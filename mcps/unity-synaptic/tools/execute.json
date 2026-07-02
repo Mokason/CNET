@@ -1,0 +1,16 @@
+{
+  "name": "execute",
+  "description": "Execute any Unity tool by name. Use list_tools(category) first to see available tools and their parameters.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "tool": {
+        "type": "string"
+      },
+      "params": {}
+    },
+    "required": [
+      "tool"
+    ]
+  }
+}

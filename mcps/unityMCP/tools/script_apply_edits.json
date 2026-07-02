@@ -1,0 +1,65 @@
+{
+  "name": "script_apply_edits",
+  "description": "Structured C# edits (methods/classes) with safer boundaries - prefer this over raw text.\n    Best practices:\n    - Prefer anchor_* ops for pattern-based insert/replace near stable markers\n    - Use replace_method/delete_method for whole-method changes (keeps signatures balanced)\n    - Avoid whole-file regex deletes; validators will guard unbalanced braces\n    - For tail insertions, prefer anchor/regex_replace on final brace (class closing)\n    - Pass options.validate='standard' for structural checks; 'relaxed' for interior-only edits\n    Canonical fields (use these exact keys):\n    - op: replace_method | insert_method | delete_method | anchor_insert | anchor_delete | anchor_replace\n    - className: string (defaults to 'name' if omitted on method/class ops)\n    - methodName: string (required for replace_method, delete_method)\n    - replacement: string (required for replace_method, insert_method)\n    - position: start | end | after | before (insert_method only)\n    - afterMethodName / beforeMethodName: string (required when position='after'/'before')\n    - anchor: regex string (for anchor_* ops)\n    - text: string (for anchor_insert/anchor_replace)\n    Examples:\n    1) Replace a method:\n    {\n        \"name\": \"SmartReach\",\n        \"path\": \"Assets/Scripts/Interaction\",\n        \"edits\": [\n        {\n        \"op\": \"replace_method\",\n        \"className\": \"SmartReach\",\n        \"methodName\": \"HasTarget\",\n        \"replacement\": \"public bool HasTarget(){ return currentTarget!=null; }\"\n        }\n    ],\n    \"options\": {\"validate\": \"standard\", \"refresh\": \"immediate\"}\n    }\n    \"2) Insert a method after another:\n    {\n        \"name\": \"SmartReach\",\n        \"path\": \"Assets/Scripts/Interaction\",\n        \"edits\": [\n        {\n        \"op\": \"insert_method\",\n        \"className\": \"SmartReach\",\n        \"replacement\": \"public void PrintSeries(){ Debug.Log(seriesName); }\",\n        \"position\": \"after\",\n        \"afterMethodName\": \"GetCurrentTarget\"\n        }\n    ],\n    }\n    ]",
+  "inputSchema": {
+    "properties": {
+      "name": {
+        "description": "Name of the script to edit",
+        "type": "string"
+      },
+      "path": {
+        "description": "Path to the script to edit under Assets/ directory",
+        "type": "string"
+      },
+      "edits": {
+        "anyOf": [
+          {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array"
+          },
+          {
+            "type": "string"
+          }
+        ],
+        "description": "List of edits to apply to the script (JSON list or stringified JSON)"
+      },
+      "options": {
+        "anyOf": [
+          {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null
+      },
+      "script_type": {
+        "default": "MonoBehaviour",
+        "description": "Type of the script to edit",
+        "type": "string"
+      },
+      "namespace": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null
+      }
+    },
+    "required": [
+      "name",
+      "path",
+      "edits"
+    ],
+    "type": "object"
+  }
+}

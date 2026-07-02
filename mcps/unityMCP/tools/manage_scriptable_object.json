@@ -1,0 +1,106 @@
+{
+  "name": "manage_scriptable_object",
+  "description": "Creates and modifies ScriptableObject assets using Unity SerializedObject property paths.",
+  "inputSchema": {
+    "properties": {
+      "action": {
+        "description": "Action to perform: create or modify.",
+        "enum": [
+          "create",
+          "modify"
+        ],
+        "type": "string"
+      },
+      "type_name": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Namespace-qualified ScriptableObject type name (for create)."
+      },
+      "folder_path": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Target folder under Assets/... (for create)."
+      },
+      "asset_name": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Asset file name without extension (for create)."
+      },
+      "overwrite": {
+        "anyOf": [
+          {
+            "type": "boolean"
+          },
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "If true, overwrite existing asset at same path (for create)."
+      },
+      "target": {
+        "anyOf": [
+          {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Target asset reference {guid|path} (for modify)."
+      },
+      "patches": {
+        "anyOf": [
+          {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array"
+          },
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Patch list (or JSON string) to apply."
+      }
+    },
+    "required": [
+      "action"
+    ],
+    "type": "object"
+  }
+}

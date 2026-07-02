@@ -1,0 +1,53 @@
+{
+  "name": "find_in_file",
+  "description": "Searches a file with a regex pattern and returns line numbers and excerpts.",
+  "inputSchema": {
+    "properties": {
+      "uri": {
+        "description": "The resource URI to search under Assets/ or file path form supported by read_resource",
+        "type": "string"
+      },
+      "pattern": {
+        "description": "The regex pattern to search for",
+        "type": "string"
+      },
+      "project_root": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Optional project root path"
+      },
+      "max_results": {
+        "default": 200,
+        "description": "Cap results to avoid huge payloads",
+        "type": "integer"
+      },
+      "ignore_case": {
+        "anyOf": [
+          {
+            "type": "boolean"
+          },
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": true,
+        "description": "Case insensitive search"
+      }
+    },
+    "required": [
+      "uri",
+      "pattern"
+    ],
+    "type": "object"
+  }
+}

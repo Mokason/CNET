@@ -1,0 +1,110 @@
+{
+  "name": "run_tests",
+  "description": "Runs Unity tests for the specified mode",
+  "inputSchema": {
+    "properties": {
+      "mode": {
+        "default": "EditMode",
+        "description": "Unity test mode to run",
+        "enum": [
+          "EditMode",
+          "PlayMode"
+        ],
+        "type": "string"
+      },
+      "timeout_seconds": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null
+      },
+      "test_names": {
+        "anyOf": [
+          {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null
+      },
+      "group_names": {
+        "anyOf": [
+          {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null
+      },
+      "category_names": {
+        "anyOf": [
+          {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null
+      },
+      "assembly_names": {
+        "anyOf": [
+          {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null
+      },
+      "include_failed_tests": {
+        "default": false,
+        "description": "Include details for failed/skipped tests only (default: false)",
+        "type": "boolean"
+      },
+      "include_details": {
+        "default": false,
+        "description": "Include details for all tests (default: false)",
+        "type": "boolean"
+      }
+    },
+    "type": "object"
+  }
+}

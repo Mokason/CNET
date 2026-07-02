@@ -1,0 +1,15 @@
+{
+  "name": "run_csharp",
+  "description": "Execute arbitrary C# code against the running Unity Editor (equivalent of Blender run_python). UnityEngine / UnityEditor / System.Linq / Newtonsoft.Json are pre-imported. Use this when no dedicated tool covers the operation. Does NOT trigger AssemblyReload so the connection stays alive.\n\nReturn value: end the snippet with `return X;` to capture X into the `result` field (prefix statements like `var x = ...;` execute first). A bare expression without trailing `;` is also accepted. Side-effect-only snippets return `result: null`. Debug.Log / LogWarning / LogError are captured into `output`.\n\nWORKS: GameObject / Transform / Component manipulation, AssetDatabase, Selection, EditorApplication, scene/asset queries via `FindObjectsByType<T>()` and other generic METHODS, generic method extension calls (`GetComponent<T>()`), arrays + foreach + LINQ-like loops, string interpolation, math, multi-statement bodies.\n\nKNOWN LIMITATION: Unity Mono.CSharp interactive parser cannot instantiate generic TYPES — `new List<int>()`, `new Dictionary<K,V>()`, `new HashSet<T>()` etc. silently return `result: null`. Workarounds: use plain arrays (`new int[] {1,2,3}`), `System.Collections.ArrayList`, or invoke generic helper methods that already exist (e.g. `FindObjectsByType<GameObject>(...)`). Generic method calls themselves are fine; only `new T<U>()` is blocked. LINQ chains that infer `IEnumerable<T>` may also fail — use `foreach` instead.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "code": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "code"
+    ]
+  }
+}

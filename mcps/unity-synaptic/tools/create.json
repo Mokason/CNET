@@ -1,0 +1,112 @@
+{
+  "name": "create",
+  "description": "Create GameObjects, instantiate prefabs, load scenes, or add components. Universal creation tool.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "type": {
+        "type": "string",
+        "enum": [
+          "gameobject",
+          "prefab",
+          "scene",
+          "component"
+        ]
+      },
+      "name": {
+        "type": "string"
+      },
+      "primitive": {
+        "type": "string",
+        "enum": [
+          "empty",
+          "cube",
+          "sphere",
+          "cylinder",
+          "plane",
+          "capsule",
+          "quad"
+        ]
+      },
+      "asset": {
+        "type": "string"
+      },
+      "scene": {
+        "type": "string"
+      },
+      "additive": {
+        "type": "boolean",
+        "default": false
+      },
+      "gameObject": {
+        "type": "string"
+      },
+      "component": {
+        "type": "string"
+      },
+      "parent": {
+        "type": "string"
+      },
+      "position": {
+        "type": "object",
+        "properties": {
+          "x": {
+            "type": "number"
+          },
+          "y": {
+            "type": "number"
+          },
+          "z": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "x",
+          "y",
+          "z"
+        ]
+      },
+      "rotation": {
+        "type": "object",
+        "properties": {
+          "x": {
+            "type": "number"
+          },
+          "y": {
+            "type": "number"
+          },
+          "z": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "x",
+          "y",
+          "z"
+        ]
+      },
+      "scale": {
+        "type": "object",
+        "properties": {
+          "x": {
+            "type": "number"
+          },
+          "y": {
+            "type": "number"
+          },
+          "z": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "x",
+          "y",
+          "z"
+        ]
+      }
+    },
+    "required": [
+      "type"
+    ]
+  }
+}

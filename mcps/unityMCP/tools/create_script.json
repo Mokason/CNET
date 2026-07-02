@@ -1,0 +1,43 @@
+{
+  "name": "create_script",
+  "description": "Create a new C# script at the given project path.",
+  "inputSchema": {
+    "properties": {
+      "path": {
+        "description": "Path under Assets/ to create the script at, e.g., 'Assets/Scripts/My.cs'",
+        "type": "string"
+      },
+      "contents": {
+        "description": "Contents of the script to create (plain text C# code). The server handles Base64 encoding.",
+        "type": "string"
+      },
+      "script_type": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null
+      },
+      "namespace": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null
+      }
+    },
+    "required": [
+      "path",
+      "contents"
+    ],
+    "type": "object"
+  }
+}

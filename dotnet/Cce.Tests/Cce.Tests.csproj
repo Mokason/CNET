@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <RootNamespace>CNET.Cce.Tests</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="coverlet.collector" Version="6.0.2">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Cce\Cce.csproj" />
+  </ItemGroup>
+
+  <!-- Robust copy of native DLL for test runs -->
+  <Target Name="CopyCceNative" AfterTargets="Build">
+    <ItemGroup>
+      <_CceDll Include="$(MSBuildThisFileDirectory)..\..\cce.dll" Condition="Exists('$(MSBuildThisFileDirectory)..\..\cce.dll')" />
+      <_CceDll Include="$(MSBuildThisFileDirectory)..\..\cce.so" Condition="Exists('$(MSBuildThisFileDirectory)..\..\cce.so')" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_CceDll)" DestinationFolder="$(OutputPath)" SkipUnchangedFiles="true" />
+    <Message Text="Copied native CCE library to test output: @(_CceDll)" Importance="high" Condition="'@(_CceDll)' != ''" />
+  </Target>
+
+</Project>

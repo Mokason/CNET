@@ -1,0 +1,24 @@
+CNET_CONTRACT 2
+increment
+INPUTS 1
+PORT_IN binary_msb 4 1 nibble_value
+OUTPUTS 1
+PORT_OUT binary_msb 5 1 incremented_value
+EXEMPLARS 16
+0 0 0 0 0 0 0 0 1
+0 0 0 1 0 0 0 1 0
+0 0 1 0 0 0 0 1 1
+0 0 1 1 0 0 1 0 0
+0 1 0 0 0 0 1 0 1
+0 1 0 1 0 0 1 1 0
+0 1 1 0 0 0 1 1 1
+0 1 1 1 0 1 0 0 0
+1 0 0 0 0 1 0 0 1
+1 0 0 1 0 1 0 1 0
+1 0 1 0 0 1 0 1 1
+1 0 1 1 0 1 1 0 0
+1 1 0 0 0 1 1 0 1
+1 1 0 1 0 1 1 1 0
+1 1 1 0 0 1 1 1 1
+1 1 1 1 1 0 0 0 0
+SEAL cc61269354bbe3d6

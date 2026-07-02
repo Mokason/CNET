@@ -1,0 +1,28 @@
+{
+  "name": "get_tools_reference",
+  "description": "Get complete reference of ALL tools in Markdown format. Use this once at the start of a session to have full tool knowledge without repeated search_tools calls. Saves tokens by eliminating multiple tool discovery calls.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "lang": {
+        "type": "string",
+        "enum": [
+          "en",
+          "jp"
+        ],
+        "default": "en"
+      },
+      "category": {
+        "type": "string"
+      },
+      "format": {
+        "type": "string",
+        "enum": [
+          "markdown",
+          "compact"
+        ],
+        "default": "markdown"
+      }
+    }
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "name": "delete_script",
+  "description": "Delete a C# script by URI or Assets-relative path.",
+  "inputSchema": {
+    "properties": {
+      "uri": {
+        "description": "URI of the script to delete under Assets/ directory, unity://path/Assets/... or file://... or Assets/...",
+        "type": "string"
+      }
+    },
+    "required": [
+      "uri"
+    ],
+    "type": "object"
+  }
+}

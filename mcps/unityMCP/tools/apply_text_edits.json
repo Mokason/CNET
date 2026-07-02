@@ -1,0 +1,59 @@
+{
+  "name": "apply_text_edits",
+  "description": "Apply small text edits to a C# script identified by URI.\n    IMPORTANT: This tool replaces EXACT character positions. Always verify content at target lines/columns BEFORE editing!\n    RECOMMENDED WORKFLOW:\n        1. First call resources/read with start_line/line_count to verify exact content\n        2. Count columns carefully (or use find_in_file to locate patterns)\n        3. Apply your edit with precise coordinates\n        4. Consider script_apply_edits with anchors for safer pattern-based replacements\n    Notes:\n        - For method/class operations, use script_apply_edits (safer, structured edits)\n        - For pattern-based replacements, consider anchor operations in script_apply_edits\n        - Lines, columns are 1-indexed\n        - Tabs count as 1 column",
+  "inputSchema": {
+    "properties": {
+      "uri": {
+        "description": "URI of the script to edit under Assets/ directory, unity://path/Assets/... or file://... or Assets/...",
+        "type": "string"
+      },
+      "edits": {
+        "description": "List of edits to apply to the script, i.e. a list of {startLine,startCol,endLine,endCol,newText} (1-indexed!)",
+        "items": {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "precondition_sha256": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null
+      },
+      "strict": {
+        "anyOf": [
+          {
+            "type": "boolean"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null
+      },
+      "options": {
+        "anyOf": [
+          {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null
+      }
+    },
+    "required": [
+      "uri",
+      "edits"
+    ],
+    "type": "object"
+  }
+}

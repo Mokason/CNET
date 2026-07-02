@@ -1,0 +1,15 @@
+# generated / build outputs
+bin/
+logs/
+*.exe
+*.o
+dotnet/**/bin/
+dotnet/**/obj/
+
+# large model & cache artifacts (external or regenerable; never in history)
+artifacts/
+Models/
+supra_cache/
+*.cce
+*.gguf
+*.safetensors

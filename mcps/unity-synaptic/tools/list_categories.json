@@ -1,0 +1,8 @@
+{
+  "name": "list_categories",
+  "description": "List all available tool categories. Use this first to discover what tools are available.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {}
+  }
+}

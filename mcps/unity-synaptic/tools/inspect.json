@@ -1,0 +1,36 @@
+{
+  "name": "inspect",
+  "description": "Dynamically inspect any Unity object, component, scene, or project assets. Use this to discover what properties are available before modifying them.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "target": {
+        "type": "string",
+        "enum": [
+          "gameobject",
+          "component",
+          "scene",
+          "project",
+          "prefabs",
+          "hierarchy"
+        ]
+      },
+      "name": {
+        "type": "string"
+      },
+      "component": {
+        "type": "string"
+      },
+      "path": {
+        "type": "string"
+      },
+      "depth": {
+        "type": "number",
+        "default": 2
+      }
+    },
+    "required": [
+      "target"
+    ]
+  }
+}

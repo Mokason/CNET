@@ -1,0 +1,8 @@
+{
+  "name": "manage_script_capabilities",
+  "description": "Get manage_script capabilities (supported ops, limits, and guards).\n    Returns:\n        - ops: list of supported structured ops\n        - text_ops: list of supported text ops\n        - max_edit_payload_bytes: server edit payload cap\n        - guards: header/using guard enabled flag",
+  "inputSchema": {
+    "properties": {},
+    "type": "object"
+  }
+}

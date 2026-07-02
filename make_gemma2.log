@@ -1,0 +1,213 @@
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -mno-avx  -o bin/cce_gguf_test src/cce/cce_tensor.c src/cce/cce_block.c src/cce/cce_cascade.c src/cce/cce_archive.c src/cce/cce_forest.c src/cce/cce_router.c src/cce/cce_learn.c src/cce/cce_block_patch.c src/cce/cce_gpu.c src/cce/cce_abi.c  src/cce/cce_perceptual_leaf.c src/cce/cce_wordlm.c src/cce/cce_model.c src/cce/cce_model_io.c src/cce/cce_dataset.c src/cce/cce_autograd.c src/cce/cce_autograd_ops.c src/cce/cce_safetensors.c src/cce/cce_gguf.c  src/nn.c tests/test_cce_gguf.c -lm -lwininet 
+src/cce/cce_block.c: In function 'cce_block_forward':
+src/cce/cce_block.c:143: warning: ignoring '#pragma omp parallel' [-Wunknown-pragmas]
+  143 |         #pragma omp parallel for schedule(static) default(none) \
+src/cce/cce_block.c:190: warning: ignoring '#pragma omp parallel' [-Wunknown-pragmas]
+  190 |     #pragma omp parallel for schedule(static) default(none) \
+src/cce/cce_cascade.c: In function 'checked_vector_bytes':
+src/cce/cce_cascade.c:23:23: warning: comparison is always false due to limited range of data type [-Wtype-limits]
+   23 |     if ((size_t)count > SIZE_MAX / sizeof(float)) return 0;
+      |                       ^
+src/cce/cce_forest.c: In function 'cce_forest_connect':
+src/cce/cce_forest.c:433:5: warning: 'strncpy' output may be truncated copying 63 bytes from a string of length 63 [-Wstringop-truncation]
+  433 |     strncpy(br->conn_names[br->num_connections], f->branches[to_idx].name, 63);
+      |     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+src/cce/cce_forest.c: In function 'cce_forest_merge':
+src/cce/cce_forest.c:591:17: warning: 'strncpy' output may be truncated copying 63 bytes from a string of length 63 [-Wstringop-truncation]
+  591 |                 strncpy(dbr->conn_names[c], conn, 63);
+      |                 ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+src/cce/cce_learn.c: In function 'dfa_update':
+src/cce/cce_learn.c:116:15: warning: comparison of integer expressions of different signedness: 'int' and 'size_t' {aka 'long long unsigned int'} [-Wsign-compare]
+  116 |         if (o < b->momentum_bias.numel) {
+      |               ^
+src/cce/cce_learn.c:53:133: warning: unused parameter 'gpu_ctx' [-Wunused-parameter]
+   53 | static void dfa_update(cce_block* b, const float* error, const cce_tensor* input, float lr, float dfa_strength, struct cce_gpu_ctx* gpu_ctx, bool is_exact) {
+      |                                                                                                                 ~~~~~~~~~~~~~~~~~~~~^~~~~~~
+src/cce/cce_learn.c: In function 'cce_train_dynamic':
+src/cce/cce_learn.c:477:78: warning: operand of '?:' changes signedness from 'int' to 'size_t' {aka 'long long unsigned int'} due to unsignedness of other operand [-Wsign-compare]
+  477 |             size_t bs = (s + batch_size > sample_count) ? sample_count - s : batch_size;
+      |                                                                              ^~~~~~~~~~
+src/cce/cce_learn.c:456:12: warning: variable 'prev_loss' set but not used [-Wunused-but-set-variable]
+  456 |     double prev_loss = 1e9;
+      |            ^~~~~~~~~
+src/cce/cce_learn.c:446:10: warning: variable 'gpu_batch' set but not used [-Wunused-but-set-variable]
+  446 |     bool gpu_batch = false;
+      |          ^~~~~~~~~
+src/cce/cce_gpu.c: In function 'cce_gpu_adam_update':
+src/cce/cce_gpu.c:174:44: warning: unused parameter 'bias' [-Wunused-parameter]
+  174 |                                cce_tensor* bias,
+      |                                ~~~~~~~~~~~~^~~~
+src/cce/cce_gpu.c:175:44: warning: unused parameter 'm_w' [-Wunused-parameter]
+  175 |                                cce_tensor* m_w,
+      |                                ~~~~~~~~~~~~^~~
+src/cce/cce_gpu.c:176:44: warning: unused parameter 'm_b' [-Wunused-parameter]
+  176 |                                cce_tensor* m_b,
+      |                                ~~~~~~~~~~~~^~~
+src/cce/cce_gpu.c:177:44: warning: unused parameter 'v_w' [-Wunused-parameter]
+  177 |                                cce_tensor* v_w,
+      |                                ~~~~~~~~~~~~^~~
+src/cce/cce_gpu.c:178:44: warning: unused parameter 'v_b' [-Wunused-parameter]
+  178 |                                cce_tensor* v_b,
+      |                                ~~~~~~~~~~~~^~~
+src/cce/cce_gpu.c:179:50: warning: unused parameter 'grad_w' [-Wunused-parameter]
+  179 |                                const cce_tensor* grad_w,
+      |                                ~~~~~~~~~~~~~~~~~~^~~~~~
+src/cce/cce_gpu.c:180:50: warning: unused parameter 'grad_b' [-Wunused-parameter]
+  180 |                                const cce_tensor* grad_b,
+      |                                ~~~~~~~~~~~~~~~~~~^~~~~~
+src/cce/cce_gpu.c:181:38: warning: unused parameter 'lr' [-Wunused-parameter]
+  181 |                                float lr,
+      |                                ~~~~~~^~
+src/cce/cce_gpu.c:182:38: warning: unused parameter 'beta1' [-Wunused-parameter]
+  182 |                                float beta1,
+      |                                ~~~~~~^~~~~
+src/cce/cce_gpu.c:183:38: warning: unused parameter 'beta2' [-Wunused-parameter]
+  183 |                                float beta2,
+      |                                ~~~~~~^~~~~
+src/cce/cce_gpu.c:184:38: warning: unused parameter 'eps' [-Wunused-parameter]
+  184 |                                float eps,
+      |                                ~~~~~~^~~
+src/cce/cce_gpu.c:185:36: warning: unused parameter 'timestep' [-Wunused-parameter]
+  185 |                                int timestep) {
+      |                                ~~~~^~~~~~~~
+src/cce/cce_gpu.c: In function 'cce_gpu_block_adam_update':
+src/cce/cce_gpu.c:293:51: warning: unused parameter 'error' [-Wunused-parameter]
+  293 |                                      const float* error, const cce_tensor* input_host,
+      |                                      ~~~~~~~~~~~~~^~~~~
+src/cce/cce_gpu.c:293:76: warning: unused parameter 'input_host' [-Wunused-parameter]
+  293 |                                      const float* error, const cce_tensor* input_host,
+      |                                                          ~~~~~~~~~~~~~~~~~~^~~~~~~~~~
+src/cce/cce_gpu.c:294:44: warning: unused parameter 'lr' [-Wunused-parameter]
+  294 |                                      float lr, float dfa_strength) {
+      |                                      ~~~~~~^~
+src/cce/cce_gpu.c:294:54: warning: unused parameter 'dfa_strength' [-Wunused-parameter]
+  294 |                                      float lr, float dfa_strength) {
+      |                                                ~~~~~~^~~~~~~~~~~~
+src/cce/cce_abi.c: In function 'cce_adapt':
+src/cce/cce_abi.c:96:23: warning: comparison of integer expressions of different signedness: 'size_t' {aka 'long long unsigned int'} and 'int' [-Wsign-compare]
+   96 |         for (i = 0; i < ydim; ++i) {
+      |                       ^
+src/cce/cce_abi.c:99:40: warning: comparison of integer expressions of different signedness: 'long long unsigned int' and 'int' [-Wsign-compare]
+   99 |         if (label < 0 || (size_t)label >= ydim) {
+      |                                        ^~
+src/cce/cce_perceptual_leaf.c: In function 'cce_perceptual_create':
+src/cce/cce_perceptual_leaf.c:91:9: warning: unused variable 'n_branches' [-Wunused-variable]
+   91 |     int n_branches = (input_dim == 7) ? 3 : 1; /* 7seg gets specialists, others simple for now */
+      |         ^~~~~~~~~~
+src/cce/cce_perceptual_leaf.c: In function 'cce_perceptual_train':
+src/cce/cce_perceptual_leaf.c:192:17: warning: this 'if' clause does not guard... [-Wmisleading-indentation]
+  192 |                 if (f[s]<0) f[s]=0; if(f[s]>1) f[s]=1;
+      |                 ^~
+src/cce/cce_perceptual_leaf.c:192:37: note: ...this statement, but the latter is misleadingly indented as if it were guarded by the 'if'
+  192 |                 if (f[s]<0) f[s]=0; if(f[s]>1) f[s]=1;
+      |                                     ^~
+src/cce/cce_perceptual_leaf.c: At top level:
+src/cce/cce_perceptual_leaf.c:54:13: warning: 'render_noisy_generic' defined but not used [-Wunused-function]
+   54 | static void render_noisy_generic(int digit, float *feat, float noise, int dim, const unsigned char *font) {
+      |             ^~~~~~~~~~~~~~~~~~~~
+src/cce/cce_perceptual_leaf.c:40:28: warning: 'block_font' defined but not used [-Wunused-const-variable=]
+   40 | static const unsigned char block_font[10][16] = {
+      |                            ^~~~~~~~~~
+src/cce/cce_perceptual_leaf.c:27:28: warning: 'grid_font' defined but not used [-Wunused-const-variable=]
+   27 | static const unsigned char grid_font[10][15] = { /* 3x5 */
+      |                            ^~~~~~~~~
+src/cce/cce_perceptual_leaf.c:15:28: warning: 'glyph_font' defined but not used [-Wunused-const-variable=]
+   15 | static const unsigned char glyph_font[10][35] = { /* 5x7 */
+      |                            ^~~~~~~~~~
+In function 'put_fixed',
+    inlined from 'put_fixed' at src/cce/cce_model_io.c:29:12,
+    inlined from 'cce_model_io_save' at src/cce/cce_model_io.c:73:5:
+src/cce/cce_model_io.c:31:31: warning: 'strncpy' output may be truncated copying 63 bytes from a string of length 63 [-Wstringop-truncation]
+   31 |     memset(tmp, 0, n); if (s) strncpy(tmp, s, n - 1);
+      |                               ^~~~~~~~~~~~~~~~~~~~~~
+src/cce/cce_model_io.c:31:31: warning: 'strncpy' output may be truncated copying 63 bytes from a string of length 63 [-Wstringop-truncation]
+In function 'put_fixed',
+    inlined from 'put_fixed' at src/cce/cce_model_io.c:29:12,
+    inlined from 'cce_model_io_save' at src/cce/cce_model_io.c:103:13:
+src/cce/cce_model_io.c:31:31: warning: 'strncpy' output may be truncated copying 63 bytes from a string of length 63 [-Wstringop-truncation]
+   31 |     memset(tmp, 0, n); if (s) strncpy(tmp, s, n - 1);
+      |                               ^~~~~~~~~~~~~~~~~~~~~~
+src/cce/cce_model_io.c: In function 'cce_model_io_load':
+src/cce/cce_model_io.c:158:5: warning: 'strncpy' output may be truncated copying 63 bytes from a string of length 63 [-Wstringop-truncation]
+  158 |     strncpy(m->name, name, sizeof(m->name) - 1);
+      |     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+src/cce/cce_model_io.c:236:13: warning: 'strncpy' output may be truncated copying 63 bytes from a string of length 63 [-Wstringop-truncation]
+  236 |             strncpy(br->name, bname, sizeof(br->name) - 1);
+      |             ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+src/cce/cce_model_io.c:170:35: warning: 't' may be used uninitialized [-Wmaybe-uninitialized]
+  170 |         rd_i32(&r, &t); s->type = (cce_sched_type_t)t; rd_f32(&r, &s->initial_lr);
+      |                                   ^~~~~~~~~~~~~~~~~~~
+src/cce/cce_model_io.c:169:17: note: 't' was declared here
+  169 |         int32_t t;
+      |                 ^
+src/cce/cce_model_io.c:197:20: warning: 'nb' may be used uninitialized [-Wmaybe-uninitialized]
+  197 |         if (nb < 0 || nb > 65536 || cdim < 0 || cdim > 32) {
+      |             ~~~~~~~^~~~~~~~~~~~~
+src/cce/cce_model_io.c:190:17: note: 'nb' was declared here
+  190 |         int32_t nb, cdim, sealed, fdm, etl;
+      |                 ^~
+src/cce/cce_model_io.c:216:38: warning: 'etl' may be used uninitialized [-Wmaybe-uninitialized]
+  216 |         f->default_exact_tail_length = etl;
+      |         ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~
+src/cce/cce_model_io.c:190:40: note: 'etl' was declared here
+  190 |         int32_t nb, cdim, sealed, fdm, etl;
+      |                                        ^~~
+src/cce/cce_model_io.c:197:34: warning: 'cdim' may be used uninitialized [-Wmaybe-uninitialized]
+  197 |         if (nb < 0 || nb > 65536 || cdim < 0 || cdim > 32) {
+      |             ~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~
+src/cce/cce_model_io.c:190:21: note: 'cdim' was declared here
+  190 |         int32_t nb, cdim, sealed, fdm, etl;
+      |                     ^~~~
+src/cce/cce_model_io.c:215:24: warning: 'fdm' may be used uninitialized [-Wmaybe-uninitialized]
+  215 |         f->diff_mode = (cce_diff_mode_t)fdm;
+      |                        ^~~~~~~~~~~~~~~~~~~~
+src/cce/cce_model_io.c:190:35: note: 'fdm' was declared here
+  190 |         int32_t nb, cdim, sealed, fdm, etl;
+      |                                   ^~~
+src/cce/cce_model_io.c:244:33: warning: 'nconn' may be used uninitialized [-Wmaybe-uninitialized]
+  244 |             br->num_connections = nconn;
+      |             ~~~~~~~~~~~~~~~~~~~~^~~~~~~
+src/cce/cce_model_io.c:222:45: note: 'nconn' was declared here
+  222 |             int32_t bcdim, tier, bdm, betl, nconn;
+      |                                             ^~~~~
+src/cce/cce_model_io.c:237:30: warning: 'bcdim' may be used uninitialized [-Wmaybe-uninitialized]
+  237 |             br->centroid_dim = bcdim;
+      |             ~~~~~~~~~~~~~~~~~^~~~~~~
+src/cce/cce_model_io.c:222:21: note: 'bcdim' was declared here
+  222 |             int32_t bcdim, tier, bdm, betl, nconn;
+      |                     ^~~~~
+src/cce/cce_model_io.c:242:29: warning: 'bdm' may be used uninitialized [-Wmaybe-uninitialized]
+  242 |             br->diff_mode = (cce_diff_mode_t)bdm;
+      |                             ^~~~~~~~~~~~~~~~~~~~
+src/cce/cce_model_io.c:222:34: note: 'bdm' was declared here
+  222 |             int32_t bcdim, tier, bdm, betl, nconn;
+      |                                  ^~~
+src/cce/cce_model_io.c:243:35: warning: 'betl' may be used uninitialized [-Wmaybe-uninitialized]
+  243 |             br->exact_tail_length = betl;
+      |             ~~~~~~~~~~~~~~~~~~~~~~^~~~~~
+src/cce/cce_model_io.c:222:39: note: 'betl' was declared here
+  222 |             int32_t bcdim, tier, bdm, betl, nconn;
+      |                                       ^~~~
+src/cce/cce_autograd.c: In function 'cce_ag_sum':
+src/cce/cce_autograd.c:429:62: warning: unused parameter 'dim' [-Wunused-parameter]
+  429 | cce_result cce_ag_sum(cce_ag_ctx* ctx, cce_ag_tensor* t, int dim, cce_ag_tensor** out) {
+      |                                                          ~~~~^~~
+src/cce/cce_autograd.c: In function 'cce_ag_adam_step':
+src/cce/cce_autograd.c:899:35: warning: unused parameter 'beta1' [-Wunused-parameter]
+  899 |                             float beta1, float beta2, float eps, int t) {
+      |                             ~~~~~~^~~~~
+src/cce/cce_autograd.c:899:48: warning: unused parameter 'beta2' [-Wunused-parameter]
+  899 |                             float beta1, float beta2, float eps, int t) {
+      |                                          ~~~~~~^~~~~
+src/cce/cce_autograd.c:899:61: warning: unused parameter 'eps' [-Wunused-parameter]
+  899 |                             float beta1, float beta2, float eps, int t) {
+      |                                                       ~~~~~~^~~
+src/cce/cce_autograd.c:899:70: warning: unused parameter 't' [-Wunused-parameter]
+  899 |                             float beta1, float beta2, float eps, int t) {
+      |                                                                  ~~~~^
+src/cce/cce_gguf.c: In function 'cce_gguf_load_qwen2':
+src/cce/cce_gguf.c:1042:5: warning: 'strncpy' output may be truncated copying 63 bytes from a string of length 63 [-Wstringop-truncation]
+ 1042 |     strncpy(m->tokenizer_model, cce_gguf_get_tokenizer_model(g), sizeof(m->tokenizer_model)-1);
+      |     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+./bin/cce_gguf_test > logs/gguf_test_run.log 2>&1 || echo "test exited non-zero (see log)"
+"test exited non-zero (see log)"

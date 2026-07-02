@@ -1,0 +1,43 @@
+{
+  "name": "manage_shader",
+  "description": "Manages shader scripts in Unity (create, read, update, delete).",
+  "inputSchema": {
+    "properties": {
+      "action": {
+        "description": "Perform CRUD operations on shader scripts.",
+        "enum": [
+          "create",
+          "read",
+          "update",
+          "delete"
+        ],
+        "type": "string"
+      },
+      "name": {
+        "description": "Shader name (no .cs extension)",
+        "type": "string"
+      },
+      "path": {
+        "description": "Asset path (default: \"Assets/\")",
+        "type": "string"
+      },
+      "contents": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null
+      }
+    },
+    "required": [
+      "action",
+      "name",
+      "path"
+    ],
+    "type": "object"
+  }
+}

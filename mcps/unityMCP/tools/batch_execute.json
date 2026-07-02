@@ -1,0 +1,56 @@
+{
+  "name": "batch_execute",
+  "description": "Runs a list of MCP tool calls as one batch. Use it to send a full sequence of commands, inspect the results, then submit the next batch for the following step.",
+  "inputSchema": {
+    "properties": {
+      "commands": {
+        "description": "List of commands with 'tool' and 'params' keys.",
+        "items": {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "parallel": {
+        "anyOf": [
+          {
+            "type": "boolean"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Attempt to run read-only commands in parallel"
+      },
+      "fail_fast": {
+        "anyOf": [
+          {
+            "type": "boolean"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Stop processing after the first failure"
+      },
+      "max_parallelism": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Hint for the maximum number of parallel workers"
+      }
+    },
+    "required": [
+      "commands"
+    ],
+    "type": "object"
+  }
+}

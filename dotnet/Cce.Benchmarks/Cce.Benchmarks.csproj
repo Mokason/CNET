@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <Nullable>enable</Nullable>
+    <RootNamespace>CNET.Cce.Benchmarks</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="BenchmarkDotNet" Version="0.14.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Cce\Cce.csproj" />
+  </ItemGroup>
+
+  <!-- Robust copy of native DLL for benchmarks -->
+  <Target Name="CopyCceNative" AfterTargets="Build">
+    <ItemGroup>
+      <_CceDll Include="$(MSBuildThisFileDirectory)..\..\cce.dll" Condition="Exists('$(MSBuildThisFileDirectory)..\..\cce.dll')" />
+      <_CceDll Include="$(MSBuildThisFileDirectory)..\..\cce.so" Condition="Exists('$(MSBuildThisFileDirectory)..\..\cce.so')" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_CceDll)" DestinationFolder="$(OutputPath)" SkipUnchangedFiles="true" />
+    <Message Text="Copied native CCE library to benchmark output: @(_CceDll)" Importance="high" Condition="'@(_CceDll)' != ''" />
+  </Target>
+
+</Project>

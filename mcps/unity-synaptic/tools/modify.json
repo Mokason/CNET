@@ -1,0 +1,27 @@
+{
+  "name": "modify",
+  "description": "Dynamically modify any property of a Unity component using property paths. Use inspect() first to discover available properties.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "gameObject": {
+        "type": "string"
+      },
+      "component": {
+        "type": "string"
+      },
+      "properties": {
+        "type": "object"
+      },
+      "createIfMissing": {
+        "type": "boolean",
+        "default": false
+      }
+    },
+    "required": [
+      "gameObject",
+      "component",
+      "properties"
+    ]
+  }
+}

@@ -1,0 +1,75 @@
+{
+  "name": "manage_editor",
+  "description": "Controls and queries the Unity editor's state and settings. Tip: pass booleans as true/false; if your client only sends strings, 'true'/'false' are accepted.",
+  "inputSchema": {
+    "properties": {
+      "action": {
+        "description": "Get and update the Unity Editor state.",
+        "enum": [
+          "telemetry_status",
+          "telemetry_ping",
+          "play",
+          "pause",
+          "stop",
+          "set_active_tool",
+          "add_tag",
+          "remove_tag",
+          "add_layer",
+          "remove_layer"
+        ],
+        "type": "string"
+      },
+      "wait_for_completion": {
+        "anyOf": [
+          {
+            "type": "boolean"
+          },
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null
+      },
+      "tool_name": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null
+      },
+      "tag_name": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null
+      },
+      "layer_name": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null
+      }
+    },
+    "required": [
+      "action"
+    ],
+    "type": "object"
+  }
+}

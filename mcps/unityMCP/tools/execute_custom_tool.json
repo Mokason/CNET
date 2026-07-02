@@ -1,0 +1,27 @@
+{
+  "name": "execute_custom_tool",
+  "description": "Execute a project-scoped custom tool registered by Unity.",
+  "inputSchema": {
+    "properties": {
+      "tool_name": {
+        "type": "string"
+      },
+      "parameters": {
+        "anyOf": [
+          {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null
+      }
+    },
+    "required": [
+      "tool_name"
+    ],
+    "type": "object"
+  }
+}

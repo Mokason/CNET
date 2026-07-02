@@ -1,0 +1,16 @@
+{
+  "name": "get_sha",
+  "description": "Get SHA256 and basic metadata for a Unity C# script without returning file contents",
+  "inputSchema": {
+    "properties": {
+      "uri": {
+        "description": "URI of the script to edit under Assets/ directory, unity://path/Assets/... or file://... or Assets/...",
+        "type": "string"
+      }
+    },
+    "required": [
+      "uri"
+    ],
+    "type": "object"
+  }
+}

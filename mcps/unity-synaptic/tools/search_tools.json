@@ -1,0 +1,22 @@
+{
+  "name": "search_tools",
+  "description": "Search for tools by keyword in name, title, or description. Use this when you don't know the exact category.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "query": {
+        "type": "string"
+      },
+      "category": {
+        "type": "string"
+      },
+      "limit": {
+        "type": "number",
+        "default": 20
+      }
+    },
+    "required": [
+      "query"
+    ]
+  }
+}

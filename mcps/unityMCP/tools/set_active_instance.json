@@ -1,0 +1,16 @@
+{
+  "name": "set_active_instance",
+  "description": "Set the active Unity instance for this client/session. Accepts Name@hash or hash.",
+  "inputSchema": {
+    "properties": {
+      "instance": {
+        "description": "Target instance (Name@hash or hash prefix)",
+        "type": "string"
+      }
+    },
+    "required": [
+      "instance"
+    ],
+    "type": "object"
+  }
+}

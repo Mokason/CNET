@@ -1,0 +1,15 @@
+{
+  "name": "list_tools",
+  "description": "List all tools in a specific category with their parameters. Use this to learn how to use specific tools.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "category": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "category"
+    ]
+  }
+}

@@ -1,0 +1,143 @@
+{
+  "name": "manage_asset",
+  "description": "Performs asset operations (import, create, modify, delete, etc.) in Unity.\n\nTip (payload safety): for `action=\"search\"`, prefer paging (`page_size`, `page_number`) and keep `generate_preview=false` (previews can add large base64 blobs).",
+  "inputSchema": {
+    "properties": {
+      "action": {
+        "description": "Perform CRUD operations on assets.",
+        "enum": [
+          "import",
+          "create",
+          "modify",
+          "delete",
+          "duplicate",
+          "move",
+          "rename",
+          "search",
+          "get_info",
+          "create_folder",
+          "get_components"
+        ],
+        "type": "string"
+      },
+      "path": {
+        "description": "Asset path (e.g., 'Materials/MyMaterial.mat') or search scope (e.g., 'Assets').",
+        "type": "string"
+      },
+      "asset_type": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null
+      },
+      "properties": {
+        "anyOf": [
+          {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null
+      },
+      "destination": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null
+      },
+      "generate_preview": {
+        "default": false,
+        "description": "Generate a preview/thumbnail for the asset when supported. Warning: previews may include large base64 payloads; keep false unless needed.",
+        "type": "boolean"
+      },
+      "search_pattern": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null
+      },
+      "filter_type": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null
+      },
+      "filter_date_after": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null
+      },
+      "page_size": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "number"
+          },
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null
+      },
+      "page_number": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "number"
+          },
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null
+      }
+    },
+    "required": [
+      "action",
+      "path"
+    ],
+    "type": "object"
+  }
+}

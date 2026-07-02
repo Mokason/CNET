@@ -1,0 +1,8 @@
+{
+  "name": "debug_request_context",
+  "description": "Return the current FastMCP request context details (client_id, session_id, and meta dump).",
+  "inputSchema": {
+    "properties": {},
+    "type": "object"
+  }
+}

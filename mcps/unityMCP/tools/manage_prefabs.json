@@ -1,0 +1,88 @@
+{
+  "name": "manage_prefabs",
+  "description": "Performs prefab operations (open_stage, close_stage, save_open_stage, create_from_gameobject).",
+  "inputSchema": {
+    "properties": {
+      "action": {
+        "description": "Perform prefab operations.",
+        "enum": [
+          "open_stage",
+          "close_stage",
+          "save_open_stage",
+          "create_from_gameobject"
+        ],
+        "type": "string"
+      },
+      "prefab_path": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null
+      },
+      "mode": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null
+      },
+      "save_before_close": {
+        "anyOf": [
+          {
+            "type": "boolean"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null
+      },
+      "target": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null
+      },
+      "allow_overwrite": {
+        "anyOf": [
+          {
+            "type": "boolean"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null
+      },
+      "search_inactive": {
+        "anyOf": [
+          {
+            "type": "boolean"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null
+      }
+    },
+    "required": [
+      "action"
+    ],
+    "type": "object"
+  }
+}

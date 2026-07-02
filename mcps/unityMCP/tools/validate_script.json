@@ -1,0 +1,30 @@
+{
+  "name": "validate_script",
+  "description": "Validate a C# script and return diagnostics.",
+  "inputSchema": {
+    "properties": {
+      "uri": {
+        "description": "URI of the script to validate under Assets/ directory, unity://path/Assets/... or file://... or Assets/...",
+        "type": "string"
+      },
+      "level": {
+        "default": "basic",
+        "description": "Validation level",
+        "enum": [
+          "basic",
+          "standard"
+        ],
+        "type": "string"
+      },
+      "include_diagnostics": {
+        "default": false,
+        "description": "Include full diagnostics and summary",
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "uri"
+    ],
+    "type": "object"
+  }
+}
