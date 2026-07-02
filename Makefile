@@ -151,6 +151,8 @@ GRADUATE_SRC := src/corpus/graduate.c
 GRADUATE_TEST := tests/test_graduate.c
 ACQUIRE_SRC := src/acquire.c
 ACQUIRE_TEST := tests/test_acquire.c
+BASE_SRC := src/base.c
+BASE_TEST := tests/test_base.c
 FONTDECODE_TEST := tests/test_font_decode.c
 TFIDF_TEST := tests/test_tfidf.c
 SYNONYMS_SRC := src/corpus/synonyms.c
@@ -244,9 +246,15 @@ contract_unit: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONSOLIDATE) $(CONTRACT) tests/t
 # Gap-triggered acquisition loop: gap ledger sidecar + oracle mining ->
 # train -> certify (PROOF/SAMPLE) -> seal .cnu -> register -> replan.
 # Link set mirrors the `coverage` target (+ acquire).
-acquire: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(ACQUIRE_TEST) include/nn.h include/router.h include/contract/contract.h include/contract/coverage.h include/contract/unit.h include/acquire.h
-	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(ACQUIRE_TEST) $(LDFLAGS)
+acquire: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(ACQUIRE_TEST) include/nn.h include/router.h include/contract/contract.h include/contract/coverage.h include/contract/unit.h include/acquire.h include/base.h
+	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(ACQUIRE_TEST) $(LDFLAGS)
 	./$(BIN_DIR)/acquire > logs/acquire.log 2>&1 || echo "test exited non-zero (see log)"
+
+# Unified base (CNB1): one sealed container (units + tags + stats + oracle
+# descriptors) replacing per-unit file sprawl; tag governance with refusal.
+base: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(BASE_TEST) include/nn.h include/router.h include/contract/contract.h include/contract/coverage.h include/contract/unit.h include/acquire.h include/base.h
+	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(BASE_TEST) $(LDFLAGS)
+	./$(BIN_DIR)/base > logs/base.log 2>&1 || echo "test exited non-zero (see log)"
 
 # Contract security + efficiency: content digests, certification cache,
 # sealed (tamper-evident) contract files, certificate-to-weights binding.
@@ -674,7 +682,7 @@ test_all: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) 
 legacy_test: test_all
 	./$(BIN_DIR)/test_all
 
-verify: cce_dll cce_safetensors_test cce_autograd_test cce_model_test cce_view forest_view cce_detect cce_ssm cce_st_llama cce_specgraph cce_wstore cce_tiers cce_similar contract_secure contract_unit acquire
+verify: cce_dll cce_safetensors_test cce_autograd_test cce_model_test cce_view forest_view cce_detect cce_ssm cce_st_llama cce_specgraph cce_wstore cce_tiers cce_similar contract_secure contract_unit acquire base
 	dotnet test dotnet/Cce.Tests/Cce.Tests.csproj -c Release --no-restore
 
 verify-long: verify cce_train_bench supra_head_qat supra_head_qat_corpus wordlm_bitnet

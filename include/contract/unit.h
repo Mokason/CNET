@@ -38,4 +38,15 @@ int unit_save(const BinaryTransformNetwork *btn, const Contract *c,
  * seal_verified = 1. Returns 0, or -1 with both outputs untouched/freed. */
 int unit_load(BinaryTransformNetwork *btn, Contract *c, const char *path);
 
+/* Buffer variants (the unified base stores CNU1 images inside one container).
+ * unit_save_mem returns the complete sealed image (malloc'd; caller frees).
+ * unit_load_mem parses a sealed image without touching the filesystem; the
+ * buffer is borrowed (caller keeps ownership). Same semantics as the file
+ * versions in every other respect — unit_save/unit_load are now thin
+ * wrappers over these. */
+int unit_save_mem(const BinaryTransformNetwork *btn, const Contract *c,
+                  unsigned char **buf_out, size_t *len_out);
+int unit_load_mem(BinaryTransformNetwork *btn, Contract *c,
+                  const unsigned char *buf, size_t len);
+
 #endif /* CONTRACT_UNIT_H */

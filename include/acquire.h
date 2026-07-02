@@ -21,6 +21,9 @@
 #define ACQUIRE_NAME_MAX 64
 #define ACQUIRE_REASON_MAX 64
 
+/* unified base (include/base.h); forward-declared to avoid a header cycle */
+struct CnetBase;
+
 /* A label source: an in-process reference implementation. in has the input
    port's total values (canonical); the oracle writes the output port's total
    values into out. Returns 0 on success, -1 on refusal (counted as a reject). */
@@ -88,6 +91,11 @@ typedef struct {
     double wilson_z;           /* 1.96 = 95% */
     size_t exhaustive_cap;     /* cap for btn_certify_exhaustive (0 = builtin) */
     const char *unit_dir;      /* dir for sealed .cnu files; NULL = skip seal */
+    /* Non-NULL -> acquired units seal INTO the unified base instead of loose
+       .cnu files (tag governance enforced: a near-miss tag DEFERs the
+       acquisition with reason "tag_collision"). unit_dir is ignored for
+       sealing when base is set. */
+    struct CnetBase *base;
     size_t capture_limit;      /* per-gap captured-exemplar cap (256) */
     /* training recipe (lean-teacher defaults; NEVER 1 hidden neuron) */
     size_t init_hidden;        /* 8 */

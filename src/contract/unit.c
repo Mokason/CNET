@@ -169,15 +169,13 @@ static int get_ports(UnitReader *r, Port *ports, size_t max_ports, size_t *n_out
 
 /* ---- unit_save ---- */
 
-int unit_save(const BinaryTransformNetwork *btn, const Contract *c,
-              const char *path) {
+int unit_save_mem(const BinaryTransformNetwork *btn, const Contract *c,
+                  unsigned char **buf_out, size_t *len_out) {
     UnitBlob b = {0};
     size_t i, j, in_total, out_total, row_bits, row_bytes;
     unsigned long long seal;
-    FILE *f;
-    int ok = -1;
 
-    if (btn == NULL || c == NULL || path == NULL) return -1;
+    if (btn == NULL || c == NULL || buf_out == NULL || len_out == NULL) return -1;
     if (!unit_name_valid(c->name)) return -1;
     if (c->exemplar_count == 0 || c->exemplar_count > UNIT_MAX_EXEMPLARS) return -1;
 
@@ -271,23 +269,38 @@ int unit_save(const BinaryTransformNetwork *btn, const Contract *c,
     seal = unit_fnv(b.buf, b.len);
     if (blob_u64(&b, seal)) goto done;
 
-    f = fopen(path, "wb");
-    if (f == NULL) goto done;
-    ok = (fwrite(b.buf, 1, b.len, f) == b.len) ? 0 : -1;
-    if (fclose(f) != 0) ok = -1;
-    if (ok != 0) remove(path);
+    *buf_out = b.buf;
+    *len_out = b.len;
+    return 0;
 
 done:
     free(b.buf);
+    return -1;
+}
+
+int unit_save(const BinaryTransformNetwork *btn, const Contract *c,
+              const char *path) {
+    unsigned char *buf;
+    size_t len;
+    FILE *f;
+    int ok = -1;
+
+    if (path == NULL) return -1;
+    if (unit_save_mem(btn, c, &buf, &len) != 0) return -1;
+    f = fopen(path, "wb");
+    if (f != NULL) {
+        ok = (fwrite(buf, 1, len, f) == len) ? 0 : -1;
+        if (fclose(f) != 0) ok = -1;
+        if (ok != 0) remove(path);
+    }
+    free(buf);
     return ok;
 }
 
 /* ---- unit_load ---- */
 
-int unit_load(BinaryTransformNetwork *btn, Contract *c, const char *path) {
-    unsigned char *buf = NULL;
-    long fsize;
-    FILE *f;
+int unit_load_mem(BinaryTransformNetwork *btn, Contract *c,
+                  const unsigned char *buf, size_t len) {
     UnitReader r;
     unsigned version, name_len, tern;
     unsigned long long ic, oc, hc, mhc, n_ex, seal_want;
@@ -296,33 +309,20 @@ int unit_load(BinaryTransformNetwork *btn, Contract *c, const char *path) {
     size_t i, j, in_total, out_total, row_bits;
     int btn_ready = 0;
 
-    if (btn == NULL || c == NULL || path == NULL) return -1;
+    if (btn == NULL || c == NULL || buf == NULL) return -1;
     memset(&local, 0, sizeof local);
-
-    f = fopen(path, "rb");
-    if (f == NULL) return -1;
-    fseek(f, 0, SEEK_END);
-    fsize = ftell(f);
-    fseek(f, 0, SEEK_SET);
-    if (fsize < 4 + 4 + 8) { fclose(f); return -1; }
-    buf = (unsigned char *)malloc((size_t)fsize);
-    if (buf == NULL || fread(buf, 1, (size_t)fsize, f) != (size_t)fsize) {
-        free(buf);
-        fclose(f);
-        return -1;
-    }
-    fclose(f);
+    if (len < 4 + 4 + 8) return -1;
 
     /* seal FIRST: never parse bytes that fail integrity */
     {
         unsigned long long have;
-        memcpy(&seal_want, buf + fsize - 8, 8);
-        have = unit_fnv(buf, (size_t)fsize - 8);
-        if (have != seal_want) { free(buf); return -1; }
+        memcpy(&seal_want, buf + len - 8, 8);
+        have = unit_fnv(buf, len - 8);
+        if (have != seal_want) return -1;
     }
 
     r.buf = buf;
-    r.len = (size_t)fsize - 8; /* payload only */
+    r.len = len - 8; /* payload only */
     r.off = 0;
 
     if (r.len < 8 || memcmp(buf, UNIT_MAGIC, 4) != 0) goto fail;
@@ -440,7 +440,6 @@ int unit_load(BinaryTransformNetwork *btn, Contract *c, const char *path) {
 
     if (r.off != r.len) goto fail; /* trailing junk inside the sealed payload */
 
-    free(buf);
     local.owns_data = 1;
     local.seal_verified = 1;
     *c = local;
@@ -450,6 +449,30 @@ fail:
     if (btn_ready) btn_free(btn);
     free(local.inputs);
     free(local.outputs);
-    free(buf);
     return -1;
+}
+
+int unit_load(BinaryTransformNetwork *btn, Contract *c, const char *path) {
+    unsigned char *buf = NULL;
+    long fsize;
+    FILE *f;
+    int rc;
+
+    if (btn == NULL || c == NULL || path == NULL) return -1;
+    f = fopen(path, "rb");
+    if (f == NULL) return -1;
+    fseek(f, 0, SEEK_END);
+    fsize = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    if (fsize < 4 + 4 + 8) { fclose(f); return -1; }
+    buf = (unsigned char *)malloc((size_t)fsize);
+    if (buf == NULL || fread(buf, 1, (size_t)fsize, f) != (size_t)fsize) {
+        free(buf);
+        fclose(f);
+        return -1;
+    }
+    fclose(f);
+    rc = unit_load_mem(btn, c, buf, (size_t)fsize);
+    free(buf);
+    return rc;
 }

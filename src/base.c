@@ -1,0 +1,741 @@
+#include "../include/base.h"
+#include "../include/contract/unit.h"
+
+#include <stdlib.h>
+#include <string.h>
+
+#define CNB_MAGIC "CNB1"
+#define CNB_VERSION 1u
+
+/* sanity caps: refuse hostile headers before any allocation */
+#define CNB_MAX_TABLE   (1u << 20)
+#define CNB_MAX_BLOB    (1u << 28)
+
+/* ---- FNV-1a (same scheme as the unit/contract seals) ---- */
+
+static unsigned long long cnb_fnv(const unsigned char *p, size_t n) {
+    unsigned long long h = 1469598103934665603ULL;
+    size_t i;
+    for (i = 0; i < n; ++i) {
+        h ^= p[i];
+        h *= 1099511628211ULL;
+    }
+    return h;
+}
+
+/* ---- growable blob writer (unit.c pattern) ---- */
+
+typedef struct { unsigned char *buf; size_t len, cap; } CnbW;
+
+static int w_put(CnbW *b, const void *p, size_t n) {
+    if (b->len + n > b->cap) {
+        size_t nc = b->cap ? b->cap * 2 : 4096;
+        unsigned char *nb;
+        while (nc < b->len + n) nc *= 2;
+        nb = (unsigned char *)realloc(b->buf, nc);
+        if (nb == NULL) return -1;
+        b->buf = nb;
+        b->cap = nc;
+    }
+    memcpy(b->buf + b->len, p, n);
+    b->len += n;
+    return 0;
+}
+
+static int w_u8(CnbW *b, unsigned v)  { unsigned char x = (unsigned char)v; return w_put(b, &x, 1); }
+static int w_u16(CnbW *b, unsigned v) { unsigned short x = (unsigned short)v; return w_put(b, &x, 2); }
+static int w_u32(CnbW *b, unsigned v) { unsigned int x = v; return w_put(b, &x, 4); }
+static int w_u64(CnbW *b, unsigned long long v) { return w_put(b, &v, 8); }
+
+typedef struct { const unsigned char *buf; size_t len, off; } CnbR;
+
+static int r_get(CnbR *r, void *p, size_t n) {
+    if (r->off + n > r->len) return -1;
+    memcpy(p, r->buf + r->off, n);
+    r->off += n;
+    return 0;
+}
+
+static int r_u8(CnbR *r, unsigned *v)  { unsigned char x; if (r_get(r, &x, 1)) return -1; *v = x; return 0; }
+static int r_u16(CnbR *r, unsigned *v) { unsigned short x; if (r_get(r, &x, 2)) return -1; *v = x; return 0; }
+static int r_u32(CnbR *r, unsigned *v) { unsigned int x; if (r_get(r, &x, 4)) return -1; *v = x; return 0; }
+static int r_u64(CnbR *r, unsigned long long *v) { return r_get(r, v, 8); }
+
+/* length-prefixed string into a fixed buffer (atom-sized) */
+static int w_str(CnbW *b, const char *s) {
+    size_t n = strlen(s);
+    if (n > 0xFFFF) return -1;
+    if (w_u16(b, (unsigned)n)) return -1;
+    return n ? w_put(b, s, n) : 0;
+}
+
+static int r_str(CnbR *r, char *dst, size_t cap) {
+    unsigned n;
+    if (r_u16(r, &n) || n >= cap) return -1;
+    if (n && r_get(r, dst, n)) return -1;
+    dst[n] = '\0';
+    return 0;
+}
+
+static int w_port(CnbW *b, Port p) {
+    if (w_u8(b, (unsigned)p.family) ||
+        w_u64(b, p.field_width) || w_u64(b, p.field_count) ||
+        w_str(b, p.tag)) return -1;
+    return 0;
+}
+
+static int r_port(CnbR *r, Port *p) {
+    unsigned fam;
+    unsigned long long w, c;
+    char tag[PORT_TAG_MAX];
+    memset(p, 0, sizeof *p);
+    if (r_u8(r, &fam) || fam > PORT_CONCEPT) return -1;
+    if (r_u64(r, &w) || r_u64(r, &c) ||
+        w > CNB_MAX_TABLE || c > CNB_MAX_TABLE) return -1;
+    if (r_str(r, tag, sizeof tag)) return -1;
+    p->family = (PortFamily)fam;
+    p->field_width = (size_t)w;
+    p->field_count = (size_t)c;
+    if (tag[0] && port_set_tag(p, tag) != 0) return -1;
+    return 0;
+}
+
+/* ---- generic dynamic-array push ---- */
+
+#define CNB_PUSH(arr, count, cap, T)                                   \
+    do {                                                               \
+        if ((count) == (cap)) {                                        \
+            size_t nc = (cap) ? (cap) * 2 : 8;                         \
+            T *na = (T *)realloc((arr), nc * sizeof(T));               \
+            if (na == NULL) return -1;                                 \
+            (arr) = na;                                                \
+            (cap) = nc;                                                \
+        }                                                              \
+        memset(&(arr)[count], 0, sizeof(T));                           \
+    } while (0)
+
+static int cnb_name_is_atom(const char *s) {
+    size_t i;
+    if (!s || !s[0]) return 0;
+    for (i = 0; s[i]; ++i) {
+        char ch = s[i];
+        int ok = (ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') ||
+                 (ch >= '0' && ch <= '9') || ch == '_';
+        if (!ok) return 0;
+    }
+    return i < CNB_NAME_MAX;
+}
+
+/* ---- lifecycle ---- */
+
+void cnb_init(CnetBase *b) {
+    if (!b) return;
+    memset(b, 0, sizeof *b);
+}
+
+void cnb_free(CnetBase *b) {
+    size_t i;
+    if (!b) return;
+    for (i = 0; i < b->blob_count; ++i) free(b->blobs[i].bytes);
+    free(b->blobs);
+    free(b->units);
+    free(b->tags);
+    free(b->oracles);
+    free(b->stats);
+    for (i = 0; i < b->loaded_count; ++i) {
+        btn_free(b->loaded[i]);
+        free(b->loaded[i]);
+    }
+    free(b->loaded);
+    free(b->loaded_names);
+    memset(b, 0, sizeof *b);
+}
+
+/* ---- tag governance (real logic in this module; see header) ---- */
+
+static void tag_fold(const char *s, char *out) {
+    /* lowercase + strip underscores: the canonical form for near-miss checks */
+    size_t i, j = 0;
+    for (i = 0; s[i]; ++i) {
+        char c = s[i];
+        if (c == '_') continue;
+        if (c >= 'A' && c <= 'Z') c = (char)(c - 'A' + 'a');
+        out[j++] = c;
+    }
+    out[j] = '\0';
+}
+
+/* Damerau-Levenshtein distance <= 1: one substitution, insertion, deletion,
+   or ADJACENT TRANSPOSITION ("nibbel" vs "nibble" — the archetypal typo). */
+static int edit_distance_le1(const char *a, const char *b) {
+    size_t la = strlen(a), lb = strlen(b);
+    if (la == lb) {
+        size_t i, diff[2], nd = 0;
+        for (i = 0; i < la; ++i) {
+            if (a[i] != b[i]) {
+                if (nd < 2) diff[nd] = i;
+                if (++nd > 2) return 0;
+            }
+        }
+        if (nd <= 1) return 1;   /* equal or one substitution */
+        return diff[1] == diff[0] + 1 &&
+               a[diff[0]] == b[diff[1]] && a[diff[1]] == b[diff[0]];
+    }
+    {
+        size_t i = 0, j = 0, edits = 0;
+        if (la > lb) { const char *t = a; a = b; b = t; la ^= lb; lb ^= la; la ^= lb; }
+        if (lb - la > 1) return 0;
+        while (i < la && j < lb) {
+            if (a[i] == b[j]) { ++i; ++j; continue; }
+            if (++edits > 1) return 0;
+            ++j;   /* insertion into the shorter */
+        }
+        edits += (lb - j) + (la - i);
+        return edits <= 1;
+    }
+}
+
+int cnb_tag_near_miss(const CnetBase *b, const char *tag,
+                      char *existing_out, size_t existing_cap) {
+    size_t i;
+    char fold_new[PORT_TAG_MAX], fold_old[PORT_TAG_MAX];
+    if (!b || !tag || !tag[0]) return 0;
+    tag_fold(tag, fold_new);
+    for (i = 0; i < b->tag_count; ++i) {
+        const char *old = b->tags[i].tag;
+        if (strcmp(old, tag) == 0) continue;   /* exact = same tag, not a miss */
+        tag_fold(old, fold_old);
+        if (strcmp(fold_new, fold_old) == 0 ||
+            edit_distance_le1(tag, old) ||
+            edit_distance_le1(fold_new, fold_old)) {
+            if (existing_out && existing_cap > 0) {
+                snprintf(existing_out, existing_cap, "%s", old);
+            }
+            return 1;
+        }
+    }
+    return 0;
+}
+
+int cnb_tag_lookup(const CnetBase *b, const char *tag) {
+    size_t i;
+    if (!b || !tag) return -1;
+    for (i = 0; i < b->tag_count; ++i)
+        if (strcmp(b->tags[i].tag, tag) == 0) return (int)i;
+    return -1;
+}
+
+int cnb_tag_mint(CnetBase *b, const char *tag, const char *owner_unit) {
+    if (!b || !cnb_name_is_atom(tag) || strlen(tag) >= PORT_TAG_MAX) return -1;
+    if (cnb_tag_lookup(b, tag) >= 0) return 1;          /* idempotent re-mint */
+    if (cnb_tag_near_miss(b, tag, NULL, 0)) return -1;  /* refusal teeth */
+    CNB_PUSH(b->tags, b->tag_count, b->tag_cap, CnbTag);
+    snprintf(b->tags[b->tag_count].tag, PORT_TAG_MAX, "%s", tag);
+    snprintf(b->tags[b->tag_count].owner, CNB_NAME_MAX, "%s",
+             owner_unit ? owner_unit : "");
+    b->tags[b->tag_count].mint_seq = b->next_mint_seq++;
+    b->tag_count++;
+    return 0;
+}
+
+void cnb_tag_audit(const CnetBase *b, FILE *out) {
+    size_t i, u;
+    if (!b || !out) return;
+    fprintf(out, "CNB tag audit: %lu tags, %lu units\n",
+            (unsigned long)b->tag_count, (unsigned long)b->unit_count);
+    for (i = 0; i < b->tag_count; ++i) {
+        size_t refs = 0;
+        for (u = 0; u < b->unit_count; ++u) {
+            BinaryTransformNetwork btn;
+            Contract c;
+            size_t p;
+            int hit = 0;
+            if (cnb_get_unit(b, b->units[u].name, &btn, &c) != 0) continue;
+            for (p = 0; p < btn.input_port_count && !hit; ++p)
+                hit = (strcmp(btn.input_ports[p].tag, b->tags[i].tag) == 0);
+            for (p = 0; p < btn.output_port_count && !hit; ++p)
+                hit = (strcmp(btn.output_ports[p].tag, b->tags[i].tag) == 0);
+            refs += (size_t)hit;
+            btn_free(&btn);
+            contract_free(&c);
+        }
+        fprintf(out, "  tag %-24s owner %-24s seq %lu units %lu%s\n",
+                b->tags[i].tag, b->tags[i].owner[0] ? b->tags[i].owner : "-",
+                (unsigned long)b->tags[i].mint_seq, (unsigned long)refs,
+                refs == 0 ? "  ORPHAN" : "");
+    }
+}
+
+/* ---- units ---- */
+
+static int find_unit(const CnetBase *b, const char *name) {
+    size_t i;
+    for (i = 0; i < b->unit_count; ++i)
+        if (strcmp(b->units[i].name, name) == 0) return (int)i;
+    return -1;
+}
+
+static int cnb_add_unit_bytes(CnetBase *b, const char *name,
+                              unsigned long long behavior_digest,
+                              const Port *in_ports, size_t n_in,
+                              const Port *out_ports, size_t n_out,
+                              unsigned char *bytes, size_t len,
+                              int *reused_out) {
+    unsigned long long digest = cnb_fnv(bytes, len);
+    size_t i, blob_index;
+    int existing = find_unit(b, name);
+
+    if (reused_out) *reused_out = 0;
+
+    if (existing >= 0) {
+        const CnbBlob *old = &b->blobs[b->units[existing].blob_index];
+        if (old->digest == digest && old->len == len &&
+            memcmp(old->bytes, bytes, len) == 0) {
+            free(bytes);
+            if (reused_out) *reused_out = 1;
+            return 0;   /* idempotent re-ingest */
+        }
+        free(bytes);
+        return -1;      /* same name, different content: refused */
+    }
+
+    /* tag governance, all-or-nothing: check every tag first, then mint */
+    for (i = 0; i < n_in; ++i)
+        if (in_ports[i].tag[0] && cnb_tag_lookup(b, in_ports[i].tag) < 0 &&
+            cnb_tag_near_miss(b, in_ports[i].tag, NULL, 0)) {
+            free(bytes); return -1;
+        }
+    for (i = 0; i < n_out; ++i)
+        if (out_ports[i].tag[0] && cnb_tag_lookup(b, out_ports[i].tag) < 0 &&
+            cnb_tag_near_miss(b, out_ports[i].tag, NULL, 0)) {
+            free(bytes); return -1;
+        }
+    for (i = 0; i < n_in; ++i)
+        if (in_ports[i].tag[0] && cnb_tag_mint(b, in_ports[i].tag, name) < 0) {
+            free(bytes); return -1;
+        }
+    for (i = 0; i < n_out; ++i)
+        if (out_ports[i].tag[0] && cnb_tag_mint(b, out_ports[i].tag, name) < 0) {
+            free(bytes); return -1;
+        }
+
+    /* content-addressed blob: byte-verified dedup, collision refused */
+    blob_index = b->blob_count;
+    for (i = 0; i < b->blob_count; ++i) {
+        if (b->blobs[i].digest == digest) {
+            if (b->blobs[i].len == len &&
+                memcmp(b->blobs[i].bytes, bytes, len) == 0) {
+                blob_index = i;
+                free(bytes);
+                bytes = NULL;
+                break;
+            }
+            free(bytes);
+            return -1;   /* digest collision, different bytes: refused */
+        }
+    }
+    if (blob_index == b->blob_count) {
+        CNB_PUSH(b->blobs, b->blob_count, b->blob_cap, CnbBlob);
+        b->blobs[b->blob_count].digest = digest;
+        b->blobs[b->blob_count].bytes = bytes;   /* base owns them now */
+        b->blobs[b->blob_count].len = len;
+        b->blob_count++;
+    }
+
+    CNB_PUSH(b->units, b->unit_count, b->unit_cap, CnbUnitRef);
+    snprintf(b->units[b->unit_count].name, CNB_NAME_MAX, "%s", name);
+    b->units[b->unit_count].blob_index = blob_index;
+    b->units[b->unit_count].behavior_digest = behavior_digest;
+    b->unit_count++;
+    return 0;
+}
+
+int cnb_add_unit(CnetBase *b, const BinaryTransformNetwork *btn,
+                 const Contract *c, int *reused_out) {
+    unsigned char *bytes;
+    size_t len;
+    if (!b || !btn || !c || !cnb_name_is_atom(c->name)) return -1;
+    if (unit_save_mem(btn, c, &bytes, &len) != 0) return -1;
+    return cnb_add_unit_bytes(b, c->name, contract_btn_digest(btn),
+                              btn->input_ports, btn->input_port_count,
+                              btn->output_ports, btn->output_port_count,
+                              bytes, len, reused_out);
+}
+
+int cnb_has_unit(const CnetBase *b, const char *name) {
+    if (!b || !name) return 0;
+    return find_unit(b, name) >= 0;
+}
+
+int cnb_get_unit(const CnetBase *b, const char *name,
+                 BinaryTransformNetwork *btn, Contract *c) {
+    int idx;
+    if (!b || !name || !btn || !c) return -1;
+    idx = find_unit(b, name);
+    if (idx < 0) return -1;
+    return unit_load_mem(btn, c, b->blobs[b->units[idx].blob_index].bytes,
+                         b->blobs[b->units[idx].blob_index].len);
+}
+
+/* ---- persistence ---- */
+
+int cnb_save(const CnetBase *b, const char *path) {
+    CnbW w = {0};
+    size_t i;
+    unsigned long long seal;
+    char tmp[512];
+    FILE *f;
+    int ok = -1;
+
+    if (!b || !path || strlen(path) > sizeof tmp - 5) return -1;
+
+    if (w_put(&w, CNB_MAGIC, 4) || w_u32(&w, CNB_VERSION)) goto done;
+
+    if (w_u64(&w, b->blob_count)) goto done;
+    for (i = 0; i < b->blob_count; ++i) {
+        if (w_u64(&w, b->blobs[i].digest) || w_u64(&w, b->blobs[i].len) ||
+            w_put(&w, b->blobs[i].bytes, b->blobs[i].len)) goto done;
+    }
+
+    if (w_u64(&w, b->unit_count)) goto done;
+    for (i = 0; i < b->unit_count; ++i) {
+        if (w_str(&w, b->units[i].name) ||
+            w_u64(&w, b->units[i].blob_index) ||
+            w_u64(&w, b->units[i].behavior_digest)) goto done;
+    }
+
+    if (w_u64(&w, b->tag_count)) goto done;
+    for (i = 0; i < b->tag_count; ++i) {
+        if (w_str(&w, b->tags[i].tag) || w_str(&w, b->tags[i].owner) ||
+            w_u64(&w, b->tags[i].mint_seq)) goto done;
+    }
+
+    if (w_u64(&w, b->oracle_count)) goto done;
+    for (i = 0; i < b->oracle_count; ++i) {
+        if (w_str(&w, b->oracles[i].name) || w_str(&w, b->oracles[i].kind) ||
+            w_port(&w, b->oracles[i].input_port) ||
+            w_port(&w, b->oracles[i].goal_port)) goto done;
+    }
+
+    if (w_u64(&w, b->stats_count)) goto done;
+    for (i = 0; i < b->stats_count; ++i) {
+        if (w_str(&w, b->stats[i].name) ||
+            w_u64(&w, b->stats[i].bound_digest) ||
+            w_u64(&w, b->stats[i].successes) ||
+            w_u64(&w, b->stats[i].failures)) goto done;
+    }
+
+    if (w_u64(&w, b->next_mint_seq)) goto done;
+
+    seal = cnb_fnv(w.buf, w.len);
+    if (w_u64(&w, seal)) goto done;
+
+    snprintf(tmp, sizeof tmp, "%s.tmp", path);
+    f = fopen(tmp, "wb");
+    if (f == NULL) goto done;
+    ok = (fwrite(w.buf, 1, w.len, f) == w.len) ? 0 : -1;
+    if (fclose(f) != 0) ok = -1;
+    if (ok == 0) {
+        remove(path);            /* Windows rename refuses existing target */
+        if (rename(tmp, path) != 0) ok = -1;
+    }
+    if (ok != 0) remove(tmp);
+
+done:
+    free(w.buf);
+    return ok;
+}
+
+int cnb_load(CnetBase *b, const char *path) {
+    unsigned char *buf = NULL;
+    long fsize;
+    FILE *f;
+    CnbR r;
+    CnetBase fresh;
+    unsigned version;
+    unsigned long long n, i;
+    int ok = -1;
+
+    if (!b || !path) return -1;
+    f = fopen(path, "rb");
+    if (f == NULL) return -1;
+    fseek(f, 0, SEEK_END);
+    fsize = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    if (fsize < 4 + 4 + 8) { fclose(f); return -1; }
+    buf = (unsigned char *)malloc((size_t)fsize);
+    if (buf == NULL || fread(buf, 1, (size_t)fsize, f) != (size_t)fsize) {
+        free(buf); fclose(f); return -1;
+    }
+    fclose(f);
+
+    /* seal FIRST */
+    {
+        unsigned long long want, have;
+        memcpy(&want, buf + fsize - 8, 8);
+        have = cnb_fnv(buf, (size_t)fsize - 8);
+        if (have != want) { free(buf); return -1; }
+    }
+
+    r.buf = buf;
+    r.len = (size_t)fsize - 8;
+    r.off = 0;
+    cnb_init(&fresh);
+
+    if (r.len < 8 || memcmp(buf, CNB_MAGIC, 4) != 0) goto fail;
+    r.off = 4;
+    if (r_u32(&r, &version) || version != CNB_VERSION) goto fail;
+
+    if (r_u64(&r, &n) || n > CNB_MAX_TABLE) goto fail;
+    for (i = 0; i < n; ++i) {
+        unsigned long long dg, len;
+        if (r_u64(&r, &dg) || r_u64(&r, &len) || len == 0 ||
+            len > CNB_MAX_BLOB || r.off + len > r.len) goto fail;
+        {
+            CnbBlob *bl;
+            if (fresh.blob_count == fresh.blob_cap) {
+                size_t nc = fresh.blob_cap ? fresh.blob_cap * 2 : 8;
+                CnbBlob *nb = (CnbBlob *)realloc(fresh.blobs, nc * sizeof *nb);
+                if (!nb) goto fail;
+                fresh.blobs = nb; fresh.blob_cap = nc;
+            }
+            bl = &fresh.blobs[fresh.blob_count];
+            memset(bl, 0, sizeof *bl);
+            bl->bytes = (unsigned char *)malloc((size_t)len);
+            if (!bl->bytes) goto fail;
+            memcpy(bl->bytes, r.buf + r.off, (size_t)len);
+            r.off += (size_t)len;
+            bl->len = (size_t)len;
+            bl->digest = dg;
+            /* honesty: the stored digest must MATCH the bytes */
+            if (cnb_fnv(bl->bytes, bl->len) != dg) {
+                free(bl->bytes); goto fail;
+            }
+            fresh.blob_count++;
+        }
+    }
+
+    if (r_u64(&r, &n) || n > CNB_MAX_TABLE) goto fail;
+    for (i = 0; i < n; ++i) {
+        char name[CNB_NAME_MAX];
+        unsigned long long bi, bd;
+        if (r_str(&r, name, sizeof name) || !cnb_name_is_atom(name) ||
+            r_u64(&r, &bi) || bi >= fresh.blob_count || r_u64(&r, &bd)) goto fail;
+        if (fresh.unit_count == fresh.unit_cap) {
+            size_t nc = fresh.unit_cap ? fresh.unit_cap * 2 : 8;
+            CnbUnitRef *nu = (CnbUnitRef *)realloc(fresh.units, nc * sizeof *nu);
+            if (!nu) goto fail;
+            fresh.units = nu; fresh.unit_cap = nc;
+        }
+        memset(&fresh.units[fresh.unit_count], 0, sizeof fresh.units[0]);
+        snprintf(fresh.units[fresh.unit_count].name, CNB_NAME_MAX, "%s", name);
+        fresh.units[fresh.unit_count].blob_index = (size_t)bi;
+        fresh.units[fresh.unit_count].behavior_digest = bd;
+        fresh.unit_count++;
+    }
+
+    if (r_u64(&r, &n) || n > CNB_MAX_TABLE) goto fail;
+    for (i = 0; i < n; ++i) {
+        char tag[PORT_TAG_MAX], owner[CNB_NAME_MAX];
+        unsigned long long seq;
+        if (r_str(&r, tag, sizeof tag) || !tag[0] ||
+            r_str(&r, owner, sizeof owner) || r_u64(&r, &seq)) goto fail;
+        if (fresh.tag_count == fresh.tag_cap) {
+            size_t nc = fresh.tag_cap ? fresh.tag_cap * 2 : 8;
+            CnbTag *nt = (CnbTag *)realloc(fresh.tags, nc * sizeof *nt);
+            if (!nt) goto fail;
+            fresh.tags = nt; fresh.tag_cap = nc;
+        }
+        memset(&fresh.tags[fresh.tag_count], 0, sizeof fresh.tags[0]);
+        snprintf(fresh.tags[fresh.tag_count].tag, PORT_TAG_MAX, "%s", tag);
+        snprintf(fresh.tags[fresh.tag_count].owner, CNB_NAME_MAX, "%s", owner);
+        fresh.tags[fresh.tag_count].mint_seq = seq;
+        fresh.tag_count++;
+    }
+
+    if (r_u64(&r, &n) || n > CNB_MAX_TABLE) goto fail;
+    for (i = 0; i < n; ++i) {
+        char name[CNB_NAME_MAX], kind[CNB_NAME_MAX];
+        Port ip, gp;
+        if (r_str(&r, name, sizeof name) || !cnb_name_is_atom(name) ||
+            r_str(&r, kind, sizeof kind) || !cnb_name_is_atom(kind) ||
+            r_port(&r, &ip) || r_port(&r, &gp)) goto fail;
+        if (fresh.oracle_count == fresh.oracle_cap) {
+            size_t nc = fresh.oracle_cap ? fresh.oracle_cap * 2 : 8;
+            CnbOracleDesc *no = (CnbOracleDesc *)realloc(fresh.oracles, nc * sizeof *no);
+            if (!no) goto fail;
+            fresh.oracles = no; fresh.oracle_cap = nc;
+        }
+        memset(&fresh.oracles[fresh.oracle_count], 0, sizeof fresh.oracles[0]);
+        snprintf(fresh.oracles[fresh.oracle_count].name, CNB_NAME_MAX, "%s", name);
+        snprintf(fresh.oracles[fresh.oracle_count].kind, CNB_NAME_MAX, "%s", kind);
+        fresh.oracles[fresh.oracle_count].input_port = ip;
+        fresh.oracles[fresh.oracle_count].goal_port = gp;
+        fresh.oracle_count++;
+    }
+
+    if (r_u64(&r, &n) || n > CNB_MAX_TABLE) goto fail;
+    for (i = 0; i < n; ++i) {
+        char name[CNB_NAME_MAX];
+        unsigned long long bd, s, fl;
+        if (r_str(&r, name, sizeof name) || !cnb_name_is_atom(name) ||
+            r_u64(&r, &bd) || r_u64(&r, &s) || r_u64(&r, &fl)) goto fail;
+        if (fresh.stats_count == fresh.stats_cap) {
+            size_t nc = fresh.stats_cap ? fresh.stats_cap * 2 : 8;
+            CnbStats *ns = (CnbStats *)realloc(fresh.stats, nc * sizeof *ns);
+            if (!ns) goto fail;
+            fresh.stats = ns; fresh.stats_cap = nc;
+        }
+        memset(&fresh.stats[fresh.stats_count], 0, sizeof fresh.stats[0]);
+        snprintf(fresh.stats[fresh.stats_count].name, CNB_NAME_MAX, "%s", name);
+        fresh.stats[fresh.stats_count].bound_digest = bd;
+        fresh.stats[fresh.stats_count].successes = s;
+        fresh.stats[fresh.stats_count].failures = fl;
+        fresh.stats_count++;
+    }
+
+    if (r_u64(&r, &fresh.next_mint_seq)) goto fail;
+
+    if (r.off != r.len) goto fail;   /* trailing junk inside the seal */
+
+    free(buf);
+    cnb_free(b);
+    *b = fresh;
+    return 0;
+
+fail:
+    cnb_free(&fresh);
+    free(buf);
+    return ok;
+}
+
+/* ---- stats ---- */
+
+int cnb_put_stats(CnetBase *b, const char *unit_name,
+                  const BinaryTransformNetwork *btn) {
+    size_t i;
+    if (!b || !btn || !cnb_name_is_atom(unit_name)) return -1;
+    for (i = 0; i < b->stats_count; ++i) {
+        if (strcmp(b->stats[i].name, unit_name) == 0) break;
+    }
+    if (i == b->stats_count) {
+        CNB_PUSH(b->stats, b->stats_count, b->stats_cap, CnbStats);
+        snprintf(b->stats[b->stats_count].name, CNB_NAME_MAX, "%s", unit_name);
+        b->stats_count++;
+    }
+    b->stats[i].bound_digest = contract_btn_digest(btn);
+    b->stats[i].successes = (unsigned long long)btn->output_successes;
+    b->stats[i].failures = (unsigned long long)btn->output_failures;
+    return 0;
+}
+
+int cnb_apply_stats(const CnetBase *b, const char *unit_name,
+                    BinaryTransformNetwork *btn) {
+    size_t i;
+    if (!b || !btn || !unit_name) return -1;
+    for (i = 0; i < b->stats_count; ++i) {
+        if (strcmp(b->stats[i].name, unit_name) == 0) {
+            if (b->stats[i].bound_digest != contract_btn_digest(btn))
+                return -1;   /* stale evidence: weights changed */
+            btn->output_successes = (unsigned long)b->stats[i].successes;
+            btn->output_failures = (unsigned long)b->stats[i].failures;
+            return 0;
+        }
+    }
+    return -1;
+}
+
+/* ---- oracle descriptors ---- */
+
+int cnb_add_oracle_desc(CnetBase *b, const char *name, const char *kind_atom,
+                        Port input_port, Port goal_port) {
+    size_t i;
+    if (!b || !cnb_name_is_atom(name) || !cnb_name_is_atom(kind_atom)) return -1;
+    for (i = 0; i < b->oracle_count; ++i)
+        if (strcmp(b->oracles[i].name, name) == 0) return -1;
+    CNB_PUSH(b->oracles, b->oracle_count, b->oracle_cap, CnbOracleDesc);
+    snprintf(b->oracles[b->oracle_count].name, CNB_NAME_MAX, "%s", name);
+    snprintf(b->oracles[b->oracle_count].kind, CNB_NAME_MAX, "%s", kind_atom);
+    b->oracles[b->oracle_count].input_port = input_port;
+    b->oracles[b->oracle_count].goal_port = goal_port;
+    b->oracle_count++;
+    return 0;
+}
+
+int cnb_bind_oracles(const CnetBase *b, OracleRegistry *orc,
+                     CnbOracleResolver resolver, void *rctx,
+                     size_t *unbound_out) {
+    size_t i, unbound = 0;
+    if (!b || !orc || !resolver) return -1;
+    for (i = 0; i < b->oracle_count; ++i) {
+        CnetOracleFn fn = resolver(b->oracles[i].name, b->oracles[i].kind, rctx);
+        if (fn == NULL) { unbound++; continue; }
+        if (acquire_oracle_register(orc, b->oracles[i].name,
+                                    b->oracles[i].input_port,
+                                    b->oracles[i].goal_port, fn, rctx) != 0) {
+            unbound++;
+        }
+    }
+    if (unbound_out) *unbound_out = unbound;
+    return 0;
+}
+
+/* ---- registry bridge ---- */
+
+int cnb_load_registry(CnetBase *b, PrimitiveRegistry *reg, size_t *skipped_out) {
+    size_t i, skipped = 0;
+    if (!b || !reg) return -1;
+    for (i = 0; i < b->unit_count; ++i) {
+        BinaryTransformNetwork *btn = (BinaryTransformNetwork *)calloc(1, sizeof *btn);
+        Contract c;
+        if (!btn) return -1;
+        if (cnb_get_unit(b, b->units[i].name, btn, &c) != 0) {
+            free(btn);
+            skipped++;
+            continue;
+        }
+        /* base owns the BTN and the name storage (units[] may realloc, so the
+           registry must never borrow a units[i].name pointer) */
+        if (b->loaded_count == b->loaded_cap) {
+            size_t nc = b->loaded_cap ? b->loaded_cap * 2 : 8;
+            BinaryTransformNetwork **nl =
+                (BinaryTransformNetwork **)realloc(b->loaded, nc * sizeof *nl);
+            char (*nn)[CNB_NAME_MAX];
+            if (!nl) { btn_free(btn); free(btn); contract_free(&c); return -1; }
+            b->loaded = nl;
+            nn = (char (*)[CNB_NAME_MAX])realloc(b->loaded_names, nc * CNB_NAME_MAX);
+            if (!nn) { btn_free(btn); free(btn); contract_free(&c); return -1; }
+            b->loaded_names = nn;
+            b->loaded_cap = nc;
+        }
+        snprintf(b->loaded_names[b->loaded_count], CNB_NAME_MAX, "%s",
+                 b->units[i].name);
+        /* trust is replayed, never stored */
+        if (registry_add_certified(reg, btn, b->loaded_names[b->loaded_count],
+                                   &c) != 0) {
+            btn_free(btn);
+            free(btn);
+            contract_free(&c);
+            skipped++;
+            continue;
+        }
+        contract_free(&c);
+        b->loaded[b->loaded_count++] = btn;
+    }
+    if (skipped_out) *skipped_out = skipped;
+    return 0;
+}
+
+/* ---- migration ---- */
+
+int cnb_ingest_cnu_file(CnetBase *b, const char *path, int *reused_out) {
+    BinaryTransformNetwork btn;
+    Contract c;
+    int rc;
+    if (!b || !path) return -1;
+    if (unit_load(&btn, &c, path) != 0) return -1;   /* verifies the CNU1 seal */
+    rc = cnb_add_unit(b, &btn, &c, reused_out);
+    btn_free(&btn);
+    contract_free(&c);
+    return rc;
+}

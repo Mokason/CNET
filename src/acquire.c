@@ -1,4 +1,5 @@
 #include "../include/acquire.h"
+#include "../include/base.h"
 #include "../include/contract/unit.h"
 
 #include <stdio.h>
@@ -328,6 +329,20 @@ static int mine_from_oracle(OracleEntry *o, Port in_p, Port goal_p,
     return 0;
 }
 
+/* Base-governance precheck: tags that would near-miss the base's registry,
+   or a name the base already holds, refuse the acquisition BEFORE any state
+   changes (DEFER stays total). Returns NULL when clear, else the defer atom. */
+static const char *base_precheck(struct CnetBase *base, const char *name,
+                                 Port in_p, Port goal_p) {
+    if (!base) return NULL;
+    if (in_p.tag[0] && cnb_tag_lookup(base, in_p.tag) < 0 &&
+        cnb_tag_near_miss(base, in_p.tag, NULL, 0)) return "tag_collision";
+    if (goal_p.tag[0] && cnb_tag_lookup(base, goal_p.tag) < 0 &&
+        cnb_tag_near_miss(base, goal_p.tag, NULL, 0)) return "tag_collision";
+    if (cnb_has_unit(base, name)) return "register_refused";
+    return NULL;
+}
+
 /* One acquisition attempt for one OPEN gap with a matched oracle.
    All behavioral checks run BEFORE any state change; the only
    post-registration step is a read-only replan (rollback on failure =
@@ -456,8 +471,18 @@ static int attempt_no_plan(PrimitiveRegistry *reg, AcquireLedger *l,
         }
     }
 
-    /* 5. seal */
-    if (cfg->unit_dir) {
+    /* 5. seal target precheck + loose-file seal (base commit happens LAST,
+       after registration + replan, so DEFER stays total for the base too) */
+    {
+        const char *why = base_precheck(cfg->base, name,
+                                        g->input_port, g->goal_port);
+        if (why) {
+            btn_free(btn); free(btn); free(inputs); free(targets);
+            gap_defer(g, rep, why);
+            return -1;
+        }
+    }
+    if (!cfg->base && cfg->unit_dir) {
         snprintf(cnu_path, sizeof cnu_path, "%s/%s.cnu", cfg->unit_dir, name);
         if (unit_save(btn, &c, cnu_path) != 0) {
             btn_free(btn); free(btn); free(inputs); free(targets);
@@ -493,6 +518,16 @@ static int attempt_no_plan(PrimitiveRegistry *reg, AcquireLedger *l,
             gap_defer(g, rep, "replan_failed");
             return -1;
         }
+    }
+
+    /* 8. commit into the unified base (precheck passed; failure = rare OOM /
+       digest collision -> full rollback) */
+    if (cfg->base && cnb_add_unit(cfg->base, btn, &c, NULL) != 0) {
+        registry_remove_last(reg);
+        l->acquired_count--;
+        btn_free(btn); free(btn); free(inputs); free(targets);
+        gap_defer(g, rep, "register_refused");
+        return -1;
     }
 
     free(inputs); free(targets);   /* contract borrowed them; done with both */
@@ -601,7 +636,14 @@ static int attempt_rebuild(PrimitiveRegistry *reg, AcquireLedger *l,
         btn_free(btn); free(btn); free(inputs); free(targets);
         gap_defer(g, rep, "accuracy_bound"); return -1;
     }
-    if (cfg->unit_dir) {
+    {
+        const char *why = base_precheck(cfg->base, name, in_p, goal_p);
+        if (why) {
+            btn_free(btn); free(btn); free(inputs); free(targets);
+            gap_defer(g, rep, why); return -1;
+        }
+    }
+    if (!cfg->base && cfg->unit_dir) {
         snprintf(cnu_path, sizeof cnu_path, "%s/%s.cnu", cfg->unit_dir, name);
         if (unit_save(btn, &mined, cnu_path) != 0) {
             btn_free(btn); free(btn); free(inputs); free(targets);
@@ -621,7 +663,7 @@ static int attempt_rebuild(PrimitiveRegistry *reg, AcquireLedger *l,
         gap_defer(g, rep, "register_refused"); return -1;
     }
 
-    /* demote the incumbent + invalidate its stats sidecar */
+    /* demote the incumbent + invalidate its stale evidence */
     registry_set_state(reg, g->subject, PRIM_RESET);
     if (cfg->unit_dir) {
         char stats_path[512];
@@ -641,6 +683,15 @@ static int attempt_rebuild(PrimitiveRegistry *reg, AcquireLedger *l,
             btn_free(btn); free(btn); free(inputs); free(targets);
             gap_defer(g, rep, "replan_failed"); return -1;
         }
+    }
+
+    /* commit the replacement into the unified base */
+    if (cfg->base && cnb_add_unit(cfg->base, btn, &mined, NULL) != 0) {
+        registry_remove_last(reg);
+        registry_set_state(reg, g->subject, PRIM_FROZEN);
+        l->acquired_count--;
+        btn_free(btn); free(btn); free(inputs); free(targets);
+        gap_defer(g, rep, "register_refused"); return -1;
     }
 
     free(inputs); free(targets);
