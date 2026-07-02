@@ -1,9 +1,9 @@
 # Unified Base (CNB1): one sealed container + tag governance — Design
 
 **Date:** 2026-07-02
-**Status:** Approved direction (user 2026-07-02: "make unified base that can be
-modular, just don't make it monolithic bloat" + tag governance delegated);
-this doc fixes the mechanics.
+**Status:** Implemented 2026-07-02 (`src/base.c`, `make base`, gated in
+verify; commit 08e93e9). Origin: user directive "make unified base that can be
+modular, just don't make it monolithic bloat" + tag governance delegated.
 **Topic:** Replace per-unit file sprawl (`<name>.cnu` + `<name>.stats` +
 `<name>.expansion` × hundreds of units) with ONE sealed, content-addressed
 container file — while keeping every unit independently sealed, verifiable and
