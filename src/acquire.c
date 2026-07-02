@@ -294,7 +294,8 @@ static int mine_from_oracle(OracleEntry *o, Port in_p, Port goal_p,
     size_t card, n_points, k, usable = 0;
     size_t in_total = port_total(in_p), out_total = port_total(goal_p);
     double *inputs, *targets;
-    double raw[64];
+    double *raw;                 /* heap: out_total is caller-sized (a fixed
+                                    stack buffer here overflowed at V=256) */
 
     memset(&tc, 0, sizeof tc);
     snprintf(tc.name, CONTRACT_NAME_MAX, "acq_tmp");
@@ -309,7 +310,11 @@ static int mine_from_oracle(OracleEntry *o, Port in_p, Port goal_p,
 
     inputs  = malloc(n_points * in_total * sizeof *inputs);
     targets = malloc(n_points * out_total * sizeof *targets);
-    if (!inputs || !targets) { free(inputs); free(targets); return -1; }
+    raw     = malloc(out_total * sizeof *raw);
+    if (!inputs || !targets || !raw) {
+        free(inputs); free(targets); free(raw);
+        return -1;
+    }
 
     for (k = 0; k < n_points; ++k) {
         size_t idx = *exhaustive_out ? k : (k * card) / n_points; /* stride */
@@ -322,6 +327,7 @@ static int mine_from_oracle(OracleEntry *o, Port in_p, Port goal_p,
         if (port_canonicalize(goal_p, raw, trow) != 0) continue;
         usable++;
     }
+    free(raw);
     *inputs_out = inputs;
     *targets_out = targets;
     *n_out = usable;
