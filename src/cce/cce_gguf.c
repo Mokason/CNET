@@ -15,6 +15,27 @@
 #include <unistd.h>
 #endif
 
+/* Oracle memory mode (CNET_ORACLE_INT8=1): quantize each specialist to int8
+   AT LOAD and drop its FP payload immediately. A 48-layer 12B FP32 forest
+   (~50 GB) becomes ~12.5 GB — the difference between paging and running on a
+   64 GB box. Shape metadata is kept because cce_block_forward derives dims
+   from weights.shape; the int8 forward path returns before any FP access.
+   Opt-in only: default loads are byte-identical to before. */
+static int gguf_oracle_int8_mode(void) {
+    const char* e = getenv("CNET_ORACLE_INT8");
+    return e && e[0] == '1';
+}
+
+/* CNET_LOAD_TRACE=1: unbuffered per-stage load progress on stderr. Costs
+   nothing when off; invaluable when a multi-GB load dies before stdout
+   ever flushes. */
+static int gguf_load_trace(void) {
+    const char* e = getenv("CNET_LOAD_TRACE");
+    return e && e[0] == '1';
+}
+#define GTRACE(...) do { if (gguf_load_trace()) { \
+    fprintf(stderr, "[load] " __VA_ARGS__); fputc('\n', stderr); fflush(stderr); } } while (0)
+
 /* ---- Internal GGUF state ---- */
 
 typedef struct {
@@ -375,7 +396,10 @@ cce_result cce_gguf_load_f32(const cce_gguf* g, int idx, float* buf, size_t cap_
        In practice for most GGUF writers the data_offset in the tensor info is the offset
        from the *start of the tensor data section*. We use the one we recorded. */
     uint64_t abs_off = g->data_offset + m->data_offset;
-    if (_fseeki64(g->f, (int64_t)abs_off, SEEK_SET) != 0) return CCE_ERR_IO;
+    if (_fseeki64(g->f, (int64_t)abs_off, SEEK_SET) != 0) {
+        GTRACE("load_f32 %s: seek FAILED abs_off=%llu", m->name, (unsigned long long)abs_off);
+        return CCE_ERR_IO;
+    }
 
     if (m->ggml_type == 0 /* F32 */) {
         if (fread(buf, 4, elems, g->f) != elems) return CCE_ERR_IO;
@@ -513,7 +537,45 @@ cce_result cce_gguf_load_f32(const cce_gguf* g, int idx, float* buf, size_t cap_
                 buf[b*QK_K + i] = x * d + dmin;
             }
         }
+    } else if (m->ggml_type == 14 /* GGML_TYPE_Q6_K */) {
+        /* Q6_K (exact llama.cpp block_q6_K): per 256-weight superblock
+           ql[128] (low nibbles), qh[64] (high 2 bits), int8 scales[16]
+           (one per 16 weights), f16 d — in THIS on-disk order (d LAST).
+           w = d * scales[group] * (q6 - 32). Q4_K_M files use Q6_K for
+           select attn_v/ffn_down tensors, so this type is REQUIRED to load
+           real Q4_K_M checkpoints completely. */
+        const int QK_K = 256;
+        size_t nblocks = (elems + QK_K - 1) / QK_K;
+        for (size_t b = 0; b < nblocks; b++) {
+            uint8_t ql[128], qh[64];
+            int8_t  sc[16];
+            uint16_t d16;
+            if (fread(ql, 1, 128, g->f) != 128) return CCE_ERR_IO;
+            if (fread(qh, 1, 64, g->f) != 64)   return CCE_ERR_IO;
+            if (fread(sc, 1, 16, g->f) != 16)   return CCE_ERR_IO;
+            if (fread(&d16, 2, 1, g->f) != 1)   return CCE_ERR_IO;
+            float d = gguf_f16_to_f32(d16);
+            size_t base = b * QK_K;
+            const uint8_t *pql = ql, *pqh = qh;
+            const int8_t  *psc = sc;
+            for (int n = 0; n < QK_K; n += 128) {
+                for (int l = 0; l < 32; l++) {
+                    int is = l / 16;
+                    int q1 = (int)((pql[l +  0] & 0xF) | (((pqh[l] >> 0) & 3) << 4)) - 32;
+                    int q2 = (int)((pql[l + 32] & 0xF) | (((pqh[l] >> 2) & 3) << 4)) - 32;
+                    int q3 = (int)((pql[l +  0] >> 4)  | (((pqh[l] >> 4) & 3) << 4)) - 32;
+                    int q4 = (int)((pql[l + 32] >> 4)  | (((pqh[l] >> 6) & 3) << 4)) - 32;
+                    size_t o = base + (size_t)n + l;
+                    if (o +  0 < elems) buf[o +  0] = d * psc[is + 0] * q1;
+                    if (o + 32 < elems) buf[o + 32] = d * psc[is + 2] * q2;
+                    if (o + 64 < elems) buf[o + 64] = d * psc[is + 4] * q3;
+                    if (o + 96 < elems) buf[o + 96] = d * psc[is + 6] * q4;
+                }
+                pql += 64; pqh += 32; psc += 8;
+            }
+        }
     } else {
+        GTRACE("load_f32 %s: UNSUPPORTED ggml_type=%d", m->name, m->ggml_type);
         return CCE_ERR_UNSUPPORTED;
     }
     return CCE_OK;
@@ -693,7 +755,13 @@ int cce_gguf_add_linear_branch(cce_forest* forest, const cce_gguf* gguf,
     if (!forest || !gguf || !weight_name || !branch_name) return -1;
 
     cce_tensor w = {0};
-    if (cce_gguf_load_tensor_by_name(gguf, weight_name, &w) != CCE_OK || w.ndim != 2) {
+    cce_result lrc = cce_gguf_load_tensor_by_name(gguf, weight_name, &w);
+    if (lrc != CCE_OK || w.ndim != 2) {
+        int ti = cce_gguf_find_tensor(gguf, weight_name);
+        cce_gguf_tensor_meta tm; tm.ggml_type = 0xFFFF;
+        if (ti >= 0) cce_gguf_get_tensor_meta(gguf, ti, &tm);
+        GTRACE("branch %s: dims pre-read FAILED (%s rc=%d ndim=%d ggml_type=%u)",
+               branch_name, weight_name, (int)lrc, w.ndim, tm.ggml_type);
         cce_tensor_free(&w);
         return -1;
     }
@@ -718,8 +786,36 @@ int cce_gguf_add_linear_branch(cce_forest* forest, const cce_gguf* gguf,
     cce_block* blk = &cas->blocks[cas->num_blocks - 1];
     rc = cce_gguf_populate_block(blk, gguf, weight_name, (bias_name && bias_name[0]) ? bias_name : NULL, 1);
     if (rc != CCE_OK) {
+        GTRACE("branch %s: populate FAILED rc=%d (in=%d out=%d)", branch_name, (int)rc, in_d, out_d);
         cce_cascade_destroy(cas);
         return -1;
+    }
+
+    /* Oracle int8 mode: quantize BEFORE the branch add, so the forest never
+       sees (and never tries to archive-persist) the FP payload. The add's
+       persistence step then refuses cleanly (payload-less block) and the
+       branch lives HOT in RAM as int8 — which is all a mining oracle needs.
+       This also avoids writing a ~50 GB FP archive for a 12B model. */
+    if (gguf_oracle_int8_mode()) {
+        for (int b = 0; b < cas->num_blocks; b++) {
+            cce_block* ob = &cas->blocks[b];
+            if (cce_block_quantize_int8(ob) == CCE_OK) {
+                int s0 = ob->weights.shape[0], s1 = ob->weights.shape[1];
+                size_t ne = ob->weights.numel;
+                cce_tensor_free(&ob->weights);          /* drop the FP payload */
+                ob->weights.shape[0] = s0;              /* ...but keep the shape */
+                ob->weights.shape[1] = s1;
+                ob->weights.ndim = 2;
+                ob->weights.numel = ne;
+                /* An oracle never trains: drop the Adam buffers too. Leaving
+                   them was a 2x-FP-sized leak per block — the OOM that killed
+                   the first 12B loads (~1.7 GB retained per layer). */
+                cce_tensor_free(&ob->momentum_weights);
+                cce_tensor_free(&ob->momentum_bias);
+                cce_tensor_free(&ob->second_moment_w);
+                cce_tensor_free(&ob->second_moment_b);
+            }
+        }
     }
 
     int idx = -1;
@@ -745,47 +841,74 @@ cce_result cce_gguf_build_qwen2_forest(cce_forest** out_forest, const cce_gguf* 
     }
 
     char wname[256], bname[256], brname[128];
+    int add_fails = 0;
+
+    /* Refusal boundary: a projection ABSENT from the tensor table is an
+       architecture variant — the forward's own arch handling decides what
+       that means (precedent: the gemma4-MTP draft has no attn_k/attn_v at
+       all and its forward handles that; the flagship campaign ran on it).
+       But a tensor that EXISTS in the file and fails to load (unsupported
+       quant type, IO, OOM) means a silently amputated forest that "loads"
+       and then forwards garbage — that is refused loudly. */
+    #define GGUF_ADD_REQ(w, bn, br) do { \
+        if (cce_gguf_add_linear_branch(forest, gguf, (w), (bn), (br), init_scale) < 0) { \
+            if (cce_gguf_find_tensor(gguf, (w)) >= 0) { \
+                GTRACE("present tensor %s FAILED to load -> fatal", (w)); \
+                add_fails++; \
+            } else { \
+                GTRACE("branch %s: tensor absent (arch variant, forward decides)", (br)); \
+            } \
+        } } while (0)
 
     for (int l = 0; l < n_layer; l++) {
+        GTRACE("forest layer %d/%d", l, n_layer);
         // Attention projections (separate for GQA)
         snprintf(wname, sizeof(wname), "blk.%d.attn_q.weight", l);
         snprintf(bname, sizeof(bname), "blk.%d.attn_q.bias", l);
         snprintf(brname, sizeof(brname), "qwen2.blk.%d.q_proj", l);
-        cce_gguf_add_linear_branch(forest, gguf, wname, bname[0]?bname:NULL, brname, init_scale);
+        GGUF_ADD_REQ(wname, bname[0]?bname:NULL, brname);
 
         snprintf(wname, sizeof(wname), "blk.%d.attn_k.weight", l);
         snprintf(bname, sizeof(bname), "blk.%d.attn_k.bias", l);
         snprintf(brname, sizeof(brname), "qwen2.blk.%d.k_proj", l);
-        cce_gguf_add_linear_branch(forest, gguf, wname, bname[0]?bname:NULL, brname, init_scale);
+        GGUF_ADD_REQ(wname, bname[0]?bname:NULL, brname);
 
         snprintf(wname, sizeof(wname), "blk.%d.attn_v.weight", l);
         snprintf(bname, sizeof(bname), "blk.%d.attn_v.bias", l);
         snprintf(brname, sizeof(brname), "qwen2.blk.%d.v_proj", l);
-        cce_gguf_add_linear_branch(forest, gguf, wname, bname[0]?bname:NULL, brname, init_scale);
+        GGUF_ADD_REQ(wname, bname[0]?bname:NULL, brname);
 
         snprintf(wname, sizeof(wname), "blk.%d.attn_output.weight", l);
         snprintf(bname, sizeof(bname), "blk.%d.attn_output.bias", l);
         snprintf(brname, sizeof(brname), "qwen2.blk.%d.o_proj", l);
-        cce_gguf_add_linear_branch(forest, gguf, wname, bname[0]?bname:NULL, brname, init_scale);
+        GGUF_ADD_REQ(wname, bname[0]?bname:NULL, brname);
 
         // MLP SwiGLU
         snprintf(wname, sizeof(wname), "blk.%d.ffn_gate.weight", l);
         snprintf(brname, sizeof(brname), "qwen2.blk.%d.gate_proj", l);
-        cce_gguf_add_linear_branch(forest, gguf, wname, NULL, brname, init_scale);
+        GGUF_ADD_REQ(wname, NULL, brname);
 
         snprintf(wname, sizeof(wname), "blk.%d.ffn_up.weight", l);
         snprintf(brname, sizeof(brname), "qwen2.blk.%d.up_proj", l);
-        cce_gguf_add_linear_branch(forest, gguf, wname, NULL, brname, init_scale);
+        GGUF_ADD_REQ(wname, NULL, brname);
 
         snprintf(wname, sizeof(wname), "blk.%d.ffn_down.weight", l);
         snprintf(bname, sizeof(bname), "blk.%d.ffn_down.bias", l);
         snprintf(brname, sizeof(brname), "qwen2.blk.%d.down_proj", l);
-        cce_gguf_add_linear_branch(forest, gguf, wname, bname[0]?bname:NULL, brname, init_scale);
+        GGUF_ADD_REQ(wname, bname[0]?bname:NULL, brname);
     }
 
     // Head only (tok_emb lookup stays in dedicated tensor; we do not need a linear branch for it)
     const char* head_name = (cce_gguf_find_tensor(gguf, "output.weight") >= 0) ? "output.weight" : "token_embd.weight";
-    cce_gguf_add_linear_branch(forest, gguf, head_name, NULL, "qwen2.lm_head", 0.0f);
+    GGUF_ADD_REQ(head_name, NULL, "qwen2.lm_head");
+    #undef GGUF_ADD_REQ
+
+    if (add_fails > 0) {
+        GTRACE("forest INCOMPLETE: %d required branches failed -> refusing", add_fails);
+        cce_forest_close(forest);
+        remove(tmpf);
+        return CCE_ERR_UNSUPPORTED;
+    }
 
     /* MTP (nextn) specialists for gemma4-assistant style models */
     if (cce_gguf_find_tensor(gguf, "nextn.pre_projection.weight") >= 0) {
@@ -1142,12 +1265,15 @@ cce_result cce_gguf_load_qwen2(cce_gguf_qwen2** out, const char* path) {
     m->eos_token_id = cce_gguf_get_eos_token_id(g);
     strncpy(m->tokenizer_model, cce_gguf_get_tokenizer_model(g), sizeof(m->tokenizer_model)-1);
 
+    GTRACE("hparams: L=%d D=%d H=%d KV=%d V=%d; building forest",
+           m->n_layer, m->n_embd, m->n_head, m->n_kv_head, m->vocab_size);
     rc = cce_gguf_build_qwen2_forest(&m->forest, g, 0.02f);
     if (rc != CCE_OK) {
         free(m);
         cce_gguf_free(g);
         return rc;
     }
+    GTRACE("forest built: %d branches", m->forest ? m->forest->num_branches : -1);
 
     /* Load norms */
     m->attn_norm = (cce_tensor*)calloc(m->n_layer, sizeof(cce_tensor));
@@ -1172,9 +1298,12 @@ cce_result cce_gguf_load_qwen2(cce_gguf_qwen2** out, const char* path) {
         cce_gguf_load_tensor_by_name(g, name, &m->layer_output_scale[l]);
     }
 
+    GTRACE("norms loaded; loading rope/embedding");
     cce_gguf_load_tensor_by_name(g, "rope_freqs.weight", &m->rope_freqs);
 
     cce_gguf_load_tensor_by_name(g, "token_embd.weight", &m->tok_emb);
+    GTRACE("tok_emb loaded (%d x %d)", m->tok_emb.ndim > 1 ? m->tok_emb.shape[0] : -1,
+           m->tok_emb.ndim > 1 ? m->tok_emb.shape[1] : -1);
     cce_gguf_load_tensor_by_name(g, "output_norm.weight", &m->output_norm);
     if (cce_gguf_find_tensor(g, "output.weight") >= 0) {
         cce_gguf_load_tensor_by_name(g, "output.weight", &m->output);
@@ -1182,6 +1311,7 @@ cce_result cce_gguf_load_qwen2(cce_gguf_qwen2** out, const char* path) {
         /* tied */
         cce_gguf_load_tensor_by_name(g, "token_embd.weight", &m->output);
     }
+    GTRACE("output/head loaded");
 
     cce_gguf_load_tensor_by_name(g, "nextn.pre_projection.weight", &m->mtp_pre);
     cce_gguf_load_tensor_by_name(g, "nextn.post_projection.weight", &m->mtp_post);
@@ -1200,13 +1330,21 @@ cce_result cce_gguf_load_qwen2(cce_gguf_qwen2** out, const char* path) {
     m->rms_eps = cce_gguf_get_rms_eps(g);               /* 0 -> forward default 1e-6 */
     m->max_ctx = (m->ctx_len > 0) ? m->ctx_len : 2048;
     if (m->max_ctx > 8192) m->max_ctx = 8192; /* cap KV cache alloc for loader demo; real use would be dynamic / paged */
+    {   /* short-context runs (campaign mining probes are <=4 tokens): let the
+           caller cap the KV allocation. A 48-layer/262k-vocab model would
+           otherwise calloc ~13 GB of cache it never touches. Opt-in env. */
+        const char* e = getenv("CNET_MAX_CTX");
+        if (e) { int v = atoi(e); if (v >= 8 && v < m->max_ctx) m->max_ctx = v; }
+    }
     m->cur_pos = 0;
 
     size_t kv_size = (size_t)m->n_layer * m->max_ctx * m->n_kv_head * m->head_dim;
+    GTRACE("kv alloc: max_ctx=%d -> %zu floats x2", m->max_ctx, kv_size);
     m->k_cache = (float*)calloc(kv_size, sizeof(float));
     m->v_cache = (float*)calloc(kv_size, sizeof(float));
 
     cce_gguf_free(g);  /* we don't need the raw loader anymore */
+    GTRACE("load complete");
     *out = m;
     return CCE_OK;
 }

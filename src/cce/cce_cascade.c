@@ -307,6 +307,19 @@ void cce_cascade_free(cce_cascade* cas) {
 cce_result cce_cascade_save_to_archive(cce_cascade* cas, cce_archive* ar, const char* name, size_t* out_offset) {
     if (!cas || !ar || cas->num_blocks == 0) return CCE_ERR_INVALID_ARG;
 
+    /* Refuse what the format cannot hold, instead of corrupting:
+       - blocks whose FP payload was dropped (oracle int8 mode keeps shape
+         metadata with data == NULL) have nothing to persist;
+       - the layout stores w_bytes/b_bytes as u32, so a >4 GB tensor (e.g. a
+         262k-vocab head at FP32) cannot be represented. Callers already
+         tolerate persistence failure (the HOT RAM copy keeps working). */
+    for (int bi = 0; bi < cas->num_blocks; bi++) {
+        const cce_block* b = &cas->blocks[bi];
+        if (b->weights.numel > 0 && !b->weights.data) return CCE_ERR_INVALID_ARG;
+        if (b->weights.numel * sizeof(float) > 0xFFFFFFFFull) return CCE_ERR_UNSUPPORTED;
+        if (b->bias.numel * sizeof(float) > 0xFFFFFFFFull) return CCE_ERR_UNSUPPORTED;
+    }
+
     /* Simple binary layout:
        [u32 num_blocks]
        for each block:
