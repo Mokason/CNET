@@ -1,0 +1,8 @@
+CNET_PROPERTY 1
+dec_value_roundtrip
+SOURCES 1
+PORT onehot 10 1 dec_symbol
+LHS 2
+dec_value
+dec_to_symbol
+RHS 0

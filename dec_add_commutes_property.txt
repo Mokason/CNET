@@ -1,0 +1,11 @@
+CNET_PROPERTY 1
+dec_add_commutes
+SOURCES 3
+PORT onehot 10 1 dec_symbol
+PORT onehot 10 1 dec_symbol
+PORT binary_msb 1 1 dec_carry
+LHS 1
+dec_add_unit
+RHS 2
+dec_swap_ab
+dec_add_unit

@@ -1,0 +1,8 @@
+8
+churn 1 attrition 0.287682
+attrition 1 churn 0.287682
+rise 1 sharply 0.616131
+sharply 1 rise 0.616131
+alpha 2 beta 0.616131 gamma 0.616131
+beta 2 alpha 0.616131 gamma 0.616131
+gamma 2 alpha 0.616131 beta 0.616131

@@ -21,7 +21,7 @@ SRC := src/nn.c
 # Router split (SRP).
 # Router sources in src/router/ (filenames without router_ prefix for cleanliness)
 # Contract sources in src/contract/ (filenames without contract_ prefix)
-ROUTER := src/router/artifacts.c src/router/attention.c src/router/dag_exec.c src/router/dag_plan.c src/router/registry.c src/router/route.c
+ROUTER := src/router/dag_full.c src/router/registry.c src/router/route.c
 CONSOLIDATE := src/consolidate.c
 PLAN_TABLE := src/plan_table.c
 TOPOLOGY := src/topology.c
@@ -689,7 +689,7 @@ test_all: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) 
           tests/structural_pref_common.h \
           include/corpus/tile_memory.h include/corpus/synonyms.h include/corpus/corpus_split.h include/corpus/corpus_store.h include/corpus/graduate.h \
           include/pdf/pdf_extract.h include/pdf/inflate.h include/pdf/font_decode.h
-	$(CC) $(CFLAGS) -Wno-unused-function -DTEST_ALL -o test_all \
+	$(CC) $(CFLAGS) -Wno-unused-function -DTEST_ALL -o $(BIN_DIR)/test_all \
 	      $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(FASTPATH) $(LIBRARY) $(PROPOSAL_SIDECAR) $(COVERAGE) $(CONFORMAL) $(LOGICGATE) \
 	      $(TILEMEM_SRC) $(SYNONYMS_SRC) $(CORPUS_SRC) $(PDF_SRC) $(GRADUATE_SRC) \
 	      tests/test_all.c tests/test_nn.c tests/test_encode_oob.c tests/test_composition.c \
@@ -707,7 +707,28 @@ test_all: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) 
 legacy_test: test_all
 	./$(BIN_DIR)/test_all
 
-verify: cce_dll cce_safetensors_test cce_autograd_test cce_model_test cce_view forest_view cce_detect cce_ssm cce_st_llama cce_specgraph cce_wstore cce_tiers cce_similar contract_secure contract_unit acquire base flagship
+# Legacy suite gate: regenerates the demo-produced weight fixtures, then runs
+# the full historical test_all (restored 2026-07-03 after the router-split
+# amputation was found and repaired — this gate keeps it from rotting again).
+legacy: test_all decimal_demo circuit_demo
+	./$(BIN_DIR)/decimal_demo > logs/decimal_demo.log 2>&1 || echo "demo exited non-zero (see log)"
+	./$(BIN_DIR)/circuit_demo > logs/circuit_demo.log 2>&1 || echo "demo exited non-zero (see log)"
+	./$(BIN_DIR)/test_all > logs/legacy_test.log 2>&1 || echo "test exited non-zero (see log)"
+
+# Allocation-balance gate (behavioral leak check; MinGW has no ASan).
+LEAK_WRAP := tests/leak_wrap.c
+LEAK_LDWRAP := -Wl,--wrap=malloc,--wrap=calloc,--wrap=realloc,--wrap=free
+leakcheck: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(BASE_TEST) $(LEAK_WRAP)
+	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(BASE_TEST) $(LEAK_WRAP) $(LEAK_LDWRAP) $(LDFLAGS)
+	./$(BIN_DIR)/leakcheck > logs/leakcheck.log 2>&1 || echo "test exited non-zero (see log)"
+	@grep "leakcheck" logs/leakcheck.log || true
+
+verify: cce_dll cce_safetensors_test cce_autograd_test cce_model_test cce_view forest_view cce_detect cce_ssm cce_st_llama cce_specgraph cce_wstore cce_tiers cce_similar contract_secure contract_unit acquire base flagship legacy leakcheck
+
+# Everything verify covers PLUS the GPU equivalence gate (needs model + GPU;
+# run this before any CNET_GPU=1 campaign).
+test_full: test gpu_equiv_build
+	./$(BIN_DIR)/gpu_equiv Models/gemma-4-12B-it-MTP-Q8_0.gguf 64 32
 	dotnet test dotnet/Cce.Tests/Cce.Tests.csproj -c Release --no-restore
 
 verify-long: verify cce_train_bench supra_head_qat supra_head_qat_corpus wordlm_bitnet

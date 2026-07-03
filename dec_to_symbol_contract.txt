@@ -1,0 +1,18 @@
+CNET_CONTRACT 2
+dec_to_symbol
+INPUTS 1
+PORT_IN binary_msb 4 1 dec_digit
+OUTPUTS 1
+PORT_OUT onehot 10 1 dec_symbol
+EXEMPLARS 10
+0 0 0 0 1 0 0 0 0 0 0 0 0 0
+0 0 0 1 0 1 0 0 0 0 0 0 0 0
+0 0 1 0 0 0 1 0 0 0 0 0 0 0
+0 0 1 1 0 0 0 1 0 0 0 0 0 0
+0 1 0 0 0 0 0 0 1 0 0 0 0 0
+0 1 0 1 0 0 0 0 0 1 0 0 0 0
+0 1 1 0 0 0 0 0 0 0 1 0 0 0
+0 1 1 1 0 0 0 0 0 0 0 1 0 0
+1 0 0 0 0 0 0 0 0 0 0 0 1 0
+1 0 0 1 0 0 0 0 0 0 0 0 0 1
+SEAL 63dec91ef8ce58c9

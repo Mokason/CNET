@@ -353,7 +353,10 @@ static int recipe_available(const PrimitiveRegistry *reg, const ExpansionRecipe 
 int entry_usable(const PrimitiveRegistry *reg, size_t i) {
     const RegistryEntry *e = &reg->entries[i];
     if (!entry_usable_base(reg, i)) return 0;
-    if (e->recipe != NULL && reg->expand_in_low_enabled &&
+    /* 3C: only chunks MARKED expand_in_low (i.e. NOT compute-beneficial) hide
+       in LOW power; the split had dropped the e->expand_in_low condition,
+       expanding beneficial chunks too (caught by test_expansion). */
+    if (e->expand_in_low && e->recipe != NULL && reg->expand_in_low_enabled &&
         reg->power_mode == CNET_POWER_LOW) {
         return !recipe_available(reg, e->recipe, i);
     }

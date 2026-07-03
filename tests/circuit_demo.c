@@ -663,6 +663,16 @@ int main(int argc, char **argv) {
                 goto cleanup;
             }
             registry_init(&reg);
+            /* The claim is "seeded chunk vs FRESH teachers" (decimal_demo
+               reloads its teachers from disk, which zeroes counters). Here
+               the live teacher BTNs still carry Part 3's 20000-execution
+               evidence, which SHOULD outrank a 200-seed chunk — the planner
+               scoring that way is correct. Reset to the uninformed prior so
+               the replan tests the stated claim, not the execution history. */
+            dec_value.output_successes = 0;
+            dec_value.output_failures = 0;
+            dec_fa.output_successes = 0;
+            dec_fa.output_failures = 0;
             if (registry_add_certified(&reg, &dec_value, "dec_value",
                                        &c_value) != 0 ||
                 registry_add_certified(&reg, &dec_fa, "dec_full_add",
