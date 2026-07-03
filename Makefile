@@ -730,7 +730,14 @@ leakcheck: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE)
 	./$(BIN_DIR)/leakcheck > logs/leakcheck.log 2>&1 || echo "test exited non-zero (see log)"
 	@grep "leakcheck" logs/leakcheck.log || true
 
+# The test recipes above swallow their exit codes (`|| echo ...`) so the whole
+# chain always runs. This recipe is the gate that makes the swallow safe: it
+# runs AFTER every prerequisite (a target's recipe always follows its prereqs,
+# even under -j) and re-reads each suite's log, asserting the suite's terminal
+# SUCCESS marker is present -- so `make test` now exits non-zero if any gate
+# failed, crashed, or produced no log. See tests/verify_logs.sh for the markers.
 verify: cce_dll cce_safetensors_test cce_autograd_test cce_model_test cce_view forest_view cce_detect cce_ssm cce_st_llama cce_specgraph cce_wstore cce_tiers cce_similar contract_secure contract_unit mutate acquire base flagship legacy leakcheck
+	@sh tests/verify_logs.sh
 
 # Everything verify covers PLUS the GPU equivalence gate (needs model + GPU;
 # run this before any CNET_GPU=1 campaign).
@@ -738,7 +745,11 @@ test_full: test gpu_equiv_build
 	./$(BIN_DIR)/gpu_equiv Models/gemma-4-12B-it-MTP-Q8_0.gguf 64 32
 	dotnet test dotnet/Cce.Tests/Cce.Tests.csproj -c Release --no-restore
 
+# `long` mode also asserts the two verify-long-only supra QAT gates (which
+# likewise swallow their exit codes). The `verify` prereq already ran + gated
+# the core chain first; this re-scan adds the extras.
 verify-long: verify cce_train_bench supra_head_qat supra_head_qat_corpus wordlm_bitnet
+	@sh tests/verify_logs.sh long
 
 test: verify
 
