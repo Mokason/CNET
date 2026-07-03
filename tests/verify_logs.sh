@@ -74,6 +74,11 @@ SPEC="$CORE"
 if [ "${1:-}" = "long" ]; then
     SPEC="$CORE$LONG"
 fi
+# Strip any CRs so the parsed markers stay clean if this script (or the table)
+# ever lands with CRLF line endings on Windows -- a trailing \r on a marker
+# would otherwise never match. Log lines may still be CRLF; that is fine, the
+# markers are mid-line substrings so grep -F matches regardless.
+SPEC=$(printf '%s' "$SPEC" | tr -d '\r')
 
 printf '\n=== verify log gate (%s) ===\n' "$LOGS"
 
