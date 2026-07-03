@@ -575,12 +575,36 @@ static cce_result gguf_rms_norm(const cce_tensor* in, const cce_tensor* weight, 
 }
 
 /* Helper copied from Supra for applying cascade to rows */
+/* Optional OpenCL fast path for the linear seam (see cce_clgemm.h). NULL =
+   the CPU path below, byte-for-byte as always. Set via cce_gguf_set_clgemm. */
+#include "../../include/cce/cce_clgemm.h"
+static cce_clgemm *g_gguf_clgemm = NULL;
+void cce_gguf_set_clgemm(cce_clgemm *h) { g_gguf_clgemm = h; }
+
 static cce_result apply_linear_rows(cce_cascade* cas, const cce_tensor* in, cce_tensor* out) {
     if (!cas || !in || !out || in->ndim != 2 || out->ndim != 2) return CCE_ERR_INVALID_ARG;
     int T    = in->shape[0];
     int din  = in->shape[1];
     int dout = out->shape[1];
     if (out->shape[0] != T) return CCE_ERR_INVALID_ARG;
+
+    /* GPU fast path: exactly the shape cce_gguf_add_linear_branch builds —
+       ONE plain-float LINEAR_HEAD block (pure affine, no quantization).
+       Anything else falls through to the CPU path unchanged. */
+    if (g_gguf_clgemm && cas->num_blocks == 1 && T >= 1 && T <= 8) {
+        const cce_block *blk = &cas->blocks[0];
+        if (blk->type == CCE_BLOCK_LINEAR_HEAD && !blk->w_q && !blk->w_trit &&
+            blk->weights.ndim == 2 && blk->weights.shape[0] == din &&
+            blk->weights.shape[1] == dout) {
+            const float *bias =
+                (blk->bias.numel == (size_t)dout) ? blk->bias.data : NULL;
+            if (cce_clgemm_matmul(g_gguf_clgemm, in->data, (size_t)T,
+                                  (size_t)din, blk->weights.data, bias,
+                                  (size_t)dout, out->data) == 0) {
+                return CCE_OK;
+            }
+        }
+    }
 
     cce_tensor row_in = {0};
     int ish[1] = { din };

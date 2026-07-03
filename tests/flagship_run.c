@@ -17,6 +17,7 @@
 
 #include "../include/flagship.h"
 #include "../include/cce/cce_detect.h"
+#include "../include/cce/cce_clgemm.h"
 
 typedef struct {
     cce_gguf_qwen2 *m;
@@ -294,6 +295,53 @@ int main(int argc, char **argv) {
     default:
         cce_task_fn = cce_cond_next;
         break;
+    }
+
+    /* CNET_GPU=1: OpenCL forward, gated by an in-process equivalence sweep —
+       a diverging oracle silently changes the meaning of extracted knowledge,
+       so any decision mismatch refuses GPU mining outright. */
+    if (getenv("CNET_GPU") && strcmp(getenv("CNET_GPU"), "1") == 0) {
+        char dev[128] = {0};
+        cce_clgemm *gpu = cce_clgemm_open(NULL, dev, sizeof dev);
+        if (!gpu) {
+            fprintf(stderr, "CNET_GPU=1 but no OpenCL GPU available\n");
+            return 1;
+        }
+        {
+            float *lg = (float *)malloc(
+                (size_t)am->transformer->vocab_size * sizeof *lg);
+            size_t jj, mismatch = 0;
+            if (!lg) return 1;
+            for (jj = 0; jj < 16 && !mismatch; ++jj) {
+                int tk[2];
+                size_t a, am_c = 0, am_g = 0;
+                tk[0] = 2000 + (int)((jj * 37u) % 4096u);
+                tk[1] = 2000 + (int)((jj * 91u + 17u) % 4096u);
+                am->transformer->cur_pos = 0;
+                cce_gguf_qwen2_forward(am->transformer, tk, 2, ctx.logits,
+                                       am->transformer->vocab_size);
+                cce_gguf_set_clgemm(gpu);
+                am->transformer->cur_pos = 0;
+                cce_gguf_qwen2_forward(am->transformer, tk, 2, lg,
+                                       am->transformer->vocab_size);
+                cce_gguf_set_clgemm(NULL);
+                for (a = 1; a < (size_t)am->transformer->vocab_size; ++a) {
+                    if (ctx.logits[a] > ctx.logits[am_c]) am_c = a;
+                    if (lg[a] > lg[am_g]) am_g = a;
+                }
+                if (am_c != am_g) mismatch = 1;
+            }
+            free(lg);
+            if (mismatch) {
+                fprintf(stderr, "GPU EQUIVALENCE FAILED — refusing to mine "
+                                "with --gpu (run gpu_equiv for details)\n");
+                cce_clgemm_close(gpu);
+                return 1;
+            }
+        }
+        cce_gguf_set_clgemm(gpu);
+        printf("gpu: %s (equivalence sweep OK, %0.1f MB will go resident)\n",
+               dev, 0.0);
     }
 
     if (determinism_spot_check(&ctx, task) != 0) {

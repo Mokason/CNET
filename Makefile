@@ -80,7 +80,7 @@ endif
 
 ifdef HAVE_CUDA
   CCE_CUDA_OBJ := src/cce/cce_cuda.o
-  CUDA_CFLAGS  := -DC CE_HAVE_CUDA
+  CUDA_CFLAGS  := -DCCE_HAVE_CUDA
   CUDA_LDFLAGS := -lcudart -lcublas
 else
   CCE_CUDA_OBJ :=
@@ -96,7 +96,8 @@ CCE_SPECGRAPH := src/cce/cce_specgraph.c
 CCE_WSTORE  := src/cce/cce_weight_store.c
 CCE_TIERRT  := src/cce/cce_tier_runtime.c
 CCE_SIMILAR := src/cce/cce_similar.c
-CCE := $(CCE_TENSOR) $(CCE_BLOCK) $(CCE_CASCADE) $(CCE_ARCHIVE) $(CCE_FOREST) $(CCE_ROUTER) $(CCE_LEARN) $(CCE_PATCH) $(CCE_GPU) $(CCE_ABI) $(CCE_CUDA_OBJ) $(CCE_PERCEPTUAL) $(CCE_WORDLM) $(CCE_MODEL) $(CCE_MODEL_IO) $(CCE_DATASET) $(CCE_AUTOGRAD) $(CCE_SAFETENSORS) $(CCE_GGUF) $(CCE_DETECT) $(CCE_SSM) $(CCE_ST_LLAMA) $(CCE_SPECGRAPH) $(CCE_WSTORE) $(CCE_TIERRT) $(CCE_SIMILAR)
+CCE_CLGEMM  := src/cce/cce_clgemm.c
+CCE := $(CCE_TENSOR) $(CCE_BLOCK) $(CCE_CASCADE) $(CCE_ARCHIVE) $(CCE_FOREST) $(CCE_ROUTER) $(CCE_LEARN) $(CCE_PATCH) $(CCE_GPU) $(CCE_ABI) $(CCE_CUDA_OBJ) $(CCE_PERCEPTUAL) $(CCE_WORDLM) $(CCE_MODEL) $(CCE_MODEL_IO) $(CCE_DATASET) $(CCE_AUTOGRAD) $(CCE_SAFETENSORS) $(CCE_GGUF) $(CCE_DETECT) $(CCE_SSM) $(CCE_ST_LLAMA) $(CCE_SPECGRAPH) $(CCE_WSTORE) $(CCE_TIERRT) $(CCE_SIMILAR) $(CCE_CLGEMM)
 SCAN := src/scan.c
 CERTIFY_TEST := tests/test_certify.c
 CERTIFY_DEMO := tests/certify_demo.c
@@ -273,6 +274,12 @@ cnb_audit: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE)
 # Usage: make flagship_run_build && ./bin/flagship_run <model> [V] [max_units] [temp_C] [duty] [wall_s] [base.cnb]
 flagship_run_build: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(CONFORMAL) $(ACQUIRE_SRC) $(BASE_SRC) $(FLAGSHIP_SRC) $(CCE) $(CCE_CUDA_OBJ) tests/flagship_run.c include/flagship.h
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/flagship_run $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(CONFORMAL) $(ACQUIRE_SRC) $(BASE_SRC) $(FLAGSHIP_SRC) $(CCE) $(CCE_CUDA_OBJ) tests/flagship_run.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+
+# GPU equivalence gate: CPU vs OpenCL forward must be DECISION-identical
+# (argmax + top-3) before --gpu mining is allowed. Needs model + GPU; NOT in
+# verify. Usage: make gpu_equiv_build && ./bin/gpu_equiv <model> [V] [N]
+gpu_equiv_build: $(CCE) tests/gpu_equiv.c include/cce/cce_clgemm.h include/cce/cce_gguf.h
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/gpu_equiv $(CCE) tests/gpu_equiv.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 
 # Contract security + efficiency: content digests, certification cache,
 # sealed (tamper-evident) contract files, certificate-to-weights binding.

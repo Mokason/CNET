@@ -192,6 +192,12 @@ void cce_gguf_qwen2_free(cce_gguf_qwen2* m);
 /* Forward for one token or sequence (basic, for small tests) */
 cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_tokens, float* logits_out, int logits_cap);
 
+/* Optional GPU acceleration for the forward's linear seam (see
+ * cce_clgemm.h). NULL (the default) = CPU path, byte-for-byte unchanged.
+ * Process-global: one model per process is the supported shape. */
+struct cce_clgemm;
+void cce_gguf_set_clgemm(struct cce_clgemm *h);
+
 /* Quantize all linear specialists (q/k/v/o/gate/up/down/head) to int8 PTQ.
  * Returns number of blocks quantized, or -1 on error. Mirrors cce_supra_quantize_int8.
  * After this, forward will use the int8 weight-only path.
