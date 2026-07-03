@@ -280,6 +280,11 @@ cnb_audit: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE)
 
 # The REAL flagship run (CCE model as oracle). NOT in verify (needs a model).
 # Usage: make flagship_run_build && ./bin/flagship_run <model> [V] [max_units] [temp_C] [duty] [wall_s] [base.cnb]
+# OMP: the oracle forwards dominate mining time; cce_block's tiled matvec
+# pragmas parallelize across OUTPUT TILES (per-output sums keep their order),
+# so threading is bit-identity-safe — verified by digest-identical re-mines
+# against serial bases. Keeps -mno-avx (this exe links src/router).
+flagship_run_build: CFLAGS := $(CFLAGS) $(OMPFLAGS)
 flagship_run_build: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(CONFORMAL) $(ACQUIRE_SRC) $(BASE_SRC) $(FLAGSHIP_SRC) $(CCE) $(CCE_CUDA_OBJ) tests/flagship_run.c include/flagship.h
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/flagship_run $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(CONFORMAL) $(ACQUIRE_SRC) $(BASE_SRC) $(FLAGSHIP_SRC) $(CCE) $(CCE_CUDA_OBJ) tests/flagship_run.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 
