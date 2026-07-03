@@ -57,6 +57,7 @@ verification chain on every `make test`.
 | Universal model layer (detect, SSM + llama runners, specialist graph, weight store, bounded-RAM tiers, evidence-gated merge) | `make cce_detect` / `cce_ssm` / `cce_st_llama` / `cce_specgraph` / `cce_wstore` / `cce_tiers` / `cce_similar` | passing, in `make test` |
 | Autonomy loop (gap-triggered acquisition → unified CNB1 base → flagship harness) | `make acquire`, `make base`, `make flagship` | passing, in `make test`; first real campaign 256/256 slices at 100%, verified 3 ways |
 | Restored legacy aggregate + allocation-balance leak gate | `make legacy`, `make leakcheck` | passing, in `make test` |
+| Loader robustness (byte-flip + truncation sweeps over every artifact loader) | `make mutate` | passing, in `make test`; sealed formats refuse every mutation, unsealed probes never crash |
 | GPU forward (self-contained OpenCL) | `make test_full` → `./bin/gpu_equiv` | optional; 11.9× with **bit-identical** logits, equivalence-gated |
 | Supra int8 PTQ | `make supra_console` (`--int8`) | near-lossless |
 | Packed 1.6-bit ternary | `make wordlm_bitnet` + export/reload tests | storage bit-exact (`ΔNLL=0` reload); *deployable quality still needs QAT at model scale* |
@@ -1166,7 +1167,7 @@ current state.
 | Target | What it does |
 |--------|--------------|
 | `make` / `make run` | build / build and run `nn_demo` (trains and freezes all primitives) |
-| `make test` / `make verify` | full offline verification: CCE DLL, safetensors loader, autograd, model save/load, WARM archive/forest views, universal-model suites (detect, ssm, st_llama, specgraph, wstore, tiers, similar), contract security + unit files, acquisition loop, unified base, flagship harness, restored legacy aggregate, leak gate, and .NET tests (`--no-restore`; run `dotnet restore` once on fresh machines) |
+| `make test` / `make verify` | full offline verification: CCE DLL, safetensors loader, autograd, model save/load, WARM archive/forest views, universal-model suites (detect, ssm, st_llama, specgraph, wstore, tiers, similar), contract security + unit files, loader-robustness sweep (`mutate`), acquisition loop, unified base, flagship harness, restored legacy aggregate, leak gate, and .NET tests (`--no-restore`; run `dotnet restore` once on fresh machines) |
 | `make verify-long` | fast verification plus longer benches/studies: `cce_train_bench`, Supra head QAT, corpus QAT, and `wordlm_bitnet` |
 | `make legacy` | the restored full historical aggregate (`test_all`, ALL TESTS PASSED) + demo-driven fixture regeneration; in `make test` |
 | `make leakcheck` | allocation-balance gate over the base+acquire paths (`-Wl,--wrap`, CRT-baseline-aware); in `make test` |
@@ -1218,6 +1219,7 @@ current state.
 | `make cce_similar` | SIMILAR_TO + adversarial verify + evidence-gated epsilon-merge (manifest remap) |
 | `make contract_secure` | contract digests, certification cache, sealed files, certificate-to-weights audit |
 | `make contract_unit` | one-file sealed units (.cnu): weights + contract, bit-packed exemplars, tamper refused |
+| `make mutate` | loader-robustness sweep: every single-byte flip + truncation over `.cnu`/`.cnb` (all refused) and gguf/safetensors/`.cce` probes (no crash); in `make test` |
 | `make bitnet_qat` | self-contained BitNet b1.58 QAT demo (FP shadow + STE): QAT ternary clearly beats post-hoc ternary |
 | `make wordlm_bitnet` | long BitNet QAT run in the real word-LM: FP / linear / embedding / both ternary + trit-packed export → reload parity (`ΔNLL=0`); use `WLM_EPOCHS=N` to shorten |
 | `make clean` | remove all binaries |

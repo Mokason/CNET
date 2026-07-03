@@ -209,8 +209,11 @@ cce_result cce_gguf_load(const char* path, cce_gguf** out) {
     g->n_tensors_hdr = nt;
     g->n_kv_hdr = nk;
 
-    /* Metadata */
-    g->kvs = (gguf_kv*)calloc((size_t)nk, sizeof(gguf_kv));
+    /* Metadata. nk/nt come straight from the file header; a corrupt or
+       hostile file can make them astronomically large. calloc then returns
+       NULL and the record loops below would deref it — guard here. */
+    g->kvs = nk ? (gguf_kv*)calloc((size_t)nk, sizeof(gguf_kv)) : NULL;
+    if (nk && !g->kvs) { fclose(g->f); free(g); return CCE_ERR_OOM; }
     g->n_kvs = (int)nk;
     for (uint64_t i = 0; i < nk; i++) {
         if (!gguf_read_kv(g->f, &g->kvs[i])) {
@@ -278,7 +281,11 @@ cce_result cce_gguf_load(const char* path, cce_gguf** out) {
     if (g->n_kv_heads == 0) g->n_kv_heads = g->n_heads;
 
     /* Tensor table */
-    g->tensors = (cce_gguf_tensor_meta*)calloc((size_t)nt, sizeof(cce_gguf_tensor_meta));
+    g->tensors = nt ? (cce_gguf_tensor_meta*)calloc((size_t)nt, sizeof(cce_gguf_tensor_meta)) : NULL;
+    if (nt && !g->tensors) {
+        for (int i = 0; i < g->n_kvs; i++) gguf_free_kv(&g->kvs[i]);
+        free(g->kvs); fclose(g->f); free(g); return CCE_ERR_OOM;
+    }
     g->n_tensors = (int)nt;
 
     uint64_t max_offset = 0;
@@ -290,8 +297,12 @@ cce_result cce_gguf_load(const char* path, cce_gguf** out) {
         }
         uint32_t nd = 0;
         if (!gguf_read_u32(g->f, &nd)) nd = 0;
-        t->ndim = nd;
-        for (uint32_t d = 0; d < nd && d < (uint32_t)CCE_MAX_DIMS; d++) {
+        /* shape[] is CCE_MAX_DIMS wide; a corrupt file can claim more dims.
+           Clamp ndim so the elems loop below never reads past the array
+           (the on-file dims beyond the cap are simply skipped). */
+        if (nd > (uint32_t)CCE_MAX_DIMS) nd = (uint32_t)CCE_MAX_DIMS;
+        t->ndim = (int)nd;
+        for (uint32_t d = 0; d < nd; d++) {
             uint64_t dim = 0;
             gguf_read_u64(g->f, &dim);
             t->shape[d] = (int)dim;

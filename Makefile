@@ -246,6 +246,13 @@ contract_unit: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONSOLIDATE) $(CONTRACT) tests/t
 	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONSOLIDATE) $(CONTRACT) tests/test_unit.c $(LDFLAGS)
 	./$(BIN_DIR)/contract_unit > logs/contract_unit.log 2>&1 || echo "test exited non-zero (see log)"
 
+# Loader robustness: systematic single-byte flip + truncation sweeps over
+# every artifact loader. Sealed formats (.cnu/.cnb) must refuse EVERY
+# mutation; unsealed probes (gguf/safetensors/.cce) must never crash.
+mutate: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(CCE) tests/test_mutate.c include/contract/unit.h include/base.h include/cce/cce_archive.h include/cce/cce_detect.h
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(CCE) tests/test_mutate.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+	./$(BIN_DIR)/mutate > logs/mutate.log 2>&1 || echo "test exited non-zero (see log)"
+
 # Gap-triggered acquisition loop: gap ledger sidecar + oracle mining ->
 # train -> certify (PROOF/SAMPLE) -> seal .cnu -> register -> replan.
 # Link set mirrors the `coverage` target (+ acquire).
@@ -723,7 +730,7 @@ leakcheck: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE)
 	./$(BIN_DIR)/leakcheck > logs/leakcheck.log 2>&1 || echo "test exited non-zero (see log)"
 	@grep "leakcheck" logs/leakcheck.log || true
 
-verify: cce_dll cce_safetensors_test cce_autograd_test cce_model_test cce_view forest_view cce_detect cce_ssm cce_st_llama cce_specgraph cce_wstore cce_tiers cce_similar contract_secure contract_unit acquire base flagship legacy leakcheck
+verify: cce_dll cce_safetensors_test cce_autograd_test cce_model_test cce_view forest_view cce_detect cce_ssm cce_st_llama cce_specgraph cce_wstore cce_tiers cce_similar contract_secure contract_unit mutate acquire base flagship legacy leakcheck
 
 # Everything verify covers PLUS the GPU equivalence gate (needs model + GPU;
 # run this before any CNET_GPU=1 campaign).
