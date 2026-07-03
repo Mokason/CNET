@@ -1,0 +1,96 @@
+# Model Merge Scope — hybrid, non-monolithic composition of decomposed models
+
+Status: SCOPING (no merge code yet). Date: 2026-07-03.
+Origin: "if I can merge models, making it hybrid while still being
+non-monolithic after conversion, it's a win for everyone."
+
+---
+
+## 1. The claim triage (grounded in the tree, not the pitch)
+
+The pitch names four mechanisms as "already there." Verified against source:
+
+| claimed | reality |
+|---|---|
+| content-addressed specialist identity (`cce_specgraph`) | **REAL** — digests + behavioral fingerprints, cross-container identity gated |
+| epsilon-merge behind evidence (`cce_similar`) | **REAL but same-shape only** — `cce_similar.c:19` skips any pair with `in_dim/out_dim` mismatch; adversarial battery + refusal gated |
+| content-addressed store + manifests (`cce_wstore`) | **REAL** — 100% reuse on re-ingest, fine-tune = 1 payload, bit-identical restore, all gated |
+| "SSMax router selects the right specialists per query" | **REAL for CCE-learn forests** (`cce_router.c`: 0.7·centroid-sim + 0.3·goodness, temp+top-k) — but **decomposed transformers do NOT run through it**: their forward calls branches by fixed name (`qwen2.blk.N.q_proj`). Free per-query routing over a merged library is NOT how converted models execute today. |
+
+Two claims in the pitch do not survive contact:
+
+- **"LLM + VLM share early-layer specialists → dedup"** — weight-level
+  sharing between independently-pretrained different-architecture models is
+  ~zero (different shapes alone disqualify under `cce_similar`), and
+  behavioral similarity does not make weights substitutable across bases.
+  The 70B+70B → "~160 GB" table row is not credible. The RAM row (~16 GB
+  tier-streamed) IS credible — but it comes from the tier runtime, not from
+  merging.
+- **"Bit-identical to originals, router-selected"** — holds only at
+  MODEL-granularity routing (a query executes one original sub-library
+  end-to-end). Mixing specialists across models inside one forward pass
+  forfeits bit-identity and is unproven research.
+
+The strongest case needs neither: **fine-tune families**. Same base, same
+shapes, mostly-identical layers → exact-digest dedup for untouched layers,
+evidence-gated epsilon-merge for near-identical ones, per-model manifests,
+one store, tier-streamed serving. Every mechanism exists and is gated today.
+(Monolith-world comparison to be honest about: multi-LoRA serving already
+dedups base weights — but only when the deltas were TRAINED as adapters.
+CNET's dedup is discovered post-hoc on full fine-tunes, and the epsilon
+merge is verified, not hoped.)
+
+## 2. Staged plan (each stage a gate, cheapest decisive experiment first)
+
+### M0 — fine-tune-family merge (the enterprise case; ~all existing machinery)
+Compose `cce_wstore` + `cce_similar` + `cce_tier_runtime` into one pipeline +
+gate (`make merge_family`):
+1. Ingest tiny base + N synthetic fine-tunes (perturb K specialists each —
+   the wstore gate already does this for N=1).
+2. Gates: storage = base + Σ small diffs (measured vs N× naive);
+   each manifest's streamed forward BIT-identical to its standalone model;
+   epsilon-merge dedups a near-identical fine-tune layer behind the probe
+   battery and REFUSES a material one; the whole library serves under one
+   HOT cap.
+3. Report the honest dedup ratio + RAM measurements.
+This is a composition test of proven parts, not new research. Highest
+value-per-effort in the whole pitch.
+
+### M1 — model-granularity hybrid catalog (different archs, one store)
+Ingest two genuinely different tiny models (the tiny-llama fixture and the
+mamba SSM fixture — both loaders exist and are gated) into ONE store with a
+catalog + query-level selector (task tag → manifest; the contract router's
+typed tags are the natural selector, not SSMax).
+Gates: per-domain outputs bit-identical to standalone; single-store
+accounting; and an HONESTY gate — measure and REPORT the actual cross-model
+dedup (expected ≈ 0 for different archs; the point is to publish the truth,
+not the fantasy).
+
+### M2 — bridging specialists (research; toy scale only on this hardware)
+The genuinely new capability: a typed-port contract unit mapping model-A
+representation → model-B-consumable representation, acquired by the
+gap-triggered loop (router detects the missing edge, oracle mines pairs,
+train, certify SAMPLED + conformal reject, seal, register, replan). The DAG
+planner composing image→features→text chains through typed ports is the
+CNET-native version of "multimodal glue."
+Reality check: a USEFUL vision→language bridge at modern-model scale is a
+training project (this is what LLaVA-class projectors are) and does not fit
+one 4070 Ti S. The honest first experiment is Supra-scale: bridge a tiny
+second modality (e.g. the perceptual-leaf glyph domain, already in-tree)
+into Supra hidden space, certified on the fuzzy tier. Mechanism proof, not
+deployable quality — label it as such.
+
+### Explicitly deferred / rejected
+- Cross-architecture specialist DEDUP by behavioral alignment: rejected as a
+  merge mechanism (weights aren't substitutable across bases); MAYBE later as
+  a diagnostic ("these two libraries have behaviorally-overlapping members")
+  via cross-arch probe adapters — which is itself the M2 bridging problem.
+- Any 70B-scale claims: nothing on this box can verify them; do not print
+  numbers we cannot gate.
+- Free specialist-granularity routing across merged transformer libraries:
+  forfeits bit-identity; revisit only after M0-M2 hold.
+
+## 3. Order of work
+M0 first (days, decisive, sellable), M1 second (small), M2 as the research
+track behind them. Each lands as one `make` gate wired into `verify` +
+`tests/verify_logs.sh`, same as every other capability in the tree.
