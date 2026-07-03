@@ -118,6 +118,30 @@ static int topk_maker(void *maker_ctx, size_t k, int token_id,
     return 0;
 }
 
+/* Constant-slice fixture (the degenerate case measured on the real model):
+   every context maps to the same token. Counts oracle calls so the gate can
+   assert the pilot refused BEFORE the main mine spent the budget. */
+typedef struct { unsigned v; size_t calls; } ConstCtx;
+
+static int const_pair_oracle(const double *in, double *out, void *ctx) {
+    ConstCtx *s = (ConstCtx *)ctx;
+    unsigned i;
+    (void)in;
+    s->calls++;
+    for (i = 0; i < s->v; ++i) out[i] = (i == 3u) ? 1.0 : 0.0;
+    return 0;
+}
+
+static int const_maker(void *maker_ctx, size_t k, int token_id,
+                       FlagshipOracle *out) {
+    ConstCtx *s = (ConstCtx *)maker_ctx;
+    (void)k; (void)token_id;
+    s->v = V;
+    out->fn = const_pair_oracle;
+    out->ctx = s;
+    return 0;
+}
+
 int main(void) {
     int vocab[V];
     unsigned i;
@@ -410,6 +434,43 @@ int main(void) {
         check(cnb_load(&b, bp) == 0 && b.unit_count == 0 && b.tag_count == 0,
               "nothing sealed by the refusal (DEFER total)");
         cnb_free(&b);
+        remove(bp);
+        remove(lp);
+    }
+
+    printf("[10] pilot-scheduled acquisition (confidence-scheduled refusal)\n");
+    {
+        FlagshipConfig fc;
+        FlagshipReport rp;
+        ConstCtx cm;
+        const char *bp = "flagship_pilot_test.cnb";
+        const char *lp = "flagship_pilot_gaps.txt";
+        remove(bp);
+        remove(lp);
+
+        flagship_config_defaults(&fc);
+        fc.task = FLAGSHIP_TASK_PAIR;
+        fc.vocab_tokens = vocab;
+        fc.vocab_size = V;
+        fc.max_units = 1;
+        fc.base_path = bp;
+        fc.ledger_path = lp;
+        fc.gpu_temp_limit_c = 0;
+        fc.duty_fraction = 1.0;
+        fc.acq.mine_budget = 32;     /* < V^2 -> sampled -> pilot active */
+        fc.acq.sample_count = 128;
+        fc.conformal_alpha = 0.0;
+
+        memset(&cm, 0, sizeof cm);
+        memset(&rp, 0, sizeof rp);
+        check(flagship_run(&fc, const_maker, &cm, &rp) == 0, "pilot run runs");
+        check(rp.deferred == 1 && rp.reason_kinds == 1 &&
+              strcmp(rp.reasons[0], "class_imbalance") == 0,
+              "constant slice refused as class_imbalance");
+        check(cm.calls <= fc.acq.pilot_count + 4,
+              "refused at PILOT cost, not the full sample (16ish calls, not 128)");
+        printf("  [pilot] oracle calls for the refusal: %lu (budget was %lu)\n",
+               (unsigned long)cm.calls, (unsigned long)fc.acq.sample_count);
         remove(bp);
         remove(lp);
     }

@@ -1,7 +1,15 @@
 # Fuzzy-Tier Flagship: sampled extraction + conformal abstention + ranked-preference "soul" — Design
 
 **Date:** 2026-07-03
-**Status:** Draft (pending user review)
+**Status:** Implemented 2026-07-03 (commit bead264; `make flagship` 69 checks
+in verify). Findings: (1) LATENT BUG FIXED — the drain judged certification by
+rc (0 iff PROVEN), so every SAMPLED success was deferred; (2) exactness-on-
+sample is the admission bar — a ~94%-exact student has no path in (probed);
+(3) conformal abstained 100% on non-generalizing memorizers (the guarantee
+working); (4) real TOPK: 2/2 PROOF, margin 0.99; (5) real PAIR on the gemma
+MTP draft: the model is globally constant over arbitrary contexts (1 distinct
+argmax in 128 probes) → all slices refused class_imbalance; the sampled tier's
+real fight needs corpus-drawn contexts or a non-draft model.
 **Topic:** The first extraction campaign on task classes that do NOT surrender
 to proofs. Measures the number that decides the thesis's reach: how much of a
 model's behavior lands in each certification tier — PROOF / SAMPLED-with-

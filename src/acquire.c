@@ -11,6 +11,7 @@ void acquire_config_defaults(AcquireConfig *cfg) {
     memset(cfg, 0, sizeof *cfg);
     cfg->mine_budget = 4096;
     cfg->sample_count = 256;
+    cfg->pilot_count = 16;
     cfg->holdout_fraction = 0.25;
     cfg->evidence_threshold = 0.9;   /* mirrors library_gate_config_defaults */
     cfg->min_evidence = 16;          /* mirrors library_gate_config_defaults */
@@ -280,7 +281,11 @@ static int ledger_own_btn(AcquireLedger *l, BinaryTransformNetwork *btn,
 
 /* Mine the (in -> goal) exemplar table from the oracle.
    Enumerable within budget -> full enumeration (exhaustive=1);
-   enumerable over budget  -> deterministic stride sample;
+   enumerable over budget  -> deterministic stride sample, preceded by a
+   PILOT phase (confidence-scheduled acquisition, DSpark-inspired): a small
+   domain-spanning pilot is mined first, and a degenerate pilot (all targets
+   identical) aborts before the main mine -> -2 (caller defers
+   class_imbalance at ~pilot cost instead of full-sample cost);
    non-enumerable          -> -1 ("unbounded_domain").
    Rows failing the oracle or port_validate are skipped and counted on the
    oracle entry. Returns usable row count via *n_out (tables are malloc'd,
@@ -291,8 +296,9 @@ static int mine_from_oracle(OracleEntry *o, Port in_p, Port goal_p,
                             size_t *n_out, size_t *attempts_out,
                             int *exhaustive_out) {
     Contract tc;                 /* temp: ports only, for domain enumeration */
-    size_t card, n_points, k, usable = 0;
+    size_t card, n_points, k, usable = 0, attempts = 0;
     size_t in_total = port_total(in_p), out_total = port_total(goal_p);
+    size_t pilot = 0, pilot_idx[64];
     double *inputs, *targets;
     double *raw;                 /* heap: out_total is caller-sized (a fixed
                                     stack buffer here overflowed at V=256) */
@@ -307,19 +313,55 @@ static int mine_from_oracle(OracleEntry *o, Port in_p, Port goal_p,
     *exhaustive_out = (card <= cfg->mine_budget);
     n_points = *exhaustive_out ? card
              : (cfg->sample_count < card ? cfg->sample_count : card);
+    if (!*exhaustive_out && cfg->pilot_count > 0 &&
+        cfg->pilot_count < n_points && cfg->pilot_count <= 64) {
+        pilot = cfg->pilot_count;
+    }
 
-    inputs  = malloc(n_points * in_total * sizeof *inputs);
-    targets = malloc(n_points * out_total * sizeof *targets);
+    inputs  = malloc((n_points + pilot) * in_total * sizeof *inputs);
+    targets = malloc((n_points + pilot) * out_total * sizeof *targets);
     raw     = malloc(out_total * sizeof *raw);
     if (!inputs || !targets || !raw) {
         free(inputs); free(targets); free(raw);
         return -1;
     }
 
+    /* pilot phase: spans the WHOLE domain with an ODD step — a step equal to
+       a field width aliases the mixed-radix encoding and samples ONE value of
+       the low field (measured: it made a wc-dependent map look constant) */
+    for (k = 0; k < pilot; ++k) {
+        size_t idx = (k * ((card / pilot) | 1)) % card;
+        double *irow = inputs + usable * in_total;
+        double *trow = targets + usable * out_total;
+        pilot_idx[k] = idx;
+        attempts++;
+        if (contract_encode_domain_point(&tc, idx, irow) != 0) continue;
+        o->calls++;
+        if (o->fn(irow, raw, o->ctx) != 0) { o->rejects++; continue; }
+        if (!port_validate(goal_p, raw))  { o->rejects++; continue; }
+        if (port_canonicalize(goal_p, raw, trow) != 0) continue;
+        usable++;
+    }
+    if (pilot > 0 && usable >= 8) {
+        size_t distinct = 1;
+        for (k = 1; k < usable && distinct < 2; ++k)
+            if (memcmp(targets, targets + k * out_total,
+                       out_total * sizeof *targets) != 0) distinct = 2;
+        if (distinct < 2) {
+            free(inputs); free(targets); free(raw);
+            return -2;   /* degenerate slice: refuse at pilot cost */
+        }
+    }
+
+    /* main phase (skips indices the pilot already mined) */
     for (k = 0; k < n_points; ++k) {
         size_t idx = *exhaustive_out ? k : (k * card) / n_points; /* stride */
         double *irow = inputs + usable * in_total;
         double *trow = targets + usable * out_total;
+        size_t p, dup = 0;
+        for (p = 0; p < pilot && !dup; ++p) dup = (pilot_idx[p] == idx);
+        if (dup) continue;
+        attempts++;
         if (contract_encode_domain_point(&tc, idx, irow) != 0) continue;
         o->calls++;
         if (o->fn(irow, raw, o->ctx) != 0) { o->rejects++; continue; }
@@ -331,7 +373,7 @@ static int mine_from_oracle(OracleEntry *o, Port in_p, Port goal_p,
     *inputs_out = inputs;
     *targets_out = targets;
     *n_out = usable;
-    *attempts_out = n_points;
+    *attempts_out = attempts;
     return 0;
 }
 
@@ -379,12 +421,16 @@ static int attempt_no_plan(PrimitiveRegistry *reg, AcquireLedger *l,
         snprintf(name, sizeof name, "acq_gap%lu",
                  (unsigned long)(g - l->gaps));
 
-    /* 1. mine */
-    if (mine_from_oracle(o, g->input_port, g->goal_port, cfg,
-                         &inputs, &targets, &usable, &attempts,
-                         &exhaustive) != 0) {
-        gap_defer(g, rep, "unbounded_domain");
-        return -1;
+    /* 1. mine (pilot-scheduled: -2 = degenerate slice caught at pilot cost) */
+    {
+        int mrc = mine_from_oracle(o, g->input_port, g->goal_port, cfg,
+                                   &inputs, &targets, &usable, &attempts,
+                                   &exhaustive);
+        if (mrc != 0) {
+            gap_defer(g, rep, mrc == -2 ? "class_imbalance"
+                                        : "unbounded_domain");
+            return -1;
+        }
     }
 
     /* merge captured pairs (sampled mode only; exhaustive already covers them) */
@@ -600,9 +646,14 @@ static int attempt_rebuild(PrimitiveRegistry *reg, AcquireLedger *l,
     if (!o) { if (rep) rep->skipped_no_oracle++; return -1; } /* stays OPEN */
     snprintf(g->oracle, ACQUIRE_NAME_MAX, "%s", o->name);
 
-    if (mine_from_oracle(o, in_p, goal_p, cfg, &inputs, &targets,
-                         &usable, &attempts, &exhaustive) != 0) {
-        gap_defer(g, rep, "unbounded_domain"); return -1;
+    {
+        int mrc = mine_from_oracle(o, in_p, goal_p, cfg, &inputs, &targets,
+                                   &usable, &attempts, &exhaustive);
+        if (mrc != 0) {
+            gap_defer(g, rep, mrc == -2 ? "class_imbalance"
+                                        : "unbounded_domain");
+            return -1;
+        }
     }
     if (usable == 0 && attempts > 0) {
         free(inputs); free(targets);

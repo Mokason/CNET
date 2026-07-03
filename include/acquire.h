@@ -82,6 +82,14 @@ typedef struct {
 typedef struct {
     size_t mine_budget;        /* enumerate the domain when card <= this (4096) */
     size_t sample_count;       /* deterministic stride samples otherwise (256) */
+    /* Confidence-scheduled acquisition (DSpark-inspired: spend the mining
+       budget by estimated survival). In SAMPLED mode a domain-spanning pilot
+       of this many points is mined first; a degenerate pilot (all targets
+       identical) defers class_imbalance immediately instead of after the
+       full sample — measured 16x cheaper refusal of constant slices.
+       0 disables (default 16). Exhaustive mode never pilots: a proven
+       constant function is legitimate knowledge. */
+    size_t pilot_count;
     double holdout_fraction;   /* sampled mode only: fraction excluded from
                                   training but kept in the contract (0.25) */
     double evidence_threshold; /* oracle validity-rate floor (0.9; mirrors
