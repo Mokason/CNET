@@ -67,7 +67,7 @@ Instead of one large differentiable model trained end-to-end with backprop, CCE 
 | **cce_router**   | Dispatch to the right specialist(s)                 | SSMax (sparse softmax over similarity + goodness). Top-k routing. |
 | **cce_forest**   | Collection of branches + tiering                    | Branches = specialist cascades (with leaf blocks: linear/patch). Hot (RAM, trainable), Warm (mmap zero-copy views), Cold (disk). Header-based dir + persist. Centroid + SSMax recall. Online growth via micro-split in router-learn loop. |
 | **cce_archive**  | Single-file persistent storage                      | Append-only sections + directory. True partial loading via mmap (no full deserialize). |
-| **cce_gpu**      | Accelerated execution (optional)                    | CUDA (when built with `CCE_USE_CUDA=1` + toolchain) or OpenCL emitter. Test auto-ramps to 800 epochs on GPU. |
+| **cce_clgemm**   | GPU forward for the transformer runner (optional)   | Self-contained OpenCL: `OpenCL.dll` loaded dynamically (no SDK/CUDA toolkit), runtime-compiled GEMM, device-resident weights. Measured 11.9× with **bit-identical logits**; equivalence-gated (`gpu_equiv`). CPU path unchanged when absent. |
 | **C ABI**        | Stable embedding interface (`include/cce/cce.h`)    | `cce_open`, `cce_infer`, `cce_adapt`, `cce_tick`. Easy to call from Unity/C#/Python. |
 
 ### Storage & Partial Loading (cce_archive + cce_forest)
@@ -200,7 +200,7 @@ Env knobs: `CNET_TS_HIDDEN` (char cascade depth), `CNET_TS_EPOCHS`, `CNET_TS_LR`
 `make cce_smoke` and `make cce_train_bench` (runs on build). Dedicated forest/archive tests pass. cce_minimal.c isolates core.
 
 Some advanced areas still need work:
-- Full OpenCL kernel dispatch (emitter exists, runtime dispatch is stubbed)
+- ~~Full OpenCL kernel dispatch~~ **done** for the transformer forward (`cce_clgemm`, 2026-07): dynamic loading, runtime kernel build, 11.9× bit-identical (see *GPU Forward*). The old `cce_gpu.c` CUDA path never actually compiled (a Makefile typo hid it) — recorded honestly, superseded.
 - Zero-copy WARM **whole-cascade** load: `cce_cascade_view_from_archive` builds a read-only cascade whose block weights/bias are views into the archive mmap (`owns_memory=0`), reusing the mapped pointer instead of reload+copy (`make cce_view`: bit-identical forward + clean free). **Now wired into the forest** (`make forest_view`, 19/19): `cce_forest_seal` + `cce_forest_forward` materialize a branch as a zero-copy view when the forest is sealed (recall reuses the same pointer, no reload), with **copy-on-write to an owned HOT cascade** when training (`cce_forest_promote_to_hot`). Sealing forbids further `add_branch` (an append remaps the mmap and would invalidate views). Latent bugs fixed along the way: the copy loader read a fixed 1 MB prefix (failed on any archive < 1 MB), and `archive_offset==0` was misused as a "not persisted" sentinel (the first branch legitimately lands at offset 0) — now an explicit `persisted` flag.
 - Larger-scale real tasks (beyond current harness) + full growth / per-layer curve logging
 
@@ -226,7 +226,7 @@ See `tests/cce_smoke.c`, `tests/cce_train_bench.c` (4-block **deeper cascades** 
 - Dedicated `test_tinystories` exercises CCE on real narrative next-token prediction with context windows.
 - Guided mode delivers coherent output; raw logits mode now free-runs into coherent prose after the softmax-CE + all-samples + decoder fixes (see "What made raw generation work" above).
 - The same CCE technique (contextual cascades + local credit) has been wired into the reusable `cnet_lm` path so that `train lm` / `--demo LLM` can use CCE cascades as the core step model.
-- Optional CUDA acceleration (when built with `CCE_USE_CUDA=1` + proper toolchain) ramps the test to 800 epochs automatically and yields stronger models for both guided coherence and raw sampling.
+- (Historical note: the advertised `CCE_USE_CUDA=1` path never actually compiled — a Makefile typo kept it off. GPU acceleration is now real via the OpenCL `cce_clgemm` forward path instead; training remains CPU.)
 
 See `test_tinystories.c`, `src/cnet_lm.c`, and the build console `train lm`.
 
@@ -257,14 +257,20 @@ make compounding_bench       # 3C dual-track demo: LOW vs DEFAULT cost/accuracy 
 
 # Universal model layer: detect + run any supported model file
 make detect FILE=Models/gemma-4-12B-it-MTP-Q8_0.gguf   # probe structure, no weights loaded
-make test             # full verification lane (CCE + universal runners + contract security + .NET)
+make test             # full verification chain (CCE + universal runners + contracts + acquisition/base/flagship + legacy + leak gate + .NET)
+
+# The autonomy loop: extract certified units from a real model
+make flagship_run_build
+./bin/flagship_run Models/gemma-4-12B-it-MTP-Q8_0.gguf 256 256 80 0.75 0 flagship.cnb          # argmax campaign (resumable; echo stop > flagship.cnb.stop)
+CNET_GPU=1 ./bin/flagship_run Models/gemma-4-12B-it-MTP-Q8_0.gguf 256 256 80 0.75 0 soul.cnb topk   # ranked-preference campaign on GPU (equivalence-gated)
+make cnb_audit && ./bin/cnb_audit flagship.cnb          # counts + re-certification + tag audit
+make gpu_equiv_build && ./bin/gpu_equiv Models/gemma-4-12B-it-MTP-Q8_0.gguf   # CPU-vs-GPU decision equivalence + speedup
 
 # New pure-C Contract Cascade Engine (CCE)
 make cce_smoke               # build & run the CCE smoke test (tensor → block → cascade → archive → forest/branches → router(SSMax) → learn (deeper credit) → patch → gpu → ABI + router-learn loop)
 # cce_train_bench now exercises deeper cascades (4 blocks), real harness (nonlinear/spatial/accuracy), persist, micro-split, etc.
 
-./test_tinystories         # real narrative data (TinyStories) — CCE with context windows, guided coherent generation + raw logits sampling (A/B demo). Rebuild with CCE_USE_CUDA=1 for 800-epoch GPU runs on 4070-class cards.
-```
+./test_tinystories         # real narrative data (TinyStories) — CCE with context windows, guided coherent generation + raw logits sampling (A/B demo)
 ```
 
 On Windows the Makefile works under MinGW (`mingw32-make` or `make` from
@@ -882,6 +888,85 @@ SSM tier-streaming deferred (its runner caches cascade pointers).
 
 ---
 
+# The Autonomy Loop (2026-07): acquire → certify → seal → route
+
+The thesis' closing arc: the router *detects* what it cannot do, and the system
+*acquires* the missing capability on its own — mining exemplars from an oracle
+(a reference implementation, or a CCE-loaded model), training a candidate,
+certifying it, sealing it, and registering it so the router simply finds the
+plan. Everything composes the machinery above; nothing new is trusted.
+
+**Gap-triggered acquisition (`make acquire`).** Three trigger kinds land in a
+persistent ledger (`CNET_GAPS 1`, sidecar rules): NO_PLAN, LOW_RELIABILITY,
+HEALTH. While a gap is open, an in-process oracle fallback keeps tasks answered
+and harvests each answer as a free training exemplar. The drain then mines the
+rest (exhaustive within budget, else deterministic stride sampling with a
+**pilot phase** — DSpark-inspired confidence scheduling: a 16-point
+domain-spanning pilot refuses degenerate constant slices at ~16× less cost),
+trains, gates on oracle evidence, certifies (**PROOF** on enumerated domains,
+else **SAMPLED** behind a Wilson floor), seals, registers, and replans.
+Candidates are structurally invisible to the planner until certified; a
+deferred acquisition leaves registry, counters, and disk **byte-identical**
+(DEFER is total). Rebuilds never same-name-replace: a suspect unit is
+re-certified against freshly mined truth first (a healthy incumbent is never
+churned), and only a behaviorally broken one is demoted to RESET beside a
+fresh-named replacement.
+
+**The unified base (`make base`, `CNB1`).** One sealed container replaces
+per-unit file sprawl: content-addressed blobs of exact `.cnu` images (each
+keeping its own seal), name→blob references, digest-bound reliability stats
+(stale evidence refused mechanically), oracle descriptors, and the **tag
+registry** — mint-once governance with provenance and *refusal teeth*: a
+near-miss tag (case-fold, underscore-strip, or Damerau-Levenshtein ≤ 1 — plain
+Levenshtein misses transpositions like `nibbel`) refuses the whole unit,
+all-or-nothing. Trust is replayed, never stored: loading a base re-certifies
+every unit against its embedded contract (cheap via the certification cache).
+`save → load → save` is byte-identical. Systematic tag families must be
+spaced ≥ 2 apart (`wa<t>q<t>` doubled-id scheme) — the typo guard is doing its
+job. `cnb_audit` inspects any base and digest-compares two.
+
+**The flagship campaigns (`make flagship`, `flagship_run`).** A
+thermal-governed, duty-cycled, crash-resumable harness sweeps conditioning
+tokens and extracts one certified unit per token from a CCE-loaded model. The
+base **is** the checkpoint (resume = skip existing units; deferred gaps reopen
+and retry); a stop file interrupts cleanly; nvidia-smi gates GPU temperature;
+the process runs below-normal priority. **Campaign result (gemma MTP draft
+model, 465 MB):** 256/256 conditional next-token slices extracted at **100%**,
+zero deferrals, ~7h on one duty-cycled CPU thread, max 48 °C — verified three
+ways (256/256 re-certify on load; clean tag audit; a fresh re-mine the next
+morning was **behavior-digest identical**). The resulting base: **13 MB** of
+individually proven, router-composable units.
+
+**The fuzzy tier (PAIR / TOPK task shapes).** Where exactness isn't available,
+the machinery is *calibrated abstention*, not fuzzy logic (evaluated and
+rejected — no calibration guarantee): sampled mining + Wilson floor globally +
+**split-conformal reject-option** per query (report-only probe today). The gate
+shows the guarantee working: units that memorized without generalizing get
+**100% abstention** on unseen strides; diversified training samples reached
+68.8% answered at 0.0227 empirical risk (target ≤ 0.05). The **TOPK "soul"
+track** extracts the model's ordered top-k preference (k one-hot fields —
+exactly certifiable ranked taste, margins 0.99 on the real model). Honest
+findings, recorded: exactness-on-the-sample is the admission bar (a ~94%-exact
+student has no path in — by design); the gemma draft model is globally
+constant over arbitrary contexts, so its pair-conditional slices are
+information-free and correctly refused — the sampled tier's real fight needs
+corpus-drawn contexts or a non-draft model. This gate also caught a latent
+drain bug (rc-vs-verdict: every successful SAMPLED certification had been
+deferred) — the first genuinely sampled domain exposed it in minutes.
+
+**GPU forward (`gpu_equiv`, `CNET_GPU=1`).** The oracle forward runs on GPU
+via a self-contained OpenCL module (`cce_clgemm`): `OpenCL.dll` loaded
+dynamically (no SDK, no CUDA toolkit, no nvcc/MSVC — which this MinGW
+toolchain couldn't host anyway), GEMM kernel compiled at runtime, model
+weights device-resident (~1.4 GB). Measured on a 4070 Ti SUPER: **11.9×**
+(4.2 → 49.8 fwd/s) with **max |Δlogit| = 0.0** — bit-identical, because the
+kernel accumulates in the same order as the CPU code. Decision-equivalence is
+*gated*: `gpu_equiv` requires 100% argmax + top-3 agreement, and `CNET_GPU=1`
+mining refuses to start on any mismatch. GPU-minted units are
+behavior-digest identical to CPU-minted ones.
+
+---
+
 # Knowing the Edge
 
 The architecture's guarantees all come from one choice — a finite alphabet at
@@ -1010,12 +1095,30 @@ perturbation robustness) have so far dominated it.
   refused), certificate-to-weights binding with audit demotion, and one-file
   sealed units (`.cnu`, 3.0× smaller) replacing the `.btn`+`.contract` pair in
   `registry_save`.
-- **Build state:** `make test` now runs the fast CCE/.NET verification lane:
-  `cce.dll`, safetensors loader, autograd, model save/load, WARM archive/forest
-  views, and `dotnet test`. The old router-era aggregate remains available as
-  `make legacy_test` and is quarantined because `src/router/dag_plan.c` still has
-  the split-era direct-source-only fallback; restore full `dag_plan` search before
-  promoting it back.
+- **Autonomy loop (2026-07):** gap-triggered acquisition (ledger → oracle →
+  train → certify → seal → register → replan, DEFER-total), the unified CNB1
+  base with mint-once tag governance, and the thermal-governed flagship
+  harness. First full campaign: **256/256 slices extracted from a real model
+  at 100%**, verified three ways; base = 13 MB vs the 465 MB source.
+- **Fuzzy tier (2026-07):** sampled-tier extraction behind Wilson floors +
+  split-conformal per-query abstention (probe), ranked-preference ("soul")
+  units, pilot-scheduled mining (16× cheaper refusals of degenerate slices).
+- **GPU forward (2026-07):** self-contained OpenCL (`cce_clgemm`), 11.9× with
+  bit-identical logits, equivalence-gated (`gpu_equiv`, `CNET_GPU=1`).
+- **Router restoration (2026-07-03):** the June "SRP split" of `src/router.c`
+  had silently replaced the DAG planner/executor/blackboard/engram/rank-artifact
+  machinery (~3,500 lines) with stubs; the 51 legacy test failures + segfault
+  were that missing code, misfiled as rot. Restored from the pre-split history
+  into `src/router/dag_full.c` (registry/route keep their newer digest-audit
+  features); a dropped `expand_in_low` condition in `entry_usable` was also
+  restored. The full legacy `test_all` is **green** and now a verify gate
+  (`legacy`) with demo-driven fixture regeneration.
+- **Build state:** `make test` runs the full verification chain: CCE/.NET lane,
+  universal-model suites, contract security + unit files, the acquisition loop
+  (`acquire`), the unified base (`base`), the flagship harness (`flagship`),
+  the restored legacy aggregate (`legacy`), and an allocation-balance leak gate
+  (`leakcheck`, `--wrap`-based, CRT-baseline-aware — the no-ASan toolchain's
+  behavioral substitute). `make test_full` adds the GPU equivalence sweep.
 - Cost-aware dual-track expansion (3C A1 — durable teacher recipes + LOW-power
   planner expansion) is committed. The architecture has been extended through multiple increments (3D–5A) into a self-improving perceptual reasoning engine capable of certified multi-step narrative generation.
 - A fixed-buffer stack overflow in `attention_retrieve_top_k` (registries > 64
@@ -1027,9 +1130,17 @@ perturbation robustness) have so far dominated it.
 | Target | What it does |
 |--------|--------------|
 | `make` / `make run` | build / build and run `nn_demo` (trains and freezes all primitives) |
-| `make test` / `make verify` | fast offline verification: CCE DLL, safetensors loader, autograd, model save/load, WARM archive/forest views, universal-model suites (detect, ssm, st_llama, specgraph, wstore, tiers, similar), contract security + unit files, and .NET tests (`--no-restore`; run `dotnet restore` once on fresh machines) |
+| `make test` / `make verify` | full offline verification: CCE DLL, safetensors loader, autograd, model save/load, WARM archive/forest views, universal-model suites (detect, ssm, st_llama, specgraph, wstore, tiers, similar), contract security + unit files, acquisition loop, unified base, flagship harness, restored legacy aggregate, leak gate, and .NET tests (`--no-restore`; run `dotnet restore` once on fresh machines) |
 | `make verify-long` | fast verification plus longer benches/studies: `cce_train_bench`, Supra head QAT, corpus QAT, and `wordlm_bitnet` |
-| `make legacy_test` | quarantined old aggregate `test_all`; currently expected red until full `dag_plan` search is restored |
+| `make legacy` | the restored full historical aggregate (`test_all`, ALL TESTS PASSED) + demo-driven fixture regeneration; in `make test` |
+| `make leakcheck` | allocation-balance gate over the base+acquire paths (`-Wl,--wrap`, CRT-baseline-aware); in `make test` |
+| `make acquire` | gap-triggered acquisition loop gate: ledger, oracle fallback, drain, rebuild, DEFER totality (118 checks) |
+| `make base` | unified base (CNB1) gate: sealed container, tag governance, certify-on-load bridge, migration (80 checks) |
+| `make flagship` | flagship harness gate: task shapes, sampled tier, conformal probe, pilot scheduling, resume, stop file (72 checks) |
+| `make flagship_run_build` | build the REAL extraction CLI (CCE model as oracle); `CNET_GPU=1` enables the OpenCL forward (equivalence-gated) |
+| `make cnb_audit` | base inspector: counts, certify-on-load verification, tag audit, cross-base digest fidelity |
+| `make gpu_equiv_build` | CPU-vs-GPU equivalence gate (argmax + top-3 must agree 100%; prints speedup) |
+| `make test_full` | everything `make test` covers plus the GPU equivalence sweep |
 | `make decimal` | train + freeze the decimal domain, run all acts |
 | `make circuit` | discover + verify circuits, distill the circuit chunk, measure pruning |
 | `make chunk` | distill proven plans into chunk primitives |
@@ -1126,6 +1237,14 @@ Run from project root or inside `build/`. Sanitization protects filenames; thoug
   content-addressed cascade/tensor payloads (one file per digest) and flat-text
   model manifests referencing them; specialist graphs persist as
   `CNET_SPECGRAPH 1` sidecars.
+- **Base containers** (`<name>.cnb`, `CNB1`): ONE sealed container for many
+  units — content-addressed blobs of exact CNU1 images, name→blob references,
+  the mint-once tag registry (with provenance), digest-bound stats, and oracle
+  descriptors; whole-file seal verified before parsing; `save → load → save`
+  byte-identical.
+- **Gap ledgers** (`CNET_GAPS 1`): the acquisition loop's sidecar — per-gap
+  trigger kind, task signature, status (OPEN/DEFERRED/CLOSED), counters, and
+  defer-reason atoms.
 - **Property files** (`CNET_PROPERTY 1`): an equational law — typed sources plus
   two chains of primitive names, checked by strict replay over the enumerated domain.
 - **Expansion sidecars** (`<name>.expansion`, 3C): for chunks that carry a recipe —
@@ -1160,12 +1279,16 @@ src/
 │   ├── cce_tier_runtime.c# bounded-RAM streaming from the store (HOT cap + LRU)
 │   ├── cce_similar.c     # SIMILAR_TO + adversarial verify + evidence-gated merge
 │   ├── cce_wordlm.c      # O(V·d) word-LM + BitNet b1.58 QAT (shadow+STE) + trit-pack export/reload
-│   ├── cce_gpu.c
+│   ├── cce_clgemm.c      # self-contained OpenCL GEMM (dynamic OpenCL.dll, resident weights) — the GPU forward
+│   ├── cce_gpu.c         # legacy GPU scaffolding (the CUDA path never compiled; superseded by cce_clgemm)
 │   └── cce_abi.c         # public C ABI
 ├── contract/          Contract modules (contract.c: certify+cache+seal+audit; unit.c: .cnu units; coverage.c, conformal.c, ...)
-├── router/            Router modules
+├── router/            dag_full.c (restored monolith DAG machinery) + registry.c + route.c
 ├── pdf/               PDF ingestion: inflate.c, pdf_extract.c, font_decode.c
 ├── corpus/            corpus_split.c, corpus_store.c, retrieval.c, tile_memory.c, synonyms.c, graduate.c
+├── acquire.c          Gap-triggered acquisition loop (ledger, oracle fallback, drain)
+├── base.c             Unified CNB1 base (container, tag governance, registry bridge)
+├── flagship.c         Thermal-governed extraction harness (task shapes, conformal probe)
 ├── nn.c               Legacy primitives
 └── main.c             nn_demo (historical)
 
@@ -1176,7 +1299,6 @@ build/                 Grok-style console (maintained)
 
 The CCE in `src/cce/` is now the primary focus.
 
-**Real-data milestone:** `test_tinystories` shows CCE cascades (with context windows) producing coherent narrative on TinyStories via guided selection while also exercising raw unconstrained logits sampling. The same engine powers the `cnet_lm` / `train lm` path, making CCE the default for own generative models. Optional CUDA acceleration (when the full toolchain is present) automatically scales training to 800+ epochs for stronger pure-CCE results. See the dedicated test, `src/cnet_lm.c`, and the build console.
-```
+**Real-data milestone:** `test_tinystories` shows CCE cascades (with context windows) producing coherent narrative on TinyStories via guided selection while also exercising raw unconstrained logits sampling. The same engine powers the `cnet_lm` / `train lm` path, making CCE the default for own generative models. See the dedicated test, `src/cnet_lm.c`, and the build console.
 
 The design documents in `docs/superpowers/specs/` record rationale for the overall approach.
