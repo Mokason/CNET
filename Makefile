@@ -737,7 +737,7 @@ leakcheck: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE)
 # even under -j) and re-reads each suite's log, asserting the suite's terminal
 # SUCCESS marker is present -- so `make test` now exits non-zero if any gate
 # failed, crashed, or produced no log. See tests/verify_logs.sh for the markers.
-verify: cce_dll cce_safetensors_test cce_autograd_test cce_model_test cce_view forest_view cce_detect cce_ssm cce_st_llama cce_specgraph cce_wstore cce_tiers cce_similar supra_train contract_secure contract_unit mutate acquire base flagship legacy leakcheck
+verify: cce_dll cce_safetensors_test cce_autograd_test cce_model_test cce_view forest_view cce_detect cce_ssm cce_st_llama cce_specgraph cce_wstore cce_tiers cce_similar merge_family supra_train contract_secure contract_unit mutate acquire base flagship legacy leakcheck
 	@sh tests/verify_logs.sh
 
 # Everything verify covers PLUS the GPU equivalence gate (needs model + GPU;
@@ -994,6 +994,14 @@ wordlm: $(CCE_WORDLM) tests/wordlm_demo.c include/cce/cce_wordlm.h
 wordlm_bitnet: $(CCE_WORDLM) tests/wordlm_bitnet_demo.c include/cce/cce_wordlm.h
 	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $(CCE_WORDLM) tests/wordlm_bitnet_demo.c $(LDFLAGS)
 	./$(BIN_DIR)/wordlm_bitnet
+
+# Fine-tune-family merge pipeline (model-merge scope M0): base + N fine-tunes
+# in ONE content-addressed store — storage accounting vs naive, per-manifest
+# bit-identity under a HOT cap, epsilon-merge accept + material refuse inside
+# the pipeline. Hermetic (tiny fixture).
+merge_family: $(CCE) $(CCE_CUDA_OBJ) tests/merge_family_test.c tests/tiny_model_fixture.h
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) tests/merge_family_test.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+	./$(BIN_DIR)/merge_family > logs/merge_family.log 2>&1 || echo "test exited non-zero (see log)"
 
 # Supra QAT trainer gate: hermetic transformer-backward gradcheck (central
 # differences over EVERY parameter group) + determinism + FP smoke + QAT-vs-

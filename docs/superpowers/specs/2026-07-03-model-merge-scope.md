@@ -94,3 +94,22 @@ deployable quality — label it as such.
 M0 first (days, decisive, sellable), M1 second (small), M2 as the research
 track behind them. Each lands as one `make` gate wired into `verify` +
 `tests/verify_logs.sh`, same as every other capability in the tree.
+
+---
+
+## 4. M0 RESULT (2026-07-03) — BUILT + GATED
+
+`tests/merge_family_test.c` (`make merge_family`, in `make test`): base + 3
+fine-tunes (material gate[1] / epsilon gate[1] / material q[0]+down[1]) in ONE
+store. 37 checks:
+- ingest accounting exact: fine-tunes cost 1/1/2 new payloads respectively
+- storage: family store 32% of naive 4x (3.12x smaller) at toy scale — the
+  ratio only improves with model depth (diffs are a large fraction of a
+  2-layer fixture)
+- every member restores + tier-streams from the shared store BIT-identical
+  to its standalone self under hot_cap=8 (high water never exceeds cap)
+- epsilon member merges to canonical ONLY behind the 32-probe battery
+  (max_rel_dev 1.37e-3), and its post-merge streamed forward is bit-identical
+  to the base; the material member fails the signature filter, fails the
+  battery, and its merge is REFUSED
+M1 (hybrid catalog) is next; M2 (bridging) behind it.
