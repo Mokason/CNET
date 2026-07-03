@@ -282,3 +282,32 @@ data / epochs at T=1 is the only remaining head-only lever and the gain stays mo
 head-only QAT recovery is fundamentally bounded; **bigger recovery needs JOINT training**
 (the rest of the network adapting), not more head data. The quality-phase path is open.
 Next: `tok_emb`-only QAT, then joint (attention/MLP backward) using the same soft-KD recipe.
+
+---
+
+## 17. Steps 7–8 RESULT — the transformer backward (2026-07-03) — BUILT + GATED
+
+Built: `src/cce/cce_supra_train.c` + `include/cce/cce_supra_train.h` +
+`tests/test_supra_train.c` (`make supra_train`, in `make test`). Hand-rolled
+reverse pass mirroring the verified Supra forward op-for-op (LayerNorm, fused
+QKV, causal softmax attention, output proj, residuals, tanh-GELU MLP, final LN,
+head, embedding scatter), following the proven `cce_wordlm` recipe: FP shadow
+weights, per-OUTPUT-column absmean ternary forward (cce_block orientation, so
+shadows export straight into the packed pipeline), STE backward, double-
+accumulation dots, Adam. Per-group QAT knobs (`qkv/proj/mlp/head/emb`);
+pos-emb frozen FP; LN params + biases FP but trained (§6/§7 policy).
+
+Gate (hermetic, tiny synthetic model, no files): **directional-derivative
+gradcheck over the whole parameter vector: rel 6.2e-4**; per-group max-|g|
+central differences all < 5e-3; same-seed bit-identical logits; FP CE
+3.087 → 0.0001; soft-KD QAT loss falls under ternary forward.
+
+**Gradcheck methodology note:** naive per-random-param central differences
+false-alarmed at ~2e-1 — float32 forward noise dominating near-zero individual
+grads, NOT a backward bug. The directional derivative (signal = full gradient
+norm) is the reliable primary check; per-param spot checks must sample the
+largest-|grad| param per group.
+
+Open (steps 9–13): joint QAT on the REAL Supra weights (loader from
+`cce_supra_decomposed` shadows), soft-KD vs the FP teacher on the PDF corpus,
+export via `cce_supra_export_packed` + parity, quality table vs FP/int8/post-hoc.

@@ -97,7 +97,8 @@ CCE_WSTORE  := src/cce/cce_weight_store.c
 CCE_TIERRT  := src/cce/cce_tier_runtime.c
 CCE_SIMILAR := src/cce/cce_similar.c
 CCE_CLGEMM  := src/cce/cce_clgemm.c
-CCE := $(CCE_TENSOR) $(CCE_BLOCK) $(CCE_CASCADE) $(CCE_ARCHIVE) $(CCE_FOREST) $(CCE_ROUTER) $(CCE_LEARN) $(CCE_PATCH) $(CCE_GPU) $(CCE_ABI) $(CCE_CUDA_OBJ) $(CCE_PERCEPTUAL) $(CCE_WORDLM) $(CCE_MODEL) $(CCE_MODEL_IO) $(CCE_DATASET) $(CCE_AUTOGRAD) $(CCE_SAFETENSORS) $(CCE_GGUF) $(CCE_DETECT) $(CCE_SSM) $(CCE_ST_LLAMA) $(CCE_SPECGRAPH) $(CCE_WSTORE) $(CCE_TIERRT) $(CCE_SIMILAR) $(CCE_CLGEMM)
+CCE_SUPRA_TRAIN := src/cce/cce_supra_train.c
+CCE := $(CCE_TENSOR) $(CCE_BLOCK) $(CCE_CASCADE) $(CCE_ARCHIVE) $(CCE_FOREST) $(CCE_ROUTER) $(CCE_LEARN) $(CCE_PATCH) $(CCE_GPU) $(CCE_ABI) $(CCE_CUDA_OBJ) $(CCE_PERCEPTUAL) $(CCE_WORDLM) $(CCE_MODEL) $(CCE_MODEL_IO) $(CCE_DATASET) $(CCE_AUTOGRAD) $(CCE_SAFETENSORS) $(CCE_GGUF) $(CCE_DETECT) $(CCE_SSM) $(CCE_ST_LLAMA) $(CCE_SPECGRAPH) $(CCE_WSTORE) $(CCE_TIERRT) $(CCE_SIMILAR) $(CCE_CLGEMM) $(CCE_SUPRA_TRAIN)
 SCAN := src/scan.c
 CERTIFY_TEST := tests/test_certify.c
 CERTIFY_DEMO := tests/certify_demo.c
@@ -736,7 +737,7 @@ leakcheck: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE)
 # even under -j) and re-reads each suite's log, asserting the suite's terminal
 # SUCCESS marker is present -- so `make test` now exits non-zero if any gate
 # failed, crashed, or produced no log. See tests/verify_logs.sh for the markers.
-verify: cce_dll cce_safetensors_test cce_autograd_test cce_model_test cce_view forest_view cce_detect cce_ssm cce_st_llama cce_specgraph cce_wstore cce_tiers cce_similar contract_secure contract_unit mutate acquire base flagship legacy leakcheck
+verify: cce_dll cce_safetensors_test cce_autograd_test cce_model_test cce_view forest_view cce_detect cce_ssm cce_st_llama cce_specgraph cce_wstore cce_tiers cce_similar supra_train contract_secure contract_unit mutate acquire base flagship legacy leakcheck
 	@sh tests/verify_logs.sh
 
 # Everything verify covers PLUS the GPU equivalence gate (needs model + GPU;
@@ -993,6 +994,15 @@ wordlm: $(CCE_WORDLM) tests/wordlm_demo.c include/cce/cce_wordlm.h
 wordlm_bitnet: $(CCE_WORDLM) tests/wordlm_bitnet_demo.c include/cce/cce_wordlm.h
 	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $(CCE_WORDLM) tests/wordlm_bitnet_demo.c $(LDFLAGS)
 	./$(BIN_DIR)/wordlm_bitnet
+
+# Supra QAT trainer gate: hermetic transformer-backward gradcheck (central
+# differences over EVERY parameter group) + determinism + FP smoke + QAT-vs-
+# post-hoc on a tiny synthetic model. No model files. The joint-QAT quality
+# phase (docs/superpowers/specs/2026-06-28-supra-qat-scope.md steps 7-10)
+# stands on this backward.
+supra_train: $(CCE) $(CCE_CUDA_OBJ) tests/test_supra_train.c include/cce/cce_supra_train.h
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) tests/test_supra_train.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+	./$(BIN_DIR)/supra_train > logs/supra_train.log 2>&1 || echo "test exited non-zero (see log)"
 
 # Trit-kernel micro-benchmark: FP vs int8 vs packed 1.6-bit forward on a
 # Supra-head-shaped block + the packed word-LM predict loop. Carries its own
