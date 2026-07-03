@@ -861,8 +861,11 @@ transformer backward). The build plan — starting with a *head-only* smoke test
 transformer backward** (freeze the transformer, cache hidden states, train a standalone ternary
 head) — is scoped in
 [`docs/superpowers/specs/2026-06-28-supra-qat-scope.md`](docs/superpowers/specs/2026-06-28-supra-qat-scope.md).
-The trit runtime kernel is correct but not yet SIMD/threaded (smallest, not yet fastest) — a
-separate, deferred optimization (keep int8 as the speed path).
+The trit runtime kernel is LUT-decoded, tiled and OpenMP-threaded (27.9× over the original
+serial kernel on the 256×50520 head: 6.14 → 0.22 ms/forward — now 2× *faster* than FP32 at 20×
+smaller), and stays **bit-identical** to the int8 ternary path (gated in `make trit_bench`,
+which memcmps the full output). int8 remains the outright speed path (1.57× faster than trit,
+at 5× the bytes).
 
 ---
 
@@ -923,9 +926,12 @@ Measured: an epsilon fine-tune (dev 1.4e-3) merges — restoring **bit-identical
 to the canonical model; a material change (dev 2.0) is refused twice over.
 
 Net effect: N fine-tunes cost one base plus their material diffs, and run in
-capped RAM. Honest limits: sharded HF checkpoints unsupported; GGUF-mamba
-mapping verified self-consistent but not against a real llama.cpp export;
-SSM tier-streaming deferred (its runner caches cascade pointers).
+capped RAM. Sharded HF checkpoints (`model.safetensors.index.json`) load
+through the same handle — gated by bit-identical logits vs the single-file/GGUF
+paths, strict index↔shard cross-validation (refuse, don't guess), and a
+byte-flip fuzz sweep over the index surface (`make mutate`). Honest limits:
+GGUF-mamba mapping verified self-consistent but not against a real llama.cpp
+export; SSM tier-streaming deferred (its runner caches cascade pointers).
 
 ---
 
