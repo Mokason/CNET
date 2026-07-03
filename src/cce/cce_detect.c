@@ -107,6 +107,24 @@ static cce_container_format sniff_format(const char* path, long* file_size_out) 
             return CCE_FMT_SAFETENSORS;
         }
     }
+
+    /* sharded HF checkpoint index (model.safetensors.index.json): plain JSON
+       with a "weight_map". No binary magic, so it can only be claimed here,
+       after every real magic above has failed. The loader auto-dispatches. */
+    {
+        size_t i = 0;
+        while (i < got && (hdr[i] == ' ' || hdr[i] == '\t' || hdr[i] == '\r' || hdr[i] == '\n')) i++;
+        if (i < got && hdr[i] == '{' && fsize > 0 && fsize <= 4L * 1024 * 1024) {
+            char buf[8192];
+            FILE* jf = fopen(path, "rb");
+            if (jf) {
+                size_t jn = fread(buf, 1, sizeof(buf) - 1, jf);
+                fclose(jf);
+                buf[jn] = 0;
+                if (strstr(buf, "\"weight_map\"")) return CCE_FMT_SAFETENSORS;
+            }
+        }
+    }
     return CCE_FMT_UNKNOWN;
 }
 
@@ -227,6 +245,13 @@ static void probe_safetensors(const char* path, cce_model_info* info) {
 
     int n = cce_safetensors_count(st);
     info->n_tensors = n;
+
+    if (cce_safetensors_shard_count(st) > 0) {
+        char note[64];
+        snprintf(note, sizeof(note), "sharded checkpoint (%d shards)",
+                 cce_safetensors_shard_count(st));
+        note_append(info, note);
+    }
 
     int has_qproj = 0, has_kproj = 0, has_vproj = 0, has_oproj = 0;
     int has_c_attn = 0, has_blocks_qkv = 0, has_mamba = 0, has_gate = 0;

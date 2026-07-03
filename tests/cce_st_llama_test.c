@@ -27,6 +27,7 @@
 #include "../include/cce/cce_st_llama.h"
 #include "../include/cce/cce_gguf.h"
 #include "../include/cce/cce_detect.h"
+#include "../include/cce/cce_safetensors.h"
 
 static int checks = 0, fails = 0;
 #define CHECK(cond, msg) do { checks++; if (!(cond)) { fails++; printf("  FAIL: %s\n", msg); } } while (0)
@@ -146,6 +147,32 @@ static void st_write(const char* path, const wentry* ents, int n_ents) {
     fwrite(&hlen, 8, 1, f);
     fwrite(json, 1, j, f);
     for (int i = 0; i < n_ents; i++) fwrite(ents[i].data, 4, ents[i].numel, f);
+    fclose(f);
+}
+
+/* sharded checkpoint writers: each shard is just st_write over a sub-range
+   (per-file offsets restart at 0, which is exactly the shard layout), plus an
+   HF-style model.safetensors.index.json mapping tensor -> shard filename. */
+static void st_write_range(const char* path, const wentry* ents, int a, int b) {
+    st_write(path, ents + a, b - a);
+}
+
+static void write_index_json(const char* path, const wentry* ents, int n, int split,
+                             const char* f1, const char* f2) {
+    FILE* f = fopen(path, "wb");
+    uint64_t total = 0;
+    for (int i = 0; i < n; i++) total += ents[i].numel * 4;
+    fprintf(f, "{\"metadata\":{\"total_size\":%llu},\"weight_map\":{",
+            (unsigned long long)total);
+    for (int i = 0; i < n; i++)
+        fprintf(f, "%s\"%s\":\"%s\"", i ? "," : "", ents[i].name, i < split ? f1 : f2);
+    fprintf(f, "}}");
+    fclose(f);
+}
+
+static void write_text(const char* path, const char* text) {
+    FILE* f = fopen(path, "wb");
+    fputs(text, f);
     fclose(f);
 }
 
@@ -295,6 +322,84 @@ int main(void) {
               "loader refuses to guess head counts");
         remove("stll_nocfg/model.safetensors");
         remove("stll_nocfg");
+    }
+
+    /* 5. sharded checkpoint: two shards + index.json must produce the SAME
+       bits as the single file, through the unchanged cce_st_llama_load. */
+    {
+        const char* F1 = "model-00001-of-00002.safetensors";
+        const char* F2 = "model-00002-of-00002.safetensors";
+        int split = n_st / 2;
+        MKDIR("stll_shard");
+        st_write_range("stll_shard/model-00001-of-00002.safetensors", ents, 0, split);
+        st_write_range("stll_shard/model-00002-of-00002.safetensors", ents, split, n_st);
+        write_index_json("stll_shard/model.safetensors.index.json", ents, n_st, split, F1, F2);
+        write_config_json("stll_shard/config.json");
+
+        cce_gguf_qwen2* m = NULL;
+        CHECK(cce_st_llama_load(&m, "stll_shard/model.safetensors.index.json") == CCE_OK && m,
+              "sharded checkpoint loads via its index.json");
+        if (m) {
+            float sh_logits[V_];
+            CHECK(cce_gguf_qwen2_forward(m, tokens, NT, sh_logits, V_) == CCE_OK, "sharded forward ok");
+            float dmax = 0;
+            for (int v = 0; v < V_; v++) { float d = fabsf(sh_logits[v] - gg_logits[v]); if (d > dmax) dmax = d; }
+            printf("  max |sharded - gguf| logit diff: %g\n", (double)dmax);
+            CHECK(dmax == 0.0f, "sharded checkpoint bit-identical to GGUF/single-file");
+            cce_gguf_qwen2_free(m);
+        }
+
+        /* the universal entry points work on the index path too */
+        cce_model_info info;
+        CHECK(cce_detect_file("stll_shard/model.safetensors.index.json", &info) == CCE_OK &&
+              info.format == CCE_FMT_SAFETENSORS && info.runnable == 1 &&
+              strcmp(info.runner, "cce_st_llama_load") == 0,
+              "detect: sharded index runnable via cce_st_llama_load");
+        CHECK(strstr(info.notes, "sharded checkpoint") != NULL, "detect notes the shard count");
+        cce_anymodel* am = NULL;
+        CHECK(cce_anymodel_open(&am, "stll_shard/model.safetensors.index.json") == CCE_OK &&
+              am && am->transformer,
+              "anymodel autoloads the sharded checkpoint");
+        if (am) cce_anymodel_free(am);
+
+        /* refusals: any index<->shard mismatch is an error, never a guess */
+        cce_safetensors* st = NULL;
+        write_text("stll_shard/bad1.index.json",
+                   "{\"weight_map\":{\"model.norm.weight\":\"model-00009-of-00002.safetensors\"}}");
+        CHECK(cce_safetensors_load("stll_shard/bad1.index.json", &st) != CCE_OK && st == NULL,
+              "refuses: index references a missing shard file");
+
+        char idx2[512];
+        snprintf(idx2, sizeof(idx2), "{\"weight_map\":{\"%s\":\"%s\"}}", ents[0].name, F1);
+        write_text("stll_shard/bad2.index.json", idx2);
+        CHECK(cce_safetensors_load("stll_shard/bad2.index.json", &st) != CCE_OK && st == NULL,
+              "refuses: shard tensor missing from weight_map");
+
+        {   /* full correct map for shard 1 only, plus a ghost entry it can't satisfy */
+            FILE* f3 = fopen("stll_shard/bad3.index.json", "wb");
+            fprintf(f3, "{\"weight_map\":{");
+            for (int i = 0; i < split; i++)
+                fprintf(f3, "%s\"%s\":\"%s\"", i ? "," : "", ents[i].name, F1);
+            fprintf(f3, ",\"ghost.weight\":\"%s\"}}", F1);
+            fclose(f3);
+        }
+        CHECK(cce_safetensors_load("stll_shard/bad3.index.json", &st) != CCE_OK && st == NULL,
+              "refuses: weight_map entry missing from its shard");
+
+        write_text("stll_shard/bad4.index.json",
+                   "{\"weight_map\":{\"x\":\"..\\\\evil.safetensors\"}}");
+        CHECK(cce_safetensors_load("stll_shard/bad4.index.json", &st) != CCE_OK && st == NULL,
+              "refuses: shard filename with path components (traversal)");
+
+        remove("stll_shard/bad1.index.json");
+        remove("stll_shard/bad2.index.json");
+        remove("stll_shard/bad3.index.json");
+        remove("stll_shard/bad4.index.json");
+        remove("stll_shard/model-00001-of-00002.safetensors");
+        remove("stll_shard/model-00002-of-00002.safetensors");
+        remove("stll_shard/model.safetensors.index.json");
+        remove("stll_shard/config.json");
+        remove("stll_shard");
     }
 
     remove("stll_tmp/model.safetensors");

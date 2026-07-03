@@ -31,6 +31,7 @@ extern "C" {
 #define CCE_ST_MAX_TENSORS 1024
 #define CCE_ST_MAX_NAME    128
 #define CCE_ST_MAX_DTYPE   16
+#define CCE_ST_MAX_SHARDS  64   /* max shard files per index.json checkpoint */
 
 typedef struct {
     char     name[CCE_ST_MAX_NAME];
@@ -46,8 +47,24 @@ typedef struct cce_safetensors cce_safetensors;  /* opaque */
 /* Load and validate entire file (header first).
  * Returns OK or error; on OK, *st owns parsed metadata (no tensor data yet).
  * Rejects: insane header_len, truncated, offset overflow, bad json, unsupported.
+ *
+ * Also accepts an HF sharded-checkpoint index (model.safetensors.index.json):
+ * a plain-JSON path with a "weight_map" auto-dispatches to
+ * cce_safetensors_load_sharded. A real single-file .safetensors (binary
+ * 8-byte header) always wins the sniff.
  */
 cce_result cce_safetensors_load(const char* path, cce_safetensors** st);
+
+/* Load an HF sharded checkpoint via its index json. Shard files are resolved
+ * as plain siblings of the index (no path components allowed). Refuses on ANY
+ * mismatch: tensor missing from its shard, tensor not in the weight_map,
+ * duplicate names, missing shard file. The returned handle is used exactly
+ * like a single-file one; reads go to the owning shard.
+ */
+cce_result cce_safetensors_load_sharded(const char* index_json_path, cce_safetensors** st);
+
+/* 0 for single-file checkpoints, number of shard files when index-loaded. */
+int cce_safetensors_shard_count(const cce_safetensors* st);
 
 /* Free the loader state (metadata + any cached data). */
 void cce_safetensors_free(cce_safetensors* st);

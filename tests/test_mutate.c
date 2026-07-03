@@ -455,6 +455,47 @@ int main(void) {
             free(bytes);
         }
         remove("mutate_fix.safetensors");
+
+        /* sharded-checkpoint index (model.safetensors.index.json): the json
+           parser + shard resolution is a NEW loader surface, so it gets the
+           same sweep. Shards stay pristine; every flip/truncation of the
+           index must be refused cleanly or load validly — never crash. */
+        write_st_fixture("mutate_shard-00001-of-00002.safetensors");
+        {
+            /* second shard with a disjoint tensor so the map is 2-file */
+            FILE *f = fopen("mutate_shard-00002-of-00002.safetensors", "wb");
+            const char *hdr = "{\"model.layers.0.mlp.up_proj.weight\":"
+                              "{\"dtype\":\"F32\",\"shape\":[2,2],\"data_offsets\":[0,16]}}";
+            uint64_t hlen = strlen(hdr);
+            char zeros[16] = {0};
+            fwrite(&hlen, 8, 1, f);
+            fwrite(hdr, 1, (size_t)hlen, f);
+            fwrite(zeros, 1, 16, f);
+            fclose(f);
+        }
+        {
+            FILE *f = fopen("mutate_fix.index.json", "wb");
+            fprintf(f, "{\"metadata\":{\"total_size\":80},\"weight_map\":{"
+                       "\"model.layers.0.self_attn.q_proj.weight\":\"mutate_shard-00001-of-00002.safetensors\","
+                       "\"model.layers.0.self_attn.k_proj.weight\":\"mutate_shard-00001-of-00002.safetensors\","
+                       "\"model.layers.0.self_attn.v_proj.weight\":\"mutate_shard-00001-of-00002.safetensors\","
+                       "\"model.layers.0.mlp.gate_proj.weight\":\"mutate_shard-00001-of-00002.safetensors\","
+                       "\"model.layers.0.mlp.up_proj.weight\":\"mutate_shard-00002-of-00002.safetensors\"}}");
+            fclose(f);
+        }
+        CHECK(cce_detect_file("mutate_fix.index.json", &info) == CCE_OK &&
+              info.n_tensors == 5,
+              "pristine sharded index probes (5 tensors across 2 shards)");
+        bytes = slurp("mutate_fix.index.json", &len);
+        CHECK(bytes != NULL && len > 0, "sharded index fixture readable");
+        if (bytes != NULL) {
+            sweep_detect("sharded-index probe: no crash across flips + truncations",
+                         bytes, len, "mutate_fix_m.index.json");
+            free(bytes);
+        }
+        remove("mutate_fix.index.json");
+        remove("mutate_shard-00001-of-00002.safetensors");
+        remove("mutate_shard-00002-of-00002.safetensors");
     }
 
     /* ---- unsealed archive (.cce): crash-freedom ---- */

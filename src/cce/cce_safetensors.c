@@ -20,11 +20,38 @@
 struct cce_safetensors {
     cce_safetensor_meta metas[CCE_ST_MAX_TENSORS];
     int count;
-    char path[256];
-    uint64_t header_len;
-    uint64_t data_section_size;  /* total bytes after the header */
+    char path[256];              /* single file, or the index.json when sharded */
+    uint64_t header_len;         /* single-file header len (unused when sharded) */
+    uint64_t data_section_size;  /* total bytes after the header (summed over shards) */
     char last_err[256];
+    /* sharded checkpoint support (model.safetensors.index.json).
+       shard_count == 0 means the classic single-file layout; otherwise each
+       tensor knows which shard file it lives in and reads use that shard's
+       own header offset. */
+    int      shard_count;
+    int      tensor_shard[CCE_ST_MAX_TENSORS];      /* meta idx -> shard idx */
+    char     shard_path[CCE_ST_MAX_SHARDS][256];
+    uint64_t shard_header_len[CCE_ST_MAX_SHARDS];
 };
+
+/* 64-bit-safe seek/size: real HF shards are ~5 GB and `long` is 32-bit on
+   Windows (MinGW), so plain fseek/ftell would wrap past 2 GB. */
+static int st_fseek64(FILE* f, uint64_t off) {
+#ifdef _WIN32
+    return _fseeki64(f, (long long)off, SEEK_SET);
+#else
+    return fseeko(f, (off_t)off, SEEK_SET);
+#endif
+}
+static int64_t st_fsize64(FILE* f) {
+#ifdef _WIN32
+    if (_fseeki64(f, 0, SEEK_END) != 0) return -1;
+    return _ftelli64(f);
+#else
+    if (fseeko(f, 0, SEEK_END) != 0) return -1;
+    return (int64_t)ftello(f);
+#endif
+}
 
 /* thread-local-ish last error for diagnostics (simple) */
 static char g_last_err[256];
@@ -308,10 +335,14 @@ static size_t shape_numel(const int* shape, int ndim) {
 
 /* ---- public API ---- */
 
-cce_result cce_safetensors_load(const char* path, cce_safetensors** st_out) {
-    if (!path || !st_out) return CCE_ERR_INVALID_ARG;
-    *st_out = NULL;
-
+/* Parse ONE .safetensors file (header first, validate everything before any
+   data read). Extracted from the original cce_safetensors_load so the sharded
+   path can run it per shard. On success fills metas/out_count/out_hlen/
+   out_dsize; on failure sets g_last_err and returns the error. */
+static cce_result st_parse_file(const char* path,
+                                cce_safetensor_meta* metas, int max_meta,
+                                int* out_count, uint64_t* out_hlen,
+                                uint64_t* out_dsize) {
     FILE* f = fopen(path, "rb");
     if (!f) {
         snprintf(g_last_err, sizeof(g_last_err), "cannot open: %s", path);
@@ -345,11 +376,8 @@ cce_result cce_safetensors_load(const char* path, cce_safetensors** st_out) {
     }
     hbuf[hlen] = 0;
 
-    /* get file size to validate data section */
-    long cur = ftell(f);
-    if (cur < 0) { free(hbuf); fclose(f); return CCE_ERR_IO; }
-    fseek(f, 0, SEEK_END);
-    long fsize = ftell(f);
+    /* get file size to validate data section (64-bit safe for >2GB shards) */
+    int64_t fsize = st_fsize64(f);
     fclose(f); /* will reopen on demand for data */
     if (fsize < 0) { free(hbuf); return CCE_ERR_IO; }
 
@@ -360,39 +388,29 @@ cce_result cce_safetensors_load(const char* path, cce_safetensors** st_out) {
     }
     uint64_t data_size = (uint64_t)fsize - data_start;
 
-    cce_safetensors* st = (cce_safetensors*)calloc(1, sizeof(cce_safetensors));
-    if (!st) { free(hbuf); return CCE_ERR_OOM; }
-    strncpy(st->path, path, sizeof(st->path)-1);
-    st->header_len = hlen;
-    st->data_section_size = data_size;
-
     int parsed = 0;
     cce_result rc = parse_safetensors_header(hbuf, (size_t)hlen,
-                                             st->metas, CCE_ST_MAX_TENSORS, &parsed);
+                                             metas, max_meta, &parsed);
     free(hbuf);
     if (rc != CCE_OK) {
-        st_set_err(st, "header json parse failed");
-        free(st);
+        st_set_err(NULL, "header json parse failed: %s", path);
         return rc;
     }
-    st->count = parsed;
 
     /* Validate every tensor's offsets against data_size */
-    for (int k = 0; k < st->count; k++) {
-        cce_safetensor_meta* m = &st->metas[k];
+    for (int k = 0; k < parsed; k++) {
+        cce_safetensor_meta* m = &metas[k];
         if (m->data_size == 0) {
             /* allow zero-size? rare, reject */
-            st_set_err(st, "zero size tensor: %s", m->name);
-            free(st);
+            st_set_err(NULL, "zero size tensor: %s", m->name);
             return CCE_ERR_UNSUPPORTED;
         }
         if (m->data_offset + m->data_size > data_size) {
-            st_set_err(st, "offset overflow for %s (%llu + %llu > %llu)",
+            st_set_err(NULL, "offset overflow for %s (%llu + %llu > %llu)",
                        m->name,
                        (unsigned long long)m->data_offset,
                        (unsigned long long)m->data_size,
                        (unsigned long long)data_size);
-            free(st);
             return CCE_ERR_UNSUPPORTED;
         }
         /* basic dtype check */
@@ -408,16 +426,246 @@ cce_result cce_safetensors_load(const char* path, cce_safetensors** st_out) {
         else if (strncmp(m->dtype, "F16", 3) == 0 || strncmp(m->dtype, "BF16", 4) == 0) expected = elems * 2;
         else if (strncmp(m->dtype, "I32", 3) == 0) expected = elems * 4;
         if (expected && m->data_size < expected) {
-            st_set_err(st, "size mismatch %s", m->name);
-            free(st);
+            st_set_err(NULL, "size mismatch %s", m->name);
             return CCE_ERR_UNSUPPORTED;
         }
     }
+
+    *out_count = parsed;
+    *out_hlen = hlen;
+    *out_dsize = data_size;
+    return CCE_OK;
+}
+
+/* Does this file have the single-file safetensors shape (8-byte sane header
+   len followed by '{')? A file that passes here is NEVER treated as a shard
+   index — the real format always wins the sniff. */
+static int st_looks_single_file(const char* path) {
+    FILE* f = fopen(path, "rb");
+    if (!f) return 0;
+    unsigned char hdr[9];
+    size_t got = fread(hdr, 1, sizeof(hdr), f);
+    fclose(f);
+    if (got < 9) return 0;
+    uint64_t hlen = 0;
+    for (int b = 0; b < 8; b++) hlen |= ((uint64_t)hdr[b]) << (b * 8);
+    return hlen > 0 && hlen <= 64ULL * 1024 * 1024 && hdr[8] == '{';
+}
+
+/* Does this file look like an HF sharded-checkpoint index
+   (model.safetensors.index.json)? Plain JSON — first non-whitespace char is
+   '{' and "weight_map" appears near the start. */
+static int st_looks_shard_index(const char* path) {
+    FILE* f = fopen(path, "rb");
+    if (!f) return 0;
+    char buf[8192];
+    size_t got = fread(buf, 1, sizeof(buf) - 1, f);
+    fclose(f);
+    buf[got] = 0;
+    size_t i = 0;
+    while (i < got && (buf[i] == ' ' || buf[i] == '\t' || buf[i] == '\r' || buf[i] == '\n')) i++;
+    if (i >= got || buf[i] != '{') return 0;
+    return strstr(buf, "\"weight_map\"") != NULL;
+}
+
+cce_result cce_safetensors_load(const char* path, cce_safetensors** st_out) {
+    if (!path || !st_out) return CCE_ERR_INVALID_ARG;
+    *st_out = NULL;
+
+    /* Sharded checkpoint index? Only when the file is NOT a real single-file
+       safetensors (binary header always takes precedence). */
+    if (!st_looks_single_file(path) && st_looks_shard_index(path))
+        return cce_safetensors_load_sharded(path, st_out);
+
+    cce_safetensors* st = (cce_safetensors*)calloc(1, sizeof(cce_safetensors));
+    if (!st) return CCE_ERR_OOM;
+    strncpy(st->path, path, sizeof(st->path)-1);
+
+    cce_result rc = st_parse_file(path, st->metas, CCE_ST_MAX_TENSORS,
+                                  &st->count, &st->header_len, &st->data_section_size);
+    if (rc != CCE_OK) { free(st); return rc; }
 
     /* success */
     g_last_err[0] = 0;
     *st_out = st;
     return CCE_OK;
+}
+
+/* ---- sharded checkpoints (model.safetensors.index.json) ----
+   Index shape: { "metadata": {...}, "weight_map": { "tensor": "shard-file", ... } }
+   Strictness (validate-then-canonicalize, refuse don't guess):
+     - shard filenames must be plain siblings (no /, \, .., or drive colon)
+     - every tensor found in a shard must be in weight_map AND mapped to that
+       exact shard (this also catches duplicate names across shards)
+     - every weight_map entry must be found in its shard
+*/
+cce_result cce_safetensors_load_sharded(const char* index_path, cce_safetensors** st_out) {
+    if (!index_path || !st_out) return CCE_ERR_INVALID_ARG;
+    *st_out = NULL;
+
+    /* slurp the index json (cap 4 MiB — real HF indexes are ~100 KB) */
+    FILE* f = fopen(index_path, "rb");
+    if (!f) {
+        snprintf(g_last_err, sizeof(g_last_err), "cannot open index: %s", index_path);
+        return CCE_ERR_IO;
+    }
+    int64_t isz = st_fsize64(f);
+    if (isz <= 0 || isz > 4LL * 1024 * 1024) {
+        fclose(f);
+        st_set_err(NULL, "index size out of range: %lld", (long long)isz);
+        return CCE_ERR_UNSUPPORTED;
+    }
+    if (st_fseek64(f, 0) != 0) { fclose(f); return CCE_ERR_IO; }
+    char* json = (char*)malloc((size_t)isz + 1);
+    if (!json) { fclose(f); return CCE_ERR_OOM; }
+    if (fread(json, 1, (size_t)isz, f) != (size_t)isz) { free(json); fclose(f); return CCE_ERR_IO; }
+    fclose(f);
+    json[isz] = 0;
+
+    /* weight_map working set (heap; struct-of-arrays kept simple) */
+    typedef struct { char name[CCE_ST_MAX_NAME]; int file; int found; } st_wm_entry;
+    st_wm_entry* wm = (st_wm_entry*)calloc(CCE_ST_MAX_TENSORS, sizeof(st_wm_entry));
+    char (*files)[128] = (char (*)[128])calloc(CCE_ST_MAX_SHARDS, 128);
+    cce_safetensor_meta* tmp = (cce_safetensor_meta*)calloc(CCE_ST_MAX_TENSORS, sizeof(cce_safetensor_meta));
+    cce_safetensors* st = (cce_safetensors*)calloc(1, sizeof(cce_safetensors));
+    int wm_count = 0, file_count = 0;
+    cce_result rc = CCE_ERR_UNSUPPORTED;
+    if (!wm || !files || !tmp || !st) { rc = CCE_ERR_OOM; goto fail; }
+    strncpy(st->path, index_path, sizeof(st->path)-1);
+
+    /* parse the top-level object */
+    {
+        int i = 0, n = (int)isz;
+        skip_ws(json, &i, n);
+        if (i >= n || json[i] != '{') { st_set_err(NULL, "index: not a json object"); goto fail; }
+        i++;
+        int saw_weight_map = 0;
+        while (i < n) {
+            skip_ws(json, &i, n);
+            if (i < n && json[i] == '}') { i++; break; }
+            char key[64];
+            if (!parse_string(json, &i, n, key, sizeof(key))) { st_set_err(NULL, "index: bad key"); goto fail; }
+            skip_ws(json, &i, n);
+            if (i >= n || json[i] != ':') { st_set_err(NULL, "index: missing ':'"); goto fail; }
+            i++;
+            skip_ws(json, &i, n);
+            if (strcmp(key, "weight_map") == 0) {
+                if (saw_weight_map) { st_set_err(NULL, "index: duplicate weight_map"); goto fail; }
+                saw_weight_map = 1;
+                if (i >= n || json[i] != '{') { st_set_err(NULL, "index: weight_map not an object"); goto fail; }
+                i++;
+                while (i < n) {
+                    skip_ws(json, &i, n);
+                    if (i < n && json[i] == '}') { i++; break; }
+                    char tname[CCE_ST_MAX_NAME], fname[128];
+                    if (!parse_string(json, &i, n, tname, sizeof(tname))) { st_set_err(NULL, "index: bad tensor name"); goto fail; }
+                    skip_ws(json, &i, n);
+                    if (i >= n || json[i] != ':') { st_set_err(NULL, "index: weight_map missing ':'"); goto fail; }
+                    i++;
+                    skip_ws(json, &i, n);
+                    if (!parse_string(json, &i, n, fname, sizeof(fname))) { st_set_err(NULL, "index: bad shard filename"); goto fail; }
+                    /* shard files must be plain siblings of the index */
+                    if (!fname[0] || strchr(fname, '/') || strchr(fname, '\\') ||
+                        strchr(fname, ':') || strstr(fname, "..")) {
+                        st_set_err(NULL, "index: refused shard filename '%s'", fname);
+                        goto fail;
+                    }
+                    if (wm_count >= CCE_ST_MAX_TENSORS) { st_set_err(NULL, "index: too many tensors (max %d)", CCE_ST_MAX_TENSORS); goto fail; }
+                    int fi = -1;
+                    for (int s = 0; s < file_count; s++) if (strcmp(files[s], fname) == 0) { fi = s; break; }
+                    if (fi < 0) {
+                        if (file_count >= CCE_ST_MAX_SHARDS) { st_set_err(NULL, "index: too many shards (max %d)", CCE_ST_MAX_SHARDS); goto fail; }
+                        strncpy(files[file_count], fname, 127);
+                        fi = file_count++;
+                    }
+                    /* duplicate tensor name in the map itself */
+                    for (int j = 0; j < wm_count; j++) {
+                        if (strcmp(wm[j].name, tname) == 0) { st_set_err(NULL, "index: duplicate weight_map entry %s", tname); goto fail; }
+                    }
+                    strncpy(wm[wm_count].name, tname, CCE_ST_MAX_NAME - 1);
+                    wm[wm_count].file = fi;
+                    wm_count++;
+                    skip_ws(json, &i, n);
+                    if (i < n && json[i] == ',') { i++; continue; }
+                }
+            } else {
+                if (!skip_json_value(json, &i, n)) { st_set_err(NULL, "index: bad value for %s", key); goto fail; }
+            }
+            skip_ws(json, &i, n);
+            if (i < n && json[i] == ',') { i++; continue; }
+        }
+        if (!saw_weight_map || wm_count == 0) { st_set_err(NULL, "index: empty or missing weight_map"); goto fail; }
+    }
+
+    /* resolve shard paths relative to the index directory */
+    {
+        int dirlen = 0;
+        for (int q = 0; index_path[q]; q++)
+            if (index_path[q] == '/' || index_path[q] == '\\') dirlen = q + 1;
+        for (int s = 0; s < file_count; s++) {
+            int need = snprintf(st->shard_path[s], sizeof(st->shard_path[s]),
+                                "%.*s%s", dirlen, index_path, files[s]);
+            if (need < 0 || need >= (int)sizeof(st->shard_path[s])) {
+                st_set_err(NULL, "index: shard path too long");
+                goto fail;
+            }
+        }
+        st->shard_count = file_count;
+    }
+
+    /* parse each shard; every tensor must match the weight_map exactly */
+    for (int s = 0; s < file_count; s++) {
+        int cnt = 0; uint64_t hlen = 0, dsz = 0;
+        rc = st_parse_file(st->shard_path[s], tmp, CCE_ST_MAX_TENSORS, &cnt, &hlen, &dsz);
+        if (rc != CCE_OK) goto fail;   /* g_last_err already names the shard problem */
+        st->shard_header_len[s] = hlen;
+        st->data_section_size += dsz;
+        for (int k = 0; k < cnt; k++) {
+            int j = -1;
+            for (int q = 0; q < wm_count; q++) if (strcmp(wm[q].name, tmp[k].name) == 0) { j = q; break; }
+            if (j < 0) {
+                st_set_err(NULL, "shard %s: tensor %s not in weight_map", files[s], tmp[k].name);
+                rc = CCE_ERR_UNSUPPORTED; goto fail;
+            }
+            if (wm[j].file != s) {
+                st_set_err(NULL, "tensor %s found in %s but weight_map assigns %s",
+                           tmp[k].name, files[s], files[wm[j].file]);
+                rc = CCE_ERR_UNSUPPORTED; goto fail;
+            }
+            if (wm[j].found) {
+                st_set_err(NULL, "duplicate tensor %s", tmp[k].name);
+                rc = CCE_ERR_UNSUPPORTED; goto fail;
+            }
+            if (st->count >= CCE_ST_MAX_TENSORS) {
+                st_set_err(NULL, "too many tensors across shards (max %d)", CCE_ST_MAX_TENSORS);
+                rc = CCE_ERR_UNSUPPORTED; goto fail;
+            }
+            st->metas[st->count] = tmp[k];
+            st->tensor_shard[st->count] = s;
+            st->count++;
+            wm[j].found = 1;
+        }
+    }
+    for (int j = 0; j < wm_count; j++) {
+        if (!wm[j].found) {
+            st_set_err(NULL, "weight_map entry %s missing from shard %s",
+                       wm[j].name, files[wm[j].file]);
+            rc = CCE_ERR_UNSUPPORTED; goto fail;
+        }
+    }
+
+    free(tmp); free(files); free(wm); free(json);
+    g_last_err[0] = 0;
+    *st_out = st;
+    return CCE_OK;
+
+fail:
+    free(tmp); free(files); free(wm); free(json); free(st);
+    return rc;
+}
+
+int cce_safetensors_shard_count(const cce_safetensors* st) {
+    return st ? st->shard_count : 0;
 }
 
 void cce_safetensors_free(cce_safetensors* st) {
@@ -449,10 +697,17 @@ int cce_safetensors_find(const cce_safetensors* st, const char* name) {
 static unsigned char* st_read_raw(const cce_safetensors* st, int idx, size_t* out_bytes) {
     if (!st || idx < 0 || idx >= st->count) return NULL;
     const cce_safetensor_meta* m = &st->metas[idx];
-    FILE* f = fopen(st->path, "rb");
+    const char* fpath = st->path;
+    uint64_t hlen = st->header_len;
+    if (st->shard_count > 0) {           /* sharded: read from the tensor's shard */
+        int s = st->tensor_shard[idx];
+        fpath = st->shard_path[s];
+        hlen = st->shard_header_len[s];
+    }
+    FILE* f = fopen(fpath, "rb");
     if (!f) return NULL;
-    uint64_t abs_off = 8ULL + st->header_len + m->data_offset;
-    if (fseek(f, (long)abs_off, SEEK_SET) != 0) { fclose(f); return NULL; }
+    uint64_t abs_off = 8ULL + hlen + m->data_offset;
+    if (st_fseek64(f, abs_off) != 0) { fclose(f); return NULL; }
     size_t n = (size_t)m->data_size;
     unsigned char* buf = (unsigned char*)malloc(n);
     if (!buf) { fclose(f); return NULL; }
@@ -552,6 +807,8 @@ void cce_safetensors_print_info(const cce_safetensors* st, const char* label) {
            label ? label : st->path, st->count,
            (unsigned long long)st->header_len,
            (unsigned long long)st->data_section_size);
+    if (st->shard_count > 0)
+        printf("  sharded checkpoint: %d shards via index %s\n", st->shard_count, st->path);
     for (int i = 0; i < st->count && i < 16; i++) {
         const cce_safetensor_meta* m = &st->metas[i];
         printf("  [%d] %s %s [", i, m->name, m->dtype);
