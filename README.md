@@ -43,9 +43,86 @@ library grows          ── reachable in a single hop; abstractions compound
 Each **primitive** is a tiny feed-forward network, trained once and frozen.
 Everything else is composition over those frozen parts.
 
+## Verified Today
+
+Every claim in this README is backed by a make-target gate. This table is the
+map from claim to gate; "in `make test`" means the gate runs in the full
+verification chain on every `make test`.
+
+| Area | Verified by | Status |
+|---|---|---|
+| CCE runtime (tensor → block → cascade → archive → forest → router → learn) | `make cce_smoke`, `make cce_train_bench` | passing (standalone gates) |
+| CCE storage + loaders (C ABI/DLL, safetensors, autograd, model save/load, zero-copy WARM views) | `cce_dll`, `cce_safetensors_test`, `cce_autograd_test`, `cce_model_test`, `cce_view`, `forest_view` | passing, in `make test` |
+| Contract security + one-file sealed units | `make contract_secure`, `make contract_unit` | passing, in `make test` |
+| Universal model layer (detect, SSM + llama runners, specialist graph, weight store, bounded-RAM tiers, evidence-gated merge) | `make cce_detect` / `cce_ssm` / `cce_st_llama` / `cce_specgraph` / `cce_wstore` / `cce_tiers` / `cce_similar` | passing, in `make test` |
+| Autonomy loop (gap-triggered acquisition → unified CNB1 base → flagship harness) | `make acquire`, `make base`, `make flagship` | passing, in `make test`; first real campaign 256/256 slices at 100%, verified 3 ways |
+| Restored legacy aggregate + allocation-balance leak gate | `make legacy`, `make leakcheck` | passing, in `make test` |
+| GPU forward (self-contained OpenCL) | `make test_full` → `./bin/gpu_equiv` | optional; 11.9× with **bit-identical** logits, equivalence-gated |
+| Supra int8 PTQ | `make supra_console` (`--int8`) | near-lossless |
+| Packed 1.6-bit ternary | `make wordlm_bitnet` + export/reload tests | storage bit-exact (`ΔNLL=0` reload); *deployable quality still needs QAT at model scale* |
+| Representation walls / planner scaling | `make margin` / `fuzzy` / `stochastic`, `make planner_scale_study` | documented **limits**, not claims |
+
+Not claimed: beating PyTorch/TensorFlow globally, free-running clean prose from
+the tiny char-LM, or steering the 3M-param Supra model into long-form output —
+see *Knowing the Edge* and the caveats inside each section.
+
+## Quick Start
+
+```sh
+make                  # build nn_demo
+make run              # train all primitives, write weight files
+make decimal          # second domain: train + run the decimal arithmetic acts
+make circuit          # discover, verify and distill circuits; measure pruning
+make glyph_habitat    # the current frontier: 4 learned perceptual domains (v4.4) + interactive agent + build console + own internal LLM models + HF contract training (speech/generative) + 5B/6A mitigations
+make glyph_habitat --demo 5A   # full 5A interactive memory agent episode (queries, memory, branching stories, summary table)
+make glyph_habitat --demo 5B   # 5B Evidence ports + late binding (finite distribs avoid early snap loss)
+make glyph_habitat --demo 6A   # 6A Concept ports + auto-abstraction (hierarchical symbols cut explosion/narrow ports)
+make glyph_habitat --demo MCP  # MCP external tools: Wikipedia + Web Search + File Read + Calculator + Summarizer (with memory caching)
+make glyph_habitat --demo AGENT  # Agentic memory: own chat history, internal thinking (thoughts), and automatic recall of past sessions
+make glyph_habitat --demo BUILD  # Build artifacts using full stack + Grok-style console + MCP writes
+make glyph_habitat --demo SPEECH # Train contracts from Hugging Face datasets (speech commands example)
+make glyph_habitat --demo LLM   # Train our own CNET-native LLM-type generative model inside (next-token step BTN + contract)
+./glyph_habitat --interactive  # Real REPL: ask, ingest books, autolearn, live drafting stream (skeleton->refine->reflect visible)
+./glyph_habitat --demo EVAL   # Evaluation harness
+# All 5 priorities + build + own internal models + HF contract training done.
+# Working Grok-like agent console (with own LLM training): ./build/build_tool.exe (supports build/train lm/train speech + natural language + internal thinking)
+make planner_scale_study   # the scaling stress test (breadth / collision / depth)
+make compounding_bench       # 3C dual-track demo: LOW vs DEFAULT cost/accuracy trade-off on the same library
+
+# Universal model layer: detect + run any supported model file
+make detect FILE=Models/gemma-4-12B-it-MTP-Q8_0.gguf   # probe structure, no weights loaded
+make test             # full verification chain (CCE + universal runners + contracts + acquisition/base/flagship + legacy + leak gate + .NET)
+
+# The autonomy loop: extract certified units from a real model
+make flagship_run_build
+./bin/flagship_run Models/gemma-4-12B-it-MTP-Q8_0.gguf 256 256 80 0.75 0 flagship.cnb          # argmax campaign (resumable; echo stop > flagship.cnb.stop)
+CNET_GPU=1 ./bin/flagship_run Models/gemma-4-12B-it-MTP-Q8_0.gguf 256 256 80 0.75 0 soul.cnb topk   # ranked-preference campaign on GPU (equivalence-gated)
+make cnb_audit && ./bin/cnb_audit flagship.cnb          # counts + re-certification + tag audit
+make gpu_equiv_build && ./bin/gpu_equiv Models/gemma-4-12B-it-MTP-Q8_0.gguf   # CPU-vs-GPU decision equivalence + speedup
+
+# New pure-C Contract Cascade Engine (CCE)
+make cce_smoke               # build & run the CCE smoke test (tensor → block → cascade → archive → forest/branches → router(SSMax) → learn (deeper credit) → patch → gpu → ABI + router-learn loop)
+# cce_train_bench now exercises deeper cascades (4 blocks), real harness (nonlinear/spatial/accuracy), persist, micro-split, etc.
+
+./test_tinystories         # real narrative data (TinyStories) — CCE with context windows, guided coherent generation + raw logits sampling (A/B demo)
+```
+
+On Windows the Makefile works under MinGW (`mingw32-make` or `make` from
+MSYS2); binaries get an `.exe` suffix automatically. The build uses
+`-O3 -march=native -mno-avx` — `-mno-avx` is **required** with `-march=native`
+on MinGW GCC 15.2 (aligned 256-bit moves on by-value structs segfault on a
+16-byte-aligned stack). Drop `-march=native` for portable binaries.
+
 ## Contract Cascade Engine (CCE) — Pure C Runtime
 
 The modern realization of these ideas is the **Contract Cascade Engine (CCE)**, a pure C11 implementation.
+
+**Boundary of "pure C":** the core runtime is C11 + `libm` only — no framework,
+no Python, no mandatory GPU. Everything else is an *optional integration outside
+the core*: the OpenCL GPU forward (`OpenCL.dll` loaded dynamically at runtime,
+CPU path unchanged when absent), the .NET test lane, the safetensors/GGUF
+loaders, and downloaded HF datasets/models used purely as input data. None of
+these are required to build or run the core.
 
 ### High-Level Philosophy
 
@@ -114,6 +191,16 @@ To improve learning quality while preserving the local/contract/non-monolithic d
 - **Forward-Forward** (Hinton arXiv:2212.13345): every layer/block has a local goodness objective. Positive (real data) increases goodness; negative data decreases it. CCE implements cheap negative contrast (occasional anti-updates on random bad directions using stored activations) + per-block goodness.
 - **DFA improvements + local targets**: fixed-size error vectors per block + scaled direct at output + projected random feedback for hiddens. Avoids the prior shared buffer bugs and weak credit.
 - These keep the "local targets, contracts, goodness gating" paradigm and high throughput (~2M steps/s on synthetic).
+
+**Scope note — where exact gradients are still used:** "no global backprop"
+describes the contract-specialist path: primitives learn from local targets,
+are certified, and are then frozen — nothing propagates gradients end-to-end
+across composed parts. A few self-contained modules *inside* that system use
+ordinary exact gradients where that is the cleanest engineering choice —
+notably the factored word-LM head (`cce_wordlm`, below), whose tied
+embedding/bottleneck would not learn under approximate DFA. These are
+individual modules trained in isolation and then treated as frozen parts, not
+a return to end-to-end monolith training.
 
 See `src/cce/cce_learn.c` for implementation notes and `tests/cce_train_bench.c` for stats.
 
@@ -231,53 +318,6 @@ See `tests/cce_smoke.c`, `tests/cce_train_bench.c` (4-block **deeper cascades** 
 See `test_tinystories.c`, `src/cnet_lm.c`, and the build console `train lm`.
 
 See updated `tests/cce_train_bench.c` (real harness + spatial + accuracy) and `src/cce/` for the implementations.
-
-## Quick Start
-
-```sh
-make                  # build nn_demo
-make run              # train all primitives, write weight files
-make decimal          # second domain: train + run the decimal arithmetic acts
-make circuit          # discover, verify and distill circuits; measure pruning
-make glyph_habitat    # the current frontier: 4 learned perceptual domains (v4.4) + interactive agent + build console + own internal LLM models + HF contract training (speech/generative) + 5B/6A mitigations
-make glyph_habitat --demo 5A   # full 5A interactive memory agent episode (queries, memory, branching stories, summary table)
-make glyph_habitat --demo 5B   # 5B Evidence ports + late binding (finite distribs avoid early snap loss)
-make glyph_habitat --demo 6A   # 6A Concept ports + auto-abstraction (hierarchical symbols cut explosion/narrow ports)
-make glyph_habitat --demo MCP  # MCP external tools: Wikipedia + Web Search + File Read + Calculator + Summarizer (with memory caching)
-make glyph_habitat --demo AGENT  # Agentic memory: own chat history, internal thinking (thoughts), and automatic recall of past sessions
-make glyph_habitat --demo BUILD  # Build artifacts using full stack + Grok-style console + MCP writes
-make glyph_habitat --demo SPEECH # Train contracts from Hugging Face datasets (speech commands example)
-make glyph_habitat --demo LLM   # Train our own CNET-native LLM-type generative model inside (next-token step BTN + contract)
-./glyph_habitat --interactive  # Real REPL: ask, ingest books, autolearn, live drafting stream (skeleton->refine->reflect visible)
-./glyph_habitat --demo EVAL   # Evaluation harness
-# All 5 priorities + build + own internal models + HF contract training done.
-# Working Grok-like agent console (with own LLM training): ./build/build_tool.exe (supports build/train lm/train speech + natural language + internal thinking)
-make planner_scale_study   # the scaling stress test (breadth / collision / depth)
-make compounding_bench       # 3C dual-track demo: LOW vs DEFAULT cost/accuracy trade-off on the same library
-
-# Universal model layer: detect + run any supported model file
-make detect FILE=Models/gemma-4-12B-it-MTP-Q8_0.gguf   # probe structure, no weights loaded
-make test             # full verification chain (CCE + universal runners + contracts + acquisition/base/flagship + legacy + leak gate + .NET)
-
-# The autonomy loop: extract certified units from a real model
-make flagship_run_build
-./bin/flagship_run Models/gemma-4-12B-it-MTP-Q8_0.gguf 256 256 80 0.75 0 flagship.cnb          # argmax campaign (resumable; echo stop > flagship.cnb.stop)
-CNET_GPU=1 ./bin/flagship_run Models/gemma-4-12B-it-MTP-Q8_0.gguf 256 256 80 0.75 0 soul.cnb topk   # ranked-preference campaign on GPU (equivalence-gated)
-make cnb_audit && ./bin/cnb_audit flagship.cnb          # counts + re-certification + tag audit
-make gpu_equiv_build && ./bin/gpu_equiv Models/gemma-4-12B-it-MTP-Q8_0.gguf   # CPU-vs-GPU decision equivalence + speedup
-
-# New pure-C Contract Cascade Engine (CCE)
-make cce_smoke               # build & run the CCE smoke test (tensor → block → cascade → archive → forest/branches → router(SSMax) → learn (deeper credit) → patch → gpu → ABI + router-learn loop)
-# cce_train_bench now exercises deeper cascades (4 blocks), real harness (nonlinear/spatial/accuracy), persist, micro-split, etc.
-
-./test_tinystories         # real narrative data (TinyStories) — CCE with context windows, guided coherent generation + raw logits sampling (A/B demo)
-```
-
-On Windows the Makefile works under MinGW (`mingw32-make` or `make` from
-MSYS2); binaries get an `.exe` suffix automatically. The build uses
-`-O3 -march=native -mno-avx` — `-mno-avx` is **required** with `-march=native`
-on MinGW GCC 15.2 (aligned 256-bit moves on by-value structs segfault on a
-16-byte-aligned stack). Drop `-march=native` for portable binaries.
 
 ---
 
@@ -1071,48 +1111,44 @@ perturbation robustness) have so far dominated it.
 
 # Status & Caveats (current)
 
-- **Mechanism thread (v0.5.3–v2.9) frozen.** The full attention-planner /
-  blackboard / engram / rank-artifact development log lives in
-  [`docs/cnet-history.md`](docs/cnet-history.md). Attention-planner work is gated:
-  resume only if, on top of reachability pruning, non-tiny fixtures show ≥3×
-  fewer nodes or less wall time with no fallback-rate increase, plan correctness
+The **dated arc log** — the chronology of what landed when, including the
+mechanism thread (v0.5.3–v2.9) and the 2026-06→07 CCE/autonomy arc — lives in
+[`docs/cnet-history.md`](docs/cnet-history.md). This section is the undated
+current state.
+
+- **Mechanism thread frozen.** Attention-planner work is gated: resume only
+  if, on top of reachability pruning, non-tiny fixtures show ≥3× fewer nodes
+  or less wall time with no fallback-rate increase, plan correctness
   preserved, and no synthetic dashboards.
 - **Working solution achieved:** Coherent responses from given text (perceptual glyphs or symbolic queries) via the contract-based system (perceptual_query orchestrator + sub-contracts + CNET-D steering + dual-track + persistence + evolution). See glyph_habitat --demo 5A for the interactive memory agent.
 - **Own internal models:** First-class trainable generative logic (next-token / next-concept predictors) implemented as ordinary CNET BTNs + contracts. Trainable from HF data or internal traces. See `--demo LLM` + `train lm`.
 - **HF contract training:** Use https://huggingface.co/datasets to source data for speech contracts and own LLM-type models (`--demo SPEECH`, `--demo LLM`).
 - **Build system:** Full `build/` directory (parallel to tests/) with Grok-style console (`build_tool`) that produces artifacts via MCP writes, supports natural language, internal thinking, and training speech/LLM contracts.
 - **Active frontier** is the learned-leaf habitat (v4.4) + generative narrative layer + own trainable LLM cores + external data ingestion for contracts. CNET-D advisory lane continues to gain steering depth.
-- **Real model compression (2026-06):** a full 119 MB HF transformer (`Supra-A2A-Nano`) is decomposed into CNET specialists, run **bit-exact** in pure C, sped up to ~256 tok/s (SIMD + KV cache + threads), and compressed down a verified ladder — int8 PTQ (16.3 MB, near-lossless) and a **6.95 MB reloadable 1.6-bit packed-ternary artifact** (storage bit-exact; quality gated on QAT). **BitNet b1.58 QAT is proven** in `cce_wordlm` (trains ternary, beats post-hoc, trit-packs + reloads with `ΔNLL=0`). See *Real Model Compression*.
-- **Universal model layer (2026-07):** any supported model file autodetects
-  (structure, not labels), decomposes through universal runners (GGUF + HF-llama
-  safetensors transformer, mamba-1 SSM), gets content-addressed specialist
-  identity, dedups into a weight store (models = manifests; fine-tune = 1
-  payload), streams in bounded RAM bit-identically, and epsilon-merges behind an
-  adversarial probe battery. Found + fixed: GGUF dims are ne-order (reverse of
-  torch). See *Universal Model Layer*.
-- **Contract hardening (2026-07):** behavior-only digests + certification cache
-  (2000 certifies/ms-scale, content-keyed), sealed contract files (tamper
-  refused), certificate-to-weights binding with audit demotion, and one-file
-  sealed units (`.cnu`, 3.0× smaller) replacing the `.btn`+`.contract` pair in
-  `registry_save`.
-- **Autonomy loop (2026-07):** gap-triggered acquisition (ledger → oracle →
-  train → certify → seal → register → replan, DEFER-total), the unified CNB1
+- **Real model compression:** a full 119 MB HF transformer is decomposed,
+  run bit-exact in pure C, and compressed down a verified ladder — int8 PTQ
+  near-lossless, 1.6-bit packing storage-exact but quality-gated on QAT.
+  Details + caveats in *Real Model Compression*.
+- **Universal model layer:** supported model files autodetect structurally,
+  decompose through universal runners, dedup into a content-addressed weight
+  store, stream in bounded RAM bit-identically, and merge only behind an
+  adversarial probe battery. Details in *Universal Model Layer*.
+- **Contract hardening:** behavior-only digests, certification cache, sealed
+  contract files (tamper refused), certificate-to-weights binding with audit
+  demotion, and one-file sealed `.cnu` units in `registry_save`.
+- **Autonomy loop:** gap-triggered acquisition (DEFER-total), the unified CNB1
   base with mint-once tag governance, and the thermal-governed flagship
   harness. First full campaign: **256/256 slices extracted from a real model
-  at 100%**, verified three ways; base = 13 MB vs the 465 MB source.
-- **Fuzzy tier (2026-07):** sampled-tier extraction behind Wilson floors +
-  split-conformal per-query abstention (probe), ranked-preference ("soul")
-  units, pilot-scheduled mining (16× cheaper refusals of degenerate slices).
-- **GPU forward (2026-07):** self-contained OpenCL (`cce_clgemm`), 11.9× with
+  at 100%**, verified three ways; base = 13 MB vs the 465 MB source. The
+  fuzzy tier adds sampled extraction (Wilson floors + conformal probe) and
+  ranked-preference ("soul") units. Details in *The Autonomy Loop*.
+- **GPU forward:** self-contained OpenCL (`cce_clgemm`), 11.9× with
   bit-identical logits, equivalence-gated (`gpu_equiv`, `CNET_GPU=1`).
-- **Router restoration (2026-07-03):** the June "SRP split" of `src/router.c`
-  had silently replaced the DAG planner/executor/blackboard/engram/rank-artifact
-  machinery (~3,500 lines) with stubs; the 51 legacy test failures + segfault
-  were that missing code, misfiled as rot. Restored from the pre-split history
-  into `src/router/dag_full.c` (registry/route keep their newer digest-audit
-  features); a dropped `expand_in_low` condition in `entry_usable` was also
-  restored. The full legacy `test_all` is **green** and now a verify gate
-  (`legacy`) with demo-driven fixture regeneration.
+- **Legacy DAG machinery restored and gated:** the full planner/executor/
+  blackboard/engram/rank-artifact code lives in `src/router/dag_full.c`;
+  the complete legacy `test_all` is green and runs as a verify gate
+  (`legacy`) with demo-driven fixture regeneration. (The restoration story —
+  a refactor had silently stubbed ~3,500 lines — is in the history doc.)
 - **Build state:** `make test` runs the full verification chain: CCE/.NET lane,
   universal-model suites, contract security + unit files, the acquisition loop
   (`acquire`), the unified base (`base`), the flagship harness (`flagship`),

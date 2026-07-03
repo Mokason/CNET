@@ -244,3 +244,52 @@ deterministic certified scan against ground truth, with no trained baseline and 
 to enforce. The claim-repositioning record this relates to is
 `docs/superpowers/specs/2026-06-18-residue-reach-claim-repositioning.md` (deliberately unchanged:
 the headline number is non-load-bearing there).
+
+## 2026-06 → 2026-07 — The CCE / Autonomy Arc (dated log)
+
+The dated milestone log for the CCE runtime, universal model layer, and
+autonomy loop. Current state (undated) lives in the README's *Status &
+Caveats*; this is the chronology.
+
+### 2026-06 — CCE depth + real generation
+- Branches/leaves + perceptual sub-forests; deeper cascades (4-block default);
+  patch blocks; header-based archive dir; zero-copy WARM cascade views.
+- TinyStories generation fixed (5 causes: skipped samples, MSE→CE, word-level
+  mode, decoder/LR sanity, 13× Adam hoist); word-level free-running sentences.
+- O(V·d) factored word-LM head (773× smaller @50k vocab, exact-gradient
+  trained, gradcheck-verified).
+- Real model compression: 119 MB HF Supra decomposed to CNET specialists,
+  bit-exact pure-C forward, ~256 tok/s, int8 PTQ (16.3 MB, near-lossless),
+  6.95 MB packed 1.6-bit artifact (storage bit-exact; quality gated on QAT).
+  BitNet b1.58 QAT proven in cce_wordlm (ΔNLL=0 packed reload).
+
+### 2026-07 — Universal layer, hardening, autonomy
+- **Universal model layer:** structural autodetect (format sniff + arch
+  fingerprint), universal runners (GGUF + HF-llama safetensors, mamba-1 SSM),
+  content-addressed specialist identity + weight store (models = manifests),
+  bounded-RAM tier streaming (bit-identical under HOT cap), evidence-gated
+  SIMILAR_TO merge. Found + fixed: GGUF dims are ne-order (reverse of torch).
+- **Contract hardening:** behavior-only digests, certification cache, sealed
+  v2 contract files (tamper-refused), cert-to-weights binding + audit
+  demotion, one-file sealed .cnu units (3.0× smaller) in registry_save.
+- **Autonomy loop:** gap-triggered acquisition (ledger → oracle → train →
+  certify → seal → register → replan, DEFER-total), unified CNB1 base with
+  mint-once tag governance, thermal-governed flagship harness.
+- **2026-07-03 — flagship campaign complete:** 256/256 slices extracted from
+  gemma MTP at 100%, 0 deferrals, ~7h CPU, verified three ways (recertify /
+  audit / digest-identical re-mine); 13 MB base vs 465 MB source.
+- **Fuzzy tier:** sampled-tier extraction (Wilson floors + split-conformal
+  probe), ranked-preference ("soul") units, pilot-scheduled mining (16×
+  cheaper refusal of degenerate slices). Fixed rc-vs-verdict drain bug that
+  deferred every SAMPLED cert.
+- **GPU forward:** self-contained OpenCL (cce_clgemm, no SDK/CUDA toolkit),
+  11.9× with bit-identical logits, equivalence-gated (gpu_equiv, CNET_GPU=1).
+  Recorded honestly: the old CCE_USE_CUDA path never compiled (Makefile typo).
+- **2026-07-03 — router restoration:** the June "SRP split" of src/router.c
+  had silently replaced the DAG planner/executor/blackboard/engram/
+  rank-artifact machinery (~3,500 lines) with stubs; the 51 legacy test
+  failures + segfault were that missing code, misfiled as rot. Restored from
+  pre-split history into src/router/dag_full.c (registry/route keep the newer
+  digest-audit features); a dropped expand_in_low condition in entry_usable
+  also restored. Full legacy test_all green, now a verify gate (legacy), plus
+  an allocation-balance leak gate (leakcheck, --wrap, CRT-baseline-aware).
