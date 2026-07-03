@@ -531,3 +531,124 @@ cce_result cce_weight_store_restore_transformer(cce_weight_store* s, const char*
     *out = m;
     return CCE_OK;
 }
+
+/* ---- ssm restore (mirrors the transformer restore + cce_ssm_load wiring) ---- */
+
+cce_result cce_weight_store_restore_ssm(cce_weight_store* s, const char* manifest_path,
+                                        const char* forest_archive_path,
+                                        cce_ssm_model** out) {
+    if (!s || !manifest_path || !forest_archive_path || !out) return CCE_ERR_INVALID_ARG;
+    *out = NULL;
+
+    FILE* f = fopen(manifest_path, "rb");
+    if (!f) return CCE_ERR_IO;
+    char line[512];
+    if (!fgets(line, sizeof(line), f) || strncmp(line, "CNET_MANIFEST v1", 16) != 0) {
+        fclose(f); return CCE_ERR_UNSUPPORTED;
+    }
+
+    cce_ssm_model* m = (cce_ssm_model*)calloc(1, sizeof(*m));
+    if (!m) { fclose(f); return CCE_ERR_OOM; }
+    m->norm_eps = 1e-5f;               /* matches cce_ssm_load's default */
+    m->bos_token_id = -1; m->eos_token_id = -1;
+
+    cce_result rc = CCE_OK;
+    while (rc == CCE_OK && fgets(line, sizeof(line), f)) {
+        if (strncmp(line, "family ", 7) == 0) {
+            if (strncmp(line + 7, "ssm", 3) != 0) rc = CCE_ERR_UNSUPPORTED;
+        } else if (strncmp(line, "hparams ", 8) == 0) {
+            if (sscanf(line + 8, "%d %d %d %d %d %d %d",
+                       &m->n_layer, &m->d_model, &m->d_inner, &m->d_state,
+                       &m->d_conv, &m->dt_rank, &m->vocab_size) != 7)
+                rc = CCE_ERR_UNSUPPORTED;
+            else if (m->n_layer < 1 || m->n_layer > 4096) rc = CCE_ERR_UNSUPPORTED;
+            else {
+                int L = m->n_layer;
+                m->norm   = (cce_tensor*)calloc(L, sizeof(cce_tensor));
+                m->conv_w = (cce_tensor*)calloc(L, sizeof(cce_tensor));
+                m->conv_b = (cce_tensor*)calloc(L, sizeof(cce_tensor));
+                m->A_log  = (cce_tensor*)calloc(L, sizeof(cce_tensor));
+                m->Dvec   = (cce_tensor*)calloc(L, sizeof(cce_tensor));
+                m->in_cas  = (cce_cascade**)calloc(L, sizeof(cce_cascade*));
+                m->x_cas   = (cce_cascade**)calloc(L, sizeof(cce_cascade*));
+                m->dt_cas  = (cce_cascade**)calloc(L, sizeof(cce_cascade*));
+                m->out_cas = (cce_cascade**)calloc(L, sizeof(cce_cascade*));
+                if (!m->norm || !m->conv_w || !m->conv_b || !m->A_log || !m->Dvec ||
+                    !m->in_cas || !m->x_cas || !m->dt_cas || !m->out_cas)
+                    rc = CCE_ERR_OOM;
+                else {
+                    remove(forest_archive_path);
+                    if (cce_forest_open(&m->forest, forest_archive_path,
+                                        8 * L + 8) != CCE_OK) rc = CCE_ERR_IO;
+                }
+            }
+        } else if (strncmp(line, "spec ", 5) == 0) {
+            char branch[128];
+            unsigned long long d = 0;
+            if (!m->forest || sscanf(line + 5, "%127s %llx", branch, &d) != 2) { rc = CCE_ERR_UNSUPPORTED; break; }
+            cce_cascade* cas = NULL;
+            rc = cce_weight_store_get(s, (uint64_t)d, &cas);
+            if (rc != CCE_OK) break;
+            int idx = -1;
+            rc = cce_forest_add_cascade_branch(m->forest, cas, branch, &idx);
+            if (rc != CCE_OK) { cce_cascade_destroy(cas); break; }
+            free(cas); /* forest owns its shallow copy */
+        } else if (strncmp(line, "tensor ", 7) == 0) {
+            char slot[128];
+            unsigned long long d = 0;
+            int nd = 0, shp[CCE_MAX_DIMS] = {0};
+            int got = sscanf(line + 7, "%127s %llx %d %d %d %d %d", slot, &d, &nd,
+                             &shp[0], &shp[1], &shp[2], &shp[3]);
+            if (got < 4 || nd < 1 || nd > 4 || got < 3 + nd) { rc = CCE_ERR_UNSUPPORTED; break; }
+            cce_tensor* dst = NULL;
+            int l;
+            if      (strcmp(slot, "tok_emb") == 0) dst = &m->tok_emb;
+            else if (strcmp(slot, "norm_f") == 0)  dst = &m->norm_f;
+            else if ((l = slot_layer(slot, "norm")) >= 0 && l < m->n_layer)   dst = &m->norm[l];
+            else if ((l = slot_layer(slot, "conv_w")) >= 0 && l < m->n_layer) dst = &m->conv_w[l];
+            else if ((l = slot_layer(slot, "conv_b")) >= 0 && l < m->n_layer) dst = &m->conv_b[l];
+            else if ((l = slot_layer(slot, "A_log")) >= 0 && l < m->n_layer)  dst = &m->A_log[l];
+            else if ((l = slot_layer(slot, "Dvec")) >= 0 && l < m->n_layer)   dst = &m->Dvec[l];
+            if (dst) rc = cce_weight_store_get_tensor(s, (uint64_t)d, shp, nd, dst);
+        } else if (strncmp(line, "end", 3) == 0) {
+            break;
+        }
+    }
+    fclose(f);
+
+    if (rc == CCE_OK && (!m->forest || !m->tok_emb.data || !m->norm_f.data))
+        rc = CCE_ERR_UNSUPPORTED;
+
+    /* resolve the cached per-layer cascades exactly like cce_ssm_load */
+    if (rc == CCE_OK) {
+        char brname[64];
+        for (int l = 0; l < m->n_layer && rc == CCE_OK; l++) {
+            cce_forest* fr = m->forest;
+            for (int b = 0; b < fr->num_branches; b++) {
+                const char* nm = fr->branches[b].name;
+                snprintf(brname, sizeof(brname), "mamba.blk.%d.in_proj", l);
+                if (strcmp(nm, brname) == 0) m->in_cas[l] = fr->branches[b].cascade;
+                snprintf(brname, sizeof(brname), "mamba.blk.%d.x_proj", l);
+                if (strcmp(nm, brname) == 0) m->x_cas[l] = fr->branches[b].cascade;
+                snprintf(brname, sizeof(brname), "mamba.blk.%d.dt_proj", l);
+                if (strcmp(nm, brname) == 0) m->dt_cas[l] = fr->branches[b].cascade;
+                snprintf(brname, sizeof(brname), "mamba.blk.%d.out_proj", l);
+                if (strcmp(nm, brname) == 0) m->out_cas[l] = fr->branches[b].cascade;
+                if (strcmp(nm, "mamba.lm_head") == 0) m->head_cas = fr->branches[b].cascade;
+            }
+            if (!m->in_cas[l] || !m->x_cas[l] || !m->dt_cas[l] || !m->out_cas[l])
+                rc = CCE_ERR_UNSUPPORTED;
+        }
+        if (rc == CCE_OK && !m->head_cas) rc = CCE_ERR_UNSUPPORTED;
+    }
+
+    if (rc == CCE_OK) {
+        m->conv_state = (float*)calloc((size_t)m->n_layer * m->d_inner * m->d_conv, sizeof(float));
+        m->ssm_state  = (float*)calloc((size_t)m->n_layer * m->d_inner * m->d_state, sizeof(float));
+        if (!m->conv_state || !m->ssm_state) rc = CCE_ERR_OOM;
+    }
+    if (rc != CCE_OK) { cce_ssm_free(m); return rc; }
+    m->cur_pos = 0;
+    *out = m;
+    return CCE_OK;
+}

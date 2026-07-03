@@ -18,14 +18,14 @@
  *
  * cce_weight_store_ingest_model writes a manifest (flat text: hparams +
  * "spec <branch> <digest>" / "tensor <slot> <digest>" rows);
- * cce_weight_store_restore_transformer rebuilds a runnable cce_gguf_qwen2
- * from a manifest — the round-trip gate is bit-identical logits.
- * (Transformer family only for now; ssm restore is a mechanical follow-up.)
+ * cce_weight_store_restore_transformer / _restore_ssm rebuild a runnable
+ * model from a manifest — the round-trip gate is bit-identical logits.
  */
 
 #include "cce_defs.h"
 #include "cce_cascade.h"
 #include "cce_detect.h"
+#include "cce_ssm.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -68,6 +68,13 @@ cce_result cce_weight_store_ingest_model(cce_weight_store* s, const cce_anymodel
 cce_result cce_weight_store_restore_transformer(cce_weight_store* s, const char* manifest_path,
                                                 const char* forest_archive_path,
                                                 cce_gguf_qwen2** out);
+
+/* Rebuild a runnable mamba-1 SSM from a "family ssm" manifest (specialist
+ * branches + per-layer small tensors + fresh recurrent state). Same
+ * round-trip contract: bit-identical logits vs the original loader. */
+cce_result cce_weight_store_restore_ssm(cce_weight_store* s, const char* manifest_path,
+                                        const char* forest_archive_path,
+                                        cce_ssm_model** out);
 
 #ifdef __cplusplus
 }

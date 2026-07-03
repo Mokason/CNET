@@ -51,6 +51,7 @@ cce_wstore.log|||failed -> OK
 cce_tiers.log|||failed -> OK
 cce_similar.log|||failed -> OK
 merge_family.log|||failed -> OK
+hybrid_catalog.log|||failed -> OK
 supra_train.log|||failed -> OK
 contract_secure.log|||All contract security tests passed.
 contract_unit.log|||All unit-file tests passed.

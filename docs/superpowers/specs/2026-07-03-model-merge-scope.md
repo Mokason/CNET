@@ -113,3 +113,21 @@ store. 37 checks:
   to the base; the material member fails the signature filter, fails the
   battery, and its merge is REFUSED
 M1 (hybrid catalog) is next; M2 (bridging) behind it.
+
+---
+
+## 5. M1 RESULT (2026-07-03) — BUILT + GATED
+
+`tests/hybrid_catalog_test.c` (`make hybrid_catalog`, in `make test`):
+tiny-llama transformer + tiny-mamba SSM in ONE store. 22 checks:
+- NEW `cce_weight_store_restore_ssm` closes the header's stated limit
+  ("ssm restore is a mechanical follow-up"): store round-trip |diff|max = 0
+- catalog file (task -> family + manifest) selects per query; both selected
+  models serve from the shared store BIT-identical to standalone; unknown
+  tasks refuse; the WRONG family's restorer refuses the other's manifest
+- HONESTY gate, measured and published: mamba reused 0 of 21 payloads
+  against the llama store — cross-architecture dedup is exactly zero, as
+  section 1 predicted. The hybrid win is one store + one runtime + verified
+  per-domain identity, NOT cross-model weight sharing.
+M2 (bridging specialists, toy scale, fuzzy-tier certified) is the remaining
+research track.
