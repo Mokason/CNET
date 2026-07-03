@@ -1,4 +1,5 @@
 #include "../../include/cce/cce_wordlm.h"
+#include "../../include/cce/cce_trit_lut.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -384,14 +385,15 @@ static void wlm_pack_row(const float* row, int n, float gamma, uint8_t* out) {
     }
 }
 
-/* sum_init + Sum_i (gamma*code_i)*vec[i] — matches the QAT forward exactly. */
+/* sum_init + Sum_i (gamma*code_i)*vec[i] — matches the QAT forward exactly.
+   Decode via cce_trit_lut (same values, same accumulation order as the old
+   div/mod chain -> bit-identical), which drops the serial byte dependency. */
 static double wlm_trit_dot(const uint8_t* packed, float gamma, const float* vec, int n, double init) {
     double s = init; int i = 0; const uint8_t* p = packed;
     while (i < n) {
-        unsigned b = *p++;
+        const int8_t* c5 = cce_trit_lut[*p++];
         for (int k = 0; k < 5 && i < n; k++, i++) {
-            int code = (int)(b % 3) - 1; b /= 3;
-            float eff = gamma * (float)code;
+            float eff = gamma * (float)c5[k];
             s += (double)eff * vec[i];
         }
     }
@@ -402,8 +404,8 @@ static double wlm_trit_dot(const uint8_t* packed, float gamma, const float* vec,
 static void wlm_trit_unpack_scaled(const uint8_t* packed, float scale, int n, float* dst) {
     int i = 0; const uint8_t* p = packed;
     while (i < n) {
-        unsigned b = *p++;
-        for (int k = 0; k < 5 && i < n; k++, i++) { int code = (int)(b % 3) - 1; b /= 3; dst[i] = scale * (float)code; }
+        const int8_t* c5 = cce_trit_lut[*p++];
+        for (int k = 0; k < 5 && i < n; k++, i++) dst[i] = scale * (float)c5[k];
     }
 }
 
@@ -535,6 +537,12 @@ static void packed_forward_hidden(cce_wordlm_packed* p, const int* ctx_words) {
         else if (p->embed_packed) wlm_trit_unpack_scaled(p->Ep + (size_t)w*p->E_bpr, p->Es[w], d, p->x + (size_t)k*d);
         else memcpy(p->x + (size_t)k*d, p->E + (size_t)w*d, d*sizeof(float));
     }
+    /* rows are independent (each h[j] is its own dot) -> thread-parallel with
+       NO reassociation: per-row accumulation order is untouched, so the
+       result stays bit-identical to the serial loop. Active only in builds
+       with -fopenmp (wordlm targets); elsewhere the pragma is inert. */
+    #pragma omp parallel for schedule(static) default(none) \
+            shared(p, hid, ctxd) if(hid >= 128)
     for (int j = 0; j < hid; j++) {
         double s = wlm_trit_dot(p->W1p + (size_t)j*p->W1_bpr, p->W1s[j], p->x, ctxd, p->b1[j]);
         p->h[j] = tanhf((float)s);

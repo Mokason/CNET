@@ -920,7 +920,9 @@ cce_autograd_test: $(CCE) $(CCE_CUDA_OBJ) tests/test_cce_autograd.c
 # clean). Combined with the vectorizable mat-vec in cce_block.c, AVX speeds up the
 # tensor math. -std=c11 keeps FP contraction off, so weights stay bit-identical.
 AVX_CFLAGS := $(filter-out -mno-avx,$(CFLAGS))
-cce_safetensors_test supra_console supra_chat_mock supra_context_probe supra_longform supra_head_qat supra_head_qat_corpus: CFLAGS := $(AVX_CFLAGS) $(OMPFLAGS)
+# wordlm/wordlm_bitnet/trit_bench link only CCE sources (no src/router/), so
+# they are AVX-safe too; OMP activates the row-parallel packed-trit kernels.
+cce_safetensors_test supra_console supra_chat_mock supra_context_probe supra_longform supra_head_qat supra_head_qat_corpus wordlm wordlm_bitnet trit_bench: CFLAGS := $(AVX_CFLAGS) $(OMPFLAGS)
 
 cce_safetensors_test: $(CCE) $(CCE_CUDA_OBJ) src/nn.c tests/test_cce_safetensors.c
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) src/nn.c tests/test_cce_safetensors.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
@@ -991,6 +993,14 @@ wordlm: $(CCE_WORDLM) tests/wordlm_demo.c include/cce/cce_wordlm.h
 wordlm_bitnet: $(CCE_WORDLM) tests/wordlm_bitnet_demo.c include/cce/cce_wordlm.h
 	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $(CCE_WORDLM) tests/wordlm_bitnet_demo.c $(LDFLAGS)
 	./$(BIN_DIR)/wordlm_bitnet
+
+# Trit-kernel micro-benchmark: FP vs int8 vs packed 1.6-bit forward on a
+# Supra-head-shaped block + the packed word-LM predict loop. Carries its own
+# parity gate (trit MUST stay bit-identical to int8 ternary). Budgeted;
+# NOT part of make test.
+trit_bench: $(CCE) $(CCE_CUDA_OBJ) tests/trit_bench.c include/cce/cce_trit_lut.h
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) tests/trit_bench.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+	./$(BIN_DIR)/trit_bench
 
 # DLL target for .NET / P/Invoke / C# interop (and other hosts).
 # Builds cce.dll (Windows) or cce.so (else). Defines CCE_BUILD_DLL so headers

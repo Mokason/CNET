@@ -1,5 +1,6 @@
 #include "../../include/cce/cce_block.h"
 #include "../../include/cce/cce_gpu.h"
+#include "../../include/cce/cce_trit_lut.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -113,25 +114,34 @@ cce_result cce_block_forward(const cce_block* blk, const cce_tensor* input, cce_
     extern cce_result cce_gpu_try_matmul(const cce_tensor* a, const cce_tensor* b, cce_tensor* c);
     bool is_head = (blk->type == CCE_BLOCK_LINEAR_HEAD);
 
-    /* trit-packed ternary path (1.6-bit): unpack 5 codes/byte on the fly.
-       Bit-identical to the int8 ternary path (same code, same per-output sum order). */
+    /* trit-packed ternary path (1.6-bit): decode each row segment into a tiny
+       per-tile int8 scratch (one 8-byte overlapping store per packed byte via
+       cce_trit_lut), then run the SAME vectorizable mul-add as the int8 path.
+       The decoded codes are exactly the w_q codes pack_trits consumed and each
+       output o still accumulates a*code over i ascending -> bit-identical to
+       the int8 ternary path. Tiles are 510 wide (a multiple of 5) so every
+       tile starts byte-aligned in the packed rows. */
     if (blk->w_trit && blk->w_scale) {
-        for (int o = 0; o < out_dim; ++o) output->data[o] = 0.0f;
-        for (int i = 0; i < in_dim; ++i) {
-            const float a = input->data[i];
-            const uint8_t* p = &blk->w_trit[(size_t)i * blk->w_trit_bpr];
-            int o = 0;
-            while (o < out_dim) {
-                unsigned b = *p++;
-                for (int k = 0; k < 5 && o < out_dim; ++k, ++o) {
-                    int code = (int)(b % 3) - 1; b /= 3;
-                    output->data[o] += a * (float)code;
-                }
+        #pragma omp parallel for schedule(static) default(none) \
+                shared(output, blk, input, in_dim, out_dim, is_head, cce_trit_lut) if(out_dim >= 4096)
+        for (int ob = 0; ob < out_dim; ob += 510) {
+            int oe = (ob + 510 < out_dim) ? ob + 510 : out_dim;
+            int w = oe - ob;
+            int nb = (w + 4) / 5;             /* packed bytes covering the tile */
+            int8_t codes[510 + 8];            /* +8: the last decode store overlaps */
+            float* out = &output->data[ob];
+            for (int o = 0; o < w; ++o) out[o] = 0.0f;
+            for (int i = 0; i < in_dim; ++i) {
+                const float a = input->data[i];
+                const uint8_t* p = &blk->w_trit[(size_t)i * blk->w_trit_bpr + (size_t)(ob / 5)];
+                for (int b = 0; b < nb; ++b)
+                    memcpy(&codes[b * 5], cce_trit_lut[p[b]], 8);
+                for (int o = 0; o < w; ++o) out[o] += a * (float)codes[o];
             }
-        }
-        for (int o = 0; o < out_dim; ++o) {
-            float v = blk->bias.data[o] + blk->w_scale[o] * output->data[o];
-            output->data[o] = is_head ? v : sigmoid(v);
+            for (int o = 0; o < w; ++o) {
+                float v = blk->bias.data[ob + o] + blk->w_scale[ob + o] * out[o];
+                out[o] = is_head ? v : sigmoid(v);
+            }
         }
         return CCE_OK;
     }
