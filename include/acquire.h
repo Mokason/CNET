@@ -116,6 +116,8 @@ typedef struct {
     size_t deferred;
     size_t skipped_no_oracle;
     CertVerdict last_verdict;                 /* verdict of the last closed gap */
+    double last_bound;       /* Wilson floor when SAMPLED; 1.0 when PROVEN */
+    double last_min_margin;  /* worst certified output margin (see port_margin) */
     char last_unit_name[ACQUIRE_NAME_MAX];    /* unit minted by the last close */
     char last_defer_reason[ACQUIRE_REASON_MAX];
 } AcquireReport;

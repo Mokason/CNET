@@ -367,6 +367,7 @@ static int attempt_no_plan(PrimitiveRegistry *reg, AcquireLedger *l,
     char name[ACQUIRE_NAME_MAX];
     char cnu_path[512];
     int sealed = 0;
+    double bound;
 
     g->attempts++;
     snprintf(g->oracle, ACQUIRE_NAME_MAX, "%s", o->name);
@@ -460,15 +461,25 @@ static int attempt_no_plan(PrimitiveRegistry *reg, AcquireLedger *l,
 
     /* 4. certify: contract over the FULL mined table (holdout rows included:
        they were never trained on, so certification tests them) */
-    if (contract_init_borrowed(&c, name, btn, inputs, targets, usable) != 0 ||
-        btn_certify_exhaustive(btn, &c, cfg->exhaustive_cap, &ex) < 0 ||
-        ex.verdict == CERT_REFUSED) {
+    /* btn_certify_exhaustive returns 0 IFF PROVEN — a successful SAMPLED
+       certification returns -1, so judge by the VERDICT, never the rc
+       (latent bug caught by the fuzzy-tier gate: every SAMPLED unit was
+       being deferred as certify_failed). */
+    memset(&ex, 0, sizeof ex);
+    if (contract_init_borrowed(&c, name, btn, inputs, targets, usable) != 0) {
         btn_free(btn); free(btn); free(inputs); free(targets);
         gap_defer(g, rep, "certify_failed");
         return -1;
     }
+    (void)btn_certify_exhaustive(btn, &c, cfg->exhaustive_cap, &ex);
+    if (ex.verdict == CERT_REFUSED) {
+        btn_free(btn); free(btn); free(inputs); free(targets);
+        gap_defer(g, rep, "certify_failed");
+        return -1;
+    }
+    bound = 1.0;
     if (ex.verdict != CERT_PROVEN) {
-        double bound = coverage_accuracy_lower_bound(
+        bound = coverage_accuracy_lower_bound(
             ex.certify.passed, ex.certify.exemplars, cfg->wilson_z);
         if (bound < cfg->min_accuracy_bound) {
             btn_free(btn); free(btn); free(inputs); free(targets);
@@ -541,6 +552,9 @@ static int attempt_no_plan(PrimitiveRegistry *reg, AcquireLedger *l,
     if (rep) {
         rep->closed++;
         rep->last_verdict = ex.verdict;
+        rep->last_bound = bound;
+        rep->last_min_margin = ex.domain_swept > 0 ? ex.min_margin_domain
+                                                   : ex.certify.min_margin;
         snprintf(rep->last_unit_name, ACQUIRE_NAME_MAX, "%s", name);
     }
     return 0;
@@ -572,6 +586,7 @@ static int attempt_rebuild(PrimitiveRegistry *reg, AcquireLedger *l,
     int sealed = 0;
     BinaryTransformNetwork *btn = NULL;
     ExhaustiveReport ex;
+    double bound;
 
     g->attempts++;
     if (!e || !e->btn) { gap_defer(g, rep, "unknown_subject"); return -1; }
@@ -628,19 +643,27 @@ static int attempt_rebuild(PrimitiveRegistry *reg, AcquireLedger *l,
     btn_train_dynamic(btn, inputs, targets, usable, cfg->max_epochs,
                       cfg->growth_window, cfg->target_loss,
                       cfg->min_improvement);
+    /* judge by VERDICT, not rc (rc==0 iff PROVEN; SAMPLED returns -1) */
+    memset(&ex, 0, sizeof ex);
     if (contract_init_borrowed(&mined, name, btn, inputs, targets,
-                               usable) != 0 ||
-        btn_certify_exhaustive(btn, &mined, cfg->exhaustive_cap, &ex) < 0 ||
-        ex.verdict == CERT_REFUSED) {
+                               usable) != 0) {
         btn_free(btn); free(btn); free(inputs); free(targets);
         gap_defer(g, rep, "certify_failed"); return -1;
     }
-    if (ex.verdict != CERT_PROVEN &&
-        coverage_accuracy_lower_bound(ex.certify.passed,
-                                      ex.certify.exemplars,
-                                      cfg->wilson_z) < cfg->min_accuracy_bound) {
+    (void)btn_certify_exhaustive(btn, &mined, cfg->exhaustive_cap, &ex);
+    if (ex.verdict == CERT_REFUSED) {
         btn_free(btn); free(btn); free(inputs); free(targets);
-        gap_defer(g, rep, "accuracy_bound"); return -1;
+        gap_defer(g, rep, "certify_failed"); return -1;
+    }
+    bound = 1.0;
+    if (ex.verdict != CERT_PROVEN) {
+        bound = coverage_accuracy_lower_bound(ex.certify.passed,
+                                              ex.certify.exemplars,
+                                              cfg->wilson_z);
+        if (bound < cfg->min_accuracy_bound) {
+            btn_free(btn); free(btn); free(inputs); free(targets);
+            gap_defer(g, rep, "accuracy_bound"); return -1;
+        }
     }
     {
         const char *why = base_precheck(cfg->base, name, in_p, goal_p);
@@ -705,6 +728,9 @@ static int attempt_rebuild(PrimitiveRegistry *reg, AcquireLedger *l,
     if (rep) {
         rep->closed++;
         rep->last_verdict = ex.verdict;
+        rep->last_bound = bound;
+        rep->last_min_margin = ex.domain_swept > 0 ? ex.min_margin_domain
+                                                   : ex.certify.min_margin;
         snprintf(rep->last_unit_name, ACQUIRE_NAME_MAX, "%s", name);
     }
     return 0;

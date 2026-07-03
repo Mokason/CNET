@@ -53,6 +53,71 @@ static int syn_maker(void *maker_ctx, size_t k, int token_id,
     return 0;
 }
 
+/* PAIR fixture: next(w_prev, w_cur | t) = (5*w_cur + t) mod V.
+   Deliberately w_cur-only: the gate proves the SAMPLED-tier MECHANICS
+   (stride mining, Wilson floor, conformal probe on unseen phases), not hard
+   training — probed empirically, a full (wp,wc)-entangled lookup trains to
+   ~94% exact and exactness-on-sample is the admission bar, so an entangled
+   fixture just measures the trainer, which is the REAL run's job. */
+typedef struct { int t; unsigned v; } PairCtx;
+
+static int pair_oracle(const double *in, double *out, void *ctx) {
+    PairCtx *s = (PairCtx *)ctx;
+    unsigned wc = 0, i, nxt;
+    for (i = 0; i < s->v; ++i)
+        if (in[s->v + i] > 0.5) wc = i;
+    nxt = (5u * wc + (unsigned)s->t) % s->v;
+    for (i = 0; i < s->v; ++i) out[i] = (i == nxt) ? 1.0 : 0.0;
+    return 0;
+}
+
+static int pair_maker(void *maker_ctx, size_t k, int token_id,
+                      FlagshipOracle *out) {
+    PairCtx *s = (PairCtx *)maker_ctx;
+    (void)k;
+    s->t = token_id;
+    s->v = V;
+    out->fn = pair_oracle;
+    out->ctx = s;
+    return 0;
+}
+
+/* TOPK fixture: three distinct deterministic ranks per (w, t). */
+typedef struct { int t; unsigned v; } TopkCtx;
+
+static void topk_ranks(unsigned w, unsigned t, unsigned v,
+                       unsigned *r1, unsigned *r2, unsigned *r3) {
+    *r1 = (w + t) % v;
+    *r2 = (w + 2u * t + 1u) % v;
+    while (*r2 == *r1) *r2 = (*r2 + 1u) % v;
+    *r3 = (w + 3u * t + 2u) % v;
+    while (*r3 == *r1 || *r3 == *r2) *r3 = (*r3 + 1u) % v;
+}
+
+static int topk_oracle(const double *in, double *out, void *ctx) {
+    TopkCtx *s = (TopkCtx *)ctx;
+    unsigned w = 0, i, r1, r2, r3;
+    for (i = 0; i < s->v; ++i)
+        if (in[i] > 0.5) w = i;
+    topk_ranks(w, (unsigned)s->t, s->v, &r1, &r2, &r3);
+    for (i = 0; i < 3u * s->v; ++i) out[i] = 0.0;
+    out[r1] = 1.0;
+    out[s->v + r2] = 1.0;
+    out[2u * s->v + r3] = 1.0;
+    return 0;
+}
+
+static int topk_maker(void *maker_ctx, size_t k, int token_id,
+                      FlagshipOracle *out) {
+    TopkCtx *s = (TopkCtx *)maker_ctx;
+    (void)k;
+    s->t = token_id;
+    s->v = V;
+    out->fn = topk_oracle;
+    out->ctx = s;
+    return 0;
+}
+
 int main(void) {
     int vocab[V];
     unsigned i;
@@ -179,6 +244,175 @@ int main(void) {
 
     remove(base_path);
     remove(ledger_path);
+
+    printf("[6] PAIR task: the SAMPLED tier runs for real\n");
+    printf("[7] conformal wrapper (report-only)\n");
+    {
+        FlagshipConfig fc;
+        FlagshipReport rp;
+        PairCtx pm;
+        const char *bp = "flagship_pair_test.cnb";
+        const char *lp = "flagship_pair_gaps.txt";
+        remove(bp);
+        remove(lp);
+
+        flagship_config_defaults(&fc);
+        fc.task = FLAGSHIP_TASK_PAIR;
+        fc.vocab_tokens = vocab;
+        fc.vocab_size = V;
+        fc.max_units = 2;
+        fc.base_path = bp;
+        fc.ledger_path = lp;
+        fc.gpu_temp_limit_c = 0;
+        fc.duty_fraction = 1.0;
+        fc.acq.mine_budget = 32;       /* < V^2 = 256 -> SAMPLED path */
+        fc.acq.sample_count = 64;      /* Wilson(64 all-pass) ~ .9433 */
+        fc.acq.min_accuracy_bound = 0.90; /* gate tests mechanics, not the
+                                             production bar (which needs n>=73) */
+        fc.acq.holdout_fraction = 0.0; /* gate determinism: train == contract */
+        fc.acq.init_hidden = 16;
+        fc.acq.max_hidden = 64;
+        fc.acq.max_epochs = 8000;
+        fc.conformal_alpha = 0.05;
+        fc.conformal_n = 64;
+
+        memset(&pm, 0, sizeof pm);
+        memset(&rp, 0, sizeof rp);
+        check(flagship_run(&fc, pair_maker, &pm, &rp) == 0, "pair run runs");
+        flagship_print_report(&rp, stdout);
+        check(rp.attempted == 2 && rp.acquired == 2 && rp.deferred == 0,
+              "both pair units acquired");
+        check(rp.proof_count == 0 && rp.sampled_count == 2,
+              "V^2 domain under a small budget lands in the SAMPLED tier");
+        check(rp.bound_count == 2 && rp.bounds[0] > 0.9 && rp.bounds[0] <= 1.0,
+              "wilson floor recorded in (0.9, 1]");
+        check(rp.conf_units == 2, "conformal probe ran per SAMPLED unit");
+        check(rp.conf_answered + rp.conf_abstained > 0,
+              "conformal test queries measured");
+        check(rp.conf_wrong <= rp.conf_answered, "risk numerator sane");
+        remove(bp);
+        remove(lp);
+    }
+
+    printf("[8] TOPK ranked preference (the soul, PROOF path)\n");
+    {
+        FlagshipConfig fc;
+        FlagshipReport rp;
+        TopkCtx tm;
+        const char *bp = "flagship_topk_test.cnb";
+        const char *lp = "flagship_topk_gaps.txt";
+        remove(bp);
+        remove(lp);
+
+        flagship_config_defaults(&fc);
+        fc.task = FLAGSHIP_TASK_TOPK;
+        fc.topk = 3;
+        fc.vocab_tokens = vocab;
+        fc.vocab_size = V;
+        fc.max_units = 2;
+        fc.base_path = bp;
+        fc.ledger_path = lp;
+        fc.gpu_temp_limit_c = 0;
+        fc.duty_fraction = 1.0;
+
+        memset(&tm, 0, sizeof tm);
+        memset(&rp, 0, sizeof rp);
+        check(flagship_run(&fc, topk_maker, &tm, &rp) == 0, "topk run runs");
+        flagship_print_report(&rp, stdout);
+        check(rp.attempted == 2 && rp.acquired == 2 && rp.proof_count == 2,
+              "ranked-preference units PROOF-certified");
+        check(rp.margin_count == 2 && rp.margins[0] > 0.0,
+              "rank margins recorded");
+
+        /* the extracted soul matches the synthetic model's ranking exactly */
+        {
+            CnetBase b;
+            PrimitiveRegistry reg;
+            size_t skipped = 99;
+            RoutePlan plan;
+            Port in_p, goal_p;
+            char goal_tag[PORT_TAG_MAX];
+            double in[V], out[3 * V];
+            unsigned w = 5, r1, r2, r3, j, g1 = 0, g2 = 0, g3 = 0;
+
+            cnb_init(&b);
+            check(cnb_load(&b, bp) == 0 && b.unit_count == 2,
+                  "topk base holds both units");
+            registry_init(&reg);
+            check(cnb_load_registry(&b, &reg, &skipped) == 0 && skipped == 0,
+                  "both certify on load");
+            memset(&in_p, 0, sizeof in_p);
+            in_p.family = PORT_ONEHOT;
+            in_p.field_width = V;
+            in_p.field_count = 1;
+            check(port_set_tag(&in_p, "w_cur") == 0, "input port");
+            goal_p = in_p;
+            goal_p.field_count = 3;
+            snprintf(goal_tag, sizeof goal_tag, "tk%dq%d", vocab[0], vocab[0]);
+            check(port_set_tag(&goal_p, goal_tag) == 0, "goal port");
+            reg.require_certified = 1;
+            check(route_plan(&reg, in_p, goal_p, &plan) == 0 &&
+                  plan.length == 1,
+                  "router plans the soul unit");
+            plan.strict = 1;
+            memset(in, 0, sizeof in);
+            in[w] = 1.0;
+            check(route_execute(&plan, in, V, out, 3 * V) == 0,
+                  "soul unit executes");
+            topk_ranks(w, (unsigned)vocab[0], V, &r1, &r2, &r3);
+            for (j = 0; j < V; ++j) {
+                if (out[j] > 0.5) g1 = j;
+                if (out[V + j] > 0.5) g2 = j;
+                if (out[2 * V + j] > 0.5) g3 = j;
+            }
+            check(g1 == r1 && g2 == r2 && g3 == r3,
+                  "extracted ranking matches the model's preference order");
+            registry_free(&reg);
+            cnb_free(&b);
+        }
+        remove(bp);
+        remove(lp);
+    }
+
+    printf("[9] TOPK capacity-starved: the honest refusal\n");
+    {
+        FlagshipConfig fc;
+        FlagshipReport rp;
+        TopkCtx tm;
+        CnetBase b;
+        const char *bp = "flagship_starve_test.cnb";
+        const char *lp = "flagship_starve_gaps.txt";
+        remove(bp);
+        remove(lp);
+
+        flagship_config_defaults(&fc);
+        fc.task = FLAGSHIP_TASK_TOPK;
+        fc.topk = 3;
+        fc.vocab_tokens = vocab;
+        fc.vocab_size = V;
+        fc.max_units = 1;
+        fc.base_path = bp;
+        fc.ledger_path = lp;
+        fc.gpu_temp_limit_c = 0;
+        fc.duty_fraction = 1.0;
+        fc.acq.init_hidden = 2;      /* never 1 (saturation trap), but far */
+        fc.acq.max_hidden = 2;       /* below what a 3-rank map needs */
+        fc.acq.max_epochs = 400;
+
+        memset(&tm, 0, sizeof tm);
+        memset(&rp, 0, sizeof rp);
+        check(flagship_run(&fc, topk_maker, &tm, &rp) == 0, "starved run runs");
+        check(rp.acquired == 0 && rp.deferred == 1 &&
+              rp.reason_kinds == 1 &&
+              strcmp(rp.reasons[0], "certify_failed") == 0,
+              "capacity starvation refused honestly (certify_failed)");
+        cnb_init(&b);
+        check(cnb_load(&b, bp) == 0 && b.unit_count == 0 && b.tag_count == 0,
+              "nothing sealed by the refusal (DEFER total)");
+        cnb_free(&b);
+        remove(bp);
+        remove(lp);
+    }
 
     printf("checks run: %d\n", checks_run);
     printf("ALL FLAGSHIP TESTS PASSED\n");

@@ -31,6 +31,18 @@
 #include "base.h"
 #include "acquire.h"
 
+/* Task shapes. ARGMAX = campaign 1 (1-field in, argmax out, PROOF-eligible).
+   PAIR = 2-field conditioning (domain V^2 >> mine budget -> the SAMPLED tier
+   runs for real; tags "w_pair" -> "pr<t>q<t>"). TOPK = ranked preference,
+   "the soul": ordered top-k as k ONEHOT fields (tags "w_cur" -> "tk<t>q<t>";
+   enumerable, PROOF-eligible, thin ranking margins). Family prefixes are
+   Damerau-spaced >= 2 from each other AND from campaign 1's "wa". */
+typedef enum {
+    FLAGSHIP_TASK_ARGMAX = 0,
+    FLAGSHIP_TASK_PAIR = 1,
+    FLAGSHIP_TASK_TOPK = 2
+} FlagshipTask;
+
 typedef struct {
     CnetOracleFn fn;
     void *ctx;
@@ -57,6 +69,12 @@ typedef struct {
     unsigned cooldown_ms;      /* sleep quantum while cooling (default 5000) */
     double max_wall_seconds;   /* clean stop after this (0 = unbounded) */
     int below_normal_priority; /* default 1: keep the PC usable */
+    /* task shape */
+    FlagshipTask task;         /* default ARGMAX */
+    size_t topk;               /* TOPK rank depth (default 3) */
+    /* conformal probe (PAIR units that certify SAMPLED; report-only) */
+    double conformal_alpha;    /* target miscoverage (default 0.05; 0 = off) */
+    size_t conformal_n;        /* calib set size == test set size (default 256) */
     /* acquisition knobs (base pointer is set internally to the run's base) */
     AcquireConfig acq;
 } FlagshipConfig;
@@ -76,6 +94,18 @@ typedef struct {
     char reasons[FLAGSHIP_MAX_REASONS][ACQUIRE_REASON_MAX];
     size_t reason_counts[FLAGSHIP_MAX_REASONS];
     size_t reason_kinds;
+    /* tier table */
+    size_t proof_count;      /* acquired with CERT_PROVEN */
+    size_t sampled_count;    /* acquired with CERT_SAMPLED (Wilson-gated) */
+    double bounds[1024];     /* Wilson floors of the SAMPLED units */
+    size_t bound_count;
+    double margins[1024];    /* certified min-margins of ALL acquired units */
+    size_t margin_count;
+    /* conformal probe aggregate (PAIR + SAMPLED units; report-only) */
+    size_t conf_units;       /* units probed */
+    size_t conf_answered;    /* test queries answered (singleton set) */
+    size_t conf_abstained;   /* test queries abstained */
+    size_t conf_wrong;       /* answered AND wrong (empirical risk numerator) */
     /* governor telemetry */
     double wall_seconds;
     double slept_seconds;    /* duty-cycle + cooling sleep, total */

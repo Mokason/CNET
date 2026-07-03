@@ -1,4 +1,5 @@
 #include "../include/flagship.h"
+#include "../include/contract/conformal.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -44,6 +45,10 @@ void flagship_config_defaults(FlagshipConfig *cfg) {
     cfg->cooldown_ms = 5000;
     cfg->max_wall_seconds = 0.0;
     cfg->below_normal_priority = 1;
+    cfg->task = FLAGSHIP_TASK_ARGMAX;
+    cfg->topk = 3;
+    cfg->conformal_alpha = 0.05;
+    cfg->conformal_n = 256;
     acquire_config_defaults(&cfg->acq);
 }
 
@@ -78,6 +83,92 @@ static void checkpoint(const CnetBase *base, const AcquireLedger *led,
                        const FlagshipConfig *cfg) {
     cnb_save(base, cfg->base_path);
     if (cfg->ledger_path) acquire_ledger_save(led, cfg->ledger_path);
+}
+
+/* Per-query calibrated abstention probe (report-only). Mines calibration and
+   test strides from the oracle at phases 1/3 and 2/3 between the domain's
+   stride points (deterministic; disjoint from the drain's phase-0 stride up
+   to rounding — an approximation, stated in the spec), calibrates
+   split-conformal on a FRESH copy of the sealed unit, and measures
+   answered / abstained / wrong on the test stride. Aggregates into rep. */
+static void conformal_probe(const FlagshipConfig *cfg, const CnetBase *base,
+                            const char *unit_name, const FlagshipOracle *orc,
+                            Port in_p, Port goal_p, FlagshipReport *rep) {
+    BinaryTransformNetwork btn;
+    Contract c, tc;
+    size_t card, n = cfg->conformal_n, i, m = 0;
+    size_t in_total = in_p.field_width * in_p.field_count;
+    size_t out_total = goal_p.field_width * goal_p.field_count;
+    double *inputs = NULL, *raw = NULL;
+    size_t *truth = NULL;
+    ConformalCalibrator cal;
+    int have_unit = 0;
+
+    if (goal_p.field_count != 1) return;   /* classifier outputs only */
+    if (cnb_get_unit(base, unit_name, &btn, &c) != 0) return;
+    have_unit = 1;
+
+    memset(&tc, 0, sizeof tc);
+    snprintf(tc.name, CONTRACT_NAME_MAX, "conf_tmp");
+    tc.input_ports[0] = in_p;
+    tc.input_port_count = 1;
+    tc.output_ports[0] = goal_p;
+    tc.output_port_count = 1;
+    if (!contract_domain_cardinality(&tc, &card) || card < 3 * n) goto out;
+
+    inputs = (double *)malloc(n * in_total * sizeof *inputs);
+    raw = (double *)malloc(out_total * sizeof *raw);
+    truth = (size_t *)malloc(n * sizeof *truth);
+    if (!inputs || !raw || !truth) goto out;
+
+    /* calibration stride (phase 1/3) */
+    for (i = 0; i < n; ++i) {
+        size_t idx = ((3 * i + 1) * card) / (3 * n);
+        double *row = inputs + m * in_total;
+        size_t a;
+        if (contract_encode_domain_point(&tc, idx, row) != 0) continue;
+        if (orc->fn(row, raw, orc->ctx) != 0) continue;
+        if (!port_validate(goal_p, raw)) continue;
+        for (a = 1, truth[m] = 0; a < goal_p.field_width; ++a)
+            if (raw[a] > raw[truth[m]]) truth[m] = a;
+        m++;
+    }
+    if (m < 8 ||
+        conformal_calibrate_btn(&cal, &btn, &c, inputs, truth, m,
+                                cfg->conformal_alpha) != 0) {
+        goto out;
+    }
+
+    /* test stride (phase 2/3) */
+    for (i = 0; i < n; ++i) {
+        size_t idx = ((3 * i + 2) * card) / (3 * n);
+        double row[4096];
+        size_t a, tru = 0;
+        int pred;
+        if (in_total > 4096) break;
+        if (contract_encode_domain_point(&tc, idx, row) != 0) continue;
+        if (orc->fn(row, raw, orc->ctx) != 0) continue;
+        if (!port_validate(goal_p, raw)) continue;
+        for (a = 1; a < goal_p.field_width; ++a)
+            if (raw[a] > raw[tru]) tru = a;
+        pred = conformal_classify_or_abstain(&cal, &btn, &c, row);
+        if (pred < 0) {
+            rep->conf_abstained++;
+        } else {
+            rep->conf_answered++;
+            if ((size_t)pred != tru) rep->conf_wrong++;
+        }
+    }
+    rep->conf_units++;
+
+out:
+    free(inputs);
+    free(raw);
+    free(truth);
+    if (have_unit) {
+        btn_free(&btn);
+        contract_free(&c);
+    }
 }
 
 int flagship_run(FlagshipConfig *cfg, FlagshipOracleMaker maker,
@@ -165,19 +256,35 @@ int flagship_run(FlagshipConfig *cfg, FlagshipOracleMaker maker,
         }
 
         /* ---- one conditioning token = one candidate unit ----
-           doubled id: systematic families must clear the Damerau-1 guard */
-        snprintf(goal_tag, sizeof goal_tag, "wa%dq%d", t, t);
-        /* the drain names acquisitions "acq_<goal tag>" — mirror it exactly
-           so the resume check sees what the drain sealed */
-        snprintf(name, sizeof name, "acq_%s", goal_tag);
-        if (cnb_has_unit(&base, name)) { local.skipped_resume++; continue; }
+           doubled id: systematic families must clear the Damerau-1 guard;
+           family prefixes (wa/pr/tk) are pairwise Damerau-spaced >= 2 */
         memset(&in_p, 0, sizeof in_p);
         in_p.family = PORT_ONEHOT;
         in_p.field_width = cfg->vocab_size;
         in_p.field_count = 1;
-        if (port_set_tag(&in_p, "w_cur") != 0) break;
         goal_p = in_p;
+        switch (cfg->task) {
+        case FLAGSHIP_TASK_PAIR:
+            snprintf(goal_tag, sizeof goal_tag, "pr%dq%d", t, t);
+            in_p.field_count = 2;                 /* (w_prev, w_cur) */
+            if (port_set_tag(&in_p, "w_pair") != 0) k = n_tokens;
+            break;
+        case FLAGSHIP_TASK_TOPK:
+            snprintf(goal_tag, sizeof goal_tag, "tk%dq%d", t, t);
+            if (port_set_tag(&in_p, "w_cur") != 0) k = n_tokens;
+            goal_p.field_count = cfg->topk;       /* ranked choices, in order */
+            break;
+        default:
+            snprintf(goal_tag, sizeof goal_tag, "wa%dq%d", t, t);
+            if (port_set_tag(&in_p, "w_cur") != 0) k = n_tokens;
+            break;
+        }
+        if (k >= n_tokens) break;                 /* tag failure: abort sweep */
         if (port_set_tag(&goal_p, goal_tag) != 0) break;
+        /* the drain names acquisitions "acq_<goal tag>" — mirror it exactly
+           so the resume check sees what the drain sealed */
+        snprintf(name, sizeof name, "acq_%s", goal_tag);
+        if (cnb_has_unit(&base, name)) { local.skipped_resume++; continue; }
 
         if (maker(maker_ctx, k, t, &orc_fn) != 0 || orc_fn.fn == NULL) {
             local.no_oracle++;
@@ -194,6 +301,22 @@ int flagship_run(FlagshipConfig *cfg, FlagshipOracleMaker maker,
         memset(&arep, 0, sizeof arep);
         if (acquire_now(&reg, &led, &orc, &cfg->acq, in_p, goal_p, &arep) == 0) {
             local.acquired++;
+            if (arep.last_verdict == CERT_PROVEN) {
+                local.proof_count++;
+            } else {
+                local.sampled_count++;
+                if (local.bound_count < 1024)
+                    local.bounds[local.bound_count++] = arep.last_bound;
+            }
+            if (local.margin_count < 1024)
+                local.margins[local.margin_count++] = arep.last_min_margin;
+            /* per-query calibrated abstention, PAIR + SAMPLED only */
+            if (cfg->task == FLAGSHIP_TASK_PAIR &&
+                arep.last_verdict == CERT_SAMPLED &&
+                cfg->conformal_alpha > 0.0) {
+                conformal_probe(cfg, &base, name, &orc_fn, in_p, goal_p,
+                                &local);
+            }
         } else {
             report_tally_defer(&local, arep.last_defer_reason[0]
                                            ? arep.last_defer_reason
@@ -217,8 +340,26 @@ int flagship_run(FlagshipConfig *cfg, FlagshipOracleMaker maker,
     return 0;
 }
 
+static int fs_cmp_double(const void *a, const void *b) {
+    double x = *(const double *)a, y = *(const double *)b;
+    return (x > y) - (x < y);
+}
+
+/* min/median/max of an UNSORTED sample (sorts a scratch copy). */
+static void fs_dist(const double *v, size_t n, double *mn, double *md,
+                    double *mx) {
+    double tmp[1024];
+    if (n == 0 || n > 1024) { *mn = *md = *mx = 0.0; return; }
+    memcpy(tmp, v, n * sizeof *tmp);
+    qsort(tmp, n, sizeof *tmp, fs_cmp_double);
+    *mn = tmp[0];
+    *md = tmp[n / 2];
+    *mx = tmp[n - 1];
+}
+
 void flagship_print_report(const FlagshipReport *rep, FILE *out) {
     size_t i;
+    double mn, md, mx;
     if (!rep || !out) return;
     fprintf(out, "flagship: attempted %lu, acquired %lu, deferred %lu, "
                  "resume-skips %lu, no-oracle %lu, load-skips %lu\n",
@@ -228,6 +369,30 @@ void flagship_print_report(const FlagshipReport *rep, FILE *out) {
     for (i = 0; i < rep->reason_kinds; ++i) {
         fprintf(out, "  defer %-24s %lu\n", rep->reasons[i],
                 (unsigned long)rep->reason_counts[i]);
+    }
+    fprintf(out, "  tiers: PROOF %lu | SAMPLED %lu",
+            (unsigned long)rep->proof_count, (unsigned long)rep->sampled_count);
+    if (rep->bound_count > 0) {
+        fs_dist(rep->bounds, rep->bound_count, &mn, &md, &mx);
+        fprintf(out, " (wilson floor min/med/max %.4f/%.4f/%.4f)", mn, md, mx);
+    }
+    fprintf(out, "\n");
+    if (rep->margin_count > 0) {
+        fs_dist(rep->margins, rep->margin_count, &mn, &md, &mx);
+        fprintf(out, "  certified min-margin min/med/max %.4f/%.4f/%.4f\n",
+                mn, md, mx);
+    }
+    if (rep->conf_units > 0) {
+        size_t total = rep->conf_answered + rep->conf_abstained;
+        fprintf(out, "  conformal: %lu units, answered %lu/%lu (%.1f%%), "
+                     "abstained %lu, empirical risk %.4f\n",
+                (unsigned long)rep->conf_units,
+                (unsigned long)rep->conf_answered, (unsigned long)total,
+                total ? 100.0 * (double)rep->conf_answered / (double)total : 0.0,
+                (unsigned long)rep->conf_abstained,
+                rep->conf_answered
+                    ? (double)rep->conf_wrong / (double)rep->conf_answered
+                    : 0.0);
     }
     fprintf(out, "  wall %.1fs (slept %.1fs)  max GPU temp %d C  stopped=%s\n",
             rep->wall_seconds, rep->slept_seconds, rep->max_gpu_temp_seen,
