@@ -122,9 +122,30 @@ static const char *k_src =
     "    __global const float* a = A + (size_t)t * K;\n"
     "    for (int k = 0; k < K; ++k) acc += a[k] * W[(size_t)k * N + n];\n"
     "    C[(size_t)t * N + n] = acc;\n"
+    "}\n"
+    /* int8 weight-only path: mirrors cce_block's int8 matvec EXACTLY —
+       float accumulation over k ascending of a[k]*(float)Wq[k*N+n], then
+       bias + scale*acc. Weight bytes are 1/4 of float: the same GEMV at 4x
+       less memory traffic, which is the whole game on ~640 GB/s GDDR6. */
+    "__kernel void cnet_gemm_q8(__global const float* A,\n"
+    "                           __global const char* Wq,\n"
+    "                           __global const float* S,\n"
+    "                           __global const float* B,\n"
+    "                           __global float* C,\n"
+    "                           const int T, const int K, const int N,\n"
+    "                           const int has_bias) {\n"
+    "    int n = get_global_id(0);\n"
+    "    int t = get_global_id(1);\n"
+    "    if (n >= N || t >= T) return;\n"
+    "    float acc = 0.0f;\n"
+    "    __global const float* a = A + (size_t)t * K;\n"
+    "    for (int k = 0; k < K; ++k)\n"
+    "        acc += a[k] * convert_float(Wq[(size_t)k * N + n]);\n"
+    "    float v = (has_bias ? B[n] : 0.0f) + S[n] * acc;\n"
+    "    C[(size_t)t * N + n] = v;\n"
     "}\n";
 
-#define CLGEMM_MAX_RESIDENT 128
+#define CLGEMM_MAX_RESIDENT 1024
 #define CLGEMM_MAX_DEV 8
 #define CLGEMM_MAX_ENUM 16
 #define CLGEMM_SPLIT_BYTES_DEFAULT (32u * 1024u * 1024u)
@@ -138,8 +159,10 @@ typedef struct {
     const void *host;
     size_t bytes;                 /* total host bytes (split slices sum to this) */
     int split;
+    int is_q8;                    /* int8 weights (+ per-column scale buffer) */
     size_t owner;                 /* meaningful when !split */
     cl_mem mem[CLGEMM_MAX_DEV];
+    cl_mem scale[CLGEMM_MAX_DEV]; /* q8 only: per-column float scales */
     size_t off[CLGEMM_MAX_DEV];   /* first column on device d */
     size_t len[CLGEMM_MAX_DEV];   /* columns on device d (0 = not involved) */
 } ResidentBuf;
@@ -150,6 +173,7 @@ typedef struct {
     cl_command_queue q;
     cl_program prog;
     cl_kernel kern;
+    cl_kernel kern_q8;
     cl_mem a_buf, c_buf;          /* reusable activation/output scratch */
     size_t a_cap, c_cap;
     float *c_host;                /* host landing zone for split reads */
@@ -343,9 +367,14 @@ static cce_clgemm *clgemm_open_internal(const char *dll_name, int solo_index,
             goto dev_fail;
         D->kern = CreateKernel(D->prog, "cnet_gemm", &err);
         if (!D->kern || err != CL_SUCCESS) goto dev_fail;
+        D->kern_q8 = CreateKernel(D->prog, "cnet_gemm_q8", &err);
+        if (!D->kern_q8 || err != CL_SUCCESS) goto dev_fail;
         h->ndev++;
         continue;
     dev_fail:
+        if (D->kern_q8) h->ReleaseKernel(D->kern_q8);
+        if (D->kern_q8) h->ReleaseKernel(D->kern_q8);
+        if (D->kern) h->ReleaseKernel(D->kern);
         if (D->prog) h->ReleaseProgram(D->prog);
         if (D->q) h->ReleaseQueue(D->q);
         if (D->ctx) h->ReleaseContext(D->ctx);
@@ -426,12 +455,15 @@ void cce_clgemm_close(cce_clgemm *h) {
     size_t i, j;
     if (!h) return;
     for (i = 0; i < h->resident_count; ++i)
-        for (j = 0; j < h->ndev; ++j)
+        for (j = 0; j < h->ndev; ++j) {
             if (h->resident[i].mem[j]) h->ReleaseMem(h->resident[i].mem[j]);
+            if (h->resident[i].scale[j]) h->ReleaseMem(h->resident[i].scale[j]);
+        }
     for (j = 0; j < h->ndev; ++j) {
         ClgemmDev *D = &h->d[j];
         if (D->a_buf) h->ReleaseMem(D->a_buf);
         if (D->c_buf) h->ReleaseMem(D->c_buf);
+        if (D->kern_q8) h->ReleaseKernel(D->kern_q8);
         if (D->kern) h->ReleaseKernel(D->kern);
         if (D->prog) h->ReleaseProgram(D->prog);
         if (D->q) h->ReleaseQueue(D->q);
@@ -474,6 +506,32 @@ static cl_mem upload_cols(cce_clgemm *h, size_t di, const float *host,
         mem = h->CreateBuffer(h->d[di].ctx,
                               CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
                               K * len * sizeof(float), tmp, &err);
+        free(tmp);
+        return (mem && err == CL_SUCCESS) ? mem : NULL;
+    }
+}
+
+/* Upload columns [off, off+len) of q8 host[K x N] to device di, packed as
+   [K x len] int8. len == N uploads as-is. */
+static cl_mem upload_cols_q8(cce_clgemm *h, size_t di, const int8_t *host,
+                             size_t K, size_t N, size_t off, size_t len) {
+    cl_int err = 0;
+    cl_mem mem;
+    if (len == N) {
+        mem = h->CreateBuffer(h->d[di].ctx,
+                              CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
+                              K * N, (void *)host, &err);
+        return (mem && err == CL_SUCCESS) ? mem : NULL;
+    }
+    {
+        int8_t *tmp = (int8_t *)malloc(K * len);
+        size_t k;
+        if (!tmp) return NULL;
+        for (k = 0; k < K; ++k)
+            memcpy(tmp + k * len, host + k * N + off, len);
+        mem = h->CreateBuffer(h->d[di].ctx,
+                              CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
+                              K * len, tmp, &err);
         free(tmp);
         return (mem && err == CL_SUCCESS) ? mem : NULL;
     }
@@ -522,6 +580,55 @@ static ResidentBuf *resident_create(cce_clgemm *h, const void *host,
     return r;
 }
 
+/* Create a resident entry for int8 host[K x N] + per-column scales with
+   the given placement. NULL on any failure (caller falls back to CPU). */
+static ResidentBuf *resident_create_q8(cce_clgemm *h, const int8_t *host,
+                                       const float *scales, size_t K,
+                                       size_t N, int split, size_t owner,
+                                       const size_t *off, const size_t *len) {
+    ResidentBuf *r;
+    size_t d;
+    cl_int err = 0;
+    if (h->resident_count >= CLGEMM_MAX_RESIDENT) return NULL;
+    r = &h->resident[h->resident_count];
+    memset(r, 0, sizeof *r);
+    r->host = host;
+    r->bytes = K * N;                /* int8: one byte per weight */
+    r->split = split;
+    r->is_q8 = 1;
+    r->owner = owner;
+    for (d = 0; d < h->ndev; ++d) {
+        r->off[d] = off[d];
+        r->len[d] = len[d];
+        if (len[d] == 0) continue;
+        r->mem[d] = upload_cols_q8(h, d, host, K, N, off[d], len[d]);
+        if (r->mem[d]) {
+            if (len[d] == N) {
+                r->scale[d] = h->CreateBuffer(
+                    h->d[d].ctx, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
+                    N * sizeof(float), (void *)scales, &err);
+                if (err != CL_SUCCESS) r->scale[d] = NULL;
+            } else {
+                r->scale[d] = h->CreateBuffer(
+                    h->d[d].ctx, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
+                    len[d] * sizeof(float), (void *)(scales + off[d]), &err);
+                if (err != CL_SUCCESS) r->scale[d] = NULL;
+            }
+        }
+        if (!r->mem[d] || !r->scale[d]) {
+            size_t e;
+            for (e = 0; e <= d; ++e) {
+                if (r->mem[e]) h->ReleaseMem(r->mem[e]);
+                if (r->scale[e]) h->ReleaseMem(r->scale[e]);
+            }
+            memset(r, 0, sizeof *r);
+            return NULL;
+        }
+    }
+    h->resident_count++;
+    return r;
+}
+
 /* Decide placement for a [K x N] weight matrix: column-split across all
    devices when big enough to be bandwidth-bound (each device then reads
    only its share), whole on one round-robin device otherwise (a second
@@ -555,6 +662,136 @@ static int scratch_ensure(cce_clgemm *h, size_t di, cl_mem *buf, size_t *cap,
     *buf = h->CreateBuffer(h->d[di].ctx, CL_MEM_READ_WRITE, bytes, NULL, &err);
     if (!*buf || err != CL_SUCCESS) { *buf = NULL; *cap = 0; return -1; }
     *cap = bytes;
+    return 0;
+}
+
+/* C[T x N] = (bias?) + scale[n] * (A[T x K] . (float)Wq[K x N]) — the
+   int8 seam. Same accumulation order as cce_block's int8 matvec and the
+   same FP_CONTRACT OFF kernel discipline: BIT-identical to the CPU path,
+   so per-matrix CPU fallback (e.g. VRAM pressure) cannot move a decision. */
+int cce_clgemm_matmul_q8(cce_clgemm *h, const float *A, size_t T, size_t K,
+                         const int8_t *Wq, const float *scales,
+                         const float *bias, size_t N, float *C) {
+    ResidentBuf *went, *bent = NULL;
+    int has_bias, rc = 0;
+    int started[CLGEMM_MAX_DEV] = {0};
+    size_t d, t;
+
+    if (!h || !A || !Wq || !scales || !C || T == 0 || T > 8 || K == 0 ||
+        N == 0) return -1;
+    if (K > 0x7FFFFFFF || N > 0x7FFFFFFF) return -1;
+
+    went = resident_find(h, Wq, K * N);
+    if (!went) {
+        int split;
+        size_t owner, off[CLGEMM_MAX_DEV], len[CLGEMM_MAX_DEV];
+        size_t d2;
+        for (d2 = 0; d2 < CLGEMM_MAX_DEV; ++d2) { off[d2] = 0; len[d2] = 0; }
+        if (h->ndev > 1 && K * N >= h->split_bytes && N >= h->ndev) {
+            size_t base = N / h->ndev, rem = N % h->ndev, at = 0;
+            split = 1; owner = 0;
+            for (d2 = 0; d2 < h->ndev; ++d2) {
+                len[d2] = base + (d2 < rem ? 1 : 0);
+                off[d2] = at;
+                at += len[d2];
+            }
+        } else {
+            split = 0;
+            owner = h->rr++ % h->ndev;
+            len[owner] = N;
+        }
+        went = resident_create_q8(h, Wq, scales, K, N, split, owner, off,
+                                  len);
+        if (!went) return -1;
+    }
+    if (bias) {
+        bent = resident_find(h, bias, N * sizeof(float));
+        if (!bent) {
+            bent = resident_create(h, bias, 1, N, went->split, went->owner,
+                                   went->off, went->len);
+            if (!bent) return -1;
+        }
+    }
+    has_bias = bias ? 1 : 0;
+
+    for (d = 0; d < h->ndev; ++d) {
+        ClgemmDev *D = &h->d[d];
+        size_t cols = went->len[d];
+        int iT, iK, iN;
+        cl_mem b_mem;
+        float *dst;
+        if (cols == 0) continue;
+        if (scratch_ensure(h, d, &D->a_buf, &D->a_cap,
+                           T * K * sizeof(float)) != 0 ||
+            scratch_ensure(h, d, &D->c_buf, &D->c_cap,
+                           T * cols * sizeof(float)) != 0) {
+            rc = -1;
+            break;
+        }
+        if (went->split) {
+            if (D->c_host_cap < T * cols) {
+                float *nc = (float *)realloc(D->c_host,
+                                             T * cols * sizeof(float));
+                if (!nc) { rc = -1; break; }
+                D->c_host = nc;
+                D->c_host_cap = T * cols;
+            }
+            dst = D->c_host;
+        } else {
+            dst = C;
+        }
+        if (h->WriteBuffer(D->q, D->a_buf, CL_FALSE, 0, T * K * sizeof(float),
+                           A, 0, NULL, NULL) != CL_SUCCESS) {
+            rc = -1;
+            break;
+        }
+        started[d] = 1;
+        b_mem = bent ? bent->mem[d] : went->scale[d];  /* dummy bind, unread */
+        iT = (int)T; iK = (int)K; iN = (int)cols;
+        if (h->SetArg(D->kern_q8, 0, sizeof(cl_mem), &D->a_buf) != CL_SUCCESS ||
+            h->SetArg(D->kern_q8, 1, sizeof(cl_mem), &went->mem[d]) != CL_SUCCESS ||
+            h->SetArg(D->kern_q8, 2, sizeof(cl_mem), &went->scale[d]) != CL_SUCCESS ||
+            h->SetArg(D->kern_q8, 3, sizeof(cl_mem), &b_mem) != CL_SUCCESS ||
+            h->SetArg(D->kern_q8, 4, sizeof(cl_mem), &D->c_buf) != CL_SUCCESS ||
+            h->SetArg(D->kern_q8, 5, sizeof(int), &iT) != CL_SUCCESS ||
+            h->SetArg(D->kern_q8, 6, sizeof(int), &iK) != CL_SUCCESS ||
+            h->SetArg(D->kern_q8, 7, sizeof(int), &iN) != CL_SUCCESS ||
+            h->SetArg(D->kern_q8, 8, sizeof(int), &has_bias) != CL_SUCCESS) {
+            rc = -1;
+            break;
+        }
+        {
+            size_t global[2];
+            global[0] = cols;
+            global[1] = T;
+            if (h->Enqueue(D->q, D->kern_q8, 2, NULL, global, NULL, 0, NULL,
+                           NULL) != CL_SUCCESS) {
+                rc = -1;
+                break;
+            }
+        }
+        if (h->ReadBuffer(D->q, D->c_buf, CL_FALSE, 0,
+                          T * cols * sizeof(float), dst, 0, NULL,
+                          NULL) != CL_SUCCESS) {
+            rc = -1;
+            break;
+        }
+        h->Flush(D->q);
+    }
+
+    for (d = 0; d < h->ndev; ++d)
+        if (started[d] && h->Finish(h->d[d].q) != CL_SUCCESS) rc = -1;
+    if (rc != 0) return -1;
+
+    if (went->split) {
+        for (d = 0; d < h->ndev; ++d) {
+            size_t cols = went->len[d];
+            if (cols == 0) continue;
+            for (t = 0; t < T; ++t)
+                memcpy(C + t * N + went->off[d], h->d[d].c_host + t * cols,
+                       cols * sizeof(float));
+        }
+    }
     return 0;
 }
 

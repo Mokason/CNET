@@ -35,6 +35,7 @@
  *        docs/superpowers/specs/2026-07-04-dual-gpu-clgemm-design.md */
 
 #include <stddef.h>
+#include <stdint.h>
 
 typedef struct cce_clgemm cce_clgemm;
 
@@ -62,6 +63,14 @@ cce_clgemm *cce_clgemm_open_device(const char *dll_name, int device_index,
  * Returns 0, or -1 on any failure (caller falls back to the CPU path). */
 int cce_clgemm_matmul(cce_clgemm *h, const float *A, size_t T, size_t K,
                       const float *W, const float *bias, size_t N, float *C);
+
+/* int8 weight-only GEMM: C = (bias?) + scale[n] * (A . (float)Wq).
+ * Same accumulation order as cce_block's int8 matvec — BIT-identical to
+ * the CPU path (FP_CONTRACT OFF), so per-matrix CPU fallback cannot move a
+ * decision. Wq/scales/bias become device-resident on first use. */
+int cce_clgemm_matmul_q8(cce_clgemm *h, const float *A, size_t T, size_t K,
+                         const signed char *Wq, const float *scales,
+                         const float *bias, size_t N, float *C);
 
 /* Telemetry: resident weight bytes across all devices (split slices sum to
  * the original host bytes) and the number of devices actually opened. */

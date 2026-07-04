@@ -1059,3 +1059,8 @@ cce_dll: $(CCE) $(CCE_CUDA_OBJ)
 	$(CC) -shared -DCCE_BUILD_DLL $(CFLAGS) -o cce.dll $(CCE) $(CCE_CUDA_OBJ) $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 	@echo "Built cce.dll (for .NET P/Invoke). Add to your C# project and use DllImport."
 
+
+# Unit-structure probe: how hard is the function each TOPK unit must memorize?
+# The near-miss-vs-fundamental discriminator. Needs the model; NOT in verify.
+unit_structure_build: $(CCE) tests/unit_structure.c include/cce/cce_gguf.h
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/unit_structure $(CCE) tests/unit_structure.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)

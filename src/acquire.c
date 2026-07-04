@@ -601,6 +601,16 @@ static int attempt_no_plan(PrimitiveRegistry *reg, AcquireLedger *l,
         return -1;
     }
     (void)btn_certify_exhaustive(btn, &c, cfg->exhaustive_cap, &ex);
+    /* CNET_CERT_DIAG=1: the near-miss number the tier discards — how many of
+       the enumerated exemplars the trained student already reproduces. The
+       gap from here to 100% is exactly what stands between a real oracle and
+       a certified unit (capacity/training question vs fundamental). */
+    if (getenv("CNET_CERT_DIAG") && getenv("CNET_CERT_DIAG")[0] == '1') {
+        fprintf(stderr, "CERT_DIAG %s: %zu/%zu exemplars exact, verdict=%d, "
+                        "worst_margin=%.4f\n", name,
+                ex.certify.passed, ex.certify.passed + ex.certify.failed,
+                (int)ex.verdict, ex.min_margin_domain);
+    }
     if (ex.verdict == CERT_REFUSED) {
         btn_free(btn); free(btn); free(inputs); free(targets);
         gap_defer(g, rep, "certify_failed");

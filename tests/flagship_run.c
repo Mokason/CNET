@@ -402,9 +402,22 @@ int main(int argc, char **argv) {
         break;
     case FLAGSHIP_TASK_TOPK:
         cce_task_fn = cce_cond_topk;
+        /* memorization-scale student (same documented precedent as PAIR):
+           a REAL oracle's top-3 slices are entangled 256-point lookups —
+           the lean-teacher default (hidden<=64, 4000 epochs) certify_fails
+           on every unit. The NaN-era oracle "certified" only because its
+           units were constant functions. */
+        cfg.acq.init_hidden = 64;
+        cfg.acq.max_hidden = 256;
+        cfg.acq.max_epochs = 12000;
+        cfg.acq.growth_window = 400;
         break;
     default:
         cce_task_fn = cce_cond_next;
+        cfg.acq.init_hidden = 64;      /* same reasoning as TOPK above */
+        cfg.acq.max_hidden = 256;
+        cfg.acq.max_epochs = 12000;
+        cfg.acq.growth_window = 400;
         break;
     }
 

@@ -8,6 +8,7 @@
  * Usage: clgemm_unit [reps]   (env knobs as usual: CNET_GPU_COUNT etc.)
  */
 
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -102,6 +103,55 @@ int main(int argc, char **argv) {
                 }
             }
         }
+    }
+
+    /* int8 weight-only path: same placements, exact CPU reference
+       (float accumulate over k ascending, then bias + scale*acc) */
+    {
+        size_t Kq = 3840, Nq = 4096, Tq = 2, i2;
+        int8_t *wq = (int8_t *)malloc(Kq * Nq);
+        float *sc = (float *)malloc(Nq * sizeof(float));
+        float *aq = (float *)malloc(Tq * Kq * sizeof(float));
+        float *cg = (float *)malloc(Tq * Nq * sizeof(float));
+        float *cr = (float *)malloc(Tq * Nq * sizeof(float));
+        float *bq = (float *)malloc(Nq * sizeof(float));
+        if (wq && sc && aq && cg && cr && bq) {
+            unsigned st2 = 777;
+            size_t t2, n2, k2;
+            int r2;
+            for (i2 = 0; i2 < Kq * Nq; ++i2)
+                wq[i2] = (int8_t)((int)(prf(&st2) * 127.0f));
+            for (i2 = 0; i2 < Nq; ++i2) { sc[i2] = prf(&st2) * 0.02f; bq[i2] = prf(&st2); }
+            for (r2 = 0; r2 < reps; ++r2) {
+                const float *bias2 = (r2 % 2) ? bq : NULL;
+                for (i2 = 0; i2 < Tq * Kq; ++i2) aq[i2] = prf(&st2);
+                if (cce_clgemm_matmul_q8(h, aq, Tq, Kq, wq, sc, bias2, Nq,
+                                         cg) != 0) {
+                    fprintf(stderr, "q8 rep %d: matmul returned -1\n", r2);
+                    return 1;
+                }
+                for (t2 = 0; t2 < Tq; ++t2)
+                    for (n2 = 0; n2 < Nq; ++n2) {
+                        float acc = 0.0f;
+                        for (k2 = 0; k2 < Kq; ++k2)
+                            acc += aq[t2 * Kq + k2] *
+                                   (float)wq[k2 * Nq + n2];
+                        cr[t2 * Nq + n2] = (bias2 ? bias2[n2] : 0.0f) +
+                                           sc[n2] * acc;
+                    }
+                total_calls++;
+                for (i2 = 0; i2 < Tq * Nq; ++i2)
+                    if (cg[i2] != cr[i2]) {
+                        if (fails < 8)
+                            printf("q8 rep %d: MISMATCH at %zu gpu=%.9g "
+                                   "ref=%.9g\n", r2, i2, (double)cg[i2],
+                                   (double)cr[i2]);
+                        fails++;
+                        break;
+                    }
+            }
+        }
+        free(wq); free(sc); free(aq); free(cg); free(cr); free(bq);
     }
 
     printf("%lu calls, %lu mismatched calls\n", (unsigned long)total_calls,

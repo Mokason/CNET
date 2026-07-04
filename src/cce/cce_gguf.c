@@ -963,11 +963,55 @@ static cce_result apply_linear_rows(cce_clgemm *gpu, cce_cascade* cas,
     int dout = out->shape[1];
     if (out->shape[0] != T) return CCE_ERR_INVALID_ARG;
 
-    /* GPU fast path: exactly the shape cce_gguf_add_linear_branch builds —
-       ONE plain-float LINEAR_HEAD block (pure affine, no quantization).
+    /* GPU fast path: exactly the shapes cce_gguf_add_linear_branch builds —
+       ONE LINEAR_HEAD block, plain-float OR int8 weight-only (Rung 5: the
+       q8 kernel reproduces cce_block's int8 matvec bit-exactly, so the 11GB
+       of int8 layer weights stream from ~640 GB/s GDDR6 instead of DDR5).
        Anything else falls through to the CPU path unchanged. */
     if (gpu && cas->num_blocks == 1 && T >= 1 && T <= 8) {
         const cce_block *blk = &cas->blocks[0];
+        if (blk->type == CCE_BLOCK_LINEAR_HEAD && blk->w_q && blk->w_scale &&
+            !blk->w_trit && blk->weights.ndim == 2 &&
+            blk->weights.shape[0] == din && blk->weights.shape[1] == dout &&
+            !(getenv("CNET_GPU_INT8") && getenv("CNET_GPU_INT8")[0] == '0')) {
+            const float *bias =
+                (blk->bias.numel == (size_t)dout) ? blk->bias.data : NULL;
+            if (cce_clgemm_matmul_q8(gpu, in->data, (size_t)T, (size_t)din,
+                                     (const signed char *)blk->w_q,
+                                     blk->w_scale, bias, (size_t)dout,
+                                     out->data) == 0) {
+                static int verify_q8 = -1;
+                if (verify_q8 < 0) {
+                    const char *e = getenv("CNET_GPU_VERIFY");
+                    verify_q8 = (e && e[0] == '1') ? 1 : 0;
+                }
+                if (verify_q8) {
+                    int t2, o2, bad = 0;
+                    for (t2 = 0; t2 < T && !bad; ++t2) {
+                        for (o2 = 0; o2 < dout && !bad; ++o2) {
+                            float acc = 0.0f;
+                            int k2;
+                            const float *arow = in->data + (size_t)t2 * din;
+                            for (k2 = 0; k2 < din; ++k2)
+                                acc += arow[k2] *
+                                       (float)blk->w_q[(size_t)k2 * dout + o2];
+                            acc = (bias ? bias[o2] : 0.0f) +
+                                  blk->w_scale[o2] * acc;
+                            if (out->data[(size_t)t2 * dout + o2] != acc) {
+                                fprintf(stderr,
+                                        "GPU_VERIFY: Q8 DIVERGE [%dx%d] "
+                                        "t=%d o=%d gpu=%.9g cpu=%.9g\n",
+                                        din, dout, t2, o2,
+                                        (double)out->data[(size_t)t2 * dout + o2],
+                                        (double)acc);
+                                bad = 1;
+                            }
+                        }
+                    }
+                }
+                return CCE_OK;
+            }
+        }
         if (blk->type == CCE_BLOCK_LINEAR_HEAD && !blk->w_q && !blk->w_trit &&
             blk->weights.ndim == 2 && blk->weights.shape[0] == din &&
             blk->weights.shape[1] == dout) {
