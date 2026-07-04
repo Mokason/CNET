@@ -45,7 +45,41 @@ typedef struct {
     const int *vocab;
     size_t v;
     int t;                 /* conditioning token of the CURRENT unit */
+    double margin_eps;     /* >0: margin-aware certification. A point whose
+                              decision margin (smallest logit gap that would
+                              change the ordered answer) is below this is
+                              ABSTAINED (oracle returns +1) — the teacher's
+                              own coin-flips are excluded from the certified
+                              domain instead of poisoning training. 0 = off. */
 } CceOracleCtx;
+
+/* Smallest logit gap whose crossing would change the ordered top-`depth`
+   window answer (gaps rank0-1, 1-2, ..., depth-1..depth). A tiny value means
+   the teacher is nearly tied at some decision boundary — a point no student
+   can be expected to memorize because the model itself is choosing at random
+   there. Returns +inf-ish (large) when the window is smaller than depth+1. */
+static double fs_decision_margin(const float *logits, const int *vocab,
+                                 size_t V, int depth) {
+    int taken[4096] = {0};
+    double prev = 0.0, minfg = 1e30;
+    int r;
+    if ((size_t)(depth + 1) > V) return 1e30;
+    for (r = 0; r <= depth; ++r) {
+        size_t i, best = (size_t)-1;
+        double bl = 0.0;
+        for (i = 0; i < V; ++i) {
+            if (taken[i]) continue;
+            if (best == (size_t)-1 || (double)logits[vocab[i]] > bl) {
+                bl = (double)logits[vocab[i]];
+                best = i;
+            }
+        }
+        taken[best] = 1;
+        if (r > 0) { double g = prev - bl; if (g < minfg) minfg = g; }
+        prev = bl;
+    }
+    return minfg;
+}
 
 /* Lane for THIS call: pinned when force_lane is set, else by OMP thread id
    (the mining loop runs one thread per lane). Also scopes the calling
@@ -134,6 +168,9 @@ static int cce_cond_next(const double *in, double *out, void *ctx) {
             return -1;
         }
     }
+    if (c->margin_eps > 0.0 &&
+        fs_decision_margin(L->logits, c->vocab, c->v, 1) < c->margin_eps)
+        return 1;   /* teacher-ambiguous argmax: abstain */
     bl = L->logits[c->vocab[0]];
     for (i = 1; i < c->v; ++i) {
         if (L->logits[c->vocab[i]] > bl) {
@@ -179,6 +216,9 @@ static int cce_cond_pair(const double *in, double *out, void *ctx) {
             return -1;
         }
     }
+    if (c->margin_eps > 0.0 &&
+        fs_decision_margin(L->logits, c->vocab, c->v, 1) < c->margin_eps)
+        return 1;   /* teacher-ambiguous argmax: abstain */
     bl = L->logits[c->vocab[0]];
     for (i = 1; i < c->v; ++i) {
         if (L->logits[c->vocab[i]] > bl) {
@@ -220,6 +260,9 @@ static int cce_cond_topk(const double *in, double *out, void *ctx) {
             return -1;
         }
     }
+    if (c->margin_eps > 0.0 &&
+        fs_decision_margin(L->logits, c->vocab, c->v, 3) < c->margin_eps)
+        return 1;   /* teacher-ambiguous top-3: abstain from the cert domain */
     for (i = 0; i < 3u * c->v; ++i) out[i] = 0.0;
     for (r = 0; r < 3; ++r) {
         float bl;
@@ -263,6 +306,10 @@ static int determinism_spot_check(CceOracleCtx *c, FlagshipTask task) {
     size_t in_total = (task == FLAGSHIP_TASK_PAIR) ? 2 * c->v : c->v;
     size_t out_total = (task == FLAGSHIP_TASK_TOPK) ? 3 * c->v : c->v;
     int rc = 0;
+    /* determinism, not certification: never abstain here (a probe point that
+       happens to be teacher-ambiguous would return +1 and read as failure). */
+    double saved_eps = c->margin_eps;
+    c->margin_eps = 0.0;
 
     c->t = c->vocab[0];
     for (lane = 0; lane < c->nlanes && rc == 0; ++lane) {
@@ -294,6 +341,7 @@ static int determinism_spot_check(CceOracleCtx *c, FlagshipTask task) {
         }
     }
     c->force_lane = -1;
+    c->margin_eps = saved_eps;
     return rc;
 }
 
@@ -360,6 +408,13 @@ int main(int argc, char **argv) {
     ctx.lane[0].m = am->transformer;
     ctx.nlanes = 1;
     ctx.force_lane = -1;
+    /* margin-aware certification: CNET_CERT_MARGIN=<logit gap>. A domain
+       point whose decision margin (smallest logit gap that would change the
+       ordered answer) falls below this is ABSTAINED — the model's own
+       near-ties are excluded from the certified domain instead of poisoning
+       training and blocking certification. 0 (default) = off. */
+    ctx.margin_eps = getenv("CNET_CERT_MARGIN")
+                         ? atof(getenv("CNET_CERT_MARGIN")) : 0.0;
 #ifdef _OPENMP
     ctx.inner_threads = omp_get_max_threads();
 #endif
@@ -441,6 +496,20 @@ int main(int argc, char **argv) {
                cfg.acq.min_accuracy_bound, (unsigned long)samp,
                (unsigned long)V);
     }
+
+    /* Student-capacity overrides (sweep the representational limit without
+       recompiling): CNET_ACQ_HIDDEN / CNET_ACQ_MAXHIDDEN / CNET_ACQ_EPOCHS.
+       Diagnostic for whether cert failures are the student's ceiling (they
+       shrink with capacity) or the oracle's ambiguity (they don't). */
+    if (getenv("CNET_ACQ_HIDDEN"))    cfg.acq.init_hidden = (size_t)atoi(getenv("CNET_ACQ_HIDDEN"));
+    if (getenv("CNET_ACQ_MAXHIDDEN")) cfg.acq.max_hidden  = (size_t)atoi(getenv("CNET_ACQ_MAXHIDDEN"));
+    if (getenv("CNET_ACQ_EPOCHS"))    cfg.acq.max_epochs  = (size_t)atoi(getenv("CNET_ACQ_EPOCHS"));
+    if (getenv("CNET_ACQ_HIDDEN") || getenv("CNET_ACQ_MAXHIDDEN") ||
+        getenv("CNET_ACQ_EPOCHS"))
+        printf("student: init_hidden=%lu max_hidden=%lu max_epochs=%lu\n",
+               (unsigned long)cfg.acq.init_hidden,
+               (unsigned long)cfg.acq.max_hidden,
+               (unsigned long)cfg.acq.max_epochs);
 
     /* Window discovery for ARGMAX/TOPK (PAIR always discovered): the fixed
        2000..2000+V window is a MEASURED constant slice on both real models
@@ -615,6 +684,19 @@ int main(int argc, char **argv) {
         return 1;
     }
     printf("determinism spot check: OK\n");
+
+    /* Restrict every lane's head to the mined window now that the full-head
+       startup gates (equivalence sweep, determinism check) have passed:
+       mining forwards then skip the [D x 262144] head GEMM and compute only
+       the |V| window logits the oracle reads — bit-identical, ~1/4 off each
+       forward. CNET_HEAD_WINDOW=0 keeps the full head. */
+    if (!(getenv("CNET_HEAD_WINDOW") && getenv("CNET_HEAD_WINDOW")[0] == '0')) {
+        size_t li;
+        for (li = 0; li < ctx.nlanes; ++li)
+            cce_gguf_qwen2_set_head_window(ctx.lane[li].m, vocab, (int)V);
+        printf("head window: restricted to %lu mined tokens (full-vocab head "
+               "off for mining)\n", (unsigned long)V);
+    }
 
     printf("run: task=%s V=%lu max_units=%lu temp<=%dC duty=%.2f wall=%.0fs base=%s\n",
            task == FLAGSHIP_TASK_PAIR ? "pair"

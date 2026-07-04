@@ -193,6 +193,15 @@ typedef struct cce_gguf_qwen2 {
        GPU path). 0 (default) = full depth, byte-identical. */
     int layer_cap;
 
+    /* Restricted head: when head_window_n > 0, the forward computes ONLY the
+       logits for these token ids (written at logits_out[ids[i]]) instead of
+       the full [D x vocab] head GEMM. The mining oracle reads only a small
+       window, so this drops ~1/4 of every mining forward's cost — and the
+       computed values are BIT-IDENTICAL to the full head's (same per-column
+       dot, same k-ascending order). Startup gates keep the full head. */
+    const int *head_window;
+    int head_window_n;
+
     /* Per-layer attention geometry, derived from TENSOR SHAPES + metadata
        at load and validated (indivisible head counts, o_proj width
        mismatches, norm-shape mismatches all REFUSE the load). NULL only
@@ -241,6 +250,11 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
  * forwarding concurrently — each instance MUST have its own handle). */
 void cce_gguf_set_clgemm(struct cce_clgemm *h);
 void cce_gguf_qwen2_set_clgemm(cce_gguf_qwen2 *m, struct cce_clgemm *h);
+
+/* Restrict the forward's head to `n` token ids (bit-identical to the full
+   head on those ids; ~1/4 less work per forward). NULL/0 = full head. The
+   ids array must outlive the model; the campaign's discovered window fits. */
+void cce_gguf_qwen2_set_head_window(cce_gguf_qwen2 *m, const int *ids, int n);
 
 /* Uniform-geometry synthesizer for models populated OUTSIDE the GGUF
  * loader (safetensors/llama path, packed-.cce reader): derives one geometry

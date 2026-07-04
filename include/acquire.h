@@ -26,7 +26,17 @@ struct CnetBase;
 
 /* A label source: an in-process reference implementation. in has the input
    port's total values (canonical); the oracle writes the output port's total
-   values into out. Returns 0 on success, -1 on refusal (counted as a reject). */
+   values into out.
+   Returns 0 = labeled (added to the certified domain),
+          <0 = refusal/error (counted as a reject),
+          >0 = ABSTAIN: a valid measurement, but the teacher itself is
+               ambiguous here (its own decision margin is below threshold),
+               so the point is EXCLUDED from the certified domain rather
+               than forcing the student to memorize a coin-flip. The domain
+               cardinality still counts it, so coverage becomes SAMPLED and
+               the Wilson bound accounts for the abstained residue. This is
+               margin-aware certification: prove what the model is decisive
+               about, decline to certify its noise. */
 typedef int (*CnetOracleFn)(const double *in, double *out, void *ctx);
 
 typedef struct {
@@ -37,6 +47,7 @@ typedef struct {
     void *ctx;
     size_t calls;
     size_t rejects;   /* refusals + outputs that failed port_validate */
+    size_t abstains;  /* margin-aware: teacher-ambiguous points excluded */
     /* 0/1 = serial (default). >1 = the fn is safe to call from this many
        threads concurrently (it dispatches per-thread state internally, e.g.
        one model instance per GPU); mining then fans enumeration out and

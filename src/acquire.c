@@ -354,7 +354,11 @@ static int mine_from_oracle(OracleEntry *o, Port in_p, Port goal_p,
         attempts++;
         if (contract_encode_domain_point(&tc, idx, irow) != 0) continue;
         o->calls++;
-        if (o->fn(irow, raw, o->ctx) != 0) { o->rejects++; continue; }
+        {
+            int rc = o->fn(irow, raw, o->ctx);
+            if (rc < 0) { o->rejects++; continue; }
+            if (rc > 0) { o->abstains++; continue; }   /* teacher-ambiguous */
+        }
         if (!port_validate(goal_p, raw))  { o->rejects++; continue; }
         if (port_canonicalize(goal_p, raw, trow) != 0) continue;
         usable++;
@@ -411,9 +415,11 @@ static int mine_from_oracle(OracleEntry *o, Port in_p, Port goal_p,
                     st[kk] = 1;
                     continue;
                 }
-                st[kk] = (o->fn(slot_in + (size_t)kk * in_total,
-                                slot_raw + (size_t)kk * out_total,
-                                o->ctx) != 0) ? 2 : 3;
+                {
+                    int rc = o->fn(slot_in + (size_t)kk * in_total,
+                                   slot_raw + (size_t)kk * out_total, o->ctx);
+                    st[kk] = (rc < 0) ? 2 : (rc > 0) ? 4 : 3;  /* 4=abstain */
+                }
             }
 #endif
             for (k = 0; k < n_points; ++k) {
@@ -422,6 +428,7 @@ static int mine_from_oracle(OracleEntry *o, Port in_p, Port goal_p,
                 if (st[k] == 1) continue;                  /* encode failed */
                 o->calls++;
                 if (st[k] == 2) { o->rejects++; continue; }
+                if (st[k] == 4) { o->abstains++; continue; }  /* teacher-ambiguous */
                 if (!port_validate(goal_p, slot_raw + k * out_total)) {
                     o->rejects++;
                     continue;
@@ -445,7 +452,11 @@ static int mine_from_oracle(OracleEntry *o, Port in_p, Port goal_p,
                 attempts++;
                 if (contract_encode_domain_point(&tc, idx, irow) != 0) continue;
                 o->calls++;
-                if (o->fn(irow, raw, o->ctx) != 0) { o->rejects++; continue; }
+                {
+                    int rc = o->fn(irow, raw, o->ctx);
+                    if (rc < 0) { o->rejects++; continue; }
+                    if (rc > 0) { o->abstains++; continue; }  /* teacher-ambiguous */
+                }
                 if (!port_validate(goal_p, raw))  { o->rejects++; continue; }
                 if (port_canonicalize(goal_p, raw, trow) != 0) continue;
                 usable++;

@@ -934,6 +934,11 @@ static cce_result gguf_rms_norm(const cce_tensor* in, const cce_tensor* weight, 
 #include "../../include/cce/cce_clgemm.h"
 static cce_clgemm *g_gguf_clgemm = NULL;
 void cce_gguf_set_clgemm(cce_clgemm *h) { g_gguf_clgemm = h; }
+void cce_gguf_qwen2_set_head_window(cce_gguf_qwen2 *m, const int *ids, int n) {
+    if (!m) return;
+    m->head_window = (n > 0) ? ids : NULL;
+    m->head_window_n = (n > 0) ? n : 0;
+}
 void cce_gguf_qwen2_set_clgemm(cce_gguf_qwen2 *m, cce_clgemm *h) {
     if (m) m->clgemm = h;
 }
@@ -1698,7 +1703,31 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
     fn_last.numel = (size_t)D;
     cce_cascade* head_cas = cce_forest_get_resident(m->forest, "qwen2.lm_head");
     bool head_ok = false;
-    if (head_cas) {
+    /* RESTRICTED HEAD: compute only the mined window's logits — a per-column
+       dot from the FP head weights, bit-identical to the full head's values
+       on those ids (same k-ascending order, FP_CONTRACT off), at ~1/1000th
+       the head work. logits_t is written only at the window positions; the
+       oracle reads exactly those. Startup gates leave head_window_n = 0 and
+       take the full-head path below. */
+    if (m->head_window_n > 0 && head_cas && head_cas->num_blocks == 1) {
+        const cce_block *hb = &head_cas->blocks[0];
+        if (hb->weights.data && !hb->w_q && !hb->w_trit &&
+            hb->weights.ndim == 2 && hb->weights.shape[0] == D &&
+            hb->weights.shape[1] == V) {
+            const float *last = fn_last.data;
+            const float *bias = (hb->bias.numel == (size_t)V) ? hb->bias.data : NULL;
+            for (int wi = 0; wi < m->head_window_n; ++wi) {
+                int id = m->head_window[wi];
+                if (id < 0 || id >= V) continue;
+                float acc = bias ? bias[id] : 0.0f;
+                const float *wcol = hb->weights.data + id;   /* W[d*V + id] */
+                for (int d = 0; d < D; ++d) acc += last[d] * wcol[(size_t)d * V];
+                logits_t.data[id] = acc;
+            }
+            head_ok = true;
+        }
+    }
+    if (!head_ok && head_cas) {
         if (apply_linear_rows(gpu, head_cas, &fn_last, &logits_t) == CCE_OK) head_ok = true;
     }
     if (!head_ok && m->output.data && m->output.ndim == 2) {
