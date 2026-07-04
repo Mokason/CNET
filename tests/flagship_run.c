@@ -403,7 +403,7 @@ int main(int argc, char **argv) {
     case FLAGSHIP_TASK_TOPK:
         cce_task_fn = cce_cond_topk;
         /* memorization-scale student (same documented precedent as PAIR):
-           a REAL oracle's top-3 slices are entangled 256-point lookups —
+           a REAL oracle's top-3 slices are entangled ~40-class lookups —
            the lean-teacher default (hidden<=64, 4000 epochs) certify_fails
            on every unit. The NaN-era oracle "certified" only because its
            units were constant functions. */
@@ -419,6 +419,27 @@ int main(int argc, char **argv) {
         cfg.acq.max_epochs = 12000;
         cfg.acq.growth_window = 400;
         break;
+    }
+
+    /* Certification tier. Default (exhaustive/PROVEN) demands EXACT match on
+       every domain point — measured on the real gemma4 oracle, students
+       reach 254-255/256, blocked from PROVEN by the model's OWN near-tie
+       points (worst_margin ~0.001: irreducible residue, the doc's
+       "no sharp boundary" wall). CNET_CERT_SAMPLED=1 engages the SAMPLED
+       tier: mine a strict subset of the domain so coverage is SAMPLED, then
+       certify with a Wilson lower bound (min_accuracy_bound, default 0.95) —
+       high-confidence units instead of exact proofs. Exactness-on-sample is
+       the bar (holdout 0), the PAIR precedent. */
+    if (getenv("CNET_CERT_SAMPLED") && getenv("CNET_CERT_SAMPLED")[0] == '1') {
+        size_t samp = (size_t)((double)V * 0.8);   /* 80% subsample -> SAMPLED */
+        if (samp < 16) samp = (V < 16 ? V : 16);
+        cfg.acq.sample_count = samp;
+        cfg.acq.mine_budget = (samp > 1) ? samp - 1 : 1;  /* card>budget => sampled */
+        cfg.acq.holdout_fraction = 0.0;
+        printf("cert tier: SAMPLED (Wilson >= %.2f over a %lu/%lu-point "
+               "subsample; exactness-on-sample)\n",
+               cfg.acq.min_accuracy_bound, (unsigned long)samp,
+               (unsigned long)V);
     }
 
     /* Window discovery for ARGMAX/TOPK (PAIR always discovered): the fixed
