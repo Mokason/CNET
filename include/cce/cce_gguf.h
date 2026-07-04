@@ -192,6 +192,30 @@ typedef struct cce_gguf_qwen2 {
        enable ONLY behind a decision-equivalence gate (same posture as the
        GPU path). 0 (default) = full depth, byte-identical. */
     int layer_cap;
+
+    /* Per-layer attention geometry, derived from TENSOR SHAPES + metadata
+       at load and validated (indivisible head counts, o_proj width
+       mismatches, norm-shape mismatches all REFUSE the load). NULL only
+       for structs calloc'd outside the loaders (legacy paths refuse to
+       forward without it). */
+    struct cce_attn_geom {
+        int q_dim, k_dim, v_dim;   /* projection widths from the tensors */
+        int head_dim;              /* q/k head width per layer type (swa vs global) */
+        int v_head_dim;            /* v head width (value_length; == head_dim in gemma4) */
+        int n_q, n_k, n_v;         /* head counts; K and V may differ (MQA/GQA) */
+        int v_tied;                /* no attn_v tensor: V = raw K projection
+                                      (one shared head; inference from
+                                      o_proj/value_length shapes) */
+        int swa;                   /* sliding-window layer? */
+        int window;                /* swa window size, 0 = unlimited */
+        float rope_base;           /* per layer type */
+        int rope_dim;              /* dims rotated (== head_dim in gemma4) */
+        size_t k_off, v_off;       /* float offsets within a position's k/v slot */
+    } *geom;
+    size_t k_slot_floats, v_slot_floats; /* per-position slot widths, all layers */
+    float embed_scale;             /* gemma-family sqrt(D); 1.0 otherwise */
+    float final_softcap;           /* logits = c*tanh(l/c); 0 = off (monotonic: cannot change decisions) */
+    cce_tensor* attn_k_norm;       /* per-layer k-norm (may be absent) */
 } cce_gguf_qwen2;
 
 /* Load a full Qwen2 model from GGUF into decomposed CCE form (forest of specialists + norms).
@@ -217,6 +241,16 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
  * forwarding concurrently — each instance MUST have its own handle). */
 void cce_gguf_set_clgemm(struct cce_clgemm *h);
 void cce_gguf_qwen2_set_clgemm(cce_gguf_qwen2 *m, struct cce_clgemm *h);
+
+/* Uniform-geometry synthesizer for models populated OUTSIDE the GGUF
+ * loader (safetensors/llama path, packed-.cce reader): derives one geometry
+ * for every layer from the scalar hparams already in the struct. Returns
+ * CCE_OK or refuses on inconsistency. */
+cce_result cce_gguf_qwen2_geom_uniform(cce_gguf_qwen2 *m);
+
+/* Per-layer numeric metadata list by key suffix; returns count (0=absent). */
+size_t cce_gguf_get_int_array(const cce_gguf* gguf, const char* key_suffix,
+                              int64_t* out, size_t cap);
 
 /* Depth instrumentation: tap called after every layer of the forward with
  * the residual stream (probe tooling; NULL = off, zero cost). */

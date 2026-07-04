@@ -58,7 +58,11 @@ typedef struct {
         double   f64;
         char*    str; /* owned */
     } val;
-    /* array support is minimal for Phase 1 */
+    /* numeric arrays (per-layer lists: sliding_window_pattern,
+       head_count_kv, ...): retained as int64, owned. NULL for
+       string/oversized arrays. */
+    int64_t* arr;
+    uint64_t arr_n;
 } gguf_kv;
 
 struct cce_gguf {
@@ -183,15 +187,40 @@ static bool gguf_read_kv(FILE* f, gguf_kv* kv) {
         case GGUF_TYPE_ARRAY: {
             uint32_t elem_type; uint64_t n;
             if (!gguf_read_u32(f, &elem_type) || !gguf_read_u64(f, &n)) return false;
+            /* retain small NUMERIC arrays (per-layer architecture lists);
+               strings and megal-arrays (tokenizer tables) are skipped */
+            int keep = (elem_type != GGUF_TYPE_STRING && n <= 4096 && kv);
+            if (keep) {
+                kv->arr = (int64_t*)calloc((size_t)n, sizeof(int64_t));
+                kv->arr_n = kv->arr ? n : 0;
+            }
             for (uint64_t k=0; k < n; k++) {
                 if (elem_type == GGUF_TYPE_STRING) {
                     uint64_t sl = 0; gguf_read_u64(f, &sl); fseek(f, (long)sl, SEEK_CUR);
                 } else {
+                    uint8_t buf[8] = {0};
                     size_t esz = 4;
                     if (elem_type==0 || elem_type==1 || elem_type==7) esz=1;
                     else if (elem_type==2||elem_type==3) esz=2;
                     else if (elem_type==10||elem_type==11||elem_type==12) esz=8;
-                    fseek(f, (long)esz, SEEK_CUR);
+                    if (keep && kv->arr) {
+                        if (fread(buf, 1, esz, f) != esz) return false;
+                        switch (elem_type) {
+                        case GGUF_TYPE_UINT8:  kv->arr[k] = *(uint8_t*)buf; break;
+                        case GGUF_TYPE_INT8:   kv->arr[k] = *(int8_t*)buf; break;
+                        case GGUF_TYPE_BOOL:   kv->arr[k] = *(uint8_t*)buf ? 1 : 0; break;
+                        case GGUF_TYPE_UINT16: kv->arr[k] = *(uint16_t*)buf; break;
+                        case GGUF_TYPE_INT16:  kv->arr[k] = *(int16_t*)buf; break;
+                        case GGUF_TYPE_UINT32: kv->arr[k] = *(uint32_t*)buf; break;
+                        case GGUF_TYPE_INT32:  kv->arr[k] = *(int32_t*)buf; break;
+                        case GGUF_TYPE_UINT64: kv->arr[k] = (int64_t)*(uint64_t*)buf; break;
+                        case GGUF_TYPE_INT64:  kv->arr[k] = *(int64_t*)buf; break;
+                        case GGUF_TYPE_FLOAT32: kv->arr[k] = (int64_t)*(float*)buf; break;
+                        default: kv->arr[k] = 0; break;
+                        }
+                    } else {
+                        fseek(f, (long)esz, SEEK_CUR);
+                    }
                 }
             }
             return true;
@@ -206,6 +235,7 @@ static void gguf_free_kv(gguf_kv* kv) {
         free(kv->val.str);
         kv->val.str = NULL;
     }
+    if (kv->arr) { free(kv->arr); kv->arr = NULL; kv->arr_n = 0; }
 }
 
 /* ---- Public API ---- */
@@ -631,6 +661,47 @@ cce_result cce_gguf_load_tensor_by_name(const cce_gguf* g, const char* name, cce
     return cce_gguf_load_as_tensor(g, idx, out);
 }
 
+/* Per-layer architecture list (e.g. "attention.head_count_kv",
+   "attention.sliding_window_pattern"): copies up to cap values, returns
+   the count found (0 = key absent or non-numeric/oversized array). Keys are
+   arch-prefixed in the file, so match by suffix. */
+size_t cce_gguf_get_int_array(const cce_gguf* g, const char* key_suffix,
+                              int64_t* out, size_t cap) {
+    if (!g || !key_suffix || !out) return 0;
+    size_t sl = strlen(key_suffix);
+    for (int i = 0; i < g->n_kvs; i++) {
+        const char* k = g->kvs[i].key;
+        size_t kl = strlen(k);
+        if (kl >= sl && strcmp(k + kl - sl, key_suffix) == 0 &&
+            g->kvs[i].arr && g->kvs[i].arr_n > 0) {
+            size_t n = g->kvs[i].arr_n < cap ? g->kvs[i].arr_n : cap;
+            memcpy(out, g->kvs[i].arr, n * sizeof(int64_t));
+            return n;
+        }
+    }
+    return 0;
+}
+
+/* Scalar metadata by key suffix (arch-prefixed keys); fallback if absent. */
+static double gguf_get_scalar(const cce_gguf* g, const char* key_suffix,
+                              double fallback) {
+    size_t sl = strlen(key_suffix);
+    for (int i = 0; i < g->n_kvs; i++) {
+        const char* k = g->kvs[i].key;
+        size_t kl = strlen(k);
+        if (kl >= sl && strcmp(k + kl - sl, key_suffix) == 0) {
+            switch (g->kvs[i].type) {
+            case GGUF_TYPE_UINT32: return g->kvs[i].val.u32;
+            case GGUF_TYPE_INT32:  return g->kvs[i].val.i32;
+            case GGUF_TYPE_UINT64: return (double)g->kvs[i].val.u64;
+            case GGUF_TYPE_FLOAT32: return g->kvs[i].val.f32;
+            default: break;
+            }
+        }
+    }
+    return fallback;
+}
+
 /* Metadata accessors */
 const char* cce_gguf_get_arch(const cce_gguf* g)     { return (g && g->arch[0]) ? g->arch : "unknown"; }
 int cce_gguf_get_n_layer(const cce_gguf* g)          { return g ? g->n_layer : 0; }
@@ -646,6 +717,197 @@ float cce_gguf_get_rms_eps(const cce_gguf* g)        { return g ? g->rms_eps : 0
 const char* cce_gguf_get_tokenizer_model(const cce_gguf* g) { return (g && g->tokenizer_model[0]) ? g->tokenizer_model : "unknown"; }
 int cce_gguf_get_bos_token_id(const cce_gguf* g) { return g ? g->bos_token_id : -1; }
 int cce_gguf_get_eos_token_id(const cce_gguf* g) { return g ? g->eos_token_id : -1; }
+
+/* ---- Per-layer attention geometry (see cce_attn_geom in the header) ----
+   Derived from TENSOR SHAPES first (the file's bytes are the truth),
+   metadata second (layer-type lists and head widths), REFUSING on any
+   inconsistency — a mis-dimensioned architecture must never forward.
+   Motivation: gemma4 varies head_dim per layer type (swa 256 / global 512),
+   runs asymmetric K/V head counts (MQA k=1, v=4 on global layers), and the
+   old uniform-dims attention silently consumed uninitialized buffers. */
+static cce_result gguf_build_attn_geom(cce_gguf_qwen2* m, const cce_gguf* g) {
+    int L = m->n_layer;
+    int D = m->n_embd;
+    const char* arch = cce_gguf_get_arch(g);
+    int64_t pattern[512];
+    size_t pat_n;
+    double klen, klen_swa, vlen, vlen_swa, window, fb, fb_swa, rdim, rdim_swa;
+    int l;
+
+    if (L <= 0 || D <= 0) return CCE_ERR_INVALID_ARG;
+    m->geom = (struct cce_attn_geom*)calloc((size_t)L, sizeof *m->geom);
+    if (!m->geom) return CCE_ERR_OOM;
+
+    pat_n = cce_gguf_get_int_array(g, "attention.sliding_window_pattern",
+                                   pattern, 512);
+    klen     = gguf_get_scalar(g, "attention.key_length", 0);
+    klen_swa = gguf_get_scalar(g, "attention.key_length_swa", klen);
+    vlen     = gguf_get_scalar(g, "attention.value_length", klen);
+    vlen_swa = gguf_get_scalar(g, "attention.value_length_swa", klen_swa);
+    window   = gguf_get_scalar(g, "attention.sliding_window", 0);
+    fb       = (m->rope_freq_base > 0.0f) ? m->rope_freq_base : 10000.0f;
+    fb_swa   = gguf_get_scalar(g, "rope.freq_base_swa", fb);
+    rdim     = gguf_get_scalar(g, "rope.dimension_count", 0);
+    rdim_swa = gguf_get_scalar(g, "rope.dimension_count_swa", rdim);
+
+    m->embed_scale = (strncmp(arch, "gemma", 5) == 0) ? sqrtf((float)D) : 1.0f;
+    m->final_softcap = (float)gguf_get_scalar(g, "final_logit_softcapping", 0);
+
+    m->k_slot_floats = 0;
+    m->v_slot_floats = 0;
+    for (l = 0; l < L; l++) {
+        struct cce_attn_geom* ge = &m->geom[l];
+        char tn[128];
+        cce_gguf_tensor_meta tm;
+        int idx;
+        double hd, vhd;
+
+        snprintf(tn, sizeof tn, "blk.%d.attn_q.weight", l);
+        idx = cce_gguf_find_tensor(g, tn);
+        if (idx < 0 || cce_gguf_get_tensor_meta(g, idx, &tm) != CCE_OK ||
+            tm.ndim != 2 || tm.shape[0] != D) {
+            fprintf(stderr, "attn geom: layer %d has no usable attn_q "
+                            "(shared-KV drafts are not standalone models) — "
+                            "refusing load\n", l);
+            return CCE_ERR_UNSUPPORTED;
+        }
+        ge->q_dim = tm.shape[1];
+
+        snprintf(tn, sizeof tn, "blk.%d.attn_k.weight", l);
+        idx = cce_gguf_find_tensor(g, tn);
+        if (idx >= 0 && cce_gguf_get_tensor_meta(g, idx, &tm) == CCE_OK &&
+            tm.ndim == 2 && tm.shape[0] == D)
+            ge->k_dim = tm.shape[1];
+        snprintf(tn, sizeof tn, "blk.%d.attn_v.weight", l);
+        idx = cce_gguf_find_tensor(g, tn);
+        if (idx >= 0 && cce_gguf_get_tensor_meta(g, idx, &tm) == CCE_OK &&
+            tm.ndim == 2 && tm.shape[0] == D)
+            ge->v_dim = tm.shape[1];
+        if (ge->k_dim > 0 && ge->v_dim <= 0) {
+            /* gemma4 global layers ship K but NO V tensor. The only
+               decomposition consistent with o_proj width (n_q*value_length)
+               and head_count_kv is V TIED to the K projection (its raw,
+               pre-norm/pre-rope output) — an inference, flagged in the spec
+               pending external ground truth. */
+            ge->v_dim = ge->k_dim;
+            ge->v_tied = 1;
+        }
+        if (ge->k_dim <= 0 || ge->v_dim <= 0) {
+            fprintf(stderr, "attn geom: layer %d lacks attn_k/attn_v — "
+                            "refusing load (KV-sharing archs unsupported)\n",
+                    l);
+            return CCE_ERR_UNSUPPORTED;
+        }
+
+        ge->swa = (pat_n > (size_t)l) ? (pattern[l] != 0) : 0;
+        hd  = ge->swa ? klen_swa : klen;
+        vhd = ge->swa ? vlen_swa : vlen;
+        if (hd <= 0) {  /* legacy qwen2/llama: no key_length metadata */
+            hd = (m->head_dim > 0) ? m->head_dim
+                                   : (m->n_head > 0 ? D / m->n_head : 0);
+            vhd = hd;
+        }
+        ge->head_dim = (int)hd;
+        ge->v_head_dim = (int)vhd;
+        if (ge->head_dim <= 0 || ge->v_head_dim <= 0 ||
+            ge->q_dim % ge->head_dim || ge->k_dim % ge->head_dim ||
+            ge->v_dim % ge->v_head_dim) {
+            fprintf(stderr, "attn geom: layer %d dims not divisible "
+                            "(q=%d k=%d v=%d hd=%d vhd=%d) — refusing\n", l,
+                    ge->q_dim, ge->k_dim, ge->v_dim, ge->head_dim,
+                    ge->v_head_dim);
+            return CCE_ERR_UNSUPPORTED;
+        }
+        ge->n_q = ge->q_dim / ge->head_dim;
+        ge->n_k = ge->k_dim / ge->head_dim;
+        ge->n_v = ge->v_dim / ge->v_head_dim;
+        if (ge->n_k <= 0 || ge->n_v <= 0 || ge->n_q % ge->n_k ||
+            ge->n_q % ge->n_v) {
+            fprintf(stderr, "attn geom: layer %d head grouping invalid "
+                            "(nq=%d nk=%d nv=%d) — refusing\n", l, ge->n_q,
+                    ge->n_k, ge->n_v);
+            return CCE_ERR_UNSUPPORTED;
+        }
+
+        /* o_proj must consume the concatenated V slices */
+        snprintf(tn, sizeof tn, "blk.%d.attn_output.weight", l);
+        idx = cce_gguf_find_tensor(g, tn);
+        if (idx >= 0 && cce_gguf_get_tensor_meta(g, idx, &tm) == CCE_OK &&
+            tm.ndim == 2 &&
+            tm.shape[0] != ge->n_q * ge->v_head_dim) {
+            fprintf(stderr, "attn geom: layer %d o_proj in=%d != nq*vhd=%d "
+                            "— refusing\n", l, tm.shape[0],
+                    ge->n_q * ge->v_head_dim);
+            return CCE_ERR_UNSUPPORTED;
+        }
+
+        /* per-layer q/k norms (when present) must match head width */
+        if (m->attn_q_norm && m->attn_q_norm[l].data &&
+            m->attn_q_norm[l].numel != (size_t)ge->head_dim) {
+            fprintf(stderr, "attn geom: layer %d q_norm numel %zu != "
+                            "head_dim %d — refusing\n", l,
+                    m->attn_q_norm[l].numel, ge->head_dim);
+            return CCE_ERR_UNSUPPORTED;
+        }
+        if (m->attn_k_norm && m->attn_k_norm[l].data &&
+            m->attn_k_norm[l].numel != (size_t)ge->head_dim) {
+            fprintf(stderr, "attn geom: layer %d k_norm numel %zu != "
+                            "head_dim %d — refusing\n", l,
+                    m->attn_k_norm[l].numel, ge->head_dim);
+            return CCE_ERR_UNSUPPORTED;
+        }
+
+        ge->rope_base = (float)(ge->swa ? fb_swa : fb);
+        ge->rope_dim = (int)(ge->swa ? rdim_swa : rdim);
+        if (ge->rope_dim <= 0 || ge->rope_dim > ge->head_dim)
+            ge->rope_dim = ge->head_dim;
+        ge->window = ge->swa ? (int)window : 0;
+
+        ge->k_off = m->k_slot_floats;
+        ge->v_off = m->v_slot_floats;
+        m->k_slot_floats += (size_t)ge->k_dim;
+        m->v_slot_floats += (size_t)ge->v_dim;
+    }
+    return CCE_OK;
+}
+
+/* Uniform geometry for models populated outside the GGUF loader (see
+   header). Trusts the scalar hparams the caller already validated. */
+cce_result cce_gguf_qwen2_geom_uniform(cce_gguf_qwen2* m) {
+    int l;
+    if (!m || m->n_layer <= 0 || m->n_head <= 0) return CCE_ERR_INVALID_ARG;
+    if (m->geom) { free(m->geom); m->geom = NULL; }
+    m->geom = (struct cce_attn_geom*)calloc((size_t)m->n_layer,
+                                            sizeof *m->geom);
+    if (!m->geom) return CCE_ERR_OOM;
+    m->k_slot_floats = 0;
+    m->v_slot_floats = 0;
+    if (m->embed_scale <= 0.0f) m->embed_scale = 1.0f;
+    for (l = 0; l < m->n_layer; l++) {
+        struct cce_attn_geom* ge = &m->geom[l];
+        int hd = (m->head_dim > 0) ? m->head_dim : m->n_embd / m->n_head;
+        int kv = (m->n_kv_head > 0) ? m->n_kv_head : m->n_head;
+        ge->head_dim = hd;
+        ge->v_head_dim = hd;
+        ge->n_q = m->n_head;
+        ge->n_k = kv;
+        ge->n_v = kv;
+        ge->q_dim = m->n_head * hd;
+        ge->k_dim = kv * hd;
+        ge->v_dim = kv * hd;
+        ge->swa = 0;
+        ge->window = 0;
+        ge->rope_base = (m->rope_freq_base > 0.0f) ? m->rope_freq_base
+                                                   : 10000.0f;
+        ge->rope_dim = hd;
+        ge->k_off = m->k_slot_floats;
+        ge->v_off = m->v_slot_floats;
+        m->k_slot_floats += (size_t)ge->k_dim;
+        m->v_slot_floats += (size_t)ge->v_dim;
+        if (ge->n_q % ge->n_k) return CCE_ERR_INVALID_ARG;
+    }
+    return CCE_OK;
+}
 
 /* Simple RMSNorm (no mean subtraction) */
 static cce_result gguf_rms_norm(const cce_tensor* in, const cce_tensor* weight, float eps, cce_tensor* out) {
@@ -1081,53 +1343,60 @@ static void gguf_apply_rope(float* q, float* k, int t, int head_dim, int pos, fl
 
 cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_tokens, float* logits_out, int logits_cap) {
     if (!m || !tokens || n_tokens < 1 || !logits_out) return CCE_ERR_INVALID_ARG;
-    if (!m->forest) return CCE_ERR_INVALID_ARG;
+    if (!m->geom || m->k_slot_floats == 0) {
+        fprintf(stderr, "cce_gguf: no attention geometry — model was not "
+                        "loaded through a geometry-aware loader; refusing\n");
+        return CCE_ERR_UNSUPPORTED;
+    }
 
     int D = m->n_embd;
-    int H = m->n_head;
-    int KV = m->n_kv_head;
-    int HD = m->head_dim;
     int V = m->vocab_size ? m->vocab_size : 151936;
-
     int start_pos = m->cur_pos;
+
+    if (start_pos + n_tokens > m->max_ctx) return CCE_ERR_INVALID_ARG;
 
     /* per-instance GPU handle wins; the process-global is the default */
     cce_clgemm *gpu = m->clgemm ? m->clgemm : g_gguf_clgemm;
 
-    /* numerics: config/metadata overrides with safe defaults for calloc'd structs */
     float eps = (m->rms_eps > 0.0f) ? m->rms_eps : 1e-6f;
-    float rope_base = (m->rope_freq_base > 0.0f) ? m->rope_freq_base : 10000.0f;
 
     cce_tensor x = {0};
-    int xsh[2] = {n_tokens, D};  // process the new tokens
+    int xsh[2] = {n_tokens, D};
     if (cce_tensor_alloc(&x, xsh, 2) != CCE_OK) return CCE_ERR_OOM;
 
-    /* Embed the new tokens */
+    /* Embed (+ gemma-family sqrt(D) scaling — part of the architecture,
+       not a tuning knob) */
     for (int t = 0; t < n_tokens; t++) {
         int tok = tokens[t];
         if (tok < 0 || tok >= V) tok = 0;
         memcpy(x.data + (size_t)t * D, m->tok_emb.data + (size_t)tok * D, D * sizeof(float));
     }
+    if (m->embed_scale > 0.0f && m->embed_scale != 1.0f) {
+        for (size_t i = 0; i < (size_t)n_tokens * D; i++)
+            x.data[i] *= m->embed_scale;
+    }
 
-    /* CNET_FWD_TRACE=1: stage checksums of the FIRST forward — the
-       nondeterminism bisector (diff two runs; first differing stage is the
-       culprit). Zero cost when off. */
+    /* CNET_FWD_TRACE=1: stage checksums of the first two forwards — the
+       nondeterminism bisector. Zero cost when off. */
     static int fwd_trace = -1;
     int trace_this = 0;
     if (fwd_trace < 0) {
         const char *e = getenv("CNET_FWD_TRACE");
-        fwd_trace = (e && e[0] == '1') ? 2 : 0;   /* 2 = calls remaining */
+        fwd_trace = (e && e[0] == '1') ? 2 : 0;
     }
     if (fwd_trace > 0) { trace_this = 1; fwd_trace--; }
 #define FWD_CK(tag, ptr, cnt) do { if (trace_this) { \
         double ck_ = 0.0; size_t ii_; \
         for (ii_ = 0; ii_ < (size_t)(cnt); ++ii_) ck_ += fabs((double)(ptr)[ii_]); \
-        printf("FWD_TRACE %s: %.10g\\n", (tag), ck_); } } while (0)
-
+        printf("FWD_TRACE %s: %.10g\n", (tag), ck_); } } while (0)
     FWD_CK("embed", x.data, (size_t)n_tokens * D);
+
+    float *scores = (float*)malloc((size_t)m->max_ctx * sizeof *scores);
+    if (!scores) { cce_tensor_free(&x); return CCE_ERR_OOM; }
 
     char name[128];
     for (int l = 0; l < m->n_layer; l++) {
+        const struct cce_attn_geom *ge = &m->geom[l];
         snprintf(name, sizeof(name), "qwen2.blk.%d.q_proj", l);
         cce_cascade* q_cas = cce_forest_get_resident(m->forest, name);
         snprintf(name, sizeof(name), "qwen2.blk.%d.k_proj", l);
@@ -1143,171 +1412,169 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
         snprintf(name, sizeof(name), "qwen2.blk.%d.down_proj", l);
         cce_cascade* down_cas = cce_forest_get_resident(m->forest, name);
 
-        if (!q_cas || !o_cas || !gate_cas || !up_cas || !down_cas) {
-            cce_tensor_free(&x);
+        if (ge->v_tied) v_cas = k_cas;   /* V = raw K projection (tied) */
+        if (!q_cas || !k_cas || !v_cas || !o_cas || !gate_cas || !up_cas ||
+            !down_cas) {
+            fprintf(stderr, "cce_gguf: layer %d cascades missing — "
+                            "refusing\n", l);
+            free(scores); cce_tensor_free(&x);
             return CCE_ERR_NOT_FOUND;
         }
-        bool has_kv = (k_cas && v_cas);
 
-        cce_tensor ln1 = {0}, q = {0};
         int lnsh[2] = {n_tokens, D};
+        cce_tensor ln1 = {0}, q = {0}, k = {0}, v = {0};
         cce_tensor_alloc(&ln1, lnsh, 2);
         gguf_rms_norm(&x, &m->attn_norm[l], eps, &ln1);
 
-        int qsh[2] = {n_tokens, D};
-        cce_tensor_alloc(&q, qsh, 2);
-        if (apply_linear_rows(gpu, q_cas, &ln1, &q) != CCE_OK) {
-            /* REFUSAL BOUNDARY: a failed projection used to be silently
-               ignored, leaving q as UNINITIALIZED HEAP — every gemma4
-               campaign mined from garbage attention (q_proj emits H*HD=4096
-               != D; found via CNET_FWD_TRACE). A wrong-dim architecture must
-               refuse, not improvise. */
-            fprintf(stderr, "cce_gguf: q_proj failed at layer %d (out dim "
-                            "%d vs expected %d?) — refusing to forward a "
-                            "mis-dimensioned architecture\n", l,
-                    q_cas->blocks[0].weights.shape[1], D);
-            cce_tensor_free(&ln1); cce_tensor_free(&q); cce_tensor_free(&x);
+        cce_tensor_alloc(&q, (int[]){n_tokens, ge->q_dim}, 2);
+        cce_tensor_alloc(&k, (int[]){n_tokens, ge->k_dim}, 2);
+        cce_tensor_alloc(&v, (int[]){n_tokens, ge->v_dim}, 2);
+        if (apply_linear_rows(gpu, q_cas, &ln1, &q) != CCE_OK ||
+            apply_linear_rows(gpu, k_cas, &ln1, &k) != CCE_OK ||
+            (ge->v_tied
+                 ? (memcpy(v.data, k.data,
+                           (size_t)n_tokens * ge->k_dim * sizeof(float)),
+                    CCE_OK)
+                 : apply_linear_rows(gpu, v_cas, &ln1, &v)) != CCE_OK) {
+            /* REFUSAL BOUNDARY: a failed projection must never leave its
+               output as uninitialized heap (the pre-geometry bug that mined
+               garbage attention for months). */
+            fprintf(stderr, "cce_gguf: q/k/v projection failed at layer %d "
+                            "(q_dim=%d k_dim=%d v_dim=%d) — refusing\n", l,
+                    ge->q_dim, ge->k_dim, ge->v_dim);
+            free(scores);
+            cce_tensor_free(&ln1); cce_tensor_free(&q);
+            cce_tensor_free(&k); cce_tensor_free(&v); cce_tensor_free(&x);
             return CCE_ERR_UNSUPPORTED;
         }
-        if (l == 0 && trace_this) {
-            double wck = 0.0; size_t wi;
-            const cce_block *qb = &q_cas->blocks[0];
-            for (wi = 0; wi < qb->weights.numel && qb->weights.data; ++wi)
-                wck += fabs((double)qb->weights.data[wi]);
-            printf("FWD_TRACE q_weights(l0,blocks=%d): %.10g\n",
-                   q_cas->num_blocks, wck);
-        }
         if (l == 0) { FWD_CK("ln1(l0)", ln1.data, (size_t)n_tokens * D);
-                      FWD_CK("q(l0)", q.data, (size_t)n_tokens * D); }
+                      FWD_CK("q(l0)", q.data, (size_t)n_tokens * ge->q_dim); }
 
-        cce_tensor k = {0}, v = {0};
-        if (has_kv) {
-            int kvsh[2] = {n_tokens, KV * HD};
-            cce_tensor_alloc(&k, kvsh, 2);
-            cce_tensor_alloc(&v, kvsh, 2);
-            if (apply_linear_rows(gpu, k_cas, &ln1, &k) != CCE_OK ||
-                apply_linear_rows(gpu, v_cas, &ln1, &v) != CCE_OK) {
-                fprintf(stderr, "cce_gguf: k/v_proj failed at layer %d — "
-                                "refusing (see q_proj note)\n", l);
-                cce_tensor_free(&ln1); cce_tensor_free(&q);
-                cce_tensor_free(&k); cce_tensor_free(&v);
-                cce_tensor_free(&x);
-                return CCE_ERR_UNSUPPORTED;
-            }
-        }
-
-        /* RoPE on new tokens - per head for correct positional encoding (quality fix) */
+        /* qk-norm (per head, when the tensors exist) THEN RoPE — with the
+           LAYER's theta and rotation width (gemma4: swa layers theta 10k /
+           dim 256, global layers theta 1e6 / dim 512). */
+        const float *qnw = (m->attn_q_norm && m->attn_q_norm[l].data)
+                               ? m->attn_q_norm[l].data : NULL;
+        const float *knw = (m->attn_k_norm && m->attn_k_norm[l].data)
+                               ? m->attn_k_norm[l].data : NULL;
         for (int t = 0; t < n_tokens; t++) {
             int pos = start_pos + t;
-            // q heads always (even in fallback)
-            for (int hh = 0; hh < H; hh++) {
-                float* qh = q.data + (size_t)t * D + (size_t)hh * HD;
-                gguf_apply_rope(qh, NULL, 0, HD, pos, rope_base, H, KV);
+            for (int h = 0; h < ge->n_q; h++) {
+                float *qh = q.data + (size_t)t * ge->q_dim +
+                            (size_t)h * ge->head_dim;
+                if (qnw) {
+                    float ss = 0.0f;
+                    for (int d2 = 0; d2 < ge->head_dim; d2++)
+                        ss += qh[d2] * qh[d2];
+                    ss = 1.0f / sqrtf(ss / ge->head_dim + eps);
+                    for (int d2 = 0; d2 < ge->head_dim; d2++)
+                        qh[d2] = (qh[d2] * ss) * qnw[d2];
+                }
+                gguf_apply_rope(qh, NULL, 0, ge->rope_dim, pos,
+                                ge->rope_base, ge->n_q, ge->n_k);
             }
-            if (has_kv) {
-                for (int hh = 0; hh < KV; hh++) {
-                    float* kh = k.data + (size_t)t * (KV * HD) + (size_t)hh * HD;
-                    gguf_apply_rope(NULL, kh, 0, HD, pos, rope_base, H, KV);
+            for (int h = 0; h < ge->n_k; h++) {
+                float *kh = k.data + (size_t)t * ge->k_dim +
+                            (size_t)h * ge->head_dim;
+                if (knw) {
+                    float ss = 0.0f;
+                    for (int d2 = 0; d2 < ge->head_dim; d2++)
+                        ss += kh[d2] * kh[d2];
+                    ss = 1.0f / sqrtf(ss / ge->head_dim + eps);
+                    for (int d2 = 0; d2 < ge->head_dim; d2++)
+                        kh[d2] = (kh[d2] * ss) * knw[d2];
+                }
+                gguf_apply_rope(NULL, kh, 0, ge->rope_dim, pos,
+                                ge->rope_base, ge->n_q, ge->n_k);
+            }
+            /* stash to the per-layer slots BEFORE attention: every read
+               below comes from the cache (prefix reuse = pinned rows) */
+            memcpy(m->k_cache + (size_t)pos * m->k_slot_floats + ge->k_off,
+                   k.data + (size_t)t * ge->k_dim,
+                   (size_t)ge->k_dim * sizeof(float));
+            memcpy(m->v_cache + (size_t)pos * m->v_slot_floats + ge->v_off,
+                   v.data + (size_t)t * ge->v_dim,
+                   (size_t)ge->v_dim * sizeof(float));
+        }
+
+        /* attention: GQA with (possibly asymmetric) K/V head groups +
+           causal + optional sliding window */
+        int o_in = ge->n_q * ge->v_head_dim;
+        cce_tensor attn_out = {0};
+        cce_tensor_alloc(&attn_out, (int[]){n_tokens, o_in}, 2);
+        float scale = 1.0f / sqrtf((float)ge->head_dim);
+        for (int h = 0; h < ge->n_q; h++) {
+            int kh_i = h / (ge->n_q / ge->n_k);
+            int vh_i = h / (ge->n_q / ge->n_v);
+            for (int t = 0; t < n_tokens; t++) {
+                int abs_t = start_pos + t;
+                int jmin = 0;
+                if (ge->window > 0 && abs_t - ge->window + 1 > 0)
+                    jmin = abs_t - ge->window + 1;
+                const float *qh = q.data + (size_t)t * ge->q_dim +
+                                  (size_t)h * ge->head_dim;
+                for (int j = jmin; j <= abs_t; j++) {
+                    const float *kh = m->k_cache +
+                        (size_t)j * m->k_slot_floats + ge->k_off +
+                        (size_t)kh_i * ge->head_dim;
+                    float sacc = 0.0f;
+                    for (int d2 = 0; d2 < ge->head_dim; d2++)
+                        sacc += qh[d2] * kh[d2];
+                    scores[j] = sacc * scale;
+                }
+                float maxs = -1e30f;
+                for (int j = jmin; j <= abs_t; j++)
+                    if (scores[j] > maxs) maxs = scores[j];
+                float sum = 0.0f;
+                for (int j = jmin; j <= abs_t; j++) {
+                    scores[j] = expf(scores[j] - maxs);
+                    sum += scores[j];
+                }
+                for (int j = jmin; j <= abs_t; j++) scores[j] /= sum;
+                float *oh = attn_out.data + (size_t)t * o_in +
+                            (size_t)h * ge->v_head_dim;
+                memset(oh, 0, (size_t)ge->v_head_dim * sizeof(float));
+                for (int j = jmin; j <= abs_t; j++) {
+                    const float *vh = m->v_cache +
+                        (size_t)j * m->v_slot_floats + ge->v_off +
+                        (size_t)vh_i * ge->v_head_dim;
+                    for (int d2 = 0; d2 < ge->v_head_dim; d2++)
+                        oh[d2] += scores[j] * vh[d2];
                 }
             }
         }
 
         cce_tensor after_attn = {0};
         cce_tensor_alloc(&after_attn, lnsh, 2);
-
-        if (has_kv) {
-            /* Full GQA attention */
-            cce_tensor attn_out = {0};
-            cce_tensor_alloc(&attn_out, lnsh, 2);
-            memset(attn_out.data, 0, (size_t)n_tokens * D * sizeof(float));
-
-            int max_abs = start_pos + n_tokens - 1;
-            if (max_abs < 0) max_abs = 0;
-            float *scores = (float*)malloc( (size_t)(max_abs + 1) * sizeof(float) );
-            if (!scores) scores = (float*)calloc(4096, sizeof(float));
-
-            for (int h = 0; h < H; h++) {
-                int kv_h = h / (H / KV);
-                for (int t = 0; t < n_tokens; t++) {
-                    int abs_t = start_pos + t;
-                    float* qh = q.data + (size_t)t * D + h * HD;
-                    int max_t = abs_t;
-                    for (int j = 0; j <= max_t; j++) {
-                        float s = 0.0f;
-                        float* kh;
-                        if (j < start_pos) {
-                            kh = m->k_cache + (size_t)l * m->max_ctx * KV * HD + (size_t)j * KV * HD + kv_h * HD;
-                        } else {
-                            int jj = j - start_pos;
-                            kh = k.data + (size_t)jj * (KV*HD) + kv_h * HD;
-                        }
-                        for (int d = 0; d < HD; d++) s += qh[d] * kh[d];
-                        scores[j] = s / sqrtf((float)HD);
-                    }
-                    float maxs = -1e30f;
-                    for (int j=0; j<=abs_t; j++) if (scores[j] > maxs) maxs = scores[j];
-                    float sum = 0.0f;
-                    for (int j=0; j<=abs_t; j++) { scores[j] = expf(scores[j] - maxs); sum += scores[j]; }
-                    for (int j=0; j<=abs_t; j++) scores[j] /= sum;
-                    float* oh = attn_out.data + (size_t)t * D + h * HD;
-                    memset(oh, 0, HD * sizeof(float));
-                    for (int j = 0; j <= abs_t; j++) {
-                        float* vh = (j < start_pos) ?
-                            m->v_cache + (size_t)l * m->max_ctx * KV * HD + (size_t)j * KV * HD + kv_h * HD :
-                            v.data + (size_t)(j - start_pos) * (KV*HD) + kv_h * HD;
-                        for (int d = 0; d < HD; d++) oh[d] += scores[j] * vh[d];
-                    }
-                }
-            }
+        if (apply_linear_rows(gpu, o_cas, &attn_out, &after_attn) != CCE_OK) {
+            fprintf(stderr, "cce_gguf: o_proj failed at layer %d — "
+                            "refusing\n", l);
             free(scores);
-            apply_linear_rows(gpu, o_cas, &attn_out, &after_attn);
-            cce_tensor_free(&attn_out);
-        } else {
-            /* Fallback for Gemma4-style (q + o only): use q_proj output through o_proj.
-               This lets the model run using its actual weights even without explicit k/v.
-               Also apply extra norms/scales when present. */
-            cce_tensor qn = {0};
-            cce_tensor_alloc(&qn, qsh, 2);
-            if (m->attn_q_norm && m->attn_q_norm[l].data) {
-                /* per-head or simple norm on q */
-                gguf_rms_norm(&q, &m->attn_q_norm[l], eps, &qn);
-            } else {
-                memcpy(qn.data, q.data, (size_t)n_tokens * D * sizeof(float));
-            }
-            apply_linear_rows(gpu, o_cas, &qn, &after_attn);
-            cce_tensor_free(&qn);
+            cce_tensor_free(&ln1); cce_tensor_free(&q); cce_tensor_free(&k);
+            cce_tensor_free(&v); cce_tensor_free(&attn_out);
+            cce_tensor_free(&after_attn); cce_tensor_free(&x);
+            return CCE_ERR_UNSUPPORTED;
+        }
+        cce_tensor_free(&attn_out);
+        if (l == 0) FWD_CK("attn(l0)", after_attn.data, (size_t)n_tokens * D);
 
-            /* Apply post-attention norm and layer scale if present */
-            if (m->post_attention_norm && m->post_attention_norm[l].data) {
-                cce_tensor tmp = {0};
-                cce_tensor_alloc(&tmp, lnsh, 2);
-                gguf_rms_norm(&after_attn, &m->post_attention_norm[l], eps, &tmp);
-                memcpy(after_attn.data, tmp.data, (size_t)n_tokens * D * sizeof(float));
-                cce_tensor_free(&tmp);
-            }
-            if (m->layer_output_scale && m->layer_output_scale[l].data && m->layer_output_scale[l].numel > 0) {
-                float sc = m->layer_output_scale[l].data[0];
-                for (size_t i = 0; i < (size_t)n_tokens * D; i++) after_attn.data[i] *= sc;
-            }
+        if (m->post_attention_norm && m->post_attention_norm[l].data) {
+            cce_tensor tmp = {0};
+            cce_tensor_alloc(&tmp, lnsh, 2);
+            gguf_rms_norm(&after_attn, &m->post_attention_norm[l], eps, &tmp);
+            memcpy(after_attn.data, tmp.data, (size_t)n_tokens * D * sizeof(float));
+            cce_tensor_free(&tmp);
+        }
+        if (m->layer_output_scale && m->layer_output_scale[l].data &&
+            m->layer_output_scale[l].numel > 0) {
+            float sc = m->layer_output_scale[l].data[0];
+            for (size_t i = 0; i < (size_t)n_tokens * D; i++)
+                after_attn.data[i] *= sc;
         }
 
         /* residual */
-        for (size_t i = 0; i < (size_t)n_tokens * D; i++) {
+        for (size_t i = 0; i < (size_t)n_tokens * D; i++)
             after_attn.data[i] += x.data[i];
-        }
-
-        /* Write current k/v to cache (only if present) */
-        if (has_kv) {
-            for (int t = 0; t < n_tokens; t++) {
-                int abs_t = start_pos + t;
-                for (int h = 0; h < KV; h++) {
-                    float* kc = m->k_cache + (size_t)l * m->max_ctx * KV * HD + (size_t)abs_t * KV * HD + (size_t)h * HD;
-                    float* vc = m->v_cache + (size_t)l * m->max_ctx * KV * HD + (size_t)abs_t * KV * HD + (size_t)h * HD;
-                    memcpy(kc, k.data + (size_t)t * (KV*HD) + (size_t)h * HD, HD * sizeof(float));
-                    memcpy(vc, v.data + (size_t)t * (KV*HD) + (size_t)h * HD, HD * sizeof(float));
-                }
-            }
-        }
 
         /* MLP */
         cce_tensor ln2 = {0}, gate = {0}, upv = {0}, mid = {0}, down = {0};
@@ -1316,48 +1583,66 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
         gguf_rms_norm(&after_attn, &m->ffn_norm[l], eps, &ln2);
 
         cce_tensor_alloc(&gate, (int[]){n_tokens, mlp_hidden}, 2);
-        apply_linear_rows(gpu, gate_cas, &ln2, &gate);
-
         cce_tensor_alloc(&upv, (int[]){n_tokens, mlp_hidden}, 2);
-        apply_linear_rows(gpu, up_cas, &ln2, &upv);
+        if (apply_linear_rows(gpu, gate_cas, &ln2, &gate) != CCE_OK ||
+            apply_linear_rows(gpu, up_cas, &ln2, &upv) != CCE_OK) {
+            fprintf(stderr, "cce_gguf: gate/up failed at layer %d — refusing\n", l);
+            free(scores);
+            cce_tensor_free(&ln1); cce_tensor_free(&q); cce_tensor_free(&k);
+            cce_tensor_free(&v); cce_tensor_free(&after_attn);
+            cce_tensor_free(&ln2); cce_tensor_free(&gate); cce_tensor_free(&upv);
+            cce_tensor_free(&x);
+            return CCE_ERR_UNSUPPORTED;
+        }
 
         cce_tensor_alloc(&mid, (int[]){n_tokens, mlp_hidden}, 2);
         gguf_silu(&gate, &gate);
-        for (size_t i = 0; i < (size_t)n_tokens * mlp_hidden; i++) {
-            mid.data[i] = gate.data[i] * upv.data[i];  // silu(gate) * up
-        }
+        for (size_t i = 0; i < (size_t)n_tokens * mlp_hidden; i++)
+            mid.data[i] = gate.data[i] * upv.data[i];
 
         cce_tensor_alloc(&down, lnsh, 2);
-        apply_linear_rows(gpu, down_cas, &mid, &down);
-
-        for (size_t i = 0; i < (size_t)n_tokens * D; i++) {
-            x.data[i] = after_attn.data[i] + down.data[i];
+        if (apply_linear_rows(gpu, down_cas, &mid, &down) != CCE_OK) {
+            fprintf(stderr, "cce_gguf: down failed at layer %d — refusing\n", l);
+            free(scores);
+            cce_tensor_free(&ln1); cce_tensor_free(&q); cce_tensor_free(&k);
+            cce_tensor_free(&v); cce_tensor_free(&after_attn);
+            cce_tensor_free(&ln2); cce_tensor_free(&gate); cce_tensor_free(&upv);
+            cce_tensor_free(&mid); cce_tensor_free(&down); cce_tensor_free(&x);
+            return CCE_ERR_UNSUPPORTED;
         }
-        if (l == 0) { FWD_CK("after_attn(l0)", after_attn.data, (size_t)n_tokens * D);
-                      FWD_CK("x(l0)", x.data, (size_t)n_tokens * D); }
 
-        // free layer temps
-        cce_tensor_free(&ln1); cce_tensor_free(&q);
-        if (has_kv) { cce_tensor_free(&k); cce_tensor_free(&v); }
-        cce_tensor_free(&after_attn);
-        cce_tensor_free(&ln2); cce_tensor_free(&gate); cce_tensor_free(&upv); cce_tensor_free(&mid); cce_tensor_free(&down);
+        /* post-FFW norm: loaded for gemma-style models but never applied
+           by the old forward — applied to the MLP branch before its
+           residual add, mirroring post_attention_norm. */
+        if (m->post_ffw_norm && m->post_ffw_norm[l].data) {
+            cce_tensor tmp = {0};
+            cce_tensor_alloc(&tmp, lnsh, 2);
+            gguf_rms_norm(&down, &m->post_ffw_norm[l], eps, &tmp);
+            memcpy(down.data, tmp.data, (size_t)n_tokens * D * sizeof(float));
+            cce_tensor_free(&tmp);
+        }
+
+        for (size_t i = 0; i < (size_t)n_tokens * D; i++)
+            x.data[i] = after_attn.data[i] + down.data[i];
+        if (l == 0) FWD_CK("x(l0)", x.data, (size_t)n_tokens * D);
+
+        cce_tensor_free(&ln1); cce_tensor_free(&q); cce_tensor_free(&k);
+        cce_tensor_free(&v); cce_tensor_free(&after_attn);
+        cce_tensor_free(&ln2); cce_tensor_free(&gate); cce_tensor_free(&upv);
+        cce_tensor_free(&mid); cce_tensor_free(&down);
 
         if (g_gguf_layer_tap)
             g_gguf_layer_tap(l, x.data, n_tokens, D, g_gguf_layer_tap_ctx);
         if (m->layer_cap > 0 && l + 1 >= m->layer_cap) break;
     }
+    free(scores);
 
     /* final norm + head */
     cce_tensor fn = {0};
     cce_tensor_alloc(&fn, xsh, 2);
     gguf_rms_norm(&x, &m->output_norm, eps, &fn);
 
-    /* HEAD FOR THE LAST ROW ONLY: the head GEMM re-reads its full [D x V]
-       weight per row and only the last row's logits are ever consumed below
-       — same per-element math, so bits cannot move, but a seq-3 call stops
-       paying the dominant GEMM three times. (This also makes the manual
-       fallback below, which always computed just the last row into row 0,
-       agree with the copy-out.) */
+    /* HEAD FOR THE LAST ROW ONLY: the only row anyone reads */
     cce_tensor logits_t = {0};
     int lsh[2] = {1, V};
     cce_tensor_alloc(&logits_t, lsh, 2);
@@ -1373,25 +1658,27 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
         if (apply_linear_rows(gpu, head_cas, &fn_last, &logits_t) == CCE_OK) head_ok = true;
     }
     if (!head_ok && m->output.data && m->output.ndim == 2) {
-        /* Manual head using stored output (tied or not) - transpose safe guess */
         int od0 = m->output.shape[0];
         int od1 = m->output.shape[1];
-        float* last = fn.data + (size_t)(n_tokens-1) * D;
+        float* last = fn_last.data;
         for (int vi = 0; vi < V && vi < logits_cap; vi++) {
-            float s = 0.0f;
+            float sacc = 0.0f;
             if (od1 == D && od0 >= V) {
-                // output [V-ish, D]
-                for (int d=0; d<D; d++) s += last[d] * m->output.data[(size_t)vi * D + d];
+                for (int d=0; d<D; d++) sacc += last[d] * m->output.data[(size_t)vi * D + d];
             } else if (od0 == D && od1 >= V) {
-                for (int d=0; d<D; d++) s += last[d] * m->output.data[(size_t)d * od1 + vi];
-            } else if (od0 >= V && od1 == D) {
-                for (int d=0; d<D; d++) s += last[d] * m->output.data[(size_t)vi * D + d];
+                for (int d=0; d<D; d++) sacc += last[d] * m->output.data[(size_t)d * od1 + vi];
             }
-            logits_t.data[vi] = s;
+            logits_t.data[vi] = sacc;
         }
     }
 
-    /* output last token logits (logits_t holds exactly that one row) */
+    /* final_softcap is NOT applied to the returned logits: tanh is
+       monotonic, so pre-cap ranking is decision-identical in exact math —
+       while fp32 saturation (c*tanhf -> exactly +-c for |l|>~9c, measured
+       on this model) manufactures TIES that scramble top-k order. The
+       oracle consumes decisions; rank on the uncapped values. (m->
+       final_softcap is retained for future logit-level comparisons.) */
+
     int out_len = (V < logits_cap) ? V : logits_cap;
     memcpy(logits_out, logits_t.data, out_len * sizeof(float));
 
@@ -1470,6 +1757,7 @@ cce_result cce_gguf_load_qwen2(cce_gguf_qwen2** out, const char* path) {
     m->attn_norm = (cce_tensor*)calloc(m->n_layer, sizeof(cce_tensor));
     m->ffn_norm = (cce_tensor*)calloc(m->n_layer, sizeof(cce_tensor));
     m->attn_q_norm = (cce_tensor*)calloc(m->n_layer, sizeof(cce_tensor));
+    m->attn_k_norm = (cce_tensor*)calloc(m->n_layer, sizeof(cce_tensor));
     m->post_attention_norm = (cce_tensor*)calloc(m->n_layer, sizeof(cce_tensor));
     m->post_ffw_norm = (cce_tensor*)calloc(m->n_layer, sizeof(cce_tensor));
     m->layer_output_scale = (cce_tensor*)calloc(m->n_layer, sizeof(cce_tensor));
@@ -1481,6 +1769,8 @@ cce_result cce_gguf_load_qwen2(cce_gguf_qwen2** out, const char* path) {
         cce_gguf_load_tensor_by_name(g, name, &m->ffn_norm[l]);
         snprintf(name, sizeof(name), "blk.%d.attn_q_norm.weight", l);
         cce_gguf_load_tensor_by_name(g, name, &m->attn_q_norm[l]);
+        snprintf(name, sizeof(name), "blk.%d.attn_k_norm.weight", l);
+        cce_gguf_load_tensor_by_name(g, name, &m->attn_k_norm[l]);
         snprintf(name, sizeof(name), "blk.%d.post_attention_norm.weight", l);
         cce_gguf_load_tensor_by_name(g, name, &m->post_attention_norm[l]);
         snprintf(name, sizeof(name), "blk.%d.post_ffw_norm.weight", l);
@@ -1529,10 +1819,21 @@ cce_result cce_gguf_load_qwen2(cce_gguf_qwen2** out, const char* path) {
     }
     m->cur_pos = 0;
 
-    size_t kv_size = (size_t)m->n_layer * m->max_ctx * m->n_kv_head * m->head_dim;
-    GTRACE("kv alloc: max_ctx=%d -> %zu floats x2", m->max_ctx, kv_size);
-    m->k_cache = (float*)calloc(kv_size, sizeof(float));
-    m->v_cache = (float*)calloc(kv_size, sizeof(float));
+    {
+        cce_result grc = gguf_build_attn_geom(m, g);
+        if (grc != CCE_OK) {
+            cce_gguf_free(g);
+            cce_gguf_qwen2_free(m);
+            return grc;
+        }
+        GTRACE("attn geom: %d layers, k_slot=%zu v_slot=%zu floats/pos",
+               m->n_layer, m->k_slot_floats, m->v_slot_floats);
+    }
+    GTRACE("kv alloc: max_ctx=%d -> %zu + %zu floats", m->max_ctx,
+           (size_t)m->max_ctx * m->k_slot_floats,
+           (size_t)m->max_ctx * m->v_slot_floats);
+    m->k_cache = (float*)calloc((size_t)m->max_ctx * m->k_slot_floats, sizeof(float));
+    m->v_cache = (float*)calloc((size_t)m->max_ctx * m->v_slot_floats, sizeof(float));
 
     cce_gguf_free(g);  /* we don't need the raw loader anymore */
     GTRACE("load complete");
@@ -1831,9 +2132,16 @@ cce_result cce_gguf_qwen2_load_packed(cce_gguf_qwen2** out, const char* path) {
         }
     }
 
-    size_t kvsz = (size_t)m->n_layer * m->max_ctx * m->n_kv_head * m->head_dim;
-    m->k_cache = (float*)calloc(kvsz, sizeof(float));
-    m->v_cache = (float*)calloc(kvsz, sizeof(float));
+    /* uniform geometry from the restored scalar hparams (packed snapshots
+       predate per-layer geometry; gemma4-style models refuse here rather
+       than forward wrong) */
+    if (cce_gguf_qwen2_geom_uniform(m) != CCE_OK) {
+        fclose(f);
+        cce_gguf_qwen2_free(m);
+        return CCE_ERR_UNSUPPORTED;
+    }
+    m->k_cache = (float*)calloc((size_t)m->max_ctx * m->k_slot_floats, sizeof(float));
+    m->v_cache = (float*)calloc((size_t)m->max_ctx * m->v_slot_floats, sizeof(float));
 
     fclose(f);
     *out = m;
@@ -1863,6 +2171,11 @@ void cce_gguf_qwen2_free(cce_gguf_qwen2* m) {
         for (int l=0; l<m->n_layer; l++) cce_tensor_free(&m->attn_q_norm[l]);
         free(m->attn_q_norm);
     }
+    if (m->attn_k_norm) {
+        for (int l=0; l<m->n_layer; l++) cce_tensor_free(&m->attn_k_norm[l]);
+        free(m->attn_k_norm);
+    }
+    free(m->geom);
     if (m->post_attention_norm) {
         for (int l=0; l<m->n_layer; l++) cce_tensor_free(&m->post_attention_norm[l]);
         free(m->post_attention_norm);

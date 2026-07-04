@@ -190,6 +190,15 @@ static void st_write(const char* path, const st_entry* ents, int n_ents) {
     uint64_t hlen = (uint64_t)j;
     fwrite(&hlen, 8, 1, f);
     fwrite(json, 1, j, f);
+    /* GGUF: tensor data begins at the next general.alignment boundary
+       (default 32) after the table — real writers pad, and the reader now
+       refuses to humor unpadded files (the unaligned-read bug mined NaN
+       oracles for months). Keep the fixture spec-compliant. */
+    {
+        long here = ftell(f);
+        long pad = (long)((32 - (here % 32)) % 32);
+        for (long p = 0; p < pad; p++) fputc(0, f);
+    }
     for (int i = 0; i < n_ents; i++) fwrite(ents[i].data, 4, ents[i].numel, f);
     fclose(f);
 }
@@ -257,6 +266,15 @@ static void gguf_write(const char* path, const st_entry* ents, int n_ents) {
         gg_u32(f, 0 /* F32 */);
         gg_u64(f, off);
         off += ents[i].numel * 4;
+    }
+    /* GGUF: tensor data begins at the next general.alignment boundary
+       (default 32) after the table — real writers pad, and the reader now
+       refuses to humor unpadded files (the unaligned-read bug mined NaN
+       oracles for months). Keep the fixture spec-compliant. */
+    {
+        long here = ftell(f);
+        long pad = (long)((32 - (here % 32)) % 32);
+        for (long p = 0; p < pad; p++) fputc(0, f);
     }
     for (int i = 0; i < n_ents; i++) fwrite(ents[i].data, 4, ents[i].numel, f);
     fclose(f);

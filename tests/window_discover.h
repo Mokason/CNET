@@ -26,6 +26,38 @@ static size_t cnet_window_discover(cce_gguf_qwen2 *m, float *logits,
     size_t i, placed = 0;
     int probes = 128;
 
+    /* BOS-anchored models: the window IS the model's ordered top-V
+       continuations of [bos] — its natural sentence-starters. Live by
+       construction (real probability mass, not junk-context attractors),
+       one forward, deterministic. The histogram fallback below serves
+       BOS-less models. */
+    if (bos >= 0) {
+        int tok = bos;
+        char *taken = (char *)calloc((size_t)m->vocab_size, 1);
+        if (!taken) return 0;
+        m->cur_pos = 0;
+        if (cce_gguf_qwen2_forward(m, &tok, 1, logits,
+                                   m->vocab_size) != CCE_OK) {
+            free(taken);
+            return 0;
+        }
+        for (placed = 0; placed < V; ++placed) {
+            size_t a, best = (size_t)-1;
+            float bl = 0.0f;
+            for (a = 0; a < (size_t)m->vocab_size; ++a) {
+                if (taken[a]) continue;
+                if (best == (size_t)-1 || logits[a] > bl) {
+                    bl = logits[a];
+                    best = a;
+                }
+            }
+            taken[best] = 1;
+            vocab[placed] = (int)best;
+        }
+        free(taken);
+        return placed;
+    }
+
     hist = (unsigned *)calloc((size_t)m->vocab_size, sizeof *hist);
     if (!hist) return 0;
     for (i = 0; i < (size_t)probes; ++i) {

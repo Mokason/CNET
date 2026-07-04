@@ -245,10 +245,16 @@ cce_result cce_st_llama_load(cce_gguf_qwen2** out, const char* path) {
     if (m->max_ctx > 8192) m->max_ctx = 8192; /* same cap as the GGUF loader */
     m->cur_pos = 0;
 
-    size_t kv_size = (size_t)L * m->max_ctx * KV * HD;
-    m->k_cache = (float*)calloc(kv_size, sizeof(float));
-    m->v_cache = (float*)calloc(kv_size, sizeof(float));
+    /* uniform per-layer geometry (the forward is geometry-driven now);
+       slot totals equal the old L*KV*HD layout for uniform models */
+    if (cce_gguf_qwen2_geom_uniform(m) != CCE_OK) {
+        cce_gguf_qwen2_free(m); cce_safetensors_free(st);
+        return CCE_ERR_UNSUPPORTED;
+    }
+    m->k_cache = (float*)calloc((size_t)m->max_ctx * m->k_slot_floats, sizeof(float));
+    m->v_cache = (float*)calloc((size_t)m->max_ctx * m->v_slot_floats, sizeof(float));
     if (!m->k_cache || !m->v_cache) { cce_gguf_qwen2_free(m); cce_safetensors_free(st); return CCE_ERR_OOM; }
+    (void)KV; (void)HD;
 
     cce_safetensors_free(st);
     *out = m;
