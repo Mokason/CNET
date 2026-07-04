@@ -74,6 +74,10 @@ struct cce_gguf {
     gguf_kv* kvs;
     int n_kvs;
 
+    uint32_t alignment;   /* general.alignment (default 32): tensor data
+                             starts at the NEXT aligned boundary after the
+                             tensor table, not at the raw file position */
+
     /* cached useful hparams */
     char arch[64];
     int n_layer;
@@ -250,8 +254,15 @@ cce_result cce_gguf_load(const char* path, cce_gguf** out) {
     g->tokenizer_model[0] = 0;
     g->bos_token_id = -1;
     g->eos_token_id = -1;
+    g->alignment = 32;
     for (int i = 0; i < g->n_kvs; i++) {
         const char* k = g->kvs[i].key;
+        if (strcmp(k, "general.alignment") == 0) {
+            if (g->kvs[i].type == GGUF_TYPE_UINT32 && g->kvs[i].val.u32 > 0)
+                g->alignment = g->kvs[i].val.u32;
+            else if (g->kvs[i].type == GGUF_TYPE_UINT64 && g->kvs[i].val.u64 > 0)
+                g->alignment = (uint32_t)g->kvs[i].val.u64;
+        }
         if (strcmp(k, "general.architecture") == 0 && g->kvs[i].type == GGUF_TYPE_STRING && g->kvs[i].val.str) {
             strncpy(g->arch, g->kvs[i].val.str, sizeof(g->arch)-1);
         }
@@ -347,13 +358,18 @@ cce_result cce_gguf_load(const char* path, cce_gguf** out) {
         if (t->data_offset + t->nbytes > max_offset) max_offset = t->data_offset + t->nbytes;
     }
 
-    /* Data section starts right after the tensor info table.
-       Use the actual current file position (writers align the data). */
+    /* Data section starts at the NEXT general.alignment boundary (default
+       32) after the tensor info table — NOT at the raw file position. The
+       missing align-up read every tensor a few bytes shifted: garbage
+       dequant, NaN streams, and every downstream gate (determinism,
+       equivalence max|dlogit|, digests) satisfied VACUOUSLY by NaN. A file
+       whose table happens to end aligned loads fine — which is how this
+       survived the small-file tests while poisoning both campaign models. */
     long data_base = ftell(g->f);
-    g->data_offset = (uint64_t)data_base;
-
-    /* For safety, if offsets in file are relative to data_start, we adjust when loading */
-    /* Many writers put absolute-ish offsets; we will seek to data_offset + tensor.data_offset when loading */
+    {
+        uint64_t a = g->alignment ? g->alignment : 32;
+        g->data_offset = ((uint64_t)data_base + a - 1) / a * a;
+    }
 
     /* We don't close the file; keep it open for on-demand loads */
     *out = g;
@@ -660,6 +676,23 @@ void cce_gguf_qwen2_set_clgemm(cce_gguf_qwen2 *m, cce_clgemm *h) {
     if (m) m->clgemm = h;
 }
 
+/* Depth instrumentation: an optional tap called after every layer with the
+   residual stream (probe tooling measures at which depth the DECISIONS the
+   oracle consumes stop changing). Also honors m->layer_cap (> 0): the loop
+   stops after that many layers and the head reads the current stream. A
+   capped forward is a DIFFERENT function from the full model — any caller
+   enabling it MUST gate decision-equivalence against the full depth and
+   refuse on mismatch, exactly like the GPU path (see depth_probe and the
+   flagship startup sweep). Default 0 = full depth, byte-identical. */
+typedef void (*cce_gguf_layer_tap_fn)(int layer, const float *x, int n_tokens,
+                                      int dim, void *uctx);
+static cce_gguf_layer_tap_fn g_gguf_layer_tap = NULL;
+static void *g_gguf_layer_tap_ctx = NULL;
+void cce_gguf_set_layer_tap(cce_gguf_layer_tap_fn fn, void *uctx) {
+    g_gguf_layer_tap = fn;
+    g_gguf_layer_tap_ctx = uctx;
+}
+
 static cce_result apply_linear_rows(cce_clgemm *gpu, cce_cascade* cas,
                                     const cce_tensor* in, cce_tensor* out) {
     if (!cas || !in || !out || in->ndim != 2 || out->ndim != 2) return CCE_ERR_INVALID_ARG;
@@ -678,14 +711,79 @@ static cce_result apply_linear_rows(cce_clgemm *gpu, cce_cascade* cas,
             blk->weights.shape[1] == dout) {
             const float *bias =
                 (blk->bias.numel == (size_t)dout) ? blk->bias.data : NULL;
+            static int verify0 = -1;
+            if (verify0 < 0) {
+                const char *e0 = getenv("CNET_GPU_VERIFY");
+                verify0 = (e0 && e0[0] == '1') ? 1 : 0;
+            }
             if (cce_clgemm_matmul(gpu, in->data, (size_t)T,
                                   (size_t)din, blk->weights.data, bias,
-                                  (size_t)dout, out->data) == 0) {
+                                  (size_t)dout, out->data) != 0) {
+                if (verify0)
+                    fprintf(stderr, "GPU_VERIFY: FALLBACK [%dx%d]\n", din,
+                            dout);
+            } else {
+                if (verify0) {
+                    /* GPU-vs-GPU: same inputs twice — catches call-to-call
+                       nondeterminism the per-call CPU check cannot */
+                    float *c2 = (float *)malloc((size_t)T * dout *
+                                                sizeof *c2);
+                    if (c2 && cce_clgemm_matmul(gpu, in->data, (size_t)T,
+                                                (size_t)din,
+                                                blk->weights.data, bias,
+                                                (size_t)dout, c2) == 0) {
+                        size_t q2;
+                        for (q2 = 0; q2 < (size_t)T * dout; ++q2)
+                            if (c2[q2] != out->data[q2]) {
+                                fprintf(stderr,
+                                        "GPU_VERIFY: NONDET [%dx%d] at %zu "
+                                        "run1=%.9g run2=%.9g\n", din, dout,
+                                        q2, (double)out->data[q2],
+                                        (double)c2[q2]);
+                                break;
+                            }
+                    }
+                    free(c2);
+                }
+                /* CNET_GPU_VERIFY=1: recompute on CPU and report the first
+                   diverging element per call — the live-fire localizer for
+                   any GPU-vs-CPU drift (kernel is FP_CONTRACT OFF, so the
+                   contract is BIT-identity, not closeness). */
+                static int verify = -1;
+                if (verify < 0) {
+                    const char *e = getenv("CNET_GPU_VERIFY");
+                    verify = (e && e[0] == '1') ? 1 : 0;
+                }
+                if (verify) {
+                    int t2, o2, bad = 0;
+                    for (t2 = 0; t2 < T && !bad; ++t2) {
+                        for (o2 = 0; o2 < dout && !bad; ++o2) {
+                            float acc = bias ? bias[o2] : 0.0f;
+                            int k2;
+                            const float *arow = in->data + (size_t)t2 * din;
+                            for (k2 = 0; k2 < din; ++k2)
+                                acc += arow[k2] *
+                                       blk->weights.data[(size_t)k2 * dout + o2];
+                            if (out->data[(size_t)t2 * dout + o2] != acc) {
+                                fprintf(stderr,
+                                        "GPU_VERIFY: DIVERGE [%dx%d] t=%d "
+                                        "o=%d gpu=%.9g cpu=%.9g W=%p\n",
+                                        din, dout, t2, o2,
+                                        (double)out->data[(size_t)t2 * dout + o2],
+                                        (double)acc,
+                                        (const void *)blk->weights.data);
+                                bad = 1;
+                            }
+                        }
+                    }
+                }
                 return CCE_OK;
             }
         }
     }
 
+    cce_tensor row_in0 = {0};
+    (void)row_in0;
     cce_tensor row_in = {0};
     int ish[1] = { din };
     if (cce_tensor_alloc(&row_in, ish, 1) != CCE_OK) return CCE_ERR_OOM;
@@ -802,8 +900,13 @@ int cce_gguf_add_linear_branch(cce_forest* forest, const cce_gguf* gguf,
        sees (and never tries to archive-persist) the FP payload. The add's
        persistence step then refuses cleanly (payload-less block) and the
        branch lives HOT in RAM as int8 — which is all a mining oracle needs.
-       This also avoids writing a ~50 GB FP archive for a 12B model. */
-    if (gguf_oracle_int8_mode()) {
+       This also avoids writing a ~50 GB FP archive for a 12B model.
+       lm_head + MTP stay FP — the SAME skip the post-hoc quantizers make
+       "for quality": the head is the decision maker the campaign extracts,
+       and int8-ing it perturbs exactly the rankings being mined. (FP head
+       also makes it clgemm-eligible again, so it runs on the GPUs.) */
+    if (gguf_oracle_int8_mode() && !strstr(branch_name, "lm_head") &&
+        !strstr(branch_name, "mtp.")) {
         for (int b = 0; b < cas->num_blocks; b++) {
             cce_block* ob = &cas->blocks[b];
             if (cce_block_quantize_int8(ob) == CCE_OK) {
@@ -1006,6 +1109,23 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
         memcpy(x.data + (size_t)t * D, m->tok_emb.data + (size_t)tok * D, D * sizeof(float));
     }
 
+    /* CNET_FWD_TRACE=1: stage checksums of the FIRST forward — the
+       nondeterminism bisector (diff two runs; first differing stage is the
+       culprit). Zero cost when off. */
+    static int fwd_trace = -1;
+    int trace_this = 0;
+    if (fwd_trace < 0) {
+        const char *e = getenv("CNET_FWD_TRACE");
+        fwd_trace = (e && e[0] == '1') ? 2 : 0;   /* 2 = calls remaining */
+    }
+    if (fwd_trace > 0) { trace_this = 1; fwd_trace--; }
+#define FWD_CK(tag, ptr, cnt) do { if (trace_this) { \
+        double ck_ = 0.0; size_t ii_; \
+        for (ii_ = 0; ii_ < (size_t)(cnt); ++ii_) ck_ += fabs((double)(ptr)[ii_]); \
+        printf("FWD_TRACE %s: %.10g\\n", (tag), ck_); } } while (0)
+
+    FWD_CK("embed", x.data, (size_t)n_tokens * D);
+
     char name[128];
     for (int l = 0; l < m->n_layer; l++) {
         snprintf(name, sizeof(name), "qwen2.blk.%d.q_proj", l);
@@ -1036,15 +1156,44 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
 
         int qsh[2] = {n_tokens, D};
         cce_tensor_alloc(&q, qsh, 2);
-        apply_linear_rows(gpu, q_cas, &ln1, &q);
+        if (apply_linear_rows(gpu, q_cas, &ln1, &q) != CCE_OK) {
+            /* REFUSAL BOUNDARY: a failed projection used to be silently
+               ignored, leaving q as UNINITIALIZED HEAP — every gemma4
+               campaign mined from garbage attention (q_proj emits H*HD=4096
+               != D; found via CNET_FWD_TRACE). A wrong-dim architecture must
+               refuse, not improvise. */
+            fprintf(stderr, "cce_gguf: q_proj failed at layer %d (out dim "
+                            "%d vs expected %d?) — refusing to forward a "
+                            "mis-dimensioned architecture\n", l,
+                    q_cas->blocks[0].weights.shape[1], D);
+            cce_tensor_free(&ln1); cce_tensor_free(&q); cce_tensor_free(&x);
+            return CCE_ERR_UNSUPPORTED;
+        }
+        if (l == 0 && trace_this) {
+            double wck = 0.0; size_t wi;
+            const cce_block *qb = &q_cas->blocks[0];
+            for (wi = 0; wi < qb->weights.numel && qb->weights.data; ++wi)
+                wck += fabs((double)qb->weights.data[wi]);
+            printf("FWD_TRACE q_weights(l0,blocks=%d): %.10g\n",
+                   q_cas->num_blocks, wck);
+        }
+        if (l == 0) { FWD_CK("ln1(l0)", ln1.data, (size_t)n_tokens * D);
+                      FWD_CK("q(l0)", q.data, (size_t)n_tokens * D); }
 
         cce_tensor k = {0}, v = {0};
         if (has_kv) {
             int kvsh[2] = {n_tokens, KV * HD};
             cce_tensor_alloc(&k, kvsh, 2);
-            apply_linear_rows(gpu, k_cas, &ln1, &k);
             cce_tensor_alloc(&v, kvsh, 2);
-            apply_linear_rows(gpu, v_cas, &ln1, &v);
+            if (apply_linear_rows(gpu, k_cas, &ln1, &k) != CCE_OK ||
+                apply_linear_rows(gpu, v_cas, &ln1, &v) != CCE_OK) {
+                fprintf(stderr, "cce_gguf: k/v_proj failed at layer %d — "
+                                "refusing (see q_proj note)\n", l);
+                cce_tensor_free(&ln1); cce_tensor_free(&q);
+                cce_tensor_free(&k); cce_tensor_free(&v);
+                cce_tensor_free(&x);
+                return CCE_ERR_UNSUPPORTED;
+            }
         }
 
         /* RoPE on new tokens - per head for correct positional encoding (quality fix) */
@@ -1184,12 +1333,18 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
         for (size_t i = 0; i < (size_t)n_tokens * D; i++) {
             x.data[i] = after_attn.data[i] + down.data[i];
         }
+        if (l == 0) { FWD_CK("after_attn(l0)", after_attn.data, (size_t)n_tokens * D);
+                      FWD_CK("x(l0)", x.data, (size_t)n_tokens * D); }
 
         // free layer temps
         cce_tensor_free(&ln1); cce_tensor_free(&q);
         if (has_kv) { cce_tensor_free(&k); cce_tensor_free(&v); }
         cce_tensor_free(&after_attn);
         cce_tensor_free(&ln2); cce_tensor_free(&gate); cce_tensor_free(&upv); cce_tensor_free(&mid); cce_tensor_free(&down);
+
+        if (g_gguf_layer_tap)
+            g_gguf_layer_tap(l, x.data, n_tokens, D, g_gguf_layer_tap_ctx);
+        if (m->layer_cap > 0 && l + 1 >= m->layer_cap) break;
     }
 
     /* final norm + head */

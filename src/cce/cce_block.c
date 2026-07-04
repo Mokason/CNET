@@ -123,7 +123,8 @@ cce_result cce_block_forward(const cce_block* blk, const cce_tensor* input, cce_
        tile starts byte-aligned in the packed rows. */
     if (blk->w_trit && blk->w_scale) {
         #pragma omp parallel for schedule(static) default(none) \
-                shared(output, blk, input, in_dim, out_dim, is_head, cce_trit_lut) if(out_dim >= 4096)
+                shared(output, blk, input, in_dim, out_dim, is_head, cce_trit_lut) \
+                if((size_t)in_dim * (size_t)out_dim >= (size_t)1 << 21)
         for (int ob = 0; ob < out_dim; ob += 510) {
             int oe = (ob + 510 < out_dim) ? ob + 510 : out_dim;
             int w = oe - ob;
@@ -150,8 +151,13 @@ cce_result cce_block_forward(const cce_block* blk, const cce_tensor* input, cce_
        int8 weights are 1/4 the bytes -> less memory traffic on the bandwidth-bound
        head. Same tiled/vectorized/threaded structure as the float path. */
     if (blk->w_q && blk->w_scale) {
+        /* work-based gate: at hidden 3840 the q/k/v/o and down matvecs sat
+           BELOW the old out_dim>=4096 gate and ran single-threaded — the
+           dominant serial chunk of a 12B oracle call. Tiling outputs keeps
+           per-output accumulation order, so threading cannot move bits. */
         #pragma omp parallel for schedule(static) default(none) \
-                shared(output, blk, input, in_dim, out_dim, is_head) if(out_dim >= 4096)
+                shared(output, blk, input, in_dim, out_dim, is_head) \
+                if((size_t)in_dim * (size_t)out_dim >= (size_t)1 << 21)
         for (int ob = 0; ob < out_dim; ob += 512) {
             int oe = (ob + 512 < out_dim) ? ob + 512 : out_dim;
             for (int o = ob; o < oe; ++o) output->data[o] = 0.0f;
@@ -198,7 +204,8 @@ cce_result cce_block_forward(const cce_block* blk, const cce_tensor* input, cce_
        unchanged -> bit-identical. OpenMP only kicks in for large layers (the
        50520-wide head); the pragma is a no-op without -fopenmp. */
     #pragma omp parallel for schedule(static) default(none) \
-            shared(output, blk, input, in_dim, out_dim) if(out_dim >= 4096)
+            shared(output, blk, input, in_dim, out_dim) \
+            if((size_t)in_dim * (size_t)out_dim >= (size_t)1 << 21)
     for (int ob = 0; ob < out_dim; ob += 512) {
         int oe = (ob + 512 < out_dim) ? ob + 512 : out_dim;
         for (int o = ob; o < oe; ++o) output->data[o] = blk->bias.data[o];

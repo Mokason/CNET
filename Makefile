@@ -1,11 +1,16 @@
 CC := gcc
 # -march=native: measured 1.25x on the training loops, bit-identical weights
 # (FP contraction stays off under -std=c11). Drop it for portable binaries.
-# -mno-avx is REQUIRED with -march=native on this toolchain: MinGW gcc 15.2
-# emits aligned 256-bit moves for by-value structs >= 32 bytes (Port is 56)
-# on a 16-byte-aligned Windows stack -> segfault. -mstackrealign does not fix
-# it; disabling AVX does.
-CFLAGS := -std=c11 -Wall -Wextra -pedantic -O3 -march=native -mno-avx
+CFLAGS := -std=c11 -Wall -Wextra -pedantic -O3 -march=native
+ifeq ($(OS),Windows_NT)
+# -mno-avx is REQUIRED with -march=native on the MinGW toolchain ONLY:
+# MinGW gcc 15.2 emits aligned 256-bit moves for by-value structs >= 32 bytes
+# (Port is 56) on a 16-byte-aligned Windows stack -> segfault. -mstackrealign
+# does not fix it; disabling AVX does. The Linux ABI has no such bug, and the
+# int8 oracle matvec runs 256/512-bit wide there (bit-identical: each output
+# element keeps its own i-ascending accumulation regardless of SIMD width).
+CFLAGS += -mno-avx
+endif
 LDFLAGS := -lm
 MCP_LDFLAGS :=
 ifeq ($(OS),Windows_NT)
@@ -298,6 +303,13 @@ flagship_run_build: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CON
 # verify. Usage: make gpu_equiv_build && ./bin/gpu_equiv <model> [V] [N]
 gpu_equiv_build: $(CCE) tests/gpu_equiv.c include/cce/cce_clgemm.h include/cce/cce_gguf.h
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/gpu_equiv $(CCE) tests/gpu_equiv.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+
+# Decision-saturation depth probe: at which layer do the window decisions the
+# oracle consumes stop changing? Measurement gate for any capped-depth oracle
+# (CNET_ORACLE_LAYER_CAP). Needs the model; NOT in verify.
+# Usage: make depth_probe_build && ./bin/depth_probe <model> [V] [N]
+depth_probe_build: $(CCE) tests/depth_probe.c include/cce/cce_gguf.h
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/depth_probe $(CCE) tests/depth_probe.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 
 # Contract security + efficiency: content digests, certification cache,
 # sealed (tamper-evident) contract files, certificate-to-weights binding.

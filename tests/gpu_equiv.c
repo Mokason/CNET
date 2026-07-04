@@ -138,7 +138,17 @@ int main(int argc, char **argv) {
 
         vs = am->transformer->vocab_size;
         for (i = 0; i < (size_t)vs; ++i) {
-            double d = fabs((double)lc[i] - (double)lg[i]);
+            double d;
+            if (lc[i] != lc[i] || lg[i] != lg[i]) {
+                /* NaN defeats every comparison below — it once let a
+                   completely broken forward "pass" this gate with
+                   max|dlogit| = 0.0. Refuse loudly instead. */
+                fprintf(stderr, "NaN logit at context %lu index %lu — "
+                                "forward is broken; gate FAILED\n",
+                        (unsigned long)j, (unsigned long)i);
+                return 1;
+            }
+            d = fabs((double)lc[i] - (double)lg[i]);
             if (d > max_dl) max_dl = d;
             if (lc[i] > lc[am_c]) am_c = i;
             if (lg[i] > lg[am_g]) am_g = i;

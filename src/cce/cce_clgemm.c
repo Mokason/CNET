@@ -101,6 +101,14 @@ typedef cl_int (*p_clReleaseContext)(cl_context);
    — the per-element k-ascending accumulation is IDENTICAL on every device,
    which is what keeps split results bit-identical to single-device runs. */
 static const char *k_src =
+    /* FP_CONTRACT OFF: the compiler otherwise fuses a*b+acc into FMA, whose
+       single rounding drifts ulps from the CPU's separate mul+add — enough
+       to flip near-tie argmax decisions at model scale (measured: unit test
+       7th-digit mismatches; gpu_equiv 18-28/32 agreement on REAL logits).
+       With contraction off the kernel is BIT-identical to the CPU seam
+       (-std=c11 keeps host contraction off too), so mixed CPU/GPU fallback
+       can never change a decision. */
+    "#pragma OPENCL FP_CONTRACT OFF\n"
     "__kernel void cnet_gemm(__global const float* A,\n"
     "                        __global const float* W,\n"
     "                        __global const float* B,\n"

@@ -22,6 +22,7 @@
 #include "../include/flagship.h"
 #include "../include/cce/cce_detect.h"
 #include "../include/cce/cce_clgemm.h"
+#include "window_discover.h"
 
 #define FS_MAX_LANES 8
 
@@ -33,6 +34,7 @@ typedef struct {
     cce_gguf_qwen2 *m;
     float *logits;         /* model vocab_size scratch */
     cce_clgemm *gpu;       /* per-lane handle in pool mode; NULL otherwise */
+    int prefix_token;      /* token whose KV occupies row 0; -1 = none */
 } OracleLane;
 
 typedef struct {
@@ -58,6 +60,51 @@ static OracleLane *fs_lane(CceOracleCtx *c) {
     return &c->lane[li];
 }
 
+/* All calls of one unit share conditioning token t. Its KV row is a pure
+   function of the token and the weights, so computing it ONCE per lane per
+   unit and letting every call attend to the cached row 0 is BIT-IDENTICAL
+   to recomputing it inside each call — while removing 1 of 2 (argmax/topk)
+   or 1 of 3 (pair) tokens from every layer traversal. Suffix calls write
+   KV rows >= 1 only; row 0 stays pinned until t changes.
+   CNET_ORACLE_PREFIX=0 disables (A/B; both paths are gated by the digest
+   audit and the determinism spot check either way). */
+static int fs_prefix_off(void) {
+    const char *e = getenv("CNET_ORACLE_PREFIX");
+    return e && e[0] == '0';
+}
+
+/* BOS anchor (default ON, CNET_ORACLE_BOS=0 opts out): gemma-family models
+   collapse to <pad> on BOS-less raw-token contexts — measured 1 distinct
+   full-vocab argmax over 128 probes on BOTH real models, which made every
+   window degenerate and every mined unit constant. Anchored contexts are
+   [bos, t, ...suffix]; with prefix reuse the anchor costs nothing per call. */
+static int fs_bos(const cce_gguf_qwen2 *m) {
+    const char *e = getenv("CNET_ORACLE_BOS");
+    if (e && e[0] == '0') return -1;
+    return m->bos_token_id;
+}
+
+static int fs_prefix(OracleLane *L, int t) {
+    int toks[2];
+    int n = 0, bos = fs_bos(L->m);
+    if (L->prefix_token == t) return 0;
+    L->prefix_token = -1;                 /* invalid until fully computed */
+    if (bos >= 0) toks[n++] = bos;
+    toks[n++] = t;
+    L->m->cur_pos = 0;
+    if (cce_gguf_qwen2_forward(L->m, toks, n, L->logits,
+                               L->m->vocab_size) != CCE_OK) {
+        return -1;
+    }
+    L->prefix_token = t;
+    return 0;
+}
+
+/* prefix length = rows pinned in the KV cache = where each suffix starts */
+static int fs_prefix_len(const cce_gguf_qwen2 *m) {
+    return (fs_bos(m) >= 0) ? 2 : 1;
+}
+
 static int cce_cond_next(const double *in, double *out, void *ctx) {
     CceOracleCtx *c = (CceOracleCtx *)ctx;
     OracleLane *L = fs_lane(c);
@@ -67,12 +114,25 @@ static int cce_cond_next(const double *in, double *out, void *ctx) {
 
     for (i = 0; i < c->v; ++i)
         if (in[i] > 0.5) w = i;
-    tokens[0] = c->t;
-    tokens[1] = c->vocab[w];
-    L->m->cur_pos = 0;   /* restart the KV cache: each call is a fresh context */
-    if (cce_gguf_qwen2_forward(L->m, tokens, 2, L->logits,
-                               L->m->vocab_size) != CCE_OK) {
-        return -1;
+    if (fs_prefix_off()) {
+        int n = 0, bos = fs_bos(L->m);
+        int toks[3];
+        if (bos >= 0) toks[n++] = bos;
+        toks[n++] = c->t;
+        toks[n++] = c->vocab[w];
+        L->m->cur_pos = 0;   /* fresh context: prefix recomputed every call */
+        if (cce_gguf_qwen2_forward(L->m, toks, n, L->logits,
+                                   L->m->vocab_size) != CCE_OK) {
+            return -1;
+        }
+    } else {
+        if (fs_prefix(L, c->t) != 0) return -1;
+        tokens[0] = c->vocab[w];
+        L->m->cur_pos = fs_prefix_len(L->m);   /* attend to the pinned prefix */
+        if (cce_gguf_qwen2_forward(L->m, tokens, 1, L->logits,
+                                   L->m->vocab_size) != CCE_OK) {
+            return -1;
+        }
     }
     bl = L->logits[c->vocab[0]];
     for (i = 1; i < c->v; ++i) {
@@ -97,13 +157,27 @@ static int cce_cond_pair(const double *in, double *out, void *ctx) {
         if (in[i] > 0.5) wp = i;
     for (i = 0; i < c->v; ++i)
         if (in[c->v + i] > 0.5) wc = i;
-    tokens[0] = c->t;
-    tokens[1] = c->vocab[wp];
-    tokens[2] = c->vocab[wc];
-    L->m->cur_pos = 0;
-    if (cce_gguf_qwen2_forward(L->m, tokens, 3, L->logits,
-                               L->m->vocab_size) != CCE_OK) {
-        return -1;
+    if (fs_prefix_off()) {
+        int n = 0, bos = fs_bos(L->m);
+        int toks[4];
+        if (bos >= 0) toks[n++] = bos;
+        toks[n++] = c->t;
+        toks[n++] = c->vocab[wp];
+        toks[n++] = c->vocab[wc];
+        L->m->cur_pos = 0;
+        if (cce_gguf_qwen2_forward(L->m, toks, n, L->logits,
+                                   L->m->vocab_size) != CCE_OK) {
+            return -1;
+        }
+    } else {
+        if (fs_prefix(L, c->t) != 0) return -1;
+        tokens[0] = c->vocab[wp];
+        tokens[1] = c->vocab[wc];
+        L->m->cur_pos = fs_prefix_len(L->m);
+        if (cce_gguf_qwen2_forward(L->m, tokens, 2, L->logits,
+                                   L->m->vocab_size) != CCE_OK) {
+            return -1;
+        }
     }
     bl = L->logits[c->vocab[0]];
     for (i = 1; i < c->v; ++i) {
@@ -126,12 +200,25 @@ static int cce_cond_topk(const double *in, double *out, void *ctx) {
 
     for (i = 0; i < c->v; ++i)
         if (in[i] > 0.5) w = i;
-    tokens[0] = c->t;
-    tokens[1] = c->vocab[w];
-    L->m->cur_pos = 0;
-    if (cce_gguf_qwen2_forward(L->m, tokens, 2, L->logits,
-                               L->m->vocab_size) != CCE_OK) {
-        return -1;
+    if (fs_prefix_off()) {
+        int n = 0, bos = fs_bos(L->m);
+        int toks[3];
+        if (bos >= 0) toks[n++] = bos;
+        toks[n++] = c->t;
+        toks[n++] = c->vocab[w];
+        L->m->cur_pos = 0;
+        if (cce_gguf_qwen2_forward(L->m, toks, n, L->logits,
+                                   L->m->vocab_size) != CCE_OK) {
+            return -1;
+        }
+    } else {
+        if (fs_prefix(L, c->t) != 0) return -1;
+        tokens[0] = c->vocab[w];
+        L->m->cur_pos = fs_prefix_len(L->m);
+        if (cce_gguf_qwen2_forward(L->m, tokens, 1, L->logits,
+                                   L->m->vocab_size) != CCE_OK) {
+            return -1;
+        }
     }
     for (i = 0; i < 3u * c->v; ++i) out[i] = 0.0;
     for (r = 0; r < 3; ++r) {
@@ -152,45 +239,6 @@ static int cce_cond_topk(const double *in, double *out, void *ctx) {
 }
 
 static CnetOracleFn cce_task_fn = cce_cond_next;   /* set by main per mode */
-
-/* PAIR window discovery. A window of arbitrary ids yields CONSTANT
-   conditional slices (the model's attractor tokens live outside it; measured
-   on the gemma MTP draft: 4/4 class_imbalance defers). Build the window from
-   the model's OWN most frequent full-vocab argmax choices over a
-   deterministic probe spread, so the restricted argmax actually varies.
-   Returns the number of discovered tokens placed (rest keep their defaults). */
-static size_t discover_pair_window(cce_gguf_qwen2 *m, float *logits,
-                                   int *vocab, size_t V) {
-    unsigned *hist;
-    size_t i, placed = 0;
-    int probes = 128;
-
-    hist = (unsigned *)calloc((size_t)m->vocab_size, sizeof *hist);
-    if (!hist) return 0;
-    for (i = 0; i < (size_t)probes; ++i) {
-        int tokens[3];
-        size_t a, best = 0;
-        tokens[0] = 2000 + (int)((i * 37u) % 4096u);
-        tokens[1] = 2000 + (int)((i * 91u + 17u) % 4096u);
-        tokens[2] = 2000 + (int)((i * 53u + 5u) % 4096u);
-        m->cur_pos = 0;
-        if (cce_gguf_qwen2_forward(m, tokens, 3, logits,
-                                   m->vocab_size) != CCE_OK) continue;
-        for (a = 1; a < (size_t)m->vocab_size; ++a)
-            if (logits[a] > logits[best]) best = a;
-        hist[best]++;
-    }
-    while (placed < V) {
-        size_t a, best = 0;
-        for (a = 1; a < (size_t)m->vocab_size; ++a)
-            if (hist[a] > hist[best]) best = a;
-        if (hist[best] == 0) break;      /* fewer distinct choices than V */
-        vocab[placed++] = (int)best;
-        hist[best] = 0;
-    }
-    free(hist);
-    return placed;
-}
 
 static int cce_maker(void *maker_ctx, size_t k, int token_id,
                      FlagshipOracle *out) {
@@ -304,6 +352,11 @@ int main(int argc, char **argv) {
     for (i = 0; i < V; ++i) vocab[i] = 2000 + (int)i;
 
     memset(&ctx, 0, sizeof ctx);
+    {
+        size_t li0;
+        for (li0 = 0; li0 < FS_MAX_LANES; ++li0)
+            ctx.lane[li0].prefix_token = -1;
+    }
     ctx.lane[0].m = am->transformer;
     ctx.nlanes = 1;
     ctx.force_lane = -1;
@@ -338,9 +391,10 @@ int main(int argc, char **argv) {
         cfg.acq.growth_window = 400;
         cfg.acq.holdout_fraction = 0.0;  /* exactness-on-sample is the bar */
         {
-            size_t placed = discover_pair_window(am->transformer,
+            size_t placed = cnet_window_discover(am->transformer,
                                                  ctx.lane[0].logits,
-                                                 vocab, V);
+                                                 vocab, V, 3,
+                                                 fs_bos(am->transformer));
             printf("pair window: %lu/%lu tokens from the model's own "
                    "argmax distribution\n",
                    (unsigned long)placed, (unsigned long)V);
@@ -352,6 +406,27 @@ int main(int argc, char **argv) {
     default:
         cce_task_fn = cce_cond_next;
         break;
+    }
+
+    /* Window discovery for ARGMAX/TOPK (PAIR always discovered): the fixed
+       2000..2000+V window is a MEASURED constant slice on both real models
+       (window_discover.h) — every unit mined from it is one constant
+       function. Discovery derives the window from the model's own argmax
+       attractors, deterministically (resume-safe: same window, same tags).
+       CNET_WINDOW_DISCOVER=0 restores the fixed window. */
+    if (task != FLAGSHIP_TASK_PAIR &&
+        !(getenv("CNET_WINDOW_DISCOVER") &&
+          getenv("CNET_WINDOW_DISCOVER")[0] == '0')) {
+        size_t placed = cnet_window_discover(am->transformer,
+                                             ctx.lane[0].logits, vocab, V, 2,
+                                             fs_bos(am->transformer));
+        printf("window: %lu/%lu tokens from the model's own argmax "
+               "distribution (first: %d %d %d %d)\n", (unsigned long)placed,
+               (unsigned long)V, vocab[0], vocab[1], vocab[2], vocab[3]);
+        if (placed < V / 2)
+            fprintf(stderr, "WARNING: only %lu distinct attractor tokens — "
+                            "window padded with defaults beyond that\n",
+                    (unsigned long)placed);
     }
 
     /* CNET_GPU=1: OpenCL forward, gated by an in-process equivalence sweep —
@@ -419,17 +494,27 @@ int main(int argc, char **argv) {
             size_t jj, li, mismatch = 0;
             if (!lg) return 1;
             for (jj = 0; jj < 16; ++jj) {
-                int tk[2];
+                int tk[3];
+                int nt = 0;
                 size_t a, am_c = 0;
-                tk[0] = 2000 + (int)((jj * 37u) % 4096u);
-                tk[1] = 2000 + (int)((jj * 91u + 17u) % 4096u);
+                if (fs_bos(am->transformer) >= 0)
+                    tk[nt++] = fs_bos(am->transformer);
+                tk[nt++] = 2000 + (int)((jj * 37u) % 4096u);
+                tk[nt++] = 2000 + (int)((jj * 91u + 17u) % 4096u);
                 am->transformer->cur_pos = 0;
-                cce_gguf_qwen2_forward(am->transformer, tk, 2,
+                cce_gguf_qwen2_forward(am->transformer, tk, nt,
                                        ctx.lane[0].logits,
                                        am->transformer->vocab_size);
-                for (a = 1; a < (size_t)am->transformer->vocab_size; ++a)
+                for (a = 0; a < (size_t)am->transformer->vocab_size; ++a) {
+                    if (ctx.lane[0].logits[a] != ctx.lane[0].logits[a]) {
+                        fprintf(stderr, "NaN logit in CPU reference — "
+                                        "forward is broken; refusing to "
+                                        "mine\n");
+                        return 1;
+                    }
                     if (ctx.lane[0].logits[a] > ctx.lane[0].logits[am_c])
                         am_c = a;
+                }
                 cpu_am[jj] = am_c;
             }
             /* attach handles (pool: per instance; single: process-global) */
@@ -442,15 +527,25 @@ int main(int argc, char **argv) {
             }
             for (li = 0; li < ctx.nlanes && !mismatch; ++li) {
                 for (jj = 0; jj < 16 && !mismatch; ++jj) {
-                    int tk[2];
+                    int tk[3];
+                    int nt = 0;
                     size_t a, am_g = 0;
-                    tk[0] = 2000 + (int)((jj * 37u) % 4096u);
-                    tk[1] = 2000 + (int)((jj * 91u + 17u) % 4096u);
+                    if (fs_bos(ctx.lane[li].m) >= 0)
+                        tk[nt++] = fs_bos(ctx.lane[li].m);
+                    tk[nt++] = 2000 + (int)((jj * 37u) % 4096u);
+                    tk[nt++] = 2000 + (int)((jj * 91u + 17u) % 4096u);
                     ctx.lane[li].m->cur_pos = 0;
-                    cce_gguf_qwen2_forward(ctx.lane[li].m, tk, 2, lg,
+                    cce_gguf_qwen2_forward(ctx.lane[li].m, tk, nt, lg,
                                            ctx.lane[li].m->vocab_size);
-                    for (a = 1; a < (size_t)ctx.lane[li].m->vocab_size; ++a)
+                    for (a = 0; a < (size_t)ctx.lane[li].m->vocab_size; ++a) {
+                        if (lg[a] != lg[a]) {
+                            fprintf(stderr, "NaN logit on lane %lu — "
+                                            "forward is broken; refusing "
+                                            "to mine\n", (unsigned long)li);
+                            return 1;
+                        }
                         if (lg[a] > lg[am_g]) am_g = a;
+                    }
                     if (am_g != cpu_am[jj]) mismatch = 1;
                 }
             }

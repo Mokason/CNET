@@ -186,6 +186,12 @@ typedef struct cce_gguf_qwen2 {
        lanes in one process never remove()/rewrite each other's live backing
        file; "" = legacy fixed-name cleanup. */
     char forest_scratch[160];
+
+    /* > 0: forward stops after this many layers (head reads the current
+       stream). A capped forward is a DIFFERENT function from the full model:
+       enable ONLY behind a decision-equivalence gate (same posture as the
+       GPU path). 0 (default) = full depth, byte-identical. */
+    int layer_cap;
 } cce_gguf_qwen2;
 
 /* Load a full Qwen2 model from GGUF into decomposed CCE form (forest of specialists + norms).
@@ -211,6 +217,12 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
  * forwarding concurrently — each instance MUST have its own handle). */
 void cce_gguf_set_clgemm(struct cce_clgemm *h);
 void cce_gguf_qwen2_set_clgemm(cce_gguf_qwen2 *m, struct cce_clgemm *h);
+
+/* Depth instrumentation: tap called after every layer of the forward with
+ * the residual stream (probe tooling; NULL = off, zero cost). */
+void cce_gguf_set_layer_tap(void (*fn)(int layer, const float *x,
+                                       int n_tokens, int dim, void *uctx),
+                            void *uctx);
 
 /* Quantize all linear specialists (q/k/v/o/gate/up/down/head) to int8 PTQ.
  * Returns number of blocks quantized, or -1 on error. Mirrors cce_supra_quantize_int8.
