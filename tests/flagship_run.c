@@ -15,20 +15,52 @@
 #include <stdlib.h>
 #include <string.h>
 
+#ifdef _OPENMP
+#include <omp.h>
+#endif
+
 #include "../include/flagship.h"
 #include "../include/cce/cce_detect.h"
 #include "../include/cce/cce_clgemm.h"
 
+#define FS_MAX_LANES 8
+
+/* One oracle LANE: a model instance + logits scratch (+ its own GPU handle
+   in pool mode). Lanes share nothing mutable — no queue, no KV cache — so
+   the mining loop can call the oracle width-wide, one lane per GPU. */
 typedef struct {
+    cce_anymodel *am;      /* owned; NULL for lane 0 (borrows main's model) */
     cce_gguf_qwen2 *m;
+    float *logits;         /* model vocab_size scratch */
+    cce_clgemm *gpu;       /* per-lane handle in pool mode; NULL otherwise */
+} OracleLane;
+
+typedef struct {
+    OracleLane lane[FS_MAX_LANES];
+    size_t nlanes;
+    int inner_threads;     /* per-lane CPU team for the forward's OMP tiles */
+    int force_lane;        /* >= 0: pin a lane (serial checks); -1 = by thread */
     const int *vocab;
     size_t v;
-    int t;           /* conditioning token of the CURRENT unit */
-    float *logits;   /* model vocab_size scratch */
+    int t;                 /* conditioning token of the CURRENT unit */
 } CceOracleCtx;
+
+/* Lane for THIS call: pinned when force_lane is set, else by OMP thread id
+   (the mining loop runs one thread per lane). Also scopes the calling
+   thread's nested-OMP team so `lanes x inner` matches the machine. */
+static OracleLane *fs_lane(CceOracleCtx *c) {
+    size_t li = 0;
+#ifdef _OPENMP
+    if (c->force_lane >= 0) li = (size_t)c->force_lane % c->nlanes;
+    else li = (size_t)omp_get_thread_num() % c->nlanes;
+    if (c->inner_threads > 0) omp_set_num_threads(c->inner_threads);
+#endif
+    return &c->lane[li];
+}
 
 static int cce_cond_next(const double *in, double *out, void *ctx) {
     CceOracleCtx *c = (CceOracleCtx *)ctx;
+    OracleLane *L = fs_lane(c);
     size_t w = 0, i, best = 0;
     int tokens[2];
     float bl;
@@ -37,15 +69,15 @@ static int cce_cond_next(const double *in, double *out, void *ctx) {
         if (in[i] > 0.5) w = i;
     tokens[0] = c->t;
     tokens[1] = c->vocab[w];
-    c->m->cur_pos = 0;   /* restart the KV cache: each call is a fresh context */
-    if (cce_gguf_qwen2_forward(c->m, tokens, 2, c->logits,
-                               c->m->vocab_size) != CCE_OK) {
+    L->m->cur_pos = 0;   /* restart the KV cache: each call is a fresh context */
+    if (cce_gguf_qwen2_forward(L->m, tokens, 2, L->logits,
+                               L->m->vocab_size) != CCE_OK) {
         return -1;
     }
-    bl = c->logits[c->vocab[0]];
+    bl = L->logits[c->vocab[0]];
     for (i = 1; i < c->v; ++i) {
-        if (c->logits[c->vocab[i]] > bl) {
-            bl = c->logits[c->vocab[i]];
+        if (L->logits[c->vocab[i]] > bl) {
+            bl = L->logits[c->vocab[i]];
             best = i;
         }
     }
@@ -56,6 +88,7 @@ static int cce_cond_next(const double *in, double *out, void *ctx) {
 /* PAIR: argmax over V of P(v | [t, w_prev, w_cur]) — 3-token context. */
 static int cce_cond_pair(const double *in, double *out, void *ctx) {
     CceOracleCtx *c = (CceOracleCtx *)ctx;
+    OracleLane *L = fs_lane(c);
     size_t wp = 0, wc = 0, i, best = 0;
     int tokens[3];
     float bl;
@@ -67,15 +100,15 @@ static int cce_cond_pair(const double *in, double *out, void *ctx) {
     tokens[0] = c->t;
     tokens[1] = c->vocab[wp];
     tokens[2] = c->vocab[wc];
-    c->m->cur_pos = 0;
-    if (cce_gguf_qwen2_forward(c->m, tokens, 3, c->logits,
-                               c->m->vocab_size) != CCE_OK) {
+    L->m->cur_pos = 0;
+    if (cce_gguf_qwen2_forward(L->m, tokens, 3, L->logits,
+                               L->m->vocab_size) != CCE_OK) {
         return -1;
     }
-    bl = c->logits[c->vocab[0]];
+    bl = L->logits[c->vocab[0]];
     for (i = 1; i < c->v; ++i) {
-        if (c->logits[c->vocab[i]] > bl) {
-            bl = c->logits[c->vocab[i]];
+        if (L->logits[c->vocab[i]] > bl) {
+            bl = L->logits[c->vocab[i]];
             best = i;
         }
     }
@@ -86,6 +119,7 @@ static int cce_cond_pair(const double *in, double *out, void *ctx) {
 /* TOPK: the model's ordered top-3 within V, as 3 one-hot fields (the soul). */
 static int cce_cond_topk(const double *in, double *out, void *ctx) {
     CceOracleCtx *c = (CceOracleCtx *)ctx;
+    OracleLane *L = fs_lane(c);
     size_t w = 0, i, r, best;
     int tokens[2];
     int taken[4096] = {0};
@@ -94,9 +128,9 @@ static int cce_cond_topk(const double *in, double *out, void *ctx) {
         if (in[i] > 0.5) w = i;
     tokens[0] = c->t;
     tokens[1] = c->vocab[w];
-    c->m->cur_pos = 0;
-    if (cce_gguf_qwen2_forward(c->m, tokens, 2, c->logits,
-                               c->m->vocab_size) != CCE_OK) {
+    L->m->cur_pos = 0;
+    if (cce_gguf_qwen2_forward(L->m, tokens, 2, L->logits,
+                               L->m->vocab_size) != CCE_OK) {
         return -1;
     }
     for (i = 0; i < 3u * c->v; ++i) out[i] = 0.0;
@@ -106,8 +140,8 @@ static int cce_cond_topk(const double *in, double *out, void *ctx) {
         bl = 0.0f;
         for (i = 0; i < c->v; ++i) {
             if (taken[i]) continue;
-            if (best == (size_t)-1 || c->logits[c->vocab[i]] > bl) {
-                bl = c->logits[c->vocab[i]];
+            if (best == (size_t)-1 || L->logits[c->vocab[i]] > bl) {
+                bl = L->logits[c->vocab[i]];
                 best = i;
             }
         }
@@ -165,37 +199,54 @@ static int cce_maker(void *maker_ctx, size_t k, int token_id,
     c->t = token_id;
     out->fn = cce_task_fn;
     out->ctx = c;
+    out->width = c->nlanes;   /* pool mode: mining fans out one thread/lane */
     return 0;
 }
 
 /* KV-state-leak guard: the same query must answer identically before and
    after an unrelated query. A leak here would poison every mined exemplar.
-   Task-aware: PAIR has a 2-field input, TOPK a 3-field output. */
+   Task-aware: PAIR has a 2-field input, TOPK a 3-field output.
+   Runs per LANE, and additionally requires every lane's answer to be
+   identical to lane 0's — divergent lanes would make mined knowledge depend
+   on scheduling, which is exactly what the digests must never do. */
 static int determinism_spot_check(CceOracleCtx *c, FlagshipTask task) {
-    static double in[8192], out1[12288], out2[12288];
-    size_t i;
+    static double in[8192], out1[12288], out2[12288], out_ref[12288];
+    size_t i, lane;
     size_t in_total = (task == FLAGSHIP_TASK_PAIR) ? 2 * c->v : c->v;
     size_t out_total = (task == FLAGSHIP_TASK_TOPK) ? 3 * c->v : c->v;
+    int rc = 0;
 
     c->t = c->vocab[0];
-    memset(in, 0, in_total * sizeof *in);
-    in[0] = 1.0;
-    if (task == FLAGSHIP_TASK_PAIR) in[c->v] = 1.0;
-    if (cce_task_fn(in, out1, c) != 0) return -1;
+    for (lane = 0; lane < c->nlanes && rc == 0; ++lane) {
+        c->force_lane = (int)lane;
 
-    memset(in, 0, in_total * sizeof *in);      /* unrelated query in between */
-    in[c->v - 1] = 1.0;
-    if (task == FLAGSHIP_TASK_PAIR) in[in_total - 1] = 1.0;
-    if (cce_task_fn(in, out2, c) != 0) return -1;
+        memset(in, 0, in_total * sizeof *in);
+        in[0] = 1.0;
+        if (task == FLAGSHIP_TASK_PAIR) in[c->v] = 1.0;
+        if (cce_task_fn(in, out1, c) != 0) { rc = -1; break; }
 
-    memset(in, 0, in_total * sizeof *in);      /* repeat the first */
-    in[0] = 1.0;
-    if (task == FLAGSHIP_TASK_PAIR) in[c->v] = 1.0;
-    if (cce_task_fn(in, out2, c) != 0) return -1;
+        memset(in, 0, in_total * sizeof *in);  /* unrelated query in between */
+        in[c->v - 1] = 1.0;
+        if (task == FLAGSHIP_TASK_PAIR) in[in_total - 1] = 1.0;
+        if (cce_task_fn(in, out2, c) != 0) { rc = -1; break; }
 
-    for (i = 0; i < out_total; ++i)
-        if (out1[i] != out2[i]) return -1;
-    return 0;
+        memset(in, 0, in_total * sizeof *in);  /* repeat the first */
+        in[0] = 1.0;
+        if (task == FLAGSHIP_TASK_PAIR) in[c->v] = 1.0;
+        if (cce_task_fn(in, out2, c) != 0) { rc = -1; break; }
+
+        for (i = 0; i < out_total && rc == 0; ++i)
+            if (out1[i] != out2[i]) rc = -1;
+
+        if (lane == 0) {
+            memcpy(out_ref, out1, out_total * sizeof *out_ref);
+        } else {
+            for (i = 0; i < out_total && rc == 0; ++i)
+                if (out1[i] != out_ref[i]) rc = -1;   /* cross-lane divergence */
+        }
+    }
+    c->force_lane = -1;
+    return rc;
 }
 
 int main(int argc, char **argv) {
@@ -253,12 +304,17 @@ int main(int argc, char **argv) {
     for (i = 0; i < V; ++i) vocab[i] = 2000 + (int)i;
 
     memset(&ctx, 0, sizeof ctx);
-    ctx.m = am->transformer;
+    ctx.lane[0].m = am->transformer;
+    ctx.nlanes = 1;
+    ctx.force_lane = -1;
+#ifdef _OPENMP
+    ctx.inner_threads = omp_get_max_threads();
+#endif
     ctx.vocab = vocab;
     ctx.v = V;
-    ctx.logits = (float *)malloc((size_t)am->transformer->vocab_size *
-                                 sizeof *ctx.logits);
-    if (!ctx.logits) { fprintf(stderr, "oom\n"); return 1; }
+    ctx.lane[0].logits = (float *)malloc((size_t)am->transformer->vocab_size *
+                                         sizeof *ctx.lane[0].logits);
+    if (!ctx.lane[0].logits) { fprintf(stderr, "oom\n"); return 1; }
 
     flagship_config_defaults(&cfg);
     cfg.task = task;
@@ -282,7 +338,8 @@ int main(int argc, char **argv) {
         cfg.acq.growth_window = 400;
         cfg.acq.holdout_fraction = 0.0;  /* exactness-on-sample is the bar */
         {
-            size_t placed = discover_pair_window(am->transformer, ctx.logits,
+            size_t placed = discover_pair_window(am->transformer,
+                                                 ctx.lane[0].logits,
                                                  vocab, V);
             printf("pair window: %lu/%lu tokens from the model's own "
                    "argmax distribution\n",
@@ -299,49 +356,127 @@ int main(int argc, char **argv) {
 
     /* CNET_GPU=1: OpenCL forward, gated by an in-process equivalence sweep —
        a diverging oracle silently changes the meaning of extracted knowledge,
-       so any decision mismatch refuses GPU mining outright. */
+       so any decision mismatch refuses GPU mining outright.
+       With >1 discrete GPU (and an OpenMP build), an oracle POOL is built:
+       one model instance pinned per GPU, and mining calls the oracle
+       width-wide (CNET_ORACLE_LANES caps it; 1 restores the single path). */
     if (getenv("CNET_GPU") && strcmp(getenv("CNET_GPU"), "1") == 0) {
         char dev[128] = {0};
+        size_t lanes = 1;
         cce_clgemm *gpu = cce_clgemm_open(NULL, dev, sizeof dev);
         if (!gpu) {
             fprintf(stderr, "CNET_GPU=1 but no OpenCL GPU available\n");
             return 1;
         }
+#ifdef _OPENMP
+        lanes = cce_clgemm_device_count(gpu);
+        if (getenv("CNET_ORACLE_LANES")) {
+            long wl = atol(getenv("CNET_ORACLE_LANES"));
+            if (wl >= 1 && wl < (long)lanes) lanes = (size_t)wl;
+        }
+        if (lanes > FS_MAX_LANES) lanes = FS_MAX_LANES;
+#endif
+        if (lanes > 1) {
+            /* pool mode: per-lane single-device handles; the probe handle
+               (which spans ALL devices) is not used for mining */
+            size_t li;
+            cce_clgemm_close(gpu);
+            gpu = NULL;
+            for (li = 0; li < lanes; ++li) {
+                char dn[128] = {0};
+                ctx.lane[li].gpu =
+                    cce_clgemm_open_device(NULL, (int)li, dn, sizeof dn);
+                if (!ctx.lane[li].gpu) {
+                    fprintf(stderr, "lane %lu: cannot open GPU device\n",
+                            (unsigned long)li);
+                    return 1;
+                }
+                if (li > 0) {
+                    cce_anymodel *am2 = NULL;
+                    if (cce_anymodel_open(&am2, model_path) != CCE_OK ||
+                        am2->transformer == NULL) {
+                        fprintf(stderr, "lane %lu: cannot re-open %s\n",
+                                (unsigned long)li, model_path);
+                        return 1;
+                    }
+                    ctx.lane[li].am = am2;
+                    ctx.lane[li].m = am2->transformer;
+                    ctx.lane[li].logits = (float *)malloc(
+                        (size_t)am2->transformer->vocab_size *
+                        sizeof *ctx.lane[li].logits);
+                    if (!ctx.lane[li].logits) { fprintf(stderr, "oom\n"); return 1; }
+                }
+                printf("lane %lu: %s\n", (unsigned long)li, dn);
+            }
+            ctx.nlanes = lanes;
+        }
         {
+            /* per-lane sweep: every lane's argmax must match the CPU path
+               (CPU reference computed BEFORE any handle is attached) */
             float *lg = (float *)malloc(
                 (size_t)am->transformer->vocab_size * sizeof *lg);
-            size_t jj, mismatch = 0;
+            size_t cpu_am[16];
+            size_t jj, li, mismatch = 0;
             if (!lg) return 1;
-            for (jj = 0; jj < 16 && !mismatch; ++jj) {
+            for (jj = 0; jj < 16; ++jj) {
                 int tk[2];
-                size_t a, am_c = 0, am_g = 0;
+                size_t a, am_c = 0;
                 tk[0] = 2000 + (int)((jj * 37u) % 4096u);
                 tk[1] = 2000 + (int)((jj * 91u + 17u) % 4096u);
                 am->transformer->cur_pos = 0;
-                cce_gguf_qwen2_forward(am->transformer, tk, 2, ctx.logits,
+                cce_gguf_qwen2_forward(am->transformer, tk, 2,
+                                       ctx.lane[0].logits,
                                        am->transformer->vocab_size);
+                for (a = 1; a < (size_t)am->transformer->vocab_size; ++a)
+                    if (ctx.lane[0].logits[a] > ctx.lane[0].logits[am_c])
+                        am_c = a;
+                cpu_am[jj] = am_c;
+            }
+            /* attach handles (pool: per instance; single: process-global) */
+            if (ctx.nlanes > 1) {
+                for (li = 0; li < ctx.nlanes; ++li)
+                    cce_gguf_qwen2_set_clgemm(ctx.lane[li].m,
+                                              ctx.lane[li].gpu);
+            } else {
                 cce_gguf_set_clgemm(gpu);
-                am->transformer->cur_pos = 0;
-                cce_gguf_qwen2_forward(am->transformer, tk, 2, lg,
-                                       am->transformer->vocab_size);
-                cce_gguf_set_clgemm(NULL);
-                for (a = 1; a < (size_t)am->transformer->vocab_size; ++a) {
-                    if (ctx.logits[a] > ctx.logits[am_c]) am_c = a;
-                    if (lg[a] > lg[am_g]) am_g = a;
+            }
+            for (li = 0; li < ctx.nlanes && !mismatch; ++li) {
+                for (jj = 0; jj < 16 && !mismatch; ++jj) {
+                    int tk[2];
+                    size_t a, am_g = 0;
+                    tk[0] = 2000 + (int)((jj * 37u) % 4096u);
+                    tk[1] = 2000 + (int)((jj * 91u + 17u) % 4096u);
+                    ctx.lane[li].m->cur_pos = 0;
+                    cce_gguf_qwen2_forward(ctx.lane[li].m, tk, 2, lg,
+                                           ctx.lane[li].m->vocab_size);
+                    for (a = 1; a < (size_t)ctx.lane[li].m->vocab_size; ++a)
+                        if (lg[a] > lg[am_g]) am_g = a;
+                    if (am_g != cpu_am[jj]) mismatch = 1;
                 }
-                if (am_c != am_g) mismatch = 1;
             }
             free(lg);
             if (mismatch) {
                 fprintf(stderr, "GPU EQUIVALENCE FAILED — refusing to mine "
                                 "with --gpu (run gpu_equiv for details)\n");
-                cce_clgemm_close(gpu);
                 return 1;
             }
         }
-        cce_gguf_set_clgemm(gpu);
-        printf("gpu: %s (equivalence sweep OK, %0.1f MB will go resident)\n",
-               dev, 0.0);
+#ifdef _OPENMP
+        if (ctx.nlanes > 1) {
+            /* nested teams: `lanes` outer oracle threads x `inner` CPU tile
+               threads per forward — sized to the machine, not stacked */
+            omp_set_max_active_levels(2);
+            ctx.inner_threads = omp_get_max_threads() / (int)ctx.nlanes;
+            if (ctx.inner_threads < 1) ctx.inner_threads = 1;
+        }
+#endif
+        if (ctx.nlanes > 1)
+            printf("gpu: %s — oracle pool of %lu lanes (equivalence sweep OK "
+                   "on every lane, inner CPU teams %d)\n",
+                   dev, (unsigned long)ctx.nlanes, ctx.inner_threads);
+        else
+            printf("gpu: %s (equivalence sweep OK, %0.1f MB will go resident)\n",
+                   dev, 0.0);
     }
 
     if (determinism_spot_check(&ctx, task) != 0) {
@@ -372,7 +507,16 @@ int main(int argc, char **argv) {
                100.0 * (double)rep.acquired / (double)rep.attempted);
     }
 
-    free(ctx.logits);
+    {
+        size_t li;
+        for (li = 1; li < ctx.nlanes; ++li) {
+            free(ctx.lane[li].logits);
+            if (ctx.lane[li].am) cce_anymodel_free(ctx.lane[li].am);
+        }
+        for (li = 0; li < ctx.nlanes; ++li)
+            if (ctx.lane[li].gpu) cce_clgemm_close(ctx.lane[li].gpu);
+    }
+    free(ctx.lane[0].logits);
     free(vocab);
     cce_anymodel_free(am);
     return 0;

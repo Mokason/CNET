@@ -128,6 +128,8 @@ cce_result cce_gguf_build_qwen2_forest(cce_forest** out_forest,
                                        float init_scale);
 
 /* Full Qwen2 model holder with forest + norms (for forward) */
+struct cce_clgemm;
+
 typedef struct cce_gguf_qwen2 {
     cce_forest* forest;
 
@@ -174,6 +176,16 @@ typedef struct cce_gguf_qwen2 {
     float *v_cache;
     int cur_pos;
     int max_ctx;
+
+    /* Optional per-instance GPU handle (overrides the process-global one
+       from cce_gguf_set_clgemm). Required when several instances forward
+       concurrently — a shared handle means shared queues, i.e. races. */
+    struct cce_clgemm *clgemm;
+
+    /* This instance's forest scratch archive. Unique per load so oracle-pool
+       lanes in one process never remove()/rewrite each other's live backing
+       file; "" = legacy fixed-name cleanup. */
+    char forest_scratch[160];
 } cce_gguf_qwen2;
 
 /* Load a full Qwen2 model from GGUF into decomposed CCE form (forest of specialists + norms).
@@ -194,9 +206,11 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
 
 /* Optional GPU acceleration for the forward's linear seam (see
  * cce_clgemm.h). NULL (the default) = CPU path, byte-for-byte unchanged.
- * Process-global: one model per process is the supported shape. */
-struct cce_clgemm;
+ * The process-global default serves the one-model-per-process shape; the
+ * per-instance setter overrides it for oracle POOLS (one model per GPU,
+ * forwarding concurrently — each instance MUST have its own handle). */
 void cce_gguf_set_clgemm(struct cce_clgemm *h);
+void cce_gguf_qwen2_set_clgemm(cce_gguf_qwen2 *m, struct cce_clgemm *h);
 
 /* Quantize all linear specialists (q/k/v/o/gate/up/down/head) to int8 PTQ.
  * Returns number of blocks quantized, or -1 on error. Mirrors cce_supra_quantize_int8.

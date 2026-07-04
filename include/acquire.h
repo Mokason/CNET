@@ -37,6 +37,11 @@ typedef struct {
     void *ctx;
     size_t calls;
     size_t rejects;   /* refusals + outputs that failed port_validate */
+    /* 0/1 = serial (default). >1 = the fn is safe to call from this many
+       threads concurrently (it dispatches per-thread state internally, e.g.
+       one model instance per GPU); mining then fans enumeration out and
+       compacts serially in index order — tables/counters stay identical. */
+    size_t parallel_width;
 } OracleEntry;
 
 typedef struct {
@@ -141,6 +146,13 @@ int acquire_port_eq_public(Port a, Port b);
 int acquire_oracle_register(OracleRegistry *o, const char *name,
                             Port input_port, Port output_port,
                             CnetOracleFn fn, void *ctx);
+
+/* Opt-in AFTER registering: declare the named oracle safe for concurrent
+   fn calls from up to `width` threads. Only takes effect in OpenMP builds;
+   mined exemplar tables and counters are identical to the serial path by
+   construction (indexed slots, serial compaction). Returns 0, -1 unknown. */
+int acquire_oracle_set_parallel(OracleRegistry *o, const char *name,
+                                size_t width);
 
 /* Note a gap. Coalesces: a record with the same (kind, ports, subject) gets
    times_hit incremented instead of a duplicate. DEFERRED records reopen

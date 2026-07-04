@@ -19,6 +19,19 @@
 #include "../include/cce/cce_detect.h"
 #include "../include/cce/cce_clgemm.h"
 
+/* WALL time. clock() is wall-ish on Windows (kept there — timespec_get is
+   absent from MSVCRT-based MinGW) but PROCESS CPU TIME on Linux, where N
+   driver threads spin-waiting on N queues overcount N-fold. */
+static double wall_s(void) {
+#ifdef _WIN32
+    return (double)clock() / CLOCKS_PER_SEC;
+#else
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (double)ts.tv_sec + (double)ts.tv_nsec / 1e9;
+#endif
+}
+
 static void top3_window(const float *logits, const int *vocab, size_t V,
                         size_t *r) {
     size_t i, k;
@@ -47,8 +60,7 @@ int main(int argc, char **argv) {
     float *lc, *lg;
     double max_dl = 0.0;
     size_t argmax_mismatch = 0, top3_mismatch = 0;
-    double t_cpu, t_gpu;
-    clock_t t0;
+    double t_cpu, t_gpu, t0;
 
     if (argc < 2) {
         fprintf(stderr, "usage: %s <model> [V] [N]\n", argv[0]);
@@ -76,7 +88,7 @@ int main(int argc, char **argv) {
     for (i = 0; i < V; ++i) vocab[i] = 2000 + (int)i;
 
     /* CPU pass (also warms nothing — the CPU path has no state) */
-    t0 = clock();
+    t0 = wall_s();
     for (j = 0; j < N; ++j) {
         int tokens[2];
         tokens[0] = 2000 + (int)((j * 37u) % 4096u);
@@ -88,11 +100,11 @@ int main(int argc, char **argv) {
             return 1;
         }
     }
-    t_cpu = (double)(clock() - t0) / CLOCKS_PER_SEC;
+    t_cpu = wall_s() - t0;
 
     /* GPU pass + comparison (re-run CPU per context for the diff) */
     cce_gguf_set_clgemm(gpu);
-    t0 = clock();
+    t0 = wall_s();
     for (j = 0; j < N; ++j) {
         int tokens[2];
         tokens[0] = 2000 + (int)((j * 37u) % 4096u);
@@ -104,7 +116,7 @@ int main(int argc, char **argv) {
             return 1;
         }
     }
-    t_gpu = (double)(clock() - t0) / CLOCKS_PER_SEC;
+    t_gpu = wall_s() - t0;
     cce_gguf_set_clgemm(NULL);
 
     /* comparison pass: per context, CPU vs GPU logits + decisions */

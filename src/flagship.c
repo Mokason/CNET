@@ -21,15 +21,68 @@ static void fs_lower_priority(void) {}
 #define FS_PCLOSE pclose
 #endif
 
-/* GPU temperature via nvidia-smi; -1 when unavailable (no GPU / no tool).
+#ifndef _WIN32
+#include <dirent.h>
+/* Max edge temperature across DISCRETE amdgpu cards via sysfs (no tool
+   dependency, ~free per read). Integrated GPUs are excluded by their VRAM
+   carve-out size (< 4 GiB) — they are not campaign compute devices and must
+   not gate the governor. -1 when no discrete amdgpu card is found. */
+static int fs_gpu_temp_amdgpu(void) {
+    int card, best = -1;
+    for (card = 0; card < 16; ++card) {
+        char path[128];
+        FILE *f;
+        unsigned long long vram = 0;
+        DIR *dir;
+        struct dirent *de;
+        snprintf(path, sizeof path,
+                 "/sys/class/drm/card%d/device/mem_info_vram_total", card);
+        f = fopen(path, "r");
+        if (!f) continue;
+        if (fscanf(f, "%llu", &vram) != 1) vram = 0;
+        fclose(f);
+        if (vram < 4ULL * 1024u * 1024u * 1024u) continue;
+        snprintf(path, sizeof path, "/sys/class/drm/card%d/device/hwmon",
+                 card);
+        dir = opendir(path);
+        if (!dir) continue;
+        while ((de = readdir(dir)) != NULL) {
+            char tpath[192];
+            int t;
+            if (strncmp(de->d_name, "hwmon", 5) != 0) continue;
+            snprintf(tpath, sizeof tpath, "%s/%s/temp1_input", path,
+                     de->d_name);
+            f = fopen(tpath, "r");
+            if (!f) continue;
+            if (fscanf(f, "%d", &t) == 1 && t / 1000 > best) best = t / 1000;
+            fclose(f);
+        }
+        closedir(dir);
+    }
+    return best;
+}
+#endif
+
+/* GPU temperature: amdgpu sysfs first (discrete cards only, max across
+   them), nvidia-smi fallback (max across GPUs); -1 when unavailable.
    Called at most once per attempt — an attempt costs seconds, the query ~0.1s. */
 static int fs_gpu_temp(void) {
-    FILE *p = FS_POPEN(
-        "nvidia-smi --query-gpu=temperature.gpu --format=csv,noheader,nounits",
+    FILE *p;
+    int t = -1, v;
+#ifndef _WIN32
+    t = fs_gpu_temp_amdgpu();
+    if (t >= 0) return t;
+#endif
+    p = FS_POPEN(
+        "nvidia-smi --query-gpu=temperature.gpu --format=csv,noheader,nounits"
+#ifndef _WIN32
+        " 2>/dev/null"
+#endif
+        ,
         "r");
-    int t = -1;
     if (!p) return -1;
-    if (fscanf(p, "%d", &t) != 1) t = -1;
+    while (fscanf(p, "%d", &v) == 1)
+        if (v > t) t = v;
     FS_PCLOSE(p);
     return t;
 }
@@ -286,6 +339,8 @@ int flagship_run(FlagshipConfig *cfg, FlagshipOracleMaker maker,
         snprintf(name, sizeof name, "acq_%s", goal_tag);
         if (cnb_has_unit(&base, name)) { local.skipped_resume++; continue; }
 
+        memset(&orc_fn, 0, sizeof orc_fn);   /* width is opt-in: makers that
+                                                don't know it stay serial */
         if (maker(maker_ctx, k, t, &orc_fn) != 0 || orc_fn.fn == NULL) {
             local.no_oracle++;
             continue;
@@ -296,6 +351,9 @@ int flagship_run(FlagshipConfig *cfg, FlagshipOracleMaker maker,
             local.no_oracle++;
             continue;
         }
+        if (orc_fn.width > 1)
+            (void)acquire_oracle_set_parallel(&orc, "cce_cond_next",
+                                              orc_fn.width);
 
         local.attempted++;
         memset(&arep, 0, sizeof arep);

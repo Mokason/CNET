@@ -13,6 +13,9 @@
 #include <fcntl.h>
 #else
 #include <unistd.h>
+/* 64-bit-safe seek: GGUF files exceed 2 GB and `long` is 32-bit on MinGW,
+   hence _fseeki64 there; glibc spells it fseeko (needs _DEFAULT_SOURCE). */
+#define _fseeki64(f, off, whence) fseeko((f), (off_t)(off), (whence))
 #endif
 
 /* Oracle memory mode (CNET_ORACLE_INT8=1): quantize each specialist to int8
@@ -653,8 +656,12 @@ static cce_result gguf_rms_norm(const cce_tensor* in, const cce_tensor* weight, 
 #include "../../include/cce/cce_clgemm.h"
 static cce_clgemm *g_gguf_clgemm = NULL;
 void cce_gguf_set_clgemm(cce_clgemm *h) { g_gguf_clgemm = h; }
+void cce_gguf_qwen2_set_clgemm(cce_gguf_qwen2 *m, cce_clgemm *h) {
+    if (m) m->clgemm = h;
+}
 
-static cce_result apply_linear_rows(cce_cascade* cas, const cce_tensor* in, cce_tensor* out) {
+static cce_result apply_linear_rows(cce_clgemm *gpu, cce_cascade* cas,
+                                    const cce_tensor* in, cce_tensor* out) {
     if (!cas || !in || !out || in->ndim != 2 || out->ndim != 2) return CCE_ERR_INVALID_ARG;
     int T    = in->shape[0];
     int din  = in->shape[1];
@@ -664,14 +671,14 @@ static cce_result apply_linear_rows(cce_cascade* cas, const cce_tensor* in, cce_
     /* GPU fast path: exactly the shape cce_gguf_add_linear_branch builds —
        ONE plain-float LINEAR_HEAD block (pure affine, no quantization).
        Anything else falls through to the CPU path unchanged. */
-    if (g_gguf_clgemm && cas->num_blocks == 1 && T >= 1 && T <= 8) {
+    if (gpu && cas->num_blocks == 1 && T >= 1 && T <= 8) {
         const cce_block *blk = &cas->blocks[0];
         if (blk->type == CCE_BLOCK_LINEAR_HEAD && !blk->w_q && !blk->w_trit &&
             blk->weights.ndim == 2 && blk->weights.shape[0] == din &&
             blk->weights.shape[1] == dout) {
             const float *bias =
                 (blk->bias.numel == (size_t)dout) ? blk->bias.data : NULL;
-            if (cce_clgemm_matmul(g_gguf_clgemm, in->data, (size_t)T,
+            if (cce_clgemm_matmul(gpu, in->data, (size_t)T,
                                   (size_t)din, blk->weights.data, bias,
                                   (size_t)dout, out->data) == 0) {
                 return CCE_OK;
@@ -827,14 +834,20 @@ int cce_gguf_add_linear_branch(cce_forest* forest, const cce_gguf* gguf,
     return idx;
 }
 
+static cce_result gguf_build_qwen2_forest_at(cce_forest** out_forest, const cce_gguf* gguf, float init_scale, const char* tmpf);
+
 cce_result cce_gguf_build_qwen2_forest(cce_forest** out_forest, const cce_gguf* gguf, float init_scale) {
+    return gguf_build_qwen2_forest_at(out_forest, gguf, init_scale,
+                                      "gguf_qwen2_forest.cce");
+}
+
+static cce_result gguf_build_qwen2_forest_at(cce_forest** out_forest, const cce_gguf* gguf, float init_scale, const char* tmpf) {
     if (!out_forest || !gguf) return CCE_ERR_INVALID_ARG;
 
     int n_layer = cce_gguf_get_n_layer(gguf);
     if (n_layer <= 0) n_layer = 24;
 
     cce_forest* forest = NULL;
-    const char *tmpf = "gguf_qwen2_forest.cce";
     remove(tmpf);
     if (cce_forest_open(&forest, tmpf, 512) != CCE_OK) {
         return CCE_ERR_IO;
@@ -931,7 +944,7 @@ static cce_cascade* get_cascade_by_name(cce_forest* f, const char* name) {
 }
 
 /* Forward declaration for helper used in forward */
-static cce_result apply_linear_rows(cce_cascade* cas, const cce_tensor* in, cce_tensor* out);
+static cce_result apply_linear_rows(cce_clgemm *gpu, cce_cascade* cas, const cce_tensor* in, cce_tensor* out);
 
 /* Basic Qwen2 forward glue (RMS + GQA + SwiGLU) - full per-layer with KV cache */
 static void gguf_silu(const cce_tensor* in, cce_tensor* out) {
@@ -974,6 +987,9 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
     int V = m->vocab_size ? m->vocab_size : 151936;
 
     int start_pos = m->cur_pos;
+
+    /* per-instance GPU handle wins; the process-global is the default */
+    cce_clgemm *gpu = m->clgemm ? m->clgemm : g_gguf_clgemm;
 
     /* numerics: config/metadata overrides with safe defaults for calloc'd structs */
     float eps = (m->rms_eps > 0.0f) ? m->rms_eps : 1e-6f;
@@ -1020,15 +1036,15 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
 
         int qsh[2] = {n_tokens, D};
         cce_tensor_alloc(&q, qsh, 2);
-        apply_linear_rows(q_cas, &ln1, &q);
+        apply_linear_rows(gpu, q_cas, &ln1, &q);
 
         cce_tensor k = {0}, v = {0};
         if (has_kv) {
             int kvsh[2] = {n_tokens, KV * HD};
             cce_tensor_alloc(&k, kvsh, 2);
-            apply_linear_rows(k_cas, &ln1, &k);
+            apply_linear_rows(gpu, k_cas, &ln1, &k);
             cce_tensor_alloc(&v, kvsh, 2);
-            apply_linear_rows(v_cas, &ln1, &v);
+            apply_linear_rows(gpu, v_cas, &ln1, &v);
         }
 
         /* RoPE on new tokens - per head for correct positional encoding (quality fix) */
@@ -1095,7 +1111,7 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
                 }
             }
             free(scores);
-            apply_linear_rows(o_cas, &attn_out, &after_attn);
+            apply_linear_rows(gpu, o_cas, &attn_out, &after_attn);
             cce_tensor_free(&attn_out);
         } else {
             /* Fallback for Gemma4-style (q + o only): use q_proj output through o_proj.
@@ -1109,7 +1125,7 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
             } else {
                 memcpy(qn.data, q.data, (size_t)n_tokens * D * sizeof(float));
             }
-            apply_linear_rows(o_cas, &qn, &after_attn);
+            apply_linear_rows(gpu, o_cas, &qn, &after_attn);
             cce_tensor_free(&qn);
 
             /* Apply post-attention norm and layer scale if present */
@@ -1151,10 +1167,10 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
         gguf_rms_norm(&after_attn, &m->ffn_norm[l], eps, &ln2);
 
         cce_tensor_alloc(&gate, (int[]){n_tokens, mlp_hidden}, 2);
-        apply_linear_rows(gate_cas, &ln2, &gate);
+        apply_linear_rows(gpu, gate_cas, &ln2, &gate);
 
         cce_tensor_alloc(&upv, (int[]){n_tokens, mlp_hidden}, 2);
-        apply_linear_rows(up_cas, &ln2, &upv);
+        apply_linear_rows(gpu, up_cas, &ln2, &upv);
 
         cce_tensor_alloc(&mid, (int[]){n_tokens, mlp_hidden}, 2);
         gguf_silu(&gate, &gate);
@@ -1163,7 +1179,7 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
         }
 
         cce_tensor_alloc(&down, lnsh, 2);
-        apply_linear_rows(down_cas, &mid, &down);
+        apply_linear_rows(gpu, down_cas, &mid, &down);
 
         for (size_t i = 0; i < (size_t)n_tokens * D; i++) {
             x.data[i] = after_attn.data[i] + down.data[i];
@@ -1181,13 +1197,25 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
     cce_tensor_alloc(&fn, xsh, 2);
     gguf_rms_norm(&x, &m->output_norm, eps, &fn);
 
+    /* HEAD FOR THE LAST ROW ONLY: the head GEMM re-reads its full [D x V]
+       weight per row and only the last row's logits are ever consumed below
+       — same per-element math, so bits cannot move, but a seq-3 call stops
+       paying the dominant GEMM three times. (This also makes the manual
+       fallback below, which always computed just the last row into row 0,
+       agree with the copy-out.) */
     cce_tensor logits_t = {0};
-    int lsh[2] = {n_tokens, V};
+    int lsh[2] = {1, V};
     cce_tensor_alloc(&logits_t, lsh, 2);
+    cce_tensor fn_last = {0};
+    fn_last.data = fn.data + (size_t)(n_tokens - 1) * D;
+    fn_last.shape[0] = 1;
+    fn_last.shape[1] = D;
+    fn_last.ndim = 2;
+    fn_last.numel = (size_t)D;
     cce_cascade* head_cas = cce_forest_get_resident(m->forest, "qwen2.lm_head");
     bool head_ok = false;
     if (head_cas) {
-        if (apply_linear_rows(head_cas, &fn, &logits_t) == CCE_OK) head_ok = true;
+        if (apply_linear_rows(gpu, head_cas, &fn_last, &logits_t) == CCE_OK) head_ok = true;
     }
     if (!head_ok && m->output.data && m->output.ndim == 2) {
         /* Manual head using stored output (tied or not) - transpose safe guess */
@@ -1208,9 +1236,9 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
         }
     }
 
-    /* output last token logits */
+    /* output last token logits (logits_t holds exactly that one row) */
     int out_len = (V < logits_cap) ? V : logits_cap;
-    memcpy(logits_out, logits_t.data + (size_t)(n_tokens-1) * V, out_len * sizeof(float));
+    memcpy(logits_out, logits_t.data, out_len * sizeof(float));
 
     m->cur_pos += n_tokens;
 
@@ -1267,7 +1295,15 @@ cce_result cce_gguf_load_qwen2(cce_gguf_qwen2** out, const char* path) {
 
     GTRACE("hparams: L=%d D=%d H=%d KV=%d V=%d; building forest",
            m->n_layer, m->n_embd, m->n_head, m->n_kv_head, m->vocab_size);
-    rc = cce_gguf_build_qwen2_forest(&m->forest, g, 0.02f);
+    {
+        /* unique per instance: oracle-pool lanes load this model N times in
+           ONE process; a shared fixed scratch name would unlink the previous
+           lane's live backing archive */
+        static int g_forest_seq = 0;
+        snprintf(m->forest_scratch, sizeof m->forest_scratch,
+                 "gguf_qwen2_forest.%d.cce", ++g_forest_seq);
+    }
+    rc = gguf_build_qwen2_forest_at(&m->forest, g, 0.02f, m->forest_scratch);
     if (rc != CCE_OK) {
         free(m);
         cce_gguf_free(g);
@@ -1653,9 +1689,13 @@ void cce_gguf_qwen2_free(cce_gguf_qwen2* m) {
     if (!m) return;
     if (m->forest) cce_forest_close(m->forest);
     // cleanup internal temp backing files to prevent junk accumulation
-    remove("gguf_qwen2_forest.cce");
-    remove("gguf_qwen2_packed.cce");
-    remove("st_llama_forest.cce"); /* same struct built by cce_st_llama_load */
+    if (m->forest_scratch[0]) {
+        remove(m->forest_scratch);   /* this instance's unique archive */
+    } else {
+        remove("gguf_qwen2_forest.cce");
+        remove("gguf_qwen2_packed.cce");
+        remove("st_llama_forest.cce"); /* same struct built by cce_st_llama_load */
+    }
     if (m->attn_norm) {
         for (int l=0; l<m->n_layer; l++) cce_tensor_free(&m->attn_norm[l]);
         free(m->attn_norm);

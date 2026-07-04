@@ -6,6 +6,10 @@
 #include <stdlib.h>
 #include <string.h>
 
+#ifdef _OPENMP
+#include <omp.h>
+#endif
+
 void acquire_config_defaults(AcquireConfig *cfg) {
     if (!cfg) return;
     memset(cfg, 0, sizeof *cfg);
@@ -112,6 +116,19 @@ int acquire_oracle_register(OracleRegistry *o, const char *name,
     o->entries[o->count].ctx = ctx;
     o->count++;
     return 0;
+}
+
+int acquire_oracle_set_parallel(OracleRegistry *o, const char *name,
+                                size_t width) {
+    size_t i;
+    if (!o || !name) return -1;
+    for (i = 0; i < o->count; ++i) {
+        if (strcmp(o->entries[i].name, name) == 0) {
+            o->entries[i].parallel_width = width;
+            return 0;
+        }
+    }
+    return -1;
 }
 
 int acquire_note_no_plan(AcquireLedger *l, Port input_port, Port goal_port) {
@@ -353,21 +370,87 @@ static int mine_from_oracle(OracleEntry *o, Port in_p, Port goal_p,
         }
     }
 
-    /* main phase (skips indices the pilot already mined) */
-    for (k = 0; k < n_points; ++k) {
-        size_t idx = *exhaustive_out ? k : (k * card) / n_points; /* stride */
-        double *irow = inputs + usable * in_total;
-        double *trow = targets + usable * out_total;
-        size_t p, dup = 0;
-        for (p = 0; p < pilot && !dup; ++p) dup = (pilot_idx[p] == idx);
-        if (dup) continue;
-        attempts++;
-        if (contract_encode_domain_point(&tc, idx, irow) != 0) continue;
-        o->calls++;
-        if (o->fn(irow, raw, o->ctx) != 0) { o->rejects++; continue; }
-        if (!port_validate(goal_p, raw))  { o->rejects++; continue; }
-        if (port_canonicalize(goal_p, raw, trow) != 0) continue;
-        usable++;
+    /* main phase (skips indices the pilot already mined). An oracle
+       registered PARALLEL (its fn dispatches per-thread state — e.g. one
+       model instance per GPU) mines points into per-index slots
+       concurrently, then compacts SERIALLY in index order: the exemplar
+       table, every counter, and therefore every downstream digest are
+       identical to the serial path by construction. */
+    {
+        size_t width = (o->parallel_width > 1) ? o->parallel_width : 1;
+        unsigned char *st = NULL;          /* 0 dup, 1 encode_fail, 2 fn_fail, 3 mined */
+        double *slot_in = NULL, *slot_raw = NULL;
+#ifndef _OPENMP
+        width = 1;
+#endif
+        if (width > 1) {
+            st = (unsigned char *)malloc(n_points);
+            slot_in = (double *)malloc(n_points * in_total * sizeof *slot_in);
+            slot_raw = (double *)malloc(n_points * out_total * sizeof *slot_raw);
+            if (!st || !slot_in || !slot_raw) {
+                free(st); free(slot_in); free(slot_raw);
+                st = NULL; slot_in = NULL; slot_raw = NULL;
+                width = 1;                 /* OOM: serial fallback, same result */
+            }
+        }
+        if (width > 1) {
+#ifdef _OPENMP
+            long kk;
+#pragma omp parallel for schedule(dynamic) num_threads((int)width) \
+    default(none) \
+    shared(n_points, card, pilot, pilot_idx, tc, o, st, slot_in, slot_raw, \
+           in_total, out_total, exhaustive_out)
+            for (kk = 0; kk < (long)n_points; ++kk) {
+                size_t idx = *exhaustive_out ? (size_t)kk
+                                             : ((size_t)kk * card) / n_points;
+                size_t p, dup = 0;
+                for (p = 0; p < pilot && !dup; ++p) dup = (pilot_idx[p] == idx);
+                if (dup) { st[kk] = 0; continue; }
+                if (contract_encode_domain_point(
+                        &tc, idx, slot_in + (size_t)kk * in_total) != 0) {
+                    st[kk] = 1;
+                    continue;
+                }
+                st[kk] = (o->fn(slot_in + (size_t)kk * in_total,
+                                slot_raw + (size_t)kk * out_total,
+                                o->ctx) != 0) ? 2 : 3;
+            }
+#endif
+            for (k = 0; k < n_points; ++k) {
+                if (st[k] == 0) continue;                  /* pilot duplicate */
+                attempts++;
+                if (st[k] == 1) continue;                  /* encode failed */
+                o->calls++;
+                if (st[k] == 2) { o->rejects++; continue; }
+                if (!port_validate(goal_p, slot_raw + k * out_total)) {
+                    o->rejects++;
+                    continue;
+                }
+                if (port_canonicalize(goal_p, slot_raw + k * out_total,
+                                      targets + usable * out_total) != 0)
+                    continue;
+                memcpy(inputs + usable * in_total, slot_in + k * in_total,
+                       in_total * sizeof *inputs);
+                usable++;
+            }
+            free(st); free(slot_in); free(slot_raw);
+        } else {
+            for (k = 0; k < n_points; ++k) {
+                size_t idx = *exhaustive_out ? k : (k * card) / n_points; /* stride */
+                double *irow = inputs + usable * in_total;
+                double *trow = targets + usable * out_total;
+                size_t p, dup = 0;
+                for (p = 0; p < pilot && !dup; ++p) dup = (pilot_idx[p] == idx);
+                if (dup) continue;
+                attempts++;
+                if (contract_encode_domain_point(&tc, idx, irow) != 0) continue;
+                o->calls++;
+                if (o->fn(irow, raw, o->ctx) != 0) { o->rejects++; continue; }
+                if (!port_validate(goal_p, raw))  { o->rejects++; continue; }
+                if (port_canonicalize(goal_p, raw, trow) != 0) continue;
+                usable++;
+            }
+        }
     }
     free(raw);
     *inputs_out = inputs;

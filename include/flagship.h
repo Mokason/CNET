@@ -12,8 +12,9 @@
  * The BASE IS THE CHECKPOINT: resume = skip units already present; the gap
  * ledger sidecar carries DEFERRED knowledge across restarts (a re-noted
  * DEFERRED gap reopens). Everything the hardware budget demands is here:
- * duty-cycled work pulses, GPU-temperature pause/resume (nvidia-smi; absent
- * -> duty cycle only), BELOW_NORMAL process priority, a wall-clock budget,
+ * duty-cycled work pulses, GPU-temperature pause/resume (amdgpu sysfs on
+ * discrete cards, else nvidia-smi; absent -> duty cycle only), BELOW_NORMAL
+ * process priority, a wall-clock budget,
  * and a stop file ("<base_path>.stop") for clean user interruption.
  *
  * Tag note ("wa<t>q<t>", token id doubled): systematic tag families collide
@@ -46,6 +47,10 @@ typedef enum {
 typedef struct {
     CnetOracleFn fn;
     void *ctx;
+    /* 0/1 = serial. >1 = fn is safe for this many concurrent callers (it
+       dispatches per-thread state, e.g. one model instance per GPU); the
+       harness passes it through to acquire_oracle_set_parallel. */
+    size_t width;
 } FlagshipOracle;
 
 /* Prepare the oracle for conditioning token vocab[k] (= token_id). Returns 0

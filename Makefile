@@ -10,6 +10,11 @@ LDFLAGS := -lm
 MCP_LDFLAGS :=
 ifeq ($(OS),Windows_NT)
 MCP_LDFLAGS := -lwininet
+else
+# Linux/glibc: strict -std=c11 hides POSIX/BSD declarations (popen, fseeko,
+# usleep, ...). _DEFAULT_SOURCE restores glibc's default feature set without
+# changing the C standard; MinGW never sees this branch.
+CFLAGS += -D_DEFAULT_SOURCE
 endif
 
 # OpenMP support for multi-threaded studies inside a single exe (MinGW GCC).
@@ -1036,6 +1041,8 @@ trit_bench: $(CCE) $(CCE_CUDA_OBJ) tests/trit_bench.c include/cce/cce_trit_lut.h
 # Builds cce.dll (Windows) or cce.so (else). Defines CCE_BUILD_DLL so headers
 # emit __declspec(dllexport) / visibility for the C ABI (model, dataset, handle).
 # Usage: make cce_dll   (then copy cce.dll next to your .exe or into PATH)
+# -fPIC: required for ELF shared objects (Linux); harmless on MinGW.
+cce_dll: CFLAGS := $(CFLAGS) -fPIC
 cce_dll: $(CCE) $(CCE_CUDA_OBJ)
 	$(CC) -shared -DCCE_BUILD_DLL $(CFLAGS) -o cce.dll $(CCE) $(CCE_CUDA_OBJ) $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 	@echo "Built cce.dll (for .NET P/Invoke). Add to your C# project and use DllImport."
