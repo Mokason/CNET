@@ -558,10 +558,28 @@ cce_result cce_gguf_load_f32(const cce_gguf* g, int idx, float* buf, size_t cap_
             if (fread(scales,1,12,g->f)!=12) return CCE_ERR_IO;
             uint8_t qs[128];
             if (fread(qs,1,128,g->f)!=128) return CCE_ERR_IO;
-            /* Simplified: use super scale, ignore per-group 6bit scales for polish */
-            for (int i = 0; i < QK_K; i++) {
-                int nib = (qs[i>>1] >> ((i&1)*4)) & 0xF;
-                buf[b*QK_K + i] = nib * d + dmin;  /* placeholder, real uses is/sc */
+            /* Correct Q4_K dequant (llama.cpp dequantize_row_q4_K): per 32-value
+               sub-block scale/min are 6-bit-packed in scales[12] via the
+               get_scale_min_k4 layout; value = d*sc*nib - dmin*m. The old code
+               dropped the per-sub-block scales AND the -dmin*m term, yielding
+               all-positive magnitudes -> a broken oracle. */
+            const uint8_t *q = qs;
+            int is = 0;
+            size_t out = b * (size_t)QK_K;
+            for (int j = 0; j < QK_K && out < elems; j += 64) {
+                uint8_t sc, mm; int jj = is;
+                if (jj < 4) { sc = scales[jj] & 63; mm = scales[jj+4] & 63; }
+                else { sc = (scales[jj+4] & 0xF) | ((scales[jj-4] >> 6) << 4);
+                       mm = (scales[jj+4] >> 4)  | ((scales[jj]   >> 6) << 4); }
+                float d1 = d * sc, m1 = dmin * mm;
+                jj = is + 1;
+                if (jj < 4) { sc = scales[jj] & 63; mm = scales[jj+4] & 63; }
+                else { sc = (scales[jj+4] & 0xF) | ((scales[jj-4] >> 6) << 4);
+                       mm = (scales[jj+4] >> 4)  | ((scales[jj]   >> 6) << 4); }
+                float d2 = d * sc, m2 = dmin * mm;
+                for (int l = 0; l < 32 && out < elems; l++) buf[out++] = d1 * (q[l] & 0xF) - m1;
+                for (int l = 0; l < 32 && out < elems; l++) buf[out++] = d2 * (q[l] >> 4)  - m2;
+                q += 32; is += 2;
             }
         }
     } else if (m->ggml_type == 13 /* Q5_K */) {

@@ -24,11 +24,15 @@ static float *T(const cce_gguf *g, const char *fmt, int l, int *numel) {
     return out;
 }
 
-/* RMSNorm over the last `d` elements: y = x/sqrt(mean(x^2)+eps) * w  (w raw). */
-static void rmsnorm(float *y, const float *x, const float *w, int d, float eps) {
+/* RMSNorm over the last `d` elements. HF gemma uses (1+weight); REF_PLUS1 enables it. */
+static int g_plus1 = 0, g_qkraw = 0;
+static void rmsnorm_p(float *y, const float *x, const float *w, int d, float eps, int plus1) {
     double ss = 0; for (int i = 0; i < d; i++) ss += (double)x[i] * x[i];
     float s = 1.0f / sqrtf((float)(ss / d) + eps);
-    for (int i = 0; i < d; i++) y[i] = x[i] * s * w[i];
+    for (int i = 0; i < d; i++) y[i] = x[i] * s * (plus1 ? (1.0f + w[i]) : w[i]);
+}
+static void rmsnorm(float *y, const float *x, const float *w, int d, float eps) {
+    rmsnorm_p(y, x, w, d, eps, g_plus1);   /* layernorms follow the global flag */
 }
 
 /* out[o] = sum_i W[o*nin+i] * in[i]   (GGUF weight is [nout, nin] row-major). */
@@ -40,11 +44,13 @@ static void matvec(float *out, const float *W, const float *in, int nout, int ni
     }
 }
 
-/* NEOX rope on a head of width hd (rotate i with i+hd/2). */
-static void rope(float *v, int hd, int pos, float base) {
+/* NEOX rope on a head of width hd (rotate i with i+hd/2). ff = freq_factors
+   (rope_freqs) divide the frequency per pair; NULL = standard rope. */
+static void rope(float *v, int hd, int pos, float base, const float *ff) {
     int half = hd / 2;
     for (int i = 0; i < half; i++) {
         float fr = 1.0f / powf(base, (float)(2 * i) / hd);
+        if (ff) fr /= ff[i];
         float a = pos * fr, c = cosf(a), s = sinf(a);
         float x0 = v[i], x1 = v[i + half];
         v[i] = x0 * c - x1 * s;
@@ -58,13 +64,20 @@ int main(int argc, char **argv) {
     if (cce_gguf_load(argv[1], &g) != CCE_OK) { fprintf(stderr, "load fail\n"); return 1; }
 
     const int D = 3840, NL = 48, NH = 16, NKV = 8, HD = 256, FF = 15360, V = 262144;
-    const float eps = 1e-6f, embed_scale = sqrtf((float)D);
+    const float eps = 1e-6f;
+    const float embed_scale = getenv("REF_EMBED") ? (float)atof(getenv("REF_EMBED")) : sqrtf((float)D);
+    const int scale256 = getenv("REF_SCALE256") != NULL;      /* 1/sqrt(256) for all layers */
+    const int vnormed  = getenv("REF_VNORMED") != NULL;       /* tied V = K after qk-norm+rope */
+    const int softcap  = getenv("REF_SOFTCAP") != NULL;       /* final logit softcap 30 */
+    g_plus1 = getenv("REF_PLUS1") != NULL;
+    g_qkraw = getenv("REF_QKRAW") != NULL;
     int n = argc - 2;
     int *tok = malloc(n * sizeof(int));
     for (int i = 0; i < n; i++) tok[i] = atoi(argv[i + 2]);
 
     int emb_numel; float *emb = T(g, "token_embd.weight", 0, &emb_numel); /* [V, D] */
     float *onorm = T(g, "output_norm.weight", 0, NULL);
+    float *rfreqs = T(g, "rope_freqs.weight", 0, NULL);  /* freq_factors for global layers */
     if (!emb || !onorm) { fprintf(stderr, "no embed/onorm\n"); return 1; }
 
     /* residual stream x[n][D] */
@@ -116,7 +129,9 @@ int main(int argc, char **argv) {
         int kvstride = nk * hd;       /* per-token K cache stride */
         int vstride  = nv * vhd;      /* per-token V cache stride */
         float rbase = (hd >= 512) ? 1000000.0f : 10000.0f;   /* global vs swa rope base */
-        float scale = 1.0f / sqrtf((float)hd);
+        /* gemma4: scaling=1.0 (the attention scale is baked into the qk-norm
+           weights); NO separate 1/sqrt(d). */
+        float scale = getenv("REF_SCALEHD") ? 1.0f / sqrtf((float)(scale256 ? 256 : hd)) : 1.0f;
 
         for (int t = 0; t < n; t++) {
             rmsnorm(h, x + (size_t)t * D, anorm, D, eps);
@@ -126,13 +141,21 @@ int main(int argc, char **argv) {
             else matvec(vv, Wv, h, nv * vhd, D);
             for (int hh = 0; hh < nq; hh++) {
                 float *qh = q + hh * hd;
-                { float tmp[512]; rmsnorm(tmp, qh, qn, hd, eps); memcpy(qh, tmp, hd * sizeof(float)); }
-                rope(qh, hd, t, rbase);
+                { float tmp[512]; rmsnorm_p(tmp, qh, qn, hd, eps, g_plus1 && !g_qkraw); memcpy(qh, tmp, hd * sizeof(float)); }
+                rope(qh, hd, t, rbase, (hd >= 512) ? rfreqs : NULL);
             }
             for (int hh = 0; hh < nk; hh++) {
                 float *khh = kk + hh * hd;
-                if (kn) { float tmp[512]; rmsnorm(tmp, khh, kn, hd, eps); memcpy(khh, tmp, hd * sizeof(float)); }
-                rope(khh, hd, t, rbase);
+                if (kn) { float tmp[512]; rmsnorm_p(tmp, khh, kn, hd, eps, g_plus1 && !g_qkraw); memcpy(khh, tmp, hd * sizeof(float)); }
+                rope(khh, hd, t, rbase, (hd >= 512) ? rfreqs : NULL);
+            }
+            /* gemma4: V gets a PLAIN RMSNorm (no weight), per head, and is NOT roped */
+            if (!getenv("REF_NOVNORM"))
+            for (int hh = 0; hh < nv; hh++) {
+                float *vh = vv + hh * vhd;
+                double ss = 0; for (int d = 0; d < vhd; d++) ss += (double)vh[d] * vh[d];
+                float s = 1.0f / sqrtf((float)(ss / vhd) + eps);
+                for (int d = 0; d < vhd; d++) vh[d] *= s;
             }
             memcpy(kcache + (size_t)t * kvstride, kk, (size_t)kvstride * sizeof(float));
             memcpy(vcache + (size_t)t * vstride,  vv, (size_t)vstride  * sizeof(float));
@@ -165,20 +188,27 @@ int main(int argc, char **argv) {
                 fprintf(stderr, "l%d residRMS=%.3f attnBranchRMS=%.3f (lscale=%.3f -> %.3f)\n",
                         l, sqrt(rx/D), sqrt(rp/D), lscale_a, sqrt(rp/D)*lscale_a);
             }
-            for (int i = 0; i < D; i++) x[(size_t)t * D + i] += proj[i] * lscale_a;
+            for (int i = 0; i < D; i++) x[(size_t)t * D + i] += proj[i];   /* attn residual (unscaled) */
             /* MLP */
             rmsnorm(h, x + (size_t)t * D, fnorm, D, eps);
             matvec(g1, Wg, h, FF, D);
             matvec(u1, Wu, h, FF, D);
-            for (int i = 0; i < FF; i++) { float z = g1[i]; g1[i] = z / (1.0f + expf(-z)) * u1[i]; }
+            /* gemma MLP activation is gelu_pytorch_tanh, NOT silu */
+            for (int i = 0; i < FF; i++) {
+                float z = g1[i];
+                float gelu = 0.5f * z * (1.0f + tanhf(0.7978845608f * (z + 0.044715f * z * z * z)));
+                g1[i] = getenv("REF_SILU") ? (z / (1.0f + expf(-z)) * u1[i]) : (gelu * u1[i]);
+            }
             matvec(proj, Wd, g1, D, FF);
             if (pfnorm) { float tmp[3840]; rmsnorm(tmp, proj, pfnorm, D, eps); memcpy(proj, tmp, D * sizeof(float)); }
-            for (int i = 0; i < D; i++) x[(size_t)t * D + i] += proj[i] * lscale_f;
+            for (int i = 0; i < D; i++) x[(size_t)t * D + i] += proj[i];   /* ffn residual (unscaled) */
+            /* gemma4: per-layer out_scale multiplies the WHOLE residual stream */
+            if (!getenv("REF_NOOUT")) for (int i = 0; i < D; i++) x[(size_t)t * D + i] *= loss;
         }
         free(anorm); free(Wq); free(Wk); free(Wv); free(Wo); free(qn); free(kn);
         free(panorm); free(fnorm); free(Wg); free(Wu); free(Wd); free(pfnorm); free(los);
-        fprintf(stderr, "layer %d done, x[last][0:3]=%.3f %.3f %.3f\n", l,
-                x[(size_t)(n-1)*D+0], x[(size_t)(n-1)*D+1], x[(size_t)(n-1)*D+2]);
+        if (getenv("REF_RMS")) { double r=0; for(int i=0;i<D;i++) r+=(double)x[(size_t)(n-1)*D+i]*x[(size_t)(n-1)*D+i];
+            fprintf(stderr, "layer %d done residRMS=%.4f out_scale=%.4f\n", l, sqrt(r/D), loss); }
     }
     /* final norm + logits from last token (tied embedding head) */
     rmsnorm(h, x + (size_t)(n - 1) * D, onorm, D, eps);
