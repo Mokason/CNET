@@ -412,10 +412,4 @@ public sealed class CceForest : SafeHandle
         // AddTo marks the builder moved; caller of AddDeep... does not dispose it.
         return b.AddTo(this, name);
     }
-
-    protected override bool ReleaseHandle()
-    {
-        CceNative.CceForestClose(handle);
-        return true;
-    }
 }

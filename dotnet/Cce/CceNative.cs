@@ -9,6 +9,7 @@
 
 using System;
 using System.Linq;
+using System.Text;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.Marshalling;
@@ -19,6 +20,8 @@ internal static partial class CceNative
 {
     // Change if you rename the library or use a different loading strategy.
     private const string LibraryName = "cce";
+    // For CNET soul/certified engine (separate or co-located build of cnet.dll / cnet.so)
+    private const string CnetLibraryName = "cnet";
 
     static CceNative()
     {
@@ -65,6 +68,14 @@ internal static partial class CceNative
                     System.Runtime.InteropServices.NativeLibrary.Load(dylibPath);
                     return;
                 }
+
+                // CNET engine (soul_host + route/dag on certified bases)
+                string cnetDll = System.IO.Path.Combine(dir, "cnet.dll");
+                string cnetSo = System.IO.Path.Combine(dir, "cnet.so");
+                string cnetDylib = System.IO.Path.Combine(dir, "cnet.dylib");
+                if (System.IO.File.Exists(cnetDll)) { System.Runtime.InteropServices.NativeLibrary.Load(cnetDll); return; }
+                if (System.IO.File.Exists(cnetSo)) { System.Runtime.InteropServices.NativeLibrary.Load(cnetSo); return; }
+                if (System.IO.File.Exists(cnetDylib)) { System.Runtime.InteropServices.NativeLibrary.Load(cnetDylib); return; }
             }
 
             // Last attempt: explicit load using full known location from repo root relative to current dir
@@ -590,87 +601,82 @@ internal static partial class CceNative
     [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
     internal static partial CceResult CceSupraA2aLoadPacked(out IntPtr handle, [MarshalAs(UnmanagedType.LPStr)] string packedPath);
 
-    [LibraryImport(LibraryName, EntryPoint = "cce_supra_a2a_load")]
-    [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
-    internal static partial CceResult CceSupraA2aLoad(out IntPtr handle, [MarshalAs(UnmanagedType.LPStr)] string dirOrRepo);
-
-    [LibraryImport(LibraryName, EntryPoint = "cce_supra_a2a_free")]
-    [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
-    internal static partial void CceSupraA2aFree(IntPtr handle);
-
-    [LibraryImport(LibraryName, EntryPoint = "cce_supra_a2a_chat_step")]
-    [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
-    internal static partial int CceSupraA2aChatStep(IntPtr handle,
-        [MarshalAs(UnmanagedType.LPStr)] string userText,
-        StringBuilder response, int maxResponse);
-
-    [LibraryImport(LibraryName, EntryPoint = "cce_supra_a2a_complete_text")]
-    [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
-    internal static partial int CceSupraA2aCompleteText(IntPtr handle,
-        [MarshalAs(UnmanagedType.LPStr)] string prompt,
-        StringBuilder outBuf, int maxOut, int maxNew, float temp, int topk);
 
     // ============================================
     // Deeper marshaling for high-level Router/Planner/Contracts (PrimitiveRegistry, Contract, planning)
     // Ports + Contracts for verifiable composition. BTN/CCE specialists can be registered.
     // ============================================
 
-    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Ansi)]
-    internal struct PortNative
-    {
-        public int family;          // PortFamily enum
-        public nuint field_width;
-        public nuint field_count;
-        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)]
-        public string tag;
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    internal struct ContractNative
-    {
-        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 64)]
-        public string name;
-        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 64)]
-        public string parent;
-        [MarshalAs(UnmanagedType.ByValArray, SizeConst = 8)]
-        public PortNative[] input_ports;
-        public nuint input_port_count;
-        [MarshalAs(UnmanagedType.ByValArray, SizeConst = 8)]
-        public PortNative[] output_ports;
-        public nuint output_port_count;
-        public IntPtr inputs;       // double*
-        public IntPtr outputs;      // double*
-        public nuint exemplar_count;
-        public int owns_data;
-    }
-
-    // Basic contract init (for simple authoring from C#)
-    [LibraryImport(LibraryName, EntryPoint = "contract_init_borrowed")]
-    [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
-    internal static partial int ContractInitBorrowed(ref ContractNative c, [MarshalAs(UnmanagedType.LPStr)] string name,
-        IntPtr btn /* can be null for CCE path */, IntPtr inputs, IntPtr targets, nuint exemplar_count);
-
-    [LibraryImport(LibraryName, EntryPoint = "contract_free")]
-    [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
-    internal static partial void ContractFree(ref ContractNative c);
-
-    // PrimitiveRegistry basics (for planner)
-    [LibraryImport(LibraryName, EntryPoint = "registry_init")]
-    [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
-    internal static partial void RegistryInit(IntPtr reg);
-
-    [LibraryImport(LibraryName, EntryPoint = "registry_add")]
-    [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
-    internal static partial int RegistryAdd(IntPtr reg, IntPtr btn, [MarshalAs(UnmanagedType.LPStr)] string name);
-
-    [LibraryImport(LibraryName, EntryPoint = "registry_free")]
-    [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
-    internal static partial void RegistryFree(IntPtr reg);
-
-    // Simple planning entry (route/dag for composition)
-    [LibraryImport(LibraryName, EntryPoint = "route_plan")]
-    [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
-    internal static partial int RoutePlan(IntPtr reg, IntPtr sources, nuint n_sources, ref PortNative goal, IntPtr planOut /* opaque or handle */);
 
     // Note: full DagPlan etc require more handles; use for registration + named dispatch first.
+
+    // ============================================
+    // Soul host shim (CNET certified engine reachability)
+    // Load .cnb base + optional model, run named units, route goals.
+    // Mirrors usage in tests/soul_query.c + route_execute / dag_execute.
+    // ============================================
+
+    [LibraryImport(CnetLibraryName, EntryPoint = "soul_open")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+    internal static partial int SoulOpen([MarshalAs(UnmanagedType.LPStr)] string basePath,
+        [MarshalAs(UnmanagedType.LPStr)] string? modelPath, out IntPtr hostOut);
+
+    [LibraryImport(CnetLibraryName, EntryPoint = "soul_unit_dims")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+    internal static partial int SoulUnitDims(IntPtr host, [MarshalAs(UnmanagedType.LPStr)] string name,
+        out int inTotal, out int outTotal);
+
+    // Returns the unit's true output size (>=0; > outCap means truncated), or <0 on error.
+    [LibraryImport(CnetLibraryName, EntryPoint = "soul_run")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+    internal static partial int SoulRun(IntPtr host, [MarshalAs(UnmanagedType.LPStr)] string name,
+        double[] input, double[] output, int outCap);
+
+    [LibraryImport(CnetLibraryName, EntryPoint = "soul_route")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+    internal static partial int SoulRoute(IntPtr host, [MarshalAs(UnmanagedType.LPStr)] string goalTag,
+        double[] input, int inCap, double[] output, int outCap);
+
+    // Real Laplace-smoothed reliability x1000 (500 = 0.5), <0 if not found.
+    [LibraryImport(CnetLibraryName, EntryPoint = "soul_unit_reliability_milli")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+    internal static partial int SoulUnitReliabilityMilli(IntPtr host, [MarshalAs(UnmanagedType.LPStr)] string name);
+
+    [LibraryImport(CnetLibraryName, EntryPoint = "soul_close")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+    internal static partial void SoulClose(IntPtr host);
+
+    // MCP tools (file, calculator, memory) exposed from the C driver
+    [LibraryImport(CnetLibraryName, EntryPoint = "port_contract_mcp_file_read")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+    internal static partial int McpFileRead([MarshalAs(UnmanagedType.LPStr)] string path,
+        byte[] contentOut, nuint cap, out int fromCache);
+
+    [LibraryImport(CnetLibraryName, EntryPoint = "port_contract_mcp_calculator")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+    internal static partial int McpCalculator([MarshalAs(UnmanagedType.LPStr)] string expr,
+        byte[] resultOut, nuint cap, out int fromMem);
+
+    [LibraryImport(CnetLibraryName, EntryPoint = "port_contract_mcp_web_search")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+    internal static partial int McpWebSearch([MarshalAs(UnmanagedType.LPStr)] string query,
+        byte[] resultsOut, nuint cap, out int fromCache);
+
+    [LibraryImport(CnetLibraryName, EntryPoint = "mcp_memory_init")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+    internal static partial int McpMemoryInit();
+
+    [LibraryImport(CnetLibraryName, EntryPoint = "mcp_recall_fact")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+    internal static partial int McpRecallFact([MarshalAs(UnmanagedType.LPStr)] string query,
+        byte[] outBuf, nuint bufCap);
+
+    [LibraryImport(CnetLibraryName, EntryPoint = "mcp_memorize_fact")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+    internal static partial void McpMemorizeFact([MarshalAs(UnmanagedType.LPStr)] string query,
+        [MarshalAs(UnmanagedType.LPStr)] string summary);
+
+    // Core engine symbols are also exported from cnet lib for direct use:
+    // cnb_load, cnb_load_registry, cnb_get_unit, registry_*, route_plan, route_execute,
+    // dag_plan, dag_execute, btn_forward, etc. Add [LibraryImport(CnetLibraryName, ...)] as needed.
 }
