@@ -1064,3 +1064,7 @@ cce_dll: $(CCE) $(CCE_CUDA_OBJ)
 # The near-miss-vs-fundamental discriminator. Needs the model; NOT in verify.
 unit_structure_build: $(CCE) tests/unit_structure.c include/cce/cce_gguf.h
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/unit_structure $(CCE) tests/unit_structure.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+
+# Ask the soul questions: run certified base units vs the live model.
+soul_query_build: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(CCE) tests/soul_query.c include/base.h include/cce/cce_detect.h
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/soul_query $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(CCE) tests/soul_query.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
