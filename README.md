@@ -55,10 +55,10 @@ verification chain on every `make test`.
 | CCE storage + loaders (C ABI/DLL, safetensors, autograd, model save/load, zero-copy WARM views) | `cce_dll`, `cce_safetensors_test`, `cce_autograd_test`, `cce_model_test`, `cce_view`, `forest_view` | passing, in `make test` |
 | Contract security + one-file sealed units | `make contract_secure`, `make contract_unit` | passing, in `make test` |
 | Universal model layer (detect, SSM + llama runners, specialist graph, weight store, bounded-RAM tiers, evidence-gated merge) | `make cce_detect` / `cce_ssm` / `cce_st_llama` / `cce_specgraph` / `cce_wstore` / `cce_tiers` / `cce_similar` | passing, in `make test` |
-| Autonomy loop (gap-triggered acquisition → unified CNB1 base → flagship harness) | `make acquire`, `make base`, `make flagship` | passing, in `make test`; first real campaign 256/256 slices at 100%, verified 3 ways |
+| Autonomy loop (gap-triggered acquisition → unified CNB1 base → flagship harness) | `make acquire`, `make base`, `make flagship` | passing, in `make test`; real gemma4-v2 12B campaign **253/256** certified (SAMPLED, Wilson ≥ 0.984), 93% live-model fidelity when queried (`soul_query`) — the earlier "256/256 at 100%" was a NaN-oracle artifact, retracted |
 | Restored legacy aggregate + allocation-balance leak gate | `make legacy`, `make leakcheck` | passing, in `make test` |
 | Loader robustness (byte-flip + truncation sweeps over every artifact loader) | `make mutate` | passing, in `make test`; sealed formats refuse every mutation, unsealed probes never crash |
-| GPU forward (self-contained OpenCL) | `make test_full` → `./bin/gpu_equiv` | optional; 11.9× with **bit-identical** logits, equivalence-gated |
+| GPU forward (self-contained OpenCL, **multi-GPU + int8**) | `make gpu_equiv_build`; `make` `clgemm_unit` | optional; dual-R9700 oracle pool + `q8` layers, 4.28× on 12B, **bit-identical proven** (`clgemm_unit`, 360 calls), NaN-hard-failed |
 | Supra int8 PTQ | `make supra_console` (`--int8`) | near-lossless |
 | Packed 1.6-bit ternary | `make wordlm_bitnet` + export/reload tests | storage bit-exact (`ΔNLL=0` reload); *deployable quality still needs QAT at model scale* |
 | Representation walls / planner scaling | `make margin` / `fuzzy` / `stochastic`, `make planner_scale_study` | documented **limits**, not claims |
@@ -94,12 +94,16 @@ make compounding_bench       # 3C dual-track demo: LOW vs DEFAULT cost/accuracy 
 make detect FILE=Models/gemma-4-12B-it-MTP-Q8_0.gguf   # probe structure, no weights loaded
 make test             # full verification chain (CCE + universal runners + contracts + acquisition/base/flagship + legacy + leak gate + .NET)
 
-# The autonomy loop: extract certified units from a real model
+# The autonomy loop: extract certified units from a real model.
+# MODEL=gemma4-v2-Q4_K_M.gguf (12B); dual-GPU int8 oracle pool + margin-aware certification.
 make flagship_run_build
-./bin/flagship_run Models/gemma-4-12B-it-MTP-Q8_0.gguf 256 256 80 0.75 0 flagship.cnb          # argmax campaign (resumable; echo stop > flagship.cnb.stop)
-CNET_GPU=1 ./bin/flagship_run Models/gemma-4-12B-it-MTP-Q8_0.gguf 256 256 80 0.75 0 soul.cnb topk   # ranked-preference campaign on GPU (equivalence-gated)
-make cnb_audit && ./bin/cnb_audit flagship.cnb          # counts + re-certification + tag audit
-make gpu_equiv_build && ./bin/gpu_equiv Models/gemma-4-12B-it-MTP-Q8_0.gguf   # CPU-vs-GPU decision equivalence + speedup
+# 100%-yield config (2026-07-05): int8 pool + margin-aware + capacity-tuned student
+CNET_ORACLE_INT8=1 CNET_GPU=1 CNET_CERT_MARGIN=1.0 \
+  CNET_ACQ_HIDDEN=128 CNET_ACQ_MAXHIDDEN=512 CNET_ACQ_EPOCHS=20000 \
+  ./bin/flagship_run Models/gemma4-v2-Q4_K_M.gguf 256 256 80 1.0 0 soul.cnb topk   # resumable; echo stop > soul.cnb.stop
+make cnb_audit && ./bin/cnb_audit soul.cnb              # counts + certify-on-load + tag audit
+make gpu_equiv_build && CNET_ORACLE_INT8=1 ./bin/gpu_equiv Models/gemma4-v2-Q4_K_M.gguf   # CPU-vs-GPU decision equivalence (NaN-hard-failed) + speedup
+make soul_query_build && CNET_ORACLE_INT8=1 ./bin/soul_query Models/gemma4-v2-Q4_K_M.gguf soul.cnb | python3 tests/soul_query.py Models/gemma4-v2-Q4_K_M.gguf   # ask the soul questions, decode to text, vs the live model
 
 # New pure-C Contract Cascade Engine (CCE)
 make cce_smoke               # build & run the CCE smoke test (tensor → block → cascade → archive → forest/branches → router(SSMax) → learn (deeper credit) → patch → gpu → ABI + router-learn loop)
@@ -145,7 +149,7 @@ Instead of one large differentiable model trained end-to-end with backprop, CCE 
 | **cce_router**   | Dispatch to the right specialist(s)                 | SSMax (sparse softmax over similarity + goodness). Top-k routing. |
 | **cce_forest**   | Collection of branches + tiering                    | Branches = specialist cascades (with leaf blocks: linear/patch). Hot (RAM, trainable), Warm (mmap zero-copy views), Cold (disk). Header-based dir + persist. Centroid + SSMax recall. Online growth via micro-split in router-learn loop. |
 | **cce_archive**  | Single-file persistent storage                      | Append-only sections + directory. True partial loading via mmap (no full deserialize). |
-| **cce_clgemm**   | GPU forward for the transformer runner (optional)   | Self-contained OpenCL: `OpenCL.dll` loaded dynamically (no SDK/CUDA toolkit), runtime-compiled GEMM, device-resident weights. Measured 11.9× with **bit-identical logits**; equivalence-gated (`gpu_equiv`). CPU path unchanged when absent. |
+| **cce_clgemm**   | Multi-GPU forward for the transformer runner (optional) | Self-contained OpenCL: `OpenCL.dll` loaded dynamically (no SDK/CUDA toolkit), runtime-compiled float + `q8` (int8) GEMM, device-resident weights, **column-split across discrete GPUs** (iGPU excluded by property). Oracle *pool* = one instance per GPU. Bit-identity proven by `clgemm_unit` (360 calls, single/dual/split), `FP_CONTRACT OFF`. CPU path unchanged when absent. |
 | **C ABI**        | Stable embedding interface (`include/cce/cce.h`)    | `cce_open`, `cce_infer`, `cce_adapt`, `cce_tick`. Easy to call from Unity/C#/Python. |
 
 ### Storage & Partial Loading (cce_archive + cce_forest)
@@ -288,7 +292,7 @@ Env knobs: `CNET_TS_HIDDEN` (char cascade depth), `CNET_TS_EPOCHS`, `CNET_TS_LR`
 `make cce_smoke` and `make cce_train_bench` (runs on build). Dedicated forest/archive tests pass. cce_minimal.c isolates core.
 
 Some advanced areas still need work:
-- ~~Full OpenCL kernel dispatch~~ **done** for the transformer forward (`cce_clgemm`, 2026-07): dynamic loading, runtime kernel build, 11.9× bit-identical (see *GPU Forward*). The old `cce_gpu.c` CUDA path never actually compiled (a Makefile typo hid it) — recorded honestly, superseded.
+- ~~Full OpenCL kernel dispatch~~ **done** for the transformer forward (`cce_clgemm`, 2026-07): dynamic loading, runtime kernel build, now **multi-GPU + int8** (see *GPU Forward*). Bit-identity proven by `clgemm_unit`, not asserted. The old `cce_gpu.c` CUDA path never actually compiled (a Makefile typo hid it) — recorded honestly, superseded.
 - Zero-copy WARM **whole-cascade** load: `cce_cascade_view_from_archive` builds a read-only cascade whose block weights/bias are views into the archive mmap (`owns_memory=0`), reusing the mapped pointer instead of reload+copy (`make cce_view`: bit-identical forward + clean free). **Now wired into the forest** (`make forest_view`, 19/19): `cce_forest_seal` + `cce_forest_forward` materialize a branch as a zero-copy view when the forest is sealed (recall reuses the same pointer, no reload), with **copy-on-write to an owned HOT cascade** when training (`cce_forest_promote_to_hot`). Sealing forbids further `add_branch` (an append remaps the mmap and would invalidate views). Latent bugs fixed along the way: the copy loader read a fixed 1 MB prefix (failed on any archive < 1 MB), and `archive_offset==0` was misused as a "not persisted" sentinel (the first branch legitimately lands at offset 0) — now an explicit `persisted` flag.
 - Larger-scale real tasks (beyond current harness) + full growth / per-layer curve logging
 
@@ -977,12 +981,30 @@ thermal-governed, duty-cycled, crash-resumable harness sweeps conditioning
 tokens and extracts one certified unit per token from a CCE-loaded model. The
 base **is** the checkpoint (resume = skip existing units; deferred gaps reopen
 and retry); a stop file interrupts cleanly; nvidia-smi gates GPU temperature;
-the process runs below-normal priority. **Campaign result (gemma MTP draft
-model, 465 MB):** 256/256 conditional next-token slices extracted at **100%**,
-zero deferrals, ~7h on one duty-cycled CPU thread, max 48 °C — verified three
-ways (256/256 re-certify on load; clean tag audit; a fresh re-mine the next
-morning was **behavior-digest identical**). The resulting base: **13 MB** of
-individually proven, router-composable units.
+the process runs below-normal priority.
+
+**Campaign result (gemma4-v2, 12B, real forward — 2026-07-05).** The earlier
+"draft model, 256/256 at 100%" number was an *artifact* and is retracted:
+instrumenting the oracle per-layer exposed that the gemma4 forward was never
+real — a GGUF data-section alignment bug read tensors shifted (NaN weights),
+NaN then satisfied every float gate *vacuously* (determinism, `gpu_equiv`'s
+"max |Δlogit| = 0.0", PROOF certification), and gemma4 attention was never
+implemented for its true geometry (q/k/v were uninitialized heap). Every
+"256/256" unit was a constant function a one-neuron net memorizes. Fixed:
+align-up honoring `general.alignment`, NaN = hard-fail on every gate,
+geometry-driven attention (per-layer head dims / MQA / sliding window, one
+runner for gemma4 + llama + qwen), and a bit-identical dual-GPU int8 forward.
+The honest run on the real oracle: **253/256** ordered-top-3 slices certified
+(**SAMPLED** tier, Wilson floor ≥ 0.984), 4.76 h on two R9700s; the 3
+uncertified are the model's own near-ties, declined by *margin-aware*
+certification. Verified: 253/253 re-certify on load, and querying the units
+against the live model (`soul_query`) reproduces it on **45/48 (93%)** sampled
+questions — misses only on the abstained near-ties. Honest caveat kept in
+view: the mined window is gemma4's top continuations of a *bare, template-less*
+`<bos>` — high-frequency **multilingual** tokens (正如, もう少し, であれば, …),
+faithfully reproduced but linguistically artificial. A faithful filing
+cabinet, not yet a mind; meaningful extraction needs real-context
+conditioning, not more machinery.
 
 **The fuzzy tier (PAIR / TOPK task shapes).** Where exactness isn't available,
 the machinery is *calibrated abstention*, not fuzzy logic (evaluated and
@@ -1003,14 +1025,21 @@ deferred) — the first genuinely sampled domain exposed it in minutes.
 
 **GPU forward (`gpu_equiv`, `CNET_GPU=1`).** The oracle forward runs on GPU
 via a self-contained OpenCL module (`cce_clgemm`): `OpenCL.dll` loaded
-dynamically (no SDK, no CUDA toolkit, no nvcc/MSVC — which this MinGW
-toolchain couldn't host anyway), GEMM kernel compiled at runtime, model
-weights device-resident (~1.4 GB). Measured on a 4070 Ti SUPER: **11.9×**
-(4.2 → 49.8 fwd/s) with **max |Δlogit| = 0.0** — bit-identical, because the
-kernel accumulates in the same order as the CPU code. Decision-equivalence is
-*gated*: `gpu_equiv` requires 100% argmax + top-3 agreement, and `CNET_GPU=1`
-mining refuses to start on any mismatch. GPU-minted units are
-behavior-digest identical to CPU-minted ones.
+dynamically (no SDK, no CUDA toolkit, no nvcc/MSVC), GEMM kernel compiled at
+runtime, weights device-resident. Now **multi-device**: an oracle *pool* runs
+one model instance per discrete GPU (integrated GPUs excluded by the
+host-unified-memory property), mining the independent per-token calls in
+parallel; float weights column-split, int8 layers resident via a `q8` kernel
+(**Rung 5**: ~640 GB/s GDDR6 vs ~80 GB/s DDR5). Measured on two AMD R9700s
+(gemma4-v2 12B): 4.28× GPU forward, 14 GB resident/lane, plus per-unit KV
+prefix reuse and a window-restricted head. Bit-identity is not assumed but
+*proven*: `clgemm_unit` checks 360 GEMM calls against an exact CPU reference
+across single/dual/split placements (the kernel needed `FP_CONTRACT OFF` — FMA
+fusion drifted ulps and flipped near-tie argmax). **Honesty note:** the old
+"11.9× on a 4070 Ti, max |Δlogit| = 0.0" number was measured on the NaN-era
+forward, where the gate passed *vacuously* (NaN defeats every comparison); it
+is retracted. `gpu_equiv` now hard-fails on any NaN logit, and the equivalence
+sweep re-runs per lane at campaign start.
 
 ---
 
@@ -1145,12 +1174,16 @@ current state.
   demotion, and one-file sealed `.cnu` units in `registry_save`.
 - **Autonomy loop:** gap-triggered acquisition (DEFER-total), the unified CNB1
   base with mint-once tag governance, and the thermal-governed flagship
-  harness. First full campaign: **256/256 slices extracted from a real model
-  at 100%**, verified three ways; base = 13 MB vs the 465 MB source. The
-  fuzzy tier adds sampled extraction (Wilson floors + conformal probe) and
-  ranked-preference ("soul") units. Details in *The Autonomy Loop*.
-- **GPU forward:** self-contained OpenCL (`cce_clgemm`), 11.9× with
-  bit-identical logits, equivalence-gated (`gpu_equiv`, `CNET_GPU=1`).
+  harness. Honest campaign (gemma4-v2 12B, real forward, 2026-07-05):
+  **253/256** ordered-top-3 slices certified (SAMPLED, Wilson ≥ 0.984),
+  93% live-model fidelity when queried; the fuzzy tier adds sampled extraction
+  (Wilson floors + conformal probe), *margin-aware* certification (decline the
+  teacher's own near-ties), and ranked-preference ("soul") units. The prior
+  "256/256 at 100%" was a NaN-oracle artifact — retracted, story in *The
+  Autonomy Loop*.
+- **GPU forward:** self-contained OpenCL (`cce_clgemm`), multi-GPU oracle pool
+  + int8 `q8` layers, 4.28× on 12B, bit-identity **proven** (`clgemm_unit`),
+  NaN-hard-failed (`gpu_equiv`, `CNET_GPU=1`).
 - **Legacy DAG machinery restored and gated:** the full planner/executor/
   blackboard/engram/rank-artifact code lives in `src/router/dag_full.c`;
   the complete legacy `test_all` is green and runs as a verify gate
