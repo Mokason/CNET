@@ -910,7 +910,7 @@ cce_result cce_gguf_qwen2_geom_uniform(cce_gguf_qwen2* m) {
 }
 
 /* Simple RMSNorm (no mean subtraction) */
-static cce_result gguf_rms_norm(const cce_tensor* in, const cce_tensor* weight, float eps, cce_tensor* out) {
+static cce_result gguf_rms_norm_impl(const cce_tensor* in, const cce_tensor* weight, float eps, cce_tensor* out, int add_one) {
     if (!in || !out || !weight || in->numel != out->numel) return CCE_ERR_INVALID_ARG;
     int last = in->shape[in->ndim-1];
     if ((size_t)last > weight->numel) return CCE_ERR_INVALID_ARG; /* undersized norm tensor: refuse, don't overread */
@@ -922,7 +922,10 @@ static cce_result gguf_rms_norm(const cce_tensor* in, const cce_tensor* weight, 
         for (int i=0; i<last; i++) ss += row[i]*row[i];
         ss = 1.0f / sqrtf(ss / last + eps);
         for (int i=0; i<last; i++) {
-            orow[i] = (row[i] * ss) * weight->data[i];
+            /* gemma stores RMSNorm weights centered at 0 -> multiply by (1+w);
+               llama/qwen use w directly. */
+            float w = add_one ? (1.0f + weight->data[i]) : weight->data[i];
+            orow[i] = (row[i] * ss) * w;
         }
     }
     return CCE_OK;
@@ -1473,7 +1476,7 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
         int lnsh[2] = {n_tokens, D};
         cce_tensor ln1 = {0}, q = {0}, k = {0}, v = {0};
         cce_tensor_alloc(&ln1, lnsh, 2);
-        gguf_rms_norm(&x, &m->attn_norm[l], eps, &ln1);
+        gguf_rms_norm_impl(&x, &m->attn_norm[l], eps, &ln1, (m->embed_scale > 1.0f));
 
         cce_tensor_alloc(&q, (int[]){n_tokens, ge->q_dim}, 2);
         cce_tensor_alloc(&k, (int[]){n_tokens, ge->k_dim}, 2);
@@ -1517,7 +1520,7 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
                         ss += qh[d2] * qh[d2];
                     ss = 1.0f / sqrtf(ss / ge->head_dim + eps);
                     for (int d2 = 0; d2 < ge->head_dim; d2++)
-                        qh[d2] = (qh[d2] * ss) * qnw[d2];
+                        qh[d2] = (qh[d2] * ss) * ((m->embed_scale > 1.0f) ? (1.0f + qnw[d2]) : qnw[d2]);
                 }
                 gguf_apply_rope(qh, NULL, 0, ge->rope_dim, pos,
                                 ge->rope_base, ge->n_q, ge->n_k);
@@ -1531,7 +1534,7 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
                         ss += kh[d2] * kh[d2];
                     ss = 1.0f / sqrtf(ss / ge->head_dim + eps);
                     for (int d2 = 0; d2 < ge->head_dim; d2++)
-                        kh[d2] = (kh[d2] * ss) * knw[d2];
+                        kh[d2] = (kh[d2] * ss) * ((m->embed_scale > 1.0f) ? (1.0f + knw[d2]) : knw[d2]);
                 }
                 gguf_apply_rope(NULL, kh, 0, ge->rope_dim, pos,
                                 ge->rope_base, ge->n_q, ge->n_k);
@@ -1610,7 +1613,7 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
         if (m->post_attention_norm && m->post_attention_norm[l].data) {
             cce_tensor tmp = {0};
             cce_tensor_alloc(&tmp, lnsh, 2);
-            gguf_rms_norm(&after_attn, &m->post_attention_norm[l], eps, &tmp);
+            gguf_rms_norm_impl(&after_attn, &m->post_attention_norm[l], eps, &tmp, (m->embed_scale > 1.0f));
             memcpy(after_attn.data, tmp.data, (size_t)n_tokens * D * sizeof(float));
             cce_tensor_free(&tmp);
         }
@@ -1629,7 +1632,7 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
         cce_tensor ln2 = {0}, gate = {0}, upv = {0}, mid = {0}, down = {0};
         int mlp_hidden = m->feed_forward_length > 0 ? m->feed_forward_length : 4864;
         cce_tensor_alloc(&ln2, lnsh, 2);
-        gguf_rms_norm(&after_attn, &m->ffn_norm[l], eps, &ln2);
+        gguf_rms_norm_impl(&after_attn, &m->ffn_norm[l], eps, &ln2, (m->embed_scale > 1.0f));
 
         cce_tensor_alloc(&gate, (int[]){n_tokens, mlp_hidden}, 2);
         cce_tensor_alloc(&upv, (int[]){n_tokens, mlp_hidden}, 2);
@@ -1666,7 +1669,7 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
         if (m->post_ffw_norm && m->post_ffw_norm[l].data) {
             cce_tensor tmp = {0};
             cce_tensor_alloc(&tmp, lnsh, 2);
-            gguf_rms_norm(&down, &m->post_ffw_norm[l], eps, &tmp);
+            gguf_rms_norm_impl(&down, &m->post_ffw_norm[l], eps, &tmp, (m->embed_scale > 1.0f));
             memcpy(down.data, tmp.data, (size_t)n_tokens * D * sizeof(float));
             cce_tensor_free(&tmp);
         }
@@ -1689,7 +1692,7 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
     /* final norm + head */
     cce_tensor fn = {0};
     cce_tensor_alloc(&fn, xsh, 2);
-    gguf_rms_norm(&x, &m->output_norm, eps, &fn);
+    gguf_rms_norm_impl(&x, &m->output_norm, eps, &fn, (m->embed_scale > 1.0f));
 
     /* HEAD FOR THE LAST ROW ONLY: the only row anyone reads */
     cce_tensor logits_t = {0};

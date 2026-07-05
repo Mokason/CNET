@@ -174,7 +174,7 @@ SYNONYMS_TEST := tests/test_synonyms.c
 TILEINDEX_TEST := tests/test_tile_index.c
 CONSOLIDATE_TEST := tests/test_tile_consolidate.c
 
-.PHONY: all run test verify verify-long legacy_test compose route dag hetero split chunk certify property coverage conformal logicgate decimal circuit study capacity library margin fuzzy stochastic fastpath throughput residue expr attention attention_study lifecycle_bench lbench proposal_sidecar probe_overhead belowbeam_chars struct_pref dgate_bench compounding_bench cce_smoke cce_train_bench cce_view forest_view wordlm wordlm_bitnet cce_dll cce_safetensors_test cce_gguf_test cce_model_test cce_autograd_test endgate jsonstory pdftest pdflearn compound tiermem_test graduate fontdecode tfidf synonyms tileindex consolidate clean
+.PHONY: all run test verify verify-long legacy_test compose route dag hetero split chunk certify property coverage conformal logicgate decimal circuit study capacity library margin fuzzy stochastic fastpath throughput residue expr attention attention_study lifecycle_bench lbench proposal_sidecar probe_overhead belowbeam_chars struct_pref dgate_bench compounding_bench cce_smoke cce_train_bench cce_view forest_view wordlm wordlm_bitnet cce_dll cnet_dll cce_safetensors_test cce_gguf_test cce_model_test cce_autograd_test endgate jsonstory pdftest pdflearn compound tiermem_test graduate fontdecode tfidf synonyms tileindex consolidate clean
 
 all: nn_demo
 
@@ -1059,6 +1059,18 @@ cce_dll: $(CCE) $(CCE_CUDA_OBJ)
 	$(CC) -shared -DCCE_BUILD_DLL $(CFLAGS) -o cce.dll $(CCE) $(CCE_CUDA_OBJ) $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 	@echo "Built cce.dll (for .NET P/Invoke). Add to your C# project and use DllImport."
 
+# CNET engine shared library (base + router + registry + contract + nn + plan)
+# for hosts to load certified .cnb bases and call route_execute / dag_execute
+# as verifiable tools. Also builds the soul_host shim.
+# Defines CNET_BUILD_DLL for export macros.
+# Usage: make cnet_dll
+cnet_dll: CFLAGS := $(CFLAGS) -fPIC
+cnet_dll: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(BASE_SRC) $(SCAN) $(PROPERTY) $(CONSOLIDATE) $(ACQUIRE_SRC) $(COVERAGE) src/fastpath.c src/soul_host.c src/contract/mcp_calculator.c src/contract/mcp_file_read.c src/contract/mcp_file_write.c src/contract/mcp_memory.c src/contract/mcp_utils.c src/contract/mcp_web_search.c src/contract/mcp_wiki.c src/agent_memory.c
+	$(CC) -shared -DCNET_BUILD_DLL $(CFLAGS) -o cnet.so \
+		$(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(BASE_SRC) $(SCAN) $(PROPERTY) $(CONSOLIDATE) $(ACQUIRE_SRC) $(COVERAGE) src/fastpath.c src/soul_host.c src/contract/mcp_calculator.c src/contract/mcp_file_read.c src/contract/mcp_file_write.c src/contract/mcp_memory.c src/contract/mcp_utils.c src/contract/mcp_web_search.c src/contract/mcp_wiki.c src/agent_memory.c \
+		$(LDFLAGS)
+	@echo "Built cnet.so (or rename/copy as cnet.dll on Windows) for CNET engine (soul_host ABI + route/dag + MCP tools). Use with P/Invoke."
+
 
 # Unit-structure probe: how hard is the function each TOPK unit must memorize?
 # The near-miss-vs-fundamental discriminator. Needs the model; NOT in verify.
@@ -1068,3 +1080,7 @@ unit_structure_build: $(CCE) tests/unit_structure.c include/cce/cce_gguf.h
 # Ask the soul questions: run certified base units vs the live model.
 soul_query_build: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(CCE) tests/soul_query.c include/base.h include/cce/cce_detect.h
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/soul_query $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(CCE) tests/soul_query.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+
+# Run the model on explicit token ids (enabler for real-context extraction).
+tok_forward_build: $(CCE) tests/tok_forward.c include/cce/cce_detect.h
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/tok_forward $(CCE) tests/tok_forward.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
