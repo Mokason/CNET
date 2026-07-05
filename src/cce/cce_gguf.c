@@ -922,10 +922,12 @@ static cce_result gguf_rms_norm_impl(const cce_tensor* in, const cce_tensor* wei
         for (int i=0; i<last; i++) ss += row[i]*row[i];
         ss = 1.0f / sqrtf(ss / last + eps);
         for (int i=0; i<last; i++) {
-            /* gemma stores RMSNorm weights centered at 0 -> multiply by (1+w);
-               llama/qwen use w directly. */
-            float w = add_one ? (1.0f + weight->data[i]) : weight->data[i];
-            orow[i] = (row[i] * ss) * w;
+            /* Use the stored weight DIRECTLY. gemma's (1+w) is already baked
+               into the GGUF norm tensors by the llama.cpp converter
+               (convert_hf_to_gguf adds 1). Adding it again here double-counts
+               and blows up q*k -> attention collapses to self. */
+            (void)add_one;
+            orow[i] = (row[i] * ss) * weight->data[i];
         }
     }
     return CCE_OK;
@@ -1373,22 +1375,28 @@ static void gguf_silu(const cce_tensor* in, cce_tensor* out) {
 
 static void gguf_apply_rope(float* q, float* k, int t, int head_dim, int pos, float base, int n_heads, int n_kv_heads) {
     (void)n_heads; (void)n_kv_heads;
-    for (int i = 0; i < head_dim; i += 2) {
-        float freq = 1.0f / powf(base, (float)i / head_dim);
+    /* NEOX-style rotary (gemma & qwen2): pair dim i with i+head_dim/2, NOT the
+       adjacent (i, i+1) GPT-J interleave. Wrong pairing scrambles all positions
+       -> attention can't localize -> model collapses to an input-independent
+       prior. head_dim here is the rope width (rope_dim); dims beyond it are
+       left unrotated by the caller. */
+    int half = head_dim / 2;
+    for (int i = 0; i < half; i++) {
+        float freq = 1.0f / powf(base, (float)(2 * i) / head_dim);
         float val = (float)pos * freq;
         float cosv = cosf(val);
         float sinv = sinf(val);
         if (q) {
             float q0 = q[t * head_dim + i];
-            float q1 = q[t * head_dim + i + 1];
-            q[t * head_dim + i] = q0 * cosv - q1 * sinv;
-            q[t * head_dim + i + 1] = q0 * sinv + q1 * cosv;
+            float q1 = q[t * head_dim + i + half];
+            q[t * head_dim + i]        = q0 * cosv - q1 * sinv;
+            q[t * head_dim + i + half] = q0 * sinv + q1 * cosv;
         }
         if (k) {
             float k0 = k[t * head_dim + i];
-            float k1 = k[t * head_dim + i + 1];
-            k[t * head_dim + i] = k0 * cosv - k1 * sinv;
-            k[t * head_dim + i + 1] = k0 * sinv + k1 * cosv;
+            float k1 = k[t * head_dim + i + half];
+            k[t * head_dim + i]        = k0 * cosv - k1 * sinv;
+            k[t * head_dim + i + half] = k0 * sinv + k1 * cosv;
         }
     }
 }
@@ -1520,7 +1528,7 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
                         ss += qh[d2] * qh[d2];
                     ss = 1.0f / sqrtf(ss / ge->head_dim + eps);
                     for (int d2 = 0; d2 < ge->head_dim; d2++)
-                        qh[d2] = (qh[d2] * ss) * ((m->embed_scale > 1.0f) ? (1.0f + qnw[d2]) : qnw[d2]);
+                        qh[d2] = (qh[d2] * ss) * qnw[d2];  /* GGUF bakes gemma +1 */
                 }
                 gguf_apply_rope(qh, NULL, 0, ge->rope_dim, pos,
                                 ge->rope_base, ge->n_q, ge->n_k);
@@ -1534,7 +1542,7 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
                         ss += kh[d2] * kh[d2];
                     ss = 1.0f / sqrtf(ss / ge->head_dim + eps);
                     for (int d2 = 0; d2 < ge->head_dim; d2++)
-                        kh[d2] = (kh[d2] * ss) * ((m->embed_scale > 1.0f) ? (1.0f + knw[d2]) : knw[d2]);
+                        kh[d2] = (kh[d2] * ss) * knw[d2];  /* GGUF bakes gemma +1 */
                 }
                 gguf_apply_rope(NULL, kh, 0, ge->rope_dim, pos,
                                 ge->rope_base, ge->n_q, ge->n_k);
@@ -1574,6 +1582,14 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
                         sacc += qh[d2] * kh[d2];
                     scores[j] = sacc * scale;
                 }
+                if (trace_this && l == 0 && h == 0 && t == n_tokens - 1) {
+                    const float *k_self = m->k_cache + (size_t)abs_t * m->k_slot_floats + ge->k_off + (size_t)kh_i * ge->head_dim;
+                    const float *k_first = m->k_cache + (size_t)jmin * m->k_slot_floats + ge->k_off + (size_t)kh_i * ge->head_dim;
+                    fprintf(stderr, "PRESOFT rope_base=%.0f scale=%.4f scores[", ge->rope_base, scale);
+                    for (int j = jmin; j <= abs_t; j++) fprintf(stderr, "%.2f ", scores[j]);
+                    fprintf(stderr, "] q[0:4]=%.3f,%.3f,%.3f,%.3f kself[0:4]=%.3f,%.3f,%.3f,%.3f kfirst[0:4]=%.3f,%.3f,%.3f,%.3f\n",
+                            qh[0],qh[1],qh[2],qh[3], k_self[0],k_self[1],k_self[2],k_self[3], k_first[0],k_first[1],k_first[2],k_first[3]);
+                }
                 float maxs = -1e30f;
                 for (int j = jmin; j <= abs_t; j++)
                     if (scores[j] > maxs) maxs = scores[j];
@@ -1583,6 +1599,12 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
                     sum += scores[j];
                 }
                 for (int j = jmin; j <= abs_t; j++) scores[j] /= sum;
+                if (trace_this && l == 0 && h == 0 && t == n_tokens - 1) {
+                    fprintf(stderr, "ATTN l0 h0 lastq: swa=%d win=%d n_q=%d n_k=%d n_v=%d vtied=%d hd=%d vhd=%d ropedim=%d weights[",
+                            ge->swa, ge->window, ge->n_q, ge->n_k, ge->n_v, ge->v_tied, ge->head_dim, ge->v_head_dim, ge->rope_dim);
+                    for (int j = jmin; j <= abs_t; j++) fprintf(stderr, "%.3f ", scores[j]);
+                    fprintf(stderr, "]\n");
+                }
                 float *oh = attn_out.data + (size_t)t * o_in +
                             (size_t)h * ge->v_head_dim;
                 memset(oh, 0, (size_t)ge->v_head_dim * sizeof(float));
