@@ -99,9 +99,14 @@ int main(int argc, char **argv) {
         float *Wu = T(g, "blk.%d.ffn_up.weight", l, NULL);
         float *Wd = T(g, "blk.%d.ffn_down.weight", l, NULL);
         float *pfnorm = T(g, "blk.%d.post_ffw_norm.weight", l, NULL);
+        float *los = T(g, "blk.%d.layer_output_scale.weight", l, NULL);
         if (!anorm || !Wq || !Wk || !Wo || !fnorm || !Wg || !Wu || !Wd || !qn) {
             fprintf(stderr, "layer %d missing tensor\n", l); return 1;
         }
+        float loss = los ? los[0] : 1.0f;
+        const char *lm = getenv("REF_LSCALE"); if (!lm) lm = "both";
+        float lscale_a = (strstr(lm,"attn")||strstr(lm,"both")) ? loss : 1.0f;
+        float lscale_f = (strstr(lm,"ffn") ||strstr(lm,"both")) ? loss : 1.0f;
         /* derive per-layer geometry from tensor shapes */
         int hd = hdn;                 /* q/k head width (= attn_q_norm size): 256 swa / 512 global */
         int qdim = qnum / D, nq = qdim / hd;
@@ -141,6 +146,11 @@ int main(int argc, char **argv) {
                     sc[j] = (float)a * scale; if (sc[j] > mx) mx = sc[j];
                 }
                 float sum = 0; for (int j = 0; j <= t; j++) { sc[j] = expf(sc[j] - mx); sum += sc[j]; }
+                if (getenv("REF_TRACE") && l == 0 && hh == 0 && t == n - 1) {
+                    fprintf(stderr, "REF l0 h0 lastq hd=%d nk=%d scale=%.4f weights[", hd, nk, scale);
+                    for (int j = 0; j <= t; j++) fprintf(stderr, "%.3f ", sc[j] / sum);
+                    fprintf(stderr, "]\n");
+                }
                 float *oh = att + hh * vhd; memset(oh, 0, vhd * sizeof(float));
                 for (int j = 0; j <= t; j++) {
                     float w = sc[j] / sum;
@@ -150,7 +160,12 @@ int main(int argc, char **argv) {
             }
             matvec(proj, Wo, att, D, nq * vhd);
             if (panorm) { float tmp[3840]; rmsnorm(tmp, proj, panorm, D, eps); memcpy(proj, tmp, D * sizeof(float)); }
-            for (int i = 0; i < D; i++) x[(size_t)t * D + i] += proj[i];
+            if (getenv("REF_RMS") && l < 3 && t == n - 1) {
+                double rx=0, rp=0; for (int i=0;i<D;i++){rx+=(double)x[(size_t)t*D+i]*x[(size_t)t*D+i]; rp+=(double)proj[i]*proj[i];}
+                fprintf(stderr, "l%d residRMS=%.3f attnBranchRMS=%.3f (lscale=%.3f -> %.3f)\n",
+                        l, sqrt(rx/D), sqrt(rp/D), lscale_a, sqrt(rp/D)*lscale_a);
+            }
+            for (int i = 0; i < D; i++) x[(size_t)t * D + i] += proj[i] * lscale_a;
             /* MLP */
             rmsnorm(h, x + (size_t)t * D, fnorm, D, eps);
             matvec(g1, Wg, h, FF, D);
@@ -158,10 +173,10 @@ int main(int argc, char **argv) {
             for (int i = 0; i < FF; i++) { float z = g1[i]; g1[i] = z / (1.0f + expf(-z)) * u1[i]; }
             matvec(proj, Wd, g1, D, FF);
             if (pfnorm) { float tmp[3840]; rmsnorm(tmp, proj, pfnorm, D, eps); memcpy(proj, tmp, D * sizeof(float)); }
-            for (int i = 0; i < D; i++) x[(size_t)t * D + i] += proj[i];
+            for (int i = 0; i < D; i++) x[(size_t)t * D + i] += proj[i] * lscale_f;
         }
         free(anorm); free(Wq); free(Wk); free(Wv); free(Wo); free(qn); free(kn);
-        free(panorm); free(fnorm); free(Wg); free(Wu); free(Wd); free(pfnorm);
+        free(panorm); free(fnorm); free(Wg); free(Wu); free(Wd); free(pfnorm); free(los);
         fprintf(stderr, "layer %d done, x[last][0:3]=%.3f %.3f %.3f\n", l,
                 x[(size_t)(n-1)*D+0], x[(size_t)(n-1)*D+1], x[(size_t)(n-1)*D+2]);
     }
@@ -169,8 +184,13 @@ int main(int argc, char **argv) {
     rmsnorm(h, x + (size_t)(n - 1) * D, onorm, D, eps);
     float *logits = malloc((size_t)V * sizeof(float));
     matvec(logits, emb, h, V, D);
+    /* rank of a target token (default Paris=9079) among all logits */
+    int target = (getenv("REF_TARGET")) ? atoi(getenv("REF_TARGET")) : 9079;
+    float tv = logits[target]; int rank = 0;
+    for (int v = 0; v < V; v++) if (logits[v] > tv) rank++;
+    fprintf(stderr, "target %d rank=%d logit=%.3f\n", target, rank, tv);
     printf("TOP");
-    for (int r = 0; r < 10; r++) {
+    for (int r = 0; r < 20; r++) {
         int best = 0; for (int v = 1; v < V; v++) if (logits[v] > logits[best]) best = v;
         printf(" %d", best); logits[best] = -1e30f;
     }
