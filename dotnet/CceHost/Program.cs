@@ -1,14 +1,39 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using CNET.Cce;
+using CNET.CceHost;
 
-// CNET .NET host — cognitive test.
-// Loads the certified soul base and asks its units real questions through the
-// clean soul_host ABI (size-safe run, real ports, real reliability). Then
-// reports HONESTLY what cognition is present.
+// CNET .NET host.
+//   default        -> cognitive recall test over the certified base
+//   --agent [task] -> Milestone 2: a REAL LLM controller drives tools + the
+//                     certified CNET skill (ollama; CNET_LLM_MODEL to pick model)
 
-string basePath = args.Length > 0 ? args[0]
-    : "/home/marble/AI/CNET/soul_gemma4v2_final.cnb";
+bool agentMode = args.Contains("--agent");
+string basePath = args.FirstOrDefault(a => a.EndsWith(".cnb"))
+    ?? "/home/marble/AI/CNET/soul_gemma4v2_final.cnb";
+
+if (agentMode)
+{
+    string model = Environment.GetEnvironmentVariable("CNET_LLM_MODEL") ?? "qwen2.5:7b";
+    int taskIdx = Array.IndexOf(args, "--agent") + 1;
+    string task = (taskIdx > 0 && taskIdx < args.Length && !args[taskIdx].EndsWith(".cnb"))
+        ? args[taskIdx]
+        : "Compute 47 times 13 with the calculator. Store the result in memory under key 'product'. "
+          + "Then recall it to double-check. Also consult the certified gemma4 skill (cnet_recall) for "
+          + "its top-3 next tokens given window token 0 then token 1, and note its reliability. "
+          + "Finish with a one-line summary of everything you found.";
+
+    Console.WriteLine("=== CNET .NET host — Milestone 2: real LLM controller ===");
+    Console.WriteLine($"LLM: {model} (ollama)   base: {basePath}\n");
+    McpTools.MemoryInit();
+    using var soulA = new SoulHost(basePath);
+    var agent = new Agent(new OllamaClient(model), soulA);
+    await agent.RunAsync(task);
+    return;
+}
+
+// ---- default: cognitive recall test ----
 
 // Window token ids (gemma4's top continuations of <bos>) -> text, decoded from
 // the model's OWN embedded vocab. Index i in a unit's one-hot IS window[i].
