@@ -40,12 +40,67 @@ namespace CnetMcpServer
         private List<string>? _unitRoster;
         private string _rosterSource = "";
 
+        // ---- Multi-base serving -----------------------------------------
+        //
+        // CNET_MODEL_PATHS (colon-separated .cnb paths) mounts additional
+        // certified bases beside the primary: exact claim-token lookup
+        // spans every base (each unit runs on its OWNING host), so a topk
+        // base, a pair base, and a set-valued base can serve one claim
+        // together. Hash-fallback probing stays on the primary.
+        private sealed class ExtraBase
+        {
+            public SoulHost Host = null!;
+            public string Path = "";
+            public List<string> Roster = new();
+            public Dictionary<int, string> ByTokenId = new();
+        }
+
+        private List<ExtraBase>? _extraBases;
+
+        private List<ExtraBase> ExtraBases()
+        {
+            if (_extraBases != null) return _extraBases;
+            _extraBases = new List<ExtraBase>();
+            string? paths = Environment.GetEnvironmentVariable("CNET_MODEL_PATHS");
+            if (string.IsNullOrWhiteSpace(paths)) return _extraBases;
+            foreach (var p in paths.Split(':', StringSplitOptions.RemoveEmptyEntries))
+            {
+                if (p == _basePath || !File.Exists(p)) continue;
+                try
+                {
+                    var eb = new ExtraBase { Host = new SoulHost(p), Path = p };
+                    foreach (var name in LoadRosterFor(eb.Host, p, out _))
+                    {
+                        eb.Roster.Add(name);
+                        int tk = name.IndexOf("tk", StringComparison.Ordinal);
+                        int q = tk >= 0 ? name.IndexOf('q', tk + 2) : -1;
+                        if (q > tk + 2 &&
+                            int.TryParse(name.Substring(tk + 2, q - tk - 2), out int id))
+                            eb.ByTokenId[id] = name;
+                    }
+                    _extraBases.Add(eb);
+                }
+                catch (Exception e)
+                {
+                    Console.Error.WriteLine($"[CNET MCP] extra base {p} skipped: {e.Message}");
+                }
+            }
+            return _extraBases;
+        }
+
         private List<string> UnitRoster()
         {
             if (_unitRoster != null) return _unitRoster;
+            _unitRoster = LoadRosterFor(_soulHost, _basePath, out _rosterSource);
+            return _unitRoster;
+        }
 
+        private static List<string> LoadRosterFor(SoulHost host, string basePath,
+                                                  out string source)
+        {
+            source = "";
             var roster = new List<string>();
-            string sidecar = _basePath + ".gaps.txt";
+            string sidecar = basePath + ".gaps.txt";
             try
             {
                 if (File.Exists(sidecar))
@@ -65,7 +120,7 @@ namespace CnetMcpServer
                             }
                         }
                     }
-                    _rosterSource = Path.GetFileName(sidecar);
+                    source = Path.GetFileName(sidecar);
                 }
             }
             catch
@@ -80,12 +135,10 @@ namespace CnetMcpServer
             var validated = new List<string>();
             foreach (var name in roster)
             {
-                try { _soulHost.UnitDims(name); validated.Add(name); }
+                try { host.UnitDims(name); validated.Add(name); }
                 catch { /* not certified in this base — drop */ }
             }
-
-            _unitRoster = validated;
-            return _unitRoster;
+            return validated;
         }
 
         // ---- Gemma tokenizer wiring --------------------------------------
@@ -285,25 +338,40 @@ namespace CnetMcpServer
             if (elementCount == 0)
                 return "[CNET] Verification refused: claim contains no usable tokens.";
 
-            // Exact unit lookup: claim tokens that own certified units.
-            var covered = new List<(int Pos, int Id, string Unit)>();
+            // Exact unit lookup: claim tokens that own certified units,
+            // across the primary AND every mounted extra base.
+            var covered = new List<(int Pos, int Id, string Unit, SoulHost Host)>();
             if (claimIds != null)
             {
                 var byId = UnitByTokenId();
+                var extras = ExtraBases();
                 for (int i = 0; i < claimIds.Count; i++)
+                {
                     if (byId.TryGetValue(claimIds[i], out var owned))
-                        covered.Add((i, claimIds[i], owned));
+                    {
+                        covered.Add((i, claimIds[i], owned, _soulHost));
+                        continue;
+                    }
+                    foreach (var eb in extras)
+                    {
+                        if (eb.ByTokenId.TryGetValue(claimIds[i], out var eowned))
+                        {
+                            covered.Add((i, claimIds[i], eowned, eb.Host));
+                            break;
+                        }
+                    }
+                }
             }
 
             // Resolve probe units: explicit unitTag first, then the claim's
             // OWN certified units (exact lookup), then deterministic
             // claim-hash selection over the certified roster.
-            var probeUnits = new List<string>();
+            var probeUnits = new List<(string Name, SoulHost Host)>();
             if (!string.IsNullOrWhiteSpace(unitTag))
             {
                 foreach (var candidate in new[] { unitTag, "acq_" + unitTag })
                 {
-                    try { _soulHost.UnitDims(candidate); probeUnits.Add(candidate); break; }
+                    try { _soulHost.UnitDims(candidate); probeUnits.Add((candidate, _soulHost)); break; }
                     catch { }
                 }
                 if (probeUnits.Count == 0)
@@ -312,28 +380,28 @@ namespace CnetMcpServer
             foreach (var c in covered)
             {
                 if (probeUnits.Count >= 3) break;
-                if (!probeUnits.Contains(c.Unit)) probeUnits.Add(c.Unit);
+                if (!probeUnits.Exists(u => u.Name == c.Unit)) probeUnits.Add((c.Unit, c.Host));
             }
             for (int i = 0; probeUnits.Count < 3 && i < 8; i++)
             {
                 string pick = roster[(int)(Fnv1a(claim + "#" + i) % (uint)roster.Count)];
-                if (!probeUnits.Contains(pick)) probeUnits.Add(pick);
+                if (!probeUnits.Exists(u => u.Name == pick)) probeUnits.Add((pick, _soulHost));
             }
 
             // Base runs: activation entropy + reliability per probed unit.
             double entropySum = 0.0, reliabilitySum = 0.0;
             int reliabilityKnown = 0;
             double[]? primaryOutput = null;
-            var (inDim, _) = _soulHost.UnitDims(probeUnits[0]);
+            var (inDim, _) = probeUnits[0].Host.UnitDims(probeUnits[0].Name);
             var input = claimIds != null
                 ? FeaturizeTokenIds(claimIds, inDim)
                 : Featurize(tokens, inDim);
             foreach (var unit in probeUnits)
             {
-                var output = _soulHost.RunUnit(unit, input);
+                var output = unit.Host.RunUnit(unit.Name, input);
                 primaryOutput ??= output;
                 entropySum += ActivationEntropy01(output);
-                double rel = _soulHost.Reliability(unit);
+                double rel = unit.Host.Reliability(unit.Name);
                 if (rel >= 0) { reliabilitySum += rel; reliabilityKnown++; }
             }
             double activationEntropy = entropySum / probeUnits.Count;
@@ -364,7 +432,7 @@ namespace CnetMcpServer
                         reduced.RemoveAt((int)(Fnv1a(claim + "@cf" + k) % (uint)reduced.Count));
                         variantInput = Featurize(reduced, inDim);
                     }
-                    var variantOut = _soulHost.RunUnit(probeUnits[0], variantInput);
+                    var variantOut = probeUnits[0].Host.RunUnit(probeUnits[0].Name, variantInput);
                     pickRuns.Add(FieldArgmax(variantOut));
                     cosineSum += Cosine(primaryOutput, variantOut);
                 }
@@ -402,7 +470,7 @@ namespace CnetMcpServer
                     if (c.Pos + 1 >= claimIds.Count) continue;
                     var oneHot = new double[inDim];
                     oneHot[((c.Id % inDim) + inDim) % inDim] = 1.0;
-                    var picks = FieldArgmax(_soulHost.RunUnit(c.Unit, oneHot));
+                    var picks = FieldArgmax(c.Host.RunUnit(c.Unit, oneHot));
                     pairsChecked++;
                     int nextBucket = ((claimIds[c.Pos + 1] % 256) + 256) % 256;
                     if (Array.IndexOf(picks, nextBucket) >= 0) pairsAgreed++;
@@ -457,7 +525,42 @@ namespace CnetMcpServer
                 $"Uncertainty: {FormatDouble(uncertainty)} " +
                 $"(activation entropy {FormatDouble(activationEntropy)}, route entropy {FormatDouble(routeEntropy)}). " +
                 $"Support: {FormatDouble(support)}. Unit reliability: {FormatDouble(reliability)}. " +
-                $"Units probed: {string.Join(", ", probeUnits)}.{tokenizerSummary}{counterfactualSummary}";
+                $"Units probed: {string.Join(", ", probeUnits.ConvertAll(u => u.Name))}.{tokenizerSummary}{counterfactualSummary}";
+
+            // Usage ledger: what verification actually ASKED FOR is the
+            // curriculum signal for the next mining window — uncovered
+            // claim tokens are demand the base cannot yet serve, and
+            // next-token agreement outcomes are field evidence about the
+            // units that exist. tools/usage_window.py turns this ledger
+            // into the next CNET_WINDOW_FILE.
+            if (claimIds != null)
+            {
+                try
+                {
+                    var coveredIds = new List<int>();
+                    foreach (var c in covered) coveredIds.Add(c.Id);
+                    var uncoveredIds = new List<int>();
+                    foreach (var id in claimIds)
+                        if (!covered.Exists(c => c.Id == id) && !uncoveredIds.Contains(id))
+                            uncoveredIds.Add(id);
+                    var entry = new
+                    {
+                        ts = DateTime.UtcNow.ToString("o"),
+                        verdict,
+                        uncertainty = Math.Round(uncertainty, 6),
+                        covered = coveredIds,
+                        uncovered = uncoveredIds,
+                        pairs_checked = pairsChecked,
+                        pairs_agreed = pairsAgreed
+                    };
+                    File.AppendAllText(_basePath + ".usage.jsonl",
+                        JsonSerializer.Serialize(entry) + "\n");
+                }
+                catch
+                {
+                    // best-effort telemetry; never fail a verification over it
+                }
+            }
 
             string filename = $"{DateTime.Now:yyyy-MM-dd} - Claim - {claim.Substring(0, Math.Min(40, claim.Length)).Replace(" ", "_")}.md";
             string path = Path.Combine(_obsidianPath, "Claims", filename);
@@ -889,10 +992,19 @@ namespace CnetMcpServer
             string tokenizerNote = _tokenizer != null
                 ? "Unit ids are gemma-4 vocab ids (tokenizer wired for exact claim-token lookup)."
                 : "Gemma tokenizer unavailable — unit ids shown raw.";
+            string extraNote = "";
+            var mounted = ExtraBases();
+            if (mounted.Count > 0)
+            {
+                var parts = new List<string>();
+                foreach (var eb in mounted)
+                    parts.Add($"{Path.GetFileName(eb.Path)} ({eb.Roster.Count} units)");
+                extraNote = $" Extra bases mounted: {string.Join(", ", parts)}.";
+            }
             return $"[CNET] {roster.Count} certified units resolved from {_rosterSource}. " +
                 $"Sample: {string.Join("; ", samples)}. " +
                 "Units follow the acq_<tag> convention with 256-wide w_cur input ports (contract cce_cond_next). " +
-                tokenizerNote + RecipeSummary();
+                tokenizerNote + RecipeSummary() + extraNote;
         }
     }
 }
