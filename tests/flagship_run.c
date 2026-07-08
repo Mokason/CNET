@@ -362,6 +362,11 @@ int main(int argc, char **argv) {
 
     FlagshipTask task = FLAGSHIP_TASK_ARGMAX;
 
+    /* Line-buffer stdout: mining runs live for hours under service managers
+       with stdout redirected to a file; block buffering hides every
+       progress line until exit. */
+    setvbuf(stdout, NULL, _IOLBF, 0);
+
     if (argc < 2) {
         fprintf(stderr, "usage: %s <model> [V] [max_units] [temp_C] [duty] "
                         "[wall_s] [base.cnb] [argmax|pair|topk]\n", argv[0]);
