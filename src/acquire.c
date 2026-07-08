@@ -613,9 +613,41 @@ static int attempt_no_plan(PrimitiveRegistry *reg, AcquireLedger *l,
         gap_defer(g, rep, "certify_failed");
         return -1;
     }
-    btn_train_dynamic(btn, inputs, targets, n_train, cfg->max_epochs,
-                      cfg->growth_window, cfg->target_loss,
-                      cfg->min_improvement);
+    /* Adaptive staged training (CNET_ACQ_ADAPTIVE=1): exactness on the
+       mined table is the certification bar, so check it BETWEEN training
+       stages — stop the instant the student is exact (passing units
+       typically need a fraction of the epoch budget) and stop early when
+       the exact count plateaus below the bar (the residue is the teacher's
+       own coin-flip points; more epochs never close it). The certification
+       path below is unchanged — this only decides how much of the budget
+       to spend before it runs. */
+    if (getenv("CNET_ACQ_ADAPTIVE") && getenv("CNET_ACQ_ADAPTIVE")[0] == '1') {
+        const size_t stages = 8;
+        size_t s, prev_pass = 0, plateau = 0;
+        Contract probe;
+        int have_probe =
+            (contract_init_borrowed(&probe, name, btn, inputs, targets,
+                                    usable) == 0);
+        for (s = 0; s < stages; ++s) {
+            CertifyReport crep;
+            btn_train_dynamic(btn, inputs, targets, n_train,
+                              cfg->max_epochs / stages, cfg->growth_window,
+                              cfg->target_loss, cfg->min_improvement);
+            if (!have_probe) continue;
+            if (btn_certify(btn, &probe, &crep) == 0) break;   /* exact */
+            if (crep.passed <= prev_pass) {
+                if (++plateau >= 2) break;   /* stuck below the bar */
+            } else {
+                plateau = 0;
+            }
+            prev_pass = crep.passed;
+        }
+        if (have_probe) contract_free(&probe);
+    } else {
+        btn_train_dynamic(btn, inputs, targets, n_train, cfg->max_epochs,
+                          cfg->growth_window, cfg->target_loss,
+                          cfg->min_improvement);
+    }
 
     /* 4. certify: contract over the FULL mined table (holdout rows included:
        they were never trained on, so certification tests them) */

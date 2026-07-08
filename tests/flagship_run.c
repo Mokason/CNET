@@ -493,6 +493,16 @@ int main(int argc, char **argv) {
        the bar (holdout 0), the PAIR precedent. */
     if (getenv("CNET_CERT_SAMPLED") && getenv("CNET_CERT_SAMPLED")[0] == '1') {
         size_t samp = (size_t)((double)V * 0.8);   /* 80% subsample -> SAMPLED */
+        /* CNET_CERT_SAMPLE_COUNT: explicit subsample size. Wilson >= 0.95
+           needs only ~96 all-correct points; the 0.8V default (204 at
+           V=256) both doubles the oracle probing cost AND plants more of
+           the teacher's coin-flip points in the sample than the bound
+           requires. Smaller samples are faster and pass more often, at a
+           lower (still >= min_accuracy_bound) statistical floor. */
+        if (getenv("CNET_CERT_SAMPLE_COUNT")) {
+            long sc = atol(getenv("CNET_CERT_SAMPLE_COUNT"));
+            if (sc >= 16 && (size_t)sc < V) samp = (size_t)sc;
+        }
         if (samp < 16) samp = (V < 16 ? V : 16);
         cfg.acq.sample_count = samp;
         cfg.acq.mine_budget = (samp > 1) ? samp - 1 : 1;  /* card>budget => sampled */
