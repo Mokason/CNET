@@ -53,6 +53,32 @@ namespace CnetMcpServer
             public string Path = "";
             public List<string> Roster = new();
             public Dictionary<int, string> ByTokenId = new();
+            /* Cross-tokenizer identity: normalized token SURFACE -> unit.
+               Loaded from <base>.tokens.tsv (tools/xlate_window.py dump).
+               A base whose teacher speaks a different tokenizer is only
+               addressable this way — raw ids collide across vocabs. */
+            public Dictionary<string, string> BySurface = new();
+            public string TokenizerModel = "";
+        }
+
+        /* Common surface form across tokenizer families (mirrors
+           tools/xlate_window.py): SentencePiece '▁' and GPT2 'Ġ' both mean
+           a leading space; 'Ċ' is newline. */
+        private static string NormalizePiece(string piece) =>
+            piece.Replace('▁', ' ').Replace('Ġ', ' ').Replace('Ċ', '\n');
+
+        private static string ManifestField(string basePath, string key)
+        {
+            try
+            {
+                string mpath = basePath + ".manifest.json";
+                if (!File.Exists(mpath)) return "";
+                using var doc = JsonDocument.Parse(File.ReadAllText(mpath));
+                return doc.RootElement.TryGetProperty(key, out var v) &&
+                       v.ValueKind == JsonValueKind.String
+                    ? v.GetString() ?? "" : "";
+            }
+            catch { return ""; }
         }
 
         private List<ExtraBase>? _extraBases;
@@ -69,6 +95,7 @@ namespace CnetMcpServer
                 try
                 {
                     var eb = new ExtraBase { Host = new SoulHost(p), Path = p };
+                    eb.TokenizerModel = ManifestField(p, "tokenizer_model");
                     foreach (var name in LoadRosterFor(eb.Host, p, out _))
                     {
                         eb.Roster.Add(name);
@@ -77,6 +104,21 @@ namespace CnetMcpServer
                         if (q > tk + 2 &&
                             int.TryParse(name.Substring(tk + 2, q - tk - 2), out int id))
                             eb.ByTokenId[id] = name;
+                    }
+                    string tsv = p + ".tokens.tsv";
+                    if (File.Exists(tsv))
+                    {
+                        foreach (var line in File.ReadLines(tsv))
+                        {
+                            var cols = line.Split('\t');
+                            if (cols.Length < 2) continue;
+                            if (!int.TryParse(cols[0], out int tid)) continue;
+                            if (!eb.ByTokenId.TryGetValue(tid, out var unit))
+                                continue;
+                            string surf = NormalizePiece(cols[1]);
+                            if (!eb.BySurface.ContainsKey(surf))
+                                eb.BySurface[surf] = unit;
+                        }
                     }
                     _extraBases.Add(eb);
                 }
@@ -354,9 +396,23 @@ namespace CnetMcpServer
                     }
                     foreach (var eb in extras)
                     {
-                        if (eb.ByTokenId.TryGetValue(claimIds[i], out var eowned))
+                        // Same tokenizer family: raw ids are shared. Anything
+                        // else: only the token's SURFACE string is portable —
+                        // ids collide across vocabularies.
+                        bool sameTok = eb.TokenizerModel == "" ||
+                                       eb.TokenizerModel.StartsWith("gemma");
+                        if (sameTok &&
+                            eb.ByTokenId.TryGetValue(claimIds[i], out var eowned))
                         {
                             covered.Add((i, claimIds[i], eowned, eb.Host));
+                            break;
+                        }
+                        if (!sameTok &&
+                            eb.BySurface.TryGetValue(
+                                NormalizePiece(PieceOf(claimIds[i])),
+                                out var sowned))
+                        {
+                            covered.Add((i, claimIds[i], sowned, eb.Host));
                             break;
                         }
                     }

@@ -755,6 +755,14 @@ int main(int argc, char **argv) {
             return 1;
         }
         while (got < V && fscanf(f, "%d", &vocab[got]) == 1) {
+            /* -1 marks an untranslatable slot in a cross-recert window:
+               kept to preserve slot alignment, skipped by the audit. Only
+               legal in recert mode — mining needs every slot real. */
+            if (vocab[got] == -1 &&
+                getenv("CNET_RECERT") && getenv("CNET_RECERT")[0] == '1') {
+                got++;
+                continue;
+            }
             if (vocab[got] < 0 ||
                 vocab[got] >= am->transformer->vocab_size) {
                 fprintf(stderr, "CNET_WINDOW_FILE: id %d outside model "
@@ -1260,6 +1268,30 @@ int main(int argc, char **argv) {
         FILE *rout;
         char rpath[600];
         size_t ui;
+        int *name_ids = vocab;
+        int *name_buf = NULL;
+        /* Cross-recert: unit NAMES belong to the source teacher's vocab,
+           probe ids to the current one. CNET_RECERT_NAMES=<source window>
+           supplies the naming ids slot-for-slot; probe slots translated to
+           -1 (no such token in this vocab) are skipped as untranslatable. */
+        if (getenv("CNET_RECERT_NAMES")) {
+            FILE *nf = fopen(getenv("CNET_RECERT_NAMES"), "r");
+            size_t got = 0;
+            name_buf = (int *)malloc(V * sizeof *name_buf);
+            if (!nf || !name_buf) {
+                fprintf(stderr, "recert: cannot read CNET_RECERT_NAMES\n");
+                return 1;
+            }
+            while (got < V && fscanf(nf, "%d", &name_buf[got]) == 1) got++;
+            fclose(nf);
+            if (got != V) {
+                fprintf(stderr, "recert: name window has %lu ids, need "
+                                "%lu\n", (unsigned long)got,
+                        (unsigned long)V);
+                return 1;
+            }
+            name_ids = name_buf;
+        }
         size_t units_seen = 0, units_clean = 0, units_drift = 0;
         size_t ex_match = 0, ex_miss = 0, ex_abst = 0, ex_err = 0;
         cnb_init(&rbase);
@@ -1277,8 +1309,9 @@ int main(int argc, char **argv) {
             size_t e, in_total, out_total;
             size_t u_match = 0, u_miss = 0, u_abst = 0, u_err = 0;
             double *got;
+            if (vocab[ui] < 0) continue;   /* untranslatable slot */
             snprintf(uname, sizeof uname, "acq_tk%dq%d",
-                     vocab[ui], vocab[ui]);
+                     name_ids[ui], name_ids[ui]);
             memset(&ubtn, 0, sizeof ubtn);
             memset(&uc, 0, sizeof uc);
             if (cnb_get_unit(&rbase, uname, &ubtn, &uc) != 0) continue;
@@ -1329,6 +1362,7 @@ int main(int argc, char **argv) {
             printf("recert report: %s\n", rpath);
         }
         cnb_free(&rbase);
+        free(name_buf);
         return units_drift > 0 ? 2 : 0;
     }
 
@@ -1416,6 +1450,10 @@ int main(int argc, char **argv) {
             );
             fprintf(mf, "  \"model\": \"%s\",\n", model_path);
             fprintf(mf, "  \"model_bytes\": %ld,\n", msz);
+            fprintf(mf, "  \"tokenizer_model\": \"%s\",\n",
+                    am->transformer->tokenizer_model);
+            fprintf(mf, "  \"bos_token_id\": %d,\n",
+                    am->transformer->bos_token_id);
             fprintf(mf, "  \"task\": \"%s\",\n",
                     task == FLAGSHIP_TASK_PAIR ? "pair"
                     : task == FLAGSHIP_TASK_TOPK ? "topk" : "argmax");
