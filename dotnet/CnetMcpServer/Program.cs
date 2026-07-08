@@ -164,7 +164,12 @@ class Program
                     var toolName = request.GetProperty("params").GetProperty("name").GetString();
                     var toolArgs = request.GetProperty("params").GetProperty("arguments");
 
-                    string resultText = toolName switch
+                    // A tool failure must never kill the stdio server: report
+                    // it as the tool result instead of unwinding the read loop.
+                    string resultText;
+                    try
+                    {
+                        resultText = toolName switch
                     {
                         "cnet_verify_claim" => tools.VerifyClaim(
                             toolArgs.GetProperty("claim").GetString() ?? "",
@@ -190,6 +195,12 @@ class Program
                         "cnet_list_units" => tools.ListUnits(),
                         _ => "Unknown tool: " + toolName
                     };
+                    }
+                    catch (Exception toolExc)
+                    {
+                        Console.Error.WriteLine($"[CNET MCP] tool '{toolName}' failed: {toolExc}");
+                        resultText = $"[CNET] Tool '{toolName}' failed: {toolExc.Message}";
+                    }
 
                     var response = new
                     {
