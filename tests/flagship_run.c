@@ -510,6 +510,11 @@ int main(int argc, char **argv) {
     if (getenv("CNET_ACQ_HIDDEN"))    cfg.acq.init_hidden = (size_t)atoi(getenv("CNET_ACQ_HIDDEN"));
     if (getenv("CNET_ACQ_MAXHIDDEN")) cfg.acq.max_hidden  = (size_t)atoi(getenv("CNET_ACQ_MAXHIDDEN"));
     if (getenv("CNET_ACQ_EPOCHS"))    cfg.acq.max_epochs  = (size_t)atoi(getenv("CNET_ACQ_EPOCHS"));
+    /* Student seed override: the default (42) is FIXED, so re-running a
+       deferred unit reproduces the identical near-miss deterministically.
+       Retry passes over deferred units need a different seed per pass to
+       give each student a fresh draw at exactness-on-sample. */
+    if (getenv("CNET_ACQ_SEED"))      cfg.acq.seed = (unsigned)atoi(getenv("CNET_ACQ_SEED"));
     if (getenv("CNET_ACQ_HIDDEN") || getenv("CNET_ACQ_MAXHIDDEN") ||
         getenv("CNET_ACQ_EPOCHS"))
         printf("student: init_hidden=%lu max_hidden=%lu max_epochs=%lu\n",
