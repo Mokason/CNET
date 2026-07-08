@@ -39,6 +39,86 @@ void acquire_ledger_init(AcquireLedger *l) {
     memset(l, 0, sizeof *l);
 }
 
+/* ---- Student warm-starting (CNET_ACQ_WARMSTART=1) ------------------------
+   Successive units in a mining run share input geometry and output
+   vocabulary; training every student from a cold random init re-learns that
+   shared structure hundreds of times over. Warm-starting clones the last
+   SUCCESSFUL student's weights as the next student's init. Certification
+   judges behavior only, so provenance is free — a warm-started student that
+   certifies is exactly as certified as a cold one. Serial mining only (the
+   snapshot is process-global; flagship processes units sequentially). */
+static struct {
+    int valid;
+    size_t in, out, maxh, h;
+    double *input_hidden;
+    double *hidden_bias;
+    double *hidden_output_weights;
+    double *output_bias;
+} ws_snap;
+
+static int ws_on(void) {
+    const char *e = getenv("CNET_ACQ_WARMSTART");
+    return e && e[0] == '1';
+}
+
+static void ws_capture(const BinaryTransformNetwork *btn) {
+    size_t ih = btn->input_count * btn->max_hidden_count;
+    size_t ho = btn->max_hidden_count * btn->output_count;
+    if (ws_snap.in != btn->input_count || ws_snap.out != btn->output_count ||
+        ws_snap.maxh != btn->max_hidden_count || !ws_snap.input_hidden) {
+        free(ws_snap.input_hidden);
+        free(ws_snap.hidden_bias);
+        free(ws_snap.hidden_output_weights);
+        free(ws_snap.output_bias);
+        memset(&ws_snap, 0, sizeof ws_snap);
+        ws_snap.input_hidden = (double *)malloc(ih * sizeof(double));
+        ws_snap.hidden_bias =
+            (double *)malloc(btn->max_hidden_count * sizeof(double));
+        ws_snap.hidden_output_weights = (double *)malloc(ho * sizeof(double));
+        ws_snap.output_bias =
+            (double *)malloc(btn->output_count * sizeof(double));
+        if (!ws_snap.input_hidden || !ws_snap.hidden_bias ||
+            !ws_snap.hidden_output_weights || !ws_snap.output_bias) {
+            free(ws_snap.input_hidden);
+            free(ws_snap.hidden_bias);
+            free(ws_snap.hidden_output_weights);
+            free(ws_snap.output_bias);
+            memset(&ws_snap, 0, sizeof ws_snap);
+            return;   /* OOM: warm-start silently off */
+        }
+        ws_snap.in = btn->input_count;
+        ws_snap.out = btn->output_count;
+        ws_snap.maxh = btn->max_hidden_count;
+    }
+    memcpy(ws_snap.input_hidden, btn->input_hidden, ih * sizeof(double));
+    memcpy(ws_snap.hidden_bias, btn->hidden_bias,
+           btn->max_hidden_count * sizeof(double));
+    memcpy(ws_snap.hidden_output_weights, btn->hidden_output_weights,
+           ho * sizeof(double));
+    memcpy(ws_snap.output_bias, btn->output_bias,
+           btn->output_count * sizeof(double));
+    ws_snap.h = btn->hidden_count;
+    ws_snap.valid = 1;
+}
+
+static void ws_apply(BinaryTransformNetwork *btn) {
+    size_t ih, ho;
+    if (!ws_snap.valid || ws_snap.in != btn->input_count ||
+        ws_snap.out != btn->output_count ||
+        ws_snap.maxh != btn->max_hidden_count)
+        return;
+    ih = btn->input_count * btn->max_hidden_count;
+    ho = btn->max_hidden_count * btn->output_count;
+    memcpy(btn->input_hidden, ws_snap.input_hidden, ih * sizeof(double));
+    memcpy(btn->hidden_bias, ws_snap.hidden_bias,
+           btn->max_hidden_count * sizeof(double));
+    memcpy(btn->hidden_output_weights, ws_snap.hidden_output_weights,
+           ho * sizeof(double));
+    memcpy(btn->output_bias, ws_snap.output_bias,
+           btn->output_count * sizeof(double));
+    btn->hidden_count = ws_snap.h;
+}
+
 void acquire_ledger_free(AcquireLedger *l) {
     size_t i;
     if (!l) return;
@@ -613,6 +693,14 @@ static int attempt_no_plan(PrimitiveRegistry *reg, AcquireLedger *l,
         gap_defer(g, rep, "certify_failed");
         return -1;
     }
+    {
+    int warm_used = 0;
+    if (ws_on() && ws_snap.valid) {
+        ws_apply(btn);
+        warm_used = 1;
+    }
+
+train_student:
     /* Adaptive staged training (CNET_ACQ_ADAPTIVE=1): exactness on the
        mined table is the certification bar, so check it BETWEEN training
        stages — stop the instant the student is exact (passing units
@@ -647,6 +735,36 @@ static int attempt_no_plan(PrimitiveRegistry *reg, AcquireLedger *l,
         btn_train_dynamic(btn, inputs, targets, n_train, cfg->max_epochs,
                           cfg->growth_window, cfg->target_loss,
                           cfg->min_improvement);
+    }
+
+    /* Warm-start is a speed bet, never a semantics change: when the
+       warm-started student is not exact on the mined table, the previous
+       unit's basin hurt more than it helped (measured: one synthetic-gate
+       unit fails under unconditional warm-start). Retrain from the cold
+       init the pipeline would otherwise have used, so warm-start can only
+       ever add speed. */
+    if (warm_used) {
+        Contract wcheck_c;
+        int exact = 0;
+        if (contract_init_borrowed(&wcheck_c, name, btn, inputs, targets,
+                                   usable) == 0) {
+            exact = (btn_certify(btn, &wcheck_c, NULL) == 0);
+            contract_free(&wcheck_c);
+        }
+        if (!exact) {
+            btn_free(btn);
+            if (btn_init(btn, in_total, out_total, cfg->init_hidden,
+                         cfg->max_hidden, cfg->learning_rate,
+                         cfg->seed) != 0 ||
+                btn_set_ports(btn, g->input_port, g->goal_port) != 0) {
+                free(btn); free(inputs); free(targets);
+                gap_defer(g, rep, "certify_failed");
+                return -1;
+            }
+            warm_used = 0;
+            goto train_student;
+        }
+    }
     }
 
     /* 4. certify: contract over the FULL mined table (holdout rows included:
@@ -747,6 +865,7 @@ static int attempt_no_plan(PrimitiveRegistry *reg, AcquireLedger *l,
         return -1;
     }
 
+    if (ws_on()) ws_capture(btn);
     free(inputs); free(targets);   /* contract borrowed them; done with both */
     g->status = GAP_CLOSED;
     if (rep) {

@@ -358,6 +358,9 @@ int flagship_run(FlagshipConfig *cfg, FlagshipOracleMaker maker,
         local.attempted++;
         memset(&arep, 0, sizeof arep);
         if (acquire_now(&reg, &led, &orc, &cfg->acq, in_p, goal_p, &arep) == 0) {
+            printf("unit %lu: %s acquired (%s)\n",
+                   (unsigned long)local.attempted, name,
+                   arep.last_verdict == CERT_PROVEN ? "PROVEN" : "SAMPLED");
             local.acquired++;
             if (arep.last_verdict == CERT_PROVEN) {
                 local.proof_count++;
@@ -376,6 +379,10 @@ int flagship_run(FlagshipConfig *cfg, FlagshipOracleMaker maker,
                                 &local);
             }
         } else {
+            printf("unit %lu: %s deferred (%s)\n",
+                   (unsigned long)local.attempted, name,
+                   arep.last_defer_reason[0] ? arep.last_defer_reason
+                                             : "no_oracle");
             report_tally_defer(&local, arep.last_defer_reason[0]
                                            ? arep.last_defer_reason
                                            : "no_oracle");

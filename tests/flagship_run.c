@@ -260,25 +260,80 @@ static int cce_cond_topk(const double *in, double *out, void *ctx) {
             return -1;
         }
     }
-    if (c->margin_eps > 0.0 &&
-        fs_decision_margin(L->logits, c->vocab, c->v, 3) < c->margin_eps)
-        return 1;   /* teacher-ambiguous top-3: abstain from the cert domain */
+    if (c->margin_eps > 0.0) {
+        double m = fs_topk_set_on()
+                       ? fs_set_margin(L->logits, c->vocab, c->v, 3)
+                       : fs_decision_margin(L->logits, c->vocab, c->v, 3);
+        if (m < c->margin_eps)
+            return 1;   /* teacher-ambiguous: abstain from the cert domain */
+    }
     for (i = 0; i < 3u * c->v; ++i) out[i] = 0.0;
-    for (r = 0; r < 3; ++r) {
-        float bl;
-        best = (size_t)-1;
-        bl = 0.0f;
-        for (i = 0; i < c->v; ++i) {
-            if (taken[i]) continue;
-            if (best == (size_t)-1 || L->logits[c->vocab[i]] > bl) {
-                bl = L->logits[c->vocab[i]];
-                best = i;
+    {
+        size_t picks[3];
+        for (r = 0; r < 3; ++r) {
+            float bl;
+            best = (size_t)-1;
+            bl = 0.0f;
+            for (i = 0; i < c->v; ++i) {
+                if (taken[i]) continue;
+                if (best == (size_t)-1 || L->logits[c->vocab[i]] > bl) {
+                    bl = L->logits[c->vocab[i]];
+                    best = i;
+                }
             }
+            taken[best] = 1;
+            picks[r] = best;
         }
-        taken[best] = 1;
-        out[r * c->v + best] = 1.0;
+        if (fs_topk_set_on()) {
+            /* canonical set encoding: ascending window index */
+            size_t tmp;
+            if (picks[0] > picks[1]) { tmp = picks[0]; picks[0] = picks[1]; picks[1] = tmp; }
+            if (picks[1] > picks[2]) { tmp = picks[1]; picks[1] = picks[2]; picks[2] = tmp; }
+            if (picks[0] > picks[1]) { tmp = picks[0]; picks[0] = picks[1]; picks[1] = tmp; }
+        }
+        for (r = 0; r < 3; ++r) out[r * c->v + picks[r]] = 1.0;
     }
     return 0;
+}
+
+/* Set-valued top-k (CNET_TOPK_SET=1): certify the teacher's top-3 SET
+   instead of its knife-edge ordering. Near-ties INSIDE the top-3 are the
+   dominant refusal cause on interactive-frequency tokens, yet the set
+   membership is stable — the ambiguity is real model knowledge, so
+   certify it rather than abstain. Mechanically: picks are written in
+   canonical (ascending window-index) order, so students train on and
+   certification replays a representation that order flips cannot change;
+   the abstention margin narrows to the only gap that still matters, the
+   rank-3/rank-4 boundary. */
+static int fs_topk_set_on(void) {
+    static int cached = -1;
+    if (cached < 0) {
+        const char *e = getenv("CNET_TOPK_SET");
+        cached = (e && e[0] == '1') ? 1 : 0;
+    }
+    return cached;
+}
+
+/* Smallest gap whose crossing would change top-`depth` MEMBERSHIP:
+   logit[rank depth] - logit[rank depth+1] over the window. */
+static double fs_set_margin(const float *logits, const int *vocab,
+                            size_t v, size_t depth) {
+    double top[8];
+    size_t i, r, n = depth + 1;
+    if (n > 8) n = 8;
+    for (r = 0; r < n; ++r) top[r] = -1e30;
+    for (i = 0; i < v; ++i) {
+        double l = (double)logits[vocab[i]];
+        for (r = 0; r < n; ++r) {
+            if (l > top[r]) {
+                size_t s;
+                for (s = n - 1; s > r; --s) top[s] = top[s - 1];
+                top[r] = l;
+                break;
+            }
+        }
+    }
+    return top[depth - 1] - top[depth];
 }
 
 static CnetOracleFn cce_task_fn = cce_cond_next;   /* set by main per mode */
@@ -749,6 +804,183 @@ int main(int argc, char **argv) {
         return 1;
     }
     printf("determinism spot check: OK\n");
+
+    /* Oracle self-check gate (the Q4_K lesson): certification guarantees
+       student == oracle, but nothing above guarantees oracle == model — a
+       silent dequant/forward regression mines confidently against garbage
+       and every seal downstream is worthless. CNET_ORACLE_GOLDEN=<file>
+       replays a fixed 32-probe battery (full-vocab argmax) BEFORE mining
+       and refuses the run on any mismatch. Regenerate the goldens on a
+       TRUSTED build with CNET_ORACLE_GOLDEN_WRITE=1. */
+    if (getenv("CNET_ORACLE_GOLDEN")) {
+        const char *gf = getenv("CNET_ORACLE_GOLDEN");
+        int gwrite = getenv("CNET_ORACLE_GOLDEN_WRITE") &&
+                     getenv("CNET_ORACLE_GOLDEN_WRITE")[0] == '1';
+        float *lg = ctx.lane[0].logits;
+        int bos = fs_bos(am->transformer);
+        FILE *gfp = fopen(gf, gwrite ? "w" : "r");
+        size_t jj, bad = 0, total = 0;
+        if (!gfp) {
+            fprintf(stderr, "oracle golden %s: cannot open\n", gf);
+            return 1;
+        }
+        if (gwrite) {
+            for (jj = 0; jj < 32; ++jj) {
+                int tk[3];
+                int nt = 0, vi, bestid = 0;
+                int a = 2000 + (int)((jj * 37u) % 4096u);
+                int b = 2000 + (int)((jj * 101u + 13u) % 4096u);
+                if (bos >= 0) tk[nt++] = bos;
+                tk[nt++] = a;
+                tk[nt++] = b;
+                am->transformer->cur_pos = 0;
+                if (cce_gguf_qwen2_forward(am->transformer, tk, nt, lg,
+                                           am->transformer->vocab_size)
+                    != CCE_OK) {
+                    fprintf(stderr, "oracle golden: forward failed\n");
+                    fclose(gfp);
+                    return 1;
+                }
+                for (vi = 1; vi < am->transformer->vocab_size; ++vi)
+                    if (lg[vi] > lg[bestid]) bestid = vi;
+                fprintf(gfp, "%d %d -> %d\n", a, b, bestid);
+            }
+            printf("oracle golden: wrote 32 probes to %s\n", gf);
+        } else {
+            int a, b, want;
+            while (fscanf(gfp, "%d %d -> %d", &a, &b, &want) == 3) {
+                int tk[3];
+                int nt = 0, vi, bestid = 0;
+                if (bos >= 0) tk[nt++] = bos;
+                tk[nt++] = a;
+                tk[nt++] = b;
+                am->transformer->cur_pos = 0;
+                if (cce_gguf_qwen2_forward(am->transformer, tk, nt, lg,
+                                           am->transformer->vocab_size)
+                    != CCE_OK) {
+                    fprintf(stderr, "oracle golden: forward failed\n");
+                    fclose(gfp);
+                    return 1;
+                }
+                for (vi = 1; vi < am->transformer->vocab_size; ++vi)
+                    if (lg[vi] > lg[bestid]) bestid = vi;
+                total++;
+                if (bestid != want) bad++;
+            }
+            if (total == 0) {
+                fprintf(stderr, "oracle golden: %s holds no probes — refusing "
+                                "to mine unchecked\n", gf);
+                fclose(gfp);
+                return 1;
+            }
+            if (bad > 0) {
+                fprintf(stderr, "oracle golden: %lu/%lu probes MISMATCH — the "
+                                "oracle no longer reproduces its trusted "
+                                "behavior, refusing to mine\n",
+                        (unsigned long)bad, (unsigned long)total);
+                fclose(gfp);
+                return 1;
+            }
+            printf("oracle golden: %lu/%lu probes match\n",
+                   (unsigned long)total, (unsigned long)total);
+        }
+        fclose(gfp);
+    }
+
+    /* Window decisiveness screening (CNET_WINDOW_SCREEN=<candidates>):
+       measure how decisive the teacher is on each candidate token BEFORE
+       spending training budget — for each candidate t, probe a fixed
+       stride of contexts [BOS, t, w] and score the mean top-3 boundary
+       margin over the candidate pool. The V highest scorers are written
+       to CNET_WINDOW_SCREEN_OUT (default <candidates>.screened) and the
+       process exits: mine them with CNET_WINDOW_FILE=<that file>. The
+       pool-relative margin is a heuristic for any final subwindow, but a
+       token indecisive against the pool never becomes decisive inside
+       it. */
+    if (getenv("CNET_WINDOW_SCREEN")) {
+        const char *cf = getenv("CNET_WINDOW_SCREEN");
+        const char *of = getenv("CNET_WINDOW_SCREEN_OUT");
+        char ofbuf[512];
+        int *cand = NULL;
+        double *score = NULL;
+        size_t ncand = 0, ci, wi, probes;
+        FILE *cfp;
+        if (!of) {
+            snprintf(ofbuf, sizeof ofbuf, "%s.screened", cf);
+            of = ofbuf;
+        }
+        probes = getenv("CNET_SCREEN_PROBES")
+                     ? (size_t)atoi(getenv("CNET_SCREEN_PROBES")) : 12;
+        if (probes < 4) probes = 4;
+        cfp = fopen(cf, "r");
+        if (!cfp) {
+            fprintf(stderr, "window screen %s: cannot open\n", cf);
+            return 1;
+        }
+        cand = (int *)malloc(8192 * sizeof *cand);
+        score = (double *)malloc(8192 * sizeof *score);
+        if (!cand || !score) { fclose(cfp); return 1; }
+        while (ncand < 8192 && fscanf(cfp, "%d", &cand[ncand]) == 1) {
+            if (cand[ncand] >= 0 &&
+                cand[ncand] < am->transformer->vocab_size)
+                ncand++;
+        }
+        fclose(cfp);
+        if (ncand < V) {
+            fprintf(stderr, "window screen: %lu candidates < V=%lu\n",
+                    (unsigned long)ncand, (unsigned long)V);
+            return 1;
+        }
+        printf("window screen: %lu candidates, %lu probes each\n",
+               (unsigned long)ncand, (unsigned long)probes);
+        cce_gguf_qwen2_set_head_window(am->transformer, cand, (int)ncand);
+        {
+            float *lg = ctx.lane[0].logits;
+            int bos = fs_bos(am->transformer);
+            for (ci = 0; ci < ncand; ++ci) {
+                double sum = 0.0;
+                for (wi = 0; wi < probes; ++wi) {
+                    int tk[3];
+                    int nt = 0;
+                    size_t w = (ci * 7919u + wi * (ncand / probes | 1))
+                               % ncand;
+                    if (bos >= 0) tk[nt++] = bos;
+                    tk[nt++] = cand[ci];
+                    tk[nt++] = cand[w];
+                    am->transformer->cur_pos = 0;
+                    if (cce_gguf_qwen2_forward(am->transformer, tk, nt, lg,
+                                               am->transformer->vocab_size)
+                        != CCE_OK)
+                        continue;
+                    sum += fs_set_margin(lg, cand, ncand, 3);
+                }
+                score[ci] = sum / (double)probes;
+            }
+        }
+        {
+            /* selection sort of the top V by score (V is small) */
+            FILE *ofp = fopen(of, "w");
+            size_t r2;
+            if (!ofp) {
+                fprintf(stderr, "window screen: cannot write %s\n", of);
+                return 1;
+            }
+            for (r2 = 0; r2 < V; ++r2) {
+                size_t bi = 0;
+                for (ci = 1; ci < ncand; ++ci)
+                    if (score[ci] > score[bi]) bi = ci;
+                fprintf(ofp, "%d\n", cand[bi]);
+                score[bi] = -1e30;
+            }
+            fclose(ofp);
+        }
+        printf("window screen: wrote the %lu most decisive tokens to %s — "
+               "mine them with CNET_WINDOW_FILE=%s\n",
+               (unsigned long)V, of, of);
+        free(cand);
+        free(score);
+        return 0;
+    }
 
     /* Restrict every lane's head to the mined window now that the full-head
        startup gates (equivalence sweep, determinism check) have passed:
