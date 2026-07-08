@@ -67,12 +67,93 @@ class Program
                         {
                             tools = new object[]
                             {
-                                new { name = "cnet_verify_claim", description = "Verify a claim against CNET units with optional counterfactual route evidence" },
-                                new { name = "cnet_generate_testimony", description = "Generate Memory-Witness testimony with narrative coherence scoring (place + dilemma + consequence)" },
-                                new { name = "cnet_compress_model", description = "Prepare a CNET-compressed model wrapper for Hermes hosting" },
-                                new { name = "cnet_expand_context", description = "Expand context with AICIMO routing + uncertainty" },
-                                new { name = "cnet_route_on_role", description = "Route using AICIMO role-slice (Drole)" },
-                                new { name = "cnet_list_units", description = "List available CNET units" }
+                                new
+                                {
+                                    name = "cnet_verify_claim",
+                                    description = "Verify a claim against CNET units with optional counterfactual route evidence",
+                                    inputSchema = (object)new
+                                    {
+                                        type = "object",
+                                        properties = new
+                                        {
+                                            claim = new { type = "string", description = "The claim to verify" },
+                                            unitTag = new { type = "string", description = "Optional CNET unit tag to verify against" },
+                                            codebaseNodes = new { type = "array", items = new { type = "string" }, description = "Optional codebase node references" },
+                                            counterfactualRoutes = new { type = "array", items = new { type = "string" }, description = "Optional counterfactual route evidence" },
+                                            counterfactualConsistency = new { type = "number", description = "Optional consistency score for counterfactual routes" }
+                                        },
+                                        required = new[] { "claim" }
+                                    }
+                                },
+                                new
+                                {
+                                    name = "cnet_generate_testimony",
+                                    description = "Generate Memory-Witness testimony with narrative coherence scoring (place + dilemma + consequence)",
+                                    inputSchema = (object)new
+                                    {
+                                        type = "object",
+                                        properties = new
+                                        {
+                                            place = new { type = "string", description = "Where the events took place" },
+                                            dilemma = new { type = "string", description = "The dilemma faced" },
+                                            consequence = new { type = "string", description = "The consequence that followed" },
+                                            codebaseNodes = new { type = "array", items = new { type = "string" }, description = "Optional codebase node references" }
+                                        },
+                                        required = new[] { "place", "dilemma", "consequence" }
+                                    }
+                                },
+                                new
+                                {
+                                    name = "cnet_compress_model",
+                                    description = "Prepare a CNET-compressed model wrapper for Hermes hosting",
+                                    inputSchema = (object)new
+                                    {
+                                        type = "object",
+                                        properties = new
+                                        {
+                                            model_path = new { type = "string", description = "Path to the model to compress" },
+                                            target_size = new { type = "string", description = "Target compression size (default 1.6bit)" },
+                                            options = new { type = "string", description = "Extra compression options" }
+                                        },
+                                        required = new[] { "model_path" }
+                                    }
+                                },
+                                new
+                                {
+                                    name = "cnet_expand_context",
+                                    description = "Expand context with AICIMO routing + uncertainty",
+                                    inputSchema = (object)new
+                                    {
+                                        type = "object",
+                                        properties = new
+                                        {
+                                            input = new { type = "string", description = "Input text to expand" },
+                                            baseDim = new { type = "integer", description = "Base dimension (default 8192)" }
+                                        },
+                                        required = new[] { "input" }
+                                    }
+                                },
+                                new
+                                {
+                                    name = "cnet_route_on_role",
+                                    description = "Route using AICIMO role-slice (Drole)",
+                                    inputSchema = (object)new
+                                    {
+                                        type = "object",
+                                        properties = new
+                                        {
+                                            input = new { type = "string", description = "Input text to route" },
+                                            role = new { type = "string", description = "Role slice (default memory-witness)" }
+                                        },
+                                        required = new[] { "input" }
+                                    }
+                                },
+                                new
+                                {
+                                    name = "cnet_list_units",
+                                    description = "List available CNET units",
+                                    inputSchema = (object)new { type = "object", properties = new { } }
+                                }
                             }
                         }
                     };
