@@ -79,6 +79,17 @@ int acquire_port_eq_public(Port a, Port b) { return acquire_port_eq(a, b); }
 
 static size_t port_total(Port p) { return p.field_width * p.field_count; }
 
+static size_t goal_sample_mix(Port goal) {
+    /* Cheap goal-dependent offset so units with same input port but
+       different goals get different (still uniform) sample strata.
+       Reduces exact cross-unit input table duplication from mining. */
+    size_t h = goal.field_width ^ (goal.field_count << 3) ^ (goal.family << 7);
+    const char *t = goal.tag;
+    for (size_t i = 0; t[i] && i < 48; ++i)
+        h = h * 131 + (unsigned char)t[i];
+    return h;
+}
+
 static GapRecord *ledger_push(AcquireLedger *l) {
     if (l->count == l->capacity) {
         size_t ncap = l->capacity ? l->capacity * 2 : 8;
@@ -403,10 +414,13 @@ static int mine_from_oracle(OracleEntry *o, Port in_p, Port goal_p,
 #pragma omp parallel for schedule(dynamic) num_threads((int)width) \
     default(none) \
     shared(n_points, card, pilot, pilot_idx, tc, o, st, slot_in, slot_raw, \
-           in_total, out_total, exhaustive_out)
+           in_total, out_total, exhaustive_out, goal_p)
             for (kk = 0; kk < (long)n_points; ++kk) {
-                size_t idx = *exhaustive_out ? (size_t)kk
-                                             : ((size_t)kk * card) / n_points;
+                size_t base = *exhaustive_out ? (size_t)kk : ((size_t)kk * card) / n_points;
+                size_t idx = base;
+                if (!*exhaustive_out && card > 0) {
+                    idx = (base + (goal_sample_mix(goal_p) % card)) % card;
+                }
                 size_t p, dup = 0;
                 for (p = 0; p < pilot && !dup; ++p) dup = (pilot_idx[p] == idx);
                 if (dup) { st[kk] = 0; continue; }
@@ -443,7 +457,11 @@ static int mine_from_oracle(OracleEntry *o, Port in_p, Port goal_p,
             free(st); free(slot_in); free(slot_raw);
         } else {
             for (k = 0; k < n_points; ++k) {
-                size_t idx = *exhaustive_out ? k : (k * card) / n_points; /* stride */
+                size_t base = *exhaustive_out ? k : (k * card) / n_points; /* stride */
+                size_t idx = base;
+                if (!*exhaustive_out && card > 0) {
+                    idx = (base + (goal_sample_mix(goal_p) % card)) % card;
+                }
                 double *irow = inputs + usable * in_total;
                 double *trow = targets + usable * out_total;
                 size_t p, dup = 0;

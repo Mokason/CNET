@@ -356,6 +356,7 @@ int main(int argc, char **argv) {
     CceOracleCtx ctx;
     int *vocab;
     size_t i;
+    int window_from_file;
     FlagshipConfig cfg;
     FlagshipReport rep;
 
@@ -511,13 +512,57 @@ int main(int argc, char **argv) {
                (unsigned long)cfg.acq.max_hidden,
                (unsigned long)cfg.acq.max_epochs);
 
+    /* Explicit window: CNET_WINDOW_FILE=<path> supplies the V token ids
+       (one decimal id per line) instead of argmax discovery — e.g. an
+       English word window so downstream claim verification covers English
+       text instead of the model's multilingual argmax attractors. Ids must
+       be unique and inside the model vocab; the run aborts on a malformed
+       file rather than silently mining the wrong units. ARGMAX/TOPK only
+       (PAIR windows are always discovered). */
+    window_from_file = 0;
+    if (task != FLAGSHIP_TASK_PAIR && getenv("CNET_WINDOW_FILE")) {
+        const char *wf = getenv("CNET_WINDOW_FILE");
+        FILE *f = fopen(wf, "r");
+        size_t got = 0, j;
+        if (!f) {
+            fprintf(stderr, "CNET_WINDOW_FILE %s: cannot open\n", wf);
+            return 1;
+        }
+        while (got < V && fscanf(f, "%d", &vocab[got]) == 1) {
+            if (vocab[got] < 0 ||
+                vocab[got] >= am->transformer->vocab_size) {
+                fprintf(stderr, "CNET_WINDOW_FILE: id %d outside model "
+                                "vocab\n", vocab[got]);
+                fclose(f);
+                return 1;
+            }
+            got++;
+        }
+        fclose(f);
+        if (got != V) {
+            fprintf(stderr, "CNET_WINDOW_FILE: need %lu ids, got %lu\n",
+                    (unsigned long)V, (unsigned long)got);
+            return 1;
+        }
+        for (i = 0; i < V; ++i)
+            for (j = i + 1; j < V; ++j)
+                if (vocab[i] == vocab[j]) {
+                    fprintf(stderr, "CNET_WINDOW_FILE: duplicate id %d\n",
+                            vocab[i]);
+                    return 1;
+                }
+        window_from_file = 1;
+        printf("window: %lu tokens from %s (first: %d %d %d %d)\n",
+               (unsigned long)V, wf, vocab[0], vocab[1], vocab[2], vocab[3]);
+    }
+
     /* Window discovery for ARGMAX/TOPK (PAIR always discovered): the fixed
        2000..2000+V window is a MEASURED constant slice on both real models
        (window_discover.h) — every unit mined from it is one constant
        function. Discovery derives the window from the model's own argmax
        attractors, deterministically (resume-safe: same window, same tags).
        CNET_WINDOW_DISCOVER=0 restores the fixed window. */
-    if (task != FLAGSHIP_TASK_PAIR &&
+    if (task != FLAGSHIP_TASK_PAIR && !window_from_file &&
         !(getenv("CNET_WINDOW_DISCOVER") &&
           getenv("CNET_WINDOW_DISCOVER")[0] == '0')) {
         size_t placed = cnet_window_discover(am->transformer,
