@@ -34,6 +34,33 @@ SCALAR_SIZE = {T_U8: 1, T_I8: 1, T_U16: 2, T_I16: 2, T_U32: 4, T_I32: 4,
                T_F32: 4, T_BOOL: 1, T_U64: 8, T_I64: 8, T_F64: 8}
 
 
+def read_hf_tokens(path):
+    """HF checkpoint dir (tokenizer.json): returns (model_type, [tokens])."""
+    import json
+    tj = Path(path) / "tokenizer.json"
+    data = json.loads(tj.read_text())
+    vocab = data["model"]["vocab"]
+    mtype = data["model"].get("type", "unknown")
+    id2tok = [None] * (max(vocab.values()) + 1)
+    for piece, tid in vocab.items():
+        id2tok[tid] = piece
+    for added in data.get("added_tokens", []):
+        tid = added.get("id")
+        if tid is not None:
+            if tid >= len(id2tok):
+                id2tok.extend([None] * (tid + 1 - len(id2tok)))
+            id2tok[tid] = added.get("content")
+    return mtype, [t if t is not None else "" for t in id2tok]
+
+
+def read_vocab(path):
+    """GGUF file or HF checkpoint dir."""
+    p = Path(path)
+    if p.is_dir():
+        return read_hf_tokens(p)
+    return read_gguf_tokens(p)
+
+
 def read_gguf_tokens(path):
     """Minimal GGUF KV scan: returns (tokenizer_model, [token strings])."""
     with open(path, "rb") as f:
@@ -120,7 +147,7 @@ def main():
            if x.strip()]
 
     if args.cmd == "dump":
-        tok_model, tokens = read_gguf_tokens(args.model)
+        tok_model, tokens = read_vocab(args.model)
         out = Path(args.out or (args.window + ".tokens.tsv"))
         with out.open("w") as f:
             for tid in ids:
@@ -130,8 +157,8 @@ def main():
               f"{len(ids)} slots)")
         return 0
 
-    src_model, src_tokens = read_gguf_tokens(args.src_model)
-    dst_model, dst_tokens = read_gguf_tokens(args.dst_model)
+    src_model, src_tokens = read_vocab(args.src_model)
+    dst_model, dst_tokens = read_vocab(args.dst_model)
     dst_by_surface = {}
     for i, piece in enumerate(dst_tokens):
         dst_by_surface.setdefault(normalize(piece), i)

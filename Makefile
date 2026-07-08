@@ -320,6 +320,7 @@ flagship: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) 
 	@CNET_ACQ_WARMSTART=1 ./$(BIN_DIR)/flagship > logs/flagship.warmstart.log 2>&1 || echo "flagship[warmstart] non-zero (see log)"
 	@CNET_TOPK_SET=1 ./$(BIN_DIR)/flagship > logs/flagship.topkset.log 2>&1 || echo "flagship[topkset] non-zero (see log)"
 	@CNET_ACQ_ADAPTIVE=1 CNET_ACQ_WARMSTART=1 CNET_TOPK_SET=1 ./$(BIN_DIR)/flagship > logs/flagship.allon.log 2>&1 || echo "flagship[all-on] non-zero (see log)"
+	@cc -O2 -w -o $(BIN_DIR)/test_dequant_xcheck tests/test_dequant_xcheck.c -lm && ./$(BIN_DIR)/test_dequant_xcheck || echo "dequant xcheck FAILED"
 
 # Base inspector: counts + certify-on-load + tag audit + digest fidelity
 # compare between two bases. Usage: ./bin/cnb_audit <base.cnb> [other.cnb]
