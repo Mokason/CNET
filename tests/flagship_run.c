@@ -20,6 +20,7 @@
 #endif
 
 #include "../include/flagship.h"
+#include "../include/base.h"
 #include "../include/cce/cce_detect.h"
 #include "../include/cce/cce_clgemm.h"
 #include "window_discover.h"
@@ -121,6 +122,13 @@ static double fs_set_margin(const float *logits, const int *vocab,
     return top[depth - 1] - top[depth];
 }
 
+
+/* Sum of a contract's port totals in doubles (mirrors soul_host). */
+static size_t fs_ports_total(const Port *ports, size_t n) {
+    size_t t = 0, i;
+    for (i = 0; i < n; ++i) t += ports[i].field_width * ports[i].field_count;
+    return t;
+}
 /* Lane for THIS call: pinned when force_lane is set, else by OMP thread id
    (the mining loop runs one thread per lane). Also scopes the calling
    thread's nested-OMP team so `lanes x inner` matches the machine. */
@@ -400,6 +408,49 @@ static int determinism_spot_check(CceOracleCtx *c, FlagshipTask task) {
     return rc;
 }
 
+
+/* ---- Manifest replay (CNET_MANIFEST=<base>.manifest.json) ---------------
+   manifest-out without manifest-in is half a loop: a run must be
+   RE-RUNNABLE from its artifact. Every recorded knob is applied via
+   setenv(..., overwrite=0) — explicit environment always wins — and the
+   argv-shaped fields (model, V, max_units, task, base) become defaults
+   for positions the caller leaves off. Parser is a scanner for our own
+   fprintf format, not a general JSON reader. */
+static int mf_scan_str(const char *text, const char *key, char *out,
+                       size_t cap) {
+    char pat[96];
+    const char *at, *q1, *q2;
+    snprintf(pat, sizeof pat, "\"%s\": \"", key);
+    at = strstr(text, pat);
+    if (!at) return -1;
+    q1 = at + strlen(pat);
+    q2 = strchr(q1, '"');
+    if (!q2 || (size_t)(q2 - q1) >= cap) return -1;
+    memcpy(out, q1, (size_t)(q2 - q1));
+    out[q2 - q1] = 0;
+    return 0;
+}
+
+static int mf_scan_num(const char *text, const char *key, double *out) {
+    char pat[96];
+    const char *at;
+    snprintf(pat, sizeof pat, "\"%s\": ", key);
+    at = strstr(text, pat);
+    if (!at) return -1;
+    *out = atof(at + strlen(pat));
+    return 0;
+}
+
+static void mf_setenv_num(const char *text, const char *key,
+                          const char *envname, int as_int) {
+    double v;
+    char buf[64];
+    if (mf_scan_num(text, key, &v) != 0) return;
+    if (as_int) snprintf(buf, sizeof buf, "%ld", (long)v);
+    else snprintf(buf, sizeof buf, "%.6f", v);
+    setenv(envname, buf, 0);
+}
+
 int main(int argc, char **argv) {
     const char *model_path;
     size_t V = 64, max_units = 8;
@@ -422,12 +473,98 @@ int main(int argc, char **argv) {
        progress line until exit. */
     setvbuf(stdout, NULL, _IOLBF, 0);
 
-    if (argc < 2) {
+    /* Manifest replay: apply the recorded recipe before anything reads
+       env or argv. Filename convention <base>.manifest.json also supplies
+       the base path and teacher when the caller omits them. */
+    {
+        const char *mfp = getenv("CNET_MANIFEST");
+        if (mfp) {
+            FILE *f = fopen(mfp, "rb");
+            if (!f) {
+                fprintf(stderr, "CNET_MANIFEST %s: cannot open\n", mfp);
+                return 1;
+            }
+            {
+                static char mtext[16384];
+                static char m_model[512], m_task[16], m_win[512];
+                static char m_base[560];
+                size_t got = fread(mtext, 1, sizeof mtext - 1, f);
+                double num;
+                mtext[got] = 0;
+                fclose(f);
+                if (mf_scan_str(mtext, "window_source", m_win,
+                                sizeof m_win) == 0 &&
+                    strcmp(m_win, "argmax-discovery") != 0)
+                    setenv("CNET_WINDOW_FILE", m_win, 0);
+                mf_setenv_num(mtext, "margin_eps", "CNET_CERT_MARGIN", 0);
+                if (mf_scan_num(mtext, "cert_sampled", &num) == 0 && num >= 1)
+                    setenv("CNET_CERT_SAMPLED", "1", 0);
+                mf_setenv_num(mtext, "sample_count",
+                              "CNET_CERT_SAMPLE_COUNT", 1);
+                mf_setenv_num(mtext, "init_hidden", "CNET_ACQ_HIDDEN", 1);
+                mf_setenv_num(mtext, "max_hidden", "CNET_ACQ_MAXHIDDEN", 1);
+                mf_setenv_num(mtext, "max_epochs", "CNET_ACQ_EPOCHS", 1);
+                mf_setenv_num(mtext, "seed", "CNET_ACQ_SEED", 1);
+                if (mf_scan_num(mtext, "adaptive", &num) == 0 && num >= 1)
+                    setenv("CNET_ACQ_ADAPTIVE", "1", 0);
+                if (mf_scan_num(mtext, "warmstart", &num) == 0 && num >= 1)
+                    setenv("CNET_ACQ_WARMSTART", "1", 0);
+                if (mf_scan_num(mtext, "oracle_int8", &num) == 0 && num >= 1)
+                    setenv("CNET_ORACLE_INT8", "1", 0);
+                mf_setenv_num(mtext, "lanes", "CNET_ORACLE_LANES", 1);
+                {
+                    static char m_sem[40];
+                    if (mf_scan_str(mtext, "target_semantics", m_sem,
+                                    sizeof m_sem) == 0 &&
+                        strcmp(m_sem, "top3-set-canonical") == 0)
+                        setenv("CNET_TOPK_SET", "1", 0);
+                }
+                {
+                    static char m_gold[512];
+                    if (mf_scan_str(mtext, "oracle_golden", m_gold,
+                                    sizeof m_gold) == 0 && m_gold[0])
+                        setenv("CNET_ORACLE_GOLDEN", m_gold, 0);
+                }
+                if (mf_scan_str(mtext, "model", m_model, sizeof m_model) == 0)
+                    setenv("CNET_MANIFEST_MODEL", m_model, 1);
+                if (mf_scan_str(mtext, "task", m_task, sizeof m_task) == 0)
+                    setenv("CNET_MANIFEST_TASK", m_task, 1);
+                if (mf_scan_num(mtext, "V", &num) == 0)
+                    mf_setenv_num(mtext, "V", "CNET_MANIFEST_V", 1);
+                if (mf_scan_num(mtext, "max_units", &num) == 0)
+                    mf_setenv_num(mtext, "max_units", "CNET_MANIFEST_UNITS", 1);
+                {
+                    size_t blen = strlen(mfp);
+                    const char *suffix = ".manifest.json";
+                    size_t slen = strlen(suffix);
+                    if (blen > slen &&
+                        strcmp(mfp + blen - slen, suffix) == 0 &&
+                        blen - slen < sizeof m_base) {
+                        memcpy(m_base, mfp, blen - slen);
+                        m_base[blen - slen] = 0;
+                        setenv("CNET_MANIFEST_BASE", m_base, 1);
+                    }
+                }
+                printf("manifest replay: %s\n", mfp);
+            }
+        }
+    }
+
+    if (argc < 2 && !getenv("CNET_MANIFEST_MODEL")) {
         fprintf(stderr, "usage: %s <model> [V] [max_units] [temp_C] [duty] "
                         "[wall_s] [base.cnb] [argmax|pair|topk]\n", argv[0]);
         return 2;
     }
-    model_path = argv[1];
+    model_path = argc > 1 ? argv[1] : getenv("CNET_MANIFEST_MODEL");
+    if (getenv("CNET_MANIFEST_V")) V = (size_t)atoi(getenv("CNET_MANIFEST_V"));
+    if (getenv("CNET_MANIFEST_UNITS"))
+        max_units = (size_t)atoi(getenv("CNET_MANIFEST_UNITS"));
+    if (getenv("CNET_MANIFEST_BASE")) base_path = getenv("CNET_MANIFEST_BASE");
+    if (getenv("CNET_MANIFEST_TASK")) {
+        const char *mt = getenv("CNET_MANIFEST_TASK");
+        if (strcmp(mt, "pair") == 0) task = FLAGSHIP_TASK_PAIR;
+        else if (strcmp(mt, "topk") == 0) task = FLAGSHIP_TASK_TOPK;
+    }
     if (argc > 2) V = (size_t)atoi(argv[2]);
     if (argc > 3) max_units = (size_t)atoi(argv[3]);
     if (argc > 4) temp_c = atoi(argv[4]);
@@ -496,6 +633,40 @@ int main(int argc, char **argv) {
     cfg.gpu_temp_limit_c = temp_c;
     cfg.duty_fraction = duty;
     cfg.max_wall_seconds = wall;
+    window_from_file = 0;
+
+    /* Recert windows come from the BASE'S OWN ledger: gaps order is
+       window order, so an old base audits against exactly the tokens it
+       was mined with — discovery under a changed oracle would produce a
+       different window and audit nothing. CNET_WINDOW_FILE still
+       overrides when a ledger is absent. */
+    if (getenv("CNET_RECERT") && getenv("CNET_RECERT")[0] == '1' &&
+        !getenv("CNET_WINDOW_FILE")) {
+        char gpath[600];
+        FILE *gf;
+        snprintf(gpath, sizeof gpath, "%s.gaps.txt", base_path);
+        gf = fopen(gpath, "r");
+        if (gf) {
+            char line[512];
+            size_t got = 0;
+            while (got < V && fgets(line, sizeof line, gf)) {
+                const char *at = strstr(line, " tk");
+                if (!at) continue;
+                vocab[got] = atoi(at + 3);
+                if (vocab[got] >= 0 &&
+                    vocab[got] < am->transformer->vocab_size)
+                    got++;
+            }
+            fclose(gf);
+            if (got > 0) {
+                V = got;
+                window_from_file = 1;
+                printf("recert window: %lu tokens from %s (ledger order)\n",
+                       (unsigned long)V, gpath);
+            }
+        }
+    }
+
     /* Explicit window: CNET_WINDOW_FILE=<path> supplies the V token ids
        (one decimal id per line) instead of argmax discovery — e.g. an
        English word window so downstream claim verification covers English
@@ -504,8 +675,7 @@ int main(int argc, char **argv) {
        file rather than silently mining the wrong units. Applies to every
        task including PAIR — an English pair window mines bigram
        conditionals over meaningful tokens. */
-    window_from_file = 0;
-    if (getenv("CNET_WINDOW_FILE")) {
+    if (!window_from_file && getenv("CNET_WINDOW_FILE")) {
         const char *wf = getenv("CNET_WINDOW_FILE");
         FILE *f = fopen(wf, "r");
         size_t got = 0, j;
@@ -1004,6 +1174,91 @@ int main(int argc, char **argv) {
             cce_gguf_qwen2_set_head_window(ctx.lane[li].m, vocab, (int)V);
         printf("head window: restricted to %lu mined tokens (full-vocab head "
                "off for mining)\n", (unsigned long)V);
+    }
+
+    /* Drift audit (CNET_RECERT=1): certification froze student == oracle
+       at MINING time; nothing checks that the oracle still stands behind
+       those answers after a loader fix or a teacher swap. Replay every
+       acquired unit's sealed exemplar table against the CURRENT oracle and
+       report per-unit agreement. The base's gaps ledger supplies the
+       window (ledger order IS window order), so old bases audit without
+       their original environment. Margin abstentions count as excluded
+       domain, not drift. Report: <base>.recert.txt + stdout; no mining. */
+    if (getenv("CNET_RECERT") && getenv("CNET_RECERT")[0] == '1') {
+        CnetBase rbase;
+        FILE *rout;
+        char rpath[600];
+        size_t ui;
+        size_t units_seen = 0, units_clean = 0, units_drift = 0;
+        size_t ex_match = 0, ex_miss = 0, ex_abst = 0, ex_err = 0;
+        cnb_init(&rbase);
+        if (cnb_load(&rbase, base_path) != 0) {
+            fprintf(stderr, "recert: cannot load base %s\n", base_path);
+            return 1;
+        }
+        snprintf(rpath, sizeof rpath, "%s.recert.txt", base_path);
+        rout = fopen(rpath, "w");
+        printf("recert: auditing %s against the current oracle\n", base_path);
+        for (ui = 0; ui < V; ++ui) {
+            char uname[64];
+            BinaryTransformNetwork ubtn;
+            Contract uc;
+            size_t e, in_total, out_total;
+            size_t u_match = 0, u_miss = 0, u_abst = 0, u_err = 0;
+            double *got;
+            snprintf(uname, sizeof uname, "acq_tk%dq%d",
+                     vocab[ui], vocab[ui]);
+            memset(&ubtn, 0, sizeof ubtn);
+            memset(&uc, 0, sizeof uc);
+            if (cnb_get_unit(&rbase, uname, &ubtn, &uc) != 0) continue;
+            units_seen++;
+            in_total = fs_ports_total(uc.input_ports, uc.input_port_count);
+            out_total = fs_ports_total(uc.output_ports, uc.output_port_count);
+            got = (double *)malloc(out_total * sizeof *got);
+            ctx.t = vocab[ui];
+            for (e = 0; e < uc.exemplar_count && got; ++e) {
+                const double *irow = uc.inputs + e * in_total;
+                const double *orow = uc.outputs + e * out_total;
+                int rc2 = cce_task_fn(irow, got, &ctx);
+                if (rc2 > 0) { u_abst++; continue; }
+                if (rc2 < 0) { u_err++; continue; }
+                if (memcmp(got, orow, out_total * sizeof *got) == 0) u_match++;
+                else u_miss++;
+            }
+            free(got);
+            if (u_miss == 0 && u_err == 0) units_clean++; else units_drift++;
+            ex_match += u_match; ex_miss += u_miss;
+            ex_abst += u_abst; ex_err += u_err;
+            if (rout)
+                fprintf(rout, "%s match=%lu miss=%lu abstain=%lu err=%lu\n",
+                        uname, (unsigned long)u_match, (unsigned long)u_miss,
+                        (unsigned long)u_abst, (unsigned long)u_err);
+            if (u_miss > 0 || u_err > 0)
+                printf("recert DRIFT %s: match=%lu miss=%lu abstain=%lu "
+                       "err=%lu\n", uname, (unsigned long)u_match,
+                       (unsigned long)u_miss, (unsigned long)u_abst,
+                       (unsigned long)u_err);
+            btn_free(&ubtn);
+            contract_free(&uc);
+        }
+        printf("recert: %lu units audited — %lu clean, %lu drifted; "
+               "exemplars match=%lu miss=%lu abstain=%lu err=%lu\n",
+               (unsigned long)units_seen, (unsigned long)units_clean,
+               (unsigned long)units_drift, (unsigned long)ex_match,
+               (unsigned long)ex_miss, (unsigned long)ex_abst,
+               (unsigned long)ex_err);
+        if (rout) {
+            fprintf(rout, "TOTAL units=%lu clean=%lu drifted=%lu "
+                          "match=%lu miss=%lu abstain=%lu err=%lu\n",
+                    (unsigned long)units_seen, (unsigned long)units_clean,
+                    (unsigned long)units_drift, (unsigned long)ex_match,
+                    (unsigned long)ex_miss, (unsigned long)ex_abst,
+                    (unsigned long)ex_err);
+            fclose(rout);
+            printf("recert report: %s\n", rpath);
+        }
+        cnb_free(&rbase);
+        return units_drift > 0 ? 2 : 0;
     }
 
     /* Run manifest: a run must be reproducible from its artifacts, not
