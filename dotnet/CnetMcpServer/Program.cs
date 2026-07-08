@@ -38,7 +38,26 @@ class Program
 
                 string method = request.TryGetProperty("method", out var m) ? m.GetString() ?? "" : "";
 
-                if (method == "tools/list")
+                if (method == "initialize")
+                {
+                    string protocolVersion =
+                        request.TryGetProperty("params", out var initParams)
+                        && initParams.TryGetProperty("protocolVersion", out var pv)
+                        ? pv.GetString() ?? "2024-11-05" : "2024-11-05";
+                    var response = new
+                    {
+                        jsonrpc = "2.0",
+                        id = request.GetProperty("id").GetInt32(),
+                        result = new
+                        {
+                            protocolVersion,
+                            capabilities = new { tools = new { } },
+                            serverInfo = new { name = "cnet-mcp", version = "0.2.0" }
+                        }
+                    };
+                    await writer.WriteLineAsync(JsonSerializer.Serialize(response));
+                }
+                else if (method == "tools/list")
                 {
                     var response = new
                     {
