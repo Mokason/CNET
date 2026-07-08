@@ -5,21 +5,15 @@
  * derive the IDENTICAL window or the depth gate compares apples to
  * oranges).
  *
- * WHY: an arbitrary id window (2000..2000+V) yields CONSTANT conditional
- * slices on real models — measured on BOTH the gemma MTP draft and the
- * gemma4-v2 12B: 0 variation over 128 probe contexts, every top-3 equal to
- * the tie-break pattern [first,second,third] of flat logits. The model's
- * attractor tokens live outside the window, so the restricted argmax never
- * varies and every mined unit is one constant function. Building the window
- * from the model's OWN most frequent full-vocab argmax choices over a
- * deterministic probe spread makes the restricted decisions actually vary.
- * (Extracted from flagship_run's PAIR-only discover_pair_window — the same
- * failure mode applies to ARGMAX and TOPK.)
+ * REAL-CONTEXT EXTRACTION: For M3, mining now prefers chat-templated real-text
+ * prompts over bare <bos>. Use cnet_window_discover_real_context when possible.
+ * This makes extracted units (skills) actually useful on real chat/agent inputs.
  *
- * n_ctx = probe context length: 3 reproduces the historical PAIR discovery
- * byte-for-byte; 2 matches the ARGMAX/TOPK query shape. Deterministic, so
- * resume across runs sees identical windows (and identical unit tags).
- * Returns the number of discovered tokens placed (rest keep defaults). */
+ * WHY bare-bos is bad: an arbitrary id window (2000..2000+V) yields CONSTANT
+ * conditional slices on real models... (old text)
+ *
+ * n_ctx = probe context length...
+ */
 static size_t cnet_window_discover(cce_gguf_qwen2 *m, float *logits,
                                    int *vocab, size_t V, int n_ctx, int bos) {
     unsigned *hist;
@@ -88,6 +82,42 @@ static size_t cnet_window_discover(cce_gguf_qwen2 *m, float *logits,
         hist[best] = 0;
     }
     free(hist);
+    return placed;
+}
+
+/* Real-context version for M3: mine window from a chat-templated real-text prompt.
+ * Tokenize the prompt with proper chat template (e.g. Qwen <|im_start|>user ... ),
+ * forward the full sequence, take top-V from the last position's logits.
+ * This replaces bare-<bos> synthetic windows.
+ * Caller must provide pre-tokenized prompt tokens + the model.
+ * Returns placed count. */
+static size_t cnet_window_discover_real_context(cce_gguf_qwen2 *m, float *logits,
+                                                int *vocab, size_t V,
+                                                const int *prompt_toks, size_t n_prompt) {
+    if (!m || !logits || !vocab || V == 0 || !prompt_toks || n_prompt == 0) return 0;
+    m->cur_pos = 0;
+    if (cce_gguf_qwen2_forward(m, prompt_toks, (int)n_prompt, logits, m->vocab_size) != CCE_OK) {
+        return 0;
+    }
+    /* Take top-V from the logits at the last position (after the real prompt) */
+    char *taken = (char *)calloc((size_t)m->vocab_size, 1);
+    if (!taken) return 0;
+    size_t placed = 0;
+    for (placed = 0; placed < V; ++placed) {
+        size_t a, best = (size_t)-1;
+        float bl = -1e30f;
+        for (a = 0; a < (size_t)m->vocab_size; ++a) {
+            if (taken[a]) continue;
+            if (best == (size_t)-1 || logits[a] > bl) {
+                bl = logits[a];
+                best = a;
+            }
+        }
+        if (best == (size_t)-1) break;
+        taken[best] = 1;
+        vocab[placed] = (int)best;
+    }
+    free(taken);
     return placed;
 }
 

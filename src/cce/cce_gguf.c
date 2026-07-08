@@ -1431,7 +1431,8 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
     int V = m->vocab_size ? m->vocab_size : 151936;
     int start_pos = m->cur_pos;
 
-    if (start_pos + n_tokens > m->max_ctx) return CCE_ERR_INVALID_ARG;
+    if ((m->probe_batch ? start_pos + 1 : start_pos + n_tokens) > m->max_ctx)
+        return CCE_ERR_INVALID_ARG;
 
     /* per-instance GPU handle wins; the process-global is the default */
     cce_clgemm *gpu = m->clgemm ? m->clgemm : g_gguf_clgemm;
@@ -1536,7 +1537,7 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
         const float *knw = (m->attn_k_norm && m->attn_k_norm[l].data)
                                ? m->attn_k_norm[l].data : NULL;
         for (int t = 0; t < n_tokens; t++) {
-            int pos = start_pos + t;
+            int pos = m->probe_batch ? start_pos : start_pos + t;
             for (int h = 0; h < ge->n_q; h++) {
                 float *qh = q.data + (size_t)t * ge->q_dim +
                             (size_t)h * ge->head_dim;
@@ -1566,13 +1567,19 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
                                 ge->rope_base, ge->n_q, ge->n_k);
             }
             /* stash to the per-layer slots BEFORE attention: every read
-               below comes from the cache (prefix reuse = pinned rows) */
-            memcpy(m->k_cache + (size_t)pos * m->k_slot_floats + ge->k_off,
-                   k.data + (size_t)t * ge->k_dim,
-                   (size_t)ge->k_dim * sizeof(float));
-            memcpy(m->v_cache + (size_t)pos * m->v_slot_floats + ge->v_off,
-                   v.data + (size_t)t * ge->v_dim,
-                   (size_t)ge->v_dim * sizeof(float));
+               below comes from the cache (prefix reuse = pinned rows).
+               Probe rows are INDEPENDENT continuations — they must never
+               enter the shared cache (they would clobber one slot); their
+               k/v stay in the local tensors and attention reads them
+               per-row below. */
+            if (!m->probe_batch) {
+                memcpy(m->k_cache + (size_t)pos * m->k_slot_floats + ge->k_off,
+                       k.data + (size_t)t * ge->k_dim,
+                       (size_t)ge->k_dim * sizeof(float));
+                memcpy(m->v_cache + (size_t)pos * m->v_slot_floats + ge->v_off,
+                       v.data + (size_t)t * ge->v_dim,
+                       (size_t)ge->v_dim * sizeof(float));
+            }
         }
 
         /* attention: GQA with (possibly asymmetric) K/V head groups +
@@ -1585,16 +1592,19 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
             int kh_i = h / (ge->n_q / ge->n_k);
             int vh_i = h / (ge->n_q / ge->n_v);
             for (int t = 0; t < n_tokens; t++) {
-                int abs_t = start_pos + t;
+                int abs_t = m->probe_batch ? start_pos : start_pos + t;
                 int jmin = 0;
                 if (ge->window > 0 && abs_t - ge->window + 1 > 0)
                     jmin = abs_t - ge->window + 1;
                 const float *qh = q.data + (size_t)t * ge->q_dim +
                                   (size_t)h * ge->head_dim;
                 for (int j = jmin; j <= abs_t; j++) {
-                    const float *kh = m->k_cache +
-                        (size_t)j * m->k_slot_floats + ge->k_off +
-                        (size_t)kh_i * ge->head_dim;
+                    const float *kh = (m->probe_batch && j == abs_t)
+                        ? k.data + (size_t)t * ge->k_dim +
+                              (size_t)kh_i * ge->head_dim
+                        : m->k_cache +
+                              (size_t)j * m->k_slot_floats + ge->k_off +
+                              (size_t)kh_i * ge->head_dim;
                     float sacc = 0.0f;
                     for (int d2 = 0; d2 < ge->head_dim; d2++)
                         sacc += qh[d2] * kh[d2];
@@ -1627,9 +1637,12 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
                             (size_t)h * ge->v_head_dim;
                 memset(oh, 0, (size_t)ge->v_head_dim * sizeof(float));
                 for (int j = jmin; j <= abs_t; j++) {
-                    const float *vh = m->v_cache +
-                        (size_t)j * m->v_slot_floats + ge->v_off +
-                        (size_t)vh_i * ge->v_head_dim;
+                    const float *vh = (m->probe_batch && j == abs_t)
+                        ? v.data + (size_t)t * ge->v_dim +
+                              (size_t)vh_i * ge->v_head_dim
+                        : m->v_cache +
+                              (size_t)j * m->v_slot_floats + ge->v_off +
+                              (size_t)vh_i * ge->v_head_dim;
                     for (int d2 = 0; d2 < ge->v_head_dim; d2++)
                         oh[d2] += scores[j] * vh[d2];
                 }
@@ -1734,17 +1747,26 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
     cce_tensor_alloc(&fn, xsh, 2);
     gguf_rms_norm_impl(&x, &m->output_norm, eps, &fn, (m->embed_scale > 1.0f));
 
-    /* HEAD FOR THE LAST ROW ONLY: the only row anyone reads */
+    /* HEAD: normally only the LAST row (the only row anyone reads); in
+       probe-batch mode EVERY row is an independent probe and gets its own
+       logits at logits_out + row*logits_cap. */
     cce_tensor logits_t = {0};
     int lsh[2] = {1, V};
     cce_tensor_alloc(&logits_t, lsh, 2);
+    cce_cascade* head_cas = cce_forest_get_resident(m->forest, "qwen2.lm_head");
+    {
+    int row0 = m->probe_batch ? 0 : n_tokens - 1;
+    int brow;
+    for (brow = row0; brow < n_tokens; ++brow) {
+    float *row_out = m->probe_batch
+        ? logits_out + (size_t)(brow - row0) * logits_cap
+        : logits_out;
     cce_tensor fn_last = {0};
-    fn_last.data = fn.data + (size_t)(n_tokens - 1) * D;
+    fn_last.data = fn.data + (size_t)brow * D;
     fn_last.shape[0] = 1;
     fn_last.shape[1] = D;
     fn_last.ndim = 2;
     fn_last.numel = (size_t)D;
-    cce_cascade* head_cas = cce_forest_get_resident(m->forest, "qwen2.lm_head");
     bool head_ok = false;
     /* RESTRICTED HEAD: compute only the mined window's logits — a per-column
        dot from the FP head weights, bit-identical to the full head's values
@@ -1795,13 +1817,35 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
        oracle consumes decisions; rank on the uncapped values. (m->
        final_softcap is retained for future logit-level comparisons.) */
 
-    int out_len = (V < logits_cap) ? V : logits_cap;
-    memcpy(logits_out, logits_t.data, out_len * sizeof(float));
+    {
+        int out_len = (V < logits_cap) ? V : logits_cap;
+        memcpy(row_out, logits_t.data, out_len * sizeof(float));
+    }
+    }
+    }
 
-    m->cur_pos += n_tokens;
+    if (!m->probe_batch)
+        m->cur_pos += n_tokens;
 
     cce_tensor_free(&x); cce_tensor_free(&fn); cce_tensor_free(&logits_t);
     return CCE_OK;
+}
+
+
+cce_result cce_gguf_qwen2_forward_probes(cce_gguf_qwen2* m,
+    const int* probe_tokens, int n_probes, float* logits_out,
+    int logits_cap) {
+    cce_result rc;
+    int saved_pos;
+    if (!m || !probe_tokens || n_probes < 1 || !logits_out)
+        return CCE_ERR_INVALID_ARG;
+    saved_pos = m->cur_pos;
+    m->probe_batch = 1;
+    rc = cce_gguf_qwen2_forward(m, probe_tokens, n_probes, logits_out,
+                                logits_cap);
+    m->probe_batch = 0;
+    m->cur_pos = saved_pos;
+    return rc;
 }
 
 /* Phase 4 dispatcher. The cross-format arch->builder registry lives in

@@ -1,4 +1,6 @@
 #include "../../include/cce/cce_safetensors.h"
+#include "../../include/cce/cce_sparse_kv.h"
+#include "../../include/cce/cce_compression.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -1555,6 +1557,8 @@ cce_result cce_supra_load_decomposed(cce_supra_decomposed** out, const char* cac
     if (m->n_embd == 0) m->n_embd = 256;
     if (m->block_size == 0) m->block_size = 384;
     if (m->vocab_size == 0) m->vocab_size = 50520; /* approx from doc */
+    m->context_routing_mode = CCE_CONTEXT_ROUTING_FULL_KV;
+    cce_specialist_kv_budget_default(&m->kv_budget, m->block_size);
 
     *out = m;
     return CCE_OK;
@@ -1578,7 +1582,54 @@ void cce_supra_free_decomposed(cce_supra_decomposed* m) {
     cce_tensor_free(&m->vq_codebook);
     free(m->tok_emb_trit);
     free(m->tok_emb_scale);
+    cce_compression_grads_free(&m->compression_grads);
     free(m);
+}
+
+cce_result cce_supra_set_context_routing(cce_supra_decomposed* m,
+                                         cce_context_routing_mode mode,
+                                         const cce_specialist_kv_budget* budget) {
+    if (!m) return CCE_ERR_INVALID_ARG;
+    if (mode != CCE_CONTEXT_ROUTING_FULL_KV && mode != CCE_CONTEXT_ROUTING_SPARSE_ROUTING)
+        return CCE_ERR_INVALID_ARG;
+    m->context_routing_mode = mode;
+    if (budget) {
+        m->kv_budget = *budget;
+    } else {
+        cce_specialist_kv_budget_default(&m->kv_budget, m->block_size);
+    }
+    return CCE_OK;
+}
+
+cce_result cce_supra_enable_gradient_accumulation(cce_supra_decomposed* m,
+                                                  size_t grad_count) {
+    if (!m || grad_count == 0) return CCE_ERR_INVALID_ARG;
+    cce_compression_grads_free(&m->compression_grads);
+    return cce_compression_grads_init(&m->compression_grads, grad_count);
+}
+
+void cce_supra_clear_gradient_accumulation(cce_supra_decomposed* m) {
+    if (!m) return;
+    cce_compression_grads_free(&m->compression_grads);
+}
+
+cce_result cce_supra_accumulate_compression_gradient(cce_supra_decomposed* m,
+                                                     const float* identity_grad,
+                                                     const float* residual_grad,
+                                                     size_t grad_count,
+                                                     float identity_scale,
+                                                     float residual_scale) {
+    if (!m) return CCE_ERR_INVALID_ARG;
+    if (!m->compression_grads.values) {
+        cce_result rc = cce_supra_enable_gradient_accumulation(m, grad_count);
+        if (rc != CCE_OK) return rc;
+    }
+    return cce_compression_grads_accumulate(&m->compression_grads,
+                                            identity_grad,
+                                            residual_grad,
+                                            grad_count,
+                                            identity_scale,
+                                            residual_scale);
 }
 
 /* int8 weight-only PTQ over every linear specialist in the forest (qkv/proj/mlp/
@@ -1752,6 +1803,8 @@ cce_result cce_supra_load_packed(cce_supra_decomposed** out, const char* path) {
     if (!m) { fclose(f); return CCE_ERR_OOM; }
     int hp[5]; if (fread(hp, sizeof(int), 5, f) != 5) { free(m); fclose(f); return CCE_ERR_IO; }
     m->n_layer = hp[0]; m->n_embd = hp[1]; m->block_size = hp[2]; m->n_head = hp[3]; m->vocab_size = hp[4];
+    m->context_routing_mode = CCE_CONTEXT_ROUTING_FULL_KV;
+    cce_specialist_kv_budget_default(&m->kv_budget, m->block_size);
     int te[3]; if (fread(te, sizeof(int), 3, f) != 3) { free(m); fclose(f); return CCE_ERR_IO; }
     m->tok_emb_trit_bpr = te[2]; m->tok_emb_packed = 1;
     m->tok_emb_trit  = (uint8_t*)malloc((size_t)te[0] * te[2]);
@@ -2177,6 +2230,7 @@ static void kv_free(supra_kv_cache* c){ if(c){ free(c->K); free(c->V); free(c); 
    next-token logits. Returns CCE_OK. `scratch_scores` must hold >= block_size floats. */
 static cce_result kv_step(cce_supra_decomposed* m, supra_kv_cache* kv,
                           int token, int pos, float* scratch_scores,
+                          int* selected_indices,
                           float* logits_out, int cap) {
     int D=m->n_embd, H=m->n_head, hd=kv->head_dim, BS=kv->block_size;
     float scale = 1.0f / sqrtf((float)hd);
@@ -2208,17 +2262,36 @@ static cce_result kv_step(cce_supra_decomposed* m, supra_kv_cache* kv,
         /* per-head attention of q_t over cached k/v (positions 0..pos) */
         for (int h=0; h<H; h++) {
             const float* q = qkv.data + h*hd;          /* q of head h */
-            float maxv=-1e30f;
             for (int j=0; j<=pos; j++) {
                 const float* kj = kv->K + ((size_t)l*BS + j)*D + h*hd;
                 float s=0; for (int d=0; d<hd; d++) s += q[d]*kj[d];
-                s *= scale; scratch_scores[j]=s; if (s>maxv) maxv=s;
+                scratch_scores[j]=s * scale;
             }
-            float sum=0; for (int j=0;j<=pos;j++){ scratch_scores[j]=expf(scratch_scores[j]-maxv); sum+=scratch_scores[j]; }
+
+            int selected_count = pos + 1;
+            if (m->context_routing_mode == CCE_CONTEXT_ROUTING_SPARSE_ROUTING) {
+                cce_result src = cce_specialist_select_kv_tokens(
+                    scratch_scores, pos + 1, &m->kv_budget,
+                    selected_indices, BS, &selected_count);
+                if (src != CCE_OK || selected_count <= 0) {
+                    selected_indices[0] = pos;
+                    selected_count = 1;
+                }
+            } else {
+                for (int j=0; j<=pos; j++) selected_indices[j]=j;
+            }
+
+            float maxv=-1e30f;
+            for (int si=0; si<selected_count; si++) {
+                int j = selected_indices[si];
+                if (scratch_scores[j] > maxv) maxv = scratch_scores[j];
+            }
+            float sum=0; for (int si=0; si<selected_count; si++){ int j=selected_indices[si]; scratch_scores[j]=expf(scratch_scores[j]-maxv); sum+=scratch_scores[j]; }
             float inv = (sum>0)?1.0f/sum:1.0f;
             float* o = attn_in.data + h*hd;
             for (int d=0; d<hd; d++) o[d]=0.0f;
-            for (int j=0; j<=pos; j++) {
+            for (int si=0; si<selected_count; si++) {
+                int j = selected_indices[si];
                 const float* vj = kv->V + ((size_t)l*BS + j)*D + h*hd;
                 float w = scratch_scores[j]*inv;
                 for (int d=0; d<hd; d++) o[d] += w*vj[d];
@@ -2269,24 +2342,25 @@ int cce_supra_generate_text(cce_supra_decomposed* m, const int* prompt, int prom
     if (!kv) return 0;
     float* logits  = (float*)malloc((size_t)m->vocab_size * sizeof(float));
     float* scores  = (float*)malloc((size_t)m->block_size * sizeof(float));
-    if (!logits || !scores) { free(logits); free(scores); kv_free(kv); return 0; }
+    int* selected_indices = (int*)malloc((size_t)m->block_size * sizeof(int));
+    if (!logits || !scores || !selected_indices) { free(logits); free(scores); free(selected_indices); kv_free(kv); return 0; }
     unsigned int rng = 123456789U;
 
     int pos = 0;
     /* prefill the prompt; `logits` ends holding the next-token distribution */
     for (int i=0; i<prompt_len && pos<m->block_size; i++, pos++)
-        kv_step(m, kv, prompt[i], pos, scores, logits, m->vocab_size);
+        kv_step(m, kv, prompt[i], pos, scores, selected_indices, logits, m->vocab_size);
 
     int produced = 0;
     for (int step=0; step<max_new && pos<m->block_size; step++) {
         int next = sample_next_token(logits, m->vocab_size, temperature, top_k, &rng);
         out_ids[produced++] = next;
         if (next == 50256) break;          /* <|endoftext|> */
-        kv_step(m, kv, next, pos, scores, logits, m->vocab_size);
+        kv_step(m, kv, next, pos, scores, selected_indices, logits, m->vocab_size);
         pos++;
     }
 
-    free(logits); free(scores); kv_free(kv);
+    free(logits); free(scores); free(selected_indices); kv_free(kv);
     return produced;
 }
 

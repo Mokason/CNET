@@ -2,6 +2,7 @@
 #define CONTRACT_MCP_WIKI_H
 
 #include <stddef.h>
+#include "../cnet_export.h"
 
 /* MCP-style external knowledge contract (v1).
  * First capability: Wikipedia summary lookup.
@@ -18,7 +19,7 @@
 #define MCP_WIKI_MEMORY_FILE "cnet_mcp_facts.bin"
 
 /* Initialize the memory layer (idempotent). Creates file if missing. */
-int mcp_memory_init(void);
+CNET_API int mcp_memory_init(void);
 
 /* Recall a fact. Returns 1 if found (and copied), 0 if miss. */
 int mcp_recall_fact(const char *query, char *out_buf, size_t buf_cap);

@@ -334,6 +334,9 @@ int main(void) {
               cnb_add_unit(&b, inc, &inc_c, NULL) == 0,
               "both fixture units in the base");
 
+        /* exercise the read-only cross-unit overlap analyzer (mining-prefetch style) */
+        cnb_analyze_cross_unit_overlap(&b, NULL);
+
         registry_init(&reg);
         check(cnb_load_registry(&b, &reg, &skipped) == 0 && skipped == 0,
               "registry loads with zero skips");

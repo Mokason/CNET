@@ -1,4 +1,6 @@
 #ifndef CONTRACT_H
+
+#include "../cnet_export.h"
 #define CONTRACT_H
 
 #include <stddef.h>

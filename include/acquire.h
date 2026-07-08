@@ -39,6 +39,15 @@ struct CnetBase;
                about, decline to certify its noise. */
 typedef int (*CnetOracleFn)(const double *in, double *out, void *ctx);
 
+/* Optional batched probe: fill `count` output rows for `count` contiguous
+   input rows in ONE call (per-point verdicts in rcs: 0 ok, -1 reject,
+   +1 abstain). Returns 0, or <0 when the whole call failed — the miner
+   then falls back to the serial fn for those points. Semantics must be
+   IDENTICAL to `count` serial fn calls; the flagship harness enforces
+   this with a startup equivalence gate. */
+typedef int (*CnetOracleBatchFn)(const double *in, double *out, int *rcs,
+                                 size_t count, void *ctx);
+
 typedef struct {
     char name[ACQUIRE_NAME_MAX];
     Port input_port;
@@ -53,6 +62,8 @@ typedef struct {
        one model instance per GPU); mining then fans enumeration out and
        compacts serially in index order — tables/counters stay identical. */
     size_t parallel_width;
+    CnetOracleBatchFn fn_batch;  /* optional; NULL = serial only */
+    size_t batch_hint;           /* preferred points per fn_batch call */
 } OracleEntry;
 
 typedef struct {
@@ -162,6 +173,8 @@ int acquire_oracle_register(OracleRegistry *o, const char *name,
    fn calls from up to `width` threads. Only takes effect in OpenMP builds;
    mined exemplar tables and counters are identical to the serial path by
    construction (indexed slots, serial compaction). Returns 0, -1 unknown. */
+int acquire_oracle_set_batch(OracleRegistry *o, const char *name,
+                             CnetOracleBatchFn fn_batch, size_t batch_hint);
 int acquire_oracle_set_parallel(OracleRegistry *o, const char *name,
                                 size_t width);
 

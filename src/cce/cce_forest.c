@@ -1,5 +1,6 @@
 #include "../../include/cce/cce_forest.h"
 #include "../../include/cce/cce_block_patch.h"
+#include "../../include/cce/cce_router.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -324,21 +325,51 @@ cce_result cce_forest_add_patch_branch(cce_forest* f, const char* name,
 }
 
 cce_result cce_forest_recall(cce_forest* f, const float* input, int dim, int* branch_idx) {
-    (void)dim;
     if (!f || !input || !branch_idx || f->num_branches == 0) return CCE_ERR_INVALID_ARG;
 
-    int best = 0;
-    float best_d = 1e30f;
+    /* Wire SSMax retrieval: compute scores (centroid sim + goodness) then sparse softmax */
+    float* scores = (float*)malloc(f->num_branches * sizeof(float));
+    if (!scores) {
+        /* fallback to old centroid */
+        int best = 0;
+        float best_d = 1e30f;
+        for (int i = 0; i < f->num_branches; ++i) {
+            float d = distance(input, f->centroids + i * f->centroid_dim, f->centroid_dim);
+            if (d < best_d) { best_d = d; best = i; }
+        }
+        *branch_idx = best;
+        return CCE_OK;
+    }
 
     for (int i = 0; i < f->num_branches; ++i) {
-        float d = distance(input, f->centroids + i * f->centroid_dim, f->centroid_dim);
-        if (d < best_d) {
-            best_d = d;
+        cce_branch* br = &f->branches[i];
+        float sim = 0.0f;
+        int cdim = (br->centroid_dim < dim) ? br->centroid_dim : dim;
+        for (int d = 0; d < cdim; ++d) {
+            float diff = input[d] - br->centroid[d];
+            sim -= diff * diff;
+        }
+        float goodness = (br->cascade && br->cascade->goodness > 0.0f) ? br->cascade->goodness : 0.5f;
+        scores[i] = sim * 0.7f + goodness * 0.3f;
+    }
+
+    float* probs = (float*)calloc(f->num_branches, sizeof(float));
+    /* Use router SSMax for retrieval scoring */
+    cce_ssmax(scores, f->num_branches, 1.0f, probs, 1);  /* top-1 */
+
+    int best = 0;
+    float best_p = -1.0f;
+    for (int i = 0; i < f->num_branches; ++i) {
+        if (probs[i] > best_p) {
+            best_p = probs[i];
             best = i;
         }
     }
 
     *branch_idx = best;
+
+    free(scores);
+    free(probs);
     return CCE_OK;
 }
 
@@ -414,6 +445,26 @@ cce_result cce_forest_get_branch_blocks(cce_forest* f, int branch_idx,
 cce_result cce_forest_promote_to_hot(cce_forest* f, int branch_idx) {
     if (!f || branch_idx < 0 || branch_idx >= f->num_branches) return CCE_ERR_INVALID_ARG;
     return forest_ensure_resident(f, branch_idx, 1 /*want_writable: owned HOT copy*/);
+}
+
+cce_result cce_forest_set_branch_specialist_type(cce_forest* f,
+                                                 int branch_idx,
+                                                 cce_specialist_type_t specialist_type) {
+    if (!f || branch_idx < 0 || branch_idx >= f->num_branches) return CCE_ERR_INVALID_ARG;
+    if (specialist_type != CCE_SPECIALIST_GENERAL &&
+        specialist_type != CCE_SPECIALIST_NARRATIVE) {
+        return CCE_ERR_INVALID_ARG;
+    }
+    f->branches[branch_idx].specialist_type = specialist_type;
+    return CCE_OK;
+}
+
+cce_specialist_type_t cce_forest_get_branch_specialist_type(const cce_forest* f,
+                                                            int branch_idx) {
+    if (!f || branch_idx < 0 || branch_idx >= f->num_branches) {
+        return CCE_SPECIALIST_GENERAL;
+    }
+    return f->branches[branch_idx].specialist_type;
 }
 
 cce_result cce_forest_seal(cce_forest* f) {

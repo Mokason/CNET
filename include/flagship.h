@@ -51,6 +51,8 @@ typedef struct {
        dispatches per-thread state, e.g. one model instance per GPU); the
        harness passes it through to acquire_oracle_set_parallel. */
     size_t width;
+    CnetOracleBatchFn fn_batch;  /* optional batched probe (see acquire.h) */
+    size_t batch_hint;
 } FlagshipOracle;
 
 /* Prepare the oracle for conditioning token vocab[k] (= token_id). Returns 0

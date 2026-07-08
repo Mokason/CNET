@@ -5,6 +5,7 @@
 #include <stdint.h>
 
 #include "nn.h"
+#include "cnet_export.h"
 
 #define ROUTE_MAX_STEPS 8
 
@@ -167,11 +168,11 @@ typedef struct {
     int strict;
 } RoutePlan;
 
-void registry_init(PrimitiveRegistry *reg);
-void registry_set_dag_beam_limit(PrimitiveRegistry *reg, size_t dag_beam_limit);
+CNET_API void registry_init(PrimitiveRegistry *reg);
+CNET_API void registry_set_dag_beam_limit(PrimitiveRegistry *reg, size_t dag_beam_limit);
 
 /* Borrows btn (does not copy or own it). Returns 0 on success, -1 on failure. */
-int registry_add(PrimitiveRegistry *reg, BinaryTransformNetwork *btn, const char *name);
+CNET_API int registry_add(PrimitiveRegistry *reg, BinaryTransformNetwork *btn, const char *name);
 /* Persist every registered primitive as <name>.btn, <name>.contract, and
    <name>.stats inside dir. Returns 0 on success, -1 on failure. */
 int registry_save(const PrimitiveRegistry *reg, const char *dir);
@@ -268,7 +269,7 @@ size_t btn_cost(const BinaryTransformNetwork *btn);
    registry order. Returns 0 with *out filled (length 0 if input already
    satisfies goal), or -1 if no chain exists. Reads only contracts and
    reliability stats -- no data, no training. */
-int route_plan(
+CNET_API int route_plan(
     const PrimitiveRegistry *reg,
     Port input_port,
     Port goal_port,
@@ -284,7 +285,7 @@ int route_plan(
    out_cap must be >= the last step's output total. A length-0 plan validates
    and canonicalizes the input against the plan's goal port. Returns 0 on
    success, -1 on failure (including an ambiguous/out-of-domain handoff). */
-int route_execute(
+CNET_API int route_execute(
     const RoutePlan *plan,
     const double *input,
     size_t in_len,
@@ -1248,7 +1249,7 @@ void circuit_rank_artifact_print_report(
    records a reliability outcome: whether its RAW output was in-domain before
    the snap (recording never changes the run's result). out_cap must be >=
    the root's output total. Returns 0 on success, -1 on failure. */
-int dag_execute(
+CNET_API int dag_execute(
     const DagPlan *plan,
     const DagSource *sources,
     size_t n_sources,

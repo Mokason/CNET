@@ -36,6 +36,8 @@ typedef struct {
     float *logits;         /* model vocab_size scratch */
     cce_clgemm *gpu;       /* per-lane handle in pool mode; NULL otherwise */
     int prefix_token;      /* token whose KV occupies row 0; -1 = none */
+    float *batch_logits;   /* batched-probe scratch: rows x vocab_size */
+    size_t batch_rows;
 } OracleLane;
 
 typedef struct {
@@ -279,6 +281,49 @@ static int cce_cond_pair(const double *in, double *out, void *ctx) {
 }
 
 /* TOPK: the model's ordered top-3 within V, as 3 one-hot fields (the soul). */
+/* Margin-gate + encode the top-3 answer from `logits` for one probe.
+   Shared verbatim by the serial and batched topk oracles so the batch
+   path cannot drift semantically. Returns 0 (encoded) or 1 (abstain). */
+static int fs_topk_encode(const CceOracleCtx *c, const float *logits,
+                          double *out) {
+    char taken[4096] = {0};
+    size_t i, r, best;
+    if (c->margin_eps > 0.0) {
+        double m = fs_topk_set_on()
+                       ? fs_set_margin(logits, c->vocab, c->v, 3)
+                       : fs_decision_margin(logits, c->vocab, c->v, 3);
+        if (m < c->margin_eps)
+            return 1;   /* teacher-ambiguous: abstain from the cert domain */
+    }
+    for (i = 0; i < 3u * c->v; ++i) out[i] = 0.0;
+    {
+        size_t picks[3];
+        for (r = 0; r < 3; ++r) {
+            float bl;
+            best = (size_t)-1;
+            bl = 0.0f;
+            for (i = 0; i < c->v; ++i) {
+                if (taken[i]) continue;
+                if (best == (size_t)-1 || logits[c->vocab[i]] > bl) {
+                    bl = logits[c->vocab[i]];
+                    best = i;
+                }
+            }
+            taken[best] = 1;
+            picks[r] = best;
+        }
+        if (fs_topk_set_on()) {
+            /* canonical set encoding: ascending window index */
+            size_t tmp;
+            if (picks[0] > picks[1]) { tmp = picks[0]; picks[0] = picks[1]; picks[1] = tmp; }
+            if (picks[1] > picks[2]) { tmp = picks[1]; picks[1] = picks[2]; picks[2] = tmp; }
+            if (picks[0] > picks[1]) { tmp = picks[0]; picks[0] = picks[1]; picks[1] = tmp; }
+        }
+        for (r = 0; r < 3; ++r) out[r * c->v + picks[r]] = 1.0;
+    }
+    return 0;
+}
+
 static int cce_cond_topk(const double *in, double *out, void *ctx) {
     CceOracleCtx *c = (CceOracleCtx *)ctx;
     OracleLane *L = fs_lane(c);
@@ -308,38 +353,59 @@ static int cce_cond_topk(const double *in, double *out, void *ctx) {
             return -1;
         }
     }
-    if (c->margin_eps > 0.0) {
-        double m = fs_topk_set_on()
-                       ? fs_set_margin(L->logits, c->vocab, c->v, 3)
-                       : fs_decision_margin(L->logits, c->vocab, c->v, 3);
-        if (m < c->margin_eps)
-            return 1;   /* teacher-ambiguous: abstain from the cert domain */
+    return fs_topk_encode(c, L->logits, out);
+}
+
+
+/* Batched probes (CNET_ORACLE_BATCH=N): answer N w-continuations of the
+   pinned prefix in ONE forward — the projections run as N-row GEMMs
+   instead of N GEMVs. Encode/margin semantics are fs_topk_encode, shared
+   with the serial path; the startup equivalence gate refuses mining if
+   the two paths ever disagree. */
+static size_t fs_batch_hint(void) {
+    static long cached = -1;
+    if (cached < 0) {
+        const char *e = getenv("CNET_ORACLE_BATCH");
+        cached = e ? atol(e) : 0;
+        if (cached < 0) cached = 0;
+        if (cached > 256) cached = 256;
     }
-    for (i = 0; i < 3u * c->v; ++i) out[i] = 0.0;
-    {
-        size_t picks[3];
-        for (r = 0; r < 3; ++r) {
-            float bl;
-            best = (size_t)-1;
-            bl = 0.0f;
-            for (i = 0; i < c->v; ++i) {
-                if (taken[i]) continue;
-                if (best == (size_t)-1 || L->logits[c->vocab[i]] > bl) {
-                    bl = L->logits[c->vocab[i]];
-                    best = i;
-                }
-            }
-            taken[best] = 1;
-            picks[r] = best;
-        }
-        if (fs_topk_set_on()) {
-            /* canonical set encoding: ascending window index */
-            size_t tmp;
-            if (picks[0] > picks[1]) { tmp = picks[0]; picks[0] = picks[1]; picks[1] = tmp; }
-            if (picks[1] > picks[2]) { tmp = picks[1]; picks[1] = picks[2]; picks[2] = tmp; }
-            if (picks[0] > picks[1]) { tmp = picks[0]; picks[0] = picks[1]; picks[1] = tmp; }
-        }
-        for (r = 0; r < 3; ++r) out[r * c->v + picks[r]] = 1.0;
+    return (size_t)cached;
+}
+
+static int cce_cond_topk_batch(const double *in, double *out, int *rcs,
+                               size_t count, void *ctx) {
+    CceOracleCtx *c = (CceOracleCtx *)ctx;
+    OracleLane *L = fs_lane(c);
+    int toks[256];
+    size_t b, i;
+    if (count == 0) return 0;
+    if (count > 256) return -1;
+    if (fs_prefix_off()) return -1;   /* batch mode rides the pinned prefix */
+    if (fs_prefix(L, c->t) != 0) return -1;
+    if (L->batch_rows < count) {
+        float *nb = (float *)realloc(
+            L->batch_logits,
+            (size_t)count * (size_t)L->m->vocab_size * sizeof *nb);
+        if (!nb) return -1;
+        L->batch_logits = nb;
+        L->batch_rows = count;
+    }
+    for (b = 0; b < count; ++b) {
+        size_t w = 0;
+        const double *row = in + b * c->v;
+        for (i = 0; i < c->v; ++i)
+            if (row[i] > 0.5) w = i;
+        toks[b] = c->vocab[w];
+    }
+    L->m->cur_pos = fs_prefix_len(L->m);
+    if (cce_gguf_qwen2_forward_probes(L->m, toks, (int)count, L->batch_logits,
+                                      L->m->vocab_size) != CCE_OK)
+        return -1;
+    for (b = 0; b < count; ++b) {
+        const float *lg =
+            L->batch_logits + b * (size_t)L->m->vocab_size;
+        rcs[b] = fs_topk_encode(c, lg, out + b * 3u * c->v);
     }
     return 0;
 }
@@ -351,6 +417,11 @@ static int cce_maker(void *maker_ctx, size_t k, int token_id,
     CceOracleCtx *c = (CceOracleCtx *)maker_ctx;
     (void)k;
     c->t = token_id;
+    if (cce_task_fn == cce_cond_topk && fs_batch_hint() > 0 &&
+        !fs_prefix_off()) {
+        out->fn_batch = cce_cond_topk_batch;
+        out->batch_hint = fs_batch_hint();
+    }
     out->fn = cce_task_fn;
     out->ctx = c;
     out->width = c->nlanes;   /* pool mode: mining fans out one thread/lane */
@@ -1259,6 +1330,54 @@ int main(int argc, char **argv) {
         }
         cnb_free(&rbase);
         return units_drift > 0 ? 2 : 0;
+    }
+
+    /* Batched-oracle equivalence gate: the same 16 probes through the
+       serial oracle and ONE batched call must agree bit-exactly — verdicts
+       and encoded rows. Bit-equality is the design property (every row's
+       math is independent of its neighbors); any drift means the batch
+       path is broken and mining with it would certify the wrong teacher.
+       Refused loudly, like every other oracle gate. */
+    if (task == FLAGSHIP_TASK_TOPK && fs_batch_hint() > 0 &&
+        !fs_prefix_off()) {
+        size_t np = 16, pi, mismatches = 0;
+        double *g_in = (double *)calloc(np * V, sizeof(double));
+        double *g_ser = (double *)calloc(np * 3u * V, sizeof(double));
+        double *g_bat = (double *)calloc(np * 3u * V, sizeof(double));
+        int r_ser[16], r_bat[16];
+        if (!g_in || !g_ser || !g_bat) {
+            fprintf(stderr, "batch gate: OOM\n");
+            return 1;
+        }
+        ctx.t = vocab[0];
+        ctx.force_lane = 0;
+        for (pi = 0; pi < np; ++pi) {
+            g_in[pi * V + (pi * 17u) % V] = 1.0;
+            r_ser[pi] = cce_cond_topk(g_in + pi * V, g_ser + pi * 3u * V,
+                                      &ctx);
+        }
+        if (cce_cond_topk_batch(g_in, g_bat, r_bat, np, &ctx) != 0) {
+            fprintf(stderr, "batch gate: batched call FAILED — refusing "
+                            "to mine with CNET_ORACLE_BATCH\n");
+            return 1;
+        }
+        for (pi = 0; pi < np; ++pi) {
+            if (r_ser[pi] != r_bat[pi]) { mismatches++; continue; }
+            if (r_ser[pi] == 0 &&
+                memcmp(g_ser + pi * 3u * V, g_bat + pi * 3u * V,
+                       3u * V * sizeof(double)) != 0)
+                mismatches++;
+        }
+        ctx.force_lane = -1;
+        free(g_in); free(g_ser); free(g_bat);
+        if (mismatches > 0) {
+            fprintf(stderr, "batch gate: %lu/%lu probes DIVERGE between "
+                            "serial and batched oracles — refusing\n",
+                    (unsigned long)mismatches, (unsigned long)np);
+            return 1;
+        }
+        printf("batch oracle: equivalence OK (%lu probes, batch<=%lu)\n",
+               (unsigned long)np, (unsigned long)fs_batch_hint());
     }
 
     /* Run manifest: a run must be reproducible from its artifacts, not

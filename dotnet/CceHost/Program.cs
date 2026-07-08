@@ -40,10 +40,10 @@ if (agentMode)
 int[] windowIds = { 176938, 216001, 117514, 60730, 159876, 99544, 53877, 52141,
                     226926, 64506, 6164, 221965, 178945, 135086, 224777, 238110 };
 var text = new System.Collections.Generic.Dictionary<int, string> {
-    [176938]="正如", [216001]="もう少し", [117514]="であれば", [60730]="və",
-    [159876]="様に", [99544]="puisque", [53877]="者的", [52141]="တွေ",
-    [226926]="も含", [64506]="akin", [6164]="いる", [221965]="그걸",
-    [178945]="heps", [135086]="дода", [224777]="günst", [238110]="စ" };
+    [176938]="just_like", [216001]="a_bit_more", [117514]="if_so", [60730]="as",
+    [159876]="in_the_manner", [99544]="since", [53877]="one_who", [52141]="the_ones",
+    [226926]="also_includes", [64506]="similar", [6164]="being", [221965]="that_one",
+    [178945]="all_of_them", [135086]="added", [224777]="favorable", [238110]="five" };
 string Label(int idx) => idx >= 0 && idx < windowIds.Length
     ? $"{text.GetValueOrDefault(windowIds[idx], "?")}" : $"[win#{idx}]";
 

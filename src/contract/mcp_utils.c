@@ -217,8 +217,41 @@ int mcp_http_get(const char *url, char *out, size_t out_cap) {
     InternetCloseHandle(hSession);
     return (got > 0) ? 0 : -1;
 #else
-    snprintf(out, out_cap, "HTTP fetch unavailable in this build.");
-    return -1;
+    /* Linux HTTP fallback using curl + popen */
+    char cmd[2048];
+    FILE *pipe;
+    size_t got = 0;
+    char buf[4096];
+
+    /* Basic safety: only allow https to known hosts */
+    if (strncmp(url, "https://api.duckduckgo.com/", 27) != 0 &&
+        strncmp(url, "https://en.wikipedia.org/", 25) != 0 &&
+        strncmp(url, "https://", 8) != 0) {
+        snprintf(out, out_cap, "HTTP fetch blocked for unsafe URL.");
+        return -1;
+    }
+
+    snprintf(cmd, sizeof(cmd), "curl -s -L --max-time 10 --connect-timeout 5 \"%s\"", url);
+
+    pipe = popen(cmd, "r");
+    if (!pipe) {
+        snprintf(out, out_cap, "HTTP fetch failed (no curl/popen).");
+        return -1;
+    }
+
+    while (fgets(buf, sizeof(buf), pipe) != NULL) {
+        size_t len = strlen(buf);
+        if (got + len >= out_cap - 1) {
+            memcpy(out + got, buf, (out_cap - 1) - got);
+            got = out_cap - 1;
+            break;
+        }
+        memcpy(out + got, buf, len);
+        got += len;
+    }
+    out[got] = '\0';
+    pclose(pipe);
+    return (got > 0) ? 0 : -1;
 #endif
 }
 

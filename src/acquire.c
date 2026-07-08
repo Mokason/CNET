@@ -209,6 +209,20 @@ int acquire_oracle_register(OracleRegistry *o, const char *name,
     return 0;
 }
 
+int acquire_oracle_set_batch(OracleRegistry *o, const char *name,
+                             CnetOracleBatchFn fn_batch, size_t batch_hint) {
+    size_t i;
+    if (!o || !fn_batch) return -1;
+    for (i = 0; i < o->count; ++i) {
+        if (strcmp(o->entries[i].name, name) == 0) {
+            o->entries[i].fn_batch = fn_batch;
+            o->entries[i].batch_hint = batch_hint ? batch_hint : 16;
+            return 0;
+        }
+    }
+    return -1;
+}
+
 int acquire_oracle_set_parallel(OracleRegistry *o, const char *name,
                                 size_t width) {
     size_t i;
@@ -509,13 +523,69 @@ static int mine_from_oracle(OracleEntry *o, Port in_p, Port goal_p,
                     st[kk] = 1;
                     continue;
                 }
-                {
+                if (o->fn_batch) {
+                    st[kk] = 5;   /* encoded; probed by the batch pass below */
+                } else {
                     int rc = o->fn(slot_in + (size_t)kk * in_total,
                                    slot_raw + (size_t)kk * out_total, o->ctx);
                     st[kk] = (rc < 0) ? 2 : (rc > 0) ? 4 : 3;  /* 4=abstain */
                 }
             }
 #endif
+            /* Batched probe pass: gather encoded points into contiguous
+               staging chunks and let the oracle answer batch_hint points
+               per call (GEMV -> GEMM inside the teacher). Chunks fan out
+               across lanes exactly like the per-point path; per-point
+               verdicts land back in st[] so compaction below is unchanged
+               and the mined table stays byte-identical to serial mining. */
+            if (o->fn_batch) {
+                size_t bh = o->batch_hint ? o->batch_hint : 16;
+                size_t *pend = (size_t *)malloc(n_points * sizeof *pend);
+                size_t npend = 0, ck;
+                double *bin = (double *)malloc(bh * in_total * sizeof *bin);
+                double *bout = (double *)malloc(bh * out_total * sizeof *bout);
+                int *brcs = (int *)malloc(bh * sizeof *brcs);
+                if (pend && bin && bout && brcs) {
+                    size_t kk2;
+                    for (kk2 = 0; kk2 < n_points; ++kk2)
+                        if (st[kk2] == 5) pend[npend++] = kk2;
+                    for (ck = 0; ck < npend; ck += bh) {
+                        size_t cnt = (npend - ck < bh) ? npend - ck : bh;
+                        size_t bi;
+                        int brc;
+                        for (bi = 0; bi < cnt; ++bi)
+                            memcpy(bin + bi * in_total,
+                                   slot_in + pend[ck + bi] * in_total,
+                                   in_total * sizeof *bin);
+                        brc = o->fn_batch(bin, bout, brcs, cnt, o->ctx);
+                        for (bi = 0; bi < cnt; ++bi) {
+                            size_t sk = pend[ck + bi];
+                            if (brc < 0) {
+                                int rc = o->fn(slot_in + sk * in_total,
+                                               slot_raw + sk * out_total,
+                                               o->ctx);
+                                st[sk] = (rc < 0) ? 2 : (rc > 0) ? 4 : 3;
+                            } else {
+                                memcpy(slot_raw + sk * out_total,
+                                       bout + bi * out_total,
+                                       out_total * sizeof *bout);
+                                st[sk] = (brcs[bi] < 0) ? 2
+                                         : (brcs[bi] > 0) ? 4 : 3;
+                            }
+                        }
+                    }
+                } else {
+                    size_t kk2;
+                    for (kk2 = 0; kk2 < n_points; ++kk2)
+                        if (st[kk2] == 5) {
+                            int rc = o->fn(slot_in + kk2 * in_total,
+                                           slot_raw + kk2 * out_total,
+                                           o->ctx);
+                            st[kk2] = (rc < 0) ? 2 : (rc > 0) ? 4 : 3;
+                        }
+                }
+                free(pend); free(bin); free(bout); free(brcs);
+            }
             for (k = 0; k < n_points; ++k) {
                 if (st[k] == 0) continue;                  /* pilot duplicate */
                 attempts++;

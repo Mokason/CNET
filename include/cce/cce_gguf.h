@@ -175,6 +175,11 @@ typedef struct cce_gguf_qwen2 {
     float *k_cache;
     float *v_cache;
     int cur_pos;
+    int probe_batch;   /* internal: forward treats the n_tokens rows as
+                          INDEPENDENT single-token probes at cur_pos (same
+                          position, attend prefix+self only, no KV writes,
+                          per-row logits). Set via
+                          cce_gguf_qwen2_forward_probes, never directly. */
     int max_ctx;
 
     /* Optional per-instance GPU handle (overrides the process-global one
@@ -242,6 +247,15 @@ void cce_gguf_qwen2_free(cce_gguf_qwen2* m);
 
 /* Forward for one token or sequence (basic, for small tests) */
 cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_tokens, float* logits_out, int logits_cap);
+
+/* Batched probes: run n_probes INDEPENDENT single-token continuations of
+   the pinned prefix (rows share position cur_pos, each attends to the
+   prefix + itself only; the KV cache is not modified). Row b's logits land
+   at logits_out + b*logits_cap. Bit-identical per row to n_probes serial
+   forward calls — every projection is row-independent — while the GEMMs
+   run n_probes-wide instead of as GEMVs. cur_pos is left unchanged. */
+CCE_API cce_result cce_gguf_qwen2_forward_probes(cce_gguf_qwen2* m,
+    const int* probe_tokens, int n_probes, float* logits_out, int logits_cap);
 
 /* Optional GPU acceleration for the forward's linear seam (see
  * cce_clgemm.h). NULL (the default) = CPU path, byte-for-byte unchanged.

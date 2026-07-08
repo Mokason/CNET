@@ -1,7 +1,7 @@
 /* tok_forward: run the model on EXPLICIT token-id sequences and print each
  * one's top-K next-token ids. Loads the model ONCE and streams prompts from
  * stdin — one prompt per line (space-separated token ids) — so a driver
- * (realctx_probe.py) can ask many real-text questions cheaply. The enabler
+ * (external driver) can ask many real-text questions cheaply. The enabler
  * for real-context work: "The capital of France is ___" instead of bare <bos>.
  *
  * Usage: echo "2 651 3312 ..." | tok_forward <model>   (CNET_ORACLE_INT8/CNET_GPU honored)

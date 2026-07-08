@@ -354,6 +354,10 @@ int flagship_run(FlagshipConfig *cfg, FlagshipOracleMaker maker,
         if (orc_fn.width > 1)
             (void)acquire_oracle_set_parallel(&orc, "cce_cond_next",
                                               orc_fn.width);
+        if (orc_fn.fn_batch)
+            (void)acquire_oracle_set_batch(&orc, "cce_cond_next",
+                                           orc_fn.fn_batch,
+                                           orc_fn.batch_hint);
 
         local.attempted++;
         memset(&arep, 0, sizeof arep);

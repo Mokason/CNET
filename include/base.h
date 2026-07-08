@@ -1,6 +1,8 @@
 #ifndef CNET_BASE_H
 #define CNET_BASE_H
 
+#include "cnet_export.h"
+
 /* Unified base ("CNB1"): ONE sealed container replacing per-unit file sprawl.
  *
  * Holds unit payloads (exact CNU1 byte images) in a content-addressed blob
@@ -91,7 +93,7 @@ void cnb_free(CnetBase *b);
    parsing, parses into a temp base and swaps on full success; missing or
    malformed/tampered file -> -1 with *b untouched. */
 int cnb_save(const CnetBase *b, const char *path);
-int cnb_load(CnetBase *b, const char *path);
+CNET_API int cnb_load(CnetBase *b, const char *path);
 
 /* Add a unit (serialized via unit_save_mem). Mints every non-empty port tag
    with owner = unit name — ALL tags are near-miss-checked first, so the add
@@ -104,7 +106,7 @@ int cnb_add_unit(CnetBase *b, const BinaryTransformNetwork *btn,
 
 /* Materialize one unit by name (unit_load_mem; per-blob CNU1 seal verified).
    On success the caller owns btn (btn_free) and c (contract_free). */
-int cnb_get_unit(const CnetBase *b, const char *name,
+CNET_API int cnb_get_unit(const CnetBase *b, const char *name,
                  BinaryTransformNetwork *btn, Contract *c);
 
 /* 1 if a unit with this name exists in the base, else 0. */
@@ -152,11 +154,25 @@ int cnb_bind_oracles(const CnetBase *b, OracleRegistry *orc,
    Materialize every unit, re-certify each against its embedded contract, and
    admit via registry_add_certified. Failed replays are skipped (counted in
    *skipped_out), never admitted. Loaded BTNs are base-owned. */
-int cnb_load_registry(CnetBase *b, PrimitiveRegistry *reg, size_t *skipped_out);
+CNET_API int cnb_load_registry(CnetBase *b, PrimitiveRegistry *reg, size_t *skipped_out);
 
 /* ---- migration -------------------------------------------------------------
    Ingest a loose .cnu file (bytes verified by loading them once). Same
    idempotence/refusal semantics as cnb_add_unit. */
 int cnb_ingest_cnu_file(CnetBase *b, const char *path, int *reused_out);
+
+/* ---- cross-unit overlap analysis -----------------------------------------
+   Read-only "mining-prefetch" scan:
+   - For every unit: cnb_get_unit (read-only) then copy *only* its sealed
+     Contract's exemplar input+output tables (the data produced by
+     mine_from_oracle). Free the heavy BTN+contract immediately.
+   - Groups units that have byte-identical full input tables (or full
+     input+output tables).
+   - Reports unique input tables, largest identical groups, partial row
+     sharing outside groups, behavior dups, and full training dups.
+   - Also mixes goal into mining sampling (in acquire.c) to reduce
+     accidental identical input sets for different goals on the same input.
+   Prints a compact summary first. Safe, no side effects. */
+void cnb_analyze_cross_unit_overlap(const CnetBase *b, FILE *out);
 
 #endif /* CNET_BASE_H */

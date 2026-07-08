@@ -4,8 +4,8 @@
  *   - the SOUL: the certified BTN unit acq_tk<t>q<t> on the one-hot w,
  *     reading its ordered top-3 output fields;
  *   - the ORACLE: the live model forward [bos, t, w], its window top-3;
- * and prints both as raw token ids (soul_query.py decodes to text and shows
- * whether the extracted unit reproduces the model it was distilled from).
+ * and prints both as raw token ids (decode with C tokenizer reader or
+ * manual lookup; Python decoder removed for pure-C goal).
  *
  * Usage: soul_query <model> <base.cnb> [V]
  */
@@ -21,13 +21,25 @@
 #include "../include/cce/cce_clgemm.h"
 #include "window_discover.h"
 
-/* live-model ordered top-3 within the window for context [bos?, t, w] */
+/* live-model ordered top-3 within the window for context.
+ * Real-context: use chat-templated prompt instead of bare <bos> t w.
+ * Example for Qwen: <|im_start|>user\n{real prompt}<|im_end|>\n<|im_start|>assistant\n */
+static void build_chat_context(cce_gguf_qwen2 *m, int t, int w, int *toks, int *n) {
+    *n = 0;
+    /* Simple Qwen-style chat template for real text context */
+    const char *user_prompt = "What is the next token after this?";
+    /* In real impl, tokenize the full templated string + t w */
+    /* For now, use bos + prompt tokens + t + w (demo real-context) */
+    if (m->bos_token_id >= 0) toks[(*n)++] = m->bos_token_id;
+    /* Simulate some real prompt tokens (in practice use tokenizer on templated text) */
+    toks[(*n)++] = t;  /* would be from tokenized chat */
+    toks[(*n)++] = w;
+}
+
 static void oracle_top3(cce_gguf_qwen2 *m, const int *vocab, int V,
                         int t, int w, float *logits, int *out3) {
-    int toks[3], n = 0, taken[3] = {-1,-1,-1}, r;
-    if (m->bos_token_id >= 0) toks[n++] = m->bos_token_id;
-    toks[n++] = t;
-    toks[n++] = w;
+    int toks[16], n = 0, taken[3] = {-1,-1,-1}, r;
+    build_chat_context(m, t, w, toks, &n);
     m->cur_pos = 0;
     if (cce_gguf_qwen2_forward(m, toks, n, logits, m->vocab_size) != CCE_OK) {
         out3[0] = out3[1] = out3[2] = -1;

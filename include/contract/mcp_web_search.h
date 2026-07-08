@@ -2,6 +2,7 @@
 #define CONTRACT_MCP_WEB_SEARCH_H
 
 #include <stddef.h>
+#include "../cnet_export.h"
 
 /* MCP Web Search tool.
  * General web search (via DuckDuckGo JSON API for portability).
@@ -10,7 +11,7 @@
  * Used for broad knowledge lookup beyond Wikipedia.
  */
 
-int port_contract_mcp_web_search(
+CNET_API int port_contract_mcp_web_search(
     const char *query,
     char *results_out, size_t results_cap,
     int *from_cache

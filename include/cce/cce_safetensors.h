@@ -22,6 +22,8 @@
 #include "cce_block.h"
 #include "cce_cascade.h"
 #include "cce_forest.h"
+#include "cce_sparse_kv.h"
+#include "cce_compression.h"
 #include "../nn.h"   /* for BinaryTransformNetwork (sibling under include/) */
 
 #ifdef __cplusplus
@@ -239,6 +241,9 @@ typedef struct {
     uint8_t*      tok_emb_trit;        /* [vocab * ceil(n_embd/5)] */
     float*        tok_emb_scale;       /* [vocab] per-row absmean */
     int           tok_emb_trit_bpr;    /* bytes per row = ceil(n_embd/5) */
+    cce_context_routing_mode context_routing_mode;
+    cce_specialist_kv_budget kv_budget;
+    cce_compression_grads compression_grads;
 } cce_supra_decomposed;
 
 /* Load (and decompose) the Supra model into independent CNet specialists.
@@ -249,6 +254,24 @@ cce_result cce_supra_load_decomposed(cce_supra_decomposed** out,
                                      const char* cache_dir /* NULL = "supra_cache" */,
                                      const char* revision  /* NULL = main */);
 void       cce_supra_free_decomposed(cce_supra_decomposed* m);
+
+/* Select full KV or sparse per-specialist KV routing for autoregressive generation. */
+cce_result cce_supra_set_context_routing(cce_supra_decomposed* m,
+                                         cce_context_routing_mode mode,
+                                         const cce_specialist_kv_budget* budget);
+
+/* Optional Grads[] buffer for compression-aware recovery passes. It preserves
+   identity and residual backward paths while quantization/packing changes the
+   forward representation. */
+cce_result cce_supra_enable_gradient_accumulation(cce_supra_decomposed* m,
+                                                  size_t grad_count);
+void       cce_supra_clear_gradient_accumulation(cce_supra_decomposed* m);
+cce_result cce_supra_accumulate_compression_gradient(cce_supra_decomposed* m,
+                                                     const float* identity_grad,
+                                                     const float* residual_grad,
+                                                     size_t grad_count,
+                                                     float identity_scale,
+                                                     float residual_scale);
 
 /* int8 weight-only post-training quantization of all linear specialists
    (per-output-channel, symmetric). Returns #blocks quantized or -1.

@@ -4,6 +4,8 @@
 #include <stddef.h>
 #include <stdatomic.h>
 
+#include "cnet_export.h"
+
 /* Interface contract for a primitive's input/output wire format.
    family/field_width/field_count describe REPRESENTATION: a ONEHOT 16 is a
    16-way one-hot whether it encodes a hex digit, a nucleotide, or a chess
@@ -151,7 +153,7 @@ int nn_save(const NeuralNetwork *nn, const char *path);
 
 int nn_load(NeuralNetwork *nn, const char *path);
 
-int btn_init(
+CNET_API int btn_init(
     BinaryTransformNetwork *btn,
     size_t input_count,
     size_t output_count,
@@ -161,9 +163,9 @@ int btn_init(
     unsigned int seed
 );
 
-void btn_free(BinaryTransformNetwork *btn);
+CNET_API void btn_free(BinaryTransformNetwork *btn);
 
-const double *btn_forward(BinaryTransformNetwork *btn, const double *inputs);
+CNET_API const double *btn_forward(BinaryTransformNetwork *btn, const double *inputs);
 
 /* Inference-only ternary mode.
    When enabled, weights and biases are quantized per-pass to {-1, 0, +1}.

@@ -29,9 +29,17 @@ typedef enum {
     CCE_TIER_COLD  = 2    /* on disk, not mapped */
 } cce_tier_t;
 
+/* Specialist intent used by higher-level routers. Default GENERAL preserves
+   existing routing behavior for old archives and zero-initialized branches. */
+typedef enum {
+    CCE_SPECIALIST_GENERAL = 0,
+    CCE_SPECIALIST_NARRATIVE = 1
+} cce_specialist_type_t;
+
 /* A single branch entry */
 typedef struct {
     cce_cascade* cascade;   /* owned when HOT; zero-copy view when is_view */
+    cce_specialist_type_t specialist_type;
     size_t       archive_offset;
     size_t       archive_size;
     cce_tier_t   tier;
@@ -187,6 +195,12 @@ CCE_API cce_result cce_forest_get_connections(cce_forest* forest, int branch_idx
 CCE_API cce_result cce_forest_get_branch_blocks(cce_forest* forest, int branch_idx,
                                                 int types[], int input_dims[], int output_dims[],
                                                 int* num, int max_blocks);
+
+CCE_API cce_result cce_forest_set_branch_specialist_type(cce_forest* forest,
+                                                          int branch_idx,
+                                                          cce_specialist_type_t specialist_type);
+CCE_API cce_specialist_type_t cce_forest_get_branch_specialist_type(const cce_forest* forest,
+                                                                     int branch_idx);
 
 /* Set default diff mode for the forest (propagates to new branches and ABI adapt).
    Existing branches keep their training behavior unless re-adapted with new learner. */

@@ -1,7 +1,13 @@
-/* CNB base inspector: counts, certify-on-load verification, tag audit, and
- * (optionally) unit-by-unit behavior-digest comparison against a second base.
+/* CNB base inspector: counts, certify-on-load verification, tag audit,
+ * cross-unit overlap analysis (read-only mining-prefetch of exemplar inputs),
+ * and (optionally) fidelity vs a second base.
  *
- * Usage: cnb_audit <base.cnb> [other.cnb]
+ * Usage: cnb_audit <base.cnb> [other.cnb | --no-registry]
+ *   --no-registry   Skip certify-on-load. Runs tag audit + the improved
+ *                   read-only cross-unit overlap analyzer (prefetches sealed
+ *                   exemplar input/output tables, reports identical groups,
+ *                   partials, full dups). Fast path for analysis.
+ *
  * With two bases: for every unit name present in BOTH, compare behavior
  * digests — equality means the two bases certify byte-identical behavior for
  * that skill (the fidelity check: re-mine into a fresh base, compare). */
@@ -15,10 +21,15 @@ int main(int argc, char **argv) {
     CnetBase a, b;
     PrimitiveRegistry reg;
     size_t skipped = 0, i, j;
+    int do_registry = 1;
 
     if (argc < 2) {
-        fprintf(stderr, "usage: %s <base.cnb> [other.cnb]\n", argv[0]);
+        fprintf(stderr, "usage: %s <base.cnb> [other.cnb | --no-registry]\n", argv[0]);
         return 2;
+    }
+
+    if (argc >= 3 && strcmp(argv[2], "--no-registry") == 0) {
+        do_registry = 0;
     }
 
     cnb_init(&a);
@@ -31,22 +42,30 @@ int main(int argc, char **argv) {
            (unsigned long)a.tag_count, (unsigned long)a.oracle_count,
            (unsigned long)a.stats_count);
 
-    registry_init(&reg);
-    if (cnb_load_registry(&a, &reg, &skipped) != 0) {
-        fprintf(stderr, "registry load failed\n");
-        return 1;
+    if (do_registry) {
+        registry_init(&reg);
+        if (cnb_load_registry(&a, &reg, &skipped) != 0) {
+            fprintf(stderr, "registry load failed\n");
+            return 1;
+        }
+        printf("certify-on-load: %lu certified, %lu SKIPPED (failed replay)\n",
+               (unsigned long)reg.count, (unsigned long)skipped);
+        registry_free(&reg);
+    } else {
+        printf("certify-on-load: SKIPPED (--no-registry)\n");
     }
-    printf("certify-on-load: %lu certified, %lu SKIPPED (failed replay)\n",
-           (unsigned long)reg.count, (unsigned long)skipped);
-    registry_free(&reg);
 
     cnb_tag_audit(&a, stdout);
 
-    if (argc > 2) {
+    cnb_analyze_cross_unit_overlap(&a, stdout);
+
+    /* Fidelity comparison only if a real second base arg is given (not a flag). */
+    if (argc > 2 && argv[2][0] != '-') {
         size_t both = 0, match = 0;
         cnb_init(&b);
         if (cnb_load(&b, argv[2]) != 0) {
             fprintf(stderr, "cannot load %s\n", argv[2]);
+            cnb_free(&a);
             return 1;
         }
         for (i = 0; i < b.unit_count; ++i) {
