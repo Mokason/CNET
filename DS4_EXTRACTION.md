@@ -53,6 +53,20 @@ keeping the same argmax but damaging the distribution. CNET's golden battery
 is 32 argmax probes — add the distribution check. Cheap, high-integrity, on
 the exact seam CNET already has. (Needs reference logprobs per teacher.)
 
+## Tier 4b — Contrastive activation directions (`dir-steering/`)
+
+Builds a per-layer normalized direction from CONTRASTIVE PROMPT PAIRS
+(mean activation difference of a good-set vs a bad-set at FFN output;
+`dir-steering/tools/build_direction.py`) and applies it at runtime as
+`y = y - scale * dir[layer] * dot(dir[layer], y)` (project out at +scale,
+amplify at -scale). This is the principled recipe AICIMO's RouteOnRole /
+Drole "role slices" only gesture at — a real way to compute a
+memory-witness / role direction from contrastive activations instead of
+CNET's current hash-fallback. Adapt (not drop-in): CNET's forward is a
+mining oracle, not a generation path, so the value is the extraction
+method (paired-contrast mean-diff → normalized per-layer direction),
+feeding a real RouteOnRole. Medium-term, tied to the AICIMO role work.
+
 ## Tier 5 — C tokenizer + generation stack
 
 Full byte-level BPE in C (`bpe_tokenize_text` `ds4.c:22153`, `vocab_load` from
