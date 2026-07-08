@@ -1326,6 +1326,37 @@ int main(int argc, char **argv) {
                 int rc2 = cce_task_fn(irow, got, &ctx);
                 if (rc2 > 0) { u_abst++; continue; }
                 if (rc2 < 0) { u_err++; continue; }
+                /* CNET_RECERT_SETCMP=1: compare the top-3 as UNORDERED sets.
+                   Same-teacher audits want exact replay (default memcmp);
+                   cross-teacher audits ask a different question — do two
+                   independent models even agree on WHICH tokens follow —
+                   and exact rank order across models is near-zero by
+                   construction. */
+                if (getenv("CNET_RECERT_SETCMP") &&
+                    getenv("CNET_RECERT_SETCMP")[0] == '1' &&
+                    out_total % 3 == 0) {
+                    size_t fw = out_total / 3, fi, gi;
+                    size_t gp[3], op[3], tmp2;
+                    for (fi = 0; fi < 3; ++fi) {
+                        gp[fi] = 0; op[fi] = 0;
+                        for (gi = 1; gi < fw; ++gi) {
+                            if (got[fi * fw + gi] > got[fi * fw + gp[fi]])
+                                gp[fi] = gi;
+                            if (orow[fi * fw + gi] > orow[fi * fw + op[fi]])
+                                op[fi] = gi;
+                        }
+                    }
+                    for (fi = 0; fi < 2; ++fi)
+                        for (gi = 0; gi < 2 - fi; ++gi) {
+                            if (gp[gi] > gp[gi + 1]) { tmp2 = gp[gi]; gp[gi] = gp[gi + 1]; gp[gi + 1] = tmp2; }
+                            if (op[gi] > op[gi + 1]) { tmp2 = op[gi]; op[gi] = op[gi + 1]; op[gi + 1] = tmp2; }
+                        }
+                    if (gp[0] == op[0] && gp[1] == op[1] && gp[2] == op[2])
+                        u_match++;
+                    else
+                        u_miss++;
+                    continue;
+                }
                 if (memcmp(got, orow, out_total * sizeof *got) == 0) u_match++;
                 else u_miss++;
             }
