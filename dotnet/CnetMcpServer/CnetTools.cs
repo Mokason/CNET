@@ -157,6 +157,31 @@ namespace CnetMcpServer
             return v;
         }
 
+        /// <summary>Recipe provenance from the mining run's manifest sidecar,
+        /// so callers learn WHAT the units certify (semantics, margins, tier)
+        /// rather than trusting whoever ran the miner.</summary>
+        private string RecipeSummary()
+        {
+            try
+            {
+                string mpath = _basePath + ".manifest.json";
+                if (!File.Exists(mpath)) return "";
+                using var doc = JsonDocument.Parse(File.ReadAllText(mpath));
+                var r = doc.RootElement;
+                string S(string k) =>
+                    r.TryGetProperty(k, out var v)
+                        ? (v.ValueKind == JsonValueKind.String ? v.GetString() ?? "" : v.GetRawText())
+                        : "?";
+                return $" Recipe (manifest): task {S("task")}, targets {S("target_semantics")}, " +
+                    $"margin ε {S("margin_eps")}, sample {S("sample_count")} @ Wilson ≥ {S("min_accuracy_bound")}, " +
+                    $"teacher {Path.GetFileName(S("model"))}, build {S("build_rev")}.";
+            }
+            catch
+            {
+                return "";
+            }
+        }
+
         private static uint Fnv1a(string text)
         {
             uint hash = 2166136261;
@@ -867,7 +892,7 @@ namespace CnetMcpServer
             return $"[CNET] {roster.Count} certified units resolved from {_rosterSource}. " +
                 $"Sample: {string.Join("; ", samples)}. " +
                 "Units follow the acq_<tag> convention with 256-wide w_cur input ports (contract cce_cond_next). " +
-                tokenizerNote;
+                tokenizerNote + RecipeSummary();
         }
     }
 }

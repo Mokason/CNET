@@ -1905,8 +1905,11 @@ cce_result cce_gguf_load_qwen2(cce_gguf_qwen2** out, const char* path) {
     if (cce_gguf_find_tensor(g, "output.weight") >= 0) {
         cce_gguf_load_tensor_by_name(g, "output.weight", &m->output);
     } else {
-        /* tied */
-        cce_gguf_load_tensor_by_name(g, "token_embd.weight", &m->output);
+        /* tied head: alias the already-loaded embedding instead of
+           dequanting a second multi-GB fp32 copy of the same tensor
+           (owns_memory=0 keeps cce_tensor_free from double-freeing). */
+        m->output = m->tok_emb;
+        m->output.owns_memory = 0;
     }
     GTRACE("output/head loaded");
 

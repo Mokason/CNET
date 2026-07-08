@@ -42,6 +42,12 @@ OOB_TEST := tests/test_encode_oob.c
 CONTRACT_TEST := tests/test_contract.c
 COMPOSE_TEST := tests/test_composition.c
 ROUTER_TEST := tests/test_router.c
+SPARSE_KV_TEST := tests/sparse_kv_test.c
+NARRATIVE_COHERENCE_TEST := tests/narrative_coherence_test.c
+PHASE4_UNCERTAINTY_TEST := tests/phase4_uncertainty_test.c
+PHASE5_INTEGRATION_TOOL := tools/register_compression_improvements.c
+PHASE5_INTEGRATION_TEST := tests/phase5_integration_test.c
+COUNTERFACTUAL_ROUTER_TEST := tests/router/counterfactual_test.c
 ROUTE_DEMO := tests/route_demo.c
 DAG_TEST := tests/test_dag.c
 DAG_DEMO := tests/dag_demo.c
@@ -56,17 +62,22 @@ CCE_CASCADE := src/cce/cce_cascade.c
 CCE_ARCHIVE := src/cce/cce_archive.c
 CCE_FOREST  := src/cce/cce_forest.c
 CCE_ROUTER  := src/cce/cce_router.c
+CCE_SPARSE_KV := src/cce/cce_sparse_kv.c
+CCE_UNCERTAINTY := src/cce/cce_uncertainty.c
+CCE_COMPRESSION := src/cce/cce_compression.c
 CCE_LEARN   := src/cce/cce_learn.c
 CCE_PATCH   := src/cce/cce_block_patch.c
 CCE_GPU     := src/cce/cce_gpu.c
 CCE_WORDLM  := src/cce/cce_wordlm.c
+CCE_AICIMO  := src/cce/cce_aicimo.c
 CCE_PERCEPTUAL := src/cce/cce_perceptual_leaf.c
 CCE_MODEL := src/cce/cce_model.c
 CCE_MODEL_IO := src/cce/cce_model_io.c
 CCE_DATASET := src/cce/cce_dataset.c
 CCE_AUTOGRAD := src/cce/cce_autograd.c src/cce/cce_autograd_ops.c
 CCE_SAFETENSORS := src/cce/cce_safetensors.c
-CCE_GGUF := src/cce/cce_gguf.c
+CCE_GGUF := src/cce/cce_gguf.c $(CCE_AICIMO)
+CCE_AICIMO  := src/cce/cce_aicimo.c
 
 # Build directory for all executables to avoid polluting the root with endless .exe junk.
 # Same philosophy as the fixed-temp cleanup for .cce / logs.
@@ -108,7 +119,7 @@ CCE_TIERRT  := src/cce/cce_tier_runtime.c
 CCE_SIMILAR := src/cce/cce_similar.c
 CCE_CLGEMM  := src/cce/cce_clgemm.c
 CCE_SUPRA_TRAIN := src/cce/cce_supra_train.c
-CCE := $(CCE_TENSOR) $(CCE_BLOCK) $(CCE_CASCADE) $(CCE_ARCHIVE) $(CCE_FOREST) $(CCE_ROUTER) $(CCE_LEARN) $(CCE_PATCH) $(CCE_GPU) $(CCE_ABI) $(CCE_CUDA_OBJ) $(CCE_PERCEPTUAL) $(CCE_WORDLM) $(CCE_MODEL) $(CCE_MODEL_IO) $(CCE_DATASET) $(CCE_AUTOGRAD) $(CCE_SAFETENSORS) $(CCE_GGUF) $(CCE_DETECT) $(CCE_SSM) $(CCE_ST_LLAMA) $(CCE_SPECGRAPH) $(CCE_WSTORE) $(CCE_TIERRT) $(CCE_SIMILAR) $(CCE_CLGEMM) $(CCE_SUPRA_TRAIN)
+CCE := $(CCE_TENSOR) $(CCE_BLOCK) $(CCE_CASCADE) $(CCE_ARCHIVE) $(CCE_FOREST) $(CCE_ROUTER) $(CCE_SPARSE_KV) $(CCE_UNCERTAINTY) $(CCE_COMPRESSION) $(CCE_LEARN) $(CCE_PATCH) $(CCE_GPU) $(CCE_ABI) $(CCE_CUDA_OBJ) $(CCE_PERCEPTUAL) $(CCE_WORDLM) $(CCE_MODEL) $(CCE_MODEL_IO) $(CCE_DATASET) $(CCE_AUTOGRAD) $(CCE_SAFETENSORS) $(CCE_GGUF) $(CCE_DETECT) $(CCE_SSM) $(CCE_ST_LLAMA) $(CCE_SPECGRAPH) $(CCE_WSTORE) $(CCE_TIERRT) $(CCE_SIMILAR) $(CCE_CLGEMM) $(CCE_SUPRA_TRAIN)
 SCAN := src/scan.c
 CERTIFY_TEST := tests/test_certify.c
 CERTIFY_DEMO := tests/certify_demo.c
@@ -174,7 +185,7 @@ SYNONYMS_TEST := tests/test_synonyms.c
 TILEINDEX_TEST := tests/test_tile_index.c
 CONSOLIDATE_TEST := tests/test_tile_consolidate.c
 
-.PHONY: all run test verify verify-long legacy_test compose route dag hetero split chunk certify property coverage conformal logicgate decimal circuit study capacity library margin fuzzy stochastic fastpath throughput residue expr attention attention_study lifecycle_bench lbench proposal_sidecar probe_overhead belowbeam_chars struct_pref dgate_bench compounding_bench cce_smoke cce_train_bench cce_view forest_view wordlm wordlm_bitnet cce_dll cnet_dll cce_safetensors_test cce_gguf_test cce_model_test cce_autograd_test endgate jsonstory pdftest pdflearn compound tiermem_test graduate fontdecode tfidf synonyms tileindex consolidate clean
+.PHONY: all run test verify verify-long legacy_test compose route dag hetero split chunk certify property coverage conformal logicgate decimal circuit study capacity library margin fuzzy stochastic fastpath throughput residue expr attention attention_study lifecycle_bench lbench proposal_sidecar probe_overhead belowbeam_chars struct_pref dgate_bench compounding_bench cce_smoke counterfactual_router_test sparse_kv_test narrative_coherence_test phase4_uncertainty_test register_compression_improvements phase5_integration_test cce_train_bench cce_view forest_view wordlm wordlm_bitnet cce_dll cnet_dll cce_safetensors_test cce_gguf_test cce_model_test cce_autograd_test endgate jsonstory pdftest pdflearn compound tiermem_test graduate fontdecode tfidf synonyms tileindex consolidate clean
 
 all: nn_demo
 
@@ -211,6 +222,29 @@ test_contract: $(SRC) $(CONTRACT_TEST) include/nn.h
 # router.c links those two as well.
 test_router: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(SCAN) $(ROUTER_TEST) include/nn.h include/router.h include/plan_table.h include/contract/contract.h include/scan.h
 	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(SCAN) $(ROUTER_TEST) $(LDFLAGS)
+
+counterfactual_router_test: $(CCE_ROUTER) $(COUNTERFACTUAL_ROUTER_TEST) include/cce/cce_router.h include/cce/cce_forest.h
+	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $(CCE_ROUTER) $(COUNTERFACTUAL_ROUTER_TEST) $(LDFLAGS)
+	./$(BIN_DIR)/counterfactual_router_test
+
+sparse_kv_test: $(CCE_SPARSE_KV) $(SPARSE_KV_TEST) include/cce/cce_sparse_kv.h
+	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $(CCE_SPARSE_KV) $(SPARSE_KV_TEST) $(LDFLAGS)
+	./$(BIN_DIR)/sparse_kv_test
+
+narrative_coherence_test: src/contract/narrative_coherence.c $(CCE_ROUTER) $(NARRATIVE_COHERENCE_TEST) include/contract/narrative_coherence.h include/cce/cce_router.h include/cce/cce_forest.h
+	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ src/contract/narrative_coherence.c $(CCE_ROUTER) $(NARRATIVE_COHERENCE_TEST) $(LDFLAGS)
+	./$(BIN_DIR)/narrative_coherence_test
+
+phase4_uncertainty_test: $(CCE_UNCERTAINTY) $(CCE_COMPRESSION) $(PHASE4_UNCERTAINTY_TEST) include/cce/cce_uncertainty.h include/cce/cce_compression.h include/cce/cce_router.h
+	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $(CCE_UNCERTAINTY) $(CCE_COMPRESSION) $(PHASE4_UNCERTAINTY_TEST) $(LDFLAGS)
+	./$(BIN_DIR)/phase4_uncertainty_test
+
+register_compression_improvements: $(PHASE5_INTEGRATION_TOOL)
+	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $(PHASE5_INTEGRATION_TOOL) $(LDFLAGS)
+
+phase5_integration_test: register_compression_improvements $(PHASE5_INTEGRATION_TEST)
+	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $(PHASE5_INTEGRATION_TEST) $(LDFLAGS)
+	./$(BIN_DIR)/phase5_integration_test
 
 test_dag: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(DAG_TEST) include/nn.h include/router.h include/plan_table.h include/contract/contract.h
 	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(DAG_TEST) $(LDFLAGS)
@@ -282,6 +316,10 @@ base: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SC
 flagship: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(CONFORMAL) $(ACQUIRE_SRC) $(BASE_SRC) $(FLAGSHIP_SRC) $(FLAGSHIP_TEST) include/acquire.h include/base.h include/flagship.h
 	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(CONFORMAL) $(ACQUIRE_SRC) $(BASE_SRC) $(FLAGSHIP_SRC) $(FLAGSHIP_TEST) $(LDFLAGS)
 	./$(BIN_DIR)/flagship > logs/flagship.log 2>&1 || echo "test exited non-zero (see log)"
+	@CNET_ACQ_ADAPTIVE=1 ./$(BIN_DIR)/flagship > logs/flagship.adaptive.log 2>&1 || echo "flagship[adaptive] non-zero (see log)"
+	@CNET_ACQ_WARMSTART=1 ./$(BIN_DIR)/flagship > logs/flagship.warmstart.log 2>&1 || echo "flagship[warmstart] non-zero (see log)"
+	@CNET_TOPK_SET=1 ./$(BIN_DIR)/flagship > logs/flagship.topkset.log 2>&1 || echo "flagship[topkset] non-zero (see log)"
+	@CNET_ACQ_ADAPTIVE=1 CNET_ACQ_WARMSTART=1 CNET_TOPK_SET=1 ./$(BIN_DIR)/flagship > logs/flagship.allon.log 2>&1 || echo "flagship[all-on] non-zero (see log)"
 
 # Base inspector: counts + certify-on-load + tag audit + digest fidelity
 # compare between two bases. Usage: ./bin/cnb_audit <base.cnb> [other.cnb]
@@ -294,7 +332,7 @@ cnb_audit: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE)
 # pragmas parallelize across OUTPUT TILES (per-output sums keep their order),
 # so threading is bit-identity-safe — verified by digest-identical re-mines
 # against serial bases. Keeps -mno-avx (this exe links src/router).
-flagship_run_build: CFLAGS := $(CFLAGS) $(OMPFLAGS)
+flagship_run_build: CFLAGS := $(CFLAGS) $(OMPFLAGS) -DCNET_BUILD_REV='"$(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)"'
 flagship_run_build: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(CONFORMAL) $(ACQUIRE_SRC) $(BASE_SRC) $(FLAGSHIP_SRC) $(CCE) $(CCE_CUDA_OBJ) tests/flagship_run.c include/flagship.h
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/flagship_run $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(CONFORMAL) $(ACQUIRE_SRC) $(BASE_SRC) $(FLAGSHIP_SRC) $(CCE) $(CCE_CUDA_OBJ) tests/flagship_run.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 
@@ -1090,3 +1128,9 @@ gguf_dump_build: $(CCE) tests/gguf_dump.c
 
 gemma_ref_build: $(CCE) tests/gemma_ref.c
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/gemma_ref $(CCE) tests/gemma_ref.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+
+
+# AICIMO test target (pure C)
+aicimo_smoke: $(CCE) tests/aicimo_smoke.c
+	$(CC) $(CFLAGS) -o $(BIN_DIR)/aicimo_smoke $(CCE) tests/aicimo_smoke.c $(LDFLAGS)
+	./$(BIN_DIR)/aicimo_smoke

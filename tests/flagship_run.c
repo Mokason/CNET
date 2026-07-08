@@ -81,6 +81,46 @@ static double fs_decision_margin(const float *logits, const int *vocab,
     return minfg;
 }
 
+/* Set-valued top-k (CNET_TOPK_SET=1): certify the teacher's top-3 SET
+   instead of its knife-edge ordering. Near-ties INSIDE the top-3 are the
+   dominant refusal cause on interactive-frequency tokens, yet the set
+   membership is stable — the ambiguity is real model knowledge, so
+   certify it rather than abstain. Mechanically: picks are written in
+   canonical (ascending window-index) order, so students train on and
+   certification replays a representation that order flips cannot change;
+   the abstention margin narrows to the only gap that still matters, the
+   rank-3/rank-4 boundary. */
+static int fs_topk_set_on(void) {
+    static int cached = -1;
+    if (cached < 0) {
+        const char *e = getenv("CNET_TOPK_SET");
+        cached = (e && e[0] == '1') ? 1 : 0;
+    }
+    return cached;
+}
+
+/* Smallest gap whose crossing would change top-`depth` MEMBERSHIP:
+   logit[rank depth] - logit[rank depth+1] over the window. */
+static double fs_set_margin(const float *logits, const int *vocab,
+                            size_t v, size_t depth) {
+    double top[8];
+    size_t i, r, n = depth + 1;
+    if (n > 8) n = 8;
+    for (r = 0; r < n; ++r) top[r] = -1e30;
+    for (i = 0; i < v; ++i) {
+        double l = (double)logits[vocab[i]];
+        for (r = 0; r < n; ++r) {
+            if (l > top[r]) {
+                size_t s;
+                for (s = n - 1; s > r; --s) top[s] = top[s - 1];
+                top[r] = l;
+                break;
+            }
+        }
+    }
+    return top[depth - 1] - top[depth];
+}
+
 /* Lane for THIS call: pinned when force_lane is set, else by OMP thread id
    (the mining loop runs one thread per lane). Also scopes the calling
    thread's nested-OMP team so `lanes x inner` matches the machine. */
@@ -296,46 +336,6 @@ static int cce_cond_topk(const double *in, double *out, void *ctx) {
     return 0;
 }
 
-/* Set-valued top-k (CNET_TOPK_SET=1): certify the teacher's top-3 SET
-   instead of its knife-edge ordering. Near-ties INSIDE the top-3 are the
-   dominant refusal cause on interactive-frequency tokens, yet the set
-   membership is stable — the ambiguity is real model knowledge, so
-   certify it rather than abstain. Mechanically: picks are written in
-   canonical (ascending window-index) order, so students train on and
-   certification replays a representation that order flips cannot change;
-   the abstention margin narrows to the only gap that still matters, the
-   rank-3/rank-4 boundary. */
-static int fs_topk_set_on(void) {
-    static int cached = -1;
-    if (cached < 0) {
-        const char *e = getenv("CNET_TOPK_SET");
-        cached = (e && e[0] == '1') ? 1 : 0;
-    }
-    return cached;
-}
-
-/* Smallest gap whose crossing would change top-`depth` MEMBERSHIP:
-   logit[rank depth] - logit[rank depth+1] over the window. */
-static double fs_set_margin(const float *logits, const int *vocab,
-                            size_t v, size_t depth) {
-    double top[8];
-    size_t i, r, n = depth + 1;
-    if (n > 8) n = 8;
-    for (r = 0; r < n; ++r) top[r] = -1e30;
-    for (i = 0; i < v; ++i) {
-        double l = (double)logits[vocab[i]];
-        for (r = 0; r < n; ++r) {
-            if (l > top[r]) {
-                size_t s;
-                for (s = n - 1; s > r; --s) top[s] = top[s - 1];
-                top[r] = l;
-                break;
-            }
-        }
-    }
-    return top[depth - 1] - top[depth];
-}
-
 static CnetOracleFn cce_task_fn = cce_cond_next;   /* set by main per mode */
 
 static int cce_maker(void *maker_ctx, size_t k, int token_id,
@@ -496,6 +496,52 @@ int main(int argc, char **argv) {
     cfg.gpu_temp_limit_c = temp_c;
     cfg.duty_fraction = duty;
     cfg.max_wall_seconds = wall;
+    /* Explicit window: CNET_WINDOW_FILE=<path> supplies the V token ids
+       (one decimal id per line) instead of argmax discovery — e.g. an
+       English word window so downstream claim verification covers English
+       text instead of the model's multilingual argmax attractors. Ids must
+       be unique and inside the model vocab; the run aborts on a malformed
+       file rather than silently mining the wrong units. Applies to every
+       task including PAIR — an English pair window mines bigram
+       conditionals over meaningful tokens. */
+    window_from_file = 0;
+    if (getenv("CNET_WINDOW_FILE")) {
+        const char *wf = getenv("CNET_WINDOW_FILE");
+        FILE *f = fopen(wf, "r");
+        size_t got = 0, j;
+        if (!f) {
+            fprintf(stderr, "CNET_WINDOW_FILE %s: cannot open\n", wf);
+            return 1;
+        }
+        while (got < V && fscanf(f, "%d", &vocab[got]) == 1) {
+            if (vocab[got] < 0 ||
+                vocab[got] >= am->transformer->vocab_size) {
+                fprintf(stderr, "CNET_WINDOW_FILE: id %d outside model "
+                                "vocab\n", vocab[got]);
+                fclose(f);
+                return 1;
+            }
+            got++;
+        }
+        fclose(f);
+        if (got != V) {
+            fprintf(stderr, "CNET_WINDOW_FILE: need %lu ids, got %lu\n",
+                    (unsigned long)V, (unsigned long)got);
+            return 1;
+        }
+        for (i = 0; i < V; ++i)
+            for (j = i + 1; j < V; ++j)
+                if (vocab[i] == vocab[j]) {
+                    fprintf(stderr, "CNET_WINDOW_FILE: duplicate id %d\n",
+                            vocab[i]);
+                    return 1;
+                }
+        window_from_file = 1;
+        printf("window: %lu tokens from %s (first: %d %d %d %d)\n",
+               (unsigned long)V, wf, vocab[0], vocab[1], vocab[2], vocab[3]);
+    }
+
+
     switch (task) {
     case FLAGSHIP_TASK_PAIR:
         cce_task_fn = cce_cond_pair;
@@ -506,7 +552,7 @@ int main(int argc, char **argv) {
         cfg.acq.max_epochs = 12000;
         cfg.acq.growth_window = 400;
         cfg.acq.holdout_fraction = 0.0;  /* exactness-on-sample is the bar */
-        {
+        if (!window_from_file) {
             size_t placed = cnet_window_discover(am->transformer,
                                                  ctx.lane[0].logits,
                                                  vocab, V, 3,
@@ -514,6 +560,9 @@ int main(int argc, char **argv) {
             printf("pair window: %lu/%lu tokens from the model's own "
                    "argmax distribution\n",
                    (unsigned long)placed, (unsigned long)V);
+        } else {
+            printf("pair window: %lu tokens from CNET_WINDOW_FILE\n",
+                   (unsigned long)V);
         }
         break;
     case FLAGSHIP_TASK_TOPK:
@@ -587,50 +636,6 @@ int main(int argc, char **argv) {
                (unsigned long)cfg.acq.max_hidden,
                (unsigned long)cfg.acq.max_epochs);
 
-    /* Explicit window: CNET_WINDOW_FILE=<path> supplies the V token ids
-       (one decimal id per line) instead of argmax discovery — e.g. an
-       English word window so downstream claim verification covers English
-       text instead of the model's multilingual argmax attractors. Ids must
-       be unique and inside the model vocab; the run aborts on a malformed
-       file rather than silently mining the wrong units. ARGMAX/TOPK only
-       (PAIR windows are always discovered). */
-    window_from_file = 0;
-    if (task != FLAGSHIP_TASK_PAIR && getenv("CNET_WINDOW_FILE")) {
-        const char *wf = getenv("CNET_WINDOW_FILE");
-        FILE *f = fopen(wf, "r");
-        size_t got = 0, j;
-        if (!f) {
-            fprintf(stderr, "CNET_WINDOW_FILE %s: cannot open\n", wf);
-            return 1;
-        }
-        while (got < V && fscanf(f, "%d", &vocab[got]) == 1) {
-            if (vocab[got] < 0 ||
-                vocab[got] >= am->transformer->vocab_size) {
-                fprintf(stderr, "CNET_WINDOW_FILE: id %d outside model "
-                                "vocab\n", vocab[got]);
-                fclose(f);
-                return 1;
-            }
-            got++;
-        }
-        fclose(f);
-        if (got != V) {
-            fprintf(stderr, "CNET_WINDOW_FILE: need %lu ids, got %lu\n",
-                    (unsigned long)V, (unsigned long)got);
-            return 1;
-        }
-        for (i = 0; i < V; ++i)
-            for (j = i + 1; j < V; ++j)
-                if (vocab[i] == vocab[j]) {
-                    fprintf(stderr, "CNET_WINDOW_FILE: duplicate id %d\n",
-                            vocab[i]);
-                    return 1;
-                }
-        window_from_file = 1;
-        printf("window: %lu tokens from %s (first: %d %d %d %d)\n",
-               (unsigned long)V, wf, vocab[0], vocab[1], vocab[2], vocab[3]);
-    }
-
     /* Window discovery for ARGMAX/TOPK (PAIR always discovered): the fixed
        2000..2000+V window is a MEASURED constant slice on both real models
        (window_discover.h) — every unit mined from it is one constant
@@ -661,6 +666,7 @@ int main(int argc, char **argv) {
     if (getenv("CNET_GPU") && strcmp(getenv("CNET_GPU"), "1") == 0) {
         char dev[128] = {0};
         size_t lanes = 1;
+        size_t ndev = 1;
         cce_clgemm *gpu = cce_clgemm_open(NULL, dev, sizeof dev);
         if (!gpu) {
             fprintf(stderr, "CNET_GPU=1 but no OpenCL GPU available\n");
@@ -668,9 +674,13 @@ int main(int argc, char **argv) {
         }
 #ifdef _OPENMP
         lanes = cce_clgemm_device_count(gpu);
+        ndev = lanes;
         if (getenv("CNET_ORACLE_LANES")) {
             long wl = atol(getenv("CNET_ORACLE_LANES"));
-            if (wl >= 1 && wl < (long)lanes) lanes = (size_t)wl;
+            /* may EXCEED the device count: with an int8 oracle
+               (CNET_ORACLE_INT8) instances are small enough to pin
+               several per GPU, and probe throughput scales with lanes */
+            if (wl >= 1) lanes = (size_t)wl;
         }
         if (lanes > FS_MAX_LANES) lanes = FS_MAX_LANES;
 #endif
@@ -683,7 +693,8 @@ int main(int argc, char **argv) {
             for (li = 0; li < lanes; ++li) {
                 char dn[128] = {0};
                 ctx.lane[li].gpu =
-                    cce_clgemm_open_device(NULL, (int)li, dn, sizeof dn);
+                    cce_clgemm_open_device(NULL, (int)(li % ndev), dn,
+                                           sizeof dn);
                 if (!ctx.lane[li].gpu) {
                     fprintf(stderr, "lane %lu: cannot open GPU device\n",
                             (unsigned long)li);
@@ -993,6 +1004,83 @@ int main(int argc, char **argv) {
             cce_gguf_qwen2_set_head_window(ctx.lane[li].m, vocab, (int)V);
         printf("head window: restricted to %lu mined tokens (full-vocab head "
                "off for mining)\n", (unsigned long)V);
+    }
+
+    /* Run manifest: a run must be reproducible from its artifacts, not
+       from shell history. Every knob that shapes what the units certify —
+       teacher, window, margins, tier, student, task semantics — lands in
+       <base>.manifest.json next to the base and the gaps ledger. The MCP
+       layer reads it to report recipe provenance honestly. */
+    {
+        char mpath[600];
+        FILE *mf;
+        snprintf(mpath, sizeof mpath, "%s.manifest.json", base_path);
+        mf = fopen(mpath, "w");
+        if (mf) {
+            unsigned long long wfnv = 1469598103934665603ULL;
+            size_t wi;
+            long msz = 0;
+            {
+                FILE *mfp = fopen(model_path, "rb");
+                if (mfp) {
+                    fseek(mfp, 0, SEEK_END);
+                    msz = ftell(mfp);
+                    fclose(mfp);
+                }
+            }
+            for (wi = 0; wi < V; ++wi) {
+                wfnv ^= (unsigned long long)(unsigned)vocab[wi];
+                wfnv *= 1099511628211ULL;
+            }
+            fprintf(mf, "{\n");
+            fprintf(mf, "  \"build_rev\": \"%s\",\n",
+#ifdef CNET_BUILD_REV
+                    CNET_BUILD_REV
+#else
+                    "unknown"
+#endif
+            );
+            fprintf(mf, "  \"model\": \"%s\",\n", model_path);
+            fprintf(mf, "  \"model_bytes\": %ld,\n", msz);
+            fprintf(mf, "  \"task\": \"%s\",\n",
+                    task == FLAGSHIP_TASK_PAIR ? "pair"
+                    : task == FLAGSHIP_TASK_TOPK ? "topk" : "argmax");
+            fprintf(mf, "  \"target_semantics\": \"%s\",\n",
+                    (task == FLAGSHIP_TASK_TOPK && fs_topk_set_on())
+                        ? "top3-set-canonical" : "ordered");
+            fprintf(mf, "  \"V\": %lu,\n", (unsigned long)V);
+            fprintf(mf, "  \"max_units\": %lu,\n", (unsigned long)max_units);
+            fprintf(mf, "  \"window_source\": \"%s\",\n",
+                    getenv("CNET_WINDOW_FILE") ? getenv("CNET_WINDOW_FILE")
+                                               : "argmax-discovery");
+            fprintf(mf, "  \"window_fnv\": \"%016llx\",\n", wfnv);
+            fprintf(mf, "  \"margin_eps\": %.6f,\n", ctx.margin_eps);
+            fprintf(mf, "  \"cert_sampled\": %d,\n",
+                    getenv("CNET_CERT_SAMPLED") ? 1 : 0);
+            fprintf(mf, "  \"sample_count\": %lu,\n",
+                    (unsigned long)cfg.acq.sample_count);
+            fprintf(mf, "  \"min_accuracy_bound\": %.4f,\n",
+                    cfg.acq.min_accuracy_bound);
+            fprintf(mf, "  \"student\": {\"init_hidden\": %lu, "
+                        "\"max_hidden\": %lu, \"max_epochs\": %lu, "
+                        "\"seed\": %u},\n",
+                    (unsigned long)cfg.acq.init_hidden,
+                    (unsigned long)cfg.acq.max_hidden,
+                    (unsigned long)cfg.acq.max_epochs, cfg.acq.seed);
+            fprintf(mf, "  \"adaptive\": %d,\n",
+                    getenv("CNET_ACQ_ADAPTIVE") ? 1 : 0);
+            fprintf(mf, "  \"warmstart\": %d,\n",
+                    getenv("CNET_ACQ_WARMSTART") ? 1 : 0);
+            fprintf(mf, "  \"oracle_int8\": %d,\n",
+                    getenv("CNET_ORACLE_INT8") ? 1 : 0);
+            fprintf(mf, "  \"oracle_golden\": \"%s\",\n",
+                    getenv("CNET_ORACLE_GOLDEN") ? getenv("CNET_ORACLE_GOLDEN")
+                                                 : "");
+            fprintf(mf, "  \"lanes\": %lu\n", (unsigned long)ctx.nlanes);
+            fprintf(mf, "}\n");
+            fclose(mf);
+            printf("manifest: %s\n", mpath);
+        }
     }
 
     printf("run: task=%s V=%lu max_units=%lu temp<=%dC duty=%.2f wall=%.0fs base=%s\n",
