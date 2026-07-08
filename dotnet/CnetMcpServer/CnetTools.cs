@@ -73,15 +73,13 @@ namespace CnetMcpServer
                 // fall through to empty roster; callers report honestly
             }
 
-            // Keep only names the engine actually resolves (validate a prefix,
-            // then trust the rest of the sidecar — it is a build artifact of
-            // this exact .cnb).
+            // Keep only names the engine actually resolves. The sidecar lists
+            // gap/coverage entries, NOT a certified-unit manifest — some of
+            // its names are absent from the base, so every name must be
+            // probed. One-time cost per process; the result is cached.
             var validated = new List<string>();
-            int checkedCount = 0;
             foreach (var name in roster)
             {
-                if (checkedCount >= 8) { validated.Add(name); continue; }
-                checkedCount++;
                 try { _soulHost.UnitDims(name); validated.Add(name); }
                 catch { /* not certified in this base — drop */ }
             }
