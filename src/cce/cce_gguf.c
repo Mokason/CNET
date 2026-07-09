@@ -130,9 +130,17 @@ static float gguf_f16_to_f32(uint16_t h) {
     if (exp == 0) {
         if (mant == 0) f = sign;
         else {
+            /* Subnormal: normalize until the IMPLICIT-1 position (0x400 for
+               a 10-bit mantissa) is set, then strip it (mask 0x3FF). The old
+               code stopped at 0x200/masked 0x1FF — one bit short — decoding
+               every subnormal scale as (512+m)*2^-24 instead of m*2^-24
+               (up to 2x too big). Quant superblocks whose f16 `d` lands
+               subnormal then dequant whole 256-weight blocks wrong — the
+               France->garbage root cause, invisible to CNET-vs-CNET identity
+               tests (both sides shared this decoder). */
             exp = 1;
-            while ((mant & 0x200) == 0) { mant <<= 1; exp--; }
-            mant &= 0x1FF;
+            while ((mant & 0x400) == 0) { mant <<= 1; exp--; }
+            mant &= 0x3FF;
             f = sign | ((exp + 112) << 23) | (mant << 13);
         }
     } else if (exp == 0x1F) {
@@ -144,6 +152,11 @@ static float gguf_f16_to_f32(uint16_t h) {
     memcpy(&r, &f, 4);
     return r;
 }
+
+/* Exported for tests/test_f16_identity.c — the exhaustive live-decoder
+   guard. Every fp16 scale in every quant superblock flows through this
+   function; a copy in a test would not have caught the subnormal bug. */
+float cce_gguf_f16_to_f32(uint16_t h) { return gguf_f16_to_f32(h); }
 
 static bool gguf_read_string(FILE* f, char* buf, size_t cap, uint64_t* out_len) {
     uint64_t len = 0;
@@ -833,6 +846,16 @@ static cce_result gguf_build_attn_geom(cce_gguf_qwen2* m, const cce_gguf* g) {
 
     m->embed_scale = (strncmp(arch, "gemma", 5) == 0) ? sqrtf((float)D) : 1.0f;
     m->final_softcap = (float)gguf_get_scalar(g, "final_logit_softcapping", 0);
+    /* Faithful per-family semantics (reference: llama.cpp models/gemma4.cpp):
+       every gemma FFN is GeGLU with tanh-GELU; gemma4 additionally runs
+       UNSCALED attention (f_attention_scale = 1.0 — qk-norm carries the
+       conditioning), a plain weightless RMSNorm on V, rope frequency
+       FACTORS (rope_freqs.weight) on global layers, and a whole-stream
+       layer_output_scale at layer end. */
+    m->ffn_gelu = (strncmp(arch, "gemma", 5) == 0);
+    m->gemma4_attn = (strncmp(arch, "gemma4", 6) == 0);
+    m->n_suppress = cce_gguf_get_int_array(g, "tokenizer.ggml.suppress_tokens",
+                                           m->suppress_ids, 256);
 
     m->k_slot_floats = 0;
     m->v_slot_floats = 0;
@@ -1454,16 +1477,35 @@ static void gguf_silu(const cce_tensor* in, cce_tensor* out) {
     }
 }
 
-static void gguf_apply_rope(float* q, float* k, int t, int head_dim, int pos, float base, int n_heads, int n_kv_heads) {
+/* tanh-approximation GELU — the gemma-family GeGLU gate activation.
+   Same formula and constants as ggml (llama.cpp evaluates it through an
+   fp16-input lookup table; the direct formula agrees to ~1e-3 absolute,
+   far below CNET_CERT_MARGIN — decision-safe). */
+static void gguf_gelu_tanh(const cce_tensor* in, cce_tensor* out) {
+    const float sqrt_2_over_pi = 0.79788456080286535587989211986876f;
+    const float coef_a = 0.044715f;
+    for (size_t i = 0; i < in->numel; i++) {
+        float x = in->data[i];
+        out->data[i] = 0.5f * x *
+            (1.0f + tanhf(sqrt_2_over_pi * x * (1.0f + coef_a * x * x)));
+    }
+}
+
+static void gguf_apply_rope(float* q, float* k, int t, int head_dim, int pos, float base, float const* freq_factors, int n_heads, int n_kv_heads) {
     (void)n_heads; (void)n_kv_heads;
     /* NEOX-style rotary (gemma & qwen2): pair dim i with i+head_dim/2, NOT the
        adjacent (i, i+1) GPT-J interleave. Wrong pairing scrambles all positions
        -> attention can't localize -> model collapses to an input-independent
        prior. head_dim here is the rope width (rope_dim); dims beyond it are
-       left unrotated by the caller. */
+       left unrotated by the caller.
+       freq_factors (rope_freqs.weight, half-width, may be NULL) DIVIDE each
+       pair's frequency — gemma4 global layers ship factors up to 1e30, i.e.
+       the tail dims are effectively position-independent (long-context
+       stretch). Ignoring them mis-rotates every global layer. */
     int half = head_dim / 2;
     for (int i = 0; i < half; i++) {
         float freq = 1.0f / powf(base, (float)(2 * i) / head_dim);
+        if (freq_factors) freq /= freq_factors[i];
         float val = (float)pos * freq;
         float cosv = cosf(val);
         float sinv = sinf(val);
@@ -1532,6 +1574,13 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
         for (ii_ = 0; ii_ < (size_t)(cnt); ++ii_) ck_ += fabs((double)(ptr)[ii_]); \
         printf("FWD_TRACE %s: %.10g\n", (tag), ck_); } } while (0)
     FWD_CK("embed", x.data, (size_t)n_tokens * D);
+/* Stage bisection vs the reference engine (llama-eval-callback): first-4
+   values of row 0 at every layer-0 stage. Zero cost unless tracing. */
+#define FWD_V4(tag, ptr) do { if (trace_this) \
+        fprintf(stderr, "FWD_V4 %-12s %.4f %.4f %.4f %.4f\n", (tag), \
+                (double)(ptr)[0], (double)(ptr)[1], (double)(ptr)[2], \
+                (double)(ptr)[3]); } while (0)
+    FWD_V4("embed", x.data);
 
     float *scores = (float*)malloc((size_t)m->max_ctx * sizeof *scores);
     if (!scores) { cce_tensor_free(&x); return CCE_ERR_OOM; }
@@ -1590,15 +1639,43 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
             return CCE_ERR_UNSUPPORTED;
         }
         if (l == 0) { FWD_CK("ln1(l0)", ln1.data, (size_t)n_tokens * D);
-                      FWD_CK("q(l0)", q.data, (size_t)n_tokens * ge->q_dim); }
+                      FWD_CK("q(l0)", q.data, (size_t)n_tokens * ge->q_dim);
+                      FWD_V4("ln1", ln1.data);
+                      FWD_V4("q_raw", q.data);
+                      FWD_V4("k_raw", k.data);
+                      FWD_V4("v_raw", v.data); }
 
         /* qk-norm (per head, when the tensors exist) THEN RoPE — with the
            LAYER's theta and rotation width (gemma4: swa layers theta 10k /
-           dim 256, global layers theta 1e6 / dim 512). */
+           dim 256, global layers theta 1e6 / dim 512). Global gemma4 layers
+           additionally divide frequencies by rope_freqs.weight. */
         const float *qnw = (m->attn_q_norm && m->attn_q_norm[l].data)
                                ? m->attn_q_norm[l].data : NULL;
         const float *knw = (m->attn_k_norm && m->attn_k_norm[l].data)
                                ? m->attn_k_norm[l].data : NULL;
+        const float *rff = (m->gemma4_attn && !ge->swa &&
+                            m->rope_freqs.data &&
+                            m->rope_freqs.numel >= (size_t)(ge->rope_dim / 2))
+                               ? m->rope_freqs.data : NULL;
+
+        /* gemma4: V gets a plain WEIGHTLESS RMSNorm per head (and no rope) —
+           applied before any cache stash or attention read. Covers both real
+           V projections and the tied-to-raw-K global layers. */
+        if (m->gemma4_attn) {
+            for (int t = 0; t < n_tokens; t++) {
+                for (int h = 0; h < ge->n_v; h++) {
+                    float *vh = v.data + (size_t)t * ge->v_dim +
+                                (size_t)h * ge->v_head_dim;
+                    float ss = 0.0f;
+                    for (int d2 = 0; d2 < ge->v_head_dim; d2++)
+                        ss += vh[d2] * vh[d2];
+                    ss = 1.0f / sqrtf(ss / ge->v_head_dim + eps);
+                    for (int d2 = 0; d2 < ge->v_head_dim; d2++)
+                        vh[d2] *= ss;
+                }
+            }
+        }
+        if (l == 0) FWD_V4("v_normed", v.data);
         for (int t = 0; t < n_tokens; t++) {
             int pos = m->probe_batch ? start_pos : start_pos + t;
             for (int h = 0; h < ge->n_q; h++) {
@@ -1613,7 +1690,7 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
                         qh[d2] = (qh[d2] * ss) * qnw[d2];  /* GGUF bakes gemma +1 */
                 }
                 gguf_apply_rope(qh, NULL, 0, ge->rope_dim, pos,
-                                ge->rope_base, ge->n_q, ge->n_k);
+                                ge->rope_base, rff, ge->n_q, ge->n_k);
             }
             for (int h = 0; h < ge->n_k; h++) {
                 float *kh = k.data + (size_t)t * ge->k_dim +
@@ -1627,7 +1704,7 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
                         kh[d2] = (kh[d2] * ss) * knw[d2];  /* GGUF bakes gemma +1 */
                 }
                 gguf_apply_rope(NULL, kh, 0, ge->rope_dim, pos,
-                                ge->rope_base, ge->n_q, ge->n_k);
+                                ge->rope_base, rff, ge->n_q, ge->n_k);
             }
             /* stash to the per-layer slots BEFORE attention: every read
                below comes from the cache (prefix reuse = pinned rows).
@@ -1650,7 +1727,10 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
         int o_in = ge->n_q * ge->v_head_dim;
         cce_tensor attn_out = {0};
         cce_tensor_alloc(&attn_out, (int[]){n_tokens, o_in}, 2);
-        float scale = 1.0f / sqrtf((float)ge->head_dim);
+        /* gemma4 runs UNSCALED attention (f_attention_scale = 1.0; the q/k
+           norms carry the conditioning). Everything else: 1/sqrt(head_dim). */
+        float scale = m->gemma4_attn ? 1.0f
+                                     : 1.0f / sqrtf((float)ge->head_dim);
         for (int h = 0; h < ge->n_q; h++) {
             int kh_i = h / (ge->n_q / ge->n_k);
             int vh_i = h / (ge->n_q / ge->n_v);
@@ -1714,6 +1794,7 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
 
         cce_tensor after_attn = {0};
         cce_tensor_alloc(&after_attn, lnsh, 2);
+        if (l == 0) FWD_V4("kqv_out", attn_out.data);
         if (apply_linear_rows(gpu, o_cas, &attn_out, &after_attn) != CCE_OK) {
             fprintf(stderr, "cce_gguf: o_proj failed at layer %d — "
                             "refusing\n", l);
@@ -1724,7 +1805,8 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
             return CCE_ERR_UNSUPPORTED;
         }
         cce_tensor_free(&attn_out);
-        if (l == 0) FWD_CK("attn(l0)", after_attn.data, (size_t)n_tokens * D);
+        if (l == 0) { FWD_CK("attn(l0)", after_attn.data, (size_t)n_tokens * D);
+                      FWD_V4("o_out", after_attn.data); }
 
         if (m->post_attention_norm && m->post_attention_norm[l].data) {
             cce_tensor tmp = {0};
@@ -1733,16 +1815,10 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
             memcpy(after_attn.data, tmp.data, (size_t)n_tokens * D * sizeof(float));
             cce_tensor_free(&tmp);
         }
-        if (m->layer_output_scale && m->layer_output_scale[l].data &&
-            m->layer_output_scale[l].numel > 0) {
-            float sc = m->layer_output_scale[l].data[0];
-            for (size_t i = 0; i < (size_t)n_tokens * D; i++)
-                after_attn.data[i] *= sc;
-        }
-
         /* residual */
         for (size_t i = 0; i < (size_t)n_tokens * D; i++)
             after_attn.data[i] += x.data[i];
+        if (l == 0) FWD_V4("attn_resid", after_attn.data);
 
         /* MLP */
         cce_tensor ln2 = {0}, gate = {0}, upv = {0}, mid = {0}, down = {0};
@@ -1764,7 +1840,8 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
         }
 
         cce_tensor_alloc(&mid, (int[]){n_tokens, mlp_hidden}, 2);
-        gguf_silu(&gate, &gate);
+        if (m->ffn_gelu) gguf_gelu_tanh(&gate, &gate);   /* gemma GeGLU */
+        else             gguf_silu(&gate, &gate);
         for (size_t i = 0; i < (size_t)n_tokens * mlp_hidden; i++)
             mid.data[i] = gate.data[i] * upv.data[i];
 
@@ -1792,7 +1869,19 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
 
         for (size_t i = 0; i < (size_t)n_tokens * D; i++)
             x.data[i] = after_attn.data[i] + down.data[i];
-        if (l == 0) FWD_CK("x(l0)", x.data, (size_t)n_tokens * D);
+
+        /* layer_output_scale multiplies the WHOLE residual stream at layer
+           end (reference: gemma4.cpp:392 — after both residual adds), not
+           just the attention branch: the huge learned norm weights of the
+           merged model re-amplify it next layer. */
+        if (m->layer_output_scale && m->layer_output_scale[l].data &&
+            m->layer_output_scale[l].numel > 0) {
+            float sc = m->layer_output_scale[l].data[0];
+            for (size_t i = 0; i < (size_t)n_tokens * D; i++)
+                x.data[i] *= sc;
+        }
+        if (l == 0) { FWD_CK("x(l0)", x.data, (size_t)n_tokens * D);
+                      FWD_V4("l_out", x.data); }
 
         cce_tensor_free(&ln1); cce_tensor_free(&q); cce_tensor_free(&k);
         cce_tensor_free(&v); cce_tensor_free(&after_attn);
@@ -1879,6 +1968,15 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
        on this model) manufactures TIES that scramble top-k order. The
        oracle consumes decisions; rank on the uncapped values. (m->
        final_softcap is retained for future logit-level comparisons.) */
+
+    /* Suppressed ids (tokenizer.ggml.suppress_tokens): the reference head
+       ADDs -inf to these after the softcap — checkpoint-known-bad tokens
+       (<image|>/<audio|>). Same erasure here; order-independent of the
+       softcap decision above. */
+    for (size_t si = 0; si < m->n_suppress; si++) {
+        int64_t sid = m->suppress_ids[si];
+        if (sid >= 0 && sid < (int64_t)V) logits_t.data[sid] = -HUGE_VALF;
+    }
 
     {
         int out_len = (V < logits_cap) ? V : logits_cap;

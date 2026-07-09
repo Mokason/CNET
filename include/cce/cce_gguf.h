@@ -236,7 +236,20 @@ typedef struct cce_gguf_qwen2 {
     float embed_scale;             /* gemma-family sqrt(D); 1.0 otherwise */
     float final_softcap;           /* logits = c*tanh(l/c); 0 = off (monotonic: cannot change decisions) */
     cce_tensor* attn_k_norm;       /* per-layer k-norm (may be absent) */
+    int ffn_gelu;                  /* gemma family: GeGLU = gelu_tanh(gate)*up (qwen/llama: silu) */
+    int gemma4_attn;               /* gemma4(+assistant): kq_scale 1.0 (no 1/sqrt(d)),
+                                      plain weightless RMSNorm on V, rope freq
+                                      factors on global layers, layer_output_scale
+                                      applied to the whole stream at layer end */
+    int64_t suppress_ids[256];     /* tokenizer.ggml.suppress_tokens: ids the
+                                      checkpoint must never emit; logits forced
+                                      to -inf, mirroring the reference head */
+    size_t n_suppress;
 } cce_gguf_qwen2;
+
+/* The live GGUF fp16->fp32 decoder (all quant superblock scales flow through
+ * it). Exported so the exhaustive identity test exercises the REAL code. */
+float cce_gguf_f16_to_f32(uint16_t h);
 
 /* Load a full Qwen2 model from GGUF into decomposed CCE form (forest of specialists + norms).
  * Similar to cce_supra_load_decomposed.

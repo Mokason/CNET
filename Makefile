@@ -321,6 +321,7 @@ flagship: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) 
 	@CNET_TOPK_SET=1 ./$(BIN_DIR)/flagship > logs/flagship.topkset.log 2>&1 || echo "flagship[topkset] non-zero (see log)"
 	@CNET_ACQ_ADAPTIVE=1 CNET_ACQ_WARMSTART=1 CNET_TOPK_SET=1 ./$(BIN_DIR)/flagship > logs/flagship.allon.log 2>&1 || echo "flagship[all-on] non-zero (see log)"
 	@cc -O2 -w -o $(BIN_DIR)/test_dequant_xcheck tests/test_dequant_xcheck.c -lm && ./$(BIN_DIR)/test_dequant_xcheck || echo "dequant xcheck FAILED"
+	@$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/test_f16_identity $(CCE) tests/test_f16_identity.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) && ./$(BIN_DIR)/test_f16_identity || echo "f16 identity FAILED"
 
 # Base inspector: counts + certify-on-load + tag audit + digest fidelity
 # compare between two bases. Usage: ./bin/cnb_audit <base.cnb> [other.cnb]
@@ -349,6 +350,17 @@ gpu_equiv_build: $(CCE) tests/gpu_equiv.c include/cce/cce_clgemm.h include/cce/c
 # Usage: make depth_probe_build && ./bin/depth_probe <model> [V] [N]
 depth_probe_build: $(CCE) tests/depth_probe.c include/cce/cce_gguf.h
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/depth_probe $(CCE) tests/depth_probe.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+
+# Token-level greedy comparison vs an external reference (llama.cpp) on the
+# same GGUF: the gemma4-forward validation gate. Needs the model; NOT in
+# verify. Usage: make gemma4_vs_ref_build && tests/gemma4_vs_ref.py
+gemma4_vs_ref_build: $(CCE) tests/gemma4_vs_ref.c include/cce/cce_gguf.h
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/gemma4_vs_ref $(CCE) tests/gemma4_vs_ref.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+
+# Exhaustive fp16 decode identity over the LIVE decoder (all 65536 patterns).
+f16_identity: $(CCE) tests/test_f16_identity.c include/cce/cce_gguf.h
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/test_f16_identity $(CCE) tests/test_f16_identity.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+	./$(BIN_DIR)/test_f16_identity
 
 # Contract security + efficiency: content digests, certification cache,
 # sealed (tamper-evident) contract files, certificate-to-weights binding.
