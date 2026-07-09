@@ -81,6 +81,12 @@ cce_result cce_gguf_load_tensor_by_name(const cce_gguf* gguf, const char* name, 
 /* Load raw F32 data (dequantizing if needed) into a caller buffer. */
 cce_result cce_gguf_load_f32(const cce_gguf* gguf, int idx, float* buf, size_t cap_elems);
 
+/* Direct pointer to a tensor's raw (still-quantized) bytes inside the mmap —
+   the single-hop DMA source for the resident-quantized VRAM forward. Only
+   valid under CNET_GGUF_MMAP=1; returns CCE_ERR_UNSUPPORTED otherwise. */
+cce_result cce_gguf_tensor_bytes(const cce_gguf* gguf, int idx,
+                                 const void** ptr, size_t* nbytes);
+
 /* Extract common metadata (best effort, returns defaults on missing) */
 const char* cce_gguf_get_arch(const cce_gguf* gguf);      /* "qwen2", "llama", etc. */
 int cce_gguf_get_n_layer(const cce_gguf* gguf);

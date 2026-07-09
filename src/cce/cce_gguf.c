@@ -13,6 +13,7 @@
 #include <fcntl.h>
 #else
 #include <unistd.h>
+#include <sys/mman.h>   /* CNET_GGUF_MMAP: mmap/madvise/munmap */
 /* 64-bit-safe seek: GGUF files exceed 2 GB and `long` is 32-bit on MinGW,
    hence _fseeki64 there; glibc spells it fseeko (needs _DEFAULT_SOURCE). */
 #define _fseeki64(f, off, whence) fseeko((f), (off_t)(off), (whence))
@@ -67,6 +68,12 @@ typedef struct {
 
 struct cce_gguf {
     FILE* f;
+    void* map;         /* CNET_GGUF_MMAP=1: whole-file mmap backing g->f via
+                          fmemopen — every dequant read faults from the shared
+                          page cache instead of read()+stdio double-buffering,
+                          and g->map is the direct DMA source for the resident-
+                          quantized VRAM path (see spike/). NULL = FILE* path. */
+    size_t map_size;
     char path[512];
     uint32_t version;
     uint64_t n_tensors_hdr;
@@ -402,13 +409,69 @@ cce_result cce_gguf_load(const char* path, cce_gguf** out) {
     }
 
     /* We don't close the file; keep it open for on-demand loads */
+
+    /* Hop 1 of the mmap+DMA loader (CNET_GGUF_MMAP=1): back the load-time
+       FILE* with a whole-file mmap via fmemopen. Every existing fseek/fread
+       in cce_gguf_load_f32 then reads from the shared, page-cached mapping
+       unchanged — byte-identical dequant, no read()/stdio double-buffer —
+       and g->map becomes the direct DMA source for the resident-quantized
+       VRAM forward. Fail-safe: any failure keeps the original FILE*. Parse
+       above already ran on the real file, so only the load phase changes. */
+    if (getenv("CNET_GGUF_MMAP") && getenv("CNET_GGUF_MMAP")[0] == '1') {
+        long fsz = ftell(g->f);
+        if (fseek(g->f, 0, SEEK_END) == 0) {
+            long total = ftell(g->f);
+            if (total > 0) {
+                int fd = fileno(g->f);
+                void* mp = mmap(NULL, (size_t)total, PROT_READ, MAP_SHARED, fd, 0);
+                if (mp != MAP_FAILED) {
+                    FILE* mf = fmemopen(mp, (size_t)total, "rb");
+                    if (mf) {
+                        madvise(mp, (size_t)total, MADV_WILLNEED);
+                        fclose(g->f);
+                        g->f = mf;
+                        g->map = mp;
+                        g->map_size = (size_t)total;
+                        GTRACE("CNET_GGUF_MMAP: mapped %ld bytes, load reads "
+                               "fault from page cache", total);
+                    } else {
+                        munmap(mp, (size_t)total);
+                    }
+                }
+            }
+        }
+        if (!g->map) fseek(g->f, fsz, SEEK_SET);   /* restore on fallback */
+    }
+
     *out = g;
+    return CCE_OK;
+}
+
+/* Direct pointer to a tensor's raw (still-quantized) bytes inside the
+   mmap — the single-hop DMA source for the resident-quantized VRAM path.
+   Only available in CNET_GGUF_MMAP mode; returns CCE_ERR_UNSUPPORTED with
+   the FILE* loader so callers fall back to cce_gguf_load_f32. */
+cce_result cce_gguf_tensor_bytes(const cce_gguf* g, int idx,
+                                 const void** ptr, size_t* nbytes) {
+    if (!g || idx < 0 || idx >= g->n_tensors || !ptr || !nbytes)
+        return CCE_ERR_INVALID_ARG;
+    if (!g->map) return CCE_ERR_UNSUPPORTED;
+    const cce_gguf_tensor_meta* m = &g->tensors[idx];
+    uint64_t abs_off = g->data_offset + m->data_offset;
+    size_t next = (idx + 1 < g->n_tensors)
+        ? g->data_offset + g->tensors[idx + 1].data_offset
+        : g->map_size;
+    if (abs_off >= g->map_size || next > g->map_size || next <= abs_off)
+        return CCE_ERR_IO;
+    *ptr = (const uint8_t*)g->map + abs_off;
+    *nbytes = (size_t)(next - abs_off);
     return CCE_OK;
 }
 
 void cce_gguf_free(cce_gguf* g) {
     if (!g) return;
     if (g->f) fclose(g->f);
+    if (g->map) munmap(g->map, g->map_size);
     if (g->tensors) free(g->tensors);
     for (int i = 0; i < g->n_kvs; i++) gguf_free_kv(&g->kvs[i]);
     if (g->kvs) free(g->kvs);
