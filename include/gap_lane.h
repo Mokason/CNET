@@ -122,6 +122,14 @@ CNET_API int gap_lane_tick(GapLane *L, GapLaneTickReport *r,
 
 CNET_API void gap_lane_close(GapLane *L);
 
+/* Parse a token-id file (one non-negative integer per line, blank lines
+   skipped): the corpus-drawn WINDOW (CNET_WINDOW_FILE, flagship's
+   convention — e.g. english_window_256.txt) and the corpus-drawn teaching
+   CONTEXT prefix (CNET_LANE_CONTEXT_FILE) both use it. Returns the number
+   of ids read (<= cap), or -1 on a missing/malformed file — a refused
+   file binds nothing rather than teaching under a wrong alphabet. */
+CNET_API int gap_lane_load_ids(const char *path, int *out, int cap);
+
 /* Serving-side inbox append (used by soul_route via CNET_GAP_INBOX): one
    O_APPEND line "NO_PLAN <fam> <w> <c> <tag|-> <fam> <w> <c> <tag|->".
    Small single-line appends are atomic on POSIX. Returns 0, or -1. */

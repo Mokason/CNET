@@ -189,6 +189,31 @@ int main(void) {
           tick.drain.examined == 0 && tick.health_noted == 0,
           "steady state: an idle tick is a no-op and skips the checkpoint");
 
+    /* -- corpus-drawn id files: strict parsing ---------------------------
+       (the window and teaching-context files feed the teacher's alphabet;
+       a refused file must bind nothing rather than teach a wrong one) */
+    {
+        int ids[8];
+        FILE *f = fopen("tmp_gap_lane.ids", "w");
+        check(f != NULL, "id fixture file opens");
+        if (f) {
+            fprintf(f, "506\n\n  529\n532\r\n");
+            fclose(f);
+        }
+        check(gap_lane_load_ids("tmp_gap_lane.ids", ids, 8) == 3 &&
+              ids[0] == 506 && ids[1] == 529 && ids[2] == 532,
+              "id file parses (blanks skipped, whitespace tolerated)");
+        check(gap_lane_load_ids("tmp_gap_lane.ids", ids, 2) == -1,
+              "over-capacity id file is refused whole");
+        f = fopen("tmp_gap_lane.ids", "w");
+        if (f) { fprintf(f, "506\nnot_a_token\n"); fclose(f); }
+        check(gap_lane_load_ids("tmp_gap_lane.ids", ids, 8) == -1,
+              "malformed id line refuses the whole file");
+        check(gap_lane_load_ids("tmp_gap_lane.missing", ids, 8) == -1,
+              "missing id file is refused, not defaulted");
+        remove("tmp_gap_lane.ids");
+    }
+
     gap_lane_close(&lane);
     remove(base_path);
     remove(ledger_path);

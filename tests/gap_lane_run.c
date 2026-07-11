@@ -21,6 +21,17 @@
  *   CNET_LANE_INTERVAL_SEC    tick interval    (default 60)
  *   CNET_LANE_LOW_REL         reliability floor gap trigger (default 0=off)
  *   CNET_LANE_LOW_REL_MIN_EV  evidence needed for the floor (default 32)
+ *   CNET_WINDOW_FILE          corpus-drawn window: token ids, one per line
+ *                             (flagship's convention, e.g.
+ *                             english_window_256.txt); input one-hot i maps
+ *                             to ids[i] and outputs range over the same ids.
+ *                             Unset = contiguous [TOKEN_BASE, TOKEN_BASE+W)
+ *   CNET_LANE_CONTEXT_FILE    corpus-drawn teaching context: token ids of a
+ *                             real prefix, pinned ONCE in the KV cache; every
+ *                             teaching call is then an independent probe of
+ *                             prefix+token (cce_gguf_qwen2_forward_probes,
+ *                             KV never modified). Unset = bare context.
+ *                             Requires CNET_MAX_CTX > prefix length.
  *   CNET_LANE_TOKEN_BASE      window base token id (default 0)
  *   CNET_LANE_MARGIN_EPS      teacher abstention margin (default 1e-4)
  *   CNET_ACQ_HIDDEN / CNET_ACQ_MAXHIDDEN / CNET_ACQ_EPOCHS
@@ -51,11 +62,19 @@ typedef struct {
     cce_gguf_qwen2 *m;
     float *logits;
     int vocab;
-    int base;      /* window base token id */
-    int width;     /* W */
-    int k;         /* ordered top-k fields */
-    double eps;    /* abstention margin */
+    const int *ids;  /* window token ids, ids[0..width) */
+    int width;       /* W */
+    int k;           /* ordered top-k fields */
+    double eps;      /* abstention margin */
 } LmTask;
+
+#define LM_WINDOW_MAX 4096
+#define LM_CTX_MAX 512
+static int lm_window[LM_WINDOW_MAX];
+static int lm_window_n;       /* 0 = synth from TOKEN_BASE per gap width */
+static int lm_ctx[LM_CTX_MAX];
+static int lm_ctx_n;          /* 0 = bare context */
+static int lm_synth[LM_WINDOW_MAX];  /* TOKEN_BASE fallback alphabet */
 
 static LmTask lm_tasks[ACQUIRE_MAX_ORACLES];
 static size_t lm_task_count;
@@ -65,11 +84,12 @@ static int lm_teach(const double *in, double *out, void *ctx) {
     int i, hot = 0, tok, picked[LM_MAX_K];
     if (!t || !t->m) return -1;
     for (i = 1; i < t->width; i++) if (in[i] > in[hot]) hot = i;
-    tok = t->base + hot;
-    /* fresh context every call: the runner's KV cache is persistent and a
-       full cache fails the forward (flagship does the same reset) */
-    t->m->cur_pos = 0;
-    if (cce_gguf_qwen2_forward(t->m, &tok, 1, t->logits, t->vocab) != CCE_OK)
+    tok = t->ids[hot];
+    /* independent probe of prefix+token: the corpus prefix stays pinned in
+       the KV (probes never modify it); with no prefix pinned, cur_pos is 0
+       and this is the bare single-token context */
+    if (cce_gguf_qwen2_forward_probes(t->m, &tok, 1, t->logits,
+                                      t->vocab) != CCE_OK)
         return -1;
     /* ordered top-k within the window; margin-aware abstention on the
        teacher's own near-tie at the k/k+1 boundary */
@@ -84,19 +104,19 @@ static int lm_teach(const double *in, double *out, void *ctx) {
                 for (u = 0; u < r; u++) if (used[u] == j) taken = 1;
                 if (taken) continue;
                 if (best < 0 ||
-                    t->logits[t->base + j] > t->logits[t->base + best])
+                    t->logits[t->ids[j]] > t->logits[t->ids[best]])
                     best = j;
             }
             used[r] = best;
             picked[r] = best;
-            kth = t->logits[t->base + best];
+            kth = t->logits[t->ids[best]];
         }
         for (j = 0; j < t->width; j++) {
             int taken = 0, u;
             for (u = 0; u < t->k; u++) if (used[u] == j) taken = 1;
             if (taken) continue;
-            if (t->logits[t->base + j] > next_best)
-                next_best = t->logits[t->base + j];
+            if (t->logits[t->ids[j]] > next_best)
+                next_best = t->logits[t->ids[j]];
         }
         if (t->width > t->k && (double)(kth - next_best) < t->eps)
             return 1;  /* abstain: the model itself is undecided here */
@@ -107,10 +127,14 @@ static int lm_teach(const double *in, double *out, void *ctx) {
 }
 
 static int lm_shape_ok(Port in, Port goal, int vocab, int base) {
-    return in.family == PORT_ONEHOT && in.field_count == 1 &&
-           goal.family == PORT_ONEHOT &&
-           goal.field_width == in.field_width &&
-           goal.field_count >= 1 && goal.field_count <= LM_MAX_K &&
+    if (!(in.family == PORT_ONEHOT && in.field_count == 1 &&
+          goal.family == PORT_ONEHOT &&
+          goal.field_width == in.field_width &&
+          goal.field_count >= 1 && goal.field_count <= LM_MAX_K))
+        return 0;
+    if (lm_window_n > 0)
+        return (int)in.field_width == lm_window_n;  /* corpus window mode */
+    return in.field_width <= LM_WINDOW_MAX &&
            base + (int)in.field_width <= vocab;
 }
 
@@ -148,7 +172,15 @@ static size_t bind_model_teachers(GapLane *L, cce_gguf_qwen2 *m,
         snprintf(name, sizeof name, "lm_%.56s",
                  goal.tag[0] ? goal.tag : "untagged");
         t = &lm_tasks[lm_task_count];
-        t->m = m; t->logits = logits; t->vocab = vocab; t->base = base;
+        t->m = m; t->logits = logits; t->vocab = vocab;
+        if (lm_window_n > 0) {
+            t->ids = lm_window;
+        } else {
+            int w;
+            for (w = 0; w < (int)in.field_width; w++)
+                lm_synth[w] = base + w;
+            t->ids = lm_synth;
+        }
         t->width = (int)in.field_width;
         t->k = (int)goal.field_count;
         t->eps = eps;
@@ -234,6 +266,49 @@ int main(int argc, char **argv) {
         vocab = model->vocab_size;
         logits = (float *)malloc((size_t)vocab * sizeof *logits);
         if (!logits) { gap_lane_close(&lane); return 1; }
+
+        /* corpus-drawn window: one-hot index -> real corpus token id */
+        {
+            const char *wf = getenv("CNET_WINDOW_FILE");
+            if (wf && wf[0]) {
+                lm_window_n = gap_lane_load_ids(wf, lm_window, LM_WINDOW_MAX);
+                if (lm_window_n <= 0) {
+                    fprintf(stderr, "gap_lane_run: bad window file %s\n", wf);
+                    gap_lane_close(&lane);
+                    return 1;
+                }
+                /* head restricted to the window ids: bit-identical logits on
+                   exactly the ids the teacher reads, at a fraction of the
+                   head GEMM (lm_window is static — outlives the model) */
+                cce_gguf_qwen2_set_head_window(model, lm_window, lm_window_n);
+                printf("gap_lane_run: window %s (%d ids, first %d)\n",
+                       wf, lm_window_n, lm_window[0]);
+            }
+        }
+        /* corpus-drawn teaching context: pin the real prefix ONCE; probes
+           never modify the KV, so it stays pinned for the process lifetime */
+        {
+            const char *cf = getenv("CNET_LANE_CONTEXT_FILE");
+            if (cf && cf[0]) {
+                lm_ctx_n = gap_lane_load_ids(cf, lm_ctx, LM_CTX_MAX);
+                if (lm_ctx_n <= 0 || lm_ctx_n >= model->max_ctx) {
+                    fprintf(stderr,
+                            "gap_lane_run: bad context file %s (n=%d, "
+                            "max_ctx=%d)\n", cf, lm_ctx_n, model->max_ctx);
+                    gap_lane_close(&lane);
+                    return 1;
+                }
+                model->cur_pos = 0;
+                if (cce_gguf_qwen2_forward(model, lm_ctx, lm_ctx_n, logits,
+                                           vocab) != CCE_OK) {
+                    fprintf(stderr, "gap_lane_run: prefix pin failed\n");
+                    gap_lane_close(&lane);
+                    return 1;
+                }
+                printf("gap_lane_run: context %s pinned (%d tokens)\n",
+                       cf, lm_ctx_n);
+            }
+        }
         printf("gap_lane_run: teacher %s (vocab %d, base %ld)\n",
                argv[3], vocab, token_base);
     } else {

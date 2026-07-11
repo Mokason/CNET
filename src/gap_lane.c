@@ -66,6 +66,32 @@ static int subject_pending(const AcquireLedger *l, const char *subject) {
     return 0;
 }
 
+int gap_lane_load_ids(const char *path, int *out, int cap) {
+    FILE *f;
+    char line[64];
+    int n = 0;
+    if (!path || !path[0] || !out || cap <= 0) return -1;
+    f = fopen(path, "r");
+    if (!f) return -1;
+    while (fgets(line, sizeof line, f)) {
+        char *end;
+        long v;
+        const char *p = line;
+        while (*p == ' ' || *p == '\t') p++;
+        if (*p == '\n' || *p == '\0' || *p == '\r') continue;
+        v = strtol(p, &end, 10);
+        if (end == p || v < 0 ||
+            (*end != '\n' && *end != '\r' && *end != '\0')) {
+            fclose(f);
+            return -1;   /* malformed: refuse the whole file */
+        }
+        if (n == cap) { fclose(f); return -1; }  /* larger than declared */
+        out[n++] = (int)v;
+    }
+    fclose(f);
+    return n;
+}
+
 /* ---- inbox (serving side + lane side) ----------------------------------- */
 
 static void port_write(FILE *f, Port p) {

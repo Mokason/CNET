@@ -13,14 +13,20 @@ Environment=CNET_GAP_INBOX=/home/marble/AI/CNET/soul_gemma4v2_final.cnb.inbox
 Environment=CNET_ORACLE_INT8=1
 Environment=CNET_LOAD_TRACE=1
 Environment=CNET_GGUF_MMAP=1
-Environment=CNET_MAX_CTX=16
+Environment=CNET_MAX_CTX=128
 # teaching window base: [base, base+W) — token ids 0..255 are special tokens
 # with flat logits (every point abstains as a near-tie); real-token ranges
 # carry signal
+# corpus-drawn teaching: the window maps one-hots to real English token ids
+# (the campaign's english window); the context pins a real tokenized prose
+# prefix in the KV once, and every teaching call probes prefix+token.
+Environment=CNET_WINDOW_FILE=/home/marble/AI/CNET/english_window_256.txt
+Environment=CNET_LANE_CONTEXT_FILE=/home/marble/AI/CNET/config/lane_context_english_v1.ids
 Environment=CNET_LANE_TOKEN_BASE=1000
 # near-tie abstention margin on raw logits: 1e-4 abstains >10% of a
 # restricted window (oracle_unfit); 1e-6 declines only genuine ties
-Environment=CNET_LANE_MARGIN_EPS=0
+# real contexts have real margins: abstain only on genuine ties
+Environment=CNET_LANE_MARGIN_EPS=1e-6
 # student structure budget: the campaign's 100%-yield recipe for
 # 256-window units (README quickstart) — defaults (8->64, 4k epochs)
 # plateau below exact replay on this shape (certify_failed)
