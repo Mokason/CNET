@@ -1,5 +1,5 @@
 CNET_GAPS 1
-257
+258
 0 2 1 1 1 256 1 w_cur 1 256 3 tk176938q176938 - cce_cond_next -
 0 2 1 1 1 256 1 w_cur 1 256 3 tk216001q216001 - cce_cond_next -
 0 2 1 1 1 256 1 w_cur 1 256 3 tk117514q117514 - cce_cond_next -
@@ -257,3 +257,4 @@ CNET_GAPS 1
 0 2 1 1 1 256 1 w_cur 1 256 3 tk57887q57887 - cce_cond_next -
 0 2 1 1 1 256 1 w_cur 1 256 3 tk122565q122565 - cce_cond_next -
 0 1 1 1 1 4 1 - 1 4 1 novel_probe_e2e - lm_novel_probe_e2e insufficient_exemplars
+0 2 9 7 1 256 1 - 1 256 1 lane_wnd256_e2e - lm_lane_wnd256_e2e -
