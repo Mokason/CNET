@@ -12,6 +12,7 @@
 #include "../include/contract/contract.h"
 #include "../include/specialist.h"
 #include "../include/specialist_health.h"
+#include "../include/gap_lane.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -28,6 +29,10 @@ struct SoulHost {
     Contract **contracts;
     char (*contract_names)[CNB_NAME_MAX];
     size_t contract_count, contract_cap;
+    /* Gap inbox (CNET_GAP_INBOX env at soul_open; "" = disabled): serving
+       no-plans are appended here for the gap lane to ingest — the serving
+       process detects, the lane learns. */
+    char gap_inbox[512];
 };
 
 /* Health-tick contract source: the base itself. A miss materializes the
@@ -125,6 +130,11 @@ CNET_API int soul_open(const char *base_path, const char *model_path,
         }
     }
     h->reg.require_certified = 1;
+    {
+        const char *inbox = getenv("CNET_GAP_INBOX");
+        if (inbox && inbox[0] && strlen(inbox) < sizeof h->gap_inbox)
+            memcpy(h->gap_inbox, inbox, strlen(inbox) + 1);
+    }
     h->loaded = 1;
     *out = h;
     return 0;
@@ -284,7 +294,12 @@ CNET_API int soul_route(SoulHost *h, const char *goal_tag,
     if ((int)in_total > in_cap || (int)out_total > out_cap) return -4;
 
     memset(&plan, 0, sizeof plan);
-    if (route_plan(&h->reg, input, goal, &plan) != 0 || plan.length == 0) return -3;
+    if (route_plan(&h->reg, input, goal, &plan) != 0 || plan.length == 0) {
+        /* a serving miss is a knowledge gap: hand it to the lane */
+        if (h->gap_inbox[0])
+            gap_inbox_note_no_plan(h->gap_inbox, input, goal);
+        return -3;
+    }
     rc = route_execute(&plan, in, in_total, out, out_total);
     return rc == 0 ? (int)out_total : -5;
 }

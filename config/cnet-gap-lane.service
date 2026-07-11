@@ -1,0 +1,34 @@
+[Unit]
+Description=CNET Gap Lane - 24/7 knowledge acquisition (detect, teach from local model, persist)
+Documentation=file:///home/marble/AI/CNET/include/gap_lane.h
+
+[Service]
+Type=simple
+WorkingDirectory=/home/marble/AI/CNET
+# inbox must match the serving side (CNET_GAP_INBOX in the MCP launch.sh)
+Environment=CNET_GAP_INBOX=/home/marble/AI/CNET/soul_gemma4v2_final.cnb.inbox
+# memory diet: mmap-backed weights (reclaimable page cache, not anon RSS)
+# and a tiny KV cap — the lane teaches from 1-token contexts
+# int8-on-load IS the diet: default load dequantizes to f32 (~48G for 12B)
+Environment=CNET_ORACLE_INT8=1
+Environment=CNET_LOAD_TRACE=1
+Environment=CNET_GGUF_MMAP=1
+Environment=CNET_MAX_CTX=16
+Environment=CNET_LANE_INTERVAL_SEC=120
+Environment=CNET_LANE_LOW_REL=0.55
+Environment=CNET_LANE_LOW_REL_MIN_EV=64
+ExecStart=/home/marble/AI/CNET/bin/gap_lane_run \
+    /home/marble/AI/CNET/soul_gemma4v2_final.cnb \
+    /home/marble/AI/CNET/soul_gemma4v2_final.cnb.gaps.txt \
+    /home/marble/AI/Models/gemma4-v2-Q4_K_M.gguf
+# CPU-only background citizen: both R9700s stay reserved
+Nice=19
+CPUWeight=20
+MemoryHigh=24G
+MemoryMax=28G
+# stop file (<base>.stop) exits 0 and must NOT be restarted into
+Restart=on-failure
+RestartSec=30
+
+[Install]
+WantedBy=default.target

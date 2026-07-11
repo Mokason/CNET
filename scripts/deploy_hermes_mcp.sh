@@ -59,6 +59,9 @@ export DOTNET_ROOT_X64="\$HOME/dotnet"
 export LD_LIBRARY_PATH="$DEPLOY:$REPO:\${LD_LIBRARY_PATH}"
 export CNET_MODEL_PATH="$BASE"
 export CNET_BASE_PATH="$BASE"
+# Serving misses become gap-lane work: soul_route appends no-plans here
+# and the cnet-gap-lane service ingests them.
+export CNET_GAP_INBOX="$BASE.inbox"
 # Runtime health optimizer: one specialist_health_pass over the live
 # certified registry every ${TICK}s (0/absent = off). Keep the interval
 # under the gateway's MCP child lifetime or it never fires.
