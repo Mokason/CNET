@@ -12,6 +12,44 @@ CNET's known wounds, ranked by value/risk. (Survey: 2026-07-08.)
   Q8_0/Q4_K dequant vs ds4's independent GGML-lineage arithmetic, bit-checked
   over 8192 blocks. The regression guard the Q4_K placeholder never had.
   Wired into `make verify`.
+- **ds4 as the resident MoE engine on this box** (2026-07-09) — built for
+  gfx1201 (RDNA4 WMMA port in `rocm/ds4_rocm_q8.cuh`, verified vs scalar ref)
+  plus prefill-conveyor patches (RAM-aware page-cache keep, layer-ahead depth
+  ring) and a dual-R9700 loopback pipeline launcher. Design + measurements:
+  `docs/superpowers/specs/2026-07-09-prefill-expert-conveyor-design.md`;
+  pattern spike: `spike/expert_conveyor_spike.cpp`. Supersedes the "MoE
+  expert streaming — not applicable" note below at the *box* level (CNET's
+  own oracle forward stays dense).
+- **CNET-governed asynchronous resource lanes** (2026-07-10) —
+  `include/async_runtime.h` and `src/async_runtime.c` execute Oracle v2 backends
+  through a bounded, work-conserving queue with one owner thread per backend
+  context. `make unified_gpu` binds one independent `cce_clgemm` context to
+  each discrete R9700, excludes the unified-memory iGPU, preserves per-call
+  evidence/status, and verifies bit-identical output. DS4's distributed
+  coordinator/worker server is staged as one CNET lane with resource mask
+  `0b11` by `scripts/run_cnet_ds4_dual.sh`; its internal
+  `--dist-prefill-window` is the multi-chunk conveyor. The launcher is
+  systemd-supervised and uses resumable chunk-tree model identity.
+- **One CNET model authority for Dense and MoE** (2026-07-10) —
+  `model_runtime` now owns the catalog, per-resource byte budgets, placement,
+  generation-stamped leases, load deduplication, pinning, LRU pressure eviction,
+  and failure recovery. `cce_model_descriptor_probe` classifies local GGUFs
+  header-first, so llama.cpp dense materializers and DS4's fixed dual-R9700 MoE
+  launcher can enter the same lifecycle through `CnetModelBackendSpec`
+  load/unload callbacks. Backends still own tokenizer/KV/kernels;
+  they may materialize only the placement selected by CNET and do not create a
+  second scheduler or trust authority. `make unified_models` is the focused
+  acceptance gate and is part of `unified_native`.
+- **Bounded ROCm streamed-weight epochs** (2026-07-10) — DS4 now pins only
+  startup-resident ranges and recycles per-layer arenas after each synchronized
+  layer (`ds4_gpu_streaming_model_ranges_pin/recycle`). This removed the
+  unbounded `g_model_ranges` growth that failed near layers 21–30. Four repeated
+  eight-token API requests completed with stable VRAM (~17.3/~16.8 GB), and a
+  canonical layer-major single/dual greedy check was byte-identical. Dual-GPU
+  wall time was 21.85 s versus 41.31 s single-GPU (1.89x). The live llama.cpp
+  fallback remains authoritative: its different resident 9B model answered the
+  eight-token service probe in 0.221 s versus 16.87 s for streamed DS4, so model
+  and performance parity correctly block endpoint cutover.
 
 ## Tier 1 — Loader memory model (cures the 140 GB/instance wall)
 
@@ -85,6 +123,7 @@ CNET's prefixes are 1-2 tokens; revisit if pair/longer-context mining lands.
 ## Not applicable
 
 MLA compressed-KV, hyper-connections + Sinkhorn, MoE expert streaming/hotlist,
-MTP speculative decode, distributed pipeline — all DeepSeek-architecture or
-chat-serving specific; CNET's oracle is a dense forward for argmax/topk, not a
-long chat generator.
+and MTP speculative decode remain DeepSeek-architecture-specific and stay
+inside the DS4 backend. The distributed pipeline is now applicable at the
+unified runtime boundary: CNET governs it as a resource-owning specialist lane
+without copying DeepSeek-specific graph semantics into the CNET planner.

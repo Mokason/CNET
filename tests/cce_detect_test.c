@@ -63,6 +63,24 @@ static void write_gguf_qwen2ish(const char* path) {
     fclose(f);
 }
 
+static void write_gguf_moeish(const char* path) {
+    FILE* f = fopen(path, "wb");
+    fwrite("GGUF", 1, 4, f);
+    w_u32(f, 3);
+    w_u64(f, 7);
+    w_u64(f, 2);
+    w_kv_str(f, "general.architecture", "mixtral");
+    w_kv_u32(f, "mixtral.block_count", 1);
+    w_tensor(f, "token_embd.weight", 64, 1000, 8);
+    w_tensor(f, "blk.0.attn_q.weight", 64, 64, 8);
+    w_tensor(f, "blk.0.attn_k.weight", 64, 16, 8);
+    w_tensor(f, "blk.0.attn_v.weight", 64, 16, 8);
+    w_tensor(f, "blk.0.attn_output.weight", 64, 64, 8);
+    w_tensor(f, "blk.0.ffn_gate_inp.weight", 64, 8, 8);
+    w_tensor(f, "blk.0.ffn_up_exps.weight", 64, 128, 8);
+    fclose(f);
+}
+
 static void write_gguf_mambaish(const char* path) {
     FILE* f = fopen(path, "wb");
     fwrite("GGUF", 1, 4, f);
@@ -159,8 +177,17 @@ int main(void) {
     CHECK(info.tied_embeddings == 1, "missing output.weight => tied");
     CHECK(info.attention_full_qkv == 1, "full q/k/v/o detected");
     CHECK(strcmp(info.dtype, "Q8_0") == 0, "dominant dtype Q8_0");
+    CHECK(info.is_moe == 0, "ordinary qwen2 structure is dense");
     CHECK(info.runnable == 1 && strcmp(info.runner, "cce_gguf_load_model") == 0,
           "llama-family gguf is runnable via cce_gguf_load_model");
+
+    /* 1b. expert tensors are structural MoE evidence independent of runner support */
+    write_gguf_moeish("detect_moe.gguf");
+    CHECK(cce_detect_file("detect_moe.gguf", &info) == CCE_OK,
+          "MoE gguf probe ok");
+    CHECK(info.family == CCE_ARCH_FAMILY_LLAMA && info.is_moe == 1,
+          "expert tensors classify a transformer as MoE");
+    remove("detect_moe.gguf");
 
     /* 2. gguf mamba: detected structurally, routed to the ssm runner */
     write_gguf_mambaish("detect_mamba.gguf");

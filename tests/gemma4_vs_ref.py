@@ -9,7 +9,7 @@ argmax agrees except at fp32 saturation ties (reported, not hidden).
 Usage: tests/gemma4_vs_ref.py [--server http://127.0.0.1:8083] [--steps 16]
 Requires: llama-server running on the SAME GGUF; bin/gemma4_vs_ref built.
 """
-import json, re, subprocess, sys, urllib.request
+import json, os, re, subprocess, sys, urllib.request
 
 SERVER = "http://127.0.0.1:8083"
 MODEL  = "/home/marble/AI/Models/gemma4-v2-Q4_K_M.gguf"
@@ -56,6 +56,11 @@ def cnet_chain(ids, steps):
     chain = [int(m.group(1)) for m in
              re.finditer(r"^STEP\s+\d+ next=(\d+)", out.stdout, re.M)]
     return chain[:steps]
+
+only = os.environ.get("GVR_ONLY")
+if only:
+    keys = [k.strip().lower() for k in only.split(",")]
+    PROMPTS = [p for p in PROMPTS if any(k in p.lower() for k in keys)]
 
 fails = 0
 for p in PROMPTS:

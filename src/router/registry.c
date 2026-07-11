@@ -400,6 +400,7 @@ void registry_init(PrimitiveRegistry *reg) {
     reg->expand_in_low_enabled = 0;
     reg->cnet_d_influence = 0.6;
     reg->text_contract_expansion_enabled = 0;
+    reg->streamer = NULL;
 }
 
 void registry_set_dag_beam_limit(PrimitiveRegistry *reg, size_t dag_beam_limit) {

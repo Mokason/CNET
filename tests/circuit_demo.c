@@ -514,8 +514,9 @@ int main(int argc, char **argv) {
            (160k epochs stalled at 196/200; 300k with a tighter target
            masters the domain). */
         consolidate_config_defaults(&ccfg);
+        ccfg.initial_hidden = 64;
         ccfg.max_epochs = 300000;
-        ccfg.target_loss = 0.0008;
+        ccfg.target_loss = 0.0005;
 
         if (consolidate_circuit(&add_circuit, add_sources, 3, &ccfg,
                                 &chunk, &rep) != 0) {

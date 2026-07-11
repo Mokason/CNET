@@ -481,7 +481,7 @@ int main(void) {
             nibble_bits(v, inc_inputs + v * 4);
             nibble_bits((v + 1u) & 0xFu, inc_targets + v * 4);
         }
-        check(inc && btn_init(inc, 4, 4, 8, 64, 0.5, 11) == 0 &&
+        check(inc && btn_init(inc, 4, 4, 8, 64, 0.5, 7) == 0 &&
               btn_set_ports(inc, nib, nibn) == 0, "incumbent inits");
         btn_train_dynamic(inc, inc_inputs, inc_targets, 16, 4000, 200,
                           1e-4, 1e-6);

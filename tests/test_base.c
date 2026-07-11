@@ -78,7 +78,7 @@ static BinaryTransformNetwork *make_increment(Contract *c_out) {
         nibble_bits(v, inc_inputs + v * 4);
         nibble_bits((v + 1u) & 0xFu, inc_targets + v * 4);
     }
-    if (!btn || btn_init(btn, 4, 4, 8, 64, 0.5, 11) != 0 ||
+    if (!btn || btn_init(btn, 4, 4, 8, 64, 0.5, 7) != 0 ||
         btn_set_ports(btn, nib, nibn) != 0) { free(btn); return NULL; }
     btn_train_dynamic(btn, inc_inputs, inc_targets, 16, 4000, 200, 1e-4, 1e-6);
     if (contract_init_borrowed(c_out, "increment", btn,
@@ -369,10 +369,20 @@ int main(void) {
         size_t unbound = 99;
         Port nib  = make_port(PORT_BINARY_MSB, 4, 1, "nibble");
         Port nibn = make_port(PORT_BINARY_MSB, 4, 1, "nibble_next");
+        CnetOracleIdentity identity;
 
         cnb_init(&b);
-        check(cnb_add_oracle_desc(&b, "increment_ref", "builtin", nib, nibn) == 0,
-              "descriptor added");
+        memset(&identity, 0, sizeof identity);
+        identity.abi_version = CNET_ORACLE_ABI_VERSION;
+        identity.struct_size = (uint32_t)sizeof identity;
+        identity.artifact_digest = 0x11112222u;
+        identity.contract_digest = 0x33334444u;
+        identity.config_digest = 0x55556666u;
+        identity.retrieval_snapshot_digest = 0x77778888u;
+        identity.toolchain_digest = 0x9999aaaau;
+        check(cnb_add_oracle_desc_v2(&b, "increment_ref", "builtin", nib, nibn,
+                                     &identity) == 0,
+              "evidence-carrying descriptor added");
         check(cnb_add_oracle_desc(&b, "future_llm", "cce_model", nib, nibn) == 0,
               "second descriptor added");
         check(cnb_add_oracle_desc(&b, "increment_ref", "builtin", nib, nibn) == -1,
@@ -383,15 +393,21 @@ int main(void) {
         check(cnb_load(&b2, "test_base_orc.cnb") == 0 && b2.oracle_count == 2,
               "descriptors survive the round-trip");
         check(strcmp(b2.oracles[1].kind, "cce_model") == 0 &&
-              strcmp(b2.oracles[0].input_port.tag, "nibble") == 0,
+               strcmp(b2.oracles[0].input_port.tag, "nibble") == 0,
               "kind + port tags survive");
+        check(b2.oracles[0].identity.artifact_digest == identity.artifact_digest &&
+              b2.oracles[0].identity.retrieval_snapshot_digest ==
+                  identity.retrieval_snapshot_digest &&
+              b2.oracles[0].behavior_digest == cnet_oracle_identity_digest(&identity),
+              "CNB2 preserves complete Oracle identity");
 
         memset(&orc, 0, sizeof orc);
         check(cnb_bind_oracles(&b2, &orc, resolve_builtin, NULL, &unbound) == 0,
               "bind runs");
         check(orc.count == 1 && unbound == 1 &&
-              strcmp(orc.entries[0].name, "increment_ref") == 0,
-              "builtin bound, cce_model skipped as unbound");
+              strcmp(orc.entries[0].name, "increment_ref") == 0 &&
+              orc.entries[0].behavior_digest == b2.oracles[0].behavior_digest,
+              "builtin bound with persisted identity; cce_model remains unbound");
 
         cnb_free(&b);
         cnb_free(&b2);

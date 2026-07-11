@@ -230,10 +230,10 @@ static void test_violation_and_gates(void) {
     registry_add(&reg, &pack, "pack");
     registry_add(&reg, &unpack, "unpack");
 
-    /* a broken retrain cannot hide from the algebra */
-    /* +10.0: must be large enough to push outputs past the canonicalization
-       margin -- a small nudge gets rounded away and produces no violation. */
-    unpack.hidden_output_weights[0] += 10.0;
+    /* A broken retrain cannot hide from the algebra. Perturbing one arbitrary
+       hidden edge can be masked by an inactive neuron; forcing an output bias
+       across the canonical threshold deterministically breaks the inverse. */
+    unpack.output_bias[0] += 20.0;
     fill_law(&p);
     memset(&rep, 0, sizeof rep);
     CHECK(property_check(&p, &reg, 4096, &rep) == -1,

@@ -382,8 +382,10 @@ branch_c_circ:
            to 0.95 to tolerate the occasional near-boundary miss while
            still proving the distillation path fires. */
         consolidate_config_defaults(&cfg);
+        cfg.initial_hidden = 64;
         cfg.min_verify_rate = 0.95;
         cfg.max_epochs = 320000;
+        cfg.target_loss = 0.0005;
 
         library_evolve_gated(&reg, &task, 1, NULL, 0, &cfg, &g, 4, &rep);
         CHECK(rep.chunk_count >= 1, "C: both primitives cleared -> chunk minted");
@@ -470,8 +472,10 @@ branch_d_circ:
         g.enabled = 0;  /* gate OFF -> legacy behavior */
 
         consolidate_config_defaults(&cfg);
+        cfg.initial_hidden = 64;
         cfg.min_verify_rate = 0.95;
         cfg.max_epochs = 320000;
+        cfg.target_loss = 0.0005;
 
         library_evolve_gated(&reg, &task, 1, NULL, 0, &cfg, &g, 4, &rep);
         CHECK(rep.chunk_count >= 1, "D: gate disabled -> chunk minted regardless of evidence");

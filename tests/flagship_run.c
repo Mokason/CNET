@@ -1294,6 +1294,7 @@ int main(int argc, char **argv) {
         }
         size_t units_seen = 0, units_clean = 0, units_drift = 0;
         size_t ex_match = 0, ex_miss = 0, ex_abst = 0, ex_err = 0;
+        size_t ex_overlap = 0;
         cnb_init(&rbase);
         if (cnb_load(&rbase, base_path) != 0) {
             fprintf(stderr, "recert: cannot load base %s\n", base_path);
@@ -1308,6 +1309,7 @@ int main(int argc, char **argv) {
             Contract uc;
             size_t e, in_total, out_total;
             size_t u_match = 0, u_miss = 0, u_abst = 0, u_err = 0;
+            size_t u_overlap = 0;
             double *got;
             if (vocab[ui] < 0) continue;   /* untranslatable slot */
             snprintf(uname, sizeof uname, "acq_tk%dq%d",
@@ -1351,10 +1353,18 @@ int main(int argc, char **argv) {
                             if (gp[gi] > gp[gi + 1]) { tmp2 = gp[gi]; gp[gi] = gp[gi + 1]; gp[gi + 1] = tmp2; }
                             if (op[gi] > op[gi + 1]) { tmp2 = op[gi]; op[gi] = op[gi + 1]; op[gi + 1] = tmp2; }
                         }
-                    if (gp[0] == op[0] && gp[1] == op[1] && gp[2] == op[2])
-                        u_match++;
-                    else
-                        u_miss++;
+                    {
+                        /* overlap = |got-set ∩ stored-set| in 0..3 — the
+                           real cross-teacher agreement signal. Full match
+                           counts as before; partial overlap accumulates
+                           for the mean reported per unit. */
+                        size_t ov = 0, ai, bi2;
+                        for (ai = 0; ai < 3; ++ai)
+                            for (bi2 = 0; bi2 < 3; ++bi2)
+                                if (gp[ai] == op[bi2]) { ov++; break; }
+                        u_overlap += ov;
+                        if (ov == 3) u_match++; else u_miss++;
+                    }
                     continue;
                 }
                 if (memcmp(got, orow, out_total * sizeof *got) == 0) u_match++;
@@ -1364,10 +1374,15 @@ int main(int argc, char **argv) {
             if (u_miss == 0 && u_err == 0) units_clean++; else units_drift++;
             ex_match += u_match; ex_miss += u_miss;
             ex_abst += u_abst; ex_err += u_err;
+            ex_overlap += u_overlap;
             if (rout)
-                fprintf(rout, "%s match=%lu miss=%lu abstain=%lu err=%lu\n",
+                fprintf(rout, "%s match=%lu miss=%lu abstain=%lu err=%lu "
+                              "mean_overlap=%.3f\n",
                         uname, (unsigned long)u_match, (unsigned long)u_miss,
-                        (unsigned long)u_abst, (unsigned long)u_err);
+                        (unsigned long)u_abst, (unsigned long)u_err,
+                        (u_match + u_miss) > 0
+                            ? (double)u_overlap / (double)(u_match + u_miss)
+                            : 0.0);
             if (u_miss > 0 || u_err > 0)
                 printf("recert DRIFT %s: match=%lu miss=%lu abstain=%lu "
                        "err=%lu\n", uname, (unsigned long)u_match,
@@ -1377,11 +1392,15 @@ int main(int argc, char **argv) {
             contract_free(&uc);
         }
         printf("recert: %lu units audited — %lu clean, %lu drifted; "
-               "exemplars match=%lu miss=%lu abstain=%lu err=%lu\n",
+               "exemplars match=%lu miss=%lu abstain=%lu err=%lu "
+               "mean_top3_overlap=%.3f\n",
                (unsigned long)units_seen, (unsigned long)units_clean,
                (unsigned long)units_drift, (unsigned long)ex_match,
                (unsigned long)ex_miss, (unsigned long)ex_abst,
-               (unsigned long)ex_err);
+               (unsigned long)ex_err,
+               (ex_match + ex_miss) > 0
+                   ? (double)ex_overlap / (double)(ex_match + ex_miss)
+                   : 0.0);
         if (rout) {
             fprintf(rout, "TOTAL units=%lu clean=%lu drifted=%lu "
                           "match=%lu miss=%lu abstain=%lu err=%lu\n",

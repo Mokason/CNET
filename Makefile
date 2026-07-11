@@ -317,8 +317,9 @@ acquire: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $
 	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(ACQUIRE_TEST) $(LDFLAGS)
 	./$(BIN_DIR)/acquire > logs/acquire.log 2>&1 || echo "test exited non-zero (see log)"
 
-# Unified base (CNB1): one sealed container (units + tags + stats + oracle
-# descriptors) replacing per-unit file sprawl; tag governance with refusal.
+# Unified base (CNB version 2 semantics under stable CNB1 magic): one sealed
+# container (units + tags + stats + oracle descriptors) replacing per-unit file
+# sprawl; tag governance with refusal.
 base: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(BASE_TEST) include/nn.h include/router.h include/contract/contract.h include/contract/coverage.h include/contract/unit.h include/acquire.h include/base.h
 	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(BASE_TEST) $(LDFLAGS)
 	./$(BIN_DIR)/base > logs/base.log 2>&1 || echo "test exited non-zero (see log)"
@@ -854,7 +855,7 @@ leakcheck: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE)
 # even under -j) and re-reads each suite's log, asserting the suite's terminal
 # SUCCESS marker is present -- so `make test` now exits non-zero if any gate
 # failed, crashed, or produced no log. See tests/verify_logs.sh for the markers.
-verify: cce_dll cce_safetensors_test cce_autograd_test cce_model_test cce_view forest_view cce_detect cce_ssm cce_st_llama cce_specgraph cce_wstore cce_tiers cce_similar merge_family hybrid_catalog supra_train contract_secure contract_unit mutate acquire base flagship legacy leakcheck
+verify: claims_test cce_dll cce_safetensors_test cce_autograd_test cce_model_test cce_view forest_view cce_detect cce_ssm cce_st_llama cce_specgraph cce_wstore cce_tiers cce_similar merge_family hybrid_catalog supra_train contract_secure contract_unit mutate acquire base flagship legacy leakcheck
 	@sh tests/verify_logs.sh
 
 # Everything verify covers PLUS the GPU equivalence gate (needs model + GPU;
@@ -1260,7 +1261,18 @@ unified_oracle_adapter: $(SPECIALIST_ADAPTERS) $(SRC) $(ROUTER) $(PLAN_TABLE) $(
 # through the single Specialist door (specialist_admit) and certified
 # end-to-end. Passing means the three backends are the same planning citizen,
 # not three coexisting subsystems.
-unified_specialist: $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) tests/test_heterogeneous_plan.c include/specialist.h
+.PHONY: specialist_unit
+specialist_unit: $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) tests/test_specialist.c include/specialist.h
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/test_specialist \
+		$(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) \
+		$(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) \
+		$(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) \
+		tests/test_specialist.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+	@./$(BIN_DIR)/test_specialist > logs/specialist_unit.log 2>&1
+	@grep -q "SPECIALIST_UNIT_PASS" logs/specialist_unit.log
+
+unified_specialist: specialist_unit $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) tests/test_heterogeneous_plan.c include/specialist.h
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/test_heterogeneous_plan \
 		$(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) \
@@ -1340,8 +1352,13 @@ soul_host_test: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLI
 	@grep -q "SOUL_HOST_UNIFIED_PASS" logs/soul_host_test.log
 
 unified_native: unified_adapter unified_cce_adapter unified_oracle_adapter unified_specialist oracle_v2_test unified_async unified_models unified_ds4_launcher soul_host_test cnet_dll
-	@nm -D cnet.so | grep -q " specialist_admit$$"
-	@nm -D cnet.so | grep -q " specialist_axes$$"
+	@for sym in specialist_wrap_btn specialist_wrap_cce_model \
+		specialist_wrap_oracle specialist_admit specialist_axes \
+		specialist_residency_from_cce_tier specialist_residency_from_model_state \
+		specialist_kind_name specialist_trust_name specialist_residency_name \
+		specialist_role_name; do \
+		nm -D cnet.so | grep -q " $$sym$$" || exit 1; \
+	done
 	@nm -D cnet.so | grep -q " soul_unit_count$$"
 	@nm -D cnet.so | grep -q " cce_model_init_contract_adapter$$"
 	@nm -D cnet.so | grep -q " cnet_oracle_init_contract_adapter$$"
@@ -1354,7 +1371,13 @@ unified_native: unified_adapter unified_cce_adapter unified_oracle_adapter unifi
 	@nm -D cnet.so | grep -q " soul_oracle_count$$"
 	@nm -D cnet.so | grep -q " soul_oracle_identity$$"
 
-unified: unified_native
+
+.PHONY: unified
+unified:
+	@mkdir -p logs
+	@rm -f logs/unified.started
+	@touch logs/unified.started
+	@$(MAKE) --no-print-directory unified_native
 	dotnet build dotnet/CceHost/CceHost.csproj -c Release --no-restore --nologo -v:q > logs/unified_dotnet_build.log 2>&1
 	dotnet build dotnet/CnetMcpServer/CnetMcpServer.csproj -c Release --no-restore --nologo -v:q >> logs/unified_dotnet_build.log 2>&1
 	LD_LIBRARY_PATH="$(CURDIR)$${LD_LIBRARY_PATH:+:$$LD_LIBRARY_PATH}" dotnet dotnet/CceHost/bin/Release/net10.0/CceHost.dll --list tmp_soul_host.cnb > logs/unified_host.log 2>&1
@@ -1366,16 +1389,24 @@ unified: unified_native
 	@grep -q "descriptor_only_not_runtime_trust" logs/unified_mcp.log
 	LD_LIBRARY_PATH="$(CURDIR)$${LD_LIBRARY_PATH:+:$$LD_LIBRARY_PATH}" dotnet test dotnet/Cce.Tests/Cce.Tests.csproj -c Release --no-restore --nologo -v:q > logs/unified_dotnet_test.log 2>&1
 	@rm -f tmp_soul_host.cnb tmp_soul_host.cnb.tmp
-	@bash scripts/gen_claims.sh || true
+	@$(MAKE) --no-print-directory claims_test
+	@bash scripts/gen_claims.sh --strict --scope unified --since logs/unified.started
+	@rm -f logs/unified.started
 	@echo "CNET_UNIFIED_PASS"
 
-# Generated claims ledger: scan the gate logs for their positive markers and
-# emit machine-readable records (logs/claims.jsonl) plus a generated table
-# (docs/verified-today.generated.md). The README's "Verified Today" prose is
-# hand-written; this target is the mechanical check it can be diffed against,
-# so a retracted or missing gate cannot silently live on as a claim.
-claims:
-	@bash scripts/gen_claims.sh
+# Generated claims ledger. `make claims` executes the unified CPU gate and emits
+# run-scoped evidence fresh relative to its sentinel. `make claims_all` merely
+# inventories every known log (including standalone GPU evidence); its PASS is
+# marker presence, not current-run provenance.
+.PHONY: claims claims_all claims_test
+claims_test: tests/test_claims.sh scripts/gen_claims.sh
+	@bash tests/test_claims.sh
+
+claims: unified
+	@grep -q '^# Verified Today (generated)' docs/verified-today.generated.md
+
+claims_all: claims_test
+	@bash scripts/gen_claims.sh --strict
 
 
 # Unit-structure probe: how hard is the function each TOPK unit must memorize?

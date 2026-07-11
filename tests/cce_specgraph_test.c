@@ -91,7 +91,21 @@ int main(void) {
         cce_spec_graph* gg = NULL;
         CHECK(cce_spec_graph_build(&gg, mg, "modelA-gguf") == CCE_OK && gg, "gguf graph builds");
         int nd = -1;
-        CHECK(gg && graphs_digest_equal(ga, gg, &nd, NULL) && nd == 0,
+        char diff[96] = {0};
+        int same = gg && graphs_digest_equal(ga, gg, &nd, diff) && nd == 0;
+        if (!same) {
+            cce_block* sa = &ma->transformer->forest->branches[0].cascade->blocks[0];
+            cce_block* sb = &mg->transformer->forest->branches[0].cascade->blocks[0];
+            printf("  cross-container differences=%d last=%s first: "
+                   "type=%d/%d shape=%dx%d/%dx%d w0=%.9g/%.9g b0=%.9g/%.9g\n",
+                   nd, diff, (int)sa->type, (int)sb->type,
+                   sa->weights.shape[0], sa->weights.shape[1],
+                   sb->weights.shape[0], sb->weights.shape[1],
+                   sa->weights.data[0], sb->weights.data[0],
+                   sa->bias.data ? sa->bias.data[0] : 0.0f,
+                   sb->bias.data ? sb->bias.data[0] : 0.0f);
+        }
+        CHECK(same,
               "gguf and safetensors produce IDENTICAL specialist digests");
         cce_spec_graph_free(gg);
         cce_anymodel_free(mg);

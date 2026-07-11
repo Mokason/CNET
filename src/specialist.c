@@ -68,6 +68,8 @@ int specialist_admit(PrimitiveRegistry *reg,
                      Specialist *s,
                      const Contract *c) {
     if (!reg || !s || !s->btn || !s->name || !c) return -1;
+    if (s->kind < SPECIALIST_KIND_BTN || s->kind > SPECIALIST_KIND_ORACLE)
+        return -1;
     if (registry_add_certified(reg, s->btn, s->name, c) != 0) return -1;
     s->digest = contract_btn_digest(s->btn);
     return 0;

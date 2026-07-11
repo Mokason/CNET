@@ -23,6 +23,8 @@
 
 #ifdef _WIN32
 #include <io.h>
+#else
+#include <dirent.h>
 #endif
 
 static int checks = 0, fails = 0;
@@ -42,7 +44,19 @@ static void wipe_store_dir(const char* dir) {
         _findclose(h);
     }
 #else
-    (void)dir; /* posix cleanup handled by the caller's environment */
+    DIR* d = opendir(dir);
+    if (d) {
+        struct dirent* ent;
+        char path[700];
+        while ((ent = readdir(d)) != NULL) {
+            size_t n = strlen(ent->d_name);
+            if (n > 5 && strcmp(ent->d_name + n - 5, ".spec") == 0) {
+                snprintf(path, sizeof(path), "%s/%s", dir, ent->d_name);
+                remove(path);
+            }
+        }
+        closedir(d);
+    }
 #endif
     remove(dir);
 }

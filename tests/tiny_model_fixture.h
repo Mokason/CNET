@@ -180,6 +180,13 @@ static void tl_write_gguf(const char* path, const tl_entry* ents, int n_ents) {
         tl_gg_u64(f, off);
         off += ents[i].numel * 4;
     }
+    /* GGUF tensor offsets are relative to an aligned data section. The
+       production loader defaults to the format's 32-byte alignment. */
+    {
+        long pos = ftell(f);
+        int pad = (int)((32 - (pos % 32)) % 32);
+        while (pad-- > 0) fputc(0, f);
+    }
     for (int i = 0; i < n_ents; i++) fwrite(ents[i].data, 4, ents[i].numel, f);
     fclose(f);
 }

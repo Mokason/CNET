@@ -3,7 +3,8 @@
 
 #include "cnet_export.h"
 
-/* Unified base ("CNB2", with CNB1 read compatibility): ONE sealed container replacing per-unit file sprawl.
+/* Unified base (version 2 semantics under stable CNB1 magic, with v1 read
+ * compatibility): ONE sealed container replacing per-unit file sprawl.
  *
  * Holds unit payloads (exact CNU1 byte images) in a content-addressed blob
  * table + name->blob references, plus the tag registry (mint-once governance
