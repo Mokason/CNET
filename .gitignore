@@ -13,3 +13,5 @@ supra_cache/
 *.cce
 *.gguf
 *.safetensors
+*.cnb
+*.cnb.bak
