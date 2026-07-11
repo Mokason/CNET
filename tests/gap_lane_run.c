@@ -26,12 +26,21 @@
  *                             english_window_256.txt); input one-hot i maps
  *                             to ids[i] and outputs range over the same ids.
  *                             Unset = contiguous [TOKEN_BASE, TOKEN_BASE+W)
- *   CNET_LANE_CONTEXT_FILE    corpus-drawn teaching context: token ids of a
- *                             real prefix, pinned ONCE in the KV cache; every
+ *   CNET_LANE_CONTEXT_FILE    default corpus-drawn teaching context: token
+ *                             ids of a real prefix, pinned in the KV; every
  *                             teaching call is then an independent probe of
  *                             prefix+token (cce_gguf_qwen2_forward_probes,
  *                             KV never modified). Unset = bare context.
  *                             Requires CNET_MAX_CTX > prefix length.
+ *   CNET_LANE_CONTEXT_DIR     multiple pinned contexts: every <name>.ids in
+ *                             the directory is a context; a gap whose goal
+ *                             tag starts with "<name>_" is taught under it
+ *                             (longest name wins), all others under the
+ *                             default. One KV holds one prefix, so the
+ *                             teacher re-pins on context switch — the drain
+ *                             works gap-by-gap, so at most one re-pin per
+ *                             gap. Each context carries its own provenance
+ *                             fingerprint into the ledger.
  *   CNET_LANE_TOKEN_BASE      window base token id (default 0)
  *   CNET_LANE_MARGIN_EPS      teacher abstention margin (default 1e-4)
  *   CNET_ACQ_HIDDEN / CNET_ACQ_MAXHIDDEN / CNET_ACQ_EPOCHS
@@ -49,6 +58,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <dirent.h>
 
 #include "../include/gap_lane.h"
 #include "../include/nn.h"
@@ -66,36 +76,64 @@ typedef struct {
     int width;       /* W */
     int k;           /* ordered top-k fields */
     double eps;      /* abstention margin */
+    const struct LmContextTag *ctx_;  /* unused; kept for layout clarity */
+    const void *ctx_sel;              /* selected LmContext for this gap */
 } LmTask;
 
 #define LM_WINDOW_MAX 4096
 #define LM_CTX_MAX 512
 static int lm_window[LM_WINDOW_MAX];
 static int lm_window_n;       /* 0 = synth from TOKEN_BASE per gap width */
-static int lm_ctx[LM_CTX_MAX];
-static int lm_ctx_n;          /* 0 = bare context */
 static int lm_synth[LM_WINDOW_MAX];  /* TOKEN_BASE fallback alphabet */
-static char lm_provenance[16];  /* "c<fnv8>" over window+context ids; the
-                                   teacher name carries it into the ledger's
-                                   permanent oracle column — WHICH corpus
-                                   taught this gap is provenance, not lore */
 
-static void lm_fingerprint(void) {
+/* Named teaching contexts. One KV cache holds one pinned prefix, so
+   lm_pinned tracks the occupant and lm_teach re-pins on switch. fp is the
+   "c<fnv8>" provenance over window+context ids, carried into the ledger's
+   permanent oracle column — WHICH corpus taught a gap is provenance. */
+#define LM_CTX_SLOTS 16
+typedef struct {
+    char name[32];            /* "" for the default context */
+    int ids[LM_CTX_MAX];
+    int n;                    /* 0 = bare context */
+    char fp[16];
+} LmContext;
+static LmContext lm_contexts[LM_CTX_SLOTS];
+static int lm_context_count;
+static LmContext lm_default_ctx;
+static const LmContext *lm_pinned;
+
+static void lm_fingerprint(LmContext *c) {
     unsigned long long h = 1469598103934665603ULL;
     int i;
     for (i = 0; i < lm_window_n; i++) {
         h ^= (unsigned long long)lm_window[i];
         h *= 1099511628211ULL;
     }
-    for (i = 0; i < lm_ctx_n; i++) {
-        h ^= (unsigned long long)lm_ctx[i] ^ 0x8000000000ULL;
+    for (i = 0; i < c->n; i++) {
+        h ^= (unsigned long long)c->ids[i] ^ 0x8000000000ULL;
         h *= 1099511628211ULL;
     }
-    if (lm_window_n || lm_ctx_n)
-        snprintf(lm_provenance, sizeof lm_provenance, "c%08x",
-                 (unsigned)(h ^ (h >> 32)));
+    if (lm_window_n || c->n)
+        snprintf(c->fp, sizeof c->fp, "c%08x", (unsigned)(h ^ (h >> 32)));
     else
-        lm_provenance[0] = '\0';
+        c->fp[0] = '\0';
+}
+
+/* tag-prefix convention: goal tag "<name>_..." selects context <name>.ids;
+   the longest matching name wins; no match = the default context */
+static const LmContext *lm_select_context(const char *tag) {
+    const LmContext *best = &lm_default_ctx;
+    size_t best_len = 0;
+    int i;
+    for (i = 0; i < lm_context_count; i++) {
+        size_t n = strlen(lm_contexts[i].name);
+        if (n > best_len && strncmp(tag, lm_contexts[i].name, n) == 0 &&
+            tag[n] == '_') {
+            best = &lm_contexts[i];
+            best_len = n;
+        }
+    }
+    return best;
 }
 
 static LmTask lm_tasks[ACQUIRE_MAX_ORACLES];
@@ -107,9 +145,22 @@ static int lm_teach(const double *in, double *out, void *ctx) {
     if (!t || !t->m) return -1;
     for (i = 1; i < t->width; i++) if (in[i] > in[hot]) hot = i;
     tok = t->ids[hot];
-    /* independent probe of prefix+token: the corpus prefix stays pinned in
-       the KV (probes never modify it); with no prefix pinned, cur_pos is 0
-       and this is the bare single-token context */
+    /* pin this gap's context if another occupies the KV (one cache, one
+       prefix; the drain works gap-by-gap so this is one forward per gap
+       switch, not per point) */
+    {
+        const LmContext *want = (const LmContext *)t->ctx_sel;
+        if (lm_pinned != want) {
+            t->m->cur_pos = 0;
+            if (want && want->n > 0 &&
+                cce_gguf_qwen2_forward(t->m, want->ids, want->n, t->logits,
+                                       t->vocab) != CCE_OK)
+                return -1;
+            lm_pinned = want;
+        }
+    }
+    /* independent probe of prefix+token: the pinned prefix stays put
+       (probes never modify the KV); with a bare context, cur_pos is 0 */
     if (cce_gguf_qwen2_forward_probes(t->m, &tok, 1, t->logits,
                                       t->vocab) != CCE_OK)
         return -1;
@@ -191,13 +242,18 @@ static size_t bind_model_teachers(GapLane *L, cce_gguf_qwen2 *m,
             goal = e->btn->output_ports[0];
         }
         if (!lm_shape_ok(in, goal, vocab, base)) continue;
-        if (lm_provenance[0])
-            snprintf(name, sizeof name, "lm_%s_%.44s", lm_provenance,
-                     goal.tag[0] ? goal.tag : "untagged");
-        else
-            snprintf(name, sizeof name, "lm_%.56s",
-                     goal.tag[0] ? goal.tag : "untagged");
-        t = &lm_tasks[lm_task_count];
+        {
+            const LmContext *sel =
+                lm_select_context(goal.tag[0] ? goal.tag : "");
+            if (sel->fp[0])
+                snprintf(name, sizeof name, "lm_%s_%.44s", sel->fp,
+                         goal.tag[0] ? goal.tag : "untagged");
+            else
+                snprintf(name, sizeof name, "lm_%.56s",
+                         goal.tag[0] ? goal.tag : "untagged");
+            t = &lm_tasks[lm_task_count];
+            t->ctx_sel = sel;
+        }
         t->m = m; t->logits = logits; t->vocab = vocab;
         if (lm_window_n > 0) {
             t->ids = lm_window;
@@ -311,35 +367,77 @@ int main(int argc, char **argv) {
                        wf, lm_window_n, lm_window[0]);
             }
         }
-        /* corpus-drawn teaching context: pin the real prefix ONCE; probes
-           never modify the KV, so it stays pinned for the process lifetime */
+        /* default corpus-drawn teaching context (selected when no named
+           context matches the goal tag); pinning happens lazily per gap */
         {
             const char *cf = getenv("CNET_LANE_CONTEXT_FILE");
             if (cf && cf[0]) {
-                lm_ctx_n = gap_lane_load_ids(cf, lm_ctx, LM_CTX_MAX);
-                if (lm_ctx_n <= 0 || lm_ctx_n >= model->max_ctx) {
+                lm_default_ctx.n = gap_lane_load_ids(cf, lm_default_ctx.ids,
+                                                     LM_CTX_MAX);
+                if (lm_default_ctx.n <= 0 ||
+                    lm_default_ctx.n >= model->max_ctx) {
                     fprintf(stderr,
                             "gap_lane_run: bad context file %s (n=%d, "
-                            "max_ctx=%d)\n", cf, lm_ctx_n, model->max_ctx);
+                            "max_ctx=%d)\n", cf, lm_default_ctx.n,
+                            model->max_ctx);
                     gap_lane_close(&lane);
                     return 1;
                 }
-                model->cur_pos = 0;
-                if (cce_gguf_qwen2_forward(model, lm_ctx, lm_ctx_n, logits,
-                                           vocab) != CCE_OK) {
-                    fprintf(stderr, "gap_lane_run: prefix pin failed\n");
-                    gap_lane_close(&lane);
-                    return 1;
-                }
-                printf("gap_lane_run: context %s pinned (%d tokens)\n",
-                       cf, lm_ctx_n);
+                printf("gap_lane_run: default context %s (%d tokens)\n",
+                       cf, lm_default_ctx.n);
             }
         }
-        lm_fingerprint();
+        /* named contexts: <name>.ids, selected by goal-tag prefix */
+        {
+            const char *cd = getenv("CNET_LANE_CONTEXT_DIR");
+            if (cd && cd[0]) {
+                DIR *d = opendir(cd);
+                struct dirent *de;
+                if (!d) {
+                    fprintf(stderr, "gap_lane_run: bad context dir %s\n", cd);
+                    gap_lane_close(&lane);
+                    return 1;
+                }
+                while ((de = readdir(d)) != NULL &&
+                       lm_context_count < LM_CTX_SLOTS) {
+                    size_t nl = strlen(de->d_name);
+                    char path[1024];
+                    LmContext *c;
+                    if (nl <= 4 || nl - 4 >= sizeof c->name ||
+                        strcmp(de->d_name + nl - 4, ".ids") != 0)
+                        continue;
+                    c = &lm_contexts[lm_context_count];
+                    memcpy(c->name, de->d_name, nl - 4);
+                    c->name[nl - 4] = '\0';
+                    snprintf(path, sizeof path, "%s/%s", cd, de->d_name);
+                    c->n = gap_lane_load_ids(path, c->ids, LM_CTX_MAX);
+                    if (c->n <= 0 || c->n >= model->max_ctx) {
+                        fprintf(stderr,
+                                "gap_lane_run: bad context %s (n=%d)\n",
+                                path, c->n);
+                        closedir(d);
+                        gap_lane_close(&lane);
+                        return 1;
+                    }
+                    lm_context_count++;
+                }
+                closedir(d);
+            }
+        }
+        lm_fingerprint(&lm_default_ctx);
+        {
+            int ci;
+            for (ci = 0; ci < lm_context_count; ci++) {
+                lm_fingerprint(&lm_contexts[ci]);
+                printf("gap_lane_run: context '%s' (%d tokens, %s)\n",
+                       lm_contexts[ci].name, lm_contexts[ci].n,
+                       lm_contexts[ci].fp);
+            }
+        }
         printf("gap_lane_run: teacher %s (vocab %d, base %ld%s%s)\n",
                argv[3], vocab, token_base,
-               lm_provenance[0] ? ", provenance " : "",
-               lm_provenance);
+               lm_default_ctx.fp[0] ? ", default provenance " : "",
+               lm_default_ctx.fp);
     } else {
         printf("gap_lane_run: maintenance mode (no teacher bound)\n");
     }

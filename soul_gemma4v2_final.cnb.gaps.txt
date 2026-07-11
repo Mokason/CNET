@@ -1,5 +1,5 @@
 CNET_GAPS 1
-260
+262
 0 2 1 1 1 256 1 w_cur 1 256 3 tk176938q176938 - cce_cond_next -
 0 2 1 1 1 256 1 w_cur 1 256 3 tk216001q216001 - cce_cond_next -
 0 2 1 1 1 256 1 w_cur 1 256 3 tk117514q117514 - cce_cond_next -
@@ -260,3 +260,5 @@ CNET_GAPS 1
 0 2 9 7 1 256 1 - 1 256 1 lane_wnd256_e2e - lm_lane_wnd256_e2e -
 0 2 1 1 1 256 1 w_cur 1 256 1 corpus_next_v01 - lm_corpus_next_v01 -
 0 2 1 1 1 256 1 w_cur 1 256 3 corpus_top3_v01 - lm_c6bd1a4ef_corpus_top3_v01 -
+0 2 1 1 1 256 1 w_cur 1 256 3 lamp_next3_v01 - lm_c6bd1a4ef_lamp_next3_v01 -
+0 2 1 1 1 256 1 w_cur 1 256 3 storm_next3_v01 - lm_ccf82c87e_storm_next3_v01 -

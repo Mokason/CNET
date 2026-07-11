@@ -22,6 +22,10 @@ Environment=CNET_MAX_CTX=128
 # prefix in the KV once, and every teaching call probes prefix+token.
 Environment=CNET_WINDOW_FILE=/home/marble/AI/CNET/english_window_256.txt
 Environment=CNET_LANE_CONTEXT_FILE=/home/marble/AI/CNET/config/lane_context_english_v1.ids
+# named contexts: goal tag "<name>_..." teaches under lane_contexts/<name>.ids
+# (lamp = evening reading prose, storm = storm at sea); unmatched tags use the
+# default context above. The teacher re-pins the KV on context switch.
+Environment=CNET_LANE_CONTEXT_DIR=/home/marble/AI/CNET/config/lane_contexts
 Environment=CNET_LANE_TOKEN_BASE=1000
 # near-tie abstention margin on raw logits: 1e-4 abstains >10% of a
 # restricted window (oracle_unfit); 1e-6 declines only genuine ties
