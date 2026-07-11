@@ -94,7 +94,9 @@ CNET_API int soul_unit_axes(SoulHost *h, const char *name,
                             int *trust, int *role);
 
 /* Novel-goal request by EXPLICIT typed signature (families are PortFamily
-   values; tags may be "" = wildcard/untagged). Serve-or-note semantics:
+   values). BOTH tags are required: an untagged input is a wildcard, which
+   trivially "already satisfies" any same-shape goal — unservable by
+   construction (-1). Serve-or-note semantics:
 
    - a certified plan exists: with `in` non-NULL, execute it (in_len must
      equal the input total) and write min(out_total, out_cap) doubles;

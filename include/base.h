@@ -84,7 +84,11 @@ typedef struct CnetBase {
        registry BORROWS them, the base OWNS them — cnb_free after the registry
        is done (acquire-ledger ownership pattern). */
     BinaryTransformNetwork **loaded;
-    char (*loaded_names)[CNB_NAME_MAX];
+    /* One heap buffer per name: RegistryEntry.name borrows these, so each
+       must stay put forever — a growable ROW ARRAY dangles every earlier
+       borrower when realloc moves it (latent until the heap layout shifted
+       at 254 units; found live 2026-07-11). */
+    char **loaded_names;
     size_t loaded_count, loaded_cap;
 } CnetBase;
 

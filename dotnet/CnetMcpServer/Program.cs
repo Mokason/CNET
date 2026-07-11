@@ -201,14 +201,14 @@ class Program
                                         properties = new
                                         {
                                             goal_tag = new { type = "string", description = "Semantic tag of the requested goal port" },
-                                            in_tag = new { type = "string", description = "Semantic tag of the input port (default: empty = untagged)" },
+                                            in_tag = new { type = "string", description = "Semantic tag of the input port (REQUIRED: a wildcard input is unservable; the deployed soul's convention is w_cur)" },
                                             family = new { type = "string", description = "Port family: onehot|binary_msb|binary_lsb|raw (default onehot)" },
                                             width = new { type = "integer", description = "Field width (default 256)" },
                                             count = new { type = "integer", description = "Input field count (default 1)" },
                                             goal_count = new { type = "integer", description = "Goal field count, e.g. top-k (default 1)" },
                                             input = new { type = "array", items = new { type = "number" }, description = "Optional input vector; omit for a capability probe" }
                                         },
-                                        required = new[] { "goal_tag" }
+                                        required = new[] { "goal_tag", "in_tag" }
                                     }
                                 },
                                 new

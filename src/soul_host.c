@@ -372,6 +372,11 @@ CNET_API int soul_request(SoulHost *h,
     size_t in_total, out_total;
 
     if (!h || !h->loaded) return -1;
+    /* a request needs REAL types on both ends: an untagged input port is a
+       wildcard, which trivially "already satisfies" any same-shape goal
+       (the 0-length identity) — such a request is unservable by
+       construction and would mint an unreachable-by-default unit */
+    if (!in_tag || !in_tag[0] || !goal_tag || !goal_tag[0]) return -1;
     if (request_port(&input, in_family, in_width, in_count, in_tag) != 0 ||
         request_port(&goal, goal_family, goal_width, goal_count,
                      goal_tag) != 0)

@@ -148,6 +148,7 @@ void cnb_free(CnetBase *b) {
         free(b->loaded[i]);
     }
     free(b->loaded);
+    for (i = 0; i < b->loaded_count; ++i) free(b->loaded_names[i]);
     free(b->loaded_names);
     memset(b, 0, sizeof *b);
 }
@@ -766,23 +767,27 @@ int cnb_load_registry(CnetBase *b, PrimitiveRegistry *reg, size_t *skipped_out) 
         }
         /* base owns the BTN and the name storage (units[] may realloc, so the
            registry must never borrow a units[i].name pointer) */
+        char *nm;
         if (b->loaded_count == b->loaded_cap) {
             size_t nc = b->loaded_cap ? b->loaded_cap * 2 : 8;
             BinaryTransformNetwork **nl =
                 (BinaryTransformNetwork **)realloc(b->loaded, nc * sizeof *nl);
-            char (*nn)[CNB_NAME_MAX];
+            char **nn;
             if (!nl) { btn_free(btn); free(btn); contract_free(&c); return -1; }
             b->loaded = nl;
-            nn = (char (*)[CNB_NAME_MAX])realloc(b->loaded_names, nc * CNB_NAME_MAX);
+            /* the POINTER array may move; the name buffers it points to
+               never do — registry entries borrow the buffers, not the rows */
+            nn = (char **)realloc(b->loaded_names, nc * sizeof *nn);
             if (!nn) { btn_free(btn); free(btn); contract_free(&c); return -1; }
             b->loaded_names = nn;
             b->loaded_cap = nc;
         }
-        snprintf(b->loaded_names[b->loaded_count], CNB_NAME_MAX, "%s",
-                 b->units[i].name);
+        nm = (char *)malloc(CNB_NAME_MAX);
+        if (!nm) { btn_free(btn); free(btn); contract_free(&c); return -1; }
+        snprintf(nm, CNB_NAME_MAX, "%s", b->units[i].name);
         /* trust is replayed, never stored */
-        if (registry_add_certified(reg, btn, b->loaded_names[b->loaded_count],
-                                   &c) != 0) {
+        if (registry_add_certified(reg, btn, nm, &c) != 0) {
+            free(nm);
             btn_free(btn);
             free(btn);
             contract_free(&c);
@@ -790,6 +795,7 @@ int cnb_load_registry(CnetBase *b, PrimitiveRegistry *reg, size_t *skipped_out) 
             continue;
         }
         contract_free(&c);
+        b->loaded_names[b->loaded_count] = nm;
         b->loaded[b->loaded_count++] = btn;
     }
     if (skipped_out) *skipped_out = skipped;

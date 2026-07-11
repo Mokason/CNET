@@ -201,6 +201,75 @@ int main(void) {
         remove("tmp_soul_host.cnb.tmp");
     }
 
+    /* -- name stability across roster growth (regression) ---------------
+       RegistryEntry.name borrows the base's per-unit name buffers; a
+       growable row array dangled every earlier borrower when realloc moved
+       (hit live at 254 units, 2026-07-11: soul_unit_name(82) returned
+       garbage and route_plan missed a sealed unit). 13 units cross the
+       first capacity doubling; under ASan realloc always moves. */
+    {
+        const char *tags2[13] = {"rs00rs00", "rs11rs11", "rs22rs22",
+                                 "rs33rs33", "rs44rs44", "rs55rs55",
+                                 "rs66rs66", "rs77rs77", "rs88rs88",
+                                 "rs99rs99", "rt00rt00", "rt11rt11",
+                                 "rt22rt22"};
+        CnetBase base2;
+        SoulHost *host2 = NULL;
+        BinaryTransformNetwork extra[13];
+        Contract c2[13];
+        int k, ok = 1, reused2 = 0;
+        remove("tmp_soul_host2.cnb");
+        cnb_init(&base2);
+        for (k = 0; k < 13; ++k) {
+            char uname[32];
+            Port op = port(PORT_ONEHOT, 2, tags2[k]);
+            const double *raw2;
+            double exp2[2];
+            memset(&extra[k], 0, sizeof extra[k]);
+            memset(&c2[k], 0, sizeof c2[k]);
+            snprintf(uname, sizeof uname, "acq_reg_stab_%02d", k);
+            if (btn_init(&extra[k], 2, 2, 2, 2, 0.1, 17u) != 0) { ok = 0; break; }
+            extra[k].output_bias[0] = 10.0;
+            extra[k].output_bias[1] = -10.0;
+            memset(extra[k].hidden_output_weights, 0,
+                   extra[k].hidden_count * extra[k].output_count *
+                   sizeof(double));
+            if (btn_set_ports(&extra[k], in_port, op) != 0) { ok = 0; break; }
+            raw2 = btn_forward(&extra[k], input);
+            if (!raw2 || port_canonicalize(op, raw2, exp2) != 0 ||
+                contract_init_borrowed(&c2[k], uname, &extra[k], input,
+                                       exp2, 1) != 0 ||
+                cnb_add_unit(&base2, &extra[k], &c2[k], &reused2) != 0) {
+                ok = 0;
+                break;
+            }
+        }
+        check(ok, "growth fixture seals 13 units");
+        check(cnb_save(&base2, "tmp_soul_host2.cnb") == 0, "growth base saves");
+        cnb_free(&base2);
+        check(soul_open("tmp_soul_host2.cnb", NULL, &host2) == 0 &&
+              soul_unit_count(host2) == 13,
+              "13-unit roster loads past the capacity doubling");
+        ok = 1;
+        for (k = 0; k < 13 && ok; ++k) {
+            char nm[CNB_NAME_MAX];
+            if (soul_unit_name(host2, k, nm, (int)sizeof nm) != 0 ||
+                strncmp(nm, "acq_", 4) != 0)
+                ok = 0;
+        }
+        check(ok, "every roster name survives array growth intact");
+        check(soul_request(host2, PORT_ONEHOT, 2, 1, "unified_input",
+                           PORT_ONEHOT, 2, 1, "rt11rt11",
+                           NULL, 0, NULL, 0) == 0,
+              "the last-sealed unit is plannable after growth");
+        soul_close(host2);
+        for (k = 0; k < 13; ++k) {
+            contract_free(&c2[k]);
+            btn_free(&extra[k]);
+        }
+        remove("tmp_soul_host2.cnb");
+    }
+
     printf("SOUL_HOST_UNIFIED_%s\n", failures ? "FAIL" : "PASS");
     return failures ? 1 : 0;
 }

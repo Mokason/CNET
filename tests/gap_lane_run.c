@@ -25,6 +25,12 @@
  *   CNET_LANE_MARGIN_EPS      teacher abstention margin (default 1e-4)
  *   CNET_ACQ_HIDDEN / CNET_ACQ_MAXHIDDEN / CNET_ACQ_EPOCHS
  *                             student structure budget (dynamic growth)
+ *   CNET_ACQ_TARGET_LOSS / CNET_ACQ_MIN_IMPROVEMENT
+ *                             training exactness bar: certification demands
+ *                             per-point exactness, and a near-constant map
+ *                             plateaus at the AVERAGE-loss default with one
+ *                             stubborn point wrong (255/256) — 1e-7 trains
+ *                             through it (measured: 41 s, margin 0.9881)
  * Stop file: <base>.stop (same convention as the flagship harness).
  */
 
@@ -60,6 +66,9 @@ static int lm_teach(const double *in, double *out, void *ctx) {
     if (!t || !t->m) return -1;
     for (i = 1; i < t->width; i++) if (in[i] > in[hot]) hot = i;
     tok = t->base + hot;
+    /* fresh context every call: the runner's KV cache is persistent and a
+       full cache fails the forward (flagship does the same reset) */
+    t->m->cur_pos = 0;
     if (cce_gguf_qwen2_forward(t->m, &tok, 1, t->logits, t->vocab) != CCE_OK)
         return -1;
     /* ordered top-k within the window; margin-aware abstention on the
@@ -210,6 +219,10 @@ int main(int argc, char **argv) {
                                            (long)lane.acq.max_hidden);
     lane.acq.max_epochs = (size_t)env_long("CNET_ACQ_EPOCHS",
                                            (long)lane.acq.max_epochs);
+    lane.acq.target_loss = env_double("CNET_ACQ_TARGET_LOSS",
+                                      lane.acq.target_loss);
+    lane.acq.min_improvement = env_double("CNET_ACQ_MIN_IMPROVEMENT",
+                                          lane.acq.min_improvement);
 
     if (argc >= 4) {
         if (cce_anymodel_open(&am, argv[3]) != CCE_OK || !am->transformer) {
