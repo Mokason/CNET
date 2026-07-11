@@ -348,6 +348,54 @@ CNET_API int soul_unit_axes(SoulHost *h, const char *name,
     return 0;
 }
 
+static int request_port(Port *p, int family, int width, int count,
+                        const char *tag) {
+    memset(p, 0, sizeof *p);
+    if (family < PORT_RAW || family > PORT_CONCEPT || width <= 0 || count <= 0)
+        return -1;
+    p->family = (PortFamily)family;
+    p->field_width = (size_t)width;
+    p->field_count = (size_t)count;
+    if (tag && tag[0] && port_set_tag(p, tag) != 0) return -1;
+    return 0;
+}
+
+CNET_API int soul_request(SoulHost *h,
+                          int in_family, int in_width, int in_count,
+                          const char *in_tag,
+                          int goal_family, int goal_width, int goal_count,
+                          const char *goal_tag,
+                          const double *in, int in_len,
+                          double *out, int out_cap) {
+    Port input, goal;
+    RoutePlan plan;
+    size_t in_total, out_total;
+
+    if (!h || !h->loaded) return -1;
+    if (request_port(&input, in_family, in_width, in_count, in_tag) != 0 ||
+        request_port(&goal, goal_family, goal_width, goal_count,
+                     goal_tag) != 0)
+        return -1;
+    in_total = input.field_width * input.field_count;
+    out_total = goal.field_width * goal.field_count;
+
+    memset(&plan, 0, sizeof plan);
+    /* length 0 = the wildcard-tag identity plan ("input already satisfies
+       the goal type") — a capability request wants a PRODUCING unit, so it
+       counts as no plan, same rule as soul_route. */
+    if (route_plan(&h->reg, input, goal, &plan) != 0 || plan.length == 0) {
+        /* an unservable request IS the knowledge gap: hand it to the lane */
+        if (h->gap_inbox[0])
+            gap_inbox_note_no_plan(h->gap_inbox, input, goal);
+        return -3;
+    }
+    if (!in) return 0;  /* capability probe: plannable, not executed */
+    if ((size_t)in_len != in_total || !out ||
+        (size_t)out_cap < out_total) return -4;
+    if (route_execute(&plan, in, in_total, out, out_total) != 0) return -5;
+    return (int)out_total;
+}
+
 CNET_API void soul_close(SoulHost *h) {
     size_t i;
     if (!h) return;

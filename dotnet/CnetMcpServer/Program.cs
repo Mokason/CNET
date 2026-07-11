@@ -193,6 +193,26 @@ class Program
                                 },
                                 new
                                 {
+                                    name = "cnet_request_capability",
+                                    description = "Request a capability by explicit typed signature: served now if a certified plan exists, else the novel goal is queued to the gap inbox for the 24/7 gap lane to acquire from the local model",
+                                    inputSchema = (object)new
+                                    {
+                                        type = "object",
+                                        properties = new
+                                        {
+                                            goal_tag = new { type = "string", description = "Semantic tag of the requested goal port" },
+                                            in_tag = new { type = "string", description = "Semantic tag of the input port (default: empty = untagged)" },
+                                            family = new { type = "string", description = "Port family: onehot|binary_msb|binary_lsb|raw (default onehot)" },
+                                            width = new { type = "integer", description = "Field width (default 256)" },
+                                            count = new { type = "integer", description = "Input field count (default 1)" },
+                                            goal_count = new { type = "integer", description = "Goal field count, e.g. top-k (default 1)" },
+                                            input = new { type = "array", items = new { type = "number" }, description = "Optional input vector; omit for a capability probe" }
+                                        },
+                                        required = new[] { "goal_tag" }
+                                    }
+                                },
+                                new
+                                {
                                     name = "cnet_health_tick",
                                     description = "Run one runtime health pass (audit, fault labeling, heal via re-certify, evidence promotion, shadow swap) over the live certified registry and report exact counts",
                                     inputSchema = (object)new { type = "object", properties = new { } }
@@ -239,6 +259,14 @@ class Program
                             toolArgs.TryGetProperty("role", out var r) ? r.GetString() ?? "memory-witness" : "memory-witness"),
                         "cnet_list_units" => tools.ListUnits(),
                         "cnet_list_oracles" => tools.ListOracles(),
+                        "cnet_request_capability" => tools.RequestCapability(
+                            toolArgs.GetProperty("goal_tag").GetString() ?? "",
+                            toolArgs.TryGetProperty("in_tag", out var rit) ? rit.GetString() ?? "" : "",
+                            toolArgs.TryGetProperty("family", out var rf) ? rf.GetString() ?? "onehot" : "onehot",
+                            toolArgs.TryGetProperty("width", out var rw) ? rw.GetInt32() : 256,
+                            toolArgs.TryGetProperty("count", out var rcnt) ? rcnt.GetInt32() : 1,
+                            toolArgs.TryGetProperty("goal_count", out var rgc) ? rgc.GetInt32() : 1,
+                            ReadDoubleList(toolArgs, "input")),
                         "cnet_health_tick" => tools.HealthTick(),
                         _ => "Unknown tool: " + toolName
                     };
@@ -280,6 +308,24 @@ class Program
             if (item.ValueKind == JsonValueKind.String)
             {
                 values.Add(item.GetString() ?? "");
+            }
+        }
+        return values;
+    }
+
+    private static List<double> ReadDoubleList(JsonElement args, string propertyName)
+    {
+        var values = new List<double>();
+        if (!args.TryGetProperty(propertyName, out var element) ||
+            element.ValueKind != JsonValueKind.Array)
+        {
+            return values;
+        }
+        foreach (var item in element.EnumerateArray())
+        {
+            if (item.ValueKind == JsonValueKind.Number)
+            {
+                values.Add(item.GetDouble());
             }
         }
         return values;

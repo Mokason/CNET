@@ -1010,6 +1010,40 @@ namespace CnetMcpServer
         /// One runtime health pass over the live certified registry. Exact
         /// native counts; a healthy soul reports all-zero actions.
         /// </summary>
+        private static int ParseFamily(string f) => f switch
+        {
+            "raw" => 0, "onehot" => 1, "binary_msb" => 2, "binary_lsb" => 3,
+            "evidence" => 4, "concept" => 5,
+            _ => throw new ArgumentException($"unknown port family '{f}'")
+        };
+
+        /// <summary>
+        /// Request a capability by explicit typed signature. Served now when
+        /// a certified plan exists; otherwise the NOVEL goal is appended to
+        /// the gap inbox and the 24/7 gap lane acquires it from the local
+        /// model. This is how goals with no existing unit flow into learning.
+        /// </summary>
+        public string RequestCapability(string goalTag, string inTag,
+            string family, int width, int count, int goalCount,
+            List<double> input)
+        {
+            int fam = ParseFamily(family);
+            double[]? inputVec = input.Count > 0 ? input.ToArray() : null;
+            var (served, gapNoted, output) = _soulHost.Request(
+                fam, width, count, inTag, fam, width, goalCount, goalTag,
+                inputVec);
+            return JsonSerializer.Serialize(new
+            {
+                request = goalTag,
+                served,
+                gap_noted = gapNoted,
+                note = gapNoted
+                    ? "no certified plan; signature queued to the gap inbox — the gap lane will mine, train, certify and seal it"
+                    : (inputVec == null ? "capability is plannable (probe only)" : "served by the certified plan"),
+                output
+            });
+        }
+
         public string HealthTick()
         {
             var r = _soulHost.HealthTick();

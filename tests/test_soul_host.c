@@ -52,6 +52,9 @@ int main(void) {
     remove(base_path);
     remove("tmp_soul_host.cnb.tmp");
 
+    remove("tmp_soul_host.inbox");
+    setenv("CNET_GAP_INBOX", "tmp_soul_host.inbox", 1);
+
     printf("== soul_host: canonical certified runtime ==\n");
     check(btn_init(&btn, 2, 2, 2, 2, 0.1, 17u) == 0,
           "matrix primitive initializes");
@@ -159,6 +162,35 @@ int main(void) {
               "unit axes read certified/active over the ABI");
         check(soul_run(host, unit_name, input, output, 2) == 2,
               "unit still executes after the health tick");
+    }
+
+    {
+        double req_out[2] = {0.0, 0.0};
+        FILE *ib;
+        check(soul_request(host, PORT_ONEHOT, 2, 1, "unified_input",
+                           PORT_ONEHOT, 2, 1, "unified_goal",
+                           input, 2, req_out, 2) == 2 &&
+              req_out[0] == expected[0] && req_out[1] == expected[1],
+              "explicit-signature request serves through the planner");
+        check(soul_request(host, PORT_ONEHOT, 2, 1, "unified_input",
+                           PORT_ONEHOT, 2, 1, "unified_goal",
+                           NULL, 0, NULL, 0) == 0,
+              "capability probe answers plannable without executing");
+        check(soul_request(host, PORT_ONEHOT, 4, 1, "novel_symbols",
+                           PORT_ONEHOT, 4, 1, "novel_goal",
+                           NULL, 0, NULL, 0) == -3,
+              "novel goal returns no-plan");
+        ib = fopen("tmp_soul_host.inbox", "r");
+        check(ib != NULL, "novel goal landed in the gap inbox for the lane");
+        if (ib) {
+            char line[256] = {0};
+            check(fgets(line, sizeof line, ib) != NULL &&
+                  strncmp(line, "NO_PLAN ", 8) == 0 &&
+                  strstr(line, "novel_goal") != NULL,
+                  "inbox line carries the full novel signature");
+            fclose(ib);
+        }
+        remove("tmp_soul_host.inbox");
     }
 
     soul_close(host);

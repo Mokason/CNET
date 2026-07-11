@@ -93,6 +93,29 @@ CNET_API int soul_health_tick(SoulHost *h, long long *counts, int counts_cap);
 CNET_API int soul_unit_axes(SoulHost *h, const char *name,
                             int *trust, int *role);
 
+/* Novel-goal request by EXPLICIT typed signature (families are PortFamily
+   values; tags may be "" = wildcard/untagged). Serve-or-note semantics:
+
+   - a certified plan exists: with `in` non-NULL, execute it (in_len must
+     equal the input total) and write min(out_total, out_cap) doubles;
+     returns the true out_total. With `in` NULL this is a capability probe:
+     returns 0 (plannable) without executing.
+   - no plan: the full signature is appended to the gap inbox
+     (CNET_GAP_INBOX; silently skipped when unset) so the gap lane can
+     acquire the capability, and -3 is returned.
+
+   This is the serving half of gap_lane_execute: the request either runs
+   now or becomes the lane's work — unknown goals no longer need an
+   existing unit to be reportable. Other returns: -1 bad args, -4 buffer/
+   length mismatch, -5 execution failure. */
+CNET_API int soul_request(SoulHost *h,
+                          int in_family, int in_width, int in_count,
+                          const char *in_tag,
+                          int goal_family, int goal_width, int goal_count,
+                          const char *goal_tag,
+                          const double *in, int in_len,
+                          double *out, int out_cap);
+
 CNET_API void soul_close(SoulHost *h);
 
 #ifdef __cplusplus

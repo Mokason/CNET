@@ -183,6 +183,30 @@ public sealed class SoulHost : IDisposable
             counts[12]);
     }
 
+    /// <summary>
+    /// Request by explicit typed signature: serve now when a certified plan
+    /// exists, otherwise the novel goal is noted to the gap inbox for the
+    /// gap lane to acquire. input == null is a capability probe.
+    /// Returns (served, gapNoted, output).
+    /// </summary>
+    public (bool Served, bool GapNoted, double[]? Output) Request(
+        int inFamily, int inWidth, int inCount, string inTag,
+        int goalFamily, int goalWidth, int goalCount, string goalTag,
+        double[]? input)
+    {
+        Check();
+        int outTotal = goalWidth * goalCount;
+        double[]? output = input != null ? new double[outTotal] : null;
+        int rc = CceNative.SoulRequest(_handle,
+            inFamily, inWidth, inCount, inTag,
+            goalFamily, goalWidth, goalCount, goalTag,
+            input, input?.Length ?? 0, output, output?.Length ?? 0);
+        if (rc == -3) return (false, true, null);
+        if (rc < 0)
+            throw new InvalidOperationException($"soul_request failed: {rc}");
+        return (true, false, output);
+    }
+
     /// <summary>Trust/role of a unit on the shared Specialist axes.</summary>
     public (int Trust, int Role) UnitAxes(string name)
     {

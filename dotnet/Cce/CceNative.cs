@@ -665,6 +665,15 @@ internal static partial class CceNative
     internal static partial int SoulUnitAxes(IntPtr host, [MarshalAs(UnmanagedType.LPStr)] string name,
         out int trust, out int role);
 
+    // Explicit-signature request: served (>=0 = out_total, 0 = probe ok),
+    // -3 = no plan (novel goal noted to the gap inbox), other <0 = error.
+    [LibraryImport(CnetLibraryName, EntryPoint = "soul_request")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+    internal static partial int SoulRequest(IntPtr host,
+        int inFamily, int inWidth, int inCount, [MarshalAs(UnmanagedType.LPStr)] string inTag,
+        int goalFamily, int goalWidth, int goalCount, [MarshalAs(UnmanagedType.LPStr)] string goalTag,
+        double[]? input, int inLen, [Out] double[]? output, int outCap);
+
     [LibraryImport(CnetLibraryName, EntryPoint = "soul_close")]
     [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
     internal static partial void SoulClose(IntPtr host);

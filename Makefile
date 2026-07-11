@@ -1406,6 +1406,7 @@ unified_native: unified_adapter unified_cce_adapter unified_oracle_adapter unifi
 	@nm -D cnet.so | grep -q " gap_lane_tick$$"
 	@nm -D cnet.so | grep -q " gap_inbox_note_no_plan$$"
 	@nm -D cnet.so | grep -q " soul_health_tick$$"
+	@nm -D cnet.so | grep -q " soul_request$$"
 	@nm -D cnet.so | grep -q " soul_unit_axes$$"
 	@nm -D cnet.so | grep -q " cce_model_init_contract_adapter$$"
 	@nm -D cnet.so | grep -q " cnet_oracle_init_contract_adapter$$"
@@ -1429,14 +1430,16 @@ unified:
 	dotnet build dotnet/CnetMcpServer/CnetMcpServer.csproj -c Release --no-restore --nologo -v:q >> logs/unified_dotnet_build.log 2>&1
 	LD_LIBRARY_PATH="$(CURDIR)$${LD_LIBRARY_PATH:+:$$LD_LIBRARY_PATH}" dotnet dotnet/CceHost/bin/Release/net10.0/CceHost.dll --list tmp_soul_host.cnb > logs/unified_host.log 2>&1
 	@grep -q "CNET_HOST_UNIFIED_PASS" logs/unified_host.log
-	@printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05"}}' '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"cnet_list_units","arguments":{}}}' '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"cnet_list_oracles","arguments":{}}}' '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"cnet_health_tick","arguments":{}}}' | CNET_BASE_PATH="$(CURDIR)/tmp_soul_host.cnb" LD_LIBRARY_PATH="$(CURDIR)$${LD_LIBRARY_PATH:+:$$LD_LIBRARY_PATH}" dotnet dotnet/CnetMcpServer/bin/Release/net10.0/CnetMcpServer.dll > logs/unified_mcp.log 2> logs/unified_mcp.stderr.log
+	@printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05"}}' '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"cnet_list_units","arguments":{}}}' '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"cnet_list_oracles","arguments":{}}}' '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"cnet_health_tick","arguments":{}}}' '{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"cnet_request_capability","arguments":{"goal_tag":"unified_novel_probe","width":4}}}' | CNET_BASE_PATH="$(CURDIR)/tmp_soul_host.cnb" CNET_GAP_INBOX="$(CURDIR)/tmp_soul_host.cnb.inbox" LD_LIBRARY_PATH="$(CURDIR)$${LD_LIBRARY_PATH:+:$$LD_LIBRARY_PATH}" dotnet dotnet/CnetMcpServer/bin/Release/net10.0/CnetMcpServer.dll > logs/unified_mcp.log 2> logs/unified_mcp.stderr.log
 	@grep -q '"name":"cnet-mcp"' logs/unified_mcp.log
 	@grep -q "acq_unified_goal" logs/unified_mcp.log
 	@grep -q "unified_teacher" logs/unified_mcp.log
 	@grep -q "descriptor_only_not_runtime_trust" logs/unified_mcp.log
 	@grep -q "reset_remaining" logs/unified_mcp.log
+	@grep -qE 'gap_noted[^:]*:true' logs/unified_mcp.log
+	@grep -q "NO_PLAN" tmp_soul_host.cnb.inbox
 	LD_LIBRARY_PATH="$(CURDIR)$${LD_LIBRARY_PATH:+:$$LD_LIBRARY_PATH}" dotnet test dotnet/Cce.Tests/Cce.Tests.csproj -c Release --no-restore --nologo -v:q > logs/unified_dotnet_test.log 2>&1
-	@rm -f tmp_soul_host.cnb tmp_soul_host.cnb.tmp
+	@rm -f tmp_soul_host.cnb tmp_soul_host.cnb.tmp tmp_soul_host.cnb.inbox
 	@$(MAKE) --no-print-directory claims_test
 	@bash scripts/gen_claims.sh --strict --scope unified --since logs/unified.started
 	@rm -f logs/unified.started
