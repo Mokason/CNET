@@ -49,6 +49,10 @@ Every claim in this README is backed by a make-target gate. This table is the
 map from claim to gate; "in `make test`" means the gate runs in the full
 verification chain on every `make test`.
 
+Last full end-to-end run on this host (2026-07-11): `make test` — all 25 suites
+green in **3:50.88** wall (99% CPU, 3.15 GiB peak RSS); `make unified` —
+`CNET_UNIFIED_PASS`; generated claims ledger **13/13 verified** (`make claims`).
+
 | Area | Verified by | Status |
 |---|---|---|
 | CCE runtime (tensor → block → cascade → archive → forest → router → learn) | `make cce_smoke`, `make cce_train_bench` | passing (standalone gates) |
@@ -59,7 +63,7 @@ verification chain on every `make test`.
 | **One `Specialist` type across kinds** — a native BTN, a real CCE model, and an Oracle unit as ordinary nodes of ONE certified plan (route + DAG), admitted through the single door (`specialist_admit`), trust/residency/role axis views | `make unified_specialist` | `HET_PLAN_PASS`, in `make unified`; strict execution exact over the whole enumerated domain; demote/restore acts identically on the CCE kind |
 | Generated claims ledger (gate logs → machine-readable verdicts, diffable against this table) | `make claims` | `logs/claims.jsonl` + `docs/verified-today.generated.md`; regenerated at the end of every `make unified` |
 | Work-conserving Oracle v2 async lanes (backpressure, cancellation, deadlines, telemetry) | `make unified_async` | `ASYNC_RUNTIME_PASS` |
-| Oracle v2 governed invocation | `make oracle_v2_bench` | semantic validation at 12.432 ns/call; ~80.4M calls/s on this host |
+| Oracle v2 governed invocation | `make oracle_v2_bench` | semantic validation at 12.446 ns/call; ~80.3M calls/s, validator delta 0.676 ns (re-measured 2026-07-11; supersedes the July 10 preliminary 12.432) |
 | Two physical R9700 lanes, exact CPU parity, iGPU excluded | `make unified_gpu` | 1.984× over the serial lane fixture; `ASYNC_GPU_LANES_PASS` |
 | Model-universal residency (Dense + MoE + SSM descriptors) | `make unified_models` | 90 lifecycle/resource checks + 12 catalog checks; lazy load, leases, deduplicated cold loads, LRU, atomic multi-resource admission |
 | Qwen3.5 QGKP v3 lossless envelope | `make qwythos_qgkp_acceptance` | 1M context metadata preserved; payload SHA-256 exact; Qwythos mixed TQ1_0+Q4_K passes 3/3 coherence at 70.97 tok/s on GPU1 |
@@ -1377,6 +1381,12 @@ current state.
 - A fixed-buffer stack overflow in `attention_retrieve_top_k` (registries > 64
   primitives under any attention mode) was found and fixed; `make
   test_attention_overflow` guards it.
+- **Repository hygiene (2026-07-11):** `*.cnb` base containers are large mined
+  artifacts and now gitignored (kept on disk, beside the existing `*.cce` /
+  `*.gguf` / `*.safetensors` rules); the 262 MB campaign base was stripped from
+  git history to fit hosting limits (pre-rewrite history preserved locally on
+  `backup-pre-rewrite`). The campaign checkpoint IS the on-disk base — version
+  control carries the machinery and its gates, never the mined weights.
 
 # Make Targets
 
@@ -1506,7 +1516,8 @@ Run from project root or inside `build/`. Sanitization protects filenames; thoug
   units — content-addressed blobs of exact CNU1 images, name→blob references,
   the mint-once tag registry (with provenance), digest-bound stats, and oracle
   descriptors; whole-file seal verified before parsing; `save → load → save`
-  byte-identical.
+  byte-identical. Gitignored: bases are large mined artifacts that live on
+  disk beside the repo, not in version control.
 - **Gap ledgers** (`CNET_GAPS 1`): the acquisition loop's sidecar — per-gap
   trigger kind, task signature, status (OPEN/DEFERRED/CLOSED), counters, and
   defer-reason atoms.
