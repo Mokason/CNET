@@ -49,11 +49,11 @@ Every current claim in this table names its executable gate or evidence log;
 historical measurements elsewhere remain explicitly dated. "In `make test`"
 means the gate runs in the full verification chain on every `make test`.
 
-Rechecked end-to-end on this host (2026-07-11): `make test` — all 25 suites
-green in **3:52.11** wall (99% CPU, 3.14 GiB peak RSS); `make unified` —
-`CNET_UNIFIED_PASS`. The unified run requires a fresh, strict **13/13**
-in-scope claims ledger; the physical-GPU lane is reported explicitly as out of
-scope rather than accepted from an older log.
+Rechecked end-to-end on this host (2026-07-11, post gap-lane fixes): `make
+test` — all 25 suites green in **3:54.31** wall (99% CPU, 3.15 GiB peak RSS);
+`make unified` — `CNET_UNIFIED_PASS`. The unified run requires a fresh, strict
+**15/15** in-scope claims ledger; the physical-GPU lane is reported explicitly
+as out of scope rather than accepted from an older log.
 
 | Area | Verified by | Status |
 |---|---|---|
@@ -141,6 +141,8 @@ correctness-gated result supersedes an older preliminary number.
 | July 11 | Unified `Specialist` type over the adapter ABI (`include/specialist.h`): kind (BTN/CCE/Oracle), ONE admission door (`specialist_admit` — certification only, identical for every kind), and trust/residency/role axis views folding `PrimitiveState`, `certified`, shadow/recipe flags, CCE tiers, and model-catalog states into one vocabulary | Heterogeneous-plan acceptance plus edge units: one ordinary route/DAG plan mixes a trained native BTN, an exact CCE linear-head model, and an external oracle; unknown kinds, adapter/native confusion, and unknown axes are refused; lifecycle trust remains state-authoritative | `make specialist_unit` → `SPECIALIST_UNIT_PASS`; `make unified_specialist` → `HET_PLAN_PASS` |
 | July 11 | Runtime health optimizer (`include/specialist_health.h`, `specialist_health_pass`): audit → label → heal → promote → shadow-swap as ONE pass with an exact machine-readable report (counts + trust histogram) | Tampered certificates demoted and restored FROZEN only via a passing re-certify; parked faults labeled from the contract exemplar table first, a clean teacher second; FUZZY promotes to PROVISIONAL on evidence, never further; a shadow that out-scores its incumbent AND certifies hot-swaps it; a healthy registry is a gated no-op | `make specialist_health` → `SPECIALIST_HEALTH_PASS`  Ticked from the running system: `soul_health_tick` rematerializes contracts from the sealed base blobs, the MCP server exposes `cnet_health_tick`, and `CNET_HEALTH_TICK_SECONDS` (opt-in, 0 = off) runs it periodically under one dispatch gate |
 | July 11 | The gap lane (`include/gap_lane.h`, `src/gap_lane.c`, daemon `tests/gap_lane_run.c`): detect (serving-side gap INBOX via `CNET_GAP_INBOX` in `soul_route`, rename-then-read ingest, health-bridge with a no-churn re-note guard) → acquire (`acquire_drain` per open gap: oracle-mined, dynamic-growth students, certified, sealed) → persist (atomic base AND ledger checkpoints — the ledger save gained tmp+rename) | Hermetic gate closes the whole circle: live miss answered-and-harvested by the oracle, inbox ingested, PROOF-certified student under the structure budget, strict-exact replan, tamper→audit→HEALTH-gap→rebuild, resume from disk with an idle no-op steady state. Field notes baked in: default f32 GGUF load is ~48 G for 12B — `CNET_ORACLE_INT8=1` is the diet (~20 G resident); a healthy-but-demoted incumbent defers `incumbent_healthy` (churn refused) | `make gap_lane` → `GAP_LANE_PASS`; `make gap_lane_run_build` ; novel-goal requests exposed end-to-end (`soul_request` → `cnet_request_capability`), exercised inside `make unified` (tool call → `gap_noted` → inbox line verified) ; corpus-drawn teaching contexts landed the same day: window files (flagship convention) + pinned real-prose prefixes via the probe path, id-file parsing strict and gated (refuse, never default) — answering the campaign's own caveat that meaningful extraction needs real-context conditioning |
+| July 11 | The first REAL request through the whole loop found three genuine defects, all fixed and gated: `cnb_load_registry` stored borrowed unit names in a growable row array (every earlier `RegistryEntry.name` dangled on realloc — latent for months, exposed live at 254 units; now per-name heap buffers + a 13-unit growth regression); the teacher never reset the runner's persistent KV cache (all forwards failed after `CNET_MAX_CTX` calls, masquerading as `oracle_unfit`; superseded by the probe path, which never writes KV); average-loss early stopping left one stubborn point wrong on near-constant maps (`certify_failed` at 255/256; `CNET_ACQ_TARGET_LOSS=1e-7` measured 256/256, min margin 0.9881) | The deferral ladder along the way was the gates working: dead special-token window → `insufficient_exemplars`, flat-logit ties → `oracle_unfit`, capacity wall → `certify_failed`; the 253-unit base was byte-untouched through every refusal | `make soul_host_test` (growth regression), `make unified` |
+| July 11 | First runtime-grown units in the deployed soul: `acq_lane_wnd256_e2e` (unit 254, bare-context) and `corpus_next_v01` (unit 255, corpus-context, closed FIRST attempt) — both requested via MCP, taught by gemma4-v2 12B on CPU, PROOF-certified, sealed, and `served:true` by the certified plan | The corpus unit's probed transitions are real English bigrams (of→the, to→the, is→the) — real-context conditioning extracts linguistic behavior, answering the campaign's own caveat; requests use `in_tag` `w_cur` (both tags required: a wildcard input trivially "already satisfies" any same-shape goal and is unservable by construction) | ledger provenance in `soul_gemma4v2_final.cnb.gaps.txt`; live `cnet_request_capability` round-trips |
 | July 11 | Generated claims ledger | `make claims` first executes the unified CPU gate, then emits machine-readable records with a run sentinel, exact markers, timestamps, and host fingerprint; missing, failed, or pre-run evidence aborts. `make claims_all` is explicitly an unscoped inventory and does not imply freshness | `make claims` → `logs/claims.jsonl`, `docs/verified-today.generated.md`; inventory: `make claims_all` |
 
 The detailed mechanism-by-mechanism chronology remains in
@@ -1190,7 +1192,11 @@ view: the mined window is gemma4's top continuations of a *bare, template-less*
 `<bos>` — high-frequency **multilingual** tokens (正如, もう少し, であれば, …),
 faithfully reproduced but linguistically artificial. A faithful filing
 cabinet, not yet a mind; meaningful extraction needs real-context
-conditioning, not more machinery.
+conditioning, not more machinery. **That conditioning now exists**: the gap
+lane's corpus-drawn teaching (window files + a pinned real-prose prefix via
+the probe path) produced its first unit the same day it landed —
+`corpus_next_v01`, whose probed transitions are real English bigrams
+(of→the, to→the, is→the). See *The gap lane* in the ledger above.
 
 **The fuzzy tier (PAIR / TOPK task shapes).** Where exactness isn't available,
 the machinery is *calibrated abstention*, not fuzzy logic (evaluated and
