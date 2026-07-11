@@ -653,6 +653,18 @@ internal static partial class CceNative
     [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
     internal static partial int SoulUnitReliabilityMilli(IntPtr host, [MarshalAs(UnmanagedType.LPStr)] string name);
 
+    // Runtime health tick: one specialist_health_pass over the live registry
+    // with the base as the contract source. Fills up to 13 counts; returns
+    // the number written, or <0.
+    [LibraryImport(CnetLibraryName, EntryPoint = "soul_health_tick")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+    internal static partial int SoulHealthTick(IntPtr host, [Out] long[] counts, int countsCap);
+
+    [LibraryImport(CnetLibraryName, EntryPoint = "soul_unit_axes")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+    internal static partial int SoulUnitAxes(IntPtr host, [MarshalAs(UnmanagedType.LPStr)] string name,
+        out int trust, out int role);
+
     [LibraryImport(CnetLibraryName, EntryPoint = "soul_close")]
     [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
     internal static partial void SoulClose(IntPtr host);

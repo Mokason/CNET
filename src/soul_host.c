@@ -10,6 +10,8 @@
 #include "../include/router.h"
 #include "../include/nn.h"
 #include "../include/contract/contract.h"
+#include "../include/specialist.h"
+#include "../include/specialist_health.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -20,7 +22,51 @@ struct SoulHost {
     CnetBase base;
     PrimitiveRegistry reg;
     int loaded;
+    /* Contract cache for the health tick: rematerialized on demand from the
+       sealed unit blobs; one heap Contract per name so pointers stay stable
+       across cache growth. Owned by the host, freed in soul_close. */
+    Contract **contracts;
+    char (*contract_names)[CNB_NAME_MAX];
+    size_t contract_count, contract_cap;
 };
+
+/* Health-tick contract source: the base itself. A miss materializes the
+   sealed unit (per-blob CNU1 seal verified by cnb_get_unit), keeps the
+   Contract, and discards the temporary BTN — the registry instance stays
+   the single execution truth. */
+static const Contract *soul_contract_lookup(const char *name, void *ctx) {
+    SoulHost *h = (SoulHost *)ctx;
+    size_t i;
+    BinaryTransformNetwork tmp;
+    Contract *c;
+    if (!h || !name) return NULL;
+    for (i = 0; i < h->contract_count; ++i)
+        if (strcmp(h->contract_names[i], name) == 0) return h->contracts[i];
+    if (strlen(name) + 1 > sizeof h->contract_names[0]) return NULL;
+    c = (Contract *)calloc(1, sizeof *c);
+    if (!c) return NULL;
+    memset(&tmp, 0, sizeof tmp);
+    if (cnb_get_unit(&h->base, name, &tmp, c) != 0) {
+        free(c);
+        return NULL;
+    }
+    btn_free(&tmp);
+    if (h->contract_count == h->contract_cap) {
+        size_t cap = h->contract_cap ? h->contract_cap * 2 : 8;
+        Contract **nc = (Contract **)realloc(h->contracts, cap * sizeof *nc);
+        char (*nn)[CNB_NAME_MAX] = (char (*)[CNB_NAME_MAX])
+            realloc(h->contract_names, cap * sizeof *nn);
+        if (nc) h->contracts = nc;
+        if (nn) h->contract_names = nn;
+        if (!nc || !nn) { contract_free(c); free(c); return NULL; }
+        h->contract_cap = cap;
+    }
+    h->contracts[h->contract_count] = c;
+    snprintf(h->contract_names[h->contract_count],
+             sizeof h->contract_names[0], "%s", name);
+    h->contract_count++;
+    return c;
+}
 
 /* Sum of a contract's port totals (field_width * field_count), in doubles. */
 static size_t ports_total(const Port *ports, size_t n) {
@@ -251,8 +297,51 @@ CNET_API int soul_unit_reliability_milli(SoulHost *h, const char *name) {
     return (int)(rel * 1000.0 + 0.5);
 }
 
+CNET_API int soul_health_tick(SoulHost *h, long long *counts, int counts_cap) {
+    SpecialistHealthConfig cfg;
+    SpecialistHealthReport rep;
+    long long full[SOUL_HEALTH_COUNTS];
+    int i, n;
+    if (!h || !h->loaded || !counts || counts_cap <= 0) return -1;
+    specialist_health_config_defaults(&cfg);
+    cfg.contracts = soul_contract_lookup;
+    cfg.contracts_ctx = h;
+    if (specialist_health_pass(&h->reg, &cfg, &rep) != 0) return -2;
+    full[0] = (long long)rep.entries;
+    full[1] = (long long)rep.demoted_by_audit;
+    full[2] = (long long)rep.labeled_from_contract;
+    full[3] = (long long)rep.labeled_via_teacher;
+    full[4] = (long long)rep.heal_attempted;
+    full[5] = (long long)rep.healed;
+    full[6] = (long long)rep.promoted_provisional;
+    full[7] = (long long)rep.shadows_promoted;
+    full[8] = (long long)rep.reset_remaining;
+    for (i = 0; i < 4; ++i) full[9 + i] = (long long)rep.trust[i];
+    n = counts_cap < SOUL_HEALTH_COUNTS ? counts_cap : SOUL_HEALTH_COUNTS;
+    for (i = 0; i < n; ++i) counts[i] = full[i];
+    return n;
+}
+
+CNET_API int soul_unit_axes(SoulHost *h, const char *name,
+                            int *trust, int *role) {
+    SpecialistTrust t;
+    SpecialistRole r;
+    if (!h || !h->loaded || !name) return -1;
+    if (specialist_axes(&h->reg, name, &t, &r) != 0) return -2;
+    if (trust) *trust = (int)t;
+    if (role) *role = (int)r;
+    return 0;
+}
+
 CNET_API void soul_close(SoulHost *h) {
+    size_t i;
     if (!h) return;
+    for (i = 0; i < h->contract_count; ++i) {
+        contract_free(h->contracts[i]);
+        free(h->contracts[i]);
+    }
+    free(h->contracts);
+    free(h->contract_names);
     if (h->loaded) { registry_free(&h->reg); cnb_free(&h->base); }
     free(h);
 }

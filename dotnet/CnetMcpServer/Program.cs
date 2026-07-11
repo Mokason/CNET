@@ -24,6 +24,35 @@ class Program
             ?? "/home/marble/AI/CNET/soul_gemma4v2_final.cnb";
         var tools = new CnetTools(basePath);
 
+        // Serializes tool dispatch and the periodic health tick: the native
+        // registry is single-threaded state, and the timer runs off-loop.
+        object toolGate = new object();
+
+        // Opt-in periodic runtime health tick (specialist_health_pass over the
+        // live registry). Disabled unless CNET_HEALTH_TICK_SECONDS > 0 — the
+        // zero-init default changes nothing, matching the engine's house rule.
+        int healthTickSeconds = int.TryParse(
+            Environment.GetEnvironmentVariable("CNET_HEALTH_TICK_SECONDS"),
+            out int hts) ? hts : 0;
+        using var healthTimer = healthTickSeconds > 0
+            ? new Timer(_ =>
+            {
+                try
+                {
+                    string tick;
+                    lock (toolGate) { tick = tools.HealthTick(); }
+                    Console.Error.WriteLine($"[CNET MCP] health tick: {tick}");
+                }
+                catch (Exception ex)
+                {
+                    Console.Error.WriteLine($"[CNET MCP] health tick failed: {ex.Message}");
+                }
+            }, null, TimeSpan.FromSeconds(healthTickSeconds),
+               TimeSpan.FromSeconds(healthTickSeconds))
+            : null;
+        if (healthTickSeconds > 0)
+            Console.Error.WriteLine($"[CNET MCP] periodic health tick every {healthTickSeconds}s");
+
         using var reader = new StreamReader(Console.OpenStandardInput());
         using var writer = new StreamWriter(Console.OpenStandardOutput()) { AutoFlush = true };
 
@@ -161,6 +190,12 @@ class Program
                                     name = "cnet_list_oracles",
                                     description = "List bounded Oracle provenance from the authoritative native base",
                                     inputSchema = (object)new { type = "object", properties = new { } }
+                                },
+                                new
+                                {
+                                    name = "cnet_health_tick",
+                                    description = "Run one runtime health pass (audit, fault labeling, heal via re-certify, evidence promotion, shadow swap) over the live certified registry and report exact counts",
+                                    inputSchema = (object)new { type = "object", properties = new { } }
                                 }
                             }
                         }
@@ -177,6 +212,8 @@ class Program
                     string resultText;
                     try
                     {
+                        lock (toolGate)
+                        {
                         resultText = toolName switch
                     {
                         "cnet_verify_claim" => tools.VerifyClaim(
@@ -202,8 +239,10 @@ class Program
                             toolArgs.TryGetProperty("role", out var r) ? r.GetString() ?? "memory-witness" : "memory-witness"),
                         "cnet_list_units" => tools.ListUnits(),
                         "cnet_list_oracles" => tools.ListOracles(),
+                        "cnet_health_tick" => tools.HealthTick(),
                         _ => "Unknown tool: " + toolName
                     };
+                        }
                     }
                     catch (Exception toolExc)
                     {

@@ -138,6 +138,29 @@ int main(void) {
     check(soul_unit_reliability_milli(host, unit_name) > 500,
           "named execution and route update one evidence stream");
 
+    {
+        long long counts[SOUL_HEALTH_COUNTS];
+        int trust = -1, role = -1;
+        int n = soul_health_tick(host, counts, SOUL_HEALTH_COUNTS);
+        check(n == SOUL_HEALTH_COUNTS,
+              "health tick reports the full count vector");
+        check(n == SOUL_HEALTH_COUNTS &&
+              counts[0] == 1 && counts[1] == 0 && counts[2] == 0 &&
+              counts[3] == 0 && counts[4] == 0 && counts[5] == 0 &&
+              counts[6] == 0 && counts[7] == 0 && counts[8] == 0,
+              "healthy soul: the tick is a proven no-op");
+        check(n == SOUL_HEALTH_COUNTS &&
+              counts[9] + counts[10] + counts[11] + counts[12] == 1 &&
+              counts[11] == 1,
+              "trust histogram: the one unit reads certified");
+        check(soul_unit_axes(host, unit_name, &trust, &role) == 0 &&
+              trust == 2 /* SPECIALIST_TRUST_CERTIFIED */ &&
+              role == 0 /* SPECIALIST_ROLE_ACTIVE */,
+              "unit axes read certified/active over the ABI");
+        check(soul_run(host, unit_name, input, output, 2) == 2,
+              "unit still executes after the health tick");
+    }
+
     soul_close(host);
     contract_free(&contract);
     btn_free(&btn);

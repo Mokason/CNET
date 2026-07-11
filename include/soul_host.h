@@ -70,6 +70,29 @@ CNET_API int soul_route(SoulHost *h, const char *goal_tag,
    the actual evidence, not a hard-coded constant. <0 if not found. */
 CNET_API int soul_unit_reliability_milli(SoulHost *h, const char *name);
 
+/* ---- runtime health (specialist_health_pass over the live registry) ----
+   One maintenance pass with the base as the contract source: contracts are
+   rematerialized on demand from the sealed unit blobs (cnb_get_unit) and
+   cached for the host's lifetime, so heal re-certifies against the SAME
+   sealed truth the unit was admitted with. Fix-then-improve, certified
+   paths only; a healthy soul is a no-op tick.
+
+   Fills counts[0..SOUL_HEALTH_COUNTS-1] (up to counts_cap):
+     0 entries             1 demoted_by_audit    2 labeled_from_contract
+     3 labeled_via_teacher 4 heal_attempted      5 healed
+     6 promoted_provisional 7 shadows_promoted   8 reset_remaining
+     9..12 trust histogram (uncertified/evidenced/certified/demoted)
+   Returns the number of counts written (SOUL_HEALTH_COUNTS when counts_cap
+   allows), or <0 on error. */
+#define SOUL_HEALTH_COUNTS 13
+CNET_API int soul_health_tick(SoulHost *h, long long *counts, int counts_cap);
+
+/* Trust/role axes of a named unit on the shared Specialist vocabulary
+   (SpecialistTrust / SpecialistRole numeric values). Either out pointer may
+   be NULL. 0 on success, <0 if the unit is not in the live registry. */
+CNET_API int soul_unit_axes(SoulHost *h, const char *name,
+                            int *trust, int *role);
+
 CNET_API void soul_close(SoulHost *h);
 
 #ifdef __cplusplus

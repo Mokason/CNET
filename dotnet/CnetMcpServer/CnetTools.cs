@@ -1006,6 +1006,35 @@ namespace CnetMcpServer
             });
         }
 
+        /// <summary>
+        /// One runtime health pass over the live certified registry. Exact
+        /// native counts; a healthy soul reports all-zero actions.
+        /// </summary>
+        public string HealthTick()
+        {
+            var r = _soulHost.HealthTick();
+            return JsonSerializer.Serialize(new
+            {
+                health_tick = true,
+                entries = r.Entries,
+                demoted_by_audit = r.DemotedByAudit,
+                labeled_from_contract = r.LabeledFromContract,
+                labeled_via_teacher = r.LabeledViaTeacher,
+                heal_attempted = r.HealAttempted,
+                healed = r.Healed,
+                promoted_provisional = r.PromotedProvisional,
+                shadows_promoted = r.ShadowsPromoted,
+                reset_remaining = r.ResetRemaining,
+                trust = new
+                {
+                    uncertified = r.TrustUncertified,
+                    evidenced = r.TrustEvidenced,
+                    certified = r.TrustCertified,
+                    demoted = r.TrustDemoted
+                }
+            });
+        }
+
         public string ListUnits()
         {
             var roster = UnitRoster();

@@ -21,6 +21,27 @@ public sealed record OracleDescriptor(
     ulong ToolchainDigest);
 
 /// <summary>
+/// Exact result of one runtime health pass (specialist_health_pass): what the
+/// audit demoted, what got verified targets, what healed via a passing
+/// re-certify, what evidence promoted or hot-swapped, and the end-of-pass
+/// trust histogram. Real counts from the native engine — never synthesized.
+/// </summary>
+public sealed record HealthReport(
+    long Entries,
+    long DemotedByAudit,
+    long LabeledFromContract,
+    long LabeledViaTeacher,
+    long HealAttempted,
+    long Healed,
+    long PromotedProvisional,
+    long ShadowsPromoted,
+    long ResetRemaining,
+    long TrustUncertified,
+    long TrustEvidenced,
+    long TrustCertified,
+    long TrustDemoted);
+
+/// <summary>
 /// Managed wrapper over the CNET soul_host shim: load a certified .cnb base,
 /// query a unit's port sizes, run named certified units safely, route by real
 /// typed ports, and read real (Laplace-smoothed) reliability. Returns actual
@@ -145,6 +166,32 @@ public sealed class SoulHost : IDisposable
     }
 
     /// <summary>Real Laplace-smoothed reliability (0..1); 0.5 fresh until executed.</summary>
+    /// <summary>
+    /// Run one runtime health maintenance pass over the live registry (fix by
+    /// evidence, improve by evidence; healthy soul = all-zero no-op).
+    /// </summary>
+    public HealthReport HealthTick()
+    {
+        Check();
+        var counts = new long[13];
+        int n = CceNative.SoulHealthTick(_handle, counts, counts.Length);
+        if (n != counts.Length)
+            throw new InvalidOperationException($"soul_health_tick failed: {n}");
+        return new HealthReport(
+            counts[0], counts[1], counts[2], counts[3], counts[4], counts[5],
+            counts[6], counts[7], counts[8], counts[9], counts[10], counts[11],
+            counts[12]);
+    }
+
+    /// <summary>Trust/role of a unit on the shared Specialist axes.</summary>
+    public (int Trust, int Role) UnitAxes(string name)
+    {
+        Check();
+        int rc = CceNative.SoulUnitAxes(_handle, name, out int trust, out int role);
+        if (rc != 0) throw new InvalidOperationException($"soul_unit_axes('{name}') failed: {rc}");
+        return (trust, role);
+    }
+
     public double Reliability(string name)
     {
         Check();
