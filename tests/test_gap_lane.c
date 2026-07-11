@@ -86,6 +86,18 @@ int main(void) {
     check(acquire_oracle_register(&lane.oracles, "rot3_ref", in_port,
                                   goal_port, rot3_oracle, NULL) == 0,
           "local-model oracle binds to the lane");
+    {
+        /* the teacher's identity is the unit's provenance-to-be */
+        OracleEntry *oe = &lane.oracles.entries[0];
+        memset(&oe->identity, 0, sizeof oe->identity);
+        oe->identity.abi_version = CNET_ORACLE_ABI_VERSION;
+        oe->identity.struct_size = (uint32_t)sizeof oe->identity;
+        oe->identity.artifact_digest = 0x4d4f44454cULL;      /* "MODEL" */
+        oe->identity.config_digest = 0x57494e444f57ULL;      /* "WINDOW" */
+        oe->identity.contract_digest = 0x434f4e5452ULL;       /* "CONTR" */
+        oe->identity.retrieval_snapshot_digest = 0xc0417e37ULL;
+        oe->behavior_digest = cnet_oracle_identity_digest(&oe->identity);
+    }
     /* keep the student's structure budget visible: growth is the point */
     lane.acq.init_hidden = 4;
     lane.acq.max_hidden = 64;
@@ -131,6 +143,12 @@ int main(void) {
               "student trained under the dynamic-growth structure budget");
     }
     check(tick.checkpointed == 1, "tick checkpointed base + ledger");
+    check(lane.base.oracle_count == 1 &&
+          strcmp(lane.base.oracles[0].name, "rot3_ref") == 0 &&
+          lane.base.oracles[0].identity.retrieval_snapshot_digest ==
+              0xc0417e37ULL &&
+          lane.base.oracles[0].identity.config_digest == 0x57494e444f57ULL,
+          "closing the gap persists the teacher as unit provenance");
 
     /* -- the plan now exists and executes strictly, end to end ----------- */
     check(route_plan(&lane.reg, in_port, goal_port, &plan) == 0 &&
@@ -170,6 +188,8 @@ int main(void) {
     check(gap_lane_drain(&lane, &tick) == 0 && tick.drain.closed >= 1,
           "rebuild path resolves the HEALTH gap through the oracle");
     check(gap_lane_checkpoint(&lane) == 0, "checkpoint persists the rebuild");
+    check(lane.base.oracle_count == 1,
+          "provenance is idempotent: the rebuild adds no duplicate");
 
     /* -- persist: a fresh lane resumes from disk, no retraining ---------- */
     gap_lane_close(&lane);
@@ -177,6 +197,10 @@ int main(void) {
     check(gap_lane_open(&lane, base_path, ledger_path, inbox_path) == 0 &&
           lane.reg.count >= 1,
           "resume: certification replay re-admits the sealed units");
+    check(lane.base.oracle_count == 1 &&
+          lane.base.oracles[0].identity.retrieval_snapshot_digest ==
+              0xc0417e37ULL,
+          "unit provenance survives the resume round-trip");
     check(route_plan(&lane.reg, in_port, goal_port, &plan) == 0,
           "resumed lane replans without retraining");
     {

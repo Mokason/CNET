@@ -243,11 +243,39 @@ int gap_lane_scan(GapLane *L, GapLaneTickReport *r) {
     return 0;
 }
 
+/* Unit provenance: a CLOSED gap's teaching oracle becomes a persisted
+   descriptor in the base — name, kind, ports, and the oracle's identity
+   (retrieval_snapshot_digest = the teaching context, config_digest = the
+   window) ride with the sealed units and project through soul_oracle_* /
+   cnet_list_oracles. Idempotent by descriptor name; a zero identity is not
+   provenance and records nothing. */
+static void record_unit_provenance(GapLane *L) {
+    size_t g, o, d;
+    for (g = 0; g < L->ledger.count; ++g) {
+        const GapRecord *gap = &L->ledger.gaps[g];
+        const OracleEntry *e = NULL;
+        int exists = 0;
+        if (gap->status != GAP_CLOSED || !gap->oracle[0]) continue;
+        for (d = 0; d < L->base.oracle_count; ++d)
+            if (strcmp(L->base.oracles[d].name, gap->oracle) == 0)
+                { exists = 1; break; }
+        if (exists) continue;
+        for (o = 0; o < L->oracles.count; ++o)
+            if (strcmp(L->oracles.entries[o].name, gap->oracle) == 0)
+                { e = &L->oracles.entries[o]; break; }
+        if (!e || cnet_oracle_identity_digest(&e->identity) == 0) continue;
+        cnb_add_oracle_desc_v2(&L->base, e->name, "gap_lane_teacher",
+                               e->input_port, e->output_port, &e->identity);
+    }
+}
+
 int gap_lane_drain(GapLane *L, GapLaneTickReport *r) {
     AcquireReport rep;
     if (!L || !L->loaded) return -1;
     memset(&rep, 0, sizeof rep);
     acquire_drain(&L->reg, &L->ledger, &L->oracles, &L->acq, &rep);
+    if (rep.closed > 0)
+        record_unit_provenance(L);
     if (r) r->drain = rep;
     return 0;
 }

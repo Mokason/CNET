@@ -96,23 +96,43 @@ typedef struct {
     int ids[LM_CTX_MAX];
     int n;                    /* 0 = bare context */
     char fp[16];
+    unsigned long long fp64;  /* context ids only: the retrieval snapshot */
 } LmContext;
+static unsigned long long lm_window_fp64;  /* window ids only: the config */
+static unsigned long long lm_model_fp64;   /* model path: the artifact (v1) */
 static LmContext lm_contexts[LM_CTX_SLOTS];
 static int lm_context_count;
 static LmContext lm_default_ctx;
 static const LmContext *lm_pinned;
 
-static void lm_fingerprint(LmContext *c) {
-    unsigned long long h = 1469598103934665603ULL;
+static unsigned long long lm_fnv_port(unsigned long long h, Port p) {
+    const char *t = p.tag;
+    h ^= (unsigned long long)p.family; h *= 1099511628211ULL;
+    h ^= (unsigned long long)p.field_width; h *= 1099511628211ULL;
+    h ^= (unsigned long long)p.field_count; h *= 1099511628211ULL;
+    while (*t) { h ^= (unsigned char)*t++; h *= 1099511628211ULL; }
+    return h;
+}
+
+static unsigned long long lm_fnv_ids(const int *ids, int n,
+                                     unsigned long long salt) {
+    unsigned long long h = 1469598103934665603ULL ^ salt;
     int i;
-    for (i = 0; i < lm_window_n; i++) {
-        h ^= (unsigned long long)lm_window[i];
+    for (i = 0; i < n; i++) {
+        h ^= (unsigned long long)ids[i];
         h *= 1099511628211ULL;
     }
+    return h;
+}
+
+static void lm_fingerprint(LmContext *c) {
+    unsigned long long h = lm_fnv_ids(lm_window, lm_window_n, 0);
+    int i;
     for (i = 0; i < c->n; i++) {
         h ^= (unsigned long long)c->ids[i] ^ 0x8000000000ULL;
         h *= 1099511628211ULL;
     }
+    c->fp64 = c->n ? lm_fnv_ids(c->ids, c->n, 0x8000000000ULL) : 0;
     if (lm_window_n || c->n)
         snprintf(c->fp, sizeof c->fp, "c%08x", (unsigned)(h ^ (h >> 32)));
     else
@@ -268,6 +288,21 @@ static size_t bind_model_teachers(GapLane *L, cce_gguf_qwen2 *m,
         t->eps = eps;
         if (acquire_oracle_register(&L->oracles, name, in, goal,
                                     lm_teach, t) == 0) {
+            /* the teacher's identity IS the unit's provenance: artifact =
+               the model, config = the window, retrieval snapshot = the
+               pinned teaching context. gap_lane_drain persists it as a
+               base descriptor when this teacher closes a gap. */
+            OracleEntry *oe = &L->oracles.entries[L->oracles.count - 1];
+            const LmContext *sel = (const LmContext *)t->ctx_sel;
+            memset(&oe->identity, 0, sizeof oe->identity);
+            oe->identity.abi_version = CNET_ORACLE_ABI_VERSION;
+            oe->identity.struct_size = (uint32_t)sizeof oe->identity;
+            oe->identity.artifact_digest = lm_model_fp64;
+            oe->identity.contract_digest =
+                lm_fnv_port(lm_fnv_port(1469598103934665603ULL, in), goal);
+            oe->identity.config_digest = lm_window_fp64;
+            oe->identity.retrieval_snapshot_digest = sel ? sel->fp64 : 0;
+            oe->behavior_digest = cnet_oracle_identity_digest(&oe->identity);
             lm_task_count++;
             bound++;
         }
@@ -423,6 +458,14 @@ int main(int argc, char **argv) {
                 }
                 closedir(d);
             }
+        }
+        lm_window_fp64 = lm_window_n ? lm_fnv_ids(lm_window, lm_window_n, 0)
+                                     : 0;
+        {
+            const char *mp = argv[3];
+            unsigned long long h = 1469598103934665603ULL;
+            while (*mp) { h ^= (unsigned char)*mp++; h *= 1099511628211ULL; }
+            lm_model_fp64 = h;   /* path identity (v1) — honest, labeled */
         }
         lm_fingerprint(&lm_default_ctx);
         {
