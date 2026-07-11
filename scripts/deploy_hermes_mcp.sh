@@ -34,21 +34,23 @@ echo "== verify native exports"
 nm -D "$REPO/cnet.so" | grep -q " soul_health_tick$"
 nm -D "$REPO/cnet.so" | grep -q " soul_unit_axes$"
 
-echo "== stop gateway"
-systemctl --user stop hermes-gateway.service
+echo "== stop gateway + dashboard (both spawn cnet-mcp children)"
+systemctl --user stop hermes-gateway.service hermes-dashboard.service
 for _ in $(seq 1 20); do
   pgrep -x CnetMcpServer >/dev/null || break
   sleep 1
 done
-pgrep -x CnetMcpServer >/dev/null && {
-  echo "CnetMcpServer still running; not deploying over a live binary" >&2
-  systemctl --user start hermes-gateway.service
-  exit 1
-}
+# A CnetMcpServer outside the hermes services (e.g. a manual terminal run)
+# may still hold the old binary open; unlink-first replacement below makes
+# that harmless — the survivor keeps its old inode, new spawns get the new.
 
 echo "== deploy"
 cp -a "$DEPLOY" "$DEPLOY.bak-$(date +%Y%m%d-%H%M%S)"
-cp "$STAGE/publish/"* "$DEPLOY/"
+for f in "$STAGE/publish/"*; do
+  rm -f "$DEPLOY/$(basename "$f")"
+  cp "$f" "$DEPLOY/"
+done
+rm -f "$DEPLOY/cnet.so" "$DEPLOY/cnet.dll"
 cp "$REPO/cnet.so" "$DEPLOY/cnet.so"
 cp "$REPO/cnet.so" "$DEPLOY/cnet.dll"
 
@@ -71,8 +73,8 @@ EOF
 chmod +x "$DEPLOY/launch.sh"
 
 echo "== start gateway"
-systemctl --user reset-failed hermes-gateway.service 2>/dev/null || true
-systemctl --user start hermes-gateway.service
+systemctl --user reset-failed hermes-gateway.service hermes-dashboard.service 2>/dev/null || true
+systemctl --user start hermes-gateway.service hermes-dashboard.service
 sleep 8
 systemctl --user is-active hermes-gateway.service
 
