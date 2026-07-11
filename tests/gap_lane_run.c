@@ -75,6 +75,28 @@ static int lm_window_n;       /* 0 = synth from TOKEN_BASE per gap width */
 static int lm_ctx[LM_CTX_MAX];
 static int lm_ctx_n;          /* 0 = bare context */
 static int lm_synth[LM_WINDOW_MAX];  /* TOKEN_BASE fallback alphabet */
+static char lm_provenance[16];  /* "c<fnv8>" over window+context ids; the
+                                   teacher name carries it into the ledger's
+                                   permanent oracle column — WHICH corpus
+                                   taught this gap is provenance, not lore */
+
+static void lm_fingerprint(void) {
+    unsigned long long h = 1469598103934665603ULL;
+    int i;
+    for (i = 0; i < lm_window_n; i++) {
+        h ^= (unsigned long long)lm_window[i];
+        h *= 1099511628211ULL;
+    }
+    for (i = 0; i < lm_ctx_n; i++) {
+        h ^= (unsigned long long)lm_ctx[i] ^ 0x8000000000ULL;
+        h *= 1099511628211ULL;
+    }
+    if (lm_window_n || lm_ctx_n)
+        snprintf(lm_provenance, sizeof lm_provenance, "c%08x",
+                 (unsigned)(h ^ (h >> 32)));
+    else
+        lm_provenance[0] = '\0';
+}
 
 static LmTask lm_tasks[ACQUIRE_MAX_ORACLES];
 static size_t lm_task_count;
@@ -169,8 +191,12 @@ static size_t bind_model_teachers(GapLane *L, cce_gguf_qwen2 *m,
             goal = e->btn->output_ports[0];
         }
         if (!lm_shape_ok(in, goal, vocab, base)) continue;
-        snprintf(name, sizeof name, "lm_%.56s",
-                 goal.tag[0] ? goal.tag : "untagged");
+        if (lm_provenance[0])
+            snprintf(name, sizeof name, "lm_%s_%.44s", lm_provenance,
+                     goal.tag[0] ? goal.tag : "untagged");
+        else
+            snprintf(name, sizeof name, "lm_%.56s",
+                     goal.tag[0] ? goal.tag : "untagged");
         t = &lm_tasks[lm_task_count];
         t->m = m; t->logits = logits; t->vocab = vocab;
         if (lm_window_n > 0) {
@@ -309,8 +335,11 @@ int main(int argc, char **argv) {
                        cf, lm_ctx_n);
             }
         }
-        printf("gap_lane_run: teacher %s (vocab %d, base %ld)\n",
-               argv[3], vocab, token_base);
+        lm_fingerprint();
+        printf("gap_lane_run: teacher %s (vocab %d, base %ld%s%s)\n",
+               argv[3], vocab, token_base,
+               lm_provenance[0] ? ", provenance " : "",
+               lm_provenance);
     } else {
         printf("gap_lane_run: maintenance mode (no teacher bound)\n");
     }
