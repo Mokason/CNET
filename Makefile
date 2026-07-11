@@ -124,7 +124,7 @@ CCE_SUPRA_TRAIN := src/cce/cce_supra_train.c
 CCE := $(CCE_TENSOR) $(CCE_BLOCK) $(CCE_CASCADE) $(CCE_ARCHIVE) $(CCE_FOREST) $(CCE_ROUTER) $(CCE_SPARSE_KV) $(CCE_UNCERTAINTY) $(CCE_COMPRESSION) $(CCE_LEARN) $(CCE_PATCH) $(CCE_GPU) $(CCE_ABI) $(CCE_CUDA_OBJ) $(CCE_PERCEPTUAL) $(CCE_WORDLM) $(CCE_MODEL) $(CCE_MODEL_IO) $(CCE_DATASET) $(CCE_AUTOGRAD) $(CCE_SAFETENSORS) $(CCE_GGUF) $(CCE_QGKP) $(CCE_DETECT) $(CCE_SSM) $(CCE_ST_LLAMA) $(CCE_SPECGRAPH) $(CCE_WSTORE) $(CCE_TIERRT) $(CCE_SIMILAR) $(CCE_CLGEMM) $(CCE_SUPRA_TRAIN)
 CNET_CCE_ADAPTER := src/cce/cce_contract_adapter.c
 SPECIALIST_ADAPTERS := src/specialist_adapters.c
-SPECIALIST_SRC := src/specialist.c
+SPECIALIST_SRC := src/specialist.c src/specialist_health.c
 ASYNC_RUNTIME := src/async_runtime.c
 MODEL_RUNTIME := src/model_runtime.c
 CCE_MODEL_CATALOG := src/cce/cce_model_catalog.c
@@ -197,7 +197,7 @@ SYNONYMS_TEST := tests/test_synonyms.c
 TILEINDEX_TEST := tests/test_tile_index.c
 CONSOLIDATE_TEST := tests/test_tile_consolidate.c
 
-.PHONY: all run test verify verify-long unified unified_native unified_adapter unified_cce_adapter unified_oracle_adapter unified_specialist claims oracle_v2_test soul_host_test legacy_test compose route dag hetero split chunk certify property coverage conformal logicgate decimal circuit study capacity library margin fuzzy stochastic fastpath throughput residue expr attention attention_study lifecycle_bench lbench proposal_sidecar probe_overhead belowbeam_chars struct_pref dgate_bench compounding_bench cce_smoke counterfactual_router_test sparse_kv_test narrative_coherence_test phase4_uncertainty_test register_compression_improvements phase5_integration_test cce_train_bench cce_view forest_view wordlm wordlm_bitnet cce_dll cnet_dll cce_safetensors_test cce_gguf_test cce_model_test cce_autograd_test endgate jsonstory pdftest pdflearn compound tiermem_test graduate fontdecode tfidf synonyms tileindex consolidate clean
+.PHONY: all run test verify verify-long unified unified_native unified_adapter unified_cce_adapter unified_oracle_adapter unified_specialist specialist_health claims oracle_v2_test soul_host_test legacy_test compose route dag hetero split chunk certify property coverage conformal logicgate decimal circuit study capacity library margin fuzzy stochastic fastpath throughput residue expr attention attention_study lifecycle_bench lbench proposal_sidecar probe_overhead belowbeam_chars struct_pref dgate_bench compounding_bench cce_smoke counterfactual_router_test sparse_kv_test narrative_coherence_test phase4_uncertainty_test register_compression_improvements phase5_integration_test cce_train_bench cce_view forest_view wordlm wordlm_bitnet cce_dll cnet_dll cce_safetensors_test cce_gguf_test cce_model_test cce_autograd_test endgate jsonstory pdftest pdflearn compound tiermem_test graduate fontdecode tfidf synonyms tileindex consolidate clean
 
 all: nn_demo
 
@@ -1272,7 +1272,22 @@ specialist_unit: $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_
 	@./$(BIN_DIR)/test_specialist > logs/specialist_unit.log 2>&1
 	@grep -q "SPECIALIST_UNIT_PASS" logs/specialist_unit.log
 
-unified_specialist: specialist_unit $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) tests/test_heterogeneous_plan.c include/specialist.h
+# Runtime health optimizer gate: one maintenance pass fixes (audit -> label
+# from contract/teacher -> heal via retrain + re-certify) and improves
+# (evidence promotion, shadow hot-swap) through existing certified paths
+# only; healthy registry = proven no-op; zero-init config = total no-op.
+.PHONY: specialist_health
+specialist_health: $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) tests/test_specialist_health.c include/specialist_health.h
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/test_specialist_health \
+		$(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) \
+		$(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) \
+		$(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) \
+		tests/test_specialist_health.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+	@./$(BIN_DIR)/test_specialist_health > logs/specialist_health.log 2>&1
+	@grep -q "SPECIALIST_HEALTH_PASS" logs/specialist_health.log
+
+unified_specialist: specialist_unit specialist_health $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) tests/test_heterogeneous_plan.c include/specialist.h
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/test_heterogeneous_plan \
 		$(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) \
@@ -1354,6 +1369,7 @@ soul_host_test: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLI
 unified_native: unified_adapter unified_cce_adapter unified_oracle_adapter unified_specialist oracle_v2_test unified_async unified_models unified_ds4_launcher soul_host_test cnet_dll
 	@for sym in specialist_wrap_btn specialist_wrap_cce_model \
 		specialist_wrap_oracle specialist_admit specialist_axes \
+		specialist_health_pass specialist_health_config_defaults \
 		specialist_residency_from_cce_tier specialist_residency_from_model_state \
 		specialist_kind_name specialist_trust_name specialist_residency_name \
 		specialist_role_name; do \

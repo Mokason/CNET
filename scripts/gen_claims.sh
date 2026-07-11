@@ -53,6 +53,7 @@ unified_adapter|logs/unified_adapter.log|UNIFIED_ADAPTER_PASS|unified
 unified_cce_adapter|logs/unified_cce_adapter.log|UNIFIED_CCE_ADAPTER_PASS|unified
 unified_oracle_adapter|logs/unified_oracle_adapter.log|ORACLE_CONTRACT_ADAPTER_PASS|unified
 specialist_unit|logs/specialist_unit.log|SPECIALIST_UNIT_PASS|unified
+specialist_health|logs/specialist_health.log|SPECIALIST_HEALTH_PASS|unified
 unified_specialist_het_plan|logs/unified_specialist.log|HET_PLAN_PASS|unified
 oracle_v2|logs/oracle_v2_test.log|ORACLE_V2_PASS|unified
 async_runtime|logs/unified_async.log|ASYNC_RUNTIME_PASS|unified
