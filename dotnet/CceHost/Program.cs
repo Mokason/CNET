@@ -10,8 +10,20 @@ using CNET.CceHost;
 //                     certified CNET skill (ollama; CNET_LLM_MODEL to pick model)
 
 bool agentMode = args.Contains("--agent");
+bool listMode = args.Contains("--list");
 string basePath = args.FirstOrDefault(a => a.EndsWith(".cnb"))
     ?? "/home/marble/AI/CNET/soul_gemma4v2_final.cnb";
+
+if (listMode)
+{
+    using var listedSoul = new SoulHost(basePath);
+    var units = listedSoul.Units();
+    Console.WriteLine($"[host] {units.Count} certified units from live registry");
+    foreach (string unit in units) Console.WriteLine(unit);
+    Console.WriteLine(units.Count > 0 ? "CNET_HOST_UNIFIED_PASS" : "CNET_HOST_UNIFIED_FAIL");
+    Environment.ExitCode = units.Count > 0 ? 0 : 1;
+    return;
+}
 
 if (agentMode)
 {

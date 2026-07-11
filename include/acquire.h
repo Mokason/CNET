@@ -11,6 +11,7 @@
    Spec: docs/superpowers/specs/2026-07-02-gap-triggered-acquisition-loop-design.md */
 
 #include <stddef.h>
+#include <stdint.h>
 
 #include "nn.h"
 #include "router.h"
@@ -48,6 +49,65 @@ typedef int (*CnetOracleFn)(const double *in, double *out, void *ctx);
 typedef int (*CnetOracleBatchFn)(const double *in, double *out, int *rcs,
                                  size_t count, void *ctx);
 
+/* Evidence-carrying Oracle ABI v2. The callback still writes into caller-owned
+   output storage; the result carries governance metadata, never an owning
+   pointer. Version + struct_size make tail extension ABI-safe. */
+#define CNET_ORACLE_ABI_VERSION 2u
+
+typedef enum {
+    CNET_ORACLE_ANSWER = 0,
+    CNET_ORACLE_ABSTAIN_AMBIGUOUS = 1,
+    CNET_ORACLE_ABSTAIN_UNDETERMINED = 2,
+    CNET_ORACLE_REFUSE_POLICY = 3,
+    CNET_ORACLE_FAIL_TRANSIENT = 4,
+    CNET_ORACLE_FAIL_PERMANENT = 5,
+    CNET_ORACLE_INVALID_OUTPUT = 6,
+    CNET_ORACLE_INVALID_INPUT = 7,
+    CNET_ORACLE_CANCELLED = 8,
+    CNET_ORACLE_DEADLINE_EXCEEDED = 9,
+    CNET_ORACLE_STATUS_COUNT = 10
+} CnetOracleStatus;
+
+typedef enum {
+    CNET_ORACLE_VALIDITY_UNDETERMINED = 0,
+    CNET_ORACLE_VALID = 1,
+    CNET_ORACLE_INVALID = 2
+} CnetOracleValidity;
+
+typedef struct {
+    uint32_t abi_version;
+    uint32_t struct_size;
+    uint64_t artifact_digest;
+    uint64_t contract_digest;
+    uint64_t config_digest;
+    uint64_t retrieval_snapshot_digest;
+    uint64_t toolchain_digest;
+} CnetOracleIdentity;
+
+typedef struct {
+    uint32_t abi_version;
+    uint32_t struct_size;
+    CnetOracleStatus status;
+    uint32_t flags;                 /* reserved; must be zero in v2 */
+    double confidence;              /* ANSWER only: finite in [0,1] */
+    uint64_t evidence_digest;       /* 0 = no attached evidence artifact */
+    uint64_t oracle_identity_digest;/* filled authoritatively by invoke */
+} CnetOracleResult;
+
+/* Return 0 when `result` was populated. Non-zero means the callback violated
+   the transport/ABI contract and is recorded as FAIL_PERMANENT. */
+typedef int (*CnetOracleFnV2)(const double *in, size_t in_count,
+                              double *out, size_t out_count,
+                              CnetOracleResult *result, void *ctx);
+
+/* Semantic validity is separate from output representation validity. A
+   verifier may accept one of many correct proofs/plans/programs, reject it,
+   or decline to decide. */
+typedef CnetOracleValidity (*CnetOracleValidateFn)(
+    const double *in, size_t in_count,
+    const double *out, size_t out_count,
+    const CnetOracleResult *result, void *ctx);
+
 typedef struct {
     char name[ACQUIRE_NAME_MAX];
     Port input_port;
@@ -64,6 +124,13 @@ typedef struct {
     size_t parallel_width;
     CnetOracleBatchFn fn_batch;  /* optional; NULL = serial only */
     size_t batch_hint;           /* preferred points per fn_batch call */
+    /* v2 append-only extension. Exactly one of fn/fn_v2 is required. */
+    CnetOracleFnV2 fn_v2;
+    CnetOracleValidateFn validator;
+    CnetOracleIdentity identity;
+    uint64_t behavior_digest;
+    size_t status_counts[CNET_ORACLE_STATUS_COUNT];
+    CnetOracleResult last_result;
 } OracleEntry;
 
 typedef struct {
@@ -168,6 +235,28 @@ int acquire_port_eq_public(Port a, Port b);
 int acquire_oracle_register(OracleRegistry *o, const char *name,
                             Port input_port, Port output_port,
                             CnetOracleFn fn, void *ctx);
+
+/* Register an evidence-carrying Oracle. artifact_digest and contract_digest
+   are mandatory; the other identity components may be zero when absent. */
+int acquire_oracle_register_v2(OracleRegistry *o, const char *name,
+                               Port input_port, Port output_port,
+                               CnetOracleFnV2 fn,
+                               CnetOracleValidateFn validator,
+                               const CnetOracleIdentity *identity,
+                               void *ctx);
+
+/* Stable FNV-1a digest over every identity component (not pointers/names).
+   Returns 0 for malformed identity. */
+CNET_API uint64_t cnet_oracle_identity_digest(const CnetOracleIdentity *identity);
+
+/* The one governed invocation path. Performs ABI checks, representation
+   validation, optional semantic validation, first-class status accounting,
+   and legacy aggregate counter updates. Returns the final status. */
+CNET_API CnetOracleStatus cnet_oracle_invoke(
+    OracleEntry *entry,
+    const double *in, size_t in_count,
+    double *out, size_t out_count,
+    CnetOracleResult *result_out);
 
 /* Opt-in AFTER registering: declare the named oracle safe for concurrent
    fn calls from up to `width` threads. Only takes effect in OpenMP builds;

@@ -347,7 +347,8 @@ cce_result cce_gguf_load(const char* path, cce_gguf** out) {
             if (g->kvs[i].type == GGUF_TYPE_UINT32) g->vocab_size = g->kvs[i].val.u32;
             else if (g->kvs[i].type == GGUF_TYPE_UINT64) g->vocab_size = (int)g->kvs[i].val.u64;
         }
-        if (strstr(k, "context_length")) {
+        if (strstr(k, "context_length") &&
+            !strstr(k, "original_context_length")) {
             if (g->kvs[i].type == GGUF_TYPE_UINT32) g->context_length = g->kvs[i].val.u32;
         }
         if (strstr(k, "feed_forward_length") || strstr(k, "ffn_length")) {

@@ -176,6 +176,11 @@ int unit_save_mem(const BinaryTransformNetwork *btn, const Contract *c,
     unsigned long long seal;
 
     if (btn == NULL || c == NULL || buf_out == NULL || len_out == NULL) return -1;
+    *buf_out = NULL;
+    *len_out = 0;
+    /* Adapter callbacks/context cannot be serialized into a CNU. Their model
+       artifact and contract remain separate, explicitly mounted modules. */
+    if (btn_is_adapter(btn)) return -1;
     if (!unit_name_valid(c->name)) return -1;
     if (c->exemplar_count == 0 || c->exemplar_count > UNIT_MAX_EXEMPLARS) return -1;
 

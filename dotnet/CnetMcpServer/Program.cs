@@ -20,7 +20,9 @@ class Program
 
         Console.Error.WriteLine("[CNET MCP] Native host starting (stdio MCP mode)...");
 
-        var tools = new CnetTools("/home/marble/AI/CNET/soul_gemma4v2_final.cnb");
+        string basePath = Environment.GetEnvironmentVariable("CNET_BASE_PATH")
+            ?? "/home/marble/AI/CNET/soul_gemma4v2_final.cnb";
+        var tools = new CnetTools(basePath);
 
         using var reader = new StreamReader(Console.OpenStandardInput());
         using var writer = new StreamWriter(Console.OpenStandardOutput()) { AutoFlush = true };
@@ -153,6 +155,12 @@ class Program
                                     name = "cnet_list_units",
                                     description = "List available CNET units",
                                     inputSchema = (object)new { type = "object", properties = new { } }
+                                },
+                                new
+                                {
+                                    name = "cnet_list_oracles",
+                                    description = "List bounded Oracle provenance from the authoritative native base",
+                                    inputSchema = (object)new { type = "object", properties = new { } }
                                 }
                             }
                         }
@@ -193,6 +201,7 @@ class Program
                             toolArgs.GetProperty("input").GetString() ?? "",
                             toolArgs.TryGetProperty("role", out var r) ? r.GetString() ?? "memory-witness" : "memory-witness"),
                         "cnet_list_units" => tools.ListUnits(),
+                        "cnet_list_oracles" => tools.ListOracles(),
                         _ => "Unknown tool: " + toolName
                     };
                     }

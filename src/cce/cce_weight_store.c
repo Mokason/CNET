@@ -23,6 +23,7 @@
 #include <io.h>
 #define WS_MKDIR(p) _mkdir(p)
 #else
+#include <dirent.h>
 #include <sys/stat.h>
 #define WS_MKDIR(p) mkdir(p, 0777)
 #endif
@@ -139,9 +140,24 @@ cce_result cce_weight_store_open(cce_weight_store** out, const char* dir) {
     }
 #else
     {
-        /* minimal: no scan on posix here; counters start at 0 for a fresh
-           process and stay correct for everything this process adds. */
-        (void)probe;
+        DIR* d = opendir(probe);
+        if (d) {
+            struct dirent* ent;
+            while ((ent = readdir(d)) != NULL) {
+                size_t n = strlen(ent->d_name);
+                if (n > 5 && strcmp(ent->d_name + n - 5, ".spec") == 0) {
+                    char path[700];
+                    long bytes;
+                    snprintf(path, sizeof(path), "%s/%s", dir, ent->d_name);
+                    bytes = file_size(path);
+                    if (bytes >= 0) {
+                        s->count++;
+                        s->bytes += (size_t)bytes;
+                    }
+                }
+            }
+            closedir(d);
+        }
     }
 #endif
     *out = s;
@@ -521,9 +537,15 @@ cce_result cce_weight_store_restore_transformer(cce_weight_store* s, const char*
     if (rc == CCE_OK && (!m->forest || !m->tok_emb.data)) rc = CCE_ERR_UNSUPPORTED;
     if (rc == CCE_OK) {
         if (m->max_ctx <= 0) m->max_ctx = 2048;
-        size_t kv_size = (size_t)m->n_layer * m->max_ctx * m->n_kv_head * m->head_dim;
-        m->k_cache = (float*)calloc(kv_size, sizeof(float));
-        m->v_cache = (float*)calloc(kv_size, sizeof(float));
+        /* Manifest restore bypasses the GGUF/safetensors loaders, so rebuild
+           the same uniform per-layer geometry before sizing KV slots. */
+        rc = cce_gguf_qwen2_geom_uniform(m);
+    }
+    if (rc == CCE_OK) {
+        size_t k_size = (size_t)m->max_ctx * m->k_slot_floats;
+        size_t v_size = (size_t)m->max_ctx * m->v_slot_floats;
+        m->k_cache = (float*)calloc(k_size, sizeof(float));
+        m->v_cache = (float*)calloc(v_size, sizeof(float));
         if (!m->k_cache || !m->v_cache) rc = CCE_ERR_OOM;
     }
     if (rc != CCE_OK) { cce_gguf_qwen2_free(m); return rc; }

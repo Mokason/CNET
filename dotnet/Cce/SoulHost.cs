@@ -1,7 +1,24 @@
 using System;
+using System.Collections.Generic;
+using System.Text;
 using CNET.Cce.Interop;
 
 namespace CNET.Cce;
+
+/// <summary>
+/// Native CNB Oracle provenance. A descriptor records bounded identity and
+/// intent; it does not claim that the Oracle is currently bound or admitted as
+/// a runtime primitive.
+/// </summary>
+public sealed record OracleDescriptor(
+    string Name,
+    string Kind,
+    ulong BehaviorDigest,
+    ulong ArtifactDigest,
+    ulong ContractDigest,
+    ulong ConfigDigest,
+    ulong RetrievalSnapshotDigest,
+    ulong ToolchainDigest);
 
 /// <summary>
 /// Managed wrapper over the CNET soul_host shim: load a certified .cnb base,
@@ -19,6 +36,65 @@ public sealed class SoulHost : IDisposable
         int rc = CceNative.SoulOpen(basePath, modelPath, out _handle);
         if (rc != 0 || _handle == IntPtr.Zero)
             throw new InvalidOperationException($"soul_open('{basePath}') failed: {rc}");
+    }
+
+    /// <summary>
+    /// Snapshot the canonical roster admitted by native certification replay.
+    /// No gap ledger, manifest, or filename convention is used as authority.
+    /// </summary>
+    public IReadOnlyList<string> Units()
+    {
+        Check();
+        int count = CceNative.SoulUnitCount(_handle);
+        if (count < 0) throw new InvalidOperationException($"soul_unit_count failed: {count}");
+        var names = new string[count];
+        for (int i = 0; i < count; ++i)
+        {
+            var buffer = new byte[256];
+            int rc = CceNative.SoulUnitName(_handle, i, buffer, buffer.Length);
+            if (rc != 0) throw new InvalidOperationException($"soul_unit_name({i}) failed: {rc}");
+            int length = Array.IndexOf(buffer, (byte)0);
+            if (length < 0) length = buffer.Length;
+            names[i] = Encoding.UTF8.GetString(buffer, 0, length);
+        }
+        return names;
+    }
+
+    /// <summary>
+    /// Snapshot evidence-carrying Oracle descriptors from the authoritative
+    /// native base. This is provenance metadata, not runtime-admission state.
+    /// </summary>
+    public IReadOnlyList<OracleDescriptor> Oracles()
+    {
+        Check();
+        int count = CceNative.SoulOracleCount(_handle);
+        if (count < 0) throw new InvalidOperationException($"soul_oracle_count failed: {count}");
+        var descriptors = new OracleDescriptor[count];
+        for (int i = 0; i < count; ++i)
+        {
+            var nameBuffer = new byte[256];
+            var kindBuffer = new byte[256];
+            int rc = CceNative.SoulOracleName(_handle, i, nameBuffer, nameBuffer.Length);
+            if (rc != 0) throw new InvalidOperationException($"soul_oracle_name({i}) failed: {rc}");
+            rc = CceNative.SoulOracleKind(_handle, i, kindBuffer, kindBuffer.Length);
+            if (rc != 0) throw new InvalidOperationException($"soul_oracle_kind({i}) failed: {rc}");
+            rc = CceNative.SoulOracleIdentity(
+                _handle, i,
+                out ulong behavior, out ulong artifact, out ulong contract,
+                out ulong config, out ulong retrieval, out ulong toolchain);
+            if (rc != 0) throw new InvalidOperationException($"soul_oracle_identity({i}) failed: {rc}");
+            descriptors[i] = new OracleDescriptor(
+                DecodeAtom(nameBuffer), DecodeAtom(kindBuffer),
+                behavior, artifact, contract, config, retrieval, toolchain);
+        }
+        return descriptors;
+    }
+
+    private static string DecodeAtom(byte[] buffer)
+    {
+        int length = Array.IndexOf(buffer, (byte)0);
+        if (length < 0) length = buffer.Length;
+        return Encoding.UTF8.GetString(buffer, 0, length);
     }
 
     /// <summary>(inputTotal, outputTotal) of a unit, or throws if absent.</summary>

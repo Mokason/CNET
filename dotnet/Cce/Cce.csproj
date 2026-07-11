@@ -23,13 +23,11 @@
     <Compile Remove="Examples\**" />
     <EmbeddedResource Remove="Examples\**" />
     <None Remove="Examples\**" />
-    <!-- Dead raw-Port/Contract bindings (reference non-exported symbols / mis-scoped
-         marshalling types). The soul_host shim (SoulHost.cs) supersedes them. -->
+    <!-- Dead raw-Port/Contract/Supra bindings reference non-exported symbols or
+         unsafe guessed layouts. Live router/perceptual bindings remain compiled. -->
     <Compile Remove="CceContract.cs" />
     <Compile Remove="CceRegistry.cs" />
-    <Compile Remove="CceRouter.cs" />
     <Compile Remove="CceSupra.cs" />
-    <Compile Remove="CcePerceptual.cs" />
   </ItemGroup>
 
 </Project>

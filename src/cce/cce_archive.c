@@ -6,6 +6,9 @@
 
 #ifdef _WIN32
 #include <windows.h>
+#else
+#include <sys/mman.h>
+#include <unistd.h>
 #endif
 
 /* cce_archive: single-file archive with memory-mapped sections for zero-copy views.
@@ -143,6 +146,8 @@ void cce_archive_close(cce_archive* arc) {
     if (arc->map_handle) CloseHandle(arc->map_handle);
     if (arc->file_handle != INVALID_HANDLE_VALUE) CloseHandle(arc->file_handle);
 #else
+    if (arc->mapped && arc->file_size > 0)
+        munmap(arc->mapped, arc->file_size);
     if (arc->f) fclose(arc->f);
 #endif
     free(arc);
@@ -183,12 +188,25 @@ cce_result cce_archive_get_tensor_view(cce_archive* arc,
     if (r == CCE_OK) out_view->owns_memory = 0;
     return r;
 #else
+    if (!arc->mapped && arc->file_size > 0) {
+        fflush(arc->f);
+        arc->mapped = mmap(NULL, arc->file_size, PROT_READ, MAP_SHARED,
+                           fileno(arc->f), 0);
+        if (arc->mapped == MAP_FAILED) arc->mapped = NULL;
+    }
+    if (arc->mapped) {
+        float* ptr = (float*)((char*)arc->mapped + section_offset);
+        cce_result r = cce_tensor_view(out_view, ptr, shape, ndim, NULL);
+        if (r == CCE_OK) out_view->owns_memory = 0;
+        return r;
+    }
+
+    /* Mapping may be unavailable on unusual filesystems; preserve the old
+       owned-copy fallback rather than making archive reads platform-fragile. */
     cce_result r = cce_tensor_alloc(out_view, shape, ndim);
     if (r != CCE_OK) return r;
-
-    fseek(arc->f, (long)section_offset, SEEK_SET);
-    size_t read = fread(out_view->data, 1, bytes_needed, arc->f);
-    if (read != bytes_needed) {
+    if (fseek(arc->f, (long)section_offset, SEEK_SET) != 0 ||
+        fread(out_view->data, 1, bytes_needed, arc->f) != bytes_needed) {
         cce_tensor_free(out_view);
         return CCE_ERR_IO;
     }
@@ -243,8 +261,13 @@ cce_result cce_archive_append_section(cce_archive* arc,
 
     return CCE_OK;
 #else
+    if (arc->mapped && arc->file_size > 0) {
+        munmap(arc->mapped, arc->file_size);
+        arc->mapped = NULL;
+    }
     fseek(arc->f, (long)arc->next_write_offset, SEEK_SET);
     if (fwrite(data, 1, size, arc->f) != size) return CCE_ERR_IO;
+    if (fflush(arc->f) != 0) return CCE_ERR_IO;
 
     if (arc->num_sections < CCE_ARCHIVE_MAX_SECTIONS) {
         int s = arc->num_sections++;
@@ -255,6 +278,7 @@ cce_result cce_archive_append_section(cce_archive* arc,
 
     if (out_offset) *out_offset = arc->next_write_offset;
     arc->next_write_offset += size;
+    arc->file_size = arc->next_write_offset;
     return CCE_OK;
 #endif
 }
@@ -287,6 +311,7 @@ cce_result cce_archive_read_raw(cce_archive* arc, size_t offset, void* buf, size
     if (!ReadFile(arc->file_handle, buf, (DWORD)len, &br, NULL) || br != (DWORD)len) return CCE_ERR_IO;
     return CCE_OK;
 #else
+    fflush(arc->f);
     fseek(arc->f, (long)offset, SEEK_SET);
     size_t r = fread(buf, 1, len, arc->f);
     return (r == len) ? CCE_OK : CCE_ERR_IO;

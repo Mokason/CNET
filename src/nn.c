@@ -726,11 +726,62 @@ int btn_init(
     return 0;
 }
 
+int btn_init_adapter(
+    BinaryTransformNetwork *btn,
+    size_t input_count,
+    size_t output_count,
+    const Port *input_ports,
+    size_t input_port_count,
+    const Port *output_ports,
+    size_t output_port_count,
+    BtnAdapterForwardFn forward,
+    BtnAdapterReleaseFn release,
+    void *context,
+    unsigned long long behavior_digest,
+    size_t cost_hint
+) {
+    if (btn == NULL || input_count == 0 || output_count == 0 ||
+        input_ports == NULL || output_ports == NULL || forward == NULL ||
+        behavior_digest == 0) {
+        return -1;
+    }
+
+    memset(btn, 0, sizeof *btn);
+    btn->input_count = input_count;
+    btn->output_count = output_count;
+    btn->last_output = calloc(output_count, sizeof *btn->last_output);
+    if (btn->last_output == NULL ||
+        btn_set_io_ports(btn, input_ports, input_port_count,
+                         output_ports, output_port_count) != 0) {
+        free(btn->last_output);
+        memset(btn, 0, sizeof *btn);
+        return -1;
+    }
+
+    btn->adapter_forward = forward;
+    btn->adapter_release = release;
+    btn->adapter_context = context;
+    btn->adapter_digest = behavior_digest;
+    btn->adapter_cost = cost_hint;
+    return 0;
+}
+
+int btn_is_adapter(const BinaryTransformNetwork *btn) {
+    return btn != NULL && btn->adapter_forward != NULL;
+}
+
 void btn_free(BinaryTransformNetwork *btn) {
     if (btn == NULL) {
         return;
     }
 
+    if (btn->adapter_release != NULL && btn->adapter_context != NULL) {
+        BtnAdapterReleaseFn release = btn->adapter_release;
+        void *context = btn->adapter_context;
+        btn->adapter_release = NULL;
+        btn->adapter_context = NULL;
+        release(context);
+    }
     free(btn->input_hidden);
     free(btn->hidden_bias);
     free(btn->hidden_output);
@@ -746,6 +797,16 @@ const double *btn_forward(BinaryTransformNetwork *btn, const double *inputs) {
     size_t output;
     double bias_threshold = btn->ternary_threshold;
     int use_ternary = btn->ternary_inference ? 1 : 0;
+
+    if (btn->adapter_forward != NULL) {
+        if (btn->last_output == NULL ||
+            btn->adapter_forward(btn->adapter_context,
+                                 inputs, btn->input_count,
+                                 btn->last_output, btn->output_count) != 0) {
+            return NULL;
+        }
+        return btn->last_output;
+    }
 
     for (hidden = 0; hidden < btn->hidden_count; ++hidden) {
         double hidden_sum = use_ternary ? ternary_quantize(btn->hidden_bias[hidden], bias_threshold) : btn->hidden_bias[hidden];
@@ -807,7 +868,7 @@ static const double *btn_forward_full_precision(
 }
 
 int btn_set_ternary_inference(BinaryTransformNetwork *btn, int enabled, double threshold) {
-    if (btn == NULL || threshold < 0.0) {
+    if (btn == NULL || btn_is_adapter(btn) || threshold < 0.0) {
         return -1;
     }
 
@@ -884,7 +945,7 @@ int btn_train(
     double *output_deltas = NULL;
     double *hidden_errors = NULL;
 
-    if (btn == NULL || inputs == NULL || targets == NULL) {
+    if (btn == NULL || btn_is_adapter(btn) || inputs == NULL || targets == NULL) {
         return -1;
     }
     if (size_t_mul_overflow(btn->output_count, sizeof(*output_deltas), &output_bytes) !=
@@ -955,7 +1016,7 @@ double btn_train_dynamic(
     double adaptive_lr;
 
 
-    if (btn == NULL || inputs == NULL || targets == NULL || sample_count == 0) {
+    if (btn == NULL || btn_is_adapter(btn) || inputs == NULL || targets == NULL || sample_count == 0) {
         return -1.0;
     }
     if (growth_window == 0) {

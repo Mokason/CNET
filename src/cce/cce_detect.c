@@ -8,6 +8,7 @@
 
 #include "../../include/cce/cce_detect.h"
 #include "../../include/cce/cce_st_llama.h"
+#include "../../include/cce/cce_qgkp.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -151,15 +152,19 @@ static void probe_gguf(const char* path, cce_model_info* info) {
 
     /* structural scan over tensor names */
     int has_q = 0, has_k = 0, has_v = 0, has_o = 0, has_qkv_fused = 0;
-    int has_ssm = 0, has_gate = 0, has_output_w = 0;
+    int has_ssm = 0, has_gate = 0, has_output_w = 0, has_experts = 0;
     int emb_d0 = 0, emb_d1 = 0;
-    uint32_t type_count[64] = {0};
-    uint32_t other_type = 0;
+    uint64_t type_bytes[64] = {0};
 
     for (int i = 0; i < info->n_tensors; i++) {
         cce_gguf_tensor_meta m;
         if (cce_gguf_get_tensor_meta(g, i, &m) != CCE_OK) continue;
-        if (m.ggml_type < 64) type_count[m.ggml_type]++; else other_type++;
+        if (m.ggml_type < 64) {
+            if (UINT64_MAX - type_bytes[m.ggml_type] < m.nbytes)
+                type_bytes[m.ggml_type] = UINT64_MAX;
+            else
+                type_bytes[m.ggml_type] += m.nbytes;
+        }
         if (strstr(m.name, "attn_q.weight"))      has_q = 1;
         if (strstr(m.name, "attn_k.weight"))      has_k = 1;
         if (strstr(m.name, "attn_v.weight"))      has_v = 1;
@@ -167,11 +172,16 @@ static void probe_gguf(const char* path, cce_model_info* info) {
         if (strstr(m.name, "attn_qkv.weight"))    has_qkv_fused = 1;
         if (strstr(m.name, ".ssm_") || strstr(m.name, "ssm_in") || strstr(m.name, "ssm_conv1d")) has_ssm = 1;
         if (strstr(m.name, "ffn_gate"))           has_gate = 1;
+        if (strstr(m.name, "ffn_up_exps") || strstr(m.name, "ffn_down_exps") ||
+            strstr(m.name, "ffn_gate_exps") || strstr(m.name, "ffn_gate_inp") ||
+            strstr(m.name, ".experts."))          has_experts = 1;
         if (strcmp(m.name, "output.weight") == 0) has_output_w = 1;
         if (strcmp(m.name, "token_embd.weight") == 0 && m.ndim == 2) {
             emb_d0 = m.shape[0]; emb_d1 = m.shape[1];
         }
     }
+
+    info->is_moe = has_experts;
 
     /* derive hidden/vocab from the embedding when metadata is missing */
     if (emb_d0 > 0 && emb_d1 > 0) {
@@ -180,10 +190,17 @@ static void probe_gguf(const char* path, cce_model_info* info) {
         info->tied_embeddings = has_output_w ? 0 : 1;
     }
 
-    /* dominant dtype */
-    uint32_t best_t = 0, best_n = 0;
-    for (uint32_t t = 0; t < 64; t++) if (type_count[t] > best_n) { best_n = type_count[t]; best_t = t; }
-    if (best_n > 0) {
+    /* Dominant storage dtype by bytes, not tensor count. Quantized models often
+       have many tiny F32 norm tensors, so count-weighting mislabels them. */
+    uint32_t best_t = 0;
+    uint64_t best_bytes = 0;
+    for (uint32_t t = 0; t < 64; t++) {
+        if (type_bytes[t] > best_bytes) {
+            best_bytes = type_bytes[t];
+            best_t = t;
+        }
+    }
+    if (best_bytes > 0) {
         const char* tn = ggml_type_name(best_t);
         if (tn) strncpy(info->dtype, tn, sizeof(info->dtype) - 1);
         else snprintf(info->dtype, sizeof(info->dtype), "ggml_%u", best_t);
@@ -254,7 +271,7 @@ static void probe_safetensors(const char* path, cce_model_info* info) {
     }
 
     int has_qproj = 0, has_kproj = 0, has_vproj = 0, has_oproj = 0;
-    int has_c_attn = 0, has_blocks_qkv = 0, has_mamba = 0, has_gate = 0;
+    int has_c_attn = 0, has_blocks_qkv = 0, has_mamba = 0, has_gate = 0, has_experts = 0;
     int has_lm_head = 0, has_tok_emb_supra = 0;
     int has_xproj = 0, has_extra_norms = 0;
     int layers_hf = -1, layers_gpt2 = -1, layers_blocks = -1, layers_backbone = -1, layers_flat = -1;
@@ -282,6 +299,8 @@ static void probe_safetensors(const char* path, cce_model_info* info) {
         if (strstr(m.name, "A_log") || strstr(m.name, ".ssm") || strstr(m.name, "mixer.")) has_mamba = 1;
         if (strstr(m.name, "mixer.x_proj"))     has_xproj = 1;
         if (strstr(m.name, "mlp.gate_proj"))    has_gate = 1;
+        if (strstr(m.name, ".experts.") || strstr(m.name, "block_sparse_moe") ||
+            strstr(m.name, "shared_expert"))     has_experts = 1;
         if (strstr(m.name, "self_attn.q_norm") || strstr(m.name, "self_attn.k_norm") ||
             strstr(m.name, "pre_feedforward_layernorm") || strstr(m.name, "post_feedforward_layernorm"))
             has_extra_norms = 1;
@@ -314,6 +333,8 @@ static void probe_safetensors(const char* path, cce_model_info* info) {
             dtype_kinds++;
         }
     }
+
+    info->is_moe = has_experts;
 
     int best = -1, best_n = 0;
     for (int d = 0; d < dtype_kinds; d++) if (dtype_n[d] > best_n) { best_n = dtype_n[d]; best = d; }
@@ -398,7 +419,30 @@ static void probe_qwen2_pack(const char* path, cce_model_info* info) {
     if (!f) return;
     uint32_t magic = 0, ver = 0;
     int hp[8];
-    if (fread(&magic, 4, 1, f) == 1 && fread(&ver, 4, 1, f) == 1 &&
+    if (fread(&magic, 4, 1, f) != 1 || fread(&ver, 4, 1, f) != 1) {
+        note_append(info, "qwen2-pack header truncated: hparams unreadable, not runnable");
+        fclose(f);
+        return;
+    }
+    if (ver == CCE_QGKP_VERSION_ENVELOPE) {
+        cce_qgkp_info q;
+        fclose(f);
+        if (cce_qgkp_inspect(path, &q) != CCE_OK) {
+            note_append(info, "QGKP v3 envelope header invalid");
+            return;
+        }
+        info->n_layer = q.n_layer;
+        info->hidden = q.hidden;
+        info->ctx_len = q.context_length;
+        info->family = CCE_ARCH_FAMILY_LLAMA;
+        info->attention_full_qkv = 1;
+        strncpy(info->arch, q.architecture, sizeof(info->arch) - 1);
+        strncpy(info->naming, "qgkp-gguf-envelope", sizeof(info->naming) - 1);
+        strncpy(info->dtype, q.quantization, sizeof(info->dtype) - 1);
+        note_append(info, "lossless packet-trit GGUF envelope: execute via declared external backend");
+        return;
+    }
+    if (
         fread(hp, sizeof(int), 8, f) == 8) {
         info->n_layer = hp[0]; info->hidden = hp[1];
         info->n_head = hp[2]; info->n_kv_head = hp[3];
@@ -488,7 +532,7 @@ static const cce_runner_entry k_runner_registry[] = {
     { CCE_FMT_SAFETENSORS, CCE_ARCH_FAMILY_LLAMA, "hf-model.layers", "cce_st_llama_load",          open_st_llama,         precheck_config_json },
     { CCE_FMT_SAFETENSORS, CCE_ARCH_FAMILY_GPT2,  "supra-blocks",    "cce_supra_a2a_load",         open_supra_dir,        NULL },
     { CCE_FMT_SUPRA_PACK,  CCE_ARCH_FAMILY_GPT2,  NULL,              "cce_supra_a2a_load_packed",  open_supra_pack,       NULL },
-    { CCE_FMT_QWEN2_PACK,  CCE_ARCH_FAMILY_LLAMA, NULL,              "cce_gguf_qwen2_load_packed", open_qwen2_pack,       NULL },
+    { CCE_FMT_QWEN2_PACK,  CCE_ARCH_FAMILY_LLAMA, "qwen2-pack",     "cce_gguf_qwen2_load_packed", open_qwen2_pack,       NULL },
     /* CCE_FMT_CCE_ARCHIVE deliberately has NO row: cce_forest_open on a bare
        archive yields an empty forest (branch restore is owned by the loaders
        that wrote it, e.g. supra decomposed reload). Claiming runnable here
@@ -579,6 +623,7 @@ void cce_detect_print(const cce_model_info* info, const char* path) {
         printf("  %-14s %s\n", "tied emb", info->tied_embeddings ? "yes" : "no");
     if (info->attention_full_qkv >= 0)
         printf("  %-14s %s\n", "full q/k/v/o", info->attention_full_qkv ? "yes" : "no (partial)");
+    printf("  %-14s %s\n", "model class", info->is_moe ? "moe" : "dense/non-moe");
     printf("  %-14s %s%s%s\n", "runnable",
            info->runnable ? "yes via " : "no",
            info->runnable ? info->runner : "",

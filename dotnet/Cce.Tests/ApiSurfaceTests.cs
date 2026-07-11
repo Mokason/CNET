@@ -287,4 +287,18 @@ public class ApiSurfaceTests
             Assert.True(typeof(CceHandle).IsPublic);
         }
     }
+
+    [Fact]
+    public void SoulHost_Exposes_Bounded_Oracle_Descriptor_Projection()
+    {
+        var descriptor = new OracleDescriptor(
+            "teacher", "builtin",
+            1UL, 2UL, 3UL, 4UL, 5UL, 6UL);
+
+        Assert.Equal("teacher", descriptor.Name);
+        Assert.Equal("builtin", descriptor.Kind);
+        Assert.Equal(1UL, descriptor.BehaviorDigest);
+        Assert.Equal(5UL, descriptor.RetrievalSnapshotDigest);
+        Assert.NotNull(typeof(SoulHost).GetMethod(nameof(SoulHost.Oracles)));
+    }
 }

@@ -12,6 +12,7 @@
 
 #include "cnet_export.h"
 #include <stddef.h>
+#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -23,8 +24,31 @@ typedef struct SoulHost SoulHost;
 CNET_API int soul_open(const char *base_path, const char *model_path,
                        SoulHost **out);
 
+/* Number of units admitted to the live registry after certification replay.
+   This is the canonical roster; sidecars are not consulted. */
+CNET_API int soul_unit_count(SoulHost *h);
+
+/* Copy the certified unit name at `index` into `out` (always NUL-terminated on
+   success). Returns 0, or <0 for invalid index/buffer/truncation. */
+CNET_API int soul_unit_name(SoulHost *h, int index, char *out, int out_cap);
+
+/* Oracle descriptors are persisted provenance/intent, not automatically
+   admitted runtime primitives. These functions project the authoritative
+   native CNB roster without binding or claiming execution trust. */
+CNET_API int soul_oracle_count(SoulHost *h);
+CNET_API int soul_oracle_name(SoulHost *h, int index, char *out, int out_cap);
+CNET_API int soul_oracle_kind(SoulHost *h, int index, char *out, int out_cap);
+CNET_API int soul_oracle_identity(
+    SoulHost *h, int index,
+    uint64_t *behavior_digest,
+    uint64_t *artifact_digest,
+    uint64_t *contract_digest,
+    uint64_t *config_digest,
+    uint64_t *retrieval_snapshot_digest,
+    uint64_t *toolchain_digest);
+
 /* Port totals (in doubles) of a named unit, so a host can size its buffers
-   BEFORE running. 0 on success (fills *in_total/*out_total), <0 if absent. */
+   BEFORE running. 0 on success (fills both totals when non-NULL), <0 if absent. */
 CNET_API int soul_unit_dims(SoulHost *h, const char *name,
                             int *in_total, int *out_total);
 

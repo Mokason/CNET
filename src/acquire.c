@@ -2,6 +2,7 @@
 #include "../include/base.h"
 #include "../include/contract/unit.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -159,6 +160,134 @@ int acquire_port_eq_public(Port a, Port b) { return acquire_port_eq(a, b); }
 
 static size_t port_total(Port p) { return p.field_width * p.field_count; }
 
+static uint64_t oracle_fnv_byte(uint64_t h, unsigned char byte) {
+    return (h ^ (uint64_t)byte) * UINT64_C(1099511628211);
+}
+
+static uint64_t oracle_fnv_u32(uint64_t h, uint32_t value) {
+    unsigned i;
+    for (i = 0; i < 4; ++i)
+        h = oracle_fnv_byte(h, (unsigned char)(value >> (i * 8)));
+    return h;
+}
+
+static uint64_t oracle_fnv_u64(uint64_t h, uint64_t value) {
+    unsigned i;
+    for (i = 0; i < 8; ++i)
+        h = oracle_fnv_byte(h, (unsigned char)(value >> (i * 8)));
+    return h;
+}
+
+uint64_t cnet_oracle_identity_digest(const CnetOracleIdentity *identity) {
+    uint64_t h = UINT64_C(1469598103934665603);
+    if (!identity || identity->abi_version != CNET_ORACLE_ABI_VERSION ||
+        identity->struct_size < sizeof *identity ||
+        identity->artifact_digest == 0 || identity->contract_digest == 0) {
+        return 0;
+    }
+    h = oracle_fnv_u32(h, identity->abi_version);
+    h = oracle_fnv_u64(h, identity->artifact_digest);
+    h = oracle_fnv_u64(h, identity->contract_digest);
+    h = oracle_fnv_u64(h, identity->config_digest);
+    h = oracle_fnv_u64(h, identity->retrieval_snapshot_digest);
+    h = oracle_fnv_u64(h, identity->toolchain_digest);
+    return h ? h : UINT64_C(1);
+}
+
+static void oracle_result_init(CnetOracleResult *result,
+                               CnetOracleStatus status,
+                               uint64_t identity_digest) {
+    memset(result, 0, sizeof *result);
+    result->abi_version = CNET_ORACLE_ABI_VERSION;
+    result->struct_size = (uint32_t)sizeof *result;
+    result->status = status;
+    result->oracle_identity_digest = identity_digest;
+}
+
+static void oracle_account(OracleEntry *entry, CnetOracleResult *result,
+                           CnetOracleStatus status) {
+    result->status = status;
+    result->oracle_identity_digest = entry->behavior_digest;
+    if ((unsigned)status < CNET_ORACLE_STATUS_COUNT)
+        entry->status_counts[status]++;
+    if (status == CNET_ORACLE_ABSTAIN_AMBIGUOUS ||
+        status == CNET_ORACLE_ABSTAIN_UNDETERMINED) {
+        entry->abstains++;
+    } else if (status != CNET_ORACLE_ANSWER) {
+        entry->rejects++;
+    }
+    entry->last_result = *result;
+}
+
+CnetOracleStatus cnet_oracle_invoke(OracleEntry *entry,
+                                    const double *in, size_t in_count,
+                                    double *out, size_t out_count,
+                                    CnetOracleResult *result_out) {
+    CnetOracleResult result;
+    CnetOracleStatus status = CNET_ORACLE_FAIL_PERMANENT;
+    size_t expected_in, expected_out;
+
+    oracle_result_init(&result, status, entry ? entry->behavior_digest : 0);
+    if (!entry || (!entry->fn && !entry->fn_v2)) {
+        if (result_out) *result_out = result;
+        return status;
+    }
+    entry->calls++;
+    expected_in = port_total(entry->input_port);
+    expected_out = port_total(entry->output_port);
+    if (!in || !out || in_count != expected_in || out_count != expected_out ||
+        !port_validate(entry->input_port, in)) {
+        status = CNET_ORACLE_INVALID_INPUT;
+        oracle_account(entry, &result, status);
+        if (result_out) *result_out = result;
+        return status;
+    }
+
+    if (entry->fn_v2) {
+        int transport_rc;
+        memset(&result, 0, sizeof result);
+        transport_rc = entry->fn_v2(in, in_count, out, out_count,
+                                    &result, entry->ctx);
+        if (transport_rc != 0 ||
+            result.abi_version != CNET_ORACLE_ABI_VERSION ||
+            result.struct_size < sizeof result || result.flags != 0 ||
+            (unsigned)result.status >= CNET_ORACLE_STATUS_COUNT) {
+            oracle_result_init(&result, CNET_ORACLE_FAIL_PERMANENT,
+                               entry->behavior_digest);
+            status = CNET_ORACLE_FAIL_PERMANENT;
+        } else {
+            status = result.status;
+            result.oracle_identity_digest = entry->behavior_digest;
+        }
+    } else {
+        int legacy_rc = entry->fn(in, out, entry->ctx);
+        status = legacy_rc == 0 ? CNET_ORACLE_ANSWER
+               : legacy_rc > 0 ? CNET_ORACLE_ABSTAIN_AMBIGUOUS
+                               : CNET_ORACLE_FAIL_PERMANENT;
+        oracle_result_init(&result, status, entry->behavior_digest);
+        result.confidence = status == CNET_ORACLE_ANSWER ? 1.0 : 0.0;
+    }
+
+    if (status == CNET_ORACLE_ANSWER) {
+        if (!isfinite(result.confidence) ||
+            result.confidence < 0.0 || result.confidence > 1.0 ||
+            !port_validate(entry->output_port, out)) {
+            status = CNET_ORACLE_INVALID_OUTPUT;
+        } else if (entry->validator) {
+            CnetOracleValidity validity = entry->validator(
+                in, in_count, out, out_count, &result, entry->ctx);
+            if (validity == CNET_ORACLE_VALIDITY_UNDETERMINED)
+                status = CNET_ORACLE_ABSTAIN_UNDETERMINED;
+            else if (validity != CNET_ORACLE_VALID)
+                status = CNET_ORACLE_INVALID_OUTPUT;
+        }
+    }
+
+    oracle_account(entry, &result, status);
+    if (result_out) *result_out = result;
+    return status;
+}
+
 static size_t goal_sample_mix(Port goal) {
     /* Cheap goal-dependent offset so units with same input port but
        different goals get different (still uniform) sample strata.
@@ -205,6 +334,35 @@ int acquire_oracle_register(OracleRegistry *o, const char *name,
     o->entries[o->count].output_port = output_port;
     o->entries[o->count].fn = fn;
     o->entries[o->count].ctx = ctx;
+    o->count++;
+    return 0;
+}
+
+int acquire_oracle_register_v2(OracleRegistry *o, const char *name,
+                               Port input_port, Port output_port,
+                               CnetOracleFnV2 fn,
+                               CnetOracleValidateFn validator,
+                               const CnetOracleIdentity *identity,
+                               void *ctx) {
+    OracleEntry *entry;
+    uint64_t digest;
+    size_t i;
+    if (!o || !fn || !acquire_name_is_atom(name) ||
+        o->count >= ACQUIRE_MAX_ORACLES) return -1;
+    digest = cnet_oracle_identity_digest(identity);
+    if (digest == 0) return -1;
+    for (i = 0; i < o->count; ++i)
+        if (strcmp(o->entries[i].name, name) == 0) return -1;
+    entry = &o->entries[o->count];
+    memset(entry, 0, sizeof *entry);
+    snprintf(entry->name, ACQUIRE_NAME_MAX, "%s", name);
+    entry->input_port = input_port;
+    entry->output_port = output_port;
+    entry->fn_v2 = fn;
+    entry->validator = validator;
+    entry->identity = *identity;
+    entry->behavior_digest = digest;
+    entry->ctx = ctx;
     o->count++;
     return 0;
 }
@@ -360,9 +518,8 @@ int acquire_execute_or_fallback(PrimitiveRegistry *reg, AcquireLedger *l,
     /* validate-then-canonicalize on BOTH sides of the oracle boundary */
     if (!port_validate(input_port, input)) return -1;
     if (port_canonicalize(input_port, input, cin) != 0) return -1;
-    o->calls++;
-    if (o->fn(cin, raw, o->ctx) != 0) { o->rejects++; return -1; }
-    if (!port_validate(goal_port, raw)) { o->rejects++; return -1; }
+    if (cnet_oracle_invoke(o, cin, in_total, raw, out_total, NULL) !=
+        CNET_ORACLE_ANSWER) return -1;
     if (port_canonicalize(goal_port, raw, ctgt) != 0) return -1;
     memcpy(output, ctgt, out_total * sizeof *ctgt);
 
@@ -458,13 +615,8 @@ static int mine_from_oracle(OracleEntry *o, Port in_p, Port goal_p,
         pilot_idx[k] = idx;
         attempts++;
         if (contract_encode_domain_point(&tc, idx, irow) != 0) continue;
-        o->calls++;
-        {
-            int rc = o->fn(irow, raw, o->ctx);
-            if (rc < 0) { o->rejects++; continue; }
-            if (rc > 0) { o->abstains++; continue; }   /* teacher-ambiguous */
-        }
-        if (!port_validate(goal_p, raw))  { o->rejects++; continue; }
+        if (cnet_oracle_invoke(o, irow, in_total, raw, out_total, NULL) !=
+            CNET_ORACLE_ANSWER) continue;
         if (port_canonicalize(goal_p, raw, trow) != 0) continue;
         usable++;
     }
@@ -492,6 +644,10 @@ static int mine_from_oracle(OracleEntry *o, Port in_p, Port goal_p,
 #ifndef _OPENMP
         width = 1;
 #endif
+        /* v2 carries per-call metadata and semantic validation. Until a
+           versioned batch result ABI exists it deliberately takes the single
+           governed serial path instead of dropping that evidence. */
+        if (o->fn_v2) width = 1;
         if (width > 1) {
             st = (unsigned char *)malloc(n_points);
             slot_in = (double *)malloc(n_points * in_total * sizeof *slot_in);
@@ -619,13 +775,8 @@ static int mine_from_oracle(OracleEntry *o, Port in_p, Port goal_p,
                 if (dup) continue;
                 attempts++;
                 if (contract_encode_domain_point(&tc, idx, irow) != 0) continue;
-                o->calls++;
-                {
-                    int rc = o->fn(irow, raw, o->ctx);
-                    if (rc < 0) { o->rejects++; continue; }
-                    if (rc > 0) { o->abstains++; continue; }  /* teacher-ambiguous */
-                }
-                if (!port_validate(goal_p, raw))  { o->rejects++; continue; }
+                if (cnet_oracle_invoke(o, irow, in_total, raw, out_total, NULL) !=
+                    CNET_ORACLE_ANSWER) continue;
                 if (port_canonicalize(goal_p, raw, trow) != 0) continue;
                 usable++;
             }

@@ -140,47 +140,9 @@ namespace CnetMcpServer
         private static List<string> LoadRosterFor(SoulHost host, string basePath,
                                                   out string source)
         {
-            source = "";
-            var roster = new List<string>();
-            string sidecar = basePath + ".gaps.txt";
-            try
-            {
-                if (File.Exists(sidecar))
-                {
-                    foreach (var line in File.ReadLines(sidecar))
-                    {
-                        var tokens = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-                        // "... 1 256 3 tk<N>q<N> - cce_cond_next -": the unit
-                        // tag is the token right before the first "-".
-                        for (int i = 1; i < tokens.Length; i++)
-                        {
-                            if (tokens[i] == "-" && tokens[i - 1].Length > 2
-                                && char.IsLetter(tokens[i - 1][0]))
-                            {
-                                roster.Add("acq_" + tokens[i - 1]);
-                                break;
-                            }
-                        }
-                    }
-                    source = Path.GetFileName(sidecar);
-                }
-            }
-            catch
-            {
-                // fall through to empty roster; callers report honestly
-            }
-
-            // Keep only names the engine actually resolves. The sidecar lists
-            // gap/coverage entries, NOT a certified-unit manifest — some of
-            // its names are absent from the base, so every name must be
-            // probed. One-time cost per process; the result is cached.
-            var validated = new List<string>();
-            foreach (var name in roster)
-            {
-                try { host.UnitDims(name); validated.Add(name); }
-                catch { /* not certified in this base — drop */ }
-            }
-            return validated;
+            _ = basePath; // retained for source-compatible call sites
+            source = "live certified registry";
+            return new List<string>(host.Units());
         }
 
         // ---- Gemma tokenizer wiring --------------------------------------
@@ -1017,14 +979,54 @@ namespace CnetMcpServer
                 $"activation entropy {FormatDouble(entropy)}.";
         }
 
+        public string ListOracles()
+        {
+            var descriptors = _soulHost.Oracles();
+            var rows = new List<object>(descriptors.Count);
+            foreach (var descriptor in descriptors)
+            {
+                rows.Add(new
+                {
+                    name = descriptor.Name,
+                    kind = descriptor.Kind,
+                    behaviorDigest = $"0x{descriptor.BehaviorDigest:x16}",
+                    artifactDigest = $"0x{descriptor.ArtifactDigest:x16}",
+                    contractDigest = $"0x{descriptor.ContractDigest:x16}",
+                    configDigest = $"0x{descriptor.ConfigDigest:x16}",
+                    retrievalSnapshotDigest = $"0x{descriptor.RetrievalSnapshotDigest:x16}",
+                    toolchainDigest = $"0x{descriptor.ToolchainDigest:x16}"
+                });
+            }
+            return JsonSerializer.Serialize(new
+            {
+                source = "native CNB Oracle descriptors",
+                admission = "descriptor_only_not_runtime_trust",
+                count = rows.Count,
+                oracles = rows
+            });
+        }
+
         public string ListUnits()
         {
             var roster = UnitRoster();
             if (roster.Count == 0)
-                return "[CNET] No certified units resolved from the loaded base " +
-                       (string.IsNullOrEmpty(_rosterSource) ? "(no unit sidecar found)." : $"(sidecar: {_rosterSource}).");
+                return "[CNET] No units passed certification replay into the live registry.";
 
-            Tokenizer();  // load once so PieceOf can decode unit token ids
+            bool tokenRoster = true;
+            foreach (string name in roster)
+            {
+                int tk = name.IndexOf("tk", StringComparison.Ordinal);
+                int q = tk >= 0 ? name.IndexOf('q', tk + 2) : -1;
+                try
+                {
+                    var (inDim, outDim) = _soulHost.UnitDims(name);
+                    if (q <= tk + 2 || !int.TryParse(name.Substring(tk + 2, q - tk - 2), out _) ||
+                        inDim != 256 || outDim <= 0 || outDim % 256 != 0)
+                        tokenRoster = false;
+                }
+                catch { tokenRoster = false; }
+            }
+            if (tokenRoster) Tokenizer(); // decode ids only when the roster proves that schema
             var samples = new List<string>();
             for (int i = 0; i < Math.Min(5, roster.Count); i++)
             {
@@ -1045,9 +1047,12 @@ namespace CnetMcpServer
                 }
             }
 
-            string tokenizerNote = _tokenizer != null
-                ? "Unit ids are gemma-4 vocab ids (tokenizer wired for exact claim-token lookup)."
-                : "Gemma tokenizer unavailable — unit ids shown raw.";
+            string schemaNote = tokenRoster
+                ? "Roster proves the acq_tk<id>q<id> 256-wide token schema. " +
+                  (_tokenizer != null
+                    ? "Gemma tokenizer is wired for exact claim-token lookup."
+                    : "Gemma tokenizer is unavailable; token ids are shown raw.")
+                : "No global task or dimensional schema is assumed; each unit is described by its live typed dimensions.";
             string extraNote = "";
             var mounted = ExtraBases();
             if (mounted.Count > 0)
@@ -1059,8 +1064,7 @@ namespace CnetMcpServer
             }
             return $"[CNET] {roster.Count} certified units resolved from {_rosterSource}. " +
                 $"Sample: {string.Join("; ", samples)}. " +
-                "Units follow the acq_<tag> convention with 256-wide w_cur input ports (contract cce_cond_next). " +
-                tokenizerNote + RecipeSummary() + extraNote;
+                schemaNote + RecipeSummary() + extraNote;
         }
     }
 }

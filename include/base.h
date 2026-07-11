@@ -3,7 +3,7 @@
 
 #include "cnet_export.h"
 
-/* Unified base ("CNB1"): ONE sealed container replacing per-unit file sprawl.
+/* Unified base ("CNB2", with CNB1 read compatibility): ONE sealed container replacing per-unit file sprawl.
  *
  * Holds unit payloads (exact CNU1 byte images) in a content-addressed blob
  * table + name->blob references, plus the tag registry (mint-once governance
@@ -60,6 +60,8 @@ typedef struct {
     char kind[CNB_NAME_MAX];     /* atom, e.g. "builtin", "cce_model" */
     Port input_port;
     Port goal_port;
+    CnetOracleIdentity identity;  /* zeroed for legacy/unversioned descriptors */
+    uint64_t behavior_digest;     /* digest of identity, 0 for legacy */
 } CnbOracleDesc;
 
 typedef struct {
@@ -146,6 +148,10 @@ typedef CnetOracleFn (*CnbOracleResolver)(const char *name, const char *kind,
                                           void *rctx);
 int cnb_add_oracle_desc(CnetBase *b, const char *name, const char *kind_atom,
                         Port input_port, Port goal_port);
+int cnb_add_oracle_desc_v2(CnetBase *b, const char *name,
+                           const char *kind_atom,
+                           Port input_port, Port goal_port,
+                           const CnetOracleIdentity *identity);
 int cnb_bind_oracles(const CnetBase *b, OracleRegistry *orc,
                      CnbOracleResolver resolver, void *rctx,
                      size_t *unbound_out);

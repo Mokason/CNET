@@ -25,14 +25,17 @@
     <ProjectReference Include="..\Cce\Cce.csproj" />
   </ItemGroup>
 
-  <!-- Robust copy of native DLL for test runs -->
-  <Target Name="CopyCceNative" AfterTargets="Build">
+  <!-- Managed bindings use the unified cnet library; retain cce copies only
+       for compatibility tests that load the legacy artifact explicitly. -->
+  <Target Name="CopyCnetNative" AfterTargets="Build">
     <ItemGroup>
       <_CceDll Include="$(MSBuildThisFileDirectory)..\..\cce.dll" Condition="Exists('$(MSBuildThisFileDirectory)..\..\cce.dll')" />
       <_CceDll Include="$(MSBuildThisFileDirectory)..\..\cce.so" Condition="Exists('$(MSBuildThisFileDirectory)..\..\cce.so')" />
+      <_CceDll Include="$(MSBuildThisFileDirectory)..\..\cnet.dll" Condition="Exists('$(MSBuildThisFileDirectory)..\..\cnet.dll')" />
+      <_CceDll Include="$(MSBuildThisFileDirectory)..\..\cnet.so" Condition="Exists('$(MSBuildThisFileDirectory)..\..\cnet.so')" />
     </ItemGroup>
     <Copy SourceFiles="@(_CceDll)" DestinationFolder="$(OutputPath)" SkipUnchangedFiles="true" />
-    <Message Text="Copied native CCE library to test output: @(_CceDll)" Importance="high" Condition="'@(_CceDll)' != ''" />
+    <Message Text="Copied native CNET libraries to test output: @(_CceDll)" Importance="high" Condition="'@(_CceDll)' != ''" />
   </Target>
 
 </Project>

@@ -24,7 +24,7 @@ public sealed class CcePerceptual : IDisposable
         _forest = forest;
         _inputDim = inputDim;
         _numClasses = numClasses;
-        _router = new CceRouterNative { temperature = 1.0f, novelty_threshold = 0.1f, top_k = 3 };
+        _router = new CceNative.CceRouterNative { temperature = 1.0f, novelty_threshold = 0.1f, top_k = 3 };
     }
 
     /// <summary>
@@ -105,9 +105,7 @@ public sealed class CcePerceptual : IDisposable
     {
         if (!_disposed && _forest != IntPtr.Zero)
         {
-            // Perceptual forests are standard CCE forests; closing via forest close is safe.
-            // We don't have separate close, rely on forest close being ok, or leak small.
-            // For correctness in this binding we leave it (caller can extract and manage).
+            CceNative.CceForestClose(_forest);
             _forest = IntPtr.Zero;
             _disposed = true;
         }

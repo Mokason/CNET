@@ -8,6 +8,7 @@
 #include "../../include/arena.h"
 #include "../../include/plan_table.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -81,6 +82,36 @@ static size_t ports_total(const Port *ports, size_t n) {
     return total;
 }
 
+/* Contract tables are canonical specifications, not arbitrary network inputs.
+   Discrete families retain the historical exact {0,1} format. RAW carries any
+   finite scalar vector; EVIDENCE carries finite normalized distributions. */
+static int contract_slice_valid(Port port, const double *values) {
+    size_t total;
+    size_t i;
+    double sum = 0.0;
+
+    if (values == NULL || port.field_width == 0 || port.field_count == 0 ||
+        port.field_width > (size_t)-1 / port.field_count) {
+        return 0;
+    }
+    total = port.field_width * port.field_count;
+    for (i = 0; i < total; ++i) {
+        if (!isfinite(values[i])) {
+            return 0;
+        }
+        if (port.family == PORT_EVIDENCE) {
+            sum += values[i];
+        } else if (port.family != PORT_RAW &&
+                   values[i] != 0.0 && values[i] != 1.0) {
+            return 0;
+        }
+    }
+    if (port.family == PORT_EVIDENCE && fabs(sum - 1.0) > 1e-12) {
+        return 0;
+    }
+    return port_validate(port, values);
+}
+
 /* ---- content identity (FNV-1a 64) ---------------------------------------- */
 
 #define CONTRACT_FNV_OFFSET 1469598103934665603ULL
@@ -132,6 +163,13 @@ unsigned long long contract_btn_digest(const BinaryTransformNetwork *btn) {
     h = fnv_bytes(h, &btn->ternary_threshold, sizeof btn->ternary_threshold);
     h = fnv_ports(h, btn->input_ports, btn->input_port_count);
     h = fnv_ports(h, btn->output_ports, btn->output_port_count);
+
+    /* Runtime adapters have no matrix payload. Their backend supplies a stable
+       nonzero artifact/behavior digest; never hash process-local pointers. */
+    if (btn_is_adapter(btn)) {
+        h = fnv_bytes(h, &btn->adapter_digest, sizeof btn->adapter_digest);
+        return h;
+    }
 
     for (i = 0; i < btn->output_count; ++i) {
         h = fnv_bytes(h, &btn->output_bias[i], sizeof(double));
@@ -243,33 +281,77 @@ int contract_init_borrowed(Contract *c, const char *name,
                            const BinaryTransformNetwork *btn,
                            const double *inputs, const double *targets,
                            size_t exemplar_count) {
-    if (c == NULL || btn == NULL || inputs == NULL || targets == NULL) {
+    Contract local;
+    size_t in_total, out_total;
+    size_t i, j;
+
+    if (c == NULL || btn == NULL || inputs == NULL || targets == NULL ||
+        !name_valid(name) || exemplar_count == 0 ||
+        btn->input_port_count == 0 ||
+        btn->input_port_count > BTN_MAX_INPUT_PORTS ||
+        btn->output_port_count == 0 ||
+        btn->output_port_count > BTN_MAX_OUTPUT_PORTS) {
         return -1;
     }
-    if (!name_valid(name)) {
-        return -1;
+    for (i = 0; i < btn->input_port_count; ++i) {
+        Port probe = btn->input_ports[i];
+        if (family_token(probe.family) == NULL ||
+            probe.field_width == 0 || probe.field_count == 0 ||
+            memchr(probe.tag, '\0', sizeof probe.tag) == NULL ||
+            (probe.tag[0] != '\0' && port_set_tag(&probe, probe.tag) != 0)) {
+            return -1;
+        }
     }
-    if (exemplar_count == 0) {
-        return -1;
+    for (i = 0; i < btn->output_port_count; ++i) {
+        Port probe = btn->output_ports[i];
+        if (family_token(probe.family) == NULL ||
+            probe.field_width == 0 || probe.field_count == 0 ||
+            memchr(probe.tag, '\0', sizeof probe.tag) == NULL ||
+            (probe.tag[0] != '\0' && port_set_tag(&probe, probe.tag) != 0)) {
+            return -1;
+        }
     }
 
-    memset(c, 0, sizeof *c);
-    strncpy(c->name, name, CONTRACT_NAME_MAX - 1);
-    c->name[CONTRACT_NAME_MAX - 1] = '\0';
+    in_total = ports_total(btn->input_ports, btn->input_port_count);
+    out_total = ports_total(btn->output_ports, btn->output_port_count);
+    if (in_total == 0 || in_total == (size_t)-1 || in_total != btn->input_count ||
+        out_total == 0 || out_total == (size_t)-1 || out_total != btn->output_count ||
+        exemplar_count > (size_t)-1 / sizeof(double) / in_total ||
+        exemplar_count > (size_t)-1 / sizeof(double) / out_total) {
+        return -1;
+    }
+    for (i = 0; i < exemplar_count; ++i) {
+        size_t offset = 0;
+        for (j = 0; j < btn->input_port_count; ++j) {
+            if (!contract_slice_valid(btn->input_ports[j],
+                                      inputs + i * in_total + offset)) {
+                return -1;
+            }
+            offset += plan_port_total(btn->input_ports[j]);
+        }
+        offset = 0;
+        for (j = 0; j < btn->output_port_count; ++j) {
+            if (!contract_slice_valid(btn->output_ports[j],
+                                      targets + i * out_total + offset)) {
+                return -1;
+            }
+            offset += plan_port_total(btn->output_ports[j]);
+        }
+    }
 
-    memcpy(c->input_ports, btn->input_ports,
+    memset(&local, 0, sizeof local);
+    strcpy(local.name, name);
+    memcpy(local.input_ports, btn->input_ports,
            btn->input_port_count * sizeof(Port));
-    c->input_port_count = btn->input_port_count;
-
-    memcpy(c->output_ports, btn->output_ports,
+    local.input_port_count = btn->input_port_count;
+    memcpy(local.output_ports, btn->output_ports,
            btn->output_port_count * sizeof(Port));
-    c->output_port_count = btn->output_port_count;
-
-    c->inputs = (double *)inputs;    /* borrowed -- cast away const */
-    c->outputs = (double *)targets;  /* borrowed -- cast away const */
-    c->exemplar_count = exemplar_count;
-    c->owns_data = 0;
-
+    local.output_port_count = btn->output_port_count;
+    local.inputs = (double *)inputs;
+    local.outputs = (double *)targets;
+    local.exemplar_count = exemplar_count;
+    local.owns_data = 0;
+    *c = local;
     return 0;
 }
 
@@ -345,11 +427,11 @@ int contract_save(const Contract *c, const char *path) {
             if (j > 0) {
                 if (fputc(' ', f) == EOF) { goto fail; }
             }
-            if (fprintf(f, "%g", in_row[j]) < 0) { goto fail; }
+            if (fprintf(f, "%.17g", in_row[j]) < 0) { goto fail; }
         }
         for (j = 0; j < out_total; ++j) {
             if (fputc(' ', f) == EOF) { goto fail; }
-            if (fprintf(f, "%g", out_row[j]) < 0) { goto fail; }
+            if (fprintf(f, "%.17g", out_row[j]) < 0) { goto fail; }
         }
         if (fputc('\n', f) == EOF) { goto fail; }
     }
@@ -504,13 +586,13 @@ int contract_load(Contract *c, const char *path) {
         for (j = 0; j < in_total; ++j) {
             double v;
             if (fscanf(f, "%lf", &v) != 1) { goto fail; }
-            if (v != 0.0 && v != 1.0) { goto fail; }
+            if (!isfinite(v)) { goto fail; }
             in_row[j] = v;
         }
         for (j = 0; j < out_total; ++j) {
             double v;
             if (fscanf(f, "%lf", &v) != 1) { goto fail; }
-            if (v != 0.0 && v != 1.0) { goto fail; }
+            if (!isfinite(v)) { goto fail; }
             out_row[j] = v;
         }
 
@@ -519,7 +601,8 @@ int contract_load(Contract *c, const char *path) {
             size_t offset = 0;
             for (j = 0; j < local.input_port_count; ++j) {
                 size_t tot = plan_port_total(local.input_ports[j]);
-                if (!port_validate(local.input_ports[j], in_row + offset)) {
+                if (!contract_slice_valid(local.input_ports[j],
+                                          in_row + offset)) {
                     goto fail;
                 }
                 offset += tot;
@@ -530,7 +613,8 @@ int contract_load(Contract *c, const char *path) {
             size_t offset = 0;
             for (j = 0; j < local.output_port_count; ++j) {
                 size_t tot = plan_port_total(local.output_ports[j]);
-                if (!port_validate(local.output_ports[j], out_row + offset)) {
+                if (!contract_slice_valid(local.output_ports[j],
+                                          out_row + offset)) {
                     goto fail;
                 }
                 offset += tot;
@@ -579,32 +663,91 @@ void contract_free(Contract *c) {
 /* ---- contract_init_frozen / contract_set_parent ------------------------- */
 
 int contract_init_frozen(Contract *c, const FrozenContractData *fd) {
-    size_t i;
-    if (c == NULL || fd == NULL || fd->name == NULL || fd->name[0] == '\0') {
+    Contract local;
+    size_t in_total, out_total;
+    size_t i, j;
+
+    if (c == NULL || fd == NULL || fd->name == NULL ||
+        memchr(fd->name, '\0', CONTRACT_NAME_MAX) == NULL ||
+        !name_valid(fd->name)) {
         return -1;
     }
-    if (fd->exemplar_count == 0 || fd->inputs == NULL || fd->outputs == NULL) {
+    if (fd->parent != NULL && fd->parent[0] != '\0' &&
+        (memchr(fd->parent, '\0', CONTRACT_NAME_MAX) == NULL ||
+         !name_valid(fd->parent))) {
         return -1;
     }
-    memset(c, 0, sizeof *c);
-    strncpy(c->name, fd->name, CONTRACT_NAME_MAX - 1);
-    c->name[CONTRACT_NAME_MAX - 1] = '\0';
+    if (fd->input_port_count == 0 ||
+        fd->input_port_count > BTN_MAX_INPUT_PORTS ||
+        fd->output_port_count == 0 ||
+        fd->output_port_count > BTN_MAX_OUTPUT_PORTS ||
+        fd->input_ports == NULL || fd->output_ports == NULL ||
+        fd->exemplar_count == 0 || fd->inputs == NULL || fd->outputs == NULL) {
+        return -1;
+    }
+
+    for (i = 0; i < fd->input_port_count; ++i) {
+        Port probe = fd->input_ports[i];
+        if (family_token(probe.family) == NULL ||
+            probe.field_width == 0 || probe.field_count == 0 ||
+            memchr(probe.tag, '\0', sizeof probe.tag) == NULL ||
+            (probe.tag[0] != '\0' && port_set_tag(&probe, probe.tag) != 0)) {
+            return -1;
+        }
+    }
+    for (i = 0; i < fd->output_port_count; ++i) {
+        Port probe = fd->output_ports[i];
+        if (family_token(probe.family) == NULL ||
+            probe.field_width == 0 || probe.field_count == 0 ||
+            memchr(probe.tag, '\0', sizeof probe.tag) == NULL ||
+            (probe.tag[0] != '\0' && port_set_tag(&probe, probe.tag) != 0)) {
+            return -1;
+        }
+    }
+
+    in_total = ports_total(fd->input_ports, fd->input_port_count);
+    out_total = ports_total(fd->output_ports, fd->output_port_count);
+    if (in_total == 0 || in_total == (size_t)-1 ||
+        out_total == 0 || out_total == (size_t)-1 ||
+        fd->exemplar_count > (size_t)-1 / sizeof(double) / in_total ||
+        fd->exemplar_count > (size_t)-1 / sizeof(double) / out_total) {
+        return -1;
+    }
+    for (i = 0; i < fd->exemplar_count; ++i) {
+        size_t offset = 0;
+        for (j = 0; j < fd->input_port_count; ++j) {
+            if (!contract_slice_valid(fd->input_ports[j],
+                                      fd->inputs + i * in_total + offset)) {
+                return -1;
+            }
+            offset += plan_port_total(fd->input_ports[j]);
+        }
+        offset = 0;
+        for (j = 0; j < fd->output_port_count; ++j) {
+            if (!contract_slice_valid(fd->output_ports[j],
+                                      fd->outputs + i * out_total + offset)) {
+                return -1;
+            }
+            offset += plan_port_total(fd->output_ports[j]);
+        }
+    }
+
+    memset(&local, 0, sizeof local);
+    strcpy(local.name, fd->name);
     if (fd->parent != NULL) {
-        strncpy(c->parent, fd->parent, CONTRACT_NAME_MAX - 1);
-        c->parent[CONTRACT_NAME_MAX - 1] = '\0';
+        strcpy(local.parent, fd->parent);
     }
-    for (i = 0; i < fd->input_port_count && i < BTN_MAX_INPUT_PORTS; ++i) {
-        c->input_ports[i] = fd->input_ports[i];
-    }
-    c->input_port_count = fd->input_port_count;
-    for (i = 0; i < fd->output_port_count && i < BTN_MAX_OUTPUT_PORTS; ++i) {
-        c->output_ports[i] = fd->output_ports[i];
-    }
-    c->output_port_count = fd->output_port_count;
-    c->inputs  = (double *)fd->inputs;   /* borrowed */
-    c->outputs = (double *)fd->outputs;  /* borrowed */
-    c->exemplar_count = fd->exemplar_count;
-    c->owns_data = 0;
+    memcpy(local.input_ports, fd->input_ports,
+           fd->input_port_count * sizeof *fd->input_ports);
+    local.input_port_count = fd->input_port_count;
+    memcpy(local.output_ports, fd->output_ports,
+           fd->output_port_count * sizeof *fd->output_ports);
+    local.output_port_count = fd->output_port_count;
+    local.inputs = (double *)fd->inputs;
+    local.outputs = (double *)fd->outputs;
+    local.exemplar_count = fd->exemplar_count;
+    local.owns_data = 0;
+    *c = local;
     return 0;
 }
 
@@ -653,7 +796,22 @@ int btn_certify(BinaryTransformNetwork *btn, const Contract *c,
     if (report != NULL) {
         memset(report, 0, sizeof *report);
     }
-    if (btn == NULL || c == NULL || c->exemplar_count == 0) {
+    if (btn == NULL || c == NULL || c->exemplar_count == 0 ||
+        c->inputs == NULL || c->outputs == NULL ||
+        c->input_port_count == 0 ||
+        c->input_port_count > BTN_MAX_INPUT_PORTS ||
+        c->output_port_count == 0 ||
+        c->output_port_count > BTN_MAX_OUTPUT_PORTS) {
+        return -1;
+    }
+
+    /* Gate 1 must precede content hashing: a forged signature can inflate a
+       fixed-array port width, making the implied exemplar table larger than
+       its borrowed allocation. Reject it before any digest reads table bytes. */
+    if (!ports_equal(btn->input_ports, btn->input_port_count,
+                     c->input_ports, c->input_port_count) ||
+        !ports_equal(btn->output_ports, btn->output_port_count,
+                     c->output_ports, c->output_port_count)) {
         return -1;
     }
 
@@ -674,17 +832,6 @@ int btn_certify(BinaryTransformNetwork *btn, const Contract *c,
         ++g_cert_cache_misses;
     }
     memset(&local, 0, sizeof local);
-
-    /* Gate 1: the claim is specific -- exact signature including tags. */
-    if (!ports_equal(btn->input_ports, btn->input_port_count,
-                     c->input_ports, c->input_port_count) ||
-        !ports_equal(btn->output_ports, btn->output_port_count,
-                     c->output_ports, c->output_port_count)) {
-        if (btn_dig != 0 && con_dig != 0) {
-            cert_cache_insert(btn_dig, con_dig, -1, &local);
-        }
-        return -1;
-    }
 
     in_total  = ports_total(c->input_ports,  c->input_port_count);
     out_total = ports_total(c->output_ports, c->output_port_count);
@@ -760,75 +907,10 @@ int btn_certify_robust(BinaryTransformNetwork *btn, const Contract *c,
     return local.min_margin >= margin_floor ? 0 : -1;
 }
 
-/* Internal helper: average raw-to-target squared error on clean outputs. */
-static int contract_average_squared_error(const BinaryTransformNetwork *btn,
-                                        const Contract *c,
-                                        double *out_mse) {
-    size_t in_total;
-    size_t out_total;
-    double *clean = NULL;
-    Arena arena;
-    double total_sq_error = 0.0;
-    size_t s;
-
-    if (out_mse == NULL) {
-        return -1;
-    }
-    if (btn == NULL || c == NULL || c->exemplar_count == 0) {
-        return -1;
-    }
-
-    in_total  = ports_total(c->input_ports, c->input_port_count);
-    out_total = ports_total(c->output_ports, c->output_port_count);
-    if (in_total == (size_t)-1 || out_total == (size_t)-1 || out_total == 0) {
-        return -1;
-    }
-
-    arena_init(&arena);
-    clean = arena_alloc(&arena, out_total * sizeof(*clean));
-    if (clean == NULL) {
-        arena_reset(&arena);
-        return -1;
-    }
-
-    for (s = 0; s < c->exemplar_count; ++s) {
-        const double *raw = btn_forward((BinaryTransformNetwork *)btn,
-                                       c->inputs + s * in_total);
-        const double *want = c->outputs + s * out_total;
-        size_t p;
-        size_t i;
-        size_t off = 0;
-
-        if (raw == NULL) {
-            arena_reset(&arena);
-            return -1;
-        }
-        for (p = 0; p < c->output_port_count; ++p) {
-            size_t total = plan_port_total(c->output_ports[p]);
-            if (!port_validate(c->output_ports[p], raw + off) ||
-                port_canonicalize(c->output_ports[p], raw + off, clean + off) != 0) {
-                arena_reset(&arena);
-                return -1;
-            }
-            off += total;
-        }
-        for (i = 0; i < out_total; ++i) {
-            double e = clean[i] - want[i];
-            total_sq_error += e * e;
-        }
-    }
-
-    *out_mse = total_sq_error / (double)(c->exemplar_count * out_total);
-    arena_reset(&arena);
-    return 0;
-}
-
 int contract_better_if(const Contract *c, const BinaryTransformNetwork *active,
                        const BinaryTransformNetwork *candidate) {
     CertifyReport active_report;
     CertifyReport candidate_report;
-    double active_loss;
-    double candidate_loss;
     int active_ok;
     int candidate_ok;
 
@@ -860,16 +942,14 @@ int contract_better_if(const Contract *c, const BinaryTransformNetwork *active,
         return 0;
     }
 
-    if (contract_average_squared_error(active, c, &active_loss) != 0) {
-        return -1;
-    }
-    if (contract_average_squared_error(candidate, c, &candidate_loss) != 0) {
-        return -1;
-    }
-    if (candidate_loss < active_loss) {
+    /* Both candidates already replayed every exemplar. Prefer the one with
+       greater worst-case headroom from the canonicalization boundary. This
+       reuses the certification report, so comparison adds no second forward
+       sweep. Reliability remains the tie-break for equal robustness. */
+    if (candidate_report.min_margin > active_report.min_margin) {
         return 1;
     }
-    if (candidate_loss > active_loss) {
+    if (candidate_report.min_margin < active_report.min_margin) {
         return 0;
     }
     return (btn_reliability(candidate) > btn_reliability(active)) ? 1 : 0;

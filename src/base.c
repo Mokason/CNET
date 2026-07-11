@@ -5,7 +5,8 @@
 #include <string.h>
 
 #define CNB_MAGIC "CNB1"
-#define CNB_VERSION 1u
+#define CNB_VERSION 2u
+#define CNB_MIN_VERSION 1u
 
 /* sanity caps: refuse hostile headers before any allocation */
 #define CNB_MAX_TABLE   (1u << 20)
@@ -414,7 +415,15 @@ int cnb_save(const CnetBase *b, const char *path) {
     for (i = 0; i < b->oracle_count; ++i) {
         if (w_str(&w, b->oracles[i].name) || w_str(&w, b->oracles[i].kind) ||
             w_port(&w, b->oracles[i].input_port) ||
-            w_port(&w, b->oracles[i].goal_port)) goto done;
+            w_port(&w, b->oracles[i].goal_port) ||
+            w_u32(&w, b->oracles[i].identity.abi_version) ||
+            w_u32(&w, b->oracles[i].identity.struct_size) ||
+            w_u64(&w, b->oracles[i].identity.artifact_digest) ||
+            w_u64(&w, b->oracles[i].identity.contract_digest) ||
+            w_u64(&w, b->oracles[i].identity.config_digest) ||
+            w_u64(&w, b->oracles[i].identity.retrieval_snapshot_digest) ||
+            w_u64(&w, b->oracles[i].identity.toolchain_digest) ||
+            w_u64(&w, b->oracles[i].behavior_digest)) goto done;
     }
 
     if (w_u64(&w, b->stats_count)) goto done;
@@ -484,7 +493,8 @@ int cnb_load(CnetBase *b, const char *path) {
 
     if (r.len < 8 || memcmp(buf, CNB_MAGIC, 4) != 0) goto fail;
     r.off = 4;
-    if (r_u32(&r, &version) || version != CNB_VERSION) goto fail;
+    if (r_u32(&r, &version) ||
+        version < CNB_MIN_VERSION || version > CNB_VERSION) goto fail;
 
     if (r_u64(&r, &n) || n > CNB_MAX_TABLE) goto fail;
     for (i = 0; i < n; ++i) {
@@ -557,9 +567,39 @@ int cnb_load(CnetBase *b, const char *path) {
     for (i = 0; i < n; ++i) {
         char name[CNB_NAME_MAX], kind[CNB_NAME_MAX];
         Port ip, gp;
+        CnetOracleIdentity identity;
+        unsigned long long behavior_digest = 0;
+        memset(&identity, 0, sizeof identity);
         if (r_str(&r, name, sizeof name) || !cnb_name_is_atom(name) ||
             r_str(&r, kind, sizeof kind) || !cnb_name_is_atom(kind) ||
             r_port(&r, &ip) || r_port(&r, &gp)) goto fail;
+        if (version >= 2) {
+            unsigned abi_version, struct_size;
+            unsigned long long artifact_digest, contract_digest, config_digest;
+            unsigned long long retrieval_snapshot_digest, toolchain_digest;
+            if (r_u32(&r, &abi_version) || r_u32(&r, &struct_size) ||
+                r_u64(&r, &artifact_digest) ||
+                r_u64(&r, &contract_digest) ||
+                r_u64(&r, &config_digest) ||
+                r_u64(&r, &retrieval_snapshot_digest) ||
+                r_u64(&r, &toolchain_digest) ||
+                r_u64(&r, &behavior_digest)) goto fail;
+            identity.abi_version = (uint32_t)abi_version;
+            identity.struct_size = (uint32_t)struct_size;
+            identity.artifact_digest = (uint64_t)artifact_digest;
+            identity.contract_digest = (uint64_t)contract_digest;
+            identity.config_digest = (uint64_t)config_digest;
+            identity.retrieval_snapshot_digest = (uint64_t)retrieval_snapshot_digest;
+            identity.toolchain_digest = (uint64_t)toolchain_digest;
+            if (behavior_digest != 0 &&
+                cnet_oracle_identity_digest(&identity) != behavior_digest) goto fail;
+            if (behavior_digest == 0 &&
+                (identity.abi_version != 0 || identity.struct_size != 0 ||
+                 identity.artifact_digest != 0 || identity.contract_digest != 0 ||
+                 identity.config_digest != 0 ||
+                 identity.retrieval_snapshot_digest != 0 ||
+                 identity.toolchain_digest != 0)) goto fail;
+        }
         if (fresh.oracle_count == fresh.oracle_cap) {
             size_t nc = fresh.oracle_cap ? fresh.oracle_cap * 2 : 8;
             CnbOracleDesc *no = (CnbOracleDesc *)realloc(fresh.oracles, nc * sizeof *no);
@@ -571,6 +611,8 @@ int cnb_load(CnetBase *b, const char *path) {
         snprintf(fresh.oracles[fresh.oracle_count].kind, CNB_NAME_MAX, "%s", kind);
         fresh.oracles[fresh.oracle_count].input_port = ip;
         fresh.oracles[fresh.oracle_count].goal_port = gp;
+        fresh.oracles[fresh.oracle_count].identity = identity;
+        fresh.oracles[fresh.oracle_count].behavior_digest = behavior_digest;
         fresh.oracle_count++;
     }
 
@@ -647,19 +689,43 @@ int cnb_apply_stats(const CnetBase *b, const char *unit_name,
 
 /* ---- oracle descriptors ---- */
 
-int cnb_add_oracle_desc(CnetBase *b, const char *name, const char *kind_atom,
-                        Port input_port, Port goal_port) {
+static int cnb_add_oracle_desc_impl(CnetBase *b, const char *name,
+                                    const char *kind_atom,
+                                    Port input_port, Port goal_port,
+                                    const CnetOracleIdentity *identity) {
+    uint64_t behavior_digest = 0;
     size_t i;
     if (!b || !cnb_name_is_atom(name) || !cnb_name_is_atom(kind_atom)) return -1;
+    if (identity) {
+        behavior_digest = cnet_oracle_identity_digest(identity);
+        if (behavior_digest == 0) return -1;
+    }
     for (i = 0; i < b->oracle_count; ++i)
         if (strcmp(b->oracles[i].name, name) == 0) return -1;
     CNB_PUSH(b->oracles, b->oracle_count, b->oracle_cap, CnbOracleDesc);
+    memset(&b->oracles[b->oracle_count], 0, sizeof b->oracles[0]);
     snprintf(b->oracles[b->oracle_count].name, CNB_NAME_MAX, "%s", name);
     snprintf(b->oracles[b->oracle_count].kind, CNB_NAME_MAX, "%s", kind_atom);
     b->oracles[b->oracle_count].input_port = input_port;
     b->oracles[b->oracle_count].goal_port = goal_port;
+    if (identity) b->oracles[b->oracle_count].identity = *identity;
+    b->oracles[b->oracle_count].behavior_digest = behavior_digest;
     b->oracle_count++;
     return 0;
+}
+
+int cnb_add_oracle_desc(CnetBase *b, const char *name, const char *kind_atom,
+                        Port input_port, Port goal_port) {
+    return cnb_add_oracle_desc_impl(b, name, kind_atom,
+                                    input_port, goal_port, NULL);
+}
+
+int cnb_add_oracle_desc_v2(CnetBase *b, const char *name,
+                           const char *kind_atom,
+                           Port input_port, Port goal_port,
+                           const CnetOracleIdentity *identity) {
+    return cnb_add_oracle_desc_impl(b, name, kind_atom,
+                                    input_port, goal_port, identity);
 }
 
 int cnb_bind_oracles(const CnetBase *b, OracleRegistry *orc,
@@ -674,6 +740,10 @@ int cnb_bind_oracles(const CnetBase *b, OracleRegistry *orc,
                                     b->oracles[i].input_port,
                                     b->oracles[i].goal_port, fn, rctx) != 0) {
             unbound++;
+        } else if (b->oracles[i].behavior_digest != 0) {
+            OracleEntry *entry = &orc->entries[orc->count - 1];
+            entry->identity = b->oracles[i].identity;
+            entry->behavior_digest = b->oracles[i].behavior_digest;
         }
     }
     if (unbound_out) *unbound_out = unbound;

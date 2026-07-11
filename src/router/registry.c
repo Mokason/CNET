@@ -896,6 +896,7 @@ size_t registry_run_shadows(PrimitiveRegistry *reg, const char *active_name,
 
 size_t btn_cost(const BinaryTransformNetwork *btn) {
     if (btn == NULL) return 0;
+    if (btn_is_adapter(btn)) return btn->adapter_cost;
     return btn->input_count * btn->hidden_count + btn->hidden_count * btn->output_count;
 }
 

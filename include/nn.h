@@ -34,6 +34,17 @@ typedef struct {
 #define BTN_MAX_INPUT_PORTS 8
 #define BTN_MAX_OUTPUT_PORTS 8
 
+/* Runtime adapter ABI: lets a non-BTN implementation participate in the
+   existing contract/registry/planner/executor path without teaching every
+   planner about every backend. The callback writes exactly output_count
+   doubles and returns 0 on success. adapter_digest is supplied by the backend
+   from stable model/artifact identity; function or context pointers are never
+   treated as behavior identity. */
+typedef int (*BtnAdapterForwardFn)(void *context,
+                                   const double *input, size_t input_count,
+                                   double *output, size_t output_count);
+typedef void (*BtnAdapterReleaseFn)(void *context);
+
 typedef struct {
     size_t input_count;
     size_t hidden_count;
@@ -82,6 +93,11 @@ typedef struct {
     unsigned long output_successes;
     unsigned long output_failures;
 #endif
+    BtnAdapterForwardFn adapter_forward;
+    BtnAdapterReleaseFn adapter_release;
+    void *adapter_context;
+    unsigned long long adapter_digest;
+    size_t adapter_cost;
 } BinaryTransformNetwork;
 
 int nn_init(
@@ -162,6 +178,27 @@ CNET_API int btn_init(
     double learning_rate,
     unsigned int seed
 );
+
+/* Initialize a runtime-only specialist facade. Ownership of `context` transfers
+   only on success; btn_free invokes `release` exactly once when non-NULL.
+   Adapter BTNs can be certified and planned normally, but matrix training and
+   CNU persistence refuse them. `behavior_digest` must be stable and nonzero. */
+CNET_API int btn_init_adapter(
+    BinaryTransformNetwork *btn,
+    size_t input_count,
+    size_t output_count,
+    const Port *input_ports,
+    size_t input_port_count,
+    const Port *output_ports,
+    size_t output_port_count,
+    BtnAdapterForwardFn forward,
+    BtnAdapterReleaseFn release,
+    void *context,
+    unsigned long long behavior_digest,
+    size_t cost_hint
+);
+
+CNET_API int btn_is_adapter(const BinaryTransformNetwork *btn);
 
 CNET_API void btn_free(BinaryTransformNetwork *btn);
 

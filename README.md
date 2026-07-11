@@ -54,8 +54,17 @@ verification chain on every `make test`.
 | CCE runtime (tensor → block → cascade → archive → forest → router → learn) | `make cce_smoke`, `make cce_train_bench` | passing (standalone gates) |
 | CCE storage + loaders (C ABI/DLL, safetensors, autograd, model save/load, zero-copy WARM views) | `cce_dll`, `cce_safetensors_test`, `cce_autograd_test`, `cce_model_test`, `cce_view`, `forest_view` | passing, in `make test` |
 | Contract security + one-file sealed units | `make contract_secure`, `make contract_unit` | passing, in `make test` |
+| Contract correctness + robust promotion quality/speed | `make contract_optimized` | malformed authored/frozen contracts refused atomically; stronger certified margin wins with one replay per model |
+| Unified contract runtime (BTN + CCE + Oracle v2 evidence-carrying specialists + CNB2 registry + planner/executor + `SoulHost` + .NET/MCP projection) | `make unified` | CPU-only, model-free vertical acceptance gate; Oracle descriptors remain provenance until independently certified/admitted |
+| **One `Specialist` type across kinds** — a native BTN, a real CCE model, and an Oracle unit as ordinary nodes of ONE certified plan (route + DAG), admitted through the single door (`specialist_admit`), trust/residency/role axis views | `make unified_specialist` | `HET_PLAN_PASS`, in `make unified`; strict execution exact over the whole enumerated domain; demote/restore acts identically on the CCE kind |
+| Generated claims ledger (gate logs → machine-readable verdicts, diffable against this table) | `make claims` | `logs/claims.jsonl` + `docs/verified-today.generated.md`; regenerated at the end of every `make unified` |
+| Work-conserving Oracle v2 async lanes (backpressure, cancellation, deadlines, telemetry) | `make unified_async` | `ASYNC_RUNTIME_PASS` |
+| Oracle v2 governed invocation | `make oracle_v2_bench` | semantic validation at 12.432 ns/call; ~80.4M calls/s on this host |
+| Two physical R9700 lanes, exact CPU parity, iGPU excluded | `make unified_gpu` | 1.984× over the serial lane fixture; `ASYNC_GPU_LANES_PASS` |
+| Model-universal residency (Dense + MoE + SSM descriptors) | `make unified_models` | 90 lifecycle/resource checks + 12 catalog checks; lazy load, leases, deduplicated cold loads, LRU, atomic multi-resource admission |
+| Qwen3.5 QGKP v3 lossless envelope | `make qwythos_qgkp_acceptance` | 1M context metadata preserved; payload SHA-256 exact; Qwythos mixed TQ1_0+Q4_K passes 3/3 coherence at 70.97 tok/s on GPU1 |
 | Universal model layer (detect, SSM + llama runners, specialist graph, weight store, bounded-RAM tiers, evidence-gated merge) | `make cce_detect` / `cce_ssm` / `cce_st_llama` / `cce_specgraph` / `cce_wstore` / `cce_tiers` / `cce_similar` | passing, in `make test` |
-| Autonomy loop (gap-triggered acquisition → unified CNB1 base → flagship harness) | `make acquire`, `make base`, `make flagship` | passing, in `make test`; real gemma4-v2 12B campaign **253/256** certified (SAMPLED, Wilson ≥ 0.984), 93% live-model fidelity when queried (`soul_query`) — the earlier "256/256 at 100%" was a NaN-oracle artifact, retracted |
+| Autonomy loop (gap-triggered acquisition → unified CNB2 base, CNB1-readable → flagship harness) | `make acquire`, `make base`, `make flagship` | passing, in `make test`; real gemma4-v2 12B campaign **253/256** certified (SAMPLED, Wilson ≥ 0.984), 93% live-model fidelity when queried (`soul_query`) — the earlier "256/256 at 100%" was a NaN-oracle artifact, retracted |
 | Restored legacy aggregate + allocation-balance leak gate | `make legacy`, `make leakcheck` | passing, in `make test` |
 | Loader robustness (byte-flip + truncation sweeps over every artifact loader) | `make mutate` | passing, in `make test`; sealed formats refuse every mutation, unsealed probes never crash |
 | GPU forward (self-contained OpenCL, **multi-GPU + int8**) | `make gpu_equiv_build`; `make` `clgemm_unit` | optional; dual-R9700 oracle pool + `q8` layers, 4.28× on 12B, **bit-identical proven** (`clgemm_unit`, 360 calls), NaN-hard-failed |
@@ -66,6 +75,98 @@ verification chain on every `make test`.
 Not claimed: beating PyTorch/TensorFlow globally, free-running clean prose from
 the tiny char-LM, or steering the 3M-param Supra model into long-form output —
 see *Knowing the Edge* and the caveats inside each section.
+
+## Optimization Ledger (cumulative)
+
+This ledger consolidates the optimizations recorded across the repository history,
+implementation plans, acceptance logs, and the June–July 2026 working sessions.
+It distinguishes shipped/gated behavior from experiments and preserves negative
+results so an old headline cannot silently become a current claim. Measurements
+from different fixtures or hardware are not directly comparable; the newest
+correctness-gated result supersedes an older preliminary number.
+
+### Contract, planner, and knowledge-composition optimizations
+
+| Era | Optimization | Effect / invariant | Gate or evidence |
+|---|---|---|---|
+| v0.5.3–v2.9 | Attention planner stripped of synthetic dashboard authority; circuit hints, typed engram cache, and rank artifacts kept `SHADOW_ONLY`/`ORDER_ONLY`; formula IR, contracts, parser refusal, and task corpus added | Advisory evidence can rank or report but cannot invent validity, mutate metrics, or bypass execution | historical aggregate; [`docs/cnet-history.md`](docs/cnet-history.md) |
+| v3.0–v4.4 | Learned glyph, 7-segment, 3×5-grid, and 4×4-block leaves share typed `dec_symbol` handoffs; robust margin certification and certified-only planning | Four perceptual domains compose through one finite interface; low-margin cases abstain instead of leaking raw values | `make glyph_habitat`, `make margin`, `make sevenseg` |
+| v4.1–v4.4 | Accepted-leak frontier, normalized denominators, provenance, per-domain stratification, and mixed-domain pair matrices | Replaced flattering aggregate accuracy with coverage-vs-confident-error evidence and explicit tail behavior | generated `v4_2_*`, `v4_3_*`, `v4_4_*` frontier artifacts |
+| June 2026 | Typed ports, DAG source assignment/backtracking, learned reliability persistence, strict execution, machine-checkable contracts/laws, circuit plans, and chunk consolidation | Planner composition became recoverable and auditable; successful multi-step plans can distill into one reusable primitive | `make certify`, `make property`, `make circuit`, `make chunk`, `make library` |
+| June 2026 | Neural lifecycle spine: provisional/frozen/shadow states, self-healing, cost-aware dual track, residue scans, and fast DAG/circuit decode lanes | Avoids retraining frozen parts, isolates experiments, and gives explicit cost/accuracy trade-offs | `make lbench`, `make throughput`, `make test_fastpath`, `make compounding_bench` |
+| June 26–27 | Dynamic PDF/JSON ingestion, compounding kNN memory, HOT/WARM tile memory, TF-IDF, discounted-PPMI synonyms, inverted index, semantic dedup, capped/pruned consolidation candidates, and graduation to certified units | Reuse-before-retrain retrieval path with bounded candidate work and byte-identical linear-oracle checks | `make pdftest`, `make jsonstory`, `make compound`, `make tiermem_test`, `make tfidf`, `make synonyms`, `make tileindex`, `make consolidate`, `make graduate` |
+| v5.0–v5.1 | No-authority proposal sidecar, below-beam recovery probe, and derivation-lock structural preference | Candidate exploration snapshots/restores reliability evidence; official planner remains unchanged unless an explicit existing ORDER_ONLY gate is enabled | `make belowbeam_chars`, `make probe_overhead`, `make struct_pref` |
+
+### CCE learning, storage, compression, and inference optimizations
+
+| Date / era | Optimization | Measured or structural result | Gate or evidence |
+|---|---|---|---|
+| June 2026 | Deeper cascades, patch blocks, per-block goodness/freezing, micro-split growth, header-based archive directory, mmap zero-copy WARM views | Many frozen specialists can remain cold and page in only when touched; learning stays local to active blocks | `make cce_smoke`, `make cce_train_bench`, `cce_view`, `forest_view` |
+| June 2026 | Train every sample, switch classification heads from MSE to cross-entropy, use a word-level mode, repair decoder/LR, and hoist Adam bias correction out of the per-weight loop | Fixed five generation failures; Adam hoist reduced the cited 30-epoch char run from ~100 s to ~8 s (~13×) | `test_tinystories`, `make wordlm` |
+| June 2026 | Tied-embedding/class-factored O(V·d) word LM with isolated exact gradients | At V=50,000: 9.7M parameters instead of 7.5B (773× smaller), with numeric gradcheck | `make wordlm`, `cce_wordlm_gradcheck` |
+| June 2026 | Full Supra checkpoint decomposition and compression ladder | 118.9MB source → 16.3MB near-lossless int8 PTQ; 6.95MB trit-packed artifact is storage-exact, while post-hoc ternary quality collapse remains explicitly rejected | `make supra_console`, `make bitnet_qat`, `make wordlm_bitnet` |
+| July 3 | Trit LUT decode, int8-shaped tiling, and OpenMP | 256×50,520 head: 6.14 → 0.22 ms/forward (27.9×), bit-identical to int8 ternary | `make trit_bench` |
+| July 3 | Universal structural detection, GGUF/HF-llama/Mamba runners, sharded safetensors, content-addressed weights, bounded-RAM LRU tiers, and evidence-gated family merge | Header-first detection, manifest reuse, HOT-cap bit identity, and merge refusal on material behavior change; corrected GGUF ne-order dimension handling | `make cce_detect`, `cce_ssm`, `cce_st_llama`, `cce_wstore`, `cce_tiers`, `cce_similar`, `merge_family`, `hybrid_catalog` |
+| July 3 | Contract digests/seals, certification cache, certificate-to-weight binding, and bit-packed one-file `.cnu` units | Tamper refusal and audit demotion; `.cnu` measured 3.0× smaller than the equivalent text pair | `make contract_secure`, `make contract_unit` |
+| July 3 | Loader mutation sweeps, hard-failing positive-marker log scan, restored ~3,500-line DAG implementation, and allocation-balance gate | Fixed two GGUF crash bugs, prevents masked test failures, restored 51 legacy failures/segfault, and guards allocation balance | `make mutate`, `make legacy`, `make leakcheck`, `tests/verify_logs.sh` |
+| July 3–5 | Self-contained OpenCL float/q8 kernels, per-GPU oracle instances, column splitting, KV-prefix reuse, and window-restricted head | Current honest Gemma4-v2 result: 4.28× forward on two R9700s; 360-call CPU/GPU bit-identity gate; any NaN hard-fails | `clgemm_unit`, `make gpu_equiv_build` |
+| July 3–5 | Gap-triggered acquisition, CNB base, sampled/Wilson certification, split-conformal abstention, pilot scheduling, margin-aware refusal, OpenMP mining, and dual-GPU oracle pool | OpenMP campaign path measured 29×; dual-GPU campaign measured 2.7× with identical digests; corrected real campaign is 253/256 certified and 45/48 (93%) live-query fidelity | `make acquire`, `make base`, `make flagship`, `cnb_audit`, `soul_query` |
+| July 4–9 | Geometry-driven Gemma attention, real Q4_K dequantization, fp16-subnormal handling, mmap-backed GGUF loading, int8-on-load, Q6_K/KV caps, and leak fixes | Replaced a broken/NaN oracle with faithful finite inference; old vacuous 256/256 and 11.9× claims were retracted | oracle integrity trilogy, `gpu_equiv`, `make flagship` |
+
+### Previous-session optimizations (July 8–11, 2026)
+
+| Date | Optimization | Verified result / boundary | Gate or evidence |
+|---|---|---|---|
+| July 8 | Explicit token windows, line-buffered progress, variable retry seeds, adaptive staged training, configurable cert sampling, set-valued top-k, golden-oracle checks, warm start, screening, PAIR windows, memory diet, lane oversubscription, and run manifests | Faster recovery and less wasted training while preserving replayable run identity | flagship/acquisition gates and manifest replay |
+| July 8 | Batched oracle probes, token-string identity across teachers, drift recertification, and cross-teacher set agreement | Batch path is equivalence-gated; recertification compares semantics rather than assuming token-ID identity across tokenizers | `CNET_ORACLE_BATCH`, `CNET_MANIFEST`, `CNET_RECERT`, `CNET_RECERT_SETCMP` |
+| July 10 | Unified BTN/CCE/Oracle specialist runtime with CNB2 identity, CNB1 read compatibility, `SoulHost`, `cnet.so`, .NET host, and stdio MCP projection | One contract/evidence lifecycle; Oracle descriptors remain provenance until independent certification and registry admission | `make unified` → `CNET_UNIFIED_PASS` |
+| July 10 | Oracle v2 status/evidence/identity ABI and centralized semantic invocation | Governed v2 + semantic validation: 12.432 ns/call, ~80.4M calls/s; validator adds 0.721 ns/call on this host | `make oracle_v2_bench`, `ORACLE_V2_PASS` |
+| July 10 | Work-conserving bounded async lane pool with copied inputs, ordered collection, backpressure, cancellation, deadlines, and telemetry | Two portable lanes beat the serial lower bound; expired/cancelled work remains explicit evidence | `make unified_async` → `ASYNC_RUNTIME_PASS` |
+| July 10 | Independent physical GPU0/GPU1 queues with iGPU exclusion | Synthetic exact-output lane fixture: 3.423 → 1.725 ms, 1.984×, 9,274 jobs/s; both R9700s performed useful work | `make unified_gpu` → `ASYNC_GPU_LANES_PASS` |
+| July 10–11 | Backend-neutral model catalog and residency manager | 90 runtime + 12 catalog checks cover header-only GGUF descriptors, budgets, lazy load/reuse, generation-stamped leases, concurrent cold-load dedup, sticky failure/retry, true LRU, pinning, and atomic Dense/MoE placement | `make unified_models` |
+| July 10 | Resumable DS4 dual-R9700 staging with plan/identity/start separation and 1GiB chunk-tree identity | Keeps DS4 as a replaceable backend and CNET as lifecycle/policy authority; does not claim DS4 numerical parity before endpoint verification | `make unified_ds4_launcher`, `scripts/run_cnet_ds4_dual.sh` |
+| July 10–11 | Qwen3.5 mixed TQ1_0+Q4_K repair after naive TQ1_0 destroyed coherence | Protected mixed artifact restored 3/3 coherence at 69.37 tok/s; the failed 0/3 TQ1_0 artifact remains recorded as a negative result | `logs/qwythos_tq1_fixed_gpu1_score.log`, `logs/qwythos_cnet_tq1_comparison.json` |
+| July 11 | QGKP v3 lossless CNET envelope for hybrid Qwen3.5 artifacts | 5,578,649,440-byte payload materializes SHA-256-identically; envelope retains mixed quantization and 1,048,576-token metadata. This is a governed bridge to the hybrid backend, not a claim that the legacy QGKP-v2 native runner implements Mamba-2/attention mixing | `make qwythos_qgkp_acceptance`, `QGKP_ENVELOPE_PASS` |
+| July 11 | Qwythos QGKP execution acceptance | 3/3 causal/constraint/narrative cases coherent at 70.97 tok/s on GPU1; envelope file SHA-256 `f4e68af7…f5f2654` | `logs/qwythos_qgkp_gpu1_score.log`, `logs/qwythos_qgkp_artifact_sha256.log` |
+| July 11 | Contract authority-boundary hardening and promotion simplification | Atomic refusal for malformed names/counts/widths/tables; pre-hash signature validation prevents forged-shape OOB; finite RAW and normalized EVIDENCE round-trip at `%.17g`; non-finite refusal; certified minimum margin replaces useless canonicalized MSE | `make contract_optimized` |
+| July 11 | Removed the second candidate-scoring replay | Exactly one certification replay per model: 4,000 forwards for 2,000 comparisons, a structural 50% reduction from the former certify-plus-score path | `CONTRACT_OPT_BENCH`, `CONTRACT_OPTIMIZED_PASS` |
+| July 11 | Unified `Specialist` type over the adapter ABI (`include/specialist.h`): kind (BTN/CCE/Oracle), ONE admission door (`specialist_admit` — certification only, identical for every kind), and trust/residency/role axis views folding `PrimitiveState`, `certified`, shadow/recipe flags, CCE tiers, and model-catalog states into one vocabulary | Heterogeneous-plan acceptance: one ordinary route/DAG plan mixes a trained native BTN, an exact CCE linear-head model, and an external oracle, planned unaided with `require_certified`, strict-exact over the whole enumerated domain; an untrained impostor is refused at the door; demotion/restore acts identically on the CCE kind | `make unified_specialist` → `HET_PLAN_PASS` |
+| July 11 | Generated claims ledger | Every unified-family gate's positive marker is scanned into machine-readable records with timestamps and host fingerprint, so a retracted, renamed, or never-run gate surfaces as FAIL/MISSING instead of living on as prose | `make claims` → `logs/claims.jsonl`, `docs/verified-today.generated.md` |
+
+The detailed mechanism-by-mechanism chronology remains in
+[`docs/cnet-history.md`](docs/cnet-history.md); this ledger is the current README
+index of what was optimized, what evidence supports it, and which negative or
+retracted results must not be revived.
+
+## The Unified Specialist (one type, one door, three axes)
+
+The framework's own thesis — typed, certified, composable units — now applies
+to the framework: `include/specialist.h` is the one type every backend becomes
+before it can plan, execute, accrue evidence, or certify.
+
+- **One type.** A `Specialist` is a planner-visible node plus its **kind**
+  (native BTN / CCE model / Oracle unit). Execution was already unified by the
+  BTN adapter ABI (`nn.h`); the Specialist names it, so "which backend is this
+  node" is a field, not archaeology.
+- **One door.** `specialist_admit` is the only admission path, identical for
+  every kind: certify against a typed contract, then register. An impostor of
+  any kind is refused the same way at the same place.
+- **Three axes.** The scattered lifecycle vocabulary factors into orthogonal
+  views read off existing state (never stored twice, so they cannot drift):
+  **trust** (uncertified → evidenced → certified → demoted, mirroring
+  `PrimitiveState`), **residency** (hot/warm/cold — one enum for the CCE
+  forest tiers, tile memory, and the model catalog's states), and **role**
+  (active / shadow / recipe / advisory — the CNET-D no-authority lane keeps
+  its boundary; advisory artifacts never enter the registry by design).
+- **The acid test.** `make unified_specialist` plans ONE ordinary certified
+  plan (route and DAG) whose nodes are a trained native BTN, a real CCE
+  linear-head model, and an external oracle — `HET_PLAN_PASS`. Integration
+  would let the three coexist; only unification lets them chain inside a
+  single plan under one lifecycle.
+- **Generated claims.** `make claims` regenerates
+  `docs/verified-today.generated.md` + `logs/claims.jsonl` from the gate logs
+  (also runs at the end of `make unified`), so the claim table above is
+  diffable against machine-checked evidence instead of maintained by prose.
 
 ## Quick Start
 
@@ -92,7 +193,10 @@ make compounding_bench       # 3C dual-track demo: LOW vs DEFAULT cost/accuracy 
 
 # Universal model layer: detect + run any supported model file
 make detect FILE=Models/gemma-4-12B-it-MTP-Q8_0.gguf   # probe structure, no weights loaded
-make test             # full verification chain (CCE + universal runners + contracts + acquisition/base/flagship + legacy + leak gate + .NET)
+make test             # native C verification chain and positive-marker log gate
+make unified          # CPU-only native + cnet.so + .NET host + stdio MCP acceptance
+make unified_specialist  # the unification acid test: BTN + CCE + Oracle in ONE certified plan
+make claims           # regenerate the machine-readable claims ledger from gate logs
 
 # The autonomy loop: extract certified units from a real model.
 # MODEL=gemma4-v2-Q4_K_M.gguf (12B); dual-GPU int8 oracle pool + margin-aware certification.
@@ -103,10 +207,17 @@ CNET_ORACLE_INT8=1 CNET_GPU=1 CNET_CERT_MARGIN=1.0 \
   ./bin/flagship_run Models/gemma4-v2-Q4_K_M.gguf 256 256 80 1.0 0 soul.cnb topk   # resumable; echo stop > soul.cnb.stop
 make cnb_audit && ./bin/cnb_audit soul.cnb              # counts + certify-on-load + tag audit
 make gpu_equiv_build && CNET_ORACLE_INT8=1 ./bin/gpu_equiv Models/gemma4-v2-Q4_K_M.gguf   # CPU-vs-GPU decision equivalence (NaN-hard-failed) + speedup
-make soul_query_build && CNET_ORACLE_INT8=1 ./bin/soul_query Models/gemma4-v2-Q4_K_M.gguf soul.cnb | python3 tests/soul_query.py Models/gemma4-v2-Q4_K_M.gguf   # ask the soul questions, decode to text, vs the live model
+make soul_query_build && CNET_ORACLE_INT8=1 ./bin/soul_query Models/gemma4-v2-Q4_K_M.gguf soul.cnb   # ask the soul questions (raw token ids; Python decoder removed for pure-C goal)
 
 # New pure-C Contract Cascade Engine (CCE)
 make cce_smoke               # build & run the CCE smoke test (tensor → block → cascade → archive → forest/branches → router(SSMax) → learn (deeper credit) → patch → gpu → ABI + router-learn loop)
+make unified_async           # portable 2+ lane async contract/evidence gate
+make unified_gpu             # independent GPU0/GPU1 queues + exact-output gate and throughput report
+# DS4 dual-R9700 staging keeps llama.cpp :8081 untouched and uses user-systemd supervision.
+source config/cnet-ds4-dual.env.example
+scripts/run_cnet_ds4_dual.sh print-plan
+scripts/run_cnet_ds4_dual.sh identity   # resumable 1 GiB chunk-tree identity
+scripts/run_cnet_ds4_dual.sh start      # stages the API on :8082
 # cce_train_bench now exercises deeper cascades (4 blocks), real harness (nonlinear/spatial/accuracy), persist, micro-split, etc.
 
 ./test_tinystories         # real narrative data (TinyStories) — CCE with context windows, guided coherent generation + raw logits sampling (A/B demo)
@@ -151,6 +262,43 @@ Instead of one large differentiable model trained end-to-end with backprop, CCE 
 | **cce_archive**  | Single-file persistent storage                      | Append-only sections + directory. True partial loading via mmap (no full deserialize). |
 | **cce_clgemm**   | Multi-GPU forward for the transformer runner (optional) | Self-contained OpenCL: `OpenCL.dll` loaded dynamically (no SDK/CUDA toolkit), runtime-compiled float + `q8` (int8) GEMM, device-resident weights, **column-split across discrete GPUs** (iGPU excluded by property). Oracle *pool* = one instance per GPU. Bit-identity proven by `clgemm_unit` (360 calls, single/dual/split), `FP_CONTRACT OFF`. CPU path unchanged when absent. |
 | **C ABI**        | Stable embedding interface (`include/cce/cce.h`)    | `cce_open`, `cce_infer`, `cce_adapt`, `cce_tick`. Easy to call from Unity/C#/Python. |
+
+### Model-Universal Runtime (Dense + MoE + SSM)
+
+`include/model_runtime.h` and `src/model_runtime.c` are CNET's single model
+catalog and lifecycle authority. Dense llama-family models, distributed MoE
+models, SSMs, embeddings, and CCE-native artifacts coexist as descriptors;
+DS4, CCE, and llama.cpp remain replaceable execution backends rather than
+independent policy engines.
+
+The runtime provides:
+
+- header-first GGUF inspection through `cce_model_descriptor_probe` (tensor
+  metadata only; no weight materialization);
+- explicit CPU/GPU resource masks and independent byte budgets;
+- lazy cold load, persistent hot residency, concurrent load deduplication, and
+  atomic generation-stamped leases;
+- one-resource dense placement that first uses a clean preference, then
+  minimizes evicted bytes and prefers more free capacity;
+- atomic multi-resource MoE admission and true LRU eviction, while leased or
+  pinned models are never evicted;
+- unlocked backend loading with per-resource reservations, sticky failure and
+  explicit retry, plus rejection/unload when a backend exceeds its declared
+  resident upper bound.
+
+This adopts the useful llama.cpp runtime behavior under CNET governance:
+quantized artifact-size accounting, mmap-friendly identity, explicit placement,
+persistent models, model/context separation, and pressure-driven unload. The
+architecture-specific tokenizer, templates, KV layout, partial offload, kernels,
+and numerical parity remain backend responsibilities; they do not bypass CNET's
+catalog, evidence, cancellation, or branch/soul policy.
+
+Resource bits are `CPU=1<<0`, `GPU0=1<<1`, `GPU1=1<<2`, and so on. A dense
+model normally allows both R9700 bits but requires one resource; a fixed
+dual-GPU MoE allows both bits and requires two resources atomically.
+Run the focused acceptance gate with `make unified_models`. A guarded real-file
+probe is available by setting `CNET_TEST_DENSE_GGUF` and/or
+`CNET_TEST_MOE_GGUF` before running `bin/test_model_catalog`.
 
 ### Storage & Partial Loading (cce_archive + cce_forest)
 
@@ -518,7 +666,18 @@ Two primitives can replay every exemplar exactly yet sit at different distances
 from the canonicalization boundary — equally *correct*, unequally *robust*.
 `btn_certify` reports that worst-case headroom (`CertifyReport.min_margin`), and
 `btn_certify_robust(btn, c, floor, …)` raises the bar from "not ambiguous" to
-"has margin ≥ floor" over the same exact-replay mechanism.
+"has margin ≥ floor" over the same exact-replay mechanism. Promotion reuses
+those reports: `contract_better_if` prefers the larger minimum margin and only
+uses deployment reliability as a tie-break. It does not replay either model a
+second time. `contract_init_borrowed` and `contract_init_frozen` validate port
+shape and every exemplar before atomically publishing a contract; malformed or
+ambiguous tables leave the destination untouched. Text contract persistence writes
+17 significant digits and round-trips finite soft `PORT_RAW` vectors and
+normalized finite `PORT_EVIDENCE` distributions bit-identically under the
+semantic seal; non-finite values and soft values on discrete port families are
+refused. (`.cnu` unit exemplars remain bit-packed canonical 0/1 by design.)
+Run `make contract_optimized` for the focused structural benchmark plus security,
+unit-file, and historical native regressions.
 
 ## Property Contracts (Laws)
 
@@ -1171,10 +1330,26 @@ current state.
   adversarial probe battery. Details in *Universal Model Layer*.
 - **Contract hardening:** behavior-only digests, certification cache, sealed
   contract files (tamper refused), certificate-to-weights binding with audit
-  demotion, and one-file sealed `.cnu` units in `registry_save`.
-- **Autonomy loop:** gap-triggered acquisition (DEFER-total), the unified CNB1
-  base with mint-once tag governance, and the thermal-governed flagship
-  harness. Honest campaign (gemma4-v2 12B, real forward, 2026-07-05):
+  demotion, and one-file sealed `.cnu` units in `registry_save`. Authored,
+  borrowed, and frozen contracts now validate bounded shape and exemplars before
+  atomic publication; signatures are checked before table hashing; text
+  persistence round-trips finite RAW/EVIDENCE values at `%.17g`; robust
+  promotion reuses one certification report per candidate.
+- **Unified runtime + Oracle v2:** BTN, CCE, and evidence-carrying Oracle
+  specialists share one certification/admission lifecycle through native C,
+  `SoulHost`, .NET, and MCP. Async lanes preserve cancellation, deadline, and
+  failure evidence instead of coercing non-answers into labels.
+- **Model residency:** one backend-neutral catalog governs Dense, MoE, SSM,
+  embedding, and CCE-native descriptors with explicit resource budgets, lazy
+  loading, generation-stamped leases, concurrent-load deduplication, pinning,
+  true LRU eviction, and atomic multi-resource admission.
+- **Qwen3.5/QGKP:** the QGKP-v3 envelope preserves a byte-identical mixed
+  TQ1_0+Q4_K payload and the 1,048,576-token context metadata, then executes it
+  through the CNET-governed hybrid backend. It is deliberately not routed into
+  the legacy QGKP-v2 native runner, which lacks hybrid SSM/attention dispatch.
+- **Autonomy loop:** gap-triggered acquisition (DEFER-total), the unified CNB2
+  base (CNB1-readable) with mint-once tag governance, and the
+  thermal-governed flagship harness. Honest campaign (gemma4-v2 12B, real forward, 2026-07-05):
   **253/256** ordered-top-3 slices certified (SAMPLED, Wilson ≥ 0.984),
   93% live-model fidelity when queried; the fuzzy tier adds sampled extraction
   (Wilson floors + conformal probe), *margin-aware* certification (decline the
@@ -1189,12 +1364,14 @@ current state.
   the complete legacy `test_all` is green and runs as a verify gate
   (`legacy`) with demo-driven fixture regeneration. (The restoration story —
   a refactor had silently stubbed ~3,500 lines — is in the history doc.)
-- **Build state:** `make test` runs the full verification chain: CCE/.NET lane,
+- **Build state:** `make test` runs the native verification chain: CCE runtime,
   universal-model suites, contract security + unit files, the acquisition loop
   (`acquire`), the unified base (`base`), the flagship harness (`flagship`),
   the restored legacy aggregate (`legacy`), and an allocation-balance leak gate
   (`leakcheck`, `--wrap`-based, CRT-baseline-aware — the no-ASan toolchain's
-  behavioral substitute). `make test_full` adds the GPU equivalence sweep.
+  behavioral substitute). `make unified` adds the model-file-free `cnet.so`,
+  Oracle v2, async lanes, model residency/catalog, DS4 launcher checks, .NET
+  host, and stdio MCP vertical slice. `make test_full` adds GPU equivalence.
 - Cost-aware dual-track expansion (3C A1 — durable teacher recipes + LOW-power
   planner expansion) is committed. The architecture has been extended through multiple increments (3D–5A) into a self-improving perceptual reasoning engine capable of certified multi-step narrative generation.
 - A fixed-buffer stack overflow in `attention_retrieve_top_k` (registries > 64
@@ -1207,11 +1384,22 @@ current state.
 |--------|--------------|
 | `make` / `make run` | build / build and run `nn_demo` (trains and freezes all primitives) |
 | `make test` / `make verify` | full offline verification: CCE DLL, safetensors loader, autograd, model save/load, WARM archive/forest views, universal-model suites (detect, ssm, st_llama, specgraph, wstore, tiers, similar), contract security + unit files, loader-robustness sweep (`mutate`), acquisition loop, unified base, flagship harness, restored legacy aggregate, leak gate, and .NET tests (`--no-restore`; run `dotnet restore` once on fresh machines) |
+| `make unified` | CPU/model-file-free vertical gate across native adapters, Oracle v2, async runtime, model catalog/residency, DS4 launcher, `cnet.so` symbols, `SoulHost`, .NET host/tests, and stdio MCP; regenerates the claims ledger; prints `CNET_UNIFIED_PASS` |
+| `make unified_specialist` | the heterogeneous-plan acid test: ONE certified route/DAG plan mixing a native BTN, a real CCE model, and an Oracle unit through the single `Specialist` door; prints `HET_PLAN_PASS`; in `make unified` |
+| `make claims` | regenerate the machine-readable claims ledger from the gate logs (`logs/claims.jsonl`, `docs/verified-today.generated.md`) |
+| `make unified_async` | work-conserving 2+ lane runtime: copied inputs, ordered collection, bounded capacity, cancellation, deadlines, timeout recovery, and telemetry |
+| `make unified_gpu` | two physical R9700 lane fixture with iGPU exclusion, exact CPU parity, per-lane work evidence, and serial-vs-async timing |
+| `make unified_models` | QGKP envelope tests plus 90-check model lifecycle/resource manager and 12-check header-only model catalog |
+| `make unified_ds4_launcher` | hermetic validation of the resumable dual-R9700 DS4 launcher, chunk-tree identity, endpoint verification, and refusal paths |
+| `make oracle_v2_bench` | seven-round median benchmark of direct v1, governed v1, governed v2 evidence, and v2 semantic validation |
+| `make contract_optimized` | optimized contract semantics, RAW/EVIDENCE round-trip, robust-margin promotion, exact forward-count benchmark, ASan+UBSan, security/unit, and historical regressions |
+| `make qgkp_envelope_test` | QGKP-v3 metadata/payload envelope round-trip and malformed-envelope refusal checks |
+| `make qwythos_qgkp_acceptance` | inspect/materialize/hash the Qwythos QGKP-v3 envelope and run the bounded GPU1 causal/constraint/narrative coherence gate |
 | `make verify-long` | fast verification plus longer benches/studies: `cce_train_bench`, Supra head QAT, corpus QAT, and `wordlm_bitnet` |
 | `make legacy` | the restored full historical aggregate (`test_all`, ALL TESTS PASSED) + demo-driven fixture regeneration; in `make test` |
 | `make leakcheck` | allocation-balance gate over the base+acquire paths (`-Wl,--wrap`, CRT-baseline-aware); in `make test` |
 | `make acquire` | gap-triggered acquisition loop gate: ledger, oracle fallback, drain, rebuild, DEFER totality (118 checks) |
-| `make base` | unified base (CNB1) gate: sealed container, tag governance, certify-on-load bridge, migration (80 checks) |
+| `make base` | unified CNB2 base gate (CNB1-readable): sealed container, tag governance, certify-on-load bridge, Oracle identity persistence, and migration (80 checks) |
 | `make flagship` | flagship harness gate: task shapes, sampled tier, conformal probe, pilot scheduling, resume, stop file (72 checks) |
 | `make flagship_run_build` | build the REAL extraction CLI (CCE model as oracle); `CNET_GPU=1` enables the OpenCL forward (equivalence-gated) |
 | `make cnb_audit` | base inspector: counts, certify-on-load verification, tag audit, cross-base digest fidelity |

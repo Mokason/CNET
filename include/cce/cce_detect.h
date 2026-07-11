@@ -66,6 +66,7 @@ typedef struct {
     int  ctx_len;            /* -1 unknown */
     int  tied_embeddings;    /* 1 = lm head shares token embedding, 0 = separate, -1 unknown */
     int  attention_full_qkv; /* 1 = q,k,v,o all present; 0 = partial (e.g. q+o only); -1 n/a */
+    int  is_moe;             /* 1 = expert/router tensors present; 0 = no structural MoE evidence */
     int  runnable;           /* 1 = an existing CCE runner handles this structure */
     char runner[64];         /* recommended entry point when runnable */
     char notes[256];         /* mismatches, caveats, what to do when not runnable */

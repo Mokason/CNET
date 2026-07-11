@@ -1,4 +1,5 @@
 CC := gcc
+CXX := g++
 # -march=native: measured 1.25x on the training loops, bit-identical weights
 # (FP contraction stays off under -std=c11). Drop it for portable binaries.
 CFLAGS := -std=c11 -Wall -Wextra -pedantic -O3 -march=native
@@ -78,6 +79,7 @@ CCE_AUTOGRAD := src/cce/cce_autograd.c src/cce/cce_autograd_ops.c
 CCE_SAFETENSORS := src/cce/cce_safetensors.c
 CCE_GGUF := src/cce/cce_gguf.c $(CCE_AICIMO)
 CCE_AICIMO  := src/cce/cce_aicimo.c
+CCE_QGKP := src/cce/cce_qgkp.c
 
 # Build directory for all executables to avoid polluting the root with endless .exe junk.
 # Same philosophy as the fixed-temp cleanup for .cce / logs.
@@ -119,7 +121,17 @@ CCE_TIERRT  := src/cce/cce_tier_runtime.c
 CCE_SIMILAR := src/cce/cce_similar.c
 CCE_CLGEMM  := src/cce/cce_clgemm.c
 CCE_SUPRA_TRAIN := src/cce/cce_supra_train.c
-CCE := $(CCE_TENSOR) $(CCE_BLOCK) $(CCE_CASCADE) $(CCE_ARCHIVE) $(CCE_FOREST) $(CCE_ROUTER) $(CCE_SPARSE_KV) $(CCE_UNCERTAINTY) $(CCE_COMPRESSION) $(CCE_LEARN) $(CCE_PATCH) $(CCE_GPU) $(CCE_ABI) $(CCE_CUDA_OBJ) $(CCE_PERCEPTUAL) $(CCE_WORDLM) $(CCE_MODEL) $(CCE_MODEL_IO) $(CCE_DATASET) $(CCE_AUTOGRAD) $(CCE_SAFETENSORS) $(CCE_GGUF) $(CCE_DETECT) $(CCE_SSM) $(CCE_ST_LLAMA) $(CCE_SPECGRAPH) $(CCE_WSTORE) $(CCE_TIERRT) $(CCE_SIMILAR) $(CCE_CLGEMM) $(CCE_SUPRA_TRAIN)
+CCE := $(CCE_TENSOR) $(CCE_BLOCK) $(CCE_CASCADE) $(CCE_ARCHIVE) $(CCE_FOREST) $(CCE_ROUTER) $(CCE_SPARSE_KV) $(CCE_UNCERTAINTY) $(CCE_COMPRESSION) $(CCE_LEARN) $(CCE_PATCH) $(CCE_GPU) $(CCE_ABI) $(CCE_CUDA_OBJ) $(CCE_PERCEPTUAL) $(CCE_WORDLM) $(CCE_MODEL) $(CCE_MODEL_IO) $(CCE_DATASET) $(CCE_AUTOGRAD) $(CCE_SAFETENSORS) $(CCE_GGUF) $(CCE_QGKP) $(CCE_DETECT) $(CCE_SSM) $(CCE_ST_LLAMA) $(CCE_SPECGRAPH) $(CCE_WSTORE) $(CCE_TIERRT) $(CCE_SIMILAR) $(CCE_CLGEMM) $(CCE_SUPRA_TRAIN)
+CNET_CCE_ADAPTER := src/cce/cce_contract_adapter.c
+SPECIALIST_ADAPTERS := src/specialist_adapters.c
+SPECIALIST_SRC := src/specialist.c
+ASYNC_RUNTIME := src/async_runtime.c
+MODEL_RUNTIME := src/model_runtime.c
+CCE_MODEL_CATALOG := src/cce/cce_model_catalog.c
+MODEL_PROBE := src/model_probe.c
+CNET_LLAMA_EVAL := tools/cnet_llama_eval.cpp
+LLAMA_CPP_ROOT ?= /home/marble/llama.cpp
+LLAMA_CPP_BUILD ?= $(LLAMA_CPP_ROOT)/build-rocm
 SCAN := src/scan.c
 CERTIFY_TEST := tests/test_certify.c
 CERTIFY_DEMO := tests/certify_demo.c
@@ -185,7 +197,7 @@ SYNONYMS_TEST := tests/test_synonyms.c
 TILEINDEX_TEST := tests/test_tile_index.c
 CONSOLIDATE_TEST := tests/test_tile_consolidate.c
 
-.PHONY: all run test verify verify-long legacy_test compose route dag hetero split chunk certify property coverage conformal logicgate decimal circuit study capacity library margin fuzzy stochastic fastpath throughput residue expr attention attention_study lifecycle_bench lbench proposal_sidecar probe_overhead belowbeam_chars struct_pref dgate_bench compounding_bench cce_smoke counterfactual_router_test sparse_kv_test narrative_coherence_test phase4_uncertainty_test register_compression_improvements phase5_integration_test cce_train_bench cce_view forest_view wordlm wordlm_bitnet cce_dll cnet_dll cce_safetensors_test cce_gguf_test cce_model_test cce_autograd_test endgate jsonstory pdftest pdflearn compound tiermem_test graduate fontdecode tfidf synonyms tileindex consolidate clean
+.PHONY: all run test verify verify-long unified unified_native unified_adapter unified_cce_adapter unified_oracle_adapter unified_specialist claims oracle_v2_test soul_host_test legacy_test compose route dag hetero split chunk certify property coverage conformal logicgate decimal circuit study capacity library margin fuzzy stochastic fastpath throughput residue expr attention attention_study lifecycle_bench lbench proposal_sidecar probe_overhead belowbeam_chars struct_pref dgate_bench compounding_bench cce_smoke counterfactual_router_test sparse_kv_test narrative_coherence_test phase4_uncertainty_test register_compression_improvements phase5_integration_test cce_train_bench cce_view forest_view wordlm wordlm_bitnet cce_dll cnet_dll cce_safetensors_test cce_gguf_test cce_model_test cce_autograd_test endgate jsonstory pdftest pdflearn compound tiermem_test graduate fontdecode tfidf synonyms tileindex consolidate clean
 
 all: nn_demo
 
@@ -364,9 +376,41 @@ f16_identity: $(CCE) tests/test_f16_identity.c include/cce/cce_gguf.h
 
 # Contract security + efficiency: content digests, certification cache,
 # sealed (tamper-evident) contract files, certificate-to-weights binding.
+.PHONY: contract_secure contract_opt_test contract_opt_sanitize contract_optimized
 contract_secure: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONSOLIDATE) $(CONTRACT) tests/test_contract_secure.c include/nn.h include/router.h include/contract/contract.h
 	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONSOLIDATE) $(CONTRACT) tests/test_contract_secure.c $(LDFLAGS)
-	./$(BIN_DIR)/contract_secure > logs/contract_secure.log 2>&1 || echo "test exited non-zero (see log)"
+	@./$(BIN_DIR)/contract_secure > logs/contract_secure.log 2>&1
+
+# Focused tracer for frozen-descriptor safety, robust candidate quality, and
+# single-replay promotion speed. The benchmark gate is structural (forward
+# count), so CPU scheduling noise cannot produce a false pass or failure.
+contract_opt_test: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONSOLIDATE) $(CONTRACT) tests/test_contract_optimized.c include/nn.h include/router.h include/contract/contract.h
+	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONSOLIDATE) $(CONTRACT) tests/test_contract_optimized.c $(LDFLAGS)
+	@./$(BIN_DIR)/contract_opt_test > logs/contract_optimized.log 2>&1
+	@grep -q '^CONTRACT_OPT_BENCH iterations=2000 forwards=4000 ' logs/contract_optimized.log
+	@grep -q '^CONTRACT_OPTIMIZED_PASS$$' logs/contract_optimized.log
+
+contract_opt_sanitize: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONSOLIDATE) $(CONTRACT) tests/test_contract_optimized.c include/nn.h include/router.h include/contract/contract.h
+	$(CC) -std=c11 -Wall -Wextra -pedantic -O1 -g -D_DEFAULT_SOURCE \
+		-fsanitize=address,undefined -fno-omit-frame-pointer \
+		-o $(BIN_DIR)/$@ $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONSOLIDATE) \
+		$(CONTRACT) tests/test_contract_optimized.c $(LDFLAGS)
+	@ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 \
+		UBSAN_OPTIONS=halt_on_error=1 \
+		./$(BIN_DIR)/contract_opt_sanitize > logs/contract_optimized_sanitize.log 2>&1
+	@grep -q '^CONTRACT_OPTIMIZED_PASS$$' logs/contract_optimized_sanitize.log
+
+# Umbrella closure gate: optimized contract semantics, contract persistence,
+# security regressions, and the full historical native suite.
+contract_optimized: contract_opt_test contract_opt_sanitize contract_secure contract_unit legacy_test
+	@grep -q '^CONTRACT_OPTIMIZED_PASS$$' logs/contract_optimized.log
+	@grep -q '^CONTRACT_OPTIMIZED_PASS$$' logs/contract_optimized_sanitize.log
+	@grep -q '^All contract security tests passed\.$$' logs/contract_secure.log
+	@grep -q '^All unit-file tests passed\.$$' logs/contract_unit.log
+	@! grep -Eq '(^|[[:space:]])(FAIL|ERROR|SANITIZER|AddressSanitizer|runtime error)([[:space:]:]|$$)' \
+		logs/contract_optimized.log logs/contract_optimized_sanitize.log \
+		logs/contract_secure.log logs/contract_unit.log
+	@echo CONTRACT_OPTIMIZATION_GATE_PASS
 
 test_certify: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONSOLIDATE) $(CONTRACT) $(CERTIFY_TEST) include/nn.h include/router.h include/plan_table.h include/consolidate.h include/contract/contract.h
 	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONSOLIDATE) $(CONTRACT) $(CERTIFY_TEST) $(LDFLAGS)
@@ -488,11 +532,11 @@ glyph_habitat: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(CCE) tests/glyph_hab
 
 # Build tool: dedicated build/ folder similar to tests/
 # Focuses on the "build" agent features (artifact construction, etc.)
-build_tool: build/build.c src/contract/mcp_utils.c src/contract/mcp_memory.c src/contract/mcp_file_write.c src/contract/mcp_web_search.c src/contract/mcp_file_read.c src/contract/mcp_wiki.c src/agent_memory.c src/contract/book_concept.c include/nn.h include/router.h include/plan_table.h include/contract/contract.h include/agent_memory.h include/contract/mcp_file_write.h include/contract/mcp_web_search.h include/contract/mcp_file_read.h include/contract/mcp_wiki.h include/contract/book_concept.h
-	$(CC) $(CFLAGS) -Ibuild/include -o build_tool $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) build/build.c src/contract/mcp_utils.c src/contract/mcp_memory.c src/contract/mcp_file_write.c src/contract/mcp_web_search.c src/contract/mcp_file_read.c src/contract/mcp_wiki.c src/agent_memory.c src/contract/book_concept.c src/cnet_lm.c src/contract/anti_repeat.c $(LDFLAGS) $(MCP_LDFLAGS)
+build_tool: $(CCE) build/build.c src/contract/mcp_utils.c src/contract/mcp_memory.c src/contract/mcp_file_write.c src/contract/mcp_web_search.c src/contract/mcp_file_read.c src/contract/mcp_wiki.c src/agent_memory.c src/contract/book_concept.c include/nn.h include/router.h include/plan_table.h include/contract/contract.h include/agent_memory.h include/contract/mcp_file_write.h include/contract/mcp_web_search.h include/contract/mcp_file_read.h include/contract/mcp_wiki.h include/contract/book_concept.h
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -Ibuild/include -o build_tool $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(CCE) build/build.c src/contract/mcp_utils.c src/contract/mcp_memory.c src/contract/mcp_file_write.c src/contract/mcp_web_search.c src/contract/mcp_file_read.c src/contract/mcp_wiki.c src/agent_memory.c src/contract/book_concept.c src/cnet_lm.c src/contract/anti_repeat.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 
 build: build_tool
-	./$(BIN_DIR)/build_tool --build default
+	./build_tool --build default
 
 # Regression: attention_retrieve_top_k stack overflow for reg->count>64.
 # Standalone (no scan dep) so it builds independently of the aggregate suite.
@@ -1110,17 +1154,228 @@ cce_dll: $(CCE) $(CCE_CUDA_OBJ)
 	$(CC) -shared -DCCE_BUILD_DLL $(CFLAGS) -o cce.dll $(CCE) $(CCE_CUDA_OBJ) $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 	@echo "Built cce.dll (for .NET P/Invoke). Add to your C# project and use DllImport."
 
-# CNET engine shared library (base + router + registry + contract + nn + plan)
-# for hosts to load certified .cnb bases and call route_execute / dag_execute
-# as verifiable tools. Also builds the soul_host shim.
-# Defines CNET_BUILD_DLL for export macros.
+# Unified CNET shared library: CCE runtime + certified base/registry/planner +
+# soul_host + MCP tools. `cce_dll` remains a native compatibility artifact;
+# managed hosts bind only this superset so there is one native ABI truth.
+# Defines both export macros.
 # Usage: make cnet_dll
 cnet_dll: CFLAGS := $(CFLAGS) -fPIC
-cnet_dll: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(BASE_SRC) $(SCAN) $(PROPERTY) $(CONSOLIDATE) $(ACQUIRE_SRC) $(COVERAGE) src/fastpath.c src/soul_host.c src/contract/mcp_calculator.c src/contract/mcp_file_read.c src/contract/mcp_file_write.c src/contract/mcp_memory.c src/contract/mcp_utils.c src/contract/mcp_web_search.c src/contract/mcp_wiki.c src/agent_memory.c
-	$(CC) -shared -DCNET_BUILD_DLL $(CFLAGS) -o cnet.so \
-		$(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(BASE_SRC) $(SCAN) $(PROPERTY) $(CONSOLIDATE) $(ACQUIRE_SRC) $(COVERAGE) src/fastpath.c src/soul_host.c src/contract/mcp_calculator.c src/contract/mcp_file_read.c src/contract/mcp_file_write.c src/contract/mcp_memory.c src/contract/mcp_utils.c src/contract/mcp_web_search.c src/contract/mcp_wiki.c src/agent_memory.c \
-		$(LDFLAGS)
-	@echo "Built cnet.so (or rename/copy as cnet.dll on Windows) for CNET engine (soul_host ABI + route/dag + MCP tools). Use with P/Invoke."
+cnet_dll: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(BASE_SRC) $(SCAN) $(PROPERTY) $(CONSOLIDATE) $(ACQUIRE_SRC) $(COVERAGE) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(ASYNC_RUNTIME) $(MODEL_RUNTIME) $(CCE_MODEL_CATALOG) $(MODEL_PROBE) src/fastpath.c src/soul_host.c src/contract/mcp_calculator.c src/contract/mcp_file_read.c src/contract/mcp_file_write.c src/contract/mcp_memory.c src/contract/mcp_utils.c src/contract/mcp_web_search.c src/contract/mcp_wiki.c src/agent_memory.c
+	$(CC) -shared -DCNET_BUILD_DLL -DCCE_BUILD_DLL $(CFLAGS) $(CUDA_CFLAGS) -o cnet.so \
+		$(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(BASE_SRC) $(SCAN) $(PROPERTY) $(CONSOLIDATE) $(ACQUIRE_SRC) $(COVERAGE) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(ASYNC_RUNTIME) $(MODEL_RUNTIME) $(CCE_MODEL_CATALOG) $(MODEL_PROBE) src/fastpath.c src/soul_host.c src/contract/mcp_calculator.c src/contract/mcp_file_read.c src/contract/mcp_file_write.c src/contract/mcp_memory.c src/contract/mcp_utils.c src/contract/mcp_web_search.c src/contract/mcp_wiki.c src/agent_memory.c \
+		$(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -pthread
+	@echo "Built unified cnet.so (CCE + certified runtime + soul_host + MCP ABI)."
+
+# CNET-native QGKP v3 envelope tool. Pack/materialize operations are resumable
+# and validate prefixes before append; the final rename remains an external
+# atomic policy decision.
+.PHONY: cnet_qgkp
+cnet_qgkp: cnet_dll tools/cnet_qgkp.c include/cce/cce_qgkp.h
+	$(CC) -std=c11 -Wall -Wextra -Werror -pedantic -O2 -Iinclude \
+		-o $(BIN_DIR)/cnet_qgkp tools/cnet_qgkp.c -L. -l:cnet.so \
+		-Wl,-rpath,'$$ORIGIN/..'
+
+# Optional real-model tracer bullet: CNET owns catalog/residency/placement while
+# llama.cpp materializes the dense GGUF and performs token generation. Keep it
+# outside `unified` because it requires a local ROCm llama.cpp build and model.
+.PHONY: cnet_llama_eval
+cnet_llama_eval: cnet_dll $(CNET_LLAMA_EVAL)
+	$(CXX) -std=c++17 -Wall -Wextra -Werror -O2 -Iinclude \
+		-I$(LLAMA_CPP_ROOT)/include -I$(LLAMA_CPP_ROOT)/ggml/include \
+		-o $(BIN_DIR)/cnet_llama_eval $(CNET_LLAMA_EVAL) \
+		-L. -l:cnet.so -L$(LLAMA_CPP_BUILD)/bin -lllama -lggml -lggml-base -ldl -pthread \
+		-Wl,-rpath,'$$ORIGIN/..' -Wl,-rpath,$(LLAMA_CPP_BUILD)/bin
+	@echo "Built $(BIN_DIR)/cnet_llama_eval (CNET-governed llama.cpp dense inference)."
+
+.PHONY: qwythos_coherence_gate
+qwythos_coherence_gate: tools/score_cnet_coherence.py tests/test_qwythos_coherence.sh
+	@bash tests/test_qwythos_coherence.sh
+
+QWYTHOS_GGUF ?= /home/marble/Downloads/Qwythos-9B-Claude-Mythos-5-1M-MTP-Q8_0.gguf
+QWYTHOS_QGKP ?= $(CURDIR)/hermes_wrappers/Qwythos-9B-Claude-Mythos-5-1M-MTP-QGKP-v3.cnetpack
+QWYTHOS_QGKP_SOURCE ?= $(CURDIR)/hermes_wrappers/Qwythos-9B-Claude-Mythos-5-1M-MTP-TQ1_0-fixed.cnetpack
+QWYTHOS_GPU ?= 1
+QWYTHOS_RESOURCE ?= gpu1
+
+.PHONY: qwythos_qgkp_acceptance
+qwythos_qgkp_acceptance: cnet_qgkp cnet_llama_eval unified_models
+	@test -f "$(QWYTHOS_QGKP)"
+	@test -f "$(QWYTHOS_QGKP_SOURCE)"
+	@./$(BIN_DIR)/cnet_qgkp inspect "$(QWYTHOS_QGKP)" | tee logs/qwythos_qgkp_inspect.log
+	@timeout --signal=TERM --kill-after=20s 180s ./$(BIN_DIR)/cnet_qgkp materialize \
+		"$(QWYTHOS_QGKP)" "$(QWYTHOS_QGKP).gguf.cache"
+	@src_hash=$$(sha256sum "$(QWYTHOS_QGKP_SOURCE)" | cut -d' ' -f1); \
+	 cache_hash=$$(sha256sum "$(QWYTHOS_QGKP).gguf.cache" | cut -d' ' -f1); \
+	 test "$$src_hash" = "$$cache_hash"; \
+	 printf 'QGKP_SHA256_PASS %s\n' "$$src_hash" | tee logs/qwythos_qgkp_sha256.log
+	timeout --signal=TERM --kill-after=20s 420s env ROCR_VISIBLE_DEVICES=$(QWYTHOS_GPU) \
+		./$(BIN_DIR)/cnet_llama_eval --model "$(QWYTHOS_QGKP)" \
+		--prompts logs/qwythos_coherence_prompts.tsv \
+		--output logs/qwythos_qgkp_gpu1_results.jsonl \
+		--resource $(QWYTHOS_RESOURCE) --main-gpu 0 --ctx 4096 \
+		--max-tokens 220 --temperature 0 --seed 424242 \
+		> logs/qwythos_qgkp_gpu1_run.log 2>&1
+	@bash tests/test_qwythos_coherence.sh \
+		logs/qwythos_qgkp_gpu1_results.jsonl \
+		logs/qwythos_qgkp_gpu1_coherence_report.json \
+		| tee logs/qwythos_qgkp_gpu1_score.log
+
+.PHONY: qwythos_gpu_acceptance
+qwythos_gpu_acceptance: cnet_llama_eval
+	@test -f "$(QWYTHOS_GGUF)"
+	timeout --signal=TERM --kill-after=20s 240s env ROCR_VISIBLE_DEVICES=$(QWYTHOS_GPU) \
+		./$(BIN_DIR)/cnet_llama_eval --model "$(QWYTHOS_GGUF)" \
+		--prompts logs/qwythos_coherence_prompts.tsv \
+		--output logs/qwythos_cnet_gpu1_results.jsonl \
+		--resource $(QWYTHOS_RESOURCE) --main-gpu 0 --ctx 4096 \
+		--max-tokens 220 --temperature 0 --seed 424242 \
+		> logs/qwythos_cnet_gpu1_run.log 2>&1
+	@$(MAKE) --no-print-directory qwythos_coherence_gate
+
+# CPU-only unified-runtime tracer bullets. These deliberately avoid model files
+# and GPUs: synthetic sealed CNB -> certified registry -> planner/executor,
+# generic runtime adapter, real in-memory CCE model adapter, native host, .NET,
+# and stdio MCP all traverse the same public cnet.so boundary.
+unified_adapter: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) tests/test_unified_runtime.c
+	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) tests/test_unified_runtime.c $(LDFLAGS)
+	./$(BIN_DIR)/$@ > logs/unified_adapter.log 2>&1
+	@grep -q "UNIFIED_ADAPTER_PASS" logs/unified_adapter.log
+
+unified_cce_adapter: $(CCE) $(CNET_CCE_ADAPTER) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) tests/test_cce_contract_adapter.c
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CNET_CCE_ADAPTER) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) tests/test_cce_contract_adapter.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+	./$(BIN_DIR)/$@ > logs/unified_cce_adapter.log 2>&1
+	@grep -q "UNIFIED_CCE_ADAPTER_PASS" logs/unified_cce_adapter.log
+
+unified_oracle_adapter: $(SPECIALIST_ADAPTERS) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) tests/test_oracle_contract_adapter.c
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -o $(BIN_DIR)/test_oracle_contract_adapter \
+		$(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) \
+		$(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(SPECIALIST_ADAPTERS) \
+		tests/test_oracle_contract_adapter.c $(LDFLAGS)
+	@./$(BIN_DIR)/test_oracle_contract_adapter > logs/unified_oracle_adapter.log 2>&1
+	@grep -q "ORACLE_CONTRACT_ADAPTER_PASS" logs/unified_oracle_adapter.log
+
+# The heterogeneous-plan acceptance gate: ONE ordinary planner plan whose
+# nodes are a native BTN, a real CCE model, and an Oracle unit, all admitted
+# through the single Specialist door (specialist_admit) and certified
+# end-to-end. Passing means the three backends are the same planning citizen,
+# not three coexisting subsystems.
+unified_specialist: $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) tests/test_heterogeneous_plan.c include/specialist.h
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/test_heterogeneous_plan \
+		$(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) \
+		$(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) \
+		$(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) \
+		tests/test_heterogeneous_plan.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+	@./$(BIN_DIR)/test_heterogeneous_plan > logs/unified_specialist.log 2>&1
+	@grep -q "HET_PLAN_PASS" logs/unified_specialist.log
+
+oracle_v2_test: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) tests/test_oracle_v2.c
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -o $(BIN_DIR)/test_oracle_v2 \
+		$(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) \
+		$(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) tests/test_oracle_v2.c $(LDFLAGS)
+	@./$(BIN_DIR)/test_oracle_v2 > logs/oracle_v2_test.log 2>&1
+	@grep -q "ORACLE_V2_PASS" logs/oracle_v2_test.log
+
+.PHONY: unified_async
+unified_async: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(ASYNC_RUNTIME) tests/test_async_runtime.c
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -o $(BIN_DIR)/test_async_runtime \
+		$(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) \
+		$(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(ASYNC_RUNTIME) \
+		tests/test_async_runtime.c $(LDFLAGS) -pthread
+	@./$(BIN_DIR)/test_async_runtime > logs/unified_async.log 2>&1
+	@grep -q "ASYNC_RUNTIME_PASS" logs/unified_async.log
+
+.PHONY: qgkp_envelope_test
+qgkp_envelope_test: $(CCE_QGKP) tests/test_qgkp_envelope.c include/cce/cce_qgkp.h
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) -std=c11 -Wall -Wextra -Werror -pedantic -O2 -Iinclude \
+		-o $(BIN_DIR)/test_qgkp_envelope $(CCE_QGKP) tests/test_qgkp_envelope.c
+	@./$(BIN_DIR)/test_qgkp_envelope > logs/qgkp_envelope_test.log 2>&1
+	@grep -q "QGKP_ENVELOPE_PASS" logs/qgkp_envelope_test.log
+
+.PHONY: unified_models
+unified_models: qgkp_envelope_test $(MODEL_RUNTIME) $(CCE_MODEL_CATALOG) $(MODEL_PROBE) tests/test_model_runtime.c tests/test_model_catalog.c
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) -std=c11 -Wall -Wextra -Werror -pedantic -O2 -Iinclude \
+		-o $(BIN_DIR)/test_model_runtime $(MODEL_RUNTIME) tests/test_model_runtime.c -pthread
+	@./$(BIN_DIR)/test_model_runtime > logs/unified_models_runtime.log 2>&1
+	@grep -q "MODEL_RUNTIME_PASS" logs/unified_models_runtime.log
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -Iinclude -o $(BIN_DIR)/test_model_catalog \
+		$(CCE) $(CCE_MODEL_CATALOG) $(MODEL_PROBE) tests/test_model_catalog.c \
+		$(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -pthread
+	@./$(BIN_DIR)/test_model_catalog > logs/unified_models_catalog.log 2>&1
+	@grep -q "MODEL_CATALOG_PASS" logs/unified_models_catalog.log
+
+.PHONY: unified_ds4_launcher
+unified_ds4_launcher: scripts/run_cnet_ds4_dual.sh scripts/cnet_chunk_hash.py scripts/verify_ds4_endpoint.py tests/test_ds4_dual_launcher.sh
+	@mkdir -p logs
+	@bash tests/test_ds4_dual_launcher.sh > logs/unified_ds4_launcher.log 2>&1
+	@grep -q "DS4_DUAL_LAUNCHER_PASS" logs/unified_ds4_launcher.log
+
+.PHONY: unified_gpu
+unified_gpu: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(ASYNC_RUNTIME) $(CCE_CLGEMM) tests/test_async_gpu_lanes.c
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -o $(BIN_DIR)/test_async_gpu_lanes \
+		$(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) \
+		$(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(ASYNC_RUNTIME) \
+		$(CCE_CLGEMM) tests/test_async_gpu_lanes.c $(LDFLAGS) -ldl -pthread
+	@./$(BIN_DIR)/test_async_gpu_lanes > logs/unified_gpu.log 2>&1
+	@grep -q "ASYNC_GPU_LANES_PASS" logs/unified_gpu.log
+
+.PHONY: oracle_v2_bench
+oracle_v2_bench: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) tests/oracle_v2_bench.c
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -o $(BIN_DIR)/oracle_v2_bench \
+		$(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) \
+		$(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) tests/oracle_v2_bench.c $(LDFLAGS)
+	@./$(BIN_DIR)/oracle_v2_bench > logs/oracle_v2_bench.log
+	@grep -q "Oracle v2 governed invocation benchmark" logs/oracle_v2_bench.log
+
+soul_host_test: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) src/soul_host.c tests/test_soul_host.c
+	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) src/soul_host.c tests/test_soul_host.c $(LDFLAGS)
+	CNET_KEEP_TEST_BASE=1 ./$(BIN_DIR)/$@ > logs/soul_host_test.log 2>&1
+	@grep -q "SOUL_HOST_UNIFIED_PASS" logs/soul_host_test.log
+
+unified_native: unified_adapter unified_cce_adapter unified_oracle_adapter unified_specialist oracle_v2_test unified_async unified_models unified_ds4_launcher soul_host_test cnet_dll
+	@nm -D cnet.so | grep -q " specialist_admit$$"
+	@nm -D cnet.so | grep -q " specialist_axes$$"
+	@nm -D cnet.so | grep -q " soul_unit_count$$"
+	@nm -D cnet.so | grep -q " cce_model_init_contract_adapter$$"
+	@nm -D cnet.so | grep -q " cnet_oracle_init_contract_adapter$$"
+	@nm -D cnet.so | grep -q " cnet_oracle_invoke$$"
+	@nm -D cnet.so | grep -q " cnet_oracle_identity_digest$$"
+	@nm -D cnet.so | grep -q " cnet_model_manager_open$$"
+	@nm -D cnet.so | grep -q " cce_model_descriptor_probe$$"
+	@nm -D cnet.so | grep -q " cnet_lane_pool_open$$"
+	@nm -D cnet.so | grep -q " cnet_lane_pool_submit$$"
+	@nm -D cnet.so | grep -q " soul_oracle_count$$"
+	@nm -D cnet.so | grep -q " soul_oracle_identity$$"
+
+unified: unified_native
+	dotnet build dotnet/CceHost/CceHost.csproj -c Release --no-restore --nologo -v:q > logs/unified_dotnet_build.log 2>&1
+	dotnet build dotnet/CnetMcpServer/CnetMcpServer.csproj -c Release --no-restore --nologo -v:q >> logs/unified_dotnet_build.log 2>&1
+	LD_LIBRARY_PATH="$(CURDIR)$${LD_LIBRARY_PATH:+:$$LD_LIBRARY_PATH}" dotnet dotnet/CceHost/bin/Release/net10.0/CceHost.dll --list tmp_soul_host.cnb > logs/unified_host.log 2>&1
+	@grep -q "CNET_HOST_UNIFIED_PASS" logs/unified_host.log
+	@printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05"}}' '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"cnet_list_units","arguments":{}}}' '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"cnet_list_oracles","arguments":{}}}' | CNET_BASE_PATH="$(CURDIR)/tmp_soul_host.cnb" LD_LIBRARY_PATH="$(CURDIR)$${LD_LIBRARY_PATH:+:$$LD_LIBRARY_PATH}" dotnet dotnet/CnetMcpServer/bin/Release/net10.0/CnetMcpServer.dll > logs/unified_mcp.log 2> logs/unified_mcp.stderr.log
+	@grep -q '"name":"cnet-mcp"' logs/unified_mcp.log
+	@grep -q "acq_unified_goal" logs/unified_mcp.log
+	@grep -q "unified_teacher" logs/unified_mcp.log
+	@grep -q "descriptor_only_not_runtime_trust" logs/unified_mcp.log
+	LD_LIBRARY_PATH="$(CURDIR)$${LD_LIBRARY_PATH:+:$$LD_LIBRARY_PATH}" dotnet test dotnet/Cce.Tests/Cce.Tests.csproj -c Release --no-restore --nologo -v:q > logs/unified_dotnet_test.log 2>&1
+	@rm -f tmp_soul_host.cnb tmp_soul_host.cnb.tmp
+	@bash scripts/gen_claims.sh || true
+	@echo "CNET_UNIFIED_PASS"
+
+# Generated claims ledger: scan the gate logs for their positive markers and
+# emit machine-readable records (logs/claims.jsonl) plus a generated table
+# (docs/verified-today.generated.md). The README's "Verified Today" prose is
+# hand-written; this target is the mechanical check it can be diffed against,
+# so a retracted or missing gate cannot silently live on as a claim.
+claims:
+	@bash scripts/gen_claims.sh
 
 
 # Unit-structure probe: how hard is the function each TOPK unit must memorize?

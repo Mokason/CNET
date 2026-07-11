@@ -137,8 +137,9 @@ int btn_certify_robust(BinaryTransformNetwork *btn, const Contract *c,
 /* Compare whether `candidate` is a strictly better implementation than `active`
    for the same contract. Returns 1 if candidate is better, 0 if not better,
    and -1 on invalid inputs. Comparison first requires both to certify, then
-   uses average squared error on contract exemplars (lower is better), with
-   reliability as a tiebreak when MSE is equal. */
+   prefers greater worst-case output margin from the canonicalization boundary,
+   with reliability as a tiebreak when margins are equal. The margin is reused
+   from certification, avoiding redundant forward sweeps. */
 int contract_better_if(const Contract *c, const BinaryTransformNetwork *active,
                        const BinaryTransformNetwork *candidate);
 
