@@ -468,6 +468,7 @@ int main(int argc, char **argv) {
                                       lane.acq.target_loss);
     lane.acq.min_improvement = env_double("CNET_ACQ_MIN_IMPROVEMENT",
                                           lane.acq.min_improvement);
+    lane.acq.momentum = env_double("CNET_ACQ_MOMENTUM", lane.acq.momentum);
 
     if (argc >= 4) {
         if (cce_anymodel_open(&am, argv[3]) != CCE_OK || !am->transformer) {

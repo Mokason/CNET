@@ -568,6 +568,7 @@ uint64_t acquire_recipe_fingerprint(const AcquireConfig *cfg) {
     h = recipe_fnv_bytes(h, &cfg->growth_window, sizeof cfg->growth_window);
     h = recipe_fnv_bytes(h, &cfg->target_loss, sizeof cfg->target_loss);
     h = recipe_fnv_bytes(h, &cfg->min_improvement, sizeof cfg->min_improvement);
+    h = recipe_fnv_bytes(h, &cfg->momentum, sizeof cfg->momentum);
     return h ? h : 1;
 }
 
@@ -978,6 +979,7 @@ static int attempt_no_plan(PrimitiveRegistry *reg, AcquireLedger *l,
         gap_defer(g, rep, "certify_failed");
         return -1;
     }
+    btn_set_momentum(btn, cfg->momentum);   /* 0 = plain SGD (default) */
     {
     int warm_used = 0;
     if (ws_on() && ws_snap.valid) {
@@ -1066,6 +1068,7 @@ train_student:
                 gap_defer(g, rep, "certify_failed");
                 return -1;
             }
+            btn_set_momentum(btn, cfg->momentum);
             warm_used = 0;
             goto train_student;
         }
@@ -1271,6 +1274,7 @@ static int attempt_rebuild(PrimitiveRegistry *reg, AcquireLedger *l,
         free(btn); free(inputs); free(targets);
         gap_defer(g, rep, "certify_failed"); return -1;
     }
+    btn_set_momentum(btn, cfg->momentum);
     btn_train_dynamic(btn, inputs, targets, usable, cfg->max_epochs,
                       cfg->growth_window, cfg->target_loss,
                       cfg->min_improvement);

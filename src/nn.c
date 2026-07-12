@@ -682,6 +682,7 @@ int btn_init(
     btn->output_count = output_count;
     btn->max_hidden_count = max_hidden_count;
     btn->learning_rate = learning_rate;
+    btn->momentum = 0.0;   /* plain SGD until btn_set_momentum */
     btn->ternary_inference = 0;
     btn->ternary_threshold = BTN_TERNARY_DEFAULT_THRESHOLD;
 
@@ -981,6 +982,14 @@ int btn_train(
     return 0;
 }
 
+int btn_set_momentum(BinaryTransformNetwork *btn, double momentum) {
+    if (btn == NULL || btn_is_adapter(btn)) return -1;
+    if (momentum < 0.0) momentum = 0.0;
+    if (momentum > 0.999) momentum = 0.999;
+    btn->momentum = momentum;
+    return 0;
+}
+
 double btn_train_dynamic(
     BinaryTransformNetwork *btn,
     const double *inputs,
@@ -1014,6 +1023,8 @@ double btn_train_dynamic(
     size_t stride;
     size_t validation_stride_offset;
     double adaptive_lr;
+    double mom = 0.0;
+    double *v_ho = NULL, *v_ob = NULL, *v_ih = NULL, *v_hb = NULL;
 
 
     if (btn == NULL || btn_is_adapter(btn) || inputs == NULL || targets == NULL || sample_count == 0) {
@@ -1059,6 +1070,22 @@ double btn_train_dynamic(
     hidden_errors = calloc(btn->max_hidden_count, sizeof(*hidden_errors));
     if (output_deltas == NULL || hidden_errors == NULL) {
         goto fail;
+    }
+
+    /* Heavy-ball momentum (btn->momentum != 0): one velocity per weight/bias,
+       max-sized and zeroed so grown neurons start at rest. mom == 0 leaves the
+       buffers NULL and the updates fall to the exact plain-SGD path below. */
+    mom = btn->momentum;
+    if (mom != 0.0) {
+        v_ho = calloc(btn->output_count * btn->max_hidden_count, sizeof(double));
+        v_ob = calloc(btn->output_count, sizeof(double));
+        v_ih = calloc(btn->max_hidden_count * btn->input_count, sizeof(double));
+        v_hb = calloc(btn->max_hidden_count, sizeof(double));
+        if (v_ho == NULL || v_ob == NULL || v_ih == NULL || v_hb == NULL) {
+            free(v_ho); free(v_ob); free(v_ih); free(v_hb);
+            v_ho = v_ob = v_ih = v_hb = NULL;
+            mom = 0.0;   /* OOM: fall back to plain SGD, same correctness */
+        }
     }
 
     previous_loss = 0.0;
@@ -1130,21 +1157,41 @@ double btn_train_dynamic(
                         size_t idx = btn_hidden_output_index(btn, hidden, output);
                         double grad = output_deltas[output] *
                                       btn->hidden_output[hidden];
-                        btn->hidden_output_weights[idx] += adaptive_lr * grad;
+                        if (v_ho) {
+                            v_ho[idx] = mom * v_ho[idx] + grad;
+                            btn->hidden_output_weights[idx] += adaptive_lr * v_ho[idx];
+                        } else {
+                            btn->hidden_output_weights[idx] += adaptive_lr * grad;
+                        }
                     }
-                    btn->output_bias[output] += adaptive_lr * output_deltas[output];
+                    if (v_ob) {
+                        v_ob[output] = mom * v_ob[output] + output_deltas[output];
+                        btn->output_bias[output] += adaptive_lr * v_ob[output];
+                    } else {
+                        btn->output_bias[output] += adaptive_lr * output_deltas[output];
+                    }
                 }
 
                 for (hidden = 0; hidden < btn->hidden_count; ++hidden) {
                     double hidden_delta =
                         hidden_errors[hidden] *
                         sigmoid_derivative_from_output(btn->hidden_output[hidden]);
-                    btn->hidden_bias[hidden] += adaptive_lr * hidden_delta;
+                    if (v_hb) {
+                        v_hb[hidden] = mom * v_hb[hidden] + hidden_delta;
+                        btn->hidden_bias[hidden] += adaptive_lr * v_hb[hidden];
+                    } else {
+                        btn->hidden_bias[hidden] += adaptive_lr * hidden_delta;
+                    }
 
                     for (input = 0; input < btn->input_count; ++input) {
                         size_t idx = btn_input_hidden_index(btn, input, hidden);
                         double grad = hidden_delta * train_input[input];
-                        btn->input_hidden[idx] += adaptive_lr * grad;
+                        if (v_ih) {
+                            v_ih[idx] = mom * v_ih[idx] + grad;
+                            btn->input_hidden[idx] += adaptive_lr * v_ih[idx];
+                        } else {
+                            btn->input_hidden[idx] += adaptive_lr * grad;
+                        }
                     }
                 }
             }
@@ -1205,12 +1252,14 @@ done:
     free(output_deltas);
     free(hidden_errors);
     free(validation_mask);
+    free(v_ho); free(v_ob); free(v_ih); free(v_hb);
     return previous_loss;
 
 fail:
     free(output_deltas);
     free(hidden_errors);
     free(validation_mask);
+    free(v_ho); free(v_ob); free(v_ih); free(v_hb);
     return -1.0;
 }
 

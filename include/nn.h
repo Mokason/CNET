@@ -98,6 +98,12 @@ typedef struct {
     void *adapter_context;
     unsigned long long adapter_digest;
     size_t adapter_cost;
+    /* Training-only momentum coefficient (heavy-ball); 0 = plain SGD, which is
+       BYTE-IDENTICAL to the pre-momentum path. Not serialized (a hyperparameter
+       of how the weights were fit, not part of them), zeroed on init/load. Set
+       via btn_set_momentum before btn_train_dynamic to converge in fewer
+       epochs. */
+    double momentum;
 } BinaryTransformNetwork;
 
 int nn_init(
@@ -232,6 +238,11 @@ double btn_train_dynamic(
     double target_loss,
     double min_improvement
 );
+
+/* Set the training momentum coefficient (default 0 = plain SGD). Valid range
+   [0, 1); values outside are clamped. Takes effect on the next
+   btn_train_dynamic. Returns 0, or -1 for a NULL/adapter btn. */
+int btn_set_momentum(BinaryTransformNetwork *btn, double momentum);
 
 int btn_predict_bits(
     BinaryTransformNetwork *btn,

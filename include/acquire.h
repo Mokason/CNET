@@ -222,6 +222,7 @@ typedef struct {
     size_t growth_window;      /* 200 */
     double target_loss;        /* 1e-4 */
     double min_improvement;    /* 1e-6 */
+    double momentum;           /* heavy-ball SGD coefficient; 0 = plain SGD */
     /* Optional close hook (NULL = off): called once per gap the moment it
        reaches CLOSED, with the record's ledger index. The gap lane feeds
        its provenance-reconcile queue here so per-closure work stays O(1)
