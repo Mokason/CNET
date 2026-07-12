@@ -1,6 +1,6 @@
-#include "../include/nn.h"
-#include "../include/contract/contract.h"
-#include "../include/router.h"
+#include "../../include/nn.h"
+#include "../../include/contract/contract.h"
+#include "../../include/router.h"
 /* 3D text-level contract lives in src/contract_text_add.c (see contract_text_add.h) */
 /* 3F: compound + abstain + persist in contract_text_add_* and glyph_habitat --demo 3F --persist-test */
 /* 3G: perceptual_query orchestrator with selection, reflection, evolution in contract_perceptual_query */

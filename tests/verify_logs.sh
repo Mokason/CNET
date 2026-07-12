@@ -35,7 +35,6 @@ base.log|||ALL BASE TESTS PASSED
 flagship.log|||ALL FLAGSHIP TESTS PASSED
 decimal_demo.log|||All decimal acts passed.
 circuit_demo.log|||All circuit demo parts passed.
-legacy_test.log|||ALL TESTS PASSED (single exe)
 leakcheck.log|||(clean)
 '
 
@@ -44,9 +43,17 @@ supra_head_qat.log|||, 0 failed
 supra_head_qat_corpus.log|||, 0 failed
 '
 
+# The compat tier (legacy quarantine): back-compat coverage that must stay
+# green but no longer blocks every `make test`. Run via `make compat`.
+COMPAT='
+legacy_test.log|||ALL TESTS PASSED (single exe)
+'
+
 SPEC="$CORE"
 if [ "${1:-}" = "long" ]; then
-    SPEC="$CORE$LONG"
+    SPEC="$CORE$LONG$COMPAT"
+elif [ "${1:-}" = "compat" ]; then
+    SPEC="$COMPAT"
 fi
 
 printf '\n=== verify log gate (%s) ===\n' "$LOGS"

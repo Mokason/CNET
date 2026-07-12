@@ -37,7 +37,7 @@ CONSOLIDATE := src/consolidate.c
 PLAN_TABLE := src/plan_table.c
 TOPOLOGY := src/topology.c
 HYPERBOLIC := src/hyperbolic.c
-APP := src/main.c
+APP := src/legacy/main.c
 TEST := tests/test_nn.c
 OOB_TEST := tests/test_encode_oob.c
 CONTRACT_TEST := tests/test_contract.c
@@ -198,7 +198,7 @@ SYNONYMS_TEST := tests/test_synonyms.c
 TILEINDEX_TEST := tests/test_tile_index.c
 CONSOLIDATE_TEST := tests/test_tile_consolidate.c
 
-.PHONY: all run test verify verify-long unified unified_native unified_adapter unified_cce_adapter unified_oracle_adapter unified_specialist specialist_health gap_lane gap_lane_run_build dispatch_story claims oracle_v2_test soul_host_test legacy_test compose route dag hetero split chunk certify property coverage conformal logicgate decimal circuit study capacity library margin fuzzy stochastic fastpath throughput residue expr attention attention_study lifecycle_bench lbench proposal_sidecar probe_overhead belowbeam_chars struct_pref dgate_bench compounding_bench cce_smoke counterfactual_router_test sparse_kv_test narrative_coherence_test phase4_uncertainty_test register_compression_improvements phase5_integration_test cce_train_bench cce_view forest_view wordlm wordlm_bitnet cce_dll cnet_dll cce_safetensors_test cce_gguf_test cce_model_test cce_autograd_test endgate jsonstory pdftest pdflearn compound tiermem_test graduate fontdecode tfidf synonyms tileindex consolidate clean
+.PHONY: all run test verify verify-long demos compat unified unified_native unified_adapter unified_cce_adapter unified_oracle_adapter unified_specialist specialist_health gap_lane gap_lane_run_build dispatch_story claims oracle_v2_test soul_host_test legacy_test compose route dag hetero split chunk certify property coverage conformal logicgate decimal circuit study capacity library margin fuzzy stochastic fastpath throughput residue expr attention attention_study lifecycle_bench lbench proposal_sidecar probe_overhead belowbeam_chars struct_pref dgate_bench compounding_bench cce_smoke counterfactual_router_test sparse_kv_test narrative_coherence_test phase4_uncertainty_test register_compression_improvements phase5_integration_test cce_train_bench cce_view forest_view wordlm wordlm_bitnet cce_dll cnet_dll cce_safetensors_test cce_gguf_test cce_model_test cce_autograd_test endgate jsonstory pdftest pdflearn compound tiermem_test graduate fontdecode tfidf synonyms tileindex consolidate clean
 
 all: nn_demo
 
@@ -834,13 +834,24 @@ test_all: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) 
 legacy_test: test_all
 	./$(BIN_DIR)/test_all
 
-# Legacy suite gate: regenerates the demo-produced weight fixtures, then runs
-# the full historical test_all (restored 2026-07-03 after the router-split
-# amputation was found and repaired — this gate keeps it from rotting again).
-legacy: test_all decimal_demo circuit_demo
+# Live domain demos (decimal + circuit): these exercise the CURRENT planner
+# and stay in the core verification chain.
+.PHONY: demos compat
+demos: decimal_demo circuit_demo
 	./$(BIN_DIR)/decimal_demo > logs/decimal_demo.log 2>&1 || echo "demo exited non-zero (see log)"
 	./$(BIN_DIR)/circuit_demo > logs/circuit_demo.log 2>&1 || echo "demo exited non-zero (see log)"
+
+# The COMPAT tier (legacy quarantine): the restored historical test_all
+# aggregate is back-compat coverage, not core verification — it runs here
+# (and in verify-long) instead of blocking every `make test`. The gate that
+# keeps the 2026-07-03 restoration from rotting again lives on, one tier out.
+compat: test_all demos
 	./$(BIN_DIR)/test_all > logs/legacy_test.log 2>&1 || echo "test exited non-zero (see log)"
+	@sh tests/verify_logs.sh compat
+	@echo "CNET_COMPAT_PASS"
+
+# Back-compat alias for the pre-quarantine target name.
+legacy: compat
 
 # Allocation-balance gate (behavioral leak check; MinGW has no ASan).
 LEAK_WRAP := tests/leak_wrap.c
@@ -856,7 +867,7 @@ leakcheck: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE)
 # even under -j) and re-reads each suite's log, asserting the suite's terminal
 # SUCCESS marker is present -- so `make test` now exits non-zero if any gate
 # failed, crashed, or produced no log. See tests/verify_logs.sh for the markers.
-verify: claims_test cce_dll cce_safetensors_test cce_autograd_test cce_model_test cce_view forest_view cce_detect cce_ssm cce_st_llama cce_specgraph cce_wstore cce_tiers cce_similar merge_family hybrid_catalog supra_train contract_secure contract_unit mutate acquire base flagship legacy leakcheck
+verify: claims_test cce_dll cce_safetensors_test cce_autograd_test cce_model_test cce_view forest_view cce_detect cce_ssm cce_st_llama cce_specgraph cce_wstore cce_tiers cce_similar merge_family hybrid_catalog supra_train contract_secure contract_unit mutate acquire base flagship demos leakcheck
 	@sh tests/verify_logs.sh
 
 # Everything verify covers PLUS the GPU equivalence gate (needs model + GPU;
@@ -868,7 +879,7 @@ test_full: test gpu_equiv_build
 # `long` mode also asserts the two verify-long-only supra QAT gates (which
 # likewise swallow their exit codes). The `verify` prereq already ran + gated
 # the core chain first; this re-scan adds the extras.
-verify-long: verify cce_train_bench supra_head_qat supra_head_qat_corpus wordlm_bitnet
+verify-long: verify cce_train_bench supra_head_qat supra_head_qat_corpus wordlm_bitnet compat
 	@sh tests/verify_logs.sh long
 
 test: verify
