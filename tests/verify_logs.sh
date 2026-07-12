@@ -47,6 +47,8 @@ supra_head_qat_corpus.log|||, 0 failed
 # green but no longer blocks every `make test`. Run via `make compat`.
 COMPAT='
 legacy_test.log|||ALL TESTS PASSED (single exe)
+decimal_demo.log|||All decimal acts passed.
+circuit_demo.log|||All circuit demo parts passed.
 '
 
 SPEC="$CORE"

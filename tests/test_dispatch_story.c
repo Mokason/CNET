@@ -68,7 +68,12 @@ static int perm_cascade(cce_cascade *cas, const int *perm) {
     cce_tensor_zero(&head.weights);
     cce_tensor_zero(&head.bias);
     for (i = 0; i < SYM; i++) head.weights.data[i * SYM + perm[i]] = 1.0f;
-    return cce_cascade_append(cas, &head) == CCE_OK ? 0 : -1;
+    if (cce_cascade_append(cas, &head) != CCE_OK) {
+        cce_block_free(&head);
+        cce_cascade_free(cas);
+        return -1;
+    }
+    return 0;
 }
 
 static int train_identity(BinaryTransformNetwork *btn, unsigned int seed,
@@ -208,10 +213,12 @@ int main(void) {
               "reliability picks the stronger certified candidate");
         check(registry_set_state(&reg, "ds_u_fast", PRIM_RESET) == 0 &&
               route_plan(&reg, a, b, &plan) == 0 &&
+              plan.length == 1 &&
               strcmp(plan.names[0], "ds_u_slow") == 0,
               "RESET re-routes to the certified alternative");
         check(registry_set_state(&reg, "ds_u_fast", PRIM_FROZEN) == 0 &&
               route_plan(&reg, a, b, &plan) == 0 &&
+              plan.length == 1 &&
               strcmp(plan.names[0], "ds_u_fast") == 0,
               "restoring the state restores the preference");
         check(strcmp(plan.names[0], "ds_u_shiny") != 0,
@@ -220,7 +227,7 @@ int main(void) {
         /* ---- layer 2b: among the certified, reliability ranks ---------- */
         u_slow.output_successes = 500;
         u_slow.output_failures = 0;
-        check(route_plan(&reg, a, b, &plan) == 0 &&
+        check(route_plan(&reg, a, b, &plan) == 0 && plan.length == 1 &&
               strcmp(plan.names[0], "ds_u_slow") == 0,
               "flip the evidence and the plan flips with it");
     }

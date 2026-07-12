@@ -149,6 +149,29 @@ int main(void) {
               0xc0417e37ULL &&
           lane.base.oracles[0].identity.config_digest == 0x57494e444f57ULL,
           "closing the gap persists the teacher as unit provenance");
+    {
+        char saved_gap_name[ACQUIRE_NAME_MAX];
+        char saved_oracle_name[ACQUIRE_NAME_MAX];
+        snprintf(saved_gap_name, sizeof saved_gap_name, "%s",
+                 lane.ledger.gaps[0].oracle);
+        snprintf(saved_oracle_name, sizeof saved_oracle_name, "%s",
+                 lane.oracles.entries[0].name);
+        snprintf(lane.ledger.gaps[0].oracle,
+                 sizeof lane.ledger.gaps[0].oracle, "bad name");
+        snprintf(lane.oracles.entries[0].name,
+                 sizeof lane.oracles.entries[0].name, "bad name");
+        lane.base.oracle_count = 0;
+        lane.provenance_dirty = 1;
+        check(gap_lane_drain(&lane, &tick) != 0 &&
+              lane.base.oracle_count == 0 && lane.provenance_dirty == 1,
+              "provenance descriptor refusal propagates and remains retryable");
+        snprintf(lane.ledger.gaps[0].oracle,
+                 sizeof lane.ledger.gaps[0].oracle, "%s", saved_gap_name);
+        snprintf(lane.oracles.entries[0].name,
+                 sizeof lane.oracles.entries[0].name, "%s", saved_oracle_name);
+        lane.base.oracle_count = 1;
+        lane.provenance_dirty = 0;
+    }
 
     /* -- the plan now exists and executes strictly, end to end ----------- */
     check(route_plan(&lane.reg, in_port, goal_port, &plan) == 0 &&

@@ -68,6 +68,9 @@ typedef struct {
     Contract **contracts;
     char (*contract_names)[CNB_NAME_MAX];
     size_t contract_count, contract_cap;
+    /* Set when CLOSED-gap oracle provenance must be reconciled into the base.
+       Remains set after a descriptor write failure so the next drain retries. */
+    int provenance_dirty;
     int loaded;
 } GapLane;
 
@@ -107,7 +110,9 @@ CNET_API int gap_lane_scan(GapLane *L, GapLaneTickReport *r);
 
 /* Acquire: drain every OPEN gap through the bound oracles (mine, train
    with dynamic growth, certify, seal into the base, admit, replan; DEFER
-   total). Fills r->drain (r may be NULL). Returns 0, or <0 on bad args. */
+   total), then reconcile CLOSED-gap teacher provenance into the base.
+   Descriptor persistence failure is returned and remains retryable on the
+   next drain. Fills r->drain (r may be NULL). Returns 0, or <0. */
 CNET_API int gap_lane_drain(GapLane *L, GapLaneTickReport *r);
 
 /* Persist: atomic cnb_save + atomic ledger save (both tmp+rename).

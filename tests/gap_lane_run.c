@@ -76,7 +76,6 @@ typedef struct {
     int width;       /* W */
     int k;           /* ordered top-k fields */
     double eps;      /* abstention margin */
-    const struct LmContextTag *ctx_;  /* unused; kept for layout clarity */
     const void *ctx_sel;              /* selected LmContext for this gap */
 } LmTask;
 
@@ -171,6 +170,10 @@ static int lm_teach(const double *in, double *out, void *ctx) {
     {
         const LmContext *want = (const LmContext *)t->ctx_sel;
         if (lm_pinned != want) {
+            /* Invalidate before touching the shared KV. A failed prefix
+               forward may have partially mutated it; the same context must
+               retry rather than being mistaken for a valid pinned prefix. */
+            lm_pinned = NULL;
             t->m->cur_pos = 0;
             if (want && want->n > 0 &&
                 cce_gguf_qwen2_forward(t->m, want->ids, want->n, t->logits,
@@ -433,14 +436,30 @@ int main(int argc, char **argv) {
                     gap_lane_close(&lane);
                     return 1;
                 }
-                while ((de = readdir(d)) != NULL &&
-                       lm_context_count < LM_CTX_SLOTS) {
+                while ((de = readdir(d)) != NULL) {
                     size_t nl = strlen(de->d_name);
                     char path[1024];
                     LmContext *c;
-                    if (nl <= 4 || nl - 4 >= sizeof c->name ||
+                    if (nl <= 4 ||
                         strcmp(de->d_name + nl - 4, ".ids") != 0)
                         continue;
+                    if (nl - 4 >= sizeof lm_contexts[0].name ||
+                        nl - 4 > PORT_TAG_MAX - 2) {
+                        fprintf(stderr,
+                                "gap_lane_run: context name cannot fit a "
+                                "goal-tag prefix: %s\n", de->d_name);
+                        closedir(d);
+                        gap_lane_close(&lane);
+                        return 1;
+                    }
+                    if (lm_context_count >= LM_CTX_SLOTS) {
+                        fprintf(stderr,
+                                "gap_lane_run: too many named contexts in %s "
+                                "(max=%d)\n", cd, LM_CTX_SLOTS);
+                        closedir(d);
+                        gap_lane_close(&lane);
+                        return 1;
+                    }
                     c = &lm_contexts[lm_context_count];
                     memcpy(c->name, de->d_name, nl - 4);
                     c->name[nl - 4] = '\0';

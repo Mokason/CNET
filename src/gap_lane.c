@@ -191,6 +191,9 @@ int gap_lane_open(GapLane *L, const char *base_path,
     L->acq.base = &L->base;                   /* seal into the base */
     L->acq.unit_dir = NULL;
     L->health_pass_enabled = 1;
+    /* Reconcile any CLOSED records loaded from an older/incomplete checkpoint
+       once an oracle registry is available. */
+    L->provenance_dirty = 1;
     L->loaded = 1;
     return 0;
 }
@@ -249,7 +252,7 @@ int gap_lane_scan(GapLane *L, GapLaneTickReport *r) {
    window) ride with the sealed units and project through soul_oracle_* /
    cnet_list_oracles. Idempotent by descriptor name; a zero identity is not
    provenance and records nothing. */
-static void record_unit_provenance(GapLane *L) {
+static int record_unit_provenance(GapLane *L) {
     size_t g, o, d;
     for (g = 0; g < L->ledger.count; ++g) {
         const GapRecord *gap = &L->ledger.gaps[g];
@@ -264,9 +267,12 @@ static void record_unit_provenance(GapLane *L) {
             if (strcmp(L->oracles.entries[o].name, gap->oracle) == 0)
                 { e = &L->oracles.entries[o]; break; }
         if (!e || cnet_oracle_identity_digest(&e->identity) == 0) continue;
-        cnb_add_oracle_desc_v2(&L->base, e->name, "gap_lane_teacher",
-                               e->input_port, e->output_port, &e->identity);
+        if (cnb_add_oracle_desc_v2(&L->base, e->name, "gap_lane_teacher",
+                                   e->input_port, e->output_port,
+                                   &e->identity) != 0)
+            return -1;
     }
+    return 0;
 }
 
 int gap_lane_drain(GapLane *L, GapLaneTickReport *r) {
@@ -274,9 +280,12 @@ int gap_lane_drain(GapLane *L, GapLaneTickReport *r) {
     if (!L || !L->loaded) return -1;
     memset(&rep, 0, sizeof rep);
     acquire_drain(&L->reg, &L->ledger, &L->oracles, &L->acq, &rep);
-    if (rep.closed > 0)
-        record_unit_provenance(L);
     if (r) r->drain = rep;
+    if (rep.closed > 0) L->provenance_dirty = 1;
+    if (L->provenance_dirty) {
+        if (record_unit_provenance(L) != 0) return -2;
+        L->provenance_dirty = 0;
+    }
     return 0;
 }
 

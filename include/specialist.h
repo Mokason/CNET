@@ -158,10 +158,12 @@ CNET_API SpecialistResidency specialist_residency_from_model_state(int model_sta
               COLD/FAILED/unknown -> cold).
    of_branch  the forest branch's CURRENT tier for branch_name
               (HOT owned / WARM mmap view / COLD on disk; unknown -> cold).
-   of_entry   the planner-level view of a registry entry: HOT when the
-              node is invocable right now (a present BTN — native weights
-              resident, or a bound adapter), COLD otherwise. Store-level
-              variance lives in the branch/model truths above. */
+              The forest API is externally synchronized; callers must not
+              race this view against branch mutation/eviction.
+   of_entry   physical mechanism presence only: HOT when a BTN or bound
+              adapter is resident, COLD otherwise. Trust/lifecycle remains a
+              separate axis: RESET may be physically HOT while planner-
+              ineligible. Store-level variance lives in branch/model truth. */
 CNET_API SpecialistResidency specialist_residency_of_model(
     const struct CnetModelManager *manager, const char *model_id);
 CNET_API SpecialistResidency specialist_residency_of_branch(

@@ -217,17 +217,22 @@ static void test_residency_truth(void) {
         opt.abi_version = 1;
         opt.struct_size = (uint32_t)sizeof opt;
         opt.max_models = 4;
+        opt.max_backends = 4;
         budget.resource_mask = CNET_MODEL_RESOURCE_CPU;
         budget.budget_bytes = 1 << 20;
         opt.budgets = &budget;
         opt.budget_count = 1;
         check(cnet_model_manager_open(&mgr, &opt) == 0,
               "residency fixture manager opens");
+        backend.abi_version = CNET_MODEL_RUNTIME_ABI_VERSION;
+        backend.struct_size = (uint32_t)sizeof backend;
         snprintf(backend.name, sizeof backend.name, "fixture");
         backend.load = fixture_backend_load;
         backend.unload = fixture_backend_unload;
         check(cnet_model_backend_register(mgr, &backend) == 0,
               "fixture backend registers");
+        d.abi_version = CNET_MODEL_RUNTIME_ABI_VERSION;
+        d.struct_size = (uint32_t)sizeof d;
         snprintf(d.model_id, sizeof d.model_id, "res_truth_model");
         snprintf(d.backend_name, sizeof d.backend_name, "fixture");
         d.model_class = CNET_MODEL_CLASS_DENSE_TRANSFORMER;
@@ -255,7 +260,7 @@ static void test_residency_truth(void) {
         cnet_model_manager_close(mgr);
     }
 
-    /* entry truth: invocable-now is the planner-level meaning of hot */
+    /* entry truth: mechanism residency is independent of planner trust */
     {
         RegistryEntry e;
         BinaryTransformNetwork b;
@@ -265,8 +270,9 @@ static void test_residency_truth(void) {
               specialist_residency_of_entry(NULL) == SPECIALIST_RES_COLD,
               "an entry without a node is cold");
         e.btn = &b;
+        e.state = PRIM_RESET;
         check(specialist_residency_of_entry(&e) == SPECIALIST_RES_HOT,
-              "a present node is hot: the planner can invoke it now");
+              "a resident node stays hot while RESET trust blocks planning");
     }
 }
 
@@ -276,13 +282,12 @@ int main(void) {
     test_axes_follow_lifecycle_state();
     test_specialist_edge_refusals_and_atoms();
 
+    test_residency_truth();
     if (failures != 0) {
         fprintf(stderr, "SPECIALIST_UNIT_FAIL checks=%d failures=%d\n",
                 checks, failures);
         return 1;
     }
-    test_residency_truth();
-
     printf("SPECIALIST_UNIT_PASS checks=%d\n", checks);
     return 0;
 }
