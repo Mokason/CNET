@@ -85,6 +85,21 @@ static int lm_window[LM_WINDOW_MAX];
 static int lm_window_n;       /* 0 = synth from TOKEN_BASE per gap width */
 static int lm_synth[LM_WINDOW_MAX];  /* TOKEN_BASE fallback alphabet */
 
+/* Batched-teach cache: a gap's mining probes the SAME window (all tokens) under
+   one pinned context, so instead of one GEMV forward per mined point we probe
+   the whole window once as wide GEMMs (streaming the 12B weights once, not W
+   times) and serve every point from the cache. Cached window-logits are
+   bit-identical to serial probes (cce_gguf_qwen2_forward_probes guarantees
+   per-row identity), so the mined table and every certification digest are
+   unchanged — a startup equivalence gate proves it. Only the corpus-window
+   path caches (all tasks share lm_window, stable); synth falls back to serial. */
+static float *lm_probe_buf;   /* LM_PROBE_CHUNK x vocab, reused per chunk */
+static float *lm_cache;       /* window_n x window_n window-logits */
+static float lm_scratch[LM_WINDOW_MAX];  /* synth-path window logits */
+static const void *lm_cache_ctx = (const void *)-1;  /* which context filled */
+static int lm_cache_w;
+static int lm_probe_chunk = 32;  /* CNET_LANE_PROBE_BATCH; probes per forward */
+
 /* Named teaching contexts. One KV cache holds one pinned prefix, so
    lm_pinned tracks the occupant and lm_teach re-pins on switch. fp is the
    "c<fnv8>" provenance over window+context ids, carried into the ledger's
@@ -198,68 +213,105 @@ static const LmContext *lm_select_context(const char *tag) {
 static LmTask lm_tasks[ACQUIRE_MAX_ORACLES];
 static size_t lm_task_count;
 
-static int lm_teach(const double *in, double *out, void *ctx) {
-    LmTask *t = (LmTask *)ctx;
-    int i, hot = 0, tok, picked[LM_MAX_K];
-    if (!t || !t->m) return -1;
-    for (i = 1; i < t->width; i++) if (in[i] > in[hot]) hot = i;
-    tok = t->ids[hot];
-    /* pin this gap's context if another occupies the KV (one cache, one
-       prefix; the drain works gap-by-gap so this is one forward per gap
-       switch, not per point) */
-    {
-        const LmContext *want = (const LmContext *)t->ctx_sel;
-        if (lm_pinned != want) {
-            /* Invalidate before touching the shared KV. A failed prefix
-               forward may have partially mutated it; the same context must
-               retry rather than being mistaken for a valid pinned prefix. */
-            lm_pinned = NULL;
-            t->m->cur_pos = 0;
-            if (want && want->n > 0 &&
-                cce_gguf_qwen2_forward(t->m, want->ids, want->n, t->logits,
-                                       t->vocab) != CCE_OK)
-                return -1;
-            lm_pinned = want;
-        }
-    }
-    /* independent probe of prefix+token: the pinned prefix stays put
-       (probes never modify the KV); with a bare context, cur_pos is 0 */
-    if (cce_gguf_qwen2_forward_probes(t->m, &tok, 1, t->logits,
-                                      t->vocab) != CCE_OK)
+/* Pin this gap's context in the KV if another occupies it (one cache, one
+   prefix). A context switch invalidates the batched-teach cache. Returns 0
+   or -1 (prefix forward failed). */
+static int lm_pin(LmTask *t, const LmContext *want) {
+    if (lm_pinned == want) return 0;
+    /* Invalidate before touching the shared KV. A failed prefix forward may
+       have partially mutated it; the same context must retry rather than be
+       mistaken for a valid pinned prefix. */
+    lm_pinned = NULL;
+    lm_cache_ctx = (const void *)-1;   /* KV changed: cached logits are stale */
+    t->m->cur_pos = 0;
+    if (want && want->n > 0 &&
+        cce_gguf_qwen2_forward(t->m, want->ids, want->n, t->logits,
+                               t->vocab) != CCE_OK)
         return -1;
-    /* ordered top-k within the window; margin-aware abstention on the
-       teacher's own near-tie at the k/k+1 boundary */
-    {
-        int used[LM_MAX_K];
-        float kth = 0.0f, next_best = -1e30f;
-        int r, j;
-        for (r = 0; r < t->k; r++) {
-            int best = -1;
-            for (j = 0; j < t->width; j++) {
-                int taken = 0, u;
-                for (u = 0; u < r; u++) if (used[u] == j) taken = 1;
-                if (taken) continue;
-                if (best < 0 ||
-                    t->logits[t->ids[j]] > t->logits[t->ids[best]])
-                    best = j;
-            }
-            used[r] = best;
-            picked[r] = best;
-            kth = t->logits[t->ids[best]];
-        }
+    lm_pinned = want;
+    return 0;
+}
+
+/* Fill lm_cache with every window token's window-restricted logits under the
+   currently pinned context, probing lm_probe_chunk tokens per wide forward
+   (GEMV -> GEMM: the model weights stream once per chunk, not once per token).
+   Bit-identical per row to serial probes. Returns 0 or -1. */
+static int lm_fill_cache(LmTask *t) {
+    int base, b, j, w = t->width, vocab = t->vocab;
+    if (!lm_cache || !lm_probe_buf) return -1;
+    for (base = 0; base < w; base += lm_probe_chunk) {
+        int cnt = (w - base < lm_probe_chunk) ? (w - base) : lm_probe_chunk;
+        if (cce_gguf_qwen2_forward_probes(t->m, &t->ids[base], cnt,
+                                          lm_probe_buf, vocab) != CCE_OK)
+            return -1;
+        for (b = 0; b < cnt; b++)
+            for (j = 0; j < w; j++)
+                lm_cache[(size_t)(base + b) * w + j] =
+                    lm_probe_buf[(size_t)b * vocab + t->ids[j]];
+    }
+    return 0;
+}
+
+/* ordered top-k within the window from window-logits wl[0..width); margin-aware
+   abstention on the teacher's own near-tie at the k/k+1 boundary. Writes k
+   one-hot output fields, or returns 1 to abstain. */
+static int lm_topk(LmTask *t, const float *wl, double *out) {
+    int used[LM_MAX_K], picked[LM_MAX_K];
+    float kth = 0.0f, next_best = -1e30f;
+    int r, j, i;
+    for (r = 0; r < t->k; r++) {
+        int best = -1;
         for (j = 0; j < t->width; j++) {
             int taken = 0, u;
-            for (u = 0; u < t->k; u++) if (used[u] == j) taken = 1;
+            for (u = 0; u < r; u++) if (used[u] == j) taken = 1;
             if (taken) continue;
-            if (t->logits[t->ids[j]] > next_best)
-                next_best = t->logits[t->ids[j]];
+            if (best < 0 || wl[j] > wl[best]) best = j;
         }
-        if (t->width > t->k && (double)(kth - next_best) < t->eps)
-            return 1;  /* abstain: the model itself is undecided here */
+        used[r] = best;
+        picked[r] = best;
+        kth = wl[best];
     }
+    for (j = 0; j < t->width; j++) {
+        int taken = 0, u;
+        for (u = 0; u < t->k; u++) if (used[u] == j) taken = 1;
+        if (taken) continue;
+        if (wl[j] > next_best) next_best = wl[j];
+    }
+    if (t->width > t->k && (double)(kth - next_best) < t->eps)
+        return 1;  /* abstain: the model itself is undecided here */
     memset(out, 0, (size_t)t->width * (size_t)t->k * sizeof *out);
     for (i = 0; i < t->k; i++) out[(size_t)i * t->width + picked[i]] = 1.0;
     return 0;
+}
+
+static int lm_teach(const double *in, double *out, void *ctx) {
+    LmTask *t = (LmTask *)ctx;
+    const LmContext *want;
+    const float *wl;
+    int i, hot = 0, j;
+    if (!t || !t->m) return -1;
+    for (i = 1; i < t->width; i++) if (in[i] > in[hot]) hot = i;
+    want = (const LmContext *)t->ctx_sel;
+    if (lm_pin(t, want) != 0) return -1;
+    /* Window logits for the hot token. Corpus-window mode (all tasks share the
+       stable lm_window) serves from the batched cache, filled once per context;
+       synth mode falls back to a serial probe. Either way `wl` is width floats. */
+    if (lm_window_n > 0 && t->ids == lm_window && lm_cache) {
+        if (lm_cache_ctx != want || lm_cache_w != t->width) {
+            if (lm_fill_cache(t) != 0) return -1;
+            lm_cache_ctx = want;
+            lm_cache_w = t->width;
+        }
+        wl = &lm_cache[(size_t)hot * t->width];
+    } else {
+        int tok = t->ids[hot];
+        if (cce_gguf_qwen2_forward_probes(t->m, &tok, 1, t->logits,
+                                          t->vocab) != CCE_OK)
+            return -1;
+        for (j = 0; j < t->width; j++) lm_scratch[j] = t->logits[t->ids[j]];
+        wl = lm_scratch;
+    }
+    return lm_topk(t, wl, out);
 }
 
 static int lm_shape_ok(Port in, Port goal, int vocab, int base) {
@@ -444,6 +496,26 @@ int main(int argc, char **argv) {
                 cce_gguf_qwen2_set_head_window(model, lm_window, lm_window_n);
                 printf("gap_lane_run: window %s (%d ids, first %d)\n",
                        wf, lm_window_n, lm_window[0]);
+                /* batched-teach buffers: probe lm_probe_chunk window tokens per
+                   wide forward and cache the whole window's logits per context */
+                lm_probe_chunk = (int)env_long("CNET_LANE_PROBE_BATCH", 32);
+                if (lm_probe_chunk < 1) lm_probe_chunk = 1;
+                if (lm_probe_chunk > lm_window_n) lm_probe_chunk = lm_window_n;
+                lm_probe_buf = (float *)malloc((size_t)lm_probe_chunk *
+                                               (size_t)vocab * sizeof *lm_probe_buf);
+                lm_cache = (float *)malloc((size_t)lm_window_n *
+                                           (size_t)lm_window_n * sizeof *lm_cache);
+                if (!lm_probe_buf || !lm_cache) {
+                    free(lm_probe_buf); free(lm_cache);
+                    lm_probe_buf = NULL; lm_cache = NULL;  /* serial fallback */
+                    fprintf(stderr, "gap_lane_run: batched-teach cache "
+                            "unavailable (OOM); serial probing\n");
+                } else {
+                    printf("gap_lane_run: batched teach on (chunk=%d, "
+                           "cache=%.1f MiB)\n", lm_probe_chunk,
+                           (double)lm_window_n * lm_window_n *
+                           sizeof *lm_cache / 1048576.0);
+                }
             }
         }
         /* default corpus-drawn teaching context (selected when no named
@@ -546,6 +618,43 @@ int main(int argc, char **argv) {
                argv[3], vocab, token_base, lm_model_fp64, lm_toolchain_fp64,
                lm_default_ctx.fp[0] ? ", default provenance " : "",
                lm_default_ctx.fp);
+        /* Equivalence gate: the batched cache is only trusted if a wide probe
+           is BIT-IDENTICAL to serial probes on the same tokens (the guarantee
+           the cache rests on). Cheap (a handful of tokens); disable on mismatch
+           rather than teach from divergent logits. */
+        if (lm_cache && lm_window_n >= 1) {
+            LmTask tt;
+            const LmContext *c0 = lm_default_ctx.n ? &lm_default_ctx : NULL;
+            int nb = lm_window_n < 4 ? lm_window_n : 4, b, j, ok = 1;
+            if (nb > lm_probe_chunk) nb = lm_probe_chunk;  /* fits lm_probe_buf */
+            tt.m = model; tt.logits = logits; tt.vocab = vocab;
+            tt.ids = lm_window; tt.width = lm_window_n; tt.k = 1; tt.eps = eps;
+            tt.ctx_sel = c0;
+            lm_pinned = (const LmContext *)-1;      /* force a clean pin */
+            if (lm_pin(&tt, c0) != 0 ||
+                cce_gguf_qwen2_forward_probes(model, lm_window, nb,
+                                              lm_probe_buf, vocab) != CCE_OK)
+                ok = 0;
+            for (b = 0; ok && b < nb; b++) {
+                int tok = lm_window[b];
+                if (cce_gguf_qwen2_forward_probes(model, &tok, 1, logits,
+                                                  vocab) != CCE_OK) { ok = 0; break; }
+                for (j = 0; j < lm_window_n; j++)
+                    if (lm_probe_buf[(size_t)b * vocab + lm_window[j]] !=
+                        logits[lm_window[j]]) { ok = 0; break; }
+            }
+            if (!ok) {
+                fprintf(stderr, "gap_lane_run: batched-teach equivalence "
+                        "FAILED — disabling cache, serial probing\n");
+                free(lm_cache); lm_cache = NULL;
+            } else {
+                printf("gap_lane_run: BATCHED_TEACH_EQUIV_OK (%d tokens x "
+                       "%d window ids, bit-exact)\n", nb, lm_window_n);
+            }
+            lm_pinned = (const LmContext *)-1;      /* real teaching re-pins */
+            lm_cache_ctx = (const void *)-1;
+            fflush(stdout);
+        }
     } else {
         printf("gap_lane_run: maintenance mode (no teacher bound)\n");
     }
@@ -592,5 +701,7 @@ int main(int argc, char **argv) {
     gap_lane_close(&lane);
     if (am) cce_anymodel_free(am);
     free(logits);
+    free(lm_probe_buf);
+    free(lm_cache);
     return 0;
 }
