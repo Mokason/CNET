@@ -1090,6 +1090,7 @@ train_student:
     free(inputs); free(targets);   /* contract borrowed them; done with both */
     g->status = GAP_CLOSED;
     snprintf(g->unit, ACQUIRE_NAME_MAX, "%s", name);
+    if (cfg->on_close) cfg->on_close((size_t)(g - l->gaps), cfg->on_close_ctx);
     if (rep) {
         rep->closed++;
         rep->last_verdict = ex.verdict;
@@ -1272,6 +1273,7 @@ static int attempt_rebuild(PrimitiveRegistry *reg, AcquireLedger *l,
     free(inputs); free(targets);
     g->status = GAP_CLOSED;
     snprintf(g->unit, ACQUIRE_NAME_MAX, "%s", name);
+    if (cfg->on_close) cfg->on_close((size_t)(g - l->gaps), cfg->on_close_ctx);
     if (rep) {
         rep->closed++;
         rep->last_verdict = ex.verdict;
@@ -1333,10 +1335,10 @@ int acquire_ledger_save(const AcquireLedger *l, const char *path) {
     if (!l || !path) return -1;
     f = fopen(path, "w");
     if (!f) return -1;
-    fprintf(f, "CNET_GAPS 2\n%lu\n", (unsigned long)l->count);
+    fprintf(f, "CNET_GAPS 3\n%lu\n", (unsigned long)l->count);
     for (i = 0; i < l->count; ++i) {
         const GapRecord *g = &l->gaps[i];
-        fprintf(f, "%d %d %lu %lu %d %lu %lu %s %d %lu %lu %s %s %s %s %s\n",
+        fprintf(f, "%d %d %lu %lu %d %lu %lu %s %d %lu %lu %s %s %s %s %s %d\n",
                 (int)g->kind, (int)g->status,
                 (unsigned long)g->times_hit, (unsigned long)g->attempts,
                 (int)g->input_port.family,
@@ -1350,7 +1352,8 @@ int acquire_ledger_save(const AcquireLedger *l, const char *path) {
                 str_or_dash(g->subject),
                 str_or_dash(g->oracle),
                 str_or_dash(g->defer_reason),
-                str_or_dash(g->unit));
+                str_or_dash(g->unit),
+                g->provenance_done ? 1 : 0);
     }
     fclose(f);
     return 0;
@@ -1368,7 +1371,7 @@ int acquire_ledger_load(AcquireLedger *l, const char *path) {
         char magic[16];
         if (fscanf(f, "%15s %d\n", magic, &ver) != 2 ||
             strcmp(magic, "CNET_GAPS") != 0 ||
-            (ver != 1 && ver != 2)) { fclose(f); return -1; }
+            ver < 1 || ver > 3) { fclose(f); return -1; }
     }
     if (fscanf(f, "%lu\n", &count) != 1) { fclose(f); return -1; }
     acquire_ledger_init(&fresh);
@@ -1379,6 +1382,7 @@ int acquire_ledger_load(AcquireLedger *l, const char *path) {
         char subject[ACQUIRE_NAME_MAX], oracle[ACQUIRE_NAME_MAX];
         char reason[ACQUIRE_REASON_MAX];
         char unit[ACQUIRE_NAME_MAX];   /* v2 column; v1 rows load as "" */
+        int done = 0;                  /* v3 column; older rows load as 0 */
         GapRecord *g;
         snprintf(unit, sizeof unit, "-");
         if (fscanf(f, "%d %d %lu %lu %d %lu %lu %31s %d %lu %lu %31s %63s %63s %63s",
@@ -1387,7 +1391,9 @@ int acquire_ledger_load(AcquireLedger *l, const char *path) {
                    &goal_fam, &goal_w, &goal_c, goal_tag,
                    subject, oracle, reason) != 15 ||
             kind < 0 || kind > 2 || status < 0 || status > 2 ||
-            (ver >= 2 && fscanf(f, " %63s", unit) != 1)) {
+            (ver >= 2 && fscanf(f, " %63s", unit) != 1) ||
+            (ver >= 3 && (fscanf(f, " %d", &done) != 1 ||
+                          done < 0 || done > 1))) {
             acquire_ledger_free(&fresh); fclose(f); return -1;
         }
         g = ledger_push(&fresh);
@@ -1408,6 +1414,7 @@ int acquire_ledger_load(AcquireLedger *l, const char *path) {
         dash_to_str(g->oracle, ACQUIRE_NAME_MAX, oracle);
         dash_to_str(g->defer_reason, ACQUIRE_REASON_MAX, reason);
         dash_to_str(g->unit, ACQUIRE_NAME_MAX, unit);
+        g->provenance_done = done;
     }
     fclose(f);
     /* success: replace gap records; acquired-BTN ownership is NOT touched */

@@ -68,11 +68,18 @@ typedef struct {
     Contract **contracts;
     char (*contract_names)[CNB_NAME_MAX];
     size_t contract_count, contract_cap;
-    /* Set when CLOSED-gap oracle provenance must be reconciled into the base
-       (descriptor + direct unit->descriptor relation). Remains set after a
-       write failure so the next drain retries; already-reconciled records
-       are skipped via their runtime provenance_done marks, so only the
-       open() migration pass walks the whole ledger. */
+    /* Provenance reconcile queue: ledger indices of CLOSED records whose
+       teacher descriptor / unit->descriptor relation are not yet in the
+       base. Fed O(1) per closure by the drain's on_close hook; drained on
+       every gap_lane_drain. provenance_done marks are PERSISTED (ledger
+       v3), so a restart restores reconciliation state instead of
+       re-verifying. */
+    size_t *prov_pending;
+    size_t prov_pending_count, prov_pending_cap;
+    /* Set = rebuild the queue with one full ledger scan before processing
+       (the open() migration/repair pass; also re-set after a reconcile
+       write failure so the next drain retries). Steady state never
+       rescans: closures arrive through the queue. */
     int provenance_dirty;
     int loaded;
 } GapLane;
@@ -85,6 +92,7 @@ typedef struct {
     size_t low_rel_noted;      /* entries noted as LOW_RELIABILITY */
     size_t healed;             /* fixed by the health pass, no gap needed */
     AcquireReport drain;       /* examined / closed / deferred / skipped */
+    size_t provenance_reconciled; /* records newly marked done this tick */
     int checkpointed;          /* 1 if base+ledger were persisted */
 } GapLaneTickReport;
 
@@ -139,11 +147,14 @@ CNET_API void gap_lane_close(GapLane *L);
    file binds nothing rather than teaching under a wrong alphabet. */
 CNET_API int gap_lane_load_ids(const char *path, int *out, int cap);
 
-/* Streamed FNV-1a over a file's BYTES: the artifact identity of a teacher
-   model (what the file IS, not where it lives — renaming or replacing the
-   artifact changes provenance truthfully). Multi-GB GGUFs hash once at
-   daemon startup. Returns 0 with *out set, or -1 on an unreadable file —
-   an unhashable artifact binds no identity. */
+/* Streamed SHA-256 over a file's BYTES, truncated to the identity field's
+   64 bits: the artifact identity of a teacher model (what the file IS, not
+   where it lives — renaming or replacing the artifact changes provenance
+   truthfully). Truncation bounds collisions at ~2^32 (birthday); a
+   full-width identity needs an oracle-ABI revision and remains open work.
+   Multi-GB GGUFs hash once at daemon startup. Returns 0 with *out set
+   (never 0), or -1 on an unreadable OR EMPTY file — an unhashable or
+   empty artifact binds no identity. */
 CNET_API int gap_lane_digest_file(const char *path, unsigned long long *out);
 
 /* Serving-side inbox append (used by soul_route via CNET_GAP_INBOX): one

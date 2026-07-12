@@ -12,6 +12,8 @@
 
 /* ---- small helpers ------------------------------------------------------ */
 
+static void lane_on_gap_close(size_t gap_index, void *ctx);
+
 static int copy_path(char *dst, size_t cap, const char *src) {
     size_t need;
     if (!src) { dst[0] = '\0'; return 0; }
@@ -92,27 +94,130 @@ int gap_lane_load_ids(const char *path, int *out, int cap) {
     return n;
 }
 
+/* ---- SHA-256 (self-contained; FIPS 180-4) for artifact identity -------- */
+
+typedef struct {
+    unsigned int h[8];
+    unsigned char block[64];
+    size_t block_len;
+    unsigned long long total_len;
+} LaneSha256;
+
+static const unsigned int lane_sha_k[64] = {
+    0x428a2f98u, 0x71374491u, 0xb5c0fbcfu, 0xe9b5dba5u,
+    0x3956c25bu, 0x59f111f1u, 0x923f82a4u, 0xab1c5ed5u,
+    0xd807aa98u, 0x12835b01u, 0x243185beu, 0x550c7dc3u,
+    0x72be5d74u, 0x80deb1feu, 0x9bdc06a7u, 0xc19bf174u,
+    0xe49b69c1u, 0xefbe4786u, 0x0fc19dc6u, 0x240ca1ccu,
+    0x2de92c6fu, 0x4a7484aau, 0x5cb0a9dcu, 0x76f988dau,
+    0x983e5152u, 0xa831c66du, 0xb00327c8u, 0xbf597fc7u,
+    0xc6e00bf3u, 0xd5a79147u, 0x06ca6351u, 0x14292967u,
+    0x27b70a85u, 0x2e1b2138u, 0x4d2c6dfcu, 0x53380d13u,
+    0x650a7354u, 0x766a0abbu, 0x81c2c92eu, 0x92722c85u,
+    0xa2bfe8a1u, 0xa81a664bu, 0xc24b8b70u, 0xc76c51a3u,
+    0xd192e819u, 0xd6990624u, 0xf40e3585u, 0x106aa070u,
+    0x19a4c116u, 0x1e376c08u, 0x2748774cu, 0x34b0bcb5u,
+    0x391c0cb3u, 0x4ed8aa4au, 0x5b9cca4fu, 0x682e6ff3u,
+    0x748f82eeu, 0x78a5636fu, 0x84c87814u, 0x8cc70208u,
+    0x90befffau, 0xa4506cebu, 0xbef9a3f7u, 0xc67178f2u
+};
+
+static unsigned int lane_rotr(unsigned int x, unsigned n) {
+    return (x >> n) | (x << (32u - n));
+}
+
+static void lane_sha_init(LaneSha256 *s) {
+    s->h[0] = 0x6a09e667u; s->h[1] = 0xbb67ae85u;
+    s->h[2] = 0x3c6ef372u; s->h[3] = 0xa54ff53au;
+    s->h[4] = 0x510e527fu; s->h[5] = 0x9b05688cu;
+    s->h[6] = 0x1f83d9abu; s->h[7] = 0x5be0cd19u;
+    s->block_len = 0;
+    s->total_len = 0;
+}
+
+static void lane_sha_compress(LaneSha256 *s, const unsigned char *p) {
+    unsigned int w[64], a, b, c, d, e, f, g, h;
+    int i;
+    for (i = 0; i < 16; i++)
+        w[i] = ((unsigned int)p[i * 4] << 24) |
+               ((unsigned int)p[i * 4 + 1] << 16) |
+               ((unsigned int)p[i * 4 + 2] << 8) |
+               (unsigned int)p[i * 4 + 3];
+    for (i = 16; i < 64; i++) {
+        unsigned int s0 = lane_rotr(w[i - 15], 7) ^ lane_rotr(w[i - 15], 18)
+                          ^ (w[i - 15] >> 3);
+        unsigned int s1 = lane_rotr(w[i - 2], 17) ^ lane_rotr(w[i - 2], 19)
+                          ^ (w[i - 2] >> 10);
+        w[i] = w[i - 16] + s0 + w[i - 7] + s1;
+    }
+    a = s->h[0]; b = s->h[1]; c = s->h[2]; d = s->h[3];
+    e = s->h[4]; f = s->h[5]; g = s->h[6]; h = s->h[7];
+    for (i = 0; i < 64; i++) {
+        unsigned int S1 = lane_rotr(e, 6) ^ lane_rotr(e, 11) ^ lane_rotr(e, 25);
+        unsigned int ch = (e & f) ^ (~e & g);
+        unsigned int t1 = h + S1 + ch + lane_sha_k[i] + w[i];
+        unsigned int S0 = lane_rotr(a, 2) ^ lane_rotr(a, 13) ^ lane_rotr(a, 22);
+        unsigned int maj = (a & b) ^ (a & c) ^ (b & c);
+        unsigned int t2 = S0 + maj;
+        h = g; g = f; f = e; e = d + t1;
+        d = c; c = b; b = a; a = t1 + t2;
+    }
+    s->h[0] += a; s->h[1] += b; s->h[2] += c; s->h[3] += d;
+    s->h[4] += e; s->h[5] += f; s->h[6] += g; s->h[7] += h;
+}
+
+static void lane_sha_update(LaneSha256 *s, const unsigned char *p, size_t n) {
+    s->total_len += n;
+    while (n) {
+        size_t take = 64 - s->block_len;
+        if (take > n) take = n;
+        memcpy(s->block + s->block_len, p, take);
+        s->block_len += take;
+        p += take;
+        n -= take;
+        if (s->block_len == 64) { lane_sha_compress(s, s->block); s->block_len = 0; }
+    }
+}
+
+static void lane_sha_final(LaneSha256 *s, unsigned char out[32]) {
+    unsigned long long bits = s->total_len * 8ULL;
+    unsigned char pad = 0x80, zero = 0, lenb[8];
+    int i;
+    lane_sha_update(s, &pad, 1);
+    while (s->block_len != 56) lane_sha_update(s, &zero, 1);
+    for (i = 0; i < 8; i++) lenb[i] = (unsigned char)(bits >> (56 - 8 * i));
+    lane_sha_update(s, lenb, 8);
+    for (i = 0; i < 8; i++) {
+        out[i * 4]     = (unsigned char)(s->h[i] >> 24);
+        out[i * 4 + 1] = (unsigned char)(s->h[i] >> 16);
+        out[i * 4 + 2] = (unsigned char)(s->h[i] >> 8);
+        out[i * 4 + 3] = (unsigned char)(s->h[i]);
+    }
+}
+
 int gap_lane_digest_file(const char *path, unsigned long long *out) {
     FILE *f;
     unsigned char *buf;
+    unsigned char hash[32];
     size_t n;
-    unsigned long long h = 1469598103934665603ULL;   /* FNV-1a basis */
+    unsigned long long v = 0;
+    int i;
+    LaneSha256 s;
     if (!path || !path[0] || !out) return -1;
     f = fopen(path, "rb");
     if (!f) return -1;
     buf = (unsigned char *)malloc(1u << 20);
     if (!buf) { fclose(f); return -1; }
-    while ((n = fread(buf, 1, 1u << 20, f)) > 0) {
-        size_t i;
-        for (i = 0; i < n; i++) {
-            h ^= buf[i];
-            h *= 1099511628211ULL;
-        }
-    }
+    lane_sha_init(&s);
+    while ((n = fread(buf, 1, 1u << 20, f)) > 0)
+        lane_sha_update(&s, buf, n);
     free(buf);
     if (ferror(f)) { fclose(f); return -1; }
     fclose(f);
-    *out = h;
+    if (s.total_len == 0) return -1;   /* empty artifact: no identity */
+    lane_sha_final(&s, hash);
+    for (i = 0; i < 8; i++) v = (v << 8) | hash[i];
+    *out = v ? v : 1;   /* 0 is reserved for "no identity" */
     return 0;
 }
 
@@ -214,9 +319,12 @@ int gap_lane_open(GapLane *L, const char *base_path,
     acquire_config_defaults(&L->acq);
     L->acq.base = &L->base;                   /* seal into the base */
     L->acq.unit_dir = NULL;
+    L->acq.on_close = lane_on_gap_close;      /* O(1) reconcile feed */
+    L->acq.on_close_ctx = L;
     L->health_pass_enabled = 1;
-    /* Reconcile any CLOSED records loaded from an older/incomplete checkpoint
-       once an oracle registry is available. */
+    /* One migration/repair scan on the first drain: reconcile CLOSED
+       records whose persisted done-mark is absent (v1/v2 ledgers) or
+       whose work predates this checkpoint. Steady state is queue-fed. */
     L->provenance_dirty = 1;
     L->loaded = 1;
     return 0;
@@ -273,58 +381,177 @@ int gap_lane_scan(GapLane *L, GapLaneTickReport *r) {
 /* Unit provenance: a CLOSED gap's teaching oracle becomes a persisted
    descriptor in the base — name, kind, ports, and the oracle's identity
    (retrieval_snapshot_digest = the teaching context, config_digest = the
-   window) ride with the sealed units and project through soul_oracle_* /
-   cnet_list_oracles — and the minted unit points at its descriptor
-   DIRECTLY (cnb_set_unit_provenance; projected by soul_unit_provenance).
-   Idempotent by descriptor name; a zero identity is not provenance and
-   records nothing.
+   window, toolchain_digest = the teaching stack; a teacher identity
+   WITHOUT toolchain attestation is not provenance) ride with the sealed
+   units and project through soul_oracle_* / cnet_list_oracles — and the
+   minted unit points at its descriptor DIRECTLY (cnb_set_unit_provenance;
+   projected by soul_unit_provenance).
 
-   Each record reconciles once: provenance_done (runtime-only) marks it, so
-   a dirty pass touches only fresh closures — the full-ledger walk happens
-   once per process (the open() migration pass over older checkpoints). A
-   record whose identity is unavailable right now (no live oracle entry)
-   stays not-done: the same teacher name re-binding later can still supply
-   it. Any write failure leaves the record not-done and propagates. */
-static int record_unit_provenance(GapLane *L) {
-    size_t g, o, d;
-    for (g = 0; g < L->ledger.count; ++g) {
-        GapRecord *gap = &L->ledger.gaps[g];
-        const OracleEntry *e = NULL;
-        int exists = 0;
-        if (gap->status != GAP_CLOSED || !gap->oracle[0] ||
-            gap->provenance_done) continue;
-        for (d = 0; d < L->base.oracle_count; ++d)
-            if (strcmp(L->base.oracles[d].name, gap->oracle) == 0)
-                { exists = 1; break; }
-        if (!exists) {
-            for (o = 0; o < L->oracles.count; ++o)
-                if (strcmp(L->oracles.entries[o].name, gap->oracle) == 0)
-                    { e = &L->oracles.entries[o]; break; }
-            if (!e || cnet_oracle_identity_digest(&e->identity) == 0)
-                continue;   /* not reconcilable this pass; stays retryable */
-            if (cnb_add_oracle_desc_v2(&L->base, e->name, "gap_lane_teacher",
-                                       e->input_port, e->output_port,
-                                       &e->identity) != 0)
-                return -1;
+   Descriptor resolution is IDENTITY-AWARE: a name collision with a
+   DIFFERENT identity (e.g. the model artifact swapped under a recurring
+   teacher name) mints a versioned descriptor "<name>_i2", "_i3", … — the
+   stored identity is never silently reused for a different teacher.
+   Exhausting 32 versions under one name fails loudly: that much identity
+   churn is an operator signal. Without a live teacher (resume), a record
+   links only when the name family is unambiguous — lineage is never
+   guessed. A unit's recorded lineage is write-once: an already-chained
+   unit is never re-pointed. */
+
+static const CnbOracleDesc *lane_find_desc(const CnetBase *b, const char *n) {
+    size_t d;
+    for (d = 0; d < b->oracle_count; ++d)
+        if (strcmp(b->oracles[d].name, n) == 0) return &b->oracles[d];
+    return NULL;
+}
+
+/* 1 if `name` is `family` or `family` + "_i<digits>" */
+static int lane_desc_in_family(const char *name, const char *family) {
+    size_t n = strlen(family);
+    const char *p;
+    if (strncmp(name, family, n) != 0) return 0;
+    if (name[n] == '\0') return 1;
+    if (name[n] != '_' || name[n + 1] != 'i' || !name[n + 2]) return 0;
+    for (p = name + n + 2; *p; ++p)
+        if (*p < '0' || *p > '9') return 0;
+    return 1;
+}
+
+/* Returns 0 = reconciled (done), 1 = not reconcilable yet (stays queued),
+   -1 = hard failure (propagates; record stays queued and retryable). */
+static int reconcile_one(GapLane *L, GapRecord *gap) {
+    const OracleEntry *e = NULL;
+    const CnbOracleDesc *desc;
+    char used[CNB_NAME_MAX];
+    size_t o;
+    unsigned v;
+
+    /* write-once lineage: already chained (and the descriptor is really
+       in the base) means fully reconciled */
+    if (gap->unit[0]) {
+        const char *prov = cnb_unit_provenance(&L->base, gap->unit);
+        if (prov && prov[0] && lane_find_desc(&L->base, prov)) {
+            gap->provenance_done = 1;
+            return 0;
         }
-        if (gap->unit[0] && cnb_has_unit(&L->base, gap->unit) &&
-            cnb_set_unit_provenance(&L->base, gap->unit, gap->oracle) != 0)
-            return -1;
-        gap->provenance_done = 1;
     }
+
+    for (o = 0; o < L->oracles.count; ++o)
+        if (strcmp(L->oracles.entries[o].name, gap->oracle) == 0)
+            { e = &L->oracles.entries[o]; break; }
+
+    if (e) {
+        uint64_t want = cnet_oracle_identity_digest(&e->identity);
+        if (want == 0 || e->identity.toolchain_digest == 0)
+            return 1;   /* zero/unattested identity is not provenance */
+        used[0] = '\0';
+        for (v = 1; v <= 32; ++v) {
+            char cand[CNB_NAME_MAX];
+            if (v == 1)
+                snprintf(cand, sizeof cand, "%s", gap->oracle);
+            else
+                snprintf(cand, sizeof cand, "%.58s_i%u", gap->oracle, v);
+            desc = lane_find_desc(&L->base, cand);
+            if (!desc) {
+                if (cnb_add_oracle_desc_v2(&L->base, cand, "gap_lane_teacher",
+                                           e->input_port, e->output_port,
+                                           &e->identity) != 0)
+                    return -1;
+                snprintf(used, sizeof used, "%s", cand);
+                break;
+            }
+            if (desc->behavior_digest == want) {
+                snprintf(used, sizeof used, "%s", cand);
+                break;
+            }
+        }
+        if (!used[0]) return -1;   /* 32 identities under one name */
+    } else {
+        /* no live teacher: link only when the family is unambiguous */
+        size_t d, matches = 0;
+        used[0] = '\0';
+        for (d = 0; d < L->base.oracle_count; ++d)
+            if (lane_desc_in_family(L->base.oracles[d].name, gap->oracle)) {
+                if (++matches == 1)
+                    snprintf(used, sizeof used, "%s",
+                             L->base.oracles[d].name);
+            }
+        if (matches == 0) return 1;   /* nothing knowable yet */
+        if (matches > 1) {
+            gap->provenance_done = 1;  /* ambiguous: done WITHOUT a link —
+                                          lineage is never guessed */
+            return 0;
+        }
+    }
+
+    if (gap->unit[0] && cnb_has_unit(&L->base, gap->unit) &&
+        cnb_set_unit_provenance(&L->base, gap->unit, used) != 0)
+        return -1;
+    gap->provenance_done = 1;
     return 0;
+}
+
+static int lane_enqueue_provenance(GapLane *L, size_t idx) {
+    if (L->prov_pending_count == L->prov_pending_cap) {
+        size_t cap = L->prov_pending_cap ? L->prov_pending_cap * 2 : 16;
+        size_t *np = (size_t *)realloc(L->prov_pending, cap * sizeof *np);
+        if (!np) return -1;
+        L->prov_pending = np;
+        L->prov_pending_cap = cap;
+    }
+    L->prov_pending[L->prov_pending_count++] = idx;
+    return 0;
+}
+
+/* acquire's close hook: per-closure O(1) — no ledger rescans */
+static void lane_on_gap_close(size_t gap_index, void *ctx) {
+    GapLane *L = (GapLane *)ctx;
+    if (!L) return;
+    if (lane_enqueue_provenance(L, gap_index) != 0)
+        L->provenance_dirty = 1;   /* OOM: fall back to a rebuild scan */
+}
+
+static int record_unit_provenance(GapLane *L, size_t *reconciled) {
+    size_t i, kept = 0;
+    int rc = 0;
+    if (L->provenance_dirty) {
+        /* migration/repair: ONE full scan rebuilds the queue */
+        L->prov_pending_count = 0;
+        for (i = 0; i < L->ledger.count; ++i) {
+            const GapRecord *gap = &L->ledger.gaps[i];
+            if (gap->status != GAP_CLOSED || !gap->oracle[0] ||
+                gap->provenance_done) continue;
+            if (lane_enqueue_provenance(L, i) != 0) return -1;
+        }
+        L->provenance_dirty = 0;
+    }
+    for (i = 0; i < L->prov_pending_count; ++i) {
+        size_t idx = L->prov_pending[i];
+        int one;
+        if (rc != 0) { L->prov_pending[kept++] = idx; continue; }
+        if (idx >= L->ledger.count) continue;   /* stale index: drop */
+        one = reconcile_one(L, &L->ledger.gaps[idx]);
+        if (one == 0) { if (reconciled) (*reconciled)++; continue; }
+        L->prov_pending[kept++] = idx;          /* 1 or -1: stays queued */
+        if (one < 0) rc = -1;
+    }
+    L->prov_pending_count = kept;
+    return rc;
 }
 
 int gap_lane_drain(GapLane *L, GapLaneTickReport *r) {
     AcquireReport rep;
+    size_t reconciled = 0;
     if (!L || !L->loaded) return -1;
     memset(&rep, 0, sizeof rep);
     acquire_drain(&L->reg, &L->ledger, &L->oracles, &L->acq, &rep);
     if (r) r->drain = rep;
-    if (rep.closed > 0) L->provenance_dirty = 1;
-    if (L->provenance_dirty) {
-        if (record_unit_provenance(L) != 0) return -2;
-        L->provenance_dirty = 0;
+    if (L->provenance_dirty || L->prov_pending_count) {
+        int rc = record_unit_provenance(L, &reconciled);
+        if (r) r->provenance_reconciled = reconciled;
+        if (rc != 0) {
+            L->provenance_dirty = 1;   /* failed work retries next drain */
+            return -2;
+        }
     }
     return 0;
 }
@@ -356,10 +583,11 @@ int gap_lane_tick(GapLane *L, GapLaneTickReport *r, int force_checkpoint) {
         memset(&d, 0, sizeof d);
         if (gap_lane_drain(L, &d) != 0) return -3;
         r->drain = d.drain;
+        r->provenance_reconciled = d.provenance_reconciled;
     }
     if (force_checkpoint || r->inbox_ingested || r->health_noted ||
         r->low_rel_noted || r->healed || r->drain.closed ||
-        r->drain.deferred) {
+        r->drain.deferred || r->provenance_reconciled) {
         if (gap_lane_checkpoint(L) != 0) return -4;
         r->checkpointed = 1;
     }
@@ -375,6 +603,7 @@ void gap_lane_close(GapLane *L) {
     }
     free(L->contracts);
     free(L->contract_names);
+    free(L->prov_pending);
     registry_free(&L->reg);
     acquire_ledger_free(&L->ledger);
     cnb_free(&L->base);

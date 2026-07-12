@@ -1285,7 +1285,10 @@ gap_lane: $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(S
 
 # The 24/7 daemon (REAL local-model teacher via the CCE GGUF runner).
 .PHONY: gap_lane_run_build
-gap_lane_run_build: CFLAGS := $(CFLAGS) $(OMPFLAGS)
+# toolchain attestation: the daemon's teacher identity folds in the build
+# flags and source revision (see lm_toolchain_identity in gap_lane_run.c)
+gap_lane_run_build: CNET_SRC_REV := $(shell git rev-parse --short=16 HEAD 2>/dev/null || echo unknown)
+gap_lane_run_build: CFLAGS := $(CFLAGS) $(OMPFLAGS) -DCNET_TOOLCHAIN_CFLAGS="\"$(CFLAGS) $(OMPFLAGS)\"" -DCNET_SOURCE_REV="\"$(CNET_SRC_REV)\""
 gap_lane_run_build: $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(GAP_LANE_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) tests/gap_lane_run.c
 	@mkdir -p $(BIN_DIR)
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/gap_lane_run \

@@ -152,9 +152,11 @@ typedef struct {
     char defer_reason[ACQUIRE_REASON_MAX]; /* atom; "" unless DEFERRED */
     size_t times_hit;
     size_t attempts;
-    /* Runtime-only reconciliation cache (never persisted; a fresh load
-       rescans): the gap lane marks a CLOSED record once its teacher
-       descriptor and unit->descriptor relation are in the base. */
+    /* Reconciliation state, PERSISTED (ledger v3): the gap lane marks a
+       CLOSED record once its teacher descriptor and unit->descriptor
+       relation are in the base. The ledger is always saved AFTER the base
+       in the same checkpoint, so a persisted 1 never claims work the base
+       does not hold; v1/v2 files load as 0 and re-reconcile idempotently. */
     int provenance_done;
     /* Exemplars captured by the fallback path (in-memory only, NOT persisted;
        canonical values). cap_inputs: cap_count x input total; cap_targets:
@@ -213,6 +215,12 @@ typedef struct {
     size_t growth_window;      /* 200 */
     double target_loss;        /* 1e-4 */
     double min_improvement;    /* 1e-6 */
+    /* Optional close hook (NULL = off): called once per gap the moment it
+       reaches CLOSED, with the record's ledger index. The gap lane feeds
+       its provenance-reconcile queue here so per-closure work stays O(1)
+       instead of rescanning the ledger. */
+    void (*on_close)(size_t gap_index, void *ctx);
+    void *on_close_ctx;
 } AcquireConfig;
 
 void acquire_config_defaults(AcquireConfig *cfg);
@@ -311,11 +319,12 @@ int acquire_now(PrimitiveRegistry *reg, AcquireLedger *l,
                 OracleRegistry *oracles, const AcquireConfig *cfg,
                 Port input_port, Port goal_port, AcquireReport *report);
 
-/* Sidecar persistence ("CNET_GAPS 2"; version 1 files load with unit "").
-   Statuses + counters + signatures + minted unit names only; captured
-   exemplar buffers and provenance_done are runtime-only. Save returns 0/-1.
-   Load REPLACES the ledger's gap records on success (acquired-BTN ownership
-   is untouched); missing/malformed file -> -1 with *l untouched. */
+/* Sidecar persistence ("CNET_GAPS 3"; v1 files load with unit "" and
+   provenance_done 0, v2 with provenance_done 0). Statuses + counters +
+   signatures + minted unit names + reconciliation marks; captured exemplar
+   buffers are runtime-only. Save returns 0/-1. Load REPLACES the ledger's
+   gap records on success (acquired-BTN ownership is untouched);
+   missing/malformed file -> -1 with *l untouched. */
 int acquire_ledger_save(const AcquireLedger *l, const char *path);
 int acquire_ledger_load(AcquireLedger *l, const char *path);
 

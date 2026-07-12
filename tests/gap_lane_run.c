@@ -125,12 +125,20 @@ static unsigned long long lm_fnv_ids(const int *ids, int n,
     return h;
 }
 
-/* Toolchain identity: what can be attested at compile time about the stack
-   that computes the teaching forwards (cce is compiled into this binary by
-   the same invocation). Deterministic for a given compiler + ABI — NOT a
-   build transcript: build FLAGS, source revision, and linked-runtime
-   identity are NOT captured (O0 and O3+LTO digest identically). Hermetic
-   attestation remains open work. */
+/* Toolchain identity: what the build can attest about the stack that
+   computes the teaching forwards (cce is compiled into this binary by the
+   same invocation): compiler version, oracle ABI, pointer width, PLUS the
+   build FLAGS and SOURCE REVISION injected by the Makefile
+   (-DCNET_TOOLCHAIN_CFLAGS / -DCNET_SOURCE_REV; "unattested" when built
+   outside it — visibly weaker identity, not silently equal). Still not a
+   full hermetic transcript: linked system libraries and any GPU kernels
+   are not captured. */
+#ifndef CNET_TOOLCHAIN_CFLAGS
+#define CNET_TOOLCHAIN_CFLAGS "unattested"
+#endif
+#ifndef CNET_SOURCE_REV
+#define CNET_SOURCE_REV "unattested"
+#endif
 static unsigned long long lm_toolchain_identity(void) {
     unsigned long long h = 1469598103934665603ULL;
     const char *v =
@@ -141,10 +149,16 @@ static unsigned long long lm_toolchain_identity(void) {
 #else
         "unknown_compiler";
 #endif
+    const char *flags = CNET_TOOLCHAIN_CFLAGS;
+    const char *rev = CNET_SOURCE_REV;
     while (*v) { h ^= (unsigned char)*v++; h *= 1099511628211ULL; }
 #if defined(_MSC_VER)
     h ^= (unsigned long long)_MSC_FULL_VER; h *= 1099511628211ULL;
 #endif
+    h ^= 0xffULL; h *= 1099511628211ULL;   /* field separator */
+    while (*flags) { h ^= (unsigned char)*flags++; h *= 1099511628211ULL; }
+    h ^= 0xffULL; h *= 1099511628211ULL;
+    while (*rev) { h ^= (unsigned char)*rev++; h *= 1099511628211ULL; }
     h ^= (unsigned long long)CNET_ORACLE_ABI_VERSION; h *= 1099511628211ULL;
     h ^= (unsigned long long)sizeof(void *); h *= 1099511628211ULL;
     return h;

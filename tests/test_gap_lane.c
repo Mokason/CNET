@@ -258,9 +258,9 @@ int main(void) {
                  "rot3_ref") == 0,
           "the direct unit -> descriptor relation survives the resume");
     check(strcmp(lane.ledger.gaps[0].unit, "acq_gl_rot3") == 0 &&
-          lane.ledger.gaps[0].provenance_done == 0,
-          "the resumed ledger carries the minted unit; the reconcile "
-          "cache is runtime-only (the open pass re-verifies)");
+          lane.ledger.gaps[0].provenance_done == 1,
+          "the resumed ledger carries the minted unit AND the persisted "
+          "reconcile mark (ledger v3): restart re-verifies nothing");
     check(route_plan(&lane.reg, in_port, goal_port, &plan) == 0,
           "resumed lane replans without retraining");
     {
@@ -316,9 +316,78 @@ int main(void) {
               "different bytes digest differently (the artifact, not the name)");
         check(gap_lane_digest_file("tmp_gap_lane.art_missing", &da) == -1,
               "an unreadable artifact binds no identity");
+        f = fopen("tmp_gap_lane.art_e", "wb");
+        if (f) fclose(f);
+        check(gap_lane_digest_file("tmp_gap_lane.art_e", &da) == -1,
+              "an EMPTY artifact binds no identity (not the hash basis)");
         remove("tmp_gap_lane.art_a");
         remove("tmp_gap_lane.art_b");
         remove("tmp_gap_lane.art_c");
+        remove("tmp_gap_lane.art_e");
+    }
+
+    /* -- identity-aware descriptor rebinding ------------------------------
+       (the audited defect: a swapped model under a recurring teacher name
+       must never inherit the OLD stored identity) */
+    {
+        OracleEntry *oe;
+        int idx, idx2;
+        Port goal2 = sym_port("gl_rot3v2");
+        Port goal3 = sym_port("gl_rot3v3");
+        check(acquire_oracle_register(&lane.oracles, "rot3_ref", in_port,
+                                      goal_port, rot3_oracle, NULL) == 0,
+              "teacher re-binds after the resume");
+        oe = &lane.oracles.entries[0];
+        memset(&oe->identity, 0, sizeof oe->identity);
+        oe->identity.abi_version = CNET_ORACLE_ABI_VERSION;
+        oe->identity.struct_size = (uint32_t)sizeof oe->identity;
+        oe->identity.artifact_digest = 0x4d4f44454c32ULL;    /* "MODEL2" */
+        oe->identity.config_digest = 0x57494e444f57ULL;
+        oe->identity.contract_digest = 0x434f4e5452ULL;
+        oe->identity.retrieval_snapshot_digest = 0xc0417e37ULL;
+        oe->identity.toolchain_digest = 0x544f4f4cULL;
+        oe->behavior_digest = cnet_oracle_identity_digest(&oe->identity);
+
+        idx = acquire_note_no_plan(&lane.ledger, in_port, goal2);
+        check(idx >= 0, "gap noted for the swapped-model teacher");
+        lane.ledger.gaps[idx].status = GAP_CLOSED;
+        snprintf(lane.ledger.gaps[idx].oracle,
+                 sizeof lane.ledger.gaps[idx].oracle, "rot3_ref");
+        lane.provenance_dirty = 1;
+        check(gap_lane_drain(&lane, &tick) == 0 &&
+              lane.base.oracle_count == 2 &&
+              strcmp(lane.base.oracles[1].name, "rot3_ref_i2") == 0 &&
+              lane.base.oracles[1].identity.artifact_digest ==
+                  0x4d4f44454c32ULL &&
+              lane.base.oracles[0].identity.artifact_digest ==
+                  0x4d4f44454cULL &&
+              lane.ledger.gaps[idx].provenance_done == 1,
+              "identity change under a recurring name mints a versioned "
+              "descriptor; the old identity is never silently reused");
+
+        /* an unattested (zero-toolchain) identity is not provenance */
+        oe->identity.toolchain_digest = 0;
+        oe->behavior_digest = cnet_oracle_identity_digest(&oe->identity);
+        idx2 = acquire_note_no_plan(&lane.ledger, in_port, goal3);
+        check(idx2 >= 0, "gap noted for the unattested teacher");
+        lane.ledger.gaps[idx2].status = GAP_CLOSED;
+        snprintf(lane.ledger.gaps[idx2].oracle,
+                 sizeof lane.ledger.gaps[idx2].oracle, "rot3_ref");
+        lane.provenance_dirty = 1;
+        check(gap_lane_drain(&lane, &tick) == 0 &&
+              lane.base.oracle_count == 2 &&
+              lane.ledger.gaps[idx2].provenance_done == 0,
+              "a zero-toolchain teacher identity records nothing and the "
+              "record stays pending, not failed");
+
+        /* no live teacher + ambiguous name family: never guess a link */
+        lane.oracles.count = 0;
+        lane.provenance_dirty = 1;
+        check(gap_lane_drain(&lane, &tick) == 0 &&
+              lane.ledger.gaps[idx2].provenance_done == 1 &&
+              lane.base.oracle_count == 2,
+              "ambiguous descriptor family without a live teacher "
+              "reconciles WITHOUT a link — lineage is never guessed");
     }
 
     gap_lane_close(&lane);

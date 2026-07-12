@@ -928,8 +928,8 @@ certifying it, sealing it, and registering it so the router simply finds the
 plan. Everything composes the machinery above; nothing new is trusted.
 
 **Gap-triggered acquisition (`make acquire`).** Three trigger kinds land in a
-persistent ledger (`CNET_GAPS 2`, sidecar rules; v1 files load with an empty
-unit column): NO_PLAN, LOW_RELIABILITY,
+persistent ledger (`CNET_GAPS 3`, sidecar rules; v1/v2 files load with an
+empty unit column / a zero reconcile mark): NO_PLAN, LOW_RELIABILITY,
 HEALTH. While a gap is open, an in-process oracle fallback keeps tasks answered
 and harvests each answer as a free training exemplar. The drain then mines the
 rest (exhaustive within budget, else deterministic stride sampling with a
@@ -1239,7 +1239,7 @@ current state.
 | `make verify-long` | fast verification plus longer benches/studies: `cce_train_bench`, Supra head QAT, corpus QAT, and `wordlm_bitnet` |
 | `make compat` (alias `make legacy`) | the COMPAT tier: the restored full historical aggregate (`test_all`, ALL TESTS PASSED) + demo fixture regeneration; quarantined out of `make test`, asserted in `verify-long`; prints `CNET_COMPAT_PASS` |
 | `make leakcheck` | allocation-balance gate over the base+acquire paths (`-Wl,--wrap`, CRT-baseline-aware); in `make test` |
-| `make acquire` | gap-triggered acquisition loop gate: ledger (v2 with minted unit names, v1-readable), oracle fallback, drain, rebuild, DEFER totality (120 checks) |
+| `make acquire` | gap-triggered acquisition loop gate: ledger (v3 with minted unit names + persisted reconcile marks, v1/v2-readable), oracle fallback, drain, close hook, rebuild, DEFER totality (122 checks) |
 | `make base` | unified CNB version 3 base gate under stable CNB1 magic (v1/v2-readable): sealed container, tag governance, certify-on-load bridge, Oracle identity persistence, the direct unit→descriptor provenance relation, and migration (90 checks) |
 | `make flagship` | flagship harness gate: task shapes, sampled tier, conformal probe, pilot scheduling, resume, stop file (72 checks) |
 | `make flagship_run_build` | build the REAL extraction CLI (CCE model as oracle); `CNET_GPU=1` enables the OpenCL forward (equivalence-gated) |
@@ -1351,10 +1351,12 @@ Run from project root or inside `build/`. Sanitization protects filenames; thoug
   descriptors; whole-file seal verified before parsing; `save → load → save`
   byte-identical. Gitignored: bases are large mined artifacts that live on
   disk beside the repo, not in version control.
-- **Gap ledgers** (`CNET_GAPS 2`; v1 readable): the acquisition loop's
+- **Gap ledgers** (`CNET_GAPS 3`; v1/v2 readable): the acquisition loop's
   sidecar — per-gap trigger kind, task signature, status
-  (OPEN/DEFERRED/CLOSED), counters, defer-reason atoms, and the minted unit
-  name once CLOSED.
+  (OPEN/DEFERRED/CLOSED), counters, defer-reason atoms, the minted unit
+  name once CLOSED, and the persisted provenance-reconcile mark (written
+  after the base in the same checkpoint, so it never claims work the base
+  does not hold).
 - **Property files** (`CNET_PROPERTY 1`): an equational law — typed sources plus
   two chains of primitive names, checked by strict replay over the enumerated domain.
 - **Expansion sidecars** (`<name>.expansion`, 3C): for chunks that carry a recipe —
