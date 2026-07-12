@@ -1,267 +1,267 @@
-CNET_GAPS 2
+CNET_GAPS 4
 265
-0 2 1 1 1 256 1 w_cur 1 256 3 tk176938q176938 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk216001q216001 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk117514q117514 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk60730q60730 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk159876q159876 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk99544q99544 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk53877q53877 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk52141q52141 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk226926q226926 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk64506q64506 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk6164q6164 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk221965q221965 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk178945q178945 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk135086q135086 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk224777q224777 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk238110q238110 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk17525q17525 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk190303q190303 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk17996q17996 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk165468q165468 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk13248q13248 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk57885q57885 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk212485q212485 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk96949q96949 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk116224q116224 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk66183q66183 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk208617q208617 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk65764q65764 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk86137q86137 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk17514q17514 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk9422q9422 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk36165q36165 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk237107q237107 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk164610q164610 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk188742q188742 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk11254q11254 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk254621q254621 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk246995q246995 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk96395q96395 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk54801q54801 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk231042q231042 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk210053q210053 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk109091q109091 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk151747q151747 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk111205q111205 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk237188q237188 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk249173q249173 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk75595q75595 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk940q940 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk92176q92176 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk167808q167808 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk44355q44355 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk217286q217286 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk231122q231122 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk203194q203194 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk156987q156987 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk64960q64960 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk14185q14185 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk251757q251757 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk60877q60877 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk158400q158400 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk140474q140474 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk231468q231468 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk106199q106199 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk102717q102717 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk197450q197450 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk40285q40285 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk121781q121781 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk197718q197718 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk248999q248999 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk70804q70804 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk89510q89510 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk16759q16759 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk85917q85917 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk164153q164153 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk43962q43962 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk83500q83500 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk3884q3884 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk155723q155723 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk91553q91553 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk156083q156083 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk26804q26804 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk166189q166189 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk218233q218233 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk125940q125940 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk255323q255323 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk170695q170695 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk233371q233371 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk111257q111257 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk184052q184052 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk3747q3747 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk66504q66504 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk234433q234433 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk253901q253901 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk50866q50866 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk252760q252760 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk234610q234610 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk216298q216298 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk182587q182587 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk175872q175872 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk207285q207285 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk57865q57865 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk77973q77973 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk90204q90204 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk223329q223329 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk209852q209852 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk180117q180117 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk125316q125316 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk176079q176079 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk166544q166544 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk134776q134776 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk254684q254684 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk223388q223388 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk117815q117815 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk104343q104343 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk229255q229255 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk225515q225515 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk226852q226852 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk45886q45886 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk98893q98893 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk237777q237777 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk2546q2546 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk219849q219849 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk198372q198372 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk187197q187197 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk141182q141182 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk18412q18412 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk37858q37858 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk100963q100963 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk44986q44986 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk253928q253928 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk38242q38242 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk42978q42978 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk111704q111704 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk90974q90974 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk139032q139032 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk163973q163973 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk58723q58723 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk113558q113558 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk163269q163269 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk117907q117907 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk247026q247026 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk231114q231114 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk153530q153530 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk254703q254703 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk251591q251591 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk61361q61361 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk55326q55326 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk98023q98023 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk27204q27204 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk104452q104452 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk43093q43093 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk179035q179035 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk181336q181336 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk247302q247302 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk141572q141572 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk23066q23066 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk102947q102947 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk66272q66272 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk16804q16804 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk248872q248872 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk233160q233160 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk36293q36293 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk189911q189911 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk217868q217868 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk128978q128978 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk135216q135216 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk41436q41436 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk220278q220278 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk60990q60990 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk226134q226134 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk100106q100106 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk71099q71099 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk40698q40698 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk130116q130116 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk118019q118019 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk62615q62615 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk47577q47577 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk48278q48278 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk237323q237323 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk131023q131023 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk176198q176198 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk226060q226060 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk65043q65043 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk168530q168530 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk108613q108613 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk57016q57016 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk204781q204781 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk175713q175713 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk251805q251805 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk253247q253247 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk157558q157558 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk14881q14881 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk192645q192645 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk246274q246274 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk48743q48743 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk32832q32832 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk58123q58123 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk219435q219435 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk40889q40889 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk103877q103877 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk39355q39355 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk98618q98618 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk147459q147459 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk147101q147101 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk61115q61115 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk123142q123142 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk218430q218430 - cce_cond_next - -
-0 1 1 1 1 256 1 w_cur 1 256 3 tk50467q50467 - cce_cond_next certify_failed -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk237302q237302 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk153547q153547 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk228214q228214 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk248832q248832 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk214232q214232 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk124561q124561 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk212788q212788 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk217562q217562 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk78130q78130 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk8251q8251 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk30405q30405 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk38702q38702 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk180776q180776 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk132046q132046 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk105315q105315 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk200544q200544 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk84958q84958 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk110607q110607 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk206178q206178 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk77003q77003 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk93616q93616 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk154615q154615 - cce_cond_next - -
-0 1 1 1 1 256 1 w_cur 1 256 3 tk253337q253337 - cce_cond_next certify_failed -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk196514q196514 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk133397q133397 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk189369q189369 - cce_cond_next - -
-0 1 1 1 1 256 1 w_cur 1 256 3 tk158539q158539 - cce_cond_next certify_failed -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk138548q138548 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk223974q223974 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk103078q103078 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk237258q237258 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk146066q146066 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk81089q81089 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk213087q213087 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk250845q250845 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk240327q240327 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk45398q45398 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk168450q168450 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk165742q165742 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk111185q111185 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk229000q229000 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk50510q50510 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk171096q171096 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk218118q218118 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk82876q82876 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk57887q57887 - cce_cond_next - -
-0 2 1 1 1 256 1 w_cur 1 256 3 tk122565q122565 - cce_cond_next - -
-0 1 1 1 1 4 1 - 1 4 1 novel_probe_e2e - lm_novel_probe_e2e insufficient_exemplars -
-0 2 9 7 1 256 1 - 1 256 1 lane_wnd256_e2e - lm_lane_wnd256_e2e - -
-0 2 1 1 1 256 1 w_cur 1 256 1 corpus_next_v01 - lm_corpus_next_v01 - -
-0 2 1 1 1 256 1 w_cur 1 256 3 corpus_top3_v01 - lm_c6bd1a4ef_corpus_top3_v01 - -
-0 2 1 1 1 256 1 w_cur 1 256 3 lamp_next3_v01 - lm_c6bd1a4ef_lamp_next3_v01 - -
-0 2 1 1 1 256 1 w_cur 1 256 3 storm_next3_v01 - lm_ccf82c87e_storm_next3_v01 - -
-0 2 1 1 1 256 1 w_cur 1 256 1 lamp_intro_v01 - lm_c6bd1a4ef_lamp_intro_v01 - -
-0 2 1 1 1 256 1 w_cur 1 256 1 storm_intro_v01 - lm_ccf82c87e_storm_intro_v01 - acq_storm_intro_v01
-0 2 1 1 1 256 1 w_cur 1 256 1 lamp_dusk_v01 - lm_c6bd1a4ef_lamp_dusk_v01 - acq_lamp_dusk_v01
+0 2 1 1 1 256 1 w_cur 1 256 3 tk176938q176938 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk216001q216001 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk117514q117514 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk60730q60730 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk159876q159876 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk99544q99544 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk53877q53877 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk52141q52141 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk226926q226926 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk64506q64506 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk6164q6164 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk221965q221965 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk178945q178945 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk135086q135086 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk224777q224777 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk238110q238110 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk17525q17525 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk190303q190303 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk17996q17996 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk165468q165468 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk13248q13248 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk57885q57885 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk212485q212485 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk96949q96949 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk116224q116224 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk66183q66183 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk208617q208617 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk65764q65764 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk86137q86137 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk17514q17514 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk9422q9422 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk36165q36165 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk237107q237107 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk164610q164610 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk188742q188742 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk11254q11254 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk254621q254621 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk246995q246995 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk96395q96395 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk54801q54801 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk231042q231042 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk210053q210053 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk109091q109091 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk151747q151747 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk111205q111205 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk237188q237188 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk249173q249173 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk75595q75595 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk940q940 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk92176q92176 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk167808q167808 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk44355q44355 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk217286q217286 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk231122q231122 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk203194q203194 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk156987q156987 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk64960q64960 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk14185q14185 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk251757q251757 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk60877q60877 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk158400q158400 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk140474q140474 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk231468q231468 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk106199q106199 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk102717q102717 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk197450q197450 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk40285q40285 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk121781q121781 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk197718q197718 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk248999q248999 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk70804q70804 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk89510q89510 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk16759q16759 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk85917q85917 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk164153q164153 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk43962q43962 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk83500q83500 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk3884q3884 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk155723q155723 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk91553q91553 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk156083q156083 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk26804q26804 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk166189q166189 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk218233q218233 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk125940q125940 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk255323q255323 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk170695q170695 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk233371q233371 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk111257q111257 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk184052q184052 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk3747q3747 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk66504q66504 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk234433q234433 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk253901q253901 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk50866q50866 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk252760q252760 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk234610q234610 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk216298q216298 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk182587q182587 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk175872q175872 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk207285q207285 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk57865q57865 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk77973q77973 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk90204q90204 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk223329q223329 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk209852q209852 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk180117q180117 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk125316q125316 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk176079q176079 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk166544q166544 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk134776q134776 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk254684q254684 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk223388q223388 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk117815q117815 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk104343q104343 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk229255q229255 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk225515q225515 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk226852q226852 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk45886q45886 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk98893q98893 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk237777q237777 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk2546q2546 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk219849q219849 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk198372q198372 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk187197q187197 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk141182q141182 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk18412q18412 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk37858q37858 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk100963q100963 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk44986q44986 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk253928q253928 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk38242q38242 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk42978q42978 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk111704q111704 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk90974q90974 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk139032q139032 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk163973q163973 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk58723q58723 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk113558q113558 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk163269q163269 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk117907q117907 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk247026q247026 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk231114q231114 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk153530q153530 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk254703q254703 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk251591q251591 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk61361q61361 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk55326q55326 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk98023q98023 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk27204q27204 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk104452q104452 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk43093q43093 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk179035q179035 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk181336q181336 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk247302q247302 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk141572q141572 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk23066q23066 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk102947q102947 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk66272q66272 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk16804q16804 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk248872q248872 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk233160q233160 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk36293q36293 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk189911q189911 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk217868q217868 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk128978q128978 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk135216q135216 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk41436q41436 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk220278q220278 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk60990q60990 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk226134q226134 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk100106q100106 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk71099q71099 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk40698q40698 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk130116q130116 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk118019q118019 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk62615q62615 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk47577q47577 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk48278q48278 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk237323q237323 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk131023q131023 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk176198q176198 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk226060q226060 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk65043q65043 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk168530q168530 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk108613q108613 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk57016q57016 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk204781q204781 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk175713q175713 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk251805q251805 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk253247q253247 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk157558q157558 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk14881q14881 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk192645q192645 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk246274q246274 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk48743q48743 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk32832q32832 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk58123q58123 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk219435q219435 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk40889q40889 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk103877q103877 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk39355q39355 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk98618q98618 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk147459q147459 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk147101q147101 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk61115q61115 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk123142q123142 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk218430q218430 - cce_cond_next - - 0 0
+0 2 2 2 1 256 1 w_cur 1 256 3 tk50467q50467 - lm_c6bd1a4ef_tk50467q50467 - acq_tk50467q50467 1 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk237302q237302 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk153547q153547 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk228214q228214 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk248832q248832 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk214232q214232 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk124561q124561 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk212788q212788 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk217562q217562 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk78130q78130 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk8251q8251 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk30405q30405 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk38702q38702 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk180776q180776 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk132046q132046 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk105315q105315 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk200544q200544 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk84958q84958 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk110607q110607 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk206178q206178 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk77003q77003 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk93616q93616 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk154615q154615 - cce_cond_next - - 0 0
+0 2 2 2 1 256 1 w_cur 1 256 3 tk253337q253337 - lm_c6bd1a4ef_tk253337q253337 - acq_tk253337q253337 1 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk196514q196514 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk133397q133397 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk189369q189369 - cce_cond_next - - 0 0
+0 2 2 2 1 256 1 w_cur 1 256 3 tk158539q158539 - lm_c6bd1a4ef_tk158539q158539 - acq_tk158539q158539 1 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk138548q138548 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk223974q223974 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk103078q103078 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk237258q237258 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk146066q146066 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk81089q81089 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk213087q213087 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk250845q250845 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk240327q240327 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk45398q45398 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk168450q168450 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk165742q165742 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk111185q111185 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk229000q229000 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk50510q50510 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk171096q171096 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk218118q218118 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk82876q82876 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk57887q57887 - cce_cond_next - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 tk122565q122565 - cce_cond_next - - 0 0
+0 0 1 1 1 4 1 - 1 4 1 novel_probe_e2e - lm_novel_probe_e2e - - 0 0
+0 2 9 7 1 256 1 - 1 256 1 lane_wnd256_e2e - lm_lane_wnd256_e2e - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 1 corpus_next_v01 - lm_corpus_next_v01 - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 corpus_top3_v01 - lm_c6bd1a4ef_corpus_top3_v01 - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 lamp_next3_v01 - lm_c6bd1a4ef_lamp_next3_v01 - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 3 storm_next3_v01 - lm_ccf82c87e_storm_next3_v01 - - 0 0
+0 2 1 1 1 256 1 w_cur 1 256 1 lamp_intro_v01 - lm_c6bd1a4ef_lamp_intro_v01 - - 1 0
+0 2 1 1 1 256 1 w_cur 1 256 1 storm_intro_v01 - lm_ccf82c87e_storm_intro_v01 - acq_storm_intro_v01 1 0
+0 2 1 1 1 256 1 w_cur 1 256 1 lamp_dusk_v01 - lm_c6bd1a4ef_lamp_dusk_v01 - acq_lamp_dusk_v01 1 0
