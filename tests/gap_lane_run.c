@@ -468,6 +468,7 @@ int main(int argc, char **argv) {
                                       lane.acq.target_loss);
     lane.acq.min_improvement = env_double("CNET_ACQ_MIN_IMPROVEMENT",
                                           lane.acq.min_improvement);
+    lane.acq.learning_rate = env_double("CNET_ACQ_LR", lane.acq.learning_rate);
     lane.acq.momentum = env_double("CNET_ACQ_MOMENTUM", lane.acq.momentum);
 
     if (argc >= 4) {
