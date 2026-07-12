@@ -995,12 +995,32 @@ train_student:
        path below is unchanged — this only decides how much of the budget
        to spend before it runs. */
     if (getenv("CNET_ACQ_ADAPTIVE") && getenv("CNET_ACQ_ADAPTIVE")[0] == '1') {
-        const size_t stages = 8;
+        /* Exactness is checked between stages, so MORE stages = a tighter
+           budget granularity: a fast-converging student stops the instant it
+           is exact instead of after a coarse 1/8 of max_epochs. The check
+           (btn_certify, one forward over the mined table) costs ~one epoch, so
+           finer staging is nearly free and only ever stops SOONER — the
+           certification bar below is unchanged. CNET_ACQ_STAGES (default 8). */
+        size_t stages = 8;
+        {
+            const char *sv = getenv("CNET_ACQ_STAGES");
+            if (sv && sv[0]) {
+                long v = atol(sv);
+                if (v >= 1 && (size_t)v <= cfg->max_epochs)
+                    stages = (size_t)v;
+            }
+        }
         size_t s, prev_pass = 0, plateau = 0;
         Contract probe;
         int have_probe =
             (contract_init_borrowed(&probe, name, btn, inputs, targets,
                                     usable) == 0);
+        /* Give-up window in STAGES scales with granularity so it stays a fixed
+           fraction of max_epochs (~1/4) regardless of stage count: finer
+           staging must only check exactness sooner, never abandon a
+           slow-but-still-improving student earlier. */
+        size_t plateau_limit = stages / 4;
+        if (plateau_limit < 2) plateau_limit = 2;
         for (s = 0; s < stages; ++s) {
             CertifyReport crep;
             btn_train_dynamic(btn, inputs, targets, n_train,
@@ -1009,7 +1029,7 @@ train_student:
             if (!have_probe) continue;
             if (btn_certify(btn, &probe, &crep) == 0) break;   /* exact */
             if (crep.passed <= prev_pass) {
-                if (++plateau >= 2) break;   /* stuck below the bar */
+                if (++plateau >= plateau_limit) break;  /* stuck below the bar */
             } else {
                 plateau = 0;
             }
