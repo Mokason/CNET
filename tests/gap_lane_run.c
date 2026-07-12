@@ -128,7 +128,9 @@ static unsigned long long lm_fnv_ids(const int *ids, int n,
 /* Toolchain identity: what can be attested at compile time about the stack
    that computes the teaching forwards (cce is compiled into this binary by
    the same invocation). Deterministic for a given compiler + ABI — NOT a
-   build transcript: same compiler and flags rebuild to the same digest. */
+   build transcript: build FLAGS, source revision, and linked-runtime
+   identity are NOT captured (O0 and O3+LTO digest identically). Hermetic
+   attestation remains open work. */
 static unsigned long long lm_toolchain_identity(void) {
     unsigned long long h = 1469598103934665603ULL;
     const char *v =
