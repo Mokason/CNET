@@ -1,5 +1,5 @@
 CNET_GAPS 4
-267
+269
 0 2 1 1 1 256 1 w_cur 1 256 3 tk176938q176938 - cce_cond_next - - 0 0
 0 2 1 1 1 256 1 w_cur 1 256 3 tk216001q216001 - cce_cond_next - - 0 0
 0 2 1 1 1 256 1 w_cur 1 256 3 tk117514q117514 - cce_cond_next - - 0 0
@@ -267,3 +267,5 @@ CNET_GAPS 4
 0 2 1 1 1 256 1 w_cur 1 256 5 corpus_quint_v01 - lm_c6bd1a4ef_corpus_quint_v01 - acq_corpus_quint_v01 1 0
 0 2 1 1 1 256 1 w_cur 1 256 5 lamp_quint_v01 - lm_c6bd1a4ef_lamp_quint_v01 - acq_lamp_quint_v01 1 0
 0 1 1 2 1 256 1 w_cur 1 256 5 storm_quint_v01 - lm_ccf82c87e_storm_quint_v01 certify_failed - 0 7412119712681733968
+0 2 1 1 1 256 1 w_cur 1 256 3 market_next3_v01 - lm_cde219711_market_next3_v01 - acq_market_next3_v01 1 0
+0 2 1 1 1 256 1 w_cur 1 256 3 forest_next3_v01 - lm_c07b36796_forest_next3_v01 - acq_forest_next3_v01 1 0
