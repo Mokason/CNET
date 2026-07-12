@@ -96,6 +96,7 @@ int main(void) {
         oe->identity.config_digest = 0x57494e444f57ULL;      /* "WINDOW" */
         oe->identity.contract_digest = 0x434f4e5452ULL;       /* "CONTR" */
         oe->identity.retrieval_snapshot_digest = 0xc0417e37ULL;
+        oe->identity.toolchain_digest = 0x544f4f4cULL;        /* "TOOL" */
         oe->behavior_digest = cnet_oracle_identity_digest(&oe->identity);
     }
     /* keep the student's structure budget visible: growth is the point */
@@ -147,8 +148,16 @@ int main(void) {
           strcmp(lane.base.oracles[0].name, "rot3_ref") == 0 &&
           lane.base.oracles[0].identity.retrieval_snapshot_digest ==
               0xc0417e37ULL &&
-          lane.base.oracles[0].identity.config_digest == 0x57494e444f57ULL,
+          lane.base.oracles[0].identity.config_digest == 0x57494e444f57ULL &&
+          lane.base.oracles[0].identity.toolchain_digest == 0x544f4f4cULL,
           "closing the gap persists the teacher as unit provenance");
+    check(strcmp(lane.ledger.gaps[0].unit, "acq_gl_rot3") == 0 &&
+          lane.ledger.gaps[0].provenance_done == 1,
+          "the closed gap records its minted unit and reconciles once");
+    check(cnb_unit_provenance(&lane.base, "acq_gl_rot3") != NULL &&
+          strcmp(cnb_unit_provenance(&lane.base, "acq_gl_rot3"),
+                 "rot3_ref") == 0,
+          "the unit points at its teacher descriptor directly");
     {
         char saved_gap_name[ACQUIRE_NAME_MAX];
         char saved_oracle_name[ACQUIRE_NAME_MAX];
@@ -160,10 +169,12 @@ int main(void) {
                  sizeof lane.ledger.gaps[0].oracle, "bad name");
         snprintf(lane.oracles.entries[0].name,
                  sizeof lane.oracles.entries[0].name, "bad name");
+        lane.ledger.gaps[0].provenance_done = 0;  /* an unreconciled record */
         lane.base.oracle_count = 0;
         lane.provenance_dirty = 1;
         check(gap_lane_drain(&lane, &tick) != 0 &&
-              lane.base.oracle_count == 0 && lane.provenance_dirty == 1,
+              lane.base.oracle_count == 0 && lane.provenance_dirty == 1 &&
+              lane.ledger.gaps[0].provenance_done == 0,
               "provenance descriptor refusal propagates and remains retryable");
         snprintf(lane.ledger.gaps[0].oracle,
                  sizeof lane.ledger.gaps[0].oracle, "%s", saved_gap_name);
@@ -213,6 +224,23 @@ int main(void) {
     check(gap_lane_checkpoint(&lane) == 0, "checkpoint persists the rebuild");
     check(lane.base.oracle_count == 1,
           "provenance is idempotent: the rebuild adds no duplicate");
+    {
+        /* reconciled records are never rescanned: with every CLOSED record
+           marked done, a dirty pass must skip even a record whose oracle
+           name would refuse a descriptor write (contrast the earlier
+           fixture, where the same corruption on a NOT-done record failed
+           the drain) */
+        char saved[ACQUIRE_NAME_MAX];
+        snprintf(saved, sizeof saved, "%s", lane.ledger.gaps[0].oracle);
+        snprintf(lane.ledger.gaps[0].oracle,
+                 sizeof lane.ledger.gaps[0].oracle, "bad name");
+        lane.provenance_dirty = 1;
+        check(gap_lane_drain(&lane, &tick) == 0 &&
+              lane.provenance_dirty == 0,
+              "a done record is skipped by the dirty pass, not rescanned");
+        snprintf(lane.ledger.gaps[0].oracle,
+                 sizeof lane.ledger.gaps[0].oracle, "%s", saved);
+    }
 
     /* -- persist: a fresh lane resumes from disk, no retraining ---------- */
     gap_lane_close(&lane);
@@ -222,8 +250,17 @@ int main(void) {
           "resume: certification replay re-admits the sealed units");
     check(lane.base.oracle_count == 1 &&
           lane.base.oracles[0].identity.retrieval_snapshot_digest ==
-              0xc0417e37ULL,
+              0xc0417e37ULL &&
+          lane.base.oracles[0].identity.toolchain_digest == 0x544f4f4cULL,
           "unit provenance survives the resume round-trip");
+    check(cnb_unit_provenance(&lane.base, "acq_gl_rot3") != NULL &&
+          strcmp(cnb_unit_provenance(&lane.base, "acq_gl_rot3"),
+                 "rot3_ref") == 0,
+          "the direct unit -> descriptor relation survives the resume");
+    check(strcmp(lane.ledger.gaps[0].unit, "acq_gl_rot3") == 0 &&
+          lane.ledger.gaps[0].provenance_done == 0,
+          "the resumed ledger carries the minted unit; the reconcile "
+          "cache is runtime-only (the open pass re-verifies)");
     check(route_plan(&lane.reg, in_port, goal_port, &plan) == 0,
           "resumed lane replans without retraining");
     {
@@ -259,6 +296,29 @@ int main(void) {
         check(gap_lane_load_ids("tmp_gap_lane.missing", ids, 8) == -1,
               "missing id file is refused, not defaulted");
         remove("tmp_gap_lane.ids");
+    }
+
+    /* -- artifact identity: the digest is over BYTES, not the path -------- */
+    {
+        unsigned long long da = 0, db = 0, dc = 0;
+        FILE *f = fopen("tmp_gap_lane.art_a", "wb");
+        if (f) { fputs("teacher weights v1", f); fclose(f); }
+        f = fopen("tmp_gap_lane.art_b", "wb");
+        if (f) { fputs("teacher weights v1", f); fclose(f); }
+        f = fopen("tmp_gap_lane.art_c", "wb");
+        if (f) { fputs("teacher weights v2", f); fclose(f); }
+        check(gap_lane_digest_file("tmp_gap_lane.art_a", &da) == 0 &&
+              gap_lane_digest_file("tmp_gap_lane.art_b", &db) == 0 &&
+              da == db,
+              "identical bytes digest identically under different paths");
+        check(gap_lane_digest_file("tmp_gap_lane.art_c", &dc) == 0 &&
+              dc != da,
+              "different bytes digest differently (the artifact, not the name)");
+        check(gap_lane_digest_file("tmp_gap_lane.art_missing", &da) == -1,
+              "an unreadable artifact binds no identity");
+        remove("tmp_gap_lane.art_a");
+        remove("tmp_gap_lane.art_b");
+        remove("tmp_gap_lane.art_c");
     }
 
     gap_lane_close(&lane);

@@ -68,8 +68,11 @@ typedef struct {
     Contract **contracts;
     char (*contract_names)[CNB_NAME_MAX];
     size_t contract_count, contract_cap;
-    /* Set when CLOSED-gap oracle provenance must be reconciled into the base.
-       Remains set after a descriptor write failure so the next drain retries. */
+    /* Set when CLOSED-gap oracle provenance must be reconciled into the base
+       (descriptor + direct unit->descriptor relation). Remains set after a
+       write failure so the next drain retries; already-reconciled records
+       are skipped via their runtime provenance_done marks, so only the
+       open() migration pass walks the whole ledger. */
     int provenance_dirty;
     int loaded;
 } GapLane;
@@ -110,8 +113,9 @@ CNET_API int gap_lane_scan(GapLane *L, GapLaneTickReport *r);
 
 /* Acquire: drain every OPEN gap through the bound oracles (mine, train
    with dynamic growth, certify, seal into the base, admit, replan; DEFER
-   total), then reconcile CLOSED-gap teacher provenance into the base.
-   Descriptor persistence failure is returned and remains retryable on the
+   total), then reconcile CLOSED-gap teacher provenance into the base: the
+   teacher descriptor plus the minted unit's DIRECT unit->descriptor
+   relation. Persistence failure is returned and remains retryable on the
    next drain. Fills r->drain (r may be NULL). Returns 0, or <0. */
 CNET_API int gap_lane_drain(GapLane *L, GapLaneTickReport *r);
 
@@ -134,6 +138,13 @@ CNET_API void gap_lane_close(GapLane *L);
    of ids read (<= cap), or -1 on a missing/malformed file — a refused
    file binds nothing rather than teaching under a wrong alphabet. */
 CNET_API int gap_lane_load_ids(const char *path, int *out, int cap);
+
+/* Streamed FNV-1a over a file's BYTES: the artifact identity of a teacher
+   model (what the file IS, not where it lives — renaming or replacing the
+   artifact changes provenance truthfully). Multi-GB GGUFs hash once at
+   daemon startup. Returns 0 with *out set, or -1 on an unreadable file —
+   an unhashable artifact binds no identity. */
+CNET_API int gap_lane_digest_file(const char *path, unsigned long long *out);
 
 /* Serving-side inbox append (used by soul_route via CNET_GAP_INBOX): one
    O_APPEND line "NO_PLAN <fam> <w> <c> <tag|-> <fam> <w> <c> <tag|->".

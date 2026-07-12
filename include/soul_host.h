@@ -47,6 +47,12 @@ CNET_API int soul_oracle_identity(
     uint64_t *retrieval_snapshot_digest,
     uint64_t *toolchain_digest);
 
+/* Direct unit -> descriptor relation: copy the name of the oracle descriptor
+   that taught `name` into `out` ("" when the unit has no recorded teacher).
+   Returns 0, -2 for an unknown unit, <0 for bad buffer/truncation. */
+CNET_API int soul_unit_provenance(SoulHost *h, const char *name,
+                                  char *out, int out_cap);
+
 /* Port totals (in doubles) of a named unit, so a host can size its buffers
    BEFORE running. 0 on success (fills both totals when non-NULL), <0 if absent. */
 CNET_API int soul_unit_dims(SoulHost *h, const char *name,

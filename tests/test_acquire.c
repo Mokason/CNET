@@ -152,6 +152,8 @@ int main(void) {
         acquire_note_no_plan(&led, nib, nibn);
         acquire_note_no_plan(&led, nib, nibn);           /* times_hit 2 */
         acquire_note_health(&led, "increment", "resource_anomaly");
+        led.gaps[0].status = GAP_CLOSED;
+        snprintf(led.gaps[0].unit, ACQUIRE_NAME_MAX, "acq_nibble_next");
         led.gaps[1].status = GAP_DEFERRED;
         snprintf(led.gaps[1].defer_reason, ACQUIRE_REASON_MAX, "oracle_unfit");
 
@@ -168,12 +170,28 @@ int main(void) {
               strcmp(led2.gaps[1].defer_reason, "oracle_unfit") == 0 &&
               strcmp(led2.gaps[1].subject, "increment") == 0,
               "DEFERRED status + reason + subject survive");
+        check(strcmp(led2.gaps[0].unit, "acq_nibble_next") == 0 &&
+              led2.gaps[1].unit[0] == '\0',
+              "minted unit name survives; unclosed record stays without one");
+
+        /* version 1 file (no unit column) loads with unit "" */
+        f = fopen(path, "w");
+        fprintf(f, "CNET_GAPS 1\n1\n"
+                   "0 2 1 1 1 4 1 nibble 1 4 1 nibble_next - old_ref -\n");
+        fclose(f);
+        acquire_ledger_free(&led2);
+        acquire_ledger_init(&led2);
+        check(acquire_ledger_load(&led2, path) == 0 && led2.count == 1 &&
+              led2.gaps[0].status == GAP_CLOSED &&
+              strcmp(led2.gaps[0].oracle, "old_ref") == 0 &&
+              led2.gaps[0].unit[0] == '\0',
+              "version 1 ledger loads; unit column defaults to empty");
 
         /* malformed -> -1 with the ledger untouched */
         f = fopen(path, "w");
         fprintf(f, "CNET_GAPS 1\nnot_a_count\n");
         fclose(f);
-        check(acquire_ledger_load(&led2, path) == -1 && led2.count == 2,
+        check(acquire_ledger_load(&led2, path) == -1 && led2.count == 1,
               "malformed file refused, ledger untouched");
 
         /* wrong magic -> -1 */

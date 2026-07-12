@@ -98,7 +98,8 @@ typedef struct {
     unsigned long long fp64;  /* context ids only: the retrieval snapshot */
 } LmContext;
 static unsigned long long lm_window_fp64;  /* window ids only: the config */
-static unsigned long long lm_model_fp64;   /* model path: the artifact (v1) */
+static unsigned long long lm_model_fp64;   /* model artifact BYTES */
+static unsigned long long lm_toolchain_fp64; /* the teaching stack's build */
 static LmContext lm_contexts[LM_CTX_SLOTS];
 static int lm_context_count;
 static LmContext lm_default_ctx;
@@ -121,6 +122,29 @@ static unsigned long long lm_fnv_ids(const int *ids, int n,
         h ^= (unsigned long long)ids[i];
         h *= 1099511628211ULL;
     }
+    return h;
+}
+
+/* Toolchain identity: what can be attested at compile time about the stack
+   that computes the teaching forwards (cce is compiled into this binary by
+   the same invocation). Deterministic for a given compiler + ABI — NOT a
+   build transcript: same compiler and flags rebuild to the same digest. */
+static unsigned long long lm_toolchain_identity(void) {
+    unsigned long long h = 1469598103934665603ULL;
+    const char *v =
+#if defined(_MSC_VER)
+        "msc";
+#elif defined(__VERSION__)
+        __VERSION__;
+#else
+        "unknown_compiler";
+#endif
+    while (*v) { h ^= (unsigned char)*v++; h *= 1099511628211ULL; }
+#if defined(_MSC_VER)
+    h ^= (unsigned long long)_MSC_FULL_VER; h *= 1099511628211ULL;
+#endif
+    h ^= (unsigned long long)CNET_ORACLE_ABI_VERSION; h *= 1099511628211ULL;
+    h ^= (unsigned long long)sizeof(void *); h *= 1099511628211ULL;
     return h;
 }
 
@@ -305,6 +329,7 @@ static size_t bind_model_teachers(GapLane *L, cce_gguf_qwen2 *m,
                 lm_fnv_port(lm_fnv_port(1469598103934665603ULL, in), goal);
             oe->identity.config_digest = lm_window_fp64;
             oe->identity.retrieval_snapshot_digest = sel ? sel->fp64 : 0;
+            oe->identity.toolchain_digest = lm_toolchain_fp64;
             oe->behavior_digest = cnet_oracle_identity_digest(&oe->identity);
             lm_task_count++;
             bound++;
@@ -480,12 +505,16 @@ int main(int argc, char **argv) {
         }
         lm_window_fp64 = lm_window_n ? lm_fnv_ids(lm_window, lm_window_n, 0)
                                      : 0;
-        {
-            const char *mp = argv[3];
-            unsigned long long h = 1469598103934665603ULL;
-            while (*mp) { h ^= (unsigned char)*mp++; h *= 1099511628211ULL; }
-            lm_model_fp64 = h;   /* path identity (v1) — honest, labeled */
+        /* artifact identity = the model file's BYTES (streamed FNV-1a; a
+           multi-GB GGUF hashes once here at startup). An unhashable model
+           refuses to teach: identity may never be guessed. */
+        if (gap_lane_digest_file(argv[3], &lm_model_fp64) != 0) {
+            fprintf(stderr, "gap_lane_run: cannot digest model bytes %s\n",
+                    argv[3]);
+            gap_lane_close(&lane);
+            return 1;
         }
+        lm_toolchain_fp64 = lm_toolchain_identity();
         lm_fingerprint(&lm_default_ctx);
         {
             int ci;
@@ -496,8 +525,9 @@ int main(int argc, char **argv) {
                        lm_contexts[ci].fp);
             }
         }
-        printf("gap_lane_run: teacher %s (vocab %d, base %ld%s%s)\n",
-               argv[3], vocab, token_base,
+        printf("gap_lane_run: teacher %s (vocab %d, base %ld, "
+               "artifact %016llx, toolchain %016llx%s%s)\n",
+               argv[3], vocab, token_base, lm_model_fp64, lm_toolchain_fp64,
                lm_default_ctx.fp[0] ? ", default provenance " : "",
                lm_default_ctx.fp);
     } else {

@@ -5,7 +5,7 @@
 #include <string.h>
 
 #define CNB_MAGIC "CNB1"
-#define CNB_VERSION 2u
+#define CNB_VERSION 3u
 #define CNB_MIN_VERSION 1u
 
 /* sanity caps: refuse hostile headers before any allocation */
@@ -403,7 +403,8 @@ int cnb_save(const CnetBase *b, const char *path) {
     for (i = 0; i < b->unit_count; ++i) {
         if (w_str(&w, b->units[i].name) ||
             w_u64(&w, b->units[i].blob_index) ||
-            w_u64(&w, b->units[i].behavior_digest)) goto done;
+            w_u64(&w, b->units[i].behavior_digest) ||
+            w_str(&w, b->units[i].provenance)) goto done;
     }
 
     if (w_u64(&w, b->tag_count)) goto done;
@@ -529,9 +530,15 @@ int cnb_load(CnetBase *b, const char *path) {
     if (r_u64(&r, &n) || n > CNB_MAX_TABLE) goto fail;
     for (i = 0; i < n; ++i) {
         char name[CNB_NAME_MAX];
+        char provenance[CNB_NAME_MAX];
         unsigned long long bi, bd;
+        provenance[0] = '\0';
         if (r_str(&r, name, sizeof name) || !cnb_name_is_atom(name) ||
             r_u64(&r, &bi) || bi >= fresh.blob_count || r_u64(&r, &bd)) goto fail;
+        if (version >= 3) {
+            if (r_str(&r, provenance, sizeof provenance)) goto fail;
+            if (provenance[0] && !cnb_name_is_atom(provenance)) goto fail;
+        }
         if (fresh.unit_count == fresh.unit_cap) {
             size_t nc = fresh.unit_cap ? fresh.unit_cap * 2 : 8;
             CnbUnitRef *nu = (CnbUnitRef *)realloc(fresh.units, nc * sizeof *nu);
@@ -542,6 +549,8 @@ int cnb_load(CnetBase *b, const char *path) {
         snprintf(fresh.units[fresh.unit_count].name, CNB_NAME_MAX, "%s", name);
         fresh.units[fresh.unit_count].blob_index = (size_t)bi;
         fresh.units[fresh.unit_count].behavior_digest = bd;
+        snprintf(fresh.units[fresh.unit_count].provenance, CNB_NAME_MAX,
+                 "%s", provenance);
         fresh.unit_count++;
     }
 
@@ -641,6 +650,18 @@ int cnb_load(CnetBase *b, const char *path) {
 
     if (r.off != r.len) goto fail;   /* trailing junk inside the seal */
 
+    /* relation integrity: every non-empty unit provenance must name a
+       descriptor that exists in this same sealed container */
+    for (i = 0; i < fresh.unit_count; ++i) {
+        if (fresh.units[i].provenance[0]) {
+            size_t d;
+            for (d = 0; d < fresh.oracle_count; ++d)
+                if (strcmp(fresh.oracles[d].name,
+                           fresh.units[i].provenance) == 0) break;
+            if (d == fresh.oracle_count) goto fail;
+        }
+    }
+
     free(buf);
     cnb_free(b);
     *b = fresh;
@@ -727,6 +748,30 @@ int cnb_add_oracle_desc_v2(CnetBase *b, const char *name,
                            const CnetOracleIdentity *identity) {
     return cnb_add_oracle_desc_impl(b, name, kind_atom,
                                     input_port, goal_port, identity);
+}
+
+int cnb_set_unit_provenance(CnetBase *b, const char *unit_name,
+                            const char *oracle_name) {
+    int u;
+    size_t d;
+    if (!b || !cnb_name_is_atom(oracle_name)) return -1;
+    u = find_unit(b, unit_name);
+    if (u < 0) return -1;
+    for (d = 0; d < b->oracle_count; ++d)
+        if (strcmp(b->oracles[d].name, oracle_name) == 0) break;
+    if (d == b->oracle_count) return -1;
+    if (b->units[u].provenance[0])
+        return strcmp(b->units[u].provenance, oracle_name) == 0 ? 0 : -1;
+    snprintf(b->units[u].provenance, CNB_NAME_MAX, "%s", oracle_name);
+    return 0;
+}
+
+CNET_API const char *cnb_unit_provenance(const CnetBase *b,
+                                         const char *unit_name) {
+    int u;
+    if (!b || !unit_name) return NULL;
+    u = find_unit(b, unit_name);
+    return u < 0 ? NULL : b->units[u].provenance;
 }
 
 int cnb_bind_oracles(const CnetBase *b, OracleRegistry *orc,

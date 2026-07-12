@@ -414,6 +414,56 @@ int main(void) {
         remove("test_base_orc.cnb");
     }
 
+    printf("[7b] direct unit -> descriptor provenance relation\n");
+    {
+        CnetBase b, b2;
+        Port nib  = make_port(PORT_BINARY_MSB, 4, 1, "nibble");
+        Port nibn = make_port(PORT_BINARY_MSB, 4, 1, "nibble_next");
+        CnetOracleIdentity identity;
+
+        cnb_init(&b);
+        memset(&identity, 0, sizeof identity);
+        identity.abi_version = CNET_ORACLE_ABI_VERSION;
+        identity.struct_size = (uint32_t)sizeof identity;
+        identity.artifact_digest = 0x11112222u;
+        identity.contract_digest = 0x33334444u;
+        check(cnb_add_unit(&b, inc, &inc_c, NULL) == 0 &&
+              cnb_add_oracle_desc_v2(&b, "increment_ref", "builtin",
+                                     nib, nibn, &identity) == 0,
+              "unit + teacher descriptor in one base");
+        check(cnb_unit_provenance(&b, "increment") != NULL &&
+              cnb_unit_provenance(&b, "increment")[0] == '\0',
+              "a fresh unit has no recorded teacher");
+        check(cnb_set_unit_provenance(&b, "increment", "increment_ref") == 0 &&
+              strcmp(cnb_unit_provenance(&b, "increment"),
+                     "increment_ref") == 0,
+              "unit points at its descriptor directly");
+        check(cnb_set_unit_provenance(&b, "increment", "increment_ref") == 0,
+              "same relation re-set is idempotent");
+        check(cnb_set_unit_provenance(&b, "increment", "other_ref") == -1 &&
+              cnb_set_unit_provenance(&b, "no_such_unit",
+                                      "increment_ref") == -1,
+              "re-pointing and unknown endpoints are refused");
+        check(cnb_save(&b, "test_base_prov.cnb") == 0, "saves the relation");
+        cnb_init(&b2);
+        check(cnb_load(&b2, "test_base_prov.cnb") == 0 &&
+              cnb_unit_provenance(&b2, "increment") != NULL &&
+              strcmp(cnb_unit_provenance(&b2, "increment"),
+                     "increment_ref") == 0,
+              "relation survives the round-trip");
+        cnb_free(&b2);
+        /* a relation naming a descriptor absent from the same container is
+           corruption: refused whole at load */
+        snprintf(b.units[0].provenance, CNB_NAME_MAX, "vanished_ref");
+        check(cnb_save(&b, "test_base_prov.cnb") == 0, "corrupt fixture saves");
+        cnb_init(&b2);
+        check(cnb_load(&b2, "test_base_prov.cnb") == -1,
+              "dangling unit -> descriptor relation refused at load");
+        cnb_free(&b);
+        cnb_free(&b2);
+        remove("test_base_prov.cnb");
+    }
+
     printf("[8] migration from loose .cnu files\n");
     {
         CnetBase b;

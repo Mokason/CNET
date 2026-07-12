@@ -92,6 +92,30 @@ int gap_lane_load_ids(const char *path, int *out, int cap) {
     return n;
 }
 
+int gap_lane_digest_file(const char *path, unsigned long long *out) {
+    FILE *f;
+    unsigned char *buf;
+    size_t n;
+    unsigned long long h = 1469598103934665603ULL;   /* FNV-1a basis */
+    if (!path || !path[0] || !out) return -1;
+    f = fopen(path, "rb");
+    if (!f) return -1;
+    buf = (unsigned char *)malloc(1u << 20);
+    if (!buf) { fclose(f); return -1; }
+    while ((n = fread(buf, 1, 1u << 20, f)) > 0) {
+        size_t i;
+        for (i = 0; i < n; i++) {
+            h ^= buf[i];
+            h *= 1099511628211ULL;
+        }
+    }
+    free(buf);
+    if (ferror(f)) { fclose(f); return -1; }
+    fclose(f);
+    *out = h;
+    return 0;
+}
+
 /* ---- inbox (serving side + lane side) ----------------------------------- */
 
 static void port_write(FILE *f, Port p) {
@@ -250,27 +274,43 @@ int gap_lane_scan(GapLane *L, GapLaneTickReport *r) {
    descriptor in the base — name, kind, ports, and the oracle's identity
    (retrieval_snapshot_digest = the teaching context, config_digest = the
    window) ride with the sealed units and project through soul_oracle_* /
-   cnet_list_oracles. Idempotent by descriptor name; a zero identity is not
-   provenance and records nothing. */
+   cnet_list_oracles — and the minted unit points at its descriptor
+   DIRECTLY (cnb_set_unit_provenance; projected by soul_unit_provenance).
+   Idempotent by descriptor name; a zero identity is not provenance and
+   records nothing.
+
+   Each record reconciles once: provenance_done (runtime-only) marks it, so
+   a dirty pass touches only fresh closures — the full-ledger walk happens
+   once per process (the open() migration pass over older checkpoints). A
+   record whose identity is unavailable right now (no live oracle entry)
+   stays not-done: the same teacher name re-binding later can still supply
+   it. Any write failure leaves the record not-done and propagates. */
 static int record_unit_provenance(GapLane *L) {
     size_t g, o, d;
     for (g = 0; g < L->ledger.count; ++g) {
-        const GapRecord *gap = &L->ledger.gaps[g];
+        GapRecord *gap = &L->ledger.gaps[g];
         const OracleEntry *e = NULL;
         int exists = 0;
-        if (gap->status != GAP_CLOSED || !gap->oracle[0]) continue;
+        if (gap->status != GAP_CLOSED || !gap->oracle[0] ||
+            gap->provenance_done) continue;
         for (d = 0; d < L->base.oracle_count; ++d)
             if (strcmp(L->base.oracles[d].name, gap->oracle) == 0)
                 { exists = 1; break; }
-        if (exists) continue;
-        for (o = 0; o < L->oracles.count; ++o)
-            if (strcmp(L->oracles.entries[o].name, gap->oracle) == 0)
-                { e = &L->oracles.entries[o]; break; }
-        if (!e || cnet_oracle_identity_digest(&e->identity) == 0) continue;
-        if (cnb_add_oracle_desc_v2(&L->base, e->name, "gap_lane_teacher",
-                                   e->input_port, e->output_port,
-                                   &e->identity) != 0)
+        if (!exists) {
+            for (o = 0; o < L->oracles.count; ++o)
+                if (strcmp(L->oracles.entries[o].name, gap->oracle) == 0)
+                    { e = &L->oracles.entries[o]; break; }
+            if (!e || cnet_oracle_identity_digest(&e->identity) == 0)
+                continue;   /* not reconcilable this pass; stays retryable */
+            if (cnb_add_oracle_desc_v2(&L->base, e->name, "gap_lane_teacher",
+                                       e->input_port, e->output_port,
+                                       &e->identity) != 0)
+                return -1;
+        }
+        if (gap->unit[0] && cnb_has_unit(&L->base, gap->unit) &&
+            cnb_set_unit_provenance(&L->base, gap->unit, gap->oracle) != 0)
             return -1;
+        gap->provenance_done = 1;
     }
     return 0;
 }

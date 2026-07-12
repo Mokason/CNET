@@ -928,7 +928,8 @@ certifying it, sealing it, and registering it so the router simply finds the
 plan. Everything composes the machinery above; nothing new is trusted.
 
 **Gap-triggered acquisition (`make acquire`).** Three trigger kinds land in a
-persistent ledger (`CNET_GAPS 1`, sidecar rules): NO_PLAN, LOW_RELIABILITY,
+persistent ledger (`CNET_GAPS 2`, sidecar rules; v1 files load with an empty
+unit column): NO_PLAN, LOW_RELIABILITY,
 HEALTH. While a gap is open, an in-process oracle fallback keeps tasks answered
 and harvests each answer as a free training exemplar. The drain then mines the
 rest (exhaustive within budget, else deterministic stride sampling with a
@@ -943,10 +944,12 @@ re-certified against freshly mined truth first (a healthy incumbent is never
 churned), and only a behaviorally broken one is demoted to RESET beside a
 fresh-named replacement.
 
-**The unified base (`make base`, CNB version 2 semantics under stable CNB1
-magic, with v1 read compatibility).** One sealed container replaces
+**The unified base (`make base`, CNB version 3 semantics under stable CNB1
+magic, with v1/v2 read compatibility).** One sealed container replaces
 per-unit file sprawl: content-addressed blobs of exact `.cnu` images (each
-keeping its own seal), name→blob references, digest-bound reliability stats
+keeping its own seal), name→blob references with a direct unit→descriptor
+provenance relation (`cnb_set_unit_provenance`; a dangling relation is
+refused whole at load), digest-bound reliability stats
 (stale evidence refused mechanically), oracle descriptors, and the **tag
 registry** — mint-once governance with provenance and *refusal teeth*: a
 near-miss tag (case-fold, underscore-strip, or Damerau-Levenshtein ≤ 1 — plain
@@ -1174,7 +1177,7 @@ current state.
   through the CNET-governed hybrid backend. It is deliberately not routed into
   the legacy QGKP-v2 native runner, which lacks hybrid SSM/attention dispatch.
 - **Autonomy loop:** gap-triggered acquisition (DEFER-total), the unified CNB
-  version 2 base under stable CNB1 magic (v1-readable) with mint-once tag governance, and the
+  version 3 base under stable CNB1 magic (v1/v2-readable) with mint-once tag governance, and the
   thermal-governed flagship harness. Honest campaign (gemma4-v2 12B, real forward, 2026-07-05):
   **253/256** ordered-top-3 slices certified (SAMPLED, Wilson ≥ 0.984),
   93% live-model fidelity when queried; the fuzzy tier adds sampled extraction
@@ -1236,8 +1239,8 @@ current state.
 | `make verify-long` | fast verification plus longer benches/studies: `cce_train_bench`, Supra head QAT, corpus QAT, and `wordlm_bitnet` |
 | `make compat` (alias `make legacy`) | the COMPAT tier: the restored full historical aggregate (`test_all`, ALL TESTS PASSED) + demo fixture regeneration; quarantined out of `make test`, asserted in `verify-long`; prints `CNET_COMPAT_PASS` |
 | `make leakcheck` | allocation-balance gate over the base+acquire paths (`-Wl,--wrap`, CRT-baseline-aware); in `make test` |
-| `make acquire` | gap-triggered acquisition loop gate: ledger, oracle fallback, drain, rebuild, DEFER totality (118 checks) |
-| `make base` | unified CNB version 2 base gate under stable CNB1 magic (v1-readable): sealed container, tag governance, certify-on-load bridge, Oracle identity persistence, and migration (81 checks) |
+| `make acquire` | gap-triggered acquisition loop gate: ledger (v2 with minted unit names, v1-readable), oracle fallback, drain, rebuild, DEFER totality (120 checks) |
+| `make base` | unified CNB version 3 base gate under stable CNB1 magic (v1/v2-readable): sealed container, tag governance, certify-on-load bridge, Oracle identity persistence, the direct unit→descriptor provenance relation, and migration (90 checks) |
 | `make flagship` | flagship harness gate: task shapes, sampled tier, conformal probe, pilot scheduling, resume, stop file (72 checks) |
 | `make flagship_run_build` | build the REAL extraction CLI (CCE model as oracle); `CNET_GPU=1` enables the OpenCL forward (equivalence-gated) |
 | `make cnb_audit` | base inspector: counts, certify-on-load verification, tag audit, cross-base digest fidelity |
@@ -1340,16 +1343,18 @@ Run from project root or inside `build/`. Sanitization protects filenames; thoug
   content-addressed cascade/tensor payloads (one file per digest) and flat-text
   model manifests referencing them; specialist graphs persist as
   `CNET_SPECGRAPH 1` sidecars.
-- **Base containers** (`<name>.cnb`, CNB version 2 semantics under stable CNB1
-  magic, with v1 read compatibility): ONE sealed container for many
-  units — content-addressed blobs of exact CNU1 images, name→blob references,
+- **Base containers** (`<name>.cnb`, CNB version 3 semantics under stable CNB1
+  magic, with v1/v2 read compatibility): ONE sealed container for many
+  units — content-addressed blobs of exact CNU1 images, name→blob references
+  (each carrying its direct teacher-descriptor relation, "" when none),
   the mint-once tag registry (with provenance), digest-bound stats, and oracle
   descriptors; whole-file seal verified before parsing; `save → load → save`
   byte-identical. Gitignored: bases are large mined artifacts that live on
   disk beside the repo, not in version control.
-- **Gap ledgers** (`CNET_GAPS 1`): the acquisition loop's sidecar — per-gap
-  trigger kind, task signature, status (OPEN/DEFERRED/CLOSED), counters, and
-  defer-reason atoms.
+- **Gap ledgers** (`CNET_GAPS 2`; v1 readable): the acquisition loop's
+  sidecar — per-gap trigger kind, task signature, status
+  (OPEN/DEFERRED/CLOSED), counters, defer-reason atoms, and the minted unit
+  name once CLOSED.
 - **Property files** (`CNET_PROPERTY 1`): an equational law — typed sources plus
   two chains of primitive names, checked by strict replay over the enumerated domain.
 - **Expansion sidecars** (`<name>.expansion`, 3C): for chunks that carry a recipe —
@@ -1392,7 +1397,7 @@ src/
 ├── pdf/               PDF ingestion: inflate.c, pdf_extract.c, font_decode.c
 ├── corpus/            corpus_split.c, corpus_store.c, retrieval.c, tile_memory.c, synonyms.c, graduate.c
 ├── acquire.c          Gap-triggered acquisition loop (ledger, oracle fallback, drain)
-├── base.c             Unified CNB v2 semantics (stable CNB1 magic, v1-readable; governance, registry bridge)
+├── base.c             Unified CNB v3 semantics (stable CNB1 magic, v1/v2-readable; governance, unit→descriptor provenance, registry bridge)
 ├── flagship.c         Thermal-governed extraction harness (task shapes, conformal probe)
 ├── nn.c               Legacy primitives
 └── main.c             nn_demo (historical)

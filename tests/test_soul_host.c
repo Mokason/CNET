@@ -88,6 +88,8 @@ int main(void) {
     check(cnb_add_oracle_desc_v2(&base, "unified_teacher", "builtin",
                                  in_port, out_port, &oracle_identity) == 0,
           "evidence-carrying Oracle descriptor enters unified base");
+    check(cnb_set_unit_provenance(&base, unit_name, "unified_teacher") == 0,
+          "unit records its teacher descriptor directly");
     check(cnb_save(&base, base_path) == 0,
           "unified base saves atomically");
     cnb_free(&base);
@@ -125,6 +127,14 @@ int main(void) {
               retrieval == oracle_identity.retrieval_snapshot_digest &&
               toolchain == oracle_identity.toolchain_digest,
               "host projects complete bounded Oracle identity");
+        memset(oracle_name, 0, sizeof oracle_name);
+        check(soul_unit_provenance(host, unit_name, oracle_name,
+                                   (int)sizeof oracle_name) == 0 &&
+              strcmp(oracle_name, "unified_teacher") == 0,
+              "host projects the direct unit -> descriptor relation");
+        check(soul_unit_provenance(host, "no_such_unit", oracle_name,
+                                   (int)sizeof oracle_name) == -2,
+              "unknown unit provenance query is refused");
     }
 
     {

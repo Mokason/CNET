@@ -3,7 +3,7 @@
 
 #include "cnet_export.h"
 
-/* Unified base (version 2 semantics under stable CNB1 magic, with v1 read
+/* Unified base (version 3 semantics under stable CNB1 magic, with v1/v2 read
  * compatibility): ONE sealed container replacing per-unit file sprawl.
  *
  * Holds unit payloads (exact CNU1 byte images) in a content-addressed blob
@@ -48,6 +48,10 @@ typedef struct {
     char name[CNB_NAME_MAX];
     size_t blob_index;
     unsigned long long behavior_digest;   /* contract_btn_digest at add time */
+    /* Direct unit -> oracle-descriptor relation: the name of the descriptor
+       whose oracle taught this unit ("" = none/unknown). Set once via
+       cnb_set_unit_provenance; must name an existing descriptor. */
+    char provenance[CNB_NAME_MAX];
 } CnbUnitRef;
 
 typedef struct {
@@ -153,6 +157,15 @@ typedef CnetOracleFn (*CnbOracleResolver)(const char *name, const char *kind,
                                           void *rctx);
 int cnb_add_oracle_desc(CnetBase *b, const char *name, const char *kind_atom,
                         Port input_port, Port goal_port);
+/* Direct unit -> descriptor relation. set: both the unit and the descriptor
+   must already exist; setting the same relation again is idempotent (0);
+   re-pointing a unit at a DIFFERENT descriptor is refused (-1) — provenance
+   is written once (retrains mint fresh unit names). get: the descriptor name
+   ("" = none) or NULL for an unknown unit. */
+int cnb_set_unit_provenance(CnetBase *b, const char *unit_name,
+                            const char *oracle_name);
+CNET_API const char *cnb_unit_provenance(const CnetBase *b,
+                                         const char *unit_name);
 int cnb_add_oracle_desc_v2(CnetBase *b, const char *name,
                            const char *kind_atom,
                            Port input_port, Port goal_port,

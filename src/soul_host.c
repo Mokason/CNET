@@ -214,6 +214,15 @@ CNET_API int soul_oracle_identity(
     return 0;
 }
 
+CNET_API int soul_unit_provenance(SoulHost *h, const char *name,
+                                  char *out, int out_cap) {
+    const char *prov;
+    if (!h || !h->loaded || !name || !out || out_cap <= 0) return -1;
+    prov = cnb_unit_provenance(&h->base, name);
+    if (!prov) return -2;
+    return soul_copy_descriptor_atom(prov, out, out_cap);
+}
+
 CNET_API int soul_unit_dims(SoulHost *h, const char *name,
                             int *in_total, int *out_total) {
     RegistryEntry *entry = soul_find_unit(h, name);
