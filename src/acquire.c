@@ -537,6 +537,70 @@ static void gap_defer(GapRecord *g, AcquireReport *rep, const char *reason) {
     }
 }
 
+/* Recipe fingerprint: FNV-1a over the config knobs that decide whether an
+   acquisition can succeed. Byte-hashing covers size_t/double/unsigned
+   uniformly and is deterministic per host. Deliberately excludes base,
+   unit_dir, capture_limit, and the on_close hook — none change a verdict. */
+static uint64_t recipe_fnv_bytes(uint64_t h, const void *p, size_t n) {
+    const unsigned char *b = (const unsigned char *)p;
+    size_t i;
+    for (i = 0; i < n; ++i) { h ^= b[i]; h *= 1099511628211ULL; }
+    return h;
+}
+
+uint64_t acquire_recipe_fingerprint(const AcquireConfig *cfg) {
+    uint64_t h = 1469598103934665603ULL;
+    if (!cfg) return h ? h : 1;
+    h = recipe_fnv_bytes(h, &cfg->mine_budget, sizeof cfg->mine_budget);
+    h = recipe_fnv_bytes(h, &cfg->sample_count, sizeof cfg->sample_count);
+    h = recipe_fnv_bytes(h, &cfg->pilot_count, sizeof cfg->pilot_count);
+    h = recipe_fnv_bytes(h, &cfg->holdout_fraction, sizeof cfg->holdout_fraction);
+    h = recipe_fnv_bytes(h, &cfg->evidence_threshold, sizeof cfg->evidence_threshold);
+    h = recipe_fnv_bytes(h, &cfg->min_evidence, sizeof cfg->min_evidence);
+    h = recipe_fnv_bytes(h, &cfg->min_accuracy_bound, sizeof cfg->min_accuracy_bound);
+    h = recipe_fnv_bytes(h, &cfg->wilson_z, sizeof cfg->wilson_z);
+    h = recipe_fnv_bytes(h, &cfg->exhaustive_cap, sizeof cfg->exhaustive_cap);
+    h = recipe_fnv_bytes(h, &cfg->init_hidden, sizeof cfg->init_hidden);
+    h = recipe_fnv_bytes(h, &cfg->max_hidden, sizeof cfg->max_hidden);
+    h = recipe_fnv_bytes(h, &cfg->learning_rate, sizeof cfg->learning_rate);
+    h = recipe_fnv_bytes(h, &cfg->seed, sizeof cfg->seed);
+    h = recipe_fnv_bytes(h, &cfg->max_epochs, sizeof cfg->max_epochs);
+    h = recipe_fnv_bytes(h, &cfg->growth_window, sizeof cfg->growth_window);
+    h = recipe_fnv_bytes(h, &cfg->target_loss, sizeof cfg->target_loss);
+    h = recipe_fnv_bytes(h, &cfg->min_improvement, sizeof cfg->min_improvement);
+    return h ? h : 1;
+}
+
+/* A defer reason is recipe-dependent when a change to some AcquireConfig knob
+   could flip it to success: the student-capacity/training failures and the
+   mining/certification-bar failures. Structural failures (unbounded domain,
+   base/registry refusals, unknown/multi-port subject) and the deliberate
+   incumbent_healthy no-op are NOT — no recipe change rescues them, so they
+   are never auto-reopened. */
+static int reason_is_recipe_dependent(const char *reason) {
+    return strcmp(reason, "certify_failed") == 0 ||
+           strcmp(reason, "accuracy_bound") == 0 ||
+           strcmp(reason, "insufficient_exemplars") == 0 ||
+           strcmp(reason, "oracle_unfit") == 0 ||
+           strcmp(reason, "class_imbalance") == 0;
+}
+
+/* True for a DEFERRED record whose recipe-dependent deferral predates the
+   current recipe fingerprint — a candidate for an automatic retry. */
+static int gap_recipe_stale(const GapRecord *g, uint64_t current_fp) {
+    return g->status == GAP_DEFERRED &&
+           reason_is_recipe_dependent(g->defer_reason) &&
+           g->recipe_fp != current_fp;
+}
+
+/* Reopen a recipe-stale deferral: back to OPEN with the reason cleared. The
+   stamp is left as-is; a re-defer under the current recipe overwrites it,
+   which is what stops the retry from repeating every drain (anti-churn). */
+static void gap_reopen_recipe(GapRecord *g) {
+    g->status = GAP_OPEN;
+    g->defer_reason[0] = '\0';
+}
+
 /* Track a minted BTN (and its name) as ledger-owned. */
 static int ledger_own_btn(AcquireLedger *l, BinaryTransformNetwork *btn,
                           const char *name) {
@@ -1289,7 +1353,19 @@ int acquire_drain(PrimitiveRegistry *reg, AcquireLedger *l,
                   OracleRegistry *oracles, const AcquireConfig *cfg,
                   AcquireReport *report) {
     size_t i;
+    uint64_t fp;
     if (!reg || !l || !cfg) return -1;
+    fp = acquire_recipe_fingerprint(cfg);
+    /* Recipe-change retry: reopen recipe-dependent deferrals stamped under an
+       older recipe, so a student/certification improvement re-attempts them
+       (the no-churn re-note policy would otherwise strand them forever). A
+       re-defer below re-stamps the current fp, so this fires once per change. */
+    for (i = 0; i < l->count; ++i) {
+        if (gap_recipe_stale(&l->gaps[i], fp)) {
+            gap_reopen_recipe(&l->gaps[i]);
+            if (report) report->recipe_reopened++;
+        }
+    }
     for (i = 0; i < l->count; ++i) {
         GapRecord *g = &l->gaps[i];
         OracleEntry *o;
@@ -1302,6 +1378,9 @@ int acquire_drain(PrimitiveRegistry *reg, AcquireLedger *l,
         } else {
             attempt_rebuild(reg, l, oracles, g, cfg, report);
         }
+        /* stamp the recipe a fresh deferral happened under, so it will not
+           reopen again until the recipe changes */
+        if (g->status == GAP_DEFERRED) g->recipe_fp = fp;
     }
     return 0;
 }
@@ -1314,12 +1393,23 @@ int acquire_now(PrimitiveRegistry *reg, AcquireLedger *l,
     if (!reg || !l || !cfg) return -1;
     idx = acquire_note_no_plan(l, input_port, goal_port);
     if (idx < 0) return -1;
-    if (l->gaps[idx].status != GAP_OPEN) /* already CLOSED by an earlier run */
-        return l->gaps[idx].status == GAP_CLOSED ? 0 : -1;
-    if (report) report->examined++;
-    o = find_oracle(oracles, input_port, goal_port);
-    if (!o) { if (report) report->skipped_no_oracle++; return -1; }
-    return attempt_no_plan(reg, l, o, &l->gaps[idx], cfg, report);
+    {
+        uint64_t fp = acquire_recipe_fingerprint(cfg);
+        int rc;
+        /* recipe-change retry for this one gap, same rule as the drain */
+        if (gap_recipe_stale(&l->gaps[idx], fp)) {
+            gap_reopen_recipe(&l->gaps[idx]);
+            if (report) report->recipe_reopened++;
+        }
+        if (l->gaps[idx].status != GAP_OPEN) /* already CLOSED by an earlier run */
+            return l->gaps[idx].status == GAP_CLOSED ? 0 : -1;
+        if (report) report->examined++;
+        o = find_oracle(oracles, input_port, goal_port);
+        if (!o) { if (report) report->skipped_no_oracle++; return -1; }
+        rc = attempt_no_plan(reg, l, o, &l->gaps[idx], cfg, report);
+        if (l->gaps[idx].status == GAP_DEFERRED) l->gaps[idx].recipe_fp = fp;
+        return rc;
+    }
 }
 
 static const char *str_or_dash(const char *s) { return s[0] ? s : "-"; }
@@ -1335,10 +1425,10 @@ int acquire_ledger_save(const AcquireLedger *l, const char *path) {
     if (!l || !path) return -1;
     f = fopen(path, "w");
     if (!f) return -1;
-    fprintf(f, "CNET_GAPS 3\n%lu\n", (unsigned long)l->count);
+    fprintf(f, "CNET_GAPS 4\n%lu\n", (unsigned long)l->count);
     for (i = 0; i < l->count; ++i) {
         const GapRecord *g = &l->gaps[i];
-        fprintf(f, "%d %d %lu %lu %d %lu %lu %s %d %lu %lu %s %s %s %s %s %d\n",
+        fprintf(f, "%d %d %lu %lu %d %lu %lu %s %d %lu %lu %s %s %s %s %s %d %llu\n",
                 (int)g->kind, (int)g->status,
                 (unsigned long)g->times_hit, (unsigned long)g->attempts,
                 (int)g->input_port.family,
@@ -1353,7 +1443,8 @@ int acquire_ledger_save(const AcquireLedger *l, const char *path) {
                 str_or_dash(g->oracle),
                 str_or_dash(g->defer_reason),
                 str_or_dash(g->unit),
-                g->provenance_done ? 1 : 0);
+                g->provenance_done ? 1 : 0,
+                (unsigned long long)g->recipe_fp);
     }
     fclose(f);
     return 0;
@@ -1371,7 +1462,7 @@ int acquire_ledger_load(AcquireLedger *l, const char *path) {
         char magic[16];
         if (fscanf(f, "%15s %d\n", magic, &ver) != 2 ||
             strcmp(magic, "CNET_GAPS") != 0 ||
-            ver < 1 || ver > 3) { fclose(f); return -1; }
+            ver < 1 || ver > 4) { fclose(f); return -1; }
     }
     if (fscanf(f, "%lu\n", &count) != 1) { fclose(f); return -1; }
     acquire_ledger_init(&fresh);
@@ -1383,6 +1474,7 @@ int acquire_ledger_load(AcquireLedger *l, const char *path) {
         char reason[ACQUIRE_REASON_MAX];
         char unit[ACQUIRE_NAME_MAX];   /* v2 column; v1 rows load as "" */
         int done = 0;                  /* v3 column; older rows load as 0 */
+        unsigned long long recipe_fp = 0; /* v4 column; older rows load as 0 */
         GapRecord *g;
         snprintf(unit, sizeof unit, "-");
         if (fscanf(f, "%d %d %lu %lu %d %lu %lu %31s %d %lu %lu %31s %63s %63s %63s",
@@ -1393,7 +1485,8 @@ int acquire_ledger_load(AcquireLedger *l, const char *path) {
             kind < 0 || kind > 2 || status < 0 || status > 2 ||
             (ver >= 2 && fscanf(f, " %63s", unit) != 1) ||
             (ver >= 3 && (fscanf(f, " %d", &done) != 1 ||
-                          done < 0 || done > 1))) {
+                          done < 0 || done > 1)) ||
+            (ver >= 4 && fscanf(f, " %llu", &recipe_fp) != 1)) {
             acquire_ledger_free(&fresh); fclose(f); return -1;
         }
         g = ledger_push(&fresh);
@@ -1415,6 +1508,7 @@ int acquire_ledger_load(AcquireLedger *l, const char *path) {
         dash_to_str(g->defer_reason, ACQUIRE_REASON_MAX, reason);
         dash_to_str(g->unit, ACQUIRE_NAME_MAX, unit);
         g->provenance_done = done;
+        g->recipe_fp = (uint64_t)recipe_fp;
     }
     fclose(f);
     /* success: replace gap records; acquired-BTN ownership is NOT touched */

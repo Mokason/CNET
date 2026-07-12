@@ -93,6 +93,7 @@ typedef struct {
     size_t healed;             /* fixed by the health pass, no gap needed */
     AcquireReport drain;       /* examined / closed / deferred / skipped */
     size_t provenance_reconciled; /* records newly marked done this tick */
+    size_t recipe_reopened;    /* recipe-stale deferrals retried this tick */
     int checkpointed;          /* 1 if base+ledger were persisted */
 } GapLaneTickReport;
 

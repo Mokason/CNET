@@ -158,6 +158,13 @@ typedef struct {
        in the same checkpoint, so a persisted 1 never claims work the base
        does not hold; v1/v2 files load as 0 and re-reconcile idempotently. */
     int provenance_done;
+    /* Acquisition recipe fingerprint in force when this record was DEFERRED
+       for a recipe-dependent reason (PERSISTED, ledger v4; 0 = unknown /
+       older ledger / never recipe-deferred). A drain reopens such a record
+       when the CURRENT recipe fingerprint differs, so a student budget or
+       certification-bar improvement retries old failures instead of leaving
+       them stranded by the no-churn re-note policy. */
+    uint64_t recipe_fp;
     /* Exemplars captured by the fallback path (in-memory only, NOT persisted;
        canonical values). cap_inputs: cap_count x input total; cap_targets:
        cap_count x output total. */
@@ -235,9 +242,18 @@ typedef struct {
     double last_min_margin;  /* worst certified output margin (see port_margin) */
     char last_unit_name[ACQUIRE_NAME_MAX];    /* unit minted by the last close */
     char last_defer_reason[ACQUIRE_REASON_MAX];
+    size_t recipe_reopened;  /* recipe-stale deferrals reopened this drain */
 } AcquireReport;
 
 void acquire_ledger_init(AcquireLedger *l);
+
+/* Stable digest over the AcquireConfig knobs that determine whether an
+   acquisition can succeed (student capacity/training + mining/certification
+   bars). Changes iff a recipe-relevant knob changes, so a DEFERRED record
+   stamped with an older fingerprint is known to predate the current recipe.
+   Deterministic for a given config; ignores non-recipe fields (base pointer,
+   unit_dir, on_close hook, capture_limit). Returns nonzero. */
+uint64_t acquire_recipe_fingerprint(const AcquireConfig *cfg);
 void acquire_ledger_free(AcquireLedger *l);
 
 /* Exact signature equality: family, field_width, field_count AND tag. */
@@ -319,12 +335,13 @@ int acquire_now(PrimitiveRegistry *reg, AcquireLedger *l,
                 OracleRegistry *oracles, const AcquireConfig *cfg,
                 Port input_port, Port goal_port, AcquireReport *report);
 
-/* Sidecar persistence ("CNET_GAPS 3"; v1 files load with unit "" and
-   provenance_done 0, v2 with provenance_done 0). Statuses + counters +
-   signatures + minted unit names + reconciliation marks; captured exemplar
-   buffers are runtime-only. Save returns 0/-1. Load REPLACES the ledger's
-   gap records on success (acquired-BTN ownership is untouched);
-   missing/malformed file -> -1 with *l untouched. */
+/* Sidecar persistence ("CNET_GAPS 4"; older versions load with the missing
+   columns defaulted: v1 -> unit "", v1/v2 -> provenance_done 0, v1/v2/v3 ->
+   recipe_fp 0). Statuses + counters + signatures + minted unit names +
+   reconciliation marks + recipe fingerprints; captured exemplar buffers are
+   runtime-only. Save returns 0/-1. Load REPLACES the ledger's gap records on
+   success (acquired-BTN ownership is untouched); missing/malformed file ->
+   -1 with *l untouched. */
 int acquire_ledger_save(const AcquireLedger *l, const char *path);
 int acquire_ledger_load(AcquireLedger *l, const char *path);
 

@@ -567,13 +567,14 @@ int main(int argc, char **argv) {
         if (gap_lane_tick(&lane, &r, 0) != 0) {
             fprintf(stderr, "gap_lane_run: tick failed; retrying\n");
         } else if (r.inbox_ingested || r.health_noted || r.low_rel_noted ||
-                   r.healed || r.drain.examined || r.checkpointed) {
+                   r.healed || r.drain.examined || r.recipe_reopened ||
+                   r.checkpointed) {
             printf("gap_lane_run: tick=%lu inbox=%zu health=%zu lowrel=%zu "
-                   "healed=%zu drained=%zu closed=%zu deferred=%zu "
+                   "healed=%zu reopened=%zu drained=%zu closed=%zu deferred=%zu "
                    "no_oracle=%zu units=%zu%s\n",
                    tick_no, r.inbox_ingested, r.health_noted,
-                   r.low_rel_noted, r.healed, r.drain.examined,
-                   r.drain.closed, r.drain.deferred,
+                   r.low_rel_noted, r.healed, r.recipe_reopened,
+                   r.drain.examined, r.drain.closed, r.drain.deferred,
                    r.drain.skipped_no_oracle, lane.reg.count,
                    r.checkpointed ? " [checkpoint]" : "");
             fflush(stdout);

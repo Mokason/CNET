@@ -157,6 +157,7 @@ int main(void) {
         led.gaps[0].provenance_done = 1;
         led.gaps[1].status = GAP_DEFERRED;
         snprintf(led.gaps[1].defer_reason, ACQUIRE_REASON_MAX, "oracle_unfit");
+        led.gaps[1].recipe_fp = 0xABCDULL;
 
         check(acquire_ledger_save(&led, path) == 0, "ledger saves");
 
@@ -177,6 +178,8 @@ int main(void) {
         check(led2.gaps[0].provenance_done == 1 &&
               led2.gaps[1].provenance_done == 0,
               "the reconcile mark is persisted per record (v3)");
+        check(led2.gaps[1].recipe_fp == 0xABCDULL,
+              "the recipe fingerprint is persisted per record (v4)");
 
         /* version 1 file (no unit column) loads with unit "" and done 0 */
         f = fopen(path, "w");
@@ -189,20 +192,22 @@ int main(void) {
               led2.gaps[0].status == GAP_CLOSED &&
               strcmp(led2.gaps[0].oracle, "old_ref") == 0 &&
               led2.gaps[0].unit[0] == '\0' &&
-              led2.gaps[0].provenance_done == 0,
-              "version 1 ledger loads; unit column defaults to empty");
+              led2.gaps[0].provenance_done == 0 &&
+              led2.gaps[0].recipe_fp == 0,
+              "version 1 ledger loads; unit/done/recipe_fp default");
 
-        /* version 2 file (unit but no done column) loads with done 0 */
+        /* version 3 file (no recipe_fp column) loads with recipe_fp 0 */
         f = fopen(path, "w");
-        fprintf(f, "CNET_GAPS 2\n1\n"
-                   "0 2 1 1 1 4 1 nibble 1 4 1 nibble_next - old_ref - acq_old\n");
+        fprintf(f, "CNET_GAPS 3\n1\n"
+                   "0 1 1 1 1 4 1 nibble 1 4 1 nibble_next - old_ref "
+                   "certify_failed acq_old 0\n");
         fclose(f);
         acquire_ledger_free(&led2);
         acquire_ledger_init(&led2);
         check(acquire_ledger_load(&led2, path) == 0 && led2.count == 1 &&
               strcmp(led2.gaps[0].unit, "acq_old") == 0 &&
-              led2.gaps[0].provenance_done == 0,
-              "version 2 ledger loads; reconcile mark defaults to 0");
+              led2.gaps[0].recipe_fp == 0,
+              "version 3 ledger loads; recipe fingerprint defaults to 0");
 
         /* malformed -> -1 with the ledger untouched */
         f = fopen(path, "w");
@@ -341,6 +346,106 @@ int main(void) {
 
         acquire_ledger_free(&led);       /* frees the acquired BTN */
         registry_free(&reg);
+    }
+
+    printf("[4b] recipe-fingerprint retry\n");
+    {
+        AcquireConfig cfgA, cfgB;
+        uint64_t fpA, fpB;
+        Port nib  = make_port(PORT_BINARY_MSB, 4, 1, "nibble");
+        Port nibn = make_port(PORT_BINARY_MSB, 4, 1, "nibble_next");
+
+        acquire_config_defaults(&cfgA);
+        acquire_config_defaults(&cfgB);
+        cfgB.max_hidden = cfgA.max_hidden + 1;   /* a bigger-student recipe */
+        fpA = acquire_recipe_fingerprint(&cfgA);
+        fpB = acquire_recipe_fingerprint(&cfgB);
+        check(fpA == acquire_recipe_fingerprint(&cfgA) && fpA != 0,
+              "recipe fingerprint is deterministic and nonzero");
+        check(fpA != fpB, "a changed student-budget knob changes the fingerprint");
+        {
+            AcquireConfig cfgC = cfgA;
+            cfgC.base = (struct CnetBase *)0x1;   /* non-recipe field */
+            cfgC.on_close = (void (*)(size_t, void *))0x2;
+            check(acquire_recipe_fingerprint(&cfgC) == fpA,
+                  "non-recipe fields (base, hook) do not affect the fingerprint");
+        }
+
+        /* end-to-end: a certify_failed deferral stamped under an OLD recipe is
+           reopened under the CURRENT recipe and closed by the oracle */
+        {
+            PrimitiveRegistry reg;
+            AcquireLedger led;
+            OracleRegistry orc;
+            AcquireReport rep;
+            int idx;
+            registry_init(&reg);
+            acquire_ledger_init(&led);
+            memset(&orc, 0, sizeof orc);
+            acquire_oracle_register(&orc, "increment_ref", nib, nibn,
+                                    oracle_increment, NULL);
+            idx = acquire_note_no_plan(&led, nib, nibn);
+            led.gaps[idx].status = GAP_DEFERRED;
+            snprintf(led.gaps[idx].defer_reason, ACQUIRE_REASON_MAX,
+                     "certify_failed");
+            led.gaps[idx].recipe_fp = 0xDEAD;   /* an old, different recipe */
+            memset(&rep, 0, sizeof rep);
+            check(acquire_drain(&reg, &led, &orc, &cfgA, &rep) == 0, "drain runs");
+            check(rep.recipe_reopened == 1,
+                  "recipe-stale certify_failed deferral is reopened");
+            check(led.gaps[idx].status == GAP_CLOSED && rep.closed == 1,
+                  "reopened gap retries and CLOSES under the current recipe");
+            acquire_ledger_free(&led);
+            registry_free(&reg);
+        }
+
+        /* anti-churn: a deferral stamped with the CURRENT recipe is left alone */
+        {
+            AcquireLedger led;
+            PrimitiveRegistry reg;
+            OracleRegistry orc;
+            AcquireReport rep;
+            int idx;
+            registry_init(&reg);
+            acquire_ledger_init(&led);
+            memset(&orc, 0, sizeof orc);
+            idx = acquire_note_no_plan(&led, nib, nibn);
+            led.gaps[idx].status = GAP_DEFERRED;
+            snprintf(led.gaps[idx].defer_reason, ACQUIRE_REASON_MAX,
+                     "certify_failed");
+            led.gaps[idx].recipe_fp = fpA;      /* the current recipe */
+            memset(&rep, 0, sizeof rep);
+            acquire_drain(&reg, &led, &orc, &cfgA, &rep);
+            check(rep.recipe_reopened == 0 &&
+                  led.gaps[idx].status == GAP_DEFERRED,
+                  "a current-recipe deferral is not reopened (no churn)");
+            acquire_ledger_free(&led);
+            registry_free(&reg);
+        }
+
+        /* structural reasons never reopen, even under a changed recipe */
+        {
+            AcquireLedger led;
+            PrimitiveRegistry reg;
+            OracleRegistry orc;
+            AcquireReport rep;
+            int idx;
+            registry_init(&reg);
+            acquire_ledger_init(&led);
+            memset(&orc, 0, sizeof orc);
+            idx = acquire_note_no_plan(&led, nib, nibn);
+            led.gaps[idx].status = GAP_DEFERRED;
+            snprintf(led.gaps[idx].defer_reason, ACQUIRE_REASON_MAX,
+                     "unbounded_domain");
+            led.gaps[idx].recipe_fp = 0xBEEF;   /* stale, but irrelevant */
+            memset(&rep, 0, sizeof rep);
+            acquire_drain(&reg, &led, &orc, &cfgB, &rep);
+            check(rep.recipe_reopened == 0 &&
+                  led.gaps[idx].status == GAP_DEFERRED,
+                  "a non-recipe deferral (unbounded_domain) is never reopened");
+            acquire_ledger_free(&led);
+            registry_free(&reg);
+        }
     }
 
     printf("[5] acquire_now (inline mode)\n");

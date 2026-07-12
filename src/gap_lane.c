@@ -585,9 +585,10 @@ int gap_lane_tick(GapLane *L, GapLaneTickReport *r, int force_checkpoint) {
         r->drain = d.drain;
         r->provenance_reconciled = d.provenance_reconciled;
     }
+    r->recipe_reopened = r->drain.recipe_reopened;
     if (force_checkpoint || r->inbox_ingested || r->health_noted ||
         r->low_rel_noted || r->healed || r->drain.closed ||
-        r->drain.deferred || r->provenance_reconciled) {
+        r->drain.deferred || r->provenance_reconciled || r->recipe_reopened) {
         if (gap_lane_checkpoint(L) != 0) return -4;
         r->checkpointed = 1;
     }

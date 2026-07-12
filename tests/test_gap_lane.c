@@ -273,6 +273,29 @@ int main(void) {
           tick.drain.examined == 0 && tick.health_noted == 0,
           "steady state: an idle tick is a no-op and skips the checkpoint");
 
+    /* -- recipe-fingerprint retry ---------------------------------------
+       a certify_failed deferral stamped with an older recipe (0 = the
+       migration case) is reopened on the next drain, so an improved student
+       budget retries it instead of the no-churn policy stranding it. */
+    {
+        Port retry_goal = sym_port("gl_retry");
+        int gi = acquire_note_no_plan(&lane.ledger, in_port, retry_goal);
+        check(gi >= 0, "inject a fresh gap for the retry check");
+        lane.ledger.gaps[gi].status = GAP_DEFERRED;
+        snprintf(lane.ledger.gaps[gi].defer_reason, ACQUIRE_REASON_MAX,
+                 "certify_failed");
+        lane.ledger.gaps[gi].recipe_fp = 0;   /* older-than-current recipe */
+        check(gap_lane_tick(&lane, &tick, 0) == 0 &&
+              tick.recipe_reopened == 1 &&
+              lane.ledger.gaps[gi].status == GAP_OPEN &&
+              tick.checkpointed == 1,
+              "recipe-stale certify_failed deferral is reopened and checkpointed");
+        /* no oracle for this signature, so it stays OPEN; the next tick must
+           not re-reopen it (it is already OPEN, not a stale deferral) */
+        check(gap_lane_tick(&lane, &tick, 0) == 0 && tick.recipe_reopened == 0,
+              "an already-open gap is not re-reopened (no churn)");
+    }
+
     /* -- corpus-drawn id files: strict parsing ---------------------------
        (the window and teaching-context files feed the teacher's alphabet;
        a refused file must bind nothing rather than teach a wrong one) */
