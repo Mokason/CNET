@@ -180,8 +180,12 @@ static uint64_t oracle_fnv_u64(uint64_t h, uint64_t value) {
 
 uint64_t cnet_oracle_identity_digest(const CnetOracleIdentity *identity) {
     uint64_t h = UINT64_C(1469598103934665603);
+    /* struct_size must cover the DIGESTED fields (through toolchain_digest),
+       NOT the whole struct — the artifact_sha256 tail is an ABI-safe extension
+       that is not hashed, so a smaller (pre-sha256) struct_size still validates
+       and its digest is unchanged. */
     if (!identity || identity->abi_version != CNET_ORACLE_ABI_VERSION ||
-        identity->struct_size < sizeof *identity ||
+        identity->struct_size < offsetof(CnetOracleIdentity, artifact_sha256) ||
         identity->artifact_digest == 0 || identity->contract_digest == 0) {
         return 0;
     }

@@ -82,6 +82,13 @@ typedef struct {
     uint64_t config_digest;
     uint64_t retrieval_snapshot_digest;
     uint64_t toolchain_digest;
+    /* Full 256-bit artifact hash (tail extension — struct_size/abi_version keep
+       it ABI-safe; all-zero = not recorded). artifact_digest is its 64-bit
+       truncation and stays the fast behavior-digest input; this is the
+       collision-resistant provenance RECORD, so an accidental 64-bit collision
+       is still distinguishable by the full hash. Deliberately NOT folded into
+       cnet_oracle_identity_digest, so bases written before it still load. */
+    unsigned char artifact_sha256[32];
 } CnetOracleIdentity;
 
 typedef struct {

@@ -158,6 +158,13 @@ CNET_API int gap_lane_load_ids(const char *path, int *out, int cap);
    empty artifact binds no identity. */
 CNET_API int gap_lane_digest_file(const char *path, unsigned long long *out);
 
+/* Same streamed SHA-256, exposing BOTH the full 32-byte digest (collision-
+   resistant provenance record) and the 64-bit truncation (the fast index).
+   Either output may be NULL. Returns 0, or -1 on an unreadable/empty file. */
+CNET_API int gap_lane_digest_file_full(const char *path,
+                                       unsigned char sha256_out[32],
+                                       unsigned long long *trunc_out);
+
 /* Serving-side inbox append (used by soul_route via CNET_GAP_INBOX): one
    O_APPEND line "NO_PLAN <fam> <w> <c> <tag|-> <fam> <w> <c> <tag|->".
    Small single-line appends are atomic on POSIX. Returns 0, or -1. */

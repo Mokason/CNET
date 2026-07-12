@@ -113,7 +113,8 @@ typedef struct {
     unsigned long long fp64;  /* context ids only: the retrieval snapshot */
 } LmContext;
 static unsigned long long lm_window_fp64;  /* window ids only: the config */
-static unsigned long long lm_model_fp64;   /* model artifact BYTES */
+static unsigned long long lm_model_fp64;   /* model artifact BYTES (64-bit index) */
+static unsigned char lm_model_sha256[32];  /* full 256-bit artifact hash */
 static unsigned long long lm_toolchain_fp64; /* the teaching stack's build */
 static LmContext lm_contexts[LM_CTX_SLOTS];
 static int lm_context_count;
@@ -393,6 +394,7 @@ static size_t bind_model_teachers(GapLane *L, cce_gguf_qwen2 *m,
             oe->identity.abi_version = CNET_ORACLE_ABI_VERSION;
             oe->identity.struct_size = (uint32_t)sizeof oe->identity;
             oe->identity.artifact_digest = lm_model_fp64;
+            memcpy(oe->identity.artifact_sha256, lm_model_sha256, 32);
             oe->identity.contract_digest =
                 lm_fnv_port(lm_fnv_port(1469598103934665603ULL, in), goal);
             oe->identity.config_digest = lm_window_fp64;
@@ -598,7 +600,8 @@ int main(int argc, char **argv) {
         /* artifact identity = the model file's BYTES (streamed FNV-1a; a
            multi-GB GGUF hashes once here at startup). An unhashable model
            refuses to teach: identity may never be guessed. */
-        if (gap_lane_digest_file(argv[3], &lm_model_fp64) != 0) {
+        if (gap_lane_digest_file_full(argv[3], lm_model_sha256,
+                                      &lm_model_fp64) != 0) {
             fprintf(stderr, "gap_lane_run: cannot digest model bytes %s\n",
                     argv[3]);
             gap_lane_close(&lane);

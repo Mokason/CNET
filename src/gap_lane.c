@@ -195,15 +195,14 @@ static void lane_sha_final(LaneSha256 *s, unsigned char out[32]) {
     }
 }
 
-int gap_lane_digest_file(const char *path, unsigned long long *out) {
+int gap_lane_digest_file_full(const char *path, unsigned char sha256_out[32],
+                              unsigned long long *trunc_out) {
     FILE *f;
     unsigned char *buf;
     unsigned char hash[32];
     size_t n;
-    unsigned long long v = 0;
-    int i;
     LaneSha256 s;
-    if (!path || !path[0] || !out) return -1;
+    if (!path || !path[0]) return -1;
     f = fopen(path, "rb");
     if (!f) return -1;
     buf = (unsigned char *)malloc(1u << 20);
@@ -216,9 +215,19 @@ int gap_lane_digest_file(const char *path, unsigned long long *out) {
     fclose(f);
     if (s.total_len == 0) return -1;   /* empty artifact: no identity */
     lane_sha_final(&s, hash);
-    for (i = 0; i < 8; i++) v = (v << 8) | hash[i];
-    *out = v ? v : 1;   /* 0 is reserved for "no identity" */
+    if (sha256_out) memcpy(sha256_out, hash, 32);
+    if (trunc_out) {
+        unsigned long long v = 0;
+        int i;
+        for (i = 0; i < 8; i++) v = (v << 8) | hash[i];
+        *trunc_out = v ? v : 1;   /* 0 is reserved for "no identity" */
+    }
     return 0;
+}
+
+int gap_lane_digest_file(const char *path, unsigned long long *out) {
+    if (!out) return -1;
+    return gap_lane_digest_file_full(path, NULL, out);
 }
 
 /* ---- inbox (serving side + lane side) ----------------------------------- */

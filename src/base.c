@@ -5,7 +5,7 @@
 #include <string.h>
 
 #define CNB_MAGIC "CNB1"
-#define CNB_VERSION 3u
+#define CNB_VERSION 4u
 #define CNB_MIN_VERSION 1u
 
 /* sanity caps: refuse hostile headers before any allocation */
@@ -425,6 +425,7 @@ int cnb_save(const CnetBase *b, const char *path) {
             w_u64(&w, b->oracles[i].identity.config_digest) ||
             w_u64(&w, b->oracles[i].identity.retrieval_snapshot_digest) ||
             w_u64(&w, b->oracles[i].identity.toolchain_digest) ||
+            w_put(&w, b->oracles[i].identity.artifact_sha256, 32) ||  /* v4 */
             w_u64(&w, b->oracles[i].behavior_digest)) goto done;
     }
 
@@ -592,8 +593,11 @@ int cnb_load(CnetBase *b, const char *path) {
                 r_u64(&r, &contract_digest) ||
                 r_u64(&r, &config_digest) ||
                 r_u64(&r, &retrieval_snapshot_digest) ||
-                r_u64(&r, &toolchain_digest) ||
-                r_u64(&r, &behavior_digest)) goto fail;
+                r_u64(&r, &toolchain_digest)) goto fail;
+            /* v4 appended the full 256-bit artifact hash; older bases leave it
+               zero (the field was memset above) */
+            if (version >= 4 && r_get(&r, identity.artifact_sha256, 32)) goto fail;
+            if (r_u64(&r, &behavior_digest)) goto fail;
             identity.abi_version = (uint32_t)abi_version;
             identity.struct_size = (uint32_t)struct_size;
             identity.artifact_digest = (uint64_t)artifact_digest;

@@ -944,7 +944,7 @@ re-certified against freshly mined truth first (a healthy incumbent is never
 churned), and only a behaviorally broken one is demoted to RESET beside a
 fresh-named replacement.
 
-**The unified base (`make base`, CNB version 3 semantics under stable CNB1
+**The unified base (`make base`, CNB version 4 semantics under stable CNB1
 magic, with v1/v2 read compatibility).** One sealed container replaces
 per-unit file sprawl: content-addressed blobs of exact `.cnu` images (each
 keeping its own seal), name→blob references with a direct unit→descriptor
@@ -1203,7 +1203,7 @@ current state.
   through the CNET-governed hybrid backend. It is deliberately not routed into
   the legacy QGKP-v2 native runner, which lacks hybrid SSM/attention dispatch.
 - **Autonomy loop:** gap-triggered acquisition (DEFER-total), the unified CNB
-  version 3 base under stable CNB1 magic (v1/v2-readable) with mint-once tag governance, and the
+  version 4 base under stable CNB1 magic (v1/v2/v3-readable) with mint-once tag governance, and the
   thermal-governed flagship harness. Honest campaign (gemma4-v2 12B, real forward, 2026-07-05):
   **253/256** ordered-top-3 slices certified (SAMPLED, Wilson ≥ 0.984),
   93% live-model fidelity when queried; the fuzzy tier adds sampled extraction
@@ -1266,7 +1266,7 @@ current state.
 | `make compat` (alias `make legacy`) | the COMPAT tier: the restored full historical aggregate (`test_all`, ALL TESTS PASSED) + demo fixture regeneration; quarantined out of `make test`, asserted in `verify-long`; prints `CNET_COMPAT_PASS` |
 | `make leakcheck` | allocation-balance gate over the base+acquire paths (`-Wl,--wrap`, CRT-baseline-aware); in `make test` |
 | `make acquire` | gap-triggered acquisition loop gate: ledger (v4 with minted unit names + reconcile marks + recipe fingerprints, v1/v2/v3-readable), oracle fallback, drain, close hook, recipe-change retry, rebuild, DEFER totality (131 checks) |
-| `make base` | unified CNB version 3 base gate under stable CNB1 magic (v1/v2-readable): sealed container, tag governance, certify-on-load bridge, Oracle identity persistence, the direct unit→descriptor provenance relation, and migration (90 checks) |
+| `make base` | unified CNB version 4 base gate under stable CNB1 magic (v1/v2/v3-readable): sealed container, tag governance, certify-on-load bridge, Oracle identity persistence (incl. the full 256-bit artifact hash), the direct unit→descriptor provenance relation, and migration (92 checks) |
 | `make flagship` | flagship harness gate: task shapes, sampled tier, conformal probe, pilot scheduling, resume, stop file (72 checks) |
 | `make flagship_run_build` | build the REAL extraction CLI (CCE model as oracle); `CNET_GPU=1` enables the OpenCL forward (equivalence-gated) |
 | `make cnb_audit` | base inspector: counts, certify-on-load verification, tag audit, cross-base digest fidelity |
@@ -1369,7 +1369,7 @@ Run from project root or inside `build/`. Sanitization protects filenames; thoug
   content-addressed cascade/tensor payloads (one file per digest) and flat-text
   model manifests referencing them; specialist graphs persist as
   `CNET_SPECGRAPH 1` sidecars.
-- **Base containers** (`<name>.cnb`, CNB version 3 semantics under stable CNB1
+- **Base containers** (`<name>.cnb`, CNB version 4 semantics under stable CNB1
   magic, with v1/v2 read compatibility): ONE sealed container for many
   units — content-addressed blobs of exact CNU1 images, name→blob references
   (each carrying its direct teacher-descriptor relation, "" when none),
@@ -1426,7 +1426,7 @@ src/
 ├── pdf/               PDF ingestion: inflate.c, pdf_extract.c, font_decode.c
 ├── corpus/            corpus_split.c, corpus_store.c, retrieval.c, tile_memory.c, synonyms.c, graduate.c
 ├── acquire.c          Gap-triggered acquisition loop (ledger, oracle fallback, drain)
-├── base.c             Unified CNB v3 semantics (stable CNB1 magic, v1/v2-readable; governance, unit→descriptor provenance, registry bridge)
+├── base.c             Unified CNB v4 semantics (stable CNB1 magic, v1/v2/v3-readable; governance, full-width artifact hash, unit→descriptor provenance, registry bridge)
 ├── flagship.c         Thermal-governed extraction harness (task shapes, conformal probe)
 ├── nn.c               Legacy primitives
 └── main.c             nn_demo (historical)

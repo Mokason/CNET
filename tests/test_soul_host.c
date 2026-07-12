@@ -85,6 +85,7 @@ int main(void) {
     oracle_identity.config_digest = 0x3030u;
     oracle_identity.retrieval_snapshot_digest = 0x4040u;
     oracle_identity.toolchain_digest = 0x5050u;
+    { int z; for (z = 0; z < 32; ++z) oracle_identity.artifact_sha256[z] = (unsigned char)(0xA0 + z); }
     check(cnb_add_oracle_desc_v2(&base, "unified_teacher", "builtin",
                                  in_port, out_port, &oracle_identity) == 0,
           "evidence-carrying Oracle descriptor enters unified base");
@@ -127,6 +128,13 @@ int main(void) {
               retrieval == oracle_identity.retrieval_snapshot_digest &&
               toolchain == oracle_identity.toolchain_digest,
               "host projects complete bounded Oracle identity");
+        {
+            unsigned char sha[32]; int z, ok = 1;
+            check(soul_oracle_artifact_sha256(host, 0, sha) == 0,
+                  "host projects the full artifact hash");
+            for (z = 0; z < 32; ++z) if (sha[z] != (unsigned char)(0xA0 + z)) ok = 0;
+            check(ok, "the full 256-bit artifact hash round-trips through the host");
+        }
         memset(oracle_name, 0, sizeof oracle_name);
         check(soul_unit_provenance(host, unit_name, oracle_name,
                                    (int)sizeof oracle_name) == 0 &&

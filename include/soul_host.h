@@ -47,6 +47,13 @@ CNET_API int soul_oracle_identity(
     uint64_t *retrieval_snapshot_digest,
     uint64_t *toolchain_digest);
 
+/* Copy the descriptor's full 256-bit artifact hash into out32 (the collision-
+   resistant provenance record; artifact_digest is its 64-bit truncation).
+   All-zero when the base predates the full hash. Returns 0, or <0 for a bad
+   index/host/buffer. */
+CNET_API int soul_oracle_artifact_sha256(SoulHost *h, int index,
+                                         unsigned char out32[32]);
+
 /* Direct unit -> descriptor relation: copy the name of the oracle descriptor
    that taught `name` into `out` ("" when the unit has no recorded teacher).
    Returns 0, -2 for an unknown unit, <0 for bad buffer/truncation. */

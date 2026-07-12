@@ -380,6 +380,10 @@ int main(void) {
         identity.config_digest = 0x55556666u;
         identity.retrieval_snapshot_digest = 0x77778888u;
         identity.toolchain_digest = 0x9999aaaau;
+        {
+            int z;
+            for (z = 0; z < 32; ++z) identity.artifact_sha256[z] = (unsigned char)(z + 1);
+        }
         check(cnb_add_oracle_desc_v2(&b, "increment_ref", "builtin", nib, nibn,
                                      &identity) == 0,
               "evidence-carrying descriptor added");
@@ -400,6 +404,21 @@ int main(void) {
                   identity.retrieval_snapshot_digest &&
               b2.oracles[0].behavior_digest == cnet_oracle_identity_digest(&identity),
               "CNB2 preserves complete Oracle identity");
+        check(memcmp(b2.oracles[0].identity.artifact_sha256,
+                     identity.artifact_sha256, 32) == 0,
+              "CNB4 preserves the full 256-bit artifact hash");
+        /* the full hash is NOT folded into the behavior digest, so an old base
+           (sha256 all-zero) and a new one with the same 64-bit fields share a
+           behavior digest — the digest stays a stable index across the bump */
+        {
+            CnetOracleIdentity old_id = identity;
+            memset(old_id.artifact_sha256, 0, 32);
+            old_id.struct_size = (uint32_t)offsetof(CnetOracleIdentity,
+                                                    artifact_sha256);
+            check(cnet_oracle_identity_digest(&old_id) ==
+                  cnet_oracle_identity_digest(&identity),
+                  "full hash is not in the behavior digest (v-agnostic index)");
+        }
 
         memset(&orc, 0, sizeof orc);
         check(cnb_bind_oracles(&b2, &orc, resolve_builtin, NULL, &unbound) == 0,
