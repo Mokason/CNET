@@ -1058,6 +1058,19 @@ information-loss ambiguity but cannot touch a graded world, because that residue
 is in the world, not the encoding. (Full method:
 [`docs/superpowers/specs/2026-06-13-margin-study.md`](superpowers/specs/2026-06-13-margin-study.md).)
 
+**A live instance — context-dependent top-k certification (gap lane, 2026-07-12).**
+The deployed lane teaches ordered top-k next-token units over the 256-token
+english window, conditioned on a pinned prose context. Top-1 and top-3 certify
+PROVEN (256/256, exact) across every context. Top-**5** certifies in the default
+and lamp contexts but the storm context *deferred* `certify_failed` — and
+doubling the student width (512→1024 hidden) via the recipe-fingerprint retry
+did **not** recover it. By the table above, "capacity recovers with width" is the
+architectural wall; width *not* recovering points instead at the graded/no-sharp-
+boundary residue: the storm context's fifth-ranked continuation sits in a
+near-tie band the teacher itself does not resolve sharply, so no exact top-5
+segmentation exists to certify. It stays DEFERRED as an honest record, not a bug
+(ledger `soul_gemma4v2_final.cnb.gaps.txt`, unit family `*_quint_v01`).
+
 ## Planner scaling (`make planner_scale_study`)
 
 Does "scale by adding primitives, not changing the core" survive a large library?

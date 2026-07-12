@@ -83,8 +83,12 @@ from an older log.
 | Representation walls / planner scaling | `make margin` / `fuzzy` / `stochastic`, `make planner_scale_study` | documented **limits**, not claims |
 
 Not claimed: beating PyTorch/TensorFlow globally, free-running clean prose from
-the tiny char-LM, or steering the 3M-param Supra model into long-form output —
-see *Knowing the Edge* and the caveats inside each section.
+the tiny char-LM, steering the 3M-param Supra model into long-form output, or
+exact top-5 next-token certification in *every* teaching context — the gap lane
+learned top-5 continuation in the default and lamp contexts but not the storm
+context, and doubling student capacity (512→1024 hidden) did not recover it, so
+it reads as graded structure in that context rather than a capacity wall. See
+*Knowing the Edge* and the caveats inside each section.
 
 ## The map
 
