@@ -42,7 +42,9 @@
 #include "contract/contract.h"
 #include "acquire.h"
 
-struct cce_model; /* cce/cce_model.h; kept opaque here */
+struct cce_model;        /* cce/cce_model.h; kept opaque here */
+struct cce_forest;       /* cce/cce_forest.h */
+struct CnetModelManager; /* model_runtime.h */
 
 #ifdef __cplusplus
 extern "C" {
@@ -146,6 +148,26 @@ CNET_API int specialist_axes(const PrimitiveRegistry *reg,
    (conservative: assume a load is needed). */
 CNET_API SpecialistResidency specialist_residency_from_cce_tier(int cce_tier);
 CNET_API SpecialistResidency specialist_residency_from_model_state(int model_state);
+
+/* Residency TRUTH: read the axis from the live machinery instead of a
+   caller-supplied enum, so the view cannot drift from what the residency
+   managers actually hold.
+
+   of_model   the model catalog's CURRENT state for model_id
+              (cnet_model_stats: RESIDENT -> hot, LOADING -> warm,
+              COLD/FAILED/unknown -> cold).
+   of_branch  the forest branch's CURRENT tier for branch_name
+              (HOT owned / WARM mmap view / COLD on disk; unknown -> cold).
+   of_entry   the planner-level view of a registry entry: HOT when the
+              node is invocable right now (a present BTN — native weights
+              resident, or a bound adapter), COLD otherwise. Store-level
+              variance lives in the branch/model truths above. */
+CNET_API SpecialistResidency specialist_residency_of_model(
+    const struct CnetModelManager *manager, const char *model_id);
+CNET_API SpecialistResidency specialist_residency_of_branch(
+    const struct cce_forest *forest, const char *branch_name);
+CNET_API SpecialistResidency specialist_residency_of_entry(
+    const RegistryEntry *entry);
 
 /* Stable lowercase atoms for logs/telemetry ("btn", "certified", ...). */
 CNET_API const char *specialist_kind_name(SpecialistKind k);

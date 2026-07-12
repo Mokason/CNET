@@ -67,8 +67,9 @@ typedef struct {
     int          last_use;
 } cce_branch;
 
-/* Forest = collection of branches + archive + recall */
-typedef struct {
+/* Forest = collection of branches + archive + recall
+   (tagged so light headers can forward-declare `struct cce_forest`) */
+typedef struct cce_forest {
     cce_archive* archive;
     cce_branch*  branches;
     int          num_branches;

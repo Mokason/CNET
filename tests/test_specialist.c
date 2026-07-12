@@ -2,6 +2,11 @@
 #include <string.h>
 
 #include "../include/specialist.h"
+#include "../include/model_runtime.h"
+#include "../include/cce/cce_tensor.h"
+#include "../include/cce/cce_block.h"
+#include "../include/cce/cce_cascade.h"
+#include "../include/cce/cce_forest.h"
 
 static int checks;
 static int failures;
@@ -154,6 +159,117 @@ static void test_specialist_edge_refusals_and_atoms(void) {
     btn_free(&adapter);
 }
 
+static int fixture_backend_load(void *ctx,
+                                const CnetModelDescriptor *descriptor,
+                                uint64_t resource_mask, void **handle_out,
+                                uint64_t *resident_bytes_out) {
+    (void)ctx; (void)descriptor; (void)resource_mask;
+    *handle_out = (void *)0x1;
+    *resident_bytes_out = 1024;
+    return 0;
+}
+
+static void fixture_backend_unload(void *ctx, void *handle) {
+    (void)ctx; (void)handle;
+}
+
+static void test_residency_truth(void) {
+    /* forest truth: the branch's LIVE tier, not a caller-supplied enum */
+    {
+        cce_forest *forest = NULL;
+        cce_cascade cascade;
+        cce_block blk;
+        memset(&cascade, 0, sizeof cascade);
+        memset(&blk, 0, sizeof blk);
+        remove("tmp_specialist_res.cce");
+        check(cce_cascade_init(&cascade, 2) == CCE_OK &&
+              cce_block_init_linear(&blk, 2, 2, 0.01f) == CCE_OK &&
+              cce_cascade_append(&cascade, &blk) == CCE_OK &&
+              cce_forest_open(&forest, "tmp_specialist_res.cce", 2) == CCE_OK &&
+              cce_forest_add_branch(forest, &cascade, "res-truth") == CCE_OK,
+              "residency fixture forest builds");
+        check(specialist_residency_of_branch(forest, "res-truth") ==
+                  SPECIALIST_RES_HOT,
+              "a freshly added branch reads hot from the live forest");
+        forest->branches[0].tier = CCE_TIER_WARM;
+        check(specialist_residency_of_branch(forest, "res-truth") ==
+                  SPECIALIST_RES_WARM,
+              "the view follows the branch tier as it changes");
+        check(specialist_residency_of_branch(forest, "absent") ==
+                  SPECIALIST_RES_COLD,
+              "an unknown branch is conservatively cold");
+        cce_forest_close(forest);
+        remove("tmp_specialist_res.cce");
+    }
+
+    /* model-catalog truth: the manager's LIVE state across a lease cycle */
+    {
+        CnetModelManager *mgr = NULL;
+        CnetModelManagerOptions opt;
+        CnetModelBackendSpec backend;
+        CnetModelDescriptor d;
+        CnetModelBudget budget;
+        CnetModelLease lease;
+        memset(&opt, 0, sizeof opt);
+        memset(&backend, 0, sizeof backend);
+        memset(&d, 0, sizeof d);
+        memset(&budget, 0, sizeof budget);
+        opt.abi_version = 1;
+        opt.struct_size = (uint32_t)sizeof opt;
+        opt.max_models = 4;
+        budget.resource_mask = CNET_MODEL_RESOURCE_CPU;
+        budget.budget_bytes = 1 << 20;
+        opt.budgets = &budget;
+        opt.budget_count = 1;
+        check(cnet_model_manager_open(&mgr, &opt) == 0,
+              "residency fixture manager opens");
+        snprintf(backend.name, sizeof backend.name, "fixture");
+        backend.load = fixture_backend_load;
+        backend.unload = fixture_backend_unload;
+        check(cnet_model_backend_register(mgr, &backend) == 0,
+              "fixture backend registers");
+        snprintf(d.model_id, sizeof d.model_id, "res_truth_model");
+        snprintf(d.backend_name, sizeof d.backend_name, "fixture");
+        d.model_class = CNET_MODEL_CLASS_DENSE_TRANSFORMER;
+        d.resident_bytes_per_resource = 1024;
+        d.allowed_resource_mask = CNET_MODEL_RESOURCE_CPU;
+        d.preferred_resource_mask = CNET_MODEL_RESOURCE_CPU;
+        d.required_resource_count = 1;
+        check(cnet_model_catalog_add(mgr, &d) == 0, "descriptor enters catalog");
+        check(specialist_residency_of_model(mgr, "res_truth_model") ==
+                  SPECIALIST_RES_COLD,
+              "an unloaded model reads cold from the live catalog");
+        check(cnet_model_acquire(mgr, "res_truth_model",
+                                 CNET_MODEL_RESOURCE_CPU, &lease) == 0 &&
+              specialist_residency_of_model(mgr, "res_truth_model") ==
+                  SPECIALIST_RES_HOT,
+              "a leased model reads hot from the live catalog");
+        check(cnet_model_release(mgr, &lease) == 0 &&
+              cnet_model_evict(mgr, "res_truth_model") == 0 &&
+              specialist_residency_of_model(mgr, "res_truth_model") ==
+                  SPECIALIST_RES_COLD,
+              "an evicted model reads cold again");
+        check(specialist_residency_of_model(mgr, "never_registered") ==
+                  SPECIALIST_RES_COLD,
+              "an unknown model is conservatively cold");
+        cnet_model_manager_close(mgr);
+    }
+
+    /* entry truth: invocable-now is the planner-level meaning of hot */
+    {
+        RegistryEntry e;
+        BinaryTransformNetwork b;
+        memset(&e, 0, sizeof e);
+        memset(&b, 0, sizeof b);
+        check(specialist_residency_of_entry(&e) == SPECIALIST_RES_COLD &&
+              specialist_residency_of_entry(NULL) == SPECIALIST_RES_COLD,
+              "an entry without a node is cold");
+        e.btn = &b;
+        check(specialist_residency_of_entry(&e) == SPECIALIST_RES_HOT,
+              "a present node is hot: the planner can invoke it now");
+    }
+}
+
 int main(void) {
     test_registry_init_clears_streamer();
     test_admit_rejects_unknown_kind();
@@ -165,6 +281,8 @@ int main(void) {
                 checks, failures);
         return 1;
     }
+    test_residency_truth();
+
     printf("SPECIALIST_UNIT_PASS checks=%d\n", checks);
     return 0;
 }

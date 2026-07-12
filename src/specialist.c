@@ -9,6 +9,8 @@
 #include "../include/specialist.h"
 #include "../include/specialist_adapters.h"
 #include "../include/cce/cce_contract_adapter.h"
+#include "../include/cce/cce_forest.h"
+#include "../include/model_runtime.h"
 
 int specialist_wrap_btn(Specialist *s,
                         BinaryTransformNetwork *btn,
@@ -126,6 +128,30 @@ SpecialistResidency specialist_residency_from_model_state(int model_state) {
     case 1: return SPECIALIST_RES_WARM;  /* CNET_MODEL_STATE_LOADING */
     default: return SPECIALIST_RES_COLD; /* COLD / FAILED / unknown */
     }
+}
+
+SpecialistResidency specialist_residency_of_model(
+    const struct CnetModelManager *manager, const char *model_id) {
+    CnetModelStats stats;
+    if (!manager || !model_id ||
+        cnet_model_stats(manager, model_id, &stats) != 0)
+        return SPECIALIST_RES_COLD;
+    return specialist_residency_from_model_state((int)stats.state);
+}
+
+SpecialistResidency specialist_residency_of_branch(
+    const struct cce_forest *forest, const char *branch_name) {
+    int i;
+    if (!forest || !branch_name) return SPECIALIST_RES_COLD;
+    for (i = 0; i < forest->num_branches; ++i)
+        if (strcmp(forest->branches[i].name, branch_name) == 0)
+            return specialist_residency_from_cce_tier(
+                (int)forest->branches[i].tier);
+    return SPECIALIST_RES_COLD;
+}
+
+SpecialistResidency specialist_residency_of_entry(const RegistryEntry *entry) {
+    return (entry && entry->btn) ? SPECIALIST_RES_HOT : SPECIALIST_RES_COLD;
 }
 
 const char *specialist_kind_name(SpecialistKind k) {
