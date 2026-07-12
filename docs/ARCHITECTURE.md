@@ -994,6 +994,19 @@ the probe path) produced its first unit the same day it landed —
 `corpus_next_v01`, whose probed transitions are real English bigrams
 (of→the, to→the, is→the). See *The gap lane* in the ledger above.
 
+**Any prose becomes a context (`tools/xlate_window.py encode` / `mint-context`,
+2026-07-12).** Teaching contexts were hand-tokenized id lists, so the lane
+could only learn from the few someone built. The tool now encodes arbitrary
+text to the model's own token ids — a rank-ordered BPE over the GGUF's embedded
+`gemma4` tokenizer (uniform scores, real merges, `▁` spaces, 256-token byte
+fallback), **verified by round-tripping the shipped contexts bit-exact**
+(`xlate_window.py verify … → ENCODER_VERIFY_PASS`; `mint-context` self-checks
+round-trip stability and refuses otherwise). `mint-context <model> <prose>
+<name>` writes `config/lane_contexts/<name>.ids`, and the lane teaches
+context-conditioned units under it on the next restart. Fit for natural prose
+(no pre-tokenization regex — exotic text/code is not guaranteed; encode refuses
+any unmappable byte).
+
 **The fuzzy tier (PAIR / TOPK task shapes).** Where exactness isn't available,
 the machinery is *calibrated abstention*, not fuzzy logic (evaluated and
 rejected — no calibration guarantee): sampled mining + Wilson floor globally +
