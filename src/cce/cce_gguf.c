@@ -3787,3 +3787,313 @@ cce_result cce_gguf_moe_rt_pin_hot(cce_gguf_moe_rt* rt, int n) {
     }
     return CCE_OK;
 }
+
+/* ============ gemma4 single-token full-stack forward (Arc B, end-to-end) ============
+ *
+ * The complete gemma4 layer stack for ONE token at position 0, where
+ * attention is EXACT without kv/rope/window machinery: softmax over a single
+ * score is 1 regardless of q/k, so attention = o_proj(repeat_gqa(rms(v))).
+ * Everything else is position-independent: embedding scaling, every norm,
+ * shared GELU FFN, the (already parity-proven) MoE FFN, dual post-norms,
+ * layer_output_scale, final norm, tied lm_head, tanh logit softcapping,
+ * suppress-token bias. Graph order mirrors llama.cpp models/gemma4.cpp.
+ *
+ * The dense stack stays resident (~7 GB fp32 for the 26B); the experts
+ * stream through the MoE runtime — the run-bigger-than-RAM split. Weights
+ * are kept in file-native [out][in] row order (row o = dot with the input).
+ */
+
+typedef struct cce_gemma4_stack {
+    cce_gguf_moe* m;      /* borrowed */
+    int L, D, V, FF;
+    float eps, softcap;
+    float** attn_norm;    /* [L][D] */
+    float** wv;           /* [L][vw x D] rows=out (attn_k when attn_v absent) */
+    int* vw;
+    float** wo;           /* [L][D x ow] rows=out */
+    int* ow;
+    int* head_dim;        /* per-head V-norm width (swa 256 / full 512) */
+    float** attn_post_norm;
+    float** ffn_norm;
+    float** ffn_gate;     /* [L][FF x D] */
+    float** ffn_up;
+    float** ffn_down;     /* [L][D x FF] */
+    float** post_ffw_norm_1;
+    float** post_ffw_norm_2;
+    float** ffn_post_norm;
+    float* out_scale;     /* [L] (1.0 when absent) */
+    float* output_norm;   /* [D] */
+    float* embd;          /* [V x D] input rows AND the tied lm_head */
+    int64_t suppress[128];
+    int n_suppress;
+} cce_gemma4_stack;
+
+static float* g4_load(const cce_gguf* g, const char* fmt, int l, size_t expect) {
+    char name[128];
+    snprintf(name, sizeof(name), fmt, l);
+    int idx = cce_gguf_find_tensor(g, name);
+    if (idx < 0) return NULL;
+    cce_gguf_tensor_meta tm;
+    cce_gguf_get_tensor_meta(g, idx, &tm);
+    size_t n = 1;
+    for (int d = 0; d < tm.ndim; d++) n *= (size_t)tm.shape[d];
+    if (expect && n != expect) return NULL;
+    float* buf = (float*)malloc(n * sizeof(float));
+    if (!buf) return NULL;
+    if (cce_gguf_load_f32(g, idx, buf, n) != CCE_OK) { free(buf); return NULL; }
+    return buf;
+}
+
+void cce_gemma4_stack_free(cce_gemma4_stack* st) {
+    if (!st) return;
+    for (int l = 0; l < st->L; l++) {
+        if (st->attn_norm) free(st->attn_norm[l]);
+        if (st->wv) free(st->wv[l]);
+        if (st->wo) free(st->wo[l]);
+        if (st->attn_post_norm) free(st->attn_post_norm[l]);
+        if (st->ffn_norm) free(st->ffn_norm[l]);
+        if (st->ffn_gate) free(st->ffn_gate[l]);
+        if (st->ffn_up) free(st->ffn_up[l]);
+        if (st->ffn_down) free(st->ffn_down[l]);
+        if (st->post_ffw_norm_1) free(st->post_ffw_norm_1[l]);
+        if (st->post_ffw_norm_2) free(st->post_ffw_norm_2[l]);
+        if (st->ffn_post_norm) free(st->ffn_post_norm[l]);
+    }
+    free(st->attn_norm); free(st->wv); free(st->wo);
+    free(st->attn_post_norm); free(st->ffn_norm);
+    free(st->ffn_gate); free(st->ffn_up); free(st->ffn_down);
+    free(st->post_ffw_norm_1); free(st->post_ffw_norm_2); free(st->ffn_post_norm);
+    free(st->vw); free(st->ow); free(st->head_dim);
+    free(st->out_scale); free(st->output_norm); free(st->embd);
+    free(st);
+}
+
+cce_result cce_gemma4_stack_open(cce_gguf_moe* m, cce_gemma4_stack** out) {
+    if (!m || !out || strncmp(m->arch, "gemma4", 6) != 0) return CCE_ERR_INVALID_ARG;
+    *out = NULL;
+    cce_gemma4_stack* st = (cce_gemma4_stack*)calloc(1, sizeof(*st));
+    if (!st) return CCE_ERR_OOM;
+    st->m = m;
+    st->L = m->n_layer;
+    st->D = m->n_embd;
+    st->FF = m->n_ff_shared;
+    st->V = cce_gguf_get_vocab_size(m->g);
+    if (st->V <= 0) {
+        /* no vocab_size metadata (tokenizer table is skipped by the parser):
+           the file's bytes are the truth — token_embd [n_embd, n_vocab] */
+        int ei = cce_gguf_find_tensor(m->g, "token_embd.weight");
+        cce_gguf_tensor_meta tm;
+        if (ei >= 0 && cce_gguf_get_tensor_meta(m->g, ei, &tm) == CCE_OK && tm.ndim == 2)
+            st->V = tm.shape[1];
+    }
+    st->eps = cce_gguf_get_rms_eps(m->g);
+    if (st->eps <= 0) st->eps = 1e-6f;
+    st->softcap = (float)gguf_get_scalar(m->g, ".final_logit_softcapping", 0.0);
+
+    int L = st->L, D = st->D;
+    /* per-head V-norm geometry: swa pattern + the two head widths */
+    int64_t pat[512];
+    size_t pn = cce_gguf_get_int_array(m->g, "attention.sliding_window_pattern", pat, 512);
+    int klen = (int)gguf_get_scalar(m->g, ".attention.key_length", 0);
+    int klen_swa = (int)gguf_get_scalar(m->g, ".attention.key_length_swa", 0);
+    if (pn < (size_t)L || klen <= 0 || klen_swa <= 0 || st->V <= 0 || st->FF <= 0) {
+        cce_gemma4_stack_free(st);
+        return CCE_ERR_UNSUPPORTED;
+    }
+
+    st->attn_norm = (float**)calloc(L, sizeof(float*));
+    st->wv = (float**)calloc(L, sizeof(float*));
+    st->wo = (float**)calloc(L, sizeof(float*));
+    st->attn_post_norm = (float**)calloc(L, sizeof(float*));
+    st->ffn_norm = (float**)calloc(L, sizeof(float*));
+    st->ffn_gate = (float**)calloc(L, sizeof(float*));
+    st->ffn_up = (float**)calloc(L, sizeof(float*));
+    st->ffn_down = (float**)calloc(L, sizeof(float*));
+    st->post_ffw_norm_1 = (float**)calloc(L, sizeof(float*));
+    st->post_ffw_norm_2 = (float**)calloc(L, sizeof(float*));
+    st->ffn_post_norm = (float**)calloc(L, sizeof(float*));
+    st->vw = (int*)calloc(L, sizeof(int));
+    st->ow = (int*)calloc(L, sizeof(int));
+    st->head_dim = (int*)calloc(L, sizeof(int));
+    st->out_scale = (float*)calloc(L, sizeof(float));
+    if (!st->attn_norm || !st->wv || !st->wo || !st->attn_post_norm || !st->ffn_norm ||
+        !st->ffn_gate || !st->ffn_up || !st->ffn_down || !st->post_ffw_norm_1 ||
+        !st->post_ffw_norm_2 || !st->ffn_post_norm || !st->vw || !st->ow ||
+        !st->head_dim || !st->out_scale) {
+        cce_gemma4_stack_free(st);
+        return CCE_ERR_OOM;
+    }
+
+    for (int l = 0; l < L; l++) {
+        st->head_dim[l] = pat[l] ? klen_swa : klen;
+        st->attn_norm[l] = g4_load(m->g, "blk.%d.attn_norm.weight", l, (size_t)D);
+        /* v projection; the 5 full-attention layers reuse k as v */
+        char vn[128];
+        snprintf(vn, sizeof(vn), "blk.%d.attn_v.weight", l);
+        int vi = cce_gguf_find_tensor(m->g, vn);
+        if (vi < 0) { snprintf(vn, sizeof(vn), "blk.%d.attn_k.weight", l); vi = cce_gguf_find_tensor(m->g, vn); }
+        if (vi >= 0) {
+            cce_gguf_tensor_meta tm;
+            cce_gguf_get_tensor_meta(m->g, vi, &tm);
+            st->vw[l] = tm.shape[1];
+            st->wv[l] = (float*)malloc((size_t)tm.shape[0] * tm.shape[1] * sizeof(float));
+            if (st->wv[l] &&
+                cce_gguf_load_f32(m->g, vi, st->wv[l], (size_t)tm.shape[0] * tm.shape[1]) != CCE_OK) {
+                free(st->wv[l]); st->wv[l] = NULL;
+            }
+        }
+        {
+            char on[128];
+            snprintf(on, sizeof(on), "blk.%d.attn_output.weight", l);
+            int oi = cce_gguf_find_tensor(m->g, on);
+            if (oi >= 0) {
+                cce_gguf_tensor_meta tm;
+                cce_gguf_get_tensor_meta(m->g, oi, &tm);
+                st->ow[l] = tm.shape[0];   /* input width of o_proj */
+                st->wo[l] = (float*)malloc((size_t)tm.shape[0] * tm.shape[1] * sizeof(float));
+                if (st->wo[l] &&
+                    cce_gguf_load_f32(m->g, oi, st->wo[l], (size_t)tm.shape[0] * tm.shape[1]) != CCE_OK) {
+                    free(st->wo[l]); st->wo[l] = NULL;
+                }
+            }
+        }
+        st->attn_post_norm[l] = g4_load(m->g, "blk.%d.post_attention_norm.weight", l, (size_t)D);
+        st->ffn_norm[l]  = g4_load(m->g, "blk.%d.ffn_norm.weight", l, (size_t)D);
+        st->ffn_gate[l]  = g4_load(m->g, "blk.%d.ffn_gate.weight", l, (size_t)D * st->FF);
+        st->ffn_up[l]    = g4_load(m->g, "blk.%d.ffn_up.weight", l, (size_t)D * st->FF);
+        st->ffn_down[l]  = g4_load(m->g, "blk.%d.ffn_down.weight", l, (size_t)D * st->FF);
+        st->post_ffw_norm_1[l] = g4_load(m->g, "blk.%d.post_ffw_norm_1.weight", l, (size_t)D);
+        st->post_ffw_norm_2[l] = g4_load(m->g, "blk.%d.post_ffw_norm_2.weight", l, (size_t)D);
+        st->ffn_post_norm[l]   = g4_load(m->g, "blk.%d.post_ffw_norm.weight", l, (size_t)D);
+        float* osc = g4_load(m->g, "blk.%d.layer_output_scale.weight", l, 1);
+        st->out_scale[l] = osc ? osc[0] : 1.0f;
+        free(osc);
+        int hd = st->head_dim[l];
+        if (!st->attn_norm[l] || !st->wv[l] || !st->wo[l] || !st->attn_post_norm[l] ||
+            !st->ffn_norm[l] || !st->ffn_gate[l] || !st->ffn_up[l] || !st->ffn_down[l] ||
+            !st->post_ffw_norm_1[l] || !st->post_ffw_norm_2[l] || !st->ffn_post_norm[l] ||
+            hd <= 0 || st->vw[l] % hd != 0 || st->ow[l] % hd != 0 ||
+            (st->ow[l] / hd) % (st->vw[l] / hd) != 0) {
+            cce_gemma4_stack_free(st);
+            return CCE_ERR_UNSUPPORTED; /* a mis-dimensioned layer must never forward */
+        }
+    }
+
+    st->output_norm = g4_load(m->g, "output_norm.weigh%.0dt", 0, (size_t)D);
+    {
+        int ei = cce_gguf_find_tensor(m->g, "token_embd.weight");
+        if (ei >= 0) {
+            st->embd = (float*)malloc((size_t)st->V * D * sizeof(float));
+            if (st->embd &&
+                cce_gguf_load_f32(m->g, ei, st->embd, (size_t)st->V * D) != CCE_OK) {
+                free(st->embd); st->embd = NULL;
+            }
+        }
+    }
+    st->n_suppress = (int)cce_gguf_get_int_array(m->g, "tokenizer.ggml.suppress_tokens",
+                                                 st->suppress, 128);
+    if (!st->output_norm || !st->embd) {
+        cce_gemma4_stack_free(st);
+        return CCE_ERR_UNSUPPORTED;
+    }
+    *out = st;
+    return CCE_OK;
+}
+
+/* weighted rms norm: y = x/rms(x) * w (llama.cpp build_norm LLM_NORM_RMS) */
+static void g4_rmsw(const float* x, const float* w, float* y, int n, float eps) {
+    double ss = 0;
+    for (int i = 0; i < n; i++) ss += (double)x[i] * x[i];
+    float inv = 1.0f / sqrtf((float)(ss / n) + eps);
+    for (int i = 0; i < n; i++) y[i] = x[i] * inv * w[i];
+}
+
+/* y[o] = row_o . x over file-native [out][in] rows */
+static void g4_matvec(const float* W, const float* x, float* y, int in, int out) {
+    for (int o = 0; o < out; o++) {
+        const float* r = W + (size_t)o * in;
+        double acc = 0;
+        for (int i = 0; i < in; i++) acc += (double)r[i] * x[i];
+        y[o] = (float)acc;
+    }
+}
+
+cce_result cce_gemma4_token_logits(cce_gemma4_stack* st, cce_gguf_moe_rt* rt,
+                                   int token, float* logits, float* l_out_dbg) {
+    if (!st || !rt || !logits || token < 0 || token >= st->V) return CCE_ERR_INVALID_ARG;
+    int D = st->D, FF = st->FF;
+    float* x  = (float*)malloc(sizeof(float) * (size_t)(6 * D + 2 * FF + 8192));
+    if (!x) return CCE_ERR_OOM;
+    float* t  = x + D;
+    float* a  = t + D;
+    float* ao = a + D;
+    float* mm = ao + D;
+    float* me = mm + D;
+    float* g  = me + D;      /* [FF] */
+    float* u  = g + FF;      /* [FF] */
+    float* av = u + FF;      /* [<=8192] o_proj input */
+
+    /* embedding row * sqrt(D) */
+    const float* er = st->embd + (size_t)token * D;
+    float esc = sqrtf((float)D);
+    for (int i = 0; i < D; i++) x[i] = er[i] * esc;
+
+    cce_result rc = CCE_OK;
+    for (int l = 0; l < st->L && rc == CCE_OK; l++) {
+        int hd = st->head_dim[l], vw = st->vw[l], ow = st->ow[l];
+        int n_kv = vw / hd, rep = (ow / hd) / n_kv;
+
+        /* attention at pos 0: o_proj(repeat_gqa(per-head rms(v(norm(x))))) */
+        g4_rmsw(x, st->attn_norm[l], t, D, st->eps);
+        float* v = av; /* reuse tail scratch: v then expanded in place */
+        g4_matvec(st->wv[l], t, me, D, vw);           /* v -> me scratch */
+        for (int h = 0; h < n_kv; h++) {              /* UNWEIGHTED per-head rms */
+            float* vh = me + (size_t)h * hd;
+            double ss = 0;
+            for (int i = 0; i < hd; i++) ss += (double)vh[i] * vh[i];
+            float inv = 1.0f / sqrtf((float)(ss / hd) + st->eps);
+            for (int i = 0; i < hd; i++) vh[i] *= inv;
+        }
+        for (int h = 0; h < ow / hd; h++)             /* GQA: q head h <- kv head h/rep */
+            memcpy(v + (size_t)h * hd, me + (size_t)(h / rep) * hd, (size_t)hd * sizeof(float));
+        g4_matvec(st->wo[l], v, a, ow, D);
+        g4_rmsw(a, st->attn_post_norm[l], a, D, st->eps);
+        for (int i = 0; i < D; i++) ao[i] = a[i] + x[i];
+
+        /* shared GELU FFN */
+        g4_rmsw(ao, st->ffn_norm[l], mm, D, st->eps);
+        g4_matvec(st->ffn_gate[l], mm, g, D, FF);
+        g4_matvec(st->ffn_up[l], mm, u, D, FF);
+        for (int o = 0; o < FF; o++) g[o] = moe_gelu_tanh(g[o]) * u[o];
+        g4_matvec(st->ffn_down[l], g, mm, FF, D);
+        g4_rmsw(mm, st->post_ffw_norm_1[l], mm, D, st->eps);
+
+        /* MoE FFN (router + expert norms computed from ao inside; B2-parity path) */
+        rc = cce_gguf_moe_ffn_forward(rt, l, ao, me);
+        if (rc != CCE_OK) break;
+        g4_rmsw(me, st->post_ffw_norm_2[l], me, D, st->eps);
+
+        for (int i = 0; i < D; i++) t[i] = mm[i] + me[i];
+        g4_rmsw(t, st->ffn_post_norm[l], t, D, st->eps);
+        for (int i = 0; i < D; i++) x[i] = (t[i] + ao[i]) * st->out_scale[l];
+        if (l_out_dbg) memcpy(l_out_dbg + (size_t)l * D, x, (size_t)D * sizeof(float));
+    }
+
+    if (rc == CCE_OK) {
+        g4_rmsw(x, st->output_norm, t, D, st->eps);
+        for (int vtok = 0; vtok < st->V; vtok++) {
+            const float* r = st->embd + (size_t)vtok * D;
+            double acc = 0;
+            for (int i = 0; i < D; i++) acc += (double)r[i] * t[i];
+            float lg = (float)acc;
+            if (st->softcap > 0) lg = st->softcap * tanhf(lg / st->softcap);
+            logits[vtok] = lg;
+        }
+        for (int i = 0; i < st->n_suppress; i++) {
+            int64_t id = st->suppress[i];
+            if (id >= 0 && id < st->V) logits[id] = -INFINITY;
+        }
+    }
+    free(x);
+    return rc;
+}

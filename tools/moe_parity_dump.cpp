@@ -37,9 +37,23 @@ static bool wanted(const char* name) {
     static const char* pats[] = {
         "attn_out-0", "ffn_norm_2-0", "ffn_moe_logits-0", "ffn_moe_probs-0",
         "ffn_moe_argsort-0", "ffn_moe_weights_norm-0", "ffn_moe_weighted-0",
+        "inp_scaled", "result_norm", "result_output",
     };
     for (size_t i = 0; i < sizeof(pats) / sizeof(pats[0]); i++)
         if (strcmp(name, pats[i]) == 0) return true;
+    /* full-stack parity ladder: every layer's checkpoints */
+    static const char* prefixes[] = {
+        "l_out-", "out_scaled-", "attn_norm-", "Vcur_normed-", "attn_post_norm-",
+        "attn_out-", "ffn_mlp-", "ffn_moe-", "ffn_post_norm-",
+    };
+    for (size_t i = 0; i < sizeof(prefixes) / sizeof(prefixes[0]); i++) {
+        size_t n = strlen(prefixes[i]);
+        if (strncmp(name, prefixes[i], n) == 0) {
+            /* suffix must be a bare layer number ("ffn_moe-3", not "ffn_moe_logits-3") */
+            const char* q = name + n;
+            if (*q && strspn(q, "0123456789") == strlen(q)) return true;
+        }
+    }
     return false;
 }
 
@@ -104,6 +118,15 @@ int main(int argc, char** argv) {
     const char* model_path = argv[1];
     g_outdir = argv[2];
     const char* prompt = (argc > 3) ? argv[3] : "The capital of France is";
+    /* "ids:2,818" bypasses tokenization: exact token ids for parity replays */
+    std::vector<llama_token> forced_ids;
+    if (strncmp(prompt, "ids:", 4) == 0) {
+        const char* q = prompt + 4;
+        while (*q) {
+            forced_ids.push_back((llama_token)strtol(q, (char**)&q, 10));
+            while (*q == ',' || *q == ' ') q++;
+        }
+    }
 
     llama_backend_init();
 
@@ -123,11 +146,17 @@ int main(int argc, char** argv) {
     if (!ctx) { fprintf(stderr, "ctx init failed\n"); return 1; }
 
     std::vector<llama_token> toks(64);
-    int nt = llama_tokenize(vocab, prompt, (int32_t)strlen(prompt),
+    int nt;
+    if (!forced_ids.empty()) {
+        toks = forced_ids;
+        nt = (int)toks.size();
+    } else {
+        nt = llama_tokenize(vocab, prompt, (int32_t)strlen(prompt),
                             toks.data(), (int32_t)toks.size(),
                             /*add_special*/ true, /*parse_special*/ false);
-    if (nt <= 0) { fprintf(stderr, "tokenize failed (%d)\n", nt); return 1; }
-    toks.resize(nt);
+        if (nt <= 0) { fprintf(stderr, "tokenize failed (%d)\n", nt); return 1; }
+        toks.resize(nt);
+    }
     fprintf(stderr, "tokens (%d):", nt);
     for (int i = 0; i < nt; i++) fprintf(stderr, " %d", toks[i]);
     fprintf(stderr, "\n");

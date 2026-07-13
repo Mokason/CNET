@@ -268,6 +268,21 @@ cce_result cce_gguf_moe_rt_lookahead_hint(cce_gguf_moe_rt* rt, int layer, const 
  * leave the LRU pool and are never evicted. RAM = hot_cap + pinned. */
 cce_result cce_gguf_moe_rt_pin_hot(cce_gguf_moe_rt* rt, int n);
 
+/* ---- gemma4 single-token full-stack forward (end-to-end parity) ----
+ *
+ * The complete gemma4 stack for ONE token at position 0, where attention is
+ * EXACT with no kv/rope/window machinery (softmax over one score is 1, so
+ * attention = o_proj(repeat_gqa(rms_per_head(v)))). The dense stack loads
+ * resident (~7 GB fp32 on the 26B); experts stream through the MoE runtime.
+ * Gated against llama.cpp per-layer checkpoints + final logits. */
+typedef struct cce_gemma4_stack cce_gemma4_stack;
+cce_result cce_gemma4_stack_open(cce_gguf_moe* m, cce_gemma4_stack** out);
+void cce_gemma4_stack_free(cce_gemma4_stack* st);
+/* logits[vocab] for `token` at position 0; l_out_dbg (optional, [n_layer x
+ * n_embd]) captures each layer's output for parity bisection. */
+cce_result cce_gemma4_token_logits(cce_gemma4_stack* st, cce_gguf_moe_rt* rt,
+                                   int token, float* logits, float* l_out_dbg);
+
 /* Batch-union prefill: route all n_tokens first, load each unique expert
  * ONCE, apply it to every token that selected it. x/out are [n_tokens x
  * n_embd]. Bit-identical to n_tokens single-token forwards (same per-expert

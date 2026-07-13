@@ -1093,6 +1093,17 @@ moe_expert_quant: $(CCE) $(CCE_CUDA_OBJ) tests/moe_expert_quant.c tests/tiny_mod
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) tests/moe_expert_quant.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 	./$(BIN_DIR)/moe_expert_quant > logs/moe_expert_quant.console.log 2>&1 || echo "test exited non-zero (see logs/moe_expert_quant.log)"
 
+# MoE end-to-end (Arc B capstone): full-stack gemma4 single-token parity.
+# CNET runs the COMPLETE 26B layer stack (attention exact at position 0:
+# softmax over one score = 1) with the expert bank DEMAND-STREAMED from
+# disk; gates vs llama.cpp dumps: every layer's output, identical next-token
+# argmax + top-8, full-vocab logits within quant tolerance.
+# Dumps regenerate via: bin/moe_parity_dump <gguf> logs/moe_e2e "ids:2"
+moe_e2e: $(CCE) $(CCE_CUDA_OBJ) tests/moe_e2e.c
+	@mkdir -p logs
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) tests/moe_e2e.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+	./$(BIN_DIR)/moe_e2e > logs/moe_e2e.console.log 2>&1 || echo "test exited non-zero (see logs/moe_e2e.log)"
+
 # Dense expert-streaming arc (A3): async readahead + learned hot-pinning.
 # The tier runtime learns the fetch order of the first cold pass, then a
 # background worker prefetches the next `depth` payloads (wrapping around the
@@ -1152,7 +1163,7 @@ cce_autograd_test: $(CCE) $(CCE_CUDA_OBJ) tests/test_cce_autograd.c
 AVX_CFLAGS := $(filter-out -mno-avx,$(CFLAGS))
 # wordlm/wordlm_bitnet/trit_bench link only CCE sources (no src/router/), so
 # they are AVX-safe too; OMP activates the row-parallel packed-trit kernels.
-cce_safetensors_test supra_console supra_chat_mock supra_context_probe supra_longform supra_head_qat supra_head_qat_corpus transformer_qat_joint transformer_qat_real transformer_qat_altmodel proj_qat_recon proj_qat_gemma proj_qat_stack proj_qat_gpu gptq_solver proj_qat_gemma_e2e proj_qat_bitwidth dense_stream_real moe_loader moe_forward moe_stream moe_expert_quant wordlm wordlm_bitnet wordlm_holdout trit_bench: CFLAGS := $(AVX_CFLAGS) $(OMPFLAGS)
+cce_safetensors_test supra_console supra_chat_mock supra_context_probe supra_longform supra_head_qat supra_head_qat_corpus transformer_qat_joint transformer_qat_real transformer_qat_altmodel proj_qat_recon proj_qat_gemma proj_qat_stack proj_qat_gpu gptq_solver proj_qat_gemma_e2e proj_qat_bitwidth dense_stream_real moe_loader moe_forward moe_stream moe_expert_quant moe_e2e wordlm wordlm_bitnet wordlm_holdout trit_bench: CFLAGS := $(AVX_CFLAGS) $(OMPFLAGS)
 
 cce_safetensors_test: $(CCE) $(CCE_CUDA_OBJ) src/nn.c tests/test_cce_safetensors.c
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) src/nn.c tests/test_cce_safetensors.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
