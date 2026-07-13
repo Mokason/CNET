@@ -1017,6 +1017,14 @@ cce_tiers: $(CCE) $(CCE_CUDA_OBJ) tests/cce_tiers_test.c tests/tiny_model_fixtur
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) tests/cce_tiers_test.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 	./$(BIN_DIR)/cce_tiers > logs/cce_tiers.log 2>&1 || echo "test exited non-zero (see log)"
 
+# Dense expert-streaming arc (Arc A1): a QUANTIZED (int8 weight-only PTQ) dense
+# model streams from the weight store under a bounded resident cap. Gates the
+# quantized streaming and reports whether the store preserves int8 end-to-end
+# (finding: it re-materializes FP at serialize_cascade) + the size/RAM numbers.
+dense_stream_q: $(CCE) $(CCE_CUDA_OBJ) tests/dense_stream_q.c tests/tiny_model_fixture.h
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) tests/dense_stream_q.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+	./$(BIN_DIR)/dense_stream_q > logs/dense_stream_q.console.log 2>&1 || echo "test exited non-zero (see logs/dense_stream_q.log)"
+
 # SIMILAR_TO + evidence-gated merge: epsilon-equivalent specialists merge via
 # manifest remap ONLY after an adversarial probe battery; unverified refuses.
 cce_similar: $(CCE) $(CCE_CUDA_OBJ) tests/cce_similar_test.c tests/tiny_model_fixture.h
