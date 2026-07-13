@@ -24,6 +24,9 @@ model_catalog|logs/unified_models_catalog.log|MODEL_CATALOG_PASS|unified
 ds4_dual_launcher|logs/unified_ds4_launcher.log|DS4_DUAL_LAUNCHER_PASS|unified
 soul_host|logs/soul_host_test.log|SOUL_HOST_UNIFIED_PASS|unified
 dotnet_host|logs/unified_host.log|CNET_HOST_UNIFIED_PASS|unified'
+CLAIMS="$CLAIMS
+real_moe_e2e|logs/moe_e2e.log|REAL_MOE_E2E_PASS|model
+real_proj_qat_gemma_e2e|logs/proj_qat_gemma_e2e.log|REAL_PROJ_QAT_GEMMA_E2E_PASS|model"
 
 seed_logs() {
   while IFS='|' read -r _id log marker _scope; do
@@ -62,6 +65,45 @@ grep -Fq '"log_mtime_utc":' "$TMP/logs/claims.jsonl" ||
 grep -Fq '"scanner_host":' "$TMP/logs/claims.jsonl" ||
   fail "ledger mislabeled scanner identity as gate-host attestation"
 
+# A skip marker can never satisfy real-model evidence, even when the process
+# producing it exited successfully.
+printf 'REAL_MOE_E2E_SKIPPED reason=no_checkpoint\n' > "$TMP/logs/moe_e2e.log"
+if (
+  cd "$TMP"
+  bash scripts/gen_claims.sh --strict --scope model >/dev/null
+); then
+  fail "model scope accepted skipped real-model evidence"
+fi
+grep -Fq '"claim":"real_moe_e2e","scope":"model"' "$TMP/logs/claims.jsonl" &&
+  grep -Fq '"verdict":"SKIPPED"' "$TMP/logs/claims.jsonl" ||
+  fail "skipped model evidence was not classified explicitly"
+
+# An explicit failure marker outranks an exact pass marker in the same log.
+seed_logs
+printf 'FAIL: terminal model failure\nREAL_MOE_E2E_PASS\n' > "$TMP/logs/moe_e2e.log"
+if (
+  cd "$TMP"
+  bash scripts/gen_claims.sh --strict --scope model >/dev/null
+); then
+  fail "model scope accepted contradictory FAIL+PASS evidence"
+fi
+grep -Fq '"claim":"real_moe_e2e","scope":"model"' "$TMP/logs/claims.jsonl" &&
+  grep -Fq '"verdict":"FAIL"' "$TMP/logs/claims.jsonl" ||
+  fail "explicit failure did not outrank the pass marker"
+
+# Missing and stale model evidence are fatal in strict model scope.
+seed_logs
+rm -f "$TMP/logs/moe_e2e.log"
+if (cd "$TMP" && bash scripts/gen_claims.sh --strict --scope model >/dev/null); then
+  fail "model scope accepted missing real-model evidence"
+fi
+seed_logs
+: > "$TMP/logs/model.started"
+touch -d '2030-01-01 UTC' "$TMP/logs/model.started"
+if (cd "$TMP" && bash scripts/gen_claims.sh --strict --scope model --since logs/model.started >/dev/null); then
+  fail "model scope accepted stale real-model evidence"
+fi
+
 rm -f "$TMP/logs/unified_adapter.log"
 if (
   cd "$TMP"
@@ -85,6 +127,7 @@ fi
 # Give every unified log the sentinel timestamp while leaving the GPU log old.
 # Equal timestamps are accepted for coarse-resolution filesystems.
 touch -d '2020-01-01 UTC' "$TMP/logs/unified_gpu.log"
+printf 'REAL_MOE_E2E_SKIPPED reason=no_checkpoint\n' > "$TMP/logs/moe_e2e.log"
 while IFS='|' read -r _id log _marker scope; do
   [ "$scope" = unified ] && touch -r "$TMP/logs/unified.started" "$TMP/$log"
 done <<< "$CLAIMS"
@@ -95,11 +138,14 @@ done <<< "$CLAIMS"
 ) || fail "unified scope incorrectly required the GPU-only lane"
 grep -Fq '"verdict":"OUT_OF_SCOPE"' "$TMP/logs/claims.jsonl" ||
   fail "out-of-scope claim was not explicit in JSONL"
-grep -Fq '**16/16 in-scope claims verified; 1 out of scope.**' \
+grep -Fq '**16/16 in-scope claims verified; 3 out of scope.**' \
   "$TMP/docs/verified-today.generated.md" ||
   fail "generated summary did not report scoped denominator"
 grep -Fq '# Verified Today (generated)' \
   "$TMP/docs/verified-today.generated.md" ||
   fail "fresh run-scoped evidence was not labeled as current verification"
+awk '/"claim":"real_moe_e2e"/ && /"verdict":"OUT_OF_SCOPE"/ { found=1 } END { exit !found }' \
+  "$TMP/logs/claims.jsonl" ||
+  fail "unified ledger did not visibly report model evidence out of scope"
 
 printf 'CLAIMS_STRICT_PASS\n'

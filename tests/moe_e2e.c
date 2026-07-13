@@ -79,9 +79,9 @@ int main(int argc, char** argv) {
 
     FILE* rf = fopen(rpath, "rb");
     if (!rf) {
-        LOG("skipped: no checkpoint at %s\n", rpath);
-        LOG("\n%d checks, %d failed -> OK (skipped)\n", checks, fails);
-        return 0;
+        LOG("REAL_MOE_E2E_SKIPPED reason=no_checkpoint path=%s\n", rpath);
+        if (LOGF) fclose(LOGF);
+        return getenv("CNET_REQUIRE_REAL_MODEL") ? 1 : 0;
     }
     fclose(rf);
 
@@ -98,10 +98,12 @@ int main(int argc, char** argv) {
     float* d_logits = (float*)read_cndt(pdir, "result_output", ne_lg);
     float* d_norm   = (float*)read_cndt(pdir, "result_norm", ne);
     if (!d_logits || !d_norm) {
-        LOG("skipped: no llama.cpp dumps in %s (generate: bin/moe_parity_dump <gguf> %s \"ids:%d\")\n",
+        LOG("REAL_MOE_E2E_SKIPPED reason=no_reference_dumps path=%s (generate: bin/moe_parity_dump <gguf> %s \"ids:%d\")\n",
             pdir, pdir, token);
-        LOG("\n%d checks, %d failed -> OK (skipped)\n", checks, fails);
-        return 0;
+        free(d_logits);
+        free(d_norm);
+        if (LOGF) fclose(LOGF);
+        return getenv("CNET_REQUIRE_REAL_MODEL") ? 1 : 0;
     }
 
     LOG("  token id %d, dumps from %s\n", token, pdir);
@@ -230,6 +232,7 @@ int main(int argc, char** argv) {
     remove("me2e_rt.cce");
 
     LOG("\n%d checks, %d failed -> %s\n", checks, fails, fails ? "FAIL" : "OK");
+    if (!fails) LOG("REAL_MOE_E2E_PASS\n");
     if (LOGF) fclose(LOGF);
     return fails ? 1 : 0;
 }

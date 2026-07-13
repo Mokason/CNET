@@ -238,6 +238,12 @@ int main(int argc,char** argv){
     int Lcap=(argc>4)?atoi(argv[4]):4;        /* layers to run (<=4); log if capped */
     g_damp=(argc>5)?atof(argv[5])/100.0:0.05; /* Hessian damping % (down-proj is under-sampled) */
 
+    FILE* checkpoint=fopen(path,"rb");
+    if(!checkpoint){
+        printf("REAL_PROJ_QAT_GEMMA_E2E_SKIPPED reason=no_checkpoint path=%s\n",path);
+        return getenv("CNET_REQUIRE_REAL_MODEL")?1:0;
+    }
+    fclose(checkpoint);
     cce_gguf* gg=NULL;
     if(cce_gguf_load(path,&gg)!=CCE_OK||!gg){ printf("FAIL: cannot load %s\n",path); return 1; }
     const char* arch=cce_gguf_get_arch(gg);
@@ -351,6 +357,7 @@ int main(int argc,char** argv){
     CHECK(gptq_hid < naive_hid, "GPTQ data-aware residual-stream relerr < naive on HELD-OUT");
 
     printf("\nproj_qat_gemma_e2e: %d passed, %d failed\n", g_pass, g_fail);
+    if(!g_fail) printf("REAL_PROJ_QAT_GEMMA_E2E_PASS\n");
     cce_gguf_free(gg);
     return g_fail?1:0;
 }

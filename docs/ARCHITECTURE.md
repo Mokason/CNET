@@ -43,11 +43,14 @@ before it can plan, execute, accrue evidence, or certify.
   against the same truth the unit was admitted with), the `cnet_health_tick`
   MCP tool, and an opt-in periodic timer (`CNET_HEALTH_TICK_SECONDS`,
   0 = off — zero-init changes nothing).
-- **Generated claims.** `make claims` first executes `make unified`, then writes
+- **Generated claims.** `make claims` first executes the hermetic `make unified`, then writes
   `docs/verified-today.generated.md` + `logs/claims.jsonl` from exact terminal
   markers under a run sentinel: every in-scope log must be fresh, and missing,
   failed, or pre-run evidence aborts. The GPU-only lane remains visible as
-  `OUT_OF_SCOPE`. `make claims_all` inventories all known logs but labels that
+  `OUT_OF_SCOPE`. Private-checkpoint evidence has its own strict `model` scope:
+  `make claims_model` (or `make model_evidence`) requires exact unambiguous
+  `REAL_*_PASS` markers, and missing prerequisites are `SKIPPED`, never PASS.
+  GPU evidence likewise remains a separate optional scope. `make claims_all` inventories all known logs but labels that
   output as unscoped evidence, never as current verification.
 
 ## Contract Cascade Engine (CCE) — Pure C Runtime
@@ -1297,6 +1300,7 @@ current state.
 | `make gap_lane` | the 24/7 learning-loop gate: inbox → ledger → oracle-taught dynamic-growth student → certified/sealed → replan → rebuild → atomic checkpoints → resume; prints `GAP_LANE_PASS`; in `make unified` |
 | `make gap_lane_run_build` | build `bin/gap_lane_run`, the gap-lane daemon (local-model teacher via the CCE GGUF runner; stop file `<base>.stop`; env knobs in `tests/gap_lane_run.c`) |
 | `make claims` | execute `make unified` and emit a fresh, strict run-scoped ledger (`logs/claims.jsonl`, `docs/verified-today.generated.md`) |
+| `make claims_model` / `make model_evidence` | run the representative private-checkpoint gates and require fresh exact `REAL_*_PASS` evidence; missing checkpoints/reference dumps emit `*_SKIPPED` and the target exits nonzero |
 | `make claims_all` | inventory every known log with exact-marker verdicts; explicitly labels filesystem mtimes/scanner identity and does not claim current-run freshness |
 | `make unified_async` | work-conserving 2+ lane runtime: copied inputs, ordered collection, bounded capacity, cancellation, deadlines, timeout recovery, and telemetry |
 | `make unified_gpu` | two physical R9700 lane fixture with iGPU exclusion, exact CPU parity, per-lane work evidence, and serial-vs-async timing |

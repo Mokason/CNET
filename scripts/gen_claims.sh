@@ -33,7 +33,7 @@ while [ "$#" -gt 0 ]; do
   esac
 done
 case "$SCOPE" in
-  all|unified|gpu) ;;
+  all|unified|gpu|model) ;;
   *) echo "claims: unknown scope: $SCOPE" >&2; exit 2 ;;
 esac
 if [ -n "$SINCE" ] && [ ! -f "$SINCE" ]; then
@@ -66,6 +66,8 @@ model_catalog|logs/unified_models_catalog.log|MODEL_CATALOG_PASS|unified
 ds4_dual_launcher|logs/unified_ds4_launcher.log|DS4_DUAL_LAUNCHER_PASS|unified
 soul_host|logs/soul_host_test.log|SOUL_HOST_UNIFIED_PASS|unified
 dotnet_host|logs/unified_host.log|CNET_HOST_UNIFIED_PASS|unified
+real_moe_e2e|logs/moe_e2e.log|REAL_MOE_E2E_PASS|model
+real_proj_qat_gemma_e2e|logs/proj_qat_gemma_e2e.log|REAL_PROJ_QAT_GEMMA_E2E_PASS|model
 '
 
 : > "$JSONL"
@@ -109,6 +111,18 @@ while IFS='|' read -r id log marker claim_scope; do
     elif [ -n "$SINCE" ] && [ "$SINCE" -nt "$log" ]; then
       verdict="STALE"
       bad=$((bad + 1))
+    elif awk '
+      $1 == "FAIL:" || $1 == "FAIL" || $1 ~ /_FAIL:?$/ ||
+      $0 ~ /->[[:space:]]*FAIL([[:space:]]|$)/ ||
+      $0 ~ /(^|[[:space:]])[1-9][0-9]* failed([[:space:]]|$)/ { found = 1 }
+      END { exit !found }
+    ' "$log"; then
+      verdict="FAIL"
+      bad=$((bad + 1))
+    elif skip_marker="${marker%_PASS}_SKIPPED" &&
+         awk -v marker="$skip_marker" '$1 == marker { found = 1 } END { exit !found }' "$log"; then
+      verdict="SKIPPED"
+      bad=$((bad + 1))
     elif awk -v marker="$marker" '$1 == marker { found = 1 } END { exit !found }' "$log"; then
       verdict="PASS"
       passed=$((passed + 1))
@@ -133,7 +147,7 @@ EOF
   else
     echo "**$passed/$total in-scope claims verified; $out_of_scope out of scope.**"
   fi
-  echo "MISSING means evidence is absent; STALE means it predates the run sentinel."
+  echo "MISSING means evidence is absent; STALE means it predates the run sentinel; SKIPPED means prerequisites were unavailable."
 } >> "$MD"
 
 echo "claims: $passed/$total verified, $out_of_scope out of scope -> $JSONL, $MD"

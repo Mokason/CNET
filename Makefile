@@ -198,7 +198,7 @@ SYNONYMS_TEST := tests/test_synonyms.c
 TILEINDEX_TEST := tests/test_tile_index.c
 CONSOLIDATE_TEST := tests/test_tile_consolidate.c
 
-.PHONY: all run test verify verify-long recipe_gate demos compat unified unified_native unified_adapter unified_cce_adapter unified_oracle_adapter unified_specialist specialist_health gap_lane gap_lane_run_build dispatch_story claims oracle_v2_test soul_host_test legacy_test compose route dag hetero split chunk certify property coverage conformal logicgate decimal circuit study capacity library margin fuzzy stochastic fastpath throughput residue expr attention attention_study lifecycle_bench lbench proposal_sidecar probe_overhead belowbeam_chars struct_pref dgate_bench compounding_bench cce_smoke counterfactual_router_test sparse_kv_test narrative_coherence_test phase4_uncertainty_test register_compression_improvements phase5_integration_test cce_train_bench cce_view forest_view wordlm wordlm_bitnet cce_dll cnet_dll cce_safetensors_test cce_gguf_test cce_model_test cce_autograd_test endgate jsonstory pdftest pdflearn compound tiermem_test graduate fontdecode tfidf synonyms tileindex consolidate clean
+.PHONY: all run test verify verify-long recipe_gate demos compat unified unified_native unified_adapter unified_cce_adapter unified_oracle_adapter unified_specialist specialist_health gap_lane gap_lane_run_build dispatch_story claims claims_model model_evidence oracle_v2_test soul_host_test legacy_test compose route dag hetero split chunk certify property coverage conformal logicgate decimal circuit study capacity library margin fuzzy stochastic fastpath throughput residue expr attention attention_study lifecycle_bench lbench proposal_sidecar probe_overhead belowbeam_chars struct_pref dgate_bench compounding_bench cce_smoke counterfactual_router_test sparse_kv_test narrative_coherence_test phase4_uncertainty_test register_compression_improvements phase5_integration_test cce_train_bench cce_view forest_view wordlm wordlm_bitnet cce_dll cnet_dll cce_safetensors_test cce_gguf_test cce_model_test cce_autograd_test endgate jsonstory pdftest pdflearn compound tiermem_test graduate fontdecode tfidf synonyms tileindex consolidate clean
 
 all: nn_demo
 
@@ -1120,9 +1120,11 @@ moe_expert_quant: $(CCE) $(CCE_CUDA_OBJ) tests/moe_expert_quant.c tests/tiny_mod
 # disk; gates vs llama.cpp dumps: every layer's output, identical next-token
 # argmax + top-8, full-vocab logits within quant tolerance.
 # Dumps regenerate via: bin/moe_parity_dump <gguf> logs/moe_e2e "ids:2"
-moe_e2e: $(CCE) $(CCE_CUDA_OBJ) tests/moe_e2e.c
+moe_e2e_build: $(CCE) $(CCE_CUDA_OBJ) tests/moe_e2e.c
 	@mkdir -p logs
-	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) tests/moe_e2e.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/moe_e2e $(CCE) $(CCE_CUDA_OBJ) tests/moe_e2e.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+
+moe_e2e: moe_e2e_build
 	./$(BIN_DIR)/moe_e2e > logs/moe_e2e.console.log 2>&1
 
 # MoE generation (Arc B finale): multi-token GENERATION parity. CNET decodes
@@ -1314,9 +1316,11 @@ gptq_solver: tests/gptq_solver.c
 # the quantized model's HELD-OUT output stays close to FP, far better than naive.
 # Standalone; needs Models/gemma-4-12B-it-MTP-Q8_0.gguf. NOT in verify-long.
 # See tests/proj_qat_gemma_e2e.c.
-proj_qat_gemma_e2e: $(CCE) $(CCE_CUDA_OBJ) tests/proj_qat_gemma_e2e.c
+proj_qat_gemma_e2e_build: $(CCE) $(CCE_CUDA_OBJ) tests/proj_qat_gemma_e2e.c
 	@mkdir -p $(BIN_DIR) logs
-	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) tests/proj_qat_gemma_e2e.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -fopenmp -o $(BIN_DIR)/proj_qat_gemma_e2e $(CCE) $(CCE_CUDA_OBJ) tests/proj_qat_gemma_e2e.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -fopenmp
+
+proj_qat_gemma_e2e: proj_qat_gemma_e2e_build
 	./$(BIN_DIR)/proj_qat_gemma_e2e > logs/proj_qat_gemma_e2e.log 2>&1
 
 # Component-dependent bit-width POLICY sweep (Colibri's insight): which projection
@@ -1715,7 +1719,7 @@ unified:
 # run-scoped evidence fresh relative to its sentinel. `make claims_all` merely
 # inventories every known log (including standalone GPU evidence); its PASS is
 # marker presence, not current-run provenance.
-.PHONY: claims claims_all claims_test
+.PHONY: claims claims_all claims_test claims_model model_evidence
 claims_test: tests/test_claims.sh scripts/gen_claims.sh
 	@bash tests/test_claims.sh
 
@@ -1724,6 +1728,21 @@ claims: unified
 
 claims_all: claims_test
 	@bash scripts/gen_claims.sh --strict
+
+# Private-checkpoint evidence is separate from the hermetic unified gate.
+# Missing checkpoints or reference dumps emit SKIPPED and fail this target.
+model_evidence: moe_e2e_build proj_qat_gemma_e2e_build claims_test
+	@mkdir -p logs
+	@rm -f logs/model_evidence.started
+	@touch logs/model_evidence.started
+	@CNET_REQUIRE_REAL_MODEL=1 ./$(BIN_DIR)/moe_e2e > logs/moe_e2e.console.log 2>&1 || :
+	@CNET_REQUIRE_REAL_MODEL=1 ./$(BIN_DIR)/proj_qat_gemma_e2e > logs/proj_qat_gemma_e2e.log 2>&1 || :
+	@rc=0; bash scripts/gen_claims.sh --strict --scope model --since logs/model_evidence.started || rc=$$?; \
+		rm -f logs/model_evidence.started; exit $$rc
+	@echo "CNET_MODEL_EVIDENCE_PASS"
+
+claims_model: model_evidence
+	@grep -q '^# Verified Today (generated)' docs/verified-today.generated.md
 
 
 # Unit-structure probe: how hard is the function each TOPK unit must memorize?
