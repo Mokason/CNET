@@ -48,6 +48,19 @@ typedef struct {
 cce_supra_train* cce_supra_train_create(const cce_supra_train_config* cfg);
 void cce_supra_train_free(cce_supra_train* t);
 
+/* Load REAL pretrained Supra weights into an already-created trainer.
+ *
+ * decomposed_model is a `cce_supra_decomposed*` (from cce_supra_a2a_load /
+ * cce_supra_load_decomposed) — declared void* here so this header does not have
+ * to pull in cce_safetensors.h. Every real weight/bias is DIRECT-copied into the
+ * matching trainer P.w matrix (same [in][out] row-major orientation, no
+ * transpose); pos_emb (frozen FP) is copied too. The trainer MUST have been
+ * created with a cfg matching the real model dims:
+ *   n_layer=m->n_layer, n_embd=m->n_embd, n_head=m->n_head, vocab=m->vocab_size,
+ *   block_size=m->block_size, mlp_hidden = up-projection out dim.
+ * Returns CCE_ERR_INVALID_ARG on any dim/element-count mismatch. */
+cce_result cce_supra_train_load_decomposed(cce_supra_train* t, void* decomposed_model);
+
 /* Forward only: logits[vocab] at the LAST position (ternary where QAT). */
 cce_result cce_supra_train_logits(cce_supra_train* t, const int* tokens, int T,
                                   float* logits /*[vocab]*/);
