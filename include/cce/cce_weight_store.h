@@ -49,12 +49,24 @@ cce_result cce_weight_store_put_tensor(cce_weight_store* s, const cce_tensor* t,
  * are bytes-only (shape is manifest metadata), so the caller supplies the
  * shape; numel must match the stored payload. */
 cce_result cce_weight_store_get(cce_weight_store* s, uint64_t digest, cce_cascade** out);
+
+/* get_opt flags */
+#define CCE_WS_GET_RAW_QUANT 1
+/* CCE_WS_GET_RAW_QUANT: restore quantized payloads (int8/trit/int4) WITHOUT
+ * dequantizing into weights.data — the FP tensor of a quant block is left
+ * UNINITIALIZED. The quantized forward never reads it (w_trit > w_q > FP),
+ * and at scale the dequant writes dominate fetch cost, so the tier runtime
+ * streams with this flag. Only forward-path consumers may use such a
+ * cascade; FP payloads are unaffected. */
+cce_result cce_weight_store_get_opt(cce_weight_store* s, uint64_t digest, cce_cascade** out,
+                                    int flags);
 cce_result cce_weight_store_get_tensor(cce_weight_store* s, uint64_t digest,
                                        const int* shape, int ndim, cce_tensor* out);
 
 int    cce_weight_store_contains(const cce_weight_store* s, uint64_t digest);
 int    cce_weight_store_count(const cce_weight_store* s);   /* payload files */
 size_t cce_weight_store_bytes(const cce_weight_store* s);   /* payload bytes on disk */
+long   cce_weight_store_payload_size(const cce_weight_store* s, uint64_t digest); /* bytes, -1 if absent */
 
 /* Ingest every specialist + parameter tensor of a loaded model; write the
  * manifest. Counts report the dedup outcome. Transformer + ssm supported. */

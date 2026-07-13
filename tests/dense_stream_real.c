@@ -67,6 +67,16 @@ static void measure(const cce_gguf_qwen2* t, size_t* fp_all, size_t* int8_all,
 static double dmax(const float* a, const float* b, int n) { double m = 0; for (int i = 0; i < n; i++) { double d = fabs((double)a[i] - b[i]); if (d > m) m = d; } return m; }
 static int argmaxf(const float* v, int n) { int a = 0; for (int i = 1; i < n; i++) if (v[i] > v[a]) a = i; return a; }
 
+#include <time.h>
+static double now_sec(void) {
+#ifdef _WIN32
+    return (double)clock() / (double)CLOCKS_PER_SEC;
+#else
+    struct timespec ts; clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (double)ts.tv_sec + (double)ts.tv_nsec * 1e-9;
+#endif
+}
+
 int main(int argc, char** argv) {
     LOGF = fopen("logs/dense_stream_real.log", "wb");
     const char* path = (argc > 1) ? argv[1] : "/home/marble/AI/Models/Qwen2.5-0.5B/model.safetensors";
@@ -156,6 +166,90 @@ int main(int argc, char** argv) {
     LOG("  (~%.0f MB, %ld params — 27%% of a 0.5B model; kept FP by design). Larger models -> whole approaches 4x.\n",
         (double)((long)V * D) * 4 / 1e6, (long)V * D);
     CHECK(spec_ratio > 3.5, "the QUANTIZED specialists compress ~4x on real weights (int8 weight-only, the streamable win)");
+
+    /* ---- A3: async readahead + learned pinning — THROUGHPUT on real payloads ----
+     * The pass above was the learning pass (fetch order recorded). Each timed
+     * pass below resets cur_pos so it replays the IDENTICAL prefill: logits
+     * must stay bit-identical to refQ, and wall/stall time becomes comparable
+     * across passes. Stall = forward-thread time blocked on store fetches;
+     * readahead overlaps those fetches with compute, so stall must DROP. */
+    {
+        const int K = 3;
+        CHECK(cce_tier_seq_learned(rt) == 1, "A3: fetch sequence learned by the first streaming pass");
+
+        double stall0 = cce_tier_stall_seconds(rt);
+        double t0 = now_sec();
+        int ok_sync = 1, id_sync = 1;
+        for (int k = 0; k < K; k++) {
+            CHECK(cce_tier_evict_all(rt) == CCE_OK, "A3: cold start (sync pass)");
+            m->cur_pos = 0;
+            if (cce_gguf_qwen2_forward(m, tokens, NT, lg, V) != CCE_OK) ok_sync = 0;
+            if (dmax(lg, refQ, V) != 0.0) id_sync = 0;
+        }
+        double wall_sync = now_sec() - t0, stall_sync = cce_tier_stall_seconds(rt) - stall0;
+        CHECK(ok_sync && id_sync, "A3: sync passes run, logits stay bit-identical to int8 all-resident");
+
+        cce_result rarc = cce_tier_set_readahead(rt, 6);
+        if (rarc == CCE_ERR_UNSUPPORTED) {
+            LOG("  A3: readahead unsupported on this platform — skipping throughput gate\n");
+        } else {
+            CHECK(rarc == CCE_OK, "A3: readahead enables (depth 6)");
+            int sync0 = cce_tier_sync_fetches(rt);
+            stall0 = cce_tier_stall_seconds(rt);
+            t0 = now_sec();
+            int ok_ra = 1, id_ra = 1;
+            for (int k = 0; k < K; k++) {
+                CHECK(cce_tier_evict_all(rt) == CCE_OK, "A3: cold start (readahead pass)");
+                m->cur_pos = 0;
+                if (cce_gguf_qwen2_forward(m, tokens, NT, lg, V) != CCE_OK) ok_ra = 0;
+                if (dmax(lg, refQ, V) != 0.0) id_ra = 0;
+            }
+            double wall_ra = now_sec() - t0, stall_ra = cce_tier_stall_seconds(rt) - stall0;
+            int sync_d = cce_tier_sync_fetches(rt) - sync0;
+            CHECK(ok_ra && id_ra, "A3: READAHEAD passes bit-identical to int8 all-resident (real model)");
+            CHECK(sync_d <= K, "A3: at most one sync fetch per cold pass (the pass head); rest prefetched");
+            CHECK(cce_tier_staged_high_water(rt) <= 6, "A3: staged payloads bounded by depth (RAM honesty)");
+
+            LOG("\n  === A3 throughput (real payloads, %d specialists, %d passes each) ===\n", nblk, K);
+            LOG("  sync:      wall %.3fs  stall %.3fs  (%.1f ms/pass stalled on fetches)\n",
+                wall_sync, stall_sync, 1e3 * stall_sync / K);
+            LOG("  readahead: wall %.3fs  stall %.3fs  (%.1f ms/pass; hits=%d waits=%d sync=%d)\n",
+                wall_ra, stall_ra, 1e3 * stall_ra / K,
+                cce_tier_prefetch_hits(rt), cce_tier_prefetch_waits(rt), sync_d);
+            LOG("  stall cut %.1f%%  wall cut %.1f%%\n",
+                stall_sync > 0 ? 100.0 * (1.0 - stall_ra / stall_sync) : 0.0,
+                wall_sync > 0 ? 100.0 * (1.0 - wall_ra / wall_sync) : 0.0);
+            CHECK(stall_ra < stall_sync,
+                  "A3 THROUGHPUT: readahead cuts forward-thread fetch stall on real payloads");
+
+            /* learned pinning on top: score = fetches x payload bytes, so the
+               huge FP tied lm_head payload (the single most expensive fetch
+               of every pass) gets pinned first, then the largest FFN blocks */
+            const int N_PIN = 32;
+            CHECK(cce_tier_pin_hot(rt, N_PIN) == CCE_OK && cce_tier_pinned(rt) == N_PIN,
+                  "A3: pin_hot pins the 32 costliest specialists (fetches x bytes)");
+            int rh0 = cce_tier_rehydrations(rt);
+            stall0 = cce_tier_stall_seconds(rt);
+            t0 = now_sec();
+            int ok_pin = 1, id_pin = 1;
+            for (int k = 0; k < K; k++) {
+                CHECK(cce_tier_evict_all(rt) == CCE_OK, "A3: cold start (pinned pass; pinned stay)");
+                m->cur_pos = 0;
+                if (cce_gguf_qwen2_forward(m, tokens, NT, lg, V) != CCE_OK) ok_pin = 0;
+                if (dmax(lg, refQ, V) != 0.0) id_pin = 0;
+            }
+            double wall_pin = now_sec() - t0, stall_pin = cce_tier_stall_seconds(rt) - stall0;
+            int rh_pass = (cce_tier_rehydrations(rt) - rh0) / K;
+            LOG("  +pinned%d:  wall %.3fs  stall %.3fs  rehydrations/pass %d (was %d)\n",
+                N_PIN, wall_pin, stall_pin, rh_pass, nblk);
+            CHECK(ok_pin && id_pin, "A3: PINNED passes bit-identical (pinning = residency, not math)");
+            CHECK(rh_pass == nblk - N_PIN, "A3: pinned specialists never refetched (rehydrations/pass drop)");
+            CHECK(stall_pin < stall_ra,
+                  "A3: cost-weighted pinning cuts stall further (the big FP head stops re-streaming)");
+            LOG("  effective RAM = cap %d + pinned %d + staged<=%d of %d specialists\n",
+                HOT_CAP, N_PIN, 6, nblk);
+        }
+    }
 
     free(refFP); free(refQ); free(lg);
     cce_tier_detach(rt); cce_weight_store_close(sq);

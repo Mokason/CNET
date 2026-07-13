@@ -1044,6 +1044,18 @@ dense_stream_a2: $(CCE) $(CCE_CUDA_OBJ) tests/dense_stream_a2.c tests/tiny_model
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) tests/dense_stream_a2.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 	./$(BIN_DIR)/dense_stream_a2 > logs/dense_stream_a2.console.log 2>&1 || echo "test exited non-zero (see logs/dense_stream_a2.log)"
 
+# Dense expert-streaming arc (A3): async readahead + learned hot-pinning.
+# The tier runtime learns the fetch order of the first cold pass, then a
+# background worker prefetches the next `depth` payloads (wrapping around the
+# pass boundary — the decode regime) while the forward computes; pin_hot keeps
+# the most-fetched specialists resident. Gates: deterministic fetch mechanics
+# (1 sync fetch after a cold start, 0 with wrap-around, rehydrations drop by
+# the pin count) and BIT-IDENTICAL logits vs a synchronous twin every pass.
+dense_stream_a3: $(CCE) $(CCE_CUDA_OBJ) tests/dense_stream_a3.c tests/tiny_model_fixture.h
+	@mkdir -p logs
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) tests/dense_stream_a3.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+	./$(BIN_DIR)/dense_stream_a3 > logs/dense_stream_a3.console.log 2>&1 || echo "test exited non-zero (see logs/dense_stream_a3.log)"
+
 # Dense expert-streaming arc (packed storage): the weight store's quantized-
 # payload path extended to PACKED formats — ternary at 1.6 bit/weight (5 trits/
 # byte base-3, ~20x) and int4 at 2 codes/byte (~8x). Gates: four precision

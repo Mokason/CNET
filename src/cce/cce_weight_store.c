@@ -243,6 +243,13 @@ int cce_weight_store_contains(const cce_weight_store* s, uint64_t digest) {
 int cce_weight_store_count(const cce_weight_store* s) { return s ? s->count : 0; }
 size_t cce_weight_store_bytes(const cce_weight_store* s) { return s ? s->bytes : 0; }
 
+long cce_weight_store_payload_size(const cce_weight_store* s, uint64_t digest) {
+    if (!s) return -1;
+    char path[600];
+    digest_path(s, digest, path, sizeof(path));
+    return file_size(path);
+}
+
 /* write-or-verify: the honesty core. */
 static cce_result put_blob(cce_weight_store* s, uint64_t digest, const ws_blob* b, int* reused_out) {
     char path[600];
@@ -328,7 +335,13 @@ static cce_result read_payload(const cce_weight_store* s, uint64_t digest,
 }
 
 cce_result cce_weight_store_get(cce_weight_store* s, uint64_t digest, cce_cascade** out) {
+    return cce_weight_store_get_opt(s, digest, out, 0);
+}
+
+cce_result cce_weight_store_get_opt(cce_weight_store* s, uint64_t digest, cce_cascade** out,
+                                    int flags) {
     if (!s || !out) return CCE_ERR_INVALID_ARG;
+    int dequant = !(flags & CCE_WS_GET_RAW_QUANT);
     *out = NULL;
     unsigned char* buf = NULL; size_t len = 0; uint32_t kind = 2;
     cce_result rc = read_payload(s, digest, &buf, &len, &kind);
@@ -389,9 +402,10 @@ cce_result cce_weight_store_get(cce_weight_store* s, uint64_t digest, cce_cascad
             memcpy(q,  buf + off, qb); off += qb;
             memcpy(sc, buf + off, (size_t)out_d * sizeof(float)); off += (size_t)out_d * sizeof(float);
             blk->w_q = q; blk->w_scale = sc;
-            for (int ii = 0; ii < in; ii++)
-                for (int oo = 0; oo < out_d; oo++)
-                    blk->weights.data[(size_t)ii * out_d + oo] = sc[oo] * (float)q[(size_t)ii * out_d + oo];
+            if (dequant)
+                for (int ii = 0; ii < in; ii++)
+                    for (int oo = 0; oo < out_d; oo++)
+                        blk->weights.data[(size_t)ii * out_d + oo] = sc[oo] * (float)q[(size_t)ii * out_d + oo];
         } else if (bk == WS_KIND_TRIT) {
             /* packed-ternary payload (1.6 bit/weight): restore w_trit + bpr + per-out scale.
                The forward prefers w_trit over w_q/FP, so the restored block runs the trit
@@ -405,13 +419,14 @@ cce_result cce_weight_store_get(cce_weight_store* s, uint64_t digest, cce_cascad
             memcpy(t,  buf + off, tb); off += tb;
             memcpy(sc, buf + off, (size_t)out_d * sizeof(float)); off += (size_t)out_d * sizeof(float);
             blk->w_trit = t; blk->w_trit_bpr = bpr; blk->w_scale = sc;
-            for (int ii = 0; ii < in; ii++) {
-                const uint8_t* tr = t + (size_t)ii * bpr;
-                for (int oo = 0; oo < out_d; oo++) {
-                    int code = (tr[oo / 5] / tri_pow[oo % 5]) % 3 - 1;   /* base-3 digit -> {-1,0,+1} */
-                    blk->weights.data[(size_t)ii * out_d + oo] = sc[oo] * (float)code;
+            if (dequant)
+                for (int ii = 0; ii < in; ii++) {
+                    const uint8_t* tr = t + (size_t)ii * bpr;
+                    for (int oo = 0; oo < out_d; oo++) {
+                        int code = (tr[oo / 5] / tri_pow[oo % 5]) % 3 - 1;   /* base-3 digit -> {-1,0,+1} */
+                        blk->weights.data[(size_t)ii * out_d + oo] = sc[oo] * (float)code;
+                    }
                 }
-            }
         } else if (bk == WS_KIND_INT4) {
             /* packed-int4 payload: unpack nibbles to w_q (int8) — the block has no native
                int4-packed forward, so the restored block runs the int8 path on the exact
@@ -428,9 +443,10 @@ cce_result cce_weight_store_get(cce_weight_store* s, uint64_t digest, cce_cascad
             off += pb;
             memcpy(sc, buf + off, (size_t)out_d * sizeof(float)); off += (size_t)out_d * sizeof(float);
             blk->w_q = q; blk->w_scale = sc;
-            for (int ii = 0; ii < in; ii++)
-                for (int oo = 0; oo < out_d; oo++)
-                    blk->weights.data[(size_t)ii * out_d + oo] = sc[oo] * (float)q[(size_t)ii * out_d + oo];
+            if (dequant)
+                for (int ii = 0; ii < in; ii++)
+                    for (int oo = 0; oo < out_d; oo++)
+                        blk->weights.data[(size_t)ii * out_d + oo] = sc[oo] * (float)q[(size_t)ii * out_d + oo];
         } else {
             memcpy(blk->weights.data, buf + off, (size_t)in * out_d * sizeof(float));
             off += (size_t)in * out_d * sizeof(float);
