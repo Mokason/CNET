@@ -1053,7 +1053,7 @@ cce_autograd_test: $(CCE) $(CCE_CUDA_OBJ) tests/test_cce_autograd.c
 AVX_CFLAGS := $(filter-out -mno-avx,$(CFLAGS))
 # wordlm/wordlm_bitnet/trit_bench link only CCE sources (no src/router/), so
 # they are AVX-safe too; OMP activates the row-parallel packed-trit kernels.
-cce_safetensors_test supra_console supra_chat_mock supra_context_probe supra_longform supra_head_qat supra_head_qat_corpus transformer_qat_joint transformer_qat_real transformer_qat_altmodel proj_qat_recon proj_qat_gemma proj_qat_stack wordlm wordlm_bitnet wordlm_holdout trit_bench: CFLAGS := $(AVX_CFLAGS) $(OMPFLAGS)
+cce_safetensors_test supra_console supra_chat_mock supra_context_probe supra_longform supra_head_qat supra_head_qat_corpus transformer_qat_joint transformer_qat_real transformer_qat_altmodel proj_qat_recon proj_qat_gemma proj_qat_stack gptq_solver proj_qat_gemma_e2e wordlm wordlm_bitnet wordlm_holdout trit_bench: CFLAGS := $(AVX_CFLAGS) $(OMPFLAGS)
 
 cce_safetensors_test: $(CCE) $(CCE_CUDA_OBJ) src/nn.c tests/test_cce_safetensors.c
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) src/nn.c tests/test_cce_safetensors.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
@@ -1147,6 +1147,26 @@ proj_qat_stack: tests/proj_qat_stack.c
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ tests/proj_qat_stack.c -lm
 	./$(BIN_DIR)/proj_qat_stack > logs/proj_qat_stack.log 2>&1 || echo "test exited non-zero (see log)"
+
+# Milestone 4-full Part 1: the EFFICIENT GPTQ-Cholesky OBQ solver — a fast drop-in
+# for proj_qat_recon's coordinate-descent reconstruct(). One Cholesky of the
+# activation Hessian H=Σ, then a single OBQ error-feedback pass over input columns.
+# Asserts held-out quality matches the coordinate-descent oracle and >=3x faster at
+# in=512,out=512. Hermetic. See tests/gptq_solver.c.
+gptq_solver: tests/gptq_solver.c
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ tests/gptq_solver.c -lm
+	./$(BIN_DIR)/gptq_solver > logs/gptq_solver.log 2>&1 || echo "test exited non-zero (see log)"
+
+# Milestone 4-full Part 2: real end-to-end on gemma-4-12B. Quantizes EVERY linear
+# projection of the real gemma MLP stack with the GPTQ data-aware solver and shows
+# the quantized model's HELD-OUT output stays close to FP, far better than naive.
+# Standalone; needs Models/gemma-4-12B-it-MTP-Q8_0.gguf. NOT in verify-long.
+# See tests/proj_qat_gemma_e2e.c.
+proj_qat_gemma_e2e: $(CCE) $(CCE_CUDA_OBJ) tests/proj_qat_gemma_e2e.c
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) tests/proj_qat_gemma_e2e.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+	./$(BIN_DIR)/proj_qat_gemma_e2e > logs/proj_qat_gemma_e2e.log 2>&1 || echo "test exited non-zero (see log)"
 
 # Lightweight mock chat test: exercises the real BPE tokenizer (encode) without
 # requiring the full model forward. Needs supra_cache/tokenizer.json (run
