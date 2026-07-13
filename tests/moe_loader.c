@@ -155,6 +155,25 @@ static double cas_dmax(const cce_cascade* a, const cce_cascade* b) {
     return m;
 }
 
+/* store-backed forest residency provider (file scope: C has no closures).
+ * name -> digest via the map the test fills, then a plain store get. */
+static struct { char name[64]; uint64_t digest; } fmap[16];
+static int fmap_n = 0, ffetches = 0;
+static cce_weight_store* fstore = NULL;
+
+static cce_cascade* moe_test_provider(void* ctx, const char* name) {
+    (void)ctx;
+    for (int i = 0; i < fmap_n; i++) {
+        if (strcmp(fmap[i].name, name) == 0) {
+            cce_cascade* cas = NULL;
+            if (cce_weight_store_get(fstore, fmap[i].digest, &cas) != CCE_OK) return NULL;
+            ffetches++;
+            return cas; /* forest adopts */
+        }
+    }
+    return NULL;
+}
+
 int main(int argc, char** argv) {
     LOGF = fopen("logs/moe_loader.log", "wb");
     LOG("=== moe_loader: Arc B1 — MoE checkpoints as streamable per-expert specialists ===\n");
@@ -251,6 +270,80 @@ int main(int argc, char** argv) {
         cce_cascade_destroy(e00);
         cce_weight_store_close(s);
         wipe_store_dir("mx_store");
+    }
+
+    /* experts live in the FOREST: evictable branches, demand-rehydrated from
+     * the store under the LRU cap — the structure Arc A's tier machinery
+     * (and B2's router-driven demand loading) operates on */
+    LOG("\n--- experts as FOREST branches with store-backed residency ---\n");
+    {
+        fmap_n = 0; ffetches = 0;
+
+        wipe_store_dir("mx_store_f");
+        remove("mx_forest.cce");
+        CHECK(cce_weight_store_open(&fstore, "mx_store_f") == CCE_OK && fstore, "forest store opens");
+        cce_forest* fo = NULL;
+        CHECK(cce_forest_open(&fo, "mx_forest.cce", 16) == CCE_OK && fo, "forest opens");
+
+        int added = 0, put_ok = 0;
+        for (int l = 0; l < MX_L && fo; l++) {
+            for (int e = 0; e <= MX_E; e++) {   /* e==MX_E slot = the router */
+                cce_cascade* cas = NULL;
+                if (e < MX_E) {
+                    if (cce_gguf_moe_load_expert(mm, l, e, &cas) != CCE_OK) continue;
+                    snprintf(fmap[fmap_n].name, sizeof(fmap[0].name), "moe.blk%d.exp%d", l, e);
+                } else {
+                    if (cce_gguf_moe_load_router(mm, l, &cas) != CCE_OK) continue;
+                    snprintf(fmap[fmap_n].name, sizeof(fmap[0].name), "moe.blk%d.router", l);
+                }
+                if (cce_weight_store_put(fstore, cas, &fmap[fmap_n].digest, NULL) == CCE_OK) put_ok++;
+                if (cce_forest_add_cascade_branch(fo, cas, fmap[fmap_n].name, NULL) == CCE_OK) added++;
+                free(cas);   /* branch owns the blocks now (shallow adopt, dense-loader pattern) */
+                fmap_n++;
+            }
+        }
+        CHECK(added == MX_L * (MX_E + 1) && put_ok == added,
+              "all experts + routers are forest branches AND store payloads (10)");
+
+        /* mark everything evictable and register the store-backed provider */
+        for (int i = 0; i < fo->num_branches; i++) fo->branches[i].evictable = 1;
+        cce_forest_set_residency(fo, 8, moe_test_provider, NULL);
+
+        /* start cold */
+        for (int i = 0; i < fo->num_branches; i++) cce_forest_evict_branch(fo, i);
+        CHECK(cce_forest_resident_count(fo) == 0, "forest starts cold (all experts evicted)");
+
+        /* demand-load every branch: LRU cap holds while all 10 stream through */
+        int loaded = 0;
+        for (int i = 0; i < fmap_n; i++)
+            if (cce_forest_get_resident(fo, fmap[i].name)) loaded++;
+        CHECK(loaded == fmap_n, "all 10 branches demand-load through the store provider");
+        CHECK(cce_forest_resident_count(fo) <= 8, "resident experts bounded by the cap (8 of 10)");
+        CHECK(cce_forest_resident_high_water(fo) <= 8, "residency high-water never exceeded the cap");
+        CHECK(ffetches == fmap_n, "one fetch per branch on the cold sweep");
+
+        /* the first-touched expert was LRU-evicted by the sweep: re-touching
+         * it re-streams (the bounded-RAM regime), and the rehydrated weights
+         * are BIT-EXACT vs a fresh load from the gguf */
+        cce_cascade* re = cce_forest_get_resident(fo, fmap[0].name);
+        CHECK(re != NULL && ffetches == fmap_n + 1,
+              "evicted expert re-streams on demand (LRU under cap pressure)");
+        if (re) {
+            cce_cascade* fresh = NULL;
+            CHECK(cce_gguf_moe_load_expert(mm, 0, 0, &fresh) == CCE_OK && fresh, "fresh twin loads");
+            if (fresh) {
+                CHECK(cas_dmax(re, fresh) == 0.0,
+                      "forest-rehydrated expert BIT-EXACT vs fresh gguf load");
+                cce_cascade_destroy(fresh);
+            }
+        }
+
+        cce_forest_set_residency(fo, 0, NULL, NULL);
+        cce_forest_close(fo);
+        cce_weight_store_close(fstore);
+        fstore = NULL;
+        wipe_store_dir("mx_store_f");
+        remove("mx_forest.cce");
     }
 
     /* refusals */
