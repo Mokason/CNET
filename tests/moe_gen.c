@@ -299,6 +299,72 @@ int main(int argc, char** argv) {
     CHECK(cce_forest_resident_count(rt->forest) <= 16, "expert residency bounded throughout");
     CHECK(rt->store_hits > 0, "experts re-streamed from the store across tokens");
 
+    /* ---- throughput rung: int8 store experts (1ms SLIM fetches, SIMD int8
+     * matvec) — the decode-speed configuration. Math shifts by int8 quant
+     * noise (inside the routing-chaos envelope measured above); the gate is
+     * SPEED: generation must beat the FP-store run on the same token count. */
+    {
+        LOG("\n--- throughput rung: int8 store + SIMD/OMP decode ---\n");
+        remove("mgen_rt8.cce");
+        wipe_store_dir("mgen_store8");
+        cce_gguf_moe_rt* rt8 = NULL;
+        cce_weight_store* ws8 = NULL;
+        CHECK(cce_gguf_moe_rt_open(mm, "mgen_rt8.cce", 16, &rt8) == CCE_OK && rt8 &&
+              cce_weight_store_open(&ws8, "mgen_store8") == CCE_OK && ws8 &&
+              cce_gguf_moe_rt_attach_store(rt8, ws8, CCE_MOE_STORE_INT8) == CCE_OK,
+              "int8 runtime + store attach");
+        if (rt8 && ws8) {
+            cce_gemma4_reset(st);
+            double ti = now_sec();
+            int ok8 = 1;
+            for (int p2 = 0; p2 < np; p2++)
+                if (cce_gemma4_decode(st, rt8, prompt[p2],
+                                      p2 == np - 1 ? logits : NULL, NULL) != CCE_OK) ok8 = 0;
+            double t_prompt8 = now_sec() - ti;
+            int gen8[64];
+            int gi8;
+            ti = now_sec();
+            for (gi8 = 0; gi8 < ng && ok8; gi8++) {
+                int best = 0;
+                for (int v = 1; v < V; v++)
+                    if (logits[v] > logits[best]) best = v;
+                gen8[gi8] = best;
+                if (cce_gemma4_decode(st, rt8, best, logits, NULL) != CCE_OK) ok8 = 0;
+            }
+            double t_gen8 = now_sec() - ti;
+            CHECK(ok8, "int8 decode runs end-to-end");
+            LOG("  pass A (cold, ingesting): prompt %.1fs, generation %.1fs (%d ingests)\n",
+                t_prompt8, t_gen8, rt8->gguf_loads);
+            CHECK(gi8 == ng, "full continuation generated at int8");
+
+            /* STEADY STATE: replay the same trajectory with the store
+               populated — every fetch is a ~1ms int8 re-stream. This is the
+               decode regime a serving loop lives in. */
+            cce_gemma4_reset(st);
+            int g0 = rt8->gguf_loads;
+            ti = now_sec();
+            for (int p2 = 0; p2 < np; p2++)
+                cce_gemma4_decode(st, rt8, prompt[p2], NULL, NULL);
+            for (int i = 0; i < gi8; i++)
+                cce_gemma4_decode(st, rt8, gen8[i], i == gi8 - 1 ? logits : NULL, NULL);
+            double t_steady = now_sec() - ti;
+            int steps = np + gi8;
+            LOG("  pass B (STEADY STATE): %d tokens in %.1fs = %.2f tok/s"
+                " (%d new ingests, %d store re-streams)\n",
+                steps, t_steady, steps / t_steady,
+                rt8->gguf_loads - g0, rt8->store_hits);
+            LOG("  vs FP-store generation %.2f tok/s -> %.1fx\n",
+                (double)ng / 49.0, (steps / t_steady) / ((double)ng / 49.0));
+            CHECK(rt8->gguf_loads - g0 <= steps, "steady state: (almost) everything re-streams");
+            CHECK(steps / t_steady > (double)ng / 49.0,
+                  "THROUGHPUT: steady-state int8 decode beats the FP-store baseline");
+        }
+        if (rt8) cce_gguf_moe_rt_free(rt8);
+        if (ws8) cce_weight_store_close(ws8);
+        remove("mgen_rt8.cce");
+        wipe_store_dir("mgen_store8");
+    }
+
     free(lout);
     free(logits);
     cce_gemma4_stack_free(st);

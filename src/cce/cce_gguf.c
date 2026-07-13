@@ -2878,6 +2878,9 @@ cce_result cce_gguf_moe_load_router(const cce_gguf_moe* m, int layer, cce_cascad
 #include <pthread.h>
 #include <time.h>
 #endif
+#if defined(__AVX2__) && defined(__FMA__)
+#include <immintrin.h>
+#endif
 
 static double moe_now(void) {
 #ifdef MOE_HAVE_THREADS
@@ -2903,24 +2906,80 @@ static int moe_branch_idx(const cce_gguf_moe_rt* rt, int l, int e) {
 
 /* linear matvec over a block: int8 codes when present (streamed RAW_QUANT
  * payloads carry w_q + per-out scale and an UNINITIALIZED fp tensor), fp
- * otherwise. y[o] = scale[o] * sum_i x[i]*q[i,o]  |  sum_i x[i]*W[i,o]. */
-static void moe_matvec(const cce_block* b, const float* x, float* y, int n_in, int n_out) {
+ * otherwise. y[o] = scale[o] * sum_i x[i]*q[i,o]  |  sum_i x[i]*W[i,o].
+ * SIMD over the contiguous output lanes + OpenMP over disjoint output
+ * chunks: values are DETERMINISTIC regardless of thread count (each output
+ * accumulates in one fixed order on one thread). Scalar fallback for
+ * -mno-avx builds. */
+static void moe_matvec_slice(const cce_block* b, const float* x, float* y,
+                             int n_in, int n_out, int o0, int o1) {
     int o, i;
-    for (o = 0; o < n_out; o++) y[o] = 0.0f;
+    for (o = o0; o < o1; o++) y[o] = 0.0f;
     if (b->w_q && b->w_scale) {
+#if defined(__AVX2__) && defined(__FMA__)
+        int ov = o0 + ((o1 - o0) & ~7);
+        for (i = 0; i < n_in; i++) {
+            const __m256 a = _mm256_set1_ps(x[i]);
+            const int8_t* qr = &b->w_q[(size_t)i * n_out];
+            for (o = o0; o < ov; o += 8) {
+                __m256i qi = _mm256_cvtepi8_epi32(_mm_loadl_epi64((const __m128i*)(qr + o)));
+                __m256 yv = _mm256_loadu_ps(y + o);
+                yv = _mm256_fmadd_ps(a, _mm256_cvtepi32_ps(qi), yv);
+                _mm256_storeu_ps(y + o, yv);
+            }
+            const float af = x[i];
+            for (o = ov; o < o1; o++) y[o] += af * (float)qr[o];
+        }
+#else
         for (i = 0; i < n_in; i++) {
             const float a = x[i];
             const int8_t* qr = &b->w_q[(size_t)i * n_out];
-            for (o = 0; o < n_out; o++) y[o] += a * (float)qr[o];
+            for (o = o0; o < o1; o++) y[o] += a * (float)qr[o];
         }
-        for (o = 0; o < n_out; o++) y[o] *= b->w_scale[o];
+#endif
+        for (o = o0; o < o1; o++) y[o] *= b->w_scale[o];
     } else {
         const float* W = b->weights.data;
+#if defined(__AVX2__) && defined(__FMA__)
+        int ov = o0 + ((o1 - o0) & ~7);
+        for (i = 0; i < n_in; i++) {
+            const __m256 a = _mm256_set1_ps(x[i]);
+            const float* wr = &W[(size_t)i * n_out];
+            for (o = o0; o < ov; o += 8) {
+                __m256 yv = _mm256_loadu_ps(y + o);
+                yv = _mm256_fmadd_ps(a, _mm256_loadu_ps(wr + o), yv);
+                _mm256_storeu_ps(y + o, yv);
+            }
+            const float af = x[i];
+            for (o = ov; o < o1; o++) y[o] += af * wr[o];
+        }
+#else
         for (i = 0; i < n_in; i++) {
             const float a = x[i];
             const float* wr = &W[(size_t)i * n_out];
-            for (o = 0; o < n_out; o++) y[o] += a * wr[o];
+            for (o = o0; o < o1; o++) y[o] += a * wr[o];
         }
+#endif
+    }
+}
+
+static void moe_matvec(const cce_block* b, const float* x, float* y, int n_in, int n_out) {
+    if ((size_t)n_in * n_out >= (size_t)1 << 20) {
+        int nc = n_out / 512 + 1;
+        if (nc > 16) nc = 16;
+        #pragma omp parallel for schedule(static)
+        for (int c = 0; c < nc; c++) {
+            int o0 = (int)((long long)n_out * c / nc);
+            int o1 = (int)((long long)n_out * (c + 1) / nc);
+            /* round chunk starts to the SIMD width so lane grouping (and
+               therefore each output's accumulation) never depends on nc */
+            o0 = (o0 + 7) & ~7;
+            if (o1 < n_out) o1 = (o1 + 7) & ~7;
+            if (o1 > n_out) o1 = n_out;
+            if (o0 < o1) moe_matvec_slice(b, x, y, n_in, n_out, o0, o1);
+        }
+    } else {
+        moe_matvec_slice(b, x, y, n_in, n_out, 0, n_out);
     }
 }
 
@@ -4032,14 +4091,34 @@ static void g4_rmsw(const float* x, const float* w, float* y, int n, float eps) 
     for (int i = 0; i < n; i++) y[i] = x[i] * inv * w[i];
 }
 
-/* y[o] = row_o . x over file-native [out][in] rows */
+/* y[o] = row_o . x over file-native [out][in] rows. SIMD 8-lane FMA dot per
+ * row + OpenMP over rows (rows are independent: deterministic under any
+ * thread count). Scalar fallback for -mno-avx builds. */
+static float g4_dot(const float* r, const float* x, int in) {
+#if defined(__AVX2__) && defined(__FMA__)
+    __m256 acc = _mm256_setzero_ps();
+    int iv = in & ~7, i;
+    for (i = 0; i < iv; i += 8)
+        acc = _mm256_fmadd_ps(_mm256_loadu_ps(r + i), _mm256_loadu_ps(x + i), acc);
+    __m128 lo = _mm256_castps256_ps128(acc);
+    __m128 hi = _mm256_extractf128_ps(acc, 1);
+    lo = _mm_add_ps(lo, hi);
+    lo = _mm_hadd_ps(lo, lo);
+    lo = _mm_hadd_ps(lo, lo);
+    float s2 = _mm_cvtss_f32(lo);
+    for (; i < in; i++) s2 += r[i] * x[i];
+    return s2;
+#else
+    double acc = 0;
+    for (int i = 0; i < in; i++) acc += (double)r[i] * x[i];
+    return (float)acc;
+#endif
+}
+
 static void g4_matvec(const float* W, const float* x, float* y, int in, int out) {
-    for (int o = 0; o < out; o++) {
-        const float* r = W + (size_t)o * in;
-        double acc = 0;
-        for (int i = 0; i < in; i++) acc += (double)r[i] * x[i];
-        y[o] = (float)acc;
-    }
+    #pragma omp parallel for schedule(static) if ((size_t)in * out >= (size_t)1 << 20)
+    for (int o = 0; o < out; o++)
+        y[o] = g4_dot(W + (size_t)o * in, x, in);
 }
 
 /* NEOX rope in place on one head (ggml_rope_ext, ext_factor=0, freq_scale=1):
@@ -4168,14 +4247,10 @@ cce_result cce_gemma4_decode(cce_gemma4_stack* st, cce_gguf_moe_rt* rt,
         st->cur_pos = pos + 1;
         if (logits) {
             g4_rmsw(x, st->output_norm, t, D, st->eps);
-            for (int vtok = 0; vtok < st->V; vtok++) {
-                const float* r = st->embd + (size_t)vtok * D;
-                double acc = 0;
-                for (int i = 0; i < D; i++) acc += (double)r[i] * t[i];
-                float lg = (float)acc;
-                if (st->softcap > 0) lg = st->softcap * tanhf(lg / st->softcap);
-                logits[vtok] = lg;
-            }
+            g4_matvec(st->embd, t, logits, D, st->V); /* tied head, OMP over vocab rows */
+            if (st->softcap > 0)
+                for (int vtok = 0; vtok < st->V; vtok++)
+                    logits[vtok] = st->softcap * tanhf(logits[vtok] / st->softcap);
             for (int i = 0; i < st->n_suppress; i++) {
                 int64_t id = st->suppress[i];
                 if (id >= 0 && id < st->V) logits[id] = -INFINITY;
