@@ -1,0 +1,23 @@
+{
+  "build_rev": "80c7f8c",
+  "model": "/home/marble/AI/Models/gemma4-v2-Q4_K_M.gguf",
+  "model_bytes": 7381381664,
+  "tokenizer_model": "gemma4",
+  "bos_token_id": 2,
+  "task": "topk",
+  "target_semantics": "ordered",
+  "V": 256,
+  "max_units": 256,
+  "window_source": "english_window_256_rev.txt",
+  "window_fnv": "1a4befebdfffac17",
+  "margin_eps": 0.020000,
+  "cert_sampled": 1,
+  "sample_count": 96,
+  "min_accuracy_bound": 0.9500,
+  "student": {"init_hidden": 128, "max_hidden": 512, "max_epochs": 20000, "seed": 43},
+  "adaptive": 1,
+  "warmstart": 0,
+  "oracle_int8": 0,
+  "oracle_golden": "/home/marble/AI/CNET/goldens_gemma4v2.txt",
+  "lanes": 1
+}

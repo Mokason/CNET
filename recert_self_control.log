@@ -1,0 +1,8 @@
+model: /home/marble/AI/Models/gemma4-v2-Q4_K_M.gguf  layers=48 hidden=3840 vocab=262144
+window: 256 tokens from english_window_256_rev.txt (first: 1800 4252 2462 3187)
+gpu: gfx1201 x2 (equivalence sweep OK, 0.0 MB will go resident)
+determinism spot check: OK
+head window: restricted to 256 mined tokens (full-vocab head off for mining)
+recert: auditing soul_english_v1.cnb against the current oracle
+recert: 256 units audited — 256 clean, 0 drifted; exemplars match=32118 miss=0 abstain=1 err=0 mean_top3_overlap=3.000
+recert report: soul_english_v1.cnb.recert.txt

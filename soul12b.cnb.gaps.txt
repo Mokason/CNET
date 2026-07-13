@@ -1,0 +1,26 @@
+CNET_GAPS 1
+24
+0 2 1 1 1 64 1 w_cur 1 64 3 tk2000q2000 - cce_cond_next -
+0 2 1 1 1 64 1 w_cur 1 64 3 tk2001q2001 - cce_cond_next -
+0 2 1 1 1 64 1 w_cur 1 64 3 tk2002q2002 - cce_cond_next -
+0 2 1 1 1 64 1 w_cur 1 64 3 tk2003q2003 - cce_cond_next -
+0 2 1 1 1 64 1 w_cur 1 64 3 tk2004q2004 - cce_cond_next -
+0 2 1 1 1 64 1 w_cur 1 64 3 tk2005q2005 - cce_cond_next -
+0 2 1 1 1 64 1 w_cur 1 64 3 tk2006q2006 - cce_cond_next -
+0 2 1 1 1 64 1 w_cur 1 64 3 tk2007q2007 - cce_cond_next -
+0 2 1 1 1 64 1 w_cur 1 64 3 tk2008q2008 - cce_cond_next -
+0 2 1 1 1 64 1 w_cur 1 64 3 tk2009q2009 - cce_cond_next -
+0 2 1 1 1 64 1 w_cur 1 64 3 tk2010q2010 - cce_cond_next -
+0 2 1 1 1 64 1 w_cur 1 64 3 tk2011q2011 - cce_cond_next -
+0 2 1 1 1 64 1 w_cur 1 64 3 tk2012q2012 - cce_cond_next -
+0 2 1 1 1 64 1 w_cur 1 64 3 tk2013q2013 - cce_cond_next -
+0 2 1 1 1 64 1 w_cur 1 64 3 tk2014q2014 - cce_cond_next -
+0 2 1 1 1 64 1 w_cur 1 64 3 tk2015q2015 - cce_cond_next -
+0 2 1 1 1 64 1 w_cur 1 64 3 tk2016q2016 - cce_cond_next -
+0 2 1 1 1 64 1 w_cur 1 64 3 tk2017q2017 - cce_cond_next -
+0 2 1 1 1 64 1 w_cur 1 64 3 tk2018q2018 - cce_cond_next -
+0 2 1 1 1 64 1 w_cur 1 64 3 tk2019q2019 - cce_cond_next -
+0 2 1 1 1 64 1 w_cur 1 64 3 tk2020q2020 - cce_cond_next -
+0 2 1 1 1 64 1 w_cur 1 64 3 tk2021q2021 - cce_cond_next -
+0 2 1 1 1 64 1 w_cur 1 64 3 tk2022q2022 - cce_cond_next -
+0 2 1 1 1 64 1 w_cur 1 64 3 tk2023q2023 - cce_cond_next -

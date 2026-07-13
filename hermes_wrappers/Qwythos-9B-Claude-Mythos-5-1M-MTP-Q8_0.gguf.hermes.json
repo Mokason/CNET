@@ -1,0 +1,39 @@
+{
+  "type": "CNET Hermes Wrapper",
+  "schema": 1,
+  "model_path": "/home/marble/Downloads/Qwythos-9B-Claude-Mythos-5-1M-MTP-Q8_0.gguf",
+  "model_exists": true,
+  "target_size": "1.6bit",
+  "options": "native_backend=llama.cpp; quant=TQ1_0; allow_requantize=true; preserve_output_tensor=true; atomic_partial=true",
+  "compression_strategy": "pack_trits_1p6bit",
+  "output_artifact": "/home/marble/AI/CNET/hermes_wrappers/Qwythos-9B-Claude-Mythos-5-1M-MTP-Q8_0.gguf.cnetpack",
+  "native_compression": {
+    "status": "complete",
+    "container": "GGUF V3",
+    "weight_quant": "TQ1_0",
+    "embedding_quant": "Q4_K",
+    "output_tensor": "Q8_0_preserved",
+    "effective_bpw": 2.76,
+    "source_bytes": 9786060640,
+    "artifact_bytes": 3178803040,
+    "compression_ratio": 3.078536,
+    "size_reduction_percent": 67.517031,
+    "sha256": "db0b3153b7d5e98cf4801cd75a24e91bcd21396971635de58345893cc081fbc3",
+    "requantized_from": "Q8_0"
+  },
+  "gradient_accumulation": {
+    "grads_buffer": "enabled",
+    "preserve_identity_path": true,
+    "preserve_residual_path": true
+  },
+  "uncertainty": {
+    "specialist_uncertainty": "activation_entropy_plus_counterfactual_route_entropy",
+    "default_uncertainty": 0.13192
+  },
+  "hermes": {
+    "loader": "cnet-hermes-wrapper",
+    "start_command": "hermes --model /home/marble/AI/CNET/hermes_wrappers/Qwythos-9B-Claude-Mythos-5-1M-MTP-Q8_0.gguf.cnetpack",
+    "status": "native_compression_complete"
+  },
+  "generated_at_utc": "2026-07-10T20:26:48.9866547Z"
+}

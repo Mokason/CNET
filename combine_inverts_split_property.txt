@@ -1,0 +1,8 @@
+CNET_PROPERTY 1
+combine_inverts_split
+SOURCES 1
+PORT binary_msb 8 1 byte_value
+LHS 2
+split
+combine
+RHS 0

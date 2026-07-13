@@ -16,3 +16,7 @@ altmodel_cache/
 *.safetensors
 *.cnb
 *.cnb.bak
+*.cnetpack
+hermes_wrappers/*.cache
+__pycache__/
+unsloth_compiled_cache/

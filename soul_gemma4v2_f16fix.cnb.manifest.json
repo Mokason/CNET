@@ -1,0 +1,23 @@
+{
+  "build_rev": "8e2c378",
+  "model": "/home/marble/AI/Models/gemma4-v2-Q4_K_M.gguf",
+  "model_bytes": 7381381664,
+  "tokenizer_model": "gemma4",
+  "bos_token_id": 2,
+  "task": "topk",
+  "target_semantics": "ordered",
+  "V": 256,
+  "max_units": 4,
+  "window_source": "argmax-discovery",
+  "window_fnv": "9f007b6568cf4d17",
+  "margin_eps": 0.000000,
+  "cert_sampled": 0,
+  "sample_count": 256,
+  "min_accuracy_bound": 0.9500,
+  "student": {"init_hidden": 64, "max_hidden": 256, "max_epochs": 12000, "seed": 42},
+  "adaptive": 0,
+  "warmstart": 0,
+  "oracle_int8": 1,
+  "oracle_golden": "",
+  "lanes": 2
+}

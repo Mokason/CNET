@@ -1,0 +1,6 @@
+CNET_GAPS 1
+4
+0 2 1 1 1 256 1 w_cur 1 256 3 tk532q532 - cce_cond_next -
+0 1 1 1 1 256 1 w_cur 1 256 3 tk255999q255999 - cce_cond_next certify_failed
+0 1 1 1 1 256 1 w_cur 1 256 3 tk240494q240494 - cce_cond_next certify_failed
+0 2 1 1 1 256 1 w_cur 1 256 3 tk56161q56161 - cce_cond_next -

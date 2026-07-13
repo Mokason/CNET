@@ -1,0 +1,401 @@
+model: /home/marble/AI/Models/gemma4-v2-Q4_K_M.gguf  layers=48 hidden=3840 vocab=262144
+student: init_hidden=128 max_hidden=512 max_epochs=20000
+window: 256 tokens from english_window_256_rev.txt (first: 1800 4252 2462 3187)
+gpu: gfx1201 x2 (equivalence sweep OK, 0.0 MB will go resident)
+determinism spot check: OK
+head window: restricted to 256 mined tokens (full-vocab head off for mining)
+run: task=topk V=256 max_units=256 temp<=80C duty=1.00 wall=0s base=soul_english_v1.cnb
+stop cleanly at any time:  echo stop > soul_english_v1.cnb.stop
+CERT_DIAG acq_tk4252q4252: 254/256 exemplars exact, verdict=0, worst_margin=0.0009
+CERT_DIAG acq_tk2462q2462: 255/256 exemplars exact, verdict=0, worst_margin=0.0196
+CERT_DIAG acq_tk3187q3187: 254/256 exemplars exact, verdict=0, worst_margin=0.0044
+CERT_DIAG acq_tk3627q3627: 252/255 exemplars exact, verdict=0, worst_margin=0.0004
+CERT_DIAG acq_tk13358q13358: 254/256 exemplars exact, verdict=0, worst_margin=0.0017
+model: /home/marble/AI/Models/gemma4-v2-Q4_K_M.gguf  layers=48 hidden=3840 vocab=262144
+cert tier: SAMPLED (Wilson >= 0.95 over a 204/256-point subsample; exactness-on-sample)
+student: init_hidden=128 max_hidden=512 max_epochs=20000
+window: 256 tokens from english_window_256_rev.txt (first: 1800 4252 2462 3187)
+gpu: gfx1201 x2 (equivalence sweep OK, 0.0 MB will go resident)
+determinism spot check: OK
+head window: restricted to 256 mined tokens (full-vocab head off for mining)
+run: task=topk V=256 max_units=256 temp<=80C duty=1.00 wall=0s base=soul_english_v1.cnb
+stop cleanly at any time:  echo stop > soul_english_v1.cnb.stop
+CERT_DIAG acq_tk4252q4252: 207/208 exemplars exact, verdict=0, worst_margin=0.0001
+CERT_DIAG acq_tk2462q2462: 209/209 exemplars exact, verdict=2, worst_margin=0.0002
+CERT_DIAG acq_tk3187q3187: 206/207 exemplars exact, verdict=0, worst_margin=0.0008
+CERT_DIAG acq_tk3627q3627: 206/206 exemplars exact, verdict=2, worst_margin=0.0001
+CERT_DIAG acq_tk13358q13358: 205/206 exemplars exact, verdict=0, worst_margin=0.0000
+CERT_DIAG acq_tk2591q2591: 207/208 exemplars exact, verdict=0, worst_margin=0.0001
+CERT_DIAG acq_tk3727q3727: 208/208 exemplars exact, verdict=2, worst_margin=0.0002
+CERT_DIAG acq_tk2506q2506: 205/207 exemplars exact, verdict=0, worst_margin=0.0001
+CERT_DIAG acq_tk3654q3654: 204/206 exemplars exact, verdict=0, worst_margin=0.0000
+CERT_DIAG acq_tk2940q2940: 207/207 exemplars exact, verdict=2, worst_margin=0.0003
+CERT_DIAG acq_tk2173q2173: 208/208 exemplars exact, verdict=2, worst_margin=0.0001
+CERT_DIAG acq_tk2148q2148: 207/207 exemplars exact, verdict=2, worst_margin=0.0003
+CERT_DIAG acq_tk3075q3075: 206/206 exemplars exact, verdict=2, worst_margin=0.0002
+CERT_DIAG acq_tk4483q4483: 206/206 exemplars exact, verdict=2, worst_margin=0.0012
+CERT_DIAG acq_tk1932q1932: 206/207 exemplars exact, verdict=0, worst_margin=0.0001
+CERT_DIAG acq_tk4721q4721: 205/206 exemplars exact, verdict=0, worst_margin=0.0002
+CERT_DIAG acq_tk2321q2321: 208/209 exemplars exact, verdict=0, worst_margin=0.0001
+CERT_DIAG acq_tk1972q1972: 206/207 exemplars exact, verdict=0, worst_margin=0.0003
+CERT_DIAG acq_tk1759q1759: 206/206 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk3446q3446: 208/208 exemplars exact, verdict=2, worst_margin=0.0003
+CERT_DIAG acq_tk3107q3107: 206/207 exemplars exact, verdict=0, worst_margin=0.0001
+CERT_DIAG acq_tk2686q2686: 206/206 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk1651q1651: 206/207 exemplars exact, verdict=0, worst_margin=0.0000
+CERT_DIAG acq_tk1845q1845: 206/207 exemplars exact, verdict=0, worst_margin=0.0003
+CERT_DIAG acq_tk5226q5226: 207/207 exemplars exact, verdict=2, worst_margin=0.0001
+CERT_DIAG acq_tk2378q2378: 207/207 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk4988q4988: 207/208 exemplars exact, verdict=0, worst_margin=0.0003
+CERT_DIAG acq_tk5442q5442: 206/207 exemplars exact, verdict=0, worst_margin=0.0002
+CERT_DIAG acq_tk2793q2793: 206/207 exemplars exact, verdict=0, worst_margin=0.0002
+CERT_DIAG acq_tk5004q5004: 205/206 exemplars exact, verdict=0, worst_margin=0.0001
+CERT_DIAG acq_tk3925q3925: 208/208 exemplars exact, verdict=2, worst_margin=0.0001
+CERT_DIAG acq_tk2473q2473: 204/206 exemplars exact, verdict=0, worst_margin=0.0000
+CERT_DIAG acq_tk1502q1502: 206/206 exemplars exact, verdict=2, worst_margin=0.0002
+CERT_DIAG acq_tk2651q2651: 206/206 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk2338q2338: 205/206 exemplars exact, verdict=0, worst_margin=0.0001
+CERT_DIAG acq_tk4071q4071: 204/205 exemplars exact, verdict=0, worst_margin=0.0002
+CERT_DIAG acq_tk5028q5028: 206/207 exemplars exact, verdict=0, worst_margin=0.0001
+CERT_DIAG acq_tk3207q3207: 205/206 exemplars exact, verdict=0, worst_margin=0.0000
+CERT_DIAG acq_tk1534q1534: 207/207 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk5232q5232: 206/207 exemplars exact, verdict=0, worst_margin=0.0000
+CERT_DIAG acq_tk1774q1774: 207/207 exemplars exact, verdict=2, worst_margin=0.0003
+CERT_DIAG acq_tk2752q2752: 208/208 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk7068q7068: 207/207 exemplars exact, verdict=2, worst_margin=0.0001
+CERT_DIAG acq_tk2514q2514: 206/206 exemplars exact, verdict=2, worst_margin=0.0003
+CERT_DIAG acq_tk1531q1531: 205/206 exemplars exact, verdict=0, worst_margin=0.0005
+CERT_DIAG acq_tk3305q3305: 206/207 exemplars exact, verdict=0, worst_margin=0.0003
+CERT_DIAG acq_tk2390q2390: 206/206 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk3768q3768: 204/206 exemplars exact, verdict=0, worst_margin=0.0003
+CERT_DIAG acq_tk2780q2780: 207/208 exemplars exact, verdict=0, worst_margin=0.0001
+CERT_DIAG acq_tk2890q2890: 207/207 exemplars exact, verdict=2, worst_margin=0.0007
+CERT_DIAG acq_tk3732q3732: 205/206 exemplars exact, verdict=0, worst_margin=0.0006
+CERT_DIAG acq_tk3449q3449: 205/206 exemplars exact, verdict=0, worst_margin=0.0000
+CERT_DIAG acq_tk2036q2036: 206/207 exemplars exact, verdict=0, worst_margin=0.0002
+CERT_DIAG acq_tk2748q2748: 207/207 exemplars exact, verdict=2, worst_margin=0.0001
+CERT_DIAG acq_tk2171q2171: 203/204 exemplars exact, verdict=0, worst_margin=0.0000
+CERT_DIAG acq_tk2528q2528: 207/207 exemplars exact, verdict=2, worst_margin=0.0006
+CERT_DIAG acq_tk3890q3890: 206/206 exemplars exact, verdict=2, worst_margin=0.0004
+CERT_DIAG acq_tk1765q1765: 206/207 exemplars exact, verdict=0, worst_margin=0.0000
+CERT_DIAG acq_tk2891q2891: 205/206 exemplars exact, verdict=0, worst_margin=0.0003
+CERT_DIAG acq_tk1374q1374: 207/208 exemplars exact, verdict=0, worst_margin=0.0001
+CERT_DIAG acq_tk3104q3104: 208/208 exemplars exact, verdict=2, worst_margin=0.0001
+CERT_DIAG acq_tk1852q1852: 207/207 exemplars exact, verdict=2, worst_margin=0.0002
+CERT_DIAG acq_tk1975q1975: 208/208 exemplars exact, verdict=2, worst_margin=0.0003
+CERT_DIAG acq_tk2228q2228: 206/208 exemplars exact, verdict=0, worst_margin=0.0001
+CERT_DIAG acq_tk6353q6353: 207/208 exemplars exact, verdict=0, worst_margin=0.0002
+CERT_DIAG acq_tk7764q7764: 205/206 exemplars exact, verdict=0, worst_margin=0.0005
+CERT_DIAG acq_tk1265q1265: 206/207 exemplars exact, verdict=0, worst_margin=0.0001
+CERT_DIAG acq_tk2016q2016: 207/208 exemplars exact, verdict=0, worst_margin=0.0001
+CERT_DIAG acq_tk3541q3541: 206/206 exemplars exact, verdict=2, worst_margin=0.0001
+CERT_DIAG acq_tk1902q1902: 209/209 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk5946q5946: 204/206 exemplars exact, verdict=0, worst_margin=0.0002
+CERT_DIAG acq_tk1523q1523: 206/207 exemplars exact, verdict=0, worst_margin=0.0001
+CERT_DIAG acq_tk7626q7626: 207/208 exemplars exact, verdict=0, worst_margin=0.0001
+CERT_DIAG acq_tk1570q1570: 207/208 exemplars exact, verdict=0, worst_margin=0.0003
+CERT_DIAG acq_tk775q775: 207/208 exemplars exact, verdict=0, worst_margin=0.0001
+CERT_DIAG acq_tk2056q2056: 205/206 exemplars exact, verdict=0, worst_margin=0.0004
+CERT_DIAG acq_tk6083q6083: 207/207 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk3155q3155: 207/208 exemplars exact, verdict=0, worst_margin=0.0001
+CERT_DIAG acq_tk1202q1202: 207/208 exemplars exact, verdict=0, worst_margin=0.0003
+CERT_DIAG acq_tk1135q1135: 205/205 exemplars exact, verdict=2, worst_margin=0.0007
+CERT_DIAG acq_tk2712q2712: 205/206 exemplars exact, verdict=0, worst_margin=0.0002
+CERT_DIAG acq_tk2214q2214: 207/208 exemplars exact, verdict=0, worst_margin=0.0001
+CERT_DIAG acq_tk3939q3939: 206/207 exemplars exact, verdict=0, worst_margin=0.0002
+CERT_DIAG acq_tk2352q2352: 206/206 exemplars exact, verdict=2, worst_margin=0.0005
+CERT_DIAG acq_tk1758q1758: 206/207 exemplars exact, verdict=0, worst_margin=0.0000
+CERT_DIAG acq_tk2679q2679: 205/206 exemplars exact, verdict=0, worst_margin=0.0002
+CERT_DIAG acq_tk3217q3217: 208/208 exemplars exact, verdict=2, worst_margin=0.0005
+CERT_DIAG acq_tk1134q1134: 207/207 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk1500q1500: 209/209 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk1288q1288: 207/208 exemplars exact, verdict=0, worst_margin=0.0001
+CERT_DIAG acq_tk1494q1494: 209/209 exemplars exact, verdict=2, worst_margin=0.0002
+CERT_DIAG acq_tk2563q2563: 209/209 exemplars exact, verdict=2, worst_margin=0.0003
+CERT_DIAG acq_tk1921q1921: 207/207 exemplars exact, verdict=2, worst_margin=0.0002
+CERT_DIAG acq_tk1590q1590: 206/207 exemplars exact, verdict=0, worst_margin=0.0003
+CERT_DIAG acq_tk2601q2601: 207/208 exemplars exact, verdict=0, worst_margin=0.0001
+CERT_DIAG acq_tk1581q1581: 207/207 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk1138q1138: 207/207 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk25749q25749: 206/206 exemplars exact, verdict=2, worst_margin=0.0007
+CERT_DIAG acq_tk2455q2455: 208/209 exemplars exact, verdict=0, worst_margin=0.0001
+CERT_DIAG acq_tk2411q2411: 209/209 exemplars exact, verdict=2, worst_margin=0.0004
+CERT_DIAG acq_tk1526q1526: 206/207 exemplars exact, verdict=0, worst_margin=0.0003
+CERT_DIAG acq_tk1676q1676: 206/206 exemplars exact, verdict=2, worst_margin=0.0003
+CERT_DIAG acq_tk2033q2033: 205/206 exemplars exact, verdict=0, worst_margin=0.0001
+CERT_DIAG acq_tk2247q2247: 205/206 exemplars exact, verdict=0, worst_margin=0.0006
+CERT_DIAG acq_tk1345q1345: 208/208 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk1944q1944: 205/206 exemplars exact, verdict=0, worst_margin=0.0003
+CERT_DIAG acq_tk1441q1441: 206/206 exemplars exact, verdict=2, worst_margin=0.0002
+CERT_DIAG acq_tk992q992: 205/206 exemplars exact, verdict=0, worst_margin=0.0001
+CERT_DIAG acq_tk1388q1388: 206/208 exemplars exact, verdict=0, worst_margin=0.0008
+CERT_DIAG acq_tk2634q2634: 206/206 exemplars exact, verdict=2, worst_margin=0.0001
+CERT_DIAG acq_tk1461q1461: 205/206 exemplars exact, verdict=0, worst_margin=0.0002
+CERT_DIAG acq_tk1806q1806: 205/206 exemplars exact, verdict=0, worst_margin=0.0003
+CERT_DIAG acq_tk1076q1076: 206/208 exemplars exact, verdict=0, worst_margin=0.0003
+CERT_DIAG acq_tk13315q13315: 206/207 exemplars exact, verdict=0, worst_margin=0.0002
+model: /home/marble/AI/Models/gemma4-v2-Q4_K_M.gguf  layers=48 hidden=3840 vocab=262144
+cert tier: SAMPLED (Wilson >= 0.95 over a 96/256-point subsample; exactness-on-sample)
+student: init_hidden=128 max_hidden=512 max_epochs=20000
+window: 256 tokens from english_window_256_rev.txt (first: 1800 4252 2462 3187)
+gpu: gfx1201 x2 (equivalence sweep OK, 0.0 MB will go resident)
+determinism spot check: OK
+head window: restricted to 256 mined tokens (full-vocab head off for mining)
+run: task=topk V=256 max_units=256 temp<=80C duty=1.00 wall=0s base=soul_english_v1.cnb
+stop cleanly at any time:  echo stop > soul_english_v1.cnb.stop
+CERT_DIAG acq_tk4252q4252: 106/106 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk3187q3187: 106/106 exemplars exact, verdict=2, worst_margin=0.0001
+CERT_DIAG acq_tk13358q13358: 106/106 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk2591q2591: 106/106 exemplars exact, verdict=2, worst_margin=0.0001
+CERT_DIAG acq_tk2506q2506: 106/106 exemplars exact, verdict=2, worst_margin=0.0001
+CERT_DIAG acq_tk3654q3654: 106/106 exemplars exact, verdict=2, worst_margin=0.0001
+CERT_DIAG acq_tk1932q1932: 105/105 exemplars exact, verdict=2, worst_margin=0.0001
+CERT_DIAG acq_tk4721q4721: 106/106 exemplars exact, verdict=2, worst_margin=0.0003
+CERT_DIAG acq_tk2321q2321: 106/106 exemplars exact, verdict=2, worst_margin=0.0001
+CERT_DIAG acq_tk1972q1972: 106/106 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk3107q3107: 106/106 exemplars exact, verdict=2, worst_margin=0.0002
+CERT_DIAG acq_tk1651q1651: 106/106 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk1845q1845: 106/106 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk4988q4988: 106/106 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk5442q5442: 106/106 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk2793q2793: 106/106 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk5004q5004: 106/106 exemplars exact, verdict=2, worst_margin=0.0001
+CERT_DIAG acq_tk2473q2473: 106/106 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk2338q2338: 106/106 exemplars exact, verdict=2, worst_margin=0.0006
+CERT_DIAG acq_tk4071q4071: 106/106 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk5028q5028: 106/106 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk3207q3207: 106/106 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk5232q5232: 106/106 exemplars exact, verdict=2, worst_margin=0.0001
+CERT_DIAG acq_tk1531q1531: 106/106 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk3305q3305: 106/106 exemplars exact, verdict=2, worst_margin=0.0001
+CERT_DIAG acq_tk3768q3768: 106/106 exemplars exact, verdict=2, worst_margin=0.0001
+CERT_DIAG acq_tk2780q2780: 106/106 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk3732q3732: 106/106 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk3449q3449: 106/106 exemplars exact, verdict=2, worst_margin=0.0003
+CERT_DIAG acq_tk2036q2036: 106/106 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk2171q2171: 105/105 exemplars exact, verdict=2, worst_margin=0.0001
+CERT_DIAG acq_tk1765q1765: 106/106 exemplars exact, verdict=2, worst_margin=0.0001
+CERT_DIAG acq_tk2891q2891: 106/106 exemplars exact, verdict=2, worst_margin=0.0001
+CERT_DIAG acq_tk1374q1374: 106/106 exemplars exact, verdict=2, worst_margin=0.0002
+CERT_DIAG acq_tk2228q2228: 106/106 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk6353q6353: 106/106 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk7764q7764: 106/106 exemplars exact, verdict=2, worst_margin=0.0001
+CERT_DIAG acq_tk1265q1265: 106/106 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk2016q2016: 106/106 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk5946q5946: 106/106 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk1523q1523: 106/106 exemplars exact, verdict=2, worst_margin=0.0001
+CERT_DIAG acq_tk7626q7626: 106/106 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk1570q1570: 106/106 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk775q775: 106/106 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk2056q2056: 106/106 exemplars exact, verdict=2, worst_margin=0.0002
+CERT_DIAG acq_tk3155q3155: 106/106 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk1202q1202: 106/106 exemplars exact, verdict=2, worst_margin=0.0001
+CERT_DIAG acq_tk2712q2712: 106/106 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk2214q2214: 106/106 exemplars exact, verdict=2, worst_margin=0.0001
+CERT_DIAG acq_tk3939q3939: 106/106 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk1758q1758: 106/106 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk2679q2679: 106/106 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk1288q1288: 106/106 exemplars exact, verdict=2, worst_margin=0.0001
+CERT_DIAG acq_tk1590q1590: 106/106 exemplars exact, verdict=2, worst_margin=0.0001
+CERT_DIAG acq_tk2601q2601: 106/106 exemplars exact, verdict=2, worst_margin=0.0001
+CERT_DIAG acq_tk2455q2455: 106/106 exemplars exact, verdict=2, worst_margin=0.0002
+CERT_DIAG acq_tk1526q1526: 106/106 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk2033q2033: 105/105 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk2247q2247: 106/106 exemplars exact, verdict=2, worst_margin=0.0001
+CERT_DIAG acq_tk1944q1944: 106/106 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk992q992: 105/106 exemplars exact, verdict=0, worst_margin=0.0002
+CERT_DIAG acq_tk1388q1388: 106/106 exemplars exact, verdict=2, worst_margin=0.0002
+CERT_DIAG acq_tk1461q1461: 106/106 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk1806q1806: 105/105 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk1076q1076: 106/106 exemplars exact, verdict=2, worst_margin=0.0001
+CERT_DIAG acq_tk13315q13315: 105/105 exemplars exact, verdict=2, worst_margin=0.0002
+CERT_DIAG acq_tk3442q3442: 106/106 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk1677q1677: 106/106 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk2311q2311: 106/106 exemplars exact, verdict=2, worst_margin=0.0001
+CERT_DIAG acq_tk2255q2255: 106/106 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk6938q6938: 106/106 exemplars exact, verdict=2, worst_margin=0.0001
+CERT_DIAG acq_tk1447q1447: 106/106 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk2827q2827: 106/106 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk1335q1335: 106/106 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk2689q2689: 106/106 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk1638q1638: 106/106 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk4400q4400: 106/106 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk2490q2490: 106/106 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk1680q1680: 106/106 exemplars exact, verdict=2, worst_margin=0.0002
+CERT_DIAG acq_tk1757q1757: 106/106 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk2708q2708: 106/106 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk1601q1601: 106/106 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk1879q1879: 106/106 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk1751q1751: 105/105 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk1822q1822: 106/106 exemplars exact, verdict=2, worst_margin=0.0001
+CERT_DIAG acq_tk1623q1623: 106/106 exemplars exact, verdict=2, worst_margin=0.0001
+CERT_DIAG acq_tk1183q1183: 106/106 exemplars exact, verdict=2, worst_margin=0.0001
+CERT_DIAG acq_tk1164q1164: 106/106 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk1343q1343: 106/106 exemplars exact, verdict=2, worst_margin=0.0001
+CERT_DIAG acq_tk1401q1401: 106/106 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk1463q1463: 106/106 exemplars exact, verdict=2, worst_margin=0.0001
+CERT_DIAG acq_tk1208q1208: 106/106 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk1023q1023: 106/106 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk2583q2583: 106/106 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk786q786: 106/106 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk1535q1535: 106/106 exemplars exact, verdict=2, worst_margin=0.0001
+CERT_DIAG acq_tk1418q1418: 106/106 exemplars exact, verdict=2, worst_margin=0.0002
+CERT_DIAG acq_tk1407q1407: 106/106 exemplars exact, verdict=2, worst_margin=0.0001
+CERT_DIAG acq_tk3588q3588: 106/106 exemplars exact, verdict=2, worst_margin=0.0001
+CERT_DIAG acq_tk1051q1051: 106/106 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk880q880: 106/106 exemplars exact, verdict=2, worst_margin=0.0003
+CERT_DIAG acq_tk4886q4886: 106/106 exemplars exact, verdict=2, worst_margin=0.0001
+CERT_DIAG acq_tk1186q1186: 106/106 exemplars exact, verdict=2, worst_margin=0.0001
+CERT_DIAG acq_tk2268q2268: 106/106 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk1063q1063: 106/106 exemplars exact, verdict=2, worst_margin=0.0001
+CERT_DIAG acq_tk1308q1308: 106/106 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk1298q1298: 106/106 exemplars exact, verdict=2, worst_margin=0.0001
+CERT_DIAG acq_tk3892q3892: 106/106 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk1603q1603: 106/106 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk1977q1977: 106/106 exemplars exact, verdict=2, worst_margin=0.0001
+CERT_DIAG acq_tk974q974: 105/106 exemplars exact, verdict=0, worst_margin=0.0001
+CERT_DIAG acq_tk1769q1769: 106/106 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk912q912: 105/106 exemplars exact, verdict=0, worst_margin=0.0000
+CERT_DIAG acq_tk981q981: 104/105 exemplars exact, verdict=0, worst_margin=0.0000
+CERT_DIAG acq_tk861q861: 106/106 exemplars exact, verdict=2, worst_margin=0.0001
+CERT_DIAG acq_tk1027q1027: 106/106 exemplars exact, verdict=2, worst_margin=0.0001
+CERT_DIAG acq_tk1586q1586: 105/105 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk1492q1492: 106/106 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk1010q1010: 106/106 exemplars exact, verdict=2, worst_margin=0.0001
+CERT_DIAG acq_tk2678q2678: 106/106 exemplars exact, verdict=2, worst_margin=0.0001
+CERT_DIAG acq_tk1679q1679: 106/106 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk1149q1149: 105/105 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk1331q1331: 106/106 exemplars exact, verdict=2, worst_margin=0.0001
+CERT_DIAG acq_tk1171q1171: 106/106 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk2246q2246: 106/106 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk1082q1082: 106/106 exemplars exact, verdict=2, worst_margin=0.0001
+CERT_DIAG acq_tk1813q1813: 106/106 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk1281q1281: 106/106 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk1024q1024: 106/106 exemplars exact, verdict=2, worst_margin=0.0001
+CERT_DIAG acq_tk1015q1015: 105/105 exemplars exact, verdict=2, worst_margin=0.0002
+CERT_DIAG acq_tk1548q1548: 106/106 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk1346q1346: 106/106 exemplars exact, verdict=2, worst_margin=0.0004
+CERT_DIAG acq_tk951q951: 106/106 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk5057q5057: 106/106 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk1041q1041: 106/106 exemplars exact, verdict=2, worst_margin=0.0001
+CERT_DIAG acq_tk1602q1602: 105/105 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk2229q2229: 106/106 exemplars exact, verdict=2, worst_margin=0.0001
+CERT_DIAG acq_tk817q817: 105/106 exemplars exact, verdict=0, worst_margin=0.0001
+CERT_DIAG acq_tk1451q1451: 106/106 exemplars exact, verdict=2, worst_margin=0.0001
+CERT_DIAG acq_tk1719q1719: 106/106 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk919q919: 106/106 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk1385q1385: 106/106 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk815q815: 105/105 exemplars exact, verdict=2, worst_margin=0.0001
+CERT_DIAG acq_tk1156q1156: 106/106 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk1515q1515: 106/106 exemplars exact, verdict=2, worst_margin=0.0001
+CERT_DIAG acq_tk1460q1460: 106/106 exemplars exact, verdict=2, worst_margin=0.0001
+CERT_DIAG acq_tk3210q3210: 106/106 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk1386q1386: 106/106 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk1440q1440: 106/106 exemplars exact, verdict=2, worst_margin=0.0001
+CERT_DIAG acq_tk1116q1116: 106/106 exemplars exact, verdict=2, worst_margin=0.0001
+CERT_DIAG acq_tk1239q1239: 106/106 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk834q834: 106/106 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk1133q1133: 106/106 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk4903q4903: 106/106 exemplars exact, verdict=2, worst_margin=0.0001
+CERT_DIAG acq_tk1093q1093: 105/105 exemplars exact, verdict=2, worst_margin=0.0001
+CERT_DIAG acq_tk1091q1091: 106/106 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk1299q1299: 106/106 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk1551q1551: 106/106 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk1003q1003: 106/106 exemplars exact, verdict=2, worst_margin=0.0001
+CERT_DIAG acq_tk1595q1595: 106/106 exemplars exact, verdict=2, worst_margin=0.0001
+CERT_DIAG acq_tk795q795: 106/106 exemplars exact, verdict=2, worst_margin=0.0001
+CERT_DIAG acq_tk768q768: 106/106 exemplars exact, verdict=2, worst_margin=0.0002
+CERT_DIAG acq_tk990q990: 106/106 exemplars exact, verdict=2, worst_margin=0.0003
+CERT_DIAG acq_tk910q910: 106/106 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk776q776: 105/106 exemplars exact, verdict=0, worst_margin=0.0001
+CERT_DIAG acq_tk837q837: 106/106 exemplars exact, verdict=2, worst_margin=0.0001
+CERT_DIAG acq_tk1304q1304: 106/106 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk1546q1546: 106/106 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk614q614: 106/106 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk1176q1176: 106/106 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk1217q1217: 106/106 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk822q822: 106/106 exemplars exact, verdict=2, worst_margin=0.0002
+CERT_DIAG acq_tk1161q1161: 105/105 exemplars exact, verdict=2, worst_margin=0.0002
+CERT_DIAG acq_tk872q872: 106/106 exemplars exact, verdict=2, worst_margin=0.0002
+CERT_DIAG acq_tk1056q1056: 106/106 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk993q993: 106/106 exemplars exact, verdict=2, worst_margin=0.0002
+CERT_DIAG acq_tk784q784: 106/106 exemplars exact, verdict=2, worst_margin=0.0001
+CERT_DIAG acq_tk964q964: 106/106 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk1032q1032: 106/106 exemplars exact, verdict=2, worst_margin=0.0001
+CERT_DIAG acq_tk855q855: 105/105 exemplars exact, verdict=2, worst_margin=0.0002
+CERT_DIAG acq_tk740q740: 106/106 exemplars exact, verdict=2, worst_margin=0.0004
+CERT_DIAG acq_tk692q692: 106/106 exemplars exact, verdict=2, worst_margin=0.0001
+CERT_DIAG acq_tk1070q1070: 106/106 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk1144q1144: 106/106 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk840q840: 106/106 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk711q711: 106/106 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk684q684: 105/106 exemplars exact, verdict=0, worst_margin=0.0000
+CERT_DIAG acq_tk1053q1053: 106/106 exemplars exact, verdict=2, worst_margin=0.0001
+CERT_DIAG acq_tk653q653: 106/106 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk699q699: 105/106 exemplars exact, verdict=0, worst_margin=0.0001
+CERT_DIAG acq_tk672q672: 106/106 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk735q735: 106/106 exemplars exact, verdict=2, worst_margin=0.0002
+CERT_DIAG acq_tk886q886: 105/106 exemplars exact, verdict=0, worst_margin=0.0000
+CERT_DIAG acq_tk657q657: 106/106 exemplars exact, verdict=2, worst_margin=0.0002
+CERT_DIAG acq_tk577q577: 106/106 exemplars exact, verdict=2, worst_margin=0.0001
+CERT_DIAG acq_tk901q901: 105/106 exemplars exact, verdict=0, worst_margin=0.0001
+CERT_DIAG acq_tk607q607: 104/104 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk659q659: 105/106 exemplars exact, verdict=0, worst_margin=0.0001
+CERT_DIAG acq_tk580q580: 106/106 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk573q573: 106/106 exemplars exact, verdict=2, worst_margin=0.0001
+CERT_DIAG acq_tk691q691: 105/106 exemplars exact, verdict=0, worst_margin=0.0000
+CERT_DIAG acq_tk563q563: 105/106 exemplars exact, verdict=0, worst_margin=0.0000
+CERT_DIAG acq_tk528q528: 106/106 exemplars exact, verdict=2, worst_margin=0.0002
+CERT_DIAG acq_tk531q531: 106/106 exemplars exact, verdict=2, worst_margin=0.0001
+CERT_DIAG acq_tk532q532: 106/106 exemplars exact, verdict=2, worst_margin=0.0000
+CERT_DIAG acq_tk529q529: 106/106 exemplars exact, verdict=2, worst_margin=0.0001
+CERT_DIAG acq_tk506q506: 105/105 exemplars exact, verdict=2, worst_margin=0.0001
+flagship: attempted 207, acquired 194, deferred 13, resume-skips 49, no-oracle 0, load-skips 0
+  defer certify_failed           13
+  tiers: PROOF 0 | SAMPLED 194 (wilson floor min/med/max 0.9644/0.9650/0.9650)
+  certified min-margin min/med/max 0.0000/0.0000/0.0006
+  wall 10670.0s (slept 0.0s)  max GPU temp 66 C  stopped=complete
+extraction rate this run: 194/207 (93.7%)
+model: /home/marble/AI/Models/gemma4-v2-Q4_K_M.gguf  layers=48 hidden=3840 vocab=262144
+window: 256 tokens from english_window_256_rev.txt (first: 1800 4252 2462 3187)
+cert tier: SAMPLED (Wilson >= 0.95 over a 96/256-point subsample; exactness-on-sample)
+student: init_hidden=128 max_hidden=512 max_epochs=20000
+gpu: gfx1201 x2 (equivalence sweep OK, 0.0 MB will go resident)
+determinism spot check: OK
+oracle golden: wrote 32 probes to /home/marble/AI/CNET/goldens_gemma4v2.txt
+head window: restricted to 256 mined tokens (full-vocab head off for mining)
+batch oracle: equivalence OK (16 probes, batch<=16)
+manifest: soul_english_v1.cnb.manifest.json
+run: task=topk V=256 max_units=256 temp<=80C duty=1.00 wall=0s base=soul_english_v1.cnb
+stop cleanly at any time:  echo stop > soul_english_v1.cnb.stop
+CERT_DIAG acq_tk992q992: 106/106 exemplars exact, verdict=2, worst_margin=0.0001
+unit 1: acq_tk992q992 acquired (SAMPLED)
+CERT_DIAG acq_tk974q974: 106/106 exemplars exact, verdict=2, worst_margin=0.0000
+unit 2: acq_tk974q974 acquired (SAMPLED)
+CERT_DIAG acq_tk912q912: 106/106 exemplars exact, verdict=2, worst_margin=0.0000
+unit 3: acq_tk912q912 acquired (SAMPLED)
+CERT_DIAG acq_tk981q981: 105/105 exemplars exact, verdict=2, worst_margin=0.0001
+unit 4: acq_tk981q981 acquired (SAMPLED)
+CERT_DIAG acq_tk817q817: 106/106 exemplars exact, verdict=2, worst_margin=0.0001
+unit 5: acq_tk817q817 acquired (SAMPLED)
+CERT_DIAG acq_tk776q776: 106/106 exemplars exact, verdict=2, worst_margin=0.0000
+unit 6: acq_tk776q776 acquired (SAMPLED)
+CERT_DIAG acq_tk684q684: 106/106 exemplars exact, verdict=2, worst_margin=0.0000
+unit 7: acq_tk684q684 acquired (SAMPLED)
+CERT_DIAG acq_tk699q699: 106/106 exemplars exact, verdict=2, worst_margin=0.0001
+unit 8: acq_tk699q699 acquired (SAMPLED)
+CERT_DIAG acq_tk886q886: 106/106 exemplars exact, verdict=2, worst_margin=0.0001
+unit 9: acq_tk886q886 acquired (SAMPLED)
+CERT_DIAG acq_tk901q901: 106/106 exemplars exact, verdict=2, worst_margin=0.0000
+unit 10: acq_tk901q901 acquired (SAMPLED)
+CERT_DIAG acq_tk659q659: 106/106 exemplars exact, verdict=2, worst_margin=0.0000
+unit 11: acq_tk659q659 acquired (SAMPLED)
+CERT_DIAG acq_tk691q691: 106/106 exemplars exact, verdict=2, worst_margin=0.0001
+unit 12: acq_tk691q691 acquired (SAMPLED)
+CERT_DIAG acq_tk563q563: 106/106 exemplars exact, verdict=2, worst_margin=0.0001
+unit 13: acq_tk563q563 acquired (SAMPLED)
+flagship: attempted 13, acquired 13, deferred 0, resume-skips 243, no-oracle 0, load-skips 0
+  tiers: PROOF 0 | SAMPLED 13 (wilson floor min/med/max 0.9647/0.9650/0.9650)
+  certified min-margin min/med/max 0.0000/0.0001/0.0001
+  wall 674.0s (slept 0.0s)  max GPU temp 66 C  stopped=complete
+extraction rate this run: 13/13 (100.0%)
