@@ -86,6 +86,26 @@ CCE_QGKP := src/cce/cce_qgkp.c
 BIN_DIR := bin
 EXE_EXT := $(if $(filter Windows_NT,$(OS)),.exe,)
 
+# Portable dotnet command discovery.
+# Tries: PATH (command -v) → DOTNET_ROOT → $HOME/dotnet.
+# Override by setting DOTNET on the command line or exporting it.
+DOTNET ?= $(shell command -v dotnet 2>/dev/null || \
+    { [ -n "$${DOTNET_ROOT:-}" ] && [ -x "$${DOTNET_ROOT}/dotnet" ] && echo "$${DOTNET_ROOT}/dotnet"; } || \
+    { [ -x "$$HOME/dotnet/dotnet" ] && echo "$$HOME/dotnet/dotnet"; } || \
+    echo "")
+DOTNET_RESTORE_PROJECTS := dotnet/CceHost/CceHost.csproj \
+    dotnet/CnetMcpServer/CnetMcpServer.csproj \
+    dotnet/Cce.Tests/Cce.Tests.csproj
+
+# Guard: emit a clear prerequisite error when dotnet is needed but missing.
+define dotnet_guard
+@if [ -z "$(DOTNET)" ]; then \
+    echo "ERROR: dotnet not found. Install .NET SDK 10 and ensure it is on PATH," \
+         "set DOTNET_ROOT, or place it at $$HOME/dotnet." >&2; \
+    exit 1; \
+fi
+endef
+
 # Auto-create bin/ on make invocation (prevents "No such file or directory" for -o bin/...)
 # POSIX sh syntax: make runs recipes/$(shell) through sh even on Windows (Git Bash).
 $(shell mkdir -p $(BIN_DIR) logs)
@@ -895,7 +915,8 @@ verify: recipe_gate claims_test cce_dll cce_safetensors_test cce_autograd_test c
 # run this before any CNET_GPU=1 campaign).
 test_full: test gpu_equiv_build
 	./$(BIN_DIR)/gpu_equiv Models/gemma-4-12B-it-MTP-Q8_0.gguf 64 32
-	dotnet test dotnet/Cce.Tests/Cce.Tests.csproj -c Release --no-restore
+	$(call dotnet_guard)
+	$(DOTNET) test dotnet/Cce.Tests/Cce.Tests.csproj -c Release --no-restore
 
 # `long` mode also asserts the two verify-long-only supra QAT gates. The
 # `verify` prerequisite already ran and gated the core chain; this re-scan adds
@@ -941,8 +962,10 @@ chunk: nn_demo chunk_demo
 
 clean:
 	# Remove all known generated binaries (core + demos + studies).
-	# We also do a blanket *.exe cleanup so the worktree root stays tidy
-	# (prevents the "ton of exe files" clutter you see in Rider).
+	# Only remove files/dirs that are NOT git-tracked — this preserves
+	# committed fixtures and shared libraries (cce.dll, cnet.so, etc.)
+	# while still cleaning genuinely generated build artifacts.
+	@# Root-level generated executables (none of these are tracked).
 	rm -f nn_demo test_nn test_encode_oob test_contract test_composition test_router test_dag \
 	      test_consolidate test_certify test_property test_decimal test_circuit test_library \
 	      property_demo route_demo dag_demo hetero_demo split_demo chunk_demo certify_demo \
@@ -950,9 +973,26 @@ clean:
 	      test_fastpath throughput_study test_residue test_expr residue_study attention_study \
 	      lifecycle_bench test_belowbeam_chars belowbeam_chars_study \
 	      test_structural_pref test_structural_pref_b0 structural_pref_study \
-	      cce_json_bench cce_smoke jsonstory pdftest pdflearn compound tiermem_test graduate fontdecode tfidf synonyms tileindex consolidate pdf_corpus.txt retrieval_store.bin cce.dll *.exe *.so *.dylib
+	      cce_json_bench cce_smoke jsonstory pdftest pdflearn compound tiermem_test graduate fontdecode tfidf synonyms tileindex consolidate
+	@# Shared libraries: only remove if NOT git-tracked (cce.dll/cnet.so are committed).
+	for lib in cce.dll cnet.dll cnet.so retrieval_store.bin pdf_corpus.txt; do \
+	  if [ -e "$$lib" ] && ! git ls-files --error-unmatch "$$lib" >/dev/null 2>&1; then \
+	    rm -f "$$lib"; \
+	  fi; \
+	done
+	@# Remove generated *.exe/*.so/*.dylib from root, but skip tracked ones.
+	for f in *.exe *.so *.dylib; do \
+	  [ -e "$$f" ] || continue; \
+	  git ls-files --error-unmatch "$$f" >/dev/null 2>&1 || rm -f "$$f"; \
+	done
+	@# bin/ is always generated.
 	rm -rf $(BIN_DIR)
-	rm -rf tile_store_test tile_store_res tile_store_per tile_store_cert tile_mem_pdf tile_grad_ctl tile_grad_pdf font_qa tfidf_ctl tfidf_book syn_ctl syn_rev syn_book tix_small tix_warm tix_exp tix_book cons_ctl cons_book cons_prune cons_cap
+	@# Fixture/store dirs: only remove if NOT git-tracked.
+	for d in tile_store_test tile_store_res tile_store_per tile_store_cert tile_mem_pdf tile_grad_ctl tile_grad_pdf font_qa tfidf_ctl tfidf_book syn_ctl syn_rev syn_book tix_small tix_warm tix_exp tix_book cons_ctl cons_book cons_prune cons_cap; do \
+	  if [ -e "$$d" ] && ! git ls-files --error-unmatch "$$d" >/dev/null 2>&1; then \
+	    rm -rf "$$d"; \
+	  fi; \
+	done
 	# Clean GGUF/CNET test aftermath junk (temp forests, per-experiment logs/outputs, .txt files)
 	rm -f gguf_qwen2_forest.cce gguf_qwen2_packed.cce gguf_test_run.log ssm_forest.cce st_llama_forest.cce
 	rm -f ssm_test.safetensors ssm_test.gguf ssm_bad.safetensors stll_test.gguf
@@ -961,9 +1001,17 @@ clean:
 	rm -rf sg_a sg_b ws_a ws_b ws_store ws_forge
 	rm -f tr_a.manifest tr_bad.manifest tr_restore.cce sim_*.manifest sim_merge.cce
 	rm -rf tr_a tr_store sim_a sim_e sim_m sim_store
+	@# logs/ is always generated.
 	rm -rf logs
-	rm -f qwen2_*.cce qwen2_gguf_packed_*.cce test_*.txt make_*.log chat_*.txt err.txt
-	rm -f test_gguf_*.txt test_phase*.txt test_final*.txt test_long*.txt test_completed*.txt test_quality*.txt test_int8*.txt test_rerun*.txt
+	@# Generated text files: only remove if NOT git-tracked.
+	for f in qwen2_*.cce qwen2_gguf_packed_*.cce test_*.txt make_*.log chat_*.txt err.txt; do \
+	  [ -e "$$f" ] || continue; \
+	  git ls-files --error-unmatch "$$f" >/dev/null 2>&1 || rm -f "$$f"; \
+	done
+	for f in test_gguf_*.txt test_phase*.txt test_final*.txt test_long*.txt test_completed*.txt test_quality*.txt test_int8*.txt test_rerun*.txt; do \
+	  [ -e "$$f" ] || continue; \
+	  git ls-files --error-unmatch "$$f" >/dev/null 2>&1 || rm -f "$$f"; \
+	done
 	# Note: residue_study (the full budgeted study) is now implemented; run with `make residue`.
 
 ifdef HAVE_CUDA
@@ -1661,7 +1709,26 @@ soul_host_test: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLI
 	CNET_KEEP_TEST_BASE=1 ./$(BIN_DIR)/$@ > logs/soul_host_test.log 2>&1
 	@grep -q "SOUL_HOST_UNIFIED_PASS" logs/soul_host_test.log
 
-unified_native: unified_adapter unified_cce_adapter unified_oracle_adapter unified_specialist gap_lane dispatch_story oracle_v2_test unified_async unified_models unified_ds4_launcher soul_host_test cnet_dll
+.PHONY: build_hygiene_test dotnet_restore
+build_hygiene_test: tests/test_build_hygiene.sh
+	@mkdir -p logs
+	@bash tests/test_build_hygiene.sh > logs/build_hygiene_test.log 2>&1
+	@grep -q "BUILD_HYGIENE_PASS" logs/build_hygiene_test.log
+
+dotnet_restore:
+	$(call dotnet_guard)
+	@mkdir -p logs
+	@: > logs/dotnet_restore.log
+	@set -e; for project in $(DOTNET_RESTORE_PROJECTS); do \
+		echo "restoring $$project" >> logs/dotnet_restore.log; \
+		$(DOTNET) restore "$$project" --nologo -v:minimal >> logs/dotnet_restore.log 2>&1; \
+	done
+	@if grep -q 'NU1603.*was not found.*resolved instead' logs/dotnet_restore.log; then \
+		cat logs/dotnet_restore.log >&2; exit 1; \
+	fi
+	@echo "DOTNET_RESTORE_PASS" | tee -a logs/dotnet_restore.log
+
+unified_native: unified_adapter unified_cce_adapter unified_oracle_adapter unified_specialist gap_lane dispatch_story oracle_v2_test unified_async unified_models unified_ds4_launcher soul_host_test cnet_dll build_hygiene_test
 	@for sym in specialist_wrap_btn specialist_wrap_cce_model \
 		specialist_wrap_oracle specialist_admit specialist_axes \
 		specialist_residency_of_model specialist_residency_of_branch \
@@ -1696,11 +1763,12 @@ unified:
 	@rm -f logs/unified.started
 	@touch logs/unified.started
 	@$(MAKE) --no-print-directory unified_native
-	dotnet build dotnet/CceHost/CceHost.csproj -c Release --no-restore --nologo -v:q > logs/unified_dotnet_build.log 2>&1
-	dotnet build dotnet/CnetMcpServer/CnetMcpServer.csproj -c Release --no-restore --nologo -v:q >> logs/unified_dotnet_build.log 2>&1
-	LD_LIBRARY_PATH="$(CURDIR)$${LD_LIBRARY_PATH:+:$$LD_LIBRARY_PATH}" dotnet dotnet/CceHost/bin/Release/net10.0/CceHost.dll --list tmp_soul_host.cnb > logs/unified_host.log 2>&1
+	@$(MAKE) --no-print-directory dotnet_restore
+	$(DOTNET) build dotnet/CceHost/CceHost.csproj -c Release --no-restore --nologo -v:q > logs/unified_dotnet_build.log 2>&1
+	$(DOTNET) build dotnet/CnetMcpServer/CnetMcpServer.csproj -c Release --no-restore --nologo -v:q >> logs/unified_dotnet_build.log 2>&1
+	LD_LIBRARY_PATH="$(CURDIR)$${LD_LIBRARY_PATH:+:$$LD_LIBRARY_PATH}" $(DOTNET) dotnet/CceHost/bin/Release/net10.0/CceHost.dll --list tmp_soul_host.cnb > logs/unified_host.log 2>&1
 	@grep -q "CNET_HOST_UNIFIED_PASS" logs/unified_host.log
-	@printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05"}}' '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"cnet_list_units","arguments":{}}}' '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"cnet_list_oracles","arguments":{}}}' '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"cnet_health_tick","arguments":{}}}' '{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"cnet_request_capability","arguments":{"goal_tag":"unified_novel_probe","in_tag":"unified_input","width":4}}}' | CNET_BASE_PATH="$(CURDIR)/tmp_soul_host.cnb" CNET_GAP_INBOX="$(CURDIR)/tmp_soul_host.cnb.inbox" LD_LIBRARY_PATH="$(CURDIR)$${LD_LIBRARY_PATH:+:$$LD_LIBRARY_PATH}" dotnet dotnet/CnetMcpServer/bin/Release/net10.0/CnetMcpServer.dll > logs/unified_mcp.log 2> logs/unified_mcp.stderr.log
+	@printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05"}}' '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"cnet_list_units","arguments":{}}}' '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"cnet_list_oracles","arguments":{}}}' '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"cnet_health_tick","arguments":{}}}' '{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"cnet_request_capability","arguments":{"goal_tag":"unified_novel_probe","in_tag":"unified_input","width":4}}}' | CNET_BASE_PATH="$(CURDIR)/tmp_soul_host.cnb" CNET_GAP_INBOX="$(CURDIR)/tmp_soul_host.cnb.inbox" LD_LIBRARY_PATH="$(CURDIR)$${LD_LIBRARY_PATH:+:$$LD_LIBRARY_PATH}" $(DOTNET) dotnet/CnetMcpServer/bin/Release/net10.0/CnetMcpServer.dll > logs/unified_mcp.log 2> logs/unified_mcp.stderr.log
 	@grep -q '"name":"cnet-mcp"' logs/unified_mcp.log
 	@grep -q "acq_unified_goal" logs/unified_mcp.log
 	@grep -q "unified_teacher" logs/unified_mcp.log
@@ -1708,7 +1776,7 @@ unified:
 	@grep -q "reset_remaining" logs/unified_mcp.log
 	@grep -qE 'gap_noted[^:]*:true' logs/unified_mcp.log
 	@grep -q "NO_PLAN" tmp_soul_host.cnb.inbox
-	LD_LIBRARY_PATH="$(CURDIR)$${LD_LIBRARY_PATH:+:$$LD_LIBRARY_PATH}" dotnet test dotnet/Cce.Tests/Cce.Tests.csproj -c Release --no-restore --nologo -v:q > logs/unified_dotnet_test.log 2>&1
+	LD_LIBRARY_PATH="$(CURDIR)$${LD_LIBRARY_PATH:+:$$LD_LIBRARY_PATH}" $(DOTNET) test dotnet/Cce.Tests/Cce.Tests.csproj -c Release --no-restore --nologo -v:q > logs/unified_dotnet_test.log 2>&1
 	@rm -f tmp_soul_host.cnb tmp_soul_host.cnb.tmp tmp_soul_host.cnb.inbox
 	@$(MAKE) --no-print-directory claims_test
 	@bash scripts/gen_claims.sh --strict --scope unified --since logs/unified.started
