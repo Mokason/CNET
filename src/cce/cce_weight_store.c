@@ -30,6 +30,14 @@
 
 #define WS_MAGIC "CSPC"
 #define WS_VERSION 1
+#define WS_VERSION_Q 2                        /* v2: per-block is_quant flag + int8 payload */
+#define WS_QUANT_SALT 0x9E3779B97F4A7C15ULL   /* a quantized payload gets a digest distinct from its FP twin */
+/* A cascade is quantized if any block carries int8 codes (w_q + per-out scale). */
+static int ws_cascade_quant(const cce_cascade* cas) {
+    for (int i = 0; i < cas->num_blocks; i++)
+        if (cas->blocks[i].w_q && cas->blocks[i].w_scale) return 1;
+    return 0;
+}
 
 struct cce_weight_store {
     char dir[512];
@@ -57,7 +65,8 @@ static int blob_put(ws_blob* b, const void* p, size_t n) {
 static int blob_i32(ws_blob* b, int v) { return blob_put(b, &v, 4); }
 
 static cce_result serialize_cascade(const cce_cascade* cas, ws_blob* b) {
-    uint32_t ver = WS_VERSION, kind = 0;
+    int quant = ws_cascade_quant(cas);
+    uint32_t ver = quant ? WS_VERSION_Q : WS_VERSION, kind = 0;   /* FP-only cascades keep v1 byte-for-byte */
     if (!blob_put(b, WS_MAGIC, 4) || !blob_put(b, &ver, 4) || !blob_put(b, &kind, 4)) return CCE_ERR_OOM;
     if (!blob_i32(b, cas->num_blocks)) return CCE_ERR_OOM;
     for (int i = 0; i < cas->num_blocks; i++) {
@@ -65,10 +74,17 @@ static cce_result serialize_cascade(const cce_cascade* cas, ws_blob* b) {
         int in  = blk->weights.ndim >= 2 ? blk->weights.shape[0] : 0;
         int out = blk->weights.ndim >= 2 ? blk->weights.shape[1] : 0;
         int has_bias = (blk->bias.data && blk->bias.numel > 0) ? 1 : 0;
-        if (in <= 0 || out <= 0 || !blk->weights.data) return CCE_ERR_UNSUPPORTED;
+        int is_q = (blk->w_q && blk->w_scale) ? 1 : 0;
+        if (in <= 0 || out <= 0 || (!is_q && !blk->weights.data)) return CCE_ERR_UNSUPPORTED;
         if (!blob_i32(b, (int)blk->type) || !blob_i32(b, in) || !blob_i32(b, out) ||
             !blob_i32(b, has_bias)) return CCE_ERR_OOM;
-        if (!blob_put(b, blk->weights.data, (size_t)in * out * sizeof(float))) return CCE_ERR_OOM;
+        if (quant && !blob_i32(b, is_q)) return CCE_ERR_OOM;   /* v2 only: per-block precision flag */
+        if (is_q) {   /* int8 weight-only payload (1/4 the bytes): codes [in*out] + per-out scale [out] */
+            if (!blob_put(b, blk->w_q, (size_t)in * out) ||
+                !blob_put(b, blk->w_scale, (size_t)out * sizeof(float))) return CCE_ERR_OOM;
+        } else {
+            if (!blob_put(b, blk->weights.data, (size_t)in * out * sizeof(float))) return CCE_ERR_OOM;
+        }
         if (has_bias && !blob_put(b, blk->bias.data, blk->bias.numel * sizeof(float))) return CCE_ERR_OOM;
     }
     return CCE_OK;
@@ -213,6 +229,7 @@ cce_result cce_weight_store_put(cce_weight_store* s, const cce_cascade* cas,
                                 uint64_t* digest_out, int* reused_out) {
     if (!s || !cas) return CCE_ERR_INVALID_ARG;
     uint64_t d = cce_spec_digest(cas);
+    if (ws_cascade_quant(cas)) d ^= WS_QUANT_SALT;   /* quant payload != FP twin (spec_digest hashes FP only) */
     if (digest_out) *digest_out = d;
     ws_blob b = {0};
     cce_result rc = serialize_cascade(cas, &b);
@@ -251,7 +268,7 @@ static cce_result read_payload(const cce_weight_store* s, uint64_t digest,
     uint32_t ver, kind;
     memcpy(&ver, buf + 4, 4);
     memcpy(&kind, buf + 8, 4);
-    if (ver != WS_VERSION) { free(buf); return CCE_ERR_UNSUPPORTED; }
+    if (ver != WS_VERSION && ver != WS_VERSION_Q) { free(buf); return CCE_ERR_UNSUPPORTED; }
     *buf_out = buf; *len_out = (size_t)n; *kind_out = kind;
     return CCE_OK;
 }
@@ -264,6 +281,8 @@ cce_result cce_weight_store_get(cce_weight_store* s, uint64_t digest, cce_cascad
     if (rc != CCE_OK) return rc;
     if (kind != 0) { free(buf); return CCE_ERR_UNSUPPORTED; }
 
+    uint32_t ver = 0; memcpy(&ver, buf + 4, 4);
+    int isv2 = (ver == WS_VERSION_Q);
     size_t off = 12;
     int nb = 0;
     if (off + 4 > len) { free(buf); return CCE_ERR_IO; }
@@ -273,12 +292,17 @@ cce_result cce_weight_store_get(cce_weight_store* s, uint64_t digest, cce_cascad
     cce_cascade* cas = NULL;
     if (cce_cascade_create(&cas, nb) != CCE_OK) { free(buf); return CCE_ERR_OOM; }
     for (int i = 0; i < nb; i++) {
-        int type, in, out_d, has_bias;
+        int type, in, out_d, has_bias, is_q = 0;
         if (off + 16 > len) { cce_cascade_destroy(cas); free(buf); return CCE_ERR_IO; }
         memcpy(&type, buf + off, 4); memcpy(&in, buf + off + 4, 4);
         memcpy(&out_d, buf + off + 8, 4); memcpy(&has_bias, buf + off + 12, 4);
         off += 16;
-        size_t wbytes = (size_t)in * out_d * sizeof(float);
+        if (isv2) {
+            if (off + 4 > len) { cce_cascade_destroy(cas); free(buf); return CCE_ERR_IO; }
+            memcpy(&is_q, buf + off, 4); off += 4;
+        }
+        size_t wbytes = is_q ? ((size_t)in * out_d + (size_t)out_d * sizeof(float))   /* int8 codes + scale */
+                             : (size_t)in * out_d * sizeof(float);
         size_t bbytes = has_bias ? (size_t)out_d * sizeof(float) : 0;
         if (in <= 0 || out_d <= 0 || off + wbytes + bbytes > len) {
             cce_cascade_destroy(cas); free(buf); return CCE_ERR_IO;
@@ -289,7 +313,25 @@ cce_result cce_weight_store_get(cce_weight_store* s, uint64_t digest, cce_cascad
         if (arc != CCE_OK) { cce_cascade_destroy(cas); free(buf); return arc; }
         cce_block* blk = &cas->blocks[cas->num_blocks - 1];
         blk->type = (cce_block_type_t)type;
-        memcpy(blk->weights.data, buf + off, wbytes); off += wbytes;
+        if (is_q) {
+            /* int8 payload: restore w_q + per-out scale. The forward's int8 path uses them
+               (w_q takes precedence over weights.data), so the restored block runs int8 —
+               bit-identical to the all-resident quantized model. Dequant into weights.data too
+               so the FP tensor stays valid for any non-forward reader; the int8 forward ignores it. */
+            size_t qb = (size_t)in * out_d;
+            int8_t* q  = (int8_t*)malloc(qb);
+            float*  sc = (float*)malloc((size_t)out_d * sizeof(float));
+            if (!q || !sc) { free(q); free(sc); cce_cascade_destroy(cas); free(buf); return CCE_ERR_OOM; }
+            memcpy(q,  buf + off, qb); off += qb;
+            memcpy(sc, buf + off, (size_t)out_d * sizeof(float)); off += (size_t)out_d * sizeof(float);
+            blk->w_q = q; blk->w_scale = sc;
+            for (int ii = 0; ii < in; ii++)
+                for (int oo = 0; oo < out_d; oo++)
+                    blk->weights.data[(size_t)ii * out_d + oo] = sc[oo] * (float)q[(size_t)ii * out_d + oo];
+        } else {
+            memcpy(blk->weights.data, buf + off, (size_t)in * out_d * sizeof(float));
+            off += (size_t)in * out_d * sizeof(float);
+        }
         if (has_bias) {
             if (blk->bias.numel == 0) {
                 int bsh[1] = { out_d };

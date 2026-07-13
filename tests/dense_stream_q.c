@@ -211,16 +211,17 @@ int main(void) {
         LOG("            are never written, and cce_weight_store_get restores FP only.)\n");
     }
 
-    LOG("\n--- fallback gate: FP streaming works (re-confirm the tiers gate) ---\n");
-    CHECK(dmax_fp == 0.0f, "capped streaming logits BIT-IDENTICAL to FP all-resident");
+    LOG("\n--- gate: QUANTIZED streaming is bit-identical to the int8 all-resident model ---\n");
+    CHECK(preserved, "store PRESERVES int8 end-to-end (quantized-payload path in cce_weight_store)");
+    CHECK(dmax_q == 0.0f, "capped QUANTIZED streaming logits BIT-IDENTICAL to int8 all-resident");
 
     LOG("\n--- on-disk store bytes: int8 ingest vs FP ingest of the same model ---\n");
     LOG("  store bytes (int8 ingest) = %zu\n", bytes_q);
     LOG("  store bytes (FP   ingest) = %zu\n", bytes_fp);
     LOG("  compression captured by store = %.3fx\n",
         bytes_q ? (double)bytes_fp / (double)bytes_q : 0.0);
-    CHECK(bytes_q == bytes_fp,
-          "store captures NO compression from int8 (payloads identical) -- the finding");
+    CHECK(bytes_q < bytes_fp,
+          "store captures int8 compression (quantized payload smaller than FP ingest)");
 
     LOG("\n--- specialist working set: FP vs int8 (the win the store SHOULD capture) ---\n");
     LOG("  quantized blocks = %d of %d forest blocks (%d specialists; lm_head kept FP)\n",
