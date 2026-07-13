@@ -823,7 +823,7 @@ outside and explore the world around her."*
 | CCE FP specialists | 64.4 MB | exact |
 | **int8 weight-only PTQ** (`--int8`) | **16.3 MB** | **near-lossless** (cosine 0.99999, greedy 64/64 identical) |
 | post-hoc ternary | ~6 MB | **collapses** (cosine 0.83, argmax flips) |
-| **packed 1.6-bit (trits)** | **6.95 MB, actual on disk** | **bit-exact vs ternary** — storage proven; quality via **joint QAT** (generalizes on unseen text, `make supra_joint_qat`), *not* post-hoc |
+| **packed 1.6-bit (trits)** | **6.95 MB, actual on disk** | **bit-exact vs ternary** — storage proven; quality via **joint QAT** (generalizes on unseen text, `make transformer_qat_joint`), *not* post-hoc |
 
 int8 PTQ is the shippable compression result today. Ternary is **BitNet b1.58** (per-row absmean,
 `{-1,0,+1}`, 5 trits/byte = 1.6 bit/weight): the **packing** is bit-exact and the **6.95 MB artifact
@@ -851,7 +851,7 @@ smaller), and stays **bit-identical** to the int8 ternary path (gated in `make t
 which memcmps the full output). int8 remains the outright speed path (1.57× faster than trit,
 at 5× the bytes).
 
-**Joint QAT generalizes; freezing the transformer was the bottleneck (`make supra_joint_qat`).**
+**Joint QAT generalizes; freezing the transformer was the bottleneck (`make transformer_qat_joint`).**
 The head-only corpus gate (`supra_head_qat_corpus`) proved a ternary head trained on a **frozen**
 pretrained transformer only *memorizes*: it recovers the FP head's argmax far better than post-hoc
 on training text but **ties post-hoc on held-out** sentences (62.6% vs 62.6%). The follow-up gate
@@ -867,9 +867,18 @@ at memorization. So the ~7 MB packed artifact's open quality question now has a 
 **joint ternary QAT is the path**, and int8 (16.3 MB, cosine 0.99999) remains the near-lossless
 shippable tier today.
 
-**Trainer-independent — it reproduces on the general word-LM (`make wordlm_holdout`).** Because
-`supra_joint_qat` uses the Supra-*shaped* `cce_supra_train`, the finding is re-run on `cce_wordlm`
-— a general word-LM with the same BitNet b1.58 recipe (FP shadow + STE), no Supra geometry — with
+**The trainer is model-agnostic — `cce_transformer_qat` (was `cce_supra_train`).** It is a
+config-driven transformer-QAT engine (any `n_layer`/`n_embd`/`n_head`/`vocab`), not tied to Supra;
+`cce_transformer_qat_load_decomposed(t, m)` loads **any** decomposed transformer (the Universal
+Model Layer's `cce_supra_decomposed` output — Supra is one input). Real pretrained Supra weights
+load with **proven forward parity** vs `cce_supra_gpt_forward` (max|Δlogit| = 3.05e-5, argmax
+identical on 10/10 sequences, zero architecture fixes — the trainer's backward was already a faithful
+mirror of the real forward). On those real weights, joint QAT of the transformer blocks recovers the
+held-out next-token accuracy that post-hoc quantization destroys (`make transformer_qat_real`).
+
+**Trainer-independent — it also reproduces on the general word-LM (`make wordlm_holdout`).** As a
+cross-family check (a word-LM, not a transformer), the finding is re-run on `cce_wordlm` — the same
+BitNet b1.58 recipe (FP shadow + STE), different architecture — with
 whole sentences held out. The compression mechanism reproduces cleanly: FP train ppl 1.39 →
 **post-hoc ternary collapses to 136.93 (98×)** → **QAT recovers to 2.02** (near FP). On unseen
 sentences QAT's held-out next-word accuracy stays ≥ post-hoc across seeds (word-level on a small

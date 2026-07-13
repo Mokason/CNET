@@ -26,7 +26,7 @@ cce_tiers.log|||failed -> OK
 cce_similar.log|||failed -> OK
 merge_family.log|||failed -> OK
 hybrid_catalog.log|||failed -> OK
-supra_train.log|||failed -> OK
+transformer_qat.log|||failed -> OK
 contract_secure.log|||All contract security tests passed.
 contract_unit.log|||All unit-file tests passed.
 mutate.log|||All mutation-sweep gates passed.
@@ -41,7 +41,7 @@ leakcheck.log|||(clean)
 LONG='
 supra_head_qat.log|||, 0 failed
 supra_head_qat_corpus.log|||, 0 failed
-supra_joint_qat.log|||, 0 failed
+transformer_qat_joint.log|||, 0 failed
 wordlm_holdout.log|||, 0 failed
 '
 

@@ -1,5 +1,5 @@
-#ifndef CCE_SUPRA_TRAIN_H
-#define CCE_SUPRA_TRAIN_H
+#ifndef CCE_TRANSFORMER_QAT_H
+#define CCE_TRANSFORMER_QAT_H
 
 /* Supra QAT trainer: the transformer backward the quality phase is gated on
  * (docs/superpowers/specs/2026-06-28-supra-qat-scope.md, steps 7-10).
@@ -30,7 +30,7 @@
 extern "C" {
 #endif
 
-typedef struct cce_supra_train cce_supra_train;
+typedef struct cce_transformer_qat cce_transformer_qat;
 
 typedef struct {
     int n_layer;      /* transformer blocks */
@@ -42,11 +42,11 @@ typedef struct {
     unsigned seed;    /* deterministic init */
     /* QAT knobs: 1 = ternary forward + STE for that group, 0 = plain FP */
     int qat_qkv, qat_proj, qat_mlp, qat_head, qat_emb;
-} cce_supra_train_config;
+} cce_transformer_qat_config;
 
 /* Create with random (seeded) weights — enough for the hermetic gate. */
-cce_supra_train* cce_supra_train_create(const cce_supra_train_config* cfg);
-void cce_supra_train_free(cce_supra_train* t);
+cce_transformer_qat* cce_transformer_qat_create(const cce_transformer_qat_config* cfg);
+void cce_transformer_qat_free(cce_transformer_qat* t);
 
 /* Load REAL pretrained Supra weights into an already-created trainer.
  *
@@ -59,10 +59,10 @@ void cce_supra_train_free(cce_supra_train* t);
  *   n_layer=m->n_layer, n_embd=m->n_embd, n_head=m->n_head, vocab=m->vocab_size,
  *   block_size=m->block_size, mlp_hidden = up-projection out dim.
  * Returns CCE_ERR_INVALID_ARG on any dim/element-count mismatch. */
-cce_result cce_supra_train_load_decomposed(cce_supra_train* t, void* decomposed_model);
+cce_result cce_transformer_qat_load_decomposed(cce_transformer_qat* t, void* decomposed_model);
 
 /* Forward only: logits[vocab] at the LAST position (ternary where QAT). */
-cce_result cce_supra_train_logits(cce_supra_train* t, const int* tokens, int T,
+cce_result cce_transformer_qat_logits(cce_transformer_qat* t, const int* tokens, int T,
                                   float* logits /*[vocab]*/);
 
 /* One training step on one sequence: forward (ternary where QAT), loss at the
@@ -70,24 +70,24 @@ cce_result cce_supra_train_logits(cce_supra_train* t, const int* tokens, int T,
  * teacher_probs != NULL -> soft-KD cross-entropy vs that distribution
  * (the T=1 recipe the head milestones proved); NULL -> hard CE on target.
  * Returns the loss (double). */
-double cce_supra_train_step(cce_supra_train* t, const int* tokens, int T,
+double cce_transformer_qat_step(cce_transformer_qat* t, const int* tokens, int T,
                             const float* teacher_probs /*[vocab] or NULL*/,
                             int target, float lr);
 
 /* Analytic-vs-numerical gradient check (FP mode; run with all qat_* = 0).
  * Central differences over n_samples params drawn from EVERY group.
  * Returns the max relative error seen (gate on < tol). */
-double cce_supra_train_gradcheck(cce_supra_train* t, const int* tokens, int T,
+double cce_transformer_qat_gradcheck(cce_transformer_qat* t, const int* tokens, int T,
                                  int target, int n_samples);
 
 /* Flip the QAT knobs live. Ternarization happens on the fly from the FP
  * shadows, so "post-hoc baseline" == train FP, then set_qat(1,...) and eval
  * WITHOUT further training; "QAT" == set_qat(1,...) and keep training. */
-void cce_supra_train_set_qat(cce_supra_train* t, int qkv, int proj, int mlp,
+void cce_transformer_qat_set_qat(cce_transformer_qat* t, int qkv, int proj, int mlp,
                              int head, int emb);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* CCE_SUPRA_TRAIN_H */
+#endif /* CCE_TRANSFORMER_QAT_H */

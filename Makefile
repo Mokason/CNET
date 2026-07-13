@@ -120,8 +120,8 @@ CCE_WSTORE  := src/cce/cce_weight_store.c
 CCE_TIERRT  := src/cce/cce_tier_runtime.c
 CCE_SIMILAR := src/cce/cce_similar.c
 CCE_CLGEMM  := src/cce/cce_clgemm.c
-CCE_SUPRA_TRAIN := src/cce/cce_supra_train.c
-CCE := $(CCE_TENSOR) $(CCE_BLOCK) $(CCE_CASCADE) $(CCE_ARCHIVE) $(CCE_FOREST) $(CCE_ROUTER) $(CCE_SPARSE_KV) $(CCE_UNCERTAINTY) $(CCE_COMPRESSION) $(CCE_LEARN) $(CCE_PATCH) $(CCE_GPU) $(CCE_ABI) $(CCE_CUDA_OBJ) $(CCE_PERCEPTUAL) $(CCE_WORDLM) $(CCE_MODEL) $(CCE_MODEL_IO) $(CCE_DATASET) $(CCE_AUTOGRAD) $(CCE_SAFETENSORS) $(CCE_GGUF) $(CCE_QGKP) $(CCE_DETECT) $(CCE_SSM) $(CCE_ST_LLAMA) $(CCE_SPECGRAPH) $(CCE_WSTORE) $(CCE_TIERRT) $(CCE_SIMILAR) $(CCE_CLGEMM) $(CCE_SUPRA_TRAIN)
+CCE_TRANSFORMER_QAT := src/cce/cce_transformer_qat.c
+CCE := $(CCE_TENSOR) $(CCE_BLOCK) $(CCE_CASCADE) $(CCE_ARCHIVE) $(CCE_FOREST) $(CCE_ROUTER) $(CCE_SPARSE_KV) $(CCE_UNCERTAINTY) $(CCE_COMPRESSION) $(CCE_LEARN) $(CCE_PATCH) $(CCE_GPU) $(CCE_ABI) $(CCE_CUDA_OBJ) $(CCE_PERCEPTUAL) $(CCE_WORDLM) $(CCE_MODEL) $(CCE_MODEL_IO) $(CCE_DATASET) $(CCE_AUTOGRAD) $(CCE_SAFETENSORS) $(CCE_GGUF) $(CCE_QGKP) $(CCE_DETECT) $(CCE_SSM) $(CCE_ST_LLAMA) $(CCE_SPECGRAPH) $(CCE_WSTORE) $(CCE_TIERRT) $(CCE_SIMILAR) $(CCE_CLGEMM) $(CCE_TRANSFORMER_QAT)
 CNET_CCE_ADAPTER := src/cce/cce_contract_adapter.c
 SPECIALIST_ADAPTERS := src/specialist_adapters.c
 SPECIALIST_SRC := src/specialist.c src/specialist_health.c
@@ -867,7 +867,7 @@ leakcheck: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE)
 # even under -j) and re-reads each suite's log, asserting the suite's terminal
 # SUCCESS marker is present -- so `make test` now exits non-zero if any gate
 # failed, crashed, or produced no log. See tests/verify_logs.sh for the markers.
-verify: claims_test cce_dll cce_safetensors_test cce_autograd_test cce_model_test cce_view forest_view cce_detect cce_ssm cce_st_llama cce_specgraph cce_wstore cce_tiers cce_similar merge_family hybrid_catalog supra_train contract_secure contract_unit mutate acquire base flagship demos leakcheck
+verify: claims_test cce_dll cce_safetensors_test cce_autograd_test cce_model_test cce_view forest_view cce_detect cce_ssm cce_st_llama cce_specgraph cce_wstore cce_tiers cce_similar merge_family hybrid_catalog transformer_qat contract_secure contract_unit mutate acquire base flagship demos leakcheck
 	@sh tests/verify_logs.sh
 
 # Everything verify covers PLUS the GPU equivalence gate (needs model + GPU;
@@ -879,7 +879,7 @@ test_full: test gpu_equiv_build
 # `long` mode also asserts the two verify-long-only supra QAT gates (which
 # likewise swallow their exit codes). The `verify` prereq already ran + gated
 # the core chain first; this re-scan adds the extras.
-verify-long: verify cce_train_bench supra_head_qat supra_head_qat_corpus supra_joint_qat wordlm_bitnet wordlm_holdout compat
+verify-long: verify cce_train_bench supra_head_qat supra_head_qat_corpus transformer_qat_joint wordlm_bitnet wordlm_holdout compat
 	@sh tests/verify_logs.sh long
 
 test: verify
@@ -1053,7 +1053,7 @@ cce_autograd_test: $(CCE) $(CCE_CUDA_OBJ) tests/test_cce_autograd.c
 AVX_CFLAGS := $(filter-out -mno-avx,$(CFLAGS))
 # wordlm/wordlm_bitnet/trit_bench link only CCE sources (no src/router/), so
 # they are AVX-safe too; OMP activates the row-parallel packed-trit kernels.
-cce_safetensors_test supra_console supra_chat_mock supra_context_probe supra_longform supra_head_qat supra_head_qat_corpus supra_joint_qat supra_joint_qat_real wordlm wordlm_bitnet wordlm_holdout trit_bench: CFLAGS := $(AVX_CFLAGS) $(OMPFLAGS)
+cce_safetensors_test supra_console supra_chat_mock supra_context_probe supra_longform supra_head_qat supra_head_qat_corpus transformer_qat_joint transformer_qat_real wordlm wordlm_bitnet wordlm_holdout trit_bench: CFLAGS := $(AVX_CFLAGS) $(OMPFLAGS)
 
 cce_safetensors_test: $(CCE) $(CCE_CUDA_OBJ) src/nn.c tests/test_cce_safetensors.c
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) src/nn.c tests/test_cce_safetensors.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
@@ -1100,18 +1100,18 @@ supra_head_qat_corpus: $(CCE) $(CCE_CUDA_OBJ) src/nn.c tests/supra_head_qat_corp
 
 # Joint ternary QAT vs head-only vs post-hoc: does training the WHOLE stack
 # ternary recover held-out next-byte accuracy where a frozen-transformer head
-# can't? Byte-level from-scratch on pdf_corpus.txt. See tests/supra_joint_qat.c.
-supra_joint_qat: $(CCE) $(CCE_CUDA_OBJ) src/nn.c tests/supra_joint_qat.c include/cce/cce_supra_train.h
-	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) src/nn.c tests/supra_joint_qat.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
-	./$(BIN_DIR)/supra_joint_qat > logs/supra_joint_qat.log 2>&1 || echo "test exited non-zero (see log)"
+# can't? Byte-level from-scratch on pdf_corpus.txt. See tests/transformer_qat_joint.c.
+transformer_qat_joint: $(CCE) $(CCE_CUDA_OBJ) src/nn.c tests/transformer_qat_joint.c include/cce/cce_transformer_qat.h
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) src/nn.c tests/transformer_qat_joint.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+	./$(BIN_DIR)/transformer_qat_joint > logs/transformer_qat_joint.log 2>&1 || echo "test exited non-zero (see log)"
 
-# Real-weight joint QAT: load pretrained Supra into the cce_supra_train trainer,
+# Real-weight joint QAT: load pretrained Supra into the cce_transformer_qat trainer,
 # prove forward-parity vs cce_supra_gpt_forward, then joint-QAT the transformer
-# blocks (head+emb FP) with a held-out generalization test. See tests/supra_joint_qat_real.c.
-supra_joint_qat_real: $(CCE) $(CCE_CUDA_OBJ) src/nn.c tests/supra_joint_qat_real.c
+# blocks (head+emb FP) with a held-out generalization test. See tests/transformer_qat_real.c.
+transformer_qat_real: $(CCE) $(CCE_CUDA_OBJ) src/nn.c tests/transformer_qat_real.c
 	@mkdir -p $(BIN_DIR) logs
-	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) src/nn.c tests/supra_joint_qat_real.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
-	./$(BIN_DIR)/supra_joint_qat_real > logs/supra_joint_qat_real.log 2>&1 || echo "test exited non-zero (see log)"
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) src/nn.c tests/transformer_qat_real.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+	./$(BIN_DIR)/transformer_qat_real > logs/transformer_qat_real.log 2>&1 || echo "test exited non-zero (see log)"
 
 # Lightweight mock chat test: exercises the real BPE tokenizer (encode) without
 # requiring the full model forward. Needs supra_cache/tokenizer.json (run
@@ -1141,8 +1141,8 @@ wordlm_bitnet: $(CCE_WORDLM) tests/wordlm_bitnet_demo.c include/cce/cce_wordlm.h
 	./$(BIN_DIR)/wordlm_bitnet
 
 # Held-out generalization of joint QAT on the GENERAL trainer (cce_wordlm, not
-# the Supra-shaped cce_supra_train): FP vs post-hoc ternary vs QAT on UNSEEN
-# sentences. Confirms the supra_joint_qat finding is trainer-independent.
+# the Supra-shaped cce_transformer_qat): FP vs post-hoc ternary vs QAT on UNSEEN
+# sentences. Confirms the transformer_qat_joint finding is trainer-independent.
 wordlm_holdout: $(CCE_WORDLM) tests/wordlm_holdout.c include/cce/cce_wordlm.h
 	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $(CCE_WORDLM) tests/wordlm_holdout.c $(LDFLAGS)
 	./$(BIN_DIR)/wordlm_holdout > logs/wordlm_holdout.log 2>&1 || echo "test exited non-zero (see log)"
@@ -1167,9 +1167,9 @@ hybrid_catalog: $(CCE) $(CCE_CUDA_OBJ) tests/hybrid_catalog_test.c tests/tiny_mo
 # post-hoc on a tiny synthetic model. No model files. The joint-QAT quality
 # phase (docs/superpowers/specs/2026-06-28-supra-qat-scope.md steps 7-10)
 # stands on this backward.
-supra_train: $(CCE) $(CCE_CUDA_OBJ) tests/test_supra_train.c include/cce/cce_supra_train.h
-	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) tests/test_supra_train.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
-	./$(BIN_DIR)/supra_train > logs/supra_train.log 2>&1 || echo "test exited non-zero (see log)"
+transformer_qat: $(CCE) $(CCE_CUDA_OBJ) tests/test_transformer_qat.c include/cce/cce_transformer_qat.h
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) tests/test_transformer_qat.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+	./$(BIN_DIR)/transformer_qat > logs/transformer_qat.log 2>&1 || echo "test exited non-zero (see log)"
 
 # Trit-kernel micro-benchmark: FP vs int8 vs packed 1.6-bit forward on a
 # Supra-head-shaped block + the packed word-LM predict loop. Carries its own

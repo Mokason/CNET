@@ -1,4 +1,4 @@
-/* Supra QAT trainer — the transformer backward. See include/cce/cce_supra_train.h.
+/* Supra QAT trainer — the transformer backward. See include/cce/cce_transformer_qat.h.
  *
  * Every dot product accumulates in double (house pattern from cce_wordlm);
  * the backward mirrors the verified forward op-for-op:
@@ -17,7 +17,7 @@
  * ternary grad), γ treated as constant (cce_wordlm precedent).
  */
 
-#include "../../include/cce/cce_supra_train.h"
+#include "../../include/cce/cce_transformer_qat.h"
 #include "../../include/cce/cce_safetensors.h"   /* cce_supra_decomposed, head_fp, forest */
 
 #include <stdlib.h>
@@ -42,8 +42,8 @@ static int p_alloc(P* p, int in, int out) {
 }
 static void p_free(P* p) { free(p->w); free(p->g); free(p->m); free(p->v); }
 
-struct cce_supra_train {
-    cce_supra_train_config cfg;
+struct cce_transformer_qat {
+    cce_transformer_qat_config cfg;
     int hd;                   /* head_dim = D / n_head */
     /* params */
     P tok_emb;                /* [vocab][D]  (QAT-able) */
@@ -80,7 +80,7 @@ struct cce_supra_train {
 };
 
 /* ---- rng ---- */
-static float tr_rnd(cce_supra_train* t) {
+static float tr_rnd(cce_transformer_qat* t) {
     t->rng = t->rng * 6364136223846793005ULL + 1442695040888963407ULL;
     return (float)((double)(t->rng >> 33) / 2147483648.0 - 1.0);
 }
@@ -102,7 +102,7 @@ static void tern_effective(const P* p, float* eff) {
 }
 
 /* effective weight pointer for a matrix: ternary copy if qat, else shadow */
-static const float* mat_eff(cce_supra_train* t, const P* p, int qat) {
+static const float* mat_eff(cce_transformer_qat* t, const P* p, int qat) {
     if (!qat) return p->w;
     tern_effective(p, t->eff);
     return t->eff;
@@ -218,14 +218,14 @@ static float gelu_df(float x) {
 
 /* ================= create / free ================= */
 
-cce_supra_train* cce_supra_train_create(const cce_supra_train_config* cfg) {
+cce_transformer_qat* cce_transformer_qat_create(const cce_transformer_qat_config* cfg) {
     if (!cfg || cfg->n_head < 1 || cfg->n_embd % cfg->n_head) return NULL;
     /* fixed-size locals in forward/backward cap these (srow/dprow: block_size,
        dh/dxl: n_embd). Real Supra is 384/256; refuse beyond the caps. */
     if (cfg->block_size < 1 || cfg->block_size > 1024) return NULL;
     if (cfg->n_embd < 1 || cfg->n_embd > 4096) return NULL;
     if (cfg->n_layer < 1 || cfg->mlp_hidden < 1 || cfg->vocab < 2) return NULL;
-    cce_supra_train* t = (cce_supra_train*)calloc(1, sizeof(*t));
+    cce_transformer_qat* t = (cce_transformer_qat*)calloc(1, sizeof(*t));
     if (!t) return NULL;
     t->cfg = *cfg;
     t->hd = cfg->n_embd / cfg->n_head;
@@ -287,7 +287,7 @@ cce_supra_train* cce_supra_train_create(const cce_supra_train_config* cfg) {
            t->ln2_mean && t->ln2_rstd && t->qkv && t->probs && t->cat && t->xattn &&
            t->mpre && t->mpost && t->hfin && t->logits && t->eff &&
            t->dx && t->dtmp && t->dmid && t->dqkv && t->dcat);
-    if (!ok) { cce_supra_train_free(t); return NULL; }
+    if (!ok) { cce_transformer_qat_free(t); return NULL; }
 
     /* init: small uniform for matrices, ones/zeros for norms */
     float sc = 0.08f;
@@ -305,7 +305,7 @@ cce_supra_train* cce_supra_train_create(const cce_supra_train_config* cfg) {
     return t;
 }
 
-void cce_supra_train_free(cce_supra_train* t) {
+void cce_transformer_qat_free(cce_transformer_qat* t) {
     if (!t) return;
     int L = t->cfg.n_layer;
     p_free(&t->tok_emb); p_free(&t->pos_emb);
@@ -355,10 +355,10 @@ static const cce_block* supra_last_block(cce_forest* f, const char* name) {
     return &c->blocks[c->num_blocks - 1];
 }
 
-cce_result cce_supra_train_load_decomposed(cce_supra_train* t, void* decomposed_model) {
+cce_result cce_transformer_qat_load_decomposed(cce_transformer_qat* t, void* decomposed_model) {
     if (!t || !decomposed_model) return CCE_ERR_INVALID_ARG;
     cce_supra_decomposed* m = (cce_supra_decomposed*)decomposed_model;
-    const cce_supra_train_config* c = &t->cfg;
+    const cce_transformer_qat_config* c = &t->cfg;
     int L = c->n_layer, D = c->n_embd, M = c->mlp_hidden, V = c->vocab, B = c->block_size;
 
     /* dims must line up exactly (direct memcpy, no reshape) */
@@ -438,7 +438,7 @@ cce_result cce_supra_train_load_decomposed(cce_supra_train* t, void* decomposed_
     return CCE_OK;
 }
 
-void cce_supra_train_set_qat(cce_supra_train* t, int qkv, int proj, int mlp,
+void cce_transformer_qat_set_qat(cce_transformer_qat* t, int qkv, int proj, int mlp,
                              int head, int emb) {
     if (!t) return;
     t->cfg.qat_qkv = qkv; t->cfg.qat_proj = proj; t->cfg.qat_mlp = mlp;
@@ -447,8 +447,8 @@ void cce_supra_train_set_qat(cce_supra_train* t, int qkv, int proj, int mlp,
 
 /* ================= forward (with cache) ================= */
 
-static cce_result tr_forward(cce_supra_train* t, const int* tokens, int T) {
-    const cce_supra_train_config* c = &t->cfg;
+static cce_result tr_forward(cce_transformer_qat* t, const int* tokens, int T) {
+    const cce_transformer_qat_config* c = &t->cfg;
     int L = c->n_layer, D = c->n_embd, H = c->n_head, hd = t->hd,
         M = c->mlp_hidden, V = c->vocab;
     if (T < 1 || T > c->block_size) return CCE_ERR_INVALID_ARG;
@@ -557,7 +557,7 @@ static cce_result tr_forward(cce_supra_train* t, const int* tokens, int T) {
     return CCE_OK;
 }
 
-cce_result cce_supra_train_logits(cce_supra_train* t, const int* tokens, int T,
+cce_result cce_transformer_qat_logits(cce_transformer_qat* t, const int* tokens, int T,
                                   float* logits) {
     if (!t || !tokens || !logits) return CCE_ERR_INVALID_ARG;
     cce_result rc = tr_forward(t, tokens, T);
@@ -569,7 +569,7 @@ cce_result cce_supra_train_logits(cce_supra_train* t, const int* tokens, int T,
 /* ================= backward ================= */
 
 /* zero all grads */
-static void tr_zero_grads(cce_supra_train* t) {
+static void tr_zero_grads(cce_transformer_qat* t) {
     int L = t->cfg.n_layer, D = t->cfg.n_embd, M = t->cfg.mlp_hidden,
         V = t->cfg.vocab;
     memset(t->tok_emb.g, 0, (size_t)V*D*sizeof(float));
@@ -595,8 +595,8 @@ static void tr_zero_grads(cce_supra_train* t) {
 
 /* full backward from dlogits[V] at the last position. Consumes the caches of
    the immediately preceding tr_forward. tokens needed for the embedding scatter. */
-static void tr_backward(cce_supra_train* t, const int* tokens, const float* dlogits) {
-    const cce_supra_train_config* c = &t->cfg;
+static void tr_backward(cce_transformer_qat* t, const int* tokens, const float* dlogits) {
+    const cce_transformer_qat_config* c = &t->cfg;
     int L = c->n_layer, D = c->n_embd, H = c->n_head, hd = t->hd,
         M = c->mlp_hidden, V = c->vocab, T = t->T;
 
@@ -719,7 +719,7 @@ static void adam_p(P* p, float lr, int step) {
     }
 }
 
-double cce_supra_train_step(cce_supra_train* t, const int* tokens, int T,
+double cce_transformer_qat_step(cce_transformer_qat* t, const int* tokens, int T,
                             const float* teacher_probs, int target, float lr) {
     if (!t || !tokens) return -1.0;
     if (tr_forward(t, tokens, T) != CCE_OK) return -1.0;
@@ -771,7 +771,7 @@ double cce_supra_train_step(cce_supra_train* t, const int* tokens, int T,
 
 /* ================= gradcheck ================= */
 
-static double gc_loss(cce_supra_train* t, const int* tokens, int T, int target) {
+static double gc_loss(cce_transformer_qat* t, const int* tokens, int T, int target) {
     if (tr_forward(t, tokens, T) != CCE_OK) return 0.0;
     int V = t->cfg.vocab;
     double maxv = t->logits[0];
@@ -781,7 +781,7 @@ static double gc_loss(cce_supra_train* t, const int* tokens, int T, int target) 
     return -((double)t->logits[target] - maxv - log(sum));
 }
 
-double cce_supra_train_gradcheck(cce_supra_train* t, const int* tokens, int T,
+double cce_transformer_qat_gradcheck(cce_transformer_qat* t, const int* tokens, int T,
                                  int target, int n_samples) {
     if (!t) return 1e9;
     /* analytic grads */

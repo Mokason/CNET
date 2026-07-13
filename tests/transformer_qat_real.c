@@ -1,16 +1,16 @@
-/* supra_joint_qat_real — plumb the REAL pretrained Supra weights into the
- * cce_supra_train QAT trainer, PROVE the plumbing via forward-parity against the
+/* transformer_qat_real — plumb the REAL pretrained Supra weights into the
+ * cce_transformer_qat QAT trainer, PROVE the plumbing via forward-parity against the
  * verified cce_supra_gpt_forward, then run a joint-QAT held-out generalization
  * experiment on the real weights.
  *
- * Task 1: cce_supra_train_load_decomposed copies every real weight/bias into the
+ * Task 1: cce_transformer_qat_load_decomposed copies every real weight/bias into the
  *         matching trainer P (direct [in][out] memcpy, no transpose).
  * Task 2 (the gate): FP-mode trainer logits must match cce_supra_gpt_forward
  *         (top-1 argmax identical on every sequence; max|Δlogit| small).
  * Task 3: joint QAT on the transformer blocks (qkv/proj/mlp ternary, head+emb FP)
  *         vs post-hoc ternary vs FP, held-out next-token argmax accuracy.
  *
- * Build/run:  make supra_joint_qat_real   (logs to logs/supra_joint_qat_real.log)
+ * Build/run:  make transformer_qat_real   (logs to logs/transformer_qat_real.log)
  *             optional args: [train_pairs] [eval_pairs] [epochs] [lr]
  */
 #include <stdio.h>
@@ -19,7 +19,7 @@
 #include <math.h>
 #include <time.h>
 #include "../include/cce/cce_safetensors.h"
-#include "../include/cce/cce_supra_train.h"
+#include "../include/cce/cce_transformer_qat.h"
 
 static int g_pass = 0, g_fail = 0;
 #define CHECK(c, msg) do { if (c) { g_pass++; printf("PASS: %s\n", (msg)); } \
@@ -57,18 +57,18 @@ int main(int argc, char** argv) {
     if (Mh <= 0) { printf("FAIL: could not read mlp_hidden\n"); cce_supra_a2a_free(a); return 1; }
 
     /* ---------- Task 1: create trainer with matching dims + load real weights ---------- */
-    cce_supra_train_config cfg = {0};
+    cce_transformer_qat_config cfg = {0};
     cfg.n_layer = L; cfg.n_embd = D; cfg.n_head = H; cfg.mlp_hidden = Mh;
     cfg.vocab = V; cfg.block_size = B; cfg.seed = 1234;
     cfg.qat_qkv = cfg.qat_proj = cfg.qat_mlp = cfg.qat_head = cfg.qat_emb = 0;
 
-    cce_supra_train* t = cce_supra_train_create(&cfg);
+    cce_transformer_qat* t = cce_transformer_qat_create(&cfg);
     if (!t) { printf("FAIL: trainer create\n"); cce_supra_a2a_free(a); return 1; }
 
-    cce_result lrc = cce_supra_train_load_decomposed(t, m);
-    CHECK(lrc == CCE_OK, "cce_supra_train_load_decomposed returned CCE_OK");
+    cce_result lrc = cce_transformer_qat_load_decomposed(t, m);
+    CHECK(lrc == CCE_OK, "cce_transformer_qat_load_decomposed returned CCE_OK");
     if (lrc != CCE_OK) { printf("  (rc=%d) aborting\n", (int)lrc);
-        cce_supra_train_free(t); cce_supra_a2a_free(a); return 1; }
+        cce_transformer_qat_free(t); cce_supra_a2a_free(a); return 1; }
 
     /* ---------- Task 2: forward parity (the proof) ---------- */
     printf("\n=== Task 2: forward parity (FP trainer vs cce_supra_gpt_forward) ===\n");
@@ -90,7 +90,7 @@ int main(int argc, char** argv) {
         if (n > 24) n = 24;               /* short seqs: parity is length-independent */
         if (n > B) n = B;
 
-        if (cce_supra_train_logits(t, ids, n, lt) != CCE_OK) continue;
+        if (cce_transformer_qat_logits(t, ids, n, lt) != CCE_OK) continue;
         if (cce_supra_gpt_forward(m, ids, n, lr_ref, V) != CCE_OK) continue;
 
         double seq_max = 0.0;
@@ -119,7 +119,7 @@ int main(int argc, char** argv) {
         int lens[3] = {12, 8, 8};
         for (int s = 0; s < 3; s++) {
             for (int i = 0; i < lens[s]; i++) if (seqs[s][i] >= V) seqs[s][i] %= V;
-            if (cce_supra_train_logits(t, seqs[s], lens[s], lt) != CCE_OK) continue;
+            if (cce_transformer_qat_logits(t, seqs[s], lens[s], lt) != CCE_OK) continue;
             if (cce_supra_gpt_forward(m, seqs[s], lens[s], lr_ref, V) != CCE_OK) continue;
             double seq_max = 0.0;
             for (int i = 0; i < V; i++) {
@@ -198,7 +198,7 @@ int main(int argc, char** argv) {
         int correct = 0, tot = 0; \
         for (int p = 0; p < npairs; p++) { \
             if (!pf_eval[p]) continue; \
-            if (cce_supra_train_logits(t, pf_ids[p], pf_len[p], lt) != CCE_OK) continue; \
+            if (cce_transformer_qat_logits(t, pf_ids[p], pf_len[p], lt) != CCE_OK) continue; \
             if (argmax(lt, V) == pf_tgt[p]) correct++; \
             tot++; \
         } \
@@ -208,11 +208,11 @@ int main(int argc, char** argv) {
     double acc_fp = 0, acc_ph = 0, acc_qat = 0;
 
     /* FP baseline (no ternary) */
-    cce_supra_train_set_qat(t, 0, 0, 0, 0, 0);
+    cce_transformer_qat_set_qat(t, 0, 0, 0, 0, 0);
     EVAL_HELDOUT(acc_fp);
 
     /* post-hoc ternary (blocks flipped to ternary, NO retrain) */
-    cce_supra_train_set_qat(t, 1, 1, 1, 0, 0);
+    cce_transformer_qat_set_qat(t, 1, 1, 1, 0, 0);
     EVAL_HELDOUT(acc_ph);
 
     /* joint QAT: train the shadow with block ternary forward + STE (head/emb FP) */
@@ -222,7 +222,7 @@ int main(int argc, char** argv) {
         double loss = 0; int nl = 0;
         for (int p = 0; p < npairs; p++) {
             if (pf_eval[p]) continue;
-            double l = cce_supra_train_step(t, pf_ids[p], pf_len[p], NULL, pf_tgt[p], lr);
+            double l = cce_transformer_qat_step(t, pf_ids[p], pf_len[p], NULL, pf_tgt[p], lr);
             if (l >= 0) { loss += l; nl++; }
         }
         loss = nl ? loss / nl : 0;
@@ -233,7 +233,7 @@ int main(int argc, char** argv) {
     double train_s = (double)(clock() - tic) / CLOCKS_PER_SEC;
 
     /* eval QAT (still ternary on blocks) */
-    cce_supra_train_set_qat(t, 1, 1, 1, 0, 0);
+    cce_transformer_qat_set_qat(t, 1, 1, 1, 0, 0);
     EVAL_HELDOUT(acc_qat);
 
     printf("\n  === joint QAT on REAL weights: held-out next-token argmax accuracy ===\n");
@@ -252,9 +252,9 @@ int main(int argc, char** argv) {
     for (int p = 0; p < npairs; p++) free(pf_ids[p]);
     free(pf_ids); free(pf_len); free(pf_tgt); free(pf_eval);
     free(lt); free(lr_ref);
-    cce_supra_train_free(t);
+    cce_transformer_qat_free(t);
     cce_supra_a2a_free(a);
 
-    printf("\nsupra_joint_qat_real: %d passed, %d failed\n", g_pass, g_fail);
+    printf("\ntransformer_qat_real: %d passed, %d failed\n", g_pass, g_fail);
     return g_fail ? 1 : 0;
 }

@@ -16,7 +16,7 @@
 #include <string.h>
 #include <math.h>
 
-#include "../include/cce/cce_supra_train.h"
+#include "../include/cce/cce_transformer_qat.h"
 
 static int checks = 0, fails = 0;
 #define CHECK(cond, msg) do { checks++; if (!(cond)) { fails++; printf("  FAIL: %s\n", msg); } \
@@ -44,9 +44,9 @@ static int argmax(const float* v, int n) {
 }
 
 int main(void) {
-    printf("=== supra QAT trainer: transformer backward + STE gate ===\n");
+    printf("=== transformer QAT trainer: transformer backward + STE gate ===\n");
 
-    cce_supra_train_config cfg;
+    cce_transformer_qat_config cfg;
     memset(&cfg, 0, sizeof cfg);
     cfg.n_layer = 2; cfg.n_embd = 8; cfg.n_head = 2;
     cfg.mlp_hidden = 16; cfg.vocab = V_; cfg.block_size = 16;
@@ -57,36 +57,36 @@ int main(void) {
 
     /* ---- 1. gradcheck (FP mode) ---- */
     {
-        cce_supra_train* t = cce_supra_train_create(&cfg);
+        cce_transformer_qat* t = cce_transformer_qat_create(&cfg);
         CHECK(t != NULL, "trainer creates");
         if (!t) return 1;
-        double rel = cce_supra_train_gradcheck(t, seqs[0], T_, tgt[0], 6);
+        double rel = cce_transformer_qat_gradcheck(t, seqs[0], T_, tgt[0], 6);
         printf("  info gradcheck max rel err = %.3e (directional + per-group max-|g|)\n", rel);
         CHECK(rel < 5e-3, "analytic backward matches central differences (<5e-3)");
-        cce_supra_train_free(t);
+        cce_transformer_qat_free(t);
     }
 
     /* ---- 2. determinism ---- */
     {
-        cce_supra_train* a = cce_supra_train_create(&cfg);
-        cce_supra_train* b = cce_supra_train_create(&cfg);
+        cce_transformer_qat* a = cce_transformer_qat_create(&cfg);
+        cce_transformer_qat* b = cce_transformer_qat_create(&cfg);
         float la[V_], lb[V_];
         CHECK(a && b &&
-              cce_supra_train_logits(a, seqs[1], T_, la) == CCE_OK &&
-              cce_supra_train_logits(b, seqs[1], T_, lb) == CCE_OK &&
+              cce_transformer_qat_logits(a, seqs[1], T_, la) == CCE_OK &&
+              cce_transformer_qat_logits(b, seqs[1], T_, lb) == CCE_OK &&
               memcmp(la, lb, sizeof la) == 0,
               "same seed -> bit-identical logits");
-        cce_supra_train_free(a); cce_supra_train_free(b);
+        cce_transformer_qat_free(a); cce_transformer_qat_free(b);
     }
 
     /* ---- 3 + 4. FP training, then post-hoc vs QAT ---- */
     {
-        cce_supra_train* t = cce_supra_train_create(&cfg);
+        cce_transformer_qat* t = cce_transformer_qat_create(&cfg);
         double first = 0, last = 0;
         for (int e = 0; e < 300; e++) {
             double sum = 0;
             for (int s = 0; s < NSEQ; s++)
-                sum += cce_supra_train_step(t, seqs[s], T_, NULL, tgt[s], 0.01f);
+                sum += cce_transformer_qat_step(t, seqs[s], T_, NULL, tgt[s], 0.01f);
             if (e == 0) first = sum / NSEQ;
             last = sum / NSEQ;
         }
@@ -99,7 +99,7 @@ int main(void) {
         float* teach = (float*)malloc((size_t)NSEQ * V_ * sizeof(float));
         for (int s = 0; s < NSEQ; s++) {
             float lg[V_];
-            cce_supra_train_logits(t, seqs[s], T_, lg);
+            cce_transformer_qat_logits(t, seqs[s], T_, lg);
             fp_arg[s] = argmax(lg, V_);
             double mx = lg[0];
             for (int i = 1; i < V_; i++) if (lg[i] > mx) mx = lg[i];
@@ -109,11 +109,11 @@ int main(void) {
         }
 
         /* post-hoc: flip every group ternary, NO training */
-        cce_supra_train_set_qat(t, 1, 1, 1, 1, 1);
+        cce_transformer_qat_set_qat(t, 1, 1, 1, 1, 1);
         int posthoc = 0;
         for (int s = 0; s < NSEQ; s++) {
             float lg[V_];
-            cce_supra_train_logits(t, seqs[s], T_, lg);
+            cce_transformer_qat_logits(t, seqs[s], T_, lg);
             if (argmax(lg, V_) == fp_arg[s]) posthoc++;
         }
         printf("  info post-hoc ternary FP-argmax agreement: %d/%d\n", posthoc, NSEQ);
@@ -123,7 +123,7 @@ int main(void) {
         for (int e = 0; e < 200; e++) {
             double sum = 0;
             for (int s = 0; s < NSEQ; s++)
-                sum += cce_supra_train_step(t, seqs[s], T_, teach + s*V_, -1, 0.005f);
+                sum += cce_transformer_qat_step(t, seqs[s], T_, teach + s*V_, -1, 0.005f);
             if (e == 0) qfirst = sum / NSEQ;
             qlast = sum / NSEQ;
         }
@@ -133,7 +133,7 @@ int main(void) {
         int qat = 0;
         for (int s = 0; s < NSEQ; s++) {
             float lg[V_];
-            cce_supra_train_logits(t, seqs[s], T_, lg);
+            cce_transformer_qat_logits(t, seqs[s], T_, lg);
             if (argmax(lg, V_) == fp_arg[s]) qat++;
         }
         printf("  info QAT ternary FP-argmax agreement: %d/%d\n", qat, NSEQ);
@@ -144,7 +144,7 @@ int main(void) {
               "QAT ternary FP-argmax agreement >= post-hoc (ties at ceiling ok)");
 
         free(teach);
-        cce_supra_train_free(t);
+        cce_transformer_qat_free(t);
     }
 
     printf("\n%d checks, %d failed -> %s\n", checks, fails, fails ? "FAIL" : "OK");

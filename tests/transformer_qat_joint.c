@@ -1,4 +1,4 @@
-/* supra_joint_qat — does JOINT ternary QAT generalize where head-only QAT can't?
+/* transformer_qat_joint — does JOINT ternary QAT generalize where head-only QAT can't?
  *
  * The head-only corpus gate (supra_head_qat_corpus) proved a frozen-transformer
  * head can only MEMORIZE: QAT lifts train recovery far above post-hoc but ties it
@@ -20,14 +20,14 @@
  * not FP-argmax recovery. The question: does `joint` recover the FP->post-hoc
  * gap that post-hoc (and head-QAT) leave on the table?
  *
- * Build: make supra_joint_qat [epochs] [lr] [max_pairs] [n_embd]
+ * Build: make transformer_qat_joint [epochs] [lr] [max_pairs] [n_embd]
  */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
 
-#include "../include/cce/cce_supra_train.h"
+#include "../include/cce/cce_transformer_qat.h"
 
 static int g_pass = 0, g_fail = 0;
 #define CHECK(c, msg) do { if (c) { g_pass++; printf("  ok   %s\n", (msg)); } \
@@ -106,7 +106,7 @@ static const char* EMB_CORPUS[] = {
 /* Train `t` for `epochs` over the train pairs (eval==0). qat flags must be set
  * by the caller BEFORE the first step so the ternary forward is live throughout.
  * Returns held-out next-byte accuracy under the CURRENT qat setting. */
-static double train_and_eval(cce_supra_train* t, const int* ctxbuf, const Pair* pr,
+static double train_and_eval(cce_transformer_qat* t, const int* ctxbuf, const Pair* pr,
                              int npairs, int epochs, float lr, int ntrain,
                              double* first_ce, double* last_ce) {
     for (int e = 0; e < epochs; e++) {
@@ -114,7 +114,7 @@ static double train_and_eval(cce_supra_train* t, const int* ctxbuf, const Pair* 
         for (int p = 0; p < npairs; p++) {
             if (pr[p].eval) continue;
             const int* ctx = ctxbuf + (size_t)p * CTX;
-            sum += cce_supra_train_step(t, ctx, pr[p].len, NULL, pr[p].target, lr);
+            sum += cce_transformer_qat_step(t, ctx, pr[p].len, NULL, pr[p].target, lr);
         }
         if (e == 0 && first_ce) *first_ce = sum / (ntrain ? ntrain : 1);
         if (last_ce) *last_ce = sum / (ntrain ? ntrain : 1);
@@ -125,7 +125,7 @@ static double train_and_eval(cce_supra_train* t, const int* ctxbuf, const Pair* 
     for (int p = 0; p < npairs; p++) {
         if (!pr[p].eval) continue;
         const int* ctx = ctxbuf + (size_t)p * CTX;
-        if (cce_supra_train_logits(t, ctx, pr[p].len, lg) != CCE_OK) continue;
+        if (cce_transformer_qat_logits(t, ctx, pr[p].len, lg) != CCE_OK) continue;
         correct += (argmax(lg, VOCAB) == pr[p].target);
         neval++;
     }
@@ -133,13 +133,13 @@ static double train_and_eval(cce_supra_train* t, const int* ctxbuf, const Pair* 
 }
 
 /* held-out accuracy for the CURRENT model+qat state, no training */
-static double eval_only(cce_supra_train* t, const int* ctxbuf, const Pair* pr, int npairs) {
+static double eval_only(cce_transformer_qat* t, const int* ctxbuf, const Pair* pr, int npairs) {
     int correct = 0, neval = 0;
     float lg[VOCAB];
     for (int p = 0; p < npairs; p++) {
         if (!pr[p].eval) continue;
         const int* ctx = ctxbuf + (size_t)p * CTX;
-        if (cce_supra_train_logits(t, ctx, pr[p].len, lg) != CCE_OK) continue;
+        if (cce_transformer_qat_logits(t, ctx, pr[p].len, lg) != CCE_OK) continue;
         correct += (argmax(lg, VOCAB) == pr[p].target);
         neval++;
     }
@@ -189,7 +189,7 @@ int main(int argc, char** argv) {
     CHECK(ntrain >= 500, "enough train pairs");
     CHECK(neval >= 100, "enough held-out pairs");
 
-    cce_supra_train_config cfg;
+    cce_transformer_qat_config cfg;
     memset(&cfg, 0, sizeof cfg);
     cfg.n_layer = 2; cfg.n_embd = n_embd; cfg.n_head = 4;
     cfg.mlp_hidden = 4 * n_embd; cfg.vocab = VOCAB; cfg.block_size = CTX;
@@ -197,30 +197,30 @@ int main(int argc, char** argv) {
 
     /* ---- A. FP model: train all-FP, eval FP (ceiling) and post-hoc ternary ---- */
     double fp_first = 0, fp_last = 0;
-    cce_supra_train* A = cce_supra_train_create(&cfg);
-    cce_supra_train_set_qat(A, 0, 0, 0, 0, 0);
+    cce_transformer_qat* A = cce_transformer_qat_create(&cfg);
+    cce_transformer_qat_set_qat(A, 0, 0, 0, 0, 0);
     double fp_ev = train_and_eval(A, ctxbuf, pr, npairs, epochs, lr, ntrain, &fp_first, &fp_last);
     printf("  FP        CE %.3f -> %.3f | held-out acc = %.2f%%\n", fp_first, fp_last, fp_ev);
-    cce_supra_train_set_qat(A, 1, 1, 1, 1, 1);          /* flip ternary, NO retrain */
+    cce_transformer_qat_set_qat(A, 1, 1, 1, 1, 1);          /* flip ternary, NO retrain */
     double ph_ev = eval_only(A, ctxbuf, pr, npairs);
     printf("  post-hoc  (same weights, ternary eval)   | held-out acc = %.2f%%\n", ph_ev);
-    cce_supra_train_free(A);
+    cce_transformer_qat_free(A);
 
     /* ---- B. head-only QAT: fresh, same seed, only head ternary in training ---- */
     double h_first = 0, h_last = 0;
-    cce_supra_train* B = cce_supra_train_create(&cfg);
-    cce_supra_train_set_qat(B, 0, 0, 0, 1, 0);
+    cce_transformer_qat* B = cce_transformer_qat_create(&cfg);
+    cce_transformer_qat_set_qat(B, 0, 0, 0, 1, 0);
     double head_ev = train_and_eval(B, ctxbuf, pr, npairs, epochs, lr, ntrain, &h_first, &h_last);
     printf("  head-QAT  CE %.3f -> %.3f | held-out acc = %.2f%%\n", h_first, h_last, head_ev);
-    cce_supra_train_free(B);
+    cce_transformer_qat_free(B);
 
     /* ---- C. joint QAT: fresh, same seed, ALL groups ternary in training ---- */
     double j_first = 0, j_last = 0;
-    cce_supra_train* C = cce_supra_train_create(&cfg);
-    cce_supra_train_set_qat(C, 1, 1, 1, 1, 1);
+    cce_transformer_qat* C = cce_transformer_qat_create(&cfg);
+    cce_transformer_qat_set_qat(C, 1, 1, 1, 1, 1);
     double joint_ev = train_and_eval(C, ctxbuf, pr, npairs, epochs, lr, ntrain, &j_first, &j_last);
     printf("  joint     CE %.3f -> %.3f | held-out acc = %.2f%%\n", j_first, j_last, joint_ev);
-    cce_supra_train_free(C);
+    cce_transformer_qat_free(C);
 
     /* ---- verdict: the robust signal is joint-vs-post-hoc on UNSEEN text ---- */
     double gap        = fp_ev - ph_ev;             /* naive-compression loss vs FP */
@@ -247,6 +247,6 @@ int main(int argc, char** argv) {
     CHECK(joint_ev >= ph_ev, "joint QAT generalizes: held-out acc >= post-hoc ternary");
 
     free(ctxbuf); free(pr);
-    printf("\nsupra_joint_qat: %d passed, %d failed\n", g_pass, g_fail);
+    printf("\ntransformer_qat_joint: %d passed, %d failed\n", g_pass, g_fail);
     return g_fail ? 1 : 0;
 }

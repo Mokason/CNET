@@ -1,7 +1,7 @@
 /* wordlm_holdout — does joint QAT generalize on the GENERAL trainer, not just
  * the Supra-shaped one? Same three-way held-out test as supra_joint_qat, but on
  * cce_wordlm (a general word-LM with real BitNet b1.58 QAT: FP shadow + STE),
- * NOT the Supra-specific cce_supra_train. If the finding is trainer-independent
+ * NOT the Supra-specific cce_transformer_qat. If the finding is trainer-independent
  * it must reproduce here.
  *
  * Whole sentences held out (every 4th). Three models from one seed:
