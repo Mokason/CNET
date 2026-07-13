@@ -45,8 +45,10 @@ static void q_ternary(const float* W,int in,int out,float* E){
         for(int i=0;i<in;i++){ float w=W[(size_t)i*out+o],r=0.0f;
             if(g>0){ r=roundf(w/g); if(r>1)r=1; if(r<-1)r=-1; } E[(size_t)i*out+o]=g*r; } }
 }
-/* bits encoding: 1=>ternary(1.58b), 4=>int4, 8=>int8, 32=>FP */
-static double bits_of(int b){ return b==1?1.58:(double)b; }
+/* bits encoding: 1=>ternary, 4=>int4, 8=>int8, 32=>FP.
+   Ternary bit-cost = CNET's ACHIEVED trit-packing: 5 trits/byte = 8/5 = 1.6 bit/weight
+   (not the 1.585 information-theoretic log2(3) — 1.6 is what packs on disk). */
+static double bits_of(int b){ return b==1?1.6:(double)b; }
 static void quantize(const float* W,int in,int out,int b,float* E){
     if(b>=32) q_fp(W,in,out,E);
     else if(b==8) q_level(W,in,out,127,E);
