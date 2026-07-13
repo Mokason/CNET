@@ -23,6 +23,11 @@ model_runtime|logs/unified_models_runtime.log|MODEL_RUNTIME_PASS|unified
 model_catalog|logs/unified_models_catalog.log|MODEL_CATALOG_PASS|unified
 ds4_dual_launcher|logs/unified_ds4_launcher.log|DS4_DUAL_LAUNCHER_PASS|unified
 soul_host|logs/soul_host_test.log|SOUL_HOST_UNIFIED_PASS|unified
+specialist_reopen|logs/soul_reopen_test.log|SPECIALIST_REOPEN_PASS|unified
+admission_bypass|logs/admission_bypass_audit.log|ADMISSION_BYPASS_AUDIT_PASS|unified
+build_hygiene|logs/build_hygiene_test.log|BUILD_HYGIENE_PASS|unified
+alt_paths|logs/alt_paths_gate.log|ALT_PATHS_GATE_PASS|unified
+managed_restore|logs/dotnet_restore.log|DOTNET_RESTORE_PASS|unified
 dotnet_host|logs/unified_host.log|CNET_HOST_UNIFIED_PASS|unified'
 CLAIMS="$CLAIMS
 real_moe_e2e|logs/moe_e2e.log|REAL_MOE_E2E_PASS|model
@@ -138,7 +143,7 @@ done <<< "$CLAIMS"
 ) || fail "unified scope incorrectly required the GPU-only lane"
 grep -Fq '"verdict":"OUT_OF_SCOPE"' "$TMP/logs/claims.jsonl" ||
   fail "out-of-scope claim was not explicit in JSONL"
-grep -Fq '**16/16 in-scope claims verified; 3 out of scope.**' \
+grep -Fq '**21/21 in-scope claims verified; 3 out of scope.**' \
   "$TMP/docs/verified-today.generated.md" ||
   fail "generated summary did not report scoped denominator"
 grep -Fq '# Verified Today (generated)' \

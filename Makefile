@@ -1781,6 +1781,15 @@ unified_native: unified_adapter unified_cce_adapter unified_oracle_adapter unifi
 	@nm -D cnet.so | grep -q " soul_mounted_oracle_count$$"
 
 
+.PHONY: priority_acceptance
+priority_acceptance:
+	@$(MAKE) --no-print-directory recipe_gate
+	@$(MAKE) --no-print-directory claims_test
+	@$(MAKE) --no-print-directory heal_mismatch
+	@$(MAKE) --no-print-directory heal_mismatch_san
+	@$(MAKE) --no-print-directory unified
+	@echo "PRIORITY_ACCEPTANCE_PASS"
+
 .PHONY: unified
 unified:
 	@mkdir -p logs
