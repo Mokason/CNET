@@ -823,7 +823,7 @@ outside and explore the world around her."*
 | CCE FP specialists | 64.4 MB | exact |
 | **int8 weight-only PTQ** (`--int8`) | **16.3 MB** | **near-lossless** (cosine 0.99999, greedy 64/64 identical) |
 | post-hoc ternary | ~6 MB | **collapses** (cosine 0.83, argmax flips) |
-| **packed 1.6-bit (trits)** | **6.95 MB, actual on disk** | **bit-exact vs ternary** — storage proven; quality = QAT |
+| **packed 1.6-bit (trits)** | **6.95 MB, actual on disk** | **bit-exact vs ternary** — storage proven; quality via **joint QAT** (generalizes on unseen text, `make supra_joint_qat`), *not* post-hoc |
 
 int8 PTQ is the shippable compression result today. Ternary is **BitNet b1.58** (per-row absmean,
 `{-1,0,+1}`, 5 trits/byte = 1.6 bit/weight): the **packing** is bit-exact and the **6.95 MB artifact
@@ -850,6 +850,22 @@ serial kernel on the 256×50520 head: 6.14 → 0.22 ms/forward — now 2× *fast
 smaller), and stays **bit-identical** to the int8 ternary path (gated in `make trit_bench`,
 which memcmps the full output). int8 remains the outright speed path (1.57× faster than trit,
 at 5× the bytes).
+
+**Joint QAT generalizes; freezing the transformer was the bottleneck (`make supra_joint_qat`).**
+The head-only corpus gate (`supra_head_qat_corpus`) proved a ternary head trained on a **frozen**
+pretrained transformer only *memorizes*: it recovers the FP head's argmax far better than post-hoc
+on training text but **ties post-hoc on held-out** sentences (62.6% vs 62.6%). The follow-up gate
+tests the fix directly — a controlled from-scratch byte-LM on real prose, whole sentences held out,
+trained three ways from one seed: FP (then post-hoc ternary), head-only QAT, and **joint** QAT (the
+whole stack ternary + STE). On **unseen** text, post-hoc ternary collapses to a near-degenerate
+predictor (~16.6%, argmax flips to the most-frequent byte — the classic BitNet collapse), while
+**joint QAT recovers real structure (22–27% across seeds), matching or exceeding the FP model and
+beating post-hoc by +6 to +10 points.** The lesson: QAT's failure to generalize was never QAT — it
+was *freezing the representation*. Let the network co-adapt and a fully-ternary 1.6-bit model
+generalizes; the frozen-transformer head trick that made milestone-1 cheap is exactly what capped it
+at memorization. So the ~7 MB packed artifact's open quality question now has a measured answer:
+**joint ternary QAT is the path**, and int8 (16.3 MB, cosine 0.99999) remains the near-lossless
+shippable tier today.
 
 ---
 

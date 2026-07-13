@@ -879,7 +879,7 @@ test_full: test gpu_equiv_build
 # `long` mode also asserts the two verify-long-only supra QAT gates (which
 # likewise swallow their exit codes). The `verify` prereq already ran + gated
 # the core chain first; this re-scan adds the extras.
-verify-long: verify cce_train_bench supra_head_qat supra_head_qat_corpus wordlm_bitnet compat
+verify-long: verify cce_train_bench supra_head_qat supra_head_qat_corpus supra_joint_qat wordlm_bitnet compat
 	@sh tests/verify_logs.sh long
 
 test: verify
@@ -1053,7 +1053,7 @@ cce_autograd_test: $(CCE) $(CCE_CUDA_OBJ) tests/test_cce_autograd.c
 AVX_CFLAGS := $(filter-out -mno-avx,$(CFLAGS))
 # wordlm/wordlm_bitnet/trit_bench link only CCE sources (no src/router/), so
 # they are AVX-safe too; OMP activates the row-parallel packed-trit kernels.
-cce_safetensors_test supra_console supra_chat_mock supra_context_probe supra_longform supra_head_qat supra_head_qat_corpus wordlm wordlm_bitnet trit_bench: CFLAGS := $(AVX_CFLAGS) $(OMPFLAGS)
+cce_safetensors_test supra_console supra_chat_mock supra_context_probe supra_longform supra_head_qat supra_head_qat_corpus supra_joint_qat wordlm wordlm_bitnet trit_bench: CFLAGS := $(AVX_CFLAGS) $(OMPFLAGS)
 
 cce_safetensors_test: $(CCE) $(CCE_CUDA_OBJ) src/nn.c tests/test_cce_safetensors.c
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) src/nn.c tests/test_cce_safetensors.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
@@ -1097,6 +1097,13 @@ supra_head_qat: $(CCE) $(CCE_CUDA_OBJ) src/nn.c tests/supra_head_qat.c
 supra_head_qat_corpus: $(CCE) $(CCE_CUDA_OBJ) src/nn.c tests/supra_head_qat_corpus.c
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) src/nn.c tests/supra_head_qat_corpus.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 	./$(BIN_DIR)/supra_head_qat_corpus > logs/supra_head_qat_corpus.log 2>&1 || echo "test exited non-zero (see log)"
+
+# Joint ternary QAT vs head-only vs post-hoc: does training the WHOLE stack
+# ternary recover held-out next-byte accuracy where a frozen-transformer head
+# can't? Byte-level from-scratch on pdf_corpus.txt. See tests/supra_joint_qat.c.
+supra_joint_qat: $(CCE) $(CCE_CUDA_OBJ) src/nn.c tests/supra_joint_qat.c include/cce/cce_supra_train.h
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) src/nn.c tests/supra_joint_qat.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+	./$(BIN_DIR)/supra_joint_qat > logs/supra_joint_qat.log 2>&1 || echo "test exited non-zero (see log)"
 
 # Lightweight mock chat test: exercises the real BPE tokenizer (encode) without
 # requiring the full model forward. Needs supra_cache/tokenizer.json (run
