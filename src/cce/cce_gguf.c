@@ -2692,8 +2692,9 @@ cce_result cce_gguf_moe_open(const char* path, cce_gguf_moe** out) {
     m->t_router       = (int*)malloc((size_t)L * sizeof(int));
     m->t_down_scale   = (int*)malloc((size_t)L * sizeof(int));
     m->t_router_scale = (int*)malloc((size_t)L * sizeof(int));
+    m->t_pre_norm     = (int*)malloc((size_t)L * sizeof(int));
     if (!m->t_gate || !m->t_up || !m->t_down || !m->t_router ||
-        !m->t_down_scale || !m->t_router_scale) {
+        !m->t_down_scale || !m->t_router_scale || !m->t_pre_norm) {
         cce_gguf_moe_free(m);
         return CCE_ERR_OOM;
     }
@@ -2706,6 +2707,7 @@ cce_result cce_gguf_moe_open(const char* path, cce_gguf_moe** out) {
         int t_rt = moe_find(g, "blk.%d.ffn_gate_inp.weight", l);
         m->t_down_scale[l]   = moe_find(g, "blk.%d.ffn_down_exps.scale", l);
         m->t_router_scale[l] = moe_find(g, "blk.%d.ffn_gate_inp.scale", l);
+        m->t_pre_norm[l]     = moe_find(g, "blk.%d.pre_ffw_norm_2.weight", l);
 
         int fused = (t_gu >= 0);
         if (l == 0) m->fused_gate_up = fused;
@@ -2755,6 +2757,7 @@ void cce_gguf_moe_free(cce_gguf_moe* m) {
     if (!m) return;
     free(m->t_gate); free(m->t_up); free(m->t_down);
     free(m->t_router); free(m->t_down_scale); free(m->t_router_scale);
+    free(m->t_pre_norm);
     if (m->g) cce_gguf_free(m->g);
     free(m);
 }
@@ -2837,5 +2840,243 @@ cce_result cce_gguf_moe_load_router(const cce_gguf_moe* m, int layer, cce_cascad
     free(buf);
     if (rc != CCE_OK) { cce_cascade_destroy(cas); return rc; }
     *out = cas;
+    return CCE_OK;
+}
+
+/* ======================= MoE forward runtime (Arc B2) =======================
+ *
+ * Routed, demand-loaded expert FFN. Conventions pinned against llama.cpp
+ * (src/llama-graph.cpp build_moe_ffn + src/models/{qwen3moe,gemma4}.cpp):
+ * softmax over ALL experts -> top-k by prob -> selected weights renormalized
+ * (sum clamped >= 6.103515625e-5) -> per-expert gated FFN -> weighted sum.
+ * gemma4 extras (all from the reference): router input is
+ * rms_norm(x)*1/sqrt(D)*ffn_gate_inp_s with x = attn_out; expert input is
+ * rms_norm(x)*pre_ffw_norm_2; GEGLU (gelu_tanh); fused bank rows [0,F)=gate
+ * [F,2F)=up; down output of expert e scaled by ffn_down_exps.scale[e]. */
+
+static float moe_gelu_tanh(float x) {
+    const float sqrt_2_over_pi = 0.79788456080286535587989211986876f; /* == ggml */
+    const float coef_a = 0.044715f;
+    return 0.5f * x * (1.0f + tanhf(sqrt_2_over_pi * x * (1.0f + coef_a * x * x)));
+}
+static float moe_silu(float x) { return x / (1.0f + expf(-x)); }
+
+static cce_cascade* moe_rt_provider(void* ctx, const char* name) {
+    cce_gguf_moe_rt* rt = (cce_gguf_moe_rt*)ctx;
+    int l = -1, e = -1;
+    if (sscanf(name, "moe.blk%d.exp%d", &l, &e) != 2) return NULL;
+    cce_cascade* cas = NULL;
+    if (cce_gguf_moe_load_expert(rt->m, l, e, &cas) != CCE_OK) return NULL;
+    rt->expert_fetches++;
+    return cas; /* forest adopts */
+}
+
+/* load an optional per-layer side vector (n floats) from tensor idx */
+static float* moe_rt_vec(const cce_gguf* g, int idx, int n) {
+    if (idx < 0) return NULL;
+    float* v = (float*)malloc((size_t)n * sizeof(float));
+    if (!v) return NULL;
+    if (cce_gguf_load_f32(g, idx, v, (size_t)n) != CCE_OK) { free(v); return NULL; }
+    return v;
+}
+
+cce_result cce_gguf_moe_rt_open(cce_gguf_moe* m, const char* forest_archive_path,
+                                int hot_cap, cce_gguf_moe_rt** out) {
+    if (!m || !forest_archive_path || !out) return CCE_ERR_INVALID_ARG;
+    *out = NULL;
+    int L = m->n_layer, E = m->n_expert;
+    if (m->n_expert_used > 64) return CCE_ERR_UNSUPPORTED; /* last_* capacity */
+
+    cce_gguf_moe_rt* rt = (cce_gguf_moe_rt*)calloc(1, sizeof(*rt));
+    if (!rt) return CCE_ERR_OOM;
+    rt->m = m;
+    rt->hot_cap = hot_cap;
+
+    cce_result rc = cce_forest_open(&rt->forest, forest_archive_path, L * (E + 1) + 4);
+    if (rc != CCE_OK) { free(rt); return rc; }
+
+    rt->gate_inp_scale = (float**)calloc((size_t)L, sizeof(float*));
+    rt->down_scale     = (float**)calloc((size_t)L, sizeof(float*));
+    rt->pre_norm       = (float**)calloc((size_t)L, sizeof(float*));
+    rt->last_logits    = (float*)calloc((size_t)E, sizeof(float));
+    if (!rt->gate_inp_scale || !rt->down_scale || !rt->pre_norm || !rt->last_logits) {
+        cce_gguf_moe_rt_free(rt);
+        return CCE_ERR_OOM;
+    }
+
+    char name[96];
+    for (int l = 0; l < L; l++) {
+        /* routers are tiny: load now, keep resident (evictable stays 0) */
+        cce_cascade* r = NULL;
+        rc = cce_gguf_moe_load_router(m, l, &r);
+        if (rc != CCE_OK) { cce_gguf_moe_rt_free(rt); return rc; }
+        snprintf(name, sizeof(name), "moe.blk%d.router", l);
+        rc = cce_forest_add_cascade_branch(rt->forest, r, name, NULL);
+        if (rc != CCE_OK) { cce_cascade_destroy(r); cce_gguf_moe_rt_free(rt); return rc; }
+        free(r); /* branch owns the blocks (shallow adopt) */
+
+        /* expert branches: COLD shells — no payload until routed. Built by
+           hand because add_branch would persist every expert to the archive
+           (and needs a loaded cascade); the residency provider fills them. */
+        for (int e = 0; e < E; e++) {
+            if (rt->forest->num_branches >= rt->forest->max_branches) {
+                cce_gguf_moe_rt_free(rt);
+                return CCE_ERR_OOM;
+            }
+            cce_branch* br = &rt->forest->branches[rt->forest->num_branches];
+            memset(br, 0, sizeof(*br));
+            snprintf(br->name, sizeof(br->name), "moe.blk%d.exp%d", l, e);
+            br->cascade = NULL;
+            br->tier = CCE_TIER_COLD;
+            br->evictable = 1;
+            br->diff_mode = -1;
+            br->exact_tail_length = -1;
+            rt->forest->num_branches++;
+        }
+
+        /* gemma4 side vectors (absent on canonical MoE: stay NULL) */
+        rt->gate_inp_scale[l] = moe_rt_vec(m->g, m->t_router_scale[l], m->n_embd);
+        rt->down_scale[l]     = moe_rt_vec(m->g, m->t_down_scale[l], E);
+        rt->pre_norm[l]       = moe_rt_vec(m->g, m->t_pre_norm[l], m->n_embd);
+    }
+
+    cce_forest_set_residency(rt->forest, hot_cap, moe_rt_provider, rt);
+    *out = rt;
+    return CCE_OK;
+}
+
+void cce_gguf_moe_rt_free(cce_gguf_moe_rt* rt) {
+    if (!rt) return;
+    if (rt->forest) {
+        cce_forest_set_residency(rt->forest, 0, NULL, NULL);
+        cce_forest_close(rt->forest);
+    }
+    if (rt->m) {
+        for (int l = 0; l < rt->m->n_layer; l++) {
+            if (rt->gate_inp_scale) free(rt->gate_inp_scale[l]);
+            if (rt->down_scale)     free(rt->down_scale[l]);
+            if (rt->pre_norm)       free(rt->pre_norm[l]);
+        }
+    }
+    free(rt->gate_inp_scale);
+    free(rt->down_scale);
+    free(rt->pre_norm);
+    free(rt->last_logits);
+    free(rt);
+}
+
+cce_result cce_gguf_moe_ffn_forward(cce_gguf_moe_rt* rt, int layer,
+                                    const float* x, float* out) {
+    if (!rt || !rt->m || !x || !out) return CCE_ERR_INVALID_ARG;
+    cce_gguf_moe* m = rt->m;
+    if (layer < 0 || layer >= m->n_layer) return CCE_ERR_INVALID_ARG;
+    int D = m->n_embd, E = m->n_expert, F = m->n_ff_exp, K = m->n_expert_used;
+    if (E > 4096 || K > 64) return CCE_ERR_UNSUPPORTED; /* selection scratch bounds */
+    int is_gemma4 = (strncmp(m->arch, "gemma4", 6) == 0);
+
+    float* scratch = (float*)malloc(((size_t)2 * E + 2 * D + 2 * F) * sizeof(float));
+    if (!scratch) return CCE_ERR_OOM;
+    float* z     = scratch;             /* [E] router logits  */
+    float* probs = z + E;               /* [E]                */
+    float* rx    = probs + E;           /* [D] router input   */
+    float* xe    = rx + D;              /* [D] expert input   */
+    float* g     = xe + D;              /* [F]                */
+    float* u     = g + F;               /* [F]                */
+
+    /* router + expert inputs (gemma4 norms both from the SAME rms of x) */
+    if (is_gemma4) {
+        double ss = 0;
+        for (int i = 0; i < D; i++) ss += (double)x[i] * x[i];
+        float eps = cce_gguf_get_rms_eps(m->g);
+        if (eps <= 0) eps = 1e-6f;
+        float inv = 1.0f / sqrtf((float)(ss / D) + eps);
+        float invsq = 1.0f / sqrtf((float)D);
+        const float* gs = rt->gate_inp_scale[layer];
+        const float* pn = rt->pre_norm[layer];
+        for (int i = 0; i < D; i++) {
+            float n = x[i] * inv;
+            rx[i] = n * invsq * (gs ? gs[i] : 1.0f);
+            xe[i] = n * (pn ? pn[i] : 1.0f);
+        }
+    } else {
+        memcpy(rx, x, (size_t)D * sizeof(float));
+        memcpy(xe, x, (size_t)D * sizeof(float));
+    }
+
+    /* router logits (router branch is always resident) */
+    char name[96];
+    snprintf(name, sizeof(name), "moe.blk%d.router", layer);
+    cce_cascade* rc_cas = cce_forest_get_resident(rt->forest, name);
+    if (!rc_cas) { free(scratch); return CCE_ERR_IO; }
+    {
+        const float* W = rc_cas->blocks[0].weights.data; /* [D][E] */
+        for (int o = 0; o < E; o++) z[o] = 0.0f;
+        for (int i = 0; i < D; i++) {
+            const float a = rx[i];
+            const float* wr = &W[(size_t)i * E];
+            for (int o = 0; o < E; o++) z[o] += a * wr[o];
+        }
+    }
+
+    /* softmax over ALL experts (llama.cpp GATING_FUNC_SOFTMAX) */
+    {
+        float mx = z[0];
+        for (int o = 1; o < E; o++) if (z[o] > mx) mx = z[o];
+        double s = 0;
+        for (int o = 0; o < E; o++) { probs[o] = expf(z[o] - mx); s += probs[o]; }
+        for (int o = 0; o < E; o++) probs[o] = (float)(probs[o] / s);
+    }
+
+    /* top-k by prob; renormalize selected (norm_w=true, clamped sum) */
+    int sel[64];
+    float w[64];
+    {
+        char taken[4096] = {0};
+        for (int k = 0; k < K; k++) {
+            int best = -1;
+            for (int o = 0; o < E; o++)
+                if (!taken[o] && (best < 0 || probs[o] > probs[best])) best = o;
+            taken[best] = 1;
+            sel[k] = best;
+            w[k] = probs[best];
+        }
+        float s = 0;
+        for (int k = 0; k < K; k++) s += w[k];
+        if (s < 6.103515625e-5f) s = 6.103515625e-5f; /* llama.cpp F16-min clamp */
+        for (int k = 0; k < K; k++) w[k] /= s;
+    }
+
+    /* experts: demand-load, gated FFN, weighted combine */
+    memset(out, 0, (size_t)D * sizeof(float));
+    for (int k = 0; k < K; k++) {
+        snprintf(name, sizeof(name), "moe.blk%d.exp%d", layer, sel[k]);
+        cce_cascade* ex = cce_forest_get_resident(rt->forest, name);
+        if (!ex || ex->num_blocks != 3) { free(scratch); return CCE_ERR_IO; }
+        const float* Wg = ex->blocks[0].weights.data; /* [D][F] */
+        const float* Wu = ex->blocks[1].weights.data; /* [D][F] */
+        const float* Wd = ex->blocks[2].weights.data; /* [F][D] */
+        for (int o = 0; o < F; o++) { g[o] = 0.0f; u[o] = 0.0f; }
+        for (int i = 0; i < D; i++) {
+            const float a = xe[i];
+            const float* wg = &Wg[(size_t)i * F];
+            const float* wu = &Wu[(size_t)i * F];
+            for (int o = 0; o < F; o++) { g[o] += a * wg[o]; u[o] += a * wu[o]; }
+        }
+        for (int o = 0; o < F; o++)
+            g[o] = (is_gemma4 ? moe_gelu_tanh(g[o]) : moe_silu(g[o])) * u[o];
+        float ds = rt->down_scale[layer] ? rt->down_scale[layer][sel[k]] : 1.0f;
+        float wk = w[k] * ds;
+        for (int i = 0; i < F; i++) {
+            const float a = g[i];
+            if (a == 0.0f) continue;
+            const float* wd = &Wd[(size_t)i * D];
+            for (int o = 0; o < D; o++) out[o] += wk * a * wd[o];
+        }
+    }
+
+    rt->last_k = K;
+    for (int k = 0; k < K; k++) { rt->last_experts[k] = sel[k]; rt->last_weights[k] = w[k]; }
+    if (rt->last_logits) memcpy(rt->last_logits, z, (size_t)E * sizeof(float));
+    free(scratch);
     return CCE_OK;
 }

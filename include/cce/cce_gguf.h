@@ -138,8 +138,9 @@ typedef struct cce_gguf_moe {
     int* t_up;                 /* up bank (-1 when fused) */
     int* t_down;
     int* t_router;
-    int* t_down_scale;         /* gemma4 side scales (recorded; semantics pinned in B2) */
-    int* t_router_scale;
+    int* t_down_scale;         /* gemma4: per-EXPERT scalar on the down output (llama.cpp build_lora_mm_id w_s) */
+    int* t_router_scale;       /* gemma4: per-CHANNEL scale on the router input (ffn_gate_inp_s) */
+    int* t_pre_norm;           /* gemma4: expert-input RMS norm weight (pre_ffw_norm_2) */
 } cce_gguf_moe;
 
 cce_result cce_gguf_moe_open(const char* path, cce_gguf_moe** out);
@@ -154,6 +155,49 @@ cce_result cce_gguf_moe_load_expert(const cce_gguf_moe* m, int layer, int expert
 
 /* The layer's router as a 1-block cascade [n_embd -> n_expert]. */
 cce_result cce_gguf_moe_load_router(const cce_gguf_moe* m, int layer, cce_cascade** out);
+
+/* ---- MoE forward runtime (Arc B2): routed, demand-loaded expert FFN ----
+ *
+ * Routers stay resident (tiny); expert branches start COLD in the forest and
+ * are demand-loaded from the gguf when routed, LRU-evicted past hot_cap —
+ * peak expert RAM = hot_cap experts, not the bank.
+ *
+ * Conventions are pinned against llama.cpp's build_moe_ffn + per-arch call
+ * sites (the B2 reference):
+ *   qwen3moe-style: logits = router . x; probs = softmax over ALL experts;
+ *     top-k by prob; selected weights renormalized to sum 1; SwiGLU experts
+ *     (silu(gate.x) * up.x -> down).
+ *   gemma4: router input = rms_norm(x) * 1/sqrt(n_embd) * ffn_gate_inp_s
+ *     (x = attn_out); expert input = rms_norm(x) * pre_ffw_norm_2; GEGLU
+ *     (gelu_tanh); fused bank rows [0,F) = gate, [F,2F) = up; expert e's down
+ *     output is multiplied by ffn_down_exps.scale[e]; same softmax/top-k/
+ *     renorm. The output is the combined expert sum (the caller owns
+ *     post_ffw norms / shared-expert add / residual). */
+typedef struct cce_gguf_moe_rt {
+    cce_gguf_moe* m;           /* borrowed */
+    cce_forest* forest;        /* owned: routers resident, experts cold-until-routed */
+    int hot_cap;
+    int expert_fetches;        /* cold expert loads from the gguf */
+    /* gemma4 per-layer side vectors (NULL when absent) */
+    float** gate_inp_scale;    /* [n_layer][n_embd] */
+    float** down_scale;        /* [n_layer][n_expert] */
+    float** pre_norm;          /* [n_layer][n_embd] */
+    /* the most recent routing decision (gates + future router-lookahead) */
+    int   last_k;
+    int   last_experts[64];
+    float last_weights[64];
+    float* last_logits;        /* [n_expert] router logits of the last forward */
+} cce_gguf_moe_rt;
+
+cce_result cce_gguf_moe_rt_open(cce_gguf_moe* m, const char* forest_archive_path,
+                                int hot_cap, cce_gguf_moe_rt** out);
+void cce_gguf_moe_rt_free(cce_gguf_moe_rt* rt);
+
+/* One MoE FFN layer on one token: route x, demand-load the top-k experts,
+ * run each, weight-combine into out[n_embd]. x is the layer's MoE input
+ * (qwen3moe: the ffn-normed hidden; gemma4: attn_out). */
+cce_result cce_gguf_moe_ffn_forward(cce_gguf_moe_rt* rt, int layer,
+                                    const float* x, float* out);
 
 /* ---- Population helpers, modeled after safetensors ---- */
 
