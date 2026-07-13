@@ -351,7 +351,8 @@ cce_result cce_gguf_load(const char* path, cce_gguf** out) {
             !strstr(k, "original_context_length")) {
             if (g->kvs[i].type == GGUF_TYPE_UINT32) g->context_length = g->kvs[i].val.u32;
         }
-        if (strstr(k, "feed_forward_length") || strstr(k, "ffn_length")) {
+        if ((strstr(k, "feed_forward_length") || strstr(k, "ffn_length")) &&
+            !strstr(k, "expert_feed_forward_length")) { /* MoE files carry BOTH; this is the dense/shared width */
             if (g->kvs[i].type == GGUF_TYPE_UINT32) g->feed_forward_length = g->kvs[i].val.u32;
             else if (g->kvs[i].type == GGUF_TYPE_UINT64) g->feed_forward_length = (int)g->kvs[i].val.u64;
         }
@@ -510,26 +511,14 @@ cce_result cce_gguf_get_tensor_meta(const cce_gguf* g, int idx, cce_gguf_tensor_
     return CCE_OK;
 }
 
-cce_result cce_gguf_load_f32(const cce_gguf* g, int idx, float* buf, size_t cap_elems) {
-    if (!g || idx < 0 || idx >= g->n_tensors || !buf) return CCE_ERR_INVALID_ARG;
-    const cce_gguf_tensor_meta* m = &g->tensors[idx];
-
-    size_t elems = 1;
-    for (int d = 0; d < m->ndim; d++) elems *= (size_t)m->shape[d];
-    if (cap_elems < elems) return CCE_ERR_INVALID_ARG;
-
-    /* Seek to the tensor data.
-       In practice for most GGUF writers the data_offset in the tensor info is the offset
-       from the *start of the tensor data section*. We use the one we recorded. */
-    uint64_t abs_off = g->data_offset + m->data_offset;
-    if (_fseeki64(g->f, (int64_t)abs_off, SEEK_SET) != 0) {
-        GTRACE("load_f32 %s: seek FAILED abs_off=%llu", m->name, (unsigned long long)abs_off);
-        return CCE_ERR_IO;
-    }
-
-    if (m->ggml_type == 0 /* F32 */) {
+/* Sequentially dequantize `elems` weights of `ggml_type` starting at the
+ * CURRENT file position of g->f. Extracted from cce_gguf_load_f32 so the
+ * per-expert MoE slice loader reuses every supported quant type. */
+static cce_result gguf_dequant_seq(const cce_gguf* g, uint32_t ggml_type,
+                                   const char* tname, size_t elems, float* buf) {
+    if (ggml_type == 0 /* F32 */) {
         if (fread(buf, 4, elems, g->f) != elems) return CCE_ERR_IO;
-    } else if (m->ggml_type == 1 /* F16 */) {
+    } else if (ggml_type == 1 /* F16 */) {
         /* proper F16->F32 */
         uint16_t* tmp = (uint16_t*)malloc(elems * 2);
         if (!tmp) return CCE_ERR_OOM;
@@ -538,7 +527,17 @@ cce_result cce_gguf_load_f32(const cce_gguf* g, int idx, float* buf, size_t cap_
             buf[i] = gguf_f16_to_f32(tmp[i]);
         }
         free(tmp);
-    } else if (m->ggml_type == 8 /* Q8_0 */) {
+    } else if (ggml_type == 30 /* BF16 */) {
+        /* bfloat16: the top 16 bits of an f32 */
+        uint16_t* tmp = (uint16_t*)malloc(elems * 2);
+        if (!tmp) return CCE_ERR_OOM;
+        if (fread(tmp, 2, elems, g->f) != elems) { free(tmp); return CCE_ERR_IO; }
+        for (size_t i = 0; i < elems; i++) {
+            uint32_t u = (uint32_t)tmp[i] << 16;
+            memcpy(&buf[i], &u, 4);
+        }
+        free(tmp);
+    } else if (ggml_type == 8 /* Q8_0 */) {
         /* Standard GGUF Q8_0: f16 scale + 32 int8 per block (32 weights) */
         const size_t block_size = 32;
         size_t nblocks = (elems + block_size - 1) / block_size;
@@ -554,7 +553,7 @@ cce_result cce_gguf_load_f32(const cce_gguf* g, int idx, float* buf, size_t cap_
             }
             if (this_block < block_size) fseek(g->f, (long)(block_size - this_block), SEEK_CUR);
         }
-    } else if (m->ggml_type == 2 /* Q4_0 */) {
+    } else if (ggml_type == 2 /* Q4_0 */) {
         /* Q4_0: 32 values, f16 d, 16 bytes qs (nibbles) */
         const size_t QK4_0 = 32;
         size_t nblocks = (elems + QK4_0 - 1) / QK4_0;
@@ -570,7 +569,7 @@ cce_result cce_gguf_load_f32(const cce_gguf* g, int idx, float* buf, size_t cap_
                 buf[b*QK4_0 + i] = (x - 8) * d;
             }
         }
-    } else if (m->ggml_type == 3 /* Q4_1 */) {
+    } else if (ggml_type == 3 /* Q4_1 */) {
         /* Q4_1: f16 d, f16 m, 16 bytes qs */
         const size_t QK4_1 = 32;
         size_t nblocks = (elems + QK4_1 - 1) / QK4_1;
@@ -587,7 +586,7 @@ cce_result cce_gguf_load_f32(const cce_gguf* g, int idx, float* buf, size_t cap_
                 buf[b*QK4_1 + i] = x * d + m;
             }
         }
-    } else if (m->ggml_type == 6 /* Q5_0 */) {
+    } else if (ggml_type == 6 /* Q5_0 */) {
         /* Q5_0: 32 vals, f16 d, 20 bytes (16 qs + 4 high bits) */
         const size_t QK5_0 = 32;
         size_t nblocks = (elems + QK5_0 - 1) / QK5_0;
@@ -605,7 +604,7 @@ cce_result cce_gguf_load_f32(const cce_gguf* g, int idx, float* buf, size_t cap_
                 buf[b*QK5_0 + i] = (x - 16) * d;  /* 5bit signed-ish */
             }
         }
-    } else if (m->ggml_type == 7 /* Q5_1 */) {
+    } else if (ggml_type == 7 /* Q5_1 */) {
         /* basic support */
         const size_t QK5_1 = 32;
         size_t nblocks = (elems + QK5_1 - 1) / QK5_1;
@@ -622,7 +621,7 @@ cce_result cce_gguf_load_f32(const cce_gguf* g, int idx, float* buf, size_t cap_
                 buf[b*QK5_1 + i] = (lo | (hi<<4)) * d + m;
             }
         }
-    } else if (m->ggml_type == 12 /* GGML_TYPE_Q4_K */) {
+    } else if (ggml_type == 12 /* GGML_TYPE_Q4_K */) {
         /* Q4_K: 256 vals/block. Layout: f16 d, f16 dmin, u8 scales[12], u8 qs[128] */
         const int QK_K = 256;
         size_t nblocks = (elems + QK_K - 1) / QK_K;
@@ -659,7 +658,7 @@ cce_result cce_gguf_load_f32(const cce_gguf* g, int idx, float* buf, size_t cap_
                 q += 32; is += 2;
             }
         }
-    } else if (m->ggml_type == 13 /* Q5_K */) {
+    } else if (ggml_type == 13 /* Q5_K */) {
         /* Q5_K: f16 d, f16 dmin, scales[12], qs[160?] for 5bit */
         const int QK_K = 256;
         size_t nblocks = (elems + QK_K - 1) / QK_K;
@@ -681,7 +680,7 @@ cce_result cce_gguf_load_f32(const cce_gguf* g, int idx, float* buf, size_t cap_
                 buf[b*QK_K + i] = x * d + dmin;
             }
         }
-    } else if (m->ggml_type == 14 /* GGML_TYPE_Q6_K */) {
+    } else if (ggml_type == 14 /* GGML_TYPE_Q6_K */) {
         /* Q6_K (exact llama.cpp block_q6_K): per 256-weight superblock
            ql[128] (low nibbles), qh[64] (high 2 bits), int8 scales[16]
            (one per 16 weights), f16 d — in THIS on-disk order (d LAST).
@@ -719,10 +718,66 @@ cce_result cce_gguf_load_f32(const cce_gguf* g, int idx, float* buf, size_t cap_
             }
         }
     } else {
-        GTRACE("load_f32 %s: UNSUPPORTED ggml_type=%d", m->name, m->ggml_type);
+        GTRACE("load_f32 %s: UNSUPPORTED ggml_type=%d", tname, (int)ggml_type);
+        (void)tname;
         return CCE_ERR_UNSUPPORTED;
     }
     return CCE_OK;
+}
+
+cce_result cce_gguf_load_f32(const cce_gguf* g, int idx, float* buf, size_t cap_elems) {
+    if (!g || idx < 0 || idx >= g->n_tensors || !buf) return CCE_ERR_INVALID_ARG;
+    const cce_gguf_tensor_meta* m = &g->tensors[idx];
+
+    size_t elems = 1;
+    for (int d = 0; d < m->ndim; d++) elems *= (size_t)m->shape[d];
+    if (cap_elems < elems) return CCE_ERR_INVALID_ARG;
+
+    /* Seek to the tensor data.
+       In practice for most GGUF writers the data_offset in the tensor info is the offset
+       from the *start of the tensor data section*. We use the one we recorded. */
+    uint64_t abs_off = g->data_offset + m->data_offset;
+    if (_fseeki64(g->f, (int64_t)abs_off, SEEK_SET) != 0) {
+        GTRACE("load_f32 %s: seek FAILED abs_off=%llu", m->name, (unsigned long long)abs_off);
+        return CCE_ERR_IO;
+    }
+    return gguf_dequant_seq(g, m->ggml_type, m->name, elems, buf);
+}
+
+/* quant block geometry: elements and bytes per on-disk block */
+static int gguf_type_block(uint32_t t, size_t* belems, size_t* bbytes) {
+    switch (t) {
+    case 0:  *belems = 1;   *bbytes = 4;   return 1; /* F32 */
+    case 1:  *belems = 1;   *bbytes = 2;   return 1; /* F16 */
+    case 30: *belems = 1;   *bbytes = 2;   return 1; /* BF16 */
+    case 2:  *belems = 32;  *bbytes = 18;  return 1; /* Q4_0 */
+    case 3:  *belems = 32;  *bbytes = 20;  return 1; /* Q4_1 */
+    case 6:  *belems = 32;  *bbytes = 22;  return 1; /* Q5_0 */
+    case 7:  *belems = 32;  *bbytes = 24;  return 1; /* Q5_1 */
+    case 8:  *belems = 32;  *bbytes = 34;  return 1; /* Q8_0 */
+    case 12: *belems = 256; *bbytes = 144; return 1; /* Q4_K */
+    case 13: *belems = 256; *bbytes = 176; return 1; /* Q5_K */
+    case 14: *belems = 256; *bbytes = 210; return 1; /* Q6_K */
+    default: return 0;
+    }
+}
+
+cce_result cce_gguf_load_f32_slice(const cce_gguf* g, int idx, size_t elem_off,
+                                   size_t n_elems, float* buf) {
+    if (!g || idx < 0 || idx >= g->n_tensors || !buf || n_elems == 0) return CCE_ERR_INVALID_ARG;
+    const cce_gguf_tensor_meta* m = &g->tensors[idx];
+    size_t elems = 1, belems = 0, bbytes = 0;
+    for (int d = 0; d < m->ndim; d++) elems *= (size_t)m->shape[d];
+    if (elem_off + n_elems > elems) return CCE_ERR_INVALID_ARG;
+    if (!gguf_type_block(m->ggml_type, &belems, &bbytes)) return CCE_ERR_UNSUPPORTED;
+    /* the slice must start on a block boundary and cover whole blocks
+       (a partial tail is fine only at the very end of the tensor) */
+    if (elem_off % belems != 0) return CCE_ERR_UNSUPPORTED;
+    if (n_elems % belems != 0 && elem_off + n_elems != elems) return CCE_ERR_UNSUPPORTED;
+    uint64_t abs_off = g->data_offset + m->data_offset
+                     + (uint64_t)(elem_off / belems) * bbytes;
+    if (_fseeki64(g->f, (int64_t)abs_off, SEEK_SET) != 0) return CCE_ERR_IO;
+    return gguf_dequant_seq(g, m->ggml_type, m->name, n_elems, buf);
 }
 
 cce_result cce_gguf_load_as_tensor(const cce_gguf* g, int idx, cce_tensor* out) {
@@ -811,6 +866,18 @@ float cce_gguf_get_rms_eps(const cce_gguf* g)        { return g ? g->rms_eps : 0
 
 const char* cce_gguf_get_tokenizer_model(const cce_gguf* g) { return (g && g->tokenizer_model[0]) ? g->tokenizer_model : "unknown"; }
 int cce_gguf_get_bos_token_id(const cce_gguf* g) { return g ? g->bos_token_id : -1; }
+
+/* MoE hparams (leading dot: "expert_count" must not also match
+   "<arch>.expert_used_count") */
+int cce_gguf_get_expert_count(const cce_gguf* g) {
+    return g ? (int)gguf_get_scalar(g, ".expert_count", 0) : 0;
+}
+int cce_gguf_get_expert_used_count(const cce_gguf* g) {
+    return g ? (int)gguf_get_scalar(g, ".expert_used_count", 0) : 0;
+}
+int cce_gguf_get_expert_feed_forward_length(const cce_gguf* g) {
+    return g ? (int)gguf_get_scalar(g, ".expert_feed_forward_length", 0) : 0;
+}
 int cce_gguf_get_eos_token_id(const cce_gguf* g) { return g ? g->eos_token_id : -1; }
 
 /* ---- Per-layer attention geometry (see cce_attn_geom in the header) ----
@@ -2558,4 +2625,217 @@ void cce_gguf_qwen2_free(cce_gguf_qwen2* m) {
     free(m->k_cache);
     free(m->v_cache);
     free(m);
+}
+
+/* ======================= MoE loader (Arc B1) =======================
+ *
+ * Parse a Mixture-of-Experts GGUF into streamable per-expert specialists.
+ * Canonical llama.cpp layout: per layer a 3D expert bank per projection —
+ *   blk.N.ffn_gate_exps.weight [n_embd, ff_exp, n_expert]
+ *   blk.N.ffn_up_exps.weight   [n_embd, ff_exp, n_expert]
+ *   blk.N.ffn_down_exps.weight [ff_exp, n_embd, n_expert]
+ * plus the router blk.N.ffn_gate_inp.weight [n_embd, n_expert].
+ * gemma4 (e.g. gemma-4-26B-A4B) fuses gate+up into one bank:
+ *   blk.N.ffn_gate_up_exps.weight [n_embd, 2*ff_exp, n_expert]
+ * and adds imatrix-style side scales (ffn_down_exps.scale [n_expert],
+ * ffn_gate_inp.scale [n_embd]) — recorded here, applied when the B2
+ * forward pins their semantics against a llama.cpp reference.
+ *
+ * ggml memory order puts expert e's matrix at one contiguous block-aligned
+ * range [e*ne0*ne1, (e+1)*ne0*ne1), so one expert loads WITHOUT touching
+ * the rest of the bank (cce_gguf_load_f32_slice) — peak RAM = one expert.
+ * Dims are validated against the metadata; a mismatch REFUSES to load
+ * (a mis-dimensioned expert must never forward). */
+
+static int moe_find(const cce_gguf* g, const char* fmt, int layer) {
+    char name[128];
+    snprintf(name, sizeof(name), fmt, layer);
+    return cce_gguf_find_tensor(g, name);
+}
+
+static int moe_dims3(const cce_gguf* g, int idx, int ne0, int ne1, int ne2) {
+    cce_gguf_tensor_meta tm;
+    if (cce_gguf_get_tensor_meta(g, idx, &tm) != CCE_OK) return 0;
+    return tm.ndim == 3 && tm.shape[0] == ne0 && tm.shape[1] == ne1 && tm.shape[2] == ne2;
+}
+
+cce_result cce_gguf_moe_open(const char* path, cce_gguf_moe** out) {
+    if (!path || !out) return CCE_ERR_INVALID_ARG;
+    *out = NULL;
+    cce_gguf* g = NULL;
+    cce_result rc = cce_gguf_load(path, &g);
+    if (rc != CCE_OK) return rc;
+
+    int n_expert = cce_gguf_get_expert_count(g);
+    if (n_expert <= 1) { cce_gguf_free(g); return CCE_ERR_UNSUPPORTED; } /* dense checkpoint: not a MoE */
+
+    cce_gguf_moe* m = (cce_gguf_moe*)calloc(1, sizeof(*m));
+    if (!m) { cce_gguf_free(g); return CCE_ERR_OOM; }
+    m->g = g;
+    strncpy(m->arch, cce_gguf_get_arch(g), sizeof(m->arch) - 1);
+    m->n_layer       = cce_gguf_get_n_layer(g);
+    m->n_embd        = cce_gguf_get_hidden_size(g);
+    m->n_ff_shared   = cce_gguf_get_feed_forward_length(g);
+    m->n_expert      = n_expert;
+    m->n_expert_used = cce_gguf_get_expert_used_count(g);
+    m->n_ff_exp      = cce_gguf_get_expert_feed_forward_length(g);
+    if (m->n_layer <= 0 || m->n_embd <= 0 || m->n_expert_used <= 0 ||
+        m->n_expert_used > m->n_expert) {
+        cce_gguf_moe_free(m);
+        return CCE_ERR_UNSUPPORTED;
+    }
+
+    int L = m->n_layer;
+    m->t_gate         = (int*)malloc((size_t)L * sizeof(int));
+    m->t_up           = (int*)malloc((size_t)L * sizeof(int));
+    m->t_down         = (int*)malloc((size_t)L * sizeof(int));
+    m->t_router       = (int*)malloc((size_t)L * sizeof(int));
+    m->t_down_scale   = (int*)malloc((size_t)L * sizeof(int));
+    m->t_router_scale = (int*)malloc((size_t)L * sizeof(int));
+    if (!m->t_gate || !m->t_up || !m->t_down || !m->t_router ||
+        !m->t_down_scale || !m->t_router_scale) {
+        cce_gguf_moe_free(m);
+        return CCE_ERR_OOM;
+    }
+
+    for (int l = 0; l < L; l++) {
+        int t_ga = moe_find(g, "blk.%d.ffn_gate_exps.weight", l);
+        int t_up = moe_find(g, "blk.%d.ffn_up_exps.weight", l);
+        int t_gu = moe_find(g, "blk.%d.ffn_gate_up_exps.weight", l);
+        int t_dn = moe_find(g, "blk.%d.ffn_down_exps.weight", l);
+        int t_rt = moe_find(g, "blk.%d.ffn_gate_inp.weight", l);
+        m->t_down_scale[l]   = moe_find(g, "blk.%d.ffn_down_exps.scale", l);
+        m->t_router_scale[l] = moe_find(g, "blk.%d.ffn_gate_inp.scale", l);
+
+        int fused = (t_gu >= 0);
+        if (l == 0) m->fused_gate_up = fused;
+        if (fused != m->fused_gate_up ||                       /* mixed layouts: refuse */
+            t_dn < 0 || t_rt < 0 ||
+            (fused ? 0 : (t_ga < 0 || t_up < 0))) {
+            cce_gguf_moe_free(m);
+            return CCE_ERR_UNSUPPORTED;
+        }
+
+        /* derive ff_exp from the file's bytes if the metadata omits it */
+        if (m->n_ff_exp <= 0) {
+            cce_gguf_tensor_meta tm;
+            if (cce_gguf_get_tensor_meta(g, t_dn, &tm) != CCE_OK || tm.ndim != 3) {
+                cce_gguf_moe_free(m);
+                return CCE_ERR_UNSUPPORTED;
+            }
+            m->n_ff_exp = tm.shape[0];
+        }
+
+        /* the file's bytes are the truth: validate every bank's dims */
+        int ok = moe_dims3(g, t_dn, m->n_ff_exp, m->n_embd, m->n_expert);
+        if (fused) {
+            ok = ok && moe_dims3(g, t_gu, m->n_embd, 2 * m->n_ff_exp, m->n_expert);
+        } else {
+            ok = ok && moe_dims3(g, t_ga, m->n_embd, m->n_ff_exp, m->n_expert)
+                    && moe_dims3(g, t_up, m->n_embd, m->n_ff_exp, m->n_expert);
+        }
+        {
+            cce_gguf_tensor_meta tm;
+            ok = ok && cce_gguf_get_tensor_meta(g, t_rt, &tm) == CCE_OK &&
+                 tm.ndim == 2 && tm.shape[0] == m->n_embd && tm.shape[1] == m->n_expert;
+        }
+        if (!ok) { cce_gguf_moe_free(m); return CCE_ERR_UNSUPPORTED; }
+
+        m->t_gate[l]   = fused ? t_gu : t_ga;
+        m->t_up[l]     = fused ? -1 : t_up;
+        m->t_down[l]   = t_dn;
+        m->t_router[l] = t_rt;
+    }
+
+    *out = m;
+    return CCE_OK;
+}
+
+void cce_gguf_moe_free(cce_gguf_moe* m) {
+    if (!m) return;
+    free(m->t_gate); free(m->t_up); free(m->t_down);
+    free(m->t_router); free(m->t_down_scale); free(m->t_router_scale);
+    if (m->g) cce_gguf_free(m->g);
+    free(m);
+}
+
+/* transpose one expert matrix from the bank's row-major [out][in] rows into
+ * the block's CCE [in][out] layout; row_off skips rows in a fused bank */
+static void moe_fill_block(cce_block* blk, const float* slice, int in_d, int out_d, int row_off) {
+    for (int o = 0; o < out_d; o++)
+        for (int i = 0; i < in_d; i++)
+            blk->weights.data[(size_t)i * out_d + o] = slice[(size_t)(row_off + o) * in_d + i];
+    memset(blk->bias.data, 0, (size_t)out_d * sizeof(float)); /* experts carry no bias */
+}
+
+cce_result cce_gguf_moe_load_expert(const cce_gguf_moe* m, int layer, int expert,
+                                    cce_cascade** out) {
+    if (!m || !out) return CCE_ERR_INVALID_ARG;
+    if (layer < 0 || layer >= m->n_layer || expert < 0 || expert >= m->n_expert)
+        return CCE_ERR_INVALID_ARG;
+    *out = NULL;
+    int D = m->n_embd, F = m->n_ff_exp;
+
+    cce_cascade* cas = NULL;
+    cce_result rc = cce_cascade_create(&cas, 3);
+    if (rc != CCE_OK) return rc;
+    if (cce_cascade_add_linear_head(cas, D, F, 0.0f) != CCE_OK ||   /* gate */
+        cce_cascade_add_linear_head(cas, D, F, 0.0f) != CCE_OK ||   /* up   */
+        cce_cascade_add_linear_head(cas, F, D, 0.0f) != CCE_OK) {   /* down */
+        cce_cascade_destroy(cas);
+        return CCE_ERR_OOM;
+    }
+
+    size_t gu_rows = m->fused_gate_up ? 2 * (size_t)F : (size_t)F;
+    size_t gu_elems = (size_t)D * gu_rows;
+    size_t dn_elems = (size_t)F * D;
+    size_t big = gu_elems > dn_elems ? gu_elems : dn_elems;
+    float* slice = (float*)malloc(big * sizeof(float));
+    if (!slice) { cce_cascade_destroy(cas); return CCE_ERR_OOM; }
+
+    /* gate (+ up when fused): bank rows are output rows of length n_embd */
+    rc = cce_gguf_load_f32_slice(m->g, m->t_gate[layer], (size_t)expert * gu_elems,
+                                 gu_elems, slice);
+    if (rc == CCE_OK) {
+        moe_fill_block(&cas->blocks[0], slice, D, F, 0);
+        if (m->fused_gate_up) {
+            moe_fill_block(&cas->blocks[1], slice, D, F, F); /* rows [F,2F) = up (provisional; B2 parity pins it) */
+        } else {
+            rc = cce_gguf_load_f32_slice(m->g, m->t_up[layer], (size_t)expert * gu_elems,
+                                         gu_elems, slice);
+            if (rc == CCE_OK) moe_fill_block(&cas->blocks[1], slice, D, F, 0);
+        }
+    }
+    /* down: bank rows are n_embd output rows of length ff_exp */
+    if (rc == CCE_OK) {
+        rc = cce_gguf_load_f32_slice(m->g, m->t_down[layer], (size_t)expert * dn_elems,
+                                     dn_elems, slice);
+        if (rc == CCE_OK) moe_fill_block(&cas->blocks[2], slice, F, D, 0);
+    }
+    free(slice);
+    if (rc != CCE_OK) { cce_cascade_destroy(cas); return rc; }
+    *out = cas;
+    return CCE_OK;
+}
+
+cce_result cce_gguf_moe_load_router(const cce_gguf_moe* m, int layer, cce_cascade** out) {
+    if (!m || !out || layer < 0 || layer >= m->n_layer) return CCE_ERR_INVALID_ARG;
+    *out = NULL;
+    int D = m->n_embd, E = m->n_expert;
+
+    cce_cascade* cas = NULL;
+    cce_result rc = cce_cascade_create(&cas, 1);
+    if (rc != CCE_OK) return rc;
+    if (cce_cascade_add_linear_head(cas, D, E, 0.0f) != CCE_OK) {
+        cce_cascade_destroy(cas);
+        return CCE_ERR_OOM;
+    }
+    float* buf = (float*)malloc((size_t)D * E * sizeof(float));
+    if (!buf) { cce_cascade_destroy(cas); return CCE_ERR_OOM; }
+    rc = cce_gguf_load_f32(m->g, m->t_router[layer], buf, (size_t)D * E);
+    if (rc == CCE_OK) moe_fill_block(&cas->blocks[0], buf, D, E, 0);
+    free(buf);
+    if (rc != CCE_OK) { cce_cascade_destroy(cas); return rc; }
+    *out = cas;
+    return CCE_OK;
 }

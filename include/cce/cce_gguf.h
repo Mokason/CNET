@@ -104,6 +104,57 @@ const char* cce_gguf_get_tokenizer_model(const cce_gguf* gguf);
 int cce_gguf_get_bos_token_id(const cce_gguf* gguf);
 int cce_gguf_get_eos_token_id(const cce_gguf* gguf);
 
+/* MoE hparams (0 when absent => dense checkpoint) */
+int cce_gguf_get_expert_count(const cce_gguf* gguf);
+int cce_gguf_get_expert_used_count(const cce_gguf* gguf);
+int cce_gguf_get_expert_feed_forward_length(const cce_gguf* gguf);
+
+/* Dequantize a BLOCK-ALIGNED element range of tensor idx into buf — slices
+ * one expert out of a 3D [ne0, ne1, n_expert] bank without materializing the
+ * whole tensor. elem_off must be a multiple of the quant block (32 for
+ * Q8_0/Q4_0/..., 256 for K-quants); n_elems too, unless the range ends the
+ * tensor. Supports every type cce_gguf_load_f32 supports. */
+cce_result cce_gguf_load_f32_slice(const cce_gguf* gguf, int idx, size_t elem_off,
+                                   size_t n_elems, float* buf);
+
+/* ---- MoE loader (Arc B1): per-expert streamable specialists ----
+ *
+ * Canonical llama.cpp MoE layout (qwen2moe/qwen3moe/mixtral):
+ *   blk.N.ffn_{gate,up}_exps.weight [n_embd, ff_exp, n_expert]
+ *   blk.N.ffn_down_exps.weight      [ff_exp, n_embd, n_expert]
+ *   blk.N.ffn_gate_inp.weight       [n_embd, n_expert]   (the router)
+ * gemma4 fuses gate+up ([n_embd, 2*ff_exp, n_expert]) and adds side scales;
+ * both layouts parse. Dims are validated against metadata — a mismatch
+ * refuses to open (a mis-dimensioned expert must never forward). */
+typedef struct cce_gguf_moe {
+    cce_gguf* g;               /* owned container handle */
+    char arch[32];
+    int n_layer, n_embd;
+    int n_ff_shared;           /* dense/shared-expert FFN width (0 if absent) */
+    int n_expert, n_expert_used, n_ff_exp;
+    int fused_gate_up;         /* 1 = gemma4 ffn_gate_up_exps layout */
+    /* per-layer tensor indices into g (-1 = absent) */
+    int* t_gate;               /* gate bank (the fused gate_up bank when fused) */
+    int* t_up;                 /* up bank (-1 when fused) */
+    int* t_down;
+    int* t_router;
+    int* t_down_scale;         /* gemma4 side scales (recorded; semantics pinned in B2) */
+    int* t_router_scale;
+} cce_gguf_moe;
+
+cce_result cce_gguf_moe_open(const char* path, cce_gguf_moe** out);
+void cce_gguf_moe_free(cce_gguf_moe* m);
+
+/* One expert's FFN as a standalone 3-block cascade [gate, up, down], weights
+ * in CCE [in][out] layout, no bias. Peak RAM = one expert (block-aligned
+ * slice reads). A streamable specialist: weight-store put/get round-trips
+ * it bit-exact. Caller owns the cascade. */
+cce_result cce_gguf_moe_load_expert(const cce_gguf_moe* m, int layer, int expert,
+                                    cce_cascade** out);
+
+/* The layer's router as a 1-block cascade [n_embd -> n_expert]. */
+cce_result cce_gguf_moe_load_router(const cce_gguf_moe* m, int layer, cce_cascade** out);
+
 /* ---- Population helpers, modeled after safetensors ---- */
 
 /* Populate a cce_block from GGUF tensor names (weight + optional bias).
