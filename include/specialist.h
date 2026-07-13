@@ -41,6 +41,7 @@
 #include "router.h"
 #include "contract/contract.h"
 #include "acquire.h"
+#include "specialist_kind.h"   /* SpecialistKind — shared with router.h's RegistryEntry */
 
 struct cce_model;        /* cce/cce_model.h; kept opaque here */
 struct cce_forest;       /* cce/cce_forest.h */
@@ -50,11 +51,8 @@ struct CnetModelManager; /* model_runtime.h */
 extern "C" {
 #endif
 
-typedef enum {
-    SPECIALIST_KIND_BTN    = 0,  /* native matrix primitive */
-    SPECIALIST_KIND_CCE    = 1,  /* CCE cascade/model behind the adapter ABI */
-    SPECIALIST_KIND_ORACLE = 2   /* oracle/mined unit behind the adapter ABI */
-} SpecialistKind;
+/* SpecialistKind (BTN / CCE / ORACLE) is defined in specialist_kind.h so the
+   registry entry in router.h can carry it without a header cycle. */
 
 /* Trust axis. Values mirror PrimitiveState on purpose (same numbers, same
    transitions); DEMOTED is numerically last but is NOT "most trusted" —

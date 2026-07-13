@@ -6,6 +6,7 @@
 
 #include "nn.h"
 #include "cnet_export.h"
+#include "specialist_kind.h"   /* SpecialistKind — durable live identity on RegistryEntry */
 
 #define ROUTE_MAX_STEPS 8
 
@@ -89,6 +90,11 @@ typedef struct {
 typedef struct {
     BinaryTransformNetwork *btn;  /* borrowed; the registry does not own it */
     const char *name;
+    /* WHICH backend this node is — durable live identity, set once by
+       specialist_admit (never persisted; trust replays separately). Defaults
+       to SPECIALIST_KIND_BTN (0) for any entry added outside the specialist
+       door, which is the correct kind for a native matrix primitive. */
+    SpecialistKind kind;
     int certified;  /* set only by registry_add_certified */
     uint64_t cert_btn_digest; /* contract_btn_digest at certification time;
                                  registry_audit_certified demotes on mismatch */

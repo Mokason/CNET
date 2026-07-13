@@ -7,6 +7,7 @@
 #include "../../include/contract/coverage.h"
 #include "../../include/nn.h"
 #include "../../include/contract/contract.h"
+#include "../../include/specialist.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -245,8 +246,12 @@ int btn_certify_exhaustive(BinaryTransformNetwork *btn, const Contract *c,
 int registry_add_proven(PrimitiveRegistry *reg, BinaryTransformNetwork *btn,
                         const char *name, const Contract *c, size_t cap) {
     ExhaustiveReport r;
+    Specialist s;
     if (btn_certify_exhaustive(btn, c, cap, &r) != 0) return -1;  /* not PROVEN */
-    return registry_add_certified(reg, btn, name, c);
+    /* PROVEN, then admit through the one specialist door (registry_add_certified
+       stays an internal of the admission layer; kind is stamped BTN). */
+    if (specialist_wrap_btn(&s, btn, name) != 0) return -1;
+    return specialist_admit(reg, &s, c);
 }
 
 CertVerdict plan_weakest_verdict(BinaryTransformNetwork *const *btns,

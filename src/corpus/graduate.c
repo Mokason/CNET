@@ -2,10 +2,21 @@
    two frozen btn_certify-proven positionally-tagged units, register them certified,
    and evict the source tiles from the fuzzy memory. Closes the soft->hard loop. */
 #include "../../include/corpus/graduate.h"
+#include "../../include/specialist.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
 #include <time.h>
+
+/* Native-step admission through the one specialist door: wrap as a
+   Specialist(kind=btn) and admit (certify + register + stamp kind). The
+   low-level registry_add_certified stays an internal of the admission layer. */
+static int admit_native_btn(PrimitiveRegistry *reg, BinaryTransformNetwork *btn,
+                            const char *name, const Contract *c) {
+    Specialist s;
+    if (specialist_wrap_btn(&s, btn, name) != 0) return -1;
+    return specialist_admit(reg, &s, c);
+}
 
 /* --- local string->id vocab over the whole corpus --- */
 typedef struct { char **w; int n, cap; } Vocab;
@@ -138,8 +149,8 @@ int graduate_deterministic(const StrList *corpus, PrimitiveRegistry *reg, TileMe
     /* 6) register certified */
     clock_t tr=clock();
     reg->require_certified=1;
-    int ra=registry_add_certified(reg,&gu->btn_a,"step_ab",&gu->con_a);
-    int rb=registry_add_certified(reg,&gu->btn_b,"step_bc",&gu->con_b);
+    int ra=admit_native_btn(reg,&gu->btn_a,"step_ab",&gu->con_a);
+    int rb=admit_native_btn(reg,&gu->btn_b,"step_bc",&gu->con_b);
     rep->units=(ra==0)+(rb==0);
     rep->ms_register = 1000.0*(double)(clock()-tr)/CLOCKS_PER_SEC;
 

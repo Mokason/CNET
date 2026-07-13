@@ -7,6 +7,7 @@
 #include "../../include/contract/contract.h"
 #include "../../include/arena.h"
 #include "../../include/plan_table.h"
+#include "../../include/specialist.h"   /* Specialist / SpecialistKind — the door lives here */
 
 #include <math.h>
 #include <stdio.h>
@@ -1004,6 +1005,52 @@ int registry_add_certified(PrimitiveRegistry *reg,
     reg->entries[reg->count - 1].certified = 1;
     reg->entries[reg->count - 1].cert_btn_digest = contract_btn_digest(btn);
     reg->entries[reg->count - 1].state = PRIM_FROZEN;
+    return 0;
+}
+
+/* ---- the specialist admission door ----------------------------------------
+   registry_add_certified above is the low-level certify-and-register; it is an
+   implementation detail of THIS admission layer (contract.c/specialist.c). The
+   two functions below are the ONLY sanctioned production entry point: they wrap
+   a backend as a Specialist and admit it through the door, stamping the durable
+   live SpecialistKind on the authoritative registry entry. They are defined
+   here (rather than in specialist.c) so every production admission path links
+   the door via the light contract.o without pulling in the CCE/model backends
+   that specialist.c's runtime wraps require. */
+
+int specialist_wrap_btn(Specialist *s, BinaryTransformNetwork *btn,
+                        const char *name) {
+    if (s == NULL || btn == NULL || name == NULL || name[0] == '\0') return -1;
+    if (btn_is_adapter(btn)) return -1;   /* runtime adapters wrap at their own site */
+    s->kind = SPECIALIST_KIND_BTN;
+    s->btn = btn;
+    s->name = name;
+    s->digest = 0;
+    return 0;
+}
+
+int specialist_admit(PrimitiveRegistry *reg, Specialist *s, const Contract *c) {
+    size_t i;
+    if (reg == NULL || s == NULL || s->btn == NULL || s->name == NULL ||
+        c == NULL) {
+        return -1;
+    }
+    if (s->kind < SPECIALIST_KIND_BTN || s->kind > SPECIALIST_KIND_ORACLE) {
+        return -1;
+    }
+    if (registry_add_certified(reg, s->btn, s->name, c) != 0) return -1;
+    /* Stamp the durable kind on the entry the door just certified (append or
+       better-replacement, same first-name rule as registry_set_state). Kind is
+       live identity, set once at admission; trust replays separately and is
+       never persisted. */
+    for (i = 0; i < reg->count; ++i) {
+        if (reg->entries[i].name != NULL &&
+            strcmp(reg->entries[i].name, s->name) == 0) {
+            reg->entries[i].kind = s->kind;
+            break;
+        }
+    }
+    s->digest = contract_btn_digest(s->btn);
     return 0;
 }
 

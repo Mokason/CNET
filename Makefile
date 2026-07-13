@@ -1733,7 +1733,23 @@ dotnet_restore:
 	fi
 	@echo "DOTNET_RESTORE_PASS" | tee -a logs/dotnet_restore.log
 
-unified_native: unified_adapter unified_cce_adapter unified_oracle_adapter unified_specialist gap_lane dispatch_story oracle_v2_test unified_async unified_models unified_ds4_launcher soul_host_test cnet_dll build_hygiene_test alt_paths_gate
+# Reopen/remount execution tracer: durable SpecialistKind across close/reopen,
+# resolver-based Oracle remount certified against provenance-linked sealed
+# truth, typed native+oracle chain, explicit refusal tallies.
+.PHONY: soul_reopen_test admission_bypass_audit
+soul_reopen_test: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(GAP_LANE_SRC) src/soul_host.c tests/test_soul_reopen.c
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(GAP_LANE_SRC) src/soul_host.c tests/test_soul_reopen.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -pthread
+	./$(BIN_DIR)/$@ > logs/soul_reopen_test.log 2>&1
+	@grep -q "SPECIALIST_REOPEN_PASS" logs/soul_reopen_test.log
+
+# Static gate: production admission must go through the specialist door.
+admission_bypass_audit: tests/audit_admission_bypass.sh
+	@mkdir -p logs
+	@sh tests/audit_admission_bypass.sh > logs/admission_bypass_audit.log 2>&1
+	@grep -q "ADMISSION_BYPASS_AUDIT_PASS" logs/admission_bypass_audit.log
+
+unified_native: unified_adapter unified_cce_adapter unified_oracle_adapter unified_specialist gap_lane dispatch_story oracle_v2_test unified_async unified_models unified_ds4_launcher soul_host_test soul_reopen_test admission_bypass_audit cnet_dll build_hygiene_test alt_paths_gate
 	@for sym in specialist_wrap_btn specialist_wrap_cce_model \
 		specialist_wrap_oracle specialist_admit specialist_axes \
 		specialist_residency_of_model specialist_residency_of_branch \
@@ -1760,6 +1776,9 @@ unified_native: unified_adapter unified_cce_adapter unified_oracle_adapter unifi
 	@nm -D cnet.so | grep -q " cnet_lane_pool_submit$$"
 	@nm -D cnet.so | grep -q " soul_oracle_count$$"
 	@nm -D cnet.so | grep -q " soul_oracle_identity$$"
+	@nm -D cnet.so | grep -q " soul_mount_oracles$$"
+	@nm -D cnet.so | grep -q " soul_unit_kind$$"
+	@nm -D cnet.so | grep -q " soul_mounted_oracle_count$$"
 
 
 .PHONY: unified

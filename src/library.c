@@ -1,5 +1,6 @@
 #include "../include/library.h"
 #include "../include/scan.h"
+#include "../include/specialist.h"
 
 #include <math.h>
 #include <stdlib.h>
@@ -47,6 +48,16 @@ typedef struct {
     size_t count;   /* 0 when the teacher exceeds EXPAND_MAX_PRIMS -> no recipe */
 } TeacherInfo;
 
+/* Native-chunk admission through the one specialist door: wrap as a
+   Specialist(kind=btn) and admit (certify + register + stamp kind). The
+   low-level registry_add_certified stays an internal of the admission layer. */
+static int admit_native_btn(PrimitiveRegistry *reg, BinaryTransformNetwork *btn,
+                            const char *name, const Contract *c) {
+    Specialist s;
+    if (specialist_wrap_btn(&s, btn, name) != 0) return -1;
+    return specialist_admit(reg, &s, c);
+}
+
 static int finalize_chunk(PrimitiveRegistry *reg, BinaryTransformNetwork *student,
                           const char *name, const Contract *c,
                           const Property *laws, size_t n_laws, size_t max_samples,
@@ -57,7 +68,7 @@ static int finalize_chunk(PrimitiveRegistry *reg, BinaryTransformNetwork *studen
     if (contract_already_known(reg, c)) return 0;          /* step 5: dedup */
 
     before = reg->count;
-    if (registry_add_certified(reg, student, name, c) != 0) return 0;  /* step 6 */
+    if (admit_native_btn(reg, student, name, c) != 0) return 0;  /* step 6 */
 
     if (law_violated(laws, n_laws, reg, max_samples)) {    /* step 7: guard */
         /* rollback only if we actually appended; unique names mean

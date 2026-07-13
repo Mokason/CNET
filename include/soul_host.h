@@ -11,6 +11,7 @@
  */
 
 #include "cnet_export.h"
+#include "acquire.h"   /* CnetOracleFn / CnetOracleIdentity for the remount resolver */
 #include <stddef.h>
 #include <stdint.h>
 
@@ -130,6 +131,69 @@ CNET_API int soul_request(SoulHost *h,
                           const char *goal_tag,
                           const double *in, int in_len,
                           double *out, int out_cap);
+
+/* ---- resolver-based Oracle remount (the reopen execution tracer) ----------
+   Oracle callbacks cannot be serialized; the sealed base persists their
+   identity, ports, and unit->descriptor provenance. soul_open loads only the
+   native units and PROJECTS the oracle descriptors (no runtime trust).
+   soul_mount_oracles turns projected descriptors back into LIVE, certified,
+   plannable ORACLE specialists by asking the caller's resolver for the live
+   callback and, for each descriptor:
+     1. verifying the resolver's ASSERTED identity digest against the SEALED
+        descriptor digest (a legacy/absent or mismatched identity is refused);
+     2. recovering the sealed contract of a native unit whose provenance points
+        at this descriptor (the oracle taught that unit, so its own sealed
+        exemplars are the certification evidence — no self-certification);
+     3. certifying the remounted adapter against that contract and admitting it
+        through the one specialist door (specialist_admit), so the live registry
+        entry is a certified ORACLE, planned/executed exactly like a native unit.
+   Every non-admission is an EXPLICIT skip count in SoulMountReport, never
+   silent runtime trust.
+
+   CCE-model remount is NOT implemented: this closes the generic resolver
+   mechanism with Oracle first. */
+
+typedef struct {
+    CnetOracleFn fn;             /* required; NULL => leave this descriptor unbound */
+    void *ctx;                   /* opaque; forwarded to fn on every call */
+    CnetOracleIdentity identity; /* the identity the caller asserts for fn */
+    int has_identity;            /* must be nonzero: identity is verified, never trusted */
+} SoulOracleBinding;
+
+/* Resolve a persisted descriptor (name, kind) to a live binding. Return 0 with
+   *out filled to bind; return non-zero (or leave out->fn NULL) to leave the
+   descriptor unbound. Called once per descriptor; *out is zeroed before each
+   call. Never serialize/return context pointers into the base. */
+typedef int (*SoulOracleResolver)(const char *name, const char *kind,
+                                  SoulOracleBinding *out, void *rctx);
+
+typedef struct {
+    int mounted;             /* admitted as live certified ORACLE specialists */
+    int unbound;             /* resolver supplied no callback */
+    int identity_mismatch;   /* asserted identity absent/legacy or != sealed digest */
+    int missing_provenance;  /* no provenance-linked native unit/contract to certify against */
+    int cert_failed;         /* adapter could not reproduce the recovered sealed contract */
+} SoulMountReport;
+
+/* Remount persisted oracle descriptors through `resolver` (REQUIRED — a NULL
+   resolver returns -1; descriptor-only projection is soul_open's default and
+   binds nothing). Already-mounted descriptors are left as-is (idempotent).
+   Fills *report when non-NULL. Returns the number NEWLY mounted (>=0), or <0 on
+   bad args / allocation failure. Ownership: the host owns and frees every bound
+   OracleEntry, adapter BTN, and recovered contract exactly once in soul_close;
+   callbacks/contexts are never serialized. */
+CNET_API int soul_mount_oracles(SoulHost *h, SoulOracleResolver resolver,
+                                void *rctx, SoulMountReport *report);
+
+/* SpecialistKind of a LIVE registry unit (SpecialistKind numeric values:
+   0 BTN, 1 CCE, 2 ORACLE). 0 on success with *kind filled (kind may be NULL for
+   a pure existence check); <0 if the name is not a live registry unit — e.g. an
+   oracle descriptor that has not been remounted. */
+CNET_API int soul_unit_kind(SoulHost *h, const char *name, int *kind);
+
+/* Number of oracle descriptors currently mounted as live ORACLE specialists.
+   <0 on a bad/unloaded host. */
+CNET_API int soul_mounted_oracle_count(SoulHost *h);
 
 CNET_API void soul_close(SoulHost *h);
 

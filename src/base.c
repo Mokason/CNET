@@ -1,5 +1,6 @@
 #include "../include/base.h"
 #include "../include/contract/unit.h"
+#include "../include/specialist.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -802,6 +803,16 @@ int cnb_bind_oracles(const CnetBase *b, OracleRegistry *orc,
 
 /* ---- registry bridge ---- */
 
+/* Native-unit admission through the one specialist door: wrap as a
+   Specialist(kind=btn) and admit (certify + register + stamp kind). The
+   low-level registry_add_certified stays an internal of the admission layer. */
+static int admit_native_btn(PrimitiveRegistry *reg, BinaryTransformNetwork *btn,
+                            const char *name, const Contract *c) {
+    Specialist s;
+    if (specialist_wrap_btn(&s, btn, name) != 0) return -1;
+    return specialist_admit(reg, &s, c);
+}
+
 int cnb_load_registry(CnetBase *b, PrimitiveRegistry *reg, size_t *skipped_out) {
     size_t i, skipped = 0;
     if (!b || !reg) return -1;
@@ -834,8 +845,9 @@ int cnb_load_registry(CnetBase *b, PrimitiveRegistry *reg, size_t *skipped_out) 
         nm = (char *)malloc(CNB_NAME_MAX);
         if (!nm) { btn_free(btn); free(btn); contract_free(&c); return -1; }
         snprintf(nm, CNB_NAME_MAX, "%s", b->units[i].name);
-        /* trust is replayed, never stored */
-        if (registry_add_certified(reg, btn, nm, &c) != 0) {
+        /* trust is replayed, never stored; admitted through the specialist
+           door so the reloaded native unit reports kind=BTN */
+        if (admit_native_btn(reg, btn, nm, &c) != 0) {
             free(nm);
             btn_free(btn);
             free(btn);

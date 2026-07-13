@@ -1,6 +1,7 @@
 #include "../include/acquire.h"
 #include "../include/base.h"
 #include "../include/contract/unit.h"
+#include "../include/specialist.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -10,6 +11,16 @@
 #ifdef _OPENMP
 #include <omp.h>
 #endif
+
+/* Native-unit admission through the one specialist door: wrap as a
+   Specialist(kind=btn) and admit (certify + register + stamp kind). The
+   low-level registry_add_certified stays an internal of the admission layer. */
+static int admit_native_btn(PrimitiveRegistry *reg, BinaryTransformNetwork *btn,
+                            const char *name, const Contract *c) {
+    Specialist s;
+    if (specialist_wrap_btn(&s, btn, name) != 0) return -1;
+    return specialist_admit(reg, &s, c);
+}
 
 void acquire_config_defaults(AcquireConfig *cfg) {
     if (!cfg) return;
@@ -1141,9 +1152,9 @@ train_student:
 
     /* 6. register (name storage must outlive the registry: ledger-owned) */
     if (ledger_own_btn(l, btn, name) != 0 ||
-        registry_add_certified(reg, btn,
-                               l->acquired_names[l->acquired_count - 1],
-                               &c) != 0) {
+        admit_native_btn(reg, btn,
+                         l->acquired_names[l->acquired_count - 1],
+                         &c) != 0) {
         if (sealed) remove(cnu_path);
         if (l->acquired_count > 0 &&
             l->acquired[l->acquired_count - 1] == btn) {
@@ -1320,9 +1331,9 @@ static int attempt_rebuild(PrimitiveRegistry *reg, AcquireLedger *l,
         sealed = 1;
     }
     if (ledger_own_btn(l, btn, name) != 0 ||
-        registry_add_certified(reg, btn,
-                               l->acquired_names[l->acquired_count - 1],
-                               &mined) != 0) {
+        admit_native_btn(reg, btn,
+                         l->acquired_names[l->acquired_count - 1],
+                         &mined) != 0) {
         if (sealed) remove(cnu_path);
         if (l->acquired_count > 0 &&
             l->acquired[l->acquired_count - 1] == btn)

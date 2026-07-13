@@ -429,6 +429,7 @@ int registry_add(PrimitiveRegistry *reg, BinaryTransformNetwork *btn, const char
 
     reg->entries[reg->count].btn = btn;
     reg->entries[reg->count].name = name;
+    reg->entries[reg->count].kind = SPECIALIST_KIND_BTN;  /* native default; specialist_admit stamps the true kind */
     reg->entries[reg->count].certified = 0;
     reg->entries[reg->count].cert_btn_digest = 0;
     reg->entries[reg->count].state = PRIM_FUZZY;

@@ -12,17 +12,13 @@
 #include "../include/cce/cce_forest.h"
 #include "../include/model_runtime.h"
 
-int specialist_wrap_btn(Specialist *s,
-                        BinaryTransformNetwork *btn,
-                        const char *name) {
-    if (!s || !btn || !name || !name[0]) return -1;
-    if (btn_is_adapter(btn)) return -1;
-    s->kind = SPECIALIST_KIND_BTN;
-    s->btn = btn;
-    s->name = name;
-    s->digest = 0;
-    return 0;
-}
+/* specialist_wrap_btn and specialist_admit — the native-wrap surface and THE
+   admission door — live in src/contract/contract.c, next to the low-level
+   registry_add_certified they wrap. That keeps the door in the same light
+   translation unit every production admission path already links (contract.o),
+   so acquire/base/library/coverage/graduate can admit through the door without
+   dragging in the CCE/model backends this file needs for the runtime wraps
+   below. */
 
 int specialist_wrap_cce_model(Specialist *s,
                               BinaryTransformNetwork *adapter,
@@ -63,17 +59,6 @@ int specialist_wrap_oracle(Specialist *s,
     s->btn = adapter;
     s->name = name;
     s->digest = 0;
-    return 0;
-}
-
-int specialist_admit(PrimitiveRegistry *reg,
-                     Specialist *s,
-                     const Contract *c) {
-    if (!reg || !s || !s->btn || !s->name || !c) return -1;
-    if (s->kind < SPECIALIST_KIND_BTN || s->kind > SPECIALIST_KIND_ORACLE)
-        return -1;
-    if (registry_add_certified(reg, s->btn, s->name, c) != 0) return -1;
-    s->digest = contract_btn_digest(s->btn);
     return 0;
 }
 

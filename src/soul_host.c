@@ -33,6 +33,17 @@ struct SoulHost {
        no-plans are appended here for the gap lane to ingest — the serving
        process detects, the lane learns. */
     char gap_inbox[512];
+    /* Remounted oracle descriptors (soul_mount_oracles). One slot per base
+       oracle descriptor, sized ONCE to base.oracle_count (fixed after load) so
+       a slot's &bound_entries[i] never moves — the adapter BTN and the live
+       registry entry both borrow it. Host-owned; freed exactly once in
+       soul_close AFTER registry_free drops the borrows. */
+    OracleEntry *bound_entries;              /* oracle_count; borrowed by adapters */
+    BinaryTransformNetwork *bound_adapters;  /* oracle_count adapter BTNs (btn_free frees ctx) */
+    Contract **bound_contracts;              /* oracle_count recovered sealed contracts (owned) */
+    unsigned char *bound_mounted;            /* oracle_count: 1 = live in the registry */
+    size_t bound_cap;                        /* == oracle_count once allocated, else 0 */
+    size_t mounted_count;
 };
 
 /* Health-tick contract source: the base itself. A miss materializes the
@@ -418,6 +429,155 @@ CNET_API int soul_request(SoulHost *h,
     return (int)out_total;
 }
 
+/* Find a native unit whose recorded provenance points at descriptor
+   `oracle_name` and recover its sealed contract into *out (owns_data). The
+   oracle taught that unit, so the unit's own sealed exemplars are the evidence
+   the remounted adapter must reproduce. Returns 0 with *out filled (caller owns
+   it), or -1 if no provenance-linked unit recovers a contract. */
+static int soul_recover_provenance_contract(SoulHost *h, const char *oracle_name,
+                                            Contract *out) {
+    size_t i;
+    for (i = 0; i < h->base.unit_count; ++i) {
+        if (strcmp(h->base.units[i].provenance, oracle_name) != 0) continue;
+        {
+            BinaryTransformNetwork tmp;
+            memset(&tmp, 0, sizeof tmp);
+            if (cnb_get_unit(&h->base, h->base.units[i].name, &tmp, out) == 0) {
+                btn_free(&tmp);        /* the native BTN is already live in the registry */
+                return 0;
+            }
+            /* recovery failed on this unit — keep scanning for another teacher */
+        }
+    }
+    return -1;
+}
+
+CNET_API int soul_mount_oracles(SoulHost *h, SoulOracleResolver resolver,
+                                void *rctx, SoulMountReport *report) {
+    SoulMountReport rep;
+    size_t i, n;
+
+    memset(&rep, 0, sizeof rep);
+    if (!h || !h->loaded) return -1;
+    if (!resolver) return -1;   /* descriptor-only projection is soul_open's default */
+
+    n = h->base.oracle_count;
+    /* Allocate the stable per-descriptor slots once (never realloc'd, so an
+       adapter's borrowed &bound_entries[i] can't dangle). */
+    if (n > 0 && h->bound_cap == 0) {
+        h->bound_entries = (OracleEntry *)calloc(n, sizeof *h->bound_entries);
+        h->bound_adapters =
+            (BinaryTransformNetwork *)calloc(n, sizeof *h->bound_adapters);
+        h->bound_contracts = (Contract **)calloc(n, sizeof *h->bound_contracts);
+        h->bound_mounted = (unsigned char *)calloc(n, sizeof *h->bound_mounted);
+        if (!h->bound_entries || !h->bound_adapters || !h->bound_contracts ||
+            !h->bound_mounted) {
+            free(h->bound_entries);   h->bound_entries = NULL;
+            free(h->bound_adapters);  h->bound_adapters = NULL;
+            free(h->bound_contracts); h->bound_contracts = NULL;
+            free(h->bound_mounted);   h->bound_mounted = NULL;
+            return -2;
+        }
+        h->bound_cap = n;
+    }
+
+    for (i = 0; i < n; ++i) {
+        const CnbOracleDesc *desc = &h->base.oracles[i];
+        SoulOracleBinding b;
+        Contract c;
+        Contract *hc;
+        Specialist s;
+        OracleEntry *e;
+        uint64_t asserted;
+        size_t cost;
+
+        if (h->bound_mounted[i]) continue;   /* idempotent: already live */
+
+        memset(&b, 0, sizeof b);
+        if (resolver(desc->name, desc->kind, &b, rctx) != 0 || b.fn == NULL) {
+            rep.unbound++;
+            continue;
+        }
+        /* Identity integrity: the sealed descriptor MUST carry a digest and the
+           caller MUST assert a matching identity. No digest, no asserted
+           identity, or a mismatch is refused — never silent runtime trust. */
+        asserted = b.has_identity ? cnet_oracle_identity_digest(&b.identity) : 0;
+        if (desc->behavior_digest == 0 || asserted == 0 ||
+            asserted != desc->behavior_digest) {
+            rep.identity_mismatch++;
+            continue;
+        }
+        /* Provenance evidence: a native unit's OWN sealed contract. */
+        memset(&c, 0, sizeof c);
+        if (soul_recover_provenance_contract(h, desc->name, &c) != 0) {
+            rep.missing_provenance++;
+            continue;
+        }
+        /* Allocate the retained contract before admission. Once the registry
+           borrows the adapter there must be no fallible ownership step left. */
+        hc = (Contract *)malloc(sizeof *hc);
+        if (!hc) {
+            contract_free(&c);
+            if (report) *report = rep;
+            return -2;
+        }
+        *hc = c;   /* move the owned tables; hc is now the sole owner */
+        /* Build the bound entry in its stable slot; the adapter borrows it. */
+        e = &h->bound_entries[i];
+        memset(e, 0, sizeof *e);
+        snprintf(e->name, sizeof e->name, "%s", desc->name);
+        e->input_port = desc->input_port;
+        e->output_port = desc->goal_port;
+        e->fn = b.fn;
+        e->ctx = b.ctx;
+        e->identity = desc->identity;             /* authoritative sealed identity */
+        e->behavior_digest = desc->behavior_digest;
+
+        cost = e->output_port.field_width * e->output_port.field_count;
+        /* Wrap as an ORACLE specialist (adapter over the resolved callback) and
+           admit through the one door against the recovered sealed contract. The
+           base-owned descriptor name is the borrowed registry name (stable for
+           the host's life: registry_free runs before cnb_free in soul_close). */
+        if (specialist_wrap_oracle(&s, &h->bound_adapters[i], e,
+                                   desc->behavior_digest, cost,
+                                   desc->name) != 0) {
+            contract_free(hc);
+            free(hc);
+            rep.cert_failed++;
+            continue;
+        }
+        if (specialist_admit(&h->reg, &s, hc) != 0) {
+            btn_free(&h->bound_adapters[i]);      /* releases the adapter context */
+            memset(&h->bound_adapters[i], 0, sizeof h->bound_adapters[i]);
+            contract_free(hc);
+            free(hc);
+            rep.cert_failed++;
+            continue;
+        }
+        h->bound_contracts[i] = hc;
+        h->bound_mounted[i] = 1;
+        h->mounted_count++;
+        rep.mounted++;
+    }
+
+    if (report) *report = rep;
+    return rep.mounted;
+}
+
+CNET_API int soul_unit_kind(SoulHost *h, const char *name, int *kind) {
+    RegistryEntry *entry;
+    if (!h || !h->loaded || !name) return -1;
+    entry = soul_find_unit(h, name);
+    if (!entry) return -2;
+    if (kind) *kind = (int)entry->kind;
+    return 0;
+}
+
+CNET_API int soul_mounted_oracle_count(SoulHost *h) {
+    if (!h || !h->loaded || h->mounted_count > (size_t)INT_MAX) return -1;
+    return (int)h->mounted_count;
+}
+
 CNET_API void soul_close(SoulHost *h) {
     size_t i;
     if (!h) return;
@@ -427,6 +587,24 @@ CNET_API void soul_close(SoulHost *h) {
     }
     free(h->contracts);
     free(h->contract_names);
-    if (h->loaded) { registry_free(&h->reg); cnb_free(&h->base); }
+    if (h->loaded) {
+        /* registry_free first: it drops the registry's borrows of the adapter
+           BTNs and their (base-owned) names. Then release each mounted adapter
+           (frees its projection context) and the recovered contract it was
+           certified against, before cnb_free reclaims the base. */
+        registry_free(&h->reg);
+        for (i = 0; i < h->bound_cap; ++i) {
+            if (h->bound_mounted[i]) btn_free(&h->bound_adapters[i]);
+            if (h->bound_contracts[i]) {
+                contract_free(h->bound_contracts[i]);
+                free(h->bound_contracts[i]);
+            }
+        }
+        free(h->bound_entries);
+        free(h->bound_adapters);
+        free(h->bound_contracts);
+        free(h->bound_mounted);
+        cnb_free(&h->base);
+    }
     free(h);
 }
