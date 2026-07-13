@@ -10,6 +10,7 @@ dotnet/**/obj/
 artifacts/
 Models/
 supra_cache/
+altmodel_cache/
 *.cce
 *.gguf
 *.safetensors
