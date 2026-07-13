@@ -52,6 +52,10 @@ cce_result cce_weight_store_get(cce_weight_store* s, uint64_t digest, cce_cascad
 
 /* get_opt flags */
 #define CCE_WS_GET_RAW_QUANT 1
+#define CCE_WS_GET_SLIM      2
+/* CCE_WS_GET_SLIM: restore blocks WITHOUT Adam moment tensors (2x FP-sized
+ * dead VA per block for inference consumers; the mmap/munmap churn dominated
+ * streamed-expert fetch cost). Slim cascades must never train. */
 /* CCE_WS_GET_RAW_QUANT: restore quantized payloads (int8/trit/int4) WITHOUT
  * dequantizing into weights.data — the FP tensor of a quant block is left
  * UNINITIALIZED. The quantized forward never reads it (w_trit > w_q > FP),

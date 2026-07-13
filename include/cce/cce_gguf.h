@@ -156,6 +156,8 @@ cce_result cce_gguf_moe_load_expert(const cce_gguf_moe* m, int layer, int expert
 /* The layer's router as a 1-block cascade [n_embd -> n_expert]. */
 cce_result cce_gguf_moe_load_router(const cce_gguf_moe* m, int layer, cce_cascade** out);
 
+struct cce_weight_store; /* cce_weight_store.h; the MoE runtime can stream from one */
+
 /* ---- MoE forward runtime (Arc B2): routed, demand-loaded expert FFN ----
  *
  * Routers stay resident (tiny); expert branches start COLD in the forest and
@@ -177,16 +179,34 @@ typedef struct cce_gguf_moe_rt {
     cce_gguf_moe* m;           /* borrowed */
     cce_forest* forest;        /* owned: routers resident, experts cold-until-routed */
     int hot_cap;
-    int expert_fetches;        /* cold expert loads from the gguf */
     /* gemma4 per-layer side vectors (NULL when absent) */
     float** gate_inp_scale;    /* [n_layer][n_embd] */
     float** down_scale;        /* [n_layer][n_expert] */
     float** pre_norm;          /* [n_layer][n_embd] */
-    /* the most recent routing decision (gates + future router-lookahead) */
+    /* the most recent routing decision (gates + router-lookahead) */
     int   last_k;
     int   last_experts[64];
     float last_weights[64];
     float* last_logits;        /* [n_expert] router logits of the last forward */
+
+    /* ---- B3: streaming throughput layer ----
+     * store-backed payloads: experts ingest into the content-addressed store
+     * on first touch (optionally int8, ~4x smaller) and re-stream from it
+     * (RAW_QUANT: the expert matvec runs w_q directly, no dequant). */
+    struct cce_weight_store* store;  /* borrowed; NULL = always load from the gguf */
+    int store_int8;
+    uint64_t* digests;         /* [n_layer*n_expert], 0 = not ingested yet */
+    int gguf_loads;            /* full expert loads (slice + dequant + transpose) */
+    int store_hits;            /* cheap re-streams from the store */
+    /* learned routing frequency (pin_hot's signal) + pinning */
+    int* route_count;          /* [n_layer*n_expert] times selected by the router */
+    int pinned;
+    /* async lookahead prefetch (opaque worker state; NULL = off) */
+    void* la;
+    int prefetch_hits;         /* staged payload adopted with no waiting */
+    int prefetch_waits;        /* adopted after waiting on an in-flight fetch */
+    int sync_fetches;          /* forward thread fetched synchronously */
+    double stall_sec;          /* forward-thread time blocked on expert fetches */
 } cce_gguf_moe_rt;
 
 cce_result cce_gguf_moe_rt_open(cce_gguf_moe* m, const char* forest_archive_path,
@@ -198,6 +218,38 @@ void cce_gguf_moe_rt_free(cce_gguf_moe_rt* rt);
  * (qwen3moe: the ffn-normed hidden; gemma4: attn_out). */
 cce_result cce_gguf_moe_ffn_forward(cce_gguf_moe_rt* rt, int layer,
                                     const float* x, float* out);
+
+/* ---- B3: streaming throughput ---- */
+
+/* Attach a weight store: experts ingest on first touch (int8_payloads=1
+ * quantizes them first — ~4x smaller payloads AND the forward runs the int8
+ * codes directly) and re-stream from the store afterwards. NULL detaches. */
+cce_result cce_gguf_moe_rt_attach_store(cce_gguf_moe_rt* rt, struct cce_weight_store* s,
+                                        int int8_payloads);
+
+/* Async lookahead: a background worker prefetches routed experts while the
+ * forward computes. Intra-layer is automatic (the whole top-k queues before
+ * the first expert runs); cross-layer via _hint. CCE_ERR_UNSUPPORTED on
+ * builds without threads (streaming stays synchronous, still correct). */
+cce_result cce_gguf_moe_rt_set_lookahead(cce_gguf_moe_rt* rt, int on);
+
+/* Cross-layer speculation: route x through `layer`'s router and prefetch the
+ * predicted experts. x is the caller's best estimate of that layer's input
+ * (e.g. the current residual stream); a misprediction costs only a wasted
+ * prefetch. Does not perturb route_count. */
+cce_result cce_gguf_moe_rt_lookahead_hint(cce_gguf_moe_rt* rt, int layer, const float* x);
+
+/* Pin the n most-ROUTED experts resident (learned frequency pinning): they
+ * leave the LRU pool and are never evicted. RAM = hot_cap + pinned. */
+cce_result cce_gguf_moe_rt_pin_hot(cce_gguf_moe_rt* rt, int n);
+
+/* Batch-union prefill: route all n_tokens first, load each unique expert
+ * ONCE, apply it to every token that selected it. x/out are [n_tokens x
+ * n_embd]. Bit-identical to n_tokens single-token forwards (same per-expert
+ * math, same per-token accumulation order); fetches = |union of selections|.
+ * last_* reflect the final token. */
+cce_result cce_gguf_moe_ffn_forward_batch(cce_gguf_moe_rt* rt, int layer,
+                                          const float* x, float* out, int n_tokens);
 
 /* ---- Population helpers, modeled after safetensors ---- */
 

@@ -207,7 +207,7 @@ int main(int argc, char** argv) {
     cce_gguf_moe_rt* rt = NULL;
     CHECK(cce_gguf_moe_rt_open(mm, "mf_rt.cce", 8, &rt) == CCE_OK && rt, "runtime opens (cap 8)");
     if (!rt) return 1;
-    CHECK(rt->expert_fetches == 0, "no experts loaded before the first token (routers only)");
+    CHECK(rt->gguf_loads == 0, "no experts loaded before the first token (routers only)");
 
     /* several tokens: forward must match the reference exactly */
     int all_sel = 1, all_w = 1, all_out = 1, all_run = 1;
@@ -237,7 +237,7 @@ int main(int argc, char** argv) {
     CHECK(all_sel, "top-k expert SELECTION matches the independent reference on every token");
     CHECK(all_w, "renormalized routing weights match the reference (<= 1e-5)");
     CHECK(all_out, "combined expert output matches the reference (dmax <= 1e-4)");
-    CHECK(rt->expert_fetches == expect_fetch,
+    CHECK(rt->gguf_loads == expect_fetch,
           "exactly the ROUTED experts were fetched (demand loading, no waste)");
     CHECK(cce_forest_resident_count(rt->forest) <= 8, "resident experts bounded by the cap");
 
@@ -247,10 +247,10 @@ int main(int argc, char** argv) {
         int f0;
         for (int i = 0; i < MF_D; i++) x[i] = 0.3f * (float)(i - 3);
         CHECK(cce_gguf_moe_ffn_forward(rt, 0, x, out) == CCE_OK, "det token forwards");
-        f0 = rt->expert_fetches;
+        f0 = rt->gguf_loads;
         CHECK(cce_gguf_moe_ffn_forward(rt, 0, x, out2) == CCE_OK, "det token repeats");
         CHECK(memcmp(out, out2, sizeof out) == 0, "repeat forward BIT-IDENTICAL");
-        CHECK(rt->expert_fetches == f0, "repeat token fetched nothing (residents reused)");
+        CHECK(rt->gguf_loads == f0, "repeat token fetched nothing (residents reused)");
     }
     CHECK(cce_gguf_moe_ffn_forward(rt, MF_L, x, out) == CCE_ERR_INVALID_ARG, "layer out of range refused");
 
@@ -287,7 +287,7 @@ int main(int argc, char** argv) {
             g_lcg = 0x5EED5EEDu;
             for (int i = 0; i < D; i++) xx[i] = 2.0f * lcg_f();
             CHECK(cce_gguf_moe_ffn_forward(rrt, 0, xx, oo) == CCE_OK, "layer-0 forward on 128 experts");
-            CHECK(rrt->expert_fetches == K, "exactly 8 of 128 experts fetched");
+            CHECK(rrt->gguf_loads == K, "exactly 8 of 128 experts fetched");
             {
                 int distinct = 1;
                 float wsum = 0;
@@ -310,15 +310,15 @@ int main(int argc, char** argv) {
             }
             CHECK(cce_gguf_moe_ffn_forward(rrt, 0, xx, oo2) == CCE_OK &&
                   memcmp(oo, oo2, (size_t)D * sizeof(float)) == 0 &&
-                  rrt->expert_fetches == K,
+                  rrt->gguf_loads == K,
                   "repeat token BIT-IDENTICAL with zero new fetches");
             {
-                int f0 = rrt->expert_fetches;
+                int f0 = rrt->gguf_loads;
                 CHECK(cce_gguf_moe_ffn_forward(rrt, rm->n_layer - 1, xx, oo) == CCE_OK,
                       "last-layer forward (BF16 down bank) runs");
                 int finite = 1;
                 for (int i = 0; i < D; i++) if (!isfinite(oo[i])) finite = 0;
-                CHECK(finite && rrt->expert_fetches == f0 + K, "BF16 layer finite, 8 more fetches");
+                CHECK(finite && rrt->gguf_loads == f0 + K, "BF16 layer finite, 8 more fetches");
             }
             CHECK(cce_forest_resident_count(rrt->forest) <= 16,
                   "resident experts bounded by the cap (16 of 3840)");

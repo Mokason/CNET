@@ -338,10 +338,28 @@ cce_result cce_weight_store_get(cce_weight_store* s, uint64_t digest, cce_cascad
     return cce_weight_store_get_opt(s, digest, out, 0);
 }
 
+/* lean linear block: weights + bias only — no Adam moments (SLIM restores) */
+static cce_result ws_add_lean_linear(cce_cascade* cas, int in_dim, int out_dim, int is_head) {
+    cce_block blk;
+    memset(&blk, 0, sizeof(blk));
+    blk.type = is_head ? CCE_BLOCK_LINEAR_HEAD : CCE_BLOCK_LINEAR;
+    int wsh[2] = { in_dim, out_dim };
+    int bsh[1] = { out_dim };
+    cce_result rc = cce_tensor_alloc(&blk.weights, wsh, 2);
+    if (rc != CCE_OK) return rc;
+    rc = cce_tensor_alloc(&blk.bias, bsh, 1);
+    if (rc != CCE_OK) { cce_tensor_free(&blk.weights); return rc; }
+    memset(blk.bias.data, 0, (size_t)out_dim * sizeof(float));
+    rc = cce_cascade_append(cas, &blk);
+    if (rc != CCE_OK) { cce_tensor_free(&blk.weights); cce_tensor_free(&blk.bias); return rc; }
+    return CCE_OK;
+}
+
 cce_result cce_weight_store_get_opt(cce_weight_store* s, uint64_t digest, cce_cascade** out,
                                     int flags) {
     if (!s || !out) return CCE_ERR_INVALID_ARG;
     int dequant = !(flags & CCE_WS_GET_RAW_QUANT);
+    int slim = (flags & CCE_WS_GET_SLIM) != 0;
     *out = NULL;
     unsigned char* buf = NULL; size_t len = 0; uint32_t kind = 2;
     cce_result rc = read_payload(s, digest, &buf, &len, &kind);
@@ -384,7 +402,9 @@ cce_result cce_weight_store_get_opt(cce_weight_store* s, uint64_t digest, cce_ca
         if (in <= 0 || out_d <= 0 || off + wbytes + bbytes > len) {
             cce_cascade_destroy(cas); free(buf); return CCE_ERR_IO;
         }
-        cce_result arc = (type == (int)CCE_BLOCK_LINEAR_HEAD)
+        cce_result arc = slim
+                       ? ws_add_lean_linear(cas, in, out_d, type == (int)CCE_BLOCK_LINEAR_HEAD)
+                       : (type == (int)CCE_BLOCK_LINEAR_HEAD)
                        ? cce_cascade_add_linear_head(cas, in, out_d, 0.0f)
                        : cce_cascade_add_linear(cas, in, out_d, 0.0f);
         if (arc != CCE_OK) { cce_cascade_destroy(cas); free(buf); return arc; }
