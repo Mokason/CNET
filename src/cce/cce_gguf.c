@@ -1070,6 +1070,26 @@ void cce_gguf_set_layer_tap(cce_gguf_layer_tap_fn fn, void *uctx) {
     g_gguf_layer_tap_ctx = uctx;
 }
 
+/* OPT-IN per-specialist activation capture (Arc A2). Default NULL = the
+   forward is byte-identical (a single NULL test per specialist). The hook
+   fires just before each linear specialist's matvec, with that specialist's
+   branch name and the input rows about to be applied. */
+typedef void (*cce_gguf_capture_fn)(const char *spec_name, const float *rows,
+                                    int n_rows, int in_dim, void *uctx);
+static cce_gguf_capture_fn g_gguf_capture = NULL;
+static void *g_gguf_capture_ctx = NULL;
+void cce_gguf_set_capture_hook(cce_gguf_capture_fn fn, void *uctx) {
+    g_gguf_capture = fn;
+    g_gguf_capture_ctx = uctx;
+}
+/* Fire the capture hook for `spec` with the input tensor `in` (rows x in_dim).
+   No-op unless a hook is registered; observation-only (never mutates `in`). */
+static inline void gguf_fire_capture(const char *spec, const cce_tensor *in) {
+    if (g_gguf_capture && in && in->data && in->ndim == 2)
+        g_gguf_capture(spec, in->data, in->shape[0], in->shape[1],
+                       g_gguf_capture_ctx);
+}
+
 static cce_result apply_linear_rows(cce_clgemm *gpu, cce_cascade* cas,
                                     const cce_tensor* in, cce_tensor* out) {
     if (!cas || !in || !out || in->ndim != 2 || out->ndim != 2) return CCE_ERR_INVALID_ARG;
@@ -1621,6 +1641,12 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
         cce_tensor_alloc(&q, (int[]){n_tokens, ge->q_dim}, 2);
         cce_tensor_alloc(&k, (int[]){n_tokens, ge->k_dim}, 2);
         cce_tensor_alloc(&v, (int[]){n_tokens, ge->v_dim}, 2);
+        if (g_gguf_capture) {   /* A2: q/k/v share the attn-norm input ln1 */
+            char cap[128];
+            snprintf(cap, sizeof(cap), "qwen2.blk.%d.q_proj", l); gguf_fire_capture(cap, &ln1);
+            snprintf(cap, sizeof(cap), "qwen2.blk.%d.k_proj", l); gguf_fire_capture(cap, &ln1);
+            if (!ge->v_tied) { snprintf(cap, sizeof(cap), "qwen2.blk.%d.v_proj", l); gguf_fire_capture(cap, &ln1); }
+        }
         if (apply_linear_rows(gpu, q_cas, &ln1, &q) != CCE_OK ||
             apply_linear_rows(gpu, k_cas, &ln1, &k) != CCE_OK ||
             (ge->v_tied
@@ -1796,6 +1822,8 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
         cce_tensor after_attn = {0};
         cce_tensor_alloc(&after_attn, lnsh, 2);
         if (l == 0) FWD_V4("kqv_out", attn_out.data);
+        if (g_gguf_capture) { char cap[128];
+            snprintf(cap, sizeof(cap), "qwen2.blk.%d.o_proj", l); gguf_fire_capture(cap, &attn_out); }
         if (apply_linear_rows(gpu, o_cas, &attn_out, &after_attn) != CCE_OK) {
             fprintf(stderr, "cce_gguf: o_proj failed at layer %d — "
                             "refusing\n", l);
@@ -1829,6 +1857,11 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
 
         cce_tensor_alloc(&gate, (int[]){n_tokens, mlp_hidden}, 2);
         cce_tensor_alloc(&upv, (int[]){n_tokens, mlp_hidden}, 2);
+        if (g_gguf_capture) {   /* A2: gate/up share the ffn-norm input ln2 */
+            char cap[128];
+            snprintf(cap, sizeof(cap), "qwen2.blk.%d.gate_proj", l); gguf_fire_capture(cap, &ln2);
+            snprintf(cap, sizeof(cap), "qwen2.blk.%d.up_proj", l);   gguf_fire_capture(cap, &ln2);
+        }
         if (apply_linear_rows(gpu, gate_cas, &ln2, &gate) != CCE_OK ||
             apply_linear_rows(gpu, up_cas, &ln2, &upv) != CCE_OK) {
             fprintf(stderr, "cce_gguf: gate/up failed at layer %d — refusing\n", l);
@@ -1847,6 +1880,8 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
             mid.data[i] = gate.data[i] * upv.data[i];
 
         cce_tensor_alloc(&down, lnsh, 2);
+        if (g_gguf_capture) { char cap[128];
+            snprintf(cap, sizeof(cap), "qwen2.blk.%d.down_proj", l); gguf_fire_capture(cap, &mid); }
         if (apply_linear_rows(gpu, down_cas, &mid, &down) != CCE_OK) {
             fprintf(stderr, "cce_gguf: down failed at layer %d — refusing\n", l);
             free(scores);
@@ -1946,6 +1981,7 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
         }
     }
     if (!head_ok && head_cas) {
+        if (g_gguf_capture) gguf_fire_capture("qwen2.lm_head", &fn_last);
         if (apply_linear_rows(gpu, head_cas, &fn_last, &logits_t) == CCE_OK) head_ok = true;
     }
     if (!head_ok && m->output.data && m->output.ndim == 2) {

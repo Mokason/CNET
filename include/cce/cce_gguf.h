@@ -305,6 +305,22 @@ void cce_gguf_set_layer_tap(void (*fn)(int layer, const float *x,
                                        int n_tokens, int dim, void *uctx),
                             void *uctx);
 
+/* OPT-IN per-specialist activation capture (Arc A2: data-aware quantization
+ * at ingest). When a hook is registered, the forward invokes it IMMEDIATELY
+ * BEFORE applying each linear specialist, passing the specialist's branch name
+ * (e.g. "qwen2.blk.3.gate_proj", "qwen2.lm_head"), the input activation rows
+ * that are about to be matmul'd, the row count, and the input dimension. Rows
+ * are contiguous [n_rows][in_dim] (the exact buffer fed to the matvec).
+ *
+ * DEFAULT OFF: with fn==NULL the forward is byte-for-byte unchanged (one NULL
+ * test per specialist per layer, zero other cost). The hook observes only; it
+ * must not mutate the rows. Set fn=NULL to detach. Not thread-safe against a
+ * concurrent forward (a calibration pass is single-threaded by construction). */
+void cce_gguf_set_capture_hook(void (*fn)(const char *spec_name,
+                                          const float *rows, int n_rows,
+                                          int in_dim, void *uctx),
+                               void *uctx);
+
 /* Quantize all linear specialists (q/k/v/o/gate/up/down/head) to int8 PTQ.
  * Returns number of blocks quantized, or -1 on error. Mirrors cce_supra_quantize_int8.
  * After this, forward will use the int8 weight-only path.

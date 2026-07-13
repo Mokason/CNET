@@ -1034,6 +1034,16 @@ dense_stream_real: $(CCE) $(CCE_CUDA_OBJ) tests/dense_stream_real.c
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) tests/dense_stream_real.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 	./$(BIN_DIR)/dense_stream_real > logs/dense_stream_real.console.log 2>&1 || echo "test exited non-zero (see logs/dense_stream_real.log)"
 
+# Dense expert-streaming arc (Arc A2): DATA-AWARE quantization at ingest. Each
+# streamed specialist is quantized with our GPTQ/OBQ solver calibrated on its
+# REAL input activations (captured via an opt-in forward hook). Proves the
+# quantized model still streams BIT-IDENTICALLY under a bounded cap AND that
+# data-aware beats naive at int4 (held-out logit relerr) — int8 near-lossless.
+dense_stream_a2: $(CCE) $(CCE_CUDA_OBJ) tests/dense_stream_a2.c tests/tiny_model_fixture.h
+	@mkdir -p logs
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) tests/dense_stream_a2.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+	./$(BIN_DIR)/dense_stream_a2 > logs/dense_stream_a2.console.log 2>&1 || echo "test exited non-zero (see logs/dense_stream_a2.log)"
+
 # SIMILAR_TO + evidence-gated merge: epsilon-equivalent specialists merge via
 # manifest remap ONLY after an adversarial probe battery; unverified refuses.
 cce_similar: $(CCE) $(CCE_CUDA_OBJ) tests/cce_similar_test.c tests/tiny_model_fixture.h
