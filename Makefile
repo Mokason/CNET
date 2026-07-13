@@ -1053,7 +1053,7 @@ cce_autograd_test: $(CCE) $(CCE_CUDA_OBJ) tests/test_cce_autograd.c
 AVX_CFLAGS := $(filter-out -mno-avx,$(CFLAGS))
 # wordlm/wordlm_bitnet/trit_bench link only CCE sources (no src/router/), so
 # they are AVX-safe too; OMP activates the row-parallel packed-trit kernels.
-cce_safetensors_test supra_console supra_chat_mock supra_context_probe supra_longform supra_head_qat supra_head_qat_corpus transformer_qat_joint transformer_qat_real transformer_qat_altmodel wordlm wordlm_bitnet wordlm_holdout trit_bench: CFLAGS := $(AVX_CFLAGS) $(OMPFLAGS)
+cce_safetensors_test supra_console supra_chat_mock supra_context_probe supra_longform supra_head_qat supra_head_qat_corpus transformer_qat_joint transformer_qat_real transformer_qat_altmodel proj_qat_recon wordlm wordlm_bitnet wordlm_holdout trit_bench: CFLAGS := $(AVX_CFLAGS) $(OMPFLAGS)
 
 cce_safetensors_test: $(CCE) $(CCE_CUDA_OBJ) src/nn.c tests/test_cce_safetensors.c
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) src/nn.c tests/test_cce_safetensors.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
@@ -1122,6 +1122,15 @@ transformer_qat_altmodel: $(CCE) $(CCE_CUDA_OBJ) src/nn.c tests/transformer_qat_
 	@test -f altmodel_cache/model.safetensors || python3 tools/gen_altmodel.py
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) src/nn.c tests/transformer_qat_altmodel.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 	./$(BIN_DIR)/transformer_qat_altmodel > logs/transformer_qat_altmodel.log 2>&1 || echo "test exited non-zero (see log)"
+
+# Core unit of decomposed data-aware per-projection ternary QAT (GPTQ/AWQ regime):
+# reconstruct one linear projection's FP output from calibration activations with
+# STE, beating naive post-hoc on HELD-OUT activations. No global backward -> works
+# for any surrounding architecture. Hermetic. See tests/proj_qat_recon.c.
+proj_qat_recon: tests/proj_qat_recon.c
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ tests/proj_qat_recon.c -lm
+	./$(BIN_DIR)/proj_qat_recon > logs/proj_qat_recon.log 2>&1 || echo "test exited non-zero (see log)"
 
 # Lightweight mock chat test: exercises the real BPE tokenizer (encode) without
 # requiring the full model forward. Needs supra_cache/tokenizer.json (run
