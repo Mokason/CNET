@@ -2942,6 +2942,226 @@ typedef struct {
 } moe_la;
 #endif
 
+/* ============ B4: per-expert data-aware quantization (routed traffic) ============
+ *
+ * Each expert quantizes against the activations THE ROUTER actually sent it
+ * (rt->calib, collected by forward_batch). Per output column o we minimize
+ * the ridge-damped sample-space objective
+ *     ||X (w - g q)||^2 / n  +  lambda * mu * ||w - g q||^2
+ * (X = [n x in] routed samples, mu = mean diag of X'X, lambda = 1% — the A2
+ * lesson: n << in MUST NOT overfit the sample span) by optimal-scale refit +
+ * greedy +-1 coordinate descent, monotone from the naive absmax init. The
+ * int4 modes follow the proven bit-width policy: gate/up at K=7 (the store
+ * packs the [-7,7] codes 2/byte), down stays at K=127.
+ */
+
+/* naive absmax grid init for one strided column */
+static float moe_naive_col(const float* w, int ws, int in, int K, int8_t* q, int qs) {
+    float amax = 0;
+    for (int i = 0; i < in; i++) { float a = fabsf(w[(size_t)i * ws]); if (a > amax) amax = a; }
+    float g = amax > 0 ? amax / (float)K : 1.0f;
+    for (int i = 0; i < in; i++) {
+        long c = lroundf(w[(size_t)i * ws] / g);
+        if (c > K) c = K;
+        if (c < -K) c = -K;
+        q[(size_t)i * qs] = (int8_t)c;
+    }
+    return g;
+}
+
+static void moe_da_quant_col(const float* X, int n, int in, float lam_mu,
+                             const float* w, int ws, int K,
+                             int8_t* q, int qs, float* scale,
+                             float* Xw, float* Xq, int8_t* qbest) {
+    float g = moe_naive_col(w, ws, in, K, q, qs);
+    if (!X || n <= 0) { *scale = g; return; }
+    /* code movement is only trustworthy when the samples DOMINATE the input
+       dimension (measured: at n ~ 6x in, free CD still overfits the sampled
+       covariance and degrades held-out; every prior data-aware win used
+       n >= 8x in). Below that, refit only the per-column SCALE — one dof
+       estimated from n*in products, safe at any n. */
+    int allow_cd = (n >= 8 * in);
+
+    for (int s2 = 0; s2 < n; s2++) Xw[s2] = 0;
+    for (int i = 0; i < in; i++) {
+        float wi = w[(size_t)i * ws];
+        const float* xi = X + i;
+        for (int s2 = 0; s2 < n; s2++) Xw[s2] += xi[(size_t)s2 * in] * wi;
+    }
+
+    double direct = 0, qq = 0, qw = 0;
+    double best;
+    float gbest;
+    /* (re)build sample/direct aggregates for the current codes at scale g */
+#define MOE_DA_BUILD() do { \
+        direct = 0; qq = 0; qw = 0; \
+        for (int s2 = 0; s2 < n; s2++) Xq[s2] = 0; \
+        for (int i = 0; i < in; i++) { \
+            float wi = w[(size_t)i * ws], qi = (float)q[(size_t)i * qs]; \
+            const float* xi = X + i; \
+            for (int s2 = 0; s2 < n; s2++) Xq[s2] += xi[(size_t)s2 * in] * qi; \
+            double d = wi - (double)g * qi; \
+            direct += d * d; qq += (double)qi * qi; qw += (double)qi * wi; \
+        } \
+    } while (0)
+#define MOE_DA_COST(out_) do { \
+        double c_ = 0; \
+        for (int s2 = 0; s2 < n; s2++) { \
+            double ev = Xw[s2] - (double)g * Xq[s2]; \
+            c_ += ev * ev; \
+        } \
+        (out_) = c_ / n + (double)lam_mu * direct; \
+    } while (0)
+
+    MOE_DA_BUILD();
+    MOE_DA_COST(best);
+    gbest = g;
+    for (int i = 0; i < in; i++) qbest[i] = q[(size_t)i * qs];
+
+    /* activation-optimal scale: refit gamma, re-round, keep if better */
+    for (int iter = 0; iter < 2; iter++) {
+        double num = 0, den = 0;
+        for (int s2 = 0; s2 < n; s2++) { num += (double)Xq[s2] * Xw[s2]; den += (double)Xq[s2] * Xq[s2]; }
+        num = num / n + (double)lam_mu * qw;
+        den = den / n + (double)lam_mu * qq;
+        if (den <= 0) break;
+        float g2 = (float)(num / den);
+        if (!(g2 > 0) || g2 == g) break;
+        g = g2;
+        for (int i = 0; i < in; i++) {
+            long c = lroundf(w[(size_t)i * ws] / g);
+            if (c > K) c = K;
+            if (c < -K) c = -K;
+            q[(size_t)i * qs] = (int8_t)c;
+        }
+        MOE_DA_BUILD();
+        double c2;
+        MOE_DA_COST(c2);
+        if (c2 < best) {
+            best = c2; gbest = g;
+            for (int i = 0; i < in; i++) qbest[i] = q[(size_t)i * qs];
+        }
+    }
+
+    if (allow_cd) {
+        /* greedy +-1 coordinate descent from the best snapshot */
+        g = gbest;
+        for (int i = 0; i < in; i++) q[(size_t)i * qs] = qbest[i];
+        MOE_DA_BUILD();
+        float* e = Xq; /* reuse: from here on track e = Xw - g*Xq directly */
+        for (int s2 = 0; s2 < n; s2++) e[s2] = Xw[s2] - g * Xq[s2];
+        for (int sweep = 0; sweep < 2; sweep++) {
+            for (int i = 0; i < in; i++) {
+                int qi = q[(size_t)i * qs];
+                const float* xi = X + i;
+                float wi = w[(size_t)i * ws];
+                for (int dq = -1; dq <= 1; dq += 2) {
+                    int q2 = qi + dq;
+                    if (q2 > K || q2 < -K) continue;
+                    double c2 = 0;
+                    for (int s2 = 0; s2 < n; s2++) {
+                        double ev = e[s2] - (double)g * dq * xi[(size_t)s2 * in];
+                        c2 += ev * ev;
+                    }
+                    double d_old = wi - (double)g * qi, d_new = wi - (double)g * q2;
+                    double direct2 = direct - d_old * d_old + d_new * d_new;
+                    c2 = c2 / n + (double)lam_mu * direct2;
+                    if (c2 < best) {
+                        for (int s2 = 0; s2 < n; s2++) e[s2] -= (float)((double)g * dq * xi[(size_t)s2 * in]);
+                        q[(size_t)i * qs] = (int8_t)q2;
+                        qi = q2;
+                        best = c2;
+                        direct = direct2;
+                    }
+                }
+            }
+        }
+        gbest = g;
+        for (int i = 0; i < in; i++) qbest[i] = q[(size_t)i * qs];
+    }
+
+    for (int i = 0; i < in; i++) q[(size_t)i * qs] = qbest[i];
+    *scale = gbest;
+#undef MOE_DA_BUILD
+#undef MOE_DA_COST
+}
+
+/* quantize one linear block [in][out] at grid K against samples X [n x in] */
+static cce_result moe_da_quant_block(cce_block* blk, const float* X, int n, int K) {
+    int in = blk->weights.shape[0], out = blk->weights.shape[1];
+    int8_t* q = (int8_t*)malloc((size_t)in * out);
+    float* sc = (float*)malloc((size_t)out * sizeof(float));
+    float* scratch = (n > 0) ? (float*)malloc(2 * (size_t)n * sizeof(float)) : NULL;
+    int8_t* qbest  = (n > 0) ? (int8_t*)malloc((size_t)in) : NULL;
+    if (!q || !sc || (n > 0 && (!scratch || !qbest))) {
+        free(q); free(sc); free(scratch); free(qbest);
+        return CCE_ERR_OOM;
+    }
+    float lam_mu = 0;
+    if (X && n > 0) {
+        double ss = 0;
+        for (size_t k = 0; k < (size_t)n * in; k++) ss += (double)X[k] * X[k];
+        lam_mu = 0.01f * (float)(ss / ((double)n * in)); /* 1% mean-diag damping */
+    }
+    for (int o = 0; o < out; o++)
+        moe_da_quant_col(X, n, in, lam_mu,
+                         blk->weights.data + o, out, K, q + o, out, &sc[o],
+                         scratch, scratch ? scratch + n : NULL, qbest);
+    free(scratch);
+    free(qbest);
+    blk->w_q = q;
+    blk->w_scale = sc;
+    return CCE_OK;
+}
+
+/* quantize a freshly loaded expert per the store mode. Data-aware modes use
+ * the expert's OWN routed samples (fallback: naive at the same grid). The
+ * down-proj samples are the gated hiddens, computed from the STILL-FP
+ * gate/up weights before those are quantized. */
+static void moe_quantize_expert(cce_gguf_moe_rt* rt, int l, int e, cce_cascade* cas) {
+    int mode = rt->store_mode;
+    if (mode == CCE_MOE_STORE_FP) return;
+    if (mode == CCE_MOE_STORE_INT8) { /* naive int8: the pre-B4 path, unchanged */
+        for (int j = 0; j < cas->num_blocks; j++) cce_block_quantize_int8(&cas->blocks[j]);
+        return;
+    }
+    int da = (mode == CCE_MOE_STORE_INT8_DA || mode == CCE_MOE_STORE_INT4_DA);
+    int Kgu = (mode == CCE_MOE_STORE_INT4 || mode == CCE_MOE_STORE_INT4_DA) ? 7 : 127;
+    int D = rt->m->n_embd, F = rt->m->n_ff_exp;
+    int is_gemma4 = (strncmp(rt->m->arch, "gemma4", 6) == 0);
+
+    const float* X = NULL;
+    int n = 0;
+    if (da && rt->calib && rt->calib_n) {
+        size_t ci = (size_t)l * rt->m->n_expert + e;
+        /* fewer than 8 routed samples: the span is too thin to trust even
+           damped — fall back to naive rather than overfit */
+        if (rt->calib[ci] && rt->calib_n[ci] >= 8) { X = rt->calib[ci]; n = rt->calib_n[ci]; }
+    }
+
+    /* down-proj calibration = act(gate.x)*up.x per sample, from FP weights */
+    float* H = NULL;
+    if (X && n > 0) {
+        H = (float*)malloc((size_t)n * F * sizeof(float));
+        float* u = (float*)malloc((size_t)F * sizeof(float));
+        if (H && u) {
+            for (int s2 = 0; s2 < n; s2++) {
+                float* h = H + (size_t)s2 * F;
+                moe_matvec(&cas->blocks[0], X + (size_t)s2 * D, h, D, F);
+                moe_matvec(&cas->blocks[1], X + (size_t)s2 * D, u, D, F);
+                for (int o = 0; o < F; o++)
+                    h[o] = (is_gemma4 ? moe_gelu_tanh(h[o]) : moe_silu(h[o])) * u[o];
+            }
+        } else { free(H); H = NULL; }
+        free(u);
+    }
+
+    moe_da_quant_block(&cas->blocks[0], X, n, Kgu);
+    moe_da_quant_block(&cas->blocks[1], X, n, Kgu);
+    moe_da_quant_block(&cas->blocks[2], H, H ? n : 0, 127); /* bit-width policy: down at int8 */
+    free(H);
+}
+
 /* Streamed experts never train and (when int8) never read their FP tensor:
  * drop the Adam moments (2x FP-sized) and optionally the FP weights. The
  * restore path otherwise allocates ~3x the payload in dead VA per expert —
@@ -2985,7 +3205,8 @@ static cce_cascade* moe_rt_fetch_payload(cce_gguf_moe_rt* rt, int l, int e) {
 #ifdef MOE_HAVE_THREADS
                 if (la) pthread_mutex_unlock(&la->mu);
 #endif
-                if (rt->store_int8) moe_slim_cascade(cas, 1); /* drop the uninit FP too */
+                if (rt->store_mode != CCE_MOE_STORE_FP)
+                    moe_slim_cascade(cas, 1); /* drop the uninit FP too */
                 return cas;
             }
         }
@@ -3000,9 +3221,7 @@ static cce_cascade* moe_rt_fetch_payload(cce_gguf_moe_rt* rt, int l, int e) {
     if (la) pthread_mutex_unlock(&la->mu);
 #endif
     if (rt->store) {
-        if (rt->store_int8)
-            for (int j = 0; j < cas->num_blocks; j++)
-                cce_block_quantize_int8(&cas->blocks[j]);
+        moe_quantize_expert(rt, l, e, cas);
         uint64_t nd = 0;
 #ifdef MOE_HAVE_THREADS
         if (la) pthread_mutex_lock(&la->store_mu);
@@ -3014,7 +3233,7 @@ static cce_cascade* moe_rt_fetch_payload(cce_gguf_moe_rt* rt, int l, int e) {
 #endif
     }
     /* the digest is FP-anchored, so slim only AFTER the put */
-    moe_slim_cascade(cas, rt->store && rt->store_int8);
+    moe_slim_cascade(cas, rt->store && rt->store_mode != CCE_MOE_STORE_FP);
     return cas;
 }
 
@@ -3188,16 +3407,43 @@ cce_result cce_gguf_moe_rt_open(cce_gguf_moe* m, const char* forest_archive_path
 }
 
 cce_result cce_gguf_moe_rt_attach_store(cce_gguf_moe_rt* rt, struct cce_weight_store* s,
-                                        int int8_payloads) {
+                                        int mode) {
     if (!rt || !rt->m) return CCE_ERR_INVALID_ARG;
+    if (mode < CCE_MOE_STORE_FP || mode > CCE_MOE_STORE_INT4_DA) return CCE_ERR_INVALID_ARG;
     if (!rt->digests) {
         rt->digests = (uint64_t*)calloc((size_t)rt->m->n_layer * rt->m->n_expert,
                                         sizeof(uint64_t));
         if (!rt->digests) return CCE_ERR_OOM;
     }
+    /* switching store or payload mode invalidates the ingest map:
+       experts re-ingest (under the new mode) on their next touch */
+    memset(rt->digests, 0,
+           (size_t)rt->m->n_layer * rt->m->n_expert * sizeof(uint64_t));
     rt->store = s;               /* NULL detaches (gguf-only again) */
-    rt->store_int8 = int8_payloads ? 1 : 0;
+    rt->store_mode = mode;
     return CCE_OK;
+}
+
+cce_result cce_gguf_moe_rt_set_calibration(cce_gguf_moe_rt* rt, int per_expert_cap) {
+    if (!rt || !rt->m || per_expert_cap < 0) return CCE_ERR_INVALID_ARG;
+    if (per_expert_cap == 0) { rt->calib_on = 0; return CCE_OK; }
+    if (!rt->calib) {
+        size_t n = (size_t)rt->m->n_layer * rt->m->n_expert;
+        rt->calib   = (float**)calloc(n, sizeof(float*));
+        rt->calib_n = (int*)calloc(n, sizeof(int));
+        if (!rt->calib || !rt->calib_n) return CCE_ERR_OOM;
+        rt->calib_cap = per_expert_cap;
+    } else if (per_expert_cap != rt->calib_cap) {
+        return CCE_ERR_INVALID_ARG; /* buffers are sized at first enable */
+    }
+    rt->calib_on = 1;
+    return CCE_OK;
+}
+
+int cce_gguf_moe_rt_calib_samples(const cce_gguf_moe_rt* rt, int layer, int expert) {
+    if (!rt || !rt->m || !rt->calib_n) return 0;
+    if (layer < 0 || layer >= rt->m->n_layer || expert < 0 || expert >= rt->m->n_expert) return 0;
+    return rt->calib_n[(size_t)layer * rt->m->n_expert + expert];
 }
 
 cce_result cce_gguf_moe_rt_set_lookahead(cce_gguf_moe_rt* rt, int on) {
@@ -3301,6 +3547,11 @@ void cce_gguf_moe_rt_free(cce_gguf_moe_rt* rt) {
     free(rt->last_logits);
     free(rt->route_count);
     free(rt->digests);
+    if (rt->calib && rt->m) {
+        for (int i = 0; i < rt->m->n_layer * rt->m->n_expert; i++) free(rt->calib[i]);
+    }
+    free(rt->calib);
+    free(rt->calib_n);
     free(rt);
 }
 
@@ -3410,6 +3661,21 @@ cce_result cce_gguf_moe_ffn_forward_batch(cce_gguf_moe_rt* rt, int layer,
         moe_prep_inputs(rt, layer, x + (size_t)t * D, rx, xe + (size_t)t * D, is_gemma4);
         rc = moe_route(rt, layer, rx, sel + (size_t)t * K, w + (size_t)t * K,
                        t == T - 1 /* last token's logits land in last_logits */);
+        if (rc == CCE_OK && rt->calib_on && rt->calib) {
+            /* B4: this token's expert input is a calibration sample for every
+               expert it routes to (append row THEN bump count: the count is
+               a stable prefix even if a worker reads it concurrently) */
+            for (int k = 0; k < K; k++) {
+                size_t ci = (size_t)layer * E + sel[(size_t)t * K + k];
+                if (!rt->calib[ci])
+                    rt->calib[ci] = (float*)malloc((size_t)rt->calib_cap * D * sizeof(float));
+                if (rt->calib[ci] && rt->calib_n[ci] < rt->calib_cap) {
+                    memcpy(rt->calib[ci] + (size_t)rt->calib_n[ci] * D,
+                           xe + (size_t)t * D, (size_t)D * sizeof(float));
+                    rt->calib_n[ci]++;
+                }
+            }
+        }
     }
 #ifdef MOE_HAVE_THREADS
     if (rc == CCE_OK && rt->la)                     /* intra-layer lookahead: */

@@ -194,7 +194,7 @@ typedef struct cce_gguf_moe_rt {
      * on first touch (optionally int8, ~4x smaller) and re-stream from it
      * (RAW_QUANT: the expert matvec runs w_q directly, no dequant). */
     struct cce_weight_store* store;  /* borrowed; NULL = always load from the gguf */
-    int store_int8;
+    int store_mode;            /* CCE_MOE_STORE_* payload mode */
     uint64_t* digests;         /* [n_layer*n_expert], 0 = not ingested yet */
     int gguf_loads;            /* full expert loads (slice + dequant + transpose) */
     int store_hits;            /* cheap re-streams from the store */
@@ -207,7 +207,25 @@ typedef struct cce_gguf_moe_rt {
     int prefetch_waits;        /* adopted after waiting on an in-flight fetch */
     int sync_fetches;          /* forward thread fetched synchronously */
     double stall_sec;          /* forward-thread time blocked on expert fetches */
+
+    /* ---- B4: per-expert calibration on ROUTED activations ----
+     * While collecting, every routed token's expert input (xe) is appended
+     * to that expert's sample buffer; the data-aware store modes quantize
+     * each expert against ITS OWN routed traffic at ingest. */
+    float** calib;             /* [n_layer*n_expert] -> [calib_cap x n_embd] */
+    int* calib_n;
+    int calib_cap;             /* buffer capacity (fixed at first enable) */
+    int calib_on;              /* 1 = collecting */
 } cce_gguf_moe_rt;
+
+/* store payload modes (attach_store). The int4 modes apply the PROVEN
+ * bit-width policy: gate/up at int4 (packed 2/byte by the store), down at
+ * int8 — naive ternary/int4 on the wide down-proj is where quality dies. */
+#define CCE_MOE_STORE_FP       0
+#define CCE_MOE_STORE_INT8     1   /* naive per-column absmax int8 */
+#define CCE_MOE_STORE_INT8_DA  2   /* data-aware int8 (routed-activation OBQ) */
+#define CCE_MOE_STORE_INT4     3   /* naive int4 gate/up + naive int8 down */
+#define CCE_MOE_STORE_INT4_DA  4   /* data-aware int4 gate/up + data-aware int8 down */
 
 cce_result cce_gguf_moe_rt_open(cce_gguf_moe* m, const char* forest_archive_path,
                                 int hot_cap, cce_gguf_moe_rt** out);
@@ -221,11 +239,18 @@ cce_result cce_gguf_moe_ffn_forward(cce_gguf_moe_rt* rt, int layer,
 
 /* ---- B3: streaming throughput ---- */
 
-/* Attach a weight store: experts ingest on first touch (int8_payloads=1
- * quantizes them first — ~4x smaller payloads AND the forward runs the int8
- * codes directly) and re-stream from the store afterwards. NULL detaches. */
+/* Attach a weight store: experts ingest on first touch (quantized per
+ * `mode`, see CCE_MOE_STORE_*; the forward runs the codes directly) and
+ * re-stream from the store afterwards. Switching store or mode resets the
+ * ingest map (experts re-ingest on next touch). NULL detaches. */
 cce_result cce_gguf_moe_rt_attach_store(cce_gguf_moe_rt* rt, struct cce_weight_store* s,
-                                        int int8_payloads);
+                                        int mode);
+
+/* B4: collect per-expert calibration samples (each routed token's expert
+ * input) up to per_expert_cap per expert. 0 pauses collection (samples are
+ * kept for the data-aware store modes); the cap is fixed at first enable. */
+cce_result cce_gguf_moe_rt_set_calibration(cce_gguf_moe_rt* rt, int per_expert_cap);
+int cce_gguf_moe_rt_calib_samples(const cce_gguf_moe_rt* rt, int layer, int expert);
 
 /* Async lookahead: a background worker prefetches routed experts while the
  * forward computes. Intra-layer is automatic (the whole top-k queues before
