@@ -1053,7 +1053,7 @@ cce_autograd_test: $(CCE) $(CCE_CUDA_OBJ) tests/test_cce_autograd.c
 AVX_CFLAGS := $(filter-out -mno-avx,$(CFLAGS))
 # wordlm/wordlm_bitnet/trit_bench link only CCE sources (no src/router/), so
 # they are AVX-safe too; OMP activates the row-parallel packed-trit kernels.
-cce_safetensors_test supra_console supra_chat_mock supra_context_probe supra_longform supra_head_qat supra_head_qat_corpus transformer_qat_joint transformer_qat_real transformer_qat_altmodel proj_qat_recon proj_qat_gemma wordlm wordlm_bitnet wordlm_holdout trit_bench: CFLAGS := $(AVX_CFLAGS) $(OMPFLAGS)
+cce_safetensors_test supra_console supra_chat_mock supra_context_probe supra_longform supra_head_qat supra_head_qat_corpus transformer_qat_joint transformer_qat_real transformer_qat_altmodel proj_qat_recon proj_qat_gemma proj_qat_stack wordlm wordlm_bitnet wordlm_holdout trit_bench: CFLAGS := $(AVX_CFLAGS) $(OMPFLAGS)
 
 cce_safetensors_test: $(CCE) $(CCE_CUDA_OBJ) src/nn.c tests/test_cce_safetensors.c
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) src/nn.c tests/test_cce_safetensors.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
@@ -1139,6 +1139,14 @@ proj_qat_gemma: $(CCE) $(CCE_CUDA_OBJ) tests/proj_qat_gemma.c
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) tests/proj_qat_gemma.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 	./$(BIN_DIR)/proj_qat_gemma > logs/proj_qat_gemma.log 2>&1 || echo "test exited non-zero (see log)"
+
+# Milestone 4 core: END-TO-END reconstruction across many projections / many
+# layers (SwiGLU MLP stack) — does it compound into collapse, and does SEQUENTIAL
+# calibration beat INDEPENDENT? Hermetic. See tests/proj_qat_stack.c.
+proj_qat_stack: tests/proj_qat_stack.c
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ tests/proj_qat_stack.c -lm
+	./$(BIN_DIR)/proj_qat_stack > logs/proj_qat_stack.log 2>&1 || echo "test exited non-zero (see log)"
 
 # Lightweight mock chat test: exercises the real BPE tokenizer (encode) without
 # requiring the full model forward. Needs supra_cache/tokenizer.json (run
