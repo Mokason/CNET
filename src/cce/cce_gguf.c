@@ -3788,31 +3788,43 @@ cce_result cce_gguf_moe_rt_pin_hot(cce_gguf_moe_rt* rt, int n) {
     return CCE_OK;
 }
 
-/* ============ gemma4 single-token full-stack forward (Arc B, end-to-end) ============
+/* ============ gemma4 full-stack forward + generation (Arc B, end-to-end) ============
  *
- * The complete gemma4 layer stack for ONE token at position 0, where
- * attention is EXACT without kv/rope/window machinery: softmax over a single
- * score is 1 regardless of q/k, so attention = o_proj(repeat_gqa(rms(v))).
- * Everything else is position-independent: embedding scaling, every norm,
- * shared GELU FFN, the (already parity-proven) MoE FFN, dual post-norms,
- * layer_output_scale, final norm, tied lm_head, tanh logit softcapping,
- * suppress-token bias. Graph order mirrors llama.cpp models/gemma4.cpp.
+ * The complete gemma4 stack with REAL attention: NEOX rope (full-attention
+ * layers at freq_base 1e6 with the rope_freqs proportional factors, swa
+ * layers at 1e4), WEIGHTED per-head Q/K rms-norms, UNWEIGHTED per-head V
+ * rms-norm, GQA, UNSCALED scores (gemma4 f_attention_scale = 1.0 — the QK
+ * norms replace scaling), causal softmax over a per-layer KV cache, and the
+ * (llama.cpp-parity-proven) MoE FFN with experts demand-streamed. Decoding
+ * is token-by-token (mathematically identical to batched causal prefill).
  *
- * The dense stack stays resident (~7 GB fp32 for the 26B); the experts
- * stream through the MoE runtime — the run-bigger-than-RAM split. Weights
- * are kept in file-native [out][in] row order (row o = dot with the input).
+ * HONEST LIMIT: sliding-window attention == full causal only while the
+ * context stays within the window (n_swa = 1024 on the 26B); max_ctx is
+ * clamped there and longer contexts refuse rather than silently drift.
+ *
+ * The dense stack stays resident (~9 GB fp32 on the 26B); the 91 GB expert
+ * bank streams through the MoE runtime. Weights kept in file-native
+ * [out][in] row order (row o = dot with the input).
  */
 
 typedef struct cce_gemma4_stack {
     cce_gguf_moe* m;      /* borrowed */
     int L, D, V, FF;
     float eps, softcap;
+    int max_ctx, cur_pos, n_swa;
     float** attn_norm;    /* [L][D] */
-    float** wv;           /* [L][vw x D] rows=out (attn_k when attn_v absent) */
-    int* vw;
-    float** wo;           /* [L][D x ow] rows=out */
-    int* ow;
-    int* head_dim;        /* per-head V-norm width (swa 256 / full 512) */
+    float** wq;           /* [L][qw x D] rows=out */
+    float** wk;           /* [L][kw x D] */
+    float** wv;           /* [L][kw x D] or NULL: the k-as-v layers */
+    float** wo;           /* [L][D x ow] */
+    int* qw; int* kw; int* ow;
+    int* head_dim;        /* per layer: swa 256 / full 512 */
+    int* is_swa;
+    float** q_norm;       /* [L][hd] weighted per-head rms */
+    float** k_norm;
+    float* rope_freqs;    /* [max hd/2] proportional factors (full layers) */
+    int rope_freqs_n;
+    float rope_base_full, rope_base_swa;
     float** attn_post_norm;
     float** ffn_norm;
     float** ffn_gate;     /* [L][FF x D] */
@@ -3821,9 +3833,11 @@ typedef struct cce_gemma4_stack {
     float** post_ffw_norm_1;
     float** post_ffw_norm_2;
     float** ffn_post_norm;
-    float* out_scale;     /* [L] (1.0 when absent) */
+    float* out_scale;     /* [L] */
     float* output_norm;   /* [D] */
     float* embd;          /* [V x D] input rows AND the tied lm_head */
+    float** k_cache;      /* [L][max_ctx x kw] (post norm+rope) */
+    float** v_cache;      /* [L][max_ctx x kw] (post per-head rms) */
     int64_t suppress[128];
     int n_suppress;
 } cce_gemma4_stack;
@@ -3844,26 +3858,43 @@ static float* g4_load(const cce_gguf* g, const char* fmt, int l, size_t expect) 
     return buf;
 }
 
+/* load a 2D projection, returning its OUT width via *w */
+static float* g4_load_mat(const cce_gguf* g, const char* fmt, int l, int* w) {
+    char name[128];
+    snprintf(name, sizeof(name), fmt, l);
+    int idx = cce_gguf_find_tensor(g, name);
+    if (idx < 0) return NULL;
+    cce_gguf_tensor_meta tm;
+    cce_gguf_get_tensor_meta(g, idx, &tm);
+    if (tm.ndim != 2) return NULL;
+    size_t n = (size_t)tm.shape[0] * tm.shape[1];
+    float* buf = (float*)malloc(n * sizeof(float));
+    if (!buf) return NULL;
+    if (cce_gguf_load_f32(g, idx, buf, n) != CCE_OK) { free(buf); return NULL; }
+    *w = tm.shape[1];
+    return buf;
+}
+
 void cce_gemma4_stack_free(cce_gemma4_stack* st) {
     if (!st) return;
     for (int l = 0; l < st->L; l++) {
-        if (st->attn_norm) free(st->attn_norm[l]);
-        if (st->wv) free(st->wv[l]);
-        if (st->wo) free(st->wo[l]);
-        if (st->attn_post_norm) free(st->attn_post_norm[l]);
-        if (st->ffn_norm) free(st->ffn_norm[l]);
-        if (st->ffn_gate) free(st->ffn_gate[l]);
-        if (st->ffn_up) free(st->ffn_up[l]);
-        if (st->ffn_down) free(st->ffn_down[l]);
-        if (st->post_ffw_norm_1) free(st->post_ffw_norm_1[l]);
-        if (st->post_ffw_norm_2) free(st->post_ffw_norm_2[l]);
-        if (st->ffn_post_norm) free(st->ffn_post_norm[l]);
+#define G4F(fld) if (st->fld) free(st->fld[l])
+        G4F(attn_norm); G4F(wq); G4F(wk); G4F(wv); G4F(wo);
+        G4F(q_norm); G4F(k_norm);
+        G4F(attn_post_norm); G4F(ffn_norm);
+        G4F(ffn_gate); G4F(ffn_up); G4F(ffn_down);
+        G4F(post_ffw_norm_1); G4F(post_ffw_norm_2); G4F(ffn_post_norm);
+        G4F(k_cache); G4F(v_cache);
+#undef G4F
     }
-    free(st->attn_norm); free(st->wv); free(st->wo);
+    free(st->attn_norm); free(st->wq); free(st->wk); free(st->wv); free(st->wo);
+    free(st->q_norm); free(st->k_norm);
     free(st->attn_post_norm); free(st->ffn_norm);
     free(st->ffn_gate); free(st->ffn_up); free(st->ffn_down);
     free(st->post_ffw_norm_1); free(st->post_ffw_norm_2); free(st->ffn_post_norm);
-    free(st->vw); free(st->ow); free(st->head_dim);
+    free(st->k_cache); free(st->v_cache);
+    free(st->qw); free(st->kw); free(st->ow); free(st->head_dim); free(st->is_swa);
+    free(st->rope_freqs);
     free(st->out_scale); free(st->output_norm); free(st->embd);
     free(st);
 }
@@ -3889,9 +3920,14 @@ cce_result cce_gemma4_stack_open(cce_gguf_moe* m, cce_gemma4_stack** out) {
     st->eps = cce_gguf_get_rms_eps(m->g);
     if (st->eps <= 0) st->eps = 1e-6f;
     st->softcap = (float)gguf_get_scalar(m->g, ".final_logit_softcapping", 0.0);
+    st->rope_base_full = (float)gguf_get_scalar(m->g, ".rope.freq_base", 1e6);
+    st->rope_base_swa  = (float)gguf_get_scalar(m->g, ".rope.freq_base_swa", 1e4);
+    st->n_swa = (int)gguf_get_scalar(m->g, ".attention.sliding_window", 0);
+    /* swa == full causal only inside the window: refuse longer contexts */
+    st->max_ctx = 256;
+    if (st->n_swa > 0 && st->max_ctx > st->n_swa) st->max_ctx = st->n_swa;
 
     int L = st->L, D = st->D;
-    /* per-head V-norm geometry: swa pattern + the two head widths */
     int64_t pat[512];
     size_t pn = cce_gguf_get_int_array(m->g, "attention.sliding_window_pattern", pat, 512);
     int klen = (int)gguf_get_scalar(m->g, ".attention.key_length", 0);
@@ -3901,62 +3937,42 @@ cce_result cce_gemma4_stack_open(cce_gguf_moe* m, cce_gemma4_stack** out) {
         return CCE_ERR_UNSUPPORTED;
     }
 
-    st->attn_norm = (float**)calloc(L, sizeof(float*));
-    st->wv = (float**)calloc(L, sizeof(float*));
-    st->wo = (float**)calloc(L, sizeof(float*));
-    st->attn_post_norm = (float**)calloc(L, sizeof(float*));
-    st->ffn_norm = (float**)calloc(L, sizeof(float*));
-    st->ffn_gate = (float**)calloc(L, sizeof(float*));
-    st->ffn_up = (float**)calloc(L, sizeof(float*));
-    st->ffn_down = (float**)calloc(L, sizeof(float*));
-    st->post_ffw_norm_1 = (float**)calloc(L, sizeof(float*));
-    st->post_ffw_norm_2 = (float**)calloc(L, sizeof(float*));
-    st->ffn_post_norm = (float**)calloc(L, sizeof(float*));
-    st->vw = (int*)calloc(L, sizeof(int));
-    st->ow = (int*)calloc(L, sizeof(int));
-    st->head_dim = (int*)calloc(L, sizeof(int));
-    st->out_scale = (float*)calloc(L, sizeof(float));
-    if (!st->attn_norm || !st->wv || !st->wo || !st->attn_post_norm || !st->ffn_norm ||
-        !st->ffn_gate || !st->ffn_up || !st->ffn_down || !st->post_ffw_norm_1 ||
-        !st->post_ffw_norm_2 || !st->ffn_post_norm || !st->vw || !st->ow ||
-        !st->head_dim || !st->out_scale) {
-        cce_gemma4_stack_free(st);
-        return CCE_ERR_OOM;
-    }
+#define G4A(fld, ty) st->fld = (ty*)calloc(L, sizeof(*st->fld)); ok = ok && st->fld
+    int ok = 1;
+    G4A(attn_norm, float*); G4A(wq, float*); G4A(wk, float*); G4A(wv, float*); G4A(wo, float*);
+    G4A(q_norm, float*); G4A(k_norm, float*);
+    G4A(attn_post_norm, float*); G4A(ffn_norm, float*);
+    G4A(ffn_gate, float*); G4A(ffn_up, float*); G4A(ffn_down, float*);
+    G4A(post_ffw_norm_1, float*); G4A(post_ffw_norm_2, float*); G4A(ffn_post_norm, float*);
+    G4A(k_cache, float*); G4A(v_cache, float*);
+    G4A(qw, int); G4A(kw, int); G4A(ow, int); G4A(head_dim, int); G4A(is_swa, int);
+    G4A(out_scale, float);
+#undef G4A
+    if (!ok) { cce_gemma4_stack_free(st); return CCE_ERR_OOM; }
+
+    st->rope_freqs = g4_load(m->g, "rope_freqs.weigh%.0dt", 0, 0);
+    if (st->rope_freqs) st->rope_freqs_n = klen / 2; /* [n_rot/2] on full layers */
 
     for (int l = 0; l < L; l++) {
-        st->head_dim[l] = pat[l] ? klen_swa : klen;
+        st->is_swa[l] = pat[l] ? 1 : 0;
+        st->head_dim[l] = st->is_swa[l] ? klen_swa : klen;
+        int hd = st->head_dim[l];
         st->attn_norm[l] = g4_load(m->g, "blk.%d.attn_norm.weight", l, (size_t)D);
-        /* v projection; the 5 full-attention layers reuse k as v */
-        char vn[128];
-        snprintf(vn, sizeof(vn), "blk.%d.attn_v.weight", l);
-        int vi = cce_gguf_find_tensor(m->g, vn);
-        if (vi < 0) { snprintf(vn, sizeof(vn), "blk.%d.attn_k.weight", l); vi = cce_gguf_find_tensor(m->g, vn); }
-        if (vi >= 0) {
-            cce_gguf_tensor_meta tm;
-            cce_gguf_get_tensor_meta(m->g, vi, &tm);
-            st->vw[l] = tm.shape[1];
-            st->wv[l] = (float*)malloc((size_t)tm.shape[0] * tm.shape[1] * sizeof(float));
-            if (st->wv[l] &&
-                cce_gguf_load_f32(m->g, vi, st->wv[l], (size_t)tm.shape[0] * tm.shape[1]) != CCE_OK) {
-                free(st->wv[l]); st->wv[l] = NULL;
-            }
-        }
-        {
+        st->wq[l] = g4_load_mat(m->g, "blk.%d.attn_q.weight", l, &st->qw[l]);
+        st->wk[l] = g4_load_mat(m->g, "blk.%d.attn_k.weight", l, &st->kw[l]);
+        st->wv[l] = g4_load_mat(m->g, "blk.%d.attn_v.weight", l, &st->ow[l]); /* ow reused as tmp */
+        if (st->wv[l] && st->ow[l] != st->kw[l]) { cce_gemma4_stack_free(st); return CCE_ERR_UNSUPPORTED; }
+        st->wo[l] = g4_load_mat(m->g, "blk.%d.attn_output.weight", l, &st->ow[l]);
+        if (st->wo[l]) {
+            /* file dims [in, out]: ow must be o_proj's INPUT width */
             char on[128];
             snprintf(on, sizeof(on), "blk.%d.attn_output.weight", l);
-            int oi = cce_gguf_find_tensor(m->g, on);
-            if (oi >= 0) {
-                cce_gguf_tensor_meta tm;
-                cce_gguf_get_tensor_meta(m->g, oi, &tm);
-                st->ow[l] = tm.shape[0];   /* input width of o_proj */
-                st->wo[l] = (float*)malloc((size_t)tm.shape[0] * tm.shape[1] * sizeof(float));
-                if (st->wo[l] &&
-                    cce_gguf_load_f32(m->g, oi, st->wo[l], (size_t)tm.shape[0] * tm.shape[1]) != CCE_OK) {
-                    free(st->wo[l]); st->wo[l] = NULL;
-                }
-            }
+            cce_gguf_tensor_meta tm;
+            cce_gguf_get_tensor_meta(m->g, cce_gguf_find_tensor(m->g, on), &tm);
+            st->ow[l] = tm.shape[0];
         }
+        st->q_norm[l] = g4_load(m->g, "blk.%d.attn_q_norm.weight", l, (size_t)hd);
+        st->k_norm[l] = g4_load(m->g, "blk.%d.attn_k_norm.weight", l, (size_t)hd);
         st->attn_post_norm[l] = g4_load(m->g, "blk.%d.post_attention_norm.weight", l, (size_t)D);
         st->ffn_norm[l]  = g4_load(m->g, "blk.%d.ffn_norm.weight", l, (size_t)D);
         st->ffn_gate[l]  = g4_load(m->g, "blk.%d.ffn_gate.weight", l, (size_t)D * st->FF);
@@ -3968,12 +3984,16 @@ cce_result cce_gemma4_stack_open(cce_gguf_moe* m, cce_gemma4_stack** out) {
         float* osc = g4_load(m->g, "blk.%d.layer_output_scale.weight", l, 1);
         st->out_scale[l] = osc ? osc[0] : 1.0f;
         free(osc);
-        int hd = st->head_dim[l];
-        if (!st->attn_norm[l] || !st->wv[l] || !st->wo[l] || !st->attn_post_norm[l] ||
+        st->k_cache[l] = (float*)malloc((size_t)st->max_ctx * st->kw[l] * sizeof(float));
+        st->v_cache[l] = (float*)malloc((size_t)st->max_ctx * st->kw[l] * sizeof(float));
+        if (!st->attn_norm[l] || !st->wq[l] || !st->wk[l] || !st->wo[l] ||
+            !st->q_norm[l] || !st->k_norm[l] || !st->attn_post_norm[l] ||
             !st->ffn_norm[l] || !st->ffn_gate[l] || !st->ffn_up[l] || !st->ffn_down[l] ||
             !st->post_ffw_norm_1[l] || !st->post_ffw_norm_2[l] || !st->ffn_post_norm[l] ||
-            hd <= 0 || st->vw[l] % hd != 0 || st->ow[l] % hd != 0 ||
-            (st->ow[l] / hd) % (st->vw[l] / hd) != 0) {
+            !st->k_cache[l] || !st->v_cache[l] ||
+            hd <= 0 || st->kw[l] % hd != 0 || st->qw[l] % hd != 0 || st->ow[l] != st->qw[l] ||
+            (st->qw[l] / hd) % (st->kw[l] / hd) != 0 ||
+            (!st->is_swa[l] && !st->rope_freqs)) {
             cce_gemma4_stack_free(st);
             return CCE_ERR_UNSUPPORTED; /* a mis-dimensioned layer must never forward */
         }
@@ -4000,6 +4020,10 @@ cce_result cce_gemma4_stack_open(cce_gguf_moe* m, cce_gemma4_stack** out) {
     return CCE_OK;
 }
 
+void cce_gemma4_reset(cce_gemma4_stack* st) {
+    if (st) st->cur_pos = 0;
+}
+
 /* weighted rms norm: y = x/rms(x) * w (llama.cpp build_norm LLM_NORM_RMS) */
 static void g4_rmsw(const float* x, const float* w, float* y, int n, float eps) {
     double ss = 0;
@@ -4018,45 +4042,106 @@ static void g4_matvec(const float* W, const float* x, float* y, int in, int out)
     }
 }
 
-cce_result cce_gemma4_token_logits(cce_gemma4_stack* st, cce_gguf_moe_rt* rt,
-                                   int token, float* logits, float* l_out_dbg) {
-    if (!st || !rt || !logits || token < 0 || token >= st->V) return CCE_ERR_INVALID_ARG;
-    int D = st->D, FF = st->FF;
-    float* x  = (float*)malloc(sizeof(float) * (size_t)(6 * D + 2 * FF + 8192));
+/* NEOX rope in place on one head (ggml_rope_ext, ext_factor=0, freq_scale=1):
+ * theta(ic) = pos * base^(-2ic/n_rot) / ff[ic]; pairs (ic, ic + n_rot/2). */
+static void g4_rope(float* h, int hd, int pos, float base, const float* ff) {
+    int half = hd / 2;
+    float theta_scale = powf(base, -2.0f / (float)hd);
+    float theta = (float)pos;
+    for (int ic = 0; ic < half; ic++) {
+        float t = ff ? theta / ff[ic] : theta;
+        float c = cosf(t), s2 = sinf(t);
+        float x0 = h[ic], x1 = h[ic + half];
+        h[ic]        = x0 * c - x1 * s2;
+        h[ic + half] = x0 * s2 + x1 * c;
+        theta *= theta_scale;
+    }
+}
+
+/* decode ONE token at the next position: appends to the kv cache, returns
+ * the (softcapped, suppress-biased) logits when logits != NULL. */
+cce_result cce_gemma4_decode(cce_gemma4_stack* st, cce_gguf_moe_rt* rt,
+                             int token, float* logits, float* l_out_dbg) {
+    if (!st || !rt || token < 0 || token >= st->V) return CCE_ERR_INVALID_ARG;
+    if (st->cur_pos >= st->max_ctx) return CCE_ERR_UNSUPPORTED; /* swa window honesty */
+    int D = st->D, FF = st->FF, pos = st->cur_pos;
+
+    float* x  = (float*)malloc(sizeof(float) * (size_t)(6 * D + 2 * FF + 3 * 8192 + st->max_ctx));
     if (!x) return CCE_ERR_OOM;
     float* t  = x + D;
     float* a  = t + D;
     float* ao = a + D;
     float* mm = ao + D;
     float* me = mm + D;
-    float* g  = me + D;      /* [FF] */
-    float* u  = g + FF;      /* [FF] */
-    float* av = u + FF;      /* [<=8192] o_proj input */
+    float* g  = me + D;       /* [FF] */
+    float* u  = g + FF;       /* [FF] */
+    float* q  = u + FF;       /* [<=8192] */
+    float* kv = q + 8192;     /* [<=8192] k then v */
+    float* sc = kv + 8192;    /* [max_ctx] scores */
 
-    /* embedding row * sqrt(D) */
     const float* er = st->embd + (size_t)token * D;
     float esc = sqrtf((float)D);
     for (int i = 0; i < D; i++) x[i] = er[i] * esc;
 
     cce_result rc = CCE_OK;
     for (int l = 0; l < st->L && rc == CCE_OK; l++) {
-        int hd = st->head_dim[l], vw = st->vw[l], ow = st->ow[l];
-        int n_kv = vw / hd, rep = (ow / hd) / n_kv;
+        int hd = st->head_dim[l], kw = st->kw[l], qwd = st->qw[l];
+        int n_kv = kw / hd, n_head = qwd / hd, rep = n_head / n_kv;
+        float base = st->is_swa[l] ? st->rope_base_swa : st->rope_base_full;
+        const float* ff = st->is_swa[l] ? NULL : st->rope_freqs;
 
-        /* attention at pos 0: o_proj(repeat_gqa(per-head rms(v(norm(x))))) */
         g4_rmsw(x, st->attn_norm[l], t, D, st->eps);
-        float* v = av; /* reuse tail scratch: v then expanded in place */
-        g4_matvec(st->wv[l], t, me, D, vw);           /* v -> me scratch */
-        for (int h = 0; h < n_kv; h++) {              /* UNWEIGHTED per-head rms */
-            float* vh = me + (size_t)h * hd;
+
+        /* q: per-head weighted rms + rope */
+        g4_matvec(st->wq[l], t, q, D, qwd);
+        for (int h = 0; h < n_head; h++) {
+            g4_rmsw(q + (size_t)h * hd, st->q_norm[l], q + (size_t)h * hd, hd, st->eps);
+            g4_rope(q + (size_t)h * hd, hd, pos, base, ff);
+        }
+        /* k raw (also the v source on the k-as-v layers) */
+        g4_matvec(st->wk[l], t, kv, D, kw);
+        float* vrow = st->v_cache[l] + (size_t)pos * kw;
+        if (st->wv[l]) g4_matvec(st->wv[l], t, vrow, D, kw);
+        else memcpy(vrow, kv, (size_t)kw * sizeof(float));
+        /* k: per-head weighted rms + rope -> cache */
+        float* krow = st->k_cache[l] + (size_t)pos * kw;
+        for (int h = 0; h < n_kv; h++) {
+            g4_rmsw(kv + (size_t)h * hd, st->k_norm[l], krow + (size_t)h * hd, hd, st->eps);
+            g4_rope(krow + (size_t)h * hd, hd, pos, base, ff);
+        }
+        /* v: per-head UNWEIGHTED rms -> cache (no rope) */
+        for (int h = 0; h < n_kv; h++) {
+            float* vh = vrow + (size_t)h * hd;
             double ss = 0;
             for (int i = 0; i < hd; i++) ss += (double)vh[i] * vh[i];
             float inv = 1.0f / sqrtf((float)(ss / hd) + st->eps);
             for (int i = 0; i < hd; i++) vh[i] *= inv;
         }
-        for (int h = 0; h < ow / hd; h++)             /* GQA: q head h <- kv head h/rep */
-            memcpy(v + (size_t)h * hd, me + (size_t)(h / rep) * hd, (size_t)hd * sizeof(float));
-        g4_matvec(st->wo[l], v, a, ow, D);
+
+        /* causal attention over the cache; UNSCALED scores (gemma4) */
+        int T = pos + 1;
+        for (int h = 0; h < n_head; h++) {
+            const float* qh = q + (size_t)h * hd;
+            int kvh = h / rep;
+            double smax = -1e30;
+            for (int j = 0; j < T; j++) {
+                const float* kj = st->k_cache[l] + (size_t)j * kw + (size_t)kvh * hd;
+                double dot = 0;
+                for (int i = 0; i < hd; i++) dot += (double)qh[i] * kj[i];
+                sc[j] = (float)dot;
+                if (dot > smax) smax = dot;
+            }
+            double ssum = 0;
+            for (int j = 0; j < T; j++) { sc[j] = expf(sc[j] - (float)smax); ssum += sc[j]; }
+            float* oh = kv + (size_t)h * hd; /* reuse kv scratch for attn out */
+            for (int i = 0; i < hd; i++) oh[i] = 0;
+            for (int j = 0; j < T; j++) {
+                float wj = (float)(sc[j] / ssum);
+                const float* vj = st->v_cache[l] + (size_t)j * kw + (size_t)kvh * hd;
+                for (int i = 0; i < hd; i++) oh[i] += wj * vj[i];
+            }
+        }
+        g4_matvec(st->wo[l], kv, a, qwd, D);
         g4_rmsw(a, st->attn_post_norm[l], a, D, st->eps);
         for (int i = 0; i < D; i++) ao[i] = a[i] + x[i];
 
@@ -4068,7 +4153,7 @@ cce_result cce_gemma4_token_logits(cce_gemma4_stack* st, cce_gguf_moe_rt* rt,
         g4_matvec(st->ffn_down[l], g, mm, FF, D);
         g4_rmsw(mm, st->post_ffw_norm_1[l], mm, D, st->eps);
 
-        /* MoE FFN (router + expert norms computed from ao inside; B2-parity path) */
+        /* MoE FFN (router + expert norms computed from ao inside) */
         rc = cce_gguf_moe_ffn_forward(rt, l, ao, me);
         if (rc != CCE_OK) break;
         g4_rmsw(me, st->post_ffw_norm_2[l], me, D, st->eps);
@@ -4080,20 +4165,31 @@ cce_result cce_gemma4_token_logits(cce_gemma4_stack* st, cce_gguf_moe_rt* rt,
     }
 
     if (rc == CCE_OK) {
-        g4_rmsw(x, st->output_norm, t, D, st->eps);
-        for (int vtok = 0; vtok < st->V; vtok++) {
-            const float* r = st->embd + (size_t)vtok * D;
-            double acc = 0;
-            for (int i = 0; i < D; i++) acc += (double)r[i] * t[i];
-            float lg = (float)acc;
-            if (st->softcap > 0) lg = st->softcap * tanhf(lg / st->softcap);
-            logits[vtok] = lg;
-        }
-        for (int i = 0; i < st->n_suppress; i++) {
-            int64_t id = st->suppress[i];
-            if (id >= 0 && id < st->V) logits[id] = -INFINITY;
+        st->cur_pos = pos + 1;
+        if (logits) {
+            g4_rmsw(x, st->output_norm, t, D, st->eps);
+            for (int vtok = 0; vtok < st->V; vtok++) {
+                const float* r = st->embd + (size_t)vtok * D;
+                double acc = 0;
+                for (int i = 0; i < D; i++) acc += (double)r[i] * t[i];
+                float lg = (float)acc;
+                if (st->softcap > 0) lg = st->softcap * tanhf(lg / st->softcap);
+                logits[vtok] = lg;
+            }
+            for (int i = 0; i < st->n_suppress; i++) {
+                int64_t id = st->suppress[i];
+                if (id >= 0 && id < st->V) logits[id] = -INFINITY;
+            }
         }
     }
     free(x);
     return rc;
+}
+
+/* single token at position 0 (the original e2e gate): reset + decode.
+ * At pos 0 the general path reduces exactly to o_proj(repeat(rms(v))). */
+cce_result cce_gemma4_token_logits(cce_gemma4_stack* st, cce_gguf_moe_rt* rt,
+                                   int token, float* logits, float* l_out_dbg) {
+    cce_gemma4_reset(st);
+    return cce_gemma4_decode(st, rt, token, logits, l_out_dbg);
 }

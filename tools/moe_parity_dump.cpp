@@ -28,6 +28,7 @@
 #include <vector>
 
 static const char* g_outdir = ".";
+static bool g_dump_on = true; /* prompt only: greedy decode steps don't re-dump */
 
 static bool wanted(const char* name) {
     /* NOTE: no "ffn_moe_topk" here — that node is a ggml VIEW of the argsort
@@ -59,6 +60,7 @@ static bool wanted(const char* name) {
 
 static bool dump_cb(struct ggml_tensor* t, bool ask, void* ud) {
     (void)ud;
+    if (!g_dump_on) return !ask;
     if (ask) return wanted(t->name);
     if (!wanted(t->name)) return true;
 
@@ -118,8 +120,13 @@ int main(int argc, char** argv) {
     const char* model_path = argv[1];
     g_outdir = argv[2];
     const char* prompt = (argc > 3) ? argv[3] : "The capital of France is";
-    /* "ids:2,818" bypasses tokenization: exact token ids for parity replays */
+    /* "ids:2,818" bypasses tokenization: exact token ids for parity replays.
+       "seqids:..." feeds the prompt ONE token per decode call (order-of-
+       evaluation experiment: does batched vs sequential prefill change the
+       model's own routing/continuation?) */
     std::vector<llama_token> forced_ids;
+    bool seq_mode = false;
+    if (strncmp(prompt, "seqids:", 7) == 0) { seq_mode = true; prompt += 3; }
     if (strncmp(prompt, "ids:", 4) == 0) {
         const char* q = prompt + 4;
         while (*q) {
@@ -170,9 +177,57 @@ int main(int argc, char** argv) {
         }
     }
 
-    if (llama_decode(ctx, llama_batch_get_one(toks.data(), nt))) {
+    if (seq_mode) {
+        /* order experiment: per-position dumps into <outdir>/p<i> */
+        const char* base_outdir = g_outdir;
+        for (int i = 0; i < nt; i++) {
+            static char stepdir[1024];
+            snprintf(stepdir, sizeof(stepdir), "%s/p%d", base_outdir, i);
+            char mk[1100];
+            snprintf(mk, sizeof(mk), "mkdir -p %s", stepdir);
+            if (system(mk) != 0) { /* best effort */ }
+            g_outdir = stepdir;
+            llama_token one = toks[i];
+            if (llama_decode(ctx, llama_batch_get_one(&one, 1))) {
+                fprintf(stderr, "seq decode failed at %d\n", i);
+                return 1;
+            }
+        }
+        g_outdir = base_outdir;
+        g_dump_on = false;
+    } else if (llama_decode(ctx, llama_batch_get_one(toks.data(), nt))) {
         fprintf(stderr, "decode failed\n");
         return 1;
+    }
+
+    /* greedy generation (argv[4] tokens): the reference continuation */
+    int n_gen = (argc > 4) ? atoi(argv[4]) : 0;
+    if (n_gen > 0) {
+        g_dump_on = false;
+        int n_vocab = llama_vocab_n_tokens(vocab);
+        std::vector<llama_token> gen;
+        for (int gi = 0; gi < n_gen; gi++) {
+            const float* lg = llama_get_logits_ith(ctx, -1);
+            int best = 0;
+            for (int v = 1; v < n_vocab; v++)
+                if (lg[v] > lg[best]) best = v;
+            gen.push_back(best);
+            llama_token nt2 = best;
+            if (llama_decode(ctx, llama_batch_get_one(&nt2, 1))) {
+                fprintf(stderr, "gen decode failed at %d\n", gi);
+                break;
+            }
+        }
+        char gf[1024];
+        snprintf(gf, sizeof(gf), "%s/gen_tokens.txt", g_outdir);
+        FILE* f = fopen(gf, "wb");
+        if (f) {
+            for (size_t i = 0; i < gen.size(); i++) fprintf(f, "%d\n", gen[i]);
+            fclose(f);
+        }
+        fprintf(stderr, "greedy:");
+        for (size_t i = 0; i < gen.size(); i++) fprintf(stderr, " %d", gen[i]);
+        fprintf(stderr, "\n");
     }
 
     llama_free(ctx);

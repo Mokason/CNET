@@ -283,6 +283,16 @@ void cce_gemma4_stack_free(cce_gemma4_stack* st);
 cce_result cce_gemma4_token_logits(cce_gemma4_stack* st, cce_gguf_moe_rt* rt,
                                    int token, float* logits, float* l_out_dbg);
 
+/* Multi-token: decode ONE token at the next position (real NEOX rope, QK
+ * norms, causal attention over a per-layer kv cache; scores unscaled per
+ * gemma4). Contexts are clamped to the sliding window (1024 on the 26B) —
+ * beyond it swa != full causal and decode refuses rather than drift.
+ * logits (optional) are softcapped + suppress-biased; l_out_dbg (optional,
+ * [n_layer x n_embd]) captures the ladder for parity bisection. */
+cce_result cce_gemma4_decode(cce_gemma4_stack* st, cce_gguf_moe_rt* rt,
+                             int token, float* logits, float* l_out_dbg);
+void cce_gemma4_reset(cce_gemma4_stack* st);
+
 /* Batch-union prefill: route all n_tokens first, load each unique expert
  * ONCE, apply it to every token that selected it. x/out are [n_tokens x
  * n_embd]. Bit-identical to n_tokens single-token forwards (same per-expert
