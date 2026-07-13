@@ -8,6 +8,8 @@
 #   - Optional artifact:   `test -f X || python3 ...`   (generates if absent)
 #   - Deliberate grep:     `grep ... || true`
 #   - Symbol check:        `nm ... || exit 1`
+#   - Model evidence collector: `CNET_REQUIRE_REAL_MODEL=1 ... || :` is
+#     allowed because the strict run-scoped ledger is the target's final exit.
 #   - Shell var assignment with $(shell ...) fallback
 #
 # What is REJECTED:
@@ -50,9 +52,9 @@ while IFS= read -r rawline; do
     # Skip empty lines.
     [ -z "$line" ] && continue
 
-    # --- Check for `|| echo` or `|| true` swallowing patterns ---
-    # We need to determine if the `|| echo`/`|| true` is swallowing an
-    # executable's exit code vs. a legitimate fallback.
+    # --- Check for `|| echo`, `|| true`, or `|| :` swallowing patterns ---
+    # We need to distinguish guarded evidence collection from an executable exit
+    # being silently converted to success.
 
     # ALLOW: git rev-parse ... || echo unknown  (metadata fallback)
     # ALLOW: $(shell ... || echo ...)  (make variable assignment)
@@ -87,6 +89,16 @@ while IFS= read -r rawline; do
                         *'./'*|*'$(BIN_DIR)'*) has_swallow=1 ;;
                     esac
                     ;;
+            esac
+            ;;
+        *'|| :'*)
+            # Per-program model evidence exits are collected so both logs are
+            # produced; strict gen_claims.sh is the final non-zero authority.
+            # Any other executable `|| :` is an unguarded false-green.
+            case "$line" in
+                *'CNET_REQUIRE_REAL_MODEL=1'*'scripts/gen_claims.sh'*) ;; # same-line collector
+                *'CNET_REQUIRE_REAL_MODEL=1'*) ;;                        # model_evidence recipe
+                *'./'*|*'$(BIN_DIR)'*) has_swallow=1 ;;
             esac
             ;;
     esac
