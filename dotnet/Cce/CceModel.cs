@@ -491,7 +491,7 @@ public sealed class CceModel : IDisposable
                 return setRc == CceNative.CceResult.Ok;
             }
 
-            // Best-effort (may get OpenCL or none)
+            // Best-effort (CPU fallback; NOT the OpenCL backend — cce_clgemm is)
             rc = CceNative.CceGpuInit(out ctx);
             if (rc == CceNative.CceResult.Ok && ctx != IntPtr.Zero)
             {
@@ -502,7 +502,8 @@ public sealed class CceModel : IDisposable
         catch (EntryPointNotFoundException)
         {
             // The current cce.dll was not built with GPU symbols exported (common).
-            // Users who want GPU must rebuild with the proper CUDA/OpenCL flags.
+            // Users who want GPU must rebuild with the proper CUDA flags.
+            // The OpenCL model-kernel backend is cce_clgemm.c, a separate path.
             return false;
         }
         catch (DllNotFoundException)

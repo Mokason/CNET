@@ -30,7 +30,7 @@ typedef struct cce_gpu_ctx cce_gpu_ctx;
 #define CCE_GPU_API
 #endif
 
-CCE_GPU_API cce_result cce_gpu_init(cce_gpu_ctx** ctx);           /* best-effort (OpenCL or none) */
+CCE_GPU_API cce_result cce_gpu_init(cce_gpu_ctx** ctx);           /* CUDA-or-CPU fallback; NOT the OpenCL backend (cce_clgemm is) */
 CCE_GPU_API cce_result cce_gpu_init_cuda(cce_gpu_ctx** ctx);     /* explicit CUDA only - returns error if unavailable */
 CCE_GPU_API void cce_gpu_destroy(cce_gpu_ctx* ctx);
 

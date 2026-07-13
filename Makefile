@@ -70,15 +70,16 @@ CCE_LEARN   := src/cce/cce_learn.c
 CCE_PATCH   := src/cce/cce_block_patch.c
 CCE_GPU     := src/cce/cce_gpu.c
 CCE_WORDLM  := src/cce/cce_wordlm.c
-CCE_AICIMO  := src/cce/cce_aicimo.c
 CCE_PERCEPTUAL := src/cce/cce_perceptual_leaf.c
 CCE_MODEL := src/cce/cce_model.c
 CCE_MODEL_IO := src/cce/cce_model_io.c
 CCE_DATASET := src/cce/cce_dataset.c
 CCE_AUTOGRAD := src/cce/cce_autograd.c src/cce/cce_autograd_ops.c
 CCE_SAFETENSORS := src/cce/cce_safetensors.c
-CCE_GGUF := src/cce/cce_gguf.c $(CCE_AICIMO)
-CCE_AICIMO  := src/cce/cce_aicimo.c
+# CCE_GGUF: core GGUF reader. Does NOT include cce_aicimo.c — that is a
+# quarantined experimental source (CCE_AICIMO_SRC), compiled only by the
+# explicit aicimo_smoke target.
+CCE_GGUF := src/cce/cce_gguf.c
 CCE_QGKP := src/cce/cce_qgkp.c
 
 # Build directory for all executables to avoid polluting the root with endless .exe junk.
@@ -567,6 +568,9 @@ struct_pref: structural_pref_study
 	./$(BIN_DIR)/structural_pref_study
 
 # v4.4 Fourth Domain Transfer (4x4 block + 4-domain mixed on frozen frontier surface)
+# LEGACY/EXPERIMENTAL: glyph_habitat links src/cnet_lm.c — a second
+# training/generation/head-routing path that is quarantined from the core
+# CCE aggregate. It is reachable ONLY through this explicit legacy target.
 glyph_habitat: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(CCE) tests/glyph_habitat.c src/contract/text_add.c src/contract/text_add_compound.c src/contract/text_add_abstain.c src/contract/perceptual_query.c src/contract/narrative_diffusion.c src/contract/narrative_branching.c src/contract/interactive_agent.c src/contract/mcp_utils.c src/contract/mcp_memory.c src/contract/mcp_wiki.c src/contract/mcp_web_search.c src/contract/mcp_file_read.c src/contract/mcp_calculator.c src/contract/mcp_summarizer.c src/contract/mcp_file_write.c src/agent_memory.c src/contract/book_concept.c include/nn.h include/router.h include/plan_table.h include/contract/contract.h include/contract/text_add.h include/contract/text_add_compound.h include/contract/text_add_abstain.h include/contract/perceptual_query.h include/contract/narrative_diffusion.h include/contract/narrative_branching.h include/contract/interactive_agent.h include/contract/mcp_wiki.h include/contract/mcp_web_search.h include/contract/mcp_file_read.h include/contract/mcp_calculator.h include/contract/mcp_summarizer.h include/contract/mcp_file_write.h include/agent_memory.h include/contract/book_concept.h
 	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(CCE) tests/glyph_habitat.c src/contract/text_add.c src/contract/text_add_compound.c src/contract/text_add_abstain.c src/contract/perceptual_query.c src/contract/narrative_diffusion.c src/contract/narrative_branching.c src/contract/interactive_agent.c src/contract/mcp_utils.c src/contract/mcp_memory.c src/contract/mcp_wiki.c src/contract/mcp_web_search.c src/contract/mcp_file_read.c src/contract/mcp_calculator.c src/contract/mcp_summarizer.c src/contract/mcp_file_write.c src/agent_memory.c src/contract/book_concept.c src/cnet_lm.c src/contract/anti_repeat.c $(LDFLAGS) $(MCP_LDFLAGS)
 # Note: for full contract-based decimal response in glyph_habitat (dec_full_add composition),
@@ -574,6 +578,7 @@ glyph_habitat: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(CCE) tests/glyph_hab
 
 # Build tool: dedicated build/ folder similar to tests/
 # Focuses on the "build" agent features (artifact construction, etc.)
+# LEGACY/EXPERIMENTAL: links src/cnet_lm.c — quarantined from core CCE.
 build_tool: $(CCE) build/build.c src/contract/mcp_utils.c src/contract/mcp_memory.c src/contract/mcp_file_write.c src/contract/mcp_web_search.c src/contract/mcp_file_read.c src/contract/mcp_wiki.c src/agent_memory.c src/contract/book_concept.c include/nn.h include/router.h include/plan_table.h include/contract/contract.h include/agent_memory.h include/contract/mcp_file_write.h include/contract/mcp_web_search.h include/contract/mcp_file_read.h include/contract/mcp_wiki.h include/contract/book_concept.h
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -Ibuild/include -o build_tool $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(CCE) build/build.c src/contract/mcp_utils.c src/contract/mcp_memory.c src/contract/mcp_file_write.c src/contract/mcp_web_search.c src/contract/mcp_file_read.c src/contract/mcp_wiki.c src/agent_memory.c src/contract/book_concept.c src/cnet_lm.c src/contract/anti_repeat.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 
@@ -1833,7 +1838,20 @@ gemma_ref_build: $(CCE) tests/gemma_ref.c
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/gemma_ref $(CCE) tests/gemma_ref.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 
 
-# AICIMO test target (pure C)
-aicimo_smoke: $(CCE) tests/aicimo_smoke.c
-	$(CC) $(CFLAGS) -o $(BIN_DIR)/aicimo_smoke $(CCE) tests/aicimo_smoke.c $(LDFLAGS)
+# AICIMO test target (pure C).
+# NOTE: aicimo_smoke deliberately compiles $(CCE_AICIMO_SRC) explicitly because
+# cce_aicimo.c is NOT in the core CCE aggregate ($(CCE)) — it is a quarantined
+# experimental source. If this target used $(CCE) alone it would fail to link
+# because the AICIMO symbols would be absent.
+CCE_AICIMO_SRC := src/cce/cce_aicimo.c
+aicimo_smoke: $(CCE) $(CCE_AICIMO_SRC) tests/aicimo_smoke.c
+	$(CC) $(CFLAGS) -o $(BIN_DIR)/aicimo_smoke $(CCE) $(CCE_AICIMO_SRC) tests/aicimo_smoke.c $(LDFLAGS)
 	./$(BIN_DIR)/aicimo_smoke
+
+# Alternate-paths regression gate: proves AICIMO and cnet_lm are NOT in the
+# core CCE aggregate, and the generic GPU API is honestly CUDA-or-CPU (not
+# OpenCL). See tests/test_alt_paths_gate.c.
+.PHONY: alt_paths_gate
+alt_paths_gate: $(CCE) tests/test_alt_paths_gate.c include/cce/cce_gpu.h include/cce/cce_gguf.h include/cce/cce_clgemm.h
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/test_alt_paths_gate $(CCE) tests/test_alt_paths_gate.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+	./$(BIN_DIR)/test_alt_paths_gate

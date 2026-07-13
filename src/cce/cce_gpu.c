@@ -34,7 +34,10 @@ cce_result cce_gpu_init(cce_gpu_ctx** ctx_out) {
     cce_gpu_ctx* ctx = (cce_gpu_ctx*)calloc(1, sizeof(cce_gpu_ctx));
     if (!ctx) return CCE_ERR_OOM;
 
-    /* Default path: try OpenCL first (keeps CUDA completely optional) */
+    /* Default path: CPU fallback. The generic GPU API provides CUDA (when
+     * compiled with CCE_USE_CUDA=1) or CPU — it does NOT provide the OpenCL
+     * backend. The OpenCL model-kernel path is cce_clgemm.c, a separate
+     * source with its own tensor contract, linked into $(CCE) independently. */
 #if defined(CCE_HAVE_OPENCL)
     ctx->backend = CCE_GPU_OPENCL;
     cl_int err;
@@ -157,7 +160,7 @@ cce_result cce_gpu_matmul(cce_gpu_ctx* ctx,
     }
 #endif
 
-    /* Fallback / OpenCL path (stub) */
+    /* CPU fallback path (no GPU backend available) */
     printf("[cce_gpu] GPU MatMul fallback (backend=%d)\n", ctx->backend);
     return cce_tensor_matmul(a, b, c);
 }
