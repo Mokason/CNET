@@ -879,7 +879,7 @@ test_full: test gpu_equiv_build
 # `long` mode also asserts the two verify-long-only supra QAT gates (which
 # likewise swallow their exit codes). The `verify` prereq already ran + gated
 # the core chain first; this re-scan adds the extras.
-verify-long: verify cce_train_bench supra_head_qat supra_head_qat_corpus supra_joint_qat wordlm_bitnet compat
+verify-long: verify cce_train_bench supra_head_qat supra_head_qat_corpus supra_joint_qat wordlm_bitnet wordlm_holdout compat
 	@sh tests/verify_logs.sh long
 
 test: verify
@@ -1053,7 +1053,7 @@ cce_autograd_test: $(CCE) $(CCE_CUDA_OBJ) tests/test_cce_autograd.c
 AVX_CFLAGS := $(filter-out -mno-avx,$(CFLAGS))
 # wordlm/wordlm_bitnet/trit_bench link only CCE sources (no src/router/), so
 # they are AVX-safe too; OMP activates the row-parallel packed-trit kernels.
-cce_safetensors_test supra_console supra_chat_mock supra_context_probe supra_longform supra_head_qat supra_head_qat_corpus supra_joint_qat wordlm wordlm_bitnet trit_bench: CFLAGS := $(AVX_CFLAGS) $(OMPFLAGS)
+cce_safetensors_test supra_console supra_chat_mock supra_context_probe supra_longform supra_head_qat supra_head_qat_corpus supra_joint_qat wordlm wordlm_bitnet wordlm_holdout trit_bench: CFLAGS := $(AVX_CFLAGS) $(OMPFLAGS)
 
 cce_safetensors_test: $(CCE) $(CCE_CUDA_OBJ) src/nn.c tests/test_cce_safetensors.c
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) src/nn.c tests/test_cce_safetensors.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
@@ -1131,6 +1131,13 @@ wordlm: $(CCE_WORDLM) tests/wordlm_demo.c include/cce/cce_wordlm.h
 wordlm_bitnet: $(CCE_WORDLM) tests/wordlm_bitnet_demo.c include/cce/cce_wordlm.h
 	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $(CCE_WORDLM) tests/wordlm_bitnet_demo.c $(LDFLAGS)
 	./$(BIN_DIR)/wordlm_bitnet
+
+# Held-out generalization of joint QAT on the GENERAL trainer (cce_wordlm, not
+# the Supra-shaped cce_supra_train): FP vs post-hoc ternary vs QAT on UNSEEN
+# sentences. Confirms the supra_joint_qat finding is trainer-independent.
+wordlm_holdout: $(CCE_WORDLM) tests/wordlm_holdout.c include/cce/cce_wordlm.h
+	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $(CCE_WORDLM) tests/wordlm_holdout.c $(LDFLAGS)
+	./$(BIN_DIR)/wordlm_holdout > logs/wordlm_holdout.log 2>&1 || echo "test exited non-zero (see log)"
 
 # Fine-tune-family merge pipeline (model-merge scope M0): base + N fine-tunes
 # in ONE content-addressed store — storage accounting vs naive, per-manifest

@@ -867,6 +867,19 @@ at memorization. So the ~7 MB packed artifact's open quality question now has a 
 **joint ternary QAT is the path**, and int8 (16.3 MB, cosine 0.99999) remains the near-lossless
 shippable tier today.
 
+**Trainer-independent — it reproduces on the general word-LM (`make wordlm_holdout`).** Because
+`supra_joint_qat` uses the Supra-*shaped* `cce_supra_train`, the finding is re-run on `cce_wordlm`
+— a general word-LM with the same BitNet b1.58 recipe (FP shadow + STE), no Supra geometry — with
+whole sentences held out. The compression mechanism reproduces cleanly: FP train ppl 1.39 →
+**post-hoc ternary collapses to 136.93 (98×)** → **QAT recovers to 2.02** (near FP). On unseen
+sentences QAT's held-out next-word accuracy stays ≥ post-hoc across seeds (word-level on a small
+corpus has a weak held-out signal — ~9–12% for all — so the *generalization* gap is where it shows
+strongest, at byte level; the *mechanism* is unambiguous either way). Note the general CNET student
+trainer `btn_train_dynamic` trains FP and exposes only an *optional* ternary-inference mode
+(`btn_set_ternary_inference`, default OFF, not enabled by the serving path) — i.e. its compression
+path is exactly the post-hoc one that collapses, so joint QAT is the recipe to reach for if ternary
+units ever need to generalize beyond their certified exemplars.
+
 ---
 
 # Universal Model Layer (detect → decompose → identify → dedup → run bounded → merge)

@@ -42,6 +42,7 @@ LONG='
 supra_head_qat.log|||, 0 failed
 supra_head_qat_corpus.log|||, 0 failed
 supra_joint_qat.log|||, 0 failed
+wordlm_holdout.log|||, 0 failed
 '
 
 # The compat tier (legacy quarantine): back-compat coverage that must stay
