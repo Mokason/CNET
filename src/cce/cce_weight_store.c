@@ -30,13 +30,37 @@
 
 #define WS_MAGIC "CSPC"
 #define WS_VERSION 1
-#define WS_VERSION_Q 2                        /* v2: per-block is_quant flag + int8 payload */
+#define WS_VERSION_Q 2                        /* v2: per-block kind flag (0=fp / 1=int8) */
+#define WS_VERSION_P 3                        /* v3: kind extends to packed (2=trit 1.6-bit, 3=int4 2/byte) */
 #define WS_QUANT_SALT 0x9E3779B97F4A7C15ULL   /* a quantized payload gets a digest distinct from its FP twin */
-/* A cascade is quantized if any block carries int8 codes (w_q + per-out scale). */
-static int ws_cascade_quant(const cce_cascade* cas) {
+#define WS_TRIT_SALT  0xC2B2AE3D27D4EB4FULL   /* packed-ternary payload: distinct from FP AND int8 twins */
+#define WS_INT4_SALT  0x165667B19E3779F9ULL   /* packed-int4 payload: distinct from FP, int8 and trit twins */
+
+/* Per-block payload kind. cce_spec_digest hashes FP weights only, so every
+   quantized variant of one FP cascade needs its own salt to not collide. */
+enum { WS_KIND_FP = 0, WS_KIND_INT8 = 1, WS_KIND_TRIT = 2, WS_KIND_INT4 = 3 };
+
+static int ws_block_kind(const cce_block* blk) {
+    if (blk->w_trit && blk->w_scale) return WS_KIND_TRIT;
+    if (blk->w_q && blk->w_scale) {
+        /* int8 codes that all fit [-7,7] pack losslessly at 2/byte. A genuine
+           absmax int8 block always carries a +/-127 code, so it never lands here. */
+        int in  = blk->weights.ndim >= 2 ? blk->weights.shape[0] : 0;
+        int out = blk->weights.ndim >= 2 ? blk->weights.shape[1] : 0;
+        size_t n = (size_t)in * out;
+        for (size_t k = 0; k < n; k++)
+            if (blk->w_q[k] < -7 || blk->w_q[k] > 7) return WS_KIND_INT8;
+        return n ? WS_KIND_INT4 : WS_KIND_INT8;
+    }
+    return WS_KIND_FP;
+}
+
+/* bitmask of block kinds present in the cascade */
+static unsigned ws_cascade_kinds(const cce_cascade* cas) {
+    unsigned m = 0;
     for (int i = 0; i < cas->num_blocks; i++)
-        if (cas->blocks[i].w_q && cas->blocks[i].w_scale) return 1;
-    return 0;
+        m |= 1u << ws_block_kind(&cas->blocks[i]);
+    return m;
 }
 
 struct cce_weight_store {
@@ -65,8 +89,11 @@ static int blob_put(ws_blob* b, const void* p, size_t n) {
 static int blob_i32(ws_blob* b, int v) { return blob_put(b, &v, 4); }
 
 static cce_result serialize_cascade(const cce_cascade* cas, ws_blob* b) {
-    int quant = ws_cascade_quant(cas);
-    uint32_t ver = quant ? WS_VERSION_Q : WS_VERSION, kind = 0;   /* FP-only cascades keep v1 byte-for-byte */
+    unsigned kinds = ws_cascade_kinds(cas);
+    /* FP-only cascades keep v1, int8-only keep v2 — both byte-for-byte stable. */
+    uint32_t ver = (kinds & ((1u << WS_KIND_TRIT) | (1u << WS_KIND_INT4))) ? WS_VERSION_P
+                 : (kinds & (1u << WS_KIND_INT8)) ? WS_VERSION_Q : WS_VERSION;
+    uint32_t kind = 0;
     if (!blob_put(b, WS_MAGIC, 4) || !blob_put(b, &ver, 4) || !blob_put(b, &kind, 4)) return CCE_ERR_OOM;
     if (!blob_i32(b, cas->num_blocks)) return CCE_ERR_OOM;
     for (int i = 0; i < cas->num_blocks; i++) {
@@ -74,15 +101,37 @@ static cce_result serialize_cascade(const cce_cascade* cas, ws_blob* b) {
         int in  = blk->weights.ndim >= 2 ? blk->weights.shape[0] : 0;
         int out = blk->weights.ndim >= 2 ? blk->weights.shape[1] : 0;
         int has_bias = (blk->bias.data && blk->bias.numel > 0) ? 1 : 0;
-        int is_q = (blk->w_q && blk->w_scale) ? 1 : 0;
-        if (in <= 0 || out <= 0 || (!is_q && !blk->weights.data)) return CCE_ERR_UNSUPPORTED;
+        int bk = ws_block_kind(blk);
+        if (in <= 0 || out <= 0 || (bk == WS_KIND_FP && !blk->weights.data)) return CCE_ERR_UNSUPPORTED;
         if (!blob_i32(b, (int)blk->type) || !blob_i32(b, in) || !blob_i32(b, out) ||
             !blob_i32(b, has_bias)) return CCE_ERR_OOM;
-        if (quant && !blob_i32(b, is_q)) return CCE_ERR_OOM;   /* v2 only: per-block precision flag */
-        if (is_q) {   /* int8 weight-only payload (1/4 the bytes): codes [in*out] + per-out scale [out] */
+        if (ver >= WS_VERSION_Q && !blob_i32(b, bk)) return CCE_ERR_OOM;   /* v2+: per-block precision kind */
+        switch (bk) {
+        case WS_KIND_INT8:   /* int8 weight-only payload (1/4 the bytes): codes [in*out] + per-out scale [out] */
             if (!blob_put(b, blk->w_q, (size_t)in * out) ||
                 !blob_put(b, blk->w_scale, (size_t)out * sizeof(float))) return CCE_ERR_OOM;
-        } else {
+            break;
+        case WS_KIND_TRIT:   /* 1.6 bit/weight: bpr + packed base-3 rows (5 trits/byte) + per-out scale */
+            if (blk->w_trit_bpr != (out + 4) / 5) return CCE_ERR_UNSUPPORTED;
+            if (!blob_i32(b, blk->w_trit_bpr) ||
+                !blob_put(b, blk->w_trit, (size_t)in * blk->w_trit_bpr) ||
+                !blob_put(b, blk->w_scale, (size_t)out * sizeof(float))) return CCE_ERR_OOM;
+            break;
+        case WS_KIND_INT4: { /* 4 bit/weight: two codes/byte (low nibble first, code+7 in [0,14]) + per-out scale */
+            size_t n = (size_t)in * out, pb = (n + 1) / 2;
+            unsigned char* pk = (unsigned char*)malloc(pb);
+            if (!pk) return CCE_ERR_OOM;
+            for (size_t k = 0; k < pb; k++) {
+                unsigned lo = (unsigned)(blk->w_q[2 * k] + 7);
+                unsigned hi = (2 * k + 1 < n) ? (unsigned)(blk->w_q[2 * k + 1] + 7) : 0;
+                pk[k] = (unsigned char)(lo | (hi << 4));
+            }
+            int okp = blob_put(b, pk, pb);
+            free(pk);
+            if (!okp || !blob_put(b, blk->w_scale, (size_t)out * sizeof(float))) return CCE_ERR_OOM;
+            break;
+        }
+        default:
             if (!blob_put(b, blk->weights.data, (size_t)in * out * sizeof(float))) return CCE_ERR_OOM;
         }
         if (has_bias && !blob_put(b, blk->bias.data, blk->bias.numel * sizeof(float))) return CCE_ERR_OOM;
@@ -229,7 +278,12 @@ cce_result cce_weight_store_put(cce_weight_store* s, const cce_cascade* cas,
                                 uint64_t* digest_out, int* reused_out) {
     if (!s || !cas) return CCE_ERR_INVALID_ARG;
     uint64_t d = cce_spec_digest(cas);
-    if (ws_cascade_quant(cas)) d ^= WS_QUANT_SALT;   /* quant payload != FP twin (spec_digest hashes FP only) */
+    {   /* each precision variant of one FP cascade gets its own digest (spec_digest hashes FP only) */
+        unsigned kinds = ws_cascade_kinds(cas);
+        if (kinds & (1u << WS_KIND_INT8)) d ^= WS_QUANT_SALT;
+        if (kinds & (1u << WS_KIND_TRIT)) d ^= WS_TRIT_SALT;
+        if (kinds & (1u << WS_KIND_INT4)) d ^= WS_INT4_SALT;
+    }
     if (digest_out) *digest_out = d;
     ws_blob b = {0};
     cce_result rc = serialize_cascade(cas, &b);
@@ -268,7 +322,7 @@ static cce_result read_payload(const cce_weight_store* s, uint64_t digest,
     uint32_t ver, kind;
     memcpy(&ver, buf + 4, 4);
     memcpy(&kind, buf + 8, 4);
-    if (ver != WS_VERSION && ver != WS_VERSION_Q) { free(buf); return CCE_ERR_UNSUPPORTED; }
+    if (ver < WS_VERSION || ver > WS_VERSION_P) { free(buf); return CCE_ERR_UNSUPPORTED; }
     *buf_out = buf; *len_out = (size_t)n; *kind_out = kind;
     return CCE_OK;
 }
@@ -282,7 +336,7 @@ cce_result cce_weight_store_get(cce_weight_store* s, uint64_t digest, cce_cascad
     if (kind != 0) { free(buf); return CCE_ERR_UNSUPPORTED; }
 
     uint32_t ver = 0; memcpy(&ver, buf + 4, 4);
-    int isv2 = (ver == WS_VERSION_Q);
+    int hasflag = (ver >= WS_VERSION_Q);
     size_t off = 12;
     int nb = 0;
     if (off + 4 > len) { free(buf); return CCE_ERR_IO; }
@@ -292,17 +346,27 @@ cce_result cce_weight_store_get(cce_weight_store* s, uint64_t digest, cce_cascad
     cce_cascade* cas = NULL;
     if (cce_cascade_create(&cas, nb) != CCE_OK) { free(buf); return CCE_ERR_OOM; }
     for (int i = 0; i < nb; i++) {
-        int type, in, out_d, has_bias, is_q = 0;
+        int type, in, out_d, has_bias, bk = WS_KIND_FP;
         if (off + 16 > len) { cce_cascade_destroy(cas); free(buf); return CCE_ERR_IO; }
         memcpy(&type, buf + off, 4); memcpy(&in, buf + off + 4, 4);
         memcpy(&out_d, buf + off + 8, 4); memcpy(&has_bias, buf + off + 12, 4);
         off += 16;
-        if (isv2) {
+        if (hasflag) {
             if (off + 4 > len) { cce_cascade_destroy(cas); free(buf); return CCE_ERR_IO; }
-            memcpy(&is_q, buf + off, 4); off += 4;
+            memcpy(&bk, buf + off, 4); off += 4;
         }
-        size_t wbytes = is_q ? ((size_t)in * out_d + (size_t)out_d * sizeof(float))   /* int8 codes + scale */
-                             : (size_t)in * out_d * sizeof(float);
+        if (bk < WS_KIND_FP || bk > WS_KIND_INT4) { cce_cascade_destroy(cas); free(buf); return CCE_ERR_UNSUPPORTED; }
+        int bpr = 0;
+        if (bk == WS_KIND_TRIT) {
+            if (off + 4 > len) { cce_cascade_destroy(cas); free(buf); return CCE_ERR_IO; }
+            memcpy(&bpr, buf + off, 4); off += 4;
+            if (bpr != (out_d + 4) / 5) { cce_cascade_destroy(cas); free(buf); return CCE_ERR_UNSUPPORTED; }
+        }
+        size_t wbytes =
+            (bk == WS_KIND_INT8) ? ((size_t)in * out_d + (size_t)out_d * sizeof(float))          /* codes + scale */
+          : (bk == WS_KIND_TRIT) ? ((size_t)in * bpr + (size_t)out_d * sizeof(float))            /* trits + scale */
+          : (bk == WS_KIND_INT4) ? (((size_t)in * out_d + 1) / 2 + (size_t)out_d * sizeof(float))/* nibbles + scale */
+          : (size_t)in * out_d * sizeof(float);
         size_t bbytes = has_bias ? (size_t)out_d * sizeof(float) : 0;
         if (in <= 0 || out_d <= 0 || off + wbytes + bbytes > len) {
             cce_cascade_destroy(cas); free(buf); return CCE_ERR_IO;
@@ -313,7 +377,7 @@ cce_result cce_weight_store_get(cce_weight_store* s, uint64_t digest, cce_cascad
         if (arc != CCE_OK) { cce_cascade_destroy(cas); free(buf); return arc; }
         cce_block* blk = &cas->blocks[cas->num_blocks - 1];
         blk->type = (cce_block_type_t)type;
-        if (is_q) {
+        if (bk == WS_KIND_INT8) {
             /* int8 payload: restore w_q + per-out scale. The forward's int8 path uses them
                (w_q takes precedence over weights.data), so the restored block runs int8 —
                bit-identical to the all-resident quantized model. Dequant into weights.data too
@@ -323,6 +387,45 @@ cce_result cce_weight_store_get(cce_weight_store* s, uint64_t digest, cce_cascad
             float*  sc = (float*)malloc((size_t)out_d * sizeof(float));
             if (!q || !sc) { free(q); free(sc); cce_cascade_destroy(cas); free(buf); return CCE_ERR_OOM; }
             memcpy(q,  buf + off, qb); off += qb;
+            memcpy(sc, buf + off, (size_t)out_d * sizeof(float)); off += (size_t)out_d * sizeof(float);
+            blk->w_q = q; blk->w_scale = sc;
+            for (int ii = 0; ii < in; ii++)
+                for (int oo = 0; oo < out_d; oo++)
+                    blk->weights.data[(size_t)ii * out_d + oo] = sc[oo] * (float)q[(size_t)ii * out_d + oo];
+        } else if (bk == WS_KIND_TRIT) {
+            /* packed-ternary payload (1.6 bit/weight): restore w_trit + bpr + per-out scale.
+               The forward prefers w_trit over w_q/FP, so the restored block runs the trit
+               path — bit-identical to the all-resident packed model. Dequant into
+               weights.data for any non-forward reader; the trit forward ignores it. */
+            static const int tri_pow[5] = { 1, 3, 9, 27, 81 };
+            size_t tb = (size_t)in * bpr;
+            uint8_t* t  = (uint8_t*)malloc(tb);
+            float*   sc = (float*)malloc((size_t)out_d * sizeof(float));
+            if (!t || !sc) { free(t); free(sc); cce_cascade_destroy(cas); free(buf); return CCE_ERR_OOM; }
+            memcpy(t,  buf + off, tb); off += tb;
+            memcpy(sc, buf + off, (size_t)out_d * sizeof(float)); off += (size_t)out_d * sizeof(float);
+            blk->w_trit = t; blk->w_trit_bpr = bpr; blk->w_scale = sc;
+            for (int ii = 0; ii < in; ii++) {
+                const uint8_t* tr = t + (size_t)ii * bpr;
+                for (int oo = 0; oo < out_d; oo++) {
+                    int code = (tr[oo / 5] / tri_pow[oo % 5]) % 3 - 1;   /* base-3 digit -> {-1,0,+1} */
+                    blk->weights.data[(size_t)ii * out_d + oo] = sc[oo] * (float)code;
+                }
+            }
+        } else if (bk == WS_KIND_INT4) {
+            /* packed-int4 payload: unpack nibbles to w_q (int8) — the block has no native
+               int4-packed forward, so the restored block runs the int8 path on the exact
+               same codes — bit-identical to the pre-pack int4 model. */
+            size_t n = (size_t)in * out_d, pb = (n + 1) / 2;
+            int8_t* q  = (int8_t*)malloc(n);
+            float*  sc = (float*)malloc((size_t)out_d * sizeof(float));
+            if (!q || !sc) { free(q); free(sc); cce_cascade_destroy(cas); free(buf); return CCE_ERR_OOM; }
+            for (size_t k = 0; k < pb; k++) {
+                unsigned char byte = buf[off + k];
+                q[2 * k] = (int8_t)((int)(byte & 0x0F) - 7);
+                if (2 * k + 1 < n) q[2 * k + 1] = (int8_t)((int)(byte >> 4) - 7);
+            }
+            off += pb;
             memcpy(sc, buf + off, (size_t)out_d * sizeof(float)); off += (size_t)out_d * sizeof(float);
             blk->w_q = q; blk->w_scale = sc;
             for (int ii = 0; ii < in; ii++)

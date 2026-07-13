@@ -1044,6 +1044,17 @@ dense_stream_a2: $(CCE) $(CCE_CUDA_OBJ) tests/dense_stream_a2.c tests/tiny_model
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) tests/dense_stream_a2.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 	./$(BIN_DIR)/dense_stream_a2 > logs/dense_stream_a2.console.log 2>&1 || echo "test exited non-zero (see logs/dense_stream_a2.log)"
 
+# Dense expert-streaming arc (packed storage): the weight store's quantized-
+# payload path extended to PACKED formats — ternary at 1.6 bit/weight (5 trits/
+# byte base-3, ~20x) and int4 at 2 codes/byte (~8x). Gates: four precision
+# variants of one cascade land under DISTINCT digests with EXACT payload sizes
+# and restore representation-bit-exact; packed models stream BIT-IDENTICALLY
+# to their all-resident twins under a bounded resident cap.
+dense_stream_trit: $(CCE) $(CCE_CUDA_OBJ) tests/dense_stream_trit.c tests/tiny_model_fixture.h
+	@mkdir -p logs
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) tests/dense_stream_trit.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+	./$(BIN_DIR)/dense_stream_trit > logs/dense_stream_trit.console.log 2>&1 || echo "test exited non-zero (see logs/dense_stream_trit.log)"
+
 # SIMILAR_TO + evidence-gated merge: epsilon-equivalent specialists merge via
 # manifest remap ONLY after an adversarial probe battery; unverified refuses.
 cce_similar: $(CCE) $(CCE_CUDA_OBJ) tests/cce_similar_test.c tests/tiny_model_fixture.h
