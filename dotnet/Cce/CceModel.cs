@@ -491,13 +491,9 @@ public sealed class CceModel : IDisposable
                 return setRc == CceNative.CceResult.Ok;
             }
 
-            // Best-effort (CPU fallback; NOT the OpenCL backend — cce_clgemm is)
-            rc = CceNative.CceGpuInit(out ctx);
-            if (rc == CceNative.CceResult.Ok && ctx != IntPtr.Zero)
-            {
-                var setRc = CceNative.CceModelSetGpuOwned(_handle, ctx);
-                return setRc == CceNative.CceResult.Ok;
-            }
+            // cce_gpu_init is a CPU context, not an accelerator. Do not attach
+            // it and report a false-positive GPU enablement.
+            return false;
         }
         catch (EntryPointNotFoundException)
         {
@@ -510,20 +506,20 @@ public sealed class CceModel : IDisposable
         {
             return false;
         }
-        return false;
     }
 
     /// <summary>
-    /// Sets the desired device. Currently a convenience over TryUseGpu() for CceDevice.Cuda/Auto.
+    /// Sets the desired device. CUDA/Auto attempt CUDA and otherwise remain on
+    /// CPU. OpenCL uses the separate cce_clgemm tensor API and is not available
+    /// through this high-level model method.
     /// </summary>
     public void SetDevice(CceDevice device)
     {
         ThrowIfDisposed();
+        if (device == CceDevice.OpenCl)
+            throw new NotSupportedException("CceDevice.OpenCl requires the separate native cce_clgemm API.");
         if (device == CceDevice.Cuda || device == CceDevice.Auto)
-        {
             TryUseGpu();
-        }
-        // Cpu and OpenCl are currently no-ops or best-effort in native init.
     }
 
     /// <summary>

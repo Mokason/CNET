@@ -13,9 +13,9 @@ libraries). It includes:
 
 - Tensor, block, cascade, archive, forest, router, sparse-kv, uncertainty,
   compression, learn, patch — the core CCE engine.
-- `cce_gpu.c` — the **generic GPU API** (CUDA-or-CPU fallback). This provides
-  `cce_gpu_init` (which returns `CCE_GPU_NONE` or `CCE_GPU_CUDA`, never
-  `CCE_GPU_OPENCL` in the default build) and `cce_gpu_init_cuda`.
+- `cce_gpu.c` — the **generic `cce_tensor` device API**. The default
+  `cce_gpu_init` creates a CPU-fallback context; CUDA is requested explicitly
+  through `cce_gpu_init_cuda`. It never owns the OpenCL backend.
 - `cce_clgemm.c` — the **OpenCL model-kernel backend**. This is a separate
   acceleration path with its own tensor contract (`float*` row-major, not
   `cce_tensor`). It dynamically loads `libOpenCL.so.1` / `OpenCL.dll` and
@@ -42,14 +42,15 @@ Two GPU backends exist, each with a distinct role:
 
 | Backend       | Source            | API entry point       | Tensor contract        | Status     |
 |--------------|-------------------|-----------------------|------------------------|------------|
-| Generic GPU  | `src/cce/cce_gpu.c`  | `cce_gpu_init`       | `cce_tensor` (struct)  | CUDA-or-CPU |
-| OpenCL kernel| `src/cce/cce_clgemm.c` | `cce_clgemm_open`  | `float*` row-major     | OpenCL     |
+| Generic tensor device | `src/cce/cce_gpu.c` | `cce_gpu_init` / `cce_gpu_init_cuda` | `cce_tensor` (struct) | CPU context or explicit CUDA |
+| OpenCL kernel | `src/cce/cce_clgemm.c` | `cce_clgemm_open` | `float*` row-major | OpenCL |
 
-**These are not unified.** `cce_gpu_init` does NOT return `CCE_GPU_OPENCL` in
-the default build (it returns `CCE_GPU_NONE` on CPU-only builds). The OpenCL
-path is accessed through `cce_clgemm_open` / `cce_clgemm_matmul`, which has
-its own device management and tensor layout. The `.NET` enum `CceDevice.OpenCl`
-maps to the cce_clgemm backend, not to `cce_gpu_init`.
+**These are not unified.** `cce_gpu_init` always creates the CPU-fallback
+context; explicit CUDA uses `cce_gpu_init_cuda`. The OpenCL path is accessed
+through `cce_clgemm_open` / `cce_clgemm_matmul`, which has its own device
+management and tensor layout. The high-level `.NET` `CceModel.UseDevice`
+method does not expose OpenCL; `CceDevice.OpenCl` is reserved and rejected
+rather than silently mapped to the wrong backend.
 
 ## Tier 3 — Quarantined Legacy Experiments
 
@@ -64,8 +65,10 @@ maps to the cce_clgemm backend, not to `cce_gpu_init`.
 ### Regression gate
 
 `make alt_paths_gate` compiles `tests/test_alt_paths_gate.c` with `$(CCE)` and
-verifies at link-time (via weak symbols) that AICIMO is not transitively in the
-core aggregate, and at runtime that `cce_gpu_init` does not return OpenCL.
+uses weak-symbol probes to reject both AICIMO and `cnet_lm` leakage into the
+core aggregate. It also verifies that `cce_gpu_init` creates only the generic
+CPU-fallback context; explicit CUDA and the separate OpenCL `cce_clgemm` API
+remain distinct.
 
 ### Smoke builds
 

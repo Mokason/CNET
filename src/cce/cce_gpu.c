@@ -4,24 +4,10 @@
 #include <stdlib.h>
 #include <string.h>
 
-#if defined(__APPLE__)
-#include <OpenCL/opencl.h>
-#elif defined(_WIN32) || defined(__linux__)
-#ifdef CCE_HAVE_OPENCL
-#include <CL/cl.h>
-#endif
-#endif
-
 struct cce_gpu_ctx {
     cce_gpu_backend_t backend;
 #ifdef CCE_HAVE_CUDA
     cublasHandle_t   cublas_handle;
-#endif
-#if defined(CCE_HAVE_OPENCL)
-    cl_platform_id   platform;
-    cl_device_id     device;
-    cl_context       context;
-    cl_command_queue queue;
 #endif
     int              initialized;
 };
@@ -34,31 +20,9 @@ cce_result cce_gpu_init(cce_gpu_ctx** ctx_out) {
     cce_gpu_ctx* ctx = (cce_gpu_ctx*)calloc(1, sizeof(cce_gpu_ctx));
     if (!ctx) return CCE_ERR_OOM;
 
-    /* Default path: CPU fallback. The generic GPU API provides CUDA (when
-     * compiled with CCE_USE_CUDA=1) or CPU — it does NOT provide the OpenCL
-     * backend. The OpenCL model-kernel path is cce_clgemm.c, a separate
-     * source with its own tensor contract, linked into $(CCE) independently. */
-#if defined(CCE_HAVE_OPENCL)
-    ctx->backend = CCE_GPU_OPENCL;
-    cl_int err;
-    err = clGetPlatformIDs(1, &ctx->platform, NULL);
-    if (err == CL_SUCCESS) {
-        err = clGetDeviceIDs(ctx->platform, CL_DEVICE_TYPE_GPU, 1, &ctx->device, NULL);
-        if (err == CL_SUCCESS) {
-            ctx->context = clCreateContext(NULL, 1, &ctx->device, NULL, NULL, &err);
-            if (err == CL_SUCCESS) {
-                ctx->queue = clCreateCommandQueue(ctx->context, ctx->device, 0, &err);
-                if (err == CL_SUCCESS) {
-                    ctx->initialized = 1;
-                    g_gpu_ctx = ctx;
-                    *ctx_out = ctx;
-                    return CCE_OK;
-                }
-            }
-        }
-    }
-#endif
-
+    /* The generic context is the CPU fallback. CUDA must be requested through
+     * cce_gpu_init_cuda(); OpenCL model kernels are owned by cce_clgemm.c and
+     * deliberately do not share this cce_tensor context. */
     ctx->backend = CCE_GPU_NONE;
     ctx->initialized = 0;
     g_gpu_ctx = ctx;
@@ -105,10 +69,6 @@ void cce_gpu_destroy(cce_gpu_ctx* ctx) {
     if (!ctx) return;
 #ifdef CCE_HAVE_CUDA
     if (ctx->cublas_handle) cublasDestroy(ctx->cublas_handle);
-#endif
-#if defined(CCE_HAVE_OPENCL)
-    if (ctx->queue) clReleaseCommandQueue(ctx->queue);
-    if (ctx->context) clReleaseContext(ctx->context);
 #endif
     free(ctx);
 }

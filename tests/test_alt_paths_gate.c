@@ -9,13 +9,9 @@
  *      it provides CUDA-or-CPU fallback, NOT an OpenCL backend.
  *      The actual OpenCL model-kernel path is cce_clgemm.c (a separate source).
  *
- * Compile this test with $(CCE) and it will fail to link if aicimo symbols
- * are present (because we deliberately do NOT compile cce_aicimo.c into $(CCE)
- * after the fix). We also check at runtime that the clgemm source is a
- * distinct compilation unit.
- *
- * The test also does a source-level check: it #includes cce_gpu.h and verifies
- * that the public API comment does not claim OpenCL as a cce_gpu_init result.
+ * Compile this test with $(CCE); weak-symbol probes fail the test if AICIMO or
+ * cnet_lm symbols resolve from the core aggregate. It also checks that the
+ * default generic context is CPU-only and documents cce_clgemm as distinct.
  */
 #include "../include/cce/cce_gpu.h"
 #include "../include/cce/cce_gguf.h"
@@ -29,6 +25,7 @@
 __attribute__((weak)) int aicimo_router_init(void *r, int a, int b);
 __attribute__((weak)) int aicimo_route(void *r, const void *in, int in_dim,
                                         void *out, int out_dim, void *used);
+__attribute__((weak)) void cnet_lm_init(void *model);
 
 int main(void) {
     int failures = 0;
@@ -50,12 +47,17 @@ int main(void) {
         printf("PASS: aicimo_route is NOT in the core CCE aggregate\n");
     }
 
-    /* --- Gate 2: cce_gpu_init does not return an OpenCL backend --- */
-    /* The cce_gpu.c source has an #ifdef CCE_HAVE_OPENCL block, but it is
-     * never defined in the default build. We verify at runtime that
-     * cce_gpu_init returns CCE_GPU_NONE (not CCE_GPU_OPENCL) when no
-     * accelerator is available. This is the honest behavior: the generic
-     * GPU API is CUDA-or-CPU, not OpenCL. */
+    if (cnet_lm_init != NULL) {
+        printf("FAIL: cnet_lm_init is linked into the core CCE aggregate\n");
+        failures++;
+    } else {
+        printf("PASS: cnet_lm_init is NOT in the core CCE aggregate\n");
+    }
+
+    /* --- Gate 2: cce_gpu_init is the CPU-fallback context only --- */
+    /* The generic initializer deliberately creates only the CPU-fallback
+     * context. CUDA is explicit through cce_gpu_init_cuda; OpenCL is the
+     * separate cce_clgemm API. */
     cce_gpu_ctx *ctx = NULL;
     cce_result rc = cce_gpu_init(&ctx);
     if (rc != CCE_OK) {
@@ -63,13 +65,12 @@ int main(void) {
         failures++;
     } else {
         cce_gpu_backend_t backend = cce_gpu_get_backend(ctx);
-        if (backend == CCE_GPU_OPENCL) {
-            printf("FAIL: cce_gpu_init returned CCE_GPU_OPENCL — the generic API\n");
-            printf("      must not claim OpenCL; cce_clgemm is the OpenCL path\n");
+        if (backend != CCE_GPU_NONE) {
+            printf("FAIL: cce_gpu_init returned backend=%d; expected CPU fallback\n",
+                   (int)backend);
             failures++;
         } else {
-            printf("PASS: cce_gpu_init returned backend=%d (not OpenCL)\n",
-                   (int)backend);
+            printf("PASS: cce_gpu_init returned the CPU-fallback context\n");
         }
         cce_gpu_destroy(ctx);
     }

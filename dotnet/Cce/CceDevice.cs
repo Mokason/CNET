@@ -6,11 +6,11 @@ namespace CNET.Cce;
 /// Device / backend selection for CCE.
 /// 
 /// Today the heavy lifting (CUDA) lives in the native C build. The generic
-/// cce_gpu API provides CUDA-or-CPU fallback. The OpenCL model-kernel backend
-/// is cce_clgemm.c — a separate source with its own tensor contract, NOT
-/// exposed through cce_gpu_init. When you build the native library with
-/// CCE_USE_CUDA=1 the learner and certain block operations can accelerate
-/// automatically for supported cascades.
+/// cce_gpu API provides explicit CUDA or a CPU fallback. The OpenCL
+/// model-kernel backend is cce_clgemm.c — a separate native API with its own
+/// tensor contract, not exposed through CceModel.UseDevice(...). When the
+/// native library is built with CCE_USE_CUDA=1, learner and block operations
+/// can accelerate automatically for supported cascades.
 ///
 /// This type + CceModel.UseDevice(...) provides the future .NET hook surface.
 /// </summary>
@@ -22,10 +22,10 @@ public enum CceDevice
     /// <summary>Prefer CUDA if the native was built with CUDA support and a GPU is present.</summary>
     Cuda = 1,
 
-    /// <summary>Prefer OpenCL (the cce_clgemm backend; not exposed via cce_gpu_init).</summary>
+    /// <summary>Reserved for the separate native cce_clgemm API; UseDevice currently rejects it.</summary>
     OpenCl = 2,
 
-    /// <summary>Let the native pick the best available accelerator (CUDA > OpenCL > CPU).</summary>
+    /// <summary>Try CUDA, otherwise remain on CPU.</summary>
     Auto = 3,
 }
 

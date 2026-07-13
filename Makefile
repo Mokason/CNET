@@ -1733,7 +1733,7 @@ dotnet_restore:
 	fi
 	@echo "DOTNET_RESTORE_PASS" | tee -a logs/dotnet_restore.log
 
-unified_native: unified_adapter unified_cce_adapter unified_oracle_adapter unified_specialist gap_lane dispatch_story oracle_v2_test unified_async unified_models unified_ds4_launcher soul_host_test cnet_dll build_hygiene_test
+unified_native: unified_adapter unified_cce_adapter unified_oracle_adapter unified_specialist gap_lane dispatch_story oracle_v2_test unified_async unified_models unified_ds4_launcher soul_host_test cnet_dll build_hygiene_test alt_paths_gate
 	@for sym in specialist_wrap_btn specialist_wrap_cce_model \
 		specialist_wrap_oracle specialist_admit specialist_axes \
 		specialist_residency_of_model specialist_residency_of_branch \
@@ -1853,5 +1853,7 @@ aicimo_smoke: $(CCE) $(CCE_AICIMO_SRC) tests/aicimo_smoke.c
 # OpenCL). See tests/test_alt_paths_gate.c.
 .PHONY: alt_paths_gate
 alt_paths_gate: $(CCE) tests/test_alt_paths_gate.c include/cce/cce_gpu.h include/cce/cce_gguf.h include/cce/cce_clgemm.h
+	@mkdir -p $(BIN_DIR) logs
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/test_alt_paths_gate $(CCE) tests/test_alt_paths_gate.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
-	./$(BIN_DIR)/test_alt_paths_gate
+	./$(BIN_DIR)/test_alt_paths_gate > logs/alt_paths_gate.log 2>&1
+	@grep -q "ALT_PATHS_GATE_PASS" logs/alt_paths_gate.log
