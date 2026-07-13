@@ -1053,7 +1053,7 @@ cce_autograd_test: $(CCE) $(CCE_CUDA_OBJ) tests/test_cce_autograd.c
 AVX_CFLAGS := $(filter-out -mno-avx,$(CFLAGS))
 # wordlm/wordlm_bitnet/trit_bench link only CCE sources (no src/router/), so
 # they are AVX-safe too; OMP activates the row-parallel packed-trit kernels.
-cce_safetensors_test supra_console supra_chat_mock supra_context_probe supra_longform supra_head_qat supra_head_qat_corpus transformer_qat_joint transformer_qat_real transformer_qat_altmodel proj_qat_recon proj_qat_gemma proj_qat_stack gptq_solver proj_qat_gemma_e2e wordlm wordlm_bitnet wordlm_holdout trit_bench: CFLAGS := $(AVX_CFLAGS) $(OMPFLAGS)
+cce_safetensors_test supra_console supra_chat_mock supra_context_probe supra_longform supra_head_qat supra_head_qat_corpus transformer_qat_joint transformer_qat_real transformer_qat_altmodel proj_qat_recon proj_qat_gemma proj_qat_stack proj_qat_gpu gptq_solver proj_qat_gemma_e2e wordlm wordlm_bitnet wordlm_holdout trit_bench: CFLAGS := $(AVX_CFLAGS) $(OMPFLAGS)
 
 cce_safetensors_test: $(CCE) $(CCE_CUDA_OBJ) src/nn.c tests/test_cce_safetensors.c
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) src/nn.c tests/test_cce_safetensors.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
@@ -1147,6 +1147,15 @@ proj_qat_stack: tests/proj_qat_stack.c
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ tests/proj_qat_stack.c -lm
 	./$(BIN_DIR)/proj_qat_stack > logs/proj_qat_stack.log 2>&1 || echo "test exited non-zero (see log)"
+
+# Milestone 3: dual-GPU async dispatch of the embarrassingly-parallel per-projection
+# GEMM jobs across the two R9700s (cce_clgemm, one handle pinned per device via
+# open_device — the oracle-pool pattern). Verifies GPU==CPU + measures the ~2x
+# throughput. Needs OpenCL + a discrete GPU; reports+passes with none. See tests/proj_qat_gpu.c.
+proj_qat_gpu: $(CCE) tests/proj_qat_gpu.c include/cce/cce_clgemm.h
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) tests/proj_qat_gpu.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+	./$(BIN_DIR)/proj_qat_gpu > logs/proj_qat_gpu.log 2>&1 || echo "test exited non-zero (see log)"
 
 # Milestone 4-full Part 1: the EFFICIENT GPTQ-Cholesky OBQ solver — a fast drop-in
 # for proj_qat_recon's coordinate-descent reconstruct(). One Cholesky of the
