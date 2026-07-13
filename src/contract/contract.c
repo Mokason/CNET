@@ -1064,6 +1064,27 @@ int registry_heal(PrimitiveRegistry *reg, const char *name,
     oc = btn->output_count;
     n_con = contract->exemplar_count;
     n_lab = q->labeled_count;
+
+    /* Dimension gate: verify the contract's port totals match the btn's
+       input/output counts BEFORE any allocation or memcpy.  The contract's
+       exemplar tables (contract->inputs / contract->outputs) are laid out
+       with in_total = ports_total(contract->input_ports) and out_total =
+       ports_total(contract->output_ports).  Using btn->input_count as the
+       row stride for contract->inputs is only safe when in_total == ic.
+       A mismatch means the memcpy would read past the end of the contract
+       buffer (over-read) or read too few doubles (under-read / data
+       corruption).  Refuse the mismatched contract without mutating state. */
+    {
+        size_t c_in_total  = ports_total(contract->input_ports,
+                                         contract->input_port_count);
+        size_t c_out_total = ports_total(contract->output_ports,
+                                          contract->output_port_count);
+        if (c_in_total == (size_t)-1 || c_out_total == (size_t)-1 ||
+            c_in_total != ic || c_out_total != oc) {
+            return -1;  /* signature mismatch: refuse, leave state/queue intact */
+        }
+    }
+
     total = n_con + n_lab;
 
     inputs = malloc(total * ic * sizeof(double));

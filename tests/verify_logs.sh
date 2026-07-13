@@ -29,6 +29,7 @@ hybrid_catalog.log|||failed -> OK
 transformer_qat.log|||failed -> OK
 contract_secure.log|||All contract security tests passed.
 contract_unit.log|||All unit-file tests passed.
+heal_mismatch.log|||HEAL_MISMATCH_PASS
 mutate.log|||All mutation-sweep gates passed.
 acquire.log|||ALL ACQUIRE TESTS PASSED
 base.log|||ALL BASE TESTS PASSED

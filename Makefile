@@ -304,6 +304,26 @@ contract_unit: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONSOLIDATE) $(CONTRACT) tests/t
 	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONSOLIDATE) $(CONTRACT) tests/test_unit.c $(LDFLAGS)
 	./$(BIN_DIR)/contract_unit > logs/contract_unit.log 2>&1 || echo "test exited non-zero (see log)"
 
+# registry_heal contract/BTN dimension-mismatch memory-safety gate.
+# Asserts registry_heal refuses mismatched contract port signatures
+# (input and output width) without mutating state or the retrain queue.
+# Normal build + run; the _san variant runs under ASan/UBSan.
+.PHONY: heal_mismatch heal_mismatch_san
+heal_mismatch: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONSOLIDATE) $(CONTRACT) tests/test_heal_mismatch.c include/nn.h include/router.h include/contract/contract.h
+	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONSOLIDATE) $(CONTRACT) tests/test_heal_mismatch.c $(LDFLAGS)
+	@./$(BIN_DIR)/heal_mismatch > logs/heal_mismatch.log 2>&1
+	@grep -q '^HEAL_MISMATCH_PASS$$' logs/heal_mismatch.log
+
+heal_mismatch_san: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONSOLIDATE) $(CONTRACT) tests/test_heal_mismatch.c include/nn.h include/router.h include/contract/contract.h
+	$(CC) -std=c11 -Wall -Wextra -pedantic -O1 -g -D_DEFAULT_SOURCE \
+		-fsanitize=address,undefined -fno-omit-frame-pointer \
+		-o $(BIN_DIR)/heal_mismatch_san $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONSOLIDATE) \
+		$(CONTRACT) tests/test_heal_mismatch.c $(LDFLAGS)
+	@ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 \
+		UBSAN_OPTIONS=halt_on_error=1 \
+		./$(BIN_DIR)/heal_mismatch_san > logs/heal_mismatch_san.log 2>&1
+	@grep -q '^HEAL_MISMATCH_PASS$$' logs/heal_mismatch_san.log
+
 # Loader robustness: systematic single-byte flip + truncation sweeps over
 # every artifact loader. Sealed formats (.cnu/.cnb) must refuse EVERY
 # mutation; unsealed probes (gguf/safetensors/.cce) must never crash.
@@ -867,7 +887,7 @@ leakcheck: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE)
 # even under -j) and re-reads each suite's log, asserting the suite's terminal
 # SUCCESS marker is present -- so `make test` now exits non-zero if any gate
 # failed, crashed, or produced no log. See tests/verify_logs.sh for the markers.
-verify: claims_test cce_dll cce_safetensors_test cce_autograd_test cce_model_test cce_view forest_view cce_detect cce_ssm cce_st_llama cce_specgraph cce_wstore cce_tiers cce_similar merge_family hybrid_catalog transformer_qat contract_secure contract_unit mutate acquire base flagship demos leakcheck
+verify: claims_test cce_dll cce_safetensors_test cce_autograd_test cce_model_test cce_view forest_view cce_detect cce_ssm cce_st_llama cce_specgraph cce_wstore cce_tiers cce_similar merge_family hybrid_catalog transformer_qat contract_secure contract_unit heal_mismatch mutate acquire base flagship demos leakcheck
 	@sh tests/verify_logs.sh
 
 # Everything verify covers PLUS the GPU equivalence gate (needs model + GPU;
