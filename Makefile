@@ -198,7 +198,7 @@ SYNONYMS_TEST := tests/test_synonyms.c
 TILEINDEX_TEST := tests/test_tile_index.c
 CONSOLIDATE_TEST := tests/test_tile_consolidate.c
 
-.PHONY: all run test verify verify-long demos compat unified unified_native unified_adapter unified_cce_adapter unified_oracle_adapter unified_specialist specialist_health gap_lane gap_lane_run_build dispatch_story claims oracle_v2_test soul_host_test legacy_test compose route dag hetero split chunk certify property coverage conformal logicgate decimal circuit study capacity library margin fuzzy stochastic fastpath throughput residue expr attention attention_study lifecycle_bench lbench proposal_sidecar probe_overhead belowbeam_chars struct_pref dgate_bench compounding_bench cce_smoke counterfactual_router_test sparse_kv_test narrative_coherence_test phase4_uncertainty_test register_compression_improvements phase5_integration_test cce_train_bench cce_view forest_view wordlm wordlm_bitnet cce_dll cnet_dll cce_safetensors_test cce_gguf_test cce_model_test cce_autograd_test endgate jsonstory pdftest pdflearn compound tiermem_test graduate fontdecode tfidf synonyms tileindex consolidate clean
+.PHONY: all run test verify verify-long recipe_gate demos compat unified unified_native unified_adapter unified_cce_adapter unified_oracle_adapter unified_specialist specialist_health gap_lane gap_lane_run_build dispatch_story claims oracle_v2_test soul_host_test legacy_test compose route dag hetero split chunk certify property coverage conformal logicgate decimal circuit study capacity library margin fuzzy stochastic fastpath throughput residue expr attention attention_study lifecycle_bench lbench proposal_sidecar probe_overhead belowbeam_chars struct_pref dgate_bench compounding_bench cce_smoke counterfactual_router_test sparse_kv_test narrative_coherence_test phase4_uncertainty_test register_compression_improvements phase5_integration_test cce_train_bench cce_view forest_view wordlm wordlm_bitnet cce_dll cnet_dll cce_safetensors_test cce_gguf_test cce_model_test cce_autograd_test endgate jsonstory pdftest pdflearn compound tiermem_test graduate fontdecode tfidf synonyms tileindex consolidate clean
 
 all: nn_demo
 
@@ -302,7 +302,7 @@ library: test_library
 # gated by digest identity, tamper refused, smaller than the text pair.
 contract_unit: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONSOLIDATE) $(CONTRACT) tests/test_unit.c include/nn.h include/router.h include/contract/contract.h include/contract/unit.h
 	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONSOLIDATE) $(CONTRACT) tests/test_unit.c $(LDFLAGS)
-	./$(BIN_DIR)/contract_unit > logs/contract_unit.log 2>&1 || echo "test exited non-zero (see log)"
+	./$(BIN_DIR)/contract_unit > logs/contract_unit.log 2>&1
 
 # registry_heal contract/BTN dimension-mismatch memory-safety gate.
 # Asserts registry_heal refuses mismatched contract port signatures
@@ -329,33 +329,33 @@ heal_mismatch_san: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONSOLIDATE) $(CONTRACT) tes
 # mutation; unsealed probes (gguf/safetensors/.cce) must never crash.
 mutate: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(CCE) tests/test_mutate.c include/contract/unit.h include/base.h include/cce/cce_archive.h include/cce/cce_detect.h
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(CCE) tests/test_mutate.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
-	./$(BIN_DIR)/mutate > logs/mutate.log 2>&1 || echo "test exited non-zero (see log)"
+	./$(BIN_DIR)/mutate > logs/mutate.log 2>&1
 
 # Gap-triggered acquisition loop: gap ledger sidecar + oracle mining ->
 # train -> certify (PROOF/SAMPLE) -> seal .cnu -> register -> replan.
 # Link set mirrors the `coverage` target (+ acquire).
 acquire: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(ACQUIRE_TEST) include/nn.h include/router.h include/contract/contract.h include/contract/coverage.h include/contract/unit.h include/acquire.h include/base.h
 	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(ACQUIRE_TEST) $(LDFLAGS)
-	./$(BIN_DIR)/acquire > logs/acquire.log 2>&1 || echo "test exited non-zero (see log)"
+	./$(BIN_DIR)/acquire > logs/acquire.log 2>&1
 
 # Unified base (CNB version 2 semantics under stable CNB1 magic): one sealed
 # container (units + tags + stats + oracle descriptors) replacing per-unit file
 # sprawl; tag governance with refusal.
 base: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(BASE_TEST) include/nn.h include/router.h include/contract/contract.h include/contract/coverage.h include/contract/unit.h include/acquire.h include/base.h
 	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(BASE_TEST) $(LDFLAGS)
-	./$(BIN_DIR)/base > logs/base.log 2>&1 || echo "test exited non-zero (see log)"
+	./$(BIN_DIR)/base > logs/base.log 2>&1
 
 # Flagship harness gate (synthetic oracle, no CCE/GPU): duty-cycled,
 # crash-resumable compounding run; base-as-checkpoint resume; stop file.
 flagship: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(CONFORMAL) $(ACQUIRE_SRC) $(BASE_SRC) $(FLAGSHIP_SRC) $(FLAGSHIP_TEST) include/acquire.h include/base.h include/flagship.h
 	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(CONFORMAL) $(ACQUIRE_SRC) $(BASE_SRC) $(FLAGSHIP_SRC) $(FLAGSHIP_TEST) $(LDFLAGS)
-	./$(BIN_DIR)/flagship > logs/flagship.log 2>&1 || echo "test exited non-zero (see log)"
-	@CNET_ACQ_ADAPTIVE=1 ./$(BIN_DIR)/flagship > logs/flagship.adaptive.log 2>&1 || echo "flagship[adaptive] non-zero (see log)"
-	@CNET_ACQ_WARMSTART=1 ./$(BIN_DIR)/flagship > logs/flagship.warmstart.log 2>&1 || echo "flagship[warmstart] non-zero (see log)"
-	@CNET_TOPK_SET=1 ./$(BIN_DIR)/flagship > logs/flagship.topkset.log 2>&1 || echo "flagship[topkset] non-zero (see log)"
-	@CNET_ACQ_ADAPTIVE=1 CNET_ACQ_WARMSTART=1 CNET_TOPK_SET=1 ./$(BIN_DIR)/flagship > logs/flagship.allon.log 2>&1 || echo "flagship[all-on] non-zero (see log)"
-	@cc -O2 -w -o $(BIN_DIR)/test_dequant_xcheck tests/test_dequant_xcheck.c -lm && ./$(BIN_DIR)/test_dequant_xcheck || echo "dequant xcheck FAILED"
-	@$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/test_f16_identity $(CCE) tests/test_f16_identity.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) && ./$(BIN_DIR)/test_f16_identity || echo "f16 identity FAILED"
+	./$(BIN_DIR)/flagship > logs/flagship.log 2>&1
+	@CNET_ACQ_ADAPTIVE=1 ./$(BIN_DIR)/flagship > logs/flagship.adaptive.log 2>&1
+	@CNET_ACQ_WARMSTART=1 ./$(BIN_DIR)/flagship > logs/flagship.warmstart.log 2>&1
+	@CNET_TOPK_SET=1 ./$(BIN_DIR)/flagship > logs/flagship.topkset.log 2>&1
+	@CNET_ACQ_ADAPTIVE=1 CNET_ACQ_WARMSTART=1 CNET_TOPK_SET=1 ./$(BIN_DIR)/flagship > logs/flagship.allon.log 2>&1
+	@cc -O2 -w -o $(BIN_DIR)/test_dequant_xcheck tests/test_dequant_xcheck.c -lm && ./$(BIN_DIR)/test_dequant_xcheck
+	@$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/test_f16_identity $(CCE) tests/test_f16_identity.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) && ./$(BIN_DIR)/test_f16_identity
 
 # Base inspector: counts + certify-on-load + tag audit + digest fidelity
 # compare between two bases. Usage: ./bin/cnb_audit <base.cnb> [other.cnb]
@@ -858,15 +858,15 @@ legacy_test: test_all
 # and stay in the core verification chain.
 .PHONY: demos compat
 demos: decimal_demo circuit_demo
-	./$(BIN_DIR)/decimal_demo > logs/decimal_demo.log 2>&1 || echo "demo exited non-zero (see log)"
-	./$(BIN_DIR)/circuit_demo > logs/circuit_demo.log 2>&1 || echo "demo exited non-zero (see log)"
+	./$(BIN_DIR)/decimal_demo > logs/decimal_demo.log 2>&1
+	./$(BIN_DIR)/circuit_demo > logs/circuit_demo.log 2>&1
 
 # The COMPAT tier (legacy quarantine): the restored historical test_all
 # aggregate is back-compat coverage, not core verification — it runs here
 # (and in verify-long) instead of blocking every `make test`. The gate that
 # keeps the 2026-07-03 restoration from rotting again lives on, one tier out.
 compat: test_all demos
-	./$(BIN_DIR)/test_all > logs/legacy_test.log 2>&1 || echo "test exited non-zero (see log)"
+	./$(BIN_DIR)/test_all > logs/legacy_test.log 2>&1
 	@sh tests/verify_logs.sh compat
 	@echo "CNET_COMPAT_PASS"
 
@@ -878,16 +878,17 @@ LEAK_WRAP := tests/leak_wrap.c
 LEAK_LDWRAP := -Wl,--wrap=malloc,--wrap=calloc,--wrap=realloc,--wrap=free
 leakcheck: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(BASE_TEST) $(LEAK_WRAP)
 	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(BASE_TEST) $(LEAK_WRAP) $(LEAK_LDWRAP) $(LDFLAGS)
-	./$(BIN_DIR)/leakcheck > logs/leakcheck.log 2>&1 || echo "test exited non-zero (see log)"
+	./$(BIN_DIR)/leakcheck > logs/leakcheck.log 2>&1
 	@grep "leakcheck" logs/leakcheck.log || true
 
-# The test recipes above swallow their exit codes (`|| echo ...`) so the whole
-# chain always runs. This recipe is the gate that makes the swallow safe: it
-# runs AFTER every prerequisite (a target's recipe always follows its prereqs,
-# even under -j) and re-reads each suite's log, asserting the suite's terminal
-# SUCCESS marker is present -- so `make test` now exits non-zero if any gate
-# failed, crashed, or produced no log. See tests/verify_logs.sh for the markers.
-verify: claims_test cce_dll cce_safetensors_test cce_autograd_test cce_model_test cce_view forest_view cce_detect cce_ssm cce_st_llama cce_specgraph cce_wstore cce_tiers cce_similar merge_family hybrid_catalog transformer_qat contract_secure contract_unit heal_mismatch mutate acquire base flagship demos leakcheck
+# The static recipe-gate: prevents regressions that re-introduce `|| echo`
+# swallowed-exit patterns in Makefile test/model/demo recipes.
+recipe_gate:
+	@sh tests/test_recipe_gates.sh
+
+# Test recipes propagate their exit codes directly. This positive-marker gate
+# runs after every prerequisite and rejects missing or stale-success logs.
+verify: recipe_gate claims_test cce_dll cce_safetensors_test cce_autograd_test cce_model_test cce_view forest_view cce_detect cce_ssm cce_st_llama cce_specgraph cce_wstore cce_tiers cce_similar merge_family hybrid_catalog transformer_qat contract_secure contract_unit heal_mismatch mutate acquire base flagship demos leakcheck
 	@sh tests/verify_logs.sh
 
 # Everything verify covers PLUS the GPU equivalence gate (needs model + GPU;
@@ -896,9 +897,9 @@ test_full: test gpu_equiv_build
 	./$(BIN_DIR)/gpu_equiv Models/gemma-4-12B-it-MTP-Q8_0.gguf 64 32
 	dotnet test dotnet/Cce.Tests/Cce.Tests.csproj -c Release --no-restore
 
-# `long` mode also asserts the two verify-long-only supra QAT gates (which
-# likewise swallow their exit codes). The `verify` prereq already ran + gated
-# the core chain first; this re-scan adds the extras.
+# `long` mode also asserts the two verify-long-only supra QAT gates. The
+# `verify` prerequisite already ran and gated the core chain; this re-scan adds
+# the extras.
 verify-long: verify cce_train_bench supra_head_qat supra_head_qat_corpus transformer_qat_joint wordlm_bitnet wordlm_holdout compat
 	@sh tests/verify_logs.sh long
 
@@ -979,7 +980,7 @@ cce_smoke: $(CCE) $(CCE_CUDA_OBJ) tests/cce_smoke.c
 # Pure CCE build without legacy nn.c (for testing the new engine)
 cce_smoke_pure: $(CCE) $(CCE_CUDA_OBJ) tests/cce_smoke.c
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) tests/cce_smoke.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
-	./$(BIN_DIR)/cce_smoke_pure || echo "Pure CCE smoke exited with code $?"
+	./$(BIN_DIR)/cce_smoke_pure
 
 cce_train_bench: $(CCE) $(CCE_CUDA_OBJ) tests/cce_train_bench.c
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) tests/cce_train_bench.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
@@ -993,7 +994,7 @@ cce_json_bench: $(CCE) $(CCE_CUDA_OBJ) tests/cce_json_bench.c
 # (owns_memory=0) instead of reload+copy. Verifies bit-identical forward + clean free.
 cce_view: $(CCE) $(CCE_CUDA_OBJ) tests/cce_view_test.c
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) tests/cce_view_test.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
-	./$(BIN_DIR)/cce_view > logs/cce_view.log 2>&1 || echo "view exited"
+	./$(BIN_DIR)/cce_view > logs/cce_view.log 2>&1
 
 # Universal pre-run model structure detection: magic-sniff the container
 # (gguf/safetensors/cce/packed), fingerprint the architecture from the tensors
@@ -1001,41 +1002,41 @@ cce_view: $(CCE) $(CCE_CUDA_OBJ) tests/cce_view_test.c
 # matching loader via cce_anymodel_open. Unsupported structures refuse honestly.
 cce_detect: $(CCE) $(CCE_CUDA_OBJ) tests/cce_detect_test.c
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) tests/cce_detect_test.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
-	./$(BIN_DIR)/cce_detect > logs/cce_detect.log 2>&1 || echo "test exited non-zero (see log)"
+	./$(BIN_DIR)/cce_detect > logs/cce_detect.log 2>&1
 
 # Mamba-1 SSM runner: forest-decomposed linear specialists + recurrent scan
 # glue; verified against an independent double-precision reference and
 # safetensors<->gguf mapping equivalence (bit-identical logits).
 cce_ssm: $(CCE) $(CCE_CUDA_OBJ) tests/cce_ssm_test.c
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) tests/cce_ssm_test.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
-	./$(BIN_DIR)/cce_ssm > logs/cce_ssm.log 2>&1 || echo "test exited non-zero (see log)"
+	./$(BIN_DIR)/cce_ssm > logs/cce_ssm.log 2>&1
 
 # HF-llama safetensors loader: same decomposed transformer as the GGUF path,
 # gated by bit-identical logits between the two container formats.
 cce_st_llama: $(CCE) $(CCE_CUDA_OBJ) tests/cce_st_llama_test.c
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) tests/cce_st_llama_test.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
-	./$(BIN_DIR)/cce_st_llama > logs/cce_st_llama.log 2>&1 || echo "test exited non-zero (see log)"
+	./$(BIN_DIR)/cce_st_llama > logs/cce_st_llama.log 2>&1
 
 # Specialist knowledge graph: content digests + behavioral fingerprints +
 # DATA_FLOWS wiring for any decomposed model (the codebase-memory move on
 # weights). Gates: cross-container digest identity, one-matrix locality.
 cce_specgraph: $(CCE) $(CCE_CUDA_OBJ) tests/cce_specgraph_test.c tests/tiny_model_fixture.h
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) tests/cce_specgraph_test.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
-	./$(BIN_DIR)/cce_specgraph > logs/cce_specgraph.log 2>&1 || echo "test exited non-zero (see log)"
+	./$(BIN_DIR)/cce_specgraph > logs/cce_specgraph.log 2>&1
 
 # Content-addressed weight store: specialists stored once by digest, models
 # as manifests. Gates: 100% reuse on re-ingest + cross-container, fine-tune
 # costs one payload, restore is bit-identical, reuse claims byte-verified.
 cce_wstore: $(CCE) $(CCE_CUDA_OBJ) tests/cce_wstore_test.c tests/tiny_model_fixture.h
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) tests/cce_wstore_test.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
-	./$(BIN_DIR)/cce_wstore > logs/cce_wstore.log 2>&1 || echo "test exited non-zero (see log)"
+	./$(BIN_DIR)/cce_wstore > logs/cce_wstore.log 2>&1
 
 # Tiered runtime: run a store-backed transformer in bounded RAM (HOT cap +
 # LRU eviction + on-demand rehydration). Gate: capped streaming logits are
 # bit-identical to all-resident; residency never exceeds the cap.
 cce_tiers: $(CCE) $(CCE_CUDA_OBJ) tests/cce_tiers_test.c tests/tiny_model_fixture.h
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) tests/cce_tiers_test.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
-	./$(BIN_DIR)/cce_tiers > logs/cce_tiers.log 2>&1 || echo "test exited non-zero (see log)"
+	./$(BIN_DIR)/cce_tiers > logs/cce_tiers.log 2>&1
 
 # Dense expert-streaming arc (Arc A1): a QUANTIZED (int8 weight-only PTQ) dense
 # model streams from the weight store under a bounded resident cap. Gates the
@@ -1043,7 +1044,7 @@ cce_tiers: $(CCE) $(CCE_CUDA_OBJ) tests/cce_tiers_test.c tests/tiny_model_fixtur
 # (finding: it re-materializes FP at serialize_cascade) + the size/RAM numbers.
 dense_stream_q: $(CCE) $(CCE_CUDA_OBJ) tests/dense_stream_q.c tests/tiny_model_fixture.h
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) tests/dense_stream_q.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
-	./$(BIN_DIR)/dense_stream_q > logs/dense_stream_q.console.log 2>&1 || echo "test exited non-zero (see logs/dense_stream_q.log)"
+	./$(BIN_DIR)/dense_stream_q > logs/dense_stream_q.console.log 2>&1
 
 # The dense expert-streaming pipeline on a REAL dense model (default Qwen2.5-0.5B):
 # load -> int8-quantize -> ingest -> restore -> tier-stream under a bounded cap,
@@ -1052,7 +1053,7 @@ dense_stream_q: $(CCE) $(CCE_CUDA_OBJ) tests/dense_stream_q.c tests/tiny_model_f
 dense_stream_real: $(CCE) $(CCE_CUDA_OBJ) tests/dense_stream_real.c
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) tests/dense_stream_real.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
-	./$(BIN_DIR)/dense_stream_real > logs/dense_stream_real.console.log 2>&1 || echo "test exited non-zero (see logs/dense_stream_real.log)"
+	./$(BIN_DIR)/dense_stream_real > logs/dense_stream_real.console.log 2>&1
 
 # Dense expert-streaming arc (Arc A2): DATA-AWARE quantization at ingest. Each
 # streamed specialist is quantized with our GPTQ/OBQ solver calibrated on its
@@ -1062,7 +1063,7 @@ dense_stream_real: $(CCE) $(CCE_CUDA_OBJ) tests/dense_stream_real.c
 dense_stream_a2: $(CCE) $(CCE_CUDA_OBJ) tests/dense_stream_a2.c tests/tiny_model_fixture.h
 	@mkdir -p logs
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) tests/dense_stream_a2.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
-	./$(BIN_DIR)/dense_stream_a2 > logs/dense_stream_a2.console.log 2>&1 || echo "test exited non-zero (see logs/dense_stream_a2.log)"
+	./$(BIN_DIR)/dense_stream_a2 > logs/dense_stream_a2.console.log 2>&1
 
 # MoE expert-streaming arc (B1): MoE checkpoints parse into streamable
 # per-expert specialists. Hermetic: synthetic MoE gguf (split gate/up/down
@@ -1074,7 +1075,7 @@ dense_stream_a2: $(CCE) $(CCE_CUDA_OBJ) tests/dense_stream_a2.c tests/tiny_model
 moe_loader: $(CCE) $(CCE_CUDA_OBJ) tests/moe_loader.c tests/tiny_model_fixture.h
 	@mkdir -p logs
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) tests/moe_loader.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
-	./$(BIN_DIR)/moe_loader > logs/moe_loader.console.log 2>&1 || echo "test exited non-zero (see logs/moe_loader.log)"
+	./$(BIN_DIR)/moe_loader > logs/moe_loader.console.log 2>&1
 
 # MoE expert-streaming arc (B2): routed, demand-loaded MoE FFN forward.
 # Conventions pinned against llama.cpp (softmax -> top-k -> renorm; gemma4
@@ -1087,7 +1088,7 @@ moe_loader: $(CCE) $(CCE_CUDA_OBJ) tests/moe_loader.c tests/tiny_model_fixture.h
 moe_forward: $(CCE) $(CCE_CUDA_OBJ) tests/moe_forward.c tests/tiny_model_fixture.h
 	@mkdir -p logs
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) tests/moe_forward.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
-	./$(BIN_DIR)/moe_forward > logs/moe_forward.console.log 2>&1 || echo "test exited non-zero (see logs/moe_forward.log)"
+	./$(BIN_DIR)/moe_forward > logs/moe_forward.console.log 2>&1
 
 # MoE expert-streaming arc (B3): the streaming throughput layer. Experts
 # ingest into the weight store on first touch (int8 = ~4x smaller payloads,
@@ -1099,7 +1100,7 @@ moe_forward: $(CCE) $(CCE_CUDA_OBJ) tests/moe_forward.c tests/tiny_model_fixture
 moe_stream: $(CCE) $(CCE_CUDA_OBJ) tests/moe_stream.c tests/tiny_model_fixture.h
 	@mkdir -p logs
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) tests/moe_stream.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
-	./$(BIN_DIR)/moe_stream > logs/moe_stream.console.log 2>&1 || echo "test exited non-zero (see logs/moe_stream.log)"
+	./$(BIN_DIR)/moe_stream > logs/moe_stream.console.log 2>&1
 
 # MoE expert-streaming arc (B4): per-expert data-aware quantization on
 # ROUTED activations. Calibration collects each routed token's expert input
@@ -1111,7 +1112,7 @@ moe_stream: $(CCE) $(CCE_CUDA_OBJ) tests/moe_stream.c tests/tiny_model_fixture.h
 moe_expert_quant: $(CCE) $(CCE_CUDA_OBJ) tests/moe_expert_quant.c tests/tiny_model_fixture.h
 	@mkdir -p logs
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) tests/moe_expert_quant.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
-	./$(BIN_DIR)/moe_expert_quant > logs/moe_expert_quant.console.log 2>&1 || echo "test exited non-zero (see logs/moe_expert_quant.log)"
+	./$(BIN_DIR)/moe_expert_quant > logs/moe_expert_quant.console.log 2>&1
 
 # MoE end-to-end (Arc B capstone): full-stack gemma4 single-token parity.
 # CNET runs the COMPLETE 26B layer stack (attention exact at position 0:
@@ -1122,7 +1123,7 @@ moe_expert_quant: $(CCE) $(CCE_CUDA_OBJ) tests/moe_expert_quant.c tests/tiny_mod
 moe_e2e: $(CCE) $(CCE_CUDA_OBJ) tests/moe_e2e.c
 	@mkdir -p logs
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) tests/moe_e2e.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
-	./$(BIN_DIR)/moe_e2e > logs/moe_e2e.console.log 2>&1 || echo "test exited non-zero (see logs/moe_e2e.log)"
+	./$(BIN_DIR)/moe_e2e > logs/moe_e2e.console.log 2>&1
 
 # MoE generation (Arc B finale): multi-token GENERATION parity. CNET decodes
 # a real prompt through the full gemma4 stack with REAL attention (NEOX rope,
@@ -1133,7 +1134,7 @@ moe_e2e: $(CCE) $(CCE_CUDA_OBJ) tests/moe_e2e.c
 moe_gen: $(CCE) $(CCE_CUDA_OBJ) tests/moe_gen.c
 	@mkdir -p logs
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) tests/moe_gen.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
-	./$(BIN_DIR)/moe_gen > logs/moe_gen.console.log 2>&1 || echo "test exited non-zero (see logs/moe_gen.log)"
+	./$(BIN_DIR)/moe_gen > logs/moe_gen.console.log 2>&1
 
 # Dense expert-streaming arc (A3): async readahead + learned hot-pinning.
 # The tier runtime learns the fetch order of the first cold pass, then a
@@ -1145,7 +1146,7 @@ moe_gen: $(CCE) $(CCE_CUDA_OBJ) tests/moe_gen.c
 dense_stream_a3: $(CCE) $(CCE_CUDA_OBJ) tests/dense_stream_a3.c tests/tiny_model_fixture.h
 	@mkdir -p logs
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) tests/dense_stream_a3.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
-	./$(BIN_DIR)/dense_stream_a3 > logs/dense_stream_a3.console.log 2>&1 || echo "test exited non-zero (see logs/dense_stream_a3.log)"
+	./$(BIN_DIR)/dense_stream_a3 > logs/dense_stream_a3.console.log 2>&1
 
 # Dense expert-streaming arc (packed storage): the weight store's quantized-
 # payload path extended to PACKED formats — ternary at 1.6 bit/weight (5 trits/
@@ -1156,13 +1157,13 @@ dense_stream_a3: $(CCE) $(CCE_CUDA_OBJ) tests/dense_stream_a3.c tests/tiny_model
 dense_stream_trit: $(CCE) $(CCE_CUDA_OBJ) tests/dense_stream_trit.c tests/tiny_model_fixture.h
 	@mkdir -p logs
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) tests/dense_stream_trit.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
-	./$(BIN_DIR)/dense_stream_trit > logs/dense_stream_trit.console.log 2>&1 || echo "test exited non-zero (see logs/dense_stream_trit.log)"
+	./$(BIN_DIR)/dense_stream_trit > logs/dense_stream_trit.console.log 2>&1
 
 # SIMILAR_TO + evidence-gated merge: epsilon-equivalent specialists merge via
 # manifest remap ONLY after an adversarial probe battery; unverified refuses.
 cce_similar: $(CCE) $(CCE_CUDA_OBJ) tests/cce_similar_test.c tests/tiny_model_fixture.h
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) tests/cce_similar_test.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
-	./$(BIN_DIR)/cce_similar > logs/cce_similar.log 2>&1 || echo "test exited non-zero (see log)"
+	./$(BIN_DIR)/cce_similar > logs/cce_similar.log 2>&1
 
 # CLI probe: make detect FILE=Models/foo.gguf  (or run bin/detect_cli directly)
 detect_cli: $(CCE) $(CCE_CUDA_OBJ) tests/detect_cli.c
@@ -1175,15 +1176,15 @@ detect: detect_cli
 # live in cce_forest_forward / promote_to_hot.
 forest_view: $(CCE) $(CCE_CUDA_OBJ) tests/cce_forest_view_test.c
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) tests/cce_forest_view_test.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
-	./$(BIN_DIR)/forest_view > logs/forest_view.log 2>&1 || echo "view exited"
+	./$(BIN_DIR)/forest_view > logs/forest_view.log 2>&1
 
 cce_model_test: $(CCE) $(CCE_CUDA_OBJ) tests/test_cce_model_save.c
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) tests/test_cce_model_save.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
-	./$(BIN_DIR)/cce_model_test > logs/cce_model_test.log 2>&1 || echo "test exited non-zero (see log)"
+	./$(BIN_DIR)/cce_model_test > logs/cce_model_test.log 2>&1
 
 cce_autograd_test: $(CCE) $(CCE_CUDA_OBJ) tests/test_cce_autograd.c
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) tests/test_cce_autograd.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
-	./$(BIN_DIR)/cce_autograd_test > logs/cce_autograd_test.log 2>&1 || echo "test exited non-zero (see log)"
+	./$(BIN_DIR)/cce_autograd_test > logs/cce_autograd_test.log 2>&1
 
 # --- SIMD re-enable for the CCE/Supra targets ---
 # The global -mno-avx works around the MinGW AVX struct-copy segfault triggered by
@@ -1198,14 +1199,14 @@ cce_safetensors_test supra_console supra_chat_mock supra_context_probe supra_lon
 
 cce_safetensors_test: $(CCE) $(CCE_CUDA_OBJ) src/nn.c tests/test_cce_safetensors.c
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) src/nn.c tests/test_cce_safetensors.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
-	./$(BIN_DIR)/cce_safetensors_test > logs/cce_safetensors_test.log 2>&1 || echo "test exited non-zero (see log)"
+	./$(BIN_DIR)/cce_safetensors_test > logs/cce_safetensors_test.log 2>&1
 
 # Dedicated GGUF loader + Qwen2 forest + full K dequant + packed 1.6-bit roundtrip test
 # Mirrors the Supra flow end-to-end (load -> specialists -> pack_trits -> export -> load_packed -> forward/generate)
 cce_gguf_test: $(CCE) $(CCE_CUDA_OBJ) src/nn.c tests/test_cce_gguf.c
 	@mkdir -p $(BIN_DIR)
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) src/nn.c tests/test_cce_gguf.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
-	./$(BIN_DIR)/$@ > logs/gguf_test_run.log 2>&1 || echo "test exited non-zero (see log)"
+	./$(BIN_DIR)/$@ > logs/gguf_test_run.log 2>&1
 
 supra_console: $(CCE) $(CCE_CUDA_OBJ) src/nn.c tests/supra_console.c
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) src/nn.c tests/supra_console.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
@@ -1217,7 +1218,7 @@ supra_console: $(CCE) $(CCE_CUDA_OBJ) src/nn.c tests/supra_console.c
 # tests/supra_context_probe.c.
 supra_context_probe: $(CCE) $(CCE_CUDA_OBJ) src/nn.c tests/supra_context_probe.c
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) src/nn.c tests/supra_context_probe.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
-	./$(BIN_DIR)/supra_context_probe > logs/supra_context_probe.log 2>&1 || echo "test exited non-zero (see log)"
+	./$(BIN_DIR)/supra_context_probe > logs/supra_context_probe.log 2>&1
 
 # Skeleton-driven long-form injector: slides a sub-384 window, cuts each chunk
 # before the ~120 coherence decay, and steers with a caller-supplied beat list so
@@ -1225,26 +1226,26 @@ supra_context_probe: $(CCE) $(CCE_CUDA_OBJ) src/nn.c tests/supra_context_probe.c
 # sliding-window baseline) for contrast. See tests/supra_longform.c.
 supra_longform: $(CCE) $(CCE_CUDA_OBJ) src/nn.c tests/supra_longform.c
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) src/nn.c tests/supra_longform.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
-	./$(BIN_DIR)/supra_longform > logs/supra_longform.log 2>&1 || echo "test exited non-zero (see log)"
+	./$(BIN_DIR)/supra_longform > logs/supra_longform.log 2>&1
 
 # Head-only QAT smoke (Supra quality phase, milestone 1): freeze the transformer,
 # cache final hidden vectors, train a ternary BitLinear head (FP shadow + STE),
 # and check QAT beats post-hoc ternary on the real Supra head. See tests/supra_head_qat.c.
 supra_head_qat: $(CCE) $(CCE_CUDA_OBJ) src/nn.c tests/supra_head_qat.c
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) src/nn.c tests/supra_head_qat.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
-	./$(BIN_DIR)/supra_head_qat > logs/supra_head_qat.log 2>&1 || echo "test exited non-zero (see log)"
+	./$(BIN_DIR)/supra_head_qat > logs/supra_head_qat.log 2>&1
 
 # Head QAT on a REAL corpus (pdf_corpus.txt): genuine held-out FP-recovery test.
 supra_head_qat_corpus: $(CCE) $(CCE_CUDA_OBJ) src/nn.c tests/supra_head_qat_corpus.c
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) src/nn.c tests/supra_head_qat_corpus.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
-	./$(BIN_DIR)/supra_head_qat_corpus > logs/supra_head_qat_corpus.log 2>&1 || echo "test exited non-zero (see log)"
+	./$(BIN_DIR)/supra_head_qat_corpus > logs/supra_head_qat_corpus.log 2>&1
 
 # Joint ternary QAT vs head-only vs post-hoc: does training the WHOLE stack
 # ternary recover held-out next-byte accuracy where a frozen-transformer head
 # can't? Byte-level from-scratch on pdf_corpus.txt. See tests/transformer_qat_joint.c.
 transformer_qat_joint: $(CCE) $(CCE_CUDA_OBJ) src/nn.c tests/transformer_qat_joint.c include/cce/cce_transformer_qat.h
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) src/nn.c tests/transformer_qat_joint.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
-	./$(BIN_DIR)/transformer_qat_joint > logs/transformer_qat_joint.log 2>&1 || echo "test exited non-zero (see log)"
+	./$(BIN_DIR)/transformer_qat_joint > logs/transformer_qat_joint.log 2>&1
 
 # Real-weight joint QAT: load pretrained Supra into the cce_transformer_qat trainer,
 # prove forward-parity vs cce_supra_gpt_forward, then joint-QAT the transformer
@@ -1252,7 +1253,7 @@ transformer_qat_joint: $(CCE) $(CCE_CUDA_OBJ) src/nn.c tests/transformer_qat_joi
 transformer_qat_real: $(CCE) $(CCE_CUDA_OBJ) src/nn.c tests/transformer_qat_real.c
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) src/nn.c tests/transformer_qat_real.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
-	./$(BIN_DIR)/transformer_qat_real > logs/transformer_qat_real.log 2>&1 || echo "test exited non-zero (see log)"
+	./$(BIN_DIR)/transformer_qat_real > logs/transformer_qat_real.log 2>&1
 
 # The same load+parity path on a DIFFERENT model (not Supra): a 4-layer model in
 # Supra's naming with every free dim changed (D128/V2000/B96/mlp512), generated by
@@ -1262,7 +1263,7 @@ transformer_qat_altmodel: $(CCE) $(CCE_CUDA_OBJ) src/nn.c tests/transformer_qat_
 	@mkdir -p $(BIN_DIR) logs
 	@test -f altmodel_cache/model.safetensors || python3 tools/gen_altmodel.py
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) src/nn.c tests/transformer_qat_altmodel.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
-	./$(BIN_DIR)/transformer_qat_altmodel > logs/transformer_qat_altmodel.log 2>&1 || echo "test exited non-zero (see log)"
+	./$(BIN_DIR)/transformer_qat_altmodel > logs/transformer_qat_altmodel.log 2>&1
 
 # Core unit of decomposed data-aware per-projection ternary QAT (GPTQ/AWQ regime):
 # reconstruct one linear projection's FP output from calibration activations with
@@ -1271,7 +1272,7 @@ transformer_qat_altmodel: $(CCE) $(CCE_CUDA_OBJ) src/nn.c tests/transformer_qat_
 proj_qat_recon: tests/proj_qat_recon.c
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ tests/proj_qat_recon.c -lm
-	./$(BIN_DIR)/proj_qat_recon > logs/proj_qat_recon.log 2>&1 || echo "test exited non-zero (see log)"
+	./$(BIN_DIR)/proj_qat_recon > logs/proj_qat_recon.log 2>&1
 
 # Milestone 2: the same per-projection reconstruction on REAL weights + REAL
 # activations from a real gemma4 GGUF (layer-0 attn_q, input = RMSNorm(embed·√D),
@@ -1279,7 +1280,7 @@ proj_qat_recon: tests/proj_qat_recon.c
 proj_qat_gemma: $(CCE) $(CCE_CUDA_OBJ) tests/proj_qat_gemma.c
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) tests/proj_qat_gemma.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
-	./$(BIN_DIR)/proj_qat_gemma > logs/proj_qat_gemma.log 2>&1 || echo "test exited non-zero (see log)"
+	./$(BIN_DIR)/proj_qat_gemma > logs/proj_qat_gemma.log 2>&1
 
 # Milestone 4 core: END-TO-END reconstruction across many projections / many
 # layers (SwiGLU MLP stack) — does it compound into collapse, and does SEQUENTIAL
@@ -1287,7 +1288,7 @@ proj_qat_gemma: $(CCE) $(CCE_CUDA_OBJ) tests/proj_qat_gemma.c
 proj_qat_stack: tests/proj_qat_stack.c
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ tests/proj_qat_stack.c -lm
-	./$(BIN_DIR)/proj_qat_stack > logs/proj_qat_stack.log 2>&1 || echo "test exited non-zero (see log)"
+	./$(BIN_DIR)/proj_qat_stack > logs/proj_qat_stack.log 2>&1
 
 # Milestone 3: dual-GPU async dispatch of the embarrassingly-parallel per-projection
 # GEMM jobs across the two R9700s (cce_clgemm, one handle pinned per device via
@@ -1296,7 +1297,7 @@ proj_qat_stack: tests/proj_qat_stack.c
 proj_qat_gpu: $(CCE) tests/proj_qat_gpu.c include/cce/cce_clgemm.h
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) tests/proj_qat_gpu.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
-	./$(BIN_DIR)/proj_qat_gpu > logs/proj_qat_gpu.log 2>&1 || echo "test exited non-zero (see log)"
+	./$(BIN_DIR)/proj_qat_gpu > logs/proj_qat_gpu.log 2>&1
 
 # Milestone 4-full Part 1: the EFFICIENT GPTQ-Cholesky OBQ solver — a fast drop-in
 # for proj_qat_recon's coordinate-descent reconstruct(). One Cholesky of the
@@ -1306,7 +1307,7 @@ proj_qat_gpu: $(CCE) tests/proj_qat_gpu.c include/cce/cce_clgemm.h
 gptq_solver: tests/gptq_solver.c
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ tests/gptq_solver.c -lm
-	./$(BIN_DIR)/gptq_solver > logs/gptq_solver.log 2>&1 || echo "test exited non-zero (see log)"
+	./$(BIN_DIR)/gptq_solver > logs/gptq_solver.log 2>&1
 
 # Milestone 4-full Part 2: real end-to-end on gemma-4-12B. Quantizes EVERY linear
 # projection of the real gemma MLP stack with the GPTQ data-aware solver and shows
@@ -1316,7 +1317,7 @@ gptq_solver: tests/gptq_solver.c
 proj_qat_gemma_e2e: $(CCE) $(CCE_CUDA_OBJ) tests/proj_qat_gemma_e2e.c
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) tests/proj_qat_gemma_e2e.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
-	./$(BIN_DIR)/proj_qat_gemma_e2e > logs/proj_qat_gemma_e2e.log 2>&1 || echo "test exited non-zero (see log)"
+	./$(BIN_DIR)/proj_qat_gemma_e2e > logs/proj_qat_gemma_e2e.log 2>&1
 
 # Component-dependent bit-width POLICY sweep (Colibri's insight): which projection
 # gets which precision. Sweeps (gate/up/down) bit-widths over real gemma FFN weights,
@@ -1324,14 +1325,14 @@ proj_qat_gemma_e2e: $(CCE) $(CCE_CUDA_OBJ) tests/proj_qat_gemma_e2e.c
 proj_qat_bitwidth: $(CCE) tests/proj_qat_bitwidth.c include/cce/cce_gguf.h
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) tests/proj_qat_bitwidth.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
-	./$(BIN_DIR)/proj_qat_bitwidth > logs/proj_qat_bitwidth.log 2>&1 || echo "test exited non-zero (see log)"
+	./$(BIN_DIR)/proj_qat_bitwidth > logs/proj_qat_bitwidth.log 2>&1
 
 # Lightweight mock chat test: exercises the real BPE tokenizer (encode) without
 # requiring the full model forward. Needs supra_cache/tokenizer.json (run
 # supra_console or cce_safetensors_test once to populate it).
 supra_chat_mock: $(CCE) $(CCE_CUDA_OBJ) src/nn.c tests/test_supra_chat_mock.c
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) src/nn.c tests/test_supra_chat_mock.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
-	./$(BIN_DIR)/supra_chat_mock > logs/supra_chat_mock.log 2>&1 || echo "test exited non-zero (see log)"
+	./$(BIN_DIR)/supra_chat_mock > logs/supra_chat_mock.log 2>&1
 
 # Self-contained BitNet b1.58 QAT demo: proves ternary weights reach ~FP accuracy
 # WHEN trained for (shadow weights + straight-through estimator), while post-hoc
@@ -1358,7 +1359,7 @@ wordlm_bitnet: $(CCE_WORDLM) tests/wordlm_bitnet_demo.c include/cce/cce_wordlm.h
 # sentences. Confirms the transformer_qat_joint finding is trainer-independent.
 wordlm_holdout: $(CCE_WORDLM) tests/wordlm_holdout.c include/cce/cce_wordlm.h
 	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $(CCE_WORDLM) tests/wordlm_holdout.c $(LDFLAGS)
-	./$(BIN_DIR)/wordlm_holdout > logs/wordlm_holdout.log 2>&1 || echo "test exited non-zero (see log)"
+	./$(BIN_DIR)/wordlm_holdout > logs/wordlm_holdout.log 2>&1
 
 # Fine-tune-family merge pipeline (model-merge scope M0): base + N fine-tunes
 # in ONE content-addressed store — storage accounting vs naive, per-manifest
@@ -1366,14 +1367,14 @@ wordlm_holdout: $(CCE_WORDLM) tests/wordlm_holdout.c include/cce/cce_wordlm.h
 # the pipeline. Hermetic (tiny fixture).
 merge_family: $(CCE) $(CCE_CUDA_OBJ) tests/merge_family_test.c tests/tiny_model_fixture.h
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) tests/merge_family_test.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
-	./$(BIN_DIR)/merge_family > logs/merge_family.log 2>&1 || echo "test exited non-zero (see log)"
+	./$(BIN_DIR)/merge_family > logs/merge_family.log 2>&1
 
 # Hybrid catalog (model-merge scope M1): transformer + SSM in ONE store with
 # a query-level task catalog; ssm restore round-trip (closes the stated
 # limit); HONESTY gate measures cross-arch dedup (= 0). Hermetic.
 hybrid_catalog: $(CCE) $(CCE_CUDA_OBJ) tests/hybrid_catalog_test.c tests/tiny_model_fixture.h
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) tests/hybrid_catalog_test.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
-	./$(BIN_DIR)/hybrid_catalog > logs/hybrid_catalog.log 2>&1 || echo "test exited non-zero (see log)"
+	./$(BIN_DIR)/hybrid_catalog > logs/hybrid_catalog.log 2>&1
 
 # Supra QAT trainer gate: hermetic transformer-backward gradcheck (central
 # differences over EVERY parameter group) + determinism + FP smoke + QAT-vs-
@@ -1382,7 +1383,7 @@ hybrid_catalog: $(CCE) $(CCE_CUDA_OBJ) tests/hybrid_catalog_test.c tests/tiny_mo
 # stands on this backward.
 transformer_qat: $(CCE) $(CCE_CUDA_OBJ) tests/test_transformer_qat.c include/cce/cce_transformer_qat.h
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) tests/test_transformer_qat.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
-	./$(BIN_DIR)/transformer_qat > logs/transformer_qat.log 2>&1 || echo "test exited non-zero (see log)"
+	./$(BIN_DIR)/transformer_qat > logs/transformer_qat.log 2>&1
 
 # Trit-kernel micro-benchmark: FP vs int8 vs packed 1.6-bit forward on a
 # Supra-head-shaped block + the packed word-LM predict loop. Carries its own
