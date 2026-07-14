@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Text.Json;
 using CNET.Cce;
@@ -50,24 +51,9 @@ public class CompressionArtifactTests
         {
             string ggufPath = CreateGgufFixture(dir);
 
-            // We need a basePath that points to a real .cnb for SoulHost init.
-            // Use the repo's fixture if available, otherwise create a dummy
-            // path — CompressModel's native compression does not require the
-            // soul host to be loaded for the QGKP path.
-            string basePath = Environment.GetEnvironmentVariable("CNET_BASE_PATH")
-                ?? "/home/marble/AI/CNET/soul_gemma4v2_final.cnb";
-
-            CnetTools tools;
-            try
-            {
-                tools = new CnetTools(basePath, dir, dir);
-            }
-            catch
-            {
-                // If the soul host can't open (no .cnb in test env), use a
-                // throwaway path — CompressModel should work independently.
-                tools = new CnetTools(Path.Combine(dir, "dummy.cnb"), dir, dir);
-            }
+            // CompressModel does not require a certified CNB base. This keeps
+            // the test hermetic and intentionally exercises the optional-host path.
+            var tools = new CnetTools(Path.Combine(dir, "dummy.cnb"), dir, dir);
 
             string result = tools.CompressModel(ggufPath, "1.6bit", "");
 
@@ -222,6 +208,27 @@ public class CompressionArtifactTests
         {
             if (Directory.Exists(dir))
                 Directory.Delete(dir, true);
+        }
+    }
+
+    [Fact]
+    public void SoulDependentTools_Refuse_When_Certified_Base_Is_Unavailable()
+    {
+        string dir = Path.Combine(Path.GetTempPath(), $"cnet_unavailable_{Guid.NewGuid():N}");
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var tools = new CnetTools(Path.Combine(dir, "missing.cnb"), dir, dir);
+
+            Assert.Contains("unavailable", tools.ListOracles(), StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("unavailable", tools.RouteOnRole("route this", "memory-witness"), StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("unavailable", tools.RequestCapability("goal", "input", "raw", 1, 1, 1, new List<double>()), StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("unavailable", tools.HealthTick(), StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("No units", tools.ListUnits(), StringComparison.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            if (Directory.Exists(dir)) Directory.Delete(dir, true);
         }
     }
 

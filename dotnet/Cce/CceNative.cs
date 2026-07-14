@@ -715,7 +715,7 @@ internal static partial class CceNative
     //   i32 n_layer | i32 hidden | i32 context_length | i32 reserved
     // Using DllImport (not LibraryImport) because ByValArray marshalling
     // is not supported by the source generator for embedded arrays.
-    [StructLayout(LayoutKind.Sequential, Pack = 1)]
+    [StructLayout(LayoutKind.Sequential, Pack = 0)]
     internal struct CceQgkpMetadata
     {
         public ulong Flags;

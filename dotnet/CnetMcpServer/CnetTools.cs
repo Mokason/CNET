@@ -38,6 +38,14 @@ namespace CnetMcpServer
             }
         }
 
+        private static string SoulUnavailable(string operation) =>
+            JsonSerializer.Serialize(new
+            {
+                status = "unavailable",
+                operation,
+                reason = "certified CNET base could not be loaded"
+            });
+
         // ---- Real verification over certified units ---------------------
         //
         // The .cnb base contains certified units named acq_tk<N>q<N>
@@ -1010,6 +1018,8 @@ namespace CnetMcpServer
         {
             if (string.IsNullOrWhiteSpace(input))
                 return "[CNET AICIMO] Routing refused: input is empty.";
+            if (_soulHost == null)
+                return "[CNET AICIMO] Routing unavailable: certified CNET base could not be loaded.";
 
             var roster = UnitRoster();
             if (roster.Count == 0)
@@ -1066,6 +1076,7 @@ namespace CnetMcpServer
 
         public string ListOracles()
         {
+            if (_soulHost == null) return SoulUnavailable("list_oracles");
             var descriptors = _soulHost.Oracles();
             var rows = new List<object>(descriptors.Count);
             foreach (var descriptor in descriptors)
@@ -1112,6 +1123,7 @@ namespace CnetMcpServer
             string family, int width, int count, int goalCount,
             List<double> input)
         {
+            if (_soulHost == null) return SoulUnavailable("request_capability");
             int fam = ParseFamily(family);
             double[]? inputVec = input.Count > 0 ? input.ToArray() : null;
             var (served, gapNoted, output) = _soulHost.Request(
@@ -1131,6 +1143,7 @@ namespace CnetMcpServer
 
         public string HealthTick()
         {
+            if (_soulHost == null) return SoulUnavailable("health_tick");
             var r = _soulHost.HealthTick();
             return JsonSerializer.Serialize(new
             {
