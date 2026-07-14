@@ -1,0 +1,23 @@
+{
+  "build_rev": "48c127d",
+  "model": "/home/marble/Downloads/Qwythos-9B-Claude-Mythos-5-1M-MTP-Q8_0.gguf",
+  "model_bytes": 9786060640,
+  "tokenizer_model": "gpt2",
+  "bos_token_id": -1,
+  "task": "topk",
+  "target_semantics": "ordered",
+  "V": 256,
+  "max_units": 4,
+  "window_source": "english_window_256_qwythos.txt",
+  "window_fnv": "690c62c7b8b5daa1",
+  "margin_eps": 0.020000,
+  "cert_sampled": 1,
+  "sample_count": 96,
+  "min_accuracy_bound": 0.9500,
+  "student": {"init_hidden": 128, "max_hidden": 512, "max_epochs": 20000, "seed": 42},
+  "adaptive": 1,
+  "warmstart": 0,
+  "oracle_int8": 1,
+  "oracle_golden": "goldens_qwythos.int8.txt",
+  "lanes": 1
+}

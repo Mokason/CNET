@@ -180,6 +180,37 @@ New env knobs (both opt-in, default behavior unchanged):
   session: teach/escalation budget (and CNET_CERT_MARGIN posture) for
   hybrid-scale units; re-run the unit-level A/B once units certify.
 
+## certify_failed diagnosis + campaign posture (2026-07-14, same day)
+
+The smoke runs' `certify_failed` deferrals were DIAGNOSED, not tuned away:
+
+```
+CERT_DIAG acq_tk2107q2107: 252/256 exemplars exact, verdict=REFUSED, worst_margin=0.0001
+```
+
+The memorization-scale student (64→256 hidden, 12k epochs, adaptive)
+reproduces 252/256 mined exemplars exactly; the 4 misses sit on ordered
+top-3 boundaries the teacher protects by a **1e-4 logit gap** — the
+model's own coin-flip points, which no student can memorize and no
+epoch/capacity budget can close. This is the gemma4 wall verbatim
+(254–255/256, worst_margin ~0.001, "no sharp boundary"): on the
+exhaustive/PROVEN tier a real (non-constant) oracle certify_fails by
+construction. The smoke posture (margin 0, PROVEN tier) was the
+strictest possible configuration — the deferrals were the tier working
+as designed, not an oracle or teach-budget defect.
+
+**Campaign posture** (the completed soul_english_v1 recipe, applied):
+`CNET_CERT_MARGIN=0.02` (≈200× the observed coin-flip scale:
+teacher-ambiguous contexts abstain from the cert domain at mining time)
++ `CNET_CERT_SAMPLED=1` / `CNET_CERT_SAMPLE_COUNT=96` (Wilson ≥ 0.95,
+exactness-on-sample) + student 128→512 hidden / 20k epochs / adaptive.
+Recorded and replayable via `qwythos_english_v1.cnb.manifest.json`
+(committed; `CNET_MANIFEST=<file>` replays the full recipe including
+window fnv and the int8 golden battery). Note: the manifest's
+`build_rev` reflects the binary's compile-time rev — rebuild
+flagship_run after pulling before the full campaign so provenance
+records the current tree.
+
 ## Deferred (out of v1)
 
 Generation quality/coherence (chat template + sampling + the missing
