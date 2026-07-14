@@ -36,6 +36,7 @@ const char* cce_detect_family_name(cce_arch_family f) {
         case CCE_ARCH_FAMILY_LLAMA: return "llama-family (separate q/k/v/o)";
         case CCE_ARCH_FAMILY_GPT2:  return "gpt2-family (fused qkv)";
         case CCE_ARCH_FAMILY_MAMBA: return "mamba-family (state-space)";
+        case CCE_ARCH_FAMILY_HYBRID:return "hybrid (attention + state-space)";
         case CCE_ARCH_FAMILY_MLP:   return "mlp-stack";
         case CCE_ARCH_FAMILY_CCE:   return "cce-native";
         default:                    return "unknown";
@@ -131,6 +132,72 @@ static cce_container_format sniff_format(const char* path, long* file_size_out) 
 
 /* ---- GGUF structural probe (metadata only) ---- */
 
+/* blk.N. prefix -> N, else -1 */
+static int gguf_blk_index(const char* name) {
+    if (strncmp(name, "blk.", 4) != 0) return -1;
+    const char* p = name + 4;
+    if (*p < '0' || *p > '9') return -1;
+    int idx = 0;
+    while (*p >= '0' && *p <= '9') { idx = idx * 10 + (*p - '0'); p++; }
+    return (*p == '.') ? idx : -1;
+}
+
+/* Verify the jamba-style hybrid layout the cce_hybrid runner actually supports:
+ * every layer is EXACTLY one of a complete attention block or a complete ssm
+ * block, there is >=1 of each, and the shared embedding + final norm exist.
+ * Returns 1 when runnable; else fills `miss` with the first gap and returns 0. */
+static int gguf_hybrid_complete(const cce_gguf* g, int* out_n_attn, int* out_n_ssm,
+                                char* miss, size_t miss_cap) {
+    int nt = cce_gguf_tensor_count(g);
+    int max_blk = -1;
+    for (int i = 0; i < nt; i++) {
+        cce_gguf_tensor_meta m;
+        if (cce_gguf_get_tensor_meta(g, i, &m) != CCE_OK) continue;
+        int b = gguf_blk_index(m.name);
+        if (b > max_blk) max_blk = b;
+    }
+    if (max_blk < 0) { snprintf(miss, miss_cap, "no blk.N tensors"); return 0; }
+
+    static const char* attn_req[] = { "attn_k.weight", "attn_v.weight",
+        "attn_output.weight", "ffn_gate.weight", "ffn_up.weight",
+        "ffn_down.weight", "attn_norm.weight", "ffn_norm.weight" };
+    static const char* ssm_req[] = { "ssm_conv1d.weight", "ssm_x.weight",
+        "ssm_dt.weight", "ssm_a", "ssm_d", "ssm_out.weight", "attn_norm.weight" };
+
+    int n_attn = 0, n_ssm = 0;
+    char nm[160];
+    for (int l = 0; l <= max_blk; l++) {
+        snprintf(nm, sizeof(nm), "blk.%d.ssm_in.weight", l);
+        int is_ssm = cce_gguf_find_tensor(g, nm) >= 0;
+        snprintf(nm, sizeof(nm), "blk.%d.attn_q.weight", l);
+        int is_attn = cce_gguf_find_tensor(g, nm) >= 0;
+        if (is_ssm == is_attn) {
+            snprintf(miss, miss_cap, "layer %d is neither a complete attn nor ssm block", l);
+            return 0;
+        }
+        const char** req = is_attn ? attn_req : ssm_req;
+        size_t nreq = is_attn ? sizeof(attn_req) / sizeof(attn_req[0])
+                              : sizeof(ssm_req) / sizeof(ssm_req[0]);
+        for (size_t r = 0; r < nreq; r++) {
+            snprintf(nm, sizeof(nm), "blk.%d.%s", l, req[r]);
+            if (cce_gguf_find_tensor(g, nm) < 0) {
+                snprintf(miss, miss_cap, "%s layer %d missing %s",
+                         is_attn ? "attn" : "ssm", l, req[r]);
+                return 0;
+            }
+        }
+        if (is_attn) n_attn++; else n_ssm++;
+    }
+    if (n_attn == 0 || n_ssm == 0) {
+        snprintf(miss, miss_cap, "not hybrid (%d attn / %d ssm layers)", n_attn, n_ssm);
+        return 0;
+    }
+    if (cce_gguf_find_tensor(g, "token_embd.weight") < 0) { snprintf(miss, miss_cap, "missing token_embd.weight"); return 0; }
+    if (cce_gguf_find_tensor(g, "output_norm.weight") < 0) { snprintf(miss, miss_cap, "missing output_norm.weight"); return 0; }
+    *out_n_attn = n_attn; *out_n_ssm = n_ssm;
+    return 1;
+}
+
 static void probe_gguf(const char* path, cce_model_info* info) {
     cce_gguf* g = NULL;
     if (cce_gguf_load(path, &g) != CCE_OK || !g) {
@@ -208,10 +275,25 @@ static void probe_gguf(const char* path, cce_model_info* info) {
 
     /* family from structure; arch string is only a label */
     if (has_ssm && (has_q || has_qkv_fused)) {
-        /* jamba/zamba-style hybrid: neither the transformer nor the ssm
-           runner can express it alone; loading either way would silently
-           truncate the model */
-        note_append(info, "hybrid attention+ssm structure: no cce runner");
+        /* jamba/zamba-style hybrid: interleaved attention + state-space. Its
+           own family (NOT mamba) — the native mixed runner threads one
+           residual stream through both mixer kinds. Advertise runnable only
+           when the layout the loader supports is actually complete. */
+        info->family = CCE_ARCH_FAMILY_HYBRID;
+        int na = 0, ns = 0;
+        char miss[128] = {0};
+        if (!has_q && has_qkv_fused) {
+            note_append(info, "hybrid with fused-qkv attention: the hybrid runner expects separate q/k/v/o");
+        } else if (gguf_hybrid_complete(g, &na, &ns, miss, sizeof(miss))) {
+            strncpy(info->naming, "hybrid-blk", sizeof(info->naming) - 1);
+            if (info->n_layer <= 0) info->n_layer = na + ns;
+            note_append(info, "interleaved attention+ssm (jamba-style): native mixed attention+ssm forward");
+        } else {
+            char note[200];
+            snprintf(note, sizeof(note),
+                     "hybrid attention+ssm but layout incomplete for the hybrid runner: %s", miss);
+            note_append(info, note);
+        }
     } else if (has_ssm) {
         info->family = CCE_ARCH_FAMILY_MAMBA;
         note_append(info, "state-space model: runs recurrently (O(1) state per token)");
@@ -483,6 +565,9 @@ static cce_result open_st_llama(cce_anymodel* m, const char* path) {
 static cce_result open_ssm(cce_anymodel* m, const char* path) {
     return cce_ssm_load(&m->ssm, path);
 }
+static cce_result open_hybrid(cce_anymodel* m, const char* path) {
+    return cce_hybrid_load(&m->hybrid, path);
+}
 static cce_result open_supra_dir(cce_anymodel* m, const char* path) {
     char dir[512];
     parent_dir(path, dir, sizeof(dir));
@@ -528,6 +613,7 @@ typedef struct {
 static const cce_runner_entry k_runner_registry[] = {
     { CCE_FMT_GGUF,        CCE_ARCH_FAMILY_LLAMA, NULL,              "cce_gguf_load_model",        open_gguf_transformer, NULL },
     { CCE_FMT_GGUF,        CCE_ARCH_FAMILY_MAMBA, NULL,              "cce_ssm_load",               open_ssm,              NULL },
+    { CCE_FMT_GGUF,        CCE_ARCH_FAMILY_HYBRID,"hybrid-blk",      "cce_hybrid_load",            open_hybrid,           NULL },
     { CCE_FMT_SAFETENSORS, CCE_ARCH_FAMILY_MAMBA, "hf-backbone",     "cce_ssm_load",               open_ssm,              NULL },
     { CCE_FMT_SAFETENSORS, CCE_ARCH_FAMILY_LLAMA, "hf-model.layers", "cce_st_llama_load",          open_st_llama,         precheck_config_json },
     { CCE_FMT_SAFETENSORS, CCE_ARCH_FAMILY_GPT2,  "supra-blocks",    "cce_supra_a2a_load",         open_supra_dir,        NULL },
@@ -660,6 +746,7 @@ void cce_anymodel_free(cce_anymodel* m) {
     if (m->transformer) cce_gguf_qwen2_free(m->transformer);
     if (m->supra)       cce_supra_a2a_free(m->supra);
     if (m->ssm)         cce_ssm_free(m->ssm);
+    if (m->hybrid)      cce_hybrid_free(m->hybrid);
     if (m->forest)      cce_forest_close(m->forest);
     if (m->model)       cce_model_destroy(m->model);
     free(m);

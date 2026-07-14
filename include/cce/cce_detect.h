@@ -26,6 +26,7 @@
 #include "cce_forest.h"
 #include "cce_model.h"
 #include "cce_ssm.h"
+#include "cce_hybrid.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -46,6 +47,7 @@ typedef enum {
     CCE_ARCH_FAMILY_LLAMA,   /* separate q/k/v/o attention + gated MLP (llama/qwen/mistral/gemma...) */
     CCE_ARCH_FAMILY_GPT2,    /* fused qkv attention (gpt2 c_attn / supra blocks.N.attn.qkv) */
     CCE_ARCH_FAMILY_MAMBA,   /* state-space mixer (ssm_* / mixer.A_log) */
+    CCE_ARCH_FAMILY_HYBRID,  /* interleaved attention + state-space (jamba/zamba) */
     CCE_ARCH_FAMILY_MLP,     /* plain layers.N linear stack */
     CCE_ARCH_FAMILY_CCE,     /* CCE-native (forest archive / cce_model) */
 } cce_arch_family;
@@ -96,6 +98,7 @@ typedef struct {
     cce_gguf_qwen2* transformer;  /* GGUF llama-family, HF-llama safetensors, 'QGKP' packed */
     cce_supra_a2a*  supra;        /* 'SUPK' packed + supra-style safetensors */
     cce_ssm_model*  ssm;          /* mamba-family (safetensors or GGUF) */
+    cce_hybrid_model* hybrid;     /* interleaved attention+ssm (jamba-style GGUF) */
     cce_forest*     forest;       /* "CCE1" archive */
     cce_model*      model;        /* "CMDL" cce_model save */
 } cce_anymodel;

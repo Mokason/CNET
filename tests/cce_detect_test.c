@@ -196,11 +196,16 @@ int main(void) {
     CHECK(info.runnable == 1 && strcmp(info.runner, "cce_ssm_load") == 0,
           "mamba gguf runnable via cce_ssm_load");
 
-    /* 2b. hybrid attention+ssm: neither runner can express it -> refuse */
+    /* 2b. hybrid attention+ssm: classified as its own family (NOT mamba). This
+       fixture is metadata-only and structurally incomplete (no block_count,
+       no k/v, no ffn, no ssm scan tensors, no embd/norm), so it is recognized
+       as hybrid but honestly NOT runnable, with a note naming the gap. */
     write_gguf_hybrid("detect_hybrid.gguf");
     CHECK(cce_detect_file("detect_hybrid.gguf", &info) == CCE_OK, "hybrid gguf probe ok");
-    CHECK(info.family == CCE_ARCH_FAMILY_UNKNOWN && info.runnable == 0,
-          "hybrid attention+ssm gguf refuses instead of loading truncated");
+    CHECK(info.family == CCE_ARCH_FAMILY_HYBRID,
+          "attention+ssm classified as hybrid family, not mis-labeled mamba");
+    CHECK(info.runnable == 0 && strstr(info.notes, "incomplete") != NULL,
+          "incomplete hybrid honestly not runnable, note explains what is missing");
     remove("detect_hybrid.gguf");
 
     /* 3. safetensors, HF llama naming */
