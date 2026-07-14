@@ -167,7 +167,18 @@ New env knobs (both opt-in, default behavior unchanged):
   produced `deferred (certify_failed)` (mine+teach+certify cannot fit
   60 s at D=4096 — a wall-clock artifact, not an oracle defect); the
   prefix A/B runs use a 900 s wall.
-  Prefix A/B (ON vs OFF, artifact comparison): `<filled below>`
+  Prefix A/B (ON vs OFF, 900 s smokes, **measured 2026-07-14**):
+  determinism OK and **golden battery 32/32** in BOTH modes; deferral
+  traces, `.cnb` bases and gaps ledgers byte-identical. Caveat, on
+  record: both runs deferred both units (`certify_failed`), so the
+  unit-level artifact comparison is vacuous (empty bases) — the prefix
+  bit-identity claim rests on the golden replay + the hermetic test's
+  exhaustive rewind identity. The `certify_failed` itself is a
+  TEACHING-side finding, not an oracle defect: the student did not
+  certify against a high-entropy teacher (123/128 distinct top-3) at
+  D=4096 within the attempt budget. First item for the campaign
+  session: teach/escalation budget (and CNET_CERT_MARGIN posture) for
+  hybrid-scale units; re-run the unit-level A/B once units certify.
 
 ## Deferred (out of v1)
 
