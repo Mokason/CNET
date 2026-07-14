@@ -332,6 +332,7 @@ cce_result cce_gguf_build_qwen2_forest(cce_forest** out_forest,
 
 /* Full Qwen2 model holder with forest + norms (for forward) */
 struct cce_clgemm;
+struct cce_gguf_qwen35_ext; /* qwen35 hybrid extension (cce_gguf_qwen35.c) */
 
 typedef struct cce_gguf_qwen2 {
     cce_forest* forest;
@@ -442,6 +443,13 @@ typedef struct cce_gguf_qwen2 {
                                       checkpoint must never emit; logits forced
                                       to -inf, mirroring the reference head */
     size_t n_suppress;
+
+    /* Qwen3.5 hybrid extension (gated attention + Gated-DeltaNet layers).
+       NULL = classic transformer; every legacy path is byte-identical. When
+       set, cce_gguf_qwen2_forward dispatches whole-forward to the qwen35
+       runner (cce_gguf_qwen35.c), which owns the per-layer kind schedule,
+       recurrent/conv state, and the prefix-rewind checkpoint protocol. */
+    struct cce_gguf_qwen35_ext *qwen35;
 } cce_gguf_qwen2;
 
 /* The live GGUF fp16->fp32 decoder (all quant superblock scales flow through
@@ -452,6 +460,13 @@ float cce_gguf_f16_to_f32(uint16_t h);
  * Similar to cce_supra_load_decomposed.
  */
 cce_result cce_gguf_load_qwen2(cce_gguf_qwen2** out, const char* path);
+
+/* Load a Qwen3.5 hybrid GGUF (gated attention + Gated-DeltaNet, arch
+ * "qwen35") into the SAME cce_gguf_qwen2 struct every oracle consumer
+ * binds to (depth_probe / window_discover / flagship). The nextn/MTP draft
+ * block is loaded by llama.cpp as an extra decoder block but never executed
+ * in the main pass — here it is skipped entirely (n_layer = trunk only). */
+cce_result cce_gguf_load_qwen35(cce_gguf_qwen2** out, const char* path);
 
 /* Phase 4: architecture dispatcher. Detects arch from GGUF metadata and builds
  * the appropriate forest. Falls back to qwen2/llama-style builder for compatible models.

@@ -135,6 +135,7 @@ CCE_DETECT  := src/cce/cce_detect.c
 CCE_SSM     := src/cce/cce_ssm.c
 CCE_HYBRID  := src/cce/cce_hybrid.c
 CCE_QWEN35  := src/cce/cce_qwen35.c
+CCE_GGUF_QWEN35 := src/cce/cce_gguf_qwen35.c
 CCE_ST_LLAMA := src/cce/cce_st_llama.c
 CCE_SPECGRAPH := src/cce/cce_specgraph.c
 CCE_WSTORE  := src/cce/cce_weight_store.c
@@ -142,7 +143,7 @@ CCE_TIERRT  := src/cce/cce_tier_runtime.c
 CCE_SIMILAR := src/cce/cce_similar.c
 CCE_CLGEMM  := src/cce/cce_clgemm.c
 CCE_TRANSFORMER_QAT := src/cce/cce_transformer_qat.c
-CCE := $(CCE_TENSOR) $(CCE_BLOCK) $(CCE_CASCADE) $(CCE_ARCHIVE) $(CCE_FOREST) $(CCE_ROUTER) $(CCE_SPARSE_KV) $(CCE_UNCERTAINTY) $(CCE_COMPRESSION) $(CCE_LEARN) $(CCE_PATCH) $(CCE_GPU) $(CCE_ABI) $(CCE_CUDA_OBJ) $(CCE_PERCEPTUAL) $(CCE_WORDLM) $(CCE_MODEL) $(CCE_MODEL_IO) $(CCE_DATASET) $(CCE_AUTOGRAD) $(CCE_SAFETENSORS) $(CCE_GGUF) $(CCE_AICIMO) $(CCE_QGKP) $(CCE_DETECT) $(CCE_SSM) $(CCE_HYBRID) $(CCE_QWEN35) $(CCE_ST_LLAMA) $(CCE_SPECGRAPH) $(CCE_WSTORE) $(CCE_TIERRT) $(CCE_SIMILAR) $(CCE_CLGEMM) $(CCE_TRANSFORMER_QAT)
+CCE := $(CCE_TENSOR) $(CCE_BLOCK) $(CCE_CASCADE) $(CCE_ARCHIVE) $(CCE_FOREST) $(CCE_ROUTER) $(CCE_SPARSE_KV) $(CCE_UNCERTAINTY) $(CCE_COMPRESSION) $(CCE_LEARN) $(CCE_PATCH) $(CCE_GPU) $(CCE_ABI) $(CCE_CUDA_OBJ) $(CCE_PERCEPTUAL) $(CCE_WORDLM) $(CCE_MODEL) $(CCE_MODEL_IO) $(CCE_DATASET) $(CCE_AUTOGRAD) $(CCE_SAFETENSORS) $(CCE_GGUF) $(CCE_AICIMO) $(CCE_QGKP) $(CCE_DETECT) $(CCE_SSM) $(CCE_HYBRID) $(CCE_QWEN35) $(CCE_GGUF_QWEN35) $(CCE_ST_LLAMA) $(CCE_SPECGRAPH) $(CCE_WSTORE) $(CCE_TIERRT) $(CCE_SIMILAR) $(CCE_CLGEMM) $(CCE_TRANSFORMER_QAT)
 CNET_CCE_ADAPTER := src/cce/cce_contract_adapter.c
 SPECIALIST_ADAPTERS := src/specialist_adapters.c
 SPECIALIST_SRC := src/specialist.c src/specialist_health.c
@@ -1082,6 +1083,14 @@ cce_qwen35: $(CCE) $(CCE_CUDA_OBJ) tests/cce_qwen35_test.c
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) tests/cce_qwen35_test.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 	./$(BIN_DIR)/cce_qwen35 > logs/cce_qwen35.log 2>&1
 
+# Hermetic end-to-end test of the qwen35 hybrid RUNNER (cce_gguf_qwen35.c):
+# writes a tiny qwen35-arch GGUF fixture, gates the forward against an
+# independent double-precision reference, and pins the oracle-harness state
+# contract (rewind checkpoint, probe batches, int8 head skip, MTP skip).
+cce_qwen35_e2e: $(CCE) $(CCE_CUDA_OBJ) tests/cce_qwen35_e2e_test.c
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) tests/cce_qwen35_e2e_test.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+	./$(BIN_DIR)/cce_qwen35_e2e > logs/cce_qwen35_e2e.log 2>&1
+
 # HF-llama safetensors loader: same decomposed transformer as the GGUF path,
 # gated by bit-identical logits between the two container formats.
 cce_st_llama: $(CCE) $(CCE_CUDA_OBJ) tests/cce_st_llama_test.c
@@ -1514,6 +1523,31 @@ cnet_llama_eval: cnet_dll $(CNET_LLAMA_EVAL)
 .PHONY: qwythos_coherence_gate
 qwythos_coherence_gate: tools/score_cnet_coherence.py tests/test_qwythos_coherence.sh
 	@bash tests/test_qwythos_coherence.sh
+
+# Real-model parity + token-identity gate: qwen35 runner vs the llama.cpp CPU
+# reference dumps (generate those first via qwen35_parity_dump; see the test
+# header). FP inference-only load: ~46 GB resident, no archive scratch.
+qwythos_e2e_build: $(CCE) $(CCE_CUDA_OBJ) tests/qwythos_e2e.c
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/qwythos_e2e $(CCE) $(CCE_CUDA_OBJ) tests/qwythos_e2e.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+.PHONY: qwythos_e2e
+qwythos_e2e: qwythos_e2e_build
+	CNET_INFER_FP=1 CNET_FOREST_NO_PERSIST=1 CNET_MAX_CTX=64 \
+		./$(BIN_DIR)/qwythos_e2e $(QWYTHOS_GGUF) > logs/qwythos_e2e.console.log 2>&1
+	@tail -5 logs/qwythos_e2e.console.log
+
+# qwen35 parity dump: llama.cpp reference tensor dumps for the Qwythos hybrid
+# forward. Links the CPU build DELIBERATELY — the pinned llama.cpp HEAD enables
+# -funsafe-math-optimizations in ggml-hip, so the ROCm build is not an IEEE-
+# faithful numeric oracle; build-cpu has no GPU backend compiled in at all.
+LLAMA_CPP_BUILD_CPU ?= $(LLAMA_CPP_ROOT)/build-cpu
+.PHONY: qwen35_parity_dump_build
+qwen35_parity_dump_build: tools/moe_parity_dump.cpp
+	$(CXX) -std=c++17 -Wall -Wextra -O2 \
+		-I$(LLAMA_CPP_ROOT)/include -I$(LLAMA_CPP_ROOT)/ggml/include \
+		-o $(BIN_DIR)/qwen35_parity_dump tools/moe_parity_dump.cpp \
+		-L$(LLAMA_CPP_BUILD_CPU)/bin -lllama -lggml -lggml-base -lggml-cpu \
+		-Wl,-rpath,$(LLAMA_CPP_BUILD_CPU)/bin
+	@echo "Built $(BIN_DIR)/qwen35_parity_dump (CPU llama.cpp reference dumps)."
 
 QWYTHOS_GGUF ?= /home/marble/Downloads/Qwythos-9B-Claude-Mythos-5-1M-MTP-Q8_0.gguf
 QWYTHOS_QGKP ?= $(CURDIR)/hermes_wrappers/Qwythos-9B-Claude-Mythos-5-1M-MTP-QGKP-v3.cnetpack

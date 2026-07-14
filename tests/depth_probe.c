@@ -148,13 +148,51 @@ int main(int argc, char **argv) {
     printf("model: %s  layers=%d hidden=%d vocab=%d  window=%lu probes=%lu\n",
            argv[1], L, D, m->vocab_size, (unsigned long)V, (unsigned long)N);
 
-    /* the window under test: DISCOVERED by default (the campaign's default
-       now); argv[4] = "fixed" measures the legacy 2000..2000+V window */
+    /* the window under test: CNET_WINDOW_FILE if set (the campaign's
+       explicit-window mode — mandatory on BOS-less models, where anchored
+       discovery is unusable and the histogram fallback mines junk-context
+       attractors), else DISCOVERED by default; argv[4] = "fixed" measures
+       the legacy 2000..2000+V window */
     vocab = (int *)malloc(V * sizeof *vocab);
     logits = (float *)malloc((size_t)m->vocab_size * sizeof *logits);
     if (!vocab || !logits) return 1;
     for (i = 0; i < V; ++i) vocab[i] = 2000 + (int)i;
-    if (!(argc > 4 && strcmp(argv[4], "fixed") == 0)) {
+    if (getenv("CNET_WINDOW_FILE")) {
+        /* same loader contract as flagship_run: decimal ids, one per line,
+           all unique and inside the model vocab, exactly V of them — the
+           probe MUST measure the exact window the campaign mines */
+        const char *wf = getenv("CNET_WINDOW_FILE");
+        FILE *f = fopen(wf, "r");
+        size_t got = 0, j;
+        if (!f) {
+            fprintf(stderr, "CNET_WINDOW_FILE %s: cannot open\n", wf);
+            return 1;
+        }
+        while (got < V && fscanf(f, "%d", &vocab[got]) == 1) {
+            if (vocab[got] < 0 || vocab[got] >= m->vocab_size) {
+                fprintf(stderr, "CNET_WINDOW_FILE: id %d outside model "
+                                "vocab\n", vocab[got]);
+                fclose(f);
+                return 1;
+            }
+            got++;
+        }
+        fclose(f);
+        if (got != V) {
+            fprintf(stderr, "CNET_WINDOW_FILE: need %lu ids, got %lu\n",
+                    (unsigned long)V, (unsigned long)got);
+            return 1;
+        }
+        for (i = 0; i < V; ++i)
+            for (j = i + 1; j < V; ++j)
+                if (vocab[i] == vocab[j]) {
+                    fprintf(stderr, "CNET_WINDOW_FILE: duplicate id %d\n",
+                            vocab[i]);
+                    return 1;
+                }
+        printf("window: %lu tokens from %s (first: %d %d %d %d)\n",
+               (unsigned long)V, wf, vocab[0], vocab[1], vocab[2], vocab[3]);
+    } else if (!(argc > 4 && strcmp(argv[4], "fixed") == 0)) {
         int bos = m->bos_token_id;
         if (getenv("CNET_ORACLE_BOS") && getenv("CNET_ORACLE_BOS")[0] == '0')
             bos = -1;

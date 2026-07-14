@@ -282,7 +282,12 @@ static void probe_gguf(const char* path, cce_model_info* info) {
         info->family = CCE_ARCH_FAMILY_HYBRID;
         int na = 0, ns = 0;
         char miss[128] = {0};
-        if (!has_q && has_qkv_fused) {
+        if (strcmp(info->arch, "qwen35") == 0 && has_qkv_fused) {
+            /* Qwen3.5: gated attention + Gated-DeltaNet. The ssm_* tensors
+               are DeltaNet, not mamba — its own runner, not cce_hybrid. */
+            strncpy(info->naming, "qwen35-blk", sizeof(info->naming) - 1);
+            note_append(info, "qwen3.5 hybrid (gated attention + gated-deltanet): native qwen35 runner");
+        } else if (!has_q && has_qkv_fused) {
             note_append(info, "hybrid with fused-qkv attention: the hybrid runner expects separate q/k/v/o");
         } else if (gguf_hybrid_complete(g, &na, &ns, miss, sizeof(miss))) {
             strncpy(info->naming, "hybrid-blk", sizeof(info->naming) - 1);
@@ -568,6 +573,9 @@ static cce_result open_ssm(cce_anymodel* m, const char* path) {
 static cce_result open_hybrid(cce_anymodel* m, const char* path) {
     return cce_hybrid_load(&m->hybrid, path);
 }
+static cce_result open_qwen35(cce_anymodel* m, const char* path) {
+    return cce_gguf_load_qwen35(&m->transformer, path);
+}
 static cce_result open_supra_dir(cce_anymodel* m, const char* path) {
     char dir[512];
     parent_dir(path, dir, sizeof(dir));
@@ -614,6 +622,7 @@ static const cce_runner_entry k_runner_registry[] = {
     { CCE_FMT_GGUF,        CCE_ARCH_FAMILY_LLAMA, NULL,              "cce_gguf_load_model",        open_gguf_transformer, NULL },
     { CCE_FMT_GGUF,        CCE_ARCH_FAMILY_MAMBA, NULL,              "cce_ssm_load",               open_ssm,              NULL },
     { CCE_FMT_GGUF,        CCE_ARCH_FAMILY_HYBRID,"hybrid-blk",      "cce_hybrid_load",            open_hybrid,           NULL },
+    { CCE_FMT_GGUF,        CCE_ARCH_FAMILY_HYBRID,"qwen35-blk",      "cce_gguf_load_qwen35",       open_qwen35,           NULL },
     { CCE_FMT_SAFETENSORS, CCE_ARCH_FAMILY_MAMBA, "hf-backbone",     "cce_ssm_load",               open_ssm,              NULL },
     { CCE_FMT_SAFETENSORS, CCE_ARCH_FAMILY_LLAMA, "hf-model.layers", "cce_st_llama_load",          open_st_llama,         precheck_config_json },
     { CCE_FMT_SAFETENSORS, CCE_ARCH_FAMILY_GPT2,  "supra-blocks",    "cce_supra_a2a_load",         open_supra_dir,        NULL },

@@ -314,14 +314,19 @@ void cce_qwen35_get_caps(cce_qwen35_caps *out) {
     out->layer_schedule_dispatch = 1;
     out->deltanet_recurrent_core = 1;
     out->gated_attention_core = 1;
-    out->gguf_loader = 0;
-    out->end_to_end_runner = 0;
+    /* the qwen35 SUBSYSTEM now ships a GGUF loader + end-to-end runner
+       (cce_gguf_qwen35.c: cce_gguf_load_qwen35 -> cce_gguf_qwen2_forward
+       dispatch), which supplies the (M)RoPE+YaRN, causal short-conv+SiLU,
+       and projections these cores deliberately leave to the caller. The
+       two applies_* fields still describe THIS core module's contract. */
+    out->gguf_loader = 1;
+    out->end_to_end_runner = 1;
     out->applies_rope = 0;
     out->applies_short_conv = 0;
     out->summary =
         "Qwen3.5 native execution core: layer-schedule dispatch + stateful "
         "Gated-DeltaNet recurrent step + gated causal attention (F32 CPU "
-        "reference). NOT a GGUF loader and NOT an end-to-end runner; (M)RoPE, "
-        "the causal short-conv+SiLU, and the large q/k/v/o and in/out "
-        "projections are caller-provided.";
+        "reference). The end-to-end GGUF runner lives in cce_gguf_qwen35.c "
+        "(cce_gguf_load_qwen35), which supplies (M)RoPE+YaRN, the causal "
+        "short-conv+SiLU, and the projections around these cores.";
 }

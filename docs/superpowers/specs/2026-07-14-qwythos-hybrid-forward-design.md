@@ -1,0 +1,181 @@
+# Qwythos-9B (qwen35) end-to-end hybrid forward — design + validation record
+
+Date: 2026-07-14
+Scope: oracle readiness v1 (CPU; no generation loop, no GPU, no chunked
+prefill; nextn/MTP draft head skipped).
+
+## Model / reference provenance
+
+- Model: `/home/marble/Downloads/Qwythos-9B-Claude-Mythos-5-1M-MTP-Q8_0.gguf`
+  - sha256: `0d65d20a1a5a96600a0fa6f53dfe636f81e61de6e637cec45bc147be7a3c6544`
+  - arch `qwen35`, GGUFv3, 442 tensors; 33 blocks with
+    `nextn_predict_layers=1` → **trunk = 32 layers** (blk.32 is the MTP
+    draft block, loaded by llama.cpp as an extra decoder block but never
+    executed in the main pass — the CNET loader skips it entirely).
+  - D=4096, FFN=12288 SwiGLU, vocab 248320 (derived from tok_emb; no
+    vocab_size key), untied `output.weight`, rms_eps 1e-6,
+    **no bos token** (bos = −1 everywhere; never synthesized).
+  - Full-attention layers blk {3,7,11,15,19,23,27,31} (`(i+1)%4==0`);
+    the other 24 are Gated-DeltaNet.
+- Reference: llama.cpp checkout `/home/marble/llama.cpp` @ `ccb0c3422`,
+  **build-cpu only** for all numeric gates. The pinned HEAD enables
+  `-funsafe-math-optimizations` in ggml-hip, so the ROCm build is not an
+  IEEE-faithful oracle; build-cpu also has no GPU backend compiled in, so
+  dump provenance is unambiguous.
+
+## Architecture semantics (pinned against llama.cpp source, not docs)
+
+- **Attention layers**: fused `attn_q [4096→8192]` is per-head interleaved
+  `[q_h(256) | gate_h(256)] × 16` (qwen35.cpp view strides); per-head Q/K
+  RMSNorm BEFORE rope; kq_scale 1/√256; the softmax context is multiplied
+  by `sigmoid(gate_h)` BEFORE o_proj. GQA 16:4 grouped (`h / (nq/nkv)`).
+- **RoPE**: IMROPE with sections [11,11,10,0]. For text, llama.cpp fills
+  all three used position streams with the same value
+  (`llm_graph_input_pos::set_input`), so it reduces EXACTLY to NEOX over
+  rope_dim=64 of the 256-dim head, pairing (i, i+32), base 1e7. The loader
+  verifies the reduction (every sector maps to t/h/w) and refuses otherwise.
+- **YaRN is active at every position**: factor 4 → freq_scale 0.25,
+  ext_factor 1.0; the reference's context-level attn_factor cancellation
+  (llama-context.cpp:203) means the kernel receives attn_factor 1.0 and
+  re-derives mscale = 1 + 0.1·ln(4) ≈ 1.13863 internally; corr_dims from
+  the ggml formula = [14, 22] (pair units) at n_ctx_orig 262144.
+- **DeltaNet layers**: qkv `[4096→8192]` (q 16×128 | k 16×128 | v 32×128),
+  z-gate `attn_gate [4096→4096]` **not convolved**; alpha/beta/z/qkv ALL
+  project from the post-attn_norm input; causal depthwise conv `[4, 8192]`
+  over the fused qkv pre-split, **tap 0 = oldest** (ggml ssm_conv), SiLU
+  after; `ssm_a` stored as −exp(A_log) (loader refuses any entry > 0);
+  gate g = ssm_a·softplus(alpha + dt_bias), write gate = sigmoid(beta);
+  Q/K L2-normed per head, q scaled 1/√128 (inside the validated
+  `cce_qwen35_deltanet_step` core).
+- **K→V head broadcast is TILED** (`kh = h mod 16`, `ggml_repeat_4d`
+  semantics; llama-model.cpp: "Qwen 3.5: [k0_v0, k1_v1, k0_v2, k1_v3]") —
+  NOT the grouped `h/rep` the core applies internally. The runner
+  pre-expands q/k to 32 heads with the tiled map and runs the core with
+  hk == hv == 32, making its internal grouping inert.
+- Gated norm: per-v-head RMSNorm(out, ssm_norm[128]) · SiLU(z_h), then
+  ssm_out.
+- **No ffn_norm tensor**: `post_attention_norm` is the pre-FFN norm with
+  the FFN residual taken pre-norm (llama.cpp graph) — mapped to
+  `m->ffn_norm[l]`; `m->post_attention_norm` stays empty so the gemma
+  sandwich path never fires.
+- Known benign deviation: ggml `l2_norm` is `x/max(‖x‖,eps)` vs the core's
+  `x/√(Σx²+eps)` — relative difference ≲5e-7 at these magnitudes; inside
+  the parity envelope, core left untouched (53/53 validated).
+
+## Integration shape
+
+Extend `cce_gguf_qwen2` in place (all oracle consumers hard-bind to that
+struct + `cce_gguf_qwen2_forward(_probes)` + `cce_gguf_set_layer_tap` +
+`cur_pos` rewind + forest branch `"qwen2.lm_head"`):
+
+- `include/cce/cce_gguf.h`: opaque `struct cce_gguf_qwen35_ext *qwen35`
+  appended (NULL = classic transformer, legacy byte-identical);
+  `cce_gguf_load_qwen35` declared.
+- New `src/cce/cce_gguf_qwen35.c` (+ internal `.h`): loader, geometry,
+  YaRN precompute, per-layer kind schedule (tensor structure primary,
+  `full_attention_interval` cross-check, refuse mismatch), DeltaNet
+  state + conv rings, whole-forward implementation, state protocol.
+- `src/cce/cce_gguf.c`: whole-forward dispatch at the top of
+  `cce_gguf_qwen2_forward`, free hook, export shims
+  (`cce_gguf__apply_linear_rows` / `__rms_norm` / `__fire_layer_tap` /
+  `__fire_capture` / `__global_clgemm` / `__get_scalar` / `__get_string`).
+- `src/cce/cce_detect.c`: `probe_gguf` stamps naming `qwen35-blk` for
+  arch qwen35 + fused qkv + ssm tensors; registry row → `open_qwen35`
+  → `am->transformer`. `cce_gguf_load_model` also routes the arch string.
+- Projections load via `cce_gguf_add_linear_branch` → **CNET_ORACLE_INT8
+  works unchanged** (head branch named `qwen2.lm_head` keeps the FP skip;
+  nextn tensors are never walked, so nothing MTP is ever mined).
+
+### Oracle state protocol (the new mechanism)
+
+The flagship rewinds `m->cur_pos` for KV-prefix reuse. A KV cache rewinds
+positionally; recurrent state does not. The ext keeps `stream_pos` and ONE
+checkpoint slot (~53 MB: 24 × [32×128×128] states + 24 × [3×8192] rings):
+
+- `cur_pos == 0` → full state reset
+- `cur_pos == stream_pos` → continue
+- `cur_pos == ckpt_pos` → restore snapshot
+- anything else → **loud refusal**
+
+Committing forwards snapshot at ENTRY (a suffix run can never clobber the
+prefix checkpoint). `forward_probes` rows run on scratch copies of state +
+ring and leave live state untouched — bit-identical to serial
+rewind-per-probe (proven in the hermetic test). `layer_cap` is refused on
+the hybrid (a capped forward would desync recurrent state).
+
+New env knobs (both opt-in, default behavior unchanged):
+- `CNET_INFER_FP=1` — inference-only FP load: keep FP payloads, drop Adam
+  moment buffers (9B FP forest 110 GB → 37 GB). For parity runs.
+- `CNET_FOREST_NO_PERSIST=1` — skip the branch archive write (a 9B FP
+  forest would write ~37 GB of scratch); branches stay HOT for the process
+  lifetime, same posture as the int8 oracle path.
+
+## Validation ladder (all gates green before any campaign)
+
+- **S1 hermetic** (`make cce_qwen35_e2e`, `tests/cce_qwen35_e2e_test.c`):
+  tiny self-written qwen35 GGUF (4 trunk = 3 deltanet + 1 attn, + nextn
+  block; partial rotary, YaRN mscale≠1, tiled 2:4 broadcast, conv kernel >
+  tokens/call), double-precision reference. **34/34 checks**: worst logit
+  |diff| 6.53e-06 (tol 1e-4); bit-identical: reset+replay, batch==serial,
+  prefix rewind, probes==serial + live state untouched, Q8_0 container ==
+  FP container (grid-snapped weights), nextn skip exact, tap on/off;
+  int8 head-FP skip; head-window bit-identity; refusals (wrong-arch
+  loaders, missing ssm_a, arbitrary rewind).
+- **S2 per-layer parity** (`make qwythos_e2e`, needs dumps from
+  `qwen35_parity_dump`): layer tap (l_out) ladder vs llama.cpp CPU on the
+  real model — 1-token pos-0 run + 8-token window-id run. Envelope: warn
+  relL2 > 5e-3, hard-fail > 0.05; result_output argmax + ORDERED TOP-3
+  identity (the oracle contract; top-8 reported informationally).
+  **Measured 2026-07-14**: 1-token ladder relL2 5.9e-3 .. 3.1e-2 (worst
+  L28), 8-token ladder 7.2e-3 .. 2.3e-2 (worst L19) — every layer under
+  the 0.05 hard limit, no discontinuity at any layer (a wrong formula
+  would spike O(0.1–1) at its first layer). Both argmaxes identical;
+  ordered top-5 identical on the 8-token run. The envelope floor sits
+  above 5e-3 because llama.cpp's CPU Q8_0 matmul quantizes ACTIVATIONS
+  to Q8_0 (q8×q8 vec_dot) while CNET runs fp32 activations on exactly-
+  dequanted weights — the reference itself carries that noise. Deep-rank
+  observation, on record: top-8 rank 6/7 swapped (gap 0.036) and rank 8
+  flipped (ref id 263 @ 7.8291 vs #9 id 83 @ 7.7713, gap 0.058 on
+  ~10-magnitude logits); the reference is byte-self-consistent between
+  batched and one-token-sequential evaluation (measured, identical
+  top-10 logits), so the flip is the fp32-vs-q8-activation implementation
+  delta, not reference instability. Oracle-relevant margins (top-3:
+  ≥ 0.27) are an order of magnitude above this noise.
+- **S3 token identity** (same binary, stage B): 32 greedy tokens from
+  "The capital of France is" vs llama.cpp `gen_tokens.txt`.
+  **Measured 2026-07-14: 32/32 token-for-token identical.**
+- **S4a depth_probe preflight**: `CNET_WINDOW_FILE=english_window_256_qwythos.txt`
+  (depth_probe gained the window-file mode — mandatory on a BOS-less
+  model), V=256 N=128, int8 campaign config. Gates: 0 probe/head
+  mismatches, distinct decisions ≫ 1, head banner `w_q=no w_trit=no`.
+  **Measured 2026-07-14**: validity **0/128 mismatches**; distinct
+  full-depth top-3 **123/128** (the english window is ALIVE on this
+  model — contrast gemma's bos-less collapse); head stayed FP under
+  int8; 1.60 s/probe single-thread. Depth-cap verdict: **DEAD** —
+  top-3 saturates only at 32/32 (argmax partially saturates much
+  earlier than gemma4-v2: 61/128 at cap 28 — the recurrent layers do
+  settle many decisions early — but never completely below full depth).
+  Full table in `scratchpad`/session log; mine at full depth only.
+- **S4b flagship startup gates** (smoke campaigns, topk V=256):
+  **Measured 2026-07-14**: window file loads (256 ids validated);
+  **determinism spot check OK in FP and int8 modes** (exercises the
+  DeltaNet checkpoint/restore under interleaved queries on the real
+  model); golden battery written, 32 probes each mode; **FP and int8
+  goldens are IDENTICAL** — with the head FP in both modes, int8 layer
+  quantization flips none of the 32 argmax decisions on this model;
+  restricted head engages for mining. Smoke-unit note: 60 s wall
+  produced `deferred (certify_failed)` (mine+teach+certify cannot fit
+  60 s at D=4096 — a wall-clock artifact, not an oracle defect); the
+  prefix A/B runs use a 900 s wall.
+  Prefix A/B (ON vs OFF, artifact comparison): `<filled below>`
+
+## Deferred (out of v1)
+
+Generation quality/coherence (chat template + sampling + the missing
+prompts TSV), GPU/clgemm equivalence + dual-R9700 pool, MTP draft-head
+execution, long-context YaRN regime (contexts ≤ 64 in v1), chunked
+DeltaNet prefill (prefill = N recurrent steps), int8 decision QUALITY
+(mechanics gated only; int8 goldens are a separate, mode-specific file),
+llama.cpp-anchored 32-pair golden cross-check via a `pairs:` dump mode
+(decision identity is currently anchored by S3's 32-step greedy chain +
+the 8-token argmax/top-8 gate).

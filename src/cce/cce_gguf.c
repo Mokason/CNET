@@ -31,6 +31,16 @@ static int gguf_oracle_int8_mode(void) {
     return e && e[0] == '1';
 }
 
+/* CNET_INFER_FP=1: inference-only FP load — keep every specialist's FP
+   payload (bit-exact parity runs need the real weights) but drop the Adam
+   momentum/second-moment buffers the way the int8 oracle path does: a parity
+   or oracle run never trains, and the buffers triple the resident footprint
+   (a 9B FP forest goes 110 GB -> 37 GB). Opt-in; default loads unchanged. */
+static int gguf_infer_fp_mode(void) {
+    const char* e = getenv("CNET_INFER_FP");
+    return e && e[0] == '1';
+}
+
 /* CNET_LOAD_TRACE=1: unbuffered per-stage load progress on stderr. Costs
    nothing when off; invaluable when a multi-GB load dies before stdout
    ever flushes. */
@@ -1435,6 +1445,15 @@ int cce_gguf_add_linear_branch(cce_forest* forest, const cce_gguf* gguf,
                 cce_tensor_free(&ob->second_moment_b);
             }
         }
+    } else if (gguf_infer_fp_mode()) {
+        /* FP parity/inference load: real weights stay, Adam buffers go */
+        for (int b = 0; b < cas->num_blocks; b++) {
+            cce_block* ob = &cas->blocks[b];
+            cce_tensor_free(&ob->momentum_weights);
+            cce_tensor_free(&ob->momentum_bias);
+            cce_tensor_free(&ob->second_moment_w);
+            cce_tensor_free(&ob->second_moment_b);
+        }
     }
 
     int idx = -1;
@@ -1613,8 +1632,17 @@ static void gguf_apply_rope(float* q, float* k, int t, int head_dim, int pos, fl
     }
 }
 
+/* qwen35 hybrid dispatch (cce_gguf_qwen35.c); NULL ext = legacy, byte-identical */
+cce_result cce_gguf_qwen35_forward_impl(cce_gguf_qwen2 *m, const int *tokens,
+                                        int n_tokens, float *logits_out,
+                                        int logits_cap);
+void cce_gguf_qwen35_ext_free(cce_gguf_qwen2 *m);
+
 cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_tokens, float* logits_out, int logits_cap) {
     if (!m || !tokens || n_tokens < 1 || !logits_out) return CCE_ERR_INVALID_ARG;
+    if (m->qwen35)
+        return cce_gguf_qwen35_forward_impl(m, tokens, n_tokens, logits_out,
+                                            logits_cap);
     if (!m->geom || m->k_slot_floats == 0) {
         fprintf(stderr, "cce_gguf: no attention geometry — model was not "
                         "loaded through a geometry-aware loader; refusing\n");
@@ -2098,6 +2126,48 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
 }
 
 
+/* ---- shims for the qwen35 runner (cce_gguf_qwen35.c): the single source
+        of truth for the linear seam, RMSNorm, tap/capture hooks, and
+        suffix-keyed metadata stays in this file ---- */
+cce_result cce_gguf__apply_linear_rows(cce_clgemm *gpu, cce_cascade *cas,
+                                       const cce_tensor *in, cce_tensor *out) {
+    return apply_linear_rows(gpu, cas, in, out);
+}
+cce_result cce_gguf__rms_norm(const cce_tensor *in, const cce_tensor *w,
+                              float eps, cce_tensor *out) {
+    return gguf_rms_norm_impl(in, w, eps, out, 0);
+}
+void cce_gguf__fire_layer_tap(int layer, const float *x, int n_tokens, int dim) {
+    if (g_gguf_layer_tap)
+        g_gguf_layer_tap(layer, x, n_tokens, dim, g_gguf_layer_tap_ctx);
+}
+void cce_gguf__fire_capture(const char *spec, const cce_tensor *in) {
+    gguf_fire_capture(spec, in);
+}
+struct cce_clgemm *cce_gguf__global_clgemm(void) { return g_gguf_clgemm; }
+double cce_gguf__get_scalar(const cce_gguf *g, const char *key_suffix,
+                            double fallback) {
+    return gguf_get_scalar(g, key_suffix, fallback);
+}
+int cce_gguf__get_string(const cce_gguf *g, const char *key_suffix,
+                         char *buf, size_t cap) {
+    size_t sl;
+    int i;
+    if (!g || !key_suffix || !buf || cap == 0) return 0;
+    sl = strlen(key_suffix);
+    for (i = 0; i < g->n_kvs; i++) {
+        const char *k = g->kvs[i].key;
+        size_t kl = strlen(k);
+        if (kl >= sl && strcmp(k + kl - sl, key_suffix) == 0 &&
+            g->kvs[i].type == GGUF_TYPE_STRING && g->kvs[i].val.str) {
+            strncpy(buf, g->kvs[i].val.str, cap - 1);
+            buf[cap - 1] = 0;
+            return 1;
+        }
+    }
+    return 0;
+}
+
 cce_result cce_gguf_qwen2_forward_probes(cce_gguf_qwen2* m,
     const int* probe_tokens, int n_probes, float* logits_out,
     int logits_cap) {
@@ -2124,6 +2194,13 @@ cce_result cce_gguf_load_model(cce_gguf_qwen2** out, const char* path) {
     cce_result rc = cce_gguf_load(path, &g);
     if (rc != CCE_OK) return rc;
     int has_attn = 0, has_ssm = 0;
+    {   /* qwen35 hybrids carry ssm_* tensors but have their own runner */
+        const char* arch = cce_gguf_get_arch(g);
+        if (strcmp(arch, "qwen35") == 0 || strcmp(arch, "qwen3.5") == 0) {
+            cce_gguf_free(g);
+            return cce_gguf_load_qwen35(out, path);
+        }
+    }
     int nt = cce_gguf_tensor_count(g);
     for (int i = 0; i < nt; i++) {
         cce_gguf_tensor_meta m;
@@ -2579,6 +2656,7 @@ cce_result cce_gguf_qwen2_load_packed(cce_gguf_qwen2** out, const char* path) {
 
 void cce_gguf_qwen2_free(cce_gguf_qwen2* m) {
     if (!m) return;
+    if (m->qwen35) cce_gguf_qwen35_ext_free(m);
     if (m->forest) cce_forest_close(m->forest);
     // cleanup internal temp backing files to prevent junk accumulation
     if (m->forest_scratch[0]) {

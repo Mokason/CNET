@@ -38,14 +38,25 @@ static bool wanted(const char* name) {
     static const char* pats[] = {
         "attn_out-0", "ffn_norm_2-0", "ffn_moe_logits-0", "ffn_moe_probs-0",
         "ffn_moe_argsort-0", "ffn_moe_weights_norm-0", "ffn_moe_weighted-0",
-        "inp_scaled", "result_norm", "result_output",
+        "inp_scaled", "result_norm", "result_output", "model.input_embed",
     };
     for (size_t i = 0; i < sizeof(pats) / sizeof(pats[0]); i++)
         if (strcmp(name, pats[i]) == 0) return true;
-    /* full-stack parity ladder: every layer's checkpoints */
+    /* full-stack parity ladder: every layer's checkpoints.
+       qwen35 hybrid nodes (real ops only — views are stale-memory hazards;
+       avoided: Qcur_reshaped/beta/alpha/v_conv_predelta/final_output):
+         both kinds:  attn_residual- (post-attn residual), ffn_out-
+         full attn:   Qcur-/Kcur- (post-YaRN-rope), attn_pregate-,
+                      attn_gated-, attn_output-
+         deltanet:    z-, conv_output_silu-, beta_sigmoid-, a_softplus-,
+                      q_conv_predelta-/k_conv_predelta-, linear_attn_out- */
     static const char* prefixes[] = {
         "l_out-", "out_scaled-", "attn_norm-", "Vcur_normed-", "attn_post_norm-",
         "attn_out-", "ffn_mlp-", "ffn_moe-", "ffn_post_norm-",
+        "attn_residual-", "ffn_out-", "Qcur-", "Kcur-", "attn_pregate-",
+        "attn_gated-", "attn_output-", "z-", "conv_output_silu-",
+        "beta_sigmoid-", "a_softplus-", "q_conv_predelta-", "k_conv_predelta-",
+        "linear_attn_out-",
     };
     for (size_t i = 0; i < sizeof(prefixes) / sizeof(prefixes[0]); i++) {
         size_t n = strlen(prefixes[i]);

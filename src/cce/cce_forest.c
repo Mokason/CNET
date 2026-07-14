@@ -153,11 +153,18 @@ cce_result cce_forest_add_branch(cce_forest* f, cce_cascade* cas, const char* na
     br->cascade = (cce_cascade*)malloc(sizeof(cce_cascade));
     if (!br->cascade) return CCE_ERR_OOM;
 
-    /* Persist first for archive-backed durability (deeper forests) */
+    /* Persist first for archive-backed durability (deeper forests).
+       CNET_FOREST_NO_PERSIST=1 skips the archive write: parity/oracle loads
+       keep every branch HOT for the process lifetime and never restore from
+       the archive — persisting a 9B FP forest would write ~37 GB of scratch
+       for nothing. Same HOT-only posture the int8 oracle path already has
+       (its payload-less blocks make this save refuse anyway). */
     size_t off = 0;
     char sec_name[128];
+    const char* nps = getenv("CNET_FOREST_NO_PERSIST");
     snprintf(sec_name, sizeof(sec_name), "branch_%s", name ? name : "unnamed");
-    if (cce_cascade_save_to_archive(cas, f->archive, sec_name, &off) == CCE_OK) {
+    if (!(nps && nps[0] == '1') &&
+        cce_cascade_save_to_archive(cas, f->archive, sec_name, &off) == CCE_OK) {
         br->archive_offset = off;
         br->archive_size = 0; /* size known via dir if needed */
         br->persisted = 1;    /* offset is valid even when 0 (first section) */

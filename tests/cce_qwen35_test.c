@@ -460,10 +460,10 @@ static void test_caps(void) {
     CHECK(c.layer_schedule_dispatch == 1, "advertises schedule dispatch");
     CHECK(c.deltanet_recurrent_core == 1, "advertises deltanet core");
     CHECK(c.gated_attention_core == 1, "advertises gated attention core");
-    CHECK(c.gguf_loader == 0, "does NOT claim a GGUF loader");
-    CHECK(c.end_to_end_runner == 0, "does NOT claim an e2e runner");
-    CHECK(c.applies_rope == 0, "honest: RoPE is caller's job");
-    CHECK(c.applies_short_conv == 0, "honest: conv is caller's job");
+    CHECK(c.gguf_loader == 1, "GGUF loader shipped (cce_gguf_load_qwen35)");
+    CHECK(c.end_to_end_runner == 1, "e2e runner shipped (cce_gguf_qwen35.c)");
+    CHECK(c.applies_rope == 0, "honest: this CORE leaves RoPE to the caller");
+    CHECK(c.applies_short_conv == 0, "honest: this CORE leaves conv to the caller");
     CHECK(c.summary != NULL && c.summary[0] != '\0', "has a summary string");
 }
 
