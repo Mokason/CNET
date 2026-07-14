@@ -45,7 +45,7 @@ static int decode_symbol_code(const BinaryTransformNetwork *glyph_leaf,
         return -1;
     }
 
-    raw = btn_forward(glyph_leaf, feat);
+    raw = btn_forward((BinaryTransformNetwork *)glyph_leaf, feat);
     if (raw == NULL) {
         return -1;
     }

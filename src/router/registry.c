@@ -363,22 +363,8 @@ int entry_usable(const PrimitiveRegistry *reg, size_t i) {
     return 1;
 }
 
-static void rank_by_reliability(const PrimitiveRegistry *reg, size_t *order) {
-    size_t i, j;
-    if (!reg || !order) return;
-    for (i = 0; i < reg->count; ++i) order[i] = i;
-    for (i = 1; i < reg->count; ++i) {
-        for (j = i; j > 0; --j) {
-            double rj = btn_reliability(reg->entries[order[j]].btn);
-            double rjm1 = btn_reliability(reg->entries[order[j-1]].btn);
-            if (rj > rjm1) {
-                size_t t = order[j]; order[j] = order[j-1]; order[j-1] = t;
-            } else {
-                break;
-            }
-        }
-    }
-}
+/* rank_by_reliability was a duplicate of the active implementation in
+   dag_full.c; removed to eliminate unused-function warning. */
 
 /* ---- public registry API --------------------------------------------- */
 
@@ -902,10 +888,8 @@ size_t btn_cost(const BinaryTransformNetwork *btn) {
     return btn->input_count * btn->hidden_count + btn->hidden_count * btn->output_count;
 }
 
-static size_t btn_mac_estimate(const BinaryTransformNetwork *btn) {
-    (void)btn;
-    return btn_cost(btn);
-}
+/* btn_mac_estimate was a duplicate of the active implementation in
+   dag_full.c; removed to eliminate unused-function warning. */
 
 /* expose a few study-only items that other modules reference via the internal header */
 size_t g_circuit_prune_allowed_prim[128];

@@ -89,7 +89,7 @@ int port_contract_narrative_diffusion(const BinaryTransformNetwork *glyph_leaf,
     emit_seed_scene(seed_phrase, base, sizeof(base));
     if (reg->streamer) reg->streamer(base, "skeleton", 0);
 
-    snprintf(refine, sizeof(refine), "%s They discovered a hidden path and shared what they learned.",
+    snprintf(refine, sizeof(refine), "%.128s They discovered a hidden path and shared what they learned.",
              base);
     if (reg->streamer) reg->streamer(refine, "refine", 0);
 

@@ -135,9 +135,9 @@ static int load_memory(void) {
         trim(line_ptr);
         trim(sep + 1);
         if (line_ptr[0] == '\0') continue;
-        strncpy(fact_queries[fact_count], line_ptr, sizeof(fact_queries[0]) - 1);
+        snprintf(fact_queries[fact_count], sizeof(fact_queries[0]), "%.127s", line_ptr);
         fact_queries[fact_count][sizeof(fact_queries[0]) - 1] = '\0';
-        strncpy(fact_summaries[fact_count], sep + 1, sizeof(fact_summaries[0]) - 1);
+        snprintf(fact_summaries[fact_count], sizeof(fact_summaries[0]), "%.767s", sep + 1);
         fact_summaries[fact_count][sizeof(fact_summaries[0]) - 1] = '\0';
         fact_count++;
     }
@@ -207,19 +207,19 @@ int mcp_recall_fact(const char *query, char *out_buf, size_t buf_cap) {
     mcp_sanitize_cache_key(query, key, sizeof(key));
     mcp_normalize_cache_key(key, lookup_key, sizeof(lookup_key));
     if (strlen(lookup_key) == 0) return 0;
-    strncpy(key, lookup_key, sizeof(key) - 1);
+    snprintf(key, sizeof(key), "%s", lookup_key);
     key[sizeof(key) - 1] = '\0';
 
     for (i = 0; i < fact_count; ++i) {
         char fk[128];
         mcp_normalize_cache_key(fact_queries[i], fk, sizeof(fk));
         if (str_eq_nocase(fk, key)) {
-            strncpy(out_buf, fact_summaries[i], buf_cap - 1);
+            snprintf(out_buf, buf_cap, "%s", fact_summaries[i]);
             out_buf[buf_cap - 1] = '\0';
             return 1;
         }
         if (token_overlap_count(key, fk) >= 2) {
-            strncpy(out_buf, fact_summaries[i], buf_cap - 1);
+            snprintf(out_buf, buf_cap, "%s", fact_summaries[i]);
             out_buf[buf_cap - 1] = '\0';
             return 1;
         }
@@ -238,7 +238,7 @@ void mcp_memorize_fact(const char *query, const char *summary) {
     mcp_sanitize_cache_key(query, key, sizeof(key));
     mcp_normalize_cache_key(key, store_key, sizeof(store_key));
     if (strlen(store_key) < 2) return;
-    strncpy(key, store_key, sizeof(key) - 1);
+    snprintf(key, sizeof(key), "%s", store_key);
     key[sizeof(key) - 1] = '\0';
     sanitize_fact_summary(summary, sanitized_summary, sizeof(sanitized_summary));
 
@@ -246,7 +246,7 @@ void mcp_memorize_fact(const char *query, const char *summary) {
         char fk[128];
         mcp_normalize_cache_key(fact_queries[i], fk, sizeof(fk));
         if (str_eq_nocase(fk, key)) {
-            strncpy(fact_summaries[i], sanitized_summary, sizeof(fact_summaries[i]) - 1);
+            snprintf(fact_summaries[i], sizeof(fact_summaries[i]), "%.767s", sanitized_summary);
             fact_summaries[i][sizeof(fact_summaries[i])-1] = '\0';
             save_memory();
             return;
@@ -254,9 +254,9 @@ void mcp_memorize_fact(const char *query, const char *summary) {
     }
 
     if (fact_count >= MAX_FACTS) return;
-    strncpy(fact_queries[fact_count], key, sizeof(fact_queries[fact_count]) - 1);
+    snprintf(fact_queries[fact_count], sizeof(fact_queries[fact_count]), "%s", key);
     fact_queries[fact_count][sizeof(fact_queries[fact_count]) - 1] = '\0';
-    strncpy(fact_summaries[fact_count], sanitized_summary, sizeof(fact_summaries[fact_count]) - 1);
+    snprintf(fact_summaries[fact_count], sizeof(fact_summaries[fact_count]), "%.767s", sanitized_summary);
     fact_summaries[fact_count][sizeof(fact_summaries[fact_count]) - 1] = '\0';
     ++fact_count;
     save_memory();

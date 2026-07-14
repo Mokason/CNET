@@ -25,205 +25,10 @@ extern int    g_circuit_prune_active;   /* defined in registry.c (internal.h) */
    Used only for measurement in study; reset per planning run. */
 extern size_t *g_nodes_expanded_counter;   /* defined in registry.c (internal.h) */
 
-static int registry_port_count(Port port, size_t *count) {
-    if (count == NULL || port.field_width == 0 || port.field_count == 0) {
-        return -1;
-    }
-    if (port.field_width > (size_t)-1 / port.field_count) {
-        return -1;
-    }
-    *count = port.field_width * port.field_count;
-    return 0;
-}
-
-static int registry_ports_total(
-    const Port *ports,
-    size_t count,
-    size_t *out_total
-) {
-    size_t total = 0;
-    size_t i;
-
-    if (ports == NULL || out_total == NULL || count == 0) {
-        return -1;
-    }
-    for (i = 0; i < count; ++i) {
-        size_t current = 0;
-        if (registry_port_count(ports[i], &current) != 0) {
-            return -1;
-        }
-        if (total > (size_t)-1 - current) {
-            return -1;
-        }
-        total += current;
-    }
-    if (total == 0) {
-        return -1;
-    }
-    *out_total = total;
-    return 0;
-}
-
-static int registry_build_path(
-    char **out,
-    const char *dir,
-    const char *name,
-    const char *suffix
-) {
-    size_t dir_len;
-    size_t name_len;
-    size_t need;
-    int use_sep;
-
-    if (out == NULL || dir == NULL || name == NULL || suffix == NULL) {
-        return -1;
-    }
-
-    dir_len = strlen(dir);
-    name_len = strlen(name);
-    if (name_len == 0) {
-        return -1;
-    }
-
-    use_sep = dir_len > 0 && dir[dir_len - 1] != '/' && dir[dir_len - 1] != '\\';
-    need = dir_len + (size_t)use_sep + name_len + 1 + strlen(suffix) + 1;
-    *out = malloc(need);
-    if (*out == NULL) {
-        return -1;
-    }
-
-    if (dir_len == 0) {
-        (void)snprintf(*out, need, "%s%s", name, suffix);
-    } else if (use_sep) {
-        (void)snprintf(*out, need, "%s/%s%s", dir, name, suffix);
-    } else {
-        (void)snprintf(*out, need, "%s%s%s", dir, name, suffix);
-    }
-    return 0;
-}
-
-/* 3C: write an entry's expansion recipe + cost truth as a small text sidecar.
-   Caller guarantees e->recipe != NULL. Returns 0 on success, -1 on I/O error. */
-static int registry_write_expansion(const RegistryEntry *e, const char *path) {
-    FILE *f;
-    size_t k;
-    f = fopen(path, "w");
-    if (f == NULL) {
-        return -1;
-    }
-    fprintf(f, "expansion v1\n");
-    fprintf(f, "teacher_mac %lu\n", (unsigned long)e->teacher_mac);
-    fprintf(f, "student_mac %lu\n", (unsigned long)e->student_mac);
-    fprintf(f, "compute_beneficial %d\n", e->compute_beneficial);
-    fprintf(f, "expand_in_low %d\n", e->expand_in_low);
-    fprintf(f, "primitives %lu\n", (unsigned long)e->recipe->primitive_count);
-    for (k = 0; k < e->recipe->primitive_count; ++k) {
-        fprintf(f, "%s\n", e->recipe->primitives[k]);
-    }
-    if (fclose(f) != 0) {
-        return -1;
-    }
-    return 0;
-}
-
-static int registry_synthesize_contract(
-    BinaryTransformNetwork *btn,
-    const char *name,
-    Contract *c_out
-) {
-    size_t in_total;
-    size_t out_total;
-    size_t port_total;
-    size_t offset;
-    size_t i;
-    size_t bit;
-    double *inputs = NULL;
-    double *outputs = NULL;
-    const double *predicted;
-
-    if (btn == NULL || name == NULL || c_out == NULL) {
-        return -1;
-    }
-
-    if (registry_ports_total(btn->input_ports, btn->input_port_count, &in_total) != 0 ||
-        registry_ports_total(btn->output_ports, btn->output_port_count, &out_total) != 0) {
-        return -1;
-    }
-
-    inputs = calloc(in_total, sizeof(*inputs));
-    outputs = malloc(out_total * sizeof(*outputs));
-    if (inputs == NULL || outputs == NULL) {
-        free(inputs);
-        free(outputs);
-        return -1;
-    }
-
-    offset = 0;
-    for (i = 0; i < btn->input_port_count; ++i) {
-        size_t k;
-        if (registry_port_count(btn->input_ports[i], &port_total) != 0) {
-            free(inputs);
-            free(outputs);
-            return -1;
-        }
-
-        for (k = 0; k < btn->input_ports[i].field_count; ++k) {
-            size_t base = offset + k * btn->input_ports[i].field_width;
-
-            for (bit = 0; bit < btn->input_ports[i].field_width; ++bit) {
-                inputs[base + bit] = 0.0;
-            }
-
-            switch (btn->input_ports[i].family) {
-            case PORT_ONEHOT:
-                inputs[base] = 1.0;
-                break;
-            case PORT_BINARY_MSB:
-            case PORT_BINARY_LSB:
-            case PORT_RAW:
-                break;
-            default:
-                free(inputs);
-                free(outputs);
-                return -1;
-            }
-        }
-        offset += port_total;
-    }
-
-    predicted = btn_forward(btn, inputs);
-    if (predicted == NULL) {
-        free(inputs);
-        free(outputs);
-        return -1;
-    }
-    memcpy(outputs, predicted, out_total * sizeof(*outputs));
-
-    offset = 0;
-    for (i = 0; i < btn->output_port_count; ++i) {
-        if (registry_port_count(btn->output_ports[i], &port_total) != 0) {
-            free(inputs);
-            free(outputs);
-            return -1;
-        }
-        if (port_canonicalize(btn->output_ports[i], outputs + offset, outputs + offset) != 0) {
-            free(inputs);
-            free(outputs);
-            return -1;
-        }
-        offset += port_total;
-    }
-
-    if (contract_init_borrowed(c_out, name, btn, inputs, outputs, 1) != 0) {
-        free(inputs);
-        free(outputs);
-        return -1;
-    }
-    c_out->owns_data = 1;
-    c_out->inputs = inputs;
-    c_out->outputs = outputs;
-    return 0;
-}
+/* The following helpers (registry_port_count, registry_ports_total,
+   registry_build_path, registry_write_expansion, registry_synthesize_contract)
+   were unused SRP-split remnants.  They had no callers in this translation
+   unit, so their duplicate definitions were removed. */
 
 /* registry_save: owned by registry.c/route.c (split) */
 
@@ -1249,7 +1054,6 @@ static void compute_grpo_shadow_from_verified(
         }
     }
 
-    size_t default_k = 8;
     double total_adv = 0.0;
     size_t with_group = 0;
 
@@ -1418,7 +1222,7 @@ int circuit_engram_from_blackboard(
         int oport = plan->root_ports[g];
 
         CircuitEngramEntry *ent = &out->entries[eidx++];
-        strncpy(ent->task_key, task, 191);
+        snprintf(ent->task_key, sizeof(ent->task_key), "%s", task);
         ent->root_index = g;
         if (g < CIRCUIT_MAX_ROOTS) ent->root_goal = (plan->roots[g] && plan->roots[g]->kind == DAG_PRIMITIVE && plan->roots[g]->btn) ?
             plan->roots[g]->btn->output_ports[plan->root_ports[g]] : (Port){0};
@@ -1545,7 +1349,7 @@ int circuit_engram_lookup_shadow(
     for (size_t g = 0; g < final_plan->root_count && out->row_count < MAX_ENGRAM_LOOKUP_ROWS; ++g) {
         CircuitEngramLookupRow *row = &out->rows[out->row_count++];
         row->root_index = g;
-        strncpy(row->task_key, task, 191);
+        snprintf(row->task_key, sizeof(row->task_key), "%s", task);
         row->influence_on_planner = 0;
 
         int found = 0;
@@ -1641,6 +1445,7 @@ static int row_key_match(const CircuitRankArtifactRow *r,
                          int producer_output_port,
                          const Port *producer_output_sig) {
     if (strcmp(r->task_key, task_key) != 0) return 0;
+    (void)root_goal;
     if (producer_name && strcmp(r->producer_name, producer_name) != 0) return 0;
     if (r->producer_output_port != producer_output_port) return 0;
     /* simple sig match for projection */
@@ -1675,7 +1480,7 @@ int circuit_rank_artifact_build_from_engrams(
             row = &out->rows[n++];
             memset(row, 0, sizeof(*row));
             strcpy(row->artifact_version, "v2.2");
-            strncpy(row->task_key, e->task_key, 191);
+            snprintf(row->task_key, sizeof(row->task_key), "%s", e->task_key);
             row->root_goal = e->root_goal;
             strncpy(row->producer_name, e->producer_name, 63);
             row->producer_output_port = e->producer_output_port;
@@ -1792,6 +1597,8 @@ int circuit_rank_artifact_lookup(
         return 0;
     }
 
+    (void)root_goal;
+    (void)producer_output_sig;
     for (size_t i = 0; i < artifact->row_count; ++i) {
         const CircuitRankArtifactRow *r = &artifact->rows[i];
         if (strcmp(r->task_key, task_key) == 0 &&
@@ -2228,7 +2035,6 @@ static int dag_search(
         for (i = 0; i < reg->count && i < max_i; ++i) {
             BinaryTransformNetwork *p = reg->entries[order[i]].btn;
             size_t slot_count = p->input_port_count;
-            size_t oj;
 
             if (!entry_usable(reg, order[i])) {
                 continue;
@@ -3603,7 +3409,6 @@ int circuit_blackboard_compute_trace_summary(
     int seen[MAX_N] = {0};
     int entry_cnt[MAX_N] = {0};
     int cons[MAX_N] = {0};
-    int src_flag[MAX_N] = {0};
 
     size_t max_nid = 0;
     for (i = 0; i < bb->count; ++i) {
@@ -3631,7 +3436,6 @@ int circuit_blackboard_compute_trace_summary(
             out->executed_node_count++;
             int is_source = (bb->entries[i].primitive_name &&
                              strcmp(bb->entries[i].primitive_name, "SOURCE") == 0);
-            src_flag[nid] = is_source;
             if (is_source) {
                 out->source_node_count++;
             } else {
@@ -3876,10 +3680,10 @@ void circuit_print_consolidation_artifact_comparison(
                 a->consolidation_safe_to_register == b->consolidation_safe_to_register);
     printf("artifact comparison: %s vs %s\n", name_a ? name_a : "A", name_b ? name_b : "B");
     printf("same=%d\n", same ? 1 : 0);
-    printf("teacher_node_count delta: %zd\n", (ssize_t)b->teacher_node_count - (ssize_t)a->teacher_node_count);
-    printf("student_node_count delta: %zd\n", (ssize_t)b->student_node_count - (ssize_t)a->student_node_count);
-    printf("teacher_mac_estimate delta: %zd\n", (ssize_t)b->teacher_mac_estimate - (ssize_t)a->teacher_mac_estimate);
-    printf("student_mac_estimate delta: %zd\n", (ssize_t)b->student_mac_estimate - (ssize_t)a->student_mac_estimate);
+    printf("teacher_node_count delta: %ld\n", (long)b->teacher_node_count - (long)a->teacher_node_count);
+    printf("student_node_count delta: %ld\n", (long)b->student_node_count - (long)a->student_node_count);
+    printf("teacher_mac_estimate delta: %ld\n", (long)b->teacher_mac_estimate - (long)a->teacher_mac_estimate);
+    printf("student_mac_estimate delta: %ld\n", (long)b->student_mac_estimate - (long)a->student_mac_estimate);
     printf("compression_ratio delta: %.2f\n", b->compression_ratio - a->compression_ratio);
     printf("root_coverage_match: %d / %d\n", a->root_coverage_match, b->root_coverage_match);
     printf("output_exact_match: %d / %d\n", a->output_exact_match, b->output_exact_match);
@@ -4281,7 +4085,7 @@ int circuit_load_consolidation_registry_snapshot(
     int in_rows = 0, in_dups = 0, in_orphans = 0, in_bad = 0;
     while (fgets(line, sizeof(line), f)) {
         char *p;
-        size_t v; int iv; char s[256];
+        size_t v; int iv;
         if (strstr(line, "\"version\"")) {
             if ((p = strstr(line, ":"))) sscanf(p+1, " \"%31[^\"]\"", out->version);
         } else if (strstr(line, "\"row_count\"")) {
@@ -4379,8 +4183,8 @@ void circuit_print_consolidation_registry_snapshot_diff(
                 a->bad_input_count == b->bad_input_count);
     printf("same=%d\n", same ? 1 : 0);
     printf("rows_a=%zu rows_b=%zu\n", a->row_count, b->row_count);
-    printf("duplicate_matching_artifact_delta=%+zd\n", (ssize_t)b->duplicate_count - (ssize_t)a->duplicate_count);
-    printf("conflicting_matching_artifact_delta=%+zd\n", (ssize_t)b->duplicate_count - (ssize_t)a->duplicate_count); /* approx, tests exercise */
+    printf("duplicate_matching_artifact_delta=%+ld\n", (long)b->duplicate_count - (long)a->duplicate_count);
+    printf("conflicting_matching_artifact_delta=%+ld\n", (long)b->duplicate_count - (long)a->duplicate_count); /* approx, tests exercise */
     printf("(deltas for multiplicity and conflicts reported; detailed per-primitive in unit tests)\n");
 }
 
@@ -4415,8 +4219,7 @@ int circuit_build_registry_snapshot_trend(
         CircuitRegistryTrendRow *row = &out->rows[trend_idx];
         strncpy(row->snapshot_path, p, 255);
         row->snapshot_path[255] = 0;
-        strncpy(row->version, cur.version, 31);
-        row->version[31] = 0;
+        snprintf(row->version, sizeof(row->version), "%s", cur.version);
 
         row->row_count = cur.row_count;
         row->certified_count = 0;
@@ -4478,7 +4281,7 @@ void circuit_print_registry_snapshot_trend(
         const CircuitRegistryTrendRow *r = &trend->rows[i];
         const char *bn = strrchr(r->snapshot_path, '\\') ? strrchr(r->snapshot_path, '\\')+1 :
                          (strrchr(r->snapshot_path, '/') ? strrchr(r->snapshot_path, '/')+1 : r->snapshot_path);
-        printf("%-40s %4zu %4zu %4zu %4zu %4zu %4zu %4d %4zu %4zu %4zu %4d %4d %s\n",
+        printf("%-40s %4zu %4zu %4zu %4zu %4zu %4zu %4zu %4zu %4zu %4zu %4d %4d %s\n",
                bn,
                r->row_count, r->certified_count,
                r->artifact_present_count, r->matching_artifact_count, r->missing_artifact_count,
@@ -4572,7 +4375,7 @@ int circuit_memory_hints_from_blackboard(
         }
 
         CircuitMemoryHint h = {0};
-        strncpy(h.task_key, task, 191);
+        snprintf(h.task_key, sizeof(h.task_key), "%s", task);
         h.source_count = source_n;
         h.root_count = plan->root_count;
         h.root_index = g;
@@ -4581,7 +4384,7 @@ int circuit_memory_hints_from_blackboard(
         h.output_sig.family = osig.family;
         h.output_sig.field_width = osig.field_width;
         h.output_sig.field_count = osig.field_count;
-        strncpy(h.output_sig.tag, osig.tag, sizeof(h.output_sig.tag)-1);
+        snprintf(h.output_sig.tag, sizeof(h.output_sig.tag), "%s", osig.tag);
         snprintf(h.plan_fingerprint, sizeof(h.plan_fingerprint), "strict-exec-root%zu-%s-p%d", g, pname, oport);
         h.observation_count = 1;
         h.produced_by_strict_execution = 1;
@@ -4625,7 +4428,7 @@ int circuit_memory_load_hints(const char *path, CircuitMemoryHintStore *out) {
     size_t hidx = 0, bidx = 0;
     int in_hints = 0, in_bads = 0;
     while (fgets(line, sizeof(line), f)) {
-        char *p; size_t v; int iv; char s[256]; int fam; char *key;
+        char *p; size_t v; int iv; int fam; char *key;
         if (strstr(line, "\"version\"")) {
             if ((p = strstr(line, ":"))) sscanf(p+1, " \"%31[^\"]\"", out->version);
         }
@@ -4715,7 +4518,7 @@ int circuit_memory_shadow_report(
     for (size_t g = 0; g < final_plan->root_count && out->row_count < MAX_CIRCUIT_MEMORY_SHADOW_ROWS; ++g) {
         CircuitMemoryShadowRow *row = &out->rows[out->row_count++];
         row->root_index = g;
-        strncpy(row->task_key, task, 191);
+        snprintf(row->task_key, sizeof(row->task_key), "%s", task);
 
         int found = 0;
         for (size_t k = 0; k < (store ? store->hint_count : 0); ++k) {
@@ -4836,15 +4639,6 @@ void circuit_memory_print_hints_report(const char *path, const CircuitMemoryHint
 /* registry_add: owned by registry.c/route.c (split) */
 
 
-static void retrain_queue_free(RetrainQueue *q) {
-    if (q == NULL) return;
-    free(q->labeled_inputs);
-    free(q->labeled_targets);
-    free(q->unlabeled_inputs);
-    free(q->unlabeled_raw);
-    free(q);
-}
-
 /* registry_free: owned by registry.c/route.c (split) */
 
 
@@ -4857,18 +4651,6 @@ static void retrain_queue_free(RetrainQueue *q) {
 /* lifecycle_promote_provisional: owned by registry.c/route.c (split) */
 
 
-/* Find an entry by name (first match). Returns index or reg->count if absent. */
-static size_t registry_find(const PrimitiveRegistry *reg, const char *name) {
-    size_t i;
-    for (i = 0; i < reg->count; ++i) {
-        if (reg->entries[i].name != NULL &&
-            strcmp(reg->entries[i].name, name) == 0) {
-            return i;
-        }
-    }
-    return reg->count;
-}
-
 /* registry_set_expansion: owned by registry.c/route.c (split) */
 
 
@@ -4880,39 +4662,6 @@ static size_t registry_find(const PrimitiveRegistry *reg, const char *name) {
 
 /* registry_pending_labels: owned by registry.c/route.c (split) */
 
-
-static int retrain_queue_add_labeled(RetrainQueue *q,
-                                     const double *input, const double *target) {
-    size_t ic = q->input_count, oc = q->output_count;
-    if (q->labeled_count == q->labeled_cap) {
-        size_t ncap = q->labeled_cap == 0 ? 4 : q->labeled_cap * 2;
-        double *ni = realloc(q->labeled_inputs, ncap * ic * sizeof(double));
-        double *nt;
-        /* Commit each realloc before the next so a partial OOM never dangles. */
-        if (ni == NULL) return -1;
-        q->labeled_inputs = ni;
-        nt = realloc(q->labeled_targets, ncap * oc * sizeof(double));
-        if (nt == NULL) return -1;
-        q->labeled_targets = nt;
-        q->labeled_cap = ncap;
-    }
-    memcpy(q->labeled_inputs + q->labeled_count * ic, input, ic * sizeof(double));
-    memcpy(q->labeled_targets + q->labeled_count * oc, target, oc * sizeof(double));
-    q->labeled_count++;
-    return 0;
-}
-
-/* Remove unlabeled row `r` by swapping the last row into its slot. */
-static void retrain_queue_drop_unlabeled(RetrainQueue *q, size_t r) {
-    size_t ic = q->input_count, oc = q->output_count, last = q->unlabeled_count - 1;
-    if (r != last) {
-        memcpy(q->unlabeled_inputs + r * ic,
-               q->unlabeled_inputs + last * ic, ic * sizeof(double));
-        memcpy(q->unlabeled_raw + r * oc,
-               q->unlabeled_raw + last * oc, oc * sizeof(double));
-    }
-    q->unlabeled_count--;
-}
 
 /* registry_supply_label: owned by registry.c/route.c (split) */
 

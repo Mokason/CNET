@@ -1700,6 +1700,22 @@ mcp_compression_test: cnet_dll
 	@grep -Eq 'Passed: +[1-9][0-9]*, Skipped: +0' logs/mcp_compression_test.log
 	@echo "MCP_COMPRESSION_TEST_PASS"
 
+# Focused warning-debt regression gate.  Keep this narrower than the full
+# build: it protects the repaired ownership boundary and its public contract
+# files with the exact warning policy used for remediation.
+.PHONY: warning_debt_strict
+warning_debt_strict:
+	@mkdir -p logs
+	@set -e; for source in \
+		src/router/dag_full.c src/router/registry.c src/router/route.c src/nn.c \
+		src/contract/book_concept.c src/contract/interactive_agent.c \
+		src/contract/mcp_memory.c src/contract/narrative_diffusion.c \
+		src/contract/text_add.c; do \
+		$(CC) -std=c11 -Wall -Wextra -Wformat=2 -Werror -pedantic \
+			-D_DEFAULT_SOURCE -Iinclude -Isrc -fsyntax-only "$$source"; \
+	done > logs/warning_debt_strict.log 2>&1
+	@echo "WARNING_DEBT_STRICT_PASS" | tee -a logs/warning_debt_strict.log
+
 .PHONY: unified_models
 unified_models: qgkp_envelope_test $(MODEL_RUNTIME) $(CCE_MODEL_CATALOG) $(MODEL_PROBE) tests/test_model_runtime.c tests/test_model_catalog.c
 	@mkdir -p $(BIN_DIR) logs

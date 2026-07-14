@@ -96,13 +96,13 @@ int port_contract_book_concept(
 
 int book_distill_to_minted_chunk(PrimitiveRegistry *reg, const char *concepts_summary, const char *source) {
     if (!reg || !concepts_summary) return 0;
+    (void)source;  /* reserved for future provenance tracking */
 
     // Create a synthetic "chunk" entry for the book knowledge
     // Use expansion recipe pointing to "perceptual_query + book_concept" as teachers
     const char *recipe[2] = {"contract_perceptual_query", "book_concept"};
     // Add a placeholder entry (reuse an existing btn or just register name)
     // For demo, we "mint" by setting expansion on a virtual chunk name
-    static BinaryTransformNetwork book_chunk = {0};
     // minimal: use registry_set_expansion to record it as minted
     int res = registry_set_expansion(reg, "book_knowledge_chunk", recipe, 2, 100, 500, 1);
     if (res == 0) {

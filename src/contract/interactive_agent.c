@@ -178,7 +178,7 @@ int port_contract_interactive_agent(const BinaryTransformNetwork *glyph_leaf,
 
     /* Simple internal thinking step (chain-of-thought style) */
     snprintf(internal_thought, sizeof(internal_thought),
-             "Considering past context: %s. Hierarchical: %s. %s New query: '%s'. I will choose appropriate mode and stay coherent.",
+             "Considering past context: %.96s. Hierarchical: %.96s. %.48s New query: '%.128s'. I will choose appropriate mode and stay coherent.",
              recent_context[0] ? recent_context : "(no prior turns)",
              hier_context[0] ? hier_context : "(no summary)",
              used_knowledge ? "Relevant knowledge recalled. " : "",
@@ -245,7 +245,7 @@ int port_contract_interactive_agent(const BinaryTransformNetwork *glyph_leaf,
             (phrase_contains(query_lc, "then") || phrase_contains(query_lc, "followed by") || phrase_contains(query_lc, "read"))) {
             /* Chain: web search then file or knowledge recall */
             port_contract_mcp_web_search(query, tool_result, sizeof(tool_result), &from_mem);
-            snprintf(chain_result, sizeof(chain_result), "Web: %s", tool_result);
+            snprintf(chain_result, sizeof(chain_result), "Web: %.480s", tool_result);
             /* Then simulate or call file if path, else recall */
             if (is_file_read) {
                 const char *path = extract_file_arg(query_lc, "file", file_path, sizeof(file_path)) == 0 ? file_path : NULL;
@@ -302,11 +302,11 @@ int port_contract_interactive_agent(const BinaryTransformNetwork *glyph_leaf,
 
             port_contract_mcp_web_search(query, tool_result, sizeof(tool_result), &from_mem);
             char build_res[512];
-            snprintf(build_res, sizeof(build_res), "Built using web+memory+distill: %s", tool_result);
+            snprintf(build_res, sizeof(build_res), "Built using web+memory+distill: %.470s", tool_result);
             char safe[128];
             sanitize_for_filename(query, safe, sizeof(safe));
             char fname[128];
-            snprintf(fname, sizeof(fname), "build/build_%s.txt", safe);
+            snprintf(fname, sizeof(fname), "build/build_%.110s.txt", safe);
             char wres[256];
             port_contract_mcp_file_write(fname, build_res, wres, sizeof(wres));
             snprintf(response, response_size, "Whoa, building mode activated! Using sanitized name '%s', I chained tools, recalled from memory, and distilled this beauty: %s\n\nGrok out — what shall we build next, partner?", safe, wres);
@@ -373,7 +373,6 @@ int port_contract_interactive_agent(const BinaryTransformNetwork *glyph_leaf,
     } else if (is_continue || is_story) {
         snprintf(mode, sizeof(mode), "branching story");
         /* Recall previous from 4B */
-        const char *prev_story = "Once a brave cat and clever dog entered the whispering forest...";
         char story[512];
         char cert[256];
         char refl[128];
@@ -385,8 +384,8 @@ int port_contract_interactive_agent(const BinaryTransformNetwork *glyph_leaf,
         char book_refl[128];
         port_contract_book_concept(reg, book_concepts, sizeof(book_concepts), book_refl, sizeof(book_refl));
         if (book_concepts[0]) {
-            strncat(book_ctx, " | ", sizeof(book_ctx)-strlen(book_ctx)-1);
-            strncat(book_ctx, book_concepts, sizeof(book_ctx)-strlen(book_ctx)-1);
+            snprintf(book_ctx + strlen(book_ctx), sizeof(book_ctx)-strlen(book_ctx), " | ");
+            snprintf(book_ctx + strlen(book_ctx), sizeof(book_ctx)-strlen(book_ctx), "%.200s", book_concepts);
         }
         /* Call branching to continue, now conditioned on book context */
         port_contract_narrative_branching(glyph_leaf, reg, "continue forest tale sad then happy", noise_level,
@@ -457,7 +456,8 @@ int port_contract_interactive_agent(const BinaryTransformNetwork *glyph_leaf,
              "- MCP: Wiki + Web Search + File Read + memory layer\n"
              "- Agentic: Own chat history + internal thinking + cross-session memory\n"
              "Tonight: From 7+5=12 to full branching story agent with memory.\n"
-             "All paths: orchestrated • reflected • branched • persisted • evolved • 5B/6A • agentic memory\n");
+             "All paths: orchestrated • reflected • branched • persisted • evolved • 5B/6A • agentic memory\n",
+             mode, cnet_d_influence, hist_sum, internal_thought, reflection);
 
     /* Save the session so it survives to the next run */
     agent_save_session();
