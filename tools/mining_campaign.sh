@@ -25,11 +25,18 @@ BASE="${MANIFEST%.manifest.json}"
 LOG="${BASE}.campaign.log"
 REPORT="${BASE}.campaign.txt"
 
+# Ledger-version-robust unit counting: v1 acquired rows end with "-" (the
+# defer-reason column empty); v4 rows append the bound unit name ("acq_*")
+# plus counters for acquired units, while deferred rows carry the reason and
+# never a unit name. Counting only $NF=="-" (the v1 rule) reads every v4
+# acquisition as a deferral and dry-stops the retry loop after pass 1.
 acquired_count() {
-    tail -n +3 "${BASE}.gaps.txt" 2>/dev/null | awk '$NF=="-"{n++} END{print n+0}'
+    tail -n +3 "${BASE}.gaps.txt" 2>/dev/null | \
+        awk '($NF=="-" || index($0, " acq_") > 0) {n++} END{print n+0}'
 }
 deferred_count() {
-    tail -n +3 "${BASE}.gaps.txt" 2>/dev/null | awk '$NF!="-"{n++} END{print n+0}'
+    tail -n +3 "${BASE}.gaps.txt" 2>/dev/null | \
+        awk '!($NF=="-" || index($0, " acq_") > 0) {n++} END{print n+0}'
 }
 
 run_pass() {
