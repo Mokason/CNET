@@ -33,7 +33,7 @@ int main(void) {
     }
 
     printf("Bridge successfully processed input combining place, dilemma, and social consequence.\n");
-    printf("Effective context expansion: 4096 → ~64K demonstrated.\n");
+    printf("Adapter routing completed (output dimensionality unchanged).\n");
 
     /* Hypothesis Testing (recalled memory) */
     printf("\n--- Hypothesis Test (Full RPG) ---\n");
@@ -44,7 +44,7 @@ int main(void) {
     printf("Systematic component (AICIMO routing) modeled and learned.\n");
     printf("Random component (token limit) bounded and sampled via composition.\n");
     printf("Non-convex dynamics handled via zero-init identity + strength matrices.\n");
-    printf("Like TGBM controlling drawdown, AICIMO controls context collapse.\n");
+    printf("AICIMO adapter routing preserves identity residuals through zero-init adapters.\n");
 
     printf("\n=== AICIMO Full RPG Test PASSED ===\n");
     return 0;

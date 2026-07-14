@@ -38,7 +38,7 @@ int main(void) {
     }
 
     printf("Composition on 512-dim place+dilemma input succeeded.\n");
-    printf("Effective context expansion: 512 → ~4K demonstrated.\n");
+    printf("Adapter routing completed (output dimensionality unchanged).\n");
 
     /* Hypothesis testing framing (recalled memory) */
     printf("\n--- Hypothesis Test (Place + Dilemma) ---\n");

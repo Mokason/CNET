@@ -1,66 +1,74 @@
-#ifndef CCE_AICIMO_H
-#define CCE_AICIMO_H
+/*
+ * cce_aicimo.h — Compatibility shim.
+ *
+ * The canonical public API now lives in include/cce/cce_aicimo.h.
+ * This shim provides backward-compatible type and function name mappings
+ * so existing code that includes "../src/cce/cce_aicimo.h" continues to
+ * compile against the new API.
+ */
+#ifndef CCE_AICIMO_H_COMPAT
+#define CCE_AICIMO_H_COMPAT
 
-#include <stddef.h>
-#include <stdint.h>
+#include "../../include/cce/cce_aicimo.h"
+
+#include <stdlib.h>
+#include <string.h>
+
+/* Backward-compatible type aliases */
+typedef cce_aicimo_adapter AicimoAdapter;
+typedef cce_aicimo_adapter_bank AicimoAdapterBank;
+typedef cce_aicimo_strength_matrix AicimoStrengthMatrix;
+typedef cce_aicimo_router AicimoRouter;
+
+/* Backward-compatible function wrappers (old API returned int 0/-1) */
+
+static inline int aicimo_router_init(AicimoRouter *r, size_t num_ops, size_t base_dim) {
+    return (cce_aicimo_router_init(r, num_ops, base_dim) == CCE_OK) ? 0 : -1;
+}
+
+static inline int aicimo_router_init_variable(AicimoRouter *r, size_t num_ops, size_t base_dim) {
+    return aicimo_router_init(r, num_ops, base_dim);
+}
+
+static inline void aicimo_router_free(AicimoRouter *r) {
+    cce_aicimo_router_free(r);
+}
+
+static inline int aicimo_route(AicimoRouter *r, const float *input, size_t in_len,
+                               float *output, size_t out_cap, size_t *used_ops) {
+    return (cce_aicimo_route(r, input, in_len, output, out_cap, used_ops) == CCE_OK) ? 0 : -1;
+}
 
 /*
- * AICIMO — Adaptive Adapter Architecture ported to CNET (pure C)
+ * aicimo_compose — Apply routing multiple times.
  *
- * Core ideas translated from the meta-learning design:
- * - Adapter bank (B_op) with zero-init identity at creation
- * - GraphMoE-style strength matrices (zero-init, learned routing)
- * - Operation routing for dynamic composition of small units
- * - Stable meta-learning dynamics (no collapse on identity init)
- *
- * Goal: Allow CNET units to be treated as small adapters that can be
- * routed and composed at runtime to achieve effective 8K–16K+ context
- * without making every individual unit gigantic.
+ * NOTE: This performs repeated adapter routing, NOT context expansion.
+ * The output has the same dimensionality as the input. The "steps" count
+ * controls how many times the routing is applied; with identity-initialized
+ * adapters and default strengths, the output equals the input.
  */
+static inline int aicimo_compose(AicimoRouter *r, const float *input, size_t in_len,
+                                 float *output, size_t out_cap) {
+    if (!r || !input || !output) return -1;
+    if (in_len != r->base_dim || out_cap < in_len) return -1;
 
-typedef struct {
-    float *weights;      /* [in_dim][out_dim] */
-    size_t in_dim;
-    size_t out_dim;
-    int owns_data;
-} AicimoAdapter;
+    float *tmp = (float *)malloc(in_len * sizeof(float));
+    if (!tmp) return -1;
 
-typedef struct {
-    AicimoAdapter *adapters;
-    size_t count;
-    size_t capacity;
-} AicimoAdapterBank;
+    memcpy(tmp, input, in_len * sizeof(float));
 
-typedef struct {
-    float *strength;     /* [num_ops][num_ops] — GraphMoE style */
-    size_t num_ops;
-    int owns_data;
-} AicimoStrengthMatrix;
+    for (size_t step = 0; step < 16; ++step) {
+        size_t used = 0;
+        if (cce_aicimo_route(r, tmp, in_len, output, out_cap, &used) != CCE_OK) {
+            free(tmp);
+            return -1;
+        }
+        memcpy(tmp, output, in_len * sizeof(float));
+    }
 
-typedef struct {
-    AicimoAdapterBank bank;
-    AicimoStrengthMatrix router;
-    size_t current_context;   /* effective context this router can handle */
-} AicimoRouter;
+    memcpy(output, tmp, in_len * sizeof(float));
+    free(tmp);
+    return 0;
+}
 
-/* Initialization with identity (zero-init + identity diagonal) */
-int aicimo_adapter_init_identity(AicimoAdapter *a, size_t in_dim, size_t out_dim);
-int aicimo_adapter_bank_init(AicimoAdapterBank *bank, size_t initial_capacity);
-void aicimo_adapter_bank_free(AicimoAdapterBank *bank);
-
-int aicimo_strength_matrix_init(AicimoStrengthMatrix *m, size_t num_ops);
-void aicimo_strength_matrix_free(AicimoStrengthMatrix *m);
-
-/* Routing */
-int aicimo_router_init(AicimoRouter *r, size_t num_ops, size_t base_dim);
-int aicimo_router_init_variable(AicimoRouter *r, size_t num_ops, size_t base_dim);
-void aicimo_router_free(AicimoRouter *r);
-
-int aicimo_route(AicimoRouter *r, const float *input, size_t in_len,
-                 float *output, size_t out_cap, size_t *used_ops);
-
-/* Composition: apply a sequence of adapters */
-int aicimo_compose(AicimoRouter *r, const float *input, size_t in_len,
-                   float *output, size_t out_cap);
-
-#endif /* CCE_AICIMO_H */
+#endif /* CCE_AICIMO_H_COMPAT */

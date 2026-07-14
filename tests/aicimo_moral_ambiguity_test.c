@@ -41,7 +41,7 @@ int main(void) {
     }
 
     printf("16x composition on 2048-dim moral ambiguity input succeeded.\n");
-    printf("Effective context expansion: 2048 → ~32K demonstrated.\n");
+    printf("Adapter routing completed (output dimensionality unchanged).\n");
 
     /* Hypothesis Testing (recalled memory) */
     printf("\n--- Hypothesis Test (Moral Ambiguity at Scale) ---\n");
@@ -51,7 +51,7 @@ int main(void) {
     printf("Result: H0 rejected (strong practical significance). Low Type I risk.\n");
     printf("Systematic component (routing) modeled and learned.\n");
     printf("Random component (token limit) bounded and sampled via composition.\n");
-    printf("Note: Like TGBM controlling drawdown, AICIMO controls context collapse.\n");
+    printf("Note: AICIMO adapter routing preserves identity residuals.\n");
 
     aicimo_router_free(&router);
     printf("\n=== AICIMO Moral Ambiguity Test PASSED ===\n");

@@ -36,7 +36,7 @@ int main(void) {
     }
 
     printf("Bridge successfully processed input combining place, dilemma, and social consequence.\n");
-    printf("Effective context expansion: 8192 → ~128K+ demonstrated.\n");
+    printf("Adapter routing completed (output dimensionality unchanged).\n");
     printf("Uncertainty estimate (std dev): %.6f\n", uncertainty);
 
     /* Hypothesis Testing (recalled memory) */
@@ -48,7 +48,7 @@ int main(void) {
     printf("Systematic component modeled and learned.\n");
     printf("Random component described, bounded, sampled, and incorporated into uncertainty estimates.\n");
     printf("Non-convex dynamics handled via zero-init identity + strength matrices.\n");
-    printf("Like TGBM controlling drawdown better than SPY while preserving Sharpe, AICIMO controls context collapse while providing uncertainty bounds.\n");
+    printf("AICIMO adapter routing provides route-entropy-based uncertainty from actual strength distribution.\n");
 
     printf("\n=== AICIMO Uncertainty-Aware RPG Test PASSED ===\n");
     return 0;

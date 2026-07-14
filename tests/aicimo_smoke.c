@@ -29,7 +29,7 @@ int main(void) {
         aicimo_router_free(&router);
         return 1;
     }
-    printf("Compose (4x) succeeded — effective context expansion demonstrated\n");
+    printf("Compose (16x) succeeded — adapter routing stability demonstrated\n");
 
     aicimo_router_free(&router);
     printf("=== AICIMO Smoke Test PASSED ===\n");

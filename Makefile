@@ -76,10 +76,8 @@ CCE_MODEL_IO := src/cce/cce_model_io.c
 CCE_DATASET := src/cce/cce_dataset.c
 CCE_AUTOGRAD := src/cce/cce_autograd.c src/cce/cce_autograd_ops.c
 CCE_SAFETENSORS := src/cce/cce_safetensors.c
-# CCE_GGUF: core GGUF reader. Does NOT include cce_aicimo.c — that is a
-# quarantined experimental source (CCE_AICIMO_SRC), compiled only by the
-# explicit aicimo_smoke target.
 CCE_GGUF := src/cce/cce_gguf.c
+CCE_AICIMO := src/cce/cce_aicimo.c
 CCE_QGKP := src/cce/cce_qgkp.c
 
 # Build directory for all executables to avoid polluting the root with endless .exe junk.
@@ -142,7 +140,7 @@ CCE_TIERRT  := src/cce/cce_tier_runtime.c
 CCE_SIMILAR := src/cce/cce_similar.c
 CCE_CLGEMM  := src/cce/cce_clgemm.c
 CCE_TRANSFORMER_QAT := src/cce/cce_transformer_qat.c
-CCE := $(CCE_TENSOR) $(CCE_BLOCK) $(CCE_CASCADE) $(CCE_ARCHIVE) $(CCE_FOREST) $(CCE_ROUTER) $(CCE_SPARSE_KV) $(CCE_UNCERTAINTY) $(CCE_COMPRESSION) $(CCE_LEARN) $(CCE_PATCH) $(CCE_GPU) $(CCE_ABI) $(CCE_CUDA_OBJ) $(CCE_PERCEPTUAL) $(CCE_WORDLM) $(CCE_MODEL) $(CCE_MODEL_IO) $(CCE_DATASET) $(CCE_AUTOGRAD) $(CCE_SAFETENSORS) $(CCE_GGUF) $(CCE_QGKP) $(CCE_DETECT) $(CCE_SSM) $(CCE_ST_LLAMA) $(CCE_SPECGRAPH) $(CCE_WSTORE) $(CCE_TIERRT) $(CCE_SIMILAR) $(CCE_CLGEMM) $(CCE_TRANSFORMER_QAT)
+CCE := $(CCE_TENSOR) $(CCE_BLOCK) $(CCE_CASCADE) $(CCE_ARCHIVE) $(CCE_FOREST) $(CCE_ROUTER) $(CCE_SPARSE_KV) $(CCE_UNCERTAINTY) $(CCE_COMPRESSION) $(CCE_LEARN) $(CCE_PATCH) $(CCE_GPU) $(CCE_ABI) $(CCE_CUDA_OBJ) $(CCE_PERCEPTUAL) $(CCE_WORDLM) $(CCE_MODEL) $(CCE_MODEL_IO) $(CCE_DATASET) $(CCE_AUTOGRAD) $(CCE_SAFETENSORS) $(CCE_GGUF) $(CCE_AICIMO) $(CCE_QGKP) $(CCE_DETECT) $(CCE_SSM) $(CCE_ST_LLAMA) $(CCE_SPECGRAPH) $(CCE_WSTORE) $(CCE_TIERRT) $(CCE_SIMILAR) $(CCE_CLGEMM) $(CCE_TRANSFORMER_QAT)
 CNET_CCE_ADAPTER := src/cce/cce_contract_adapter.c
 SPECIALIST_ADAPTERS := src/specialist_adapters.c
 SPECIALIST_SRC := src/specialist.c src/specialist_health.c
@@ -219,7 +217,7 @@ SYNONYMS_TEST := tests/test_synonyms.c
 TILEINDEX_TEST := tests/test_tile_index.c
 CONSOLIDATE_TEST := tests/test_tile_consolidate.c
 
-.PHONY: all run test verify verify-long recipe_gate demos compat unified unified_native unified_adapter unified_cce_adapter unified_oracle_adapter unified_specialist specialist_health gap_lane gap_lane_run_build dispatch_story claims claims_model model_evidence oracle_v2_test soul_host_test legacy_test compose route dag hetero split chunk certify property coverage conformal logicgate decimal circuit study capacity library margin fuzzy stochastic fastpath throughput residue expr attention attention_study lifecycle_bench lbench proposal_sidecar probe_overhead belowbeam_chars struct_pref dgate_bench compounding_bench cce_smoke counterfactual_router_test sparse_kv_test narrative_coherence_test phase4_uncertainty_test register_compression_improvements phase5_integration_test cce_train_bench cce_view forest_view wordlm wordlm_bitnet cce_dll cnet_dll cce_safetensors_test cce_gguf_test cce_model_test cce_autograd_test endgate jsonstory pdftest pdflearn compound tiermem_test graduate fontdecode tfidf synonyms tileindex consolidate clean
+.PHONY: all run test verify verify-long recipe_gate demos compat unified unified_native unified_adapter unified_cce_adapter unified_oracle_adapter unified_specialist specialist_health gap_lane gap_lane_run_build dispatch_story claims claims_model model_evidence oracle_v2_test soul_host_test legacy_test compose route dag hetero split chunk certify property coverage conformal logicgate decimal circuit study capacity library margin fuzzy stochastic fastpath throughput residue expr attention attention_study lifecycle_bench lbench proposal_sidecar probe_overhead belowbeam_chars struct_pref dgate_bench compounding_bench cce_smoke counterfactual_router_test sparse_kv_test narrative_coherence_test phase4_uncertainty_test register_compression_improvements phase5_integration_test cce_train_bench cce_view forest_view wordlm wordlm_bitnet cce_dll cnet_dll cce_safetensors_test cce_gguf_test cce_model_test cce_autograd_test endgate jsonstory pdftest pdflearn compound tiermem_test graduate fontdecode tfidf synonyms tileindex consolidate clean aicimo_smoke aicimo_core_test
 
 all: nn_demo
 
@@ -1749,7 +1747,7 @@ admission_bypass_audit: tests/audit_admission_bypass.sh
 	@sh tests/audit_admission_bypass.sh > logs/admission_bypass_audit.log 2>&1
 	@grep -q "ADMISSION_BYPASS_AUDIT_PASS" logs/admission_bypass_audit.log
 
-unified_native: unified_adapter unified_cce_adapter unified_oracle_adapter unified_specialist gap_lane dispatch_story oracle_v2_test unified_async unified_models unified_ds4_launcher soul_host_test soul_reopen_test admission_bypass_audit cnet_dll build_hygiene_test alt_paths_gate
+unified_native: unified_adapter unified_cce_adapter unified_oracle_adapter unified_specialist gap_lane dispatch_story oracle_v2_test unified_async unified_models unified_ds4_launcher soul_host_test soul_reopen_test admission_bypass_audit cnet_dll build_hygiene_test alt_paths_gate aicimo_core_test
 	@for sym in specialist_wrap_btn specialist_wrap_cce_model \
 		specialist_wrap_oracle specialist_admit specialist_axes \
 		specialist_residency_of_model specialist_residency_of_branch \
@@ -1866,21 +1864,28 @@ gemma_ref_build: $(CCE) tests/gemma_ref.c
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/gemma_ref $(CCE) tests/gemma_ref.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 
 
-# AICIMO test target (pure C).
-# NOTE: aicimo_smoke deliberately compiles $(CCE_AICIMO_SRC) explicitly because
-# cce_aicimo.c is NOT in the core CCE aggregate ($(CCE)) — it is a quarantined
-# experimental source. If this target used $(CCE) alone it would fail to link
-# because the AICIMO symbols would be absent.
-CCE_AICIMO_SRC := src/cce/cce_aicimo.c
-aicimo_smoke: $(CCE) $(CCE_AICIMO_SRC) tests/aicimo_smoke.c
-	$(CC) $(CFLAGS) -o $(BIN_DIR)/aicimo_smoke $(CCE) $(CCE_AICIMO_SRC) tests/aicimo_smoke.c $(LDFLAGS)
+# AICIMO smoke test (pure C). cce_aicimo.c is now in the core CCE aggregate.
+aicimo_smoke: $(CCE) tests/aicimo_smoke.c include/cce/cce_aicimo.h
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -o $(BIN_DIR)/aicimo_smoke $(CCE) tests/aicimo_smoke.c $(LDFLAGS)
 	./$(BIN_DIR)/aicimo_smoke
 
-# Alternate-paths regression gate: proves AICIMO and cnet_lm are NOT in the
-# core CCE aggregate, and the generic GPU API is honestly CUDA-or-CPU (not
-# OpenCL). See tests/test_alt_paths_gate.c.
+# AICIMO core routing test — hermetic focused test proving:
+#   identity/residual preservation, deterministic role routing selection,
+#   uncertainty from actual route state, invalid argument rejection.
+.PHONY: aicimo_core_test
+aicimo_core_test: $(CCE) tests/test_aicimo_core.c include/cce/cce_aicimo.h
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -o $(BIN_DIR)/aicimo_core_test $(CCE) tests/test_aicimo_core.c $(LDFLAGS)
+	./$(BIN_DIR)/aicimo_core_test > logs/aicimo_core_test.log 2>&1
+	@grep -q "AICIMO_CORE_TEST_PASS" logs/aicimo_core_test.log
+
+# Alternate-paths regression gate: proves AICIMO is in the core CCE aggregate
+# with its canonical API (cce_aicimo_*), old compat names are NOT global symbols,
+# cnet_lm is NOT in the core aggregate, and the generic GPU API is honestly
+# CUDA-or-CPU (not OpenCL). See tests/test_alt_paths_gate.c.
 .PHONY: alt_paths_gate
-alt_paths_gate: $(CCE) tests/test_alt_paths_gate.c include/cce/cce_gpu.h include/cce/cce_gguf.h include/cce/cce_clgemm.h
+alt_paths_gate: $(CCE) tests/test_alt_paths_gate.c include/cce/cce_gpu.h include/cce/cce_gguf.h include/cce/cce_clgemm.h include/cce/cce_aicimo.h
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/test_alt_paths_gate $(CCE) tests/test_alt_paths_gate.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 	./$(BIN_DIR)/test_alt_paths_gate > logs/alt_paths_gate.log 2>&1

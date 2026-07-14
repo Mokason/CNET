@@ -41,7 +41,7 @@ int main(void) {
     }
 
     printf("16x composition on 1024-dim quest input succeeded.\n");
-    printf("Effective context expansion: 1024 → ~16K demonstrated.\n");
+    printf("Adapter routing completed (output dimensionality unchanged).\n");
 
     /* Hypothesis Testing (recalled memory) */
     printf("\n--- Hypothesis Test (Quest Scale) ---\n");

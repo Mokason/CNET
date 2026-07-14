@@ -34,7 +34,7 @@ int main(void) {
     }
 
     printf("Bridge successfully processed input combining place, dilemma, and social consequence at full Gemma context scale.\n");
-    printf("Effective context expansion: 8192 → ~128K+ demonstrated.\n");
+    printf("Adapter routing completed (output dimensionality unchanged).\n");
 
     /* Hypothesis Testing (recalled memory) */
     printf("\n--- Hypothesis Test (Complete) ---\n");
@@ -45,9 +45,9 @@ int main(void) {
     printf("Systematic component (AICIMO routing) modeled and learned.\n");
     printf("Random component (token limit) described, bounded, sampled, and incorporated into uncertainty estimates.\n");
     printf("Non-convex dynamics handled via zero-init identity + strength matrices.\n");
-    printf("Like TGBM controlling drawdown better than SPY while preserving a reasonable Sharpe, AICIMO controls context collapse while preserving performance.\n");
+    printf("AICIMO adapter routing preserves identity residuals through zero-init adapters.\n");
 
     printf("\n=== AICIMO Complete Solution Test PASSED ===\n");
-    printf("CNET units token limit solved via AICIMO adapter routing.\n");
+    printf("AICIMO adapter routing verified (no context expansion claimed).\n");
     return 0;
 }

@@ -34,7 +34,7 @@ int main(void) {
     }
 
     printf("Bridge composition on place+dilemma+consequence input succeeded.\n");
-    printf("Effective context: 4096 → ~64K demonstrated via CNET bridge.\n");
+    printf("Adapter routing completed via CNET bridge (output dimensionality unchanged).\n");
 
     /* Hypothesis Testing (recalled memory) */
     printf("\n--- Hypothesis Test (Bridge + RPG) ---\n");

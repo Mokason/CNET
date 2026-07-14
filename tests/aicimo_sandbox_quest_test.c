@@ -43,7 +43,7 @@ int main(void) {
     }
 
     printf("16x composition on 4096-dim sandbox quest succeeded.\n");
-    printf("Effective context expansion: 4096 → ~64K demonstrated.\n");
+    printf("Adapter routing completed (output dimensionality unchanged).\n");
 
     /* Hypothesis Testing + Math Framing (recalled memory) */
     printf("\n--- Hypothesis Test (Sandbox Scale) ---\n");
@@ -53,7 +53,7 @@ int main(void) {
     printf("Result: H0 rejected. Strong practical significance.\n");
     printf("Non-convex dynamics handled via zero-init identity + strength matrix.\n");
     printf("Systematic component modeled. Random component (limit) bounded.\n");
-    printf("Like TGBM controlling drawdown, AICIMO controls context collapse in sandbox mode.\n");
+    printf("AICIMO adapter routing preserves identity residuals in sandbox mode.\n");
 
     aicimo_router_free(&router);
     printf("\n=== AICIMO Sandbox Quest Test PASSED ===\n");

@@ -3,7 +3,7 @@
 #include <stdlib.h>
 
 /*
- * 128K Context RPG Testimony Generator
+ * Adapter Routing RPG Testimony
  * Combines place, dilemma, and social consequence (recalled RPG framework).
  *
  * Systematic component (AICIMO routing) modeled and learned.
@@ -18,8 +18,8 @@ static void generate_long_testimony_input(float *buf, size_t len) {
 }
 
 int main(void) {
-    printf("=== AICIMO 128K Context RPG Testimony Generator ===\n");
-    printf("Combining place, dilemma, and social consequence at full scale.\n\n");
+    printf("=== AICIMO Adapter Routing RPG Testimony ===\n");
+    printf("Combining place, dilemma, and social consequence.\n\n");
 
     const size_t base_dim = 8192;
 
@@ -31,11 +31,11 @@ int main(void) {
 
     int rc = cce_aicimo_expand_context(input, 8192, output, 8192, base_dim);
     if (rc != 0) {
-        printf("FAIL: 128K generation\n");
+        printf("FAIL: adapter routing\n");
         return 1;
     }
 
-    printf("Generated 128K-scale testimony (effective context).\n");
+    printf("Adapter routing completed (output dimensionality unchanged — no context expansion).\n");
     printf("Uncertainty estimate: %.6f\n\n", uncertainty);
 
     /* Generated RPG Testimony (combining place, dilemma, and social consequence) */
@@ -53,8 +53,8 @@ int main(void) {
     printf("Systematic component (AICIMO routing) learned. Random component incorporated into uncertainty estimate.\n");
     printf("Like TGBM controlling drawdown, AICIMO preserves performance while providing bounds.\n\n");
 
-    printf("=== 128K CONTEXT GENERATION COMPLETE ===\n");
-    printf("CNET units token limit solved via AICIMO adapter routing at 128K scale.\n");
+    printf("=== ADAPTER ROUTING TEST COMPLETE ===\n");
+    printf("AICIMO adapter routing verified at 8192-dim (no context expansion claimed).\n");
 
     return 0;
 }
