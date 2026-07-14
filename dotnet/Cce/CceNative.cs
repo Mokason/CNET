@@ -708,6 +708,65 @@ internal static partial class CceNative
     internal static partial void McpMemorizeFact([MarshalAs(UnmanagedType.LPStr)] string query,
         [MarshalAs(UnmanagedType.LPStr)] string summary);
 
+    // ---- QGKP native compression envelope (cce_qgkp.h) -------------------
+
+    // cce_qgkp_metadata: matches C struct layout exactly.
+    //   u64 flags | char[64] architecture | char[32] quantization |
+    //   i32 n_layer | i32 hidden | i32 context_length | i32 reserved
+    // Using DllImport (not LibraryImport) because ByValArray marshalling
+    // is not supported by the source generator for embedded arrays.
+    [StructLayout(LayoutKind.Sequential, Pack = 1)]
+    internal struct CceQgkpMetadata
+    {
+        public ulong Flags;
+        [MarshalAs(UnmanagedType.ByValArray, SizeConst = 64)]
+        public byte[] Architecture;
+        [MarshalAs(UnmanagedType.ByValArray, SizeConst = 32)]
+        public byte[] Quantization;
+        public int NLayer;
+        public int Hidden;
+        public int ContextLength;
+        public int Reserved;
+    }
+
+    // cce_qgkp_info: matches C struct layout (with natural alignment).
+    //   u32 version | (pad) | u64 header_bytes | u64 flags | u64 payload_bytes |
+    //   u64 payload_hash | char[64] architecture | char[32] quantization |
+    //   i32 n_layer | i32 hidden | i32 context_length
+    [StructLayout(LayoutKind.Sequential, Pack = 0)]
+    internal struct CceQgkpInfo
+    {
+        public uint Version;
+        public uint _pad;
+        public ulong HeaderBytes;
+        public ulong Flags;
+        public ulong PayloadBytes;
+        public ulong PayloadHash;
+        [MarshalAs(UnmanagedType.ByValArray, SizeConst = 64)]
+        public byte[] Architecture;
+        [MarshalAs(UnmanagedType.ByValArray, SizeConst = 32)]
+        public byte[] Quantization;
+        public int NLayer;
+        public int Hidden;
+        public int ContextLength;
+    }
+
+    [DllImport(CnetLibraryName, EntryPoint = "cce_qgkp_pack_gguf", CallingConvention = CallingConvention.Cdecl)]
+    internal static extern int QgkpPackGguf(
+        [MarshalAs(UnmanagedType.LPStr)] string ggufPath,
+        [MarshalAs(UnmanagedType.LPStr)] string qgkpPath,
+        ref CceQgkpMetadata meta);
+
+    [DllImport(CnetLibraryName, EntryPoint = "cce_qgkp_inspect", CallingConvention = CallingConvention.Cdecl)]
+    internal static extern int QgkpInspect(
+        [MarshalAs(UnmanagedType.LPStr)] string qgkpPath,
+        ref CceQgkpInfo info);
+
+    [DllImport(CnetLibraryName, EntryPoint = "cce_qgkp_materialize_gguf", CallingConvention = CallingConvention.Cdecl)]
+    internal static extern int QgkpMaterializeGguf(
+        [MarshalAs(UnmanagedType.LPStr)] string qgkpPath,
+        [MarshalAs(UnmanagedType.LPStr)] string ggufPath);
+
     // Core engine symbols are also exported from cnet lib for direct use:
     // cnb_load, cnb_load_registry, cnb_get_unit, registry_*, route_plan, route_execute,
     // dag_plan, dag_execute, btn_forward, etc. Add [LibraryImport(CnetLibraryName, ...)] as needed.

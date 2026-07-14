@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <RootNamespace>CnetMcpServer.Tests</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="coverlet.collector" Version="6.0.2">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\CnetMcpServer\CnetMcpServer.csproj" />
+    <ProjectReference Include="..\Cce\Cce.csproj" />
+  </ItemGroup>
+
+  <!-- Copy native cnet.so next to test output -->
+  <Target Name="CopyCnetNative" AfterTargets="Build">
+    <ItemGroup>
+      <_CnetLib Include="$(MSBuildThisFileDirectory)..\..\cnet.so" Condition="Exists('$(MSBuildThisFileDirectory)..\..\cnet.so')" />
+      <_CnetLib Include="$(MSBuildThisFileDirectory)..\..\cnet.dll" Condition="Exists('$(MSBuildThisFileDirectory)..\..\cnet.dll')" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_CnetLib)" DestinationFolder="$(OutputPath)" SkipUnchangedFiles="true" />
+    <Message Text="Copied native CNET libraries to MCP test output: @(_CnetLib)" Importance="high" Condition="'@(_CnetLib)' != ''" />
+  </Target>
+
+</Project>

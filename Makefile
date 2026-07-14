@@ -1679,6 +1679,17 @@ qgkp_envelope_test: $(CCE_QGKP) tests/test_qgkp_envelope.c include/cce/cce_qgkp.
 	@./$(BIN_DIR)/test_qgkp_envelope > logs/qgkp_envelope_test.log 2>&1
 	@grep -q "QGKP_ENVELOPE_PASS" logs/qgkp_envelope_test.log
 
+.PHONY: mcp_compression_test
+mcp_compression_test: cnet_dll
+	@mkdir -p logs
+	LD_LIBRARY_PATH="$(CURDIR)$${LD_LIBRARY_PATH:+:$$LD_LIBRARY_PATH}" \
+		$(DOTNET) test dotnet/CnetMcpServer.Tests/CnetMcpServer.Tests.csproj \
+		-c Debug --nologo -v:q \
+		--filter "FullyQualifiedName~CompressionArtifactTests" \
+		> logs/mcp_compression_test.log 2>&1
+	@grep -Eq 'Passed: +[1-9][0-9]*, Skipped: +0' logs/mcp_compression_test.log
+	@echo "MCP_COMPRESSION_TEST_PASS"
+
 .PHONY: unified_models
 unified_models: qgkp_envelope_test $(MODEL_RUNTIME) $(CCE_MODEL_CATALOG) $(MODEL_PROBE) tests/test_model_runtime.c tests/test_model_catalog.c
 	@mkdir -p $(BIN_DIR) logs

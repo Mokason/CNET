@@ -12,12 +12,30 @@ namespace CnetMcpServer
         private readonly SoulHost _soulHost;
         private readonly string _basePath;
         private readonly string _obsidianPath;
+        private readonly string _artifactPath;
 
-        public CnetTools(string basePath, string obsidianPath = "/home/marble/Documents/Obsidian Vault/CNET")
+        public CnetTools(string basePath,
+                         string obsidianPath = "/home/marble/Documents/Obsidian Vault/CNET",
+                         string? artifactPath = null)
         {
-            _soulHost = new SoulHost(basePath);
             _basePath = basePath;
             _obsidianPath = obsidianPath;
+            _artifactPath = Path.GetFullPath(
+                string.IsNullOrWhiteSpace(artifactPath)
+                    ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                                   "CNET", "artifacts")
+                    : artifactPath);
+            // SoulHost opening the certified base is optional for tools that
+            // don't need it (e.g. CompressModel works independently). Tools
+            // that do need it (VerifyClaim, ListUnits) will check _soulHost.
+            try
+            {
+                _soulHost = new SoulHost(basePath);
+            }
+            catch
+            {
+                _soulHost = null!;
+            }
         }
 
         // ---- Real verification over certified units ---------------------
@@ -133,6 +151,7 @@ namespace CnetMcpServer
         private List<string> UnitRoster()
         {
             if (_unitRoster != null) return _unitRoster;
+            if (_soulHost == null) { _unitRoster = new List<string>(); return _unitRoster; }
             _unitRoster = LoadRosterFor(_soulHost, _basePath, out _rosterSource);
             return _unitRoster;
         }
@@ -839,64 +858,130 @@ namespace CnetMcpServer
 
         public string ExpandContext(string input, int baseDim = 8192)
         {
-            return $"[CNET] Context expanded from {baseDim} to ~128K effective. Uncertainty: 0.131920.";
+            return $"[CNET] Context expansion unavailable: AICIMO performs fixed-width adapter routing at {baseDim} dimensions; it does not increase the context window.";
         }
 
         public string CompressModel(string modelPath, string targetSize = "1.6bit", string options = "")
         {
             if (string.IsNullOrWhiteSpace(modelPath))
             {
-                return "[CNET] Compression refused: model_path is required.";
+                return JsonSerializer.Serialize(new
+                {
+                    status = "refused",
+                    reason = "model_path is required"
+                });
             }
 
             string fullModelPath = Path.GetFullPath(modelPath);
-            bool modelExists = File.Exists(fullModelPath) || Directory.Exists(fullModelPath);
-            string strategy = SelectCompressionStrategy(targetSize, options);
-            string root = Path.GetDirectoryName(Path.GetFullPath(_basePath)) ?? Directory.GetCurrentDirectory();
-            string wrapperDir = Path.Combine(root, "hermes_wrappers");
-            Directory.CreateDirectory(wrapperDir);
-
-            string modelName = Path.GetFileName(fullModelPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
-            if (string.IsNullOrWhiteSpace(modelName)) modelName = "cnet_model";
-            string safeModelName = SanitizeFileStem(modelName);
-            string manifestPath = Path.Combine(wrapperDir, safeModelName + ".hermes.json");
-            string artifactPath = Path.Combine(wrapperDir, safeModelName + ".cnetpack");
-
-            var manifest = new
+            if (!File.Exists(fullModelPath))
             {
-                type = "CNET Hermes Wrapper",
-                schema = 1,
-                model_path = fullModelPath,
-                model_exists = modelExists,
-                target_size = targetSize,
-                options,
-                compression_strategy = strategy,
-                output_artifact = artifactPath,
-                gradient_accumulation = new
+                return JsonSerializer.Serialize(new
                 {
-                    grads_buffer = "enabled",
-                    preserve_identity_path = true,
-                    preserve_residual_path = true
+                    status = "refused",
+                    reason = $"model not found: {fullModelPath}",
+                    model_path = fullModelPath
+                });
+            }
+
+            // Verify GGUF magic before attempting native compression
+            try
+            {
+                byte[] magic = new byte[4];
+                using (var fs = File.OpenRead(fullModelPath))
+                {
+                    if (fs.Read(magic, 0, 4) < 4 ||
+                        magic[0] != 0x47 || magic[1] != 0x47 ||
+                        magic[2] != 0x55 || magic[3] != 0x46)
+                    {
+                        return JsonSerializer.Serialize(new
+                        {
+                            status = "refused",
+                            reason = "source file is not a valid GGUF (magic mismatch)",
+                            model_path = fullModelPath
+                        });
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                return JsonSerializer.Serialize(new
+                {
+                    status = "refused",
+                    reason = $"cannot read source file: {ex.Message}",
+                    model_path = fullModelPath
+                });
+            }
+
+            // Create the real native QGKP artifact
+            string outputDir = _artifactPath;
+
+            CnetCompressionResult result;
+            try
+            {
+                result = CnetCompression.Compress(fullModelPath, outputDir, targetSize, options);
+            }
+            catch (Exception ex)
+            {
+                return JsonSerializer.Serialize(new
+                {
+                    status = "refused",
+                    reason = $"native compression failed: {ex.Message}",
+                    model_path = fullModelPath
+                });
+            }
+
+            // Return structured JSON with full native artifact evidence
+            return JsonSerializer.Serialize(new
+            {
+                status = "packaged_losslessly",
+                artifact_path = result.ArtifactPath,
+                artifact_size = result.ArtifactSize,
+                artifact_magic = "QGKP",
+                artifact_kind = result.ArtifactKind,
+                source_integrity_hash = result.SourceIntegrityHash,
+                source_sha256 = result.Probe.SourceSha256,
+                source_size = result.SourceSize,
+                requested_target_size = result.RequestedTargetSize,
+                target_size_applied = result.TargetSizeApplied,
+                strategy = result.Strategy,
+                verified = result.Verified,
+                packaging = new
+                {
+                    storage_ratio = Math.Round(result.StorageRatio, 6),
+                    source_bytes = result.SourceSize,
+                    artifact_bytes = result.ArtifactSize,
+                    header_bytes = result.Inspection.HeaderBytes,
+                    payload_bytes = result.Inspection.PayloadBytes,
+                    note = "QGKP v3 packages the GGUF losslessly; no target-bit quantization was applied."
                 },
-                uncertainty = new
+                native_inspection = new
                 {
-                    specialist_uncertainty = "activation_entropy_plus_counterfactual_route_entropy",
-                    default_uncertainty = 0.131920
+                    version = result.Inspection.Version,
+                    header_bytes = result.Inspection.HeaderBytes,
+                    flags = $"0x{result.Inspection.Flags:x16}",
+                    payload_bytes = result.Inspection.PayloadBytes,
+                    payload_hash = $"0x{result.Inspection.PayloadHash:x16}",
+                    architecture = result.Inspection.Architecture,
+                    quantization = result.Inspection.Quantization,
+                    n_layer = result.Inspection.NLayer,
+                    hidden = result.Inspection.Hidden,
+                    context_length = result.Inspection.ContextLength
                 },
-                hermes = new
+                quality_probe = new
                 {
-                    loader = "cnet-hermes-wrapper",
-                    start_command = $"hermes --model {artifactPath}",
-                    status = modelExists ? "ready_for_native_compression" : "manifest_only_model_missing"
+                    round_trip_verified = result.Probe.RoundTripVerified,
+                    source_sha256 = result.Probe.SourceSha256,
+                    note = result.Probe.RoundTripVerified
+                        ? "materialized GGUF is byte-identical to source"
+                        : "round-trip probe was not verified"
+                },
+                runtime = new
+                {
+                    directly_loadable_by_hermes = false,
+                    required_action = "materialize the QGKP payload back to GGUF before use with a model runtime"
                 },
                 generated_at_utc = DateTime.UtcNow.ToString("O", CultureInfo.InvariantCulture)
-            };
-
-            var jsonOptions = new JsonSerializerOptions { WriteIndented = true };
-            File.WriteAllText(manifestPath, JsonSerializer.Serialize(manifest, jsonOptions));
-
-            string existence = modelExists ? "model found" : "model path not found; wrote manifest only";
-            return $"[CNET] Compression wrapper prepared ({strategy}, {existence}). Hermes manifest: {manifestPath}";
+            }, new JsonSerializerOptions { WriteIndented = true });
         }
 
         private static string SelectCompressionStrategy(string targetSize, string options)
