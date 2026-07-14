@@ -134,6 +134,7 @@ CCE_ABI     := src/cce/cce_abi.c
 CCE_DETECT  := src/cce/cce_detect.c
 CCE_SSM     := src/cce/cce_ssm.c
 CCE_HYBRID  := src/cce/cce_hybrid.c
+CCE_QWEN35  := src/cce/cce_qwen35.c
 CCE_ST_LLAMA := src/cce/cce_st_llama.c
 CCE_SPECGRAPH := src/cce/cce_specgraph.c
 CCE_WSTORE  := src/cce/cce_weight_store.c
@@ -141,7 +142,7 @@ CCE_TIERRT  := src/cce/cce_tier_runtime.c
 CCE_SIMILAR := src/cce/cce_similar.c
 CCE_CLGEMM  := src/cce/cce_clgemm.c
 CCE_TRANSFORMER_QAT := src/cce/cce_transformer_qat.c
-CCE := $(CCE_TENSOR) $(CCE_BLOCK) $(CCE_CASCADE) $(CCE_ARCHIVE) $(CCE_FOREST) $(CCE_ROUTER) $(CCE_SPARSE_KV) $(CCE_UNCERTAINTY) $(CCE_COMPRESSION) $(CCE_LEARN) $(CCE_PATCH) $(CCE_GPU) $(CCE_ABI) $(CCE_CUDA_OBJ) $(CCE_PERCEPTUAL) $(CCE_WORDLM) $(CCE_MODEL) $(CCE_MODEL_IO) $(CCE_DATASET) $(CCE_AUTOGRAD) $(CCE_SAFETENSORS) $(CCE_GGUF) $(CCE_AICIMO) $(CCE_QGKP) $(CCE_DETECT) $(CCE_SSM) $(CCE_HYBRID) $(CCE_ST_LLAMA) $(CCE_SPECGRAPH) $(CCE_WSTORE) $(CCE_TIERRT) $(CCE_SIMILAR) $(CCE_CLGEMM) $(CCE_TRANSFORMER_QAT)
+CCE := $(CCE_TENSOR) $(CCE_BLOCK) $(CCE_CASCADE) $(CCE_ARCHIVE) $(CCE_FOREST) $(CCE_ROUTER) $(CCE_SPARSE_KV) $(CCE_UNCERTAINTY) $(CCE_COMPRESSION) $(CCE_LEARN) $(CCE_PATCH) $(CCE_GPU) $(CCE_ABI) $(CCE_CUDA_OBJ) $(CCE_PERCEPTUAL) $(CCE_WORDLM) $(CCE_MODEL) $(CCE_MODEL_IO) $(CCE_DATASET) $(CCE_AUTOGRAD) $(CCE_SAFETENSORS) $(CCE_GGUF) $(CCE_AICIMO) $(CCE_QGKP) $(CCE_DETECT) $(CCE_SSM) $(CCE_HYBRID) $(CCE_QWEN35) $(CCE_ST_LLAMA) $(CCE_SPECGRAPH) $(CCE_WSTORE) $(CCE_TIERRT) $(CCE_SIMILAR) $(CCE_CLGEMM) $(CCE_TRANSFORMER_QAT)
 CNET_CCE_ADAPTER := src/cce/cce_contract_adapter.c
 SPECIALIST_ADAPTERS := src/specialist_adapters.c
 SPECIALIST_SRC := src/specialist.c src/specialist_health.c
@@ -912,7 +913,7 @@ recipe_gate:
 
 # Test recipes propagate their exit codes directly. This positive-marker gate
 # runs after every prerequisite and rejects missing or stale-success logs.
-verify: recipe_gate claims_test cce_dll cce_safetensors_test cce_autograd_test cce_model_test cce_view forest_view cce_detect cce_ssm cce_hybrid cce_st_llama cce_specgraph cce_wstore cce_tiers cce_similar merge_family hybrid_catalog transformer_qat contract_secure contract_unit heal_mismatch mutate acquire base flagship demos leakcheck
+verify: recipe_gate claims_test cce_dll cce_safetensors_test cce_autograd_test cce_model_test cce_view forest_view cce_detect cce_ssm cce_hybrid cce_qwen35 cce_st_llama cce_specgraph cce_wstore cce_tiers cce_similar merge_family hybrid_catalog transformer_qat contract_secure contract_unit heal_mismatch mutate acquire base flagship demos leakcheck
 	@sh tests/verify_logs.sh
 
 # Everything verify covers PLUS the GPU equivalence gate (needs model + GPU;
@@ -1071,6 +1072,15 @@ cce_ssm: $(CCE) $(CCE_CUDA_OBJ) tests/cce_ssm_test.c
 cce_hybrid: $(CCE) $(CCE_CUDA_OBJ) tests/cce_hybrid_test.c
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) tests/cce_hybrid_test.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 	./$(BIN_DIR)/cce_hybrid > logs/cce_hybrid.log 2>&1
+
+# Native Qwen3.5 execution core (attention + Gated-DeltaNet hybrid): the
+# architecture-specific layer-schedule dispatch, the stateful recurrent
+# Gated-DeltaNet step, and the Qwen3.5 gated causal attention. Gated against an
+# independent double-precision reference recurrence/attention; the generic
+# cce_hybrid mamba-1 runner deliberately does NOT cover this convention.
+cce_qwen35: $(CCE) $(CCE_CUDA_OBJ) tests/cce_qwen35_test.c
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) tests/cce_qwen35_test.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+	./$(BIN_DIR)/cce_qwen35 > logs/cce_qwen35.log 2>&1
 
 # HF-llama safetensors loader: same decomposed transformer as the GGUF path,
 # gated by bit-identical logits between the two container formats.
