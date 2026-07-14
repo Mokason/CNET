@@ -211,6 +211,16 @@ window fnv and the int8 golden battery). Note: the manifest's
 flagship_run after pulling before the full campaign so provenance
 records the current tree.
 
+**Verified 2026-07-14**: 4-unit run under this posture —
+`attempted 4, acquired 4, deferred 0`, every unit 100% exact on its
+certification domain (101/101, 101/101, 98/98, 96/96 exemplars; the
+count spread is the margin gate abstaining on teacher coin-flip
+contexts), all SAMPLED-certified at Wilson ≥ 0.95. The unit that was
+stuck at 252/256 under PROVEN (tk2107) converts cleanly. Campaigns are
+unblocked end to end; next session: full 256-unit campaign via
+`tools/mining_campaign.sh` + re-run the unit-level prefix A/B on
+certifying units.
+
 ## Deferred (out of v1)
 
 Generation quality/coherence (chat template + sampling + the missing
