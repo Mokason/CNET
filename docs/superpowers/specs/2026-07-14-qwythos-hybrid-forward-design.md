@@ -236,6 +236,48 @@ to the rank-3/4 boundary, so ordered ties inside the top-3 stop
 abstaining); mining under set semantics changes what a unit claims, so
 it belongs to a deliberate follow-up campaign, not a retry pass.
 
+## Unit-level prefix A/B: two oracle-integrity bugs found + fixed (2026-07-15)
+
+The certifying-units prefix A/B (ON vs OFF, same posture/seed, fresh
+bases) initially DIVERGED (tk2590 acquire/defer flip) and exposed two
+independent bugs, both of the same class — a deterministic,
+self-consistent chimera oracle that certifies its own students and is
+invisible to every same-mode gate (goldens, determinism check,
+same-shape bitwise probes):
+
+1. **qwen35 runner — stale checkpoint across resets**: a stream reset
+   (new unit's prefix) did not invalidate the rewind checkpoint, so
+   suffixes 2..N of every unit after a process's first restored the
+   PREVIOUS unit's recurrent state. Fixed (`ckpt_pos = -1` on reset);
+   hermetic unit-boundary regression added (fails without the fix,
+   36/36 with).
+2. **flagship — lane prefix cache survives foreign forwards**: the
+   determinism check primes `prefix_token` with `vocab[0]` (always
+   unit 1's token), the golden battery then clobbers the stream with 32
+   direct forwards, and unit 1's `fs_prefix` trusts the stale cache —
+   unit 1 mines against the LAST GOLDEN PAIR's state. **This bug
+   predates the hybrid: every goldens-enabled campaign poisoned exactly
+   its first unit (gemma soul bases included — their vocab[0] units are
+   suspect).** On the hybrid, the runner's rewind refusal turned the
+   silent corruption into a loud oracle_unfit, which is what exposed
+   it. Fixed: lanes invalidate `prefix_token` after the battery.
+
+Forward-path exoneration (measured): prefix+rewound-suffix vs fresh
+2-token contexts are bit-identical across the full window in BOTH the
+re-prefix-per-probe shape and the exact flagship restore-chain shape
+(0/256 rows differ, 0 abstention flips, t=2107 and t=2590). Lesson
+recorded: prefix-identity gates must ALTERNATE conditioning tokens and
+include foreign-forward interleavings; same-t comparisons are
+structurally blind to both bugs.
+
+**Post-fix A/B (final): ON and OFF produce byte-identical bases and
+ledgers (sha256 22be1575…, equal to the pre-fix OFF truth reference)
+with identical acquire/defer patterns.** Prefix reuse is now a proven
+pure speed change. The 2026-07-15 207/256 campaign base was mined
+pre-fix and is POISONED (quarantined as
+qwythos_english_v1.cnb.POISONED-stale-ckpt; ledger commit 939780e is
+superseded); the campaign re-runs on a fresh base with both fixes.
+
 ## Deferred (out of v1)
 
 Generation quality/coherence (chat template + sampling + the missing

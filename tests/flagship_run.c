@@ -1145,6 +1145,21 @@ int main(int argc, char **argv) {
                    (unsigned long)total, (unsigned long)total);
         }
         fclose(gfp);
+        /* The battery's DIRECT forwards clobbered the model stream, but the
+           lane still remembers the determinism check's prefix — and the
+           check's t is vocab[0], the SAME token unit 1 mines. A stale
+           prefix_token makes fs_prefix skip the recompute and mine unit 1
+           against the LAST GOLDEN PAIR's state (KV row 0 + recurrent
+           state): a self-consistent chimera that certifies its own student.
+           Every goldens-enabled campaign to date poisoned exactly its first
+           unit this way (caught 2026-07-15 by the qwen35 runner's rewind
+           refusal turning the silent corruption into oracle_unfit).
+           Invalidate the cache: any foreign forward = prefix gone. */
+        {
+            size_t li;
+            for (li = 0; li < ctx.nlanes; ++li)
+                ctx.lane[li].prefix_token = -1;
+        }
     }
 
     /* Window decisiveness screening (CNET_WINDOW_SCREEN=<candidates>):

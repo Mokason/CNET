@@ -718,6 +718,15 @@ static cce_result q35_state_enter(cce_gguf_qwen35_ext *e, long want,
                    (size_t)(e->conv_k - 1) * e->qkv_dim * sizeof(float));
         }
         e->stream_pos = 0;
+        /* a reset starts a NEW stream: the checkpoint belongs to the old
+           one and MUST die with it. Keeping it made ckpt_pos collide with
+           the next unit's prefix length, which (a) skipped the fresh
+           snapshot on the first suffix and (b) restored the PREVIOUS
+           unit's recurrent state on every later suffix — a deterministic,
+           self-consistent chimera that certifies its own students and is
+           invisible to every same-mode gate. Caught only by the
+           prefix-ON/OFF unit-level A/B (tk2590 flip, 2026-07-15). */
+        e->ckpt_pos = -1;
     } else if (want == e->stream_pos) {
         /* continue */
     } else if (want == e->ckpt_pos) {

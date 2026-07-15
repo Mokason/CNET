@@ -712,6 +712,40 @@ int main(void) {
               "arbitrary rewind refused");
     }
 
+    /* UNIT-BOUNDARY rewind (the flagship fs_prefix pattern across units):
+       prefix t0 + suffixes with rewinds, then a RESET + NEW prefix t1 at
+       the SAME position, then suffixes with rewinds again. The stale-
+       checkpoint bug restored t0's recurrent state into t1's suffixes
+       (chimera oracle, mined 2026-07-15's poisoned base) — the reset must
+       invalidate the checkpoint so t1's first suffix re-snapshots. */
+    {
+        float freshB[V_], sufX[V_], sufX2[V_];
+        int t0 = toks[0], t1 = toks[3], xx = 7, yy = 30;
+        int twoB[2];
+        m->cur_pos = 0;
+        cce_gguf_qwen2_forward(m, &t0, 1, lg, V_);      /* unit A prefix */
+        m->cur_pos = 1;
+        cce_gguf_qwen2_forward(m, &xx, 1, lg, V_);      /* A suffix (ckpt@1) */
+        m->cur_pos = 1;
+        cce_gguf_qwen2_forward(m, &yy, 1, lg, V_);      /* A suffix (restore) */
+        twoB[0] = t1; twoB[1] = xx;
+        m->cur_pos = 0;
+        cce_gguf_qwen2_forward(m, twoB, 2, freshB, V_); /* truth for unit B */
+        m->cur_pos = 0;
+        cce_gguf_qwen2_forward(m, &t1, 1, lg, V_);      /* unit B prefix */
+        m->cur_pos = 1;
+        cce_gguf_qwen2_forward(m, &xx, 1, sufX, V_);    /* B suffix 1 */
+        m->cur_pos = 1;
+        cce_gguf_qwen2_forward(m, &yy, 1, lg, V_);      /* B suffix 2 (restore) */
+        m->cur_pos = 1;
+        cce_gguf_qwen2_forward(m, &xx, 1, sufX2, V_);   /* B suffix 3 (restore) */
+        CHECK(memcmp(sufX, freshB, sizeof sufX) == 0,
+              "unit-boundary: first suffix of the NEW unit == fresh context");
+        CHECK(memcmp(sufX2, freshB, sizeof sufX2) == 0,
+              "unit-boundary: RESTORED suffix of the new unit == fresh "
+              "context (stale-checkpoint regression)");
+    }
+
     /* forward_probes == serial, live state untouched */
     {
         float serialA[V_], serialB[V_], after_c[V_], after_c2[V_];
