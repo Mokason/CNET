@@ -216,10 +216,25 @@ records the current tree.
 certification domain (101/101, 101/101, 98/98, 96/96 exemplars; the
 count spread is the margin gate abstaining on teacher coin-flip
 contexts), all SAMPLED-certified at Wilson ≥ 0.95. The unit that was
-stuck at 252/256 under PROVEN (tk2107) converts cleanly. Campaigns are
-unblocked end to end; next session: full 256-unit campaign via
-`tools/mining_campaign.sh` + re-run the unit-level prefix A/B on
-certifying units.
+stuck at 252/256 under PROVEN (tk2107) converts cleanly.
+
+**Full campaign completed 2026-07-15** (`tools/mining_campaign.sh`,
+3 passes, converged dry at 07:24): **acquired 207/256 (80.9%),
+deferred 49/256 — every deferral `oracle_unfit`, and the SAME 49 every
+pass** (0/49 converted on retries with fresh seeds: the residue is a
+property of the teacher, not the students). Those 49 window tokens
+condition distributions where >10% of the 96-point sample falls under
+the 0.02 top-3 margin — genuinely ambiguous conditioning contexts for
+this model. Base: `qwythos_english_v1.cnb` (221 MB, 207 certified
+units); ledger committed. Two launcher fixes landed en route
+(`e8a7020`): absolute-path requirement for the systemd log sink, and
+ledger-v4-aware acquired/deferred counting (the v1 rule read every v4
+row as a deferral and dry-stopped the retry loop after one pass).
+Possible yield lever for the 49, deliberately NOT applied blind:
+`CNET_TOPK_SET=1` (top-3 SET semantics — the abstention margin narrows
+to the rank-3/4 boundary, so ordered ties inside the top-3 stop
+abstaining); mining under set semantics changes what a unit claims, so
+it belongs to a deliberate follow-up campaign, not a retry pass.
 
 ## Deferred (out of v1)
 
