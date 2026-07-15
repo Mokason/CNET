@@ -1,5 +1,5 @@
 {
-  "build_rev": "1517dd4",
+  "build_rev": "939780e",
   "model": "/home/marble/Downloads/Qwythos-9B-Claude-Mythos-5-1M-MTP-Q8_0.gguf",
   "model_bytes": 9786060640,
   "tokenizer_model": "gpt2",

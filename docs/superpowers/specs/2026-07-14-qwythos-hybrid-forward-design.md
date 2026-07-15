@@ -276,7 +276,23 @@ with identical acquire/defer patterns.** Prefix reuse is now a proven
 pure speed change. The 2026-07-15 207/256 campaign base was mined
 pre-fix and is POISONED (quarantined as
 qwythos_english_v1.cnb.POISONED-stale-ckpt; ledger commit 939780e is
-superseded); the campaign re-runs on a fresh base with both fixes.
+superseded); the campaign re-ran on a fresh base with both fixes.
+
+**CLEAN campaign final tally (2026-07-15 20:49, supersedes 939780e):
+acquired 89/256 (34.8%), deferred 167 — all oracle_unfit, provably
+seed-independent** (pass 2 converted exactly the 4 certify_failed
+units and nothing else; the 167 re-deferred identically, so the
+campaign was stopped before pass 3 re-churned them a third time). The
+true teacher is far less decidable than the chimera made it look: the
+poisoned run's 207 was inflated by mismatched recurrent state
+sharpening genuinely-flat distributions. 89 units = the model's
+honestly-confident subset under ordered-top-3 at margin 0.02 /
+evidence 0.9. Base: qwythos_english_v1.cnb (95 MB). Yield levers for
+v2, to be MEASURED before chosen (one margin-distribution sweep over
+the window): CNET_TOPK_SET=1 set semantics (ordered ties inside the
+top-3 are the dominant abstention driver) and/or CNET_WINDOW_SCREEN
+decisiveness screening. Either is a new campaign with new goldens —
+unit claims change; never a retry pass.
 
 ## Deferred (out of v1)
 
