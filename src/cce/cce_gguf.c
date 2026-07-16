@@ -306,7 +306,13 @@ cce_result cce_gguf_load(const char* path, cce_gguf** out) {
     g->n_kvs = (int)nk;
     for (uint64_t i = 0; i < nk; i++) {
         if (!gguf_read_kv(g->f, &g->kvs[i])) {
-            /* best effort continue */
+            /* fail-closed: a truncated/malformed KV record means the file is
+               corrupt. Release partially initialized allocations and refuse
+               the load — never continue with a partially parsed metadata
+               table (silent wrong hparams, missing tokenizer config, etc.). */
+            for (uint64_t j = 0; j < i; j++) gguf_free_kv(&g->kvs[j]);
+            free(g->kvs); g->kvs = NULL; g->n_kvs = 0;
+            fclose(g->f); free(g); return CCE_ERR_IO;
         }
     }
 
@@ -391,10 +397,20 @@ cce_result cce_gguf_load(const char* path, cce_gguf** out) {
         cce_gguf_tensor_meta* t = &g->tensors[i];
         uint64_t nlen = 0;
         if (!gguf_read_string(g->f, t->name, sizeof(t->name), &nlen)) {
-            /* error recovery */
+            /* fail-closed: truncated tensor metadata. Release all allocations
+               (kvs + tensors + file) and refuse the load. A partially parsed
+               tensor table causes wrong data offsets, silent missing tensors,
+               or garbage dequant — never continue. */
+            for (int k = 0; k < g->n_kvs; k++) gguf_free_kv(&g->kvs[k]);
+            free(g->kvs); free(g->tensors); fclose(g->f); free(g);
+            return CCE_ERR_IO;
         }
         uint32_t nd = 0;
-        if (!gguf_read_u32(g->f, &nd)) nd = 0;
+        if (!gguf_read_u32(g->f, &nd)) {
+            for (int k = 0; k < g->n_kvs; k++) gguf_free_kv(&g->kvs[k]);
+            free(g->kvs); free(g->tensors); fclose(g->f); free(g);
+            return CCE_ERR_IO;
+        }
         /* shape[] is CCE_MAX_DIMS wide; a corrupt file can claim more dims.
            Clamp ndim so the elems loop below never reads past the array
            (the on-file dims beyond the cap are simply skipped). */
@@ -402,11 +418,23 @@ cce_result cce_gguf_load(const char* path, cce_gguf** out) {
         t->ndim = (int)nd;
         for (uint32_t d = 0; d < nd; d++) {
             uint64_t dim = 0;
-            gguf_read_u64(g->f, &dim);
+            if (!gguf_read_u64(g->f, &dim)) {
+                for (int k = 0; k < g->n_kvs; k++) gguf_free_kv(&g->kvs[k]);
+                free(g->kvs); free(g->tensors); fclose(g->f); free(g);
+                return CCE_ERR_IO;
+            }
             t->shape[d] = (int)dim;
         }
-        gguf_read_u32(g->f, &t->ggml_type);
-        gguf_read_u64(g->f, &t->data_offset);
+        if (!gguf_read_u32(g->f, &t->ggml_type)) {
+            for (int k = 0; k < g->n_kvs; k++) gguf_free_kv(&g->kvs[k]);
+            free(g->kvs); free(g->tensors); fclose(g->f); free(g);
+            return CCE_ERR_IO;
+        }
+        if (!gguf_read_u64(g->f, &t->data_offset)) {
+            for (int k = 0; k < g->n_kvs; k++) gguf_free_kv(&g->kvs[k]);
+            free(g->kvs); free(g->tensors); fclose(g->f); free(g);
+            return CCE_ERR_IO;
+        }
 
         /* Compute nbytes from shape + type (for f32 only in Phase 1) */
         size_t elems = 1;
@@ -670,7 +698,14 @@ static cce_result gguf_dequant_seq(const cce_gguf* g, uint32_t ggml_type,
             }
         }
     } else if (ggml_type == 13 /* Q5_K */) {
-        /* Q5_K: f16 d, f16 dmin, scales[12], qs[160?] for 5bit */
+        /* Q5_K (llama.cpp block_q5_K, exact reference dequant):
+           On-disk layout: f16 d, f16 dmin, u8 scales[12], u8 qh[32], u8 qs[128].
+           256 weights per super-block, 8 sub-blocks of 32.
+           scales[12] packs 8 x (6-bit scale, 6-bit min) via get_scale_min_k4.
+           qh[l] holds the high (5th) bit: bit positions rotate per 64-group.
+           Dequant: w = d*sc*q - dmin*m, where q = (lo nibble) + (hi bit ? 16 : 0).
+           The old decoder read a single 160-byte buffer and used x*d+dmin
+           with no per-sub-block scales/mins — wrong on every value. */
         const int QK_K = 256;
         size_t nblocks = (elems + QK_K - 1) / QK_K;
         for (size_t b = 0; b < nblocks; b++) {
@@ -680,15 +715,33 @@ static cce_result gguf_dequant_seq(const cce_gguf* g, uint32_t ggml_type,
             float dmin = gguf_f16_to_f32(dmin16);
             uint8_t scales[12];
             if (fread(scales,1,12,g->f) != 12) return CCE_ERR_IO;
-            uint8_t qs[160];
-            size_t qbytes = (QK_K * 5 + 7) / 8; /* ~160 */
-            if (fread(qs,1,qbytes,g->f) != qbytes) return CCE_ERR_IO;
-            for (int i=0; i<QK_K; i++) {
-                /* rough 5bit from layout */
-                int lo = (qs[i/2] >> ((i%2)*4)) & 0xF;
-                int hi = (qs[128 + (i/8)] >> (i%8)) & 1;
-                int x = lo | (hi<<4);
-                buf[b*QK_K + i] = x * d + dmin;
+            uint8_t qh[32];
+            if (fread(qh,1,32,g->f) != 32) return CCE_ERR_IO;
+            uint8_t qs[128];
+            if (fread(qs,1,128,g->f) != 128) return CCE_ERR_IO;
+            const uint8_t *ql = qs;
+            size_t out = b * (size_t)QK_K;
+            int is = 0;
+            uint8_t u1 = 1, u2 = 2;
+            for (int j = 0; j < QK_K && out < elems; j += 64) {
+                uint8_t sc, m;
+                /* get_scale_min_k4(is+0) */
+                if (is < 4) { sc = scales[is] & 63; m = scales[is+4] & 63; }
+                else { sc = (scales[is+4] & 0xF) | ((scales[is-4] >> 6) << 4);
+                       m  = (scales[is+4] >> 4)  | ((scales[is  ] >> 6) << 4); }
+                float d1 = d * sc, m1 = dmin * m;
+                /* get_scale_min_k4(is+1) */
+                int is1 = is + 1;
+                if (is1 < 4) { sc = scales[is1] & 63; m = scales[is1+4] & 63; }
+                else { sc = (scales[is1+4] & 0xF) | ((scales[is1-4] >> 6) << 4);
+                       m  = (scales[is1+4] >> 4)  | ((scales[is1  ] >> 6) << 4); }
+                float d2 = d * sc, m2 = dmin * m;
+                for (int l = 0; l < 32 && out < elems; l++)
+                    buf[out++] = d1 * ((ql[l] & 0xF) + (qh[l] & u1 ? 16 : 0)) - m1;
+                for (int l = 0; l < 32 && out < elems; l++)
+                    buf[out++] = d2 * ((ql[l] >> 4)  + (qh[l] & u2 ? 16 : 0)) - m2;
+                ql += 32; is += 2;
+                u1 <<= 2; u2 <<= 2;
             }
         }
     } else if (ggml_type == 14 /* GGML_TYPE_Q6_K */) {
