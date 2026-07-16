@@ -26,3 +26,19 @@ H0: any slice remains unwired, the extracted archive is not self-building, or th
 H1: all focused tests are mandatory prerequisites; the clean-tree umbrella exits zero; exact terminal markers are present; no sanitizer/fatal marker occurs; archive extraction builds and runs a consumer; no process is left running.
 
 No external push is part of this cycle.
+
+## Closure Evidence
+
+`make --no-print-directory release_integrity` exited zero on the clean integrated tree. Inspected terminal evidence:
+
+- `GGUF_INTEGRITY_GATE_PASS`
+- `MODEL_RUNTIME_INTEGRITY_GATE_PASS`
+- `SPECIALIST_AUTHORITY_PASS`
+- `PERSISTENCE_INTEGRITY_GATE_PASS`
+- `MCP_PROTOCOL_SURVIVAL_GATE_PASS` (12/12 managed tests)
+- `RELEASE_PACKAGE_PASS` with extracted build/install/pkg-config consumer execution
+- `CNET_CI_CORE_PASS`
+- `PRIORITY_ACCEPTANCE_PASS`
+- `CNET_RELEASE_INTEGRITY_PASS`
+
+The generated v5.1.1 archive is byte-reproducible at SHA-256 `5c498319b59b845ca45d10c34443adb1b13b310c4d63875fc197b9fd01d68394`. The tracked tree remained clean and no release test process remained after completion.

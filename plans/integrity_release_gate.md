@@ -22,4 +22,4 @@
 - A clean extraction builds `cnet.so`, stages headers/library/pkg-config metadata, links an external consumer through `pkg-config`, and executes it.
 - `release_integrity` is statically audited for ordered focused slices, one archive build, portable CI core, priority acceptance, diff hygiene and clean tracked-tree preflight/closure checks.
 - The first integrated umbrella reached `PRIORITY_ACCEPTANCE_PASS` but correctly failed closure because `unified` rewrote the tracked timestamped evidence document; the authority now preserves that fresh document under `logs/verified-today.release.md`, restores only the generated checkout copy, and rejects any other tracked mutation.
-- Final umbrella execution remains the closure authority; this section is not a substitute for `CNET_RELEASE_INTEGRITY_PASS`.
+- The clean integrated umbrella exits zero with `CNET_RELEASE_INTEGRITY_PASS`; its self-built reproducible v5.1.1 archive records SHA-256 `5c498319b59b845ca45d10c34443adb1b13b310c4d63875fc197b9fd01d68394`.
