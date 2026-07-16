@@ -282,6 +282,23 @@ int main(void) {
         check(cnb_save(&base, base_path) == 0, "sealed base saves atomically");
         cnb_free(&base);   /* every original runtime object is now gone */
 
+        /* SoulHost owns replay of adjacent runtime sidecars. A malformed
+           expansion must fail the reopen instead of silently discarding
+           persisted planner policy. */
+        {
+            FILE *bad = fopen("reopen_head.expansion", "wb");
+            SoulHost *probe = NULL;
+            check(bad != NULL, "malformed restart sidecar fixture opens");
+            if (bad) {
+                fputs("not-an-expansion\n", bad);
+                fclose(bad);
+            }
+            check(soul_open(base_path, NULL, &probe) != 0 && probe == NULL,
+                  "SoulHost fails closed on malformed adjacent runtime state");
+            if (probe) soul_close(probe);
+            remove("reopen_head.expansion");
+        }
+
         memset(&good, 0, sizeof good);
         good.mode = MODE_GOOD; good.id_oracle = id_oracle; good.id_orphan = id_orphan;
         decline = good;   decline.mode = MODE_DECLINE;
