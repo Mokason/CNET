@@ -22,6 +22,9 @@ if not match:
 else:
     body = match.group("body")
 
+if not re.search(r"^mcp_protocol_survival:\s*", makefile, flags=re.MULTILINE):
+    failures.append("Makefile references but does not define mcp_protocol_survival")
+
 required_in_order = [
     "gguf_integrity",
     "model_runtime_integrity",

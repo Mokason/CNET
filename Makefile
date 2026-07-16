@@ -1787,6 +1787,16 @@ mcp_compression_test: cnet_dll
 	@grep -Eq 'Passed: +[1-9][0-9]*, Skipped: +0' logs/mcp_compression_test.log
 	@echo "MCP_COMPRESSION_TEST_PASS"
 
+.PHONY: mcp_protocol_survival
+mcp_protocol_survival: cnet_dll
+	@mkdir -p logs
+	LD_LIBRARY_PATH="$(CURDIR)$${LD_LIBRARY_PATH:+:$$LD_LIBRARY_PATH}" \
+		$(DOTNET) test dotnet/CnetMcpServer.Tests/CnetMcpServer.Tests.csproj \
+		-c Debug --nologo -v:q \
+		> logs/mcp_protocol_survival.log 2>&1
+	@grep -Eq 'Passed: +[1-9][0-9]*, Skipped: +0' logs/mcp_protocol_survival.log
+	@echo "MCP_PROTOCOL_SURVIVAL_GATE_PASS" | tee -a logs/mcp_protocol_survival.log
+
 # Focused warning-debt regression gate.  Keep this narrower than the full
 # build: it protects the repaired ownership boundary and its public contract
 # files with the exact warning policy used for remediation.
