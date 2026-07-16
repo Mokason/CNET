@@ -309,8 +309,13 @@ cce_result cce_gguf_load(const char* path, cce_gguf** out) {
             /* fail-closed: a truncated/malformed KV record means the file is
                corrupt. Release partially initialized allocations and refuse
                the load — never continue with a partially parsed metadata
-               table (silent wrong hparams, missing tokenizer config, etc.). */
-            for (uint64_t j = 0; j < i; j++) gguf_free_kv(&g->kvs[j]);
+               table (silent wrong hparams, missing tokenizer config, etc.).
+
+               NOTE: the CURRENT entry (i) may have a partially initialized
+               allocation (e.g. kv->arr from a truncated ARRAY). The loop
+               must free j <= i, not just j < i, or the current entry's
+               heap allocation leaks. ASan/LSan verifies this. */
+            for (uint64_t j = 0; j <= i; j++) gguf_free_kv(&g->kvs[j]);
             free(g->kvs); g->kvs = NULL; g->n_kvs = 0;
             fclose(g->f); free(g); return CCE_ERR_IO;
         }
@@ -411,10 +416,16 @@ cce_result cce_gguf_load(const char* path, cce_gguf** out) {
             free(g->kvs); free(g->tensors); fclose(g->f); free(g);
             return CCE_ERR_IO;
         }
-        /* shape[] is CCE_MAX_DIMS wide; a corrupt file can claim more dims.
-           Clamp ndim so the elems loop below never reads past the array
-           (the on-file dims beyond the cap are simply skipped). */
-        if (nd > (uint32_t)CCE_MAX_DIMS) nd = (uint32_t)CCE_MAX_DIMS;
+        /* shape[] is CCE_MAX_DIMS wide; a corrupt file can claim more dims
+           (or zero). Reject ndim==0 (no dimensions => malformed) and
+           ndim > CCE_MAX_DIMS (would overflow shape[]) as corrupt rather
+           than clamping — a clamped tensor silently drops dimensions and
+           produces a misshapen tensor with wrong element counts. */
+        if (nd == 0 || nd > (uint32_t)CCE_MAX_DIMS) {
+            for (int k = 0; k < g->n_kvs; k++) gguf_free_kv(&g->kvs[k]);
+            free(g->kvs); free(g->tensors); fclose(g->f); free(g);
+            return CCE_ERR_INVALID_ARG;
+        }
         t->ndim = (int)nd;
         for (uint32_t d = 0; d < nd; d++) {
             uint64_t dim = 0;
