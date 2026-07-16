@@ -45,7 +45,7 @@ Final authority: `make --no-print-directory release_integrity`
 
 | Slice | Artifact | Status | Required evidence |
 |---|---|---|---|
-| Exact model ingestion | `plans/integrity_q5_gguf.md` | REPAIR IN PROGRESS | first delegate proved exact single-block parity and basic truncation refusal; parent review rejected incomplete current-KV cleanup, clamped malformed dimensions, and no multi-block/sanitizer evidence; repair lane active |
+| Exact model ingestion | `plans/integrity_q5_gguf.md` | FOCUSED GREEN | exact Q5_K decoding matches an independent reference across one uniform and three consecutive nonuniform blocks; malformed/truncated KV and tensor metadata fail closed; ASan/LSan proves current-record cleanup (`GGUF_INTEGRITY_GATE_PASS`) |
 | Transactional residency | `plans/integrity_model_runtime.md` | REPAIR IN PROGRESS | first delegate fixed target relocation but parent review found an under-lock over-budget unload and pre-commit destruction of bystander victims; true prepare/load/commit-or-rollback repair lane active |
 | Specialist authority | `plans/integrity_specialist_authority.md` | FOCUSED GREEN | production constructors require certification; static bypass audit passes; unchecked constructors/appends and low-level certified append are absent from the ELF dynamic ABI (`ADMISSION_ABI_AUDIT_PASS`) |
 | Crash-safe restart | `plans/integrity_persistence.md` | FOCUSED GREEN | temp+fsync+rename publication, verified previous-generation fallback, fail-closed registry globals/expansions, and automatic SoulHost replay pass focused gates |

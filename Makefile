@@ -1871,6 +1871,26 @@ dist: VERSION .github/workflows/ci.yml include/cnet_version.h
 	@echo "CNET_DIST_PASS $(DIST_DIR)/cnet-$(CNET_VERSION).tar.gz"
 
 .PHONY: agent_memory_integrity registry_restart_unit persistence_integrity specialist_authority admission_abi_audit
+
+.PHONY: gguf_integrity
+gguf_integrity: src/cce/cce_gguf.c tests/test_cce_gguf_q5_integrity.c tests/stubs_q5_test.c
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) -std=c11 -Wall -Wextra -Werror -pedantic -O2 -D_DEFAULT_SOURCE -Iinclude \
+		-o $(BIN_DIR)/test_cce_gguf_q5_integrity \
+		tests/test_cce_gguf_q5_integrity.c tests/stubs_q5_test.c src/cce/cce_gguf.c \
+		-lm -lpthread
+	@timeout 30 ./$(BIN_DIR)/test_cce_gguf_q5_integrity > logs/gguf_integrity.log 2>&1
+	@grep -q "GGUF_INTEGRITY_PASS" logs/gguf_integrity.log
+	$(CC) -std=c11 -Wall -Wextra -Werror -pedantic -O1 -g -D_DEFAULT_SOURCE \
+		-fsanitize=address,leak -fno-omit-frame-pointer -Iinclude \
+		-o $(BIN_DIR)/test_cce_gguf_q5_integrity_asan \
+		tests/test_cce_gguf_q5_integrity.c tests/stubs_q5_test.c src/cce/cce_gguf.c \
+		-lm -lpthread
+	@timeout 60 env ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 \
+		./$(BIN_DIR)/test_cce_gguf_q5_integrity_asan > logs/gguf_integrity_asan.log 2>&1
+	@grep -q "GGUF_INTEGRITY_PASS" logs/gguf_integrity_asan.log
+	@echo "GGUF_INTEGRITY_GATE_PASS"
+
 agent_memory_integrity: src/agent_memory.c tests/test_agent_memory.c include/agent_memory.h
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) -std=c11 -Wall -Wextra -Werror -pedantic -O2 -D_DEFAULT_SOURCE -Iinclude \

@@ -422,15 +422,9 @@ static int build_truncated_kv_array_gguf(void) {
     w_u32(f, 4);  /* elem_type = GGUF_TYPE_UINT32 */
     w_u64(f, 1000); /* n = 1000 elements */
 
-    /* Write only 3 of the 1000 u32 elements, then truncate.
-       The reader will calloc 1000*8=8000 bytes for kv->arr,
-       successfully read 3 elements, then fread fails on the 4th.
-       gguf_read_kv returns false with kv->arr still allocated.
-       The caller frees j<2 (entries 0 and 1), BUT the cleanup loop
-       at line 313 is `for (j < i)` so entry i=1 IS freed... wait,
-       let me re-check: the loop is `for (uint64_t j = 0; j < i; j++)`.
-       i=1 here, so j goes 0..0, freeing ONLY entry 0. Entry 1 (the
-       current partially-initialized one) is NOT freed — its arr leaks. */
+    /* Write only 3 of the 1000 u32 elements, then truncate. The reader
+       allocates the current entry's array before the fourth read fails;
+       cleanup must therefore include the current partially initialized KV. */
     for (int k = 0; k < 3; k++)
         w_u32(f, (uint32_t)(k * 10));
     /* File ends here — 997 elements missing */
