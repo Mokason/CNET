@@ -37,3 +37,19 @@ Focused RED/green logs reject H0. Final umbrella acceptance is the single closur
 | P4 Release mechanics | `VERSION`, `.github/workflows/ci.yml`, `tests/test_release_package.sh`, `tests/test_ci_workflow.py` | `/tmp/cnet-p4-red-package.log`: no version source/install/package surface; `/tmp/cnet-p4-red-ci.log`: workflow missing; `/tmp/cnet-global-warning-red.log`: 116 strict diagnostics across 16 sources | `make PORTABLE=1 ci` passes locally: manual-dispatch-only YAML, portable flags, versioned staged install/uninstall, pkg-config consumer link/run, source tarball, and a complete shared-library `-Wall -Wextra -Wpedantic -Werror` gate (`NATIVE_WARNING_GATE_PASS`) |
 
 P1 rejects H0: the chimera fixes are no longer standalone/manual-only evidence. P2 rejects H0: manifest replay now verifies source state, exact executable, model, ordered window, golden fixture and base, and only completed runs atomically publish output-base provenance. P3 rejects H0: the execution-tier contract now matches both the Makefile and executable symbol gate. P4 rejects H0: release version, CPU CI, portable configuration, staged package consumption, and warning-debt boundaries are executable rather than manual conventions. The final umbrella remains the single closure check.
+
+## 2026-07-16 CNET 5.1.1 Integrity Closure
+
+Source of truth: `plans/cnet_5_1_1_integrity_closure.md`
+Final authority: `make --no-print-directory release_integrity`
+
+| Slice | Artifact | Status | Required evidence |
+|---|---|---|---|
+| Exact model ingestion | `plans/integrity_q5_gguf.md` | IN PROGRESS | independent Q5_K reference parity; malformed metadata refusal; `GGUF_INTEGRITY_PASS` |
+| Transactional residency | `plans/integrity_model_runtime.md` | PENDING | reentrant unload without deadlock; failed relocation preserves old generation |
+| Specialist authority | `plans/integrity_specialist_authority.md` | PENDING | unchecked append removed from stable API; default production planning requires certification |
+| Crash-safe restart | `plans/integrity_persistence.md` | PENDING | old-or-new atomic KB publication; policies and expansions survive reopen |
+| MCP survival | `plans/integrity_mcp_protocol.md` | PENDING | malformed sequence returns JSON-RPC errors and subsequent valid request succeeds |
+| Release authority | `plans/integrity_release_gate.md` | PENDING | reproducible source archive builds/installs/runs from extraction; final marker `CNET_RELEASE_INTEGRITY_PASS` |
+
+H0 remains active until the clean integration tree executes the final authority and its exact evidence is inspected. No feature breadth or external push belongs to this cycle.
