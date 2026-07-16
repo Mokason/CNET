@@ -20,5 +20,6 @@
 
 - The v5.1.1 source archive is byte-reproducible across two builds.
 - A clean extraction builds `cnet.so`, stages headers/library/pkg-config metadata, links an external consumer through `pkg-config`, and executes it.
-- `release_integrity` is statically audited for ordered focused slices, one archive build, portable CI core, priority acceptance, diff hygiene and a clean tracked integration tree.
+- `release_integrity` is statically audited for ordered focused slices, one archive build, portable CI core, priority acceptance, diff hygiene and clean tracked-tree preflight/closure checks.
+- The first integrated umbrella reached `PRIORITY_ACCEPTANCE_PASS` but correctly failed closure because `unified` rewrote the tracked timestamped evidence document; the authority now preserves that fresh document under `logs/verified-today.release.md`, restores only the generated checkout copy, and rejects any other tracked mutation.
 - Final umbrella execution remains the closure authority; this section is not a substitute for `CNET_RELEASE_INTEGRITY_PASS`.

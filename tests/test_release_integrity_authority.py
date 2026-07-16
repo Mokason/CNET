@@ -35,7 +35,6 @@ required_in_order = [
     "PORTABLE=1 ci_core",
     "priority_acceptance",
     "git diff --check",
-    "git status --porcelain --untracked-files=no",
 ]
 last = -1
 for required in required_in_order:
@@ -46,6 +45,20 @@ for required in required_in_order:
         failures.append(f"release_integrity runs {required} out of order")
     else:
         last = pos
+
+status_positions = [
+    found.start()
+    for found in re.finditer("git status --porcelain --untracked-files=no", body)
+]
+if len(status_positions) != 2:
+    failures.append("release_integrity must check a clean tracked tree at start and end")
+elif status_positions[0] > body.find("release_integrity_authority"):
+    failures.append("release_integrity clean-tree preflight runs too late")
+elif status_positions[1] < body.find("priority_acceptance"):
+    failures.append("release_integrity clean-tree closure runs too early")
+if "logs/verified-today.release.md" not in body or \
+        "git restore -- docs/verified-today.generated.md" not in body:
+    failures.append("release_integrity does not preserve and clean generated evidence")
 
 if "CNET_RELEASE_INTEGRITY_PASS" not in body:
     failures.append("release_integrity emits no terminal PASS marker")

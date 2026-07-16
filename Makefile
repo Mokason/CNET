@@ -2097,6 +2097,16 @@ release_integrity_authority: tests/test_release_integrity_authority.py VERSION i
 release_integrity:
 	@mkdir -p logs
 	@set -eu; { \
+		test -z "$$(git status --porcelain --untracked-files=no)" || { \
+			echo "RELEASE_INTEGRITY_DIRTY_START" >&2; exit 1; \
+		}; \
+		cleanup_release_generated() { \
+			if [ -f docs/verified-today.generated.md ]; then \
+				cp docs/verified-today.generated.md logs/verified-today.release.md || :; \
+				git restore -- docs/verified-today.generated.md || :; \
+			fi; \
+		}; \
+		trap cleanup_release_generated EXIT INT TERM; \
 		$(MAKE) --no-print-directory release_integrity_authority; \
 		$(MAKE) --no-print-directory gguf_integrity; \
 		$(MAKE) --no-print-directory model_runtime_integrity; \
@@ -2106,6 +2116,7 @@ release_integrity:
 		$(MAKE) --no-print-directory release_package; \
 		$(MAKE) --no-print-directory PORTABLE=1 ci_core; \
 		$(MAKE) --no-print-directory SKIP_RELEASE_PACKAGE=1 priority_acceptance; \
+		cleanup_release_generated; trap - EXIT INT TERM; \
 		git diff --check; git diff --cached --check; \
 		test -z "$$(git status --porcelain --untracked-files=no)"; \
 	} > logs/release_integrity.log.tmp 2>&1 || { \
