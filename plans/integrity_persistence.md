@@ -16,3 +16,10 @@
 4. Add save→SoulHost reopen coverage for global policy and per-entry expansion restoration.
 5. Pick one documented canonical checkpoint path and delete/deprecate contradictory dead semantics.
 6. Focused marker: `PERSISTENCE_INTEGRITY_PASS`.
+
+## Verified Closure
+
+- Agent KB writes use checked writes to a same-directory exclusive temp file, `fflush`/`fsync`, atomic replacement and parent-directory sync.
+- A hard-linked verified previous generation survives successful publication; corrupt-current reopen recovers that generation, while injected write failure leaves the current generation untouched.
+- Registry global policy and per-entry expansion recipes restore together; malformed global policy and malformed sidecars fail closed during SoulHost reopen.
+- Focused normal and ASan/UBSan runs pass; `make persistence_integrity` emits `PERSISTENCE_INTEGRITY_GATE_PASS`.

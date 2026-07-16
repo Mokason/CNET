@@ -16,3 +16,10 @@
 4. Give tests an explicit fixture-only unchecked helper rather than weakening production defaults.
 5. Add a static source/export gate preventing public reintroduction.
 6. Focused marker: `SPECIALIST_AUTHORITY_PASS`.
+
+## Verified Closure
+
+- Production registries initialize certification-required; supported production admission remains `specialist_admit`.
+- The source bypass audit refuses production calls to fixture-only unchecked admission.
+- `registry_init`, `registry_add`, and `registry_add_certified` carry hidden ELF visibility in the unified DLL build; `specialist_admit` remains exported. `tests/audit_admission_abi.sh` verifies the actual dynamic symbol table.
+- `make specialist_authority` combines behavior, static-source and ELF-ABI checks and emits `SPECIALIST_AUTHORITY_PASS`.
