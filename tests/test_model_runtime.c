@@ -665,6 +665,222 @@ static void test_eviction_uses_lru_not_catalog_order(void) {
           "LRU manager closes balanced handles");
 }
 
+/* ------------------------------------------------------------------ */
+/* 5.1.1 Integrity Slice: Transactional Model Residency              */
+/* ------------------------------------------------------------------ */
+
+/* --- Test A: Reentrant unload callback must not deadlock --- */
+
+typedef struct {
+    CnetModelManager *manager;
+    atomic_int loads;
+    atomic_int unloads;
+    atomic_int reentry_attempted;
+    atomic_int reentry_succeeded;
+    int fail_load;
+} ReentrantBackendState;
+
+static int reentrant_load(void *context,
+                          const CnetModelDescriptor *descriptor,
+                          uint64_t resource_mask,
+                          void **handle_out,
+                          uint64_t *resident_bytes_per_resource_out) {
+    ReentrantBackendState *state = (ReentrantBackendState *)context;
+    (void)descriptor; (void)resource_mask;
+    state->loads++;
+    *handle_out = malloc(1);
+    *resident_bytes_per_resource_out = 10;
+    return *handle_out ? 0 : -1;
+}
+
+static void reentrant_unload(void *context, void *handle) {
+    ReentrantBackendState *state = (ReentrantBackendState *)context;
+    state->unloads++;
+    /* Simulate a backend that calls back into the manager during unload.
+     * This must not deadlock — the manager mutex must not be held here. */
+    atomic_store(&state->reentry_attempted, 1);
+    int count = cnet_model_manager_model_count(state->manager);
+    if (count >= 0) {
+        atomic_store(&state->reentry_succeeded, 1);
+    }
+    free(handle);
+}
+
+static void test_unload_callback_runs_outside_mutex(void) {
+    CnetModelManager *manager = NULL;
+    CnetModelBudget budget = { CNET_MODEL_RESOURCE_GPU0, 100 };
+    CnetModelManagerOptions options;
+    CnetModelBackendSpec backend;
+    ReentrantBackendState backend_state = {0};
+    CnetModelDescriptor model;
+    CnetModelLease lease;
+    CnetModelStats stats;
+
+    memset(&options, 0, sizeof options);
+    options.abi_version = CNET_MODEL_RUNTIME_ABI_VERSION;
+    options.struct_size = sizeof options;
+    options.max_models = 4;
+    options.max_backends = 1;
+    options.budgets = &budget;
+    options.budget_count = 1;
+    CHECK(cnet_model_manager_open(&manager, &options) == CNET_MODEL_OK,
+          "reentrant manager opens");
+
+    memset(&backend, 0, sizeof backend);
+    backend.abi_version = CNET_MODEL_RUNTIME_ABI_VERSION;
+    backend.struct_size = sizeof backend;
+    snprintf(backend.name, sizeof backend.name, "mock");
+    backend.context = &backend_state;
+    backend.load = reentrant_load;
+    backend.unload = reentrant_unload;
+    backend_state.manager = manager;
+    CHECK(cnet_model_backend_register(manager, &backend) == CNET_MODEL_OK,
+          "reentrant backend registers");
+
+    model = descriptor("reentrant-model", CNET_MODEL_CLASS_DENSE_TRANSFORMER,
+                       CNET_MODEL_RESOURCE_GPU0, 1, 10);
+    CHECK(cnet_model_catalog_add(manager, &model) == CNET_MODEL_OK,
+          "reentrant model enters catalog");
+
+    CHECK(cnet_model_acquire(manager, "reentrant-model", 0, &lease) == CNET_MODEL_OK,
+          "reentrant model loads");
+    CHECK(cnet_model_release(manager, &lease) == CNET_MODEL_OK,
+          "reentrant lease releases");
+
+    /* Eviction triggers unload; the callback re-enters the manager.
+     * If the mutex is held, this deadlocks and the watchdog kills us. */
+    CHECK(cnet_model_evict(manager, "reentrant-model") == CNET_MODEL_OK,
+          "reentrant model evicts without deadlock");
+    CHECK(atomic_load(&backend_state.reentry_attempted) == 1,
+          "unload callback was invoked");
+    CHECK(atomic_load(&backend_state.reentry_succeeded) == 1,
+          "unload callback re-entered manager without deadlock");
+    CHECK(cnet_model_stats(manager, "reentrant-model", &stats) == CNET_MODEL_OK &&
+          stats.state == CNET_MODEL_STATE_COLD && stats.evictions == 1,
+          "reentrant model is cold after eviction");
+    CHECK(cnet_model_manager_close(manager) == CNET_MODEL_OK,
+          "reentrant manager closes cleanly");
+}
+
+/* --- Test B: Failed relocation preserves prior healthy residency --- */
+
+static void test_failed_relocation_preserves_prior_residency(void) {
+    CnetModelManager *manager = NULL;
+    CnetModelBudget budgets[] = {
+        { CNET_MODEL_RESOURCE_GPU0, 100 },
+        { CNET_MODEL_RESOURCE_GPU1, 100 },
+    };
+    CnetModelManagerOptions options;
+    CnetModelBackendSpec backend;
+    MockBackendState backend_state = {0};
+    CnetModelDescriptor model;
+    CnetModelLease lease_a1;
+    CnetModelLease lease_a2;
+    CnetModelLease failed_lease;
+    CnetModelStats stats;
+    CnetModelResourceStats res_gpu0;
+    CnetModelResourceStats res_gpu1;
+    void *original_handle;
+    uint64_t original_generation;
+
+    memset(&options, 0, sizeof options);
+    options.abi_version = CNET_MODEL_RUNTIME_ABI_VERSION;
+    options.struct_size = sizeof options;
+    options.max_models = 4;
+    options.max_backends = 1;
+    options.budgets = budgets;
+    options.budget_count = 2;
+    CHECK(cnet_model_manager_open(&manager, &options) == CNET_MODEL_OK,
+          "relocation manager opens");
+
+    memset(&backend, 0, sizeof backend);
+    backend.abi_version = CNET_MODEL_RUNTIME_ABI_VERSION;
+    backend.struct_size = sizeof backend;
+    snprintf(backend.name, sizeof backend.name, "mock");
+    backend.context = &backend_state;
+    backend.load = mock_load;
+    backend.unload = mock_unload;
+    CHECK(cnet_model_backend_register(manager, &backend) == CNET_MODEL_OK,
+          "relocation backend registers");
+
+    /* Model allowed on both GPU0 and GPU1, requires 1 resource */
+    model = descriptor("relocatable", CNET_MODEL_CLASS_DENSE_TRANSFORMER,
+                       CNET_MODEL_RESOURCE_GPU0 | CNET_MODEL_RESOURCE_GPU1, 1, 10);
+    CHECK(cnet_model_catalog_add(manager, &model) == CNET_MODEL_OK,
+          "relocatable model enters catalog");
+
+    /* Load on GPU0, release the lease so it's resident but unleased */
+    memset(&lease_a1, 0, sizeof lease_a1);
+    CHECK(cnet_model_acquire(manager, "relocatable", CNET_MODEL_RESOURCE_GPU0,
+                             &lease_a1) == CNET_MODEL_OK &&
+          lease_a1.resource_mask == CNET_MODEL_RESOURCE_GPU0 && lease_a1.handle,
+          "model loads on GPU0");
+    original_handle = lease_a1.handle;
+    original_generation = lease_a1.generation;
+    CHECK(cnet_model_release(manager, &lease_a1) == CNET_MODEL_OK,
+          "GPU0 lease releases, model stays resident");
+
+    /* Verify residency on GPU0 before relocation attempt */
+    CHECK(cnet_model_resource_stats(manager, CNET_MODEL_RESOURCE_GPU0,
+                                    &res_gpu0) == CNET_MODEL_OK &&
+          res_gpu0.resident_bytes == 10 && res_gpu0.resident_models == 1,
+          "GPU0 has one resident model before relocation");
+    CHECK(cnet_model_resource_stats(manager, CNET_MODEL_RESOURCE_GPU1,
+                                    &res_gpu1) == CNET_MODEL_OK &&
+          res_gpu1.resident_bytes == 0 && res_gpu1.resident_models == 0,
+          "GPU1 is empty before relocation");
+
+    /* Now attempt to relocate to GPU1 with load failure.
+     * The model is resident on GPU0 with no active lease.
+     * Requesting GPU1 (incompatible with current GPU0 residency)
+     * forces an unload-then-reload. If the reload fails, the old
+     * healthy residency on GPU0 must be preserved. */
+    backend_state.fail_load = 1;
+    memset(&failed_lease, 0, sizeof failed_lease);
+    CHECK(cnet_model_acquire(manager, "relocatable", CNET_MODEL_RESOURCE_GPU1,
+                             &failed_lease) == CNET_MODEL_LOAD_FAILED,
+          "relocation to GPU1 fails as expected");
+
+    /* The prior healthy residency on GPU0 must be intact */
+    CHECK(cnet_model_stats(manager, "relocatable", &stats) == CNET_MODEL_OK,
+          "model stats are accessible after failed relocation");
+
+    /* The old handle and generation must be preserved — the model should
+     * still be RESIDENT on GPU0, not FAILED or COLD. */
+    CHECK(stats.state == CNET_MODEL_STATE_RESIDENT,
+          "model remains RESIDENT on GPU0 after failed relocation to GPU1");
+    CHECK(stats.load_failures == 1,
+          "load failure is recorded for the failed relocation attempt");
+
+    /* Resource accounting: GPU0 should still have the model, GPU1 should be empty */
+    CHECK(cnet_model_resource_stats(manager, CNET_MODEL_RESOURCE_GPU0,
+                                    &res_gpu0) == CNET_MODEL_OK &&
+          res_gpu0.resident_bytes == 10 && res_gpu0.resident_models == 1,
+          "GPU0 accounting preserved after failed relocation");
+    CHECK(cnet_model_resource_stats(manager, CNET_MODEL_RESOURCE_GPU1,
+                                    &res_gpu1) == CNET_MODEL_OK &&
+          res_gpu1.resident_bytes == 0 && res_gpu1.resident_models == 0,
+          "GPU1 accounting clean after failed relocation");
+
+    /* The model must be reacquirable on GPU0 with the original handle */
+    backend_state.fail_load = 0;
+    memset(&lease_a2, 0, sizeof lease_a2);
+    CHECK(cnet_model_acquire(manager, "relocatable", CNET_MODEL_RESOURCE_GPU0,
+                             &lease_a2) == CNET_MODEL_OK &&
+          lease_a2.handle == original_handle &&
+          lease_a2.generation == original_generation,
+          "model is reacquirable on GPU0 with original handle and generation");
+    CHECK(cnet_model_stats(manager, "relocatable", &stats) == CNET_MODEL_OK &&
+          stats.state == CNET_MODEL_STATE_RESIDENT && stats.cache_hits == 1,
+          "reacquire is a cache hit, not a new load");
+    CHECK(cnet_model_release(manager, &lease_a2) == CNET_MODEL_OK,
+          "reacquired lease releases");
+
+    CHECK(cnet_model_manager_close(manager) == CNET_MODEL_OK &&
+          backend_state.unloads == 1,
+          "relocation manager closes with only one unload (the final eviction)");
+}
+
 int main(void) {
     test_dense_and_moe_share_one_catalog();
     test_two_dense_models_remain_resident_and_reuse_hot_handles();
@@ -674,6 +890,8 @@ int main(void) {
     test_failed_and_oversized_loads_leave_no_accounting_leak();
     test_placement_minimizes_evicted_bytes_after_preference_misses();
     test_eviction_uses_lru_not_catalog_order();
+    test_unload_callback_runs_outside_mutex();
+    test_failed_relocation_preserves_prior_residency();
     if (failures) {
         fprintf(stderr, "MODEL_RUNTIME_FAIL checks=%d failures=%d\n", checks, failures);
         return 1;

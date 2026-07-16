@@ -141,14 +141,39 @@ static void remove_residency_locked(CnetModelManager *manager,
     }
 }
 
-static void unload_entry_locked(CnetModelManager *manager,
+/* Deferred-unload list: collects handles that must be released via
+ * backend->unload() *outside* the manager mutex.  This prevents
+ * deadlocks when a backend unload callback re-enters the manager. */
+typedef struct {
+    void *handle;
+    CnetModelBackendUnloadFn unload_fn;
+    void *backend_context;
+} DeferredUnload;
+
+static void deferred_unload_execute(const DeferredUnload *list, uint32_t count) {
+    uint32_t i;
+    for (i = 0; i < count; i++) {
+        if (list[i].handle && list[i].unload_fn)
+            list[i].unload_fn(list[i].backend_context, list[i].handle);
+    }
+}
+
+/* detach_entry_locked: removes residency accounting and transitions the entry
+ * to COLD, but does NOT call backend->unload().  The caller must collect the
+ * handle into a deferred-unload list and invoke it outside the mutex. */
+static void detach_entry_locked(CnetModelManager *manager,
                                 CnetModelEntry *entry,
-                                int record_eviction) {
+                                int record_eviction,
+                                DeferredUnload *deferred_out) {
     CnetModelBackendSpec *backend;
     if (entry->state != CNET_MODEL_STATE_RESIDENT || !entry->handle) return;
     backend = &manager->backends[entry->backend_index].spec;
     remove_residency_locked(manager, entry);
-    backend->unload(backend->context, entry->handle);
+    if (deferred_out) {
+        deferred_out->handle = entry->handle;
+        deferred_out->unload_fn = backend->unload;
+        deferred_out->backend_context = backend->context;
+    }
     entry->handle = NULL;
     entry->resource_mask = 0;
     entry->resident_bytes = 0;
@@ -156,6 +181,10 @@ static void unload_entry_locked(CnetModelManager *manager,
     if (record_eviction) entry->evictions++;
     pthread_cond_broadcast(&entry->changed);
 }
+
+/* unload_entry_locked: legacy wrapper for internal-only paths where no
+ * reentry is expected and no deferred list is available.  Currently unused
+ * after refactor — all paths use detach_entry_locked + deferred unloads. */
 
 typedef enum {
     CANDIDATE_BLOCKED = 0,
@@ -484,18 +513,32 @@ fail:
 
 int cnet_model_manager_close(CnetModelManager *manager) {
     uint32_t index;
+    DeferredUnload *deferred;
+    uint32_t deferred_count = 0;
     if (!manager) return CNET_MODEL_INVALID;
+    deferred = calloc(manager->max_models, sizeof *deferred);
+    if (!deferred) return CNET_MODEL_INVALID;
     pthread_mutex_lock(&manager->mutex);
     for (index = 0; index < manager->model_count; index++) {
         if (manager->models[index].lease_count != 0 ||
             manager->models[index].state == CNET_MODEL_STATE_LOADING) {
             pthread_mutex_unlock(&manager->mutex);
+            free(deferred);
             return CNET_MODEL_BUSY;
         }
     }
-    for (index = 0; index < manager->model_count; index++)
-        unload_entry_locked(manager, &manager->models[index], 0);
+    for (index = 0; index < manager->model_count; index++) {
+        if (manager->models[index].state == CNET_MODEL_STATE_RESIDENT &&
+            manager->models[index].handle) {
+            detach_entry_locked(manager, &manager->models[index], 0,
+                                &deferred[deferred_count]);
+            if (deferred[deferred_count].handle)
+                deferred_count++;
+        }
+    }
     pthread_mutex_unlock(&manager->mutex);
+    deferred_unload_execute(deferred, deferred_count);
+    free(deferred);
 
     for (index = 0; index < manager->max_models; index++) {
         if (manager->models[index].condition_initialized)
@@ -575,10 +618,27 @@ int cnet_model_acquire(CnetModelManager *manager,
     void *handle = NULL;
     int load_result;
 
+    /* Relocation rollback state */
+    int is_relocation = 0;
+    void *old_handle = NULL;
+    uint64_t old_resource_mask = 0;
+    uint64_t old_resident_bytes = 0;
+    uint64_t old_generation = 0;
+    uint32_t old_backend_index = 0;
+
+    /* Deferred-unload list for evicted models (and relocation old handle). */
+    DeferredUnload *deferred;
+    uint32_t deferred_count = 0;
+
     if (!manager || !model_id || !lease_out) return CNET_MODEL_INVALID;
     memset(lease_out, 0, sizeof *lease_out);
     evictions = calloc(manager->max_models, 1);
     if (!evictions) return CNET_MODEL_INVALID;
+    deferred = calloc(manager->max_models + 1, sizeof *deferred);
+    if (!deferred) {
+        free(evictions);
+        return CNET_MODEL_INVALID;
+    }
 
     pthread_mutex_lock(&manager->mutex);
 retry:
@@ -613,22 +673,81 @@ retry:
             result = CNET_MODEL_BUSY;
             goto done_locked;
         }
-        unload_entry_locked(manager, entry, 1);
+        /* Relocation: save the old residency for rollback.  Detach the
+         * old handle from accounting but keep it alive — we will only
+         * unload it if the new load succeeds (commit).  On failure we
+         * restore the old residency (rollback). */
+        is_relocation = 1;
+        old_handle = entry->handle;
+        old_resource_mask = entry->resource_mask;
+        old_resident_bytes = entry->resident_bytes;
+        old_generation = entry->generation;
+        old_backend_index = entry->backend_index;
+        /* Remove old residency accounting but do NOT unload yet. */
+        remove_residency_locked(manager, entry);
+        entry->handle = NULL;
+        entry->resource_mask = 0;
+        entry->resident_bytes = 0;
+        entry->state = CNET_MODEL_STATE_COLD;
+        entry->evictions++;
+        pthread_cond_broadcast(&entry->changed);
     }
 
     backend_index = find_backend_locked(manager, entry->descriptor.backend_name);
     if (backend_index < 0) {
         result = CNET_MODEL_UNSUPPORTED;
+        /* Rollback relocation if we detached the old handle. */
+        if (is_relocation) {
+            entry->handle = old_handle;
+            entry->resource_mask = old_resource_mask;
+            entry->resident_bytes = old_resident_bytes;
+            entry->generation = old_generation;
+            entry->backend_index = old_backend_index;
+            entry->state = CNET_MODEL_STATE_RESIDENT;
+            entry->evictions--;  /* undo the eviction we recorded */
+            /* Re-add residency accounting */
+            for (index = 0; index < manager->resource_count; index++) {
+                CnetResourceEntry *resource = &manager->resources[index];
+                if ((old_resource_mask & resource->mask) == 0) continue;
+                resource->resident_bytes += old_resident_bytes;
+                resource->resident_models++;
+            }
+            is_relocation = 0;
+        }
         goto done_locked;
     }
     result = choose_resources_locked(manager, (uint32_t)model_index,
                                      preferred_resource_mask,
                                      &selected_mask, evictions);
-    if (result != CNET_MODEL_OK) goto done_locked;
+    if (result != CNET_MODEL_OK) {
+        /* Rollback relocation if we detached the old handle. */
+        if (is_relocation) {
+            entry->handle = old_handle;
+            entry->resource_mask = old_resource_mask;
+            entry->resident_bytes = old_resident_bytes;
+            entry->generation = old_generation;
+            entry->backend_index = old_backend_index;
+            entry->state = CNET_MODEL_STATE_RESIDENT;
+            entry->evictions--;
+            for (index = 0; index < manager->resource_count; index++) {
+                CnetResourceEntry *resource = &manager->resources[index];
+                if ((old_resource_mask & resource->mask) == 0) continue;
+                resource->resident_bytes += old_resident_bytes;
+                resource->resident_models++;
+            }
+            is_relocation = 0;
+        }
+        goto done_locked;
+    }
 
+    /* Evict other models (not the target) using deferred unloads. */
     for (index = 0; index < manager->model_count; index++) {
-        if (evictions[index])
-            unload_entry_locked(manager, &manager->models[index], 1);
+        if (evictions[index]) {
+            detach_entry_locked(manager, &manager->models[index], 1,
+                                &deferred[deferred_count]);
+            if (deferred[deferred_count].handle)
+                deferred_count++;
+        }
     }
 
     estimated_bytes = entry->descriptor.resident_bytes_per_resource;
@@ -649,6 +768,10 @@ retry:
         handle = NULL;
     }
 
+    /* Execute deferred unloads for evicted models — outside the mutex. */
+    deferred_unload_execute(deferred, deferred_count);
+    deferred_count = 0;
+
     pthread_mutex_lock(&manager->mutex);
     entry = &manager->models[model_index];
     for (index = 0; index < manager->resource_count; index++) {
@@ -661,6 +784,33 @@ retry:
     }
 
     if (load_result != 0 || !handle) {
+        /* Load failed.  If this was a relocation, rollback to the old
+         * residency instead of going to FAILED state.  The old handle
+         * is still alive (we never unloaded it). */
+        if (is_relocation) {
+            entry->handle = old_handle;
+            entry->resource_mask = old_resource_mask;
+            entry->resident_bytes = old_resident_bytes;
+            entry->generation = old_generation;
+            entry->backend_index = old_backend_index;
+            entry->state = CNET_MODEL_STATE_RESIDENT;
+            /* Undo the eviction we recorded for the relocation. */
+            if (entry->evictions > 0) entry->evictions--;
+            /* Re-add residency accounting for the old resource. */
+            for (index = 0; index < manager->resource_count; index++) {
+                CnetResourceEntry *resource = &manager->resources[index];
+                if ((old_resource_mask & resource->mask) == 0) continue;
+                resource->resident_bytes += old_resident_bytes;
+                resource->resident_models++;
+            }
+            /* Record the failure attempt but keep the model usable. */
+            entry->load_failures++;
+            result = load_result == 0 && actual_bytes > estimated_bytes ?
+                     CNET_MODEL_OVER_BUDGET : CNET_MODEL_LOAD_FAILED;
+            pthread_cond_broadcast(&entry->changed);
+            is_relocation = 0;
+            goto done_locked;
+        }
         entry->state = CNET_MODEL_STATE_FAILED;
         entry->resource_mask = 0;
         entry->resident_bytes = 0;
@@ -677,7 +827,29 @@ retry:
         if ((selected_mask & resource->mask) == 0) continue;
         if (resource->resident_bytes + resource->reserved_bytes + actual_bytes >
             resource->budget_bytes) {
+            /* Over budget after actual load.  Unload the new handle
+             * outside the mutex.  For relocation, rollback to old. */
             backend.unload(backend.context, handle);
+            if (is_relocation) {
+                entry->handle = old_handle;
+                entry->resource_mask = old_resource_mask;
+                entry->resident_bytes = old_resident_bytes;
+                entry->generation = old_generation;
+                entry->backend_index = old_backend_index;
+                entry->state = CNET_MODEL_STATE_RESIDENT;
+                if (entry->evictions > 0) entry->evictions--;
+                for (index = 0; index < manager->resource_count; index++) {
+                    CnetResourceEntry *r = &manager->resources[index];
+                    if ((old_resource_mask & r->mask) == 0) continue;
+                    r->resident_bytes += old_resident_bytes;
+                    r->resident_models++;
+                }
+                entry->load_failures++;
+                result = CNET_MODEL_OVER_BUDGET;
+                pthread_cond_broadcast(&entry->changed);
+                is_relocation = 0;
+                goto done_locked;
+            }
             entry->state = CNET_MODEL_STATE_FAILED;
             entry->resource_mask = 0;
             entry->resident_bytes = 0;
@@ -687,6 +859,17 @@ retry:
             pthread_cond_broadcast(&entry->changed);
             goto done_locked;
         }
+    }
+
+    /* Commit: new load succeeded.  Unload the old handle (if relocation)
+     * outside the mutex via deferred list. */
+    if (is_relocation && old_handle) {
+        deferred[deferred_count].handle = old_handle;
+        deferred[deferred_count].unload_fn =
+            manager->backends[old_backend_index].spec.unload;
+        deferred[deferred_count].backend_context =
+            manager->backends[old_backend_index].spec.context;
+        deferred_count++;
     }
 
     entry->handle = handle;
@@ -706,9 +889,13 @@ retry:
     fill_lease(entry, lease_out);
     pthread_cond_broadcast(&entry->changed);
     result = CNET_MODEL_OK;
+    is_relocation = 0;
 
 done_locked:
     pthread_mutex_unlock(&manager->mutex);
+    /* Execute any remaining deferred unloads outside the mutex. */
+    deferred_unload_execute(deferred, deferred_count);
+    free(deferred);
     free(evictions);
     return result;
 }
@@ -777,6 +964,7 @@ int cnet_model_unpin(CnetModelManager *manager, const char *model_id) {
 int cnet_model_evict(CnetModelManager *manager, const char *model_id) {
     int index;
     CnetModelEntry *entry;
+    DeferredUnload deferred = {0};
     if (!manager || !model_id) return CNET_MODEL_INVALID;
     pthread_mutex_lock(&manager->mutex);
     index = find_model_locked(manager, model_id);
@@ -790,8 +978,9 @@ int cnet_model_evict(CnetModelManager *manager, const char *model_id) {
         pthread_mutex_unlock(&manager->mutex);
         return CNET_MODEL_BUSY;
     }
-    unload_entry_locked(manager, entry, 1);
+    detach_entry_locked(manager, entry, 1, &deferred);
     pthread_mutex_unlock(&manager->mutex);
+    deferred_unload_execute(&deferred, 1);
     return CNET_MODEL_OK;
 }
 
