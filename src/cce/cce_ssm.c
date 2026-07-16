@@ -204,13 +204,24 @@ static const ssm_names k_gguf_names = {
 
 /* ---- loader ---- */
 
+/* Format one per-layer name pattern (one %d) into a buffer.
+   The pattern is a compile-time-constant string from ssm_names, so the
+   conversion is always int->%d.  We disable -Wformat-nonliteral only in
+   this leaf helper — every caller still passes a literal-named field. */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wformat-nonliteral"
+static int ssm_fmt_name(char *dst, size_t cap, const char *pat, int layer) {
+    return snprintf(dst, cap, pat, layer);
+}
+#pragma GCC diagnostic pop
+
 static cce_result ssm_load_from_src(cce_ssm_model** out, const ssm_src* s, const ssm_names* nm) {
     char name[160], bias[160];
 
     /* layer count: highest index whose A_log exists */
     int L = 0;
     for (;; L++) {
-        snprintf(name, sizeof(name), nm->a_log, L);
+        ssm_fmt_name(name, sizeof(name), nm->a_log, L);
         if (src_find(s, name) < 0) break;
         if (L > 4096) return CCE_ERR_UNSUPPORTED;
     }
@@ -218,21 +229,21 @@ static cce_result ssm_load_from_src(cce_ssm_model** out, const ssm_src* s, const
 
     /* dims from layer-0 tensor shapes; no config file needed */
     int shape[CCE_MAX_DIMS], ndim = 0;
-    snprintf(name, sizeof(name), nm->a_log, 0);
+    ssm_fmt_name(name, sizeof(name), nm->a_log, 0);
     if (src_shape(s, name, shape, &ndim) != CCE_OK || ndim != 2) return CCE_ERR_UNSUPPORTED;
     int E = shape[0], N = shape[1];
 
-    snprintf(name, sizeof(name), nm->in_w, 0);
+    ssm_fmt_name(name, sizeof(name), nm->in_w, 0);
     if (src_shape(s, name, shape, &ndim) != CCE_OK || ndim != 2) return CCE_ERR_UNSUPPORTED;
     if (shape[0] != 2 * E) return CCE_ERR_UNSUPPORTED;
     int D = shape[1];
 
-    snprintf(name, sizeof(name), nm->x_w, 0);
+    ssm_fmt_name(name, sizeof(name), nm->x_w, 0);
     if (src_shape(s, name, shape, &ndim) != CCE_OK || ndim != 2 || shape[1] != E) return CCE_ERR_UNSUPPORTED;
     int R = shape[0] - 2 * N;
     if (R <= 0) return CCE_ERR_UNSUPPORTED;
 
-    snprintf(name, sizeof(name), nm->conv_w, 0);
+    ssm_fmt_name(name, sizeof(name), nm->conv_w, 0);
     if (src_shape(s, name, shape, &ndim) != CCE_OK) return CCE_ERR_UNSUPPORTED;
     int K = shape[ndim - 1];                       /* [E,1,K] or [E,K] */
     if (K <= 0 || shape[0] != E) return CCE_ERR_UNSUPPORTED;
@@ -270,37 +281,37 @@ static cce_result ssm_load_from_src(cce_ssm_model** out, const ssm_src* s, const
 
     char brname[96];
     for (int l = 0; l < L; l++) {
-        snprintf(name, sizeof(name), nm->in_w, l);
-        snprintf(bias, sizeof(bias), nm->in_b, l);
+        ssm_fmt_name(name, sizeof(name), nm->in_w, l);
+        ssm_fmt_name(bias, sizeof(bias), nm->in_b, l);
         snprintf(brname, sizeof(brname), "mamba.blk.%d.in_proj", l);
         if (src_add_linear_branch(m->forest, s, name, bias, brname) != CCE_OK) { cce_ssm_free(m); return CCE_ERR_NOT_FOUND; }
 
-        snprintf(name, sizeof(name), nm->x_w, l);
+        ssm_fmt_name(name, sizeof(name), nm->x_w, l);
         snprintf(brname, sizeof(brname), "mamba.blk.%d.x_proj", l);
         if (src_add_linear_branch(m->forest, s, name, NULL, brname) != CCE_OK) { cce_ssm_free(m); return CCE_ERR_NOT_FOUND; }
 
-        snprintf(name, sizeof(name), nm->dt_w, l);
-        snprintf(bias, sizeof(bias), nm->dt_b, l);
+        ssm_fmt_name(name, sizeof(name), nm->dt_w, l);
+        ssm_fmt_name(bias, sizeof(bias), nm->dt_b, l);
         snprintf(brname, sizeof(brname), "mamba.blk.%d.dt_proj", l);
         if (src_add_linear_branch(m->forest, s, name, bias, brname) != CCE_OK) { cce_ssm_free(m); return CCE_ERR_NOT_FOUND; }
 
-        snprintf(name, sizeof(name), nm->out_w, l);
-        snprintf(bias, sizeof(bias), nm->out_b, l);
+        ssm_fmt_name(name, sizeof(name), nm->out_w, l);
+        ssm_fmt_name(bias, sizeof(bias), nm->out_b, l);
         snprintf(brname, sizeof(brname), "mamba.blk.%d.out_proj", l);
         if (src_add_linear_branch(m->forest, s, name, bias, brname) != CCE_OK) { cce_ssm_free(m); return CCE_ERR_NOT_FOUND; }
 
         /* every per-channel tensor is size-checked against the layer-0 dims:
            the forward reads these raw (no apply_row guard), so an undersized
            layer-1 tensor would be a silent heap overread */
-        snprintf(name, sizeof(name), nm->norm, l);
+        ssm_fmt_name(name, sizeof(name), nm->norm, l);
         if (src_load(s, name, &m->norm[l]) != CCE_OK || m->norm[l].numel != (size_t)D) { cce_ssm_free(m); return CCE_ERR_UNSUPPORTED; }
-        snprintf(name, sizeof(name), nm->conv_w, l);
+        ssm_fmt_name(name, sizeof(name), nm->conv_w, l);
         if (src_load(s, name, &m->conv_w[l]) != CCE_OK || m->conv_w[l].numel != (size_t)E * K) { cce_ssm_free(m); return CCE_ERR_UNSUPPORTED; }
-        snprintf(name, sizeof(name), nm->conv_b, l);
+        ssm_fmt_name(name, sizeof(name), nm->conv_b, l);
         src_load(s, name, &m->conv_b[l]); /* optional; used only when numel == E */
-        snprintf(name, sizeof(name), nm->a_log, l);
+        ssm_fmt_name(name, sizeof(name), nm->a_log, l);
         if (src_load(s, name, &m->A_log[l]) != CCE_OK || m->A_log[l].numel != (size_t)E * N) { cce_ssm_free(m); return CCE_ERR_UNSUPPORTED; }
-        snprintf(name, sizeof(name), nm->dvec, l);
+        ssm_fmt_name(name, sizeof(name), nm->dvec, l);
         if (src_load(s, name, &m->Dvec[l]) != CCE_OK || m->Dvec[l].numel != (size_t)E) { cce_ssm_free(m); return CCE_ERR_UNSUPPORTED; }
     }
 

@@ -251,8 +251,13 @@ static cce_clgemm *clgemm_open_internal(const char *dll_name, int solo_index,
 
 #define SYM(dst, type, name)                                                \
     do {                                                                    \
-        dst = (type)cce_dl_sym(h->dll, name);                               \
-        if (!dst) { cce_dl_close(h->dll); free(h); return NULL; }           \
+        void *_sym = cce_dl_sym(h->dll, name);                              \
+        if (!_sym) { cce_dl_close(h->dll); free(h); return NULL; }          \
+        /* POSIX requires dlsym results to be usable as function pointers.     \
+           memcpy avoids ISO C's forbidden object/function-pointer cast. */  \
+        _Static_assert(sizeof(dst) == sizeof(_sym),                          \
+                       "dlsym/function pointer size mismatch");              \
+        memcpy(&(dst), &_sym, sizeof(dst));                                 \
     } while (0)
 
     SYM(GetPlatformIDs, p_clGetPlatformIDs, "clGetPlatformIDs");

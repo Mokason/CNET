@@ -23,6 +23,8 @@
 #include "../include/base.h"
 #include "../include/cce/cce_detect.h"
 #include "../include/cce/cce_clgemm.h"
+#include "../include/cce/cce_campaign_provenance.h"
+#include "../include/cce/cce_oracle_prefix_cache.h"
 #include "window_discover.h"
 
 #define FS_MAX_LANES 8
@@ -35,7 +37,7 @@ typedef struct {
     cce_gguf_qwen2 *m;
     float *logits;         /* model vocab_size scratch */
     cce_clgemm *gpu;       /* per-lane handle in pool mode; NULL otherwise */
-    int prefix_token;      /* token whose KV occupies row 0; -1 = none */
+    cce_oracle_prefix_cache prefix_cache;
     float *batch_logits;   /* batched-probe scratch: rows x vocab_size */
     size_t batch_rows;
 } OracleLane;
@@ -171,8 +173,8 @@ static int fs_bos(const cce_gguf_qwen2 *m) {
 static int fs_prefix(OracleLane *L, int t) {
     int toks[2];
     int n = 0, bos = fs_bos(L->m);
-    if (L->prefix_token == t) return 0;
-    L->prefix_token = -1;                 /* invalid until fully computed */
+    if (cce_oracle_prefix_cache_hit(&L->prefix_cache, t)) return 0;
+    cce_oracle_prefix_cache_begin_fill(&L->prefix_cache);
     if (bos >= 0) toks[n++] = bos;
     toks[n++] = t;
     L->m->cur_pos = 0;
@@ -180,7 +182,7 @@ static int fs_prefix(OracleLane *L, int t) {
                                L->m->vocab_size) != CCE_OK) {
         return -1;
     }
-    L->prefix_token = t;
+    cce_oracle_prefix_cache_commit(&L->prefix_cache, t);
     return 0;
 }
 
@@ -522,6 +524,149 @@ static void mf_setenv_num(const char *text, const char *key,
     setenv(envname, buf, 0);
 }
 
+static int mf_write_window_sidecar(const char *base_path, const int *vocab,
+                                   size_t v, char *out, size_t out_cap) {
+    FILE *f;
+    size_t i;
+    if (snprintf(out, out_cap, "%s.window.txt", base_path) < 0) return -1;
+    f = fopen(out, "w");
+    if (!f) return -1;
+    for (i = 0; i < v; ++i) {
+        if (fprintf(f, "%d\n", vocab[i]) < 0) { fclose(f); return -1; }
+    }
+    return fclose(f) == 0 ? 0 : -1;
+}
+
+static int mf_write_run_manifest(const char *base_path,
+                                 const char *executable_path,
+                                 const char *model_path,
+                                 FlagshipTask task, size_t v,
+                                 size_t max_units, const int *vocab,
+                                 const CceOracleCtx *ctx,
+                                 const FlagshipConfig *cfg,
+                                 const cce_anymodel *am) {
+    char mpath[600], mtmp[640], spath[600], stmp[640];
+    char generated_window[600];
+    char exe_sha[65], model_sha[65], window_sha[65];
+    char golden_sha[65] = "", base_sha[65];
+    const char *window_path = getenv("CNET_WINDOW_FILE");
+    const char *golden_path = getenv("CNET_ORACLE_GOLDEN");
+    unsigned long long wfnv = 1469598103934665603ULL;
+    FILE *mf = NULL, *sf = NULL;
+    size_t wi;
+    long msz = 0;
+
+    if (!window_path || !*window_path) {
+        if (mf_write_window_sidecar(base_path, vocab, v, generated_window,
+                                    sizeof generated_window) != 0) {
+            fprintf(stderr, "manifest: cannot write canonical window sidecar\n");
+            return -1;
+        }
+        window_path = generated_window;
+    }
+    if (!golden_path) golden_path = "";
+    if (cce_sha256_file_hex(executable_path, exe_sha) != 0 ||
+        cce_sha256_file_hex(model_path, model_sha) != 0 ||
+        cce_sha256_file_hex(window_path, window_sha) != 0 ||
+        cce_sha256_file_hex(base_path, base_sha) != 0 ||
+        (*golden_path && cce_sha256_file_hex(golden_path, golden_sha) != 0)) {
+        fprintf(stderr, "manifest: cannot fingerprint executable/model/window/"
+                        "golden/base artifacts\n");
+        return -1;
+    }
+    {
+        FILE *mfp = fopen(model_path, "rb");
+        if (mfp) {
+            if (fseek(mfp, 0, SEEK_END) == 0) msz = ftell(mfp);
+            fclose(mfp);
+        }
+    }
+    for (wi = 0; wi < v; ++wi) {
+        wfnv ^= (unsigned long long)(unsigned)vocab[wi];
+        wfnv *= 1099511628211ULL;
+    }
+
+    snprintf(mpath, sizeof mpath, "%s.manifest.json", base_path);
+    snprintf(mtmp, sizeof mtmp, "%s.tmp", mpath);
+    mf = fopen(mtmp, "w");
+    if (!mf) return -1;
+    fprintf(mf, "{\n");
+    fprintf(mf, "  \"provenance_version\": 1,\n");
+    fprintf(mf, "  \"build_rev\": \"%s\",\n",
+#ifdef CNET_BUILD_REV
+            CNET_BUILD_REV
+#else
+            "unknown"
+#endif
+    );
+    fprintf(mf, "  \"source_dirty\": %d,\n",
+#ifdef CNET_SOURCE_DIRTY
+            CNET_SOURCE_DIRTY ? 1 : 0
+#else
+            1
+#endif
+    );
+    fprintf(mf, "  \"executable_sha256\": \"%s\",\n", exe_sha);
+    fprintf(mf, "  \"model\": \"%s\",\n", model_path);
+    fprintf(mf, "  \"model_bytes\": %ld,\n", msz);
+    fprintf(mf, "  \"model_sha256\": \"%s\",\n", model_sha);
+    fprintf(mf, "  \"tokenizer_model\": \"%s\",\n",
+            am->transformer->tokenizer_model);
+    fprintf(mf, "  \"bos_token_id\": %d,\n",
+            am->transformer->bos_token_id);
+    fprintf(mf, "  \"task\": \"%s\",\n",
+            task == FLAGSHIP_TASK_PAIR ? "pair"
+            : task == FLAGSHIP_TASK_TOPK ? "topk" : "argmax");
+    fprintf(mf, "  \"target_semantics\": \"%s\",\n",
+            (task == FLAGSHIP_TASK_TOPK && fs_topk_set_on())
+                ? "top3-set-canonical" : "ordered");
+    fprintf(mf, "  \"V\": %lu,\n", (unsigned long)v);
+    fprintf(mf, "  \"max_units\": %lu,\n", (unsigned long)max_units);
+    fprintf(mf, "  \"window_source\": \"%s\",\n", window_path);
+    fprintf(mf, "  \"window_fnv\": \"%016llx\",\n", wfnv);
+    fprintf(mf, "  \"window_sha256\": \"%s\",\n", window_sha);
+    fprintf(mf, "  \"margin_eps\": %.6f,\n", ctx->margin_eps);
+    fprintf(mf, "  \"cert_sampled\": %d,\n",
+            getenv("CNET_CERT_SAMPLED") ? 1 : 0);
+    fprintf(mf, "  \"sample_count\": %lu,\n",
+            (unsigned long)cfg->acq.sample_count);
+    fprintf(mf, "  \"min_accuracy_bound\": %.4f,\n",
+            cfg->acq.min_accuracy_bound);
+    fprintf(mf, "  \"student\": {\"init_hidden\": %lu, "
+                "\"max_hidden\": %lu, \"max_epochs\": %lu, "
+                "\"seed\": %u},\n",
+            (unsigned long)cfg->acq.init_hidden,
+            (unsigned long)cfg->acq.max_hidden,
+            (unsigned long)cfg->acq.max_epochs, cfg->acq.seed);
+    fprintf(mf, "  \"adaptive\": %d,\n",
+            getenv("CNET_ACQ_ADAPTIVE") ? 1 : 0);
+    fprintf(mf, "  \"warmstart\": %d,\n",
+            getenv("CNET_ACQ_WARMSTART") ? 1 : 0);
+    fprintf(mf, "  \"oracle_int8\": %d,\n",
+            getenv("CNET_ORACLE_INT8") ? 1 : 0);
+    fprintf(mf, "  \"oracle_golden\": \"%s\",\n", golden_path);
+    fprintf(mf, "  \"oracle_golden_sha256\": \"%s\",\n", golden_sha);
+    fprintf(mf, "  \"base\": \"%s\",\n", base_path);
+    fprintf(mf, "  \"base_sha256\": \"%s\",\n", base_sha);
+    fprintf(mf, "  \"lanes\": %lu\n", (unsigned long)ctx->nlanes);
+    fprintf(mf, "}\n");
+    if (fclose(mf) != 0 || rename(mtmp, mpath) != 0) {
+        remove(mtmp); return -1;
+    }
+
+    snprintf(spath, sizeof spath, "%s.sha256", base_path);
+    snprintf(stmp, sizeof stmp, "%s.tmp", spath);
+    sf = fopen(stmp, "w");
+    if (!sf) return -1;
+    fprintf(sf, "%s  %s\n", base_sha, base_path);
+    if (fclose(sf) != 0 || rename(stmp, spath) != 0) {
+        remove(stmp); return -1;
+    }
+    printf("manifest: %s (strict provenance v1)\n", mpath);
+    printf("base digest: %s\n", spath);
+    return 0;
+}
+
 int main(int argc, char **argv) {
     const char *model_path;
     size_t V = 64, max_units = 8;
@@ -550,6 +695,24 @@ int main(int argc, char **argv) {
     {
         const char *mfp = getenv("CNET_MANIFEST");
         if (mfp) {
+            char provenance_error[256];
+#ifdef CNET_BUILD_REV
+            const char *live_build_rev = CNET_BUILD_REV;
+#else
+            const char *live_build_rev = "unknown";
+#endif
+#ifdef CNET_SOURCE_DIRTY
+            const int live_source_dirty = CNET_SOURCE_DIRTY;
+#else
+            const int live_source_dirty = 1;
+#endif
+            if (cce_campaign_provenance_verify(
+                    mfp, argv[0], live_build_rev, live_source_dirty,
+                    provenance_error, sizeof provenance_error) != 0) {
+                fprintf(stderr, "CNET_MANIFEST %s: provenance refusal: %s\n",
+                        mfp, provenance_error);
+                return 1;
+            }
             FILE *f = fopen(mfp, "rb");
             if (!f) {
                 fprintf(stderr, "CNET_MANIFEST %s: cannot open\n", mfp);
@@ -672,7 +835,7 @@ int main(int argc, char **argv) {
     {
         size_t li0;
         for (li0 = 0; li0 < FS_MAX_LANES; ++li0)
-            ctx.lane[li0].prefix_token = -1;
+            cce_oracle_prefix_cache_init(&ctx.lane[li0].prefix_cache);
     }
     ctx.lane[0].m = am->transformer;
     ctx.nlanes = 1;
@@ -1148,7 +1311,7 @@ int main(int argc, char **argv) {
         /* The battery's DIRECT forwards clobbered the model stream, but the
            lane still remembers the determinism check's prefix — and the
            check's t is vocab[0], the SAME token unit 1 mines. A stale
-           prefix_token makes fs_prefix skip the recompute and mine unit 1
+           prefix cache makes fs_prefix skip the recompute and mine unit 1
            against the LAST GOLDEN PAIR's state (KV row 0 + recurrent
            state): a self-consistent chimera that certifies its own student.
            Every goldens-enabled campaign to date poisoned exactly its first
@@ -1158,7 +1321,8 @@ int main(int argc, char **argv) {
         {
             size_t li;
             for (li = 0; li < ctx.nlanes; ++li)
-                ctx.lane[li].prefix_token = -1;
+                cce_oracle_prefix_cache_invalidate(
+                    &ctx.lane[li].prefix_cache);
         }
     }
 
@@ -1479,87 +1643,6 @@ int main(int argc, char **argv) {
                (unsigned long)np, (unsigned long)fs_batch_hint());
     }
 
-    /* Run manifest: a run must be reproducible from its artifacts, not
-       from shell history. Every knob that shapes what the units certify —
-       teacher, window, margins, tier, student, task semantics — lands in
-       <base>.manifest.json next to the base and the gaps ledger. The MCP
-       layer reads it to report recipe provenance honestly. */
-    {
-        char mpath[600];
-        FILE *mf;
-        snprintf(mpath, sizeof mpath, "%s.manifest.json", base_path);
-        mf = fopen(mpath, "w");
-        if (mf) {
-            unsigned long long wfnv = 1469598103934665603ULL;
-            size_t wi;
-            long msz = 0;
-            {
-                FILE *mfp = fopen(model_path, "rb");
-                if (mfp) {
-                    fseek(mfp, 0, SEEK_END);
-                    msz = ftell(mfp);
-                    fclose(mfp);
-                }
-            }
-            for (wi = 0; wi < V; ++wi) {
-                wfnv ^= (unsigned long long)(unsigned)vocab[wi];
-                wfnv *= 1099511628211ULL;
-            }
-            fprintf(mf, "{\n");
-            fprintf(mf, "  \"build_rev\": \"%s\",\n",
-#ifdef CNET_BUILD_REV
-                    CNET_BUILD_REV
-#else
-                    "unknown"
-#endif
-            );
-            fprintf(mf, "  \"model\": \"%s\",\n", model_path);
-            fprintf(mf, "  \"model_bytes\": %ld,\n", msz);
-            fprintf(mf, "  \"tokenizer_model\": \"%s\",\n",
-                    am->transformer->tokenizer_model);
-            fprintf(mf, "  \"bos_token_id\": %d,\n",
-                    am->transformer->bos_token_id);
-            fprintf(mf, "  \"task\": \"%s\",\n",
-                    task == FLAGSHIP_TASK_PAIR ? "pair"
-                    : task == FLAGSHIP_TASK_TOPK ? "topk" : "argmax");
-            fprintf(mf, "  \"target_semantics\": \"%s\",\n",
-                    (task == FLAGSHIP_TASK_TOPK && fs_topk_set_on())
-                        ? "top3-set-canonical" : "ordered");
-            fprintf(mf, "  \"V\": %lu,\n", (unsigned long)V);
-            fprintf(mf, "  \"max_units\": %lu,\n", (unsigned long)max_units);
-            fprintf(mf, "  \"window_source\": \"%s\",\n",
-                    getenv("CNET_WINDOW_FILE") ? getenv("CNET_WINDOW_FILE")
-                                               : "argmax-discovery");
-            fprintf(mf, "  \"window_fnv\": \"%016llx\",\n", wfnv);
-            fprintf(mf, "  \"margin_eps\": %.6f,\n", ctx.margin_eps);
-            fprintf(mf, "  \"cert_sampled\": %d,\n",
-                    getenv("CNET_CERT_SAMPLED") ? 1 : 0);
-            fprintf(mf, "  \"sample_count\": %lu,\n",
-                    (unsigned long)cfg.acq.sample_count);
-            fprintf(mf, "  \"min_accuracy_bound\": %.4f,\n",
-                    cfg.acq.min_accuracy_bound);
-            fprintf(mf, "  \"student\": {\"init_hidden\": %lu, "
-                        "\"max_hidden\": %lu, \"max_epochs\": %lu, "
-                        "\"seed\": %u},\n",
-                    (unsigned long)cfg.acq.init_hidden,
-                    (unsigned long)cfg.acq.max_hidden,
-                    (unsigned long)cfg.acq.max_epochs, cfg.acq.seed);
-            fprintf(mf, "  \"adaptive\": %d,\n",
-                    getenv("CNET_ACQ_ADAPTIVE") ? 1 : 0);
-            fprintf(mf, "  \"warmstart\": %d,\n",
-                    getenv("CNET_ACQ_WARMSTART") ? 1 : 0);
-            fprintf(mf, "  \"oracle_int8\": %d,\n",
-                    getenv("CNET_ORACLE_INT8") ? 1 : 0);
-            fprintf(mf, "  \"oracle_golden\": \"%s\",\n",
-                    getenv("CNET_ORACLE_GOLDEN") ? getenv("CNET_ORACLE_GOLDEN")
-                                                 : "");
-            fprintf(mf, "  \"lanes\": %lu\n", (unsigned long)ctx.nlanes);
-            fprintf(mf, "}\n");
-            fclose(mf);
-            printf("manifest: %s\n", mpath);
-        }
-    }
-
     printf("run: task=%s V=%lu max_units=%lu temp<=%dC duty=%.2f wall=%.0fs base=%s\n",
            task == FLAGSHIP_TASK_PAIR ? "pair"
            : task == FLAGSHIP_TASK_TOPK ? "topk" : "argmax",
@@ -1569,6 +1652,14 @@ int main(int argc, char **argv) {
 
     if (flagship_run(&cfg, cce_maker, &ctx, &rep) != 0) {
         fprintf(stderr, "flagship_run failed to start\n");
+        return 1;
+    }
+    /* Only a completed run publishes a manifest. The manifest fingerprints
+       the resulting base, not the pre-run input, and is atomically replaced. */
+    if (mf_write_run_manifest(base_path, argv[0], model_path, task, V,
+                              max_units, vocab, &ctx, &cfg, am) != 0) {
+        fprintf(stderr, "flagship_run completed but strict provenance "
+                        "publication failed\n");
         return 1;
     }
     flagship_print_report(&rep, stdout);

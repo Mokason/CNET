@@ -154,29 +154,45 @@ cce_result cce_model_io_load(cce_model* m, const char* path) {
         free(buf); cce_archive_close(arc); return CCE_ERR_UNSUPPORTED;
     }
 
-    char name[64]; rd(&r, name, 64);
-    strncpy(m->name, name, sizeof(m->name) - 1);
-    int32_t dm = 0; rd_i32(&r, &dm); m->diff_mode = (cce_diff_mode_t)dm;
-    rd_i32(&r, &m->classify);
-    rd_f32(&r, &m->goodness_threshold);
-    rd_f32(&r, &m->dfa_strength);
-    rd_f32(&r, &m->grad_clip);
+    char name[64] = {0};
+    int32_t dm = 0;
+    if (!rd(&r, name, sizeof name) || !rd_i32(&r, &dm) ||
+        !rd_i32(&r, &m->classify) ||
+        !rd_f32(&r, &m->goodness_threshold) ||
+        !rd_f32(&r, &m->dfa_strength) || !rd_f32(&r, &m->grad_clip)) {
+        free(buf); cce_archive_close(arc); return CCE_ERR_IO;
+    }
+    memcpy(m->name, name, sizeof m->name);
+    m->name[sizeof m->name - 1] = '\0';
+    m->diff_mode = (cce_diff_mode_t)dm;
 
-    int32_t has_sched = 0; rd_i32(&r, &has_sched);
+    int32_t has_sched = 0;
+    if (!rd_i32(&r, &has_sched)) {
+        free(buf); cce_archive_close(arc); return CCE_ERR_IO;
+    }
     if (has_sched) {
         cce_scheduler* s = (cce_scheduler*)calloc(1, sizeof(cce_scheduler));
         if (!s) { free(buf); cce_archive_close(arc); return CCE_ERR_OOM; }
-        int32_t t;
-        rd_i32(&r, &t); s->type = (cce_sched_type_t)t; rd_f32(&r, &s->initial_lr);
-        rd_i32(&r, &s->warmup_epochs); rd_f32(&r, &s->decay_factor);
-        rd_i32(&r, &s->step_size);     rd_f32(&r, &s->plateau_factor);
-        rd_i32(&r, &s->plateau_patience);
-        rd_f32(&r, &s->current_lr);    rd_f32(&r, &s->best_loss);
-        rd_i32(&r, &s->patience_counter); rd_i32(&r, &s->total_steps);
+        int32_t t = 0;
+        if (!rd_i32(&r, &t) || !rd_f32(&r, &s->initial_lr) ||
+            !rd_i32(&r, &s->warmup_epochs) ||
+            !rd_f32(&r, &s->decay_factor) ||
+            !rd_i32(&r, &s->step_size) ||
+            !rd_f32(&r, &s->plateau_factor) ||
+            !rd_i32(&r, &s->plateau_patience) ||
+            !rd_f32(&r, &s->current_lr) || !rd_f32(&r, &s->best_loss) ||
+            !rd_i32(&r, &s->patience_counter) ||
+            !rd_i32(&r, &s->total_steps)) {
+            free(s); free(buf); cce_archive_close(arc); return CCE_ERR_IO;
+        }
+        s->type = (cce_sched_type_t)t;
         m->scheduler = s; m->owns_scheduler = 1;
     }
 
-    int32_t num_forests = 0; rd_i32(&r, &num_forests);
+    int32_t num_forests = 0;
+    if (!rd_i32(&r, &num_forests)) {
+        free(buf); cce_archive_close(arc); return CCE_ERR_IO;
+    }
     if (num_forests < 0 || num_forests > 16) {
         free(buf); cce_archive_close(arc); return CCE_ERR_UNSUPPORTED;
     }
@@ -186,10 +202,14 @@ cce_result cce_model_io_load(cce_model* m, const char* path) {
     m->owns_forests = 1;
 
     for (int fi = 0; fi < num_forests; ++fi) {
-        char fname[64]; rd(&r, fname, 64);
-        int32_t nb, cdim, sealed, fdm, etl;
-        rd_i32(&r, &nb); rd_i32(&r, &cdim); rd_i32(&r, &sealed);
-        rd_i32(&r, &fdm); rd_i32(&r, &etl);
+        char fname[64] = {0};
+        int32_t nb = 0, cdim = 0, sealed = 0, fdm = 0, etl = 0;
+        if (!rd(&r, fname, sizeof fname) || !rd_i32(&r, &nb) ||
+            !rd_i32(&r, &cdim) || !rd_i32(&r, &sealed) ||
+            !rd_i32(&r, &fdm) || !rd_i32(&r, &etl)) {
+            free(buf); cce_archive_close(arc); return CCE_ERR_IO;
+        }
+        fname[sizeof fname - 1] = '\0';
 
         /* Bound untrusted manifest values before using them as allocation sizes,
            loop bounds, or array indices. Branch centroids are a fixed float[32],
@@ -217,23 +237,37 @@ cce_result cce_model_io_load(cce_model* m, const char* path) {
 
         for (int bi = 0; bi < nb; ++bi) {
             cce_branch* br = &f->branches[bi];
-            char bname[64]; rd(&r, bname, 64);
-            rd(&r, br->centroid, sizeof(br->centroid));
-            int32_t bcdim, tier, bdm, betl, nconn;
-            rd_i32(&r, &bcdim); rd_i32(&r, &tier); rd_i32(&r, &bdm);
-            rd_i32(&r, &betl);  rd_i32(&r, &nconn);
-            rd(&r, br->conn_names, sizeof(br->conn_names));
-            rd(&r, br->conn_types, sizeof(br->conn_types));
-            uint64_t coff = 0; rd_u64(&r, &coff);
+            char bname[64] = {0};
+            int32_t bcdim = 0, tier = 0, bdm = 0, betl = 0, nconn = 0;
+            uint64_t coff = 0;
+            if (!rd(&r, bname, sizeof bname) ||
+                !rd(&r, br->centroid, sizeof br->centroid) ||
+                !rd_i32(&r, &bcdim) || !rd_i32(&r, &tier) ||
+                !rd_i32(&r, &bdm) || !rd_i32(&r, &betl) ||
+                !rd_i32(&r, &nconn) ||
+                !rd(&r, br->conn_names, sizeof br->conn_names) ||
+                !rd(&r, br->conn_types, sizeof br->conn_types) ||
+                !rd_u64(&r, &coff) || bcdim < 0 || bcdim > 32 ||
+                nconn < 0 || nconn > 8) {
+                cce_forest_close(f); free(buf); cce_archive_close(arc);
+                return CCE_ERR_IO;
+            }
+            for (int ci = 0; ci < nconn; ++ci)
+                br->conn_names[ci][sizeof br->conn_names[ci] - 1] = '\0';
 
             br->cascade = (cce_cascade*)malloc(sizeof(cce_cascade));
+            if (!br->cascade) {
+                cce_forest_close(f); free(buf); cce_archive_close(arc);
+                return CCE_ERR_OOM;
+            }
             memset(br->cascade, 0, sizeof(cce_cascade));
             if (cce_cascade_load_from_archive(br->cascade, arc, (size_t)coff) != CCE_OK) {
                 free(br->cascade); br->cascade = NULL;
                 cce_forest_close(f); free(buf); cce_archive_close(arc);
                 return CCE_ERR_IO;
             }
-            strncpy(br->name, bname, sizeof(br->name) - 1);
+            memcpy(br->name, bname, sizeof br->name);
+            br->name[sizeof br->name - 1] = '\0';
             br->centroid_dim = bcdim;
             br->tier = CCE_TIER_HOT;
             br->is_view = 0;
@@ -247,7 +281,10 @@ cce_result cce_model_io_load(cce_model* m, const char* path) {
             f->num_branches++;
         }
 
-        cce_model_add_forest(m, f, fname);
+        if (cce_model_add_forest(m, f, fname) != CCE_OK) {
+            cce_forest_close(f); free(buf); cce_archive_close(arc);
+            return CCE_ERR_IO;
+        }
     }
 
     m->owns_forests = 1;                    /* loaded model owns its forests */

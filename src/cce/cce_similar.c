@@ -26,8 +26,8 @@ int cce_similar_candidates(const cce_spec_graph* ga, const cce_spec_graph* gb,
             if (dist > tau) continue;
             cce_similar_pair* p = &out[n++];
             memset(p, 0, sizeof(*p));
-            strncpy(p->name_a, a->name, sizeof(p->name_a) - 1);
-            strncpy(p->name_b, b->name, sizeof(p->name_b) - 1);
+            snprintf(p->name_a, sizeof(p->name_a), "%s", a->name);
+            snprintf(p->name_b, sizeof(p->name_b), "%s", b->name);
             p->digest_a = a->digest;
             p->digest_b = b->digest;
             p->sig_dist = dist;

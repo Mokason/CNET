@@ -577,14 +577,14 @@ cce_result cce_safetensors_load_sharded(const char* index_path, cce_safetensors*
                     for (int s = 0; s < file_count; s++) if (strcmp(files[s], fname) == 0) { fi = s; break; }
                     if (fi < 0) {
                         if (file_count >= CCE_ST_MAX_SHARDS) { st_set_err(NULL, "index: too many shards (max %d)", CCE_ST_MAX_SHARDS); goto fail; }
-                        strncpy(files[file_count], fname, 127);
+                        snprintf(files[file_count], sizeof(files[file_count]), "%s", fname);
                         fi = file_count++;
                     }
                     /* duplicate tensor name in the map itself */
                     for (int j = 0; j < wm_count; j++) {
                         if (strcmp(wm[j].name, tname) == 0) { st_set_err(NULL, "index: duplicate weight_map entry %s", tname); goto fail; }
                     }
-                    strncpy(wm[wm_count].name, tname, CCE_ST_MAX_NAME - 1);
+                    snprintf(wm[wm_count].name, sizeof(wm[wm_count].name), "%s", tname);
                     wm[wm_count].file = fi;
                     wm_count++;
                     skip_ws(json, &i, n);
@@ -1806,12 +1806,14 @@ cce_result cce_supra_load_packed(cce_supra_decomposed** out, const char* path) {
     m->context_routing_mode = CCE_CONTEXT_ROUTING_FULL_KV;
     cce_specialist_kv_budget_default(&m->kv_budget, m->block_size);
     int te[3]; if (fread(te, sizeof(int), 3, f) != 3) { free(m); fclose(f); return CCE_ERR_IO; }
+    if (te[0] <= 0 || te[2] <= 0 || (size_t)te[0] > SIZE_MAX / (size_t)te[2]) { free(m); fclose(f); return CCE_ERR_UNSUPPORTED; }
+    size_t tok_emb_bytes = (size_t)te[0] * (size_t)te[2];
     m->tok_emb_trit_bpr = te[2]; m->tok_emb_packed = 1;
-    m->tok_emb_trit  = (uint8_t*)malloc((size_t)te[0] * te[2]);
+    m->tok_emb_trit  = (uint8_t*)malloc(tok_emb_bytes);
     m->tok_emb_scale = (float*)malloc((size_t)te[0] * sizeof(float));
     if (!m->tok_emb_trit || !m->tok_emb_scale) { cce_supra_free_decomposed(m); fclose(f); return CCE_ERR_OOM; }
-    fread(m->tok_emb_trit, 1, (size_t)te[0] * te[2], f);
-    fread(m->tok_emb_scale, sizeof(float), (size_t)te[0], f);
+    if (fread(m->tok_emb_trit, 1, tok_emb_bytes, f) != tok_emb_bytes) { cce_supra_free_decomposed(m); fclose(f); return CCE_ERR_IO; }
+    if (fread(m->tok_emb_scale, sizeof(float), (size_t)te[0], f) != (size_t)te[0]) { cce_supra_free_decomposed(m); fclose(f); return CCE_ERR_IO; }
     st_read_tensor(f, &m->pos_emb);
     for (int l = 0; l < 4; l++) { st_read_tensor(f, &m->ln1_w[l]); st_read_tensor(f, &m->ln1_b[l]); st_read_tensor(f, &m->ln2_w[l]); st_read_tensor(f, &m->ln2_b[l]); }
     st_read_tensor(f, &m->ln_f_w); st_read_tensor(f, &m->ln_f_b);
@@ -1819,21 +1821,28 @@ cce_result cce_supra_load_packed(cce_supra_decomposed** out, const char* path) {
     char arch[256]; snprintf(arch, sizeof(arch), "supra_packed_reload.cce"); remove(arch);
     if (cce_forest_open(&m->forest, arch, ns + 4) != CCE_OK) { cce_supra_free_decomposed(m); fclose(f); return CCE_ERR_IO; }
     for (int b = 0; b < ns; b++) {
-        int valid = 0; if (fread(&valid, sizeof(int), 1, f) != 1) break;
+        int valid = 0;
+        if (fread(&valid, sizeof(int), 1, f) != 1) { cce_supra_free_decomposed(m); fclose(f); return CCE_ERR_IO; }
         if (!valid) continue;
-        char name[64]; fread(name, 1, 64, f);
-        int dims[3]; fread(dims, sizeof(int), 3, f);
+        char name[64];
+        if (fread(name, 1, 64, f) != 64) { cce_supra_free_decomposed(m); fclose(f); return CCE_ERR_IO; }
+        int dims[3];
+        if (fread(dims, sizeof(int), 3, f) != 3) { cce_supra_free_decomposed(m); fclose(f); return CCE_ERR_IO; }
         int in = dims[0], out = dims[1], bpr = dims[2];
-        uint8_t* trit = (uint8_t*)malloc((size_t)in * bpr);
+        if (in <= 0 || out <= 0 || bpr <= 0 || (size_t)in > SIZE_MAX / (size_t)bpr) { cce_supra_free_decomposed(m); fclose(f); return CCE_ERR_UNSUPPORTED; }
+        size_t trit_bytes = (size_t)in * (size_t)bpr;
+        uint8_t* trit = (uint8_t*)malloc(trit_bytes);
         float* scale = (float*)malloc((size_t)out * sizeof(float));
         float* bias  = (float*)malloc((size_t)out * sizeof(float));
-        if (trit && scale && bias
-            && fread(trit, 1, (size_t)in * bpr, f) == (size_t)in * bpr
-            && fread(scale, sizeof(float), (size_t)out, f) == (size_t)out
-            && fread(bias, sizeof(float), (size_t)out, f) == (size_t)out) {
-            add_packed_branch(m->forest, name, in, out, bpr, trit, scale, bias);
+        if (!trit || !scale || !bias) { free(trit); free(scale); free(bias); cce_supra_free_decomposed(m); fclose(f); return CCE_ERR_OOM; }
+        if (fread(trit, 1, trit_bytes, f) != trit_bytes
+            || fread(scale, sizeof(float), (size_t)out, f) != (size_t)out
+            || fread(bias, sizeof(float), (size_t)out, f) != (size_t)out) {
+            free(trit); free(scale); free(bias); cce_supra_free_decomposed(m); fclose(f); return CCE_ERR_IO;
         }
+        cce_result add_result = add_packed_branch(m->forest, name, in, out, bpr, trit, scale, bias);
         free(trit); free(scale); free(bias);
+        if (add_result != CCE_OK) { cce_supra_free_decomposed(m); fclose(f); return add_result; }
     }
     fclose(f);
     *out = m;

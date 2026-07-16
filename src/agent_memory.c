@@ -43,13 +43,9 @@ static void save_knowledge_index(void);
 static void get_timestamp(char *buf, size_t cap) {
     time_t t = time(NULL);
     struct tm *tm = localtime(&t);
-    if (tm) {
-        snprintf(buf, cap, "%04d-%02d-%02d %02d:%02d:%02d",
-                 tm->tm_year + 1900, tm->tm_mon + 1, tm->tm_mday,
-                 tm->tm_hour, tm->tm_min, tm->tm_sec);
-    } else {
-        strncpy(buf, "unknown-time", cap);
-    }
+    if (!buf || cap == 0) return;
+    if (tm && strftime(buf, cap, "%Y-%m-%d %H:%M:%S", tm) > 0) return;
+    snprintf(buf, cap, "%s", "unknown-time");
 }
 
 static void trim_line(char *s) {
@@ -160,8 +156,10 @@ int agent_record_turn(const char *role, const char *content) {
     get_timestamp(ts, sizeof(ts));
 
     strncpy(chat_history[chat_count].role, role, sizeof(chat_history[0].role)-1);
+    chat_history[chat_count].role[sizeof(chat_history[0].role)-1] = '\0';
     strncpy(chat_history[chat_count].content, content, MAX_CONTENT-1);
-    strncpy(chat_history[chat_count].timestamp, ts, sizeof(chat_history[0].timestamp)-1);
+    chat_history[chat_count].content[MAX_CONTENT-1] = '\0';
+    snprintf(chat_history[chat_count].timestamp, sizeof(chat_history[0].timestamp), "%s", ts);
 
     chat_count++;
 
@@ -186,8 +184,10 @@ int agent_record_thought(const char *content) {
     get_timestamp(ts, sizeof(ts));
 
     strncpy(thoughts[thought_count].role, AGENT_ROLE_THOUGHT, sizeof(thoughts[0].role)-1);
+    thoughts[thought_count].role[sizeof(thoughts[0].role)-1] = '\0';
     strncpy(thoughts[thought_count].content, content, MAX_CONTENT-1);
-    strncpy(thoughts[thought_count].timestamp, ts, sizeof(thoughts[0].timestamp)-1);
+    thoughts[thought_count].content[MAX_CONTENT-1] = '\0';
+    snprintf(thoughts[thought_count].timestamp, sizeof(thoughts[0].timestamp), "%s", ts);
 
     thought_count++;
 
@@ -282,18 +282,18 @@ static void load_knowledge_base(void) {
         fclose(f);
         return;
     }
-    fread(&ver, sizeof(uint32_t), 1, f);
-    fread(&nchat, sizeof(uint32_t), 1, f);
-    fread(&nthought, sizeof(uint32_t), 1, f);
-    fread(&nknow, sizeof(uint32_t), 1, f);
+    if (fread(&ver, sizeof(uint32_t), 1, f) != 1) { fclose(f); return; }
+    if (fread(&nchat, sizeof(uint32_t), 1, f) != 1) { fclose(f); return; }
+    if (fread(&nthought, sizeof(uint32_t), 1, f) != 1) { fclose(f); return; }
+    if (fread(&nknow, sizeof(uint32_t), 1, f) != 1) { fclose(f); return; }
 
     if (nchat > MAX_TURNS) nchat = MAX_TURNS;
     if (nthought > MAX_TURNS) nthought = MAX_TURNS;
     if (nknow > MAX_KNOWLEDGE_CHUNKS) nknow = MAX_KNOWLEDGE_CHUNKS;
 
-    fread(chat_history, sizeof(AgentTurn), nchat, f);
-    fread(thoughts, sizeof(AgentTurn), nthought, f);
-    fread(knowledge_chunks, sizeof(KnowledgeChunk), nknow, f);
+    if (nchat > 0 && fread(chat_history, sizeof(AgentTurn), nchat, f) != nchat) { fclose(f); return; }
+    if (nthought > 0 && fread(thoughts, sizeof(AgentTurn), nthought, f) != nthought) { fclose(f); return; }
+    if (nknow > 0 && fread(knowledge_chunks, sizeof(KnowledgeChunk), nknow, f) != nknow) { fclose(f); return; }
 
     chat_count = nchat;
     thought_count = nthought;
@@ -350,12 +350,9 @@ static void load_knowledge_index(void) {
         char *p2 = strchr(p1+1, '|');
         if (!p2) continue;
         *p2 = 0;
-        strncpy(knowledge_chunks[knowledge_count].source, line, 63);
-        strncpy(knowledge_chunks[knowledge_count].entities, p1+1, 255);
-        strncpy(knowledge_chunks[knowledge_count].snippet, p2+1, 511);
-        knowledge_chunks[knowledge_count].source[63] = 0;
-        knowledge_chunks[knowledge_count].entities[255] = 0;
-        knowledge_chunks[knowledge_count].snippet[511] = 0;
+        snprintf(knowledge_chunks[knowledge_count].source, sizeof(knowledge_chunks[0].source), "%s", line);
+        snprintf(knowledge_chunks[knowledge_count].entities, sizeof(knowledge_chunks[0].entities), "%s", p1+1);
+        snprintf(knowledge_chunks[knowledge_count].snippet, sizeof(knowledge_chunks[0].snippet), "%s", p2+1);
         knowledge_count++;
     }
     fclose(f);
@@ -382,8 +379,10 @@ int agent_build_knowledge_index(void) {
         if (src_start) {
             char *src_end = strchr(src_start+1, ']');
             if (src_end) {
-                size_t sl = src_end - src_start - 1;
-                if (sl > 0 && sl < 63) strncpy(src, src_start+1, sl); src[sl]=0;
+                size_t sl = (size_t)(src_end - src_start - 1);
+                if (sl >= sizeof(src)) sl = sizeof(src) - 1;
+                if (sl > 0) memcpy(src, src_start + 1, sl);
+                src[sl]=0;
             }
         }
         char ents[256] = {0};
@@ -392,8 +391,10 @@ int agent_build_knowledge_index(void) {
             e_start += 10;
             char *e_end = strchr(e_start, ']');
             if (e_end) {
-                size_t el = e_end - e_start;
-                if (el > 0 && el < 255) strncpy(ents, e_start, el); ents[el]=0;
+                size_t el = (size_t)(e_end - e_start);
+                if (el >= sizeof(ents)) el = sizeof(ents) - 1;
+                if (el > 0) memcpy(ents, e_start, el);
+                ents[el]=0;
             }
         }
         // snippet is the rest
@@ -401,12 +402,12 @@ int agent_build_knowledge_index(void) {
         char *content_start = strstr(c, "] ");
         if (content_start) snip = content_start + 2;
 
-        strncpy(knowledge_chunks[knowledge_count].source, src, 63);
-        strncpy(knowledge_chunks[knowledge_count].entities, ents, 255);
-        strncpy(knowledge_chunks[knowledge_count].snippet, snip, 511);
-        knowledge_chunks[knowledge_count].source[63]=0;
-        knowledge_chunks[knowledge_count].entities[255]=0;
-        knowledge_chunks[knowledge_count].snippet[511]=0;
+        snprintf(knowledge_chunks[knowledge_count].source, sizeof(knowledge_chunks[0].source), "%s", src);
+        snprintf(knowledge_chunks[knowledge_count].entities, sizeof(knowledge_chunks[0].entities), "%s", ents);
+        snprintf(knowledge_chunks[knowledge_count].snippet, sizeof(knowledge_chunks[0].snippet), "%s", snip);
+        knowledge_chunks[knowledge_count].source[sizeof(knowledge_chunks[0].source)-1]=0;
+        knowledge_chunks[knowledge_count].entities[sizeof(knowledge_chunks[0].entities)-1]=0;
+        knowledge_chunks[knowledge_count].snippet[sizeof(knowledge_chunks[0].snippet)-1]=0;
         knowledge_count++;
     }
     save_knowledge_index();
@@ -491,10 +492,11 @@ int agent_create_summary(char *summary_out, size_t cap, int num_recent) {
 }
 
 int agent_get_hierarchical_context(char *out, size_t cap, int max_levels) {
+    (void)max_levels; /* reserved for future recursive multi-level expansion */
     if (!out || cap == 0) return 0;
     agent_create_summary(out, cap, 5); /* auto summarize recent */
     /* Could recurse for levels, but simple for now */
-    return strlen(out);
+    return (int)strlen(out);
 }
 
 /* Better chunker: prefer paragraphs, then sentences, with size limit. 

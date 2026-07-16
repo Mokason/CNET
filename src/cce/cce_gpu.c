@@ -153,6 +153,19 @@ cce_result cce_gpu_adam_update(cce_gpu_ctx* ctx,
         extern cce_result cuda_adam_update_wrapper(cce_tensor*, cce_tensor*, cce_tensor*, cce_tensor*, cce_tensor*, cce_tensor*, const cce_tensor*, const cce_tensor*, float, float, float, float, int);
         return cuda_adam_update_wrapper(weights, bias, m_w, m_b, v_w, v_b, grad_w, grad_b, lr, beta1, beta2, eps, timestep);
     }
+#else
+    (void)bias;
+    (void)m_w;
+    (void)m_b;
+    (void)v_w;
+    (void)v_b;
+    (void)grad_w;
+    (void)grad_b;
+    (void)lr;
+    (void)beta1;
+    (void)beta2;
+    (void)eps;
+    (void)timestep;
 #endif
 
     /* Fallback to CPU Adam (the one in learn.c) */
@@ -312,5 +325,9 @@ cce_result cce_gpu_block_adam_update(cce_gpu_ctx* ctx, cce_block* blk,
 
     return CCE_OK;
 #endif
+    (void)error;
+    (void)input_host;
+    (void)lr;
+    (void)dfa_strength;
     return CCE_ERR_UNSUPPORTED;
 }

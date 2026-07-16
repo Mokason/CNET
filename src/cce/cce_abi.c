@@ -92,16 +92,16 @@ cce_result cce_adapt(cce_handle* h, const float* input, int dim, int label, floa
     if (ydim == 1) {
         yt.data[0] = (float)label * 0.1f;  /* demo mapping; for classification use onehot in future task */
     } else {
-        size_t i;
+        int i;
         for (i = 0; i < ydim; ++i) {
             yt.data[i] = 0.0f;
         }
-        if (label < 0 || (size_t)label >= ydim) {
+        if (label < 0 || label >= ydim) {
             cce_tensor_free(&xin);
             cce_tensor_free(&yt);
             return CCE_ERR_INVALID_ARG;
         }
-        yt.data[(size_t)label] = 1.0f;
+        yt.data[label] = 1.0f;
     }
 
     int prev_classify = h->learner.classify;

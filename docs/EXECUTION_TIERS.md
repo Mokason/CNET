@@ -1,9 +1,10 @@
 # CNET Execution Tiers
 
 This document describes the three execution tiers of the CNET CCE build:
-core Specialist/SoulHost, model-kernel acceleration, and quarantined legacy
-experiments. It exists to make the dual GPU backend roles honest and to
-prevent accidental re-coupling of experimental code into the core aggregate.
+core Specialist/SoulHost, model-kernel acceleration, and quarantined bridge or
+legacy experiments. It exists to make the dual GPU backend roles honest and
+to prevent accidental re-coupling of experimental code into the core
+aggregate.
 
 ## Tier 1 — Core CCE Aggregate (`$(CCE)`)
 
@@ -24,15 +25,19 @@ libraries). It includes:
   `cce_gpu` — the two are **not unified** and have different tensor layouts.
 - Model I/O, dataset, autograd, safetensors, GGUF reader, QGKP, detect, SSM,
   st_llama, specgraph, weight store, tier runtime, similar, transformer QAT.
+- `src/cce/cce_aicimo.c` — the canonical AICIMO adapter router is in the
+  **core CCE aggregate** and exports the `cce_aicimo_*` API. Historical
+  unprefixed names remain header-only compatibility wrappers, not global ABI.
 
 ### What is NOT in `$(CCE)`
 
-The following sources are deliberately **excluded** from the core aggregate:
+The following auxiliary or legacy sources are deliberately **excluded** from
+the core aggregate:
 
-- `src/cce/cce_aicimo.c` — AICIMO adapter router (experimental, quarantined).
 - `src/cce/cce_aicimo_bridge.c`, `cce_aicimo_preservation.c`,
-  `cce_aicimo_role_slice.c` — AICIMO bridge/role-slice files (experimental).
-- `src/cnet_lm.c` — second training/generation/head-routing path (legacy).
+  `cce_aicimo_role_slice.c` — experimental AICIMO bridge/role-slice files.
+- `src/cnet_lm.c` — legacy second training/generation/head-routing path; it is
+  **not in the core** aggregate.
 
 These are reachable only through explicit experimental/legacy targets.
 
@@ -56,22 +61,22 @@ rather than silently mapped to the wrong backend.
 
 | Source                          | Target(s) using it          | Notes                        |
 |---------------------------------|-----------------------------|------------------------------|
-| `src/cce/cce_aicimo.c`          | `aicimo_smoke`              | Explicit compilation; not in `$(CCE)` |
 | `src/cnet_lm.c`                 | `glyph_habitat`, `build_tool`| Legacy/experimental targets only |
-| `src/cce/cce_aicimo_bridge.c`   | (not in Makefile)           | Placeholder/TODO code        |
+| `src/cce/cce_aicimo_bridge.c`   | (not in Makefile)           | Placeholder/TODO; experimental bridge |
 | `src/cce/cce_aicimo_preservation.c` | (not in Makefile)       | Placeholder/TODO code        |
 | `src/cce/cce_aicimo_role_slice.c` | (not in Makefile)         | Placeholder/TODO code        |
 
 ### Regression gate
 
 `make alt_paths_gate` compiles `tests/test_alt_paths_gate.c` with `$(CCE)` and
-uses weak-symbol probes to reject both AICIMO and `cnet_lm` leakage into the
-core aggregate. It also verifies that `cce_gpu_init` creates only the generic
-CPU-fallback context; explicit CUDA and the separate OpenCL `cce_clgemm` API
-remain distinct.
+requires the canonical `cce_aicimo_*` implementation in the core aggregate.
+Weak-symbol probes reject both old unprefixed AICIMO global symbols and
+`cnet_lm` leakage. It also verifies that `cce_gpu_init` creates only the
+generic CPU-fallback context; explicit CUDA and the separate OpenCL
+`cce_clgemm` API remain distinct.
 
 ### Smoke builds
 
-- `make aicimo_smoke` — compiles `$(CCE_AICIMO_SRC)` explicitly alongside
-  `$(CCE)` and runs the AICIMO smoke test.
+- `make aicimo_smoke` — compiles `$(CCE)` and runs the canonical AICIMO smoke
+  test; no second AICIMO source list exists.
 - `make cce_smoke` — compiles `$(CCE)` and runs the CCE engine smoke test.

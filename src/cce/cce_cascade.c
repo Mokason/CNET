@@ -20,7 +20,9 @@ static int checked_matrix_bytes(uint32_t rows, uint32_t cols, size_t* out_bytes)
 
 static int checked_vector_bytes(uint32_t count, size_t* out_bytes) {
     if (!out_bytes || count == 0) return 0;
+#if SIZE_MAX < UINT32_MAX
     if ((size_t)count > SIZE_MAX / sizeof(float)) return 0;
+#endif
     *out_bytes = (size_t)count * sizeof(float);
     return 1;
 }

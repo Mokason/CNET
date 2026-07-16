@@ -162,11 +162,35 @@ scripts/run_cnet_ds4_dual.sh start      # stages the API on :8082
 ./test_tinystories         # real narrative data (TinyStories) — CCE with context windows, guided coherent generation + raw logits sampling (A/B demo)
 ```
 
+### Portable build and native package
+
+`VERSION` is the single release version source. `PORTABLE=1` disables
+host-specific ISA tuning; the default keeps the measured native optimization.
+
+```sh
+make PORTABLE=1 ci                 # CPU-only CI/release gate
+make PORTABLE=1 cnet_dll           # portable unified shared library
+make PORTABLE=1 DESTDIR=/tmp/stage PREFIX=/usr install
+PKG_CONFIG_SYSROOT_DIR=/tmp/stage \
+  PKG_CONFIG_PATH=/tmp/stage/usr/lib/pkgconfig pkg-config --cflags --libs cnet
+make DIST_DIR="$PWD/dist" dist     # reproducible cnet-<version>.tar.gz
+make DESTDIR=/tmp/stage PREFIX=/usr uninstall
+```
+
+The install layout is versioned (`libcnet.so.<version>` plus ABI and linker
+symlinks), installs all public headers below `include/cnet`, and publishes
+`cnet.pc`. The GitHub Actions workflow exposes the same portable `make ci`
+path by manual dispatch only; pushes and pull requests do not trigger paid CI.
+The local `native_warning_gate` compiles the complete shared-library source set
+with `-Werror` under `-Wall -Wextra -Wpedantic`. Inactive OpenMP pragmas are
+source-guarded, so the portable serial build is diagnostic-free without warning
+suppressions.
+
 On Windows the Makefile works under MinGW (`mingw32-make` or `make` from
 MSYS2); binaries get an `.exe` suffix automatically. The build uses
 `-O3 -march=native -mno-avx` — `-mno-avx` is **required** with `-march=native`
 on MinGW GCC 15.2 (aligned 256-bit moves on by-value structs segfault on a
-16-byte-aligned stack). Drop `-march=native` for portable binaries.
+16-byte-aligned stack). Use `PORTABLE=1` for portable binaries.
 
 ## Essential targets
 

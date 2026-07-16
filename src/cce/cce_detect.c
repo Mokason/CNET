@@ -523,9 +523,12 @@ static void probe_qwen2_pack(const char* path, cce_model_info* info) {
         info->ctx_len = q.context_length;
         info->family = CCE_ARCH_FAMILY_LLAMA;
         info->attention_full_qkv = 1;
-        strncpy(info->arch, q.architecture, sizeof(info->arch) - 1);
-        strncpy(info->naming, "qgkp-gguf-envelope", sizeof(info->naming) - 1);
-        strncpy(info->dtype, q.quantization, sizeof(info->dtype) - 1);
+        strncpy(info->arch, q.architecture, sizeof(info->arch));
+        info->arch[sizeof(info->arch) - 1] = 0;
+        strncpy(info->naming, "qgkp-gguf-envelope", sizeof(info->naming));
+        info->naming[sizeof(info->naming) - 1] = 0;
+        strncpy(info->dtype, q.quantization, sizeof(info->dtype));
+        info->dtype[sizeof(info->dtype) - 1] = 0;
         note_append(info, "lossless packet-trit GGUF envelope: execute via declared external backend");
         return;
     }

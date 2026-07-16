@@ -1,0 +1,20 @@
+---
+name: CNET CI
+
+'on':
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  native-release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Install native build dependencies
+        run: sudo apt-get update && sudo apt-get install -y build-essential pkg-config python3-yaml
+      - name: Run portable CPU release gate
+        run: make --no-print-directory PORTABLE=1 ci

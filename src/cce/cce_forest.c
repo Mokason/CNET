@@ -562,7 +562,8 @@ cce_result cce_forest_connect(cce_forest* f, int from_idx, int to_idx, int conn_
     if (br->num_connections >= 8) return CCE_ERR_INVALID_ARG;
 
     /* store by name for merge safety */
-    strncpy(br->conn_names[br->num_connections], f->branches[to_idx].name, 63);
+    memcpy(br->conn_names[br->num_connections], f->branches[to_idx].name,
+           sizeof(br->conn_names[br->num_connections]));
     br->conn_names[br->num_connections][63] = '\0';
     br->conn_types[br->num_connections] = conn_type;
     br->num_connections++;
@@ -720,7 +721,8 @@ cce_result cce_forest_merge(cce_forest* dst, cce_forest* src, const char* name_p
             for (int c=0; c < sbr->num_connections; c++) {
                 char conn[64];
                 snprintf(conn, sizeof(conn), "%s%s", pfx, sbr->conn_names[c]);
-                strncpy(dbr->conn_names[c], conn, 63);
+                memcpy(dbr->conn_names[c], conn,
+                       sizeof(dbr->conn_names[c]));
                 dbr->conn_names[c][63] = '\0';
                 dbr->conn_types[c] = sbr->conn_types[c];
             }

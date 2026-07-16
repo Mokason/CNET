@@ -53,6 +53,9 @@ void cce_learner_set_diff_mode(cce_learner* l, cce_diff_mode_t mode) {
 static void dfa_update(cce_block* b, const float* error, const cce_tensor* input, float lr, float dfa_strength, struct cce_gpu_ctx* gpu_ctx, bool is_exact) {
     if (!b || !error || !input) return;
     if (b->type != CCE_BLOCK_LINEAR && b->type != CCE_BLOCK_LINEAR_HEAD) return;
+#ifndef CCE_HAVE_CUDA
+    (void)gpu_ctx;
+#endif
 
     int in_d = b->weights.shape[0];
     int out_d = b->weights.shape[1];
@@ -113,7 +116,7 @@ static void dfa_update(cce_block* b, const float* error, const cce_tensor* input
             float update = lr * m_hat / (sqrtf(v_hat) + eps);
             b->weights.data[idx] += update - 0.0001f * b->weights.data[idx];
         }
-        if (o < b->momentum_bias.numel) {
+        if ((size_t)o < b->momentum_bias.numel) {
             float g = e * ( is_head ? 0.25f : 0.08f );
             m_b[o] = beta1 * m_b[o] + (1 - beta1) * g;
             v_b[o] = beta2 * v_b[o] + (1 - beta2) * g * g;
@@ -443,9 +446,7 @@ double cce_train_dynamic(cce_cascade* cas,
         return -1.0;
     }
 
-    bool gpu_batch = false;
     if (cce_gpu_is_cuda(learner.gpu)) {
-        gpu_batch = true;
         // Sync cascade to device once
         for (int bi=0; bi < cas->num_blocks; bi++) {
             cce_gpu_sync_block_to_device(learner.gpu, &cas->blocks[bi]);
@@ -453,13 +454,12 @@ double cce_train_dynamic(cce_cascade* cas,
     }
 
     double best_loss = 1e9;
-    double prev_loss = 1e9;
     float current_lr = lr;
     int diverge_count = 0;
     bool verbose = (getenv("CNET_CCE_VERBOSE") != NULL);
 
-    int batch_size = 8;  /* smaller for better per-update learning on LM-like tasks (A) */
-    if (batch_size > (int)sample_count) batch_size = (int)sample_count;
+    size_t batch_size = 8;  /* smaller for better per-update learning on LM-like tasks (A) */
+    if (batch_size > sample_count) batch_size = sample_count;
 
     /* Pre-allocate prediction buffer to avoid churn */
     cce_tensor pred;
@@ -557,7 +557,6 @@ double cce_train_dynamic(cce_cascade* cas,
 
         /* Use the tiny scheduler helper */
         current_lr = cce_scheduler_get_lr(&sched, (int)ep, (float)epoch_loss);
-        prev_loss = epoch_loss;
     }
 
     cce_tensor_free(&x);

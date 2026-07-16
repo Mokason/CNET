@@ -266,7 +266,7 @@ cce_result cce_tier_attach(cce_tier_runtime** out, cce_gguf_qwen2* m,
         char name[96];
         unsigned long long d = 0;
         if (sscanf(line + 5, "%95s %llx", name, &d) == 2) {
-            strncpy(rt->map[rt->n_map].name, name, sizeof(rt->map[0].name) - 1);
+            snprintf(rt->map[rt->n_map].name, sizeof(rt->map[0].name), "%s", name);
             rt->map[rt->n_map].digest = (uint64_t)d;
             rt->map[rt->n_map].fidx = -1;
             rt->n_map++;

@@ -679,7 +679,7 @@ static cce_result gguf_dequant_seq(const cce_gguf* g, uint32_t ggml_type,
             float d = gguf_f16_to_f32(d16);
             float dmin = gguf_f16_to_f32(dmin16);
             uint8_t scales[12];
-            fread(scales,1,12,g->f);
+            if (fread(scales,1,12,g->f) != 12) return CCE_ERR_IO;
             uint8_t qs[160];
             size_t qbytes = (QK_K * 5 + 7) / 8; /* ~160 */
             if (fread(qs,1,qbytes,g->f) != qbytes) return CCE_ERR_IO;
@@ -2236,7 +2236,7 @@ cce_result cce_gguf_load_qwen2(cce_gguf_qwen2** out, const char* path) {
     /* Embed tokenizer data from GGUF (Phase 4) */
     m->bos_token_id = cce_gguf_get_bos_token_id(g);
     m->eos_token_id = cce_gguf_get_eos_token_id(g);
-    strncpy(m->tokenizer_model, cce_gguf_get_tokenizer_model(g), sizeof(m->tokenizer_model)-1);
+    snprintf(m->tokenizer_model, sizeof(m->tokenizer_model), "%s", cce_gguf_get_tokenizer_model(g));
 
     GTRACE("hparams: L=%d D=%d H=%d KV=%d V=%d; building forest",
            m->n_layer, m->n_embd, m->n_head, m->n_kv_head, m->vocab_size);
@@ -2533,11 +2533,12 @@ cce_result cce_gguf_qwen2_load_packed(cce_gguf_qwen2** out, const char* path) {
     if (m->max_ctx <= 0) m->max_ctx = 2048;
     m->cur_pos = 0;
     /* tokenizer from packed (Phase 4) */
-    fread(&m->bos_token_id, sizeof(int), 1, f);
-    fread(&m->eos_token_id, sizeof(int), 1, f);
-    int tlen = 0; fread(&tlen, sizeof(int), 1, f);
-    if (tlen > 0 && tlen < (int)sizeof(m->tokenizer_model)) {
-        fread(m->tokenizer_model, 1, tlen, f);
+    if (fread(&m->bos_token_id, sizeof(int), 1, f) != 1) { free(m); fclose(f); return CCE_ERR_IO; }
+    if (fread(&m->eos_token_id, sizeof(int), 1, f) != 1) { free(m); fclose(f); return CCE_ERR_IO; }
+    int tlen = 0; if (fread(&tlen, sizeof(int), 1, f) != 1) { free(m); fclose(f); return CCE_ERR_IO; }
+    if (tlen < 0 || tlen >= (int)sizeof(m->tokenizer_model)) { free(m); fclose(f); return CCE_ERR_UNSUPPORTED; }
+    if (tlen > 0) {
+        if (fread(m->tokenizer_model, 1, (size_t)tlen, f) != (size_t)tlen) { free(m); fclose(f); return CCE_ERR_IO; }
         m->tokenizer_model[tlen] = 0;
     }
 
@@ -2728,7 +2729,10 @@ void cce_gguf_qwen2_free(cce_gguf_qwen2* m) {
 
 static int moe_find(const cce_gguf* g, const char* fmt, int layer) {
     char name[128];
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wformat-nonliteral"
     snprintf(name, sizeof(name), fmt, layer);
+#pragma GCC diagnostic pop
     return cce_gguf_find_tensor(g, name);
 }
 
@@ -2751,7 +2755,9 @@ cce_result cce_gguf_moe_open(const char* path, cce_gguf_moe** out) {
     cce_gguf_moe* m = (cce_gguf_moe*)calloc(1, sizeof(*m));
     if (!m) { cce_gguf_free(g); return CCE_ERR_OOM; }
     m->g = g;
-    strncpy(m->arch, cce_gguf_get_arch(g), sizeof(m->arch) - 1);
+    /* arch is 32 bytes, source is up to 64; strncpy(full size) + explicit NUL */
+    strncpy(m->arch, cce_gguf_get_arch(g), sizeof(m->arch));
+    m->arch[sizeof(m->arch) - 1] = 0;
     m->n_layer       = cce_gguf_get_n_layer(g);
     m->n_embd        = cce_gguf_get_hidden_size(g);
     m->n_ff_shared   = cce_gguf_get_feed_forward_length(g);
@@ -3045,7 +3051,9 @@ static void moe_matvec(const cce_block* b, const float* x, float* y, int n_in, i
     if ((size_t)n_in * n_out >= (size_t)1 << 20) {
         int nc = n_out / 512 + 1;
         if (nc > 16) nc = 16;
+#ifdef _OPENMP
         #pragma omp parallel for schedule(static)
+#endif
         for (int c = 0; c < nc; c++) {
             int o0 = (int)((long long)n_out * c / nc);
             int o1 = (int)((long long)n_out * (c + 1) / nc);
@@ -3981,11 +3989,14 @@ typedef struct cce_gemma4_stack {
 
 static float* g4_load(const cce_gguf* g, const char* fmt, int l, size_t expect) {
     char name[128];
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wformat-nonliteral"
     snprintf(name, sizeof(name), fmt, l);
+#pragma GCC diagnostic pop
     int idx = cce_gguf_find_tensor(g, name);
     if (idx < 0) return NULL;
     cce_gguf_tensor_meta tm;
-    cce_gguf_get_tensor_meta(g, idx, &tm);
+    if (cce_gguf_get_tensor_meta(g, idx, &tm) != CCE_OK) return NULL;
     size_t n = 1;
     for (int d = 0; d < tm.ndim; d++) n *= (size_t)tm.shape[d];
     if (expect && n != expect) return NULL;
@@ -3998,11 +4009,14 @@ static float* g4_load(const cce_gguf* g, const char* fmt, int l, size_t expect) 
 /* load a 2D projection, returning its OUT width via *w */
 static float* g4_load_mat(const cce_gguf* g, const char* fmt, int l, int* w) {
     char name[128];
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wformat-nonliteral"
     snprintf(name, sizeof(name), fmt, l);
+#pragma GCC diagnostic pop
     int idx = cce_gguf_find_tensor(g, name);
     if (idx < 0) return NULL;
     cce_gguf_tensor_meta tm;
-    cce_gguf_get_tensor_meta(g, idx, &tm);
+    if (cce_gguf_get_tensor_meta(g, idx, &tm) != CCE_OK) return NULL;
     if (tm.ndim != 2) return NULL;
     size_t n = (size_t)tm.shape[0] * tm.shape[1];
     float* buf = (float*)malloc(n * sizeof(float));
@@ -4105,8 +4119,9 @@ cce_result cce_gemma4_stack_open(cce_gguf_moe* m, cce_gemma4_stack** out) {
             char on[128];
             snprintf(on, sizeof(on), "blk.%d.attn_output.weight", l);
             cce_gguf_tensor_meta tm;
-            cce_gguf_get_tensor_meta(m->g, cce_gguf_find_tensor(m->g, on), &tm);
-            st->ow[l] = tm.shape[0];
+            int on_idx = cce_gguf_find_tensor(m->g, on);
+            if (on_idx >= 0 && cce_gguf_get_tensor_meta(m->g, on_idx, &tm) == CCE_OK)
+                st->ow[l] = tm.shape[0];
         }
         st->q_norm[l] = g4_load(m->g, "blk.%d.attn_q_norm.weight", l, (size_t)hd);
         st->k_norm[l] = g4_load(m->g, "blk.%d.attn_k_norm.weight", l, (size_t)hd);
@@ -4194,7 +4209,9 @@ static float g4_dot(const float* r, const float* x, int in) {
 }
 
 static void g4_matvec(const float* W, const float* x, float* y, int in, int out) {
+#ifdef _OPENMP
     #pragma omp parallel for schedule(static) if ((size_t)in * out >= (size_t)1 << 20)
+#endif
     for (int o = 0; o < out; o++)
         y[o] = g4_dot(W + (size_t)o * in, x, in);
 }

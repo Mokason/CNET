@@ -11,57 +11,11 @@
 
 #define NCLASSES 10
 
-/* Embedded fonts for all 4 domains (from habitat) for self-contained training/render */
-static const unsigned char glyph_font[10][35] = { /* 5x7 */
-    {0,1,1,1,0,1,0,0,0,1,1,0,0,0,1,1,0,0,0,1,1,0,0,0,1,1,0,0,0,1,0,1,1,1,0},
-    /* ... abbreviated for key ones, full would be pasted but to save we use simplified or call out; for impl use per-dim */
-    /* To keep compile small, we'll dispatch render by dim using minimal logic or full embed below */
-};
-
 static const unsigned char seg7_font[10][7] = {
     {1,1,1,1,1,1,0}, {0,1,1,0,0,0,0}, {1,1,0,1,1,0,1}, {1,1,1,1,0,0,1},
     {0,1,1,0,0,1,1}, {1,0,1,1,0,1,1}, {1,0,1,1,1,1,1}, {1,1,1,0,0,0,0},
     {1,1,1,1,1,1,1}, {1,1,1,1,0,1,1},
 };
-
-static const unsigned char grid_font[10][15] = { /* 3x5 */
-    {1,1,1,1,1,1,0,0,0,1,1,1,1,1,1},
-    {0,0,1,0,0,0,0,1,0,0,0,0,1,0,0},
-    {1,1,1,0,0,0,1,1,1,0,1,1,1,1,1},
-    {1,1,1,1,1,0,0,1,1,0,1,1,1,1,1},
-    {1,0,0,1,0,1,1,1,1,1,0,0,1,0,0},
-    {1,1,1,1,1,1,1,1,0,0,1,1,1,1,1},
-    {1,0,0,0,0,1,1,1,1,1,1,1,1,1,1},
-    {1,1,1,1,1,0,0,1,0,0,0,1,0,0,0},
-    {1,1,1,1,1,1,0,1,0,1,1,1,1,1,1},
-    {1,1,1,1,1,1,1,1,0,0,0,0,1,0,0},
-};
-
-static const unsigned char block_font[10][16] = {
-    {0,1,1,0,1,0,0,1,1,0,0,1,0,1,1,0},
-    {0,0,1,0,0,1,1,0,0,0,1,0,0,1,1,1},
-    {1,1,1,0,0,0,1,0,0,1,0,0,1,1,1,1},
-    {1,1,1,0,0,0,1,1,0,0,0,1,1,1,1,0},
-    {1,0,1,0,1,1,1,1,0,0,1,0,0,0,1,0},
-    {1,1,1,1,1,0,0,0,0,1,1,0,1,1,1,1},
-    {0,1,1,0,1,0,0,0,1,1,1,1,1,1,1,1},
-    {1,1,1,1,0,0,1,0,0,1,0,0,0,1,0,0},
-    {1,1,1,1,1,0,1,0,1,1,1,1,1,1,1,1},
-    {1,1,1,1,1,1,1,0,0,0,1,0,0,1,1,0},
-};
-
-/* Render helpers dispatched by input_dim */
-static void render_noisy_generic(int digit, float *feat, float noise, int dim, const unsigned char *font) {
-    int d = digit % 10;
-    for (int s = 0; s < dim; s++) {
-        float v = font ? (font[d * (dim > 16 ? 35 : dim) + s] ? 0.9f : 0.1f) : 0.5f; /* fallback */
-        /* Note: for glyph we use approximate linear; full impl would have 2d, but for demo sufficient */
-        v += (2.0f * ((float)rand() / RAND_MAX) - 1.0f) * noise;
-        if (v < 0.0f) v = 0.0f;
-        if (v > 1.0f) v = 1.0f;
-        feat[s] = v;
-    }
-}
 
 static void render_noisy_7seg_helper(int digit, float *feat, float noise) {
     int d = digit % 10;
@@ -88,7 +42,6 @@ int cce_perceptual_create(cce_forest** forest, cce_router* router,
     cce_router_init(router, 0.7f, 2);
     (*forest)->diff_mode = (diff_mode == CCE_DIFF_EXACT || diff_mode == CCE_DIFF_HYBRID) ? diff_mode : CCE_DIFF_LOCAL;
 
-    int n_branches = (input_dim == 7) ? 3 : 1; /* 7seg gets specialists, others simple for now */
     int hidden = (input_dim > 10) ? 16 : 12;
 
     /* Branch 0: general */
@@ -189,7 +142,8 @@ int cce_perceptual_train(cce_forest* forest, int input_dim) {
             for (int s=0; s<feat; s++) {
                 f[s] = ((d + s) % 3 == 0) ? 0.9f : 0.1f;
                 f[s] += (2.0f * ((float)rand() / RAND_MAX) - 1.0f) * n * 0.5f;
-                if (f[s]<0) f[s]=0; if(f[s]>1) f[s]=1;
+                if (f[s] < 0) f[s] = 0;
+                if (f[s] > 1) f[s] = 1;
             }
         }
         for (int s = 0; s < feat; s++) gen_in[i * feat + s] = f[s];

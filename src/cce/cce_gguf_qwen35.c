@@ -78,7 +78,10 @@ static int q35_tensor_2d(const cce_gguf *g, const char *name, int *in_d, int *ou
 
 static int q35_has_tensor(const cce_gguf *g, const char *fmt, int l) {
     char nm[160];
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wformat-nonliteral"
     snprintf(nm, sizeof nm, fmt, l);
+#pragma GCC diagnostic pop
     return cce_gguf_find_tensor(g, nm) >= 0;
 }
 

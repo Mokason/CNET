@@ -1,10 +1,27 @@
 CC := gcc
 CXX := g++
+PORTABLE ?= 0
+OPTFLAGS ?= -O3
+PREFIX ?= /usr/local
+DESTDIR ?=
+LIBDIR ?= $(PREFIX)/lib
+INCLUDEDIR ?= $(PREFIX)/include
+PKGCONFIGDIR ?= $(LIBDIR)/pkgconfig
+DIST_DIR ?= $(CURDIR)/dist
+INSTALL ?= install
+CNET_VERSION := $(strip $(file <VERSION))
+CNET_ABI_VERSION := $(word 1,$(subst ., ,$(CNET_VERSION)))
+
 # -march=native: measured 1.25x on the training loops, bit-identical weights
-# (FP contraction stays off under -std=c11). Drop it for portable binaries.
-CFLAGS := -std=c11 -Wall -Wextra -pedantic -O3 -march=native
+# (FP contraction stays off under -std=c11). PORTABLE=1 omits host-specific ISA.
+ifeq ($(PORTABLE),1)
+ARCH_CFLAGS :=
+else
+ARCH_CFLAGS := -march=native
+endif
+CFLAGS := -std=c11 -Wall -Wextra -pedantic $(OPTFLAGS) $(ARCH_CFLAGS)
 ifeq ($(OS),Windows_NT)
-# -mno-avx is REQUIRED with -march=native on the MinGW toolchain ONLY:
+# -mno-avx is REQUIRED with native tuning on the MinGW toolchain ONLY:
 # MinGW gcc 15.2 emits aligned 256-bit moves for by-value structs >= 32 bytes
 # (Port is 56) on a 16-byte-aligned Windows stack -> segfault. -mstackrealign
 # does not fix it; disabling AVX does. The Linux ABI has no such bug, and the
@@ -21,12 +38,24 @@ else
 # usleep, ...). _DEFAULT_SOURCE restores glibc's default feature set without
 # changing the C standard; MinGW never sees this branch.
 CFLAGS += -D_DEFAULT_SOURCE
+CNET_SONAME_LDFLAGS := -Wl,-soname,libcnet.so.$(CNET_ABI_VERSION)
 endif
 
 # OpenMP support for multi-threaded studies inside a single exe (MinGW GCC).
 # Follows strict rules: default(none) on all pragmas, OMP_NUM_THREADS=1 for
 # isolating races, etc. Only study targets get -fopenmp.
 OMPFLAGS := -fopenmp
+
+.PHONY: print-config
+print-config:
+	@printf '%s\n' \
+		"CNET_VERSION=$(CNET_VERSION)" \
+		"PORTABLE=$(PORTABLE)" \
+		"CC=$(CC)" \
+		"CFLAGS=$(CFLAGS)" \
+		"PREFIX=$(PREFIX)" \
+		"LIBDIR=$(LIBDIR)" \
+		"INCLUDEDIR=$(INCLUDEDIR)"
 
 SRC := src/nn.c
 # Router split (SRP).
@@ -136,6 +165,8 @@ CCE_SSM     := src/cce/cce_ssm.c
 CCE_HYBRID  := src/cce/cce_hybrid.c
 CCE_QWEN35  := src/cce/cce_qwen35.c
 CCE_GGUF_QWEN35 := src/cce/cce_gguf_qwen35.c
+CCE_ORACLE_PREFIX_CACHE := src/cce/cce_oracle_prefix_cache.c
+CCE_CAMPAIGN_PROVENANCE := src/cce/cce_campaign_provenance.c
 CCE_ST_LLAMA := src/cce/cce_st_llama.c
 CCE_SPECGRAPH := src/cce/cce_specgraph.c
 CCE_WSTORE  := src/cce/cce_weight_store.c
@@ -390,9 +421,9 @@ cnb_audit: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE)
 # pragmas parallelize across OUTPUT TILES (per-output sums keep their order),
 # so threading is bit-identity-safe — verified by digest-identical re-mines
 # against serial bases. Keeps -mno-avx (this exe links src/router).
-flagship_run_build: CFLAGS := $(CFLAGS) $(OMPFLAGS) -DCNET_BUILD_REV='"$(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)"'
-flagship_run_build: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(CONFORMAL) $(ACQUIRE_SRC) $(BASE_SRC) $(FLAGSHIP_SRC) $(CCE) $(CCE_CUDA_OBJ) tests/flagship_run.c include/flagship.h
-	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/flagship_run $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(CONFORMAL) $(ACQUIRE_SRC) $(BASE_SRC) $(FLAGSHIP_SRC) $(CCE) $(CCE_CUDA_OBJ) tests/flagship_run.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+flagship_run_build: CFLAGS := $(CFLAGS) $(OMPFLAGS) -DCNET_BUILD_REV='"$(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)"' -DCNET_SOURCE_DIRTY=$(shell test -z "$$(git status --porcelain --untracked-files=normal 2>/dev/null)" && echo 0 || echo 1)
+flagship_run_build: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(CONFORMAL) $(ACQUIRE_SRC) $(BASE_SRC) $(FLAGSHIP_SRC) $(CCE) $(CCE_CUDA_OBJ) $(CCE_ORACLE_PREFIX_CACHE) $(CCE_CAMPAIGN_PROVENANCE) tests/flagship_run.c include/flagship.h include/cce/cce_oracle_prefix_cache.h include/cce/cce_campaign_provenance.h
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/flagship_run $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(CONFORMAL) $(ACQUIRE_SRC) $(BASE_SRC) $(FLAGSHIP_SRC) $(CCE) $(CCE_CUDA_OBJ) $(CCE_ORACLE_PREFIX_CACHE) $(CCE_CAMPAIGN_PROVENANCE) tests/flagship_run.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 
 # GPU equivalence gate: CPU vs OpenCL forward must be DECISION-identical
 # (argmax + top-3) before --gpu mining is allowed. Needs model + GPU; NOT in
@@ -1091,6 +1122,28 @@ cce_qwen35_e2e: $(CCE) $(CCE_CUDA_OBJ) tests/cce_qwen35_e2e_test.c
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) tests/cce_qwen35_e2e_test.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 	./$(BIN_DIR)/cce_qwen35_e2e > logs/cce_qwen35_e2e.log 2>&1
 
+# Hermetic state-machine regression for the real flagship oracle's prefix
+# cache. A direct/foreign forward (notably the golden battery) must force the
+# next unit to rebuild its prefix; failed fills must remain invalid.
+flagship_prefix_cache: $(CCE_ORACLE_PREFIX_CACHE) include/cce/cce_oracle_prefix_cache.h tests/test_flagship_prefix_cache.c
+	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $(CCE_ORACLE_PREFIX_CACHE) tests/test_flagship_prefix_cache.c $(LDFLAGS)
+	./$(BIN_DIR)/flagship_prefix_cache > logs/flagship_prefix_cache.log 2>&1
+	@grep -q "FLAGSHIP_PREFIX_CACHE_PASS" logs/flagship_prefix_cache.log
+
+campaign_provenance_unit: $(CCE_CAMPAIGN_PROVENANCE) include/cce/cce_campaign_provenance.h tests/test_campaign_provenance.c
+	$(CC) $(CFLAGS) -Werror -o $(BIN_DIR)/$@ $(CCE_CAMPAIGN_PROVENANCE) tests/test_campaign_provenance.c $(LDFLAGS)
+	./$(BIN_DIR)/campaign_provenance_unit > logs/campaign_provenance.log 2>&1
+	@grep -q "CAMPAIGN_PROVENANCE_PASS" logs/campaign_provenance.log
+
+campaign_provenance: campaign_provenance_unit qwythos_english_v1.cnb.manifest.json qwythos_english_v1.cnb.sha256
+	@sha256sum -c qwythos_english_v1.cnb.sha256 > logs/qwythos_base_digest.log
+	./$(BIN_DIR)/campaign_provenance_unit qwythos_english_v1.cnb.manifest.json bin/flagship_run 939780e 1 > logs/qwythos_provenance.log 2>&1
+	@grep -q "CAMPAIGN_ARTIFACTS_PASS" logs/qwythos_provenance.log
+
+execution_tiers_doc_gate: docs/EXECUTION_TIERS.md tests/test_execution_tiers_doc.sh Makefile tests/test_alt_paths_gate.c
+	@sh tests/test_execution_tiers_doc.sh > logs/execution_tiers_doc.log 2>&1
+	@grep -q "EXECUTION_TIERS_DOC_PASS" logs/execution_tiers_doc.log
+
 # HF-llama safetensors loader: same decomposed transformer as the GGUF path,
 # gated by bit-identical logits between the two container formats.
 cce_st_llama: $(CCE) $(CCE_CUDA_OBJ) tests/cce_st_llama_test.c
@@ -1496,7 +1549,7 @@ cnet_dll: CFLAGS := $(CFLAGS) -fPIC
 cnet_dll: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(BASE_SRC) $(SCAN) $(PROPERTY) $(CONSOLIDATE) $(ACQUIRE_SRC) $(COVERAGE) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(GAP_LANE_SRC) $(ASYNC_RUNTIME) $(MODEL_RUNTIME) $(CCE_MODEL_CATALOG) $(MODEL_PROBE) src/fastpath.c src/soul_host.c src/contract/mcp_calculator.c src/contract/mcp_file_read.c src/contract/mcp_file_write.c src/contract/mcp_memory.c src/contract/mcp_utils.c src/contract/mcp_web_search.c src/contract/mcp_wiki.c src/agent_memory.c
 	$(CC) -shared -DCNET_BUILD_DLL -DCCE_BUILD_DLL $(CFLAGS) $(CUDA_CFLAGS) -o cnet.so \
 		$(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(BASE_SRC) $(SCAN) $(PROPERTY) $(CONSOLIDATE) $(ACQUIRE_SRC) $(COVERAGE) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(GAP_LANE_SRC) $(ASYNC_RUNTIME) $(MODEL_RUNTIME) $(CCE_MODEL_CATALOG) $(MODEL_PROBE) src/fastpath.c src/soul_host.c src/contract/mcp_calculator.c src/contract/mcp_file_read.c src/contract/mcp_file_write.c src/contract/mcp_memory.c src/contract/mcp_utils.c src/contract/mcp_web_search.c src/contract/mcp_wiki.c src/agent_memory.c \
-		$(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -pthread
+		$(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) $(CNET_SONAME_LDFLAGS) -pthread
 	@echo "Built unified cnet.so (CCE + certified runtime + soul_host + MCP ABI)."
 
 # CNET-native QGKP v3 envelope tool. Pack/materialize operations are resumable
@@ -1750,6 +1803,85 @@ warning_debt_strict:
 	done > logs/warning_debt_strict.log 2>&1
 	@echo "WARNING_DEBT_STRICT_PASS" | tee -a logs/warning_debt_strict.log
 
+# Full native warning ratchet. OpenMP pragmas are source-guarded when OpenMP is
+# disabled; every -Wall/-Wextra/-Wpedantic diagnostic is a release failure for
+# the complete shared-library source set.
+.PHONY: native_warning_gate release_warning_gate
+native_warning_gate:
+	@mkdir -p logs
+	@$(MAKE) --no-print-directory PORTABLE=1 \
+		CFLAGS='-std=c11 -Wall -Wextra -Wpedantic $(OPTFLAGS) -mno-avx -D_DEFAULT_SOURCE -fPIC -Werror' \
+		cnet_dll > logs/native_warning_gate.log 2>&1
+	@if grep -Eq '(^|[[:space:]])(warning|error):' logs/native_warning_gate.log; then \
+		cat logs/native_warning_gate.log; \
+		exit 1; \
+	fi
+	@echo "NATIVE_WARNING_GATE_PASS" | tee -a logs/native_warning_gate.log
+
+release_warning_gate: native_warning_gate
+	@mkdir -p logs
+	@printf '%s\n' 'RELEASE_WARNING_GATE_PASS' > logs/release_warning_gate.log
+	@echo "RELEASE_WARNING_GATE_PASS"
+
+.PHONY: pkgconfig
+pkgconfig: VERSION
+	@mkdir -p $(BIN_DIR)/pkgconfig
+	@printf '%s\n' \
+		"prefix=$(PREFIX)" \
+		'exec_prefix=$${prefix}' \
+		'libdir=$${exec_prefix}/lib' \
+		'includedir=$${prefix}/include/cnet' \
+		'' \
+		'Name: CNET' \
+		'Description: Certified native specialist and CCE runtime' \
+		"Version: $(CNET_VERSION)" \
+		'Libs: -L$${libdir} -lcnet' \
+		'Libs.private: -lm -pthread' \
+		'Cflags: -I$${includedir}' > $(BIN_DIR)/pkgconfig/cnet.pc
+
+.PHONY: install uninstall
+install: cnet_dll pkgconfig
+	$(INSTALL) -d "$(DESTDIR)$(LIBDIR)" "$(DESTDIR)$(INCLUDEDIR)/cnet" "$(DESTDIR)$(PKGCONFIGDIR)"
+	$(INSTALL) -m 755 cnet.so "$(DESTDIR)$(LIBDIR)/libcnet.so.$(CNET_VERSION)"
+	ln -sfn "libcnet.so.$(CNET_VERSION)" "$(DESTDIR)$(LIBDIR)/libcnet.so.$(CNET_ABI_VERSION)"
+	ln -sfn "libcnet.so.$(CNET_ABI_VERSION)" "$(DESTDIR)$(LIBDIR)/libcnet.so"
+	cp -R include/. "$(DESTDIR)$(INCLUDEDIR)/cnet/"
+	$(INSTALL) -m 644 $(BIN_DIR)/pkgconfig/cnet.pc "$(DESTDIR)$(PKGCONFIGDIR)/cnet.pc"
+	@echo "CNET_INSTALL_PASS version=$(CNET_VERSION) prefix=$(PREFIX)"
+
+uninstall:
+	rm -f "$(DESTDIR)$(LIBDIR)/libcnet.so" \
+		"$(DESTDIR)$(LIBDIR)/libcnet.so.$(CNET_ABI_VERSION)" \
+		"$(DESTDIR)$(LIBDIR)/libcnet.so.$(CNET_VERSION)" \
+		"$(DESTDIR)$(PKGCONFIGDIR)/cnet.pc"
+	rm -rf "$(DESTDIR)$(INCLUDEDIR)/cnet"
+	@echo "CNET_UNINSTALL_PASS prefix=$(PREFIX)"
+
+.PHONY: dist
+dist: VERSION .github/workflows/ci.yml include/cnet_version.h
+	@mkdir -p "$(DIST_DIR)"
+	@set -eu; out="$(DIST_DIR)/cnet-$(CNET_VERSION).tar.gz"; tmp="$$out.tmp"; \
+		tar --sort=name --mtime='@0' --owner=0 --group=0 --numeric-owner \
+			--transform='s,^,cnet-$(CNET_VERSION)/,' \
+			--exclude='*.cnb' --exclude='*.so' --exclude='*.dll' \
+			--exclude='*/bin' --exclude='*/bin/*' --exclude='*/obj' --exclude='*/obj/*' \
+			-cf - Makefile README.md VERSION .github docs include src tests tools scripts \
+			| gzip -n > "$$tmp"; \
+		mv "$$tmp" "$$out"
+	@echo "CNET_DIST_PASS $(DIST_DIR)/cnet-$(CNET_VERSION).tar.gz"
+
+.PHONY: ci_config_gate release_package ci
+ci_config_gate: .github/workflows/ci.yml tests/test_ci_workflow.py
+	@python3 tests/test_ci_workflow.py > logs/ci_config_gate.log 2>&1
+	@grep -q "CI_WORKFLOW_PASS" logs/ci_config_gate.log
+
+release_package: tests/test_release_package.sh VERSION include/cnet_version.h .github/workflows/ci.yml
+	@sh tests/test_release_package.sh > logs/release_package.log 2>&1
+	@grep -q "RELEASE_PACKAGE_PASS" logs/release_package.log
+
+ci: ci_config_gate warning_debt_strict release_warning_gate flagship_prefix_cache campaign_provenance_unit execution_tiers_doc_gate alt_paths_gate release_package
+	@echo "CNET_CI_PASS"
+
 .PHONY: unified_models
 unified_models: qgkp_envelope_test $(MODEL_RUNTIME) $(CCE_MODEL_CATALOG) $(MODEL_PROBE) tests/test_model_runtime.c tests/test_model_catalog.c
 	@mkdir -p $(BIN_DIR) logs
@@ -1866,6 +1998,14 @@ priority_acceptance:
 	@$(MAKE) --no-print-directory claims_test
 	@$(MAKE) --no-print-directory heal_mismatch
 	@$(MAKE) --no-print-directory heal_mismatch_san
+	@$(MAKE) --no-print-directory campaign_provenance
+	@$(MAKE) --no-print-directory execution_tiers_doc_gate
+	@$(MAKE) --no-print-directory cce_qwen35
+	@$(MAKE) --no-print-directory cce_qwen35_e2e
+	@$(MAKE) --no-print-directory flagship_prefix_cache
+	@$(MAKE) --no-print-directory ci_config_gate
+	@$(MAKE) --no-print-directory release_warning_gate
+	@$(MAKE) --no-print-directory release_package
 	@$(MAKE) --no-print-directory unified
 	@echo "PRIORITY_ACCEPTANCE_PASS"
 

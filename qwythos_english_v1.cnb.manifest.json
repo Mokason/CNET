@@ -1,7 +1,11 @@
 {
+  "provenance_version": 1,
   "build_rev": "939780e",
+  "source_dirty": 1,
+  "executable_sha256": "d54cbc2484b137ef9889bf733006ed6811b08e24747859a97bffa2902b0e93d3",
   "model": "/home/marble/Downloads/Qwythos-9B-Claude-Mythos-5-1M-MTP-Q8_0.gguf",
   "model_bytes": 9786060640,
+  "model_sha256": "0d65d20a1a5a96600a0fa6f53dfe636f81e61de6e637cec45bc147be7a3c6544",
   "tokenizer_model": "gpt2",
   "bos_token_id": -1,
   "task": "topk",
@@ -10,6 +14,7 @@
   "max_units": 256,
   "window_source": "english_window_256_qwythos.txt",
   "window_fnv": "690c62c7b8b5daa1",
+  "window_sha256": "8a150c3fab7c4a9bbbce8828f9a26aecbccb21cc7f5059a1b29a3d7270cce85e",
   "margin_eps": 0.020000,
   "cert_sampled": 1,
   "sample_count": 96,
@@ -19,5 +24,8 @@
   "warmstart": 0,
   "oracle_int8": 1,
   "oracle_golden": "goldens_qwythos.int8.txt",
+  "oracle_golden_sha256": "645264ba57f7db4b313cd02a25c70a778ca80ab866a2414b282258d80ae6731f",
+  "base": "qwythos_english_v1.cnb",
+  "base_sha256": "c420ab6e3890d27d8e35305767d0c0b34ca1cabdae858a0fef635dbb66a2eb0e",
   "lanes": 1
 }

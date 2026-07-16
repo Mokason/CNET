@@ -1100,11 +1100,6 @@ after_prefetch: ;
 
         fprintf(out, "cross-unit exemplar-input overlap scan (U=%lu collected, %lu unique input tables)\n",
                 (unsigned long)collected, (unsigned long)unique_input);
-        /* Executive summary for quick analysis */
-        {
-            size_t full_table_dups = 0; /* recompute lightly for summary */
-            /* (we already have the groups and full_dups count from later sections) */
-        }
     }
 
     /* Groups of units with identical full input tables */

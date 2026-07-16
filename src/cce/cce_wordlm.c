@@ -539,10 +539,12 @@ static void packed_forward_hidden(cce_wordlm_packed* p, const int* ctx_words) {
     }
     /* rows are independent (each h[j] is its own dot) -> thread-parallel with
        NO reassociation: per-row accumulation order is untouched, so the
-       result stays bit-identical to the serial loop. Active only in builds
-       with -fopenmp (wordlm targets); elsewhere the pragma is inert. */
+       result stays bit-identical to the serial loop. Compiled only in builds
+       with -fopenmp (wordlm targets). */
+#ifdef _OPENMP
     #pragma omp parallel for schedule(static) default(none) \
             shared(p, hid, ctxd) if(hid >= 128)
+#endif
     for (int j = 0; j < hid; j++) {
         double s = wlm_trit_dot(p->W1p + (size_t)j*p->W1_bpr, p->W1s[j], p->x, ctxd, p->b1[j]);
         p->h[j] = tanhf((float)s);

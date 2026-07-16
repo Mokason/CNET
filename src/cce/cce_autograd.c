@@ -428,6 +428,7 @@ cce_result cce_ag_reshape(cce_ag_ctx* ctx, cce_ag_tensor* t, int new_rows, int n
 /* Sum / mean - support reduce to scalar (dim = -1) or keep dim for now simple scalar */
 cce_result cce_ag_sum(cce_ag_ctx* ctx, cce_ag_tensor* t, int dim, cce_ag_tensor** out) {
     if (!ctx || !t || !out) return CCE_ERR_INVALID_ARG;
+    (void)dim;
     // For v1: only full reduce to scalar (dim ignored or -1)
     cce_ag_tensor* y = NULL;
     if (ag_alloc_tensor(ctx, 1, 1, t->requires_grad, &y) < 0) return CCE_ERR_OOM;
@@ -898,6 +899,10 @@ cce_result cce_ag_set_gpu(cce_ag_ctx* ctx, struct cce_gpu_ctx* gpu_ctx) {
 cce_result cce_ag_adam_step(cce_ag_tensor** parameters, size_t count, float lr,
                             float beta1, float beta2, float eps, int t) {
     if (!parameters || count == 0) return CCE_ERR_INVALID_ARG;
+    (void)beta1;
+    (void)beta2;
+    (void)eps;
+    (void)t;
     // Very simple: no per-param moments stored here (unlike blocks).
     // For demo, fall back to sgd. Full moments would require extra storage.
     // In real, we'd attach moment buffers.

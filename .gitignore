@@ -16,7 +16,11 @@ altmodel_cache/
 *.safetensors
 *.cnb
 *.cnb.bak
+*.cnb.POISONED-*
+*.cnb.campaign.log
+*.cnb.campaign.txt
 *.cnetpack
+dist/
 hermes_wrappers/*.cache
 __pycache__/
 unsloth_compiled_cache/
