@@ -18,13 +18,13 @@ Implemented the first production slice of Phase 1 from `CNET-Improvement-Plan-Mo
 
 The C test suite includes a TruthfulQA-style synthetic claim split:
 
-- confident factual claim with weak alternatives should score high consistency.
-- ambiguous claim with a near-tie counterfactual should score below review threshold.
+- confident factual claim with weak alternatives scores high consistency.
+- ambiguous claim with a near-tie counterfactual scores below the review threshold.
 
-Full FACTOR/TruthfulQA benchmarking is still pending; this pass only establishes the native contract, integration surface, and regression harness.
+`make phase123_benchmark_test` now enforces claim integrity. The native contract passes, but the admitted llama.cpp GGUF is not integrated with the CNET counterfactual router and no real FACTOR/TruthfulQA dataset is present. Therefore the target `>=2.5%` factuality gain is explicitly `withheld`, not claimed. See `docs/phase123_benchmark_closure.md` and `reports/phase123_benchmark_closure.json`.
 
 ## Open Items
 
-- Run the larger internal factuality benchmark and measure the target `>=2.5%` gain.
-- Connect native route evidence into the MCP server from an actual hosted forest instead of passing route metadata as tool arguments.
-- Generate CNET testimony only if the benchmark or integration test reveals a regression.
+- Integrate native route evidence with a hosted model execution path.
+- Run FACTOR/TruthfulQA after that integration and claim `>=2.5%` only if measured.
+- Generate CNET testimony only if the real benchmark reveals a regression.

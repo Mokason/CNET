@@ -2,11 +2,11 @@
 
 ## Scope
 
-Phase 5 registers the completed CNET model-compression work through a C-only bridge with local
-self-improvement artifacts. The external `closed-loop-self-improvement` and
-`perpetual-improvement-engine` repositories were not present under
-`/home/marble/AI`, so CNET now emits deterministic handoff files that those
-engines can ingest when available.
+Phase 5 registers completed CNET model-compression work through deterministic
+local handoff artifacts, a SQLite ingester, and a bounded evidence consumer.
+The generic cloud auto-implementation stack described by older skills is not
+present under `/home/marble/AI`; CNET therefore does not pretend that an
+unbounded code-generating daemon exists.
 
 ## Bridge Command
 
@@ -56,7 +56,24 @@ The ingester validates the existing schema and uses stable SHA-256 keys with `IN
 
 ## Perpetual Engine Handoff
 
-Consumers should schedule only rows with `status='proposed'` and `meta.actionable=true`. Implemented milestone rows remain queryable evidence but are not follow-up tasks.
+`tools/activate_cnet_suggestions.py` is the local bounded consumer. It:
+
+- selects only `cnet-model-compression` rows from `cnet_real_model_acceptance`
+  with status `proposed` or recoverable `in_progress` and
+  `meta.actionable=true`;
+- claims at most one row with `BEGIN IMMEDIATE`;
+- records a durable `in_progress` checkpoint before evidence evaluation;
+- requires the task SHA-256 to match the quarantined artifact and the
+  replacement SHA-256 to match the admitted candidate;
+- requires CPU-only acceptance, QGKP byte identity, restart stability, Hermes
+  loopback acceptance, and `max_quality_delta=0.0`;
+- finalizes as `verified` or `archived`, never re-proposes a failure;
+- never schedules itself, generates code, invokes git, or writes externally.
+
+The live row 6 completed `proposed -> in_progress -> verified`; a second
+invocation returned `idle`, and zero actionable rows remain. See
+`reports/cnet_bounded_activation.json`. Implemented milestone rows remain
+queryable evidence but are never scheduled as follow-up tasks.
 
 ## Self-Development Handoff
 

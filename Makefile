@@ -74,9 +74,14 @@ COMPOSE_TEST := tests/test_composition.c
 ROUTER_TEST := tests/test_router.c
 SPARSE_KV_TEST := tests/sparse_kv_test.c
 NARRATIVE_COHERENCE_TEST := tests/narrative_coherence_test.c
+PHASE123_BENCHMARK_TEST := tests/test_phase123_benchmarks.py
+PHASE123_BENCHMARK_TOOL := tools/run_phase123_benchmarks.py
+PHASE123_BENCHMARK_LIBRARY = $(BIN_DIR)/libphase123_benchmark.so
 PHASE4_UNCERTAINTY_TEST := tests/phase4_uncertainty_test.c
 PHASE5_INTEGRATION_TOOL := tools/register_compression_improvements.c
 PHASE5_INTEGRATION_TEST := tests/phase5_integration_test.c
+CNET_ACTIVATION_TOOL := tools/activate_cnet_suggestions.py
+CNET_ACTIVATION_TEST := tests/test_activate_cnet_suggestions.py
 COUNTERFACTUAL_ROUTER_TEST := tests/router/counterfactual_test.c
 ROUTE_DEMO := tests/route_demo.c
 DAG_TEST := tests/test_dag.c
@@ -298,8 +303,16 @@ sparse_kv_test: $(CCE_SPARSE_KV) $(SPARSE_KV_TEST) include/cce/cce_sparse_kv.h
 	./$(BIN_DIR)/sparse_kv_test
 
 narrative_coherence_test: src/contract/narrative_coherence.c $(CCE_ROUTER) $(NARRATIVE_COHERENCE_TEST) include/contract/narrative_coherence.h include/cce/cce_router.h include/cce/cce_forest.h
-	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ src/contract/narrative_coherence.c $(CCE_ROUTER) $(NARRATIVE_COHERENCE_TEST) $(LDFLAGS)
+	$(CC) $(CFLAGS) -Iinclude -o $(BIN_DIR)/$@ src/contract/narrative_coherence.c $(CCE_ROUTER) $(NARRATIVE_COHERENCE_TEST) $(LDFLAGS)
 	./$(BIN_DIR)/narrative_coherence_test
+
+.PHONY: phase123_benchmark_build phase123_benchmark_test
+phase123_benchmark_build: counterfactual_router_test sparse_kv_test narrative_coherence_test
+	$(CC) $(CFLAGS) -fPIC -shared -Iinclude -o $(PHASE123_BENCHMARK_LIBRARY) \
+		src/cce/cce_sparse_kv.c src/contract/narrative_coherence.c $(LDFLAGS)
+
+phase123_benchmark_test: phase123_benchmark_build $(PHASE123_BENCHMARK_TEST) $(PHASE123_BENCHMARK_TOOL)
+	python3 $(PHASE123_BENCHMARK_TEST)
 
 phase4_uncertainty_test: $(CCE_UNCERTAINTY) $(CCE_COMPRESSION) $(PHASE4_UNCERTAINTY_TEST) include/cce/cce_uncertainty.h include/cce/cce_compression.h include/cce/cce_router.h
 	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $(CCE_UNCERTAINTY) $(CCE_COMPRESSION) $(PHASE4_UNCERTAINTY_TEST) $(LDFLAGS)
@@ -312,8 +325,11 @@ phase5_integration_test: register_compression_improvements $(PHASE5_INTEGRATION_
 	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $(PHASE5_INTEGRATION_TEST) $(LDFLAGS)
 	./$(BIN_DIR)/phase5_integration_test
 
-.PHONY: real_model_control_plane_test
-real_model_control_plane_test:
+.PHONY: phase5_bounded_activation_test real_model_control_plane_test
+phase5_bounded_activation_test: $(CNET_ACTIVATION_TOOL) $(CNET_ACTIVATION_TEST)
+	python3 $(CNET_ACTIVATION_TEST)
+
+real_model_control_plane_test: phase5_bounded_activation_test
 	python3 tests/test_real_model_acceptance.py
 	python3 tests/test_hermes_wrapper.py
 	python3 tests/test_run_hermes_wrapper.py
@@ -2118,6 +2134,7 @@ release_integrity:
 		trap cleanup_release_generated EXIT INT TERM; \
 		$(MAKE) --no-print-directory release_integrity_authority; \
 		$(MAKE) --no-print-directory real_model_control_plane_test; \
+		$(MAKE) --no-print-directory phase123_benchmark_test; \
 		$(MAKE) --no-print-directory phase5_integration_test; \
 		$(MAKE) --no-print-directory gguf_integrity; \
 		$(MAKE) --no-print-directory model_runtime_integrity; \

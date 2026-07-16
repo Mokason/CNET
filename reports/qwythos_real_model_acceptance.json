@@ -1,23 +1,54 @@
 {
-  "schema_version": 1,
-  "generated_at_utc": "2026-07-16T13:48:44.218833+00:00",
+  "schema_version": 2,
+  "generated_at_utc": "2026-07-16T16:11:35.575691+00:00",
   "execution": {
     "cpu_only": true,
     "server": "/home/marble/llama.cpp/build-cpu/bin/llama-server",
     "threads": 4,
-    "ctx_size": 512
+    "ctx_size": 512,
+    "max_quality_delta": 0.0
   },
   "artifacts": {
     "reference": {
       "path": "/home/marble/AI/CNET/hermes_wrappers/Qwythos-9B-Claude-Mythos-5-1M-MTP-TQ1_0-fixed.cnetpack",
       "bytes": 5578649440,
-      "sha256": "a6eee1573d145d61b895cf0a575681ab48452d39fba56f77343fe4cdf31315ee"
+      "sha256": "a6eee1573d145d61b895cf0a575681ab48452d39fba56f77343fe4cdf31315ee",
+      "gguf": {
+        "version": 3,
+        "architecture": "qwen35",
+        "name": "Qwythos 9B Claude Mythos 5 1M MTP",
+        "file_type": 36,
+        "quantization_version": 2,
+        "tensor_count": 442,
+        "metadata_count": 36,
+        "tensor_types": {
+          "F32": 184,
+          "Q4_K": 250,
+          "Q8_0": 1,
+          "TQ1_0": 7
+        }
+      }
     },
     "candidate": {
-      "path": "/home/marble/AI/CNET/hermes_wrappers/Qwythos-9B-Claude-Mythos-5-1M-MTP-Q8_0.gguf.cnetpack",
-      "bytes": 3178803040,
-      "sha256": "db0b3153b7d5e98cf4801cd75a24e91bcd21396971635de58345893cc081fbc3",
-      "storage_ratio_vs_reference": 0.5698158800241802
+      "path": "/home/marble/AI/CNET/hermes_wrappers/Qwythos-9B-Claude-Mythos-5-1M-MTP-Q4_K_S-recovery.gguf",
+      "bytes": 5488553824,
+      "sha256": "d162f405d76240ed573acbf616e7c85fa861aefbaa3dd44d8a812758800f2045",
+      "storage_ratio_vs_reference": 0.983849923360662,
+      "gguf": {
+        "version": 3,
+        "architecture": "qwen35",
+        "name": "Qwythos 9B Claude Mythos 5 1M MTP",
+        "file_type": 14,
+        "quantization_version": 2,
+        "tensor_count": 442,
+        "metadata_count": 36,
+        "tensor_types": {
+          "F32": 184,
+          "Q4_K": 249,
+          "Q5_K": 8,
+          "Q6_K": 1
+        }
+      }
     },
     "qgkp": {
       "path": "/home/marble/AI/CNET/hermes_wrappers/Qwythos-9B-Claude-Mythos-5-1M-MTP-QGKP-v3.cnetpack",
@@ -33,7 +64,7 @@
   "reference": {
     "role": "reference",
     "model": "/home/marble/AI/CNET/hermes_wrappers/Qwythos-9B-Claude-Mythos-5-1M-MTP-TQ1_0-fixed.cnetpack",
-    "startup_seconds": 5.524297963012941,
+    "startup_seconds": 5.576538891997188,
     "quality_passed": 2,
     "quality_total": 3,
     "quality_pass_fraction": 0.6666666666666666,
@@ -144,7 +175,7 @@
           }
         ],
         "normalized_entropy": 0.3480353931376147,
-        "tokens_per_second": 17.221485525341414
+        "tokens_per_second": 17.143983747503405
       },
       {
         "id": "arithmetic_exact",
@@ -234,7 +265,7 @@
           }
         ],
         "normalized_entropy": 0.5466287335048823,
-        "tokens_per_second": 12.81126024367017
+        "tokens_per_second": 12.99522642016166
       },
       {
         "id": "constraint_exact",
@@ -338,309 +369,17 @@
           }
         ],
         "normalized_entropy": 0.5877870367491324,
-        "tokens_per_second": 17.74229319139499
+        "tokens_per_second": 16.792047286405158
       }
     ]
   },
   "candidate": {
     "role": "candidate",
-    "model": "/home/marble/AI/CNET/hermes_wrappers/Qwythos-9B-Claude-Mythos-5-1M-MTP-Q8_0.gguf.cnetpack",
-    "startup_seconds": 10.207760504999897,
-    "quality_passed": 0,
+    "model": "/home/marble/AI/CNET/hermes_wrappers/Qwythos-9B-Claude-Mythos-5-1M-MTP-Q4_K_S-recovery.gguf",
+    "startup_seconds": 5.549104595993413,
+    "quality_passed": 3,
     "quality_total": 3,
-    "quality_pass_fraction": 0.0,
-    "probes": [
-      {
-        "id": "instruction_exact",
-        "expected": "READY",
-        "response": "",
-        "passed": false,
-        "error": "HTTP 500 from http://127.0.0.1:39289/v1/chat/completions: {\"error\":{\"code\":500,\"message\":\"The model produced output that does not match the expected peg-native format\",\"type\":\"server_error\"}}",
-        "top_logprobs": [],
-        "normalized_entropy": 0.0,
-        "tokens_per_second": 0.0
-      },
-      {
-        "id": "arithmetic_exact",
-        "expected": "42",
-        "response": "robe晰ummy公uko糟 E臨rozen睡了工作业iskan历历努不要让eron",
-        "passed": false,
-        "top_logprobs": [
-          {
-            "id": 31748,
-            "token": "robe",
-            "bytes": [
-              114,
-              111,
-              98,
-              101
-            ],
-            "logprob": -4.597236633300781
-          },
-          {
-            "id": 96855,
-            "token": "希",
-            "bytes": [
-              229,
-              184,
-              140
-            ],
-            "logprob": -4.962730407714844
-          },
-          {
-            "id": 96653,
-            "token": "紧",
-            "bytes": [
-              231,
-              180,
-              167
-            ],
-            "logprob": -5.157170295715332
-          },
-          {
-            "id": 4899,
-            "token": "asc",
-            "bytes": [
-              97,
-              115,
-              99
-            ],
-            "logprob": -5.467500686645508
-          },
-          {
-            "id": 129157,
-            "token": "进一步强化",
-            "bytes": [
-              232,
-              191,
-              155,
-              228,
-              184,
-              128,
-              230,
-              173,
-              165,
-              229,
-              188,
-              186,
-              229,
-              140,
-              150
-            ],
-            "logprob": -5.496570587158203
-          },
-          {
-            "id": 194858,
-            "token": "alise",
-            "bytes": [
-              97,
-              108,
-              105,
-              115,
-              101
-            ],
-            "logprob": -5.555495262145996
-          },
-          {
-            "id": 218746,
-            "token": "macher",
-            "bytes": [
-              109,
-              97,
-              99,
-              104,
-              101,
-              114
-            ],
-            "logprob": -5.558956146240234
-          },
-          {
-            "id": 119885,
-            "token": "去过",
-            "bytes": [
-              229,
-              142,
-              187,
-              232,
-              191,
-              135
-            ],
-            "logprob": -5.6174821853637695
-          },
-          {
-            "id": 100848,
-            "token": "景观",
-            "bytes": [
-              230,
-              153,
-              175,
-              232,
-              167,
-              130
-            ],
-            "logprob": -5.622668266296387
-          },
-          {
-            "id": 231219,
-            "token": " Riviera",
-            "bytes": [
-              32,
-              82,
-              105,
-              118,
-              105,
-              101,
-              114,
-              97
-            ],
-            "logprob": -5.785412788391113
-          }
-        ],
-        "normalized_entropy": 0.9675853432065704,
-        "tokens_per_second": 14.563354231746658
-      },
-      {
-        "id": "constraint_exact",
-        "expected": "BLUE",
-        "response": "妻楚楚ibilities查 wboleartin耳聋kopfloeiais迪亚sherepenishedrg",
-        "passed": false,
-        "top_logprobs": [
-          {
-            "id": 98198,
-            "token": "妻",
-            "bytes": [
-              229,
-              166,
-              187
-            ],
-            "logprob": -4.22221040725708
-          },
-          {
-            "id": 65780,
-            "token": "lite",
-            "bytes": [
-              108,
-              105,
-              116,
-              101
-            ],
-            "logprob": -4.641299247741699
-          },
-          {
-            "id": 150074,
-            "token": "انية",
-            "bytes": [
-              216,
-              167,
-              217,
-              134,
-              217,
-              138,
-              216,
-              169
-            ],
-            "logprob": -5.274962902069092
-          },
-          {
-            "id": 163724,
-            "token": "lair",
-            "bytes": [
-              108,
-              97,
-              105,
-              114
-            ],
-            "logprob": -5.421597957611084
-          },
-          {
-            "id": 96528,
-            "token": "招",
-            "bytes": [
-              230,
-              139,
-              155
-            ],
-            "logprob": -5.435570240020752
-          },
-          {
-            "id": 184883,
-            "token": "lava",
-            "bytes": [
-              108,
-              97,
-              118,
-              97
-            ],
-            "logprob": -5.596821308135986
-          },
-          {
-            "id": 101583,
-            "token": "浒",
-            "bytes": [
-              230,
-              181,
-              146
-            ],
-            "logprob": -5.606245517730713
-          },
-          {
-            "id": 13084,
-            "token": "owa",
-            "bytes": [
-              111,
-              119,
-              97
-            ],
-            "logprob": -5.624908924102783
-          },
-          {
-            "id": 82192,
-            "token": "AMY",
-            "bytes": [
-              65,
-              77,
-              89
-            ],
-            "logprob": -5.630122661590576
-          },
-          {
-            "id": 21703,
-            "token": "locate",
-            "bytes": [
-              108,
-              111,
-              99,
-              97,
-              116,
-              101
-            ],
-            "logprob": -5.6575026512146
-          }
-        ],
-        "normalized_entropy": 0.9338163464316827,
-        "tokens_per_second": 14.625014625014623
-      }
-    ]
-  },
-  "admission": {
-    "admitted": false,
-    "selected_role": "reference",
-    "quality_delta": -0.6666666666666666,
-    "reasons": [
-      "quality_regression"
-    ]
-  },
-  "selected_model": {
-    "role": "reference",
-    "path": "/home/marble/AI/CNET/hermes_wrappers/Qwythos-9B-Claude-Mythos-5-1M-MTP-TQ1_0-fixed.cnetpack"
-  },
-  "selected_restart": {
-    "role": "selected-restart",
-    "model": "/home/marble/AI/CNET/hermes_wrappers/Qwythos-9B-Claude-Mythos-5-1M-MTP-TQ1_0-fixed.cnetpack",
-    "startup_seconds": 5.572539838991361,
-    "quality_passed": 2,
-    "quality_total": 3,
-    "quality_pass_fraction": 0.6666666666666666,
+    "quality_pass_fraction": 1.0,
     "probes": [
       {
         "id": "instruction_exact",
@@ -658,7 +397,15 @@
               68,
               89
             ],
-            "logprob": -0.32990023493766785
+            "logprob": -0.02923397719860077
+          },
+          {
+            "id": 40,
+            "token": "I",
+            "bytes": [
+              73
+            ],
+            "logprob": -4.733430862426758
           },
           {
             "id": 18622,
@@ -670,13 +417,48 @@
               100,
               121
             ],
-            "logprob": -2.767179012298584
+            "logprob": -5.6100568771362305
           },
           {
-            "id": 248046,
-            "token": "",
-            "bytes": [],
-            "logprob": -3.644779682159424
+            "id": 2,
+            "token": "#",
+            "bytes": [
+              35
+            ],
+            "logprob": -6.424650192260742
+          },
+          {
+            "id": 48,
+            "token": "Q",
+            "bytes": [
+              81
+            ],
+            "logprob": -6.7376813888549805
+          },
+          {
+            "id": 760,
+            "token": "The",
+            "bytes": [
+              84,
+              104,
+              101
+            ],
+            "logprob": -6.951555252075195
+          },
+          {
+            "id": 248069,
+            "token": "</think>",
+            "bytes": [
+              60,
+              47,
+              116,
+              104,
+              105,
+              110,
+              107,
+              62
+            ],
+            "logprob": -7.221158981323242
           },
           {
             "id": 82385,
@@ -689,7 +471,15 @@
               68,
               89
             ],
-            "logprob": -4.208764553070068
+            "logprob": -7.325052261352539
+          },
+          {
+            "id": 27,
+            "token": "<",
+            "bytes": [
+              60
+            ],
+            "logprob": -7.409841537475586
           },
           {
             "id": 2232,
@@ -701,60 +491,17 @@
               100,
               121
             ],
-            "logprob": -4.3992791175842285
-          },
-          {
-            "id": 271,
-            "token": "\n\n",
-            "bytes": [
-              10,
-              10
-            ],
-            "logprob": -4.551901340484619
-          },
-          {
-            "id": 27,
-            "token": "<",
-            "bytes": [
-              60
-            ],
-            "logprob": -4.675228595733643
-          },
-          {
-            "id": 48,
-            "token": "Q",
-            "bytes": [
-              81
-            ],
-            "logprob": -4.687506198883057
-          },
-          {
-            "id": 40,
-            "token": "I",
-            "bytes": [
-              73
-            ],
-            "logprob": -4.870336055755615
-          },
-          {
-            "id": 760,
-            "token": "The",
-            "bytes": [
-              84,
-              104,
-              101
-            ],
-            "logprob": -5.475742816925049
+            "logprob": -7.489408493041992
           }
         ],
-        "normalized_entropy": 0.3480353931376147,
-        "tokens_per_second": 16.396937052158655
+        "normalized_entropy": 0.05457888751266503,
+        "tokens_per_second": 17.632952461560162
       },
       {
         "id": "arithmetic_exact",
         "expected": "42",
-        "response": "41",
-        "passed": false,
+        "response": "42",
+        "passed": true,
         "top_logprobs": [
           {
             "id": 19,
@@ -762,15 +509,7 @@
             "bytes": [
               52
             ],
-            "logprob": -0.5898835062980652
-          },
-          {
-            "id": 21,
-            "token": "6",
-            "bytes": [
-              54
-            ],
-            "logprob": -2.5067946910858154
+            "logprob": -0.018746111541986465
           },
           {
             "id": 48,
@@ -778,29 +517,7 @@
             "bytes": [
               81
             ],
-            "logprob": -2.58921217918396
-          },
-          {
-            "id": 248046,
-            "token": "",
-            "bytes": [],
-            "logprob": -3.149444341659546
-          },
-          {
-            "id": 20,
-            "token": "5",
-            "bytes": [
-              53
-            ],
-            "logprob": -4.141227722167969
-          },
-          {
-            "id": 18,
-            "token": "3",
-            "bytes": [
-              51
-            ],
-            "logprob": -4.164122104644775
+            "logprob": -5.3997483253479
           },
           {
             "id": 16,
@@ -808,23 +525,30 @@
             "bytes": [
               49
             ],
-            "logprob": -4.397190570831299
+            "logprob": -6.519678592681885
           },
           {
-            "id": 220,
-            "token": " ",
+            "id": 2665,
+            "token": "No",
             "bytes": [
-              32
+              78,
+              111
             ],
-            "logprob": -4.412160873413086
+            "logprob": -6.893746376037598
           },
           {
-            "id": 15,
-            "token": "0",
+            "id": 248046,
+            "token": "",
+            "bytes": [],
+            "logprob": -6.9251017570495605
+          },
+          {
+            "id": 18,
+            "token": "3",
             "bytes": [
-              48
+              51
             ],
-            "logprob": -4.455907344818115
+            "logprob": -7.073895454406738
           },
           {
             "id": 760,
@@ -834,11 +558,41 @@
               104,
               101
             ],
-            "logprob": -4.510396480560303
+            "logprob": -7.196309566497803
+          },
+          {
+            "id": 248068,
+            "token": "<think>",
+            "bytes": [
+              60,
+              116,
+              104,
+              105,
+              110,
+              107,
+              62
+            ],
+            "logprob": -7.232761859893799
+          },
+          {
+            "id": 2,
+            "token": "#",
+            "bytes": [
+              35
+            ],
+            "logprob": -7.3476786613464355
+          },
+          {
+            "id": 17,
+            "token": "2",
+            "bytes": [
+              50
+            ],
+            "logprob": -7.400095462799072
           }
         ],
-        "normalized_entropy": 0.5466287335048823,
-        "tokens_per_second": 13.250298131707964
+        "normalized_entropy": 0.03721113683340403,
+        "tokens_per_second": 13.720683472979402
       },
       {
         "id": "constraint_exact",
@@ -855,40 +609,7 @@
               85,
               69
             ],
-            "logprob": -0.7560297846794128
-          },
-          {
-            "id": 48,
-            "token": "Q",
-            "bytes": [
-              81
-            ],
-            "logprob": -2.4012515544891357
-          },
-          {
-            "id": 10025,
-            "token": "Blue",
-            "bytes": [
-              66,
-              108,
-              117,
-              101
-            ],
-            "logprob": -2.7755086421966553
-          },
-          {
-            "id": 27,
-            "token": "<",
-            "bytes": [
-              60
-            ],
-            "logprob": -2.9204413890838623
-          },
-          {
-            "id": 248046,
-            "token": "",
-            "bytes": [],
-            "logprob": -3.57013201713562
+            "logprob": -0.15043877065181732
           },
           {
             "id": 40,
@@ -896,7 +617,50 @@
             "bytes": [
               73
             ],
-            "logprob": -3.86972975730896
+            "logprob": -3.1840920448303223
+          },
+          {
+            "id": 760,
+            "token": "The",
+            "bytes": [
+              84,
+              104,
+              101
+            ],
+            "logprob": -4.086430072784424
+          },
+          {
+            "id": 48,
+            "token": "Q",
+            "bytes": [
+              81
+            ],
+            "logprob": -5.0802483558654785
+          },
+          {
+            "id": 2665,
+            "token": "No",
+            "bytes": [
+              78,
+              111
+            ],
+            "logprob": -5.108402729034424
+          },
+          {
+            "id": 2,
+            "token": "#",
+            "bytes": [
+              35
+            ],
+            "logprob": -5.225673198699951
+          },
+          {
+            "id": 27,
+            "token": "<",
+            "bytes": [
+              60
+            ],
+            "logprob": -5.422848224639893
           },
           {
             "id": 9110,
@@ -905,7 +669,7 @@
               66,
               76
             ],
-            "logprob": -4.707925319671631
+            "logprob": -5.7032952308654785
           },
           {
             "id": 90700,
@@ -920,7 +684,84 @@
               110,
               103
             ],
-            "logprob": -4.828420162200928
+            "logprob": -6.077995777130127
+          },
+          {
+            "id": 2083,
+            "token": "no",
+            "bytes": [
+              110,
+              111
+            ],
+            "logprob": -6.10670804977417
+          }
+        ],
+        "normalized_entropy": 0.2018531621153893,
+        "tokens_per_second": 17.95847999425329
+      }
+    ]
+  },
+  "quantization_diagnosis": {
+    "reference_ternary_fraction": 0.01583710407239819,
+    "candidate_ternary_fraction": 0.0,
+    "aggressive_ternarization": false,
+    "source": "embedded_gguf_tensor_types"
+  },
+  "admission": {
+    "admitted": true,
+    "selected_role": "candidate",
+    "quality_delta": 0.33333333333333337,
+    "reasons": []
+  },
+  "selected_model": {
+    "role": "candidate",
+    "path": "/home/marble/AI/CNET/hermes_wrappers/Qwythos-9B-Claude-Mythos-5-1M-MTP-Q4_K_S-recovery.gguf"
+  },
+  "selected_restart": {
+    "role": "selected-restart",
+    "model": "/home/marble/AI/CNET/hermes_wrappers/Qwythos-9B-Claude-Mythos-5-1M-MTP-Q4_K_S-recovery.gguf",
+    "startup_seconds": 5.556172319978941,
+    "quality_passed": 3,
+    "quality_total": 3,
+    "quality_pass_fraction": 1.0,
+    "probes": [
+      {
+        "id": "instruction_exact",
+        "expected": "READY",
+        "response": "READY",
+        "passed": true,
+        "top_logprobs": [
+          {
+            "id": 44061,
+            "token": "READY",
+            "bytes": [
+              82,
+              69,
+              65,
+              68,
+              89
+            ],
+            "logprob": -0.02923397719860077
+          },
+          {
+            "id": 40,
+            "token": "I",
+            "bytes": [
+              73
+            ],
+            "logprob": -4.733430862426758
+          },
+          {
+            "id": 18622,
+            "token": "Ready",
+            "bytes": [
+              82,
+              101,
+              97,
+              100,
+              121
+            ],
+            "logprob": -5.6100568771362305
           },
           {
             "id": 2,
@@ -928,7 +769,15 @@
             "bytes": [
               35
             ],
-            "logprob": -4.865602016448975
+            "logprob": -6.424650192260742
+          },
+          {
+            "id": 48,
+            "token": "Q",
+            "bytes": [
+              81
+            ],
+            "logprob": -6.7376813888549805
           },
           {
             "id": 760,
@@ -938,11 +787,261 @@
               104,
               101
             ],
-            "logprob": -5.058237552642822
+            "logprob": -6.951555252075195
+          },
+          {
+            "id": 248069,
+            "token": "</think>",
+            "bytes": [
+              60,
+              47,
+              116,
+              104,
+              105,
+              110,
+              107,
+              62
+            ],
+            "logprob": -7.221158981323242
+          },
+          {
+            "id": 82385,
+            "token": " READY",
+            "bytes": [
+              32,
+              82,
+              69,
+              65,
+              68,
+              89
+            ],
+            "logprob": -7.325052261352539
+          },
+          {
+            "id": 27,
+            "token": "<",
+            "bytes": [
+              60
+            ],
+            "logprob": -7.409841537475586
+          },
+          {
+            "id": 2232,
+            "token": "ready",
+            "bytes": [
+              114,
+              101,
+              97,
+              100,
+              121
+            ],
+            "logprob": -7.489408493041992
           }
         ],
-        "normalized_entropy": 0.5877870367491324,
-        "tokens_per_second": 17.41462480190864
+        "normalized_entropy": 0.05457888751266503,
+        "tokens_per_second": 17.548477669562164
+      },
+      {
+        "id": "arithmetic_exact",
+        "expected": "42",
+        "response": "42",
+        "passed": true,
+        "top_logprobs": [
+          {
+            "id": 19,
+            "token": "4",
+            "bytes": [
+              52
+            ],
+            "logprob": -0.018746111541986465
+          },
+          {
+            "id": 48,
+            "token": "Q",
+            "bytes": [
+              81
+            ],
+            "logprob": -5.3997483253479
+          },
+          {
+            "id": 16,
+            "token": "1",
+            "bytes": [
+              49
+            ],
+            "logprob": -6.519678592681885
+          },
+          {
+            "id": 2665,
+            "token": "No",
+            "bytes": [
+              78,
+              111
+            ],
+            "logprob": -6.893746376037598
+          },
+          {
+            "id": 248046,
+            "token": "",
+            "bytes": [],
+            "logprob": -6.9251017570495605
+          },
+          {
+            "id": 18,
+            "token": "3",
+            "bytes": [
+              51
+            ],
+            "logprob": -7.073895454406738
+          },
+          {
+            "id": 760,
+            "token": "The",
+            "bytes": [
+              84,
+              104,
+              101
+            ],
+            "logprob": -7.196309566497803
+          },
+          {
+            "id": 248068,
+            "token": "<think>",
+            "bytes": [
+              60,
+              116,
+              104,
+              105,
+              110,
+              107,
+              62
+            ],
+            "logprob": -7.232761859893799
+          },
+          {
+            "id": 2,
+            "token": "#",
+            "bytes": [
+              35
+            ],
+            "logprob": -7.3476786613464355
+          },
+          {
+            "id": 17,
+            "token": "2",
+            "bytes": [
+              50
+            ],
+            "logprob": -7.400095462799072
+          }
+        ],
+        "normalized_entropy": 0.03721113683340403,
+        "tokens_per_second": 13.331852016442618
+      },
+      {
+        "id": "constraint_exact",
+        "expected": "BLUE",
+        "response": "BLUE",
+        "passed": true,
+        "top_logprobs": [
+          {
+            "id": 62158,
+            "token": "BLUE",
+            "bytes": [
+              66,
+              76,
+              85,
+              69
+            ],
+            "logprob": -0.15043877065181732
+          },
+          {
+            "id": 40,
+            "token": "I",
+            "bytes": [
+              73
+            ],
+            "logprob": -3.1840920448303223
+          },
+          {
+            "id": 760,
+            "token": "The",
+            "bytes": [
+              84,
+              104,
+              101
+            ],
+            "logprob": -4.086430072784424
+          },
+          {
+            "id": 48,
+            "token": "Q",
+            "bytes": [
+              81
+            ],
+            "logprob": -5.0802483558654785
+          },
+          {
+            "id": 2665,
+            "token": "No",
+            "bytes": [
+              78,
+              111
+            ],
+            "logprob": -5.108402729034424
+          },
+          {
+            "id": 2,
+            "token": "#",
+            "bytes": [
+              35
+            ],
+            "logprob": -5.225673198699951
+          },
+          {
+            "id": 27,
+            "token": "<",
+            "bytes": [
+              60
+            ],
+            "logprob": -5.422848224639893
+          },
+          {
+            "id": 9110,
+            "token": "BL",
+            "bytes": [
+              66,
+              76
+            ],
+            "logprob": -5.7032952308654785
+          },
+          {
+            "id": 90700,
+            "token": "Thinking",
+            "bytes": [
+              84,
+              104,
+              105,
+              110,
+              107,
+              105,
+              110,
+              103
+            ],
+            "logprob": -6.077995777130127
+          },
+          {
+            "id": 2083,
+            "token": "no",
+            "bytes": [
+              110,
+              111
+            ],
+            "logprob": -6.10670804977417
+          }
+        ],
+        "normalized_entropy": 0.2018531621153893,
+        "tokens_per_second": 17.6878449129758
       }
     ]
   },
@@ -957,31 +1056,31 @@
       "median": 0.5466287335048823
     },
     "candidate": {
-      "low": 0.0,
-      "high": 0.9675853432065704,
-      "median": 0.9338163464316827
+      "low": 0.03721113683340403,
+      "high": 0.2018531621153893,
+      "median": 0.05457888751266503
     }
   },
   "distribution_evidence": [
     {
       "identity_l2_norm": 0.8249695650762229,
-      "residual_l2_norm": 0.8249695650762229,
+      "residual_l2_norm": 0.1789261357697175,
       "recovery_curve": [
         {
           "alpha": 0.0,
-          "residual_l2_norm": 0.8249695650762229
+          "residual_l2_norm": 0.1789261357697175
         },
         {
           "alpha": 0.25,
-          "residual_l2_norm": 0.6187271738071672
+          "residual_l2_norm": 0.13419460182728812
         },
         {
           "alpha": 0.5,
-          "residual_l2_norm": 0.41248478253811144
+          "residual_l2_norm": 0.0894630678848588
         },
         {
           "alpha": 0.75,
-          "residual_l2_norm": 0.20624239126905572
+          "residual_l2_norm": 0.0447315339424294
         },
         {
           "alpha": 1.0,
@@ -990,29 +1089,29 @@
       ],
       "cnet_grads": {
         "identity_l2_norm": 0.8249695897102356,
-        "residual_l2_norm": 0.8249695897102356
+        "residual_l2_norm": 0.17892612516880035
       },
       "id": "instruction_exact"
     },
     {
       "identity_l2_norm": 0.6822824142437247,
-      "residual_l2_norm": 0.7634029390257838,
+      "residual_l2_norm": 0.3532593043414096,
       "recovery_curve": [
         {
           "alpha": 0.0,
-          "residual_l2_norm": 0.7634029390257838
+          "residual_l2_norm": 0.3532593043414096
         },
         {
           "alpha": 0.25,
-          "residual_l2_norm": 0.5725522042693378
+          "residual_l2_norm": 0.26494447825605716
         },
         {
           "alpha": 0.5,
-          "residual_l2_norm": 0.3817014695128919
+          "residual_l2_norm": 0.17662965217070478
         },
         {
           "alpha": 0.75,
-          "residual_l2_norm": 0.19085073475644596
+          "residual_l2_norm": 0.08831482608535245
         },
         {
           "alpha": 1.0,
@@ -1021,29 +1120,29 @@
       ],
       "cnet_grads": {
         "identity_l2_norm": 0.6822824478149414,
-        "residual_l2_norm": 0.7634029388427734
+        "residual_l2_norm": 0.3532593250274658
       },
       "id": "arithmetic_exact"
     },
     {
       "identity_l2_norm": 0.6434588454117469,
-      "residual_l2_norm": 0.7432281072255443,
+      "residual_l2_norm": 0.32863238373072934,
       "recovery_curve": [
         {
           "alpha": 0.0,
-          "residual_l2_norm": 0.7432281072255443
+          "residual_l2_norm": 0.32863238373072934
         },
         {
           "alpha": 0.25,
-          "residual_l2_norm": 0.5574210804191583
+          "residual_l2_norm": 0.24647428779804698
         },
         {
           "alpha": 0.5,
-          "residual_l2_norm": 0.37161405361277217
+          "residual_l2_norm": 0.16431619186536467
         },
         {
           "alpha": 0.75,
-          "residual_l2_norm": 0.1858070268063861
+          "residual_l2_norm": 0.08215809593268233
         },
         {
           "alpha": 1.0,
@@ -1052,11 +1151,11 @@
       ],
       "cnet_grads": {
         "identity_l2_norm": 0.6434588432312012,
-        "residual_l2_norm": 0.7432280778884888
+        "residual_l2_norm": 0.3286323845386505
       },
       "id": "constraint_exact"
     }
   ],
   "overall_pass": true,
-  "verdict": "PASS_CANDIDATE_QUARANTINED"
+  "verdict": "PASS_CANDIDATE_ADMITTED"
 }

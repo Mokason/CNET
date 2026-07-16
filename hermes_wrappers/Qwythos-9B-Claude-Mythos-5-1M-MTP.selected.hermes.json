@@ -2,20 +2,18 @@
   "schema_version": 1,
   "kind": "cnet-hermes-wrapper",
   "source_report": "/home/marble/AI/CNET/reports/qwythos_real_model_acceptance.json",
-  "campaign_verdict": "PASS_CANDIDATE_QUARANTINED",
+  "campaign_verdict": "PASS_CANDIDATE_ADMITTED",
   "selected_model": {
-    "role": "reference",
-    "path": "/home/marble/AI/CNET/hermes_wrappers/Qwythos-9B-Claude-Mythos-5-1M-MTP-TQ1_0-fixed.cnetpack",
-    "sha256": "a6eee1573d145d61b895cf0a575681ab48452d39fba56f77343fe4cdf31315ee",
-    "bytes": 5578649440
+    "role": "candidate",
+    "path": "/home/marble/AI/CNET/hermes_wrappers/Qwythos-9B-Claude-Mythos-5-1M-MTP-Q4_K_S-recovery.gguf",
+    "sha256": "d162f405d76240ed573acbf616e7c85fa861aefbaa3dd44d8a812758800f2045",
+    "bytes": 5488553824
   },
   "candidate_admission": {
-    "admitted": false,
-    "selected_role": "reference",
-    "quality_delta": -0.6666666666666666,
-    "reasons": [
-      "quality_regression"
-    ]
+    "admitted": true,
+    "selected_role": "candidate",
+    "quality_delta": 0.33333333333333337,
+    "reasons": []
   },
   "runtime": {
     "backend": "llama-server",

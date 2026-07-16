@@ -11,6 +11,7 @@ import math
 import os
 import signal
 import socket
+import struct
 import subprocess
 import tempfile
 import time
@@ -45,6 +46,187 @@ def sha256_file(path: Path, chunk_size: int = 8 * 1024 * 1024) -> str:
                 break
             digest.update(chunk)
     return digest.hexdigest()
+
+
+_GGUF_SCALAR_FORMATS = {
+    0: "B",  # uint8
+    1: "b",  # int8
+    2: "H",  # uint16
+    3: "h",  # int16
+    4: "I",  # uint32
+    5: "i",  # int32
+    6: "f",  # float32
+    7: "?",  # bool
+    10: "Q",  # uint64
+    11: "q",  # int64
+    12: "d",  # float64
+}
+_GGML_TYPE_NAMES = {
+    0: "F32",
+    1: "F16",
+    2: "Q4_0",
+    3: "Q4_1",
+    6: "Q5_0",
+    7: "Q5_1",
+    8: "Q8_0",
+    9: "Q8_1",
+    10: "Q2_K",
+    11: "Q3_K",
+    12: "Q4_K",
+    13: "Q5_K",
+    14: "Q6_K",
+    15: "Q8_K",
+    16: "IQ2_XXS",
+    17: "IQ2_XS",
+    18: "IQ3_XXS",
+    19: "IQ1_S",
+    20: "IQ4_NL",
+    21: "IQ3_S",
+    22: "IQ2_S",
+    23: "IQ4_XS",
+    24: "I8",
+    25: "I16",
+    26: "I32",
+    27: "I64",
+    28: "F64",
+    29: "IQ1_M",
+    30: "BF16",
+    34: "TQ1_0",
+    35: "TQ2_0",
+}
+
+
+def _read_exact(handle: Any, count: int) -> bytes:
+    data = handle.read(count)
+    if len(data) != count:
+        raise ValueError("truncated GGUF metadata")
+    return data
+
+
+def _read_number(handle: Any, format_code: str) -> Any:
+    size = struct.calcsize("<" + format_code)
+    return struct.unpack("<" + format_code, _read_exact(handle, size))[0]
+
+
+def _read_gguf_string(handle: Any) -> str:
+    count = int(_read_number(handle, "Q"))
+    if count > 100_000_000:
+        raise ValueError(f"unreasonable GGUF string length: {count}")
+    return _read_exact(handle, count).decode("utf-8", errors="replace")
+
+
+def _read_or_skip_gguf_value(handle: Any, value_type: int, keep: bool) -> Any:
+    if value_type == 8:  # string
+        value = _read_gguf_string(handle)
+        return value if keep else None
+    if value_type == 9:  # array
+        element_type = int(_read_number(handle, "I"))
+        count = int(_read_number(handle, "Q"))
+        if count > 10_000_000:
+            raise ValueError(f"unreasonable GGUF array length: {count}")
+        if element_type == 8:
+            values = [] if keep and count < 100 else None
+            for _ in range(count):
+                value = _read_gguf_string(handle)
+                if values is not None:
+                    values.append(value)
+            return values
+        format_code = _GGUF_SCALAR_FORMATS.get(element_type)
+        if format_code is None:
+            raise ValueError(f"unsupported GGUF array element type: {element_type}")
+        size = struct.calcsize("<" + format_code) * count
+        raw = _read_exact(handle, size)
+        if keep and count < 100:
+            return list(struct.unpack("<" + format_code * count, raw))
+        return None
+    format_code = _GGUF_SCALAR_FORMATS.get(value_type)
+    if format_code is None:
+        raise ValueError(f"unsupported GGUF value type: {value_type}")
+    value = _read_number(handle, format_code)
+    return value if keep else None
+
+
+def inspect_gguf(path: Path) -> dict[str, Any]:
+    """Read GGUF metadata/tensor headers without touching multi-gigabyte payloads."""
+    with path.open("rb") as handle:
+        if _read_exact(handle, 4) != b"GGUF":
+            raise ValueError(f"magic mismatch for {path}: expected b'GGUF'")
+        version = int(_read_number(handle, "I"))
+        tensor_count = int(_read_number(handle, "Q"))
+        metadata_count = int(_read_number(handle, "Q"))
+        if version not in (2, 3):
+            raise ValueError(f"unsupported GGUF version: {version}")
+        if tensor_count > 10_000_000 or metadata_count > 1_000_000:
+            raise ValueError("unreasonable GGUF header counts")
+
+        selected: dict[str, Any] = {}
+        selected_keys = {
+            "general.architecture",
+            "general.file_type",
+            "general.name",
+            "general.quantization_version",
+        }
+        for _ in range(metadata_count):
+            key = _read_gguf_string(handle)
+            value_type = int(_read_number(handle, "I"))
+            value = _read_or_skip_gguf_value(handle, value_type, key in selected_keys)
+            if key in selected_keys:
+                selected[key] = value
+
+        tensor_types: dict[str, int] = {}
+        for _ in range(tensor_count):
+            _read_gguf_string(handle)
+            dimensions = int(_read_number(handle, "I"))
+            if dimensions > 8:
+                raise ValueError(f"unreasonable GGUF tensor rank: {dimensions}")
+            _read_exact(handle, dimensions * 8)
+            tensor_type = int(_read_number(handle, "I"))
+            _read_exact(handle, 8)  # payload offset
+            name = _GGML_TYPE_NAMES.get(tensor_type, f"TYPE_{tensor_type}")
+            tensor_types[name] = tensor_types.get(name, 0) + 1
+
+    return {
+        "version": version,
+        "architecture": selected.get("general.architecture"),
+        "name": selected.get("general.name"),
+        "file_type": selected.get("general.file_type"),
+        "quantization_version": selected.get("general.quantization_version"),
+        "tensor_count": tensor_count,
+        "metadata_count": metadata_count,
+        "tensor_types": dict(sorted(tensor_types.items())),
+    }
+
+
+def structural_mismatch_reasons(
+    reference: dict[str, Any], candidate: dict[str, Any]
+) -> list[str]:
+    reasons: list[str] = []
+    if reference.get("architecture") != candidate.get("architecture"):
+        reasons.append("architecture_mismatch")
+    if int(reference.get("tensor_count", -1)) != int(candidate.get("tensor_count", -2)):
+        reasons.append("tensor_count_mismatch")
+    return reasons
+
+
+def quantization_diagnosis(
+    reference: dict[str, Any], candidate: dict[str, Any]
+) -> dict[str, Any]:
+    def ternary_fraction(inspection: dict[str, Any]) -> float:
+        types = inspection.get("tensor_types", {})
+        ternary = int(types.get("TQ1_0", 0)) + int(types.get("TQ2_0", 0))
+        count = int(inspection.get("tensor_count", 0))
+        return ternary / count if count else 0.0
+
+    reference_fraction = ternary_fraction(reference)
+    candidate_fraction = ternary_fraction(candidate)
+    return {
+        "reference_ternary_fraction": reference_fraction,
+        "candidate_ternary_fraction": candidate_fraction,
+        "aggressive_ternarization": (
+            candidate_fraction > 0.5 and candidate_fraction > reference_fraction + 0.25
+        ),
+        "source": "embedded_gguf_tensor_types",
+    }
 
 
 def _probability_map(top_logprobs: list[dict[str, Any]]) -> dict[int, float]:
@@ -101,12 +283,16 @@ def distribution_metrics(
 
 
 def admit_candidate(
-    reference: dict[str, Any], candidate: dict[str, Any], max_quality_delta: float
+    reference: dict[str, Any],
+    candidate: dict[str, Any],
+    max_quality_delta: float,
+    structural_reasons: list[str] | None = None,
 ) -> dict[str, Any]:
     delta = float(candidate["quality_pass_fraction"]) - float(reference["quality_pass_fraction"])
-    reasons: list[str] = []
+    reasons = list(structural_reasons or [])
     if delta < -abs(max_quality_delta):
         reasons.append("quality_regression")
+    reasons = list(dict.fromkeys(reasons))
     admitted = not reasons
     return {
         "admitted": admitted,
@@ -355,6 +541,10 @@ def run_campaign(args: argparse.Namespace) -> dict[str, Any]:
     require_magic(reference, b"GGUF")
     require_magic(candidate, b"GGUF")
     require_magic(qgkp, b"QGKP")
+    reference_quantization = inspect_gguf(reference)
+    candidate_quantization = inspect_gguf(candidate)
+    structure_reasons = structural_mismatch_reasons(reference_quantization, candidate_quantization)
+    quantization_evidence = quantization_diagnosis(reference_quantization, candidate_quantization)
     if not server.is_file() or not os.access(server, os.X_OK):
         raise ValueError(f"llama-server is not executable: {server}")
     if not library.is_file():
@@ -387,7 +577,12 @@ def run_campaign(args: argparse.Namespace) -> dict[str, Any]:
     candidate_run = probe_model(
         server, candidate, "candidate", args.startup_timeout, args.request_timeout, args.threads, args.ctx_size
     )
-    admission = admit_candidate(reference_run, candidate_run, args.max_quality_delta)
+    admission = admit_candidate(
+        reference_run,
+        candidate_run,
+        args.max_quality_delta,
+        structural_reasons=structure_reasons,
+    )
     selected_model = candidate if admission["admitted"] else reference
     selected_initial = candidate_run if admission["admitted"] else reference_run
     restart_run = probe_model(
@@ -415,25 +610,28 @@ def run_campaign(args: argparse.Namespace) -> dict[str, Any]:
     overall_pass = reference_operational and selected_quality_preserved and restart_match and round_trip_ok
 
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
         "execution": {
             "cpu_only": True,
             "server": str(server),
             "threads": args.threads,
             "ctx_size": args.ctx_size,
+            "max_quality_delta": args.max_quality_delta,
         },
         "artifacts": {
             "reference": {
                 "path": str(reference),
                 "bytes": reference.stat().st_size,
                 "sha256": reference_sha,
+                "gguf": reference_quantization,
             },
             "candidate": {
                 "path": str(candidate),
                 "bytes": candidate.stat().st_size,
                 "sha256": sha256_file(candidate),
                 "storage_ratio_vs_reference": candidate.stat().st_size / reference.stat().st_size,
+                "gguf": candidate_quantization,
             },
             "qgkp": {
                 "path": str(qgkp),
@@ -444,6 +642,7 @@ def run_campaign(args: argparse.Namespace) -> dict[str, Any]:
         },
         "reference": reference_run,
         "candidate": candidate_run,
+        "quantization_diagnosis": quantization_evidence,
         "admission": admission,
         "selected_model": {
             "role": admission["selected_role"],

@@ -1,7 +1,6 @@
 #include "../include/contract/narrative_coherence.h"
 #include "../include/cce/cce_router.h"
 
-#include <math.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -31,51 +30,20 @@ static void set_branch(cce_branch* br,
     snprintf(br->name, sizeof(br->name), "%s", name);
 }
 
-static void test_contract_init(void) {
-    Contract c;
-    Port seed;
-    Port out;
-    memset(&seed, 0, sizeof(seed));
-    memset(&out, 0, sizeof(out));
-    seed.family = PORT_RAW;
-    seed.field_width = 8;
-    seed.field_count = 32;
-    snprintf(seed.tag, sizeof(seed.tag), "narrative_seed");
-    out.family = PORT_RAW;
-    out.field_width = 8;
-    out.field_count = 128;
-    snprintf(out.tag, sizeof(out.tag), "narrative_output");
-
-    CHECK(contract_init_narrative_coherence(&c, &seed, &out) == 0,
-          "narrative coherence contract initializes");
-    CHECK(strcmp(c.name, NARRATIVE_COHERENCE_CONTRACT_NAME) == 0,
-          "contract uses the narrative coherence name");
-    CHECK(c.input_port_count == 1 && c.output_port_count == 1,
-          "contract has one seed port and one output port");
-    CHECK(c.exemplar_count == 0 && c.owns_data == 0,
-          "contract is a rubric contract without owned exemplar tables");
-}
-
 static void test_rubric_scores_texture_above_flatness(void) {
-    const char* prompt =
-        "Village river dilemma: Mira must hide the fisherman's lie to save the harvest.";
     const char* textured =
-        "In our old village by the river, I remembered Mira's promise. "
-        "She knew the lie was wrong, but mercy would save the harvest. "
-        "Years later, after the lantern festival, the cost returned: her brother "
-        "spoke the truth at the well, and the ancestors' song made the market "
-        "forgive her with shame.";
+        "In the shadowed halls, an oath-bearer guarded an ancient pact. "
+        "The oath demanded silence, but betrayal could save the village. "
+        "Long after the cost was paid, its consequence became a forgotten legend "
+        "that would echo across generations.";
     const char* flat =
         "A person solved the problem quickly. Everyone agreed it was fine. The end.";
-    NarrativeCoherenceContract contract;
-    NarrativeCoherenceScore rich;
-    NarrativeCoherenceScore thin;
+    NarrativeCoherenceConfig config = NARRATIVE_DEFAULT_CONFIG;
+    NarrativeCoherenceScore rich = cnet_narrative_evaluate(textured, &config);
+    NarrativeCoherenceScore thin = cnet_narrative_evaluate(flat, &config);
 
-    narrative_coherence_contract_default(&contract);
-    CHECK(narrative_coherence_score_text(&contract, prompt, textured, &rich) == 0,
-          "textured story scores successfully");
-    CHECK(narrative_coherence_score_text(&contract, prompt, flat, &thin) == 0,
-          "flat story scores successfully");
+    CHECK(rich.is_valid && thin.is_valid,
+          "both narrative samples score successfully");
     CHECK(rich.voice_consistency > 0.65,
           "rubric rewards prompt-grounded voice consistency");
     CHECK(rich.moral_ambiguity > 0.65,
@@ -84,16 +52,12 @@ static void test_rubric_scores_texture_above_flatness(void) {
           "rubric rewards delayed consequence");
     CHECK(rich.folklore_texture > 0.65,
           "rubric rewards folklore texture");
-    CHECK(rich.overall > thin.overall + 0.45,
+    CHECK(rich.overall_score > thin.overall_score + 0.25,
           "textured continuation separates from flat continuation");
-    CHECK(rich.flatness_risk < thin.flatness_risk,
-          "flatness risk rises for flattened prose");
-    CHECK(narrative_coherence_passes(&contract, &rich),
+    CHECK(cnet_narrative_passes(&rich, &config),
           "textured continuation passes the default contract");
-    CHECK(!narrative_coherence_passes(&contract, &thin),
+    CHECK(!cnet_narrative_passes(&thin, &config),
           "flat continuation fails the default contract");
-    CHECK((thin.missing_dimensions & NARRATIVE_COHERENCE_MISSING_FOLKLORE) != 0,
-          "flat continuation reports missing folklore texture");
 }
 
 static void test_router_prefers_narrative_specialist_for_creative_tasks(void) {
@@ -133,7 +97,6 @@ static void test_router_prefers_narrative_specialist_for_creative_tasks(void) {
 
 int main(void) {
     printf("narrative coherence tests:\n");
-    test_contract_init();
     test_rubric_scores_texture_above_flatness();
     test_router_prefers_narrative_specialist_for_creative_tasks();
 

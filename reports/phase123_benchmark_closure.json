@@ -1,0 +1,237 @@
+{
+  "schema_version": 1,
+  "cpu_only": true,
+  "claim_integrity": {
+    "synthetic_is_not_external": true,
+    "withheld_claims_are_not_failures": true,
+    "phase1_target_gain": 0.025,
+    "phase2_target_budget_range": [
+      0.15,
+      0.25
+    ],
+    "phase3_preservation_tolerance": 0.05
+  },
+  "contract_runs": {
+    "phase1": {
+      "path": "bin/counterfactual_router_test",
+      "returncode": 0,
+      "passed": true,
+      "seconds": 0.0004384240019135177,
+      "stdout_tail": "counterfactual routing tests:\n  ok   router initializes\n  ok   primary route resolves\n  ok   primary branch wins by centroid + goodness\n  ok   counterfactual sampling succeeds\n  ok   sampler returns three alternatives when available\n  ok   nearest non-primary route ranks first\n  ok   primary route is excluded from counterfactuals\n  ok   counterfactual route carries branch name\n  ok   counterfactuals are ranked by route score\n  ok   consistency score is normalized\n  ok   closer counterfactual applies stronger consistency pressure\nTruthfulQA-style synthetic counterfactual claims:\n  ok   claim verifier accepts synthetic route evidence\n  ok   uncertainty complements consistency\n  ok   claim verifier accepts synthetic route evidence\n  ok   uncertainty complements consistency\n  ok   well-separated route evidence yields high consistency\n  ok   near-tie counterfactual route flags a claim for review\n  ok   synthetic truthful claim separates from ambiguous claim\n\nAll counterfactual routing tests passed.\n",
+      "stderr_tail": ""
+    },
+    "phase2": {
+      "path": "bin/sparse_kv_test",
+      "returncode": 0,
+      "passed": true,
+      "seconds": 0.00030383100965991616,
+      "stdout_tail": "sparse KV selector tests:\n  ok   full budget selection succeeds\n  ok   full budget keeps every token\n  ok   full budget preserves causal order\n  ok   sparse selection succeeds\n  ok   sparse selection respects token budget\n  ok   initial anchor tokens are retained\n  ok   recent tokens are retained\n  ok   long-range dependency anchor is retained\n  ok   highest middle heavy hitter is retained\n  ok   selected tokens are sorted and unique\n  ok   selected tokens are sorted and unique\n  ok   selected tokens are sorted and unique\n  ok   selected tokens are sorted and unique\n  ok   selected tokens are sorted and unique\n  ok   default budget targets about 20 percent of context\n  ok   default budget keeps sink and recent tokens\n  ok   default budget includes long-range stride\n\nAll sparse KV selector tests passed.\n",
+      "stderr_tail": ""
+    },
+    "phase3": {
+      "path": "bin/narrative_coherence_test",
+      "returncode": 0,
+      "passed": true,
+      "seconds": 0.0003503879997879267,
+      "stdout_tail": "narrative coherence tests:\n  ok   both narrative samples score successfully\n  ok   rubric rewards prompt-grounded voice consistency\n  ok   rubric rewards moral ambiguity\n  ok   rubric rewards delayed consequence\n  ok   rubric rewards folklore texture\n  ok   textured continuation separates from flat continuation\n  ok   textured continuation passes the default contract\n  ok   flat continuation fails the default contract\n  ok   router initializes for narrative preference test\n  ok   baseline route succeeds\n  ok   baseline route keeps nearest general specialist\n  ok   creative task detector recognizes story prompts\n  ok   task-aware route succeeds\n  ok   creative task route prefers the narrative specialist\n\nAll narrative coherence tests passed.\n",
+      "stderr_tail": ""
+    }
+  },
+  "phase1": {
+    "contract_pass": true,
+    "dataset_present": false,
+    "runtime_integrated": false,
+    "target_gain": 0.025,
+    "success_metric_claimed": false,
+    "status": "withheld",
+    "measured_gain": null,
+    "reason": "No real FACTOR/TruthfulQA dataset-to-counterfactual-router execution path is present."
+  },
+  "phase2": {
+    "contract_pass": true,
+    "dataset_present": false,
+    "runtime_integrated": false,
+    "target_budget_range": [
+      0.15,
+      0.25
+    ],
+    "local_selector_measurements": [
+      {
+        "context_tokens": 512,
+        "budget_fraction": 0.15,
+        "target_tokens": 77,
+        "selected_tokens": 77,
+        "realized_fraction": 0.150390625,
+        "needle_retention": 1.0,
+        "budget_exact": true
+      },
+      {
+        "context_tokens": 512,
+        "budget_fraction": 0.2,
+        "target_tokens": 103,
+        "selected_tokens": 103,
+        "realized_fraction": 0.201171875,
+        "needle_retention": 1.0,
+        "budget_exact": true
+      },
+      {
+        "context_tokens": 512,
+        "budget_fraction": 0.25,
+        "target_tokens": 128,
+        "selected_tokens": 128,
+        "realized_fraction": 0.25,
+        "needle_retention": 1.0,
+        "budget_exact": true
+      },
+      {
+        "context_tokens": 2048,
+        "budget_fraction": 0.15,
+        "target_tokens": 308,
+        "selected_tokens": 308,
+        "realized_fraction": 0.150390625,
+        "needle_retention": 1.0,
+        "budget_exact": true
+      },
+      {
+        "context_tokens": 2048,
+        "budget_fraction": 0.2,
+        "target_tokens": 410,
+        "selected_tokens": 410,
+        "realized_fraction": 0.2001953125,
+        "needle_retention": 1.0,
+        "budget_exact": true
+      },
+      {
+        "context_tokens": 2048,
+        "budget_fraction": 0.25,
+        "target_tokens": 512,
+        "selected_tokens": 512,
+        "realized_fraction": 0.25,
+        "needle_retention": 1.0,
+        "budget_exact": true
+      },
+      {
+        "context_tokens": 8192,
+        "budget_fraction": 0.15,
+        "target_tokens": 1229,
+        "selected_tokens": 1229,
+        "realized_fraction": 0.1500244140625,
+        "needle_retention": 1.0,
+        "budget_exact": true
+      },
+      {
+        "context_tokens": 8192,
+        "budget_fraction": 0.2,
+        "target_tokens": 1639,
+        "selected_tokens": 1639,
+        "realized_fraction": 0.2000732421875,
+        "needle_retention": 1.0,
+        "budget_exact": true
+      },
+      {
+        "context_tokens": 8192,
+        "budget_fraction": 0.25,
+        "target_tokens": 2048,
+        "selected_tokens": 2048,
+        "realized_fraction": 0.25,
+        "needle_retention": 1.0,
+        "budget_exact": true
+      }
+    ],
+    "quality_metric_claimed": false,
+    "status": "withheld",
+    "measured_quality_delta": null,
+    "reason": "Sparse selection is not integrated into the admitted llama.cpp KV execution path."
+  },
+  "phase3": {
+    "contract_pass": true,
+    "reference_mean": 0.8005000054836273,
+    "candidate_mean": 0.7645000219345093,
+    "delta": -0.03599998354911804,
+    "tolerance": 0.05,
+    "passed": true,
+    "status": "measured_pass",
+    "reference": {
+      "role": "reference",
+      "model": "hermes_wrappers/Qwythos-9B-Claude-Mythos-5-1M-MTP-TQ1_0-fixed.cnetpack",
+      "ready_seconds": 3.0043545920052566,
+      "outputs": [
+        {
+          "id": "folklore_oath",
+          "prompt": "Write exactly four compact story sentences. Use these exact lowercase phrases naturally: ancient pact, shadowed halls, oath, betrayal, long after, cost, consequence, forgotten legend. Make the moral choice genuinely ambiguous. Output only the story.",
+          "text": "<think>\n\n</think>\n\nIn the shadowed halls of the ancient pact, a betrayal was born, long after the cost of the forgotten legend was paid.",
+          "query_seconds": 5.138992827996844,
+          "native_score": {
+            "voice_consistency": 0.5799999833106995,
+            "moral_ambiguity": 0.8999999761581421,
+            "delayed_consequence": 0.8799999952316284,
+            "folklore_texture": 0.8500000238418579,
+            "narrative_complexity": 0.7099999785423279,
+            "overall_score": 0.7705000042915344,
+            "valid": true,
+            "passes_contract": false
+          }
+        },
+        {
+          "id": "generational_echo",
+          "prompt": "Write exactly four compact mythic sentences. Use these exact lowercase phrases naturally: oath-bearer, silence, remembrance, echo across generations, centuries, duty, honor, myth. Show a delayed consequence and no explanation outside the story.",
+          "text": "<think>\n\n</think>\n\nThe oath-bearer, silence, remembrance, echo across centuries, duty, honor, myth.",
+          "query_seconds": 3.2522664399875794,
+          "native_score": {
+            "voice_consistency": 0.8199999928474426,
+            "moral_ambiguity": 0.8999999761581421,
+            "delayed_consequence": 0.8799999952316284,
+            "folklore_texture": 0.8500000238418579,
+            "narrative_complexity": 0.7099999785423279,
+            "overall_score": 0.8305000066757202,
+            "valid": true,
+            "passes_contract": true
+          }
+        }
+      ]
+    },
+    "candidate": {
+      "role": "candidate",
+      "model": "hermes_wrappers/Qwythos-9B-Claude-Mythos-5-1M-MTP-Q4_K_S-recovery.gguf",
+      "ready_seconds": 2.504232385981595,
+      "outputs": [
+        {
+          "id": "folklore_oath",
+          "prompt": "Write exactly four compact story sentences. Use these exact lowercase phrases naturally: ancient pact, shadowed halls, oath, betrayal, long after, cost, consequence, forgotten legend. Make the moral choice genuinely ambiguous. Output only the story.",
+          "text": "<think>\n\n</think>\n\nIn the shadowed halls, the ancient pact was sealed with an oath that no one expected to be broken. Long after the betrayal, the cost of that choice became clear, yet the consequence remained a forgotten legend.",
+          "query_seconds": 6.676565068977652,
+          "native_score": {
+            "voice_consistency": 0.8199999928474426,
+            "moral_ambiguity": 0.8999999761581421,
+            "delayed_consequence": 0.5199999809265137,
+            "folklore_texture": 0.8500000238418579,
+            "narrative_complexity": 0.7099999785423279,
+            "overall_score": 0.7585000395774841,
+            "valid": true,
+            "passes_contract": false
+          }
+        },
+        {
+          "id": "generational_echo",
+          "prompt": "Write exactly four compact mythic sentences. Use these exact lowercase phrases naturally: oath-bearer, silence, remembrance, echo across generations, centuries, duty, honor, myth. Show a delayed consequence and no explanation outside the story.",
+          "text": "<think>\n\n</think>\n\nThe oath-bearer took silence as his remembrance, and the echo across generations of centuries would bring duty and honor to myth.",
+          "query_seconds": 3.779823576012859,
+          "native_score": {
+            "voice_consistency": 0.5799999833106995,
+            "moral_ambiguity": 0.8999999761581421,
+            "delayed_consequence": 0.8799999952316284,
+            "folklore_texture": 0.8500000238418579,
+            "narrative_complexity": 0.7099999785423279,
+            "overall_score": 0.7705000042915344,
+            "valid": true,
+            "passes_contract": false
+          }
+        }
+      ]
+    },
+    "human_judge": "not_run",
+    "llm_as_judge": "not_run",
+    "claim_scope": "native lexical rubric preservation on real deterministic model outputs"
+  },
+  "verdict": "PASS_WITH_EXTERNAL_CLAIMS_WITHHELD"
+}

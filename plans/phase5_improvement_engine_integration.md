@@ -33,9 +33,13 @@ Results:
 - Imported five Phase 1–5 rows as `implemented` evidence.
 - Imported one priority-5 `proposed` repair task from the quarantined real-model candidate.
 - Verified a second identical pass inserted zero rows and skipped all six stable hashes.
-- Kept activation local and on-demand: no cron, GitHub Actions, or public write.
+- Added `tools/activate_cnet_suggestions.py`, a one-row, atomic, resumable consumer.
+- Verified eight activation tests covering actionable filtering, dry-run purity, one-row bounds, crash recovery, SHA linkage, zero-regression policy, and terminal archival.
+- Consumed row 6 using the admitted Q4_K_S recovery evidence: `proposed -> in_progress -> verified`.
+- Verified the repeat invocation returned `idle` and zero actionable rows remain.
+- Kept activation local and on-demand: no cron, cloud code generation, GitHub Actions, or public write.
+- Evidence: `reports/cnet_bounded_activation.json`.
 
 ## Remaining Work
 
-- A future local perpetual engine may consume only `proposed` rows whose metadata marks them actionable.
 - Copy the reusable implementation pattern into `Self-Development-Log.md` during the next self-development cycle.

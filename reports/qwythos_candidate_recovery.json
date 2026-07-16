@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "root_cause": {
+    "quarantined_artifact": "/home/marble/AI/CNET/hermes_wrappers/Qwythos-9B-Claude-Mythos-5-1M-MTP-Q8_0.gguf.cnetpack",
+    "quarantined_sha256": "db0b3153b7d5e98cf4801cd75a24e91bcd21396971635de58345893cc081fbc3",
+    "finding": "The filename claimed Q8_0, but embedded GGUF headers contained 256 TQ1_0 tensors. Unsupported post-hoc full-model ternarization caused incoherent output.",
+    "old_tensor_types": {
+      "F32": 184,
+      "Q4_K": 1,
+      "Q8_0": 1,
+      "TQ1_0": 256
+    },
+    "disposition": "quarantined; admission threshold unchanged"
+  },
+  "replacement": {
+    "source": "/home/marble/Downloads/Qwythos-9B-Claude-Mythos-5-1M-MTP-Q8_0.gguf",
+    "source_sha256": "0d65d20a1a5a96600a0fa6f53dfe636f81e61de6e637cec45bc147be7a3c6544",
+    "strategy": "Q4_K_S mixed quantization with --allow-requantize, CPU-only, four threads, timeout-bounded and atomically published",
+    "path": "/home/marble/AI/CNET/hermes_wrappers/Qwythos-9B-Claude-Mythos-5-1M-MTP-Q4_K_S-recovery.gguf",
+    "sha256": "d162f405d76240ed573acbf616e7c85fa861aefbaa3dd44d8a812758800f2045",
+    "bytes": 5488553824,
+    "storage_ratio_vs_reference": 0.983849923360662,
+    "tensor_count": 442,
+    "tensor_types": {
+      "F32": 184,
+      "Q4_K": 249,
+      "Q5_K": 8,
+      "Q6_K": 1
+    }
+  },
+  "acceptance": {
+    "report": "reports/qwythos_real_model_acceptance.json",
+    "verdict": "PASS_CANDIDATE_ADMITTED",
+    "selected_role": "candidate",
+    "reference_quality": 0.6666666666666666,
+    "candidate_quality": 1.0,
+    "quality_delta": 0.33333333333333337,
+    "admission_reasons": [],
+    "qgkp_byte_identical": true,
+    "restart_responses_identical": true,
+    "restart_quality_preserved": true,
+    "grads_evidence": "reports/qwythos_real_model_acceptance.json#/distribution_evidence"
+  },
+  "hermes": {
+    "status": "pass",
+    "expected": "Ready",
+    "matched": true,
+    "final_line": "Ready",
+    "returncode": 0,
+    "server_ready_seconds": 3.0060163750022184,
+    "query_seconds": 325.5875658709847,
+    "cpu_only": true,
+    "loopback_only": true
+  },
+  "verdict": "QWYTHOS_RECOVERY_AND_HERMES_ACCEPTANCE_PASS"
+}

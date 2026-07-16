@@ -23,11 +23,13 @@ The focused test validates:
 - sparse mode keeps initial anchors, recent tokens, long-range anchors, and high-score middle tokens.
 - default budget targets roughly 20% of context.
 
-LongBench / InfiniteBench and full-vs-sparse quality measurements are still pending.
+The bounded authority also called the real native selector at 512, 2,048, and 8,192 tokens with 15%, 20%, and 25% budgets. All nine measurements used the exact budget and retained every injected heavy-hitter needle.
+
+This is selector evidence, not LongBench quality evidence. The admitted llama.cpp runtime does not execute this CNET sparse-KV path, so LongBench / InfiniteBench quality is explicitly `withheld`. See `docs/phase123_benchmark_closure.md` and `reports/phase123_benchmark_closure.json`.
 
 ## Open Items
 
+- Integrate sparse selection into the admitted model's KV execution path.
 - Implement true multi-context query personalization and selective recomputation.
-- Add benchmark harness for LongBench / InfiniteBench or SCBench-style shared context tests.
-- Measure quality at 15-25% KV budget and only then claim the Phase 2 success metric.
-- Generate CNET testimony if lost-in-the-middle regressions appear in benchmark runs.
+- Run LongBench / InfiniteBench or SCBench after integration and claim quality only from those measurements.
+- Generate CNET testimony if the real long-context benchmark reveals lost-in-the-middle regressions.

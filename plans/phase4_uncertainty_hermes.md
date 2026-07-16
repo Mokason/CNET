@@ -27,8 +27,12 @@ Results:
 - `dotnet build`: passed with the existing `NU1603` package warning.
 - `make cce_safetensors_test`: compiled aggregate CCE and the log ends with `ALL SAFETENSORS TESTS PASSED`.
 
+## Post-Release Status
+
+- Hermes wrapper launch is complete and strict end-to-end acceptance passed through a loopback CPU llama.cpp custom provider. See `plans/post_release_real_model_continuation.md`.
+- Real-model acceptance quarantined the compressed candidate for measured quality regression and retained the validated reference.
+
 ## Remaining Work
 
-- Wire the Hermes wrapper to an actual Hermes launch script once the target runtime contract is fixed.
-- Run compression recovery on a real converted model and inspect `Grads[]` norms.
-- Calibrate uncertainty thresholds on real specialist activations and route evidence.
+- Run compression recovery on a real converted model and inspect `Grads[]` norms before producing a replacement candidate.
+- Calibrate uncertainty thresholds on real specialist activations and route evidence without changing the existing admission floor.

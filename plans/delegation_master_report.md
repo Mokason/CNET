@@ -52,4 +52,19 @@ Final authority: `make --no-print-directory release_integrity`
 | MCP survival | `plans/integrity_mcp_protocol.md` | FOCUSED GREEN | malformed roots/params survive in one process; JSON-RPC 2.0 is enforced; every notification is silent; synchronized writes preserve protocol-only stdout; an injected blocked compression operation proves concurrent `tools/list` progress; integrated suite passes 12/12 (`MCP_PROTOCOL_SURVIVAL_GATE_PASS`) |
 | Release authority | `plans/integrity_release_gate.md` | CLOSED | v5.1.1 archive is reproducible and builds/installs/runs a pkg-config consumer from extraction; clean tracked-tree preflight/closure pass; final authority emits `CNET_RELEASE_INTEGRITY_PASS` |
 
-H0 is rejected: the clean integration tree executed the single release authority, every ordered marker was inspected, the archive self-built and ran its consumer, and no release process remained. No external push was performed.
+H0 is rejected: the clean integration tree executed the single release authority, every ordered marker was inspected, the archive self-built and ran its consumer, and no release process remained. No external push was performed during that closure run.
+
+## 2026-07-16 Real-Model Recovery, Benchmark Closure, and Bounded Activation
+
+Source of truth: `plans/post_release_real_model_continuation.md`
+
+| Slice | Artifact | Status | Evidence |
+|---|---|---|---|
+| Candidate recovery | `reports/qwythos_candidate_recovery.json` | GREEN | Quarantined filename claimed Q8_0 while embedded headers contained 256 TQ1_0 tensors; an atomic CPU Q4_K_S replacement was admitted without weakening `max_quality_delta=0.0` |
+| Real-model campaign | `reports/qwythos_real_model_acceptance.json` | GREEN, CANDIDATE ADMITTED | candidate quality `1.0`, reference `0.6666667`, delta `+0.3333333`; QGKP byte-identical; restart responses identical; candidate selected |
+| Hermes launch | `tools/run_hermes_wrapper.py`, selected wrapper manifest | GREEN | isolated custom provider, loopback llama.cpp, `--n-gpu-layers 0`, strict final-line `Ready`, return code 0, and process cleanup |
+| Phase 1–3 benchmarks | `reports/phase123_benchmark_closure.json` | PASS WITH EXTERNAL CLAIMS WITHHELD | three native contracts pass; nine sparse selector budgets are exact with full needle retention; real-model narrative delta `-0.036` passes `-0.05`; absent FACTOR/TruthfulQA and LongBench runtime paths are explicitly not claimed |
+| Bounded registry consumer | `reports/cnet_bounded_activation.json` | GREEN | eight tests pass; row 6 completed `proposed -> in_progress -> verified`; unchanged candidate/replacement SHA linkage and zero-regression policy recorded; repeat invocation `idle`; zero actionable rows remain |
+| Publication | private `origin/master` | PENDING FINAL AUTHORITY | run `make release_integrity`, attribution audit, private push, and local/remote SHA equality check |
+
+H0 is rejected for recovery, benchmark integrity, and bounded activation: the replacement is admitted under unchanged gates, unavailable external metrics are withheld rather than simulated, and the only actionable row is durably verified with dedup/recovery evidence. Publication remains contingent on the single clean-tree release authority.

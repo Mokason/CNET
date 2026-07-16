@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "generated_at_utc": "2026-07-16T16:38:30+00:00",
+  "mode": "bounded_one_shot",
+  "scheduler_installed": false,
+  "public_write_performed": false,
+  "registry": "/home/marble/AI/tools/suggestion_registry.db",
+  "selection": {
+    "area": "cnet-model-compression",
+    "source": "cnet_real_model_acceptance",
+    "required_status": [
+      "proposed",
+      "in_progress"
+    ],
+    "required_actionable": true,
+    "max_rows_per_invocation": 1
+  },
+  "dry_run": {
+    "status": "dry_run",
+    "would_process": 6,
+    "processed": 0,
+    "row_status_after": "proposed"
+  },
+  "activation": {
+    "row_id": 6,
+    "status": "verified",
+    "resumed": false,
+    "processed": 1,
+    "reasons": [],
+    "task_candidate_sha256": "db0b3153b7d5e98cf4801cd75a24e91bcd21396971635de58345893cc081fbc3",
+    "replacement_sha256": "d162f405d76240ed573acbf616e7c85fa861aefbaa3dd44d8a812758800f2045",
+    "quality_delta": 0.33333333333333337,
+    "max_quality_delta": 0.0,
+    "qgkp_byte_identical": true,
+    "restart_responses_identical": true,
+    "restart_quality_preserved": true,
+    "hermes_acceptance": "pass"
+  },
+  "repeat_invocation": {
+    "status": "idle",
+    "processed": 0
+  },
+  "remaining_actionable_rows": 0,
+  "recovery_verification": {
+    "unit_test": "test_crash_after_claim_leaves_resumable_state",
+    "transition": "proposed -> in_progress -> verified",
+    "in_progress_resume_supported": true
+  },
+  "tests": {
+    "activation": "8/8 pass",
+    "real_model_acceptance": "8/8 pass",
+    "ingest_dedup": "3/3 pass"
+  },
+  "verdict": "CNET_BOUNDED_ACTIVATION_PASS"
+}
