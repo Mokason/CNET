@@ -2113,7 +2113,12 @@ priority_acceptance:
 # Single release authority. Focused integrity slices run first; the existing
 # portable CI and full private acceptance umbrellas run only after every slice
 # is green. Output is published atomically at the end of the bounded sequence.
-.PHONY: release_integrity_authority release_integrity
+.PHONY: license_metadata_test release_integrity_authority release_integrity
+license_metadata_test: tests/test_license_metadata.py LICENSE README.md docs/RELEASE_POLICY.md dotnet/Cce/Cce.csproj Makefile
+	@mkdir -p logs
+	@python3 tests/test_license_metadata.py > logs/license_metadata_test.log 2>&1
+	@grep -q "LICENSE_METADATA_PASS" logs/license_metadata_test.log
+
 release_integrity_authority: tests/test_release_integrity_authority.py VERSION include/cnet_version.h docs/RELEASE_POLICY.md Makefile
 	@mkdir -p logs
 	@python3 tests/test_release_integrity_authority.py > logs/release_integrity_authority.log 2>&1
@@ -2133,6 +2138,7 @@ release_integrity:
 		}; \
 		trap cleanup_release_generated EXIT INT TERM; \
 		$(MAKE) --no-print-directory release_integrity_authority; \
+		$(MAKE) --no-print-directory license_metadata_test; \
 		$(MAKE) --no-print-directory real_model_control_plane_test; \
 		$(MAKE) --no-print-directory phase123_benchmark_test; \
 		$(MAKE) --no-print-directory phase5_integration_test; \

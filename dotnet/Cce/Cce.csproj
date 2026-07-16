@@ -8,6 +8,7 @@
     <InvariantGlobalization>true</InvariantGlobalization>
     <RootNamespace>CNET.Cce</RootNamespace>
     <AssemblyName>CNET.Cce</AssemblyName>
+    <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <LangVersion>latest</LangVersion>
   </PropertyGroup>

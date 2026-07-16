@@ -3,7 +3,10 @@
 ## Current status
 
 - Version `5.1.1` is the integrity-closure internal release candidate.
+- Unless a file states otherwise, CNET-authored source code and documentation
+  are licensed under `Apache-2.0` as recorded in the repository `LICENSE`.
 - The repository, source archive, binaries, campaign evidence, tags, and release notes remain private.
+- License selection does not authorize public distribution or a repository-visibility change.
 - No public release, remote push, tag, package upload, or announcement is authorized by this policy.
 - GitHub Actions is manual-dispatch only. Pushes and pull requests must not start paid CI automatically.
 
@@ -29,10 +32,13 @@ A release candidate is acceptable only when that umbrella returns zero, its full
 
 Public distribution remains blocked until the owner explicitly authorizes all of the following:
 
-1. A public license and copyright holder text.
+1. Copyright holder text and any required `NOTICE` or third-party attribution.
 2. A remote destination and branch/tag strategy.
 3. A final public-facing security and secret scan.
 4. A public CI budget and trigger policy.
 5. Publication of a specific immutable release digest.
 
-Until those decisions are recorded, no public license is granted and no external publication action is permitted.
+Apache-2.0 applies to covered copies received under `LICENSE`; GitHub visibility
+and release authorization are separate controls. Until the remaining decisions
+are recorded, the repository must remain private and no external publication
+action is permitted.

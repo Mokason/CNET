@@ -203,3 +203,13 @@ gates), `make claims`. The complete annotated table is in
 
 The design documents in `docs/superpowers/specs/` record rationale for
 the overall approach.
+
+## License
+
+Unless a file states otherwise, CNET-authored source code and documentation
+are licensed under **Apache-2.0**. See [LICENSE](LICENSE). Third-party model,
+tokenizer, dataset, and other external artifacts retain their applicable
+upstream terms.
+
+The canonical repository currently remains private. Selecting Apache-2.0 does
+not authorize a public release or a repository-visibility change.
