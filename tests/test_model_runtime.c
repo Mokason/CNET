@@ -677,6 +677,8 @@ typedef struct {
     atomic_int unloads;
     atomic_int reentry_attempted;
     atomic_int reentry_succeeded;
+    atomic_int observed_state;
+    const char *observe_model_id;
     int fail_load;
 } ReentrantBackendState;
 
@@ -695,6 +697,7 @@ static int reentrant_load(void *context,
 
 static void reentrant_unload(void *context, void *handle) {
     ReentrantBackendState *state = (ReentrantBackendState *)context;
+    CnetModelStats stats;
     state->unloads++;
     /* Simulate a backend that calls back into the manager during unload.
      * This must not deadlock — the manager mutex must not be held here. */
@@ -702,6 +705,11 @@ static void reentrant_unload(void *context, void *handle) {
     int count = cnet_model_manager_model_count(state->manager);
     if (count >= 0) {
         atomic_store(&state->reentry_succeeded, 1);
+    }
+    if (state->observe_model_id &&
+        cnet_model_stats(state->manager, state->observe_model_id, &stats) ==
+            CNET_MODEL_OK) {
+        atomic_store(&state->observed_state, (int)stats.state);
     }
     free(handle);
 }
@@ -881,6 +889,184 @@ static void test_failed_relocation_preserves_prior_residency(void) {
           "relocation manager closes with only one unload (the final eviction)");
 }
 
+static void test_failed_load_preserves_selected_bystander(void) {
+    CnetModelManager *manager = NULL;
+    CnetModelBudget budget = { CNET_MODEL_RESOURCE_GPU0, 10 };
+    CnetModelManagerOptions options;
+    CnetModelBackendSpec backend;
+    MockBackendState backend_state = {0};
+    CnetModelDescriptor victim;
+    CnetModelDescriptor replacement;
+    CnetModelLease victim_lease;
+    CnetModelLease failed_lease;
+    CnetModelLease reacquired;
+    CnetModelStats stats;
+    CnetModelResourceStats resource;
+    void *original_handle;
+    uint64_t original_generation;
+
+    memset(&options, 0, sizeof options);
+    options.abi_version = CNET_MODEL_RUNTIME_ABI_VERSION;
+    options.struct_size = sizeof options;
+    options.max_models = 4;
+    options.max_backends = 1;
+    options.budgets = &budget;
+    options.budget_count = 1;
+    CHECK(cnet_model_manager_open(&manager, &options) == CNET_MODEL_OK,
+          "bystander rollback manager opens");
+    memset(&backend, 0, sizeof backend);
+    backend.abi_version = CNET_MODEL_RUNTIME_ABI_VERSION;
+    backend.struct_size = sizeof backend;
+    snprintf(backend.name, sizeof backend.name, "mock");
+    backend.context = &backend_state;
+    backend.load = mock_load;
+    backend.unload = mock_unload;
+    CHECK(cnet_model_backend_register(manager, &backend) == CNET_MODEL_OK,
+          "bystander rollback backend registers");
+    victim = descriptor("rollback-victim", CNET_MODEL_CLASS_DENSE_TRANSFORMER,
+                        CNET_MODEL_RESOURCE_GPU0, 1, 6);
+    replacement = descriptor("rollback-new", CNET_MODEL_CLASS_DENSE_TRANSFORMER,
+                             CNET_MODEL_RESOURCE_GPU0, 1, 8);
+    CHECK(cnet_model_catalog_add(manager, &victim) == CNET_MODEL_OK &&
+          cnet_model_catalog_add(manager, &replacement) == CNET_MODEL_OK,
+          "bystander rollback fixtures enter catalog");
+    CHECK(cnet_model_acquire(manager, "rollback-victim", 0, &victim_lease) ==
+              CNET_MODEL_OK,
+          "rollback victim loads");
+    original_handle = victim_lease.handle;
+    original_generation = victim_lease.generation;
+    CHECK(cnet_model_release(manager, &victim_lease) == CNET_MODEL_OK,
+          "rollback victim becomes inactive");
+
+    backend_state.fail_load = 1;
+    CHECK(cnet_model_acquire(manager, "rollback-new", 0, &failed_lease) ==
+              CNET_MODEL_LOAD_FAILED,
+          "replacement load fails after selecting a victim");
+    CHECK(backend_state.unloads == 0,
+          "failed replacement never unloads the selected bystander");
+    CHECK(cnet_model_stats(manager, "rollback-victim", &stats) == CNET_MODEL_OK &&
+          stats.state == CNET_MODEL_STATE_RESIDENT && stats.evictions == 0,
+          "failed replacement preserves bystander state and generation history");
+    CHECK(cnet_model_resource_stats(manager, CNET_MODEL_RESOURCE_GPU0, &resource) ==
+              CNET_MODEL_OK && resource.resident_bytes == 6 &&
+              resource.resident_models == 1 && resource.reserved_bytes == 0,
+          "failed replacement preserves bystander accounting");
+    backend_state.fail_load = 0;
+    CHECK(cnet_model_acquire(manager, "rollback-victim", 0, &reacquired) ==
+              CNET_MODEL_OK && reacquired.handle == original_handle &&
+              reacquired.generation == original_generation,
+          "failed replacement preserves bystander handle and generation");
+    CHECK(cnet_model_release(manager, &reacquired) == CNET_MODEL_OK,
+          "preserved bystander lease releases");
+    CHECK(cnet_model_manager_close(manager) == CNET_MODEL_OK &&
+          backend_state.unloads == 1,
+          "bystander rollback manager closes one original handle");
+}
+
+static void test_successful_load_commits_victim_before_unload_callback(void) {
+    CnetModelManager *manager = NULL;
+    CnetModelBudget budget = { CNET_MODEL_RESOURCE_GPU0, 10 };
+    CnetModelManagerOptions options;
+    CnetModelBackendSpec backend;
+    ReentrantBackendState backend_state = {0};
+    CnetModelDescriptor victim;
+    CnetModelDescriptor replacement;
+    CnetModelLease lease;
+    CnetModelStats victim_stats;
+
+    atomic_store(&backend_state.observed_state, -1);
+    memset(&options, 0, sizeof options);
+    options.abi_version = CNET_MODEL_RUNTIME_ABI_VERSION;
+    options.struct_size = sizeof options;
+    options.max_models = 4;
+    options.max_backends = 1;
+    options.budgets = &budget;
+    options.budget_count = 1;
+    CHECK(cnet_model_manager_open(&manager, &options) == CNET_MODEL_OK,
+          "transaction commit manager opens");
+    backend_state.manager = manager;
+    backend_state.observe_model_id = "commit-new";
+    memset(&backend, 0, sizeof backend);
+    backend.abi_version = CNET_MODEL_RUNTIME_ABI_VERSION;
+    backend.struct_size = sizeof backend;
+    snprintf(backend.name, sizeof backend.name, "mock");
+    backend.context = &backend_state;
+    backend.load = reentrant_load;
+    backend.unload = reentrant_unload;
+    CHECK(cnet_model_backend_register(manager, &backend) == CNET_MODEL_OK,
+          "transaction commit backend registers");
+    victim = descriptor("commit-victim", CNET_MODEL_CLASS_DENSE_TRANSFORMER,
+                        CNET_MODEL_RESOURCE_GPU0, 1, 10);
+    replacement = descriptor("commit-new", CNET_MODEL_CLASS_DENSE_TRANSFORMER,
+                             CNET_MODEL_RESOURCE_GPU0, 1, 10);
+    CHECK(cnet_model_catalog_add(manager, &victim) == CNET_MODEL_OK &&
+          cnet_model_catalog_add(manager, &replacement) == CNET_MODEL_OK,
+          "transaction commit fixtures enter catalog");
+    CHECK(cnet_model_acquire(manager, "commit-victim", 0, &lease) == CNET_MODEL_OK &&
+          cnet_model_release(manager, &lease) == CNET_MODEL_OK,
+          "transaction victim becomes inactive");
+    CHECK(cnet_model_acquire(manager, "commit-new", 0, &lease) == CNET_MODEL_OK,
+          "replacement load commits");
+    CHECK(atomic_load(&backend_state.reentry_succeeded) == 1,
+          "victim unload callback re-enters without deadlock");
+    CHECK(atomic_load(&backend_state.observed_state) == CNET_MODEL_STATE_RESIDENT,
+          "victim unload observes replacement already committed");
+    CHECK(cnet_model_stats(manager, "commit-victim", &victim_stats) == CNET_MODEL_OK &&
+          victim_stats.state == CNET_MODEL_STATE_COLD &&
+          victim_stats.evictions == 1,
+          "successful replacement commits victim eviction exactly once");
+    CHECK(cnet_model_release(manager, &lease) == CNET_MODEL_OK,
+          "committed replacement lease releases");
+    backend_state.observe_model_id = NULL;
+    CHECK(cnet_model_manager_close(manager) == CNET_MODEL_OK,
+          "transaction commit manager closes");
+}
+
+static void test_actual_size_rejection_unloads_outside_mutex(void) {
+    CnetModelManager *manager = NULL;
+    CnetModelBudget budget = { CNET_MODEL_RESOURCE_GPU0, 16 };
+    CnetModelManagerOptions options;
+    CnetModelBackendSpec backend;
+    ReentrantBackendState backend_state = {0};
+    CnetModelDescriptor model;
+    CnetModelLease lease;
+    CnetModelStats stats;
+
+    memset(&options, 0, sizeof options);
+    options.abi_version = CNET_MODEL_RUNTIME_ABI_VERSION;
+    options.struct_size = sizeof options;
+    options.max_models = 2;
+    options.max_backends = 1;
+    options.budgets = &budget;
+    options.budget_count = 1;
+    CHECK(cnet_model_manager_open(&manager, &options) == CNET_MODEL_OK,
+          "actual-size manager opens");
+    backend_state.manager = manager;
+    memset(&backend, 0, sizeof backend);
+    backend.abi_version = CNET_MODEL_RUNTIME_ABI_VERSION;
+    backend.struct_size = sizeof backend;
+    snprintf(backend.name, sizeof backend.name, "mock");
+    backend.context = &backend_state;
+    backend.load = reentrant_load;
+    backend.unload = reentrant_unload;
+    CHECK(cnet_model_backend_register(manager, &backend) == CNET_MODEL_OK,
+          "actual-size backend registers");
+    model = descriptor("actual-size", CNET_MODEL_CLASS_DENSE_TRANSFORMER,
+                       CNET_MODEL_RESOURCE_GPU0, 1, 9);
+    CHECK(cnet_model_catalog_add(manager, &model) == CNET_MODEL_OK,
+          "actual-size fixture enters catalog");
+    CHECK(cnet_model_acquire(manager, "actual-size", 0, &lease) ==
+              CNET_MODEL_OVER_BUDGET,
+          "actual bytes above estimate fail closed");
+    CHECK(atomic_load(&backend_state.reentry_succeeded) == 1,
+          "actual-size rejection unload re-enters without deadlock");
+    CHECK(cnet_model_stats(manager, "actual-size", &stats) == CNET_MODEL_OK &&
+          stats.state == CNET_MODEL_STATE_FAILED && stats.load_failures == 1,
+          "actual-size rejection leaves explicit failed state");
+    CHECK(cnet_model_manager_close(manager) == CNET_MODEL_OK,
+          "actual-size manager closes");
+}
+
 int main(void) {
     test_dense_and_moe_share_one_catalog();
     test_two_dense_models_remain_resident_and_reuse_hot_handles();
@@ -892,6 +1078,9 @@ int main(void) {
     test_eviction_uses_lru_not_catalog_order();
     test_unload_callback_runs_outside_mutex();
     test_failed_relocation_preserves_prior_residency();
+    test_failed_load_preserves_selected_bystander();
+    test_successful_load_commits_victim_before_unload_callback();
+    test_actual_size_rejection_unloads_outside_mutex();
     if (failures) {
         fprintf(stderr, "MODEL_RUNTIME_FAIL checks=%d failures=%d\n", checks, failures);
         return 1;
