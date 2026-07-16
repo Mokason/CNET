@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Text.Json;
 using System.Threading;
@@ -61,6 +62,13 @@ class Program
 
         using var reader = new StreamReader(Console.OpenStandardInput());
         using var writer = new StreamWriter(Console.OpenStandardOutput()) { AutoFlush = true };
+        using var writerGate = new SemaphoreSlim(1, 1);
+        using var emptyArgsDocument = JsonDocument.Parse("{}");
+        JsonElement emptyArgs = emptyArgsDocument.RootElement;
+        var pendingOperations = new List<Task>();
+        int compressionDelayMs = int.TryParse(
+            Environment.GetEnvironmentVariable("CNET_MCP_TEST_COMPRESSION_DELAY_MS"),
+            out int delayMs) && delayMs > 0 ? delayMs : 0;
 
         var jsonOpts = new JsonSerializerOptions
         {
@@ -73,7 +81,12 @@ class Program
             while (!cts.IsCancellationRequested && (line = await reader.ReadLineAsync()) != null)
             {
                 if (string.IsNullOrWhiteSpace(line)) continue;
+                await ObserveOperations(pendingOperations, waitForAll: false);
 
+                JsonElement? responseId = null;
+                bool responseExpected = false;
+                try
+                {
                 // ---- Parse phase: -32700 on malformed JSON ----
                 JsonElement request;
                 try
@@ -85,7 +98,13 @@ class Program
                     // Parse error: the input is not valid JSON.
                     // JSON-RPC 2.0: -32700 parse error. We have no id to
                     // echo back, so id is null.
-                    await WriteError(writer, null, -32700, "Parse error");
+                    await WriteError(writer, writerGate, null, -32700, "Parse error");
+                    continue;
+                }
+
+                if (request.ValueKind != JsonValueKind.Object)
+                {
+                    await WriteError(writer, writerGate, null, -32600, "Invalid Request");
                     continue;
                 }
 
@@ -94,6 +113,11 @@ class Program
                 // says notifications must NOT receive a response).
                 bool hasId = request.TryGetProperty("id", out var idElement);
                 bool isNotification = !hasId;
+                if (hasId)
+                {
+                    responseExpected = true;
+                    responseId = idElement.Clone();
+                }
 
                 // ---- Extract method ----
                 string method = "";
@@ -110,12 +134,16 @@ class Program
                 bool hasJsonRpc = request.TryGetProperty("jsonrpc", out var jrEl) &&
                     jrEl.ValueKind == JsonValueKind.String &&
                     jrEl.GetString() == "2.0";
+                bool validId = !hasId || idElement.ValueKind == JsonValueKind.String ||
+                    idElement.ValueKind == JsonValueKind.Number ||
+                    idElement.ValueKind == JsonValueKind.Null;
 
-                if (string.IsNullOrEmpty(method))
+                if (!hasJsonRpc || !validId || string.IsNullOrEmpty(method))
                 {
-                    // Missing or empty method → invalid request
+                    // Invalid notifications remain silent. Requests preserve a
+                    // valid id; malformed id values are represented as null.
                     if (!isNotification)
-                        await WriteError(writer, hasId ? idElement : (JsonElement?)null,
+                        await WriteError(writer, writerGate, validId ? idElement : (JsonElement?)null,
                             -32600, "Invalid Request");
                     continue;
                 }
@@ -123,10 +151,20 @@ class Program
                 // ---- Dispatch ----
                 if (method == "initialize")
                 {
-                    string protocolVersion =
-                        request.TryGetProperty("params", out var initParams)
-                        && initParams.TryGetProperty("protocolVersion", out var pv)
-                        ? pv.GetString() ?? "2024-11-05" : "2024-11-05";
+                    string protocolVersion = "2024-11-05";
+                    if (request.TryGetProperty("params", out var initParams))
+                    {
+                        if (initParams.ValueKind != JsonValueKind.Object)
+                        {
+                            if (!isNotification)
+                                await WriteError(writer, writerGate, idElement, -32602,
+                                    "Invalid params: expected object");
+                            continue;
+                        }
+                        if (initParams.TryGetProperty("protocolVersion", out var pv) &&
+                            pv.ValueKind == JsonValueKind.String)
+                            protocolVersion = pv.GetString() ?? protocolVersion;
+                    }
                     var response = new
                     {
                         jsonrpc = "2.0",
@@ -138,7 +176,9 @@ class Program
                             serverInfo = new { name = "cnet-mcp", version = "0.2.0" }
                         }
                     };
-                    await writer.WriteLineAsync(JsonSerializer.Serialize(response, jsonOpts));
+                    if (!isNotification)
+                        await WriteFrame(writer, writerGate,
+                            JsonSerializer.Serialize(response, jsonOpts));
                 }
                 else if (method == "tools/list")
                 {
@@ -272,15 +312,18 @@ class Program
                             }
                         }
                     };
-                    await writer.WriteLineAsync(JsonSerializer.Serialize(response, jsonOpts));
+                    if (!isNotification)
+                        await WriteFrame(writer, writerGate,
+                            JsonSerializer.Serialize(response, jsonOpts));
                 }
                 else if (method == "tools/call")
                 {
-                    // Validate params presence
-                    if (!request.TryGetProperty("params", out var callParams))
+                    // MCP tool-call params must be a JSON object.
+                    if (!request.TryGetProperty("params", out var callParams) ||
+                        callParams.ValueKind != JsonValueKind.Object)
                     {
                         if (!isNotification)
-                            await WriteError(writer, hasId ? idElement : (JsonElement?)null,
+                            await WriteError(writer, writerGate, hasId ? idElement : (JsonElement?)null,
                                 -32602, "Invalid params: missing params object");
                         continue;
                     }
@@ -290,7 +333,7 @@ class Program
                         nameEl.ValueKind != JsonValueKind.String)
                     {
                         if (!isNotification)
-                            await WriteError(writer, hasId ? idElement : (JsonElement?)null,
+                            await WriteError(writer, writerGate, hasId ? idElement : (JsonElement?)null,
                                 -32602, "Invalid params: missing or invalid tool name");
                         continue;
                     }
@@ -298,30 +341,71 @@ class Program
                     var toolName = nameEl.GetString() ?? "";
                     // arguments is optional — default to empty object
                     var toolArgs = callParams.TryGetProperty("arguments", out var argsEl)
-                        ? argsEl : default;
+                        ? argsEl : emptyArgs;
+                    if (toolArgs.ValueKind != JsonValueKind.Object)
+                    {
+                        if (!isNotification)
+                            await WriteError(writer, writerGate, idElement, -32602,
+                                "Invalid params: arguments must be an object");
+                        continue;
+                    }
+
+                    if (toolName == "cnet_compress_model")
+                    {
+                        JsonElement capturedArgs = toolArgs.ValueKind == JsonValueKind.Object
+                            ? toolArgs.Clone() : default;
+                        JsonElement capturedId = hasId ? idElement.Clone() : default;
+                        bool capturedNotification = isNotification;
+                        pendingOperations.Add(Task.Run(async () =>
+                        {
+                            string resultText;
+                            try
+                            {
+                                if (compressionDelayMs > 0)
+                                    await Task.Delay(compressionDelayMs);
+                                string targetSize = SafeGetString(capturedArgs, "target_size");
+                                resultText = tools.CompressModel(
+                                    SafeGetString(capturedArgs, "model_path"),
+                                    string.IsNullOrEmpty(targetSize) ? "1.6bit" : targetSize,
+                                    SafeGetString(capturedArgs, "options"));
+                            }
+                            catch (Exception toolExc)
+                            {
+                                Console.Error.WriteLine(
+                                    $"[CNET MCP] tool '{toolName}' failed: {toolExc}");
+                                resultText =
+                                    $"[CNET] Tool '{toolName}' failed: {toolExc.Message}";
+                            }
+                            if (!capturedNotification)
+                            {
+                                var response = new
+                                {
+                                    jsonrpc = "2.0",
+                                    id = (object?)GetIdValue(capturedId),
+                                    result = new
+                                    {
+                                        content = new[]
+                                        {
+                                            new { type = "text", text = resultText }
+                                        }
+                                    }
+                                };
+                                await WriteFrame(writer, writerGate,
+                                    JsonSerializer.Serialize(response, jsonOpts));
+                            }
+                        }));
+                        continue;
+                    }
 
                     // A tool failure must never kill the stdio server: report
                     // it as the tool result instead of unwinding the read loop.
                     string resultText;
                     try
                     {
-                        // Lock-scope narrowing: only SoulHost-touching tools
-                        // hold the authority lock. Compression runs outside
-                        // the lock because it uses an independent native path
-                        // (CnetCompression) and never touches SoulHost/registry.
-                        if (toolName == "cnet_compress_model")
+                        lock (toolGate)
                         {
-                            resultText = tools.CompressModel(
-                                SafeGetString(toolArgs, "model_path"),
-                                toolArgs.TryGetProperty("target_size", out var ts) ? ts.GetString() ?? "1.6bit" : "1.6bit",
-                                toolArgs.TryGetProperty("options", out var co) ? co.GetString() ?? "" : "");
-                        }
-                        else
-                        {
-                            lock (toolGate)
+                            resultText = toolName switch
                             {
-                                resultText = toolName switch
-                                {
                                     "cnet_verify_claim" => tools.VerifyClaim(
                                         SafeGetString(toolArgs, "claim"),
                                         toolArgs.TryGetProperty("unitTag", out var ut) ? ut.GetString() ?? "" : "",
@@ -351,8 +435,7 @@ class Program
                                         ReadDoubleList(toolArgs, "input")),
                                     "cnet_health_tick" => tools.HealthTick(),
                                     _ => "Unknown tool: " + toolName
-                                };
-                            }
+                            };
                         }
                     }
                     catch (Exception toolExc)
@@ -369,7 +452,8 @@ class Program
                             id = (object?)GetIdValue(idElement),
                             result = new { content = new[] { new { type = "text", text = resultText } } }
                         };
-                        await writer.WriteLineAsync(JsonSerializer.Serialize(response, jsonOpts));
+                        await WriteFrame(writer, writerGate,
+                            JsonSerializer.Serialize(response, jsonOpts));
                     }
                 }
                 else if (method == "initialized" || method == "notifications/initialized")
@@ -380,10 +464,20 @@ class Program
                 {
                     // Unknown method → -32601 method not found
                     if (!isNotification)
-                        await WriteError(writer, hasId ? idElement : (JsonElement?)null,
+                        await WriteError(writer, writerGate, hasId ? idElement : (JsonElement?)null,
                             -32601, $"Method not found: {method}");
                 }
+                }
+                catch (Exception frameException)
+                {
+                    Console.Error.WriteLine(
+                        $"[CNET MCP] request frame failed: {frameException}");
+                    if (responseExpected)
+                        await WriteError(writer, writerGate, responseId,
+                            -32603, "Internal error");
+                }
             }
+            await ObserveOperations(pendingOperations, waitForAll: true);
         }
         catch (OperationCanceledException)
         {
@@ -391,11 +485,45 @@ class Program
         }
     }
 
+    static async Task ObserveOperations(List<Task> operations, bool waitForAll)
+    {
+        for (int index = operations.Count - 1; index >= 0; index--)
+        {
+            Task operation = operations[index];
+            if (!waitForAll && !operation.IsCompleted) continue;
+            try
+            {
+                await operation;
+            }
+            catch (Exception operationException)
+            {
+                Console.Error.WriteLine(
+                    $"[CNET MCP] independent operation failed: {operationException}");
+            }
+            operations.RemoveAt(index);
+        }
+    }
+
     /// <summary>
     /// Write a JSON-RPC 2.0 error response. The id is preserved as-is
     /// (string, number, or null) by serializing the raw JsonElement.
     /// </summary>
-    static async Task WriteError(StreamWriter writer, JsonElement? id, int code, string message)
+    static async Task WriteFrame(StreamWriter writer, SemaphoreSlim writerGate,
+                                 string frame)
+    {
+        await writerGate.WaitAsync();
+        try
+        {
+            await writer.WriteLineAsync(frame);
+        }
+        finally
+        {
+            writerGate.Release();
+        }
+    }
+
+    static async Task WriteError(StreamWriter writer, SemaphoreSlim writerGate,
+                                 JsonElement? id, int code, string message)
     {
         // Build the error response manually to preserve id type fidelity.
         // We serialize the id element directly to preserve its JSON type
@@ -409,7 +537,7 @@ class Program
         });
 
         string frame = $"{{\"jsonrpc\":\"2.0\",\"id\":{idJson},\"error\":{errorJson}}}";
-        await writer.WriteLineAsync(frame);
+        await WriteFrame(writer, writerGate, frame);
     }
 
     /// <summary>
@@ -422,7 +550,7 @@ class Program
         {
             JsonValueKind.String => idElement.GetString(),
             JsonValueKind.Number when idElement.TryGetInt64(out long l) => l,
-            JsonValueKind.Number => idElement.GetDouble(),
+            JsonValueKind.Number when idElement.TryGetDouble(out double d) => d,
             JsonValueKind.Null => null,
             _ => null
         };
@@ -434,7 +562,7 @@ class Program
     /// </summary>
     static string SafeGetString(JsonElement element, string propertyName)
     {
-        if (element.ValueKind == JsonValueKind.Undefined) return "";
+        if (element.ValueKind != JsonValueKind.Object) return "";
         if (!element.TryGetProperty(propertyName, out var prop)) return "";
         if (prop.ValueKind != JsonValueKind.String) return "";
         return prop.GetString() ?? "";
@@ -452,7 +580,7 @@ class Program
     private static List<string> ReadStringList(JsonElement args, string propertyName)
     {
         var values = new List<string>();
-        if (args.ValueKind == JsonValueKind.Undefined) return values;
+        if (args.ValueKind != JsonValueKind.Object) return values;
         if (!args.TryGetProperty(propertyName, out var element) ||
             element.ValueKind != JsonValueKind.Array)
         {
@@ -472,7 +600,7 @@ class Program
     private static List<double> ReadDoubleList(JsonElement args, string propertyName)
     {
         var values = new List<double>();
-        if (args.ValueKind == JsonValueKind.Undefined) return values;
+        if (args.ValueKind != JsonValueKind.Object) return values;
         if (!args.TryGetProperty(propertyName, out var element) ||
             element.ValueKind != JsonValueKind.Array)
         {
@@ -490,7 +618,7 @@ class Program
 
     private static double? ReadOptionalDouble(JsonElement args, string propertyName)
     {
-        if (args.ValueKind == JsonValueKind.Undefined) return null;
+        if (args.ValueKind != JsonValueKind.Object) return null;
         if (!args.TryGetProperty(propertyName, out var element) ||
             element.ValueKind != JsonValueKind.Number)
         {
