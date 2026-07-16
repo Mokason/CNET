@@ -1891,6 +1891,21 @@ gguf_integrity: src/cce/cce_gguf.c tests/test_cce_gguf_q5_integrity.c tests/stub
 	@grep -q "GGUF_INTEGRITY_PASS" logs/gguf_integrity_asan.log
 	@echo "GGUF_INTEGRITY_GATE_PASS"
 
+.PHONY: model_runtime_integrity
+model_runtime_integrity: src/model_runtime.c tests/test_model_runtime.c include/model_runtime.h
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) -std=c11 -Wall -Wextra -Werror -pedantic -O2 -D_DEFAULT_SOURCE -Iinclude -pthread \
+		-o $(BIN_DIR)/test_model_runtime_integrity src/model_runtime.c tests/test_model_runtime.c
+	@timeout 30 ./$(BIN_DIR)/test_model_runtime_integrity > logs/model_runtime_integrity.log 2>&1
+	@grep -q "MODEL_RUNTIME_PASS" logs/model_runtime_integrity.log
+	$(CC) -std=c11 -Wall -Wextra -Werror -pedantic -O1 -g -D_DEFAULT_SOURCE \
+		-fsanitize=address,undefined -fno-omit-frame-pointer -Iinclude -pthread \
+		-o $(BIN_DIR)/test_model_runtime_integrity_san src/model_runtime.c tests/test_model_runtime.c
+	@timeout 60 env ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 \
+		./$(BIN_DIR)/test_model_runtime_integrity_san > logs/model_runtime_integrity_san.log 2>&1
+	@grep -q "MODEL_RUNTIME_PASS" logs/model_runtime_integrity_san.log
+	@echo "MODEL_RUNTIME_INTEGRITY_GATE_PASS"
+
 agent_memory_integrity: src/agent_memory.c tests/test_agent_memory.c include/agent_memory.h
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) -std=c11 -Wall -Wextra -Werror -pedantic -O2 -D_DEFAULT_SOURCE -Iinclude \

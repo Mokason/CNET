@@ -16,3 +16,16 @@
 4. Implement prepare/load/commit-or-rollback replacement semantics.
 5. Preserve lease, pin, accounting and cold-load dedup invariants.
 6. Focused marker: existing `MODEL_RUNTIME_PASS` plus new named assertions.
+
+## Verified Closure
+
+- Selected bystanders are transaction-pinned but remain fully resident until commit.
+- Failed replacement loads preserve every bystander handle, state, generation,
+  eviction count and resource-accounting field.
+- Successful replacements detach victims and publish the new residency under
+  one mutex hold; all unload callbacks run afterward and can re-enter manager APIs.
+- Actual-size rejection also defers handle destruction until rollback is visible.
+- `-Werror` and ASan/UBSan pass 146 assertions. TSan compilation succeeds, but
+  this host runtime aborts before tests with `unexpected memory mapping`.
+- Focused authority: `make --no-print-directory model_runtime_integrity` emits
+  `MODEL_RUNTIME_INTEGRITY_GATE_PASS`.
