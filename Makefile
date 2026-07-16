@@ -2060,6 +2060,7 @@ release_integrity:
 		$(MAKE) --no-print-directory PORTABLE=1 ci_core; \
 		$(MAKE) --no-print-directory priority_acceptance; \
 		git diff --check; git diff --cached --check; \
+		test -z "$$(git status --porcelain --untracked-files=no)"; \
 	} > logs/release_integrity.log.tmp 2>&1 || { \
 		rc=$$?; cat logs/release_integrity.log.tmp >&2; \
 		mv logs/release_integrity.log.tmp logs/release_integrity.log; exit $$rc; \

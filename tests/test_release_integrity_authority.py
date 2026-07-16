@@ -32,6 +32,7 @@ required_in_order = [
     "PORTABLE=1 ci_core",
     "priority_acceptance",
     "git diff --check",
+    "git status --porcelain --untracked-files=no",
 ]
 last = -1
 for required in required_in_order:
