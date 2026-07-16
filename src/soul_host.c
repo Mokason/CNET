@@ -91,6 +91,27 @@ static size_t ports_total(const Port *ports, size_t n) {
     return t;
 }
 
+static int soul_state_dir(const char *base_path, char *out, size_t cap) {
+    const char *slash;
+    const char *backslash;
+    size_t len;
+    int n;
+    if (!base_path || !out || cap == 0) return -1;
+    slash = strrchr(base_path, '/');
+    backslash = strrchr(base_path, '\\');
+    if (backslash && (!slash || backslash > slash)) slash = backslash;
+    if (!slash) {
+        n = snprintf(out, cap, ".");
+        return n >= 0 && (size_t)n < cap ? 0 : -1;
+    }
+    len = (size_t)(slash - base_path);
+    if (len == 0) len = 1;
+    if (len + 1 > cap) return -1;
+    memcpy(out, base_path, len);
+    out[len] = '\0';
+    return 0;
+}
+
 /* The registry is the live source of truth after cnb_load_registry has replayed
    certification. Rematerializing a fresh BTN from CNB per call would split
    execution evidence from the planner's instance. */
@@ -118,6 +139,7 @@ static void soul_record_result(BinaryTransformNetwork *btn, int success) {
 
 CNET_API int soul_open(const char *base_path, const char *model_path,
                        SoulHost **out) {
+    char state_dir[1024];
     (void)model_path;                  /* hybrid model loading is host-side */
     if (!base_path || !out) return -1;
 
@@ -130,7 +152,7 @@ CNET_API int soul_open(const char *base_path, const char *model_path,
         free(h);
         return -3;
     }
-    registry_init(&h->reg);
+    registry_init_production(&h->reg);
     {
         size_t skipped = 0;
         if (cnb_load_registry(&h->base, &h->reg, &skipped) != 0) {
@@ -139,6 +161,13 @@ CNET_API int soul_open(const char *base_path, const char *model_path,
             free(h);
             return -4;
         }
+    }
+    if (soul_state_dir(base_path, state_dir, sizeof state_dir) != 0 ||
+        registry_restore_runtime_state(&h->reg, state_dir) != 0) {
+        registry_free(&h->reg);
+        cnb_free(&h->base);
+        free(h);
+        return -5;
     }
     h->reg.require_certified = 1;
     {

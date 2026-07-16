@@ -389,6 +389,13 @@ void registry_init(PrimitiveRegistry *reg) {
     reg->streamer = NULL;
 }
 
+void registry_init_production(PrimitiveRegistry *reg) {
+    registry_init(reg);
+    if (reg != NULL) {
+        reg->require_certified = 1;
+    }
+}
+
 void registry_set_dag_beam_limit(PrimitiveRegistry *reg, size_t dag_beam_limit) {
     if (reg == NULL) {
         return;
@@ -642,6 +649,19 @@ int registry_load_globals(PrimitiveRegistry *reg, const char *dir) {
         }
     }
     fclose(f);
+    return 0;
+}
+
+int registry_restore_runtime_state(PrimitiveRegistry *reg, const char *dir) {
+    size_t i;
+    if (reg == NULL || dir == NULL) return -1;
+    if (registry_load_globals(reg, dir) != 0) return -1;
+    for (i = 0; i < reg->count; ++i) {
+        if (reg->entries[i].name == NULL ||
+            registry_load_expansion(reg, reg->entries[i].name, dir) != 0) {
+            return -1;
+        }
+    }
     return 0;
 }
 

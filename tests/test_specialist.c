@@ -19,14 +19,16 @@ static void check(int condition, const char *message) {
     }
 }
 
-static void test_registry_init_clears_streamer(void) {
+static void test_registry_init_enforces_authority(void) {
     PrimitiveRegistry reg;
     memset(&reg, 0xa5, sizeof reg);
 
-    registry_init(&reg);
+    registry_init_production(&reg);
 
     check(reg.streamer == NULL,
-          "registry_init clears the optional streaming callback");
+          "production registry clears the optional streaming callback");
+    check(reg.require_certified == 1,
+          "production registry makes certified admission the default");
     registry_free(&reg);
 }
 
@@ -277,7 +279,7 @@ static void test_residency_truth(void) {
 }
 
 int main(void) {
-    test_registry_init_clears_streamer();
+    test_registry_init_enforces_authority();
     test_admit_rejects_unknown_kind();
     test_axes_follow_lifecycle_state();
     test_specialist_edge_refusals_and_atoms();

@@ -314,7 +314,7 @@ int gap_lane_open(GapLane *L, const char *base_path,
 
     cnb_init(&L->base);
     cnb_load(&L->base, base_path);            /* absent = fresh base */
-    registry_init(&L->reg);
+    registry_init_production(&L->reg);
     if (cnb_load_registry(&L->base, &L->reg, &skipped) != 0) {
         registry_free(&L->reg);
         cnb_free(&L->base);

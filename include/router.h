@@ -174,11 +174,16 @@ typedef struct {
     int strict;
 } RoutePlan;
 
-CNET_API void registry_init(PrimitiveRegistry *reg);
+/* Legacy/test registry constructor: accepts unchecked fixture entries.
+   Production authorities must use registry_init_production(). */
+void registry_init(PrimitiveRegistry *reg);
+CNET_API void registry_init_production(PrimitiveRegistry *reg);
 CNET_API void registry_set_dag_beam_limit(PrimitiveRegistry *reg, size_t dag_beam_limit);
 
-/* Borrows btn (does not copy or own it). Returns 0 on success, -1 on failure. */
-CNET_API int registry_add(PrimitiveRegistry *reg, BinaryTransformNetwork *btn, const char *name);
+/* Low-level unchecked append for legacy/test fixtures and the certification
+   implementation. It is deliberately outside the stable CNET_API surface;
+   production admission goes through specialist_admit(). Borrows btn. */
+int registry_add(PrimitiveRegistry *reg, BinaryTransformNetwork *btn, const char *name);
 /* Persist every registered primitive as <name>.btn, <name>.contract, and
    <name>.stats inside dir. Returns 0 on success, -1 on failure. */
 int registry_save(const PrimitiveRegistry *reg, const char *dir);
@@ -212,6 +217,11 @@ int registry_set_expansion(PrimitiveRegistry *reg, const char *name,
    reg/name/dir is NULL, the entry is absent, or the sidecar is malformed. */
 int registry_load_expansion(PrimitiveRegistry *reg, const char *name,
                             const char *dir);
+
+/* Restore every persisted runtime-only registry field from `dir`: global
+   policy first, then each registered entry's optional expansion sidecar.
+   Absent sidecars are a no-op; malformed state fails closed. */
+int registry_restore_runtime_state(PrimitiveRegistry *reg, const char *dir);
 
 /* Promote every PRIM_FUZZY entry whose learned reliability >= promote_threshold
    AND whose recorded evidence (successes + failures) >= min_evidence to

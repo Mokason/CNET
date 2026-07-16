@@ -7,6 +7,15 @@
 #include <ctype.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <errno.h>
+
+#ifdef _WIN32
+#include <io.h>
+#include <windows.h>
+#else
+#include <fcntl.h>
+#include <unistd.h>
+#endif
 
 #define MAX_TURNS 256
 #define MAX_CONTENT 512
@@ -35,9 +44,9 @@ static size_t knowledge_count = 0;
 
 /* Forward prototypes for KB (defined after KnowledgeChunk) */
 static void load_knowledge_base(void);
-static void save_knowledge_base(void);
+static int save_knowledge_base(void);
 static void load_knowledge_index(void);
-static void save_knowledge_index(void);
+static int save_knowledge_index(void);
 
 /* Simple timestamp */
 static void get_timestamp(char *buf, size_t cap) {
@@ -141,7 +150,7 @@ int agent_memory_init(void) {
         load_knowledge_index();
 
         /* one-time stack to KB */
-        save_knowledge_base();
+        (void)save_knowledge_base();
     }
 
     initialized = 1;
@@ -163,8 +172,12 @@ int agent_record_turn(const char *role, const char *content) {
 
     chat_count++;
 
-    /* Stack into single knowledge base file (smaller, one file) */
-    save_knowledge_base();
+    /* Stack into single knowledge base file (smaller, one file). Publish is
+       part of the operation: a failed durable write rolls back the count. */
+    if (save_knowledge_base() != 0) {
+        --chat_count;
+        return -1;
+    }
     return 0;
 }
 
@@ -191,8 +204,11 @@ int agent_record_thought(const char *content) {
 
     thought_count++;
 
-    /* Stack into single knowledge base file */
-    save_knowledge_base();
+    /* Stack into single knowledge base file. */
+    if (save_knowledge_base() != 0) {
+        --thought_count;
+        return -1;
+    }
     return 0;
 }
 
@@ -245,8 +261,8 @@ int agent_get_session_summary(char *out, size_t cap) {
 }
 
 int agent_save_session(void) {
-    /* Already appended on record; this is a no-op or could force flush */
-    return 0;
+    if (!initialized && agent_memory_init() != 0) return -1;
+    return save_knowledge_base();
 }
 
 void agent_clear_session(void) {
@@ -268,63 +284,230 @@ static int index_built = 0;
 
 /* === Consolidated single-file Knowledge Base (after structs) === */
 
-#define KB_MAGIC 0x434E4B42  /* 'CNKB' */
+#define KB_MAGIC 0x434E4B42u  /* 'CNKB' */
+#define KB_VERSION 2u
+#define KB_FNV_OFFSET UINT64_C(1469598103934665603)
+#define KB_FNV_PRIME  UINT64_C(1099511628211)
+
+static uint64_t kb_checksum_update(uint64_t hash, const void *data, size_t size) {
+    const unsigned char *p = (const unsigned char *)data;
+    size_t i;
+    for (i = 0; i < size; ++i) {
+        hash ^= (uint64_t)p[i];
+        hash *= KB_FNV_PRIME;
+    }
+    return hash;
+}
+
+static int kb_path(char *out, size_t cap, const char *leaf) {
+    const char *dir = getenv("CNET_AGENT_MEMORY_DIR");
+    int n;
+    if (out == NULL || cap == 0 || leaf == NULL) return -1;
+    if (dir != NULL && dir[0] != '\0') {
+        size_t len = strlen(dir);
+        const char *sep = (dir[len - 1] == '/' || dir[len - 1] == '\\') ? "" : "/";
+        n = snprintf(out, cap, "%s%s%s", dir, sep, leaf);
+    } else {
+        n = snprintf(out, cap, "%s", leaf);
+    }
+    return (n >= 0 && (size_t)n < cap) ? 0 : -1;
+}
+
+static int kb_sync_file(FILE *f) {
+    if (fflush(f) != 0) return -1;
+#ifdef _WIN32
+    return _commit(_fileno(f)) == 0 ? 0 : -1;
+#else
+    return fsync(fileno(f)) == 0 ? 0 : -1;
+#endif
+}
+
+static int kb_sync_parent(const char *path) {
+#ifdef _WIN32
+    (void)path;
+    return 0;
+#else
+    char dir[1024];
+    char *slash;
+    int fd;
+    int flags = O_RDONLY;
+    int rc;
+    size_t len;
+    if (path == NULL) return -1;
+    len = strlen(path);
+    if (len >= sizeof dir) return -1;
+    memcpy(dir, path, len + 1);
+    slash = strrchr(dir, '/');
+    if (slash == NULL) {
+        snprintf(dir, sizeof dir, ".");
+    } else if (slash == dir) {
+        slash[1] = '\0';
+    } else {
+        *slash = '\0';
+    }
+#ifdef O_DIRECTORY
+    flags |= O_DIRECTORY;
+#endif
+    fd = open(dir, flags);
+    if (fd < 0) return -1;
+    rc = fsync(fd);
+    if (close(fd) != 0 && rc == 0) rc = -1;
+    return rc == 0 ? 0 : -1;
+#endif
+}
+
+static int kb_replace(const char *tmp_path, const char *path) {
+#ifdef _WIN32
+    return MoveFileExA(tmp_path, path,
+                       MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)
+               ? 0 : -1;
+#else
+    return rename(tmp_path, path) == 0 ? 0 : -1;
+#endif
+}
+
+static int kb_write(FILE *f, const void *data, size_t size, size_t count,
+                    long fail_after, long *writes) {
+    if (count == 0) return 0;
+    if (fail_after >= 0 && *writes >= fail_after) {
+        errno = EIO;
+        return -1;
+    }
+    if (fwrite(data, size, count, f) != count) return -1;
+    ++*writes;
+    return 0;
+}
 
 static void load_knowledge_base(void) {
-    if (!initialized) return;
+    char path[1024];
+    FILE *f;
+    uint32_t magic = 0, ver = 0, nchat = 0, nthought = 0, nknow = 0;
+    uint64_t stored_payload = 0, stored_checksum = 0;
+    uint64_t expected_payload;
+    uint64_t checksum = KB_FNV_OFFSET;
+    int trailing;
 
-    FILE *f = fopen(AGENT_KB_FILE, "rb");
+    if (kb_path(path, sizeof path, AGENT_KB_FILE) != 0) return;
+    f = fopen(path, "rb");
     if (!f) return;
 
-    uint32_t magic = 0, ver = 0, nchat = 0, nthought = 0, nknow = 0;
-
-    if (fread(&magic, sizeof(uint32_t), 1, f) != 1 || magic != KB_MAGIC) {
-        fclose(f);
-        return;
+    if (fread(&magic, sizeof magic, 1, f) != 1 || magic != KB_MAGIC ||
+        fread(&ver, sizeof ver, 1, f) != 1 ||
+        fread(&nchat, sizeof nchat, 1, f) != 1 ||
+        fread(&nthought, sizeof nthought, 1, f) != 1 ||
+        fread(&nknow, sizeof nknow, 1, f) != 1 ||
+        (ver != 1u && ver != KB_VERSION) ||
+        nchat > MAX_TURNS || nthought > MAX_TURNS ||
+        nknow > MAX_KNOWLEDGE_CHUNKS) {
+        goto invalid;
     }
-    if (fread(&ver, sizeof(uint32_t), 1, f) != 1) { fclose(f); return; }
-    if (fread(&nchat, sizeof(uint32_t), 1, f) != 1) { fclose(f); return; }
-    if (fread(&nthought, sizeof(uint32_t), 1, f) != 1) { fclose(f); return; }
-    if (fread(&nknow, sizeof(uint32_t), 1, f) != 1) { fclose(f); return; }
 
-    if (nchat > MAX_TURNS) nchat = MAX_TURNS;
-    if (nthought > MAX_TURNS) nthought = MAX_TURNS;
-    if (nknow > MAX_KNOWLEDGE_CHUNKS) nknow = MAX_KNOWLEDGE_CHUNKS;
+    expected_payload = (uint64_t)nchat * sizeof(AgentTurn) +
+                       (uint64_t)nthought * sizeof(AgentTurn) +
+                       (uint64_t)nknow * sizeof(KnowledgeChunk);
+    if (ver == KB_VERSION &&
+        (fread(&stored_payload, sizeof stored_payload, 1, f) != 1 ||
+         fread(&stored_checksum, sizeof stored_checksum, 1, f) != 1 ||
+         stored_payload != expected_payload)) {
+        goto invalid;
+    }
 
-    if (nchat > 0 && fread(chat_history, sizeof(AgentTurn), nchat, f) != nchat) { fclose(f); return; }
-    if (nthought > 0 && fread(thoughts, sizeof(AgentTurn), nthought, f) != nthought) { fclose(f); return; }
-    if (nknow > 0 && fread(knowledge_chunks, sizeof(KnowledgeChunk), nknow, f) != nknow) { fclose(f); return; }
+    if ((nchat > 0 && fread(chat_history, sizeof(AgentTurn), nchat, f) != nchat) ||
+        (nthought > 0 && fread(thoughts, sizeof(AgentTurn), nthought, f) != nthought) ||
+        (nknow > 0 && fread(knowledge_chunks, sizeof(KnowledgeChunk), nknow, f) != nknow)) {
+        goto invalid;
+    }
+    trailing = fgetc(f);
+    if (trailing != EOF) goto invalid;
+
+    if (ver == KB_VERSION) {
+        checksum = kb_checksum_update(checksum, chat_history,
+                                      (size_t)nchat * sizeof(AgentTurn));
+        checksum = kb_checksum_update(checksum, thoughts,
+                                      (size_t)nthought * sizeof(AgentTurn));
+        checksum = kb_checksum_update(checksum, knowledge_chunks,
+                                      (size_t)nknow * sizeof(KnowledgeChunk));
+        if (checksum != stored_checksum) goto invalid;
+    }
 
     chat_count = nchat;
     thought_count = nthought;
     knowledge_count = nknow;
+    fclose(f);
+    return;
 
+invalid:
+    chat_count = 0;
+    thought_count = 0;
+    knowledge_count = 0;
     fclose(f);
 }
 
-static void save_knowledge_base(void) {
-    if (!initialized) return;
-
-    FILE *f = fopen(AGENT_KB_FILE, "wb");
-    if (!f) return;
-
+static int save_knowledge_base(void) {
+    char path[1024];
+    char tmp_path[1032];
+    FILE *f = NULL;
     uint32_t magic = KB_MAGIC;
-    uint32_t ver = 1;
+    uint32_t ver = KB_VERSION;
     uint32_t nchat = (uint32_t)chat_count;
     uint32_t nthought = (uint32_t)thought_count;
     uint32_t nknow = (uint32_t)knowledge_count;
+    uint64_t payload = (uint64_t)nchat * sizeof(AgentTurn) +
+                       (uint64_t)nthought * sizeof(AgentTurn) +
+                       (uint64_t)nknow * sizeof(KnowledgeChunk);
+    uint64_t checksum = KB_FNV_OFFSET;
+    const char *inject = getenv("CNET_AGENT_MEMORY_FAIL_AFTER_WRITES");
+    char *end = NULL;
+    long fail_after = -1;
+    long writes = 0;
+    int n;
 
-    fwrite(&magic, sizeof(uint32_t), 1, f);
-    fwrite(&ver, sizeof(uint32_t), 1, f);
-    fwrite(&nchat, sizeof(uint32_t), 1, f);
-    fwrite(&nthought, sizeof(uint32_t), 1, f);
-    fwrite(&nknow, sizeof(uint32_t), 1, f);
+    if (inject != NULL && inject[0] != '\0') {
+        long parsed = strtol(inject, &end, 10);
+        if (end != inject && *end == '\0' && parsed >= 0) fail_after = parsed;
+    }
+    if (kb_path(path, sizeof path, AGENT_KB_FILE) != 0) return -1;
+    n = snprintf(tmp_path, sizeof tmp_path, "%s.tmp", path);
+    if (n < 0 || (size_t)n >= sizeof tmp_path) return -1;
 
-    fwrite(chat_history, sizeof(AgentTurn), nchat, f);
-    fwrite(thoughts, sizeof(AgentTurn), nthought, f);
-    fwrite(knowledge_chunks, sizeof(KnowledgeChunk), nknow, f);
+    checksum = kb_checksum_update(checksum, chat_history,
+                                  (size_t)nchat * sizeof(AgentTurn));
+    checksum = kb_checksum_update(checksum, thoughts,
+                                  (size_t)nthought * sizeof(AgentTurn));
+    checksum = kb_checksum_update(checksum, knowledge_chunks,
+                                  (size_t)nknow * sizeof(KnowledgeChunk));
 
-    fclose(f);
+    (void)remove(tmp_path);
+    f = fopen(tmp_path, "wb");
+    if (f == NULL) return -1;
+    {
+        int ok = 1;
+        if (kb_write(f, &magic, sizeof magic, 1, fail_after, &writes) != 0 ||
+            kb_write(f, &ver, sizeof ver, 1, fail_after, &writes) != 0 ||
+            kb_write(f, &nchat, sizeof nchat, 1, fail_after, &writes) != 0 ||
+            kb_write(f, &nthought, sizeof nthought, 1, fail_after, &writes) != 0 ||
+            kb_write(f, &nknow, sizeof nknow, 1, fail_after, &writes) != 0 ||
+            kb_write(f, &payload, sizeof payload, 1, fail_after, &writes) != 0 ||
+            kb_write(f, &checksum, sizeof checksum, 1, fail_after, &writes) != 0 ||
+            kb_write(f, chat_history, sizeof(AgentTurn), nchat, fail_after, &writes) != 0 ||
+            kb_write(f, thoughts, sizeof(AgentTurn), nthought, fail_after, &writes) != 0 ||
+            kb_write(f, knowledge_chunks, sizeof(KnowledgeChunk), nknow,
+                     fail_after, &writes) != 0 ||
+            kb_sync_file(f) != 0) {
+            ok = 0;
+        }
+        if (fclose(f) != 0) ok = 0;
+        f = NULL;
+        if (!ok) {
+            (void)remove(tmp_path);
+            return -1;
+        }
+    }
+    if (kb_replace(tmp_path, path) != 0) {
+        (void)remove(tmp_path);
+        return -1;
+    }
+    return kb_sync_parent(path);
 }
 
 static void load_knowledge_index(void) {
@@ -359,11 +542,11 @@ static void load_knowledge_index(void) {
     index_built = 1;
 }
 
-static void save_knowledge_index(void) {
+static int save_knowledge_index(void) {
     /* Primary storage is now the single consolidated binary KB.
      * No .md sidecar export is written (avoids stray data .md files; use bin or in-memory queries).
      */
-    save_knowledge_base();
+    return save_knowledge_base();
 }
 
 int agent_build_knowledge_index(void) {
@@ -410,7 +593,7 @@ int agent_build_knowledge_index(void) {
         knowledge_chunks[knowledge_count].snippet[sizeof(knowledge_chunks[0].snippet)-1]=0;
         knowledge_count++;
     }
-    save_knowledge_index();
+    if (save_knowledge_index() != 0) return -1;
     index_built = 1;
     return (int)knowledge_count;
 }

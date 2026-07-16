@@ -3,10 +3,12 @@ set -eu
 
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 stage="/tmp/cnet-install-$$"
-dist="/tmp/cnet-dist-$$"
+dist_a="/tmp/cnet-dist-a-$$"
+dist_b="/tmp/cnet-dist-b-$$"
+extract="/tmp/cnet-extract-$$"
 consumer_c="/tmp/cnet-consumer-$$.c"
 consumer_bin="/tmp/cnet-consumer-$$"
-trap 'rm -rf "$stage" "$dist" "$consumer_c" "$consumer_bin"' EXIT INT TERM
+trap 'rm -rf "$stage" "$dist_a" "$dist_b" "$extract" "$consumer_c" "$consumer_bin"' EXIT INT TERM
 
 cd "$root"
 test -f VERSION || { echo 'RELEASE_PACKAGE_FAIL: VERSION missing' >&2; exit 1; }
@@ -22,7 +24,35 @@ if printf '%s\n' "$config" | grep -q -- '-march=native'; then
     exit 1
 fi
 
-make --no-print-directory PORTABLE=1 DESTDIR="$stage" PREFIX=/usr install
+# The published source object is reproducible, not just present.
+mkdir -p "$dist_a" "$dist_b" "$extract"
+make --no-print-directory DIST_DIR="$dist_a" dist
+make --no-print-directory DIST_DIR="$dist_b" dist
+archive_a="$dist_a/cnet-$version.tar.gz"
+archive_b="$dist_b/cnet-$version.tar.gz"
+test -f "$archive_a" && test -f "$archive_b"
+sha_a=$(sha256sum "$archive_a" | cut -d' ' -f1)
+sha_b=$(sha256sum "$archive_b" | cut -d' ' -f1)
+test "$sha_a" = "$sha_b" || {
+    echo 'RELEASE_PACKAGE_FAIL: source archive is not reproducible' >&2
+    exit 1
+}
+tar -tzf "$archive_a" | grep -q "^cnet-$version/VERSION$"
+tar -tzf "$archive_a" | grep -q "^cnet-$version/.github/workflows/ci.yml$"
+if tar -tzf "$archive_a" | grep -Eq '\.(so|dll)$'; then
+    echo 'RELEASE_PACKAGE_FAIL: source archive contains a compiled library' >&2
+    exit 1
+fi
+
+# Prove the archive, not the checkout: clean extraction -> native build ->
+# staged install -> pkg-config compile/link -> execution.
+tar -xzf "$archive_a" -C "$extract"
+archive_root="$extract/cnet-$version"
+test -f "$archive_root/Makefile"
+make --no-print-directory -C "$archive_root" PORTABLE=1 cnet_dll
+make --no-print-directory -C "$archive_root" PORTABLE=1 \
+    DESTDIR="$stage" PREFIX=/usr install
+
 libdir="$stage/usr/lib"
 incdir="$stage/usr/include/cnet"
 pcdir="$libdir/pkgconfig"
@@ -54,13 +84,9 @@ PKG_CONFIG_PATH="$pcdir" PKG_CONFIG_SYSROOT_DIR="$stage" \
         pkg-config --cflags --libs cnet)
 test "$(LD_LIBRARY_PATH="$libdir" "$consumer_bin")" = "$version"
 
-mkdir -p "$dist"
-make --no-print-directory DIST_DIR="$dist" dist
-test -f "$dist/cnet-$version.tar.gz"
-tar -tzf "$dist/cnet-$version.tar.gz" | grep -q "^cnet-$version/VERSION$"
-tar -tzf "$dist/cnet-$version.tar.gz" | grep -q "^cnet-$version/.github/workflows/ci.yml$"
-
-make --no-print-directory DESTDIR="$stage" PREFIX=/usr uninstall
+make --no-print-directory -C "$archive_root" \
+    DESTDIR="$stage" PREFIX=/usr uninstall
 test ! -e "$libdir/libcnet.so"
 test ! -e "$incdir"
-printf 'RELEASE_PACKAGE_PASS version=%s\n' "$version"
+printf 'RELEASE_PACKAGE_PASS version=%s sha256=%s archive_self_build=1\n' \
+    "$version" "$sha_a"

@@ -197,6 +197,9 @@ static void test_expand_persistence(void) {
     registry_add(&reg, &hi, "exp_hi");
     registry_add(&reg, &chunk, "exp_chunk");
     registry_set_expansion(&reg, "exp_chunk", recipe_names, 2, 100, 900, 0);
+    reg.cnet_d_influence = 0.8125;
+    reg.expand_in_low_enabled = 1;
+    reg.text_contract_expansion_enabled = 1;
 
     CHECK(registry_save(&reg, "") == 0, "registry_save writes the entries (incl .expansion)");
     f = fopen("exp_chunk.expansion", "r");
@@ -218,8 +221,8 @@ static void test_expand_persistence(void) {
         registry_add(&reg2, &hi, "exp_hi");
         registry_add(&reg2, &chunk, "exp_chunk");
 
-        CHECK(registry_load_expansion(&reg2, "exp_chunk", "") == 0,
-              "registry_load_expansion restores the chunk's sidecar");
+        CHECK(registry_restore_runtime_state(&reg2, "") == 0,
+              "one restart operation restores registry policy and expansions");
         e = find_entry(&reg2, "exp_chunk");
         CHECK(e != NULL && e->recipe != NULL && e->recipe->primitive_count == 2 &&
               strcmp(e->recipe->primitives[0], "exp_lo") == 0 &&
@@ -229,6 +232,10 @@ static void test_expand_persistence(void) {
               e->teacher_mac == 100 && e->student_mac == 900 &&
               e->compute_beneficial == 0,
               "policy bit + cost truth round-trip");
+        CHECK(reg2.cnet_d_influence == 0.8125 &&
+              reg2.expand_in_low_enabled == 1 &&
+              reg2.text_contract_expansion_enabled == 1,
+              "global registry policy round-trips in the same restart operation");
 
         /* absent sidecar is a no-op success, not an error */
         CHECK(registry_load_expansion(&reg2, "exp_lo", "") == 0,

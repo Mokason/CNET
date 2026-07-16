@@ -253,7 +253,7 @@ int flagship_run(FlagshipConfig *cfg, FlagshipOracleMaker maker,
     if (cfg->ledger_path) (void)acquire_ledger_load(&led, cfg->ledger_path);
 
     /* prior units join the planner (certify-on-load; failures counted) */
-    registry_init(&reg);
+    registry_init_production(&reg);
     if (cnb_load_registry(&base, &reg, &local.registry_skipped) != 0) {
         cnb_free(&base);
         acquire_ledger_free(&led);
