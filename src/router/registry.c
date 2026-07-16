@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 
 /* ========================================================================
  * Registry core + persistence + lifecycle + entry utilities
@@ -627,11 +628,16 @@ int registry_load_expansion(PrimitiveRegistry *reg, const char *name,
     return 0;
 }
 
-/* Load persisted global policy knobs (best-effort, non-fatal). */
+/* Load persisted global policy knobs. Missing state is a no-op; an existing
+   file is an all-or-nothing checkpoint and malformed/partial data fails. */
 int registry_load_globals(PrimitiveRegistry *reg, const char *dir) {
     char *path = NULL;
     FILE *f;
     char line[128];
+    double influence = 0.0;
+    int expand_low = 0;
+    int text_expand = 0;
+    unsigned seen = 0;
     if (reg == NULL || dir == NULL) return -1;
     if (registry_build_path(&path, dir, "registry", ".meta") != 0) return -1;
     f = fopen(path, "r");
@@ -640,16 +646,33 @@ int registry_load_globals(PrimitiveRegistry *reg, const char *dir) {
     while (fgets(line, sizeof line, f)) {
         double d;
         int v;
-        if (sscanf(line, "cnet_d_influence %lf", &d) == 1) {
-            reg->cnet_d_influence = d;
-        } else if (sscanf(line, "expand_in_low_enabled %d", &v) == 1) {
-            reg->expand_in_low_enabled = v ? 1 : 0;
-        } else if (sscanf(line, "text_contract_expansion_enabled %d", &v) == 1) {
-            reg->text_contract_expansion_enabled = v ? 1 : 0;
+        char extra;
+        if (sscanf(line, "cnet_d_influence %lf %c", &d, &extra) == 1) {
+            if ((seen & 1u) != 0 || !isfinite(d) || d < 0.0 || d > 1.0) goto malformed;
+            influence = d;
+            seen |= 1u;
+        } else if (sscanf(line, "expand_in_low_enabled %d %c", &v, &extra) == 1) {
+            if ((seen & 2u) != 0 || (v != 0 && v != 1)) goto malformed;
+            expand_low = v;
+            seen |= 2u;
+        } else if (sscanf(line, "text_contract_expansion_enabled %d %c", &v, &extra) == 1) {
+            if ((seen & 4u) != 0 || (v != 0 && v != 1)) goto malformed;
+            text_expand = v;
+            seen |= 4u;
+        } else {
+            goto malformed;
         }
     }
-    fclose(f);
+    if (ferror(f) || seen != 7u) goto malformed;
+    if (fclose(f) != 0) return -1;
+    reg->cnet_d_influence = influence;
+    reg->expand_in_low_enabled = expand_low;
+    reg->text_contract_expansion_enabled = text_expand;
     return 0;
+
+malformed:
+    fclose(f);
+    return -1;
 }
 
 int registry_restore_runtime_state(PrimitiveRegistry *reg, const char *dir) {

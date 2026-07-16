@@ -11,7 +11,9 @@
 #include "../include/router.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 static int failures = 0;
 
@@ -183,6 +185,8 @@ static void test_expand_persistence(void) {
     BinaryTransformNetwork lo = {0}, hi = {0}, chunk = {0};
     PrimitiveRegistry reg;
     const char *recipe_names[2] = { "exp_lo", "exp_hi" };
+    char state_dir[] = "/tmp/cnet-expansion-XXXXXX";
+    char original_dir[1024];
     FILE *f;
 
     printf("expansion persistence round-trip:\n");
@@ -190,6 +194,12 @@ static void test_expand_persistence(void) {
         make_btn(&hi, 4, 5, M_PORT, B_PORT) != 0 ||
         make_btn(&chunk, 16, 5, A_PORT, B_PORT) != 0) {
         CHECK(0, "persistence setup");
+        return;
+    }
+    if (getcwd(original_dir, sizeof original_dir) == NULL ||
+        mkdtemp(state_dir) == NULL || chdir(state_dir) != 0) {
+        CHECK(0, "isolated persistence directory setup");
+        btn_free(&lo); btn_free(&hi); btn_free(&chunk);
         return;
     }
     registry_init(&reg);
@@ -252,9 +262,26 @@ static void test_expand_persistence(void) {
         registry_free(&reg2);
     }
 
+    {
+        PrimitiveRegistry reg3;
+        registry_init(&reg3);
+        f = fopen("registry.meta", "w");
+        CHECK(f != NULL, "malformed global policy fixture opens");
+        if (f) {
+            fputs("unknown_policy 1\n", f);
+            fclose(f);
+        }
+        CHECK(registry_restore_runtime_state(&reg3, "") != 0,
+              "malformed global registry policy fails closed");
+        registry_free(&reg3);
+    }
+
     remove("exp_lo.cnu"); remove("exp_lo.stats"); remove("exp_lo.expansion");
     remove("exp_hi.cnu"); remove("exp_hi.stats"); remove("exp_hi.expansion");
     remove("exp_chunk.cnu"); remove("exp_chunk.stats"); remove("exp_chunk.expansion");
+    remove("registry.meta");
+    CHECK(chdir(original_dir) == 0, "leave isolated persistence directory");
+    rmdir(state_dir);
     btn_free(&lo); btn_free(&hi); btn_free(&chunk);
 }
 
