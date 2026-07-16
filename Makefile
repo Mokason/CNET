@@ -2034,7 +2034,9 @@ priority_acceptance:
 	@$(MAKE) --no-print-directory flagship_prefix_cache
 	@$(MAKE) --no-print-directory ci_config_gate
 	@$(MAKE) --no-print-directory release_warning_gate
-	@$(MAKE) --no-print-directory release_package
+	@if [ "$(SKIP_RELEASE_PACKAGE)" != "1" ]; then \
+		$(MAKE) --no-print-directory release_package; \
+	fi
 	@$(MAKE) --no-print-directory unified
 	@echo "PRIORITY_ACCEPTANCE_PASS"
 
@@ -2058,7 +2060,7 @@ release_integrity:
 		$(MAKE) --no-print-directory mcp_protocol_survival; \
 		$(MAKE) --no-print-directory release_package; \
 		$(MAKE) --no-print-directory PORTABLE=1 ci_core; \
-		$(MAKE) --no-print-directory priority_acceptance; \
+		$(MAKE) --no-print-directory SKIP_RELEASE_PACKAGE=1 priority_acceptance; \
 		git diff --check; git diff --cached --check; \
 		test -z "$$(git status --porcelain --untracked-files=no)"; \
 	} > logs/release_integrity.log.tmp 2>&1 || { \
