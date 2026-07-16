@@ -2,7 +2,7 @@
 
 ## Current status
 
-- Version `5.1.0` is the confirmed internal release candidate.
+- Version `5.1.1` is the integrity-closure internal release candidate.
 - The repository, source archive, binaries, campaign evidence, tags, and release notes remain private.
 - No public release, remote push, tag, package upload, or announcement is authorized by this policy.
 - GitHub Actions is manual-dispatch only. Pushes and pull requests must not start paid CI automatically.
@@ -12,11 +12,10 @@
 The local fail-fast authority is:
 
 ```sh
-make PORTABLE=1 ci
-make priority_acceptance
+make release_integrity
 ```
 
-A release candidate is acceptable only when both commands return zero, their full logs contain no failure verdict, `git diff --check` passes, and the generated archive passes `tests/test_release_package.sh`.
+A release candidate is acceptable only when that umbrella returns zero, its full log contains no failure verdict, `git diff --check` passes, and the generated archive proves a reproducible extract/build/install/consumer round trip.
 
 ## Artifact handling
 

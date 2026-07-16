@@ -973,7 +973,7 @@ int contract_swap_if_better(const Contract *c, BinaryTransformNetwork **active,
 
 /* ---- registry_add_certified ---------------------------------------------- */
 
-int registry_add_certified(PrimitiveRegistry *reg,
+CNET_INTERNAL int registry_add_certified(PrimitiveRegistry *reg,
                            BinaryTransformNetwork *btn,
                            const char *name, const Contract *c) {
     size_t i;

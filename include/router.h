@@ -176,14 +176,14 @@ typedef struct {
 
 /* Legacy/test registry constructor: accepts unchecked fixture entries.
    Production authorities must use registry_init_production(). */
-void registry_init(PrimitiveRegistry *reg);
+CNET_INTERNAL void registry_init(PrimitiveRegistry *reg);
 CNET_API void registry_init_production(PrimitiveRegistry *reg);
 CNET_API void registry_set_dag_beam_limit(PrimitiveRegistry *reg, size_t dag_beam_limit);
 
 /* Low-level unchecked append for legacy/test fixtures and the certification
    implementation. It is deliberately outside the stable CNET_API surface;
    production admission goes through specialist_admit(). Borrows btn. */
-int registry_add(PrimitiveRegistry *reg, BinaryTransformNetwork *btn, const char *name);
+CNET_INTERNAL int registry_add(PrimitiveRegistry *reg, BinaryTransformNetwork *btn, const char *name);
 /* Persist every registered primitive as <name>.btn, <name>.contract, and
    <name>.stats inside dir. Returns 0 on success, -1 on failure. */
 int registry_save(const PrimitiveRegistry *reg, const char *dir);

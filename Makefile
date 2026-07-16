@@ -1870,7 +1870,33 @@ dist: VERSION .github/workflows/ci.yml include/cnet_version.h
 		mv "$$tmp" "$$out"
 	@echo "CNET_DIST_PASS $(DIST_DIR)/cnet-$(CNET_VERSION).tar.gz"
 
-.PHONY: ci_config_gate release_package ci
+.PHONY: agent_memory_integrity registry_restart_unit persistence_integrity specialist_authority admission_abi_audit
+agent_memory_integrity: src/agent_memory.c tests/test_agent_memory.c include/agent_memory.h
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) -std=c11 -Wall -Wextra -Werror -pedantic -O2 -D_DEFAULT_SOURCE -Iinclude \
+		-o $(BIN_DIR)/test_agent_memory src/agent_memory.c tests/test_agent_memory.c $(LDFLAGS)
+	@./$(BIN_DIR)/test_agent_memory > logs/agent_memory_integrity.log 2>&1
+	@grep -q "PERSISTENCE_INTEGRITY_PASS" logs/agent_memory_integrity.log
+
+registry_restart_unit: src/nn.c $(ROUTER) $(PLAN_TABLE) src/contract/contract.c src/contract/unit.c tests/test_expansion.c
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) -std=c11 -Wall -Wextra -Werror -pedantic -O2 -D_DEFAULT_SOURCE -Iinclude \
+		-o $(BIN_DIR)/test_registry_restart src/nn.c $(ROUTER) $(PLAN_TABLE) \
+		src/contract/contract.c src/contract/unit.c tests/test_expansion.c $(LDFLAGS)
+	@./$(BIN_DIR)/test_registry_restart > logs/registry_restart_unit.log 2>&1
+	@grep -q "All expansion tests passed" logs/registry_restart_unit.log
+
+persistence_integrity: agent_memory_integrity registry_restart_unit soul_reopen_test
+	@echo "PERSISTENCE_INTEGRITY_GATE_PASS"
+
+admission_abi_audit: cnet_dll tests/audit_admission_abi.sh
+	@sh tests/audit_admission_abi.sh > logs/admission_abi_audit.log 2>&1
+	@grep -q "ADMISSION_ABI_AUDIT_PASS" logs/admission_abi_audit.log
+
+specialist_authority: specialist_unit admission_bypass_audit admission_abi_audit
+	@echo "SPECIALIST_AUTHORITY_PASS"
+
+.PHONY: ci_config_gate release_package ci_core ci
 ci_config_gate: .github/workflows/ci.yml tests/test_ci_workflow.py
 	@python3 tests/test_ci_workflow.py > logs/ci_config_gate.log 2>&1
 	@grep -q "CI_WORKFLOW_PASS" logs/ci_config_gate.log
@@ -1879,7 +1905,10 @@ release_package: tests/test_release_package.sh VERSION include/cnet_version.h .g
 	@sh tests/test_release_package.sh > logs/release_package.log 2>&1
 	@grep -q "RELEASE_PACKAGE_PASS" logs/release_package.log
 
-ci: ci_config_gate warning_debt_strict release_warning_gate flagship_prefix_cache campaign_provenance_unit execution_tiers_doc_gate alt_paths_gate release_package
+ci_core: ci_config_gate warning_debt_strict release_warning_gate flagship_prefix_cache campaign_provenance_unit execution_tiers_doc_gate alt_paths_gate
+	@echo "CNET_CI_CORE_PASS"
+
+ci: ci_core release_package
 	@echo "CNET_CI_PASS"
 
 .PHONY: unified_models
@@ -2008,6 +2037,36 @@ priority_acceptance:
 	@$(MAKE) --no-print-directory release_package
 	@$(MAKE) --no-print-directory unified
 	@echo "PRIORITY_ACCEPTANCE_PASS"
+
+# Single release authority. Focused integrity slices run first; the existing
+# portable CI and full private acceptance umbrellas run only after every slice
+# is green. Output is published atomically at the end of the bounded sequence.
+.PHONY: release_integrity_authority release_integrity
+release_integrity_authority: tests/test_release_integrity_authority.py VERSION include/cnet_version.h docs/RELEASE_POLICY.md Makefile
+	@mkdir -p logs
+	@python3 tests/test_release_integrity_authority.py > logs/release_integrity_authority.log 2>&1
+	@grep -q "RELEASE_INTEGRITY_AUTHORITY_PASS" logs/release_integrity_authority.log
+
+release_integrity:
+	@mkdir -p logs
+	@set -eu; { \
+		$(MAKE) --no-print-directory release_integrity_authority; \
+		$(MAKE) --no-print-directory gguf_integrity; \
+		$(MAKE) --no-print-directory model_runtime_integrity; \
+		$(MAKE) --no-print-directory specialist_authority; \
+		$(MAKE) --no-print-directory persistence_integrity; \
+		$(MAKE) --no-print-directory mcp_protocol_survival; \
+		$(MAKE) --no-print-directory release_package; \
+		$(MAKE) --no-print-directory PORTABLE=1 ci_core; \
+		$(MAKE) --no-print-directory priority_acceptance; \
+		git diff --check; git diff --cached --check; \
+	} > logs/release_integrity.log.tmp 2>&1 || { \
+		rc=$$?; cat logs/release_integrity.log.tmp >&2; \
+		mv logs/release_integrity.log.tmp logs/release_integrity.log; exit $$rc; \
+	}
+	@mv logs/release_integrity.log.tmp logs/release_integrity.log
+	@echo "CNET_RELEASE_INTEGRITY_PASS" >> logs/release_integrity.log
+	@cat logs/release_integrity.log
 
 .PHONY: unified
 unified:

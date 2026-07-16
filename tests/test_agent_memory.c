@@ -30,6 +30,7 @@ int main(void) {
     char store[128];
     char kb[192];
     char tmp[192];
+    char prev[192];
     char context[4096];
     long stable_size;
 
@@ -38,6 +39,7 @@ int main(void) {
     snprintf(store, sizeof store, "%s/store", root);
     snprintf(kb, sizeof kb, "%s/%s", store, AGENT_KB_FILE);
     snprintf(tmp, sizeof tmp, "%s/%s.tmp", store, AGENT_KB_FILE);
+    snprintf(prev, sizeof prev, "%s/%s.prev", store, AGENT_KB_FILE);
     check(mkdir(work, 0700) == 0 && mkdir(store, 0700) == 0,
           "isolated work and durable directories created");
     check(chdir(work) == 0 && setenv("CNET_AGENT_MEMORY_DIR", store, 1) == 0,
@@ -67,14 +69,30 @@ int main(void) {
 
     check(agent_record_assistant("durable-second") == 0 && agent_reload() == 0,
           "subsequent successful generation publishes and reopens");
+    check(access(prev, F_OK) == 0,
+          "successful replacement preserves the previous complete generation");
     memset(context, 0, sizeof context);
     check(agent_get_chat_context(context, sizeof context, 8, 0) > 0 &&
               strstr(context, "durable-first") != NULL &&
               strstr(context, "durable-second") != NULL,
           "reload restores the complete new generation");
 
+    {
+        FILE *corrupt = fopen(kb, "wb");
+        check(corrupt != NULL && fwrite("bad", 1, 3, corrupt) == 3 &&
+                  fclose(corrupt) == 0,
+              "current generation can be corrupted for recovery test");
+    }
+    check(agent_reload() == 0, "reload falls back from corrupt current generation");
+    memset(context, 0, sizeof context);
+    check(agent_get_chat_context(context, sizeof context, 8, 0) > 0 &&
+              strstr(context, "durable-first") != NULL &&
+              strstr(context, "durable-second") == NULL,
+          "fallback restores exactly the previous complete generation");
+
     unlink(tmp);
     unlink(kb);
+    unlink(prev);
     rmdir(store);
     check(chdir("/") == 0, "leave temporary work directory");
     rmdir(work);

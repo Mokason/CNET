@@ -366,6 +366,36 @@ static int kb_replace(const char *tmp_path, const char *path) {
 #endif
 }
 
+/* Snapshot the current complete generation without creating a publication
+   gap. The hard link preserves the old inode while the head remains live. */
+static int kb_preserve_previous(const char *path) {
+    char prev_path[1032];
+    char prev_tmp[1040];
+    int n;
+
+    n = snprintf(prev_path, sizeof prev_path, "%s.prev", path);
+    if (n < 0 || (size_t)n >= sizeof prev_path) return -1;
+    n = snprintf(prev_tmp, sizeof prev_tmp, "%s.tmp", prev_path);
+    if (n < 0 || (size_t)n >= sizeof prev_tmp) return -1;
+    (void)remove(prev_tmp);
+#ifdef _WIN32
+    if (GetFileAttributesA(path) == INVALID_FILE_ATTRIBUTES) {
+        return GetLastError() == ERROR_FILE_NOT_FOUND ? 0 : -1;
+    }
+    if (!CopyFileA(path, prev_tmp, FALSE)) return -1;
+#else
+    if (link(path, prev_tmp) != 0) {
+        if (errno == ENOENT) return 0;
+        return -1;
+    }
+#endif
+    if (kb_replace(prev_tmp, prev_path) != 0) {
+        (void)remove(prev_tmp);
+        return -1;
+    }
+    return kb_sync_parent(prev_path);
+}
+
 static int kb_write(FILE *f, const void *data, size_t size, size_t count,
                     long fail_after, long *writes) {
     if (count == 0) return 0;
@@ -378,8 +408,8 @@ static int kb_write(FILE *f, const void *data, size_t size, size_t count,
     return 0;
 }
 
-static void load_knowledge_base(void) {
-    char path[1024];
+/* Return 1 for a verified generation, 0 when absent, and -1 when invalid. */
+static int kb_load_file(const char *path) {
     FILE *f;
     uint32_t magic = 0, ver = 0, nchat = 0, nthought = 0, nknow = 0;
     uint64_t stored_payload = 0, stored_checksum = 0;
@@ -387,9 +417,8 @@ static void load_knowledge_base(void) {
     uint64_t checksum = KB_FNV_OFFSET;
     int trailing;
 
-    if (kb_path(path, sizeof path, AGENT_KB_FILE) != 0) return;
     f = fopen(path, "rb");
-    if (!f) return;
+    if (!f) return errno == ENOENT ? 0 : -1;
 
     if (fread(&magic, sizeof magic, 1, f) != 1 || magic != KB_MAGIC ||
         fread(&ver, sizeof ver, 1, f) != 1 ||
@@ -434,13 +463,34 @@ static void load_knowledge_base(void) {
     thought_count = nthought;
     knowledge_count = nknow;
     fclose(f);
-    return;
+    return 1;
 
 invalid:
     chat_count = 0;
     thought_count = 0;
     knowledge_count = 0;
     fclose(f);
+    return -1;
+}
+
+static void load_knowledge_base(void) {
+    char path[1024];
+    char prev_path[1032];
+    int current;
+    int n;
+
+    if (kb_path(path, sizeof path, AGENT_KB_FILE) != 0) return;
+    current = kb_load_file(path);
+    if (current == 1) return;
+
+    n = snprintf(prev_path, sizeof prev_path, "%s.prev", path);
+    if (n < 0 || (size_t)n >= sizeof prev_path) return;
+    if (kb_load_file(prev_path) == 1 && current < 0) {
+        /* A corrupt head must not replace the verified fallback on the next
+           save. Remove only after the previous generation has been verified. */
+        (void)remove(path);
+        (void)kb_sync_parent(path);
+    }
 }
 
 static int save_knowledge_base(void) {
@@ -502,6 +552,10 @@ static int save_knowledge_base(void) {
             (void)remove(tmp_path);
             return -1;
         }
+    }
+    if (kb_preserve_previous(path) != 0) {
+        (void)remove(tmp_path);
+        return -1;
     }
     if (kb_replace(tmp_path, path) != 0) {
         (void)remove(tmp_path);
