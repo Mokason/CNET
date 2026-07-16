@@ -312,6 +312,14 @@ phase5_integration_test: register_compression_improvements $(PHASE5_INTEGRATION_
 	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $(PHASE5_INTEGRATION_TEST) $(LDFLAGS)
 	./$(BIN_DIR)/phase5_integration_test
 
+.PHONY: real_model_control_plane_test
+real_model_control_plane_test:
+	python3 tests/test_real_model_acceptance.py
+	python3 tests/test_hermes_wrapper.py
+	python3 tests/test_run_hermes_wrapper.py
+	python3 tests/test_ingest_cnet_suggestions.py
+	bash tests/test_qgkp_cli_runtime.sh
+
 test_dag: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(DAG_TEST) include/nn.h include/router.h include/plan_table.h include/contract/contract.h
 	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(DAG_TEST) $(LDFLAGS)
 
@@ -1559,7 +1567,8 @@ cnet_dll: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(BASE_SRC) $(SCAN) $(PROPE
 cnet_qgkp: cnet_dll tools/cnet_qgkp.c include/cce/cce_qgkp.h
 	$(CC) -std=c11 -Wall -Wextra -Werror -pedantic -O2 -Iinclude \
 		-o $(BIN_DIR)/cnet_qgkp tools/cnet_qgkp.c -L. -l:cnet.so \
-		-Wl,-rpath,'$$ORIGIN/..'
+		-Wl,-rpath,'$$ORIGIN:$$ORIGIN/..'
+	ln -sfn ../cnet.so $(BIN_DIR)/libcnet.so.5
 
 # Optional real-model tracer bullet: CNET owns catalog/residency/placement while
 # llama.cpp materializes the dense GGUF and performs token generation. Keep it
@@ -2108,6 +2117,8 @@ release_integrity:
 		}; \
 		trap cleanup_release_generated EXIT INT TERM; \
 		$(MAKE) --no-print-directory release_integrity_authority; \
+		$(MAKE) --no-print-directory real_model_control_plane_test; \
+		$(MAKE) --no-print-directory phase5_integration_test; \
 		$(MAKE) --no-print-directory gguf_integrity; \
 		$(MAKE) --no-print-directory model_runtime_integrity; \
 		$(MAKE) --no-print-directory specialist_authority; \

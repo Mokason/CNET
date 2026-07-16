@@ -2,7 +2,7 @@
 
 ## Status
 
-Phase 4 adds the wrapper and metadata needed to hand CNET-compressed artifacts to Hermes. The wrapper is intentionally explicit: it records the source model, compression strategy, uncertainty method, and gradient-preservation policy before native compression is run.
+Phase 4 supplies compression metadata, but a file path is not a Hermes model identifier and Hermes does not load `.cnetpack` directly. Deployment is therefore admission-gated: `tools/render_hermes_wrapper.py` selects only an admitted candidate or the reference fallback from a real-model acceptance report, and `tools/run_hermes_wrapper.py` starts that GGUF through CPU-only `llama-server` before routing an isolated Hermes custom-provider session to it.
 
 ## MCP Tool
 
@@ -31,7 +31,7 @@ The manifest includes:
 - output artifact path
 - uncertainty policy (`activation_entropy_plus_counterfactual_route_entropy`)
 - `Grads[]` preservation policy for identity and residual paths
-- suggested Hermes start command
+- legacy launch intent (not deployment authority; the acceptance-selected wrapper supplies the executable command)
 
 ## Native Compression Path
 
@@ -53,12 +53,26 @@ Use these before or during compression-aware recovery passes so quantization and
 
 ## Deployment Steps
 
-1. Generate the wrapper manifest with `cnet_compress_model`.
-2. Run the matching native compression path (`int8`, ternary, or packed trits).
-3. Verify the model with uncertainty and narrative/counterfactual checks.
-4. Place the resulting `.cnetpack` artifact at the manifest `output_artifact` path.
-5. Start Hermes with the manifest's `hermes.start_command`.
+1. Run `tools/run_real_model_acceptance.py` against a reference and candidate.
+2. Require campaign `overall_pass=true`; a rejected candidate remains quarantined.
+3. Render the selected wrapper:
+
+```sh
+python3 tools/render_hermes_wrapper.py \
+  --report reports/qwythos_real_model_acceptance.json \
+  --server /path/to/cpu/llama-server \
+  --output hermes_wrappers/model.selected.hermes.json
+```
+
+4. Launch and probe the real Hermes path:
+
+```sh
+python3 tools/run_hermes_wrapper.py \
+  --manifest hermes_wrappers/model.selected.hermes.json
+```
+
+The launcher verifies GGUF magic and SHA-256, binds only to loopback, clears CUDA/HIP/ROCR visibility, fixes `--n-gpu-layers 0`, disables model-side thinking for the exact probe, creates an ephemeral Hermes home, caps output at 64 tokens, and removes the server after the probe. It does not alter or restart the active Hermes gateway/profile.
 
 ## Limits
 
-The MCP tool currently prepares the Hermes wrapper manifest and compression plan. It does not perform heavyweight model conversion by itself; that remains a native/offline compression step because model paths, GPU availability, and target format differ per deployment.
+The legacy Phase 4 `hermes --model <artifact-path>` suggestion is not executable: Hermes expects a catalog model name, not a GGUF path. Native conversion remains an offline step. The selected wrapper currently requires at least a 65,536-token llama.cpp context for Hermes' core prompt and permits a bounded 180–600 second CPU query timeout.

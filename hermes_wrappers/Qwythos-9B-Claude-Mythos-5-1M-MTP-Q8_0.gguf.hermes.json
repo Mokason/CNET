@@ -32,8 +32,9 @@
   },
   "hermes": {
     "loader": "cnet-hermes-wrapper",
-    "start_command": "hermes --model /home/marble/AI/CNET/hermes_wrappers/Qwythos-9B-Claude-Mythos-5-1M-MTP-Q8_0.gguf.cnetpack",
-    "status": "native_compression_complete"
+    "start_command": null,
+    "status": "candidate_quarantined",
+    "reason": "Rejected by reports/qwythos_real_model_acceptance.json; use the admission-gated selected wrapper."
   },
   "generated_at_utc": "2026-07-10T20:26:48.9866547Z"
 }

@@ -41,17 +41,22 @@ Each suggestion row contains:
 - `tags`: routing tags for model compression, sparse KV, uncertainty, narrative
   coherence, or self-improvement ingestion.
 
+## Local Registry Activation
+
+The external SQLite SuggestionRegistry is available locally and is populated on demand with:
+
+```sh
+python3 tools/ingest_cnet_suggestions.py \
+  --suggestions suggestions/cnet_compression_suggestions.jsonl \
+  --acceptance-report reports/qwythos_real_model_acceptance.json \
+  --db /path/to/suggestion_registry.db
+```
+
+The ingester validates the existing schema and uses stable SHA-256 keys with `INSERT OR IGNORE`. Historical Phase 1–5 rows retain `implemented` status rather than becoming duplicate work. A valid real-model campaign with denied candidate admission creates one priority-5 `proposed` repair item keyed by candidate SHA-256. This makes the scheduling input current and evidence-backed while keeping execution local and manual; no cron, GitHub Actions, or external write is installed.
+
 ## Perpetual Engine Handoff
 
-The perpetual improvement engine should scan
-`suggestions/cnet_compression_suggestions.jsonl` and prefer rows with:
-
-- high `priority`
-- `status` containing `implemented`
-- non-empty `next_steps`
-
-That lets it propose follow-up benchmark work without reimplementing completed
-native/MCP features.
+Consumers should schedule only rows with `status='proposed'` and `meta.actionable=true`. Implemented milestone rows remain queryable evidence but are not follow-up tasks.
 
 ## Self-Development Handoff
 

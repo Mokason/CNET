@@ -27,12 +27,15 @@ Results:
 - C bridge export: wrote 5 suggestions and 5 generated training rows, including Phase 5.
 - C bridge dry-run: read 5 phase records successfully.
 
+## Local Registry Activation Completed
+
+- Added `tools/ingest_cnet_suggestions.py` and focused dedup/status tests.
+- Imported five Phase 1–5 rows as `implemented` evidence.
+- Imported one priority-5 `proposed` repair task from the quarantined real-model candidate.
+- Verified a second identical pass inserted zero rows and skipped all six stable hashes.
+- Kept activation local and on-demand: no cron, GitHub Actions, or public write.
+
 ## Remaining Work
 
-- Point the external suggestion registry at
-  `suggestions/cnet_compression_suggestions.jsonl` when that repository is
-  available locally.
-- Point the external perpetual improvement engine at the same suggestions file and schedule follow-up
-  benchmark tasks from `next_steps`.
-- Copy the reusable implementation pattern into `Self-Development-Log.md` during
-  the next self-development cycle.
+- A future local perpetual engine may consume only `proposed` rows whose metadata marks them actionable.
+- Copy the reusable implementation pattern into `Self-Development-Log.md` during the next self-development cycle.

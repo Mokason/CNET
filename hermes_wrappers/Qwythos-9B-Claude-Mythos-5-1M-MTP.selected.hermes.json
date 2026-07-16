@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "kind": "cnet-hermes-wrapper",
+  "source_report": "/home/marble/AI/CNET/reports/qwythos_real_model_acceptance.json",
+  "campaign_verdict": "PASS_CANDIDATE_QUARANTINED",
+  "selected_model": {
+    "role": "reference",
+    "path": "/home/marble/AI/CNET/hermes_wrappers/Qwythos-9B-Claude-Mythos-5-1M-MTP-TQ1_0-fixed.cnetpack",
+    "sha256": "a6eee1573d145d61b895cf0a575681ab48452d39fba56f77343fe4cdf31315ee",
+    "bytes": 5578649440
+  },
+  "candidate_admission": {
+    "admitted": false,
+    "selected_role": "reference",
+    "quality_delta": -0.6666666666666666,
+    "reasons": [
+      "quality_regression"
+    ]
+  },
+  "runtime": {
+    "backend": "llama-server",
+    "server": "/home/marble/llama.cpp/build-cpu/bin/llama-server",
+    "cpu_only": true,
+    "host": "127.0.0.1",
+    "port": 0,
+    "threads": 4,
+    "ctx_size": 65536,
+    "parallel": 1,
+    "gpu_layers": 0
+  },
+  "hermes": {
+    "provider": "custom",
+    "model": "qwen/qwen3.5-9b-cnet-selected",
+    "api_mode": "chat_completions",
+    "default_probe": "Reply with exactly Ready",
+    "probe_expected": "Ready",
+    "max_output_tokens": 64,
+    "max_turns": 2,
+    "query_timeout_seconds": 540,
+    "start_command": "python3 tools/run_hermes_wrapper.py --manifest <manifest.json>"
+  }
+}
