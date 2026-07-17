@@ -193,7 +193,8 @@ HARNESS_ORACLE_SRC := src/harness_oracle.c
 EXT_TEACHER_SRC := src/external_teacher.c
 MODALITY_VOICE_SRC := src/modality_voice.c
 MODALITY_VISION_SRC := src/modality_vision.c
-MULTIMODAL_SRC := $(EXT_TEACHER_SRC) $(MODALITY_VOICE_SRC) $(MODALITY_VISION_SRC)
+JSON_TOOLCALL_SRC := src/json_toolcall.c
+MULTIMODAL_SRC := $(EXT_TEACHER_SRC) $(MODALITY_VOICE_SRC) $(MODALITY_VISION_SRC) $(JSON_TOOLCALL_SRC)
 PERSONAL_AI_SRC := src/personal_ai.c
 HYBRID_AI_SRC := src/hybrid_ai.c
 RESIDUAL_GGUF_SRC := src/residual_gguf.c
@@ -1915,7 +1916,7 @@ recipe_proposals: tools/propose_recipe_improvements.py
 	@grep "RECIPE_PROPOSALS_PASS" logs/recipe_proposals.log
 
 # Full hermetic umbrella for the 4-phase self-improve/resource program.
-unified_self_improve: resource_governor counterfactual_order self_improve deploy_profile recipe_proposals gap_lane_service_config campaign_v2_fast multimodal_v0 voice_real_teacher personal_ai post_seal_serve hybrid_ai hybrid_bench residual_gguf colibri_integrate curiosity eg registry_hash
+unified_self_improve: resource_governor counterfactual_order self_improve deploy_profile recipe_proposals gap_lane_service_config campaign_v2_fast multimodal_v0 voice_real_teacher json_toolcall personal_ai post_seal_serve hybrid_ai hybrid_bench residual_gguf colibri_integrate curiosity eg registry_hash
 	@echo "UNIFIED_SELF_IMPROVE_PASS"
 
 # Personal AI: local certified library first; big-AI teacher only on gaps.
@@ -2127,6 +2128,21 @@ voice_real_teacher: $(MULTIMODAL_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER
 	@./$(BIN_DIR)/test_voice_real_teacher > logs/voice_real_teacher.log 2>&1
 	@grep -q "VOICE_REAL_TEACHER_PASS" logs/voice_real_teacher.log
 	@grep "VOICE_REAL_TEACHER_PASS" logs/voice_real_teacher.log
+
+# Closed-set JSON tool-call spine: keyword features → certified tool ONEHOT.
+.PHONY: json_toolcall
+json_toolcall: $(MULTIMODAL_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) $(GAP_LANE_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(EXT_TEACHER_SRC) src/soul_host.c tests/test_json_toolcall.c include/json_toolcall.h
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/test_json_toolcall \
+		$(MULTIMODAL_SRC) \
+		$(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) \
+		$(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) \
+		$(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) $(GAP_LANE_SRC) \
+		$(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) \
+		src/soul_host.c tests/test_json_toolcall.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -pthread
+	@./$(BIN_DIR)/test_json_toolcall > logs/json_toolcall.log 2>&1
+	@grep -q "JSON_TOOLCALL_PASS" logs/json_toolcall.log
+	@grep "JSON_TOOLCALL_PASS" logs/json_toolcall.log
 
 multimodal_prepare: tests/test_multimodal_prepare.py tools/multimodal_campaign.sh plans/multimodal_external_teachers.md
 	@mkdir -p logs
