@@ -97,6 +97,9 @@ int main(void) {
         oe->identity.contract_digest = 0x434f4e5452ULL;       /* "CONTR" */
         oe->identity.retrieval_snapshot_digest = 0xc0417e37ULL;
         oe->identity.toolchain_digest = 0x544f4f4cULL;        /* "TOOL" */
+        /* the REAL process digest, like the daemon stamps: proves the
+           dl_iterate_phdr fold produces a stable nonzero value here */
+        oe->identity.runtime_libs_digest = cnet_runtime_libs_digest();
         oe->behavior_digest = cnet_oracle_identity_digest(&oe->identity);
     }
     /* keep the student's structure budget visible: growth is the point */
@@ -151,6 +154,13 @@ int main(void) {
           lane.base.oracles[0].identity.config_digest == 0x57494e444f57ULL &&
           lane.base.oracles[0].identity.toolchain_digest == 0x544f4f4cULL,
           "closing the gap persists the teacher as unit provenance");
+#ifdef __GLIBC__
+    check(lane.base.oracles[0].identity.runtime_libs_digest != 0 &&
+          lane.base.oracles[0].identity.runtime_libs_digest ==
+              cnet_runtime_libs_digest(),
+          "linked-runtime digest is nonzero, stable, and persists with the "
+          "descriptor");
+#endif
     check(strcmp(lane.ledger.gaps[0].unit, "acq_gl_rot3") == 0 &&
           lane.ledger.gaps[0].provenance_done == 1,
           "the closed gap records its minted unit and reconciles once");
@@ -253,6 +263,11 @@ int main(void) {
               0xc0417e37ULL &&
           lane.base.oracles[0].identity.toolchain_digest == 0x544f4f4cULL,
           "unit provenance survives the resume round-trip");
+#ifdef __GLIBC__
+    check(lane.base.oracles[0].identity.runtime_libs_digest ==
+              cnet_runtime_libs_digest(),
+          "linked-runtime digest survives the CNB v5 resume round-trip");
+#endif
     check(cnb_unit_provenance(&lane.base, "acq_gl_rot3") != NULL &&
           strcmp(cnb_unit_provenance(&lane.base, "acq_gl_rot3"),
                  "rot3_ref") == 0,

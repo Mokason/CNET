@@ -384,6 +384,7 @@ int main(void) {
             int z;
             for (z = 0; z < 32; ++z) identity.artifact_sha256[z] = (unsigned char)(z + 1);
         }
+        identity.runtime_libs_digest = 0xbbbbccccddddeeeeULL;
         check(cnb_add_oracle_desc_v2(&b, "increment_ref", "builtin", nib, nibn,
                                      &identity) == 0,
               "evidence-carrying descriptor added");
@@ -407,6 +408,9 @@ int main(void) {
         check(memcmp(b2.oracles[0].identity.artifact_sha256,
                      identity.artifact_sha256, 32) == 0,
               "CNB4 preserves the full 256-bit artifact hash");
+        check(b2.oracles[0].identity.runtime_libs_digest ==
+                  identity.runtime_libs_digest,
+              "CNB5 preserves the linked-runtime digest");
         /* the full hash is NOT folded into the behavior digest, so an old base
            (sha256 all-zero) and a new one with the same 64-bit fields share a
            behavior digest — the digest stays a stable index across the bump */
@@ -418,6 +422,16 @@ int main(void) {
             check(cnet_oracle_identity_digest(&old_id) ==
                   cnet_oracle_identity_digest(&identity),
                   "full hash is not in the behavior digest (v-agnostic index)");
+        }
+        /* same label rule for the v5 tail: the linked-runtime digest is a
+           RECORD, not part of the index — a pre-v5 identity (field zero)
+           keeps the same behavior digest */
+        {
+            CnetOracleIdentity old_id = identity;
+            old_id.runtime_libs_digest = 0;
+            check(cnet_oracle_identity_digest(&old_id) ==
+                  cnet_oracle_identity_digest(&identity),
+                  "linked-runtime digest is not in the behavior digest");
         }
 
         memset(&orc, 0, sizeof orc);

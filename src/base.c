@@ -6,7 +6,7 @@
 #include <string.h>
 
 #define CNB_MAGIC "CNB1"
-#define CNB_VERSION 4u
+#define CNB_VERSION 5u
 #define CNB_MIN_VERSION 1u
 
 /* sanity caps: refuse hostile headers before any allocation */
@@ -427,6 +427,7 @@ int cnb_save(const CnetBase *b, const char *path) {
             w_u64(&w, b->oracles[i].identity.retrieval_snapshot_digest) ||
             w_u64(&w, b->oracles[i].identity.toolchain_digest) ||
             w_put(&w, b->oracles[i].identity.artifact_sha256, 32) ||  /* v4 */
+            w_u64(&w, b->oracles[i].identity.runtime_libs_digest) ||  /* v5 */
             w_u64(&w, b->oracles[i].behavior_digest)) goto done;
     }
 
@@ -598,6 +599,14 @@ int cnb_load(CnetBase *b, const char *path) {
             /* v4 appended the full 256-bit artifact hash; older bases leave it
                zero (the field was memset above) */
             if (version >= 4 && r_get(&r, identity.artifact_sha256, 32)) goto fail;
+            /* v5 appended the linked-runtime digest; older bases read 0 =
+               "linked runtime unattested" (memset above), same label rule
+               as the full hash */
+            if (version >= 5) {
+                unsigned long long runtime_libs_digest;
+                if (r_u64(&r, &runtime_libs_digest)) goto fail;
+                identity.runtime_libs_digest = (uint64_t)runtime_libs_digest;
+            }
             if (r_u64(&r, &behavior_digest)) goto fail;
             identity.abi_version = (uint32_t)abi_version;
             identity.struct_size = (uint32_t)struct_size;

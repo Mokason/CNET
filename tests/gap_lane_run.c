@@ -400,6 +400,9 @@ static size_t bind_model_teachers(GapLane *L, cce_gguf_qwen2 *m,
             oe->identity.config_digest = lm_window_fp64;
             oe->identity.retrieval_snapshot_digest = sel ? sel->fp64 : 0;
             oe->identity.toolchain_digest = lm_toolchain_fp64;
+            /* linked-runtime attestation (libc/libm/OpenMP build-ids): the
+               layer the toolchain digest cannot see; 0 only off-glibc */
+            oe->identity.runtime_libs_digest = cnet_runtime_libs_digest();
             oe->behavior_digest = cnet_oracle_identity_digest(&oe->identity);
             lm_task_count++;
             bound++;
@@ -619,8 +622,9 @@ int main(int argc, char **argv) {
             }
         }
         printf("gap_lane_run: teacher %s (vocab %d, base %ld, "
-               "artifact %016llx, toolchain %016llx%s%s)\n",
+               "artifact %016llx, toolchain %016llx, runtime %016llx%s%s)\n",
                argv[3], vocab, token_base, lm_model_fp64, lm_toolchain_fp64,
+               (unsigned long long)cnet_runtime_libs_digest(),
                lm_default_ctx.fp[0] ? ", default provenance " : "",
                lm_default_ctx.fp);
         /* Equivalence gate: the batched cache is only trusted if a wide probe

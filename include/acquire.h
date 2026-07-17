@@ -89,7 +89,19 @@ typedef struct {
        is still distinguishable by the full hash. Deliberately NOT folded into
        cnet_oracle_identity_digest, so bases written before it still load. */
     unsigned char artifact_sha256[32];
+    /* Linked-runtime attestation (tail extension #2, same ABI rules as the
+       full hash above): FNV over the process's loaded DSOs — (soname,
+       .note.gnu.build-id) pairs in soname-sorted order — plus the glibc
+       version. Teaching numerics depend on libm/OpenMP the toolchain digest
+       never sees; this records that layer. 0 = linked runtime unattested
+       (pre-v5 base, or a platform without dl introspection) — a visible
+       label, never a refusal. NOT folded into cnet_oracle_identity_digest. */
+    uint64_t runtime_libs_digest;
 } CnetOracleIdentity;
+
+/* The current process's linked-runtime digest (see runtime_libs_digest).
+   Returns 0 when the platform offers no dl introspection (non-glibc). */
+uint64_t cnet_runtime_libs_digest(void);
 
 typedef struct {
     uint32_t abi_version;
