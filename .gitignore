@@ -11,6 +11,9 @@ artifacts/
 Models/
 supra_cache/
 altmodel_cache/
+altmodel_gpt2_cache/
+altmodel_gpt2_nohead_cache/
+altmodel_gpt2_gap_cache/
 *.cce
 *.gguf
 *.safetensors

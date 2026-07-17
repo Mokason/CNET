@@ -15,11 +15,12 @@ Synthetic fixtures are never relabeled as FACTOR, TruthfulQA, LongBench, or Infi
 ## Phase 1 — Counterfactual Factuality
 
 - Native counterfactual route and claim-verification contract: pass.
-- Real FACTOR/TruthfulQA dataset present in the repository: no.
+- Native router on the hosted serving path: pass (2026-07-16). `soul_route` executes `cce_router_sample_counterfactuals` + `cce_router_consistency_score` as REPORT-ONLY shadow evidence behind `CNET_COUNTERFACTUAL` (default OFF). The hermetic gate is `make counterfactual_serving` (marker `COUNTERFACTUAL_SERVING_PASS`): served answers are byte-identical with the knob on or off, report metadata is present only when ON, and refusal semantics are unchanged.
+- Real TruthfulQA dataset present in the repository: yes (2026-07-16) — `references/truthfulqa/TruthfulQA.csv`, 789 questions, sha256 `b8d8ef1e12f98b4f2a9f47abc9765da0640b182b6c5d9b92f0c1a1f2f1e02e5c` (see `references/truthfulqa/README.md`). FACTOR: still absent.
 - Admitted llama.cpp GGUF integrated with the CNET counterfactual router: no.
-- Claimed `>=2.5%` gain: withheld.
+- Claimed `>=2.5%` gain: withheld — the dataset alone is not a measurement. No factuality A/B (admitted model with vs without counterfactual route evidence) has been run against it, and the serving integration attaches route evidence, it does not measure factuality.
 
-The open work is runtime integration followed by a real external benchmark; the repository now fails closed rather than repeating the target as if it were measured.
+The remaining open work is GGUF-runtime integration followed by a real measured A/B on the in-repo TruthfulQA split (and a FACTOR dataset, still absent); the repository still fails closed rather than repeating the target as if it were measured.
 
 ## Phase 2 — Sparse KV Routing
 
@@ -29,7 +30,11 @@ The real native selector was called through `bin/libphase123_benchmark.so` at:
 - budgets: 15%, 20%, and 25%;
 - nine total measurements.
 
-All nine runs selected the exact budget and retained all three injected heavy-hitter needles. This is selector evidence only. The admitted llama.cpp GGUF does not execute this CNET sparse-KV path, so LongBench/InfiniteBench quality remains withheld.
+All nine runs selected the exact budget and retained all three injected heavy-hitter needles.
+
+Since 2026-07-16 the selector also EXECUTES on a real KV cache attention path: CNET's own `cce_gguf_qwen2` forward (the mining-oracle runner), opt-in via `cce_gguf_qwen2_set_sparse_kv()` / `CNET_SPARSE_KV=<fraction>`, default OFF with a byte-identical forward. The hermetic gate `make sparse_kv_exec` (marker `SPARSE_KV_EXEC_PASS`, in the `phase123_benchmark_build` tier beside `sparse_kv_test`) pins on a synthetic 288-token context with three planted heavy-hitter needles: OFF == ON@1.0 bit-identity; at budget 0.25 the per-step budget ceiling, needle retention at every decode step (selection-tap evidence), in-situ top-scorer retention, and decode argmax agreement vs full KV of 32/32 = 1.00 against a stated 0.90 threshold; malformed budgets refused.
+
+This is selector plus hermetic synthetic-fixture execution evidence on CNET's OWN runner — `contract_pass`, not a long-context benchmark score. The admitted llama.cpp GGUF runtime does not execute this CNET sparse-KV path, and no real LongBench/InfiniteBench dataset is present in the repository, so LongBench/InfiniteBench quality remains withheld.
 
 ## Phase 3 — Creative Preservation
 

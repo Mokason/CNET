@@ -243,7 +243,7 @@ TILEMEM_SRC := src/corpus/tile_memory.c
 TILEMEM_TEST := tests/test_tile_memory.c
 GRADUATE_SRC := src/corpus/graduate.c
 GRADUATE_TEST := tests/test_graduate.c
-ACQUIRE_SRC := src/acquire.c
+ACQUIRE_SRC := src/acquire.c src/runtime_identity.c
 ACQUIRE_TEST := tests/test_acquire.c
 BASE_SRC := src/base.c
 BASE_TEST := tests/test_base.c
@@ -302,12 +302,24 @@ sparse_kv_test: $(CCE_SPARSE_KV) $(SPARSE_KV_TEST) include/cce/cce_sparse_kv.h
 	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $(CCE_SPARSE_KV) $(SPARSE_KV_TEST) $(LDFLAGS)
 	./$(BIN_DIR)/sparse_kv_test
 
+# Sparse KV EXECUTION gate: the ONE cce_sparse_kv selector wired into the
+# REAL cce_gguf_qwen2 KV-cache attention path (the oracle seam), on a
+# hermetic synthetic qwen2 GGUF the test writes itself. Pins OFF == ON@1.0
+# bit-identity, budget-0.25 planted-needle retention + budget ceiling +
+# decode argmax agreement, malformed-budget refusal (API and CNET_SPARSE_KV
+# env knob), and OFF-restore bit-identity. Terminal marker: SPARSE_KV_EXEC_PASS.
+sparse_kv_exec: $(CCE) $(CCE_CUDA_OBJ) tests/sparse_kv_exec_test.c tests/tiny_model_fixture.h include/cce/cce_sparse_kv.h include/cce/cce_gguf.h
+	@mkdir -p logs
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) tests/sparse_kv_exec_test.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+	./$(BIN_DIR)/sparse_kv_exec > logs/sparse_kv_exec.log 2>&1
+	@grep "SPARSE_KV_EXEC_PASS" logs/sparse_kv_exec.log
+
 narrative_coherence_test: src/contract/narrative_coherence.c $(CCE_ROUTER) $(NARRATIVE_COHERENCE_TEST) include/contract/narrative_coherence.h include/cce/cce_router.h include/cce/cce_forest.h
 	$(CC) $(CFLAGS) -Iinclude -o $(BIN_DIR)/$@ src/contract/narrative_coherence.c $(CCE_ROUTER) $(NARRATIVE_COHERENCE_TEST) $(LDFLAGS)
 	./$(BIN_DIR)/narrative_coherence_test
 
-.PHONY: phase123_benchmark_build phase123_benchmark_test
-phase123_benchmark_build: counterfactual_router_test sparse_kv_test narrative_coherence_test
+.PHONY: phase123_benchmark_build phase123_benchmark_test sparse_kv_exec
+phase123_benchmark_build: counterfactual_router_test sparse_kv_test sparse_kv_exec narrative_coherence_test
 	$(CC) $(CFLAGS) -fPIC -shared -Iinclude -o $(PHASE123_BENCHMARK_LIBRARY) \
 		src/cce/cce_sparse_kv.c src/contract/narrative_coherence.c $(LDFLAGS)
 
@@ -1354,7 +1366,7 @@ cce_autograd_test: $(CCE) $(CCE_CUDA_OBJ) tests/test_cce_autograd.c
 AVX_CFLAGS := $(filter-out -mno-avx,$(CFLAGS))
 # wordlm/wordlm_bitnet/trit_bench link only CCE sources (no src/router/), so
 # they are AVX-safe too; OMP activates the row-parallel packed-trit kernels.
-cce_safetensors_test supra_console supra_chat_mock supra_context_probe supra_longform supra_head_qat supra_head_qat_corpus transformer_qat_joint transformer_qat_real transformer_qat_altmodel proj_qat_recon proj_qat_gemma proj_qat_stack proj_qat_gpu gptq_solver proj_qat_gemma_e2e proj_qat_bitwidth dense_stream_real moe_loader moe_forward moe_stream moe_expert_quant moe_e2e moe_gen wordlm wordlm_bitnet wordlm_holdout trit_bench: CFLAGS := $(AVX_CFLAGS) $(OMPFLAGS)
+cce_safetensors_test supra_console supra_chat_mock supra_context_probe supra_longform supra_head_qat supra_head_qat_corpus transformer_qat_joint transformer_qat_real transformer_qat_altmodel transformer_qat_gpt2names proj_qat_recon proj_qat_gemma proj_qat_stack proj_qat_gpu gptq_solver proj_qat_gemma_e2e proj_qat_bitwidth dense_stream_real moe_loader moe_forward moe_stream moe_expert_quant moe_e2e moe_gen wordlm wordlm_bitnet wordlm_holdout trit_bench: CFLAGS := $(AVX_CFLAGS) $(OMPFLAGS)
 
 cce_safetensors_test: $(CCE) $(CCE_CUDA_OBJ) src/nn.c tests/test_cce_safetensors.c
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) src/nn.c tests/test_cce_safetensors.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
@@ -1423,6 +1435,22 @@ transformer_qat_altmodel: $(CCE) $(CCE_CUDA_OBJ) src/nn.c tests/transformer_qat_
 	@test -f altmodel_cache/model.safetensors || python3 tools/gen_altmodel.py
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) src/nn.c tests/transformer_qat_altmodel.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 	./$(BIN_DIR)/transformer_qat_altmodel > logs/transformer_qat_altmodel.log 2>&1
+
+# The decomposer-generalization gate: load + forward parity on a model the old
+# hardwired decomposer could NOT load — GPT-2-STYLE tensor naming (h.{i}.attn.c_attn,
+# wte/wpe), 6 layers, 2 heads (from safetensors __metadata__), Conv1D [in,out]
+# block weights, TIED head (no lm_head, like real HF gpt2). Parity is asserted
+# both against the trainer AND against golden logits from an independent numpy
+# forward embedded in the fixture. Standalone (needs python3+numpy+safetensors),
+# not in verify-long. See tests/transformer_qat_gpt2names.c.
+transformer_qat_gpt2names: $(CCE) $(CCE_CUDA_OBJ) src/nn.c tests/transformer_qat_gpt2names.c
+	@mkdir -p $(BIN_DIR) logs
+	@test -f altmodel_gpt2_cache/model.safetensors || python3 tools/gen_altmodel.py altmodel_gpt2_cache gpt2
+	@test -f altmodel_gpt2_nohead_cache/model.safetensors || python3 tools/gen_altmodel.py altmodel_gpt2_nohead_cache gpt2_nohead
+	@test -f altmodel_gpt2_gap_cache/model.safetensors || python3 tools/gen_altmodel.py altmodel_gpt2_gap_cache gpt2_gap
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) src/nn.c tests/transformer_qat_gpt2names.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+	./$(BIN_DIR)/transformer_qat_gpt2names > logs/transformer_qat_gpt2names.log 2>&1
+	@grep -q "TRANSFORMER_QAT_GPT2NAMES_PASS" logs/transformer_qat_gpt2names.log
 
 # Core unit of decomposed data-aware per-projection ternary QAT (GPTQ/AWQ regime):
 # reconstruct one linear projection's FP output from calibration activations with
@@ -1720,6 +1748,25 @@ gap_lane_run_build: $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADA
 		$(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) \
 		tests/gap_lane_run.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -pthread
 
+# Gap-lane student-training throughput gate: CNET_TRAIN_FAST=1 (default OFF)
+# is a byte-identical fast plain-SGD step in btn_train_dynamic (row-blocked
+# reduction chains + exact-zero input skip + deterministic OpenMP worksharing;
+# see the comment block in src/nn.c). The gate teaches the campaign-shaped
+# hermetic fixture (256 one-hot -> 3x256 one-hot, 256 exemplars, the deployed
+# service's staging/loss knobs) twice from the same seed and asserts the
+# knob-on student is byte-identical to the knob-off one and both certify
+# EXACT. `profile` and `run` modes of the same binary give the phase
+# breakdown and A/B timings.
+.PHONY: teach_fast
+teach_fast: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(CONSOLIDATE) tests/teach_fast_bench.c include/nn.h include/contract/contract.h
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) $(OMPFLAGS) -o $(BIN_DIR)/teach_fast_bench \
+		$(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(CONSOLIDATE) \
+		tests/teach_fast_bench.c $(LDFLAGS) $(OMPFLAGS)
+	@OMP_NUM_THREADS=4 ./$(BIN_DIR)/teach_fast_bench gate > logs/teach_fast.log 2>&1
+	@grep -q "TEACH_FAST_PASS" logs/teach_fast.log
+	@grep "TEACH_FAST_PASS" logs/teach_fast.log
+
 # The one-dispatch-story gate (docs/dispatch.md): recall dispatches INSIDE
 # a specialist under its contract; certification outranks everything across
 # specialists; among the certified, learned reliability ranks.
@@ -1908,11 +1955,12 @@ dist: VERSION .github/workflows/ci.yml include/cnet_version.h
 .PHONY: agent_memory_integrity registry_restart_unit persistence_integrity specialist_authority admission_abi_audit
 
 .PHONY: gguf_integrity
-gguf_integrity: src/cce/cce_gguf.c tests/test_cce_gguf_q5_integrity.c tests/stubs_q5_test.c
+gguf_integrity: src/cce/cce_gguf.c src/cce/cce_sparse_kv.c tests/test_cce_gguf_q5_integrity.c tests/stubs_q5_test.c
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) -std=c11 -Wall -Wextra -Werror -pedantic -O2 -D_DEFAULT_SOURCE -Iinclude \
 		-o $(BIN_DIR)/test_cce_gguf_q5_integrity \
 		tests/test_cce_gguf_q5_integrity.c tests/stubs_q5_test.c src/cce/cce_gguf.c \
+		src/cce/cce_sparse_kv.c \
 		-lm -lpthread
 	@timeout 30 ./$(BIN_DIR)/test_cce_gguf_q5_integrity > logs/gguf_integrity.log 2>&1
 	@grep -q "GGUF_INTEGRITY_PASS" logs/gguf_integrity.log
@@ -1920,6 +1968,7 @@ gguf_integrity: src/cce/cce_gguf.c tests/test_cce_gguf_q5_integrity.c tests/stub
 		-fsanitize=address,leak -fno-omit-frame-pointer -Iinclude \
 		-o $(BIN_DIR)/test_cce_gguf_q5_integrity_asan \
 		tests/test_cce_gguf_q5_integrity.c tests/stubs_q5_test.c src/cce/cce_gguf.c \
+		src/cce/cce_sparse_kv.c \
 		-lm -lpthread
 	@timeout 60 env ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 \
 		./$(BIN_DIR)/test_cce_gguf_q5_integrity_asan > logs/gguf_integrity_asan.log 2>&1
@@ -2059,7 +2108,20 @@ admission_bypass_audit: tests/audit_admission_bypass.sh
 	@sh tests/audit_admission_bypass.sh > logs/admission_bypass_audit.log 2>&1
 	@grep -q "ADMISSION_BYPASS_AUDIT_PASS" logs/admission_bypass_audit.log
 
-unified_native: unified_adapter unified_cce_adapter unified_oracle_adapter unified_specialist gap_lane dispatch_story oracle_v2_test unified_async unified_models unified_ds4_launcher soul_host_test soul_reopen_test admission_bypass_audit cnet_dll build_hygiene_test alt_paths_gate aicimo_core_test
+# Counterfactual serving shadow gate: the native cce_router counterfactual
+# contract executes on the hosted soul_route serving path as REPORT-ONLY
+# evidence behind CNET_COUNTERFACTUAL (default OFF). Core assertion: a served
+# answer is BYTE-IDENTICAL with the knob on or off, metadata is present only
+# when ON, and refusal semantics (unknown goal, gap-inbox note) are unchanged.
+.PHONY: counterfactual_serving
+counterfactual_serving: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(GAP_LANE_SRC) src/soul_host.c tests/test_counterfactual_serving.c
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(GAP_LANE_SRC) src/soul_host.c tests/test_counterfactual_serving.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -pthread
+	./$(BIN_DIR)/$@ > logs/counterfactual_serving.log 2>&1
+	@grep -q "CNET_COUNTERFACTUAL REPORT" logs/counterfactual_serving.log
+	@grep -q "COUNTERFACTUAL_SERVING_PASS" logs/counterfactual_serving.log
+
+unified_native: unified_adapter unified_cce_adapter unified_oracle_adapter unified_specialist gap_lane dispatch_story oracle_v2_test unified_async unified_models unified_ds4_launcher soul_host_test soul_reopen_test counterfactual_serving admission_bypass_audit cnet_dll build_hygiene_test alt_paths_gate aicimo_core_test
 	@for sym in specialist_wrap_btn specialist_wrap_cce_model \
 		specialist_wrap_oracle specialist_admit specialist_axes \
 		specialist_residency_of_model specialist_residency_of_branch \
