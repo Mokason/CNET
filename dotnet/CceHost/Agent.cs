@@ -15,7 +15,7 @@ namespace CNET.CceHost;
 /// </summary>
 public sealed class Agent
 {
-    private readonly OllamaClient _llm;
+    private readonly IChatClient _llm;
     private readonly SoulHost _soul;
 
     // window token ids (gemma4's <bos> continuations) -> text, for cnet_recall.
@@ -42,7 +42,7 @@ Tools:
 Think step by step, use tools, then give a final answer. Only ONE JSON object per turn.
 """;
 
-    public Agent(OllamaClient llm, SoulHost soul) { _llm = llm; _soul = soul; }
+    public Agent(IChatClient llm, SoulHost soul) { _llm = llm; _soul = soul; }
 
     public async Task RunAsync(string task, int maxSteps = 8)
     {

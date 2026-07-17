@@ -2,15 +2,21 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using CNET.Cce;
+using CNET.Cce.CnetHarness;
 using CNET.CceHost;
 
 // CNET .NET host.
-//   default        -> cognitive recall test over the certified base
-//   --agent [task] -> Milestone 2: a REAL LLM controller drives tools + the
-//                     certified CNET skill (ollama; CNET_LLM_MODEL to pick model)
+//   default            -> cognitive recall test over the certified base
+//   --agent [task]     -> Milestone 2: a REAL LLM controller drives tools + the
+//                         certified CNET skill. Backend defaults to the CNET
+//                         native harness (libcnet_harness.so) when CNET_HARNESS_MODEL
+//                         is set; otherwise falls back to the legacy Ollama HTTP
+//                         path if --ollama is passed.
+//   --ollama           -> force the legacy Ollama HTTP backend.
 
 bool agentMode = args.Contains("--agent");
 bool listMode = args.Contains("--list");
+bool ollamaMode = args.Contains("--ollama");
 string basePath = args.FirstOrDefault(a => a.EndsWith(".cnb"))
     ?? "/home/marble/AI/CNET/soul_gemma4v2_final.cnb";
 
@@ -27,7 +33,6 @@ if (listMode)
 
 if (agentMode)
 {
-    string model = Environment.GetEnvironmentVariable("CNET_LLM_MODEL") ?? "qwen2.5:7b";
     int taskIdx = Array.IndexOf(args, "--agent") + 1;
     string task = (taskIdx > 0 && taskIdx < args.Length && !args[taskIdx].EndsWith(".cnb"))
         ? args[taskIdx]
@@ -36,12 +41,41 @@ if (agentMode)
           + "its top-3 next tokens given window token 0 then token 1, and note its reliability. "
           + "Finish with a one-line summary of everything you found.";
 
+    string? harnessModel = Environment.GetEnvironmentVariable("CNET_HARNESS_MODEL");
+    bool useHarness = !ollamaMode && !string.IsNullOrEmpty(harnessModel);
+
     Console.WriteLine("=== CNET .NET host — Milestone 2: real LLM controller ===");
-    Console.WriteLine($"LLM: {model} (ollama)   base: {basePath}\n");
     McpTools.MemoryInit();
     using var soulA = new SoulHost(basePath);
-    var agent = new Agent(new OllamaClient(model), soulA);
-    await agent.RunAsync(task);
+
+    if (useHarness)
+    {
+        Console.WriteLine($"LLM: {harnessModel} (cnet native harness)   base: {basePath}\n");
+        var config = new CnetHarnessConfig
+        {
+            ModelId = Environment.GetEnvironmentVariable("CNET_HARNESS_MODEL_ID") ?? "qwythos-9b",
+            ModelPath = harnessModel!,
+            ResourceMask = 1ul << 2,          /* GPU1 default */
+            BudgetBytes = 30ul * 1024ul * 1024ul * 1024ul,
+            MainGpu = 0,
+            ContextTokens = 4096,
+            BatchTokens = 4096,
+            Threads = 8,
+            AicimoNumOps = 4,
+            AicimoBaseDim = 32,
+        };
+        using var session = CnetHarnessSession.Open(config);
+        using var chat = new CnetHarnessChatClient(session, role: "planner",
+                                                    maxTokens: 512, ownsSession: false);
+        var agent = new Agent(chat, soulA);
+        await agent.RunAsync(task);
+        return;
+    }
+
+    string model = Environment.GetEnvironmentVariable("CNET_LLM_MODEL") ?? "qwen2.5:7b";
+    Console.WriteLine($"LLM: {model} (ollama)   base: {basePath}\n");
+    var agent2 = new Agent(new OllamaClient(model), soulA);
+    await agent2.RunAsync(task);
     return;
 }
 

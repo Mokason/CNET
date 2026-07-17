@@ -17,6 +17,7 @@
     <!-- The native cce.dll / cce.so must be discoverable at runtime.
          Place it next to your app, or in the output directory.
          For development, the test/benchmark projects below will try to copy it. -->
+    <InternalsVisibleTo Include="CNET.Cce.Tests" />
   </ItemGroup>
 
   <ItemGroup>

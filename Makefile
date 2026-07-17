@@ -256,7 +256,7 @@ SYNONYMS_TEST := tests/test_synonyms.c
 TILEINDEX_TEST := tests/test_tile_index.c
 CONSOLIDATE_TEST := tests/test_tile_consolidate.c
 
-.PHONY: all run test verify verify-long recipe_gate demos compat unified unified_native unified_adapter unified_cce_adapter unified_oracle_adapter unified_specialist specialist_health gap_lane gap_lane_run_build dispatch_story claims claims_model model_evidence oracle_v2_test soul_host_test legacy_test compose route dag hetero split chunk certify property coverage conformal logicgate decimal circuit study capacity library margin fuzzy stochastic fastpath throughput residue expr attention attention_study lifecycle_bench lbench proposal_sidecar probe_overhead belowbeam_chars struct_pref dgate_bench compounding_bench cce_smoke counterfactual_router_test sparse_kv_test narrative_coherence_test phase4_uncertainty_test register_compression_improvements phase5_integration_test cce_train_bench cce_view forest_view wordlm wordlm_bitnet cce_dll cnet_dll cce_safetensors_test cce_gguf_test cce_model_test cce_autograd_test endgate jsonstory pdftest pdflearn compound tiermem_test graduate fontdecode tfidf synonyms tileindex consolidate clean aicimo_smoke aicimo_core_test
+.PHONY: all run test verify verify-long recipe_gate demos compat unified unified_native unified_adapter unified_cce_adapter unified_oracle_adapter unified_specialist specialist_health gap_lane gap_lane_run_build dispatch_story claims claims_model model_evidence oracle_v2_test soul_host_test legacy_test compose route dag hetero split chunk certify property coverage conformal logicgate decimal circuit study capacity library margin fuzzy stochastic fastpath throughput residue expr attention attention_study lifecycle_bench lbench proposal_sidecar probe_overhead belowbeam_chars struct_pref dgate_bench compounding_bench cce_smoke counterfactual_router_test sparse_kv_test narrative_coherence_test phase4_uncertainty_test register_compression_improvements phase5_integration_test cce_train_bench cce_view forest_view wordlm wordlm_bitnet cce_dll cnet_dll cce_safetensors_test cce_gguf_test cce_model_test cce_autograd_test endgate jsonstory pdftest pdflearn compound tiermem_test graduate fontdecode tfidf synonyms tileindex consolidate clean aicimo_smoke aicimo_core_test cnet_harness_contract_test cnet_harness_plugin dotnet_harness_test
 
 all: nn_demo
 
@@ -2150,7 +2150,7 @@ counterfactual_serving: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $
 	@grep -q "CNET_COUNTERFACTUAL REPORT" logs/counterfactual_serving.log
 	@grep -q "COUNTERFACTUAL_SERVING_PASS" logs/counterfactual_serving.log
 
-unified_native: unified_adapter unified_cce_adapter unified_oracle_adapter unified_specialist gap_lane gap_lane_service_config dispatch_story oracle_v2_test unified_async unified_models unified_ds4_launcher soul_host_test soul_reopen_test counterfactual_serving admission_bypass_audit cnet_dll build_hygiene_test alt_paths_gate aicimo_core_test
+unified_native: unified_adapter unified_cce_adapter unified_oracle_adapter unified_specialist gap_lane gap_lane_service_config dispatch_story oracle_v2_test unified_async unified_models unified_ds4_launcher soul_host_test soul_reopen_test counterfactual_serving admission_bypass_audit cnet_dll build_hygiene_test alt_paths_gate aicimo_core_test cnet_harness_contract_test
 	@for sym in specialist_wrap_btn specialist_wrap_cce_model \
 		specialist_wrap_oracle specialist_admit specialist_axes \
 		specialist_residency_of_model specialist_residency_of_branch \
@@ -2313,6 +2313,52 @@ aicimo_core_test: $(CCE) tests/test_aicimo_core.c include/cce/cce_aicimo.h
 	$(CC) $(CFLAGS) -o $(BIN_DIR)/aicimo_core_test $(CCE) tests/test_aicimo_core.c $(LDFLAGS)
 	./$(BIN_DIR)/aicimo_core_test > logs/aicimo_core_test.log 2>&1
 	@grep -q "AICIMO_CORE_TEST_PASS" logs/aicimo_core_test.log
+
+# CNET harness contract test — hermetic ABI + AICIMO surface test for the
+# .NET-owned inference harness plugin. Links cnet_harness_core.c only; the
+# llama.cpp-backed backend TU is intentionally left out so this target does
+# not require llama.cpp. See docs/cnet_dotnet_inference_harness.md.
+CNET_HARNESS_CORE := src/cnet_harness/cnet_harness_core.c
+CNET_HARNESS_HEADERS := include/cnet_harness.h src/cnet_harness/cnet_harness_private.h include/cce/cce_aicimo.h include/model_runtime.h include/model_probe.h
+
+# Optional plugin build. Links cnet.so + llama.cpp libraries. Not part of
+# unified / release_integrity: it requires the pinned llama.cpp ROCm build
+# ($(LLAMA_CPP_BUILD)) to be present, exactly as cnet_llama_eval already does.
+CNET_HARNESS_LLAMA := src/cnet_harness/cnet_harness_llama.cpp
+
+.PHONY: cnet_harness_plugin
+cnet_harness_plugin: cnet_dll $(CNET_HARNESS_CORE) $(CNET_HARNESS_LLAMA) $(CNET_HARNESS_HEADERS)
+	$(CXX) -std=c++17 -Wall -Wextra -O2 -fPIC -shared -Iinclude \
+		-I$(LLAMA_CPP_ROOT)/include -I$(LLAMA_CPP_ROOT)/ggml/include \
+		-o $(BIN_DIR)/libcnet_harness.so \
+		$(CNET_HARNESS_CORE) $(CNET_HARNESS_LLAMA) \
+		-L. -l:cnet.so -L$(LLAMA_CPP_BUILD)/bin -lllama -lggml -lggml-base \
+		-ldl -pthread \
+		-Wl,-rpath,'$$ORIGIN/..' -Wl,-rpath,$(LLAMA_CPP_BUILD)/bin
+	@echo "Built $(BIN_DIR)/libcnet_harness.so (CNET .NET inference harness plugin)."
+
+.PHONY: cnet_harness_contract_test
+cnet_harness_contract_test: $(CCE) $(CCE_MODEL_CATALOG) $(MODEL_RUNTIME) $(MODEL_PROBE) $(CNET_HARNESS_CORE) tests/test_cnet_harness_contract.c $(CNET_HARNESS_HEADERS)
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -o $(BIN_DIR)/cnet_harness_contract_test \
+		$(CCE) $(CCE_MODEL_CATALOG) $(MODEL_RUNTIME) $(MODEL_PROBE) \
+		$(CNET_HARNESS_CORE) tests/test_cnet_harness_contract.c \
+		$(LDFLAGS) -pthread
+	./$(BIN_DIR)/cnet_harness_contract_test > logs/cnet_harness_contract_test.log 2>&1
+	@grep -q "CNET_HARNESS_CONTRACT_TEST_PASS" logs/cnet_harness_contract_test.log
+
+# Managed harness unit tests: exercises dotnet/Cce.Tests filtered to the
+# CnetHarnessTests class. Fakes the native invoker; does not require the
+# plugin .so or a real GGUF, so it stays hermetic.
+DOTNET ?= /home/marble/dotnet/dotnet
+
+.PHONY: dotnet_harness_test
+dotnet_harness_test:
+	@mkdir -p logs
+	$(DOTNET) test dotnet/Cce.Tests/Cce.Tests.csproj -c Release --nologo \
+		--filter "FullyQualifiedName~CnetHarnessTests" \
+		2>&1 | tee logs/dotnet_harness_test.log
+	@grep -Eq "Passed:[[:space:]]*[1-9][0-9]*" logs/dotnet_harness_test.log
 
 # Alternate-paths regression gate: proves AICIMO is in the core CCE aggregate
 # with its canonical API (cce_aicimo_*), old compat names are NOT global symbols,

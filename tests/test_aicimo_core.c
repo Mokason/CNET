@@ -157,6 +157,103 @@ static void test_uncertainty_from_route_state(void) {
     fprintf(stderr, "  test_uncertainty_from_route_state: done\n");
 }
 
+/* 3b. Role hash must distribute over at least two adapter rows under equal base
+ *     strengths. This encodes the mandatory prerequisite: with equal strengths
+ *     the deterministic role bias is the only signal — if bias_row is always
+ *     zero, no role selects row != 0 and adapter routing collapses. */
+static void test_role_distribution_under_equal_strengths(void) {
+    const size_t dim = 32;
+    const size_t num_ops = 4;
+    cce_aicimo_router router;
+
+    CHECK(cce_aicimo_router_init(&router, num_ops, dim) == CCE_OK,
+          "role_dist: router_init");
+
+    /* Do NOT change strengths. All rows have identical base sum (0.01). Only the
+     * role bias can decide the winner in this configuration. */
+    static const char *roles[] = {
+        "narrative", "analytical", "planner", "critic",
+        "coder",     "summarizer", "planner_meta", "explorer",
+        "verifier",  "empathic",   "adversary",    "arbiter",
+        "story",     "diagnostic", "trickster",    "synthesizer",
+    };
+    const size_t nroles = sizeof(roles) / sizeof(roles[0]);
+
+    float input[32];
+    for (size_t i = 0; i < dim; ++i) input[i] = (float)(i * 0.03);
+
+    int hits[8] = {0};
+    for (size_t r = 0; r < nroles; ++r) {
+        float output[32];
+        size_t sel = 999;
+        CHECK(cce_aicimo_route_for_role(&router, input, dim, output, dim,
+                                         roles[r], &sel) == CCE_OK,
+              "role_dist: route_for_role");
+        CHECK(sel < num_ops, "role_dist: sel in range");
+        if (sel < num_ops) hits[sel]++;
+    }
+
+    int distinct = 0;
+    for (size_t i = 0; i < num_ops; ++i) if (hits[i] > 0) distinct++;
+    CHECK(distinct >= 2,
+          "role_dist: at least two adapters chosen across stable roles "
+          "(RED without fix — bias always resolves to row 0)");
+
+    cce_aicimo_router_free(&router);
+    fprintf(stderr, "  test_role_distribution_under_equal_strengths: done "
+                    "(distinct=%d, hits={%d,%d,%d,%d})\n",
+            distinct, hits[0], hits[1], hits[2], hits[3]);
+}
+
+/* 3c. The additive shared-decision API returns adapter AND uncertainty from the
+ *     same role-biased routing state. Bridge callers must not need two separate
+ *     routes. */
+static void test_role_decision_shared_uncertainty(void) {
+    const size_t dim = 16;
+    const size_t num_ops = 4;
+    cce_aicimo_router router;
+
+    CHECK(cce_aicimo_router_init(&router, num_ops, dim) == CCE_OK,
+          "role_dec: router_init");
+
+    float input[16], output[16];
+    for (size_t i = 0; i < dim; ++i) input[i] = (float)(i * 0.05);
+
+    size_t sel = 999;
+    float unc = -1.0f;
+    CHECK(cce_aicimo_route_decision(&router, input, dim, output, dim,
+                                     "planner", &sel, &unc) == CCE_OK,
+          "role_dec: route_decision");
+    CHECK(sel < num_ops, "role_dec: sel in range");
+    CHECK(unc >= 0.0f && unc <= 1.0f, "role_dec: unc in [0,1]");
+
+    /* Same role -> same selection AND same uncertainty (determinism). */
+    size_t sel2 = 999;
+    float unc2 = -1.0f;
+    CHECK(cce_aicimo_route_decision(&router, input, dim, output, dim,
+                                     "planner", &sel2, &unc2) == CCE_OK,
+          "role_dec: route_decision (repeat)");
+    CHECK(sel == sel2, "role_dec: deterministic selection");
+    CHECK(approx_eq(unc, unc2, 1e-6f), "role_dec: deterministic uncertainty");
+
+    /* Invalid-arg surface. */
+    CHECK(cce_aicimo_route_decision(NULL, input, dim, output, dim,
+                                     "x", &sel, &unc) != CCE_OK,
+          "role_dec: NULL router rejected");
+    CHECK(cce_aicimo_route_decision(&router, input, dim, output, dim,
+                                     NULL, &sel, &unc) != CCE_OK,
+          "role_dec: NULL role rejected");
+    CHECK(cce_aicimo_route_decision(&router, input, dim, output, dim,
+                                     "x", NULL, &unc) != CCE_OK,
+          "role_dec: NULL sel rejected");
+    CHECK(cce_aicimo_route_decision(&router, input, dim, output, dim,
+                                     "x", &sel, NULL) != CCE_OK,
+          "role_dec: NULL unc rejected");
+
+    cce_aicimo_router_free(&router);
+    fprintf(stderr, "  test_role_decision_shared_uncertainty: done\n");
+}
+
 /* 4. Invalid arguments rejected */
 static void test_invalid_args(void) {
     const size_t dim = 8;
@@ -237,6 +334,8 @@ int main(void) {
 
     test_identity_preservation();
     test_deterministic_role_routing();
+    test_role_distribution_under_equal_strengths();
+    test_role_decision_shared_uncertainty();
     test_uncertainty_from_route_state();
     test_invalid_args();
 

@@ -109,6 +109,22 @@ cce_result cce_aicimo_route_with_uncertainty(const cce_aicimo_router *r,
                                               float *output, size_t out_cap,
                                               float *uncertainty);
 
+/*
+ * Additive shared-decision API: perform one role-biased routing decision and
+ * return BOTH the selected adapter index and the uncertainty derived from the
+ * *same* strength distribution used to select it. Bridges must not need two
+ * separate route calls to obtain adapter and uncertainty.
+ *
+ * All arguments are required. Returns CCE_OK on success, CCE_ERR_INVALID_ARG
+ * on any NULL / dimension mismatch, or CCE_ERR_OOM.
+ */
+cce_result cce_aicimo_route_decision(const cce_aicimo_router *r,
+                                      const float *input, size_t in_len,
+                                      float *output, size_t out_cap,
+                                      const char *role,
+                                      size_t *selected_op,
+                                      float *uncertainty);
+
 /* ---- strength manipulation ---- */
 
 /*

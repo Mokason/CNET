@@ -32,17 +32,32 @@ static float clamp01(float v) {
     return v;
 }
 
-/* Deterministic hash of a role string to a non-negative float. */
-static float role_hash_bias(const char *role) {
-    /* FNV-1a inspired hash, mapped to [0, num_ops) as a fractional bias */
+/* Deterministic FNV-1a hash of a role string. Returns the raw hash so callers
+ * can derive both a target row (modulo num_ops) and a bias magnitude. */
+static unsigned role_hash(const char *role) {
     unsigned h = 2166136261u;
     for (const unsigned char *p = (const unsigned char *)role; *p; ++p) {
         h ^= *p;
         h *= 16777619u;
     }
-    /* Small bias in [0, 0.1): enough to break ties between equal strengths,
-     * not enough to override meaningful strength differences. */
-    return (float)(h % 100) / 1000.0f;
+    return h;
+}
+
+/* Deterministic role bias split into a target row and an additive magnitude.
+ * The row uses the full hash modulo num_ops so different roles reach different
+ * adapters. The magnitude is bounded low enough that meaningful strength
+ * differences still win, but high enough to beat the identity-init base
+ * diagonal (0.01) when base strengths are otherwise equal. Value in [0.05,
+ * 0.15) is the sweet spot: >0.01 to overpower base ties, <0.5 so a moderate
+ * user-set strength always dominates. */
+static void role_bias_decompose(const char *role, size_t num_ops,
+                                size_t *row_out, float *magnitude_out) {
+    unsigned h = role_hash(role);
+    /* Split the hash into two independent nibbles: low bits pick the row,
+     * higher bits shape the magnitude so equal-length roles do not collide. */
+    *row_out = (num_ops > 0) ? ((size_t)h % num_ops) : 0;
+    unsigned tail = (h >> 16) & 0xFFu;
+    *magnitude_out = 0.05f + (float)tail / 2560.0f; /* [0.05, 0.15) */
 }
 
 /* Compute the strength row sums and find the best adapter index.
@@ -224,40 +239,32 @@ cce_result cce_aicimo_route(const cce_aicimo_router *r,
     return CCE_OK;
 }
 
-cce_result cce_aicimo_route_for_role(const cce_aicimo_router *r,
-                                      const float *input, size_t in_len,
-                                      float *output, size_t out_cap,
-                                      const char *role,
-                                      size_t *selected_op) {
-    if (!r || !input || !output || !role || !selected_op) return CCE_ERR_INVALID_ARG;
-    if (in_len != r->base_dim || out_cap < in_len) return CCE_ERR_INVALID_ARG;
-    if (r->bank.count == 0) return CCE_ERR_INVALID_ARG;
-
+/* Shared role-biased decision: fills row sums, applies the deterministic role
+ * bias, selects the best adapter, and computes the uncertainty from the SAME
+ * biased distribution. Returns CCE_OK on success. Uncertainty and selected_op
+ * pointers are optional. Owns no heap on the failure path. */
+static cce_result role_biased_decision(const cce_aicimo_router *r,
+                                       const char *role,
+                                       size_t *selected_op,
+                                       float *uncertainty) {
     size_t num_ops = r->router.num_ops;
 
-    /* Compute base row sums, then add a deterministic role bias.
-     * The role hash selects a bias target row; the bias shifts the
-     * competition deterministically: same role + same state => same choice. */
     float *sums = (float *)calloc(num_ops, sizeof(float));
     if (!sums) return CCE_ERR_OOM;
 
     for (size_t i = 0; i < num_ops; ++i) {
-        sums[i] = 0.0f;
+        float row_sum = 0.0f;
         for (size_t j = 0; j < num_ops; ++j) {
-            sums[i] += r->router.strength[i * num_ops + j];
+            row_sum += r->router.strength[i * num_ops + j];
         }
+        sums[i] = row_sum;
     }
 
-    /* Deterministic role bias: hash the role string to get a value in [0,1),
-     * then apply it as an additive bias to a row determined by the hash.
-     * This means different role strings consistently prefer different adapters
-     * when the base strengths are close. */
-    float bias = role_hash_bias(role);
-    size_t bias_row = (size_t)(bias * (float)num_ops);
-    if (bias_row >= num_ops) bias_row = num_ops - 1;
-    sums[bias_row] += bias;
+    size_t bias_row = 0;
+    float bias_mag = 0.0f;
+    role_bias_decompose(role, num_ops, &bias_row, &bias_mag);
+    sums[bias_row] += bias_mag;
 
-    /* Find the best after bias */
     size_t best = 0;
     float best_score = -1e30f;
     for (size_t i = 0; i < num_ops; ++i) {
@@ -267,10 +274,50 @@ cce_result cce_aicimo_route_for_role(const cce_aicimo_router *r,
         }
     }
 
+    if (selected_op) *selected_op = best;
+    if (uncertainty) *uncertainty = normalized_entropy(sums, num_ops);
+
     free(sums);
+    return CCE_OK;
+}
+
+cce_result cce_aicimo_route_for_role(const cce_aicimo_router *r,
+                                      const float *input, size_t in_len,
+                                      float *output, size_t out_cap,
+                                      const char *role,
+                                      size_t *selected_op) {
+    if (!r || !input || !output || !role || !selected_op) return CCE_ERR_INVALID_ARG;
+    if (in_len != r->base_dim || out_cap < in_len) return CCE_ERR_INVALID_ARG;
+    if (r->bank.count == 0) return CCE_ERR_INVALID_ARG;
+
+    size_t best = 0;
+    cce_result rc = role_biased_decision(r, role, &best, NULL);
+    if (rc != CCE_OK) return rc;
 
     apply_adapter(&r->bank.adapters[best], input, in_len, output);
     *selected_op = best;
+    return CCE_OK;
+}
+
+cce_result cce_aicimo_route_decision(const cce_aicimo_router *r,
+                                      const float *input, size_t in_len,
+                                      float *output, size_t out_cap,
+                                      const char *role,
+                                      size_t *selected_op,
+                                      float *uncertainty) {
+    if (!r || !input || !output || !role || !selected_op || !uncertainty)
+        return CCE_ERR_INVALID_ARG;
+    if (in_len != r->base_dim || out_cap < in_len) return CCE_ERR_INVALID_ARG;
+    if (r->bank.count == 0) return CCE_ERR_INVALID_ARG;
+
+    size_t best = 0;
+    float unc = 1.0f;
+    cce_result rc = role_biased_decision(r, role, &best, &unc);
+    if (rc != CCE_OK) return rc;
+
+    apply_adapter(&r->bank.adapters[best], input, in_len, output);
+    *selected_op = best;
+    *uncertainty = unc;
     return CCE_OK;
 }
 

@@ -6,6 +6,7 @@
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
     <RootNamespace>CNET.Cce.Tests</RootNamespace>
+    <AssemblyName>CNET.Cce.Tests</AssemblyName>
   </PropertyGroup>
 
   <ItemGroup>
@@ -23,6 +24,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Cce\Cce.csproj" />
+    <ProjectReference Include="..\CceHost\CceHost.csproj" />
   </ItemGroup>
 
   <!-- Managed bindings use the unified cnet library; retain cce copies only

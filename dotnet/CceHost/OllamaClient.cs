@@ -7,7 +7,7 @@ using System.Threading.Tasks;
 namespace CNET.CceHost;
 
 /// <summary>Minimal client for a local OpenAI-compatible chat endpoint (ollama).</summary>
-public sealed class OllamaClient
+public sealed class OllamaClient : IChatClient
 {
     private readonly HttpClient _http = new() { Timeout = TimeSpan.FromSeconds(120) };
     private readonly string _url;

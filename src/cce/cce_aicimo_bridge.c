@@ -56,17 +56,14 @@ int cce_aicimo_route_on_role(const float *input, size_t in_len,
     cce_aicimo_router router;
     if (cce_aicimo_router_init(&router, 8, base_dim) != CCE_OK) return -1;
 
+    /* Single shared decision: adapter and uncertainty come from the same
+     * role-biased strength distribution. Previously the bridge issued a
+     * second, unbiased route to obtain uncertainty; that reported the entropy
+     * of a different distribution than the one that selected the adapter. */
     size_t selected = 0;
-    cce_result rc = cce_aicimo_route_for_role(&router, input, in_len,
-                                               output, out_cap, role, &selected);
-
-    if (rc == CCE_OK) {
-        /* Compute uncertainty from the same router state.
-         * route_with_uncertainty overwrites output, but since adapters are
-         * identity-initialized, the output is the same. */
-        cce_aicimo_route_with_uncertainty(&router, input, in_len,
-                                          output, out_cap, uncertainty);
-    }
+    cce_result rc = cce_aicimo_route_decision(&router, input, in_len,
+                                               output, out_cap, role,
+                                               &selected, uncertainty);
 
     cce_aicimo_router_free(&router);
     return (rc == CCE_OK) ? 0 : -1;
