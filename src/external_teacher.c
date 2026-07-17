@@ -2,9 +2,13 @@
 #include "../include/contract/contract.h"
 #include "../include/specialist.h"
 
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/wait.h>
 
 typedef struct {
     double *inputs;
@@ -14,6 +18,16 @@ typedef struct {
     size_t out_dim;
     int onehot_in;
 } ExtTableCtx;
+
+typedef struct {
+    char *cmdline;
+    size_t in_dim;
+    size_t out_dim;
+    FILE *to_child;   /* parent writes stdin of child */
+    FILE *from_child; /* parent reads stdout of child */
+    pid_t pid;
+    int started;
+} ExtSubprocessCtx;
 
 static size_t port_total(Port p) {
     return p.field_width * p.field_count;
@@ -156,14 +170,176 @@ int external_teacher_bind_table(
     return 0;
 }
 
+static void subprocess_stop(ExtSubprocessCtx *s) {
+    if (!s) return;
+    if (s->to_child) {
+        fclose(s->to_child);
+        s->to_child = NULL;
+    }
+    if (s->from_child) {
+        fclose(s->from_child);
+        s->from_child = NULL;
+    }
+    if (s->started && s->pid > 0) {
+        int st = 0;
+        (void)waitpid(s->pid, &st, 0);
+        s->pid = 0;
+        s->started = 0;
+    }
+}
+
+static int subprocess_start(ExtSubprocessCtx *s) {
+    int in_pipe[2], out_pipe[2];
+    pid_t pid;
+    if (!s || !s->cmdline || !s->cmdline[0]) return -1;
+    if (s->started) return 0;
+    if (pipe(in_pipe) != 0) return -2;
+    if (pipe(out_pipe) != 0) {
+        close(in_pipe[0]);
+        close(in_pipe[1]);
+        return -2;
+    }
+    pid = fork();
+    if (pid < 0) {
+        close(in_pipe[0]);
+        close(in_pipe[1]);
+        close(out_pipe[0]);
+        close(out_pipe[1]);
+        return -3;
+    }
+    if (pid == 0) {
+        /* child: stdin = in_pipe[0], stdout = out_pipe[1] */
+        close(in_pipe[1]);
+        close(out_pipe[0]);
+        if (dup2(in_pipe[0], STDIN_FILENO) < 0) _exit(127);
+        if (dup2(out_pipe[1], STDOUT_FILENO) < 0) _exit(127);
+        close(in_pipe[0]);
+        close(out_pipe[1]);
+        execl("/bin/sh", "sh", "-c", s->cmdline, (char *)NULL);
+        _exit(127);
+    }
+    /* parent */
+    close(in_pipe[0]);
+    close(out_pipe[1]);
+    s->to_child = fdopen(in_pipe[1], "w");
+    s->from_child = fdopen(out_pipe[0], "r");
+    if (!s->to_child || !s->from_child) {
+        subprocess_stop(s);
+        return -4;
+    }
+    setvbuf(s->to_child, NULL, _IOLBF, 0);
+    setvbuf(s->from_child, NULL, _IOLBF, 0);
+    s->pid = pid;
+    s->started = 1;
+    return 0;
+}
+
+static int subprocess_teacher_fn(const double *in, double *out, void *ctx) {
+    ExtSubprocessCtx *s = (ExtSubprocessCtx *)ctx;
+    char line[65536];
+    size_t j;
+    unsigned long declared = 0;
+    char *tok;
+    char *save = NULL;
+
+    if (!s || !in || !out) return -1;
+    if (subprocess_start(s) != 0) return -2;
+
+    if (fprintf(s->to_child, "IN %zu", s->in_dim) < 0) return -3;
+    for (j = 0; j < s->in_dim; j++) {
+        if (fprintf(s->to_child, " %.17g", in[j]) < 0) return -3;
+    }
+    if (fprintf(s->to_child, "\n") < 0 || fflush(s->to_child) != 0)
+        return -3;
+
+    if (!fgets(line, (int)sizeof line, s->from_child)) return -4;
+    tok = strtok_r(line, " \t\r\n", &save);
+    if (!tok || strcmp(tok, "OUT") != 0) return -5;
+    tok = strtok_r(NULL, " \t\r\n", &save);
+    if (!tok) return -5;
+    declared = strtoul(tok, NULL, 10);
+    if (declared != (unsigned long)s->out_dim) return -6;
+    for (j = 0; j < s->out_dim; j++) {
+        tok = strtok_r(NULL, " \t\r\n", &save);
+        if (!tok) return -7;
+        out[j] = strtod(tok, NULL);
+    }
+    return 0;
+}
+
+uint64_t external_teacher_file_digest(const char *path) {
+    FILE *f;
+    uint64_t h = 14695981039346656037ULL;
+    unsigned char buf[4096];
+    size_t n;
+    if (!path || !path[0]) return 0;
+    f = fopen(path, "rb");
+    if (!f) return 0;
+    while ((n = fread(buf, 1, sizeof buf, f)) > 0) {
+        size_t i;
+        for (i = 0; i < n; i++) {
+            h ^= (uint64_t)buf[i];
+            h *= 1099511628211ULL;
+        }
+    }
+    fclose(f);
+    return h ? h : 1ULL; /* nonzero when file readable */
+}
+
+int external_teacher_bind_subprocess(
+    ExternalTeacher *t,
+    CnetModality modality,
+    const char *name,
+    Port input_port,
+    Port output_port,
+    const char *cmdline,
+    const CnetOracleIdentity *identity,
+    uint64_t behavior_digest)
+{
+    ExtSubprocessCtx *sc;
+    size_t in_dim, out_dim;
+    if (!t || !name || !name[0] || !cmdline || !cmdline[0] || !identity)
+        return -1;
+    if (identity->artifact_digest == 0) return -2;
+    in_dim = port_total(input_port);
+    out_dim = port_total(output_port);
+    if (in_dim == 0 || out_dim == 0) return -3;
+    sc = (ExtSubprocessCtx *)calloc(1, sizeof *sc);
+    if (!sc) return -4;
+    sc->cmdline = strdup(cmdline);
+    if (!sc->cmdline) {
+        free(sc);
+        return -4;
+    }
+    sc->in_dim = in_dim;
+    sc->out_dim = out_dim;
+    if (external_teacher_bind_callback(t, modality, name, input_port,
+                                       output_port, subprocess_teacher_fn, sc,
+                                       identity, behavior_digest) != 0) {
+        free(sc->cmdline);
+        free(sc);
+        return -5;
+    }
+    snprintf(t->kind, sizeof t->kind, "subprocess");
+    return 0;
+}
+
 void external_teacher_unbind(ExternalTeacher *t) {
     if (!t) return;
-    if (t->bound && strcmp(t->kind, "table") == 0 && t->ctx) {
-        ExtTableCtx *tc = (ExtTableCtx *)t->ctx;
-        free(tc->inputs);
-        free(tc->targets);
-        free(tc);
-        t->ctx = NULL;
+    if (t->bound && t->ctx) {
+        if (strcmp(t->kind, "table") == 0) {
+            ExtTableCtx *tc = (ExtTableCtx *)t->ctx;
+            free(tc->inputs);
+            free(tc->targets);
+            free(tc);
+            t->ctx = NULL;
+        } else if (strcmp(t->kind, "subprocess") == 0) {
+            ExtSubprocessCtx *sc = (ExtSubprocessCtx *)t->ctx;
+            subprocess_stop(sc);
+            free(sc->cmdline);
+            free(sc);
+            t->ctx = NULL;
+        }
     }
     memset(t, 0, sizeof *t);
 }

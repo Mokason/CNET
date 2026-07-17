@@ -58,3 +58,18 @@ Gate: `make personal_ai_auto` → `PERSONAL_AI_AUTO_PASS`
 
 New units appear on the serve side when MCP children recycle (Hermes) or on
 process reopen — the lane never rewrites a running host’s memory in place.
+
+## Post-seal serve proof
+
+Learning is only real if a sealed unit serves as **Tier A** after reopen:
+
+```bash
+make post_seal_serve          # hermetic: teach → seal → SoulHost → CERTIFIED
+scripts/personal_ai_serve_proof.sh hermetic
+scripts/personal_ai_serve_proof.sh live     # sample live CNB via bin/serve_proof
+scripts/personal_ai_serve_proof.sh all
+```
+
+Gate: `POST_SEAL_SERVE_PASS` — personal_ai teacher help, gap_lane seal +
+checkpoint, close process, `soul_open` same CNB, `soul_request` source =
+`SOUL_SOURCE_CERTIFIED`.

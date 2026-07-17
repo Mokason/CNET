@@ -49,6 +49,32 @@ CNET_API int cnet_voice_v0_mine_admit(
     BinaryTransformNetwork **student_out,
     ExternalTeacher *teacher_out /* optional; unbound by caller if non-NULL */);
 
+/* Bind a real/foreign voice teacher as a subprocess oracle.
+ * cmdline e.g. "python3 tools/voice_teacher.py --mode hermetic"
+ * or whisper: "python3 tools/voice_teacher.py --mode whisper --model tiny"
+ * Artifact digest defaults to FNV of the script path when digest_salt==0 and
+ * script path is parsed from cmdline; else digest_salt (must be nonzero).
+ * Returns 0, or <0. */
+CNET_API int cnet_voice_bind_subprocess(
+    ExternalTeacher *t,
+    const char *name,
+    const char *cmdline,
+    uint64_t identity_digest_salt);
+
+/* Env-driven bind: CNET_VOICE_TEACHER_CMD required.
+ * Optional CNET_VOICE_TEACHER_DIGEST (hex/decimal uint64).
+ * Returns 0 on success, -2 if env unset, <0 on other errors. */
+CNET_API int cnet_voice_bind_from_env(ExternalTeacher *t);
+
+/* Mine+admit using a bound teacher (callback or subprocess). Probes are
+ * hermetic frontend features; teacher labels each row. unit_name default
+ * "voice_cmd_v0". Returns 0 on success. */
+CNET_API int cnet_voice_mine_admit_teacher(
+    ExternalTeacher *t,
+    PrimitiveRegistry *reg,
+    const char *unit_name,
+    BinaryTransformNetwork **student_out);
+
 #ifdef __cplusplus
 }
 #endif

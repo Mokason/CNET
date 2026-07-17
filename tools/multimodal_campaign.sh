@@ -56,13 +56,27 @@ EOF
 }
 
 env_voice() {
+    local py="${CNET_VOICE_TEACHER_PYTHON:-python3}"
+    # Prefer Hermes venv when faster-whisper is installed there.
+    if [ -x "$HOME/.hermes/hermes-agent/venv/bin/python3" ]; then
+        if "$HOME/.hermes/hermes-agent/venv/bin/python3" -c "import faster_whisper" 2>/dev/null; then
+            py="$HOME/.hermes/hermes-agent/venv/bin/python3"
+        fi
+    fi
     cat <<EOF
-# External voice teacher binding (operator fills real binary/API)
+# External voice teacher binding (subprocess ABI → tools/voice_teacher.py)
 export CNET_MODALITY=voice
-export CNET_EXT_TEACHER_KIND=callback
+export CNET_EXT_TEACHER_KIND=subprocess
 export CNET_EXT_TEACHER_NAME=voice_external
-# Example future: path to ONNX/Whisper frontend that maps to speech_feat
-# export CNET_VOICE_TEACHER_CMD="/path/to/whisper_teacher --features"
+export CNET_VOICE_TEACHER_PYTHON="$py"
+# Hermetic (gate / no Whisper weights):
+export CNET_VOICE_TEACHER_CMD="$py $CNET_DIR/tools/voice_teacher.py --mode hermetic"
+# Real ASR (faster-whisper / openai-whisper):
+# export CNET_VOICE_TEACHER_CMD="$py $CNET_DIR/tools/voice_teacher.py --mode whisper --model tiny"
+# Label a wav offline:
+#   $py $CNET_DIR/tools/voice_teacher.py --mode whisper --label-wav clip.wav
+# Check readiness:
+#   $py $CNET_DIR/tools/voice_teacher.py --mode whisper --check
 export CNET_VOICE_N_CMD=10
 export CNET_VOICE_FEAT_DIM=16
 EOF

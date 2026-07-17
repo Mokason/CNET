@@ -1904,7 +1904,7 @@ recipe_proposals: tools/propose_recipe_improvements.py
 	@grep "RECIPE_PROPOSALS_PASS" logs/recipe_proposals.log
 
 # Full hermetic umbrella for the 4-phase self-improve/resource program.
-unified_self_improve: resource_governor counterfactual_order self_improve deploy_profile recipe_proposals gap_lane_service_config campaign_v2_fast multimodal_v0 personal_ai hybrid_ai hybrid_bench residual_gguf colibri_integrate curiosity eg
+unified_self_improve: resource_governor counterfactual_order self_improve deploy_profile recipe_proposals gap_lane_service_config campaign_v2_fast multimodal_v0 voice_real_teacher personal_ai post_seal_serve hybrid_ai hybrid_bench residual_gguf colibri_integrate curiosity eg
 	@echo "UNIFIED_SELF_IMPROVE_PASS"
 
 # Personal AI: local certified library first; big-AI teacher only on gaps.
@@ -2064,9 +2064,34 @@ personal_ai_auto: tests/test_personal_ai_auto.py scripts/personal_ai_auto.sh con
 	@grep -q "PERSONAL_AI_AUTO_PASS" logs/personal_ai_auto.log
 	@grep "PERSONAL_AI_AUTO_PASS" logs/personal_ai_auto.log
 
+# Post-seal serve proof: teach → seal → SoulHost reopen → certified Tier A.
+.PHONY: post_seal_serve serve_proof_cli serve_proof
+post_seal_serve: $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EXT_TEACHER_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) src/soul_host.c tests/test_post_seal_serve.c include/personal_ai.h include/soul_host.h
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/test_post_seal_serve \
+		$(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EXT_TEACHER_SRC) \
+		$(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) \
+		$(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) \
+		$(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) src/soul_host.c \
+		tests/test_post_seal_serve.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -pthread
+	@./$(BIN_DIR)/test_post_seal_serve > logs/post_seal_serve.log 2>&1
+	@grep -q "POST_SEAL_SERVE_PASS" logs/post_seal_serve.log
+	@grep "POST_SEAL_SERVE_PASS" logs/post_seal_serve.log
+
+serve_proof_cli: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(GAP_LANE_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(EXT_TEACHER_SRC) $(LIBRARY) src/soul_host.c tools/serve_proof.c
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/serve_proof \
+		$(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) \
+		$(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(GAP_LANE_SRC) \
+		$(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(EXT_TEACHER_SRC) $(LIBRARY) \
+		src/soul_host.c tools/serve_proof.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -pthread
+
+serve_proof: post_seal_serve
+	@bash scripts/personal_ai_serve_proof.sh hermetic
+	@echo "SERVE_PROOF_OK"
 
 # Multimodal v0: external teacher bridge + voice/vision closed-set mine/admit.
-.PHONY: multimodal_v0 multimodal_prepare
+.PHONY: multimodal_v0 multimodal_prepare voice_real_teacher
 multimodal_v0: $(MULTIMODAL_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) tests/test_multimodal_v0.c include/external_teacher.h include/modality_voice.h include/modality_vision.h
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/test_multimodal_v0 \
@@ -2079,6 +2104,18 @@ multimodal_v0: $(MULTIMODAL_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(S
 	@grep -q "MULTIMODAL_V0_PASS" logs/multimodal_v0.log
 	@$(MAKE) --no-print-directory multimodal_prepare
 	@grep "MULTIMODAL_V0_PASS" logs/multimodal_v0.log
+
+voice_real_teacher: $(MULTIMODAL_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) tests/test_voice_real_teacher.c tools/voice_teacher.py include/external_teacher.h include/modality_voice.h
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/test_voice_real_teacher \
+		$(MULTIMODAL_SRC) \
+		$(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) \
+		$(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) \
+		$(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) \
+		tests/test_voice_real_teacher.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -pthread
+	@./$(BIN_DIR)/test_voice_real_teacher > logs/voice_real_teacher.log 2>&1
+	@grep -q "VOICE_REAL_TEACHER_PASS" logs/voice_real_teacher.log
+	@grep "VOICE_REAL_TEACHER_PASS" logs/voice_real_teacher.log
 
 multimodal_prepare: tests/test_multimodal_prepare.py tools/multimodal_campaign.sh plans/multimodal_external_teachers.md
 	@mkdir -p logs

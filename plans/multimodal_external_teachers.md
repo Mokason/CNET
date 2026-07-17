@@ -15,8 +15,9 @@ from CNB. Self-improve stays short cycles after a domain spine exists.
 
 | Phase | Deliverable | Gate |
 |---|---|---|
-| Bridge | `external_teacher` bind + identity + table/callback modes | `make multimodal_v0` |
+| Bridge | `external_teacher` bind + identity + table/callback/**subprocess** modes | `make multimodal_v0` |
 | Voice v0 | Closed-set speech commands from hermetic teacher → certified unit | same |
+| Voice real teacher | Subprocess ABI + `tools/voice_teacher.py` (hermetic gate; Whisper optional) | `make voice_real_teacher` |
 | Vision v0 | Fixed-label image classifier + optional EVIDENCE | same |
 | Campaign helper | `tools/multimodal_campaign.sh` prepare/env | same |
 | Self-improve | modality tags `voice_*` / `vision_*` for gap-lane contexts | config |
@@ -39,11 +40,28 @@ make multimodal_v0  →  MULTIMODAL_V0_PASS (39 checks)
   prepare artifacts via tools/multimodal_campaign.sh
 ```
 
-### Bind a real framework later
+### Bind a real framework (voice)
 
-1. Implement `CnetOracleFn` that: preprocess audio/image → feature vector matching the port; call Whisper/CLIP/ONNX; write one-hot/evidence into `out`.
-2. `external_teacher_bind_callback(..., identity with artifact SHA of weights)`.
-3. `external_teacher_mine_admit` or gap-lane oracle register + acquire.
+**H2 (subprocess + Whisper path, 2026-07-17):**
+
+```
+make voice_real_teacher → VOICE_REAL_TEACHER_PASS
+  external_teacher_bind_subprocess (IN/OUT line protocol)
+  tools/voice_teacher.py --mode hermetic | whisper
+  cnet_voice_bind_subprocess / bind_from_env / mine_admit_teacher
+```
+
+1. **Subprocess (preferred for foreign stacks):**
+   ```bash
+   # hermetic ABI proof
+   export CNET_VOICE_TEACHER_CMD="python3 tools/voice_teacher.py --mode hermetic"
+   # real ASR (faster-whisper when installed)
+   export CNET_VOICE_TEACHER_CMD="python3 tools/voice_teacher.py --mode whisper --model tiny"
+   # or: tools/multimodal_campaign.sh env-voice
+   ```
+   Then `cnet_voice_bind_from_env` / `cnet_voice_mine_admit_teacher`.
+2. **Callback:** implement `CnetOracleFn` that maps `speech_feat` → `speech_cmd` one-hot; bind with nonzero `artifact_digest`.
+3. Offline wav labeling: `voice_teacher.py --mode whisper --label-wav clip.wav`.
 4. Serve the sealed student without the heavy teacher.
 
 Self-improve: after the spine exists, only misses re-teach (short cycles).

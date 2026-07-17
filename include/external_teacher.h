@@ -81,6 +81,26 @@ CNET_API int external_teacher_bind_table(
     const CnetOracleIdentity *identity,
     uint64_t behavior_digest);
 
+/* Subprocess teacher: each oracle call writes one line to the child stdin:
+ *   IN <in_dim> d0 d1 ... d{n-1}
+ * and expects one line on stdout:
+ *   OUT <out_dim> d0 d1 ... d{m-1}
+ * `cmdline` is executed via /bin/sh -c (shell metacharacters allowed).
+ * Child is started lazily on first call and kept open until unbind.
+ * kind="subprocess". identity required. Returns 0, or <0. */
+CNET_API int external_teacher_bind_subprocess(
+    ExternalTeacher *t,
+    CnetModality modality,
+    const char *name,
+    Port input_port,
+    Port output_port,
+    const char *cmdline,
+    const CnetOracleIdentity *identity,
+    uint64_t behavior_digest);
+
+/* FNV-1a 64 of a file's bytes (0 if unreadable). Used for artifact digests. */
+CNET_API uint64_t external_teacher_file_digest(const char *path);
+
 /* Fill an OracleEntry for acquire/gap-lane (borrows t's fn/ctx/identity). */
 CNET_API int external_teacher_to_oracle(const ExternalTeacher *t,
                                         OracleEntry *out);
