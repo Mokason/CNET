@@ -1,6 +1,7 @@
 #include "../../include/cce/cce_forest.h"
 #include "../../include/cce/cce_block_patch.h"
 #include "../../include/cce/cce_router.h"
+#include "../../include/cnet_lfru.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -77,6 +78,10 @@ void cce_forest_set_residency(cce_forest* f, int hot_cap,
     f->hot_cap = provider ? hot_cap : 0;
     f->residency_provider = provider;
     f->residency_ctx = ctx;
+    {
+        const char *e = getenv("CNET_FOREST_LFRU");
+        f->lfru = (e && e[0] == '1') ? 1 : 0;
+    }
     if (!provider) {
         for (int i = 0; i < f->num_branches; i++) f->branches[i].evictable = 0;
     }
@@ -105,14 +110,47 @@ cce_result cce_forest_evict_branch(cce_forest* f, int idx) {
     return CCE_OK;
 }
 
-/* evict LRU evictable cascades until fewer than `target` are resident */
+/* evict LRU (or LFRU when f->lfru) until fewer than `target` are resident */
 static void forest_make_room(cce_forest* f, int target, int protect_idx) {
     while (cce_forest_resident_count(f) >= target) {
-        int victim = -1, oldest = 0x7fffffff;
-        for (int i = 0; i < f->num_branches; i++) {
-            cce_branch* b = &f->branches[i];
-            if (i == protect_idx || !b->evictable || !b->cascade || b->is_view) continue;
-            if (b->last_use < oldest) { oldest = b->last_use; victim = i; }
+        int victim = -1;
+        if (f->lfru) {
+            int res[256], nres = 0;
+            for (int i = 0; i < f->num_branches && nres < 256; i++) {
+                cce_branch* b = &f->branches[i];
+                if (i == protect_idx || !b->evictable || !b->cascade || b->is_view)
+                    continue;
+                res[nres++] = i;
+            }
+            if (nres < 1) return;
+            {
+                int cold_slot = 0;
+                uint64_t cs = cnet_lfru_score(f->branches[res[0]].heat,
+                                              (uint32_t)f->branches[res[0]].last_use,
+                                              (uint32_t)f->use_tick);
+                for (int z = 1; z < nres; z++) {
+                    uint64_t sc = cnet_lfru_score(
+                        f->branches[res[z]].heat,
+                        (uint32_t)f->branches[res[z]].last_use,
+                        (uint32_t)f->use_tick);
+                    if (sc < cs) {
+                        cs = sc;
+                        cold_slot = z;
+                    }
+                }
+                victim = res[cold_slot];
+            }
+        } else {
+            int oldest = 0x7fffffff;
+            for (int i = 0; i < f->num_branches; i++) {
+                cce_branch* b = &f->branches[i];
+                if (i == protect_idx || !b->evictable || !b->cascade || b->is_view)
+                    continue;
+                if (b->last_use < oldest) {
+                    oldest = b->last_use;
+                    victim = i;
+                }
+            }
         }
         if (victim < 0) return; /* nothing safely evictable */
         cce_forest_evict_branch(f, victim);
@@ -128,6 +166,7 @@ cce_cascade* cce_forest_get_resident(cce_forest* f, const char* branch_name) {
     if (idx < 0) return NULL;
     cce_branch* b = &f->branches[idx];
     b->last_use = ++f->use_tick;
+    if (b->heat < 0xffffff00u) b->heat++;
     if (b->cascade) return b->cascade;
 
     if (!f->residency_provider || !b->evictable) return NULL;

@@ -9,6 +9,11 @@ LEDGER="${BASE}.gaps.txt"
 ENVF="$REPO/config/personal-ai.env"
 
 echo "=== Personal AI loop report ($(date -Iseconds)) ==="
+if [ -x "$REPO/bin/cnet_plan" ]; then
+  echo "--- placement (cnet_plan doctor) ---"
+  (cd "$REPO" && CNET_BASE_PATH="$BASE" ./bin/cnet_plan doctor 2>/dev/null) || true
+  echo "---"
+fi
 echo "base:   $BASE$([ -f "$BASE" ] && echo ' [ok]' || echo ' [MISSING]')"
 if [ -f "$BASE" ]; then
   bytes=$(wc -c <"$BASE" | tr -d ' ')

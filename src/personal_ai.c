@@ -207,6 +207,7 @@ int personal_ai_serve(PersonalAi *ai, Port input_port, Port goal_port,
         rep->local_hits = 1;
         ai->totals.local_hits++;
         ai->hybrid.tier_a_hits++;
+        ai->hybrid.prefer_warm_hits++;
         return 0;
     }
 
@@ -219,6 +220,7 @@ int personal_ai_serve(PersonalAi *ai, Port input_port, Port goal_port,
             rep->tier = HYBRID_TIER_B;
             rep->soft_hits = 1;
             ai->totals.soft_hits++;
+            ai->hybrid.prefer_warm_hits++;
             return 0;
         }
     }
@@ -232,6 +234,7 @@ int personal_ai_serve(PersonalAi *ai, Port input_port, Port goal_port,
             rep->tier = HYBRID_TIER_B;
             rep->soft_hits = 1;
             ai->totals.soft_hits++;
+            ai->hybrid.prefer_warm_hits++;
             return 0;
         }
     }

@@ -1,5 +1,6 @@
 #include "../include/hybrid_ai.h"
 #include "../include/external_teacher.h"
+#include "../include/cnet_lfru.h"
 
 #include <math.h>
 #include <stdint.h>
@@ -230,10 +231,12 @@ int hybrid_trace_residual(HybridAi *h, Port in_port, Port out_port,
         if (port_match(tr->input_port, in_port) &&
             port_match(tr->goal_port, out_port) &&
             tr->in_dim == in_dim && tr->out_dim == out_dim) {
-            /* Keep latest exemplar; count hits for mining threshold. */
+            /* Keep latest exemplar; count hits + heat for mining threshold. */
             memcpy(tr->in, in, in_dim * sizeof(double));
             memcpy(tr->out, out, out_dim * sizeof(double));
             tr->hits++;
+            if (tr->heat < 0xffffff00u) tr->heat++;
+            tr->last_tick = ++h->heat_clock;
             return 0;
         }
     }
@@ -255,12 +258,15 @@ int hybrid_trace_residual(HybridAi *h, Port in_port, Port out_port,
     memcpy(tr->in, in, in_dim * sizeof(double));
     memcpy(tr->out, out, out_dim * sizeof(double));
     tr->hits = 1;
+    tr->heat = 1;
+    tr->last_tick = ++h->heat_clock;
     return 0;
 }
 
 int hybrid_structure_mine(HybridAi *h, PrimitiveRegistry *reg, size_t min_hits,
                           BinaryTransformNetwork **student_out) {
-    size_t i, best = (size_t)-1, best_hits = 0;
+    size_t i, best = (size_t)-1;
+    uint64_t best_score = 0;
     HybridTrace *tr;
     ExternalTeacher teacher;
     CnetOracleIdentity id;
@@ -269,9 +275,14 @@ int hybrid_structure_mine(HybridAi *h, PrimitiveRegistry *reg, size_t min_hits,
     int rc;
 
     if (!h || !reg || min_hits == 0 || !student_out) return -1;
+    /* Heat-ranked pick (LFRU score among ripe traces). */
     for (i = 0; i < h->trace_count; i++) {
-        if (h->traces[i].hits >= min_hits && h->traces[i].hits > best_hits) {
-            best_hits = h->traces[i].hits;
+        uint64_t sc;
+        if (h->traces[i].hits < min_hits) continue;
+        sc = cnet_lfru_score(h->traces[i].heat, h->traces[i].last_tick,
+                             h->heat_clock);
+        if (best == (size_t)-1 || sc > best_score) {
+            best_score = sc;
             best = i;
         }
     }
@@ -279,7 +290,8 @@ int hybrid_structure_mine(HybridAi *h, PrimitiveRegistry *reg, size_t min_hits,
 
     tr = &h->traces[best];
     /* Domain expansion: ONEHOT alphabet — full if small; with residual, label
-     * up to 16 symbols even on large windows (real GGUF residual path). */
+     * up to 16 symbols even on large windows (real GGUF residual path).
+     * P3: residual labels are filled in one batch loop (batch_label_rows). */
     {
         size_t n_rows = 1;
         size_t r, j;
@@ -300,24 +312,24 @@ int hybrid_structure_mine(HybridAi *h, PrimitiveRegistry *reg, size_t min_hits,
                 free(targets);
                 return -3;
             }
-            for (r = 0; r < n_rows; r++) {
+            /* Build all one-hot inputs first (batch table). */
+            for (r = 0; r < n_rows; r++)
                 for (j = 0; j < tr->in_dim; j++)
                     inputs[r * tr->in_dim + j] = (j == r) ? 1.0 : 0.0;
-                /* Label via residual if bound, else only known row */
-                if (h->residual.bound) {
+            /* Batch residual labeling (single sequential pass; counts rows). */
+            if (h->residual.bound) {
+                for (r = 0; r < n_rows; r++) {
                     if (h->residual.fn(inputs + r * tr->in_dim,
                                        targets + r * tr->out_dim,
                                        h->residual.ctx) != 0)
                         memcpy(targets + r * tr->out_dim, tr->out,
                                tr->out_dim * sizeof(double));
-                } else {
-                    if (r == 0)
-                        memcpy(targets + r * tr->out_dim, tr->out,
-                               tr->out_dim * sizeof(double));
-                    else
-                        memcpy(targets + r * tr->out_dim, tr->out,
-                               tr->out_dim * sizeof(double));
+                    h->batch_label_rows++;
                 }
+            } else {
+                for (r = 0; r < n_rows; r++)
+                    memcpy(targets + r * tr->out_dim, tr->out,
+                           tr->out_dim * sizeof(double));
             }
         } else {
             n_rows = 1;

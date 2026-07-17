@@ -1,5 +1,6 @@
 #include "../include/residual_gguf.h"
 #include "../include/gap_lane.h"
+#include "../include/cnet_pilot.h"
 #include "../include/cce/cce_detect.h"
 #include "../include/cce/cce_gguf.h"
 #include "../include/cce/cce_defs.h"
@@ -16,6 +17,9 @@ struct ResidualGguf {
     int n_win;
     int vocab;
     int owns_win;
+    int session_kv; /* CNET_RESIDUAL_SESSION_KV=1: grow cur_pos */
+    int last_out_hot;
+    CnetPilot pilot;
     char path[512];
 };
 
@@ -84,6 +88,14 @@ int residual_gguf_open(ResidualGguf **out, const char *gguf_path,
         cce_gguf_qwen2_set_head_window(r->m, r->win, r->n_win);
     }
 
+    {
+        const char *sk = getenv("CNET_RESIDUAL_SESSION_KV");
+        r->session_kv = (sk && sk[0] == '1') ? 1 : 0;
+    }
+    cnet_pilot_init(&r->pilot);
+    cnet_pilot_from_env(&r->pilot);
+    r->last_out_hot = -1;
+
     *out = r;
     return 0;
 }
@@ -94,6 +106,20 @@ void residual_gguf_close(ResidualGguf *r) {
     if (r->owns_win) free(r->win);
     if (r->am) cce_anymodel_free(r->am);
     free(r);
+}
+
+void residual_gguf_session_reset(ResidualGguf *r) {
+    if (!r || !r->m) return;
+    r->m->cur_pos = 0;
+    r->last_out_hot = -1;
+}
+
+int residual_gguf_session_mode(const ResidualGguf *r) {
+    return r ? r->session_kv : 0;
+}
+
+uint64_t residual_gguf_pilot_recorded(const ResidualGguf *r) {
+    return r ? r->pilot.recorded : 0;
 }
 
 int residual_gguf_window_n(const ResidualGguf *r) {
@@ -138,8 +164,9 @@ int residual_gguf_oracle(const double *in, double *out, void *ctx) {
     if (hot < 0 || hot >= r->n_win) return -1;
     tok = r->win[hot];
 
-    /* Independent probe: do not grow KV; bit-stable for repeated calls. */
-    r->m->cur_pos = 0;
+    /* Default: independent probe (bit-stable). Session mode grows KV for chat. */
+    if (!r->session_kv)
+        r->m->cur_pos = 0;
     if (cce_gguf_qwen2_forward_probes(r->m, &tok, 1, r->logits, r->vocab) !=
         CCE_OK)
         return -1;
@@ -158,6 +185,10 @@ int residual_gguf_oracle(const double *in, double *out, void *ctx) {
         for (i = 0; i < r->n_win; i++) out[i] = 0.0;
         out[best_j] = 1.0;
     }
+    r->last_out_hot = best_j;
+    /* P5 research: hint next window slot for prefetch consumers. */
+    if (r->pilot.enabled)
+        (void)cnet_pilot_push(&r->pilot, best_j);
     return 0;
 }
 

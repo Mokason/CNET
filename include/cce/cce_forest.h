@@ -62,9 +62,11 @@ typedef struct {
     int          exact_tail_length; /* -1 inherit from forest default */
 
     /* Residency (tiered runtime): only branches a provider can restore are
-       ever evicted; last_use drives LRU. Zero-init = never evicted. */
+       ever evicted; last_use drives LRU (or LFRU when CNET_FOREST_LFRU=1).
+       Zero-init = never evicted. */
     int          evictable;
     int          last_use;
+    uint32_t     heat;      /* access frequency for LFRU (opt-in) */
 } cce_branch;
 
 /* Forest = collection of branches + archive + recall
@@ -94,6 +96,7 @@ typedef struct cce_forest {
     int resident_high_water;
     cce_cascade* (*residency_provider)(void* ctx, const char* branch_name);
     void* residency_ctx;
+    int lfru; /* 1 = Colibrì LFRU victim pick (CNET_FOREST_LFRU=1) */
 } cce_forest;
 
 /* Open/create forest backed by archive file */

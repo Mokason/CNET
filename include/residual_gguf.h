@@ -16,6 +16,8 @@
  *   CNET_RESIDUAL_GGUF=/path/model.gguf   auto-bind on personal_ai_open
  *   CNET_RESIDUAL_WINDOW=/path/ids.txt    window file (flagship convention)
  *   CNET_ORACLE_INT8=1                   memory diet for large GGUFs
+ *   CNET_RESIDUAL_SESSION_KV=1           chat path: grow KV (not bit-stable)
+ *   CNET_PILOT=1                         research: record next-slot hints
  *
  * Gate: make residual_gguf → RESIDUAL_GGUF_PASS
  * Real smoke: make residual_gguf_real (requires CNET_RESIDUAL_GGUF)
@@ -52,6 +54,13 @@ CNET_API Port residual_gguf_output_port(const ResidualGguf *r);
 CNET_API int residual_gguf_window_n(const ResidualGguf *r);
 CNET_API int residual_gguf_vocab(const ResidualGguf *r);
 CNET_API const int *residual_gguf_window_ids(const ResidualGguf *r);
+
+/* P4: reset session KV (always safe; mining path also resets per probe). */
+CNET_API void residual_gguf_session_reset(ResidualGguf *r);
+/* 1 if session-KV mode is active. */
+CNET_API int residual_gguf_session_mode(const ResidualGguf *r);
+/* P5 research: pilot hints recorded this residual (0 if PILOT off). */
+CNET_API uint64_t residual_gguf_pilot_recorded(const ResidualGguf *r);
 
 /* Bind into PersonalAi as Tier C residual (takes ownership of *r? no —
    caller keeps ResidualGguf* alive for PersonalAi lifetime). */

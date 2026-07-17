@@ -88,6 +88,8 @@ typedef struct {
     size_t in_dim;
     size_t out_dim;
     size_t hits;
+    uint32_t heat;      /* Colibrì-style heat for mine priority */
+    uint32_t last_tick; /* recency for LFRU score */
 } HybridTrace;
 
 typedef struct {
@@ -99,6 +101,7 @@ typedef struct {
     HybridAdapter adapter;
     HybridTrace traces[HYBRID_TRACE_MAX];
     size_t trace_count;
+    uint32_t heat_clock; /* global tick for LFRU recency */
     /* Counters */
     size_t tier_a_hits;
     size_t tier_b_hits;
@@ -107,6 +110,8 @@ typedef struct {
     size_t distills;
     size_t structure_mines;
     size_t adapter_applies;
+    size_t prefer_warm_hits; /* served without residual (A/B) */
+    size_t batch_label_rows; /* residual labels produced in batch mine */
     uint64_t medium_resident_bytes;
 } HybridAi;
 
