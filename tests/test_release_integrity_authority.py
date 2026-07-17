@@ -111,7 +111,10 @@ def behavioral_failure_injection() -> None:
             "set -u\n"
             "printf '%s\\n' \"$*\" >> \"$CNET_RELEASE_CALL_LOG\"\n"
             "fail=${CNET_RELEASE_FAIL_TARGET:-}\n"
-            "if [[ -n \"$fail\" && \" $* \" == *\" $fail \"* ]]; then exit 17; fi\n",
+            "if [[ -n \"$fail\" && \" $* \" == *\" $fail \"* ]]; then\n"
+            "  printf '%s\\n' INJECTED_RELEASE_FAILURE >&2\n"
+            "  exit 17\n"
+            "fi\n",
             encoding="utf-8",
         )
         fake_make.chmod(0o755)
@@ -129,6 +132,9 @@ def behavioral_failure_injection() -> None:
             "CNET_RELEASE_CALL_LOG": str(call_log),
             "CNET_RELEASE_FAIL_TARGET": "phase123_benchmark_test",
         })
+        stale_log = repo / "logs" / "release_integrity.log"
+        stale_log.parent.mkdir()
+        stale_log.write_text("STALE CNET_RELEASE_INTEGRITY_PASS\n", encoding="utf-8")
         failed = subprocess.run(
             ["bash", "tests/run_release_integrity.sh"], cwd=repo, env=env,
             text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
@@ -145,8 +151,14 @@ def behavioral_failure_injection() -> None:
             failures.append("release runner continued after injected failure")
         if not failed_log.is_file():
             failures.append("release runner did not atomically publish failure log")
-        elif "CNET_RELEASE_INTEGRITY_PASS" in failed_log.read_text(encoding="utf-8"):
-            failures.append("release runner wrote PASS after injected failure")
+        else:
+            failure_text = failed_log.read_text(encoding="utf-8")
+            if "INJECTED_RELEASE_FAILURE" not in failure_text:
+                failures.append("release runner preserved stale log after injected failure")
+            if "CNET_RELEASE_INTEGRITY_PASS" in failure_text:
+                failures.append("release runner wrote PASS after injected failure")
+        if "INJECTED_RELEASE_FAILURE" not in failed.stderr:
+            failures.append("release runner did not replay failure log to original stderr")
 
         call_log.unlink(missing_ok=True)
         env.pop("CNET_RELEASE_FAIL_TARGET", None)

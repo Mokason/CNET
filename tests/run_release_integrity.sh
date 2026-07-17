@@ -13,6 +13,9 @@ LOG_FINAL="$LOG_DIR/release_integrity.log"
 MAKE_BIN=${CNET_RELEASE_MAKE:-make}
 mkdir -p "$LOG_DIR"
 rm -f "$LOG_TMP"
+# The guarded body redirects stderr into LOG_TMP. Preserve the caller's stderr
+# so the EXIT trap can replay a failed log without cat reading/writing one file.
+exec 3>&2
 
 cleanup_release_generated() {
     if [[ -f docs/verified-today.generated.md ]]; then
@@ -27,9 +30,10 @@ publish_failure() {
     trap - EXIT INT TERM
     cleanup_release_generated
     if [[ -f "$LOG_TMP" ]]; then
-        cat "$LOG_TMP" >&2
         mv -f "$LOG_TMP" "$LOG_FINAL"
+        cat "$LOG_FINAL" >&3 || true
     fi
+    exec 3>&-
     exit "$rc"
 }
 
@@ -72,4 +76,5 @@ trap 'exit 130' INT TERM
 trap - EXIT INT TERM
 printf '%s\n' 'CNET_RELEASE_INTEGRITY_PASS' >>"$LOG_TMP"
 mv -f "$LOG_TMP" "$LOG_FINAL"
+exec 3>&-
 cat "$LOG_FINAL"

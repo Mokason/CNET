@@ -58,11 +58,15 @@ makefile = (root / "Makefile").read_text(encoding="utf-8")
 if not re.search(r"^license_metadata_test:\s*", makefile, re.MULTILINE):
     failures.append("Makefile has no license_metadata_test target")
 release = re.search(
-    r"^release_integrity:\s*\n(?P<body>(?:\t.*\n|\n)+)",
+    r"^release_integrity:[^\n]*\n(?P<body>(?:\t.*\n|\n)+)",
     makefile,
     re.MULTILINE,
 )
-if not release or "license_metadata_test" not in release.group("body"):
+runner_path = root / "tests" / "run_release_integrity.sh"
+runner = runner_path.read_text(encoding="utf-8") if runner_path.exists() else ""
+if not release or "bash tests/run_release_integrity.sh" not in release.group("body"):
+    failures.append("release_integrity does not delegate to the strict runner")
+if "run_make license_metadata_test" not in runner:
     failures.append("release_integrity does not run license_metadata_test")
 
 if failures:
