@@ -88,6 +88,13 @@ def main():
     ap.add_argument("--eps", type=float, default=0.02)
     ap.add_argument("--evidence", type=float, default=0.9)
     ap.add_argument("--min-evidence", type=int, default=16)
+    ap.add_argument("--semantics", choices=("set", "ordered"), default="set",
+                    help="which margin gate to use for --export-minable")
+    ap.add_argument("--export-minable", metavar="PATH",
+                    help="write one predicted-minable token id per line "
+                         "(for CNET_UNIT_ALLOWLIST)")
+    ap.add_argument("--export-unfit", metavar="PATH",
+                    help="write predicted-unfit token ids (diagnostics)")
     a = ap.parse_args()
 
     header, per_unit = read_sweep(a.tsv)
@@ -141,6 +148,30 @@ def main():
     lost = [r for r in rows if r[1] == "minable" and r[3] != "minable"]
     print("\nat eps=%g: set-semantics converts %d units, loses %d"
           % (a.eps, len(conv), len(lost)))
+
+    # Export allowlist for CNET_UNIT_ALLOWLIST (quality-preserving screen).
+    sem_idx = 3 if a.semantics == "set" else 1  # vs / vo field in rows
+    minable_toks = sorted(r[0] for r in rows if r[sem_idx] == "minable")
+    unfit_toks = sorted(r[0] for r in rows if r[sem_idx] != "minable")
+    print("\nexport semantics=%s @ eps=%g: minable=%d unfit=%d"
+          % (a.semantics, a.eps, len(minable_toks), len(unfit_toks)))
+    if a.export_minable:
+        with open(a.export_minable, "w") as f:
+            f.write("# predicted-minable token ids (%s eps=%g evidence>=%.2f "
+                    "min_ev=%d)\n"
+                    % (a.semantics, a.eps, a.evidence, a.min_evidence))
+            for t in minable_toks:
+                f.write("%d\n" % t)
+        print("wrote allowlist %s (%d tokens)" % (a.export_minable,
+                                                  len(minable_toks)))
+    if a.export_unfit:
+        with open(a.export_unfit, "w") as f:
+            f.write("# predicted-unfit token ids (%s eps=%g)\n"
+                    % (a.semantics, a.eps))
+            for t in unfit_toks:
+                f.write("%d\n" % t)
+        print("wrote unfit list %s (%d tokens)" % (a.export_unfit,
+                                                   len(unfit_toks)))
 
     # decisiveness ranking (what WINDOW_SCREEN would sort by)
     rows.sort(key=lambda r: -r[5])

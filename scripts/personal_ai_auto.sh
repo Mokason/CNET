@@ -1,0 +1,157 @@
+#!/usr/bin/env bash
+# Make Personal AI automatic: one command to prepare, install, start, status.
+#
+# Automatic loop (no babysitter):
+#   [Serve]  Hermes MCP / SoulHost  — local units first; misses → GAP_INBOX
+#            + periodic health tick
+#   [Learn]  cnet-personal-ai-lane  — inbox → teach from local teacher GGUF
+#            → seal CNB; teacher sleeps when idle
+#
+# Usage:
+#   scripts/personal_ai_auto.sh prepare   # build binaries, check paths
+#   scripts/personal_ai_auto.sh install   # install user systemd units
+#   scripts/personal_ai_auto.sh start     # enable --now learner (+ optional serve)
+#   scripts/personal_ai_auto.sh stop
+#   scripts/personal_ai_auto.sh status
+#   scripts/personal_ai_auto.sh doctor    # print what is wired / missing
+#
+# Env overrides:
+#   BASE_PATH=.../soul.cnb
+#   TEACHER=.../model.gguf          # empty = maintenance-only lane (no teach)
+#   SERVE=1                         # also run deploy_hermes_mcp.sh on start
+#   TICK_SECONDS=60                 # MCP health tick
+set -euo pipefail
+
+REPO="$(cd "$(dirname "$0")/.." && pwd)"
+BASE="${BASE_PATH:-$REPO/soul_gemma4v2_final.cnb}"
+TEACHER="${TEACHER:-${CNET_PERSONAL_TEACHER:-/home/marble/AI/Models/gemma4-v2-Q4_K_M.gguf}}"
+UNIT_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
+LANE_UNIT="cnet-personal-ai-lane.service"
+TARGET_UNIT="cnet-personal-ai.target"
+SERVE="${SERVE:-0}"
+TICK="${TICK_SECONDS:-60}"
+
+cmd="${1:-}"
+
+die() { echo "personal_ai_auto: $*" >&2; exit 1; }
+info() { echo "personal_ai_auto: $*"; }
+
+prepare() {
+  info "build learner + personal_ai gate"
+  make -C "$REPO" gap_lane_run_build personal_ai -j"$(nproc 2>/dev/null || echo 2)"
+  [ -x "$REPO/bin/gap_lane_run" ] || die "gap_lane_run missing"
+  [ -f "$BASE" ] || info "WARN: base not found yet: $BASE (serve/learn need it)"
+  if [ -n "$TEACHER" ] && [ ! -f "$TEACHER" ]; then
+    info "WARN: teacher not found: $TEACHER (lane will run maintenance-only)"
+  fi
+  # Ensure inbox exists so serve can append before lane starts
+  if [ -f "$BASE" ]; then
+    : >>"${BASE}.inbox"
+  fi
+  info "PERSONAL_AI_AUTO_PREPARE_OK"
+}
+
+install_units() {
+  prepare
+  mkdir -p "$UNIT_DIR"
+  # Materialize unit with resolved paths from this host.
+  local src_lane="$REPO/config/cnet-personal-ai-lane.service"
+  local src_target="$REPO/config/cnet-personal-ai.target"
+  [ -f "$src_lane" ] || die "missing $src_lane"
+  sed \
+    -e "s|/home/marble/AI/CNET|$REPO|g" \
+    -e "s|Environment=CNET_BASE_PATH=.*|Environment=CNET_BASE_PATH=$BASE|g" \
+    -e "s|Environment=CNET_GAP_INBOX=.*|Environment=CNET_GAP_INBOX=${BASE}.inbox|g" \
+    -e "s|Environment=CNET_PERSONAL_TEACHER=.*|Environment=CNET_PERSONAL_TEACHER=$TEACHER|g" \
+    "$src_lane" >"$UNIT_DIR/$LANE_UNIT"
+  sed "s|/home/marble/AI/CNET|$REPO|g" "$src_target" >"$UNIT_DIR/$TARGET_UNIT"
+  systemctl --user daemon-reload
+  info "installed $UNIT_DIR/$LANE_UNIT"
+  info "PERSONAL_AI_AUTO_INSTALL_OK"
+}
+
+start() {
+  install_units
+  systemctl --user enable --now "$LANE_UNIT"
+  if [ "$SERVE" = "1" ]; then
+    if [ -x "$REPO/scripts/deploy_hermes_mcp.sh" ] && [ -f "$BASE" ]; then
+      info "deploying serve side (Hermes MCP) with inbox + health tick"
+      BASE_PATH="$BASE" TICK_SECONDS="$TICK" \
+        bash "$REPO/scripts/deploy_hermes_mcp.sh" || \
+        info "WARN: hermes deploy failed (learner still running)"
+    else
+      info "WARN: SERVE=1 but hermes deploy or base missing — learner only"
+    fi
+  fi
+  info "PERSONAL_AI_AUTO_START_OK"
+  status
+}
+
+stop() {
+  systemctl --user stop "$LANE_UNIT" 2>/dev/null || true
+  systemctl --user disable "$LANE_UNIT" 2>/dev/null || true
+  info "PERSONAL_AI_AUTO_STOP_OK"
+}
+
+status() {
+  echo "=== Personal AI automation status ==="
+  echo "repo:    $REPO"
+  echo "base:    $BASE$([ -f "$BASE" ] && echo ' [ok]' || echo ' [MISSING]')"
+  echo "inbox:   ${BASE}.inbox$([ -f "${BASE}.inbox" ] && echo ' [ok]' || echo ' [absent]')"
+  echo "teacher: $TEACHER$([ -f "$TEACHER" ] && echo ' [ok]' || echo ' [missing→maintenance]')"
+  echo "binary:  $REPO/bin/gap_lane_run$([ -x "$REPO/bin/gap_lane_run" ] && echo ' [ok]' || echo ' [MISSING]')"
+  if systemctl --user status "$LANE_UNIT" --no-pager 2>/dev/null | head -15; then
+    :
+  else
+    echo "lane unit: not installed/running"
+  fi
+  if pgrep -x CnetMcpServer >/dev/null 2>&1; then
+    echo "serve (CnetMcpServer): running"
+  else
+    echo "serve (CnetMcpServer): not running (enable SERVE=1 on start or deploy_hermes_mcp.sh)"
+  fi
+  echo "=== loop ==="
+  echo "  serve miss → ${BASE}.inbox"
+  echo "  lane tick  → teach → seal ${BASE}"
+  echo "  MCP recycle / reopen → new units available locally"
+}
+
+doctor() {
+  status
+  echo "=== doctor ==="
+  local ok=1
+  [ -x "$REPO/bin/gap_lane_run" ] || { echo "FIX: make gap_lane_run_build"; ok=0; }
+  [ -f "$BASE" ] || { echo "FIX: set BASE_PATH to a sealed .cnb"; ok=0; }
+  [ -f "$UNIT_DIR/$LANE_UNIT" ] || { echo "FIX: scripts/personal_ai_auto.sh install"; ok=0; }
+  systemctl --user is-active --quiet "$LANE_UNIT" 2>/dev/null || \
+    echo "NOTE: lane inactive — scripts/personal_ai_auto.sh start"
+  if [ "$ok" = 1 ]; then
+    echo "PERSONAL_AI_AUTO_DOCTOR_OK"
+  else
+    echo "PERSONAL_AI_AUTO_DOCTOR_NEEDS_FIX"
+    return 1
+  fi
+}
+
+case "$cmd" in
+  prepare) prepare ;;
+  install) install_units ;;
+  start) start ;;
+  stop) stop ;;
+  status) status ;;
+  doctor) doctor ;;
+  *)
+    cat <<EOF
+usage: $0 prepare|install|start|stop|status|doctor
+
+Automatic Personal AI:
+  1. prepare  — build learner binary + check base/teacher
+  2. install  — user systemd unit for the learner
+  3. start    — enable --now learner
+                SERVE=1 also deploys Hermes MCP (local serve + inbox + health)
+
+Env: BASE_PATH TEACHER SERVE=0|1 TICK_SECONDS
+EOF
+    exit 2
+    ;;
+esac

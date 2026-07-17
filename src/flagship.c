@@ -276,6 +276,28 @@ int flagship_run(FlagshipConfig *cfg, FlagshipOracleMaker maker,
         FlagshipOracle orc_fn;
         OracleRegistry orc;
         AcquireReport arep;
+        size_t range_lo = cfg->unit_start;
+        size_t range_hi = (cfg->unit_end && cfg->unit_end < n_tokens)
+                              ? cfg->unit_end
+                              : n_tokens;
+
+        /* Shard: half-open [unit_start, unit_end) over vocab indices. */
+        if (k < range_lo || k >= range_hi) {
+            local.skipped_screen++;
+            continue;
+        }
+        /* Sweep screen: only attempt tokens in the predicted-minable set. */
+        if (cfg->allowlist_tokens && cfg->allowlist_count > 0) {
+            size_t ai;
+            int found = 0;
+            for (ai = 0; ai < cfg->allowlist_count; ++ai) {
+                if (cfg->allowlist_tokens[ai] == t) { found = 1; break; }
+            }
+            if (!found) {
+                local.skipped_screen++;
+                continue;
+            }
+        }
 
         /* ---- governor gate (before each attempt) ---- */
         if (stop_file_present(cfg->base_path)) { local.stopped = 2; break; }
@@ -431,9 +453,11 @@ void flagship_print_report(const FlagshipReport *rep, FILE *out) {
     double mn, md, mx;
     if (!rep || !out) return;
     fprintf(out, "flagship: attempted %lu, acquired %lu, deferred %lu, "
-                 "resume-skips %lu, no-oracle %lu, load-skips %lu\n",
+                 "resume-skips %lu, screen-skips %lu, no-oracle %lu, "
+                 "load-skips %lu\n",
             (unsigned long)rep->attempted, (unsigned long)rep->acquired,
             (unsigned long)rep->deferred, (unsigned long)rep->skipped_resume,
+            (unsigned long)rep->skipped_screen,
             (unsigned long)rep->no_oracle, (unsigned long)rep->registry_skipped);
     for (i = 0; i < rep->reason_kinds; ++i) {
         fprintf(out, "  defer %-24s %lu\n", rep->reasons[i],

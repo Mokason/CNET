@@ -1,0 +1,11 @@
+[Unit]
+Description=CNET Personal AI (local library + learner)
+Documentation=file:///home/marble/AI/CNET/plans/personal_ai_local_first.md
+# Pulls the learner; serving is usually Hermes MCP (separate unit) writing
+# the same CNET_GAP_INBOX. Enable both for full automation:
+#   systemctl --user enable --now cnet-personal-ai-lane.service
+#   scripts/deploy_hermes_mcp.sh   # serve side with inbox + health tick
+Wants=cnet-personal-ai-lane.service
+
+[Install]
+WantedBy=default.target

@@ -186,6 +186,15 @@ SPECIALIST_SRC := src/specialist.c src/specialist_health.c
 GAP_LANE_SRC := src/gap_lane.c
 ASYNC_RUNTIME := src/async_runtime.c
 MODEL_RUNTIME := src/model_runtime.c
+RESOURCE_GOV_SRC := src/resource_governor.c
+CF_ORDER_SRC := src/counterfactual_order.c
+SELF_IMPROVE_SRC := src/self_improve.c
+HARNESS_ORACLE_SRC := src/harness_oracle.c
+EXT_TEACHER_SRC := src/external_teacher.c
+MODALITY_VOICE_SRC := src/modality_voice.c
+MODALITY_VISION_SRC := src/modality_vision.c
+MULTIMODAL_SRC := $(EXT_TEACHER_SRC) $(MODALITY_VOICE_SRC) $(MODALITY_VISION_SRC)
+PERSONAL_AI_SRC := src/personal_ai.c
 CCE_MODEL_CATALOG := src/cce/cce_model_catalog.c
 MODEL_PROBE := src/model_probe.c
 CNET_LLAMA_EVAL := tools/cnet_llama_eval.cpp
@@ -1610,11 +1619,12 @@ cce_dll: $(CCE) $(CCE_CUDA_OBJ)
 # Defines both export macros.
 # Usage: make cnet_dll
 cnet_dll: CFLAGS := $(CFLAGS) -fPIC
-cnet_dll: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(BASE_SRC) $(SCAN) $(PROPERTY) $(CONSOLIDATE) $(ACQUIRE_SRC) $(COVERAGE) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(GAP_LANE_SRC) $(ASYNC_RUNTIME) $(MODEL_RUNTIME) $(CCE_MODEL_CATALOG) $(MODEL_PROBE) src/fastpath.c src/soul_host.c src/contract/mcp_calculator.c src/contract/mcp_file_read.c src/contract/mcp_file_write.c src/contract/mcp_memory.c src/contract/mcp_utils.c src/contract/mcp_web_search.c src/contract/mcp_wiki.c src/agent_memory.c
+cnet_dll: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(BASE_SRC) $(SCAN) $(PROPERTY) $(CONSOLIDATE) $(ACQUIRE_SRC) $(COVERAGE) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(GAP_LANE_SRC) $(ASYNC_RUNTIME) $(MODEL_RUNTIME) $(CCE_MODEL_CATALOG) $(MODEL_PROBE) $(RESOURCE_GOV_SRC) $(CF_ORDER_SRC) $(SELF_IMPROVE_SRC) $(HARNESS_ORACLE_SRC) $(MULTIMODAL_SRC) $(PERSONAL_AI_SRC) $(LIBRARY) src/fastpath.c src/soul_host.c src/contract/mcp_calculator.c src/contract/mcp_file_read.c src/contract/mcp_file_write.c src/contract/mcp_memory.c src/contract/mcp_utils.c src/contract/mcp_web_search.c src/contract/mcp_wiki.c src/agent_memory.c
 	$(CC) -shared -DCNET_BUILD_DLL -DCCE_BUILD_DLL $(CFLAGS) $(CUDA_CFLAGS) -o cnet.so \
-		$(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(BASE_SRC) $(SCAN) $(PROPERTY) $(CONSOLIDATE) $(ACQUIRE_SRC) $(COVERAGE) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(GAP_LANE_SRC) $(ASYNC_RUNTIME) $(MODEL_RUNTIME) $(CCE_MODEL_CATALOG) $(MODEL_PROBE) src/fastpath.c src/soul_host.c src/contract/mcp_calculator.c src/contract/mcp_file_read.c src/contract/mcp_file_write.c src/contract/mcp_memory.c src/contract/mcp_utils.c src/contract/mcp_web_search.c src/contract/mcp_wiki.c src/agent_memory.c \
+		$(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(BASE_SRC) $(SCAN) $(PROPERTY) $(CONSOLIDATE) $(ACQUIRE_SRC) $(COVERAGE) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(GAP_LANE_SRC) $(ASYNC_RUNTIME) $(MODEL_RUNTIME) $(CCE_MODEL_CATALOG) $(MODEL_PROBE) $(RESOURCE_GOV_SRC) $(CF_ORDER_SRC) $(SELF_IMPROVE_SRC) $(HARNESS_ORACLE_SRC) $(MULTIMODAL_SRC) $(PERSONAL_AI_SRC) $(LIBRARY) src/fastpath.c src/soul_host.c src/contract/mcp_calculator.c src/contract/mcp_file_read.c src/contract/mcp_file_write.c src/contract/mcp_memory.c src/contract/mcp_utils.c src/contract/mcp_web_search.c src/contract/mcp_wiki.c src/agent_memory.c \
 		$(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) $(CNET_SONAME_LDFLAGS) -pthread
 	@echo "Built unified cnet.so (CCE + certified runtime + soul_host + MCP ABI)."
+
 
 # CNET-native QGKP v3 envelope tool. Pack/materialize operations are resumable
 # and validate prefixes before append; the final rename remains an external
@@ -1841,6 +1851,107 @@ specialist_health: $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAP
 		tests/test_specialist_health.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -pthread
 	@./$(BIN_DIR)/test_specialist_health > logs/specialist_health.log 2>&1
 	@grep -q "SPECIALIST_HEALTH_PASS" logs/specialist_health.log
+
+# ---- Unified self-improve + resource program (plans/unified_self_improve_resource.md) ----
+.PHONY: resource_governor counterfactual_order self_improve deploy_profile recipe_proposals unified_self_improve
+resource_governor: $(RESOURCE_GOV_SRC) tests/test_resource_governor.c include/resource_governor.h
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -o $(BIN_DIR)/test_resource_governor \
+		$(RESOURCE_GOV_SRC) tests/test_resource_governor.c $(LDFLAGS)
+	@./$(BIN_DIR)/test_resource_governor > logs/resource_governor.log 2>&1
+	@grep -q "RESOURCE_GOVERNOR_PASS" logs/resource_governor.log
+	@grep "RESOURCE_GOVERNOR_PASS" logs/resource_governor.log
+
+counterfactual_order: $(CF_ORDER_SRC) tests/test_counterfactual_order.c include/counterfactual_order.h
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -o $(BIN_DIR)/test_counterfactual_order \
+		$(CF_ORDER_SRC) tests/test_counterfactual_order.c $(LDFLAGS)
+	@./$(BIN_DIR)/test_counterfactual_order > logs/counterfactual_order.log 2>&1
+	@grep -q "CF_ORDER_PASS" logs/counterfactual_order.log
+	@grep "CF_ORDER_PASS" logs/counterfactual_order.log
+
+self_improve: $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(HARNESS_ORACLE_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) tests/test_self_improve.c include/self_improve.h include/harness_oracle.h
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/test_self_improve \
+		$(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(HARNESS_ORACLE_SRC) \
+		$(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) \
+		$(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) \
+		$(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) \
+		tests/test_self_improve.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -pthread
+	@./$(BIN_DIR)/test_self_improve > logs/self_improve.log 2>&1
+	@grep -q "SELF_IMPROVE_PASS" logs/self_improve.log
+	@grep "SELF_IMPROVE_PASS" logs/self_improve.log
+
+deploy_profile: tests/test_deploy_profile.py config/cnet-deploy.env config/cnet-gap-lane.service config/qwythos_v2_campaign.env scripts/apply_deploy_profile.sh
+	@mkdir -p logs
+	@python3 tests/test_deploy_profile.py > logs/deploy_profile.log 2>&1
+	@grep -q "DEPLOY_PROFILE_PASS" logs/deploy_profile.log
+	@grep "DEPLOY_PROFILE_PASS" logs/deploy_profile.log
+
+recipe_proposals: tools/propose_recipe_improvements.py
+	@mkdir -p logs suggestions
+	@python3 tools/propose_recipe_improvements.py \
+		--out suggestions/cnet_recipe_proposals.jsonl \
+		> logs/recipe_proposals.log 2>&1
+	@grep -q "RECIPE_PROPOSALS_PASS" logs/recipe_proposals.log
+	@grep "RECIPE_PROPOSALS_PASS" logs/recipe_proposals.log
+
+# Full hermetic umbrella for the 4-phase self-improve/resource program.
+unified_self_improve: resource_governor counterfactual_order self_improve deploy_profile recipe_proposals gap_lane_service_config campaign_v2_fast multimodal_v0 personal_ai
+	@echo "UNIFIED_SELF_IMPROVE_PASS"
+
+# Personal AI: local certified library first; big-AI teacher only on gaps.
+.PHONY: personal_ai
+personal_ai: $(PERSONAL_AI_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) tests/test_personal_ai.c include/personal_ai.h
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/test_personal_ai \
+		$(PERSONAL_AI_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) \
+		$(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) \
+		$(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) \
+		$(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) \
+		tests/test_personal_ai.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -pthread
+	@./$(BIN_DIR)/test_personal_ai > logs/personal_ai.log 2>&1
+	@grep -q "PERSONAL_AI_PASS" logs/personal_ai.log
+	@$(MAKE) --no-print-directory personal_ai_auto
+	@grep "PERSONAL_AI_PASS" logs/personal_ai.log
+
+.PHONY: personal_ai_auto
+personal_ai_auto: tests/test_personal_ai_auto.py scripts/personal_ai_auto.sh config/cnet-personal-ai-lane.service config/cnet-personal-ai.target config/personal-ai.env
+	@mkdir -p logs
+	@python3 tests/test_personal_ai_auto.py > logs/personal_ai_auto.log 2>&1
+	@grep -q "PERSONAL_AI_AUTO_PASS" logs/personal_ai_auto.log
+	@grep "PERSONAL_AI_AUTO_PASS" logs/personal_ai_auto.log
+
+
+# Multimodal v0: external teacher bridge + voice/vision closed-set mine/admit.
+.PHONY: multimodal_v0 multimodal_prepare
+multimodal_v0: $(MULTIMODAL_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) tests/test_multimodal_v0.c include/external_teacher.h include/modality_voice.h include/modality_vision.h
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/test_multimodal_v0 \
+		$(MULTIMODAL_SRC) \
+		$(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) \
+		$(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) \
+		$(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) \
+		tests/test_multimodal_v0.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -pthread
+	@./$(BIN_DIR)/test_multimodal_v0 > logs/multimodal_v0.log 2>&1
+	@grep -q "MULTIMODAL_V0_PASS" logs/multimodal_v0.log
+	@$(MAKE) --no-print-directory multimodal_prepare
+	@grep "MULTIMODAL_V0_PASS" logs/multimodal_v0.log
+
+multimodal_prepare: tests/test_multimodal_prepare.py tools/multimodal_campaign.sh plans/multimodal_external_teachers.md
+	@mkdir -p logs
+	@python3 tests/test_multimodal_prepare.py > logs/multimodal_prepare.log 2>&1
+	@grep -q "MULTIMODAL_PREPARE_PASS" logs/multimodal_prepare.log
+
+
+# Quality-preserving campaign speedups: sweep allowlist export + unit
+# shard/allowlist screening in flagship (no cert-bar changes).
+.PHONY: campaign_v2_fast
+campaign_v2_fast: flagship tests/test_campaign_v2_fast.py tools/campaign_v2_fast.sh tools/margin_sweep_analyze.py
+	@mkdir -p logs
+	@python3 tests/test_campaign_v2_fast.py > logs/campaign_v2_fast.log 2>&1
+	@grep -q "CAMPAIGN_V2_FAST_PASS" logs/campaign_v2_fast.log
+	@grep "CAMPAIGN_V2_FAST_PASS" logs/campaign_v2_fast.log
 
 unified_specialist: specialist_unit specialist_health $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) tests/test_heterogeneous_plan.c include/specialist.h
 	@mkdir -p $(BIN_DIR) logs
@@ -2151,7 +2262,7 @@ counterfactual_serving: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $
 	@grep -q "CNET_COUNTERFACTUAL REPORT" logs/counterfactual_serving.log
 	@grep -q "COUNTERFACTUAL_SERVING_PASS" logs/counterfactual_serving.log
 
-unified_native: unified_adapter unified_cce_adapter unified_oracle_adapter unified_specialist gap_lane gap_lane_service_config dispatch_story oracle_v2_test unified_async unified_models unified_ds4_launcher soul_host_test soul_reopen_test counterfactual_serving admission_bypass_audit cnet_dll build_hygiene_test alt_paths_gate aicimo_core_test cnet_harness_contract_test
+unified_native: unified_adapter unified_cce_adapter unified_oracle_adapter unified_specialist gap_lane gap_lane_service_config dispatch_story oracle_v2_test unified_async unified_models unified_ds4_launcher soul_host_test soul_reopen_test counterfactual_serving admission_bypass_audit cnet_dll build_hygiene_test alt_paths_gate aicimo_core_test cnet_harness_contract_test resource_governor counterfactual_order self_improve deploy_profile
 	@for sym in specialist_wrap_btn specialist_wrap_cce_model \
 		specialist_wrap_oracle specialist_admit specialist_axes \
 		specialist_residency_of_model specialist_residency_of_branch \

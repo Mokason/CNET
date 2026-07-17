@@ -248,6 +248,11 @@ typedef struct {
        instead of rescanning the ledger. */
     void (*on_close)(size_t gap_index, void *ctx);
     void *on_close_ctx;
+    /* Budgeted self-improve: stop the drain after this many successful
+       CLOSES in one acquire_drain call. 0 = unlimited (legacy default).
+       Examined/deferred gaps still count toward examined; only closed
+       units consume the budget. CNET_LANE_MAX_CLOSURES overlays this. */
+    size_t max_closures_per_drain;
 } AcquireConfig;
 
 void acquire_config_defaults(AcquireConfig *cfg);

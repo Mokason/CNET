@@ -19,6 +19,15 @@ Environment=CNET_ORACLE_INT8=1
 Environment=CNET_LOAD_TRACE=1
 Environment=CNET_GGUF_MMAP=1
 Environment=CNET_MAX_CTX=128
+# Deploy free wins (measured byte-identical / exactness-preserving)
+Environment=CNET_TRAIN_FAST=1
+Environment=CNET_ACQ_STAGES=40
+Environment=CNET_ACQ_ADAPTIVE=1
+Environment=CNET_LANE_PROBE_BATCH=32
+Environment=OMP_NUM_THREADS=4
+# Budgeted self-improve: rate-limit closes; sleep teacher when idle (CNB-primary)
+Environment=CNET_LANE_MAX_CLOSURES=4
+Environment=CNET_TEACHER_IDLE_SEC=300
 # teaching window base: [base, base+W) — token ids 0..255 are special tokens
 # with flat logits (every point abstains as a near-tie); real-token ranges
 # carry signal

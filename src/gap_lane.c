@@ -330,6 +330,14 @@ int gap_lane_open(GapLane *L, const char *base_path,
     L->acq.unit_dir = NULL;
     L->acq.on_close = lane_on_gap_close;      /* O(1) reconcile feed */
     L->acq.on_close_ctx = L;
+    /* Budgeted self-improve: CNET_LANE_MAX_CLOSURES (0 = unlimited). */
+    {
+        const char *mc = getenv("CNET_LANE_MAX_CLOSURES");
+        if (mc && mc[0]) {
+            long v = atol(mc);
+            if (v >= 0) L->acq.max_closures_per_drain = (size_t)v;
+        }
+    }
     L->health_pass_enabled = 1;
     /* One migration/repair scan on the first drain: reconcile CLOSED
        records whose persisted done-mark is absent (v1/v2 ledgers) or

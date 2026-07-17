@@ -66,6 +66,17 @@ typedef struct {
     const int *vocab_tokens;   /* closed token set V (ids into the model) */
     size_t vocab_size;         /* |V| = ONEHOT width; must be >= acq.min_evidence */
     size_t max_units;          /* conditioning tokens attempted this run (0 = all) */
+    /* Sharding + sweep screening (quality-preserving speedups):
+       unit_start / unit_end select a half-open index range into vocab_tokens
+       after max_units is applied (0 / 0 = full range [0, n_tokens)).
+       allowlist_tokens, when non-NULL and allowlist_count > 0, restricts
+       attempts to conditioning tokens whose id is in the set — the margin-
+       sweep predicted-minable set. Screened units are never trained; the
+       certification bar for attempted units is unchanged. */
+    size_t unit_start;         /* inclusive index; default 0 */
+    size_t unit_end;           /* exclusive; 0 = n_tokens */
+    const int *allowlist_tokens;
+    size_t allowlist_count;
     /* persistence (the base is the checkpoint) */
     const char *base_path;     /* loaded when present -> resume */
     const char *ledger_path;   /* gap ledger sidecar (loaded when present) */
@@ -95,6 +106,7 @@ typedef struct {
     size_t acquired;         /* gaps CLOSED (unit certified + sealed into base) */
     size_t deferred;         /* gaps DEFERRED */
     size_t skipped_resume;   /* units already in the base (prior runs) */
+    size_t skipped_screen;   /* units filtered by allowlist / shard range */
     size_t no_oracle;        /* maker had no oracle for the token */
     size_t registry_skipped; /* base units that failed certify-on-load */
     /* defer tally by reason atom */

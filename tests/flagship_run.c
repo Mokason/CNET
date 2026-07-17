@@ -867,6 +867,49 @@ int main(int argc, char **argv) {
     cfg.gpu_temp_limit_c = temp_c;
     cfg.duty_fraction = duty;
     cfg.max_wall_seconds = wall;
+    /* Quality-preserving campaign speedups (optional):
+       CNET_UNIT_START / CNET_UNIT_END — half-open index shard into vocab
+       CNET_UNIT_ALLOWLIST — file of token ids (predicted-minable set) */
+    {
+        const char *us = getenv("CNET_UNIT_START");
+        const char *ue = getenv("CNET_UNIT_END");
+        const char *al = getenv("CNET_UNIT_ALLOWLIST");
+        static int allow_buf[8192];
+        static size_t allow_n;
+        if (us && us[0]) cfg.unit_start = (size_t)atol(us);
+        if (ue && ue[0]) cfg.unit_end = (size_t)atol(ue);
+        allow_n = 0;
+        if (al && al[0]) {
+            FILE *af = fopen(al, "r");
+            char line[64];
+            if (!af) {
+                fprintf(stderr, "CNET_UNIT_ALLOWLIST: cannot open %s\n", al);
+                return 1;
+            }
+            while (allow_n < 8192 && fgets(line, sizeof line, af)) {
+                char *end = NULL;
+                long v;
+                if (line[0] == '#' || line[0] == '\n' || line[0] == '\0')
+                    continue;
+                v = strtol(line, &end, 10);
+                if (end == line) continue;
+                allow_buf[allow_n++] = (int)v;
+            }
+            fclose(af);
+            if (allow_n == 0) {
+                fprintf(stderr, "CNET_UNIT_ALLOWLIST: empty %s\n", al);
+                return 1;
+            }
+            cfg.allowlist_tokens = allow_buf;
+            cfg.allowlist_count = allow_n;
+            printf("unit allowlist: %lu tokens from %s\n",
+                   (unsigned long)allow_n, al);
+        }
+        if (cfg.unit_start || cfg.unit_end)
+            printf("unit shard: [%lu, %lu)\n",
+                   (unsigned long)cfg.unit_start,
+                   (unsigned long)cfg.unit_end);
+    }
     window_from_file = 0;
 
     /* Recert windows come from the BASE'S OWN ledger: gaps order is

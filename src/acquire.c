@@ -1405,21 +1405,29 @@ int acquire_drain(PrimitiveRegistry *reg, AcquireLedger *l,
             if (report) report->recipe_reopened++;
         }
     }
-    for (i = 0; i < l->count; ++i) {
-        GapRecord *g = &l->gaps[i];
-        OracleEntry *o;
-        if (g->status != GAP_OPEN) continue;
-        if (report) report->examined++;
-        if (g->kind == GAP_NO_PLAN) {
-            o = find_oracle(oracles, g->input_port, g->goal_port);
-            if (!o) { if (report) report->skipped_no_oracle++; continue; }
-            attempt_no_plan(reg, l, o, g, cfg, report);
-        } else {
-            attempt_rebuild(reg, l, oracles, g, cfg, report);
+    {
+        size_t closed_this_drain = 0;
+        for (i = 0; i < l->count; ++i) {
+            GapRecord *g = &l->gaps[i];
+            OracleEntry *o;
+            if (g->status != GAP_OPEN) continue;
+            /* Budgeted self-improve: stop after max successful closes. */
+            if (cfg->max_closures_per_drain &&
+                closed_this_drain >= cfg->max_closures_per_drain)
+                break;
+            if (report) report->examined++;
+            if (g->kind == GAP_NO_PLAN) {
+                o = find_oracle(oracles, g->input_port, g->goal_port);
+                if (!o) { if (report) report->skipped_no_oracle++; continue; }
+                attempt_no_plan(reg, l, o, g, cfg, report);
+            } else {
+                attempt_rebuild(reg, l, oracles, g, cfg, report);
+            }
+            if (g->status == GAP_CLOSED) closed_this_drain++;
+            /* stamp the recipe a fresh deferral happened under, so it will not
+               reopen again until the recipe changes */
+            if (g->status == GAP_DEFERRED) g->recipe_fp = fp;
         }
-        /* stamp the recipe a fresh deferral happened under, so it will not
-           reopen again until the recipe changes */
-        if (g->status == GAP_DEFERRED) g->recipe_fp = fp;
     }
     return 0;
 }

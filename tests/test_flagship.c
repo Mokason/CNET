@@ -475,6 +475,71 @@ int main(void) {
         remove(lp);
     }
 
+    printf("[11] unit shard [start,end) — no train outside the range\n");
+    {
+        FlagshipConfig fc;
+        FlagshipReport rp;
+        SynMaker mk;
+        const char *bp = "flagship_shard_test.cnb";
+        const char *lp = "flagship_shard_gaps.txt";
+        remove(bp);
+        remove(lp);
+        flagship_config_defaults(&fc);
+        fc.vocab_tokens = vocab;
+        fc.vocab_size = V;
+        fc.max_units = V;
+        fc.unit_start = 2;
+        fc.unit_end = 5;            /* indices 2,3,4 only */
+        fc.base_path = bp;
+        fc.ledger_path = lp;
+        fc.gpu_temp_limit_c = 0;
+        fc.duty_fraction = 1.0;
+        memset(&mk, 0, sizeof mk);
+        mk.broken_token = -1;
+        memset(&rp, 0, sizeof rp);
+        check(flagship_run(&fc, syn_maker, &mk, &rp) == 0, "shard run runs");
+        check(rp.attempted == 3 && rp.acquired == 3,
+              "only 3 units in [2,5) attempted");
+        check(rp.skipped_screen == V - 3,
+              "remaining indices counted as screen-skips");
+        remove(bp);
+        remove(lp);
+    }
+
+    printf("[12] allowlist screen — only listed token ids are trained\n");
+    {
+        FlagshipConfig fc;
+        FlagshipReport rp;
+        SynMaker mk;
+        int allow[2];
+        const char *bp = "flagship_allow_test.cnb";
+        const char *lp = "flagship_allow_gaps.txt";
+        remove(bp);
+        remove(lp);
+        allow[0] = vocab[0];
+        allow[1] = vocab[5];
+        flagship_config_defaults(&fc);
+        fc.vocab_tokens = vocab;
+        fc.vocab_size = V;
+        fc.max_units = V;
+        fc.allowlist_tokens = allow;
+        fc.allowlist_count = 2;
+        fc.base_path = bp;
+        fc.ledger_path = lp;
+        fc.gpu_temp_limit_c = 0;
+        fc.duty_fraction = 1.0;
+        memset(&mk, 0, sizeof mk);
+        mk.broken_token = -1;
+        memset(&rp, 0, sizeof rp);
+        check(flagship_run(&fc, syn_maker, &mk, &rp) == 0, "allowlist run runs");
+        check(rp.attempted == 2 && rp.acquired == 2,
+              "only 2 allowlisted tokens attempted");
+        check(rp.skipped_screen == V - 2,
+              "non-allowlisted tokens are screen-skips (no train)");
+        remove(bp);
+        remove(lp);
+    }
+
     printf("checks run: %d\n", checks_run);
     printf("ALL FLAGSHIP TESTS PASSED\n");
     return 0;

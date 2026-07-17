@@ -253,6 +253,19 @@ static int lm_fill_cache(LmTask *t) {
     return 0;
 }
 
+/* CNET_TOPK_SET=1: certify the teacher's top-k SET (canonical ascending
+   window index order) with abstention only on the rank-k/rank-(k+1)
+   membership margin — measured to convert ordered near-tie deferrals
+   without changing the certification door. */
+static int lm_topk_set_on(void) {
+    static int cached = -1;
+    if (cached < 0) {
+        const char *e = getenv("CNET_TOPK_SET");
+        cached = (e && e[0] == '1') ? 1 : 0;
+    }
+    return cached;
+}
+
 /* ordered top-k within the window from window-logits wl[0..width); margin-aware
    abstention on the teacher's own near-tie at the k/k+1 boundary. Writes k
    one-hot output fields, or returns 1 to abstain. */
@@ -280,6 +293,18 @@ static int lm_topk(LmTask *t, const float *wl, double *out) {
     }
     if (t->width > t->k && (double)(kth - next_best) < t->eps)
         return 1;  /* abstain: the model itself is undecided here */
+    /* Set semantics: rewrite picks in ascending window-index order so
+       near-ties inside the top-k do not change the certified claim. */
+    if (lm_topk_set_on() && t->k > 1) {
+        int a, b;
+        for (a = 0; a < t->k; a++)
+            for (b = a + 1; b < t->k; b++)
+                if (picked[b] < picked[a]) {
+                    int tmp = picked[a];
+                    picked[a] = picked[b];
+                    picked[b] = tmp;
+                }
+    }
     memset(out, 0, (size_t)t->width * (size_t)t->k * sizeof *out);
     for (i = 0; i < t->k; i++) out[(size_t)i * t->width + picked[i]] = 1.0;
     return 0;
@@ -475,6 +500,13 @@ int main(int argc, char **argv) {
                                           lane.acq.min_improvement);
     lane.acq.learning_rate = env_double("CNET_ACQ_LR", lane.acq.learning_rate);
     lane.acq.momentum = env_double("CNET_ACQ_MOMENTUM", lane.acq.momentum);
+    {
+        long mc = env_long("CNET_LANE_MAX_CLOSURES",
+                           (long)lane.acq.max_closures_per_drain);
+        if (mc >= 0) lane.acq.max_closures_per_drain = (size_t)mc;
+    }
+    if (lm_topk_set_on())
+        printf("gap_lane_run: CNET_TOPK_SET=1 (set-valued top-k claims)\n");
 
     if (argc >= 4) {
         if (cce_anymodel_open(&am, argv[3]) != CCE_OK || !am->transformer) {
@@ -672,36 +704,96 @@ int main(int argc, char **argv) {
            argv[1], argv[2], inbox, interval, lane.reg.count);
     fflush(stdout);
 
-    for (;;) {
-        long slept;
-        if (stop_requested(stop_path)) {
-            printf("gap_lane_run: stop file honored\n");
-            break;
-        }
-        tick_no++;
-        if (model)
-            bind_model_teachers(&lane, model, logits, vocab,
-                                (int)token_base, eps);
-        if (gap_lane_tick(&lane, &r, 0) != 0) {
-            fprintf(stderr, "gap_lane_run: tick failed; retrying\n");
-        } else if (r.inbox_ingested || r.health_noted || r.low_rel_noted ||
-                   r.healed || r.drain.examined || r.recipe_reopened ||
-                   r.checkpointed) {
-            printf("gap_lane_run: tick=%lu inbox=%zu health=%zu lowrel=%zu "
-                   "healed=%zu reopened=%zu drained=%zu closed=%zu deferred=%zu "
-                   "no_oracle=%zu units=%zu%s\n",
-                   tick_no, r.inbox_ingested, r.health_noted,
-                   r.low_rel_noted, r.healed, r.recipe_reopened,
-                   r.drain.examined, r.drain.closed, r.drain.deferred,
-                   r.drain.skipped_no_oracle, lane.reg.count,
-                   r.checkpointed ? " [checkpoint]" : "");
-            fflush(stdout);
-        }
-        for (slept = 0; slept < interval; slept++) {
-            if (stop_requested(stop_path)) break;
-            {
-                struct timespec ts = {1, 0};
-                nanosleep(&ts, NULL);
+    {
+        /* Teacher sleep: after CNET_TEACHER_IDLE_SEC consecutive idle
+           seconds with no open-gap work, free the GGUF so steady-state
+           residency is CNB-primary. Reload on the next open gap. */
+        long teacher_idle_sec = env_long("CNET_TEACHER_IDLE_SEC", 0);
+        long idle_for = 0;
+        char model_path_saved[1024];
+        model_path_saved[0] = '\0';
+        if (argc >= 4)
+            snprintf(model_path_saved, sizeof model_path_saved, "%s", argv[3]);
+
+        for (;;) {
+            long slept;
+            size_t open_gaps = 0, gi;
+            int did_work = 0;
+            if (stop_requested(stop_path)) {
+                printf("gap_lane_run: stop file honored\n");
+                break;
+            }
+            tick_no++;
+            for (gi = 0; gi < lane.ledger.count; gi++)
+                if (lane.ledger.gaps[gi].status == GAP_OPEN) open_gaps++;
+
+            /* Reload teacher if we slept it and demand returned. */
+            if (!model && open_gaps > 0 && model_path_saved[0]) {
+                if (cce_anymodel_open(&am, model_path_saved) == CCE_OK &&
+                    am && am->transformer) {
+                    model = am->transformer;
+                    vocab = model->vocab_size;
+                    if (!logits)
+                        logits = (float *)malloc((size_t)vocab * sizeof *logits);
+                    if (lm_window_n > 0)
+                        cce_gguf_qwen2_set_head_window(model, lm_window,
+                                                      lm_window_n);
+                    lm_pinned = (const LmContext *)-1;
+                    lm_cache_ctx = (const void *)-1;
+                    idle_for = 0;
+                    printf("gap_lane_run: teacher reloaded (open_gaps=%zu)\n",
+                           open_gaps);
+                    fflush(stdout);
+                } else {
+                    fprintf(stderr, "gap_lane_run: teacher reload failed\n");
+                    am = NULL; model = NULL;
+                }
+            }
+
+            if (model)
+                bind_model_teachers(&lane, model, logits, vocab,
+                                    (int)token_base, eps);
+            if (gap_lane_tick(&lane, &r, 0) != 0) {
+                fprintf(stderr, "gap_lane_run: tick failed; retrying\n");
+            } else if (r.inbox_ingested || r.health_noted || r.low_rel_noted ||
+                       r.healed || r.drain.examined || r.recipe_reopened ||
+                       r.checkpointed) {
+                did_work = 1;
+                idle_for = 0;
+                printf("gap_lane_run: tick=%lu inbox=%zu health=%zu lowrel=%zu "
+                       "healed=%zu reopened=%zu drained=%zu closed=%zu deferred=%zu "
+                       "no_oracle=%zu units=%zu%s\n",
+                       tick_no, r.inbox_ingested, r.health_noted,
+                       r.low_rel_noted, r.healed, r.recipe_reopened,
+                       r.drain.examined, r.drain.closed, r.drain.deferred,
+                       r.drain.skipped_no_oracle, lane.reg.count,
+                       r.checkpointed ? " [checkpoint]" : "");
+                fflush(stdout);
+            }
+
+            if (!did_work && open_gaps == 0 && model && teacher_idle_sec > 0) {
+                idle_for += interval;
+                if (idle_for >= teacher_idle_sec) {
+                    printf("gap_lane_run: teacher sleep after %lds idle "
+                           "(CNB-primary serve)\n", idle_for);
+                    fflush(stdout);
+                    if (am) { cce_anymodel_free(am); am = NULL; }
+                    model = NULL;
+                    free(logits); logits = NULL;
+                    lm_pinned = NULL;
+                    lm_cache_ctx = (const void *)-1;
+                    idle_for = 0;
+                }
+            } else if (open_gaps > 0 || did_work) {
+                idle_for = 0;
+            }
+
+            for (slept = 0; slept < interval; slept++) {
+                if (stop_requested(stop_path)) break;
+                {
+                    struct timespec ts = {1, 0};
+                    nanosleep(&ts, NULL);
+                }
             }
         }
     }

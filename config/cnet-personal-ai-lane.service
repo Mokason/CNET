@@ -1,0 +1,62 @@
+[Unit]
+Description=CNET Personal AI learner (gap lane) — teach from misses, seal into local library
+Documentation=file:///home/marble/AI/CNET/plans/personal_ai_local_first.md
+# Fail-safe: skip cleanly if binary not built (no 203/EXEC churn).
+ConditionFileIsExecutable=/home/marble/AI/CNET/bin/gap_lane_run
+# Optional: wait for network only if teacher is remote; local GGUF needs none.
+After=default.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/marble/AI/CNET
+# Load personal-ai profile (local-first budgets + free wins). Paths below
+# still pin the active base/model so the unit is self-contained.
+EnvironmentFile=-/home/marble/AI/CNET/config/personal-ai.env
+
+# Active personal library (operator may override via drop-in).
+Environment=CNET_BASE_PATH=/home/marble/AI/CNET/soul_gemma4v2_final.cnb
+Environment=CNET_GAP_INBOX=/home/marble/AI/CNET/soul_gemma4v2_final.cnb.inbox
+Environment=CNET_ORACLE_INT8=1
+Environment=CNET_LOAD_TRACE=1
+Environment=CNET_GGUF_MMAP=1
+Environment=CNET_MAX_CTX=128
+Environment=CNET_TRAIN_FAST=1
+Environment=CNET_ACQ_STAGES=40
+Environment=CNET_ACQ_ADAPTIVE=1
+Environment=CNET_LANE_PROBE_BATCH=32
+Environment=OMP_NUM_THREADS=4
+Environment=CNET_LANE_MAX_CLOSURES=4
+Environment=CNET_TEACHER_IDLE_SEC=300
+Environment=CNET_LANE_INTERVAL_SEC=120
+Environment=CNET_ACQ_HIDDEN=128
+Environment=CNET_ACQ_MAXHIDDEN=512
+Environment=CNET_ACQ_EPOCHS=20000
+Environment=CNET_ACQ_TARGET_LOSS=1e-7
+Environment=CNET_ACQ_MIN_IMPROVEMENT=1e-9
+Environment=CNET_WINDOW_FILE=/home/marble/AI/CNET/english_window_256.txt
+Environment=CNET_LANE_CONTEXT_FILE=/home/marble/AI/CNET/config/lane_context_english_v1.ids
+Environment=CNET_LANE_CONTEXT_DIR=/home/marble/AI/CNET/config/lane_contexts
+Environment=CNET_LANE_TOKEN_BASE=1000
+Environment=CNET_LANE_MARGIN_EPS=1e-6
+Environment=CNET_LANE_LOW_REL=0.55
+Environment=CNET_LANE_LOW_REL_MIN_EV=64
+
+# Teacher model: set CNET_PERSONAL_TEACHER in a drop-in or env to override.
+# Default matches the historical gemma teacher path if present.
+Environment=CNET_PERSONAL_TEACHER=/home/marble/AI/Models/gemma4-v2-Q4_K_M.gguf
+
+ExecStart=/bin/bash -c 'exec /home/marble/AI/CNET/bin/gap_lane_run \
+  "${CNET_BASE_PATH}" \
+  "${CNET_BASE_PATH}.gaps.txt" \
+  ${CNET_PERSONAL_TEACHER:+"$CNET_PERSONAL_TEACHER"}'
+
+# Background citizen: do not starve interactive work.
+Nice=19
+CPUWeight=20
+MemoryHigh=24G
+MemoryMax=28G
+Restart=on-failure
+RestartSec=30
+
+[Install]
+WantedBy=default.target
