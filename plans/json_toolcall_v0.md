@@ -33,6 +33,21 @@ var toolName = JsonToolCall.Classify(soul, json);
 
 Alphabet must stay aligned: `src/json_toolcall.c` ↔ `dotnet/Cce/JsonToolCall.cs`.
 
+## Seal into personal / live CNB
+
+```bash
+# Stops learner briefly, mines+seals, verifies SoulHost, restarts learner
+scripts/json_toolcall_seal.sh
+# or
+scripts/personal_ai_auto.sh jtc-seal
+
+# CLI only (operator ensures no concurrent writer):
+make json_toolcall_seal_cli
+bin/json_toolcall_seal /path/to/soul.cnb
+```
+
+Idempotent: if `json_toolcall_v0` already present with identical bytes, reuses.
+
 ## Not in v0
 
 - Arbitrary schema validation as certified law

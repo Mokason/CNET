@@ -2144,6 +2144,18 @@ json_toolcall: $(MULTIMODAL_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(S
 	@grep -q "JSON_TOOLCALL_PASS" logs/json_toolcall.log
 	@grep "JSON_TOOLCALL_PASS" logs/json_toolcall.log
 
+# Seal json_toolcall_v0 into a live/personal CNB (CLI for scripts/json_toolcall_seal.sh).
+.PHONY: json_toolcall_seal_cli
+json_toolcall_seal_cli: $(MULTIMODAL_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) $(GAP_LANE_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) src/soul_host.c tools/json_toolcall_seal.c include/json_toolcall.h
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/json_toolcall_seal \
+		$(MULTIMODAL_SRC) \
+		$(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) \
+		$(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) \
+		$(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) $(GAP_LANE_SRC) \
+		$(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) \
+		src/soul_host.c tools/json_toolcall_seal.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -pthread
+
 multimodal_prepare: tests/test_multimodal_prepare.py tools/multimodal_campaign.sh plans/multimodal_external_teachers.md
 	@mkdir -p logs
 	@python3 tests/test_multimodal_prepare.py > logs/multimodal_prepare.log 2>&1

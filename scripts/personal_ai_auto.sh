@@ -204,6 +204,7 @@ case "$cmd" in
   hillclimb|eg) cmd=hillclimb ;;
   loop|report) cmd=loop ;;
   serve-proof|serve_proof) cmd=serve-proof ;;
+  jtc-seal|json-toolcall-seal|json_toolcall_seal) cmd=jtc-seal ;;
 esac
 
 case "$cmd" in
@@ -219,9 +220,13 @@ case "$cmd" in
   hillclimb) bash "$REPO/scripts/personal_ai_hill_climb_report.sh" "$BASE" "${2:-7}" ;;
   loop) bash "$REPO/scripts/personal_ai_loop_report.sh" "$BASE" ;;
   serve-proof) bash "$REPO/scripts/personal_ai_serve_proof.sh" "${2:-hermetic}" ;;
+  jtc-seal)
+    # Seal closed-set json_toolcall_v0 into personal CNB (stops learner if needed).
+    bash "$REPO/scripts/json_toolcall_seal.sh" "$BASE" ${2:+"$2"}
+    ;;
   *)
     cat <<EOF
-usage: $0 prepare|install|start|stop|status|doctor|grow|observe|metrics|hillclimb|loop|serve-proof
+usage: $0 prepare|install|start|stop|status|doctor|grow|observe|metrics|hillclimb|loop|serve-proof|jtc-seal
 
 Automatic Personal AI:
   1. prepare  — build learner binary + check base/teacher + placement doctor
@@ -234,10 +239,12 @@ Automatic Personal AI:
   hillclimb   — local EG report (days optional, default 7)
   loop        — human-readable loop report (inbox/ledger/learner/serve)
   serve-proof — post-seal Tier A proof (hermetic|live|all)
+  jtc-seal    — seal json_toolcall_v0 into personal CNB (+ SoulHost verify)
 
 Env: BASE_PATH / CNET_BASE_PATH  TEACHER  SERVE=0|1  TICK_SECONDS
      RESIDUAL / CNET_RESIDUAL_GGUF  (Tier C; also config/personal-ai.env)
      RESIDUAL_WINDOW / CNET_RESIDUAL_WINDOW
+     STOP_LEARNER=1 (default for jtc-seal)
 EOF
     exit 2
     ;;
