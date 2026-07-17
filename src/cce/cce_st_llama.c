@@ -106,6 +106,24 @@ cce_result cce_st_llama_load(cce_gguf_qwen2** out, const char* path) {
     if (!out || !path) return CCE_ERR_INVALID_ARG;
     *out = NULL;
 
+    {   /* CNET_SPARSE_KV: only the GGUF loader parses this knob into
+           m->sparse_kv_fraction — this safetensors/llama loader never arms
+           it, so an armed knob must fail LOUD here rather than silently
+           run full attention: the oracle must never misrepresent what it
+           executed. Unset/empty/"0" = OFF, proceed unchanged. */
+        const char *skv = getenv("CNET_SPARSE_KV");
+        if (skv && skv[0]) {
+            char *end = NULL;
+            double f = strtod(skv, &end);
+            if (end == skv || (end && *end) || f != 0.0) {
+                fprintf(stderr, "cce_st_llama: CNET_SPARSE_KV='%s' set but "
+                                "the safetensors/llama load path has no "
+                                "sparse-KV wiring — refusing load\n", skv);
+                return CCE_ERR_UNSUPPORTED;
+            }
+        }
+    }
+
     cce_safetensors* st = NULL;
     cce_result rc = cce_safetensors_load(path, &st);
     if (rc != CCE_OK) return rc;

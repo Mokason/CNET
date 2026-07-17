@@ -283,6 +283,24 @@ int main(void) {
         cce_gguf_qwen2_free(m);
     }
 
+    /* 2b. an armed CNET_SPARSE_KV must refuse this path (the loader never
+       arms m->sparse_kv_fraction, so accepting the knob would silently run
+       full attention); "0"/unset load normally. */
+    {
+        cce_gguf_qwen2* m = NULL;
+        setenv("CNET_SPARSE_KV", "0.25", 1);
+        CHECK(cce_st_llama_load(&m, "stll_tmp/model.safetensors") != CCE_OK && m == NULL,
+              "armed CNET_SPARSE_KV refuses the st llama load");
+        setenv("CNET_SPARSE_KV", "banana", 1);
+        CHECK(cce_st_llama_load(&m, "stll_tmp/model.safetensors") != CCE_OK && m == NULL,
+              "malformed CNET_SPARSE_KV refuses the st llama load");
+        setenv("CNET_SPARSE_KV", "0", 1);
+        CHECK(cce_st_llama_load(&m, "stll_tmp/model.safetensors") == CCE_OK && m != NULL,
+              "CNET_SPARSE_KV=0 loads normally (knob OFF)");
+        if (m) cce_gguf_qwen2_free(m);
+        unsetenv("CNET_SPARSE_KV");
+    }
+
     /* 3. kv-cache continuity through the new loader (prompt + continue) */
     {
         cce_gguf_qwen2* m = NULL;

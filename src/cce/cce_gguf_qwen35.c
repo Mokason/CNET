@@ -139,6 +139,25 @@ cce_result cce_gguf_load_qwen35(cce_gguf_qwen2 **out, const char *path) {
         }
     }
 
+    {   /* CNET_SPARSE_KV: the sparse-KV read exists only on the classic
+           transformer attention path (cce_gguf.c). An armed knob must fail
+           LOUD here rather than silently run full attention — the oracle
+           must never misrepresent what it executed. Unset/empty/"0" = OFF,
+           proceed unchanged. */
+        const char *skv = getenv("CNET_SPARSE_KV");
+        if (skv && skv[0]) {
+            char *end = NULL;
+            double f = strtod(skv, &end);
+            if (end == skv || (end && *end) || f != 0.0) {
+                fprintf(stderr, "qwen35: CNET_SPARSE_KV='%s' set but the "
+                                "qwen35 hybrid runner has no sparse-KV path "
+                                "— refusing load\n", skv);
+                cce_gguf_free(g);
+                return CCE_ERR_UNSUPPORTED;
+            }
+        }
+    }
+
     block_count = cce_gguf_get_n_layer(g);
     nextn = (int)cce_gguf__get_scalar(g, "nextn_predict_layers", 0);
     if (block_count <= 0 || nextn < 0 || nextn > 1 || nextn >= block_count) {

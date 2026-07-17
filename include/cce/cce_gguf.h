@@ -450,6 +450,18 @@ typedef struct cce_gguf_qwen2 {
        runner (cce_gguf_qwen35.c), which owns the per-layer kind schedule,
        recurrent/conv state, and the prefix-rewind checkpoint protocol. */
     struct cce_gguf_qwen35_ext *qwen35;
+
+    /* OPT-IN sparse per-specialist KV routing (Phase 2 execution slice).
+       0.0 (every loader callocs it) = OFF: the attention loop is
+       byte-identical to the historical forward. (0, 1]: each attention
+       step's softmax/V-read is restricted to the rows chosen by the ONE
+       cce_sparse_kv selector (cce_specialist_select_kv_tokens) under a
+       max_tokens budget of ceil(fraction * visible rows); 1.0 selects
+       every row and is gated BIT-IDENTICAL to OFF. Never write directly:
+       set through cce_gguf_qwen2_set_sparse_kv (malformed values refused)
+       or the CNET_SPARSE_KV env knob read at load. Classic transformer
+       path only — the qwen35 hybrid runner has no sparse read. */
+    float sparse_kv_fraction;
 } cce_gguf_qwen2;
 
 /* The live GGUF fp16->fp32 decoder (all quant superblock scales flow through
@@ -500,6 +512,30 @@ void cce_gguf_qwen2_set_clgemm(cce_gguf_qwen2 *m, struct cce_clgemm *h);
    head on those ids; ~1/4 less work per forward). NULL/0 = full head. The
    ids array must outlive the model; the campaign's discovered window fits. */
 void cce_gguf_qwen2_set_head_window(cce_gguf_qwen2 *m, const int *ids, int n);
+
+/* OPT-IN sparse per-specialist KV routing on THIS runner's attention path.
+   budget_fraction == 0.0 disables (the default: byte-identical forward);
+   0 < f <= 1 restricts every attention step's softmax/V-read to the rows
+   chosen by the cce_sparse_kv selector under max_tokens =
+   ceil(f * visible rows) — 1.0 selects every row and is gated bit-identical
+   to OFF. Malformed budgets (negative, > 1, NaN) are REFUSED with
+   CCE_ERR_INVALID_ARG (state unchanged); qwen35 hybrids are refused with
+   CCE_ERR_UNSUPPORTED (that runner has no sparse read). Env knob:
+   CNET_SPARSE_KV=<fraction>, read by cce_gguf_load_qwen2 at load — a
+   malformed value refuses the load. */
+cce_result cce_gguf_qwen2_set_sparse_kv(cce_gguf_qwen2 *m, float budget_fraction);
+
+/* Observation-only tap for the sparse-KV selection (gate/probe tooling):
+   fires per (layer, head, query step) AFTER selection, with the raw
+   pre-softmax scores of the visible rows (scores[0..n_rows-1], row r =
+   absolute position jmin + r) and the selected row indices (relative to
+   jmin, ascending). NULL (the default) = zero cost; it can never fire while
+   sparse KV is OFF. Observes only; must not mutate. */
+void cce_gguf_set_sparse_kv_tap(void (*fn)(int layer, int head, int q_pos,
+                                           int jmin, const float *scores,
+                                           int n_rows, const int *selected,
+                                           int n_selected, void *uctx),
+                                void *uctx);
 
 /* Uniform-geometry synthesizer for models populated OUTSIDE the GGUF
  * loader (safetensors/llama path, packed-.cce reader): derives one geometry

@@ -878,6 +878,27 @@ int main(void) {
               "missing ssm_a refused");
     }
 
+    /* honest refusal: sparse KV (CNET_SPARSE_KV / set_sparse_kv) exists only
+       on the classic transformer attention path — the hybrid runner must
+       refuse an armed knob rather than silently run full attention */
+    {
+        cce_gguf_qwen2 *ms = NULL;
+        setenv("CNET_SPARSE_KV", "0.25", 1);
+        CHECK(cce_gguf_load_qwen35(&ms, "qwen35_e2e.gguf") != CCE_OK,
+              "armed CNET_SPARSE_KV refused by the qwen35 loader");
+        setenv("CNET_SPARSE_KV", "0", 1);
+        ms = NULL;
+        CHECK(cce_gguf_load_qwen35(&ms, "qwen35_e2e.gguf") == CCE_OK &&
+              ms != NULL, "CNET_SPARSE_KV=0 still loads");
+        unsetenv("CNET_SPARSE_KV");
+        if (ms) {
+            CHECK(cce_gguf_qwen2_set_sparse_kv(ms, 0.5f) ==
+                  CCE_ERR_UNSUPPORTED,
+                  "sparse-KV setter refuses the qwen35 hybrid");
+            cce_gguf_qwen2_free(ms);
+        }
+    }
+
     cce_gguf_qwen2_free(m);
     remove("qwen35_e2e.gguf");
     remove("qwen35_e2e.q8.gguf");

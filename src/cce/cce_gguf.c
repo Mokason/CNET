@@ -1,6 +1,7 @@
 #include "../../include/cce/cce_gguf.h"
 #include "../../include/cce/cce_weight_store.h"
 #include "../../include/cce/cce_safetensors.h" /* for some helpers if needed, but we'll be self-contained */
+#include "../../include/cce/cce_sparse_kv.h"   /* opt-in sparse KV routing (the ONE selector) */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -1195,6 +1196,44 @@ void cce_gguf_qwen2_set_clgemm(cce_gguf_qwen2 *m, cce_clgemm *h) {
     if (m) m->clgemm = h;
 }
 
+/* OPT-IN sparse per-specialist KV routing (Phase 2 execution slice). The
+   selector is the ONE in cce_sparse_kv.c — this file only wires it into the
+   attention read. Default OFF (fraction 0.0, the calloc default of every
+   loader): the forward stays byte-identical (one float compare per forward
+   plus one branch per head/step guard the untouched historical code). */
+cce_result cce_gguf_qwen2_set_sparse_kv(cce_gguf_qwen2 *m, float budget_fraction) {
+    if (!m) return CCE_ERR_INVALID_ARG;
+    if (m->qwen35) {
+        fprintf(stderr, "cce_gguf: sparse KV is wired into the classic "
+                        "transformer attention path only — the qwen35 hybrid "
+                        "runner has no sparse read; refusing\n");
+        return CCE_ERR_UNSUPPORTED;
+    }
+    if (!(budget_fraction >= 0.0f) || budget_fraction > 1.0f) {
+        /* !(f >= 0) also catches NaN */
+        fprintf(stderr, "cce_gguf: sparse KV budget %g malformed "
+                        "(need 0 <= fraction <= 1) — refusing\n",
+                (double)budget_fraction);
+        return CCE_ERR_INVALID_ARG;
+    }
+    m->sparse_kv_fraction = budget_fraction;
+    return CCE_OK;
+}
+
+/* Observation-only sparse-KV selection tap (gate/probe tooling). Default
+   NULL = zero cost; it is only consulted inside the sparse branch, so it can
+   never fire — and never costs — while sparse KV is OFF. */
+typedef void (*cce_gguf_sparse_kv_tap_fn)(int layer, int head, int q_pos,
+                                          int jmin, const float *scores,
+                                          int n_rows, const int *selected,
+                                          int n_selected, void *uctx);
+static cce_gguf_sparse_kv_tap_fn g_gguf_sparse_kv_tap = NULL;
+static void *g_gguf_sparse_kv_tap_ctx = NULL;
+void cce_gguf_set_sparse_kv_tap(cce_gguf_sparse_kv_tap_fn fn, void *uctx) {
+    g_gguf_sparse_kv_tap = fn;
+    g_gguf_sparse_kv_tap_ctx = uctx;
+}
+
 /* Depth instrumentation: an optional tap called after every layer with the
    residual stream (probe tooling measures at which depth the DECISIONS the
    oracle consumes stop changing). Also honors m->layer_cap (> 0): the loop
@@ -1766,6 +1805,17 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
     float *scores = (float*)malloc((size_t)m->max_ctx * sizeof *scores);
     if (!scores) { cce_tensor_free(&x); return CCE_ERR_OOM; }
 
+    /* OPT-IN sparse KV routing: fraction 0.0 (the default) leaves every FP
+       op of the attention loop untouched — skv_idx stays NULL and the
+       historical code below runs verbatim. When set, skv_idx receives the
+       cce_sparse_kv selector's chosen rows per (head, query step). */
+    float skv_frac = m->sparse_kv_fraction;
+    int *skv_idx = NULL;
+    if (skv_frac > 0.0f) {
+        skv_idx = (int*)malloc((size_t)m->max_ctx * sizeof *skv_idx);
+        if (!skv_idx) { free(scores); cce_tensor_free(&x); return CCE_ERR_OOM; }
+    }
+
     char name[128];
     for (int l = 0; l < m->n_layer; l++) {
         const struct cce_attn_geom *ge = &m->geom[l];
@@ -1789,7 +1839,8 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
             !down_cas) {
             fprintf(stderr, "cce_gguf: layer %d cascades missing — "
                             "refusing\n", l);
-            free(scores); cce_tensor_free(&x);
+            /* free(NULL) is a no-op when the sparse knob is unset */
+            free(scores); free(skv_idx); cce_tensor_free(&x);
             return CCE_ERR_NOT_FOUND;
         }
 
@@ -1820,7 +1871,7 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
             fprintf(stderr, "cce_gguf: q/k/v projection failed at layer %d "
                             "(q_dim=%d k_dim=%d v_dim=%d) — refusing\n", l,
                     ge->q_dim, ge->k_dim, ge->v_dim);
-            free(scores);
+            free(scores); free(skv_idx);
             cce_tensor_free(&ln1); cce_tensor_free(&q);
             cce_tensor_free(&k); cce_tensor_free(&v); cce_tensor_free(&x);
             return CCE_ERR_UNSUPPORTED;
@@ -1948,6 +1999,10 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
                     fprintf(stderr, "] q[0:4]=%.3f,%.3f,%.3f,%.3f kself[0:4]=%.3f,%.3f,%.3f,%.3f kfirst[0:4]=%.3f,%.3f,%.3f,%.3f\n",
                             qh[0],qh[1],qh[2],qh[3], k_self[0],k_self[1],k_self[2],k_self[3], k_first[0],k_first[1],k_first[2],k_first[3]);
                 }
+                if (!skv_idx) {
+                /* FULL KV: the historical path, byte-identical when the
+                   sparse knob is unset (skv_idx can only be non-NULL when
+                   sparse_kv_fraction was explicitly opted in). */
                 float maxs = -1e30f;
                 for (int j = jmin; j <= abs_t; j++)
                     if (scores[j] > maxs) maxs = scores[j];
@@ -1976,6 +2031,88 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
                     for (int d2 = 0; d2 < ge->v_head_dim; d2++)
                         oh[d2] += scores[j] * vh[d2];
                 }
+                } else {
+                /* SPARSE KV (opt-in): restrict this step's softmax/V-read to
+                   the rows the cce_sparse_kv selector keeps under a budget of
+                   ceil(fraction * visible rows). Selection scores are the raw
+                   pre-softmax q·k values just computed (heavy hitters = the
+                   rows the full softmax would weight most). At fraction 1.0
+                   the selector keeps every row in ascending order, making
+                   this branch op-for-op identical to the full path — the
+                   sparse_kv_exec gate pins that bit-identity. */
+                int tc = abs_t - jmin + 1;
+                int skv_n = 0;
+                cce_specialist_kv_budget bud;
+                cce_specialist_kv_budget_default(&bud, tc);
+                {
+                    int target = (int)ceilf(skv_frac * (float)tc);
+                    if (target < 1) target = 1;
+                    if (target > tc) target = tc;
+                    bud.max_tokens = target;
+                    /* Re-derive the positional shares against THIS target,
+                       not the default ~20% budget the line above replaced:
+                       the selector fills initial rows then the recent
+                       window BEFORE its heavy-hitter score pass, so shares
+                       sized for the default budget would spend a small
+                       target entirely on the OLDEST rows (e.g. fraction
+                       0.25 at tc=12 selected {0,1,2}), evicting the
+                       query's own row. Invariants: recent >= 1 keeps the
+                       query's own row (the newest) selected at every step;
+                       initial + recent <= target means the positional fill
+                       can never starve the score pass. */
+                    bud.recent_tokens = target / 2;
+                    if (bud.recent_tokens < 1) bud.recent_tokens = 1;
+                    if (bud.recent_tokens > 32) bud.recent_tokens = 32;
+                    bud.initial_tokens = target / 4;
+                    if (bud.initial_tokens > 4) bud.initial_tokens = 4;
+                    /* over-budget: shrink initial first (recent <= target
+                       always holds above, so initial never goes negative) */
+                    if (bud.initial_tokens + bud.recent_tokens > target)
+                        bud.initial_tokens = target - bud.recent_tokens;
+                }
+                if (cce_specialist_select_kv_tokens(scores + jmin, tc, &bud,
+                                                    skv_idx, tc,
+                                                    &skv_n) != CCE_OK ||
+                    skv_n < 1) {
+                    fprintf(stderr, "cce_gguf: sparse KV selection failed at "
+                                    "layer %d — refusing\n", l);
+                    free(scores); free(skv_idx);
+                    cce_tensor_free(&ln1); cce_tensor_free(&q);
+                    cce_tensor_free(&k); cce_tensor_free(&v);
+                    cce_tensor_free(&attn_out); cce_tensor_free(&x);
+                    return CCE_ERR_UNSUPPORTED;
+                }
+                if (g_gguf_sparse_kv_tap)
+                    g_gguf_sparse_kv_tap(l, h, abs_t, jmin, scores + jmin, tc,
+                                         skv_idx, skv_n,
+                                         g_gguf_sparse_kv_tap_ctx);
+                float maxs = -1e30f;
+                for (int si = 0; si < skv_n; si++) {
+                    int j = jmin + skv_idx[si];
+                    if (scores[j] > maxs) maxs = scores[j];
+                }
+                float sum = 0.0f;
+                for (int si = 0; si < skv_n; si++) {
+                    int j = jmin + skv_idx[si];
+                    scores[j] = expf(scores[j] - maxs);
+                    sum += scores[j];
+                }
+                for (int si = 0; si < skv_n; si++) scores[jmin + skv_idx[si]] /= sum;
+                float *oh = attn_out.data + (size_t)t * o_in +
+                            (size_t)h * ge->v_head_dim;
+                memset(oh, 0, (size_t)ge->v_head_dim * sizeof(float));
+                for (int si = 0; si < skv_n; si++) {
+                    int j = jmin + skv_idx[si];
+                    const float *vh = (m->probe_batch && j == abs_t)
+                        ? v.data + (size_t)t * ge->v_dim +
+                              (size_t)vh_i * ge->v_head_dim
+                        : m->v_cache +
+                              (size_t)j * m->v_slot_floats + ge->v_off +
+                              (size_t)vh_i * ge->v_head_dim;
+                    for (int d2 = 0; d2 < ge->v_head_dim; d2++)
+                        oh[d2] += scores[j] * vh[d2];
+                }
+                }
             }
         }
 
@@ -1987,7 +2124,7 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
         if (apply_linear_rows(gpu, o_cas, &attn_out, &after_attn) != CCE_OK) {
             fprintf(stderr, "cce_gguf: o_proj failed at layer %d — "
                             "refusing\n", l);
-            free(scores);
+            free(scores); free(skv_idx);
             cce_tensor_free(&ln1); cce_tensor_free(&q); cce_tensor_free(&k);
             cce_tensor_free(&v); cce_tensor_free(&attn_out);
             cce_tensor_free(&after_attn); cce_tensor_free(&x);
@@ -2025,7 +2162,7 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
         if (apply_linear_rows(gpu, gate_cas, &ln2, &gate) != CCE_OK ||
             apply_linear_rows(gpu, up_cas, &ln2, &upv) != CCE_OK) {
             fprintf(stderr, "cce_gguf: gate/up failed at layer %d — refusing\n", l);
-            free(scores);
+            free(scores); free(skv_idx);
             cce_tensor_free(&ln1); cce_tensor_free(&q); cce_tensor_free(&k);
             cce_tensor_free(&v); cce_tensor_free(&after_attn);
             cce_tensor_free(&ln2); cce_tensor_free(&gate); cce_tensor_free(&upv);
@@ -2044,7 +2181,7 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
             snprintf(cap, sizeof(cap), "qwen2.blk.%d.down_proj", l); gguf_fire_capture(cap, &mid); }
         if (apply_linear_rows(gpu, down_cas, &mid, &down) != CCE_OK) {
             fprintf(stderr, "cce_gguf: down failed at layer %d — refusing\n", l);
-            free(scores);
+            free(scores); free(skv_idx);
             cce_tensor_free(&ln1); cce_tensor_free(&q); cce_tensor_free(&k);
             cce_tensor_free(&v); cce_tensor_free(&after_attn);
             cce_tensor_free(&ln2); cce_tensor_free(&gate); cce_tensor_free(&upv);
@@ -2088,7 +2225,7 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
             g_gguf_layer_tap(l, x.data, n_tokens, D, g_gguf_layer_tap_ctx);
         if (m->layer_cap > 0 && l + 1 >= m->layer_cap) break;
     }
-    free(scores);
+    free(scores); free(skv_idx);
 
     /* final norm + head */
     cce_tensor fn = {0};
@@ -2386,6 +2523,26 @@ cce_result cce_gguf_load_qwen2(cce_gguf_qwen2** out, const char* path) {
            otherwise calloc ~13 GB of cache it never touches. Opt-in env. */
         const char* e = getenv("CNET_MAX_CTX");
         if (e) { int v = atoi(e); if (v >= 8 && v < m->max_ctx) m->max_ctx = v; }
+    }
+    {   /* CNET_SPARSE_KV=<fraction>: opt-in sparse per-specialist KV routing
+           on this runner's attention path (see cce_gguf_qwen2_set_sparse_kv).
+           Unset/empty = OFF, the byte-identical default; "0" = explicit OFF.
+           A malformed value REFUSES the load — the mining oracle must never
+           forward with a silently misread budget. */
+        const char* e = getenv("CNET_SPARSE_KV");
+        if (e && e[0]) {
+            char* end = NULL;
+            double f = strtod(e, &end);
+            if (end == e || (end && *end) || !(f >= 0.0) || f > 1.0) {
+                fprintf(stderr, "cce_gguf: CNET_SPARSE_KV='%s' malformed "
+                                "(need 0 <= fraction <= 1) — refusing load\n",
+                        e);
+                cce_gguf_free(g);
+                cce_gguf_qwen2_free(m);
+                return CCE_ERR_INVALID_ARG;
+            }
+            m->sparse_kv_fraction = (float)f;
+        }
     }
     m->cur_pos = 0;
 

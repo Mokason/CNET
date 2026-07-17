@@ -154,6 +154,11 @@ static void tl_gg_kv_f32(FILE* f, const char* k, float v) { tl_gg_str(f, k); tl_
 
 #define TL_ROPE 50000.0f
 #define TL_EPS  1e-5f
+#ifndef TL_CTX
+#define TL_CTX  64  /* GGUF context_length; a test may #define TL_CTX before
+                       including this header for a longer KV window (the
+                       safetensors config.json path stays at 64) */
+#endif
 
 static void tl_write_gguf(const char* path, const tl_entry* ents, int n_ents) {
     FILE* f = fopen(path, "wb");
@@ -166,7 +171,7 @@ static void tl_write_gguf(const char* path, const tl_entry* ents, int n_ents) {
     tl_gg_kv_u32(f, "qwen2.embedding_length", TL_D);
     tl_gg_kv_u32(f, "qwen2.attention.head_count", TL_H);
     tl_gg_kv_u32(f, "qwen2.attention.head_count_kv", TL_KV);
-    tl_gg_kv_u32(f, "qwen2.context_length", 64);
+    tl_gg_kv_u32(f, "qwen2.context_length", TL_CTX);
     tl_gg_kv_u32(f, "qwen2.feed_forward_length", TL_FFN);
     tl_gg_kv_f32(f, "qwen2.rope.freq_base", TL_ROPE);
     tl_gg_kv_f32(f, "qwen2.attention.layer_norm_rms_epsilon", TL_EPS);
