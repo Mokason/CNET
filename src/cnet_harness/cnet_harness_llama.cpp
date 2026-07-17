@@ -28,6 +28,7 @@ extern "C" {
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <memory>
 #include <mutex>
 #include <stdexcept>
 #include <string>
@@ -47,6 +48,7 @@ struct BackendState {
     BackendContext load_ctx;
     llama_model *model = nullptr;
     llama_context *context = nullptr;
+    std::vector<llama_token> cached_prompt_tokens;
     bool holds_global = false;
 };
 
@@ -187,6 +189,16 @@ static std::string token_piece(const llama_vocab *vocab, llama_token tok) {
     return std::string(buffer.data(), static_cast<std::size_t>(written));
 }
 
+static std::size_t common_prompt_prefix(
+        const std::vector<llama_token> &left,
+        const std::vector<llama_token> &right) {
+    const std::size_t limit = left.size() < right.size()
+        ? left.size() : right.size();
+    std::size_t prefix = 0;
+    while (prefix < limit && left[prefix] == right[prefix]) ++prefix;
+    return prefix;
+}
+
 /* Build a sampler chain from the plugin's central profile-parameter table.
  * The backend never invents its own numbers; it consumes whatever the core
  * decided. Deterministic uses greedy; every other mode composes the same
@@ -307,8 +319,15 @@ int harness_backend_open(struct CnetHarnessSession *session) {
     llama_context_params ctx_params = llama_context_default_params();
     ctx_params.n_ctx = session->config_copy.n_ctx;
     ctx_params.n_batch = session->config_copy.n_batch;
-    ctx_params.n_ubatch = 512;
+    ctx_params.n_ubatch = session->config_copy.n_batch < 512u
+        ? session->config_copy.n_batch : 512u;
     ctx_params.n_seq_max = 1;
+    /* Keep recurrent rollback snapshots disabled intentionally. llama.cpp
+     * allocates recurrent state as (1 + n_rs_seq) rows per cell and layer, so
+     * even a small non-zero value can multiply hybrid-model memory. Pure KV
+     * models support seq_rm without snapshots; hybrid models fail seq_rm and
+     * take the correctness-preserving full-prefill fallback below. */
+    ctx_params.n_rs_seq = 0;
     ctx_params.n_threads = session->config_copy.n_threads;
     ctx_params.n_threads_batch = session->config_copy.n_threads;
     ctx_params.offload_kqv = !state->load_ctx.is_cpu;
@@ -339,6 +358,7 @@ int harness_backend_generate(struct CnetHarnessSession *session,
     auto *state = static_cast<BackendState *>(session->backend_state);
     if (!state || !state->model || !state->context) return CNET_HARNESS_ERR_STATE;
 
+    try {
     const std::string system_text = options->system ? options->system : "";
     const std::string user_text = options->user;
     const std::string formatted = apply_chat_template(
@@ -362,38 +382,69 @@ int harness_backend_generate(struct CnetHarnessSession *session,
     uint32_t cap_max_tokens = options->max_tokens < max_new
         ? options->max_tokens : max_new;
 
-    llama_memory_clear(llama_get_memory(state->context), true);
-
-    llama_sampler *sampler = build_sampler(effective, params, options->seed);
+    std::unique_ptr<llama_sampler, decltype(&llama_sampler_free)> sampler(
+        build_sampler(effective, params, options->seed), &llama_sampler_free);
     if (!sampler) return CNET_HARNESS_ERR_BACKEND;
 
+    llama_memory_t memory = llama_get_memory(state->context);
+    std::size_t reused_prompt_tokens = 0;
+    if (!state->cached_prompt_tokens.empty() && prompt_tokens.size() > 1u) {
+        const std::size_t common = common_prompt_prefix(
+            state->cached_prompt_tokens, prompt_tokens);
+        const std::size_t candidate = common < prompt_tokens.size() - 1u
+            ? common : prompt_tokens.size() - 1u;
+        if (candidate > 0u && llama_memory_seq_rm(
+                memory, 0, static_cast<llama_pos>(candidate), -1)) {
+            reused_prompt_tokens = candidate;
+        } else {
+            llama_memory_clear(memory, false);
+        }
+    } else {
+        llama_memory_clear(memory, false);
+    }
+
     const auto prompt_start = std::chrono::steady_clock::now();
-    llama_batch batch = llama_batch_get_one(
-        prompt_tokens.data(), static_cast<int32_t>(prompt_tokens.size()));
-    int decode_rc = llama_decode(state->context, batch);
+    int decode_rc = 0;
+    const std::size_t n_batch = session->config_copy.n_batch;
+    for (std::size_t offset = reused_prompt_tokens;
+         offset < prompt_tokens.size(); offset += n_batch) {
+        const std::size_t remaining = prompt_tokens.size() - offset;
+        const std::size_t chunk_size = remaining < n_batch ? remaining : n_batch;
+        llama_batch batch = llama_batch_get_one(
+            prompt_tokens.data() + offset, static_cast<int32_t>(chunk_size));
+        decode_rc = llama_decode(state->context, batch);
+        if (decode_rc != 0) break;
+    }
     const auto prompt_end = std::chrono::steady_clock::now();
     if (decode_rc != 0) {
-        llama_sampler_free(sampler);
+        state->cached_prompt_tokens.clear();
+        llama_memory_clear(memory, false);
         return CNET_HARNESS_ERR_BACKEND;
     }
 
+    llama_batch batch{};
     std::string response;
     uint32_t generated = 0;
     const auto gen_start = std::chrono::steady_clock::now();
     for (uint32_t i = 0; i < cap_max_tokens; ++i) {
-        llama_token tok = llama_sampler_sample(sampler, state->context, -1);
+        llama_token tok = llama_sampler_sample(sampler.get(), state->context, -1);
         if (llama_vocab_is_eog(vocab, tok)) break;
         response += token_piece(vocab, tok);
         generated++;
         batch = llama_batch_get_one(&tok, 1);
         decode_rc = llama_decode(state->context, batch);
         if (decode_rc != 0) {
-            llama_sampler_free(sampler);
+            state->cached_prompt_tokens.clear();
+            llama_memory_clear(memory, false);
             return CNET_HARNESS_ERR_BACKEND;
         }
     }
     const auto gen_end = std::chrono::steady_clock::now();
-    llama_sampler_free(sampler);
+    try {
+        state->cached_prompt_tokens = prompt_tokens;
+    } catch (...) {
+        state->cached_prompt_tokens.clear();
+    }
 
     char *text = static_cast<char *>(std::malloc(response.size() + 1u));
     if (!text) return CNET_HARNESS_ERR_INTERNAL;
@@ -408,6 +459,11 @@ int harness_backend_generate(struct CnetHarnessSession *session,
     generation->generation_ms = std::chrono::duration<double, std::milli>(
         gen_end - gen_start).count();
     return CNET_HARNESS_OK;
+    } catch (...) {
+        state->cached_prompt_tokens.clear();
+        llama_memory_clear(llama_get_memory(state->context), false);
+        return CNET_HARNESS_ERR_INTERNAL;
+    }
 }
 
 void harness_backend_prepare_close(struct CnetHarnessSession *session) {

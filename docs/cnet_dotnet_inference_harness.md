@@ -243,6 +243,33 @@ that reach the llama.cpp sampler.
   dim; adapters are identity-initialized.
 - The plugin does not embed a duplicate llama.cpp or duplicate CNET catalog.
 
+## Prompt memory and batching
+
+`n_ctx` and `n_batch` are independent. A valid prompt may be larger than
+`n_batch` while remaining smaller than `n_ctx`. The llama backend therefore
+prefills in ordered chunks of at most `n_batch`; it never passes the entire
+prompt to one `llama_decode` call. This prevents llama.cpp's
+`n_tokens_all <= n_batch` assertion without inflating the decode workspace.
+`n_ubatch` is capped to `min(n_batch, 512)` for the same reason.
+
+Each native session retains only the previous prompt's token IDs. Before a
+new request it finds the longest common token prefix and asks llama.cpp to
+remove sequence state from that point onward. At least the final prompt token
+is always re-decoded so current logits are valid. If the model/backend refuses
+partial sequence removal (permitted for recurrent layouts), the backend clears
+sequence metadata and safely performs a full chunked prefill. Recurrent
+rollback snapshots are intentionally disabled: llama.cpp stores
+`(1 + n_rs_seq)` recurrent rows per cell and layer, so enabling a useful
+rollback window can multiply hybrid-model memory. Pure KV models still reuse
+prefixes; hybrid recurrent models take the bounded-memory full-prefill
+fallback. Any decode failure invalidates the token cache. This is a performance
+cache, not authoritative conversation memory, and it allocates no second KV
+context.
+
+The real Bonsai regression verifies both sides of this contract: the cached
+second prefill must be materially faster, and its deterministic token output
+must exactly match a fresh-session full prefill.
+
 ## Native tests
 
 `tests/test_cnet_harness_contract.c` links `cnet_harness_core.c` into a
@@ -319,7 +346,19 @@ never silently succeeds.
 
 `dotnet/CceHost/IChatClient.cs` — small chat-client abstraction implemented by
 `OllamaClient` (legacy, `--ollama`) and `CnetHarnessChatClient` (default when
-configured, selected by `--agent`).
+configured, selected by `--agent`). The native chat client exposes explicit
+sampling and seed constructor options while preserving `AUTO` / `424242` as
+backward-compatible defaults.
+
+`dotnet/CceHost/CnetHarnessConversation.cs` is the authoritative managed
+short-term memory owner. It serializes a conversation, preserves the system
+prompt, retains only the newest complete turns, builds bounded request views
+without mutating committed history, and commits eviction/addition only after a
+successful model call. It enforces both turn and character budgets. Oversized
+model output is returned intact to the caller but clipped in retained history.
+Conversation disposal clears retained text and disposes the underlying client
+only when ownership was explicitly requested. `Agent` uses this owner instead
+of an ad hoc growable message list.
 
 ## Host mode selection
 
@@ -351,6 +390,16 @@ configured, selected by `--agent`).
   runs `.NET → plugin → CNET model manager → AICIMO → llama.cpp` under a
   300-second hard timeout with all accelerator visibility disabled. It starts
   no server and writes evidence to `logs/cnet_harness_real_smoke.log`.
+- `make LLAMA_CPP_BUILD=/home/marble/llama.cpp/build-cpu \
+  CNET_HARNESS_MODEL=/absolute/path/model.gguf \
+  cnet_harness_memory_acceptance` — runs four real-model gates with
+  `n_ctx=512`, `n_batch=64`: a prompt above 64 tokens completes without an
+  assertion; common-prefix reuse is output-equivalent to a fresh context; and
+  a bounded managed conversation recalls a random nonce while an isolated
+  conversation does not; then a 50-generation soak keeps peak post-warmup
+  private growth below 16 MiB and peak RSS growth below 32 MiB. Evidence is
+  written to `logs/cnet_harness_{batch_regression,prefix_reuse,
+  continuous_memory,memory_soak}.log`.
 
 The real-GGUF target is intentionally outside `unified` / `release_integrity`:
 portable release acceptance must not depend on a private model file or an

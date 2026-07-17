@@ -46,19 +46,23 @@ Think step by step, use tools, then give a final answer. Only ONE JSON object pe
 
     public async Task RunAsync(string task, int maxSteps = 8)
     {
-        var msgs = new List<(string, string)> { ("system", SystemPrompt), ("user", "TASK: " + task) };
+        using var conversation = new CnetHarnessConversation(
+            _llm, SystemPrompt,
+            maxRetainedTurns: Math.Clamp(maxSteps, 1, 8),
+            maxRetainedCharacters: 32768,
+            ownsClient: false);
+        string nextUser = "TASK: " + task;
         Console.WriteLine($"TASK: {task}\n");
 
         for (int step = 0; step < maxSteps; step++)
         {
-            string reply = await _llm.ChatAsync(msgs.ToArray());
+            string reply = await conversation.SendAsync(nextUser);
             if (!TryExtractJson(reply, out var json))
             {
                 Console.WriteLine($"[step {step}] LLM (unparseable): {reply.Trim()}");
-                msgs.Add(("user", "Your reply was not a single JSON object. Reply with one JSON object only."));
+                nextUser = "Your reply was not a single JSON object. Reply with one JSON object only.";
                 continue;
             }
-            msgs.Add(("assistant", json));
 
             using var doc = JsonDocument.Parse(json);
             var root = doc.RootElement;
@@ -82,7 +86,7 @@ Think step by step, use tools, then give a final answer. Only ONE JSON object pe
 
             string obs = Execute(tool, args);
             Console.WriteLine($"          observation: {obs}\n");
-            msgs.Add(("user", "OBSERVATION: " + obs));
+            nextUser = "OBSERVATION: " + obs;
         }
         Console.WriteLine("\n=== stopped: max steps reached ===");
     }

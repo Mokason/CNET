@@ -2397,10 +2397,60 @@ cnet_harness_real_smoke: cnet_harness_plugin
 	timeout --signal=TERM --kill-after=15s $(CNET_HARNESS_SMOKE_TIMEOUT)s env \
 		CNET_HARNESS_LIBRARY="$(CURDIR)/$(BIN_DIR)/libcnet_harness.so" \
 		ROCR_VISIBLE_DEVICES='' HIP_VISIBLE_DEVICES='' CUDA_VISIBLE_DEVICES='' \
-		$(DOTNET) dotnet/CnetHarnessSmoke/bin/Release/net10.0/CnetHarnessSmoke.dll \
+		$(DOTNET) run --no-build -c Release \
+		--project dotnet/CnetHarnessSmoke/CnetHarnessSmoke.csproj -- \
 		"$(CNET_HARNESS_MODEL)" > logs/cnet_harness_real_smoke.log 2>&1
 	@grep -q "CNET_HARNESS_REAL_SMOKE_PASS" logs/cnet_harness_real_smoke.log
 	@echo "CNET_HARNESS_REAL_SMOKE_PASS"
+
+# Real-model memory/continuity acceptance. Unlike the basic smoke, this keeps
+# n_batch deliberately smaller than n_ctx and proves: long-prompt chunking,
+# output-equivalent common-prefix KV reuse, and bounded post-warmup RSS/private
+# growth across repeated generations. Requires a caller-owned private GGUF.
+CNET_HARNESS_MEMORY_TIMEOUT ?= 600
+
+.PHONY: cnet_harness_memory_acceptance
+cnet_harness_memory_acceptance: cnet_harness_plugin
+	$(call dotnet_guard)
+	@test -n "$(CNET_HARNESS_MODEL)" || { \
+		echo "CNET_HARNESS_MODEL=/absolute/path/model.gguf is required" >&2; exit 2; \
+	}
+	@mkdir -p logs
+	$(DOTNET) build dotnet/CnetHarnessSmoke/CnetHarnessSmoke.csproj -c Release --nologo \
+		> logs/cnet_harness_memory_build.log 2>&1
+	timeout --signal=TERM --kill-after=15s $(CNET_HARNESS_MEMORY_TIMEOUT)s env \
+		CNET_HARNESS_LIBRARY="$(CURDIR)/$(BIN_DIR)/libcnet_harness.so" \
+		ROCR_VISIBLE_DEVICES='' HIP_VISIBLE_DEVICES='' CUDA_VISIBLE_DEVICES='' \
+		$(DOTNET) run --no-build -c Release \
+		--project dotnet/CnetHarnessSmoke/CnetHarnessSmoke.csproj -- \
+		"$(CNET_HARNESS_MODEL)" --batch-regression \
+		> logs/cnet_harness_batch_regression.log 2>&1
+	@grep -q "CNET_HARNESS_BATCH_REGRESSION_PASS" logs/cnet_harness_batch_regression.log
+	timeout --signal=TERM --kill-after=15s $(CNET_HARNESS_MEMORY_TIMEOUT)s env \
+		CNET_HARNESS_LIBRARY="$(CURDIR)/$(BIN_DIR)/libcnet_harness.so" \
+		ROCR_VISIBLE_DEVICES='' HIP_VISIBLE_DEVICES='' CUDA_VISIBLE_DEVICES='' \
+		$(DOTNET) run --no-build -c Release \
+		--project dotnet/CnetHarnessSmoke/CnetHarnessSmoke.csproj -- \
+		"$(CNET_HARNESS_MODEL)" --prefix-reuse-regression \
+		> logs/cnet_harness_prefix_reuse.log 2>&1
+	@grep -q "CNET_HARNESS_PREFIX_REUSE_PASS" logs/cnet_harness_prefix_reuse.log
+	timeout --signal=TERM --kill-after=15s $(CNET_HARNESS_MEMORY_TIMEOUT)s env \
+		CNET_HARNESS_LIBRARY="$(CURDIR)/$(BIN_DIR)/libcnet_harness.so" \
+		ROCR_VISIBLE_DEVICES='' HIP_VISIBLE_DEVICES='' CUDA_VISIBLE_DEVICES='' \
+		$(DOTNET) run --no-build -c Release \
+		--project dotnet/CnetHarnessSmoke/CnetHarnessSmoke.csproj -- \
+		"$(CNET_HARNESS_MODEL)" --continuous-memory \
+		> logs/cnet_harness_continuous_memory.log 2>&1
+	@grep -q "CNET_HARNESS_CONTINUOUS_MEMORY_PASS" logs/cnet_harness_continuous_memory.log
+	timeout --signal=TERM --kill-after=15s $(CNET_HARNESS_MEMORY_TIMEOUT)s env \
+		CNET_HARNESS_LIBRARY="$(CURDIR)/$(BIN_DIR)/libcnet_harness.so" \
+		ROCR_VISIBLE_DEVICES='' HIP_VISIBLE_DEVICES='' CUDA_VISIBLE_DEVICES='' \
+		$(DOTNET) run --no-build -c Release \
+		--project dotnet/CnetHarnessSmoke/CnetHarnessSmoke.csproj -- \
+		"$(CNET_HARNESS_MODEL)" --memory-soak \
+		> logs/cnet_harness_memory_soak.log 2>&1
+	@grep -q "CNET_HARNESS_MEMORY_SOAK_PASS" logs/cnet_harness_memory_soak.log
+	@echo "CNET_HARNESS_MEMORY_ACCEPTANCE_PASS"
 
 # Alternate-paths regression gate: proves AICIMO is in the core CCE aggregate
 # with its canonical API (cce_aicimo_*), old compat names are NOT global symbols,

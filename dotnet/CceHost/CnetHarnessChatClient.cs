@@ -18,9 +18,15 @@ public sealed class CnetHarnessChatClient : IChatClient, IDisposable
     private readonly string _role;
     private readonly uint _maxTokens;
     private readonly bool _ownsSession;
+    private readonly CnetHarnessSamplingMode _sampling;
+    private readonly uint _seed;
 
-    public CnetHarnessChatClient(CnetHarnessSession session, string role,
-                                  uint maxTokens = 512, bool ownsSession = true)
+    public CnetHarnessChatClient(CnetHarnessSession session,
+                                 string role = "default",
+                                 uint maxTokens = 512,
+                                 bool ownsSession = true,
+                                 CnetHarnessSamplingMode sampling = CnetHarnessSamplingMode.Auto,
+                                 uint seed = 424242)
     {
         ArgumentNullException.ThrowIfNull(session);
         ArgumentException.ThrowIfNullOrEmpty(role);
@@ -28,6 +34,8 @@ public sealed class CnetHarnessChatClient : IChatClient, IDisposable
         _role = role;
         _maxTokens = maxTokens;
         _ownsSession = ownsSession;
+        _sampling = sampling;
+        _seed = seed;
     }
 
     public Task<string> ChatAsync((string Role, string Content)[] messages)
@@ -53,7 +61,8 @@ public sealed class CnetHarnessChatClient : IChatClient, IDisposable
             User = userBuf.ToString(),
             Role = _role,
             MaxTokens = _maxTokens,
-            Sampling = CnetHarnessSamplingMode.Auto,
+            Seed = _seed,
+            Sampling = _sampling,
         };
         var result = _session.Generate(options);
         return Task.FromResult(result.Text);

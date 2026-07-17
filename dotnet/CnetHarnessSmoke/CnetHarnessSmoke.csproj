@@ -7,5 +7,6 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../Cce/Cce.csproj" />
+    <ProjectReference Include="../CceHost/CceHost.csproj" />
   </ItemGroup>
 </Project>

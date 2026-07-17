@@ -438,7 +438,8 @@ public sealed class CnetHarnessTests
         fake.GenerationText = "assistant reply";
 
         using var chat = new CnetHarnessChatClient(s, role: "planner",
-                                                    maxTokens: 8, ownsSession: false);
+            maxTokens: 8, ownsSession: false,
+            sampling: CnetHarnessSamplingMode.Deterministic, seed: 77);
         IChatClient client = chat;
         var reply = await client.ChatAsync(new (string, string)[]
         {
@@ -454,6 +455,151 @@ public sealed class CnetHarnessTests
         Assert.Contains("assistant: hi back", fake.LastUser);
         Assert.Contains("user: another", fake.LastUser);
         Assert.Equal("planner", fake.LastRole);
+        Assert.Equal(CnetHarnessSamplingMode.Deterministic, fake.LastSampling);
+        Assert.Equal((uint)77, fake.LastSeed);
+    }
+
+    [Fact]
+    public void CnetHarnessConversation_PublicBoundedMemoryContractExists()
+    {
+        Type? conversation = typeof(CnetHarnessChatClient).Assembly.GetType(
+            "CNET.CceHost.CnetHarnessConversation");
+
+        Assert.NotNull(conversation);
+        Assert.NotNull(conversation!.GetConstructor(new[]
+        {
+            typeof(IChatClient), typeof(string), typeof(int), typeof(int), typeof(bool),
+        }));
+        Assert.NotNull(conversation.GetMethod("SendAsync", new[] { typeof(string) }));
+        Assert.NotNull(conversation.GetMethod("Snapshot", Type.EmptyTypes));
+        Assert.NotNull(conversation.GetProperty("RetainedTurnCount"));
+        Assert.NotNull(conversation.GetProperty("RetainedCharacterCount"));
+
+        Type[] deterministicClientSignature =
+        {
+            typeof(CnetHarnessSession), typeof(string), typeof(uint),
+            typeof(bool), typeof(CnetHarnessSamplingMode), typeof(uint),
+        };
+        Assert.NotNull(typeof(CnetHarnessChatClient).GetConstructor(
+            deterministicClientSignature));
+    }
+
+    [Fact]
+    public async System.Threading.Tasks.Task CnetHarnessConversation_RetainsOnlyNewestCompleteTurns()
+    {
+        var fake = new RecordingChatClient("a1", "a2", "a3");
+        using var conversation = new CnetHarnessConversation(
+            fake, "system", maxRetainedTurns: 2,
+            maxRetainedCharacters: 1024, ownsClient: false);
+
+        Assert.Equal("a1", await conversation.SendAsync("u1"));
+        Assert.Equal("a2", await conversation.SendAsync("u2"));
+        Assert.Equal("a3", await conversation.SendAsync("u3"));
+
+        Assert.Equal(2, conversation.RetainedTurnCount);
+        Assert.Equal(new (string, string)[]
+        {
+            ("system", "system"),
+            ("user", "u2"),
+            ("assistant", "a2"),
+            ("user", "u3"),
+            ("assistant", "a3"),
+        }, conversation.Snapshot());
+        Assert.DoesNotContain(fake.Requests[2], m => m.Content == "u1");
+        Assert.Contains(fake.Requests[2], m => m.Content == "u2");
+        Assert.Contains(fake.Requests[2], m => m.Content == "u3");
+        Assert.Equal(14, conversation.RetainedCharacterCount);
+    }
+
+    [Fact]
+    public async System.Threading.Tasks.Task CnetHarnessConversation_CharacterBudgetEvictsOldestWholeTurn()
+    {
+        var fake = new RecordingChatClient("aaaa", "bbbb", "cccc");
+        using var conversation = new CnetHarnessConversation(
+            fake, "s", maxRetainedTurns: 4,
+            maxRetainedCharacters: 17, ownsClient: false);
+
+        await conversation.SendAsync("1111");
+        await conversation.SendAsync("2222");
+        await conversation.SendAsync("3333");
+
+        Assert.Equal(2, conversation.RetainedTurnCount);
+        Assert.Equal(17, conversation.RetainedCharacterCount);
+        Assert.DoesNotContain(conversation.Snapshot(), m => m.Content == "1111");
+        Assert.DoesNotContain(conversation.Snapshot(), m => m.Content == "aaaa");
+    }
+
+    [Fact]
+    public async System.Threading.Tasks.Task CnetHarnessConversation_OversizedReplyIsReturnedButClippedInHistory()
+    {
+        const string fullReply = "abcdefghijklmnopqrst";
+        var fake = new RecordingChatClient(fullReply);
+        using var conversation = new CnetHarnessConversation(
+            fake, "s", maxRetainedTurns: 2,
+            maxRetainedCharacters: 10, ownsClient: false);
+
+        Assert.Equal(fullReply, await conversation.SendAsync("1234"));
+
+        Assert.Equal(new (string, string)[]
+        {
+            ("system", "s"),
+            ("user", "1234"),
+            ("assistant", "abcde"),
+        }, conversation.Snapshot());
+        Assert.Equal(1, conversation.RetainedTurnCount);
+        Assert.Equal(10, conversation.RetainedCharacterCount);
+    }
+
+    [Fact]
+    public async System.Threading.Tasks.Task CnetHarnessConversation_DisposeClearsHistoryAndOwnedClientExactlyOnce()
+    {
+        var fake = new RecordingChatClient("answer");
+        var conversation = new CnetHarnessConversation(
+            fake, "system", maxRetainedTurns: 2,
+            maxRetainedCharacters: 128, ownsClient: true);
+        await conversation.SendAsync("question");
+
+        conversation.Dispose();
+        conversation.Dispose();
+
+        Assert.Equal(0, conversation.RetainedTurnCount);
+        Assert.Equal(0, conversation.RetainedCharacterCount);
+        Assert.Equal(1, fake.DisposeCalls);
+        await Assert.ThrowsAsync<ObjectDisposedException>(() =>
+            conversation.SendAsync("after dispose"));
+    }
+
+    [Fact]
+    public async System.Threading.Tasks.Task CnetHarnessConversation_FailedSendPreservesCommittedHistory()
+    {
+        var fake = new FailSecondChatClient();
+        using var conversation = new CnetHarnessConversation(
+            fake, "system", maxRetainedTurns: 1,
+            maxRetainedCharacters: 128);
+        Assert.Equal("a1", await conversation.SendAsync("u1"));
+        var before = conversation.Snapshot();
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            conversation.SendAsync("u2"));
+
+        Assert.Equal(before, conversation.Snapshot());
+        Assert.Equal(1, conversation.RetainedTurnCount);
+    }
+
+    [Fact]
+    public void Generate_ManyCalls_FreeEveryNativeGeneration()
+    {
+        var fake = new FakeNative { OpenReturn = 0, GenerationText = "ok" };
+        using var session = CnetHarnessSession.Open(MakeConfig(), fake);
+        var options = new CnetHarnessGenerateOptions
+        {
+            User = "bounded", Role = "memory", MaxTokens = 4,
+        };
+
+        for (int i = 0; i < 1000; ++i)
+            _ = session.Generate(options);
+
+        Assert.Equal(1000, fake.GenerationFreeCalls);
     }
 
     // ---- host environment parsing ----
@@ -579,7 +725,45 @@ public sealed class CnetHarnessTests
         Assert.All(candidates, c => Assert.EndsWith("libcnet_harness.so", c));
     }
 
-    // ---- fake native invoker ----
+    // ---- fake chat/native invokers ----
+
+    private sealed class RecordingChatClient : IChatClient, IDisposable
+    {
+        private readonly Queue<string> _replies;
+
+        public RecordingChatClient(params string[] replies)
+        {
+            _replies = new Queue<string>(replies);
+        }
+
+        public List<(string Role, string Content)[]> Requests { get; } = new();
+        public int DisposeCalls { get; private set; }
+
+        public System.Threading.Tasks.Task<string> ChatAsync(
+            (string Role, string Content)[] messages)
+        {
+            Requests.Add(((string Role, string Content)[])messages.Clone());
+            return System.Threading.Tasks.Task.FromResult(_replies.Dequeue());
+        }
+
+        public void Dispose() => DisposeCalls++;
+    }
+
+    private sealed class FailSecondChatClient : IChatClient
+    {
+        private int _calls;
+
+        public System.Threading.Tasks.Task<string> ChatAsync(
+            (string Role, string Content)[] messages)
+        {
+            _ = messages;
+            _calls++;
+            return _calls == 1
+                ? System.Threading.Tasks.Task.FromResult("a1")
+                : System.Threading.Tasks.Task.FromException<string>(
+                    new InvalidOperationException("injected failure"));
+        }
+    }
 
     private sealed class FakeNative : ICnetHarnessNative
     {
@@ -598,6 +782,8 @@ public sealed class CnetHarnessTests
         public string LastSystem = "";
         public string LastUser = "";
         public string LastRole = "";
+        public CnetHarnessSamplingMode LastSampling;
+        public uint LastSeed;
         public ManualResetEventSlim? GenerateEntered;
         public ManualResetEventSlim? GenerateRelease;
         public int MaxConcurrentGenerations;
@@ -643,6 +829,8 @@ public sealed class CnetHarnessTests
                     : Marshal.PtrToStringUTF8(options.User) ?? "";
                 LastSystem = options.System == IntPtr.Zero ? ""
                     : Marshal.PtrToStringUTF8(options.System) ?? "";
+                LastSampling = options.Sampling;
+                LastSeed = options.Seed;
 
                 if (GenerateReturn != 0)
                 {
