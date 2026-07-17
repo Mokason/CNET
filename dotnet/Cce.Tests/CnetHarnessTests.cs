@@ -457,6 +457,12 @@ public sealed class CnetHarnessTests
         Assert.Equal("planner", fake.LastRole);
         Assert.Equal(CnetHarnessSamplingMode.Deterministic, fake.LastSampling);
         Assert.Equal((uint)77, fake.LastSeed);
+
+        await ((IPrefillChatClient)chat).PrefillAsync(
+            new[] { ("system", "sys-instr"), ("user", "draft") },
+            CancellationToken.None);
+        Assert.Equal(1u, fake.LastMaxTokens);
+        Assert.Equal(1, chat.PrefillCount);
     }
 
     [Fact]
@@ -548,6 +554,23 @@ public sealed class CnetHarnessTests
         }, conversation.Snapshot());
         Assert.Equal(1, conversation.RetainedTurnCount);
         Assert.Equal(10, conversation.RetainedCharacterCount);
+    }
+
+    [Fact]
+    public async System.Threading.Tasks.Task CnetHarnessConversation_BudgetErrorNamesTheOversizedInput()
+    {
+        var fake = new RecordingChatClient("unused");
+        using var conversation = new CnetHarnessConversation(
+            fake, "s", maxRetainedTurns: 2,
+            maxRetainedCharacters: 64, ownsClient: false);
+
+        ArgumentException userError = await Assert.ThrowsAsync<ArgumentException>(
+            () => conversation.SendAsync(new string('u', 64)));
+        Assert.Equal("user", userError.ParamName);
+
+        ArgumentException contextError = await Assert.ThrowsAsync<ArgumentException>(
+            () => conversation.SendAsync("u", new string('c', 32)));
+        Assert.Equal("transientContext", contextError.ParamName);
     }
 
     [Fact]
@@ -784,6 +807,7 @@ public sealed class CnetHarnessTests
         public string LastRole = "";
         public CnetHarnessSamplingMode LastSampling;
         public uint LastSeed;
+        public uint LastMaxTokens;
         public ManualResetEventSlim? GenerateEntered;
         public ManualResetEventSlim? GenerateRelease;
         public int MaxConcurrentGenerations;
@@ -831,6 +855,7 @@ public sealed class CnetHarnessTests
                     : Marshal.PtrToStringUTF8(options.System) ?? "";
                 LastSampling = options.Sampling;
                 LastSeed = options.Seed;
+                LastMaxTokens = options.MaxTokens;
 
                 if (GenerateReturn != 0)
                 {

@@ -1,5 +1,6 @@
 using System;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using CNET.Cce.CnetHarness;
 
@@ -10,9 +11,11 @@ namespace CNET.CceHost;
 /// role/content transcript into a single system+user pair (the first system
 /// message becomes System; the concatenated user/assistant turns become
 /// User), because the current harness ABI is synchronous non-streaming and
-/// takes exactly one system + user prompt per generate call.
+/// takes exactly one system + user prompt per generate call. Native session
+/// access is serialized, but callers that need transactional transcript ordering
+/// must use <see cref="CnetHarnessConversation"/>.
 /// </summary>
-public sealed class CnetHarnessChatClient : IChatClient, IDisposable
+public sealed class CnetHarnessChatClient : IChatClient, IPrefillChatClient, IDisposable
 {
     private readonly CnetHarnessSession _session;
     private readonly string _role;
@@ -20,6 +23,9 @@ public sealed class CnetHarnessChatClient : IChatClient, IDisposable
     private readonly bool _ownsSession;
     private readonly CnetHarnessSamplingMode _sampling;
     private readonly uint _seed;
+    private int _prefillCount;
+
+    public int PrefillCount => Volatile.Read(ref _prefillCount);
 
     public CnetHarnessChatClient(CnetHarnessSession session,
                                  string role = "default",
@@ -39,6 +45,22 @@ public sealed class CnetHarnessChatClient : IChatClient, IDisposable
     }
 
     public Task<string> ChatAsync((string Role, string Content)[] messages)
+        => Task.FromResult(Generate(messages, _maxTokens));
+
+    public Task PrefillAsync(
+        (string Role, string Content)[] messages,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        _ = Generate(messages, maxTokens: 1);
+        cancellationToken.ThrowIfCancellationRequested();
+        Interlocked.Increment(ref _prefillCount);
+        return Task.CompletedTask;
+    }
+
+    private string Generate(
+        (string Role, string Content)[] messages,
+        uint maxTokens)
     {
         StringBuilder systemBuf = new();
         StringBuilder userBuf = new();
@@ -60,12 +82,12 @@ public sealed class CnetHarnessChatClient : IChatClient, IDisposable
             System = systemBuf.Length > 0 ? systemBuf.ToString() : null,
             User = userBuf.ToString(),
             Role = _role,
-            MaxTokens = _maxTokens,
+            MaxTokens = maxTokens,
             Seed = _seed,
             Sampling = _sampling,
         };
         var result = _session.Generate(options);
-        return Task.FromResult(result.Text);
+        return result.Text;
     }
 
     public void Dispose()

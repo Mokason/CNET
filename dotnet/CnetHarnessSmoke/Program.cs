@@ -8,17 +8,18 @@ const string BatchMode = "--batch-regression";
 const string PrefixMode = "--prefix-reuse-regression";
 const string SoakMode = "--memory-soak";
 const string ContinuousMode = "--continuous-memory";
+const string AsyncContextMode = "--async-context";
 
 if (args.Length is < 1 or > 2 || !File.Exists(args[0]))
 {
     Console.Error.WriteLine(
-        $"usage: CnetHarnessSmoke /absolute/path/to/model.gguf [{BatchMode}|{PrefixMode}|{SoakMode}|{ContinuousMode}]");
+        $"usage: CnetHarnessSmoke /absolute/path/to/model.gguf [{BatchMode}|{PrefixMode}|{SoakMode}|{ContinuousMode}|{AsyncContextMode}]");
     return 2;
 }
 
 string? mode = args.Length == 2 ? args[1] : null;
 if (mode is not null and not BatchMode and not PrefixMode
-    and not SoakMode and not ContinuousMode)
+    and not SoakMode and not ContinuousMode and not AsyncContextMode)
 {
     Console.Error.WriteLine($"unknown mode: {mode}");
     return 2;
@@ -66,6 +67,115 @@ static string Visible(string text)
         .Replace("<think>", string.Empty, StringComparison.OrdinalIgnoreCase)
         .Replace("</think>", string.Empty, StringComparison.OrdinalIgnoreCase)
         .Trim();
+}
+
+if (mode == AsyncContextMode)
+{
+    string prompt = string.Join(' ', Enumerable.Repeat("memory", 120))
+        + " Explain why bounded context improves coherent offline inference. /no_think";
+    const uint acceptanceTokens = 64;
+    using var chat = new CnetHarnessChatClient(
+        session, role: "analytical", maxTokens: acceptanceTokens, ownsSession: false,
+        sampling: CnetHarnessSamplingMode.Deterministic, seed: 424242);
+    using var conversation = new CnetHarnessConversation(
+        chat, "Answer concisely.", maxRetainedTurns: 3,
+        maxRetainedCharacters: 4096, ownsClient: false);
+    await using var pipeline = new AsyncContextPipeline(
+        conversation,
+        new FinalDraftContextSource(
+            prompt,
+            "Earlier discussion: bounded memory preserves relevant complete turns."),
+        new FinalDraftContextSource(
+            prompt,
+            "connections: bounded -> memory, context -> coherence"),
+        new AsyncContextPipelineOptions
+        {
+            TypingDebounce = TimeSpan.Zero,
+            MaxHistoryCharacters = 256,
+            MaxConnectionCharacters = 128,
+            MaxCombinedCharacters = 512,
+        });
+
+    var superseded = new List<Task<AsyncContextSnapshot>>();
+    int step = prompt.Length / 4;
+    for (int length = step; length < prompt.Length; length += step)
+        superseded.Add(pipeline.UpdateDraftAsync(prompt[..length]));
+    Task<AsyncContextSnapshot> preparedTask = pipeline.UpdateDraftAsync(prompt);
+    int cancelledDrafts = 0;
+    foreach (Task<AsyncContextSnapshot> stale in superseded)
+    {
+        try { _ = await stale; }
+        catch (OperationCanceledException) { cancelledDrafts++; }
+    }
+    AsyncContextSnapshot prepared = await preparedTask;
+
+    var warmedTimer = Stopwatch.StartNew();
+    string warmed = await pipeline.SendAsync(prompt);
+    warmedTimer.Stop();
+    int productionPrefillCount = chat.PrefillCount;
+
+    // Keep acceptance resource-honest: release the production context before
+    // opening the independent full-prefill baseline context.
+    await pipeline.DisposeAsync();
+    conversation.Dispose();
+    chat.Dispose();
+    session.Dispose();
+
+    using var freshSession = CnetHarnessSession.Open(config);
+    using var freshChat = new CnetHarnessChatClient(
+        freshSession, role: "analytical", maxTokens: acceptanceTokens, ownsSession: false,
+        sampling: CnetHarnessSamplingMode.Deterministic, seed: 424242);
+    using var freshConversation = new CnetHarnessConversation(
+        freshChat, "Answer concisely.", maxRetainedTurns: 3,
+        maxRetainedCharacters: 4096, ownsClient: false);
+    await ((IPrefillChatClient)freshChat).PrefillAsync(
+        new[]
+        {
+            ("system", "Unrelated graph warmup."),
+            ("user", "Return one token. /no_think"),
+        },
+        CancellationToken.None);
+    var freshTimer = Stopwatch.StartNew();
+    string fresh = await freshConversation.SendAsync(
+        prompt, prepared.CombinedContext, CancellationToken.None);
+    freshTimer.Stop();
+
+    double latencyRatio = warmedTimer.Elapsed.TotalMilliseconds
+        / freshTimer.Elapsed.TotalMilliseconds;
+    bool outputEquivalent = warmed == fresh;
+    bool pass = prepared.PrefillCompleted
+        && productionPrefillCount == 1
+        && cancelledDrafts == superseded.Count
+        && outputEquivalent
+        && latencyRatio < 0.85;
+    var evidence = new
+    {
+        status = pass
+            ? "CNET_HARNESS_ASYNC_CONTEXT_PASS"
+            : "CNET_HARNESS_ASYNC_CONTEXT_FAIL",
+        cancelledDrafts,
+        submittedDrafts = superseded.Count + 1,
+        productionPrefillCount,
+        maxConcurrentModelSessions = 1,
+        contextTokens = config.ContextTokens,
+        generatedTokenLimit = acceptanceTokens,
+        measurement = "generate-only warm-prefix versus full-prefill; shared hot OS page cache",
+        prepared.PrefillCompleted,
+        combinedContextCharacters = prepared.CombinedContext.Length,
+        warmedMs = warmedTimer.Elapsed.TotalMilliseconds,
+        freshMs = freshTimer.Elapsed.TotalMilliseconds,
+        latencyRatio,
+        outputEquivalent,
+        warmed,
+        fresh,
+    };
+    if (!pass)
+    {
+        Console.Error.WriteLine(JsonSerializer.Serialize(evidence));
+        return 1;
+    }
+    Console.WriteLine(JsonSerializer.Serialize(evidence));
+    return 0;
 }
 
 if (mode == ContinuousMode)
@@ -276,3 +386,20 @@ Console.WriteLine(JsonSerializer.Serialize(new
     result.GenerationMs,
 }));
 return 0;
+
+file sealed class FinalDraftContextSource(string finalDraft, string value)
+    : IAsyncContextSource
+{
+    public async ValueTask<string> CollectAsync(
+        string draft,
+        int maxCharacters,
+        CancellationToken cancellationToken)
+    {
+        if (!string.Equals(draft, finalDraft, StringComparison.Ordinal))
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
+        return value.Length <= maxCharacters
+            ? value
+            : value[..maxCharacters];
+    }
+}

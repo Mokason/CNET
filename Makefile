@@ -2376,7 +2376,7 @@ dotnet_harness_test:
 	$(call dotnet_guard)
 	@mkdir -p logs
 	$(DOTNET) test dotnet/Cce.Tests/Cce.Tests.csproj -c Release --nologo \
-		--filter "FullyQualifiedName~CnetHarnessTests" \
+		--filter "FullyQualifiedName~CnetHarnessTests|FullyQualifiedName~AsyncContextPipelineTests" \
 		2>&1 | tee logs/dotnet_harness_test.log
 	@grep -Eq "Passed:[[:space:]]*[1-9][0-9]*" logs/dotnet_harness_test.log
 
@@ -2409,8 +2409,29 @@ cnet_harness_real_smoke: cnet_harness_plugin
 # growth across repeated generations. Requires a caller-owned private GGUF.
 CNET_HARNESS_MEMORY_TIMEOUT ?= 600
 
+.PHONY: cnet_harness_async_context_acceptance
+cnet_harness_async_context_acceptance: cnet_harness_plugin
+	$(call dotnet_guard)
+	@test -n "$(CNET_HARNESS_MODEL)" || { \
+		echo "CNET_HARNESS_MODEL=/absolute/path/model.gguf is required" >&2; exit 2; \
+	}
+	@mkdir -p logs
+	$(DOTNET) build dotnet/CnetHarnessSmoke/CnetHarnessSmoke.csproj -c Release --nologo \
+		> logs/cnet_harness_async_context_build.log 2>&1 || { \
+		cat logs/cnet_harness_async_context_build.log >&2; exit 1; \
+	}
+	timeout --signal=TERM --kill-after=15s $(CNET_HARNESS_MEMORY_TIMEOUT)s env \
+		CNET_HARNESS_LIBRARY="$(CURDIR)/$(BIN_DIR)/libcnet_harness.so" \
+		ROCR_VISIBLE_DEVICES='' HIP_VISIBLE_DEVICES='' CUDA_VISIBLE_DEVICES='' \
+		$(DOTNET) run --no-build -c Release \
+		--project dotnet/CnetHarnessSmoke/CnetHarnessSmoke.csproj -- \
+		"$(CNET_HARNESS_MODEL)" --async-context \
+		> logs/cnet_harness_async_context.log 2>&1
+	@grep -q '^{"status":"CNET_HARNESS_ASYNC_CONTEXT_PASS"' logs/cnet_harness_async_context.log
+	@echo "CNET_HARNESS_ASYNC_CONTEXT_PASS"
+
 .PHONY: cnet_harness_memory_acceptance
-cnet_harness_memory_acceptance: cnet_harness_plugin
+cnet_harness_memory_acceptance: cnet_harness_plugin cnet_harness_async_context_acceptance
 	$(call dotnet_guard)
 	@test -n "$(CNET_HARNESS_MODEL)" || { \
 		echo "CNET_HARNESS_MODEL=/absolute/path/model.gguf is required" >&2; exit 2; \
