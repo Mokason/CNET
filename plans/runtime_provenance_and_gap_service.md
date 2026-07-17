@@ -2,7 +2,7 @@
 
 > **For Hermes:** Use subagent-driven-development skill to implement this plan task-by-task.
 
-**Goal:** Close two live seams in CNET's self-improvement loop: make the local gap-lane service fail safely when its ignored daemon artifact is absent, and project CNB v5 linked-runtime provenance through SoulHost, .NET, and MCP.
+**Goal:** Close two live seams in CNET's self-improvement loop: make the local gap-lane service fail safely when its ignored daemon artifact is absent, and project complete CNB artifact/runtime provenance through SoulHost, .NET, and MCP.
 
 **Architecture:** Preserve existing authorities. The systemd unit remains a local deployment descriptor and never starts a model as part of a build; a condition turns an absent executable into a clean skip, while a preparation target only builds and validates. CNB remains provenance authority; add a new scalar SoulHost accessor rather than changing the existing C ABI signature, then expose the value unchanged through the managed descriptor and MCP JSON.
 
@@ -54,9 +54,9 @@ Commit only the four owned files.
 
 ---
 
-### Task 2: Linked-runtime provenance projection tracer
+### Task 2: Complete artifact/runtime provenance projection tracer
 
-**Objective:** Project `CnetOracleIdentity.runtime_libs_digest` from authoritative CNB descriptors through native SoulHost, managed `OracleDescriptor`, and `cnet_list_oracles` JSON while preserving the old C ABI.
+**Objective:** Project `CnetOracleIdentity.runtime_libs_digest` and the existing native `artifact_sha256` from authoritative CNB descriptors through managed `OracleDescriptor` and `cnet_list_oracles` JSON while preserving the old C ABI.
 
 **Files:**
 - Modify: `include/soul_host.h`
@@ -77,7 +77,7 @@ Add a separate exported accessor. Do not append an argument to `soul_oracle_iden
 
 **Step 3: Managed/MCP RED→GREEN**
 
-Add a P/Invoke for the new accessor, append `RuntimeLibsDigest` to `OracleDescriptor`, fetch it per native descriptor, and include `runtimeLibsDigest` as lowercase fixed-width hex in MCP JSON. Add a focused test that opens the real native fixture and proves the exact value reaches JSON; do not synthesize a managed-only descriptor.
+Add P/Invokes for the new runtime accessor and existing full-hash accessor, append optional/defaulted `ArtifactSha256` and `RuntimeLibsDigest` tails to `OracleDescriptor` so existing eight-argument source callers remain valid, fetch exact values per native descriptor, and include `artifactSha256` as 64 lowercase hex characters plus `runtimeLibsDigest` as lowercase fixed-width hex in MCP JSON. Add a focused test that opens the real native fixture and proves the exact values reach JSON; do not rely only on a managed synthetic descriptor.
 
 **Step 4: Verify GREEN**
 
@@ -117,4 +117,4 @@ Run one consolidated command covering `gap_lane_service_config`, `soul_host_test
 
 **H0:** the loop remains operationally fragile or linked-runtime provenance disappears above CNB.
 
-**H1:** the missing executable is a clean skip with a build-only recovery path, and exact CNB runtime provenance reaches native/managed/MCP observers under passing unified/release gates.
+**H1:** the missing executable is a clean skip with a build-only recovery path, and exact CNB full-artifact plus linked-runtime provenance reaches native/managed/MCP observers under passing unified/release gates.

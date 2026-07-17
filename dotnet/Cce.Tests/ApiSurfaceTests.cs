@@ -293,12 +293,26 @@ public class ApiSurfaceTests
     {
         var descriptor = new OracleDescriptor(
             "teacher", "builtin",
-            1UL, 2UL, 3UL, 4UL, 5UL, 6UL);
+            1UL, 2UL, 3UL, 4UL, 5UL, 6UL,
+            "a0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebf",
+            7UL);
 
         Assert.Equal("teacher", descriptor.Name);
         Assert.Equal("builtin", descriptor.Kind);
         Assert.Equal(1UL, descriptor.BehaviorDigest);
         Assert.Equal(5UL, descriptor.RetrievalSnapshotDigest);
+        Assert.Equal("a0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebf",
+            descriptor.ArtifactSha256);
+        Assert.Equal(7UL, descriptor.RuntimeLibsDigest);
         Assert.NotNull(typeof(SoulHost).GetMethod(nameof(SoulHost.Oracles)));
+
+        // Append-only managed projection: existing source callers retain the
+        // pre-v5 constructor and receive explicit unattested tail defaults.
+        var legacy = new OracleDescriptor(
+            "legacy", "builtin",
+            1UL, 2UL, 3UL, 4UL, 5UL, 6UL);
+        Assert.Equal("0000000000000000000000000000000000000000000000000000000000000000",
+            legacy.ArtifactSha256);
+        Assert.Equal(0UL, legacy.RuntimeLibsDigest);
     }
 }
