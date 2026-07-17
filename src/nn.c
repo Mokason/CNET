@@ -990,6 +990,305 @@ int btn_set_momentum(BinaryTransformNetwork *btn, double momentum) {
     return 0;
 }
 
+/* ---- CNET_TRAIN_FAST=1 (default OFF): faster plain-SGD training step -----
+   Opt-in acceleration of btn_train_dynamic's hot loop (the gap lane's ~100 s
+   per-gap teach is ~90% this loop's dense hidden<->output work). Three
+   mechanical changes, none of which alters what any floating-point
+   accumulator sums or in what order it sums it:
+     1. Row blocking: the two forward reductions walk 4 independent output
+        elements per pass — 4 independent dependency chains instead of one
+        latency-bound chain; each element still receives its terms in the
+        same ascending index order as the plain loops.
+     2. Exact-zero input skip: exemplar rows are one-hot in the lane, and a
+        skipped term is an exact +/-0.0 addition. Under round-to-nearest an
+        accumulator seeded from a nonzero bias/weight can never be -0.0 (a
+        sum with a nonzero term only rounds to +0.0), and x + (+/-0.0) == x
+        for every x except -0.0, so dropping the terms is byte-identical.
+     3. OpenMP worksharing across INDEPENDENT elements (rows of the weight
+        matrices) in _OPENMP builds only: disjoint writes, static schedule,
+        each element's chain stays whole inside one thread — results are
+        independent of thread count.
+   Byte-identity of the trained weights against the knob-off path is an
+   executable gate (`make teach_fast`). Momentum runs (a CLOSED negative;
+   btn->momentum != 0) always take the plain path. */
+static int btn_train_fast_on(void) {
+    const char *e = getenv("CNET_TRAIN_FAST");
+    return e != NULL && e[0] == '1';
+}
+
+static const double *btn_forward_fast(BinaryTransformNetwork *btn,
+                                      const double *inputs) {
+    const size_t hidden_count = btn->hidden_count;
+    const size_t input_count = btn->input_count;
+    const size_t output_count = btn->output_count;
+    const size_t stride = btn->max_hidden_count;
+    const long hidden_blocks = (long)((hidden_count + 3) / 4);
+    const long output_blocks = (long)((output_count + 3) / 4);
+    long block;
+
+#ifdef _OPENMP
+#pragma omp parallel for schedule(static) default(none) \
+    shared(btn, inputs, hidden_count, input_count, hidden_blocks)
+#endif
+    for (block = 0; block < hidden_blocks; ++block) {
+        size_t h0 = (size_t)block * 4;
+        size_t rows = hidden_count - h0 < 4 ? hidden_count - h0 : 4;
+        const double *w0 = btn->input_hidden + h0 * input_count;
+        double acc[4];
+        size_t r, i;
+        for (r = 0; r < rows; ++r) {
+            acc[r] = btn->hidden_bias[h0 + r];
+        }
+        if (rows == 4) {
+            const double *w1 = w0 + input_count;
+            const double *w2 = w1 + input_count;
+            const double *w3 = w2 + input_count;
+            for (i = 0; i < input_count; ++i) {
+                double x = inputs[i];
+                if (x == 0.0) continue;
+                acc[0] += x * w0[i];
+                acc[1] += x * w1[i];
+                acc[2] += x * w2[i];
+                acc[3] += x * w3[i];
+            }
+        } else {
+            for (i = 0; i < input_count; ++i) {
+                double x = inputs[i];
+                if (x == 0.0) continue;
+                for (r = 0; r < rows; ++r) {
+                    acc[r] += x * w0[r * input_count + i];
+                }
+            }
+        }
+        for (r = 0; r < rows; ++r) {
+            btn->hidden_output[h0 + r] = sigmoid(acc[r]);
+        }
+    }
+
+#ifdef _OPENMP
+#pragma omp parallel for schedule(static) default(none) \
+    shared(btn, hidden_count, output_count, stride, output_blocks)
+#endif
+    for (block = 0; block < output_blocks; ++block) {
+        size_t o0 = (size_t)block * 4;
+        size_t rows = output_count - o0 < 4 ? output_count - o0 : 4;
+        const double *w0 = btn->hidden_output_weights + o0 * stride;
+        const double *hout = btn->hidden_output;
+        double acc[4];
+        size_t r, h;
+        for (r = 0; r < rows; ++r) {
+            acc[r] = btn->output_bias[o0 + r];
+        }
+        if (rows == 4) {
+            const double *w1 = w0 + stride;
+            const double *w2 = w1 + stride;
+            const double *w3 = w2 + stride;
+            for (h = 0; h < hidden_count; ++h) {
+                double x = hout[h];
+                acc[0] += x * w0[h];
+                acc[1] += x * w1[h];
+                acc[2] += x * w2[h];
+                acc[3] += x * w3[h];
+            }
+        } else {
+            for (h = 0; h < hidden_count; ++h) {
+                double x = hout[h];
+                for (r = 0; r < rows; ++r) {
+                    acc[r] += x * w0[r * stride + h];
+                }
+            }
+        }
+        for (r = 0; r < rows; ++r) {
+            btn->last_output[o0 + r] = sigmoid(acc[r]);
+        }
+    }
+
+    return btn->last_output;
+}
+
+/* One plain-SGD epoch (every sample: forward + backprop + update), same
+   arithmetic and same per-accumulator order as the momentum==0 branch of
+   the plain loop below. hidden_errors[h] accumulates in ascending output
+   order there too (o-outer/h-inner feeds each h once per o), so the
+   h-chunked loop here sums the identical sequence. The forward is inlined
+   rather than calling btn_forward_fast because the whole epoch runs inside
+   ONE parallel region: per-sample fork/join costs more than the small
+   phases themselves (measured 8-thread regression), while the per-phase
+   `omp for` barriers below are cheap. Every phase workshares across
+   disjoint elements, so results are independent of thread count. */
+static void btn_train_fast_epoch(BinaryTransformNetwork *btn,
+                                 const double *inputs,
+                                 const double *targets,
+                                 size_t sample_count,
+                                 double adaptive_lr,
+                                 double *output_deltas,
+                                 double *hidden_errors) {
+    const size_t hidden_count = btn->hidden_count;
+    const size_t input_count = btn->input_count;
+    const size_t output_count = btn->output_count;
+    const size_t stride = btn->max_hidden_count;
+    const long hidden_blocks = (long)((hidden_count + 3) / 4);
+    const long output_blocks = (long)((output_count + 3) / 4);
+    const long hidden_chunks = (long)((hidden_count + 63) / 64);
+
+#ifdef _OPENMP
+#pragma omp parallel default(none) \
+    shared(btn, inputs, targets, sample_count, adaptive_lr, output_deltas, \
+           hidden_errors, hidden_count, input_count, output_count, stride, \
+           hidden_blocks, output_blocks, hidden_chunks)
+#endif
+    {
+        size_t sample;
+        long block;
+
+        for (sample = 0; sample < sample_count; ++sample) {
+            const double *in = inputs + sample * input_count;
+            const double *tg = targets + sample * output_count;
+
+            /* 1. forward input->hidden (blocked chains, zero-skip) */
+#ifdef _OPENMP
+#pragma omp for schedule(static)
+#endif
+            for (block = 0; block < hidden_blocks; ++block) {
+                size_t h0 = (size_t)block * 4;
+                size_t rows = hidden_count - h0 < 4 ? hidden_count - h0 : 4;
+                const double *w0 = btn->input_hidden + h0 * input_count;
+                double acc[4];
+                size_t r, i;
+                for (r = 0; r < rows; ++r) {
+                    acc[r] = btn->hidden_bias[h0 + r];
+                }
+                if (rows == 4) {
+                    const double *w1 = w0 + input_count;
+                    const double *w2 = w1 + input_count;
+                    const double *w3 = w2 + input_count;
+                    for (i = 0; i < input_count; ++i) {
+                        double x = in[i];
+                        if (x == 0.0) continue;
+                        acc[0] += x * w0[i];
+                        acc[1] += x * w1[i];
+                        acc[2] += x * w2[i];
+                        acc[3] += x * w3[i];
+                    }
+                } else {
+                    for (i = 0; i < input_count; ++i) {
+                        double x = in[i];
+                        if (x == 0.0) continue;
+                        for (r = 0; r < rows; ++r) {
+                            acc[r] += x * w0[r * input_count + i];
+                        }
+                    }
+                }
+                for (r = 0; r < rows; ++r) {
+                    btn->hidden_output[h0 + r] = sigmoid(acc[r]);
+                }
+            }
+
+            /* 2. forward hidden->output, fused with the output deltas
+               (deltas are elementwise in the forward's own output) */
+#ifdef _OPENMP
+#pragma omp for schedule(static)
+#endif
+            for (block = 0; block < output_blocks; ++block) {
+                size_t o0 = (size_t)block * 4;
+                size_t rows = output_count - o0 < 4 ? output_count - o0 : 4;
+                const double *w0 = btn->hidden_output_weights + o0 * stride;
+                const double *hout = btn->hidden_output;
+                double acc[4];
+                size_t r, h;
+                for (r = 0; r < rows; ++r) {
+                    acc[r] = btn->output_bias[o0 + r];
+                }
+                if (rows == 4) {
+                    const double *w1 = w0 + stride;
+                    const double *w2 = w1 + stride;
+                    const double *w3 = w2 + stride;
+                    for (h = 0; h < hidden_count; ++h) {
+                        double x = hout[h];
+                        acc[0] += x * w0[h];
+                        acc[1] += x * w1[h];
+                        acc[2] += x * w2[h];
+                        acc[3] += x * w3[h];
+                    }
+                } else {
+                    for (h = 0; h < hidden_count; ++h) {
+                        double x = hout[h];
+                        for (r = 0; r < rows; ++r) {
+                            acc[r] += x * w0[r * stride + h];
+                        }
+                    }
+                }
+                for (r = 0; r < rows; ++r) {
+                    double out = sigmoid(acc[r]);
+                    double error = tg[o0 + r] - out;
+                    btn->last_output[o0 + r] = out;
+                    output_deltas[o0 + r] =
+                        error * sigmoid_derivative_from_output(out);
+                }
+            }
+
+            /* 3. hidden_errors backprop (reads the pre-update weights) */
+#ifdef _OPENMP
+#pragma omp for schedule(static)
+#endif
+            for (block = 0; block < hidden_chunks; ++block) {
+                size_t h0 = (size_t)block * 64;
+                size_t hn = hidden_count - h0 < 64 ? hidden_count - h0 : 64;
+                double *he = hidden_errors + h0;
+                size_t o, h;
+                for (h = 0; h < hn; ++h) {
+                    he[h] = 0.0;
+                }
+                for (o = 0; o < output_count; ++o) {
+                    const double d = output_deltas[o];
+                    const double *row =
+                        btn->hidden_output_weights + o * stride + h0;
+                    for (h = 0; h < hn; ++h) {
+                        he[h] += d * row[h];
+                    }
+                }
+            }
+
+            /* 4a. hidden->output update; nowait: 4b touches disjoint
+               arrays, and 4b's barrier covers both before the next
+               sample's forward reads any weight */
+#ifdef _OPENMP
+#pragma omp for schedule(static) nowait
+#endif
+            for (block = 0; block < (long)output_count; ++block) {
+                const double d = output_deltas[block];
+                const double *hout = btn->hidden_output;
+                double *row =
+                    btn->hidden_output_weights + (size_t)block * stride;
+                size_t h;
+                for (h = 0; h < hidden_count; ++h) {
+                    row[h] += adaptive_lr * (d * hout[h]);
+                }
+                btn->output_bias[block] += adaptive_lr * d;
+            }
+
+            /* 4b. input->hidden update (zero-skip) */
+#ifdef _OPENMP
+#pragma omp for schedule(static)
+#endif
+            for (block = 0; block < (long)hidden_count; ++block) {
+                double hidden_delta =
+                    hidden_errors[block] *
+                    sigmoid_derivative_from_output(btn->hidden_output[block]);
+                double *row =
+                    btn->input_hidden + (size_t)block * input_count;
+                size_t i;
+                btn->hidden_bias[block] += adaptive_lr * hidden_delta;
+                for (i = 0; i < input_count; ++i) {
+                    double x = in[i];
+                    if (x == 0.0) continue;
+                    row[i] += adaptive_lr * (hidden_delta * x);
+                }
+            }
+        }
+    }
+}
+
 double btn_train_dynamic(
     BinaryTransformNetwork *btn,
     const double *inputs,
@@ -1025,6 +1324,7 @@ double btn_train_dynamic(
     double adaptive_lr;
     double mom = 0.0;
     double *v_ho = NULL, *v_ob = NULL, *v_ih = NULL, *v_hb = NULL;
+    int fast = 0;
 
 
     if (btn == NULL || btn_is_adapter(btn) || inputs == NULL || targets == NULL || sample_count == 0) {
@@ -1088,11 +1388,17 @@ double btn_train_dynamic(
         }
     }
 
+    /* CNET_TRAIN_FAST: byte-identical fast step, plain SGD only (see the
+       comment block above btn_train_fast_on). */
+    fast = (mom == 0.0) && btn_train_fast_on();
+
     previous_loss = 0.0;
     for (sample = 0; sample < sample_count; ++sample) {
         const double *train_input = inputs + (sample * btn->input_count);
         const double *train_target = targets + (sample * btn->output_count);
-        const double *outputs = btn_forward_full_precision(btn, train_input);
+        const double *outputs = fast
+            ? btn_forward_fast(btn, train_input)
+            : btn_forward_full_precision(btn, train_input);
 
         for (output = 0; output < btn->output_count; ++output) {
             double error = train_target[output] - outputs[output];
@@ -1108,7 +1414,9 @@ double btn_train_dynamic(
             }
             const double *val_input = inputs + (sample * btn->input_count);
             const double *val_target = targets + (sample * btn->output_count);
-            const double *outputs = btn_forward_full_precision(btn, val_input);
+            const double *outputs = fast
+                ? btn_forward_fast(btn, val_input)
+                : btn_forward_full_precision(btn, val_input);
 
             for (output = 0; output < btn->output_count; ++output) {
                 double error = val_target[output] - outputs[output];
@@ -1129,6 +1437,12 @@ double btn_train_dynamic(
         }
 
         for (epoch = 0; epoch < epochs_to_train; ++epoch) {
+            if (fast) {
+                btn_train_fast_epoch(btn, inputs, targets, sample_count,
+                                     adaptive_lr, output_deltas,
+                                     hidden_errors);
+                continue;
+            }
             for (sample = 0; sample < sample_count; ++sample) {
                 const double *train_input = inputs + sample * btn->input_count;
                 const double *train_target = targets + sample * btn->output_count;
@@ -1202,7 +1516,9 @@ double btn_train_dynamic(
         for (sample = 0; sample < sample_count; ++sample) {
             const double *train_input = inputs + (sample * btn->input_count);
             const double *train_target = targets + (sample * btn->output_count);
-            const double *outputs = btn_forward_full_precision(btn, train_input);
+            const double *outputs = fast
+                ? btn_forward_fast(btn, train_input)
+                : btn_forward_full_precision(btn, train_input);
 
             for (output = 0; output < btn->output_count; ++output) {
                 double error = train_target[output] - outputs[output];
@@ -1223,7 +1539,9 @@ double btn_train_dynamic(
                 }
                 const double *val_input = inputs + (sample * btn->input_count);
                 const double *val_target = targets + (sample * btn->output_count);
-                const double *outputs = btn_forward_full_precision(btn, val_input);
+                const double *outputs = fast
+                    ? btn_forward_fast(btn, val_input)
+                    : btn_forward_full_precision(btn, val_input);
 
                 for (output = 0; output < btn->output_count; ++output) {
                     double error = val_target[output] - outputs[output];
