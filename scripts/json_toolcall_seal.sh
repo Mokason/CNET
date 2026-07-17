@@ -53,6 +53,10 @@ set -e
 
 if [ "$was_active" = "1" ]; then
   info "restarting learner"
+  if [ ! -x "$REPO/bin/gap_lane_run" ]; then
+    info "rebuilding gap_lane_run (systemd ConditionFileIsExecutable)"
+    make -C "$REPO" gap_lane_run_build -j"$(cnet_nproc)" || true
+  fi
   systemctl --user start "$LANE_UNIT" || info "WARN: learner restart failed"
 fi
 
