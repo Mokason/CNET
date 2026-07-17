@@ -1,0 +1,15 @@
+[Unit]
+Description=CNET Personal AI ops tick (heal, TODO, learn via Hermes)
+Documentation=file:///home/marble/AI/CNET/plans/personal_ai_local_first.md
+After=default.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/marble/AI/CNET
+EnvironmentFile=-/home/marble/AI/CNET/config/personal-ai.env
+EnvironmentFile=-/home/marble/AI/CNET/config/personal-ai-ops.env
+ExecStart=/home/marble/AI/CNET/scripts/personal_ai_ops_tick.sh tick
+Nice=15
+
+[Install]
+WantedBy=default.target

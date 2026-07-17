@@ -50,6 +50,8 @@ class PersonalAiAutoTest(unittest.TestCase):
         self.assertIn("serve-proof", out)
         self.assertIn("loop", out)
         self.assertIn("jtc-seal", out)
+        self.assertIn("ops-install", out)
+        self.assertIn("ops-tick", out)
 
     def test_prepare_dry_structure(self) -> None:
         # prepare needs make; may be heavy — only check script parses + target exists

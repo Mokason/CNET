@@ -1,0 +1,13 @@
+[Unit]
+Description=CNET Personal AI ops timer (every 15 minutes)
+Documentation=file:///home/marble/AI/CNET/plans/personal_ai_local_first.md
+
+[Timer]
+OnBootSec=3min
+OnUnitActiveSec=15min
+AccuracySec=1min
+Persistent=true
+Unit=cnet-personal-ai-ops.service
+
+[Install]
+WantedBy=timers.target
