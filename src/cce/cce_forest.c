@@ -87,6 +87,20 @@ void cce_forest_set_residency(cce_forest* f, int hot_cap,
     }
 }
 
+void cce_forest_set_lfru(cce_forest* f, int enabled) {
+    if (f) f->lfru = enabled ? 1 : 0;
+}
+
+int cce_forest_lfru(const cce_forest* f) {
+    return f ? f->lfru : 0;
+}
+
+void cce_forest_heat_decay(cce_forest* f) {
+    int i;
+    if (!f) return;
+    for (i = 0; i < f->num_branches; i++) f->branches[i].heat >>= 1;
+}
+
 int cce_forest_resident_count(const cce_forest* f) {
     if (!f) return 0;
     int n = 0;

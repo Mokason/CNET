@@ -40,8 +40,8 @@ die() { echo "personal_ai_auto: $*" >&2; exit 1; }
 info() { echo "personal_ai_auto: $*"; }
 
 prepare() {
-  info "build learner + personal_ai gate"
-  make -C "$REPO" gap_lane_run_build personal_ai -j"$(nproc 2>/dev/null || echo 2)"
+  info "build learner + personal_ai gate + placement CLI"
+  make -C "$REPO" gap_lane_run_build personal_ai cnet_plan_cli -j"$(nproc 2>/dev/null || echo 2)"
   [ -x "$REPO/bin/gap_lane_run" ] || die "gap_lane_run missing"
   [ -f "$BASE" ] || info "WARN: base not found yet: $BASE (serve/learn need it)"
   if [ -n "$TEACHER" ] && [ ! -f "$TEACHER" ]; then
@@ -56,6 +56,12 @@ prepare() {
     fi
   else
     info "Tier C residual: unset (bind later via CNET_RESIDUAL_GGUF)"
+  fi
+  if [ -x "$REPO/bin/cnet_plan" ]; then
+    info "placement doctor:"
+    CNET_BASE_PATH="$BASE" CNET_PERSONAL_TEACHER="$TEACHER" \
+      CNET_RESIDUAL_GGUF="${RESIDUAL:-}" \
+      "$REPO/bin/cnet_plan" doctor || info "WARN: doctor NEEDS_ATTENTION (see dual_safe)"
   fi
   # Ensure inbox exists so serve can append before lane starts
   if [ -f "$BASE" ]; then
@@ -184,15 +190,21 @@ case "$cmd" in
   stop) stop ;;
   status) status ;;
   doctor) doctor ;;
+  grow) bash "$REPO/scripts/personal_ai_campaign_nudge.sh" "${2:-16}" ;;
+  observe) bash "$REPO/scripts/personal_ai_observe.sh" "$BASE" ;;
+  metrics) bash "$REPO/scripts/personal_ai_metrics.sh" "$BASE" ;;
   *)
     cat <<EOF
-usage: $0 prepare|install|start|stop|status|doctor
+usage: $0 prepare|install|start|stop|status|doctor|grow|observe|metrics
 
 Automatic Personal AI:
-  1. prepare  — build learner binary + check base/teacher
+  1. prepare  — build learner binary + check base/teacher + placement doctor
   2. install  — user systemd unit for the learner
   3. start    — enable --now learner
                 SERVE=1 also deploys Hermes MCP (local serve + inbox + health)
+  grow        — seed inbox + campaign nudge (library growth)
+  observe     — A: snapshot metrics JSON under logs/
+  metrics     — JSON metrics to stdout
 
 Env: BASE_PATH TEACHER SERVE=0|1 TICK_SECONDS
      RESIDUAL / CNET_RESIDUAL_GGUF  (Tier C; also config/personal-ai.env)

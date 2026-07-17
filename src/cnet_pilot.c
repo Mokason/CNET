@@ -43,3 +43,26 @@ int cnet_pilot_pop(CnetPilot *p, int *out) {
 void cnet_pilot_note_hit(CnetPilot *p) {
     if (p) p->hits++;
 }
+
+int cnet_pilot_drain(CnetPilot *p, int *out, int max_out) {
+    int n = 0;
+    if (!p || !out || max_out <= 0) return 0;
+    while (n < max_out && p->count > 0) {
+        out[n++] = p->hints[p->tail];
+        p->tail = (p->tail + 1) % CNET_PILOT_RING;
+        p->count--;
+        p->drained++;
+    }
+    return n;
+}
+
+int cnet_pilot_peek(const CnetPilot *p, int *out, int max_out) {
+    int n = 0, i, idx;
+    if (!p || !out || max_out <= 0 || p->count <= 0) return 0;
+    idx = p->tail;
+    for (i = 0; i < p->count && n < max_out; i++) {
+        out[n++] = p->hints[idx];
+        idx = (idx + 1) % CNET_PILOT_RING;
+    }
+    return n;
+}

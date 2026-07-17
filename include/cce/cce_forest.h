@@ -115,6 +115,11 @@ CCE_API void cce_forest_close(cce_forest* forest);
 CCE_API void cce_forest_set_residency(cce_forest* f, int hot_cap,
                                       cce_cascade* (*provider)(void*, const char*),
                                       void* ctx);
+/* Opt-in LFRU victim policy (also set by CNET_FOREST_LFRU=1 at set_residency). */
+CCE_API void cce_forest_set_lfru(cce_forest* f, int enabled);
+CCE_API int cce_forest_lfru(const cce_forest* f);
+/* Decay all branch heat (call periodically under LFRU). */
+CCE_API void cce_forest_heat_decay(cce_forest* f);
 CCE_API cce_cascade* cce_forest_get_resident(cce_forest* f, const char* branch_name);
 CCE_API cce_result cce_forest_evict_branch(cce_forest* f, int idx); /* evictable HOT non-view only */
 CCE_API int cce_forest_resident_count(const cce_forest* f);          /* resident evictable branches */

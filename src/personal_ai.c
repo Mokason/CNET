@@ -80,6 +80,8 @@ static void policy_from_env(PersonalAiPolicy *p) {
         long v = atol(m);
         if (v >= 1) p->structure_min_hits = (size_t)v;
     }
+    a = getenv("CNET_PERSONAL_STRUCTURE_MINE_ON_SERVE");
+    if (a && a[0] == '1') p->structure_mine_on_serve = 1;
 }
 
 int personal_ai_open(PersonalAi *ai, const char *base_path,

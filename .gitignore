@@ -22,7 +22,13 @@ altmodel_gpt2_gap_cache/
 *.cnb.POISONED-*
 *.cnb.campaign.log
 *.cnb.campaign.txt
+*.cnb.inbox
+*.cnb.gaps.txt
+*.cnb.recert.txt
 *.cnetpack
+suggestions/*.jsonl
+cnet.so
+cnet.dll
 dist/
 hermes_wrappers/*.cache
 __pycache__/

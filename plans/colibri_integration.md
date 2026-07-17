@@ -11,11 +11,22 @@ CNET’s certified library + residual architecture (not a engine merge).
 | Phase | Item | Status |
 |---|---|---|
 | P0 | `cnet plan` / `doctor` (MemAvailable + residual/teacher/CNB) | landed |
-| P1 | LFRU + hysteresis (`cnet_lfru.h`, `CNET_FOREST_LFRU=1`) | landed |
+| P1 | LFRU + hysteresis (`cnet_lfru.h`, `CNET_FOREST_LFRU=1`) | landed + **deploy default on** |
 | P2 | Prefer-warm counters + heat-ranked structure mine | landed |
 | P3 | Batch residual labeling (`batch_label_rows`) | landed |
 | P4 | Residual session KV (`CNET_RESIDUAL_SESSION_KV=1`) | landed (opt-in) |
-| P5 | PILOT research ring (`CNET_PILOT=1`, `cnet_pilot`) | landed (research) |
+| P5 | PILOT research ring (`CNET_PILOT=1`, `cnet_pilot`) | landed + **mine consumes order** |
+
+### Follow-through sequence D→B→C→F→E→A
+
+| Step | Deliverable |
+|---|---|
+| D | LFRU default in `personal-ai.env`; pilot drain → residual batch label order; `cce_forest_set_lfru` |
+| B | `structure_min_hits=2`; `personal_ai_campaign_nudge.sh`; grow/observe via `personal_ai_auto` |
+| C | Hermes deploy + auto prepare run doctor; refuse unsafe dual unless override; metrics JSON |
+| F | gitignore inbox/recert/cnet.so/suggestions noise |
+| E | `external_residual` ABI stub; `bin/residual_session_chat` multi-turn helper |
+| A | `personal_ai_observe.sh` baseline snapshots under `logs/` |
 
 ## Env knobs
 

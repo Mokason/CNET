@@ -12,6 +12,8 @@
 #include "../include/hybrid_ai.h"
 #include "../include/personal_ai.h"
 #include "../include/residual_gguf.h"
+#include "../include/external_residual.h"
+#include "../include/cce/cce_forest.h"
 
 static int failures, checks;
 
@@ -139,6 +141,35 @@ int main(void) {
         check(getenv("CNET_FOREST_LFRU") && getenv("CNET_FOREST_LFRU")[0] == '1',
               "P1 CNET_FOREST_LFRU opt-in present");
         unsetenv("CNET_FOREST_LFRU");
+    }
+
+    /* D: pilot drain/peek + external residual stub */
+    {
+        CnetPilot p;
+        int slots[8], n;
+        ExternalResidual er;
+        Port pin, pout;
+        cnet_pilot_init(&p);
+        p.enabled = 1;
+        cnet_pilot_push(&p, 3);
+        cnet_pilot_push(&p, 1);
+        n = cnet_pilot_peek(&p, slots, 8);
+        check(n == 2 && slots[0] == 3, "D pilot peek FIFO");
+        n = cnet_pilot_drain(&p, slots, 8);
+        check(n == 2 && p.count == 0, "D pilot drain empties");
+        external_residual_init(&er);
+        memset(&pin, 0, sizeof pin);
+        memset(&pout, 0, sizeof pout);
+        pin.family = pout.family = PORT_ONEHOT;
+        pin.field_width = pout.field_width = 4;
+        pin.field_count = pout.field_count = 1;
+        check(external_residual_bind(&er, "ext", pin, pout,
+                                     hybrid_hermetic_residual,
+                                     (void *)(uintptr_t)4) == 0,
+              "E external residual bind");
+        check(er.bound == 1, "E external residual bound");
+        external_residual_unbind(&er);
+        check(er.bound == 0, "E external residual unbind");
     }
 
     if (failures) {

@@ -1,6 +1,7 @@
 #include "../include/hybrid_ai.h"
 #include "../include/external_teacher.h"
 #include "../include/cnet_lfru.h"
+#include "../include/residual_gguf.h"
 
 #include <math.h>
 #include <stdint.h>
@@ -312,13 +313,35 @@ int hybrid_structure_mine(HybridAi *h, PrimitiveRegistry *reg, size_t min_hits,
                 free(targets);
                 return -3;
             }
-            /* Build all one-hot inputs first (batch table). */
-            for (r = 0; r < n_rows; r++)
-                for (j = 0; j < tr->in_dim; j++)
-                    inputs[r * tr->in_dim + j] = (j == r) ? 1.0 : 0.0;
-            /* Batch residual labeling (single sequential pass; counts rows). */
-            if (h->residual.bound) {
+            /* D: pilot-ordered batch residual labels when ctx is ResidualGguf. */
+            if (h->residual.bound &&
+                h->residual.fn == residual_gguf_oracle && h->residual.ctx) {
+                ResidualGguf *rg = (ResidualGguf *)h->residual.ctx;
+                int slots[64];
+                int ns = (int)n_rows;
+                if (ns > 64) ns = 64;
+                residual_gguf_pilot_consume(rg, slots, ns);
+                if (residual_gguf_label_batch(
+                        rg, slots, ns, inputs, targets, (int)tr->in_dim,
+                        (int)tr->out_dim) == 0) {
+                    h->batch_label_rows += (size_t)ns;
+                    n_rows = (size_t)ns;
+                } else {
+                    for (r = 0; r < n_rows; r++) {
+                        for (j = 0; j < tr->in_dim; j++)
+                            inputs[r * tr->in_dim + j] = (j == r) ? 1.0 : 0.0;
+                        if (h->residual.fn(inputs + r * tr->in_dim,
+                                           targets + r * tr->out_dim,
+                                           h->residual.ctx) != 0)
+                            memcpy(targets + r * tr->out_dim, tr->out,
+                                   tr->out_dim * sizeof(double));
+                        h->batch_label_rows++;
+                    }
+                }
+            } else if (h->residual.bound) {
                 for (r = 0; r < n_rows; r++) {
+                    for (j = 0; j < tr->in_dim; j++)
+                        inputs[r * tr->in_dim + j] = (j == r) ? 1.0 : 0.0;
                     if (h->residual.fn(inputs + r * tr->in_dim,
                                        targets + r * tr->out_dim,
                                        h->residual.ctx) != 0)
@@ -327,9 +350,12 @@ int hybrid_structure_mine(HybridAi *h, PrimitiveRegistry *reg, size_t min_hits,
                     h->batch_label_rows++;
                 }
             } else {
-                for (r = 0; r < n_rows; r++)
+                for (r = 0; r < n_rows; r++) {
+                    for (j = 0; j < tr->in_dim; j++)
+                        inputs[r * tr->in_dim + j] = (j == r) ? 1.0 : 0.0;
                     memcpy(targets + r * tr->out_dim, tr->out,
                            tr->out_dim * sizeof(double));
+                }
             }
         } else {
             n_rows = 1;

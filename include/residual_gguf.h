@@ -61,6 +61,18 @@ CNET_API void residual_gguf_session_reset(ResidualGguf *r);
 CNET_API int residual_gguf_session_mode(const ResidualGguf *r);
 /* P5 research: pilot hints recorded this residual (0 if PILOT off). */
 CNET_API uint64_t residual_gguf_pilot_recorded(const ResidualGguf *r);
+CNET_API uint64_t residual_gguf_pilot_hits(const ResidualGguf *r);
+
+/* D: batch-label n one-hot rows (probe mode forced). Prefer pilot-ordered
+ * slot indices if slot_order non-NULL (length n). Returns 0. */
+CNET_API int residual_gguf_label_batch(ResidualGguf *r,
+                                       const int *slot_order, int n_slots,
+                                       double *inputs, double *targets,
+                                       int in_dim, int out_dim);
+
+/* D: consume pilot hints into slot_order[0..max); returns count. */
+CNET_API int residual_gguf_pilot_consume(ResidualGguf *r, int *slot_order,
+                                         int max_slots);
 
 /* Bind into PersonalAi as Tier C residual (takes ownership of *r? no —
    caller keeps ResidualGguf* alive for PersonalAi lifetime). */

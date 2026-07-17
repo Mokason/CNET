@@ -122,6 +122,64 @@ uint64_t residual_gguf_pilot_recorded(const ResidualGguf *r) {
     return r ? r->pilot.recorded : 0;
 }
 
+uint64_t residual_gguf_pilot_hits(const ResidualGguf *r) {
+    return r ? r->pilot.hits : 0;
+}
+
+int residual_gguf_pilot_consume(ResidualGguf *r, int *slot_order, int max_slots) {
+    int n, i, j, w, s;
+    unsigned char used[512];
+    if (!r || !slot_order || max_slots <= 0) return 0;
+    w = r->n_win > 0 ? r->n_win : max_slots;
+    if (w > 512) w = 512;
+    memset(used, 0, sizeof used);
+    n = cnet_pilot_drain(&r->pilot, slot_order, max_slots);
+    j = 0;
+    for (i = 0; i < n; i++) {
+        int h = slot_order[i];
+        if (h < 0 || h >= w) continue;
+        if (used[h]) continue;
+        used[h] = 1;
+        slot_order[j++] = h;
+    }
+    n = j;
+    for (s = 0; s < w && n < max_slots; s++) {
+        if (used[s]) continue;
+        used[s] = 1;
+        slot_order[n++] = s;
+    }
+    return n;
+}
+
+int residual_gguf_label_batch(ResidualGguf *r, const int *slot_order, int n_slots,
+                              double *inputs, double *targets, int in_dim,
+                              int out_dim) {
+    int s, i, hot;
+    int saved_session;
+    double *in_row, *out_row;
+    if (!r || !inputs || !targets || n_slots <= 0 || in_dim <= 0 || out_dim <= 0)
+        return -1;
+    /* Force probe mode for bit-stable mine labels. */
+    saved_session = r->session_kv;
+    r->session_kv = 0;
+    residual_gguf_session_reset(r);
+    for (s = 0; s < n_slots; s++) {
+        hot = slot_order ? slot_order[s] : s;
+        if (hot < 0) hot = 0;
+        if (hot >= in_dim) hot = hot % in_dim;
+        in_row = inputs + (size_t)s * (size_t)in_dim;
+        out_row = targets + (size_t)s * (size_t)out_dim;
+        for (i = 0; i < in_dim; i++) in_row[i] = (i == hot) ? 1.0 : 0.0;
+        if (residual_gguf_oracle(in_row, out_row, r) != 0) {
+            for (i = 0; i < out_dim; i++) out_row[i] = 0.0;
+            if (out_dim > 0) out_row[hot % out_dim] = 1.0;
+        }
+    }
+    r->session_kv = saved_session;
+    residual_gguf_session_reset(r);
+    return 0;
+}
+
 int residual_gguf_window_n(const ResidualGguf *r) {
     return r ? r->n_win : 0;
 }

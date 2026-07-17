@@ -36,6 +36,10 @@ CNET_API int cnet_pilot_push(CnetPilot *p, int hint_id);
 /* Pop oldest; returns 1 and *out=id, or 0 if empty. */
 CNET_API int cnet_pilot_pop(CnetPilot *p, int *out);
 CNET_API void cnet_pilot_note_hit(CnetPilot *p);
+/* Drain up to max_out unique-ish hints (FIFO order) into out[]. Returns count. */
+CNET_API int cnet_pilot_drain(CnetPilot *p, int *out, int max_out);
+/* Peek without pop: copy up to max_out; returns count. */
+CNET_API int cnet_pilot_peek(const CnetPilot *p, int *out, int max_out);
 
 #ifdef __cplusplus
 }

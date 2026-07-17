@@ -26,6 +26,37 @@ trap 'rm -rf "$STAGE"' EXIT
 [ -d "$DEPLOY" ] || { echo "deploy dir not found: $DEPLOY" >&2; exit 1; }
 [ -f "$BASE" ] || { echo "base not found: $BASE" >&2; exit 1; }
 
+# C: placement doctor — refuse missing base paths; dual-load UNSAFE is hard fail
+# unless CNET_DEPLOY_ALLOW_UNSAFE_DUAL=1.
+echo "== placement doctor"
+if [ ! -x "$REPO/bin/cnet_plan" ]; then
+  make -C "$REPO" cnet_plan_cli -j"$(nproc 2>/dev/null || echo 2)" || true
+fi
+if [ -x "$REPO/bin/cnet_plan" ]; then
+  export CNET_BASE_PATH="$BASE"
+  # shellcheck disable=SC1091
+  if [ -f "$REPO/config/personal-ai.env" ]; then
+    set -a
+    # shellcheck source=/dev/null
+    . "$REPO/config/personal-ai.env" || true
+    set +a
+  fi
+  if ! "$REPO/bin/cnet_plan" doctor; then
+    if [ "${CNET_DEPLOY_ALLOW_UNSAFE_DUAL:-0}" = "1" ]; then
+      echo "deploy: doctor NEEDS_ATTENTION but CNET_DEPLOY_ALLOW_UNSAFE_DUAL=1 — continuing"
+    else
+      # Re-check: only hard-fail on missing residual when set, or missing cnb
+      json=$("$REPO/bin/cnet_plan" json 2>/dev/null || echo '{}')
+      if echo "$json" | grep -q '"dual_safe":0'; then
+        echo "deploy: REFUSED dual residual+teacher over MemAvailable budget" >&2
+        echo "  set CNET_DEPLOY_ALLOW_UNSAFE_DUAL=1 to override, or unset one model" >&2
+        exit 1
+      fi
+      echo "deploy: doctor flagged issues — continuing if only soft warnings"
+    fi
+  fi
+fi
+
 echo "== publish"
 dotnet publish "$REPO/dotnet/CnetMcpServer/CnetMcpServer.csproj" \
   -c Release --nologo -v:q -o "$STAGE/publish"

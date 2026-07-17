@@ -1977,10 +1977,11 @@ residual_structure_mine_real: residual_gguf_real
 
 # Colibrì integration P0–P5 (placement, LFRU, heat mine, batch labels, session KV, pilot).
 .PHONY: colibri_integrate cnet_plan_cli
-colibri_integrate: $(PLACEMENT_SRC) $(PILOT_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EXT_TEACHER_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) tests/test_colibri_integrate.c include/cnet_placement.h include/cnet_lfru.h include/cnet_pilot.h
+EXT_RESIDUAL_SRC := src/external_residual.c
+colibri_integrate: $(PLACEMENT_SRC) $(PILOT_SRC) $(EXT_RESIDUAL_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EXT_TEACHER_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) tests/test_colibri_integrate.c include/cnet_placement.h include/cnet_lfru.h include/cnet_pilot.h include/external_residual.h
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/test_colibri_integrate \
-		$(PLACEMENT_SRC) $(PILOT_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EXT_TEACHER_SRC) \
+		$(PLACEMENT_SRC) $(PILOT_SRC) $(EXT_RESIDUAL_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EXT_TEACHER_SRC) \
 		$(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) \
 		$(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) \
 		$(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) \
@@ -1993,6 +1994,17 @@ cnet_plan_cli: $(PLACEMENT_SRC) include/cnet_placement.h tools/cnet_plan.c
 	@mkdir -p $(BIN_DIR)
 	$(CC) $(CFLAGS) -o $(BIN_DIR)/cnet_plan $(PLACEMENT_SRC) tools/cnet_plan.c
 	@echo "Built bin/cnet_plan (plan|doctor|json)"
+
+.PHONY: residual_session_chat
+residual_session_chat: $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(GAP_LANE_SRC) $(MODEL_RUNTIME) $(CCE) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(EXT_TEACHER_SRC) tools/residual_session_chat.c
+	@mkdir -p $(BIN_DIR)
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/residual_session_chat \
+		$(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EXT_TEACHER_SRC) \
+		$(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) \
+		$(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) \
+		$(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) \
+		tools/residual_session_chat.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -pthread
+	@echo "Built bin/residual_session_chat (CNET_RESIDUAL_SESSION_KV=1)"
 
 .PHONY: soul_residual_serve
 soul_residual_serve: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(GAP_LANE_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(EXT_TEACHER_SRC) $(LIBRARY) src/soul_host.c tests/test_soul_residual.c
