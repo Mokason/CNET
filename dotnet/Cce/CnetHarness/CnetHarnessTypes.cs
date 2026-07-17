@@ -5,6 +5,7 @@
 // uncertainty, effective sampling profile, token counts, and timings.
 
 using System;
+using System.Collections.Generic;
 
 namespace CNET.Cce.CnetHarness;
 
@@ -42,6 +43,56 @@ public enum CnetHarnessResource : ulong
     Gpu3 = 1ul << 4,
 }
 
+/// <summary>Supported llama.cpp distribution for explicitly selected GPUs.</summary>
+public enum CnetHarnessSplitMode : uint
+{
+    None = 0,
+    Layer = 1,
+}
+
+/// <summary>
+/// Per-session, strictly partial GPU offload. LayerCount is validated again
+/// against GGUF metadata by the native backend before any GPU allocation.
+/// </summary>
+public sealed class CnetHarnessGpuOffload
+{
+    public int LayerCount { get; init; }
+    public IReadOnlyList<int> DeviceIndices { get; init; } = new[] { 0 };
+    public IReadOnlyList<float>? TensorSplit { get; init; }
+    public bool OffloadKqv { get; init; } = true;
+    public ulong MaxVramBytesPerDevice { get; init; }
+}
+
+/// <summary>Applied partial-offload and measured steady-state residency.</summary>
+public sealed class CnetHarnessOffloadInfo
+{
+    internal CnetHarnessOffloadInfo(
+        int requestedGpuLayers,
+        int appliedGpuLayers,
+        int modelLayerCount,
+        IReadOnlyList<int> deviceIndices,
+        IReadOnlyList<ulong> vramBytes,
+        CnetHarnessSplitMode splitMode,
+        bool offloadKqv)
+    {
+        RequestedGpuLayers = requestedGpuLayers;
+        AppliedGpuLayers = appliedGpuLayers;
+        ModelLayerCount = modelLayerCount;
+        DeviceIndices = deviceIndices;
+        VramBytes = vramBytes;
+        SplitMode = splitMode;
+        OffloadKqv = offloadKqv;
+    }
+
+    public int RequestedGpuLayers { get; }
+    public int AppliedGpuLayers { get; }
+    public int ModelLayerCount { get; }
+    public IReadOnlyList<int> DeviceIndices { get; }
+    public IReadOnlyList<ulong> VramBytes { get; }
+    public CnetHarnessSplitMode SplitMode { get; }
+    public bool OffloadKqv { get; }
+}
+
 /// <summary>Session-open configuration. All fields required unless noted.</summary>
 public sealed class CnetHarnessConfig
 {
@@ -62,6 +113,7 @@ public sealed class CnetHarnessConfig
     public uint Threads { get; init; }
     public uint AicimoNumOps { get; init; } = 4;
     public uint AicimoBaseDim { get; init; } = 32;
+    public CnetHarnessGpuOffload? GpuOffload { get; init; }
 }
 
 /// <summary>Per-request generation options. <see cref="Role"/> feeds AICIMO.</summary>

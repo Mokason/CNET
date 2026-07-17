@@ -16,6 +16,7 @@
 #include "../../include/model_runtime.h"
 #include "../../include/model_probe.h"
 
+#include <math.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -86,6 +87,32 @@ static int validate_config(const CnetHarnessConfig *c) {
     if (c->n_threads == 0u || c->n_threads > 1024u) return 0;
     if (c->aicimo_num_ops < 4u || c->aicimo_num_ops > 256u) return 0;
     if (c->aicimo_base_dim < 8u || c->aicimo_base_dim > 8192u) return 0;
+    return 1;
+}
+
+static int validate_offload_policy(const CnetHarnessConfig *config,
+                                   const CnetHarnessOffloadPolicy *policy) {
+    if (!config || !policy) return 0;
+    if (config->resource_mask == (uint64_t)CNET_HARNESS_RESOURCE_CPU) return 0;
+    if (policy->abi_version != CNET_HARNESS_OFFLOAD_ABI_VERSION) return 0;
+    if (policy->struct_size != sizeof(*policy)) return 0;
+    if (policy->gpu_layer_count <= 0) return 0;
+    if (policy->device_count == 0u ||
+        policy->device_count > CNET_HARNESS_MAX_GPU_DEVICES) return 0;
+    if (policy->offload_kqv > 1u) return 0;
+    if (policy->device_count == 1u) {
+        if (policy->split_mode != CNET_HARNESS_SPLIT_NONE) return 0;
+    } else if (policy->split_mode != CNET_HARNESS_SPLIT_LAYER) {
+        return 0;
+    }
+    for (uint32_t i = 0; i < policy->device_count; ++i) {
+        if (policy->device_indices[i] < 0) return 0;
+        if (!isfinite(policy->tensor_split[i]) ||
+            policy->tensor_split[i] < 0.0f) return 0;
+        for (uint32_t j = 0; j < i; ++j) {
+            if (policy->device_indices[i] == policy->device_indices[j]) return 0;
+        }
+    }
     return 1;
 }
 
@@ -193,11 +220,16 @@ static void session_release(struct CnetHarnessSession *session) {
     free(session);
 }
 
-int cnet_harness_open(const CnetHarnessConfig *config,
-                      CnetHarnessSession **session_out) {
+static int cnet_harness_open_internal(
+        const CnetHarnessConfig *config,
+        const CnetHarnessOffloadPolicy *policy,
+        CnetHarnessSession **session_out) {
     if (!session_out) return CNET_HARNESS_ERR_INVALID;
     *session_out = NULL;
     if (!validate_config(config)) return CNET_HARNESS_ERR_INVALID;
+    if (policy && !validate_offload_policy(config, policy)) {
+        return CNET_HARNESS_ERR_INVALID;
+    }
 
     if (access(config->model_path, R_OK) != 0) {
         return CNET_HARNESS_ERR_MODEL_LOAD;
@@ -209,6 +241,20 @@ int cnet_harness_open(const CnetHarnessConfig *config,
 
     session->magic = CNET_HARNESS_SESSION_MAGIC;
     session->config_copy = *config;
+    if (policy) {
+        session->offload_enabled = 1;
+        session->offload_policy = *policy;
+        session->offload_info.abi_version = CNET_HARNESS_OFFLOAD_ABI_VERSION;
+        session->offload_info.struct_size =
+            (uint32_t)sizeof(session->offload_info);
+        session->offload_info.requested_gpu_layers = policy->gpu_layer_count;
+        session->offload_info.device_count = policy->device_count;
+        session->offload_info.split_mode = policy->split_mode;
+        session->offload_info.offload_kqv = policy->offload_kqv;
+        for (uint32_t i = 0; i < policy->device_count; ++i) {
+            session->offload_info.device_indices[i] = policy->device_indices[i];
+        }
+    }
     session->model_id_owned = dup_string(config->model_id);
     session->model_path_owned = dup_string(config->model_path);
     if (!session->model_id_owned || !session->model_path_owned) {
@@ -235,6 +281,36 @@ int cnet_harness_open(const CnetHarnessConfig *config,
     }
 
     *session_out = session;
+    return CNET_HARNESS_OK;
+}
+
+int cnet_harness_open(const CnetHarnessConfig *config,
+                      CnetHarnessSession **session_out) {
+    return cnet_harness_open_internal(config, NULL, session_out);
+}
+
+int cnet_harness_open_with_offload(const CnetHarnessConfig *config,
+                                   const CnetHarnessOffloadPolicy *policy,
+                                   CnetHarnessSession **session_out) {
+    if (!policy) {
+        if (session_out) *session_out = NULL;
+        return CNET_HARNESS_ERR_INVALID;
+    }
+    return cnet_harness_open_internal(config, policy, session_out);
+}
+
+int cnet_harness_get_offload_info(CnetHarnessSession *session,
+                                  CnetHarnessOffloadInfo *info_out) {
+    if (!session || session->magic != CNET_HARNESS_SESSION_MAGIC) {
+        return CNET_HARNESS_ERR_STATE;
+    }
+    if (!info_out ||
+        info_out->abi_version != CNET_HARNESS_OFFLOAD_ABI_VERSION ||
+        info_out->struct_size != sizeof(*info_out)) {
+        return CNET_HARNESS_ERR_INVALID;
+    }
+    if (!session->offload_enabled) return CNET_HARNESS_ERR_STATE;
+    *info_out = session->offload_info;
     return CNET_HARNESS_OK;
 }
 

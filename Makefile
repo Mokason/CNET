@@ -191,6 +191,7 @@ MODEL_PROBE := src/model_probe.c
 CNET_LLAMA_EVAL := tools/cnet_llama_eval.cpp
 LLAMA_CPP_ROOT ?= /home/marble/llama.cpp
 LLAMA_CPP_BUILD ?= $(LLAMA_CPP_ROOT)/build-rocm
+LLAMA_CPP_HYBRID_BUILD ?= $(LLAMA_CPP_ROOT)/build-rocm-nographs
 SCAN := src/scan.c
 CERTIFY_TEST := tests/test_certify.c
 CERTIFY_DEMO := tests/certify_demo.c
@@ -2345,6 +2346,38 @@ cnet_harness_plugin: cnet_dll $(CNET_HARNESS_CORE) $(CNET_HARNESS_LLAMA) $(CNET_
 		-Wl,-rpath,'$$ORIGIN' -Wl,-rpath,'$$ORIGIN/..' \
 		-Wl,-rpath,$(LLAMA_CPP_BUILD)/bin
 	@echo "Built $(BIN_DIR)/libcnet_harness.so (CNET .NET inference harness plugin)."
+
+# Real bounded-offload acceptance. Partial CPU/GPU execution produces changing
+# scheduler subgraphs, so it intentionally links the dedicated HIP build with
+# GGML_HIP_GRAPHS=OFF rather than the full-GPU-optimized default build.
+CNET_HARNESS_GPU_BENCHMARK_REPEATS ?= 3
+CNET_HARNESS_GPU_BENCHMARK_TIMEOUT ?= 1800
+
+.PHONY: cnet_harness_gpu_benchmark
+cnet_harness_gpu_benchmark: LLAMA_CPP_BUILD := $(LLAMA_CPP_HYBRID_BUILD)
+cnet_harness_gpu_benchmark: cnet_harness_plugin
+	$(call dotnet_guard)
+	@test -n "$(CNET_HARNESS_MODEL)" || { \
+		echo "CNET_HARNESS_MODEL=/absolute/path/model.gguf is required" >&2; exit 2; \
+	}
+	@test -f "$(LLAMA_CPP_BUILD)/CMakeCache.txt" || { \
+		echo "missing hybrid llama.cpp build: $(LLAMA_CPP_BUILD)" >&2; exit 2; \
+	}
+	@grep -q '^GGML_HIP_GRAPHS:BOOL=OFF$$' "$(LLAMA_CPP_BUILD)/CMakeCache.txt" || { \
+		echo "hybrid llama.cpp build must set GGML_HIP_GRAPHS=OFF" >&2; exit 2; \
+	}
+	@mkdir -p logs
+	$(DOTNET) build dotnet/CnetHarnessSmoke/CnetHarnessSmoke.csproj -c Release --nologo \
+		> logs/cnet_harness_gpu_smoke_build.log 2>&1
+	timeout --signal=TERM --kill-after=15s $(CNET_HARNESS_GPU_BENCHMARK_TIMEOUT)s \
+		python3 tests/cnet_harness_gpu_benchmark.py \
+		--model "$(CNET_HARNESS_MODEL)" \
+		--worktree "$(CURDIR)" \
+		--dotnet "$(DOTNET)" \
+		--llama-bin "$(LLAMA_CPP_BUILD)/bin" \
+		--repeats $(CNET_HARNESS_GPU_BENCHMARK_REPEATS)
+	@grep -q '"status": "CNET_HARNESS_GPU_BENCHMARK_PASS"' \
+		logs/cnet_harness_gpu_benchmark.json
 
 .PHONY: cnet_harness_contract_test
 cnet_harness_contract_test: $(CCE) $(CCE_MODEL_CATALOG) $(MODEL_RUNTIME) $(MODEL_PROBE) $(CNET_HARNESS_CORE) tests/test_cnet_harness_contract.c tests/test_cnet_harness_failclosed.c $(CNET_HARNESS_HEADERS)

@@ -85,3 +85,18 @@ Status at commit: **FULL FUNCTIONAL GREEN — DEFAULT ARTIFACT REFRESHED; FINAL 
 | Operational boundary | Any service start could load the local Gemma-backed teacher and violate the offline requirement. | No start/enable action is present in Make targets or tests; `cnet-gap-lane.service` remains disabled/inactive and Gemma remains offline. Build-only recovery is explicit operator preparation, not activation. |
 
 H0 for the focused candidate is rejected: the service has a fail-safe executable condition and build-only recovery path, while exact full-artifact and linked-runtime provenance reaches native, managed, and MCP observers without changing the old identity ABI. Release closure is granted only by the single clean-tree authority above; publication to the private `origin/master` occurred only under the user's explicit direction.
+
+## 2026-07-17 Bounded Partial GPU Offload
+
+Source of truth: `plans/bounded_gpu_offload.md`
+Technical contract: `docs/cnet_bounded_gpu_offload.md`
+
+| Slice | Status | Required evidence |
+|---|---|---|
+| Additive native ABI | PASS | legacy ABI v1 unchanged; versioned offload open and introspection fail closed |
+| Managed projection | PASS | exact per-session layer/device/split/cap projection; no process-global policy |
+| Single-R9700 | PASS | 16/36 layers: 9.29x prefill, 1.66x decode, 690 MiB harness VRAM, exact output, zero cleanup delta |
+| Dual-R9700 | VALID, REJECTED AS DEFAULT | 12-layer split was 0.492% slower than one GPU and used 37 W more combined peak power |
+| Closure | PASS | three-repeat matrix, real full-layer/cap fail-closed probes, and process/VRAM sweep |
+
+H1 accepted for bounded single-GPU offload. The recommended Bonsai-8B policy is 16/36 layers on one R9700 with a 2 GiB/device hard cap. Dual-GPU remains opt-in for future larger models and is not recommended for Bonsai-8B.

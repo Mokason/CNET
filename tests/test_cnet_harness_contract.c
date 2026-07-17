@@ -33,6 +33,7 @@
 #include "../src/cnet_harness/cnet_harness_private.h"
 
 #include <errno.h>
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -57,10 +58,28 @@ static int fake_prepare_close_calls = 0;
 static int fake_finish_close_calls = 0;
 static int fake_teardown_order_ok = 1;
 static int fake_teardown_stage = 0;
+static int fake_observed_offload_enabled = 0;
+static CnetHarnessOffloadPolicy fake_observed_offload_policy;
 
 int harness_backend_open(struct CnetHarnessSession *session) {
-    (void)session;
     fake_open_calls++;
+    fake_observed_offload_enabled = session->offload_enabled;
+    memset(&fake_observed_offload_policy, 0,
+           sizeof(fake_observed_offload_policy));
+    if (session->offload_enabled) {
+        fake_observed_offload_policy = session->offload_policy;
+        session->offload_info.applied_gpu_layers =
+            session->offload_policy.gpu_layer_count;
+        session->offload_info.model_layer_count = 36;
+        session->offload_info.device_count =
+            session->offload_policy.device_count;
+        session->offload_info.device_indices[0] =
+            session->offload_policy.device_indices[0];
+        session->offload_info.device_indices[1] =
+            session->offload_policy.device_indices[1];
+        session->offload_info.vram_bytes[0] = 400000000ull;
+        session->offload_info.vram_bytes[1] = 420000000ull;
+    }
     return CNET_HARNESS_OK;
 }
 
@@ -440,6 +459,112 @@ static void test_generate_options_validated(void) {
     fprintf(stderr, "  test_generate_options_validated: done\n");
 }
 
+static CnetHarnessOffloadPolicy valid_offload_policy(void) {
+    CnetHarnessOffloadPolicy p;
+    memset(&p, 0, sizeof(p));
+    p.abi_version = CNET_HARNESS_OFFLOAD_ABI_VERSION;
+    p.struct_size = (uint32_t)sizeof(p);
+    p.gpu_layer_count = 8;
+    p.device_count = 2;
+    p.device_indices[0] = 0;
+    p.device_indices[1] = 1;
+    p.tensor_split[0] = 1.0f;
+    p.tensor_split[1] = 1.0f;
+    p.split_mode = CNET_HARNESS_SPLIT_LAYER;
+    p.offload_kqv = 1u;
+    p.max_vram_bytes_per_device = 2ull * 1024ull * 1024ull * 1024ull;
+    return p;
+}
+
+static void test_additive_offload_policy(void) {
+    CnetHarnessConfig c = valid_config();
+    CnetHarnessSession *s = NULL;
+
+    fake_observed_offload_enabled = -1;
+    CHECK(cnet_harness_open(&c, &s) == CNET_HARNESS_OK,
+          "offload: legacy open remains valid");
+    CHECK(fake_observed_offload_enabled == 0,
+          "offload: legacy open carries no policy");
+    cnet_harness_close(s);
+
+    CnetHarnessOffloadPolicy p = valid_offload_policy();
+    s = NULL;
+    CHECK(cnet_harness_open_with_offload(&c, &p, &s) == CNET_HARNESS_OK,
+          "offload: additive open accepts valid bounded policy");
+    CHECK(s != NULL && fake_observed_offload_enabled == 1,
+          "offload: backend observes enabled policy");
+    CHECK(fake_observed_offload_policy.gpu_layer_count == 8 &&
+          fake_observed_offload_policy.device_count == 2 &&
+          fake_observed_offload_policy.device_indices[0] == 0 &&
+          fake_observed_offload_policy.device_indices[1] == 1 &&
+          fake_observed_offload_policy.tensor_split[0] == 1.0f &&
+          fake_observed_offload_policy.tensor_split[1] == 1.0f &&
+          fake_observed_offload_policy.max_vram_bytes_per_device ==
+              2ull * 1024ull * 1024ull * 1024ull,
+          "offload: policy copied exactly before backend open");
+
+    CnetHarnessOffloadInfo info;
+    memset(&info, 0, sizeof(info));
+    info.abi_version = CNET_HARNESS_OFFLOAD_ABI_VERSION;
+    info.struct_size = (uint32_t)sizeof(info);
+    CHECK(cnet_harness_get_offload_info(s, &info) == CNET_HARNESS_OK,
+          "offload: introspection succeeds");
+    CHECK(info.applied_gpu_layers == 8 && info.model_layer_count == 36 &&
+          info.device_count == 2 && info.device_indices[0] == 0 &&
+          info.device_indices[1] == 1 && info.vram_bytes[0] == 400000000ull &&
+          info.vram_bytes[1] == 420000000ull,
+          "offload: introspection projects applied policy and residency");
+    info.struct_size--;
+    CHECK(cnet_harness_get_offload_info(s, &info) == CNET_HARNESS_ERR_INVALID,
+          "offload: introspection rejects bad struct size");
+    cnet_harness_close(s);
+
+    CnetHarnessOffloadPolicy bad = p;
+    bad.abi_version++;
+    s = (CnetHarnessSession *)0x1;
+    CHECK(cnet_harness_open_with_offload(&c, &bad, &s) ==
+              CNET_HARNESS_ERR_INVALID && s == NULL,
+          "offload: bad policy ABI rejected before allocation");
+
+    bad = p;
+    bad.gpu_layer_count = 0;
+    CHECK(cnet_harness_open_with_offload(&c, &bad, &s) ==
+              CNET_HARNESS_ERR_INVALID,
+          "offload: zero layer count rejected");
+
+    bad = p;
+    bad.device_indices[1] = bad.device_indices[0];
+    CHECK(cnet_harness_open_with_offload(&c, &bad, &s) ==
+              CNET_HARNESS_ERR_INVALID,
+          "offload: duplicate devices rejected");
+
+    bad = p;
+    bad.split_mode = CNET_HARNESS_SPLIT_NONE;
+    CHECK(cnet_harness_open_with_offload(&c, &bad, &s) ==
+              CNET_HARNESS_ERR_INVALID,
+          "offload: multi-device NONE split rejected");
+
+    bad = p;
+    bad.tensor_split[0] = NAN;
+    CHECK(cnet_harness_open_with_offload(&c, &bad, &s) ==
+              CNET_HARNESS_ERR_INVALID,
+          "offload: non-finite tensor split rejected");
+
+    bad = p;
+    bad.offload_kqv = 2u;
+    CHECK(cnet_harness_open_with_offload(&c, &bad, &s) ==
+              CNET_HARNESS_ERR_INVALID,
+          "offload: non-boolean KQV flag rejected");
+
+    CnetHarnessConfig cpu = c;
+    cpu.resource_mask = CNET_HARNESS_RESOURCE_CPU;
+    CHECK(cnet_harness_open_with_offload(&cpu, &p, &s) ==
+              CNET_HARNESS_ERR_INVALID,
+          "offload: CPU resource plus GPU policy rejected");
+
+    fprintf(stderr, "  test_additive_offload_policy: done\n");
+}
+
 int main(void) {
     printf("=== CNET harness contract test ===\n");
     make_temp_model_file();
@@ -451,6 +576,7 @@ int main(void) {
     test_error_strings();
     test_safe_null_teardown();
     test_generate_options_validated();
+    test_additive_offload_policy();
 
     remove_temp_model_file();
 

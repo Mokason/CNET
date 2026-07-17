@@ -66,11 +66,15 @@ public sealed class CnetHarnessSession : IDisposable
     private readonly object _gate = new();
     private bool _disposed;
 
+    public CnetHarnessOffloadInfo? OffloadInfo { get; }
+
     internal CnetHarnessSession(ICnetHarnessNative native,
-                                 CnetHarnessSessionHandle handle)
+                                 CnetHarnessSessionHandle handle,
+                                 CnetHarnessOffloadInfo? offloadInfo)
     {
         _native = native;
         _handle = handle;
+        OffloadInfo = offloadInfo;
     }
 
     /// <summary>Open a new session. Throws <see cref="CnetHarnessException"/> on any non-OK native status.</summary>
@@ -104,14 +108,38 @@ public sealed class CnetHarnessSession : IDisposable
                 AicimoBaseDim = config.AicimoBaseDim,
             };
 
-            int rc = native.Open(in nc, out IntPtr raw);
+            int rc;
+            IntPtr raw;
+            if (config.GpuOffload is null)
+            {
+                rc = native.Open(in nc, out raw);
+            }
+            else
+            {
+                NativeOffloadPolicy policy = BuildOffloadPolicy(config.GpuOffload);
+                rc = native.OpenWithOffload(in nc, in policy, out raw);
+            }
             if (rc != (int)CnetHarnessStatus.Ok || raw == IntPtr.Zero)
             {
-                throw MakeException(native, rc, "cnet_harness_open");
+                string operation = config.GpuOffload is null
+                    ? "cnet_harness_open"
+                    : "cnet_harness_open_with_offload";
+                throw MakeException(native, rc, operation);
             }
 
             var safeHandle = new CnetHarnessSessionHandle(native, raw);
-            return new CnetHarnessSession(native, safeHandle);
+            try
+            {
+                CnetHarnessOffloadInfo? offloadInfo = config.GpuOffload is null
+                    ? null
+                    : ReadOffloadInfo(native, raw);
+                return new CnetHarnessSession(native, safeHandle, offloadInfo);
+            }
+            catch
+            {
+                safeHandle.Dispose();
+                throw;
+            }
         }
         finally
         {
@@ -269,6 +297,127 @@ public sealed class CnetHarnessSession : IDisposable
             throw new ArgumentException("AicimoNumOps must be in [4, 256]", nameof(c));
         if (c.AicimoBaseDim < 8u || c.AicimoBaseDim > 8192u)
             throw new ArgumentException("AicimoBaseDim must be in [8, 8192]", nameof(c));
+        if (c.GpuOffload is not null)
+        {
+            if (mask == (ulong)CnetHarnessResource.Cpu)
+                throw new ArgumentException(
+                    "GpuOffload requires a GPU resource", nameof(c));
+            ValidateGpuOffload(c.GpuOffload);
+        }
+    }
+
+    private static void ValidateGpuOffload(CnetHarnessGpuOffload offload)
+    {
+        if (offload.LayerCount <= 0)
+            throw new ArgumentOutOfRangeException(nameof(offload.LayerCount),
+                "LayerCount must be > 0");
+        if (offload.DeviceIndices is null ||
+            offload.DeviceIndices.Count is < 1 or > 4)
+        {
+            throw new ArgumentException("DeviceIndices must contain 1 to 4 devices",
+                nameof(offload));
+        }
+        var seen = new System.Collections.Generic.HashSet<int>();
+        foreach (int device in offload.DeviceIndices)
+        {
+            if (device < 0)
+                throw new ArgumentOutOfRangeException(nameof(offload.DeviceIndices));
+            if (!seen.Add(device))
+                throw new ArgumentException("DeviceIndices must be distinct",
+                    nameof(offload));
+        }
+        if (offload.TensorSplit is null) return;
+        if (offload.TensorSplit.Count != offload.DeviceIndices.Count)
+            throw new ArgumentException(
+                "TensorSplit count must equal DeviceIndices count", nameof(offload));
+        foreach (float weight in offload.TensorSplit)
+        {
+            if (!float.IsFinite(weight) || weight < 0.0f)
+                throw new ArgumentOutOfRangeException(nameof(offload.TensorSplit));
+        }
+    }
+
+    private static NativeOffloadPolicy BuildOffloadPolicy(
+        CnetHarnessGpuOffload offload)
+    {
+        int count = offload.DeviceIndices.Count;
+        int[] devices = { -1, -1, -1, -1 };
+        float[] splits = new float[4];
+        bool anyPositive = false;
+        for (int i = 0; i < count; ++i)
+        {
+            devices[i] = offload.DeviceIndices[i];
+            float weight = offload.TensorSplit is null
+                ? 1.0f
+                : offload.TensorSplit[i];
+            splits[i] = weight;
+            anyPositive |= weight > 0.0f;
+        }
+        if (!anyPositive)
+        {
+            for (int i = 0; i < count; ++i) splits[i] = 1.0f;
+        }
+        return new NativeOffloadPolicy
+        {
+            AbiVersion = AbiConstants.OffloadAbiVersion,
+            StructSize = (uint)Marshal.SizeOf<NativeOffloadPolicy>(),
+            GpuLayerCount = offload.LayerCount,
+            DeviceCount = (uint)count,
+            Device0 = devices[0],
+            Device1 = devices[1],
+            Device2 = devices[2],
+            Device3 = devices[3],
+            TensorSplit0 = splits[0],
+            TensorSplit1 = splits[1],
+            TensorSplit2 = splits[2],
+            TensorSplit3 = splits[3],
+            SplitMode = count == 1
+                ? CnetHarnessSplitMode.None
+                : CnetHarnessSplitMode.Layer,
+            OffloadKqv = offload.OffloadKqv ? 1u : 0u,
+            MaxVramBytesPerDevice = offload.MaxVramBytesPerDevice,
+        };
+    }
+
+    private static CnetHarnessOffloadInfo ReadOffloadInfo(
+        ICnetHarnessNative native, IntPtr session)
+    {
+        NativeOffloadInfo info = new()
+        {
+            AbiVersion = AbiConstants.OffloadAbiVersion,
+            StructSize = (uint)Marshal.SizeOf<NativeOffloadInfo>(),
+        };
+        int rc = native.GetOffloadInfo(session, ref info);
+        if (rc != (int)CnetHarnessStatus.Ok)
+            throw MakeException(native, rc, "cnet_harness_get_offload_info");
+        if (info.AbiVersion != AbiConstants.OffloadAbiVersion ||
+            info.StructSize != (uint)Marshal.SizeOf<NativeOffloadInfo>() ||
+            info.DeviceCount is < 1u or > 4u ||
+            info.AppliedGpuLayers <= 0 ||
+            info.AppliedGpuLayers != info.RequestedGpuLayers ||
+            info.ModelLayerCount <= info.AppliedGpuLayers ||
+            info.OffloadKqv > 1u)
+        {
+            throw new CnetHarnessException(CnetHarnessStatus.InvalidState,
+                "native offload evidence is invalid or not strictly partial");
+        }
+
+        int[] allDevices = { info.Device0, info.Device1, info.Device2, info.Device3 };
+        ulong[] allVram = {
+            info.VramBytes0, info.VramBytes1, info.VramBytes2, info.VramBytes3,
+        };
+        int[] devices = new int[info.DeviceCount];
+        ulong[] vram = new ulong[info.DeviceCount];
+        Array.Copy(allDevices, devices, devices.Length);
+        Array.Copy(allVram, vram, vram.Length);
+        return new CnetHarnessOffloadInfo(
+            info.RequestedGpuLayers,
+            info.AppliedGpuLayers,
+            info.ModelLayerCount,
+            devices,
+            vram,
+            info.SplitMode,
+            info.OffloadKqv != 0u);
     }
 
     private static void ValidateGenerateOptions(CnetHarnessGenerateOptions o)

@@ -22,6 +22,9 @@ extern "C" {
 struct CnetHarnessSession {
     uint32_t magic;                    /* CNET_HARNESS_SESSION_MAGIC */
     CnetHarnessConfig config_copy;
+    int offload_enabled;
+    CnetHarnessOffloadPolicy offload_policy;
+    CnetHarnessOffloadInfo offload_info;
 
     /* Copies of string pointers held by config_copy (heap-owned by session). */
     char *model_id_owned;

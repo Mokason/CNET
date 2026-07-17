@@ -12,6 +12,48 @@ namespace CNET.Cce.CnetHarness;
 internal static class AbiConstants
 {
     public const uint AbiVersion = 1u;
+    public const uint OffloadAbiVersion = 1u;
+}
+
+[StructLayout(LayoutKind.Sequential)]
+internal struct NativeOffloadPolicy
+{
+    public uint AbiVersion;
+    public uint StructSize;
+    public int GpuLayerCount;
+    public uint DeviceCount;
+    public int Device0;
+    public int Device1;
+    public int Device2;
+    public int Device3;
+    public float TensorSplit0;
+    public float TensorSplit1;
+    public float TensorSplit2;
+    public float TensorSplit3;
+    public CnetHarnessSplitMode SplitMode;
+    public uint OffloadKqv;
+    public ulong MaxVramBytesPerDevice;
+}
+
+[StructLayout(LayoutKind.Sequential)]
+internal struct NativeOffloadInfo
+{
+    public uint AbiVersion;
+    public uint StructSize;
+    public int RequestedGpuLayers;
+    public int AppliedGpuLayers;
+    public int ModelLayerCount;
+    public uint DeviceCount;
+    public int Device0;
+    public int Device1;
+    public int Device2;
+    public int Device3;
+    public ulong VramBytes0;
+    public ulong VramBytes1;
+    public ulong VramBytes2;
+    public ulong VramBytes3;
+    public CnetHarnessSplitMode SplitMode;
+    public uint OffloadKqv;
 }
 
 [StructLayout(LayoutKind.Sequential)]
@@ -87,6 +129,15 @@ internal static partial class CnetHarnessNativeImports
     [LibraryImport(LibraryName, EntryPoint = "cnet_harness_open")]
     public static partial int Open(ref NativeConfig config, out IntPtr session);
 
+    [LibraryImport(LibraryName, EntryPoint = "cnet_harness_open_with_offload")]
+    public static partial int OpenWithOffload(ref NativeConfig config,
+                                              ref NativeOffloadPolicy policy,
+                                              out IntPtr session);
+
+    [LibraryImport(LibraryName, EntryPoint = "cnet_harness_get_offload_info")]
+    public static partial int GetOffloadInfo(IntPtr session,
+                                             ref NativeOffloadInfo info);
+
     [LibraryImport(LibraryName, EntryPoint = "cnet_harness_generate")]
     public static partial int Generate(IntPtr session,
                                         ref NativeGenerateOptions options,
@@ -116,6 +167,19 @@ internal sealed class LibraryCnetHarnessNative : ICnetHarnessNative
         NativeConfig local = config;
         return CnetHarnessNativeImports.Open(ref local, out session);
     }
+
+    public int OpenWithOffload(in NativeConfig config,
+                               in NativeOffloadPolicy policy,
+                               out IntPtr session)
+    {
+        NativeConfig configLocal = config;
+        NativeOffloadPolicy policyLocal = policy;
+        return CnetHarnessNativeImports.OpenWithOffload(
+            ref configLocal, ref policyLocal, out session);
+    }
+
+    public int GetOffloadInfo(IntPtr session, ref NativeOffloadInfo info)
+        => CnetHarnessNativeImports.GetOffloadInfo(session, ref info);
 
     public int Generate(IntPtr session, in NativeGenerateOptions options,
                         out IntPtr generation)

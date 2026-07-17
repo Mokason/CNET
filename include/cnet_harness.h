@@ -85,6 +85,43 @@ typedef struct {
     uint32_t aicimo_base_dim;  /* >= 8                             */
 } CnetHarnessConfig;
 
+/* Additive per-session GPU policy. This does not change CnetHarnessConfig or
+ * cnet_harness_open: ABI-v1 callers remain byte-for-byte compatible. Device
+ * indices address llama.cpp's dedicated-GPU enumeration after visibility
+ * filters; integrated GPUs are never selected by this contract. */
+#define CNET_HARNESS_OFFLOAD_ABI_VERSION 1u
+#define CNET_HARNESS_MAX_GPU_DEVICES 4u
+
+typedef enum {
+    CNET_HARNESS_SPLIT_NONE  = 0,
+    CNET_HARNESS_SPLIT_LAYER = 1
+} CnetHarnessSplitMode;
+
+typedef struct {
+    uint32_t abi_version;      /* = CNET_HARNESS_OFFLOAD_ABI_VERSION */
+    uint32_t struct_size;      /* = sizeof(CnetHarnessOffloadPolicy) */
+    int32_t gpu_layer_count;   /* > 0 and strictly below model layers */
+    uint32_t device_count;     /* [1, CNET_HARNESS_MAX_GPU_DEVICES] */
+    int32_t device_indices[CNET_HARNESS_MAX_GPU_DEVICES];
+    float tensor_split[CNET_HARNESS_MAX_GPU_DEVICES];
+    CnetHarnessSplitMode split_mode;
+    uint32_t offload_kqv;      /* strict boolean */
+    uint64_t max_vram_bytes_per_device; /* 0 disables secondary cap */
+} CnetHarnessOffloadPolicy;
+
+typedef struct {
+    uint32_t abi_version;
+    uint32_t struct_size;
+    int32_t requested_gpu_layers;
+    int32_t applied_gpu_layers;
+    int32_t model_layer_count;
+    uint32_t device_count;
+    int32_t device_indices[CNET_HARNESS_MAX_GPU_DEVICES];
+    uint64_t vram_bytes[CNET_HARNESS_MAX_GPU_DEVICES];
+    CnetHarnessSplitMode split_mode;
+    uint32_t offload_kqv;
+} CnetHarnessOffloadInfo;
+
 typedef struct {
     uint32_t abi_version;
     uint32_t struct_size;
@@ -123,6 +160,19 @@ typedef struct {
  * native callers; separate sessions may be used concurrently. */
 CNET_API int cnet_harness_open(const CnetHarnessConfig *config,
                                 CnetHarnessSession **session_out);
+
+/* Additive bounded-offload open. The legacy entry point above remains
+ * unchanged and never reads this policy. */
+CNET_API int cnet_harness_open_with_offload(
+    const CnetHarnessConfig *config,
+    const CnetHarnessOffloadPolicy *policy,
+    CnetHarnessSession **session_out);
+
+/* Copy the applied policy and measured steady-state device residency. The
+ * caller initializes abi_version + struct_size before the call. */
+CNET_API int cnet_harness_get_offload_info(
+    CnetHarnessSession *session,
+    CnetHarnessOffloadInfo *info_out);
 
 CNET_API int cnet_harness_generate(CnetHarnessSession *session,
                                     const CnetHarnessGenerateOptions *options,

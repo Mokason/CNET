@@ -18,6 +18,10 @@ extern "C" {
 #include "../../include/cce/cce_qgkp.h"
 #include "../../include/model_runtime.h"
 #include "../../include/model_probe.h"
+typedef struct cce_gguf cce_gguf;
+cce_result cce_gguf_load(const char *path, cce_gguf **out);
+void cce_gguf_free(cce_gguf *gguf);
+int cce_gguf_get_n_layer(const cce_gguf *gguf);
 }
 
 #include "ggml-backend.h"
@@ -37,11 +41,16 @@ extern "C" {
 namespace {
 
 struct BackendContext {
+    CnetHarnessSession *session = nullptr;
     uint64_t expected_resource_mask = 0;
     int main_gpu = -1;
     int is_cpu = 0;
     int loads = 0;
     int unloads = 0;
+    int model_layer_count = 0;
+    std::vector<ggml_backend_dev_t> selected_devices;
+    std::vector<float> tensor_split;
+    std::vector<std::size_t> free_vram_before;
 };
 
 struct BackendState {
@@ -76,6 +85,84 @@ void release_global_backend() {
     if (g_global_refcount == 0) {
         llama_backend_free();
     }
+}
+
+bool configure_bounded_offload(BackendContext *ctx,
+                               const std::string &load_path,
+                               llama_model_params *params) {
+    if (!ctx || !ctx->session || !params || !ctx->session->offload_enabled) {
+        return false;
+    }
+    const CnetHarnessOffloadPolicy &policy = ctx->session->offload_policy;
+
+    cce_gguf *metadata = nullptr;
+    if (cce_gguf_load(load_path.c_str(), &metadata) != CCE_OK || !metadata) {
+        std::fprintf(stderr,
+            "cnet_harness: bounded offload could not read GGUF metadata\n");
+        return false;
+    }
+    ctx->model_layer_count = cce_gguf_get_n_layer(metadata);
+    cce_gguf_free(metadata);
+    if (ctx->model_layer_count <= 0 ||
+        policy.gpu_layer_count >= ctx->model_layer_count) {
+        std::fprintf(stderr,
+            "cnet_harness: refusing non-partial offload (%d requested, %d model layers)\n",
+            policy.gpu_layer_count, ctx->model_layer_count);
+        return false;
+    }
+
+    std::vector<ggml_backend_dev_t> gpu_devices;
+    const std::size_t backend_count = ggml_backend_dev_count();
+    for (std::size_t i = 0; i < backend_count; ++i) {
+        ggml_backend_dev_t device = ggml_backend_dev_get(i);
+        if (device && ggml_backend_dev_type(device) ==
+                GGML_BACKEND_DEVICE_TYPE_GPU) {
+            gpu_devices.push_back(device);
+        }
+    }
+
+    ctx->selected_devices.clear();
+    ctx->free_vram_before.clear();
+    for (uint32_t i = 0; i < policy.device_count; ++i) {
+        const int requested = policy.device_indices[i];
+        if (requested < 0 ||
+            static_cast<std::size_t>(requested) >= gpu_devices.size()) {
+            std::fprintf(stderr,
+                "cnet_harness: GPU device index %d unavailable (%zu dedicated GPUs)\n",
+                requested, gpu_devices.size());
+            return false;
+        }
+        ggml_backend_dev_t device = gpu_devices[static_cast<std::size_t>(requested)];
+        ctx->selected_devices.push_back(device);
+        std::size_t free_bytes = 0;
+        std::size_t total_bytes = 0;
+        ggml_backend_dev_memory(device, &free_bytes, &total_bytes);
+        ctx->free_vram_before.push_back(free_bytes);
+    }
+    ctx->selected_devices.push_back(nullptr);
+
+    ctx->tensor_split.assign(llama_max_devices(), 0.0f);
+    bool any_positive = false;
+    for (uint32_t i = 0; i < policy.device_count; ++i) {
+        ctx->tensor_split[i] = policy.tensor_split[i];
+        any_positive = any_positive || policy.tensor_split[i] > 0.0f;
+    }
+    if (!any_positive) {
+        for (uint32_t i = 0; i < policy.device_count; ++i) {
+            ctx->tensor_split[i] = 1.0f;
+        }
+    }
+
+    params->devices = ctx->selected_devices.data();
+    params->n_gpu_layers = policy.gpu_layer_count;
+    params->main_gpu = 0;
+    params->split_mode = policy.device_count == 1u
+        ? LLAMA_SPLIT_MODE_NONE
+        : LLAMA_SPLIT_MODE_LAYER;
+    params->tensor_split = policy.device_count == 1u
+        ? nullptr
+        : ctx->tensor_split.data();
+    return true;
 }
 
 extern "C" int cnet_harness__llama_load(void *opaque,
@@ -115,6 +202,10 @@ extern "C" int cnet_harness__llama_load(void *opaque,
                                       load_path.c_str()) != CCE_OK) {
             return -1;
         }
+    }
+    if (ctx->session && ctx->session->offload_enabled &&
+        !configure_bounded_offload(ctx, load_path, &params)) {
+        return -1;
     }
 
     llama_model *model = llama_model_load_from_file(load_path.c_str(), params);
@@ -228,6 +319,44 @@ static llama_sampler *build_sampler(CnetHarnessSamplingMode mode,
     return chain;
 }
 
+bool publish_bounded_offload_info(CnetHarnessSession *session,
+                                  BackendState *state) {
+    if (!session || !state || !session->offload_enabled) return true;
+    const CnetHarnessOffloadPolicy &policy = session->offload_policy;
+    if (state->load_ctx.model_layer_count <= policy.gpu_layer_count ||
+        state->load_ctx.selected_devices.size() <= policy.device_count ||
+        state->load_ctx.free_vram_before.size() != policy.device_count) {
+        return false;
+    }
+
+    CnetHarnessOffloadInfo info = session->offload_info;
+    info.applied_gpu_layers = policy.gpu_layer_count;
+    info.model_layer_count = state->load_ctx.model_layer_count;
+    for (uint32_t i = 0; i < policy.device_count; ++i) {
+        std::size_t free_after = 0;
+        std::size_t total_bytes = 0;
+        ggml_backend_dev_memory(state->load_ctx.selected_devices[i],
+                                &free_after, &total_bytes);
+        const std::size_t free_before = state->load_ctx.free_vram_before[i];
+        const uint64_t delta = free_before > free_after
+            ? static_cast<uint64_t>(free_before - free_after)
+            : 0u;
+        if (policy.max_vram_bytes_per_device > 0u &&
+            delta > policy.max_vram_bytes_per_device) {
+            std::fprintf(stderr,
+                "cnet_harness: GPU %d residency %llu exceeds cap %llu bytes\n",
+                policy.device_indices[i],
+                static_cast<unsigned long long>(delta),
+                static_cast<unsigned long long>(
+                    policy.max_vram_bytes_per_device));
+            return false;
+        }
+        info.vram_bytes[i] = delta;
+    }
+    session->offload_info = info;
+    return true;
+}
+
 }  /* namespace */
 
 extern "C" {
@@ -242,6 +371,7 @@ int harness_backend_open(struct CnetHarnessSession *session) {
     } catch (...) {
         return CNET_HARNESS_ERR_INTERNAL;
     }
+    state->load_ctx.session = session;
     state->load_ctx.expected_resource_mask = session->config_copy.resource_mask;
     state->load_ctx.main_gpu = session->config_copy.main_gpu;
     state->load_ctx.is_cpu =
@@ -330,11 +460,17 @@ int harness_backend_open(struct CnetHarnessSession *session) {
     ctx_params.n_rs_seq = 0;
     ctx_params.n_threads = session->config_copy.n_threads;
     ctx_params.n_threads_batch = session->config_copy.n_threads;
-    ctx_params.offload_kqv = !state->load_ctx.is_cpu;
+    ctx_params.offload_kqv = session->offload_enabled
+        ? session->offload_policy.offload_kqv != 0u
+        : !state->load_ctx.is_cpu;
     ctx_params.no_perf = false;
 
     state->context = llama_init_from_model(state->model, ctx_params);
-    if (!state->context) {
+    if (!state->context || !publish_bounded_offload_info(session, state)) {
+        if (state->context) {
+            llama_free(state->context);
+            state->context = nullptr;
+        }
         cnet_model_release(session->manager, &session->lease);
         session->lease_held = 0;
         cnet_model_manager_close(session->manager);

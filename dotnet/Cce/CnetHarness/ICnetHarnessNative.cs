@@ -10,6 +10,9 @@ namespace CNET.Cce.CnetHarness;
 internal interface ICnetHarnessNative
 {
     int Open(in NativeConfig config, out IntPtr session);
+    int OpenWithOffload(in NativeConfig config, in NativeOffloadPolicy policy,
+                        out IntPtr session);
+    int GetOffloadInfo(IntPtr session, ref NativeOffloadInfo info);
     int Generate(IntPtr session, in NativeGenerateOptions options,
                  out IntPtr generation);
     int ProbeRoute(IntPtr session, string role,

@@ -151,6 +151,130 @@ public sealed class CnetHarnessTests
         };
         using var s = CnetHarnessSession.Open(c, fake);
         Assert.NotNull(s);
+        Assert.Equal(1, fake.OpenCalls);
+        Assert.Equal(0, fake.OpenWithOffloadCalls);
+        Assert.Null(s.OffloadInfo);
+    }
+
+    [Fact]
+    public void Open_BoundedGpuPolicy_UsesAdditiveEntryPointAndProjectsEvidence()
+    {
+        var fake = new FakeNative
+        {
+            OffloadInfoTemplate = new NativeOffloadInfo
+            {
+                AbiVersion = 1,
+                StructSize = (uint)Marshal.SizeOf<NativeOffloadInfo>(),
+                RequestedGpuLayers = 8,
+                AppliedGpuLayers = 8,
+                ModelLayerCount = 36,
+                DeviceCount = 2,
+                Device0 = 0,
+                Device1 = 1,
+                VramBytes0 = 400_000_000,
+                VramBytes1 = 420_000_000,
+                SplitMode = CnetHarnessSplitMode.Layer,
+                OffloadKqv = 1,
+            },
+        };
+        var c = new CnetHarnessConfig
+        {
+            ModelId = "unit",
+            ModelPath = "/tmp/unit.gguf",
+            Resource = CnetHarnessResource.Gpu0,
+            BudgetBytes = 4ul * 1024 * 1024 * 1024,
+            MainGpu = 0,
+            ContextTokens = 2048,
+            BatchTokens = 512,
+            Threads = 4,
+            AicimoNumOps = 4,
+            AicimoBaseDim = 32,
+            GpuOffload = new CnetHarnessGpuOffload
+            {
+                LayerCount = 8,
+                DeviceIndices = new[] { 0, 1 },
+                TensorSplit = new[] { 3.0f, 1.0f },
+                OffloadKqv = true,
+                MaxVramBytesPerDevice = 2ul * 1024 * 1024 * 1024,
+            },
+        };
+
+        using var s = CnetHarnessSession.Open(c, fake);
+
+        Assert.Equal(0, fake.OpenCalls);
+        Assert.Equal(1, fake.OpenWithOffloadCalls);
+        Assert.Equal(8, fake.LastOffloadPolicy.GpuLayerCount);
+        Assert.Equal((uint)2, fake.LastOffloadPolicy.DeviceCount);
+        Assert.Equal(0, fake.LastOffloadPolicy.Device0);
+        Assert.Equal(1, fake.LastOffloadPolicy.Device1);
+        Assert.Equal(3.0f, fake.LastOffloadPolicy.TensorSplit0);
+        Assert.Equal(1.0f, fake.LastOffloadPolicy.TensorSplit1);
+        Assert.Equal(CnetHarnessSplitMode.Layer, fake.LastOffloadPolicy.SplitMode);
+        Assert.Equal((uint)1, fake.LastOffloadPolicy.OffloadKqv);
+        Assert.Equal(2ul * 1024 * 1024 * 1024,
+            fake.LastOffloadPolicy.MaxVramBytesPerDevice);
+
+        Assert.NotNull(s.OffloadInfo);
+        Assert.Equal(8, s.OffloadInfo!.AppliedGpuLayers);
+        Assert.Equal(36, s.OffloadInfo.ModelLayerCount);
+        Assert.Equal(new[] { 0, 1 }, s.OffloadInfo.DeviceIndices);
+        Assert.Equal(new ulong[] { 400_000_000, 420_000_000 },
+            s.OffloadInfo.VramBytes);
+        Assert.Equal(1, fake.GetOffloadInfoCalls);
+    }
+
+    [Fact]
+    public void Open_InvalidGpuPolicy_ThrowsBeforeNativeCall()
+    {
+        var fake = new FakeNative();
+        var baseCfg = MakeConfig();
+        var c = new CnetHarnessConfig
+        {
+            ModelId = baseCfg.ModelId,
+            ModelPath = baseCfg.ModelPath,
+            Resource = CnetHarnessResource.Gpu0,
+            BudgetBytes = baseCfg.BudgetBytes,
+            MainGpu = 0,
+            ContextTokens = baseCfg.ContextTokens,
+            BatchTokens = baseCfg.BatchTokens,
+            Threads = baseCfg.Threads,
+            AicimoNumOps = baseCfg.AicimoNumOps,
+            AicimoBaseDim = baseCfg.AicimoBaseDim,
+            GpuOffload = new CnetHarnessGpuOffload
+            {
+                LayerCount = 0,
+                DeviceIndices = new[] { 0 },
+            },
+        };
+
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            CnetHarnessSession.Open(c, fake));
+        Assert.Equal(0, fake.OpenCalls + fake.OpenWithOffloadCalls);
+    }
+
+    [Fact]
+    public void Open_CpuResourceWithGpuPolicy_ThrowsBeforeNativeCall()
+    {
+        var fake = new FakeNative();
+        var c = new CnetHarnessConfig
+        {
+            ModelId = "unit",
+            ModelPath = "/tmp/unit.gguf",
+            Resource = CnetHarnessResource.Cpu,
+            BudgetBytes = 1,
+            MainGpu = -1,
+            ContextTokens = 2048,
+            BatchTokens = 512,
+            Threads = 4,
+            GpuOffload = new CnetHarnessGpuOffload
+            {
+                LayerCount = 4,
+                DeviceIndices = new[] { 0 },
+            },
+        };
+
+        Assert.Throws<ArgumentException>(() => CnetHarnessSession.Open(c, fake));
+        Assert.Equal(0, fake.OpenCalls + fake.OpenWithOffloadCalls);
     }
 
     [Fact]
@@ -802,6 +926,11 @@ public sealed class CnetHarnessTests
         public bool GenerationAicimoOverride = false;
         public int GenerationFreeCalls = 0;
         public int CloseCalls = 0;
+        public int OpenCalls = 0;
+        public int OpenWithOffloadCalls = 0;
+        public int GetOffloadInfoCalls = 0;
+        public NativeOffloadPolicy LastOffloadPolicy;
+        public NativeOffloadInfo OffloadInfoTemplate;
         public string LastSystem = "";
         public string LastUser = "";
         public string LastRole = "";
@@ -821,12 +950,35 @@ public sealed class CnetHarnessTests
 
         public int Open(in NativeConfig config, out IntPtr session)
         {
+            OpenCalls++;
             if (OpenReturn != 0)
             {
                 session = IntPtr.Zero;
                 return OpenReturn;
             }
             session = new IntPtr(SessionSentinel);
+            return 0;
+        }
+
+        public int OpenWithOffload(in NativeConfig config,
+                                   in NativeOffloadPolicy policy,
+                                   out IntPtr session)
+        {
+            OpenWithOffloadCalls++;
+            LastOffloadPolicy = policy;
+            if (OpenReturn != 0)
+            {
+                session = IntPtr.Zero;
+                return OpenReturn;
+            }
+            session = new IntPtr(SessionSentinel);
+            return 0;
+        }
+
+        public int GetOffloadInfo(IntPtr session, ref NativeOffloadInfo info)
+        {
+            GetOffloadInfoCalls++;
+            info = OffloadInfoTemplate;
             return 0;
         }
 

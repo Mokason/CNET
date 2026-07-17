@@ -9,19 +9,75 @@ const string PrefixMode = "--prefix-reuse-regression";
 const string SoakMode = "--memory-soak";
 const string ContinuousMode = "--continuous-memory";
 const string AsyncContextMode = "--async-context";
+const string GpuBaselineMode = "--gpu-baseline";
+const string GpuOffloadMode = "--gpu-offload";
 
-if (args.Length is < 1 or > 2 || !File.Exists(args[0]))
+if (args.Length < 1 || args.Length > 5 || !File.Exists(args[0]))
 {
     Console.Error.WriteLine(
-        $"usage: CnetHarnessSmoke /absolute/path/to/model.gguf [{BatchMode}|{PrefixMode}|{SoakMode}|{ContinuousMode}|{AsyncContextMode}]");
+        $"usage: CnetHarnessSmoke /absolute/path/to/model.gguf "
+        + $"[{BatchMode}|{PrefixMode}|{SoakMode}|{ContinuousMode}|{AsyncContextMode}|"
+        + $"{GpuBaselineMode}|{GpuOffloadMode} LAYERS DEVICES [MAX_VRAM_MIB]]");
     return 2;
 }
 
-string? mode = args.Length == 2 ? args[1] : null;
+string? mode = args.Length >= 2 ? args[1] : null;
 if (mode is not null and not BatchMode and not PrefixMode
-    and not SoakMode and not ContinuousMode and not AsyncContextMode)
+    and not SoakMode and not ContinuousMode and not AsyncContextMode
+    and not GpuBaselineMode and not GpuOffloadMode)
 {
     Console.Error.WriteLine($"unknown mode: {mode}");
+    return 2;
+}
+
+CnetHarnessGpuOffload? gpuOffload = null;
+int[] gpuDevices = Array.Empty<int>();
+if (mode == GpuOffloadMode)
+{
+    if (args.Length is < 4 or > 5
+        || !int.TryParse(args[2], out int gpuLayers)
+        || gpuLayers <= 0)
+    {
+        Console.Error.WriteLine(
+            $"{GpuOffloadMode} requires positive LAYERS and comma-separated DEVICES");
+        return 2;
+    }
+    try
+    {
+        gpuDevices = args[3].Split(',', StringSplitOptions.RemoveEmptyEntries)
+            .Select(int.Parse).ToArray();
+    }
+    catch (Exception ex) when (ex is FormatException or OverflowException)
+    {
+        Console.Error.WriteLine("DEVICES must be comma-separated integer indices");
+        return 2;
+    }
+    if (gpuDevices.Length is < 1 or > 4
+        || gpuDevices.Any(d => d is < 0 or > 3)
+        || gpuDevices.Distinct().Count() != gpuDevices.Length)
+    {
+        Console.Error.WriteLine("DEVICES must contain 1-4 distinct indices in [0,3]");
+        return 2;
+    }
+    ulong maxVramMib = 2048;
+    if (args.Length == 5
+        && (!ulong.TryParse(args[4], out maxVramMib) || maxVramMib == 0))
+    {
+        Console.Error.WriteLine("MAX_VRAM_MIB must be positive");
+        return 2;
+    }
+    gpuOffload = new CnetHarnessGpuOffload
+    {
+        LayerCount = gpuLayers,
+        DeviceIndices = gpuDevices,
+        TensorSplit = Enumerable.Repeat(1.0f, gpuDevices.Length).ToArray(),
+        OffloadKqv = true,
+        MaxVramBytesPerDevice = checked(maxVramMib * 1024UL * 1024UL),
+    };
+}
+else if (args.Length > 2)
+{
+    Console.Error.WriteLine("extra arguments are only valid with --gpu-offload");
     return 2;
 }
 
@@ -29,19 +85,30 @@ string modelPath = Path.GetFullPath(args[0]);
 ulong modelBytes = checked((ulong)new FileInfo(modelPath).Length);
 ulong budgetBytes = Math.Max(2UL * 1024UL * 1024UL * 1024UL,
                          checked(modelBytes + 512UL * 1024UL * 1024UL));
+CnetHarnessResource resource = gpuOffload is null
+    ? CnetHarnessResource.Cpu
+    : gpuDevices[0] switch
+    {
+        0 => CnetHarnessResource.Gpu0,
+        1 => CnetHarnessResource.Gpu1,
+        2 => CnetHarnessResource.Gpu2,
+        3 => CnetHarnessResource.Gpu3,
+        _ => throw new UnreachableException(),
+    };
 
 var config = new CnetHarnessConfig
 {
     ModelId = Path.GetFileNameWithoutExtension(modelPath),
     ModelPath = modelPath,
-    Resource = CnetHarnessResource.Cpu,
+    Resource = resource,
     BudgetBytes = budgetBytes,
-    MainGpu = -1,
+    MainGpu = gpuOffload is null ? -1 : gpuDevices[0],
     ContextTokens = 512,
     BatchTokens = mode is null ? 512u : 64u,
     Threads = 2,
     AicimoNumOps = 4,
     AicimoBaseDim = 32,
+    GpuOffload = gpuOffload,
 };
 
 using var session = CnetHarnessSession.Open(config);
@@ -67,6 +134,58 @@ static string Visible(string text)
         .Replace("<think>", string.Empty, StringComparison.OrdinalIgnoreCase)
         .Replace("</think>", string.Empty, StringComparison.OrdinalIgnoreCase)
         .Trim();
+}
+
+if (mode is GpuBaselineMode or GpuOffloadMode)
+{
+    CnetHarnessOffloadInfo? info = session.OffloadInfo;
+    string prompt = string.Join(' ', Enumerable.Repeat("context", 120))
+        + " Explain in one sentence why bounded memory matters. /no_think";
+    CnetHarnessGenerationResult gpuResult = Generate(prompt, 64);
+    bool isGpu = mode == GpuOffloadMode;
+    bool partial = !isGpu || info is not null
+        && info.RequestedGpuLayers == gpuOffload!.LayerCount
+        && info.AppliedGpuLayers == gpuOffload.LayerCount
+        && info.AppliedGpuLayers < info.ModelLayerCount;
+    bool deviceMatch = !isGpu || info is not null
+        && info.DeviceIndices.SequenceEqual(gpuDevices);
+    bool residencyBounded = !isGpu || info is not null
+        && info.VramBytes.Count == gpuDevices.Length
+        && info.VramBytes.All(bytes => bytes > 0
+            && bytes <= gpuOffload!.MaxVramBytesPerDevice);
+    bool generated = gpuResult.GeneratedTokens > 0 && gpuResult.Text.Length > 0;
+    bool pass = partial && deviceMatch && residencyBounded && generated;
+    var evidence = new
+    {
+        status = pass
+            ? isGpu ? "CNET_HARNESS_GPU_OFFLOAD_PASS"
+                    : "CNET_HARNESS_GPU_BASELINE_PASS"
+            : isGpu ? "CNET_HARNESS_GPU_OFFLOAD_FAIL"
+                    : "CNET_HARNESS_GPU_BASELINE_FAIL",
+        requestedGpuLayers = gpuOffload?.LayerCount ?? 0,
+        appliedGpuLayers = info?.AppliedGpuLayers,
+        modelLayerCount = info?.ModelLayerCount,
+        deviceIndices = info?.DeviceIndices,
+        splitMode = info?.SplitMode.ToString(),
+        offloadKqv = info?.OffloadKqv,
+        vramBytes = info?.VramBytes,
+        maxVramBytesPerDevice = gpuOffload?.MaxVramBytesPerDevice ?? 0,
+        gpuResult.PromptTokens,
+        gpuResult.GeneratedTokens,
+        gpuResult.PromptMs,
+        gpuResult.GenerationMs,
+        gpuResult.Text,
+        partial,
+        deviceMatch,
+        residencyBounded,
+    };
+    if (!pass)
+    {
+        Console.Error.WriteLine(JsonSerializer.Serialize(evidence));
+        return 1;
+    }
+    Console.WriteLine(JsonSerializer.Serialize(evidence));
+    return 0;
 }
 
 if (mode == AsyncContextMode)
