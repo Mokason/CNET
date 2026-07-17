@@ -55,6 +55,9 @@ int main(void) {
               cnet_jtc_decode_tool(tool) == 5,
           "unknown shape → final (closed default)");
 
+    check(cnet_jtc_ports_match(cnet_jtc_input_port(), cnet_jtc_output_port()),
+          "ports_match spine");
+
     /* Mine + admit */
     check(cnet_jtc_v0_mine_admit(&reg, 0x4A54435F01ULL, &student, NULL) == 0 &&
               student != NULL,
@@ -119,6 +122,16 @@ int main(void) {
     }
 
     soul_close(host);
+
+    /* ensure_sealed idempotent on already-sealed base */
+    {
+        CnetBase b2;
+        cnb_init(&b2);
+        check(cnb_load(&b2, base_path) == 0, "reload sealed base");
+        check(cnet_jtc_ensure_sealed(&b2, NULL) == 1, "ensure_sealed already");
+        cnb_free(&b2);
+    }
+
     registry_free(&reg);
     /* student borrowed by registry; free process-owned after free */
     if (student) {

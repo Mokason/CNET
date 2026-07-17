@@ -42,6 +42,16 @@ Alphabet must stay aligned: `src/json_toolcall.c` ↔ `dotnet/Cce/JsonToolCall.c
 | C Alphabet SoT | `config/json_toolcall_v0.json` → `make json_toolcall_alphabet` |
 | D Metrics / recycle | `personal_ai_metrics` + seal script recycle note |
 | E Gap path | `JsonToolCall.NoteGap` / unknown tool → inbox `jtc_feat→json_tool` |
+| F JTC teacher | `gap_lane_run`: bind `jtc_hermetic_v0` + `drain_jtc_gaps` → `cnet_jtc_ensure_sealed` |
+
+### Gap-lane teacher (F)
+
+Generic `mine_from_oracle` treats `PORT_RAW` as **unbounded**, so JTC gaps used to stay `skipped_no_oracle`. The lane now:
+
+1. Registers hermetic oracle `jtc_hermetic_v0` for matching open gaps (with or without GGUF).
+2. After each tick, `drain_jtc_gaps` runs the **finite** closed-set path (`cnet_jtc_ensure_sealed`) and marks those gaps `CLOSED`.
+
+Disable: `CNET_JTC_TEACHER=0`.
 
 ## Seal into personal / live CNB
 

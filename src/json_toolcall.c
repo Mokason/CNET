@@ -1,5 +1,8 @@
 #include "../include/json_toolcall.h"
 #include "../include/json_toolcall_alphabet.inc"
+#include "../include/base.h"
+#include "../include/contract/contract.h"
+#include "../include/specialist.h"
 
 #include <ctype.h>
 #include <stdio.h>
@@ -143,5 +146,80 @@ int cnet_jtc_v0_mine_admit(
         return 1;
     }
     if (!teacher_out) external_teacher_unbind(t);
+    return 0;
+}
+
+int cnet_jtc_ports_match(Port in, Port goal) {
+    if (in.family != PORT_RAW || in.field_width != (size_t)CNET_JTC_N_FEAT ||
+        in.field_count != 1)
+        return 0;
+    if (goal.family != PORT_ONEHOT ||
+        goal.field_width != (size_t)CNET_JTC_N_TOOL || goal.field_count != 1)
+        return 0;
+    /* Tags optional but when set must match spine. */
+    if (in.tag[0] && strcmp(in.tag, "jtc_feat") != 0) return 0;
+    if (goal.tag[0] && strcmp(goal.tag, "json_tool") != 0) return 0;
+    return 1;
+}
+
+int cnet_jtc_ensure_sealed(CnetBase *base, PrimitiveRegistry *reg) {
+    BinaryTransformNetwork *student = NULL;
+    PrimitiveRegistry local_reg, *r;
+    Contract c;
+    double inputs[CNET_JTC_N_TOOL * CNET_JTC_N_FEAT];
+    double targets[CNET_JTC_N_TOOL * CNET_JTC_N_TOOL];
+    int ti, j, reused = 0, rc;
+    int own_reg = 0;
+
+    if (!base) return -1;
+    if (cnb_has_unit(base, CNET_JTC_UNIT_NAME))
+        return 1;
+
+    r = reg;
+    if (!r) {
+        registry_init(&local_reg);
+        r = &local_reg;
+        own_reg = 1;
+    }
+
+    if (cnet_jtc_v0_mine_admit(r, 0x4A54435F54454143ULL, &student, NULL) != 0 ||
+        !student) {
+        if (own_reg) registry_free(&local_reg);
+        return -2;
+    }
+
+    for (ti = 0; ti < CNET_JTC_N_TOOL; ti++) {
+        cnet_jtc_encode(cnet_jtc_example_json(ti),
+                        inputs + ti * CNET_JTC_N_FEAT);
+        for (j = 0; j < CNET_JTC_N_TOOL; j++)
+            targets[ti * CNET_JTC_N_TOOL + j] = (j == ti) ? 1.0 : 0.0;
+    }
+    memset(&c, 0, sizeof c);
+    if (contract_init_borrowed(&c, CNET_JTC_UNIT_NAME, student, inputs, targets,
+                               CNET_JTC_N_TOOL) != 0 ||
+        btn_certify(student, &c, NULL) != 0) {
+        contract_free(&c);
+        if (own_reg) registry_free(&local_reg);
+        return -3;
+    }
+    rc = cnb_add_unit(base, student, &c, &reused);
+    contract_free(&c);
+    if (rc != 0) {
+        if (own_reg) {
+            registry_free(&local_reg);
+        }
+        return -4;
+    }
+    /* Base owns sealed blob. Free heap student only when we own the reg
+       (mine_admit otherwise leaves student borrowed by caller's reg). */
+    if (own_reg) {
+        btn_free(student);
+        free(student);
+        registry_free(&local_reg);
+    } else {
+        /* Keep student alive for reg entry; base has independent copy. */
+        (void)student;
+    }
+    (void)reused;
     return 0;
 }

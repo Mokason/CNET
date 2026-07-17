@@ -60,6 +60,21 @@ CNET_API int cnet_jtc_v0_mine_admit(
 /* Canonical example JSON strings per tool (for mines + host tests). */
 CNET_API const char *cnet_jtc_example_json(int tool_id);
 
+/* 1 if ports match the closed-set JTC signature (jtc_feat → json_tool). */
+CNET_API int cnet_jtc_ports_match(Port in, Port goal);
+
+/* Ensure json_toolcall_v0 is mined, certified, and sealed into `base`.
+   Also admits into `reg` when non-NULL (planner-visible). Idempotent when
+   identical unit already present. Returns:
+     0  sealed / admitted this call
+     1  already present (identical)
+    <0  error
+   Used by the gap-lane JTC teacher path (RAW domain is unbounded for
+   generic mine_from_oracle — this finite closed-set path is intentional). */
+struct CnetBase;
+CNET_API int cnet_jtc_ensure_sealed(struct CnetBase *base,
+                                    PrimitiveRegistry *reg);
+
 #ifdef __cplusplus
 }
 #endif

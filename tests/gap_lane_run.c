@@ -43,6 +43,9 @@
  *                             fingerprint into the ledger.
  *   CNET_LANE_TOKEN_BASE      window base token id (default 0)
  *   CNET_LANE_MARGIN_EPS      teacher abstention margin (default 1e-4)
+ *   CNET_JTC_TEACHER          0 = disable closed-set JSON tool-call teacher
+ *                             (default on). Binds jtc_hermetic_v0 and drains
+ *                             jtc_feat→json_tool gaps via finite mine+seal.
  *   CNET_ACQ_HIDDEN / CNET_ACQ_MAXHIDDEN / CNET_ACQ_EPOCHS
  *                             student structure budget (dynamic growth)
  *   CNET_ACQ_TARGET_LOSS / CNET_ACQ_MIN_IMPROVEMENT
@@ -65,6 +68,8 @@
 #include "../include/router.h"
 #include "../include/cnet_curiosity.h"
 #include "../include/cnet_eg.h"
+#include "../include/json_toolcall.h"
+#include "../include/base.h"
 #include "../include/cce/cce_detect.h"
 #include "../include/cce/cce_gguf.h"
 
@@ -352,6 +357,97 @@ static int lm_shape_ok(Port in, Port goal, int vocab, int base) {
         return (int)in.field_width == lm_window_n;  /* corpus window mode */
     return in.field_width <= LM_WINDOW_MAX &&
            base + (int)in.field_width <= vocab;
+}
+
+/* JTC teacher: closed-set hermetic oracle for jtc_feat → json_tool.
+   Registered alongside LM teachers so find_oracle matches NO_PLAN gaps.
+   Drain itself uses cnet_jtc_ensure_sealed (finite exemplars) because RAW
+   input domains are unbounded for generic mine_from_oracle. */
+static size_t bind_jtc_teachers(GapLane *L) {
+    size_t g, bound = 0;
+    Port in = cnet_jtc_input_port();
+    Port goal = cnet_jtc_output_port();
+    const char *dis = getenv("CNET_JTC_TEACHER");
+    if (dis && dis[0] == '0' && dis[1] == '\0') return 0;
+    for (g = 0; g < L->ledger.count && L->oracles.count < ACQUIRE_MAX_ORACLES;
+         g++) {
+        const GapRecord *gap = &L->ledger.gaps[g];
+        Port gin, ggoal;
+        if (gap->status != GAP_OPEN) continue;
+        if (gap->kind == GAP_NO_PLAN) {
+            gin = gap->input_port;
+            ggoal = gap->goal_port;
+        } else if (gap->subject[0] &&
+                   strcmp(gap->subject, CNET_JTC_UNIT_NAME) == 0) {
+            gin = in;
+            ggoal = goal;
+        } else {
+            continue;
+        }
+        if (!cnet_jtc_ports_match(gin, ggoal)) continue;
+        /* One shared hermetic teacher entry is enough for all matching gaps. */
+        if (acquire_oracle_register(&L->oracles, "jtc_hermetic_v0", in, goal,
+                                    cnet_jtc_hermetic_teacher, NULL) == 0) {
+            OracleEntry *oe = &L->oracles.entries[L->oracles.count - 1];
+            memset(&oe->identity, 0, sizeof oe->identity);
+            oe->identity.abi_version = CNET_ORACLE_ABI_VERSION;
+            oe->identity.struct_size = (uint32_t)sizeof oe->identity;
+            oe->identity.artifact_digest = 0x4A54435F54454143ULL; /* JTC_TEAC */
+            oe->identity.contract_digest = 0x4A534F4E5F5430ULL;
+            oe->identity.config_digest =
+                ((uint64_t)CNET_JTC_N_TOOL << 32) | (uint64_t)CNET_JTC_N_FEAT;
+            oe->identity.toolchain_digest = lm_toolchain_fp64
+                ? lm_toolchain_fp64
+                : 0x4A54435F0001ULL;
+            oe->behavior_digest = cnet_oracle_identity_digest(&oe->identity);
+            bound = 1;
+        }
+        break; /* single oracle covers all JTC-shaped gaps */
+    }
+    return bound;
+}
+
+/* Close open JTC-shaped gaps by ensuring the sealed unit exists (finite mine). */
+static size_t drain_jtc_gaps(GapLane *L) {
+    size_t g, closed = 0;
+    const char *dis = getenv("CNET_JTC_TEACHER");
+    if (dis && dis[0] == '0' && dis[1] == '\0') return 0;
+    if (!L || !L->loaded) return 0;
+    for (g = 0; g < L->ledger.count; g++) {
+        GapRecord *gap = &L->ledger.gaps[g];
+        Port gin, ggoal;
+        int erc;
+        if (gap->status != GAP_OPEN) continue;
+        if (gap->kind == GAP_NO_PLAN) {
+            gin = gap->input_port;
+            ggoal = gap->goal_port;
+            if (!cnet_jtc_ports_match(gin, ggoal)) continue;
+        } else if (gap->subject[0] &&
+                   strcmp(gap->subject, CNET_JTC_UNIT_NAME) == 0) {
+            /* rebuild/health of the JTC unit — re-ensure sealed */
+        } else {
+            continue;
+        }
+        erc = cnet_jtc_ensure_sealed(&L->base, &L->reg);
+        if (erc < 0) {
+            fprintf(stderr, "gap_lane_run: jtc ensure_sealed failed rc=%d\n",
+                    erc);
+            continue;
+        }
+        gap->status = GAP_CLOSED;
+        snprintf(gap->unit, sizeof gap->unit, "%s", CNET_JTC_UNIT_NAME);
+        snprintf(gap->oracle, sizeof gap->oracle, "jtc_hermetic_v0");
+        gap->provenance_done = 0;
+        closed++;
+    }
+    if (closed) {
+        if (gap_lane_checkpoint(L) != 0)
+            fprintf(stderr, "gap_lane_run: jtc checkpoint failed\n");
+        printf("gap_lane_run: jtc_teacher closed=%zu units=%zu\n", closed,
+               L->reg.count);
+        fflush(stdout);
+    }
+    return closed;
 }
 
 /* Rebuild the oracle registry for this tick: one teacher per open gap
@@ -752,9 +848,15 @@ int main(int argc, char **argv) {
                 }
             }
 
-            if (model)
+            if (model) {
                 bind_model_teachers(&lane, model, logits, vocab,
                                     (int)token_base, eps);
+            } else {
+                memset(&lane.oracles, 0, sizeof lane.oracles);
+            }
+            /* JTC hermetic teacher (works with or without GGUF). */
+            (void)bind_jtc_teachers(&lane);
+
             if (gap_lane_tick(&lane, &r, 0) != 0) {
                 fprintf(stderr, "gap_lane_run: tick failed; retrying\n");
             } else if (r.inbox_ingested || r.health_noted || r.low_rel_noted ||
@@ -771,6 +873,12 @@ int main(int argc, char **argv) {
                        r.drain.skipped_no_oracle, lane.reg.count,
                        r.checkpointed ? " [checkpoint]" : "");
                 fflush(stdout);
+            }
+            /* Finite closed-set seal path for RAW jtc_feat gaps (generic mine
+               treats PORT_RAW as unbounded → skipped_no_oracle without this). */
+            {
+                size_t jtc_n = drain_jtc_gaps(&lane);
+                if (jtc_n > 0) did_work = 1;
             }
             /* Budgeted curiosity: self-seed teachable gaps when quiet. */
             {
