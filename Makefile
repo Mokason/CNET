@@ -310,6 +310,17 @@ test_contract: $(SRC) $(CONTRACT_TEST) include/nn.h
 test_router: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(SCAN) $(ROUTER_TEST) include/nn.h include/router.h include/plan_table.h include/contract/contract.h include/scan.h
 	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(SCAN) $(ROUTER_TEST) $(LDFLAGS)
 
+# Open-addressing name → index map on PrimitiveRegistry (registry_find).
+.PHONY: registry_hash
+registry_hash: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(SCAN) tests/test_registry_hash.c include/router.h
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -o $(BIN_DIR)/test_registry_hash \
+		$(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(SCAN) \
+		tests/test_registry_hash.c $(LDFLAGS)
+	@./$(BIN_DIR)/test_registry_hash > logs/registry_hash.log 2>&1
+	@grep -q "REGISTRY_HASH_PASS" logs/registry_hash.log
+	@grep "REGISTRY_HASH_PASS" logs/registry_hash.log
+
 counterfactual_router_test: $(CCE_ROUTER) $(COUNTERFACTUAL_ROUTER_TEST) include/cce/cce_router.h include/cce/cce_forest.h
 	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $(CCE_ROUTER) $(COUNTERFACTUAL_ROUTER_TEST) $(LDFLAGS)
 	./$(BIN_DIR)/counterfactual_router_test
@@ -1904,7 +1915,7 @@ recipe_proposals: tools/propose_recipe_improvements.py
 	@grep "RECIPE_PROPOSALS_PASS" logs/recipe_proposals.log
 
 # Full hermetic umbrella for the 4-phase self-improve/resource program.
-unified_self_improve: resource_governor counterfactual_order self_improve deploy_profile recipe_proposals gap_lane_service_config campaign_v2_fast multimodal_v0 voice_real_teacher personal_ai post_seal_serve hybrid_ai hybrid_bench residual_gguf colibri_integrate curiosity eg
+unified_self_improve: resource_governor counterfactual_order self_improve deploy_profile recipe_proposals gap_lane_service_config campaign_v2_fast multimodal_v0 voice_real_teacher personal_ai post_seal_serve hybrid_ai hybrid_bench residual_gguf colibri_integrate curiosity eg registry_hash
 	@echo "UNIFIED_SELF_IMPROVE_PASS"
 
 # Personal AI: local certified library first; big-AI teacher only on gaps.

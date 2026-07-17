@@ -388,7 +388,78 @@ void registry_init(PrimitiveRegistry *reg) {
     reg->cnet_d_influence = 0.6;
     reg->text_contract_expansion_enabled = 0;
     reg->streamer = NULL;
+    reg->name_hash = NULL;
+    reg->name_hash_cap = 0;
 }
+
+/* ---- name hash (Phase A: registry_find chokepoint) --------------------- */
+
+static int registry_linear_forced(void) {
+    const char *e = getenv("CNET_REGISTRY_LINEAR");
+    return (e && e[0] == '1' && e[1] == '\0') ? 1 : 0;
+}
+
+static uint64_t registry_name_fnv(const char *s) {
+    uint64_t h = 14695981039346656037ULL;
+    const unsigned char *p = (const unsigned char *)s;
+    if (!p) return 1ULL;
+    for (; *p; p++) {
+        h ^= (uint64_t)*p;
+        h *= 1099511628211ULL;
+    }
+    return h ? h : 1ULL;
+}
+
+static int registry_hash_insert_at(PrimitiveRegistry *reg, size_t idx) {
+    const char *name;
+    uint64_t h;
+    size_t mask, i, probes;
+    if (!reg || !reg->name_hash || reg->name_hash_cap == 0 || idx >= reg->count)
+        return -1;
+    name = reg->entries[idx].name;
+    if (!name || !name[0]) return 0; /* anonymous: not indexed */
+    h = registry_name_fnv(name);
+    mask = reg->name_hash_cap - 1;
+    i = (size_t)h & mask;
+    for (probes = 0; probes < reg->name_hash_cap; probes++) {
+        if (reg->name_hash[i] == 0) {
+            reg->name_hash[i] = idx + 1; /* 0 reserved empty */
+            return 0;
+        }
+        i = (i + 1) & mask;
+    }
+    return -1; /* table full */
+}
+
+static int registry_hash_rebuild(PrimitiveRegistry *reg) {
+    size_t want, i;
+    size_t *tab;
+    if (!reg) return -1;
+    if (registry_linear_forced()) {
+        free(reg->name_hash);
+        reg->name_hash = NULL;
+        reg->name_hash_cap = 0;
+        return 0;
+    }
+    want = 16;
+    while (want < reg->count * 2 + 8) want <<= 1;
+    tab = (size_t *)calloc(want, sizeof *tab);
+    if (!tab) return -1;
+    free(reg->name_hash);
+    reg->name_hash = tab;
+    reg->name_hash_cap = want;
+    for (i = 0; i < reg->count; i++) {
+        if (registry_hash_insert_at(reg, i) != 0) {
+            free(reg->name_hash);
+            reg->name_hash = NULL;
+            reg->name_hash_cap = 0;
+            return -1;
+        }
+    }
+    return 0;
+}
+
+
 
 void registry_init_production(PrimitiveRegistry *reg) {
     registry_init(reg);
@@ -405,6 +476,7 @@ void registry_set_dag_beam_limit(PrimitiveRegistry *reg, size_t dag_beam_limit) 
 }
 
 int registry_add(PrimitiveRegistry *reg, BinaryTransformNetwork *btn, const char *name) {
+    size_t idx;
     if (reg == NULL || btn == NULL) {
         return -1;
     }
@@ -421,20 +493,41 @@ int registry_add(PrimitiveRegistry *reg, BinaryTransformNetwork *btn, const char
         reg->capacity = new_capacity;
     }
 
-    reg->entries[reg->count].btn = btn;
-    reg->entries[reg->count].name = name;
-    reg->entries[reg->count].kind = SPECIALIST_KIND_BTN;  /* native default; specialist_admit stamps the true kind */
-    reg->entries[reg->count].certified = 0;
-    reg->entries[reg->count].cert_btn_digest = 0;
-    reg->entries[reg->count].state = PRIM_FUZZY;
-    reg->entries[reg->count].queue = NULL;
-    reg->entries[reg->count].shadow_of = NULL;
-    reg->entries[reg->count].teacher_mac = 0;
-    reg->entries[reg->count].student_mac = 0;
-    reg->entries[reg->count].compute_beneficial = 0;
-    reg->entries[reg->count].recipe = NULL;
-    reg->entries[reg->count].expand_in_low = 0;
+    idx = reg->count;
+    reg->entries[idx].btn = btn;
+    reg->entries[idx].name = name;
+    reg->entries[idx].kind = SPECIALIST_KIND_BTN;  /* native default; specialist_admit stamps the true kind */
+    reg->entries[idx].certified = 0;
+    reg->entries[idx].cert_btn_digest = 0;
+    reg->entries[idx].state = PRIM_FUZZY;
+    reg->entries[idx].queue = NULL;
+    reg->entries[idx].shadow_of = NULL;
+    reg->entries[idx].teacher_mac = 0;
+    reg->entries[idx].student_mac = 0;
+    reg->entries[idx].compute_beneficial = 0;
+    reg->entries[idx].recipe = NULL;
+    reg->entries[idx].expand_in_low = 0;
     reg->count++;
+
+    /* Index name; fail-open to linear find if hash OOM (table cleared).
+       Rebuild path already re-inserts all entries including idx — no double insert. */
+    if (name && name[0] && !registry_linear_forced()) {
+        int need_rebuild = (!reg->name_hash || reg->name_hash_cap == 0 ||
+                            reg->count * 10 > reg->name_hash_cap * 7);
+        if (need_rebuild) {
+            if (registry_hash_rebuild(reg) != 0) {
+                free(reg->name_hash);
+                reg->name_hash = NULL;
+                reg->name_hash_cap = 0;
+            }
+        } else if (registry_hash_insert_at(reg, idx) != 0) {
+            if (registry_hash_rebuild(reg) != 0) {
+                free(reg->name_hash);
+                reg->name_hash = NULL;
+                reg->name_hash_cap = 0;
+            }
+        }
+    }
     return 0;
 }
 
@@ -464,6 +557,9 @@ void registry_free(PrimitiveRegistry *reg) {
     reg->entries = NULL;
     reg->count = 0;
     reg->capacity = 0;
+    free(reg->name_hash);
+    reg->name_hash = NULL;
+    reg->name_hash_cap = 0;
 }
 
 int registry_remove_last(PrimitiveRegistry *reg) {
@@ -473,21 +569,23 @@ int registry_remove_last(PrimitiveRegistry *reg) {
     free(reg->entries[reg->count - 1].recipe);
     reg->entries[reg->count - 1].recipe = NULL;
     reg->count--;
+    /* Indices after removed slot don't shift (only last); rebuild keeps map honest. */
+    if (reg->name_hash)
+        (void)registry_hash_rebuild(reg);
     return 0;
 }
+
+/* Forward decl — used by set_state and peers before definition. */
+static size_t registry_find(const PrimitiveRegistry *reg, const char *name);
 
 int registry_set_state(PrimitiveRegistry *reg, const char *name,
                        PrimitiveState state) {
     size_t i;
     if (reg == NULL || name == NULL) return -1;
-    for (i = 0; i < reg->count; ++i) {
-        if (reg->entries[i].name != NULL &&
-            strcmp(reg->entries[i].name, name) == 0) {
-            reg->entries[i].state = state;
-            return 0;
-        }
-    }
-    return -1;
+    i = registry_find(reg, name);
+    if (i == reg->count) return -1;
+    reg->entries[i].state = state;
+    return 0;
 }
 
 void lifecycle_promote_provisional(PrimitiveRegistry *reg,
@@ -510,22 +608,45 @@ void lifecycle_promote_provisional(PrimitiveRegistry *reg,
     }
 }
 
-/* Last-hit cache: serve/heal paths often re-touch the same unit name. */
+/* Name → index. Prefer open-addressing hash; last-hit + linear fallback. */
 static size_t registry_find(const PrimitiveRegistry *reg, const char *name) {
     size_t i;
     static const PrimitiveRegistry *last_reg;
     static size_t last_idx;
     static const char *last_name;
     if (!reg || !name) return reg ? reg->count : 0;
-    if (reg == last_reg && last_name == name && last_idx < reg->count &&
-        reg->entries[last_idx].name == name) {
-        return last_idx; /* pointer-equal name (borrowed registry strings) */
+
+    /* Process-local last-hit (pointer-equal name or strcmp). */
+    if (reg == last_reg && last_idx < reg->count) {
+        if (last_name == name && reg->entries[last_idx].name == name)
+            return last_idx;
+        if (reg->entries[last_idx].name != NULL &&
+            strcmp(reg->entries[last_idx].name, name) == 0)
+            return last_idx;
     }
-    if (reg == last_reg && last_idx < reg->count &&
-        reg->entries[last_idx].name != NULL &&
-        strcmp(reg->entries[last_idx].name, name) == 0) {
-        return last_idx;
+
+    if (reg->name_hash && reg->name_hash_cap && !registry_linear_forced()) {
+        uint64_t h = registry_name_fnv(name);
+        size_t mask = reg->name_hash_cap - 1;
+        size_t slot = (size_t)h & mask;
+        size_t probes;
+        for (probes = 0; probes < reg->name_hash_cap; probes++) {
+            size_t v = reg->name_hash[slot];
+            size_t idx;
+            if (v == 0) break; /* empty → miss */
+            idx = v - 1;
+            if (idx < reg->count && reg->entries[idx].name != NULL &&
+                strcmp(reg->entries[idx].name, name) == 0) {
+                last_reg = reg;
+                last_idx = idx;
+                last_name = reg->entries[idx].name;
+                return idx;
+            }
+            slot = (slot + 1) & mask;
+        }
+        /* Hash miss: fall through to linear (handles rare desync). */
     }
+
     for (i = 0; i < reg->count; ++i) {
         if (reg->entries[i].name != NULL &&
             strcmp(reg->entries[i].name, name) == 0) {
@@ -771,9 +892,7 @@ int registry_record_fault(PrimitiveRegistry *reg, const char *name,
     RegistryEntry *e;
     RetrainQueue *q;
     if (reg == NULL || name == NULL || input == NULL || raw_output == NULL) return -1;
-    for (i = 0; i < reg->count; ++i) {
-        if (reg->entries[i].name && strcmp(reg->entries[i].name, name) == 0) break;
-    }
+    i = registry_find(reg, name);
     if (i == reg->count) return -1;
     e = &reg->entries[i];
     if (e->queue == NULL) {
@@ -793,14 +912,12 @@ int registry_record_fault(PrimitiveRegistry *reg, const char *name,
 
 size_t registry_pending_labels(const PrimitiveRegistry *reg, const char *name) {
     size_t i;
+    RetrainQueue *q;
     if (!reg || !name) return 0;
-    for (i = 0; i < reg->count; ++i) {
-        if (reg->entries[i].name && strcmp(reg->entries[i].name, name) == 0) {
-            RetrainQueue *q = reg->entries[i].queue;
-            return q ? q->unlabeled_count : 0;
-        }
-    }
-    return 0;
+    i = registry_find(reg, name);
+    if (i == reg->count) return 0;
+    q = reg->entries[i].queue;
+    return q ? q->unlabeled_count : 0;
 }
 
 int registry_supply_label(PrimitiveRegistry *reg, const char *name,
@@ -809,8 +926,7 @@ int registry_supply_label(PrimitiveRegistry *reg, const char *name,
     RegistryEntry *e;
     RetrainQueue *q;
     if (!reg || !name || !input || !target) return -1;
-    for (i = 0; i < reg->count; ++i)
-        if (reg->entries[i].name && strcmp(reg->entries[i].name, name) == 0) break;
+    i = registry_find(reg, name);
     if (i == reg->count) return -1;
     e = &reg->entries[i]; q = e->queue;
     if (!q || q->unlabeled_count == 0) return -1;
@@ -831,8 +947,7 @@ size_t registry_label_via_teacher(PrimitiveRegistry *reg, const char *name) {
     RegistryEntry *e;
     RetrainQueue *q;
     if (!reg || !name) return 0;
-    for (i = 0; i < reg->count; ++i)
-        if (reg->entries[i].name && strcmp(reg->entries[i].name, name) == 0) break;
+    i = registry_find(reg, name);
     if (i == reg->count) return 0;
     e = &reg->entries[i]; q = e->queue;
     if (!q || q->unlabeled_count == 0 || !e->btn) return 0;
@@ -901,13 +1016,10 @@ int registry_set_shadow(PrimitiveRegistry *reg, const char *name,
                         const char *active_name) {
     size_t i;
     if (!reg || !name) return -1;
-    for (i = 0; i < reg->count; ++i) {
-        if (reg->entries[i].name && strcmp(reg->entries[i].name, name) == 0) {
-            reg->entries[i].shadow_of = active_name; /* may be NULL to clear */
-            return 0;
-        }
-    }
-    return -1;
+    i = registry_find(reg, name);
+    if (i == reg->count) return -1;
+    reg->entries[i].shadow_of = active_name; /* may be NULL to clear */
+    return 0;
 }
 
 size_t registry_run_shadows(PrimitiveRegistry *reg, const char *active_name,

@@ -161,6 +161,12 @@ typedef struct {
        If non-NULL, executors and narrative contracts will call it for tagged outputs.
        Enables "live drafting" instead of only final output. */
     CNETStreamFn streamer;
+
+    /* Name → entry index map (open addressing). values: 0 empty, else index+1.
+       Power-of-two name_hash_cap; rebuilt on growth / remove_last.
+       Opt out: CNET_REGISTRY_LINEAR=1 forces linear scan (debug). */
+    size_t *name_hash;
+    size_t name_hash_cap;
 } PrimitiveRegistry;  /* note: rank_artifact defined later in this header */
 
 typedef struct {
