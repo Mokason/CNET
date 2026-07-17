@@ -62,4 +62,9 @@ fi
 
 [ "$rc" -eq 0 ] || die "seal failed rc=$rc"
 info "done — .NET: JsonToolCall.Classify(new SoulHost(\"$BASE\"), json)"
+info "MCP: cnet_classify_toolcall / cnet_json_toolcall_status"
+if pgrep -x CnetMcpServer >/dev/null 2>&1; then
+  info "RECYCLE: Hermes MCP children must restart to load the new unit (serve is otherwise stale)"
+  info "  e.g. systemctl --user restart hermes-gateway.service"
+fi
 echo "JSON_TOOLCALL_SEAL_SH_OK"

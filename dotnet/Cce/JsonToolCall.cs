@@ -1,50 +1,29 @@
 using System;
+using System.IO;
 using System.Text.Json;
 
 namespace CNET.Cce;
 
 /// <summary>
 /// Closed-set JSON tool-call bridge (v0).
-///
-/// Host owns free-form JSON via System.Text.Json.
-/// CNET owns a certified classifier: keyword features → tool ONEHOT.
-/// Must stay alphabet-aligned with native <c>src/json_toolcall.c</c>.
+/// Host owns free-form JSON; CNET owns certified keyword→tool classification.
+/// Alphabet: config/json_toolcall_v0.json → gen_json_toolcall_alphabet.py.
 /// </summary>
-public static class JsonToolCall
+public static partial class JsonToolCall
 {
-    public const string UnitName = "json_toolcall_v0";
-    public const string InputTag = "jtc_feat";
-    public const string GoalTag = "json_tool";
-    public const int FeatureCount = 16;
-    public const int ToolCount = 6;
+    public const string UnitName = UnitNameGen;
+    public const string InputTag = InputTagGen;
+    public const string GoalTag = GoalTagGen;
+    public const int FeatureCount = FeatureCountGen;
+    public const int ToolCount = ToolCountGen;
 
     /// <summary>Port family values matching native PortFamily (nn.h).</summary>
-    public const int PortRaw = 0;     // PORT_RAW
-    public const int PortOneHot = 1;  // PORT_ONEHOT
+    public const int PortRaw = 0;
+    public const int PortOneHot = 1;
 
-    public static readonly string[] ToolNames =
-    {
-        "calculator", "memory_store", "memory_recall",
-        "file_read", "cnet_recall", "final"
-    };
-
-    /// <summary>Keyword alphabet (order = feature index). Keep in sync with C.</summary>
-    public static readonly string[] FeatureNames =
-    {
-        "calculator", "memory_store", "memory_recall", "file_read",
-        "cnet_recall", "final", "expr", "key", "value", "query",
-        "path", "cond", "current", "answer", "tool", "args"
-    };
-
-    public static readonly string[] ExampleJson =
-    {
-        """{"tool":"calculator","args":{"expr":"23 * 19"}}""",
-        """{"tool":"memory_store","args":{"key":"k","value":"v"}}""",
-        """{"tool":"memory_recall","args":{"query":"k"}}""",
-        """{"tool":"file_read","args":{"path":"readme.txt"}}""",
-        """{"tool":"cnet_recall","args":{"cond":0,"current":1}}""",
-        """{"final":"done","answer":"ok"}"""
-    };
+    public static string[] ToolNames => ToolNamesGen;
+    public static string[] FeatureNames => FeatureNamesGen;
+    public static string[] ExampleJson => ExampleJsonGen;
 
     /// <summary>Encode JSON text into the closed feature vector (0/1 doubles).</summary>
     public static double[] Encode(string? jsonText)
@@ -56,7 +35,6 @@ public static class JsonToolCall
         return feat;
     }
 
-    /// <summary>Argmax of tool one-hot → tool name, or null.</summary>
     public static string? DecodeTool(ReadOnlySpan<double> onehot)
     {
         if (onehot.Length < ToolCount) return null;
@@ -75,10 +53,25 @@ public static class JsonToolCall
         return best;
     }
 
-    /// <summary>
-    /// Host-side parse of a tool-call JSON object (Agent protocol).
-    /// Does not replace CNET certification — use <see cref="Classify"/> for the sealed skill.
-    /// </summary>
+    public static bool IsKnownTool(string? tool)
+    {
+        if (string.IsNullOrEmpty(tool)) return false;
+        foreach (var t in ToolNames)
+            if (string.Equals(t, tool, StringComparison.OrdinalIgnoreCase))
+                return true;
+        return tool is "finish" or "answer"; // aliases for final
+    }
+
+    public static string NormalizeTool(string? tool)
+    {
+        if (string.IsNullOrEmpty(tool)) return "final";
+        if (tool is "finish" or "answer") return "final";
+        foreach (var t in ToolNames)
+            if (string.Equals(t, tool, StringComparison.OrdinalIgnoreCase))
+                return t;
+        return tool;
+    }
+
     public static bool TryParseAgentJson(string json, out string? tool, out JsonElement args, out string? final)
     {
         tool = null;
@@ -105,10 +98,6 @@ public static class JsonToolCall
         }
     }
 
-    /// <summary>
-    /// Run the certified <c>json_toolcall_v0</c> unit on a sealed SoulHost base.
-    /// Throws if the unit is absent (mine/seal spine first).
-    /// </summary>
     public static string Classify(SoulHost soul, string jsonText)
     {
         ArgumentNullException.ThrowIfNull(soul);
@@ -117,9 +106,6 @@ public static class JsonToolCall
         return DecodeTool(output) ?? "final";
     }
 
-    /// <summary>
-    /// Route by typed ports (jtc_feat → json_tool) without requiring the unit name.
-    /// </summary>
     public static string ClassifyByRoute(SoulHost soul, string jsonText)
     {
         ArgumentNullException.ThrowIfNull(soul);
@@ -128,19 +114,73 @@ public static class JsonToolCall
         return DecodeTool(output) ?? "final";
     }
 
-    /// <summary>
-    /// Capability / serve probe via soul_request ABI (certified vs gap).
-    /// </summary>
-    public static (bool Served, string Source, string? Tool) RequestClassify(
+    public static (bool Served, string Source, string? Tool, bool GapNoted) RequestClassify(
         SoulHost soul, string jsonText)
     {
         ArgumentNullException.ThrowIfNull(soul);
         var feat = Encode(jsonText);
-        var (served, _, _, source, output) = soul.Request(
+        var (served, gapNoted, residual, source, output) = soul.Request(
             inFamily: PortRaw, inWidth: FeatureCount, inCount: 1, inTag: InputTag,
             goalFamily: PortOneHot, goalWidth: ToolCount, goalCount: 1, goalTag: GoalTag,
             input: feat);
-        if (!served || output == null) return (false, source, null);
-        return (true, source, DecodeTool(output));
+        if (!served || output == null)
+            return (false, source, null, gapNoted || residual);
+        return (true, source, DecodeTool(output), gapNoted || residual);
+    }
+
+    /// <summary>
+    /// Append a NO_PLAN line for jtc_feat→json_tool so the gap lane can see demand.
+    /// Format matches gap_inbox_note_no_plan (PORT_RAW=0, PORT_ONEHOT=1).
+    /// </summary>
+    public static bool NoteGap(string? inboxPath)
+    {
+        if (string.IsNullOrWhiteSpace(inboxPath)) return false;
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(inboxPath))!);
+            // NO_PLAN fam width count tag fam width count tag
+            File.AppendAllText(inboxPath,
+                $"NO_PLAN {PortRaw} {FeatureCount} 1 {InputTag} {PortOneHot} {ToolCount} 1 {GoalTag}\n");
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Classify with certified unit when present; on miss/error note gap and return null.
+    /// </summary>
+    public static (string? Tool, string Source, bool GapNoted) ClassifyOrGap(
+        SoulHost? soul, string jsonText, string? inboxPath = null)
+    {
+        if (soul == null)
+        {
+            bool noted = NoteGap(inboxPath);
+            return (null, "none", noted);
+        }
+        try
+        {
+            var (served, source, tool, gapNoted) = RequestClassify(soul, jsonText);
+            if (served && tool != null)
+                return (tool, source, gapNoted);
+            // Fall back to named unit if request path failed but unit exists
+            try
+            {
+                string t = Classify(soul, jsonText);
+                return (t, "certified", false);
+            }
+            catch
+            {
+                bool noted = NoteGap(inboxPath) || gapNoted;
+                return (null, source, noted);
+            }
+        }
+        catch
+        {
+            bool noted = NoteGap(inboxPath);
+            return (null, "error", noted);
+        }
     }
 }

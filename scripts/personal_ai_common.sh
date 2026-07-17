@@ -91,6 +91,30 @@ cnet_load_personal_env() {
   fi
 }
 
+# 1 if sealed base lists json_toolcall_v0 (via cnb_audit --count is not enough;
+# use strings/grep on CNB is fragile — prefer bin/json_toolcall_seal dry or soul).
+# Cheap heuristic: name appears in recent serve_proof / unit list file if any.
+cnet_jtc_present() {
+  local base="${1:-}"
+  if [ -z "$base" ] || [ ! -f "$base" ]; then
+    echo 0
+    return 0
+  fi
+  # Binary CNB often contains unit name as ASCII
+  if command -v strings >/dev/null 2>&1; then
+    if strings "$base" 2>/dev/null | grep -qx 'json_toolcall_v0'; then
+      echo 1
+      return 0
+    fi
+  fi
+  if grep -aob $'json_toolcall_v0\0' "$base" >/dev/null 2>&1 || \
+     grep -aob 'json_toolcall_v0' "$base" >/dev/null 2>&1; then
+    echo 1
+    return 0
+  fi
+  echo 0
+}
+
 # Path mark without if/else ladders: cnet_path_mark /path ok MISSING
 # Usage: echo "base: $BASE$(cnet_path_mark "$BASE" ' [ok]' ' [MISSING]')"
 cnet_path_mark() {

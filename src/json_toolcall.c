@@ -1,38 +1,24 @@
 #include "../include/json_toolcall.h"
+#include "../include/json_toolcall_alphabet.inc"
 
 #include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-static const char *const TOOLS[CNET_JTC_N_TOOL] = {
-    "calculator", "memory_store", "memory_recall",
-    "file_read", "cnet_recall", "final"
-};
+#if CNET_JTC_N_TOOL_GEN != CNET_JTC_N_TOOL
+#error "json_toolcall_alphabet.inc N_TOOL mismatch — re-run tools/gen_json_toolcall_alphabet.py"
+#endif
+#if CNET_JTC_N_FEAT_GEN != CNET_JTC_N_FEAT
+#error "json_toolcall_alphabet.inc N_FEAT mismatch — re-run tools/gen_json_toolcall_alphabet.py"
+#endif
 
-/* Closed feature alphabet — host + C must stay in sync with .NET JsonToolCall.cs */
-static const char *const FEATS[CNET_JTC_N_FEAT] = {
-    "calculator", "memory_store", "memory_recall", "file_read",
-    "cnet_recall", "final", "expr", "key", "value", "query",
-    "path", "cond", "current", "answer", "tool", "args"
-};
-
-/* One exemplar JSON per tool (closed set — not free-form open JSON). */
-static const char *const EXAMPLES[CNET_JTC_N_TOOL] = {
-    "{\"tool\":\"calculator\",\"args\":{\"expr\":\"23 * 19\"}}",
-    "{\"tool\":\"memory_store\",\"args\":{\"key\":\"k\",\"value\":\"v\"}}",
-    "{\"tool\":\"memory_recall\",\"args\":{\"query\":\"k\"}}",
-    "{\"tool\":\"file_read\",\"args\":{\"path\":\"readme.txt\"}}",
-    "{\"tool\":\"cnet_recall\",\"args\":{\"cond\":0,\"current\":1}}",
-    "{\"final\":\"done\",\"answer\":\"ok\"}"
-};
-
-const char *const *cnet_jtc_tool_names(void) { return TOOLS; }
-const char *const *cnet_jtc_feature_names(void) { return FEATS; }
+const char *const *cnet_jtc_tool_names(void) { return CNET_JTC_TOOLS_GEN; }
+const char *const *cnet_jtc_feature_names(void) { return CNET_JTC_FEATS_GEN; }
 
 const char *cnet_jtc_example_json(int tool_id) {
     if (tool_id < 0 || tool_id >= CNET_JTC_N_TOOL) return NULL;
-    return EXAMPLES[tool_id];
+    return CNET_JTC_EXAMPLES_GEN[tool_id];
 }
 
 static int ascii_ci_contains(const char *hay, const char *needle) {
@@ -57,7 +43,7 @@ int cnet_jtc_encode(const char *json_text, double *feat_out) {
     if (!feat_out) return -1;
     if (!json_text) json_text = "";
     for (k = 0; k < CNET_JTC_N_FEAT; k++)
-        feat_out[k] = ascii_ci_contains(json_text, FEATS[k]) ? 1.0 : 0.0;
+        feat_out[k] = ascii_ci_contains(json_text, CNET_JTC_FEATS_GEN[k]) ? 1.0 : 0.0;
     return 0;
 }
 
@@ -70,27 +56,25 @@ int cnet_jtc_decode_tool(const double *tool_onehot) {
 }
 
 int cnet_jtc_hermetic_teacher(const double *in, double *out, void *ctx) {
-    /* Priority: explicit tool-name features, then final, then arg cues. */
     int c;
     (void)ctx;
     if (!in || !out) return -1;
     for (c = 0; c < CNET_JTC_N_TOOL; c++) out[c] = 0.0;
 
-    if (in[0] > 0.5) { out[0] = 1.0; return 0; } /* calculator */
-    if (in[1] > 0.5) { out[1] = 1.0; return 0; } /* memory_store */
-    if (in[2] > 0.5) { out[2] = 1.0; return 0; } /* memory_recall */
-    if (in[3] > 0.5) { out[3] = 1.0; return 0; } /* file_read */
-    if (in[4] > 0.5) { out[4] = 1.0; return 0; } /* cnet_recall */
-    if (in[5] > 0.5 || in[13] > 0.5) { out[5] = 1.0; return 0; } /* final/answer */
+    if (in[0] > 0.5) { out[0] = 1.0; return 0; }
+    if (in[1] > 0.5) { out[1] = 1.0; return 0; }
+    if (in[2] > 0.5) { out[2] = 1.0; return 0; }
+    if (in[3] > 0.5) { out[3] = 1.0; return 0; }
+    if (in[4] > 0.5) { out[4] = 1.0; return 0; }
+    if (in[5] > 0.5 || in[13] > 0.5) { out[5] = 1.0; return 0; }
 
-    /* Soft cues without tool field */
-    if (in[6] > 0.5) { out[0] = 1.0; return 0; }  /* expr → calculator */
-    if (in[7] > 0.5 && in[8] > 0.5) { out[1] = 1.0; return 0; } /* key+value */
-    if (in[9] > 0.5) { out[2] = 1.0; return 0; }  /* query → recall */
-    if (in[10] > 0.5) { out[3] = 1.0; return 0; } /* path → file */
-    if (in[11] > 0.5 || in[12] > 0.5) { out[4] = 1.0; return 0; } /* cond/current */
+    if (in[6] > 0.5) { out[0] = 1.0; return 0; }
+    if (in[7] > 0.5 && in[8] > 0.5) { out[1] = 1.0; return 0; }
+    if (in[9] > 0.5) { out[2] = 1.0; return 0; }
+    if (in[10] > 0.5) { out[3] = 1.0; return 0; }
+    if (in[11] > 0.5 || in[12] > 0.5) { out[4] = 1.0; return 0; }
 
-    out[5] = 1.0; /* default final */
+    out[5] = 1.0;
     return 0;
 }
 
@@ -131,7 +115,7 @@ int cnet_jtc_v0_mine_admit(
     external_teacher_init(t);
 
     for (c = 0; c < CNET_JTC_N_TOOL; c++) {
-        cnet_jtc_encode(EXAMPLES[c], inputs + c * CNET_JTC_N_FEAT);
+        cnet_jtc_encode(CNET_JTC_EXAMPLES_GEN[c], inputs + c * CNET_JTC_N_FEAT);
         for (j = 0; j < CNET_JTC_N_TOOL; j++)
             targets[c * CNET_JTC_N_TOOL + j] = (j == c) ? 1.0 : 0.0;
     }
@@ -141,8 +125,8 @@ int cnet_jtc_v0_mine_admit(
     id.struct_size = (uint32_t)sizeof id;
     id.artifact_digest = identity_digest_salt
         ? identity_digest_salt
-        : 0x4A54435F56300001ULL; /* JTC_V0 */
-    id.contract_digest = 0x4A534F4E5F5430ULL; /* JSON_T0 */
+        : 0x4A54435F56300001ULL;
+    id.contract_digest = 0x4A534F4E5F5430ULL;
     id.config_digest = (uint64_t)CNET_JTC_N_TOOL << 32 |
                        (uint64_t)CNET_JTC_N_FEAT;
 

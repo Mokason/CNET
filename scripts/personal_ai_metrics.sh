@@ -22,6 +22,7 @@ cnet_serve_active && serve=1
 
 inbox_n=$(cnet_count_lines "$INBOX" '.')
 noplan=$(cnet_count_lines "$INBOX" '^NO_PLAN')
+jtc_gaps=$(cnet_count_lines "$INBOX" 'jtc_feat')
 ledger_n=$(cnet_count_lines "$LEDGER" '.')
 cnb_b=$(cnet_file_bytes "$BASE")
 
@@ -30,7 +31,6 @@ if [ -x "$REPO/bin/cnet_plan" ]; then
   plan_json=$(CNET_BASE_PATH="$BASE" "$REPO/bin/cnet_plan" json 2>/dev/null || echo '{}')
 fi
 
-# Prefer sealed CNB unit count; fall back to journal (can lag).
 units_cnb=$(cnet_unit_count_fast "$BASE")
 last_units="$units_cnb"
 if [ -z "$last_units" ] && command -v journalctl >/dev/null 2>&1; then
@@ -44,10 +44,14 @@ if [ -f "${BASE}.curiosity" ]; then
   cur_count=${cur_count:-0}
 fi
 
-# Sanitize numeric fields for JSON (no newlines from bad greps).
+jtc=$(cnet_jtc_present "$BASE")
+recycle_note="Hermes MCP children must recycle to load newly sealed units"
+
 mem=${mem//$'\n'/}
 mem=${mem:-0}
 last_units=${last_units//$'\n'/}
+jtc=${jtc//$'\n'/}
+jtc_gaps=${jtc_gaps//$'\n'/}
 
 printf '%s\n' "{
   \"ts\": \"$TS\",
@@ -55,6 +59,7 @@ printf '%s\n' "{
   \"cnb_bytes\": $cnb_b,
   \"inbox_lines\": $inbox_n,
   \"inbox_no_plan\": $noplan,
+  \"inbox_jtc_gaps\": $jtc_gaps,
   \"ledger_lines\": $ledger_n,
   \"learner_active\": $learner,
   \"learner_memory_bytes\": $mem,
@@ -62,5 +67,8 @@ printf '%s\n' "{
   \"units\": ${last_units:-null},
   \"units_journal\": ${last_units:-null},
   \"curiosity_hour_count\": ${cur_count:-0},
+  \"json_toolcall\": $jtc,
+  \"json_toolcall_unit\": \"json_toolcall_v0\",
+  \"recycle_note\": \"$recycle_note\",
   \"placement\": $plan_json
 }"

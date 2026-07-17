@@ -60,6 +60,9 @@ if (agentMode)
         }
         McpTools.MemoryInit();
         using var legacySoul = new SoulHost(basePath);
+        Environment.SetEnvironmentVariable("CNET_BASE_PATH", basePath);
+        if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable("CNET_GAP_INBOX")))
+            Environment.SetEnvironmentVariable("CNET_GAP_INBOX", basePath + ".inbox");
         Console.WriteLine($"LLM: {ollamaModel} (ollama, legacy)   base: {basePath}\n");
         var legacyAgent = new Agent(new OllamaClient(ollamaModel), legacySoul);
         await legacyAgent.RunAsync(task);
@@ -88,6 +91,9 @@ if (agentMode)
 
     McpTools.MemoryInit();
     using var soulA = new SoulHost(basePath);
+    Environment.SetEnvironmentVariable("CNET_BASE_PATH", basePath);
+    if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable("CNET_GAP_INBOX")))
+        Environment.SetEnvironmentVariable("CNET_GAP_INBOX", basePath + ".inbox");
     Console.WriteLine($"LLM: {harnessModel} (cnet native harness, {hostConfig.Resource})   base: {basePath}\n");
     var config = new CnetHarnessConfig
     {

@@ -1198,6 +1198,94 @@ namespace CnetMcpServer
             });
         }
 
+        /// <summary>
+        /// Closed-set JSON tool-call classify via sealed json_toolcall_v0.
+        /// On miss, notes gap (jtc_feat→json_tool) when CNET_GAP_INBOX or base.inbox is set.
+        /// </summary>
+        public string ClassifyToolCall(string json)
+        {
+            if (_soulHost == null) return SoulUnavailable("classify_toolcall");
+            string inbox = Environment.GetEnvironmentVariable("CNET_GAP_INBOX")
+                ?? (_basePath + ".inbox");
+            try
+            {
+                var (tool, source, gapNoted) = JsonToolCall.ClassifyOrGap(_soulHost, json ?? "", inbox);
+                bool present = false;
+                try
+                {
+                    foreach (var u in _soulHost.Units())
+                        if (u == JsonToolCall.UnitName) { present = true; break; }
+                }
+                catch { /* ignore */ }
+
+                return JsonSerializer.Serialize(new
+                {
+                    unit = JsonToolCall.UnitName,
+                    unit_present = present,
+                    tool,
+                    source,
+                    gap_noted = gapNoted,
+                    known = tool != null && JsonToolCall.IsKnownTool(tool),
+                    features = JsonToolCall.Encode(json),
+                    note = tool != null
+                        ? "certified closed-set tool classification"
+                        : (gapNoted
+                            ? "no certified plan / unit; NO_PLAN noted for gap lane (jtc_feat→json_tool)"
+                            : "classification failed without gap note")
+                });
+            }
+            catch (Exception ex)
+            {
+                bool noted = JsonToolCall.NoteGap(inbox);
+                return JsonSerializer.Serialize(new
+                {
+                    unit = JsonToolCall.UnitName,
+                    tool = (string?)null,
+                    source = "error",
+                    gap_noted = noted,
+                    error = ex.Message,
+                    note = "seal with scripts/personal_ai_auto.sh jtc-seal if unit missing"
+                });
+            }
+        }
+
+        /// <summary>Whether json_toolcall_v0 is in the live registry.</summary>
+        public string JsonToolCallStatus()
+        {
+            if (_soulHost == null) return SoulUnavailable("json_toolcall_status");
+            bool present = false;
+            try
+            {
+                foreach (var u in _soulHost.Units())
+                    if (u == JsonToolCall.UnitName) { present = true; break; }
+            }
+            catch (Exception ex)
+            {
+                return JsonSerializer.Serialize(new { unit = JsonToolCall.UnitName, present = false, error = ex.Message });
+            }
+            object? sample = null;
+            if (present)
+            {
+                try
+                {
+                    string t = JsonToolCall.Classify(_soulHost, JsonToolCall.ExampleJson[0]);
+                    sample = new { example_tool = t, ok = t == "calculator" };
+                }
+                catch (Exception ex)
+                {
+                    sample = new { error = ex.Message };
+                }
+            }
+            return JsonSerializer.Serialize(new
+            {
+                unit = JsonToolCall.UnitName,
+                present,
+                tools = JsonToolCall.ToolNames,
+                sample,
+                recycle_note = "Hermes MCP children must recycle to see newly sealed units"
+            });
+        }
+
         public string ListUnits()
         {
             var roster = UnitRoster();

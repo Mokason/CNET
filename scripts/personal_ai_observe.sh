@@ -30,6 +30,10 @@ units = d.get("units") if d.get("units") is not None else d.get("units_journal")
 print(f"  units={units} inbox={d.get('inbox_lines')} "
       f"ledger={d.get('ledger_lines')} learner={d.get('learner_active')} "
       f"cnb_MiB={d.get('cnb_bytes',0)/1024/1024:.1f}")
+print(f"  json_toolcall={d.get('json_toolcall')} jtc_gaps={d.get('inbox_jtc_gaps')} "
+      f"serve_mcp={d.get('serve_mcp')}")
+if d.get("recycle_note"):
+    print(f"  note: {d.get('recycle_note')}")
 pl = d.get("placement") or {}
 if isinstance(pl, dict):
     print(f"  dual_safe={pl.get('dual_safe')} mem_avail_GiB="

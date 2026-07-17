@@ -191,6 +191,21 @@ doctor() {
       tail -5 "$sp_log" 2>/dev/null || true
     fi
   fi
+  # JSON tool-call spine presence
+  echo "--- json_toolcall_v0 ---"
+  local jtc
+  jtc=$(cnet_jtc_present "$BASE")
+  if [ "$jtc" = "1" ]; then
+    echo "json_toolcall: present in base"
+    if [ -x "$REPO/bin/json_toolcall_seal" ]; then
+      "$REPO/bin/json_toolcall_seal" "$BASE" 2>/dev/null | tail -3 || true
+    fi
+  else
+    echo "NOTE: json_toolcall_v0 missing — scripts/personal_ai_auto.sh jtc-seal"
+  fi
+  if pgrep -x CnetMcpServer >/dev/null 2>&1; then
+    echo "NOTE: recycle Hermes MCP children to load newly sealed units (serve may be stale)"
+  fi
   if [ "$ok" = 1 ]; then
     echo "PERSONAL_AI_AUTO_DOCTOR_OK"
   else

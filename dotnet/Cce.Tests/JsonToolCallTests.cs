@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using Xunit;
 using CNET.Cce;
 
@@ -78,5 +79,34 @@ public class JsonToolCallTests
         Assert.Equal(6, JsonToolCall.ToolNames.Length);
         Assert.Equal(JsonToolCall.ToolCount, JsonToolCall.ToolNames.Length);
         Assert.Equal(JsonToolCall.ToolCount, JsonToolCall.ExampleJson.Length);
+    }
+
+    [Fact]
+    public void IsKnownTool_And_Normalize()
+    {
+        Assert.True(JsonToolCall.IsKnownTool("calculator"));
+        Assert.True(JsonToolCall.IsKnownTool("finish"));
+        Assert.False(JsonToolCall.IsKnownTool("web_search"));
+        Assert.Equal("final", JsonToolCall.NormalizeTool("finish"));
+        Assert.Equal("calculator", JsonToolCall.NormalizeTool("Calculator"));
+    }
+
+    [Fact]
+    public void NoteGap_Writes_Inbox_Line()
+    {
+        var path = Path.Combine(Path.GetTempPath(), "cnet_jtc_gap_test.inbox");
+        try
+        {
+            if (File.Exists(path)) File.Delete(path);
+            Assert.True(JsonToolCall.NoteGap(path));
+            var line = File.ReadAllText(path);
+            Assert.Contains("NO_PLAN", line);
+            Assert.Contains("jtc_feat", line);
+            Assert.Contains("json_tool", line);
+        }
+        finally
+        {
+            if (File.Exists(path)) File.Delete(path);
+        }
     }
 }

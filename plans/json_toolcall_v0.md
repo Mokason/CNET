@@ -33,6 +33,16 @@ var toolName = JsonToolCall.Classify(soul, json);
 
 Alphabet must stay aligned: `src/json_toolcall.c` ↔ `dotnet/Cce/JsonToolCall.cs`.
 
+## Unification (A–E)
+
+| Step | Status |
+|---|---|
+| A Agent classify before execute | `CceHost/Agent.cs` uses `JsonToolCall.ClassifyOrGap` |
+| B MCP tools | `cnet_classify_toolcall`, `cnet_json_toolcall_status` |
+| C Alphabet SoT | `config/json_toolcall_v0.json` → `make json_toolcall_alphabet` |
+| D Metrics / recycle | `personal_ai_metrics` + seal script recycle note |
+| E Gap path | `JsonToolCall.NoteGap` / unknown tool → inbox `jtc_feat→json_tool` |
+
 ## Seal into personal / live CNB
 
 ```bash

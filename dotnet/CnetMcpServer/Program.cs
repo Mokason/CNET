@@ -308,6 +308,26 @@ class Program
                                     name = "cnet_health_tick",
                                     description = "Run one runtime health pass (audit, fault labeling, heal via re-certify, evidence promotion, shadow swap) over the live certified registry and report exact counts",
                                     inputSchema = (object)new { type = "object", properties = new { } }
+                                },
+                                new
+                                {
+                                    name = "cnet_classify_toolcall",
+                                    description = "Classify agent JSON into a closed-set tool via sealed json_toolcall_v0 (certified). On miss notes gap jtc_feat→json_tool for the personal-AI lane.",
+                                    inputSchema = (object)new
+                                    {
+                                        type = "object",
+                                        properties = new
+                                        {
+                                            json = new { type = "string", description = "Agent tool-call JSON object, e.g. {\"tool\":\"calculator\",\"args\":{...}}" }
+                                        },
+                                        required = new[] { "json" }
+                                    }
+                                },
+                                new
+                                {
+                                    name = "cnet_json_toolcall_status",
+                                    description = "Report whether json_toolcall_v0 is sealed in the live base and sample-classify calculator example",
+                                    inputSchema = (object)new { type = "object", properties = new { } }
                                 }
                             }
                         }
@@ -434,6 +454,9 @@ class Program
                                         toolArgs.TryGetProperty("goal_count", out var rgc) && rgc.ValueKind == JsonValueKind.Number ? rgc.GetInt32() : 1,
                                         ReadDoubleList(toolArgs, "input")),
                                     "cnet_health_tick" => tools.HealthTick(),
+                                    "cnet_classify_toolcall" => tools.ClassifyToolCall(
+                                        SafeGetString(toolArgs, "json")),
+                                    "cnet_json_toolcall_status" => tools.JsonToolCallStatus(),
                                     _ => "Unknown tool: " + toolName
                             };
                         }

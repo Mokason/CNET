@@ -2129,9 +2129,16 @@ voice_real_teacher: $(MULTIMODAL_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER
 	@grep -q "VOICE_REAL_TEACHER_PASS" logs/voice_real_teacher.log
 	@grep "VOICE_REAL_TEACHER_PASS" logs/voice_real_teacher.log
 
+# Single source of truth → C include + .NET partial (check in generated files).
+.PHONY: json_toolcall_alphabet
+json_toolcall_alphabet: config/json_toolcall_v0.json tools/gen_json_toolcall_alphabet.py
+	@python3 tools/gen_json_toolcall_alphabet.py
+	@test -f include/json_toolcall_alphabet.inc
+	@test -f dotnet/Cce/JsonToolCall.Alphabet.g.cs
+
 # Closed-set JSON tool-call spine: keyword features → certified tool ONEHOT.
 .PHONY: json_toolcall
-json_toolcall: $(MULTIMODAL_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) $(GAP_LANE_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(EXT_TEACHER_SRC) src/soul_host.c tests/test_json_toolcall.c include/json_toolcall.h
+json_toolcall: json_toolcall_alphabet $(MULTIMODAL_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) $(GAP_LANE_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(EXT_TEACHER_SRC) src/soul_host.c tests/test_json_toolcall.c include/json_toolcall.h include/json_toolcall_alphabet.inc
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/test_json_toolcall \
 		$(MULTIMODAL_SRC) \
