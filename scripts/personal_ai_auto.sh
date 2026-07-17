@@ -136,30 +136,23 @@ stop() {
 }
 
 status() {
-  echo "=== Personal AI automation status ==="
-  echo "repo:    $REPO"
-  echo "base:    $BASE$([ -f "$BASE" ] && echo ' [ok]' || echo ' [MISSING]')"
-  echo "inbox:   ${BASE}.inbox$([ -f "${BASE}.inbox" ] && echo ' [ok]' || echo ' [absent]')"
-  echo "teacher: $TEACHER$([ -f "$TEACHER" ] && echo ' [ok]' || echo ' [missing→maintenance]')"
-  # Prefer explicit RESIDUAL; else show what personal-ai.env enables.
+  # Residual already resolved via cnet_load_personal_env + env overrides (no re-grep).
   local res_show="$RESIDUAL"
   local win_show="$RESIDUAL_WINDOW"
-  if [ -z "$res_show" ] && [ -f "$REPO/config/personal-ai.env" ]; then
-    res_show=$(grep -E '^CNET_RESIDUAL_GGUF=' "$REPO/config/personal-ai.env" | head -1 | cut -d= -f2- || true)
-    win_show=$(grep -E '^CNET_RESIDUAL_WINDOW=' "$REPO/config/personal-ai.env" | head -1 | cut -d= -f2- || true)
-  fi
+  echo "=== Personal AI automation status ==="
+  echo "repo:    $REPO"
+  echo "base:    $BASE$(cnet_path_mark "$BASE")"
+  echo "inbox:   ${BASE}.inbox$(cnet_path_mark "${BASE}.inbox" ' [ok]' ' [absent]')"
+  echo "teacher: $TEACHER$(cnet_path_mark "$TEACHER" ' [ok]' ' [missing→maintenance]')"
   if [ -n "$res_show" ]; then
-    echo "residual C: $res_show$([ -f "$res_show" ] && echo ' [ok]' || echo ' [MISSING]')"
+    echo "residual C: $res_show$(cnet_path_mark "$res_show")"
     echo "res_window: ${win_show:-$RESIDUAL_WINDOW}"
   else
     echo "residual C: (unset — hermetic/soft only until CNET_RESIDUAL_GGUF)"
   fi
-  echo "binary:  $REPO/bin/gap_lane_run$([ -x "$REPO/bin/gap_lane_run" ] && echo ' [ok]' || echo ' [MISSING]')"
-  if systemctl --user status "$LANE_UNIT" --no-pager 2>/dev/null | head -15; then
-    :
-  else
+  echo "binary:  $REPO/bin/gap_lane_run$(cnet_x_mark "$REPO/bin/gap_lane_run")"
+  systemctl --user status "$LANE_UNIT" --no-pager 2>/dev/null | head -15 || \
     echo "lane unit: not installed/running"
-  fi
   if cnet_serve_active; then
     echo "serve (CnetMcpServer): running"
   else
@@ -206,6 +199,13 @@ doctor() {
   fi
 }
 
+# Dispatch table (aliases map → canonical action). Avoids long if/elif chains.
+case "$cmd" in
+  hillclimb|eg) cmd=hillclimb ;;
+  loop|report) cmd=loop ;;
+  serve-proof|serve_proof) cmd=serve-proof ;;
+esac
+
 case "$cmd" in
   prepare) prepare ;;
   install) install_units ;;
@@ -216,11 +216,9 @@ case "$cmd" in
   grow) bash "$REPO/scripts/personal_ai_campaign_nudge.sh" "${2:-16}" ;;
   observe) bash "$REPO/scripts/personal_ai_observe.sh" "$BASE" ;;
   metrics) bash "$REPO/scripts/personal_ai_metrics.sh" "$BASE" ;;
-  hillclimb|eg) bash "$REPO/scripts/personal_ai_hill_climb_report.sh" "$BASE" "${2:-7}" ;;
-  loop|report) bash "$REPO/scripts/personal_ai_loop_report.sh" "$BASE" ;;
-  serve-proof|serve_proof)
-    bash "$REPO/scripts/personal_ai_serve_proof.sh" "${2:-hermetic}"
-    ;;
+  hillclimb) bash "$REPO/scripts/personal_ai_hill_climb_report.sh" "$BASE" "${2:-7}" ;;
+  loop) bash "$REPO/scripts/personal_ai_loop_report.sh" "$BASE" ;;
+  serve-proof) bash "$REPO/scripts/personal_ai_serve_proof.sh" "${2:-hermetic}" ;;
   *)
     cat <<EOF
 usage: $0 prepare|install|start|stop|status|doctor|grow|observe|metrics|hillclimb|loop|serve-proof

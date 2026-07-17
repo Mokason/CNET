@@ -32,56 +32,116 @@ void cnet_curiosity_config_defaults(CnetCuriosityConfig *c) {
     snprintf(c->state_path, sizeof c->state_path, "curiosity_state.txt");
 }
 
+static int env_size_clamped(const char *e, long lo, long hi, size_t *out) {
+    long v;
+    if (!e || !e[0] || !out) return 0;
+    v = atol(e);
+    if (v < lo || (hi >= 0 && v > hi)) return 0;
+    *out = (size_t)v;
+    return 1;
+}
+
+static void env_copy_path(char *dst, size_t cap, const char *e) {
+    if (!dst || !cap || !e || !e[0]) return;
+    snprintf(dst, cap, "%s", e);
+}
+
 void cnet_curiosity_config_from_env(CnetCuriosityConfig *c) {
     const char *e;
+    size_t v;
     if (!c) return;
     cnet_curiosity_config_defaults(c);
     e = getenv("CNET_CURIOSITY");
     c->enabled = (e && e[0] == '1') ? 1 : 0;
-    e = getenv("CNET_CURIOSITY_MAX_PER_HOUR");
-    if (e && e[0]) {
-        long v = atol(e);
-        if (v >= 0) c->max_per_hour = (size_t)v;
-    }
-    e = getenv("CNET_CURIOSITY_MAX_PER_TICK");
-    if (e && e[0]) {
-        long v = atol(e);
-        if (v >= 1) c->max_per_tick = (size_t)v;
-    }
-    e = getenv("CNET_CURIOSITY_K");
-    if (e && e[0]) {
-        long v = atol(e);
-        if (v >= 1 && v <= 16) c->k = (int)v;
-    }
-    e = getenv("CNET_CURIOSITY_YIELD_OPEN");
-    if (e && e[0]) {
-        long v = atol(e);
-        if (v >= 0) c->yield_if_open = (size_t)v;
-    }
+    if (env_size_clamped(getenv("CNET_CURIOSITY_MAX_PER_HOUR"), 0, -1, &v))
+        c->max_per_hour = v;
+    if (env_size_clamped(getenv("CNET_CURIOSITY_MAX_PER_TICK"), 1, -1, &v))
+        c->max_per_tick = v;
+    if (env_size_clamped(getenv("CNET_CURIOSITY_K"), 1, 16, &v))
+        c->k = (int)v;
+    if (env_size_clamped(getenv("CNET_CURIOSITY_YIELD_OPEN"), 0, -1, &v))
+        c->yield_if_open = v;
     e = getenv("CNET_WINDOW_FILE");
     if (!e || !e[0]) e = getenv("CNET_RESIDUAL_WINDOW");
-    if (e && e[0])
-        snprintf(c->window_path, sizeof c->window_path, "%s", e);
-    e = getenv("CNET_CURIOSITY_STATE");
-    if (e && e[0])
-        snprintf(c->state_path, sizeof c->state_path, "%s", e);
-    e = getenv("CNET_GAP_INBOX");
-    if (e && e[0])
-        snprintf(c->inbox_path, sizeof c->inbox_path, "%s", e);
+    env_copy_path(c->window_path, sizeof c->window_path, e);
+    env_copy_path(c->state_path, sizeof c->state_path,
+                  getenv("CNET_CURIOSITY_STATE"));
+    env_copy_path(c->inbox_path, sizeof c->inbox_path, getenv("CNET_GAP_INBOX"));
+}
+
+/* Parse tk{N}q{N} token id from a unit name (e.g. acq_tk12q12). Returns -1. */
+static int parse_tk_token_id(const char *name) {
+    const char *p, *q;
+    long a, b;
+    char *end = NULL;
+    if (!name) return -1;
+    p = strstr(name, "tk");
+    if (!p) return -1;
+    p += 2;
+    a = strtol(p, &end, 10);
+    if (end == p || *end != 'q') return -1;
+    q = end + 1;
+    b = strtol(q, &end, 10);
+    if (end == q || a != b || a < 0 || a > 2147483647L) return -1;
+    return (int)a;
+}
+
+static int int_cmp(const void *x, const void *y) {
+    int a = *(const int *)x, b = *(const int *)y;
+    return (a > b) - (a < b);
+}
+
+/* One registry scan → sorted unique token ids; O(log n) covered checks. */
+static int *build_covered_tokens(const PrimitiveRegistry *reg, size_t *n_out) {
+    int *ids = NULL;
+    size_t n = 0, cap = 0, i, w;
+    if (n_out) *n_out = 0;
+    if (!reg) return NULL;
+    for (i = 0; i < reg->count; i++) {
+        int tid = parse_tk_token_id(reg->entries[i].name);
+        if (tid < 0) continue;
+        if (n == cap) {
+            size_t ncap = cap ? cap * 2 : 64;
+            int *ni = (int *)realloc(ids, ncap * sizeof *ni);
+            if (!ni) {
+                free(ids);
+                return NULL;
+            }
+            ids = ni;
+            cap = ncap;
+        }
+        ids[n++] = tid;
+    }
+    if (n == 0) return ids;
+    qsort(ids, n, sizeof *ids, int_cmp);
+    w = 1;
+    for (i = 1; i < n; i++)
+        if (ids[i] != ids[w - 1]) ids[w++] = ids[i];
+    if (n_out) *n_out = w;
+    return ids;
+}
+
+static int covered_has(const int *sorted, size_t n, int tid) {
+    size_t lo = 0, hi = n;
+    if (!sorted || n == 0 || tid < 0) return 0;
+    while (lo < hi) {
+        size_t mid = lo + (hi - lo) / 2;
+        if (sorted[mid] < tid) lo = mid + 1;
+        else if (sorted[mid] > tid) hi = mid;
+        else return 1;
+    }
+    return 0;
 }
 
 int cnet_curiosity_token_covered(const PrimitiveRegistry *reg, int token_id) {
+    /* Public API: single-token probe (still linear). Prefer set inside tick. */
     char needle[48];
     size_t i;
     if (!reg || token_id < 0) return 0;
     snprintf(needle, sizeof needle, "tk%dq%d", token_id, token_id);
     for (i = 0; i < reg->count; i++) {
         const char *n = reg->entries[i].name;
-        if (!n) continue;
-        if (strstr(n, needle) != NULL) return 1;
-        /* also goal tag style acq_tk… */
-        if (strncmp(n, "acq_", 4) == 0 && strstr(n + 4, needle) != NULL)
-            return 1;
+        if (n && strstr(n, needle) != NULL) return 1;
     }
     return 0;
 }
@@ -201,20 +261,25 @@ int cnet_curiosity_tick(const CnetCuriosityConfig *cfg,
     goal.field_width = (size_t)n_win;
     goal.field_count = (size_t)(cfg->k > 0 ? cfg->k : 3);
 
-    /* Round-robin start from time so successive hours explore different slices. */
+    /* Round-robin start from time so successive hours explore different slices.
+       Covered check uses one registry scan + binary search (not per-token scan). */
     {
+        size_t n_cov = 0;
+        int *covered = build_covered_tokens(reg, &n_cov);
         int start = (int)(hour_bucket() % (uint64_t)n_win);
         for (i = 0; i < n_win && emitted < to_emit; i++) {
             int idx = (start + i) % n_win;
             int tid = ids[idx];
             local.candidates++;
-            if (cnet_curiosity_token_covered(reg, tid)) {
+            if (covered_has(covered, n_cov, tid) ||
+                (!covered && cnet_curiosity_token_covered(reg, tid))) {
                 local.skipped_covered++;
                 continue;
             }
             snprintf(goal.tag, sizeof goal.tag, "tk%dq%d", tid, tid);
             if (curiosity_note(cfg->inbox_path, in, goal) == 0) emitted++;
         }
+        free(covered);
     }
 
     if (emitted > 0) budget_consume(cfg, emitted);

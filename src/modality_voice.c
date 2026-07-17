@@ -8,6 +8,10 @@ static const char *const VOICE_CMDS[CNET_VOICE_N_CMD] = {
     "yes", "no", "up", "down", "left", "right", "on", "off", "stop", "go"
 };
 
+/* Precomputed once — teacher no longer re-hashes features every class probe. */
+static double g_voice_feat_tab[CNET_VOICE_N_CMD][CNET_VOICE_FEAT_DIM];
+static int g_voice_feat_ready;
+
 const char *const *cnet_voice_command_names(void) { return VOICE_CMDS; }
 
 void cnet_voice_hermetic_features(int class_id, double *out_feat) {
@@ -30,16 +34,24 @@ void cnet_voice_hermetic_features(int class_id, double *out_feat) {
     }
 }
 
+static void voice_feat_table_ensure(void) {
+    int c;
+    if (g_voice_feat_ready) return;
+    for (c = 0; c < CNET_VOICE_N_CMD; c++)
+        cnet_voice_hermetic_features(c, g_voice_feat_tab[c]);
+    g_voice_feat_ready = 1;
+}
+
 int cnet_voice_hermetic_teacher(const double *in, double *out, void *ctx) {
     int c, best = 0;
     double best_d = 1e300;
-    double feat[CNET_VOICE_FEAT_DIM];
     (void)ctx;
     if (!in || !out) return -1;
+    voice_feat_table_ensure();
     for (c = 0; c < CNET_VOICE_N_CMD; c++) {
         int k;
         double d = 0.0;
-        cnet_voice_hermetic_features(c, feat);
+        const double *feat = g_voice_feat_tab[c];
         for (k = 0; k < CNET_VOICE_FEAT_DIM; k++) {
             double e = in[k] - feat[k];
             d += e * e;
@@ -47,9 +59,10 @@ int cnet_voice_hermetic_teacher(const double *in, double *out, void *ctx) {
         if (d < best_d) {
             best_d = d;
             best = c;
+            if (d == 0.0) break; /* exact hermetic match */
         }
     }
-    for (c = 0; c < CNET_VOICE_N_CMD; c++) out[c] = 0.0;
+    memset(out, 0, (size_t)CNET_VOICE_N_CMD * sizeof(double));
     out[best] = 1.0;
     return 0;
 }

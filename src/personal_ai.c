@@ -8,6 +8,16 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* Dense name table for PersonalAiSource (enum values are 0..5). */
+static const char *const k_source_names[] = {
+    "local",    /* PERSONAL_AI_LOCAL */
+    "teacher",  /* PERSONAL_AI_TEACHER */
+    "abstain",  /* PERSONAL_AI_ABSTAIN */
+    "error",    /* PERSONAL_AI_ERROR */
+    "soft",     /* PERSONAL_AI_SOFT */
+    "residual"  /* PERSONAL_AI_RESIDUAL */
+};
+
 void personal_ai_policy_defaults(PersonalAiPolicy *p) {
     if (!p) return;
     memset(p, 0, sizeof *p);
@@ -22,67 +32,118 @@ void personal_ai_policy_defaults(PersonalAiPolicy *p) {
 }
 
 const char *personal_ai_source_name(PersonalAiSource s) {
-    switch (s) {
-    case PERSONAL_AI_LOCAL: return "local";
-    case PERSONAL_AI_TEACHER: return "teacher";
-    case PERSONAL_AI_ABSTAIN: return "abstain";
-    case PERSONAL_AI_SOFT: return "soft";
-    case PERSONAL_AI_RESIDUAL: return "residual";
-    default: return "error";
+    unsigned u = (unsigned)s;
+    if (u < sizeof k_source_names / sizeof k_source_names[0])
+        return k_source_names[u];
+    return "error";
+}
+
+/* One getenv per key (old PAI_SET called getenv twice). */
+static int pai_setenv_default(const char *k, const char *v) {
+    const char *cur = getenv(k);
+    if (cur && cur[0]) return 0;
+#if defined(_WIN32)
+    {
+        char b[128];
+        snprintf(b, sizeof b, "%s=%s", k, v);
+        return _putenv(b) == 0 ? 1 : 0;
     }
+#else
+    return setenv(k, v, 0) == 0 ? 1 : 0;
+#endif
 }
 
 int personal_ai_apply_env(void) {
-    int n = 0;
-    n += self_improve_apply_deploy_env();
-#if defined(_WIN32)
-#define PAI_SET(k, v) do { \
-        if (!getenv(k) || !getenv(k)[0]) { \
-            char b[128]; snprintf(b, sizeof b, "%s=%s", k, v); \
-            if (_putenv(b) == 0) n++; \
-        } \
-    } while (0)
-#else
-#define PAI_SET(k, v) do { \
-        if (!getenv(k) || !getenv(k)[0]) { \
-            if (setenv(k, v, 0) == 0) n++; \
-        } \
-    } while (0)
-#endif
-    PAI_SET("CNET_PERSONAL_ALLOW_TEACHER", "1");
-    PAI_SET("CNET_PERSONAL_TEACH_INLINE", "0");
-    PAI_SET("CNET_PERSONAL_ALLOW_SOFT", "1");
-    PAI_SET("CNET_PERSONAL_ALLOW_RESIDUAL", "1");
-    PAI_SET("CNET_TEACHER_IDLE_SEC", "300");
-    PAI_SET("CNET_LANE_MAX_CLOSURES", "4");
+    static const char *const kv[][2] = {
+        {"CNET_PERSONAL_ALLOW_TEACHER", "1"},
+        {"CNET_PERSONAL_TEACH_INLINE", "0"},
+        {"CNET_PERSONAL_ALLOW_SOFT", "1"},
+        {"CNET_PERSONAL_ALLOW_RESIDUAL", "1"},
+        {"CNET_TEACHER_IDLE_SEC", "300"},
+        {"CNET_LANE_MAX_CLOSURES", "4"},
+    };
+    int n = self_improve_apply_deploy_env();
+    size_t i;
+    for (i = 0; i < sizeof kv / sizeof kv[0]; i++)
+        n += pai_setenv_default(kv[i][0], kv[i][1]);
     /* Real residual GGUF is operator-set (CNET_RESIDUAL_GGUF); not defaulted. */
-#undef PAI_SET
     return n;
 }
 
+/* Env parsers — avoid repeated if (e && e[0]) ladders. */
+static int env_truthy_on(const char *e) {
+    return e && e[0] == '1' && e[1] == '\0';
+}
+static int env_truthy_off(const char *e) {
+    /* default-on flags: only explicit "0" disables */
+    return !(e && e[0] == '0' && e[1] == '\0');
+}
+static int env_size_at_least(const char *e, long min_v, size_t *out) {
+    long v;
+    if (!e || !e[0] || !out) return 0;
+    v = atol(e);
+    if (v < min_v) return 0;
+    *out = (size_t)v;
+    return 1;
+}
+
 static void policy_from_env(PersonalAiPolicy *p) {
-    const char *a, *t, *m;
+    size_t v;
     if (!p) return;
-    a = getenv("CNET_PERSONAL_ALLOW_TEACHER");
-    if (a && a[0]) p->allow_teacher = !(a[0] == '0' && a[1] == '\0');
-    t = getenv("CNET_PERSONAL_TEACH_INLINE");
-    if (t && t[0]) p->teach_inline = (t[0] == '1');
-    m = getenv("CNET_PERSONAL_MAX_INLINE_TEACHES");
-    if (m && m[0]) {
-        long v = atol(m);
-        if (v >= 0) p->max_inline_teaches = (size_t)v;
+    {
+        const char *e = getenv("CNET_PERSONAL_ALLOW_TEACHER");
+        if (e && e[0]) p->allow_teacher = env_truthy_off(e);
     }
-    a = getenv("CNET_PERSONAL_ALLOW_SOFT");
-    if (a && a[0]) p->allow_soft = !(a[0] == '0' && a[1] == '\0');
-    a = getenv("CNET_PERSONAL_ALLOW_RESIDUAL");
-    if (a && a[0]) p->allow_residual = !(a[0] == '0' && a[1] == '\0');
-    m = getenv("CNET_PERSONAL_STRUCTURE_MIN_HITS");
-    if (m && m[0]) {
-        long v = atol(m);
-        if (v >= 1) p->structure_min_hits = (size_t)v;
+    {
+        const char *e = getenv("CNET_PERSONAL_TEACH_INLINE");
+        if (e && e[0]) p->teach_inline = env_truthy_on(e);
     }
-    a = getenv("CNET_PERSONAL_STRUCTURE_MINE_ON_SERVE");
-    if (a && a[0] == '1') p->structure_mine_on_serve = 1;
+    if (env_size_at_least(getenv("CNET_PERSONAL_MAX_INLINE_TEACHES"), 0, &v))
+        p->max_inline_teaches = v;
+    {
+        const char *e = getenv("CNET_PERSONAL_ALLOW_SOFT");
+        if (e && e[0]) p->allow_soft = env_truthy_off(e);
+    }
+    {
+        const char *e = getenv("CNET_PERSONAL_ALLOW_RESIDUAL");
+        if (e && e[0]) p->allow_residual = env_truthy_off(e);
+    }
+    if (env_size_at_least(getenv("CNET_PERSONAL_STRUCTURE_MIN_HITS"), 1, &v))
+        p->structure_min_hits = v;
+    if (env_truthy_on(getenv("CNET_PERSONAL_STRUCTURE_MINE_ON_SERVE")))
+        p->structure_mine_on_serve = 1;
+}
+
+/* Collapse repeated serve bookkeeping (source/trust/tier + counters). */
+static void serve_record_hit(PersonalAi *ai, PersonalAiReport *rep,
+                             PersonalAiSource src, HybridTrust trust,
+                             HybridTier tier) {
+    rep->source = src;
+    rep->trust = trust;
+    rep->tier = tier;
+    switch (src) {
+    case PERSONAL_AI_LOCAL:
+        rep->local_hits = 1;
+        ai->totals.local_hits++;
+        ai->hybrid.tier_a_hits++;
+        ai->hybrid.prefer_warm_hits++;
+        break;
+    case PERSONAL_AI_SOFT:
+        rep->soft_hits = 1;
+        ai->totals.soft_hits++;
+        ai->hybrid.prefer_warm_hits++;
+        break;
+    case PERSONAL_AI_RESIDUAL:
+        rep->residual_hits = 1;
+        ai->totals.residual_hits++;
+        break;
+    case PERSONAL_AI_TEACHER:
+        rep->teacher_helps = 1;
+        ai->totals.teacher_helps++;
+        break;
+    default:
+        break;
+    }
 }
 
 int personal_ai_open(PersonalAi *ai, const char *base_path,
@@ -204,65 +265,43 @@ int personal_ai_serve(PersonalAi *ai, Port input_port, Port goal_port,
             ai->totals.abstains++;
             return -1;
         }
-        rep->source = PERSONAL_AI_LOCAL;
-        rep->trust = HYBRID_TRUST_CERTIFIED;
-        rep->tier = HYBRID_TIER_A;
-        rep->local_hits = 1;
-        ai->totals.local_hits++;
-        ai->hybrid.tier_a_hits++;
-        ai->hybrid.prefer_warm_hits++;
+        serve_record_hit(ai, rep, PERSONAL_AI_LOCAL, HYBRID_TRUST_CERTIFIED,
+                         HYBRID_TIER_A);
         return 0;
     }
 
     /* ---- Tier B: medium modules then soft specialists ---- */
-    if (ai->policy.allow_medium) {
-        if (hybrid_try_medium(&ai->hybrid, input_port, goal_port, input,
-                              in_len, output, out_cap) == 0) {
-            rep->source = PERSONAL_AI_SOFT;
-            rep->trust = HYBRID_TRUST_PROVISIONAL;
-            rep->tier = HYBRID_TIER_B;
-            rep->soft_hits = 1;
-            ai->totals.soft_hits++;
-            ai->hybrid.prefer_warm_hits++;
-            return 0;
-        }
+    if (ai->policy.allow_medium &&
+        hybrid_try_medium(&ai->hybrid, input_port, goal_port, input, in_len,
+                          output, out_cap) == 0) {
+        serve_record_hit(ai, rep, PERSONAL_AI_SOFT, HYBRID_TRUST_PROVISIONAL,
+                         HYBRID_TIER_B);
+        return 0;
     }
     if (ai->policy.allow_soft) {
         char sn[64];
-        rc = hybrid_try_soft(&ai->hybrid, input_port, goal_port, input, in_len,
-                             output, out_cap, sn, sizeof sn);
-        if (rc == 0) {
-            rep->source = PERSONAL_AI_SOFT;
-            rep->trust = HYBRID_TRUST_PROVISIONAL;
-            rep->tier = HYBRID_TIER_B;
-            rep->soft_hits = 1;
-            ai->totals.soft_hits++;
-            ai->hybrid.prefer_warm_hits++;
+        if (hybrid_try_soft(&ai->hybrid, input_port, goal_port, input, in_len,
+                            output, out_cap, sn, sizeof sn) == 0) {
+            serve_record_hit(ai, rep, PERSONAL_AI_SOFT,
+                             HYBRID_TRUST_PROVISIONAL, HYBRID_TIER_B);
             return 0;
         }
     }
 
     /* ---- Tier C: residual generative ---- */
-    if (ai->policy.allow_residual && ai->hybrid.residual.bound) {
-        if (hybrid_try_residual(&ai->hybrid, input_port, goal_port, input,
-                                in_len, output, out_cap) == 0) {
-            rep->source = PERSONAL_AI_RESIDUAL;
-            rep->trust = HYBRID_TRUST_UNCERTIFIED;
-            rep->tier = HYBRID_TIER_C;
-            rep->residual_hits = 1;
-            ai->totals.residual_hits++;
-            if (ai->policy.structure_mine_on_serve) {
-                BinaryTransformNetwork *stu = NULL;
-                if (personal_ai_structure_mine(ai, &stu) == 0) {
-                    rep->structure_mined = 1;
-                    if (stu) {
-                        /* registry borrows; keep alive */
-                        (void)stu;
-                    }
-                }
+    if (ai->policy.allow_residual && ai->hybrid.residual.bound &&
+        hybrid_try_residual(&ai->hybrid, input_port, goal_port, input, in_len,
+                            output, out_cap) == 0) {
+        serve_record_hit(ai, rep, PERSONAL_AI_RESIDUAL,
+                         HYBRID_TRUST_UNCERTIFIED, HYBRID_TIER_C);
+        if (ai->policy.structure_mine_on_serve) {
+            BinaryTransformNetwork *stu = NULL;
+            if (personal_ai_structure_mine(ai, &stu) == 0) {
+                rep->structure_mined = 1;
+                (void)stu; /* registry borrows */
             }
-            return 0;
         }
+        return 0;
     }
 
     /* ---- Legacy teacher oracle path (signature-matched big AI) ---- */
@@ -271,27 +310,20 @@ int personal_ai_serve(PersonalAi *ai, Port input_port, Port goal_port,
                               output, out_cap);
         rep->gap_noted = 1;
         if (rc == 0) {
-            rep->source = PERSONAL_AI_TEACHER;
-            rep->trust = HYBRID_TRUST_UNCERTIFIED;
-            rep->tier = HYBRID_TIER_C;
-            rep->teacher_helps = 1;
-            ai->totals.teacher_helps++;
-            if (ai->policy.teach_inline) {
-                int can = 1;
-                if (ai->policy.max_inline_teaches &&
-                    ai->inline_teaches_done >= ai->policy.max_inline_teaches)
-                    can = 0;
-                if (can) {
-                    AcquireReport ar;
-                    memset(&ar, 0, sizeof ar);
-                    if (acquire_now(&ai->lane.reg, &ai->lane.ledger,
-                                    &ai->lane.oracles, &ai->lane.acq,
-                                    input_port, goal_port, &ar) == 0) {
-                        rep->taught = 1;
-                        ai->inline_teaches_done++;
-                        ai->totals.teaches++;
-                        (void)gap_lane_checkpoint(&ai->lane);
-                    }
+            serve_record_hit(ai, rep, PERSONAL_AI_TEACHER,
+                             HYBRID_TRUST_UNCERTIFIED, HYBRID_TIER_C);
+            if (ai->policy.teach_inline &&
+                (!ai->policy.max_inline_teaches ||
+                 ai->inline_teaches_done < ai->policy.max_inline_teaches)) {
+                AcquireReport ar;
+                memset(&ar, 0, sizeof ar);
+                if (acquire_now(&ai->lane.reg, &ai->lane.ledger,
+                                &ai->lane.oracles, &ai->lane.acq, input_port,
+                                goal_port, &ar) == 0) {
+                    rep->taught = 1;
+                    ai->inline_teaches_done++;
+                    ai->totals.teaches++;
+                    (void)gap_lane_checkpoint(&ai->lane);
                 }
             }
             return 0;
@@ -335,9 +367,12 @@ int personal_ai_tick(PersonalAi *ai, GapLaneTickReport *tick_rep) {
         if (ai->lane.inbox_path[0])
             snprintf(cc.inbox_path, sizeof cc.inbox_path, "%s",
                      ai->lane.inbox_path);
-        if (ai->lane.base_path[0] && !getenv("CNET_CURIOSITY_STATE")) {
-            snprintf(cc.state_path, sizeof cc.state_path, "%s.curiosity",
-                     ai->lane.base_path);
+        /* Prefer operator state path; else default beside the base (one getenv). */
+        {
+            const char *st = getenv("CNET_CURIOSITY_STATE");
+            if ((!st || !st[0]) && ai->lane.base_path[0])
+                snprintf(cc.state_path, sizeof cc.state_path, "%s.curiosity",
+                         ai->lane.base_path);
         }
         (void)cnet_curiosity_tick(&cc, &ai->lane.reg, open_gaps, &cr);
         if (cr.proposed > 0)

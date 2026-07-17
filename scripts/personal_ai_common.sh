@@ -90,3 +90,23 @@ cnet_load_personal_env() {
     set +a
   fi
 }
+
+# Path mark without if/else ladders: cnet_path_mark /path ok MISSING
+# Usage: echo "base: $BASE$(cnet_path_mark "$BASE" ' [ok]' ' [MISSING]')"
+cnet_path_mark() {
+  local p="${1:-}" ok="${2:- [ok]}" bad="${3:- [MISSING]}"
+  if [ -n "$p" ] && [ -e "$p" ]; then
+    printf '%s' "$ok"
+  else
+    printf '%s' "$bad"
+  fi
+}
+
+cnet_x_mark() {
+  local p="${1:-}" ok="${2:- [ok]}" bad="${3:- [MISSING]}"
+  if [ -n "$p" ] && [ -x "$p" ]; then
+    printf '%s' "$ok"
+  else
+    printf '%s' "$bad"
+  fi
+}
