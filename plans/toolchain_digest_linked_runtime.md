@@ -1,0 +1,69 @@
+# Toolchain digest: linked-runtime attestation (scope)
+
+Status: IMPLEMENTED, slice 1 (2026-07-17) — `runtime_libs_digest` tail
+field on `CnetOracleIdentity`, computed in `src/runtime_identity.c`
+(dl_iterate_phdr build-id fold + glibc version), CNB v5 with v1–v4 read
+compat, populated by the daemon, gated (`make base` 94 checks,
+`make gap_lane` 51). Deferred from this slice: GPU driver/kernel folding
+(folds only when a GPU lane teaches — not in CPU-only identities) and
+the `soul_host` projection of the new field. Original scope below.
+Closes the last provenance caveat named in the July 12/13 CHANGELOG
+rows: "linked system libraries/GPU kernels are outside the toolchain
+digest."
+
+## What the digest covers today
+
+`lm_toolchain_identity()` (tests/gap_lane_run.c) FNV-folds: compiler
+version string, `CNET_TOOLCHAIN_CFLAGS`, `CNET_SOURCE_REV` (both
+Makefile-injected), `CNET_ORACLE_ABI_VERSION`, and pointer width. A
+zero digest reads `unattested` and is refused as provenance
+(reconcile_one, src/gap_lane.c).
+
+## The hole
+
+Teaching numerics also depend on code the digest never sees:
+- glibc/libm (expf/tanh differ across versions — logits shift),
+- the OpenMP runtime (reduction/scheduling order),
+- OpenCL driver + kernel binaries when a GPU oracle pool teaches.
+
+A teacher rebuilt against a different libm can produce a different
+exemplar table under an IDENTICAL current digest.
+
+## Proposed mechanism
+
+Add `runtime_libs_digest` (u64) to `CnetOracleIdentity` as an ABI-safe
+TAIL extension — the exact precedent of `artifact_sha256` (July 13):
+`struct_size`-gated, NOT folded into `cnet_oracle_identity_digest`
+(the 64-bit digest stays the fast index; the new field is the record).
+
+Computation at daemon startup, pure C:
+1. `dl_iterate_phdr` over loaded DSOs; for each, read the
+   `.note.gnu.build-id` ELF note; fold (soname, build-id) pairs
+   sorted by soname. Covers libc, libm, libgomp, libOpenCL — whatever
+   is actually linked, not a hardcoded list.
+2. Fold `gnu_get_libc_version()` explicitly (build-id can be stripped).
+3. GPU lanes only: fold `CL_PLATFORM_VERSION` + per-device
+   `CL_DRIVER_VERSION` at pool construction; CPU-only teaching folds
+   nothing GPU (a CPU teacher must not change identity when a driver
+   updates).
+
+## Serialization + compat
+
+CNB descriptor record gains the field → CNB v5 with v1–v4 read compat
+(older descriptors load it zero = "linked runtime unattested", exactly
+how pre-v4 loads read the full hash as all-zero). Ledger untouched.
+
+## Gates
+
+- `make base`: +2 checks (round-trip of the new field; zero-on-old-load).
+- `make gap_lane`: daemon populates it; provenance projection
+  (`soul_oracle_*`) exposes it.
+- A refusal is NOT added: a zero runtime digest stays a visible label,
+  not a hard fail (same posture as `unattested` toolchain today).
+
+## Cost / verdict
+
+~60–100 lines C + serializer bump + gate rows; roughly a half-day.
+Honestly modest for a single-host runtime (same caveat as the
+artifact-hash closure) — but it is the one remaining named provenance
+hole, and the mechanism is cheap and dlopen-order-independent.

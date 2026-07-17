@@ -1,0 +1,67 @@
+# margin_sweep model=/home/marble/Downloads/Qwythos-9B-Claude-Mythos-5-1M-MTP-Q8_0.gguf V=256 units=256 eps=0.020000 prefix=on int8=1
+units=256 probes/unit=256
+
+predicted minable units (evidence>=0.90, min_evidence=16):
+eps           ordered          set  recovered
+0.005         256/256      256/256         +0
+0.01          256/256      256/256         +0
+0.02          101/256      255/256       +154  <-- campaign eps
+0.03            4/256      211/256       +207
+0.05            0/256       17/256        +17
+0.08            0/256        0/256         +0
+0.12            0/256        0/256         +0
+
+at eps=0.02: set-semantics converts 154 units, loses 0
+
+top 10 / bottom 10 by mean set margin (screen decisiveness):
+  tk1881    mean_set=  0.5110 ordered=minable set=minable
+  tk2107    mean_set=  0.4493 ordered=minable set=minable
+  tk494     mean_set=  0.4471 ordered=minable set=minable
+  tk1318    mean_set=  0.4339 ordered=minable set=minable
+  tk440     mean_set=  0.4291 ordered=oracle_unfit set=minable
+  tk2426    mean_set=  0.4256 ordered=minable set=minable
+  tk1332    mean_set=  0.4255 ordered=minable set=minable
+  tk884     mean_set=  0.4234 ordered=minable set=minable
+  tk3184    mean_set=  0.4188 ordered=minable set=minable
+  tk1204    mean_set=  0.4186 ordered=oracle_unfit set=minable
+  ...
+  tk3603    mean_set=  0.2955 ordered=oracle_unfit set=minable
+  tk866     mean_set=  0.2935 ordered=minable set=minable
+  tk1396    mean_set=  0.2930 ordered=minable set=minable
+  tk2046    mean_set=  0.2924 ordered=oracle_unfit set=minable
+  tk1362    mean_set=  0.2918 ordered=minable set=minable
+  tk685     mean_set=  0.2887 ordered=oracle_unfit set=minable
+  tk1680    mean_set=  0.2877 ordered=oracle_unfit set=minable
+  tk449     mean_set=  0.2876 ordered=minable set=minable
+  tk466     mean_set=  0.2875 ordered=oracle_unfit set=minable
+  tk491     mean_set=  0.2868 ordered=oracle_unfit set=minable
+
+validation vs ledger qwythos_english_v1.cnb.gaps.txt (ordered @ eps=0.02):
+  predicted-minable & acquired:       66 (true positive)
+  predicted-minable & deferred:       35 (downstream defers)
+  predicted-unfit   & acquired:       23 (should be ~0)
+  predicted-unfit   & deferred:      132 (true negative)
+    fp tk1318 actual=oracle_unfit usable=235
+    fp tk2426 actual=oracle_unfit usable=232
+    fp tk364 actual=oracle_unfit usable=235
+    fp tk1518 actual=oracle_unfit usable=231
+    fp tk1366 actual=oracle_unfit usable=231
+    fp tk1132 actual=oracle_unfit usable=235
+    fp tk998 actual=oracle_unfit usable=232
+    fp tk539 actual=oracle_unfit usable=233
+    fp tk1007 actual=oracle_unfit usable=231
+    fp tk1467 actual=oracle_unfit usable=233
+    fp tk854 actual=oracle_unfit usable=232
+    fp tk1599 actual=oracle_unfit usable=234
+    fn tk777 usable=224
+    fn tk635 usable=229
+    fn tk3000 usable=222
+    fn tk369 usable=230
+    fn tk4950 usable=230
+    fn tk2812 usable=229
+    fn tk314 usable=227
+    fn tk3827 usable=225
+    fn tk1375 usable=229
+    fn tk411 usable=221
+    fn tk1500 usable=229
+    fn tk958 usable=229
