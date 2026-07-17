@@ -510,11 +510,28 @@ void lifecycle_promote_provisional(PrimitiveRegistry *reg,
     }
 }
 
+/* Last-hit cache: serve/heal paths often re-touch the same unit name. */
 static size_t registry_find(const PrimitiveRegistry *reg, const char *name) {
     size_t i;
+    static const PrimitiveRegistry *last_reg;
+    static size_t last_idx;
+    static const char *last_name;
+    if (!reg || !name) return reg ? reg->count : 0;
+    if (reg == last_reg && last_name == name && last_idx < reg->count &&
+        reg->entries[last_idx].name == name) {
+        return last_idx; /* pointer-equal name (borrowed registry strings) */
+    }
+    if (reg == last_reg && last_idx < reg->count &&
+        reg->entries[last_idx].name != NULL &&
+        strcmp(reg->entries[last_idx].name, name) == 0) {
+        return last_idx;
+    }
     for (i = 0; i < reg->count; ++i) {
         if (reg->entries[i].name != NULL &&
             strcmp(reg->entries[i].name, name) == 0) {
+            last_reg = reg;
+            last_idx = i;
+            last_name = reg->entries[i].name;
             return i;
         }
     }

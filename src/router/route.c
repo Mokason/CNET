@@ -9,7 +9,23 @@
  * Linear route planning + execution (including self-healing)
  * ======================================================================== */
 
-/* Local forward (dupe of internal for this TU until fully cleaned) */
+/* Port shape+tag key (FNV-1a) — reject before strcmp in type tables. */
+static uint64_t route_port_key(Port p) {
+    uint64_t h = 14695981039346656037ULL;
+    const unsigned char *t = (const unsigned char *)p.tag;
+    h ^= (uint64_t)(unsigned)p.family;
+    h *= 1099511628211ULL;
+    h ^= (uint64_t)p.field_width;
+    h *= 1099511628211ULL;
+    h ^= (uint64_t)p.field_count;
+    h *= 1099511628211ULL;
+    for (; *t; t++) {
+        h ^= (uint64_t)*t;
+        h *= 1099511628211ULL;
+    }
+    return h ? h : 1ULL;
+}
+
 static int same_port_type(Port a, Port b) {
     return a.family == b.family &&
            a.field_width == b.field_width &&
@@ -17,13 +33,13 @@ static int same_port_type(Port a, Port b) {
            strcmp(a.tag, b.tag) == 0;
 }
 
-/* Uses entry_usable from registry module (non-static via linkage) */
-/* In practice entry_usable is currently static in registry file.
-   For this refactor we re-provide a thin visible wrapper or we will promote.
-   To make build succeed fast we redeclare the logic here via a call to a
-   registry helper when available. For now we inline a compatible predicate. */
+/* Key-first type equality against the planner's type table. */
+static int same_port_type_keyed(Port a, uint64_t ka, Port b, uint64_t kb) {
+    if (ka != kb) return 0;
+    return same_port_type(a, b);
+}
 
-extern int entry_usable(const PrimitiveRegistry *reg, size_t i); /* may need to be made visible */
+extern int entry_usable(const PrimitiveRegistry *reg, size_t i);
 
 int route_plan(
     const PrimitiveRegistry *reg,
@@ -33,6 +49,7 @@ int route_plan(
 ) {
     enum { K = ROUTE_MAX_STEPS };
     Port *types;
+    uint64_t *type_keys;
     double *dist;
     int *via_prim;
     int *via_type;
@@ -51,41 +68,49 @@ int route_plan(
 
     max_types = reg->count + 1;
     types = malloc(max_types * sizeof(*types));
+    type_keys = malloc(max_types * sizeof(*type_keys));
     dist = malloc((K + 1) * max_types * sizeof(*dist));
     via_prim = malloc((K + 1) * max_types * sizeof(*via_prim));
     via_type = malloc((K + 1) * max_types * sizeof(*via_type));
-    if (types == NULL || dist == NULL || via_prim == NULL ||
+    if (types == NULL || type_keys == NULL || dist == NULL || via_prim == NULL ||
         via_type == NULL) {
         free(types);
+        free(type_keys);
         free(dist);
         free(via_prim);
         free(via_type);
         return -1;
     }
 
-    types[n_types++] = input_port;
+    types[0] = input_port;
+    type_keys[0] = route_port_key(input_port);
+    n_types = 1;
     for (i = 0; i < reg->count; ++i) {
         const BinaryTransformNetwork *p = reg->entries[i].btn;
+        Port outp;
+        uint64_t ok;
         int seen = 0;
 
         if (!entry_usable(reg, i)) continue;
-
-        if (p->input_port_count != 1 || p->output_port_count != 1) {
-            continue;
-        }
+        if (p->input_port_count != 1 || p->output_port_count != 1) continue;
+        outp = p->output_ports[0];
+        ok = route_port_key(outp);
         for (t = 0; t < n_types; ++t) {
-            if (same_port_type(types[t], p->output_ports[0])) {
+            if (same_port_type_keyed(types[t], type_keys[t], outp, ok)) {
                 seen = 1;
                 break;
             }
         }
         if (!seen) {
-            types[n_types++] = p->output_ports[0];
+            types[n_types] = outp;
+            type_keys[n_types] = ok;
+            n_types++;
         }
     }
 
+    /* Only clear the used (k, type) cells — not the full max_types slab. */
     for (k = 0; k <= K; ++k) {
-        for (t = 0; t < max_types; ++t) {
+        for (t = 0; t < n_types; ++t) {
             dist[k * max_types + t] = 0.0;
             via_prim[k * max_types + t] = -1;
             via_type[k * max_types + t] = -1;
@@ -96,15 +121,21 @@ int route_plan(
     for (k = 1; k <= K; ++k) {
         for (i = 0; i < reg->count; ++i) {
             BinaryTransformNetwork *p = reg->entries[i].btn;
+            Port outp;
+            uint64_t ok;
             size_t ti;
             double rel;
 
             if (!entry_usable(reg, i)) continue;
             if (p->input_port_count != 1 || p->output_port_count != 1) continue;
 
+            outp = p->output_ports[0];
+            ok = route_port_key(outp);
             for (ti = 0; ti < n_types; ++ti) {
-                if (same_port_type(types[ti], p->output_ports[0])) break;
+                if (same_port_type_keyed(types[ti], type_keys[ti], outp, ok))
+                    break;
             }
+            if (ti >= n_types) continue;
             rel = btn_reliability(p);
             for (t = 0; t < n_types; ++t) {
                 double cand;
@@ -147,6 +178,7 @@ int route_plan(
     }
 
     free(types);
+    free(type_keys);
     free(dist);
     free(via_prim);
     free(via_type);

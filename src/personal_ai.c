@@ -348,8 +348,8 @@ int personal_ai_tick(PersonalAi *ai, GapLaneTickReport *tick_rep) {
     if (!ai || !ai->loaded) return -1;
     cnet_gov_begin_drain(&ai->gov);
     rc = gap_lane_tick(&ai->lane, tick_rep, 0);
-    /* P5: attempt structure mining after drain */
-    {
+    /* P5: structure mine only if residual traces exist (skip empty scan). */
+    if (ai->hybrid.trace_count > 0) {
         BinaryTransformNetwork *stu = NULL;
         if (hybrid_structure_mine(&ai->hybrid, &ai->lane.reg,
                                   ai->policy.structure_min_hits, &stu) == 0) {
@@ -357,28 +357,31 @@ int personal_ai_tick(PersonalAi *ai, GapLaneTickReport *tick_rep) {
             (void)gap_lane_checkpoint(&ai->lane);
         }
     }
-    /* Curiosity: budgeted self-seeding when demand is quiet. */
-    for (gi = 0; gi < ai->lane.ledger.count; gi++)
-        if (ai->lane.ledger.gaps[gi].status == GAP_OPEN) open_gaps++;
+    /* Curiosity: budgeted self-seeding when demand is quiet.
+       Skip open-gap scan entirely when curiosity is off. */
     {
-        CnetCuriosityConfig cc;
-        CnetCuriosityReport cr;
-        cnet_curiosity_config_from_env(&cc);
-        if (ai->lane.inbox_path[0])
-            snprintf(cc.inbox_path, sizeof cc.inbox_path, "%s",
-                     ai->lane.inbox_path);
-        /* Prefer operator state path; else default beside the base (one getenv). */
-        {
-            const char *st = getenv("CNET_CURIOSITY_STATE");
-            if ((!st || !st[0]) && ai->lane.base_path[0])
-                snprintf(cc.state_path, sizeof cc.state_path, "%s.curiosity",
-                         ai->lane.base_path);
+        const char *cur = getenv("CNET_CURIOSITY");
+        if (cur && cur[0] == '1') {
+            CnetCuriosityConfig cc;
+            CnetCuriosityReport cr;
+            for (gi = 0; gi < ai->lane.ledger.count; gi++)
+                if (ai->lane.ledger.gaps[gi].status == GAP_OPEN) open_gaps++;
+            cnet_curiosity_config_from_env(&cc);
+            if (ai->lane.inbox_path[0])
+                snprintf(cc.inbox_path, sizeof cc.inbox_path, "%s",
+                         ai->lane.inbox_path);
+            {
+                const char *st = getenv("CNET_CURIOSITY_STATE");
+                if ((!st || !st[0]) && ai->lane.base_path[0])
+                    snprintf(cc.state_path, sizeof cc.state_path, "%s.curiosity",
+                             ai->lane.base_path);
+            }
+            (void)cnet_curiosity_tick(&cc, &ai->lane.reg, open_gaps, &cr);
+            if (cr.proposed > 0)
+                fprintf(stderr,
+                        "personal_ai: curiosity proposed=%zu covered_skip=%zu\n",
+                        cr.proposed, cr.skipped_covered);
         }
-        (void)cnet_curiosity_tick(&cc, &ai->lane.reg, open_gaps, &cr);
-        if (cr.proposed > 0)
-            fprintf(stderr,
-                    "personal_ai: curiosity proposed=%zu covered_skip=%zu\n",
-                    cr.proposed, cr.skipped_covered);
     }
     return rc;
 }

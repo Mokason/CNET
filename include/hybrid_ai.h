@@ -46,6 +46,8 @@ typedef struct {
     char name[64];
     Port input_port;
     Port output_port;
+    uint64_t in_key;  /* port shape+tag hash — reject before strcmp */
+    uint64_t out_key;
     CnetOracleFn fn;
     void *ctx;
     double min_margin; /* abstain if top1-top2 < this (0 = never) */
@@ -57,6 +59,8 @@ typedef struct {
     char name[64];
     Port input_port;
     Port output_port;
+    uint64_t in_key;
+    uint64_t out_key;
     CnetOracleFn fn;
     void *ctx;
     uint64_t resident_bytes;
@@ -83,6 +87,8 @@ typedef struct {
 typedef struct {
     Port input_port;
     Port goal_port;
+    uint64_t in_key;
+    uint64_t goal_key;
     double *in;
     double *out;
     size_t in_dim;
