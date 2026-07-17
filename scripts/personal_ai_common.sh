@@ -46,17 +46,29 @@ cnet_serve_active() {
   pgrep -x CnetMcpServer >/dev/null 2>&1
 }
 
-# Best-effort unit count without full registry certify (fast).
+# Best-effort unit count: cnb_audit --count (load only, no tag/overlap dump).
+# Rebuilds cnb_audit once if missing (ops path after fresh clone).
+cnet_ensure_cnb_audit() {
+  if [ -x "$REPO/bin/cnb_audit" ]; then
+    return 0
+  fi
+  make -C "$REPO" cnb_audit -j"$(cnet_nproc)" >/dev/null 2>&1 || true
+}
+
 cnet_unit_count_fast() {
   local base="${1:-}"
   if [ -z "$base" ] || [ ! -f "$base" ]; then
     echo ""
     return 0
   fi
+  cnet_ensure_cnb_audit
   if [ -x "$REPO/bin/cnb_audit" ]; then
-    # "base path: units=N blobs=..."
     local line
-    line=$("$REPO/bin/cnb_audit" "$base" --no-registry 2>/dev/null | head -1 || true)
+    # Prefer --count (fast). Fall back for older binaries.
+    line=$("$REPO/bin/cnb_audit" "$base" --count 2>/dev/null | head -1 || true)
+    if [ -z "$line" ]; then
+      line=$("$REPO/bin/cnb_audit" "$base" --no-registry 2>/dev/null | head -1 || true)
+    fi
     if [[ "$line" =~ units=([0-9]+) ]]; then
       echo "${BASH_REMATCH[1]}"
       return 0

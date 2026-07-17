@@ -14,6 +14,12 @@ if [ -x "$REPO/scripts/personal_ai_hill_climb_report.sh" ]; then
   echo "--- hill-climb (7d) ---"
   bash "$REPO/scripts/personal_ai_hill_climb_report.sh" "$BASE" 7 2>/dev/null || true
 fi
+# Optional light Tier A sample (not a hard fail — observe stays cheap)
+if [ -f "$BASE" ] && [ -x "$REPO/bin/serve_proof" ]; then
+  echo "--- serve-proof sample (max 2) ---"
+  "$REPO/bin/serve_proof" "$BASE" --max 2 2>/dev/null | \
+    grep -E 'units_loaded=|SERVE_PROOF_|sample:' || true
+fi
 if command -v python3 >/dev/null 2>&1; then
   python3 - <<PY
 import json

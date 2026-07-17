@@ -42,8 +42,9 @@ die() { echo "personal_ai_auto: $*" >&2; exit 1; }
 info() { echo "personal_ai_auto: $*"; }
 
 prepare() {
-  info "build learner + personal_ai gate + placement CLI"
-  make -C "$REPO" gap_lane_run_build personal_ai cnet_plan_cli -j"$(cnet_nproc)"
+  info "build learner + personal_ai gate + placement CLI + ops tools"
+  make -C "$REPO" gap_lane_run_build personal_ai cnet_plan_cli cnb_audit serve_proof_cli \
+    -j"$(cnet_nproc)"
   [ -x "$REPO/bin/gap_lane_run" ] || die "gap_lane_run missing"
   [ -f "$BASE" ] || info "WARN: base not found yet: $BASE (serve/learn need it)"
   if [ -n "$TEACHER" ] && [ ! -f "$TEACHER" ]; then
@@ -68,6 +69,8 @@ prepare() {
   # Ensure inbox exists so serve can append before lane starts
   if [ -f "$BASE" ]; then
     : >>"${BASE}.inbox"
+    units=$(cnet_unit_count_fast "$BASE")
+    [ -n "$units" ] && info "sealed units=$units"
   fi
   info "PERSONAL_AI_AUTO_PREPARE_OK"
 }
@@ -177,8 +180,24 @@ doctor() {
   [ -x "$REPO/bin/gap_lane_run" ] || { echo "FIX: make gap_lane_run_build"; ok=0; }
   [ -f "$BASE" ] || { echo "FIX: set BASE_PATH to a sealed .cnb"; ok=0; }
   [ -f "$UNIT_DIR/$LANE_UNIT" ] || { echo "FIX: scripts/personal_ai_auto.sh install"; ok=0; }
+  [ -x "$REPO/bin/cnb_audit" ] || echo "NOTE: make cnb_audit (unit counts in metrics/loop)"
+  [ -x "$REPO/bin/serve_proof" ] || echo "NOTE: make serve_proof_cli (Tier A sample proof)"
   systemctl --user is-active --quiet "$LANE_UNIT" 2>/dev/null || \
     echo "NOTE: lane inactive — scripts/personal_ai_auto.sh start"
+  # Light live serve sample when base + CLI present (proves sealed units run).
+  if [ -f "$BASE" ] && [ -x "$REPO/bin/serve_proof" ]; then
+    echo "--- serve-proof sample (max 4) ---"
+    local sp_log="$REPO/logs/serve_proof_doctor.log"
+    mkdir -p "$REPO/logs"
+    if "$REPO/bin/serve_proof" "$BASE" --max 4 >"$sp_log" 2>&1 && \
+        grep -q "SERVE_PROOF_PASS" "$sp_log"; then
+      grep -E 'units_loaded=|sample:|SERVE_PROOF_' "$sp_log" || true
+      echo "serve-proof: OK"
+    else
+      echo "NOTE: serve-proof sample failed — try: scripts/personal_ai_auto.sh serve-proof live"
+      tail -5 "$sp_log" 2>/dev/null || true
+    fi
+  fi
   if [ "$ok" = 1 ]; then
     echo "PERSONAL_AI_AUTO_DOCTOR_OK"
   else
