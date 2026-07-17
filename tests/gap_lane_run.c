@@ -63,6 +63,7 @@
 #include "../include/gap_lane.h"
 #include "../include/nn.h"
 #include "../include/router.h"
+#include "../include/cnet_curiosity.h"
 #include "../include/cce/cce_detect.h"
 #include "../include/cce/cce_gguf.h"
 
@@ -769,6 +770,27 @@ int main(int argc, char **argv) {
                        r.drain.skipped_no_oracle, lane.reg.count,
                        r.checkpointed ? " [checkpoint]" : "");
                 fflush(stdout);
+            }
+            /* Budgeted curiosity: self-seed teachable gaps when quiet. */
+            {
+                CnetCuriosityConfig cc;
+                CnetCuriosityReport cr;
+                size_t open_now = 0, oj;
+                for (oj = 0; oj < lane.ledger.count; oj++)
+                    if (lane.ledger.gaps[oj].status == GAP_OPEN) open_now++;
+                cnet_curiosity_config_from_env(&cc);
+                if (inbox && inbox[0])
+                    snprintf(cc.inbox_path, sizeof cc.inbox_path, "%s", inbox);
+                if (!getenv("CNET_CURIOSITY_STATE"))
+                    snprintf(cc.state_path, sizeof cc.state_path, "%s.curiosity",
+                             argv[1]);
+                (void)cnet_curiosity_tick(&cc, &lane.reg, open_now, &cr);
+                if (cr.proposed > 0) {
+                    printf("gap_lane_run: curiosity proposed=%zu "
+                           "skipped_covered=%zu budget_skip=%zu\n",
+                           cr.proposed, cr.skipped_covered, cr.skipped_budget);
+                    fflush(stdout);
+                }
             }
 
             if (!did_work && open_gaps == 0 && model && teacher_idle_sec > 0) {

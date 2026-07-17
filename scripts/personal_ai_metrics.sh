@@ -41,6 +41,10 @@ if command -v journalctl >/dev/null 2>&1; then
   last_units=$(journalctl --user -u cnet-personal-ai-lane.service -n 30 --no-pager 2>/dev/null | \
     grep -oE 'units=[0-9]+' | tail -1 | cut -d= -f2 || true)
 fi
+cur_count=0
+if [ -f "${BASE}.curiosity" ]; then
+  cur_count=$(grep -E '^count=' "${BASE}.curiosity" 2>/dev/null | head -1 | cut -d= -f2 || echo 0)
+fi
 printf '%s\n' "{
   \"ts\": \"$TS\",
   \"base\": \"$BASE\",
@@ -52,5 +56,6 @@ printf '%s\n' "{
   \"learner_memory_bytes\": ${mem:-0},
   \"serve_mcp\": $serve,
   \"units_journal\": ${last_units:-null},
+  \"curiosity_hour_count\": ${cur_count:-0},
   \"placement\": $plan_json
 }"
