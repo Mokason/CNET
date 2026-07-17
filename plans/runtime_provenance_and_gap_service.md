@@ -32,7 +32,7 @@
 
 **Step 1: Write failing tests**
 
-Assert the tracked unit contains `ConditionPathIsExecutable=` matching the exact `ExecStart` executable, that the condition is in `[Unit]`, and that `make gap_lane_service_config` validates the file. Add a `gap_lane_service_prepare` target depending on `gap_lane_run_build` and the config gate; it must not invoke `systemctl` or execute the daemon.
+Assert the tracked unit contains `ConditionFileIsExecutable=` matching the exact `ExecStart` executable, that the condition is in `[Unit]`, and that `make gap_lane_service_config` validates the file. Add a `gap_lane_service_prepare` target depending on `gap_lane_run_build` and the config gate; it must not invoke `systemctl` or execute the daemon.
 
 **Step 2: Verify RED**
 
