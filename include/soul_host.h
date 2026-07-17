@@ -227,6 +227,44 @@ CNET_API int soul_unit_kind(SoulHost *h, const char *name, int *kind);
    <0 on a bad/unloaded host. */
 CNET_API int soul_mounted_oracle_count(SoulHost *h);
 
+/* ---- Live residual (Tier C) + structure mine (P5) ------------------------
+   When CNET_RESIDUAL_GGUF is set, soul_request falls back to a local GGUF
+   residual after a certified miss (still notes the gap inbox so the learner
+   can seal a permanent skill). Hermetic tests may set
+   CNET_SOUL_RESIDUAL_HERMETIC=1 for a rot1 stand-in without a model.
+
+   Residual answers are uncertified. soul_health_tick may structure-mine
+   residual traces into certified units and seal them into the open CNB.
+*/
+
+/* Last soul_request / soul_route serve source. */
+#define SOUL_SOURCE_NONE       0
+#define SOUL_SOURCE_CERTIFIED  1
+#define SOUL_SOURCE_RESIDUAL   2
+#define SOUL_SOURCE_PROBE      3
+
+typedef struct {
+    uint64_t certified_serves;
+    uint64_t residual_serves;
+    uint64_t gap_notes;
+    uint64_t structure_mines;
+    uint64_t structure_seals;
+    int residual_bound;   /* 1 if residual ready */
+    int residual_window;  /* window n, or 0 */
+    int last_source;      /* SOUL_SOURCE_* */
+    int units;            /* live registry count */
+} SoulServeStats;
+
+/* Copy serve counters. Returns 0, or <0 on bad host. */
+CNET_API int soul_serve_stats(SoulHost *h, SoulServeStats *out);
+
+/* Last source for the most recent soul_request (SOUL_SOURCE_*). <0 bad host. */
+CNET_API int soul_last_source(SoulHost *h);
+
+/* Explicit structure-mine attempt (also invoked from soul_health_tick).
+   Returns 0 if a unit was mined+sealed, 1 if nothing ripe, <0 on error. */
+CNET_API int soul_structure_mine(SoulHost *h);
+
 CNET_API void soul_close(SoulHost *h);
 
 #ifdef __cplusplus

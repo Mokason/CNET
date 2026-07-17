@@ -54,6 +54,16 @@ rm -f "$DEPLOY/cnet.so" "$DEPLOY/cnet.dll"
 cp "$REPO/cnet.so" "$DEPLOY/cnet.so"
 cp "$REPO/cnet.so" "$DEPLOY/cnet.dll"
 
+# Residual Tier C: source from personal-ai.env when present (operator may
+# override RESIDUAL= / CNET_RESIDUAL_GGUF= for this deploy).
+RESIDUAL_GGUF="${RESIDUAL:-${CNET_RESIDUAL_GGUF:-}}"
+RESIDUAL_WIN="${RESIDUAL_WINDOW:-${CNET_RESIDUAL_WINDOW:-$REPO/english_window_256.txt}}"
+if [ -z "$RESIDUAL_GGUF" ] && [ -f "$REPO/config/personal-ai.env" ]; then
+  RESIDUAL_GGUF=$(grep -E '^CNET_RESIDUAL_GGUF=' "$REPO/config/personal-ai.env" | head -1 | cut -d= -f2- || true)
+  RESIDUAL_WIN=$(grep -E '^CNET_RESIDUAL_WINDOW=' "$REPO/config/personal-ai.env" | head -1 | cut -d= -f2- || true)
+  RESIDUAL_WIN="${RESIDUAL_WIN:-$REPO/english_window_256.txt}"
+fi
+
 cat > "$DEPLOY/launch.sh" <<EOF
 #!/bin/bash
 export DOTNET_ROOT="\$HOME/dotnet"
@@ -61,13 +71,27 @@ export DOTNET_ROOT_X64="\$HOME/dotnet"
 export LD_LIBRARY_PATH="$DEPLOY:$REPO:\${LD_LIBRARY_PATH}"
 export CNET_MODEL_PATH="$BASE"
 export CNET_BASE_PATH="$BASE"
-# Serving misses become gap-lane work: soul_route appends no-plans here
-# and the cnet-gap-lane service ingests them.
+# Serving misses become gap-lane work: soul_route/soul_request append no-plans
+# here and the personal-ai learner ingests them.
 export CNET_GAP_INBOX="$BASE.inbox"
 # Runtime health optimizer: one specialist_health_pass over the live
 # certified registry every ${TICK}s (0/absent = off). Keep the interval
 # under the gateway's MCP child lifetime or it never fires.
+# Also runs structure-mine on residual traces when ripe.
 export CNET_HEALTH_TICK_SECONDS=$TICK
+export CNET_ORACLE_INT8="\${CNET_ORACLE_INT8:-1}"
+# Tier C residual (lazy-loaded on first certified miss when set)
+EOF
+if [ -n "$RESIDUAL_GGUF" ]; then
+  cat >> "$DEPLOY/launch.sh" <<EOF
+export CNET_RESIDUAL_GGUF="$RESIDUAL_GGUF"
+export CNET_RESIDUAL_WINDOW="$RESIDUAL_WIN"
+EOF
+  echo "deploy: residual Tier C → $RESIDUAL_GGUF"
+else
+  echo "deploy: residual Tier C unset (certified-only serve until CNET_RESIDUAL_GGUF)"
+fi
+cat >> "$DEPLOY/launch.sh" <<EOF
 exec "$DEPLOY/CnetMcpServer" "\$@"
 EOF
 chmod +x "$DEPLOY/launch.sh"

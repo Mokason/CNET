@@ -70,3 +70,21 @@ make residual_structure_mine_real
 RESIDUAL_GGUF_PASS checks=15
 ```
 
+### Live serve path (SoulHost / Hermes MCP)
+
+```
+soul_request / soul_route miss
+  → gap inbox note (learner still teaches)
+  → residual GGUF answer if dims match window (lazy load)
+  → source = residual (uncertified)
+
+soul_health_tick (every 60s on Hermes)
+  → structure-mine residual traces when ripe
+  → admit + best-effort cnb_save into open base
+
+Hermetic: make soul_residual_serve → SOUL_RESIDUAL_SERVE_PASS
+Deploy:   scripts/deploy_hermes_mcp.sh  # exports CNET_RESIDUAL_*
+Measure:  scripts/personal_ai_loop_report.sh
+Grow:     scripts/personal_ai_grow_local.sh [n]
+```
+

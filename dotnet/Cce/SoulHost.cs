@@ -212,12 +212,13 @@ public sealed class SoulHost : IDisposable
     }
 
     /// <summary>
-    /// Request by explicit typed signature: serve now when a certified plan
-    /// exists, otherwise the novel goal is noted to the gap inbox for the
-    /// gap lane to acquire. input == null is a capability probe.
-    /// Returns (served, gapNoted, output).
+    /// Request by explicit typed signature: serve certified plan when present;
+    /// else residual Tier C may answer (uncertified) while the gap is noted
+    /// for the learner. input == null is a capability probe.
+    /// Returns (served, gapNoted, residual, source, output).
+    /// source: none|certified|residual|probe
     /// </summary>
-    public (bool Served, bool GapNoted, double[]? Output) Request(
+    public (bool Served, bool GapNoted, bool Residual, string Source, double[]? Output) Request(
         int inFamily, int inWidth, int inCount, string inTag,
         int goalFamily, int goalWidth, int goalCount, string goalTag,
         double[]? input)
@@ -229,11 +230,51 @@ public sealed class SoulHost : IDisposable
             inFamily, inWidth, inCount, inTag,
             goalFamily, goalWidth, goalCount, goalTag,
             input, input?.Length ?? 0, output, output?.Length ?? 0);
-        if (rc == -3) return (false, true, null);
+        int srcCode = CceNative.SoulLastSource(_handle);
+        string source = srcCode switch
+        {
+            1 => "certified",
+            2 => "residual",
+            3 => "probe",
+            _ => "none"
+        };
+        if (rc == -3) return (false, true, false, source, null);
         if (rc < 0)
             throw new InvalidOperationException($"soul_request failed: {rc}");
-        return (true, false, output);
+        bool residual = srcCode == 2;
+        // Residual serves still note the gap so the lane can seal a skill.
+        bool gapNoted = residual || srcCode == 0;
+        return (true, gapNoted && residual, residual, source, output);
     }
+
+    public ServeStats GetServeStats()
+    {
+        Check();
+        int rc = CceNative.SoulServeStats(_handle, out var n);
+        if (rc != 0)
+            throw new InvalidOperationException($"soul_serve_stats failed: {rc}");
+        return new ServeStats(
+            n.CertifiedServes, n.ResidualServes, n.GapNotes,
+            n.StructureMines, n.StructureSeals,
+            n.ResidualBound != 0, n.ResidualWindow, n.LastSource, n.Units);
+    }
+
+    public int StructureMine()
+    {
+        Check();
+        return CceNative.SoulStructureMine(_handle);
+    }
+
+    public readonly record struct ServeStats(
+        ulong CertifiedServes,
+        ulong ResidualServes,
+        ulong GapNotes,
+        ulong StructureMines,
+        ulong StructureSeals,
+        bool ResidualBound,
+        int ResidualWindow,
+        int LastSource,
+        int Units);
 
     /// <summary>Trust/role of a unit on the shared Specialist axes.</summary>
     public (int Trust, int Role) UnitAxes(string name)

@@ -692,6 +692,33 @@ internal static partial class CceNative
     [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
     internal static partial void SoulClose(IntPtr host);
 
+    // Serve telemetry: residual Tier C + structure mine seals.
+    [LibraryImport(CnetLibraryName, EntryPoint = "soul_last_source")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+    internal static partial int SoulLastSource(IntPtr host);
+
+    [LibraryImport(CnetLibraryName, EntryPoint = "soul_structure_mine")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+    internal static partial int SoulStructureMine(IntPtr host);
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct SoulServeStatsNative
+    {
+        public ulong CertifiedServes;
+        public ulong ResidualServes;
+        public ulong GapNotes;
+        public ulong StructureMines;
+        public ulong StructureSeals;
+        public int ResidualBound;
+        public int ResidualWindow;
+        public int LastSource;
+        public int Units;
+    }
+
+    [LibraryImport(CnetLibraryName, EntryPoint = "soul_serve_stats")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+    internal static partial int SoulServeStats(IntPtr host, out SoulServeStatsNative stats);
+
     // MCP tools (file, calculator, memory) exposed from the C driver
     [LibraryImport(CnetLibraryName, EntryPoint = "port_contract_mcp_file_read")]
     [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]

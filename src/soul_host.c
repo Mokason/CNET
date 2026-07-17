@@ -14,11 +14,14 @@
 #include "../include/specialist_health.h"
 #include "../include/gap_lane.h"
 #include "../include/cce/cce_router.h"
+#include "../include/hybrid_ai.h"
+#include "../include/residual_gguf.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <limits.h>
+#include <stdint.h>
 
 struct SoulHost {
     CnetBase base;
@@ -52,6 +55,19 @@ struct SoulHost {
     unsigned char *bound_mounted;            /* oracle_count: 1 = live in the registry */
     size_t bound_cap;                        /* == oracle_count once allocated, else 0 */
     size_t mounted_count;
+    /* Live residual (Tier C) — lazy-bound on first miss when env set. */
+    char base_path[512];
+    HybridAi hybrid;
+    ResidualGguf *owned_residual;
+    int residual_tried;       /* lazy init attempted */
+    int hermetic_residual;    /* rot1 stand-in (tests) */
+    int residual_window;
+    int last_source;
+    uint64_t certified_serves;
+    uint64_t residual_serves;
+    uint64_t gap_notes;
+    uint64_t structure_mines;
+    uint64_t structure_seals;
 };
 
 /* Health-tick contract source: the base itself. A miss materializes the
@@ -187,9 +203,207 @@ CNET_API int soul_open(const char *base_path, const char *model_path,
         const char *cf = getenv("CNET_COUNTERFACTUAL");
         h->counterfactual_enabled = cf && cf[0] && strcmp(cf, "0") != 0;
     }
+    {
+        size_t n = strlen(base_path);
+        if (n >= sizeof h->base_path) n = sizeof h->base_path - 1;
+        memcpy(h->base_path, base_path, n);
+        h->base_path[n] = '\0';
+    }
+    hybrid_ai_init(&h->hybrid);
+    h->owned_residual = NULL;
+    h->residual_tried = 0;
+    h->hermetic_residual = 0;
+    h->residual_window = 0;
+    h->last_source = SOUL_SOURCE_NONE;
+    {
+        const char *hr = getenv("CNET_SOUL_RESIDUAL_HERMETIC");
+        if (hr && hr[0] == '1') h->hermetic_residual = 1;
+    }
     h->loaded = 1;
     *out = h;
     return 0;
+}
+
+/* Lazy residual bind: real GGUF if CNET_RESIDUAL_GGUF set, else hermetic rot1. */
+static int soul_ensure_residual(SoulHost *h, size_t want_dim) {
+    const char *path;
+    if (!h) return -1;
+    if (h->hybrid.residual.bound) {
+        if (h->hermetic_residual && want_dim > 0) {
+            /* Rebind hermetic with matching dim for this request. */
+            hybrid_bind_residual(&h->hybrid, "hermetic_residual",
+                                 hybrid_hermetic_residual,
+                                 (void *)(uintptr_t)want_dim);
+            h->residual_window = (int)want_dim;
+        }
+        return 0;
+    }
+    if (h->residual_tried && !h->hermetic_residual) return -1;
+    path = getenv("CNET_RESIDUAL_GGUF");
+    if (path && path[0]) {
+        ResidualGguf *r = NULL;
+        const char *win = getenv("CNET_RESIDUAL_WINDOW");
+        h->residual_tried = 1;
+        if (residual_gguf_open(&r, path, win, 32) != 0 || !r) {
+            fprintf(stderr, "soul_host: residual GGUF open failed (%s)\n", path);
+            return -1;
+        }
+        if (hybrid_bind_residual(&h->hybrid, "residual_gguf", residual_gguf_oracle,
+                                 r) != 0) {
+            residual_gguf_close(r);
+            return -1;
+        }
+        h->owned_residual = r;
+        h->residual_window = residual_gguf_window_n(r);
+        fprintf(stderr, "soul_host: residual GGUF bound window=%d\n",
+                h->residual_window);
+        return 0;
+    }
+    if (h->hermetic_residual) {
+        size_t d = want_dim > 0 ? want_dim : 4;
+        if (hybrid_bind_residual(&h->hybrid, "hermetic_residual",
+                                 hybrid_hermetic_residual,
+                                 (void *)(uintptr_t)d) != 0)
+            return -1;
+        h->residual_window = (int)d;
+        h->residual_tried = 1;
+        return 0;
+    }
+    h->residual_tried = 1;
+    return -1;
+}
+
+static int soul_try_residual_answer(SoulHost *h, Port input, Port goal,
+                                    const double *in, size_t in_total,
+                                    double *out, size_t out_total) {
+    if (!h || !in || !out) return -1;
+    if (input.family != PORT_ONEHOT || goal.family != PORT_ONEHOT)
+        return -1;
+    if (in_total != out_total || in_total == 0) return -1;
+    if (soul_ensure_residual(h, in_total) != 0) return -1;
+    if (!h->hybrid.residual.bound) return -1;
+    /* Real GGUF residual only answers its fixed window size. */
+    if (h->owned_residual && (int)in_total != h->residual_window) return -1;
+    if (hybrid_try_residual(&h->hybrid, input, goal, in, in_total, out,
+                            out_total) != 0)
+        return -1;
+    h->residual_serves++;
+    h->last_source = SOUL_SOURCE_RESIDUAL;
+    return 0;
+}
+
+/* Mine residual traces → certified unit → seal into the open CNB. */
+CNET_API int soul_structure_mine(SoulHost *h) {
+    BinaryTransformNetwork *stu = NULL;
+    size_t min_hits = 3;
+    const char *mh;
+    int mrc;
+    size_t in_dim, out_dim, n_rows, r, j;
+    double *inputs = NULL, *targets = NULL;
+    Contract c;
+    int reused = 0;
+    char name[64];
+
+    if (!h || !h->loaded) return -1;
+    mh = getenv("CNET_PERSONAL_STRUCTURE_MIN_HITS");
+    if (mh && mh[0]) {
+        long v = atol(mh);
+        if (v >= 1) min_hits = (size_t)v;
+    }
+    mrc = hybrid_structure_mine(&h->hybrid, &h->reg, min_hits, &stu);
+    if (mrc != 0) return mrc == 1 ? 1 : mrc;
+    if (!stu) return -2;
+    h->structure_mines++;
+
+    /* Rebuild labeled table for durable seal (cnb_add_unit needs a contract). */
+    if (stu->input_port_count < 1 || stu->output_port_count < 1) return -3;
+    in_dim = stu->input_ports[0].field_width * stu->input_ports[0].field_count;
+    out_dim = stu->output_ports[0].field_width * stu->output_ports[0].field_count;
+    if (in_dim == 0 || out_dim == 0) return -3;
+    n_rows = in_dim <= 16 ? in_dim : 16;
+    inputs = (double *)calloc(n_rows * in_dim, sizeof(double));
+    targets = (double *)calloc(n_rows * out_dim, sizeof(double));
+    if (!inputs || !targets) {
+        free(inputs);
+        free(targets);
+        return -4;
+    }
+    for (r = 0; r < n_rows; r++) {
+        for (j = 0; j < in_dim; j++)
+            inputs[r * in_dim + j] = (j == r) ? 1.0 : 0.0;
+        if (h->hybrid.residual.bound &&
+            h->hybrid.residual.fn(inputs + r * in_dim, targets + r * out_dim,
+                                  h->hybrid.residual.ctx) != 0) {
+            /* fallback: student forward */
+            const double *pred = btn_forward(stu, inputs + r * in_dim);
+            if (pred)
+                memcpy(targets + r * out_dim, pred, out_dim * sizeof(double));
+        } else if (!h->hybrid.residual.bound) {
+            const double *pred = btn_forward(stu, inputs + r * in_dim);
+            if (pred)
+                memcpy(targets + r * out_dim, pred, out_dim * sizeof(double));
+        }
+    }
+    /* hybrid_structure_mine already bumped structure_mines; name matches admit. */
+    snprintf(name, sizeof name, "hyb_struct_%zu",
+             h->hybrid.structure_mines > 0 ? h->hybrid.structure_mines - 1
+                                           : 0);
+    memset(&c, 0, sizeof c);
+    /* Prefer student self-labels for seal: unit already admitted via residual
+     * teacher; self-consistency is what cnb_add_unit certification needs. */
+    for (r = 0; r < n_rows; r++) {
+        const double *pred = btn_forward(stu, inputs + r * in_dim);
+        if (pred)
+            memcpy(targets + r * out_dim, pred, out_dim * sizeof(double));
+    }
+    if (contract_init_borrowed(&c, name, stu, inputs, targets, n_rows) != 0) {
+        fprintf(stderr, "soul_host: structure seal contract failed name=%s\n",
+                name);
+        free(inputs);
+        free(targets);
+        /* Live registry still has the mined unit. */
+        return 0;
+    }
+    if (cnb_add_unit(&h->base, stu, &c, &reused) != 0) {
+        fprintf(stderr, "soul_host: structure seal cnb_add_unit failed name=%s\n",
+                name);
+        contract_free(&c);
+        free(inputs);
+        free(targets);
+        return 0; /* mined live; durable seal optional */
+    }
+    contract_free(&c);
+    free(inputs);
+    free(targets);
+    if (h->base_path[0] && cnb_save(&h->base, h->base_path) != 0) {
+        fprintf(stderr, "soul_host: structure seal cnb_save failed path=%s\n",
+                h->base_path);
+        return 0;
+    }
+    h->structure_seals++;
+    fprintf(stderr, "soul_host: structure-mined + sealed unit '%s' (reused=%d)\n",
+            name, reused);
+    return 0;
+}
+
+CNET_API int soul_serve_stats(SoulHost *h, SoulServeStats *out) {
+    if (!h || !h->loaded || !out) return -1;
+    memset(out, 0, sizeof *out);
+    out->certified_serves = h->certified_serves;
+    out->residual_serves = h->residual_serves;
+    out->gap_notes = h->gap_notes;
+    out->structure_mines = h->structure_mines;
+    out->structure_seals = h->structure_seals;
+    out->residual_bound = h->hybrid.residual.bound ? 1 : 0;
+    out->residual_window = h->residual_window;
+    out->last_source = h->last_source;
+    out->units = (int)h->reg.count;
+    return 0;
+}
+
+CNET_API int soul_last_source(SoulHost *h) {
+    if (!h || !h->loaded) return -1;
+    return h->last_source;
 }
 
 CNET_API int soul_unit_count(SoulHost *h) {
@@ -522,9 +736,15 @@ CNET_API int soul_route(SoulHost *h, const char *goal_tag,
 
     memset(&plan, 0, sizeof plan);
     if (route_plan(&h->reg, input, goal, &plan) != 0 || plan.length == 0) {
-        /* a serving miss is a knowledge gap: hand it to the lane */
-        if (h->gap_inbox[0])
+        /* Miss: note gap for the learner; try residual Tier C if bound. */
+        if (h->gap_inbox[0]) {
             gap_inbox_note_no_plan(h->gap_inbox, input, goal);
+            h->gap_notes++;
+        }
+        if (soul_try_residual_answer(h, input, goal, in, in_total, out,
+                                     out_total) == 0)
+            return (int)out_total;
+        h->last_source = SOUL_SOURCE_NONE;
         return -3;
     }
     rc = route_execute(&plan, in, in_total, out, out_total);
@@ -532,7 +752,13 @@ CNET_API int soul_route(SoulHost *h, const char *goal_tag,
        report can never change `out`, the return code, or any refusal. */
     if (rc == 0 && h->counterfactual_enabled)
         soul_counterfactual_shadow(h, goal_tag, entry, in, in_total);
-    return rc == 0 ? (int)out_total : -5;
+    if (rc == 0) {
+        h->certified_serves++;
+        h->last_source = SOUL_SOURCE_CERTIFIED;
+        return (int)out_total;
+    }
+    h->last_source = SOUL_SOURCE_NONE;
+    return -5;
 }
 
 CNET_API int soul_unit_reliability_milli(SoulHost *h, const char *name) {
@@ -553,6 +779,8 @@ CNET_API int soul_health_tick(SoulHost *h, long long *counts, int counts_cap) {
     cfg.contracts = soul_contract_lookup;
     cfg.contracts_ctx = h;
     if (specialist_health_pass(&h->reg, &cfg, &rep) != 0) return -2;
+    /* P5: promote residual traces into certified+sealed units when ripe. */
+    (void)soul_structure_mine(h);
     full[0] = (long long)rep.entries;
     full[1] = (long long)rep.demoted_by_audit;
     full[2] = (long long)rep.labeled_from_contract;
@@ -620,15 +848,36 @@ CNET_API int soul_request(SoulHost *h,
        the goal type") — a capability request wants a PRODUCING unit, so it
        counts as no plan, same rule as soul_route. */
     if (route_plan(&h->reg, input, goal, &plan) != 0 || plan.length == 0) {
-        /* an unservable request IS the knowledge gap: hand it to the lane */
-        if (h->gap_inbox[0])
+        /* Novel goal: note for the learner; residual may answer immediately. */
+        if (h->gap_inbox[0]) {
             gap_inbox_note_no_plan(h->gap_inbox, input, goal);
+            h->gap_notes++;
+        }
+        if (!in) {
+            /* Probe: residual cannot claim certified capability. */
+            h->last_source = SOUL_SOURCE_NONE;
+            return -3;
+        }
+        if ((size_t)in_len != in_total || !out ||
+            (size_t)out_cap < out_total) return -4;
+        if (soul_try_residual_answer(h, input, goal, in, in_total, out,
+                                     out_total) == 0)
+            return (int)out_total;
+        h->last_source = SOUL_SOURCE_NONE;
         return -3;
     }
-    if (!in) return 0;  /* capability probe: plannable, not executed */
+    if (!in) {
+        h->last_source = SOUL_SOURCE_PROBE;
+        return 0;  /* capability probe: plannable, not executed */
+    }
     if ((size_t)in_len != in_total || !out ||
         (size_t)out_cap < out_total) return -4;
-    if (route_execute(&plan, in, in_total, out, out_total) != 0) return -5;
+    if (route_execute(&plan, in, in_total, out, out_total) != 0) {
+        h->last_source = SOUL_SOURCE_NONE;
+        return -5;
+    }
+    h->certified_serves++;
+    h->last_source = SOUL_SOURCE_CERTIFIED;
     return (int)out_total;
 }
 
@@ -791,6 +1040,12 @@ CNET_API void soul_close(SoulHost *h) {
     free(h->contracts);
     free(h->contract_names);
     if (h->loaded) {
+        /* Drop residual bind before freeing the model it points at. */
+        hybrid_ai_free(&h->hybrid);
+        if (h->owned_residual) {
+            residual_gguf_close(h->owned_residual);
+            h->owned_residual = NULL;
+        }
         /* registry_free first: it drops the registry's borrows of the adapter
            BTNs and their (base-owned) names. Then release each mounted adapter
            (frees its projection context) and the recovered contract it was

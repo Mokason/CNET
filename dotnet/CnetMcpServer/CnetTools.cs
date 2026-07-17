@@ -1128,17 +1128,24 @@ namespace CnetMcpServer
             if (_soulHost == null) return SoulUnavailable("request_capability");
             int fam = ParseFamily(family);
             double[]? inputVec = input.Count > 0 ? input.ToArray() : null;
-            var (served, gapNoted, output) = _soulHost.Request(
+            var (served, gapNoted, residual, source, output) = _soulHost.Request(
                 fam, width, count, inTag, fam, width, goalCount, goalTag,
                 inputVec);
+            string note = residual
+                ? "served by residual Tier C (uncertified); signature also queued to gap inbox for learning"
+                : gapNoted
+                    ? "no certified plan and residual unavailable; signature queued to the gap inbox"
+                    : (inputVec == null
+                        ? "capability is plannable (probe only)"
+                        : "served by the certified plan");
             return JsonSerializer.Serialize(new
             {
                 request = goalTag,
                 served,
-                gap_noted = gapNoted,
-                note = gapNoted
-                    ? "no certified plan; signature queued to the gap inbox — the gap lane will mine, train, certify and seal it"
-                    : (inputVec == null ? "capability is plannable (probe only)" : "served by the certified plan"),
+                gap_noted = gapNoted || residual,
+                residual,
+                source,
+                note,
                 output
             });
         }
@@ -1147,6 +1154,27 @@ namespace CnetMcpServer
         {
             if (_soulHost == null) return SoulUnavailable("health_tick");
             var r = _soulHost.HealthTick();
+            object? serve = null;
+            try
+            {
+                var s = _soulHost.GetServeStats();
+                serve = new
+                {
+                    certified_serves = s.CertifiedServes,
+                    residual_serves = s.ResidualServes,
+                    gap_notes = s.GapNotes,
+                    structure_mines = s.StructureMines,
+                    structure_seals = s.StructureSeals,
+                    residual_bound = s.ResidualBound,
+                    residual_window = s.ResidualWindow,
+                    last_source = s.LastSource,
+                    units = s.Units
+                };
+            }
+            catch
+            {
+                /* older native lib without soul_serve_stats */
+            }
             return JsonSerializer.Serialize(new
             {
                 health_tick = true,
@@ -1165,7 +1193,8 @@ namespace CnetMcpServer
                     evidenced = r.TrustEvidenced,
                     certified = r.TrustCertified,
                     demoted = r.TrustDemoted
-                }
+                },
+                serve
             });
         }
 
