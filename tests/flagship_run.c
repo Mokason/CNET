@@ -1434,6 +1434,120 @@ int main(int argc, char **argv) {
                "off for mining)\n", (unsigned long)V);
     }
 
+    /* Margin-distribution sweep (CNET_MARGIN_SWEEP=<out.tsv>): the v2
+       lever measurement. For every (unit t, continuation w) mining probe —
+       the exact pinned-prefix context cce_cond_topk sees — record BOTH
+       margins that decide abstention: the ordered top-3 decision margin
+       (today's criterion) and the top-3 SET margin (the rank-3/rank-4 gap,
+       CNET_TOPK_SET's criterion). No training budget is spent and the base
+       is never touched: one row per probe, then exit. Offline analysis
+       reproduces the acquire gate exactly (usable/attempts >= evidence
+       threshold at any eps), so ordered-vs-set yield AND the decisiveness
+       ranking window screening would sort by come from ONE dataset.
+       CNET_SWEEP_UNITS=<n> limits to the first n units (timing samples).
+       CNET_SWEEP_START=<u> resumes an interrupted sweep: appends to the
+       TSV starting at unit index u (the caller strips any partial trailing
+       unit first — the analyzer refuses partial units either way). */
+    if (getenv("CNET_MARGIN_SWEEP")) {
+        const char *of = getenv("CNET_MARGIN_SWEEP");
+        OracleLane *L = &ctx.lane[0];
+        FILE *ofp;
+        float *bl;
+        size_t nu = V, ui, u0 = 0;
+        double t0;
+        if (fs_prefix_off()) {
+            fprintf(stderr, "margin sweep: rides the pinned prefix "
+                            "(CNET_ORACLE_PREFIX=0 unsupported)\n");
+            return 1;
+        }
+        if (getenv("CNET_SWEEP_UNITS")) {
+            long n = atol(getenv("CNET_SWEEP_UNITS"));
+            if (n > 0 && (size_t)n < nu) nu = (size_t)n;
+        }
+        if (getenv("CNET_SWEEP_START")) {
+            long n = atol(getenv("CNET_SWEEP_START"));
+            if (n > 0 && (size_t)n < nu) u0 = (size_t)n;
+        }
+        ofp = fopen(of, u0 ? "a" : "w");
+        if (!ofp) {
+            fprintf(stderr, "margin sweep: cannot write %s\n", of);
+            return 1;
+        }
+        /* scratch sized to the probe CHUNK (<= 256 rows, the batch API's
+           cap), not V: at the V=4096 ceiling a V-row buffer would be a
+           multi-GiB request of which only 256 rows are ever touched */
+        bl = (float *)malloc((V < 256 ? V : 256)
+                             * (size_t)L->m->vocab_size * sizeof *bl);
+        if (!bl) { fclose(ofp); return 1; }
+        if (u0 == 0) {
+            /* int8 stamp mirrors gguf_oracle_int8_mode ('1' enables), not
+               mere env presence — CNET_ORACLE_INT8=0 must stamp int8=0 */
+            const char *i8 = getenv("CNET_ORACLE_INT8");
+            fprintf(ofp, "# margin_sweep model=%s V=%lu units=%lu eps=%.6f "
+                         "prefix=on int8=%s\n",
+                    model_path, (unsigned long)V, (unsigned long)nu,
+                    ctx.margin_eps, (i8 && i8[0] == '1') ? "1" : "0");
+            fprintf(ofp, "unit_idx\tunit_token\tw_idx\tw_token\t"
+                         "ordered_margin\tset_margin\n");
+        } else {
+            printf("margin sweep: resuming at unit %lu (append)\n",
+                   (unsigned long)u0);
+        }
+        t0 = omp_get_wtime();
+        for (ui = u0; ui < nu; ++ui) {
+            int t = vocab[ui];
+            size_t done = 0;
+            while (done < V) {
+                size_t nb = V - done, b;
+                int toks[256];
+                if (nb > 256) nb = 256;
+                for (b = 0; b < nb; ++b) toks[b] = vocab[done + b];
+                if (fs_prefix(L, t) != 0) {
+                    fprintf(stderr, "margin sweep: prefix failed at unit "
+                                    "%lu\n", (unsigned long)ui);
+                    fclose(ofp); free(bl);
+                    return 1;
+                }
+                L->m->cur_pos = fs_prefix_len(L->m);
+                if (cce_gguf_qwen2_forward_probes(L->m, toks, (int)nb, bl,
+                                                  L->m->vocab_size)
+                    != CCE_OK) {
+                    fprintf(stderr, "margin sweep: probe failed at unit "
+                                    "%lu\n", (unsigned long)ui);
+                    fclose(ofp); free(bl);
+                    return 1;
+                }
+                for (b = 0; b < nb; ++b) {
+                    const float *lg = bl + b * (size_t)L->m->vocab_size;
+                    fprintf(ofp, "%lu\t%d\t%lu\t%d\t%.9g\t%.9g\n",
+                            (unsigned long)ui, t,
+                            (unsigned long)(done + b), toks[b],
+                            fs_decision_margin(lg, vocab, V, 3),
+                            fs_set_margin(lg, vocab, V, 3));
+                }
+                done += nb;
+            }
+            {
+                double el = omp_get_wtime() - t0;
+                /* the TSV flushes per unit so an external kill loses at
+                   most the in-flight unit, and the progress line can never
+                   claim rows the file does not hold */
+                fflush(ofp);
+                printf("margin sweep: unit %lu/%lu (tk%d) elapsed %.0fs "
+                       "eta %.0fs\n", (unsigned long)(ui + 1),
+                       (unsigned long)nu, t, el,
+                       el / (double)(ui + 1 - u0)
+                           * (double)(nu - ui - 1));
+                fflush(stdout);
+            }
+        }
+        fclose(ofp);
+        free(bl);
+        printf("margin sweep: wrote %lu units x %lu probes to %s\n",
+               (unsigned long)nu, (unsigned long)V, of);
+        return 0;
+    }
+
     /* Drift audit (CNET_RECERT=1): certification froze student == oracle
        at MINING time; nothing checks that the oracle still stands behind
        those answers after a loader fix or a teacher swap. Replay every
