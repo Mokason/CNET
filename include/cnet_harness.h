@@ -48,6 +48,25 @@ typedef enum {
     CNET_HARNESS_SAMPLING_EXPLORATORY    = 4
 } CnetHarnessSamplingMode;
 
+/* Named single-bit resource selectors. Callers pass exactly one of these as
+ * config.resource_mask; multi-bit or unknown masks are rejected. Values
+ * mirror include/model_runtime.h's CnetModelResource; kept here so the ABI
+ * has no transitive header dependency. */
+typedef enum {
+    CNET_HARNESS_RESOURCE_CPU  = 1u << 0,
+    CNET_HARNESS_RESOURCE_GPU0 = 1u << 1,
+    CNET_HARNESS_RESOURCE_GPU1 = 1u << 2,
+    CNET_HARNESS_RESOURCE_GPU2 = 1u << 3,
+    CNET_HARNESS_RESOURCE_GPU3 = 1u << 4
+} CnetHarnessResource;
+
+#define CNET_HARNESS_RESOURCE_MASK_KNOWN (   \
+    CNET_HARNESS_RESOURCE_CPU  |             \
+    CNET_HARNESS_RESOURCE_GPU0 |             \
+    CNET_HARNESS_RESOURCE_GPU1 |             \
+    CNET_HARNESS_RESOURCE_GPU2 |             \
+    CNET_HARNESS_RESOURCE_GPU3)
+
 /* Opaque session. Callers only ever hold a pointer to it. */
 typedef struct CnetHarnessSession CnetHarnessSession;
 
@@ -57,7 +76,7 @@ typedef struct {
     const char *model_id;      /* required, UTF-8, non-empty */
     const char *model_path;    /* required, GGUF path        */
     uint64_t resource_mask;    /* CNET_MODEL_RESOURCE_GPU* bitmask */
-    uint64_t budget_bytes;     /* resident budget for this session */
+    uint64_t budget_bytes;     /* resident budget, must be > 0     */
     int32_t main_gpu;          /* llama.cpp main_gpu index         */
     uint32_t n_ctx;            /* context tokens                   */
     uint32_t n_batch;          /* llama.cpp n_batch                */
@@ -89,11 +108,19 @@ typedef struct {
     float route_uncertainty;               /* [0, 1]                          */
     CnetHarnessSamplingMode effective_sampling;
     int32_t aicimo_override;               /* 1 if caller override in effect  */
+    /* Actual numeric sampling parameters applied by the backend, resolved
+     * from the effective_sampling profile via one central table.
+     * Deterministic honestly reports 0.0f / 1.0f / 0 / 0.0f. */
+    float effective_temperature;
+    float effective_top_p;
+    uint32_t effective_top_k;
+    float effective_min_p;
 } CnetHarnessGeneration;
 
 /* Lifecycle. Ownership: sessions and generations are heap-owned by the
  * plugin; callers must free them exactly through the paired free/close call.
- * Both free/close accept NULL. */
+ * Both free/close accept NULL. Access to one session must be serialized by
+ * native callers; separate sessions may be used concurrently. */
 CNET_API int cnet_harness_open(const CnetHarnessConfig *config,
                                 CnetHarnessSession **session_out);
 
@@ -118,6 +145,13 @@ typedef struct {
     uint32_t selected_adapter;
     float route_uncertainty;
     CnetHarnessSamplingMode effective_sampling;
+    /* Actual numeric sampling parameters that would be applied to a
+     * generation with this route. Same source of truth as
+     * CnetHarnessGeneration.effective_*. */
+    float effective_temperature;
+    float effective_top_p;
+    uint32_t effective_top_k;
+    float effective_min_p;
 } CnetHarnessRouteInfo;
 
 CNET_API int cnet_harness_probe_route(CnetHarnessSession *session,

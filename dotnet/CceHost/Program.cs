@@ -8,11 +8,12 @@ using CNET.CceHost;
 // CNET .NET host.
 //   default            -> cognitive recall test over the certified base
 //   --agent [task]     -> Milestone 2: a REAL LLM controller drives tools + the
-//                         certified CNET skill. Backend defaults to the CNET
-//                         native harness (libcnet_harness.so) when CNET_HARNESS_MODEL
-//                         is set; otherwise falls back to the legacy Ollama HTTP
-//                         path if --ollama is passed.
-//   --ollama           -> force the legacy Ollama HTTP backend.
+//                         certified CNET skill. Requires CNET_HARNESS_MODEL and
+//                         uses the CNET native harness (libcnet_harness.so).
+//                         There is NO silent fallback to an HTTP backend.
+//   --ollama           -> legacy HTTP path. Requires explicit CNET_LLM_MODEL;
+//                         there is no baked-in default model name, and this
+//                         host never starts a backend for you.
 
 bool agentMode = args.Contains("--agent");
 bool listMode = args.Contains("--list");
@@ -34,48 +35,88 @@ if (listMode)
 if (agentMode)
 {
     int taskIdx = Array.IndexOf(args, "--agent") + 1;
-    string task = (taskIdx > 0 && taskIdx < args.Length && !args[taskIdx].EndsWith(".cnb"))
+    string task = (taskIdx > 0 && taskIdx < args.Length &&
+                   !args[taskIdx].StartsWith("--", StringComparison.Ordinal) &&
+                   !args[taskIdx].EndsWith(".cnb"))
         ? args[taskIdx]
         : "Compute 47 times 13 with the calculator. Store the result in memory under key 'product'. "
           + "Then recall it to double-check. Also consult the certified gemma4 skill (cnet_recall) for "
           + "its top-3 next tokens given window token 0 then token 1, and note its reliability. "
           + "Finish with a one-line summary of everything you found.";
 
-    string? harnessModel = Environment.GetEnvironmentVariable("CNET_HARNESS_MODEL");
-    bool useHarness = !ollamaMode && !string.IsNullOrEmpty(harnessModel);
-
     Console.WriteLine("=== CNET .NET host — Milestone 2: real LLM controller ===");
+
+    if (ollamaMode)
+    {
+        // Legacy HTTP path — must be opt-in AND an explicit model name.
+        string? ollamaModel = Environment.GetEnvironmentVariable("CNET_LLM_MODEL");
+        if (string.IsNullOrEmpty(ollamaModel))
+        {
+            Console.Error.WriteLine(
+                "config error: --ollama requires CNET_LLM_MODEL to be set explicitly. "
+              + "There is no default model name and this host does not start any backend.");
+            Environment.ExitCode = 2;
+            return;
+        }
+        McpTools.MemoryInit();
+        using var legacySoul = new SoulHost(basePath);
+        Console.WriteLine($"LLM: {ollamaModel} (ollama, legacy)   base: {basePath}\n");
+        var legacyAgent = new Agent(new OllamaClient(ollamaModel), legacySoul);
+        await legacyAgent.RunAsync(task);
+        return;
+    }
+
+    // Default agent path: CNET native harness. No silent fallback.
+    string? harnessModel = Environment.GetEnvironmentVariable("CNET_HARNESS_MODEL");
+    if (string.IsNullOrEmpty(harnessModel))
+    {
+        Console.Error.WriteLine(
+            "config error: --agent requires CNET_HARNESS_MODEL (path to a GGUF file). "
+          + "Use --ollama with CNET_LLM_MODEL to explicitly select the legacy HTTP backend.");
+        Environment.ExitCode = 2;
+        return;
+    }
+
+    CceHostConfig hostConfig;
+    try { hostConfig = CceHostConfig.FromEnvironment(); }
+    catch (Exception ex)
+    {
+        Console.Error.WriteLine($"config error: {ex.Message}");
+        Environment.ExitCode = 2;
+        return;
+    }
+
     McpTools.MemoryInit();
     using var soulA = new SoulHost(basePath);
-
-    if (useHarness)
+    Console.WriteLine($"LLM: {harnessModel} (cnet native harness, {hostConfig.Resource})   base: {basePath}\n");
+    var config = new CnetHarnessConfig
     {
-        Console.WriteLine($"LLM: {harnessModel} (cnet native harness)   base: {basePath}\n");
-        var config = new CnetHarnessConfig
-        {
-            ModelId = Environment.GetEnvironmentVariable("CNET_HARNESS_MODEL_ID") ?? "qwythos-9b",
-            ModelPath = harnessModel!,
-            ResourceMask = 1ul << 2,          /* GPU1 default */
-            BudgetBytes = 30ul * 1024ul * 1024ul * 1024ul,
-            MainGpu = 0,
-            ContextTokens = 4096,
-            BatchTokens = 4096,
-            Threads = 8,
-            AicimoNumOps = 4,
-            AicimoBaseDim = 32,
-        };
-        using var session = CnetHarnessSession.Open(config);
+        ModelId = Environment.GetEnvironmentVariable("CNET_HARNESS_MODEL_ID") ?? "cnet-harness-model",
+        ModelPath = harnessModel,
+        Resource = hostConfig.Resource,
+        BudgetBytes = hostConfig.BudgetBytes,
+        MainGpu = hostConfig.MainGpu,
+        ContextTokens = hostConfig.ContextTokens,
+        BatchTokens = hostConfig.BatchTokens,
+        Threads = hostConfig.Threads,
+        AicimoNumOps = 4,
+        AicimoBaseDim = 32,
+    };
+    CnetHarnessSession session;
+    try { session = CnetHarnessSession.Open(config); }
+    catch (CnetHarnessException ex)
+    {
+        Console.Error.WriteLine($"harness open error: {ex.Message}");
+        Environment.ExitCode = 3;
+        return;
+    }
+    using (session)
+    {
         using var chat = new CnetHarnessChatClient(session, role: "planner",
                                                     maxTokens: 512, ownsSession: false);
         var agent = new Agent(chat, soulA);
         await agent.RunAsync(task);
-        return;
     }
-
-    string model = Environment.GetEnvironmentVariable("CNET_LLM_MODEL") ?? "qwen2.5:7b";
-    Console.WriteLine($"LLM: {model} (ollama)   base: {basePath}\n");
-    var agent2 = new Agent(new OllamaClient(model), soulA);
-    await agent2.RunAsync(task);
     return;
 }
 

@@ -1,15 +1,17 @@
 # CNET .NET Inference Harness
 
-Status: first vertical tracer. Synchronous non-streaming generation only.
-Cancellation and streaming are explicitly deferred, not implemented.
-AMD/ROCm only. No CUDA-specific claims or controls.
+Status: working vertical tracer with hermetic contract gates and an optional
+real-GGUF CPU smoke executable. Synchronous non-streaming generation only.
+Cancellation and streaming are explicitly deferred, not implemented. CPU is
+a first-class resource; GPU resources are opt-in and unrelated to any
+specific vendor stack outside the pinned llama.cpp build the plugin links.
 
 ## Boundary
 
 Core `cnet.so` remains independent of `llama.cpp`. This harness ships as an
 **optional** native plugin, `libcnet_harness.so`, that links `cnet.so` and the
-`/home/marble/llama.cpp/build-rocm/bin` libraries. The plugin is the only
-symbol boundary the managed .NET layer touches — it never sees a raw
+libraries in the selected `LLAMA_CPP_BUILD/bin` directory. The plugin is the
+only symbol boundary the managed .NET layer touches — it never sees a raw
 `llama_model *` or any llama.cpp type.
 
 The plugin reuses:
@@ -28,9 +30,20 @@ No duplicate residency manager. No parallel budget bookkeeping.
 sampling profile and reports uncertainty. It does *not* generate tokens and
 does *not* expand the context window.
 
+**Single-process global backend refcount.** `llama_backend_init/free` and
+`ggml_backend_load_all` are process-global. The plugin protects them with a
+C++ mutex and refcount: the first session that opens acquires global state;
+the last session that closes releases it. Multiple concurrent sessions
+therefore cannot free global state out from under one another.
+
+**Per-session serialization.** A llama context is not reentrant. The managed
+`CnetHarnessSession` serializes generation, route probes, and disposal on one
+session. Separate sessions may execute concurrently. Native C callers must
+provide the same serialization when sharing one `CnetHarnessSession *`.
+
 ## Versioned C ABI
 
-Header: `include/cnet/cnet_harness.h`. Every struct crossing the ABI carries
+Header: `include/cnet_harness.h`. Every struct crossing the ABI carries
 `abi_version` and `struct_size` as the first two `uint32_t` fields. The plugin
 rejects any input whose `abi_version != CNET_HARNESS_ABI_VERSION` or whose
 `struct_size` does not match the current `sizeof`.
@@ -56,6 +69,27 @@ typedef enum {
 const char *cnet_harness_error_string(int status);  /* static storage, never NULL */
 ```
 
+### Resources
+
+Exactly one resource bit must be set in `config.resource_mask`. Multi-bit or
+unknown masks are rejected during validation, before any backend or model
+state is allocated.
+
+```c
+typedef enum {
+    CNET_HARNESS_RESOURCE_CPU  = 1u << 0,
+    CNET_HARNESS_RESOURCE_GPU0 = 1u << 1,
+    CNET_HARNESS_RESOURCE_GPU1 = 1u << 2,
+    CNET_HARNESS_RESOURCE_GPU2 = 1u << 3,
+    CNET_HARNESS_RESOURCE_GPU3 = 1u << 4
+} CnetHarnessResource;
+```
+
+For `CNET_HARNESS_RESOURCE_CPU` the llama.cpp model is loaded with
+`n_gpu_layers = 0` and `main_gpu` is ignored. For GPU resources the plugin
+uses `n_gpu_layers = -1` (offload every supported layer) and the caller's
+`main_gpu` index (or 0 when it is negative).
+
 ### Open
 
 ```c
@@ -64,9 +98,9 @@ typedef struct {
     uint32_t struct_size;      /* = sizeof(CnetHarnessConfig) */
     const char *model_id;      /* required, UTF-8, must be non-empty */
     const char *model_path;    /* required GGUF file path            */
-    uint64_t resource_mask;    /* CNET_MODEL_RESOURCE_GPU* bitmask   */
-    uint64_t budget_bytes;     /* resident budget for this session   */
-    int main_gpu;              /* llama.cpp main_gpu index           */
+    uint64_t resource_mask;    /* EXACTLY one CNET_HARNESS_RESOURCE_* bit */
+    uint64_t budget_bytes;     /* resident budget, must be > 0       */
+    int32_t main_gpu;          /* llama.cpp main_gpu index; -1 means "not applicable" */
     uint32_t n_ctx;            /* context window in tokens           */
     uint32_t n_batch;          /* llama.cpp n_batch                  */
     uint32_t n_threads;        /* generation thread count            */
@@ -106,6 +140,18 @@ typedef struct {
 } CnetHarnessGenerateOptions;
 ```
 
+`system` and `user` are handed to the model's real chat template via
+`llama_chat_apply_template`. The plugin never injects control tokens for
+specific model families (no `/no_think`, no fabricated `<think>` blocks). If
+template resolution or application fails, a plain `System:/User:/Assistant:`
+transcript is used as fallback.
+
+**Context bound.** Generation caps `max_tokens` at `n_ctx − prompt_tokens`
+before the decode loop starts. If the tokenised prompt already fills the
+window, `generate` returns `CNET_HARNESS_ERR_INVALID` without decoding. The
+plugin never runs the decode loop past `n_ctx` and never discards a
+partially-produced response.
+
 ### Result
 
 ```c
@@ -121,6 +167,10 @@ typedef struct {
     float route_uncertainty;     /* [0, 1] normalized entropy             */
     CnetHarnessSamplingMode effective_sampling; /* profile actually used  */
     int aicimo_override;         /* 1 if caller override bypassed AICIMO  */
+    float effective_temperature;
+    float effective_top_p;
+    uint32_t effective_top_k;
+    float effective_min_p;
 } CnetHarnessGeneration;
 
 int cnet_harness_generate(CnetHarnessSession *session,
@@ -130,6 +180,13 @@ int cnet_harness_generate(CnetHarnessSession *session,
 void cnet_harness_generation_free(CnetHarnessGeneration *generation);
 int  cnet_harness_close(CnetHarnessSession *session);
 ```
+
+The `effective_*` fields are the exact numeric parameters the backend fed
+into the llama.cpp sampler chain, resolved from `effective_sampling` through
+one central table in `cnet_harness_core.c`. Deterministic reports honest
+zeros (`temperature=0`, `top_p=1`, `top_k=0`, `min_p=0`) — nothing is
+smoothed after the fact. `CnetHarnessRouteInfo` carries the same four
+fields so the non-generative probe returns the same evidence.
 
 ### Ownership
 
@@ -142,6 +199,12 @@ int  cnet_harness_close(CnetHarnessSession *session);
   exactly once. Copying the pointer out of the handle is not exposed.
 - `cnet_harness_generation_free(NULL)` and `cnet_harness_close(NULL)` are
   safe no-ops.
+- Session teardown runs in two phases: `harness_backend_prepare_close` frees
+  per-session backend state (context, sampler) while the CNET model lease is
+  still held. After the core releases the lease and closes the manager,
+  `harness_backend_finish_close` runs and decrements the process-global
+  backend refcount. This order guarantees the lease-owned model handle stays
+  valid until every backend-owned object that references it is gone.
 
 ## AICIMO must materially affect generation
 
@@ -152,12 +215,12 @@ Each session owns a single persistent `cce_aicimo_router` with
 per request. The returned `selected_adapter` is mapped 1:1 to a named sampling
 profile:
 
-| adapter index (mod 4) | profile              | temp | top_p | top_k |
-|-----------------------|----------------------|------|-------|-------|
-| 0                     | DETERMINISTIC        | 0.0  | 1.0   | 0     |
-| 1                     | FOCUSED              | 0.30 | 0.85  | 40    |
-| 2                     | BALANCED             | 0.70 | 0.90  | 40    |
-| 3                     | EXPLORATORY          | 0.95 | 0.95  | 80    |
+| adapter index (mod 4) | profile              | temp | top_p | top_k | min_p |
+|-----------------------|----------------------|------|-------|-------|-------|
+| 0                     | DETERMINISTIC        | 0.0  | 1.0   | 0     | 0.0   |
+| 1                     | FOCUSED              | 0.30 | 0.85  | 40    | 0.05  |
+| 2                     | BALANCED             | 0.70 | 0.90  | 40    | 0.05  |
+| 3                     | EXPLORATORY          | 0.95 | 0.95  | 80    | 0.03  |
 
 **Uncertainty fails safe.** If `route_uncertainty >= 0.85`, the plugin
 downgrades one profile step (EXPLORATORY→BALANCED, BALANCED→FOCUSED,
@@ -165,59 +228,132 @@ FOCUSED→DETERMINISTIC). This reduces exploration when the router is unsure.
 
 Callers may override AICIMO by setting `options->sampling` to any non-AUTO
 value; the result reports `aicimo_override == 1` and `effective_sampling`
-equal to the override.
+equal to the override. The `effective_temperature`, `effective_top_p`,
+`effective_top_k`, and `effective_min_p` fields carry the actual parameters
+that reach the llama.cpp sampler.
 
 ## What this tracer does not claim
 
+- No token streaming and no cancellation. The API is synchronous. Adding
+  either is a later slice.
 - No input-conditioned learned routing. The AICIMO decision is a real
   function of `role` and the router's persistent strength state — it is
   deterministic given both.
-- No token streaming and no cancellation. The API is synchronous. Adding
-  either is a later slice.
 - AICIMO is not context expansion. The router's base_dim equals its output
   dim; adapters are identity-initialized.
 - The plugin does not embed a duplicate llama.cpp or duplicate CNET catalog.
 
 ## Native tests
 
-`tests/test_cnet_harness_contract.c` links the plugin at build time and:
+`tests/test_cnet_harness_contract.c` links `cnet_harness_core.c` into a
+hermetic test binary and provides *its own strong* backend hooks so the
+route-only surface can be exercised without llama.cpp. This is deliberately
+**not** the real llama plugin; the optional real-model target is documented
+below and remains outside hermetic release acceptance.
 
-1. Rejects mismatched `abi_version` and mismatched `struct_size` on every
-   input struct.
-2. Confirms `cnet_harness_open` with a non-existent `model_path` returns
+`tests/test_cnet_harness_failclosed.c` links the same core with NO strong
+overrides. It proves that the plugin's default (weak) `harness_backend_open`
+fails closed with `CNET_HARNESS_ERR_BACKEND` even when the model path is a
+readable dummy file, and that `session_out` stays NULL on that failure.
+
+Both tests are built and run by `make cnet_harness_contract_test`.
+
+Together they exercise:
+
+1. Rejected `abi_version` / `struct_size` on every input struct.
+2. Multi-bit and unknown resource masks rejected.
+3. Zero resident budget rejected before backend allocation.
+4. `cnet_harness_open` with a non-existent `model_path` returns
    `CNET_HARNESS_ERR_MODEL_LOAD` and leaks no session.
-3. Runs `cce_aicimo_route_decision` for a set of stable role strings against
-   the *same* session-lifetime router and verifies that the resulting adapter
-   set contains at least two distinct values (profiles are not all adapter 0)
-   and that all reported uncertainties are in `[0, 1]`.
-4. `cnet_harness_error_string(bad_code)` returns a non-NULL static string.
-5. `cnet_harness_generation_free(NULL)` and `cnet_harness_close(NULL)` do not
-   crash.
+5. `cce_aicimo_route_decision` distributes over at least two adapters and
+   never all to adapter 0; uncertainties in `[0, 1]`.
+6. Reported `effective_*` numeric parameters agree with the central
+   profile table; deterministic reports honest zeros.
+7. Invalid sampling enums fail before generation or route probing.
+8. Two-phase teardown fires `prepare_close` before `finish_close` exactly
+   once each per session.
+9. `cnet_harness_error_string(bad_code)` returns a non-NULL static string.
+10. `cnet_harness_generation_free(NULL)` and `cnet_harness_close(NULL)` do
+   not crash.
+11. The weak fail-closed default refuses to open a session even with a
+   readable dummy model path.
 
-This test does not load a real model or link ggml/llama runtime symbols. The
-plugin's AICIMO-only surface is separated from the llama-backed generation
-path so the contract test can exercise it hermetically.
+Neither test loads a real model, links the llama.cpp runtime, or exercises
+the real generation path. The plugin build target is a separate slice.
 
 ## Managed API
 
 `dotnet/Cce/CnetHarness/CnetHarnessNative.cs` — source-generated
 `LibraryImport` bindings and error-code marshalling.
 
-`dotnet/Cce/CnetHarness/CnetHarness.cs` — `CnetHarnessSession` public class
-built on `SafeHandle`, disposable, throws `CnetHarnessException` for every
-non-OK native status. Public options/results expose adapter, uncertainty,
-effective profile, token counts, and timings.
+`dotnet/Cce/CnetHarness/CnetHarnessSession.cs` — `CnetHarnessSession` public
+class built on `SafeHandle`, disposable, serializes same-session calls, and
+throws `CnetHarnessException` for every non-OK native status. Public
+options/results expose adapter,
+uncertainty, effective profile, effective temperature / top_p / top_k /
+min_p, token counts, and timings.
 
 `dotnet/Cce/CnetHarness/ICnetHarnessNative.cs` — injectable invoker interface
 so managed unit tests do not require loading a real GGUF.
+
+`dotnet/Cce/CnetHarness/CnetHarnessLibraryResolver.cs` — single
+`DllImportResolver` registered once per AppDomain against the `CNET.Cce`
+assembly. Only the `cnet_harness` library name is handled; any other
+library name returns zero so unrelated P/Invokes keep the OS default
+behavior. Candidate order:
+
+1. `CNET_HARNESS_LIBRARY` (full-path override, deterministic).
+2. `$CNET_HARNESS_BIN_DIR/libcnet_harness.so`.
+3. `<AppBase>/libcnet_harness.so`.
+4. `<AppBase>/bin/libcnet_harness.so`.
+5. `<AppBase>/../bin/libcnet_harness.so`.
+6. OS default (`LD_LIBRARY_PATH`, `RPATH`).
+
+`dotnet/CceHost/CceHostConfig.cs` — parses the harness env vars
+(`CNET_HARNESS_RESOURCE_MASK`, `CNET_HARNESS_MAIN_GPU`,
+`CNET_HARNESS_BUDGET_BYTES`, `CNET_HARNESS_CONTEXT_TOKENS`,
+`CNET_HARNESS_BATCH_TOKENS`, `CNET_HARNESS_THREADS`). Defaults are CPU +
+`MainGpu = -1`; invalid values throw `ArgumentException` with a specific
+message and the host prints the error and exits `2` — misconfiguration
+never silently succeeds.
 
 `dotnet/CceHost/IChatClient.cs` — small chat-client abstraction implemented by
 `OllamaClient` (legacy, `--ollama`) and `CnetHarnessChatClient` (default when
 configured, selected by `--agent`).
 
+## Host mode selection
+
+- `--agent` uses the CNET native harness. **Requires** `CNET_HARNESS_MODEL`
+  (path to a GGUF file). Without it the host prints a config error and
+  exits non-zero *before* any HTTP call or backend start.
+- `--ollama` uses the legacy HTTP path. **Requires** `CNET_LLM_MODEL`
+  explicitly — there is no baked-in default model name and this host never
+  starts an Ollama backend for you.
+- No silent fallback: `--agent` without `CNET_HARNESS_MODEL` fails; it does
+  not quietly switch to HTTP.
+
 ## Build
 
-- `make cnet_harness_contract_test` — hermetic, no GGUF required.
-- `make dotnet_harness_test` — runs the managed unit tests (fakes at native
-  boundary, real GGUF explicitly not required).
-- Real GGUF inference remains outside `unified` / `release_integrity`.
+- `make cnet_harness_contract_test` — hermetic. Builds and runs both the
+  contract test (with strong fake hooks) and the fail-closed sibling.
+  Does not require a GGUF or llama.cpp.
+- `make LLAMA_CPP_BUILD=/home/marble/llama.cpp/build-cpu cnet_harness_plugin`
+  — builds `bin/libcnet_harness.so` against the pinned CPU llama.cpp. The
+  target compiles with `-Wall -Wextra -Werror` and sets RUNPATH to
+  `$ORIGIN:$ORIGIN/..:$(LLAMA_CPP_BUILD)/bin` so both `cnet.so` (via its
+  own `libcnet.so.$(CNET_ABI_VERSION)` symlink in `bin/`) and the llama
+  libraries resolve without global `LD_LIBRARY_PATH` munging.
+- `make dotnet_harness_test` — runs the managed unit tests. Uses fakes at
+  the native boundary; requires neither `libcnet_harness.so` nor a GGUF.
+- `make LLAMA_CPP_BUILD=/home/marble/llama.cpp/build-cpu \
+  CNET_HARNESS_MODEL=/absolute/path/model.gguf cnet_harness_real_smoke` —
+  builds the CPU plugin and committed `dotnet/CnetHarnessSmoke` tracer, then
+  runs `.NET → plugin → CNET model manager → AICIMO → llama.cpp` under a
+  300-second hard timeout with all accelerator visibility disabled. It starts
+  no server and writes evidence to `logs/cnet_harness_real_smoke.log`.
+
+The real-GGUF target is intentionally outside `unified` / `release_integrity`:
+portable release acceptance must not depend on a private model file or an
+external llama.cpp checkout. `unified_native` includes the AICIMO and harness
+contract tests plus an ABI symbol assertion; `unified` runs the full managed
+test project.

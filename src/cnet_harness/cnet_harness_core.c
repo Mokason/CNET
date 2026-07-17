@@ -5,6 +5,10 @@
  * translation unit through weakly-linked hooks so that hermetic contract
  * tests can exercise the ABI, AICIMO routing, and lifecycle without linking
  * llama.cpp.
+ *
+ * The weak defaults fail closed (ERR_BACKEND). Tests that want to exercise
+ * the route-only surface must link explicit strong fake hooks; there is no
+ * production no-op backend.
  */
 #include "cnet_harness_private.h"
 
@@ -23,22 +27,28 @@
 __attribute__((weak))
 int harness_backend_open(struct CnetHarnessSession *session) {
     (void)session;
-    /* No backend linked in — treat as a successful no-op. Real generation
-     * paths will fail with ERR_BACKEND, which is enforced below. */
-    return CNET_HARNESS_OK;
+    /* No backend linked in: fail closed. Tests provide strong fakes when
+     * they want the route-only surface. */
+    return CNET_HARNESS_ERR_BACKEND;
 }
 
 __attribute__((weak))
 int harness_backend_generate(struct CnetHarnessSession *session,
                               const CnetHarnessGenerateOptions *options,
                               CnetHarnessSamplingMode effective,
+                              CnetHarnessSamplingParams params,
                               CnetHarnessGeneration *generation) {
-    (void)session; (void)options; (void)effective; (void)generation;
+    (void)session; (void)options; (void)effective; (void)params; (void)generation;
     return CNET_HARNESS_ERR_BACKEND;
 }
 
 __attribute__((weak))
-void harness_backend_close(struct CnetHarnessSession *session) {
+void harness_backend_prepare_close(struct CnetHarnessSession *session) {
+    (void)session;
+}
+
+__attribute__((weak))
+void harness_backend_finish_close(struct CnetHarnessSession *session) {
     (void)session;
 }
 
@@ -53,13 +63,24 @@ static char *dup_string(const char *src) {
     return dst;
 }
 
+static int is_single_bit(uint64_t v) {
+    return v != 0ull && (v & (v - 1ull)) == 0ull;
+}
+
+static int resource_mask_valid(uint64_t mask) {
+    if (!is_single_bit(mask)) return 0;
+    /* Must match a documented resource bit. */
+    return (mask & (uint64_t)CNET_HARNESS_RESOURCE_MASK_KNOWN) == mask;
+}
+
 static int validate_config(const CnetHarnessConfig *c) {
     if (!c) return 0;
     if (c->abi_version != CNET_HARNESS_ABI_VERSION) return 0;
     if (c->struct_size != sizeof(*c)) return 0;
     if (!c->model_id || c->model_id[0] == '\0') return 0;
     if (!c->model_path || c->model_path[0] == '\0') return 0;
-    if (c->resource_mask == 0ull) return 0;
+    if (!resource_mask_valid(c->resource_mask)) return 0;
+    if (c->budget_bytes == 0ull) return 0;
     if (c->n_ctx < 256u) return 0;
     if (c->n_batch == 0u || c->n_batch > c->n_ctx) return 0;
     if (c->n_threads == 0u || c->n_threads > 1024u) return 0;
@@ -108,6 +129,29 @@ CnetHarnessSamplingMode cnet_harness__downgrade_for_uncertainty(
     }
 }
 
+/* Single source of truth for the numeric parameters each profile applies.
+ * Deterministic reports honest zeros (no cut, no temperature). */
+CnetHarnessSamplingParams cnet_harness__profile_params(
+    CnetHarnessSamplingMode mode) {
+    CnetHarnessSamplingParams p = {0.0f, 1.0f, 0u, 0.0f};
+    switch (mode) {
+        case CNET_HARNESS_SAMPLING_DETERMINISTIC:
+            p.temperature = 0.0f; p.top_p = 1.0f; p.top_k = 0u; p.min_p = 0.0f;
+            break;
+        case CNET_HARNESS_SAMPLING_FOCUSED:
+            p.temperature = 0.30f; p.top_p = 0.85f; p.top_k = 40u; p.min_p = 0.05f;
+            break;
+        case CNET_HARNESS_SAMPLING_BALANCED:
+        case CNET_HARNESS_SAMPLING_AUTO:
+            p.temperature = 0.70f; p.top_p = 0.90f; p.top_k = 40u; p.min_p = 0.05f;
+            break;
+        case CNET_HARNESS_SAMPLING_EXPLORATORY:
+            p.temperature = 0.95f; p.top_p = 0.95f; p.top_k = 80u; p.min_p = 0.03f;
+            break;
+    }
+    return p;
+}
+
 /* ---- ABI ---- */
 
 const char *cnet_harness_error_string(int status) {
@@ -124,7 +168,12 @@ const char *cnet_harness_error_string(int status) {
 
 static void session_release(struct CnetHarnessSession *session) {
     if (!session) return;
-    harness_backend_close(session);
+    /* Two-phase backend teardown. Phase one frees per-session backend state
+     * (context, sampler) while the model lease is still held; phase two
+     * runs only after the lease is released and the manager is closed, so
+     * global backend state cannot vanish while another session still owns
+     * a model handle. */
+    harness_backend_prepare_close(session);
     if (session->lease_held && session->manager) {
         cnet_model_release(session->manager, &session->lease);
         session->lease_held = 0;
@@ -133,6 +182,7 @@ static void session_release(struct CnetHarnessSession *session) {
         cnet_model_manager_close(session->manager);
         session->manager = NULL;
     }
+    harness_backend_finish_close(session);
     if (session->router_ready) {
         cce_aicimo_router_free(&session->router);
         session->router_ready = 0;
@@ -258,6 +308,16 @@ int cnet_harness_probe_route(CnetHarnessSession *session,
                               CnetHarnessSamplingMode override_mode,
                               CnetHarnessRouteInfo *info_out) {
     if (!info_out) return CNET_HARNESS_ERR_INVALID;
+    switch (override_mode) {
+        case CNET_HARNESS_SAMPLING_AUTO:
+        case CNET_HARNESS_SAMPLING_DETERMINISTIC:
+        case CNET_HARNESS_SAMPLING_FOCUSED:
+        case CNET_HARNESS_SAMPLING_BALANCED:
+        case CNET_HARNESS_SAMPLING_EXPLORATORY:
+            break;
+        default:
+            return CNET_HARNESS_ERR_INVALID;
+    }
     if (info_out->abi_version != CNET_HARNESS_ABI_VERSION ||
         info_out->struct_size != sizeof(*info_out)) {
         return CNET_HARNESS_ERR_INVALID;
@@ -271,9 +331,14 @@ int cnet_harness_probe_route(CnetHarnessSession *session,
                                 &adapter, &unc, &profile, &override_used);
     if (rc != CNET_HARNESS_OK) return rc;
 
+    CnetHarnessSamplingParams params = cnet_harness__profile_params(profile);
     info_out->selected_adapter = adapter;
     info_out->route_uncertainty = unc;
     info_out->effective_sampling = profile;
+    info_out->effective_temperature = params.temperature;
+    info_out->effective_top_p = params.top_p;
+    info_out->effective_top_k = params.top_k;
+    info_out->effective_min_p = params.min_p;
     return CNET_HARNESS_OK;
 }
 
@@ -305,7 +370,13 @@ int cnet_harness_generate(CnetHarnessSession *session,
     gen->effective_sampling = profile;
     gen->aicimo_override = override_used;
 
-    int brc = harness_backend_generate(session, options, profile, gen);
+    CnetHarnessSamplingParams params = cnet_harness__profile_params(profile);
+    gen->effective_temperature = params.temperature;
+    gen->effective_top_p = params.top_p;
+    gen->effective_top_k = params.top_k;
+    gen->effective_min_p = params.min_p;
+
+    int brc = harness_backend_generate(session, options, profile, params, gen);
     if (brc != CNET_HARNESS_OK) {
         cnet_harness_generation_free(gen);
         return brc;

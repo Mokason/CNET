@@ -29,14 +29,34 @@ public enum CnetHarnessSamplingMode : uint
     Exploratory = 4,
 }
 
+/// <summary>Named single-bit resource selectors. Pass exactly one of these
+/// as <see cref="CnetHarnessConfig.ResourceMask"/> — the native ABI is a
+/// <c>ulong</c>, but this enum keeps callers from writing magic bit masks
+/// by hand.</summary>
+public enum CnetHarnessResource : ulong
+{
+    Cpu  = 1ul << 0,
+    Gpu0 = 1ul << 1,
+    Gpu1 = 1ul << 2,
+    Gpu2 = 1ul << 3,
+    Gpu3 = 1ul << 4,
+}
+
 /// <summary>Session-open configuration. All fields required unless noted.</summary>
 public sealed class CnetHarnessConfig
 {
     public string ModelId { get; init; } = string.Empty;
     public string ModelPath { get; init; } = string.Empty;
+    /// <summary>ABI-preserving raw mask. Prefer <see cref="Resource"/>.</summary>
     public ulong ResourceMask { get; init; }
+    /// <summary>Named projection. Setting this overrides <see cref="ResourceMask"/>.</summary>
+    public CnetHarnessResource Resource
+    {
+        init => ResourceMask = (ulong)value;
+    }
     public ulong BudgetBytes { get; init; }
-    public int MainGpu { get; init; }
+    /// <summary>llama.cpp main_gpu index; -1 means "backend picks / not applicable" (used for CPU).</summary>
+    public int MainGpu { get; init; } = -1;
     public uint ContextTokens { get; init; }
     public uint BatchTokens { get; init; }
     public uint Threads { get; init; }
@@ -65,13 +85,21 @@ public sealed record CnetHarnessGenerationResult(
     uint SelectedAdapter,
     float RouteUncertainty,
     CnetHarnessSamplingMode EffectiveSampling,
-    bool AicimoOverride);
+    bool AicimoOverride,
+    float EffectiveTemperature,
+    float EffectiveTopP,
+    uint EffectiveTopK,
+    float EffectiveMinP);
 
 /// <summary>Non-generative route probe result — the same metadata generate() applies.</summary>
 public sealed record CnetHarnessRouteInfo(
     uint SelectedAdapter,
     float RouteUncertainty,
-    CnetHarnessSamplingMode EffectiveSampling);
+    CnetHarnessSamplingMode EffectiveSampling,
+    float EffectiveTemperature,
+    float EffectiveTopP,
+    uint EffectiveTopK,
+    float EffectiveMinP);
 
 /// <summary>Thrown when the native plugin reports a non-OK status.</summary>
 public sealed class CnetHarnessException : Exception

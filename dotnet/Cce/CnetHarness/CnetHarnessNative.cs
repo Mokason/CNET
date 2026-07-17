@@ -58,6 +58,10 @@ internal struct NativeGeneration
     public float RouteUncertainty;
     public CnetHarnessSamplingMode EffectiveSampling;
     public int AicimoOverride;
+    public float EffectiveTemperature;
+    public float EffectiveTopP;
+    public uint EffectiveTopK;
+    public float EffectiveMinP;
 }
 
 [StructLayout(LayoutKind.Sequential)]
@@ -68,11 +72,17 @@ internal struct NativeRouteInfo
     public uint SelectedAdapter;
     public float RouteUncertainty;
     public CnetHarnessSamplingMode EffectiveSampling;
+    public float EffectiveTemperature;
+    public float EffectiveTopP;
+    public uint EffectiveTopK;
+    public float EffectiveMinP;
 }
 
 internal static partial class CnetHarnessNativeImports
 {
     private const string LibraryName = "cnet_harness";
+
+    static CnetHarnessNativeImports() => CnetHarnessLibraryResolver.EnsureRegistered();
 
     [LibraryImport(LibraryName, EntryPoint = "cnet_harness_open")]
     public static partial int Open(ref NativeConfig config, out IntPtr session);
@@ -128,6 +138,14 @@ internal sealed class LibraryCnetHarnessNative : ICnetHarnessNative
             throw new CnetHarnessException(CnetHarnessStatus.Internal,
                 "native returned null generation pointer");
         }
+        uint abiVersion = unchecked((uint)Marshal.ReadInt32(generation, 0));
+        uint structSize = unchecked((uint)Marshal.ReadInt32(generation, sizeof(uint)));
+        if (abiVersion != AbiConstants.AbiVersion ||
+            structSize != (uint)Marshal.SizeOf<NativeGeneration>())
+        {
+            throw new CnetHarnessException(CnetHarnessStatus.InvalidState,
+                $"native generation ABI mismatch: version={abiVersion}, size={structSize}");
+        }
         NativeGeneration native = Unsafe.Read<NativeGeneration>((void *)generation);
         string text = native.Text == IntPtr.Zero
             ? string.Empty
@@ -141,7 +159,11 @@ internal sealed class LibraryCnetHarnessNative : ICnetHarnessNative
             native.SelectedAdapter,
             native.RouteUncertainty,
             native.EffectiveSampling,
-            native.AicimoOverride != 0);
+            native.AicimoOverride != 0,
+            native.EffectiveTemperature,
+            native.EffectiveTopP,
+            native.EffectiveTopK,
+            native.EffectiveMinP);
     }
 
     public void GenerationFree(IntPtr generation)

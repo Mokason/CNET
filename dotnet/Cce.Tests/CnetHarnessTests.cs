@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
 using CNET.Cce.CnetHarness;
 using CNET.CceHost;
 using Xunit;
@@ -19,7 +21,7 @@ public sealed class CnetHarnessTests
     {
         ModelId = "unit",
         ModelPath = "/tmp/unit.gguf",
-        ResourceMask = 1ul << 2,
+        Resource = CnetHarnessResource.Gpu1,
         BudgetBytes = 4ul * 1024 * 1024 * 1024,
         MainGpu = 0,
         ContextTokens = 2048,
@@ -79,6 +81,79 @@ public sealed class CnetHarnessTests
     }
 
     [Fact]
+    public void Open_MultiBitResourceMask_Throws()
+    {
+        var fake = new FakeNative();
+        var c = new CnetHarnessConfig
+        {
+            ModelId = "unit",
+            ModelPath = "/tmp/unit.gguf",
+            ResourceMask = (ulong)(CnetHarnessResource.Gpu0 | CnetHarnessResource.Gpu1),
+            BudgetBytes = 1,
+            MainGpu = 0,
+            ContextTokens = 2048,
+            BatchTokens = 512,
+            Threads = 4,
+        };
+        Assert.Throws<ArgumentException>(() => CnetHarnessSession.Open(c, fake));
+    }
+
+    [Fact]
+    public void Open_UnknownResourceBit_Throws()
+    {
+        var fake = new FakeNative();
+        var c = new CnetHarnessConfig
+        {
+            ModelId = "unit",
+            ModelPath = "/tmp/unit.gguf",
+            ResourceMask = 1ul << 20,  /* not a known resource */
+            BudgetBytes = 1,
+            MainGpu = 0,
+            ContextTokens = 2048,
+            BatchTokens = 512,
+            Threads = 4,
+        };
+        Assert.Throws<ArgumentException>(() => CnetHarnessSession.Open(c, fake));
+    }
+
+    [Fact]
+    public void Open_ZeroBudget_Throws()
+    {
+        var fake = new FakeNative();
+        var c = new CnetHarnessConfig
+        {
+            ModelId = "unit",
+            ModelPath = "/tmp/unit.gguf",
+            Resource = CnetHarnessResource.Cpu,
+            BudgetBytes = 0,
+            MainGpu = -1,
+            ContextTokens = 2048,
+            BatchTokens = 512,
+            Threads = 4,
+        };
+        Assert.Throws<ArgumentException>(() => CnetHarnessSession.Open(c, fake));
+    }
+
+    [Fact]
+    public void Open_CpuResource_Accepted()
+    {
+        var fake = new FakeNative { OpenReturn = 0 };
+        var c = new CnetHarnessConfig
+        {
+            ModelId = "unit",
+            ModelPath = "/tmp/unit.gguf",
+            Resource = CnetHarnessResource.Cpu,
+            BudgetBytes = 1,
+            MainGpu = -1,
+            ContextTokens = 2048,
+            BatchTokens = 512,
+            Threads = 4,
+        };
+        using var s = CnetHarnessSession.Open(c, fake);
+        Assert.NotNull(s);
+    }
+
+    [Fact]
     public void Open_TooSmallAicimoDim_Throws()
     {
         var fake = new FakeNative();
@@ -86,7 +161,7 @@ public sealed class CnetHarnessTests
         {
             ModelId = "unit",
             ModelPath = "/tmp/unit.gguf",
-            ResourceMask = 1,
+            Resource = CnetHarnessResource.Cpu,
             BudgetBytes = 1,
             MainGpu = 0,
             ContextTokens = 2048,
@@ -184,6 +259,105 @@ public sealed class CnetHarnessTests
         Assert.Throws<ObjectDisposedException>(() => s.Generate(options));
     }
 
+    // ---- effective sampling parameter projection ----
+
+    [Fact]
+    public void Generate_ProjectsEffectiveSamplingParams_FromNative()
+    {
+        var fake = new FakeNative { OpenReturn = 0 };
+        using var s = CnetHarnessSession.Open(MakeConfig(), fake);
+        fake.GenerationText = "ok";
+        fake.GenerationEffectiveSampling = CnetHarnessSamplingMode.Focused;
+        fake.GenerationEffectiveTemperature = 0.30f;
+        fake.GenerationEffectiveTopP = 0.85f;
+        fake.GenerationEffectiveTopK = 40u;
+        fake.GenerationEffectiveMinP = 0.05f;
+
+        var result = s.Generate(new CnetHarnessGenerateOptions
+        {
+            User = "hi", Role = "planner", MaxTokens = 4,
+        });
+
+        Assert.Equal(0.30f, result.EffectiveTemperature);
+        Assert.Equal(0.85f, result.EffectiveTopP);
+        Assert.Equal(40u, result.EffectiveTopK);
+        Assert.Equal(0.05f, result.EffectiveMinP);
+    }
+
+    [Fact]
+    public void Generate_DifferentProfiles_HaveDifferentEffectiveParams()
+    {
+        var fake = new FakeNative { OpenReturn = 0 };
+        using var s = CnetHarnessSession.Open(MakeConfig(), fake);
+        fake.GenerationText = "ok";
+
+        fake.GenerationEffectiveSampling = CnetHarnessSamplingMode.Deterministic;
+        fake.GenerationEffectiveTemperature = 0.0f;
+        fake.GenerationEffectiveTopP = 1.0f;
+        fake.GenerationEffectiveTopK = 0u;
+        fake.GenerationEffectiveMinP = 0.0f;
+        var det = s.Generate(new CnetHarnessGenerateOptions
+        {
+            User = "hi", Role = "planner", MaxTokens = 4,
+        });
+
+        fake.GenerationEffectiveSampling = CnetHarnessSamplingMode.Exploratory;
+        fake.GenerationEffectiveTemperature = 0.95f;
+        fake.GenerationEffectiveTopP = 0.95f;
+        fake.GenerationEffectiveTopK = 80u;
+        fake.GenerationEffectiveMinP = 0.03f;
+        var exp = s.Generate(new CnetHarnessGenerateOptions
+        {
+            User = "hi", Role = "explorer", MaxTokens = 4,
+        });
+
+        Assert.NotEqual(det.EffectiveTemperature, exp.EffectiveTemperature);
+        Assert.NotEqual(det.EffectiveTopP, exp.EffectiveTopP);
+        Assert.NotEqual(det.EffectiveTopK, exp.EffectiveTopK);
+    }
+
+    [Fact]
+    public async Task Generate_SerializesConcurrentCalls_OnOneSession()
+    {
+        using var entered = new ManualResetEventSlim(false);
+        using var release = new ManualResetEventSlim(false);
+        using var secondStarted = new ManualResetEventSlim(false);
+        var fake = new FakeNative
+        {
+            OpenReturn = 0,
+            GenerateEntered = entered,
+            GenerateRelease = release,
+        };
+        using var s = CnetHarnessSession.Open(MakeConfig(), fake);
+        var options = new CnetHarnessGenerateOptions
+        {
+            User = "hi", Role = "planner", MaxTokens = 4,
+        };
+
+        Task<CnetHarnessGenerationResult> first =
+            Task.Run(() => s.Generate(options));
+        Assert.True(entered.Wait(TimeSpan.FromSeconds(1)));
+        Task<CnetHarnessGenerationResult> second = Task.Run(() =>
+        {
+            secondStarted.Set();
+            return s.Generate(options);
+        });
+        Assert.True(secondStarted.Wait(TimeSpan.FromSeconds(1)));
+
+        try
+        {
+            await Task.Delay(50);
+            Assert.Equal(1, Volatile.Read(ref fake.MaxConcurrentGenerations));
+        }
+        finally
+        {
+            release.Set();
+        }
+
+        await Task.WhenAll(first, second);
+        Assert.Equal(1, fake.MaxConcurrentGenerations);
+    }
+
     // ---- ProbeRoute + fake role behavior ----
 
     [Fact]
@@ -200,6 +374,20 @@ public sealed class CnetHarnessTests
                 info.EffectiveSampling = over == CnetHarnessSamplingMode.Auto
                     ? CnetHarnessSamplingMode.Focused
                     : over;
+                if (info.EffectiveSampling == CnetHarnessSamplingMode.Focused)
+                {
+                    info.EffectiveTemperature = 0.30f;
+                    info.EffectiveTopP = 0.85f;
+                    info.EffectiveTopK = 40u;
+                    info.EffectiveMinP = 0.05f;
+                }
+                else
+                {
+                    info.EffectiveTemperature = 0.0f;
+                    info.EffectiveTopP = 1.0f;
+                    info.EffectiveTopK = 0u;
+                    info.EffectiveMinP = 0.0f;
+                }
                 return 0;
             }
         };
@@ -208,9 +396,36 @@ public sealed class CnetHarnessTests
         var info = s.ProbeRoute("analytical");
         Assert.Equal((uint)("analytical".Length % 4), info.SelectedAdapter);
         Assert.Equal(CnetHarnessSamplingMode.Focused, info.EffectiveSampling);
+        Assert.Equal(0.30f, info.EffectiveTemperature);
+        Assert.Equal(40u, info.EffectiveTopK);
 
         var overridden = s.ProbeRoute("analytical", CnetHarnessSamplingMode.Deterministic);
         Assert.Equal(CnetHarnessSamplingMode.Deterministic, overridden.EffectiveSampling);
+        Assert.Equal(0.0f, overridden.EffectiveTemperature);
+        Assert.Equal(1.0f, overridden.EffectiveTopP);
+        Assert.Equal(0u, overridden.EffectiveTopK);
+    }
+
+    [Fact]
+    public void ProbeRoute_InvalidSamplingOverride_ThrowsBeforeNativeCall()
+    {
+        var fake = new FakeNative { OpenReturn = 0 };
+        using var s = CnetHarnessSession.Open(MakeConfig(), fake);
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            s.ProbeRoute("analytical", (CnetHarnessSamplingMode)999u));
+    }
+
+    [Fact]
+    public void Generate_InvalidSamplingMode_ThrowsBeforeNativeCall()
+    {
+        var fake = new FakeNative { OpenReturn = 0 };
+        using var s = CnetHarnessSession.Open(MakeConfig(), fake);
+        Assert.Throws<ArgumentOutOfRangeException>(() => s.Generate(
+            new CnetHarnessGenerateOptions
+            {
+                User = "hi", Role = "planner", MaxTokens = 4,
+                Sampling = (CnetHarnessSamplingMode)999u,
+            }));
     }
 
     // ---- IChatClient / CceHost abstraction ----
@@ -241,6 +456,129 @@ public sealed class CnetHarnessTests
         Assert.Equal("planner", fake.LastRole);
     }
 
+    // ---- host environment parsing ----
+
+    [Fact]
+    public void CceHostConfig_Defaults_AreCpuAndMainGpuMinusOne()
+    {
+        var cfg = CceHostConfig.FromEnvironment(_ => null);
+        Assert.Equal(CnetHarnessResource.Cpu, cfg.Resource);
+        Assert.Equal(-1, cfg.MainGpu);
+        Assert.True(cfg.ContextTokens >= 256u);
+        Assert.True(cfg.BatchTokens <= cfg.ContextTokens);
+    }
+
+    [Fact]
+    public void CceHostConfig_ParsesGpu1_FromEnv()
+    {
+        var env = new Dictionary<string, string?>
+        {
+            [CceHostConfig.EnvResourceMask] = "gpu1",
+            [CceHostConfig.EnvMainGpu] = "0",
+        };
+        var cfg = CceHostConfig.FromEnvironment(k =>
+            env.TryGetValue(k, out var v) ? v : null);
+        Assert.Equal(CnetHarnessResource.Gpu1, cfg.Resource);
+        Assert.Equal(0, cfg.MainGpu);
+    }
+
+    [Fact]
+    public void CceHostConfig_RejectsMultiBitResource()
+    {
+        var env = new Dictionary<string, string?>
+        {
+            [CceHostConfig.EnvResourceMask] = "6",  /* 0b110 => Gpu0|Gpu1 */
+        };
+        Assert.Throws<ArgumentException>(() =>
+            CceHostConfig.FromEnvironment(k =>
+                env.TryGetValue(k, out var v) ? v : null));
+    }
+
+    [Fact]
+    public void CceHostConfig_RejectsGarbageInteger()
+    {
+        var env = new Dictionary<string, string?>
+        {
+            [CceHostConfig.EnvThreads] = "not-a-number",
+        };
+        Assert.Throws<ArgumentException>(() =>
+            CceHostConfig.FromEnvironment(k =>
+                env.TryGetValue(k, out var v) ? v : null));
+    }
+
+    // ---- library resolver candidate paths ----
+
+    [Fact]
+    public void LibraryResolver_OverrideEnv_IsHandledOutsideFallbackCandidates()
+    {
+        var overrides = new Dictionary<string, string?>
+        {
+            [CnetHarnessLibraryResolver.EnvOverride] = "/some/absolute/libcnet_harness.so",
+            [CnetHarnessLibraryResolver.EnvBinDir] = null,
+        };
+        string[] candidates = CnetHarnessLibraryResolver.EnumerateCandidates(k =>
+            overrides.TryGetValue(k, out var v) ? v : null);
+        Assert.DoesNotContain("/some/absolute/libcnet_harness.so", candidates);
+    }
+
+    [Fact]
+    public void CceHostConfig_DoesNotMisreadDecimalTenAsHexGpu3()
+    {
+        var env = new Dictionary<string, string?>
+        {
+            [CceHostConfig.EnvResourceMask] = "10",
+        };
+        Assert.Throws<ArgumentException>(() =>
+            CceHostConfig.FromEnvironment(k =>
+                env.TryGetValue(k, out var v) ? v : null));
+    }
+
+    [Fact]
+    public void CceHostConfig_ParsesExplicitHexResource()
+    {
+        var env = new Dictionary<string, string?>
+        {
+            [CceHostConfig.EnvResourceMask] = "0x10",
+        };
+        var cfg = CceHostConfig.FromEnvironment(k =>
+            env.TryGetValue(k, out var v) ? v : null);
+        Assert.Equal(CnetHarnessResource.Gpu3, cfg.Resource);
+    }
+
+    [Theory]
+    [InlineData(CceHostConfig.EnvMainGpu, "-2")]
+    [InlineData(CceHostConfig.EnvContextTokens, "255")]
+    [InlineData(CceHostConfig.EnvThreads, "1025")]
+    public void CceHostConfig_RejectsOutOfRangeValues(string key, string value)
+    {
+        var env = new Dictionary<string, string?> { [key] = value };
+        Assert.Throws<ArgumentException>(() =>
+            CceHostConfig.FromEnvironment(k =>
+                env.TryGetValue(k, out var v) ? v : null));
+    }
+
+    [Fact]
+    public void LibraryResolver_BinDirEnv_ContributesCandidate()
+    {
+        var overrides = new Dictionary<string, string?>
+        {
+            [CnetHarnessLibraryResolver.EnvOverride] = null,
+            [CnetHarnessLibraryResolver.EnvBinDir] = "/some/bin",
+        };
+        string[] candidates = CnetHarnessLibraryResolver.EnumerateCandidates(k =>
+            overrides.TryGetValue(k, out var v) ? v : null);
+        Assert.Contains(candidates,
+            c => c.Replace('\\', '/') == "/some/bin/libcnet_harness.so");
+    }
+
+    [Fact]
+    public void LibraryResolver_NoEnv_IncludesAppBaseCandidates()
+    {
+        string[] candidates = CnetHarnessLibraryResolver.EnumerateCandidates(_ => null);
+        Assert.NotEmpty(candidates);
+        Assert.All(candidates, c => Assert.EndsWith("libcnet_harness.so", c));
+    }
+
     // ---- fake native invoker ----
 
     private sealed class FakeNative : ICnetHarnessNative
@@ -260,6 +598,10 @@ public sealed class CnetHarnessTests
         public string LastSystem = "";
         public string LastUser = "";
         public string LastRole = "";
+        public ManualResetEventSlim? GenerateEntered;
+        public ManualResetEventSlim? GenerateRelease;
+        public int MaxConcurrentGenerations;
+        private int _activeGenerations;
 
         public delegate int ProbeRouteHandler(IntPtr session, string role,
             CnetHarnessSamplingMode overrideMode, ref NativeRouteInfo info);
@@ -281,21 +623,40 @@ public sealed class CnetHarnessTests
         public int Generate(IntPtr session, in NativeGenerateOptions options,
                             out IntPtr generation)
         {
-            LastRole = options.Role == IntPtr.Zero ? ""
-                : Marshal.PtrToStringUTF8(options.Role) ?? "";
-            LastUser = options.User == IntPtr.Zero ? ""
-                : Marshal.PtrToStringUTF8(options.User) ?? "";
-            LastSystem = options.System == IntPtr.Zero ? ""
-                : Marshal.PtrToStringUTF8(options.System) ?? "";
-
-            if (GenerateReturn != 0)
+            int active = Interlocked.Increment(ref _activeGenerations);
+            int observed;
+            do
             {
-                generation = IntPtr.Zero;
-                return GenerateReturn;
+                observed = Volatile.Read(ref MaxConcurrentGenerations);
             }
-            /* Return a non-zero sentinel; ReadGeneration will look it up. */
-            generation = new IntPtr(0x5678);
-            return 0;
+            while (active > observed &&
+                   Interlocked.CompareExchange(ref MaxConcurrentGenerations,
+                       active, observed) != observed);
+
+            GenerateEntered?.Set();
+            GenerateRelease?.Wait(TimeSpan.FromSeconds(2));
+            try
+            {
+                LastRole = options.Role == IntPtr.Zero ? ""
+                    : Marshal.PtrToStringUTF8(options.Role) ?? "";
+                LastUser = options.User == IntPtr.Zero ? ""
+                    : Marshal.PtrToStringUTF8(options.User) ?? "";
+                LastSystem = options.System == IntPtr.Zero ? ""
+                    : Marshal.PtrToStringUTF8(options.System) ?? "";
+
+                if (GenerateReturn != 0)
+                {
+                    generation = IntPtr.Zero;
+                    return GenerateReturn;
+                }
+                /* Return a non-zero sentinel; ReadGeneration will look it up. */
+                generation = new IntPtr(0x5678);
+                return 0;
+            }
+            finally
+            {
+                Interlocked.Decrement(ref _activeGenerations);
+            }
         }
 
         public int ProbeRoute(IntPtr session, string role,
@@ -312,6 +673,11 @@ public sealed class CnetHarnessTests
             return 0;
         }
 
+        public float GenerationEffectiveTemperature = 0.30f;
+        public float GenerationEffectiveTopP = 0.85f;
+        public uint  GenerationEffectiveTopK = 40u;
+        public float GenerationEffectiveMinP = 0.05f;
+
         public NativeGenerationLayout ReadGeneration(IntPtr generation)
         {
             return new NativeGenerationLayout(
@@ -323,7 +689,11 @@ public sealed class CnetHarnessTests
                 GenerationSelectedAdapter,
                 GenerationRouteUncertainty,
                 GenerationEffectiveSampling,
-                GenerationAicimoOverride);
+                GenerationAicimoOverride,
+                GenerationEffectiveTemperature,
+                GenerationEffectiveTopP,
+                GenerationEffectiveTopK,
+                GenerationEffectiveMinP);
         }
 
         public void GenerationFree(IntPtr generation)

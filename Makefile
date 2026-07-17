@@ -2173,6 +2173,7 @@ unified_native: unified_adapter unified_cce_adapter unified_oracle_adapter unifi
 	@nm -D cnet.so | grep -q " cnet_oracle_identity_digest$$"
 	@nm -D cnet.so | grep -q " cnet_model_manager_open$$"
 	@nm -D cnet.so | grep -q " cce_model_descriptor_probe$$"
+	@nm -D cnet.so | grep -q " cce_aicimo_route_decision$$"
 	@nm -D cnet.so | grep -q " cnet_lane_pool_open$$"
 	@nm -D cnet.so | grep -q " cnet_lane_pool_submit$$"
 	@nm -D cnet.so | grep -q " soul_oracle_count$$"
@@ -2328,37 +2329,78 @@ CNET_HARNESS_LLAMA := src/cnet_harness/cnet_harness_llama.cpp
 
 .PHONY: cnet_harness_plugin
 cnet_harness_plugin: cnet_dll $(CNET_HARNESS_CORE) $(CNET_HARNESS_LLAMA) $(CNET_HARNESS_HEADERS)
-	$(CXX) -std=c++17 -Wall -Wextra -O2 -fPIC -shared -Iinclude \
+	@mkdir -p $(BIN_DIR)
+	# cnet.so's SONAME is libcnet.so.$(CNET_ABI_VERSION). The plugin links
+	# against the -l:cnet.so file in the repo root but at load time the
+	# dynamic linker looks for that SONAME on the plugin's RPATH.
+	# $(BIN_DIR)/libcnet.so.$(CNET_ABI_VERSION) -> ../cnet.so satisfies it.
+	ln -sfn ../cnet.so $(BIN_DIR)/libcnet.so.$(CNET_ABI_VERSION)
+	$(CXX) -std=c++17 -Wall -Wextra -Werror -O2 -fPIC -shared -Iinclude \
 		-I$(LLAMA_CPP_ROOT)/include -I$(LLAMA_CPP_ROOT)/ggml/include \
+		-Wl,-soname,libcnet_harness.so \
 		-o $(BIN_DIR)/libcnet_harness.so \
 		$(CNET_HARNESS_CORE) $(CNET_HARNESS_LLAMA) \
 		-L. -l:cnet.so -L$(LLAMA_CPP_BUILD)/bin -lllama -lggml -lggml-base \
 		-ldl -pthread \
-		-Wl,-rpath,'$$ORIGIN/..' -Wl,-rpath,$(LLAMA_CPP_BUILD)/bin
+		-Wl,-rpath,'$$ORIGIN' -Wl,-rpath,'$$ORIGIN/..' \
+		-Wl,-rpath,$(LLAMA_CPP_BUILD)/bin
 	@echo "Built $(BIN_DIR)/libcnet_harness.so (CNET .NET inference harness plugin)."
 
 .PHONY: cnet_harness_contract_test
-cnet_harness_contract_test: $(CCE) $(CCE_MODEL_CATALOG) $(MODEL_RUNTIME) $(MODEL_PROBE) $(CNET_HARNESS_CORE) tests/test_cnet_harness_contract.c $(CNET_HARNESS_HEADERS)
+cnet_harness_contract_test: $(CCE) $(CCE_MODEL_CATALOG) $(MODEL_RUNTIME) $(MODEL_PROBE) $(CNET_HARNESS_CORE) tests/test_cnet_harness_contract.c tests/test_cnet_harness_failclosed.c $(CNET_HARNESS_HEADERS)
 	@mkdir -p $(BIN_DIR) logs
+	# Main contract test: links strong fake backend hooks so the route-only
+	# ABI surface can be exercised without llama.cpp.
 	$(CC) $(CFLAGS) -o $(BIN_DIR)/cnet_harness_contract_test \
 		$(CCE) $(CCE_MODEL_CATALOG) $(MODEL_RUNTIME) $(MODEL_PROBE) \
 		$(CNET_HARNESS_CORE) tests/test_cnet_harness_contract.c \
 		$(LDFLAGS) -pthread
 	./$(BIN_DIR)/cnet_harness_contract_test > logs/cnet_harness_contract_test.log 2>&1
 	@grep -q "CNET_HARNESS_CONTRACT_TEST_PASS" logs/cnet_harness_contract_test.log
+	# Fail-closed sibling: same core, no fake backend, proves the weak
+	# default refuses to fabricate a successful open with a readable
+	# dummy path.
+	$(CC) $(CFLAGS) -o $(BIN_DIR)/cnet_harness_failclosed_test \
+		$(CCE) $(CCE_MODEL_CATALOG) $(MODEL_RUNTIME) $(MODEL_PROBE) \
+		$(CNET_HARNESS_CORE) tests/test_cnet_harness_failclosed.c \
+		$(LDFLAGS) -pthread
+	./$(BIN_DIR)/cnet_harness_failclosed_test > logs/cnet_harness_failclosed_test.log 2>&1
+	@grep -q "CNET_HARNESS_FAILCLOSED_TEST_PASS" logs/cnet_harness_failclosed_test.log
 
 # Managed harness unit tests: exercises dotnet/Cce.Tests filtered to the
 # CnetHarnessTests class. Fakes the native invoker; does not require the
 # plugin .so or a real GGUF, so it stays hermetic.
-DOTNET ?= /home/marble/dotnet/dotnet
 
 .PHONY: dotnet_harness_test
 dotnet_harness_test:
+	$(call dotnet_guard)
 	@mkdir -p logs
 	$(DOTNET) test dotnet/Cce.Tests/Cce.Tests.csproj -c Release --nologo \
 		--filter "FullyQualifiedName~CnetHarnessTests" \
 		2>&1 | tee logs/dotnet_harness_test.log
 	@grep -Eq "Passed:[[:space:]]*[1-9][0-9]*" logs/dotnet_harness_test.log
+
+# Optional real-model tracer. This is intentionally outside unified/release:
+# it requires a private local GGUF and a caller-selected llama.cpp build.
+# It is CPU-only, bounded, and starts no model server.
+CNET_HARNESS_SMOKE_TIMEOUT ?= 300
+
+.PHONY: cnet_harness_real_smoke
+cnet_harness_real_smoke: cnet_harness_plugin
+	$(call dotnet_guard)
+	@test -n "$(CNET_HARNESS_MODEL)" || { \
+		echo "CNET_HARNESS_MODEL=/absolute/path/model.gguf is required" >&2; exit 2; \
+	}
+	@mkdir -p logs
+	$(DOTNET) build dotnet/CnetHarnessSmoke/CnetHarnessSmoke.csproj -c Release --nologo \
+		> logs/cnet_harness_smoke_build.log 2>&1
+	timeout --signal=TERM --kill-after=15s $(CNET_HARNESS_SMOKE_TIMEOUT)s env \
+		CNET_HARNESS_LIBRARY="$(CURDIR)/$(BIN_DIR)/libcnet_harness.so" \
+		ROCR_VISIBLE_DEVICES='' HIP_VISIBLE_DEVICES='' CUDA_VISIBLE_DEVICES='' \
+		$(DOTNET) dotnet/CnetHarnessSmoke/bin/Release/net10.0/CnetHarnessSmoke.dll \
+		"$(CNET_HARNESS_MODEL)" > logs/cnet_harness_real_smoke.log 2>&1
+	@grep -q "CNET_HARNESS_REAL_SMOKE_PASS" logs/cnet_harness_real_smoke.log
+	@echo "CNET_HARNESS_REAL_SMOKE_PASS"
 
 # Alternate-paths regression gate: proves AICIMO is in the core CCE aggregate
 # with its canonical API (cce_aicimo_*), old compat names are NOT global symbols,

@@ -1,12 +1,16 @@
 /*
  * cnet_harness_llama.cpp — llama.cpp backend for the CNET harness plugin.
  *
- * Provides strong overrides of harness_backend_open/generate/close. Reuses the
+ * Provides strong overrides of harness_backend_open, harness_backend_generate,
+ * harness_backend_prepare_close, and harness_backend_finish_close. Reuses the
  * proven load/unload + chat template + sampler patterns from
  * tools/cnet_llama_eval.cpp without altering that tool.
  *
  * Only linked into libcnet_harness.so, not into the hermetic contract test.
- * AMD/ROCm only; no CUDA-specific claims.
+ *
+ * Process-global state (llama_backend_init/free, ggml_backend_load_all) is
+ * guarded by a mutex + refcount so multiple sessions cannot free global
+ * state out from under one another.
  */
 #include "cnet_harness_private.h"
 
@@ -24,6 +28,7 @@ extern "C" {
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <mutex>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -32,7 +37,8 @@ namespace {
 
 struct BackendContext {
     uint64_t expected_resource_mask = 0;
-    int main_gpu = 0;
+    int main_gpu = -1;
+    int is_cpu = 0;
     int loads = 0;
     int unloads = 0;
 };
@@ -41,11 +47,34 @@ struct BackendState {
     BackendContext load_ctx;
     llama_model *model = nullptr;
     llama_context *context = nullptr;
-    llama_sampler *sampler = nullptr;
-    /* The sampler is owned per-generate call so it can be rebuilt each time
-     * AICIMO picks a different profile. */
-    bool backend_inited = false;
+    bool holds_global = false;
 };
+
+/* Process-global refcount for llama_backend_init/free and ggml_backend_load_all.
+ * First acquire initializes; last release finalizes. Protects concurrent
+ * sessions from tearing global state down while another session still holds
+ * a model handle. */
+std::mutex g_global_mutex;
+int g_global_refcount = 0;
+
+bool acquire_global_backend() {
+    std::lock_guard<std::mutex> lock(g_global_mutex);
+    if (g_global_refcount == 0) {
+        ggml_backend_load_all();
+        llama_backend_init();
+    }
+    ++g_global_refcount;
+    return true;
+}
+
+void release_global_backend() {
+    std::lock_guard<std::mutex> lock(g_global_mutex);
+    if (g_global_refcount <= 0) return;
+    --g_global_refcount;
+    if (g_global_refcount == 0) {
+        llama_backend_free();
+    }
+}
 
 extern "C" int cnet_harness__llama_load(void *opaque,
                                          const CnetModelDescriptor *descriptor,
@@ -59,9 +88,15 @@ extern "C" int cnet_harness__llama_load(void *opaque,
     }
 
     llama_model_params params = llama_model_default_params();
-    params.n_gpu_layers = -1;
+    if (ctx->is_cpu) {
+        /* First-class CPU: no GPU offload, main_gpu ignored. */
+        params.n_gpu_layers = 0;
+        params.main_gpu = 0;
+    } else {
+        params.n_gpu_layers = -1;
+        params.main_gpu = ctx->main_gpu < 0 ? 0 : ctx->main_gpu;
+    }
     params.split_mode = LLAMA_SPLIT_MODE_NONE;
-    params.main_gpu = ctx->main_gpu;
     params.use_mmap = true;
     params.use_mlock = false;
     params.check_tensors = false;
@@ -95,26 +130,33 @@ extern "C" void cnet_harness__llama_unload(void *opaque, void *handle) {
     if (ctx) ctx->unloads++;
 }
 
-/* Small helpers (kept local to avoid a broad refactor of cnet_llama_eval). */
+/* Generic chat-template application. No model-specific control tokens are
+ * injected. If the model's real template cannot be resolved or applied, a
+ * plain "System:/User:/Assistant:" fallback is used. */
 static std::string apply_chat_template(llama_model *model,
                                        const std::string &system,
                                        const std::string &user) {
-    const std::string user_no_think = user + "\n/no_think";
     const llama_chat_message messages[] = {
         {"system", system.c_str()},
-        {"user", user_no_think.c_str()},
+        {"user", user.c_str()},
     };
     const char *chat_template = llama_model_chat_template(model, nullptr);
+    if (!chat_template) {
+        return "System: " + system + "\nUser: " + user + "\nAssistant:";
+    }
     int32_t needed = llama_chat_apply_template(
         chat_template, messages, 2, true, nullptr, 0);
-    if (needed < 0) return "System: " + system + "\nUser: " + user + "\nAssistant:";
+    if (needed < 0) {
+        return "System: " + system + "\nUser: " + user + "\nAssistant:";
+    }
     std::vector<char> buffer(static_cast<std::size_t>(needed) + 1u, '\0');
     int32_t written = llama_chat_apply_template(
         chat_template, messages, 2, true, buffer.data(),
         static_cast<int32_t>(buffer.size()));
-    if (written < 0) return std::string();
-    return std::string(buffer.data(), static_cast<std::size_t>(written)) +
-           "<think>\n\n</think>\n\n";
+    if (written < 0) {
+        return "System: " + system + "\nUser: " + user + "\nAssistant:";
+    }
+    return std::string(buffer.data(), static_cast<std::size_t>(written));
 }
 
 static std::vector<llama_token> tokenize_all(const llama_vocab *vocab,
@@ -145,37 +187,32 @@ static std::string token_piece(const llama_vocab *vocab, llama_token tok) {
     return std::string(buffer.data(), static_cast<std::size_t>(written));
 }
 
-static llama_sampler *build_sampler(CnetHarnessSamplingMode mode, uint32_t seed) {
+/* Build a sampler chain from the plugin's central profile-parameter table.
+ * The backend never invents its own numbers; it consumes whatever the core
+ * decided. Deterministic uses greedy; every other mode composes the same
+ * top_k/top_p/min_p/temp chain from the passed-in params. */
+static llama_sampler *build_sampler(CnetHarnessSamplingMode mode,
+                                     CnetHarnessSamplingParams p,
+                                     uint32_t seed) {
     llama_sampler *chain = llama_sampler_chain_init(
         llama_sampler_chain_default_params());
     if (!chain) return nullptr;
-    switch (mode) {
-        case CNET_HARNESS_SAMPLING_DETERMINISTIC:
-            llama_sampler_chain_add(chain, llama_sampler_init_greedy());
-            break;
-        case CNET_HARNESS_SAMPLING_FOCUSED:
-            llama_sampler_chain_add(chain, llama_sampler_init_top_k(40));
-            llama_sampler_chain_add(chain, llama_sampler_init_top_p(0.85f, 1));
-            llama_sampler_chain_add(chain, llama_sampler_init_min_p(0.05f, 1));
-            llama_sampler_chain_add(chain, llama_sampler_init_temp(0.30f));
-            llama_sampler_chain_add(chain, llama_sampler_init_dist(seed));
-            break;
-        case CNET_HARNESS_SAMPLING_BALANCED:
-        case CNET_HARNESS_SAMPLING_AUTO:
-            llama_sampler_chain_add(chain, llama_sampler_init_top_k(40));
-            llama_sampler_chain_add(chain, llama_sampler_init_top_p(0.90f, 1));
-            llama_sampler_chain_add(chain, llama_sampler_init_min_p(0.05f, 1));
-            llama_sampler_chain_add(chain, llama_sampler_init_temp(0.70f));
-            llama_sampler_chain_add(chain, llama_sampler_init_dist(seed));
-            break;
-        case CNET_HARNESS_SAMPLING_EXPLORATORY:
-            llama_sampler_chain_add(chain, llama_sampler_init_top_k(80));
-            llama_sampler_chain_add(chain, llama_sampler_init_top_p(0.95f, 1));
-            llama_sampler_chain_add(chain, llama_sampler_init_min_p(0.03f, 1));
-            llama_sampler_chain_add(chain, llama_sampler_init_temp(0.95f));
-            llama_sampler_chain_add(chain, llama_sampler_init_dist(seed));
-            break;
+    if (mode == CNET_HARNESS_SAMPLING_DETERMINISTIC) {
+        llama_sampler_chain_add(chain, llama_sampler_init_greedy());
+        return chain;
     }
+    if (p.top_k > 0u) {
+        llama_sampler_chain_add(chain,
+            llama_sampler_init_top_k(static_cast<int32_t>(p.top_k)));
+    }
+    if (p.top_p > 0.0f && p.top_p < 1.0f) {
+        llama_sampler_chain_add(chain, llama_sampler_init_top_p(p.top_p, 1));
+    }
+    if (p.min_p > 0.0f) {
+        llama_sampler_chain_add(chain, llama_sampler_init_min_p(p.min_p, 1));
+    }
+    llama_sampler_chain_add(chain, llama_sampler_init_temp(p.temperature));
+    llama_sampler_chain_add(chain, llama_sampler_init_dist(seed));
     return chain;
 }
 
@@ -195,10 +232,12 @@ int harness_backend_open(struct CnetHarnessSession *session) {
     }
     state->load_ctx.expected_resource_mask = session->config_copy.resource_mask;
     state->load_ctx.main_gpu = session->config_copy.main_gpu;
+    state->load_ctx.is_cpu =
+        (session->config_copy.resource_mask == (uint64_t)CNET_HARNESS_RESOURCE_CPU)
+            ? 1 : 0;
 
-    ggml_backend_load_all();
-    llama_backend_init();
-    state->backend_inited = true;
+    acquire_global_backend();
+    state->holds_global = true;
 
     CnetModelDescriptor descriptor{};
     if (cnet_model_descriptor_probe(
@@ -209,12 +248,14 @@ int harness_backend_open(struct CnetHarnessSession *session) {
             session->config_copy.resource_mask,
             session->config_copy.resource_mask,
             1, 0, 0, 0) != CNET_MODEL_OK) {
-        llama_backend_free();
+        release_global_backend();
+        state->holds_global = false;
         delete state;
         return CNET_HARNESS_ERR_MODEL_LOAD;
     }
     if (descriptor.model_class != CNET_MODEL_CLASS_DENSE_TRANSFORMER) {
-        llama_backend_free();
+        release_global_backend();
+        state->holds_global = false;
         delete state;
         return CNET_HARNESS_ERR_MODEL_LOAD;
     }
@@ -242,7 +283,8 @@ int harness_backend_open(struct CnetHarnessSession *session) {
         cnet_model_catalog_add(session->manager, &descriptor) != CNET_MODEL_OK) {
         if (session->manager) cnet_model_manager_close(session->manager);
         session->manager = nullptr;
-        llama_backend_free();
+        release_global_backend();
+        state->holds_global = false;
         delete state;
         return CNET_HARNESS_ERR_MODEL_LOAD;
     }
@@ -253,7 +295,8 @@ int harness_backend_open(struct CnetHarnessSession *session) {
         session->lease.resource_mask != session->config_copy.resource_mask) {
         cnet_model_manager_close(session->manager);
         session->manager = nullptr;
-        llama_backend_free();
+        release_global_backend();
+        state->holds_global = false;
         delete state;
         return CNET_HARNESS_ERR_MODEL_LOAD;
     }
@@ -268,7 +311,7 @@ int harness_backend_open(struct CnetHarnessSession *session) {
     ctx_params.n_seq_max = 1;
     ctx_params.n_threads = session->config_copy.n_threads;
     ctx_params.n_threads_batch = session->config_copy.n_threads;
-    ctx_params.offload_kqv = true;
+    ctx_params.offload_kqv = !state->load_ctx.is_cpu;
     ctx_params.no_perf = false;
 
     state->context = llama_init_from_model(state->model, ctx_params);
@@ -277,7 +320,8 @@ int harness_backend_open(struct CnetHarnessSession *session) {
         session->lease_held = 0;
         cnet_model_manager_close(session->manager);
         session->manager = nullptr;
-        llama_backend_free();
+        release_global_backend();
+        state->holds_global = false;
         delete state;
         return CNET_HARNESS_ERR_BACKEND;
     }
@@ -289,6 +333,7 @@ int harness_backend_open(struct CnetHarnessSession *session) {
 int harness_backend_generate(struct CnetHarnessSession *session,
                               const CnetHarnessGenerateOptions *options,
                               CnetHarnessSamplingMode effective,
+                              CnetHarnessSamplingParams params,
                               CnetHarnessGeneration *generation) {
     if (!session || !options || !generation) return CNET_HARNESS_ERR_INTERNAL;
     auto *state = static_cast<BackendState *>(session->backend_state);
@@ -302,14 +347,24 @@ int harness_backend_generate(struct CnetHarnessSession *session,
 
     const llama_vocab *vocab = llama_model_get_vocab(state->model);
     std::vector<llama_token> prompt_tokens = tokenize_all(vocab, formatted);
-    if (prompt_tokens.empty() ||
-        prompt_tokens.size() >= session->config_copy.n_ctx) {
+    if (prompt_tokens.empty()) {
         return CNET_HARNESS_ERR_BACKEND;
     }
+    /* Context bound: reject upfront if the prompt already fills the window,
+     * or cap max_tokens so decode never drives us past n_ctx. Discarding a
+     * partial response after llama_decode fails would be dishonest. */
+    const uint32_t n_ctx = session->config_copy.n_ctx;
+    if (prompt_tokens.size() >= n_ctx) {
+        return CNET_HARNESS_ERR_INVALID;
+    }
+    const uint32_t max_new = static_cast<uint32_t>(
+        n_ctx - static_cast<uint32_t>(prompt_tokens.size()));
+    uint32_t cap_max_tokens = options->max_tokens < max_new
+        ? options->max_tokens : max_new;
 
     llama_memory_clear(llama_get_memory(state->context), true);
 
-    llama_sampler *sampler = build_sampler(effective, options->seed);
+    llama_sampler *sampler = build_sampler(effective, params, options->seed);
     if (!sampler) return CNET_HARNESS_ERR_BACKEND;
 
     const auto prompt_start = std::chrono::steady_clock::now();
@@ -325,7 +380,7 @@ int harness_backend_generate(struct CnetHarnessSession *session,
     std::string response;
     uint32_t generated = 0;
     const auto gen_start = std::chrono::steady_clock::now();
-    for (uint32_t i = 0; i < options->max_tokens; ++i) {
+    for (uint32_t i = 0; i < cap_max_tokens; ++i) {
         llama_token tok = llama_sampler_sample(sampler, state->context, -1);
         if (llama_vocab_is_eog(vocab, tok)) break;
         response += token_piece(vocab, tok);
@@ -355,7 +410,7 @@ int harness_backend_generate(struct CnetHarnessSession *session,
     return CNET_HARNESS_OK;
 }
 
-void harness_backend_close(struct CnetHarnessSession *session) {
+void harness_backend_prepare_close(struct CnetHarnessSession *session) {
     if (!session) return;
     auto *state = static_cast<BackendState *>(session->backend_state);
     if (!state) return;
@@ -363,10 +418,19 @@ void harness_backend_close(struct CnetHarnessSession *session) {
         llama_free(state->context);
         state->context = nullptr;
     }
-    /* state->model is owned by the manager lease; do not free directly. */
-    if (state->backend_inited) {
-        llama_backend_free();
-        state->backend_inited = false;
+    /* Do NOT touch the global backend or the model handle here — the model
+     * is still leased and other sessions may share global state. */
+}
+
+void harness_backend_finish_close(struct CnetHarnessSession *session) {
+    if (!session) return;
+    auto *state = static_cast<BackendState *>(session->backend_state);
+    if (!state) return;
+    /* state->model is owned by the manager lease which has already been
+     * released and destroyed by the core; do not free directly. */
+    if (state->holds_global) {
+        release_global_backend();
+        state->holds_global = false;
     }
     delete state;
     session->backend_state = nullptr;

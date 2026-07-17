@@ -30,4 +30,8 @@ internal readonly record struct NativeGenerationLayout(
     uint SelectedAdapter,
     float RouteUncertainty,
     CnetHarnessSamplingMode EffectiveSampling,
-    bool AicimoOverride);
+    bool AicimoOverride,
+    float EffectiveTemperature,
+    float EffectiveTopP,
+    uint EffectiveTopK,
+    float EffectiveMinP);

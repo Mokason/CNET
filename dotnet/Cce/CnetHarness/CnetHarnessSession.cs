@@ -63,6 +63,7 @@ public sealed class CnetHarnessSession : IDisposable
 {
     private readonly ICnetHarnessNative _native;
     private readonly CnetHarnessSessionHandle _handle;
+    private readonly object _gate = new();
     private bool _disposed;
 
     internal CnetHarnessSession(ICnetHarnessNative native,
@@ -122,6 +123,14 @@ public sealed class CnetHarnessSession : IDisposable
     /// <summary>Perform one synchronous, non-streaming generation.</summary>
     public CnetHarnessGenerationResult Generate(CnetHarnessGenerateOptions options)
     {
+        lock (_gate)
+        {
+            return GenerateCore(options);
+        }
+    }
+
+    private CnetHarnessGenerationResult GenerateCore(CnetHarnessGenerateOptions options)
+    {
         ArgumentNullException.ThrowIfNull(options);
         ObjectDisposedException.ThrowIf(_disposed, this);
         ValidateGenerateOptions(options);
@@ -161,7 +170,11 @@ public sealed class CnetHarnessSession : IDisposable
                 layout.SelectedAdapter,
                 layout.RouteUncertainty,
                 layout.EffectiveSampling,
-                layout.AicimoOverride);
+                layout.AicimoOverride,
+                layout.EffectiveTemperature,
+                layout.EffectiveTopP,
+                layout.EffectiveTopK,
+                layout.EffectiveMinP);
         }
         finally
         {
@@ -175,8 +188,19 @@ public sealed class CnetHarnessSession : IDisposable
     public CnetHarnessRouteInfo ProbeRoute(string role,
         CnetHarnessSamplingMode overrideMode = CnetHarnessSamplingMode.Auto)
     {
+        lock (_gate)
+        {
+            return ProbeRouteCore(role, overrideMode);
+        }
+    }
+
+    private CnetHarnessRouteInfo ProbeRouteCore(string role,
+        CnetHarnessSamplingMode overrideMode)
+    {
         ArgumentException.ThrowIfNullOrEmpty(role);
         ObjectDisposedException.ThrowIf(_disposed, this);
+        if (!SamplingModeValid(overrideMode))
+            throw new ArgumentOutOfRangeException(nameof(overrideMode));
 
         NativeRouteInfo info = new()
         {
@@ -188,16 +212,36 @@ public sealed class CnetHarnessSession : IDisposable
         {
             throw MakeException(_native, rc, "cnet_harness_probe_route");
         }
+        if (info.AbiVersion != AbiConstants.AbiVersion ||
+            info.StructSize != (uint)Marshal.SizeOf<NativeRouteInfo>())
+        {
+            throw new CnetHarnessException(CnetHarnessStatus.InvalidState,
+                $"native route ABI mismatch: version={info.AbiVersion}, size={info.StructSize}");
+        }
         return new CnetHarnessRouteInfo(
-            info.SelectedAdapter, info.RouteUncertainty, info.EffectiveSampling);
+            info.SelectedAdapter,
+            info.RouteUncertainty,
+            info.EffectiveSampling,
+            info.EffectiveTemperature,
+            info.EffectiveTopP,
+            info.EffectiveTopK,
+            info.EffectiveMinP);
     }
 
     public void Dispose()
     {
-        if (_disposed) return;
-        _disposed = true;
-        _handle.Dispose();
+        lock (_gate)
+        {
+            if (_disposed) return;
+            _disposed = true;
+            _handle.Dispose();
+        }
     }
+
+    private const ulong KnownResourceMask =
+        (ulong)(CnetHarnessResource.Cpu | CnetHarnessResource.Gpu0 |
+                CnetHarnessResource.Gpu1 | CnetHarnessResource.Gpu2 |
+                CnetHarnessResource.Gpu3);
 
     private static void ValidateConfig(CnetHarnessConfig c)
     {
@@ -205,8 +249,16 @@ public sealed class CnetHarnessSession : IDisposable
             throw new ArgumentException("ModelId is required", nameof(c));
         if (string.IsNullOrEmpty(c.ModelPath))
             throw new ArgumentException("ModelPath is required", nameof(c));
-        if (c.ResourceMask == 0ul)
-            throw new ArgumentException("ResourceMask must select at least one resource", nameof(c));
+        ulong mask = c.ResourceMask;
+        if (mask == 0ul || (mask & (mask - 1ul)) != 0ul ||
+            (mask & ~KnownResourceMask) != 0ul)
+        {
+            throw new ArgumentException(
+                "ResourceMask must be exactly one of CnetHarnessResource.{Cpu,Gpu0..Gpu3}",
+                nameof(c));
+        }
+        if (c.BudgetBytes == 0ul)
+            throw new ArgumentException("BudgetBytes must be > 0", nameof(c));
         if (c.ContextTokens < 256u)
             throw new ArgumentException("ContextTokens must be >= 256", nameof(c));
         if (c.BatchTokens == 0u || c.BatchTokens > c.ContextTokens)
@@ -227,7 +279,16 @@ public sealed class CnetHarnessSession : IDisposable
             throw new ArgumentException("Role is required", nameof(o));
         if (o.MaxTokens == 0u || o.MaxTokens > 65536u)
             throw new ArgumentException("MaxTokens must be in (0, 65536]", nameof(o));
+        if (!SamplingModeValid(o.Sampling))
+            throw new ArgumentOutOfRangeException(nameof(o.Sampling));
     }
+
+    private static bool SamplingModeValid(CnetHarnessSamplingMode mode) =>
+        mode is CnetHarnessSamplingMode.Auto or
+            CnetHarnessSamplingMode.Deterministic or
+            CnetHarnessSamplingMode.Focused or
+            CnetHarnessSamplingMode.Balanced or
+            CnetHarnessSamplingMode.Exploratory;
 
     private static CnetHarnessException MakeException(
         ICnetHarnessNative native, int rc, string operation)

@@ -2,22 +2,35 @@
  * test_cnet_harness_contract.c — hermetic ABI + AICIMO contract test.
  *
  * Exercises the real cnet_harness_core.c compiled into the test binary. No
- * llama.cpp linkage; the weak backend hooks stay at their defaults.
+ * llama.cpp linkage. The plugin's default weak backend hooks fail closed
+ * (return ERR_BACKEND), so this file provides STRONG fake backend hooks that
+ * override the weak defaults. That override is the ONLY reason the route-
+ * only surface can be exercised hermetically.
+ *
+ * The companion test in tests/test_cnet_harness_failclosed.c links the same
+ * cnet_harness_core.c but provides no fakes; it proves that a readable dummy
+ * model path still returns ERR_BACKEND and leaves session_out NULL.
  *
  * Proves:
  *   - ABI/struct validation fails closed (bad abi_version, bad struct_size,
  *     NULL, empty strings, out-of-range dims).
+ *   - Multi-bit / unknown resource masks are rejected.
  *   - Missing model_path returns CNET_HARNESS_ERR_MODEL_LOAD and does not
  *     leak a session (out pointer stays NULL).
  *   - A real role-biased AICIMO decision through cnet_harness_probe_route
  *     distributes over at least two adapters and never all to adapter 0;
- *     uncertainties stay in [0,1].
+ *     uncertainties stay in [0,1]; the effective_* parameter fields agree
+ *     with the effective_sampling profile.
+ *   - Distinct profiles carry distinct numeric parameters.
  *   - cnet_harness_error_string returns non-NULL for every documented code
  *     and for an unknown code.
  *   - cnet_harness_generation_free(NULL) and cnet_harness_close(NULL) are
  *     safe no-ops.
+ *   - Two-phase backend teardown is invoked in order: prepare_close BEFORE
+ *     model release/manager close, finish_close AFTER.
  */
 #include "../include/cnet_harness.h"
+#include "../src/cnet_harness/cnet_harness_private.h"
 
 #include <errno.h>
 #include <stdio.h>
@@ -33,6 +46,49 @@ static int fail_count = 0;
     if (cond) { pass_count++; }                                     \
     else { fail_count++; fprintf(stderr, "FAIL: %s\n", msg); }      \
 } while (0)
+
+/* ---- Strong fake backend hooks. These override the plugin's weak
+ * fail-closed defaults so the route-only surface can be exercised without
+ * llama.cpp. The strong linkage is the mechanism the plugin uses in
+ * production too — the real llama TU provides these symbols. ---- */
+
+static int fake_open_calls = 0;
+static int fake_prepare_close_calls = 0;
+static int fake_finish_close_calls = 0;
+static int fake_teardown_order_ok = 1;
+static int fake_teardown_stage = 0;
+
+int harness_backend_open(struct CnetHarnessSession *session) {
+    (void)session;
+    fake_open_calls++;
+    return CNET_HARNESS_OK;
+}
+
+int harness_backend_generate(struct CnetHarnessSession *session,
+                              const CnetHarnessGenerateOptions *options,
+                              CnetHarnessSamplingMode effective,
+                              CnetHarnessSamplingParams params,
+                              CnetHarnessGeneration *generation) {
+    (void)session; (void)options; (void)effective; (void)params; (void)generation;
+    /* The contract test does not exercise the generate() text path; return
+     * ERR_BACKEND deliberately so tests that call generate() see the
+     * error-handling path. */
+    return CNET_HARNESS_ERR_BACKEND;
+}
+
+void harness_backend_prepare_close(struct CnetHarnessSession *session) {
+    (void)session;
+    fake_prepare_close_calls++;
+    if (fake_teardown_stage != 0) fake_teardown_order_ok = 0;
+    fake_teardown_stage = 1;
+}
+
+void harness_backend_finish_close(struct CnetHarnessSession *session) {
+    (void)session;
+    fake_finish_close_calls++;
+    if (fake_teardown_stage != 1) fake_teardown_order_ok = 0;
+    fake_teardown_stage = 2;
+}
 
 static char temp_path[512];
 
@@ -63,7 +119,7 @@ static CnetHarnessConfig valid_config(void) {
     c.struct_size = (uint32_t)sizeof(c);
     c.model_id = "qwythos-9b";
     c.model_path = temp_path;
-    c.resource_mask = 1ull << 2;   /* GPU1 */
+    c.resource_mask = (uint64_t)CNET_HARNESS_RESOURCE_GPU1;
     c.budget_bytes = 4ull * 1024ull * 1024ull * 1024ull;
     c.main_gpu = 0;
     c.n_ctx = 2048;
@@ -134,9 +190,32 @@ static void test_abi_validation(void) {
 
     s = (CnetHarnessSession *)0x1;
     bad = c;
+    bad.budget_bytes = 0ull;
+    CHECK(cnet_harness_open(&bad, &s) == CNET_HARNESS_ERR_INVALID,
+          "abi: zero model budget rejected");
+
+    s = (CnetHarnessSession *)0x1;
+    bad = c;
     bad.resource_mask = 0ull;
     CHECK(cnet_harness_open(&bad, &s) == CNET_HARNESS_ERR_INVALID,
           "abi: empty resource mask rejected");
+
+    /* Multi-bit mask must be rejected: CPU + GPU0 has two set bits. */
+    s = (CnetHarnessSession *)0x1;
+    bad = c;
+    bad.resource_mask =
+        (uint64_t)CNET_HARNESS_RESOURCE_CPU |
+        (uint64_t)CNET_HARNESS_RESOURCE_GPU0;
+    CHECK(cnet_harness_open(&bad, &s) == CNET_HARNESS_ERR_INVALID,
+          "abi: multi-bit resource mask rejected");
+
+    /* Unknown bit not in the documented set must be rejected even if
+     * single-bit. */
+    s = (CnetHarnessSession *)0x1;
+    bad = c;
+    bad.resource_mask = 1ull << 20;
+    CHECK(cnet_harness_open(&bad, &s) == CNET_HARNESS_ERR_INVALID,
+          "abi: unknown resource bit rejected");
 
     fprintf(stderr, "  test_abi_validation: done\n");
 }
@@ -167,6 +246,7 @@ static void test_role_distribution_via_probe(void) {
     const int nroles = (int)(sizeof(roles) / sizeof(roles[0]));
     int hits[4] = {0, 0, 0, 0};
     int uncertainty_ok = 1;
+    int effective_params_ok = 1;
 
     for (int i = 0; i < nroles; ++i) {
         CnetHarnessRouteInfo info;
@@ -182,7 +262,18 @@ static void test_role_distribution_via_probe(void) {
         }
         CHECK(info.effective_sampling != CNET_HARNESS_SAMPLING_AUTO,
               "route: effective_sampling resolved");
+        /* Effective params must agree with the profile (single source of truth). */
+        CnetHarnessSamplingParams expected =
+            cnet_harness__profile_params(info.effective_sampling);
+        if (info.effective_temperature != expected.temperature ||
+            info.effective_top_p != expected.top_p ||
+            info.effective_top_k != expected.top_k ||
+            info.effective_min_p != expected.min_p) {
+            effective_params_ok = 0;
+        }
     }
+    CHECK(effective_params_ok,
+          "route: effective params match profile table");
 
     int distinct = 0;
     for (int i = 0; i < 4; ++i) if (hits[i] > 0) distinct++;
@@ -203,6 +294,17 @@ static void test_role_distribution_via_probe(void) {
     CHECK(prc == CNET_HARNESS_OK, "route: probe with override ok");
     CHECK(info.effective_sampling == CNET_HARNESS_SAMPLING_DETERMINISTIC,
           "route: override respected");
+    CHECK(info.effective_temperature == 0.0f,
+          "route: deterministic reports temp=0 honestly");
+    CHECK(info.effective_top_p == 1.0f,
+          "route: deterministic reports top_p=1 honestly");
+    CHECK(info.effective_top_k == 0u,
+          "route: deterministic reports top_k=0 honestly");
+
+    prc = cnet_harness_probe_route(
+        s, "narrative", (CnetHarnessSamplingMode)999u, &info);
+    CHECK(prc == CNET_HARNESS_ERR_INVALID,
+          "route: invalid sampling override rejected");
 
     /* Bad probe struct rejected. */
     memset(&info, 0, sizeof(info));
@@ -215,13 +317,46 @@ static void test_role_distribution_via_probe(void) {
     CHECK(prc == CNET_HARNESS_ERR_INVALID || prc == CNET_HARNESS_ERR_STATE,
           "route: NULL role rejected");
 
+    /* Reset teardown-order tracker and observe. */
+    fake_teardown_stage = 0;
+    fake_teardown_order_ok = 1;
+    fake_prepare_close_calls = 0;
+    fake_finish_close_calls = 0;
+
     int cc = cnet_harness_close(s);
     CHECK(cc == CNET_HARNESS_OK, "route: close ok");
+    CHECK(fake_prepare_close_calls == 1,
+          "teardown: prepare_close called exactly once");
+    CHECK(fake_finish_close_calls == 1,
+          "teardown: finish_close called exactly once");
+    CHECK(fake_teardown_order_ok,
+          "teardown: prepare_close ran before finish_close");
 
     fprintf(stderr,
             "  test_role_distribution_via_probe: done "
             "(distinct=%d hits={%d,%d,%d,%d})\n",
             distinct, hits[0], hits[1], hits[2], hits[3]);
+}
+
+static void test_profile_params_distinct(void) {
+    CnetHarnessSamplingParams det =
+        cnet_harness__profile_params(CNET_HARNESS_SAMPLING_DETERMINISTIC);
+    CnetHarnessSamplingParams foc =
+        cnet_harness__profile_params(CNET_HARNESS_SAMPLING_FOCUSED);
+    CnetHarnessSamplingParams bal =
+        cnet_harness__profile_params(CNET_HARNESS_SAMPLING_BALANCED);
+    CnetHarnessSamplingParams exp =
+        cnet_harness__profile_params(CNET_HARNESS_SAMPLING_EXPLORATORY);
+
+    CHECK(det.temperature == 0.0f && det.top_p == 1.0f && det.top_k == 0u,
+          "profile: deterministic is honest zeros");
+    CHECK(foc.temperature != bal.temperature,
+          "profile: focused and balanced differ (temperature)");
+    CHECK(exp.top_k != bal.top_k,
+          "profile: exploratory and balanced differ (top_k)");
+    CHECK(foc.top_p != exp.top_p,
+          "profile: focused and exploratory differ (top_p)");
+    fprintf(stderr, "  test_profile_params_distinct: done\n");
 }
 
 static void test_error_strings(void) {
@@ -269,12 +404,11 @@ static void test_generate_options_validated(void) {
 
     CnetHarnessGeneration *gen = (CnetHarnessGeneration *)0x1;
     int grc = cnet_harness_generate(s, &o, &gen);
-    /* In hermetic build the weak backend returns ERR_BACKEND, but the ABI
-     * validation and AICIMO decision must have run successfully before the
-     * backend hook: therefore ERR_BACKEND is the expected code (never
-     * INVALID). */
+    /* The fake backend_generate returns ERR_BACKEND, but the ABI validation
+     * and AICIMO decision must have run successfully before the backend
+     * hook: therefore ERR_BACKEND is the expected code (never INVALID). */
     CHECK(grc == CNET_HARNESS_ERR_BACKEND,
-          "gen_opts: hermetic backend returns ERR_BACKEND");
+          "gen_opts: fake backend returns ERR_BACKEND");
     CHECK(gen == NULL, "gen_opts: no leaked generation on failure");
 
     CnetHarnessGenerateOptions bad = o;
@@ -313,6 +447,7 @@ int main(void) {
     test_abi_validation();
     test_missing_model_returns_model_load();
     test_role_distribution_via_probe();
+    test_profile_params_distinct();
     test_error_strings();
     test_safe_null_teardown();
     test_generate_options_validated();

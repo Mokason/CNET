@@ -43,15 +43,34 @@ struct CnetHarnessSession {
 
 #define CNET_HARNESS_SESSION_MAGIC 0xC1E7C0DEu
 
-/* Backend hook. Weak default implementations in cnet_harness_core.c let the
- * hermetic contract test link without llama.cpp. The llama TU
- * (cnet_harness_llama.cpp) provides strong overrides. */
+/* Numeric parameters that a sampling profile resolves to. One source of
+ * truth: cnet_harness__profile_params. The backend consumes these; there is
+ * no per-backend switch that can drift from what the plugin reports. */
+typedef struct {
+    float temperature;   /* deterministic reports 0.0f honestly            */
+    float top_p;         /* deterministic reports 1.0f (no top-p cut)      */
+    uint32_t top_k;      /* deterministic reports 0 (no top-k cut)         */
+    float min_p;         /* deterministic reports 0.0f                     */
+} CnetHarnessSamplingParams;
+
+CnetHarnessSamplingParams cnet_harness__profile_params(
+    CnetHarnessSamplingMode mode);
+
+/* Backend hook contract. The default (fail-closed) implementations in
+ * cnet_harness_core.c return ERR_BACKEND. The llama TU
+ * (cnet_harness_llama.cpp) provides strong overrides. Tests that need a
+ * hermetic route-only path must provide their own strong fakes. */
 int harness_backend_open(struct CnetHarnessSession *session);
 int harness_backend_generate(struct CnetHarnessSession *session,
                               const CnetHarnessGenerateOptions *options,
                               CnetHarnessSamplingMode effective,
+                              CnetHarnessSamplingParams params,
                               CnetHarnessGeneration *generation);
-void harness_backend_close(struct CnetHarnessSession *session);
+/* Two-phase teardown. prepare_close frees the backend context/sampler while
+ * the CNET model lease is still held. finish_close releases global backend
+ * state after the core has released the lease and closed the manager. */
+void harness_backend_prepare_close(struct CnetHarnessSession *session);
+void harness_backend_finish_close(struct CnetHarnessSession *session);
 
 /* Shared sampling-profile decision, exported for the backend TU. */
 CnetHarnessSamplingMode cnet_harness__adapter_to_profile(uint32_t adapter);
