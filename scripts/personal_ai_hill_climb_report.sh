@@ -11,14 +11,10 @@
 #   CNET_EG_BASELINE_COST=32
 #   CNET_EG_LOG=<base>.hill_climb.jsonl
 set -euo pipefail
-REPO="$(cd "$(dirname "$0")/.." && pwd)"
-if [ -f "$REPO/config/personal-ai.env" ]; then
-  set -a
-  # shellcheck source=/dev/null
-  . "$REPO/config/personal-ai.env" || true
-  set +a
-fi
-BASE="${1:-${CNET_BASE_PATH:-$REPO/soul_gemma4v2_final.cnb}}"
+# shellcheck source=personal_ai_common.sh
+. "$(cd "$(dirname "$0")" && pwd)/personal_ai_common.sh"
+cnet_load_personal_env
+BASE="${1:-$(cnet_default_base)}"
 DAYS="${2:-7}"
 LOG="${CNET_EG_LOG:-${BASE}.hill_climb.jsonl}"
 BASELINE="${CNET_EG_BASELINE_COST:-32}"
@@ -26,9 +22,8 @@ NOW=$(date +%s)
 T0=$((NOW - DAYS * 86400))
 mkdir -p "$REPO/logs"
 
-# Ensure bin/cnet_eg if possible
 if [ ! -x "$REPO/bin/cnet_eg" ]; then
-  make -C "$REPO" cnet_eg_cli -j"$(nproc 2>/dev/null || echo 2)" >/dev/null 2>&1 || true
+  make -C "$REPO" cnet_eg_cli -j"$(cnet_nproc)" >/dev/null 2>&1 || true
 fi
 
 echo "=== CNET hill-climb report (last ${DAYS}d) ==="
@@ -39,15 +34,25 @@ echo "baseline_cost_per_seal: $BASELINE"
 if [ ! -f "$LOG" ]; then
   echo "No EG log yet — learner writes on each did_work tick after rebuild."
   echo "Hint: leave lane running; or seed: scripts/personal_ai_grow_local.sh 8"
-  # Fallback: scrape journal if present
   if command -v journalctl >/dev/null 2>&1; then
     echo "--- journal fallback (approx) ---"
-    closed=$(journalctl --user -u cnet-personal-ai-lane.service --since "${DAYS} days ago" --no-pager 2>/dev/null | \
-      grep -oE 'closed=[0-9]+' | awk -F= '{s+=$2} END{print s+0}')
-    drained=$(journalctl --user -u cnet-personal-ai-lane.service --since "${DAYS} days ago" --no-pager 2>/dev/null | \
-      grep -oE 'drained=[0-9]+' | awk -F= '{s+=$2} END{print s+0}')
-    units=$(journalctl --user -u cnet-personal-ai-lane.service -n 5 --no-pager 2>/dev/null | \
-      grep -oE 'units=[0-9]+' | tail -1 | cut -d= -f2 || echo 0)
+    # Single journalctl scan instead of three
+    mapfile -t JLINES < <(journalctl --user -u cnet-personal-ai-lane.service \
+      --since "${DAYS} days ago" --no-pager 2>/dev/null || true)
+    closed=0
+    drained=0
+    units=0
+    for line in "${JLINES[@]:-}"; do
+      if [[ "$line" =~ closed=([0-9]+) ]]; then
+        closed=$((closed + BASH_REMATCH[1]))
+      fi
+      if [[ "$line" =~ drained=([0-9]+) ]]; then
+        drained=$((drained + BASH_REMATCH[1]))
+      fi
+      if [[ "$line" =~ units=([0-9]+) ]]; then
+        units=${BASH_REMATCH[1]}
+      fi
+    done
     echo "  journal_closed_sum=$closed journal_drained_sum=$drained last_units=$units"
     if [ "${closed:-0}" -gt 0 ] 2>/dev/null; then
       cps=$(python3 -c "print(round($drained/max($closed,1), 4))")
@@ -61,33 +66,41 @@ if [ ! -f "$LOG" ]; then
 fi
 
 if [ -x "$REPO/bin/cnet_eg" ]; then
-  "$REPO/bin/cnet_eg" report --log "$LOG" --since "$T0" --baseline "$BASELINE" | tee "$REPO/logs/hill_climb_report.txt"
-else
-  python3 - <<PY
-import json, time
+  "$REPO/bin/cnet_eg" report --log "$LOG" --since "$T0" --baseline "$BASELINE" | \
+    tee "$REPO/logs/hill_climb_report.txt"
+  # cnet_eg may already print the marker; ensure one final line
+  if ! grep -q "HILL_CLIMB_REPORT_OK" "$REPO/logs/hill_climb_report.txt" 2>/dev/null; then
+    echo "HILL_CLIMB_REPORT_OK"
+  fi
+  exit 0
+fi
+
+python3 - <<PY
+import json
 from pathlib import Path
 log = Path("$LOG")
 t0, t1 = $T0, $NOW
 base = float("$BASELINE")
-work=seals=deferred=no_oracle=curiosity=0
-units=0
-first=last=None
+work = seals = deferred = no_oracle = curiosity = 0
+units = 0
+first = last = None
 for line in log.read_text().splitlines():
     try:
-        o=json.loads(line)
+        o = json.loads(line)
     except Exception:
         continue
-    ts=int(o.get("ts",0))
-    if ts<t0 or ts>t1: continue
-    first = ts if first is None or ts<first else first
-    last = ts if last is None or ts>last else last
-    work += int(o.get("examined",0))
-    seals += int(o.get("closed",0))
-    deferred += int(o.get("deferred",0))
-    no_oracle += int(o.get("no_oracle",0))
-    curiosity += int(o.get("curiosity",0))
-    units = max(units, int(o.get("units",0)))
-hours = max((last-first)/3600.0, 1e-9) if first and last else 1e-9
+    ts = int(o.get("ts", 0))
+    if ts < t0 or ts > t1:
+        continue
+    first = ts if first is None or ts < first else first
+    last = ts if last is None or ts > last else last
+    work += int(o.get("examined", 0))
+    seals += int(o.get("closed", 0))
+    deferred += int(o.get("deferred", 0))
+    no_oracle += int(o.get("no_oracle", 0))
+    curiosity += int(o.get("curiosity", 0))
+    units = max(units, int(o.get("units", 0)))
+hours = max((last - first) / 3600.0, 1e-9) if first and last else 1e-9
 cost = work / max(seals, 1)
 eg = base / max(cost, 1e-9)
 rate = seals / hours
@@ -104,13 +117,25 @@ elif seals == 0:
     print("  trend: no seals in window — feed teachable gaps or wait for curiosity")
 else:
     print(f"  trend: below baseline — each seal costs more teach work than {base}")
-Path("$REPO/logs/hill_climb_report.json").write_text(json.dumps({
-  "teacher_work": work, "seals": seals, "deferred": deferred,
-  "no_oracle": no_oracle, "curiosity": curiosity, "units": units,
-  "hours": hours, "cost_per_seal": cost, "seal_rate": rate,
-  "local_eg": eg, "baseline_cost": base, "days": $DAYS
-}, indent=2)+"\n")
+Path("$REPO/logs/hill_climb_report.json").write_text(
+    json.dumps(
+        {
+            "teacher_work": work,
+            "seals": seals,
+            "deferred": deferred,
+            "no_oracle": no_oracle,
+            "curiosity": curiosity,
+            "units": units,
+            "hours": hours,
+            "cost_per_seal": cost,
+            "seal_rate": rate,
+            "local_eg": eg,
+            "baseline_cost": base,
+            "days": $DAYS,
+        },
+        indent=2,
+    )
+    + "\n"
+)
 print("HILL_CLIMB_REPORT_OK")
 PY
-fi
-echo "HILL_CLIMB_REPORT_OK"

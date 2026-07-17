@@ -76,7 +76,7 @@ int main(int argc, char **argv) {
         int in_tot = 0, out_tot = 0;
         int trust = -1, role = -1;
         double *in = NULL, *out = NULL;
-        int j, rc;
+        int rc;
 
         if (soul_unit_name(host, i, name, (int)sizeof name) != 0) continue;
         if (tag_prefix && tag_prefix[0] &&
@@ -95,13 +95,8 @@ int main(int argc, char **argv) {
             fail++;
             continue;
         }
-        /* Probe: one-hot-ish first slot when small, else sparse 1.0 at 0. */
-        if (in_tot <= 4096) {
-            for (j = 0; j < in_tot; j++) in[j] = 0.0;
-            in[0] = 1.0;
-        } else {
-            in[0] = 1.0;
-        }
+        /* calloc already zeroed; one-hot-ish probe at index 0. */
+        in[0] = 1.0;
 
         rc = soul_run(host, name, in, out, out_tot);
         (void)soul_unit_axes(host, name, &trust, &role);

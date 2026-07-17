@@ -2,14 +2,14 @@
 # A: baseline observation snapshot — call once now, again later to compare.
 # Writes logs/personal_ai_observe_<ts>.json and prints a short summary.
 set -euo pipefail
-REPO="$(cd "$(dirname "$0")/.." && pwd)"
-BASE="${1:-${CNET_BASE_PATH:-$REPO/soul_gemma4v2_final.cnb}}"
+# shellcheck source=personal_ai_common.sh
+. "$(cd "$(dirname "$0")" && pwd)/personal_ai_common.sh"
+BASE="${1:-$(cnet_default_base)}"
 mkdir -p "$REPO/logs"
 TS=$(date +%Y%m%dT%H%M%S)
 OUT="$REPO/logs/personal_ai_observe_${TS}.json"
 bash "$REPO/scripts/personal_ai_metrics.sh" "$BASE" >"$OUT"
 echo "observe: wrote $OUT"
-# Hill-climb EG snapshot (appended summary)
 if [ -x "$REPO/scripts/personal_ai_hill_climb_report.sh" ]; then
   echo "--- hill-climb (7d) ---"
   bash "$REPO/scripts/personal_ai_hill_climb_report.sh" "$BASE" 7 2>/dev/null || true
@@ -20,7 +20,8 @@ import json
 from pathlib import Path
 p = Path("$OUT")
 d = json.loads(p.read_text())
-print(f"  units_journal={d.get('units_journal')} inbox={d.get('inbox_lines')} "
+units = d.get("units") if d.get("units") is not None else d.get("units_journal")
+print(f"  units={units} inbox={d.get('inbox_lines')} "
       f"ledger={d.get('ledger_lines')} learner={d.get('learner_active')} "
       f"cnb_MiB={d.get('cnb_bytes',0)/1024/1024:.1f}")
 pl = d.get("placement") or {}

@@ -22,8 +22,10 @@
 #   TICK_SECONDS=60                 # MCP health tick
 set -euo pipefail
 
-REPO="$(cd "$(dirname "$0")/.." && pwd)"
-BASE="${BASE_PATH:-$REPO/soul_gemma4v2_final.cnb}"
+# shellcheck source=personal_ai_common.sh
+. "$(cd "$(dirname "$0")" && pwd)/personal_ai_common.sh"
+cnet_load_personal_env
+BASE="$(cnet_default_base)"
 TEACHER="${TEACHER:-${CNET_PERSONAL_TEACHER:-/home/marble/AI/Models/gemma4-v2-Q4_K_M.gguf}}"
 # Optional Tier C residual GGUF (open-ended serve); empty = hermetic/soft only
 RESIDUAL="${RESIDUAL:-${CNET_RESIDUAL_GGUF:-}}"
@@ -41,7 +43,7 @@ info() { echo "personal_ai_auto: $*"; }
 
 prepare() {
   info "build learner + personal_ai gate + placement CLI"
-  make -C "$REPO" gap_lane_run_build personal_ai cnet_plan_cli -j"$(nproc 2>/dev/null || echo 2)"
+  make -C "$REPO" gap_lane_run_build personal_ai cnet_plan_cli -j"$(cnet_nproc)"
   [ -x "$REPO/bin/gap_lane_run" ] || die "gap_lane_run missing"
   [ -f "$BASE" ] || info "WARN: base not found yet: $BASE (serve/learn need it)"
   if [ -n "$TEACHER" ] && [ ! -f "$TEACHER" ]; then
@@ -155,11 +157,13 @@ status() {
   else
     echo "lane unit: not installed/running"
   fi
-  if pgrep -x CnetMcpServer >/dev/null 2>&1; then
+  if cnet_serve_active; then
     echo "serve (CnetMcpServer): running"
   else
     echo "serve (CnetMcpServer): not running (enable SERVE=1 on start or deploy_hermes_mcp.sh)"
   fi
+  units=$(cnet_unit_count_fast "$BASE")
+  [ -n "$units" ] && echo "units:   $units (sealed CNB)"
   echo "=== loop ==="
   echo "  serve miss → ${BASE}.inbox"
   echo "  lane tick  → teach → seal ${BASE}"
@@ -194,9 +198,13 @@ case "$cmd" in
   observe) bash "$REPO/scripts/personal_ai_observe.sh" "$BASE" ;;
   metrics) bash "$REPO/scripts/personal_ai_metrics.sh" "$BASE" ;;
   hillclimb|eg) bash "$REPO/scripts/personal_ai_hill_climb_report.sh" "$BASE" "${2:-7}" ;;
+  loop|report) bash "$REPO/scripts/personal_ai_loop_report.sh" "$BASE" ;;
+  serve-proof|serve_proof)
+    bash "$REPO/scripts/personal_ai_serve_proof.sh" "${2:-hermetic}"
+    ;;
   *)
     cat <<EOF
-usage: $0 prepare|install|start|stop|status|doctor|grow|observe|metrics|hillclimb
+usage: $0 prepare|install|start|stop|status|doctor|grow|observe|metrics|hillclimb|loop|serve-proof
 
 Automatic Personal AI:
   1. prepare  — build learner binary + check base/teacher + placement doctor
@@ -207,8 +215,10 @@ Automatic Personal AI:
   observe     — A: snapshot metrics JSON under logs/
   metrics     — JSON metrics to stdout
   hillclimb   — local EG report (days optional, default 7)
+  loop        — human-readable loop report (inbox/ledger/learner/serve)
+  serve-proof — post-seal Tier A proof (hermetic|live|all)
 
-Env: BASE_PATH TEACHER SERVE=0|1 TICK_SECONDS
+Env: BASE_PATH / CNET_BASE_PATH  TEACHER  SERVE=0|1  TICK_SECONDS
      RESIDUAL / CNET_RESIDUAL_GGUF  (Tier C; also config/personal-ai.env)
      RESIDUAL_WINDOW / CNET_RESIDUAL_WINDOW
 EOF

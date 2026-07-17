@@ -45,13 +45,42 @@ class PersonalAiAutoTest(unittest.TestCase):
             cwd=str(ROOT),
         )
         self.assertEqual(proc.returncode, 2)
-        self.assertIn("prepare|install|start", proc.stdout + proc.stderr)
+        out = proc.stdout + proc.stderr
+        self.assertIn("prepare|install|start", out)
+        self.assertIn("serve-proof", out)
+        self.assertIn("loop", out)
 
     def test_prepare_dry_structure(self) -> None:
         # prepare needs make; may be heavy — only check script parses + target exists
         self.assertTrue(TARGET.is_file())
         self.assertTrue(SCRIPT.is_file())
         self.assertIn("PERSONAL_AI_AUTO_PREPARE_OK", SCRIPT.read_text(encoding="utf-8"))
+        common = ROOT / "scripts" / "personal_ai_common.sh"
+        self.assertTrue(common.is_file())
+        text = common.read_text(encoding="utf-8")
+        self.assertIn("cnet_count_lines", text)
+        self.assertIn("cnet_default_base", text)
+
+    def test_metrics_json_empty_inbox(self) -> None:
+        """grep -c || echo 0 must not emit double-zero JSON (empty file)."""
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td) / "fake.cnb"
+            base.write_bytes(b"x")
+            inbox = Path(str(base) + ".inbox")
+            inbox.write_text("")  # empty → zero matches
+            proc = subprocess.run(
+                ["bash", str(ROOT / "scripts" / "personal_ai_metrics.sh"), str(base)],
+                check=False,
+                capture_output=True,
+                text=True,
+                cwd=str(ROOT),
+            )
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            import json
+
+            data = json.loads(proc.stdout)
+            self.assertEqual(data["inbox_lines"], 0)
+            self.assertEqual(data["inbox_no_plan"], 0)
 
 
 if __name__ == "__main__":

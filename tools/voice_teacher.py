@@ -63,10 +63,18 @@ def hermetic_features(class_id: int) -> List[float]:
     return out
 
 
+# Precompute once — classify is O(n_cmd) with fixed refs (not re-hashed each call).
+_HERMETIC_TABLE: Tuple[Tuple[float, ...], ...] = tuple(
+    tuple(hermetic_features(c)) for c in range(N_CMD)
+)
+_ONEHOT_TABLE: Tuple[Tuple[float, ...], ...] = tuple(
+    tuple(1.0 if i == c else 0.0 for i in range(N_CMD)) for c in range(N_CMD)
+)
+
+
 def hermetic_classify(feat: Sequence[float]) -> int:
     best, best_d = 0, 1e300
-    for c in range(N_CMD):
-        ref = hermetic_features(c)
+    for c, ref in enumerate(_HERMETIC_TABLE):
         d = 0.0
         for a, b in zip(feat, ref):
             e = float(a) - float(b)
@@ -78,6 +86,8 @@ def hermetic_classify(feat: Sequence[float]) -> int:
 
 
 def onehot(c: int) -> List[float]:
+    if 0 <= c < N_CMD:
+        return list(_ONEHOT_TABLE[c])
     return [1.0 if i == c else 0.0 for i in range(N_CMD)]
 
 

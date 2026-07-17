@@ -7,28 +7,38 @@
 #   scripts/personal_ai_serve_proof.sh all          # hermetic + live
 #   BASE_PATH=/path/to/soul.cnb scripts/personal_ai_serve_proof.sh live
 set -euo pipefail
-REPO="$(cd "$(dirname "$0")/.." && pwd)"
-BASE="${BASE_PATH:-${CNET_BASE_PATH:-$REPO/soul_gemma4v2_final.cnb}}"
+# shellcheck source=personal_ai_common.sh
+. "$(cd "$(dirname "$0")" && pwd)/personal_ai_common.sh"
+cnet_load_personal_env
+BASE="$(cnet_default_base)"
 MODE="${1:-hermetic}"
 MAX="${SERVE_PROOF_MAX:-24}"
+JOBS="$(cnet_nproc)"
 
 info() { echo "serve_proof: $*"; }
 die() { echo "serve_proof: $*" >&2; exit 1; }
 
+mkdir -p "$REPO/logs"
+
 hermetic() {
   info "building + running hermetic post-seal serve gate"
-  make -C "$REPO" post_seal_serve -j"$(nproc 2>/dev/null || echo 2)"
-  grep -q "POST_SEAL_SERVE_PASS" "$REPO/logs/post_seal_serve.log"
-  grep "POST_SEAL_SERVE_PASS" "$REPO/logs/post_seal_serve.log"
+  make -C "$REPO" post_seal_serve -j"$JOBS"
+  grep -E "POST_SEAL_SERVE_PASS" "$REPO/logs/post_seal_serve.log"
 }
 
 live() {
   info "live serve proof on $BASE"
   [ -f "$BASE" ] || die "base missing: $BASE"
-  make -C "$REPO" serve_proof_cli -j"$(nproc 2>/dev/null || echo 2)"
+  make -C "$REPO" serve_proof_cli -j"$JOBS"
   [ -x "$REPO/bin/serve_proof" ] || die "bin/serve_proof missing"
+  # Capture exit of serve_proof, not tee
+  set +e
   "$REPO/bin/serve_proof" "$BASE" --max "$MAX" | tee "$REPO/logs/serve_proof_live.log"
-  grep -q "SERVE_PROOF_PASS" "$REPO/logs/serve_proof_live.log"
+  local rc=${PIPESTATUS[0]}
+  set -e
+  [ "$rc" -eq 0 ] || die "serve_proof exited $rc"
+  grep -q "SERVE_PROOF_PASS" "$REPO/logs/serve_proof_live.log" || die "SERVE_PROOF_PASS missing"
+  grep "SERVE_PROOF_PASS" "$REPO/logs/serve_proof_live.log"
 }
 
 case "$MODE" in

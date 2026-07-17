@@ -2,8 +2,9 @@
 # Measure the personal-AI loop: library size, inbox backlog, residual env, lane.
 # Usage: scripts/personal_ai_loop_report.sh [base.cnb]
 set -euo pipefail
-REPO="$(cd "$(dirname "$0")/.." && pwd)"
-BASE="${1:-${CNET_BASE_PATH:-$REPO/soul_gemma4v2_final.cnb}}"
+# shellcheck source=personal_ai_common.sh
+. "$(cd "$(dirname "$0")" && pwd)/personal_ai_common.sh"
+BASE="${1:-$(cnet_default_base)}"
 INBOX="${BASE}.inbox"
 LEDGER="${BASE}.gaps.txt"
 ENVF="$REPO/config/personal-ai.env"
@@ -16,46 +17,49 @@ if [ -x "$REPO/bin/cnet_plan" ]; then
 fi
 echo "base:   $BASE$([ -f "$BASE" ] && echo ' [ok]' || echo ' [MISSING]')"
 if [ -f "$BASE" ]; then
-  bytes=$(wc -c <"$BASE" | tr -d ' ')
-  echo "size:   $bytes bytes"
-fi
-if [ -x "$REPO/bin/cnb_audit" ] || [ -x "$REPO/bin/base" ]; then
-  :
-fi
-# Unit count via soul_host if built
-if [ -x "$REPO/bin/test_soul_residual" ] || [ -f "$REPO/cnet.so" ]; then
-  :
+  echo "size:   $(cnet_file_bytes "$BASE") bytes"
+  units=$(cnet_unit_count_fast "$BASE")
+  if [ -n "$units" ]; then
+    echo "units:  $units (cnb)"
+  elif command -v journalctl >/dev/null 2>&1; then
+    # Cheap fallback — journal last units= (no SoulHost load)
+    u=$(journalctl --user -u cnet-personal-ai-lane.service -n 20 --no-pager 2>/dev/null | \
+      grep -oE 'units=[0-9]+' | tail -1 | cut -d= -f2 || true)
+    [ -n "${u:-}" ] && echo "units:  $u (journal)"
+  fi
 fi
 if [ -f "$INBOX" ]; then
-  notes=$(grep -c . "$INBOX" 2>/dev/null || echo 0)
-  noplan=$(grep -c '^NO_PLAN' "$INBOX" 2>/dev/null || echo 0)
+  notes=$(cnet_count_lines "$INBOX" '.')
+  noplan=$(cnet_count_lines "$INBOX" '^NO_PLAN')
   echo "inbox:  $notes lines ($noplan NO_PLAN)"
 else
   echo "inbox:  absent"
 fi
 if [ -f "$LEDGER" ]; then
-  echo "ledger: $(wc -l <"$LEDGER" | tr -d ' ') lines"
+  echo "ledger: $(cnet_count_lines "$LEDGER" '.') lines"
 fi
 if [ -f "$ENVF" ]; then
   res=$(grep -E '^CNET_RESIDUAL_GGUF=' "$ENVF" | head -1 | cut -d= -f2- || true)
   echo "residual env: ${res:-unset}"
 fi
-if systemctl --user is-active --quiet cnet-personal-ai-lane.service 2>/dev/null; then
+if cnet_learner_active; then
   echo "learner: active"
   systemctl --user show cnet-personal-ai-lane.service -p MemoryCurrent --value 2>/dev/null | \
     awk '{printf "learner_rss_hint: %s\n", $0}'
 else
   echo "learner: inactive"
 fi
-if pgrep -x CnetMcpServer >/dev/null 2>&1; then
+if cnet_serve_active; then
   echo "serve:  CnetMcpServer running"
 else
   echo "serve:  not running"
 fi
-# Recent residual / structure-mine lines from journal
 if command -v journalctl >/dev/null 2>&1; then
   echo "--- recent residual/structure (journal, last 2h) ---"
   journalctl --user -u cnet-personal-ai-lane.service --since "2 hours ago" --no-pager 2>/dev/null | \
-    grep -E 'residual|structure-mined|teacher sleep|BATCHED|units=' | tail -20 || true
+    grep -E 'residual|structure-mined|teacher sleep|BATCHED|units=|local_eg|closed=' | tail -20 || true
+fi
+if [ -f "${BASE}.hill_climb.jsonl" ]; then
+  echo "eg_log: ${BASE}.hill_climb.jsonl ($(cnet_count_lines "${BASE}.hill_climb.jsonl" '.') lines)"
 fi
 echo "=== end report ==="
