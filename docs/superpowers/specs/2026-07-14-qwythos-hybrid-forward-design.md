@@ -204,12 +204,16 @@ as designed, not an oracle or teach-budget defect.
 teacher-ambiguous contexts abstain from the cert domain at mining time)
 + `CNET_CERT_SAMPLED=1` / `CNET_CERT_SAMPLE_COUNT=96` (Wilson ≥ 0.95,
 exactness-on-sample) + student 128→512 hidden / 20k epochs / adaptive.
-Recorded and replayable via `qwythos_english_v1.cnb.manifest.json`
-(committed; `CNET_MANIFEST=<file>` replays the full recipe including
-window fnv and the int8 golden battery). Note: the manifest's
-`build_rev` reflects the binary's compile-time rev — rebuild
-flagship_run after pulling before the full campaign so provenance
-records the current tree.
+Recorded via `qwythos_english_v1.cnb.manifest.json` (committed;
+`CNET_MANIFEST=<file>` replays the recipe parameters, window fnv, and int8
+golden battery). Exact historical-build replay is **not** available from the
+repository: this record truthfully says `source_dirty: 1`, and neither that
+dirty source state nor its executable is retained. `make campaign_provenance`
+therefore verifies the committed record fields plus window/golden hashes and
+the local base hash when present, while emitting `replayable=0`; it never
+rewrites the executable hash to match a current build. Future campaigns must
+start from a clean tree and retain the exact executable for full artifact
+replay verification.
 
 **Verified 2026-07-14**: 4-unit run under this posture —
 `attempted 4, acquired 4, deferred 0`, every unit 100% exact on its

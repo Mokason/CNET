@@ -18,7 +18,7 @@ The local fail-fast authority is:
 make release_integrity
 ```
 
-A release candidate is acceptable only when that umbrella returns zero, its full log contains no failure verdict, `git diff --check` passes, and the generated archive proves a reproducible extract/build/install/consumer round trip.
+A release candidate is acceptable only when that umbrella returns zero, its full log contains no failure verdict, `git diff --check` passes, and the generated archive proves a reproducible extract/build/install/consumer round trip. The Make entry point delegates to strict Bash `tests/run_release_integrity.sh`; its authority test injects a failing `make` and requires immediate nonzero exit, no later target calls, and no PASS marker before separately proving the success path. A PASS string from a non-fail-closed wrapper is not release evidence.
 
 ## Artifact handling
 

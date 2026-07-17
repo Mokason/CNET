@@ -1171,10 +1171,21 @@ campaign_provenance_unit: $(CCE_CAMPAIGN_PROVENANCE) include/cce/cce_campaign_pr
 	./$(BIN_DIR)/campaign_provenance_unit > logs/campaign_provenance.log 2>&1
 	@grep -q "CAMPAIGN_PROVENANCE_PASS" logs/campaign_provenance.log
 
-campaign_provenance: campaign_provenance_unit qwythos_english_v1.cnb.manifest.json qwythos_english_v1.cnb.sha256
-	@sha256sum -c qwythos_english_v1.cnb.sha256 > logs/qwythos_base_digest.log
-	./$(BIN_DIR)/campaign_provenance_unit qwythos_english_v1.cnb.manifest.json bin/flagship_run 939780e 1 > logs/qwythos_provenance.log 2>&1
-	@grep -q "CAMPAIGN_ARTIFACTS_PASS" logs/qwythos_provenance.log
+# The Qwythos campaign was recorded from source_dirty=1 and its exact binary
+# was not retained. Verify the immutable record/local artifacts without ever
+# relabelling today's flagship_run as the historical teacher.
+campaign_provenance: campaign_provenance_unit \
+		qwythos_english_v1.cnb.manifest.json qwythos_english_v1.cnb.sha256 \
+		english_window_256_qwythos.txt goldens_qwythos.int8.txt \
+		tests/test_qwythos_campaign_record.py
+	@python3 tests/test_qwythos_campaign_record.py > logs/qwythos_provenance.log 2>&1
+	@grep -q "QWYTHOS_CAMPAIGN_RECORD_PASS" logs/qwythos_provenance.log
+	@if [ -f qwythos_english_v1.cnb ]; then \
+		sha256sum -c qwythos_english_v1.cnb.sha256 > logs/qwythos_base_digest.log; \
+	else \
+		printf '%s\n' 'QWYTHOS_BASE_LOCAL_UNAVAILABLE record_only=1' \
+			> logs/qwythos_base_digest.log; \
+	fi
 
 execution_tiers_doc_gate: docs/EXECUTION_TIERS.md tests/test_execution_tiers_doc.sh Makefile tests/test_alt_paths_gate.c
 	@sh tests/test_execution_tiers_doc.sh > logs/execution_tiers_doc.log 2>&1
@@ -2201,47 +2212,13 @@ license_metadata_test: tests/test_license_metadata.py LICENSE README.md docs/REL
 	@python3 tests/test_license_metadata.py > logs/license_metadata_test.log 2>&1
 	@grep -q "LICENSE_METADATA_PASS" logs/license_metadata_test.log
 
-release_integrity_authority: tests/test_release_integrity_authority.py VERSION include/cnet_version.h docs/RELEASE_POLICY.md Makefile
+release_integrity_authority: tests/test_release_integrity_authority.py tests/run_release_integrity.sh VERSION include/cnet_version.h docs/RELEASE_POLICY.md Makefile
 	@mkdir -p logs
 	@python3 tests/test_release_integrity_authority.py > logs/release_integrity_authority.log 2>&1
 	@grep -q "RELEASE_INTEGRITY_AUTHORITY_PASS" logs/release_integrity_authority.log
 
-release_integrity:
-	@mkdir -p logs
-	@set -eu; { \
-		test -z "$$(git status --porcelain --untracked-files=no)" || { \
-			echo "RELEASE_INTEGRITY_DIRTY_START" >&2; exit 1; \
-		}; \
-		cleanup_release_generated() { \
-			if [ -f docs/verified-today.generated.md ]; then \
-				cp docs/verified-today.generated.md logs/verified-today.release.md || :; \
-				git restore -- docs/verified-today.generated.md || :; \
-			fi; \
-		}; \
-		trap cleanup_release_generated EXIT INT TERM; \
-		$(MAKE) --no-print-directory release_integrity_authority; \
-		$(MAKE) --no-print-directory license_metadata_test; \
-		$(MAKE) --no-print-directory real_model_control_plane_test; \
-		$(MAKE) --no-print-directory phase123_benchmark_test; \
-		$(MAKE) --no-print-directory phase5_integration_test; \
-		$(MAKE) --no-print-directory gguf_integrity; \
-		$(MAKE) --no-print-directory model_runtime_integrity; \
-		$(MAKE) --no-print-directory specialist_authority; \
-		$(MAKE) --no-print-directory persistence_integrity; \
-		$(MAKE) --no-print-directory mcp_protocol_survival; \
-		$(MAKE) --no-print-directory release_package; \
-		$(MAKE) --no-print-directory PORTABLE=1 ci_core; \
-		$(MAKE) --no-print-directory SKIP_RELEASE_PACKAGE=1 priority_acceptance; \
-		cleanup_release_generated; trap - EXIT INT TERM; \
-		git diff --check; git diff --cached --check; \
-		test -z "$$(git status --porcelain --untracked-files=no)"; \
-	} > logs/release_integrity.log.tmp 2>&1 || { \
-		rc=$$?; cat logs/release_integrity.log.tmp >&2; \
-		mv logs/release_integrity.log.tmp logs/release_integrity.log; exit $$rc; \
-	}
-	@mv logs/release_integrity.log.tmp logs/release_integrity.log
-	@echo "CNET_RELEASE_INTEGRITY_PASS" >> logs/release_integrity.log
-	@cat logs/release_integrity.log
+release_integrity: tests/run_release_integrity.sh
+	@bash tests/run_release_integrity.sh
 
 .PHONY: unified
 unified:

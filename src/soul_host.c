@@ -447,8 +447,13 @@ static void soul_counterfactual_shadow(SoulHost *h, const char *goal_tag,
     primary.route_score = count > 0
         ? alts[0].route_score + alts[0].contrast_margin
         : 1.0f;
-    snprintf(primary.branch_name, sizeof primary.branch_name, "%s",
-             branches[primary_idx].name);
+    {
+        const char *branch_name = branches[primary_idx].name;
+        size_t branch_name_len = strnlen(
+            branch_name, sizeof primary.branch_name - 1u);
+        memcpy(primary.branch_name, branch_name, branch_name_len);
+        primary.branch_name[branch_name_len] = '\0';
+    }
     consistency = cce_router_consistency_score(&primary, alts, count);
 
     len = snprintf(h->counterfactual_last, sizeof h->counterfactual_last,
