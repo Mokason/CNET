@@ -9,6 +9,11 @@ TS=$(date +%Y%m%dT%H%M%S)
 OUT="$REPO/logs/personal_ai_observe_${TS}.json"
 bash "$REPO/scripts/personal_ai_metrics.sh" "$BASE" >"$OUT"
 echo "observe: wrote $OUT"
+# Hill-climb EG snapshot (appended summary)
+if [ -x "$REPO/scripts/personal_ai_hill_climb_report.sh" ]; then
+  echo "--- hill-climb (7d) ---"
+  bash "$REPO/scripts/personal_ai_hill_climb_report.sh" "$BASE" 7 2>/dev/null || true
+fi
 if command -v python3 >/dev/null 2>&1; then
   python3 - <<PY
 import json

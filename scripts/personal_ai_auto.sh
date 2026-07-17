@@ -193,9 +193,10 @@ case "$cmd" in
   grow) bash "$REPO/scripts/personal_ai_campaign_nudge.sh" "${2:-16}" ;;
   observe) bash "$REPO/scripts/personal_ai_observe.sh" "$BASE" ;;
   metrics) bash "$REPO/scripts/personal_ai_metrics.sh" "$BASE" ;;
+  hillclimb|eg) bash "$REPO/scripts/personal_ai_hill_climb_report.sh" "$BASE" "${2:-7}" ;;
   *)
     cat <<EOF
-usage: $0 prepare|install|start|stop|status|doctor|grow|observe|metrics
+usage: $0 prepare|install|start|stop|status|doctor|grow|observe|metrics|hillclimb
 
 Automatic Personal AI:
   1. prepare  — build learner binary + check base/teacher + placement doctor
@@ -205,6 +206,7 @@ Automatic Personal AI:
   grow        — seed inbox + campaign nudge (library growth)
   observe     — A: snapshot metrics JSON under logs/
   metrics     — JSON metrics to stdout
+  hillclimb   — local EG report (days optional, default 7)
 
 Env: BASE_PATH TEACHER SERVE=0|1 TICK_SECONDS
      RESIDUAL / CNET_RESIDUAL_GGUF  (Tier C; also config/personal-ai.env)

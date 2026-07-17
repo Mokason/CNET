@@ -64,6 +64,7 @@
 #include "../include/nn.h"
 #include "../include/router.h"
 #include "../include/cnet_curiosity.h"
+#include "../include/cnet_eg.h"
 #include "../include/cce/cce_detect.h"
 #include "../include/cce/cce_gguf.h"
 
@@ -776,6 +777,7 @@ int main(int argc, char **argv) {
                 CnetCuriosityConfig cc;
                 CnetCuriosityReport cr;
                 size_t open_now = 0, oj;
+                uint64_t cur_prop = 0;
                 for (oj = 0; oj < lane.ledger.count; oj++)
                     if (lane.ledger.gaps[oj].status == GAP_OPEN) open_now++;
                 cnet_curiosity_config_from_env(&cc);
@@ -785,11 +787,28 @@ int main(int argc, char **argv) {
                     snprintf(cc.state_path, sizeof cc.state_path, "%s.curiosity",
                              argv[1]);
                 (void)cnet_curiosity_tick(&cc, &lane.reg, open_now, &cr);
+                cur_prop = (uint64_t)cr.proposed;
                 if (cr.proposed > 0) {
                     printf("gap_lane_run: curiosity proposed=%zu "
                            "skipped_covered=%zu budget_skip=%zu\n",
                            cr.proposed, cr.skipped_covered, cr.skipped_budget);
                     fflush(stdout);
+                }
+                /* Local EG telemetry (MAI-style hill-climb log). */
+                if (did_work || cur_prop > 0) {
+                    char eg_path[560];
+                    const char *eg_env = getenv("CNET_EG_LOG");
+                    if (eg_env && eg_env[0])
+                        snprintf(eg_path, sizeof eg_path, "%s", eg_env);
+                    else
+                        snprintf(eg_path, sizeof eg_path, "%s.hill_climb.jsonl",
+                                 argv[1]);
+                    (void)cnet_eg_log_tick(
+                        eg_path, (uint64_t)tick_no,
+                        (uint64_t)r.drain.examined, (uint64_t)r.drain.closed,
+                        (uint64_t)r.drain.deferred,
+                        (uint64_t)r.drain.skipped_no_oracle,
+                        (uint64_t)lane.reg.count, cur_prop);
                 }
             }
 

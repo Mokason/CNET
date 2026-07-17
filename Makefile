@@ -199,6 +199,7 @@ HYBRID_AI_SRC := src/hybrid_ai.c
 RESIDUAL_GGUF_SRC := src/residual_gguf.c
 PILOT_SRC := src/cnet_pilot.c
 CURIOSITY_SRC := src/cnet_curiosity.c
+EG_SRC := src/cnet_eg.c
 PLACEMENT_SRC := src/cnet_placement.c
 CCE_MODEL_CATALOG := src/cce/cce_model_catalog.c
 MODEL_PROBE := src/model_probe.c
@@ -1768,11 +1769,11 @@ gap_lane: $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(S
 # flags and source revision (see lm_toolchain_identity in gap_lane_run.c)
 gap_lane_run_build: CNET_SRC_REV := $(shell git rev-parse --short=16 HEAD 2>/dev/null || echo unknown)
 gap_lane_run_build: CFLAGS := $(CFLAGS) $(OMPFLAGS) -DCNET_TOOLCHAIN_CFLAGS="\"$(CFLAGS) $(OMPFLAGS)\"" -DCNET_SOURCE_REV="\"$(CNET_SRC_REV)\""
-gap_lane_run_build: $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(GAP_LANE_SRC) $(CURIOSITY_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) tests/gap_lane_run.c
+gap_lane_run_build: $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(GAP_LANE_SRC) $(CURIOSITY_SRC) $(EG_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) tests/gap_lane_run.c
 	@mkdir -p $(BIN_DIR)
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/gap_lane_run \
 		$(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) \
-		$(GAP_LANE_SRC) $(CURIOSITY_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) \
+		$(GAP_LANE_SRC) $(CURIOSITY_SRC) $(EG_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) \
 		$(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) \
 		tests/gap_lane_run.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -pthread
 
@@ -1903,13 +1904,27 @@ recipe_proposals: tools/propose_recipe_improvements.py
 	@grep "RECIPE_PROPOSALS_PASS" logs/recipe_proposals.log
 
 # Full hermetic umbrella for the 4-phase self-improve/resource program.
-unified_self_improve: resource_governor counterfactual_order self_improve deploy_profile recipe_proposals gap_lane_service_config campaign_v2_fast multimodal_v0 personal_ai hybrid_ai hybrid_bench residual_gguf colibri_integrate curiosity
+unified_self_improve: resource_governor counterfactual_order self_improve deploy_profile recipe_proposals gap_lane_service_config campaign_v2_fast multimodal_v0 personal_ai hybrid_ai hybrid_bench residual_gguf colibri_integrate curiosity eg
 	@echo "UNIFIED_SELF_IMPROVE_PASS"
 
 # Personal AI: local certified library first; big-AI teacher only on gaps.
 .PHONY: personal_ai
 
 .PHONY: curiosity
+
+.PHONY: eg cnet_eg_cli
+eg: $(EG_SRC) tests/test_cnet_eg.c include/cnet_eg.h
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -o $(BIN_DIR)/test_cnet_eg $(EG_SRC) tests/test_cnet_eg.c -lm
+	@./$(BIN_DIR)/test_cnet_eg > logs/cnet_eg.log 2>&1
+	@grep -q "EG_PASS" logs/cnet_eg.log
+	@grep "EG_PASS" logs/cnet_eg.log
+
+cnet_eg_cli: $(EG_SRC) include/cnet_eg.h tools/cnet_eg.c
+	@mkdir -p $(BIN_DIR)
+	$(CC) $(CFLAGS) -o $(BIN_DIR)/cnet_eg $(EG_SRC) tools/cnet_eg.c -lm
+	@echo "Built bin/cnet_eg (compute|report|log)"
+
 curiosity: $(CURIOSITY_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) tests/test_curiosity.c include/cnet_curiosity.h
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) $(CFLAGS) -o $(BIN_DIR)/test_curiosity \

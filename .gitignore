@@ -25,6 +25,8 @@ altmodel_gpt2_gap_cache/
 *.cnb.inbox
 *.cnb.gaps.txt
 *.cnb.recert.txt
+*.cnb.curiosity
+*.cnb.hill_climb.jsonl
 *.cnetpack
 suggestions/*.jsonl
 cnet.so
