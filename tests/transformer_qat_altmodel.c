@@ -2,13 +2,15 @@
  * DIFFERENT model than Supra, to prove the trainer/loader/forward are not tied
  * to Supra's specific dimensions.
  *
- * The Supra decomposer (cce_supra_load_decomposed) is hardwired to 4 layers /
- * 4 heads and Supra's tensor NAMES, and cce_supra_decomposed has fixed [4]
- * LayerNorm arrays — so a "different model" here is a 4-layer model in Supra's
- * naming with EVERY FREE DIMENSION changed (n_embd, vocab, block, mlp), built by
- * tools/gen_altmodel.py into ./altmodel_cache. This exercises the trainer at a
- * config the real-Supra test never touches (D128 vs 256, V2000 vs 50520,
- * B96 vs 384, mlp512 vs 1024, head_dim 32 vs 64).
+ * Historical note: when this gate was written the Supra decomposer hardwired
+ * 4 layers / 4 heads and Supra's tensor NAMES (fixed [4] LN arrays), so the
+ * "different model" is a 4-layer model in Supra's naming with EVERY FREE
+ * DIMENSION changed (n_embd, vocab, block, mlp), built by tools/gen_altmodel.py
+ * into ./altmodel_cache. It stays that way as the free-dimension gate (D128 vs
+ * 256, V2000 vs 50520, B96 vs 384, mlp512 vs 1024, head_dim 32 vs 64); the
+ * decomposer has since been generalized (schema table, counted n_layer,
+ * metadata n_head) and transformer_qat_gpt2names covers other layer counts,
+ * GPT-2-style naming, Conv1D layout, and tied heads.
  *
  * The proof is forward parity: FP-mode cce_transformer_qat_logits must match
  * cce_supra_gpt_forward on this different model, exactly as it did for Supra.

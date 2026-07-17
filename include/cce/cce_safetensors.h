@@ -79,6 +79,13 @@ cce_result cce_safetensors_get_meta(const cce_safetensors* st, int idx,
 /* Find by exact name (case sensitive). Returns index or -1. */
 int cce_safetensors_find(const cce_safetensors* st, const char* name);
 
+/* Look up a string value in the header's "__metadata__" map (free-form
+ * string->string pairs real safetensors files may carry, e.g. {"n_head":"12"}).
+ * Returns 1 and copies the value into buf when the key is present, 0 otherwise.
+ * Single-file checkpoints only (sharded indexes expose no metadata here). */
+int cce_safetensors_meta_lookup(const cce_safetensors* st, const char* key,
+                                char* buf, size_t cap);
+
 /* Load one tensor as owned cce_tensor (always F32; converts F16 on the fly if possible).
  * Caller must cce_tensor_free the result if owns_memory.
  * For large models, prefer loading specific tensors rather than everything.
@@ -210,19 +217,26 @@ int cce_hf_build_resolve_url(char* buf, size_t cap,
                              const char* filename,
                              const char* revision);
 
-/* ---- Supra-A2A-Nano-Exp specific loader (decomposed, non-monolithic) ---- */
+/* ---- GPT-style decomposed loader (non-monolithic; Supra is one input) ---- */
 
-/* Decomposed representation of the Supra model.
+/* Decomposed representation of a GPT-shaped transformer checkpoint.
  * All heavy linear projections live in the forest as independent tiny cascades.
  * Embed tables and VQ conv weights are kept as first-class cce_tensor so they
  * can be used with cce_tensor_embed / custom conv without forcing a monolithic object.
+ *
+ * The loader is schema-driven: it recognizes Supra's tensor naming
+ * ("blocks.{i}.attn.qkv", torch Linear [out,in] weights) and GPT-2-style naming
+ * ("h.{i}.attn.c_attn", Conv1D [in,out] weights, tied lm_head), with n_layer
+ * counted from the actual per-layer tensors and n_head taken from the file's
+ * "__metadata__" (key "n_head") or a sibling config.json ("n_head" /
+ * "num_attention_heads"), defaulting to Supra's documented 4.
  */
 typedef struct {
     cce_forest*   forest;          /* owns all the linear specialist cascades */
     cce_tensor    tok_emb;         /* [vocab, dim] */
     cce_tensor    pos_emb;         /* [block_size, dim] */
-    cce_tensor    ln1_w[4], ln1_b[4];
-    cce_tensor    ln2_w[4], ln2_b[4];
+    cce_tensor    *ln1_w, *ln1_b;  /* heap arrays [n_layer] (was fixed [4]) */
+    cce_tensor    *ln2_w, *ln2_b;  /* heap arrays [n_layer] */
     cce_tensor    ln_f_w, ln_f_b;
     cce_tensor    vq_enc_w[3], vq_enc_b[3];   /* full encoder conv weights (4D) */
     cce_tensor    vq_dec_w[3], vq_dec_b[3];   /* decoder transposed conv */
@@ -241,15 +255,22 @@ typedef struct {
     uint8_t*      tok_emb_trit;        /* [vocab * ceil(n_embd/5)] */
     float*        tok_emb_scale;       /* [vocab] per-row absmean */
     int           tok_emb_trit_bpr;    /* bytes per row = ceil(n_embd/5) */
+    /* provenance of the load (informational) */
+    const char*   naming_schema;       /* "supra" / "gpt2" (static string); NULL for packed reloads */
+    int           head_tied;           /* 1 = logits head tied to tok_emb (no separate head tensor) */
     cce_context_routing_mode context_routing_mode;
     cce_specialist_kv_budget kv_budget;
     cce_compression_grads compression_grads;
 } cce_supra_decomposed;
 
-/* Load (and decompose) the Supra model into independent CNet specialists.
- * cache_dir: where to store/reuse the downloaded weights (NULL = "supra_cache").
- *            The 118 MB model + VQ are downloaded ONCE and reused every session.
- * revision:  HF revision (NULL = "main"). */
+/* Load (and decompose) a GPT-shaped model into independent CNet specialists.
+ * cache_dir: where the weights live (NULL = "supra_cache"). A missing
+ *            model.safetensors is downloaded ONCE from the Supra repo and
+ *            reused every session; any pre-populated cache dir (e.g. a local
+ *            GPT-2-style checkpoint) is used as-is, no network.
+ * revision:  HF revision (NULL = "main").
+ * n_layer / tensor names are discovered per the schema table (see the struct
+ * comment); n_head comes from safetensors "__metadata__" or config.json. */
 cce_result cce_supra_load_decomposed(cce_supra_decomposed** out,
                                      const char* cache_dir /* NULL = "supra_cache" */,
                                      const char* revision  /* NULL = main */);

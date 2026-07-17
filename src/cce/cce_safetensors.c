@@ -19,6 +19,8 @@
 #endif
 
 /* Internal representation */
+#define CCE_ST_MAX_META_KV 16    /* captured "__metadata__" string pairs */
+
 struct cce_safetensors {
     cce_safetensor_meta metas[CCE_ST_MAX_TENSORS];
     int count;
@@ -26,6 +28,10 @@ struct cce_safetensors {
     uint64_t header_len;         /* single-file header len (unused when sharded) */
     uint64_t data_section_size;  /* total bytes after the header (summed over shards) */
     char last_err[256];
+    /* "__metadata__" string->string pairs (single-file loads; first N kept) */
+    int  meta_kv_count;
+    char meta_kv_key[CCE_ST_MAX_META_KV][CCE_ST_MAX_NAME];
+    char meta_kv_val[CCE_ST_MAX_META_KV][CCE_ST_MAX_NAME];
     /* sharded checkpoint support (model.safetensors.index.json).
        shard_count == 0 means the classic single-file layout; otherwise each
        tensor knows which shard file it lives in and reads use that shard's
@@ -228,6 +234,42 @@ static int skip_json_value(const char* s, int* i, int n) {
     return 1;
 }
 
+/* Parse the "__metadata__" value — a flat string->string map — capturing up to
+   max_kv pairs into st (non-string values are skipped, not errors). Returns 1
+   on a well-formed map, 0 on malformed json (caller then falls back to skip). */
+static int parse_meta_map(const char* s, int* i, int n, cce_safetensors* st) {
+    skip_ws(s, i, n);
+    if (*i >= n || s[*i] != '{') return 0;
+    (*i)++;
+    while (*i < n) {
+        skip_ws(s, i, n);
+        if (*i < n && s[*i] == '}') { (*i)++; return 1; }
+
+        char key[CCE_ST_MAX_NAME];
+        if (!parse_string(s, i, n, key, sizeof(key))) return 0;
+        skip_ws(s, i, n);
+        if (*i >= n || s[*i] != ':') return 0;
+        (*i)++;
+        skip_ws(s, i, n);
+
+        if (*i < n && s[*i] == '"') {
+            char val[CCE_ST_MAX_NAME];
+            if (!parse_string(s, i, n, val, sizeof(val))) return 0;
+            if (st && st->meta_kv_count < CCE_ST_MAX_META_KV) {
+                int k = st->meta_kv_count++;
+                snprintf(st->meta_kv_key[k], sizeof(st->meta_kv_key[k]), "%s", key);
+                snprintf(st->meta_kv_val[k], sizeof(st->meta_kv_val[k]), "%s", val);
+            }
+        } else {
+            if (!skip_json_value(s, i, n)) return 0;  /* spec says strings only; tolerate */
+        }
+
+        skip_ws(s, i, n);
+        if (*i < n && s[*i] == ',') { (*i)++; continue; }
+    }
+    return 0;
+}
+
 /* Parse one tensor entry object after the colon */
 static int parse_tensor_entry(const char* s, int* i, int n,
                               cce_safetensor_meta* m) {
@@ -280,7 +322,8 @@ static int parse_tensor_entry(const char* s, int* i, int n,
 
 static int parse_safetensors_header(const char* json, size_t jlen,
                                     cce_safetensor_meta* metas, int max_meta,
-                                    int* out_count) {
+                                    int* out_count,
+                                    cce_safetensors* meta_sink /* may be NULL */) {
     int i = 0, n = (int)jlen;
     *out_count = 0;
     skip_ws(json, &i, n);
@@ -300,9 +343,15 @@ static int parse_safetensors_header(const char* json, size_t jlen,
         skip_ws(json, &i, n);
 
         /* The "__metadata__" entry is a free-form string->string map, not a
-           tensor. Skip its value and continue (real HF files always have it). */
+           tensor. Capture its pairs when a sink is given (falling back to a
+           plain skip on malformed content) and continue. */
         if (strcmp(name, "__metadata__") == 0) {
-            if (!skip_json_value(json, &i, n)) return CCE_ERR_UNSUPPORTED;
+            int save = i;
+            if (!meta_sink || !parse_meta_map(json, &i, n, meta_sink)) {
+                i = save;
+                if (meta_sink) meta_sink->meta_kv_count = 0; /* partial capture is worthless */
+                if (!skip_json_value(json, &i, n)) return CCE_ERR_UNSUPPORTED;
+            }
             skip_ws(json, &i, n);
             if (i < n && json[i] == ',') { i++; }
             continue;
@@ -344,7 +393,8 @@ static size_t shape_numel(const int* shape, int ndim) {
 static cce_result st_parse_file(const char* path,
                                 cce_safetensor_meta* metas, int max_meta,
                                 int* out_count, uint64_t* out_hlen,
-                                uint64_t* out_dsize) {
+                                uint64_t* out_dsize,
+                                cce_safetensors* meta_sink /* may be NULL */) {
     FILE* f = fopen(path, "rb");
     if (!f) {
         snprintf(g_last_err, sizeof(g_last_err), "cannot open: %s", path);
@@ -392,7 +442,7 @@ static cce_result st_parse_file(const char* path,
 
     int parsed = 0;
     cce_result rc = parse_safetensors_header(hbuf, (size_t)hlen,
-                                             metas, max_meta, &parsed);
+                                             metas, max_meta, &parsed, meta_sink);
     free(hbuf);
     if (rc != CCE_OK) {
         st_set_err(NULL, "header json parse failed: %s", path);
@@ -484,7 +534,8 @@ cce_result cce_safetensors_load(const char* path, cce_safetensors** st_out) {
     strncpy(st->path, path, sizeof(st->path)-1);
 
     cce_result rc = st_parse_file(path, st->metas, CCE_ST_MAX_TENSORS,
-                                  &st->count, &st->header_len, &st->data_section_size);
+                                  &st->count, &st->header_len, &st->data_section_size,
+                                  st /* capture __metadata__ */);
     if (rc != CCE_OK) { free(st); return rc; }
 
     /* success */
@@ -618,7 +669,7 @@ cce_result cce_safetensors_load_sharded(const char* index_path, cce_safetensors*
     /* parse each shard; every tensor must match the weight_map exactly */
     for (int s = 0; s < file_count; s++) {
         int cnt = 0; uint64_t hlen = 0, dsz = 0;
-        rc = st_parse_file(st->shard_path[s], tmp, CCE_ST_MAX_TENSORS, &cnt, &hlen, &dsz);
+        rc = st_parse_file(st->shard_path[s], tmp, CCE_ST_MAX_TENSORS, &cnt, &hlen, &dsz, NULL);
         if (rc != CCE_OK) goto fail;   /* g_last_err already names the shard problem */
         st->shard_header_len[s] = hlen;
         st->data_section_size += dsz;
@@ -692,6 +743,18 @@ int cce_safetensors_find(const cce_safetensors* st, const char* name) {
         if (strcmp(st->metas[i].name, name) == 0) return i;
     }
     return -1;
+}
+
+int cce_safetensors_meta_lookup(const cce_safetensors* st, const char* key,
+                                char* buf, size_t cap) {
+    if (!st || !key) return 0;
+    for (int i = 0; i < st->meta_kv_count; i++) {
+        if (strcmp(st->meta_kv_key[i], key) == 0) {
+            if (buf && cap) snprintf(buf, cap, "%s", st->meta_kv_val[i]);
+            return 1;
+        }
+    }
+    return 0;
 }
 
 /* Internal: read raw bytes for a tensor into a malloc'd buffer.
@@ -1292,7 +1355,9 @@ static int add_linear_specialist_from_st(cce_forest* forest,
                                          const cce_safetensors* st,
                                          const char* weight_name,
                                          const char* branch_name,
-                                         float init_scale) {
+                                         float init_scale,
+                                         int transpose /* 1 = torch Linear [out,in];
+                                                          0 = GPT-2 Conv1D [in,out] */) {
     int wi = cce_safetensors_find(st, weight_name);
     if (wi < 0) return -1;
 
@@ -1302,8 +1367,9 @@ static int add_linear_specialist_from_st(cce_forest* forest,
         return -1;
     }
 
-    int in_d  = w.shape[1];   /* torch convention [out, in] */
-    int out_d = w.shape[0];
+    int in_d, out_d;
+    if (transpose) { in_d = w.shape[1]; out_d = w.shape[0]; }  /* torch [out, in] */
+    else           { in_d = w.shape[0]; out_d = w.shape[1]; }  /* Conv1D [in, out] */
 
     cce_cascade* cas = NULL;
     if (cce_cascade_create(&cas, 2) != CCE_OK) {
@@ -1332,9 +1398,9 @@ static int add_linear_specialist_from_st(cce_forest* forest,
         char* suffix = strstr(bias_name, ".weight");
         if (suffix) memcpy(suffix, ".bias\0\0", 7); else bias_name[0] = 0;
     }
-    /* populate will transpose because torch Linear weight is [out,in] */
+    /* transpose=1: torch Linear [out,in] -> CCE [in,out]; 0: Conv1D copies verbatim */
     rc = cce_safetensors_populate_block(blk, st, weight_name,
-                                        bias_name[0] ? bias_name : NULL, 1 /*transpose*/);
+                                        bias_name[0] ? bias_name : NULL, transpose);
     if (rc != CCE_OK) {
         /* fallback: direct copy if shapes happened to match */
         if (blk->weights.numel == w.numel) {
@@ -1352,6 +1418,22 @@ static int add_linear_specialist_from_st(cce_forest* forest,
 
     cce_tensor_free(&w);
     return branch_idx;
+}
+
+/* Checked specialist add: a failed add (missing/bad tensor, forest full or
+   archive error) must abort the load — a silently dropped specialist produces
+   a model that forwards garbage. Returns 1 on success; on failure records the
+   error and reports the exact branch on stderr, returning 0 so the caller can
+   fail closed. */
+static int supra_add_checked(cce_forest* forest, const cce_safetensors* st,
+                             const char* tname, const char* bname,
+                             float init_scale, int transpose) {
+    if (add_linear_specialist_from_st(forest, st, tname, bname, init_scale, transpose) >= 0)
+        return 1;
+    st_set_err(NULL, "specialist add failed: %s (from tensor %s)", bname, tname);
+    fprintf(stderr, "cce_supra_load_decomposed: failed to add specialist '%s' "
+                    "from tensor '%s' -- refusing load\n", bname, tname);
+    return 0;
 }
 
 #define SUPRA_REPO "SupraLabs/Supra-A2A-Nano-Exp"
@@ -1407,6 +1489,140 @@ static cce_result cce_supra_fetch_file(const char* cache_dir, const char* filena
     return CCE_OK;
 }
 
+/* ---- tensor-name schemas (which checkpoint namings the decomposer speaks) ----
+   A small template table, one row per naming family. Per-layer entries are
+   printf formats taking the layer index; ".weight"/".bias" are appended.
+   conv1d_blocks says how the BLOCK projections are stored on disk:
+     0 = torch nn.Linear [out,in]  (transposed into the forest's [in,out])
+     1 = GPT-2 Conv1D    [in,out]  (copied verbatim)
+   The explicit head (when present) is always nn.Linear [vocab,n_embd] in both
+   families (HF GPT-2's lm_head is a Linear even though its blocks are Conv1D);
+   a missing head tensor means GPT-2-style weight tying (head = tok_emb). */
+typedef struct {
+    const char* name;          /* schema id (also published on the struct) */
+    const char* tok_emb;       /* [vocab, n_embd] — also the schema probe key */
+    const char* pos_emb;       /* [block_size, n_embd] */
+    const char* ln1_fmt;       /* per-layer prefixes (".weight"/".bias" appended) */
+    const char* ln2_fmt;
+    const char* qkv_fmt;       /* fused qkv projection */
+    const char* attn_proj_fmt;
+    const char* mlp_up_fmt;
+    const char* mlp_down_fmt;
+    const char* ln_f;          /* final-LN prefix */
+    const char* head;          /* explicit logits head weight (absent -> tied) */
+    int         conv1d_blocks;
+} supra_name_schema;
+
+static const supra_name_schema k_supra_schemas[] = {
+    { "supra", "tok_emb.weight", "pos_emb.weight",
+      "blocks.%d.ln1",      "blocks.%d.ln2",
+      "blocks.%d.attn.qkv", "blocks.%d.attn.proj",
+      "blocks.%d.mlp.0",    "blocks.%d.mlp.2",
+      "ln_f", "head.weight", 0 },
+    { "gpt2",  "wte.weight", "wpe.weight",
+      "h.%d.ln_1",          "h.%d.ln_2",
+      "h.%d.attn.c_attn",   "h.%d.attn.c_proj",
+      "h.%d.mlp.c_fc",      "h.%d.mlp.c_proj",
+      "ln_f", "lm_head.weight", 1 },
+};
+
+/* Pick the first schema whose embedding-table tensor exists in the file. */
+static const supra_name_schema* supra_detect_schema(const cce_safetensors* st) {
+    for (size_t s = 0; s < sizeof(k_supra_schemas)/sizeof(k_supra_schemas[0]); ++s)
+        if (cce_safetensors_find(st, k_supra_schemas[s].tok_emb) >= 0)
+            return &k_supra_schemas[s];
+    return NULL;
+}
+
+/* Build "<fmt % layer><suffix>" (e.g. "h.%d.ln_1" + 3 + ".weight"). */
+static void supra_tname(char* out, size_t cap, const char* fmt, int layer,
+                        const char* suffix) {
+    char base[CCE_ST_MAX_NAME - 16];   /* headroom for ".weight"/".bias" */
+    snprintf(base, sizeof(base), fmt, layer);
+    snprintf(out, cap, "%s%s", base, suffix);
+}
+
+/* n_layer = number of consecutive per-layer LN1 weight tensors, from 0.
+   Cross-check: an LN1 weight numbered >= that count means the layer indices
+   are NOT consecutive (e.g. h.0..h.2 present, h.3 missing, h.4 present) and
+   a plain count would silently load a truncated model. Returns -1 on such a
+   numbering gap so the caller can refuse the load (fail closed). */
+static int supra_count_layers(const cce_safetensors* st, const supra_name_schema* sc) {
+    char buf[CCE_ST_MAX_NAME];
+    char scanfmt[CCE_ST_MAX_NAME + 16];
+    int l = 0, i;
+    while (l < CCE_ST_MAX_TENSORS) {
+        supra_tname(buf, sizeof(buf), sc->ln1_fmt, l, ".weight");
+        if (cce_safetensors_find(st, buf) < 0) break;
+        ++l;
+    }
+    /* Gap scan over every tensor name: reuse ln1_fmt as a scanf pattern (its
+       "%d" now PARSES the layer index); "%n" pins the full-name match. */
+    snprintf(scanfmt, sizeof(scanfmt), "%s.weight%%n", sc->ln1_fmt);
+    for (i = 0; i < st->count; ++i) {
+        int idx = -1, used = -1;
+        if (sscanf(st->metas[i].name, scanfmt, &idx, &used) >= 1 &&
+            used == (int)strlen(st->metas[i].name) && idx >= l)
+            return -1;
+    }
+    return l;
+}
+
+/* Best-effort integer field scan over a small sibling config.json (the file HF
+   checkpoints ship next to the weights, e.g. GPT-2's {"n_head": 12, ...}).
+   A scan, not a JSON parser: finds "key" and reads the number after ':'. */
+static int supra_config_int(const char* cache_dir, const char* key, int* out_val) {
+    char path[512];
+    snprintf(path, sizeof(path), "%s/config.json", cache_dir);
+    FILE* f = fopen(path, "rb");
+    if (!f) return 0;
+    char buf[65536];
+    size_t got = fread(buf, 1, sizeof(buf) - 1, f);
+    fclose(f);
+    buf[got] = 0;
+    char pat[80];
+    snprintf(pat, sizeof(pat), "\"%s\"", key);
+    const char* p = strstr(buf, pat);
+    if (!p) return 0;
+    p += strlen(pat);
+    while (*p == ' ' || *p == '\t' || *p == ':') p++;
+    if (*p < '0' || *p > '9') return 0;
+    *out_val = atoi(p);
+    return 1;
+}
+
+/* n_head cannot be recovered from tensor shapes. Priority: safetensors
+   "__metadata__" (key "n_head"), then config.json ("n_head" or HF's
+   "num_attention_heads"). The final 4 is Supra's documented head count and is
+   legitimate ONLY for the "supra" schema; for any other schema a guessed
+   n_head silently builds wrong attention geometry, so return 0 and let the
+   caller refuse the load (fail closed). */
+static int supra_resolve_n_head(const cce_safetensors* st, const char* cache_dir,
+                                const supra_name_schema* sc) {
+    char val[CCE_ST_MAX_NAME];
+    int v = 0;
+    if (cce_safetensors_meta_lookup(st, "n_head", val, sizeof(val)) &&
+        (v = atoi(val)) > 0) return v;
+    if (supra_config_int(cache_dir, "n_head", &v) && v > 0) return v;
+    if (supra_config_int(cache_dir, "num_attention_heads", &v) && v > 0) return v;
+    return (strcmp(sc->name, "supra") == 0) ? 4 : 0;
+}
+
+/* Heap LN arrays sized [n_layer] (was fixed [4]). calloc'd so cce_tensor_free
+   on never-loaded entries is a no-op. */
+static cce_result supra_alloc_ln_arrays(cce_supra_decomposed* m, int n_layer) {
+    m->ln1_w = (cce_tensor*)calloc((size_t)n_layer, sizeof(cce_tensor));
+    m->ln1_b = (cce_tensor*)calloc((size_t)n_layer, sizeof(cce_tensor));
+    m->ln2_w = (cce_tensor*)calloc((size_t)n_layer, sizeof(cce_tensor));
+    m->ln2_b = (cce_tensor*)calloc((size_t)n_layer, sizeof(cce_tensor));
+    if (!m->ln1_w || !m->ln1_b || !m->ln2_w || !m->ln2_b) {
+        free(m->ln1_w); free(m->ln1_b); free(m->ln2_w); free(m->ln2_b);
+        m->ln1_w = m->ln1_b = m->ln2_w = m->ln2_b = NULL;
+        return CCE_ERR_OOM;
+    }
+    return CCE_OK;
+}
+
 cce_result cce_supra_load_decomposed(cce_supra_decomposed** out, const char* cache_dir,
                                      const char* revision) {
     if (!out) return CCE_ERR_INVALID_ARG;
@@ -1419,111 +1635,189 @@ cce_result cce_supra_load_decomposed(cce_supra_decomposed** out, const char* cac
     cce_supra_cache_dir(cache_dir, cdir, sizeof(cdir));
     supra_ensure_dir(cdir);
 
-    /* Archive for the linear specialists (rebuilt each session from cached weights;
-       cheap CPU work — the expensive 118 MB download is what the cache avoids). */
-    char tmp_path[320];
-    snprintf(tmp_path, sizeof(tmp_path), "%s/supra_a2a_nano_decomp.cce", cdir);
-    remove(tmp_path);
-
-    if (cce_forest_open(&m->forest, tmp_path, 64) != CCE_OK) {
-        free(m);
-        return CCE_ERR_IO;
-    }
-
     /* --- GPT weights (cached: download once, reuse every session) --- */
     cce_safetensors* gpt = NULL;
     cce_result rc = supra_open_repo_st(cdir, "model.safetensors", revision, &gpt);
     if (rc != CCE_OK || !gpt) {
-        cce_forest_close(m->forest);
         free(m);
         return rc ? rc : CCE_ERR_IO;
     }
 
-    /* Recover hyperparams from shapes */
-    int wi = cce_safetensors_find(gpt, "tok_emb.weight");
+    /* Which naming family is this checkpoint? (schema table, not an if-chain) */
+    const supra_name_schema* sc = supra_detect_schema(gpt);
+    if (!sc) {
+        st_set_err(NULL, "no known tensor-name schema (tried: supra, gpt2)");
+        cce_safetensors_free(gpt);
+        free(m);
+        return CCE_ERR_UNSUPPORTED;
+    }
+    m->naming_schema = sc->name;
+    int transpose = sc->conv1d_blocks ? 0 : 1;
+
+    /* Recover hyperparams: shapes for the sizes, per-layer tensor count for
+       n_layer, metadata/config.json for n_head (see supra_resolve_n_head). */
+    int wi = cce_safetensors_find(gpt, sc->tok_emb);
     if (wi >= 0) {
         cce_safetensor_meta meta = {0};
         cce_safetensors_get_meta(gpt, wi, &meta);
         m->vocab_size = meta.shape[0];
         m->n_embd     = meta.shape[1];
     }
-    wi = cce_safetensors_find(gpt, "pos_emb.weight");
+    wi = cce_safetensors_find(gpt, sc->pos_emb);
     if (wi >= 0) {
         cce_safetensor_meta meta = {0};
         cce_safetensors_get_meta(gpt, wi, &meta);
         m->block_size = meta.shape[0];
     }
-    m->n_layer = 4;
-    m->n_head  = 4;   /* as documented */
+    m->n_layer = supra_count_layers(gpt, sc);
+    if (m->n_layer < 0) {
+        st_set_err(NULL, "layer numbering gap in schema '%s'", sc->name);
+        fprintf(stderr, "cce_supra_load_decomposed: layer numbering gap (a "
+                        "per-layer tensor exists past the consecutive count) "
+                        "-- refusing load\n");
+        cce_safetensors_free(gpt);
+        free(m);
+        return CCE_ERR_UNSUPPORTED;
+    }
+    m->n_head = supra_resolve_n_head(gpt, cdir, sc);
+    if (m->n_head < 1) {
+        st_set_err(NULL, "n_head missing for schema '%s'", sc->name);
+        fprintf(stderr, "cce_supra_load_decomposed: schema '%s' carries no "
+                        "n_head (safetensors __metadata__ \"n_head\" and "
+                        "config.json n_head/num_attention_heads all absent) "
+                        "-- refusing load\n", sc->name);
+        cce_safetensors_free(gpt);
+        free(m);
+        return CCE_ERR_UNSUPPORTED;
+    }
+    if (m->n_layer < 1 ||
+        (m->n_embd > 0 && m->n_embd % m->n_head != 0)) {
+        st_set_err(NULL, "bad recovered config: n_layer=%d n_head=%d n_embd=%d",
+                   m->n_layer, m->n_head, m->n_embd);
+        cce_safetensors_free(gpt);
+        free(m);
+        return CCE_ERR_UNSUPPORTED;
+    }
+
+    /* Archive for the linear specialists (rebuilt each session from cached weights;
+       cheap CPU work — the expensive 118 MB download is what the cache avoids).
+       Capacity follows the DISCOVERED n_layer — 4 specialists per block, plus
+       the logits head, the optional VQ codebook and spare — never a fixed cap
+       (a fixed 64 silently dropped specialists for any model with n_layer >= 16). */
+    char tmp_path[320];
+    snprintf(tmp_path, sizeof(tmp_path), "%s/supra_a2a_nano_decomp.cce", cdir);
+    remove(tmp_path);
+    if (cce_forest_open(&m->forest, tmp_path, 4 * m->n_layer + 8) != CCE_OK) {
+        cce_safetensors_free(gpt);
+        free(m);
+        return CCE_ERR_IO;
+    }
+    if (supra_alloc_ln_arrays(m, m->n_layer) != CCE_OK) {
+        cce_safetensors_free(gpt);
+        cce_forest_close(m->forest);
+        free(m);
+        return CCE_ERR_OOM;
+    }
 
     /* Load embedding tables as proper cce_tensor (fix for "raw tables" limitation) */
-    if (cce_safetensors_find(gpt, "tok_emb.weight") >= 0) {
-        cce_safetensors_load_as_tensor(gpt, cce_safetensors_find(gpt, "tok_emb.weight"), &m->tok_emb);
+    if (cce_safetensors_find(gpt, sc->tok_emb) >= 0) {
+        cce_safetensors_load_as_tensor(gpt, cce_safetensors_find(gpt, sc->tok_emb), &m->tok_emb);
     }
-    if (cce_safetensors_find(gpt, "pos_emb.weight") >= 0) {
-        cce_safetensors_load_as_tensor(gpt, cce_safetensors_find(gpt, "pos_emb.weight"), &m->pos_emb);
+    if (cce_safetensors_find(gpt, sc->pos_emb) >= 0) {
+        cce_safetensors_load_as_tensor(gpt, cce_safetensors_find(gpt, sc->pos_emb), &m->pos_emb);
     }
 
     /* Load LayerNorm weights (fix for missing real gamma/beta) */
-    for (int l = 0; l < 4; l++) {
+    for (int l = 0; l < m->n_layer; l++) {
         char buf[128];
-        snprintf(buf, sizeof(buf), "blocks.%d.ln1.weight", l);
+        supra_tname(buf, sizeof(buf), sc->ln1_fmt, l, ".weight");
         if (cce_safetensors_find(gpt, buf) >= 0)
             cce_safetensors_load_as_tensor(gpt, cce_safetensors_find(gpt, buf), &m->ln1_w[l]);
-        snprintf(buf, sizeof(buf), "blocks.%d.ln1.bias", l);
+        supra_tname(buf, sizeof(buf), sc->ln1_fmt, l, ".bias");
         if (cce_safetensors_find(gpt, buf) >= 0)
             cce_safetensors_load_as_tensor(gpt, cce_safetensors_find(gpt, buf), &m->ln1_b[l]);
 
-        snprintf(buf, sizeof(buf), "blocks.%d.ln2.weight", l);
+        supra_tname(buf, sizeof(buf), sc->ln2_fmt, l, ".weight");
         if (cce_safetensors_find(gpt, buf) >= 0)
             cce_safetensors_load_as_tensor(gpt, cce_safetensors_find(gpt, buf), &m->ln2_w[l]);
-        snprintf(buf, sizeof(buf), "blocks.%d.ln2.bias", l);
+        supra_tname(buf, sizeof(buf), sc->ln2_fmt, l, ".bias");
         if (cce_safetensors_find(gpt, buf) >= 0)
             cce_safetensors_load_as_tensor(gpt, cce_safetensors_find(gpt, buf), &m->ln2_b[l]);
     }
-    if (cce_safetensors_find(gpt, "ln_f.weight") >= 0)
-        cce_safetensors_load_as_tensor(gpt, cce_safetensors_find(gpt, "ln_f.weight"), &m->ln_f_w);
-    if (cce_safetensors_find(gpt, "ln_f.bias") >= 0)
-        cce_safetensors_load_as_tensor(gpt, cce_safetensors_find(gpt, "ln_f.bias"), &m->ln_f_b);
-
-    /* Decompose all linear projections into independent CNet cascades */
-    const char* proj_names[] = {
-        "blocks.0.attn.qkv.weight", "blocks.0.attn.proj.weight",
-        "blocks.0.mlp.0.weight",    "blocks.0.mlp.2.weight",
-        "blocks.1.attn.qkv.weight", "blocks.1.attn.proj.weight",
-        "blocks.1.mlp.0.weight",    "blocks.1.mlp.2.weight",
-        "blocks.2.attn.qkv.weight", "blocks.2.attn.proj.weight",
-        "blocks.2.mlp.0.weight",    "blocks.2.mlp.2.weight",
-        "blocks.3.attn.qkv.weight", "blocks.3.attn.proj.weight",
-        "blocks.3.mlp.0.weight",    "blocks.3.mlp.2.weight",
-        "head.weight"
-    };
-    const char* branch_names[] = {
-        "gpt.block0.qkv", "gpt.block0.attn_proj",
-        "gpt.block0.mlp_up", "gpt.block0.mlp_down",
-        "gpt.block1.qkv", "gpt.block1.attn_proj",
-        "gpt.block1.mlp_up", "gpt.block1.mlp_down",
-        "gpt.block2.qkv", "gpt.block2.attn_proj",
-        "gpt.block2.mlp_up", "gpt.block2.mlp_down",
-        "gpt.block3.qkv", "gpt.block3.attn_proj",
-        "gpt.block3.mlp_up", "gpt.block3.mlp_down",
-        "gpt.head"
-    };
-
-    for (size_t i = 0; i < sizeof(proj_names)/sizeof(proj_names[0]); ++i) {
-        add_linear_specialist_from_st(m->forest, gpt, proj_names[i], branch_names[i], 0.02f);
+    {
+        char buf[128];
+        snprintf(buf, sizeof(buf), "%s.weight", sc->ln_f);
+        if (cce_safetensors_find(gpt, buf) >= 0)
+            cce_safetensors_load_as_tensor(gpt, cce_safetensors_find(gpt, buf), &m->ln_f_w);
+        snprintf(buf, sizeof(buf), "%s.bias", sc->ln_f);
+        if (cce_safetensors_find(gpt, buf) >= 0)
+            cce_safetensors_load_as_tensor(gpt, cce_safetensors_find(gpt, buf), &m->ln_f_b);
     }
 
-    /* Load ln weights as small tensors (attached via dummy 1d handling or keep in caller) */
-    /* For now we load them when doing forward using find + load_as_tensor inside forward helpers */
+    /* Decompose all linear projections into independent CNet cascades. Branch
+       names are the loader's own stable vocabulary ("gpt.block%d.*"), the same
+       for every input schema — the forward and the QAT trainer key on them. */
+    for (int l = 0; l < m->n_layer; l++) {
+        char tname[CCE_ST_MAX_NAME], bname[64];
+        int ok = 1;
+        supra_tname(tname, sizeof(tname), sc->qkv_fmt, l, ".weight");
+        snprintf(bname, sizeof(bname), "gpt.block%d.qkv", l);
+        ok = ok && supra_add_checked(m->forest, gpt, tname, bname, 0.02f, transpose);
+
+        supra_tname(tname, sizeof(tname), sc->attn_proj_fmt, l, ".weight");
+        snprintf(bname, sizeof(bname), "gpt.block%d.attn_proj", l);
+        ok = ok && supra_add_checked(m->forest, gpt, tname, bname, 0.02f, transpose);
+
+        supra_tname(tname, sizeof(tname), sc->mlp_up_fmt, l, ".weight");
+        snprintf(bname, sizeof(bname), "gpt.block%d.mlp_up", l);
+        ok = ok && supra_add_checked(m->forest, gpt, tname, bname, 0.02f, transpose);
+
+        supra_tname(tname, sizeof(tname), sc->mlp_down_fmt, l, ".weight");
+        snprintf(bname, sizeof(bname), "gpt.block%d.mlp_down", l);
+        ok = ok && supra_add_checked(m->forest, gpt, tname, bname, 0.02f, transpose);
+
+        /* Any dropped specialist = wrong model: fail closed, free everything. */
+        if (!ok) {
+            cce_safetensors_free(gpt);
+            cce_supra_free_decomposed(m);
+            return CCE_ERR_UNSUPPORTED;
+        }
+    }
+
+    /* Logits head: explicit nn.Linear [vocab, n_embd] when present; otherwise
+       GPT-2-style weight tying — the embedding table [vocab, n_embd] IS the
+       [out,in] head matrix, so the same transposing add builds "gpt.head". */
+    if (cce_safetensors_find(gpt, sc->head) >= 0) {
+        if (!supra_add_checked(m->forest, gpt, sc->head, "gpt.head", 0.02f, 1)) {
+            cce_safetensors_free(gpt);
+            cce_supra_free_decomposed(m);
+            return CCE_ERR_UNSUPPORTED;
+        }
+    } else {
+        if (!supra_add_checked(m->forest, gpt, sc->tok_emb, "gpt.head", 0.02f, 1)) {
+            cce_safetensors_free(gpt);
+            cce_supra_free_decomposed(m);
+            return CCE_ERR_UNSUPPORTED;
+        }
+        m->head_tied = 1;
+    }
 
     cce_safetensors_free(gpt);
 
-    /* --- VQ-VAE full weights (4D convs for patch + linear style mapping) --- */
+    /* --- VQ-VAE full weights (4D convs for patch + linear style mapping) ---
+       Supra-only sidecar: other schemas (GPT-2 style) have no VQ file, so do
+       not attempt the download-once fetch for them. */
     cce_safetensors* vq = NULL;
-    rc = supra_open_repo_st(cdir, "vqvae.safetensors", revision, &vq);
+    rc = (strcmp(sc->name, "supra") == 0)
+             ? supra_open_repo_st(cdir, "vqvae.safetensors", revision, &vq)
+             : CCE_ERR_NOT_FOUND;
     if (rc == CCE_OK && vq) {
-        add_linear_specialist_from_st(m->forest, vq, "vq.embedding.weight", "vqvae.codebook", 0.0f);
+        /* The sidecar FILE is optional; once present, its codebook add is not. */
+        if (!supra_add_checked(m->forest, vq, "vq.embedding.weight", "vqvae.codebook", 0.0f, 1)) {
+            cce_safetensors_free(vq);
+            cce_supra_free_decomposed(m);
+            return CCE_ERR_UNSUPPORTED;
+        }
         if (cce_safetensors_find(vq, "vq.embedding.weight") >= 0) {
             cce_safetensors_load_as_tensor(vq, cce_safetensors_find(vq, "vq.embedding.weight"), &m->vq_codebook);
             m->vq_codebook_size = m->vq_codebook.shape[0];
@@ -1569,10 +1863,13 @@ void cce_supra_free_decomposed(cce_supra_decomposed* m) {
     if (m->forest) cce_forest_close(m->forest);
     cce_tensor_free(&m->tok_emb);
     cce_tensor_free(&m->pos_emb);
-    for (int i=0; i<4; i++) {
-        cce_tensor_free(&m->ln1_w[i]); cce_tensor_free(&m->ln1_b[i]);
-        cce_tensor_free(&m->ln2_w[i]); cce_tensor_free(&m->ln2_b[i]);
+    for (int i = 0; i < m->n_layer; i++) {
+        if (m->ln1_w) cce_tensor_free(&m->ln1_w[i]);
+        if (m->ln1_b) cce_tensor_free(&m->ln1_b[i]);
+        if (m->ln2_w) cce_tensor_free(&m->ln2_w[i]);
+        if (m->ln2_b) cce_tensor_free(&m->ln2_b[i]);
     }
+    free(m->ln1_w); free(m->ln1_b); free(m->ln2_w); free(m->ln2_b);
     cce_tensor_free(&m->ln_f_w);
     cce_tensor_free(&m->ln_f_b);
     for (int i=0; i<3; i++) {
@@ -1772,7 +2069,8 @@ cce_result cce_supra_export_packed(cce_supra_decomposed* m, const char* path) {
     fwrite(m->tok_emb_trit, 1, (size_t)m->vocab_size * m->tok_emb_trit_bpr, f);
     fwrite(m->tok_emb_scale, sizeof(float), (size_t)m->vocab_size, f);
     st_write_tensor(f, &m->pos_emb);
-    for (int l = 0; l < 4; l++) { st_write_tensor(f, &m->ln1_w[l]); st_write_tensor(f, &m->ln1_b[l]); st_write_tensor(f, &m->ln2_w[l]); st_write_tensor(f, &m->ln2_b[l]); }
+    /* n_layer LN pairs (n_layer is in the header above; legacy artifacts hold 4) */
+    for (int l = 0; l < m->n_layer; l++) { st_write_tensor(f, &m->ln1_w[l]); st_write_tensor(f, &m->ln1_b[l]); st_write_tensor(f, &m->ln2_w[l]); st_write_tensor(f, &m->ln2_b[l]); }
     st_write_tensor(f, &m->ln_f_w); st_write_tensor(f, &m->ln_f_b);
     int ns = m->forest->num_branches; fwrite(&ns, sizeof(int), 1, f);
     for (int b = 0; b < ns; b++) {
@@ -1803,10 +2101,14 @@ cce_result cce_supra_load_packed(cce_supra_decomposed** out, const char* path) {
     if (!m) { fclose(f); return CCE_ERR_OOM; }
     int hp[5]; if (fread(hp, sizeof(int), 5, f) != 5) { free(m); fclose(f); return CCE_ERR_IO; }
     m->n_layer = hp[0]; m->n_embd = hp[1]; m->block_size = hp[2]; m->n_head = hp[3]; m->vocab_size = hp[4];
+    if (m->n_layer < 1 || m->n_layer > CCE_ST_MAX_TENSORS) { free(m); fclose(f); return CCE_ERR_UNSUPPORTED; }
+    if (supra_alloc_ln_arrays(m, m->n_layer) != CCE_OK) { free(m); fclose(f); return CCE_ERR_OOM; }
     m->context_routing_mode = CCE_CONTEXT_ROUTING_FULL_KV;
     cce_specialist_kv_budget_default(&m->kv_budget, m->block_size);
-    int te[3]; if (fread(te, sizeof(int), 3, f) != 3) { free(m); fclose(f); return CCE_ERR_IO; }
-    if (te[0] <= 0 || te[2] <= 0 || (size_t)te[0] > SIZE_MAX / (size_t)te[2]) { free(m); fclose(f); return CCE_ERR_UNSUPPORTED; }
+    /* From here on the LN arrays are live: every error exit must tear down via
+       cce_supra_free_decomposed (a bare free(m) leaks ln1_w/ln1_b/ln2_w/ln2_b). */
+    int te[3]; if (fread(te, sizeof(int), 3, f) != 3) { cce_supra_free_decomposed(m); fclose(f); return CCE_ERR_IO; }
+    if (te[0] <= 0 || te[2] <= 0 || (size_t)te[0] > SIZE_MAX / (size_t)te[2]) { cce_supra_free_decomposed(m); fclose(f); return CCE_ERR_UNSUPPORTED; }
     size_t tok_emb_bytes = (size_t)te[0] * (size_t)te[2];
     m->tok_emb_trit_bpr = te[2]; m->tok_emb_packed = 1;
     m->tok_emb_trit  = (uint8_t*)malloc(tok_emb_bytes);
@@ -1815,7 +2117,7 @@ cce_result cce_supra_load_packed(cce_supra_decomposed** out, const char* path) {
     if (fread(m->tok_emb_trit, 1, tok_emb_bytes, f) != tok_emb_bytes) { cce_supra_free_decomposed(m); fclose(f); return CCE_ERR_IO; }
     if (fread(m->tok_emb_scale, sizeof(float), (size_t)te[0], f) != (size_t)te[0]) { cce_supra_free_decomposed(m); fclose(f); return CCE_ERR_IO; }
     st_read_tensor(f, &m->pos_emb);
-    for (int l = 0; l < 4; l++) { st_read_tensor(f, &m->ln1_w[l]); st_read_tensor(f, &m->ln1_b[l]); st_read_tensor(f, &m->ln2_w[l]); st_read_tensor(f, &m->ln2_b[l]); }
+    for (int l = 0; l < m->n_layer; l++) { st_read_tensor(f, &m->ln1_w[l]); st_read_tensor(f, &m->ln1_b[l]); st_read_tensor(f, &m->ln2_w[l]); st_read_tensor(f, &m->ln2_b[l]); }
     st_read_tensor(f, &m->ln_f_w); st_read_tensor(f, &m->ln_f_b);
     int ns = 0; if (fread(&ns, sizeof(int), 1, f) != 1) { cce_supra_free_decomposed(m); fclose(f); return CCE_ERR_IO; }
     char arch[256]; snprintf(arch, sizeof(arch), "supra_packed_reload.cce"); remove(arch);
