@@ -1,14 +1,16 @@
 #ifndef CNET_PERSONAL_AI_H
 #define CNET_PERSONAL_AI_H
 
-/* Personal AI serving policy: local certified library first; big-AI teacher
- * only on gaps; optional budgeted teach so help becomes a local skill.
+/* Personal AI: hybrid A/B/C serve policy.
  *
- * This is the product-facing composition of gap_lane + resource_governor +
- * deploy free-wins — not a second planner. Certification remains the only
- * admission door; teachers never outrank sealed units.
+ *   A  certified library plan     (highest trust)
+ *   B  soft / medium specialists  (provisional, margin-gated)
+ *   C  residual generator         (uncertified; local dense stand-in or teacher)
  *
- * Gate: make personal_ai → PERSONAL_AI_PASS.
+ * Optional: structure-mine residual successes into A; distill multi-step plans.
+ *
+ * Gate: make personal_ai → PERSONAL_AI_PASS
+ *       make hybrid_ai   → HYBRID_AI_PASS
  */
 
 #include <stddef.h>
@@ -16,6 +18,7 @@
 
 #include "cnet_export.h"
 #include "gap_lane.h"
+#include "hybrid_ai.h"
 #include "resource_governor.h"
 #include "router.h"
 #include "nn.h"
@@ -24,61 +27,66 @@
 extern "C" {
 #endif
 
-/* How the last serve was answered. */
 typedef enum {
-    PERSONAL_AI_LOCAL = 0,     /* certified plan served locally */
-    PERSONAL_AI_TEACHER = 1,   /* no plan; teacher answered (big AI on call) */
-    PERSONAL_AI_ABSTAIN = 2,   /* no plan and no teacher / teacher refused */
-    PERSONAL_AI_ERROR = 3
+    PERSONAL_AI_LOCAL = 0,     /* Tier A certified */
+    PERSONAL_AI_TEACHER = 1,   /* legacy: bound teacher oracle (also Tier C) */
+    PERSONAL_AI_ABSTAIN = 2,
+    PERSONAL_AI_ERROR = 3,
+    PERSONAL_AI_SOFT = 4,      /* Tier B */
+    PERSONAL_AI_RESIDUAL = 5   /* Tier C residual */
 } PersonalAiSource;
 
 typedef struct {
     PersonalAiSource source;
-    int taught;                /* 1 if this call also closed a teach */
-    int gap_noted;             /* 1 if a NO_PLAN was recorded */
+    HybridTrust trust;
+    HybridTier tier;
+    int taught;
+    int gap_noted;
+    int structure_mined;
+    int distilled;
     size_t local_hits;
     size_t teacher_helps;
+    size_t soft_hits;
+    size_t residual_hits;
     size_t abstains;
     size_t teaches;
 } PersonalAiReport;
 
 typedef struct {
-    /* 1 = after a teacher-answered miss, attempt acquire_now immediately
-       (synchronous teach). 0 = only note the gap; gap_lane_tick teaches later
-       (async, preferred for interactive latency). Default 0. */
     int teach_inline;
-    /* 1 = bind teacher oracles for serve-time help. 0 = local-only mode
-       (still notes gaps). Default 1. */
     int allow_teacher;
-    /* Max inline teaches per process lifetime (0 = unlimited). */
     size_t max_inline_teaches;
+    /* Hybrid extensions */
+    int allow_soft;              /* default 1 */
+    int allow_residual;          /* default 1 */
+    int allow_medium;            /* default 1 */
+    int structure_mine_on_serve; /* default 0 — mine in tick */
+    size_t structure_min_hits;   /* default 3 */
 } PersonalAiPolicy;
+
+struct ResidualGguf; /* opaque; see residual_gguf.h */
 
 typedef struct {
     GapLane lane;
     CnetResourceGovernor gov;
+    HybridAi hybrid;
     PersonalAiPolicy policy;
     PersonalAiReport totals;
     size_t inline_teaches_done;
     int loaded;
+    /* Owned when CNET_RESIDUAL_GGUF auto-bound at open; freed in close. */
+    struct ResidualGguf *owned_residual;
 } PersonalAi;
 
 CNET_API void personal_ai_policy_defaults(PersonalAiPolicy *p);
-
-/* Apply personal-ai + deploy free-win env when unset (CNET_PERSONAL_*). */
 CNET_API int personal_ai_apply_env(void);
 
-/* Open on an existing or fresh base/ledger. inbox may be NULL.
-   Applies deploy free-wins (unset only) and opens a resource governor with
-   deploy defaults. Returns 0, or <0. */
 CNET_API int personal_ai_open(PersonalAi *ai,
                               const char *base_path,
                               const char *ledger_path,
                               const char *inbox_path,
-                              const PersonalAiPolicy *policy /* NULL = defaults */);
+                              const PersonalAiPolicy *policy);
 
-/* Register a teacher oracle (big AI on call) for a port signature.
-   identity/fn via existing acquire_oracle_register on the lane. */
 CNET_API int personal_ai_bind_teacher(PersonalAi *ai,
                                       const char *name,
                                       Port input_port,
@@ -86,9 +94,24 @@ CNET_API int personal_ai_bind_teacher(PersonalAi *ai,
                                       CnetOracleFn fn,
                                       void *ctx);
 
-/* Serve one request under the local-first policy.
-   Fills *rep (may be NULL). Returns 0 if an answer was written (local or
-   teacher), -1 if abstained/error (no output guaranteed). */
+/* Bind Tier C residual (open-ended). Separate from signature teachers. */
+CNET_API int personal_ai_bind_residual(PersonalAi *ai, const char *name,
+                                       CnetOracleFn fn, void *ctx);
+
+/* Real GGUF residual (Tier C) — see residual_gguf.h:
+ * personal_ai_bind_residual_gguf / personal_ai_auto_residual_gguf */
+
+CNET_API int personal_ai_bind_soft(PersonalAi *ai, const char *name,
+                                   Port in, Port out, CnetOracleFn fn,
+                                   void *ctx, double min_margin);
+
+CNET_API int personal_ai_bind_medium(PersonalAi *ai, const char *name,
+                                     Port in, Port out, CnetOracleFn fn,
+                                     void *ctx, uint64_t resident_bytes);
+
+CNET_API int personal_ai_enable_adapter(PersonalAi *ai, const double *bias,
+                                        size_t dim, double scale);
+
 CNET_API int personal_ai_serve(PersonalAi *ai,
                                Port input_port,
                                Port goal_port,
@@ -98,15 +121,21 @@ CNET_API int personal_ai_serve(PersonalAi *ai,
                                size_t out_cap,
                                PersonalAiReport *rep);
 
-/* One maintenance tick: gap_lane_tick (scan/drain/checkpoint under budgets). */
+/* Maintenance: gap_lane_tick + optional structure mining from residual traces. */
 CNET_API int personal_ai_tick(PersonalAi *ai, GapLaneTickReport *tick_rep);
 
+/* Explicit structure mine / distill hooks. */
+CNET_API int personal_ai_structure_mine(PersonalAi *ai,
+                                        BinaryTransformNetwork **student_out);
+CNET_API int personal_ai_distill_plan(PersonalAi *ai, const RoutePlan *plan,
+                                      BinaryTransformNetwork **chunk_out);
+
 CNET_API void personal_ai_close(PersonalAi *ai);
-
-/* Copy cumulative counters into *out. */
 CNET_API void personal_ai_totals(const PersonalAi *ai, PersonalAiReport *out);
-
 CNET_API const char *personal_ai_source_name(PersonalAiSource s);
+
+/* Access hybrid counters. */
+CNET_API const HybridAi *personal_ai_hybrid(const PersonalAi *ai);
 
 #ifdef __cplusplus
 }

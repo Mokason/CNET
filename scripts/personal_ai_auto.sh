@@ -25,6 +25,9 @@ set -euo pipefail
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 BASE="${BASE_PATH:-$REPO/soul_gemma4v2_final.cnb}"
 TEACHER="${TEACHER:-${CNET_PERSONAL_TEACHER:-/home/marble/AI/Models/gemma4-v2-Q4_K_M.gguf}}"
+# Optional Tier C residual GGUF (open-ended serve); empty = hermetic/soft only
+RESIDUAL="${RESIDUAL:-${CNET_RESIDUAL_GGUF:-}}"
+RESIDUAL_WINDOW="${RESIDUAL_WINDOW:-${CNET_RESIDUAL_WINDOW:-$REPO/english_window_256.txt}}"
 UNIT_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
 LANE_UNIT="cnet-personal-ai-lane.service"
 TARGET_UNIT="cnet-personal-ai.target"
@@ -43,6 +46,16 @@ prepare() {
   [ -f "$BASE" ] || info "WARN: base not found yet: $BASE (serve/learn need it)"
   if [ -n "$TEACHER" ] && [ ! -f "$TEACHER" ]; then
     info "WARN: teacher not found: $TEACHER (lane will run maintenance-only)"
+  fi
+  if [ -n "$RESIDUAL" ]; then
+    if [ -f "$RESIDUAL" ]; then
+      info "Tier C residual GGUF: $RESIDUAL"
+      [ -f "$RESIDUAL_WINDOW" ] || info "WARN: residual window missing: $RESIDUAL_WINDOW (synth window)"
+    else
+      info "WARN: CNET_RESIDUAL_GGUF not found: $RESIDUAL"
+    fi
+  else
+    info "Tier C residual: unset (bind later via CNET_RESIDUAL_GGUF)"
   fi
   # Ensure inbox exists so serve can append before lane starts
   if [ -f "$BASE" ]; then
@@ -64,9 +77,27 @@ install_units() {
     -e "s|Environment=CNET_GAP_INBOX=.*|Environment=CNET_GAP_INBOX=${BASE}.inbox|g" \
     -e "s|Environment=CNET_PERSONAL_TEACHER=.*|Environment=CNET_PERSONAL_TEACHER=$TEACHER|g" \
     "$src_lane" >"$UNIT_DIR/$LANE_UNIT"
+  # Residual env primarily from personal-ai.env (EnvironmentFile). Optionally pin
+  # in [Service] when RESIDUAL is set for this install (must be before [Install]).
+  if [ -n "$RESIDUAL" ] && ! grep -q '^Environment=CNET_RESIDUAL_GGUF=' "$UNIT_DIR/$LANE_UNIT"; then
+    awk -v r="$RESIDUAL" -v w="$RESIDUAL_WINDOW" '
+      /^\[Install\]/ && !done {
+        print "# Tier C residual (personal_ai path; gap_lane_run ignores)"
+        print "Environment=CNET_RESIDUAL_GGUF=" r
+        print "Environment=CNET_RESIDUAL_WINDOW=" w
+        print ""
+        done=1
+      }
+      { print }
+    ' "$UNIT_DIR/$LANE_UNIT" >"$UNIT_DIR/$LANE_UNIT.tmp" && \
+      mv "$UNIT_DIR/$LANE_UNIT.tmp" "$UNIT_DIR/$LANE_UNIT"
+  fi
   sed "s|/home/marble/AI/CNET|$REPO|g" "$src_target" >"$UNIT_DIR/$TARGET_UNIT"
   systemctl --user daemon-reload
   info "installed $UNIT_DIR/$LANE_UNIT"
+  if [ -n "$RESIDUAL" ]; then
+    info "Tier C residual env pinned in [Service] for personal_ai consumers"
+  fi
   info "PERSONAL_AI_AUTO_INSTALL_OK"
 }
 
@@ -99,6 +130,19 @@ status() {
   echo "base:    $BASE$([ -f "$BASE" ] && echo ' [ok]' || echo ' [MISSING]')"
   echo "inbox:   ${BASE}.inbox$([ -f "${BASE}.inbox" ] && echo ' [ok]' || echo ' [absent]')"
   echo "teacher: $TEACHER$([ -f "$TEACHER" ] && echo ' [ok]' || echo ' [missing→maintenance]')"
+  # Prefer explicit RESIDUAL; else show what personal-ai.env enables.
+  local res_show="$RESIDUAL"
+  local win_show="$RESIDUAL_WINDOW"
+  if [ -z "$res_show" ] && [ -f "$REPO/config/personal-ai.env" ]; then
+    res_show=$(grep -E '^CNET_RESIDUAL_GGUF=' "$REPO/config/personal-ai.env" | head -1 | cut -d= -f2- || true)
+    win_show=$(grep -E '^CNET_RESIDUAL_WINDOW=' "$REPO/config/personal-ai.env" | head -1 | cut -d= -f2- || true)
+  fi
+  if [ -n "$res_show" ]; then
+    echo "residual C: $res_show$([ -f "$res_show" ] && echo ' [ok]' || echo ' [MISSING]')"
+    echo "res_window: ${win_show:-$RESIDUAL_WINDOW}"
+  else
+    echo "residual C: (unset — hermetic/soft only until CNET_RESIDUAL_GGUF)"
+  fi
   echo "binary:  $REPO/bin/gap_lane_run$([ -x "$REPO/bin/gap_lane_run" ] && echo ' [ok]' || echo ' [MISSING]')"
   if systemctl --user status "$LANE_UNIT" --no-pager 2>/dev/null | head -15; then
     :
@@ -151,6 +195,8 @@ Automatic Personal AI:
                 SERVE=1 also deploys Hermes MCP (local serve + inbox + health)
 
 Env: BASE_PATH TEACHER SERVE=0|1 TICK_SECONDS
+     RESIDUAL / CNET_RESIDUAL_GGUF  (Tier C; also config/personal-ai.env)
+     RESIDUAL_WINDOW / CNET_RESIDUAL_WINDOW
 EOF
     exit 2
     ;;

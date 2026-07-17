@@ -1,6 +1,7 @@
 #include "../include/personal_ai.h"
 #include "../include/self_improve.h"
 #include "../include/acquire.h"
+#include "../include/residual_gguf.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -12,6 +13,11 @@ void personal_ai_policy_defaults(PersonalAiPolicy *p) {
     p->teach_inline = 0;
     p->allow_teacher = 1;
     p->max_inline_teaches = 0;
+    p->allow_soft = 1;
+    p->allow_residual = 1;
+    p->allow_medium = 1;
+    p->structure_mine_on_serve = 0;
+    p->structure_min_hits = 3;
 }
 
 const char *personal_ai_source_name(PersonalAiSource s) {
@@ -19,6 +25,8 @@ const char *personal_ai_source_name(PersonalAiSource s) {
     case PERSONAL_AI_LOCAL: return "local";
     case PERSONAL_AI_TEACHER: return "teacher";
     case PERSONAL_AI_ABSTAIN: return "abstain";
+    case PERSONAL_AI_SOFT: return "soft";
+    case PERSONAL_AI_RESIDUAL: return "residual";
     default: return "error";
     }
 }
@@ -42,8 +50,11 @@ int personal_ai_apply_env(void) {
 #endif
     PAI_SET("CNET_PERSONAL_ALLOW_TEACHER", "1");
     PAI_SET("CNET_PERSONAL_TEACH_INLINE", "0");
+    PAI_SET("CNET_PERSONAL_ALLOW_SOFT", "1");
+    PAI_SET("CNET_PERSONAL_ALLOW_RESIDUAL", "1");
     PAI_SET("CNET_TEACHER_IDLE_SEC", "300");
     PAI_SET("CNET_LANE_MAX_CLOSURES", "4");
+    /* Real residual GGUF is operator-set (CNET_RESIDUAL_GGUF); not defaulted. */
 #undef PAI_SET
     return n;
 }
@@ -60,14 +71,20 @@ static void policy_from_env(PersonalAiPolicy *p) {
         long v = atol(m);
         if (v >= 0) p->max_inline_teaches = (size_t)v;
     }
+    a = getenv("CNET_PERSONAL_ALLOW_SOFT");
+    if (a && a[0]) p->allow_soft = !(a[0] == '0' && a[1] == '\0');
+    a = getenv("CNET_PERSONAL_ALLOW_RESIDUAL");
+    if (a && a[0]) p->allow_residual = !(a[0] == '0' && a[1] == '\0');
+    m = getenv("CNET_PERSONAL_STRUCTURE_MIN_HITS");
+    if (m && m[0]) {
+        long v = atol(m);
+        if (v >= 1) p->structure_min_hits = (size_t)v;
+    }
 }
 
-int personal_ai_open(PersonalAi *ai,
-                     const char *base_path,
-                     const char *ledger_path,
-                     const char *inbox_path,
-                     const PersonalAiPolicy *policy)
-{
+int personal_ai_open(PersonalAi *ai, const char *base_path,
+                     const char *ledger_path, const char *inbox_path,
+                     const PersonalAiPolicy *policy) {
     CnetGovPolicy gp;
     if (!ai || !base_path || !ledger_path) return -1;
     memset(ai, 0, sizeof *ai);
@@ -87,8 +104,6 @@ int personal_ai_open(PersonalAi *ai,
     }
     if (gp.max_closures_per_drain)
         ai->lane.acq.max_closures_per_drain = gp.max_closures_per_drain;
-    /* Personal/small-domain skills often have card << 16; allow override.
-       Default acquire min_evidence=16 is correct for windowed LM units. */
     {
         const char *me = getenv("CNET_ACQ_MIN_EVIDENCE");
         if (me && me[0]) {
@@ -97,35 +112,70 @@ int personal_ai_open(PersonalAi *ai,
         }
     }
 
+    hybrid_ai_init(&ai->hybrid);
+    ai->owned_residual = NULL;
     ai->loaded = 1;
+    /* Auto-bind real Tier C residual when operator set CNET_RESIDUAL_GGUF. */
+    {
+        ResidualGguf *r = NULL;
+        int ar = personal_ai_auto_residual_gguf(ai, &r);
+        if (ar == 0 && r) {
+            ai->owned_residual = r;
+        } else if (ar < 0) {
+            const char *want = getenv("CNET_RESIDUAL_GGUF");
+            if (want && want[0]) {
+                /* Fail-closed: residual was requested but could not load. */
+                personal_ai_close(ai);
+                return -4;
+            }
+        }
+    }
     return 0;
 }
 
-int personal_ai_bind_teacher(PersonalAi *ai,
-                             const char *name,
-                             Port input_port,
-                             Port goal_port,
-                             CnetOracleFn fn,
-                             void *ctx)
-{
+int personal_ai_bind_teacher(PersonalAi *ai, const char *name,
+                             Port input_port, Port goal_port,
+                             CnetOracleFn fn, void *ctx) {
     if (!ai || !ai->loaded || !name || !fn) return -1;
     if (!ai->policy.allow_teacher) return -2;
     return acquire_oracle_register(&ai->lane.oracles, name, input_port,
                                    goal_port, fn, ctx);
 }
 
-int personal_ai_serve(PersonalAi *ai,
-                      Port input_port,
-                      Port goal_port,
-                      const double *input,
-                      size_t in_len,
-                      double *output,
-                      size_t out_cap,
-                      PersonalAiReport *rep)
-{
+int personal_ai_bind_residual(PersonalAi *ai, const char *name,
+                              CnetOracleFn fn, void *ctx) {
+    if (!ai || !ai->loaded) return -1;
+    if (!ai->policy.allow_residual) return -2;
+    return hybrid_bind_residual(&ai->hybrid, name, fn, ctx);
+}
+
+int personal_ai_bind_soft(PersonalAi *ai, const char *name, Port in, Port out,
+                          CnetOracleFn fn, void *ctx, double min_margin) {
+    if (!ai || !ai->loaded) return -1;
+    if (!ai->policy.allow_soft) return -2;
+    return hybrid_bind_soft(&ai->hybrid, name, in, out, fn, ctx, min_margin);
+}
+
+int personal_ai_bind_medium(PersonalAi *ai, const char *name, Port in, Port out,
+                            CnetOracleFn fn, void *ctx,
+                            uint64_t resident_bytes) {
+    if (!ai || !ai->loaded) return -1;
+    if (!ai->policy.allow_medium) return -2;
+    return hybrid_bind_medium(&ai->hybrid, &ai->gov, name, in, out, fn, ctx,
+                              resident_bytes);
+}
+
+int personal_ai_enable_adapter(PersonalAi *ai, const double *bias, size_t dim,
+                               double scale) {
+    if (!ai || !ai->loaded) return -1;
+    return hybrid_adapter_enable(&ai->hybrid, bias, dim, scale);
+}
+
+int personal_ai_serve(PersonalAi *ai, Port input_port, Port goal_port,
+                      const double *input, size_t in_len, double *output,
+                      size_t out_cap, PersonalAiReport *rep) {
     PersonalAiReport scratch;
     RoutePlan plan;
-    size_t units_before;
     int rc;
 
     if (!rep) {
@@ -134,15 +184,15 @@ int personal_ai_serve(PersonalAi *ai,
     } else {
         memset(rep, 0, sizeof *rep);
     }
+    rep->trust = HYBRID_TRUST_UNCERTIFIED;
+    rep->tier = HYBRID_TIER_C;
 
     if (!ai || !ai->loaded || !input || !output) {
         rep->source = PERSONAL_AI_ERROR;
         return -1;
     }
 
-    units_before = ai->lane.reg.count;
-
-    /* 1) Local certified library first. */
+    /* ---- Tier A: certified plan ---- */
     memset(&plan, 0, sizeof plan);
     if (route_plan(&ai->lane.reg, input_port, goal_port, &plan) == 0 &&
         plan.length > 0) {
@@ -152,77 +202,147 @@ int personal_ai_serve(PersonalAi *ai,
             return -1;
         }
         rep->source = PERSONAL_AI_LOCAL;
+        rep->trust = HYBRID_TRUST_CERTIFIED;
+        rep->tier = HYBRID_TIER_A;
         rep->local_hits = 1;
         ai->totals.local_hits++;
+        ai->hybrid.tier_a_hits++;
         return 0;
     }
 
-    /* 2) No plan: local-only mode still notes the gap for later. */
-    if (!ai->policy.allow_teacher || ai->lane.oracles.count == 0) {
+    /* ---- Tier B: medium modules then soft specialists ---- */
+    if (ai->policy.allow_medium) {
+        if (hybrid_try_medium(&ai->hybrid, input_port, goal_port, input,
+                              in_len, output, out_cap) == 0) {
+            rep->source = PERSONAL_AI_SOFT;
+            rep->trust = HYBRID_TRUST_PROVISIONAL;
+            rep->tier = HYBRID_TIER_B;
+            rep->soft_hits = 1;
+            ai->totals.soft_hits++;
+            return 0;
+        }
+    }
+    if (ai->policy.allow_soft) {
+        char sn[64];
+        rc = hybrid_try_soft(&ai->hybrid, input_port, goal_port, input, in_len,
+                             output, out_cap, sn, sizeof sn);
+        if (rc == 0) {
+            rep->source = PERSONAL_AI_SOFT;
+            rep->trust = HYBRID_TRUST_PROVISIONAL;
+            rep->tier = HYBRID_TIER_B;
+            rep->soft_hits = 1;
+            ai->totals.soft_hits++;
+            return 0;
+        }
+    }
+
+    /* ---- Tier C: residual generative ---- */
+    if (ai->policy.allow_residual && ai->hybrid.residual.bound) {
+        if (hybrid_try_residual(&ai->hybrid, input_port, goal_port, input,
+                                in_len, output, out_cap) == 0) {
+            rep->source = PERSONAL_AI_RESIDUAL;
+            rep->trust = HYBRID_TRUST_UNCERTIFIED;
+            rep->tier = HYBRID_TIER_C;
+            rep->residual_hits = 1;
+            ai->totals.residual_hits++;
+            if (ai->policy.structure_mine_on_serve) {
+                BinaryTransformNetwork *stu = NULL;
+                if (personal_ai_structure_mine(ai, &stu) == 0) {
+                    rep->structure_mined = 1;
+                    if (stu) {
+                        /* registry borrows; keep alive */
+                        (void)stu;
+                    }
+                }
+            }
+            return 0;
+        }
+    }
+
+    /* ---- Legacy teacher oracle path (signature-matched big AI) ---- */
+    if (ai->policy.allow_teacher && ai->lane.oracles.count > 0) {
+        rc = gap_lane_execute(&ai->lane, input_port, goal_port, input, in_len,
+                              output, out_cap);
+        rep->gap_noted = 1;
+        if (rc == 0) {
+            rep->source = PERSONAL_AI_TEACHER;
+            rep->trust = HYBRID_TRUST_UNCERTIFIED;
+            rep->tier = HYBRID_TIER_C;
+            rep->teacher_helps = 1;
+            ai->totals.teacher_helps++;
+            if (ai->policy.teach_inline) {
+                int can = 1;
+                if (ai->policy.max_inline_teaches &&
+                    ai->inline_teaches_done >= ai->policy.max_inline_teaches)
+                    can = 0;
+                if (can) {
+                    AcquireReport ar;
+                    memset(&ar, 0, sizeof ar);
+                    if (acquire_now(&ai->lane.reg, &ai->lane.ledger,
+                                    &ai->lane.oracles, &ai->lane.acq,
+                                    input_port, goal_port, &ar) == 0) {
+                        rep->taught = 1;
+                        ai->inline_teaches_done++;
+                        ai->totals.teaches++;
+                        (void)gap_lane_checkpoint(&ai->lane);
+                    }
+                }
+            }
+            return 0;
+        }
+    } else {
         (void)acquire_note_no_plan(&ai->lane.ledger, input_port, goal_port);
         if (ai->lane.inbox_path[0])
             (void)gap_inbox_note_no_plan(ai->lane.inbox_path, input_port,
                                          goal_port);
-        rep->source = PERSONAL_AI_ABSTAIN;
         rep->gap_noted = 1;
-        ai->totals.abstains++;
-        return -1;
     }
 
-    /* 3) Big AI on call: plan-or-fallback (notes gap + teacher answer). */
-    rc = gap_lane_execute(&ai->lane, input_port, goal_port, input, in_len,
-                          output, out_cap);
-    rep->gap_noted = 1;
-
-    if (rc != 0) {
-        rep->source = PERSONAL_AI_ABSTAIN;
-        ai->totals.abstains++;
-        return -1;
-    }
-
-    /* If a plan appeared (unlikely) treat as local; else teacher help. */
-    memset(&plan, 0, sizeof plan);
-    if (route_plan(&ai->lane.reg, input_port, goal_port, &plan) == 0 &&
-        plan.length > 0 && ai->lane.reg.count == units_before) {
-        rep->source = PERSONAL_AI_LOCAL;
-        rep->local_hits = 1;
-        ai->totals.local_hits++;
-        return 0;
-    }
-
-    rep->source = PERSONAL_AI_TEACHER;
-    rep->teacher_helps = 1;
-    ai->totals.teacher_helps++;
-
-    /* 4) Optional inline teach: help becomes a local skill now. */
-    if (ai->policy.teach_inline) {
-        int can = 1;
-        if (ai->policy.max_inline_teaches &&
-            ai->inline_teaches_done >= ai->policy.max_inline_teaches)
-            can = 0;
-        if (can) {
-            AcquireReport ar;
-            memset(&ar, 0, sizeof ar);
-            if (acquire_now(&ai->lane.reg, &ai->lane.ledger, &ai->lane.oracles,
-                            &ai->lane.acq, input_port, goal_port, &ar) == 0) {
-                rep->taught = 1;
-                ai->inline_teaches_done++;
-                ai->totals.teaches++;
-                (void)gap_lane_checkpoint(&ai->lane);
-            }
-        }
-    }
-    return 0;
+    rep->source = PERSONAL_AI_ABSTAIN;
+    rep->trust = HYBRID_TRUST_UNCERTIFIED;
+    ai->totals.abstains++;
+    return -1;
 }
 
 int personal_ai_tick(PersonalAi *ai, GapLaneTickReport *tick_rep) {
+    int rc;
     if (!ai || !ai->loaded) return -1;
     cnet_gov_begin_drain(&ai->gov);
-    return gap_lane_tick(&ai->lane, tick_rep, 0);
+    rc = gap_lane_tick(&ai->lane, tick_rep, 0);
+    /* P5: attempt structure mining after drain */
+    {
+        BinaryTransformNetwork *stu = NULL;
+        if (hybrid_structure_mine(&ai->hybrid, &ai->lane.reg,
+                                  ai->policy.structure_min_hits, &stu) == 0) {
+            (void)stu;
+            (void)gap_lane_checkpoint(&ai->lane);
+        }
+    }
+    return rc;
+}
+
+int personal_ai_structure_mine(PersonalAi *ai,
+                               BinaryTransformNetwork **student_out) {
+    if (!ai || !ai->loaded) return -1;
+    return hybrid_structure_mine(&ai->hybrid, &ai->lane.reg,
+                                 ai->policy.structure_min_hits, student_out);
+}
+
+int personal_ai_distill_plan(PersonalAi *ai, const RoutePlan *plan,
+                             BinaryTransformNetwork **chunk_out) {
+    if (!ai || !ai->loaded) return -1;
+    return hybrid_distill_plan(&ai->hybrid, &ai->lane.reg, plan, &ai->gov,
+                               chunk_out);
 }
 
 void personal_ai_close(PersonalAi *ai) {
     if (!ai || !ai->loaded) return;
+    /* Drop residual fn bind before freeing the model it points at. */
+    hybrid_ai_free(&ai->hybrid);
+    if (ai->owned_residual) {
+        residual_gguf_close(ai->owned_residual);
+        ai->owned_residual = NULL;
+    }
     gap_lane_close(&ai->lane);
     cnet_gov_close(&ai->gov);
     ai->loaded = 0;
@@ -231,4 +351,8 @@ void personal_ai_close(PersonalAi *ai) {
 void personal_ai_totals(const PersonalAi *ai, PersonalAiReport *out) {
     if (!ai || !out) return;
     *out = ai->totals;
+}
+
+const HybridAi *personal_ai_hybrid(const PersonalAi *ai) {
+    return ai ? &ai->hybrid : NULL;
 }

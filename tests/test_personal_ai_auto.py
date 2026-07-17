@@ -32,6 +32,9 @@ class PersonalAiAutoTest(unittest.TestCase):
         self.assertIn("CNET_PERSONAL_ALLOW_TEACHER=1", text)
         self.assertIn("CNET_PERSONAL_TEACH_INLINE=0", text)
         self.assertIn("CNET_TEACHER_IDLE_SEC", text)
+        self.assertIn("CNET_RESIDUAL_GGUF=", text)
+        self.assertNotIn("# CNET_RESIDUAL_GGUF=", text)
+        self.assertIn("CNET_RESIDUAL_WINDOW=", text)
 
     def test_script_help(self) -> None:
         proc = subprocess.run(

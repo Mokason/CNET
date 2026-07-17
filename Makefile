@@ -195,6 +195,8 @@ MODALITY_VOICE_SRC := src/modality_voice.c
 MODALITY_VISION_SRC := src/modality_vision.c
 MULTIMODAL_SRC := $(EXT_TEACHER_SRC) $(MODALITY_VOICE_SRC) $(MODALITY_VISION_SRC)
 PERSONAL_AI_SRC := src/personal_ai.c
+HYBRID_AI_SRC := src/hybrid_ai.c
+RESIDUAL_GGUF_SRC := src/residual_gguf.c
 CCE_MODEL_CATALOG := src/cce/cce_model_catalog.c
 MODEL_PROBE := src/model_probe.c
 CNET_LLAMA_EVAL := tools/cnet_llama_eval.cpp
@@ -1619,11 +1621,12 @@ cce_dll: $(CCE) $(CCE_CUDA_OBJ)
 # Defines both export macros.
 # Usage: make cnet_dll
 cnet_dll: CFLAGS := $(CFLAGS) -fPIC
-cnet_dll: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(BASE_SRC) $(SCAN) $(PROPERTY) $(CONSOLIDATE) $(ACQUIRE_SRC) $(COVERAGE) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(GAP_LANE_SRC) $(ASYNC_RUNTIME) $(MODEL_RUNTIME) $(CCE_MODEL_CATALOG) $(MODEL_PROBE) $(RESOURCE_GOV_SRC) $(CF_ORDER_SRC) $(SELF_IMPROVE_SRC) $(HARNESS_ORACLE_SRC) $(MULTIMODAL_SRC) $(PERSONAL_AI_SRC) $(LIBRARY) src/fastpath.c src/soul_host.c src/contract/mcp_calculator.c src/contract/mcp_file_read.c src/contract/mcp_file_write.c src/contract/mcp_memory.c src/contract/mcp_utils.c src/contract/mcp_web_search.c src/contract/mcp_wiki.c src/agent_memory.c
+cnet_dll: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(BASE_SRC) $(SCAN) $(PROPERTY) $(CONSOLIDATE) $(ACQUIRE_SRC) $(COVERAGE) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(GAP_LANE_SRC) $(ASYNC_RUNTIME) $(MODEL_RUNTIME) $(CCE_MODEL_CATALOG) $(MODEL_PROBE) $(RESOURCE_GOV_SRC) $(CF_ORDER_SRC) $(SELF_IMPROVE_SRC) $(HARNESS_ORACLE_SRC) $(MULTIMODAL_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(LIBRARY) src/fastpath.c src/soul_host.c src/contract/mcp_calculator.c src/contract/mcp_file_read.c src/contract/mcp_file_write.c src/contract/mcp_memory.c src/contract/mcp_utils.c src/contract/mcp_web_search.c src/contract/mcp_wiki.c src/agent_memory.c
 	$(CC) -shared -DCNET_BUILD_DLL -DCCE_BUILD_DLL $(CFLAGS) $(CUDA_CFLAGS) -o cnet.so \
-		$(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(BASE_SRC) $(SCAN) $(PROPERTY) $(CONSOLIDATE) $(ACQUIRE_SRC) $(COVERAGE) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(GAP_LANE_SRC) $(ASYNC_RUNTIME) $(MODEL_RUNTIME) $(CCE_MODEL_CATALOG) $(MODEL_PROBE) $(RESOURCE_GOV_SRC) $(CF_ORDER_SRC) $(SELF_IMPROVE_SRC) $(HARNESS_ORACLE_SRC) $(MULTIMODAL_SRC) $(PERSONAL_AI_SRC) $(LIBRARY) src/fastpath.c src/soul_host.c src/contract/mcp_calculator.c src/contract/mcp_file_read.c src/contract/mcp_file_write.c src/contract/mcp_memory.c src/contract/mcp_utils.c src/contract/mcp_web_search.c src/contract/mcp_wiki.c src/agent_memory.c \
+		$(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(BASE_SRC) $(SCAN) $(PROPERTY) $(CONSOLIDATE) $(ACQUIRE_SRC) $(COVERAGE) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(GAP_LANE_SRC) $(ASYNC_RUNTIME) $(MODEL_RUNTIME) $(CCE_MODEL_CATALOG) $(MODEL_PROBE) $(RESOURCE_GOV_SRC) $(CF_ORDER_SRC) $(SELF_IMPROVE_SRC) $(HARNESS_ORACLE_SRC) $(MULTIMODAL_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(LIBRARY) src/fastpath.c src/soul_host.c src/contract/mcp_calculator.c src/contract/mcp_file_read.c src/contract/mcp_file_write.c src/contract/mcp_memory.c src/contract/mcp_utils.c src/contract/mcp_web_search.c src/contract/mcp_wiki.c src/agent_memory.c \
 		$(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) $(CNET_SONAME_LDFLAGS) -pthread
 	@echo "Built unified cnet.so (CCE + certified runtime + soul_host + MCP ABI)."
+
 
 
 # CNET-native QGKP v3 envelope tool. Pack/materialize operations are resumable
@@ -1897,15 +1900,15 @@ recipe_proposals: tools/propose_recipe_improvements.py
 	@grep "RECIPE_PROPOSALS_PASS" logs/recipe_proposals.log
 
 # Full hermetic umbrella for the 4-phase self-improve/resource program.
-unified_self_improve: resource_governor counterfactual_order self_improve deploy_profile recipe_proposals gap_lane_service_config campaign_v2_fast multimodal_v0 personal_ai
+unified_self_improve: resource_governor counterfactual_order self_improve deploy_profile recipe_proposals gap_lane_service_config campaign_v2_fast multimodal_v0 personal_ai hybrid_ai hybrid_bench residual_gguf
 	@echo "UNIFIED_SELF_IMPROVE_PASS"
 
 # Personal AI: local certified library first; big-AI teacher only on gaps.
 .PHONY: personal_ai
-personal_ai: $(PERSONAL_AI_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) tests/test_personal_ai.c include/personal_ai.h
+personal_ai: $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EXT_TEACHER_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) tests/test_personal_ai.c include/personal_ai.h
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/test_personal_ai \
-		$(PERSONAL_AI_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) \
+		$(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EXT_TEACHER_SRC) \
 		$(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) \
 		$(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) \
 		$(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) \
@@ -1914,6 +1917,61 @@ personal_ai: $(PERSONAL_AI_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LA
 	@grep -q "PERSONAL_AI_PASS" logs/personal_ai.log
 	@$(MAKE) --no-print-directory personal_ai_auto
 	@grep "PERSONAL_AI_PASS" logs/personal_ai.log
+
+.PHONY: hybrid_ai hybrid_bench
+hybrid_ai: $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EXT_TEACHER_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) tests/test_hybrid_ai.c include/hybrid_ai.h include/personal_ai.h
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/test_hybrid_ai \
+		$(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EXT_TEACHER_SRC) \
+		$(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) \
+		$(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) \
+		$(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) \
+		tests/test_hybrid_ai.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -pthread
+	@./$(BIN_DIR)/test_hybrid_ai > logs/hybrid_ai.log 2>&1
+	@grep -q "HYBRID_AI_PASS" logs/hybrid_ai.log
+	@grep "HYBRID_AI_PASS" logs/hybrid_ai.log
+
+hybrid_bench: $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EXT_TEACHER_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) tests/bench_hybrid_ai.c
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/bench_hybrid_ai \
+		$(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EXT_TEACHER_SRC) \
+		$(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) \
+		$(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) \
+		$(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) \
+		tests/bench_hybrid_ai.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -pthread
+	@./$(BIN_DIR)/bench_hybrid_ai > logs/hybrid_bench.log 2>&1
+	@grep -q "HYBRID_BENCH_PASS" logs/hybrid_bench.log
+	@cat logs/hybrid_bench.log
+
+# Real GGUF residual (Tier C). Hermetic without env; real when path set.
+.PHONY: residual_gguf residual_gguf_real
+residual_gguf: $(RESIDUAL_GGUF_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EXT_TEACHER_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) tests/test_residual_gguf.c include/residual_gguf.h
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/test_residual_gguf \
+		$(RESIDUAL_GGUF_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EXT_TEACHER_SRC) \
+		$(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) \
+		$(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) \
+		$(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) \
+		tests/test_residual_gguf.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -pthread
+	@./$(BIN_DIR)/test_residual_gguf > logs/residual_gguf.log 2>&1
+	@grep -q "RESIDUAL_GGUF_PASS" logs/residual_gguf.log
+	@grep "RESIDUAL_GGUF_PASS" logs/residual_gguf.log
+
+# Requires CNET_RESIDUAL_GGUF (and optional CNET_RESIDUAL_WINDOW). Uses int8 diet.
+# Structure-mines residual traces into a certified unit (P5) when real.
+residual_gguf_real: residual_gguf
+	@if [ -z "$$CNET_RESIDUAL_GGUF" ]; then \
+		echo "Set CNET_RESIDUAL_GGUF=/path/model.gguf"; exit 2; \
+	fi
+	@mkdir -p logs
+	@CNET_ORACLE_INT8=$${CNET_ORACLE_INT8:-1} CNET_REQUIRE_REAL_RESIDUAL=1 \
+		CNET_RESIDUAL_STRUCTURE_MINE=1 \
+		./$(BIN_DIR)/test_residual_gguf > logs/residual_gguf_real.log 2>&1
+	@grep -q "RESIDUAL_GGUF_PASS" logs/residual_gguf_real.log
+	@grep -E "real residual|structure mine|RESIDUAL_GGUF_PASS|personal_ai serves|post-mine" logs/residual_gguf_real.log
+
+.PHONY: residual_structure_mine_real
+residual_structure_mine_real: residual_gguf_real
 
 .PHONY: personal_ai_auto
 personal_ai_auto: tests/test_personal_ai_auto.py scripts/personal_ai_auto.sh config/cnet-personal-ai-lane.service config/cnet-personal-ai.target config/personal-ai.env
