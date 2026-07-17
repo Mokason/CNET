@@ -79,6 +79,27 @@ CNET_API int soul_run(SoulHost *h, const char *name,
 CNET_API int soul_route(SoulHost *h, const char *goal_tag,
                         const double *in, int in_cap, double *out, int out_cap);
 
+/* ---- counterfactual route evidence (REPORT-ONLY, opt-in) ------------------
+   Set CNET_COUNTERFACTUAL=1 (any non-empty value other than "0") BEFORE
+   soul_open to enable a shadow evidence channel on soul_route: after a route
+   is SERVED, the certified same-shape roster is projected as an ephemeral CCE
+   recall forest and the native counterfactual API ranks alternative routes
+   and computes a conservative consistency score
+   (cce_router_sample_counterfactuals + cce_router_consistency_score). The
+   report is logged as one stderr telemetry line ("CNET_COUNTERFACTUAL
+   REPORT ...") and kept for this accessor, so a host (e.g. the MCP server's
+   existing counterfactualRoutes / counterfactualConsistency metadata channel
+   on cnet_verify_claim) can attach it as metadata. Certification outranks
+   evidence (docs/dispatch.md): the channel may RANK or REPORT, never decide —
+   the served answer, every error code, and every refusal path are
+   byte-identical with the knob on or off (gate: make counterfactual_serving).
+
+   Copies the report attached to the LAST SERVED soul_route answer into out
+   (NUL-terminated). Returns 0 on success, -1 bad args, -2 channel disabled
+   (knob unset at soul_open), -3 no report (nothing served yet, or the last
+   routed query was refused), -4 out_cap too small. */
+CNET_API int soul_counterfactual_last(SoulHost *h, char *out, int out_cap);
+
 /* Real Laplace-smoothed reliability of a named unit from the loaded registry,
    scaled x1000 (920 = 0.920). Fresh units read 500 (0.5) until executed —
    the actual evidence, not a hard-coded constant. <0 if not found. */

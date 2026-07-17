@@ -13,6 +13,7 @@
 #include "../include/specialist.h"
 #include "../include/specialist_health.h"
 #include "../include/gap_lane.h"
+#include "../include/cce/cce_router.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -33,6 +34,13 @@ struct SoulHost {
        no-plans are appended here for the gap lane to ingest — the serving
        process detects, the lane learns. */
     char gap_inbox[512];
+    /* Counterfactual route evidence (CNET_COUNTERFACTUAL env at soul_open;
+       default OFF): a REPORT-ONLY shadow channel on soul_route. Certification
+       outranks evidence (docs/dispatch.md) — the channel may RANK or REPORT
+       but never changes a served answer or a refusal. counterfactual_last
+       holds the report attached to the last SERVED route ("" = none). */
+    int counterfactual_enabled;
+    char counterfactual_last[512];
     /* Remounted oracle descriptors (soul_mount_oracles). One slot per base
        oracle descriptor, sized ONCE to base.oracle_count (fixed after load) so
        a slot's &bound_entries[i] never moves — the adapter BTN and the live
@@ -174,6 +182,10 @@ CNET_API int soul_open(const char *base_path, const char *model_path,
         const char *inbox = getenv("CNET_GAP_INBOX");
         if (inbox && inbox[0] && strlen(inbox) < sizeof h->gap_inbox)
             memcpy(h->gap_inbox, inbox, strlen(inbox) + 1);
+    }
+    {
+        const char *cf = getenv("CNET_COUNTERFACTUAL");
+        h->counterfactual_enabled = cf && cf[0] && strcmp(cf, "0") != 0;
     }
     h->loaded = 1;
     *out = h;
@@ -324,6 +336,147 @@ CNET_API int soul_run(SoulHost *h, const char *name,
     return (int)out_total;   /* > out_cap signals truncation to the caller */
 }
 
+/* ---- counterfactual route evidence (REPORT-ONLY shadow channel) -----------
+   With CNET_COUNTERFACTUAL set at soul_open, a SERVED route additionally
+   projects the same-shape certified roster as an ephemeral CCE recall forest
+   (branch = live unit, centroid = the unit's first sealed exemplar input,
+   goodness = its live Laplace reliability) and asks the layer-1 recall router
+   how stable the served unit's goal ownership is against ranked alternatives
+   (cce_router_sample_counterfactuals + cce_router_consistency_score).
+   Layer-1 recall has NO authority (docs/dispatch.md): this runs strictly
+   AFTER route_execute has produced the answer, executes no unit, and only
+   writes a report string plus one stderr telemetry line. The served answer
+   and every refusal path are byte-identical with the knob on or off
+   (gate: make counterfactual_serving).
+   Roster slot 0 is RESERVED for the served unit so a saturated roster
+   (>= SOUL_CF_MAX_BRANCHES same-shape certified units ahead of it in
+   registry order) can never crowd the primary out; the shadow stays silent
+   only when the served unit itself is unqualifiable (no recoverable sealed
+   exemplar/centroid data). */
+#define SOUL_CF_MAX_BRANCHES 32
+#define SOUL_CF_CENTROID_DIM 32
+
+/* Grounds one certified live unit as a CCE branch at the given roster slot.
+   Returns 1 on success; 0 when the unit cannot be honestly grounded (not
+   certified, shape mismatch, or its sealed exemplar contract — which anchors
+   the unit's input domain — cannot be recovered). */
+static int soul_cf_ground_branch(SoulHost *h, const RegistryEntry *entry,
+                                 size_t in_total, int dim,
+                                 cce_cascade *cascade, cce_branch *branch) {
+    const Contract *c;
+    int d;
+    if (!entry->btn || !entry->name || !entry->certified || entry->shadow_of)
+        return 0;
+    if (ports_total(entry->btn->input_ports,
+                    entry->btn->input_port_count) != in_total)
+        return 0;
+    c = soul_contract_lookup(entry->name, h);
+    if (!c || c->exemplar_count == 0 || !c->inputs) return 0;
+    memset(cascade, 0, sizeof *cascade);
+    memset(branch, 0, sizeof *branch);
+    cascade->goodness = (float)btn_reliability(entry->btn);
+    snprintf(cascade->name, sizeof cascade->name, "%s", entry->name);
+    branch->cascade = cascade;
+    branch->centroid_dim = dim;
+    for (d = 0; d < dim; ++d)
+        branch->centroid[d] = (float)c->inputs[d];
+    snprintf(branch->name, sizeof branch->name, "%s", entry->name);
+    return 1;
+}
+
+static void soul_counterfactual_shadow(SoulHost *h, const char *goal_tag,
+                                       const RegistryEntry *served,
+                                       const double *in, size_t in_total) {
+    cce_cascade cascades[SOUL_CF_MAX_BRANCHES];
+    cce_branch branches[SOUL_CF_MAX_BRANCHES];
+    cce_forest forest;
+    cce_router router;
+    CounterfactualRoute alts[CCE_ROUTER_MAX_COUNTERFACTUALS];
+    CounterfactualRoute primary;
+    float input_f[SOUL_CF_CENTROID_DIM];
+    float consistency;
+    size_t i;
+    int dim, k, len, n, primary_idx, count = 0;
+
+    dim = in_total < SOUL_CF_CENTROID_DIM ? (int)in_total
+                                          : SOUL_CF_CENTROID_DIM;
+    if (dim <= 0) return;
+    for (k = 0; k < dim; ++k) input_f[k] = (float)in[k];
+
+    /* the served unit owns slot 0 unconditionally so the roster can never
+       saturate before reaching it; if IT cannot be grounded (missing sealed
+       exemplar/centroid data) the channel honestly reports nothing */
+    if (!soul_cf_ground_branch(h, served, in_total, dim, &cascades[0],
+                               &branches[0]))
+        return;
+    primary_idx = 0;
+    n = 1;
+    for (i = 0; i < h->reg.count && n < SOUL_CF_MAX_BRANCHES; ++i) {
+        const RegistryEntry *entry = &h->reg.entries[i];
+        if (entry == served) continue;
+        if (soul_cf_ground_branch(h, entry, in_total, dim, &cascades[n],
+                                  &branches[n]))
+            n++;
+    }
+
+    memset(&forest, 0, sizeof forest);
+    forest.branches = branches;
+    forest.num_branches = n;
+    forest.max_branches = n;
+    if (cce_router_init(&router, 1.0f, n) != CCE_OK) return;
+    if (cce_router_sample_counterfactuals(&router, &forest, input_f, dim,
+                                          primary_idx, alts,
+                                          CCE_ROUTER_MAX_COUNTERFACTUALS,
+                                          &count) != CCE_OK)
+        return;
+
+    memset(&primary, 0, sizeof primary);
+    primary.branch_index = primary_idx;
+    /* the sampler records each alternative's margin AGAINST the primary's
+       SSMax score, so the primary score is recovered from the top
+       alternative (score + margin); with no alternative the route is
+       unchallenged by definition */
+    primary.route_score = count > 0
+        ? alts[0].route_score + alts[0].contrast_margin
+        : 1.0f;
+    snprintf(primary.branch_name, sizeof primary.branch_name, "%s",
+             branches[primary_idx].name);
+    consistency = cce_router_consistency_score(&primary, alts, count);
+
+    len = snprintf(h->counterfactual_last, sizeof h->counterfactual_last,
+                   "goal=%s unit=%s consistency=%.6f alternatives=%d",
+                   goal_tag, branches[primary_idx].name,
+                   (double)consistency, count);
+    if (len < 0) {
+        h->counterfactual_last[0] = '\0';
+        return;
+    }
+    for (k = 0; k < count && (size_t)len < sizeof h->counterfactual_last;
+         ++k) {
+        int wrote = snprintf(h->counterfactual_last + len,
+                             sizeof h->counterfactual_last - (size_t)len,
+                             " alt%d=%s:%.6f", k, alts[k].branch_name,
+                             (double)alts[k].route_score);
+        if (wrote < 0) break;
+        len += wrote;
+    }
+    fprintf(stderr, "CNET_COUNTERFACTUAL REPORT %s\n", h->counterfactual_last);
+}
+
+CNET_API int soul_counterfactual_last(SoulHost *h, char *out, int out_cap) {
+    size_t need;
+    if (!h || !h->loaded || !out || out_cap <= 0) return -1;
+    if (!h->counterfactual_enabled) return -2;
+    if (h->counterfactual_last[0] == '\0') return -3;
+    need = strlen(h->counterfactual_last) + 1;
+    if (need > (size_t)out_cap) {
+        out[0] = '\0';
+        return -4;
+    }
+    memcpy(out, h->counterfactual_last, need);
+    return 0;
+}
+
 CNET_API int soul_route(SoulHost *h, const char *goal_tag,
                         const double *in, int in_cap, double *out, int out_cap) {
     RegistryEntry *entry;
@@ -335,6 +488,10 @@ CNET_API int soul_route(SoulHost *h, const char *goal_tag,
     int rc;
 
     if (!h || !h->loaded || !goal_tag || !in || !out) return -1;
+    /* Each routed query starts with no counterfactual evidence; only a
+       SERVED answer may attach a report, so a refusal never carries stale
+       metadata and refusal semantics stay untouched. */
+    if (h->counterfactual_enabled) h->counterfactual_last[0] = '\0';
 
     /* the unit that owns a goal tag is named "acq_<tag>" (flagship convention);
        take its REAL input/output ports instead of fabricating them. */
@@ -358,6 +515,10 @@ CNET_API int soul_route(SoulHost *h, const char *goal_tag,
         return -3;
     }
     rc = route_execute(&plan, in, in_total, out, out_total);
+    /* SHADOW evidence only, strictly after the answer bytes are final: the
+       report can never change `out`, the return code, or any refusal. */
+    if (rc == 0 && h->counterfactual_enabled)
+        soul_counterfactual_shadow(h, goal_tag, entry, in, in_total);
     return rc == 0 ? (int)out_total : -5;
 }
 
