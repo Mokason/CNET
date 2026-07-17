@@ -1748,6 +1748,24 @@ gap_lane_run_build: $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADA
 		$(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) \
 		tests/gap_lane_run.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -pthread
 
+# Fail-safe deployment tracer: static check that the gap-lane systemd unit
+# carries ConditionFileIsExecutable matching ExecStart's binary, plus a
+# no-start systemd-analyze semantic probe when available. No systemctl and no
+# daemon execution.
+.PHONY: gap_lane_service_config
+gap_lane_service_config: tests/test_gap_lane_service_config.py config/cnet-gap-lane.service Makefile
+	@mkdir -p logs
+	@python3 tests/test_gap_lane_service_config.py > logs/gap_lane_service_config.log 2>&1
+	@grep -q "GAP_LANE_SERVICE_CONFIG_PASS" logs/gap_lane_service_config.log
+
+# Build-only prepare: compile the daemon and run the config tracer.  This does
+# NOT start, enable, or systemctl the service.  Operators must start the lane
+# explicitly with `systemctl start cnet-gap-lane` after verifying the binary
+# and model paths exist on the target host.
+.PHONY: gap_lane_service_prepare
+gap_lane_service_prepare: gap_lane_run_build gap_lane_service_config
+	@echo "GAP_LANE_SERVICE_PREPARE_DONE"
+
 # Gap-lane student-training throughput gate: CNET_TRAIN_FAST=1 (default OFF)
 # is a byte-identical fast plain-SGD step in btn_train_dynamic (row-blocked
 # reduction chains + exact-zero input skip + deterministic OpenMP worksharing;
@@ -1860,7 +1878,7 @@ mcp_compression_test: cnet_dll
 	@echo "MCP_COMPRESSION_TEST_PASS"
 
 .PHONY: mcp_protocol_survival
-mcp_protocol_survival: cnet_dll
+mcp_protocol_survival: cnet_dll soul_host_test
 	@mkdir -p logs
 	LD_LIBRARY_PATH="$(CURDIR)$${LD_LIBRARY_PATH:+:$$LD_LIBRARY_PATH}" \
 		$(DOTNET) test dotnet/CnetMcpServer.Tests/CnetMcpServer.Tests.csproj \
@@ -2121,7 +2139,7 @@ counterfactual_serving: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $
 	@grep -q "CNET_COUNTERFACTUAL REPORT" logs/counterfactual_serving.log
 	@grep -q "COUNTERFACTUAL_SERVING_PASS" logs/counterfactual_serving.log
 
-unified_native: unified_adapter unified_cce_adapter unified_oracle_adapter unified_specialist gap_lane dispatch_story oracle_v2_test unified_async unified_models unified_ds4_launcher soul_host_test soul_reopen_test counterfactual_serving admission_bypass_audit cnet_dll build_hygiene_test alt_paths_gate aicimo_core_test
+unified_native: unified_adapter unified_cce_adapter unified_oracle_adapter unified_specialist gap_lane gap_lane_service_config dispatch_story oracle_v2_test unified_async unified_models unified_ds4_launcher soul_host_test soul_reopen_test counterfactual_serving admission_bypass_audit cnet_dll build_hygiene_test alt_paths_gate aicimo_core_test
 	@for sym in specialist_wrap_btn specialist_wrap_cce_model \
 		specialist_wrap_oracle specialist_admit specialist_axes \
 		specialist_residency_of_model specialist_residency_of_branch \
@@ -2148,6 +2166,8 @@ unified_native: unified_adapter unified_cce_adapter unified_oracle_adapter unifi
 	@nm -D cnet.so | grep -q " cnet_lane_pool_submit$$"
 	@nm -D cnet.so | grep -q " soul_oracle_count$$"
 	@nm -D cnet.so | grep -q " soul_oracle_identity$$"
+	@nm -D cnet.so | grep -q " soul_oracle_artifact_sha256$$"
+	@nm -D cnet.so | grep -q " soul_oracle_runtime_libs_digest$$"
 	@nm -D cnet.so | grep -q " soul_mount_oracles$$"
 	@nm -D cnet.so | grep -q " soul_unit_kind$$"
 	@nm -D cnet.so | grep -q " soul_mounted_oracle_count$$"
@@ -2239,6 +2259,8 @@ unified:
 	@grep -q "acq_unified_goal" logs/unified_mcp.log
 	@grep -q "unified_teacher" logs/unified_mcp.log
 	@grep -q "descriptor_only_not_runtime_trust" logs/unified_mcp.log
+	@grep -q "artifactSha256.*a0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebf" logs/unified_mcp.log
+	@grep -q "runtimeLibsDigest.*0x00000000c1b5c0de" logs/unified_mcp.log
 	@grep -q "reset_remaining" logs/unified_mcp.log
 	@grep -qE 'gap_noted[^:]*:true' logs/unified_mcp.log
 	@grep -q "NO_PLAN" tmp_soul_host.cnb.inbox

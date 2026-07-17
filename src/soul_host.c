@@ -274,6 +274,14 @@ CNET_API int soul_oracle_artifact_sha256(SoulHost *h, int index,
     return 0;
 }
 
+CNET_API int soul_oracle_runtime_libs_digest(SoulHost *h, int index,
+                                             uint64_t *out) {
+    if (!h || !h->loaded || !out || index < 0 ||
+        (size_t)index >= h->base.oracle_count) return -1;
+    *out = h->base.oracles[(size_t)index].identity.runtime_libs_digest;
+    return 0;
+}
+
 CNET_API int soul_unit_provenance(SoulHost *h, const char *name,
                                   char *out, int out_cap) {
     const char *prov;

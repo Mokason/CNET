@@ -632,6 +632,20 @@ internal static partial class CceNative
         out ulong contractDigest, out ulong configDigest,
         out ulong retrievalSnapshotDigest, out ulong toolchainDigest);
 
+    // Full collision-resistant artifact identity. The native accessor always
+    // writes exactly 32 bytes; all-zero is the visible pre-v4/unattested label.
+    [LibraryImport(CnetLibraryName, EntryPoint = "soul_oracle_artifact_sha256")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+    internal static partial int SoulOracleArtifactSha256(IntPtr host, int index,
+        [Out] byte[] artifactSha256);
+
+    // v5 linked-runtime provenance digest (tail extension; 0 = unattested,
+    // never a refusal). <0 on bad host/index/out-pointer.
+    [LibraryImport(CnetLibraryName, EntryPoint = "soul_oracle_runtime_libs_digest")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+    internal static partial int SoulOracleRuntimeLibsDigest(IntPtr host, int index,
+        out ulong runtimeLibsDigest);
+
     [LibraryImport(CnetLibraryName, EntryPoint = "soul_unit_dims")]
     [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
     internal static partial int SoulUnitDims(IntPtr host, [MarshalAs(UnmanagedType.LPStr)] string name,

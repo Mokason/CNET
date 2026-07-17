@@ -68,3 +68,18 @@ Source of truth: `plans/post_release_real_model_continuation.md`
 | Publication | private `origin/master` | PENDING FINAL AUTHORITY | run `make release_integrity`, attribution audit, private push, and local/remote SHA equality check |
 
 H0 is rejected for recovery, benchmark integrity, and bounded activation: the replacement is admitted under unchanged gates, unavailable external metrics are withheld rather than simulated, and the only actionable row is durably verified with dedup/recovery evidence. Publication remains contingent on the single clean-tree release authority.
+
+## 2026-07-17 Runtime Provenance and Gap-Service Unification
+
+Source of truth: `plans/runtime_provenance_and_gap_service.md`
+Final authority: `make --no-print-directory release_integrity`
+Status at commit: **FOCUSED GREEN — READY FOR FINAL AUTHORITY**
+
+| Slice | RED/adversarial evidence | Focused GREEN / permanent authority |
+|---|---|---|
+| Gap-service fail-safe | The enabled user unit had no daemon artifact and accumulated `203/EXEC` restarts. The first proposed `ConditionPathIsExecutable` name is invalid on systemd 255 and was rejected rather than normalized into the implementation. | Exactly one non-negated `ConditionFileIsExecutable` in `[Unit]` matches `ExecStart`; `systemd-analyze condition` accepts `/bin/sh` and rejects a known-missing path; `gap_lane_service_prepare` builds/tests only and never starts/enables. `gap_lane_service_config` is mandatory in `unified_native`. |
+| Complete Oracle provenance | Native RED linked undefined `soul_oracle_runtime_libs_digest`; managed RED showed missing `ArtifactSha256`/`RuntimeLibsDigest`. The existing fixed-signature `soul_oracle_identity` could not be extended without ABI breakage. | Independent native accessors expose the exact persisted 32-byte artifact hash and v5 runtime digest; invalid arguments fail, zero stays an unattested label. The .NET record appends optional zero defaults and retains the exact old constructor overload for source/binary compatibility; real `SoulHost` data replaces them. Focused API test 1/1 and MCP real-fixture tests 3/3 pass exact `a0…bf` / `0x00000000c1b5c0de`. |
+| False-green resistance | A focused MCP command using `--no-restore` on a fresh worktree returned 0 with `IsTestProject` empty and ran zero tests. That success was rejected. | The test project is restored before focused execution and output must contain a nonzero all-passing count. Permanent `mcp_protocol_survival` already restores/runs the full project and rejects absent/zero pass markers; `unified` separately asserts exact stdio MCP fields and both ELF symbols. |
+| Operational boundary | Any service start could load the local Gemma-backed teacher and violate the offline requirement. | No start/enable action is present in Make targets or tests; `cnet-gap-lane.service` remains disabled/inactive and Gemma remains offline. Build-only recovery is explicit operator preparation, not activation. |
+
+H0 for the focused candidate is rejected: the service has a fail-safe executable condition and build-only recovery path, while exact full-artifact and linked-runtime provenance reaches native, managed, and MCP observers without changing the old identity ABI. Release closure is granted only by the single clean-tree authority above; no external push is part of this slice.

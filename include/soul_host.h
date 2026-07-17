@@ -55,6 +55,17 @@ CNET_API int soul_oracle_identity(
 CNET_API int soul_oracle_artifact_sha256(SoulHost *h, int index,
                                          unsigned char out32[32]);
 
+/* Linked-runtime provenance digest of an Oracle descriptor (the v5
+   attestation: FNV over the process's loaded DSOs + glibc version).
+   Returns 0 and writes *out on success. *out is the EXACT persisted
+   value; 0 is a valid label meaning "linked runtime unattested"
+   (pre-v5 base, or a platform without dl introspection) — never a
+   refusal. <0 for a bad host, index, or out-pointer. This is a NEW
+   tail-extension accessor; it does NOT alter soul_oracle_identity's
+   ABI. */
+CNET_API int soul_oracle_runtime_libs_digest(SoulHost *h, int index,
+                                             uint64_t *out);
+
 /* Direct unit -> descriptor relation: copy the name of the oracle descriptor
    that taught `name` into `out` ("" when the unit has no recorded teacher).
    Returns 0, -2 for an unknown unit, <0 for bad buffer/truncation. */

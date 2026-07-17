@@ -1,15 +1,18 @@
 # Toolchain digest: linked-runtime attestation (scope)
 
-Status: IMPLEMENTED, slice 1 (2026-07-17) — `runtime_libs_digest` tail
-field on `CnetOracleIdentity`, computed in `src/runtime_identity.c`
-(dl_iterate_phdr build-id fold + glibc version), CNB v5 with v1–v4 read
-compat, populated by the daemon, gated (`make base` 94 checks,
-`make gap_lane` 51). Deferred from this slice: GPU driver/kernel folding
-(folds only when a GPU lane teaches — not in CPU-only identities) and
-the `soul_host` projection of the new field. Original scope below.
-Closes the last provenance caveat named in the July 12/13 CHANGELOG
-rows: "linked system libraries/GPU kernels are outside the toolchain
-digest."
+Status: IMPLEMENTED, slices 1–2 (2026-07-17) — `runtime_libs_digest` is an
+ABI-safe tail on `CnetOracleIdentity`, computed in `src/runtime_identity.c`
+(`dl_iterate_phdr` build-id fold + glibc version), persisted in CNB v5 with
+v1–v4 read compatibility, populated by the daemon, and projected exactly with
+the existing full artifact SHA-256 through native `SoulHost`, .NET, and MCP.
+The original `soul_oracle_identity` ABI is unchanged; new independent accessors
+carry the full hash/runtime record; the managed descriptor adds optional zero
+defaults and retains the exact eight-argument overload so source and binary
+callers remain valid. Permanent gates:
+`make base` (94 checks), `make gap_lane` (51), `make soul_host_test`, focused
+managed/MCP real-fixture tests, and `make unified` symbol + exact-value checks.
+Only GPU driver/kernel folding remains deferred; it applies only when a GPU
+lane teaches and must not perturb CPU-only identities. Original scope below.
 
 ## What the digest covers today
 
@@ -19,9 +22,9 @@ Makefile-injected), `CNET_ORACLE_ABI_VERSION`, and pointer width. A
 zero digest reads `unattested` and is refused as provenance
 (reconcile_one, src/gap_lane.c).
 
-## The hole
+## The hole closed for CPU teaching by slices 1–2
 
-Teaching numerics also depend on code the digest never sees:
+Before CNB v5, teaching numerics also depended on code the toolchain digest did not see:
 - glibc/libm (expf/tanh differ across versions — logits shift),
 - the OpenMP runtime (reduction/scheduling order),
 - OpenCL driver + kernel binaries when a GPU oracle pool teaches.
@@ -29,7 +32,7 @@ Teaching numerics also depend on code the digest never sees:
 A teacher rebuilt against a different libm can produce a different
 exemplar table under an IDENTICAL current digest.
 
-## Proposed mechanism
+## Implemented mechanism
 
 Add `runtime_libs_digest` (u64) to `CnetOracleIdentity` as an ABI-safe
 TAIL extension — the exact precedent of `artifact_sha256` (July 13):
@@ -56,8 +59,15 @@ how pre-v4 loads read the full hash as all-zero). Ledger untouched.
 ## Gates
 
 - `make base`: +2 checks (round-trip of the new field; zero-on-old-load).
-- `make gap_lane`: daemon populates it; provenance projection
-  (`soul_oracle_*`) exposes it.
+- `make gap_lane`: daemon populates it.
+- `make soul_host_test`: native exact-value and invalid-argument accessor
+  checks over the real CNB fixture.
+- Managed/MCP tests: exact 64-character lowercase `artifactSha256` and
+  fixed-width lowercase `runtimeLibsDigest` reach `cnet_list_oracles`; legacy
+  managed construction receives explicit zero defaults.
+- `make unified`: requires the two exported accessor symbols and exact fixture
+  values on the real stdio MCP response. The service config gate is also a
+  permanent native prerequisite.
 - A refusal is NOT added: a zero runtime digest stays a visible label,
   not a hard fail (same posture as `unattested` toolchain today).
 

@@ -85,6 +85,7 @@ int main(void) {
     oracle_identity.config_digest = 0x3030u;
     oracle_identity.retrieval_snapshot_digest = 0x4040u;
     oracle_identity.toolchain_digest = 0x5050u;
+    oracle_identity.runtime_libs_digest = 0xC1B5C0DEu;  /* v5 linked-runtime attestation */
     { int z; for (z = 0; z < 32; ++z) oracle_identity.artifact_sha256[z] = (unsigned char)(0xA0 + z); }
     check(cnb_add_oracle_desc_v2(&base, "unified_teacher", "builtin",
                                  in_port, out_port, &oracle_identity) == 0,
@@ -128,6 +129,20 @@ int main(void) {
               retrieval == oracle_identity.retrieval_snapshot_digest &&
               toolchain == oracle_identity.toolchain_digest,
               "host projects complete bounded Oracle identity");
+        {
+            uint64_t rt_libs = 0;
+            check(soul_oracle_runtime_libs_digest(host, 0, &rt_libs) == 0 &&
+                  rt_libs == 0xC1B5C0DEu,
+                  "host projects the v5 linked-runtime provenance digest");
+            check(soul_oracle_runtime_libs_digest(host, -1, &rt_libs) < 0,
+                  "negative index refused");
+            check(soul_oracle_runtime_libs_digest(NULL, 0, &rt_libs) < 0,
+                  "NULL host refused");
+            check(soul_oracle_runtime_libs_digest(host, 0, NULL) < 0,
+                  "NULL out-pointer refused");
+            check(soul_oracle_runtime_libs_digest(host, 1, &rt_libs) < 0,
+                  "out-of-range index refused");
+        }
         {
             unsigned char sha[32]; int z, ok = 1;
             check(soul_oracle_artifact_sha256(host, 0, sha) == 0,

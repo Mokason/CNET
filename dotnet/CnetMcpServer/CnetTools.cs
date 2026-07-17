@@ -1090,7 +1090,9 @@ namespace CnetMcpServer
                     contractDigest = $"0x{descriptor.ContractDigest:x16}",
                     configDigest = $"0x{descriptor.ConfigDigest:x16}",
                     retrievalSnapshotDigest = $"0x{descriptor.RetrievalSnapshotDigest:x16}",
-                    toolchainDigest = $"0x{descriptor.ToolchainDigest:x16}"
+                    toolchainDigest = $"0x{descriptor.ToolchainDigest:x16}",
+                    artifactSha256 = descriptor.ArtifactSha256,
+                    runtimeLibsDigest = $"0x{descriptor.RuntimeLibsDigest:x16}"
                 });
             }
             return JsonSerializer.Serialize(new

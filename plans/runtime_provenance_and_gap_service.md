@@ -1,5 +1,8 @@
 # Runtime Provenance and Gap-Service Unification Plan
 
+**Status (2026-07-17):** Implemented and focused-green; clean candidate ready
+for the single release authority. Gemma and the user service remain offline.
+
 > **For Hermes:** Use subagent-driven-development skill to implement this plan task-by-task.
 
 **Goal:** Close two live seams in CNET's self-improvement loop: make the local gap-lane service fail safely when its ignored daemon artifact is absent, and project complete CNB artifact/runtime provenance through SoulHost, .NET, and MCP.
@@ -77,7 +80,7 @@ Add a separate exported accessor. Do not append an argument to `soul_oracle_iden
 
 **Step 3: Managed/MCP RED→GREEN**
 
-Add P/Invokes for the new runtime accessor and existing full-hash accessor, append optional/defaulted `ArtifactSha256` and `RuntimeLibsDigest` tails to `OracleDescriptor` so existing eight-argument source callers remain valid, fetch exact values per native descriptor, and include `artifactSha256` as 64 lowercase hex characters plus `runtimeLibsDigest` as lowercase fixed-width hex in MCP JSON. Add a focused test that opens the real native fixture and proves the exact values reach JSON; do not rely only on a managed synthetic descriptor.
+Add P/Invokes for the new runtime accessor and existing full-hash accessor, append optional/defaulted `ArtifactSha256` and `RuntimeLibsDigest` tails to `OracleDescriptor` plus retain an explicit eight-argument overload so existing source and already-compiled callers remain valid, fetch exact values per native descriptor, and include `artifactSha256` as 64 lowercase hex characters plus `runtimeLibsDigest` as lowercase fixed-width hex in MCP JSON. Add a focused test that opens the real native fixture and proves the exact values reach JSON; do not rely only on a managed synthetic descriptor.
 
 **Step 4: Verify GREEN**
 
@@ -107,13 +110,19 @@ Confirm service config never starts/enables a model, exact condition/ExecStart a
 
 Challenge missing/invalid indices, pre-v5 zero semantics, P/Invoke symbol loading, clean-tree behavior, service condition behavior, and accidental model start.
 
-**Step 3: Integrate candidate commits**
+**Step 3: Integrate reviewed candidate diffs**
 
-Cherry-pick into `feat/unified-self-improvement`, update master report/status docs to evidence-backed results, and run diff hygiene.
+Import only reviewed net diffs into `feat/unified-self-improvement` (excluding
+the rejected invalid systemd directive and source-breaking managed constructor),
+update master report/status docs to evidence-backed results, and run diff hygiene.
 
 **Step 4: Single umbrella acceptance**
 
-Run one consolidated command covering `gap_lane_service_config`, `soul_host_test`, MCP integration, `gap_lane`, and `release_integrity`. Preserve/restore only allowlisted generated evidence. Do not start the Gemma-backed systemd service.
+Commit the clean candidate, then run exactly one
+`make --no-print-directory release_integrity`. Its permanent `unified` and MCP
+prerequisites cover `gap_lane_service_config`, `soul_host_test`, exact MCP
+projection, `gap_lane`, native symbols, and managed tests. Preserve/restore only
+allowlisted generated evidence. Do not start the Gemma-backed systemd service.
 
 **H0:** the loop remains operationally fragile or linked-runtime provenance disappears above CNB.
 

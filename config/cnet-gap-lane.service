@@ -1,6 +1,11 @@
 [Unit]
 Description=CNET Gap Lane - 24/7 knowledge acquisition (detect, teach from local model, persist)
 Documentation=file:///home/marble/AI/CNET/include/gap_lane.h
+# Fail-safe: if the daemon binary is absent (e.g. not yet built, or this host
+# is a non-CNET worker) the unit is cleanly skipped via ConditionFileIsExecutable
+# instead of producing 203/EXEC restart churn.  The condition must match the
+# executable at the start of ExecStart below.
+ConditionFileIsExecutable=/home/marble/AI/CNET/bin/gap_lane_run
 
 [Service]
 Type=simple

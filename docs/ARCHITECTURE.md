@@ -1003,8 +1003,8 @@ re-certified against freshly mined truth first (a healthy incumbent is never
 churned), and only a behaviorally broken one is demoted to RESET beside a
 fresh-named replacement.
 
-**The unified base (`make base`, CNB version 4 semantics under stable CNB1
-magic, with v1/v2 read compatibility).** One sealed container replaces
+**The unified base (`make base`, CNB version 5 semantics under stable CNB1
+magic, with v1/v2/v3/v4 read compatibility).** One sealed container replaces
 per-unit file sprawl: content-addressed blobs of exact `.cnu` images (each
 keeping its own seal), name→blob references with a direct unit→descriptor
 provenance relation (`cnb_set_unit_provenance`; a dangling relation is
@@ -1143,6 +1143,33 @@ near-tie band the teacher itself does not resolve sharply, so no exact top-5
 segmentation exists to certify. It stays DEFERRED as an honest record, not a bug
 (ledger `soul_gemma4v2_final.cnb.gaps.txt`, unit family `*_quint_v01`).
 
+### Gap-lane service fail-safe deployment (build-only / explicit-start)
+
+The systemd unit `config/cnet-gap-lane.service` is the deployment tracer for
+the 24/7 gap-lane daemon.  It carries a `ConditionFileIsExecutable` guard in
+`[Unit]` that matches the executable at the start of `ExecStart`
+(`/home/marble/AI/CNET/bin/gap_lane_run`).  The gate validates the tracked
+section/path statically and, when available, runs a no-start
+`systemd-analyze condition` probe against present and missing files.  On a
+fresh start or restart, an absent binary makes the unit **cleanly skip**
+(condition failed) rather than spawn 203/EXEC restart churn.  The condition is
+not a live monitor: deleting the executable does not affect an already-running
+process until its next start attempt.
+
+**Operator flow (build-only — `prepare` does NOT start the service):**
+
+1. `make gap_lane_service_prepare` — compiles `bin/gap_lane_run`
+   (`gap_lane_run_build`) and runs the static config tracer
+   (`gap_lane_service_config`, which asserts the condition matches ExecStart
+   and emits `GAP_LANE_SERVICE_CONFIG_PASS`).  No `systemctl`, no daemon
+   execution.
+2. Verify the model and corpus paths referenced in `ExecStart` /
+   `Environment` exist on the target host.
+3. **Explicit start** — the operator runs
+   `systemctl start cnet-gap-lane` only when ready.  `prepare` never does
+   this.  If the binary is missing, systemd skips the unit (condition fail)
+   instead of entering a restart loop.
+
 ## Planner scaling (`make planner_scale_study`)
 
 Does "scale by adding primitives, not changing the core" survive a large library?
@@ -1253,6 +1280,17 @@ current state.
   specialists share one certification/admission lifecycle through native C,
   `SoulHost`, .NET, and MCP. Async lanes preserve cancellation, deadline, and
   failure evidence instead of coercing non-answers into labels.
+  Oracle identity projection is additive: the original fixed-signature
+  `soul_oracle_identity` ABI remains unchanged, while
+  `soul_oracle_artifact_sha256` and `soul_oracle_runtime_libs_digest` return
+  the exact persisted full artifact hash and CNB-v5 linked-runtime record.
+  `OracleDescriptor` appends optional zero defaults and retains the exact old
+  eight-argument constructor for source/binary compatibility; live
+  `SoulHost.Oracles()` replaces those defaults from native data.
+  `cnet_list_oracles` emits `artifactSha256` as 64
+  lowercase hex characters and `runtimeLibsDigest` as `0x` plus 16 lowercase
+  hex characters. Zero remains a visible pre-version/unattested label, never
+  runtime trust or a new refusal.
 - **Model residency:** one backend-neutral catalog governs Dense, MoE, SSM,
   embedding, and CCE-native descriptors with explicit resource budgets, lazy
   loading, generation-stamped leases, concurrent-load deduplication, pinning,
@@ -1262,7 +1300,7 @@ current state.
   through the CNET-governed hybrid backend. It is deliberately not routed into
   the legacy QGKP-v2 native runner, which lacks hybrid SSM/attention dispatch.
 - **Autonomy loop:** gap-triggered acquisition (DEFER-total), the unified CNB
-  version 4 base under stable CNB1 magic (v1/v2/v3-readable) with mint-once tag governance, and the
+  version 5 base under stable CNB1 magic (v1/v2/v3/v4-readable) with mint-once tag governance, and the
   thermal-governed flagship harness. Honest campaign (gemma4-v2 12B, real forward, 2026-07-05):
   **253/256** ordered-top-3 slices certified (SAMPLED, Wilson ≥ 0.984),
   93% live-model fidelity when queried; the fuzzy tier adds sampled extraction
@@ -1312,6 +1350,8 @@ current state.
 | `make dispatch_story` | the one-dispatch-story gate (docs/dispatch.md): recall inside the contract, certification above evidence, reliability among the certified; prints `DISPATCH_STORY_PASS`; in `make unified` |
 | `make gap_lane` | the 24/7 learning-loop gate: inbox → ledger → oracle-taught dynamic-growth student → certified/sealed → replan → rebuild → atomic checkpoints → resume; prints `GAP_LANE_PASS`; in `make unified` |
 | `make gap_lane_run_build` | build `bin/gap_lane_run`, the gap-lane daemon (local-model teacher via the CCE GGUF runner; stop file `<base>.stop`; env knobs in `tests/gap_lane_run.c`) |
+| `make gap_lane_service_config` | fail-safe deployment tracer: assert exactly one non-negated `ConditionFileIsExecutable` in `[Unit]` matches the executable at the start of `ExecStart`, then use a no-start `systemd-analyze condition` semantic probe when available; prints `GAP_LANE_SERVICE_CONFIG_PASS`; no systemctl, no daemon execution |
+| `make gap_lane_service_prepare` | build-only prepare: runs `gap_lane_run_build` + `gap_lane_service_config`; compiles the daemon and verifies the unit's fail-safe condition; **does NOT start, enable, or systemctl the service** — operators must start the lane explicitly |
 | `make claims` | execute `make unified` and emit a fresh, strict run-scoped ledger (`logs/claims.jsonl`, `docs/verified-today.generated.md`) |
 | `make claims_model` / `make model_evidence` | run the representative private-checkpoint gates and require fresh exact `REAL_*_PASS` evidence; missing checkpoints/reference dumps emit `*_SKIPPED` and the target exits nonzero |
 | `make claims_all` | inventory every known log with exact-marker verdicts; explicitly labels filesystem mtimes/scanner identity and does not claim current-run freshness |
@@ -1327,7 +1367,7 @@ current state.
 | `make compat` (alias `make legacy`) | the COMPAT tier: the restored full historical aggregate (`test_all`, ALL TESTS PASSED) + demo fixture regeneration; quarantined out of `make test`, asserted in `verify-long`; prints `CNET_COMPAT_PASS` |
 | `make leakcheck` | allocation-balance gate over the base+acquire paths (`-Wl,--wrap`, CRT-baseline-aware); in `make test` |
 | `make acquire` | gap-triggered acquisition loop gate: ledger (v4 with minted unit names + reconcile marks + recipe fingerprints, v1/v2/v3-readable), oracle fallback, drain, close hook, recipe-change retry, rebuild, DEFER totality (131 checks) |
-| `make base` | unified CNB version 4 base gate under stable CNB1 magic (v1/v2/v3-readable): sealed container, tag governance, certify-on-load bridge, Oracle identity persistence (incl. the full 256-bit artifact hash), the direct unit→descriptor provenance relation, and migration (92 checks) |
+| `make base` | unified CNB version 5 base gate under stable CNB1 magic (v1/v2/v3/v4-readable): sealed container, tag governance, certify-on-load bridge, Oracle identity persistence (including the full 256-bit artifact hash and linked-runtime digest), the direct unit→descriptor provenance relation, and migration (94 checks) |
 | `make flagship` | flagship harness gate: task shapes, sampled tier, conformal probe, pilot scheduling, resume, stop file (72 checks) |
 | `make flagship_run_build` | build the REAL extraction CLI (CCE model as oracle); `CNET_GPU=1` enables the OpenCL forward (equivalence-gated) |
 | `make cnb_audit` | base inspector: counts, certify-on-load verification, tag audit, cross-base digest fidelity |
@@ -1430,8 +1470,8 @@ Run from project root or inside `build/`. Sanitization protects filenames; thoug
   content-addressed cascade/tensor payloads (one file per digest) and flat-text
   model manifests referencing them; specialist graphs persist as
   `CNET_SPECGRAPH 1` sidecars.
-- **Base containers** (`<name>.cnb`, CNB version 4 semantics under stable CNB1
-  magic, with v1/v2 read compatibility): ONE sealed container for many
+- **Base containers** (`<name>.cnb`, CNB version 5 semantics under stable CNB1
+  magic, with v1/v2/v3/v4 read compatibility): ONE sealed container for many
   units — content-addressed blobs of exact CNU1 images, name→blob references
   (each carrying its direct teacher-descriptor relation, "" when none),
   the mint-once tag registry (with provenance), digest-bound stats, and oracle
@@ -1487,7 +1527,7 @@ src/
 ├── pdf/               PDF ingestion: inflate.c, pdf_extract.c, font_decode.c
 ├── corpus/            corpus_split.c, corpus_store.c, retrieval.c, tile_memory.c, synonyms.c, graduate.c
 ├── acquire.c          Gap-triggered acquisition loop (ledger, oracle fallback, drain)
-├── base.c             Unified CNB v4 semantics (stable CNB1 magic, v1/v2/v3-readable; governance, full-width artifact hash, unit→descriptor provenance, registry bridge)
+├── base.c             Unified CNB v5 semantics (stable CNB1 magic, v1/v2/v3/v4-readable; governance, full-width artifact hash, linked-runtime digest, unit→descriptor provenance, registry bridge)
 ├── flagship.c         Thermal-governed extraction harness (task shapes, conformal probe)
 ├── nn.c               Legacy primitives
 └── main.c             nn_demo (historical)

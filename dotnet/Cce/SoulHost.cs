@@ -18,7 +18,28 @@ public sealed record OracleDescriptor(
     ulong ContractDigest,
     ulong ConfigDigest,
     ulong RetrievalSnapshotDigest,
-    ulong ToolchainDigest);
+    ulong ToolchainDigest,
+    string ArtifactSha256 = "0000000000000000000000000000000000000000000000000000000000000000",
+    ulong RuntimeLibsDigest = 0)
+{
+    // Preserve the original constructor in metadata for already-compiled
+    // managed callers, not just source callers recompiled against defaults.
+    public OracleDescriptor(
+        string name,
+        string kind,
+        ulong behaviorDigest,
+        ulong artifactDigest,
+        ulong contractDigest,
+        ulong configDigest,
+        ulong retrievalSnapshotDigest,
+        ulong toolchainDigest)
+        : this(name, kind, behaviorDigest, artifactDigest, contractDigest,
+            configDigest, retrievalSnapshotDigest, toolchainDigest,
+            "0000000000000000000000000000000000000000000000000000000000000000",
+            0)
+    {
+    }
+}
 
 /// <summary>
 /// Exact result of one runtime health pass (specialist_health_pass): what the
@@ -104,9 +125,16 @@ public sealed class SoulHost : IDisposable
                 out ulong behavior, out ulong artifact, out ulong contract,
                 out ulong config, out ulong retrieval, out ulong toolchain);
             if (rc != 0) throw new InvalidOperationException($"soul_oracle_identity({i}) failed: {rc}");
+            var artifactSha256Bytes = new byte[32];
+            rc = CceNative.SoulOracleArtifactSha256(_handle, i, artifactSha256Bytes);
+            if (rc != 0) throw new InvalidOperationException($"soul_oracle_artifact_sha256({i}) failed: {rc}");
+            rc = CceNative.SoulOracleRuntimeLibsDigest(_handle, i, out ulong runtimeLibs);
+            if (rc != 0) throw new InvalidOperationException($"soul_oracle_runtime_libs_digest({i}) failed: {rc}");
             descriptors[i] = new OracleDescriptor(
                 DecodeAtom(nameBuffer), DecodeAtom(kindBuffer),
-                behavior, artifact, contract, config, retrieval, toolchain);
+                behavior, artifact, contract, config, retrieval, toolchain,
+                Convert.ToHexString(artifactSha256Bytes).ToLowerInvariant(),
+                runtimeLibs);
         }
         return descriptors;
     }

@@ -311,8 +311,15 @@ public class ApiSurfaceTests
         var legacy = new OracleDescriptor(
             "legacy", "builtin",
             1UL, 2UL, 3UL, 4UL, 5UL, 6UL);
-        Assert.Equal("0000000000000000000000000000000000000000000000000000000000000000",
+        Assert.Equal(
+            "0000000000000000000000000000000000000000000000000000000000000000",
             legacy.ArtifactSha256);
         Assert.Equal(0UL, legacy.RuntimeLibsDigest);
+        Assert.NotNull(typeof(OracleDescriptor).GetConstructor(new[]
+        {
+            typeof(string), typeof(string),
+            typeof(ulong), typeof(ulong), typeof(ulong),
+            typeof(ulong), typeof(ulong), typeof(ulong)
+        }));
     }
 }
