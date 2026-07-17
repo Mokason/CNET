@@ -1,13 +1,12 @@
 #!/usr/bin/env bash
-# B: nudge local library growth — inbox seeds + optional v2-fast prepare.
-# Does NOT lower cert bars. Safe to run while learner is active.
+# B: nudge local library growth — LANE-TEACHABLE inbox seeds + optional v2-fast.
+# Does NOT lower cert bars. Seeds use w_cur → tk*q* top-k (matches gap_lane).
 set -euo pipefail
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 N="${1:-16}"
 bash "$REPO/scripts/personal_ai_grow_local.sh" "$N"
 if [ -x "$REPO/tools/campaign_v2_fast.sh" ]; then
   echo "campaign_nudge: campaign_v2_fast available — prepare only (no long run)"
-  # prepare is cheap if already built; ignore failures if artifacts missing
   bash "$REPO/tools/campaign_v2_fast.sh" prepare 2>/dev/null || \
     echo "campaign_nudge: prepare skipped (ok if not configured)"
 fi
