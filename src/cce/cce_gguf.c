@@ -4,6 +4,7 @@
 #include "../../include/cce/cce_sparse_kv.h"   /* opt-in sparse KV routing (the ONE selector) */
 #include "../../include/cce/cce_router.h"      /* cce_ssmax_topk_weights for MoE route */
 #include "../../include/cce/cce_dsa.h"         /* full DSA attention kernel */
+#include "../../include/cce/cce_cl_stream.h"   /* residual stream + device KV */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -1290,6 +1291,29 @@ static inline void gguf_fire_capture(const char *spec, const cce_tensor *in) {
                        g_gguf_capture_ctx);
 }
 
+/* Device-stream linear from cascade (T=1, residual stream ln as A). */
+static int stream_linear_cas(cce_clgemm *gpu, cce_cascade *cas, float *out,
+                             int dout) {
+    const cce_block *blk;
+    const float *bias;
+    int din, N;
+    if (!gpu || !cas || !out || cas->num_blocks != 1) return -1;
+    blk = &cas->blocks[0];
+    if (blk->type != CCE_BLOCK_LINEAR_HEAD || blk->weights.ndim != 2)
+        return -1;
+    din = blk->weights.shape[0];
+    N = blk->weights.shape[1];
+    if (N != dout) return -1;
+    bias = (blk->bias.numel == (size_t)N) ? blk->bias.data : NULL;
+    if (blk->w_q && blk->w_scale && !blk->w_trit)
+        return cce_clgemm_stream_linear_q8(
+            gpu, (const int8_t *)blk->w_q, blk->w_scale, bias, din, N, out);
+    if (!blk->w_q && !blk->w_trit)
+        return cce_clgemm_stream_linear_fp(gpu, blk->weights.data, bias, din, N,
+                                           out);
+    return -1;
+}
+
 static cce_result apply_linear_rows(cce_clgemm *gpu, cce_hipgemm *hip,
                                     cce_cascade* cas,
                                     const cce_tensor* in, cce_tensor* out) {
@@ -1874,6 +1898,15 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
         }
     }
 
+    /* Device residual stream + KV (decode only, dense, no gemma4 extras). */
+    int use_stream = 0;
+    if (gpu && n_tokens == 1 && !m->probe_batch && skv_frac <= 0.0f &&
+        !m->mla_kv && !m->gemma4_attn && m->embed_scale <= 1.0f &&
+        cce_clgemm_stream_bind(gpu, D, m->max_ctx, m->k_slot_floats,
+                               m->v_slot_floats) == 0 &&
+        cce_clgemm_stream_set_x(gpu, x.data, D) == 0)
+        use_stream = 1;
+
     char name[128];
     for (int l = 0; l < m->n_layer; l++) {
         const struct cce_attn_geom *ge = &m->geom[l];
@@ -1900,6 +1933,139 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
             /* free(NULL) is a no-op when the sparse knob is unset */
             free(scores); free(skv_idx); free(idx_scores); cce_tensor_free(&x);
             return CCE_ERR_NOT_FOUND;
+        }
+
+        /* ---- Device residual stream layer (decode) ---- */
+        if (use_stream) {
+            int abs_t = start_pos;
+            int jmin = 0;
+            float scale = 1.0f / sqrtf((float)ge->head_dim);
+            float *q_h = NULL, *k_h = NULL, *v_h = NULL, *ao = NULL;
+            float *o_h = NULL, *gate_h = NULL, *up_h = NULL, *mid_h = NULL,
+                  *down_h = NULL;
+            int mlp_h = m->feed_forward_length > 0 ? m->feed_forward_length
+                                                   : 4864;
+            int ok = 1;
+            if (ge->window > 0 && abs_t - ge->window + 1 > 0)
+                jmin = abs_t - ge->window + 1;
+            q_h = (float *)malloc((size_t)ge->q_dim * 4);
+            k_h = (float *)malloc((size_t)ge->k_dim * 4);
+            v_h = (float *)malloc((size_t)ge->v_dim * 4);
+            ao = (float *)malloc((size_t)ge->n_q * (size_t)ge->v_head_dim * 4);
+            o_h = (float *)malloc((size_t)D * 4);
+            gate_h = (float *)malloc((size_t)mlp_h * 4);
+            up_h = (float *)malloc((size_t)mlp_h * 4);
+            mid_h = (float *)malloc((size_t)mlp_h * 4);
+            down_h = (float *)malloc((size_t)D * 4);
+            if (!q_h || !k_h || !v_h || !ao || !o_h || !gate_h || !up_h ||
+                !mid_h || !down_h)
+                ok = 0;
+            if (ok &&
+                cce_clgemm_stream_rms_x(gpu, m->attn_norm[l].data, D, eps, 0) !=
+                    0)
+                ok = 0;
+            if (ok && (stream_linear_cas(gpu, q_cas, q_h, ge->q_dim) != 0 ||
+                       stream_linear_cas(gpu, k_cas, k_h, ge->k_dim) != 0 ||
+                       (ge->v_tied
+                            ? (memcpy(v_h, k_h, (size_t)ge->v_dim * 4), 0)
+                            : stream_linear_cas(gpu, v_cas, v_h, ge->v_dim))))
+                ok = 0;
+            if (ok) {
+                /* RoPE on host (tiny), then device KV + host cache mirror */
+                int hh;
+                for (hh = 0; hh < ge->n_q; hh++)
+                    gguf_apply_rope(q_h + (size_t)hh * ge->head_dim, NULL, 0,
+                                    ge->rope_dim, abs_t, ge->rope_base, NULL,
+                                    ge->n_q, ge->n_k);
+                for (hh = 0; hh < ge->n_k; hh++)
+                    gguf_apply_rope(NULL, k_h + (size_t)hh * ge->head_dim, 0,
+                                    ge->rope_dim, abs_t, ge->rope_base, NULL,
+                                    ge->n_q, ge->n_k);
+                memcpy(m->k_cache + (size_t)abs_t * m->k_slot_floats +
+                           ge->k_off,
+                       k_h, (size_t)ge->k_dim * 4);
+                memcpy(m->v_cache + (size_t)abs_t * m->v_slot_floats +
+                           ge->v_off,
+                       v_h, (size_t)ge->v_dim * 4);
+                if (cce_clgemm_stream_kv_write(gpu, abs_t, k_h, v_h, ge->k_dim,
+                                               ge->v_dim, ge->k_off,
+                                               ge->v_off) != 0)
+                    ok = 0;
+            }
+            if (ok &&
+                cce_clgemm_stream_attn(gpu, q_h, ge->k_off, ge->v_off, ge->n_q,
+                                       ge->n_k, ge->n_v, ge->head_dim,
+                                       ge->v_head_dim, jmin, abs_t, scale,
+                                       ao) != 0)
+                ok = 0;
+            if (ok) {
+                cce_tensor tin = {0}, tout = {0};
+                int o_in = ge->n_q * ge->v_head_dim;
+                cce_tensor_alloc(&tin, (int[]){1, o_in}, 2);
+                cce_tensor_alloc(&tout, (int[]){1, D}, 2);
+                if (tin.data && tout.data) {
+                    memcpy(tin.data, ao, (size_t)o_in * 4);
+                    if (apply_linear_rows(gpu, hip, o_cas, &tin, &tout) ==
+                        CCE_OK)
+                        memcpy(o_h, tout.data, (size_t)D * 4);
+                    else
+                        ok = 0;
+                } else
+                    ok = 0;
+                cce_tensor_free(&tin);
+                cce_tensor_free(&tout);
+            }
+            if (ok && cce_clgemm_stream_add_x_host(gpu, o_h, D) != 0) ok = 0;
+            if (ok &&
+                cce_clgemm_stream_rms_x(gpu, m->ffn_norm[l].data, D, eps, 0) !=
+                    0)
+                ok = 0;
+            if (ok && (stream_linear_cas(gpu, gate_cas, gate_h, mlp_h) != 0 ||
+                       stream_linear_cas(gpu, up_cas, up_h, mlp_h) != 0))
+                ok = 0;
+            if (ok &&
+                cce_clgemm_stream_silu_mul_host(gpu, gate_h, up_h, mid_h,
+                                               mlp_h) != 0) {
+                int i2;
+                for (i2 = 0; i2 < mlp_h; i2++) {
+                    float gv = gate_h[i2];
+                    float s = 1.0f / (1.0f + expf(-gv));
+                    mid_h[i2] = (gv * s) * up_h[i2];
+                }
+            }
+            /* down: mid as host A via apply_linear */
+            if (ok) {
+                cce_tensor tin = {0}, tout = {0};
+                cce_tensor_alloc(&tin, (int[]){1, mlp_h}, 2);
+                cce_tensor_alloc(&tout, (int[]){1, D}, 2);
+                if (tin.data && tout.data) {
+                    memcpy(tin.data, mid_h, (size_t)mlp_h * 4);
+                    if (apply_linear_rows(gpu, hip, down_cas, &tin, &tout) ==
+                        CCE_OK) {
+                        memcpy(down_h, tout.data, (size_t)D * 4);
+                    } else
+                        ok = 0;
+                } else
+                    ok = 0;
+                cce_tensor_free(&tin);
+                cce_tensor_free(&tout);
+            }
+            if (ok && cce_clgemm_stream_add_x_host(gpu, down_h, D) != 0)
+                ok = 0;
+            free(q_h);
+            free(k_h);
+            free(v_h);
+            free(ao);
+            free(o_h);
+            free(gate_h);
+            free(up_h);
+            free(mid_h);
+            free(down_h);
+            if (ok) continue; /* next layer, residual still on device */
+            /* fall through: resync host x and use CPU layer */
+            use_stream = 0;
+            (void)cce_clgemm_stream_get_x(gpu, x.data, D);
+            cce_clgemm_stream_reset(gpu);
         }
 
         int lnsh[2] = {n_tokens, D};
@@ -2353,6 +2519,10 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
     /* final norm + head */
     cce_tensor fn = {0};
     cce_tensor_alloc(&fn, xsh, 2);
+    /* Pull residual back if the stream path kept it on-GPU. */
+    if (use_stream && gpu && cce_clgemm_stream_live(gpu))
+        (void)cce_clgemm_stream_get_x(gpu, x.data, D);
+
     gguf_rms_norm_impl(&x, &m->output_norm, eps, &fn, (m->embed_scale > 1.0f));
 
     /* HEAD: normally only the LAST row (the only row anyone reads); in

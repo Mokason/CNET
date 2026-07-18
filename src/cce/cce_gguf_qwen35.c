@@ -51,6 +51,7 @@
 
 #include "cce_gguf_qwen35.h"
 #include "../../include/cce/cce_clgemm.h"
+#include "../../include/cce/cce_cl_stream.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -822,6 +823,14 @@ cce_result cce_gguf_qwen35_forward_impl(cce_gguf_qwen2 *m, const int *tokens,
                (size_t)D * sizeof(float));
     }
 
+    /* Residual stream + device KV for decode (full-attn layers + residual). */
+    int use_stream = 0;
+    if (gpu && n_tokens == 1 && !m->probe_batch &&
+        cce_clgemm_stream_bind(gpu, D, m->max_ctx, m->k_slot_floats,
+                               m->v_slot_floats) == 0 &&
+        cce_clgemm_stream_set_x(gpu, x.data, D) == 0)
+        use_stream = 1;
+
     float *scores = (float *)malloc((size_t)m->max_ctx * sizeof *scores);
     /* deltanet per-token scratch (widest case), shared across layers */
     float *dn_conv = (float *)malloc((size_t)e->qkv_dim * sizeof(float));
@@ -851,6 +860,10 @@ cce_result cce_gguf_qwen35_forward_impl(cce_gguf_qwen2 *m, const int *tokens,
             cce_tensor_free(&ln1); cce_tensor_free(&after_attn);
             rc = CCE_ERR_OOM; goto done;
         }
+        /* Keep host x mirrored when stream is live (GDN needs host residual). */
+        if (use_stream && e->kind[l] != CCE_QWEN35_LAYER_FULL_ATTN)
+            (void)cce_clgemm_stream_get_x(gpu, x.data, D);
+
         cce_gguf__rms_norm(&x, &m->attn_norm[l], eps, &ln1);
 
         if (e->kind[l] == CCE_QWEN35_LAYER_FULL_ATTN) {
@@ -926,11 +939,16 @@ cce_result cce_gguf_qwen35_forward_impl(cce_gguf_qwen2 *m, const int *tokens,
                     memcpy(m->v_cache + (size_t)pos * m->v_slot_floats + ge->v_off,
                            v.data + (size_t)t * ge->v_dim,
                            (size_t)ge->v_dim * sizeof(float));
+                    if (use_stream)
+                        (void)cce_clgemm_stream_kv_write(
+                            gpu, pos, k.data + (size_t)t * ge->k_dim,
+                            v.data + (size_t)t * ge->v_dim, ge->k_dim,
+                            ge->v_dim, ge->k_off, ge->v_off);
                 }
             }
 
-            /* GPU decode attention when prefix ≥ 64 (pack cost vs compute). */
-            if (n_tokens == 1 && !m->probe_batch && gpu && start_pos + 1 >= 64) {
+            /* GPU attn: prefer device KV stream (no pack); else host pack ≥64. */
+            if (n_tokens == 1 && !m->probe_batch && gpu) {
                 float *qplain = (float *)malloc(
                     (size_t)ge->n_q * (size_t)ge->head_dim * sizeof(float));
                 int abs_t0 = start_pos;
@@ -942,12 +960,31 @@ cce_result cce_gguf_qwen35_forward_impl(cce_gguf_qwen2 *m, const int *tokens,
                         memcpy(qplain + (size_t)h * ge->head_dim, qh,
                                (size_t)ge->head_dim * sizeof(float));
                     }
-                    if (cce_clgemm_attn_decode(
+                    /* ensure this token's K/V are on device cache */
+                    if (use_stream) {
+                        for (t = 0; t < 1; t++) {
+                            const int pos = abs_t0;
+                            (void)cce_clgemm_stream_kv_write(
+                                gpu, pos,
+                                k.data + (size_t)t * ge->k_dim,
+                                v.data + (size_t)t * ge->v_dim, ge->k_dim,
+                                ge->v_dim, ge->k_off, ge->v_off);
+                        }
+                        if (cce_clgemm_stream_attn(
+                                gpu, qplain, ge->k_off, ge->v_off, ge->n_q,
+                                ge->n_k, ge->n_v, ge->head_dim, ge->v_head_dim,
+                                0, abs_t0, scale, attn_out.data) == 0)
+                            ok_gpu = 1;
+                    }
+                    if (!ok_gpu && abs_t0 + 1 >= 64 &&
+                        cce_clgemm_attn_decode(
                             gpu, qplain, m->k_cache, m->v_cache,
                             m->k_slot_floats, m->v_slot_floats, ge->k_off,
                             ge->v_off, ge->n_q, ge->n_k, ge->n_v, ge->head_dim,
                             ge->v_head_dim, 0, abs_t0, scale,
-                            attn_out.data) == 0) {
+                            attn_out.data) == 0)
+                        ok_gpu = 1;
+                    if (ok_gpu) {
                         for (h = 0; h < ge->n_q; h++) {
                             const float *gate_h =
                                 qg.data + (size_t)h * 2 * ge->head_dim +
@@ -958,7 +995,6 @@ cce_result cce_gguf_qwen35_forward_impl(cce_gguf_qwen2 *m, const int *tokens,
                             for (d2 = 0; d2 < ge->v_head_dim; d2++)
                                 oh[d2] *= q35_sigmoidf(gate_h[d2]);
                         }
-                        ok_gpu = 1;
                     }
                     free(qplain);
                 }
@@ -1154,8 +1190,11 @@ cce_result cce_gguf_qwen35_forward_impl(cce_gguf_qwen2 *m, const int *tokens,
             cce_tensor_free(&be); cce_tensor_free(&gn);
         }
 
-        /* residual */
-        {
+        /* residual (device stream keeps x on GPU when live) */
+        if (use_stream && n_tokens == 1 &&
+            cce_clgemm_stream_add_x_host(gpu, after_attn.data, D) == 0) {
+            (void)cce_clgemm_stream_get_x(gpu, after_attn.data, D);
+        } else {
             size_t i;
             for (i = 0; i < (size_t)n_tokens * D; i++)
                 after_attn.data[i] += x.data[i];
@@ -1211,10 +1250,16 @@ cce_result cce_gguf_qwen35_forward_impl(cce_gguf_qwen2 *m, const int *tokens,
                 cce_tensor_free(&after_attn);
                 Q35_FAIL("down failed");
             }
-            {
+            if (use_stream && n_tokens == 1 &&
+                cce_clgemm_stream_set_x(gpu, after_attn.data, D) == 0 &&
+                cce_clgemm_stream_add_x_host(gpu, down.data, D) == 0) {
+                (void)cce_clgemm_stream_get_x(gpu, x.data, D);
+            } else {
                 size_t i;
                 for (i = 0; i < (size_t)n_tokens * D; i++)
                     x.data[i] = after_attn.data[i] + down.data[i];
+                if (use_stream)
+                    (void)cce_clgemm_stream_set_x(gpu, x.data, D);
             }
             cce_tensor_free(&ln2); cce_tensor_free(&gate); cce_tensor_free(&upv);
             cce_tensor_free(&mid); cce_tensor_free(&down);
@@ -1224,6 +1269,9 @@ cce_result cce_gguf_qwen35_forward_impl(cce_gguf_qwen2 *m, const int *tokens,
 
         cce_gguf__fire_layer_tap(l, x.data, n_tokens, D);
     }
+
+    if (use_stream && gpu)
+        (void)cce_clgemm_stream_get_x(gpu, x.data, D);
 
     /* ---- final norm + head (same contract as the qwen2 head: window head
             bit-identical on window ids, forest lm_head, output fallback,

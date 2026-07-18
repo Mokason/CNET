@@ -74,11 +74,26 @@ Hermetic tiny identity: `make gguf_gpu` → `GGUF_GPU_PASS`, max|Δlogit|=0, dua
 7. **hip int8**: expand-to-float LRU (`CNET_HIP_Q8_MB`, default 8 GiB) + sgemm.
 8. RMS/add/silu OpenCL helpers for residency chain.
 
+## Residual stream + device KV (landed)
+
+`cce_cl_stream.h` on primary OpenCL device (same CCE residual, not a second model):
+
+| API | Role |
+|-----|------|
+| `stream_bind` / `set_x` / `get_x` | residual x[D] on device |
+| `stream_rms_x` | ln = rms(x)*w on device → matmul A |
+| `stream_linear_{fp,q8}` | linear from device ln (d0 weights) |
+| `stream_kv_write` | write K/V row into device cache |
+| `stream_attn` | multi-head decode from device KV (strided, no pack) |
+| `stream_add_x_host` | x += delta |
+
+Wired: classic qwen2 decode stream layer; qwen35 residual + device KV + stream attn. Soft-fail → CPU. `CNET_GPU_STREAM=0` disables.
+
 ## Next levers (faster still)
 
-1. Keep residual/activations fully device-side across a whole layer (no host A for ln).
-2. Persistent K/V cache on GPU (avoid per-step pack).
-3. Longer decode benches (n≥64) to exercise GPU attention steady-state.
+1. Device-side RoPE + keep q on GPU through attn (less H2D).
+2. Stream linears for qwen35 full-attn q/k/v (not only residual/KV).
+3. Longer decode benches (n≥64) for steady-state tok/s.
 
 ## Isolation
 

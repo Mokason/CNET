@@ -1,5 +1,7 @@
 #include "../../include/cce/cce_clgemm.h"
+#include "../../include/cce/cce_cl_stream.h"
 
+#include <math.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -95,6 +97,9 @@ typedef cl_int (*p_clReleaseKernel)(cl_kernel);
 typedef cl_int (*p_clReleaseProgram)(cl_program);
 typedef cl_int (*p_clReleaseCommandQueue)(cl_command_queue);
 typedef cl_int (*p_clReleaseContext)(cl_context);
+typedef cl_int (*p_clEnqueueCopyBuffer)(cl_command_queue, cl_mem, cl_mem,
+                                        size_t, size_t, size_t, cl_uint,
+                                        const void *, void *);
 
 /* C[t*N+n] = (bias? B[n]:0) + sum_k A[t*K+k]*W[k*N+n].
  *
@@ -231,6 +236,61 @@ static const char *k_src =
     "    for (int j = 0; j < seq; ++j)\n"
     "        acc += scores[j] * V[(size_t)j * (size_t)vd + (size_t)d];\n"
     "    out[d] = acc;\n"
+    "}\n"
+    /* Device residual stream: rms(x)->ln, x+=y, strided KV attention. */
+    "__kernel void cnet_rms_dev(__global const float* x,\n"
+    "                           __global const float* w,\n"
+    "                           __global float* y,\n"
+    "                           const int D, const float eps,\n"
+    "                           const int has_w, const int add_one) {\n"
+    "    int i = get_global_id(0);\n"
+    "    if (i != 0) return;\n"
+    "    float ss = 0.0f;\n"
+    "    for (int d = 0; d < D; ++d) ss += x[d] * x[d];\n"
+    "    ss = rsqrt(ss / (float)D + eps);\n"
+    "    for (int d = 0; d < D; ++d) {\n"
+    "        float ww = has_w ? (add_one ? (1.0f + w[d]) : w[d]) : 1.0f;\n"
+    "        y[d] = x[d] * ss * ww;\n"
+    "    }\n"
+    "}\n"
+    "__kernel void cnet_add_dev(__global float* x,\n"
+    "                           __global const float* y, const int n) {\n"
+    "    int i = get_global_id(0);\n"
+    "    if (i < n) x[i] += y[i];\n"
+    "}\n"
+    /* scores[j] = scale * q·K[jmin+j] with K row at (jmin+j)*k_slot+k_off+kh*hd */
+    "__kernel void cnet_ascores_kv(__global const float* q,\n"
+    "                              __global const float* Kc,\n"
+    "                              __global float* scores,\n"
+    "                              const int seq, const int jmin,\n"
+    "                              const int hd, const int kh,\n"
+    "                              const int k_slot, const int k_off,\n"
+    "                              const float scale) {\n"
+    "    int j = get_global_id(0);\n"
+    "    if (j >= seq) return;\n"
+    "    int pos = jmin + j;\n"
+    "    __global const float* kj = Kc + (size_t)pos * (size_t)k_slot +\n"
+    "                              (size_t)k_off + (size_t)kh * (size_t)hd;\n"
+    "    float acc = 0.0f;\n"
+    "    for (int d = 0; d < hd; ++d) acc += q[d] * kj[d];\n"
+    "    scores[j] = acc * scale;\n"
+    "}\n"
+    "__kernel void cnet_av_kv(__global const float* scores,\n"
+    "                         __global const float* Vc,\n"
+    "                         __global float* out,\n"
+    "                         const int seq, const int jmin,\n"
+    "                         const int vd, const int vh,\n"
+    "                         const int v_slot, const int v_off) {\n"
+    "    int d = get_global_id(0);\n"
+    "    if (d >= vd) return;\n"
+    "    float acc = 0.0f;\n"
+    "    for (int j = 0; j < seq; ++j) {\n"
+    "        int pos = jmin + j;\n"
+    "        __global const float* vj = Vc + (size_t)pos * (size_t)v_slot +\n"
+    "                                  (size_t)v_off + (size_t)vh * (size_t)vd;\n"
+    "        acc += scores[j] * vj[d];\n"
+    "    }\n"
+    "    out[d] = acc;\n"
     "}\n";
 
 #define CLGEMM_MAX_RESIDENT 1024
@@ -271,6 +331,10 @@ typedef struct {
     cl_kernel kern_ascores;
     cl_kernel kern_asoft;
     cl_kernel kern_av;
+    cl_kernel kern_rms_dev;
+    cl_kernel kern_add_dev;
+    cl_kernel kern_ascores_kv;
+    cl_kernel kern_av_kv;
     cl_mem a_buf, c_buf;          /* reusable activation/output scratch */
     size_t a_cap, c_cap;
     cl_mem op_a, op_b, op_c;      /* residency ops + attn scratch */
@@ -286,6 +350,24 @@ typedef struct {
     uint64_t a_fp_tag;
 } ClgemmDev;
 
+/* Residual + device KV stream (lives on device 0). */
+typedef struct {
+    int live;
+    int D;
+    int max_ctx;
+    size_t k_slot, v_slot;
+    cl_mem x;       /* residual [D] */
+    cl_mem ln;      /* last rms output [D] — matmul A */
+    cl_mem tmp;     /* linear / attn scratch */
+    cl_mem k_cache; /* [max_ctx * k_slot] */
+    cl_mem v_cache;
+    cl_mem scores;  /* [max_ctx] */
+    cl_mem w_rms;   /* uploaded norm weights */
+    size_t w_rms_cap;
+    size_t scores_cap;
+    size_t tmp_cap;
+} ClStream;
+
 struct cce_clgemm {
     cce_dl dll;
     ClgemmDev d[CLGEMM_MAX_DEV];
@@ -295,10 +377,12 @@ struct cce_clgemm {
     size_t min_flops;             /* T*K*N below this → refuse (CPU) */
     ResidentBuf resident[CLGEMM_MAX_RESIDENT];
     size_t resident_count;
+    ClStream stream;
     /* function pointers */
     p_clCreateBuffer CreateBuffer;
     p_clEnqueueWriteBuffer WriteBuffer;
     p_clEnqueueReadBuffer ReadBuffer;
+    p_clEnqueueCopyBuffer CopyBuffer;
     p_clSetKernelArg SetArg;
     p_clEnqueueNDRangeKernel Enqueue;
     p_clFlush Flush;
@@ -378,6 +462,7 @@ static cce_clgemm *clgemm_open_internal(const char *dll_name, int solo_index,
     SYM(h->CreateBuffer, p_clCreateBuffer, "clCreateBuffer");
     SYM(h->WriteBuffer, p_clEnqueueWriteBuffer, "clEnqueueWriteBuffer");
     SYM(h->ReadBuffer, p_clEnqueueReadBuffer, "clEnqueueReadBuffer");
+    SYM(h->CopyBuffer, p_clEnqueueCopyBuffer, "clEnqueueCopyBuffer");
     SYM(h->SetArg, p_clSetKernelArg, "clSetKernelArg");
     SYM(h->Enqueue, p_clEnqueueNDRangeKernel, "clEnqueueNDRangeKernel");
     SYM(h->Flush, p_clFlush, "clFlush");
@@ -488,9 +573,17 @@ static cce_clgemm *clgemm_open_internal(const char *dll_name, int solo_index,
         D->kern_ascores = CreateKernel(D->prog, "cnet_ascores", &err);
         D->kern_asoft = CreateKernel(D->prog, "cnet_asoftmax", &err);
         D->kern_av = CreateKernel(D->prog, "cnet_av", &err);
+        D->kern_rms_dev = CreateKernel(D->prog, "cnet_rms_dev", &err);
+        D->kern_add_dev = CreateKernel(D->prog, "cnet_add_dev", &err);
+        D->kern_ascores_kv = CreateKernel(D->prog, "cnet_ascores_kv", &err);
+        D->kern_av_kv = CreateKernel(D->prog, "cnet_av_kv", &err);
         h->ndev++;
         continue;
     dev_fail:
+        if (D->kern_av_kv) h->ReleaseKernel(D->kern_av_kv);
+        if (D->kern_ascores_kv) h->ReleaseKernel(D->kern_ascores_kv);
+        if (D->kern_add_dev) h->ReleaseKernel(D->kern_add_dev);
+        if (D->kern_rms_dev) h->ReleaseKernel(D->kern_rms_dev);
         if (D->kern_av) h->ReleaseKernel(D->kern_av);
         if (D->kern_asoft) h->ReleaseKernel(D->kern_asoft);
         if (D->kern_ascores) h->ReleaseKernel(D->kern_ascores);
@@ -577,9 +670,24 @@ cce_clgemm *cce_clgemm_open_device(const char *dll_name, int device_index,
                                 device_name_cap);
 }
 
+static void stream_free(cce_clgemm *h) {
+    ClStream *s;
+    if (!h) return;
+    s = &h->stream;
+    if (s->x) h->ReleaseMem(s->x);
+    if (s->ln) h->ReleaseMem(s->ln);
+    if (s->tmp) h->ReleaseMem(s->tmp);
+    if (s->k_cache) h->ReleaseMem(s->k_cache);
+    if (s->v_cache) h->ReleaseMem(s->v_cache);
+    if (s->scores) h->ReleaseMem(s->scores);
+    if (s->w_rms) h->ReleaseMem(s->w_rms);
+    memset(s, 0, sizeof *s);
+}
+
 void cce_clgemm_close(cce_clgemm *h) {
     size_t i, j;
     if (!h) return;
+    stream_free(h);
     for (i = 0; i < h->resident_count; ++i)
         for (j = 0; j < h->ndev; ++j) {
             if (h->resident[i].mem[j]) h->ReleaseMem(h->resident[i].mem[j]);
@@ -592,6 +700,10 @@ void cce_clgemm_close(cce_clgemm *h) {
         if (D->op_a) h->ReleaseMem(D->op_a);
         if (D->op_b) h->ReleaseMem(D->op_b);
         if (D->op_c) h->ReleaseMem(D->op_c);
+        if (D->kern_av_kv) h->ReleaseKernel(D->kern_av_kv);
+        if (D->kern_ascores_kv) h->ReleaseKernel(D->kern_ascores_kv);
+        if (D->kern_add_dev) h->ReleaseKernel(D->kern_add_dev);
+        if (D->kern_rms_dev) h->ReleaseKernel(D->kern_rms_dev);
         if (D->kern_av) h->ReleaseKernel(D->kern_av);
         if (D->kern_asoft) h->ReleaseKernel(D->kern_asoft);
         if (D->kern_ascores) h->ReleaseKernel(D->kern_ascores);
@@ -1320,4 +1432,411 @@ int cce_clgemm_attn_decode(cce_clgemm *h, const float *q, const float *k_cache,
         (void)d;
     }
     return 0;
+}
+
+/* ---- Residual stream + device KV (primary device) ------------------------ */
+
+static int stream_enabled(void) {
+    const char *e = getenv("CNET_GPU_STREAM");
+    if (e && e[0] == '0') return 0;
+    return 1;
+}
+
+int cce_clgemm_stream_live(const cce_clgemm *h) {
+    return h && h->stream.live;
+}
+
+void cce_clgemm_stream_reset(cce_clgemm *h) {
+    if (h) h->stream.live = 0;
+}
+
+int cce_clgemm_stream_bind(cce_clgemm *h, int d_model, int max_ctx,
+                           size_t k_slot, size_t v_slot) {
+    ClgemmDev *D;
+    ClStream *s;
+    cl_int err = 0;
+    size_t k_bytes, v_bytes;
+    if (!h || h->ndev < 1 || d_model < 1 || max_ctx < 1 || k_slot < 1 ||
+        v_slot < 1)
+        return -1;
+    if (!stream_enabled()) return -1;
+    D = &h->d[0];
+    if (!D->kern_rms_dev || !D->kern_add_dev || !D->kern_ascores_kv ||
+        !D->kern_av_kv)
+        return -1;
+    s = &h->stream;
+    if (s->x && s->D == d_model && s->max_ctx == max_ctx &&
+        s->k_slot == k_slot && s->v_slot == v_slot) {
+        s->live = 1;
+        return 0;
+    }
+    stream_free(h);
+    s->D = d_model;
+    s->max_ctx = max_ctx;
+    s->k_slot = k_slot;
+    s->v_slot = v_slot;
+    k_bytes = (size_t)max_ctx * k_slot * sizeof(float);
+    v_bytes = (size_t)max_ctx * v_slot * sizeof(float);
+    s->x = h->CreateBuffer(D->ctx, CL_MEM_READ_WRITE, (size_t)d_model * 4,
+                           NULL, &err);
+    s->ln = h->CreateBuffer(D->ctx, CL_MEM_READ_WRITE, (size_t)d_model * 4,
+                            NULL, &err);
+    s->k_cache =
+        h->CreateBuffer(D->ctx, CL_MEM_READ_WRITE, k_bytes, NULL, &err);
+    s->v_cache =
+        h->CreateBuffer(D->ctx, CL_MEM_READ_WRITE, v_bytes, NULL, &err);
+    s->scores =
+        h->CreateBuffer(D->ctx, CL_MEM_READ_WRITE, (size_t)max_ctx * 4, NULL,
+                        &err);
+    s->scores_cap = (size_t)max_ctx;
+    if (!s->x || !s->ln || !s->k_cache || !s->v_cache || !s->scores) {
+        stream_free(h);
+        return -1;
+    }
+    s->live = 1;
+    return 0;
+}
+
+int cce_clgemm_stream_set_x(cce_clgemm *h, const float *x, int D) {
+    ClgemmDev *Dv;
+    if (!h || !x || !h->stream.live || D != h->stream.D) return -1;
+    Dv = &h->d[0];
+    if (h->WriteBuffer(Dv->q, h->stream.x, CL_TRUE, 0, (size_t)D * 4, x, 0,
+                       NULL, NULL) != CL_SUCCESS)
+        return -1;
+    return 0;
+}
+
+int cce_clgemm_stream_get_x(cce_clgemm *h, float *x, int D) {
+    ClgemmDev *Dv;
+    if (!h || !x || !h->stream.live || D != h->stream.D) return -1;
+    Dv = &h->d[0];
+    if (h->ReadBuffer(Dv->q, h->stream.x, CL_TRUE, 0, (size_t)D * 4, x, 0,
+                      NULL, NULL) != CL_SUCCESS)
+        return -1;
+    return 0;
+}
+
+int cce_clgemm_stream_rms_x(cce_clgemm *h, const float *w, int D, float eps,
+                            int add_one) {
+    ClgemmDev *Dv;
+    ClStream *s;
+    int iD, has_w, add1;
+    size_t g = 1;
+    cl_int err = 0;
+    if (!h || !h->stream.live || D != h->stream.D) return -1;
+    Dv = &h->d[0];
+    s = &h->stream;
+    has_w = w ? 1 : 0;
+    add1 = add_one ? 1 : 0;
+    iD = D;
+    if (has_w) {
+        if (!s->w_rms || s->w_rms_cap < (size_t)D * 4) {
+            if (s->w_rms) h->ReleaseMem(s->w_rms);
+            s->w_rms = h->CreateBuffer(Dv->ctx, CL_MEM_READ_ONLY,
+                                       (size_t)D * 4, NULL, &err);
+            s->w_rms_cap = (size_t)D * 4;
+            if (!s->w_rms) return -1;
+        }
+        if (h->WriteBuffer(Dv->q, s->w_rms, CL_FALSE, 0, (size_t)D * 4, w, 0,
+                           NULL, NULL) != CL_SUCCESS)
+            return -1;
+    }
+    if (h->SetArg(Dv->kern_rms_dev, 0, sizeof(cl_mem), &s->x) != CL_SUCCESS ||
+        h->SetArg(Dv->kern_rms_dev, 1, sizeof(cl_mem),
+                  has_w ? &s->w_rms : &s->x) != CL_SUCCESS ||
+        h->SetArg(Dv->kern_rms_dev, 2, sizeof(cl_mem), &s->ln) != CL_SUCCESS ||
+        h->SetArg(Dv->kern_rms_dev, 3, sizeof(int), &iD) != CL_SUCCESS ||
+        h->SetArg(Dv->kern_rms_dev, 4, sizeof(float), &eps) != CL_SUCCESS ||
+        h->SetArg(Dv->kern_rms_dev, 5, sizeof(int), &has_w) != CL_SUCCESS ||
+        h->SetArg(Dv->kern_rms_dev, 6, sizeof(int), &add1) != CL_SUCCESS)
+        return -1;
+    if (h->Enqueue(Dv->q, Dv->kern_rms_dev, 1, NULL, &g, NULL, 0, NULL, NULL) !=
+        CL_SUCCESS)
+        return -1;
+    h->Flush(Dv->q);
+    /* Mark device A as stream ln for subsequent matmuls on d0 */
+    if (scratch_ensure(h, 0, &Dv->a_buf, &Dv->a_cap, (size_t)D * 4) != 0)
+        return -1;
+    if (h->CopyBuffer(Dv->q, s->ln, Dv->a_buf, 0, 0, (size_t)D * 4, 0, NULL,
+                      NULL) != CL_SUCCESS)
+        return -1;
+    Dv->a_fp_host = NULL;
+    Dv->a_fp_bytes = (size_t)D * 4;
+    Dv->a_fp_tag = 0xC0FFEE01ULL; /* device-sourced A */
+    return 0;
+}
+
+int cce_clgemm_stream_add_x_host(cce_clgemm *h, const float *y, int D) {
+    ClgemmDev *Dv;
+    ClStream *s;
+    int in;
+    size_t g, loc;
+    if (!h || !y || !h->stream.live || D != h->stream.D) return -1;
+    Dv = &h->d[0];
+    s = &h->stream;
+    if (op_scratch(h, &Dv->op_a, &Dv->op_a_cap, (size_t)D * 4) != 0) return -1;
+    if (h->WriteBuffer(Dv->q, Dv->op_a, CL_FALSE, 0, (size_t)D * 4, y, 0, NULL,
+                       NULL) != CL_SUCCESS)
+        return -1;
+    in = D;
+    if (h->SetArg(Dv->kern_add_dev, 0, sizeof(cl_mem), &s->x) != CL_SUCCESS ||
+        h->SetArg(Dv->kern_add_dev, 1, sizeof(cl_mem), &Dv->op_a) !=
+            CL_SUCCESS ||
+        h->SetArg(Dv->kern_add_dev, 2, sizeof(int), &in) != CL_SUCCESS)
+        return -1;
+    g = (size_t)((D + 63) / 64) * 64;
+    if (g == 0) g = 64;
+    loc = 64;
+    if (h->Enqueue(Dv->q, Dv->kern_add_dev, 1, NULL, &g, &loc, 0, NULL, NULL) !=
+        CL_SUCCESS)
+        return -1;
+    h->Finish(Dv->q);
+    return 0;
+}
+
+/* Device-0-only matmul using a_buf already holding A (stream ln). */
+static int stream_matmul_dev0(cce_clgemm *h, size_t K, size_t N, float *C_host,
+                              int is_q8, const void *Wkey, size_t Wbytes,
+                              const float *bias, const float *scales,
+                              const int8_t *Wq, const float *Wfp) {
+    ClgemmDev *D;
+    ResidentBuf *went = NULL, *bent = NULL;
+    int has_bias, iT = 1, iK, iN;
+    size_t cols;
+    if (!h || !C_host || h->ndev < 1) return -1;
+    D = &h->d[0];
+    if ((size_t)1 * K * N < h->min_flops) return -1;
+
+    if (is_q8) {
+        went = resident_find(h, Wq, K * N);
+        if (!went) {
+            int split;
+            size_t owner, off[CLGEMM_MAX_DEV], len[CLGEMM_MAX_DEV];
+            size_t d2;
+            for (d2 = 0; d2 < CLGEMM_MAX_DEV; ++d2) {
+                off[d2] = 0;
+                len[d2] = 0;
+            }
+            /* Stream path: force whole matrix on device 0 (no split). */
+            split = 0;
+            owner = 0;
+            len[0] = N;
+            went = resident_create_q8(h, Wq, scales, K, N, split, owner, off,
+                                      len);
+            if (!went) return -1;
+        }
+    } else {
+        went = resident_find(h, Wfp, K * N * sizeof(float));
+        if (!went) {
+            int split = 0;
+            size_t owner = 0, off[CLGEMM_MAX_DEV], len[CLGEMM_MAX_DEV];
+            size_t d2;
+            for (d2 = 0; d2 < CLGEMM_MAX_DEV; ++d2) {
+                off[d2] = 0;
+                len[d2] = 0;
+            }
+            len[0] = N;
+            went = resident_create(h, Wfp, K, N, split, owner, off, len);
+            if (!went) return -1;
+        }
+    }
+    /* If weight not fully on d0, refuse stream (caller uses host path). */
+    if (went->len[0] != N) return -1;
+    cols = N;
+    if (bias) {
+        bent = resident_find(h, bias, N * sizeof(float));
+        if (!bent) {
+            bent = resident_create(h, bias, 1, N, 0, 0, went->off, went->len);
+            if (!bent) return -1;
+        }
+    }
+    has_bias = bias ? 1 : 0;
+    if (scratch_ensure(h, 0, &D->c_buf, &D->c_cap, cols * sizeof(float)) != 0)
+        return -1;
+    if (!D->a_buf || D->a_cap < K * sizeof(float)) return -1;
+    iK = (int)K;
+    iN = (int)cols;
+    if (is_q8) {
+        cl_mem b_mem = bent ? bent->mem[0] : went->scale[0];
+        if (h->SetArg(D->kern_q8, 0, sizeof(cl_mem), &D->a_buf) != CL_SUCCESS ||
+            h->SetArg(D->kern_q8, 1, sizeof(cl_mem), &went->mem[0]) !=
+                CL_SUCCESS ||
+            h->SetArg(D->kern_q8, 2, sizeof(cl_mem), &went->scale[0]) !=
+                CL_SUCCESS ||
+            h->SetArg(D->kern_q8, 3, sizeof(cl_mem), &b_mem) != CL_SUCCESS ||
+            h->SetArg(D->kern_q8, 4, sizeof(cl_mem), &D->c_buf) != CL_SUCCESS ||
+            h->SetArg(D->kern_q8, 5, sizeof(int), &iT) != CL_SUCCESS ||
+            h->SetArg(D->kern_q8, 6, sizeof(int), &iK) != CL_SUCCESS ||
+            h->SetArg(D->kern_q8, 7, sizeof(int), &iN) != CL_SUCCESS ||
+            h->SetArg(D->kern_q8, 8, sizeof(int), &has_bias) != CL_SUCCESS)
+            return -1;
+        if (enqueue_2d(h, D->q, D->kern_q8, cols, 1) != 0) return -1;
+    } else {
+        cl_mem b_mem = bent ? bent->mem[0] : went->mem[0];
+        if (h->SetArg(D->kern, 0, sizeof(cl_mem), &D->a_buf) != CL_SUCCESS ||
+            h->SetArg(D->kern, 1, sizeof(cl_mem), &went->mem[0]) != CL_SUCCESS ||
+            h->SetArg(D->kern, 2, sizeof(cl_mem), &b_mem) != CL_SUCCESS ||
+            h->SetArg(D->kern, 3, sizeof(cl_mem), &D->c_buf) != CL_SUCCESS ||
+            h->SetArg(D->kern, 4, sizeof(int), &iT) != CL_SUCCESS ||
+            h->SetArg(D->kern, 5, sizeof(int), &iK) != CL_SUCCESS ||
+            h->SetArg(D->kern, 6, sizeof(int), &iN) != CL_SUCCESS ||
+            h->SetArg(D->kern, 7, sizeof(int), &has_bias) != CL_SUCCESS)
+            return -1;
+        if (enqueue_2d(h, D->q, D->kern, cols, 1) != 0) return -1;
+    }
+    if (h->ReadBuffer(D->q, D->c_buf, CL_TRUE, 0, cols * sizeof(float), C_host,
+                      0, NULL, NULL) != CL_SUCCESS)
+        return -1;
+    (void)Wkey;
+    (void)Wbytes;
+    return 0;
+}
+
+int cce_clgemm_stream_linear_fp(cce_clgemm *h, const float *W,
+                                const float *bias, int K, int N,
+                                float *C_host) {
+    if (!h || !h->stream.live || !W || !C_host || K != h->stream.D) return -1;
+    return stream_matmul_dev0(h, (size_t)K, (size_t)N, C_host, 0, W,
+                              (size_t)K * (size_t)N * 4, bias, NULL, NULL, W);
+}
+
+int cce_clgemm_stream_linear_q8(cce_clgemm *h, const int8_t *Wq,
+                                const float *scales, const float *bias, int K,
+                                int N, float *C_host) {
+    if (!h || !h->stream.live || !Wq || !scales || !C_host || K != h->stream.D)
+        return -1;
+    return stream_matmul_dev0(h, (size_t)K, (size_t)N, C_host, 1, Wq,
+                              (size_t)K * (size_t)N, bias, scales, Wq, NULL);
+}
+
+int cce_clgemm_stream_kv_write(cce_clgemm *h, int pos, const float *k,
+                               const float *v, int k_dim, int v_dim,
+                               size_t k_off, size_t v_off) {
+    ClgemmDev *Dv;
+    ClStream *s;
+    size_t ko, vo;
+    if (!h || !h->stream.live || !k || !v || pos < 0 || pos >= h->stream.max_ctx)
+        return -1;
+    Dv = &h->d[0];
+    s = &h->stream;
+    ko = (size_t)pos * s->k_slot + k_off;
+    vo = (size_t)pos * s->v_slot + v_off;
+    if (ko + (size_t)k_dim > (size_t)s->max_ctx * s->k_slot ||
+        vo + (size_t)v_dim > (size_t)s->max_ctx * s->v_slot)
+        return -1;
+    if (h->WriteBuffer(Dv->q, s->k_cache, CL_FALSE, ko * 4,
+                       (size_t)k_dim * 4, k, 0, NULL, NULL) != CL_SUCCESS ||
+        h->WriteBuffer(Dv->q, s->v_cache, CL_FALSE, vo * 4, (size_t)v_dim * 4,
+                       v, 0, NULL, NULL) != CL_SUCCESS)
+        return -1;
+    h->Flush(Dv->q);
+    return 0;
+}
+
+int cce_clgemm_stream_attn(cce_clgemm *h, const float *q, size_t k_off,
+                           size_t v_off, int n_q, int n_k, int n_v,
+                           int head_dim, int v_head_dim, int jmin, int abs_t,
+                           float scale, float *attn_out) {
+    ClgemmDev *Dv;
+    ClStream *s;
+    int seq, hi, iseq, ijmin, ihd, ivd, ikh, ivh, iks, ivs, iko, ivo;
+    size_t g, loc;
+    if (!h || !h->stream.live || !q || !attn_out || n_q < 1) return -1;
+    if (abs_t < jmin || abs_t >= h->stream.max_ctx) return -1;
+    Dv = &h->d[0];
+    s = &h->stream;
+    seq = abs_t - jmin + 1;
+    if (op_scratch(h, &Dv->op_a, &Dv->op_a_cap, (size_t)head_dim * 4) != 0 ||
+        op_scratch(h, &Dv->op_c, &Dv->op_c_cap,
+                   (size_t)seq * 4 > (size_t)v_head_dim * 4
+                       ? (size_t)seq * 4
+                       : (size_t)v_head_dim * 4) != 0)
+        return -1;
+    iseq = seq;
+    ijmin = jmin;
+    ihd = head_dim;
+    ivd = v_head_dim;
+    iks = (int)s->k_slot;
+    ivs = (int)s->v_slot;
+    iko = (int)k_off;
+    ivo = (int)v_off;
+
+    for (hi = 0; hi < n_q; ++hi) {
+        ikh = hi / (n_q / n_k);
+        ivh = hi / (n_q / n_v);
+        if (h->WriteBuffer(Dv->q, Dv->op_a, CL_FALSE, 0, (size_t)head_dim * 4,
+                           q + (size_t)hi * (size_t)head_dim, 0, NULL,
+                           NULL) != CL_SUCCESS)
+            return -1;
+        if (h->SetArg(Dv->kern_ascores_kv, 0, sizeof(cl_mem), &Dv->op_a) !=
+                CL_SUCCESS ||
+            h->SetArg(Dv->kern_ascores_kv, 1, sizeof(cl_mem), &s->k_cache) !=
+                CL_SUCCESS ||
+            h->SetArg(Dv->kern_ascores_kv, 2, sizeof(cl_mem), &Dv->op_c) !=
+                CL_SUCCESS ||
+            h->SetArg(Dv->kern_ascores_kv, 3, sizeof(int), &iseq) !=
+                CL_SUCCESS ||
+            h->SetArg(Dv->kern_ascores_kv, 4, sizeof(int), &ijmin) !=
+                CL_SUCCESS ||
+            h->SetArg(Dv->kern_ascores_kv, 5, sizeof(int), &ihd) != CL_SUCCESS ||
+            h->SetArg(Dv->kern_ascores_kv, 6, sizeof(int), &ikh) != CL_SUCCESS ||
+            h->SetArg(Dv->kern_ascores_kv, 7, sizeof(int), &iks) != CL_SUCCESS ||
+            h->SetArg(Dv->kern_ascores_kv, 8, sizeof(int), &iko) != CL_SUCCESS ||
+            h->SetArg(Dv->kern_ascores_kv, 9, sizeof(float), &scale) !=
+                CL_SUCCESS)
+            return -1;
+        g = (size_t)((seq + 63) / 64) * 64;
+        if (g == 0) g = 64;
+        loc = 64;
+        if (h->Enqueue(Dv->q, Dv->kern_ascores_kv, 1, NULL, &g, &loc, 0, NULL,
+                       NULL) != CL_SUCCESS)
+            return -1;
+        if (h->SetArg(Dv->kern_asoft, 0, sizeof(cl_mem), &Dv->op_c) !=
+                CL_SUCCESS ||
+            h->SetArg(Dv->kern_asoft, 1, sizeof(int), &iseq) != CL_SUCCESS)
+            return -1;
+        g = 1;
+        if (h->Enqueue(Dv->q, Dv->kern_asoft, 1, NULL, &g, NULL, 0, NULL,
+                       NULL) != CL_SUCCESS)
+            return -1;
+        /* out head into tmp then read */
+        if (!s->tmp || s->tmp_cap < (size_t)v_head_dim * 4) {
+            cl_int err = 0;
+            if (s->tmp) h->ReleaseMem(s->tmp);
+            s->tmp = h->CreateBuffer(Dv->ctx, CL_MEM_READ_WRITE,
+                                     (size_t)v_head_dim * 4, NULL, &err);
+            s->tmp_cap = (size_t)v_head_dim * 4;
+            if (!s->tmp) return -1;
+        }
+        if (h->SetArg(Dv->kern_av_kv, 0, sizeof(cl_mem), &Dv->op_c) !=
+                CL_SUCCESS ||
+            h->SetArg(Dv->kern_av_kv, 1, sizeof(cl_mem), &s->v_cache) !=
+                CL_SUCCESS ||
+            h->SetArg(Dv->kern_av_kv, 2, sizeof(cl_mem), &s->tmp) !=
+                CL_SUCCESS ||
+            h->SetArg(Dv->kern_av_kv, 3, sizeof(int), &iseq) != CL_SUCCESS ||
+            h->SetArg(Dv->kern_av_kv, 4, sizeof(int), &ijmin) != CL_SUCCESS ||
+            h->SetArg(Dv->kern_av_kv, 5, sizeof(int), &ivd) != CL_SUCCESS ||
+            h->SetArg(Dv->kern_av_kv, 6, sizeof(int), &ivh) != CL_SUCCESS ||
+            h->SetArg(Dv->kern_av_kv, 7, sizeof(int), &ivs) != CL_SUCCESS ||
+            h->SetArg(Dv->kern_av_kv, 8, sizeof(int), &ivo) != CL_SUCCESS)
+            return -1;
+        g = (size_t)((v_head_dim + 63) / 64) * 64;
+        if (g == 0) g = 64;
+        loc = 64;
+        if (h->Enqueue(Dv->q, Dv->kern_av_kv, 1, NULL, &g, &loc, 0, NULL,
+                       NULL) != CL_SUCCESS)
+            return -1;
+        if (h->ReadBuffer(Dv->q, s->tmp, CL_TRUE, 0, (size_t)v_head_dim * 4,
+                          attn_out + (size_t)hi * (size_t)v_head_dim, 0, NULL,
+                          NULL) != CL_SUCCESS)
+            return -1;
+    }
+    return 0;
+}
+
+int cce_clgemm_stream_silu_mul_host(cce_clgemm *h, const float *gate,
+                                    const float *up, float *y, int n) {
+    return cce_clgemm_silu_mul(h, gate, up, y, n);
 }
