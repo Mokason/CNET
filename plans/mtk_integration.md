@@ -53,8 +53,20 @@ Apply/revert = CPU snapshot + sparse write. KV flush clears GGUF `cur_pos` /
 dense cache so skill changes do not contaminate attention history.
 Pair with `CNET_GOV_PROFILE=eco` for duty-cycle GPU.
 
-## Gate
+## Product wiring
+
+| Path | Env / API |
+|------|-----------|
+| `cce_mtk_host` | GGUF open + MTK + gov + generate |
+| Residual / personal AI | `CNET_MTK=1` `CNET_MTK_ROUTES=...` with `CNET_RESIDUAL_GGUF` |
+| Session chat | `p <prompt>` route, `a <skill>`, `u` revert |
+| Routes example | `config/mtk_routes.example` |
+
+## Gate / eval
 
 ```bash
-make mtk   # MTK_PASS, 9/9 needles, failures=0
+make mtk            # unit: MTK_PASS, 9/9 needles
+make mtk_eval       # synthetic host wiring eval
+make mtk_eval_real  # CNET_MTK_EVAL_GGUF=/path/model.gguf
 ```
+

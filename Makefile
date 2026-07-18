@@ -101,6 +101,7 @@ CCE_SPARSE_KV := src/cce/cce_sparse_kv.c
 CCE_DSA := src/cce/cce_dsa.c
 CCE_KV_PAGE := src/cce/cce_kv_page.c
 CCE_MTK := src/cce/cce_mtk.c
+CCE_MTK_HOST := src/cce/cce_mtk_host.c
 CCE_MLA := src/cce/cce_mla.c
 CCE_DS_MAP := src/cce/cce_deepseek_map.c
 CCE_DS_RT  := src/cce/cce_ds_runtime.c
@@ -1232,6 +1233,26 @@ mtk: $(CCE) tests/test_mtk.c include/cce/cce_mtk.h
 	@grep -q "failures=0" logs/mtk.log
 	@grep -q "9/9 needles" logs/mtk.log
 
+# Product wiring eval: synthetic host (always) + optional real GGUF.
+.PHONY: mtk_eval
+mtk_eval: $(CCE) $(CCE_MTK_HOST) $(RESOURCE_GOV_SRC) tools/cnet_mtk_eval.c include/cce/cce_mtk_host.h
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -o $(BIN_DIR)/cnet_mtk_eval $(CCE) $(CCE_MTK_HOST) $(RESOURCE_GOV_SRC) \
+		tools/cnet_mtk_eval.c $(LDFLAGS) -lm
+	@CNET_FOREST_NO_PERSIST=1 ./$(BIN_DIR)/cnet_mtk_eval 2>&1 | tee logs/mtk_eval.log
+	@grep -q "MTK_EVAL_PASS" logs/mtk_eval.log
+	@grep -q "failures=0" logs/mtk_eval.log
+
+.PHONY: mtk_eval_real
+mtk_eval_real: mtk_eval
+	@if [ -z "$$CNET_MTK_EVAL_GGUF" ]; then \
+		echo "Set CNET_MTK_EVAL_GGUF=/path/model.gguf for real smoke"; exit 2; \
+	fi
+	@CNET_FOREST_NO_PERSIST=1 CNET_MTK_EVAL_GGUF="$$CNET_MTK_EVAL_GGUF" \
+		./$(BIN_DIR)/cnet_mtk_eval 2>&1 | tee logs/mtk_eval_real.log
+	@grep -q "MTK_EVAL_PASS" logs/mtk_eval_real.log
+	@grep -q "real generate" logs/mtk_eval_real.log
+
 
 .PHONY: cnet_ds_bench
 cnet_ds_bench: $(CCE) tools/cnet_ds_bench.c
@@ -2292,10 +2313,10 @@ learning_delta_bench: $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $
 
 # Real GGUF residual (Tier C). Hermetic without env; real when path set.
 .PHONY: residual_gguf residual_gguf_real
-residual_gguf: $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EXT_TEACHER_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) tests/test_residual_gguf.c include/residual_gguf.h
+residual_gguf: $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EXT_TEACHER_SRC) $(CURIOSITY_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) tests/test_residual_gguf.c include/residual_gguf.h
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/test_residual_gguf \
-		$(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EXT_TEACHER_SRC) \
+		$(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EXT_TEACHER_SRC) $(CURIOSITY_SRC) \
 		$(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) \
 		$(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) \
 		$(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) \

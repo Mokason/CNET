@@ -86,6 +86,16 @@ CNET_API int personal_ai_bind_residual_gguf(PersonalAi *ai, ResidualGguf *r,
 CNET_API int personal_ai_auto_residual_gguf(PersonalAi *ai,
                                             ResidualGguf **owned);
 
+/* MTK knowledge swap on residual (when CNET_MTK=1 / CNET_MTK_ROUTES at open).
+ * route: keyword match → apply skill; apply/revert: explicit cartridge.
+ * Returns 0 ok, 1 no match/skip, <0 error. */
+CNET_API int residual_gguf_mtk_route(ResidualGguf *r, const char *prompt);
+CNET_API int residual_gguf_mtk_apply(ResidualGguf *r, const char *skill_path);
+CNET_API int residual_gguf_mtk_revert(ResidualGguf *r);
+CNET_API int residual_gguf_mtk_active(const ResidualGguf *r);
+struct cce_mtk;
+CNET_API struct cce_mtk *residual_gguf_mtk(ResidualGguf *r);
+
 #ifdef __cplusplus
 }
 #endif

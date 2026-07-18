@@ -4,6 +4,7 @@
 #include "../include/cce/cce_detect.h"
 #include "../include/cce/cce_gguf.h"
 #include "../include/cce/cce_defs.h"
+#include "../include/cce/cce_mtk.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -21,6 +22,8 @@ struct ResidualGguf {
     int last_out_hot;
     CnetPilot pilot;
     char path[512];
+    /* Optional MTK knowledge swap (CNET_MTK=1 / CNET_MTK_ROUTES). */
+    cce_mtk *mtk;
 };
 
 static int argmax_d(const double *v, int n) {
@@ -96,12 +99,33 @@ int residual_gguf_open(ResidualGguf **out, const char *gguf_path,
     cnet_pilot_from_env(&r->pilot);
     r->last_out_hot = -1;
 
+    /* Product wire: MTK knowledge swap when requested. */
+    {
+        const char *mtk_on = getenv("CNET_MTK");
+        const char *routes = getenv("CNET_MTK_ROUTES");
+        if ((mtk_on && mtk_on[0] == '1') || (routes && routes[0])) {
+            if (cce_mtk_open(&r->mtk) == CCE_OK && r->mtk) {
+                (void)cce_mtk_bind_gguf(r->mtk, r->m);
+                cce_mtk_set_kv_flush(r->mtk, cce_mtk_gguf_kv_flush, r->m);
+                if (routes && routes[0])
+                    (void)cce_mtk_router_load(r->mtk, routes);
+                if (getenv("CNET_MTK_HOOK") &&
+                    getenv("CNET_MTK_HOOK")[0] == '1')
+                    cce_mtk_install_block_hook();
+            }
+        }
+    }
+
     *out = r;
     return 0;
 }
 
 void residual_gguf_close(ResidualGguf *r) {
     if (!r) return;
+    if (r->mtk) {
+        cce_mtk_close(r->mtk);
+        r->mtk = NULL;
+    }
     free(r->logits);
     if (r->owns_win) free(r->win);
     if (r->am) cce_anymodel_free(r->am);
@@ -116,6 +140,30 @@ void residual_gguf_session_reset(ResidualGguf *r) {
 
 int residual_gguf_session_mode(const ResidualGguf *r) {
     return r ? r->session_kv : 0;
+}
+
+/* Route/apply MTK skill for residual chat (prompt text → knowledge cartridge). */
+int residual_gguf_mtk_route(ResidualGguf *r, const char *prompt) {
+    if (!r || !r->mtk || !prompt) return -1;
+    return cce_mtk_router_apply(r->mtk, prompt, 1.f) == CCE_OK ? 0 : 1;
+}
+
+int residual_gguf_mtk_apply(ResidualGguf *r, const char *skill_path) {
+    if (!r || !r->mtk || !skill_path) return -1;
+    return cce_mtk_apply_file(r->mtk, skill_path, 1.f) == CCE_OK ? 0 : 1;
+}
+
+int residual_gguf_mtk_revert(ResidualGguf *r) {
+    if (!r || !r->mtk) return -1;
+    return cce_mtk_revert(r->mtk) == CCE_OK ? 0 : 1;
+}
+
+int residual_gguf_mtk_active(const ResidualGguf *r) {
+    return (r && r->mtk && cce_mtk_skill_active(r->mtk)) ? 1 : 0;
+}
+
+struct cce_mtk *residual_gguf_mtk(ResidualGguf *r) {
+    return r ? r->mtk : NULL;
 }
 
 uint64_t residual_gguf_pilot_recorded(const ResidualGguf *r) {

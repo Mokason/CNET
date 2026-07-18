@@ -1,0 +1,11 @@
+# CNET MTK skill routes — copy to mtk_routes.txt and point CNET_MTK_ROUTES at it.
+# Format: <skill_path> <keyword1,keyword2,...>
+#
+# Enable on residual/personal AI:
+#   export CNET_MTK=1
+#   export CNET_MTK_ROUTES=/path/to/mtk_routes.txt
+#   export CNET_RESIDUAL_GGUF=/path/to/model.gguf
+#
+# skills/code.cmsk   code,python,function,compile
+# skills/math.cmsk   integral,derivative,equation,prove
+# skills/law.cmsk    contract,statute,jurisdiction
