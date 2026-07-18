@@ -80,6 +80,14 @@ void cce_block_freeze(cce_block* blk);
 /* Free owned tensors */
 void cce_block_free(cce_block* blk);
 
+/* Optional linear forward hook (MTK / custom kernels). Return CCE_OK to
+ * fully handle the call; CCE_ERR_NOT_FOUND (or other) falls through to the
+ * built-in float/int8/trit paths. ctx is opaque user data. */
+typedef cce_result (*cce_block_linear_hook_fn)(const cce_block *blk,
+                                               const cce_tensor *input,
+                                               cce_tensor *output, void *ctx);
+void cce_block_set_linear_hook(cce_block_linear_hook_fn fn, void *ctx);
+
 #ifdef __cplusplus
 }
 #endif

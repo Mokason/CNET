@@ -86,6 +86,14 @@ cce_result cce_block_init_linear(cce_block* blk, int in_dim, int out_dim, float 
     return CCE_OK;
 }
 
+static cce_block_linear_hook_fn g_linear_hook;
+static void *g_linear_hook_ctx;
+
+void cce_block_set_linear_hook(cce_block_linear_hook_fn fn, void *ctx) {
+    g_linear_hook = fn;
+    g_linear_hook_ctx = ctx;
+}
+
 cce_result cce_block_forward(const cce_block* blk, const cce_tensor* input, cce_tensor* output) {
     if (!blk || !input || !output) return CCE_ERR_INVALID_ARG;
     if (blk->type == CCE_BLOCK_PATCH) {
@@ -108,6 +116,12 @@ cce_result cce_block_forward(const cce_block* blk, const cce_tensor* input, cce_
 
     if (input->numel != (size_t)in_dim || output->numel != (size_t)out_dim)
         return CCE_ERR_INVALID_ARG;
+
+    /* MTK / custom linear kernel (LEGO replace). Fall through on NOT_FOUND. */
+    if (g_linear_hook) {
+        cce_result hr = g_linear_hook(blk, input, output, g_linear_hook_ctx);
+        if (hr == CCE_OK) return CCE_OK;
+    }
 
     /* Try GPU acceleration if available (CUDA on 4070 is excellent here) */
     /* For proper resident, use sync, here we do per call upload for simplicity */
