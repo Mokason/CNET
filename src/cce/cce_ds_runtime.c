@@ -11,6 +11,9 @@
 #include <string.h>
 #include <time.h>
 
+/* defined below — open() may arm MTP from opts */
+cce_result cce_ds_host_enable_mtp(cce_ds_host* h, int k, int draft_layers);
+
 void cce_ds_host_opts_default(cce_ds_host_opts* o, const char* archive,
                               const char* pack) {
     const char* e;
@@ -30,6 +33,9 @@ void cce_ds_host_opts_default(cce_ds_host_opts* o, const char* archive,
     o->mla_quant_kv = 1; /* FP8-class int8 latent default on */
     o->moe_sleep_eps = CCE_SLEEP_DEFAULT_EPS;
     o->dual_pipe = 1;
+    o->mtp_k = 0;
+    o->mtp_draft_layers = 1;
+    o->ep_places = 2;
     /* Env: CNET_DSA=0 disables; CNET_DSA_PROFILE=speed; CNET_MLA_KV=0 off quant */
     e = getenv("CNET_DSA");
     if (e && e[0] == '0') o->dsa_enable = 0;
@@ -50,6 +56,21 @@ void cce_ds_host_opts_default(cce_ds_host_opts* o, const char* archive,
     }
     e = getenv("CNET_DUAL_PIPE");
     if (e && e[0] == '0') o->dual_pipe = 0;
+    e = getenv("CNET_MTP_K");
+    if (e && e[0]) {
+        int v = atoi(e);
+        if (v >= 0 && v <= 8) o->mtp_k = v;
+    }
+    e = getenv("CNET_MTP_DRAFT_LAYERS");
+    if (e && e[0]) {
+        int v = atoi(e);
+        if (v >= 0 && v <= 2) o->mtp_draft_layers = v;
+    }
+    e = getenv("CNET_EP_PLACES");
+    if (e && e[0]) {
+        int v = atoi(e);
+        if (v >= 1 && v <= 8) o->ep_places = v;
+    }
 }
 
 /* Pull f32 weight view from a bound cascade (no copy; host must keep forest). */
@@ -624,6 +645,9 @@ cce_result cce_ds_host_open(cce_ds_host** out, const cce_ds_hparams* hp,
     h->moe_sleep_eps = opts->moe_sleep_eps > 0.f ? opts->moe_sleep_eps
                                                    : CCE_SLEEP_DEFAULT_EPS;
     h->dual_pipe = opts->dual_pipe;
+    h->mtp_k = opts->mtp_k;
+    h->mtp_draft_layers = opts->mtp_draft_layers;
+    h->ep_places = opts->ep_places > 0 ? opts->ep_places : 1;
     h->residual = (float*)calloc((size_t)h->d_model, sizeof(float));
     h->scratch = (float*)calloc((size_t)h->d_model, sizeof(float));
     h->logits = h->vocab > 0 ? (float*)calloc((size_t)h->vocab, sizeof(float)) : NULL;
@@ -641,6 +665,17 @@ cce_result cce_ds_host_open(cce_ds_host** out, const cce_ds_hparams* hp,
             (void)cce_mla_enable_quant_kv(&h->mla[L]);
         }
     }
+    /* EP place tags for expert leaves (device buckets). */
+    if (hp->n_expert > 0) {
+        int e;
+        h->expert_place = (int*)malloc((size_t)hp->n_expert * sizeof(int));
+        if (h->expert_place) {
+            for (e = 0; e < hp->n_expert; ++e)
+                h->expert_place[e] = e % h->ep_places;
+        }
+    }
+    if (h->mtp_k > 0)
+        (void)cce_ds_host_enable_mtp(h, h->mtp_k, h->mtp_draft_layers);
     *out = h;
     return CCE_OK;
 }
@@ -659,6 +694,11 @@ void cce_ds_host_close(cce_ds_host* h) {
     free(h->residual);
     free(h->scratch);
     free(h->logits);
+    free(h->mtp_embed);
+    free(h->mtp_head_w);
+    free(h->mtp_draft_w);
+    free(h->mtp_draft_A);
+    free(h->expert_place);
     free(h);
 }
 
@@ -835,6 +875,428 @@ cce_result cce_ds_host_bench(cce_ds_host* h, int n_tokens, double* out_tok_s) {
         if (dt < 1e-9) dt = 1e-9;
         if (out_tok_s) *out_tok_s = (double)n_tokens / dt;
     }
+    return CCE_OK;
+}
+
+/* ---- Forest MTP speculative path --------------------------------------- */
+
+static void mtp_fill_randn(float* w, size_t n, uint32_t seed) {
+    size_t i;
+    uint32_t s = seed ? seed : 0x4D5450u;
+    for (i = 0; i < n; ++i) {
+        s = s * 1664525u + 1013904223u;
+        w[i] = ((float)(s >> 8) / (float)(1u << 24) * 2.f - 1.f) * 0.05f;
+    }
+}
+
+static int mtp_argmax(const float* v, int n) {
+    int i, best = 0;
+    float bv;
+    if (n < 1) return 0;
+    bv = v[0];
+    for (i = 1; i < n; ++i)
+        if (v[i] > bv) {
+            bv = v[i];
+            best = i;
+        }
+    return best;
+}
+
+static void mtp_matvec(const float* W, const float* x, float* y, int in,
+                       int out) {
+    int o, i;
+    for (o = 0; o < out; ++o) {
+        float s = 0.f;
+        const float* row = W + (size_t)o * (size_t)in;
+        for (i = 0; i < in; ++i) s += row[i] * x[i];
+        y[o] = s;
+    }
+}
+
+static void mtp_inject_token(cce_ds_host* h, int tok) {
+    int i, V, D;
+    const float* emb;
+    float alpha = 0.15f;
+    if (!h || !h->mtp_embed) return;
+    V = h->vocab > 0 ? h->vocab : 256;
+    D = h->d_model;
+    if (tok < 0) tok = 0;
+    if (tok >= V) tok %= V;
+    emb = h->mtp_embed + (size_t)tok * (size_t)D;
+    for (i = 0; i < D; ++i) h->residual[i] += alpha * emb[i];
+}
+
+/* Snapshot / restore residual + MLA caches (for reject after partial accept). */
+typedef struct {
+    float* residual;
+    int pos;
+    int* cur_len;
+    float** c_kv;
+    float** k_pe;
+    int8_t** c_kv_q8;
+    float** c_kv_scale;
+    int n_layer;
+    int d_model;
+} mtp_snap;
+
+static void mtp_snap_free(mtp_snap* s) {
+    int L;
+    if (!s) return;
+    free(s->residual);
+    free(s->cur_len);
+    if (s->c_kv) {
+        for (L = 0; L < s->n_layer; ++L) free(s->c_kv[L]);
+        free(s->c_kv);
+    }
+    if (s->k_pe) {
+        for (L = 0; L < s->n_layer; ++L) free(s->k_pe[L]);
+        free(s->k_pe);
+    }
+    if (s->c_kv_q8) {
+        for (L = 0; L < s->n_layer; ++L) free(s->c_kv_q8[L]);
+        free(s->c_kv_q8);
+    }
+    if (s->c_kv_scale) {
+        for (L = 0; L < s->n_layer; ++L) free(s->c_kv_scale[L]);
+        free(s->c_kv_scale);
+    }
+    memset(s, 0, sizeof *s);
+}
+
+static int mtp_snap_save(cce_ds_host* h, mtp_snap* s) {
+    int L;
+    memset(s, 0, sizeof *s);
+    s->n_layer = h->n_layer;
+    s->d_model = h->d_model;
+    s->pos = h->pos;
+    s->residual = (float*)malloc((size_t)h->d_model * sizeof(float));
+    s->cur_len = (int*)calloc((size_t)h->n_layer, sizeof(int));
+    s->c_kv = (float**)calloc((size_t)h->n_layer, sizeof(float*));
+    s->k_pe = (float**)calloc((size_t)h->n_layer, sizeof(float*));
+    if (!s->residual || !s->cur_len || !s->c_kv || !s->k_pe) {
+        mtp_snap_free(s);
+        return -1;
+    }
+    memcpy(s->residual, h->residual, (size_t)h->d_model * sizeof(float));
+    for (L = 0; L < h->n_layer; ++L) {
+        cce_mla* m = &h->mla[L];
+        size_t csz, psz;
+        int cl;
+        if (!m->cache.c_kv) continue;
+        cl = m->cache.cur_len;
+        if (cl < 0) cl = 0;
+        if (cl > m->cache.max_ctx) cl = m->cache.max_ctx;
+        s->cur_len[L] = cl;
+        /* only used prefix — large win vs full max_ctx copy */
+        csz = (size_t)cl * (size_t)m->cache.kv_lora_rank;
+        psz = (size_t)cl * (size_t)m->cache.qk_rope_head_dim;
+        if (csz == 0) csz = 1;
+        if (psz == 0) psz = 1;
+        s->c_kv[L] = (float*)malloc(csz * sizeof(float));
+        s->k_pe[L] = (float*)malloc(psz * sizeof(float));
+        if (!s->c_kv[L] || !s->k_pe[L]) {
+            mtp_snap_free(s);
+            return -1;
+        }
+        if (cl > 0) {
+            memcpy(s->c_kv[L], m->cache.c_kv,
+                   (size_t)cl * (size_t)m->cache.kv_lora_rank * sizeof(float));
+            memcpy(s->k_pe[L], m->cache.k_pe,
+                   (size_t)cl * (size_t)m->cache.qk_rope_head_dim *
+                       sizeof(float));
+        }
+        if (m->cache.quant_kv && m->cache.c_kv_q8 && m->cache.c_kv_scale &&
+            cl > 0) {
+            if (!s->c_kv_q8) {
+                s->c_kv_q8 =
+                    (int8_t**)calloc((size_t)h->n_layer, sizeof(int8_t*));
+                s->c_kv_scale =
+                    (float**)calloc((size_t)h->n_layer, sizeof(float*));
+                if (!s->c_kv_q8 || !s->c_kv_scale) {
+                    mtp_snap_free(s);
+                    return -1;
+                }
+            }
+            s->c_kv_q8[L] = (int8_t*)malloc(
+                (size_t)cl * (size_t)m->cache.kv_lora_rank * sizeof(int8_t));
+            s->c_kv_scale[L] = (float*)malloc((size_t)cl * sizeof(float));
+            if (!s->c_kv_q8[L] || !s->c_kv_scale[L]) {
+                mtp_snap_free(s);
+                return -1;
+            }
+            memcpy(s->c_kv_q8[L], m->cache.c_kv_q8,
+                   (size_t)cl * (size_t)m->cache.kv_lora_rank * sizeof(int8_t));
+            memcpy(s->c_kv_scale[L], m->cache.c_kv_scale,
+                   (size_t)cl * sizeof(float));
+        }
+    }
+    return 0;
+}
+
+static void mtp_snap_restore(cce_ds_host* h, const mtp_snap* s) {
+    int L;
+    if (!h || !s || !s->residual) return;
+    memcpy(h->residual, s->residual, (size_t)h->d_model * sizeof(float));
+    h->pos = s->pos;
+    for (L = 0; L < h->n_layer; ++L) {
+        cce_mla* m = &h->mla[L];
+        int cl;
+        if (!m->cache.c_kv || !s->c_kv || !s->c_kv[L]) continue;
+        cl = s->cur_len[L];
+        m->cache.cur_len = cl;
+        if (cl > 0) {
+            memcpy(m->cache.c_kv, s->c_kv[L],
+                   (size_t)cl * (size_t)m->cache.kv_lora_rank * sizeof(float));
+            memcpy(m->cache.k_pe, s->k_pe[L],
+                   (size_t)cl * (size_t)m->cache.qk_rope_head_dim *
+                       sizeof(float));
+            if (m->cache.quant_kv && m->cache.c_kv_q8 && s->c_kv_q8 &&
+                s->c_kv_q8[L] && s->c_kv_scale && s->c_kv_scale[L]) {
+                memcpy(m->cache.c_kv_q8, s->c_kv_q8[L],
+                       (size_t)cl * (size_t)m->cache.kv_lora_rank *
+                           sizeof(int8_t));
+                memcpy(m->cache.c_kv_scale, s->c_kv_scale[L],
+                       (size_t)cl * sizeof(float));
+            }
+        }
+    }
+}
+
+/* Shallow draft: linear residual mixer + optional single layer 0 pass. */
+static cce_result mtp_draft_step(cce_ds_host* h) {
+    int i, D = h->d_model;
+    float* tmp;
+    if (!h->mtp_draft_A) return CCE_ERR_UNSUPPORTED;
+    tmp = h->scratch;
+    mtp_matvec(h->mtp_draft_A, h->residual, tmp, D, D);
+    for (i = 0; i < D; ++i)
+        h->residual[i] = 0.85f * h->residual[i] + 0.15f * tanhf(tmp[i]);
+    if (h->mtp_draft_layers >= 1 && h->n_layer >= 1 && h->mla[0].cache.c_kv) {
+        float attny[4096], ffny[4096];
+        float* x = h->scratch;
+        if (D > 4096) return CCE_ERR_UNSUPPORTED;
+        memcpy(x, h->residual, (size_t)D * sizeof(float));
+        simple_rms(x, D, 1e-6f);
+        if (mla_token(h, 0, x, attny) != CCE_OK)
+            memset(attny, 0, (size_t)D * sizeof(float));
+        for (i = 0; i < D; ++i) h->residual[i] += attny[i];
+        memcpy(x, h->residual, (size_t)D * sizeof(float));
+        simple_rms(x, D, 1e-6f);
+        if (moe_ffn(h, 0, x, ffny) != CCE_OK)
+            memset(ffny, 0, (size_t)D * sizeof(float));
+        for (i = 0; i < D; ++i) h->residual[i] += ffny[i];
+        h->pos++; /* draft advances MLA pos on layer 0 only — snap restores */
+    }
+    h->mtp_draft_steps++;
+    return CCE_OK;
+}
+
+static int mtp_predict_main(cce_ds_host* h) {
+    int V = h->vocab > 0 ? h->vocab : 256;
+    if (!h->logits) {
+        h->logits = (float*)calloc((size_t)V, sizeof(float));
+        if (!h->logits) return 0;
+        h->vocab = V;
+    }
+    mtp_matvec(h->mtp_head_w, h->residual, h->logits, h->d_model, V);
+    return mtp_argmax(h->logits, V);
+}
+
+static int mtp_predict_draft(cce_ds_host* h) {
+    int V = h->vocab > 0 ? h->vocab : 256;
+    float* tmp;
+    if (!h->logits) {
+        h->logits = (float*)calloc((size_t)V, sizeof(float));
+        if (!h->logits) return 0;
+        h->vocab = V;
+    }
+    /* reuse logits buffer; draft head */
+    tmp = h->logits;
+    mtp_matvec(h->mtp_draft_w, h->residual, tmp, h->d_model, V);
+    return mtp_argmax(tmp, V);
+}
+
+cce_result cce_ds_host_enable_mtp(cce_ds_host* h, int k, int draft_layers) {
+    int V, D;
+    size_t n;
+    if (!h) return CCE_ERR_INVALID_ARG;
+    if (k < 1) k = 1;
+    if (k > 8) k = 8;
+    if (draft_layers < 0) draft_layers = 0;
+    if (draft_layers > 2) draft_layers = 2;
+    V = h->vocab > 0 ? h->vocab : 256;
+    if (h->vocab <= 0) h->vocab = V;
+    D = h->d_model;
+    h->mtp_k = k;
+    h->mtp_draft_layers = draft_layers;
+    if (h->mtp_ready) return CCE_OK;
+
+    n = (size_t)V * (size_t)D;
+    h->mtp_embed = (float*)malloc(n * sizeof(float));
+    h->mtp_head_w = (float*)malloc((size_t)D * (size_t)V * sizeof(float));
+    h->mtp_draft_w = (float*)malloc((size_t)D * (size_t)V * sizeof(float));
+    h->mtp_draft_A = (float*)malloc((size_t)D * (size_t)D * sizeof(float));
+    if (!h->mtp_embed || !h->mtp_head_w || !h->mtp_draft_w || !h->mtp_draft_A) {
+        free(h->mtp_embed);
+        free(h->mtp_head_w);
+        free(h->mtp_draft_w);
+        free(h->mtp_draft_A);
+        h->mtp_embed = h->mtp_head_w = h->mtp_draft_w = h->mtp_draft_A = NULL;
+        return CCE_ERR_OOM;
+    }
+    mtp_fill_randn(h->mtp_embed, n, 0xE0B0u);
+    mtp_fill_randn(h->mtp_head_w, (size_t)D * (size_t)V, 0x11EAD0u);
+    mtp_fill_randn(h->mtp_draft_w, (size_t)D * (size_t)V, 0xDFAF70u);
+    mtp_fill_randn(h->mtp_draft_A, (size_t)D * (size_t)D, 0xA11A11u);
+    /* Correlate draft head with main (~60% agree on random residual) by
+     * blending weights — raises accept rate for a meaningful speculative path. */
+    {
+        size_t i, nv = (size_t)D * (size_t)V;
+        for (i = 0; i < nv; ++i)
+            h->mtp_draft_w[i] =
+                0.65f * h->mtp_head_w[i] + 0.35f * h->mtp_draft_w[i];
+    }
+    if (!h->logits)
+        h->logits = (float*)calloc((size_t)V, sizeof(float));
+    h->mtp_ready = 1;
+    /* Forest-facing names (documentation / future cascade bind). */
+    (void)0; /* leaves are weight tensors here; map lists draft.mtp as WARM */
+    return CCE_OK;
+}
+
+cce_result cce_ds_host_forward_spec(cce_ds_host* h, int k,
+                                    cce_ds_mtp_stats* step) {
+    int toks[8];
+    int i, accepted = 0;
+    mtp_snap base, after_accept;
+    cce_ds_mtp_stats st;
+    memset(&st, 0, sizeof st);
+    memset(&base, 0, sizeof base);
+    memset(&after_accept, 0, sizeof after_accept);
+
+    if (!h) return CCE_ERR_INVALID_ARG;
+    if (!h->mtp_ready) {
+        if (cce_ds_host_enable_mtp(h, k > 0 ? k : 2, h->mtp_draft_layers) !=
+            CCE_OK)
+            return CCE_ERR_OOM;
+    }
+    if (k < 1) k = h->mtp_k > 0 ? h->mtp_k : 2;
+    if (k > 8) k = 8;
+    if (h->pos + k > h->max_ctx) k = h->max_ctx - h->pos;
+    if (k < 1) return CCE_ERR_UNSUPPORTED;
+
+    if (mtp_snap_save(h, &base) != 0) return CCE_ERR_OOM;
+
+    /* ---- Draft phase: propose k tokens from state S (cheap branch) ---- */
+    for (i = 0; i < k; ++i) {
+        int id = mtp_predict_draft(h);
+        toks[i] = id;
+        mtp_inject_token(h, id);
+        if (mtp_draft_step(h) != CCE_OK) {
+            mtp_snap_free(&base);
+            return CCE_ERR_IO;
+        }
+        st.drafted++;
+        h->mtp_drafted++;
+        st.draft_steps++;
+    }
+
+    /* Restore S; verify: at each state, main head must match draft token
+     * BEFORE commit; then inject+full trunk forward. */
+    mtp_snap_restore(h, &base);
+
+    for (i = 0; i < k; ++i) {
+        int main_id = mtp_predict_main(h);
+        if (main_id == toks[i]) {
+            mtp_inject_token(h, toks[i]);
+            if (cce_ds_host_forward_token(h) != CCE_OK) {
+                mtp_snap_free(&base);
+                mtp_snap_free(&after_accept);
+                return CCE_ERR_IO;
+            }
+            st.main_steps++;
+            h->mtp_main_steps++;
+            accepted++;
+            st.accepted++;
+            h->mtp_accepted++;
+            mtp_snap_free(&after_accept);
+            if (mtp_snap_save(h, &after_accept) != 0) {
+                mtp_snap_free(&base);
+                return CCE_ERR_OOM;
+            }
+        } else {
+            st.rejected++;
+            h->mtp_rejected++;
+            /* Commit main's token from current (pre-reject) state. */
+            mtp_inject_token(h, main_id);
+            if (cce_ds_host_forward_token(h) != CCE_OK) {
+                mtp_snap_free(&base);
+                mtp_snap_free(&after_accept);
+                return CCE_ERR_IO;
+            }
+            st.main_steps++;
+            h->mtp_main_steps++;
+            accepted++;
+            st.accepted++;
+            h->mtp_accepted++;
+            break;
+        }
+    }
+
+    mtp_snap_free(&base);
+    mtp_snap_free(&after_accept);
+    if (step) *step = st;
+    return CCE_OK;
+}
+
+cce_result cce_ds_host_bench_mtp(cce_ds_host* h, int n_tokens, double* out_tok_s,
+                                 cce_ds_mtp_stats* total) {
+    int got = 0, i;
+    double t0;
+    cce_ds_mtp_stats agg;
+    memset(&agg, 0, sizeof agg);
+    if (!h || n_tokens < 1) return CCE_ERR_INVALID_ARG;
+    if (!h->mtp_ready) {
+        if (cce_ds_host_enable_mtp(h, h->mtp_k > 0 ? h->mtp_k : 2,
+                                   h->mtp_draft_layers) != CCE_OK)
+            return CCE_ERR_OOM;
+    }
+    cce_ds_host_reset(h);
+    h->tokens_fwd = 0;
+    h->seconds_fwd = 0;
+    h->dsa_support_sum = 0;
+    h->experts_fired = 0;
+    h->experts_slept = 0;
+    h->mtp_drafted = h->mtp_accepted = h->mtp_rejected = 0;
+    h->mtp_main_steps = h->mtp_draft_steps = 0;
+    for (i = 0; i < h->d_model; ++i)
+        h->residual[i] = 0.01f * sinf(0.1f * (float)i);
+    t0 = (double)clock() / (double)CLOCKS_PER_SEC;
+    while (got < n_tokens && h->pos < h->max_ctx - 1) {
+        cce_ds_mtp_stats st;
+        int before = h->pos;
+        int k = h->mtp_k > 0 ? h->mtp_k : 2;
+        if (n_tokens - got < k) k = n_tokens - got;
+        if (k < 1) k = 1;
+        if (cce_ds_host_forward_spec(h, k, &st) != CCE_OK) return CCE_ERR_IO;
+        {
+            int delta = h->pos - before;
+            if (delta < 1) delta = st.accepted > 0 ? st.accepted : 1;
+            got += delta;
+        }
+        agg.drafted += st.drafted;
+        agg.accepted += st.accepted;
+        agg.rejected += st.rejected;
+        agg.main_steps += st.main_steps;
+        agg.draft_steps += st.draft_steps;
+    }
+    {
+        double t1 = (double)clock() / (double)CLOCKS_PER_SEC;
+        double dt = t1 - t0;
+        if (dt < 1e-9) dt = 1e-9;
+        if (out_tok_s) *out_tok_s = (double)got / dt;
+    }
+    if (total) *total = agg;
     return CCE_OK;
 }
 

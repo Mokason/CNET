@@ -53,3 +53,22 @@ make cnet_ds_bench  # synthetic tok/s + experts_fired
 ## Isolation
 
 Pure C, no DeepSeek repo, no llama.cpp on this path. GGUF import optional into `.cnetpack` + forest names.
+
+## MTP speculative + EP place (Forest branches)
+
+```text
+trunk.head          main next-token head (verify)
+draft.mtp.0         cheap draft head (+ optional 1-layer draft trunk)
+embeds              synthetic token inject into residual
+expert_place[e]     e % ep_places  (dual-GPU role tags for MoE leaves)
+```
+
+**Loop:** draft proposes k tokens → restore snapshot → for each token, main head must agree **before** inject; then full trunk forward; on mismatch commit main's token and stop.
+
+```bash
+make mtp_spec          # hermetic
+make mtp_bench         # baseline vs MTP wall tok/s
+# CNET_MTP_K=2 CNET_MTP_DRAFT_LAYERS=0 CNET_EP_PLACES=2
+```
+
+Honest note: sequential verify still pays ~1 main step per accepted token; wall speedup needs parallel multi-token verify or a much smaller draft (draft_layers=0 is near-free). Machinery + accept_rate telemetry land first.

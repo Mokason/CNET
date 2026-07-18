@@ -1195,6 +1195,22 @@ cnet_ds_import: $(CCE) tools/cnet_ds_import.c
 sparse_stack: ssmax dsa mla deepseek_map ds_stack
 	@echo "SPARSE_STACK_PASS"
 
+# Forest MTP speculative + EP place tags
+.PHONY: mtp_spec
+mtp_spec: $(CCE) tests/test_mtp_spec.c include/cce/cce_ds_runtime.h
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -o $(BIN_DIR)/test_mtp_spec $(CCE) tests/test_mtp_spec.c $(LDFLAGS) -lm
+	@./$(BIN_DIR)/test_mtp_spec 2>&1 | tee logs/mtp_spec.log
+	@grep -q "MTP_SPEC_PASS" logs/mtp_spec.log
+	@grep -q "failures=0" logs/mtp_spec.log
+
+.PHONY: mtp_bench
+mtp_bench: $(CCE) tools/cnet_mtp_bench.c
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -o $(BIN_DIR)/cnet_mtp_bench $(CCE) tools/cnet_mtp_bench.c $(LDFLAGS) -lm
+	@./$(BIN_DIR)/cnet_mtp_bench 64 2 0 | tee logs/mtp_bench.log
+	@grep -q "MTP_BENCH_PASS" logs/mtp_bench.log
+
 .PHONY: cnet_ds_bench
 cnet_ds_bench: $(CCE) tools/cnet_ds_bench.c
 	@mkdir -p $(BIN_DIR) logs

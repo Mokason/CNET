@@ -43,6 +43,17 @@ typedef struct cce_ds_host {
     int             mla_quant_kv;  /* int8 latent KV side (FP8-class BW) */
     float           moe_sleep_eps; /* sleep on expert mix */
     int             dual_pipe;     /* batch-ensure experts then fire (overlap-ready) */
+    /* MTP speculative (Forest draft branches) */
+    int             mtp_k;         /* max draft tokens per step (0=off) */
+    int             mtp_draft_layers; /* 1 = shallow draft; 0 = linear-only */
+    float*          mtp_embed;     /* [vocab * d_model] synthetic token embeds */
+    float*          mtp_head_w;    /* trunk.head [d_model * vocab] */
+    float*          mtp_draft_w;   /* draft.mtp.0 [d_model * vocab] */
+    float*          mtp_draft_A;   /* optional residual mixer [d_model*d_model] */
+    int             mtp_ready;
+    /* EP place: expert e → device bucket (e % ep_places) */
+    int             ep_places;     /* 1 or 2 (dual-GPU role tags) */
+    int*            expert_place;  /* [n_expert] device id */
     /* telemetry (Forest sparse-activate) */
     int             tokens_fwd;
     int             experts_loaded;   /* cold→resident lifetime */
@@ -51,6 +62,11 @@ typedef struct cce_ds_host {
     int             experts_attempted;
     int             dsa_support_sum;
     int             dsa_full_fallback; /* heads that fell back to dense */
+    int             mtp_drafted;
+    int             mtp_accepted;
+    int             mtp_rejected;
+    int             mtp_main_steps;
+    int             mtp_draft_steps;
     double          seconds_fwd;
 } cce_ds_host;
 
@@ -69,7 +85,19 @@ typedef struct cce_ds_host_opts {
     int         mla_quant_kv;
     float       moe_sleep_eps;
     int         dual_pipe;
+    int         mtp_k;           /* 0=off, 2..4 typical */
+    int         mtp_draft_layers;/* 0=linear draft, 1=one residual layer */
+    int         ep_places;       /* 1 or 2 expert placement buckets */
 } cce_ds_host_opts;
+
+/* Speculative-step stats (one call may accept multiple tokens). */
+typedef struct cce_ds_mtp_stats {
+    int drafted;
+    int accepted;
+    int rejected;
+    int main_steps;
+    int draft_steps;
+} cce_ds_mtp_stats;
 
 void cce_ds_host_opts_default(cce_ds_host_opts* o, const char* archive,
                               const char* pack);
@@ -97,6 +125,18 @@ cce_result cce_ds_import_gguf(const char* gguf_path, const char* pack_path,
 
 /* Microbench: T tokens residual-only (synthetic input), fill tok/s. */
 cce_result cce_ds_host_bench(cce_ds_host* h, int n_tokens, double* out_tok_s);
+
+/* Enable Forest MTP leaves (trunk.head, draft.mtp.0, embeds). Idempotent. */
+cce_result cce_ds_host_enable_mtp(cce_ds_host* h, int k, int draft_layers);
+
+/* One speculative step: draft up to k tokens (cheap), verify with main.
+ * Returns tokens accepted (>=1 if progress). */
+cce_result cce_ds_host_forward_spec(cce_ds_host* h, int k,
+                                    cce_ds_mtp_stats* step /*nullable*/);
+
+/* Bench n target tokens with MTP on; fills wall tok/s and aggregate stats. */
+cce_result cce_ds_host_bench_mtp(cce_ds_host* h, int n_tokens, double* out_tok_s,
+                                 cce_ds_mtp_stats* total /*nullable*/);
 
 #ifdef __cplusplus
 }
