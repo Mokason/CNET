@@ -1253,6 +1253,18 @@ mtk_eval_real: mtk_eval
 	@grep -q "MTK_EVAL_PASS" logs/mtk_eval_real.log
 	@grep -q "real generate" logs/mtk_eval_real.log
 
+# Real-model quality + latency (tok/s, finite logits, optional skill delta).
+.PHONY: quality_eval
+quality_eval: $(CCE) $(CCE_MTK_HOST) $(RESOURCE_GOV_SRC) tools/cnet_quality_eval.c
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -o $(BIN_DIR)/cnet_quality_eval $(CCE) $(CCE_MTK_HOST) \
+		$(RESOURCE_GOV_SRC) tools/cnet_quality_eval.c $(LDFLAGS) -lm
+	@echo "built bin/cnet_quality_eval — run with MODEL path"
+
+.PHONY: campaign_bench
+campaign_bench: mtk mtk_eval kv_page mtp_bench sparse_stack gguf_stack quality_eval
+	@bash scripts/run_campaign_bench.sh
+
 
 .PHONY: cnet_ds_bench
 cnet_ds_bench: $(CCE) tools/cnet_ds_bench.c

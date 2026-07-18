@@ -38,6 +38,15 @@ cce_result cce_mtk_host_open(cce_mtk_host **out, const char *gguf_path,
         /* try qwen2 path */
         rc = cce_gguf_load_qwen2(&h->model, gguf_path);
     }
+    /* Hybrid runners (qwen35) refuse CNET_SPARSE_KV — clear and retry once. */
+    if ((rc != CCE_OK || !h->model) && getenv("CNET_SPARSE_KV")) {
+        unsetenv("CNET_SPARSE_KV");
+        unsetenv("CNET_DSA");
+        h->model = NULL;
+        rc = cce_gguf_load_model(&h->model, gguf_path);
+        if (rc != CCE_OK || !h->model)
+            rc = cce_gguf_load_qwen2(&h->model, gguf_path);
+    }
     if (rc != CCE_OK || !h->model) {
         cce_mtk_host_close(h);
         return rc != CCE_OK ? rc : CCE_ERR_IO;
