@@ -1429,9 +1429,19 @@ static cce_result apply_linear_rows(cce_clgemm *gpu, cce_hipgemm *hip,
                 return CCE_OK;
             }
         }
-        /* hipBLAS fallback for plain-float (or exclusive when OpenCL absent /
-           CNET_GPU_BACKEND=hip). Peak single-GEMM on R9700; full-forward
-           usually still wants OpenCL above. */
+        /* hipBLAS: int8 expand-cache then sgemm; else plain float. */
+        if (hip && blk->type == CCE_BLOCK_LINEAR_HEAD && blk->w_q &&
+            blk->w_scale && !blk->w_trit && blk->weights.ndim == 2 &&
+            blk->weights.shape[0] == din && blk->weights.shape[1] == dout &&
+            !(getenv("CNET_GPU_INT8") && getenv("CNET_GPU_INT8")[0] == '0')) {
+            const float *bias =
+                (blk->bias.numel == (size_t)dout) ? blk->bias.data : NULL;
+            if (cce_hipgemm_matmul_q8(hip, in->data, (size_t)T, (size_t)din,
+                                     (const signed char *)blk->w_q,
+                                     blk->w_scale, bias, (size_t)dout,
+                                     out->data) == 0)
+                return CCE_OK;
+        }
         if (hip && blk->type == CCE_BLOCK_LINEAR_HEAD && !blk->w_q &&
             !blk->w_trit && blk->weights.ndim == 2 &&
             blk->weights.shape[0] == din && blk->weights.shape[1] == dout) {
@@ -2027,6 +2037,24 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
            norms carry the conditioning). Everything else: 1/sqrt(head_dim). */
         float scale = m->gemma4_attn ? 1.0f
                                      : 1.0f / sqrtf((float)ge->head_dim);
+        /* GPU attention: single-token dense decode. Only when prefix is long
+           enough that score/V work dominates host pack cost (measured: short
+           ctx is faster on CPU; long ctx wins on GPU). */
+        if (n_tokens == 1 && !m->probe_batch && !skv_idx && gpu && !m->mla_kv) {
+            int abs_t0 = start_pos;
+            int jmin0 = 0;
+            int seq0;
+            if (ge->window > 0 && abs_t0 - ge->window + 1 > 0)
+                jmin0 = abs_t0 - ge->window + 1;
+            seq0 = abs_t0 - jmin0 + 1;
+            if (seq0 >= 64 &&
+                cce_clgemm_attn_decode(
+                    gpu, q.data, m->k_cache, m->v_cache, m->k_slot_floats,
+                    m->v_slot_floats, ge->k_off, ge->v_off, ge->n_q, ge->n_k,
+                    ge->n_v, ge->head_dim, ge->v_head_dim, jmin0, abs_t0, scale,
+                    attn_out.data) == 0)
+                goto attn_done_gpu;
+        }
         for (int h = 0; h < ge->n_q; h++) {
             int kh_i = h / (ge->n_q / ge->n_k);
             int vh_i = h / (ge->n_q / ge->n_v);
@@ -2070,8 +2098,7 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
                 }
                 if (!skv_idx) {
                 /* FULL KV: the historical path, byte-identical when the
-                   sparse knob is unset (skv_idx can only be non-NULL when
-                   sparse_kv_fraction was explicitly opted in). */
+                   sparse knob is unset. */
                 float maxs = -1e30f;
                 for (int j = jmin; j <= abs_t; j++)
                     if (scores[j] > maxs) maxs = scores[j];
@@ -2205,6 +2232,7 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
                 }
             }
         }
+    attn_done_gpu: ;
 
         cce_tensor after_attn = {0};
         cce_tensor_alloc(&after_attn, lnsh, 2);
@@ -2261,10 +2289,15 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
         }
 
         cce_tensor_alloc(&mid, (int[]){n_tokens, mlp_hidden}, 2);
-        if (m->ffn_gelu) gguf_gelu_tanh(&gate, &gate);   /* gemma GeGLU */
-        else             gguf_silu(&gate, &gate);
-        for (size_t i = 0; i < (size_t)n_tokens * mlp_hidden; i++)
-            mid.data[i] = gate.data[i] * upv.data[i];
+        /* GPU silu*up when single token + OpenCL available (residency path). */
+        if (!(gpu && n_tokens == 1 && !m->ffn_gelu &&
+              cce_clgemm_silu_mul(gpu, gate.data, upv.data, mid.data,
+                                 mlp_hidden) == 0)) {
+            if (m->ffn_gelu) gguf_gelu_tanh(&gate, &gate); /* gemma GeGLU */
+            else             gguf_silu(&gate, &gate);
+            for (size_t i = 0; i < (size_t)n_tokens * mlp_hidden; i++)
+                mid.data[i] = gate.data[i] * upv.data[i];
+        }
 
         cce_tensor_alloc(&down, lnsh, 2);
         if (g_gguf_capture) { char cap[128];

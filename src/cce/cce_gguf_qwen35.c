@@ -929,6 +929,41 @@ cce_result cce_gguf_qwen35_forward_impl(cce_gguf_qwen2 *m, const int *tokens,
                 }
             }
 
+            /* GPU decode attention when prefix ≥ 64 (pack cost vs compute). */
+            if (n_tokens == 1 && !m->probe_batch && gpu && start_pos + 1 >= 64) {
+                float *qplain = (float *)malloc(
+                    (size_t)ge->n_q * (size_t)ge->head_dim * sizeof(float));
+                int abs_t0 = start_pos;
+                int ok_gpu = 0;
+                if (qplain) {
+                    for (h = 0; h < ge->n_q; h++) {
+                        const float *qh =
+                            qg.data + (size_t)h * 2 * ge->head_dim;
+                        memcpy(qplain + (size_t)h * ge->head_dim, qh,
+                               (size_t)ge->head_dim * sizeof(float));
+                    }
+                    if (cce_clgemm_attn_decode(
+                            gpu, qplain, m->k_cache, m->v_cache,
+                            m->k_slot_floats, m->v_slot_floats, ge->k_off,
+                            ge->v_off, ge->n_q, ge->n_k, ge->n_v, ge->head_dim,
+                            ge->v_head_dim, 0, abs_t0, scale,
+                            attn_out.data) == 0) {
+                        for (h = 0; h < ge->n_q; h++) {
+                            const float *gate_h =
+                                qg.data + (size_t)h * 2 * ge->head_dim +
+                                ge->head_dim;
+                            float *oh = attn_out.data +
+                                        (size_t)h * ge->v_head_dim;
+                            int d2;
+                            for (d2 = 0; d2 < ge->v_head_dim; d2++)
+                                oh[d2] *= q35_sigmoidf(gate_h[d2]);
+                        }
+                        ok_gpu = 1;
+                    }
+                    free(qplain);
+                }
+                if (ok_gpu) goto q35_attn_gpu_done;
+            }
             for (h = 0; h < ge->n_q; h++) {
                 const int kh_i = h / (ge->n_q / ge->n_k);
                 const int vh_i = h / (ge->n_q / ge->n_v);
@@ -975,6 +1010,7 @@ cce_result cce_gguf_qwen35_forward_impl(cce_gguf_qwen2 *m, const int *tokens,
                         oh[d2] *= q35_sigmoidf(gate_h[d2]);
                 }
             }
+        q35_attn_gpu_done: ;
 
             snprintf(name, sizeof name, "qwen35.blk.%d.o_proj", l);
             cce_gguf__fire_capture(name, &attn_out);

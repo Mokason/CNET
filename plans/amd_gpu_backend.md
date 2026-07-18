@@ -69,13 +69,16 @@ Hermetic tiny identity: `make gguf_gpu` → `GGUF_GPU_PASS`, max|Δlogit|=0, dua
 2. **Activation fingerprint cache** — skip H2D when q/k/v or gate/up reuse the same rows.
 3. hipBLAS **A cache** + multi-device launch/download split.
 4. Size floor + dual column-split + iGPU exclude (earlier).
+5. **GPU attention** (`cce_clgemm_attn_decode`) when prefix ≥ 64 tokens (classic + qwen35 full-attn).
+6. **GPU silu×up** for single-token FFN mid.
+7. **hip int8**: expand-to-float LRU (`CNET_HIP_Q8_MB`, default 8 GiB) + sgemm.
+8. RMS/add/silu OpenCL helpers for residency chain.
 
 ## Next levers (faster still)
 
-1. Keep **C on device** when the next op is also a GPU linear (needs partial residual on GPU).
-2. **hip int8** path so hip-only matches OpenCL coverage.
-3. GPU **attention** (or flash-style) — linears alone leave a CPU-bound ceiling.
-4. Longer decode benches (n≥32) with warm resident weights for steady-state tok/s.
+1. Keep residual/activations fully device-side across a whole layer (no host A for ln).
+2. Persistent K/V cache on GPU (avoid per-step pack).
+3. Longer decode benches (n≥64) to exercise GPU attention steady-state.
 
 ## Isolation
 

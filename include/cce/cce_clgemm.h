@@ -77,4 +77,31 @@ int cce_clgemm_matmul_q8(cce_clgemm *h, const float *A, size_t T, size_t K,
 size_t cce_clgemm_resident_bytes(const cce_clgemm *h);
 size_t cce_clgemm_device_count(const cce_clgemm *h);
 
+/* ---- Residency + attention (primary device; pure C OpenCL) ----
+ * RMS / residual / silu stay on-GPU so linears can reuse device activations.
+ * Attn decode: one query token vs prefix K/V (classic causal path).
+ * Returns 0 ok, -1 → caller keeps CPU path. */
+
+/* y = rms_norm(x) * w  (w may be NULL → pure rms scale only). */
+int cce_clgemm_rms_norm(cce_clgemm *h, const float *x, const float *w,
+                        float *y, int D, float eps);
+
+/* y[i] = a[i] + b[i] */
+int cce_clgemm_add(cce_clgemm *h, const float *a, const float *b, float *y,
+                   int n);
+
+/* y[i] = silu(gate[i]) * up[i] */
+int cce_clgemm_silu_mul(cce_clgemm *h, const float *gate, const float *up,
+                        float *y, int n);
+
+/* Causal multi-head decode attention (n_tokens=1). Packs K/V from cache
+ * layout: row j at base + j*slot + off, head h at + h*head_dim. */
+int cce_clgemm_attn_decode(cce_clgemm *h,
+                           const float *q, /* [n_q * head_dim] */
+                           const float *k_cache, const float *v_cache,
+                           size_t k_slot, size_t v_slot, size_t k_off,
+                           size_t v_off, int n_q, int n_k, int n_v,
+                           int head_dim, int v_head_dim, int jmin, int abs_t,
+                           float scale, float *attn_out /* [n_q * v_hd] */);
+
 #endif /* CCE_CLGEMM_H */

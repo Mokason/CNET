@@ -15,7 +15,8 @@
  *
  * Matmul semantics match cce_clgemm (row-major C = A[T,K] * W[K,N] + bias).
  * hipBLAS uses FMA → not bit-identical to CPU; decision-identity only.
- * int8 weight-only: not on this backend — use cce_clgemm_matmul_q8.
+ * int8: expand-to-float on first use (LRU VRAM budget CNET_HIP_Q8_MB, default
+ * 8192) then hipblasSgemm — decision-identity only.
  */
 
 #include <stddef.h>
@@ -35,6 +36,11 @@ void         cce_hipgemm_close(cce_hipgemm *h);
 
 int cce_hipgemm_matmul(cce_hipgemm *h, const float *A, size_t T, size_t K,
                        const float *W, const float *bias, size_t N, float *C);
+
+/* int8 weight-only → float expand (cached) + sgemm. */
+int cce_hipgemm_matmul_q8(cce_hipgemm *h, const float *A, size_t T, size_t K,
+                          const int8_t *Wq, const float *scales,
+                          const float *bias, size_t N, float *C);
 
 size_t cce_hipgemm_resident_bytes(const cce_hipgemm *h);
 size_t cce_hipgemm_device_count(const cce_hipgemm *h);

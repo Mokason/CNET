@@ -566,3 +566,239 @@ int cce_hipgemm_matmul(cce_hipgemm *h, const float *A, size_t T, size_t K,
     }
     return 0;
 }
+
+/* ---- int8 expand-to-float (LRU) + sgemm ---------------------------------- */
+
+#define HIP_Q8_MAX 256
+#define HIP_Q8_MB_DEFAULT 8192u
+
+typedef struct {
+    const int8_t *wq;
+    size_t K, N;
+    size_t bytes; /* K*N*4 total across devices (approx) */
+    uint64_t stamp;
+    void *mem[HIPGEMM_MAX_DEV];
+    size_t off[HIPGEMM_MAX_DEV];
+    size_t len[HIPGEMM_MAX_DEV];
+    int split;
+    size_t owner;
+    int live;
+} HipQ8;
+
+/* stash on handle via unused tail of resident array — keep separate static
+ * list on the handle by growing struct... use file-static map keyed by h. */
+typedef struct {
+    cce_hipgemm *h;
+    HipQ8 slot[HIP_Q8_MAX];
+    size_t n;
+    size_t budget;
+    size_t used;
+    uint64_t tick;
+} HipQ8Cache;
+
+static HipQ8Cache g_q8_caches[8];
+static int g_q8_ncache;
+
+static HipQ8Cache *q8_cache_for(cce_hipgemm *h) {
+    int i;
+    size_t mb;
+    for (i = 0; i < g_q8_ncache; i++)
+        if (g_q8_caches[i].h == h) return &g_q8_caches[i];
+    if (g_q8_ncache >= 8) return NULL;
+    memset(&g_q8_caches[g_q8_ncache], 0, sizeof g_q8_caches[0]);
+    g_q8_caches[g_q8_ncache].h = h;
+    mb = 0;
+    {
+        const char *e = getenv("CNET_HIP_Q8_MB");
+        if (e && *e) mb = (size_t)strtoul(e, NULL, 10);
+    }
+    if (mb == 0) mb = HIP_Q8_MB_DEFAULT;
+    g_q8_caches[g_q8_ncache].budget = mb * 1024u * 1024u;
+    return &g_q8_caches[g_q8_ncache++];
+}
+
+static void q8_evict_one(HipQ8Cache *c) {
+    size_t i, victim = (size_t)-1;
+    uint64_t oldest = ~(uint64_t)0;
+    size_t d;
+    cce_hipgemm *h = c->h;
+    for (i = 0; i < c->n; i++) {
+        if (!c->slot[i].live) continue;
+        if (c->slot[i].stamp < oldest) {
+            oldest = c->slot[i].stamp;
+            victim = i;
+        }
+    }
+    if (victim == (size_t)-1) return;
+    for (d = 0; d < h->ndev; d++) {
+        if (c->slot[victim].mem[d]) {
+            h->SetDevice(h->d[d].dev_id);
+            h->Free(c->slot[victim].mem[d]);
+        }
+    }
+    c->used -= c->slot[victim].bytes;
+    memset(&c->slot[victim], 0, sizeof c->slot[0]);
+}
+
+static HipQ8 *q8_get(cce_hipgemm *h, const int8_t *Wq, const float *scales,
+                     size_t K, size_t N) {
+    HipQ8Cache *c = q8_cache_for(h);
+    HipQ8 *s;
+    size_t i, d, need;
+    int split;
+    size_t owner, off[HIPGEMM_MAX_DEV], len[HIPGEMM_MAX_DEV];
+    float *tmp = NULL;
+    if (!c) return NULL;
+    for (i = 0; i < c->n; i++) {
+        if (c->slot[i].live && c->slot[i].wq == Wq && c->slot[i].K == K &&
+            c->slot[i].N == N) {
+            c->slot[i].stamp = ++c->tick;
+            return &c->slot[i];
+        }
+    }
+    /* expand */
+    need = K * N * sizeof(float);
+    while (c->used + need > c->budget && c->used > 0) q8_evict_one(c);
+    if (c->used + need > c->budget) return NULL;
+    /* find free slot */
+    s = NULL;
+    for (i = 0; i < c->n; i++)
+        if (!c->slot[i].live) {
+            s = &c->slot[i];
+            break;
+        }
+    if (!s) {
+        if (c->n >= HIP_Q8_MAX) {
+            q8_evict_one(c);
+            for (i = 0; i < c->n; i++)
+                if (!c->slot[i].live) {
+                    s = &c->slot[i];
+                    break;
+                }
+        } else {
+            s = &c->slot[c->n++];
+        }
+    }
+    if (!s) return NULL;
+    memset(s, 0, sizeof *s);
+    place(h, K, N, &split, &owner, off, len);
+    tmp = (float *)malloc(need);
+    if (!tmp) return NULL;
+    /* scales are per-column (n); Wq layout is k*N+n. */
+    for (i = 0; i < K; i++)
+        for (d = 0; d < N; d++)
+            tmp[i * N + d] = scales[d] * (float)Wq[i * N + d];
+
+    s->wq = Wq;
+    s->K = K;
+    s->N = N;
+    s->split = split;
+    s->owner = owner;
+    s->bytes = 0;
+    for (d = 0; d < h->ndev; d++) {
+        s->off[d] = off[d];
+        s->len[d] = len[d];
+        if (len[d] == 0) continue;
+        if (upload_cols(h, d, tmp, K, N, off[d], len[d], &s->mem[d]) != 0) {
+            size_t e;
+            for (e = 0; e < d; e++)
+                if (s->mem[e]) {
+                    h->SetDevice(h->d[e].dev_id);
+                    h->Free(s->mem[e]);
+                }
+            free(tmp);
+            memset(s, 0, sizeof *s);
+            return NULL;
+        }
+        s->bytes += K * len[d] * sizeof(float);
+    }
+    free(tmp);
+    s->live = 1;
+    s->stamp = ++c->tick;
+    c->used += s->bytes;
+    return s;
+}
+
+int cce_hipgemm_matmul_q8(cce_hipgemm *h, const float *A, size_t T, size_t K,
+                          const int8_t *Wq, const float *scales,
+                          const float *bias, size_t N, float *C) {
+    HipQ8 *wq;
+    HipRes *bent = NULL;
+    size_t d, t;
+    float alpha = 1.0f, beta = 0.0f;
+    int rc = 0;
+    if (!h || !A || !Wq || !scales || !C || T == 0 || T > 8 || K == 0 || N == 0)
+        return -1;
+    if ((size_t)T * K * N < h->min_flops) return -1;
+
+    wq = q8_get(h, Wq, scales, K, N);
+    if (!wq) return -1;
+    if (bias) {
+        bent = res_find(h, bias, N * sizeof(float));
+        if (!bent) {
+            bent = res_create(h, bias, 1, N, wq->split, wq->owner, wq->off,
+                              wq->len);
+            if (!bent) return -1;
+        }
+    }
+    for (d = 0; d < h->ndev; ++d) {
+        HipDev *D = &h->d[d];
+        size_t cols = wq->len[d];
+        if (cols == 0) continue;
+        h->SetDevice(D->dev_id);
+        if (hip_ensure_A(h, d, A, T, K) != 0 ||
+            scratch(h, d, &D->c_dev, &D->c_cap, T * cols * sizeof(float)) != 0) {
+            rc = -1;
+            break;
+        }
+        if (wq->split) {
+            if (D->c_host_cap < T * cols) {
+                float *nc =
+                    (float *)realloc(D->c_host, T * cols * sizeof(float));
+                if (!nc) {
+                    rc = -1;
+                    break;
+                }
+                D->c_host = nc;
+                D->c_host_cap = T * cols;
+            }
+        }
+        if (h->Sgemm(D->blas, HIPBLAS_OP_N, HIPBLAS_OP_N, (int)cols, (int)T,
+                     (int)K, &alpha, (const float *)wq->mem[d], (int)cols,
+                     (const float *)D->a_dev, (int)K, &beta, (float *)D->c_dev,
+                     (int)cols) != HIPBLAS_STATUS_SUCCESS) {
+            rc = -1;
+            break;
+        }
+    }
+    if (rc != 0) return -1;
+    for (d = 0; d < h->ndev; ++d) {
+        HipDev *D = &h->d[d];
+        size_t cols = wq->len[d];
+        float *dst;
+        if (cols == 0) continue;
+        h->SetDevice(D->dev_id);
+        h->Sync();
+        dst = wq->split ? D->c_host : C;
+        if (h->Memcpy(dst, D->c_dev, T * cols * sizeof(float),
+                      hipMemcpyDeviceToHost) != HIP_SUCCESS)
+            return -1;
+    }
+    if (wq->split) {
+        for (d = 0; d < h->ndev; ++d) {
+            size_t cols = wq->len[d];
+            if (cols == 0) continue;
+            for (t = 0; t < T; ++t)
+                memcpy(C + t * N + wq->off[d], h->d[d].c_host + t * cols,
+                       cols * sizeof(float));
+        }
+    }
+    if (bias) {
+        for (t = 0; t < T; ++t) {
+            size_t n;
+            float *row = C + t * N;
+            for (n = 0; n < N; ++n) row[n] += bias[n];
+        }
+    }
+    return 0;
+}
