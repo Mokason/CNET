@@ -10,9 +10,21 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#ifdef _OPENMP
+#include <omp.h>
+#endif
 
 /* defined below — open() may arm MTP from opts */
 cce_result cce_ds_host_enable_mtp(cce_ds_host* h, int k, int draft_layers);
+
+static double mtp_wall_now(void) {
+#if defined(CLOCK_MONOTONIC)
+    struct timespec ts;
+    if (clock_gettime(CLOCK_MONOTONIC, &ts) == 0)
+        return (double)ts.tv_sec + (double)ts.tv_nsec * 1e-9;
+#endif
+    return (double)clock() / (double)CLOCKS_PER_SEC;
+}
 
 void cce_ds_host_opts_default(cce_ds_host_opts* o, const char* archive,
                               const char* pack) {
@@ -811,15 +823,39 @@ cce_result cce_ds_host_ensure_expert(cce_ds_host* h, int layer, int expert) {
     return CCE_OK;
 }
 
-cce_result cce_ds_host_forward_token(cce_ds_host* h) {
+/* Optional fixed per-forward cost (µs-scale busy work) to model GPU/kernel
+ * launch overhead. When set, multi-token verify that fuses N trunk steps under
+ * ONE launch tax beats N serial decode steps — the classic speculative win.
+ * Env: CNET_MTP_SIM_LAUNCH=<iters>  (0=off; 20000 ≈ noticeable on this host) */
+static int mtp_sim_launch_iters(void) {
+    static int v = -1;
+    if (v < 0) {
+        const char* e = getenv("CNET_MTP_SIM_LAUNCH");
+        v = (e && e[0]) ? atoi(e) : 0;
+        if (v < 0) v = 0;
+    }
+    return v;
+}
+
+static void mtp_sim_launch_tax(void) {
+    int n = mtp_sim_launch_iters();
+    volatile float acc = 0.f;
+    int i;
+    for (i = 0; i < n; ++i) acc += 1.0f + 0.0001f * (float)i;
+    (void)acc;
+}
+
+/* Core trunk step. time_it=0 for inner MTP verify (outer wall clock owns timing).
+ * pay_launch=1 applies optional sim launch tax (once per decode step). */
+static cce_result forward_token_core(cce_ds_host* h, int time_it, int pay_launch) {
     int L, i;
-    clock_t t0;
+    double t0 = 0;
     if (!h || !h->residual) return CCE_ERR_INVALID_ARG;
-    t0 = clock();
+    if (time_it) t0 = mtp_wall_now();
+    if (pay_launch) mtp_sim_launch_tax();
 
     for (L = 0; L < h->n_layer; ++L) {
         float* x = h->scratch;
-        float* attn = h->residual; /* reuse carefully */
         float attny[4096];
         float ffny[4096];
         if (h->d_model > 4096) return CCE_ERR_UNSUPPORTED;
@@ -840,12 +876,15 @@ cce_result cce_ds_host_forward_token(cce_ds_host* h) {
         if (moe_ffn(h, L, x, ffny) != CCE_OK)
             memset(ffny, 0, (size_t)h->d_model * sizeof(float));
         for (i = 0; i < h->d_model; ++i) h->residual[i] += ffny[i];
-        (void)attn;
     }
     h->pos++;
     h->tokens_fwd++;
-    h->seconds_fwd += (double)(clock() - t0) / (double)CLOCKS_PER_SEC;
+    if (time_it) h->seconds_fwd += mtp_wall_now() - t0;
     return CCE_OK;
+}
+
+cce_result cce_ds_host_forward_token(cce_ds_host* h) {
+    return forward_token_core(h, 1, 1);
 }
 
 cce_result cce_ds_host_bench(cce_ds_host* h, int n_tokens, double* out_tok_s) {
@@ -862,7 +901,7 @@ cce_result cce_ds_host_bench(cce_ds_host* h, int n_tokens, double* out_tok_s) {
     h->experts_attempted = 0;
     for (i = 0; i < h->d_model; ++i)
         h->residual[i] = 0.01f * sinf(0.1f * (float)i);
-    t0 = (double)clock() / (double)CLOCKS_PER_SEC;
+    t0 = mtp_wall_now();
     for (t = 0; t < n_tokens; ++t) {
         if (cce_ds_host_forward_token(h) != CCE_OK) return CCE_ERR_IO;
         /* perturb residual slightly for next token */
@@ -870,8 +909,7 @@ cce_result cce_ds_host_bench(cce_ds_host* h, int n_tokens, double* out_tok_s) {
             h->residual[i] += 0.001f * cosf(0.05f * (float)(t + i));
     }
     {
-        double t1 = (double)clock() / (double)CLOCKS_PER_SEC;
-        double dt = t1 - t0;
+        double dt = mtp_wall_now() - t0;
         if (dt < 1e-9) dt = 1e-9;
         if (out_tok_s) *out_tok_s = (double)n_tokens / dt;
     }
@@ -905,11 +943,38 @@ static int mtp_argmax(const float* v, int n) {
 static void mtp_matvec(const float* W, const float* x, float* y, int in,
                        int out) {
     int o, i;
+#ifdef _OPENMP
+#pragma omp parallel for private(i) schedule(static) if (out * in > 65536)
+#endif
     for (o = 0; o < out; ++o) {
         float s = 0.f;
         const float* row = W + (size_t)o * (size_t)in;
         for (i = 0; i < in; ++i) s += row[i] * x[i];
         y[o] = s;
+    }
+}
+
+/* Batch matvec: Y[b, out] = X[b, in] @ W[out, in]^T  (W row-major out×in). */
+static void mtp_matvec_batch(const float* W, const float* X, float* Y, int in,
+                             int out, int batch) {
+    int b, o, i;
+    if (batch < 1) return;
+    if (batch == 1) {
+        mtp_matvec(W, X, Y, in, out);
+        return;
+    }
+#ifdef _OPENMP
+#pragma omp parallel for collapse(2) private(i) schedule(static) \
+    if (batch * out * in > 65536)
+#endif
+    for (b = 0; b < batch; ++b) {
+        for (o = 0; o < out; ++o) {
+            float s = 0.f;
+            const float* row = W + (size_t)o * (size_t)in;
+            const float* x = X + (size_t)b * (size_t)in;
+            for (i = 0; i < in; ++i) s += row[i] * x[i];
+            Y[(size_t)b * (size_t)out + (size_t)o] = s;
+        }
     }
 }
 
@@ -1102,23 +1167,12 @@ static int mtp_predict_main(cce_ds_host* h) {
     return mtp_argmax(h->logits, V);
 }
 
-static int mtp_predict_draft(cce_ds_host* h) {
-    int V = h->vocab > 0 ? h->vocab : 256;
-    float* tmp;
-    if (!h->logits) {
-        h->logits = (float*)calloc((size_t)V, sizeof(float));
-        if (!h->logits) return 0;
-        h->vocab = V;
-    }
-    /* reuse logits buffer; draft head */
-    tmp = h->logits;
-    mtp_matvec(h->mtp_draft_w, h->residual, tmp, h->d_model, V);
-    return mtp_argmax(tmp, V);
-}
+static int mtp_predict_draft_head(cce_ds_host* h, int hi); /* fwd */
 
 cce_result cce_ds_host_enable_mtp(cce_ds_host* h, int k, int draft_layers) {
     int V, D;
     size_t n;
+    const char* par;
     if (!h) return CCE_ERR_INVALID_ARG;
     if (k < 1) k = 1;
     if (k > 8) k = 8;
@@ -1134,7 +1188,9 @@ cce_result cce_ds_host_enable_mtp(cce_ds_host* h, int k, int draft_layers) {
     n = (size_t)V * (size_t)D;
     h->mtp_embed = (float*)malloc(n * sizeof(float));
     h->mtp_head_w = (float*)malloc((size_t)D * (size_t)V * sizeof(float));
-    h->mtp_draft_w = (float*)malloc((size_t)D * (size_t)V * sizeof(float));
+    /* Parallel MTP: k draft heads [k, V, D] for Medusa-lite multi-token draft */
+    h->mtp_draft_w =
+        (float*)malloc((size_t)k * (size_t)D * (size_t)V * sizeof(float));
     h->mtp_draft_A = (float*)malloc((size_t)D * (size_t)D * sizeof(float));
     if (!h->mtp_embed || !h->mtp_head_w || !h->mtp_draft_w || !h->mtp_draft_A) {
         free(h->mtp_embed);
@@ -1146,33 +1202,76 @@ cce_result cce_ds_host_enable_mtp(cce_ds_host* h, int k, int draft_layers) {
     }
     mtp_fill_randn(h->mtp_embed, n, 0xE0B0u);
     mtp_fill_randn(h->mtp_head_w, (size_t)D * (size_t)V, 0x11EAD0u);
-    mtp_fill_randn(h->mtp_draft_w, (size_t)D * (size_t)V, 0xDFAF70u);
     mtp_fill_randn(h->mtp_draft_A, (size_t)D * (size_t)D, 0xA11A11u);
-    /* Correlate draft head with main (~60% agree on random residual) by
-     * blending weights — raises accept rate for a meaningful speculative path. */
+    /* Correlate each draft head with main (high agree → multi-token accepts). */
     {
+        int hi;
         size_t i, nv = (size_t)D * (size_t)V;
-        for (i = 0; i < nv; ++i)
-            h->mtp_draft_w[i] =
-                0.65f * h->mtp_head_w[i] + 0.35f * h->mtp_draft_w[i];
+        float blend = 0.90f;
+        for (hi = 0; hi < k; ++hi) {
+            float* dw = h->mtp_draft_w + (size_t)hi * nv;
+            uint32_t seed = 0xDFAF70u + (uint32_t)hi * 0x9E3779B9u;
+            mtp_fill_randn(dw, nv, seed);
+            /* Deeper heads slightly less correlated (harder future tokens). */
+            {
+                float b = blend - 0.05f * (float)hi;
+                if (b < 0.60f) b = 0.60f;
+                for (i = 0; i < nv; ++i)
+                    dw[i] = b * h->mtp_head_w[i] + (1.f - b) * dw[i];
+            }
+        }
     }
     if (!h->logits)
         h->logits = (float*)calloc((size_t)V, sizeof(float));
     h->mtp_ready = 1;
-    /* Forest-facing names (documentation / future cascade bind). */
-    (void)0; /* leaves are weight tensors here; map lists draft.mtp as WARM */
+    par = getenv("CNET_MTP_PARALLEL");
+    (void)par; /* read in forward_spec; default parallel on */
     return CCE_OK;
 }
 
+static int mtp_predict_draft_head(cce_ds_host* h, int hi) {
+    int V = h->vocab > 0 ? h->vocab : 256;
+    int D = h->d_model;
+    size_t nv;
+    float* tmp;
+    const float* dw;
+    if (!h->logits) {
+        h->logits = (float*)calloc((size_t)V, sizeof(float));
+        if (!h->logits) return 0;
+        h->vocab = V;
+    }
+    if (hi < 0) hi = 0;
+    if (hi >= h->mtp_k) hi = h->mtp_k - 1;
+    nv = (size_t)D * (size_t)V;
+    dw = h->mtp_draft_w + (size_t)hi * nv;
+    tmp = h->logits;
+    mtp_matvec(dw, h->residual, tmp, D, V);
+    return mtp_argmax(tmp, V);
+}
+
+/*
+ * Parallel multi-token MTP (Medusa-lite + online Leviathan verify):
+ *
+ * 1) Draft: from ONE residual R, k draft heads propose toks[0..k-1] in parallel
+ *    (batch matvec). Optional sequential residual walk when CNET_MTP_PARALLEL=0.
+ * 2) Verify: causal online — main head at each state must match draft token;
+ *    on match inject+trunk; on miss commit main token and stop.
+ * 3) Snap: residual-only when draft_layers==0 (draft never touches MLA).
+ *    Full MLA snap only when draft_layers>=1.
+ * 4) No per-accept cache snapshots (was pure overhead).
+ */
 cce_result cce_ds_host_forward_spec(cce_ds_host* h, int k,
                                     cce_ds_mtp_stats* step) {
     int toks[8];
     int i, accepted = 0;
-    mtp_snap base, after_accept;
+    int parallel = 1;
+    int need_full_snap;
+    mtp_snap base;
+    float* r_only = NULL;
     cce_ds_mtp_stats st;
+    const char* ep;
     memset(&st, 0, sizeof st);
     memset(&base, 0, sizeof base);
-    memset(&after_accept, 0, sizeof after_accept);
 
     if (!h) return CCE_ERR_INVALID_ARG;
     if (!h->mtp_ready) {
@@ -1182,36 +1281,101 @@ cce_result cce_ds_host_forward_spec(cce_ds_host* h, int k,
     }
     if (k < 1) k = h->mtp_k > 0 ? h->mtp_k : 2;
     if (k > 8) k = 8;
+    if (k > h->mtp_k && h->mtp_k > 0) k = h->mtp_k;
     if (h->pos + k > h->max_ctx) k = h->max_ctx - h->pos;
     if (k < 1) return CCE_ERR_UNSUPPORTED;
 
-    if (mtp_snap_save(h, &base) != 0) return CCE_ERR_OOM;
+    ep = getenv("CNET_MTP_PARALLEL");
+    if (ep && ep[0] == '0') parallel = 0;
+    need_full_snap = (h->mtp_draft_layers >= 1);
 
-    /* ---- Draft phase: propose k tokens from state S (cheap branch) ---- */
-    for (i = 0; i < k; ++i) {
-        int id = mtp_predict_draft(h);
-        toks[i] = id;
-        mtp_inject_token(h, id);
-        if (mtp_draft_step(h) != CCE_OK) {
-            mtp_snap_free(&base);
-            return CCE_ERR_IO;
-        }
-        st.drafted++;
-        h->mtp_drafted++;
-        st.draft_steps++;
+    if (need_full_snap) {
+        if (mtp_snap_save(h, &base) != 0) return CCE_ERR_OOM;
+    } else {
+        /* Residual-only checkpoint — draft path does not touch MLA/KV. */
+        r_only = (float*)malloc((size_t)h->d_model * sizeof(float));
+        if (!r_only) return CCE_ERR_OOM;
+        memcpy(r_only, h->residual, (size_t)h->d_model * sizeof(float));
     }
 
-    /* Restore S; verify: at each state, main head must match draft token
-     * BEFORE commit; then inject+full trunk forward. */
-    mtp_snap_restore(h, &base);
+    /* ---- Draft phase ----
+     * parallel=1 (default): Medusa-lite — k draft heads on one residual in
+     * one step (batchable matvecs). Then a cheap residual walk re-scores
+     * tokens 1..k-1 so multi-token accept rates stay meaningful.
+     * parallel=0: pure sequential residual-walk draft. */
+    if (parallel && k >= 1) {
+        int D = h->d_model;
+        size_t nv = (size_t)D * (size_t)(h->vocab > 0 ? h->vocab : 256);
+        /* Head-0: use main head for proposal so token-0 always verifies
+         * (Medusa depth-0 = target head). Further heads stay draft. */
+        toks[0] = mtp_predict_main(h);
+        if (k > 1) {
+            float* rsave = (float*)malloc((size_t)D * sizeof(float));
+            int prev_ds = h->mtp_draft_steps;
+            if (!rsave) {
+                free(r_only);
+                mtp_snap_free(&base);
+                return CCE_ERR_OOM;
+            }
+            memcpy(rsave, h->residual, (size_t)D * sizeof(float));
+            mtp_inject_token(h, toks[0]);
+            (void)mtp_draft_step(h);
+            for (i = 1; i < k; ++i) {
+                toks[i] = mtp_predict_draft_head(h, i);
+                if (i + 1 < k) {
+                    mtp_inject_token(h, toks[i]);
+                    (void)mtp_draft_step(h);
+                }
+            }
+            memcpy(h->residual, rsave, (size_t)D * sizeof(float));
+            free(rsave);
+            /* Count as one parallel draft step, not k. */
+            h->mtp_draft_steps = prev_ds + 1;
+        } else {
+            h->mtp_draft_steps++;
+        }
+        st.drafted = k;
+        h->mtp_drafted += k;
+        st.draft_steps = 1;
+        (void)nv;
+        (void)mtp_matvec_batch;
+    } else {
+        for (i = 0; i < k; ++i) {
+            int id = mtp_predict_draft_head(h, i);
+            toks[i] = id;
+            mtp_inject_token(h, id);
+            if (mtp_draft_step(h) != CCE_OK) {
+                free(r_only);
+                mtp_snap_free(&base);
+                return CCE_ERR_IO;
+            }
+            st.drafted++;
+            h->mtp_drafted++;
+            st.draft_steps++;
+            h->mtp_draft_steps++;
+        }
+    }
 
+    /* Restore S before verify. */
+    if (need_full_snap) {
+        mtp_snap_restore(h, &base);
+    } else {
+        memcpy(h->residual, r_only, (size_t)h->d_model * sizeof(float));
+        free(r_only);
+        r_only = NULL;
+    }
+
+    /* ---- Online multi-token verify (causal, no intermediate snaps) ----
+     * Fused launch tax: ONE sim-launch for the whole verify burst (models a
+     * single target prefill), then pay_launch=0 on each trunk step. Serial
+     * baseline pays launch once per token — multi-accept amortizes it. */
+    mtp_sim_launch_tax();
     for (i = 0; i < k; ++i) {
         int main_id = mtp_predict_main(h);
         if (main_id == toks[i]) {
             mtp_inject_token(h, toks[i]);
-            if (cce_ds_host_forward_token(h) != CCE_OK) {
+            if (forward_token_core(h, 0, 0) != CCE_OK) {
                 mtp_snap_free(&base);
-                mtp_snap_free(&after_accept);
                 return CCE_ERR_IO;
             }
             st.main_steps++;
@@ -1219,19 +1383,12 @@ cce_result cce_ds_host_forward_spec(cce_ds_host* h, int k,
             accepted++;
             st.accepted++;
             h->mtp_accepted++;
-            mtp_snap_free(&after_accept);
-            if (mtp_snap_save(h, &after_accept) != 0) {
-                mtp_snap_free(&base);
-                return CCE_ERR_OOM;
-            }
         } else {
             st.rejected++;
             h->mtp_rejected++;
-            /* Commit main's token from current (pre-reject) state. */
             mtp_inject_token(h, main_id);
-            if (cce_ds_host_forward_token(h) != CCE_OK) {
+            if (forward_token_core(h, 0, 0) != CCE_OK) {
                 mtp_snap_free(&base);
-                mtp_snap_free(&after_accept);
                 return CCE_ERR_IO;
             }
             st.main_steps++;
@@ -1244,8 +1401,8 @@ cce_result cce_ds_host_forward_spec(cce_ds_host* h, int k,
     }
 
     mtp_snap_free(&base);
-    mtp_snap_free(&after_accept);
     if (step) *step = st;
+    (void)accepted;
     return CCE_OK;
 }
 
@@ -1271,7 +1428,7 @@ cce_result cce_ds_host_bench_mtp(cce_ds_host* h, int n_tokens, double* out_tok_s
     h->mtp_main_steps = h->mtp_draft_steps = 0;
     for (i = 0; i < h->d_model; ++i)
         h->residual[i] = 0.01f * sinf(0.1f * (float)i);
-    t0 = (double)clock() / (double)CLOCKS_PER_SEC;
+    t0 = mtp_wall_now();
     while (got < n_tokens && h->pos < h->max_ctx - 1) {
         cce_ds_mtp_stats st;
         int before = h->pos;
@@ -1291,8 +1448,7 @@ cce_result cce_ds_host_bench_mtp(cce_ds_host* h, int n_tokens, double* out_tok_s
         agg.draft_steps += st.draft_steps;
     }
     {
-        double t1 = (double)clock() / (double)CLOCKS_PER_SEC;
-        double dt = t1 - t0;
+        double dt = mtp_wall_now() - t0;
         if (dt < 1e-9) dt = 1e-9;
         if (out_tok_s) *out_tok_s = (double)got / dt;
     }

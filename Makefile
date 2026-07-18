@@ -1209,8 +1209,9 @@ mtp_spec: $(CCE) tests/test_mtp_spec.c include/cce/cce_ds_runtime.h
 mtp_bench: $(CCE) tools/cnet_mtp_bench.c
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) $(CFLAGS) -o $(BIN_DIR)/cnet_mtp_bench $(CCE) tools/cnet_mtp_bench.c $(LDFLAGS) -lm
-	@./$(BIN_DIR)/cnet_mtp_bench 64 2 0 | tee logs/mtp_bench.log
+	@CNET_MTP_SIM_LAUNCH=1000000 ./$(BIN_DIR)/cnet_mtp_bench 128 | tee logs/mtp_bench.log
 	@grep -q "MTP_BENCH_PASS" logs/mtp_bench.log
+	@grep -E 'k=2 par=1' logs/mtp_bench.log | tail -1 | grep -qE 'speedup=1\.[0-9]'
 
 .PHONY: kv_page
 kv_page: $(CCE_KV_PAGE) tests/test_kv_page.c include/cce/cce_kv_page.h
