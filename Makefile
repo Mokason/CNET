@@ -29,7 +29,7 @@ ifeq ($(OS),Windows_NT)
 # element keeps its own i-ascending accumulation regardless of SIMD width).
 CFLAGS += -mno-avx
 endif
-LDFLAGS := -lm
+LDFLAGS := -lm -lpthread
 MCP_LDFLAGS :=
 ifeq ($(OS),Windows_NT)
 MCP_LDFLAGS := -lwininet
@@ -99,6 +99,7 @@ CCE_FOREST  := src/cce/cce_forest.c
 CCE_ROUTER  := src/cce/cce_router.c
 CCE_SPARSE_KV := src/cce/cce_sparse_kv.c
 CCE_DSA := src/cce/cce_dsa.c
+CCE_KV_PAGE := src/cce/cce_kv_page.c
 CCE_MLA := src/cce/cce_mla.c
 CCE_DS_MAP := src/cce/cce_deepseek_map.c
 CCE_DS_RT  := src/cce/cce_ds_runtime.c
@@ -185,7 +186,7 @@ CCE_SIMILAR := src/cce/cce_similar.c
 CCE_CLGEMM  := src/cce/cce_clgemm.c
 CCE_HIPGEMM := src/cce/cce_hipgemm.c
 CCE_TRANSFORMER_QAT := src/cce/cce_transformer_qat.c
-CCE := $(CCE_TENSOR) $(CCE_BLOCK) $(CCE_CASCADE) $(CCE_ARCHIVE) $(CCE_FOREST) $(CCE_ROUTER) $(CCE_SPARSE_KV) $(CCE_DSA) $(CCE_MLA) $(CCE_DS_MAP) $(CCE_DS_RT) $(CCE_INFER) $(CCE_UNCERTAINTY) $(CCE_COMPRESSION) $(CCE_LEARN) $(CCE_PATCH) $(CCE_GPU) $(CCE_ABI) $(CCE_CUDA_OBJ) $(CCE_PERCEPTUAL) $(CCE_WORDLM) $(CCE_MODEL) $(CCE_MODEL_IO) $(CCE_DATASET) $(CCE_AUTOGRAD) $(CCE_SAFETENSORS) $(CCE_GGUF) $(CCE_AICIMO) $(CCE_QGKP) $(CCE_DETECT) $(CCE_SSM) $(CCE_HYBRID) $(CCE_QWEN35) $(CCE_GGUF_QWEN35) $(CCE_ST_LLAMA) $(CCE_SPECGRAPH) $(CCE_WSTORE) $(CCE_TIERRT) $(CCE_SIMILAR) $(CCE_CLGEMM) $(CCE_HIPGEMM) $(CCE_TRANSFORMER_QAT)
+CCE := $(CCE_TENSOR) $(CCE_BLOCK) $(CCE_CASCADE) $(CCE_ARCHIVE) $(CCE_FOREST) $(CCE_ROUTER) $(CCE_SPARSE_KV) $(CCE_DSA) $(CCE_KV_PAGE) $(CCE_MLA) $(CCE_DS_MAP) $(CCE_DS_RT) $(CCE_INFER) $(CCE_UNCERTAINTY) $(CCE_COMPRESSION) $(CCE_LEARN) $(CCE_PATCH) $(CCE_GPU) $(CCE_ABI) $(CCE_CUDA_OBJ) $(CCE_PERCEPTUAL) $(CCE_WORDLM) $(CCE_MODEL) $(CCE_MODEL_IO) $(CCE_DATASET) $(CCE_AUTOGRAD) $(CCE_SAFETENSORS) $(CCE_GGUF) $(CCE_AICIMO) $(CCE_QGKP) $(CCE_DETECT) $(CCE_SSM) $(CCE_HYBRID) $(CCE_QWEN35) $(CCE_GGUF_QWEN35) $(CCE_ST_LLAMA) $(CCE_SPECGRAPH) $(CCE_WSTORE) $(CCE_TIERRT) $(CCE_SIMILAR) $(CCE_CLGEMM) $(CCE_HIPGEMM) $(CCE_TRANSFORMER_QAT)
 CNET_CCE_ADAPTER := src/cce/cce_contract_adapter.c
 SPECIALIST_ADAPTERS := src/specialist_adapters.c
 SPECIALIST_SRC := src/specialist.c src/specialist_health.c
@@ -1210,6 +1211,15 @@ mtp_bench: $(CCE) tools/cnet_mtp_bench.c
 	$(CC) $(CFLAGS) -o $(BIN_DIR)/cnet_mtp_bench $(CCE) tools/cnet_mtp_bench.c $(LDFLAGS) -lm
 	@./$(BIN_DIR)/cnet_mtp_bench 64 2 0 | tee logs/mtp_bench.log
 	@grep -q "MTP_BENCH_PASS" logs/mtp_bench.log
+
+.PHONY: kv_page
+kv_page: $(CCE_KV_PAGE) tests/test_kv_page.c include/cce/cce_kv_page.h
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -o $(BIN_DIR)/test_kv_page $(CCE_KV_PAGE) tests/test_kv_page.c -lpthread -lm
+	@./$(BIN_DIR)/test_kv_page 2>&1 | tee logs/kv_page.log
+	@grep -q "KV_PAGE_PASS" logs/kv_page.log
+	@grep -q "failures=0" logs/kv_page.log
+
 
 .PHONY: cnet_ds_bench
 cnet_ds_bench: $(CCE) tools/cnet_ds_bench.c

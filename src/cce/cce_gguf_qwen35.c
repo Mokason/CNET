@@ -661,7 +661,31 @@ cce_result cce_gguf_load_qwen35(cce_gguf_qwen2 **out, const char *path) {
 
     /* ---- KV cache (same sizing policy as the qwen2 loader) ---- */
     m->max_ctx = (m->ctx_len > 0) ? m->ctx_len : 2048;
-    if (m->max_ctx > 8192) m->max_ctx = 8192;
+    /* Same policy as cce_gguf.c: dense slab capped unless CNET_KV_PAGE=1
+       (legal model ctx e.g. 1M; hot window sized for paged RAM). */
+    {
+        const char *page = getenv("CNET_KV_PAGE");
+        if (!(page && page[0] == '1')) {
+            if (m->max_ctx > 8192) m->max_ctx = 8192;
+        } else {
+            int hot = 4 * 256;
+            const char *pl = getenv("CNET_KV_PAGE_LEN");
+            const char *nh = getenv("CNET_KV_HOT_PAGES");
+            if (pl && pl[0]) {
+                int v = atoi(pl);
+                if (v >= 16) hot = v * 4;
+            }
+            if (nh && nh[0]) {
+                int v = atoi(nh);
+                int plen = (pl && pl[0]) ? atoi(pl) : 256;
+                if (v >= 2 && plen >= 16) hot = plen * v;
+            }
+            if (hot < 256) hot = 256;
+            if (m->ctx_len <= 0) m->ctx_len = m->max_ctx;
+            if (hot > m->ctx_len && m->ctx_len > 0) hot = m->ctx_len;
+            m->max_ctx = hot;
+        }
+    }
     {
         const char *ce = getenv("CNET_MAX_CTX");
         if (ce) { int v = atoi(ce); if (v >= 8 && v < m->max_ctx) m->max_ctx = v; }

@@ -2943,10 +2943,41 @@ cce_result cce_gguf_load_qwen2(cce_gguf_qwen2** out, const char* path) {
     m->rope_freq_base = cce_gguf_get_rope_freq_base(g); /* 0 -> forward default 10000 */
     m->rms_eps = cce_gguf_get_rms_eps(g);               /* 0 -> forward default 1e-6 */
     m->max_ctx = (m->ctx_len > 0) ? m->ctx_len : 2048;
-    if (m->max_ctx > 8192) m->max_ctx = 8192; /* cap KV cache alloc for loader demo; real use would be dynamic / paged */
-    {   /* short-context runs (campaign mining probes are <=4 tokens): let the
-           caller cap the KV allocation. A 48-layer/262k-vocab model would
-           otherwise calloc ~13 GB of cache it never touches. Opt-in env. */
+    /* Dense f32 slab is still O(max_ctx). Default cap 8192 unless paged KV
+       is requested (CNET_KV_PAGE=1): then legal max follows model (e.g. 1M)
+       but RAM must use cce_kv_pager (see plans/kv_async_page.md) — for now
+       we still allocate a finite hot window to avoid OOM on open. */
+    {
+        const char *page = getenv("CNET_KV_PAGE");
+        if (!(page && page[0] == '1')) {
+            if (m->max_ctx > 8192) m->max_ctx = 8192;
+        } else {
+            /* Paged mode: keep a bounded alloc (hot window default 4*256)
+               while allowing cur_pos / legal positions up to model ctx.
+               Full ring wire is incremental; enlarge slab via CNET_MAX_CTX. */
+            int hot = 4 * 256;
+            const char *pl = getenv("CNET_KV_PAGE_LEN");
+            const char *nh = getenv("CNET_KV_HOT_PAGES");
+            if (pl && pl[0]) {
+                int v = atoi(pl);
+                if (v >= 16) hot = v;
+            }
+            if (nh && nh[0]) {
+                int v = atoi(nh);
+                if (v >= 2) hot *= v;
+                else hot = (pl && pl[0]) ? atoi(pl) * 4 : hot;
+            } else if (pl && pl[0]) {
+                hot = atoi(pl) * 4;
+            }
+            if (hot < 256) hot = 256;
+            if (hot > m->max_ctx) hot = m->max_ctx;
+            /* Store model legal max in ctx_len; operational hot slab in max_ctx
+               until pager owns writes. */
+            if (m->ctx_len <= 0) m->ctx_len = m->max_ctx;
+            m->max_ctx = hot;
+        }
+    }
+    {   /* short-context runs: further shrink hot slab. */
         const char* e = getenv("CNET_MAX_CTX");
         if (e) { int v = atoi(e); if (v >= 8 && v < m->max_ctx) m->max_ctx = v; }
     }
