@@ -46,9 +46,22 @@ cce_ds_map_bind_check(&map, has_gguf_tensor, ctx, &report);
 cce_ds_hparams_to_mla(&hp, &mla_cfg);  /* → cce_mla */
 ```
 
-## Gate
+## Runtime host + import
+```c
+cce_ds_host_open(&h, &hp, &opts);   /* map→forest→MLA layers */
+cce_ds_host_forward_token(h);       /* residual: MLA(+DSA) + MoE cold-load */
+cce_ds_host_ensure_expert(h, L, e); /* demand-load COLD expert */
+cce_ds_host_bench(h, 128, &tok_s);
+/* optional interchange */
+cce_ds_import_gguf("model.gguf", "model.cnetpack", "model.cce", 0);
+```
+
+## Gates
 ```bash
-make deepseek_map   # DEEPSEEK_MAP_PASS
+make deepseek_map   # DEEPSEEK_MAP_PASS (map + bind + pack)
+make ds_stack       # DS_STACK_PASS (full host + microbench)
+make sparse_stack   # ssmax + dsa + mla + deepseek_map + ds_stack
+make cnet_ds_import # bin/cnet_ds_import
 ```
 
 ## Isolation (no DeepSeek repo, no llama.cpp runtime dep)
