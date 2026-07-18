@@ -864,7 +864,8 @@ cce_result cce_gguf_qwen35_forward_impl(cce_gguf_qwen2 *m, const int *tokens,
         if (use_stream && e->kind[l] != CCE_QWEN35_LAYER_FULL_ATTN)
             (void)cce_clgemm_stream_get_x(gpu, x.data, D);
 
-        cce_gguf__rms_norm(&x, &m->attn_norm[l], eps, &ln1);
+        if (!(use_stream && e->kind[l] == CCE_QWEN35_LAYER_FULL_ATTN))
+            cce_gguf__rms_norm(&x, &m->attn_norm[l], eps, &ln1);
 
         if (e->kind[l] == CCE_QWEN35_LAYER_FULL_ATTN) {
             /* ---- gated causal attention ---- */
@@ -897,9 +898,30 @@ cce_result cce_gguf_qwen35_forward_impl(cce_gguf_qwen2 *m, const int *tokens,
             }
             snprintf(name, sizeof name, "qwen35.blk.%d.qg_proj", l);
             cce_gguf__fire_capture(name, &ln1);
-            if (cce_gguf__apply_linear_rows(gpu, hip, qg_cas, &ln1, &qg) != CCE_OK ||
-                cce_gguf__apply_linear_rows(gpu, hip, k_cas, &ln1, &k) != CCE_OK ||
-                cce_gguf__apply_linear_rows(gpu, hip, v_cas, &ln1, &v) != CCE_OK) {
+            /* Prefer stream linears (device ln → Q/K/V slots) when residual
+               stream is live; RoPE+attn stay on device after. */
+            if (use_stream &&
+                cce_clgemm_stream_rms_x(gpu, m->attn_norm[l].data, D, eps, 0) ==
+                    0 &&
+                cce_gguf__stream_linear_slot(gpu, qg_cas, qg_dim,
+                                             CCE_CL_SLOT_TMP) == 0 &&
+                cce_gguf__stream_linear_slot(gpu, k_cas, ge->k_dim,
+                                             CCE_CL_SLOT_K) == 0 &&
+                cce_gguf__stream_linear_slot(gpu, v_cas, ge->v_dim,
+                                             CCE_CL_SLOT_V) == 0 &&
+                cce_clgemm_stream_get_slot(gpu, CCE_CL_SLOT_TMP, qg.data,
+                                           qg_dim) == 0 &&
+                cce_clgemm_stream_get_slot(gpu, CCE_CL_SLOT_K, k.data,
+                                           ge->k_dim) == 0 &&
+                cce_clgemm_stream_get_slot(gpu, CCE_CL_SLOT_V, v.data,
+                                           ge->v_dim) == 0) {
+                /* host mirrors filled; rope/gate still need host qg layout */
+            } else if (cce_gguf__apply_linear_rows(gpu, hip, qg_cas, &ln1, &qg) !=
+                           CCE_OK ||
+                       cce_gguf__apply_linear_rows(gpu, hip, k_cas, &ln1, &k) !=
+                           CCE_OK ||
+                       cce_gguf__apply_linear_rows(gpu, hip, v_cas, &ln1, &v) !=
+                           CCE_OK) {
                 cce_tensor_free(&qg); cce_tensor_free(&k); cce_tensor_free(&v);
                 cce_tensor_free(&attn_out); cce_tensor_free(&ln1);
                 cce_tensor_free(&after_attn);

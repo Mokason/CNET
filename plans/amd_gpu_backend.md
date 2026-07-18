@@ -82,18 +82,26 @@ Hermetic tiny identity: `make gguf_gpu` → `GGUF_GPU_PASS`, max|Δlogit|=0, dua
 |-----|------|
 | `stream_bind` / `set_x` / `get_x` | residual x[D] on device |
 | `stream_rms_x` | ln = rms(x)*w on device → matmul A |
-| `stream_linear_{fp,q8}` | linear from device ln (d0 weights) |
-| `stream_kv_write` | write K/V row into device cache |
-| `stream_attn` | multi-head decode from device KV (strided, no pack) |
+| `stream_linear_{fp,q8}` | linear from device ln → host C |
+| `stream_linear_{fp,q8}_slot` | linear from device ln → Q/K/V/AO/TMP slot |
+| `stream_rope_slot` | NEOX RoPE on Q or K slot (optional freq factors) |
+| `stream_kv_write` / `kv_write_slots` | host or device-slot K/V → device cache |
+| `stream_attn` | host Q + device KV → host out |
+| `stream_attn_dev` | device Q slot + device KV → AO slot |
+| `stream_use_slot_as_a` | AO (or other slot) as next matmul A |
 | `stream_add_x_host` | x += delta |
 
-Wired: classic qwen2 decode stream layer; qwen35 residual + device KV + stream attn. Soft-fail → CPU. `CNET_GPU_STREAM=0` disables.
+Wired:
+- **Classic qwen2 decode**: full stream layer (rms → slot QKV → device RoPE → kv_write_slots → attn_dev → o_proj → FFN). Soft-fail restores pre-layer residual checkpoint then host path.
+- **qwen35 full-attn**: residual stream + stream Q/K/V linears; per-head QK-norm + YaRN still host (device NEOX ≠ YaRN); device KV + stream_attn. GDN layers host residual.
+
+`CNET_GPU_STREAM=0` disables. Measured (dual gfx1201, Qwythos Q8): N=4 ~8.4 tok/s (~7.4×), N=64 ~7.6 tok/s (~6.8×) vs ~1.1 CPU.
 
 ## Next levers (faster still)
 
-1. Device-side RoPE + keep q on GPU through attn (less H2D).
-2. Stream linears for qwen35 full-attn q/k/v (not only residual/KV).
-3. Longer decode benches (n≥64) for steady-state tok/s.
+1. Device YaRN / per-head QK-norm for qwen35 (drop host Q/K/V round-trip on full-attn).
+2. Device-side silu*up and down-proj without host mid buffer.
+3. Dual-GPU residual split or weight-pipelined layers (today residual/KV on d0).
 
 ## Isolation
 

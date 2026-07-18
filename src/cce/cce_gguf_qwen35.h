@@ -73,6 +73,9 @@ cce_result cce_gguf__apply_linear_rows(struct cce_clgemm *gpu,
                                        struct cce_hipgemm *hip,
                                        cce_cascade *cas,
                                        const cce_tensor *in, cce_tensor *out);
+/* Stream linear from device ln → slot (0=Q,1=K,2=V,3=AO,4=TMP). */
+int cce_gguf__stream_linear_slot(struct cce_clgemm *gpu, cce_cascade *cas,
+                                 int dout, int slot);
 cce_result cce_gguf__rms_norm(const cce_tensor *in, const cce_tensor *w,
                               float eps, cce_tensor *out);
 void cce_gguf__fire_layer_tap(int layer, const float *x, int n_tokens, int dim);

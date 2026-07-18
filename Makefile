@@ -1300,6 +1300,24 @@ gguf_gpu_real: $(CCE) tools/cnet_gguf_gpu_bench.c
 		| tee logs/gguf_gpu_real.log
 	@grep -q "GGUF_GPU_BENCH_PASS" logs/gguf_gpu_real.log
 
+# Steady-state decode: long enough for device KV + stream attn (n>=64).
+# Example: make gguf_gpu_steady MODEL=/path/Qwythos.gguf N=64
+.PHONY: gguf_gpu_steady
+gguf_gpu_steady: $(CCE) tools/cnet_gguf_gpu_bench.c
+	@mkdir -p $(BIN_DIR) logs
+	@if [ -z "$(MODEL)" ]; then \
+		echo "Set MODEL=/path/to.gguf  (optional N=64+)"; \
+		exit 2; \
+	fi
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/cnet_gguf_gpu_bench \
+		$(CCE) tools/cnet_gguf_gpu_bench.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -lm -ldl
+	@LD_LIBRARY_PATH=/opt/rocm/lib:$$LD_LIBRARY_PATH \
+		CNET_ORACLE_INT8=1 CNET_FOREST_NO_PERSIST=1 CNET_GPU_COUNT=2 \
+		./$(BIN_DIR)/cnet_gguf_gpu_bench "$(MODEL)" $(or $(N),64) opencl \
+		| tee logs/gguf_gpu_steady.log
+	@grep -q "GGUF_GPU_BENCH_PASS" logs/gguf_gpu_steady.log
+	@grep "tok_s\|speedup\|GGUF_GPU_BENCH" logs/gguf_gpu_steady.log
+
 # Pure CCE build without legacy nn.c (for testing the new engine)
 cce_smoke_pure: $(CCE) $(CCE_CUDA_OBJ) tests/cce_smoke.c
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) tests/cce_smoke.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
