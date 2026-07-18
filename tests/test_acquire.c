@@ -592,6 +592,51 @@ int main(void) {
         btn_free(hexv); free(hexv);
     }
 
+    printf("[7b] no-oracle wait state + automatic wake\n");
+    {
+        PrimitiveRegistry reg;
+        AcquireLedger led;
+        OracleRegistry orc;
+        AcquireConfig cfg;
+        AcquireReport rep;
+        Port nib  = make_port(PORT_BINARY_MSB, 4, 1, "nibble");
+        Port nibn = make_port(PORT_BINARY_MSB, 4, 1, "nibble_next");
+
+        registry_init(&reg);
+        acquire_ledger_init(&led);
+        memset(&orc, 0, sizeof orc);
+        acquire_config_defaults(&cfg);
+        acquire_note_no_plan(&led, nib, nibn);
+
+        memset(&rep, 0, sizeof rep);
+        check(acquire_drain(&reg, &led, &orc, &cfg, &rep) == 0,
+              "no-oracle drain runs");
+        check(rep.examined == 1 && rep.skipped_no_oracle == 1 &&
+              rep.deferred == 1 &&
+              led.gaps[0].status == GAP_DEFERRED &&
+              strcmp(led.gaps[0].defer_reason,
+                     ACQUIRE_DEFER_WAITING_ORACLE) == 0,
+              "missing oracle parks the gap instead of spinning OPEN");
+
+        memset(&rep, 0, sizeof rep);
+        check(acquire_drain(&reg, &led, &orc, &cfg, &rep) == 0 &&
+              rep.examined == 0 && rep.skipped_no_oracle == 0 &&
+              led.gaps[0].status == GAP_DEFERRED,
+              "parked gap is a steady-state no-op");
+
+        check(acquire_oracle_register(&orc, "increment_ref", nib, nibn,
+                                      oracle_increment, NULL) == 0,
+              "matching oracle arrives later");
+        memset(&rep, 0, sizeof rep);
+        check(acquire_drain(&reg, &led, &orc, &cfg, &rep) == 0 &&
+              rep.examined == 1 && rep.closed == 1 &&
+              led.gaps[0].status == GAP_CLOSED,
+              "matching oracle automatically wakes and closes the parked gap");
+
+        acquire_ledger_free(&led);
+        registry_free(&reg);
+    }
+
     printf("[8] rebuild: LOW_RELIABILITY + HEALTH\n");
     {
         PrimitiveRegistry reg;

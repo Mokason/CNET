@@ -359,6 +359,44 @@ static int lm_shape_ok(Port in, Port goal, int vocab, int base) {
            base + (int)in.field_width <= vocab;
 }
 
+/* Missing-oracle gaps are parked by acquire_drain. Treat them as candidates
+   when rebuilding the per-tick oracle registry so a newly available teacher
+   can wake them; unsupported shapes remain parked and consume no tick work. */
+static int gap_oracle_candidate(const GapRecord *gap) {
+    return gap && (gap->status == GAP_OPEN ||
+           (gap->kind == GAP_NO_PLAN && gap->status == GAP_DEFERRED &&
+            strcmp(gap->defer_reason, ACQUIRE_DEFER_WAITING_ORACLE) == 0));
+}
+
+static int gap_ports(const GapLane *L, const GapRecord *gap,
+                     Port *in, Port *goal) {
+    size_t k;
+    const RegistryEntry *e = NULL;
+    if (!L || !gap || !in || !goal) return 0;
+    if (gap->kind == GAP_NO_PLAN) {
+        *in = gap->input_port;
+        *goal = gap->goal_port;
+        return 1;
+    }
+    for (k = 0; k < L->reg.count; ++k)
+        if (L->reg.entries[k].name &&
+            strcmp(L->reg.entries[k].name, gap->subject) == 0)
+            e = &L->reg.entries[k];
+    if (!e || !e->btn || e->btn->input_port_count != 1 ||
+        e->btn->output_port_count != 1)
+        return 0;
+    *in = e->btn->input_ports[0];
+    *goal = e->btn->output_ports[0];
+    return 1;
+}
+
+static int gap_model_teachable(const GapLane *L, const GapRecord *gap,
+                               int vocab, int base) {
+    Port in, goal;
+    return gap_oracle_candidate(gap) && gap_ports(L, gap, &in, &goal) &&
+           lm_shape_ok(in, goal, vocab, base);
+}
+
 /* JTC teacher: closed-set hermetic oracle for jtc_feat → json_tool.
    Registered alongside LM teachers so find_oracle matches NO_PLAN gaps.
    Drain itself uses cnet_jtc_ensure_sealed (finite exemplars) because RAW
@@ -373,7 +411,7 @@ static size_t bind_jtc_teachers(GapLane *L) {
          g++) {
         const GapRecord *gap = &L->ledger.gaps[g];
         Port gin, ggoal;
-        if (gap->status != GAP_OPEN) continue;
+        if (!gap_oracle_candidate(gap)) continue;
         if (gap->kind == GAP_NO_PLAN) {
             gin = gap->input_port;
             ggoal = gap->goal_port;
@@ -417,7 +455,7 @@ static size_t drain_jtc_gaps(GapLane *L) {
         GapRecord *gap = &L->ledger.gaps[g];
         Port gin, ggoal;
         int erc;
-        if (gap->status != GAP_OPEN) continue;
+        if (!gap_oracle_candidate(gap)) continue;
         if (gap->kind == GAP_NO_PLAN) {
             gin = gap->input_port;
             ggoal = gap->goal_port;
@@ -463,23 +501,8 @@ static size_t bind_model_teachers(GapLane *L, cce_gguf_qwen2 *m,
         Port in, goal;
         char name[ACQUIRE_NAME_MAX];
         LmTask *t;
-        if (gap->status != GAP_OPEN) continue;
-        if (gap->kind == GAP_NO_PLAN) {
-            in = gap->input_port;
-            goal = gap->goal_port;
-        } else {
-            /* rebuild: take the incumbent's real ports */
-            size_t k;
-            const RegistryEntry *e = NULL;
-            for (k = 0; k < L->reg.count; ++k)
-                if (L->reg.entries[k].name &&
-                    strcmp(L->reg.entries[k].name, gap->subject) == 0)
-                    e = &L->reg.entries[k];
-            if (!e || !e->btn || e->btn->input_port_count != 1 ||
-                e->btn->output_port_count != 1) continue;
-            in = e->btn->input_ports[0];
-            goal = e->btn->output_ports[0];
-        }
+        if (!gap_oracle_candidate(gap) || !gap_ports(L, gap, &in, &goal))
+            continue;
         if (!lm_shape_ok(in, goal, vocab, base)) continue;
         {
             const LmContext *sel =
@@ -815,18 +838,23 @@ int main(int argc, char **argv) {
 
         for (;;) {
             long slept;
-            size_t open_gaps = 0, gi;
+            size_t open_gaps = 0, teacher_demand = 0, gi;
             int did_work = 0;
             if (stop_requested(stop_path)) {
                 printf("gap_lane_run: stop file honored\n");
                 break;
             }
             tick_no++;
-            for (gi = 0; gi < lane.ledger.count; gi++)
-                if (lane.ledger.gaps[gi].status == GAP_OPEN) open_gaps++;
+            for (gi = 0; gi < lane.ledger.count; gi++) {
+                const GapRecord *gap = &lane.ledger.gaps[gi];
+                if (gap->status == GAP_OPEN) open_gaps++;
+                if (gap_model_teachable(&lane, gap, vocab, (int)token_base))
+                    teacher_demand++;
+            }
 
-            /* Reload teacher if we slept it and demand returned. */
-            if (!model && open_gaps > 0 && model_path_saved[0]) {
+            /* Reload only for a gap this LM can actually teach. Parked legacy
+               or foreign shapes must not pin the multi-GB teacher in memory. */
+            if (!model && teacher_demand > 0 && model_path_saved[0]) {
                 if (cce_anymodel_open(&am, model_path_saved) == CCE_OK &&
                     am && am->transformer) {
                     model = am->transformer;
@@ -839,8 +867,8 @@ int main(int argc, char **argv) {
                     lm_pinned = (const LmContext *)-1;
                     lm_cache_ctx = (const void *)-1;
                     idle_for = 0;
-                    printf("gap_lane_run: teacher reloaded (open_gaps=%zu)\n",
-                           open_gaps);
+                    printf("gap_lane_run: teacher reloaded (demand=%zu)\n",
+                           teacher_demand);
                     fflush(stdout);
                 } else {
                     fprintf(stderr, "gap_lane_run: teacher reload failed\n");

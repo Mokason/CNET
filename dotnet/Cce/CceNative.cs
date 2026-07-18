@@ -735,6 +735,11 @@ internal static partial class CceNative
     internal static partial int McpWebSearch([MarshalAs(UnmanagedType.LPStr)] string query,
         byte[] resultsOut, nuint cap, out int fromCache);
 
+    [LibraryImport(CnetLibraryName, EntryPoint = "port_contract_mcp_wiki_lookup")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+    internal static partial int McpWikiLookup([MarshalAs(UnmanagedType.LPStr)] string query,
+        byte[] summaryOut, nuint cap, out int fromMemory);
+
     [LibraryImport(CnetLibraryName, EntryPoint = "mcp_memory_init")]
     [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
     internal static partial int McpMemoryInit();

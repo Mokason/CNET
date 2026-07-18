@@ -9,7 +9,7 @@
 ```
 jtc_feat  RAW[16]  (keyword bag from JSON text)
     →
-json_tool ONEHOT[6]  (calculator | memory_store | memory_recall | file_read | cnet_recall | final)
+json_tool ONEHOT[8]  (calculator | memory_store | memory_recall | file_read | cnet_recall | web_search | wiki_lookup | final)
 ```
 
 ## Gate
@@ -18,7 +18,7 @@ json_tool ONEHOT[6]  (calculator | memory_store | memory_recall | file_read | cn
 make json_toolcall → JSON_TOOLCALL_PASS
   encode + hermetic teacher
   mine+admit json_toolcall_v0
-  seal CNB → soul_request source=CERTIFIED for all 6 tools
+  seal CNB → soul_request source=CERTIFIED for all 8 tools
 ```
 
 ## .NET
@@ -68,8 +68,22 @@ bin/json_toolcall_seal /path/to/soul.cnb
 
 Idempotent: if `json_toolcall_v0` already present with identical bytes, reuses.
 
-## Not in v0
+## v1 lookup tools
+
+Unit `json_toolcall_v1` adds:
+
+| Tool | Host execute | Native |
+|---|---|---|
+| `web_search` | `McpTools.WebSearch` / MCP `cnet_web_search` | DuckDuckGo Instant Answer; **Wikipedia fallback** when DDG is empty |
+| `wiki_lookup` | `McpTools.WikiLookup` / MCP `cnet_wiki_lookup` | Wikipedia REST summary + fact memory cache |
+
+Agent system prompt tells the LLM to call lookup when it lacks facts. Certified classifier confirms closed-set tool id before execute.
+
+Legacy `json_toolcall_v0` may remain in an older CNB; seal script adds v1 without removing v0.
+
+## Not in spine
 
 - Arbitrary schema validation as certified law
 - Nested/open tool catalogs (extend closed set + re-mine)
 - Residual “JSON-looking” text without host validate
+- Full browser / multi-page scrape (use host residual / Hermes if needed)

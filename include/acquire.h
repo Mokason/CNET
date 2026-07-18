@@ -21,6 +21,7 @@
 #define ACQUIRE_MAX_ORACLES 16
 #define ACQUIRE_NAME_MAX 64
 #define ACQUIRE_REASON_MAX 64
+#define ACQUIRE_DEFER_WAITING_ORACLE "waiting_oracle"
 
 /* unified base (include/base.h); forward-declared to avoid a header cycle */
 struct CnetBase;

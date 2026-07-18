@@ -1198,8 +1198,58 @@ namespace CnetMcpServer
             });
         }
 
+        /// <summary>Live web lookup (DuckDuckGo Instant Answer + Wikipedia fallback).</summary>
+        public string WebSearch(string query)
+        {
+            try
+            {
+                McpTools.MemoryInit();
+                string text = McpTools.WebSearch(query ?? "");
+                return JsonSerializer.Serialize(new
+                {
+                    tool = "web_search",
+                    query = query ?? "",
+                    result = text
+                });
+            }
+            catch (Exception ex)
+            {
+                return JsonSerializer.Serialize(new
+                {
+                    tool = "web_search",
+                    query = query ?? "",
+                    error = ex.Message
+                });
+            }
+        }
+
+        /// <summary>Wikipedia summary lookup (memory-cached).</summary>
+        public string WikiLookup(string query)
+        {
+            try
+            {
+                McpTools.MemoryInit();
+                string text = McpTools.WikiLookup(query ?? "");
+                return JsonSerializer.Serialize(new
+                {
+                    tool = "wiki_lookup",
+                    query = query ?? "",
+                    result = text
+                });
+            }
+            catch (Exception ex)
+            {
+                return JsonSerializer.Serialize(new
+                {
+                    tool = "wiki_lookup",
+                    query = query ?? "",
+                    error = ex.Message
+                });
+            }
+        }
+
         /// <summary>
-        /// Closed-set JSON tool-call classify via sealed json_toolcall_v0.
+        /// Closed-set JSON tool-call classify via sealed json_toolcall unit.
         /// On miss, notes gap (jtc_feat→json_tool) when CNET_GAP_INBOX or base.inbox is set.
         /// </summary>
         public string ClassifyToolCall(string json)
@@ -1249,7 +1299,7 @@ namespace CnetMcpServer
             }
         }
 
-        /// <summary>Whether json_toolcall_v0 is in the live registry.</summary>
+        /// <summary>Whether the sealed json_toolcall unit is in the live registry.</summary>
         public string JsonToolCallStatus()
         {
             if (_soulHost == null) return SoulUnavailable("json_toolcall_status");

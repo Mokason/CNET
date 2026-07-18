@@ -210,7 +210,7 @@ jtc=$(cnet_jtc_present "$BASE")
 if [ "$jtc" != "1" ]; then
   issues+=("json_toolcall_missing")
   if [ "${OPS_AUTO_JTC_SEAL:-1}" = "1" ] && [ -f "$BASE" ]; then
-    info "sealing json_toolcall_v0"
+    info "sealing json_toolcall (closed-set + lookup tools)"
     if STOP_LEARNER=1 bash "$REPO/scripts/json_toolcall_seal.sh" "$BASE" >/dev/null 2>&1; then
       actions+=("jtc_seal")
       jtc=$(cnet_jtc_present "$BASE")
@@ -317,6 +317,23 @@ if [ "${OPS_NOTE_JTC_GAP_ON_UNKNOWN:-1}" = "1" ] && [ "$jtc" = "1" ]; then
   # If many NO_PLAN but not jtc, leave them to token teacher.
   # If jtc_gaps present and hermes lessons mention new tools, operator expands alphabet.
   :
+fi
+
+# --- 9) stale curriculum (Ollama planner → teachable queue) ---------------
+if [ "${OPS_CURRICULUM_ON_STALE:-0}" = "1" ] && [ -x "$REPO/scripts/personal_ai_curriculum.sh" ]; then
+  if bash "$REPO/scripts/personal_ai_curriculum.sh" run >/dev/null 2>>"$OPS_DIR/curriculum.log"; then
+    if grep -q 'PERSONAL_AI_CURRICULUM_RUN_OK' "$OPS_DIR/curriculum.log" 2>/dev/null || \
+       [ -f "$OPS_DIR/last_curriculum.json" ]; then
+      # only record action when a plan was produced this hour recently
+      if [ -f "$OPS_DIR/last_curriculum.json" ]; then
+        age_plan=$(( $(date +%s) - $(stat -c %Y "$OPS_DIR/last_curriculum.json" 2>/dev/null || echo 0) ))
+        if [ "$age_plan" -lt 120 ]; then
+          actions+=("curriculum_plan")
+          fixed=1
+        fi
+      fi
+    fi
+  fi
 fi
 
 # --- report ---------------------------------------------------------------

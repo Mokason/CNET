@@ -58,26 +58,83 @@ int cnet_jtc_decode_tool(const double *tool_onehot) {
     return best;
 }
 
-int cnet_jtc_hermetic_teacher(const double *in, double *out, void *ctx) {
+static int jtc_feat_idx(const char *name) {
+    int i;
+    if (!name) return -1;
+    for (i = 0; i < CNET_JTC_N_FEAT; i++)
+        if (strcmp(CNET_JTC_FEATS_GEN[i], name) == 0) return i;
+    return -1;
+}
+
+static int jtc_tool_idx(const char *name) {
+    int i;
+    if (!name) return -1;
+    for (i = 0; i < CNET_JTC_N_TOOL; i++)
+        if (strcmp(CNET_JTC_TOOLS_GEN[i], name) == 0) return i;
+    return -1;
+}
+
+static void jtc_onehot(double *out, int tool_id) {
     int c;
+    for (c = 0; c < CNET_JTC_N_TOOL; c++) out[c] = 0.0;
+    if (tool_id >= 0 && tool_id < CNET_JTC_N_TOOL) out[tool_id] = 1.0;
+}
+
+int cnet_jtc_hermetic_teacher(const double *in, double *out, void *ctx) {
+    int t, fi, final_id;
+    int f_expr, f_key, f_value, f_query, f_path, f_cond, f_current, f_answer;
     (void)ctx;
     if (!in || !out) return -1;
-    for (c = 0; c < CNET_JTC_N_TOOL; c++) out[c] = 0.0;
+    for (t = 0; t < CNET_JTC_N_TOOL; t++) out[t] = 0.0;
 
-    if (in[0] > 0.5) { out[0] = 1.0; return 0; }
-    if (in[1] > 0.5) { out[1] = 1.0; return 0; }
-    if (in[2] > 0.5) { out[2] = 1.0; return 0; }
-    if (in[3] > 0.5) { out[3] = 1.0; return 0; }
-    if (in[4] > 0.5) { out[4] = 1.0; return 0; }
-    if (in[5] > 0.5 || in[13] > 0.5) { out[5] = 1.0; return 0; }
+    /* Prefer explicit tool-name features (alphabet order; final last). */
+    for (t = 0; t < CNET_JTC_N_TOOL; t++) {
+        fi = jtc_feat_idx(CNET_JTC_TOOLS_GEN[t]);
+        if (fi >= 0 && in[fi] > 0.5) {
+            jtc_onehot(out, t);
+            return 0;
+        }
+    }
 
-    if (in[6] > 0.5) { out[0] = 1.0; return 0; }
-    if (in[7] > 0.5 && in[8] > 0.5) { out[1] = 1.0; return 0; }
-    if (in[9] > 0.5) { out[2] = 1.0; return 0; }
-    if (in[10] > 0.5) { out[3] = 1.0; return 0; }
-    if (in[11] > 0.5 || in[12] > 0.5) { out[4] = 1.0; return 0; }
+    /* Arg-keyword heuristics when the host JSON omitted a tool name. */
+    f_expr = jtc_feat_idx("expr");
+    f_key = jtc_feat_idx("key");
+    f_value = jtc_feat_idx("value");
+    f_query = jtc_feat_idx("query");
+    f_path = jtc_feat_idx("path");
+    f_cond = jtc_feat_idx("cond");
+    f_current = jtc_feat_idx("current");
+    f_answer = jtc_feat_idx("answer");
 
-    out[5] = 1.0;
+    if (f_expr >= 0 && in[f_expr] > 0.5) {
+        jtc_onehot(out, jtc_tool_idx("calculator"));
+        return 0;
+    }
+    if (f_key >= 0 && f_value >= 0 && in[f_key] > 0.5 && in[f_value] > 0.5) {
+        jtc_onehot(out, jtc_tool_idx("memory_store"));
+        return 0;
+    }
+    if (f_path >= 0 && in[f_path] > 0.5) {
+        jtc_onehot(out, jtc_tool_idx("file_read"));
+        return 0;
+    }
+    if ((f_cond >= 0 && in[f_cond] > 0.5) ||
+        (f_current >= 0 && in[f_current] > 0.5)) {
+        jtc_onehot(out, jtc_tool_idx("cnet_recall"));
+        return 0;
+    }
+    if (f_query >= 0 && in[f_query] > 0.5) {
+        /* Ambiguous query: default to local memory_recall (not network). */
+        jtc_onehot(out, jtc_tool_idx("memory_recall"));
+        return 0;
+    }
+    if (f_answer >= 0 && in[f_answer] > 0.5) {
+        jtc_onehot(out, jtc_tool_idx("final"));
+        return 0;
+    }
+
+    final_id = jtc_tool_idx("final");
+    jtc_onehot(out, final_id >= 0 ? final_id : CNET_JTC_N_TOOL - 1);
     return 0;
 }
 

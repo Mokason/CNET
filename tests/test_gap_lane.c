@@ -302,13 +302,19 @@ int main(void) {
         lane.ledger.gaps[gi].recipe_fp = 0;   /* older-than-current recipe */
         check(gap_lane_tick(&lane, &tick, 0) == 0 &&
               tick.recipe_reopened == 1 &&
-              lane.ledger.gaps[gi].status == GAP_OPEN &&
+              lane.ledger.gaps[gi].status == GAP_DEFERRED &&
+              strcmp(lane.ledger.gaps[gi].defer_reason,
+                     ACQUIRE_DEFER_WAITING_ORACLE) == 0 &&
+              tick.drain.skipped_no_oracle == 1 &&
               tick.checkpointed == 1,
-              "recipe-stale certify_failed deferral is reopened and checkpointed");
-        /* no oracle for this signature, so it stays OPEN; the next tick must
-           not re-reopen it (it is already OPEN, not a stale deferral) */
-        check(gap_lane_tick(&lane, &tick, 0) == 0 && tick.recipe_reopened == 0,
-              "an already-open gap is not re-reopened (no churn)");
+              "recipe-stale gap retries once, then parks awaiting an oracle");
+        /* No matching oracle is bound: the parked gap must not be examined on
+           every daemon tick. A later matching registration wakes it in drain. */
+        check(gap_lane_tick(&lane, &tick, 0) == 0 &&
+              tick.recipe_reopened == 0 && tick.drain.examined == 0 &&
+              tick.drain.skipped_no_oracle == 0 &&
+              lane.ledger.gaps[gi].status == GAP_DEFERRED,
+              "waiting-oracle gap is a steady-state no-op (no churn)");
     }
 
     /* -- corpus-drawn id files: strict parsing ---------------------------

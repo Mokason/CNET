@@ -50,10 +50,16 @@ int main(void) {
     }
 
     /* Unknown open JSON still encodes (host parse elsewhere); teacher defaults */
-    check(cnet_jtc_encode("{\"foo\":1}", feat) == 0, "encode open-ish json");
-    check(cnet_jtc_hermetic_teacher(feat, tool, NULL) == 0 &&
-              cnet_jtc_decode_tool(tool) == 5,
-          "unknown shape → final (closed default)");
+    {
+        int final_id = -1;
+        for (i = 0; i < CNET_JTC_N_TOOL; i++)
+            if (strcmp(cnet_jtc_tool_names()[i], "final") == 0) final_id = i;
+        check(final_id >= 0, "final tool present in alphabet");
+        check(cnet_jtc_encode("{\"foo\":1}", feat) == 0, "encode open-ish json");
+        check(cnet_jtc_hermetic_teacher(feat, tool, NULL) == 0 &&
+                  cnet_jtc_decode_tool(tool) == final_id,
+              "unknown shape → final (closed default)");
+    }
 
     check(cnet_jtc_ports_match(cnet_jtc_input_port(), cnet_jtc_output_port()),
           "ports_match spine");

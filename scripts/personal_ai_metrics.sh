@@ -68,7 +68,7 @@ printf '%s\n' "{
   \"units_journal\": ${last_units:-null},
   \"curiosity_hour_count\": ${cur_count:-0},
   \"json_toolcall\": $jtc,
-  \"json_toolcall_unit\": \"json_toolcall_v0\",
+  \"json_toolcall_unit\": \"$(cnet_jtc_unit_name "$BASE")\",
   \"recycle_note\": \"$recycle_note\",
   \"placement\": $plan_json
 }"

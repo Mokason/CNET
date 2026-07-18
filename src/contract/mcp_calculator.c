@@ -1,48 +1,27 @@
 #include "../../include/contract/mcp_calculator.h"
+#include "../../include/contract/mcp_math_eval.h"
 #include "../../include/contract/mcp_wiki.h"
-#include "../../include/agent_memory.h"
+
 #include <stdio.h>
 #include <string.h>
-#include <stdlib.h>
 
+/* Phase 1: calculator is a thin MCP face over math_eval (richer expressions).
+ * Legacy "a OP b" still works; also accepts sqrt(), ^, parentheses, etc.
+ */
 int port_contract_mcp_calculator(
     const char *expr,
     char *result_out, size_t cap,
-    int *from_mem
-) {
+    int *from_mem)
+{
+    int rc;
     if (!expr || !result_out || cap == 0 || !from_mem) return -1;
-    *from_mem = 0;
-
-    char key[128];
-    snprintf(key, sizeof(key), "calc:%s", expr);
-    if (mcp_recall_fact(key, result_out, cap)) {
-        *from_mem = 1;
-        return 0;
-    }
-
-    /* Simple eval for + - * / on numbers */
-    double a=0, b=0; char op;
-    if (sscanf(expr, "%lf %c %lf", &a, &op, &b) == 3) {
-        double res = 0;
-        if (op == '+') res = a+b;
-        else if (op == '-') res = a-b;
-        else if (op == '*') res = a*b;
-        else if (op == '/') {
-            if (b == 0.0) {
-                snprintf(result_out, cap, "Division by zero");
-            } else {
-                snprintf(result_out, cap, "%.2f", a / b);
-            }
-            mcp_memorize_fact(key, result_out);
-            return 0;
-        }
-        snprintf(result_out, cap, "%.2f", res);
-    } else {
+    rc = port_contract_mcp_math_eval(expr, result_out, cap, from_mem);
+    if (rc != 0) return rc;
+    /* Map eval errors to legacy-ish messages for callers */
+    if (strcmp(result_out, "EVAL_ERROR") == 0) {
         snprintf(result_out, cap, "Could not parse expr: %s", expr);
+    } else if (strcmp(result_out, "Division by zero") == 0) {
+        /* already handled in parser as EVAL_ERROR */
     }
-
-    mcp_memorize_fact(key, result_out);
     return 0;
 }
-
-

@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Linq;
 using Xunit;
 using CNET.Cce;
 
@@ -16,9 +17,9 @@ public class JsonToolCallTests
     {
         var feat = JsonToolCall.Encode("""{"tool":"calculator","args":{"expr":"1+2"}}""");
         Assert.Equal(JsonToolCall.FeatureCount, feat.Length);
-        Assert.Equal(1.0, feat[0]); // calculator
-        Assert.Equal(1.0, feat[6]); // expr
-        Assert.Equal(1.0, feat[14]); // tool
+        Assert.Equal(1.0, feat[Array.IndexOf(JsonToolCall.FeatureNames, "calculator")]);
+        Assert.Equal(1.0, feat[Array.IndexOf(JsonToolCall.FeatureNames, "expr")]);
+        Assert.Equal(1.0, feat[Array.IndexOf(JsonToolCall.FeatureNames, "tool")]);
     }
 
     [Theory]
@@ -27,16 +28,19 @@ public class JsonToolCallTests
     [InlineData(2, "memory_recall")]
     [InlineData(3, "file_read")]
     [InlineData(4, "cnet_recall")]
-    [InlineData(5, "final")]
+    [InlineData(5, "web_search")]
+    [InlineData(6, "wiki_lookup")]
+    [InlineData(7, "final")]
     public void ExampleJson_Encodes_Expected_Tool_Features(int toolId, string toolName)
     {
         var feat = JsonToolCall.Encode(JsonToolCall.ExampleJson[toolId]);
         Assert.Equal(toolName, JsonToolCall.ToolNames[toolId]);
-        // Each example includes either the tool name feature or final/answer.
-        if (toolId < 5)
-            Assert.Equal(1.0, feat[toolId]);
+        int fi = Array.IndexOf(JsonToolCall.FeatureNames, toolName);
+        if (toolName != "final")
+            Assert.Equal(1.0, feat[fi]);
         else
-            Assert.True(feat[5] > 0.5 || feat[13] > 0.5);
+            Assert.True(feat[fi] > 0.5 ||
+                        feat[Array.IndexOf(JsonToolCall.FeatureNames, "answer")] > 0.5);
     }
 
     [Fact]
@@ -74,21 +78,27 @@ public class JsonToolCallTests
     [Fact]
     public void Feature_Alphabet_Length_Matches_Native_Contract()
     {
-        Assert.Equal(16, JsonToolCall.FeatureNames.Length);
+        Assert.Equal(18, JsonToolCall.FeatureNames.Length);
         Assert.Equal(JsonToolCall.FeatureCount, JsonToolCall.FeatureNames.Length);
-        Assert.Equal(6, JsonToolCall.ToolNames.Length);
+        Assert.Equal(8, JsonToolCall.ToolNames.Length);
         Assert.Equal(JsonToolCall.ToolCount, JsonToolCall.ToolNames.Length);
         Assert.Equal(JsonToolCall.ToolCount, JsonToolCall.ExampleJson.Length);
+        Assert.Contains("web_search", JsonToolCall.ToolNames);
+        Assert.Contains("wiki_lookup", JsonToolCall.ToolNames);
+        Assert.Equal("json_toolcall_v1", JsonToolCall.UnitName);
     }
 
     [Fact]
     public void IsKnownTool_And_Normalize()
     {
         Assert.True(JsonToolCall.IsKnownTool("calculator"));
+        Assert.True(JsonToolCall.IsKnownTool("web_search"));
+        Assert.True(JsonToolCall.IsKnownTool("wiki_lookup"));
         Assert.True(JsonToolCall.IsKnownTool("finish"));
-        Assert.False(JsonToolCall.IsKnownTool("web_search"));
+        Assert.False(JsonToolCall.IsKnownTool("browser"));
         Assert.Equal("final", JsonToolCall.NormalizeTool("finish"));
         Assert.Equal("calculator", JsonToolCall.NormalizeTool("Calculator"));
+        Assert.Equal("web_search", JsonToolCall.NormalizeTool("Web_Search"));
     }
 
     [Fact]
@@ -103,6 +113,8 @@ public class JsonToolCallTests
             Assert.Contains("NO_PLAN", line);
             Assert.Contains("jtc_feat", line);
             Assert.Contains("json_tool", line);
+            Assert.Contains($" {JsonToolCall.FeatureCount} ", line);
+            Assert.Contains($" {JsonToolCall.ToolCount} ", line);
         }
         finally
         {

@@ -1637,9 +1637,9 @@ cce_dll: $(CCE) $(CCE_CUDA_OBJ)
 # Defines both export macros.
 # Usage: make cnet_dll
 cnet_dll: CFLAGS := $(CFLAGS) -fPIC
-cnet_dll: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(BASE_SRC) $(SCAN) $(PROPERTY) $(CONSOLIDATE) $(ACQUIRE_SRC) $(COVERAGE) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(GAP_LANE_SRC) $(ASYNC_RUNTIME) $(MODEL_RUNTIME) $(CCE_MODEL_CATALOG) $(MODEL_PROBE) $(RESOURCE_GOV_SRC) $(CF_ORDER_SRC) $(SELF_IMPROVE_SRC) $(HARNESS_ORACLE_SRC) $(MULTIMODAL_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(LIBRARY) src/fastpath.c src/soul_host.c src/contract/mcp_calculator.c src/contract/mcp_file_read.c src/contract/mcp_file_write.c src/contract/mcp_memory.c src/contract/mcp_utils.c src/contract/mcp_web_search.c src/contract/mcp_wiki.c src/agent_memory.c
+cnet_dll: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(BASE_SRC) $(SCAN) $(PROPERTY) $(CONSOLIDATE) $(ACQUIRE_SRC) $(COVERAGE) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(GAP_LANE_SRC) $(ASYNC_RUNTIME) $(MODEL_RUNTIME) $(CCE_MODEL_CATALOG) $(MODEL_PROBE) $(RESOURCE_GOV_SRC) $(CF_ORDER_SRC) $(SELF_IMPROVE_SRC) $(HARNESS_ORACLE_SRC) $(MULTIMODAL_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(LIBRARY) src/fastpath.c src/soul_host.c src/contract/mcp_calculator.c src/contract/mcp_math_eval.c src/contract/mcp_file_read.c src/contract/mcp_file_write.c src/contract/mcp_memory.c src/contract/mcp_utils.c src/contract/mcp_web_search.c src/contract/mcp_wiki.c src/contract/mcp_math_eval.c src/agent_memory.c
 	$(CC) -shared -DCNET_BUILD_DLL -DCCE_BUILD_DLL $(CFLAGS) $(CUDA_CFLAGS) -o cnet.so \
-		$(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(BASE_SRC) $(SCAN) $(PROPERTY) $(CONSOLIDATE) $(ACQUIRE_SRC) $(COVERAGE) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(GAP_LANE_SRC) $(ASYNC_RUNTIME) $(MODEL_RUNTIME) $(CCE_MODEL_CATALOG) $(MODEL_PROBE) $(RESOURCE_GOV_SRC) $(CF_ORDER_SRC) $(SELF_IMPROVE_SRC) $(HARNESS_ORACLE_SRC) $(MULTIMODAL_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(LIBRARY) src/fastpath.c src/soul_host.c src/contract/mcp_calculator.c src/contract/mcp_file_read.c src/contract/mcp_file_write.c src/contract/mcp_memory.c src/contract/mcp_utils.c src/contract/mcp_web_search.c src/contract/mcp_wiki.c src/agent_memory.c \
+		$(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(BASE_SRC) $(SCAN) $(PROPERTY) $(CONSOLIDATE) $(ACQUIRE_SRC) $(COVERAGE) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(GAP_LANE_SRC) $(ASYNC_RUNTIME) $(MODEL_RUNTIME) $(CCE_MODEL_CATALOG) $(MODEL_PROBE) $(RESOURCE_GOV_SRC) $(CF_ORDER_SRC) $(SELF_IMPROVE_SRC) $(HARNESS_ORACLE_SRC) $(MULTIMODAL_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(LIBRARY) src/fastpath.c src/soul_host.c src/contract/mcp_calculator.c src/contract/mcp_math_eval.c src/contract/mcp_file_read.c src/contract/mcp_file_write.c src/contract/mcp_memory.c src/contract/mcp_utils.c src/contract/mcp_web_search.c src/contract/mcp_wiki.c src/agent_memory.c \
 		$(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) $(CNET_SONAME_LDFLAGS) -pthread
 	@echo "Built unified cnet.so (CCE + certified runtime + soul_host + MCP ABI)."
 
@@ -1947,6 +1947,49 @@ curiosity: $(CURIOSITY_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERT
 	@./$(BIN_DIR)/test_curiosity > logs/curiosity.log 2>&1
 	@grep -q "CURIOSITY_PASS" logs/curiosity.log
 	@grep "CURIOSITY_PASS" logs/curiosity.log
+
+# Hermes-style learn loop in pure C (memory → tools → skill → optional gap seed).
+LEARN_LOOP_SRC := src/cnet_learn_loop.c
+LEARN_LOOP_MCP := src/contract/mcp_utils.c src/contract/mcp_memory.c src/contract/mcp_wiki.c \
+	src/contract/mcp_web_search.c src/agent_memory.c
+.PHONY: learn_loop learn_loop_cli
+MATH_EVAL_SRC := src/contract/mcp_math_eval.c
+MATH_SOLVE_SRC := src/cnet_math_solve.c
+LEARN_LOOP_MATH := $(MATH_EVAL_SRC) $(MATH_SOLVE_SRC)
+
+learn_loop: $(LEARN_LOOP_SRC) $(LEARN_LOOP_MCP) $(LEARN_LOOP_MATH) tests/test_learn_loop.c include/cnet_learn_loop.h include/cnet_math_solve.h
+	@mkdir -p $(BIN_DIR) logs logs/test_learn_skills
+	$(CC) $(CFLAGS) -o $(BIN_DIR)/test_learn_loop \
+		$(LEARN_LOOP_SRC) $(LEARN_LOOP_MCP) $(LEARN_LOOP_MATH) tests/test_learn_loop.c \
+		$(LDFLAGS) $(MCP_LDFLAGS) -pthread
+	@./$(BIN_DIR)/test_learn_loop > logs/learn_loop.log 2>&1
+	@grep -q "LEARN_LOOP_PASS" logs/learn_loop.log
+	@grep "LEARN_LOOP_PASS" logs/learn_loop.log
+
+learn_loop_cli: $(LEARN_LOOP_SRC) $(LEARN_LOOP_MCP) $(LEARN_LOOP_MATH) tools/cnet_learn_cycle.c include/cnet_learn_loop.h
+	@mkdir -p $(BIN_DIR)
+	$(CC) $(CFLAGS) -o $(BIN_DIR)/cnet_learn_cycle \
+		$(LEARN_LOOP_SRC) $(LEARN_LOOP_MCP) $(LEARN_LOOP_MATH) tools/cnet_learn_cycle.c \
+		$(LDFLAGS) $(MCP_LDFLAGS) -pthread
+	@echo "Built bin/cnet_learn_cycle"
+
+.PHONY: math_solve math_solve_cli
+math_solve: $(MATH_SOLVE_SRC) $(MATH_EVAL_SRC) $(LEARN_LOOP_MCP) tests/test_math_solve.c include/cnet_math_solve.h include/contract/mcp_math_eval.h
+	@mkdir -p $(BIN_DIR) logs logs/test_math_skills
+	$(CC) $(CFLAGS) -o $(BIN_DIR)/test_math_solve \
+		$(MATH_SOLVE_SRC) $(MATH_EVAL_SRC) $(LEARN_LOOP_MCP) tests/test_math_solve.c \
+		$(LDFLAGS) $(MCP_LDFLAGS) -pthread
+	@./$(BIN_DIR)/test_math_solve > logs/math_solve.log 2>&1
+	@grep -q "MATH_SOLVE_PASS checks=" logs/math_solve.log
+	@grep -q "failures=0" logs/math_solve.log
+	@grep "MATH_SOLVE_PASS" logs/math_solve.log
+
+math_solve_cli: $(MATH_SOLVE_SRC) $(MATH_EVAL_SRC) $(LEARN_LOOP_MCP) tools/cnet_math_solve.c include/cnet_math_solve.h
+	@mkdir -p $(BIN_DIR)
+	$(CC) $(CFLAGS) -o $(BIN_DIR)/cnet_math_solve \
+		$(MATH_SOLVE_SRC) $(MATH_EVAL_SRC) $(LEARN_LOOP_MCP) tools/cnet_math_solve.c \
+		$(LDFLAGS) $(MCP_LDFLAGS) -pthread
+	@echo "Built bin/cnet_math_solve"
 
 personal_ai: $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EXT_TEACHER_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) tests/test_personal_ai.c include/personal_ai.h
 	@mkdir -p $(BIN_DIR) logs

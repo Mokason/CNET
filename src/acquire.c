@@ -609,6 +609,14 @@ static int gap_recipe_stale(const GapRecord *g, uint64_t current_fp) {
            g->recipe_fp != current_fp;
 }
 
+/* A missing oracle is an external dependency, not active work. Park the gap
+   after one miss so every daemon tick does not re-examine the same signature.
+   The drain wakes it automatically as soon as a matching oracle is bound. */
+static int gap_waiting_oracle(const GapRecord *g) {
+    return g && g->kind == GAP_NO_PLAN && g->status == GAP_DEFERRED &&
+           strcmp(g->defer_reason, ACQUIRE_DEFER_WAITING_ORACLE) == 0;
+}
+
 /* Reopen a recipe-stale deferral: back to OPEN with the reason cleared. The
    stamp is left as-is; a re-defer under the current recipe overwrites it,
    which is what stops the retry from repeating every drain (anti-churn). */
@@ -1395,6 +1403,16 @@ int acquire_drain(PrimitiveRegistry *reg, AcquireLedger *l,
     uint64_t fp;
     if (!reg || !l || !cfg) return -1;
     fp = acquire_recipe_fingerprint(cfg);
+    /* Oracle-arrival retry: a parked NO_PLAN gap becomes active exactly when
+       its matching teacher is present. Unsupported gaps otherwise stay quiet. */
+    for (i = 0; i < l->count; ++i) {
+        GapRecord *g = &l->gaps[i];
+        if (gap_waiting_oracle(g) &&
+            find_oracle(oracles, g->input_port, g->goal_port)) {
+            g->status = GAP_OPEN;
+            g->defer_reason[0] = '\0';
+        }
+    }
     /* Recipe-change retry: reopen recipe-dependent deferrals stamped under an
        older recipe, so a student/certification improvement re-attempts them
        (the no-churn re-note policy would otherwise strand them forever). A
@@ -1418,7 +1436,11 @@ int acquire_drain(PrimitiveRegistry *reg, AcquireLedger *l,
             if (report) report->examined++;
             if (g->kind == GAP_NO_PLAN) {
                 o = find_oracle(oracles, g->input_port, g->goal_port);
-                if (!o) { if (report) report->skipped_no_oracle++; continue; }
+                if (!o) {
+                    if (report) report->skipped_no_oracle++;
+                    gap_defer(g, report, ACQUIRE_DEFER_WAITING_ORACLE);
+                    continue;
+                }
                 attempt_no_plan(reg, l, o, g, cfg, report);
             } else {
                 attempt_rebuild(reg, l, oracles, g, cfg, report);
@@ -1452,7 +1474,12 @@ int acquire_now(PrimitiveRegistry *reg, AcquireLedger *l,
             return l->gaps[idx].status == GAP_CLOSED ? 0 : -1;
         if (report) report->examined++;
         o = find_oracle(oracles, input_port, goal_port);
-        if (!o) { if (report) report->skipped_no_oracle++; return -1; }
+        if (!o) {
+            if (report) report->skipped_no_oracle++;
+            gap_defer(&l->gaps[idx], report, ACQUIRE_DEFER_WAITING_ORACLE);
+            l->gaps[idx].recipe_fp = fp;
+            return -1;
+        }
         rc = attempt_no_plan(reg, l, o, &l->gaps[idx], cfg, report);
         if (l->gaps[idx].status == GAP_DEFERRED) l->gaps[idx].recipe_fp = fp;
         return rc;

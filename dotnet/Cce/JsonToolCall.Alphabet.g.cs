@@ -5,9 +5,9 @@ namespace CNET.Cce;
 
 public static partial class JsonToolCall
 {
-    public const int FeatureCountGen = 16;
-    public const int ToolCountGen = 6;
-    public const string UnitNameGen = "json_toolcall_v0";
+    public const int FeatureCountGen = 18;
+    public const int ToolCountGen = 8;
+    public const string UnitNameGen = "json_toolcall_v1";
     public const string InputTagGen = "jtc_feat";
     public const string GoalTagGen = "json_tool";
 
@@ -18,6 +18,8 @@ public static partial class JsonToolCall
         "memory_recall",
         "file_read",
         "cnet_recall",
+        "web_search",
+        "wiki_lookup",
         "final"
     };
 
@@ -28,6 +30,8 @@ public static partial class JsonToolCall
         "memory_recall",
         "file_read",
         "cnet_recall",
+        "web_search",
+        "wiki_lookup",
         "final",
         "expr",
         "key",
@@ -48,6 +52,8 @@ public static partial class JsonToolCall
         "{\"tool\":\"memory_recall\",\"args\":{\"query\":\"k\"}}",
         "{\"tool\":\"file_read\",\"args\":{\"path\":\"readme.txt\"}}",
         "{\"tool\":\"cnet_recall\",\"args\":{\"cond\":0,\"current\":1}}",
+        "{\"tool\":\"web_search\",\"args\":{\"query\":\"CNET machine learning\"}}",
+        "{\"tool\":\"wiki_lookup\",\"args\":{\"query\":\"Alan Turing\"}}",
         "{\"final\":\"done\",\"answer\":\"ok\"}"
     };
 }

@@ -38,6 +38,7 @@ Two long-running pieces share one base + inbox:
 |---|---|---|
 | **Serve** | Hermes MCP via `scripts/deploy_hermes_mcp.sh` | Local units first; `CNET_GAP_INBOX` on miss; health tick |
 | **Learn** | `cnet-personal-ai-lane.service` | Inbox → teach from teacher GGUF → seal CNB; idle teacher sleep |
+| **Hermes-style C learn** | `make learn_loop` / `bin/cnet_learn_cycle` | memory → wiki/web tools → memorize + write `SKILL.md` procedural skill (pure C) |
 
 One command:
 

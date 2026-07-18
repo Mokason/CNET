@@ -1,15 +1,15 @@
 #ifndef CNET_JSON_TOOLCALL_H
 #define CNET_JSON_TOOLCALL_H
 
-/* Closed-set JSON tool-call spine (v0).
+/* Closed-set JSON tool-call spine (v1 alphabet; unit json_toolcall_v1).
  *
  * Host (.NET / MCP) owns free-form JSON parse/emit.
  * CNET owns a certified closed-set classifier:
  *   features(json keywords) → ONEHOT tool id
  *
  * Tools (match CceHost Agent):
- *   0 calculator  1 memory_store  2 memory_recall
- *   3 file_read   4 cnet_recall   5 final
+ *   0 calculator  1 memory_store  2 memory_recall  3 file_read
+ *   4 cnet_recall  5 web_search   6 wiki_lookup     7 final
  *
  * Gate: make json_toolcall → JSON_TOOLCALL_PASS
  */
@@ -26,9 +26,9 @@
 extern "C" {
 #endif
 
-#define CNET_JTC_N_TOOL 6
-#define CNET_JTC_N_FEAT 16
-#define CNET_JTC_UNIT_NAME "json_toolcall_v0"
+#define CNET_JTC_N_TOOL 8
+#define CNET_JTC_N_FEAT 18
+#define CNET_JTC_UNIT_NAME "json_toolcall_v1"
 
 /* Canonical tool names (index = class id). */
 CNET_API const char *const *cnet_jtc_tool_names(void);
@@ -49,7 +49,7 @@ CNET_API int cnet_jtc_hermetic_teacher(const double *in, double *out, void *ctx)
 CNET_API Port cnet_jtc_input_port(void);  /* tag jtc_feat  RAW[16] */
 CNET_API Port cnet_jtc_output_port(void); /* tag json_tool ONEHOT[6] */
 
-/* Mine all 6 tool exemplars + admit certified student.
+/* Mine all closed-set tool exemplars + admit certified student.
    identity_digest_salt nonzero preferred. Returns 0 on success. */
 CNET_API int cnet_jtc_v0_mine_admit(
     PrimitiveRegistry *reg,

@@ -42,8 +42,13 @@ static int is_word_equal(const char *a, const char *b) {
 }
 
 static int token_is_skippable(const char *tok) {
-    const char *skip[] = {"who", "is", "what", "the", "about", "tell", "me",
-                          "search", "for", "wikipedia", NULL};
+    const char *skip[] = {"who", "is", "was", "are", "were", "what", "when",
+                          "where", "why", "how", "the", "a", "an", "about",
+                          "tell", "me", "search", "for", "wikipedia", "wiki",
+                          "look", "up", "lookup", "find", "please", "invented",
+                          "inventor", "created", "creator", "discovered",
+                          "define", "definition", "of", "on", "in", "to",
+                          NULL};
     size_t i;
     for (i = 0; skip[i] != NULL; ++i) {
         if (is_word_equal(tok, skip[i])) return 1;

@@ -35,12 +35,15 @@ You are an autonomous agent. Each turn you MUST reply with EXACTLY ONE JSON obje
   {"thought":"<brief reasoning>","tool":"<name>","args":{...}}   to call a tool, or
   {"thought":"<brief reasoning>","final":"<answer>"}             when the task is done.
 Tools (closed set — certified CNET classifier may override/confirm):
-  calculator     args {"expr":"<e.g. 23 * 19>"}  -> real arithmetic (single binary op: a OP b).
+  calculator     args {"expr":"<e.g. 23 * 19 or sqrt(3*3+4*4)>"}  -> real math_eval (+ - * / ^ sqrt parentheses).
   memory_store   args {"key":"<k>","value":"<v>"} -> persist a fact.
   memory_recall  args {"query":"<k>"}             -> retrieve a stored fact.
+  file_read      args {"path":"<relative path>"}  -> read a sandboxed file.
+  web_search     args {"query":"<search terms>"}  -> look up live facts (web + wiki fallback). Use when you do not already know.
+  wiki_lookup    args {"query":"<person/topic>"}  -> Wikipedia summary for a named entity or topic.
   cnet_recall    args {"cond":<0-15>,"current":<0-15>} -> consult the CERTIFIED gemma4 skill:
                  its top-3 next tokens given window token[cond] then window[current]. Auditable, with reliability.
-  file_read      args {"path":"<relative path>"}  -> read a sandboxed file.
+When the task needs external knowledge you do not have, call web_search or wiki_lookup before final.
 Think step by step, use tools, then give a final answer. Only ONE JSON object per turn.
 """;
 
@@ -154,7 +157,7 @@ Think step by step, use tools, then give a final answer. Only ONE JSON object pe
             {
                 bool noted = JsonToolCall.NoteGap(_gapInbox);
                 Console.WriteLine($"[step {step}] unknown tool '{tool}'{jtcNote} gap_noted={noted}");
-                nextUser = $"OBSERVATION: unknown tool '{tool}' (not in closed set). gap_noted={noted}. Use only: calculator, memory_store, memory_recall, file_read, cnet_recall, or final.";
+                nextUser = $"OBSERVATION: unknown tool '{tool}' (not in closed set). gap_noted={noted}. Use only: calculator, memory_store, memory_recall, file_read, web_search, wiki_lookup, cnet_recall, or final.";
                 continue;
             }
 
@@ -186,6 +189,12 @@ Think step by step, use tools, then give a final answer. Only ONE JSON object pe
                 case "file_read":
                     return McpTools.FileRead(args.ValueKind == JsonValueKind.Object && args.TryGetProperty("path", out var p)
                         ? p.GetString() ?? "" : "");
+                case "web_search":
+                    return McpTools.WebSearch(args.ValueKind == JsonValueKind.Object && args.TryGetProperty("query", out var wq)
+                        ? wq.GetString() ?? "" : AsString(args, "q", ""));
+                case "wiki_lookup":
+                    return McpTools.WikiLookup(args.ValueKind == JsonValueKind.Object && args.TryGetProperty("query", out var wiq)
+                        ? wiq.GetString() ?? "" : AsString(args, "q", ""));
                 case "cnet_recall":
                 {
                     int cond = args.ValueKind == JsonValueKind.Object && args.TryGetProperty("cond", out var c) && c.ValueKind == JsonValueKind.Number

@@ -312,13 +312,13 @@ class Program
                                 new
                                 {
                                     name = "cnet_classify_toolcall",
-                                    description = "Classify agent JSON into a closed-set tool via sealed json_toolcall_v0 (certified). On miss notes gap jtc_feat→json_tool for the personal-AI lane.",
+                                    description = "Classify agent JSON into a closed-set tool via sealed json_toolcall_v1 (certified; includes web_search/wiki_lookup). On miss notes gap jtc_feat→json_tool for the personal-AI lane.",
                                     inputSchema = (object)new
                                     {
                                         type = "object",
                                         properties = new
                                         {
-                                            json = new { type = "string", description = "Agent tool-call JSON object, e.g. {\"tool\":\"calculator\",\"args\":{...}}" }
+                                            json = new { type = "string", description = "Agent tool-call JSON object, e.g. {\"tool\":\"web_search\",\"args\":{\"query\":\"...\"}}" }
                                         },
                                         required = new[] { "json" }
                                     }
@@ -326,8 +326,36 @@ class Program
                                 new
                                 {
                                     name = "cnet_json_toolcall_status",
-                                    description = "Report whether json_toolcall_v0 is sealed in the live base and sample-classify calculator example",
+                                    description = "Report whether json_toolcall unit is sealed in the live base and sample-classify calculator example",
                                     inputSchema = (object)new { type = "object", properties = new { } }
+                                },
+                                new
+                                {
+                                    name = "cnet_web_search",
+                                    description = "Look up facts on the web (DuckDuckGo Instant Answer; falls back to Wikipedia). Use when the agent needs external knowledge.",
+                                    inputSchema = (object)new
+                                    {
+                                        type = "object",
+                                        properties = new
+                                        {
+                                            query = new { type = "string", description = "Search terms / question" }
+                                        },
+                                        required = new[] { "query" }
+                                    }
+                                },
+                                new
+                                {
+                                    name = "cnet_wiki_lookup",
+                                    description = "Look up a Wikipedia summary for a person, place, or topic. Memory-cached.",
+                                    inputSchema = (object)new
+                                    {
+                                        type = "object",
+                                        properties = new
+                                        {
+                                            query = new { type = "string", description = "Entity or topic name" }
+                                        },
+                                        required = new[] { "query" }
+                                    }
                                 }
                             }
                         }
@@ -457,6 +485,10 @@ class Program
                                     "cnet_classify_toolcall" => tools.ClassifyToolCall(
                                         SafeGetString(toolArgs, "json")),
                                     "cnet_json_toolcall_status" => tools.JsonToolCallStatus(),
+                                    "cnet_web_search" => tools.WebSearch(
+                                        SafeGetString(toolArgs, "query")),
+                                    "cnet_wiki_lookup" => tools.WikiLookup(
+                                        SafeGetString(toolArgs, "query")),
                                     _ => "Unknown tool: " + toolName
                             };
                         }

@@ -1,4 +1,4 @@
-/* Seal closed-set json_toolcall_v0 into an existing CNB (or create if absent).
+/* Seal closed-set json_toolcall unit (v1 alphabet) into an existing CNB.
  *
  * Usage:
  *   json_toolcall_seal <base.cnb> [--force]
@@ -90,7 +90,7 @@ int main(int argc, char **argv) {
             cnb_free(&base);
             return 1;
         }
-        printf("json_toolcall_seal: json_toolcall_v0 sealed units=%lu\n",
+        printf("json_toolcall_seal: %s sealed units=%lu\n", CNET_JTC_UNIT_NAME,
                (unsigned long)base.unit_count);
     } else {
         printf("json_toolcall_seal: unit %s already present\n", CNET_JTC_UNIT_NAME);

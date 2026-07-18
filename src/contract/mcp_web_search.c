@@ -109,12 +109,40 @@ int port_contract_mcp_web_search(
         topic_scan = strstr(text_pos + 6, "\"Text\"");
     }
 
-    if (filtered[0] == '\0' || strstr(filtered, "NO_RESULTS")) {
-        snprintf(results_out, results_cap, "No useful web results for: %s", query);
-        return 0;
-    }
-
-    if (strlen(filtered) < 10) {
+    if (filtered[0] == '\0' || strstr(filtered, "NO_RESULTS") ||
+        strlen(filtered) < 10) {
+        /* DDG Instant Answer is sparse for many queries; fall back to Wikipedia. */
+        int wiki_cache = 0;
+        char wiki[1024];
+        wiki[0] = '\0';
+        if (port_contract_mcp_wiki_lookup(query, wiki, sizeof(wiki), &wiki_cache) == 0 &&
+            wiki[0] && strcmp(wiki, "LOOKUP_FAILED") != 0) {
+            snprintf(results_out, results_cap, "wiki: %s", wiki);
+            *from_cache = wiki_cache;
+            mcp_memorize_fact(mem_key, results_out);
+            return 0;
+        }
+        /* Last-token retry for questions like "who invented COBOL". */
+        {
+            const char *p = query + strlen(query);
+            char last[128];
+            size_t n = 0;
+            while (p > query && (p[-1] == ' ' || p[-1] == '?' || p[-1] == '.')) p--;
+            while (p > query && p[-1] != ' ' && n + 1 < sizeof(last)) {
+                p--;
+            }
+            while (*p && *p != ' ' && *p != '?' && n + 1 < sizeof(last))
+                last[n++] = *p++;
+            last[n] = '\0';
+            if (n >= 2 &&
+                port_contract_mcp_wiki_lookup(last, wiki, sizeof(wiki), &wiki_cache) == 0 &&
+                wiki[0] && strcmp(wiki, "LOOKUP_FAILED") != 0) {
+                snprintf(results_out, results_cap, "wiki: %s", wiki);
+                *from_cache = wiki_cache;
+                mcp_memorize_fact(mem_key, results_out);
+                return 0;
+            }
+        }
         snprintf(results_out, results_cap, "No useful web results for: %s", query);
         return 0;
     }
