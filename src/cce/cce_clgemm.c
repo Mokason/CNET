@@ -1,5 +1,6 @@
 #include "../../include/cce/cce_clgemm.h"
 
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -95,20 +96,15 @@ typedef cl_int (*p_clReleaseProgram)(cl_program);
 typedef cl_int (*p_clReleaseCommandQueue)(cl_command_queue);
 typedef cl_int (*p_clReleaseContext)(cl_context);
 
-/* C[t*N+n] = (bias? B[n]:0) + sum_k A[t*K+k]*W[k*N+n]; adjacent work-items
-   read adjacent W entries (coalesced across the wide N dimension). N is a
-   kernel argument, so a column slice of a split matrix is just a smaller N
-   — the per-element k-ascending accumulation is IDENTICAL on every device,
-   which is what keeps split results bit-identical to single-device runs. */
+/* C[t*N+n] = (bias? B[n]:0) + sum_k A[t*K+k]*W[k*N+n].
+ *
+ * Speed: local-memory tiles of A so N work-items share one A load (decode
+ * T=1 is the hot path). Bit-identity: k still walks 0..K-1 ascending with
+ * FP_CONTRACT OFF — same as CPU mul+add order.
+ * N is a kernel argument so column-split slices stay correct. */
 static const char *k_src =
-    /* FP_CONTRACT OFF: the compiler otherwise fuses a*b+acc into FMA, whose
-       single rounding drifts ulps from the CPU's separate mul+add — enough
-       to flip near-tie argmax decisions at model scale (measured: unit test
-       7th-digit mismatches; gpu_equiv 18-28/32 agreement on REAL logits).
-       With contraction off the kernel is BIT-identical to the CPU seam
-       (-std=c11 keeps host contraction off too), so mixed CPU/GPU fallback
-       can never change a decision. */
     "#pragma OPENCL FP_CONTRACT OFF\n"
+    "#define CCE_ATILE 64\n"
     "__kernel void cnet_gemm(__global const float* A,\n"
     "                        __global const float* W,\n"
     "                        __global const float* B,\n"
@@ -117,16 +113,27 @@ static const char *k_src =
     "                        const int has_bias) {\n"
     "    int n = get_global_id(0);\n"
     "    int t = get_global_id(1);\n"
-    "    if (n >= N || t >= T) return;\n"
-    "    float acc = has_bias ? B[n] : 0.0f;\n"
-    "    __global const float* a = A + (size_t)t * K;\n"
-    "    for (int k = 0; k < K; ++k) acc += a[k] * W[(size_t)k * N + n];\n"
-    "    C[(size_t)t * N + n] = acc;\n"
+    "    int lid = get_local_id(0);\n"
+    "    __local float As[CCE_ATILE];\n"
+    "    float acc = 0.0f;\n"
+    "    int valid = (n < N && t < T);\n"
+    "    if (valid && has_bias) acc = B[n];\n"
+    "    __global const float* arow = A + (size_t)(valid ? t : 0) * (size_t)K;\n"
+    "    for (int k0 = 0; k0 < K; k0 += CCE_ATILE) {\n"
+    "        int kk = k0 + lid;\n"
+    "        if (lid < CCE_ATILE)\n"
+    "            As[lid] = (kk < K) ? arow[kk] : 0.0f;\n"
+    "        barrier(CLK_LOCAL_MEM_FENCE);\n"
+    "        if (valid) {\n"
+    "            int lim = K - k0;\n"
+    "            if (lim > CCE_ATILE) lim = CCE_ATILE;\n"
+    "            for (int i = 0; i < lim; ++i)\n"
+    "                acc += As[i] * W[((size_t)k0 + (size_t)i) * (size_t)N + (size_t)n];\n"
+    "        }\n"
+    "        barrier(CLK_LOCAL_MEM_FENCE);\n"
+    "    }\n"
+    "    if (valid) C[(size_t)t * (size_t)N + (size_t)n] = acc;\n"
     "}\n"
-    /* int8 weight-only path: mirrors cce_block's int8 matvec EXACTLY —
-       float accumulation over k ascending of a[k]*(float)Wq[k*N+n], then
-       bias + scale*acc. Weight bytes are 1/4 of float: the same GEMV at 4x
-       less memory traffic, which is the whole game on ~640 GB/s GDDR6. */
     "__kernel void cnet_gemm_q8(__global const float* A,\n"
     "                           __global const char* Wq,\n"
     "                           __global const float* S,\n"
@@ -136,19 +143,38 @@ static const char *k_src =
     "                           const int has_bias) {\n"
     "    int n = get_global_id(0);\n"
     "    int t = get_global_id(1);\n"
-    "    if (n >= N || t >= T) return;\n"
+    "    int lid = get_local_id(0);\n"
+    "    __local float As[CCE_ATILE];\n"
     "    float acc = 0.0f;\n"
-    "    __global const float* a = A + (size_t)t * K;\n"
-    "    for (int k = 0; k < K; ++k)\n"
-    "        acc += a[k] * convert_float(Wq[(size_t)k * N + n]);\n"
-    "    float v = (has_bias ? B[n] : 0.0f) + S[n] * acc;\n"
-    "    C[(size_t)t * N + n] = v;\n"
+    "    int valid = (n < N && t < T);\n"
+    "    __global const float* arow = A + (size_t)(valid ? t : 0) * (size_t)K;\n"
+    "    for (int k0 = 0; k0 < K; k0 += CCE_ATILE) {\n"
+    "        int kk = k0 + lid;\n"
+    "        if (lid < CCE_ATILE)\n"
+    "            As[lid] = (kk < K) ? arow[kk] : 0.0f;\n"
+    "        barrier(CLK_LOCAL_MEM_FENCE);\n"
+    "        if (valid) {\n"
+    "            int lim = K - k0;\n"
+    "            if (lim > CCE_ATILE) lim = CCE_ATILE;\n"
+    "            for (int i = 0; i < lim; ++i)\n"
+    "                acc += As[i] * convert_float(\n"
+    "                    Wq[((size_t)k0 + (size_t)i) * (size_t)N + (size_t)n]);\n"
+    "        }\n"
+    "        barrier(CLK_LOCAL_MEM_FENCE);\n"
+    "    }\n"
+    "    if (valid) {\n"
+    "        float v = (has_bias ? B[n] : 0.0f) + S[n] * acc;\n"
+    "        C[(size_t)t * (size_t)N + (size_t)n] = v;\n"
+    "    }\n"
     "}\n";
 
 #define CLGEMM_MAX_RESIDENT 1024
 #define CLGEMM_MAX_DEV 8
 #define CLGEMM_MAX_ENUM 16
-#define CLGEMM_SPLIT_BYTES_DEFAULT (32u * 1024u * 1024u)
+/* Lower default split so dual discrete cards co-own large layers more often
+   (was 32 MiB; 8 MiB covers typical 4k×4k+ FP weights). */
+#define CLGEMM_SPLIT_BYTES_DEFAULT (8u * 1024u * 1024u)
+#define CLGEMM_MIN_FLOPS_DEFAULT (1u << 20) /* 1M: skip PCIe-bound micro GEMMs */
 
 /* Device-resident placement of one stable host array (weights or bias),
    keyed by host pointer. Either column-SPLIT across every device (device d
@@ -178,6 +204,11 @@ typedef struct {
     size_t a_cap, c_cap;
     float *c_host;                /* host landing zone for split reads */
     size_t c_host_cap;
+    /* Skip H2D when the same activation rows are reused (q/k/v, gate/up).
+       Fingerprint catches in-place rewrites of the same host buffer. */
+    const float *a_fp_host;
+    size_t a_fp_bytes;
+    uint64_t a_fp_tag;
 } ClgemmDev;
 
 struct cce_clgemm {
@@ -186,6 +217,7 @@ struct cce_clgemm {
     size_t ndev;
     size_t rr;                    /* round-robin owner for unsplit weights */
     size_t split_bytes;           /* matrices >= this are column-split */
+    size_t min_flops;             /* T*K*N below this → refuse (CPU) */
     ResidentBuf resident[CLGEMM_MAX_RESIDENT];
     size_t resident_count;
     /* function pointers */
@@ -418,6 +450,8 @@ static cce_clgemm *clgemm_open_internal(const char *dll_name, int solo_index,
 
     h->split_bytes = env_size("CNET_GPU_SPLIT_MB", 0) * 1024u * 1024u;
     if (h->split_bytes == 0) h->split_bytes = CLGEMM_SPLIT_BYTES_DEFAULT;
+    h->min_flops = env_size("CNET_GPU_MIN_FLOPS", CLGEMM_MIN_FLOPS_DEFAULT);
+    if (h->min_flops == 0) h->min_flops = CLGEMM_MIN_FLOPS_DEFAULT;
 
     if (device_name_out && device_name_cap > 0) {
         char name0[128] = {0}, namei[128];
@@ -667,7 +701,64 @@ static int scratch_ensure(cce_clgemm *h, size_t di, cl_mem *buf, size_t *cap,
     *buf = h->CreateBuffer(h->d[di].ctx, CL_MEM_READ_WRITE, bytes, NULL, &err);
     if (!*buf || err != CL_SUCCESS) { *buf = NULL; *cap = 0; return -1; }
     *cap = bytes;
+    /* buffer reallocated — cached A no longer lives here */
+    h->d[di].a_fp_host = NULL;
+    h->d[di].a_fp_bytes = 0;
+    h->d[di].a_fp_tag = 0;
     return 0;
+}
+
+/* Cheap content tag: size + strided samples (catches layer-buffer reuse). */
+static uint64_t a_fingerprint(const float *A, size_t nfloat) {
+    uint64_t h = 14695981039346656037ULL ^ (nfloat * 0x9E3779B97F4A7C15ULL);
+    size_t i, step;
+    if (!A || nfloat == 0) return 0;
+    step = nfloat > 64 ? nfloat / 64 : 1;
+    for (i = 0; i < nfloat; i += step) {
+        uint32_t u;
+        memcpy(&u, &A[i], 4);
+        h ^= (uint64_t)u + 0x9e3779b9u + (h << 6) + (h >> 2);
+    }
+    if (nfloat > 1) {
+        uint32_t u;
+        memcpy(&u, &A[nfloat - 1], 4);
+        h ^= (uint64_t)u;
+    }
+    return h;
+}
+
+/* Upload A unless this device already holds the same rows. */
+static int ensure_A(cce_clgemm *h, size_t di, const float *A, size_t T,
+                    size_t K) {
+    ClgemmDev *D = &h->d[di];
+    size_t bytes = T * K * sizeof(float);
+    uint64_t tag;
+    if (scratch_ensure(h, di, &D->a_buf, &D->a_cap, bytes) != 0) return -1;
+    tag = a_fingerprint(A, T * K);
+    if (D->a_fp_host == A && D->a_fp_bytes == bytes && D->a_fp_tag == tag)
+        return 0;
+    if (h->WriteBuffer(D->q, D->a_buf, CL_FALSE, 0, bytes, A, 0, NULL, NULL) !=
+        CL_SUCCESS)
+        return -1;
+    D->a_fp_host = A;
+    D->a_fp_bytes = bytes;
+    D->a_fp_tag = tag;
+    return 0;
+}
+
+/* global[0] rounded up to 64 for local A-tile work-group. */
+static int enqueue_2d(cce_clgemm *h, cl_command_queue q, cl_kernel kern,
+                      size_t cols, size_t T) {
+    size_t local[2], global[2];
+    local[0] = 64;
+    local[1] = 1;
+    global[0] = ((cols + 63) / 64) * 64;
+    if (global[0] == 0) global[0] = 64;
+    global[1] = T < 1 ? 1 : T;
+    return h->Enqueue(q, kern, 2, NULL, global, local, 0, NULL, NULL) ==
+                   CL_SUCCESS
+               ? 0
+               : -1;
 }
 
 /* C[T x N] = (bias?) + scale[n] * (A[T x K] . (float)Wq[K x N]) — the
@@ -684,6 +775,7 @@ int cce_clgemm_matmul_q8(cce_clgemm *h, const float *A, size_t T, size_t K,
 
     if (!h || !A || !Wq || !scales || !C || T == 0 || T > 8 || K == 0 ||
         N == 0) return -1;
+    if ((size_t)T * K * N < h->min_flops) return -1;
     if (K > 0x7FFFFFFF || N > 0x7FFFFFFF) return -1;
 
     went = resident_find(h, Wq, K * N);
@@ -726,8 +818,7 @@ int cce_clgemm_matmul_q8(cce_clgemm *h, const float *A, size_t T, size_t K,
         cl_mem b_mem;
         float *dst;
         if (cols == 0) continue;
-        if (scratch_ensure(h, d, &D->a_buf, &D->a_cap,
-                           T * K * sizeof(float)) != 0 ||
+        if (ensure_A(h, d, A, T, K) != 0 ||
             scratch_ensure(h, d, &D->c_buf, &D->c_cap,
                            T * cols * sizeof(float)) != 0) {
             rc = -1;
@@ -745,11 +836,6 @@ int cce_clgemm_matmul_q8(cce_clgemm *h, const float *A, size_t T, size_t K,
         } else {
             dst = C;
         }
-        if (h->WriteBuffer(D->q, D->a_buf, CL_FALSE, 0, T * K * sizeof(float),
-                           A, 0, NULL, NULL) != CL_SUCCESS) {
-            rc = -1;
-            break;
-        }
         started[d] = 1;
         b_mem = bent ? bent->mem[d] : went->scale[d];  /* dummy bind, unread */
         iT = (int)T; iK = (int)K; iN = (int)cols;
@@ -765,15 +851,9 @@ int cce_clgemm_matmul_q8(cce_clgemm *h, const float *A, size_t T, size_t K,
             rc = -1;
             break;
         }
-        {
-            size_t global[2];
-            global[0] = cols;
-            global[1] = T;
-            if (h->Enqueue(D->q, D->kern_q8, 2, NULL, global, NULL, 0, NULL,
-                           NULL) != CL_SUCCESS) {
-                rc = -1;
-                break;
-            }
+        if (enqueue_2d(h, D->q, D->kern_q8, cols, (size_t)T) != 0) {
+            rc = -1;
+            break;
         }
         if (h->ReadBuffer(D->q, D->c_buf, CL_FALSE, 0,
                           T * cols * sizeof(float), dst, 0, NULL,
@@ -808,6 +888,7 @@ int cce_clgemm_matmul(cce_clgemm *h, const float *A, size_t T, size_t K,
     size_t d, t;
 
     if (!h || !A || !W || !C || T == 0 || T > 8 || K == 0 || N == 0) return -1;
+    if ((size_t)T * K * N < h->min_flops) return -1;
     if (K > 0x7FFFFFFF || N > 0x7FFFFFFF) return -1;
 
     went = resident_find(h, W, K * N * sizeof(float));
@@ -836,8 +917,7 @@ int cce_clgemm_matmul(cce_clgemm *h, const float *A, size_t T, size_t K,
         cl_mem b_mem;
         float *dst;
         if (cols == 0) continue;
-        if (scratch_ensure(h, d, &D->a_buf, &D->a_cap,
-                           T * K * sizeof(float)) != 0 ||
+        if (ensure_A(h, d, A, T, K) != 0 ||
             scratch_ensure(h, d, &D->c_buf, &D->c_cap,
                            T * cols * sizeof(float)) != 0) {
             rc = -1;
@@ -855,11 +935,6 @@ int cce_clgemm_matmul(cce_clgemm *h, const float *A, size_t T, size_t K,
         } else {
             dst = C;   /* cols == N: the kernel's layout IS the caller's */
         }
-        if (h->WriteBuffer(D->q, D->a_buf, CL_FALSE, 0, T * K * sizeof(float),
-                           A, 0, NULL, NULL) != CL_SUCCESS) {
-            rc = -1;
-            break;
-        }
         started[d] = 1;
         b_mem = bent ? bent->mem[d] : went->mem[d];   /* dummy bind, unread */
         iT = (int)T; iK = (int)K; iN = (int)cols;
@@ -874,15 +949,9 @@ int cce_clgemm_matmul(cce_clgemm *h, const float *A, size_t T, size_t K,
             rc = -1;
             break;
         }
-        {
-            size_t global[2];
-            global[0] = cols;
-            global[1] = T;
-            if (h->Enqueue(D->q, D->kern, 2, NULL, global, NULL, 0, NULL,
-                           NULL) != CL_SUCCESS) {
-                rc = -1;
-                break;
-            }
+        if (enqueue_2d(h, D->q, D->kern, cols, (size_t)T) != 0) {
+            rc = -1;
+            break;
         }
         if (h->ReadBuffer(D->q, D->c_buf, CL_FALSE, 0,
                           T * cols * sizeof(float), dst, 0, NULL,

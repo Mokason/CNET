@@ -332,6 +332,7 @@ cce_result cce_gguf_build_qwen2_forest(cce_forest** out_forest,
 
 /* Full Qwen2 model holder with forest + norms (for forward) */
 struct cce_clgemm;
+struct cce_hipgemm;
 struct cce_gguf_qwen35_ext; /* qwen35 hybrid extension (cce_gguf_qwen35.c) */
 
 typedef struct cce_gguf_qwen2 {
@@ -386,10 +387,12 @@ typedef struct cce_gguf_qwen2 {
                           cce_gguf_qwen2_forward_probes, never directly. */
     int max_ctx;
 
-    /* Optional per-instance GPU handle (overrides the process-global one
-       from cce_gguf_set_clgemm). Required when several instances forward
-       concurrently — a shared handle means shared queues, i.e. races. */
+    /* Optional per-instance GPU handles (override process-global).
+       hipBLAS (AMD, large FP GEMM) is tried first when set; OpenCL covers
+       FP + int8 and multi-device column-split. Concurrent instances need
+       their own handles (shared queues race). */
     struct cce_clgemm *clgemm;
+    struct cce_hipgemm *hipgemm;
 
     /* This instance's forest scratch archive. Unique per load so oracle-pool
        lanes in one process never remove()/rewrite each other's live backing
@@ -525,6 +528,8 @@ CCE_API cce_result cce_gguf_qwen2_forward_probes(cce_gguf_qwen2* m,
  * forwarding concurrently — each instance MUST have its own handle). */
 void cce_gguf_set_clgemm(struct cce_clgemm *h);
 void cce_gguf_qwen2_set_clgemm(cce_gguf_qwen2 *m, struct cce_clgemm *h);
+void cce_gguf_set_hipgemm(struct cce_hipgemm *h);
+void cce_gguf_qwen2_set_hipgemm(cce_gguf_qwen2 *m, struct cce_hipgemm *h);
 
 /* Restrict the forward's head to `n` token ids (bit-identical to the full
    head on those ids; ~1/4 less work per forward). NULL/0 = full head. The

@@ -792,6 +792,7 @@ cce_result cce_gguf_qwen35_forward_impl(cce_gguf_qwen2 *m, const int *tokens,
     const int start_pos = m->cur_pos;
     const float eps = (m->rms_eps > 0.0f) ? m->rms_eps : 1e-6f;
     struct cce_clgemm *gpu = m->clgemm ? m->clgemm : cce_gguf__global_clgemm();
+    struct cce_hipgemm *hip = m->hipgemm ? m->hipgemm : cce_gguf__global_hipgemm();
     cce_result rc = CCE_OK;
     char name[128];
     int l, t;
@@ -883,9 +884,9 @@ cce_result cce_gguf_qwen35_forward_impl(cce_gguf_qwen2 *m, const int *tokens,
             }
             snprintf(name, sizeof name, "qwen35.blk.%d.qg_proj", l);
             cce_gguf__fire_capture(name, &ln1);
-            if (cce_gguf__apply_linear_rows(gpu, qg_cas, &ln1, &qg) != CCE_OK ||
-                cce_gguf__apply_linear_rows(gpu, k_cas, &ln1, &k) != CCE_OK ||
-                cce_gguf__apply_linear_rows(gpu, v_cas, &ln1, &v) != CCE_OK) {
+            if (cce_gguf__apply_linear_rows(gpu, hip, qg_cas, &ln1, &qg) != CCE_OK ||
+                cce_gguf__apply_linear_rows(gpu, hip, k_cas, &ln1, &k) != CCE_OK ||
+                cce_gguf__apply_linear_rows(gpu, hip, v_cas, &ln1, &v) != CCE_OK) {
                 cce_tensor_free(&qg); cce_tensor_free(&k); cce_tensor_free(&v);
                 cce_tensor_free(&attn_out); cce_tensor_free(&ln1);
                 cce_tensor_free(&after_attn);
@@ -977,7 +978,7 @@ cce_result cce_gguf_qwen35_forward_impl(cce_gguf_qwen2 *m, const int *tokens,
 
             snprintf(name, sizeof name, "qwen35.blk.%d.o_proj", l);
             cce_gguf__fire_capture(name, &attn_out);
-            if (cce_gguf__apply_linear_rows(gpu, o_cas, &attn_out,
+            if (cce_gguf__apply_linear_rows(gpu, hip, o_cas, &attn_out,
                                             &after_attn) != CCE_OK) {
                 cce_tensor_free(&qg); cce_tensor_free(&k); cce_tensor_free(&v);
                 cce_tensor_free(&attn_out); cce_tensor_free(&ln1);
@@ -1022,10 +1023,10 @@ cce_result cce_gguf_qwen35_forward_impl(cce_gguf_qwen2 *m, const int *tokens,
                (llama.cpp qwen35.cpp:357-368); z is NOT convolved */
             snprintf(name, sizeof name, "qwen35.blk.%d.qkv", l);
             cce_gguf__fire_capture(name, &ln1);
-            if (cce_gguf__apply_linear_rows(gpu, qkv_cas, &ln1, &qkv) != CCE_OK ||
-                cce_gguf__apply_linear_rows(gpu, z_cas, &ln1, &z) != CCE_OK ||
-                cce_gguf__apply_linear_rows(gpu, a_cas, &ln1, &al) != CCE_OK ||
-                cce_gguf__apply_linear_rows(gpu, b_cas, &ln1, &be) != CCE_OK) {
+            if (cce_gguf__apply_linear_rows(gpu, hip, qkv_cas, &ln1, &qkv) != CCE_OK ||
+                cce_gguf__apply_linear_rows(gpu, hip, z_cas, &ln1, &z) != CCE_OK ||
+                cce_gguf__apply_linear_rows(gpu, hip, a_cas, &ln1, &al) != CCE_OK ||
+                cce_gguf__apply_linear_rows(gpu, hip, b_cas, &ln1, &be) != CCE_OK) {
                 cce_tensor_free(&qkv); cce_tensor_free(&z); cce_tensor_free(&al);
                 cce_tensor_free(&be); cce_tensor_free(&gn); cce_tensor_free(&ln1);
                 cce_tensor_free(&after_attn);
@@ -1106,7 +1107,7 @@ cce_result cce_gguf_qwen35_forward_impl(cce_gguf_qwen2 *m, const int *tokens,
 
             snprintf(name, sizeof name, "qwen35.blk.%d.ssm_out", l);
             cce_gguf__fire_capture(name, &gn);
-            if (cce_gguf__apply_linear_rows(gpu, so_cas, &gn,
+            if (cce_gguf__apply_linear_rows(gpu, hip, so_cas, &gn,
                                             &after_attn) != CCE_OK) {
                 cce_tensor_free(&qkv); cce_tensor_free(&z); cce_tensor_free(&al);
                 cce_tensor_free(&be); cce_tensor_free(&gn); cce_tensor_free(&ln1);
@@ -1152,8 +1153,8 @@ cce_result cce_gguf_qwen35_forward_impl(cce_gguf_qwen2 *m, const int *tokens,
             cce_gguf__rms_norm(&after_attn, &m->ffn_norm[l], eps, &ln2);
             snprintf(name, sizeof name, "qwen35.blk.%d.gate_proj", l);
             cce_gguf__fire_capture(name, &ln2);
-            if (cce_gguf__apply_linear_rows(gpu, gate_cas, &ln2, &gate) != CCE_OK ||
-                cce_gguf__apply_linear_rows(gpu, up_cas, &ln2, &upv) != CCE_OK) {
+            if (cce_gguf__apply_linear_rows(gpu, hip, gate_cas, &ln2, &gate) != CCE_OK ||
+                cce_gguf__apply_linear_rows(gpu, hip, up_cas, &ln2, &upv) != CCE_OK) {
                 cce_tensor_free(&ln2); cce_tensor_free(&gate);
                 cce_tensor_free(&upv); cce_tensor_free(&mid);
                 cce_tensor_free(&down); cce_tensor_free(&ln1);
@@ -1167,7 +1168,7 @@ cce_result cce_gguf_qwen35_forward_impl(cce_gguf_qwen2 *m, const int *tokens,
             }
             snprintf(name, sizeof name, "qwen35.blk.%d.down_proj", l);
             cce_gguf__fire_capture(name, &mid);
-            if (cce_gguf__apply_linear_rows(gpu, down_cas, &mid, &down) != CCE_OK) {
+            if (cce_gguf__apply_linear_rows(gpu, hip, down_cas, &mid, &down) != CCE_OK) {
                 cce_tensor_free(&ln2); cce_tensor_free(&gate);
                 cce_tensor_free(&upv); cce_tensor_free(&mid);
                 cce_tensor_free(&down); cce_tensor_free(&ln1);
@@ -1256,7 +1257,7 @@ cce_result cce_gguf_qwen35_forward_impl(cce_gguf_qwen2 *m, const int *tokens,
             }
             if (!head_ok && head_cas) {
                 cce_gguf__fire_capture("qwen2.lm_head", &fn_last);
-                if (cce_gguf__apply_linear_rows(gpu, head_cas, &fn_last,
+                if (cce_gguf__apply_linear_rows(gpu, hip, head_cas, &fn_last,
                                                 &logits_t) == CCE_OK)
                     head_ok = 1;
             }

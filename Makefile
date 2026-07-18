@@ -102,6 +102,7 @@ CCE_DSA := src/cce/cce_dsa.c
 CCE_MLA := src/cce/cce_mla.c
 CCE_DS_MAP := src/cce/cce_deepseek_map.c
 CCE_DS_RT  := src/cce/cce_ds_runtime.c
+CCE_INFER  := src/cce/cce_infer_backend.c
 CCE_UNCERTAINTY := src/cce/cce_uncertainty.c
 CCE_COMPRESSION := src/cce/cce_compression.c
 CCE_LEARN   := src/cce/cce_learn.c
@@ -182,8 +183,9 @@ CCE_WSTORE  := src/cce/cce_weight_store.c
 CCE_TIERRT  := src/cce/cce_tier_runtime.c
 CCE_SIMILAR := src/cce/cce_similar.c
 CCE_CLGEMM  := src/cce/cce_clgemm.c
+CCE_HIPGEMM := src/cce/cce_hipgemm.c
 CCE_TRANSFORMER_QAT := src/cce/cce_transformer_qat.c
-CCE := $(CCE_TENSOR) $(CCE_BLOCK) $(CCE_CASCADE) $(CCE_ARCHIVE) $(CCE_FOREST) $(CCE_ROUTER) $(CCE_SPARSE_KV) $(CCE_DSA) $(CCE_MLA) $(CCE_DS_MAP) $(CCE_DS_RT) $(CCE_UNCERTAINTY) $(CCE_COMPRESSION) $(CCE_LEARN) $(CCE_PATCH) $(CCE_GPU) $(CCE_ABI) $(CCE_CUDA_OBJ) $(CCE_PERCEPTUAL) $(CCE_WORDLM) $(CCE_MODEL) $(CCE_MODEL_IO) $(CCE_DATASET) $(CCE_AUTOGRAD) $(CCE_SAFETENSORS) $(CCE_GGUF) $(CCE_AICIMO) $(CCE_QGKP) $(CCE_DETECT) $(CCE_SSM) $(CCE_HYBRID) $(CCE_QWEN35) $(CCE_GGUF_QWEN35) $(CCE_ST_LLAMA) $(CCE_SPECGRAPH) $(CCE_WSTORE) $(CCE_TIERRT) $(CCE_SIMILAR) $(CCE_CLGEMM) $(CCE_TRANSFORMER_QAT)
+CCE := $(CCE_TENSOR) $(CCE_BLOCK) $(CCE_CASCADE) $(CCE_ARCHIVE) $(CCE_FOREST) $(CCE_ROUTER) $(CCE_SPARSE_KV) $(CCE_DSA) $(CCE_MLA) $(CCE_DS_MAP) $(CCE_DS_RT) $(CCE_INFER) $(CCE_UNCERTAINTY) $(CCE_COMPRESSION) $(CCE_LEARN) $(CCE_PATCH) $(CCE_GPU) $(CCE_ABI) $(CCE_CUDA_OBJ) $(CCE_PERCEPTUAL) $(CCE_WORDLM) $(CCE_MODEL) $(CCE_MODEL_IO) $(CCE_DATASET) $(CCE_AUTOGRAD) $(CCE_SAFETENSORS) $(CCE_GGUF) $(CCE_AICIMO) $(CCE_QGKP) $(CCE_DETECT) $(CCE_SSM) $(CCE_HYBRID) $(CCE_QWEN35) $(CCE_GGUF_QWEN35) $(CCE_ST_LLAMA) $(CCE_SPECGRAPH) $(CCE_WSTORE) $(CCE_TIERRT) $(CCE_SIMILAR) $(CCE_CLGEMM) $(CCE_HIPGEMM) $(CCE_TRANSFORMER_QAT)
 CNET_CCE_ADAPTER := src/cce/cce_contract_adapter.c
 SPECIALIST_ADAPTERS := src/specialist_adapters.c
 SPECIALIST_SRC := src/specialist.c src/specialist_health.c
@@ -1189,7 +1191,7 @@ cnet_ds_import: $(CCE) tools/cnet_ds_import.c
 	$(CC) $(CFLAGS) -o $(BIN_DIR)/cnet_ds_import $(CCE) tools/cnet_ds_import.c \
 		$(LDFLAGS) -lm
 
-# Aggregate sparse stack gate.
+# Aggregate sparse stack gate (DS residual host).
 .PHONY: sparse_stack
 sparse_stack: ssmax dsa mla deepseek_map ds_stack
 	@echo "SPARSE_STACK_PASS"
@@ -1201,6 +1203,102 @@ cnet_ds_bench: $(CCE) tools/cnet_ds_bench.c
 		$(LDFLAGS) -lm
 	@./$(BIN_DIR)/cnet_ds_bench 128 | tee logs/ds_bench.log
 	@grep -q "DS_BENCH" logs/ds_bench.log
+
+# GGUF residual/token stack: synthetic tiny weights → load → multi-token gen
+# + residual layer tap + sparse_kv + microbench + dual-backend open.
+.PHONY: gguf_stack
+gguf_stack: $(CCE) tests/test_gguf_runtime.c tests/tiny_model_fixture.h \
+		include/cce/cce_infer_backend.h
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/test_gguf_runtime \
+		$(CCE) tests/test_gguf_runtime.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -lm
+	@./$(BIN_DIR)/test_gguf_runtime > logs/gguf_stack.log 2>&1
+	@grep -q "GGUF_STACK_PASS" logs/gguf_stack.log
+	@grep -q "failures=0" logs/gguf_stack.log
+	@grep "GGUF_STACK_PASS\|bench:" logs/gguf_stack.log
+
+.PHONY: cnet_gguf_bench
+cnet_gguf_bench: $(CCE) tools/cnet_gguf_bench.c include/cce/cce_infer_backend.h
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/cnet_gguf_bench \
+		$(CCE) tools/cnet_gguf_bench.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -lm
+	@./$(BIN_DIR)/cnet_gguf_bench 128 | tee logs/gguf_bench.log
+	@grep -q "GGUF_BENCH" logs/gguf_bench.log
+
+# Dual CPU: DS residual host + GGUF token path side-by-side (GPU hooks reserved).
+.PHONY: dual_cpu_bench
+dual_cpu_bench: $(CCE) tests/test_dual_cpu_bench.c include/cce/cce_infer_backend.h
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/test_dual_cpu_bench \
+		$(CCE) tests/test_dual_cpu_bench.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -lm
+	@./$(BIN_DIR)/test_dual_cpu_bench > logs/dual_cpu_bench.log 2>&1
+	@grep -q "DUAL_CPU_BENCH_PASS" logs/dual_cpu_bench.log
+	@grep -q "failures=0" logs/dual_cpu_bench.log
+	@grep "DUAL_CPU_BENCH_PASS\|DS \|GGUF " logs/dual_cpu_bench.log
+
+# Aggregate: sparse DS stack + GGUF token stack + dual CPU baselines.
+.PHONY: dual_stack
+dual_stack: sparse_stack gguf_stack dual_cpu_bench
+	@echo "DUAL_STACK_PASS"
+
+# GGUF GPU: OpenCL primary (AMD pure-C). Soft-skip if no discrete GPU.
+# Decision gate: 100% argmax vs CPU on synthetic fixture.
+.PHONY: gguf_gpu
+gguf_gpu: $(CCE) tests/test_gguf_gpu.c tests/tiny_model_fixture.h \
+		include/cce/cce_infer_backend.h include/cce/cce_clgemm.h
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/test_gguf_gpu \
+		$(CCE) tests/test_gguf_gpu.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -lm -ldl
+	@./$(BIN_DIR)/test_gguf_gpu > logs/gguf_gpu.log 2>&1
+	@if grep -q "GGUF_GPU_SKIP" logs/gguf_gpu.log; then \
+		grep "GGUF_GPU_SKIP" logs/gguf_gpu.log; \
+	else \
+		grep -q "GGUF_GPU_PASS" logs/gguf_gpu.log && \
+		grep -q "failures=0" logs/gguf_gpu.log && \
+		grep "GGUF_GPU_PASS\|OpenCL\|argmax" logs/gguf_gpu.log; \
+	fi
+
+# Dual GPU bench: DS CPU + GGUF CPU/OpenCL; DS GPU reserved.
+.PHONY: dual_gpu_bench
+dual_gpu_bench: $(CCE) tests/test_dual_gpu_bench.c include/cce/cce_infer_backend.h
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/test_dual_gpu_bench \
+		$(CCE) tests/test_dual_gpu_bench.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -lm -ldl
+	@./$(BIN_DIR)/test_dual_gpu_bench > logs/dual_gpu_bench.log 2>&1
+	@if grep -q "DUAL_GPU_BENCH_SKIP" logs/dual_gpu_bench.log; then \
+		grep "DUAL_GPU_BENCH_SKIP\|DS \|GGUF " logs/dual_gpu_bench.log; \
+	else \
+		grep -q "DUAL_GPU_BENCH_PASS" logs/dual_gpu_bench.log && \
+		grep -q "failures=0" logs/dual_gpu_bench.log && \
+		grep "DUAL_GPU_BENCH_PASS\|DS \|GGUF " logs/dual_gpu_bench.log; \
+	fi
+
+# Raw GEMM: CPU vs OpenCL×1/×2 vs hipBLAS×1/×2 (no model load).
+.PHONY: gpu_matmul_bench
+gpu_matmul_bench: $(CCE) tools/cnet_gpu_matmul_bench.c include/cce/cce_clgemm.h \
+		include/cce/cce_hipgemm.h
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/cnet_gpu_matmul_bench \
+		$(CCE) tools/cnet_gpu_matmul_bench.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -lm -ldl
+	@LD_LIBRARY_PATH=/opt/rocm/lib:$$LD_LIBRARY_PATH \
+		./$(BIN_DIR)/cnet_gpu_matmul_bench 4096 4096 20 | tee logs/gpu_matmul_bench.log
+	@grep -q "GPU_MATMUL_BENCH_PASS" logs/gpu_matmul_bench.log
+
+# CNET-native real GGUF GPU bench (not llama.cpp). MODEL= path required.
+# Example: make gguf_gpu_real MODEL=Models/gemma-4-12B-it-MTP-Q8_0.gguf N=16
+.PHONY: gguf_gpu_real
+gguf_gpu_real: $(CCE) tools/cnet_gguf_gpu_bench.c
+	@mkdir -p $(BIN_DIR) logs
+	@if [ -z "$(MODEL)" ]; then \
+		echo "Set MODEL=/path/to.gguf  (optional N= tokens, BACKEND=auto|hip|opencl|cpu)"; \
+		exit 2; \
+	fi
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/cnet_gguf_gpu_bench \
+		$(CCE) tools/cnet_gguf_gpu_bench.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -lm -ldl
+	@LD_LIBRARY_PATH=/opt/rocm/lib:$$LD_LIBRARY_PATH \
+		./$(BIN_DIR)/cnet_gguf_gpu_bench "$(MODEL)" $(or $(N),16) $(or $(BACKEND),auto) \
+		| tee logs/gguf_gpu_real.log
+	@grep -q "GGUF_GPU_BENCH_PASS" logs/gguf_gpu_real.log
 
 # Pure CCE build without legacy nn.c (for testing the new engine)
 cce_smoke_pure: $(CCE) $(CCE_CUDA_OBJ) tests/cce_smoke.c

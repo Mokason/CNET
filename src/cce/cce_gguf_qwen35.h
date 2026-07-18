@@ -68,13 +68,17 @@ void cce_gguf_qwen35_ext_free(cce_gguf_qwen2 *m);
 
 /* ---- shims exported from cce_gguf.c (single source of truth for the
         linear seam, RMSNorm, tap/capture hooks, and metadata access) ---- */
-cce_result cce_gguf__apply_linear_rows(struct cce_clgemm *gpu, cce_cascade *cas,
+struct cce_hipgemm; /* pure-C hipBLAS peer of cce_clgemm */
+cce_result cce_gguf__apply_linear_rows(struct cce_clgemm *gpu,
+                                       struct cce_hipgemm *hip,
+                                       cce_cascade *cas,
                                        const cce_tensor *in, cce_tensor *out);
 cce_result cce_gguf__rms_norm(const cce_tensor *in, const cce_tensor *w,
                               float eps, cce_tensor *out);
 void cce_gguf__fire_layer_tap(int layer, const float *x, int n_tokens, int dim);
 void cce_gguf__fire_capture(const char *spec, const cce_tensor *in);
 struct cce_clgemm *cce_gguf__global_clgemm(void);
+struct cce_hipgemm *cce_gguf__global_hipgemm(void);
 double cce_gguf__get_scalar(const cce_gguf *g, const char *key_suffix,
                             double fallback);
 /* returns 1 + copies the string value when a key with this suffix exists */
