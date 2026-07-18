@@ -72,8 +72,12 @@ int main(void) {
     check(cce_ds_host_forward_token(h) == CCE_OK, "forward token 1");
     check(cce_ds_host_forward_token(h) == CCE_OK, "forward token 2");
     check(h->experts_loaded >= 0, "cold autoload counter live");
-    printf("    experts_loaded=%d dsa_support_sum=%d\n",
-           h->experts_loaded, h->dsa_support_sum);
+    check(h->experts_fired >= 0, "experts_fired telemetry");
+    check(h->mla[0].cache.quant_kv == 1 || h->mla_quant_kv == 0,
+          "MLA quant_kv armed or opted out");
+    printf("    experts_loaded=%d fired=%d slept=%d dsa_support_sum=%d\n",
+           h->experts_loaded, h->experts_fired, h->experts_slept,
+           h->dsa_support_sum);
 
     /* ensure_expert explicit */
     {
@@ -108,11 +112,13 @@ int main(void) {
     /* microbench */
     check(cce_ds_host_bench(h, 32, &tok_s) == CCE_OK, "bench 32 tokens");
     check(tok_s > 0, "tok/s > 0");
+    check(h->experts_fired > 0, "bench fired sparse experts");
     printf("    bench: %.1f tok/s (32 tokens, synthetic 2L MLA+MoE+DSA)\n", tok_s);
-    printf("    dsa_avg_support=%.1f\n",
+    printf("    dsa_avg_support=%.1f experts_fired=%d slept=%d quant_kv=%d\n",
            h->tokens_fwd > 0
                ? (double)h->dsa_support_sum / (double)(h->tokens_fwd * h->n_layer)
-               : 0.0);
+               : 0.0,
+           h->experts_fired, h->experts_slept, h->mla[0].cache.quant_kv);
 
     cce_ds_host_close(h);
     remove("ds_stack_test.cce");

@@ -37,11 +37,20 @@ typedef struct cce_ds_host {
     /* knobs */
     int             dsa_enable;
     float           dsa_fraction;
+    float           dsa_sleep_eps;  /* sleep after DSA softmax */
+    int             dsa_speed;      /* 1: floor grid (CNET_DSA_PROFILE=speed) */
     int             cold_autoload; /* 1: ensure_expert on route */
-    /* telemetry */
+    int             mla_quant_kv;  /* int8 latent KV side (FP8-class BW) */
+    float           moe_sleep_eps; /* sleep on expert mix */
+    int             dual_pipe;     /* batch-ensure experts then fire (overlap-ready) */
+    /* telemetry (Forest sparse-activate) */
     int             tokens_fwd;
-    int             experts_loaded;
+    int             experts_loaded;   /* cold→resident lifetime */
+    int             experts_fired;    /* expert matmuls this process */
+    int             experts_slept;    /* top-k slots zeroed by sleep */
+    int             experts_attempted;
     int             dsa_support_sum;
+    int             dsa_full_fallback; /* heads that fell back to dense */
     double          seconds_fwd;
 } cce_ds_host;
 
@@ -54,7 +63,12 @@ typedef struct cce_ds_host_opts {
     int         bind_cold;      /* bind all experts at open (heavy) */
     int         dsa_enable;
     float       dsa_fraction;
+    float       dsa_sleep_eps;
+    int         dsa_speed;
     int         cold_autoload;
+    int         mla_quant_kv;
+    float       moe_sleep_eps;
+    int         dual_pipe;
 } cce_ds_host_opts;
 
 void cce_ds_host_opts_default(cce_ds_host_opts* o, const char* archive,

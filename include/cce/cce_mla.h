@@ -61,14 +61,19 @@ typedef struct cce_mla_weights {
     int          owns;    /* free buffers on destroy */
 } cce_mla_weights;
 
-/* Compressed KV cache: per position only latent + shared rope key. */
+/* Compressed KV cache: per position only latent + shared rope key.
+ * Optional int8 side-channel (CNET_MLA_KV / quant_kv): FlashMLA-class
+ * bandwidth win — 1 byte/elem like FP8 KV; dequant only on DSA support. */
 typedef struct cce_mla_cache {
     int    max_ctx;
     int    cur_len;
     int    kv_lora_rank;
     int    qk_rope_head_dim;
-    float* c_kv;   /* [max_ctx × kv_lora_rank] */
+    float* c_kv;   /* [max_ctx × kv_lora_rank]  (f32 master) */
     float* k_pe;   /* [max_ctx × qk_rope_head_dim] */
+    int8_t* c_kv_q8;   /* nullable [max_ctx × kv_lora_rank] */
+    float*  c_kv_scale; /* nullable [max_ctx] per-row scale */
+    int     quant_kv;   /* 1: maintain q8 side; absorb may use q8 dots */
 } cce_mla_cache;
 
 typedef struct cce_mla {
@@ -98,6 +103,9 @@ size_t cce_mha_cache_bytes_per_token(int n_kv_heads, int head_dim);
 cce_result cce_mla_init(cce_mla* m, const cce_mla_config* cfg,
                         const cce_mla_weights* w, int max_ctx);
 void       cce_mla_free(cce_mla* m);
+
+/* Enable int8 latent side-cache (idempotent). Soft-fail: returns -1, f32 only. */
+int cce_mla_enable_quant_kv(cce_mla* m);
 void       cce_mla_reset_cache(cce_mla* m);
 
 /* Allocate + fill random orthonormal-ish synthetic weights (hermetic tests). */

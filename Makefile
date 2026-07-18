@@ -1154,14 +1154,13 @@ dsa: $(CCE_ROUTER) $(CCE_SPARSE_KV) $(CCE_DSA) tests/test_dsa.c include/cce/cce_
 
 # DeepSeek Multi-head Latent Attention (latent KV cache + decoupled RoPE).
 .PHONY: mla
-mla: $(CCE_ROUTER) $(CCE_MLA) tests/test_mla.c include/cce/cce_mla.h
+mla: $(CCE_ROUTER) $(CCE_MLA) $(CCE_DSA) $(CCE_SPARSE_KV) tests/test_mla.c include/cce/cce_mla.h
 	@mkdir -p $(BIN_DIR) logs
-	$(CC) $(CFLAGS) -o $(BIN_DIR)/test_mla $(CCE_ROUTER) $(CCE_MLA) tests/test_mla.c -lm
+	$(CC) $(CFLAGS) -o $(BIN_DIR)/test_mla $(CCE_ROUTER) $(CCE_MLA) $(CCE_DSA) $(CCE_SPARSE_KV) tests/test_mla.c -lm
 	@./$(BIN_DIR)/test_mla > logs/mla.log 2>&1
 	@grep -q "MLA_PASS" logs/mla.log
 	@grep -q "failures=0" logs/mla.log
 	@grep "MLA_PASS" logs/mla.log
-
 # CNET-native DeepSeek map + real forest bind (isolated from DS/llama.cpp).
 .PHONY: deepseek_map
 deepseek_map: $(CCE) tests/test_deepseek_map.c include/cce/cce_deepseek_map.h

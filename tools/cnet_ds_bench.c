@@ -39,9 +39,11 @@ int main(int argc, char** argv) {
         return 1;
     }
     printf("DS_BENCH layers=%d d_model=%d heads=%d experts=%d used=%d "
-           "tokens=%d tok_s=%.1f experts_loaded=%d dsa_support_sum=%d\n",
+           "tokens=%d tok_s=%.1f experts_loaded=%d fired=%d slept=%d "
+           "dsa_support_sum=%d quant_kv=%d\n",
            hp.n_layer, hp.d_model, hp.n_heads, hp.n_expert, hp.n_expert_used,
-           n, tps, h->experts_loaded, h->dsa_support_sum);
+           n, tps, h->experts_loaded, h->experts_fired, h->experts_slept,
+           h->dsa_support_sum, h->mla && h->mla[0].cache.quant_kv);
     cce_ds_host_close(h);
     remove("ds_bench.cce");
     return 0;

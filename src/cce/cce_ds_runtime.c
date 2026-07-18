@@ -13,6 +13,7 @@
 
 void cce_ds_host_opts_default(cce_ds_host_opts* o, const char* archive,
                               const char* pack) {
+    const char* e;
     if (!o) return;
     memset(o, 0, sizeof(*o));
     o->archive_path = archive ? archive : "ds_host.cce";
@@ -23,7 +24,32 @@ void cce_ds_host_opts_default(cce_ds_host_opts* o, const char* archive,
     o->bind_cold = 0;
     o->dsa_enable = 1;
     o->dsa_fraction = 0.25f;
+    o->dsa_sleep_eps = CCE_SLEEP_DEFAULT_EPS;
+    o->dsa_speed = 0;
     o->cold_autoload = 1;
+    o->mla_quant_kv = 1; /* FP8-class int8 latent default on */
+    o->moe_sleep_eps = CCE_SLEEP_DEFAULT_EPS;
+    o->dual_pipe = 1;
+    /* Env: CNET_DSA=0 disables; CNET_DSA_PROFILE=speed; CNET_MLA_KV=0 off quant */
+    e = getenv("CNET_DSA");
+    if (e && e[0] == '0') o->dsa_enable = 0;
+    e = getenv("CNET_DSA_PROFILE");
+    if (e && (e[0] == 's' || e[0] == 'S')) o->dsa_speed = 1;
+    e = getenv("CNET_DSA_SLEEP");
+    if (e && e[0]) {
+        float v = (float)atof(e);
+        if (v > 0.f) o->dsa_sleep_eps = v;
+    }
+    e = getenv("CNET_MLA_KV");
+    if (e && e[0] == '0') o->mla_quant_kv = 0;
+    if (e && e[0] && e[0] != '0') o->mla_quant_kv = 1;
+    e = getenv("CNET_MOE_SLEEP");
+    if (e && e[0]) {
+        float v = (float)atof(e);
+        if (v > 0.f) o->moe_sleep_eps = v;
+    }
+    e = getenv("CNET_DUAL_PIPE");
+    if (e && e[0] == '0') o->dual_pipe = 0;
 }
 
 /* Pull f32 weight view from a bound cascade (no copy; host must keep forest). */
@@ -155,7 +181,97 @@ static void simple_rms(float* x, int d, float eps) {
     for (i = 0; i < d; ++i) x[i] *= inv;
 }
 
-/* MoE: matvec router, top-2, load experts, combine. */
+/* Fire one SwiGLU expert cascade triple into yacc (weighted). */
+static int moe_fire_expert(cce_ds_host* h, int L, int e, float wk,
+                           const float* x, float* yacc) {
+    char gn[64], un[64], dn[64];
+    cce_cascade *cg, *cu, *cd;
+    cce_tensor xin = {0}, g = {0}, u = {0}, mid = {0}, down = {0};
+    int sh[1] = {h->d_model};
+    int i, ok = 0;
+    if (!(wk > 0.f)) return 0;
+    snprintf(gn, sizeof gn, "L%02d.ffn.e%03d.g", L, e);
+    snprintf(un, sizeof un, "L%02d.ffn.e%03d.u", L, e);
+    snprintf(dn, sizeof dn, "L%02d.ffn.e%03d.d", L, e);
+    cg = cce_forest_get_resident(h->forest, gn);
+    cu = cce_forest_get_resident(h->forest, un);
+    cd = cce_forest_get_resident(h->forest, dn);
+    if (!cg || !cu || !cd) return 0;
+    if (cce_tensor_alloc(&xin, sh, 1) != CCE_OK) return 0;
+    memcpy(xin.data, x, (size_t)h->d_model * sizeof(float));
+    if (cce_cascade_forward(cg, &xin, &g) == CCE_OK &&
+        cce_cascade_forward(cu, &xin, &u) == CCE_OK) {
+        int F = (int)g.numel;
+        int shf[1] = {F};
+        if (cce_tensor_alloc(&mid, shf, 1) == CCE_OK) {
+            for (i = 0; i < F; ++i) {
+                float gv = g.data[i];
+                mid.data[i] = (gv / (1.f + expf(-gv))) * u.data[i];
+            }
+            if (cce_cascade_forward(cd, &mid, &down) == CCE_OK && down.data) {
+                int D = (int)down.numel;
+                if (D > h->d_model) D = h->d_model;
+                for (i = 0; i < D; ++i) yacc[i] += wk * down.data[i];
+                ok = 1;
+            }
+            cce_tensor_free(&mid);
+            cce_tensor_free(&down);
+        }
+    }
+    cce_tensor_free(&xin);
+    cce_tensor_free(&g);
+    cce_tensor_free(&u);
+    if (ok) h->experts_fired++;
+    return ok;
+}
+
+/* Shared expert leaf Lxx.ffn.shared.{g,u,d} — always-on Forest specialist. */
+static void moe_fire_shared(cce_ds_host* h, int L, const float* x, float* yacc) {
+    char gn[64], un[64], dn[64];
+    cce_cascade *cg, *cu, *cd;
+    snprintf(gn, sizeof gn, "L%02d.ffn.shared.g", L);
+    snprintf(un, sizeof un, "L%02d.ffn.shared.u", L);
+    snprintf(dn, sizeof dn, "L%02d.ffn.shared.d", L);
+    cg = cce_forest_get_resident(h->forest, gn);
+    cu = cce_forest_get_resident(h->forest, un);
+    cd = cce_forest_get_resident(h->forest, dn);
+    if (!cg || !cu || !cd) return;
+    /* weight 1.0 — DeepSeek-style shared expert (named Forest leaf) */
+    {
+        cce_tensor xin = {0}, g = {0}, u = {0}, mid = {0}, down = {0};
+        int sh[1] = {h->d_model};
+        int i;
+        if (cce_tensor_alloc(&xin, sh, 1) != CCE_OK) return;
+        memcpy(xin.data, x, (size_t)h->d_model * sizeof(float));
+        if (cce_cascade_forward(cg, &xin, &g) == CCE_OK &&
+            cce_cascade_forward(cu, &xin, &u) == CCE_OK) {
+            int F = (int)g.numel;
+            int shf[1] = {F};
+            if (cce_tensor_alloc(&mid, shf, 1) == CCE_OK) {
+                for (i = 0; i < F; ++i) {
+                    float gv = g.data[i];
+                    mid.data[i] = (gv / (1.f + expf(-gv))) * u.data[i];
+                }
+                if (cce_cascade_forward(cd, &mid, &down) == CCE_OK &&
+                    down.data) {
+                    int D = (int)down.numel;
+                    if (D > h->d_model) D = h->d_model;
+                    for (i = 0; i < D; ++i) yacc[i] += down.data[i];
+                    h->experts_fired++;
+                }
+                cce_tensor_free(&mid);
+                cce_tensor_free(&down);
+            }
+        }
+        cce_tensor_free(&xin);
+        cce_tensor_free(&g);
+        cce_tensor_free(&u);
+    }
+}
+
+/* MoE: forest router leaf → SSMax top-k → sleep → cold ensure → fire.
+ * DualPipe-like: when dual_pipe, ensure ALL support experts first, then fire
+ * (load phase then compute phase — ready for multi-device place later). */
 static cce_result moe_ffn(cce_ds_host* h, int L, const float* x, float* y) {
     char name[64];
     int in_d, out_d, E, K, e, k, i;
@@ -164,24 +280,15 @@ static cce_result moe_ffn(cce_ds_host* h, int L, const float* x, float* y) {
     int* sel = NULL;
     float* w = NULL;
     float* yacc = NULL;
-    cce_result rc = CCE_OK;
+    float sleep_eps;
     const cce_ds_hparams* hp = &h->map.hp;
 
     E = hp->n_expert;
     K = hp->n_expert_used > 0 ? hp->n_expert_used : 2;
     if (K > E) K = E;
+    sleep_eps = h->moe_sleep_eps > 0.f ? h->moe_sleep_eps : CCE_SLEEP_DEFAULT_EPS;
+
     if (E < 1) {
-        /* dense FFN if present */
-        snprintf(name, sizeof name, "L%02d.ffn.gate", L);
-        {
-            cce_cascade* g = cce_forest_get_resident(h->forest, name);
-            cce_cascade* u = cce_forest_get_resident(h->forest, "L%02d.ffn.up");
-            (void)u;
-            if (!g) {
-                memcpy(y, x, (size_t)h->d_model * sizeof(float));
-                return CCE_OK;
-            }
-        }
         memcpy(y, x, (size_t)h->d_model * sizeof(float));
         return CCE_OK;
     }
@@ -202,7 +309,7 @@ static cce_result moe_ffn(cce_ds_host* h, int L, const float* x, float* y) {
         return CCE_ERR_OOM;
     }
 
-    /* router: out[e] = sum_i x[i]*W[i*E+e]  (cce layout) */
+    /* Forest router specialist: residual → expert logits */
     for (e = 0; e < E; ++e) {
         float s = 0.f;
         for (i = 0; i < in_d && i < h->d_model; ++i)
@@ -213,57 +320,35 @@ static cce_result moe_ffn(cce_ds_host* h, int L, const float* x, float* y) {
         free(logits); free(sel); free(w); free(yacc);
         return CCE_ERR_UNSUPPORTED;
     }
-    cce_sleep_renorm(w, K, CCE_SLEEP_DEFAULT_EPS, 0);
+    /* Sleep: exact-zero dead zone — no matmul / no ensure for dust */
+    {
+        int before = 0, after = 0;
+        for (k = 0; k < K; ++k)
+            if (w[k] > 0.f) before++;
+        cce_sleep_renorm(w, K, sleep_eps, 0);
+        for (k = 0; k < K; ++k)
+            if (w[k] > 0.f) after++;
+        h->experts_slept += (before - after);
+        h->experts_attempted += K;
+    }
 
-    for (k = 0; k < K; ++k) {
-        float wk = w[k];
-        char gn[64], un[64], dn[64];
-        cce_cascade *cg, *cu, *cd;
-        if (!(wk > 0.f)) continue;
-        e = sel[k];
-        if (h->cold_autoload) {
-            rc = cce_ds_host_ensure_expert(h, L, e);
-            if (rc != CCE_OK) continue;
-        }
-        snprintf(gn, sizeof gn, "L%02d.ffn.e%03d.g", L, e);
-        snprintf(un, sizeof un, "L%02d.ffn.e%03d.u", L, e);
-        snprintf(dn, sizeof dn, "L%02d.ffn.e%03d.d", L, e);
-        cg = cce_forest_get_resident(h->forest, gn);
-        cu = cce_forest_get_resident(h->forest, un);
-        cd = cce_forest_get_resident(h->forest, dn);
-        if (!cg || !cu || !cd) continue;
-        {
-            cce_tensor xin = {0}, g = {0}, u = {0}, mid = {0}, down = {0};
-            int sh[1] = { h->d_model };
-            cce_tensor_alloc(&xin, sh, 1);
-            memcpy(xin.data, x, (size_t)h->d_model * sizeof(float));
-            if (cce_cascade_forward(cg, &xin, &g) != CCE_OK ||
-                cce_cascade_forward(cu, &xin, &u) != CCE_OK) {
-                cce_tensor_free(&xin); cce_tensor_free(&g); cce_tensor_free(&u);
-                continue;
-            }
-            /* silu(g)*u → mid */
-            {
-                int F = (int)g.numel;
-                int shf[1] = { F };
-                cce_tensor_alloc(&mid, shf, 1);
-                for (i = 0; i < F; ++i) {
-                    float gv = g.data[i];
-                    mid.data[i] = (gv / (1.f + expf(-gv))) * u.data[i];
-                }
-                if (cce_cascade_forward(cd, &mid, &down) == CCE_OK && down.data) {
-                    int D = (int)down.numel;
-                    if (D > h->d_model) D = h->d_model;
-                    for (i = 0; i < D; ++i) yacc[i] += wk * down.data[i];
-                }
-                cce_tensor_free(&mid);
-                cce_tensor_free(&down);
-            }
-            cce_tensor_free(&xin);
-            cce_tensor_free(&g);
-            cce_tensor_free(&u);
+    /* DualPipe-like phase 1: demand-load entire support (cold→resident) */
+    if (h->cold_autoload) {
+        for (k = 0; k < K; ++k) {
+            if (!(w[k] > 0.f)) continue;
+            (void)cce_ds_host_ensure_expert(h, L, sel[k]);
         }
     }
+
+    /* Shared expert (always-on Forest leaf) */
+    moe_fire_shared(h, L, x, yacc);
+
+    /* Phase 2: fire only awake support */
+    for (k = 0; k < K; ++k) {
+        if (!(w[k] > 0.f)) continue;
+        (void)moe_fire_expert(h, L, sel[k], w[k], x, yacc);
+    }
+
     memcpy(y, yacc, (size_t)h->d_model * sizeof(float));
     free(logits); free(sel); free(w); free(yacc);
     return CCE_OK;
@@ -341,6 +426,11 @@ static cce_result mla_token(cce_ds_host* h, int L, const float* x, float* y) {
                               : 1.f / sqrtf((float)(nope + rope));
     use_dsa = h->dsa_enable && h->dsa_fraction < 0.999f && (T + 1) > 4;
 
+    /* Quantize new latent row (FP8-class int8 side) when enabled. */
+    if (m->cache.quant_kv && m->cache.c_kv_q8 && m->cache.c_kv_scale)
+        cce_mla_kv_quantize(c_kv_row, kr, m->cache.c_kv_q8 + (size_t)T * kr,
+                            &m->cache.c_kv_scale[T]);
+
     memset(m->attn_out, 0, (size_t)n_h * vd * sizeof(float));
     for (hh = 0; hh < n_h; ++hh) {
         const float* qn = m->q_nope + hh * nope;
@@ -353,11 +443,24 @@ static cce_result mla_token(cce_ds_host* h, int L, const float* x, float* y) {
             const float* kpe = m->cache.k_pe + (size_t)t * rope;
             float s = 0.f;
             int r, d;
-            for (r = 0; r < kr; ++r) {
-                float wr = 0.f;
-                for (d = 0; d < nope; ++d)
-                    wr += w->w_uk[(size_t)(hh * nope + d) * kr + r] * qn[d];
-                s += wr * ckv[r];
+            if (m->cache.quant_kv && m->cache.c_kv_q8 && m->cache.c_kv_scale) {
+                float wr[512];
+                if (kr > 512) return CCE_ERR_UNSUPPORTED;
+                for (r = 0; r < kr; ++r) {
+                    float acc = 0.f;
+                    for (d = 0; d < nope; ++d)
+                        acc += w->w_uk[(size_t)(hh * nope + d) * kr + r] * qn[d];
+                    wr[r] = acc;
+                }
+                s += cce_mla_kv_dot_q8(wr, m->cache.c_kv_q8 + (size_t)t * kr,
+                                       m->cache.c_kv_scale[t], kr);
+            } else {
+                for (r = 0; r < kr; ++r) {
+                    float wr = 0.f;
+                    for (d = 0; d < nope; ++d)
+                        wr += w->w_uk[(size_t)(hh * nope + d) * kr + r] * qn[d];
+                    s += wr * ckv[r];
+                }
             }
             for (i = 0; i < rope; ++i) s += qr[i] * kpe[i];
             m->scores[t] = s * scale;
@@ -366,17 +469,34 @@ static cce_result mla_token(cce_ds_host* h, int L, const float* x, float* y) {
 
         if (use_dsa) {
             cce_dsa_config dcfg;
-            cce_dsa_config_default(&dcfg);
+            float* idx_scores = NULL;
+            if (h->dsa_speed)
+                cce_dsa_config_speed(&dcfg);
+            else
+                cce_dsa_config_default(&dcfg);
             dcfg.fraction = h->dsa_fraction;
             dcfg.keep_anchors = 1;
-            dcfg.floor_quantum = 0.f;
+            if (h->dsa_sleep_eps > 0.f) dcfg.sleep_eps = h->dsa_sleep_eps;
             if (!idx) {
                 idx = (int*)malloc((size_t)(T + 1) * sizeof(int));
                 wt = (float*)malloc((size_t)(T + 1) * sizeof(float));
             }
+            /* Lightning indexer on latent dots: hybrid of scores (affinity)
+             * — index WHO, scores HOW (DeepSeek DSA). */
+            idx_scores = (float*)malloc((size_t)(T + 1) * sizeof(float));
+            if (idx_scores) {
+                /* ReLU multi-head proxy: max(0, score/scale) as index */
+                for (t = 0; t <= T; ++t) {
+                    float z = m->scores[t] / (scale > 0.f ? scale : 1.f);
+                    idx_scores[t] = z > 0.f ? z : 0.f;
+                    if (dcfg.index_mode == CCE_DSA_INDEX_HYBRID)
+                        idx_scores[t] = 0.5f * idx_scores[t] + 0.5f * m->scores[t];
+                }
+            }
             if (idx && wt &&
-                cce_dsa_select_dual(m->scores, m->scores, T + 1, &dcfg,
-                                    idx, wt, T + 1, &kn) == CCE_OK) {
+                cce_dsa_select_dual(idx_scores ? idx_scores : m->scores,
+                                    m->scores, T + 1, &dcfg, idx, wt, T + 1,
+                                    &kn) == CCE_OK) {
                 h->dsa_support_sum += kn;
                 for (i = 0; i < kn; ++i) {
                     float wti = wt[i];
@@ -384,16 +504,40 @@ static cce_result mla_token(cce_ds_host* h, int L, const float* x, float* y) {
                     const float* ckv;
                     int d, r;
                     if (!(wti > 0.f) || ti < 0 || ti > T) continue;
-                    ckv = m->cache.c_kv + (size_t)ti * kr;
-                    for (d = 0; d < vd; ++d) {
-                        float acc = 0.f;
-                        for (r = 0; r < kr; ++r)
-                            acc += w->w_uv[(size_t)(hh * vd + d) * kr + r] * ckv[r];
-                        oh[d] += wti * acc;
+                    /* DSA V: dequant latent only on support when quant_kv */
+                    if (m->cache.quant_kv && m->cache.c_kv_q8 &&
+                        m->cache.c_kv_scale) {
+                        float ctmp[512];
+                        if (kr > 512) {
+                            free(idx_scores);
+                            return CCE_ERR_UNSUPPORTED;
+                        }
+                        cce_mla_kv_dequant(m->cache.c_kv_q8 + (size_t)ti * kr,
+                                           m->cache.c_kv_scale[ti], kr, ctmp);
+                        ckv = ctmp;
+                        for (d = 0; d < vd; ++d) {
+                            float acc = 0.f;
+                            for (r = 0; r < kr; ++r)
+                                acc += w->w_uv[(size_t)(hh * vd + d) * kr + r] *
+                                       ckv[r];
+                            oh[d] += wti * acc;
+                        }
+                    } else {
+                        ckv = m->cache.c_kv + (size_t)ti * kr;
+                        for (d = 0; d < vd; ++d) {
+                            float acc = 0.f;
+                            for (r = 0; r < kr; ++r)
+                                acc += w->w_uv[(size_t)(hh * vd + d) * kr + r] *
+                                       ckv[r];
+                            oh[d] += wti * acc;
+                        }
                     }
                 }
+                free(idx_scores);
                 continue; /* next head */
             }
+            free(idx_scores);
+            h->dsa_full_fallback++;
         }
 
         /* full softmax fallback */
@@ -424,9 +568,6 @@ static cce_result mla_token(cce_ds_host* h, int L, const float* x, float* y) {
     (void)mla_token_dsa;
     return CCE_OK;
 }
-
-void cce_ds_host_opts_default(cce_ds_host_opts* o, const char* archive,
-                              const char* pack);
 
 cce_result cce_ds_host_open(cce_ds_host** out, const cce_ds_hparams* hp,
                             const cce_ds_host_opts* opts) {
@@ -475,7 +616,14 @@ cce_result cce_ds_host_open(cce_ds_host** out, const cce_ds_hparams* hp,
     h->max_ctx = opts->max_ctx > 0 ? opts->max_ctx : 256;
     h->dsa_enable = opts->dsa_enable;
     h->dsa_fraction = opts->dsa_fraction > 0 ? opts->dsa_fraction : 0.25f;
+    h->dsa_sleep_eps = opts->dsa_sleep_eps > 0.f ? opts->dsa_sleep_eps
+                                                   : CCE_SLEEP_DEFAULT_EPS;
+    h->dsa_speed = opts->dsa_speed;
     h->cold_autoload = opts->cold_autoload;
+    h->mla_quant_kv = opts->mla_quant_kv;
+    h->moe_sleep_eps = opts->moe_sleep_eps > 0.f ? opts->moe_sleep_eps
+                                                   : CCE_SLEEP_DEFAULT_EPS;
+    h->dual_pipe = opts->dual_pipe;
     h->residual = (float*)calloc((size_t)h->d_model, sizeof(float));
     h->scratch = (float*)calloc((size_t)h->d_model, sizeof(float));
     h->logits = h->vocab > 0 ? (float*)calloc((size_t)h->vocab, sizeof(float)) : NULL;
@@ -489,6 +637,8 @@ cce_result cce_ds_host_open(cce_ds_host** out, const cce_ds_hparams* hp,
         if (rc != CCE_OK) {
             /* degrade: leave mla zeroed; forward will skip */
             memset(&h->mla[L], 0, sizeof(h->mla[L]));
+        } else if (h->mla_quant_kv) {
+            (void)cce_mla_enable_quant_kv(&h->mla[L]);
         }
     }
     *out = h;
@@ -666,6 +816,10 @@ cce_result cce_ds_host_bench(cce_ds_host* h, int n_tokens, double* out_tok_s) {
     h->tokens_fwd = 0;
     h->seconds_fwd = 0;
     h->dsa_support_sum = 0;
+    h->dsa_full_fallback = 0;
+    h->experts_fired = 0;
+    h->experts_slept = 0;
+    h->experts_attempted = 0;
     for (i = 0; i < h->d_model; ++i)
         h->residual[i] = 0.01f * sinf(0.1f * (float)i);
     t0 = (double)clock() / (double)CLOCKS_PER_SEC;

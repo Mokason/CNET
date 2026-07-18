@@ -17,8 +17,10 @@
 | Top-k select | `cce_dsa_select_dual` (index = WHO, q·k = HOW) |
 | Sparse attend | Skip zero-mass V; optional int8 dequant only on support |
 | MLA latent KV | `cce_mla` (latent cache + decoupled RoPE + absorb) + optional int8 lite |
-| MoE sparse | SSMax topk + sleep skip experts |
-| Wide-EP / dual-batch | Not needed (one user) |
+| MoE sparse | SSMax topk + sleep skip experts (Forest cold leaves) |
+| FlashMLA-class KV | int8 latent side-cache (`cce_mla_enable_quant_kv`) |
+| DualPipe-like | batch ensure awake experts then fire |
+| Wide-EP / dual-batch | Not needed (one user); see `plans/forest_sparse_activate.md` |
 
 ## Env
 

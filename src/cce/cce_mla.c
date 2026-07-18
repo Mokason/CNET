@@ -1,4 +1,5 @@
 #include "../../include/cce/cce_mla.h"
+#include "../../include/cce/cce_dsa.h"
 #include "../../include/cce/cce_router.h"
 
 #include <math.h>
@@ -24,6 +25,7 @@ void cce_mla_config_default(cce_mla_config* cfg, int d_model, int n_heads) {
 
 size_t cce_mla_cache_bytes_per_token(const cce_mla_config* cfg) {
     if (!cfg) return 0;
+    /* f32 latent + rope; quant side is optional extra ~rank bytes */
     return (size_t)(cfg->kv_lora_rank + cfg->qk_rope_head_dim) * sizeof(float);
 }
 
@@ -169,6 +171,9 @@ cce_result cce_mla_init(cce_mla* m, const cce_mla_config* cfg,
     m->cache.qk_rope_head_dim = rope;
     m->cache.c_kv = (float*)calloc((size_t)max_ctx * kr, sizeof(float));
     m->cache.k_pe = (float*)calloc((size_t)max_ctx * rope, sizeof(float));
+    m->cache.c_kv_q8 = NULL;
+    m->cache.c_kv_scale = NULL;
+    m->cache.quant_kv = 0;
 
     m->q_nope = (float*)malloc((size_t)n_h * nope * sizeof(float));
     m->q_pe   = (float*)malloc((size_t)n_h * rope * sizeof(float));
@@ -194,10 +199,36 @@ cce_result cce_mla_init(cce_mla* m, const cce_mla_config* cfg,
     return CCE_OK;
 }
 
+int cce_mla_enable_quant_kv(cce_mla* m) {
+    int max_ctx, kr;
+    if (!m || !m->cache.c_kv) return -1;
+    if (m->cache.quant_kv && m->cache.c_kv_q8 && m->cache.c_kv_scale) return 0;
+    max_ctx = m->cache.max_ctx;
+    kr = m->cache.kv_lora_rank;
+    if (max_ctx < 1 || kr < 1) return -1;
+    free(m->cache.c_kv_q8);
+    free(m->cache.c_kv_scale);
+    m->cache.c_kv_q8 =
+        (int8_t*)calloc((size_t)max_ctx * (size_t)kr, sizeof(int8_t));
+    m->cache.c_kv_scale = (float*)calloc((size_t)max_ctx, sizeof(float));
+    if (!m->cache.c_kv_q8 || !m->cache.c_kv_scale) {
+        free(m->cache.c_kv_q8);
+        free(m->cache.c_kv_scale);
+        m->cache.c_kv_q8 = NULL;
+        m->cache.c_kv_scale = NULL;
+        m->cache.quant_kv = 0;
+        return -1;
+    }
+    m->cache.quant_kv = 1;
+    return 0;
+}
+
 void cce_mla_free(cce_mla* m) {
     if (!m) return;
     free(m->cache.c_kv);
     free(m->cache.k_pe);
+    free(m->cache.c_kv_q8);
+    free(m->cache.c_kv_scale);
     free(m->q_nope);
     free(m->q_pe);
     free(m->k_nope);
@@ -257,6 +288,10 @@ cce_result cce_mla_forward_token(cce_mla* m, const float* x, int pos,
     k_pe_row = m->cache.k_pe + (size_t)T * rope;
     memcpy(c_kv_row, m->tmp, (size_t)kr * sizeof(float));
     if (w->kv_norm) mla_rms_norm(c_kv_row, kr, w->kv_norm, w->rms_eps);
+    if (m->cache.quant_kv && m->cache.c_kv_q8 && m->cache.c_kv_scale)
+        cce_mla_kv_quantize(c_kv_row, kr,
+                            m->cache.c_kv_q8 + (size_t)T * kr,
+                            &m->cache.c_kv_scale[T]);
     memcpy(k_pe_row, m->tmp + kr, (size_t)rope * sizeof(float));
     cce_mla_apply_rope(k_pe_row, rope, pos, c->rope_theta);
     m->cache.cur_len = T + 1;
@@ -283,11 +318,29 @@ cce_result cce_mla_forward_token(cce_mla* m, const float* x, int pos,
             int r, d;
 
             if (c->use_absorb) {
-                for (r = 0; r < kr; ++r) {
-                    float wr = 0.0f;
-                    for (d = 0; d < nope; ++d)
-                        wr += w->w_uk[(size_t)(h * nope + d) * kr + r] * qn[d];
-                    s += wr * ckv[r];
+                /* Absorb: (W_uk^T q) · c_kv — optional int8 latent dot */
+                if (m->cache.quant_kv && m->cache.c_kv_q8 &&
+                    m->cache.c_kv_scale) {
+                    float wr[512];
+                    if (kr > 512) return CCE_ERR_UNSUPPORTED;
+                    for (r = 0; r < kr; ++r) {
+                        float acc = 0.0f;
+                        for (d = 0; d < nope; ++d)
+                            acc += w->w_uk[(size_t)(h * nope + d) * kr + r] *
+                                   qn[d];
+                        wr[r] = acc;
+                    }
+                    s += cce_mla_kv_dot_q8(
+                        wr, m->cache.c_kv_q8 + (size_t)t * kr,
+                        m->cache.c_kv_scale[t], kr);
+                } else {
+                    for (r = 0; r < kr; ++r) {
+                        float wr = 0.0f;
+                        for (d = 0; d < nope; ++d)
+                            wr += w->w_uk[(size_t)(h * nope + d) * kr + r] *
+                                  qn[d];
+                        s += wr * ckv[r];
+                    }
                 }
             } else {
                 float kn[256];
