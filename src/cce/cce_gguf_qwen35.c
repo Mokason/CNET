@@ -52,6 +52,7 @@
 #include "cce_gguf_qwen35.h"
 #include "../../include/cce/cce_clgemm.h"
 #include "../../include/cce/cce_cl_stream.h"
+#include "../../include/cce/cce_kv_page.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -696,6 +697,7 @@ cce_result cce_gguf_load_qwen35(cce_gguf_qwen2 **out, const char *path) {
     m->v_cache = (float *)calloc((size_t)m->max_ctx * m->v_slot_floats,
                                  sizeof(float));
     if (!m->k_cache || !m->v_cache) goto fail_oom;
+    cce_gguf_qwen2_enable_kv_page(m);
 
     cce_gguf_free(g);
     Q35TRACE("load complete");
@@ -827,8 +829,12 @@ cce_result cce_gguf_qwen35_forward_impl(cce_gguf_qwen2 *m, const int *tokens,
                         "refusing\n");
         return CCE_ERR_UNSUPPORTED;
     }
-    if ((m->probe_batch ? start_pos + 1 : start_pos + n_tokens) > m->max_ctx)
-        return CCE_ERR_INVALID_ARG;
+    {
+        int pos_lim = m->max_ctx;
+        if (m->kv_pager && m->kv_legal_max > 0) pos_lim = m->kv_legal_max;
+        if ((m->probe_batch ? start_pos + 1 : start_pos + n_tokens) > pos_lim)
+            return CCE_ERR_INVALID_ARG;
+    }
     if (m->layer_cap > 0) {
         fprintf(stderr, "qwen35: layer_cap is unsupported on the hybrid (a "
                         "capped forward desyncs recurrent state) — refusing\n");
@@ -847,9 +853,10 @@ cce_result cce_gguf_qwen35_forward_impl(cce_gguf_qwen2 *m, const int *tokens,
                (size_t)D * sizeof(float));
     }
 
-    /* Residual stream + device KV for decode (full-attn layers + residual). */
+    /* Residual stream + device KV for decode. Off when host pager owns KV
+       (device dense cache cannot slide with HOT/COLD). */
     int use_stream = 0;
-    if (gpu && n_tokens == 1 && !m->probe_batch &&
+    if (gpu && n_tokens == 1 && !m->probe_batch && !m->kv_pager &&
         cce_clgemm_stream_bind(gpu, D, m->max_ctx, m->k_slot_floats,
                                m->v_slot_floats) == 0 &&
         cce_clgemm_stream_set_x(gpu, x.data, D) == 0)
@@ -972,12 +979,9 @@ cce_result cce_gguf_qwen35_forward_impl(cce_gguf_qwen2 *m, const int *tokens,
                         0 &&
                     cce_clgemm_stream_get_slot(gpu, CCE_CL_SLOT_AO,
                                                attn_out.data, o_in) == 0) {
-                    memcpy(m->k_cache +
-                               (size_t)abs_t0 * m->k_slot_floats + ge->k_off,
-                           k.data, (size_t)ge->k_dim * sizeof(float));
-                    memcpy(m->v_cache +
-                               (size_t)abs_t0 * m->v_slot_floats + ge->v_off,
-                           v.data, (size_t)ge->v_dim * sizeof(float));
+                    (void)cce_gguf_qwen2_kv_write_slice(
+                        m, abs_t0, ge->k_off, k.data, ge->k_dim, ge->v_off,
+                        v.data, ge->v_dim);
                     dev_full = 1;
                 }
                 if (dev_full) goto q35_attn_gpu_done;
@@ -1038,12 +1042,10 @@ cce_result cce_gguf_qwen35_forward_impl(cce_gguf_qwen2 *m, const int *tokens,
                     q35_rope_yarn(e, kh, pos);
                 }
                 if (!m->probe_batch) {
-                    memcpy(m->k_cache + (size_t)pos * m->k_slot_floats + ge->k_off,
-                           k.data + (size_t)t * ge->k_dim,
-                           (size_t)ge->k_dim * sizeof(float));
-                    memcpy(m->v_cache + (size_t)pos * m->v_slot_floats + ge->v_off,
-                           v.data + (size_t)t * ge->v_dim,
-                           (size_t)ge->v_dim * sizeof(float));
+                    (void)cce_gguf_qwen2_kv_write_slice(
+                        m, pos, ge->k_off, k.data + (size_t)t * ge->k_dim,
+                        ge->k_dim, ge->v_off, v.data + (size_t)t * ge->v_dim,
+                        ge->v_dim);
                     if (use_stream)
                         (void)cce_clgemm_stream_kv_write(
                             gpu, pos, k.data + (size_t)t * ge->k_dim,
@@ -1075,7 +1077,8 @@ cce_result cce_gguf_qwen35_forward_impl(cce_gguf_qwen2 *m, const int *tokens,
                                 0, abs_t0, scale, attn_out.data) == 0)
                             ok_gpu = 1;
                     }
-                    if (!ok_gpu && abs_t0 + 1 >= 64 &&
+                    if (!ok_gpu && abs_t0 + 1 >= 64 && m->k_cache &&
+                        m->v_cache && !m->kv_pager &&
                         cce_clgemm_attn_decode(
                             gpu, qplain, m->k_cache, m->v_cache,
                             m->k_slot_floats, m->v_slot_floats, ge->k_off,
@@ -1110,34 +1113,55 @@ cce_result cce_gguf_qwen35_forward_impl(cce_gguf_qwen2 *m, const int *tokens,
                     float maxs = -1e30f, sum = 0.0f;
                     float *oh = attn_out.data + (size_t)t * o_in +
                                 (size_t)h * ge->v_head_dim;
-                    int j, d2;
-                    for (j = 0; j <= abs_t; j++) {
-                        const float *kh = (m->probe_batch && j == abs_t)
-                            ? k.data + (size_t)t * ge->k_dim +
-                                  (size_t)kh_i * ge->head_dim
-                            : m->k_cache + (size_t)j * m->k_slot_floats +
-                                  ge->k_off + (size_t)kh_i * ge->head_dim;
+                    int j, d2, jmin = 0, sb = 0;
+                    jmin = cce_gguf_qwen2_kv_jmin(m, jmin);
+                    if (abs_t - jmin + 1 > m->max_ctx && m->max_ctx > 0)
+                        jmin = abs_t - m->max_ctx + 1;
+                    if (jmin < 0) jmin = 0;
+                    sb = m->kv_pager ? jmin : 0;
+                    for (j = jmin; j <= abs_t; j++) {
+                        const float *kh = NULL;
                         float sacc = 0.0f;
-                        for (d2 = 0; d2 < ge->head_dim; d2++)
-                            sacc += qh[d2] * kh[d2];
-                        scores[j] = sacc * scale;
+                        if (m->probe_batch && j == abs_t)
+                            kh = k.data + (size_t)t * ge->k_dim +
+                                 (size_t)kh_i * ge->head_dim;
+                        else {
+                            const float *row = cce_gguf_qwen2_k_row_ex(m, j);
+                            kh = row ? row + ge->k_off +
+                                           (size_t)kh_i * ge->head_dim
+                                     : NULL;
+                        }
+                        if (kh) {
+                            for (d2 = 0; d2 < ge->head_dim; d2++)
+                                sacc += qh[d2] * kh[d2];
+                        }
+                        scores[(size_t)(j - sb)] = sacc * scale;
                     }
-                    for (j = 0; j <= abs_t; j++)
-                        if (scores[j] > maxs) maxs = scores[j];
-                    for (j = 0; j <= abs_t; j++) {
-                        scores[j] = expf(scores[j] - maxs);
-                        sum += scores[j];
+                    for (j = jmin; j <= abs_t; j++)
+                        if (scores[(size_t)(j - sb)] > maxs)
+                            maxs = scores[(size_t)(j - sb)];
+                    for (j = jmin; j <= abs_t; j++) {
+                        scores[(size_t)(j - sb)] =
+                            expf(scores[(size_t)(j - sb)] - maxs);
+                        sum += scores[(size_t)(j - sb)];
                     }
-                    for (j = 0; j <= abs_t; j++) scores[j] /= sum;
+                    for (j = jmin; j <= abs_t; j++)
+                        scores[(size_t)(j - sb)] /= sum;
                     memset(oh, 0, (size_t)ge->v_head_dim * sizeof(float));
-                    for (j = 0; j <= abs_t; j++) {
-                        const float *vh = (m->probe_batch && j == abs_t)
-                            ? v.data + (size_t)t * ge->v_dim +
-                                  (size_t)vh_i * ge->v_head_dim
-                            : m->v_cache + (size_t)j * m->v_slot_floats +
-                                  ge->v_off + (size_t)vh_i * ge->v_head_dim;
+                    for (j = jmin; j <= abs_t; j++) {
+                        const float *vh = NULL;
+                        if (m->probe_batch && j == abs_t)
+                            vh = v.data + (size_t)t * ge->v_dim +
+                                 (size_t)vh_i * ge->v_head_dim;
+                        else {
+                            const float *row = cce_gguf_qwen2_v_row_ex(m, j);
+                            vh = row ? row + ge->v_off +
+                                           (size_t)vh_i * ge->v_head_dim
+                                     : NULL;
+                        }
+                        if (!vh) continue;
                         for (d2 = 0; d2 < ge->v_head_dim; d2++)
-                            oh[d2] += scores[j] * vh[d2];
+                            oh[d2] += scores[(size_t)(j - sb)] * vh[d2];
                     }
                     /* Qwen3.5 output gate: context * sigmoid(gate) BEFORE
                        o_proj (llama.cpp qwen35.cpp attn_gated) */

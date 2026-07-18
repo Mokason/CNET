@@ -4,7 +4,8 @@
 #include "../../include/cce/cce_sparse_kv.h"   /* opt-in sparse KV routing (the ONE selector) */
 #include "../../include/cce/cce_router.h"      /* cce_ssmax_topk_weights for MoE route */
 #include "../../include/cce/cce_dsa.h"         /* full DSA attention kernel */
-#include "../../include/cce/cce_cl_stream.h"   /* residual stream + device KV */
+#include "../../include/cce/cce_cl_stream.h"
+#include "../../include/cce/cce_kv_page.h"   /* residual stream + device KV */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -1891,9 +1892,15 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
     int D = m->n_embd;
     int V = m->vocab_size ? m->vocab_size : 151936;
     int start_pos = m->cur_pos;
-
-    if ((m->probe_batch ? start_pos + 1 : start_pos + n_tokens) > m->max_ctx)
-        return CCE_ERR_INVALID_ARG;
+    /* Paged mode: legal bound is kv_legal_max (model ctx, e.g. 1M). Dense
+       mode: max_ctx. Scores buffer still sized to max_ctx (hot ops window);
+       attention clamps jmin to HOT so indices stay in [0, max_ctx). */
+    {
+        int pos_lim = m->max_ctx;
+        if (m->kv_pager && m->kv_legal_max > 0) pos_lim = m->kv_legal_max;
+        if ((m->probe_batch ? start_pos + 1 : start_pos + n_tokens) > pos_lim)
+            return CCE_ERR_INVALID_ARG;
+    }
 
     /* per-instance GPU handle wins; the process-global is the default */
     cce_clgemm *gpu = m->clgemm ? m->clgemm : g_gguf_clgemm;
@@ -1939,7 +1946,15 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
                 (double)(ptr)[3]); } while (0)
     FWD_V4("embed", x.data);
 
-    float *scores = (float*)malloc((size_t)m->max_ctx * sizeof *scores);
+    /* Score buffer sized to operational max_ctx (dense) or HOT capacity
+       (paged). Absolute pos may exceed max_ctx under the pager; attention
+       always indexes as scores[j - jmin] when kv_pager is set. */
+    int scores_cap = m->max_ctx;
+    if (m->kv_pager) {
+        int hot = cce_kv_pager_hot_capacity(m->kv_pager);
+        if (hot > scores_cap) scores_cap = hot;
+    }
+    float *scores = (float*)malloc((size_t)scores_cap * sizeof *scores);
     if (!scores) { cce_tensor_free(&x); return CCE_ERR_OOM; }
     /* Lightning index scores (separate from true q·k when DSA is on). */
     float *idx_scores = NULL;
@@ -1949,8 +1964,8 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
     float skv_frac = m->sparse_kv_fraction;
     int *skv_idx = NULL;
     if (skv_frac > 0.0f) {
-        skv_idx = (int*)malloc((size_t)m->max_ctx * sizeof *skv_idx);
-        idx_scores = (float*)malloc((size_t)m->max_ctx * sizeof *idx_scores);
+        skv_idx = (int*)malloc((size_t)scores_cap * sizeof *skv_idx);
+        idx_scores = (float*)malloc((size_t)scores_cap * sizeof *idx_scores);
         if (!skv_idx || !idx_scores) {
             free(scores); free(skv_idx); free(idx_scores);
             cce_tensor_free(&x);
@@ -1958,10 +1973,13 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
         }
     }
 
-    /* Device residual stream + KV (decode only, dense, no gemma4 extras). */
+    /* Device residual stream + KV (decode only, dense, no gemma4 extras).
+       Disabled under host KV pager: device cache is dense-absolute and cannot
+       slide with the HOT ring (would desync after cold flush). */
     int use_stream = 0;
     if (gpu && n_tokens == 1 && !m->probe_batch && skv_frac <= 0.0f &&
         !m->mla_kv && !m->gemma4_attn && m->embed_scale <= 1.0f &&
+        !m->kv_pager &&
         cce_clgemm_stream_bind(gpu, D, m->max_ctx, m->k_slot_floats,
                                m->v_slot_floats) == 0 &&
         cce_clgemm_stream_set_x(gpu, x.data, D) == 0)
@@ -2009,6 +2027,7 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
             int o_in = ge->n_q * ge->v_head_dim;
             if (ge->window > 0 && abs_t - ge->window + 1 > 0)
                 jmin = abs_t - ge->window + 1;
+            jmin = cce_gguf_qwen2_kv_jmin(m, jmin);
             /* Checkpoint residual before any stream mutation so a mid-layer
                soft-fail can re-run the host path without double residual. */
             x_ckpt = (float *)malloc((size_t)D * 4);
@@ -2059,12 +2078,10 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
                 if (ok && ge->v_tied)
                     memcpy(v_host, k_host, (size_t)ge->v_dim * 4);
                 if (ok) {
-                    memcpy(m->k_cache + (size_t)abs_t * m->k_slot_floats +
-                               ge->k_off,
-                           k_host, (size_t)ge->k_dim * 4);
-                    memcpy(m->v_cache + (size_t)abs_t * m->v_slot_floats +
-                               ge->v_off,
-                           v_host, (size_t)ge->v_dim * 4);
+                    if (cce_gguf_qwen2_kv_write_slice(
+                            m, abs_t, ge->k_off, k_host, ge->k_dim, ge->v_off,
+                            v_host, ge->v_dim) != 0)
+                        ok = 0;
                     if (ge->v_tied) {
                         if (cce_clgemm_stream_kv_write(
                                 gpu, abs_t, k_host, v_host, ge->k_dim,
@@ -2306,14 +2323,17 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
                k/v stay in the local tensors and attention reads them
                per-row below. */
             if (!m->probe_batch) {
-                float* kdst = m->k_cache + (size_t)pos * m->k_slot_floats + ge->k_off;
-                float* vdst = m->v_cache + (size_t)pos * m->v_slot_floats + ge->v_off;
-                memcpy(kdst, k.data + (size_t)t * ge->k_dim,
-                       (size_t)ge->k_dim * sizeof(float));
-                memcpy(vdst, v.data + (size_t)t * ge->v_dim,
-                       (size_t)ge->v_dim * sizeof(float));
-                /* MLA-lite: int8 side cache for bandwidth-cheap sparse reads */
-                if (m->mla_kv && m->k_mla_q8 && m->v_mla_q8) {
+                (void)cce_gguf_qwen2_kv_write_slice(
+                    m, pos, ge->k_off, k.data + (size_t)t * ge->k_dim, ge->k_dim,
+                    ge->v_off, v.data + (size_t)t * ge->v_dim, ge->v_dim);
+                /* MLA-lite: int8 side cache for bandwidth-cheap sparse reads.
+                   Dense-sized to max_ctx; skip when past that under paging. */
+                if (m->mla_kv && m->k_mla_q8 && m->v_mla_q8 &&
+                    pos < m->max_ctx) {
+                    const float *kdst =
+                        k.data + (size_t)t * ge->k_dim;
+                    const float *vdst =
+                        v.data + (size_t)t * ge->v_dim;
                     size_t si = (size_t)pos * (size_t)m->n_layer + (size_t)l;
                     cce_mla_kv_quantize(kdst, ge->k_dim,
                         m->k_mla_q8 + (size_t)pos * m->k_slot_floats + ge->k_off,
@@ -2337,12 +2357,16 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
         /* GPU attention: single-token dense decode. Only when prefix is long
            enough that score/V work dominates host pack cost (measured: short
            ctx is faster on CPU; long ctx wins on GPU). */
-        if (n_tokens == 1 && !m->probe_batch && !skv_idx && gpu && !m->mla_kv) {
+        /* Host-pack GPU attn needs a dense contiguous k/v base. When the
+           pager owns KV, k_cache is NULL — skip to CPU/row_ex path. */
+        if (n_tokens == 1 && !m->probe_batch && !skv_idx && gpu && !m->mla_kv &&
+            m->k_cache && m->v_cache && !m->kv_pager) {
             int abs_t0 = start_pos;
             int jmin0 = 0;
             int seq0;
             if (ge->window > 0 && abs_t0 - ge->window + 1 > 0)
                 jmin0 = abs_t0 - ge->window + 1;
+            jmin0 = cce_gguf_qwen2_kv_jmin(m, jmin0);
             seq0 = abs_t0 - jmin0 + 1;
             if (seq0 >= 64 &&
                 cce_clgemm_attn_decode(
@@ -2358,20 +2382,26 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
             for (int t = 0; t < n_tokens; t++) {
                 int abs_t = m->probe_batch ? start_pos : start_pos + t;
                 int jmin = 0;
+                int sb; /* score index base: 0 dense; jmin when paged */
                 if (ge->window > 0 && abs_t - ge->window + 1 > 0)
                     jmin = abs_t - ge->window + 1;
+                jmin = cce_gguf_qwen2_kv_jmin(m, jmin);
+                /* Cap attend length to scores_cap (HOT window under pager). */
+                if (abs_t - jmin + 1 > scores_cap)
+                    jmin = abs_t - scores_cap + 1;
+                if (jmin < 0) jmin = 0;
+                sb = m->kv_pager ? jmin : 0;
                 const float *qh = q.data + (size_t)t * ge->q_dim +
                                   (size_t)h * ge->head_dim;
                 for (int j = jmin; j <= abs_t; j++) {
                     const float *kh = (m->probe_batch && j == abs_t)
                         ? k.data + (size_t)t * ge->k_dim +
                               (size_t)kh_i * ge->head_dim
-                        : m->k_cache +
-                              (size_t)j * m->k_slot_floats + ge->k_off +
-                              (size_t)kh_i * ge->head_dim;
+                        : NULL;
                     float sacc;
                     /* MLA-lite: score from int8 K when enabled (non-probe). */
-                    if (m->mla_kv && m->k_mla_q8 && !m->probe_batch) {
+                    if (m->mla_kv && m->k_mla_q8 && !m->probe_batch &&
+                        j < m->max_ctx) {
                         const int8_t *kq = m->k_mla_q8 +
                             (size_t)j * m->k_slot_floats + ge->k_off +
                             (size_t)kh_i * ge->head_dim;
@@ -2379,17 +2409,26 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
                         sacc = cce_mla_kv_dot_q8(qh, kq, m->k_mla_scale[si],
                                                  ge->head_dim);
                     } else {
+                        if (!kh) {
+                            const float *row = cce_gguf_qwen2_k_row_ex(m, j);
+                            kh = row ? row + ge->k_off +
+                                           (size_t)kh_i * ge->head_dim
+                                     : NULL;
+                        }
                         sacc = 0.0f;
-                        for (int d2 = 0; d2 < ge->head_dim; d2++)
-                            sacc += qh[d2] * kh[d2];
+                        if (kh) {
+                            for (int d2 = 0; d2 < ge->head_dim; d2++)
+                                sacc += qh[d2] * kh[d2];
+                        }
                     }
-                    scores[j] = sacc * scale;
+                    scores[(size_t)(j - sb)] = sacc * scale;
                 }
                 if (trace_this && l == 0 && h == 0 && t == n_tokens - 1) {
-                    const float *k_self = m->k_cache + (size_t)abs_t * m->k_slot_floats + ge->k_off + (size_t)kh_i * ge->head_dim;
-                    const float *k_first = m->k_cache + (size_t)jmin * m->k_slot_floats + ge->k_off + (size_t)kh_i * ge->head_dim;
+                    const float *k_self = (cce_gguf_qwen2_k_row_ex(m, (int)(abs_t)) ? cce_gguf_qwen2_k_row_ex(m, (int)(abs_t)) + ge->k_off + (size_t)(kh_i) * ge->head_dim : NULL);
+                    const float *k_first = (cce_gguf_qwen2_k_row_ex(m, (int)(jmin)) ? cce_gguf_qwen2_k_row_ex(m, (int)(jmin)) + ge->k_off + (size_t)(kh_i) * ge->head_dim : NULL);
                     fprintf(stderr, "PRESOFT rope_base=%.0f scale=%.4f scores[", ge->rope_base, scale);
-                    for (int j = jmin; j <= abs_t; j++) fprintf(stderr, "%.2f ", scores[j]);
+                    for (int j = jmin; j <= abs_t; j++)
+                        fprintf(stderr, "%.2f ", scores[(size_t)(j - sb)]);
                     fprintf(stderr, "] q[0:4]=%.3f,%.3f,%.3f,%.3f kself[0:4]=%.3f,%.3f,%.3f,%.3f kfirst[0:4]=%.3f,%.3f,%.3f,%.3f\n",
                             qh[0],qh[1],qh[2],qh[3], k_self[0],k_self[1],k_self[2],k_self[3], k_first[0],k_first[1],k_first[2],k_first[3]);
                 }
@@ -2398,17 +2437,21 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
                    sparse knob is unset. */
                 float maxs = -1e30f;
                 for (int j = jmin; j <= abs_t; j++)
-                    if (scores[j] > maxs) maxs = scores[j];
+                    if (scores[(size_t)(j - sb)] > maxs)
+                        maxs = scores[(size_t)(j - sb)];
                 float sum = 0.0f;
                 for (int j = jmin; j <= abs_t; j++) {
-                    scores[j] = expf(scores[j] - maxs);
-                    sum += scores[j];
+                    scores[(size_t)(j - sb)] =
+                        expf(scores[(size_t)(j - sb)] - maxs);
+                    sum += scores[(size_t)(j - sb)];
                 }
-                for (int j = jmin; j <= abs_t; j++) scores[j] /= sum;
+                for (int j = jmin; j <= abs_t; j++)
+                    scores[(size_t)(j - sb)] /= sum;
                 if (trace_this && l == 0 && h == 0 && t == n_tokens - 1) {
                     fprintf(stderr, "ATTN l0 h0 lastq: swa=%d win=%d n_q=%d n_k=%d n_v=%d vtied=%d hd=%d vhd=%d ropedim=%d weights[",
                             ge->swa, ge->window, ge->n_q, ge->n_k, ge->n_v, ge->v_tied, ge->head_dim, ge->v_head_dim, ge->rope_dim);
-                    for (int j = jmin; j <= abs_t; j++) fprintf(stderr, "%.3f ", scores[j]);
+                    for (int j = jmin; j <= abs_t; j++)
+                        fprintf(stderr, "%.3f ", scores[(size_t)(j - sb)]);
                     fprintf(stderr, "]\n");
                 }
                 float *oh = attn_out.data + (size_t)t * o_in +
@@ -2418,11 +2461,16 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
                     const float *vh = (m->probe_batch && j == abs_t)
                         ? v.data + (size_t)t * ge->v_dim +
                               (size_t)vh_i * ge->v_head_dim
-                        : m->v_cache +
-                              (size_t)j * m->v_slot_floats + ge->v_off +
-                              (size_t)vh_i * ge->v_head_dim;
+                        : NULL;
+                    if (!vh) {
+                        const float *row = cce_gguf_qwen2_v_row_ex(m, j);
+                        vh = row ? row + ge->v_off +
+                                       (size_t)vh_i * ge->v_head_dim
+                                 : NULL;
+                    }
+                    if (!vh) continue;
                     for (int d2 = 0; d2 < ge->v_head_dim; d2++)
-                        oh[d2] += scores[j] * vh[d2];
+                        oh[d2] += scores[(size_t)(j - sb)] * vh[d2];
                 }
                 } else {
                 /* FULL DSA: lightning index (WHO) + true q·k (HOW) + skip V.
@@ -2432,6 +2480,11 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
                 float w_stk[256];
                 float* dsa_w = (tc <= 256) ? w_stk
                     : (float*)malloc((size_t)tc * sizeof(float));
+                /* Contiguous score span for DSA: paged packs at 0, dense at jmin. */
+                float *sc_span = scores + (m->kv_pager ? 0 : (size_t)jmin);
+                float *isc_span =
+                    idx_scores ? (idx_scores + (m->kv_pager ? 0 : (size_t)jmin))
+                               : NULL;
                 cce_dsa_config dcfg;
                 cce_dsa_config_default(&dcfg);
                 dcfg.fraction = skv_frac;
@@ -2451,35 +2504,36 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
                         ? m->dsa_sleep_eps : CCE_SLEEP_DEFAULT_EPS;
                 }
                 /* Lightning index scores (multi-head ReLU / hybrid). */
-                if (skv_frac < 0.999f && idx_scores) {
+                if (skv_frac < 0.999f && isc_span) {
                     const float** kptrs = (const float**)malloc(
                         (size_t)tc * sizeof(float*));
                     if (kptrs) {
                         for (int jj = 0; jj < tc; jj++) {
                             int j = jmin + jj;
-                            kptrs[jj] = (m->probe_batch && j == abs_t)
-                                ? k.data + (size_t)t * ge->k_dim +
-                                      (size_t)kh_i * ge->head_dim
-                                : m->k_cache +
-                                      (size_t)j * m->k_slot_floats + ge->k_off +
-                                      (size_t)kh_i * ge->head_dim;
+                            if (m->probe_batch && j == abs_t) {
+                                kptrs[jj] = k.data + (size_t)t * ge->k_dim +
+                                            (size_t)kh_i * ge->head_dim;
+                            } else {
+                                const float *row =
+                                    cce_gguf_qwen2_k_row_ex(m, j);
+                                kptrs[jj] =
+                                    row ? row + ge->k_off +
+                                              (size_t)kh_i * ge->head_dim
+                                        : NULL;
+                            }
                         }
                         cce_dsa_lightning_index_ptr(qh, ge->head_dim, kptrs, tc,
-                                                    &dcfg, scale, NULL,
-                                                    idx_scores + jmin);
+                                                    &dcfg, scale, NULL, isc_span);
                         free((void*)kptrs);
                     } else {
-                        memcpy(idx_scores + jmin, scores + jmin,
-                               (size_t)tc * sizeof(float));
+                        memcpy(isc_span, sc_span, (size_t)tc * sizeof(float));
                     }
-                } else if (idx_scores) {
-                    memcpy(idx_scores + jmin, scores + jmin,
-                           (size_t)tc * sizeof(float));
+                } else if (isc_span) {
+                    memcpy(isc_span, sc_span, (size_t)tc * sizeof(float));
                 }
                 if (!dsa_w ||
                     cce_dsa_select_dual(
-                        idx_scores ? idx_scores + jmin : scores + jmin,
-                        scores + jmin, tc, &dcfg,
+                        isc_span ? isc_span : sc_span, sc_span, tc, &dcfg,
                         skv_idx, dsa_w, tc, &skv_n) != CCE_OK ||
                     skv_n < 1) {
                     fprintf(stderr, "cce_gguf: DSA select failed at "
@@ -2492,7 +2546,7 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
                     return CCE_ERR_UNSUPPORTED;
                 }
                 if (g_gguf_sparse_kv_tap)
-                    g_gguf_sparse_kv_tap(l, h, abs_t, jmin, scores + jmin, tc,
+                    g_gguf_sparse_kv_tap(l, h, abs_t, jmin, sc_span, tc,
                                          skv_idx, skv_n,
                                          g_gguf_sparse_kv_tap_ctx);
                 float *oh = attn_out.data + (size_t)t * o_in +
@@ -2508,7 +2562,7 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
                         vh = v.data + (size_t)t * ge->v_dim +
                              (size_t)vh_i * ge->v_head_dim;
                     } else if (m->mla_kv && m->v_mla_q8 &&
-                               ge->v_head_dim <= 256) {
+                               ge->v_head_dim <= 256 && j < m->max_ctx) {
                         /* Dequant only the selected V head (MLA-lite win). */
                         const int8_t *vq = m->v_mla_q8 +
                             (size_t)j * m->v_slot_floats + ge->v_off +
@@ -2518,10 +2572,12 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
                                            ge->v_head_dim, vtmp_stk);
                         vh = vtmp_stk;
                     } else {
-                        vh = m->v_cache +
-                             (size_t)j * m->v_slot_floats + ge->v_off +
-                             (size_t)vh_i * ge->v_head_dim;
+                        const float *row = cce_gguf_qwen2_v_row_ex(m, j);
+                        vh = row ? row + ge->v_off +
+                                       (size_t)vh_i * ge->v_head_dim
+                                 : NULL;
                     }
+                    if (!vh) continue;
                     for (int d2 = 0; d2 < ge->v_head_dim; d2++)
                         oh[d2] += sj * vh[d2];
                 }
@@ -3051,6 +3107,7 @@ cce_result cce_gguf_load_qwen2(cce_gguf_qwen2** out, const char* path) {
            (size_t)m->max_ctx * m->v_slot_floats);
     m->k_cache = (float*)calloc((size_t)m->max_ctx * m->k_slot_floats, sizeof(float));
     m->v_cache = (float*)calloc((size_t)m->max_ctx * m->v_slot_floats, sizeof(float));
+    cce_gguf_qwen2_enable_kv_page(m);
     if (m->mla_kv) {
         size_t kf = (size_t)m->max_ctx * m->k_slot_floats;
         size_t vf = (size_t)m->max_ctx * m->v_slot_floats;
@@ -3371,6 +3428,7 @@ cce_result cce_gguf_qwen2_load_packed(cce_gguf_qwen2** out, const char* path) {
     }
     m->k_cache = (float*)calloc((size_t)m->max_ctx * m->k_slot_floats, sizeof(float));
     m->v_cache = (float*)calloc((size_t)m->max_ctx * m->v_slot_floats, sizeof(float));
+    cce_gguf_qwen2_enable_kv_page(m);
     if (m->mla_kv) {
         size_t kf = (size_t)m->max_ctx * m->k_slot_floats;
         size_t vf = (size_t)m->max_ctx * m->v_slot_floats;
@@ -3386,6 +3444,95 @@ cce_result cce_gguf_qwen2_load_packed(cce_gguf_qwen2** out, const char* path) {
     fclose(f);
     *out = m;
     return CCE_OK;
+}
+
+
+/* ---- Paged / dense KV accessors ----------------------------------------- */
+
+float *cce_gguf_qwen2_k_row(cce_gguf_qwen2 *m, int pos) {
+    if (!m || pos < 0) return NULL;
+    if (m->kv_pager) return cce_kv_pager_k_row(m->kv_pager, pos);
+    if (!m->k_cache || pos >= m->max_ctx) return NULL;
+    return m->k_cache + (size_t)pos * m->k_slot_floats;
+}
+
+float *cce_gguf_qwen2_v_row(cce_gguf_qwen2 *m, int pos) {
+    if (!m || pos < 0) return NULL;
+    if (m->kv_pager) return cce_kv_pager_v_row(m->kv_pager, pos);
+    if (!m->v_cache || pos >= m->max_ctx) return NULL;
+    return m->v_cache + (size_t)pos * m->v_slot_floats;
+}
+
+const float *cce_gguf_qwen2_k_row_ex(cce_gguf_qwen2 *m, int pos) {
+    if (!m || pos < 0) return NULL;
+    if (m->kv_pager) return cce_kv_pager_k_row_ex(m->kv_pager, pos);
+    return cce_gguf_qwen2_k_row(m, pos);
+}
+
+const float *cce_gguf_qwen2_v_row_ex(cce_gguf_qwen2 *m, int pos) {
+    if (!m || pos < 0) return NULL;
+    if (m->kv_pager) return cce_kv_pager_v_row_ex(m->kv_pager, pos);
+    return cce_gguf_qwen2_v_row(m, pos);
+}
+
+int cce_gguf_qwen2_kv_prepare(cce_gguf_qwen2 *m, int pos) {
+    if (!m || pos < 0) return -1;
+    if (m->kv_pager) return cce_kv_pager_prepare_write(m->kv_pager, pos);
+    if (pos >= m->max_ctx) return -1;
+    return 0;
+}
+
+int cce_gguf_qwen2_kv_write_slice(cce_gguf_qwen2 *m, int pos, size_t k_off,
+                                  const float *k, int k_dim, size_t v_off,
+                                  const float *v, int v_dim) {
+    float *kr, *vr;
+    if (!m || !k || !v || k_dim < 1 || v_dim < 1) return -1;
+    if (m->kv_pager)
+        return cce_kv_pager_write_slice(m->kv_pager, pos, k_off, k, k_dim,
+                                        v_off, v, v_dim);
+    if (pos < 0 || pos >= m->max_ctx || !m->k_cache || !m->v_cache) return -1;
+    if (k_off + (size_t)k_dim > m->k_slot_floats ||
+        v_off + (size_t)v_dim > m->v_slot_floats)
+        return -1;
+    kr = m->k_cache + (size_t)pos * m->k_slot_floats + k_off;
+    vr = m->v_cache + (size_t)pos * m->v_slot_floats + v_off;
+    memcpy(kr, k, (size_t)k_dim * sizeof(float));
+    memcpy(vr, v, (size_t)v_dim * sizeof(float));
+    return 0;
+}
+
+int cce_gguf_qwen2_kv_jmin(const cce_gguf_qwen2 *m, int jmin) {
+    if (!m) return jmin;
+    if (m->kv_pager) return cce_kv_pager_clamp_jmin(m->kv_pager, jmin);
+    if (jmin < 0) return 0;
+    return jmin;
+}
+
+void cce_gguf_qwen2_enable_kv_page(cce_gguf_qwen2 *m) {
+    const char *e;
+    cce_kv_pager_opts o;
+    int legal;
+    if (!m || m->kv_pager) return;
+    e = getenv("CNET_KV_PAGE");
+    if (!e || e[0] != '1') return;
+    if (m->k_slot_floats == 0 || m->v_slot_floats == 0) return;
+    /* Legal positions follow model ctx (e.g. 1M). max_ctx stays as the
+       operational bound used for scores/MLA/GPU device-KV sizing; the
+       pager ring is independent and may slide past max_ctx when legal. */
+    legal = m->ctx_len > 0 ? m->ctx_len : m->max_ctx;
+    if (legal < m->max_ctx) legal = m->max_ctx;
+    m->kv_legal_max = legal;
+    cce_kv_pager_opts_default(&o, (int)m->k_slot_floats, (int)m->v_slot_floats,
+                              legal);
+    if (cce_kv_pager_open(&m->kv_pager, &o) != CCE_OK) {
+        m->kv_pager = NULL;
+        return;
+    }
+    /* Drop dense slabs — pager owns HOT ring. Keep max_ctx as hot/ops bound. */
+    free(m->k_cache);
+    free(m->v_cache);
+    m->k_cache = NULL;
+    m->v_cache = NULL;
 }
 
 void cce_gguf_qwen2_free(cce_gguf_qwen2* m) {
@@ -3435,6 +3582,11 @@ void cce_gguf_qwen2_free(cce_gguf_qwen2* m) {
     cce_tensor_free(&m->mtp_pre);
     cce_tensor_free(&m->mtp_post);
     cce_tensor_free(&m->rope_freqs);
+    if (m->kv_pager) {
+        cce_kv_pager_sync(m->kv_pager);
+        cce_kv_pager_close(m->kv_pager);
+        m->kv_pager = NULL;
+    }
     free(m->k_cache);
     free(m->v_cache);
     free(m->k_mla_q8);

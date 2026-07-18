@@ -47,15 +47,45 @@ Env: `CNET_KV_PAGE_LEN`, `CNET_KV_HOT_PAGES`, `CNET_KV_ARCHIVE`, `CNET_KV_ASYNC=
 make kv_page   # KV_PAGE_PASS
 ```
 
-## Next wire
+## Wired (GGUF / qwen35)
 
-1. GGUF/qwen35: `legal_max = context_length` (1M); replace dense `k_cache` writes with pager.
-2. Attention: `jmin = clamp_jmin(...)` for rolling full-attn layers.
-3. Optional COLD rehydrate for true long-range attend.
-4. int8/ternary pack for COLD pages (quality gate).
+1. `cce_gguf_qwen2_enable_kv_page` when `CNET_KV_PAGE=1` — free dense slabs, pager owns HOT.
+2. Writes via `cce_gguf_qwen2_kv_write_slice`; reads via `k_row_ex` / `v_row_ex`.
+3. Attention `jmin = cce_gguf_qwen2_kv_jmin` (rolling HOT).
+4. `CNET_KV_REHYDRATE=1` loads COLD pages (int8 dequant) for long-range attend.
+5. COLD default **int8 quant pack** (`CNET_KV_QUANT=0` for f32 cold).
 
-## Non-goals (this slice)
+## Env
 
-- Full 1M dense attention every step  
-- Replacing hybrid GDN state protocol  
+```bash
+CNET_KV_PAGE=1
+CNET_KV_PAGE_LEN=256
+CNET_KV_HOT_PAGES=4
+CNET_KV_ARCHIVE=./kv_archive
+CNET_KV_ASYNC=1
+CNET_KV_QUANT=1
+CNET_KV_REHYDRATE=1   # optional long-range
+```
+
+## Non-goals
+
+- Full 1M dense attention every step without rehydrate cost  
+- Ternary COLD (int8 first; ternary later with quality gate)  
 - Python / llama.cpp paging  
+- Device residual-stream KV while host pager is on (dense GPU cache cannot
+  slide with HOT/COLD; host `k_row_ex` path is used instead)
+
+## Status (wired)
+
+| Point | Status |
+|-------|--------|
+| 1 GGUF write/read via pager | `kv_write_slice` / `k_row_ex` / `v_row_ex` |
+| 2 Attention jmin → HOT | `cce_gguf_qwen2_kv_jmin` + clamp |
+| 3 Optional COLD rehydrate | `CNET_KV_REHYDRATE=1` |
+| 4 COLD int8 quant pack | CVK2 + `CNET_KV_QUANT` (default on) |
+
+`max_ctx` stays the operational hot/ops bound (scores, MLA, GPU bind).
+`kv_legal_max` holds model legal length (e.g. 1M). Generation may advance
+past `max_ctx` when the pager is open; attention attends the HOT window
+(or rehydrated COLD pages when enabled).  
+

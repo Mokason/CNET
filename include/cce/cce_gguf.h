@@ -386,6 +386,10 @@ typedef struct cce_gguf_qwen2 {
                           per-row logits). Set via
                           cce_gguf_qwen2_forward_probes, never directly. */
     int max_ctx;
+    /* Async paged KV (CNET_KV_PAGE=1). When set, k_cache/v_cache may be NULL
+       or a small fallback; use cce_gguf_qwen2_k_row / kv_write_slice. */
+    struct cce_kv_pager *kv_pager;
+    int kv_legal_max; /* model context_length (e.g. 1M); max_ctx may be hot */
 
     /* Optional per-instance GPU handles (override process-global).
        hipBLAS (AMD, large FP GEMM) is tried first when set; OpenCL covers
@@ -508,6 +512,20 @@ cce_result cce_gguf_load_model(cce_gguf_qwen2** out, const char* path);
 
 /* Free the model */
 void cce_gguf_qwen2_free(cce_gguf_qwen2* m);
+
+/* Paged / dense KV accessors (pager if CNET_KV_PAGE=1, else dense slab). */
+float *cce_gguf_qwen2_k_row(cce_gguf_qwen2 *m, int pos);
+float *cce_gguf_qwen2_v_row(cce_gguf_qwen2 *m, int pos);
+/* Prefer HOT; rehydrate COLD when CNET_KV_REHYDRATE=1. */
+const float *cce_gguf_qwen2_k_row_ex(cce_gguf_qwen2 *m, int pos);
+const float *cce_gguf_qwen2_v_row_ex(cce_gguf_qwen2 *m, int pos);
+int cce_gguf_qwen2_kv_prepare(cce_gguf_qwen2 *m, int pos);
+int cce_gguf_qwen2_kv_write_slice(cce_gguf_qwen2 *m, int pos, size_t k_off,
+                                  const float *k, int k_dim, size_t v_off,
+                                  const float *v, int v_dim);
+int cce_gguf_qwen2_kv_jmin(const cce_gguf_qwen2 *m, int jmin);
+/* Opt-in: open async pager (CNET_KV_PAGE=1), free dense slabs. */
+void cce_gguf_qwen2_enable_kv_page(cce_gguf_qwen2 *m);
 
 /* Forward for one token or sequence (basic, for small tests) */
 cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_tokens, float* logits_out, int logits_cap);
