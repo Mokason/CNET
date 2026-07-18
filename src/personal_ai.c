@@ -160,12 +160,15 @@ int personal_ai_open(PersonalAi *ai, const char *base_path,
     if (gap_lane_open(&ai->lane, base_path, ledger_path, inbox_path) != 0)
         return -2;
 
+    /* Compute orchestrator: eco|balanced|turbo sparse/page/MTP knobs +
+       duty-cycle (CNET_GOV_PROFILE). Apply env before any heavy load. */
     cnet_gov_policy_deploy_defaults(&gp);
     (void)cnet_gov_policy_from_env(&gp);
     if (cnet_gov_open(&ai->gov, &gp) != 0) {
         gap_lane_close(&ai->lane);
         return -3;
     }
+    (void)cnet_gov_apply_compute_env(&ai->gov);
     if (gp.max_closures_per_drain)
         ai->lane.acq.max_closures_per_drain = gp.max_closures_per_drain;
     {
