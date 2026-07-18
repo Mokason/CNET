@@ -312,6 +312,83 @@ static const char *k_src =
     "        row[i] = a0 * c - a1 * s;\n"
     "        row[i + half_rd] = a0 * s + a1 * c;\n"
     "    }\n"
+    "}\n"
+    /* YaRN NEOX (ggml rope_yarn + iterative theta). stride=head_dim dense or
+       2*head_dim interleaved [q|gate]; only first rope_dim of each head. */
+    "__kernel void cnet_rope_yarn(__global float* x,\n"
+    "                             const int n_heads, const int head_dim,\n"
+    "                             const int rope_dim, const int pos,\n"
+    "                             const float base,\n"
+    "                             const float freq_scale,\n"
+    "                             const float ext_factor,\n"
+    "                             const float attn_factor,\n"
+    "                             const float corr0, const float corr1,\n"
+    "                             const int stride) {\n"
+    "    int h = get_global_id(0);\n"
+    "    if (h >= n_heads) return;\n"
+    "    int half_rd = rope_dim / 2;\n"
+    "    __global float* row = x + (size_t)h * (size_t)stride;\n"
+    "    float theta = (float)pos;\n"
+    "    float theta_scale = pow(base, -2.0f / (float)rope_dim);\n"
+    "    for (int i = 0; i < half_rd; ++i) {\n"
+    "        float theta_extrap = theta;\n"
+    "        float theta_interp = freq_scale * theta_extrap;\n"
+    "        float th = theta_interp;\n"
+    "        float mscale = attn_factor;\n"
+    "        if (ext_factor != 0.0f) {\n"
+    "            float y = ((float)i - corr0) / fmax(0.001f, corr1 - corr0);\n"
+    "            float ramp = (1.0f - fmin(1.0f, fmax(0.0f, y))) * ext_factor;\n"
+    "            th = theta_interp * (1.0f - ramp) + theta_extrap * ramp;\n"
+    "            mscale *= 1.0f + 0.1f * log(1.0f / freq_scale);\n"
+    "        }\n"
+    "        float c = cos(th) * mscale, s = sin(th) * mscale;\n"
+    "        float a0 = row[i], a1 = row[i + half_rd];\n"
+    "        row[i] = a0 * c - a1 * s;\n"
+    "        row[i + half_rd] = a0 * s + a1 * c;\n"
+    "        theta *= theta_scale;\n"
+    "    }\n"
+    "}\n"
+    /* Per-head RMSNorm * w[d]. stride = head_dim (dense) or 2*head_dim
+       (interleaved [q|gate]: only first head_dim of each head). */
+    "__kernel void cnet_head_rms(__global float* x,\n"
+    "                            __global const float* w,\n"
+    "                            const int n_heads, const int head_dim,\n"
+    "                            const int stride, const float eps) {\n"
+    "    int h = get_global_id(0);\n"
+    "    if (h >= n_heads) return;\n"
+    "    __global float* row = x + (size_t)h * (size_t)stride;\n"
+    "    float ss = 0.0f;\n"
+    "    for (int d = 0; d < head_dim; ++d) ss += row[d] * row[d];\n"
+    "    ss = rsqrt(ss / (float)head_dim + eps);\n"
+    "    for (int d = 0; d < head_dim; ++d)\n"
+    "        row[d] = row[d] * ss * w[d];\n"
+    "}\n"
+    /* Pack interleaved [q_h|gate_h] → dense Q[n_q * head_dim]. */
+    "__kernel void cnet_pack_q_int(__global const float* qg,\n"
+    "                              __global float* q,\n"
+    "                              const int n_q, const int head_dim) {\n"
+    "    int h = get_global_id(0);\n"
+    "    if (h >= n_q) return;\n"
+    "    __global const float* src = qg + (size_t)h * 2 * (size_t)head_dim;\n"
+    "    __global float* dst = q + (size_t)h * (size_t)head_dim;\n"
+    "    for (int d = 0; d < head_dim; ++d) dst[d] = src[d];\n"
+    "}\n"
+    /* AO[h,d] *= sigmoid(gate from interleaved qg). v_hd may equal head_dim. */
+    "__kernel void cnet_gate_ao(__global float* ao,\n"
+    "                           __global const float* qg,\n"
+    "                           const int n_q, const int head_dim,\n"
+    "                           const int v_hd) {\n"
+    "    int h = get_global_id(0);\n"
+    "    if (h >= n_q) return;\n"
+    "    __global const float* g =\n"
+    "        qg + (size_t)h * 2 * (size_t)head_dim + (size_t)head_dim;\n"
+    "    __global float* o = ao + (size_t)h * (size_t)v_hd;\n"
+    "    int lim = v_hd < head_dim ? v_hd : head_dim;\n"
+    "    for (int d = 0; d < lim; ++d) {\n"
+    "        float x = g[d];\n"
+    "        float s = 1.0f / (1.0f + exp(-x));\n"
+    "        o[d] *= s;\n"
+    "    }\n"
     "}\n";
 
 #define CLGEMM_MAX_RESIDENT 1024
@@ -357,6 +434,10 @@ typedef struct {
     cl_kernel kern_ascores_kv;
     cl_kernel kern_av_kv;
     cl_kernel kern_rope;
+    cl_kernel kern_rope_yarn;
+    cl_kernel kern_head_rms;
+    cl_kernel kern_pack_q;
+    cl_kernel kern_gate_ao;
     cl_mem a_buf, c_buf;          /* reusable activation/output scratch */
     size_t a_cap, c_cap;
     cl_mem op_a, op_b, op_c;      /* residency ops + attn scratch */
@@ -385,10 +466,16 @@ typedef struct {
     cl_mem v_cache;
     cl_mem scores;  /* [max_ctx] */
     cl_mem w_rms;   /* uploaded norm weights */
-    cl_mem slot[5]; /* Q K V AO TMP */
+    cl_mem slot[5]; /* Q K V AO TMP — FFN reuses Q/K/TMP after attn */
     size_t slot_cap[5];
     cl_mem rope_fac; /* optional freq factors */
     size_t rope_fac_cap;
+    cl_mem w_head; /* per-head Q/K norm weights */
+    size_t w_head_cap;
+    float *a_bcast; /* host scratch for multi-GPU A broadcast */
+    size_t a_bcast_cap;
+    float *c_gather; /* host scratch for multi-GPU C gather → slot */
+    size_t c_gather_cap;
     size_t w_rms_cap;
     size_t scores_cap;
     size_t tmp_cap;
@@ -625,9 +712,17 @@ static cce_clgemm *clgemm_open_internal(const char *dll_name, int solo_index,
         D->kern_ascores_kv = CreateKernel(D->prog, "cnet_ascores_kv", &err);
         D->kern_av_kv = CreateKernel(D->prog, "cnet_av_kv", &err);
         D->kern_rope = CreateKernel(D->prog, "cnet_rope_neox", &err);
+        D->kern_rope_yarn = CreateKernel(D->prog, "cnet_rope_yarn", &err);
+        D->kern_head_rms = CreateKernel(D->prog, "cnet_head_rms", &err);
+        D->kern_pack_q = CreateKernel(D->prog, "cnet_pack_q_int", &err);
+        D->kern_gate_ao = CreateKernel(D->prog, "cnet_gate_ao", &err);
         h->ndev++;
         continue;
     dev_fail:
+        if (D->kern_gate_ao) h->ReleaseKernel(D->kern_gate_ao);
+        if (D->kern_pack_q) h->ReleaseKernel(D->kern_pack_q);
+        if (D->kern_head_rms) h->ReleaseKernel(D->kern_head_rms);
+        if (D->kern_rope_yarn) h->ReleaseKernel(D->kern_rope_yarn);
         if (D->kern_rope) h->ReleaseKernel(D->kern_rope);
         if (D->kern_av_kv) h->ReleaseKernel(D->kern_av_kv);
         if (D->kern_ascores_kv) h->ReleaseKernel(D->kern_ascores_kv);
@@ -732,8 +827,11 @@ static void stream_free(cce_clgemm *h) {
     if (s->scores) h->ReleaseMem(s->scores);
     if (s->w_rms) h->ReleaseMem(s->w_rms);
     if (s->rope_fac) h->ReleaseMem(s->rope_fac);
+    if (s->w_head) h->ReleaseMem(s->w_head);
     for (i = 0; i < 5; i++)
         if (s->slot[i]) h->ReleaseMem(s->slot[i]);
+    free(s->a_bcast);
+    free(s->c_gather);
     memset(s, 0, sizeof *s);
 }
 
@@ -753,6 +851,10 @@ void cce_clgemm_close(cce_clgemm *h) {
         if (D->op_a) h->ReleaseMem(D->op_a);
         if (D->op_b) h->ReleaseMem(D->op_b);
         if (D->op_c) h->ReleaseMem(D->op_c);
+        if (D->kern_gate_ao) h->ReleaseKernel(D->kern_gate_ao);
+        if (D->kern_pack_q) h->ReleaseKernel(D->kern_pack_q);
+        if (D->kern_head_rms) h->ReleaseKernel(D->kern_head_rms);
+        if (D->kern_rope_yarn) h->ReleaseKernel(D->kern_rope_yarn);
         if (D->kern_rope) h->ReleaseKernel(D->kern_rope);
         if (D->kern_av_kv) h->ReleaseKernel(D->kern_av_kv);
         if (D->kern_ascores_kv) h->ReleaseKernel(D->kern_ascores_kv);
@@ -1649,32 +1751,29 @@ int cce_clgemm_stream_add_x_host(cce_clgemm *h, const float *y, int D) {
     return 0;
 }
 
-/* Device-0-only matmul using a_buf already holding A (stream ln). */
+static int stream_bcast_a(cce_clgemm *h, size_t K); /* defined with slot path */
+
+/* Stream matmul: a_buf already holds A. Dual-GPU column-split when resident
+ * is split; results gather to C_host (same layout as cce_clgemm_matmul). */
 static int stream_matmul_dev0(cce_clgemm *h, size_t K, size_t N, float *C_host,
                               int is_q8, const void *Wkey, size_t Wbytes,
                               const float *bias, const float *scales,
                               const int8_t *Wq, const float *Wfp) {
-    ClgemmDev *D;
     ResidentBuf *went = NULL, *bent = NULL;
-    int has_bias, iT = 1, iK, iN;
-    size_t cols;
+    int has_bias, iT = 1, iK, started[CLGEMM_MAX_DEV] = {0};
+    size_t d;
+    int need_split;
     if (!h || !C_host || h->ndev < 1) return -1;
-    D = &h->d[0];
     if ((size_t)1 * K * N < h->min_flops) return -1;
+    if (!h->d[0].a_buf || h->d[0].a_cap < K * sizeof(float)) return -1;
 
     if (is_q8) {
         went = resident_find(h, Wq, K * N);
         if (!went) {
-            int split;
-            size_t owner, off[CLGEMM_MAX_DEV], len[CLGEMM_MAX_DEV];
-            size_t d2;
-            for (d2 = 0; d2 < CLGEMM_MAX_DEV; ++d2) {
-                off[d2] = 0;
-                len[d2] = 0;
-            }
-            /* Stream path: force whole matrix on device 0 (no split). */
-            split = 0;
-            owner = 0;
+            /* Stream-created weights: whole on d0 (see stream_linear_to_slot). */
+            int split = 0;
+            size_t owner = 0, off[CLGEMM_MAX_DEV] = {0},
+                   len[CLGEMM_MAX_DEV] = {0};
             len[0] = N;
             went = resident_create_q8(h, Wq, scales, K, N, split, owner, off,
                                       len);
@@ -1684,64 +1783,98 @@ static int stream_matmul_dev0(cce_clgemm *h, size_t K, size_t N, float *C_host,
         went = resident_find(h, Wfp, K * N * sizeof(float));
         if (!went) {
             int split = 0;
-            size_t owner = 0, off[CLGEMM_MAX_DEV], len[CLGEMM_MAX_DEV];
-            size_t d2;
-            for (d2 = 0; d2 < CLGEMM_MAX_DEV; ++d2) {
-                off[d2] = 0;
-                len[d2] = 0;
-            }
+            size_t owner = 0, off[CLGEMM_MAX_DEV] = {0},
+                   len[CLGEMM_MAX_DEV] = {0};
             len[0] = N;
             went = resident_create(h, Wfp, K, N, split, owner, off, len);
             if (!went) return -1;
         }
     }
-    /* If weight not fully on d0, refuse stream (caller uses host path). */
-    if (went->len[0] != N) return -1;
-    cols = N;
     if (bias) {
         bent = resident_find(h, bias, N * sizeof(float));
         if (!bent) {
-            bent = resident_create(h, bias, 1, N, 0, 0, went->off, went->len);
+            bent = resident_create(h, bias, 1, N, went->split, went->owner,
+                                   went->off, went->len);
             if (!bent) return -1;
         }
     }
     has_bias = bias ? 1 : 0;
-    if (scratch_ensure(h, 0, &D->c_buf, &D->c_cap, cols * sizeof(float)) != 0)
-        return -1;
-    if (!D->a_buf || D->a_cap < K * sizeof(float)) return -1;
+    need_split = (went->len[0] != N);
+    if (need_split && stream_bcast_a(h, K) != 0) return -1;
+
     iK = (int)K;
-    iN = (int)cols;
-    if (is_q8) {
-        cl_mem b_mem = bent ? bent->mem[0] : went->scale[0];
-        if (h->SetArg(D->kern_q8, 0, sizeof(cl_mem), &D->a_buf) != CL_SUCCESS ||
-            h->SetArg(D->kern_q8, 1, sizeof(cl_mem), &went->mem[0]) !=
-                CL_SUCCESS ||
-            h->SetArg(D->kern_q8, 2, sizeof(cl_mem), &went->scale[0]) !=
-                CL_SUCCESS ||
-            h->SetArg(D->kern_q8, 3, sizeof(cl_mem), &b_mem) != CL_SUCCESS ||
-            h->SetArg(D->kern_q8, 4, sizeof(cl_mem), &D->c_buf) != CL_SUCCESS ||
-            h->SetArg(D->kern_q8, 5, sizeof(int), &iT) != CL_SUCCESS ||
-            h->SetArg(D->kern_q8, 6, sizeof(int), &iK) != CL_SUCCESS ||
-            h->SetArg(D->kern_q8, 7, sizeof(int), &iN) != CL_SUCCESS ||
-            h->SetArg(D->kern_q8, 8, sizeof(int), &has_bias) != CL_SUCCESS)
+    for (d = 0; d < h->ndev; ++d) {
+        ClgemmDev *D = &h->d[d];
+        size_t cols = went->len[d];
+        int iN;
+        float *dst;
+        if (cols == 0) continue;
+        if (scratch_ensure(h, d, &D->c_buf, &D->c_cap, cols * 4) != 0)
             return -1;
-        if (enqueue_2d(h, D->q, D->kern_q8, cols, 1) != 0) return -1;
-    } else {
-        cl_mem b_mem = bent ? bent->mem[0] : went->mem[0];
-        if (h->SetArg(D->kern, 0, sizeof(cl_mem), &D->a_buf) != CL_SUCCESS ||
-            h->SetArg(D->kern, 1, sizeof(cl_mem), &went->mem[0]) != CL_SUCCESS ||
-            h->SetArg(D->kern, 2, sizeof(cl_mem), &b_mem) != CL_SUCCESS ||
-            h->SetArg(D->kern, 3, sizeof(cl_mem), &D->c_buf) != CL_SUCCESS ||
-            h->SetArg(D->kern, 4, sizeof(int), &iT) != CL_SUCCESS ||
-            h->SetArg(D->kern, 5, sizeof(int), &iK) != CL_SUCCESS ||
-            h->SetArg(D->kern, 6, sizeof(int), &iN) != CL_SUCCESS ||
-            h->SetArg(D->kern, 7, sizeof(int), &has_bias) != CL_SUCCESS)
+        if (d != 0 && !need_split && stream_bcast_a(h, K) != 0) return -1;
+        if (!D->a_buf || D->a_cap < K * 4) return -1;
+        iN = (int)cols;
+        if (need_split) {
+            if (D->c_host_cap < cols) {
+                float *nc =
+                    (float *)realloc(D->c_host, cols * sizeof(float));
+                if (!nc) return -1;
+                D->c_host = nc;
+                D->c_host_cap = cols;
+            }
+            dst = D->c_host;
+        } else {
+            dst = C_host;
+        }
+        if (is_q8) {
+            cl_mem b_mem = bent ? bent->mem[d] : went->scale[d];
+            if (h->SetArg(D->kern_q8, 0, sizeof(cl_mem), &D->a_buf) !=
+                    CL_SUCCESS ||
+                h->SetArg(D->kern_q8, 1, sizeof(cl_mem), &went->mem[d]) !=
+                    CL_SUCCESS ||
+                h->SetArg(D->kern_q8, 2, sizeof(cl_mem), &went->scale[d]) !=
+                    CL_SUCCESS ||
+                h->SetArg(D->kern_q8, 3, sizeof(cl_mem), &b_mem) !=
+                    CL_SUCCESS ||
+                h->SetArg(D->kern_q8, 4, sizeof(cl_mem), &D->c_buf) !=
+                    CL_SUCCESS ||
+                h->SetArg(D->kern_q8, 5, sizeof(int), &iT) != CL_SUCCESS ||
+                h->SetArg(D->kern_q8, 6, sizeof(int), &iK) != CL_SUCCESS ||
+                h->SetArg(D->kern_q8, 7, sizeof(int), &iN) != CL_SUCCESS ||
+                h->SetArg(D->kern_q8, 8, sizeof(int), &has_bias) != CL_SUCCESS)
+                return -1;
+            if (enqueue_2d(h, D->q, D->kern_q8, cols, 1) != 0) return -1;
+        } else {
+            cl_mem b_mem = bent ? bent->mem[d] : went->mem[d];
+            if (h->SetArg(D->kern, 0, sizeof(cl_mem), &D->a_buf) !=
+                    CL_SUCCESS ||
+                h->SetArg(D->kern, 1, sizeof(cl_mem), &went->mem[d]) !=
+                    CL_SUCCESS ||
+                h->SetArg(D->kern, 2, sizeof(cl_mem), &b_mem) != CL_SUCCESS ||
+                h->SetArg(D->kern, 3, sizeof(cl_mem), &D->c_buf) !=
+                    CL_SUCCESS ||
+                h->SetArg(D->kern, 4, sizeof(int), &iT) != CL_SUCCESS ||
+                h->SetArg(D->kern, 5, sizeof(int), &iK) != CL_SUCCESS ||
+                h->SetArg(D->kern, 6, sizeof(int), &iN) != CL_SUCCESS ||
+                h->SetArg(D->kern, 7, sizeof(int), &has_bias) != CL_SUCCESS)
+                return -1;
+            if (enqueue_2d(h, D->q, D->kern, cols, 1) != 0) return -1;
+        }
+        if (h->ReadBuffer(D->q, D->c_buf, CL_FALSE, 0, cols * 4, dst, 0, NULL,
+                          NULL) != CL_SUCCESS)
             return -1;
-        if (enqueue_2d(h, D->q, D->kern, cols, 1) != 0) return -1;
+        started[d] = 1;
+        h->Flush(D->q);
     }
-    if (h->ReadBuffer(D->q, D->c_buf, CL_TRUE, 0, cols * sizeof(float), C_host,
-                      0, NULL, NULL) != CL_SUCCESS)
-        return -1;
+    for (d = 0; d < h->ndev; ++d)
+        if (started[d] && h->Finish(h->d[d].q) != CL_SUCCESS) return -1;
+    if (need_split) {
+        for (d = 0; d < h->ndev; ++d) {
+            size_t cols = went->len[d];
+            if (cols == 0) continue;
+            memcpy(C_host + went->off[d], h->d[d].c_host, cols * sizeof(float));
+        }
+    }
     (void)Wkey;
     (void)Wbytes;
     return 0;
@@ -1912,22 +2045,65 @@ static int stream_slot_ensure(cce_clgemm *h, int slot, size_t bytes) {
     return s->slot[slot] ? 0 : -1;
 }
 
+/* Broadcast d0 a_buf[K] to every device (host hop — K is tiny vs GEMM). */
+static int stream_bcast_a(cce_clgemm *h, size_t K) {
+    ClStream *s;
+    ClgemmDev *D0;
+    size_t d;
+    if (!h || K < 1) return -1;
+    s = &h->stream;
+    D0 = &h->d[0];
+    if (!D0->a_buf || D0->a_cap < K * 4) return -1;
+    if (h->ndev <= 1) return 0;
+    if (!s->a_bcast || s->a_bcast_cap < K) {
+        float *p = (float *)realloc(s->a_bcast, K * sizeof(float));
+        if (!p) return -1;
+        s->a_bcast = p;
+        s->a_bcast_cap = K;
+    }
+    if (h->ReadBuffer(D0->q, D0->a_buf, CL_TRUE, 0, K * 4, s->a_bcast, 0, NULL,
+                      NULL) != CL_SUCCESS)
+        return -1;
+    for (d = 1; d < h->ndev; ++d) {
+        ClgemmDev *D = &h->d[d];
+        if (scratch_ensure(h, d, &D->a_buf, &D->a_cap, K * 4) != 0) return -1;
+        if (h->WriteBuffer(D->q, D->a_buf, CL_FALSE, 0, K * 4, s->a_bcast, 0,
+                           NULL, NULL) != CL_SUCCESS)
+            return -1;
+        D->a_fp_host = NULL;
+        D->a_fp_bytes = K * 4;
+        D->a_fp_tag = 0xC0FFEE03ULL;
+        h->Flush(D->q);
+    }
+    return 0;
+}
+
+/* Multi-GPU stream linear → d0 slot. Column-split weights run concurrently;
+ * C is gathered through host (16–100 KB) then written to the slot. */
 static int stream_linear_to_slot(cce_clgemm *h, size_t K, size_t N, int slot,
                                  int is_q8, const float *bias,
                                  const float *scales, const int8_t *Wq,
                                  const float *Wfp) {
-    ClgemmDev *D;
+    ClgemmDev *D0;
+    ClStream *s;
     ResidentBuf *went = NULL, *bent = NULL;
-    int has_bias, iT = 1, iK, iN;
+    int has_bias, iT = 1, iK, started[CLGEMM_MAX_DEV] = {0};
+    size_t d;
+    int need_gather = 0;
     if (!h || !h->stream.live || h->ndev < 1) return -1;
     if (stream_slot_ensure(h, slot, N * sizeof(float)) != 0) return -1;
-    D = &h->d[0];
+    D0 = &h->d[0];
+    s = &h->stream;
     if ((size_t)1 * K * N < h->min_flops) return -1;
+    if (!D0->a_buf || D0->a_cap < K * sizeof(float)) return -1;
+
     if (is_q8) {
         went = resident_find(h, Wq, K * N);
         if (!went) {
+            /* New stream residents stay whole on d0 (A already there). */
             int split = 0;
-            size_t owner = 0, off[CLGEMM_MAX_DEV] = {0}, len[CLGEMM_MAX_DEV] = {0};
+            size_t owner = 0, off[CLGEMM_MAX_DEV] = {0},
+                   len[CLGEMM_MAX_DEV] = {0};
             len[0] = N;
             went = resident_create_q8(h, Wq, scales, K, N, split, owner, off,
                                       len);
@@ -1937,55 +2113,106 @@ static int stream_linear_to_slot(cce_clgemm *h, size_t K, size_t N, int slot,
         went = resident_find(h, Wfp, K * N * sizeof(float));
         if (!went) {
             int split = 0;
-            size_t owner = 0, off[CLGEMM_MAX_DEV] = {0}, len[CLGEMM_MAX_DEV] = {0};
+            size_t owner = 0, off[CLGEMM_MAX_DEV] = {0},
+                   len[CLGEMM_MAX_DEV] = {0};
             len[0] = N;
             went = resident_create(h, Wfp, K, N, split, owner, off, len);
             if (!went) return -1;
         }
     }
-    if (went->len[0] != N) return -1;
     if (bias) {
         bent = resident_find(h, bias, N * sizeof(float));
         if (!bent) {
-            bent = resident_create(h, bias, 1, N, 0, 0, went->off, went->len);
+            bent = resident_create(h, bias, 1, N, went->split, went->owner,
+                                   went->off, went->len);
             if (!bent) return -1;
         }
     }
     has_bias = bias ? 1 : 0;
-    if (!D->a_buf || D->a_cap < K * sizeof(float)) return -1;
-    iK = (int)K;
-    iN = (int)N;
-    if (is_q8) {
-        cl_mem b_mem = bent ? bent->mem[0] : went->scale[0];
-        if (h->SetArg(D->kern_q8, 0, sizeof(cl_mem), &D->a_buf) != CL_SUCCESS ||
-            h->SetArg(D->kern_q8, 1, sizeof(cl_mem), &went->mem[0]) !=
-                CL_SUCCESS ||
-            h->SetArg(D->kern_q8, 2, sizeof(cl_mem), &went->scale[0]) !=
-                CL_SUCCESS ||
-            h->SetArg(D->kern_q8, 3, sizeof(cl_mem), &b_mem) != CL_SUCCESS ||
-            h->SetArg(D->kern_q8, 4, sizeof(cl_mem), &h->stream.slot[slot]) !=
-                CL_SUCCESS ||
-            h->SetArg(D->kern_q8, 5, sizeof(int), &iT) != CL_SUCCESS ||
-            h->SetArg(D->kern_q8, 6, sizeof(int), &iK) != CL_SUCCESS ||
-            h->SetArg(D->kern_q8, 7, sizeof(int), &iN) != CL_SUCCESS ||
-            h->SetArg(D->kern_q8, 8, sizeof(int), &has_bias) != CL_SUCCESS)
-            return -1;
-        if (enqueue_2d(h, D->q, D->kern_q8, N, 1) != 0) return -1;
-    } else {
-        cl_mem b_mem = bent ? bent->mem[0] : went->mem[0];
-        if (h->SetArg(D->kern, 0, sizeof(cl_mem), &D->a_buf) != CL_SUCCESS ||
-            h->SetArg(D->kern, 1, sizeof(cl_mem), &went->mem[0]) != CL_SUCCESS ||
-            h->SetArg(D->kern, 2, sizeof(cl_mem), &b_mem) != CL_SUCCESS ||
-            h->SetArg(D->kern, 3, sizeof(cl_mem), &h->stream.slot[slot]) !=
-                CL_SUCCESS ||
-            h->SetArg(D->kern, 4, sizeof(int), &iT) != CL_SUCCESS ||
-            h->SetArg(D->kern, 5, sizeof(int), &iK) != CL_SUCCESS ||
-            h->SetArg(D->kern, 6, sizeof(int), &iN) != CL_SUCCESS ||
-            h->SetArg(D->kern, 7, sizeof(int), &has_bias) != CL_SUCCESS)
-            return -1;
-        if (enqueue_2d(h, D->q, D->kern, N, 1) != 0) return -1;
+    /* Multi-GPU only when weights were already column-split (e.g. prior
+       host matmul). Fresh stream uploads stay on d0 — dual-card gather on
+       every T=1 step is slower than single-device. */
+    need_gather = (went->len[0] != N);
+    if (need_gather && stream_bcast_a(h, K) != 0) return -1;
+    if (need_gather) {
+        if (!s->c_gather || s->c_gather_cap < N) {
+            float *p = (float *)realloc(s->c_gather, N * sizeof(float));
+            if (!p) return -1;
+            s->c_gather = p;
+            s->c_gather_cap = N;
+        }
     }
-    h->Flush(D->q);
+
+    iK = (int)K;
+    for (d = 0; d < h->ndev; ++d) {
+        ClgemmDev *D = &h->d[d];
+        size_t cols = went->len[d];
+        int iN;
+        cl_mem out_mem;
+        if (cols == 0) continue;
+        if (scratch_ensure(h, d, &D->c_buf, &D->c_cap, cols * 4) != 0)
+            return -1;
+        if (d != 0 && !need_gather) {
+            /* unsplit on non-d0: need A there */
+            if (stream_bcast_a(h, K) != 0) return -1;
+        }
+        if (!D->a_buf || D->a_cap < K * 4) return -1;
+        iN = (int)cols;
+        /* Fast path: whole N on d0 → write slot directly (no host). */
+        out_mem = (!need_gather && d == 0 && cols == N) ? s->slot[slot]
+                                                        : D->c_buf;
+        if (is_q8) {
+            cl_mem b_mem = bent ? bent->mem[d] : went->scale[d];
+            if (h->SetArg(D->kern_q8, 0, sizeof(cl_mem), &D->a_buf) !=
+                    CL_SUCCESS ||
+                h->SetArg(D->kern_q8, 1, sizeof(cl_mem), &went->mem[d]) !=
+                    CL_SUCCESS ||
+                h->SetArg(D->kern_q8, 2, sizeof(cl_mem), &went->scale[d]) !=
+                    CL_SUCCESS ||
+                h->SetArg(D->kern_q8, 3, sizeof(cl_mem), &b_mem) !=
+                    CL_SUCCESS ||
+                h->SetArg(D->kern_q8, 4, sizeof(cl_mem), &out_mem) !=
+                    CL_SUCCESS ||
+                h->SetArg(D->kern_q8, 5, sizeof(int), &iT) != CL_SUCCESS ||
+                h->SetArg(D->kern_q8, 6, sizeof(int), &iK) != CL_SUCCESS ||
+                h->SetArg(D->kern_q8, 7, sizeof(int), &iN) != CL_SUCCESS ||
+                h->SetArg(D->kern_q8, 8, sizeof(int), &has_bias) != CL_SUCCESS)
+                return -1;
+            if (enqueue_2d(h, D->q, D->kern_q8, cols, 1) != 0) return -1;
+        } else {
+            cl_mem b_mem = bent ? bent->mem[d] : went->mem[d];
+            if (h->SetArg(D->kern, 0, sizeof(cl_mem), &D->a_buf) !=
+                    CL_SUCCESS ||
+                h->SetArg(D->kern, 1, sizeof(cl_mem), &went->mem[d]) !=
+                    CL_SUCCESS ||
+                h->SetArg(D->kern, 2, sizeof(cl_mem), &b_mem) != CL_SUCCESS ||
+                h->SetArg(D->kern, 3, sizeof(cl_mem), &out_mem) !=
+                    CL_SUCCESS ||
+                h->SetArg(D->kern, 4, sizeof(int), &iT) != CL_SUCCESS ||
+                h->SetArg(D->kern, 5, sizeof(int), &iK) != CL_SUCCESS ||
+                h->SetArg(D->kern, 6, sizeof(int), &iN) != CL_SUCCESS ||
+                h->SetArg(D->kern, 7, sizeof(int), &has_bias) != CL_SUCCESS)
+                return -1;
+            if (enqueue_2d(h, D->q, D->kern, cols, 1) != 0) return -1;
+        }
+        started[d] = 1;
+        if (need_gather) {
+            if (h->ReadBuffer(D->q, D->c_buf, CL_FALSE, 0, cols * 4,
+                              s->c_gather + went->off[d], 0, NULL,
+                              NULL) != CL_SUCCESS)
+                return -1;
+        }
+        h->Flush(D->q);
+    }
+    for (d = 0; d < h->ndev; ++d)
+        if (started[d] && h->Finish(h->d[d].q) != CL_SUCCESS) return -1;
+    if (need_gather) {
+        if (h->WriteBuffer(D0->q, s->slot[slot], CL_TRUE, 0, N * 4, s->c_gather,
+                           0, NULL, NULL) != CL_SUCCESS)
+            return -1;
+    } else {
+        h->Flush(D0->q);
+    }
     return 0;
 }
 
@@ -2216,5 +2443,383 @@ int cce_clgemm_stream_attn_dev(cce_clgemm *h, size_t k_off, size_t v_off,
     } else {
         h->Finish(Dv->q);
     }
+    return 0;
+}
+
+/* ---- YaRN / QK-norm / FFN device path ------------------------------------ */
+
+int cce_clgemm_stream_head_rms_slot(cce_clgemm *h, int slot, int n_heads,
+                                    int head_dim, int stride, const float *w,
+                                    float eps) {
+    ClgemmDev *D;
+    ClStream *s;
+    int nh, hd, st;
+    size_t g;
+    if (!h || !h->stream.live || !w || slot < 0 || slot > 4) return -1;
+    D = &h->d[0];
+    s = &h->stream;
+    if (!D->kern_head_rms || !s->slot[slot]) return -1;
+    if (n_heads < 1 || head_dim < 1 || stride < head_dim) return -1;
+    {
+        cl_int err = 0;
+        size_t bytes = (size_t)head_dim * 4;
+        if (!s->w_head || s->w_head_cap < bytes) {
+            if (s->w_head) h->ReleaseMem(s->w_head);
+            s->w_head =
+                h->CreateBuffer(D->ctx, CL_MEM_READ_ONLY, bytes, NULL, &err);
+            s->w_head_cap = bytes;
+            if (!s->w_head) return -1;
+        }
+        if (h->WriteBuffer(D->q, s->w_head, CL_FALSE, 0, bytes, w, 0, NULL,
+                           NULL) != CL_SUCCESS)
+            return -1;
+    }
+    nh = n_heads;
+    hd = head_dim;
+    st = stride;
+    if (h->SetArg(D->kern_head_rms, 0, sizeof(cl_mem), &s->slot[slot]) !=
+            CL_SUCCESS ||
+        h->SetArg(D->kern_head_rms, 1, sizeof(cl_mem), &s->w_head) !=
+            CL_SUCCESS ||
+        h->SetArg(D->kern_head_rms, 2, sizeof(int), &nh) != CL_SUCCESS ||
+        h->SetArg(D->kern_head_rms, 3, sizeof(int), &hd) != CL_SUCCESS ||
+        h->SetArg(D->kern_head_rms, 4, sizeof(int), &st) != CL_SUCCESS ||
+        h->SetArg(D->kern_head_rms, 5, sizeof(float), &eps) != CL_SUCCESS)
+        return -1;
+    g = (size_t)n_heads;
+    if (h->Enqueue(D->q, D->kern_head_rms, 1, NULL, &g, NULL, 0, NULL, NULL) !=
+        CL_SUCCESS)
+        return -1;
+    h->Flush(D->q);
+    return 0;
+}
+
+int cce_clgemm_stream_rope_yarn_slot(cce_clgemm *h, int slot, int n_heads,
+                                     int head_dim, int rope_dim, int pos,
+                                     float base, float freq_scale,
+                                     float ext_factor, float attn_factor,
+                                     float corr0, float corr1, int stride) {
+    ClgemmDev *D;
+    ClStream *s;
+    int nh, hd, rd, p, st;
+    size_t g;
+    if (!h || !h->stream.live || slot < 0 || slot > 4) return -1;
+    D = &h->d[0];
+    s = &h->stream;
+    if (!D->kern_rope_yarn || !s->slot[slot]) return -1;
+    if (rope_dim < 2 || rope_dim > head_dim || n_heads < 1 || stride < head_dim)
+        return -1;
+    nh = n_heads;
+    hd = head_dim;
+    rd = rope_dim;
+    p = pos;
+    st = stride;
+    if (h->SetArg(D->kern_rope_yarn, 0, sizeof(cl_mem), &s->slot[slot]) !=
+            CL_SUCCESS ||
+        h->SetArg(D->kern_rope_yarn, 1, sizeof(int), &nh) != CL_SUCCESS ||
+        h->SetArg(D->kern_rope_yarn, 2, sizeof(int), &hd) != CL_SUCCESS ||
+        h->SetArg(D->kern_rope_yarn, 3, sizeof(int), &rd) != CL_SUCCESS ||
+        h->SetArg(D->kern_rope_yarn, 4, sizeof(int), &p) != CL_SUCCESS ||
+        h->SetArg(D->kern_rope_yarn, 5, sizeof(float), &base) != CL_SUCCESS ||
+        h->SetArg(D->kern_rope_yarn, 6, sizeof(float), &freq_scale) !=
+            CL_SUCCESS ||
+        h->SetArg(D->kern_rope_yarn, 7, sizeof(float), &ext_factor) !=
+            CL_SUCCESS ||
+        h->SetArg(D->kern_rope_yarn, 8, sizeof(float), &attn_factor) !=
+            CL_SUCCESS ||
+        h->SetArg(D->kern_rope_yarn, 9, sizeof(float), &corr0) != CL_SUCCESS ||
+        h->SetArg(D->kern_rope_yarn, 10, sizeof(float), &corr1) !=
+            CL_SUCCESS ||
+        h->SetArg(D->kern_rope_yarn, 11, sizeof(int), &st) != CL_SUCCESS)
+        return -1;
+    g = (size_t)n_heads;
+    if (h->Enqueue(D->q, D->kern_rope_yarn, 1, NULL, &g, NULL, 0, NULL, NULL) !=
+        CL_SUCCESS)
+        return -1;
+    h->Flush(D->q);
+    return 0;
+}
+
+int cce_clgemm_stream_pack_q_interleaved(cce_clgemm *h, int qg_slot, int q_slot,
+                                         int n_q, int head_dim) {
+    ClgemmDev *D;
+    ClStream *s;
+    int nq, hd;
+    size_t g;
+    if (!h || !h->stream.live || qg_slot < 0 || qg_slot > 4 || q_slot < 0 ||
+        q_slot > 4 || n_q < 1 || head_dim < 1)
+        return -1;
+    D = &h->d[0];
+    s = &h->stream;
+    if (!D->kern_pack_q || !s->slot[qg_slot]) return -1;
+    if (stream_slot_ensure(h, q_slot, (size_t)n_q * (size_t)head_dim * 4) != 0)
+        return -1;
+    nq = n_q;
+    hd = head_dim;
+    if (h->SetArg(D->kern_pack_q, 0, sizeof(cl_mem), &s->slot[qg_slot]) !=
+            CL_SUCCESS ||
+        h->SetArg(D->kern_pack_q, 1, sizeof(cl_mem), &s->slot[q_slot]) !=
+            CL_SUCCESS ||
+        h->SetArg(D->kern_pack_q, 2, sizeof(int), &nq) != CL_SUCCESS ||
+        h->SetArg(D->kern_pack_q, 3, sizeof(int), &hd) != CL_SUCCESS)
+        return -1;
+    g = (size_t)n_q;
+    if (h->Enqueue(D->q, D->kern_pack_q, 1, NULL, &g, NULL, 0, NULL, NULL) !=
+        CL_SUCCESS)
+        return -1;
+    h->Flush(D->q);
+    return 0;
+}
+
+int cce_clgemm_stream_gate_ao(cce_clgemm *h, int qg_slot, int n_q, int head_dim,
+                              int v_head_dim) {
+    ClgemmDev *D;
+    ClStream *s;
+    int nq, hd, vd;
+    size_t g;
+    if (!h || !h->stream.live || qg_slot < 0 || qg_slot > 4) return -1;
+    D = &h->d[0];
+    s = &h->stream;
+    if (!D->kern_gate_ao || !s->slot[qg_slot] || !s->slot[CCE_CL_SLOT_AO])
+        return -1;
+    nq = n_q;
+    hd = head_dim;
+    vd = v_head_dim;
+    if (h->SetArg(D->kern_gate_ao, 0, sizeof(cl_mem), &s->slot[CCE_CL_SLOT_AO]) !=
+            CL_SUCCESS ||
+        h->SetArg(D->kern_gate_ao, 1, sizeof(cl_mem), &s->slot[qg_slot]) !=
+            CL_SUCCESS ||
+        h->SetArg(D->kern_gate_ao, 2, sizeof(int), &nq) != CL_SUCCESS ||
+        h->SetArg(D->kern_gate_ao, 3, sizeof(int), &hd) != CL_SUCCESS ||
+        h->SetArg(D->kern_gate_ao, 4, sizeof(int), &vd) != CL_SUCCESS)
+        return -1;
+    g = (size_t)n_q;
+    if (h->Enqueue(D->q, D->kern_gate_ao, 1, NULL, &g, NULL, 0, NULL, NULL) !=
+        CL_SUCCESS)
+        return -1;
+    h->Flush(D->q);
+    return 0;
+}
+
+int cce_clgemm_stream_silu_mul_slots(cce_clgemm *h, int gate_slot, int up_slot,
+                                     int out_slot, int n) {
+    ClgemmDev *D;
+    ClStream *s;
+    int in;
+    size_t g, loc;
+    if (!h || !h->stream.live || n < 1) return -1;
+    if (gate_slot < 0 || gate_slot > 4 || up_slot < 0 || up_slot > 4 ||
+        out_slot < 0 || out_slot > 4)
+        return -1;
+    D = &h->d[0];
+    s = &h->stream;
+    if (!D->kern_silu || !s->slot[gate_slot] || !s->slot[up_slot]) return -1;
+    if (stream_slot_ensure(h, out_slot, (size_t)n * 4) != 0) return -1;
+    in = n;
+    if (h->SetArg(D->kern_silu, 0, sizeof(cl_mem), &s->slot[gate_slot]) !=
+            CL_SUCCESS ||
+        h->SetArg(D->kern_silu, 1, sizeof(cl_mem), &s->slot[up_slot]) !=
+            CL_SUCCESS ||
+        h->SetArg(D->kern_silu, 2, sizeof(cl_mem), &s->slot[out_slot]) !=
+            CL_SUCCESS ||
+        h->SetArg(D->kern_silu, 3, sizeof(int), &in) != CL_SUCCESS)
+        return -1;
+    g = (size_t)((n + 63) / 64) * 64;
+    if (g == 0) g = 64;
+    loc = 64;
+    if (h->Enqueue(D->q, D->kern_silu, 1, NULL, &g, &loc, 0, NULL, NULL) !=
+        CL_SUCCESS)
+        return -1;
+    h->Flush(D->q);
+    return 0;
+}
+
+int cce_clgemm_stream_add_x_slot(cce_clgemm *h, int slot, int D) {
+    ClgemmDev *Dv;
+    ClStream *s;
+    int n;
+    size_t g, loc;
+    if (!h || !h->stream.live || slot < 0 || slot > 4 || D < 1) return -1;
+    Dv = &h->d[0];
+    s = &h->stream;
+    if (!Dv->kern_add_dev || !s->x || !s->slot[slot]) return -1;
+    n = D;
+    if (h->SetArg(Dv->kern_add_dev, 0, sizeof(cl_mem), &s->x) != CL_SUCCESS ||
+        h->SetArg(Dv->kern_add_dev, 1, sizeof(cl_mem), &s->slot[slot]) !=
+            CL_SUCCESS ||
+        h->SetArg(Dv->kern_add_dev, 2, sizeof(int), &n) != CL_SUCCESS)
+        return -1;
+    g = (size_t)((D + 63) / 64) * 64;
+    if (g == 0) g = 64;
+    loc = 64;
+    if (h->Enqueue(Dv->q, Dv->kern_add_dev, 1, NULL, &g, &loc, 0, NULL, NULL) !=
+        CL_SUCCESS)
+        return -1;
+    h->Finish(Dv->q);
+    return 0;
+}
+
+/* Concurrent dual-GPU: two independent linears from the same A (d0 a_buf).
+ * d0 owns out0_slot; d1 computes out1 and copies via host into out1_slot on d0.
+ * Soft-fail → caller runs sequential stream_linear_to_slot. */
+int cce_clgemm_stream_linear_pair_slots(
+    cce_clgemm *h, const float *W0, const float *bias0, int is_q8_0,
+    const int8_t *Wq0, const float *sc0, int N0, int slot0, const float *W1,
+    const float *bias1, int is_q8_1, const int8_t *Wq1, const float *sc1,
+    int N1, int slot1, int K) {
+    ClgemmDev *D0, *D1;
+    ResidentBuf *w0 = NULL, *w1 = NULL, *b0 = NULL, *b1 = NULL;
+    int has0, has1, iT = 1, iK, iN0, iN1;
+    size_t d;
+    if (!h || !h->stream.live || K < 1 || N0 < 1 || N1 < 1) return -1;
+    if (h->ndev < 2) return -1;
+    if ((size_t)1 * K * N0 < h->min_flops ||
+        (size_t)1 * K * N1 < h->min_flops)
+        return -1;
+    if (stream_slot_ensure(h, slot0, (size_t)N0 * 4) != 0 ||
+        stream_slot_ensure(h, slot1, (size_t)N1 * 4) != 0)
+        return -1;
+    D0 = &h->d[0];
+    D1 = &h->d[1];
+    if (!D0->a_buf || D0->a_cap < (size_t)K * 4) return -1;
+
+    /* Place W0 on d0, W1 on d1 (whole, not split). */
+    if (is_q8_0) {
+        w0 = resident_find(h, Wq0, (size_t)K * N0);
+        if (!w0) {
+            size_t off[CLGEMM_MAX_DEV] = {0}, len[CLGEMM_MAX_DEV] = {0};
+            len[0] = (size_t)N0;
+            w0 = resident_create_q8(h, Wq0, sc0, (size_t)K, (size_t)N0, 0, 0,
+                                    off, len);
+        }
+    } else {
+        w0 = resident_find(h, W0, (size_t)K * N0 * 4);
+        if (!w0) {
+            size_t off[CLGEMM_MAX_DEV] = {0}, len[CLGEMM_MAX_DEV] = {0};
+            len[0] = (size_t)N0;
+            w0 = resident_create(h, W0, (size_t)K, (size_t)N0, 0, 0, off, len);
+        }
+    }
+    if (is_q8_1) {
+        w1 = resident_find(h, Wq1, (size_t)K * N1);
+        if (!w1) {
+            size_t off[CLGEMM_MAX_DEV] = {0}, len[CLGEMM_MAX_DEV] = {0};
+            len[1] = (size_t)N1;
+            w1 = resident_create_q8(h, Wq1, sc1, (size_t)K, (size_t)N1, 0, 1,
+                                    off, len);
+        }
+    } else {
+        w1 = resident_find(h, W1, (size_t)K * N1 * 4);
+        if (!w1) {
+            size_t off[CLGEMM_MAX_DEV] = {0}, len[CLGEMM_MAX_DEV] = {0};
+            len[1] = (size_t)N1;
+            w1 = resident_create(h, W1, (size_t)K, (size_t)N1, 0, 1, off, len);
+        }
+    }
+    if (!w0 || !w1 || w0->len[0] != (size_t)N0 || w1->len[1] != (size_t)N1)
+        return -1;
+    if (bias0) {
+        b0 = resident_find(h, bias0, (size_t)N0 * 4);
+        if (!b0)
+            b0 = resident_create(h, bias0, 1, (size_t)N0, 0, 0, w0->off,
+                                 w0->len);
+        if (!b0) return -1;
+    }
+    if (bias1) {
+        b1 = resident_find(h, bias1, (size_t)N1 * 4);
+        if (!b1)
+            b1 = resident_create(h, bias1, 1, (size_t)N1, 0, 1, w1->off,
+                                 w1->len);
+        if (!b1) return -1;
+    }
+    if (stream_bcast_a(h, (size_t)K) != 0) return -1;
+    if (scratch_ensure(h, 1, &D1->c_buf, &D1->c_cap, (size_t)N1 * 4) != 0)
+        return -1;
+    if (!h->stream.c_gather || h->stream.c_gather_cap < (size_t)N1) {
+        float *p =
+            (float *)realloc(h->stream.c_gather, (size_t)N1 * sizeof(float));
+        if (!p) return -1;
+        h->stream.c_gather = p;
+        h->stream.c_gather_cap = (size_t)N1;
+    }
+    has0 = bias0 ? 1 : 0;
+    has1 = bias1 ? 1 : 0;
+    iK = K;
+    iN0 = N0;
+    iN1 = N1;
+
+    /* Launch d0 → slot0 */
+    if (is_q8_0) {
+        cl_mem bm = b0 ? b0->mem[0] : w0->scale[0];
+        if (h->SetArg(D0->kern_q8, 0, sizeof(cl_mem), &D0->a_buf) !=
+                CL_SUCCESS ||
+            h->SetArg(D0->kern_q8, 1, sizeof(cl_mem), &w0->mem[0]) !=
+                CL_SUCCESS ||
+            h->SetArg(D0->kern_q8, 2, sizeof(cl_mem), &w0->scale[0]) !=
+                CL_SUCCESS ||
+            h->SetArg(D0->kern_q8, 3, sizeof(cl_mem), &bm) != CL_SUCCESS ||
+            h->SetArg(D0->kern_q8, 4, sizeof(cl_mem),
+                      &h->stream.slot[slot0]) != CL_SUCCESS ||
+            h->SetArg(D0->kern_q8, 5, sizeof(int), &iT) != CL_SUCCESS ||
+            h->SetArg(D0->kern_q8, 6, sizeof(int), &iK) != CL_SUCCESS ||
+            h->SetArg(D0->kern_q8, 7, sizeof(int), &iN0) != CL_SUCCESS ||
+            h->SetArg(D0->kern_q8, 8, sizeof(int), &has0) != CL_SUCCESS)
+            return -1;
+        if (enqueue_2d(h, D0->q, D0->kern_q8, (size_t)N0, 1) != 0) return -1;
+    } else {
+        cl_mem bm = b0 ? b0->mem[0] : w0->mem[0];
+        if (h->SetArg(D0->kern, 0, sizeof(cl_mem), &D0->a_buf) != CL_SUCCESS ||
+            h->SetArg(D0->kern, 1, sizeof(cl_mem), &w0->mem[0]) != CL_SUCCESS ||
+            h->SetArg(D0->kern, 2, sizeof(cl_mem), &bm) != CL_SUCCESS ||
+            h->SetArg(D0->kern, 3, sizeof(cl_mem), &h->stream.slot[slot0]) !=
+                CL_SUCCESS ||
+            h->SetArg(D0->kern, 4, sizeof(int), &iT) != CL_SUCCESS ||
+            h->SetArg(D0->kern, 5, sizeof(int), &iK) != CL_SUCCESS ||
+            h->SetArg(D0->kern, 6, sizeof(int), &iN0) != CL_SUCCESS ||
+            h->SetArg(D0->kern, 7, sizeof(int), &has0) != CL_SUCCESS)
+            return -1;
+        if (enqueue_2d(h, D0->q, D0->kern, (size_t)N0, 1) != 0) return -1;
+    }
+    /* Launch d1 → c_buf */
+    if (is_q8_1) {
+        cl_mem bm = b1 ? b1->mem[1] : w1->scale[1];
+        if (h->SetArg(D1->kern_q8, 0, sizeof(cl_mem), &D1->a_buf) !=
+                CL_SUCCESS ||
+            h->SetArg(D1->kern_q8, 1, sizeof(cl_mem), &w1->mem[1]) !=
+                CL_SUCCESS ||
+            h->SetArg(D1->kern_q8, 2, sizeof(cl_mem), &w1->scale[1]) !=
+                CL_SUCCESS ||
+            h->SetArg(D1->kern_q8, 3, sizeof(cl_mem), &bm) != CL_SUCCESS ||
+            h->SetArg(D1->kern_q8, 4, sizeof(cl_mem), &D1->c_buf) !=
+                CL_SUCCESS ||
+            h->SetArg(D1->kern_q8, 5, sizeof(int), &iT) != CL_SUCCESS ||
+            h->SetArg(D1->kern_q8, 6, sizeof(int), &iK) != CL_SUCCESS ||
+            h->SetArg(D1->kern_q8, 7, sizeof(int), &iN1) != CL_SUCCESS ||
+            h->SetArg(D1->kern_q8, 8, sizeof(int), &has1) != CL_SUCCESS)
+            return -1;
+        if (enqueue_2d(h, D1->q, D1->kern_q8, (size_t)N1, 1) != 0) return -1;
+    } else {
+        cl_mem bm = b1 ? b1->mem[1] : w1->mem[1];
+        if (h->SetArg(D1->kern, 0, sizeof(cl_mem), &D1->a_buf) != CL_SUCCESS ||
+            h->SetArg(D1->kern, 1, sizeof(cl_mem), &w1->mem[1]) != CL_SUCCESS ||
+            h->SetArg(D1->kern, 2, sizeof(cl_mem), &bm) != CL_SUCCESS ||
+            h->SetArg(D1->kern, 3, sizeof(cl_mem), &D1->c_buf) != CL_SUCCESS ||
+            h->SetArg(D1->kern, 4, sizeof(int), &iT) != CL_SUCCESS ||
+            h->SetArg(D1->kern, 5, sizeof(int), &iK) != CL_SUCCESS ||
+            h->SetArg(D1->kern, 6, sizeof(int), &iN1) != CL_SUCCESS ||
+            h->SetArg(D1->kern, 7, sizeof(int), &has1) != CL_SUCCESS)
+            return -1;
+        if (enqueue_2d(h, D1->q, D1->kern, (size_t)N1, 1) != 0) return -1;
+    }
+    if (h->ReadBuffer(D1->q, D1->c_buf, CL_FALSE, 0, (size_t)N1 * 4,
+                      h->stream.c_gather, 0, NULL, NULL) != CL_SUCCESS)
+        return -1;
+    h->Flush(D0->q);
+    h->Flush(D1->q);
+    for (d = 0; d < 2; ++d)
+        if (h->Finish(h->d[d].q) != CL_SUCCESS) return -1;
+    if (h->WriteBuffer(D0->q, h->stream.slot[slot1], CL_TRUE, 0, (size_t)N1 * 4,
+                       h->stream.c_gather, 0, NULL, NULL) != CL_SUCCESS)
+        return -1;
     return 0;
 }

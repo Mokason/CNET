@@ -97,11 +97,19 @@ Wired:
 
 `CNET_GPU_STREAM=0` disables. Measured (dual gfx1201, Qwythos Q8): N=4 ~8.4 tok/s (~7.4×), N=64 ~7.6 tok/s (~6.8×) vs ~1.1 CPU.
 
-## Next levers (faster still)
+## Next levers (landed 2026-07-18)
 
-1. Device YaRN / per-head QK-norm for qwen35 (drop host Q/K/V round-trip on full-attn).
-2. Device-side silu*up and down-proj without host mid buffer.
-3. Dual-GPU residual split or weight-pipelined layers (today residual/KV on d0).
+1. **Device YaRN + per-head QK-norm** (`cnet_rope_yarn`, `cnet_head_rms`, pack_q, gate_ao) on qwen35 full-attn decode; host fallback if any step soft-fails.
+2. **Device FFN**: gate/up → slots → `silu_mul_slots` → down → `add_x_slot` (no host mid). Residual host download skipped between consecutive full-attn layers.
+3. **Dual-GPU**: stream matmul handles already-split residents; concurrent gate@d0+up@d1 via `stream_linear_pair_slots` (**opt-in** `CNET_GPU_PAIR=1` — T=1 decode often PCIe-slower). Non-stream column-split GEMM still dual by default.
+
+Measured (Qwythos Q8, dual gfx1201): N=4 ~7.4 / N=16 ~7.3 tok/s (~6.5× CPU). Hermetic `GGUF_GPU_PASS`. Synthetic DS microbench (~719 tok/s) remains a different scale (tiny residual stack).
+
+## Further headroom
+
+1. Device Gated-DeltaNet (hybrid layers still host — biggest Qwythos gap).
+2. Fused kernels (rms+linear, silu+down) to cut launch overhead.
+3. True dual residual pipeline (layer i on d0, i+1 on d1) without per-step A bcast.
 
 ## Isolation
 

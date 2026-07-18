@@ -72,6 +72,27 @@ int cce_clgemm_stream_rope_slot(cce_clgemm *h, int slot, int n_heads,
                                 int head_dim, int rope_dim, int pos, float base,
                                 const float *freq_factors /*nullable half*/);
 
+/* YaRN NEOX (ggml rope_yarn). stride=head_dim dense, or 2*head_dim for
+ * interleaved [q|gate] (only first head_dim of each head is rotated). */
+int cce_clgemm_stream_rope_yarn_slot(cce_clgemm *h, int slot, int n_heads,
+                                     int head_dim, int rope_dim, int pos,
+                                     float base, float freq_scale,
+                                     float ext_factor, float attn_factor,
+                                     float corr0, float corr1, int stride);
+
+/* Per-head RMSNorm * w[d]. stride as above (interleaved: only Q half). */
+int cce_clgemm_stream_head_rms_slot(cce_clgemm *h, int slot, int n_heads,
+                                    int head_dim, int stride, const float *w,
+                                    float eps);
+
+/* Pack interleaved TMP [q|gate] → dense Q slot. */
+int cce_clgemm_stream_pack_q_interleaved(cce_clgemm *h, int qg_slot, int q_slot,
+                                         int n_q, int head_dim);
+
+/* AO *= sigmoid(gate) using interleaved qg layout. */
+int cce_clgemm_stream_gate_ao(cce_clgemm *h, int qg_slot, int n_q, int head_dim,
+                              int v_head_dim);
+
 /* Write K/V row at position pos into device cache (after host RoPE). */
 int cce_clgemm_stream_kv_write(cce_clgemm *h, int pos, const float *k,
                                const float *v, int k_dim, int v_dim,
@@ -100,9 +121,24 @@ int cce_clgemm_stream_use_slot_as_a(cce_clgemm *h, int slot, int n);
 /* Download a device slot to host. */
 int cce_clgemm_stream_get_slot(cce_clgemm *h, int slot, float *host, int n);
 
-/* silu(gate)*up → host y (or could leave on device later). */
+/* silu(gate)*up → host y. */
 int cce_clgemm_stream_silu_mul_host(cce_clgemm *h, const float *gate,
                                     const float *up, float *y, int n);
+
+/* silu(gate_slot)*up_slot → out_slot (device; FFN reuses Q/K/TMP). */
+int cce_clgemm_stream_silu_mul_slots(cce_clgemm *h, int gate_slot, int up_slot,
+                                     int out_slot, int n);
+
+/* residual x += slot[0..D). */
+int cce_clgemm_stream_add_x_slot(cce_clgemm *h, int slot, int D);
+
+/* Dual-GPU concurrent linears from the same stream A: W0→slot0 on d0,
+ * W1→slot1 via d1 (host hop for result only). Soft-fail if ndev<2. */
+int cce_clgemm_stream_linear_pair_slots(
+    cce_clgemm *h, const float *W0, const float *bias0, int is_q8_0,
+    const int8_t *Wq0, const float *sc0, int N0, int slot0, const float *W1,
+    const float *bias1, int is_q8_1, const int8_t *Wq1, const float *sc1,
+    int N1, int slot1, int K);
 
 #ifdef __cplusplus
 }

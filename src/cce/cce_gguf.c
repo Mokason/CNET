@@ -1342,6 +1342,38 @@ int cce_gguf__stream_linear_slot(cce_clgemm *gpu, cce_cascade *cas, int dout,
     return stream_linear_cas_slot(gpu, cas, dout, slot);
 }
 
+/* Dual concurrent linears (gate/up) from two cascades. */
+static int stream_linear_pair_cas(cce_clgemm *gpu, cce_cascade *a,
+                                  cce_cascade *b, int na, int nb, int sa,
+                                  int sb) {
+    const cce_block *ba, *bb;
+    const float *bisa, *bisb;
+    int dina, dinb;
+    if (!gpu || !a || !b || a->num_blocks != 1 || b->num_blocks != 1) return -1;
+    ba = &a->blocks[0];
+    bb = &b->blocks[0];
+    if (ba->type != CCE_BLOCK_LINEAR_HEAD || bb->type != CCE_BLOCK_LINEAR_HEAD ||
+        ba->weights.ndim != 2 || bb->weights.ndim != 2)
+        return -1;
+    dina = ba->weights.shape[0];
+    dinb = bb->weights.shape[0];
+    if (dina != dinb || ba->weights.shape[1] != na ||
+        bb->weights.shape[1] != nb)
+        return -1;
+    bisa = (ba->bias.numel == (size_t)na) ? ba->bias.data : NULL;
+    bisb = (bb->bias.numel == (size_t)nb) ? bb->bias.data : NULL;
+    if (ba->w_q && ba->w_scale && !ba->w_trit && bb->w_q && bb->w_scale &&
+        !bb->w_trit)
+        return cce_clgemm_stream_linear_pair_slots(
+            gpu, NULL, bisa, 1, (const int8_t *)ba->w_q, ba->w_scale, na, sa,
+            NULL, bisb, 1, (const int8_t *)bb->w_q, bb->w_scale, nb, sb, dina);
+    if (!ba->w_q && !ba->w_trit && !bb->w_q && !bb->w_trit)
+        return cce_clgemm_stream_linear_pair_slots(
+            gpu, ba->weights.data, bisa, 0, NULL, NULL, na, sa, bb->weights.data,
+            bisb, 0, NULL, NULL, nb, sb, dina);
+    return -1;
+}
+
 static cce_result apply_linear_rows(cce_clgemm *gpu, cce_hipgemm *hip,
                                     cce_cascade* cas,
                                     const cce_tensor* in, cce_tensor* out) {
@@ -2083,37 +2115,72 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
                 cce_clgemm_stream_rms_x(gpu, m->ffn_norm[l].data, D, eps, 0) !=
                     0)
                 ok = 0;
-            if (ok && (stream_linear_cas(gpu, gate_cas, gate_h, mlp_h) != 0 ||
-                       stream_linear_cas(gpu, up_cas, up_h, mlp_h) != 0))
-                ok = 0;
-            if (ok &&
-                cce_clgemm_stream_silu_mul_host(gpu, gate_h, up_h, mid_h,
-                                               mlp_h) != 0) {
-                int i2;
-                for (i2 = 0; i2 < mlp_h; i2++) {
-                    float gv = gate_h[i2];
-                    float s = 1.0f / (1.0f + expf(-gv));
-                    mid_h[i2] = (gv * s) * up_h[i2];
-                }
-            }
+            /* Device FFN: gate/up (dual concurrent when 2 GPUs) → silu → down.
+               On FFN failure, layer soft-fails to host (x_ckpt restores residual
+               — do not half-apply host mid after a partial device FFN). */
             if (ok) {
-                cce_tensor tin = {0}, tout = {0};
-                cce_tensor_alloc(&tin, (int[]){1, mlp_h}, 2);
-                cce_tensor_alloc(&tout, (int[]){1, D}, 2);
-                if (tin.data && tout.data) {
-                    memcpy(tin.data, mid_h, (size_t)mlp_h * 4);
-                    if (apply_linear_rows(gpu, hip, down_cas, &tin, &tout) ==
-                        CCE_OK)
-                        memcpy(down_h, tout.data, (size_t)D * 4);
-                    else
-                        ok = 0;
-                } else
-                    ok = 0;
-                cce_tensor_free(&tin);
-                cce_tensor_free(&tout);
+                int gu_ok = 0;
+                int ffn_ok = 0;
+                /* CNET_GPU_PAIR=1: concurrent gate@d0 + up@d1 (often slower
+                   on T=1 decode due to A bcast + C gather — opt-in). */
+                {
+                    const char *pe = getenv("CNET_GPU_PAIR");
+                    if (pe && pe[0] == '1' &&
+                        stream_linear_pair_cas(gpu, gate_cas, up_cas, mlp_h,
+                                               mlp_h, CCE_CL_SLOT_Q,
+                                               CCE_CL_SLOT_K) == 0)
+                        gu_ok = 1;
+                }
+                if (!gu_ok &&
+                    stream_linear_cas_slot(gpu, gate_cas, mlp_h,
+                                           CCE_CL_SLOT_Q) == 0 &&
+                    stream_linear_cas_slot(gpu, up_cas, mlp_h, CCE_CL_SLOT_K) ==
+                        0)
+                    gu_ok = 1;
+                if (gu_ok &&
+                    cce_clgemm_stream_silu_mul_slots(
+                        gpu, CCE_CL_SLOT_Q, CCE_CL_SLOT_K, CCE_CL_SLOT_TMP,
+                        mlp_h) == 0 &&
+                    cce_clgemm_stream_use_slot_as_a(gpu, CCE_CL_SLOT_TMP,
+                                                    mlp_h) == 0 &&
+                    stream_linear_cas_slot(gpu, down_cas, D, CCE_CL_SLOT_V) ==
+                        0 &&
+                    cce_clgemm_stream_add_x_slot(gpu, CCE_CL_SLOT_V, D) == 0)
+                    ffn_ok = 1;
+                if (!ffn_ok && gu_ok == 0) {
+                    /* neither dual nor sequential slots: host mid buffers */
+                    if (stream_linear_cas(gpu, gate_cas, gate_h, mlp_h) == 0 &&
+                        stream_linear_cas(gpu, up_cas, up_h, mlp_h) == 0) {
+                        if (cce_clgemm_stream_silu_mul_host(gpu, gate_h, up_h,
+                                                           mid_h, mlp_h) != 0) {
+                            int i2;
+                            for (i2 = 0; i2 < mlp_h; i2++) {
+                                float gv = gate_h[i2];
+                                float s = 1.0f / (1.0f + expf(-gv));
+                                mid_h[i2] = (gv * s) * up_h[i2];
+                            }
+                        }
+                        {
+                            cce_tensor tin = {0}, tout = {0};
+                            cce_tensor_alloc(&tin, (int[]){1, mlp_h}, 2);
+                            cce_tensor_alloc(&tout, (int[]){1, D}, 2);
+                            if (tin.data && tout.data) {
+                                memcpy(tin.data, mid_h, (size_t)mlp_h * 4);
+                                if (apply_linear_rows(gpu, hip, down_cas, &tin,
+                                                      &tout) == CCE_OK) {
+                                    memcpy(down_h, tout.data, (size_t)D * 4);
+                                    if (cce_clgemm_stream_add_x_host(
+                                            gpu, down_h, D) == 0)
+                                        ffn_ok = 1;
+                                }
+                            }
+                            cce_tensor_free(&tin);
+                            cce_tensor_free(&tout);
+                        }
+                    }
+                }
+                if (!ffn_ok) ok = 0;
             }
-            if (ok && cce_clgemm_stream_add_x_host(gpu, down_h, D) != 0)
-                ok = 0;
             free(o_h);
             free(gate_h);
             free(up_h);

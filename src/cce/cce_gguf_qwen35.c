@@ -898,8 +898,67 @@ cce_result cce_gguf_qwen35_forward_impl(cce_gguf_qwen2 *m, const int *tokens,
             }
             snprintf(name, sizeof name, "qwen35.blk.%d.qg_proj", l);
             cce_gguf__fire_capture(name, &ln1);
-            /* Prefer stream linears (device ln → Q/K/V slots) when residual
-               stream is live; RoPE+attn stay on device after. */
+            /* Full device path: ln → Q/K/V slots → QK-norm → YaRN → pack Q
+               → device KV → attn_dev → gate → o_proj (decode only). */
+            {
+                int dev_full = 0;
+                const int abs_t0 = start_pos;
+                const int q_stride = 2 * ge->head_dim;
+                if (use_stream && n_tokens == 1 && !m->probe_batch &&
+                    cce_clgemm_stream_rms_x(gpu, m->attn_norm[l].data, D, eps,
+                                            0) == 0 &&
+                    cce_gguf__stream_linear_slot(gpu, qg_cas, qg_dim,
+                                                 CCE_CL_SLOT_TMP) == 0 &&
+                    cce_gguf__stream_linear_slot(gpu, k_cas, ge->k_dim,
+                                                 CCE_CL_SLOT_K) == 0 &&
+                    cce_gguf__stream_linear_slot(gpu, v_cas, ge->v_dim,
+                                                 CCE_CL_SLOT_V) == 0 &&
+                    cce_clgemm_stream_head_rms_slot(
+                        gpu, CCE_CL_SLOT_TMP, ge->n_q, ge->head_dim, q_stride,
+                        qnw, eps) == 0 &&
+                    cce_clgemm_stream_head_rms_slot(
+                        gpu, CCE_CL_SLOT_K, ge->n_k, ge->head_dim, ge->head_dim,
+                        knw, eps) == 0 &&
+                    cce_clgemm_stream_rope_yarn_slot(
+                        gpu, CCE_CL_SLOT_TMP, ge->n_q, ge->head_dim, e->rope_dim,
+                        abs_t0, e->rope_base, e->yarn_freq_scale,
+                        e->yarn_ext_factor, e->yarn_attn_factor, e->yarn_corr0,
+                        e->yarn_corr1, q_stride) == 0 &&
+                    cce_clgemm_stream_rope_yarn_slot(
+                        gpu, CCE_CL_SLOT_K, ge->n_k, ge->head_dim, e->rope_dim,
+                        abs_t0, e->rope_base, e->yarn_freq_scale,
+                        e->yarn_ext_factor, e->yarn_attn_factor, e->yarn_corr0,
+                        e->yarn_corr1, ge->head_dim) == 0 &&
+                    cce_clgemm_stream_pack_q_interleaved(
+                        gpu, CCE_CL_SLOT_TMP, CCE_CL_SLOT_Q, ge->n_q,
+                        ge->head_dim) == 0 &&
+                    cce_clgemm_stream_kv_write_slots(
+                        gpu, abs_t0, ge->k_dim, ge->v_dim, ge->k_off,
+                        ge->v_off) == 0 &&
+                    cce_clgemm_stream_get_slot(gpu, CCE_CL_SLOT_K, k.data,
+                                               ge->k_dim) == 0 &&
+                    cce_clgemm_stream_get_slot(gpu, CCE_CL_SLOT_V, v.data,
+                                               ge->v_dim) == 0 &&
+                    cce_clgemm_stream_attn_dev(
+                        gpu, ge->k_off, ge->v_off, ge->n_q, ge->n_k, ge->n_v,
+                        ge->head_dim, ge->v_head_dim, 0, abs_t0, scale,
+                        NULL) == 0 &&
+                    cce_clgemm_stream_gate_ao(gpu, CCE_CL_SLOT_TMP, ge->n_q,
+                                              ge->head_dim, ge->v_head_dim) ==
+                        0 &&
+                    cce_clgemm_stream_get_slot(gpu, CCE_CL_SLOT_AO,
+                                               attn_out.data, o_in) == 0) {
+                    memcpy(m->k_cache +
+                               (size_t)abs_t0 * m->k_slot_floats + ge->k_off,
+                           k.data, (size_t)ge->k_dim * sizeof(float));
+                    memcpy(m->v_cache +
+                               (size_t)abs_t0 * m->v_slot_floats + ge->v_off,
+                           v.data, (size_t)ge->v_dim * sizeof(float));
+                    dev_full = 1;
+                }
+                if (dev_full) goto q35_attn_gpu_done;
+            }
+            /* Host / hybrid fallback */
             if (use_stream &&
                 cce_clgemm_stream_rms_x(gpu, m->attn_norm[l].data, D, eps, 0) ==
                     0 &&
@@ -915,7 +974,7 @@ cce_result cce_gguf_qwen35_forward_impl(cce_gguf_qwen2 *m, const int *tokens,
                                            ge->k_dim) == 0 &&
                 cce_clgemm_stream_get_slot(gpu, CCE_CL_SLOT_V, v.data,
                                            ge->v_dim) == 0) {
-                /* host mirrors filled; rope/gate still need host qg layout */
+                /* host mirrors filled; rope/gate on host */
             } else if (cce_gguf__apply_linear_rows(gpu, hip, qg_cas, &ln1, &qg) !=
                            CCE_OK ||
                        cce_gguf__apply_linear_rows(gpu, hip, k_cas, &ln1, &k) !=
@@ -982,16 +1041,10 @@ cce_result cce_gguf_qwen35_forward_impl(cce_gguf_qwen2 *m, const int *tokens,
                         memcpy(qplain + (size_t)h * ge->head_dim, qh,
                                (size_t)ge->head_dim * sizeof(float));
                     }
-                    /* ensure this token's K/V are on device cache */
                     if (use_stream) {
-                        for (t = 0; t < 1; t++) {
-                            const int pos = abs_t0;
-                            (void)cce_clgemm_stream_kv_write(
-                                gpu, pos,
-                                k.data + (size_t)t * ge->k_dim,
-                                v.data + (size_t)t * ge->v_dim, ge->k_dim,
-                                ge->v_dim, ge->k_off, ge->v_off);
-                        }
+                        (void)cce_clgemm_stream_kv_write(
+                            gpu, abs_t0, k.data, v.data, ge->k_dim, ge->v_dim,
+                            ge->k_off, ge->v_off);
                         if (cce_clgemm_stream_attn(
                                 gpu, qplain, ge->k_off, ge->v_off, ge->n_q,
                                 ge->n_k, ge->n_v, ge->head_dim, ge->v_head_dim,
@@ -1247,41 +1300,106 @@ cce_result cce_gguf_qwen35_forward_impl(cce_gguf_qwen2 *m, const int *tokens,
                 cce_tensor_free(&after_attn);
                 Q35_FAIL("ffn cascades missing");
             }
-            cce_gguf__rms_norm(&after_attn, &m->ffn_norm[l], eps, &ln2);
             snprintf(name, sizeof name, "qwen35.blk.%d.gate_proj", l);
             cce_gguf__fire_capture(name, &ln2);
-            if (cce_gguf__apply_linear_rows(gpu, hip, gate_cas, &ln2, &gate) != CCE_OK ||
-                cce_gguf__apply_linear_rows(gpu, hip, up_cas, &ln2, &upv) != CCE_OK) {
-                cce_tensor_free(&ln2); cce_tensor_free(&gate);
-                cce_tensor_free(&upv); cce_tensor_free(&mid);
-                cce_tensor_free(&down); cce_tensor_free(&ln1);
-                cce_tensor_free(&after_attn);
-                Q35_FAIL("gate/up failed");
-            }
-            {
-                size_t i;
-                for (i = 0; i < (size_t)n_tokens * mlp_hidden; i++)
-                    mid.data[i] = q35_siluf(gate.data[i]) * upv.data[i];
-            }
-            snprintf(name, sizeof name, "qwen35.blk.%d.down_proj", l);
-            cce_gguf__fire_capture(name, &mid);
-            if (cce_gguf__apply_linear_rows(gpu, hip, down_cas, &mid, &down) != CCE_OK) {
-                cce_tensor_free(&ln2); cce_tensor_free(&gate);
-                cce_tensor_free(&upv); cce_tensor_free(&mid);
-                cce_tensor_free(&down); cce_tensor_free(&ln1);
-                cce_tensor_free(&after_attn);
-                Q35_FAIL("down failed");
-            }
+            /* Device FFN when residual stream is live (decode). */
             if (use_stream && n_tokens == 1 &&
-                cce_clgemm_stream_set_x(gpu, after_attn.data, D) == 0 &&
-                cce_clgemm_stream_add_x_host(gpu, down.data, D) == 0) {
-                (void)cce_clgemm_stream_get_x(gpu, x.data, D);
+                cce_clgemm_stream_rms_x(gpu, m->ffn_norm[l].data, D, eps, 0) ==
+                    0) {
+                int ffn_ok = 0;
+                /* Opt-in dual concurrent gate/up (CNET_GPU_PAIR=1). */
+                {
+                    const char *pe = getenv("CNET_GPU_PAIR");
+                    if (pe && pe[0] == '1' &&
+                        cce_clgemm_device_count(gpu) >= 2) {
+                        const cce_block *bg = &gate_cas->blocks[0];
+                        const cce_block *bu = &up_cas->blocks[0];
+                        const float *bisa =
+                            (bg->bias.numel == (size_t)mlp_hidden)
+                                ? bg->bias.data
+                                : NULL;
+                        const float *bisb =
+                            (bu->bias.numel == (size_t)mlp_hidden)
+                                ? bu->bias.data
+                                : NULL;
+                        int din = bg->weights.shape[0];
+                        if (bg->w_q && bg->w_scale && !bg->w_trit && bu->w_q &&
+                            bu->w_scale && !bu->w_trit &&
+                            cce_clgemm_stream_linear_pair_slots(
+                                gpu, NULL, bisa, 1, (const int8_t *)bg->w_q,
+                                bg->w_scale, mlp_hidden, CCE_CL_SLOT_Q, NULL,
+                                bisb, 1, (const int8_t *)bu->w_q, bu->w_scale,
+                                mlp_hidden, CCE_CL_SLOT_K, din) == 0)
+                            ffn_ok = 1;
+                    }
+                }
+                if (!ffn_ok &&
+                    cce_gguf__stream_linear_slot(gpu, gate_cas, mlp_hidden,
+                                                 CCE_CL_SLOT_Q) == 0 &&
+                    cce_gguf__stream_linear_slot(gpu, up_cas, mlp_hidden,
+                                                 CCE_CL_SLOT_K) == 0)
+                    ffn_ok = 1;
+                if (ffn_ok &&
+                    cce_clgemm_stream_silu_mul_slots(
+                        gpu, CCE_CL_SLOT_Q, CCE_CL_SLOT_K, CCE_CL_SLOT_TMP,
+                        mlp_hidden) == 0 &&
+                    cce_clgemm_stream_use_slot_as_a(gpu, CCE_CL_SLOT_TMP,
+                                                    mlp_hidden) == 0 &&
+                    cce_gguf__stream_linear_slot(gpu, down_cas, D,
+                                                 CCE_CL_SLOT_V) == 0 &&
+                    cce_clgemm_stream_add_x_slot(gpu, CCE_CL_SLOT_V, D) == 0) {
+                    /* Keep residual on GPU unless next layer is GDN (needs
+                       host x) or this is the last layer (logits path). */
+                    if (l + 1 >= m->n_layer ||
+                        e->kind[l + 1] != CCE_QWEN35_LAYER_FULL_ATTN)
+                        (void)cce_clgemm_stream_get_x(gpu, x.data, D);
+                    ffn_ok = 1;
+                } else {
+                    ffn_ok = 0;
+                }
+                if (ffn_ok) {
+                    /* done device FFN */
+                } else
+                    goto q35_ffn_host;
             } else {
-                size_t i;
-                for (i = 0; i < (size_t)n_tokens * D; i++)
-                    x.data[i] = after_attn.data[i] + down.data[i];
-                if (use_stream)
-                    (void)cce_clgemm_stream_set_x(gpu, x.data, D);
+            q35_ffn_host: ;
+                cce_gguf__rms_norm(&after_attn, &m->ffn_norm[l], eps, &ln2);
+                if (cce_gguf__apply_linear_rows(gpu, hip, gate_cas, &ln2,
+                                                &gate) != CCE_OK ||
+                    cce_gguf__apply_linear_rows(gpu, hip, up_cas, &ln2, &upv) !=
+                        CCE_OK) {
+                    cce_tensor_free(&ln2); cce_tensor_free(&gate);
+                    cce_tensor_free(&upv); cce_tensor_free(&mid);
+                    cce_tensor_free(&down); cce_tensor_free(&ln1);
+                    cce_tensor_free(&after_attn);
+                    Q35_FAIL("gate/up failed");
+                }
+                {
+                    size_t i;
+                    for (i = 0; i < (size_t)n_tokens * mlp_hidden; i++)
+                        mid.data[i] = q35_siluf(gate.data[i]) * upv.data[i];
+                }
+                snprintf(name, sizeof name, "qwen35.blk.%d.down_proj", l);
+                cce_gguf__fire_capture(name, &mid);
+                if (cce_gguf__apply_linear_rows(gpu, hip, down_cas, &mid,
+                                                &down) != CCE_OK) {
+                    cce_tensor_free(&ln2); cce_tensor_free(&gate);
+                    cce_tensor_free(&upv); cce_tensor_free(&mid);
+                    cce_tensor_free(&down); cce_tensor_free(&ln1);
+                    cce_tensor_free(&after_attn);
+                    Q35_FAIL("down failed");
+                }
+                if (use_stream && n_tokens == 1 &&
+                    cce_clgemm_stream_set_x(gpu, after_attn.data, D) == 0 &&
+                    cce_clgemm_stream_add_x_host(gpu, down.data, D) == 0) {
+                    (void)cce_clgemm_stream_get_x(gpu, x.data, D);
+                } else {
+                    size_t i;
+                    for (i = 0; i < (size_t)n_tokens * D; i++)
+                        x.data[i] = after_attn.data[i] + down.data[i];
+                    if (use_stream)
+                        (void)cce_clgemm_stream_set_x(gpu, x.data, D);
+                }
             }
             cce_tensor_free(&ln2); cce_tensor_free(&gate); cce_tensor_free(&upv);
             cce_tensor_free(&mid); cce_tensor_free(&down);
