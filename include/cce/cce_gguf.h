@@ -462,6 +462,24 @@ typedef struct cce_gguf_qwen2 {
        or the CNET_SPARSE_KV env knob read at load. Classic transformer
        path only — the qwen35 hybrid runner has no sparse read. */
     float sparse_kv_fraction;
+
+    /* Full DSA attention (DeepSeek-style). When sparse_kv_fraction > 0 the
+       forward uses lightning index → dual select (index WHO, q·k HOW) →
+       sleep/floor-keep-one → skip zero V. Quality default: sleep only.
+       CNET_DSA_PROFILE=speed enables floor grid. */
+    float dsa_floor_quantum;
+    float dsa_sleep_eps;
+    int   dsa_keep_anchors;
+    int   dsa_index_mode;   /* cce_dsa_index_mode */
+    int   dsa_index_heads;
+
+    /* MLA-lite int8 KV (CNET_MLA_KV=1): store int8+scale alongside f32;
+       DSA scores via q8 dot; V dequant only on awake support. */
+    int     mla_kv;
+    int8_t *k_mla_q8;       /* max_ctx * k_slot_floats */
+    float  *k_mla_scale;    /* max_ctx * n_layer (per-pos, per-layer) */
+    int8_t *v_mla_q8;
+    float  *v_mla_scale;    /* max_ctx * n_layer */
 } cce_gguf_qwen2;
 
 /* The live GGUF fp16->fp32 decoder (all quant superblock scales flow through

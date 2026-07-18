@@ -77,7 +77,7 @@ typedef struct cce_forest {
     int          num_branches;
     int          max_branches;
 
-    /* Simple in-RAM index for recall (can be replaced by SSMax later) */
+    /* In-RAM index; recall uses DSA-inspired SSMax (sparse softmax) */
     float*       centroids;   /* [max_branches * centroid_dim] */
     int          centroid_dim;
 
@@ -157,7 +157,7 @@ CCE_API cce_result cce_forest_add_patch_branch(cce_forest* forest,
                                                float init_scale,
                                                int* out_branch_idx);
 
-/* Recall: find best branch by simple centroid distance (placeholder for SSMax) */
+/* Recall: SSMax over centroid-similarity + goodness scores */
 cce_result cce_forest_recall(cce_forest* forest, const float* input, int dim, int* branch_idx);
 
 /* Load a branch into HOT tier (mmap -> RAM copy if needed) */

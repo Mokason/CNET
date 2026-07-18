@@ -2,6 +2,8 @@
 #include "../../include/cce/cce_weight_store.h"
 #include "../../include/cce/cce_safetensors.h" /* for some helpers if needed, but we'll be self-contained */
 #include "../../include/cce/cce_sparse_kv.h"   /* opt-in sparse KV routing (the ONE selector) */
+#include "../../include/cce/cce_router.h"      /* cce_ssmax_topk_weights for MoE route */
+#include "../../include/cce/cce_dsa.h"         /* full DSA attention kernel */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -1217,6 +1219,17 @@ cce_result cce_gguf_qwen2_set_sparse_kv(cce_gguf_qwen2 *m, float budget_fraction
         return CCE_ERR_INVALID_ARG;
     }
     m->sparse_kv_fraction = budget_fraction;
+    /* Quality DSA defaults; identity (frac~1) disables floor/sleep. */
+    if (budget_fraction > 0.0f && budget_fraction < 0.999f) {
+        if (m->dsa_sleep_eps <= 0.0f) m->dsa_sleep_eps = CCE_SLEEP_DEFAULT_EPS;
+        m->dsa_keep_anchors = 1;
+        if (m->dsa_index_mode < 0) m->dsa_index_mode = 2; /* HYBRID */
+        /* floor stays 0 unless speed profile / CNET_DSA_FLOOR */
+    } else {
+        m->dsa_floor_quantum = 0.0f;
+        m->dsa_sleep_eps = 0.0f;
+        m->dsa_keep_anchors = 1;
+    }
     return CCE_OK;
 }
 
@@ -1804,16 +1817,21 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
 
     float *scores = (float*)malloc((size_t)m->max_ctx * sizeof *scores);
     if (!scores) { cce_tensor_free(&x); return CCE_ERR_OOM; }
+    /* Lightning index scores (separate from true q·k when DSA is on). */
+    float *idx_scores = NULL;
 
-    /* OPT-IN sparse KV routing: fraction 0.0 (the default) leaves every FP
-       op of the attention loop untouched — skv_idx stays NULL and the
-       historical code below runs verbatim. When set, skv_idx receives the
-       cce_sparse_kv selector's chosen rows per (head, query step). */
+    /* OPT-IN sparse KV / DSA: fraction 0.0 leaves attention dense and
+       byte-identical. When set, full DSA kernel runs (lightning + dual). */
     float skv_frac = m->sparse_kv_fraction;
     int *skv_idx = NULL;
     if (skv_frac > 0.0f) {
         skv_idx = (int*)malloc((size_t)m->max_ctx * sizeof *skv_idx);
-        if (!skv_idx) { free(scores); cce_tensor_free(&x); return CCE_ERR_OOM; }
+        idx_scores = (float*)malloc((size_t)m->max_ctx * sizeof *idx_scores);
+        if (!skv_idx || !idx_scores) {
+            free(scores); free(skv_idx); free(idx_scores);
+            cce_tensor_free(&x);
+            return CCE_ERR_OOM;
+        }
     }
 
     char name[128];
@@ -1840,7 +1858,7 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
             fprintf(stderr, "cce_gguf: layer %d cascades missing — "
                             "refusing\n", l);
             /* free(NULL) is a no-op when the sparse knob is unset */
-            free(scores); free(skv_idx); cce_tensor_free(&x);
+            free(scores); free(skv_idx); free(idx_scores); cce_tensor_free(&x);
             return CCE_ERR_NOT_FOUND;
         }
 
@@ -1871,7 +1889,7 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
             fprintf(stderr, "cce_gguf: q/k/v projection failed at layer %d "
                             "(q_dim=%d k_dim=%d v_dim=%d) — refusing\n", l,
                     ge->q_dim, ge->k_dim, ge->v_dim);
-            free(scores); free(skv_idx);
+            free(scores); free(skv_idx); free(idx_scores);
             cce_tensor_free(&ln1); cce_tensor_free(&q);
             cce_tensor_free(&k); cce_tensor_free(&v); cce_tensor_free(&x);
             return CCE_ERR_UNSUPPORTED;
@@ -1951,12 +1969,22 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
                k/v stay in the local tensors and attention reads them
                per-row below. */
             if (!m->probe_batch) {
-                memcpy(m->k_cache + (size_t)pos * m->k_slot_floats + ge->k_off,
-                       k.data + (size_t)t * ge->k_dim,
+                float* kdst = m->k_cache + (size_t)pos * m->k_slot_floats + ge->k_off;
+                float* vdst = m->v_cache + (size_t)pos * m->v_slot_floats + ge->v_off;
+                memcpy(kdst, k.data + (size_t)t * ge->k_dim,
                        (size_t)ge->k_dim * sizeof(float));
-                memcpy(m->v_cache + (size_t)pos * m->v_slot_floats + ge->v_off,
-                       v.data + (size_t)t * ge->v_dim,
+                memcpy(vdst, v.data + (size_t)t * ge->v_dim,
                        (size_t)ge->v_dim * sizeof(float));
+                /* MLA-lite: int8 side cache for bandwidth-cheap sparse reads */
+                if (m->mla_kv && m->k_mla_q8 && m->v_mla_q8) {
+                    size_t si = (size_t)pos * (size_t)m->n_layer + (size_t)l;
+                    cce_mla_kv_quantize(kdst, ge->k_dim,
+                        m->k_mla_q8 + (size_t)pos * m->k_slot_floats + ge->k_off,
+                        &m->k_mla_scale[si]);
+                    cce_mla_kv_quantize(vdst, ge->v_dim,
+                        m->v_mla_q8 + (size_t)pos * m->v_slot_floats + ge->v_off,
+                        &m->v_mla_scale[si]);
+                }
             }
         }
 
@@ -1986,9 +2014,20 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
                         : m->k_cache +
                               (size_t)j * m->k_slot_floats + ge->k_off +
                               (size_t)kh_i * ge->head_dim;
-                    float sacc = 0.0f;
-                    for (int d2 = 0; d2 < ge->head_dim; d2++)
-                        sacc += qh[d2] * kh[d2];
+                    float sacc;
+                    /* MLA-lite: score from int8 K when enabled (non-probe). */
+                    if (m->mla_kv && m->k_mla_q8 && !m->probe_batch) {
+                        const int8_t *kq = m->k_mla_q8 +
+                            (size_t)j * m->k_slot_floats + ge->k_off +
+                            (size_t)kh_i * ge->head_dim;
+                        size_t si = (size_t)j * (size_t)m->n_layer + (size_t)l;
+                        sacc = cce_mla_kv_dot_q8(qh, kq, m->k_mla_scale[si],
+                                                 ge->head_dim);
+                    } else {
+                        sacc = 0.0f;
+                        for (int d2 = 0; d2 < ge->head_dim; d2++)
+                            sacc += qh[d2] * kh[d2];
+                    }
                     scores[j] = sacc * scale;
                 }
                 if (trace_this && l == 0 && h == 0 && t == n_tokens - 1) {
@@ -2032,51 +2071,67 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
                         oh[d2] += scores[j] * vh[d2];
                 }
                 } else {
-                /* SPARSE KV (opt-in): restrict this step's softmax/V-read to
-                   the rows the cce_sparse_kv selector keeps under a budget of
-                   ceil(fraction * visible rows). Selection scores are the raw
-                   pre-softmax q·k values just computed (heavy hitters = the
-                   rows the full softmax would weight most). At fraction 1.0
-                   the selector keeps every row in ascending order, making
-                   this branch op-for-op identical to the full path — the
-                   sparse_kv_exec gate pins that bit-identity. */
+                /* FULL DSA: lightning index (WHO) + true q·k (HOW) + skip V.
+                   Identity frac~1: sequential support, no floor/sleep. */
                 int tc = abs_t - jmin + 1;
                 int skv_n = 0;
-                cce_specialist_kv_budget bud;
-                cce_specialist_kv_budget_default(&bud, tc);
-                {
-                    int target = (int)ceilf(skv_frac * (float)tc);
-                    if (target < 1) target = 1;
-                    if (target > tc) target = tc;
-                    bud.max_tokens = target;
-                    /* Re-derive the positional shares against THIS target,
-                       not the default ~20% budget the line above replaced:
-                       the selector fills initial rows then the recent
-                       window BEFORE its heavy-hitter score pass, so shares
-                       sized for the default budget would spend a small
-                       target entirely on the OLDEST rows (e.g. fraction
-                       0.25 at tc=12 selected {0,1,2}), evicting the
-                       query's own row. Invariants: recent >= 1 keeps the
-                       query's own row (the newest) selected at every step;
-                       initial + recent <= target means the positional fill
-                       can never starve the score pass. */
-                    bud.recent_tokens = target / 2;
-                    if (bud.recent_tokens < 1) bud.recent_tokens = 1;
-                    if (bud.recent_tokens > 32) bud.recent_tokens = 32;
-                    bud.initial_tokens = target / 4;
-                    if (bud.initial_tokens > 4) bud.initial_tokens = 4;
-                    /* over-budget: shrink initial first (recent <= target
-                       always holds above, so initial never goes negative) */
-                    if (bud.initial_tokens + bud.recent_tokens > target)
-                        bud.initial_tokens = target - bud.recent_tokens;
+                float w_stk[256];
+                float* dsa_w = (tc <= 256) ? w_stk
+                    : (float*)malloc((size_t)tc * sizeof(float));
+                cce_dsa_config dcfg;
+                cce_dsa_config_default(&dcfg);
+                dcfg.fraction = skv_frac;
+                dcfg.top_k = 0;
+                dcfg.keep_anchors = m->dsa_keep_anchors ? 1 : 0;
+                dcfg.index_mode = m->dsa_index_mode >= 0 ? m->dsa_index_mode
+                                                        : CCE_DSA_INDEX_HYBRID;
+                dcfg.index_heads = m->dsa_index_heads;
+                if (skv_frac >= 0.999f) {
+                    dcfg.floor_quantum = 0.0f;
+                    dcfg.sleep_eps = 0.0f;
+                    dcfg.fraction = 1.0f;
+                    dcfg.index_mode = CCE_DSA_INDEX_QK; /* identity = plain qk */
+                } else {
+                    dcfg.floor_quantum = m->dsa_floor_quantum;
+                    dcfg.sleep_eps = m->dsa_sleep_eps > 0.0f
+                        ? m->dsa_sleep_eps : CCE_SLEEP_DEFAULT_EPS;
                 }
-                if (cce_specialist_select_kv_tokens(scores + jmin, tc, &bud,
-                                                    skv_idx, tc,
-                                                    &skv_n) != CCE_OK ||
+                /* Lightning index scores (multi-head ReLU / hybrid). */
+                if (skv_frac < 0.999f && idx_scores) {
+                    const float** kptrs = (const float**)malloc(
+                        (size_t)tc * sizeof(float*));
+                    if (kptrs) {
+                        for (int jj = 0; jj < tc; jj++) {
+                            int j = jmin + jj;
+                            kptrs[jj] = (m->probe_batch && j == abs_t)
+                                ? k.data + (size_t)t * ge->k_dim +
+                                      (size_t)kh_i * ge->head_dim
+                                : m->k_cache +
+                                      (size_t)j * m->k_slot_floats + ge->k_off +
+                                      (size_t)kh_i * ge->head_dim;
+                        }
+                        cce_dsa_lightning_index_ptr(qh, ge->head_dim, kptrs, tc,
+                                                    &dcfg, scale, NULL,
+                                                    idx_scores + jmin);
+                        free((void*)kptrs);
+                    } else {
+                        memcpy(idx_scores + jmin, scores + jmin,
+                               (size_t)tc * sizeof(float));
+                    }
+                } else if (idx_scores) {
+                    memcpy(idx_scores + jmin, scores + jmin,
+                           (size_t)tc * sizeof(float));
+                }
+                if (!dsa_w ||
+                    cce_dsa_select_dual(
+                        idx_scores ? idx_scores + jmin : scores + jmin,
+                        scores + jmin, tc, &dcfg,
+                        skv_idx, dsa_w, tc, &skv_n) != CCE_OK ||
                     skv_n < 1) {
-                    fprintf(stderr, "cce_gguf: sparse KV selection failed at "
+                    fprintf(stderr, "cce_gguf: DSA select failed at "
                                     "layer %d — refusing\n", l);
-                    free(scores); free(skv_idx);
+                    if (dsa_w && dsa_w != w_stk) free(dsa_w);
+                    free(scores); free(skv_idx); free(idx_scores);
                     cce_tensor_free(&ln1); cce_tensor_free(&q);
                     cce_tensor_free(&k); cce_tensor_free(&v);
                     cce_tensor_free(&attn_out); cce_tensor_free(&x);
@@ -2086,32 +2141,37 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
                     g_gguf_sparse_kv_tap(l, h, abs_t, jmin, scores + jmin, tc,
                                          skv_idx, skv_n,
                                          g_gguf_sparse_kv_tap_ctx);
-                float maxs = -1e30f;
-                for (int si = 0; si < skv_n; si++) {
-                    int j = jmin + skv_idx[si];
-                    if (scores[j] > maxs) maxs = scores[j];
-                }
-                float sum = 0.0f;
-                for (int si = 0; si < skv_n; si++) {
-                    int j = jmin + skv_idx[si];
-                    scores[j] = expf(scores[j] - maxs);
-                    sum += scores[j];
-                }
-                for (int si = 0; si < skv_n; si++) scores[jmin + skv_idx[si]] /= sum;
                 float *oh = attn_out.data + (size_t)t * o_in +
                             (size_t)h * ge->v_head_dim;
                 memset(oh, 0, (size_t)ge->v_head_dim * sizeof(float));
                 for (int si = 0; si < skv_n; si++) {
+                    float sj = dsa_w[si];
+                    if (!(sj > 0.0f)) continue; /* slept — skip V */
                     int j = jmin + skv_idx[si];
-                    const float *vh = (m->probe_batch && j == abs_t)
-                        ? v.data + (size_t)t * ge->v_dim +
-                              (size_t)vh_i * ge->v_head_dim
-                        : m->v_cache +
-                              (size_t)j * m->v_slot_floats + ge->v_off +
-                              (size_t)vh_i * ge->v_head_dim;
+                    float vtmp_stk[256];
+                    const float *vh;
+                    if (m->probe_batch && j == abs_t) {
+                        vh = v.data + (size_t)t * ge->v_dim +
+                             (size_t)vh_i * ge->v_head_dim;
+                    } else if (m->mla_kv && m->v_mla_q8 &&
+                               ge->v_head_dim <= 256) {
+                        /* Dequant only the selected V head (MLA-lite win). */
+                        const int8_t *vq = m->v_mla_q8 +
+                            (size_t)j * m->v_slot_floats + ge->v_off +
+                            (size_t)vh_i * ge->v_head_dim;
+                        size_t si = (size_t)j * (size_t)m->n_layer + (size_t)l;
+                        cce_mla_kv_dequant(vq, m->v_mla_scale[si],
+                                           ge->v_head_dim, vtmp_stk);
+                        vh = vtmp_stk;
+                    } else {
+                        vh = m->v_cache +
+                             (size_t)j * m->v_slot_floats + ge->v_off +
+                             (size_t)vh_i * ge->v_head_dim;
+                    }
                     for (int d2 = 0; d2 < ge->v_head_dim; d2++)
-                        oh[d2] += scores[j] * vh[d2];
+                        oh[d2] += sj * vh[d2];
                 }
+                if (dsa_w != w_stk) free(dsa_w);
                 }
             }
         }
@@ -2124,7 +2184,7 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
         if (apply_linear_rows(gpu, o_cas, &attn_out, &after_attn) != CCE_OK) {
             fprintf(stderr, "cce_gguf: o_proj failed at layer %d — "
                             "refusing\n", l);
-            free(scores); free(skv_idx);
+            free(scores); free(skv_idx); free(idx_scores);
             cce_tensor_free(&ln1); cce_tensor_free(&q); cce_tensor_free(&k);
             cce_tensor_free(&v); cce_tensor_free(&attn_out);
             cce_tensor_free(&after_attn); cce_tensor_free(&x);
@@ -2162,7 +2222,7 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
         if (apply_linear_rows(gpu, gate_cas, &ln2, &gate) != CCE_OK ||
             apply_linear_rows(gpu, up_cas, &ln2, &upv) != CCE_OK) {
             fprintf(stderr, "cce_gguf: gate/up failed at layer %d — refusing\n", l);
-            free(scores); free(skv_idx);
+            free(scores); free(skv_idx); free(idx_scores);
             cce_tensor_free(&ln1); cce_tensor_free(&q); cce_tensor_free(&k);
             cce_tensor_free(&v); cce_tensor_free(&after_attn);
             cce_tensor_free(&ln2); cce_tensor_free(&gate); cce_tensor_free(&upv);
@@ -2181,7 +2241,7 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
             snprintf(cap, sizeof(cap), "qwen2.blk.%d.down_proj", l); gguf_fire_capture(cap, &mid); }
         if (apply_linear_rows(gpu, down_cas, &mid, &down) != CCE_OK) {
             fprintf(stderr, "cce_gguf: down failed at layer %d — refusing\n", l);
-            free(scores); free(skv_idx);
+            free(scores); free(skv_idx); free(idx_scores);
             cce_tensor_free(&ln1); cce_tensor_free(&q); cce_tensor_free(&k);
             cce_tensor_free(&v); cce_tensor_free(&after_attn);
             cce_tensor_free(&ln2); cce_tensor_free(&gate); cce_tensor_free(&upv);
@@ -2225,7 +2285,7 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
             g_gguf_layer_tap(l, x.data, n_tokens, D, g_gguf_layer_tap_ctx);
         if (m->layer_cap > 0 && l + 1 >= m->layer_cap) break;
     }
-    free(scores); free(skv_idx);
+    free(scores); free(skv_idx); free(idx_scores);
 
     /* final norm + head */
     cce_tensor fn = {0};
@@ -2524,12 +2584,12 @@ cce_result cce_gguf_load_qwen2(cce_gguf_qwen2** out, const char* path) {
         const char* e = getenv("CNET_MAX_CTX");
         if (e) { int v = atoi(e); if (v >= 8 && v < m->max_ctx) m->max_ctx = v; }
     }
-    {   /* CNET_SPARSE_KV=<fraction>: opt-in sparse per-specialist KV routing
-           on this runner's attention path (see cce_gguf_qwen2_set_sparse_kv).
-           Unset/empty = OFF, the byte-identical default; "0" = explicit OFF.
-           A malformed value REFUSES the load — the mining oracle must never
-           forward with a silently misread budget. */
+    {   /* CNET_SPARSE_KV=<fraction>: opt-in sparse DSA attention.
+           CNET_DSA=1 (single-user default path): if SPARSE_KV unset, arm
+           fraction 0.25 with full DSA kernel (index→top-k→floor→skip V).
+           Unset both = OFF (byte-identical dense). Malformed → refuse load. */
         const char* e = getenv("CNET_SPARSE_KV");
+        const char* dsa = getenv("CNET_DSA");
         if (e && e[0]) {
             char* end = NULL;
             double f = strtod(e, &end);
@@ -2541,7 +2601,40 @@ cce_result cce_gguf_load_qwen2(cce_gguf_qwen2** out, const char* path) {
                 cce_gguf_qwen2_free(m);
                 return CCE_ERR_INVALID_ARG;
             }
-            m->sparse_kv_fraction = (float)f;
+            if (cce_gguf_qwen2_set_sparse_kv(m, (float)f) != CCE_OK) {
+                cce_gguf_free(g);
+                cce_gguf_qwen2_free(m);
+                return CCE_ERR_INVALID_ARG;
+            }
+        } else if (dsa && dsa[0] && dsa[0] != '0') {
+            /* Single-user: enable DSA at 25% support without multi-tenant EP */
+            if (cce_gguf_qwen2_set_sparse_kv(m, 0.25f) != CCE_OK) {
+                cce_gguf_free(g);
+                cce_gguf_qwen2_free(m);
+                return CCE_ERR_INVALID_ARG;
+            }
+        }
+        /* Optional overrides + profile (quality default / speed floor) */
+        {
+            const char* prof = getenv("CNET_DSA_PROFILE");
+            const char* q = getenv("CNET_DSA_FLOOR");
+            const char* s = getenv("CNET_DSA_SLEEP");
+            const char* mla = getenv("CNET_MLA_KV");
+            if (prof && (prof[0] == 's' || prof[0] == 'S')) {
+                /* speed: enable floor grid */
+                if (m->sparse_kv_fraction > 0.0f && m->sparse_kv_fraction < 0.999f)
+                    m->dsa_floor_quantum = 1.0e-3f;
+            }
+            if (q && q[0]) {
+                float v = (float)atof(q);
+                if (v >= 0.0f) m->dsa_floor_quantum = v;
+            }
+            if (s && s[0]) {
+                float v = (float)atof(s);
+                if (v >= 0.0f) m->dsa_sleep_eps = v;
+            }
+            if (mla && mla[0] && mla[0] != '0') m->mla_kv = 1;
+            m->dsa_index_mode = 2; /* HYBRID lightning */
         }
     }
     m->cur_pos = 0;
@@ -2561,6 +2654,17 @@ cce_result cce_gguf_load_qwen2(cce_gguf_qwen2** out, const char* path) {
            (size_t)m->max_ctx * m->v_slot_floats);
     m->k_cache = (float*)calloc((size_t)m->max_ctx * m->k_slot_floats, sizeof(float));
     m->v_cache = (float*)calloc((size_t)m->max_ctx * m->v_slot_floats, sizeof(float));
+    if (m->mla_kv) {
+        size_t kf = (size_t)m->max_ctx * m->k_slot_floats;
+        size_t vf = (size_t)m->max_ctx * m->v_slot_floats;
+        size_t ns = (size_t)m->max_ctx * (size_t)m->n_layer;
+        m->k_mla_q8 = (int8_t*)calloc(kf, 1);
+        m->v_mla_q8 = (int8_t*)calloc(vf, 1);
+        m->k_mla_scale = (float*)calloc(ns, sizeof(float));
+        m->v_mla_scale = (float*)calloc(ns, sizeof(float));
+        if (!m->k_mla_q8 || !m->v_mla_q8 || !m->k_mla_scale || !m->v_mla_scale)
+            m->mla_kv = 0; /* fail-soft: stay on f32 only */
+    }
 
     cce_gguf_free(g);  /* we don't need the raw loader anymore */
     GTRACE("load complete");
@@ -2870,6 +2974,17 @@ cce_result cce_gguf_qwen2_load_packed(cce_gguf_qwen2** out, const char* path) {
     }
     m->k_cache = (float*)calloc((size_t)m->max_ctx * m->k_slot_floats, sizeof(float));
     m->v_cache = (float*)calloc((size_t)m->max_ctx * m->v_slot_floats, sizeof(float));
+    if (m->mla_kv) {
+        size_t kf = (size_t)m->max_ctx * m->k_slot_floats;
+        size_t vf = (size_t)m->max_ctx * m->v_slot_floats;
+        size_t ns = (size_t)m->max_ctx * (size_t)m->n_layer;
+        m->k_mla_q8 = (int8_t*)calloc(kf, 1);
+        m->v_mla_q8 = (int8_t*)calloc(vf, 1);
+        m->k_mla_scale = (float*)calloc(ns, sizeof(float));
+        m->v_mla_scale = (float*)calloc(ns, sizeof(float));
+        if (!m->k_mla_q8 || !m->v_mla_q8 || !m->k_mla_scale || !m->v_mla_scale)
+            m->mla_kv = 0;
+    }
 
     fclose(f);
     *out = m;
@@ -2925,6 +3040,10 @@ void cce_gguf_qwen2_free(cce_gguf_qwen2* m) {
     cce_tensor_free(&m->rope_freqs);
     free(m->k_cache);
     free(m->v_cache);
+    free(m->k_mla_q8);
+    free(m->v_mla_q8);
+    free(m->k_mla_scale);
+    free(m->v_mla_scale);
     free(m);
 }
 
@@ -3153,8 +3272,12 @@ cce_result cce_gguf_moe_load_router(const cce_gguf_moe* m, int layer, cce_cascad
  *
  * B2 — routed, demand-loaded expert FFN. Conventions pinned against llama.cpp
  * (src/llama-graph.cpp build_moe_ffn + src/models/{qwen3moe,gemma4}.cpp):
- * softmax over ALL experts -> top-k by prob -> selected weights renormalized
- * (sum clamped >= 6.103515625e-5) -> per-expert gated FFN -> weighted sum.
+ * top-k by router logits -> stable softmax renorm ONLY on selected experts
+ * (bit-identical to dense-softmax-all → top-k-by-prob → renorm; skips O(E)
+ * exp when E is large) -> per-expert gated FFN -> weighted sum.
+ * Weight sum: f32 SSMax unit-sums, then physics-style sleep (w < 1e-4 → exact
+ * 0 + renorm; CCE_MOE_NO_SLEEP=1 restores pre-sleep weights). Zero-mass slots
+ * are skipped on expert apply / lookahead / calib (next-cycle speed win).
  * gemma4 extras (all from the reference): router input is
  * rms_norm(x)*1/sqrt(D)*ffn_gate_inp_s with x = attn_out; expert input is
  * rms_norm(x)*pre_ffw_norm_2; GEGLU (gelu_tanh); fused bank rows [0,F)=gate
@@ -3945,15 +4068,16 @@ static void moe_prep_inputs(const cce_gguf_moe_rt* rt, int layer, const float* x
     }
 }
 
-/* route one token: logits -> softmax over ALL experts -> top-k -> renorm.
- * Bumps route_count; optionally records logits into rt->last_logits. */
+/* route one token: logits -> top-k by logit -> softmax renorm on support only
+ * -> optional sleep (tiny mass → exact 0). Zero-weight slots are not fetched
+ * or applied. Bumps route_count only for awake experts; optionally records
+ * raw logits into rt->last_logits. */
 static cce_result moe_route(cce_gguf_moe_rt* rt, int layer, const float* rx,
                             int* sel, float* w, int save_logits) {
     cce_gguf_moe* m = rt->m;
     int E = m->n_expert, K = m->n_expert_used;
-    float* z = (float*)malloc(2 * (size_t)E * sizeof(float));
+    float* z = (float*)malloc((size_t)E * sizeof(float));
     if (!z) return CCE_ERR_OOM;
-    float* probs = z + E;
 
     char name[96];
     snprintf(name, sizeof(name), "moe.blk%d.router", layer);
@@ -3961,26 +4085,38 @@ static cce_result moe_route(cce_gguf_moe_rt* rt, int layer, const float* rx,
     if (!rc_cas) { free(z); return CCE_ERR_IO; }
     moe_matvec(&rc_cas->blocks[0], rx, z, m->n_embd, E);
 
-    float mx = z[0];
-    for (int o = 1; o < E; o++) if (z[o] > mx) mx = z[o];
-    double s = 0;
-    for (int o = 0; o < E; o++) { probs[o] = expf(z[o] - mx); s += probs[o]; }
-    for (int o = 0; o < E; o++) probs[o] = (float)(probs[o] / s);
-
-    char taken[4096] = {0};
-    for (int k = 0; k < K; k++) {
-        int best = -1;
-        for (int o = 0; o < E; o++)
-            if (!taken[o] && (best < 0 || probs[o] > probs[best])) best = o;
-        taken[best] = 1;
-        sel[k] = best;
-        w[k] = probs[best];
-        rt->route_count[(size_t)layer * E + best]++;
+    if (cce_ssmax_topk_weights(z, E, K, sel, w) != K) {
+        free(z);
+        return CCE_ERR_UNSUPPORTED;
     }
-    float ws = 0;
-    for (int k = 0; k < K; k++) ws += w[k];
-    if (ws < 6.103515625e-5f) ws = 6.103515625e-5f; /* llama.cpp F16-min clamp */
-    for (int k = 0; k < K; k++) w[k] /= ws;
+
+    /* f32 hygiene: unit-sum (already), then physics sleep unless disabled.
+     * CCE_MOE_NO_SLEEP=1 keeps pre-sleep top-k renorm (llama.cpp weight match). */
+    {
+        static int sleep_on = -1;
+        if (sleep_on < 0) {
+            const char* e = getenv("CCE_MOE_NO_SLEEP");
+            sleep_on = !(e && e[0] && e[0] != '0');
+        }
+        if (sleep_on)
+            cce_sleep_renorm(w, K, CCE_SLEEP_DEFAULT_EPS, 0); /* sel[0]=argmax */
+        else {
+            float ws = 0.0f;
+            int k;
+            for (k = 0; k < K; k++) ws += w[k];
+            if (!(ws > 1e-12f) || !isfinite(ws)) {
+                for (k = 0; k < K; k++) w[k] = 0.0f;
+                w[0] = 1.0f;
+            } else if (fabsf(ws - 1.0f) > 1e-5f) {
+                for (k = 0; k < K; k++) w[k] /= ws;
+            }
+        }
+    }
+
+    /* pin / learn from experts that actually run (awake mass only) */
+    for (int k = 0; k < K; k++)
+        if (w[k] > 0.0f)
+            rt->route_count[(size_t)layer * E + sel[k]]++;
 
     if (save_logits && rt->last_logits) memcpy(rt->last_logits, z, (size_t)E * sizeof(float));
     free(z);
@@ -4028,10 +4164,9 @@ cce_result cce_gguf_moe_ffn_forward_batch(cce_gguf_moe_rt* rt, int layer,
         rc = moe_route(rt, layer, rx, sel + (size_t)t * K, w + (size_t)t * K,
                        t == T - 1 /* last token's logits land in last_logits */);
         if (rc == CCE_OK && rt->calib_on && rt->calib) {
-            /* B4: this token's expert input is a calibration sample for every
-               expert it routes to (append row THEN bump count: the count is
-               a stable prefix even if a worker reads it concurrently) */
+            /* B4: calib only for awake (nonzero-mass) experts — slept slots skip */
             for (int k = 0; k < K; k++) {
+                if (!(w[(size_t)t * K + k] > 0.0f)) continue;
                 size_t ci = (size_t)layer * E + sel[(size_t)t * K + k];
                 if (!rt->calib[ci])
                     rt->calib[ci] = (float*)malloc((size_t)rt->calib_cap * D * sizeof(float));
@@ -4044,18 +4179,20 @@ cce_result cce_gguf_moe_ffn_forward_batch(cce_gguf_moe_rt* rt, int layer,
         }
     }
 #ifdef MOE_HAVE_THREADS
-    if (rc == CCE_OK && rt->la)                     /* intra-layer lookahead: */
-        for (int t = 0; t < T; t++)                 /* everything routed queues */
-            for (int k = 0; k < K; k++)             /* before the first expert */
-                moe_la_enqueue(rt, layer, sel[(size_t)t * K + k]);
+    if (rc == CCE_OK && rt->la) /* only prefetch experts that will actually run */
+        for (int t = 0; t < T; t++)
+            for (int k = 0; k < K; k++)
+                if (w[(size_t)t * K + k] > 0.0f)
+                    moe_la_enqueue(rt, layer, sel[(size_t)t * K + k]);
 #endif
 
-    /* batch-union: each unique expert loads ONCE, applies to all its tokens */
+    /* batch-union: each unique AWAKE expert loads ONCE; slept slots skip matmul */
     if (rc == CCE_OK) {
         char name[96];
         char done[4096] = {0};
         for (int t0 = 0; t0 < T && rc == CCE_OK; t0++) {
             for (int k0 = 0; k0 < K && rc == CCE_OK; k0++) {
+                if (!(w[(size_t)t0 * K + k0] > 0.0f)) continue; /* slept — skip */
                 int eidx = sel[(size_t)t0 * K + k0];
                 if (done[eidx]) continue;
                 done[eidx] = 1;
@@ -4064,22 +4201,25 @@ cce_result cce_gguf_moe_ffn_forward_batch(cce_gguf_moe_rt* rt, int layer,
                 if (!ex || ex->num_blocks != 3) { rc = CCE_ERR_IO; break; }
                 for (int t = 0; t < T; t++)
                     for (int k = 0; k < K; k++)
-                        if (sel[(size_t)t * K + k] == eidx)
+                        if (sel[(size_t)t * K + k] == eidx &&
+                            w[(size_t)t * K + k] > 0.0f)
                             moe_expert_apply(rt, ex, xe + (size_t)t * D,
                                              yy + ((size_t)t * K + k) * D, g, u, is_gemma4);
             }
         }
     }
 
-    /* combine per token in the token's own selection order (bit-stable) */
+    /* combine: zero-mass terms contribute nothing (skipped for speed) */
     if (rc == CCE_OK) {
         for (int t = 0; t < T; t++) {
             float* ot = out + (size_t)t * D;
             memset(ot, 0, (size_t)D * sizeof(float));
             for (int k = 0; k < K; k++) {
+                float wk0 = w[(size_t)t * K + k];
+                if (!(wk0 > 0.0f)) continue;
                 int eidx = sel[(size_t)t * K + k];
                 float ds = rt->down_scale[layer] ? rt->down_scale[layer][eidx] : 1.0f;
-                float wk = w[(size_t)t * K + k] * ds;
+                float wk = wk0 * ds;
                 const float* y = yy + ((size_t)t * K + k) * D;
                 for (int i = 0; i < D; i++) ot[i] += wk * y[i];
             }
@@ -4120,6 +4260,7 @@ cce_result cce_gguf_moe_rt_lookahead_hint(cce_gguf_moe_rt* rt, int layer, const 
     cce_result rc = moe_route(rt, layer, rx, sel, w, 0);
     if (rc == CCE_OK) {
         for (int k = 0; k < K; k++) {
+            if (!(w[k] > 0.0f)) continue; /* slept — no prefetch */
             /* speculative: undo the counter bump so pinning learns only from real routing */
             rt->route_count[(size_t)layer * rt->m->n_expert + sel[k]]--;
             moe_la_enqueue(rt, layer, sel[k]);

@@ -137,8 +137,25 @@ static void mf_ref_forward(int l, const float* x, float* out, int* sel, float* w
     float ws = 0;
     for (int k = 0; k < MF_K; k++) ws += w[k];
     for (int k = 0; k < MF_K; k++) w[k] /= ws;
+    /* Match CNET sleep: mass < 1e-4 → exact 0, renorm (skip those experts). */
+    {
+        float sum2 = 0.f;
+        int kept = 0, best = 0;
+        for (int k = 0; k < MF_K; k++) {
+            if (w[k] > 0.f && w[k] < 1e-4f) w[k] = 0.f;
+            if (w[k] > 0.f) { sum2 += w[k]; kept++; }
+            if (w[k] > w[best]) best = k;
+        }
+        if (kept == 0 || sum2 <= 0.f) {
+            for (int k = 0; k < MF_K; k++) w[k] = 0.f;
+            w[0] = 1.f;
+        } else if (fabsf(sum2 - 1.f) > 1e-6f) {
+            for (int k = 0; k < MF_K; k++) if (w[k] > 0.f) w[k] /= sum2;
+        }
+    }
     memset(out, 0, MF_D * sizeof(float));
     for (int k = 0; k < MF_K; k++) {
+        if (!(w[k] > 0.f)) continue; /* slept — skip expert */
         int e = sel[k];
         float h[MF_F];
         for (int o = 0; o < MF_F; o++) {
@@ -223,7 +240,10 @@ int main(int argc, char** argv) {
         for (int i = 0; i < MF_D; i++) x[i] = 2.0f * lcg_f();
         mf_ref_forward(l, x, ref, rsel, rw);
         for (int k = 0; k < MF_K; k++)
-            if (!touched[l][rsel[k]]) { touched[l][rsel[k]] = 1; expect_fetch++; }
+            if (rw[k] > 0.f && !touched[l][rsel[k]]) {
+                touched[l][rsel[k]] = 1;
+                expect_fetch++;
+            }
         if (cce_gguf_moe_ffn_forward(rt, l, x, out) != CCE_OK) { all_run = 0; continue; }
         if (!sets_equal(rt->last_experts, rsel, MF_K)) all_sel = 0;
         /* weights matched by expert id */
@@ -287,15 +307,18 @@ int main(int argc, char** argv) {
             g_lcg = 0x5EED5EEDu;
             for (int i = 0; i < D; i++) xx[i] = 2.0f * lcg_f();
             CHECK(cce_gguf_moe_ffn_forward(rrt, 0, xx, oo) == CCE_OK, "layer-0 forward on 128 experts");
-            CHECK(rrt->gguf_loads == K, "exactly 8 of 128 experts fetched");
             {
-                int distinct = 1;
+                int awake = 0, distinct = 1;
                 float wsum = 0;
                 for (int k = 0; k < K; k++) {
+                    if (rrt->last_weights[k] > 0.f) awake++;
                     wsum += rrt->last_weights[k];
                     for (int j = k + 1; j < K; j++)
                         if (rrt->last_experts[k] == rrt->last_experts[j]) distinct = 0;
                 }
+                /* sleep may drop near-zero experts; only awake ones are fetched */
+                CHECK(awake >= 1 && awake <= K && rrt->gguf_loads == awake,
+                      "awake experts of top-k are fetched (sleep skips zero mass)");
                 CHECK(distinct, "selected experts are distinct");
                 CHECK(fabsf(wsum - 1.0f) < 1e-4f, "routing weights renormalize to 1");
             }
@@ -308,17 +331,22 @@ int main(int argc, char** argv) {
                 }
                 CHECK(finite && amax > 0, "real MoE output finite and non-degenerate");
             }
-            CHECK(cce_gguf_moe_ffn_forward(rrt, 0, xx, oo2) == CCE_OK &&
-                  memcmp(oo, oo2, (size_t)D * sizeof(float)) == 0 &&
-                  rrt->gguf_loads == K,
-                  "repeat token BIT-IDENTICAL with zero new fetches");
+            {
+                int f0 = rrt->gguf_loads;
+                CHECK(cce_gguf_moe_ffn_forward(rrt, 0, xx, oo2) == CCE_OK &&
+                      memcmp(oo, oo2, (size_t)D * sizeof(float)) == 0 &&
+                      rrt->gguf_loads == f0,
+                      "repeat token BIT-IDENTICAL with zero new fetches");
+            }
             {
                 int f0 = rrt->gguf_loads;
                 CHECK(cce_gguf_moe_ffn_forward(rrt, rm->n_layer - 1, xx, oo) == CCE_OK,
                       "last-layer forward (BF16 down bank) runs");
-                int finite = 1;
+                int finite = 1, awake = 0;
                 for (int i = 0; i < D; i++) if (!isfinite(oo[i])) finite = 0;
-                CHECK(finite && rrt->gguf_loads == f0 + K, "BF16 layer finite, 8 more fetches");
+                for (int k = 0; k < K; k++) if (rrt->last_weights[k] > 0.f) awake++;
+                CHECK(finite && rrt->gguf_loads == f0 + awake,
+                      "BF16 layer finite; fetches == awake experts");
             }
             CHECK(cce_forest_resident_count(rrt->forest) <= 16,
                   "resident experts bounded by the cap (16 of 3840)");

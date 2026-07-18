@@ -98,6 +98,9 @@ CCE_ARCHIVE := src/cce/cce_archive.c
 CCE_FOREST  := src/cce/cce_forest.c
 CCE_ROUTER  := src/cce/cce_router.c
 CCE_SPARSE_KV := src/cce/cce_sparse_kv.c
+CCE_DSA := src/cce/cce_dsa.c
+CCE_MLA := src/cce/cce_mla.c
+CCE_DS_MAP := src/cce/cce_deepseek_map.c
 CCE_UNCERTAINTY := src/cce/cce_uncertainty.c
 CCE_COMPRESSION := src/cce/cce_compression.c
 CCE_LEARN   := src/cce/cce_learn.c
@@ -179,7 +182,7 @@ CCE_TIERRT  := src/cce/cce_tier_runtime.c
 CCE_SIMILAR := src/cce/cce_similar.c
 CCE_CLGEMM  := src/cce/cce_clgemm.c
 CCE_TRANSFORMER_QAT := src/cce/cce_transformer_qat.c
-CCE := $(CCE_TENSOR) $(CCE_BLOCK) $(CCE_CASCADE) $(CCE_ARCHIVE) $(CCE_FOREST) $(CCE_ROUTER) $(CCE_SPARSE_KV) $(CCE_UNCERTAINTY) $(CCE_COMPRESSION) $(CCE_LEARN) $(CCE_PATCH) $(CCE_GPU) $(CCE_ABI) $(CCE_CUDA_OBJ) $(CCE_PERCEPTUAL) $(CCE_WORDLM) $(CCE_MODEL) $(CCE_MODEL_IO) $(CCE_DATASET) $(CCE_AUTOGRAD) $(CCE_SAFETENSORS) $(CCE_GGUF) $(CCE_AICIMO) $(CCE_QGKP) $(CCE_DETECT) $(CCE_SSM) $(CCE_HYBRID) $(CCE_QWEN35) $(CCE_GGUF_QWEN35) $(CCE_ST_LLAMA) $(CCE_SPECGRAPH) $(CCE_WSTORE) $(CCE_TIERRT) $(CCE_SIMILAR) $(CCE_CLGEMM) $(CCE_TRANSFORMER_QAT)
+CCE := $(CCE_TENSOR) $(CCE_BLOCK) $(CCE_CASCADE) $(CCE_ARCHIVE) $(CCE_FOREST) $(CCE_ROUTER) $(CCE_SPARSE_KV) $(CCE_DSA) $(CCE_MLA) $(CCE_DS_MAP) $(CCE_UNCERTAINTY) $(CCE_COMPRESSION) $(CCE_LEARN) $(CCE_PATCH) $(CCE_GPU) $(CCE_ABI) $(CCE_CUDA_OBJ) $(CCE_PERCEPTUAL) $(CCE_WORDLM) $(CCE_MODEL) $(CCE_MODEL_IO) $(CCE_DATASET) $(CCE_AUTOGRAD) $(CCE_SAFETENSORS) $(CCE_GGUF) $(CCE_AICIMO) $(CCE_QGKP) $(CCE_DETECT) $(CCE_SSM) $(CCE_HYBRID) $(CCE_QWEN35) $(CCE_GGUF_QWEN35) $(CCE_ST_LLAMA) $(CCE_SPECGRAPH) $(CCE_WSTORE) $(CCE_TIERRT) $(CCE_SIMILAR) $(CCE_CLGEMM) $(CCE_TRANSFORMER_QAT)
 CNET_CCE_ADAPTER := src/cce/cce_contract_adapter.c
 SPECIALIST_ADAPTERS := src/specialist_adapters.c
 SPECIALIST_SRC := src/specialist.c src/specialist_health.c
@@ -1125,6 +1128,48 @@ endif
 cce_smoke: $(CCE) $(CCE_CUDA_OBJ) tests/cce_smoke.c
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) tests/cce_smoke.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 	@echo "cce_smoke built. Run manually: ./cce_smoke"
+
+# DSA-inspired Sparse Softmax (SSMax) — no dense tail mass under the curve.
+.PHONY: ssmax
+ssmax: $(CCE_ROUTER) tests/test_ssmax.c include/cce/cce_router.h
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -o $(BIN_DIR)/test_ssmax $(CCE_ROUTER) tests/test_ssmax.c -lm
+	@./$(BIN_DIR)/test_ssmax > logs/ssmax.log 2>&1
+	@grep -q "SSMAX_PASS" logs/ssmax.log
+	@grep -q "failures=0" logs/ssmax.log
+	@grep "SSMAX_PASS" logs/ssmax.log
+
+# Full DeepSeek-style DSA attention kernel (index → top-k → sleep/floor → skip).
+.PHONY: dsa
+dsa: $(CCE_ROUTER) $(CCE_SPARSE_KV) $(CCE_DSA) tests/test_dsa.c include/cce/cce_dsa.h
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -o $(BIN_DIR)/test_dsa $(CCE_ROUTER) $(CCE_SPARSE_KV) $(CCE_DSA) tests/test_dsa.c -lm
+	@./$(BIN_DIR)/test_dsa > logs/dsa.log 2>&1
+	@grep -q "DSA_PASS" logs/dsa.log
+	@grep -q "failures=0" logs/dsa.log
+	@grep "DSA_PASS" logs/dsa.log
+
+# DeepSeek Multi-head Latent Attention (latent KV cache + decoupled RoPE).
+.PHONY: mla
+mla: $(CCE_ROUTER) $(CCE_MLA) tests/test_mla.c include/cce/cce_mla.h
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -o $(BIN_DIR)/test_mla $(CCE_ROUTER) $(CCE_MLA) tests/test_mla.c -lm
+	@./$(BIN_DIR)/test_mla > logs/mla.log 2>&1
+	@grep -q "MLA_PASS" logs/mla.log
+	@grep -q "failures=0" logs/mla.log
+	@grep "MLA_PASS" logs/mla.log
+
+# CNET-native DeepSeek GGUF→forest tensor map (trunk/branch/leaf contracts).
+.PHONY: deepseek_map
+deepseek_map: $(CCE_ROUTER) $(CCE_MLA) $(CCE_DS_MAP) tests/test_deepseek_map.c \
+		include/cce/cce_deepseek_map.h
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -o $(BIN_DIR)/test_deepseek_map $(CCE_ROUTER) $(CCE_MLA) \
+		$(CCE_DS_MAP) tests/test_deepseek_map.c -lm
+	@./$(BIN_DIR)/test_deepseek_map > logs/deepseek_map.log 2>&1
+	@grep -q "DEEPSEEK_MAP_PASS" logs/deepseek_map.log
+	@grep -q "failures=0" logs/deepseek_map.log
+	@grep "DEEPSEEK_MAP_PASS" logs/deepseek_map.log
 
 # Pure CCE build without legacy nn.c (for testing the new engine)
 cce_smoke_pure: $(CCE) $(CCE_CUDA_OBJ) tests/cce_smoke.c
