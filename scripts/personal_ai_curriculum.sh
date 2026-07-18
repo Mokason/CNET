@@ -508,6 +508,26 @@ if done:
     print(f"PERSONAL_AI_CURRICULUM_MATERIALIZE_OK n={done}")
 else:
     print("PERSONAL_AI_CURRICULUM_MATERIALIZE_OK n=0")
+# Feed pattern runtime fluid edges for each successful materialize
+pat = Path(repo) / "bin" / "cnet_pattern"
+if pat.is_file():
+    import os
+    env = os.environ.copy()
+    env["CNET_PATTERN_STORE"] = str(Path(repo) / "logs" / "personal_ai_ops" / "pattern_runtime.jsonl")
+    proposed = 0
+    for a in actions:
+        if not a.get("ok"):
+            continue
+        kind = str(a.get("kind") or "curriculum")
+        # detail often holds query/result; use kind + short detail as text
+        text = str(a.get("detail") or kind)[:200]
+        r = subprocess.run(
+            [str(pat), "propose", kind, text],
+            capture_output=True, text=True, timeout=30, env=env, cwd=repo)
+        if r.returncode == 0 and "CNET_PATTERN_PROPOSE_OK" in (r.stdout or ""):
+            proposed += 1
+    if proposed:
+        print(f"PERSONAL_AI_CURRICULUM_PATTERN_PROPOSE_OK n={proposed}")
 PY
 }
 

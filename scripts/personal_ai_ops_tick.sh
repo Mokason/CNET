@@ -336,6 +336,36 @@ if [ "${OPS_CURRICULUM_ON_STALE:-0}" = "1" ] && [ -x "$REPO/scripts/personal_ai_
   fi
 fi
 
+# --- 10) pattern runtime: promote fluid→frozen + optional CNB import ------
+if [ "${OPS_PATTERN_PROMOTE:-1}" = "1" ]; then
+  if [ ! -x "$REPO/bin/cnet_pattern" ]; then
+    make -C "$REPO" pattern_cli -j"$(cnet_nproc)" >/dev/null 2>&1 || true
+  fi
+  if [ -x "$REPO/bin/cnet_pattern" ]; then
+    export CNET_PATTERN_STORE="${CNET_PATTERN_STORE:-$OPS_DIR/pattern_runtime.jsonl}"
+    export CNET_BASE_PATH="${CNET_BASE_PATH:-$BASE}"
+    if CNET_BASE_PATH="$BASE" CNET_PATTERN_STORE="$CNET_PATTERN_STORE" \
+      "$REPO/bin/cnet_pattern" promote >>"$OPS_DIR/pattern.log" 2>&1; then
+      if grep -q 'CNET_PATTERN_PROMOTE_OK' "$OPS_DIR/pattern.log" 2>/dev/null; then
+        prom=$(tail -5 "$OPS_DIR/pattern.log" | grep -oE 'promoted=[0-9]+' | tail -1 | cut -d= -f2)
+        if [ -n "${prom:-}" ] && [ "$prom" -gt 0 ] 2>/dev/null; then
+          actions+=("pattern_promote")
+          fixed=1
+        fi
+      fi
+    fi
+    if [ "${OPS_PATTERN_IMPORT_UNITS:-0}" = "1" ]; then
+      maxu="${OPS_PATTERN_IMPORT_MAX:-32}"
+      if CNET_BASE_PATH="$BASE" CNET_PATTERN_STORE="$CNET_PATTERN_STORE" \
+        "$REPO/bin/cnet_pattern" import-units "$maxu" >>"$OPS_DIR/pattern.log" 2>&1; then
+        actions+=("pattern_import_units")
+      fi
+    fi
+    CNET_PATTERN_STORE="$CNET_PATTERN_STORE" "$REPO/bin/cnet_pattern" status \
+      >"$OPS_DIR/pattern_status.txt" 2>/dev/null || true
+  fi
+fi
+
 # --- report ---------------------------------------------------------------
 units=$(cnet_unit_count_fast "$BASE")
 units=${units:-null}

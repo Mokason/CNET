@@ -1,4 +1,5 @@
 #include "../include/cnet_math_solve.h"
+#include "../include/cnet_pattern.h"
 #include "../include/contract/mcp_math_eval.h"
 #include "../include/contract/mcp_wiki.h"
 #include "../include/agent_memory.h"
@@ -1033,6 +1034,21 @@ int cnet_math_solve(const char *question, const CnetMathSolveConfig *cfg_in,
             if (write_math_skill(cfg.skills_dir, slug, question, plans[i].method, trace,
                                  rep->answer, rep->skill_path, sizeof rep->skill_path) == 0)
                 rep->skill_written = 1;
+        }
+        /* Feed pattern runtime: fluid → improving → freeze on verified math. */
+        {
+            static CnetPatternRuntime s_pat;
+            static int s_pat_init = 0;
+            if (!s_pat_init) {
+                cnet_pattern_runtime_from_env(&s_pat);
+                cnet_pattern_runtime_load(&s_pat, s_pat.store_path);
+                cnet_pattern_bootstrap_defaults(&s_pat);
+                s_pat_init = 1;
+            }
+            snprintf(s_pat.skills_dir, sizeof s_pat.skills_dir, "%s", cfg.skills_dir);
+            cnet_pattern_observe_math(&s_pat, question, plans[i].method,
+                                      rep ? rep->answer : "", 1);
+            cnet_pattern_runtime_save(&s_pat, s_pat.store_path);
         }
         return 0;
     }
