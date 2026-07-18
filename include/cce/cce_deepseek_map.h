@@ -2,10 +2,10 @@
 #define CCE_DEEPSEEK_MAP_H
 
 /*
- * CNET-native DeepSeek GGUF tensor map
- * =====================================
- * We do NOT follow Python/HF module paths as the source of truth.
- * Forest vocabulary is the contract:
+ * CNET-native DeepSeek-style model map (forest-first, isolated)
+ * ==============================================================
+ * CNET does not depend on the DeepSeek repo, llama.cpp, or Python.
+ * Forest vocabulary is the contract and the runtime identity:
  *
  *   TRUNK   — always-on spine (embed, final norm, lm_head, rope tables)
  *   BRANCH  — one decoder layer (layer index L)
@@ -13,20 +13,11 @@
  *   FOREST  — whole model = set of named leaves under trunk + L*
  *   CONTRACT— role + dims + residency + requiredness for each leaf
  *
- * GGUF tensor names (blk.N.attn_kv_a_mqa.weight, …) are *aliases* only —
- * import-side. Runtime always addresses leaves by CNET names.
+ * Optional interchange only:
+ *   - GGUF tensor strings are *import aliases* (one-way), never runtime keys
+ *   - CNET pack (.cnetpack) is the native leaf-weight container
  *
  * Name budget: cce_branch.name is 64 bytes — keep short, stable, parseable.
- *
- * Examples:
- *   trunk.embed
- *   trunk.norm
- *   trunk.head
- *   L03.attn.norm
- *   L03.mla.kv_dn      # latent compress W^{DKV}|k^R
- *   L03.mla.kv_up      # W^{UK}|W^{UV}
- *   L03.ffn.route
- *   L03.ffn.e012.g     # expert 12 gate
  */
 
 #include "cce_defs.h"
@@ -173,6 +164,77 @@ cce_result cce_ds_map_bind_check(const cce_ds_map* map,
                                  cce_ds_has_tensor_fn has,
                                  void* ctx,
                                  cce_ds_bind_report* out);
+
+/* ---- Real forest bind (CNET-isolated) ----
+ *
+ * Materialize linear leaves as cascades in a cce_forest, named by cnet[].
+ * Norm/rope leaves are contracts only (no 2D cascade) unless opts say so.
+ *
+ * Weight source priority:
+ *   1. opts->load_weight callback (CNET pack, custom store, …)
+ *   2. opts->synthetic != 0 → hermetic random weights (no external project)
+ *   3. else fail if required linear leaf has no provider
+ *
+ * GGUF is NOT required. Use cce_ds_weight_provider_gguf only as optional import.
+ */
+
+typedef cce_result (*cce_ds_load_weight_fn)(void* ctx, const cce_ds_leaf* leaf,
+                                            float** out_w, int* out_in, int* out_out);
+/* out_w: row-major [out × in], caller frees with free() */
+
+typedef struct cce_ds_bind_opts {
+    const char* archive_path;   /* .cce path for forest open (required) */
+    int         max_branches;   /* 0 → map->n_leaves + 16 */
+    int         bind_hot;       /* 1 (default): bind HOT residency */
+    int         bind_warm;      /* 1: bind WARM */
+    int         bind_cold;      /* 0 default: skip COLD experts (demand-load later) */
+    int         synthetic;      /* 1: fill missing weights with seeded random */
+    uint32_t    seed;
+    float       init_scale;     /* used only when creating empty then overwrite */
+    cce_ds_load_weight_fn load_weight;
+    void*       load_ctx;
+    int         wire_connections; /* 1: layer leaf → specializes layer group */
+} cce_ds_bind_opts;
+
+typedef struct cce_ds_bind_result {
+    int bound;              /* cascades successfully added */
+    int skipped_norm;       /* contract-only 1D / non-linear */
+    int skipped_cold;       /* residency filter */
+    int skipped_missing;    /* no weight and not synthetic */
+    int failed;
+    int first_fail_leaf;    /* -1 ok */
+    char first_fail_cnet[64];
+} cce_ds_bind_result;
+
+void cce_ds_bind_opts_default(cce_ds_bind_opts* opts, const char* archive_path);
+
+/* Create forest and bind map leaves. *out_forest owned by caller (cce_forest_close). */
+cce_result cce_ds_map_bind_forest(const cce_ds_map* map,
+                                  cce_forest** out_forest,
+                                  const cce_ds_bind_opts* opts,
+                                  cce_ds_bind_result* result);
+
+/* True if role is a 2D linear leaf (bindable cascade). */
+int cce_ds_role_is_linear(cce_ds_role role);
+
+/* ---- CNET native pack (isolated weight container, not GGUF) ----
+ * Magic "CNPK" + version + per-leaf f32 matrices keyed by cnet name.
+ */
+cce_result cce_ds_pack_write(const char* path, const cce_ds_map* map,
+                             cce_ds_load_weight_fn load, void* ctx);
+/* load_weight for pack: ctx is FILE* opened by open helper, or pack handle */
+typedef struct cce_ds_pack cce_ds_pack;
+cce_result cce_ds_pack_open(cce_ds_pack** out, const char* path);
+void       cce_ds_pack_close(cce_ds_pack* p);
+cce_result cce_ds_pack_load_weight(void* pack_ctx, const cce_ds_leaf* leaf,
+                                   float** out_w, int* out_in, int* out_out);
+
+/* Optional GGUF import provider — implemented only if linked with cce_gguf.
+ * Declared here; body in cce_deepseek_map.c uses weak/optional include.
+ * Pass gguf* as ctx. Returns NOT_FOUND if tensor absent.
+ */
+cce_result cce_ds_gguf_load_weight(void* gguf_ctx, const cce_ds_leaf* leaf,
+                                   float** out_w, int* out_in, int* out_out);
 
 #ifdef __cplusplus
 }

@@ -1,8 +1,13 @@
 #include "../../include/cce/cce_deepseek_map.h"
+#include "../../include/cce/cce_cascade.h"
+#include "../../include/cce/cce_block.h"
+#include "../../include/cce/cce_gguf.h"
 
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <stdint.h>
+#include <math.h>
 
 void cce_ds_hparams_default_v3(cce_ds_hparams* hp) {
     if (!hp) return;
@@ -441,4 +446,411 @@ cce_result cce_ds_map_bind_check(const cce_ds_map* map,
     }
     if (out) *out = r;
     return r.ok ? CCE_OK : CCE_ERR_NOT_FOUND;
+}
+
+/* ================= Real forest bind + CNET pack (isolated) ================= */
+
+int cce_ds_role_is_linear(cce_ds_role role) {
+    switch (role) {
+    case CCE_DS_ROLE_TRUNK_EMBED:
+    case CCE_DS_ROLE_TRUNK_HEAD:
+    case CCE_DS_ROLE_MLA_Q_DOWN:
+    case CCE_DS_ROLE_MLA_Q_UP:
+    case CCE_DS_ROLE_MLA_KV_DOWN:
+    case CCE_DS_ROLE_MLA_KV_UP:
+    case CCE_DS_ROLE_MLA_O:
+    case CCE_DS_ROLE_FFN_ROUTER:
+    case CCE_DS_ROLE_FFN_SHARED:
+    case CCE_DS_ROLE_FFN_EXPERT_GATE:
+    case CCE_DS_ROLE_FFN_EXPERT_UP:
+    case CCE_DS_ROLE_FFN_EXPERT_DOWN:
+        return 1;
+    default:
+        return 0; /* norms, rope, mtp tables — contract-only unless extended */
+    }
+}
+
+void cce_ds_bind_opts_default(cce_ds_bind_opts* opts, const char* archive_path) {
+    if (!opts) return;
+    memset(opts, 0, sizeof(*opts));
+    opts->archive_path = archive_path;
+    opts->bind_hot = 1;
+    opts->bind_warm = 1;
+    opts->bind_cold = 0; /* experts demand-loaded later */
+    opts->synthetic = 1;
+    opts->seed = 0xC0E7u;
+    opts->init_scale = 0.02f;
+    opts->wire_connections = 1;
+}
+
+static int ds_res_allowed(const cce_ds_bind_opts* o, cce_ds_residency r) {
+    if (r == CCE_DS_RES_HOT) return o->bind_hot;
+    if (r == CCE_DS_RES_WARM) return o->bind_warm;
+    return o->bind_cold;
+}
+
+static uint32_t ds_lcg(uint32_t* s) {
+    *s = *s * 1664525u + 1013904223u;
+    return *s;
+}
+
+static void ds_fill_synthetic(float* w, int in_d, int out_d, uint32_t seed) {
+    /* cce_block layout: weights[i*out + o], shape [in,out] */
+    int i, o;
+    uint32_t s = seed;
+    float scale = 0.02f / sqrtf((float)(in_d > 0 ? in_d : 1));
+    for (i = 0; i < in_d; ++i)
+        for (o = 0; o < out_d; ++o) {
+            float u = (float)(ds_lcg(&s) >> 8) / (float)(1u << 24);
+            w[(size_t)i * out_d + o] = (u * 2.0f - 1.0f) * scale;
+        }
+}
+
+static cce_result ds_add_linear_cascade(cce_forest* forest, const char* name,
+                                        int in_d, int out_d, const float* w_data,
+                                        float init_scale) {
+    cce_cascade* cas = NULL;
+    cce_result rc;
+    int idx = -1;
+    cce_block* blk;
+    size_t ne;
+
+    if (!forest || !name || in_d < 1 || out_d < 1) return CCE_ERR_INVALID_ARG;
+    if (cce_cascade_create(&cas, 2) != CCE_OK) return CCE_ERR_OOM;
+    rc = cce_cascade_add_linear_head(cas, in_d, out_d, init_scale);
+    if (rc != CCE_OK) {
+        cce_cascade_destroy(cas);
+        return rc;
+    }
+    blk = &cas->blocks[cas->num_blocks - 1];
+    ne = (size_t)in_d * (size_t)out_d;
+    if (w_data && blk->weights.data && blk->weights.numel >= ne)
+        memcpy(blk->weights.data, w_data, ne * sizeof(float));
+    /* Inference-only: drop Adam buffers (same as oracle GGUF path). */
+    cce_tensor_free(&blk->momentum_weights);
+    cce_tensor_free(&blk->momentum_bias);
+    cce_tensor_free(&blk->second_moment_w);
+    cce_tensor_free(&blk->second_moment_b);
+    cce_block_freeze(blk);
+
+    rc = cce_forest_add_cascade_branch(forest, cas, name, &idx);
+    if (rc != CCE_OK) {
+        cce_cascade_destroy(cas);
+        return rc;
+    }
+    /* add_branch copies cascade then mark_cascade_moved zeros the shell */
+    free(cas);
+    return CCE_OK;
+}
+
+cce_result cce_ds_map_bind_forest(const cce_ds_map* map,
+                                  cce_forest** out_forest,
+                                  const cce_ds_bind_opts* opts,
+                                  cce_ds_bind_result* result) {
+    cce_ds_bind_opts local;
+    cce_forest* forest = NULL;
+    cce_ds_bind_result r;
+    int i, maxb;
+    cce_result rc;
+
+    memset(&r, 0, sizeof(r));
+    r.first_fail_leaf = -1;
+    if (!map || !out_forest) return CCE_ERR_INVALID_ARG;
+    if (!opts) {
+        cce_ds_bind_opts_default(&local, "ds_forest.cce");
+        opts = &local;
+    }
+    if (!opts->archive_path || !opts->archive_path[0])
+        return CCE_ERR_INVALID_ARG;
+
+    maxb = opts->max_branches > 0 ? opts->max_branches : map->n_leaves + 32;
+    remove(opts->archive_path);
+    rc = cce_forest_open(&forest, opts->archive_path, maxb);
+    if (rc != CCE_OK || !forest) return CCE_ERR_IO;
+
+    for (i = 0; i < map->n_leaves; ++i) {
+        const cce_ds_leaf* L = &map->leaves[i];
+        float* wbuf = NULL;
+        int in_d = L->dim_in, out_d = L->dim_out;
+
+        if (!cce_ds_role_is_linear(L->role) || in_d < 1 || out_d < 1) {
+            r.skipped_norm++;
+            continue;
+        }
+        if (!ds_res_allowed(opts, L->res)) {
+            r.skipped_cold++;
+            continue;
+        }
+
+        if (opts->load_weight) {
+            rc = opts->load_weight(opts->load_ctx, L, &wbuf, &in_d, &out_d);
+            if (rc != CCE_OK) {
+                if (opts->synthetic) {
+                    wbuf = (float*)malloc((size_t)in_d * out_d * sizeof(float));
+                    if (!wbuf) { r.failed++; goto fail; }
+                    ds_fill_synthetic(wbuf, in_d, out_d,
+                                      opts->seed ^ (uint32_t)(i * 2654435761u));
+                } else if (L->required) {
+                    r.failed++;
+                    r.first_fail_leaf = i;
+                    snprintf(r.first_fail_cnet, sizeof r.first_fail_cnet, "%s",
+                             L->cnet);
+                    goto fail;
+                } else {
+                    r.skipped_missing++;
+                    continue;
+                }
+            }
+        } else if (opts->synthetic) {
+            wbuf = (float*)malloc((size_t)in_d * out_d * sizeof(float));
+            if (!wbuf) { r.failed++; goto fail; }
+            ds_fill_synthetic(wbuf, in_d, out_d,
+                              opts->seed ^ (uint32_t)(i * 2654435761u));
+        } else {
+            r.skipped_missing++;
+            if (L->required) {
+                r.failed++;
+                r.first_fail_leaf = i;
+                snprintf(r.first_fail_cnet, sizeof r.first_fail_cnet, "%s", L->cnet);
+                goto fail;
+            }
+            continue;
+        }
+
+        rc = ds_add_linear_cascade(forest, L->cnet, in_d, out_d, wbuf,
+                                   opts->init_scale > 0 ? opts->init_scale : 0.02f);
+        free(wbuf);
+        if (rc != CCE_OK) {
+            r.failed++;
+            r.first_fail_leaf = i;
+            snprintf(r.first_fail_cnet, sizeof r.first_fail_cnet, "%s", L->cnet);
+            goto fail;
+        }
+        r.bound++;
+    }
+
+    /* Structure: MLA up specializes down; FFN route specializes MLA o */
+    if (opts->wire_connections && map->hp.n_layer > 0) {
+        int L, b;
+        for (L = 0; L < map->hp.n_layer; ++L) {
+            char a[64], c[64];
+            int ia = -1, ic = -1;
+            snprintf(a, sizeof a, "L%02d.mla.kv_dn", L);
+            snprintf(c, sizeof c, "L%02d.mla.kv_up", L);
+            for (b = 0; b < forest->num_branches; ++b) {
+                if (strcmp(forest->branches[b].name, a) == 0) ia = b;
+                if (strcmp(forest->branches[b].name, c) == 0) ic = b;
+            }
+            if (ia >= 0 && ic >= 0) {
+                cce_branch* br = &forest->branches[ic];
+                if (br->num_connections < 8) {
+                    snprintf(br->conn_names[br->num_connections], 64, "%s", a);
+                    br->conn_types[br->num_connections] = 3; /* specializes */
+                    br->num_connections++;
+                }
+            }
+            snprintf(a, sizeof a, "L%02d.mla.o", L);
+            snprintf(c, sizeof c, "L%02d.ffn.route", L);
+            ia = ic = -1;
+            for (b = 0; b < forest->num_branches; ++b) {
+                if (strcmp(forest->branches[b].name, a) == 0) ia = b;
+                if (strcmp(forest->branches[b].name, c) == 0) ic = b;
+            }
+            if (ia >= 0 && ic >= 0) {
+                cce_branch* br = &forest->branches[ic];
+                if (br->num_connections < 8) {
+                    snprintf(br->conn_names[br->num_connections], 64, "%s", a);
+                    br->conn_types[br->num_connections] = 2; /* composes */
+                    br->num_connections++;
+                }
+            }
+        }
+    }
+
+    *out_forest = forest;
+    if (result) *result = r;
+    return CCE_OK;
+
+fail:
+    cce_forest_close(forest);
+    if (result) *result = r;
+    return CCE_ERR_IO;
+}
+
+/* ---- CNET pack (.cnetpack) ---- */
+
+#define CNPK_MAGIC 0x4B504E43u /* "CNPK" le */
+#define CNPK_VER   1u
+
+struct cce_ds_pack {
+    FILE* f;
+    char  path[512];
+};
+
+typedef struct {
+    char     name[64];
+    int32_t  dim_in;
+    int32_t  dim_out;
+    uint64_t off;   /* file offset of f32 payload */
+    uint64_t nbytes;
+} cnpk_entry;
+
+cce_result cce_ds_pack_write(const char* path, const cce_ds_map* map,
+                             cce_ds_load_weight_fn load, void* ctx) {
+    FILE* f;
+    uint32_t magic = CNPK_MAGIC, ver = CNPK_VER, n = 0;
+    int i;
+    if (!path || !map) return CCE_ERR_INVALID_ARG;
+    f = fopen(path, "wb");
+    if (!f) return CCE_ERR_IO;
+    fwrite(&magic, 4, 1, f);
+    fwrite(&ver, 4, 1, f);
+    fwrite(&n, 4, 1, f); /* patch later */
+
+    for (i = 0; i < map->n_leaves; ++i) {
+        const cce_ds_leaf* L = &map->leaves[i];
+        float* w = NULL;
+        int in_d = L->dim_in, out_d = L->dim_out;
+        uint64_t nbytes;
+        cce_result rc;
+        if (!cce_ds_role_is_linear(L->role) || in_d < 1 || out_d < 1) continue;
+        if (load) {
+            rc = load(ctx, L, &w, &in_d, &out_d);
+            if (rc != CCE_OK || !w) continue;
+        } else {
+            w = (float*)malloc((size_t)in_d * out_d * sizeof(float));
+            if (!w) { fclose(f); return CCE_ERR_OOM; }
+            ds_fill_synthetic(w, in_d, out_d, 0xC0FFEE01u ^ (uint32_t)i);
+        }
+        nbytes = (uint64_t)in_d * (uint64_t)out_d * sizeof(float);
+        fwrite(L->cnet, 1, 64, f);
+        {
+            int32_t di = in_d, dout = out_d;
+            fwrite(&di, 4, 1, f);
+            fwrite(&dout, 4, 1, f);
+        }
+        fwrite(&nbytes, 8, 1, f);
+        fwrite(w, 1, (size_t)nbytes, f);
+        free(w);
+        n++;
+    }
+    fseek(f, 8, SEEK_SET);
+    fwrite(&n, 4, 1, f);
+    fclose(f);
+    return CCE_OK;
+}
+
+cce_result cce_ds_pack_open(cce_ds_pack** out, const char* path) {
+    cce_ds_pack* p;
+    uint32_t magic = 0, ver = 0;
+    if (!out || !path) return CCE_ERR_INVALID_ARG;
+    p = (cce_ds_pack*)calloc(1, sizeof(*p));
+    if (!p) return CCE_ERR_OOM;
+    p->f = fopen(path, "rb");
+    if (!p->f) { free(p); return CCE_ERR_IO; }
+    if (fread(&magic, 4, 1, p->f) != 1 || magic != CNPK_MAGIC ||
+        fread(&ver, 4, 1, p->f) != 1 || ver != CNPK_VER) {
+        fclose(p->f);
+        free(p);
+        return CCE_ERR_UNSUPPORTED;
+    }
+    snprintf(p->path, sizeof p->path, "%s", path);
+    *out = p;
+    return CCE_OK;
+}
+
+void cce_ds_pack_close(cce_ds_pack* p) {
+    if (!p) return;
+    if (p->f) fclose(p->f);
+    free(p);
+}
+
+cce_result cce_ds_pack_load_weight(void* pack_ctx, const cce_ds_leaf* leaf,
+                                   float** out_w, int* out_in, int* out_out) {
+    cce_ds_pack* p = (cce_ds_pack*)pack_ctx;
+    uint32_t n = 0, i;
+    if (!p || !p->f || !leaf || !out_w) return CCE_ERR_INVALID_ARG;
+    *out_w = NULL;
+    fseek(p->f, 8, SEEK_SET);
+    if (fread(&n, 4, 1, p->f) != 1) return CCE_ERR_IO;
+    for (i = 0; i < n; ++i) {
+        char name[64];
+        int32_t di, dout;
+        uint64_t nbytes;
+        if (fread(name, 1, 64, p->f) != 64) return CCE_ERR_IO;
+        if (fread(&di, 4, 1, p->f) != 1 || fread(&dout, 4, 1, p->f) != 1 ||
+            fread(&nbytes, 8, 1, p->f) != 1)
+            return CCE_ERR_IO;
+        if (strcmp(name, leaf->cnet) == 0) {
+            float* w = (float*)malloc((size_t)nbytes);
+            if (!w) return CCE_ERR_OOM;
+            if (fread(w, 1, (size_t)nbytes, p->f) != (size_t)nbytes) {
+                free(w);
+                return CCE_ERR_IO;
+            }
+            *out_w = w;
+            if (out_in) *out_in = di;
+            if (out_out) *out_out = dout;
+            return CCE_OK;
+        }
+        fseek(p->f, (long)nbytes, SEEK_CUR);
+    }
+    return CCE_ERR_NOT_FOUND;
+}
+
+/* Optional GGUF import — CNET owns the reader; DeepSeek/llama.cpp not linked. */
+cce_result cce_ds_gguf_load_weight(void* gguf_ctx, const cce_ds_leaf* leaf,
+                                   float** out_w, int* out_in, int* out_out) {
+    cce_gguf* g = (cce_gguf*)gguf_ctx;
+    cce_tensor t = {0};
+    cce_result rc;
+    int in_d, out_d;
+    float* w;
+    size_t ne;
+    if (!g || !leaf || !out_w) return CCE_ERR_INVALID_ARG;
+    *out_w = NULL;
+    if (!leaf->gguf[0]) return CCE_ERR_NOT_FOUND;
+    rc = cce_gguf_load_tensor_by_name(g, leaf->gguf, &t);
+    if (rc != CCE_OK || t.ndim != 2) {
+        cce_tensor_free(&t);
+        return CCE_ERR_NOT_FOUND;
+    }
+    /* GGUF/HF often [out,in]; cce_block wants [in,out]. Transpose on copy. */
+    out_d = t.shape[0];
+    in_d = t.shape[1];
+    if (in_d < 1 || out_d < 1) {
+        /* try swapped meta */
+        in_d = t.shape[0];
+        out_d = t.shape[1];
+    }
+    /* Prefer contract dims when they match either orientation */
+    if (leaf->dim_in > 0 && leaf->dim_out > 0) {
+        if (t.shape[0] == leaf->dim_out && t.shape[1] == leaf->dim_in) {
+            out_d = leaf->dim_out;
+            in_d = leaf->dim_in;
+        } else if (t.shape[0] == leaf->dim_in && t.shape[1] == leaf->dim_out) {
+            in_d = leaf->dim_in;
+            out_d = leaf->dim_out;
+        }
+    }
+    ne = (size_t)in_d * (size_t)out_d;
+    w = (float*)malloc(ne * sizeof(float));
+    if (!w) {
+        cce_tensor_free(&t);
+        return CCE_ERR_OOM;
+    }
+    if (t.shape[0] == out_d && t.shape[1] == in_d) {
+        /* source [out,in] → dest [in,out] */
+        int o, i;
+        for (i = 0; i < in_d; ++i)
+            for (o = 0; o < out_d; ++o)
+                w[(size_t)i * out_d + o] = t.data[(size_t)o * in_d + i];
+    } else {
+        memcpy(w, t.data, ne * sizeof(float));
+    }
+    cce_tensor_free(&t);
+    *out_w = w;
+    if (out_in) *out_in = in_d;
+    if (out_out) *out_out = out_d;
+    return CCE_OK;
 }

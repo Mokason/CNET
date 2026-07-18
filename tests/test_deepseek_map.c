@@ -2,9 +2,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 
 #include "../include/cce/cce_deepseek_map.h"
 #include "../include/cce/cce_mla.h"
+#include "../include/cce/cce_forest.h"
+#include "../include/cce/cce_cascade.h"
+#include "../include/cce/cce_tensor.h"
 
 static int failures, checks;
 
@@ -141,6 +145,110 @@ int main(void) {
     /* Role names stable */
     check(strcmp(cce_ds_role_name(CCE_DS_ROLE_MLA_KV_DOWN), "mla.kv_down") == 0,
           "role_name mla.kv_down");
+
+    /* ---- Real cce_forest bind (synthetic, no GGUF / no DeepSeek project) ---- */
+    {
+        cce_forest* forest = NULL;
+        cce_ds_bind_opts opts;
+        cce_ds_bind_result br;
+        cce_ds_bind_opts_default(&opts, "ds_bind_test.cce");
+        opts.synthetic = 1;
+        opts.bind_cold = 0; /* HOT (+WARM) only — isolation from expert banks */
+        opts.wire_connections = 1;
+        check(cce_ds_map_bind_forest(&map, &forest, &opts, &br) == CCE_OK,
+              "bind_forest synthetic");
+        check(forest != NULL && forest->num_branches > 0, "forest has branches");
+        check(br.bound > 0 && br.failed == 0, "bound > 0, failed == 0");
+        printf("    bind: bound=%d skip_norm=%d skip_cold=%d\n",
+               br.bound, br.skipped_norm, br.skipped_cold);
+
+        check(cce_forest_get_resident(forest, "trunk.embed") != NULL,
+              "resident trunk.embed");
+        check(cce_forest_get_resident(forest, "L00.mla.kv_dn") != NULL,
+              "resident L00.mla.kv_dn");
+        check(cce_forest_get_resident(forest, "L00.ffn.route") != NULL,
+              "resident L00.ffn.route");
+        /* COLD experts not bound by default */
+        check(cce_forest_get_resident(forest, "L00.ffn.e000.g") == NULL,
+              "cold expert not bound (demand-load later)");
+
+        /* Structure connection kv_up specializes kv_dn */
+        {
+            int b, found = 0;
+            for (b = 0; b < forest->num_branches; ++b) {
+                if (strcmp(forest->branches[b].name, "L00.mla.kv_up") == 0) {
+                    int c;
+                    for (c = 0; c < forest->branches[b].num_connections; ++c)
+                        if (strstr(forest->branches[b].conn_names[c], "kv_dn"))
+                            found = 1;
+                }
+            }
+            check(found, "kv_up specializes kv_dn connection");
+        }
+
+        /* Forward through a bound leaf cascade (real weights, real forest) */
+        {
+            cce_cascade* cas = cce_forest_get_resident(forest, "L00.mla.kv_dn");
+            cce_tensor in = {0}, out = {0};
+            int ok = 0;
+            if (cas && cas->num_blocks > 0) {
+                int in_d = cas->blocks[0].weights.shape[0];
+                int out_d = cas->blocks[0].weights.shape[1];
+                int sh[1] = { in_d };
+                cce_tensor_alloc(&in, sh, 1);
+                {
+                    int j;
+                    for (j = 0; j < in_d; ++j) in.data[j] = 0.01f * (float)j;
+                }
+                if (cce_cascade_forward(cas, &in, &out) == CCE_OK &&
+                    out.data && out.numel == (size_t)out_d) {
+                    int j, finite = 1;
+                    double amax = 0;
+                    for (j = 0; j < out_d; ++j) {
+                        if (!isfinite(out.data[j])) finite = 0;
+                        if (fabs((double)out.data[j]) > amax)
+                            amax = fabs((double)out.data[j]);
+                    }
+                    ok = finite && amax > 0;
+                }
+                cce_tensor_free(&in);
+                cce_tensor_free(&out);
+            }
+            check(ok, "cascade_forward on bound MLA leaf");
+        }
+
+        /* CNET pack round-trip (native, not GGUF) */
+        {
+            cce_ds_pack* pack = NULL;
+            cce_forest* f2 = NULL;
+            cce_ds_bind_opts o2;
+            cce_ds_bind_result br2;
+            check(cce_ds_pack_write("ds_test.cnetpack", &map, NULL, NULL) == CCE_OK,
+                  "cnetpack write (synthetic fill)");
+            check(cce_ds_pack_open(&pack, "ds_test.cnetpack") == CCE_OK,
+                  "cnetpack open");
+            cce_ds_bind_opts_default(&o2, "ds_bind_pack.cce");
+            o2.synthetic = 0;
+            o2.load_weight = cce_ds_pack_load_weight;
+            o2.load_ctx = pack;
+            o2.bind_cold = 0;
+            check(cce_ds_map_bind_forest(&map, &f2, &o2, &br2) == CCE_OK,
+                  "bind_forest from cnetpack");
+            check(br2.bound > 0 && cce_forest_get_resident(f2, "trunk.head") != NULL,
+                  "pack-bound trunk.head resident");
+            cce_ds_pack_close(pack);
+            if (f2) cce_forest_close(f2);
+            remove("ds_test.cnetpack");
+            remove("ds_bind_pack.cce");
+        }
+
+        if (forest) cce_forest_close(forest);
+        remove("ds_bind_test.cce");
+    }
+
+    check(cce_ds_role_is_linear(CCE_DS_ROLE_MLA_KV_DOWN) &&
+          !cce_ds_role_is_linear(CCE_DS_ROLE_ATTN_NORM),
+          "role_is_linear distinguishes norms");
 
     cce_ds_map_free(&map);
 

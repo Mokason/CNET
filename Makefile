@@ -1159,13 +1159,12 @@ mla: $(CCE_ROUTER) $(CCE_MLA) tests/test_mla.c include/cce/cce_mla.h
 	@grep -q "failures=0" logs/mla.log
 	@grep "MLA_PASS" logs/mla.log
 
-# CNET-native DeepSeek GGUF→forest tensor map (trunk/branch/leaf contracts).
+# CNET-native DeepSeek map + real forest bind (isolated from DS/llama.cpp).
 .PHONY: deepseek_map
-deepseek_map: $(CCE_ROUTER) $(CCE_MLA) $(CCE_DS_MAP) tests/test_deepseek_map.c \
-		include/cce/cce_deepseek_map.h
+deepseek_map: $(CCE) tests/test_deepseek_map.c include/cce/cce_deepseek_map.h
 	@mkdir -p $(BIN_DIR) logs
-	$(CC) $(CFLAGS) -o $(BIN_DIR)/test_deepseek_map $(CCE_ROUTER) $(CCE_MLA) \
-		$(CCE_DS_MAP) tests/test_deepseek_map.c -lm
+	$(CC) $(CFLAGS) -o $(BIN_DIR)/test_deepseek_map $(CCE) \
+		tests/test_deepseek_map.c $(LDFLAGS) -lm
 	@./$(BIN_DIR)/test_deepseek_map > logs/deepseek_map.log 2>&1
 	@grep -q "DEEPSEEK_MAP_PASS" logs/deepseek_map.log
 	@grep -q "failures=0" logs/deepseek_map.log

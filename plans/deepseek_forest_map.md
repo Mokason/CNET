@@ -51,6 +51,24 @@ cce_ds_hparams_to_mla(&hp, &mla_cfg);  /* → cce_mla */
 make deepseek_map   # DEEPSEEK_MAP_PASS
 ```
 
+## Isolation (no DeepSeek repo, no llama.cpp runtime dep)
+| Layer | Owner |
+|-------|--------|
+| Leaf names + contracts | CNET map |
+| Weights at rest | **`.cnetpack`** (CNPK) or synthetic |
+| Runtime | **`cce_forest`** cascades |
+| GGUF | Optional one-way import (`cce_ds_gguf_load_weight`) via CNET's own reader |
+
+## Real forest bind
+```c
+cce_ds_bind_opts_default(&opts, "model.cce");
+opts.synthetic = 1;          /* or load_weight = cce_ds_pack_load_weight */
+opts.bind_cold = 0;          /* experts demand-load later */
+cce_ds_map_bind_forest(&map, &forest, &opts, &result);
+/* forest->branches named trunk.*, L00.mla.*, L00.ffn.route, … */
+cce_forest_get_resident(forest, "L00.mla.kv_dn");
+```
+
 ## Not Python
 No `transformers` modules, no `model.layers.N.self_attn…`.  
-Forest names are the contract; GGUF strings are one-way import keys.
+Forest names are the contract; GGUF strings are one-way import keys only.
