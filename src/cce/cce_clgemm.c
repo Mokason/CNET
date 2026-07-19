@@ -101,6 +101,14 @@ typedef cl_int (*p_clEnqueueCopyBuffer)(cl_command_queue, cl_mem, cl_mem,
                                         size_t, size_t, size_t, cl_uint,
                                         const void *, void *);
 
+/* OpenCL accepts one source string and this embedded kernel bundle exceeds
+ * ISO C's minimum guaranteed string-literal length. GCC/Clang support it;
+ * suppress only that portability diagnostic around the bundle. */
+#if defined(__GNUC__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Woverlength-strings"
+#endif
+
 /* C[t*N+n] = (bias? B[n]:0) + sum_k A[t*K+k]*W[k*N+n].
  *
  * Speed: local-memory tiles of A so N work-items share one A load (decode
@@ -391,6 +399,10 @@ static const char *k_src =
     "    }\n"
     "}\n";
 
+#if defined(__GNUC__)
+#pragma GCC diagnostic pop
+#endif
+
 #define CLGEMM_MAX_RESIDENT 1024
 #define CLGEMM_MAX_DEV 8
 #define CLGEMM_MAX_ENUM 16
@@ -481,6 +493,17 @@ typedef struct {
     size_t tmp_cap;
 } ClStream;
 
+/* STE bind: device-resident W for repeated matmul with changing A. */
+typedef struct {
+    int live;
+    size_t K, N;
+    int split;
+    size_t owner;
+    size_t off[CLGEMM_MAX_DEV];
+    size_t len[CLGEMM_MAX_DEV];
+    cl_mem w[CLGEMM_MAX_DEV];
+} ClSteW;
+
 struct cce_clgemm {
     cce_dl dll;
     ClgemmDev d[CLGEMM_MAX_DEV];
@@ -490,6 +513,7 @@ struct cce_clgemm {
     size_t min_flops;             /* T*K*N below this → refuse (CPU) */
     ResidentBuf resident[CLGEMM_MAX_RESIDENT];
     size_t resident_count;
+    ClSteW ste_W;
     ClStream stream;
     /* function pointers */
     p_clCreateBuffer CreateBuffer;
@@ -838,6 +862,7 @@ static void stream_free(cce_clgemm *h) {
 void cce_clgemm_close(cce_clgemm *h) {
     size_t i, j;
     if (!h) return;
+    cce_clgemm_ste_unbind_W(h);
     stream_free(h);
     for (i = 0; i < h->resident_count; ++i)
         for (j = 0; j < h->ndev; ++j) {
@@ -1343,6 +1368,348 @@ int cce_clgemm_matmul(cce_clgemm *h, const float *A, size_t T, size_t K,
         }
     }
     return 0;
+}
+
+/* STE/training: re-upload W every call — resident cache assumes immutable W.
+ * Intentionally ignores min_flops: STE tiles (T≤8, small K=calib) must stay
+ * on GPU even when PCIe-bound, or the ladder falls back to 100% CPU. */
+int cce_clgemm_matmul_ephemeral(cce_clgemm *h, const float *A, size_t T,
+                                size_t K, const float *W, const float *bias,
+                                size_t N, float *C) {
+    int has_bias, rc = 0;
+    int started[CLGEMM_MAX_DEV] = {0};
+    cl_mem w_mem[CLGEMM_MAX_DEV];
+    cl_mem b_mem[CLGEMM_MAX_DEV];
+    size_t d, t;
+    int split;
+    size_t owner, off[CLGEMM_MAX_DEV], len[CLGEMM_MAX_DEV];
+
+    memset(w_mem, 0, sizeof w_mem);
+    memset(b_mem, 0, sizeof b_mem);
+    if (!h || !A || !W || !C || T == 0 || T > 8 || K == 0 || N == 0) return -1;
+
+    place_weights(h, K, N, &split, &owner, off, len);
+    has_bias = bias ? 1 : 0;
+
+    for (d = 0; d < h->ndev; ++d) {
+        ClgemmDev *D = &h->d[d];
+        size_t cols = len[d];
+        int iT, iK, iN;
+        float *dst;
+        cl_mem bb;
+        if (cols == 0) continue;
+        w_mem[d] = upload_cols(h, d, W, K, N, off[d], cols);
+        if (!w_mem[d]) { rc = -1; break; }
+        if (bias) {
+            b_mem[d] = upload_cols(h, d, bias, 1, N, off[d], cols);
+            if (!b_mem[d]) { rc = -1; break; }
+            bb = b_mem[d];
+        } else {
+            bb = w_mem[d];
+        }
+        if (ensure_A(h, d, A, T, K) != 0 ||
+            scratch_ensure(h, d, &D->c_buf, &D->c_cap,
+                           T * cols * sizeof(float)) != 0) {
+            rc = -1;
+            break;
+        }
+        if (split) {
+            if (D->c_host_cap < T * cols) {
+                float *nc = (float *)realloc(D->c_host,
+                                             T * cols * sizeof(float));
+                if (!nc) { rc = -1; break; }
+                D->c_host = nc;
+                D->c_host_cap = T * cols;
+            }
+            dst = D->c_host;
+        } else {
+            dst = C;
+        }
+        started[d] = 1;
+        iT = (int)T; iK = (int)K; iN = (int)cols;
+        if (h->SetArg(D->kern, 0, sizeof(cl_mem), &D->a_buf) != CL_SUCCESS ||
+            h->SetArg(D->kern, 1, sizeof(cl_mem), &w_mem[d]) != CL_SUCCESS ||
+            h->SetArg(D->kern, 2, sizeof(cl_mem), &bb) != CL_SUCCESS ||
+            h->SetArg(D->kern, 3, sizeof(cl_mem), &D->c_buf) != CL_SUCCESS ||
+            h->SetArg(D->kern, 4, sizeof(int), &iT) != CL_SUCCESS ||
+            h->SetArg(D->kern, 5, sizeof(int), &iK) != CL_SUCCESS ||
+            h->SetArg(D->kern, 6, sizeof(int), &iN) != CL_SUCCESS ||
+            h->SetArg(D->kern, 7, sizeof(int), &has_bias) != CL_SUCCESS) {
+            rc = -1;
+            break;
+        }
+        if (enqueue_2d(h, D->q, D->kern, cols, (size_t)T) != 0) {
+            rc = -1;
+            break;
+        }
+        if (h->ReadBuffer(D->q, D->c_buf, CL_FALSE, 0,
+                          T * cols * sizeof(float), dst, 0, NULL,
+                          NULL) != CL_SUCCESS) {
+            rc = -1;
+            break;
+        }
+        h->Flush(D->q);
+    }
+
+    for (d = 0; d < h->ndev; ++d)
+        if (started[d] && h->Finish(h->d[d].q) != CL_SUCCESS) rc = -1;
+
+    if (rc == 0 && split) {
+        for (d = 0; d < h->ndev; ++d) {
+            size_t cols = len[d];
+            if (cols == 0) continue;
+            for (t = 0; t < T; ++t)
+                memcpy(C + t * N + off[d], h->d[d].c_host + t * cols,
+                       cols * sizeof(float));
+        }
+    }
+
+    for (d = 0; d < h->ndev; ++d) {
+        if (w_mem[d]) h->ReleaseMem(w_mem[d]);
+        if (b_mem[d]) h->ReleaseMem(b_mem[d]);
+    }
+    return rc == 0 ? 0 : -1;
+}
+
+/* ---- STE acceleration: resident Weff + pipelined dW strips -------------- */
+
+void cce_clgemm_ste_unbind_W(cce_clgemm *h) {
+    size_t d;
+    if (!h || !h->ste_W.live) return;
+    for (d = 0; d < h->ndev; ++d) {
+        if (h->ste_W.w[d]) {
+            h->ReleaseMem(h->ste_W.w[d]);
+            h->ste_W.w[d] = NULL;
+        }
+    }
+    memset(&h->ste_W, 0, sizeof h->ste_W);
+}
+
+int cce_clgemm_ste_bind_W(cce_clgemm *h, const float *W, size_t K, size_t N) {
+    size_t d;
+    if (!h || !W || K == 0 || N == 0) return -1;
+    cce_clgemm_ste_unbind_W(h);
+    place_weights(h, K, N, &h->ste_W.split, &h->ste_W.owner, h->ste_W.off,
+                  h->ste_W.len);
+    h->ste_W.K = K;
+    h->ste_W.N = N;
+    for (d = 0; d < h->ndev; ++d) {
+        size_t cols = h->ste_W.len[d];
+        if (cols == 0) continue;
+        h->ste_W.w[d] = upload_cols(h, d, W, K, N, h->ste_W.off[d], cols);
+        if (!h->ste_W.w[d]) {
+            cce_clgemm_ste_unbind_W(h);
+            return -1;
+        }
+    }
+    h->ste_W.live = 1;
+    return 0;
+}
+
+int cce_clgemm_ste_matmul(cce_clgemm *h, const float *A, size_t T, float *C) {
+    int has_bias = 0, rc = 0;
+    int started[CLGEMM_MAX_DEV] = {0};
+    size_t d, t;
+    size_t K, N;
+
+    if (!h || !h->ste_W.live || !A || !C || T == 0 || T > 8) return -1;
+    K = h->ste_W.K;
+    N = h->ste_W.N;
+
+    for (d = 0; d < h->ndev; ++d) {
+        ClgemmDev *D = &h->d[d];
+        size_t cols = h->ste_W.len[d];
+        int iT, iK, iN;
+        float *dst;
+        cl_mem bb;
+        if (cols == 0) continue;
+        if (ensure_A(h, d, A, T, K) != 0 ||
+            scratch_ensure(h, d, &D->c_buf, &D->c_cap,
+                           T * cols * sizeof(float)) != 0) {
+            rc = -1;
+            break;
+        }
+        if (h->ste_W.split) {
+            if (D->c_host_cap < T * cols) {
+                float *nc =
+                    (float *)realloc(D->c_host, T * cols * sizeof(float));
+                if (!nc) {
+                    rc = -1;
+                    break;
+                }
+                D->c_host = nc;
+                D->c_host_cap = T * cols;
+            }
+            dst = D->c_host;
+        } else {
+            dst = C;
+        }
+        started[d] = 1;
+        bb = h->ste_W.w[d]; /* dummy bias bind */
+        iT = (int)T;
+        iK = (int)K;
+        iN = (int)cols;
+        if (h->SetArg(D->kern, 0, sizeof(cl_mem), &D->a_buf) != CL_SUCCESS ||
+            h->SetArg(D->kern, 1, sizeof(cl_mem), &h->ste_W.w[d]) !=
+                CL_SUCCESS ||
+            h->SetArg(D->kern, 2, sizeof(cl_mem), &bb) != CL_SUCCESS ||
+            h->SetArg(D->kern, 3, sizeof(cl_mem), &D->c_buf) != CL_SUCCESS ||
+            h->SetArg(D->kern, 4, sizeof(int), &iT) != CL_SUCCESS ||
+            h->SetArg(D->kern, 5, sizeof(int), &iK) != CL_SUCCESS ||
+            h->SetArg(D->kern, 6, sizeof(int), &iN) != CL_SUCCESS ||
+            h->SetArg(D->kern, 7, sizeof(int), &has_bias) != CL_SUCCESS) {
+            rc = -1;
+            break;
+        }
+        if (enqueue_2d(h, D->q, D->kern, cols, (size_t)T) != 0) {
+            rc = -1;
+            break;
+        }
+        if (h->ReadBuffer(D->q, D->c_buf, CL_FALSE, 0, T * cols * sizeof(float),
+                          dst, 0, NULL, NULL) != CL_SUCCESS) {
+            rc = -1;
+            break;
+        }
+        h->Flush(D->q);
+    }
+
+    for (d = 0; d < h->ndev; ++d)
+        if (started[d] && h->Finish(h->d[d].q) != CL_SUCCESS) rc = -1;
+    if (rc != 0) return -1;
+
+    if (h->ste_W.split) {
+        for (d = 0; d < h->ndev; ++d) {
+            size_t cols = h->ste_W.len[d];
+            if (cols == 0) continue;
+            for (t = 0; t < T; ++t)
+                memcpy(C + t * N + h->ste_W.off[d],
+                       h->d[d].c_host + t * cols, cols * sizeof(float));
+        }
+    }
+    return 0;
+}
+
+/* dW = X^T @ dY with dY resident once; strips of ≤8 input dims.
+ * Dual-GPU: full dY on each device, alternate strips → true pipeline. */
+int cce_clgemm_ste_XT_dY(cce_clgemm *h, const float *X, const float *dY,
+                         size_t n, size_t in, size_t out, float *dW) {
+    cl_mem dy_mem[CLGEMM_MAX_DEV];
+    size_t d, r, t;
+    int rc = 0;
+    size_t n_strips, s;
+    int has_bias = 0;
+
+    memset(dy_mem, 0, sizeof dy_mem);
+    if (!h || !X || !dY || !dW || n == 0 || in == 0 || out == 0 || n > 0x7FFF)
+        return -1;
+    if (h->ndev < 1) return -1;
+
+    /* Full dY on every device so strips can run independently (pipeline). */
+    for (d = 0; d < h->ndev; ++d) {
+        cl_int err = 0;
+        dy_mem[d] = h->CreateBuffer(h->d[d].ctx,
+                                    CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
+                                    n * out * sizeof(float), (void *)dY, &err);
+        if (!dy_mem[d] || err != CL_SUCCESS) {
+            dy_mem[d] = NULL;
+            rc = -1;
+            break;
+        }
+    }
+    if (rc != 0) goto done_dW;
+
+    memset(dW, 0, in * out * sizeof(float));
+    n_strips = (in + 7) / 8;
+
+    /* Process strips in waves of ndev — concurrent on dual GPUs. */
+    for (s = 0; s < n_strips; s += h->ndev) {
+        int started[CLGEMM_MAX_DEV] = {0};
+        size_t strip_i0[CLGEMM_MAX_DEV];
+        size_t strip_tb[CLGEMM_MAX_DEV];
+        float *A_host[CLGEMM_MAX_DEV];
+        float *C_host[CLGEMM_MAX_DEV];
+
+        memset(A_host, 0, sizeof A_host);
+        memset(C_host, 0, sizeof C_host);
+        memset(strip_i0, 0, sizeof strip_i0);
+        memset(strip_tb, 0, sizeof strip_tb);
+
+        for (d = 0; d < h->ndev; ++d) {
+            size_t si = s + d;
+            size_t tb, ii;
+            ClgemmDev *D;
+            int iT, iK, iN;
+            if (si >= n_strips) break;
+            ii = si * 8;
+            tb = in - ii;
+            if (tb > 8) tb = 8;
+            strip_i0[d] = ii;
+            strip_tb[d] = tb;
+
+            A_host[d] = (float *)malloc(tb * n * sizeof(float));
+            C_host[d] = (float *)malloc(tb * out * sizeof(float));
+            if (!A_host[d] || !C_host[d]) {
+                rc = -1;
+                break;
+            }
+            /* A[tb][n] = X[:, ii:ii+tb]^T */
+            for (t = 0; t < tb; ++t)
+                for (r = 0; r < n; ++r)
+                    A_host[d][t * n + r] = X[r * in + (ii + t)];
+
+            D = &h->d[d];
+            if (ensure_A(h, d, A_host[d], tb, n) != 0 ||
+                scratch_ensure(h, d, &D->c_buf, &D->c_cap,
+                               tb * out * sizeof(float)) != 0) {
+                rc = -1;
+                break;
+            }
+            iT = (int)tb;
+            iK = (int)n;
+            iN = (int)out;
+            if (h->SetArg(D->kern, 0, sizeof(cl_mem), &D->a_buf) != CL_SUCCESS ||
+                h->SetArg(D->kern, 1, sizeof(cl_mem), &dy_mem[d]) !=
+                    CL_SUCCESS ||
+                h->SetArg(D->kern, 2, sizeof(cl_mem), &dy_mem[d]) !=
+                    CL_SUCCESS ||
+                h->SetArg(D->kern, 3, sizeof(cl_mem), &D->c_buf) != CL_SUCCESS ||
+                h->SetArg(D->kern, 4, sizeof(int), &iT) != CL_SUCCESS ||
+                h->SetArg(D->kern, 5, sizeof(int), &iK) != CL_SUCCESS ||
+                h->SetArg(D->kern, 6, sizeof(int), &iN) != CL_SUCCESS ||
+                h->SetArg(D->kern, 7, sizeof(int), &has_bias) != CL_SUCCESS) {
+                rc = -1;
+                break;
+            }
+            if (enqueue_2d(h, D->q, D->kern, out, tb) != 0) {
+                rc = -1;
+                break;
+            }
+            if (h->ReadBuffer(D->q, D->c_buf, CL_FALSE, 0,
+                              tb * out * sizeof(float), C_host[d], 0, NULL,
+                              NULL) != CL_SUCCESS) {
+                rc = -1;
+                break;
+            }
+            h->Flush(D->q);
+            started[d] = 1;
+        }
+
+        for (d = 0; d < h->ndev; ++d) {
+            if (started[d] && h->Finish(h->d[d].q) != CL_SUCCESS) rc = -1;
+            if (rc == 0 && started[d] && C_host[d]) {
+                memcpy(dW + strip_i0[d] * out, C_host[d],
+                       strip_tb[d] * out * sizeof(float));
+            }
+            free(A_host[d]);
+            free(C_host[d]);
+        }
+        if (rc != 0) break;
+    }
+
+done_dW:
+    for (d = 0; d < h->ndev; ++d)
+        if (dy_mem[d]) h->ReleaseMem(dy_mem[d]);
+    return rc == 0 ? 0 : -1;
 }
 
 /* ---- Residency ops + attention (device 0) -------------------------------- */
@@ -1903,10 +2270,16 @@ int cce_clgemm_stream_kv_write(cce_clgemm *h, int pos, const float *k,
     ClgemmDev *Dv;
     ClStream *s;
     size_t ko, vo;
-    if (!h || !h->stream.live || !k || !v || pos < 0 || pos >= h->stream.max_ctx)
+    if (!h || !h->stream.live || !k || !v || k_dim < 1 || v_dim < 1 ||
+        pos < 0 || pos >= h->stream.max_ctx)
         return -1;
     Dv = &h->d[0];
     s = &h->stream;
+    /* Fail closed on per-row shape mismatch. A total-buffer-only bound lets
+       an oversized K slice spill into the next token's row. */
+    if (k_off > s->k_slot || (size_t)k_dim > s->k_slot - k_off ||
+        v_off > s->v_slot || (size_t)v_dim > s->v_slot - v_off)
+        return -1;
     ko = (size_t)pos * s->k_slot + k_off;
     vo = (size_t)pos * s->v_slot + v_off;
     if (ko + (size_t)k_dim > (size_t)s->max_ctx * s->k_slot ||
@@ -2288,10 +2661,16 @@ int cce_clgemm_stream_kv_write_slots(cce_clgemm *h, int pos, int k_dim,
     ClgemmDev *D;
     ClStream *s;
     size_t ko, vo;
-    if (!h || !h->stream.live || pos < 0 || pos >= h->stream.max_ctx) return -1;
+    if (!h || !h->stream.live || k_dim < 1 || v_dim < 1 || pos < 0 ||
+        pos >= h->stream.max_ctx) return -1;
     D = &h->d[0];
     s = &h->stream;
     if (!s->slot[CCE_CL_SLOT_K] || !s->slot[CCE_CL_SLOT_V]) return -1;
+    if (k_off > s->k_slot || (size_t)k_dim > s->k_slot - k_off ||
+        v_off > s->v_slot || (size_t)v_dim > s->v_slot - v_off ||
+        s->slot_cap[CCE_CL_SLOT_K] < (size_t)k_dim * sizeof(float) ||
+        s->slot_cap[CCE_CL_SLOT_V] < (size_t)v_dim * sizeof(float))
+        return -1;
     ko = (size_t)pos * s->k_slot + k_off;
     vo = (size_t)pos * s->v_slot + v_off;
     if (h->CopyBuffer(D->q, s->slot[CCE_CL_SLOT_K], s->k_cache, 0, ko * 4,

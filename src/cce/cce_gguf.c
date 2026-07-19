@@ -1306,7 +1306,8 @@ static int stream_linear_cas(cce_clgemm *gpu, cce_cascade *cas, float *out,
     N = blk->weights.shape[1];
     if (N != dout) return -1;
     bias = (blk->bias.numel == (size_t)N) ? blk->bias.data : NULL;
-    if (blk->w_q && blk->w_scale && !blk->w_trit)
+    /* Prefer int8 codes (kept after pack_trits) for GPU; trit is export-only. */
+    if (blk->w_q && blk->w_scale)
         return cce_clgemm_stream_linear_q8(
             gpu, (const int8_t *)blk->w_q, blk->w_scale, bias, din, N, out);
     if (!blk->w_q && !blk->w_trit)
@@ -1329,7 +1330,7 @@ static int stream_linear_cas_slot(cce_clgemm *gpu, cce_cascade *cas, int dout,
     N = blk->weights.shape[1];
     if (N != dout) return -1;
     bias = (blk->bias.numel == (size_t)N) ? blk->bias.data : NULL;
-    if (blk->w_q && blk->w_scale && !blk->w_trit)
+    if (blk->w_q && blk->w_scale)
         return cce_clgemm_stream_linear_q8_slot(
             gpu, (const int8_t *)blk->w_q, blk->w_scale, bias, din, N, slot);
     if (!blk->w_q && !blk->w_trit)
@@ -1363,8 +1364,7 @@ static int stream_linear_pair_cas(cce_clgemm *gpu, cce_cascade *a,
         return -1;
     bisa = (ba->bias.numel == (size_t)na) ? ba->bias.data : NULL;
     bisb = (bb->bias.numel == (size_t)nb) ? bb->bias.data : NULL;
-    if (ba->w_q && ba->w_scale && !ba->w_trit && bb->w_q && bb->w_scale &&
-        !bb->w_trit)
+    if (ba->w_q && ba->w_scale && bb->w_q && bb->w_scale)
         return cce_clgemm_stream_linear_pair_slots(
             gpu, NULL, bisa, 1, (const int8_t *)ba->w_q, ba->w_scale, na, sa,
             NULL, bisb, 1, (const int8_t *)bb->w_q, bb->w_scale, nb, sb, dina);
@@ -1952,8 +1952,11 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
     int scores_cap = m->max_ctx;
     if (m->kv_pager) {
         int hot = cce_kv_pager_hot_capacity(m->kv_pager);
-        if (hot > scores_cap) scores_cap = hot;
+        /* Paged attention indexes relative to jmin, so the HOT window—not
+           the model's legal context—is the exact allocation bound. */
+        scores_cap = hot;
     }
+    if (scores_cap < 1) { cce_tensor_free(&x); return CCE_ERR_INVALID_ARG; }
     float *scores = (float*)malloc((size_t)scores_cap * sizeof *scores);
     if (!scores) { cce_tensor_free(&x); return CCE_ERR_OOM; }
     /* Lightning index scores (separate from true q·k when DSA is on). */
@@ -2024,6 +2027,8 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
             int mlp_h = m->feed_forward_length > 0 ? m->feed_forward_length
                                                    : 4864;
             int ok = 1;
+            int fatal_alloc = 0;
+            int fatal_readback = 0;
             int o_in = ge->n_q * ge->v_head_dim;
             if (ge->window > 0 && abs_t - ge->window + 1 > 0)
                 jmin = abs_t - ge->window + 1;
@@ -2039,9 +2044,14 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
             k_host = (float *)malloc((size_t)ge->k_dim * 4);
             v_host = (float *)malloc((size_t)ge->v_dim * 4);
             if (!x_ckpt || !o_h || !gate_h || !up_h || !mid_h || !down_h ||
-                !k_host || !v_host)
+                !k_host || !v_host) {
                 ok = 0;
-            if (ok && cce_clgemm_stream_get_x(gpu, x_ckpt, D) != 0) ok = 0;
+                fatal_alloc = 1;
+            }
+            if (ok && cce_clgemm_stream_get_x(gpu, x_ckpt, D) != 0) {
+                ok = 0;
+                fatal_readback = 1;
+            }
             if (ok &&
                 cce_clgemm_stream_rms_x(gpu, m->attn_norm[l].data, D, eps, 0) !=
                     0)
@@ -2205,6 +2215,22 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
             free(down_h);
             free(k_host);
             free(v_host);
+            if (fatal_alloc) {
+                free(x_ckpt);
+                cce_clgemm_stream_reset(gpu);
+                free(scores); free(skv_idx); free(idx_scores);
+                cce_tensor_free(&x);
+                return CCE_ERR_OOM;
+            }
+            if (fatal_readback) {
+                fprintf(stderr, "cce_gguf: device residual checkpoint readback "
+                                "failed at layer %d — refusing\n", l);
+                free(x_ckpt);
+                cce_clgemm_stream_reset(gpu);
+                free(scores); free(skv_idx); free(idx_scores);
+                cce_tensor_free(&x);
+                return CCE_ERR_IO;
+            }
             if (ok) {
                 free(x_ckpt);
                 continue;
@@ -2707,8 +2733,14 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
     cce_tensor fn = {0};
     cce_tensor_alloc(&fn, xsh, 2);
     /* Pull residual back if the stream path kept it on-GPU. */
-    if (use_stream && gpu && cce_clgemm_stream_live(gpu))
-        (void)cce_clgemm_stream_get_x(gpu, x.data, D);
+    if (use_stream && gpu && cce_clgemm_stream_live(gpu) &&
+        cce_clgemm_stream_get_x(gpu, x.data, D) != 0) {
+        fprintf(stderr, "cce_gguf: final device residual readback failed — "
+                        "refusing\n");
+        cce_clgemm_stream_reset(gpu);
+        cce_tensor_free(&fn); cce_tensor_free(&x);
+        return CCE_ERR_IO;
+    }
 
     gguf_rms_norm_impl(&x, &m->output_norm, eps, &fn, (m->embed_scale > 1.0f));
 
@@ -3105,9 +3137,20 @@ cce_result cce_gguf_load_qwen2(cce_gguf_qwen2** out, const char* path) {
     GTRACE("kv alloc: max_ctx=%d -> %zu + %zu floats", m->max_ctx,
            (size_t)m->max_ctx * m->k_slot_floats,
            (size_t)m->max_ctx * m->v_slot_floats);
-    m->k_cache = (float*)calloc((size_t)m->max_ctx * m->k_slot_floats, sizeof(float));
-    m->v_cache = (float*)calloc((size_t)m->max_ctx * m->v_slot_floats, sizeof(float));
+    /* Open the pager before allocating dense slabs: paged mode must never
+       transiently reserve the full logical K/V cache only to free it. */
     cce_gguf_qwen2_enable_kv_page(m);
+    if (!m->kv_pager) {
+        m->k_cache = (float*)calloc((size_t)m->max_ctx * m->k_slot_floats,
+                                    sizeof(float));
+        m->v_cache = (float*)calloc((size_t)m->max_ctx * m->v_slot_floats,
+                                    sizeof(float));
+        if (!m->k_cache || !m->v_cache) {
+            cce_gguf_free(g);
+            cce_gguf_qwen2_free(m);
+            return CCE_ERR_OOM;
+        }
+    }
     if (m->mla_kv) {
         size_t kf = (size_t)m->max_ctx * m->k_slot_floats;
         size_t vf = (size_t)m->max_ctx * m->v_slot_floats;
@@ -3426,9 +3469,18 @@ cce_result cce_gguf_qwen2_load_packed(cce_gguf_qwen2** out, const char* path) {
         cce_gguf_qwen2_free(m);
         return CCE_ERR_UNSUPPORTED;
     }
-    m->k_cache = (float*)calloc((size_t)m->max_ctx * m->k_slot_floats, sizeof(float));
-    m->v_cache = (float*)calloc((size_t)m->max_ctx * m->v_slot_floats, sizeof(float));
     cce_gguf_qwen2_enable_kv_page(m);
+    if (!m->kv_pager) {
+        m->k_cache = (float*)calloc((size_t)m->max_ctx * m->k_slot_floats,
+                                    sizeof(float));
+        m->v_cache = (float*)calloc((size_t)m->max_ctx * m->v_slot_floats,
+                                    sizeof(float));
+        if (!m->k_cache || !m->v_cache) {
+            fclose(f);
+            cce_gguf_qwen2_free(m);
+            return CCE_ERR_OOM;
+        }
+    }
     if (m->mla_kv) {
         size_t kf = (size_t)m->max_ctx * m->k_slot_floats;
         size_t vf = (size_t)m->max_ctx * m->v_slot_floats;

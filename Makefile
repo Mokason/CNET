@@ -1253,16 +1253,58 @@ mtk_eval_real: mtk_eval
 	@grep -q "MTK_EVAL_PASS" logs/mtk_eval_real.log
 	@grep -q "real generate" logs/mtk_eval_real.log
 
-# Real-model quality + latency (tok/s, finite logits, optional skill delta).
+# GGUF tokenizer (chat template + BPE encode/decode) — hermetic + optional model.
+CCE_GGUF_TOK := src/cce/cce_gguf_tok.c
+.PHONY: gguf_tok
+gguf_tok: $(CCE_GGUF_TOK) tests/test_gguf_tok.c include/cce/cce_gguf_tok.h
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -o $(BIN_DIR)/test_gguf_tok $(CCE_GGUF_TOK) \
+		tests/test_gguf_tok.c $(LDFLAGS) -lm
+	@./$(BIN_DIR)/test_gguf_tok 2>&1 | tee logs/gguf_tok.log
+	@grep -q "GGUF_TOK_PASS" logs/gguf_tok.log
+	@grep -q "fails=0" logs/gguf_tok.log
+
+# Progressive specialist conversion ladder (STE QAT → certify → pack).
+CCE_SPEC_LADDER := src/cce/cce_spec_ladder.c
+.PHONY: spec_ladder
+spec_ladder: $(CCE) $(CCE_SPEC_LADDER) tests/test_spec_ladder.c \
+		include/cce/cce_spec_ladder.h
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -o $(BIN_DIR)/test_spec_ladder $(CCE) $(CCE_SPEC_LADDER) \
+		tests/test_spec_ladder.c $(LDFLAGS) -lm
+	@./$(BIN_DIR)/test_spec_ladder 2>&1 | tee logs/spec_ladder.log
+	@grep -q "SPEC_LADDER_PASS" logs/spec_ladder.log
+	@grep -q "fails=0" logs/spec_ladder.log
+
+.PHONY: spec_ladder_tool
+spec_ladder_tool: $(CCE) $(CCE_SPEC_LADDER) tools/cnet_spec_ladder.c
+	@mkdir -p $(BIN_DIR)
+	$(CC) $(CFLAGS) -o $(BIN_DIR)/cnet_spec_ladder $(CCE) $(CCE_SPEC_LADDER) \
+		tools/cnet_spec_ladder.c $(LDFLAGS) -lm
+	@echo "built bin/cnet_spec_ladder — run with MODEL path + family|schedule"
+
+.PHONY: ladder_bench
+ladder_bench: $(CCE) $(CCE_SPEC_LADDER) tools/cnet_ladder_bench.c \
+		tests/tiny_model_fixture.h
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -o $(BIN_DIR)/cnet_ladder_bench $(CCE) $(CCE_SPEC_LADDER) \
+		tools/cnet_ladder_bench.c $(LDFLAGS) -lm
+	@./$(BIN_DIR)/cnet_ladder_bench 2>&1 | tee logs/ladder_bench.log
+	@grep -q "LADDER_BENCH_PASS" logs/ladder_bench.log
+
+# Real-model quality + latency (tok/s, English detokenize, optional skill delta).
+# Optional CNET_LADDER_IMPORT=.ldtr loads certified trit specialists.
 .PHONY: quality_eval
-quality_eval: $(CCE) $(CCE_MTK_HOST) $(RESOURCE_GOV_SRC) tools/cnet_quality_eval.c
+quality_eval: $(CCE) $(CCE_MTK_HOST) $(CCE_SPEC_LADDER) $(RESOURCE_GOV_SRC) \
+		$(CCE_GGUF_TOK) tools/cnet_quality_eval.c
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) $(CFLAGS) -o $(BIN_DIR)/cnet_quality_eval $(CCE) $(CCE_MTK_HOST) \
-		$(RESOURCE_GOV_SRC) tools/cnet_quality_eval.c $(LDFLAGS) -lm
+		$(CCE_SPEC_LADDER) $(RESOURCE_GOV_SRC) $(CCE_GGUF_TOK) \
+		tools/cnet_quality_eval.c $(LDFLAGS) -lm
 	@echo "built bin/cnet_quality_eval — run with MODEL path"
 
 .PHONY: campaign_bench
-campaign_bench: mtk mtk_eval kv_page mtp_bench sparse_stack gguf_stack quality_eval
+campaign_bench: mtk mtk_eval kv_page mtp_bench sparse_stack gguf_stack gguf_tok quality_eval
 	@bash scripts/run_campaign_bench.sh
 
 
@@ -2457,7 +2499,7 @@ voice_real_teacher: $(MULTIMODAL_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER
 
 # Single source of truth → C include + .NET partial (check in generated files).
 .PHONY: json_toolcall_alphabet
-json_toolcall_alphabet: config/json_toolcall_v0.json tools/gen_json_toolcall_alphabet.py
+json_toolcall_alphabet: config/json_toolcall_v2.json tools/gen_json_toolcall_alphabet.py
 	@python3 tools/gen_json_toolcall_alphabet.py
 	@test -f include/json_toolcall_alphabet.inc
 	@test -f dotnet/Cce/JsonToolCall.Alphabet.g.cs
@@ -2580,7 +2622,7 @@ warning_debt_strict:
 # Full native warning ratchet. OpenMP pragmas are source-guarded when OpenMP is
 # disabled; every -Wall/-Wextra/-Wpedantic diagnostic is a release failure for
 # the complete shared-library source set.
-.PHONY: native_warning_gate release_warning_gate
+.PHONY: native_warning_gate native_test_warning_gate managed_warning_gate release_warning_gate
 native_warning_gate:
 	@mkdir -p logs
 	@$(MAKE) --no-print-directory PORTABLE=1 \
@@ -2592,7 +2634,46 @@ native_warning_gate:
 	fi
 	@echo "NATIVE_WARNING_GATE_PASS" | tee -a logs/native_warning_gate.log
 
-release_warning_gate: native_warning_gate
+# The production-only gate above cannot see warnings introduced by the
+# amalgamated native test sources.  Compile that exact target under the same
+# warning-as-error policy; execution remains owned by the behavioral gates.
+native_test_warning_gate:
+	@mkdir -p logs
+	@$(MAKE) --no-print-directory PORTABLE=1 \
+		CFLAGS='-std=c11 -Wall -Wextra -Wpedantic $(OPTFLAGS) -mno-avx -D_DEFAULT_SOURCE -Werror' \
+		test_all > logs/native_test_warning_gate.log 2>&1
+	@if grep -Eq '(^|[[:space:]])(warning|error):' logs/native_test_warning_gate.log; then \
+		cat logs/native_test_warning_gate.log; \
+		exit 1; \
+	fi
+	@echo "NATIVE_TEST_WARNING_GATE_PASS" | tee -a logs/native_test_warning_gate.log
+
+# Managed warning policy is deliberately offline: dependency restoration is a
+# provisioning step, while release verification must not gain network egress.
+managed_warning_gate:
+	@mkdir -p logs
+	@: > logs/managed_warning_gate.log
+	@set -e; for project in \
+		dotnet/Cce/Cce.csproj \
+		dotnet/Cce.Tests/Cce.Tests.csproj \
+		dotnet/CnetMcpServer/CnetMcpServer.csproj \
+		dotnet/CnetMcpServer.Tests/CnetMcpServer.Tests.csproj \
+		dotnet/CceHost/CceHost.csproj \
+		dotnet/CnetHarnessSmoke/CnetHarnessSmoke.csproj \
+		dotnet/Cce.Benchmarks/Cce.Benchmarks.csproj; do \
+		$(DOTNET) build "$$project" --no-restore --nologo -v:minimal \
+			-p:TreatWarningsAsErrors=true -warnaserror \
+			>> logs/managed_warning_gate.log 2>&1 || { \
+				cat logs/managed_warning_gate.log; exit 1; \
+			}; \
+	done
+	@if grep -Eq '(^|[[:space:]])(warning|error) [A-Z]+[0-9]+:' logs/managed_warning_gate.log; then \
+		cat logs/managed_warning_gate.log; \
+		exit 1; \
+	fi
+	@echo "MANAGED_WARNING_GATE_PASS" | tee -a logs/managed_warning_gate.log
+
+release_warning_gate: native_warning_gate native_test_warning_gate managed_warning_gate
 	@mkdir -p logs
 	@printf '%s\n' 'RELEASE_WARNING_GATE_PASS' > logs/release_warning_gate.log
 	@echo "RELEASE_WARNING_GATE_PASS"

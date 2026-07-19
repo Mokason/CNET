@@ -352,7 +352,8 @@ cce_result cce_block_pack_trits(cce_block* blk) {
     }
     blk->w_trit = t;
     blk->w_trit_bpr = bpr;
-    free(blk->w_q); blk->w_q = NULL;   /* trit is now the storage; no int8 codes */
+    /* Keep w_q: GPU OpenCL stream uses int8 ternary (q8 path). Trit is the
+     * compact export/storage form; inference prefers w_q when both present. */
     return CCE_OK;
 }
 

@@ -64,6 +64,30 @@ cce_clgemm *cce_clgemm_open_device(const char *dll_name, int device_index,
 int cce_clgemm_matmul(cce_clgemm *h, const float *A, size_t T, size_t K,
                       const float *W, const float *bias, size_t N, float *C);
 
+/* Like matmul but W is re-uploaded every call (no resident cache). Required for
+ * STE/training where the same host pointer is rewritten each step. */
+int cce_clgemm_matmul_ephemeral(cce_clgemm *h, const float *A, size_t T,
+                                size_t K, const float *W, const float *bias,
+                                size_t N, float *C);
+
+/* ---- STE acceleration (training / ladder) --------------------------------
+ * 1) ste_bind_W + ste_matmul: upload Weff once per STE step; only A tiles
+ *    move for the n_calib row batches (cuts PCIe on large in×out).
+ * 2) ste_XT_dY: upload dY once; pipeline input-strips across devices
+ *    (dual-GPU: strip i on dev i%ndev concurrently).
+ * No min_flops gate — STE tiles must stay on GPU. */
+
+/* Bind W[K×N] for repeated ste_matmul. Replaces any previous bind. */
+int cce_clgemm_ste_bind_W(cce_clgemm *h, const float *W, size_t K, size_t N);
+void cce_clgemm_ste_unbind_W(cce_clgemm *h);
+/* C[T×N] = A[T×K] @ bound_W. T∈[1,8]. Requires prior ste_bind_W. */
+int cce_clgemm_ste_matmul(cce_clgemm *h, const float *A, size_t T, float *C);
+
+/* dW[in×out] = X[n×in]^T @ dY[n×out]. dY uploaded once; strips of ≤8 input
+ * dims pipelined across devices. Returns 0 on success. */
+int cce_clgemm_ste_XT_dY(cce_clgemm *h, const float *X, const float *dY,
+                         size_t n, size_t in, size_t out, float *dW);
+
 /* int8 weight-only GEMM: C = (bias?) + scale[n] * (A . (float)Wq).
  * Same accumulation order as cce_block's int8 matvec — BIT-identical to
  * the CPU path (FP_CONTRACT OFF), so per-matrix CPU fallback cannot move a

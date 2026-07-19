@@ -71,6 +71,7 @@ typedef struct {
     void *mem[HIPGEMM_MAX_DEV];
     size_t off[HIPGEMM_MAX_DEV];
     size_t len[HIPGEMM_MAX_DEV];
+    uint64_t stamp; /* LRU tick — last matmul that touched this entry */
 } HipRes;
 
 typedef struct {
@@ -95,6 +96,8 @@ struct cce_hipgemm {
     size_t min_flops;
     HipRes resident[HIPGEMM_MAX_RES];
     size_t resident_count;
+    uint64_t resident_tick;        /* LRU clock for resident[]            */
+    size_t resident_evictions;     /* surfaced telemetry (audit 2026-07)  */
     p_hipSetDevice SetDevice;
     p_hipMalloc Malloc;
     p_hipFree Free;
@@ -102,6 +105,71 @@ struct cce_hipgemm {
     p_hipDeviceSynchronize Sync;
     p_hipblasSgemm Sgemm;
 };
+
+/* ---- int8 expand-to-float (LRU) + sgemm ----------------------------------- *
+ * Declared up here (ahead of cce_hipgemm_close) so the file-static q8 cache
+ * table and the close-time release helper are visible throughout the file. */
+#define HIP_Q8_MAX 256
+#define HIP_Q8_MB_DEFAULT 8192u
+
+typedef struct {
+    const int8_t *wq;
+    size_t K, N;
+    size_t bytes; /* K*N*4 total across devices (approx) */
+    uint64_t stamp;
+    void *mem[HIPGEMM_MAX_DEV];
+    size_t off[HIPGEMM_MAX_DEV];
+    size_t len[HIPGEMM_MAX_DEV];
+    int split;
+    size_t owner;
+    int live;
+} HipQ8;
+
+/* File-static map keyed by handle. Reclaimed on close so repeated
+ * open/close cannot exhaust the 8-slot table with dangling handles. */
+typedef struct {
+    cce_hipgemm *h;
+    HipQ8 slot[HIP_Q8_MAX];
+    size_t n;
+    size_t budget;
+    size_t used;
+    uint64_t tick;
+} HipQ8Cache;
+
+static HipQ8Cache g_q8_caches[8];
+static int g_q8_ncache;
+
+/* Free every device buffer held by a handle's q8 cache entry, then compact
+ * the file-static g_q8_caches[] table so repeated open/close cannot exhaust
+ * the 8-slot global map with dangling handles (audit 2026-07-18).  Called by
+ * cce_hipgemm_close; safe to call with NULL (no-op) or for a handle that was
+ * never used with q8 (the slot is simply absent). */
+static void q8_cache_release(cce_hipgemm *h) {
+    int i, j;
+    size_t d;
+    if (!h) return;
+    for (i = 0; i < g_q8_ncache; ++i) {
+        if (g_q8_caches[i].h != h) continue;
+        for (j = 0; j < (int)g_q8_caches[i].n; ++j) {
+            if (!g_q8_caches[i].slot[j].live) continue;
+            for (d = 0; d < h->ndev; ++d) {
+                if (g_q8_caches[i].slot[j].mem[d]) {
+                    if (h->SetDevice && h->d[d].dev_id >= 0)
+                        h->SetDevice(h->d[d].dev_id);
+                    if (h->Free) h->Free(g_q8_caches[i].slot[j].mem[d]);
+                }
+            }
+        }
+        /* Compact: shift the tail down so g_q8_ncache only counts live slots.
+         * This keeps q8_cache_for(h) from ever hitting the g_q8_ncache>=8 cap
+         * through dead-handle accumulation. */
+        for (j = i; j < g_q8_ncache - 1; ++j)
+            g_q8_caches[j] = g_q8_caches[j + 1];
+        memset(&g_q8_caches[g_q8_ncache - 1], 0, sizeof g_q8_caches[0]);
+        g_q8_ncache--;
+        break; /* at most one entry per handle */
+    }
+}
 
 static size_t env_size(const char *name, size_t fallback) {
     const char *s = getenv(name);
@@ -287,6 +355,10 @@ void cce_hipgemm_close(cce_hipgemm *h) {
     p_hipblasDestroy BlasDestroy = NULL;
     void *sym;
     if (!h) return;
+    /* Free file-static q8 cache device buffers for this handle FIRST, while
+     * h->SetDevice/h->Free/h->d[] are still valid. Compacts g_q8_caches[] so
+     * repeated open/close cannot leak slots or exhaust the 8-entry map. */
+    q8_cache_release(h);
     if (h->blas_dll) {
         sym = cce_dl_sym(h->blas_dll, "hipblasDestroy");
         if (sym) memcpy(&BlasDestroy, &sym, sizeof BlasDestroy);
@@ -321,11 +393,36 @@ size_t cce_hipgemm_resident_bytes(const cce_hipgemm *h) {
     return t;
 }
 
+size_t cce_hipgemm_resident_count(const cce_hipgemm *h) {
+    return h ? h->resident_count : 0;
+}
+
+size_t cce_hipgemm_resident_evictions(const cce_hipgemm *h) {
+    return h ? h->resident_evictions : 0;
+}
+
+int cce_hipgemm_max_resident(void) {
+    return HIPGEMM_MAX_RES;
+}
+
+size_t cce_hipgemm_q8_cache_slots_used(void) {
+    /* Count only slots that actually hold a live handle — dead slots are
+     * compacted on close, so this is the process-wide live q8 cache count. */
+    int i;
+    size_t n = 0;
+    for (i = 0; i < g_q8_ncache; ++i)
+        if (g_q8_caches[i].h) n++;
+    return n;
+}
+
 static HipRes *res_find(cce_hipgemm *h, const void *host, size_t bytes) {
     size_t i;
     for (i = 0; i < h->resident_count; ++i)
-        if (h->resident[i].host == host && h->resident[i].bytes == bytes)
+        if (h->resident[i].host == host && h->resident[i].bytes == bytes) {
+            /* Refresh LRU stamp so hot weights survive eviction. */
+            h->resident[i].stamp = ++h->resident_tick;
             return &h->resident[i];
+        }
     return NULL;
 }
 
@@ -360,12 +457,46 @@ static int upload_cols(cce_hipgemm *h, size_t di, const float *host, size_t K,
     return 0;
 }
 
+static void res_evict_one(cce_hipgemm *h) {
+    size_t i, victim = (size_t)-1;
+    uint64_t oldest = ~(uint64_t)0;
+    size_t d;
+    for (i = 0; i < h->resident_count; ++i) {
+        if (h->resident[i].stamp < oldest) {
+            oldest = h->resident[i].stamp;
+            victim = i;
+        }
+    }
+    if (victim == (size_t)-1) return;
+    for (d = 0; d < h->ndev; ++d) {
+        if (h->resident[victim].mem[d]) {
+            h->SetDevice(h->d[d].dev_id);
+            h->Free(h->resident[victim].mem[d]);
+        }
+    }
+    /* Shift tail down to keep the table dense (res_find is linear). */
+    for (i = victim; i + 1 < h->resident_count; ++i)
+        h->resident[i] = h->resident[i + 1];
+    memset(&h->resident[h->resident_count - 1], 0, sizeof h->resident[0]);
+    h->resident_count--;
+    h->resident_evictions++;
+}
+
 static HipRes *res_create(cce_hipgemm *h, const float *host, size_t K, size_t N,
                           int split, size_t owner, const size_t *off,
                           const size_t *len) {
     HipRes *r;
     size_t d;
-    if (h->resident_count >= HIPGEMM_MAX_RES) return NULL;
+    /* Bounded LRU eviction (audit 2026-07-18): never silently return NULL and
+     * let the caller fall back to CPU. When the fixed resident table is full,
+     * evict the least-recently-used entry and surface the eviction in
+     * h->resident_evictions. Only if eviction cannot make room (e.g. ndev==0,
+     * which is impossible post-open) do we fail — and that path returns NULL
+     * with a non-zero eviction delta the caller can inspect. */
+    while (h->resident_count >= HIPGEMM_MAX_RES) {
+        if (h->resident_count == 0) return NULL;
+        res_evict_one(h);
+    }
     r = &h->resident[h->resident_count];
     memset(r, 0, sizeof *r);
     r->host = host;
@@ -387,6 +518,7 @@ static HipRes *res_create(cce_hipgemm *h, const float *host, size_t K, size_t N,
             return NULL;
         }
     }
+    r->stamp = ++h->resident_tick;
     h->resident_count++;
     return r;
 }
@@ -567,37 +699,105 @@ int cce_hipgemm_matmul(cce_hipgemm *h, const float *A, size_t T, size_t K,
     return 0;
 }
 
-/* ---- int8 expand-to-float (LRU) + sgemm ---------------------------------- */
-
-#define HIP_Q8_MAX 256
-#define HIP_Q8_MB_DEFAULT 8192u
-
-typedef struct {
-    const int8_t *wq;
-    size_t K, N;
-    size_t bytes; /* K*N*4 total across devices (approx) */
-    uint64_t stamp;
-    void *mem[HIPGEMM_MAX_DEV];
-    size_t off[HIPGEMM_MAX_DEV];
-    size_t len[HIPGEMM_MAX_DEV];
+/* STE/training: re-upload W every call (resident cache assumes immutable W).
+ * Ignores min_flops so small STE tiles do not silently fall back to CPU. */
+int cce_hipgemm_matmul_ephemeral(cce_hipgemm *h, const float *A, size_t T,
+                                 size_t K, const float *W, const float *bias,
+                                 size_t N, float *C) {
+    size_t d, t;
+    float alpha = 1.0f, beta = 0.0f;
+    int rc = 0;
     int split;
-    size_t owner;
-    int live;
-} HipQ8;
+    size_t owner, off[HIPGEMM_MAX_DEV], len[HIPGEMM_MAX_DEV];
+    void *w_dev[HIPGEMM_MAX_DEV];
 
-/* stash on handle via unused tail of resident array — keep separate static
- * list on the handle by growing struct... use file-static map keyed by h. */
-typedef struct {
-    cce_hipgemm *h;
-    HipQ8 slot[HIP_Q8_MAX];
-    size_t n;
-    size_t budget;
-    size_t used;
-    uint64_t tick;
-} HipQ8Cache;
+    memset(w_dev, 0, sizeof w_dev);
+    if (!h || !A || !W || !C || T == 0 || T > 8 || K == 0 || N == 0) return -1;
 
-static HipQ8Cache g_q8_caches[8];
-static int g_q8_ncache;
+    place(h, K, N, &split, &owner, off, len);
+
+    for (d = 0; d < h->ndev; ++d) {
+        HipDev *D = &h->d[d];
+        size_t cols = len[d];
+        if (cols == 0) continue;
+        h->SetDevice(D->dev_id);
+        if (upload_cols(h, d, W, K, N, off[d], cols, &w_dev[d]) != 0) {
+            rc = -1;
+            break;
+        }
+        if (hip_ensure_A(h, d, A, T, K) != 0 ||
+            scratch(h, d, &D->c_dev, &D->c_cap, T * cols * sizeof(float)) !=
+                0) {
+            rc = -1;
+            break;
+        }
+        if (split) {
+            if (D->c_host_cap < T * cols) {
+                float *nc =
+                    (float *)realloc(D->c_host, T * cols * sizeof(float));
+                if (!nc) {
+                    rc = -1;
+                    break;
+                }
+                D->c_host = nc;
+                D->c_host_cap = T * cols;
+            }
+        }
+        if (h->Sgemm(D->blas, HIPBLAS_OP_N, HIPBLAS_OP_N, (int)cols, (int)T,
+                     (int)K, &alpha, (const float *)w_dev[d], (int)cols,
+                     (const float *)D->a_dev, (int)K, &beta, (float *)D->c_dev,
+                     (int)cols) != HIPBLAS_STATUS_SUCCESS) {
+            rc = -1;
+            break;
+        }
+    }
+    if (rc == 0) {
+        for (d = 0; d < h->ndev; ++d) {
+            HipDev *D = &h->d[d];
+            size_t cols = len[d];
+            float *dst;
+            if (cols == 0) continue;
+            h->SetDevice(D->dev_id);
+            if (h->Sync() != HIP_SUCCESS) {
+                rc = -1;
+                break;
+            }
+            dst = split ? D->c_host : C;
+            if (h->Memcpy(dst, D->c_dev, T * cols * sizeof(float),
+                          hipMemcpyDeviceToHost) != HIP_SUCCESS) {
+                rc = -1;
+                break;
+            }
+        }
+    }
+    if (rc == 0 && split) {
+        for (d = 0; d < h->ndev; ++d) {
+            size_t cols = len[d];
+            if (cols == 0) continue;
+            for (t = 0; t < T; ++t)
+                memcpy(C + t * N + off[d], h->d[d].c_host + t * cols,
+                       cols * sizeof(float));
+        }
+    }
+    if (rc == 0 && bias) {
+        for (t = 0; t < T; ++t) {
+            size_t n;
+            float *row = C + t * N;
+            for (n = 0; n < N; ++n) row[n] += bias[n];
+        }
+    }
+    for (d = 0; d < h->ndev; ++d) {
+        if (w_dev[d]) {
+            h->SetDevice(h->d[d].dev_id);
+            h->Free(w_dev[d]);
+        }
+    }
+    return rc == 0 ? 0 : -1;
+}
+
+/* ---- int8 expand-to-float (LRU) + sgemm ---------------------------------- *
+ * Struct definitions + file-static table + q8_cache_release live above, near
+ * cce_hipgemm_close, so the close path can reclaim device buffers. */
 
 static HipQ8Cache *q8_cache_for(cce_hipgemm *h) {
     int i;
