@@ -3,6 +3,7 @@
  * make dual_cpu_bench → DUAL_CPU_BENCH_PASS
  */
 #include <stdio.h>
+#include "../include/cnet_platform.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -24,8 +25,8 @@ int main(void) {
     double tps_ds = 0, tps_gg = 0;
     const int N = 64;
 
-    setenv("CNET_FOREST_NO_PERSIST", "1", 1);
-    setenv("CNET_INFER_FP", "1", 1);
+    cnet_setenv("CNET_FOREST_NO_PERSIST", "1", 1);
+    cnet_setenv("CNET_INFER_FP", "1", 1);
 
     printf("== Dual CPU bench: DS residual vs GGUF token gen ==\n");
 

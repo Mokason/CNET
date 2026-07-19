@@ -8,6 +8,7 @@
  * docs/superpowers/specs/2026-06-19-dual-track-expansion-3c-design.md
  */
 #include "../include/nn.h"
+#include "../include/cnet_platform.h"
 #include "../include/router.h"
 
 #include <stdio.h>
@@ -197,7 +198,7 @@ static void test_expand_persistence(void) {
         return;
     }
     if (getcwd(original_dir, sizeof original_dir) == NULL ||
-        mkdtemp(state_dir) == NULL || chdir(state_dir) != 0) {
+        cnet_mkdtemp(state_dir) == NULL || chdir(state_dir) != 0) {
         CHECK(0, "isolated persistence directory setup");
         btn_free(&lo); btn_free(&hi); btn_free(&chunk);
         return;

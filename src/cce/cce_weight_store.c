@@ -9,6 +9,7 @@
  */
 
 #include "../../include/cce/cce_weight_store.h"
+#include "../../include/cnet_platform.h"
 #include "../../include/cce/cce_specgraph.h"
 #include "../../include/cce/cce_forest.h"
 #include "../../include/cce/cce_block.h"
@@ -18,14 +19,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-#ifdef _WIN32
-#include <direct.h>
-#include <io.h>
-#define WS_MKDIR(p) _mkdir(p)
-#else
+#ifndef _WIN32
 #include <dirent.h>
-#include <sys/stat.h>
-#define WS_MKDIR(p) mkdir(p, 0777)
 #endif
 
 #define WS_MAGIC "CSPC"
@@ -183,7 +178,7 @@ static long file_size(const char* path) {
 cce_result cce_weight_store_open(cce_weight_store** out, const char* dir) {
     if (!out || !dir) return CCE_ERR_INVALID_ARG;
     *out = NULL;
-    WS_MKDIR(dir); /* idempotent */
+    cnet_mkdir(dir, 0777); /* idempotent */
     cce_weight_store* s = (cce_weight_store*)calloc(1, sizeof(*s));
     if (!s) return CCE_ERR_OOM;
     strncpy(s->dir, dir, sizeof(s->dir) - 1);

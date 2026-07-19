@@ -5,6 +5,7 @@
  * make voice_real_teacher → VOICE_REAL_TEACHER_PASS
  */
 #include <stdio.h>
+#include "../include/cnet_platform.h"
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -107,8 +108,8 @@ int main(void) {
         ExternalTeacher t2;
         char env_cmd[1024];
         snprintf(env_cmd, sizeof env_cmd, "%s", cmdline);
-        setenv("CNET_VOICE_TEACHER_CMD", env_cmd, 1);
-        setenv("CNET_VOICE_TEACHER_NAME", "voice_env", 1);
+        cnet_setenv("CNET_VOICE_TEACHER_CMD", env_cmd, 1);
+        cnet_setenv("CNET_VOICE_TEACHER_NAME", "voice_env", 1);
         external_teacher_init(&t2);
         check(cnet_voice_bind_from_env(&t2) == 0, "bind from env");
         cnet_voice_hermetic_features(3, feat);
@@ -116,8 +117,8 @@ int main(void) {
                   argmax_n(cmd, CNET_VOICE_N_CMD) == 3,
               "env teacher classifies down");
         external_teacher_unbind(&t2);
-        unsetenv("CNET_VOICE_TEACHER_CMD");
-        unsetenv("CNET_VOICE_TEACHER_NAME");
+        cnet_unsetenv("CNET_VOICE_TEACHER_CMD");
+        cnet_unsetenv("CNET_VOICE_TEACHER_NAME");
     }
 
     /* Optional whisper readiness (does not fail gate if unavailable). */

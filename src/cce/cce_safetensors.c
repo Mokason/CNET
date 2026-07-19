@@ -1,6 +1,7 @@
 #include "../../include/cce/cce_safetensors.h"
 #include "../../include/cce/cce_sparse_kv.h"
 #include "../../include/cce/cce_compression.h"
+#include "../../include/cce/cce_gguf.h"       /* cce_gguf_f16_to_f32 */
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -782,29 +783,10 @@ static unsigned char* st_read_raw(const cce_safetensors* st, int idx, size_t* ou
     return buf;
 }
 
-static float f16_to_f32(uint16_t h) {
-    /* minimal IEEE half to float (no subnormal/NaN perfection needed for weights) */
-    uint32_t sign = (h & 0x8000u) << 16;
-    int32_t exp = (h >> 10) & 0x1F;
-    uint32_t mant = h & 0x3FFu;
-    uint32_t f;
-    if (exp == 0) {
-        if (mant == 0) f = sign; /* +/- 0 */
-        else {
-            /* subnormal */
-            exp = -14;
-            while ((mant & 0x400) == 0) { mant <<= 1; exp--; }
-            mant &= 0x3FF;
-            f = sign | ((uint32_t)(exp + 127) << 23) | (mant << 13);
-        }
-    } else if (exp == 31) {
-        f = sign | 0x7F800000u | (mant << 13); /* inf/nan */
-    } else {
-        f = sign | ((uint32_t)(exp - 15 + 127) << 23) | (mant << 13);
-    }
-    float r; memcpy(&r, &f, 4);
-    return r;
-}
+/* The fp16 decoder lives in cce_gguf.c, which tests/test_f16_identity.c covers
+   exhaustively over all 65536 half patterns. This file used to carry a second,
+   numerically identical copy — the exact shape of the subnormal bug that copy
+   was written to avoid, so there is now only one decoder to get right. */
 
 cce_result cce_safetensors_load_f32(const cce_safetensors* st, int idx,
                                     float* buf, size_t cap_elems) {
@@ -836,7 +818,7 @@ cce_result cce_safetensors_load_f32(const cce_safetensors* st, int idx,
                 float fv; memcpy(&fv, &fb, 4);
                 buf[e] = fv;
             } else {
-                buf[e] = f16_to_f32(hv);
+                buf[e] = cce_gguf_f16_to_f32(hv);
             }
         }
     } else {

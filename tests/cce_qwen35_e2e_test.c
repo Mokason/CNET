@@ -24,6 +24,7 @@
  * honest refusals (wrong-arch loaders, missing ssm_a). */
 
 #include <stdio.h>
+#include "../include/cnet_platform.h"
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
@@ -844,9 +845,9 @@ int main(void) {
        stays FP; forward still runs and produces finite logits */
     {
         cce_gguf_qwen2 *mi = NULL;
-        setenv("CNET_ORACLE_INT8", "1", 1);
+        cnet_setenv("CNET_ORACLE_INT8", "1", 1);
         CHECK(cce_gguf_load_qwen35(&mi, "qwen35_e2e.gguf") == CCE_OK, "int8 load");
-        unsetenv("CNET_ORACLE_INT8");
+        cnet_unsetenv("CNET_ORACLE_INT8");
         if (mi) {
             cce_cascade *head = cce_forest_get_resident(mi->forest, "qwen2.lm_head");
             cce_cascade *lay = cce_forest_get_resident(mi->forest, "qwen35.blk.0.qkv");
@@ -883,14 +884,14 @@ int main(void) {
        refuse an armed knob rather than silently run full attention */
     {
         cce_gguf_qwen2 *ms = NULL;
-        setenv("CNET_SPARSE_KV", "0.25", 1);
+        cnet_setenv("CNET_SPARSE_KV", "0.25", 1);
         CHECK(cce_gguf_load_qwen35(&ms, "qwen35_e2e.gguf") != CCE_OK,
               "armed CNET_SPARSE_KV refused by the qwen35 loader");
-        setenv("CNET_SPARSE_KV", "0", 1);
+        cnet_setenv("CNET_SPARSE_KV", "0", 1);
         ms = NULL;
         CHECK(cce_gguf_load_qwen35(&ms, "qwen35_e2e.gguf") == CCE_OK &&
               ms != NULL, "CNET_SPARSE_KV=0 still loads");
-        unsetenv("CNET_SPARSE_KV");
+        cnet_unsetenv("CNET_SPARSE_KV");
         if (ms) {
             CHECK(cce_gguf_qwen2_set_sparse_kv(ms, 0.5f) ==
                   CCE_ERR_UNSUPPORTED,

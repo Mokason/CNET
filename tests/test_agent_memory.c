@@ -1,5 +1,6 @@
 #define _POSIX_C_SOURCE 200809L
 #include <stdio.h>
+#include "../include/cnet_platform.h"
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
@@ -34,15 +35,15 @@ int main(void) {
     char context[4096];
     long stable_size;
 
-    check(mkdtemp(root) != NULL, "temporary root created");
+    check(cnet_mkdtemp(root) != NULL, "temporary root created");
     snprintf(work, sizeof work, "%s/work", root);
     snprintf(store, sizeof store, "%s/store", root);
     snprintf(kb, sizeof kb, "%s/%s", store, AGENT_KB_FILE);
     snprintf(tmp, sizeof tmp, "%s/%s.tmp", store, AGENT_KB_FILE);
     snprintf(prev, sizeof prev, "%s/%s.prev", store, AGENT_KB_FILE);
-    check(mkdir(work, 0700) == 0 && mkdir(store, 0700) == 0,
+    check(cnet_mkdir(work, 0700) == 0 && cnet_mkdir(store, 0700) == 0,
           "isolated work and durable directories created");
-    check(chdir(work) == 0 && setenv("CNET_AGENT_MEMORY_DIR", store, 1) == 0,
+    check(chdir(work) == 0 && cnet_setenv("CNET_AGENT_MEMORY_DIR", store, 1) == 0,
           "memory directory override configured");
 
     check(agent_memory_init() == 0, "empty memory initializes");
@@ -52,11 +53,11 @@ int main(void) {
     check(stable_size > 0 && access(tmp, F_OK) != 0,
           "configured KB path exists with no stale temp file");
 
-    check(setenv("CNET_AGENT_MEMORY_FAIL_AFTER_WRITES", "1", 1) == 0,
+    check(cnet_setenv("CNET_AGENT_MEMORY_FAIL_AFTER_WRITES", "1", 1) == 0,
           "failure injection enabled");
     check(agent_record_assistant("must-not-publish") != 0,
           "injected partial write is reported to caller");
-    unsetenv("CNET_AGENT_MEMORY_FAIL_AFTER_WRITES");
+    cnet_unsetenv("CNET_AGENT_MEMORY_FAIL_AFTER_WRITES");
     check(file_size(kb) == stable_size && access(tmp, F_OK) != 0,
           "failed publication preserves old KB and removes temp file");
 

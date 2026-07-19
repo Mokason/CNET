@@ -2,6 +2,7 @@
  * make learn_loop → LEARN_LOOP_PASS
  */
 #include <stdio.h>
+#include "../include/cnet_platform.h"
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -23,7 +24,7 @@ int main(void) {
     char names[16][128];
     int n;
 
-    setenv("CNET_SKILLS_DIR", skills, 1);
+    cnet_setenv("CNET_SKILLS_DIR", skills, 1);
     /* Isolate MCP fact file if possible — tools may still write cwd facts. */
     printf("== cnet learn loop (Hermes-style in C) ==\n");
 

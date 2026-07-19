@@ -1,16 +1,11 @@
 /* Contract-graph topology audit -- see include/topology.h.
  * Read-only. Betti-0 via union-find, Betti-1 via cycle rank (E - V + C). */
 #include "../include/topology.h"
+#include "../include/cnet_platform.h"
 
 #include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
-#ifdef _WIN32
-#include <direct.h>
-#define TOPO_MKDIR(p) _mkdir(p)
-#else
-#define TOPO_MKDIR(p) mkdir((p), 0755)
-#endif
 
 const char *topology_port_sig(Port p, char *buf, size_t n) {
     if (!buf || n == 0) return buf;
@@ -197,7 +192,7 @@ static void ensure_parent_dirs(const char *path) {
     for (size_t i = 1; i < n; i++)
         if (buf[i] == '/' || buf[i] == '\\') {
             char c = buf[i]; buf[i] = '\0';
-            TOPO_MKDIR(buf);                 /* best-effort; EEXIST is fine */
+            cnet_mkdir(buf, 0755);                 /* best-effort; EEXIST is fine */
             buf[i] = c;
         }
 }

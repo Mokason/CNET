@@ -3,6 +3,7 @@
  * make residual_gguf_real → requires model path (+ optional structure mine)
  */
 #include <stdio.h>
+#include "../include/cnet_platform.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -155,16 +156,16 @@ int main(void) {
         PersonalAi ai;
         PersonalAiPolicy pol;
         personal_ai_policy_defaults(&pol);
-        setenv("CNET_RESIDUAL_GGUF", "/nonexistent/nope.gguf", 1);
+        cnet_setenv("CNET_RESIDUAL_GGUF", "/nonexistent/nope.gguf", 1);
         remove("tmp_res_fail.cnb");
         remove("tmp_res_fail.gaps.txt");
         check(personal_ai_open(&ai, "tmp_res_fail.cnb", "tmp_res_fail.gaps.txt",
                                NULL, &pol) == -4,
               "open fails closed on missing residual GGUF");
         if (old && old[0])
-            setenv("CNET_RESIDUAL_GGUF", old, 1);
+            cnet_setenv("CNET_RESIDUAL_GGUF", old, 1);
         else
-            unsetenv("CNET_RESIDUAL_GGUF");
+            cnet_unsetenv("CNET_RESIDUAL_GGUF");
         remove("tmp_res_fail.cnb");
         remove("tmp_res_fail.gaps.txt");
     }

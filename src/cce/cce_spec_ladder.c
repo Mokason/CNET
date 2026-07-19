@@ -1,5 +1,6 @@
 /* Progressive specialist conversion ladder — see cce_spec_ladder.h */
 #include "../../include/cce/cce_spec_ladder.h"
+#include "../../include/cnet_platform.h"
 #include "../../include/cce/cce_tensor.h"
 #include "../../include/cce/cce_clgemm.h"
 #include "../../include/cce/cce_hipgemm.h"
@@ -72,7 +73,7 @@ int cce_ladder_nthreads(void) {
         const char *e = getenv("CNET_LADDER_THREADS");
         int n = (e && e[0]) ? atoi(e) : 0;
         if (n <= 0) {
-            long c = sysconf(_SC_NPROCESSORS_ONLN);
+            long c = cnet_cpu_count();
             n = (c > 1) ? (int)c : 1;
             if (n > 24) n = 24;
         }

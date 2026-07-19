@@ -774,10 +774,13 @@ cce_result cce_ds_pack_load_weight(void* pack_ctx, const cce_ds_leaf* leaf,
     fseek(p->f, 8, SEEK_SET);
     if (fread(&n, 4, 1, p->f) != 1) return CCE_ERR_IO;
     for (i = 0; i < n; ++i) {
-        char name[64];
+        /* The on-disk name field is a fixed 64 bytes with no guaranteed
+           terminator; the extra byte keeps strcmp inside the buffer. */
+        char name[65];
         int32_t di, dout;
         uint64_t nbytes;
         if (fread(name, 1, 64, p->f) != 64) return CCE_ERR_IO;
+        name[64] = '\0';
         if (fread(&di, 4, 1, p->f) != 1 || fread(&dout, 4, 1, p->f) != 1 ||
             fread(&nbytes, 8, 1, p->f) != 1)
             return CCE_ERR_IO;

@@ -12,6 +12,7 @@
  */
 
 #include <stdio.h>
+#include "../include/cnet_platform.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -485,7 +486,7 @@ static int determinism_spot_check(CceOracleCtx *c, FlagshipTask task) {
 /* ---- Manifest replay (CNET_MANIFEST=<base>.manifest.json) ---------------
    manifest-out without manifest-in is half a loop: a run must be
    RE-RUNNABLE from its artifact. Every recorded knob is applied via
-   setenv(..., overwrite=0) — explicit environment always wins — and the
+   cnet_setenv(..., overwrite=0) — explicit environment always wins — and the
    argv-shaped fields (model, V, max_units, task, base) become defaults
    for positions the caller leaves off. Parser is a scanner for our own
    fprintf format, not a general JSON reader. */
@@ -521,7 +522,7 @@ static void mf_setenv_num(const char *text, const char *key,
     if (mf_scan_num(text, key, &v) != 0) return;
     if (as_int) snprintf(buf, sizeof buf, "%ld", (long)v);
     else snprintf(buf, sizeof buf, "%.6f", v);
-    setenv(envname, buf, 0);
+    cnet_setenv(envname, buf, 0);
 }
 
 static int mf_write_window_sidecar(const char *base_path, const int *vocab,
@@ -729,10 +730,10 @@ int main(int argc, char **argv) {
                 if (mf_scan_str(mtext, "window_source", m_win,
                                 sizeof m_win) == 0 &&
                     strcmp(m_win, "argmax-discovery") != 0)
-                    setenv("CNET_WINDOW_FILE", m_win, 0);
+                    cnet_setenv("CNET_WINDOW_FILE", m_win, 0);
                 mf_setenv_num(mtext, "margin_eps", "CNET_CERT_MARGIN", 0);
                 if (mf_scan_num(mtext, "cert_sampled", &num) == 0 && num >= 1)
-                    setenv("CNET_CERT_SAMPLED", "1", 0);
+                    cnet_setenv("CNET_CERT_SAMPLED", "1", 0);
                 mf_setenv_num(mtext, "sample_count",
                               "CNET_CERT_SAMPLE_COUNT", 1);
                 mf_setenv_num(mtext, "init_hidden", "CNET_ACQ_HIDDEN", 1);
@@ -740,29 +741,29 @@ int main(int argc, char **argv) {
                 mf_setenv_num(mtext, "max_epochs", "CNET_ACQ_EPOCHS", 1);
                 mf_setenv_num(mtext, "seed", "CNET_ACQ_SEED", 1);
                 if (mf_scan_num(mtext, "adaptive", &num) == 0 && num >= 1)
-                    setenv("CNET_ACQ_ADAPTIVE", "1", 0);
+                    cnet_setenv("CNET_ACQ_ADAPTIVE", "1", 0);
                 if (mf_scan_num(mtext, "warmstart", &num) == 0 && num >= 1)
-                    setenv("CNET_ACQ_WARMSTART", "1", 0);
+                    cnet_setenv("CNET_ACQ_WARMSTART", "1", 0);
                 if (mf_scan_num(mtext, "oracle_int8", &num) == 0 && num >= 1)
-                    setenv("CNET_ORACLE_INT8", "1", 0);
+                    cnet_setenv("CNET_ORACLE_INT8", "1", 0);
                 mf_setenv_num(mtext, "lanes", "CNET_ORACLE_LANES", 1);
                 {
                     static char m_sem[40];
                     if (mf_scan_str(mtext, "target_semantics", m_sem,
                                     sizeof m_sem) == 0 &&
                         strcmp(m_sem, "top3-set-canonical") == 0)
-                        setenv("CNET_TOPK_SET", "1", 0);
+                        cnet_setenv("CNET_TOPK_SET", "1", 0);
                 }
                 {
                     static char m_gold[512];
                     if (mf_scan_str(mtext, "oracle_golden", m_gold,
                                     sizeof m_gold) == 0 && m_gold[0])
-                        setenv("CNET_ORACLE_GOLDEN", m_gold, 0);
+                        cnet_setenv("CNET_ORACLE_GOLDEN", m_gold, 0);
                 }
                 if (mf_scan_str(mtext, "model", m_model, sizeof m_model) == 0)
-                    setenv("CNET_MANIFEST_MODEL", m_model, 1);
+                    cnet_setenv("CNET_MANIFEST_MODEL", m_model, 1);
                 if (mf_scan_str(mtext, "task", m_task, sizeof m_task) == 0)
-                    setenv("CNET_MANIFEST_TASK", m_task, 1);
+                    cnet_setenv("CNET_MANIFEST_TASK", m_task, 1);
                 if (mf_scan_num(mtext, "V", &num) == 0)
                     mf_setenv_num(mtext, "V", "CNET_MANIFEST_V", 1);
                 if (mf_scan_num(mtext, "max_units", &num) == 0)
@@ -776,7 +777,7 @@ int main(int argc, char **argv) {
                         blen - slen < sizeof m_base) {
                         memcpy(m_base, mfp, blen - slen);
                         m_base[blen - slen] = 0;
-                        setenv("CNET_MANIFEST_BASE", m_base, 1);
+                        cnet_setenv("CNET_MANIFEST_BASE", m_base, 1);
                     }
                 }
                 printf("manifest replay: %s\n", mfp);

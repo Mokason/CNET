@@ -4,6 +4,7 @@
  * make post_seal_serve → POST_SEAL_SERVE_PASS
  */
 #include <stdio.h>
+#include "../include/cnet_platform.h"
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -75,9 +76,9 @@ int main(void) {
     remove(ledger);
     remove(inbox);
     remove("tmp_post_seal_serve.cnb.tmp");
-    unsetenv("CNET_RESIDUAL_GGUF");
-    unsetenv("CNET_SOUL_RESIDUAL_HERMETIC");
-    setenv("CNET_GAP_INBOX", inbox, 1);
+    cnet_unsetenv("CNET_RESIDUAL_GGUF");
+    cnet_unsetenv("CNET_SOUL_RESIDUAL_HERMETIC");
+    cnet_setenv("CNET_GAP_INBOX", inbox, 1);
 
     printf("== post-seal serve proof (teach → seal → reopen → Tier A) ==\n");
 

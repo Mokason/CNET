@@ -10,6 +10,7 @@
  */
 #define TL_CTX 128
 #include "tiny_model_fixture.h"
+#include "../include/cnet_platform.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -68,8 +69,8 @@ int main(void) {
     cce_infer_session *sess = NULL;
     cce_infer_opts opts;
 
-    setenv("CNET_FOREST_NO_PERSIST", "1", 1);
-    setenv("CNET_INFER_FP", "1", 1);
+    cnet_setenv("CNET_FOREST_NO_PERSIST", "1", 1);
+    cnet_setenv("CNET_INFER_FP", "1", 1);
 
     printf("== CNET GGUF GPU (OpenCL primary, pure C) ==\n");
     printf("  plan: plans/amd_gpu_backend.md (Vulkan deferred; hipBLAS later)\n");

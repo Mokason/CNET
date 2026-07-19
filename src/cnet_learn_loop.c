@@ -1,4 +1,5 @@
 #include "../include/cnet_learn_loop.h"
+#include "../include/cnet_platform.h"
 #include "../include/cnet_math_solve.h"
 #include "../include/agent_memory.h"
 #include "../include/contract/mcp_wiki.h"
@@ -12,14 +13,6 @@
 #include <sys/stat.h>
 #include <time.h>
 
-#ifdef _WIN32
-#include <direct.h>
-#define CNET_MKDIR(p) _mkdir(p)
-#else
-#include <sys/types.h>
-#include <errno.h>
-#define CNET_MKDIR(p) mkdir((p), 0755)
-#endif
 
 static void trim_inplace(char *s) {
     size_t n, i = 0, j;
@@ -126,13 +119,13 @@ static int mkdir_p(const char *path) {
     for (i = 1; tmp[i]; i++) {
         if (tmp[i] == '/') {
             tmp[i] = '\0';
-            if (CNET_MKDIR(tmp) != 0 && errno != EEXIST) {
+            if (cnet_mkdir(tmp, 0755) != 0 && errno != EEXIST) {
                 /* continue; parent may exist */
             }
             tmp[i] = '/';
         }
     }
-    if (CNET_MKDIR(tmp) != 0 && errno != EEXIST) return -1;
+    if (cnet_mkdir(tmp, 0755) != 0 && errno != EEXIST) return -1;
     return 0;
 }
 

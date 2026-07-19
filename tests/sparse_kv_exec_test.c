@@ -53,6 +53,7 @@
 
 #define TL_CTX 320
 #include "tiny_model_fixture.h"
+#include "../include/cnet_platform.h"
 
 #include <math.h>
 #include <stdint.h>
@@ -357,26 +358,26 @@ int main(void) {
     cce_gguf_qwen2_free(m); m = NULL;
 
     /* (c) env knob at load: malformed refuses, valid loads, "0" stays OFF */
-    setenv("CNET_SPARSE_KV", "banana", 1);
+    cnet_setenv("CNET_SPARSE_KV", "banana", 1);
     CHECK(cce_gguf_load_qwen2(&m, gguf_path) != CCE_OK,
           "CNET_SPARSE_KV=banana refuses the load");
-    setenv("CNET_SPARSE_KV", "1.5", 1);
+    cnet_setenv("CNET_SPARSE_KV", "1.5", 1);
     CHECK(cce_gguf_load_qwen2(&m, gguf_path) != CCE_OK,
           "CNET_SPARSE_KV=1.5 refuses the load");
-    setenv("CNET_SPARSE_KV", "-0.1", 1);
+    cnet_setenv("CNET_SPARSE_KV", "-0.1", 1);
     CHECK(cce_gguf_load_qwen2(&m, gguf_path) != CCE_OK,
           "CNET_SPARSE_KV=-0.1 refuses the load");
-    setenv("CNET_SPARSE_KV", "0", 1);
+    cnet_setenv("CNET_SPARSE_KV", "0", 1);
     m = NULL;
     CHECK(cce_gguf_load_qwen2(&m, gguf_path) == CCE_OK &&
           m && m->sparse_kv_fraction == 0.0f,
           "CNET_SPARSE_KV=0 loads with sparse KV OFF");
     if (m) { cce_gguf_qwen2_free(m); m = NULL; }
-    setenv("CNET_SPARSE_KV", "0.25", 1);
+    cnet_setenv("CNET_SPARSE_KV", "0.25", 1);
     CHECK(cce_gguf_load_qwen2(&m, gguf_path) == CCE_OK &&
           m && m->sparse_kv_fraction == 0.25f,
           "CNET_SPARSE_KV=0.25 loads with the knob set");
-    unsetenv("CNET_SPARSE_KV");
+    cnet_unsetenv("CNET_SPARSE_KV");
     if (m) {
         /* the env-armed model must match the setter-armed run exactly */
         static float envsp[NRUNS][TL_V];

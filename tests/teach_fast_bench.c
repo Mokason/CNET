@@ -24,6 +24,7 @@
  *            weights and prints TEACH_FAST_PASS.
  */
 #include "../include/nn.h"
+#include "../include/cnet_platform.h"
 #include "../include/contract/contract.h"
 
 #include <math.h>
@@ -539,7 +540,7 @@ static int mode_gate(const double *inputs, const double *targets) {
         BinaryTransformNetwork *btn = fresh_student();
         double t0, cert_s;
         if (!btn) return 2;
-        if (setenv("CNET_TRAIN_FAST", i == 0 ? "0" : "1", 1) != 0) {
+        if (cnet_setenv("CNET_TRAIN_FAST", i == 0 ? "0" : "1", 1) != 0) {
             btn_free(btn); free(btn);
             return 2;
         }

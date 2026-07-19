@@ -1,5 +1,6 @@
 /* Async paged KV — make kv_page → KV_PAGE_PASS */
 #include <stdio.h>
+#include "../include/cnet_platform.h"
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -22,7 +23,7 @@ int main(void) {
     char dir[] = "kv_archive_test_XXXXXX";
 
     printf("== CNET async paged KV (hot/warm/cold) ==\n");
-    if (!mkdtemp(dir)) {
+    if (!cnet_mkdtemp(dir)) {
         perror("mkdtemp");
         return 1;
     }
@@ -148,7 +149,7 @@ int main(void) {
         cce_kv_pager_opts o2;
         cce_kv_pager *p2 = NULL;
         char dir2[] = "kv_archive_f32_XXXXXX";
-        if (mkdtemp(dir2)) {
+        if (cnet_mkdtemp(dir2)) {
             cce_kv_pager_opts_default(&o2, 4, 4, 1000);
             o2.page_len = 16; /* min page_len is 16 */
             o2.n_hot = 2;

@@ -3,6 +3,7 @@
  * make dual_gpu_bench → DUAL_GPU_BENCH_PASS or DUAL_GPU_BENCH_SKIP
  */
 #include <stdio.h>
+#include "../include/cnet_platform.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -28,8 +29,8 @@ int main(void) {
     const int N = 32;
     int have_gpu = 0;
 
-    setenv("CNET_FOREST_NO_PERSIST", "1", 1);
-    setenv("CNET_INFER_FP", "1", 1);
+    cnet_setenv("CNET_FOREST_NO_PERSIST", "1", 1);
+    cnet_setenv("CNET_INFER_FP", "1", 1);
 
     printf("== Dual GPU bench scaffold (AMD OpenCL primary) ==\n");
     printf("  plan: plans/amd_gpu_backend.md\n");

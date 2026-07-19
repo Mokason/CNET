@@ -2,6 +2,7 @@
  * make colibri_integrate → COLIBRI_INTEGRATE_PASS
  */
 #include <stdio.h>
+#include "../include/cnet_platform.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
@@ -111,12 +112,12 @@ int main(void) {
     /* ---- P4 session KV flag (hermetic, no real GGUF) ---- */
     {
         const char *old = getenv("CNET_RESIDUAL_SESSION_KV");
-        setenv("CNET_RESIDUAL_SESSION_KV", "1", 1);
+        cnet_setenv("CNET_RESIDUAL_SESSION_KV", "1", 1);
         /* Without a GGUF path, open fails — just check env read via pilot path */
         {
             CnetPilot p;
             cnet_pilot_init(&p);
-            setenv("CNET_PILOT", "1", 1);
+            cnet_setenv("CNET_PILOT", "1", 1);
             cnet_pilot_from_env(&p);
             check(p.enabled == 1, "P5 pilot enables from env");
             check(cnet_pilot_push(&p, 7) == 0, "P5 pilot push");
@@ -126,21 +127,21 @@ int main(void) {
             }
             cnet_pilot_note_hit(&p);
             check(p.hits == 1 && p.recorded >= 1, "P5 pilot stats");
-            unsetenv("CNET_PILOT");
+            cnet_unsetenv("CNET_PILOT");
         }
         if (old)
-            setenv("CNET_RESIDUAL_SESSION_KV", old, 1);
+            cnet_setenv("CNET_RESIDUAL_SESSION_KV", old, 1);
         else
-            unsetenv("CNET_RESIDUAL_SESSION_KV");
+            cnet_unsetenv("CNET_RESIDUAL_SESSION_KV");
         check(1, "P4 session-KV env documented (open path in residual_gguf)");
     }
 
     /* LFRU forest env is opt-in — document via flag readability */
     {
-        setenv("CNET_FOREST_LFRU", "1", 1);
+        cnet_setenv("CNET_FOREST_LFRU", "1", 1);
         check(getenv("CNET_FOREST_LFRU") && getenv("CNET_FOREST_LFRU")[0] == '1',
               "P1 CNET_FOREST_LFRU opt-in present");
-        unsetenv("CNET_FOREST_LFRU");
+        cnet_unsetenv("CNET_FOREST_LFRU");
     }
 
     /* D: pilot drain/peek + external residual stub */

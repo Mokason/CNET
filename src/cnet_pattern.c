@@ -1,4 +1,5 @@
 #include "../include/cnet_pattern.h"
+#include "../include/cnet_platform.h"
 #include "../include/cnet_lfru.h"
 #include "../include/cnet_math_solve.h"
 #include "../include/contract/mcp_math_eval.h"
@@ -14,14 +15,6 @@
 #include <string.h>
 #include <time.h>
 
-#ifndef _WIN32
-#include <sys/stat.h>
-#include <errno.h>
-#define CNET_MKDIR(p) mkdir((p), 0755)
-#else
-#include <direct.h>
-#define CNET_MKDIR(p) _mkdir(p)
-#endif
 
 /* Optional SoulHost via dlopen(cnet.so) — avoids linking the full CCE stack
  * into every pattern binary while still enabling live unit callouts. */
@@ -867,7 +860,7 @@ static int mkdir_parent(const char *path) {
     for (i = 1; i < len; i++) {
         if (tmp[i] == '/') {
             tmp[i] = '\0';
-            CNET_MKDIR(tmp);
+            cnet_mkdir(tmp, 0755);
             tmp[i] = '/';
         }
     }

@@ -2,6 +2,7 @@
  * make resource_governor → RESOURCE_GOVERNOR_PASS
  */
 #include <stdio.h>
+#include "../include/cnet_platform.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -68,14 +69,14 @@ int main(void) {
           "format produces log line");
 
     /* env overlay */
-    setenv("CNET_LANE_MAX_CLOSURES", "2", 1);
-    setenv("CNET_TEACHER_IDLE_SEC", "60", 1);
+    cnet_setenv("CNET_LANE_MAX_CLOSURES", "2", 1);
+    cnet_setenv("CNET_TEACHER_IDLE_SEC", "60", 1);
     cnet_gov_policy_deploy_defaults(&p);
     check(cnet_gov_policy_from_env(&p) == 0, "env overlay");
     check(p.max_closures_per_drain == 2 && p.teacher_idle_sec == 60,
           "env max_closures + idle applied");
-    unsetenv("CNET_LANE_MAX_CLOSURES");
-    unsetenv("CNET_TEACHER_IDLE_SEC");
+    cnet_unsetenv("CNET_LANE_MAX_CLOSURES");
+    cnet_unsetenv("CNET_TEACHER_IDLE_SEC");
 
     cnet_gov_close(&g);
 
@@ -110,10 +111,10 @@ int main(void) {
 
     /* balanced: no forced pace */
     cnet_gov_close(&g);
-    unsetenv("CNET_DSA");
-    unsetenv("CNET_SPARSE_KV");
-    unsetenv("CNET_KV_PAGE");
-    unsetenv("CNET_DSA_PROFILE");
+    cnet_unsetenv("CNET_DSA");
+    cnet_unsetenv("CNET_SPARSE_KV");
+    cnet_unsetenv("CNET_KV_PAGE");
+    cnet_unsetenv("CNET_DSA_PROFILE");
     check(cnet_gov_orchestrate_boot(&g, "balanced") == CNET_GOV_OK,
           "boot balanced");
     check(g.plan.dsa_speed == 0, "balanced quality DSA (no floor)");
@@ -122,14 +123,14 @@ int main(void) {
 
     /* turbo */
     cnet_gov_close(&g);
-    unsetenv("CNET_DSA");
-    unsetenv("CNET_MTP_K");
+    cnet_unsetenv("CNET_DSA");
+    cnet_unsetenv("CNET_MTP_K");
     check(cnet_gov_orchestrate_boot(&g, "turbo") == CNET_GOV_OK, "boot turbo");
     check(g.plan.mtp_k >= 2 && g.plan.kv_hot_pages >= 4, "turbo mtp+hot");
     check(g.plan.kv_rehydrate == 1, "turbo may rehydrate COLD");
 
     /* force overwrite */
-    setenv("CNET_DSA", "0", 1);
+    cnet_setenv("CNET_DSA", "0", 1);
     cnet_gov_close(&g);
     cnet_gov_policy_deploy_defaults(&p);
     cnet_gov_policy_set_profile(&p, CNET_GOV_PROFILE_ECO);
@@ -149,14 +150,14 @@ int main(void) {
           "bad profile name refused");
 
     cnet_gov_close(&g);
-    unsetenv("CNET_DSA");
-    unsetenv("CNET_SPARSE_KV");
-    unsetenv("CNET_KV_PAGE");
-    unsetenv("CNET_KV_HOT_PAGES");
-    unsetenv("CNET_MLA_KV");
-    unsetenv("CNET_MTP_K");
-    unsetenv("CNET_DSA_PROFILE");
-    unsetenv("CNET_GOV_FORCE");
+    cnet_unsetenv("CNET_DSA");
+    cnet_unsetenv("CNET_SPARSE_KV");
+    cnet_unsetenv("CNET_KV_PAGE");
+    cnet_unsetenv("CNET_KV_HOT_PAGES");
+    cnet_unsetenv("CNET_MLA_KV");
+    cnet_unsetenv("CNET_MTP_K");
+    cnet_unsetenv("CNET_DSA_PROFILE");
+    cnet_unsetenv("CNET_GOV_FORCE");
 
     printf("RESOURCE_GOVERNOR_PASS checks=%d failures=%d\n", checks, failures);
     return failures ? 1 : 0;

@@ -2,6 +2,7 @@
    recall + GraphMemoryHead decay), in C. Passages -> tiles; fuzzy-dedup ingest; a
    capacity-bounded HOT tier spills to a WARM on-disk tier; the store persists. */
 #include "../../include/corpus/tile_memory.h"
+#include "../../include/cnet_platform.h"
 #include "../../include/corpus/synonyms.h"
 #include <stdlib.h>
 #include <string.h>
@@ -9,12 +10,6 @@
 #include <math.h>
 #include <time.h>
 #include <sys/stat.h>
-#ifdef _WIN32
-#include <direct.h>
-#define MKDIR(p) _mkdir(p)
-#else
-#define MKDIR(p) mkdir(p,0755)
-#endif
 
 /* Real term -> document-frequency dictionary (no hash-bucket collisions, so idf can
    isolate a rare term like "mile"). Open-addressing string hash. */
@@ -184,7 +179,7 @@ static void remove_hot_by_tid(TileMemory *m, unsigned tid){
 }
 
 static size_t warm_append(TileMemory *m, const Tile *t){
-    MKDIR(m->store_dir);
+    cnet_mkdir(m->store_dir, 0755);
     char wp[300]; warm_path(m,wp,sizeof(wp));
     FILE *f=fopen(wp,"ab"); if(!f) return (size_t)-1;
     fseek(f,0,SEEK_END); long off=ftell(f);
@@ -226,7 +221,7 @@ static void tilemem_load(TileMemory *m){
     else if(m->doc_count>0) m->syn_dirty=1;   /* tiles exist but no/stale map */
 }
 static void tilemem_save(TileMemory *m){
-    MKDIR(m->store_dir);
+    cnet_mkdir(m->store_dir, 0755);
     char hp[300]; hot_path(m,hp,sizeof(hp)); FILE *f=fopen(hp,"wb");
     if(f){ for(int i=0;i<m->n_hot;i++) tile_write(f,&m->hot[i]); fclose(f); }
     char ip[300]; idf_path(m,ip,sizeof(ip)); FILE *h=fopen(ip,"w");

@@ -3,6 +3,7 @@
  * make self_improve → SELF_IMPROVE_PASS
  */
 #include <stdio.h>
+#include "../include/cnet_platform.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -99,15 +100,15 @@ int main(void) {
     registry_init(&reg);
 
     /* Deploy free-wins fill holes only. */
-    unsetenv("CNET_TRAIN_FAST");
-    unsetenv("CNET_ORACLE_INT8");
-    unsetenv("CNET_ACQ_STAGES");
-    unsetenv("CNET_LANE_MAX_CLOSURES");
-    unsetenv("CNET_TEACHER_IDLE_SEC");
-    unsetenv("CNET_HEALTH_TICK_SECONDS");
-    unsetenv("CNET_ACQ_ADAPTIVE");
-    unsetenv("CNET_LANE_PROBE_BATCH");
-    unsetenv("CNET_GGUF_MMAP");
+    cnet_unsetenv("CNET_TRAIN_FAST");
+    cnet_unsetenv("CNET_ORACLE_INT8");
+    cnet_unsetenv("CNET_ACQ_STAGES");
+    cnet_unsetenv("CNET_LANE_MAX_CLOSURES");
+    cnet_unsetenv("CNET_TEACHER_IDLE_SEC");
+    cnet_unsetenv("CNET_HEALTH_TICK_SECONDS");
+    cnet_unsetenv("CNET_ACQ_ADAPTIVE");
+    cnet_unsetenv("CNET_LANE_PROBE_BATCH");
+    cnet_unsetenv("CNET_GGUF_MMAP");
     {
         int n = self_improve_apply_deploy_env();
         check(n >= 6, "deploy env sets free-win holes");
@@ -118,7 +119,7 @@ int main(void) {
         check(getenv("CNET_ACQ_STAGES") && strcmp(getenv("CNET_ACQ_STAGES"), "40") == 0,
               "ACQ_STAGES=40 defaulted");
     }
-    setenv("CNET_TRAIN_FAST", "0", 1);
+    cnet_setenv("CNET_TRAIN_FAST", "0", 1);
     check(self_improve_apply_deploy_env() == 0 ||
           strcmp(getenv("CNET_TRAIN_FAST"), "0") == 0,
           "explicit operator choice not overridden");

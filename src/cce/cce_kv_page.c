@@ -1,4 +1,5 @@
 #include "../../include/cce/cce_kv_page.h"
+#include "../../include/cnet_platform.h"
 
 #include <errno.h>
 #include <math.h>
@@ -90,11 +91,11 @@ static int mkdir_p(const char *dir) {
     for (i = 1; tmp[i]; ++i) {
         if (tmp[i] == '/') {
             tmp[i] = 0;
-            if (mkdir(tmp, 0755) != 0 && errno != EEXIST) return -1;
+            if (cnet_mkdir(tmp, 0755) != 0 && errno != EEXIST) return -1;
             tmp[i] = '/';
         }
     }
-    if (mkdir(tmp, 0755) != 0 && errno != EEXIST) return -1;
+    if (cnet_mkdir(tmp, 0755) != 0 && errno != EEXIST) return -1;
     return 0;
 }
 

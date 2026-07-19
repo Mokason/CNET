@@ -1,4 +1,5 @@
 #include "../include/cnet_math_solve.h"
+#include "../include/cnet_platform.h"
 #include "../include/cnet_pattern.h"
 #include "../include/contract/mcp_math_eval.h"
 #include "../include/contract/mcp_wiki.h"
@@ -12,14 +13,6 @@
 #include <sys/stat.h>
 #include <time.h>
 
-#ifndef _WIN32
-#include <errno.h>
-#include <sys/types.h>
-#define CNET_MKDIR(p) mkdir((p), 0755)
-#else
-#include <direct.h>
-#define CNET_MKDIR(p) _mkdir(p)
-#endif
 
 /* answer_kind: 0=single number, 1=pair "a and b", 2=text already in answer_text */
 typedef struct {
@@ -886,11 +879,11 @@ static int mkdir_p(const char *path) {
     for (i = 1; tmp[i]; i++) {
         if (tmp[i] == '/') {
             tmp[i] = '\0';
-            CNET_MKDIR(tmp);
+            cnet_mkdir(tmp, 0755);
             tmp[i] = '/';
         }
     }
-    return CNET_MKDIR(tmp) == 0 || errno == EEXIST ? 0 : -1;
+    return cnet_mkdir(tmp, 0755) == 0 || errno == EEXIST ? 0 : -1;
 }
 
 static void slugify(const char *in, char *out, size_t cap) {

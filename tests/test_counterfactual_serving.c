@@ -20,6 +20,7 @@
  */
 
 #include <stdio.h>
+#include "../include/cnet_platform.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -116,7 +117,7 @@ int main(void) {
     remove("tmp_cf_serving.cnb.tmp");
     remove("tmp_cf_serving_off.inbox");
     remove("tmp_cf_serving_on.inbox");
-    unsetenv("CNET_COUNTERFACTUAL");
+    cnet_unsetenv("CNET_COUNTERFACTUAL");
 
     printf("== counterfactual serving: report-only shadow evidence ==\n");
     cnb_init(&base);
@@ -129,7 +130,7 @@ int main(void) {
     cnb_free(&base);
 
     /* ---- phase OFF: knob unset, the legacy serving path ---- */
-    setenv("CNET_GAP_INBOX", "tmp_cf_serving_off.inbox", 1);
+    cnet_setenv("CNET_GAP_INBOX", "tmp_cf_serving_off.inbox", 1);
     check(soul_open(base_path, NULL, &host) == 0 && host != NULL,
           "host opens with the knob OFF");
     check(soul_counterfactual_last(host, report, (int)sizeof report) == -2,
@@ -152,8 +153,8 @@ int main(void) {
     }
 
     /* ---- phase ON: knob set BEFORE soul_open, identical query replay ---- */
-    setenv("CNET_COUNTERFACTUAL", "1", 1);
-    setenv("CNET_GAP_INBOX", "tmp_cf_serving_on.inbox", 1);
+    cnet_setenv("CNET_COUNTERFACTUAL", "1", 1);
+    cnet_setenv("CNET_GAP_INBOX", "tmp_cf_serving_on.inbox", 1);
     check(soul_open(base_path, NULL, &host) == 0 && host != NULL,
           "host opens with the knob ON");
     check(soul_counterfactual_last(host, report, (int)sizeof report) == -3,
@@ -252,7 +253,7 @@ int main(void) {
         remove("tmp_cf_overflow.cnb.tmp");
     }
 
-    unsetenv("CNET_COUNTERFACTUAL");
+    cnet_unsetenv("CNET_COUNTERFACTUAL");
     remove(base_path);
     remove("tmp_cf_serving.cnb.tmp");
     remove("tmp_cf_serving_off.inbox");

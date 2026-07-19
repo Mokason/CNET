@@ -2,6 +2,7 @@
  * make registry_hash → REGISTRY_HASH_PASS
  */
 #include <stdio.h>
+#include "../include/cnet_platform.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -37,7 +38,7 @@ int main(void) {
     char names[64][32];
     int i;
 
-    unsetenv("CNET_REGISTRY_LINEAR");
+    cnet_unsetenv("CNET_REGISTRY_LINEAR");
     printf("== registry name hash ==\n");
 
     registry_init(&reg);
@@ -112,7 +113,7 @@ int main(void) {
     {
         PrimitiveRegistry r2;
         BinaryTransformNetwork b;
-        setenv("CNET_REGISTRY_LINEAR", "1", 1);
+        cnet_setenv("CNET_REGISTRY_LINEAR", "1", 1);
         registry_init(&r2);
         check(make_btn(&b, "lin") == 0, "linear btn");
         check(registry_add(&r2, &b, "linear_only") == 0, "linear add");
@@ -121,7 +122,7 @@ int main(void) {
               "linear find works");
         registry_free(&r2);
         btn_free(&b);
-        unsetenv("CNET_REGISTRY_LINEAR");
+        cnet_unsetenv("CNET_REGISTRY_LINEAR");
     }
     if (failures) {
         printf("REGISTRY_HASH_FAIL failures=%d checks=%d\n", failures, checks);

@@ -1,4 +1,5 @@
 #include "../include/resource_governor.h"
+#include "../include/cnet_platform.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -57,7 +58,7 @@ static void env_set(const char *key, const char *val, int force) {
     if (!key || !val) return;
     cur = getenv(key);
     if (!force && cur && cur[0]) return;
-    setenv(key, val, 1);
+    cnet_setenv(key, val, 1);
 }
 
 static void env_set_int(const char *key, int v, int force) {

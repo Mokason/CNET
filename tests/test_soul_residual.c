@@ -2,6 +2,7 @@
  * make soul_residual_serve → SOUL_RESIDUAL_SERVE_PASS
  */
 #include <stdio.h>
+#include "../include/cnet_platform.h"
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -48,9 +49,9 @@ int main(void) {
     remove(base_path);
     remove("tmp_soul_residual.cnb.tmp");
     remove("tmp_soul_residual.inbox");
-    setenv("CNET_GAP_INBOX", "tmp_soul_residual.inbox", 1);
-    setenv("CNET_SOUL_RESIDUAL_HERMETIC", "1", 1);
-    unsetenv("CNET_RESIDUAL_GGUF");
+    cnet_setenv("CNET_GAP_INBOX", "tmp_soul_residual.inbox", 1);
+    cnet_setenv("CNET_SOUL_RESIDUAL_HERMETIC", "1", 1);
+    cnet_unsetenv("CNET_RESIDUAL_GGUF");
 
     printf("== soul residual live serve + structure mine ==\n");
 
@@ -154,8 +155,8 @@ int main(void) {
     remove(base_path);
     remove("tmp_soul_residual.cnb.tmp");
     remove("tmp_soul_residual.inbox");
-    unsetenv("CNET_SOUL_RESIDUAL_HERMETIC");
-    unsetenv("CNET_GAP_INBOX");
+    cnet_unsetenv("CNET_SOUL_RESIDUAL_HERMETIC");
+    cnet_unsetenv("CNET_GAP_INBOX");
 
     if (failures) {
         printf("SOUL_RESIDUAL_SERVE_FAIL failures=%d checks=%d\n", failures,

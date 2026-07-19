@@ -2,6 +2,7 @@
  * make json_toolcall → JSON_TOOLCALL_PASS
  */
 #include <stdio.h>
+#include "../include/cnet_platform.h"
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -33,8 +34,8 @@ int main(void) {
 
     remove(base_path);
     remove("tmp_json_toolcall.cnb.tmp");
-    unsetenv("CNET_RESIDUAL_GGUF");
-    unsetenv("CNET_SOUL_RESIDUAL_HERMETIC");
+    cnet_unsetenv("CNET_RESIDUAL_GGUF");
+    cnet_unsetenv("CNET_SOUL_RESIDUAL_HERMETIC");
 
     printf("== json toolcall v0 (closed-set) ==\n");
     registry_init(&reg);

@@ -2,6 +2,7 @@
 #define _FILE_OFFSET_BITS 64
 
 #include "../../include/cce/cce_qgkp.h"
+#include "../../include/cnet_platform.h"
 
 #include <errno.h>
 #include <stdio.h>
@@ -123,7 +124,7 @@ static cce_result append_range(FILE *src, uint64_t src_offset, FILE *dst,
             return CCE_ERR_IO;
         bytes -= n;
     }
-    if (fflush(dst) != 0 || fsync(fileno(dst)) != 0) return CCE_ERR_IO;
+    if (fflush(dst) != 0 || cnet_fsync(fileno(dst)) != 0) return CCE_ERR_IO;
     return CCE_OK;
 }
 

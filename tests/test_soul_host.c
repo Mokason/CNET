@@ -5,6 +5,7 @@
  */
 
 #include <stdio.h>
+#include "../include/cnet_platform.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -53,7 +54,7 @@ int main(void) {
     remove("tmp_soul_host.cnb.tmp");
 
     remove("tmp_soul_host.inbox");
-    setenv("CNET_GAP_INBOX", "tmp_soul_host.inbox", 1);
+    cnet_setenv("CNET_GAP_INBOX", "tmp_soul_host.inbox", 1);
 
     printf("== soul_host: canonical certified runtime ==\n");
     check(btn_init(&btn, 2, 2, 2, 2, 0.1, 17u) == 0,

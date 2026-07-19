@@ -159,11 +159,24 @@ cce_result cce_archive_get_tensor_view(cce_archive* arc,
                                        cce_tensor* out_view) {
     if (!arc || !out_view || !shape) return CCE_ERR_INVALID_ARG;
 
+    /* shape/ndim and section_offset all originate in the file. Guard the
+       product and the bounds test against wraparound — otherwise a crafted
+       shape yields a small `bytes_needed` that passes the check while the
+       returned view points outside the mapping (and the mapping is writable). */
+    if (ndim < 0 || ndim > CCE_MAX_DIMS) return CCE_ERR_INVALID_ARG;
     size_t total = 1;
-    for (int i = 0; i < ndim; ++i) total *= (size_t)shape[i];
+    for (int i = 0; i < ndim; ++i) {
+        if (shape[i] < 0) return CCE_ERR_INVALID_ARG;
+        size_t s = (size_t)shape[i];
+        if (s != 0 && total > SIZE_MAX / s) return CCE_ERR_INVALID_ARG;
+        total *= s;
+    }
+    if (total > SIZE_MAX / sizeof(float)) return CCE_ERR_INVALID_ARG;
     size_t bytes_needed = total * sizeof(float);
 
-    if (section_offset + bytes_needed > arc->file_size) return CCE_ERR_INVALID_ARG;
+    if (section_offset > arc->file_size ||
+        bytes_needed > arc->file_size - section_offset)
+        return CCE_ERR_INVALID_ARG;
 
 #ifdef _WIN32
     if (!arc->mapped) {
@@ -298,7 +311,10 @@ cce_result cce_archive_find_section(cce_archive* arc, const char* name,
 
 cce_result cce_archive_read_raw(cce_archive* arc, size_t offset, void* buf, size_t len) {
     if (!arc || !buf || len == 0) return CCE_ERR_INVALID_ARG;
-    if (offset + len > arc->file_size) return CCE_ERR_INVALID_ARG;
+    /* Both operands are file-derived, so `offset + len` can wrap and let an
+       out-of-range read through. Subtract instead — file_size is the bound. */
+    if (offset > arc->file_size || len > arc->file_size - offset)
+        return CCE_ERR_INVALID_ARG;
 
 #ifdef _WIN32
     if (arc->mapped) {

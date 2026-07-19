@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include "../include/cnet_platform.h"
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
@@ -91,7 +92,7 @@ static char* build_command(const char* log_path, const char* training_path, cons
 
 int main(void) {
     char dir_template[] = "/tmp/cnet_phase5_c_test_XXXXXX";
-    char* dir = mkdtemp(dir_template);
+    char* dir = cnet_mkdtemp(dir_template);
     char* log_path;
     char* training_path;
     char* suggestions_dir;
@@ -111,7 +112,7 @@ int main(void) {
     training_path = join_path(dir, "training_data.jsonl");
     suggestions_dir = join_path(dir, "suggestions");
     suggestions_path = join_path(suggestions_dir, "cnet_compression_suggestions.jsonl");
-    mkdir(suggestions_dir, 0777);
+    cnet_mkdir(suggestions_dir, 0777);
 
     CHECK(write_text(log_path,
         "{\"date\":\"2026-07-06\",\"phase\":\"phase1_counterfactual_routing\",\"status\":\"implemented_initial_slice\",\"artifacts\":[\"include/cce/cce_router.h\"],\"notes\":\"Added deterministic counterfactual route sampling.\"}\n"

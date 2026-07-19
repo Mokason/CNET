@@ -11,6 +11,7 @@
  */
 
 #include <stdio.h>
+#include "../include/cnet_platform.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
@@ -288,17 +289,17 @@ int main(void) {
        full attention); "0"/unset load normally. */
     {
         cce_gguf_qwen2* m = NULL;
-        setenv("CNET_SPARSE_KV", "0.25", 1);
+        cnet_setenv("CNET_SPARSE_KV", "0.25", 1);
         CHECK(cce_st_llama_load(&m, "stll_tmp/model.safetensors") != CCE_OK && m == NULL,
               "armed CNET_SPARSE_KV refuses the st llama load");
-        setenv("CNET_SPARSE_KV", "banana", 1);
+        cnet_setenv("CNET_SPARSE_KV", "banana", 1);
         CHECK(cce_st_llama_load(&m, "stll_tmp/model.safetensors") != CCE_OK && m == NULL,
               "malformed CNET_SPARSE_KV refuses the st llama load");
-        setenv("CNET_SPARSE_KV", "0", 1);
+        cnet_setenv("CNET_SPARSE_KV", "0", 1);
         CHECK(cce_st_llama_load(&m, "stll_tmp/model.safetensors") == CCE_OK && m != NULL,
               "CNET_SPARSE_KV=0 loads normally (knob OFF)");
         if (m) cce_gguf_qwen2_free(m);
-        unsetenv("CNET_SPARSE_KV");
+        cnet_unsetenv("CNET_SPARSE_KV");
     }
 
     /* 3. kv-cache continuity through the new loader (prompt + continue) */
