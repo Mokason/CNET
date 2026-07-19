@@ -1460,14 +1460,14 @@ static void circuit_blackboard_tests(void) {
         /* zero for this isolated check (prior bb execs in func already bumped the counter) */
         sp.output_successes = 0;
         sp.output_failures = 0;
-        long before_s = 0, before_f = 0;
+        long before_s = (long)sp.output_successes;
+        long before_f = (long)sp.output_failures;
         CHECK(dag_plan_circuit(&r_off, src, 1, goals, 2, &cp) == 0 &&
               dag_execute_circuit(&cp, src, 1, out, 8, &bb2) == 0,
               "exec with blackboard");
-        /* direct counter check can be noisy with atomic/prior state on this btn; the exec path
-           (eval_node) that bumps success is identical with or without bb pointer, so trace capture
-           cannot affect it. */
-        CHECK(1, "CircuitBlackboard_NoMutation exercised (bb write path does not touch reliability atomics)");
+        CHECK((long)sp.output_successes >= before_s &&
+              (long)sp.output_failures >= before_f,
+              "CircuitBlackboard reliability counters remain monotonic");
         circuit_free(&cp);
         circuit_blackboard_free(&bb2);
         registry_free(&r_off);
@@ -1629,7 +1629,7 @@ static void circuit_consolidation_report_tests(void) {
     double out[8];
     CircuitBlackboard bb = {0};
     BinaryTransformNetwork student = {0};
-    ConsolidateReport crep = {0};
+
     CircuitConsolidationReport report = {0};
     ConsolidateConfig cfg;
 
@@ -2078,8 +2078,9 @@ static void circuit_consolidation_report_tests(void) {
               tsum.row_count == 3,
               "CircuitRegistryTrend_LoadsMultipleSnapshots");
 
-        CHECK(tsum.rows[0].row_count > 0 && tsum.rows[0].certified_count >= 0 &&
-              tsum.rows[0].artifact_present_count >= 0,
+        CHECK(tsum.rows[0].row_count > 0 &&
+              tsum.rows[0].certified_count <= tsum.rows[0].row_count &&
+              tsum.rows[0].artifact_present_count <= tsum.rows[0].row_count,
               "CircuitRegistryTrend_ComputesCoreCounts");
 
         /* for v2 fields in count */
@@ -2293,7 +2294,9 @@ static void circuit_memory_hints_v2_tests(void) {
         CHECK(struct_same &&
               memcmp(ooff, osh, sizeof(double)*5) == 0 &&
               sums_match &&
-              (rel_s1 - mid_s) >= 0 /* non-negative, no weird mutation */,
+              rel_s0 == 0 && rel_f0 == 0 &&
+              mid_s >= rel_s0 && mid_f >= rel_f0 &&
+              rel_s1 >= mid_s && rel_f1 >= mid_f,
               "CircuitMemoryShadow_DoesNotChangePlan");
         circuit_free(&poff); circuit_free(&psh);
         circuit_blackboard_free(&bbo); circuit_blackboard_free(&bbs);
@@ -2749,9 +2752,8 @@ static void formula_ir_seed(void) {
 
     /* v2.5 evidence path in unit test: strict + bb + engram + build artifact (source not manual) */
     {
-        CircuitPlan cp_v = {0}; cp_v.strict = 1;
         freg.attention_mode = CNET_ATTENTION_OFF;
-        CircuitPlan cp_vp = {0};
+        CircuitPlan cp_vp = {0}; cp_vp.strict = 1;
         CHECK(dag_plan_circuit(&freg, fsrc, 1, fgl, 1, &cp_vp) == 0, "formula strict plan for engram");
         CircuitBlackboard bbv = {0};
         double vout[4];
@@ -2889,11 +2891,16 @@ static void formula_laws_v27(void) {
 
     /* Law 1/2 comm + composition via sim (finite domain) */
     {
-        int inputs[3] = {0,1,2};
-        /* mul comm example */
-        int vab = sim_formula(0, inputs, 3, cell_table); /* dummy but use direct */
-        /* direct math for mul comm */
-        CHECK( (3*5) == (5*3) , "mul commutativity law (finite domain)");
+        int commutes = 1;
+        for (int a = 0; a < 8; ++a) {
+            for (int b = 0; b < 8; ++b) {
+                int ab = 0, ba = 0;
+                for (int i = 0; i < b; ++i) ab += a;
+                for (int i = 0; i < a; ++i) ba += b;
+                if (ab != ba) commutes = 0;
+            }
+        }
+        CHECK(commutes, "mul commutativity law (finite domain)");
         /* composition */
         int left = (cell_table[0] + 2) * cell_table[1];
         int right = (cell_table[0] + 2) * cell_table[1];
@@ -3011,7 +3018,8 @@ static FExpr *parse_term(void) {
     if (parse_cell(c)) {
         FExpr *e = calloc(1, sizeof(FExpr));
         e->kind = FE_CELL;
-        strncpy(e->cell, c, 7);
+        memcpy(e->cell, c, sizeof e->cell);
+        e->cell[sizeof e->cell - 1] = 0;
         return e;
     }
     parse_error = 1;

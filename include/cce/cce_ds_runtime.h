@@ -41,6 +41,9 @@ typedef struct cce_ds_host {
     int             dsa_speed;      /* 1: floor grid (CNET_DSA_PROFILE=speed) */
     int             cold_autoload; /* 1: ensure_expert on route */
     int             mla_quant_kv;  /* int8 latent KV side (FP8-class BW) */
+    int             synthetic;     /* 1: hermetic random weights (no real
+                                   *   .cnetpack / GGUF model bound). Gates
+                                   *   MTP random draft-weight arming. */
     float           moe_sleep_eps; /* sleep on expert mix */
     int             dual_pipe;     /* batch-ensure experts then fire (overlap-ready) */
     /* MTP speculative (Forest draft branches) */

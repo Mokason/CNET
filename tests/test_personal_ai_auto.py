@@ -12,6 +12,8 @@ SCRIPT = ROOT / "scripts" / "personal_ai_auto.sh"
 LANE = ROOT / "config" / "cnet-personal-ai-lane.service"
 TARGET = ROOT / "config" / "cnet-personal-ai.target"
 ENV = ROOT / "config" / "personal-ai.env"
+OPS_ENV = ROOT / "config" / "personal-ai-ops.env"
+OPS_TICK = ROOT / "scripts" / "personal_ai_ops_tick.sh"
 
 
 class PersonalAiAutoTest(unittest.TestCase):
@@ -84,6 +86,34 @@ class PersonalAiAutoTest(unittest.TestCase):
             data = json.loads(proc.stdout)
             self.assertEqual(data["inbox_lines"], 0)
             self.assertEqual(data["inbox_no_plan"], 0)
+
+    def test_ops_last_metric_is_total_under_pipefail(self) -> None:
+        """Missing/promoted metrics are data, not fatal shell control flow."""
+        with tempfile.TemporaryDirectory() as td:
+            log = Path(td) / "pattern.log"
+            log.write_text(
+                "status: count=7\nnoise\nstatus: promoted=3\ntrailing\n",
+                encoding="utf-8",
+            )
+            for key, expected in (("promoted", "3"), ("count", "7"), ("missing", "0")):
+                proc = subprocess.run(
+                    ["bash", str(OPS_TICK), "--extract-metric", str(log), key],
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                    cwd=str(ROOT),
+                )
+                self.assertEqual(proc.returncode, 0, proc.stderr)
+                self.assertEqual(proc.stdout.strip(), expected)
+
+    def test_ops_curriculum_does_not_target_local_model(self) -> None:
+        """Scheduled ops is local-only until cloud egress is explicitly enabled."""
+        text = OPS_ENV.read_text(encoding="utf-8")
+        self.assertIn("OPS_CURRICULUM_ON_STALE=0", text)
+        self.assertIn("OPS_ASK_HERMES=0", text)
+        self.assertIn("OPS_RESTART_LEARNER=0", text)
+        self.assertNotIn("g4v2ref", text)
 
 
 if __name__ == "__main__":

@@ -45,6 +45,27 @@ mkdir -p "$OPS_DIR" "$OPS_DIR/lessons"
 info() { echo "ops_tick: $*"; }
 warn() { echo "ops_tick: WARN: $*" >&2; }
 
+# Return the last unsigned key=value metric from a log.  Absence is a normal
+# zero result: callers run under `set -euo pipefail`, so grep-style misses must
+# never terminate the whole scheduled tick.
+ops_last_metric() {
+  local file="${1:-}" key="${2:-}"
+  if [[ ! "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || [ ! -f "$file" ]; then
+    printf '0\n'
+    return 0
+  fi
+  awk -v key="$key" '
+    {
+      rest = $0
+      while (match(rest, key "=[0-9]+")) {
+        value = substr(rest, RSTART + length(key) + 1, RLENGTH - length(key) - 1)
+        rest = substr(rest, RSTART + RLENGTH)
+      }
+    }
+    END { print value == "" ? 0 : value }
+  ' "$file"
+}
+
 cmd="${1:-tick}"
 
 # --- install / uninstall / status -----------------------------------------
@@ -107,6 +128,14 @@ status_timer() {
 }
 
 case "$cmd" in
+  --extract-metric)
+    if [ "$#" -ne 3 ]; then
+      echo "usage: $0 --extract-metric LOG KEY" >&2
+      exit 2
+    fi
+    ops_last_metric "$2" "$3"
+    exit 0
+    ;;
   install) install_timer; exit 0 ;;
   uninstall) uninstall_timer; exit 0 ;;
   status) status_timer; exit 0 ;;
@@ -347,7 +376,7 @@ if [ "${OPS_PATTERN_PROMOTE:-1}" = "1" ]; then
     if CNET_BASE_PATH="$BASE" CNET_PATTERN_STORE="$CNET_PATTERN_STORE" \
       "$REPO/bin/cnet_pattern" promote >>"$OPS_DIR/pattern.log" 2>&1; then
       if grep -q 'CNET_PATTERN_PROMOTE_OK' "$OPS_DIR/pattern.log" 2>/dev/null; then
-        prom=$(tail -5 "$OPS_DIR/pattern.log" | grep -oE 'promoted=[0-9]+' | tail -1 | cut -d= -f2)
+        prom=$(ops_last_metric "$OPS_DIR/pattern.log" promoted)
         if [ -n "${prom:-}" ] && [ "$prom" -gt 0 ] 2>/dev/null; then
           actions+=("pattern_promote")
           fixed=1

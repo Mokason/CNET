@@ -85,7 +85,7 @@ public class JsonToolCallTests
         Assert.Equal(JsonToolCall.ToolCount, JsonToolCall.ExampleJson.Length);
         Assert.Contains("web_search", JsonToolCall.ToolNames);
         Assert.Contains("wiki_lookup", JsonToolCall.ToolNames);
-        Assert.Equal("json_toolcall_v1", JsonToolCall.UnitName);
+        Assert.Equal("json_toolcall_v2", JsonToolCall.UnitName);
     }
 
     [Fact]

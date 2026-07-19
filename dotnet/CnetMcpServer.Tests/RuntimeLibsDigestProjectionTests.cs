@@ -96,6 +96,11 @@ public sealed class RuntimeLibsDigestProjectionTests : IDisposable
         Assert.Equal(18, hex.Length);
         // 0xC1B5C0DE as a 64-bit value formatted x16
         Assert.Equal("0x00000000c1b5c0de", hex);
+        Assert.True(first.GetProperty("provenance").GetProperty("complete").GetBoolean());
+        Assert.Equal(0, first.GetProperty("provenance").GetProperty("missing").GetArrayLength());
+        Assert.Equal(1, doc.RootElement.GetProperty("provenance_complete_count").GetInt32());
+        Assert.Equal("descriptor_only_not_runtime_trust",
+            doc.RootElement.GetProperty("admission").GetString());
     }
 
     [Fact]

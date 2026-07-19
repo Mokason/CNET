@@ -46,6 +46,7 @@ struct cce_kv_pager {
 
     pthread_t thr;
     pthread_mutex_t mu;
+    pthread_rwlock_t ring_rw;
     pthread_cond_t cv_jobs;
     pthread_cond_t cv_space;
     int thr_started;
@@ -67,6 +68,9 @@ struct cce_kv_pager {
     int pages_reused;
     int pages_rehydrated;
     FILE *ledger;
+
+    /* Telemetry for the ring_rw read leases below. */
+    int reader_count;
 };
 
 static uint64_t fnv1a_buf(const void *data, size_t n) {
@@ -266,6 +270,18 @@ cce_result cce_kv_pager_open(cce_kv_pager **out, const cce_kv_pager_opts *opts) 
         return CCE_ERR_INVALID_ARG;
     p = (cce_kv_pager *)calloc(1, sizeof *p);
     if (!p) return CCE_ERR_OOM;
+    if (pthread_mutex_init(&p->mu, NULL) != 0) { free(p); return CCE_ERR_IO; }
+    if (pthread_cond_init(&p->cv_jobs, NULL) != 0) {
+        pthread_mutex_destroy(&p->mu); free(p); return CCE_ERR_IO;
+    }
+    if (pthread_cond_init(&p->cv_space, NULL) != 0) {
+        pthread_cond_destroy(&p->cv_jobs); pthread_mutex_destroy(&p->mu);
+        free(p); return CCE_ERR_IO;
+    }
+    if (pthread_rwlock_init(&p->ring_rw, NULL) != 0) {
+        pthread_cond_destroy(&p->cv_space); pthread_cond_destroy(&p->cv_jobs);
+        pthread_mutex_destroy(&p->mu); free(p); return CCE_ERR_IO;
+    }
     p->page_len = o.page_len;
     p->n_hot = o.n_hot;
     p->k_slot = o.k_slot;
@@ -280,14 +296,14 @@ cce_result cce_kv_pager_open(cce_kv_pager **out, const cce_kv_pager_opts *opts) 
     snprintf(p->archive_dir, sizeof p->archive_dir, "%s",
              o.archive_dir && o.archive_dir[0] ? o.archive_dir : "kv_archive");
     if (mkdir_p(p->archive_dir) != 0) {
-        free(p);
+        cce_kv_pager_close(p);
         return CCE_ERR_IO;
     }
     snprintf(p->ledger_path, sizeof p->ledger_path, "%s/ledger.tsv",
              p->archive_dir);
     p->ledger = fopen(p->ledger_path, "a");
     if (!p->ledger) {
-        free(p);
+        cce_kv_pager_close(p);
         return CCE_ERR_IO;
     }
     fprintf(p->ledger, "# cce_kv_page ledger page_len=%d n_hot=%d legal_max=%d\n",
@@ -315,9 +331,7 @@ cce_result cce_kv_pager_open(cce_kv_pager **out, const cce_kv_pager_opts *opts) 
     for (i = 0; i < p->n_hot; ++i) p->slot_page_id[i] = i;
     p->next_page_id = p->n_hot;
 
-    pthread_mutex_init(&p->mu, NULL);
-    pthread_cond_init(&p->cv_jobs, NULL);
-    pthread_cond_init(&p->cv_space, NULL);
+
     if (p->async) {
         if (pthread_create(&p->thr, NULL, kv_flush_thread, p) == 0)
             p->thr_started = 1;
@@ -340,6 +354,8 @@ void cce_kv_pager_close(cce_kv_pager *p) {
         p->thr_started = 0;
     }
     if (p->ledger) fclose(p->ledger);
+    /* Wait for every acquired HOT row lease before releasing ring storage. */
+    pthread_rwlock_wrlock(&p->ring_rw);
     free(p->k_ring);
     free(p->v_ring);
     free(p->slot_page_id);
@@ -347,9 +363,11 @@ void cce_kv_pager_close(cce_kv_pager *p) {
     free(p->stage_v);
     free(p->rehyd_k);
     free(p->rehyd_v);
+    pthread_rwlock_unlock(&p->ring_rw);
     pthread_mutex_destroy(&p->mu);
     pthread_cond_destroy(&p->cv_jobs);
     pthread_cond_destroy(&p->cv_space);
+    pthread_rwlock_destroy(&p->ring_rw);
     free(p);
 }
 
@@ -410,10 +428,93 @@ float *cce_kv_pager_v_row(cce_kv_pager *p, int pos) {
     return p->v_ring + (size_t)ri * (size_t)p->v_slot;
 }
 
+int cce_kv_pager_reader_count(const cce_kv_pager *p) {
+    int r;
+    if (!p) return 0;
+    pthread_mutex_lock((pthread_mutex_t *)&p->mu);
+    r = p->reader_count;
+    pthread_mutex_unlock((pthread_mutex_t *)&p->mu);
+    return r;
+}
+
+float *cce_kv_pager_k_row_acquire(cce_kv_pager *p, int pos) {
+    int ri;
+    float *row;
+    if (!p) return NULL;
+    pthread_rwlock_rdlock(&p->ring_rw);
+    ri = ring_index(p, pos);
+    if (ri < 0 || !p->k_ring) {
+        pthread_rwlock_unlock(&p->ring_rw);
+        return NULL;
+    }
+    row = p->k_ring + (size_t)ri * (size_t)p->k_slot;
+    pthread_mutex_lock(&p->mu);
+    p->reader_count++;
+    pthread_mutex_unlock(&p->mu);
+    return row;
+}
+
+float *cce_kv_pager_v_row_acquire(cce_kv_pager *p, int pos) {
+    int ri;
+    float *row;
+    if (!p) return NULL;
+    pthread_rwlock_rdlock(&p->ring_rw);
+    ri = ring_index(p, pos);
+    if (ri < 0 || !p->v_ring) {
+        pthread_rwlock_unlock(&p->ring_rw);
+        return NULL;
+    }
+    row = p->v_ring + (size_t)ri * (size_t)p->v_slot;
+    pthread_mutex_lock(&p->mu);
+    p->reader_count++;
+    pthread_mutex_unlock(&p->mu);
+    return row;
+}
+
+void cce_kv_pager_row_release(cce_kv_pager *p, const float *row) {
+    int held = 0;
+    if (!p || !row) return;
+    pthread_mutex_lock(&p->mu);
+    if (p->reader_count > 0) {
+        p->reader_count--;
+        held = 1;
+    }
+    pthread_cond_broadcast(&p->cv_space);
+    pthread_mutex_unlock(&p->mu);
+    if (held) pthread_rwlock_unlock(&p->ring_rw);
+}
+
 int cce_kv_pager_clamp_jmin(const cce_kv_pager *p, int jmin) {
     if (!p) return jmin;
     if (jmin < p->window_start) return p->window_start;
     return jmin;
+}
+
+int cce_kv_pager_clear(cce_kv_pager *p) {
+    int i;
+    if (!p) return -1;
+    cce_kv_pager_sync(p);
+    pthread_rwlock_wrlock(&p->ring_rw);
+    memset(p->k_ring, 0,
+           (size_t)p->capacity * (size_t)p->k_slot * sizeof(float));
+    memset(p->v_ring, 0,
+           (size_t)p->capacity * (size_t)p->v_slot * sizeof(float));
+    memset(p->stage_k, 0,
+           (size_t)p->page_len * (size_t)p->k_slot * sizeof(float));
+    memset(p->stage_v, 0,
+           (size_t)p->page_len * (size_t)p->v_slot * sizeof(float));
+    memset(p->rehyd_k, 0,
+           (size_t)p->page_len * (size_t)p->k_slot * sizeof(float));
+    memset(p->rehyd_v, 0,
+           (size_t)p->page_len * (size_t)p->v_slot * sizeof(float));
+    p->window_start = 0;
+    p->cur_pos = 0;
+    p->stage_busy = 0;
+    p->rehyd_page_id = -1;
+    for (i = 0; i < p->n_hot; ++i) p->slot_page_id[i] = i;
+    p->next_page_id = p->n_hot;
+    pthread_rwlock_unlock(&p->ring_rw);
+    return 0;
 }
 
 static int enqueue_flush(cce_kv_pager *p, int page_id, int pos_lo, int pos_hi,
@@ -532,10 +633,10 @@ static int slide_one_page(cce_kv_pager *p) {
     return 0;
 }
 
-int cce_kv_pager_prepare_write(cce_kv_pager *p, int pos) {
+static int pager_prepare_write_locked(cce_kv_pager *p, int pos) {
     if (!p || pos < 0) return -1;
     if (pos >= p->legal_max) return -1;
-    /* Slide until pos is inside hot window end (writable). */
+    /* Caller holds ring_rw for the complete slide/update transaction. */
     while (pos >= p->window_start + p->capacity) {
         if (slide_one_page(p) != 0) return -1;
     }
@@ -544,16 +645,33 @@ int cce_kv_pager_prepare_write(cce_kv_pager *p, int pos) {
     return 0;
 }
 
+int cce_kv_pager_prepare_write(cce_kv_pager *p, int pos) {
+    int rc;
+    if (!p) return -1;
+    pthread_rwlock_wrlock(&p->ring_rw);
+    rc = pager_prepare_write_locked(p, pos);
+    pthread_rwlock_unlock(&p->ring_rw);
+    return rc;
+}
+
 int cce_kv_pager_write(cce_kv_pager *p, int pos, const float *k,
                        const float *v) {
     float *kr, *vr;
     if (!p || !k || !v) return -1;
-    if (cce_kv_pager_prepare_write(p, pos) != 0) return -1;
+    pthread_rwlock_wrlock(&p->ring_rw);
+    if (pager_prepare_write_locked(p, pos) != 0) {
+        pthread_rwlock_unlock(&p->ring_rw);
+        return -1;
+    }
     kr = cce_kv_pager_k_row(p, pos);
     vr = cce_kv_pager_v_row(p, pos);
-    if (!kr || !vr) return -1;
+    if (!kr || !vr) {
+        pthread_rwlock_unlock(&p->ring_rw);
+        return -1;
+    }
     memcpy(kr, k, (size_t)p->k_slot * sizeof(float));
     memcpy(vr, v, (size_t)p->v_slot * sizeof(float));
+    pthread_rwlock_unlock(&p->ring_rw);
     return 0;
 }
 
@@ -577,6 +695,7 @@ int cce_kv_pager_verify_cold(const cce_kv_pager *p, int page_id,
     uint32_t magic = 0, ver = 0;
     int pid = 0, lo = 0, hi = 0, ks = 0, vs = 0, quant = 0;
     uint64_t dig = 0;
+    size_t npos, nk, nv;
     if (!p) return -1;
     snprintf(path, sizeof path, "%s/page_%06d.kvc", p->archive_dir, page_id);
     f = fopen(path, "rb");
@@ -588,28 +707,88 @@ int cce_kv_pager_verify_cold(const cce_kv_pager *p, int page_id,
         fclose(f);
         return -1;
     }
+    if (ks != p->k_slot || vs != p->v_slot || pid != page_id) {
+        fclose(f);
+        return -1;
+    }
+    /* Slot shape must match the pager that wrote the page; reject otherwise
+     * (e.g. page_len was changed between runs). npos bounds the body size. */
+    npos = (size_t)(hi - lo);
+    if (npos > (size_t)p->page_len) {
+        fclose(f);
+        return -1;
+    }
+    nk = npos * (size_t)ks;
+    nv = npos * (size_t)vs;
+
     if (magic == 0x43564B32u) {
+        float sk = 1.f, sv = 1.f;
+        int8_t *kq = NULL, *vq = NULL;
         if (fread(&quant, 4, 1, f) != 1 || fread(&dig, 8, 1, f) != 1) {
             fclose(f);
             return -1;
         }
+        /* Re-hash the BODY (quant bytes or f32 bytes) and compare against
+         * the digest stored in the header. A flipped body bit must fail. */
+        if (quant) {
+            uint64_t body_dig;
+            if (fread(&sk, 4, 1, f) != 1 || fread(&sv, 4, 1, f) != 1) {
+                fclose(f);
+                return -1;
+            }
+            kq = (int8_t *)malloc(nk ? nk : 1);
+            vq = (int8_t *)malloc(nv ? nv : 1);
+            if (!kq || !vq ||
+                fread(kq, 1, nk, f) != nk || fread(vq, 1, nv, f) != nv) {
+                free(kq); free(vq); fclose(f);
+                return -1;
+            }
+            body_dig = fnv1a_buf(kq, nk) ^ (fnv1a_buf(vq, nv) << 1);
+            body_dig ^= (uint64_t)(sk * 1e6f) ^ ((uint64_t)(sv * 1e6f) << 32);
+            free(kq); free(vq);
+            if (body_dig != dig) { fclose(f); return -1; }
+        } else {
+            size_t kb_bytes = nk * sizeof(float);
+            size_t vb_bytes = nv * sizeof(float);
+            float *kb = (float *)malloc(kb_bytes ? kb_bytes : 1);
+            float *vb = (float *)malloc(vb_bytes ? vb_bytes : 1);
+            uint64_t body_dig;
+            if (!kb || !vb ||
+                fread(kb, sizeof(float), nk, f) != nk ||
+                fread(vb, sizeof(float), nv, f) != nv) {
+                free(kb); free(vb); fclose(f);
+                return -1;
+            }
+            body_dig = fnv1a_buf(kb, kb_bytes) ^
+                       (fnv1a_buf(vb, vb_bytes) << 1);
+            free(kb); free(vb);
+            if (body_dig != dig) { fclose(f); return -1; }
+        }
     } else if (magic == 0x43564B31u) {
-        if (fread(&dig, 8, 1, f) != 1) {
-            fclose(f);
+        size_t kb_bytes = nk * sizeof(float);
+        size_t vb_bytes = nv * sizeof(float);
+        float *kb, *vb;
+        uint64_t body_dig;
+        if (fread(&dig, 8, 1, f) != 1) { fclose(f); return -1; }
+        kb = (float *)malloc(kb_bytes ? kb_bytes : 1);
+        vb = (float *)malloc(vb_bytes ? vb_bytes : 1);
+        if (!kb || !vb ||
+            fread(kb, sizeof(float), nk, f) != nk ||
+            fread(vb, sizeof(float), nv, f) != nv) {
+            free(kb); free(vb); fclose(f);
             return -1;
         }
+        body_dig = fnv1a_buf(kb, kb_bytes) ^
+                   (fnv1a_buf(vb, vb_bytes) << 1);
+        free(kb); free(vb);
+        if (body_dig != dig) { fclose(f); return -1; }
     } else {
         fclose(f);
         return -1;
     }
     fclose(f);
-    if (pid != page_id) return -1;
     if (expect_digest && dig != expect_digest) return -1;
     (void)ver;
-    (void)lo;
-    (void)hi;
-    (void)ks;
-    (void)vs;
     (void)quant;
     return 0;
 }
@@ -619,15 +798,21 @@ int cce_kv_pager_write_slice(cce_kv_pager *p, int pos, size_t k_off,
                              const float *v, int v_dim) {
     float *kr, *vr;
     if (!p || !k || !v || k_dim < 1 || v_dim < 1) return -1;
-    if (cce_kv_pager_prepare_write(p, pos) != 0) return -1;
+    pthread_rwlock_wrlock(&p->ring_rw);
+    if (pager_prepare_write_locked(p, pos) != 0) {
+        pthread_rwlock_unlock(&p->ring_rw);
+        return -1;
+    }
     kr = cce_kv_pager_k_row(p, pos);
     vr = cce_kv_pager_v_row(p, pos);
-    if (!kr || !vr) return -1;
-    if (k_off + (size_t)k_dim > (size_t)p->k_slot ||
-        v_off + (size_t)v_dim > (size_t)p->v_slot)
+    if (!kr || !vr || k_off + (size_t)k_dim > (size_t)p->k_slot ||
+        v_off + (size_t)v_dim > (size_t)p->v_slot) {
+        pthread_rwlock_unlock(&p->ring_rw);
         return -1;
+    }
     memcpy(kr + k_off, k, (size_t)k_dim * sizeof(float));
     memcpy(vr + v_off, v, (size_t)v_dim * sizeof(float));
+    pthread_rwlock_unlock(&p->ring_rw);
     return 0;
 }
 

@@ -25,7 +25,8 @@ A release candidate is acceptable only when that umbrella returns zero, its full
 - `VERSION` is the single release-version source.
 - `dist/` is generated, retained locally, and ignored by Git.
 - Campaign logs and poisoned/stale checkpoints are retained locally but ignored by Git.
-- The versioned shared library remains tracked because existing repository policy already tracks `cnet.so`; release commits must refresh it from the accepted source tree.
+- The root Linux shared library remains tracked because existing repository policy already versions `cnet.so`; release commits must refresh it from the accepted source tree. Platform copies and `cnet.dll` are generated, not versioned.
+- Live memory (`cnet_knowledge_base.bin`), MCP fact caches, gap/inbox journals, pager archives, and recovery backups remain local and ignored; they may contain private or machine-specific runtime state and are never release inputs.
 - Digests required for provenance remain tracked; transient logs remain ignored.
 
 ## Publication blockers

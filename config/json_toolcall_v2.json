@@ -1,6 +1,6 @@
 {
-  "version": 1,
-  "unit_name": "json_toolcall_v1",
+  "version": 2,
+  "unit_name": "json_toolcall_v2",
   "input_tag": "jtc_feat",
   "goal_tag": "json_tool",
   "tools": [

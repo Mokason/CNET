@@ -58,7 +58,14 @@ int cce_kv_pager_rehydrate_enabled(const cce_kv_pager *p);
 
 int cce_kv_pager_prepare_write(cce_kv_pager *p, int pos);
 
-/* HOT row only (NULL if cold). */
+/* Drain pending COLD writes and reset the HOT window to an empty generation.
+ * Invalidates every row pointer previously returned by this pager. */
+int cce_kv_pager_clear(cce_kv_pager *p);
+
+/* HOT row only (NULL if cold).
+ * UNPROTECTED: caller must NOT race a slide/clear/write on the same pager
+ * while reading through the returned pointer. For concurrent readers, use
+ * the _acquire / _release pair below which serializes ring mutation. */
 float *cce_kv_pager_k_row(cce_kv_pager *p, int pos);
 float *cce_kv_pager_v_row(cce_kv_pager *p, int pos);
 
@@ -66,6 +73,30 @@ float *cce_kv_pager_v_row(cce_kv_pager *p, int pos);
  * return pointers valid until next rehydrate/slide. */
 const float *cce_kv_pager_k_row_ex(cce_kv_pager *p, int pos);
 const float *cce_kv_pager_v_row_ex(cce_kv_pager *p, int pos);
+
+/* ---- Lifetime contract for raw-row readers vs ring mutation ----
+ *
+ * cce_kv_pager_k_row_acquire / _v_row_acquire return a HOT row pointer AND
+ * pin the ring: the returned pointer stays valid until the matching
+ * cce_kv_pager_row_release, even if another thread calls prepare_write /
+ * write / clear which would otherwise slide the window and recycle the
+ * ring slot. A slide that would evict an acquired row blocks on the pager's
+ * internal write lock until every outstanding reader has released.
+ *
+ * The implementation holds an internal read lock for the lifetime of each
+ * acquired row. Ring writes, slides, clear, and close take the matching write
+ * lock, so mutation cannot begin between the pin check and the actual copy.
+ *
+ * Returns NULL if pos is not in the HOT window (same semantics as k_row).
+ * Release must be called exactly once, from the acquiring thread, for every
+ * successful acquire. */
+float *cce_kv_pager_k_row_acquire(cce_kv_pager *p, int pos);
+float *cce_kv_pager_v_row_acquire(cce_kv_pager *p, int pos);
+void  cce_kv_pager_row_release(cce_kv_pager *p, const float *row);
+
+/* Number of currently outstanding acquired rows (0 when no reader pins the
+ * ring). Test hook for the lifetime contract. */
+int cce_kv_pager_reader_count(const cce_kv_pager *p);
 
 int cce_kv_pager_write(cce_kv_pager *p, int pos, const float *k, const float *v);
 

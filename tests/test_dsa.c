@@ -144,6 +144,30 @@ int main(void) {
             check(fabsf(d_f - d_q) / (fabsf(d_f) + 1e-3f) < 0.05f,
                   "MLA q8 dot ≈ f32 self-dot");
         }
+
+        /* ---- Audit regression RED (6b9b5e1): cce_mla_kv_dot_q8 must match a
+         * float accumulator reference (the in-line MLA f32 path uses float).
+         * The classic bug is double-acc in the q8 helper vs float in the
+         * attention loop → quant_kv on/off score divergence. We rebuild the
+         * float reference EXACTLY as the production f32 attention loop
+         * (wr accumulation in float), then require the q8 helper within 5e-5
+         * of it — not of the infinite-precision dot, which is the weaker
+         * check above. */
+        {
+            float ref_f = 0.f;
+            for (i = 0; i < 16; ++i) {
+                float kq = (float)q8[i] * sc;       /* dequant as float */
+                ref_f += src[i] * kq;                /* float×float, float sum */
+            }
+            {
+                float d_q = cce_mla_kv_dot_q8(src, q8, sc, 16);
+                float diff = fabsf(ref_f - d_q);
+                check(diff < 5e-5f,
+                      "q8 dot uses float accumulator (matches MLA f32 path)");
+                printf("    q8-f32acc diff=%.3g ref=%.6g q8=%.6g\\n",
+                       diff, ref_f, d_q);
+            }
+        }
     }
 
     /* round_down keep one */

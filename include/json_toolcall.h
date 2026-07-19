@@ -1,7 +1,7 @@
 #ifndef CNET_JSON_TOOLCALL_H
 #define CNET_JSON_TOOLCALL_H
 
-/* Closed-set JSON tool-call spine (v1 alphabet; unit json_toolcall_v1).
+/* Closed-set JSON tool-call spine (v2 alphabet; unit json_toolcall_v2).
  *
  * Host (.NET / MCP) owns free-form JSON parse/emit.
  * CNET owns a certified closed-set classifier:
@@ -28,7 +28,7 @@ extern "C" {
 
 #define CNET_JTC_N_TOOL 8
 #define CNET_JTC_N_FEAT 18
-#define CNET_JTC_UNIT_NAME "json_toolcall_v1"
+#define CNET_JTC_UNIT_NAME "json_toolcall_v2"
 
 /* Canonical tool names (index = class id). */
 CNET_API const char *const *cnet_jtc_tool_names(void);
@@ -63,7 +63,7 @@ CNET_API const char *cnet_jtc_example_json(int tool_id);
 /* 1 if ports match the closed-set JTC signature (jtc_feat → json_tool). */
 CNET_API int cnet_jtc_ports_match(Port in, Port goal);
 
-/* Ensure json_toolcall_v0 is mined, certified, and sealed into `base`.
+/* Ensure the current json_toolcall_v2 unit is mined, certified, and sealed into `base`.
    Also admits into `reg` when non-NULL (planner-visible). Idempotent when
    identical unit already present. Returns:
      0  sealed / admitted this call

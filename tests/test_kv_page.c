@@ -2,8 +2,10 @@
 #include <stdio.h>
 #include "../include/cnet_platform.h"
 #include <stdlib.h>
+#include <stdatomic.h>
 #include <string.h>
 #include <unistd.h>
+#include <pthread.h>
 
 #include "../include/cce/cce_kv_page.h"
 
@@ -13,6 +15,22 @@ static void check(int ok, const char *name) {
     checks++;
     printf("  %-58s %s\n", name, ok ? "PASS" : "FAIL");
     if (!ok) failures++;
+}
+
+typedef struct {
+    cce_kv_pager *pager;
+    float k[4], v[4];
+    atomic_int started;
+    atomic_int done;
+    int rc;
+} slide_writer_ctx;
+
+static void *slide_writer(void *opaque) {
+    slide_writer_ctx *ctx = (slide_writer_ctx *)opaque;
+    atomic_store(&ctx->started, 1);
+    ctx->rc = cce_kv_pager_write(ctx->pager, 32, ctx->k, ctx->v);
+    atomic_store(&ctx->done, 1);
+    return NULL;
 }
 
 int main(void) {
@@ -185,6 +203,171 @@ int main(void) {
                     unlink(path);
                 }
                 rmdir(dir2);
+            }
+        }
+    }
+
+    /* ---- Regression RED-then-GREEN tests for 2026-07-19 audit ---- */
+
+    /* [HIGH] verify_cold must re-hash the body and compare against the
+     * stored digest — not merely parse the header. A flipped body byte
+     * MUST be detected. We craft a tiny quant cold page, flip one body
+     * byte, and assert verify_cold rejects it. */
+    {
+        cce_kv_pager_opts ov;
+        cce_kv_pager *pv = NULL;
+        char vdir[] = "kv_audit_v_XXXXXX";
+        if (cnet_mkdtemp(vdir)) {
+            cce_kv_pager_opts_default(&ov, 4, 4, 256);
+            ov.page_len = 16;
+            ov.n_hot = 2;
+            ov.archive_dir = vdir;
+            ov.async = 0;          /* sync so file exists when we verify */
+            ov.quant_cold = 0;      /* f32 → body bytes == floats, easy flip */
+            ov.rehydrate = 0;
+            check(cce_kv_pager_open(&pv, &ov) == CCE_OK, "audit: vhash open");
+            if (pv) {
+                int rr;
+                float kf[4] = {1, 2, 3, 4}, vf[4] = {5, 6, 7, 8};
+                char path[400];
+                FILE *vf_f;
+                long fsz;
+                uint64_t dig_stored = 0;
+                /* Write 33 positions so pos 32 slides page 0 to cold. */
+                int okw = 1;
+                for (t = 0; t < 33; ++t) {
+                    if (cce_kv_pager_write(pv, t, kf, vf) != 0) okw = 0;
+                }
+                cce_kv_pager_sync(pv);
+                check(okw && cce_kv_pager_pages_flushed(pv) >= 1,
+                      "audit: vhash cold page written");
+                /* Parse digest from the file header (mirrors verify_cold
+                 * header parsing) so we can pass expect_digest below. */
+                snprintf(path, sizeof path, "%s/page_000000.kvc", vdir);
+                vf_f = fopen(path, "rb");
+                check(vf_f != NULL, "audit: vhash cold file exists");
+                if (vf_f) {
+                    uint32_t magic, ver; int pid, lo, hi, ks, vs, quant;
+                    uint64_t dig;
+                    if (fread(&magic, 4, 1, vf_f) == 1 &&
+                        fread(&ver, 4, 1, vf_f) == 1 &&
+                        fread(&pid, 4, 1, vf_f) == 1 &&
+                        fread(&lo, 4, 1, vf_f) == 1 &&
+                        fread(&hi, 4, 1, vf_f) == 1 &&
+                        fread(&ks, 4, 1, vf_f) == 1 &&
+                        fread(&vs, 4, 1, vf_f) == 1 &&
+                        fread(&quant, 4, 1, vf_f) == 1 &&
+                        fread(&dig, 8, 1, vf_f) == 1) {
+                        dig_stored = dig;
+                    }
+                    fclose(vf_f);
+                }
+                /* verify_cold with the correct digest must pass. */
+                rr = cce_kv_pager_verify_cold(pv, 0, dig_stored);
+                check(rr == 0, "audit: vhash verify_cold ok w/ digest");
+                /* Now flip a body byte and assert verify_cold detects it. */
+                snprintf(path, sizeof path, "%s/page_000000.kvc", vdir);
+                vf_f = fopen(path, "r+b");
+                check(vf_f != NULL, "audit: vhash reopen for flip");
+                if (vf_f) {
+                    fseek(vf_f, 0, SEEK_END);
+                    fsz = ftell(vf_f);
+                    /* Header for f32 (CVK2 quant=0): 4+4+4+4+4+4+4+4 +8 dig
+                     * = 40 bytes; body starts at offset 40. Flip last byte. */
+                    if (fsz > 40) {
+                        unsigned char b;
+                        fseek(vf_f, fsz - 1, SEEK_SET);
+                        if (fread(&b, 1, 1, vf_f) == 1) {
+                            b ^= 0x01u;
+                            fseek(vf_f, fsz - 1, SEEK_SET);
+                            fwrite(&b, 1, 1, vf_f);
+                        }
+                    }
+                    fclose(vf_f);
+                }
+                rr = cce_kv_pager_verify_cold(pv, 0, dig_stored);
+                check(rr != 0,
+                      "audit: vhash verify_cold REJECTS flipped body byte");
+                cce_kv_pager_close(pv);
+            }
+            {
+                char path[400];
+                snprintf(path, sizeof path, "%s/ledger.tsv", vdir);
+                unlink(path);
+                for (t = 0; t < 8; ++t) {
+                    snprintf(path, sizeof path, "%s/page_%06d.kvc", vdir, t);
+                    unlink(path);
+                }
+                rmdir(vdir);
+            }
+        }
+    }
+
+    /* [MED] Concurrent raw-row safety: an acquired row holds a read lease.
+     * A writer that must slide the ring blocks until release, and the reader
+     * observes stable storage throughout the overlap. */
+    {
+        cce_kv_pager_opts oc;
+        cce_kv_pager *pc = NULL;
+        char cdir[] = "kv_audit_c_XXXXXX";
+        if (cnet_mkdtemp(cdir)) {
+            cce_kv_pager_opts_default(&oc, 4, 4, 256);
+            oc.page_len = 16;
+            oc.n_hot = 2;
+            oc.archive_dir = cdir;
+            oc.async = 0;
+            oc.quant_cold = 0;
+            oc.rehydrate = 0;
+            check(cce_kv_pager_open(&pc, &oc) == CCE_OK, "audit: conc open");
+            if (pc) {
+                slide_writer_ctx ctx;
+                pthread_t writer;
+                float *kr0;
+                int created;
+                memset(&ctx, 0, sizeof ctx);
+                ctx.pager = pc;
+                ctx.k[0] = 1.f; ctx.k[1] = 2.f; ctx.k[2] = 3.f; ctx.k[3] = 4.f;
+                ctx.v[0] = 5.f; ctx.v[1] = 6.f; ctx.v[2] = 7.f; ctx.v[3] = 8.f;
+                atomic_init(&ctx.started, 0);
+                atomic_init(&ctx.done, 0);
+                for (t = 0; t < 32; ++t)
+                    cce_kv_pager_write(pc, t, ctx.k, ctx.v);
+                kr0 = cce_kv_pager_k_row_acquire(pc, 0);
+                check(kr0 != NULL && kr0[0] == 1.f,
+                      "audit: acquired row0 valid");
+                check(cce_kv_pager_reader_count(pc) == 1,
+                      "audit: acquired row increments reader count");
+                created = pthread_create(&writer, NULL, slide_writer, &ctx) == 0;
+                check(created, "audit: concurrent slide writer started");
+                if (created) {
+                    while (!atomic_load(&ctx.started)) usleep(1000);
+                    usleep(50000);
+                    check(!atomic_load(&ctx.done),
+                          "audit: slide blocks while row lease is held");
+                    check(kr0[0] == 1.f && kr0[3] == 4.f,
+                          "audit: acquired row remains stable during blocked slide");
+                    cce_kv_pager_row_release(pc, kr0);
+                    pthread_join(writer, NULL);
+                    check(ctx.rc == 0 && atomic_load(&ctx.done),
+                          "audit: slide completes after row release");
+                    check(cce_kv_pager_reader_count(pc) == 0,
+                          "audit: reader count returns to zero");
+                    check(cce_kv_pager_k_row(pc, 0) == NULL,
+                          "audit: old position cold after completed slide");
+                } else if (kr0) {
+                    cce_kv_pager_row_release(pc, kr0);
+                }
+                cce_kv_pager_close(pc);
+            }
+            {
+                char path[400];
+                snprintf(path, sizeof path, "%s/ledger.tsv", cdir);
+                unlink(path);
+                for (t = 0; t < 8; ++t) {
+                    snprintf(path, sizeof path, "%s/page_%06d.kvc", cdir, t);
+                    unlink(path);
+                }
+                rmdir(cdir);
             }
         }
     }

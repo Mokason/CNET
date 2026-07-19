@@ -166,8 +166,18 @@ int cnet_jtc_v0_mine_admit(
 {
     ExternalTeacher local, *t;
     CnetOracleIdentity id;
-    double inputs[CNET_JTC_N_TOOL * CNET_JTC_N_FEAT];
-    double targets[CNET_JTC_N_TOOL * CNET_JTC_N_TOOL];
+    enum { JTC_TRAIN_EXTRA = 7, JTC_TRAIN_N = CNET_JTC_N_TOOL + JTC_TRAIN_EXTRA };
+    static const char *const heuristic_training[JTC_TRAIN_EXTRA] = {
+        "{\"args\":{\"expr\":\"6*7\"}}",
+        "{\"args\":{\"key\":\"alpha\",\"value\":\"beta\"}}",
+        "{\"args\":{\"path\":\"notes.txt\"}}",
+        "{\"args\":{\"cond\":0,\"current\":2}}",
+        "{\"args\":{\"query\":\"local recollection\"}}",
+        "{\"answer\":\"complete response\"}",
+        "{\"tool\":\"memory_recall\",\"args\":{\"key\":\"saved preference\"}}"
+    };
+    double inputs[JTC_TRAIN_N * CNET_JTC_N_FEAT];
+    double targets[JTC_TRAIN_N * CNET_JTC_N_TOOL];
     int c, j;
 
     if (!reg || !student_out) return -1;
@@ -179,6 +189,12 @@ int cnet_jtc_v0_mine_admit(
         for (j = 0; j < CNET_JTC_N_TOOL; j++)
             targets[c * CNET_JTC_N_TOOL + j] = (j == c) ? 1.0 : 0.0;
     }
+    for (c = 0; c < JTC_TRAIN_EXTRA; ++c) {
+        double *sample = inputs + (CNET_JTC_N_TOOL + c) * CNET_JTC_N_FEAT;
+        double *target = targets + (CNET_JTC_N_TOOL + c) * CNET_JTC_N_TOOL;
+        cnet_jtc_encode(heuristic_training[c], sample);
+        if (cnet_jtc_hermetic_teacher(sample, target, NULL) != 0) return -2;
+    }
 
     memset(&id, 0, sizeof id);
     id.abi_version = CNET_ORACLE_ABI_VERSION;
@@ -187,7 +203,8 @@ int cnet_jtc_v0_mine_admit(
         ? identity_digest_salt
         : 0x4A54435F56300001ULL;
     id.contract_digest = 0x4A534F4E5F5430ULL;
-    id.config_digest = (uint64_t)CNET_JTC_N_TOOL << 32 |
+    id.config_digest = (uint64_t)JTC_TRAIN_N << 48 |
+                       (uint64_t)CNET_JTC_N_TOOL << 32 |
                        (uint64_t)CNET_JTC_N_FEAT;
 
     if (external_teacher_bind_callback(
@@ -197,7 +214,7 @@ int cnet_jtc_v0_mine_admit(
         return -2;
 
     if (external_teacher_mine_admit(
-            t, reg, inputs, targets, CNET_JTC_N_TOOL, 16, 64, 15000, 4242u,
+            t, reg, inputs, targets, JTC_TRAIN_N, 24, 64, 30000, 4242u,
             CNET_JTC_UNIT_NAME, student_out) != 0) {
         if (!teacher_out) external_teacher_unbind(t);
         return 1;

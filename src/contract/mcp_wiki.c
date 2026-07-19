@@ -27,8 +27,10 @@ static void filter_summary(const char *raw, char *out, size_t cap) {
     out[n] = '\0';
     trim(out);
     if (strlen(out) < 5) {
-        strncpy(out, raw, cap - 1);
-        out[cap - 1] = '\0';
+        size_t copy_n = strlen(raw);
+        if (copy_n >= cap) copy_n = cap - 1;
+        memcpy(out, raw, copy_n);
+        out[copy_n] = '\0';
     }
 }
 

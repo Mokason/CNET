@@ -9,6 +9,7 @@
 #include "../include/cce/cce_forest.h"
 #include "../include/cce/cce_cascade.h"
 #include "../include/cce/cce_tensor.h"
+#include "../include/cce/cce_gguf.h"
 
 static int failures, checks;
 
@@ -249,6 +250,126 @@ int main(void) {
     check(cce_ds_role_is_linear(CCE_DS_ROLE_MLA_KV_DOWN) &&
           !cce_ds_role_is_linear(CCE_DS_ROLE_ATTN_NORM),
           "role_is_linear distinguishes norms");
+
+    /* ---- Audit regression RED (b5c268a): cce_ds_gguf_load_weight must
+     * REJECT GGUF tensors whose dims match NEITHER orientation of the leaf
+     * contract — the old code fell through to default out_d=shape[0],
+     * in_d=shape[1] and silently returned a wrong-shaped weight. We build a
+     * real GGUF with one tensor whose dims do NOT match the MLA_KV_DOWN
+     * contract (d_model × (kv_lora_rank+rope)) on either side, then require
+     * load to fail with NOT_FOUND, not silently transpose-and-return. */
+    {
+        cce_gguf* g = NULL;
+        cce_ds_hparams v3;
+        cce_ds_map bigmap;
+        char err[128];
+        /* Tiny GGUF with one "bad" tensor: dims 7×3 (in no orientation does
+         * this equal kv_lora_rank=64+rope=8 → 72, nor d_model=256). */
+        {
+            FILE* f = fopen("ds_bad_dim.gguf", "wb");
+            float w[21];
+            int i;
+            if (!f) { check(0, "open bad-dim gguf for write"); goto skip_gguf_dim; }
+            for (i = 0; i < 21; ++i) w[i] = 0.01f * (float)i;
+            /* minimal GGUF v3 header: magic, ver=3, n_tensors=1, n_kv=0 */
+            fwrite("GGUF", 1, 4, f);
+            { uint32_t v = 3; fwrite(&v, 4, 1, f); }
+            { uint64_t n = 1; fwrite(&n, 8, 1, f); }
+            { uint64_t n = 0; fwrite(&n, 8, 1, f); }
+            /* tensor: name "blk.0.attn_kv_a_mqa.weight", ndim=2, dims ne-order
+             * (3,7) → shape[0]=7, shape[1]=3 after loader normalizes. */
+            {
+                const char* nm = "blk.0.attn_kv_a_mqa.weight";
+                uint64_t nl = strlen(nm);
+                uint32_t nd = 2;
+                uint64_t d0 = 3, d1 = 7;   /* ne order: shape[0]=7, shape[1]=3 */
+                uint32_t ty = 0;          /* F32 */
+                uint64_t off = 0;
+                fwrite(&nl, 8, 1, f); fwrite(nm, 1, (size_t)nl, f);
+                fwrite(&nd, 4, 1, f);
+                fwrite(&d0, 8, 1, f); fwrite(&d1, 8, 1, f);
+                fwrite(&ty, 4, 1, f); fwrite(&off, 8, 1, f);
+            }
+            /* pad to 32-byte alignment, then data */
+            {
+                long pos = ftell(f);
+                int pad = (int)((32 - (pos % 32)) % 32);
+                while (pad-- > 0) fputc(0, f);
+            }
+            fwrite(w, 4, 21, f);
+            fclose(f);
+        }
+        check(cce_gguf_load("ds_bad_dim.gguf", &g) == CCE_OK && g,
+              "load bad-dim gguf");
+        if (g) {
+            cce_ds_hparams_default_small(&v3);
+            v3.n_layer = 1;
+            check(cce_ds_map_build(&bigmap, &v3) == CCE_OK,
+                  "build small map for gguf dim check");
+            if (cce_ds_map_validate(&bigmap, err, sizeof err) == CCE_OK) {
+                const cce_ds_leaf* L =
+                    cce_ds_map_find_role(&bigmap, CCE_DS_ROLE_MLA_KV_DOWN, 0, -1);
+                float* wout = NULL;
+                int wi = -1, wo = -1;
+                cce_result rc;
+                check(L != NULL, "found MLA_KV_DOWN leaf for dim-mismatch");
+                rc = cce_ds_gguf_load_weight(g, L, &wout, &wi, &wo);
+                /* Must REJECT — neither orientation matches contract dims. */
+                check(rc != CCE_OK,
+                      "gguf dim mismatch rejected (no silent wrong-dim load)");
+                check(wout == NULL, "no weight buffer on rejection");
+                if (wout) free(wout);
+                cce_ds_map_free(&bigmap);
+            }
+            cce_gguf_free(g);
+            g = NULL;
+        }
+        remove("ds_bad_dim.gguf");
+        skip_gguf_dim: ;
+    }
+
+    /* ---- Audit regression RED (b5c268a): cce_ds_pack_write must surface
+     * fwrite failures rather than silently truncating the pack. We can't
+     * easily force a mid-stream disk error portably, but we CAN assert the
+     * pack round-trip integrity (write → reopen → load each leaf → verify
+     * dim contract + numel). The old code never validated its own writes. */
+    {
+        cce_ds_pack* pack = NULL;
+        cce_ds_map vmap;
+        cce_ds_hparams v3;
+        cce_ds_hparams_default_small(&v3);
+        v3.n_layer = 1;
+        v3.n_expert = 2;   /* keep small */
+        check(cce_ds_map_build(&vmap, &v3) == CCE_OK, "build vmap for pack write");
+        check(cce_ds_pack_write("ds_pack_integ.cnetpack", &vmap, NULL, NULL) ==
+              CCE_OK, "pack write ok");
+        check(cce_ds_pack_open(&pack, "ds_pack_integ.cnetpack") == CCE_OK,
+              "pack reopen");
+        if (pack) {
+            int i, all_ok = 1;
+            for (i = 0; i < vmap.n_leaves; ++i) {
+                const cce_ds_leaf* L = &vmap.leaves[i];
+                float* w = NULL;
+                int wi = -1, wo = -1;
+                cce_result rc;
+                if (!cce_ds_role_is_linear(L->role) ||
+                    L->dim_in < 1 || L->dim_out < 1)
+                    continue;
+                rc = cce_ds_pack_load_weight(pack, L, &w, &wi, &wo);
+                if (rc != CCE_OK || !w) { all_ok = 0; continue; }
+                /* written dims must equal contract dims (the bug case:
+                 * truncated fwrite would still load but with wrong numel,
+                 * which the read would catch via short fread). */
+                if (wi != L->dim_in || wo != L->dim_out) all_ok = 0;
+                free(w);
+            }
+            check(all_ok, "pack round-trip: every linear leaf loads "
+                          "with contract dims");
+            cce_ds_pack_close(pack);
+        }
+        cce_ds_map_free(&vmap);
+        remove("ds_pack_integ.cnetpack");
+    }
 
     cce_ds_map_free(&map);
 
