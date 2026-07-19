@@ -45,7 +45,7 @@ if [ -f "${BASE}.curiosity" ]; then
 fi
 
 jtc=$(cnet_jtc_present "$BASE")
-recycle_note="Hermes MCP children must recycle to load newly sealed units"
+recycle_note="Hermes MCP children reload atomically replaced CNB generations in-process"
 
 mem=${mem//$'\n'/}
 mem=${mem:-0}

@@ -89,6 +89,15 @@ typedef struct cce_mla {
     float* attn_out; /* [n_heads * v_head_dim] */
     float* out;      /* [d_model] */
     float* tmp;      /* [max(d_model, q_lora, kv_lora+rope)] */
+    /* Optional array of separately-owned weight buffers (caller-managed,
+     * NOT freed by cce_mla_free — the caller frees them via
+     * cce_mla_owned_bufs_free). Used by build_layer_mla to hold the
+     * per-leaf transposed weight buffers without aliasing a single fused
+     * allocation and without the old w_kr pointer-bag strict-aliasing
+     * hack. NULL when weights are caller-owned views or a single
+     * cce_mla_weights_alloc_synthetic contiguous block. */
+    float** owned_bufs;
+    int     n_owned;
 } cce_mla;
 
 /* Defaults matching DeepSeek-V3-ish small demo (not full 671B). */

@@ -27,8 +27,15 @@ static int put_i32(buf_t* b, int32_t v)  { return buf_put(b, &v, 4); }
 static int put_f32(buf_t* b, float v)    { return buf_put(b, &v, 4); }
 static int put_u64(buf_t* b, uint64_t v) { return buf_put(b, &v, 8); }
 static int put_fixed(buf_t* b, const char* s, size_t n) {
-    char tmp[512]; if (n > sizeof(tmp)) return 0;
-    memset(tmp, 0, n); if (s) strncpy(tmp, s, n - 1);
+    char tmp[512];
+    size_t len = 0;
+    if (n > sizeof(tmp)) return 0;
+    if (n == 0) return buf_put(b, tmp, 0);
+    memset(tmp, 0, n);
+    if (s) {
+        while (len + 1 < n && s[len] != '\0') len++;
+        memcpy(tmp, s, len);
+    }
     return buf_put(b, tmp, n);
 }
 

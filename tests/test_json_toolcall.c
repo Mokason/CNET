@@ -22,6 +22,13 @@ static void check(int ok, const char *name) {
     if (!ok) failures++;
 }
 
+static int tool_id(const char *name) {
+    int i;
+    for (i = 0; i < CNET_JTC_N_TOOL; ++i)
+        if (strcmp(cnet_jtc_tool_names()[i], name) == 0) return i;
+    return -1;
+}
+
 int main(void) {
     PrimitiveRegistry reg;
     BinaryTransformNetwork *student = NULL;
@@ -75,6 +82,58 @@ int main(void) {
         out = btn_forward(student, feat);
         check(out && cnet_jtc_decode_tool(out) == i,
               "student matches tool class");
+    }
+
+    /* Fixed held-out surface set. None of these JSON strings is used by
+       cnet_jtc_v0_mine_admit or the seal contract above/below. The explicit
+       cases measure syntax/order/case robustness; implicit cases measure the
+       learned argument-feature path rather than the literal tool-name bit. */
+    {
+        static const struct { const char *json, *expect; } heldout[] = {
+            {"{ \"args\": {\"expr\":\"17*3\"}, \"tool\":\"CALCULATOR\" }", "calculator"},
+            {"{\"tool\":\"calculator\",\"args\":{\"expr\":\"sqrt(81)\"},\"id\":9}", "calculator"},
+            {"{\"args\":{\"key\":\"timezone\",\"value\":\"Riga\"},\"tool\":\"MEMORY_STORE\"}", "memory_store"},
+            {"{\"tool\":\"memory_store\",\"args\":{\"value\":\"blue\",\"key\":\"color\"}}", "memory_store"},
+            {"{\"args\":{\"key\":\"project\"},\"tool\":\"MEMORY_RECALL\"}", "memory_recall"},
+            {"{\"tool\":\"memory_recall\",\"args\":{\"key\":\"hardware\"},\"trace\":true}", "memory_recall"},
+            {"{\"args\":{\"path\":\"docs/README.md\"},\"tool\":\"FILE_READ\"}", "file_read"},
+            {"{\"tool\":\"file_read\",\"args\":{\"path\":\"LICENSE\"},\"id\":3}", "file_read"},
+            {"{\"args\":{\"cond\":1,\"current\":0},\"tool\":\"CNET_RECALL\"}", "cnet_recall"},
+            {"{\"tool\":\"cnet_recall\",\"args\":{\"current\":1,\"cond\":0},\"meta\":{}}", "cnet_recall"},
+            {"{\"args\":{\"query\":\"bounded oracle\"},\"tool\":\"WEB_SEARCH\"}", "web_search"},
+            {"{\"tool\":\"web_search\",\"args\":{\"query\":\"CNET runtime\"},\"limit\":4}", "web_search"},
+            {"{\"args\":{\"query\":\"Ada Lovelace\"},\"tool\":\"WIKI_LOOKUP\"}", "wiki_lookup"},
+            {"{\"tool\":\"wiki_lookup\",\"args\":{\"query\":\"ternary computing\"},\"lang\":\"en\"}", "wiki_lookup"},
+            {"{\"final\":\"done\",\"tool\":\"FINAL\"}", "final"},
+            {"{\"tool\":\"final\",\"answer\":\"complete\",\"ok\":true}", "final"},
+            {"{\"args\":{\"expr\":\"9+8\"}}", "calculator"},
+            {"{\"args\":{\"key\":\"k\",\"value\":\"v\"}}", "memory_store"},
+            {"{\"args\":{\"query\":\"only-local-memory\"}}", "memory_recall"},
+            {"{\"args\":{\"path\":\"docs/guide.md\"}}", "file_read"},
+            {"{\"args\":{\"cond\":1,\"current\":1}}", "cnet_recall"},
+            {"{\"answer\":\"all done\"}", "final"},
+            {"{\"args\":{\"query\":\"recall this phrase\"}}", "memory_recall"},
+            {"{\"final\":\"finished\"}", "final"}
+        };
+        int exact = 0;
+        size_t hi;
+        for (hi = 0; hi < sizeof heldout / sizeof heldout[0]; ++hi) {
+            int expected_id = tool_id(heldout[hi].expect);
+            cnet_jtc_encode(heldout[hi].json, feat);
+            out = btn_forward(student, feat);
+            if (out && cnet_jtc_decode_tool(out) == expected_id) {
+                exact++;
+            } else {
+                int got_id = out ? cnet_jtc_decode_tool(out) : -1;
+                printf("  JTC_HELDOUT_MISS index=%zu expected=%s got=%s\n", hi,
+                       heldout[hi].expect,
+                       got_id >= 0 ? cnet_jtc_tool_names()[got_id] : "none");
+            }
+        }
+        printf("JTC_HELDOUT exact=%d total=%zu accuracy=%.4f exact_json_overlap=0\n",
+               exact, sizeof heldout / sizeof heldout[0],
+               (double)exact / (double)(sizeof heldout / sizeof heldout[0]));
+        check(exact == 24, "held-out JSON tool-call accuracy = 24/24");
     }
 
     /* Seal into CNB + SoulHost certified serve */

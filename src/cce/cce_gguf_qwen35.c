@@ -692,12 +692,15 @@ cce_result cce_gguf_load_qwen35(cce_gguf_qwen2 **out, const char *path) {
         if (ce) { int v = atoi(ce); if (v >= 8 && v < m->max_ctx) m->max_ctx = v; }
     }
     m->cur_pos = 0;
-    m->k_cache = (float *)calloc((size_t)m->max_ctx * m->k_slot_floats,
-                                 sizeof(float));
-    m->v_cache = (float *)calloc((size_t)m->max_ctx * m->v_slot_floats,
-                                 sizeof(float));
-    if (!m->k_cache || !m->v_cache) goto fail_oom;
+    /* Pager first: avoid transient dense K/V reservation in long-context mode. */
     cce_gguf_qwen2_enable_kv_page(m);
+    if (!m->kv_pager) {
+        m->k_cache = (float *)calloc((size_t)m->max_ctx * m->k_slot_floats,
+                                     sizeof(float));
+        m->v_cache = (float *)calloc((size_t)m->max_ctx * m->v_slot_floats,
+                                     sizeof(float));
+        if (!m->k_cache || !m->v_cache) goto fail_oom;
+    }
 
     cce_gguf_free(g);
     Q35TRACE("load complete");
@@ -862,7 +865,10 @@ cce_result cce_gguf_qwen35_forward_impl(cce_gguf_qwen2 *m, const int *tokens,
         cce_clgemm_stream_set_x(gpu, x.data, D) == 0)
         use_stream = 1;
 
-    float *scores = (float *)malloc((size_t)m->max_ctx * sizeof *scores);
+    int scores_cap = m->kv_pager
+        ? cce_kv_pager_hot_capacity(m->kv_pager) : m->max_ctx;
+    if (scores_cap < 1) { cce_tensor_free(&x); return CCE_ERR_INVALID_ARG; }
+    float *scores = (float *)malloc((size_t)scores_cap * sizeof *scores);
     /* deltanet per-token scratch (widest case), shared across layers */
     float *dn_conv = (float *)malloc((size_t)e->qkv_dim * sizeof(float));
     float *dn_qe = (float *)malloc((size_t)e->hv * e->dk * sizeof(float));
@@ -892,8 +898,13 @@ cce_result cce_gguf_qwen35_forward_impl(cce_gguf_qwen2 *m, const int *tokens,
             rc = CCE_ERR_OOM; goto done;
         }
         /* Keep host x mirrored when stream is live (GDN needs host residual). */
-        if (use_stream && e->kind[l] != CCE_QWEN35_LAYER_FULL_ATTN)
-            (void)cce_clgemm_stream_get_x(gpu, x.data, D);
+        if (use_stream && e->kind[l] != CCE_QWEN35_LAYER_FULL_ATTN &&
+            cce_clgemm_stream_get_x(gpu, x.data, D) != 0) {
+            fprintf(stderr, "qwen35: device residual readback failed before "
+                            "host layer %d — refusing\n", l);
+            cce_tensor_free(&ln1); cce_tensor_free(&after_attn);
+            rc = CCE_ERR_IO; goto done;
+        }
 
         if (!(use_stream && e->kind[l] == CCE_QWEN35_LAYER_FULL_ATTN))
             cce_gguf__rms_norm(&x, &m->attn_norm[l], eps, &ln1);
@@ -1115,8 +1126,8 @@ cce_result cce_gguf_qwen35_forward_impl(cce_gguf_qwen2 *m, const int *tokens,
                                 (size_t)h * ge->v_head_dim;
                     int j, d2, jmin = 0, sb = 0;
                     jmin = cce_gguf_qwen2_kv_jmin(m, jmin);
-                    if (abs_t - jmin + 1 > m->max_ctx && m->max_ctx > 0)
-                        jmin = abs_t - m->max_ctx + 1;
+                    if (abs_t - jmin + 1 > scores_cap)
+                        jmin = abs_t - scores_cap + 1;
                     if (jmin < 0) jmin = 0;
                     sb = m->kv_pager ? jmin : 0;
                     for (j = jmin; j <= abs_t; j++) {
@@ -1316,7 +1327,12 @@ cce_result cce_gguf_qwen35_forward_impl(cce_gguf_qwen2 *m, const int *tokens,
         /* residual (device stream keeps x on GPU when live) */
         if (use_stream && n_tokens == 1 &&
             cce_clgemm_stream_add_x_host(gpu, after_attn.data, D) == 0) {
-            (void)cce_clgemm_stream_get_x(gpu, after_attn.data, D);
+            if (cce_clgemm_stream_get_x(gpu, after_attn.data, D) != 0) {
+                fprintf(stderr, "qwen35: device residual readback failed after "
+                                "attention at layer %d — refusing\n", l);
+                cce_tensor_free(&ln1); cce_tensor_free(&after_attn);
+                rc = CCE_ERR_IO; goto done;
+            }
         } else {
             size_t i;
             for (i = 0; i < (size_t)n_tokens * D; i++)
@@ -1399,8 +1415,18 @@ cce_result cce_gguf_qwen35_forward_impl(cce_gguf_qwen2 *m, const int *tokens,
                     /* Keep residual on GPU unless next layer is GDN (needs
                        host x) or this is the last layer (logits path). */
                     if (l + 1 >= m->n_layer ||
-                        e->kind[l + 1] != CCE_QWEN35_LAYER_FULL_ATTN)
-                        (void)cce_clgemm_stream_get_x(gpu, x.data, D);
+                        e->kind[l + 1] != CCE_QWEN35_LAYER_FULL_ATTN) {
+                        if (cce_clgemm_stream_get_x(gpu, x.data, D) != 0) {
+                            fprintf(stderr, "qwen35: device residual readback "
+                                            "failed after FFN at layer %d — "
+                                            "refusing\n", l);
+                            cce_tensor_free(&ln2); cce_tensor_free(&gate);
+                            cce_tensor_free(&upv); cce_tensor_free(&mid);
+                            cce_tensor_free(&down); cce_tensor_free(&ln1);
+                            cce_tensor_free(&after_attn);
+                            rc = CCE_ERR_IO; goto done;
+                        }
+                    }
                     ffn_ok = 1;
                 } else {
                     ffn_ok = 0;
@@ -1440,7 +1466,15 @@ cce_result cce_gguf_qwen35_forward_impl(cce_gguf_qwen2 *m, const int *tokens,
                 if (use_stream && n_tokens == 1 &&
                     cce_clgemm_stream_set_x(gpu, after_attn.data, D) == 0 &&
                     cce_clgemm_stream_add_x_host(gpu, down.data, D) == 0) {
-                    (void)cce_clgemm_stream_get_x(gpu, x.data, D);
+                    if (cce_clgemm_stream_get_x(gpu, x.data, D) != 0) {
+                        fprintf(stderr, "qwen35: device residual readback failed "
+                                        "after host FFN at layer %d — refusing\n", l);
+                        cce_tensor_free(&ln2); cce_tensor_free(&gate);
+                        cce_tensor_free(&upv); cce_tensor_free(&mid);
+                        cce_tensor_free(&down); cce_tensor_free(&ln1);
+                        cce_tensor_free(&after_attn);
+                        rc = CCE_ERR_IO; goto done;
+                    }
                 } else {
                     size_t i;
                     for (i = 0; i < (size_t)n_tokens * D; i++)
@@ -1458,8 +1492,12 @@ cce_result cce_gguf_qwen35_forward_impl(cce_gguf_qwen2 *m, const int *tokens,
         cce_gguf__fire_layer_tap(l, x.data, n_tokens, D);
     }
 
-    if (use_stream && gpu)
-        (void)cce_clgemm_stream_get_x(gpu, x.data, D);
+    if (use_stream && gpu && cce_clgemm_stream_get_x(gpu, x.data, D) != 0) {
+        fprintf(stderr, "qwen35: final device residual readback failed — "
+                        "refusing\n");
+        rc = CCE_ERR_IO;
+        goto done;
+    }
 
     /* ---- final norm + head (same contract as the qwen2 head: window head
             bit-identical on window ids, forest lm_head, output fallback,

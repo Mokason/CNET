@@ -1,5 +1,6 @@
 #include "../../include/cce/cce_mtk.h"
 #include "../../include/cce/cce_gguf.h"
+#include "../../include/cce/cce_kv_page.h"
 
 #include <ctype.h>
 #include <stdio.h>
@@ -195,8 +196,7 @@ void cce_mtk_gguf_kv_flush(void *gguf_qwen2_ctx) {
         memset(model->v_cache, 0,
                (size_t)model->max_ctx * model->v_slot_floats * sizeof(float));
     if (model->kv_pager) {
-        /* Pager has no public clear; position reset is enough for next write. */
-        (void)0;
+        (void)cce_kv_pager_clear(model->kv_pager);
     }
 }
 
@@ -312,7 +312,8 @@ cce_result cce_mtk_apply_mtsk(cce_mtk *m, const char *path, float scale) {
         return CCE_ERR_UNSUPPORTED;
     }
     if (hdr.version != 0 && hdr.version != CCE_MTK_MTSK_VER) {
-        /* accept ver 0 or 1 */
+        fclose(f);
+        return CCE_ERR_UNSUPPORTED;
     }
 
     t0 = now_us();
@@ -330,26 +331,32 @@ cce_result cce_mtk_apply_mtsk(cce_mtk *m, const char *path, float scale) {
             fclose(f);
             return CCE_ERR_IO;
         }
-        rlen = th.name_len < 255 ? th.name_len : 255;
+        if (th.name_len == 0 || th.name_len >= sizeof name || th.ndim > 8) {
+            fclose(f);
+            return CCE_ERR_UNSUPPORTED;
+        }
+        rlen = (int)th.name_len;
         if (fread(name, 1, (size_t)rlen, f) != (size_t)rlen) {
             fclose(f);
             return CCE_ERR_IO;
         }
         name[rlen] = 0;
-        if (th.name_len > 255)
-            fseek(f, (long)(th.name_len - 255), SEEK_CUR);
-        if (th.ndim > 8) {
-            fclose(f);
-            return CCE_ERR_UNSUPPORTED;
-        }
         if (th.ndim > 0 &&
             fread(shape, sizeof(int64_t), th.ndim, f) != th.ndim) {
             fclose(f);
             return CCE_ERR_IO;
         }
 
-        mask_bytes = (size_t)((th.num_elements + 7) / 8);
-        val_bytes = (size_t)((th.num_modified + 3) / 4);
+        s = find_site(m, name);
+        if (!s || th.num_elements != (uint64_t)s->n ||
+            th.num_modified > th.num_elements ||
+            th.num_elements > (uint64_t)SIZE_MAX - 7u ||
+            th.num_modified > (uint64_t)SIZE_MAX - 3u) {
+            fclose(f);
+            return CCE_ERR_UNSUPPORTED;
+        }
+        mask_bytes = ((size_t)th.num_elements + 7u) / 8u;
+        val_bytes = ((size_t)th.num_modified + 3u) / 4u;
         mod_mask = (uint8_t *)malloc(mask_bytes ? mask_bytes : 1);
         packed = (uint8_t *)malloc(val_bytes ? val_bytes : 1);
         if (!mod_mask || !packed ||
@@ -361,12 +368,6 @@ cce_result cce_mtk_apply_mtsk(cce_mtk *m, const char *path, float scale) {
             return CCE_ERR_IO;
         }
 
-        s = find_site(m, name);
-        if (!s || s->n != (size_t)th.num_elements) {
-            free(mod_mask);
-            free(packed);
-            continue;
-        }
         if (ensure_base_snap(s) != 0) {
             free(mod_mask);
             free(packed);
@@ -377,6 +378,12 @@ cce_result cce_mtk_apply_mtsk(cce_mtk *m, const char *path, float scale) {
 
         for (i = 0; i < (size_t)th.num_elements; ++i) {
             if (!(mod_mask[i / 8] & (1u << (i % 8)))) continue;
+            if (val_idx >= (size_t)th.num_modified) {
+                free(mod_mask);
+                free(packed);
+                fclose(f);
+                return CCE_ERR_UNSUPPORTED;
+            }
             {
                 int shift = (int)((val_idx % 4) * 2);
                 uint8_t enc = (packed[val_idx / 4] >> shift) & 0x03;
@@ -388,6 +395,12 @@ cce_result cce_mtk_apply_mtsk(cce_mtk *m, const char *path, float scale) {
                 val_idx++;
                 nnz_tot++;
             }
+        }
+        if (val_idx != (size_t)th.num_modified) {
+            free(mod_mask);
+            free(packed);
+            fclose(f);
+            return CCE_ERR_UNSUPPORTED;
         }
         free(mod_mask);
         free(packed);

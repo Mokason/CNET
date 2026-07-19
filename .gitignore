@@ -28,6 +28,12 @@ altmodel_gpt2_gap_cache/
 *.cnb.curiosity
 *.cnb.hill_climb.jsonl
 *.cnetpack
+*.prev
+*.bak
+*.pre-oracle-fix-*
+kv_archive/
+cnet_knowledge_base.bin
+cnet_mcp_facts.bin
 suggestions/*.jsonl
 cnet.so
 cnet.dll

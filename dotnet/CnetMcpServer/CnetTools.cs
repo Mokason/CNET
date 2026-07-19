@@ -9,10 +9,14 @@ namespace CnetMcpServer
 {
     public class CnetTools
     {
-        private readonly SoulHost _soulHost;
+        private SoulHost _soulHost;
         private readonly string _basePath;
         private readonly string _obsidianPath;
         private readonly string _artifactPath;
+        private readonly object _soulReloadGate = new();
+        private long _baseLength = -1;
+        private long _baseWriteTicks = -1;
+        private int _baseGeneration;
 
         public CnetTools(string basePath,
                          string obsidianPath = "/home/marble/Documents/Obsidian Vault/CNET",
@@ -26,15 +30,88 @@ namespace CnetMcpServer
                                    "CNET", "artifacts")
                     : artifactPath);
             // SoulHost opening the certified base is optional for tools that
-            // don't need it (e.g. CompressModel works independently). Tools
-            // that do need it (VerifyClaim, ListUnits) will check _soulHost.
+            // don't need it (e.g. CompressModel works independently).  The
+            // same host is replaced in-process when an atomic CNB generation
+            // swap changes the file fingerprint.
+            _soulHost = null!;
+            EnsureFreshSoulHost(logReload: false);
+        }
+
+        private static bool TryBaseFingerprint(string path, out long length, out long writeTicks)
+        {
+            length = -1;
+            writeTicks = -1;
             try
             {
-                _soulHost = new SoulHost(basePath);
+                var info = new FileInfo(path);
+                info.Refresh();
+                if (!info.Exists) return false;
+                length = info.Length;
+                writeTicks = info.LastWriteTimeUtc.Ticks;
+                return true;
             }
             catch
             {
-                _soulHost = null!;
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Refresh the live native host after an atomic learner checkpoint.
+        /// Program.cs serializes all SoulHost-backed calls through toolGate;
+        /// this local lock also prevents duplicate opens when CnetTools is used
+        /// directly. A failed/unstable replacement leaves the last certified
+        /// generation serving and retries on the next call.
+        /// </summary>
+        private SoulHost? EnsureFreshSoulHost(bool logReload = true)
+        {
+            if (!TryBaseFingerprint(_basePath, out long observedLength, out long observedTicks))
+                return _soulHost;
+            if (_soulHost != null && observedLength == _baseLength && observedTicks == _baseWriteTicks)
+                return _soulHost;
+
+            lock (_soulReloadGate)
+            {
+                if (!TryBaseFingerprint(_basePath, out observedLength, out observedTicks))
+                    return _soulHost;
+                if (_soulHost != null && observedLength == _baseLength && observedTicks == _baseWriteTicks)
+                    return _soulHost;
+
+                SoulHost? fresh = null;
+                try
+                {
+                    fresh = new SoulHost(_basePath);
+                    if (!TryBaseFingerprint(_basePath, out long loadedLength, out long loadedTicks) ||
+                        loadedLength != observedLength || loadedTicks != observedTicks)
+                    {
+                        fresh.Dispose();
+                        return _soulHost;
+                    }
+
+                    SoulHost? previous = _soulHost;
+                    _soulHost = fresh;
+                    _baseLength = loadedLength;
+                    _baseWriteTicks = loadedTicks;
+                    _baseGeneration++;
+                    _unitRoster = null;
+                    _rosterSource = "";
+                    _unitByTokenId = null;
+                    previous?.Dispose();
+                    if (logReload)
+                        Console.Error.WriteLine(
+                            $"[CNET MCP] loaded CNB generation {_baseGeneration}: " +
+                            $"{Path.GetFileName(_basePath)} ({loadedLength} bytes)");
+                    return _soulHost;
+                }
+                catch (Exception e)
+                {
+                    fresh?.Dispose();
+                    if (_soulHost == null)
+                        Console.Error.WriteLine($"[CNET MCP] certified base unavailable: {e.Message}");
+                    else
+                        Console.Error.WriteLine($"[CNET MCP] CNB reload deferred: {e.Message}");
+                    return _soulHost;
+                }
             }
         }
 
@@ -158,6 +235,7 @@ namespace CnetMcpServer
 
         private List<string> UnitRoster()
         {
+            EnsureFreshSoulHost();
             if (_unitRoster != null) return _unitRoster;
             if (_soulHost == null) { _unitRoster = new List<string>(); return _unitRoster; }
             _unitRoster = LoadRosterFor(_soulHost, _basePath, out _rosterSource);
@@ -1016,6 +1094,7 @@ namespace CnetMcpServer
 
         public string RouteOnRole(string input, string role = "memory-witness")
         {
+            EnsureFreshSoulHost();
             if (string.IsNullOrWhiteSpace(input))
                 return "[CNET AICIMO] Routing refused: input is empty.";
             if (_soulHost == null)
@@ -1076,11 +1155,26 @@ namespace CnetMcpServer
 
         public string ListOracles()
         {
+            EnsureFreshSoulHost();
             if (_soulHost == null) return SoulUnavailable("list_oracles");
             var descriptors = _soulHost.Oracles();
             var rows = new List<object>(descriptors.Count);
+            int provenanceCompleteCount = 0;
             foreach (var descriptor in descriptors)
             {
+                var missing = new List<string>();
+                if (descriptor.BehaviorDigest == 0) missing.Add("behaviorDigest");
+                if (descriptor.ArtifactDigest == 0) missing.Add("artifactDigest");
+                if (descriptor.ContractDigest == 0) missing.Add("contractDigest");
+                if (descriptor.ConfigDigest == 0) missing.Add("configDigest");
+                if (descriptor.RetrievalSnapshotDigest == 0) missing.Add("retrievalSnapshotDigest");
+                if (descriptor.ToolchainDigest == 0) missing.Add("toolchainDigest");
+                if (string.IsNullOrWhiteSpace(descriptor.ArtifactSha256) ||
+                    descriptor.ArtifactSha256.All(c => c == '0'))
+                    missing.Add("artifactSha256");
+                if (descriptor.RuntimeLibsDigest == 0) missing.Add("runtimeLibsDigest");
+                bool complete = missing.Count == 0;
+                if (complete) provenanceCompleteCount++;
                 rows.Add(new
                 {
                     name = descriptor.Name,
@@ -1092,7 +1186,14 @@ namespace CnetMcpServer
                     retrievalSnapshotDigest = $"0x{descriptor.RetrievalSnapshotDigest:x16}",
                     toolchainDigest = $"0x{descriptor.ToolchainDigest:x16}",
                     artifactSha256 = descriptor.ArtifactSha256,
-                    runtimeLibsDigest = $"0x{descriptor.RuntimeLibsDigest:x16}"
+                    runtimeLibsDigest = $"0x{descriptor.RuntimeLibsDigest:x16}",
+                    provenance = new
+                    {
+                        complete,
+                        observed = 8 - missing.Count,
+                        required = 8,
+                        missing
+                    }
                 });
             }
             return JsonSerializer.Serialize(new
@@ -1100,6 +1201,8 @@ namespace CnetMcpServer
                 source = "native CNB Oracle descriptors",
                 admission = "descriptor_only_not_runtime_trust",
                 count = rows.Count,
+                provenance_complete_count = provenanceCompleteCount,
+                provenance_incomplete_count = rows.Count - provenanceCompleteCount,
                 oracles = rows
             });
         }
@@ -1125,6 +1228,7 @@ namespace CnetMcpServer
             string family, int width, int count, int goalCount,
             List<double> input)
         {
+            EnsureFreshSoulHost();
             if (_soulHost == null) return SoulUnavailable("request_capability");
             int fam = ParseFamily(family);
             double[]? inputVec = input.Count > 0 ? input.ToArray() : null;
@@ -1152,6 +1256,7 @@ namespace CnetMcpServer
 
         public string HealthTick()
         {
+            EnsureFreshSoulHost();
             if (_soulHost == null) return SoulUnavailable("health_tick");
             var r = _soulHost.HealthTick();
             object? serve = null;
@@ -1254,6 +1359,7 @@ namespace CnetMcpServer
         /// </summary>
         public string ClassifyToolCall(string json)
         {
+            EnsureFreshSoulHost();
             if (_soulHost == null) return SoulUnavailable("classify_toolcall");
             string inbox = Environment.GetEnvironmentVariable("CNET_GAP_INBOX")
                 ?? (_basePath + ".inbox");
@@ -1302,6 +1408,7 @@ namespace CnetMcpServer
         /// <summary>Whether the sealed json_toolcall unit is in the live registry.</summary>
         public string JsonToolCallStatus()
         {
+            EnsureFreshSoulHost();
             if (_soulHost == null) return SoulUnavailable("json_toolcall_status");
             bool present = false;
             try
@@ -1332,7 +1439,8 @@ namespace CnetMcpServer
                 present,
                 tools = JsonToolCall.ToolNames,
                 sample,
-                recycle_note = "Hermes MCP children must recycle to see newly sealed units"
+                base_generation = _baseGeneration,
+                refresh = "atomic CNB generations reload in-process"
             });
         }
 

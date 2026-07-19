@@ -123,6 +123,43 @@ int main(void) {
         }
     }
 
+    /* ---- Audit regression RED: quant_kv on/off output parity (0a01b50).
+     * The f32 and int8 latent dot paths must produce bit-close scores so
+     * flipping quant_kv cannot move a token decision. */
+    {
+        cce_mla mf, mq;
+        float *yf, *yq;
+        cce_mla_config cf = cfg;
+        cf.use_absorb = 1;
+        check(cce_mla_init(&mf, &cf, &w, 64) == CCE_OK, "parity: f32 init");
+        check(cce_mla_init(&mq, &cf, &w, 64) == CCE_OK, "parity: q8 init");
+        check(cce_mla_enable_quant_kv(&mq) == 0, "parity: q8 armed");
+        check(mq.cache.quant_kv == 1 && mq.cache.c_kv_q8 != NULL,
+              "parity: q8 cache allocated");
+        yf = (float*)malloc((size_t)T * dm * sizeof(float));
+        yq = (float*)malloc((size_t)T * dm * sizeof(float));
+        check(yf && yq, "parity: scratch alloc");
+        check(cce_mla_forward_seq(&mf, x, T, yf) == CCE_OK, "parity: f32 prefill");
+        check(cce_mla_forward_seq(&mq, x, T, yq) == CCE_OK, "parity: q8 prefill");
+        {
+            float dmax = 0.f;
+            for (i = 0; i < T * dm; ++i) {
+                float d = fabsf(yf[i] - yq[i]);
+                if (d > dmax) dmax = d;
+            }
+            /* int8 KV round-trip accumulates < 1/127 per-element; the
+             * attention softmax + V up-project keep the L2 distance small.
+             * 1e-3 is a generous fail-closed bar — divergence above this
+             * is the classic double-vs-float accumulator parity bug. */
+            check(dmax < 1e-3f, "quant_kv on/off parity (decision-identity)");
+            printf("    quant_kv parity dmax=%.6g\\n", dmax);
+        }
+        cce_mla_free(&mf);
+        cce_mla_free(&mq);
+        free(yf);
+        free(yq);
+    }
+
     cce_mla_free(&m);
     cce_mla_weights_free(&w);
     free(x);

@@ -10,6 +10,8 @@
 #include "../include/cce/cce_tensor.h"
 #include "../include/cce/cce_gguf.h"
 #include "../include/cce/cce_block.h"
+#include "../include/cce/cce_kv_page.h"
+#include <unistd.h>
 
 static int failures, checks;
 static int gemm_hook_calls;
@@ -320,6 +322,7 @@ static void forest_fwd(void) {
 }
 
 int main(void) {
+    int t; /* scratch loop index used by audit blocks */
     printf("== CNET Micro-Trensor Kernel (MTK) phases 1–5 ==\n");
     needle_cmsk();
     mtsk_ternary();
@@ -327,6 +330,194 @@ int main(void) {
     gguf_registry();
     auto_router();
     forest_fwd();
+
+    /* ---- 2026-07-19 audit RED-then-GREEN regression tests ---- */
+
+    /* [HIGH] cce_mtk_apply_mtsk must validate th.num_elements /
+     * th.num_modified BEFORE allocating mask/packed buffers and BEFORE
+     * the read loop. A crafted header with num_elements so large that
+     * (num_elements+7)/8 overflows must not cause a heap OOB read.
+     *
+     * We hand-craft a MTSK file with num_elements = 0xFFFFFFFFFFFF0000.
+     * Without the fix, (num_elements+7)/8 overflows to a tiny mask
+     * malloc, the fread of that tiny mask succeeds, then the
+     * for(i=0; i<num_elements) loop reads mod_mask[i/8] massively OOB. */
+    {
+        float W[16];
+        cce_mtk *m = NULL;
+        const char *path = "mtsk_audit_oversize.tskill";
+        FILE *f;
+        int i;
+        uint8_t hdr[45];
+        uint8_t th[20];
+        int64_t shape[1] = {16};
+
+        for (i = 0; i < 16; ++i) W[i] = (float)i;
+        check(cce_mtk_open(&m) == CCE_OK, "audit: mtsk-open");
+        if (m) {
+            uint8_t tiny_mask[1];
+            uint8_t tiny_packed[1];
+            cce_result rc;
+            int untouched;
+            check(cce_mtk_register(m, "tiny.w", W, 16) == CCE_OK,
+                  "audit: mtsk-register");
+            f = fopen(path, "wb");
+            check(f != NULL, "audit: mtsk-file-create");
+            if (f) {
+                memset(hdr, 0, sizeof hdr);
+                memcpy(hdr, "MTSK", 4);
+                {   uint32_t v = 1; memcpy(hdr + 4, &v, 4); }
+                hdr[8] = 1;
+                {   float d = 0.5f; memcpy(hdr + 9, &d, 4); }
+                {   float dr = 0.0f; memcpy(hdr + 13, &dr, 4); }
+                {   uint32_t s = 0; memcpy(hdr + 17, &s, 4); }
+                hdr[21] = 0;
+                hdr[22] = 0;
+                {   uint32_t nt = 1; memcpy(hdr + 25, &nt, 4); }
+                {   uint64_t tm = 4; memcpy(hdr + 29, &tm, 8); }
+                {   uint64_t te = 0xFFFFFFFFFFFFFFF9ULL;
+                    memcpy(hdr + 37, &te, 8); }
+                fwrite(hdr, 1, 45, f);
+                memset(th, 0, sizeof th);
+                {   uint16_t nl = 6; memcpy(th, &nl, 2); }
+                th[2] = 1;
+                {   uint64_t ne = 0xFFFFFFFFFFFFFFF9ULL;
+                    memcpy(th + 4, &ne, 8); }
+                {   uint64_t nm = 4; memcpy(th + 12, &nm, 8); }
+                fwrite(th, 1, 20, f);
+                fwrite("tiny.w", 1, 6, f);
+                fwrite(shape, sizeof(int64_t), 1, f);
+                tiny_mask[0] = 0xFF;
+                tiny_packed[0] = 0xFF;
+                fwrite(tiny_mask, 1, 1, f);
+                fwrite(tiny_packed, 1, 1, f);
+                fclose(f);
+            }
+            rc = cce_mtk_apply_file(m, path, 0.1f);
+            untouched = 1;
+            for (i = 0; i < 16; ++i)
+                if (W[i] != (float)i) untouched = 0;
+            check(rc != CCE_OK,
+                  "audit: mtsk oversize header rejected (no crash)");
+            check(untouched, "audit: mtsk oversize leaves weights intact");
+            cce_mtk_close(m);
+            remove(path);
+        }
+    }
+
+    /* [MED] MTSK version enforcement: a header with an unknown future
+     * version (e.g. 99) must be rejected, not silently accepted. */
+    {
+        float W[8];
+        cce_mtk *m = NULL;
+        const char *path = "mtsk_audit_ver.tskill";
+        FILE *f;
+        int i;
+        uint8_t hdr[45];
+        uint8_t th[20];
+        int64_t shape[1] = {8};
+        for (i = 0; i < 8; ++i) W[i] = (float)i;
+        check(cce_mtk_open(&m) == CCE_OK, "audit: ver-open");
+        if (m) {
+            cce_result rc;
+            cce_mtk_register(m, "v.w", W, 8);
+            f = fopen(path, "wb");
+            check(f != NULL, "audit: ver-file");
+            if (f) {
+                uint8_t mask[1];
+                uint8_t pk[1];
+                memset(hdr, 0, sizeof hdr);
+                memcpy(hdr, "MTSK", 4);
+                {   uint32_t v = 99; memcpy(hdr + 4, &v, 4); }
+                hdr[8] = 1;
+                {   float d = 0.5f; memcpy(hdr + 9, &d, 4); }
+                {   float dr = 0.0f; memcpy(hdr + 13, &dr, 4); }
+                {   uint32_t s = 0; memcpy(hdr + 17, &s, 4); }
+                hdr[21] = 0; hdr[22] = 0;
+                {   uint32_t nt = 1; memcpy(hdr + 25, &nt, 4); }
+                {   uint64_t tm = 1; memcpy(hdr + 29, &tm, 8); }
+                {   uint64_t te = 8; memcpy(hdr + 37, &te, 8); }
+                fwrite(hdr, 1, 45, f);
+                memset(th, 0, sizeof th);
+                {   uint16_t nl = 3; memcpy(th, &nl, 2); }
+                th[2] = 1;
+                {   uint64_t ne = 8; memcpy(th + 4, &ne, 8); }
+                {   uint64_t nm = 1; memcpy(th + 12, &nm, 8); }
+                fwrite(th, 1, 20, f);
+                fwrite("v.w", 1, 3, f);
+                fwrite(shape, sizeof(int64_t), 1, f);
+                mask[0] = 0x01; pk[0] = 0xFF;
+                fwrite(mask, 1, 1, f); fwrite(pk, 1, 1, f);
+                fclose(f);
+            }
+            rc = cce_mtk_apply_file(m, path, 0.1f);
+            check(rc == CCE_ERR_UNSUPPORTED,
+                  "audit: mtsk unknown version rejected");
+            cce_mtk_close(m);
+            remove(path);
+        }
+    }
+
+    /* [MED] cce_mtk_gguf_kv_flush under pager: after a skill swap with
+     * CNET_KV_PAGE-style pager set, the HOT ring must be cleared so the
+     * next forward does not attend to stale pre-skill K/V. We exercise
+     * the kv_flush callback directly with a model struct that has
+     * kv_pager set to a real pager. Contract: after flush, all hot rows
+     * read zero and cur_pos == 0. */
+    {
+        cce_kv_pager_opts opg;
+        cce_kv_pager *pg = NULL;
+        cce_gguf_qwen2 model;
+        char pdir[] = "kv_audit_flush_XXXXXX";
+        if (mkdtemp(pdir)) {
+            cce_kv_pager_opts_default(&opg, 4, 4, 256);
+            opg.page_len = 16;
+            opg.n_hot = 2;
+            opg.archive_dir = pdir;
+            opg.async = 0;
+            opg.quant_cold = 0;
+            opg.rehydrate = 0;
+            check(cce_kv_pager_open(&pg, &opg) == CCE_OK,
+                  "audit: flush pager open");
+            if (pg) {
+                float kf[4] = {1, 2, 3, 4}, vf[4] = {5, 6, 7, 8};
+                int cleared = 1;
+                int h, d;
+                for (t = 0; t < 8; ++t)
+                    cce_kv_pager_write(pg, t, kf, vf);
+                memset(&model, 0, sizeof model);
+                model.kv_pager = pg;
+                model.max_ctx = 32;
+                model.k_slot_floats = 4;
+                model.v_slot_floats = 4;
+                model.cur_pos = 8;
+                cce_mtk_gguf_kv_flush(&model);
+                check(model.cur_pos == 0,
+                      "audit: kv_flush resets cur_pos under pager");
+                for (h = 0; h < 32; ++h) {
+                    float *kr = cce_kv_pager_k_row(pg, h);
+                    float *vr = cce_kv_pager_v_row(pg, h);
+                    if (kr) for (d = 0; d < 4; ++d)
+                        if (kr[d] != 0.f) cleared = 0;
+                    if (vr) for (d = 0; d < 4; ++d)
+                        if (vr[d] != 0.f) cleared = 0;
+                }
+                check(cleared, "audit: kv_flush clears HOT ring under pager");
+                cce_kv_pager_close(pg);
+            }
+            {
+                char path[400];
+                snprintf(path, sizeof path, "%s/ledger.tsv", pdir);
+                unlink(path);
+                for (t = 0; t < 8; ++t) {
+                    snprintf(path, sizeof path, "%s/page_%06d.kvc", pdir, t);
+                    unlink(path);
+                }
+                rmdir(pdir);
+            }
+        }
+    }
+
     printf("MTK_PASS checks=%d failures=%d\n", checks, failures);
     return failures ? 1 : 0;
 }

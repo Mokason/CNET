@@ -106,7 +106,7 @@ static float* maybe_transpose_for_mla(const float* w_in_out, int in_d, int out_d
     for (o = 0; o < out_d; ++o)
         for (i = 0; i < in_d; ++i)
             t[(size_t)o * in_d + i] = w_in_out[(size_t)i * out_d + o];
-    *owned = t;
+    if (owned) *owned = t;
     return t;
 }
 
@@ -115,7 +115,15 @@ static cce_result build_layer_mla(cce_ds_host* h, int L) {
     cce_mla_weights w;
     char name[64];
     int in_d, out_d;
-    float *t_dkv = NULL, *t_uk = NULL, *t_uq = NULL, *t_o = NULL;
+    /* Each weight buffer is its OWN allocation — NO fused-buffer aliasing
+     * (the old code set w_uk=full, w_uv=full+offset into one malloc and
+     * then stashed the single owning pointer in w_kr via a strict-
+     * aliasing violation). The owning pointers live in owned_bufs[] and
+     * are freed by free_layer_mla_owned; cce_mla_free does NOT touch them. */
+    float *t_dkv = NULL, *t_uk = NULL, *t_uv = NULL;
+    float *t_uq = NULL, *t_qr = NULL, *t_o = NULL;
+    float** owned = NULL;
+    int n_owned = 0;
     const float* p;
     cce_result rc;
 
@@ -127,80 +135,113 @@ static cce_result build_layer_mla(cce_ds_host* h, int L) {
     snprintf(name, sizeof name, "L%02d.mla.kv_dn", L);
     p = leaf_w(h->forest, name, &in_d, &out_d);
     if (!p) return CCE_ERR_NOT_FOUND;
-    w.w_dkv = maybe_transpose_for_mla(p, in_d, out_d, &t_dkv);
+    t_dkv = maybe_transpose_for_mla(p, in_d, out_d, &t_dkv);
+    w.w_dkv = t_dkv;
+    if (!t_dkv) return CCE_ERR_OOM;
 
     snprintf(name, sizeof name, "L%02d.mla.kv_up", L);
     p = leaf_w(h->forest, name, &in_d, &out_d);
     if (!p) { free(t_dkv); return CCE_ERR_NOT_FOUND; }
-    /* kv_up: [kv_rank][n_h*(nope+v)] in cce → split UK and UV
-     * layout out = n_h*nope + n_h*v  or fused; we treat first half UK, second UV
-     * by contract dim_out = n_h*(nope+v) */
+    /* kv_up: [kv_rank][n_h*(nope+v)] in cce → split UK and UV into SEPARATE
+     * buffers. The fused-leaf layout is out = n_h*nope + n_h*v; we copy the
+     * UK rows and UV rows into their own mallocs and drop the fused block.
+     * If out_d does NOT match the fused contract, reject (the GGUF dim
+     * rejection at the loader layer already prevents wrong-shape leaves
+     * from reaching here; a mismatch now is a map/bind bug, not a fallback
+     * case). */
     {
         int n_h = cfg.n_heads, nope = cfg.qk_nope_head_dim, vd = cfg.v_head_dim;
         int uk_out = n_h * nope, uv_out = n_h * vd;
-        float* full = maybe_transpose_for_mla(p, in_d, out_d, &t_uk);
+        float* full = maybe_transpose_for_mla(p, in_d, out_d, NULL);
         if (!full) { free(t_dkv); return CCE_ERR_OOM; }
-        /* If dims match fuse split: full is [out][in] with out=uk_out+uv_out */
-        if (out_d == uk_out + uv_out) {
-            w.w_uk = full;
-            w.w_uv = full + (size_t)uk_out * in_d;
-            t_uk = full;
-        } else {
-            w.w_uk = full;
-            w.w_uv = full;
-            t_uk = full;
+        if (in_d != cfg.kv_lora_rank || out_d != uk_out + uv_out) {
+            /* No silent orientation pick — reject the incompatible leaf. */
+            free(full); free(t_dkv);
+            return CCE_ERR_NOT_FOUND;
         }
+        t_uk = (float*)malloc((size_t)uk_out * (size_t)in_d * sizeof(float));
+        t_uv = (float*)malloc((size_t)uv_out * (size_t)in_d * sizeof(float));
+        if (!t_uk || !t_uv) { free(full); free(t_uk); free(t_uv); free(t_dkv);
+                              return CCE_ERR_OOM; }
+        memcpy(t_uk, full, (size_t)uk_out * (size_t)in_d * sizeof(float));
+        memcpy(t_uv, full + (size_t)uk_out * (size_t)in_d,
+               (size_t)uv_out * (size_t)in_d * sizeof(float));
+        free(full); /* drop the fused buffer — UK and UV are now independent */
+        w.w_uk = t_uk;
+        w.w_uv = t_uv;
     }
 
     snprintf(name, sizeof name, "L%02d.mla.q_up", L);
     p = leaf_w(h->forest, name, &in_d, &out_d);
-    if (!p) { free(t_dkv); free(t_uk); return CCE_ERR_NOT_FOUND; }
+    if (!p) { free(t_dkv); free(t_uk); free(t_uv); return CCE_ERR_NOT_FOUND; }
     {
         int n_h = cfg.n_heads, nope = cfg.qk_nope_head_dim, rope = cfg.qk_rope_head_dim;
-        float* full = maybe_transpose_for_mla(p, in_d, out_d, &t_uq);
-        if (!full) { free(t_dkv); free(t_uk); return CCE_ERR_OOM; }
-        if (out_d == n_h * (nope + rope)) {
-            w.w_uq = full;
-            w.w_qr = full + (size_t)(n_h * nope) * in_d;
-            t_uq = full;
-        } else {
-            w.w_uq = full;
-            w.w_qr = full;
-            t_uq = full;
+        int q_in = cfg.q_lora_rank > 0 ? cfg.q_lora_rank : cfg.d_model;
+        int uq_out = n_h * nope, qr_out = n_h * rope;
+        float* full = maybe_transpose_for_mla(p, in_d, out_d, NULL);
+        if (!full) { free(t_dkv); free(t_uk); free(t_uv); return CCE_ERR_OOM; }
+        if (in_d != q_in || out_d != uq_out + qr_out) {
+            free(full); free(t_dkv); free(t_uk); free(t_uv);
+            return CCE_ERR_NOT_FOUND;
         }
+        t_uq = (float*)malloc((size_t)uq_out * (size_t)q_in * sizeof(float));
+        t_qr = (float*)malloc((size_t)qr_out * (size_t)q_in * sizeof(float));
+        if (!t_uq || !t_qr) { free(full); free(t_uq); free(t_qr);
+                              free(t_dkv); free(t_uk); free(t_uv);
+                              return CCE_ERR_OOM; }
+        memcpy(t_uq, full, (size_t)uq_out * (size_t)q_in * sizeof(float));
+        memcpy(t_qr, full + (size_t)uq_out * (size_t)q_in,
+               (size_t)qr_out * (size_t)q_in * sizeof(float));
+        free(full);
+        w.w_uq = t_uq;
+        w.w_qr = t_qr;
+
     }
 
     snprintf(name, sizeof name, "L%02d.mla.o", L);
     p = leaf_w(h->forest, name, &in_d, &out_d);
-    if (!p) { free(t_dkv); free(t_uk); free(t_uq); return CCE_ERR_NOT_FOUND; }
-    w.w_o = maybe_transpose_for_mla(p, in_d, out_d, &t_o);
+    if (!p) { free(t_dkv); free(t_uk); free(t_uv); free(t_uq); free(t_qr);
+              return CCE_ERR_NOT_FOUND; }
+    t_o = maybe_transpose_for_mla(p, in_d, out_d, &t_o);
+    w.w_o = t_o;
+    if (!t_o) { free(t_dkv); free(t_uk); free(t_uv); free(t_uq); free(t_qr);
+                return CCE_ERR_OOM; }
 
     rc = cce_mla_init(&h->mla[L], &cfg, &w, h->max_ctx);
     if (rc != CCE_OK) {
-        free(t_dkv); free(t_uk); free(t_uq); free(t_o);
+        free(t_dkv); free(t_uk); free(t_uv); free(t_uq); free(t_qr); free(t_o);
         return rc;
     }
-    /* Keep transposed weight buffers alive until host_close (bag in w_kr). */
-    h->mla[L].w.owns = 0;
-    {
-        float** bag = (float**)malloc(4 * sizeof(float*));
-        if (bag) {
-            bag[0] = t_dkv; bag[1] = t_uk; bag[2] = t_uq; bag[3] = t_o;
-            h->mla[L].w.w_kr = (const float*)(void*)bag;
-        } else {
-            free(t_dkv); free(t_uk); free(t_uq); free(t_o);
-        }
+    /* Keep the per-leaf transposed buffers alive until host_close via the
+     * mla struct's owned_bufs bag (a proper float** field, NOT a strict-
+     * aliasing cast through w_kr). cce_mla_init copied the weight VIEWS
+     * into m->w; the buffers here are the backing storage. */
+    owned = (float**)malloc(6 * sizeof(float*));
+    if (!owned) {
+        free(t_dkv); free(t_uk); free(t_uv); free(t_uq); free(t_qr); free(t_o);
+        /* mla[L] is initialized but has dangling weight views — reset it. */
+        cce_mla_free(&h->mla[L]);
+        memset(&h->mla[L], 0, sizeof(h->mla[L]));
+        return CCE_ERR_OOM;
     }
+    owned[0] = t_dkv; owned[1] = t_uk; owned[2] = t_uv;
+    owned[3] = t_uq;  owned[4] = t_qr; owned[5] = t_o;
+    n_owned = 6;
+    h->mla[L].owned_bufs = owned;
+    h->mla[L].n_owned = n_owned;
+    /* w_kr stays NULL: k_rope is packed in w_dkv (MLA_KV_DOWN contract). */
     return CCE_OK;
 }
 
 static void free_layer_mla_owned(cce_mla* m) {
     if (!m) return;
-    if (m->w.w_kr) {
-        float** bag = (float**)(void*)m->w.w_kr;
-        free(bag[0]); free(bag[1]); free(bag[2]); free(bag[3]);
-        free(bag);
-        m->w.w_kr = NULL;
+    if (m->owned_bufs) {
+        int i;
+        for (i = 0; i < m->n_owned; ++i)
+            free(m->owned_bufs[i]);
+        free(m->owned_bufs);
+        m->owned_bufs = NULL;
+        m->n_owned = 0;
     }
     cce_mla_free(m);
 }
@@ -478,7 +519,7 @@ static cce_result mla_token(cce_ds_host* h, int L, const float* x, float* y) {
             int r, d;
             if (m->cache.quant_kv && m->cache.c_kv_q8 && m->cache.c_kv_scale) {
                 float wr[512];
-                if (kr > 512) return CCE_ERR_UNSUPPORTED;
+                if (kr > 512) { free(idx); free(wt); return CCE_ERR_UNSUPPORTED; }
                 for (r = 0; r < kr; ++r) {
                     float acc = 0.f;
                     for (d = 0; d < nope; ++d)
@@ -543,6 +584,7 @@ static cce_result mla_token(cce_ds_host* h, int L, const float* x, float* y) {
                         float ctmp[512];
                         if (kr > 512) {
                             free(idx_scores);
+                            free(idx); free(wt);
                             return CCE_ERR_UNSUPPORTED;
                         }
                         cce_mla_kv_dequant(m->cache.c_kv_q8 + (size_t)ti * kr,
@@ -654,6 +696,12 @@ cce_result cce_ds_host_open(cce_ds_host** out, const cce_ds_hparams* hp,
     h->dsa_speed = opts->dsa_speed;
     h->cold_autoload = opts->cold_autoload;
     h->mla_quant_kv = opts->mla_quant_kv;
+    /* synthetic = 1 iff the host is hermetic-random (no real .cnetpack /
+     * GGUF model bound). bopts.synthetic is the authoritative signal: it
+     * starts true for a pack-less/host opts, and is cleared once a real
+     * pack opens successfully. MTP random draft-weight arming is gated on
+     * this flag (refuse on real hosts). */
+    h->synthetic = bopts.synthetic;
     h->moe_sleep_eps = opts->moe_sleep_eps > 0.f ? opts->moe_sleep_eps
                                                    : CCE_SLEEP_DEFAULT_EPS;
     h->dual_pipe = opts->dual_pipe;
@@ -794,33 +842,58 @@ cce_result cce_ds_host_ensure_expert(cce_ds_host* h, int layer, int expert) {
         }
     }
 
-    /* Add cascades if missing */
-    #define ADD_IF_MISS(nm, W, di, doo) do { \
-        if (!cce_forest_get_resident(h->forest, nm) && W) { \
-            cce_cascade* cas = NULL; \
-            if (cce_cascade_create(&cas, 2) == CCE_OK && \
-                cce_cascade_add_linear_head(cas, di, doo, 0.02f) == CCE_OK) { \
-                cce_block* blk = &cas->blocks[0]; \
-                size_t ne = (size_t)di * doo; \
-                if (blk->weights.data && W) \
-                    memcpy(blk->weights.data, W, ne * sizeof(float)); \
-                cce_block_freeze(blk); \
-                if (cce_forest_add_cascade_branch(h->forest, cas, nm, NULL) == CCE_OK) \
-                    free(cas); \
-                else cce_cascade_destroy(cas); \
+    /* Add cascades if missing.
+     *
+     * Audit 0a01b50 (MED telemetry lie): the old ADD_IF_MISS macro swallowed
+     * every internal rc and the function always returned CCE_OK + bumped
+     * experts_loaded — even when cce_forest_add_cascade_branch failed
+     * (forest at capacity). Now we track failures and, if ANY of the three
+     * cascades failed to become resident, we propagate a non-OK rc and do
+     * NOT increment experts_loaded (so cold-autoload telemetry stays honest
+     * and DualPipe load-then-fire ordering doesn't fire a missing expert). */
+    {
+        int add_failed = 0;
+        #define ADD_IF_MISS(nm, W, di, doo) do { \
+            if (!cce_forest_get_resident(h->forest, nm) && (W)) { \
+                cce_cascade* cas = NULL; \
+                cce_result arc; \
+                if (cce_cascade_create(&cas, 2) != CCE_OK) { add_failed = 1; break; } \
+                if (cce_cascade_add_linear_head(cas, di, doo, 0.02f) != CCE_OK) { \
+                    cce_cascade_destroy(cas); add_failed = 1; break; \
+                } \
+                { \
+                    cce_block* blk = &cas->blocks[0]; \
+                    size_t ne = (size_t)(di) * (size_t)(doo); \
+                    if (blk->weights.data && (W)) \
+                        memcpy(blk->weights.data, (W), ne * sizeof(float)); \
+                    cce_block_freeze(blk); \
+                } \
+                arc = cce_forest_add_cascade_branch(h->forest, cas, nm, NULL); \
+                if (arc == CCE_OK) free(cas); \
+                else { cce_cascade_destroy(cas); add_failed = 1; } \
             } \
-        } \
-    } while (0)
+        } while (0)
 
-    ADD_IF_MISS(g, wg, Lg->dim_in, Lg->dim_out);
-    ADD_IF_MISS(u, wu, Lu->dim_in, Lu->dim_out);
-    ADD_IF_MISS(d, wd, Ld->dim_in, Ld->dim_out);
-    #undef ADD_IF_MISS
+        ADD_IF_MISS(g, wg, Lg->dim_in, Lg->dim_out);
+        ADD_IF_MISS(u, wu, Lu->dim_in, Lu->dim_out);
+        ADD_IF_MISS(d, wd, Ld->dim_in, Ld->dim_out);
+        #undef ADD_IF_MISS
 
-    free(wg); free(wu); free(wd);
-    h->experts_loaded++;
-    (void)rc;
-    return CCE_OK;
+        free(wg); free(wu); free(wd);
+
+        /* Final authority: did the three expert cascades actually become
+         * resident? If not, this is a hard failure — never lie about it. */
+        if (add_failed ||
+            !cce_forest_get_resident(h->forest, g) ||
+            !cce_forest_get_resident(h->forest, u) ||
+            !cce_forest_get_resident(h->forest, d)) {
+            (void)rc;
+            return CCE_ERR_IO;
+        }
+        h->experts_loaded++;
+        (void)rc;
+        return CCE_OK;
+    }
 }
 
 /* Optional fixed per-forward cost (µs-scale busy work) to model GPU/kernel
@@ -1174,6 +1247,10 @@ cce_result cce_ds_host_enable_mtp(cce_ds_host* h, int k, int draft_layers) {
     size_t n;
     const char* par;
     if (!h) return CCE_ERR_INVALID_ARG;
+    /* This implementation synthesizes every MTP matrix below. Never attach
+     * those fabricated draft weights to a pack/GGUF-backed host. A real host
+     * needs model-supplied MTP tensors and a separate binding path. */
+    if (!h->synthetic) return CCE_ERR_UNSUPPORTED;
     if (k < 1) k = 1;
     if (k > 8) k = 8;
     if (draft_layers < 0) draft_layers = 0;

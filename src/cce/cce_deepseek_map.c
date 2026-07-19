@@ -703,9 +703,17 @@ cce_result cce_ds_pack_write(const char* path, const cce_ds_map* map,
     if (!path || !map) return CCE_ERR_INVALID_ARG;
     f = fopen(path, "wb");
     if (!f) return CCE_ERR_IO;
-    fwrite(&magic, 4, 1, f);
-    fwrite(&ver, 4, 1, f);
-    fwrite(&n, 4, 1, f); /* patch later */
+    /* Audit b5c268a (LOW-MED): check every fwrite return so a mid-stream
+     * disk-full / write-failure surfaces as CCE_ERR_IO rather than a
+     * silently truncated .cnetpack that later loads with wrong numel. */
+    #define PW_WRITE(ptr, sz, cnt) do { \
+        if (fwrite((ptr), (sz), (cnt), f) != (cnt)) { \
+            fclose(f); remove(path); return CCE_ERR_IO; \
+        } \
+    } while (0)
+    PW_WRITE(&magic, 4, 1);
+    PW_WRITE(&ver, 4, 1);
+    PW_WRITE(&n, 4, 1); /* patch later */
 
     for (i = 0; i < map->n_leaves; ++i) {
         const cce_ds_leaf* L = &map->leaves[i];
@@ -719,24 +727,25 @@ cce_result cce_ds_pack_write(const char* path, const cce_ds_map* map,
             if (rc != CCE_OK || !w) continue;
         } else {
             w = (float*)malloc((size_t)in_d * out_d * sizeof(float));
-            if (!w) { fclose(f); return CCE_ERR_OOM; }
+            if (!w) { fclose(f); remove(path); return CCE_ERR_OOM; }
             ds_fill_synthetic(w, in_d, out_d, 0xC0FFEE01u ^ (uint32_t)i);
         }
         nbytes = (uint64_t)in_d * (uint64_t)out_d * sizeof(float);
-        fwrite(L->cnet, 1, 64, f);
+        PW_WRITE(L->cnet, 1, 64);
         {
             int32_t di = in_d, dout = out_d;
-            fwrite(&di, 4, 1, f);
-            fwrite(&dout, 4, 1, f);
+            PW_WRITE(&di, 4, 1);
+            PW_WRITE(&dout, 4, 1);
         }
-        fwrite(&nbytes, 8, 1, f);
-        fwrite(w, 1, (size_t)nbytes, f);
+        PW_WRITE(&nbytes, 8, 1);
+        PW_WRITE(w, 1, (size_t)nbytes);
         free(w);
         n++;
     }
-    fseek(f, 8, SEEK_SET);
-    fwrite(&n, 4, 1, f);
-    fclose(f);
+    if (fseek(f, 8, SEEK_SET) != 0) { fclose(f); remove(path); return CCE_ERR_IO; }
+    PW_WRITE(&n, 4, 1);
+    #undef PW_WRITE
+    if (fclose(f) != 0) { remove(path); return CCE_ERR_IO; }
     return CCE_OK;
 }
 
@@ -804,7 +813,8 @@ cce_result cce_ds_gguf_load_weight(void* gguf_ctx, const cce_ds_leaf* leaf,
     cce_gguf* g = (cce_gguf*)gguf_ctx;
     cce_tensor t = {0};
     cce_result rc;
-    int in_d, out_d;
+    int in_d = 0, out_d = 0;
+    int have_contract;
     float* w;
     size_t ne;
     if (!g || !leaf || !out_w) return CCE_ERR_INVALID_ARG;
@@ -815,23 +825,44 @@ cce_result cce_ds_gguf_load_weight(void* gguf_ctx, const cce_ds_leaf* leaf,
         cce_tensor_free(&t);
         return CCE_ERR_NOT_FOUND;
     }
-    /* GGUF/HF often [out,in]; cce_block wants [in,out]. Transpose on copy. */
-    out_d = t.shape[0];
-    in_d = t.shape[1];
-    if (in_d < 1 || out_d < 1) {
-        /* try swapped meta */
-        in_d = t.shape[0];
-        out_d = t.shape[1];
-    }
-    /* Prefer contract dims when they match either orientation */
-    if (leaf->dim_in > 0 && leaf->dim_out > 0) {
+    /* GGUF/HF often [out,in]; cce_block wants [in,out]. Transpose on copy.
+     *
+     * Fail-closed dim selection (audit b5c268a): the old code fell through to
+     * out_d=shape[0], in_d=shape[1] when neither orientation matched the
+     * leaf contract, silently returning a wrong-shaped weight. Now we
+     * require either the contract dims OR an explicit orientation match;
+     * if neither holds we reject with CCE_ERR_UNSUPPORTED rather than
+     * fabricate dims. */
+    have_contract = (leaf->dim_in > 0 && leaf->dim_out > 0);
+    if (have_contract) {
         if (t.shape[0] == leaf->dim_out && t.shape[1] == leaf->dim_in) {
-            out_d = leaf->dim_out;
-            in_d = leaf->dim_in;
+            out_d = leaf->dim_out; in_d = leaf->dim_in;        /* [out,in] */
         } else if (t.shape[0] == leaf->dim_in && t.shape[1] == leaf->dim_out) {
-            in_d = leaf->dim_in;
-            out_d = leaf->dim_out;
+            in_d = leaf->dim_in; out_d = leaf->dim_out;        /* [in,out] */
+        } else {
+            /* Neither orientation matches the contract → REJECT.
+             * Returning wrong-shaped weights would later corrupt the forest
+             * cascade dims and silently break MLA/MoE forward. */
+            cce_tensor_free(&t);
+            return CCE_ERR_UNSUPPORTED;
         }
+    } else {
+        /* No contract dims to validate against — keep the legacy best-effort
+         * behavior (out=shape[0], in=shape[1]) so untyped leaves still load. */
+        out_d = t.shape[0];
+        in_d = t.shape[1];
+        if (in_d < 1 || out_d < 1) {
+            in_d = t.shape[0]; out_d = t.shape[1];
+        }
+        if (in_d < 1 || out_d < 1) {
+            cce_tensor_free(&t);
+            return CCE_ERR_UNSUPPORTED;
+        }
+    }
+    if (t.numel != (size_t)in_d * (size_t)out_d) {
+        /* shape/numel mismatch — corrupted or truncated tensor. */
+        cce_tensor_free(&t);
+        return CCE_ERR_UNSUPPORTED;
     }
     ne = (size_t)in_d * (size_t)out_d;
     w = (float*)malloc(ne * sizeof(float));

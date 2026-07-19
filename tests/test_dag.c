@@ -907,16 +907,17 @@ static void attention_prune_with_fallback_uses_topk_first(void) {
     src.values = (double[4]){0};
 
     int rc = dag_plan(&reg, &src, 1, P(PORT_BINARY_MSB, 4, 1), &p);
-    /* The telemetry should reflect that we attempted prune */
-    /* For this simple case it may succeed on first or fallback; we check the field is settable */
-    CHECK(1, "AttentionPruneWithFallback_UsesTopKFirst (prune path taken when k small)");
+    /* For this simple case the first pass or fallback may succeed; the result
+       must still be a valid plan rather than a performative path check. */
+    CHECK(rc == 0 && p.root != NULL,
+          "AttentionPruneWithFallback_UsesTopKFirst returns a valid plan");
     dag_free(&p);
 }
 
 static void attention_prune_with_fallback_recovers_when_topk_misses(void) {
     /* Load-bearing test: construct a situation where top-K (k=1) picks a "lure"
        that cannot lead to a valid plan for the goal (high attention but input obligations fail),
-       then assert fallback recovers the correct plan. 
+       then assert fallback recovers the correct plan.
        We reuse the spirit of the existing beam trap test by using small k and a registry
        that has a high-ranked but ultimately dead-end for the full obligation. */
     PrimitiveRegistry reg = {0};
@@ -1052,7 +1053,7 @@ static void attention_prune_with_fallback_forced_miss_regression(void) {
           p_prune.first_pass_found_plan == 0,
           "v0.4.1 forced-miss telemetry path exercised");
 
-    CHECK(p_prune.root != NULL, "plan produced");
+    CHECK(rc_prune == 0 && p_prune.root != NULL, "fallback plan produced");
 
     dag_free(&p_off);
     dag_free(&p_prune);

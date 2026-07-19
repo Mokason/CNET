@@ -2,8 +2,11 @@
 
 #include <ctype.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/wait.h>
+#include <unistd.h>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -166,12 +169,18 @@ int mcp_url_encode_component(const char *in, char *out, size_t cap) {
     return 0;
 }
 
-#ifdef _WIN32
+/* Strict transport allowlist: only the two known MCP knowledge hosts.
+ * The header contract promises a bounded, command-free fetch; we never
+ * accept arbitrary https hosts and we never run a shell. Both Windows
+ * and Linux paths use this same allowlist. */
 static int url_host_allowed(const char *url) {
-    return (strncmp(url, "https://api.duckduckgo.com/", 27) == 0 ||
-            strncmp(url, "https://en.wikipedia.org/", 25) == 0);
+    if (!url) return 0;
+    if (strncmp(url, "https://api.duckduckgo.com/", 27) == 0)
+        return 1;
+    if (strncmp(url, "https://en.wikipedia.org/", 25) == 0)
+        return 1;
+    return 0;
 }
-#endif
 
 int mcp_http_get(const char *url, char *out, size_t out_cap) {
     if (!url || !out || out_cap == 0) return -1;
@@ -217,40 +226,74 @@ int mcp_http_get(const char *url, char *out, size_t out_cap) {
     InternetCloseHandle(hSession);
     return (got > 0) ? 0 : -1;
 #else
-    /* Linux HTTP fallback using curl + popen */
-    char cmd[2048];
-    FILE *pipe;
+    /* Linux: argv-based curl child. No shell, no popen, no command string.
+     * The strict allowlist above is the only way a URL reaches curl, so an
+     * attacker-controlled URL can never smuggle argv flags even if it
+     * reached this function. execve uses a fixed argv with the URL as the
+     * final positional argument. */
+    int pipefd[2];
+    pid_t pid;
     size_t got = 0;
-    char buf[4096];
+    ssize_t n;
 
-    /* Basic safety: only allow https to known hosts */
-    if (strncmp(url, "https://api.duckduckgo.com/", 27) != 0 &&
-        strncmp(url, "https://en.wikipedia.org/", 25) != 0 &&
-        strncmp(url, "https://", 8) != 0) {
-        snprintf(out, out_cap, "HTTP fetch blocked for unsafe URL.");
+    if (!url_host_allowed(url)) {
+        snprintf(out, out_cap, "HTTP fetch blocked: host not on MCP allowlist.");
         return -1;
     }
-
-    snprintf(cmd, sizeof(cmd), "curl -s -L --max-time 10 --connect-timeout 5 \"%s\"", url);
-
-    pipe = popen(cmd, "r");
-    if (!pipe) {
-        snprintf(out, out_cap, "HTTP fetch failed (no curl/popen).");
+    if (strlen(url) > 1024) {
+        snprintf(out, out_cap, "HTTP fetch blocked: URL too long.");
         return -1;
     }
-
-    while (fgets(buf, sizeof(buf), pipe) != NULL) {
-        size_t len = strlen(buf);
-        if (got + len >= out_cap - 1) {
-            memcpy(out + got, buf, (out_cap - 1) - got);
-            got = out_cap - 1;
-            break;
+    if (pipe(pipefd) != 0) {
+        snprintf(out, out_cap, "HTTP fetch failed (pipe).");
+        return -1;
+    }
+    pid = fork();
+    if (pid < 0) {
+        close(pipefd[0]); close(pipefd[1]);
+        snprintf(out, out_cap, "HTTP fetch failed (fork).");
+        return -1;
+    }
+    if (pid == 0) {
+        /* child: exec curl with a fixed argv — no shell interpretation. */
+        extern char **environ;
+        const char *argv[] = {
+            "curl", "--silent", "--show-error", "--fail",
+            "--proto", "=https",
+            "--max-time", "10",
+            "--connect-timeout", "5",
+            "--max-filesize", "1048576",
+            url, NULL
+        };
+        int devnull_fd;
+        close(pipefd[0]);
+        dup2(pipefd[1], STDOUT_FILENO);
+        if (pipefd[1] != STDOUT_FILENO) close(pipefd[1]);
+        devnull_fd = open("/dev/null", O_WRONLY);
+        if (devnull_fd >= 0) {
+            dup2(devnull_fd, STDERR_FILENO);
+            if (devnull_fd != STDERR_FILENO) close(devnull_fd);
         }
-        memcpy(out + got, buf, len);
-        got += len;
+        execve("/usr/bin/curl", (char *const *)argv, environ);
+        /* fall back to PATH lookup if /usr/bin/curl missing */
+        execvp("curl", (char *const *)argv);
+        _exit(127);
+    }
+    close(pipefd[1]);
+    while (got + 1 < out_cap &&
+           (n = read(pipefd[0], out + got, out_cap - 1 - got)) > 0) {
+        got += (size_t)n;
     }
     out[got] = '\0';
-    pclose(pipe);
+    close(pipefd[0]);
+    {
+        int status = 0;
+        pid_t w;
+        do { w = waitpid(pid, &status, 0); } while (w < 0 && errno == EINTR);
+        if (w < 0 || (!WIFEXITED(status) || WEXITSTATUS(status) != 0)) {
+            return -1;
+        }
+    }
     return (got > 0) ? 0 : -1;
 #endif
 }
@@ -281,8 +324,8 @@ int mcp_extract_json_field(const char *json, const char *key, char *out, size_t 
                 out[j++] = ' ';
             } else if (esc == 't') {
                 out[j++] = ' ';
-            } else if (esc == '\"') {
-                out[j++] = '\"';
+            } else if (esc == '"') {
+                out[j++] = '"';
             } else if (esc == '\\') {
                 out[j++] = '\\';
             } else if (esc == '/' ) {
@@ -345,5 +388,3 @@ int mcp_atomic_write_text(const char *path, const char *content) {
     }
     return 0;
 }
-
-

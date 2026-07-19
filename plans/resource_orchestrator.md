@@ -71,7 +71,7 @@ make resource_governor   # RESOURCE_GOVERNOR_PASS
 
 ## What this is not
 
-- Not a replacement for OS cgroups / nvidia-smi power caps  
+- Not a replacement for OS cgroups or vendor power/thermal controls
 - Not mid-GEMM throttling (saves work by **skip + duty cycle**)  
 - Hosts must call `begin/between/end` — pure loaders that ignore the
   governor still need a one-line boot before open  

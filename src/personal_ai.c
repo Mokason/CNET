@@ -366,7 +366,8 @@ int personal_ai_tick(PersonalAi *ai, GapLaneTickReport *tick_rep) {
         const char *cur = getenv("CNET_CURIOSITY");
         if (cur && cur[0] == '1') {
             CnetCuriosityConfig cc;
-            CnetCuriosityReport cr;
+            CnetCuriosityReport cr = {0};
+            int state_path_ok = 1;
             for (gi = 0; gi < ai->lane.ledger.count; gi++)
                 if (ai->lane.ledger.gaps[gi].status == GAP_OPEN) open_gaps++;
             cnet_curiosity_config_from_env(&cc);
@@ -375,11 +376,22 @@ int personal_ai_tick(PersonalAi *ai, GapLaneTickReport *tick_rep) {
                          ai->lane.inbox_path);
             {
                 const char *st = getenv("CNET_CURIOSITY_STATE");
-                if ((!st || !st[0]) && ai->lane.base_path[0])
-                    snprintf(cc.state_path, sizeof cc.state_path, "%s.curiosity",
-                             ai->lane.base_path);
+                if ((!st || !st[0]) && ai->lane.base_path[0]) {
+                    static const char suffix[] = ".curiosity";
+                    size_t base_len = strlen(ai->lane.base_path);
+                    if (base_len + sizeof suffix <= sizeof cc.state_path) {
+                        memcpy(cc.state_path, ai->lane.base_path, base_len);
+                        memcpy(cc.state_path + base_len, suffix, sizeof suffix);
+                    } else {
+                        state_path_ok = 0;
+                        fprintf(stderr,
+                                "personal_ai: curiosity state path too long — "
+                                "skipping tick\n");
+                    }
+                }
             }
-            (void)cnet_curiosity_tick(&cc, &ai->lane.reg, open_gaps, &cr);
+            if (state_path_ok)
+                (void)cnet_curiosity_tick(&cc, &ai->lane.reg, open_gaps, &cr);
             if (cr.proposed > 0)
                 fprintf(stderr,
                         "personal_ai: curiosity proposed=%zu covered_skip=%zu\n",

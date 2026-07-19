@@ -10,6 +10,10 @@
     <AssemblyName>CNET.Cce</AssemblyName>
     <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <!-- XML documentation is published incrementally; missing-doc warnings are
+         excluded so every remaining compiler/analyzer warning is release-fatal. -->
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <LangVersion>latest</LangVersion>
   </PropertyGroup>
 

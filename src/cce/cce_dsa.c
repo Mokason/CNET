@@ -231,11 +231,17 @@ void cce_mla_kv_dequant(const int8_t* q8, float scale, int dim, float* dst) {
 
 float cce_mla_kv_dot_q8(const float* q, const int8_t* k_q8, float k_scale,
                         int dim) {
-    double acc = 0.0;
+    /* Audit 6b9b5e1 (MED parity): use a float accumulator to match the
+     * production MLA f32 attention path exactly. The old double accumulator
+     * caused quant_kv=on vs quant_kv=off to produce divergent scores on
+     * larger contexts (the f32 attention loop sums wr*ckv[r] in float).
+     * Returning a float cast at the end is insufficient — intermediate
+     * rounding must match the f32 path too. */
+    float acc = 0.0f;
     int i;
     if (!q || !k_q8 || dim <= 0) return 0.0f;
-    for (i = 0; i < dim; ++i) acc += (double)q[i] * (double)k_q8[i];
-    return (float)(acc * (double)k_scale);
+    for (i = 0; i < dim; ++i) acc += q[i] * ((float)k_q8[i] * k_scale);
+    return acc;
 }
 
 /* ---- select ---- */

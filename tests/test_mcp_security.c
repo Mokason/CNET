@@ -59,6 +59,37 @@ static void test_mcp_path_policy(void) {
     CHECK(mcp_resolve_write_path("build/../out.txt", out, sizeof(out)) != 0, "write path blocks traversal");
 }
 
+static void test_mcp_transport_policy(void) {
+    char out[256];
+    char long_url[1200];
+    FILE *source;
+    char source_text[32768];
+    size_t got = 0;
+
+    CHECK(mcp_http_get("http://api.duckduckgo.com/", out, sizeof out) != 0,
+          "transport blocks cleartext HTTP");
+    CHECK(mcp_http_get("https://example.com/", out, sizeof out) != 0,
+          "transport blocks arbitrary HTTPS host");
+    CHECK(mcp_http_get("https://api.duckduckgo.com.evil.invalid/", out,
+                       sizeof out) != 0,
+          "transport blocks lookalike allowlist host");
+    memset(long_url, 'a', sizeof long_url);
+    memcpy(long_url, "https://api.duckduckgo.com/", 27);
+    long_url[sizeof long_url - 1] = 0;
+    CHECK(mcp_http_get(long_url, out, sizeof out) != 0,
+          "transport blocks overlong URL before execution");
+
+    source = fopen("src/contract/mcp_utils.c", "rb");
+    if (source) {
+        got = fread(source_text, 1, sizeof source_text - 1, source);
+        fclose(source);
+        source_text[got] = 0;
+    }
+    CHECK(source != NULL && strstr(source_text, "popen(") == NULL &&
+              strstr(source_text, "system(") == NULL,
+          "Linux transport contains no shell execution path");
+}
+
 static void test_mcp_memory_roundtrip(void) {
     const char *backup_path = "cnet_mcp_facts.bin._test_backup";
     const char *tmp_path = "cnet_mcp_facts.bin.tmp";
@@ -107,6 +138,7 @@ static void test_mcp_memory_roundtrip(void) {
 int run_test_mcp_security(void) {
     printf("\\n-- MCP security and persistence checks --\\n");
     test_mcp_path_policy();
+    test_mcp_transport_policy();
     test_mcp_memory_roundtrip();
     if (failures == 0) {
         printf("MCP_SECURITY PASS\\n");

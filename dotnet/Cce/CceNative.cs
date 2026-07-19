@@ -7,6 +7,8 @@
 //   make cnet_dll
 // Then ensure cnet.dll (or cnet.so) is next to your app or in PATH / LD_LIBRARY_PATH.
 
+#nullable enable
+
 using System;
 using System.Linq;
 using System.Text;

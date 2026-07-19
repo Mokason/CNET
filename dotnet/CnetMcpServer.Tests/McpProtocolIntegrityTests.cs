@@ -35,7 +35,19 @@ public sealed class McpProtocolIntegrityTests
         throw new FileNotFoundException("CnetMcpServer executable not found");
     }
 
-    private static Process StartServer(int compressionDelayMs = 0)
+    private static string FindRepoFile(string name)
+    {
+        string? directory = AppContext.BaseDirectory;
+        for (int depth = 0; depth < 10 && directory is not null; depth++)
+        {
+            string candidate = Path.Combine(directory, name);
+            if (File.Exists(candidate)) return candidate;
+            directory = Path.GetDirectoryName(directory);
+        }
+        throw new FileNotFoundException($"Repository fixture not found: {name}");
+    }
+
+    private static Process StartServer(int compressionDelayMs = 0, string? basePath = null)
     {
         string serverPath = FindServerPath();
         bool isDll = serverPath.EndsWith(".dll", StringComparison.Ordinal);
@@ -49,7 +61,7 @@ public sealed class McpProtocolIntegrityTests
             CreateNoWindow = true,
         };
         if (isDll) startInfo.ArgumentList.Add(serverPath);
-        startInfo.Environment["CNET_BASE_PATH"] =
+        startInfo.Environment["CNET_BASE_PATH"] = basePath ??
             "/tmp/cnet_mcp_protocol_integrity_missing.cnb";
         startInfo.Environment["CNET_HEALTH_TICK_SECONDS"] = "0";
         startInfo.Environment["CNET_MCP_TEST_COMPRESSION_DELAY_MS"] =
@@ -125,6 +137,56 @@ public sealed class McpProtocolIntegrityTests
         Assert.True(FindById(responses, 99).TryGetProperty("result", out _));
         Assert.All(responses, frame => Assert.Equal(JsonValueKind.Object, frame.ValueKind));
         Console.WriteLine("MCP_PROTOCOL_SURVIVAL_PASS");
+    }
+
+    [Fact]
+    public async Task Same_Process_Reloads_Atomically_Replaced_Base_Generation()
+    {
+        string tempDirectory = Path.Combine(Path.GetTempPath(), $"cnet-mcp-reload-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempDirectory);
+        string liveBase = Path.Combine(tempDirectory, "live.cnb");
+        string stagedBase = Path.Combine(tempDirectory, "live.cnb.next");
+        File.Copy(FindRepoFile("tmp_soul_host.cnb"), liveBase);
+
+        try
+        {
+            using Process process = StartServer(basePath: liveBase);
+            Task<string> stderrTask = process.StandardError.ReadToEndAsync();
+
+            async Task<string> CallListUnits(int id)
+            {
+                await process.StandardInput.WriteLineAsync(
+                    $"{{\"jsonrpc\":\"2.0\",\"id\":{id},\"method\":\"tools/call\",\"params\":{{\"name\":\"cnet_list_units\",\"arguments\":{{}}}}}}");
+                await process.StandardInput.FlushAsync();
+                using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+                string? line = await process.StandardOutput.ReadLineAsync(timeout.Token);
+                Assert.NotNull(line);
+                JsonElement frame = JsonSerializer.Deserialize<JsonElement>(line);
+                return frame.GetProperty("result").GetProperty("content")[0]
+                    .GetProperty("text").GetString() ?? "";
+            }
+
+            string before = await CallListUnits(1);
+            Assert.Contains("[CNET] 1 certified units", before, StringComparison.Ordinal);
+
+            File.Copy(FindRepoFile("flagship.cnb"), stagedBase);
+            File.Move(stagedBase, liveBase, overwrite: true);
+            File.SetLastWriteTimeUtc(liveBase, DateTime.UtcNow.AddSeconds(2));
+
+            string after = await CallListUnits(2);
+            Assert.Contains("[CNET] 256 certified units", after, StringComparison.Ordinal);
+
+            process.StandardInput.Close();
+            using var exitTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            await process.WaitForExitAsync(exitTimeout.Token);
+            await stderrTask;
+            Assert.Equal(0, process.ExitCode);
+            Console.WriteLine("MCP_BASE_GENERATION_RELOAD_PASS");
+        }
+        finally
+        {
+            Directory.Delete(tempDirectory, recursive: true);
+        }
     }
 
     [Fact]

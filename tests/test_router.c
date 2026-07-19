@@ -591,14 +591,6 @@ static void test_global_route_score(void) {
    This proves a fresh sequential domain can be stood up with very little
    bespoke code. */
 static void test_new_scan_demo_domain(void) {
-    /* Trivial step shape for a parity-like accumulator (demo only) */
-    StepShape shape = {0};
-    shape.num_in_ports = 2;
-    shape.in_widths[0] = 2;
-    shape.in_widths[1] = 2;
-    shape.num_out_ports = 1;
-    shape.out_widths[0] = 2;
-
     /* Use the planner-supported scan builder with a dummy wiring */
     StepWiring w = {0};
     w.n_state_slots = 1; w.state_in_slots[0] = 0; w.state_out_ports[0] = 0;
@@ -615,12 +607,12 @@ static void test_new_scan_demo_domain(void) {
 
     /* Exercises dag_plan_iterative_scan (the new first-class planner entry point) */
     PrimitiveRegistry dummy_reg = {0};
-    (void)dag_plan_iterative_scan(&dummy_reg, &s0, 1, items, 2, &w, &p, steps);
+    int rc = dag_plan_iterative_scan(&dummy_reg, &s0, 1, items, 2, &w, &p, steps);
 
     /* Layering path exercised via freeze emission (previous item). */
     /* scan_run_simple and ctx data builder exercised in residue/expr paths. */
 
-    CHECK(1, "new scan demo domain APIs (planner scan, etc.) exercised");
+    CHECK(rc != 0, "new scan planner cleanly refuses an empty registry");
 }
 
 int run_test_router(void) {
