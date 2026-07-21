@@ -388,6 +388,60 @@ int cnb_get_unit(const CnetBase *b, const char *name,
                          b->blobs[b->units[idx].blob_index].len);
 }
 
+int cnb_export_subset(const CnetBase *src, CnetBase *dst,
+                      int (*keep)(const char *name, void *ctx), void *ctx) {
+    size_t i;
+    if (!src || !dst || !keep) return -1;
+    cnb_init(dst);
+    /* Oracle descriptors first (provenance targets). */
+    for (i = 0; i < src->oracle_count; ++i) {
+        const CnbOracleDesc *o = &src->oracles[i];
+        if (o->behavior_digest || o->identity.abi_version) {
+            if (cnb_add_oracle_desc_v2(dst, o->name, o->kind, o->input_port,
+                                       o->goal_port, &o->identity) != 0)
+                goto fail;
+        } else if (cnb_add_oracle_desc(dst, o->name, o->kind, o->input_port,
+                                       o->goal_port) != 0) {
+            goto fail;
+        }
+    }
+    for (i = 0; i < src->unit_count; ++i) {
+        const char *nm = src->units[i].name;
+        BinaryTransformNetwork btn;
+        Contract c;
+        int reused = 0;
+        if (!keep(nm, ctx)) continue;
+        memset(&btn, 0, sizeof btn);
+        memset(&c, 0, sizeof c);
+        if (cnb_get_unit(src, nm, &btn, &c) != 0) goto fail;
+        if (cnb_add_unit(dst, &btn, &c, &reused) != 0) {
+            btn_free(&btn);
+            contract_free(&c);
+            goto fail;
+        }
+        if (src->units[i].provenance[0])
+            (void)cnb_set_unit_provenance(dst, nm, src->units[i].provenance);
+        /* stats */
+        {
+            size_t s;
+            for (s = 0; s < src->stats_count; ++s) {
+                if (strcmp(src->stats[s].name, nm) == 0) {
+                    /* re-bind via put after get already has counters on btn */
+                    (void)cnb_put_stats(dst, nm, &btn);
+                    break;
+                }
+            }
+        }
+        btn_free(&btn);
+        contract_free(&c);
+    }
+    return 0;
+fail:
+    cnb_free(dst);
+    cnb_init(dst);
+    return -1;
+}
+
 /* ---- persistence ---- */
 
 static int cnb_sync_file(FILE *f) {

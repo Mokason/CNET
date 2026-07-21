@@ -123,6 +123,12 @@ CNET_API int cnb_get_unit(const CnetBase *b, const char *name,
 /* 1 if a unit with this name exists in the base, else 0. */
 int cnb_has_unit(const CnetBase *b, const char *name);
 
+/* Build dst as a subset of src: keep only units where keep(name,ctx)!=0.
+ * Copies matching oracle descriptors and stats. Tags are re-minted via
+ * cnb_add_unit. Does not modify src. Returns 0 on success. */
+int cnb_export_subset(const CnetBase *src, CnetBase *dst,
+                      int (*keep)(const char *name, void *ctx), void *ctx);
+
 /* ---- tag governance ------------------------------------------------------
    Mint-once with refusal teeth. Exact re-mint is idempotent (returns 1).
    A NEAR-MISS against an existing tag is refused (-1): case-insensitive

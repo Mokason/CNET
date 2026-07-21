@@ -55,3 +55,17 @@ Policy object bounds + consolidate/dedupe + rollback pins.
 - Rollback pins: `cnet_gov_pin_snapshot` / `scripts/cnet_janitor_restore.sh`
 - Caps: `warn_units`, `max_units`, `max_waiting_oracle_warn`
 - Gate: `make governance` → `GOVERNANCE_PASS`
+
+## G3 dense-bucket consolidate (2026-07-21)
+
+```bash
+make cnet_consolidate_build
+./bin/cnet_consolidate                 # dry-run plan
+CNET_CONSOLIDATE_APPLY=1 ./bin/cnet_consolidate   # write .consolidated.cnb + pin
+CNET_CONSOLIDATE_APPLY=1 CNET_CONSOLIDATE_REPLACE=1 ./bin/cnet_consolidate  # replace base
+```
+
+- Protects `json_toolcall*`, `le8_*`, and all non-`acq_tk*` units
+- For large dim buckets (count > `CNET_GOV_BUCKET_MIN`, default 32): keep top `CNET_GOV_KEEP_PER_BUCKET` (default 48) by reliability
+- Uses `cnb_export_subset` (rebuild subset CNB; no in-place delete)
+- Apply always pins first via governance
