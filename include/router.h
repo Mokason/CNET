@@ -225,9 +225,15 @@ int registry_load_expansion(PrimitiveRegistry *reg, const char *name,
                             const char *dir);
 
 /* Restore every persisted runtime-only registry field from `dir`: global
-   policy first, then each registered entry's optional expansion sidecar.
-   Absent sidecars are a no-op; malformed state fails closed. */
+   policy first, then each registered entry's optional expansion sidecar
+   and CNET_STATS reliability counters (<name>.stats). Absent sidecars are
+   a no-op; malformed state fails closed. */
 int registry_restore_runtime_state(PrimitiveRegistry *reg, const char *dir);
+
+/* Persist runtime-only registry state to `dir` without rewriting sealed CNU
+   units: per-unit .stats (successes/failures) + registry.meta globals +
+   expansion sidecars when present. Creates dir if needed. Returns 0/-1. */
+int registry_persist_runtime_state(const PrimitiveRegistry *reg, const char *dir);
 
 /* Promote every PRIM_FUZZY entry whose learned reliability >= promote_threshold
    AND whose recorded evidence (successes + failures) >= min_evidence to

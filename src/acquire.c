@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #ifdef _OPENMP
 #include <omp.h>
@@ -549,6 +550,14 @@ static void gap_defer(GapRecord *g, AcquireReport *rep, const char *reason) {
     if (rep) {
         rep->deferred++;
         snprintf(rep->last_defer_reason, ACQUIRE_REASON_MAX, "%s", reason);
+        if (reason && strcmp(reason, ACQUIRE_DEFER_WAITING_ORACLE) == 0)
+            rep->defer_waiting_oracle++;
+        else if (reason && strcmp(reason, "oracle_unfit") == 0)
+            rep->defer_oracle_unfit++;
+        else if (reason && strcmp(reason, "certify_failed") == 0)
+            rep->defer_certify_failed++;
+        else
+            rep->defer_other++;
     }
 }
 
@@ -1019,6 +1028,9 @@ train_student:
        own coin-flip points; more epochs never close it). The certification
        path below is unchanged — this only decides how much of the budget
        to spend before it runs. */
+    {
+        struct timespec t0, t1;
+        clock_gettime(CLOCK_MONOTONIC, &t0);
     if (getenv("CNET_ACQ_ADAPTIVE") && getenv("CNET_ACQ_ADAPTIVE")[0] == '1') {
         /* Exactness is checked between stages, so MORE stages = a tighter
            budget granularity: a fast-converging student stops the instant it
@@ -1065,6 +1077,13 @@ train_student:
         btn_train_dynamic(btn, inputs, targets, n_train, cfg->max_epochs,
                           cfg->growth_window, cfg->target_loss,
                           cfg->min_improvement);
+    }
+        clock_gettime(CLOCK_MONOTONIC, &t1);
+        if (rep) {
+            double ms = (double)(t1.tv_sec - t0.tv_sec) * 1000.0 +
+                        (double)(t1.tv_nsec - t0.tv_nsec) / 1e6;
+            rep->train_wall_ms += ms;
+        }
     }
 
     /* Warm-start is a speed bet, never a semantics change: when the
@@ -1156,6 +1175,15 @@ train_student:
             return -1;
         }
         sealed = 1;
+        if (rep) {
+            FILE *sf = fopen(cnu_path, "rb");
+            if (sf) {
+                long n;
+                if (fseek(sf, 0, SEEK_END) == 0 && (n = ftell(sf)) >= 0)
+                    rep->student_bytes = (size_t)n;
+                fclose(sf);
+            }
+        }
     }
 
     /* 6. register (name storage must outlive the registry: ledger-owned) */
@@ -1449,6 +1477,15 @@ int acquire_drain(PrimitiveRegistry *reg, AcquireLedger *l,
             /* stamp the recipe a fresh deferral happened under, so it will not
                reopen again until the recipe changes */
             if (g->status == GAP_DEFERRED) g->recipe_fp = fp;
+        }
+    }
+    /* Aggregate oracle economics after the drain (best-effort). */
+    if (report && oracles) {
+        size_t oi;
+        for (oi = 0; oi < oracles->count; ++oi) {
+            report->total_oracle_calls += oracles->entries[oi].calls;
+            report->total_oracle_rejects += oracles->entries[oi].rejects;
+            report->total_oracle_abstains += oracles->entries[oi].abstains;
         }
     }
     return 0;

@@ -269,6 +269,17 @@ typedef struct {
     char last_unit_name[ACQUIRE_NAME_MAX];    /* unit minted by the last close */
     char last_defer_reason[ACQUIRE_REASON_MAX];
     size_t recipe_reopened;  /* recipe-stale deferrals reopened this drain */
+    /* Efficiency / economics (filled best-effort each drain). */
+    size_t total_oracle_calls;
+    size_t total_oracle_rejects;
+    size_t total_oracle_abstains;
+    double train_wall_ms;          /* wall time spent in student train this drain */
+    size_t student_bytes;          /* last sealed CNU size, 0 if unknown */
+    /* Defer-reason histogram (atoms we care about for ops). */
+    size_t defer_waiting_oracle;
+    size_t defer_oracle_unfit;
+    size_t defer_certify_failed;
+    size_t defer_other;
 } AcquireReport;
 
 void acquire_ledger_init(AcquireLedger *l);

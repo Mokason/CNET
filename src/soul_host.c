@@ -233,15 +233,23 @@ static int soul_state_dir(const char *base_path, char *out, size_t cap) {
     backslash = strrchr(base_path, '\\');
     if (backslash && (!slash || backslash > slash)) slash = backslash;
     if (!slash) {
-        n = snprintf(out, cap, ".");
+        /* Relative bare filename: use "<base>.state" so cwd is never a
+           shared dump for every base (prevents cross-test/host contamination). */
+        n = snprintf(out, cap, "%s.state", base_path);
         return n >= 0 && (size_t)n < cap ? 0 : -1;
     }
     len = (size_t)(slash - base_path);
     if (len == 0) len = 1;
-    if (len + 1 > cap) return -1;
-    memcpy(out, base_path, len);
-    out[len] = '\0';
-    return 0;
+    /* "<dir>/<file>.state" next to the base */
+    {
+        size_t flen = strlen(slash + 1);
+        if (len + 1 + flen + 6 + 1 > cap) return -1;
+        memcpy(out, base_path, len);
+        out[len] = '/';
+        memcpy(out + len + 1, slash + 1, flen);
+        memcpy(out + len + 1 + flen, ".state", 7);
+        return 0;
+    }
 }
 
 /* The registry is the live source of truth after cnb_load_registry has replayed
@@ -300,6 +308,38 @@ CNET_API int soul_open(const char *base_path, const char *model_path,
         cnb_free(&h->base);
         free(h);
         return -5;
+    }
+    /* Restore host serve counters if a prior soul_close wrote them. */
+    {
+        char serve_path[1100];
+        if ((size_t)snprintf(serve_path, sizeof serve_path,
+                             "%s/soul_serve.stats", state_dir) <
+            sizeof serve_path) {
+            FILE *sf = fopen(serve_path, "r");
+            if (sf) {
+                char magic[32];
+                int ver = 0;
+                unsigned long long cs = 0, rs = 0, gn = 0, sm = 0, ss = 0;
+                if (fscanf(sf, "%31s %d", magic, &ver) == 2 &&
+                    strcmp(magic, "CNET_SERVE") == 0 && ver == 1) {
+                    char key[64];
+                    unsigned long long val;
+                    while (fscanf(sf, "%63s %llu", key, &val) == 2) {
+                        if (strcmp(key, "certified_serves") == 0) cs = val;
+                        else if (strcmp(key, "residual_serves") == 0) rs = val;
+                        else if (strcmp(key, "gap_notes") == 0) gn = val;
+                        else if (strcmp(key, "structure_mines") == 0) sm = val;
+                        else if (strcmp(key, "structure_seals") == 0) ss = val;
+                    }
+                    h->certified_serves = cs;
+                    h->residual_serves = rs;
+                    h->gap_notes = gn;
+                    h->structure_mines = sm;
+                    h->structure_seals = ss;
+                }
+                fclose(sf);
+            }
+        }
     }
     h->reg.require_certified = 1;
     {
@@ -1285,6 +1325,7 @@ CNET_API int soul_mounted_oracle_count(SoulHost *h) {
 
 CNET_API void soul_close(SoulHost *h) {
     size_t i;
+    char state_dir[1024];
     if (!h) return;
     for (i = 0; i < h->contract_count; ++i) {
         contract_free(h->contracts[i]);
@@ -1295,6 +1336,46 @@ CNET_API void soul_close(SoulHost *h) {
     free(h->route_log_path);
     h->route_log_path = NULL;
     if (h->loaded) {
+        /* Persist learned reliability + runtime sidecars BEFORE teardown so
+           the next soul_open restores execution evidence (not the 0.5 prior). */
+        if (h->base_path[0] &&
+            soul_state_dir(h->base_path, state_dir, sizeof state_dir) == 0) {
+            char serve_path[1100];
+            (void)registry_persist_runtime_state(&h->reg, state_dir);
+            /* Host-level serve counters (session evidence for ops). */
+            if ((size_t)snprintf(serve_path, sizeof serve_path,
+                                 "%s/soul_serve.stats", state_dir) <
+                sizeof serve_path) {
+                FILE *sf = fopen(serve_path, "w");
+                if (sf) {
+                    fprintf(sf,
+                            "CNET_SERVE 1\n"
+                            "certified_serves %llu\n"
+                            "residual_serves %llu\n"
+                            "gap_notes %llu\n"
+                            "structure_mines %llu\n"
+                            "structure_seals %llu\n",
+                            (unsigned long long)h->certified_serves,
+                            (unsigned long long)h->residual_serves,
+                            (unsigned long long)h->gap_notes,
+                            (unsigned long long)h->structure_mines,
+                            (unsigned long long)h->structure_seals);
+                    fclose(sf);
+                }
+            }
+            if (h->evidence_store[0]) {
+                size_t ui;
+                for (ui = 0; ui < h->reg.count; ++ui) {
+                    const char *nm = h->reg.entries[ui].name;
+                    if (!nm) continue;
+                    CnetEvidenceOpts eopts;
+                    memset(&eopts, 0, sizeof eopts);
+                    eopts.counterfactual_stability = -1.0f;
+                    (void)cnet_evidence_record(&h->base, nm, h->evidence_store,
+                                               &eopts);
+                }
+            }
+        }
         /* Drop residual bind before freeing the model it points at. */
         hybrid_ai_free(&h->hybrid);
         if (h->owned_residual) {

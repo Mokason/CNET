@@ -120,3 +120,21 @@ Final authority: `make --no-print-directory cnet_use_loop_acceptance`
 H0 rejected: serve path moves reliability and serve stats; miner efficiency is comparable; unattested labels stay labels; external claims stay withheld without a path. Safety envelope held (no teacher/GPU/service start, no push).
 
 Umbrella marker: `CNET_USE_LOOP_ACCEPTANCE_PASS`
+
+## 2026-07-21 Deep Eight Priorities
+
+Source: `plans/deep_eight_priorities.md`
+Authority: `make cnet_use_loop_acceptance` (includes `cnet_deep_use_loop`)
+
+| P | Work | Evidence |
+|---|---|---|
+| 1 | Persist reliability + serve stats per-base `.state/`; restore on open | deep loop rel 962→962 reopen; serve_feedback |
+| 2 | Multi-step distill domain equality | deep P2 + SELF_IMPROVE + POST_SEAL |
+| 3 | AcquireReport economics + defer histogram | acquire/deep + miner_efficiency |
+| 4 | Hermetic residual bind | deep P4 + residual gates |
+| 5 | Planner prefers higher reliability | deep P5 |
+| 6 | Health/evidence after live serves | deep P6 |
+| 7 | route_execute counters + state-dir isolation bugfix | deep P7 |
+| 8 | Taxonomy withheld without path | deep P8 + benchmark_taxonomy |
+
+Umbrella: `CNET_USE_LOOP_ACCEPTANCE_PASS`

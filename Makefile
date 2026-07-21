@@ -3146,7 +3146,21 @@ miner_efficiency_bench: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $
 
 # Ordered six-priority umbrella (hermetic + existing product gates).
 # Does not start teachers/GPUs/services. Single final check for the chunk.
-cnet_use_loop_acceptance: serve_feedback self_improve post_seal_serve miner_efficiency_bench acquire oracle_unattested json_toolcall residual_gguf soul_residual_serve phase123_benchmark_test benchmark_taxonomy health_layers evidence_bundle route_log agent_role
+
+.PHONY: cnet_deep_use_loop
+cnet_deep_use_loop: $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EXT_TEACHER_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) src/soul_host.c $(ROUTE_LOG_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) tests/test_cnet_deep_use_loop.c
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/test_cnet_deep_use_loop \
+		$(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(EXT_TEACHER_SRC) \
+		$(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) \
+		$(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) \
+		$(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) src/soul_host.c $(ROUTE_LOG_SRC) \
+		tests/test_cnet_deep_use_loop.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -pthread
+	@./$(BIN_DIR)/test_cnet_deep_use_loop > logs/cnet_deep_use_loop.log 2>&1
+	@grep -q "CNET_DEEP_USE_LOOP_PASS" logs/cnet_deep_use_loop.log
+	@grep "CNET_DEEP_USE_LOOP_PASS" logs/cnet_deep_use_loop.log
+
+cnet_use_loop_acceptance: cnet_deep_use_loop serve_feedback self_improve post_seal_serve miner_efficiency_bench acquire oracle_unattested json_toolcall residual_gguf soul_residual_serve phase123_benchmark_test benchmark_taxonomy health_layers evidence_bundle route_log agent_role
 	@echo "CNET_USE_LOOP_ACCEPTANCE_PASS"
 
 # Five-layer health diagnostics (registry/loadable/execution/semantic/utility).

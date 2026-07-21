@@ -52,3 +52,7 @@ tmp_miner_eff_*/
 tmp_serve_feedback.*
 tmp_post_seal_serve.*
 tmp_gap_lane.*
+# SoulHost runtime evidence sidecars (per-base)
+*.state/
+*.cnb.state/
+soul_serve.stats

@@ -83,6 +83,11 @@ int main(void) {
     unsetenv("CNET_RESIDUAL_GGUF");
     setenv("CNET_GAP_INBOX", inbox, 1);
     setenv("CNET_ROUTE_LOG", rlog, 1);
+    {
+        char cmd[256];
+        snprintf(cmd, sizeof cmd, "rm -rf '%s.state'", base);
+        (void)system(cmd);
+    }
 
     printf("== serve_feedback (P1) ==\n");
 
@@ -152,6 +157,11 @@ int main(void) {
     remove(inbox);
     remove(rlog);
     remove("tmp_serve_feedback.cnb.tmp");
+    {
+        char cmd[256];
+        snprintf(cmd, sizeof cmd, "rm -rf '%s.state'", base);
+        (void)system(cmd);
+    }
 
     if (failures) {
         printf("SERVE_FEEDBACK_FAIL failures=%d checks=%d rel0=%d rel1=%d serves=%llu\n",

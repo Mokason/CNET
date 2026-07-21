@@ -7,6 +7,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
+#include <sys/stat.h>
+#include <errno.h>
 
 /* ========================================================================
  * Registry core + persistence + lifecycle + entry utilities
@@ -800,11 +802,71 @@ int registry_restore_runtime_state(PrimitiveRegistry *reg, const char *dir) {
     if (reg == NULL || dir == NULL) return -1;
     if (registry_load_globals(reg, dir) != 0) return -1;
     for (i = 0; i < reg->count; ++i) {
+        char *stats_path = NULL;
         if (reg->entries[i].name == NULL ||
             registry_load_expansion(reg, reg->entries[i].name, dir) != 0) {
             return -1;
         }
+        /* Optional reliability sidecar: absent = keep Laplace prior (0.5). */
+        if (reg->entries[i].btn != NULL &&
+            registry_build_path(&stats_path, dir, reg->entries[i].name,
+                                ".stats") == 0) {
+            (void)btn_load_stats(reg->entries[i].btn, stats_path);
+            free(stats_path);
+        }
     }
+    return 0;
+}
+
+int registry_persist_runtime_state(const PrimitiveRegistry *reg, const char *dir) {
+    size_t i;
+    char *meta_path = NULL;
+    FILE *mf;
+    if (reg == NULL || dir == NULL) return -1;
+#if defined(_WIN32)
+    _mkdir(dir);
+#else
+    if (mkdir(dir, 0755) != 0 && errno != EEXIST) {
+        /* try parent-relative create once; still fail closed on write */
+    }
+#endif
+    for (i = 0; i < reg->count; ++i) {
+        char *stats_path = NULL;
+        if (reg->entries[i].btn == NULL || reg->entries[i].name == NULL)
+            continue;
+        if (registry_build_path(&stats_path, dir, reg->entries[i].name,
+                                ".stats") != 0)
+            return -1;
+        if (btn_save_stats(reg->entries[i].btn, stats_path) != 0) {
+            free(stats_path);
+            return -1;
+        }
+        free(stats_path);
+        if (reg->entries[i].recipe != NULL) {
+            char *exp_path = NULL;
+            if (registry_build_path(&exp_path, dir, reg->entries[i].name,
+                                    ".expansion") != 0)
+                return -1;
+            if (registry_write_expansion(&reg->entries[i], exp_path) != 0) {
+                free(exp_path);
+                return -1;
+            }
+            free(exp_path);
+        }
+    }
+    if (registry_build_path(&meta_path, dir, "registry", ".meta") != 0)
+        return -1;
+    mf = fopen(meta_path, "w");
+    if (!mf) {
+        free(meta_path);
+        return -1;
+    }
+    fprintf(mf, "cnet_d_influence %f\n", reg->cnet_d_influence);
+    fprintf(mf, "expand_in_low_enabled %d\n", reg->expand_in_low_enabled);
+    fprintf(mf, "text_contract_expansion_enabled %d\n",
+            reg->text_contract_expansion_enabled);
+    fclose(mf);
+    free(meta_path);
     return 0;
 }
 
