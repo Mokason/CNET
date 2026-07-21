@@ -8,6 +8,7 @@
 #include <string.h>
 
 #include "../include/gap_lane.h"
+#include "../include/cnet_auto_learn.h"
 #include "../include/specialist.h"
 #include "../include/specialist_health.h"
 #include "../include/cnet_evidence_bundle.h"
@@ -242,13 +243,16 @@ static void port_write(FILE *f, Port p) {
 int gap_inbox_note_no_plan(const char *inbox_path,
                            Port input_port, Port goal_port) {
     FILE *f;
+    Port in = input_port, goal = goal_port;
     if (!inbox_path || !inbox_path[0]) return -1;
+    /* Automatic learning: freeform Hermes goals → window-teachable shapes. */
+    (void)cnet_auto_learn_make_teachable(&in, &goal, goal.tag[0] ? goal.tag : in.tag);
     f = fopen(inbox_path, "a");
     if (!f) return -1;
     fprintf(f, "NO_PLAN ");
-    port_write(f, input_port);
+    port_write(f, in);
     fprintf(f, " ");
-    port_write(f, goal_port);
+    port_write(f, goal);
     fprintf(f, "\n");
     fclose(f);
     return 0;
@@ -292,6 +296,9 @@ static void ingest_inbox(GapLane *L, GapLaneTickReport *r) {
         p += used;
         while (*p == ' ') p++;
         if (port_parse(p, &goal, &used2) != 0) { r->inbox_malformed++; continue; }
+        /* Normalize freeform → teachable before ledger note. */
+        (void)cnet_auto_learn_make_teachable(&in, &goal,
+                                            goal.tag[0] ? goal.tag : in.tag);
         if (acquire_note_no_plan(&L->ledger, in, goal) >= 0)
             r->inbox_ingested++;
         else

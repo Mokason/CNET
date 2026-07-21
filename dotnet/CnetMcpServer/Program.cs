@@ -305,6 +305,21 @@ class Program
                                 },
                                 new
                                 {
+                                    name = "cnet_learn_from_chat",
+                                    description = "Queue freeform Hermes chat text as a teachable CNET gap (auto-learn). The personal-AI lane trains and seals a certified unit from the local teacher while you keep chatting.",
+                                    inputSchema = (object)new
+                                    {
+                                        type = "object",
+                                        properties = new
+                                        {
+                                            text = new { type = "string", description = "Chat snippet or skill description to learn" },
+                                            k = new { type = "integer", description = "top-k outputs (default 3)" }
+                                        },
+                                        required = new[] { "text" }
+                                    }
+                                },
+                                new
+                                {
                                     name = "cnet_health_tick",
                                     description = "Run one runtime health pass (audit, fault labeling, heal via re-certify, evidence promotion, shadow swap) over the live certified registry and report exact counts",
                                     inputSchema = (object)new { type = "object", properties = new { } }
@@ -481,6 +496,9 @@ class Program
                                         toolArgs.TryGetProperty("count", out var rcnt) && rcnt.ValueKind == JsonValueKind.Number ? rcnt.GetInt32() : 1,
                                         toolArgs.TryGetProperty("goal_count", out var rgc) && rgc.ValueKind == JsonValueKind.Number ? rgc.GetInt32() : 1,
                                         ReadDoubleList(toolArgs, "input")),
+                                    "cnet_learn_from_chat" => tools.LearnFromChat(
+                                        SafeGetString(toolArgs, "text"),
+                                        toolArgs.TryGetProperty("k", out var lk) && lk.ValueKind == JsonValueKind.Number ? lk.GetInt32() : 3),
                                     "cnet_health_tick" => tools.HealthTick(),
                                     "cnet_classify_toolcall" => tools.ClassifyToolCall(
                                         SafeGetString(toolArgs, "json")),

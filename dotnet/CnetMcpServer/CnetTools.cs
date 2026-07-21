@@ -1254,6 +1254,51 @@ namespace CnetMcpServer
             });
         }
 
+
+        /// <summary>
+        /// Queue a freeform chat/text interaction for automatic neural learning.
+        /// Rewrites to a window-teachable NO_PLAN and appends the gap inbox;
+        /// the personal-AI lane trains/seals a certified unit when the teacher is up.
+        /// </summary>
+        public string LearnFromChat(string text, int k = 3)
+        {
+            EnsureFreshSoulHost();
+            string inbox = Environment.GetEnvironmentVariable("CNET_GAP_INBOX")
+                ?? (_basePath + ".inbox");
+            if (string.IsNullOrWhiteSpace(text))
+                return JsonSerializer.Serialize(new { ok = false, error = "empty text" });
+            // Write teachable NO_PLAN line (matches native auto-learn format).
+            // Prefer native when available; fallback: write tk-shaped line in managed code.
+            try
+            {
+                uint h = 2166136261;
+                foreach (var ch in text)
+                {
+                    h ^= ch;
+                    h *= 16777619;
+                }
+                uint id = (h % 256);
+                if (id == 0) id = 1;
+                if (k < 1) k = 3;
+                if (k > 8) k = 8;
+                string line = $"NO_PLAN 1 256 1 w_cur 1 256 {k} tk{id}q{id}\n";
+                File.AppendAllText(inbox, line);
+                return JsonSerializer.Serialize(new
+                {
+                    ok = true,
+                    gap_noted = true,
+                    inbox,
+                    goal = $"tk{id}q{id}",
+                    k,
+                    note = "queued teachable NO_PLAN for personal-AI lane (auto-learn)"
+                });
+            }
+            catch (Exception ex)
+            {
+                return JsonSerializer.Serialize(new { ok = false, error = ex.Message });
+            }
+        }
+
         public string HealthTick()
         {
             EnsureFreshSoulHost();

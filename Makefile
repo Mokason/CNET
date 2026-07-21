@@ -195,7 +195,7 @@ CCE := $(CCE_TENSOR) $(CCE_BLOCK) $(CCE_CASCADE) $(CCE_ARCHIVE) $(CCE_FOREST) $(
 CNET_CCE_ADAPTER := src/cce/cce_contract_adapter.c
 SPECIALIST_ADAPTERS := src/specialist_adapters.c
 SPECIALIST_SRC := src/specialist.c src/specialist_health.c
-GAP_LANE_SRC := src/gap_lane.c
+GAP_LANE_SRC := src/gap_lane.c src/cnet_auto_learn.c
 ASYNC_RUNTIME := src/async_runtime.c
 MODEL_RUNTIME := src/model_runtime.c
 RESOURCE_GOV_SRC := src/resource_governor.c
@@ -2233,6 +2233,15 @@ unified_self_improve: resource_governor counterfactual_order self_improve deploy
 
 # Personal AI: local certified library first; big-AI teacher only on gaps.
 .PHONY: personal_ai
+
+
+.PHONY: auto_learn
+auto_learn: src/cnet_auto_learn.c tests/test_auto_learn.c include/cnet_auto_learn.h
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -o $(BIN_DIR)/test_auto_learn src/cnet_auto_learn.c tests/test_auto_learn.c $(LDFLAGS)
+	@./$(BIN_DIR)/test_auto_learn > logs/auto_learn.log 2>&1
+	@grep -q AUTO_LEARN_PASS logs/auto_learn.log
+	@grep AUTO_LEARN_PASS logs/auto_learn.log
 
 .PHONY: curiosity
 

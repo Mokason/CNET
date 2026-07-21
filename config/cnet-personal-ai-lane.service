@@ -25,9 +25,9 @@ Environment=CNET_ACQ_STAGES=40
 Environment=CNET_ACQ_ADAPTIVE=1
 Environment=CNET_LANE_PROBE_BATCH=32
 Environment=OMP_NUM_THREADS=4
-Environment=CNET_LANE_MAX_CLOSURES=4
+Environment=CNET_LANE_MAX_CLOSURES=8
 Environment=CNET_TEACHER_IDLE_SEC=300
-Environment=CNET_LANE_INTERVAL_SEC=120
+Environment=CNET_LANE_INTERVAL_SEC=60
 Environment=CNET_ACQ_HIDDEN=128
 Environment=CNET_ACQ_MAXHIDDEN=512
 Environment=CNET_ACQ_EPOCHS=20000
@@ -40,6 +40,9 @@ Environment=CNET_LANE_TOKEN_BASE=1000
 Environment=CNET_LANE_MARGIN_EPS=1e-6
 Environment=CNET_LANE_LOW_REL=0.55
 Environment=CNET_LANE_LOW_REL_MIN_EV=64
+Environment=CNET_AUTO_LEARN=1
+Environment=CNET_AUTO_LEARN_W=256
+Environment=CNET_AUTO_LEARN_K=3
 
 # Teacher model: set CNET_PERSONAL_TEACHER in a drop-in or env to override.
 # Default matches the historical gemma teacher path if present.

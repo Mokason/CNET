@@ -18,7 +18,7 @@
 #include "contract/contract.h"
 #include "contract/coverage.h"
 
-#define ACQUIRE_MAX_ORACLES 16
+#define ACQUIRE_MAX_ORACLES 32
 #define ACQUIRE_NAME_MAX 64
 #define ACQUIRE_REASON_MAX 64
 #define ACQUIRE_DEFER_WAITING_ORACLE "waiting_oracle"

@@ -68,6 +68,7 @@
 #include "../include/router.h"
 #include "../include/cnet_curiosity.h"
 #include "../include/cnet_eg.h"
+#include "../include/cnet_auto_learn.h"
 #include "../include/json_toolcall.h"
 #include "../include/base.h"
 #include "../include/cce/cce_detect.h"
@@ -488,22 +489,51 @@ static size_t drain_jtc_gaps(GapLane *L) {
     return closed;
 }
 
-/* Rebuild the oracle registry for this tick: one teacher per open gap
-   whose shape the model can teach. */
+/* Rebuild the oracle registry for this tick: prioritize high-hit teachable
+   gaps so Hermes traffic is learned before cold curiosity tails. */
 static size_t bind_model_teachers(GapLane *L, cce_gguf_qwen2 *m,
                                   float *logits, int vocab, int base,
                                   double eps) {
-    size_t g, bound = 0;
+    size_t g, bound = 0, n_cand = 0, ci;
+    size_t order[512];
     memset(&L->oracles, 0, sizeof L->oracles);
     lm_task_count = 0;
-    for (g = 0; g < L->ledger.count && bound < ACQUIRE_MAX_ORACLES; g++) {
+    for (g = 0; g < L->ledger.count && n_cand < 512; g++) {
         const GapRecord *gap = &L->ledger.gaps[g];
         Port in, goal;
-        char name[ACQUIRE_NAME_MAX];
-        LmTask *t;
         if (!gap_oracle_candidate(gap) || !gap_ports(L, gap, &in, &goal))
             continue;
         if (!lm_shape_ok(in, goal, vocab, base)) continue;
+        /* Auto-learn: rewrite freeform tags so bind name/ports stay teachable */
+        if (cnet_auto_learn_enabled()) {
+            GapRecord *gw = &L->ledger.gaps[g];
+            Port tin = in, tgoal = goal;
+            if (cnet_auto_learn_make_teachable(&tin, &tgoal,
+                                              tgoal.tag[0] ? tgoal.tag : tin.tag) > 0) {
+                gw->input_port = tin;
+                gw->goal_port = tgoal;
+            }
+        }
+        order[n_cand++] = g;
+    }
+    /* Sort by times_hit descending (simple insertion — n_cand small). */
+    for (ci = 1; ci < n_cand; ci++) {
+        size_t key = order[ci], j = ci;
+        while (j > 0 &&
+               L->ledger.gaps[order[j - 1]].times_hit <
+                   L->ledger.gaps[key].times_hit) {
+            order[j] = order[j - 1];
+            j--;
+        }
+        order[j] = key;
+    }
+    for (ci = 0; ci < n_cand && bound < ACQUIRE_MAX_ORACLES; ci++) {
+        const GapRecord *gap = &L->ledger.gaps[order[ci]];
+        Port in, goal;
+        char name[ACQUIRE_NAME_MAX];
+        LmTask *t;
+        if (!gap_ports(L, gap, &in, &goal) || !lm_shape_ok(in, goal, vocab, base))
+            continue;
         {
             const LmContext *sel =
                 lm_select_context(goal.tag[0] ? goal.tag : "");
@@ -530,10 +560,6 @@ static size_t bind_model_teachers(GapLane *L, cce_gguf_qwen2 *m,
         t->eps = eps;
         if (acquire_oracle_register(&L->oracles, name, in, goal,
                                     lm_teach, t) == 0) {
-            /* the teacher's identity IS the unit's provenance: artifact =
-               the model, config = the window, retrieval snapshot = the
-               pinned teaching context. gap_lane_drain persists it as a
-               base descriptor when this teacher closes a gap. */
             OracleEntry *oe = &L->oracles.entries[L->oracles.count - 1];
             const LmContext *sel = (const LmContext *)t->ctx_sel;
             memset(&oe->identity, 0, sizeof oe->identity);
