@@ -56,3 +56,4 @@ tmp_gap_lane.*
 *.state/
 *.cnb.state/
 soul_serve.stats
+artifacts/live_eight*

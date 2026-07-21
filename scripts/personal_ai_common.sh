@@ -91,7 +91,7 @@ cnet_load_personal_env() {
   fi
 }
 
-# 1 if sealed base lists a json_toolcall unit (v1 preferred, v0 legacy).
+# 1 if sealed base lists a json_toolcall unit (v2 preferred, then v1/v0).
 # Cheap heuristic: unit name appears as ASCII in the CNB blob.
 cnet_jtc_present() {
   local base="${1:-}"
@@ -101,13 +101,13 @@ cnet_jtc_present() {
   fi
   # Binary CNB often contains unit name as ASCII
   if command -v strings >/dev/null 2>&1; then
-    if strings "$base" 2>/dev/null | grep -Eqx 'json_toolcall_v[01]'; then
+    if strings "$base" 2>/dev/null | grep -Eqx 'json_toolcall_v[012]'; then
       echo 1
       return 0
     fi
   fi
-  if grep -aobE $'json_toolcall_v[01]\0' "$base" >/dev/null 2>&1 || \
-     grep -aobE 'json_toolcall_v[01]' "$base" >/dev/null 2>&1; then
+  if grep -aobE $'json_toolcall_v[012]\0' "$base" >/dev/null 2>&1 || \
+     grep -aobE 'json_toolcall_v[012]' "$base" >/dev/null 2>&1; then
     echo 1
     return 0
   fi
@@ -122,6 +122,10 @@ cnet_jtc_unit_name() {
     return 0
   fi
   if command -v strings >/dev/null 2>&1; then
+    if strings "$base" 2>/dev/null | grep -qx 'json_toolcall_v2'; then
+      echo json_toolcall_v2
+      return 0
+    fi
     if strings "$base" 2>/dev/null | grep -qx 'json_toolcall_v1'; then
       echo json_toolcall_v1
       return 0
@@ -130,6 +134,10 @@ cnet_jtc_unit_name() {
       echo json_toolcall_v0
       return 0
     fi
+  fi
+  if grep -aob 'json_toolcall_v2' "$base" >/dev/null 2>&1; then
+    echo json_toolcall_v2
+    return 0
   fi
   if grep -aob 'json_toolcall_v1' "$base" >/dev/null 2>&1; then
     echo json_toolcall_v1

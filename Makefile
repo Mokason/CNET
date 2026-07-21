@@ -2567,6 +2567,20 @@ unified_specialist: specialist_unit specialist_health $(MODEL_RUNTIME) $(CCE) $(
 	@grep -q "HET_PLAN_PASS" logs/unified_specialist.log
 
 
+
+.PHONY: live_eight_campaign
+live_eight_campaign: $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EXT_TEACHER_SRC) $(JSON_TOOLCALL_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) src/soul_host.c $(ROUTE_LOG_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) tools/live_eight_campaign.c include/json_toolcall.h
+	@mkdir -p $(BIN_DIR) logs artifacts
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/live_eight_campaign \
+		$(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(EXT_TEACHER_SRC) $(JSON_TOOLCALL_SRC) \
+		$(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) \
+		$(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) \
+		$(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) src/soul_host.c $(ROUTE_LOG_SRC) \
+		tools/live_eight_campaign.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -pthread
+	@./$(BIN_DIR)/live_eight_campaign > logs/live_eight_campaign.log 2>&1
+	@grep -q "LIVE_EIGHT_CAMPAIGN_PASS" logs/live_eight_campaign.log
+	@grep "LIVE_EIGHT_CAMPAIGN_PASS" logs/live_eight_campaign.log
+
 .PHONY: oracle_teacher_runtime
 oracle_teacher_runtime: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) tests/test_oracle_teacher_runtime.c
 	@mkdir -p $(BIN_DIR) logs

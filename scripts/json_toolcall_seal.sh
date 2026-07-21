@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Seal json_toolcall_v0 into a personal CNB and verify SoulHost serve.
+# Seal json_toolcall_v2 into a personal CNB and verify SoulHost serve.
 #
 # Usage:
 #   scripts/json_toolcall_seal.sh [base.cnb] [--force]
