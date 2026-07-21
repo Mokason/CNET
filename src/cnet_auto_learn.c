@@ -143,9 +143,12 @@ int cnet_auto_learn_note_text(const char *inbox_path, const char *text,
 
 static void slugify(const char *src, char *dst, size_t cap) {
     size_t i = 0, j = 0;
+    /* Leave room for skill_ prefix when caller adds it (7 chars). */
+    size_t max_body = (cap > 8) ? cap - 1 : 8;
+    if (max_body > 24) max_body = 24; /* skill_ + 24 = 30 < PORT_TAG_MAX */
     if (!dst || cap < 2) return;
     if (!src) src = "skill";
-    while (src[i] && j + 1 < cap) {
+    while (src[i] && j + 1 < cap && j < max_body) {
         unsigned char c = (unsigned char)src[i++];
         if ((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9'))
             dst[j++] = (char)c;
