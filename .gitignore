@@ -57,3 +57,4 @@ tmp_gap_lane.*
 *.cnb.state/
 soul_serve.stats
 artifacts/live_eight*
+artifacts/janitor/

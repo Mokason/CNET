@@ -1,0 +1,18 @@
+[Unit]
+Description=CNET library janitor (G1 governance)
+Documentation=file:///home/marble/AI/CNET/plans/cnet_janitor_g1.md
+After=default.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/marble/AI/CNET
+EnvironmentFile=-/home/marble/AI/CNET/config/personal-ai.env
+Environment=CNET_BASE_PATH=/home/marble/AI/CNET/soul_gemma4v2_final.cnb
+Environment=CNET_JANITOR_REPORT_DIR=/home/marble/AI/CNET/artifacts/janitor
+Environment=CNET_JANITOR_NOTE_LOW_REL=1
+Environment=CNET_JANITOR_LOW_REL=0.55
+Environment=CNET_JANITOR_LOW_REL_MIN_EV=64
+Environment=CNET_JANITOR_SNAPSHOT=0
+Nice=19
+# Learner may hold the base; janitor only needs read+runtime state write.
+ExecStart=/bin/bash /home/marble/AI/CNET/scripts/cnet_janitor.sh

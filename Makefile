@@ -2577,6 +2577,33 @@ unified_specialist: specialist_unit specialist_health $(MODEL_RUNTIME) $(CCE) $(
 
 
 
+
+.PHONY: janitor cnet_janitor_build
+cnet_janitor_build: $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EXT_TEACHER_SRC) $(JSON_TOOLCALL_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) src/soul_host.c $(ROUTE_LOG_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) tools/cnet_janitor.c
+	@mkdir -p $(BIN_DIR) logs artifacts/janitor
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/cnet_janitor \
+		$(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(EXT_TEACHER_SRC) $(JSON_TOOLCALL_SRC) \
+		$(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) \
+		$(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) \
+		$(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) src/soul_host.c $(ROUTE_LOG_SRC) \
+		tools/cnet_janitor.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -pthread
+
+# G1 library janitor. Uses CNET_JANITOR_BASE or CNET_BASE_PATH or soul_gemma4v2_final.cnb.
+# Hermetic smoke: builds binary and greps JANITOR_OK from a dry structural self-check when
+# CNET_JANITOR_SMOKE_BASE points at a small CNB; otherwise build-only unless RUN_JANITOR=1.
+.PHONY: janitor
+janitor: cnet_janitor_build
+	@if [ "$${RUN_JANITOR:-0}" = "1" ]; then \
+	  BASE="$${CNET_JANITOR_BASE:-$${CNET_BASE_PATH:-soul_gemma4v2_final.cnb}}"; \
+	  ./$(BIN_DIR)/cnet_janitor "$$BASE" | tee logs/janitor.log; \
+	  grep -q JANITOR_OK logs/janitor.log; \
+	elif [ -n "$${CNET_JANITOR_SMOKE_BASE:-}" ] && [ -f "$${CNET_JANITOR_SMOKE_BASE}" ]; then \
+	  ./$(BIN_DIR)/cnet_janitor "$${CNET_JANITOR_SMOKE_BASE}" | tee logs/janitor_smoke.log; \
+	  grep -q JANITOR_OK logs/janitor_smoke.log; \
+	else \
+	  test -x $(BIN_DIR)/cnet_janitor && echo "JANITOR_BUILD_OK bin/cnet_janitor"; \
+	fi
+
 .PHONY: live_eight_campaign
 live_eight_campaign: $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EXT_TEACHER_SRC) $(JSON_TOOLCALL_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) src/soul_host.c $(ROUTE_LOG_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) tools/live_eight_campaign.c include/json_toolcall.h
 	@mkdir -p $(BIN_DIR) logs artifacts
