@@ -304,6 +304,170 @@ CnetOracleStatus cnet_oracle_invoke(OracleEntry *entry,
     return status;
 }
 
+int cnet_oracle_identity_is_attested(const CnetOracleIdentity *identity) {
+    size_t i;
+    int any = 0;
+    if (!identity) return 0;
+    if (identity->toolchain_digest == 0) return 0;
+    for (i = 0; i < sizeof identity->artifact_sha256; ++i) {
+        if (identity->artifact_sha256[i]) {
+            any = 1;
+            break;
+        }
+    }
+    return any;
+}
+
+void acquire_oracle_policy_defaults(OraclePolicy *p) {
+    if (!p) return;
+    memset(p, 0, sizeof *p);
+}
+
+void acquire_oracle_policy_set(OracleRegistry *o, const OraclePolicy *p) {
+    if (!o) return;
+    if (!p) memset(&o->policy, 0, sizeof o->policy);
+    else o->policy = *p;
+}
+
+int acquire_oracle_is_teachable(const OracleRegistry *o, const OracleEntry *e) {
+    if (!e || e->retired) return 0;
+    if (!e->fn && !e->fn_v2) return 0;
+    if (o && o->policy.require_attested_to_teach &&
+        !cnet_oracle_identity_is_attested(&e->identity))
+        return 0;
+    if (o && o->policy.require_lease_to_teach && e->lease_gen == 0)
+        return 0;
+    return 1;
+}
+
+static OracleEntry *oracle_by_name(OracleRegistry *o, const char *name) {
+    size_t i;
+    if (!o || !name) return NULL;
+    for (i = 0; i < o->count; ++i)
+        if (strcmp(o->entries[i].name, name) == 0) return &o->entries[i];
+    return NULL;
+}
+
+uint64_t acquire_oracle_bind(OracleRegistry *o, const char *name) {
+    OracleEntry *e = oracle_by_name(o, name);
+    if (!e || e->retired) return 0;
+    if (o->policy.require_attested_to_teach &&
+        !cnet_oracle_identity_is_attested(&e->identity))
+        return 0;
+    if (o->next_lease_gen == 0) o->next_lease_gen = 1;
+    e->lease_gen = o->next_lease_gen++;
+    if (o->next_lease_gen == 0) o->next_lease_gen = 1; /* skip 0 */
+    return e->lease_gen;
+}
+
+int acquire_oracle_unbind(OracleRegistry *o, const char *name, uint64_t lease) {
+    OracleEntry *e = oracle_by_name(o, name);
+    if (!e) return -1;
+    if (lease && e->lease_gen != lease) return -1;
+    e->lease_gen = 0;
+    return 0;
+}
+
+int acquire_oracle_scorecard(const OracleRegistry *o, const char *name,
+                             OracleScorecard *out) {
+    size_t i;
+    const OracleEntry *e = NULL;
+    if (!o || !name || !out) return -1;
+    for (i = 0; i < o->count; ++i)
+        if (strcmp(o->entries[i].name, name) == 0) {
+            e = &o->entries[i];
+            break;
+        }
+    if (!e) return -1;
+    memset(out, 0, sizeof *out);
+    snprintf(out->name, sizeof out->name, "%s", e->name);
+    snprintf(out->family, sizeof out->family, "%s", e->family);
+    out->calls = e->calls;
+    out->rejects = e->rejects;
+    out->abstains = e->abstains;
+    out->seals_produced = e->seals_produced;
+    out->unfit_closes = e->unfit_closes;
+    out->retired = e->retired;
+    out->leased = e->lease_gen != 0;
+    out->attested = cnet_oracle_identity_is_attested(&e->identity);
+    out->behavior_digest = e->behavior_digest;
+    out->unfit_rate = e->calls ? (double)e->unfit_closes / (double)e->calls : 0.0;
+    return 0;
+}
+
+size_t acquire_oracle_apply_retire_policy(OracleRegistry *o) {
+    size_t i, n = 0;
+    double rate;
+    size_t min_calls;
+    if (!o) return 0;
+    rate = o->policy.retire_unfit_rate;
+    if (rate <= 0.0) return 0;
+    min_calls = o->policy.retire_min_calls ? o->policy.retire_min_calls : 16;
+    for (i = 0; i < o->count; ++i) {
+        OracleEntry *e = &o->entries[i];
+        double ur;
+        if (e->retired || e->calls < min_calls) continue;
+        ur = (double)e->unfit_closes / (double)e->calls;
+        if (ur >= rate) {
+            e->retired = 1;
+            e->lease_gen = 0;
+            snprintf(e->retire_reason, sizeof e->retire_reason, "unfit_rate");
+            n++;
+        }
+    }
+    return n;
+}
+
+void acquire_oracle_note_seal(OracleRegistry *o, const char *name) {
+    OracleEntry *e = oracle_by_name(o, name);
+    if (e) e->seals_produced++;
+}
+
+void acquire_oracle_note_unfit(OracleRegistry *o, const char *name) {
+    OracleEntry *e = oracle_by_name(o, name);
+    if (e) e->unfit_closes++;
+}
+
+int cnet_oracle_invoke_batch(OracleEntry *entry,
+                             const double *in, size_t in_stride,
+                             double *out, size_t out_stride,
+                             size_t count,
+                             CnetOracleResult *results) {
+    size_t i;
+    size_t expected_in, expected_out;
+    if (!entry || !in || !out || !results || count == 0) return -1;
+    expected_in = entry->input_port.field_width * entry->input_port.field_count;
+    expected_out = entry->output_port.field_width * entry->output_port.field_count;
+    if (in_stride < expected_in || out_stride < expected_out) return -1;
+    if (entry->fn_batch_v2) {
+        int rc = entry->fn_batch_v2(in, in_stride, out, out_stride, count,
+                                    results, entry->ctx);
+        if (rc != 0) return -1;
+        for (i = 0; i < count; ++i) {
+            /* Re-run accounting through invoke semantics via thin path when
+               batch callback returned raw rows — still validate each row. */
+            CnetOracleStatus st = results[i].status;
+            entry->calls++;
+            if ((unsigned)st < CNET_ORACLE_STATUS_COUNT)
+                entry->status_counts[st]++;
+            if (st == CNET_ORACLE_ABSTAIN_AMBIGUOUS ||
+                st == CNET_ORACLE_ABSTAIN_UNDETERMINED)
+                entry->abstains++;
+            else if (st != CNET_ORACLE_ANSWER)
+                entry->rejects++;
+            results[i].oracle_identity_digest = entry->behavior_digest;
+            entry->last_result = results[i];
+        }
+        return 0;
+    }
+    for (i = 0; i < count; ++i) {
+        (void)cnet_oracle_invoke(entry, in + i * in_stride, expected_in,
+                                 out + i * out_stride, expected_out,
+                                 &results[i]);
+    }
+    return 0;
+}
+
 static size_t goal_sample_mix(Port goal) {
     /* Cheap goal-dependent offset so units with same input port but
        different goals get different (still uniform) sample strata.
@@ -341,6 +505,7 @@ int acquire_oracle_register(OracleRegistry *o, const char *name,
                             CnetOracleFn fn, void *ctx) {
     size_t i;
     if (!o || !fn || !acquire_name_is_atom(name)) return -1;
+    if (o->policy.v2_only_new) return -1; /* Tier B: refuse new v1 registers */
     if (o->count >= ACQUIRE_MAX_ORACLES) return -1;
     for (i = 0; i < o->count; ++i)
         if (strcmp(o->entries[i].name, name) == 0) return -1;
@@ -360,11 +525,26 @@ int acquire_oracle_register_v2(OracleRegistry *o, const char *name,
                                CnetOracleValidateFn validator,
                                const CnetOracleIdentity *identity,
                                void *ctx) {
+    return acquire_oracle_register_v2_family(o, name, NULL, input_port,
+                                             output_port, fn, validator,
+                                             identity, ctx);
+}
+
+int acquire_oracle_register_v2_family(OracleRegistry *o, const char *name,
+                                      const char *family,
+                                      Port input_port, Port output_port,
+                                      CnetOracleFnV2 fn,
+                                      CnetOracleValidateFn validator,
+                                      const CnetOracleIdentity *identity,
+                                      void *ctx) {
     OracleEntry *entry;
     uint64_t digest;
     size_t i;
     if (!o || !fn || !acquire_name_is_atom(name) ||
         o->count >= ACQUIRE_MAX_ORACLES) return -1;
+    if (o->policy.require_validator && !validator) return -1;
+    if (o->policy.require_attested_to_teach &&
+        !cnet_oracle_identity_is_attested(identity)) return -1;
     digest = cnet_oracle_identity_digest(identity);
     if (digest == 0) return -1;
     for (i = 0; i < o->count; ++i)
@@ -372,6 +552,8 @@ int acquire_oracle_register_v2(OracleRegistry *o, const char *name,
     entry = &o->entries[o->count];
     memset(entry, 0, sizeof *entry);
     snprintf(entry->name, ACQUIRE_NAME_MAX, "%s", name);
+    if (family && family[0])
+        snprintf(entry->family, ACQUIRE_NAME_MAX, "%s", family);
     entry->input_port = input_port;
     entry->output_port = output_port;
     entry->fn_v2 = fn;
@@ -390,6 +572,20 @@ int acquire_oracle_set_batch(OracleRegistry *o, const char *name,
     for (i = 0; i < o->count; ++i) {
         if (strcmp(o->entries[i].name, name) == 0) {
             o->entries[i].fn_batch = fn_batch;
+            o->entries[i].batch_hint = batch_hint ? batch_hint : 16;
+            return 0;
+        }
+    }
+    return -1;
+}
+
+int acquire_oracle_set_batch_v2(OracleRegistry *o, const char *name,
+                                CnetOracleBatchFnV2 fn_batch, size_t batch_hint) {
+    size_t i;
+    if (!o || !fn_batch) return -1;
+    for (i = 0; i < o->count; ++i) {
+        if (strcmp(o->entries[i].name, name) == 0) {
+            o->entries[i].fn_batch_v2 = fn_batch;
             o->entries[i].batch_hint = batch_hint ? batch_hint : 16;
             return 0;
         }
@@ -471,10 +667,14 @@ int acquire_note_health(AcquireLedger *l, const char *subject,
 static OracleEntry *find_oracle(OracleRegistry *o, Port in_p, Port goal_p) {
     size_t i;
     if (!o) return NULL;
-    for (i = 0; i < o->count; ++i)
-        if (acquire_port_eq(o->entries[i].input_port, in_p) &&
-            acquire_port_eq(o->entries[i].output_port, goal_p))
-            return &o->entries[i];
+    for (i = 0; i < o->count; ++i) {
+        OracleEntry *e = &o->entries[i];
+        if (!acquire_port_eq(e->input_port, in_p) ||
+            !acquire_port_eq(e->output_port, goal_p))
+            continue;
+        if (!acquire_oracle_is_teachable(o, e)) continue;
+        return e;
+    }
     return NULL;
 }
 
@@ -970,7 +1170,7 @@ static int attempt_no_plan(PrimitiveRegistry *reg, AcquireLedger *l,
     /* 2. oracle-evidence gate (the acquisition analog of EVIDENCE_CLEAR) */
     if (usable == 0 && attempts > 0) {
         free(inputs); free(targets);
-        gap_defer(g, rep, "oracle_unfit");
+        gap_defer(g, rep, "oracle_unfit"); if (o) o->unfit_closes++;
         return -1;
     }
     if (usable < cfg->min_evidence) {
@@ -981,7 +1181,7 @@ static int attempt_no_plan(PrimitiveRegistry *reg, AcquireLedger *l,
     if ((double)usable / (double)(attempts ? attempts : 1) <
         cfg->evidence_threshold) {
         free(inputs); free(targets);
-        gap_defer(g, rep, "oracle_unfit");
+        gap_defer(g, rep, "oracle_unfit"); if (o) o->unfit_closes++;
         return -1;
     }
 
@@ -1237,6 +1437,7 @@ train_student:
                                                    : ex.certify.min_margin;
         snprintf(rep->last_unit_name, ACQUIRE_NAME_MAX, "%s", name);
     }
+    if (o) o->seals_produced++;
     return 0;
 }
 
@@ -1291,7 +1492,7 @@ static int attempt_rebuild(PrimitiveRegistry *reg, AcquireLedger *l,
     }
     if (usable == 0 && attempts > 0) {
         free(inputs); free(targets);
-        gap_defer(g, rep, "oracle_unfit"); return -1;
+        gap_defer(g, rep, "oracle_unfit"); if (o) o->unfit_closes++; return -1;
     }
     if (usable < cfg->min_evidence) {
         free(inputs); free(targets);
@@ -1299,7 +1500,7 @@ static int attempt_rebuild(PrimitiveRegistry *reg, AcquireLedger *l,
     }
     if ((double)usable / (double)attempts < cfg->evidence_threshold) {
         free(inputs); free(targets);
-        gap_defer(g, rep, "oracle_unfit"); return -1;
+        gap_defer(g, rep, "oracle_unfit"); if (o) o->unfit_closes++; return -1;
     }
 
     /* subject bounded to 48 chars so "_r<n>" always fits in NAME_MAX */
@@ -1421,6 +1622,7 @@ static int attempt_rebuild(PrimitiveRegistry *reg, AcquireLedger *l,
                                                    : ex.certify.min_margin;
         snprintf(rep->last_unit_name, ACQUIRE_NAME_MAX, "%s", name);
     }
+    if (o) o->seals_produced++;
     return 0;
 }
 

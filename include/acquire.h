@@ -128,6 +128,13 @@ typedef CnetOracleValidity (*CnetOracleValidateFn)(
     const double *out, size_t out_count,
     const CnetOracleResult *result, void *ctx);
 
+/* v2 batch row ABI: one full CnetOracleResult per row (never collapse to int). */
+typedef int (*CnetOracleBatchFnV2)(const double *in, size_t in_stride,
+                                   double *out, size_t out_stride,
+                                   size_t count,
+                                   CnetOracleResult *results,
+                                   void *ctx);
+
 typedef struct {
     char name[ACQUIRE_NAME_MAX];
     Port input_port;
@@ -144,6 +151,7 @@ typedef struct {
     size_t parallel_width;
     CnetOracleBatchFn fn_batch;  /* optional; NULL = serial only */
     size_t batch_hint;           /* preferred points per fn_batch call */
+    CnetOracleBatchFnV2 fn_batch_v2; /* optional v2 batch (full per-row results) */
     /* v2 append-only extension. Exactly one of fn/fn_v2 is required. */
     CnetOracleFnV2 fn_v2;
     CnetOracleValidateFn validator;
@@ -151,12 +159,54 @@ typedef struct {
     uint64_t behavior_digest;
     size_t status_counts[CNET_ORACLE_STATUS_COUNT];
     CnetOracleResult last_result;
+    /* ---- Teacher runtime (Tier A/B, 2026-07-21) ---- */
+    char family[ACQUIRE_NAME_MAX]; /* optional teacher family atom; "" = none */
+    int retired;                   /* 1 = not eligible to teach until rebound */
+    char retire_reason[ACQUIRE_REASON_MAX];
+    uint64_t lease_gen;            /* 0 = unbound; else active lease id */
+    size_t seals_produced;         /* closed units taught by this oracle */
+    size_t unfit_closes;           /* drain attempts ending oracle_unfit */
 } OracleEntry;
+
+/* Deploy/teach policy for an OracleRegistry (zero-init = hermetic-compatible). */
+typedef struct {
+    /* When 1, only fully attested identities may teach (non-zero SHA-256 and
+       non-zero toolchain_digest). Hermetic tests leave this 0. */
+    int require_attested_to_teach;
+    /* When 1, acquire_oracle_register (v1) is refused; use v2. */
+    int v2_only_new;
+    /* When 1, v2 register without a semantic validator is refused for
+       non-PROOF/sampled teaching paths (caller opts in for production). */
+    int require_validator;
+    /* Auto-retire when unfit_closes/calls exceeds rate after min_calls. */
+    double retire_unfit_rate;   /* 0 = disabled; e.g. 0.5 */
+    size_t retire_min_calls;    /* default 0 → treated as 16 when rate > 0 */
+    /* When 1, only leased oracles may teach (after acquire_oracle_bind). */
+    int require_lease_to_teach;
+} OraclePolicy;
 
 typedef struct {
     OracleEntry entries[ACQUIRE_MAX_ORACLES];
     size_t count;
+    OraclePolicy policy;
+    uint64_t next_lease_gen; /* monotonic lease issuer; 0 reserved */
 } OracleRegistry;
+
+/* Scorecard snapshot (report-only). */
+typedef struct {
+    char name[ACQUIRE_NAME_MAX];
+    char family[ACQUIRE_NAME_MAX];
+    size_t calls;
+    size_t rejects;
+    size_t abstains;
+    size_t seals_produced;
+    size_t unfit_closes;
+    int retired;
+    int leased;
+    int attested;
+    uint64_t behavior_digest;
+    double unfit_rate; /* rejects+unfit style; unfit_closes/max(calls,1) */
+} OracleScorecard;
 
 typedef enum { GAP_NO_PLAN = 0, GAP_LOW_RELIABILITY = 1, GAP_HEALTH = 2 } GapKind;
 typedef enum { GAP_OPEN = 0, GAP_DEFERRED = 1, GAP_CLOSED = 2 } GapStatus;
@@ -315,6 +365,10 @@ int acquire_oracle_register_v2(OracleRegistry *o, const char *name,
    Returns 0 for malformed identity. */
 CNET_API uint64_t cnet_oracle_identity_digest(const CnetOracleIdentity *identity);
 
+/* 1 if identity carries a non-zero full artifact SHA-256 and non-zero
+   toolchain_digest (deploy attestation). Digests-only identities return 0. */
+CNET_API int cnet_oracle_identity_is_attested(const CnetOracleIdentity *identity);
+
 /* The one governed invocation path. Performs ABI checks, representation
    validation, optional semantic validation, first-class status accounting,
    and legacy aggregate counter updates. Returns the final status. */
@@ -324,14 +378,57 @@ CNET_API CnetOracleStatus cnet_oracle_invoke(
     double *out, size_t out_count,
     CnetOracleResult *result_out);
 
+/* Governed batch path: fills results[i] for each row. If entry has no
+   fn_batch_v2, falls back to serial cnet_oracle_invoke per row (identical
+   accounting). Returns 0, or -1 on bad args. */
+CNET_API int cnet_oracle_invoke_batch(
+    OracleEntry *entry,
+    const double *in, size_t in_stride,
+    double *out, size_t out_stride,
+    size_t count,
+    CnetOracleResult *results);
+
 /* Opt-in AFTER registering: declare the named oracle safe for concurrent
    fn calls from up to `width` threads. Only takes effect in OpenMP builds;
    mined exemplar tables and counters are identical to the serial path by
    construction (indexed slots, serial compaction). Returns 0, -1 unknown. */
 int acquire_oracle_set_batch(OracleRegistry *o, const char *name,
                              CnetOracleBatchFn fn_batch, size_t batch_hint);
+int acquire_oracle_set_batch_v2(OracleRegistry *o, const char *name,
+                                CnetOracleBatchFnV2 fn_batch, size_t batch_hint);
 int acquire_oracle_set_parallel(OracleRegistry *o, const char *name,
                                 size_t width);
+
+/* Teacher runtime policy (zero-init = hermetic: no attestation gate). */
+void acquire_oracle_policy_defaults(OraclePolicy *p);
+void acquire_oracle_policy_set(OracleRegistry *o, const OraclePolicy *p);
+
+/* Lease a registered oracle for teaching. Returns lease gen (>0), or 0 on
+   refusal (unknown/retired/unattested under policy). */
+uint64_t acquire_oracle_bind(OracleRegistry *o, const char *name);
+int acquire_oracle_unbind(OracleRegistry *o, const char *name, uint64_t lease);
+int acquire_oracle_is_teachable(const OracleRegistry *o, const OracleEntry *e);
+
+/* Scorecard fill; returns 0, or -1 unknown. */
+int acquire_oracle_scorecard(const OracleRegistry *o, const char *name,
+                             OracleScorecard *out);
+
+/* Apply auto-retire policy to all entries; returns number newly retired. */
+size_t acquire_oracle_apply_retire_policy(OracleRegistry *o);
+
+/* Record a seal or unfit outcome against the named teacher (drain hooks). */
+void acquire_oracle_note_seal(OracleRegistry *o, const char *name);
+void acquire_oracle_note_unfit(OracleRegistry *o, const char *name);
+
+/* v2 register with optional teacher family atom ("" ok). Same rules as
+   acquire_oracle_register_v2 plus policy gates. */
+int acquire_oracle_register_v2_family(OracleRegistry *o, const char *name,
+                                      const char *family,
+                                      Port input_port, Port output_port,
+                                      CnetOracleFnV2 fn,
+                                      CnetOracleValidateFn validator,
+                                      const CnetOracleIdentity *identity,
+                                      void *ctx);
 
 /* Note a gap. Coalesces: a record with the same (kind, ports, subject) gets
    times_hit incremented instead of a duplicate. DEFERRED records reopen

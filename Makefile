@@ -2566,6 +2566,17 @@ unified_specialist: specialist_unit specialist_health $(MODEL_RUNTIME) $(CCE) $(
 	@./$(BIN_DIR)/test_heterogeneous_plan > logs/unified_specialist.log 2>&1
 	@grep -q "HET_PLAN_PASS" logs/unified_specialist.log
 
+
+.PHONY: oracle_teacher_runtime
+oracle_teacher_runtime: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) tests/test_oracle_teacher_runtime.c
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -o $(BIN_DIR)/test_oracle_teacher_runtime \
+		$(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) \
+		$(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) tests/test_oracle_teacher_runtime.c $(LDFLAGS) -pthread
+	@./$(BIN_DIR)/test_oracle_teacher_runtime > logs/oracle_teacher_runtime.log 2>&1
+	@grep -q "ORACLE_TEACHER_RUNTIME_PASS" logs/oracle_teacher_runtime.log
+	@grep "ORACLE_TEACHER_RUNTIME_PASS" logs/oracle_teacher_runtime.log
+
 oracle_v2_test: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) tests/test_oracle_v2.c
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) $(CFLAGS) -o $(BIN_DIR)/test_oracle_v2 \
@@ -2902,7 +2913,7 @@ counterfactual_serving: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $
 	@grep -q "CNET_COUNTERFACTUAL REPORT" logs/counterfactual_serving.log
 	@grep -q "COUNTERFACTUAL_SERVING_PASS" logs/counterfactual_serving.log
 
-unified_native: unified_adapter unified_cce_adapter unified_oracle_adapter unified_specialist gap_lane gap_lane_service_config dispatch_story oracle_v2_test unified_async unified_models unified_ds4_launcher soul_host_test soul_reopen_test counterfactual_serving admission_bypass_audit cnet_dll build_hygiene_test alt_paths_gate aicimo_core_test agent_role route_log evidence_bundle health_layers cnet_harness_contract_test resource_governor counterfactual_order self_improve deploy_profile
+unified_native: unified_adapter unified_cce_adapter unified_oracle_adapter unified_specialist gap_lane gap_lane_service_config dispatch_story oracle_v2_test oracle_teacher_runtime unified_async unified_models unified_ds4_launcher soul_host_test soul_reopen_test counterfactual_serving admission_bypass_audit cnet_dll build_hygiene_test alt_paths_gate aicimo_core_test agent_role route_log evidence_bundle health_layers cnet_harness_contract_test resource_governor counterfactual_order self_improve deploy_profile
 	@for sym in specialist_wrap_btn specialist_wrap_cce_model \
 		specialist_wrap_oracle specialist_admit specialist_axes \
 		specialist_residency_of_model specialist_residency_of_branch \
