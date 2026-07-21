@@ -416,19 +416,23 @@ static int soul_ensure_residual(SoulHost *h, size_t want_dim) {
         const char *win = getenv("CNET_RESIDUAL_WINDOW");
         h->residual_tried = 1;
         if (residual_gguf_open(&r, path, win, 32) != 0 || !r) {
-            fprintf(stderr, "soul_host: residual GGUF open failed (%s)\n", path);
-            return -1;
-        }
-        if (hybrid_bind_residual(&h->hybrid, "residual_gguf", residual_gguf_oracle,
-                                 r) != 0) {
+            fprintf(stderr, "soul_host: residual GGUF open failed (%s)%s\n", path,
+                    h->hermetic_residual ? " — falling back to hermetic" : "");
+            if (!h->hermetic_residual) return -1;
+            /* fall through to hermetic */
+        } else if (hybrid_bind_residual(&h->hybrid, "residual_gguf",
+                                        residual_gguf_oracle, r) != 0) {
             residual_gguf_close(r);
-            return -1;
+            fprintf(stderr, "soul_host: residual GGUF bind failed%s\n",
+                    h->hermetic_residual ? " — falling back to hermetic" : "");
+            if (!h->hermetic_residual) return -1;
+        } else {
+            h->owned_residual = r;
+            h->residual_window = residual_gguf_window_n(r);
+            fprintf(stderr, "soul_host: residual GGUF bound window=%d\n",
+                    h->residual_window);
+            return 0;
         }
-        h->owned_residual = r;
-        h->residual_window = residual_gguf_window_n(r);
-        fprintf(stderr, "soul_host: residual GGUF bound window=%d\n",
-                h->residual_window);
-        return 0;
     }
     if (h->hermetic_residual) {
         size_t d = want_dim > 0 ? want_dim : 4;
