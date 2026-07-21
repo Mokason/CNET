@@ -47,3 +47,11 @@ systemctl --user start cnet-janitor.service
 
 ## Next (G2)
 Policy object bounds + consolidate/dedupe + rollback pins.
+
+
+## G2 additions (2026-07-21)
+- `config/governance_policy.env` + `include/cnet_governance.h`
+- Dim-bucket near-duplicate **report** (no auto-delete)
+- Rollback pins: `cnet_gov_pin_snapshot` / `scripts/cnet_janitor_restore.sh`
+- Caps: `warn_units`, `max_units`, `max_waiting_oracle_warn`
+- Gate: `make governance` → `GOVERNANCE_PASS`

@@ -1,29 +1,20 @@
-/* CNET library janitor (governance G1).
+/* CNET library janitor (governance G1+G2).
  *
- * One maintenance pass over a personal CNB:
- *   - soul_health_tick (audit / label / heal / promote / structure-mine)
+ * Maintenance pass over a personal CNB under a human policy file:
+ *   - load config/governance_policy.env (CNET_GOV_* env overlays)
+ *   - soul_health_tick
  *   - low-reliability scan (+ optional LOW_RELIABILITY ledger notes)
- *   - gap ledger census (open / deferred / closed)
- *   - serve-stats snapshot
+ *   - dim-bucket near-duplicate census (report only; no auto-delete)
+ *   - gap ledger census
+ *   - optional rollback pin (rotated snapshots)
  *   - markdown + JSON report under artifacts/janitor/
- *   - optional CNB file snapshot (copy) when CNET_JANITOR_SNAPSHOT=1
  *
  * Safety:
- *   - Refuses if <base>.stop exists (learner stop convention)
- *   - Refuses if CNET_JANITOR_LOCK cannot be acquired (single flight)
+ *   - Refuses if <base>.stop exists (when policy.refuse_if_stop)
+ *   - Single-flight lock
  *   - Does not delete units; does not rewrite policy
- *   - Default is report + health + persist runtime state via soul_close
  *
- * Usage:
- *   ./bin/cnet_janitor [base.cnb]
- * Env:
- *   CNET_BASE_PATH              default base
- *   CNET_JANITOR_REPORT_DIR     default artifacts/janitor
- *   CNET_JANITOR_LOW_REL        floor (default 0.55); 0 = skip scan notes
- *   CNET_JANITOR_LOW_REL_MIN_EV evidence needed (default 64)
- *   CNET_JANITOR_NOTE_LOW_REL=1 write LOW_RELIABILITY into <base>.gaps.txt
- *   CNET_JANITOR_SNAPSHOT=1     copy CNB to report dir/snapshots/
- *   CNET_JANITOR_LOCK           lock file path (default <report>/.janitor.lock)
+ * Usage: ./bin/cnet_janitor [base.cnb]
  */
 #include <errno.h>
 #include <stdio.h>
@@ -38,15 +29,11 @@
 #include "../include/acquire.h"
 #include "../include/nn.h"
 #include "../include/router.h"
+#include "../include/cnet_governance.h"
 
 static int env_flag(const char *k) {
     const char *v = getenv(k);
     return v && v[0] == '1' && v[1] == '\0';
-}
-
-static double env_d(const char *k, double d) {
-    const char *v = getenv(k);
-    return (v && v[0]) ? atof(v) : d;
 }
 
 static long env_l(const char *k, long d) {
@@ -79,11 +66,13 @@ static int file_exists(const char *p) {
 static int acquire_lock(const char *path) {
     int fd;
     char pidbuf[32];
+    ssize_t w;
     if (!path || !path[0]) return -1;
     fd = open(path, O_CREAT | O_EXCL | O_WRONLY, 0644);
     if (fd < 0) return -1;
     snprintf(pidbuf, sizeof pidbuf, "%d\n", (int)getpid());
-    (void)write(fd, pidbuf, strlen(pidbuf));
+    w = write(fd, pidbuf, strlen(pidbuf));
+    (void)w;
     close(fd);
     return 0;
 }
@@ -109,7 +98,6 @@ static void census_ledger(const char *path, LedgerCensus *c) {
     if (!fgets(line, sizeof line, f)) { fclose(f); return; }
     while (fgets(line, sizeof line, f)) {
         int kind, status;
-        char reason[64];
         if (sscanf(line, "%d %d", &kind, &status) != 2) {
             c->other_n++;
             continue;
@@ -118,14 +106,11 @@ static void census_ledger(const char *path, LedgerCensus *c) {
         else if (status == 1) c->deferred_n++;
         else if (status == 2) c->closed_n++;
         else c->other_n++;
-        reason[0] = '\0';
-        /* defer_reason often field 14 (0-based varies); scan tokens */
         {
             char *tok, *save = NULL, *copy = strdup(line);
-            int i = 0;
             if (copy) {
                 for (tok = strtok_r(copy, " \t\n", &save); tok;
-                     tok = strtok_r(NULL, " \t\n", &save), i++) {
+                     tok = strtok_r(NULL, " \t\n", &save)) {
                     if (strcmp(tok, "waiting_oracle") == 0) c->waiting_oracle++;
                     if (strcmp(tok, "low_reliability") == 0 ||
                         strcmp(tok, "LOW_RELIABILITY") == 0)
@@ -139,12 +124,85 @@ static void census_ledger(const char *path, LedgerCensus *c) {
     fclose(f);
 }
 
+/* Dim-bucket duplicate census (report-only). */
+typedef struct {
+    int in_d, out_d;
+    int count;
+    char sample[3][128];
+} DimBucket;
+
+static void dedupe_scan(SoulHost *host, int nunits, FILE *md, int *out_buckets,
+                        int *out_flagged) {
+    DimBucket *bk = NULL;
+    size_t nb = 0, cap = 0;
+    int ui, flagged = 0, big = 0;
+    fprintf(md, "## Near-duplicate dim census (report only)\n\n");
+    fprintf(md, "Groups units by (in_dim, out_dim). No deletion.\n\n");
+    for (ui = 0; ui < nunits; ui++) {
+        char name[128];
+        int idim = 0, odim = 0;
+        size_t j;
+        int found = -1;
+        if (soul_unit_name(host, ui, name, (int)sizeof name) != 0) continue;
+        if (soul_unit_dims(host, name, &idim, &odim) != 0) continue;
+        for (j = 0; j < nb; j++) {
+            if (bk[j].in_d == idim && bk[j].out_d == odim) {
+                found = (int)j;
+                break;
+            }
+        }
+        if (found < 0) {
+            if (nb == cap) {
+                size_t ncap = cap ? cap * 2 : 64;
+                DimBucket *nbk = realloc(bk, ncap * sizeof *bk);
+                if (!nbk) break;
+                bk = nbk;
+                cap = ncap;
+            }
+            bk[nb].in_d = idim;
+            bk[nb].out_d = odim;
+            bk[nb].count = 0;
+            bk[nb].sample[0][0] = bk[nb].sample[1][0] = bk[nb].sample[2][0] =
+                '\0';
+            found = (int)nb;
+            nb++;
+        }
+        {
+            DimBucket *b = &bk[found];
+            if (b->count < 3)
+                snprintf(b->sample[b->count], sizeof b->sample[0], "%s", name);
+            b->count++;
+        }
+    }
+    fprintf(md, "| in | out | count | samples |\n|---|---|---|---|\n");
+    {
+        size_t j;
+        for (j = 0; j < nb; j++) {
+            if (bk[j].count < 5) continue;
+            flagged++;
+            big += bk[j].count;
+            fprintf(md, "| %d | %d | %d | `%s` `%s` `%s` |\n", bk[j].in_d,
+                    bk[j].out_d, bk[j].count, bk[j].sample[0],
+                    bk[j].sample[1][0] ? bk[j].sample[1] : "",
+                    bk[j].sample[2][0] ? bk[j].sample[2] : "");
+        }
+    }
+    if (flagged == 0)
+        fprintf(md, "_(no dim buckets with count ≥ 5)_\n");
+    fprintf(md, "\nFlagged buckets: %d  Units in those buckets: %d\n\n", flagged,
+            big);
+    free(bk);
+    if (out_buckets) *out_buckets = flagged;
+    if (out_flagged) *out_flagged = big;
+}
+
 int main(int argc, char **argv) {
     const char *base;
     const char *report_dir;
+    const char *policy_path;
     char ledger_path[768], stop_path[768], lock_path[800];
     char report_md[900], report_json[900], stamp[64];
-    char snap_dir[900], snap_path[960];
+    char pin_path[CNET_GOV_PATH_MAX];
     SoulHost *host = NULL;
     long long health[16];
     int hn, ui, nunits;
@@ -158,24 +216,43 @@ int main(int argc, char **argv) {
     AcquireLedger ledger;
     int note_low, do_snap;
     int rc = 1;
+    int dedupe_buckets = 0, dedupe_units = 0;
+    int warn_units = 0, warn_oracle = 0, refuse_cap = 0;
+    CnetGovernancePolicy gov;
+    char pin_ok[8] = "no";
 
     base = (argc >= 2 && argv[1][0]) ? argv[1] : getenv("CNET_BASE_PATH");
-    if (!base || !base[0])
-        base = "soul_gemma4v2_final.cnb";
+    if (!base || !base[0]) base = "soul_gemma4v2_final.cnb";
     report_dir = getenv("CNET_JANITOR_REPORT_DIR");
     if (!report_dir || !report_dir[0]) report_dir = "artifacts/janitor";
+    policy_path = getenv("CNET_GOV_POLICY");
+    if (!policy_path || !policy_path[0])
+        policy_path = "config/governance_policy.env";
 
-    low_floor = env_d("CNET_JANITOR_LOW_REL", 0.55);
-    low_min_ev = env_l("CNET_JANITOR_LOW_REL_MIN_EV", 64);
-    note_low = env_flag("CNET_JANITOR_NOTE_LOW_REL");
-    do_snap = env_flag("CNET_JANITOR_SNAPSHOT");
+    (void)cnet_gov_policy_load(&gov, policy_path);
+    /* Legacy janitor env still works as overlay */
+    if (getenv("CNET_JANITOR_LOW_REL"))
+        gov.low_rel_floor = atof(getenv("CNET_JANITOR_LOW_REL"));
+    if (getenv("CNET_JANITOR_LOW_REL_MIN_EV"))
+        gov.low_rel_min_evidence =
+            (size_t)atol(getenv("CNET_JANITOR_LOW_REL_MIN_EV"));
+    if (env_flag("CNET_JANITOR_NOTE_LOW_REL")) gov.note_low_rel = 1;
+    if (env_flag("CNET_JANITOR_SNAPSHOT")) gov.snapshot_on_run = 1;
+    if (getenv("CNET_JANITOR_SNAPSHOT") &&
+        getenv("CNET_JANITOR_SNAPSHOT")[0] == '0')
+        gov.snapshot_on_run = 0;
+
+    low_floor = gov.low_rel_floor;
+    low_min_ev = (long)gov.low_rel_min_evidence;
+    note_low = gov.note_low_rel;
+    do_snap = gov.snapshot_on_run;
 
     if (!file_exists(base)) {
         fprintf(stderr, "cnet_janitor: base missing: %s\n", base);
         return 2;
     }
     snprintf(stop_path, sizeof stop_path, "%s.stop", base);
-    if (file_exists(stop_path)) {
+    if (gov.refuse_if_stop && file_exists(stop_path)) {
         fprintf(stderr, "cnet_janitor: refuse — stop file present: %s\n",
                 stop_path);
         return 3;
@@ -206,8 +283,10 @@ int main(int argc, char **argv) {
     snprintf(report_json, sizeof report_json, "%s/janitor_%s.json", report_dir,
              stamp);
     snprintf(ledger_path, sizeof ledger_path, "%s.gaps.txt", base);
+    pin_path[0] = '\0';
 
-    printf("cnet_janitor: base=%s report=%s\n", base, report_md);
+    printf("cnet_janitor: base=%s policy=%s report=%s\n", base, policy_path,
+           report_md);
     fflush(stdout);
 
     host = NULL;
@@ -228,8 +307,12 @@ int main(int argc, char **argv) {
 
     nunits = soul_unit_count(host);
     if (nunits < 0) nunits = 0;
+    if ((size_t)nunits >= gov.warn_units) warn_units = 1;
+    if (gov.max_units && (size_t)nunits > gov.max_units) {
+        warn_units = 1;
+        if (gov.refuse_over_cap) refuse_cap = 1;
+    }
 
-    /* Low-rel scan */
     memset(&ledger, 0, sizeof ledger);
     if (note_low && file_exists(ledger_path))
         (void)acquire_ledger_load(&ledger, ledger_path);
@@ -241,10 +324,26 @@ int main(int argc, char **argv) {
         goto done;
     }
 
-    fprintf(md, "# CNET Janitor Report\n\n");
+    fprintf(md, "# CNET Janitor Report (G1+G2)\n\n");
     fprintf(md, "- **When:** %s\n", stamp);
     fprintf(md, "- **Base:** `%s`\n", base);
-    fprintf(md, "- **Units:** %d\n\n", nunits);
+    fprintf(md, "- **Units:** %d\n", nunits);
+    fprintf(md, "- **Policy:** `%s`\n\n", policy_path);
+
+    fprintf(md, "## Policy bounds\n\n");
+    fprintf(md, "| key | value |\n|---|---|\n");
+    fprintf(md, "| max_units | %zu |\n", gov.max_units);
+    fprintf(md, "| warn_units | %zu |\n", gov.warn_units);
+    fprintf(md, "| low_rel_floor | %.3f |\n", gov.low_rel_floor);
+    fprintf(md, "| low_rel_min_evidence | %zu |\n", gov.low_rel_min_evidence);
+    fprintf(md, "| note_low_rel | %d |\n", gov.note_low_rel);
+    fprintf(md, "| snapshot_on_run | %d |\n", gov.snapshot_on_run);
+    fprintf(md, "| max_snapshots | %zu |\n", gov.max_snapshots);
+    fprintf(md, "| pin_dir | `%s` |\n", gov.pin_dir);
+    fprintf(md, "| refuse_over_cap | %d |\n\n", gov.refuse_over_cap);
+    if (warn_units)
+        fprintf(md, "**WARN:** unit count %d crosses warn/max bounds.\n\n",
+                nunits);
 
     fprintf(md, "## Health tick\n\n");
     fprintf(md, "| field | value |\n|---|---|\n");
@@ -257,8 +356,9 @@ int main(int argc, char **argv) {
     fprintf(md, "| promoted_provisional | %lld |\n", health[6]);
     fprintf(md, "| shadows_promoted | %lld |\n", health[7]);
     fprintf(md, "| reset_remaining | %lld |\n", health[8]);
-    fprintf(md, "| trust uncertified/evidenced/certified/demoted | "
-                "%lld/%lld/%lld/%lld |\n\n",
+    fprintf(md,
+            "| trust uncertified/evidenced/certified/demoted | "
+            "%lld/%lld/%lld/%lld |\n\n",
             health[9], health[10], health[11], health[12]);
 
     fprintf(md, "## Low-reliability scan\n\n");
@@ -275,21 +375,12 @@ int main(int argc, char **argv) {
                 continue;
             reli = soul_unit_reliability_milli(host, name);
             if (reli >= 0) rel = reli / 1000.0;
-            /* evidence: use health layers JSON snippet or skip count */
-            {
-                /* Approximate evidence from reliability API only; detailed
-                   evidence is in registry state — milli is enough for janitor. */
-            }
             if (rel < low_floor) {
-                /* Without evidence count API on soul, treat milli-known units
-                   with rel under floor as candidates when min_ev==0, else we
-                   only list when we can get evidence from serve path. */
                 char hl[512];
                 int has_ev = 0;
                 hl[0] = '\0';
                 if (soul_unit_health_layers(host, name, hl, (int)sizeof hl) ==
                     0) {
-                    /* parse "evidence":N if present */
                     const char *p = strstr(hl, "\"evidence\"");
                     if (p) {
                         p = strchr(p, ':');
@@ -298,8 +389,6 @@ int main(int argc, char **argv) {
                     }
                 }
                 if (!has_ev) {
-                    /* Fallback: if reliability left Laplace 0.5 exactly and
-                       milli==500, skip; else require min_ev==0 or ev. */
                     if (reli == 500) continue;
                     if (low_min_ev > 0 && ev < (unsigned long)low_min_ev)
                         continue;
@@ -326,7 +415,10 @@ int main(int argc, char **argv) {
     if (note_low && low_noted > 0)
         (void)acquire_ledger_save(&ledger, ledger_path);
 
+    dedupe_scan(host, nunits, md, &dedupe_buckets, &dedupe_units);
+
     census_ledger(ledger_path, &census);
+    if (census.waiting_oracle >= gov.max_waiting_oracle_warn) warn_oracle = 1;
     fprintf(md, "## Gap ledger census\n\n");
     fprintf(md, "| status | count |\n|---|---|\n");
     fprintf(md, "| open | %zu |\n", census.open_n);
@@ -334,89 +426,102 @@ int main(int argc, char **argv) {
     fprintf(md, "| closed | %zu |\n", census.closed_n);
     fprintf(md, "| waiting_oracle (token) | %zu |\n", census.waiting_oracle);
     fprintf(md, "| low_reliability (token) | %zu |\n\n", census.low_rel_gaps);
+    if (warn_oracle)
+        fprintf(md, "**WARN:** waiting_oracle ≥ policy warn (%zu).\n\n",
+                gov.max_waiting_oracle_warn);
 
-    fprintf(md, "## Serve stats (host after tick)\n\n");
-    {
-        unsigned long long cs = 0, rs = 0, gn = 0, sm = 0, ss = 0;
-        /* read back via soul if getters exist — use state file after close;
-           for now print from health path note */
-        fprintf(md, "See `%s.state/soul_serve.stats` after close.\n\n", base);
-        (void)cs; (void)rs; (void)gn; (void)sm; (void)ss;
+    fprintf(md, "## Serve stats\n\n");
+    fprintf(md, "See `%s.state/soul_serve.stats` after close.\n\n", base);
+
+    fprintf(md, "## Rollback pin\n\n");
+    if (do_snap) {
+        if (cnet_gov_pin_snapshot(&gov, base, pin_path, sizeof pin_path) == 0) {
+            fprintf(md, "Pinned: `%s`\n", pin_path);
+            snprintf(pin_ok, sizeof pin_ok, "yes");
+        } else {
+            fprintf(md, "Pin: **FAILED**\n");
+            snprintf(pin_ok, sizeof pin_ok, "fail");
+        }
+    } else {
+        fprintf(md, "Pin: skipped (policy snapshot_on_run=0)\n");
     }
+    fprintf(md, "\nRestore: `bash scripts/cnet_janitor_restore.sh [pin.cnb]`\n\n");
 
     fprintf(md, "## Actions taken\n\n");
     fprintf(md, "- health_tick: yes (hn=%d)\n", hn);
     fprintf(md, "- low_rel_notes: %zu\n", low_noted);
-    fprintf(md, "- snapshot: %s\n", do_snap ? "requested" : "no");
+    fprintf(md, "- dedupe_buckets_flagged: %d\n", dedupe_buckets);
+    fprintf(md, "- pin: %s\n", pin_ok);
     fprintf(md, "\n## Governance\n\n");
-    fprintf(md, "G1 janitor only. No unit deletion. No policy rewrite. "
-                "Human charter remains external.\n");
+    fprintf(md,
+            "G1+G2 janitor. Policy bounds enforced as warnings"
+            "%s. No unit deletion. Human charter remains external.\n",
+            refuse_cap ? " (**REFUSE_OVER_CAP**)" : "");
 
-    /* JSON */
     fprintf(js,
             "{\n"
             "  \"stamp\": \"%s\",\n"
             "  \"base\": \"%s\",\n"
             "  \"units\": %d,\n"
+            "  \"policy\": {\n"
+            "    \"path\": \"%s\",\n"
+            "    \"max_units\": %zu,\n"
+            "    \"warn_units\": %zu,\n"
+            "    \"low_rel_floor\": %.4f,\n"
+            "    \"snapshot_on_run\": %d,\n"
+            "    \"max_snapshots\": %zu,\n"
+            "    \"pin_dir\": \"%s\"\n"
+            "  },\n"
+            "  \"warnings\": {\n"
+            "    \"units\": %s,\n"
+            "    \"waiting_oracle\": %s,\n"
+            "    \"refuse_over_cap\": %s\n"
+            "  },\n"
             "  \"health\": {\n"
             "    \"entries\": %lld,\n"
             "    \"demoted_by_audit\": %lld,\n"
-            "    \"labeled_from_contract\": %lld,\n"
-            "    \"labeled_via_teacher\": %lld,\n"
-            "    \"heal_attempted\": %lld,\n"
             "    \"healed\": %lld,\n"
-            "    \"promoted_provisional\": %lld,\n"
-            "    \"shadows_promoted\": %lld,\n"
-            "    \"reset_remaining\": %lld,\n"
             "    \"trust\": {\"uncertified\": %lld, \"evidenced\": %lld, "
             "\"certified\": %lld, \"demoted\": %lld}\n"
             "  },\n"
             "  \"low_rel\": {\"floor\": %.4f, \"min_ev\": %ld, \"hits\": %zu, "
             "\"noted\": %zu},\n"
+            "  \"dedupe\": {\"buckets\": %d, \"units_in_buckets\": %d},\n"
             "  \"ledger\": {\"open\": %zu, \"deferred\": %zu, \"closed\": %zu, "
-            "\"waiting_oracle\": %zu, \"low_rel_gaps\": %zu}\n"
+            "\"waiting_oracle\": %zu, \"low_rel_gaps\": %zu},\n"
+            "  \"pin\": {\"ok\": \"%s\", \"path\": \"%s\"}\n"
             "}\n",
-            stamp, base, nunits, health[0], health[1], health[2], health[3],
-            health[4], health[5], health[6], health[7], health[8], health[9],
-            health[10], health[11], health[12], low_floor, low_min_ev, low_hit,
-            low_noted, census.open_n, census.deferred_n, census.closed_n,
-            census.waiting_oracle, census.low_rel_gaps);
+            stamp, base, nunits, policy_path, gov.max_units, gov.warn_units,
+            gov.low_rel_floor, gov.snapshot_on_run, gov.max_snapshots,
+            gov.pin_dir, warn_units ? "true" : "false",
+            warn_oracle ? "true" : "false", refuse_cap ? "true" : "false",
+            health[0], health[1], health[5], health[9], health[10], health[11],
+            health[12], low_floor, low_min_ev, low_hit, low_noted,
+            dedupe_buckets, dedupe_units, census.open_n, census.deferred_n,
+            census.closed_n, census.waiting_oracle, census.low_rel_gaps, pin_ok,
+            pin_path[0] ? pin_path : "");
 
-    if (do_snap) {
-        snprintf(snap_dir, sizeof snap_dir, "%s/snapshots", report_dir);
-        if (ensure_dir(snap_dir) == 0) {
-            char cmd[2048];
-            snprintf(snap_path, sizeof snap_path, "%s/%s_%s", snap_dir, stamp,
-                     strrchr(base, '/') ? strrchr(base, '/') + 1 : base);
-            snprintf(cmd, sizeof cmd, "cp -f -- \"%s\" \"%s\"", base, snap_path);
-            if (system(cmd) == 0)
-                fprintf(md, "\nSnapshot: `%s`\n", snap_path);
-            else
-                fprintf(md, "\nSnapshot: FAILED\n");
-        }
-    }
-
-    /* latest pointers */
     {
         char latest_md[900], latest_js[900];
         snprintf(latest_md, sizeof latest_md, "%s/LATEST.md", report_dir);
         snprintf(latest_js, sizeof latest_js, "%s/LATEST.json", report_dir);
         unlink(latest_md);
         unlink(latest_js);
-        symlink(strrchr(report_md, '/') ? strrchr(report_md, '/') + 1
-                                        : report_md,
-                latest_md);
-        symlink(strrchr(report_json, '/') ? strrchr(report_json, '/') + 1
-                                          : report_json,
-                latest_js);
+        (void)symlink(strrchr(report_md, '/') ? strrchr(report_md, '/') + 1
+                                              : report_md,
+                      latest_md);
+        (void)symlink(strrchr(report_json, '/') ? strrchr(report_json, '/') + 1
+                                                : report_json,
+                      latest_js);
     }
 
     printf("JANITOR_OK units=%d demoted=%lld healed=%lld low_hits=%zu "
-           "low_noted=%zu ledger_closed=%zu deferred=%zu\n",
+           "low_noted=%zu ledger_closed=%zu deferred=%zu dedupe_buckets=%d "
+           "pin=%s warn_units=%d\n",
            nunits, health[1], health[5], low_hit, low_noted, census.closed_n,
-           census.deferred_n);
+           census.deferred_n, dedupe_buckets, pin_ok, warn_units);
     printf("JANITOR_REPORT %s\n", report_md);
-    rc = 0;
+    rc = refuse_cap ? 8 : 0;
 
 done:
     if (md) fclose(md);

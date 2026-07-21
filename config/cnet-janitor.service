@@ -13,6 +13,8 @@ Environment=CNET_JANITOR_NOTE_LOW_REL=1
 Environment=CNET_JANITOR_LOW_REL=0.55
 Environment=CNET_JANITOR_LOW_REL_MIN_EV=64
 Environment=CNET_JANITOR_SNAPSHOT=0
+Environment=CNET_GOV_POLICY=/home/marble/AI/CNET/config/governance_policy.env
+Environment=CNET_GOV_SNAPSHOT=0
 Nice=19
 # Learner may hold the base; janitor only needs read+runtime state write.
 ExecStart=/bin/bash /home/marble/AI/CNET/scripts/cnet_janitor.sh
