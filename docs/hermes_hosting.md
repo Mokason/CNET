@@ -76,3 +76,8 @@ The launcher verifies GGUF magic and SHA-256, binds only to loopback, clears CUD
 ## Limits
 
 The legacy Phase 4 `hermes --model <artifact-path>` suggestion is not executable: Hermes expects a catalog model name, not a GGUF path. Native conversion remains an offline step. The selected wrapper currently requires at least a 65,536-token llama.cpp context for Hermes' core prompt and permits a bounded 180–600 second CPU query timeout.
+
+## See also
+
+- Doc hub: [`INDEX.md`](INDEX.md)
+- Use-loop: `make cnet_use_loop_acceptance`

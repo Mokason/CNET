@@ -46,5 +46,7 @@ through the strict machinery.
    plan flips with it — the planner's ranking is learned, not configured.
 
 *Related reading:* `include/specialist.h` (the one type the layers
-dispatch over), *The Loop* and *Routing* in the README, and the CNET-D
-section for the no-authority discipline layer 3 inherits.
+dispatch over), *The Loop* and *Routing* in the README, [`INDEX.md`](INDEX.md)
+for umbrellas, and the CNET-D section for the no-authority discipline layer 3
+inherits. Layer-3 agent roles and route telemetry (2026-07-21): see
+`include/cnet_agent_role.h`, `include/cnet_route_log.h`.

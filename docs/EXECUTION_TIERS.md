@@ -80,3 +80,18 @@ generic CPU-fallback context; explicit CUDA and the separate OpenCL
 - `make aicimo_smoke` — compiles `$(CCE)` and runs the canonical AICIMO smoke
   test; no second AICIMO source list exists.
 - `make cce_smoke` — compiles `$(CCE)` and runs the CCE engine smoke test.
+
+## Tier U — Use-loop product surface (2026-07-21)
+
+Not a separate binary tier: these targets compose core Specialists/SoulHost
+with personal-AI, residual, oracle teaching, and evidence persistence.
+
+| Target | Marker | Notes |
+|---|---|---|
+| `cnet_deep_use_loop` | `CNET_DEEP_USE_LOOP_PASS` | Multi-priority hermetic (evidence reopen, distill, residual, planner rank, taxonomy) |
+| `cnet_use_loop_acceptance` | `CNET_USE_LOOP_ACCEPTANCE_PASS` | Product umbrella over deep + personal_ai surfaces |
+| `serve_feedback` | `SERVE_FEEDBACK_PASS` | Reliability + serve stats across reopen |
+| `oracle_teacher_runtime` | `ORACLE_TEACHER_RUNTIME_PASS` | Teacher A+B governance on Oracle v2 |
+| `health_layers` / `evidence_bundle` / `route_log` / `agent_role` | respective `*_PASS` | Measure/report layers; do not replace certification |
+
+See [`INDEX.md`](INDEX.md).

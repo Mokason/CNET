@@ -43,3 +43,7 @@ Apache-2.0 applies to covered copies received under `LICENSE`; GitHub visibility
 and release authorization are separate controls. Until the remaining decisions
 are recorded, the repository must remain private and no external publication
 action is permitted.
+
+## Documentation
+
+Human navigation starts at [`docs/INDEX.md`](INDEX.md). Machine claim ledger: `make claims` → `docs/verified-today.generated.md`.

@@ -49,11 +49,13 @@ Every current claim in this table names its executable gate or evidence log;
 historical measurements elsewhere remain explicitly dated. "In `make test`"
 means the gate runs in the full verification chain on every `make test`.
 
-Rechecked end-to-end on this host (2026-07-14, priority acceptance): `make
-priority_acceptance` — `PRIORITY_ACCEPTANCE_PASS`; its unified phase emitted
-`CNET_UNIFIED_PASS` with a fresh, strict **21/21** in-scope claims ledger. The
-physical-GPU and private-model lanes are reported explicitly as out of scope
-rather than accepted from older logs.
+Rechecked end-to-end on this host (2026-07-21, use-loop + oracle teacher
+runtime): `make cnet_use_loop_acceptance` → `CNET_USE_LOOP_ACCEPTANCE_PASS`
+(includes `cnet_deep_use_loop`, serve feedback, distill, residual, oracle
+teacher runtime, json_toolcall, phase123 taxonomy). `make unified` remains the
+CPU-only vertical for specialist/SoulHost/MCP. Physical-GPU and private-model
+lanes stay explicitly out of scope unless their own gates are run. Start from
+[`docs/INDEX.md`](docs/INDEX.md).
 
 | Area | Verified by | Status |
 |---|---|---|
@@ -66,6 +68,11 @@ rather than accepted from older logs.
 | **Runtime health optimizer** — one opt-in maintenance pass that fixes (audit → contract/teacher fault labeling → heal via retrain + passing re-certify) and improves (evidence promotion, shadow hot-swap) through existing certified paths only | `make specialist_health` | `SPECIALIST_HEALTH_PASS` (17 checks), in `make unified`; healthy registry = proven no-op, zero-init config = total no-op; demoted adapters stay RESET — their repair path is re-acquisition  Wired into SoulHost/MCP: `soul_health_tick` C ABI, `cnet_health_tick` tool, opt-in `CNET_HEALTH_TICK_SECONDS` timer |
 | **One dispatch story** ([`docs/dispatch.md`](docs/dispatch.md)) — "which specialist runs" has one answer in three layers with machine-checked boundaries: recall (`cce_router` SSMax) dispatches INSIDE a Specialist under its contract; the certified planner is the sole cross-specialist composition authority; orchestrators are policy above the planner | `make dispatch_story` | `DISPATCH_STORY_PASS` (15 checks), in `make unified`: a two-branch model routes per input yet certifies and replays as ONE node; evidence never outranks certification; among the certified, learned reliability ranks |
 | **The gap lane** — the 24/7 learning runtime: serving misses land in a gap inbox, the lane ingests them into the persistent ledger, bridges unhealed demotions to HEALTH gaps, and drains by teaching from a bound local model (dynamic-growth students, PROOF/SAMPLED certification, sealed into the base); checkpoints are atomic for base AND ledger; a fresh lane resumes from disk | `make gap_lane` | `GAP_LANE_PASS` (51 checks), in `make unified`; daemon `bin/gap_lane_run` (`make gap_lane_run_build`) has a fail-safe `cnet-gap-lane` user unit, currently intentionally **disabled/offline** with Gemma offline; `make gap_lane_service_prepare` only builds and validates it and never starts/enables the service; activation remains an explicit operator action. Novel goals flow in by explicit typed signature: the `cnet_request_capability` MCP tool (`soul_request` ABI) serves the request now when a certified plan exists, answers capability probes without executing, and otherwise queues the full signature to the inbox — a goal no longer needs an existing unit to become the lane’s work. The wildcard-identity plan (length 0) counts as no plan, same rule as `soul_route` Teaching is corpus-drawn: `CNET_WINDOW_FILE` maps the one-hot alphabet to real corpus token ids (the english window) and `CNET_LANE_CONTEXT_FILE` pins a real tokenized prose prefix in the KV once — every teaching call is an independent probe of prefix+token (`cce_gguf_qwen2_forward_probes`, KV never modified), with the head restricted to the window ids (bit-identical, fraction of the cost). Bare single-token contexts remain the fallback Multiple named contexts per lane: every `<name>.ids` in `CNET_LANE_CONTEXT_DIR` is a pinned-able context selected by goal-tag prefix (`<name>_…`); the teacher re-pins the KV on context switch (once per gap, not per point), and each context carries its own provenance fingerprint into the ledger — proven live with lamp/storm units closed in one tick whose transitions differ by context on identical inputs Unit provenance is a direct relation: a closed gap’s teacher persists as a CNB oracle descriptor (kind `gap_lane_teacher`; identity = the model artifact’s BYTES via streamed SHA-256 — the full 256-bit hash recorded (`artifact_sha256`, collision-resistant) with its 64-bit truncation kept as the fast behavior-digest index; the file’s content, not its path; empty artifacts refused — window config, context retrieval snapshot, taught-signature contract digests, and the teaching stack’s toolchain digest: compiler + build flags + source revision, Makefile-injected, `unattested` visible when built outside it), and the minted unit points at its descriptor directly (`CnbUnitRef.provenance`, CNB v5 with v1/v2/v3/v4 read compat; the gaps ledger v4 carries the minted unit name, the persisted reconcile mark, AND the recipe fingerprint; projected by `soul_unit_provenance`), surviving resume, served by `cnet_list_oracles` under the existing `descriptor_only_not_runtime_trust` admission label. Descriptor resolution is identity-aware: a recurring teacher name with a DIFFERENT identity mints a versioned descriptor (`<name>_i2`…) — the stored identity is never silently reused; a zero-toolchain identity is not provenance; without a live teacher, links happen only when unambiguous. Recipe-change retry: a deferral for a recipe-dependent reason (certify/accuracy/exemplar/oracle-fit/imbalance) is stamped with the acquisition recipe's fingerprint, and a later drain reopens it when the current recipe differs — so a bigger student budget or looser certification bar automatically retries old failures instead of the no-churn re-note policy stranding them; a re-defer re-stamps, so the retry fires once per recipe change, never every drain. Reconciliation is queue-fed O(1) per closure (drain close-hook + persisted done-marks; the one full scan is the open() migration/repair pass) and stays retryable on write failure. Full-width artifact identity landed 2026-07-13; CPU linked-runtime attestation and exact SoulHost/.NET/MCP projection landed 2026-07-17. Still open: GPU driver/kernel folding when a GPU lane teaches |
+| **Use-loop umbrella (serve → evidence → distill → teach)** — deep multi-priority hermetic: reliability survives SoulHost reopen via per-base `<base>.state/*.stats` + `soul_serve.stats`; multi-step distill domain equality; acquire economics (oracle_calls, train_wall_ms, defer histogram); hermetic residual; planner prefers higher live reliability; health/evidence after serves; route_execute outcome recording; benchmark taxonomy honesty | `make cnet_deep_use_loop`; umbrella `make cnet_use_loop_acceptance` | `CNET_DEEP_USE_LOOP_PASS` (72); `CNET_USE_LOOP_ACCEPTANCE_PASS`; plan: `plans/deep_eight_priorities.md` |
+| **Serve feedback + evidence persist** — certified serves move Laplace reliability off the 0.5 prior; close persists counters; reopen restores them (state dir is base-scoped, never cwd) | `make serve_feedback` | `SERVE_FEEDBACK_PASS` |
+| **Oracle teacher runtime (Tier A+B)** — attestation (SHA-256+toolchain), bind/unbind leases, scorecards, auto-retire on unfit rate, teachable-only drain match, v2_only_new / require_validator policies, teacher families, `cnet_oracle_invoke_batch` per-row results | `make oracle_teacher_runtime`; regression `make oracle_v2_test` | `ORACLE_TEACHER_RUNTIME_PASS`; `ORACLE_V2_PASS`; plan: `plans/oracle_teacher_runtime.md`. Descriptors remain `descriptor_only_not_runtime_trust` until bind+certify+admit |
+| **Miner efficiency A/B** — BASE vs `CNET_TRAIN_FAST` on hermetic domain; teacher_efficiency + semantic full-domain | `make miner_efficiency_bench` | `MINER_EFFICIENCY_BENCH_PASS` |
+| **Layered health + evidence bundles + route log + agent roles** | `make health_layers`, `evidence_bundle`, `route_log`, `agent_role` | `HEALTH_LAYERS_PASS`, `EVIDENCE_BUNDLE_PASS`, `ROUTE_LOG_PASS`, `AGENT_ROLE_PASS` |
 | **Phase 1/2 runtime integration** — counterfactual route evidence executes on the live `soul_route` serving path (report-only, opt-in `CNET_COUNTERFACTUAL`; served answers byte-identical knob on/off, roster slot 0 reserved for the served unit) and sparse per-specialist KV selection executes on the `cce_gguf_qwen2` KV attention path (opt-in `CNET_SPARSE_KV`, audited-inert OFF, bit-identical at budget 1.0, fail-loud on unwired paths) | `make counterfactual_serving`, `make sparse_kv_exec` | `COUNTERFACTUAL_SERVING_PASS` (28), `SPARSE_KV_EXEC_PASS` (43); external benchmarks (FACTOR/TruthfulQA, LongBench-class) remain **withheld** — the TruthfulQA dataset is in-repo (`references/truthfulqa/`) but unmeasured |
 | **Sparse stack + async paged KV** — MLA/DSA/MoE/MTP; **async double-buffer KV pages** (HOT ring write while WARM flushes to COLD ledger — endless stream, documented archive) | `make sparse_stack`; `make mtp_spec`; `make kv_page` | `SPARSE_STACK_PASS`; `MTP_SPEC_PASS`; `KV_PAGE_PASS`; plans: `forest_sparse_activate.md`, `kv_async_page.md` |
 | **Dual backends (DS residual + GGUF token gen), CPU first** — separate kinds under `cce_infer_backend` (CPU live; GPU: GGUF via `cce_clgemm`, DS reserved); hermetic synthetic GGUF residual/token stack + dual CPU microbench | `make gguf_stack`; `make cnet_gguf_bench`; `make dual_cpu_bench`; `make dual_stack` | `GGUF_STACK_PASS`; `GGUF_BENCH`; `DUAL_CPU_BENCH_PASS`; plan: `plans/dual_backend_cpu_gpu.md` |
@@ -75,7 +82,7 @@ rather than accepted from older logs.
 | **Campaign v2-fast** — sweep-guided allowlist (`CNET_UNIT_ALLOWLIST`) + index shards (`CNET_UNIT_START`/`END`) + deploy free wins; no cert-bar changes | `make campaign_v2_fast`; `tools/campaign_v2_fast.sh prepare\|estimate\|env` | `CAMPAIGN_V2_FAST_PASS`; real sweep exports **255** minable ids → ~**4–6 h** 1-worker / ~**2 h** 2-worker wall (50–70 s/unit) |
 | **Multimodal v0 (voice/vision external teachers)** — foreign frameworks as oracles only; closed-set speech commands + fixed-label vision mined through `external_teacher` → certify → `specialist_admit` | `make multimodal_v0` | `MULTIMODAL_V0_PASS` (39); plan: `plans/multimodal_external_teachers.md`; helper: `tools/multimodal_campaign.sh` |
 | **Voice real teacher** — subprocess ABI + `tools/voice_teacher.py` (hermetic gate; faster-whisper/openai-whisper optional) → mine/admit closed-set | `make voice_real_teacher` | `VOICE_REAL_TEACHER_PASS`; env: `CNET_VOICE_TEACHER_CMD` |
-| **JSON tool-call v1** — closed-set keyword features → certified tool ONEHOT (calc/memory/file/**web_search**/**wiki_lookup**/…); host owns free-form JSON; SoulHost + .NET `JsonToolCall`; Agent + MCP classify/lookup | `make json_toolcall` | `JSON_TOOLCALL_PASS`; plan: `plans/json_toolcall_v0.md`; MCP: `cnet_web_search`, `cnet_wiki_lookup`, `cnet_classify_toolcall`; seal: `jtc-seal` |
+| **JSON tool-call v2** — closed-set keyword features → certified tool ONEHOT (calc/memory/file/**web_search**/**wiki_lookup**/…); host owns free-form JSON; SoulHost + .NET `JsonToolCall`; Agent + MCP classify/lookup | `make json_toolcall` | `JSON_TOOLCALL_PASS`; plan: `plans/json_toolcall_v0.md (unit `json_toolcall_v2`)`; MCP: `cnet_web_search`, `cnet_wiki_lookup`, `cnet_classify_toolcall`; seal: `jtc-seal` |
 | **Personal AI (local first, big AI on call)** — certified library serves first; miss → teacher help + gap note; tick seals a local skill; abstain if no teacher | `make personal_ai` | `PERSONAL_AI_PASS` (13); plan: `plans/personal_ai_local_first.md`; env: `config/personal-ai.env` |
 | **Post-seal serve proof** — teach → seal → SoulHost reopen → `SOUL_SOURCE_CERTIFIED` Tier A; live CNB sample CLI | `make post_seal_serve` / `scripts/personal_ai_serve_proof.sh` | `POST_SEAL_SERVE_PASS`; live: `bin/serve_proof` |
 | **Personal AI automation** — user systemd learner + optional Hermes serve; one script prepare/install/start/status/doctor | `make personal_ai_auto`; `scripts/personal_ai_auto.sh start` | `PERSONAL_AI_AUTO_PASS`; full loop: `SERVE=1 scripts/personal_ai_auto.sh start` |
@@ -112,19 +119,28 @@ it reads as graded structure in that context rather than a capacity wall. See
 
 ## The map
 
-The deep documentation is split by altitude (2026-07-12; unification
-analysis item 8 — one document per job, all content preserved):
+**Start at [`docs/INDEX.md`](docs/INDEX.md)** — single navigation hub (2026-07-21 rewire).
 
 | Where | What |
 |---|---|
-| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | how every layer works: the Specialist type, CCE runtime, planner/contracts/lifecycle, domains, knowledge pipeline, compression, universal model layer, autonomy loop, Knowing the Edge, CNET-D, status & caveats, the full make-target table, file formats, repo layout |
-| [`docs/CHANGELOG.md`](docs/CHANGELOG.md) | the dated optimization ledgers — what landed when, what evidence supports it, and which negative or retracted results must not be revived |
-| [`docs/dispatch.md`](docs/dispatch.md) | the one dispatch story: recall / synthesis / policy, and the gate that pins its boundaries |
-| [`docs/cnet-history.md`](docs/cnet-history.md) | the mechanism-by-mechanism chronology |
-| [`plans/ssmax_dsa.md`](plans/ssmax_dsa.md) | SSMax + DSA sparse attention (single-user) |
-| [`plans/mla.md`](plans/mla.md) | DeepSeek-style MLA engine (latent KV + absorb) |
-| [`plans/deepseek_forest_map.md`](plans/deepseek_forest_map.md) | CNET-native trunk/branch/leaf map + `bind_forest` / `.cnetpack` |
-| [`docs/verified-today.generated.md`](docs/verified-today.generated.md) | machine-generated claim verdicts (`make claims`; regenerated by every `make unified`) |
+| [`docs/INDEX.md`](docs/INDEX.md) | **doc hub**: orientation table, umbrellas, honesty rules |
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | how every layer works: Specialist, CCE, planner/contracts/lifecycle, autonomy loop, Knowing the Edge, make targets, formats |
+| [`docs/CHANGELOG.md`](docs/CHANGELOG.md) | dated optimization ledger + negative/retracted results |
+| [`docs/dispatch.md`](docs/dispatch.md) | one dispatch story: recall / synthesis / policy (+ route log, agent roles) |
+| [`docs/EXECUTION_TIERS.md`](docs/EXECUTION_TIERS.md) | core vs GPU acceleration vs quarantined paths |
+| [`docs/RELEASE_POLICY.md`](docs/RELEASE_POLICY.md) | private release authority; `make release_integrity` |
+| [`docs/phase123_benchmark_closure.md`](docs/phase123_benchmark_closure.md) | measured / contract_pass / withheld taxonomy |
+| [`docs/hermes_hosting.md`](docs/hermes_hosting.md) | Hermes/MCP hosting |
+| [`docs/cnet-history.md`](docs/cnet-history.md) | long mechanism chronology |
+| [`docs/verified-today.generated.md`](docs/verified-today.generated.md) | machine claim verdicts (`make claims`; do not hand-edit) |
+| [`plans/deep_eight_priorities.md`](plans/deep_eight_priorities.md) | use-loop P1–P8 deep gate |
+| [`plans/oracle_teacher_runtime.md`](plans/oracle_teacher_runtime.md) | Oracle A+B teacher governance |
+| [`plans/delegation_master_report.md`](plans/delegation_master_report.md) | master execution report |
+| [`plans/personal_ai_local_first.md`](plans/personal_ai_local_first.md) | personal AI product loop |
+| [`plans/ssmax_dsa.md`](plans/ssmax_dsa.md) | SSMax + DSA sparse attention |
+| [`plans/mla.md`](plans/mla.md) | MLA engine |
+| [`plans/deepseek_forest_map.md`](plans/deepseek_forest_map.md) | trunk/branch/leaf + `.cnetpack` |
+
 
 ## Quick Start
 
@@ -153,6 +169,14 @@ make compounding_bench       # 3C dual-track demo: LOW vs DEFAULT cost/accuracy 
 make detect FILE=Models/gemma-4-12B-it-MTP-Q8_0.gguf   # probe structure, no weights loaded
 make test             # native C verification chain and positive-marker log gate
 make unified          # CPU-only native + cnet.so + .NET host + stdio MCP acceptance
+
+# Use-loop + oracle teacher runtime (2026-07-21)
+make cnet_deep_use_loop          # deep P1–P8 hermetic
+make cnet_use_loop_acceptance    # product umbrella (deep + personal_ai surfaces)
+make oracle_teacher_runtime      # attest / lease / scorecard / batch v2
+make serve_feedback              # reliability + serve stats persist across reopen
+make oracle_v2_test acquire      # oracle + acquisition regression
+
 make specialist_unit  # Specialist lifecycle/refusal edge cases
 make unified_specialist  # the unification acid test: BTN + CCE + Oracle in ONE certified plan
 make claims           # execute unified and emit fresh run-scoped claims evidence

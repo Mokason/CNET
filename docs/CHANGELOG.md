@@ -1,4 +1,25 @@
-# CNET Changelog — the Optimization Ledgers
+# CNET Changelog
+
+## 2026-07-21 — Documentation rewire + use-loop / Oracle teacher runtime (index)
+
+**Doc hub:** [`docs/INDEX.md`](INDEX.md) is the single navigation entry.
+README verified-today table, map, and quick start now point at:
+
+- `make cnet_use_loop_acceptance` / `make cnet_deep_use_loop` — use-loop umbrella
+- `make serve_feedback` — reliability + serve counters persist in `<base>.state/`
+- `make oracle_teacher_runtime` — Oracle Tier A+B (attest, lease, scorecard, batch v2, families)
+- JSON tool-call unit documented as **v2** (`json_toolcall_v2`)
+- Honesty: descriptors ≠ trust; external FACTOR/TruthfulQA/LongBench still **withheld**
+
+Architecture: Learned Reliability + Autonomy Loop sections updated for base-scoped
+stats and teacher runtime. Execution tiers: Tier U table for use-loop surfaces.
+Dispatch: agent roles + route log pointers.
+
+Engineering landings this day (evidence in plans + gates, not this prose alone):
+`plans/deep_eight_priorities.md`, `plans/oracle_teacher_runtime.md`,
+`plans/six_priority_improvement.md`, commits through `cbd7aa5` on master.
+
+---
 
 Moved verbatim from the README (2026-07-12 hygiene split; unification
 analysis item 8). The dated mechanism chronology remains in

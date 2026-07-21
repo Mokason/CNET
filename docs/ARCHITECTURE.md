@@ -1,8 +1,13 @@
 # CNET Architecture
 
-The deep map, moved verbatim from the README (2026-07-12 hygiene split).
-Start with the README for the thesis, the claim→gate table, and the
-quickstart; start here for how each layer actually works. The dispatch
+How every layer works. For navigation and umbrellas, start at
+[`INDEX.md`](INDEX.md). For dated evidence, see [`CHANGELOG.md`](CHANGELOG.md).
+For “which specialist runs?”, see [`dispatch.md`](dispatch.md).
+
+This file is the mechanism book — not the release authority
+(`make release_integrity` / [`RELEASE_POLICY.md`](RELEASE_POLICY.md)).
+
+Navigation: [`INDEX.md`](INDEX.md). Thesis and claim→gate table: repository `README.md`.
 doctrine lives in [`dispatch.md`](dispatch.md); dated ledgers in
 [`CHANGELOG.md`](CHANGELOG.md).
 
@@ -424,12 +429,18 @@ it, and record the outcome in success/failure counters. The score is
 Laplace-smoothed: `(s + 1) / (s + f + 2)` — a fresh primitive scores 0.5,
 evidence moves it toward its observed validity rate.
 
-- Evidence persists in per-primitive sidecar files (`<name>_stats.txt`,
-  `CNET_STATS 1`), never in the weight file: the weight file stays a pure
-  function definition, the sidecar is deployment experience. Retraining a
-  primitive invalidates its sidecar.
+- Evidence persists beside the sealed base, **not** only as loose
+  `<name>_stats.txt` next to demos: SoulHost writes per-base runtime state to
+  `<base>.state/<unit>.stats` plus `soul_serve.stats` on `soul_close`, and
+  `registry_restore_runtime_state` reloads it on the next `soul_open`. The
+  state directory is **base-scoped** (never the process cwd), so hosts and
+  tests cannot contaminate each other. Weight files stay pure function
+  definitions; stats are deployment experience. Retraining invalidates stats.
 - **Strict mode** (`plan.strict = 1`, opt-in after planning) aborts a run on any
   out-of-domain raw output instead of snapping it. Evidence is recorded either way.
+- Among certified same-shape candidates, planners rank by this reliability
+  (cost is only a tiebreak under `CNET_POWER_LOW`). Gate: `make cnet_deep_use_loop`
+  (planner preference) and `make serve_feedback` (serve → persist → reopen).
 
 ## Machine-Checkable Contracts
 
@@ -983,6 +994,25 @@ The thesis' closing arc: the router *detects* what it cannot do, and the system
 certifying it, sealing it, and registering it so the router simply finds the
 plan. Everything composes the machinery above; nothing new is trusted.
 
+**Doc hub:** [`docs/INDEX.md`](INDEX.md). **Use-loop umbrella (2026-07-21):**
+`make cnet_use_loop_acceptance` / `make cnet_deep_use_loop` — hermetic proof
+that serve feedback, evidence persist, distill, residual, planner ranking, and
+benchmark taxonomy compose. **Oracle teacher runtime:**
+`make oracle_teacher_runtime` (Tier A+B on top of Oracle v2; see
+`plans/oracle_teacher_runtime.md`).
+
+**Oracle teacher runtime (Tier A+B, 2026-07-21).** Oracle v2 already carries
+statuses, identity, and one invoke path. The teacher runtime adds *teach-time*
+governance without rewriting the ABI: attestation
+(`cnet_oracle_identity_is_attested` = non-zero SHA-256 + toolchain), optional
+policies on the registry (`require_attested_to_teach`, `v2_only_new`,
+`require_validator`, `require_lease_to_teach`, `retire_unfit_rate`), bind/unbind
+leases, scorecards, auto-retire, teacher **families**, and
+`cnet_oracle_invoke_batch` with per-row `CnetOracleResult` (or serial fallback).
+Drain only matches **teachable** oracles. CNB descriptors remain
+`descriptor_only_not_runtime_trust` until bind + independent certify + admit.
+Hermetic defaults leave all policy flags at zero so legacy tests stay green.
+
 **Gap-triggered acquisition (`make acquire`).** Three trigger kinds land in a
 persistent ledger (`CNET_GAPS 4`, sidecar rules; older files load with the
 missing columns defaulted): NO_PLAN, LOW_RELIABILITY,
@@ -993,12 +1023,13 @@ rest (exhaustive within budget, else deterministic stride sampling with a
 domain-spanning pilot refuses degenerate constant slices at ~16× less cost),
 trains, gates on oracle evidence, certifies (**PROOF** on enumerated domains,
 else **SAMPLED** behind a Wilson floor), seals, registers, and replans.
-Candidates are structurally invisible to the planner until certified; a
-deferred acquisition leaves registry, counters, and disk **byte-identical**
-(DEFER is total). Rebuilds never same-name-replace: a suspect unit is
-re-certified against freshly mined truth first (a healthy incumbent is never
-churned), and only a behaviorally broken one is demoted to RESET beside a
-fresh-named replacement.
+`AcquireReport` also carries economics (oracle_calls/rejects/abstains,
+train_wall_ms, student_bytes) and a defer-reason histogram. Candidates are
+structurally invisible to the planner until certified; a deferred acquisition
+leaves registry, counters, and disk **byte-identical** (DEFER is total).
+Rebuilds never same-name-replace: a suspect unit is re-certified against
+freshly mined truth first (a healthy incumbent is never churned), and only a
+behaviorally broken one is demoted to RESET beside a fresh-named replacement.
 
 **The unified base (`make base`, CNB version 5 semantics under stable CNB1
 magic, with v1/v2/v3/v4 read compatibility).** One sealed container replaces
@@ -1341,6 +1372,11 @@ current state.
 | `make test` / `make verify` | full offline native verification: claims-generator regression, CCE DLL, safetensors loader, autograd, model save/load, WARM archive/forest views, universal-model suites (detect, ssm, st_llama, specgraph, wstore, tiers, similar), contract security + unit files, loader-robustness sweep (`mutate`), acquisition loop, unified base, flagship harness, and leak gate; the restored legacy aggregate is quarantined behind `make compat` |
 | `make priority_acceptance` | single serial closure gate: recipe-exit audit, claims-generator regression, normal + ASan/UBSan heal-mismatch tests, then the full unified native/.NET/MCP path; prints `PRIORITY_ACCEPTANCE_PASS` only after strict fresh evidence succeeds |
 | `make unified` | CPU/model-file-free vertical gate across native adapters, Specialist edge units, close/reopen Oracle remount, admission-bypass audit, build hygiene, alternate-path quarantine, managed restore, model catalog/residency, DS4 launcher, `cnet.so` symbols, `SoulHost`, .NET host/tests, and stdio MCP; requires a fresh strict 21/21 run-scoped claims ledger and labels GPU/private-model lanes out of scope; prints `CNET_UNIFIED_PASS` |
+| `make cnet_use_loop_acceptance` | **Use-loop product umbrella (2026-07-21):** `cnet_deep_use_loop` + serve_feedback + self_improve + post_seal_serve + miner_efficiency + acquire + oracle_unattested + json_toolcall + residual surfaces + phase123 taxonomy + health/evidence/route/agent_role; prints `CNET_USE_LOOP_ACCEPTANCE_PASS` |
+| `make cnet_deep_use_loop` | Deep multi-priority hermetic (evidence reopen, distill, residual, planner reliability, taxonomy); prints `CNET_DEEP_USE_LOOP_PASS` |
+| `make serve_feedback` | Certified serves move reliability; stats persist across SoulHost reopen; prints `SERVE_FEEDBACK_PASS` |
+| `make oracle_teacher_runtime` | Oracle Tier A+B teacher governance (attest/lease/scorecard/retire/batch v2/family); prints `ORACLE_TEACHER_RUNTIME_PASS` |
+| `make oracle_v2_test` | Oracle v2 evidence lifecycle regression; prints `ORACLE_V2_PASS` |
 | `make specialist_unit` | Specialist NULL/unknown-kind/adapter refusal, lifecycle trust-axis characterization, conservative residency mapping, registry initialization, and axis-name edge cases; prints `SPECIALIST_UNIT_PASS` |
 | `make unified_specialist` | the heterogeneous-plan acid test: ONE certified route/DAG plan mixing a native BTN, a real CCE model, and an Oracle unit through the single `Specialist` door; prints `HET_PLAN_PASS`; in `make unified` |
 | `make specialist_health` | runtime health optimizer gate: fix (audit, contract/teacher labeling, heal) + improve (promote, shadow-swap) through certified paths only; healthy registry is a proven no-op; prints `SPECIALIST_HEALTH_PASS`; in `make unified` |
