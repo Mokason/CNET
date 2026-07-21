@@ -1,12 +1,20 @@
+#ifndef _DEFAULT_SOURCE
+#define _DEFAULT_SOURCE
+#endif
+
 #include "../../include/contract/mcp_utils.h"
 
 #include <ctype.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/wait.h>
 #include <unistd.h>
+#ifndef _WIN32
+#include <sys/stat.h>
+#endif
 
 #ifdef _WIN32
 #include <windows.h>
@@ -55,6 +63,58 @@ static int path_has_allowed_read_ext(const char *in) {
             strcmp(ext, ".cfg") == 0 || strcmp(ext, ".csv") == 0);
 }
 
+/* Lexical checks do not stop fopen from following a symlinked file or parent
+ * directory. Reject every existing link/reparse component; a missing final
+ * leaf remains valid so callers can use this for both reads and creates. */
+static int path_components_safe(const char *path) {
+    char probe[1024];
+    size_t len;
+    size_t i;
+
+    if (!path) return 0;
+    len = strlen(path);
+    if (len == 0 || len >= sizeof probe) return 0;
+    memcpy(probe, path, len + 1);
+    for (i = 0; i <= len; ++i) {
+        int leaf;
+        char saved;
+        if (probe[i] != '/' && probe[i] != '\\' && probe[i] != '\0')
+            continue;
+        saved = probe[i];
+        probe[i] = '\0';
+        leaf = (i == len);
+        if (probe[0] != '\0') {
+#ifdef _WIN32
+            DWORD attrs = GetFileAttributesA(probe);
+            if (attrs == INVALID_FILE_ATTRIBUTES) {
+                if (!leaf) {
+                    probe[i] = saved;
+                    return 0;
+                }
+            } else if ((attrs & FILE_ATTRIBUTE_REPARSE_POINT) != 0 ||
+                       (!leaf && (attrs & FILE_ATTRIBUTE_DIRECTORY) == 0)) {
+                probe[i] = saved;
+                return 0;
+            }
+#else
+            struct stat st;
+            if (lstat(probe, &st) != 0) {
+                if (!leaf || errno != ENOENT) {
+                    probe[i] = saved;
+                    return 0;
+                }
+            } else if (S_ISLNK(st.st_mode) ||
+                       (!leaf && !S_ISDIR(st.st_mode))) {
+                probe[i] = saved;
+                return 0;
+            }
+#endif
+        }
+        probe[i] = saved;
+    }
+    return 1;
+}
+
 static int resolve_safe_relative_path(
     const char *in, char *out, size_t cap,
     int need_build_root, int require_ext
@@ -81,6 +141,7 @@ static int resolve_safe_relative_path(
     }
     if (need_build_root && !path_under_build_root(out)) return -1;
     if (!need_build_root && !path_under_read_root(out)) return -1;
+    if (!path_components_safe(out)) return -1;
     return 0;
 }
 
@@ -204,7 +265,8 @@ int mcp_http_get(const char *url, char *out, size_t out_cap) {
         NULL,
         0,
         INTERNET_FLAG_RELOAD | INTERNET_FLAG_NO_CACHE_WRITE |
-        INTERNET_FLAG_NO_COOKIES | INTERNET_FLAG_NO_UI,
+        INTERNET_FLAG_NO_COOKIES | INTERNET_FLAG_NO_UI |
+        INTERNET_FLAG_NO_AUTO_REDIRECT,
         0
     );
     if (!hRequest) {
@@ -355,36 +417,104 @@ int mcp_extract_json_field(const char *json, const char *key, char *out, size_t 
 int mcp_atomic_write_text(const char *path, const char *content) {
     char tmp_path[1024];
     size_t len;
-    FILE *f;
-    size_t written;
 
-    if (!path || !content) return -1;
-    if (snprintf(tmp_path, sizeof(tmp_path), "%s.tmp", path) >= (int)sizeof(tmp_path)) {
-        return -1;
-    }
-
-    f = fopen(tmp_path, "wb");
-    if (!f) return -1;
+    if (!path || !content || !path_components_safe(path)) return -1;
     len = strlen(content);
-    written = fwrite(content, 1, len, f);
-    if (ferror(f) || written != len) {
-        fclose(f);
-        remove(tmp_path);
-        return -1;
+#ifdef _WIN32
+    {
+        static volatile LONG serial = 0;
+        HANDLE h = INVALID_HANDLE_VALUE;
+        size_t done = 0;
+        int attempt;
+        for (attempt = 0; attempt < 32; ++attempt) {
+            LONG id = InterlockedIncrement(&serial);
+            if (snprintf(tmp_path, sizeof tmp_path, "%s.tmp.%lu.%ld", path,
+                         (unsigned long)GetCurrentProcessId(), (long)id) >=
+                (int)sizeof tmp_path)
+                return -1;
+            h = CreateFileA(tmp_path, GENERIC_WRITE, 0, NULL, CREATE_NEW,
+                            FILE_ATTRIBUTE_NORMAL, NULL);
+            if (h != INVALID_HANDLE_VALUE) break;
+            if (GetLastError() != ERROR_FILE_EXISTS) return -1;
+        }
+        if (h == INVALID_HANDLE_VALUE) return -1;
+        while (done < len) {
+            DWORD wrote = 0;
+            DWORD chunk = (DWORD)((len - done) > 0x7fffffffu
+                                      ? 0x7fffffffu
+                                      : (len - done));
+            if (!WriteFile(h, content + done, chunk, &wrote, NULL) ||
+                wrote == 0) {
+                CloseHandle(h);
+                DeleteFileA(tmp_path);
+                return -1;
+            }
+            done += (size_t)wrote;
+        }
+        {
+            int ok = FlushFileBuffers(h) ? 1 : 0;
+            if (!CloseHandle(h)) ok = 0;
+            if (!ok ||
+                !MoveFileExA(tmp_path, path,
+                             MOVEFILE_REPLACE_EXISTING |
+                                 MOVEFILE_WRITE_THROUGH)) {
+                DeleteFileA(tmp_path);
+                return -1;
+            }
+        }
     }
-    if (fclose(f) != 0) {
-        remove(tmp_path);
-        return -1;
-    }
-    if (rename(tmp_path, path) != 0) {
-        if (remove(path) != 0 && errno != ENOENT) {
+#else
+    {
+        FILE *f;
+        int fd;
+        int ok = 0;
+        int dirfd = -1;
+        char parent[1024];
+        char *slash;
+
+        if (snprintf(tmp_path, sizeof tmp_path, "%s.tmp.XXXXXX", path) >=
+            (int)sizeof tmp_path)
+            return -1;
+        fd = mkstemp(tmp_path);
+        if (fd < 0) return -1;
+        f = fdopen(fd, "wb");
+        if (!f) {
+            close(fd);
             remove(tmp_path);
             return -1;
         }
-        if (rename(tmp_path, path) != 0) {
+        if ((len > 0 && fwrite(content, 1, len, f) != len) ||
+            fflush(f) != 0 || fsync(fd) != 0)
+            ok = -1;
+        if (fclose(f) != 0) ok = -1;
+        if (ok == 0 && rename(tmp_path, path) != 0) ok = -1;
+        if (ok == 0) {
+            if (strlen(path) >= sizeof parent) {
+                ok = -1;
+            } else {
+                memcpy(parent, path, strlen(path) + 1);
+                slash = strrchr(parent, '/');
+                if (!slash) {
+                    memcpy(parent, ".", 2);
+                } else if (slash == parent) {
+                    slash[1] = '\0';
+                } else {
+                    *slash = '\0';
+                }
+#ifdef O_DIRECTORY
+                dirfd = open(parent, O_RDONLY | O_DIRECTORY);
+#else
+                dirfd = open(parent, O_RDONLY);
+#endif
+                if (dirfd < 0 || fsync(dirfd) != 0) ok = -1;
+                if (dirfd >= 0 && close(dirfd) != 0) ok = -1;
+            }
+        }
+        if (ok != 0) {
             remove(tmp_path);
             return -1;
         }
     }
+#endif
     return 0;
 }

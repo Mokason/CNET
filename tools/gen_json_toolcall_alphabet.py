@@ -39,7 +39,7 @@ def main() -> int:
         "};",
         "",
     ]
-    C_OUT.write_text("\n".join(c_lines), encoding="utf-8")
+    c_text = "\n".join(c_lines)
 
     cs_tools = ",\n        ".join(c_string(t) for t in tools)
     cs_feats = ",\n        ".join(c_string(f) for f in feats)
@@ -73,6 +73,20 @@ public static partial class JsonToolCall
     }};
 }}
 """
+    if "--check" in sys.argv[1:]:
+        stale = []
+        if not C_OUT.exists() or C_OUT.read_text(encoding="utf-8") != c_text:
+            stale.append(str(C_OUT.relative_to(ROOT)))
+        if not CS_OUT.exists() or CS_OUT.read_text(encoding="utf-8") != cs:
+            stale.append(str(CS_OUT.relative_to(ROOT)))
+        if stale:
+            print("stale generated JSON tool-call alphabet: " + ", ".join(stale),
+                  file=sys.stderr)
+            return 1
+        print("JSON_TOOLCALL_ALPHABET_CHECK_PASS")
+        return 0
+
+    C_OUT.write_text(c_text, encoding="utf-8")
     CS_OUT.parent.mkdir(parents=True, exist_ok=True)
     CS_OUT.write_text(cs, encoding="utf-8")
     print(f"wrote {C_OUT.relative_to(ROOT)}")

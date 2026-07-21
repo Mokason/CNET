@@ -9,6 +9,10 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#ifndef _WIN32
+#include <sys/stat.h>
+#include <unistd.h>
+#endif
 
 static int failures = 0;
 
@@ -57,6 +61,58 @@ static void test_mcp_path_policy(void) {
     CHECK(mcp_resolve_write_path("build/out.txt", out, sizeof(out)) == 0, "write path allows build path file");
     CHECK(mcp_resolve_write_path("report.txt", out, sizeof(out)) != 0, "write path blocks non-build path");
     CHECK(mcp_resolve_write_path("build/../out.txt", out, sizeof(out)) != 0, "write path blocks traversal");
+
+#ifndef _WIN32
+    {
+        const char *read_link = "build/mcp_security_read_link.txt";
+        const char *dir_link = "build/mcp_security_dir_link";
+        unlink(read_link);
+        unlink(dir_link);
+        CHECK(symlink("../README.md", read_link) == 0,
+              "read-policy symlink fixture created");
+        CHECK(mcp_resolve_read_path(read_link, out, sizeof out) != 0,
+              "read policy rejects a symlink escape");
+        CHECK(symlink("..", dir_link) == 0,
+              "write-policy parent-symlink fixture created");
+        CHECK(mcp_resolve_write_path(
+                  "build/mcp_security_dir_link/escaped.txt", out,
+                  sizeof out) != 0,
+              "write policy rejects a symlinked parent");
+        unlink(read_link);
+        unlink(dir_link);
+    }
+    {
+        const char *sentinel = "mcp_security_sentinel.txt";
+        const char *target = "build/mcp_security_atomic.txt";
+        const char *hostile_tmp = "build/mcp_security_atomic.txt.tmp";
+        char contents[64] = {0};
+        FILE *f;
+        struct stat st;
+        remove(target);
+        unlink(hostile_tmp);
+        f = fopen(sentinel, "wb");
+        CHECK(f && fwrite("SENTINEL", 1, 8, f) == 8,
+              "atomic-write sentinel fixture created");
+        if (f) fclose(f);
+        CHECK(symlink("../mcp_security_sentinel.txt", hostile_tmp) == 0,
+              "atomic-write hostile temp symlink created");
+        CHECK(mcp_atomic_write_text(target, "replacement") == 0,
+              "atomic write succeeds despite hostile legacy temp name");
+        f = fopen(sentinel, "rb");
+        if (f) {
+            size_t got = fread(contents, 1, sizeof contents - 1, f);
+            contents[got] = '\0';
+            fclose(f);
+        }
+        CHECK(strcmp(contents, "SENTINEL") == 0,
+              "atomic write never follows a hostile temp symlink");
+        CHECK(lstat(target, &st) == 0 && !S_ISLNK(st.st_mode),
+              "atomic write publishes a regular destination");
+        remove(target);
+        unlink(hostile_tmp);
+        remove(sentinel);
+    }
+#endif
 }
 
 static void test_mcp_transport_policy(void) {

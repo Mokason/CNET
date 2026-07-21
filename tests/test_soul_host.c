@@ -54,6 +54,8 @@ int main(void) {
 
     remove("tmp_soul_host.inbox");
     setenv("CNET_GAP_INBOX", "tmp_soul_host.inbox", 1);
+    remove("tmp_soul_host.route.jsonl");
+    setenv("CNET_ROUTE_LOG", "tmp_soul_host.route.jsonl", 1);
 
     printf("== soul_host: canonical certified runtime ==\n");
     check(btn_init(&btn, 2, 2, 2, 2, 0.1, 17u) == 0,
@@ -225,6 +227,42 @@ int main(void) {
         }
         remove("tmp_soul_host.inbox");
     }
+
+    /* Core CNET route decision log (CNET_ROUTE_LOG). */
+    {
+        FILE *rf = fopen("tmp_soul_host.route.jsonl", "r");
+        int lines = 0;
+        int has_planner = 0, has_unit = 0, has_entropy = 0, has_cost = 0;
+        int has_latency = 0, has_outcome = 0, has_no_plan = 0, has_probe = 0;
+        char line[1600];
+        check(rf != NULL, "route log file created for soul_route/request");
+        if (rf) {
+            while (fgets(line, sizeof line, rf)) {
+                lines++;
+                if (strstr(line, "\"mechanism\":\"planner\"")) has_planner = 1;
+                if (strstr(line, "selected_unit")) has_unit = 1;
+                if (strstr(line, "\"entropy\"")) has_entropy = 1;
+                if (strstr(line, "\"cost\"")) has_cost = 1;
+                if (strstr(line, "latency_ms")) has_latency = 1;
+                if (strstr(line, "\"outcome\"")) has_outcome = 1;
+                if (strstr(line, "\"mechanism\":\"no_plan\"")) has_no_plan = 1;
+                if (strstr(line, "\"mechanism\":\"probe\"")) has_probe = 1;
+                if (strstr(line, "acq_unified_goal")) has_unit = 1;
+            }
+            fclose(rf);
+        }
+        check(lines >= 3, "route log has multiple serve events");
+        check(has_planner, "route log records planner mechanism");
+        check(has_unit, "route log records selected_unit");
+        check(has_entropy, "route log records entropy");
+        check(has_cost, "route log records cost");
+        check(has_latency, "route log records latency");
+        check(has_outcome, "route log records outcome");
+        check(has_no_plan, "route log records no_plan for novel goal");
+        check(has_probe, "route log records probe for capability check");
+        remove("tmp_soul_host.route.jsonl");
+    }
+    unsetenv("CNET_ROUTE_LOG");
 
     soul_close(host);
     contract_free(&contract);

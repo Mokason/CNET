@@ -8,6 +8,18 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <math.h>
+#ifndef _WIN32
+#include <sys/types.h>
+#endif
+
+static int ds_seek_forward(FILE *f, uint64_t bytes) {
+    if (!f || bytes > (uint64_t)INT64_MAX) return -1;
+#ifdef _WIN32
+    return _fseeki64(f, (int64_t)bytes, SEEK_CUR);
+#else
+    return fseeko(f, (off_t)bytes, SEEK_CUR);
+#endif
+}
 
 void cce_ds_hparams_default_v3(cce_ds_hparams* hp) {
     if (!hp) return;
@@ -802,7 +814,7 @@ cce_result cce_ds_pack_load_weight(void* pack_ctx, const cce_ds_leaf* leaf,
             if (out_out) *out_out = dout;
             return CCE_OK;
         }
-        fseek(p->f, (long)nbytes, SEEK_CUR);
+        if (ds_seek_forward(p->f, nbytes) != 0) return CCE_ERR_IO;
     }
     return CCE_ERR_NOT_FOUND;
 }

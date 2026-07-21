@@ -375,8 +375,10 @@ static cce_result open_gguf(cce_infer_session* s, const cce_infer_opts* opts) {
         if (!s->hipgemm && !s->clgemm)
             return CCE_ERR_NOT_FOUND;
         if (s->hipgemm && s->clgemm)
-            snprintf(s->device_name, sizeof s->device_name, "%s + %s",
+            snprintf(s->device_name, sizeof s->device_name, "%.*s + %.*s",
+                     77,
                      hip_name[0] ? hip_name : "hip",
+                     77,
                      cl_name[0] ? cl_name : "opencl");
         else if (s->hipgemm)
             snprintf(s->device_name, sizeof s->device_name, "%s",

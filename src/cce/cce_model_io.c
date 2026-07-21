@@ -30,7 +30,7 @@ static int put_fixed(buf_t* b, const char* s, size_t n) {
     char tmp[512];
     size_t len = 0;
     if (n > sizeof(tmp)) return 0;
-    if (n == 0) return buf_put(b, tmp, 0);
+    if (n == 0) return 1;
     memset(tmp, 0, n);
     if (s) {
         while (len + 1 < n && s[len] != '\0') len++;

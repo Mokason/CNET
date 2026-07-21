@@ -41,3 +41,14 @@ dist/
 hermes_wrappers/*.cache
 __pycache__/
 unsloth_compiled_cache/
+
+# Per-unit evidence sidecars / hermetic temp bases (runtime, not release)
+*.evidence.jsonl
+*.cnb.evidence.jsonl
+tmp_*.cnb
+tmp_*.cnb.*
+tmp_*_serve*
+tmp_miner_eff_*/
+tmp_serve_feedback.*
+tmp_post_seal_serve.*
+tmp_gap_lane.*

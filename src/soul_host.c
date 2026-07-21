@@ -16,12 +16,16 @@
 #include "../include/cce/cce_router.h"
 #include "../include/hybrid_ai.h"
 #include "../include/residual_gguf.h"
+#include "../include/cnet_route_log.h"
+#include "../include/cnet_evidence_bundle.h"
+#include "../include/cnet_health_layers.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <limits.h>
 #include <stdint.h>
+#include <time.h>
 
 struct SoulHost {
     CnetBase base;
@@ -68,6 +72,10 @@ struct SoulHost {
     uint64_t gap_notes;
     uint64_t structure_mines;
     uint64_t structure_seals;
+    /* Optional route-decision JSONL (CNET_ROUTE_LOG at soul_open). */
+    char *route_log_path;
+    /* Evidence-bundle sidecar path (CNET_EVIDENCE_STORE or <base>.evidence.jsonl). */
+    char evidence_store[576];
 };
 
 /* Health-tick contract source: the base itself. A miss materializes the
@@ -113,6 +121,106 @@ static size_t ports_total(const Port *ports, size_t n) {
     size_t t = 0, i;
     for (i = 0; i < n; ++i) t += ports[i].field_width * ports[i].field_count;
     return t;
+}
+
+static double soul_mono_ms(void) {
+    struct timespec ts;
+    if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0) return 0.0;
+    return (double)ts.tv_sec * 1000.0 + (double)ts.tv_nsec / 1.0e6;
+}
+
+static const char *soul_route_outcome(int code, int last_source) {
+    if (code >= 0) {
+        if (last_source == SOUL_SOURCE_RESIDUAL) return "ok_residual";
+        if (last_source == SOUL_SOURCE_PROBE) return "ok_probe";
+        if (last_source == SOUL_SOURCE_CERTIFIED) return "ok";
+        return "ok";
+    }
+    switch (code) {
+        case -1: return "err_invalid";
+        case -2: return "err_not_found";
+        case -3: return "no_plan";
+        case -4: return "err_buffer";
+        case -5: return "err_execute";
+        default: return "err_unknown";
+    }
+}
+
+static const char *soul_source_profile(int last_source) {
+    switch (last_source) {
+        case SOUL_SOURCE_CERTIFIED: return "certified";
+        case SOUL_SOURCE_RESIDUAL:  return "residual";
+        case SOUL_SOURCE_PROBE:     return "probe";
+        default: return "none";
+    }
+}
+
+/* Plan cost: 1 (decision) + sum of adapter_cost (or 1 per step if unset). */
+static double soul_plan_cost(const RoutePlan *plan) {
+    double c = 1.0;
+    size_t i;
+    if (!plan || plan->length == 0) return c;
+    for (i = 0; i < plan->length; ++i) {
+        size_t hint = plan->steps[i] ? plan->steps[i]->adapter_cost : 0;
+        c += hint > 0 ? (double)hint : 1.0;
+    }
+    return c;
+}
+
+/* Entropy proxy: 1 - mean Laplace reliability of plan steps (or 1 if empty). */
+static float soul_plan_entropy(const RoutePlan *plan) {
+    double sum = 0.0;
+    size_t i, n;
+    if (!plan || plan->length == 0) return 1.0f;
+    n = plan->length;
+    for (i = 0; i < n; ++i) {
+        double rel = plan->steps[i] ? btn_reliability(plan->steps[i]) : 0.5;
+        if (rel < 0.0) rel = 0.0;
+        if (rel > 1.0) rel = 1.0;
+        sum += rel;
+    }
+    return (float)(1.0 - sum / (double)n);
+}
+
+/* Best-effort; never fails the serve path. */
+static void soul_emit_route_log(SoulHost *h,
+                                const char *event,
+                                const char *mechanism,
+                                const char *goal_tag,
+                                const RoutePlan *plan,
+                                int outcome_code,
+                                int last_source,
+                                double route_ms,
+                                double total_ms) {
+    CnetRouteLogEvent ev;
+    const char *unit = "";
+    uint32_t plen = 0;
+    if (!h || !h->route_log_path || !h->route_log_path[0]) return;
+    if (plan && plan->length > 0) {
+        plen = (uint32_t)plan->length;
+        if (plan->names[plan->length - 1])
+            unit = plan->names[plan->length - 1];
+    }
+    memset(&ev, 0, sizeof ev);
+    ev.event = event ? event : "soul_route";
+    ev.mechanism = mechanism ? mechanism : CNET_ROUTE_MECH_PLANNER;
+    ev.role = goal_tag ? goal_tag : "";
+    ev.role_canonical = ev.role;
+    ev.selected_expert = plen;
+    ev.selected_unit = unit;
+    ev.plan_length = plen;
+    ev.expert_profile = soul_source_profile(last_source);
+    ev.entropy = plan ? soul_plan_entropy(plan) : 1.0f;
+    ev.outcome = soul_route_outcome(outcome_code, last_source);
+    ev.outcome_code = outcome_code;
+    ev.route_latency_ms = route_ms;
+    ev.total_latency_ms = total_ms;
+    ev.cost = plan ? soul_plan_cost(plan)
+                   : (outcome_code >= 0 ? 1.0 : 1.0);
+    if (last_source == SOUL_SOURCE_RESIDUAL && (!plan || plan->length == 0))
+        ev.cost = 1.0; /* residual decision cost only (no certified steps) */
+    ev.model_id = h->base_path[0] ? h->base_path : NULL;
+    (void)cnet_route_log_append(h->route_log_path, &ev);
 }
 
 static int soul_state_dir(const char *base_path, char *out, size_t cap) {
@@ -204,10 +312,33 @@ CNET_API int soul_open(const char *base_path, const char *model_path,
         h->counterfactual_enabled = cf && cf[0] && strcmp(cf, "0") != 0;
     }
     {
+        const char *rl = cnet_route_log_path_from_env();
+        if (rl && rl[0]) {
+            size_t n = strlen(rl);
+            h->route_log_path = (char *)malloc(n + 1);
+            if (!h->route_log_path) {
+                registry_free(&h->reg);
+                cnb_free(&h->base);
+                free(h);
+                return -2;
+            }
+            memcpy(h->route_log_path, rl, n + 1);
+        }
+    }
+    {
         size_t n = strlen(base_path);
         if (n >= sizeof h->base_path) n = sizeof h->base_path - 1;
         memcpy(h->base_path, base_path, n);
         h->base_path[n] = '\0';
+    }
+    {
+        const char *es = cnet_evidence_store_path_from_env();
+        h->evidence_store[0] = '\0';
+        if (es && es[0] && strlen(es) < sizeof h->evidence_store)
+            memcpy(h->evidence_store, es, strlen(es) + 1);
+        else
+            (void)cnet_evidence_store_path_for_base(
+                h->base_path, h->evidence_store, sizeof h->evidence_store);
     }
     hybrid_ai_init(&h->hybrid);
     h->owned_residual = NULL;
@@ -375,6 +506,12 @@ CNET_API int soul_structure_mine(SoulHost *h) {
     contract_free(&c);
     free(inputs);
     free(targets);
+    if (h->evidence_store[0]) {
+        CnetEvidenceOpts eopts;
+        memset(&eopts, 0, sizeof eopts);
+        eopts.counterfactual_stability = -1.0f;
+        (void)cnet_evidence_record(&h->base, name, h->evidence_store, &eopts);
+    }
     if (h->base_path[0] && cnb_save(&h->base, h->base_path) != 0) {
         fprintf(stderr, "soul_host: structure seal cnb_save failed path=%s\n",
                 h->base_path);
@@ -713,8 +850,10 @@ CNET_API int soul_route(SoulHost *h, const char *goal_tag,
     char name[CNB_NAME_MAX];
     RoutePlan plan;
     int rc;
+    double t0, t_plan0, route_ms, total_ms;
 
     if (!h || !h->loaded || !goal_tag || !in || !out) return -1;
+    t0 = soul_mono_ms();
     /* Each routed query starts with no counterfactual evidence; only a
        SERVED answer may attach a report, so a refusal never carries stale
        metadata and refusal semantics stay untouched. */
@@ -724,40 +863,72 @@ CNET_API int soul_route(SoulHost *h, const char *goal_tag,
        take its REAL input/output ports instead of fabricating them. */
     snprintf(name, sizeof name, "acq_%s", goal_tag);
     entry = soul_find_unit(h, name);
-    if (!entry) return -2;
+    if (!entry) {
+        soul_emit_route_log(h, "soul_route", CNET_ROUTE_MECH_NO_PLAN, goal_tag,
+                            NULL, -2, SOUL_SOURCE_NONE, 0.0,
+                            soul_mono_ms() - t0);
+        return -2;
+    }
     btn = entry->btn;
-    if (btn->input_port_count < 1 || btn->output_port_count < 1) return -2;
+    if (btn->input_port_count < 1 || btn->output_port_count < 1) {
+        soul_emit_route_log(h, "soul_route", CNET_ROUTE_MECH_NO_PLAN, goal_tag,
+                            NULL, -2, SOUL_SOURCE_NONE, 0.0,
+                            soul_mono_ms() - t0);
+        return -2;
+    }
     input = btn->input_ports[0];
     goal  = btn->output_ports[0];
     in_total  = ports_total(&input, 1);
     out_total = ports_total(&goal, 1);
 
-    if ((int)in_total > in_cap || (int)out_total > out_cap) return -4;
+    if ((int)in_total > in_cap || (int)out_total > out_cap) {
+        soul_emit_route_log(h, "soul_route", CNET_ROUTE_MECH_NO_PLAN, goal_tag,
+                            NULL, -4, SOUL_SOURCE_NONE, 0.0,
+                            soul_mono_ms() - t0);
+        return -4;
+    }
 
     memset(&plan, 0, sizeof plan);
+    t_plan0 = soul_mono_ms();
     if (route_plan(&h->reg, input, goal, &plan) != 0 || plan.length == 0) {
+        route_ms = soul_mono_ms() - t_plan0;
         /* Miss: note gap for the learner; try residual Tier C if bound. */
         if (h->gap_inbox[0]) {
             gap_inbox_note_no_plan(h->gap_inbox, input, goal);
             h->gap_notes++;
         }
         if (soul_try_residual_answer(h, input, goal, in, in_total, out,
-                                     out_total) == 0)
+                                     out_total) == 0) {
+            total_ms = soul_mono_ms() - t0;
+            soul_emit_route_log(h, "soul_route", CNET_ROUTE_MECH_RESIDUAL,
+                                goal_tag, NULL, (int)out_total,
+                                SOUL_SOURCE_RESIDUAL, route_ms, total_ms);
             return (int)out_total;
+        }
         h->last_source = SOUL_SOURCE_NONE;
+        total_ms = soul_mono_ms() - t0;
+        soul_emit_route_log(h, "soul_route", CNET_ROUTE_MECH_NO_PLAN, goal_tag,
+                            NULL, -3, SOUL_SOURCE_NONE, route_ms, total_ms);
         return -3;
     }
+    route_ms = soul_mono_ms() - t_plan0;
     rc = route_execute(&plan, in, in_total, out, out_total);
     /* SHADOW evidence only, strictly after the answer bytes are final: the
        report can never change `out`, the return code, or any refusal. */
     if (rc == 0 && h->counterfactual_enabled)
         soul_counterfactual_shadow(h, goal_tag, entry, in, in_total);
+    total_ms = soul_mono_ms() - t0;
     if (rc == 0) {
         h->certified_serves++;
         h->last_source = SOUL_SOURCE_CERTIFIED;
+        soul_emit_route_log(h, "soul_route", CNET_ROUTE_MECH_PLANNER, goal_tag,
+                            &plan, (int)out_total, SOUL_SOURCE_CERTIFIED,
+                            route_ms, total_ms);
         return (int)out_total;
     }
     h->last_source = SOUL_SOURCE_NONE;
+    soul_emit_route_log(h, "soul_route", CNET_ROUTE_MECH_PLANNER, goal_tag,
+                        &plan, -5, SOUL_SOURCE_NONE, route_ms, total_ms);
     return -5;
 }
 
@@ -807,6 +978,49 @@ CNET_API int soul_unit_axes(SoulHost *h, const char *name,
     return 0;
 }
 
+CNET_API int soul_unit_evidence(SoulHost *h, const char *name,
+                                char *out, int out_cap) {
+    CnetEvidenceBundle b;
+    size_t need;
+    if (!h || !h->loaded || !name || !out || out_cap <= 0) return -1;
+    memset(&b, 0, sizeof b);
+    /* Prefer sidecar (carries CF stability + rollback) when present. */
+    if (h->evidence_store[0] &&
+        cnet_evidence_store_get(h->evidence_store, name, &b) == 0) {
+        /* ok */
+    } else if (cnet_evidence_bundle_from_base(&h->base, name, NULL, &b) != 0) {
+        return -2;
+    }
+    if (cnet_evidence_bundle_format_json(&b, out, (size_t)out_cap) != 0) {
+        out[0] = '\0';
+        return -4;
+    }
+    need = strlen(out) + 1;
+    if (need > (size_t)out_cap) {
+        out[0] = '\0';
+        return -4;
+    }
+    return 0;
+}
+
+CNET_API int soul_unit_health_layers(SoulHost *h, const char *name,
+                                     char *out, int out_cap) {
+    CnetHealthLayerConfig cfg;
+    CnetUnitHealthLayers u;
+    if (!h || !h->loaded || !name || !out || out_cap <= 0) return -1;
+    cnet_health_layer_config_defaults(&cfg);
+    cfg.contracts = soul_contract_lookup;
+    cfg.contracts_ctx = h;
+    cfg.utility_min_evidence = 0; /* certified units may be freshly sealed */
+    if (cnet_health_check_unit(&h->reg, name, &cfg, &u) != 0) return -2;
+    if (u.layer[CNET_HEALTH_LAYER_REGISTRY] == CNET_HEALTH_FAIL) return -2;
+    if (cnet_health_layers_format_json(&u, out, (size_t)out_cap) != 0) {
+        out[0] = '\0';
+        return -4;
+    }
+    return 0;
+}
+
 static int request_port(Port *p, int family, int width, int count,
                         const char *tag) {
     memset(p, 0, sizeof *p);
@@ -829,8 +1043,10 @@ CNET_API int soul_request(SoulHost *h,
     Port input, goal;
     RoutePlan plan;
     size_t in_total, out_total;
+    double t0, t_plan0, route_ms, total_ms;
 
     if (!h || !h->loaded) return -1;
+    t0 = soul_mono_ms();
     /* a request needs REAL types on both ends: an untagged input port is a
        wildcard, which trivially "already satisfies" any same-shape goal
        (the 0-length identity) — such a request is unservable by
@@ -844,10 +1060,12 @@ CNET_API int soul_request(SoulHost *h,
     out_total = goal.field_width * goal.field_count;
 
     memset(&plan, 0, sizeof plan);
+    t_plan0 = soul_mono_ms();
     /* length 0 = the wildcard-tag identity plan ("input already satisfies
        the goal type") — a capability request wants a PRODUCING unit, so it
        counts as no plan, same rule as soul_route. */
     if (route_plan(&h->reg, input, goal, &plan) != 0 || plan.length == 0) {
+        route_ms = soul_mono_ms() - t_plan0;
         /* Novel goal: note for the learner; residual may answer immediately. */
         if (h->gap_inbox[0]) {
             gap_inbox_note_no_plan(h->gap_inbox, input, goal);
@@ -856,28 +1074,63 @@ CNET_API int soul_request(SoulHost *h,
         if (!in) {
             /* Probe: residual cannot claim certified capability. */
             h->last_source = SOUL_SOURCE_NONE;
+            total_ms = soul_mono_ms() - t0;
+            soul_emit_route_log(h, "soul_request", CNET_ROUTE_MECH_NO_PLAN,
+                                goal_tag, NULL, -3, SOUL_SOURCE_NONE,
+                                route_ms, total_ms);
             return -3;
         }
         if ((size_t)in_len != in_total || !out ||
-            (size_t)out_cap < out_total) return -4;
+            (size_t)out_cap < out_total) {
+            soul_emit_route_log(h, "soul_request", CNET_ROUTE_MECH_NO_PLAN,
+                                goal_tag, NULL, -4, SOUL_SOURCE_NONE,
+                                route_ms, soul_mono_ms() - t0);
+            return -4;
+        }
         if (soul_try_residual_answer(h, input, goal, in, in_total, out,
-                                     out_total) == 0)
+                                     out_total) == 0) {
+            total_ms = soul_mono_ms() - t0;
+            soul_emit_route_log(h, "soul_request", CNET_ROUTE_MECH_RESIDUAL,
+                                goal_tag, NULL, (int)out_total,
+                                SOUL_SOURCE_RESIDUAL, route_ms, total_ms);
             return (int)out_total;
+        }
         h->last_source = SOUL_SOURCE_NONE;
+        total_ms = soul_mono_ms() - t0;
+        soul_emit_route_log(h, "soul_request", CNET_ROUTE_MECH_NO_PLAN,
+                            goal_tag, NULL, -3, SOUL_SOURCE_NONE,
+                            route_ms, total_ms);
         return -3;
     }
+    route_ms = soul_mono_ms() - t_plan0;
     if (!in) {
         h->last_source = SOUL_SOURCE_PROBE;
+        total_ms = soul_mono_ms() - t0;
+        soul_emit_route_log(h, "soul_request", CNET_ROUTE_MECH_PROBE, goal_tag,
+                            &plan, 0, SOUL_SOURCE_PROBE, route_ms, total_ms);
         return 0;  /* capability probe: plannable, not executed */
     }
     if ((size_t)in_len != in_total || !out ||
-        (size_t)out_cap < out_total) return -4;
+        (size_t)out_cap < out_total) {
+        soul_emit_route_log(h, "soul_request", CNET_ROUTE_MECH_PLANNER,
+                            goal_tag, &plan, -4, SOUL_SOURCE_NONE,
+                            route_ms, soul_mono_ms() - t0);
+        return -4;
+    }
     if (route_execute(&plan, in, in_total, out, out_total) != 0) {
         h->last_source = SOUL_SOURCE_NONE;
+        total_ms = soul_mono_ms() - t0;
+        soul_emit_route_log(h, "soul_request", CNET_ROUTE_MECH_PLANNER,
+                            goal_tag, &plan, -5, SOUL_SOURCE_NONE,
+                            route_ms, total_ms);
         return -5;
     }
     h->certified_serves++;
     h->last_source = SOUL_SOURCE_CERTIFIED;
+    total_ms = soul_mono_ms() - t0;
+    soul_emit_route_log(h, "soul_request", CNET_ROUTE_MECH_PLANNER, goal_tag,
+                        &plan, (int)out_total, SOUL_SOURCE_CERTIFIED,
+                        route_ms, total_ms);
     return (int)out_total;
 }
 
@@ -1039,6 +1292,8 @@ CNET_API void soul_close(SoulHost *h) {
     }
     free(h->contracts);
     free(h->contract_names);
+    free(h->route_log_path);
+    h->route_log_path = NULL;
     if (h->loaded) {
         /* Drop residual bind before freeing the model it points at. */
         hybrid_ai_free(&h->hybrid);

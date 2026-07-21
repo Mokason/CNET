@@ -112,6 +112,9 @@ void cce_kv_pager_sync(cce_kv_pager *p);
 int cce_kv_pager_pages_flushed(const cce_kv_pager *p);
 int cce_kv_pager_pages_reused(const cce_kv_pager *p);
 int cce_kv_pager_pages_rehydrated(const cce_kv_pager *p);
+/* Asynchronous COLD writes are retried, then counted here if storage or the
+ * ledger still fails. Call sync() before sampling for a complete batch. */
+int cce_kv_pager_write_failures(const cce_kv_pager *p);
 int cce_kv_pager_queue_depth(const cce_kv_pager *p);
 
 int cce_kv_pager_verify_cold(const cce_kv_pager *p, int page_id,

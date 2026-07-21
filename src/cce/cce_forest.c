@@ -763,7 +763,8 @@ cce_result cce_forest_merge(cce_forest* dst, cce_forest* src, const char* name_p
         }
 
         char newname[64];
-        snprintf(newname, sizeof(newname), "%s%s", pfx, sbr->name);
+        snprintf(newname, sizeof(newname), "%s%.*s", pfx,
+                 (int)(sizeof(newname) - strlen(pfx) - 1u), sbr->name);
 
         cce_result add_rc = cce_forest_add_branch(dst, copy, newname);
         if (add_rc == CCE_OK) {
@@ -773,7 +774,9 @@ cce_result cce_forest_merge(cce_forest* dst, cce_forest* src, const char* name_p
             dbr->num_connections = sbr->num_connections;
             for (int c=0; c < sbr->num_connections; c++) {
                 char conn[64];
-                snprintf(conn, sizeof(conn), "%s%s", pfx, sbr->conn_names[c]);
+                snprintf(conn, sizeof(conn), "%s%.*s", pfx,
+                         (int)(sizeof(conn) - strlen(pfx) - 1u),
+                         sbr->conn_names[c]);
                 memcpy(dbr->conn_names[c], conn,
                        sizeof(dbr->conn_names[c]));
                 dbr->conn_names[c][63] = '\0';

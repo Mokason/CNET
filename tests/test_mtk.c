@@ -240,6 +240,16 @@ static void auto_router(void) {
     check(cce_mtk_router_apply(m, "hello weather today", 1.f) ==
               CCE_ERR_NOT_FOUND,
           "router no match");
+    rf = fopen("mtk_routes.txt", "w");
+    check(rf != NULL, "oversize route file create");
+    if (rf) {
+        for (i = 0; i < 300; ++i) fputc('a', rf);
+        fprintf(rf, "  keyword\n");
+        fclose(rf);
+    }
+    check(cce_mtk_router_load(m, "mtk_routes.txt") == CCE_ERR_INVALID_ARG &&
+              cce_mtk_router_n_routes(m) == 0,
+          "router rejects overlong path instead of truncating authority");
     cce_mtk_close(m);
     remove("skill_code.cmsk");
     remove("mtk_routes.txt");
@@ -516,6 +526,94 @@ int main(void) {
                 rmdir(pdir);
             }
         }
+    }
+
+    /* A malformed MTSK mask must be rejected transactionally: no prefix of
+     * the skill may remain in live weights after an error return. */
+    {
+        float W[8];
+        cce_mtk *m = NULL;
+        const char *path = "mtsk_audit_mask_mismatch.tskill";
+        FILE *f;
+        uint8_t hdr[45], th[20], mask = 0x07, packed = 0x0f;
+        int64_t shape[1] = {8};
+        int i, untouched = 1;
+        cce_result rc;
+
+        for (i = 0; i < 8; ++i) W[i] = (float)i;
+        check(cce_mtk_open(&m) == CCE_OK &&
+              cce_mtk_register(m, "tiny.w", W, 8) == CCE_OK,
+              "audit: mismatch fixture opens and registers");
+        f = fopen(path, "wb");
+        check(f != NULL, "audit: mismatch fixture file");
+        if (f) {
+            memset(hdr, 0, sizeof hdr);
+            memcpy(hdr, "MTSK", 4);
+            { uint32_t v = 1; memcpy(hdr + 4, &v, 4); }
+            hdr[8] = 1;
+            { float d = 0.5f; memcpy(hdr + 9, &d, 4); }
+            { uint32_t nt = 1; memcpy(hdr + 25, &nt, 4); }
+            { uint64_t tm = 2, te = 8;
+              memcpy(hdr + 29, &tm, 8); memcpy(hdr + 37, &te, 8); }
+            fwrite(hdr, 1, sizeof hdr, f);
+            memset(th, 0, sizeof th);
+            { uint16_t nl = 6; memcpy(th, &nl, 2); }
+            th[2] = 1;
+            { uint64_t ne = 8, nm = 2;
+              memcpy(th + 4, &ne, 8); memcpy(th + 12, &nm, 8); }
+            fwrite(th, 1, sizeof th, f);
+            fwrite("tiny.w", 1, 6, f);
+            fwrite(shape, sizeof shape, 1, f);
+            fwrite(&mask, 1, 1, f);
+            fwrite(&packed, 1, 1, f);
+            fclose(f);
+        }
+        rc = cce_mtk_apply_file(m, path, 0.1f);
+        for (i = 0; i < 8; ++i)
+            if (W[i] != (float)i) untouched = 0;
+        check(rc == CCE_ERR_UNSUPPORTED,
+              "audit: mask/popcount mismatch rejected");
+        check(untouched, "audit: malformed MTSK leaves all weights unchanged");
+        cce_mtk_close(m);
+        remove(path);
+    }
+
+    /* The binary format uses a uint16 name length. Writers must reject an
+     * overlong name before opening/truncating the destination. */
+    {
+        char *long_name = (char *)malloc(65537u);
+        uint32_t idx = 0;
+        float val = 1.f;
+        cce_mtk_skill_tensor st;
+        const char *cmsk = "mtk_audit_long_name.cmsk";
+        const char *mtsk = "mtk_audit_long_name.tskill";
+        FILE *probe;
+        int absent = 1;
+        remove(cmsk);
+        remove(mtsk);
+        check(long_name != NULL, "audit: long-name fixture allocates");
+        if (long_name) {
+            memset(long_name, 'x', 65536u);
+            long_name[65536] = '\0';
+            memset(&st, 0, sizeof st);
+            st.site_name = long_name;
+            st.n_elem = 1;
+            st.nnz = 1;
+            st.idx = &idx;
+            st.val = &val;
+            check(cce_mtk_write_cmsk(cmsk, CCE_MTK_METHOD_DELTA, &st, 1) ==
+                      CCE_ERR_INVALID_ARG &&
+                  cce_mtk_write_mtsk(mtsk, &st, 1) == CCE_ERR_INVALID_ARG,
+                  "audit: uint16-overlong names rejected by both writers");
+            probe = fopen(cmsk, "rb");
+            if (probe) { absent = 0; fclose(probe); }
+            probe = fopen(mtsk, "rb");
+            if (probe) { absent = 0; fclose(probe); }
+            check(absent, "audit: rejected names do not truncate destinations");
+            free(long_name);
+        }
+        remove(cmsk);
+        remove(mtsk);
     }
 
     printf("MTK_PASS checks=%d failures=%d\n", checks, failures);

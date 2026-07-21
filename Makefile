@@ -136,7 +136,10 @@ DOTNET ?= $(shell command -v dotnet 2>/dev/null || \
     echo "")
 DOTNET_RESTORE_PROJECTS := dotnet/CceHost/CceHost.csproj \
     dotnet/CnetMcpServer/CnetMcpServer.csproj \
-    dotnet/Cce.Tests/Cce.Tests.csproj
+    dotnet/Cce.Tests/Cce.Tests.csproj \
+    dotnet/CnetMcpServer.Tests/CnetMcpServer.Tests.csproj \
+    dotnet/CnetHarnessSmoke/CnetHarnessSmoke.csproj \
+    dotnet/Cce.Benchmarks/Cce.Benchmarks.csproj
 
 # Guard: emit a clear prerequisite error when dotnet is needed but missing.
 define dotnet_guard
@@ -210,6 +213,10 @@ RESIDUAL_GGUF_SRC := src/residual_gguf.c
 PILOT_SRC := src/cnet_pilot.c
 CURIOSITY_SRC := src/cnet_curiosity.c
 EG_SRC := src/cnet_eg.c
+AGENT_ROLE_SRC := src/cnet_agent_role.c
+ROUTE_LOG_SRC := src/cnet_route_log.c
+EVIDENCE_BUNDLE_SRC := src/cnet_evidence_bundle.c
+HEALTH_LAYERS_SRC := src/cnet_health_layers.c
 PLACEMENT_SRC := src/cnet_placement.c
 CCE_MODEL_CATALOG := src/cce/cce_model_catalog.c
 MODEL_PROBE := src/model_probe.c
@@ -1941,9 +1948,9 @@ cce_dll: $(CCE) $(CCE_CUDA_OBJ)
 # Defines both export macros.
 # Usage: make cnet_dll
 cnet_dll: CFLAGS := $(CFLAGS) -fPIC
-cnet_dll: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(BASE_SRC) $(SCAN) $(PROPERTY) $(CONSOLIDATE) $(ACQUIRE_SRC) $(COVERAGE) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(GAP_LANE_SRC) $(ASYNC_RUNTIME) $(MODEL_RUNTIME) $(CCE_MODEL_CATALOG) $(MODEL_PROBE) $(RESOURCE_GOV_SRC) $(CF_ORDER_SRC) $(SELF_IMPROVE_SRC) $(HARNESS_ORACLE_SRC) $(MULTIMODAL_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(LIBRARY) src/fastpath.c src/soul_host.c src/contract/mcp_calculator.c src/contract/mcp_math_eval.c src/contract/mcp_file_read.c src/contract/mcp_file_write.c src/contract/mcp_memory.c src/contract/mcp_utils.c src/contract/mcp_web_search.c src/contract/mcp_wiki.c src/contract/mcp_math_eval.c src/agent_memory.c
+cnet_dll: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(BASE_SRC) $(SCAN) $(PROPERTY) $(CONSOLIDATE) $(ACQUIRE_SRC) $(COVERAGE) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(GAP_LANE_SRC) $(ASYNC_RUNTIME) $(MODEL_RUNTIME) $(CCE_MODEL_CATALOG) $(MODEL_PROBE) $(RESOURCE_GOV_SRC) $(CF_ORDER_SRC) $(SELF_IMPROVE_SRC) $(HARNESS_ORACLE_SRC) $(MULTIMODAL_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(AGENT_ROLE_SRC) $(ROUTE_LOG_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(LIBRARY) src/fastpath.c src/soul_host.c src/contract/mcp_calculator.c src/contract/mcp_math_eval.c src/contract/mcp_file_read.c src/contract/mcp_file_write.c src/contract/mcp_memory.c src/contract/mcp_utils.c src/contract/mcp_web_search.c src/contract/mcp_wiki.c src/contract/mcp_math_eval.c src/agent_memory.c
 	$(CC) -shared -DCNET_BUILD_DLL -DCCE_BUILD_DLL $(CFLAGS) $(CUDA_CFLAGS) -o cnet.so \
-		$(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(BASE_SRC) $(SCAN) $(PROPERTY) $(CONSOLIDATE) $(ACQUIRE_SRC) $(COVERAGE) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(GAP_LANE_SRC) $(ASYNC_RUNTIME) $(MODEL_RUNTIME) $(CCE_MODEL_CATALOG) $(MODEL_PROBE) $(RESOURCE_GOV_SRC) $(CF_ORDER_SRC) $(SELF_IMPROVE_SRC) $(HARNESS_ORACLE_SRC) $(MULTIMODAL_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(LIBRARY) src/fastpath.c src/soul_host.c src/contract/mcp_calculator.c src/contract/mcp_math_eval.c src/contract/mcp_file_read.c src/contract/mcp_file_write.c src/contract/mcp_memory.c src/contract/mcp_utils.c src/contract/mcp_web_search.c src/contract/mcp_wiki.c src/agent_memory.c \
+		$(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(BASE_SRC) $(SCAN) $(PROPERTY) $(CONSOLIDATE) $(ACQUIRE_SRC) $(COVERAGE) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(GAP_LANE_SRC) $(ASYNC_RUNTIME) $(MODEL_RUNTIME) $(CCE_MODEL_CATALOG) $(MODEL_PROBE) $(RESOURCE_GOV_SRC) $(CF_ORDER_SRC) $(SELF_IMPROVE_SRC) $(HARNESS_ORACLE_SRC) $(MULTIMODAL_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(AGENT_ROLE_SRC) $(ROUTE_LOG_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(LIBRARY) src/fastpath.c src/soul_host.c src/contract/mcp_calculator.c src/contract/mcp_math_eval.c src/contract/mcp_file_read.c src/contract/mcp_file_write.c src/contract/mcp_memory.c src/contract/mcp_utils.c src/contract/mcp_web_search.c src/contract/mcp_wiki.c src/agent_memory.c \
 		$(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) $(CNET_SONAME_LDFLAGS) -pthread
 	@echo "Built unified cnet.so (CCE + certified runtime + soul_host + MCP ABI)."
 
@@ -2069,11 +2076,11 @@ unified_oracle_adapter: $(SPECIALIST_ADAPTERS) $(SRC) $(ROUTER) $(PLAN_TABLE) $(
 # bound oracle (dynamic-growth students, certified, sealed), checkpoints are
 # atomic for base AND ledger, and a fresh lane resumes from disk.
 .PHONY: gap_lane
-gap_lane: $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(GAP_LANE_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) tests/test_gap_lane.c include/gap_lane.h
+gap_lane: $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) tests/test_gap_lane.c include/gap_lane.h
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/test_gap_lane \
 		$(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) \
-		$(GAP_LANE_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) \
+		$(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) \
 		$(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) \
 		tests/test_gap_lane.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -pthread
 	@./$(BIN_DIR)/test_gap_lane > logs/gap_lane.log 2>&1
@@ -2085,11 +2092,11 @@ gap_lane: $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(S
 # flags and source revision (see lm_toolchain_identity in gap_lane_run.c)
 gap_lane_run_build: CNET_SRC_REV := $(shell git rev-parse --short=16 HEAD 2>/dev/null || echo unknown)
 gap_lane_run_build: CFLAGS := $(CFLAGS) $(OMPFLAGS) -DCNET_TOOLCHAIN_CFLAGS="\"$(CFLAGS) $(OMPFLAGS)\"" -DCNET_SOURCE_REV="\"$(CNET_SRC_REV)\""
-gap_lane_run_build: $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(GAP_LANE_SRC) $(CURIOSITY_SRC) $(EG_SRC) $(JSON_TOOLCALL_SRC) $(EXT_TEACHER_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) tests/gap_lane_run.c include/json_toolcall.h
+gap_lane_run_build: $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(CURIOSITY_SRC) $(EG_SRC) $(JSON_TOOLCALL_SRC) $(EXT_TEACHER_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) tests/gap_lane_run.c include/json_toolcall.h
 	@mkdir -p $(BIN_DIR)
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/gap_lane_run \
 		$(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) \
-		$(GAP_LANE_SRC) $(CURIOSITY_SRC) $(EG_SRC) $(JSON_TOOLCALL_SRC) $(EXT_TEACHER_SRC) \
+		$(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(CURIOSITY_SRC) $(EG_SRC) $(JSON_TOOLCALL_SRC) $(EXT_TEACHER_SRC) \
 		$(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) \
 		$(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) \
 		tests/gap_lane_run.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -pthread
@@ -2315,10 +2322,10 @@ pattern_cli: $(PATTERN_DEPS) tools/cnet_pattern.c include/cnet_pattern.h
 		$(LDFLAGS) $(MCP_LDFLAGS) -pthread -ldl
 	@echo "Built bin/cnet_pattern"
 
-personal_ai: $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EXT_TEACHER_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) tests/test_personal_ai.c include/personal_ai.h
+personal_ai: $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(EXT_TEACHER_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) tests/test_personal_ai.c include/personal_ai.h
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/test_personal_ai \
-		$(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EXT_TEACHER_SRC) \
+		$(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(EXT_TEACHER_SRC) \
 		$(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) \
 		$(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) \
 		$(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) \
@@ -2329,10 +2336,10 @@ personal_ai: $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SR
 	@grep "PERSONAL_AI_PASS" logs/personal_ai.log
 
 .PHONY: hybrid_ai hybrid_bench
-hybrid_ai: $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EXT_TEACHER_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) tests/test_hybrid_ai.c include/hybrid_ai.h include/personal_ai.h
+hybrid_ai: $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(EXT_TEACHER_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) tests/test_hybrid_ai.c include/hybrid_ai.h include/personal_ai.h
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/test_hybrid_ai \
-		$(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EXT_TEACHER_SRC) \
+		$(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(EXT_TEACHER_SRC) \
 		$(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) \
 		$(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) \
 		$(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) \
@@ -2341,10 +2348,10 @@ hybrid_ai: $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC)
 	@grep -q "HYBRID_AI_PASS" logs/hybrid_ai.log
 	@grep "HYBRID_AI_PASS" logs/hybrid_ai.log
 
-hybrid_bench: $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EXT_TEACHER_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) tests/bench_hybrid_ai.c
+hybrid_bench: $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(EXT_TEACHER_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) tests/bench_hybrid_ai.c
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/bench_hybrid_ai \
-		$(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EXT_TEACHER_SRC) \
+		$(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(EXT_TEACHER_SRC) \
 		$(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) \
 		$(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) \
 		$(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) \
@@ -2354,10 +2361,10 @@ hybrid_bench: $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_S
 	@cat logs/hybrid_bench.log
 
 .PHONY: learning_delta_bench
-learning_delta_bench: $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EXT_TEACHER_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) tests/bench_learning_delta.c
+learning_delta_bench: $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(EXT_TEACHER_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) tests/bench_learning_delta.c
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/bench_learning_delta \
-		$(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EXT_TEACHER_SRC) \
+		$(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(EXT_TEACHER_SRC) \
 		$(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) \
 		$(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) \
 		$(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) \
@@ -2367,10 +2374,10 @@ learning_delta_bench: $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $
 
 # Real GGUF residual (Tier C). Hermetic without env; real when path set.
 .PHONY: residual_gguf residual_gguf_real
-residual_gguf: $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EXT_TEACHER_SRC) $(CURIOSITY_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) tests/test_residual_gguf.c include/residual_gguf.h
+residual_gguf: $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(EXT_TEACHER_SRC) $(CURIOSITY_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) tests/test_residual_gguf.c include/residual_gguf.h
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/test_residual_gguf \
-		$(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EXT_TEACHER_SRC) $(CURIOSITY_SRC) \
+		$(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(EXT_TEACHER_SRC) $(CURIOSITY_SRC) \
 		$(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) \
 		$(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) \
 		$(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) \
@@ -2398,10 +2405,10 @@ residual_structure_mine_real: residual_gguf_real
 # Colibrì integration P0–P5 (placement, LFRU, heat mine, batch labels, session KV, pilot).
 .PHONY: colibri_integrate cnet_plan_cli
 EXT_RESIDUAL_SRC := src/external_residual.c
-colibri_integrate: $(PLACEMENT_SRC) $(PILOT_SRC) $(EXT_RESIDUAL_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EXT_TEACHER_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) tests/test_colibri_integrate.c include/cnet_placement.h include/cnet_lfru.h include/cnet_pilot.h include/external_residual.h
+colibri_integrate: $(PLACEMENT_SRC) $(PILOT_SRC) $(EXT_RESIDUAL_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(EXT_TEACHER_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) tests/test_colibri_integrate.c include/cnet_placement.h include/cnet_lfru.h include/cnet_pilot.h include/external_residual.h
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/test_colibri_integrate \
-		$(PLACEMENT_SRC) $(PILOT_SRC) $(EXT_RESIDUAL_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EXT_TEACHER_SRC) \
+		$(PLACEMENT_SRC) $(PILOT_SRC) $(EXT_RESIDUAL_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(EXT_TEACHER_SRC) \
 		$(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) \
 		$(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) \
 		$(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) \
@@ -2416,10 +2423,10 @@ cnet_plan_cli: $(PLACEMENT_SRC) include/cnet_placement.h tools/cnet_plan.c
 	@echo "Built bin/cnet_plan (plan|doctor|json)"
 
 .PHONY: residual_session_chat
-residual_session_chat: $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(GAP_LANE_SRC) $(MODEL_RUNTIME) $(CCE) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(EXT_TEACHER_SRC) tools/residual_session_chat.c
+residual_session_chat: $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(MODEL_RUNTIME) $(CCE) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(EXT_TEACHER_SRC) tools/residual_session_chat.c
 	@mkdir -p $(BIN_DIR)
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/residual_session_chat \
-		$(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EXT_TEACHER_SRC) \
+		$(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(EXT_TEACHER_SRC) \
 		$(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) \
 		$(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) \
 		$(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) \
@@ -2427,11 +2434,11 @@ residual_session_chat: $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(GAP_LANE_SRC) $(MODEL
 	@echo "Built bin/residual_session_chat (CNET_RESIDUAL_SESSION_KV=1)"
 
 .PHONY: soul_residual_serve
-soul_residual_serve: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(GAP_LANE_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(EXT_TEACHER_SRC) $(LIBRARY) src/soul_host.c tests/test_soul_residual.c
+soul_residual_serve: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(GAP_LANE_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(EXT_TEACHER_SRC) $(LIBRARY) src/soul_host.c $(ROUTE_LOG_SRC) tests/test_soul_residual.c
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/test_soul_residual \
-		$(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(GAP_LANE_SRC) \
-		$(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(EXT_TEACHER_SRC) $(LIBRARY) src/soul_host.c tests/test_soul_residual.c \
+		$(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) \
+		$(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(EXT_TEACHER_SRC) $(LIBRARY) src/soul_host.c $(ROUTE_LOG_SRC) tests/test_soul_residual.c \
 		$(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -pthread
 	@./$(BIN_DIR)/test_soul_residual > logs/soul_residual_serve.log 2>&1
 	@grep -q "SOUL_RESIDUAL_SERVE_PASS" logs/soul_residual_serve.log
@@ -2446,25 +2453,25 @@ personal_ai_auto: tests/test_personal_ai_auto.py scripts/personal_ai_auto.sh con
 
 # Post-seal serve proof: teach → seal → SoulHost reopen → certified Tier A.
 .PHONY: post_seal_serve serve_proof_cli serve_proof
-post_seal_serve: $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EXT_TEACHER_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) src/soul_host.c tests/test_post_seal_serve.c include/personal_ai.h include/soul_host.h
+post_seal_serve: $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EXT_TEACHER_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) src/soul_host.c $(ROUTE_LOG_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) tests/test_post_seal_serve.c include/personal_ai.h include/soul_host.h
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/test_post_seal_serve \
-		$(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EXT_TEACHER_SRC) \
+		$(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(EXT_TEACHER_SRC) \
 		$(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) \
 		$(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) \
-		$(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) src/soul_host.c \
+		$(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) src/soul_host.c $(ROUTE_LOG_SRC) \
 		tests/test_post_seal_serve.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -pthread
 	@./$(BIN_DIR)/test_post_seal_serve > logs/post_seal_serve.log 2>&1
 	@grep -q "POST_SEAL_SERVE_PASS" logs/post_seal_serve.log
 	@grep "POST_SEAL_SERVE_PASS" logs/post_seal_serve.log
 
-serve_proof_cli: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(GAP_LANE_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(EXT_TEACHER_SRC) $(LIBRARY) src/soul_host.c tools/serve_proof.c
+serve_proof_cli: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(GAP_LANE_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(EXT_TEACHER_SRC) $(LIBRARY) src/soul_host.c $(ROUTE_LOG_SRC) tools/serve_proof.c
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/serve_proof \
 		$(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) \
-		$(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(GAP_LANE_SRC) \
+		$(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) \
 		$(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(EXT_TEACHER_SRC) $(LIBRARY) \
-		src/soul_host.c tools/serve_proof.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -pthread
+		src/soul_host.c $(ROUTE_LOG_SRC) tools/serve_proof.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -pthread
 
 serve_proof: post_seal_serve
 	@bash scripts/personal_ai_serve_proof.sh hermetic
@@ -2498,38 +2505,41 @@ voice_real_teacher: $(MULTIMODAL_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER
 	@grep "VOICE_REAL_TEACHER_PASS" logs/voice_real_teacher.log
 
 # Single source of truth → C include + .NET partial (check in generated files).
-.PHONY: json_toolcall_alphabet
+.PHONY: json_toolcall_alphabet json_toolcall_alphabet_check
 json_toolcall_alphabet: config/json_toolcall_v2.json tools/gen_json_toolcall_alphabet.py
 	@python3 tools/gen_json_toolcall_alphabet.py
 	@test -f include/json_toolcall_alphabet.inc
 	@test -f dotnet/Cce/JsonToolCall.Alphabet.g.cs
 
+json_toolcall_alphabet_check: config/json_toolcall_v2.json tools/gen_json_toolcall_alphabet.py include/json_toolcall_alphabet.inc dotnet/Cce/JsonToolCall.Alphabet.g.cs
+	@python3 tools/gen_json_toolcall_alphabet.py --check
+
 # Closed-set JSON tool-call spine: keyword features → certified tool ONEHOT.
 .PHONY: json_toolcall
-json_toolcall: json_toolcall_alphabet $(MULTIMODAL_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) $(GAP_LANE_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(EXT_TEACHER_SRC) src/soul_host.c tests/test_json_toolcall.c include/json_toolcall.h include/json_toolcall_alphabet.inc
+json_toolcall: json_toolcall_alphabet $(MULTIMODAL_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) $(GAP_LANE_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(EXT_TEACHER_SRC) src/soul_host.c $(ROUTE_LOG_SRC) tests/test_json_toolcall.c include/json_toolcall.h include/json_toolcall_alphabet.inc
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/test_json_toolcall \
 		$(MULTIMODAL_SRC) \
 		$(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) \
 		$(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) \
-		$(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) $(GAP_LANE_SRC) \
+		$(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) \
 		$(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) \
-		src/soul_host.c tests/test_json_toolcall.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -pthread
+		src/soul_host.c $(ROUTE_LOG_SRC) tests/test_json_toolcall.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -pthread
 	@./$(BIN_DIR)/test_json_toolcall > logs/json_toolcall.log 2>&1
 	@grep -q "JSON_TOOLCALL_PASS" logs/json_toolcall.log
 	@grep "JSON_TOOLCALL_PASS" logs/json_toolcall.log
 
-# Seal json_toolcall_v0 into a live/personal CNB (CLI for scripts/json_toolcall_seal.sh).
+# Seal the current json_toolcall_v2 into a live/personal CNB (CLI for scripts/json_toolcall_seal.sh).
 .PHONY: json_toolcall_seal_cli
-json_toolcall_seal_cli: $(MULTIMODAL_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) $(GAP_LANE_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) src/soul_host.c tools/json_toolcall_seal.c include/json_toolcall.h
+json_toolcall_seal_cli: $(MULTIMODAL_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) $(GAP_LANE_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) src/soul_host.c $(ROUTE_LOG_SRC) tools/json_toolcall_seal.c include/json_toolcall.h
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/json_toolcall_seal \
 		$(MULTIMODAL_SRC) \
 		$(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) \
 		$(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) \
-		$(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) $(GAP_LANE_SRC) \
+		$(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) \
 		$(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) \
-		src/soul_host.c tools/json_toolcall_seal.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -pthread
+		src/soul_host.c $(ROUTE_LOG_SRC) tools/json_toolcall_seal.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -pthread
 
 multimodal_prepare: tests/test_multimodal_prepare.py tools/multimodal_campaign.sh plans/multimodal_external_teachers.md
 	@mkdir -p logs
@@ -2650,7 +2660,7 @@ native_test_warning_gate:
 
 # Managed warning policy is deliberately offline: dependency restoration is a
 # provisioning step, while release verification must not gain network egress.
-managed_warning_gate:
+managed_warning_gate: json_toolcall_alphabet_check
 	@mkdir -p logs
 	@: > logs/managed_warning_gate.log
 	@set -e; for project in \
@@ -2720,7 +2730,7 @@ dist: VERSION .github/workflows/ci.yml include/cnet_version.h
 			--transform='s,^,cnet-$(CNET_VERSION)/,' \
 			--exclude='*.cnb' --exclude='*.so' --exclude='*.dll' \
 			--exclude='*/bin' --exclude='*/bin/*' --exclude='*/obj' --exclude='*/obj/*' \
-			-cf - Makefile README.md VERSION .github docs include src tests tools scripts \
+			-cf - Makefile README.md VERSION .github docs dotnet include src tests tools scripts \
 			| gzip -n > "$$tmp"; \
 		mv "$$tmp" "$$out"
 	@echo "CNET_DIST_PASS $(DIST_DIR)/cnet-$(CNET_VERSION).tar.gz"
@@ -2728,20 +2738,18 @@ dist: VERSION .github/workflows/ci.yml include/cnet_version.h
 .PHONY: agent_memory_integrity registry_restart_unit persistence_integrity specialist_authority admission_abi_audit
 
 .PHONY: gguf_integrity
-gguf_integrity: src/cce/cce_gguf.c src/cce/cce_sparse_kv.c tests/test_cce_gguf_q5_integrity.c tests/stubs_q5_test.c
+gguf_integrity: $(CCE) tests/test_cce_gguf_q5_integrity.c
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) -std=c11 -Wall -Wextra -Werror -pedantic -O2 -D_DEFAULT_SOURCE -Iinclude \
 		-o $(BIN_DIR)/test_cce_gguf_q5_integrity \
-		tests/test_cce_gguf_q5_integrity.c tests/stubs_q5_test.c src/cce/cce_gguf.c \
-		src/cce/cce_sparse_kv.c \
+		tests/test_cce_gguf_q5_integrity.c $(CCE) \
 		-lm -lpthread
 	@timeout 30 ./$(BIN_DIR)/test_cce_gguf_q5_integrity > logs/gguf_integrity.log 2>&1
 	@grep -q "GGUF_INTEGRITY_PASS" logs/gguf_integrity.log
 	$(CC) -std=c11 -Wall -Wextra -Werror -pedantic -O1 -g -D_DEFAULT_SOURCE \
 		-fsanitize=address,leak -fno-omit-frame-pointer -Iinclude \
 		-o $(BIN_DIR)/test_cce_gguf_q5_integrity_asan \
-		tests/test_cce_gguf_q5_integrity.c tests/stubs_q5_test.c src/cce/cce_gguf.c \
-		src/cce/cce_sparse_kv.c \
+		tests/test_cce_gguf_q5_integrity.c $(CCE) \
 		-lm -lpthread
 	@timeout 60 env ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 \
 		./$(BIN_DIR)/test_cce_gguf_q5_integrity_asan > logs/gguf_integrity_asan.log 2>&1
@@ -2793,7 +2801,7 @@ ci_config_gate: .github/workflows/ci.yml tests/test_ci_workflow.py
 	@python3 tests/test_ci_workflow.py > logs/ci_config_gate.log 2>&1
 	@grep -q "CI_WORKFLOW_PASS" logs/ci_config_gate.log
 
-release_package: tests/test_release_package.sh VERSION include/cnet_version.h .github/workflows/ci.yml
+release_package: json_toolcall_alphabet_check tests/test_release_package.sh VERSION include/cnet_version.h .github/workflows/ci.yml
 	@sh tests/test_release_package.sh > logs/release_package.log 2>&1
 	@grep -q "RELEASE_PACKAGE_PASS" logs/release_package.log
 
@@ -2841,8 +2849,8 @@ oracle_v2_bench: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOL
 	@./$(BIN_DIR)/oracle_v2_bench > logs/oracle_v2_bench.log
 	@grep -q "Oracle v2 governed invocation benchmark" logs/oracle_v2_bench.log
 
-soul_host_test: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(GAP_LANE_SRC) src/soul_host.c  $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(EXT_TEACHER_SRC) $(LIBRARY) tests/test_soul_host.c
-	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(GAP_LANE_SRC) src/soul_host.c $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(EXT_TEACHER_SRC) $(LIBRARY) tests/test_soul_host.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -pthread
+soul_host_test: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(GAP_LANE_SRC) src/soul_host.c $(ROUTE_LOG_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(EXT_TEACHER_SRC) $(LIBRARY) tests/test_soul_host.c
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(GAP_LANE_SRC) src/soul_host.c $(ROUTE_LOG_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(EXT_TEACHER_SRC) $(LIBRARY) tests/test_soul_host.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -pthread
 	CNET_KEEP_TEST_BASE=1 ./$(BIN_DIR)/$@ > logs/soul_host_test.log 2>&1
 	@grep -q "SOUL_HOST_UNIFIED_PASS" logs/soul_host_test.log
 
@@ -2869,9 +2877,9 @@ dotnet_restore:
 # resolver-based Oracle remount certified against provenance-linked sealed
 # truth, typed native+oracle chain, explicit refusal tallies.
 .PHONY: soul_reopen_test admission_bypass_audit
-soul_reopen_test: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(GAP_LANE_SRC) src/soul_host.c $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(EXT_TEACHER_SRC) tests/test_soul_reopen.c
+soul_reopen_test: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(GAP_LANE_SRC) src/soul_host.c $(ROUTE_LOG_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(EXT_TEACHER_SRC) tests/test_soul_reopen.c
 	@mkdir -p $(BIN_DIR) logs
-	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(GAP_LANE_SRC) src/soul_host.c $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(EXT_TEACHER_SRC) $(LIBRARY) tests/test_soul_reopen.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -pthread
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(GAP_LANE_SRC) src/soul_host.c $(ROUTE_LOG_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(EXT_TEACHER_SRC) $(LIBRARY) tests/test_soul_reopen.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -pthread
 	./$(BIN_DIR)/$@ > logs/soul_reopen_test.log 2>&1
 	@grep -q "SPECIALIST_REOPEN_PASS" logs/soul_reopen_test.log
 
@@ -2887,14 +2895,14 @@ admission_bypass_audit: tests/audit_admission_bypass.sh
 # answer is BYTE-IDENTICAL with the knob on or off, metadata is present only
 # when ON, and refusal semantics (unknown goal, gap-inbox note) are unchanged.
 .PHONY: counterfactual_serving
-counterfactual_serving: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(GAP_LANE_SRC) src/soul_host.c $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(EXT_TEACHER_SRC) tests/test_counterfactual_serving.c
+counterfactual_serving: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(GAP_LANE_SRC) src/soul_host.c $(ROUTE_LOG_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(EXT_TEACHER_SRC) tests/test_counterfactual_serving.c
 	@mkdir -p $(BIN_DIR) logs
-	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(GAP_LANE_SRC) src/soul_host.c $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(EXT_TEACHER_SRC) $(LIBRARY) tests/test_counterfactual_serving.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -pthread
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(GAP_LANE_SRC) src/soul_host.c $(ROUTE_LOG_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(EXT_TEACHER_SRC) $(LIBRARY) tests/test_counterfactual_serving.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -pthread
 	./$(BIN_DIR)/$@ > logs/counterfactual_serving.log 2>&1
 	@grep -q "CNET_COUNTERFACTUAL REPORT" logs/counterfactual_serving.log
 	@grep -q "COUNTERFACTUAL_SERVING_PASS" logs/counterfactual_serving.log
 
-unified_native: unified_adapter unified_cce_adapter unified_oracle_adapter unified_specialist gap_lane gap_lane_service_config dispatch_story oracle_v2_test unified_async unified_models unified_ds4_launcher soul_host_test soul_reopen_test counterfactual_serving admission_bypass_audit cnet_dll build_hygiene_test alt_paths_gate aicimo_core_test cnet_harness_contract_test resource_governor counterfactual_order self_improve deploy_profile
+unified_native: unified_adapter unified_cce_adapter unified_oracle_adapter unified_specialist gap_lane gap_lane_service_config dispatch_story oracle_v2_test unified_async unified_models unified_ds4_launcher soul_host_test soul_reopen_test counterfactual_serving admission_bypass_audit cnet_dll build_hygiene_test alt_paths_gate aicimo_core_test agent_role route_log evidence_bundle health_layers cnet_harness_contract_test resource_governor counterfactual_order self_improve deploy_profile
 	@for sym in specialist_wrap_btn specialist_wrap_cce_model \
 		specialist_wrap_oracle specialist_admit specialist_axes \
 		specialist_residency_of_model specialist_residency_of_branch \
@@ -2937,6 +2945,7 @@ priority_acceptance:
 	@$(MAKE) --no-print-directory heal_mismatch_san
 	@$(MAKE) --no-print-directory campaign_provenance
 	@$(MAKE) --no-print-directory execution_tiers_doc_gate
+	@$(MAKE) --no-print-directory gguf_integrity
 	@$(MAKE) --no-print-directory cce_qwen35
 	@$(MAKE) --no-print-directory cce_qwen35_e2e
 	@$(MAKE) --no-print-directory flagship_prefix_cache
@@ -2966,7 +2975,7 @@ release_integrity: tests/run_release_integrity.sh
 	@bash tests/run_release_integrity.sh
 
 .PHONY: unified
-unified:
+unified: json_toolcall_alphabet_check
 	@mkdir -p logs
 	@rm -f logs/unified.started
 	@touch logs/unified.started
@@ -3064,7 +3073,93 @@ aicimo_core_test: $(CCE) tests/test_aicimo_core.c include/cce/cce_aicimo.h
 # llama.cpp-backed backend TU is intentionally left out so this target does
 # not require llama.cpp. See docs/cnet_dotnet_inference_harness.md.
 CNET_HARNESS_CORE := src/cnet_harness/cnet_harness_core.c
-CNET_HARNESS_HEADERS := include/cnet_harness.h src/cnet_harness/cnet_harness_private.h include/cce/cce_aicimo.h include/model_runtime.h include/model_probe.h
+CNET_HARNESS_HEADERS := include/cnet_harness.h src/cnet_harness/cnet_harness_private.h include/cce/cce_aicimo.h include/cnet_agent_role.h include/cnet_route_log.h include/model_runtime.h include/model_probe.h
+
+# Explicit agent-role vocabulary (layer-3 policy). Gate: make agent_role.
+.PHONY: agent_role
+agent_role: $(AGENT_ROLE_SRC) tests/test_cnet_agent_role.c include/cnet_agent_role.h include/cnet_harness.h
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -o $(BIN_DIR)/test_cnet_agent_role \
+		$(AGENT_ROLE_SRC) tests/test_cnet_agent_role.c $(LDFLAGS)
+	./$(BIN_DIR)/test_cnet_agent_role > logs/agent_role.log 2>&1
+	@grep -q "AGENT_ROLE_PASS" logs/agent_role.log
+
+# Route decision JSONL (mechanism / expert / entropy / outcome / latency / cost).
+.PHONY: route_log
+route_log: $(ROUTE_LOG_SRC) tests/test_cnet_route_log.c include/cnet_route_log.h
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -o $(BIN_DIR)/test_cnet_route_log \
+		$(ROUTE_LOG_SRC) tests/test_cnet_route_log.c $(LDFLAGS)
+	./$(BIN_DIR)/test_cnet_route_log > logs/route_log.log 2>&1
+	@grep -q "ROUTE_LOG_PASS" logs/route_log.log
+
+# Per-unit evidence bundles (contract/dataset/artifact/runtime/reliability/CF/rollback).
+.PHONY: evidence_bundle
+evidence_bundle: $(EVIDENCE_BUNDLE_SRC) $(BASE_SRC) $(ACQUIRE_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) tests/test_cnet_evidence_bundle.c include/cnet_evidence_bundle.h
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -o $(BIN_DIR)/test_cnet_evidence_bundle \
+		$(EVIDENCE_BUNDLE_SRC) $(BASE_SRC) $(ACQUIRE_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) \
+		tests/test_cnet_evidence_bundle.c $(LDFLAGS) -pthread
+	./$(BIN_DIR)/test_cnet_evidence_bundle > logs/evidence_bundle.log 2>&1
+	@grep -q "EVIDENCE_BUNDLE_PASS" logs/evidence_bundle.log
+
+
+# ---- Six-priority use-loop gates (2026-07-21) ----------------------------
+.PHONY: serve_feedback oracle_unattested benchmark_taxonomy miner_efficiency_bench cnet_use_loop_acceptance
+
+serve_feedback: $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EXT_TEACHER_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) src/soul_host.c $(ROUTE_LOG_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) tests/test_serve_feedback.c
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/test_serve_feedback \
+		$(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(EXT_TEACHER_SRC) \
+		$(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) \
+		$(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) \
+		$(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) src/soul_host.c $(ROUTE_LOG_SRC) \
+		tests/test_serve_feedback.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -pthread
+	@./$(BIN_DIR)/test_serve_feedback > logs/serve_feedback.log 2>&1
+	@grep -q "SERVE_FEEDBACK_PASS" logs/serve_feedback.log
+	@grep "SERVE_FEEDBACK_PASS" logs/serve_feedback.log
+
+oracle_unattested: $(ACQUIRE_SRC) $(BASE_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) tests/test_oracle_unattested.c
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -o $(BIN_DIR)/test_oracle_unattested \
+		$(ACQUIRE_SRC) $(BASE_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) \
+		tests/test_oracle_unattested.c $(LDFLAGS) -pthread
+	@./$(BIN_DIR)/test_oracle_unattested > logs/oracle_unattested.log 2>&1
+	@grep -q "ORACLE_UNATTESTED_PASS" logs/oracle_unattested.log
+	@grep "ORACLE_UNATTESTED_PASS" logs/oracle_unattested.log
+
+benchmark_taxonomy: tests/test_benchmark_taxonomy.c
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -o $(BIN_DIR)/test_benchmark_taxonomy tests/test_benchmark_taxonomy.c $(LDFLAGS)
+	@./$(BIN_DIR)/test_benchmark_taxonomy > logs/benchmark_taxonomy.log 2>&1
+	@grep -q "BENCHMARK_TAXONOMY_PASS" logs/benchmark_taxonomy.log
+	@grep "BENCHMARK_TAXONOMY_PASS" logs/benchmark_taxonomy.log
+
+miner_efficiency_bench: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) tests/miner_efficiency_bench.c
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -o $(BIN_DIR)/miner_efficiency_bench \
+		$(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) \
+		tests/miner_efficiency_bench.c $(LDFLAGS) -pthread
+	@./$(BIN_DIR)/miner_efficiency_bench > logs/miner_efficiency_bench.log 2>&1
+	@grep -q "MINER_EFFICIENCY_BENCH_PASS" logs/miner_efficiency_bench.log
+	@grep "MINER_EFFICIENCY_BENCH_PASS" logs/miner_efficiency_bench.log
+
+# Ordered six-priority umbrella (hermetic + existing product gates).
+# Does not start teachers/GPUs/services. Single final check for the chunk.
+cnet_use_loop_acceptance: serve_feedback self_improve post_seal_serve miner_efficiency_bench acquire oracle_unattested json_toolcall residual_gguf soul_residual_serve phase123_benchmark_test benchmark_taxonomy health_layers evidence_bundle route_log agent_role
+	@echo "CNET_USE_LOOP_ACCEPTANCE_PASS"
+
+# Five-layer health diagnostics (registry/loadable/execution/semantic/utility).
+.PHONY: health_layers
+health_layers: $(HEALTH_LAYERS_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) tests/test_cnet_health_layers.c include/cnet_health_layers.h
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/test_cnet_health_layers \
+		$(HEALTH_LAYERS_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) \
+		$(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) \
+		$(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) \
+		tests/test_cnet_health_layers.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -pthread
+	./$(BIN_DIR)/test_cnet_health_layers > logs/health_layers.log 2>&1
+	@grep -q "HEALTH_LAYERS_PASS" logs/health_layers.log
 
 # Optional plugin build. Links cnet.so + llama.cpp libraries. Not part of
 # unified / release_integrity: it requires the pinned llama.cpp ROCm build
@@ -3123,13 +3218,13 @@ cnet_harness_gpu_benchmark: cnet_harness_plugin
 		logs/cnet_harness_gpu_benchmark.json
 
 .PHONY: cnet_harness_contract_test
-cnet_harness_contract_test: $(CCE) $(CCE_MODEL_CATALOG) $(MODEL_RUNTIME) $(MODEL_PROBE) $(CNET_HARNESS_CORE) tests/test_cnet_harness_contract.c tests/test_cnet_harness_failclosed.c $(CNET_HARNESS_HEADERS)
+cnet_harness_contract_test: $(CCE) $(CCE_MODEL_CATALOG) $(MODEL_RUNTIME) $(MODEL_PROBE) $(CNET_HARNESS_CORE) $(AGENT_ROLE_SRC) $(ROUTE_LOG_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) tests/test_cnet_harness_contract.c tests/test_cnet_harness_failclosed.c $(CNET_HARNESS_HEADERS)
 	@mkdir -p $(BIN_DIR) logs
 	# Main contract test: links strong fake backend hooks so the route-only
 	# ABI surface can be exercised without llama.cpp.
 	$(CC) $(CFLAGS) -o $(BIN_DIR)/cnet_harness_contract_test \
 		$(CCE) $(CCE_MODEL_CATALOG) $(MODEL_RUNTIME) $(MODEL_PROBE) \
-		$(CNET_HARNESS_CORE) tests/test_cnet_harness_contract.c \
+		$(CNET_HARNESS_CORE) $(AGENT_ROLE_SRC) $(ROUTE_LOG_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) tests/test_cnet_harness_contract.c \
 		$(LDFLAGS) -pthread
 	./$(BIN_DIR)/cnet_harness_contract_test > logs/cnet_harness_contract_test.log 2>&1
 	@grep -q "CNET_HARNESS_CONTRACT_TEST_PASS" logs/cnet_harness_contract_test.log
@@ -3138,7 +3233,7 @@ cnet_harness_contract_test: $(CCE) $(CCE_MODEL_CATALOG) $(MODEL_RUNTIME) $(MODEL
 	# dummy path.
 	$(CC) $(CFLAGS) -o $(BIN_DIR)/cnet_harness_failclosed_test \
 		$(CCE) $(CCE_MODEL_CATALOG) $(MODEL_RUNTIME) $(MODEL_PROBE) \
-		$(CNET_HARNESS_CORE) tests/test_cnet_harness_failclosed.c \
+		$(CNET_HARNESS_CORE) $(AGENT_ROLE_SRC) $(ROUTE_LOG_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) tests/test_cnet_harness_failclosed.c \
 		$(LDFLAGS) -pthread
 	./$(BIN_DIR)/cnet_harness_failclosed_test > logs/cnet_harness_failclosed_test.log 2>&1
 	@grep -q "CNET_HARNESS_FAILCLOSED_TEST_PASS" logs/cnet_harness_failclosed_test.log

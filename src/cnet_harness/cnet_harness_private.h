@@ -30,6 +30,9 @@ struct CnetHarnessSession {
     char *model_id_owned;
     char *model_path_owned;
 
+    /* Optional route-decision JSONL path (from CNET_ROUTE_LOG at open). */
+    char *route_log_path;
+
     /* AICIMO router: one per session, persistent across calls. */
     cce_aicimo_router router;
     int router_ready;

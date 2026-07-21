@@ -5,6 +5,14 @@
 #include <stdlib.h>
 #include <string.h>
 
+#ifdef _WIN32
+#include <io.h>
+#include <windows.h>
+#else
+#include <fcntl.h>
+#include <unistd.h>
+#endif
+
 #define CNB_MAGIC "CNB1"
 #define CNB_VERSION 5u
 #define CNB_MIN_VERSION 1u
@@ -382,6 +390,60 @@ int cnb_get_unit(const CnetBase *b, const char *name,
 
 /* ---- persistence ---- */
 
+static int cnb_sync_file(FILE *f) {
+    if (fflush(f) != 0) return -1;
+#ifdef _WIN32
+    return _commit(_fileno(f)) == 0 ? 0 : -1;
+#else
+    return fsync(fileno(f)) == 0 ? 0 : -1;
+#endif
+}
+
+static int cnb_replace_file(const char *tmp_path, const char *path) {
+#ifdef _WIN32
+    return MoveFileExA(tmp_path, path,
+                       MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)
+               ? 0 : -1;
+#else
+    return rename(tmp_path, path) == 0 ? 0 : -1;
+#endif
+}
+
+static int cnb_sync_parent(const char *path) {
+#ifdef _WIN32
+    (void)path;
+    return 0;
+#else
+    char dir[512];
+    char *slash;
+    int fd;
+    int flags = O_RDONLY;
+    int rc;
+    size_t len;
+
+    if (!path) return -1;
+    len = strlen(path);
+    if (len >= sizeof dir) return -1;
+    memcpy(dir, path, len + 1);
+    slash = strrchr(dir, '/');
+    if (!slash) {
+        snprintf(dir, sizeof dir, ".");
+    } else if (slash == dir) {
+        slash[1] = '\0';
+    } else {
+        *slash = '\0';
+    }
+#ifdef O_DIRECTORY
+    flags |= O_DIRECTORY;
+#endif
+    fd = open(dir, flags);
+    if (fd < 0) return -1;
+    rc = fsync(fd);
+    if (close(fd) != 0 && rc == 0) rc = -1;
+    return rc == 0 ? 0 : -1;
+#endif
+}
+
 int cnb_save(const CnetBase *b, const char *path) {
     CnbW w = {0};
     size_t i;
@@ -448,11 +510,10 @@ int cnb_save(const CnetBase *b, const char *path) {
     f = fopen(tmp, "wb");
     if (f == NULL) goto done;
     ok = (fwrite(w.buf, 1, w.len, f) == w.len) ? 0 : -1;
+    if (ok == 0 && cnb_sync_file(f) != 0) ok = -1;
     if (fclose(f) != 0) ok = -1;
-    if (ok == 0) {
-        remove(path);            /* Windows rename refuses existing target */
-        if (rename(tmp, path) != 0) ok = -1;
-    }
+    if (ok == 0 && cnb_replace_file(tmp, path) != 0) ok = -1;
+    if (ok == 0 && cnb_sync_parent(path) != 0) ok = -1;
     if (ok != 0) remove(tmp);
 
 done:

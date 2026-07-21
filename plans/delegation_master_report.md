@@ -100,3 +100,23 @@ Technical contract: `docs/cnet_bounded_gpu_offload.md`
 | Closure | PASS | three-repeat matrix, real full-layer/cap fail-closed probes, and process/VRAM sweep |
 
 H1 accepted for bounded single-GPU offload. The recommended Bonsai-8B policy is 16/36 layers on one R9700 with a 2 GiB/device hard cap. Dual-GPU remains opt-in for future larger models and is not recommended for Bonsai-8B.
+
+## 2026-07-21 Six-Priority Use-Loop Chunk
+
+Source of truth: `plans/six_priority_improvement.md`
+Final authority: `make --no-print-directory cnet_use_loop_acceptance`
+
+| Priority | Artifact | Status | Evidence |
+|---|---|---|---|
+| P1 Serve feedback | `tests/test_serve_feedback.c` | GREEN | `SERVE_FEEDBACK_PASS` rel 500→944, certified_serves=16, route log lines |
+| P2 Composition distill | `make self_improve` + `post_seal_serve` | GREEN | `SELF_IMPROVE_PASS` (17), `POST_SEAL_SERVE_PASS` (16) |
+| P3 Miner efficiency | `tests/miner_efficiency_bench.c` | GREEN | `MINER_EFFICIENCY_BENCH_PASS` BASE vs TRAIN_FAST A/B, semantic 16/16 |
+| P4 Oracle park + unattested | `make acquire` + `oracle_unattested` | GREEN | park-wake in acquire; `ORACLE_UNATTESTED_PASS` (10) |
+| P5 Product surface | json_toolcall + residual + soul residual | GREEN | JTC 55, RESIDUAL 5, SOUL_RESIDUAL 19 |
+| P6 Benchmark taxonomy | phase123 + `benchmark_taxonomy` | GREEN | phase123 OK; `BENCHMARK_TAXONOMY_PASS` (12) withheld honesty |
+| Makefile link hygiene | duplicate HEALTH/EVIDENCE after soul_host | GREEN | post_seal/json_toolcall/route_log/evidence_bundle link again |
+| Supporting WIP | health_layers / evidence_bundle / route_log / agent_role | GREEN | all PASS under umbrella |
+
+H0 rejected: serve path moves reliability and serve stats; miner efficiency is comparable; unattested labels stay labels; external claims stay withheld without a path. Safety envelope held (no teacher/GPU/service start, no push).
+
+Umbrella marker: `CNET_USE_LOOP_ACCEPTANCE_PASS`

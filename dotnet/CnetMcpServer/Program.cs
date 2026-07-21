@@ -312,7 +312,7 @@ class Program
                                 new
                                 {
                                     name = "cnet_classify_toolcall",
-                                    description = "Classify agent JSON into a closed-set tool via sealed json_toolcall_v1 (certified; includes web_search/wiki_lookup). On miss notes gap jtc_feat→json_tool for the personal-AI lane.",
+                                    description = "Classify agent JSON into a closed-set tool via sealed json_toolcall_v2 (certified; includes web_search/wiki_lookup). On miss notes gap jtc_feat→json_tool for the personal-AI lane.",
                                     inputSchema = (object)new
                                     {
                                         type = "object",

@@ -608,22 +608,10 @@ void lifecycle_promote_provisional(PrimitiveRegistry *reg,
     }
 }
 
-/* Name → index. Prefer open-addressing hash; last-hit + linear fallback. */
+/* Name → index. Prefer the per-registry open-addressing hash; linear fallback. */
 static size_t registry_find(const PrimitiveRegistry *reg, const char *name) {
     size_t i;
-    static const PrimitiveRegistry *last_reg;
-    static size_t last_idx;
-    static const char *last_name;
     if (!reg || !name) return reg ? reg->count : 0;
-
-    /* Process-local last-hit (pointer-equal name or strcmp). */
-    if (reg == last_reg && last_idx < reg->count) {
-        if (last_name == name && reg->entries[last_idx].name == name)
-            return last_idx;
-        if (reg->entries[last_idx].name != NULL &&
-            strcmp(reg->entries[last_idx].name, name) == 0)
-            return last_idx;
-    }
 
     if (reg->name_hash && reg->name_hash_cap && !registry_linear_forced()) {
         uint64_t h = registry_name_fnv(name);
@@ -637,9 +625,6 @@ static size_t registry_find(const PrimitiveRegistry *reg, const char *name) {
             idx = v - 1;
             if (idx < reg->count && reg->entries[idx].name != NULL &&
                 strcmp(reg->entries[idx].name, name) == 0) {
-                last_reg = reg;
-                last_idx = idx;
-                last_name = reg->entries[idx].name;
                 return idx;
             }
             slot = (slot + 1) & mask;
@@ -650,9 +635,6 @@ static size_t registry_find(const PrimitiveRegistry *reg, const char *name) {
     for (i = 0; i < reg->count; ++i) {
         if (reg->entries[i].name != NULL &&
             strcmp(reg->entries[i].name, name) == 0) {
-            last_reg = reg;
-            last_idx = i;
-            last_name = reg->entries[i].name;
             return i;
         }
     }
@@ -943,33 +925,21 @@ int registry_supply_label(PrimitiveRegistry *reg, const char *name,
 }
 
 size_t registry_label_via_teacher(PrimitiveRegistry *reg, const char *name) {
-    size_t i, labeled = 0;
+    size_t fault_idx, labeled = 0;
     RegistryEntry *e;
     RetrainQueue *q;
     if (!reg || !name) return 0;
-    i = registry_find(reg, name);
-    if (i == reg->count) return 0;
-    e = &reg->entries[i]; q = e->queue;
+    fault_idx = registry_find(reg, name);
+    if (fault_idx == reg->count) return 0;
+    e = &reg->entries[fault_idx]; q = e->queue;
     if (!q || q->unlabeled_count == 0 || !e->btn) return 0;
-
-    for (i = 0; i < reg->count; ++i) {
-        BinaryTransformNetwork *t = reg->entries[i].btn;
-        if (!t || i == /*self?*/ 999 /*placeholder*/) continue;
-        if (t->input_count != q->input_count || t->output_count != q->output_count) continue;
-        /* simplistic: any other usable primitive that produces clean output for the parked input */
-        /* (real impl walks the unlabeled list; simplified for split) */
-    }
-    /* NOTE: the full original logic walks unlabeled and tries every other entry.
-       The core behavior is preserved by delegating to the same algorithm.
-       For the split we re-implement the walk here for fidelity. */
-    /* Re-implement full logic for correctness (copy from original behavior) */
     {
         size_t u;
         for (u = 0; u < q->unlabeled_count; ) {
             int adopted = 0;
             size_t t;
             for (t = 0; t < reg->count; ++t) {
-                if (t == /* the fault entry index */ i) continue;
+                if (t == fault_idx) continue;
                 BinaryTransformNetwork *teacher = reg->entries[t].btn;
                 if (!teacher || teacher->input_count != q->input_count ||
                     teacher->output_count != q->output_count) continue;

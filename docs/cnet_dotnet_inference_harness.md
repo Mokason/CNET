@@ -212,8 +212,25 @@ Each session owns a single persistent `cce_aicimo_router` with
 `config.aicimo_num_ops` adapters (>= 4) at `config.aicimo_base_dim`.
 
 `cnet_harness_generate` performs one call to `cce_aicimo_route_decision(role)`
-per request. The returned `selected_adapter` is mapped 1:1 to a named sampling
-profile:
+per request. When `role` is a known **agent role**
+(`auditor` / `researcher` / `coder` / `critic` / `memory-witness`, see
+`include/cnet_agent_role.h` and `plans/agent_roles.md`), AICIMO routes on the
+canonical name, AUTO sampling starts from the role's preferred profile
+(uncertainty may still downgrade), and the backend system prompt is prefixed
+with the role fragment. Free-form roles keep the adapter map below.
+
+### Route decision log
+
+When `CNET_ROUTE_LOG` is set to a file path at session open, every
+`probe_route` / `generate` appends one JSONL line with the real routing
+telemetry: `mechanism` (`aicimo_agent_role` | `aicimo_role_hash`),
+`selected_expert` (adapter index), `entropy` (route uncertainty),
+`outcome` / `outcome_code`, `route_latency_ms` / `total_latency_ms`, and
+`cost` (`1 + prompt_tokens + generated_tokens`). See
+`include/cnet_route_log.h` and `make route_log`.
+
+For free-form (unknown) roles, the returned `selected_adapter` is mapped 1:1
+to a named sampling profile:
 
 | adapter index (mod 4) | profile              | temp | top_p | top_k | min_p |
 |-----------------------|----------------------|------|-------|-------|-------|

@@ -39,6 +39,8 @@ test "$sha_a" = "$sha_b" || {
 }
 tar -tzf "$archive_a" | grep -q "^cnet-$version/VERSION$"
 tar -tzf "$archive_a" | grep -q "^cnet-$version/.github/workflows/ci.yml$"
+tar -tzf "$archive_a" | grep -q "^cnet-$version/dotnet/Cce/Cce.csproj$"
+tar -tzf "$archive_a" | grep -q "^cnet-$version/dotnet/CnetMcpServer/CnetMcpServer.csproj$"
 if tar -tzf "$archive_a" | grep -Eq '\.(so|dll)$'; then
     echo 'RELEASE_PACKAGE_FAIL: source archive contains a compiled library' >&2
     exit 1

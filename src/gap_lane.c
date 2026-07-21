@@ -2,6 +2,7 @@
  * persist (atomic checkpoints). Pure composition of gated machinery;
  * certification remains the only door and DEFER stays total. */
 
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -9,6 +10,7 @@
 #include "../include/gap_lane.h"
 #include "../include/specialist.h"
 #include "../include/specialist_health.h"
+#include "../include/cnet_evidence_bundle.h"
 
 /* ---- small helpers ------------------------------------------------------ */
 
@@ -304,6 +306,8 @@ static void ingest_inbox(GapLane *L, GapLaneTickReport *r) {
 int gap_lane_open(GapLane *L, const char *base_path,
                   const char *ledger_path, const char *inbox_path) {
     size_t skipped = 0;
+    int base_exists = 0;
+    FILE *probe;
     if (!L || !base_path || !base_path[0] || !ledger_path || !ledger_path[0])
         return -1;
     memset(L, 0, sizeof *L);
@@ -312,8 +316,18 @@ int gap_lane_open(GapLane *L, const char *base_path,
         copy_path(L->inbox_path, sizeof L->inbox_path, inbox_path) != 0)
         return -2;
 
+    probe = fopen(base_path, "rb");
+    if (probe) {
+        base_exists = 1;
+        fclose(probe);
+    } else if (errno != ENOENT) {
+        return -3;
+    }
     cnb_init(&L->base);
-    cnb_load(&L->base, base_path);            /* absent = fresh base */
+    if (cnb_load(&L->base, base_path) != 0 && base_exists) {
+        cnb_free(&L->base);
+        return -3;                            /* present corruption is not fresh */
+    }
     registry_init_production(&L->reg);
     if (cnb_load_registry(&L->base, &L->reg, &skipped) != 0) {
         registry_free(&L->reg);
@@ -503,6 +517,21 @@ static int reconcile_one(GapLane *L, GapRecord *gap) {
     if (gap->unit[0] && cnb_has_unit(&L->base, gap->unit) &&
         cnb_set_unit_provenance(&L->base, gap->unit, used) != 0)
         return -1;
+    /* Evidence bundle for the learned unit (sidecar; never blocks admit). */
+    if (gap->unit[0] && cnb_has_unit(&L->base, gap->unit)) {
+        char store[576];
+        CnetEvidenceOpts opts;
+        const char *envp = cnet_evidence_store_path_from_env();
+        memset(&opts, 0, sizeof opts);
+        opts.counterfactual_stability = -1.0f;
+        opts.recipe_fp = gap->recipe_fp;
+        if (envp && envp[0]) {
+            (void)cnet_evidence_record(&L->base, gap->unit, envp, &opts);
+        } else if (cnet_evidence_store_path_for_base(L->base_path, store,
+                                                     sizeof store) == 0) {
+            (void)cnet_evidence_record(&L->base, gap->unit, store, &opts);
+        }
+    }
     gap->provenance_done = 1;
     return 0;
 }

@@ -2,7 +2,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdatomic.h>
+#include <limits.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <unistd.h>
 #include <pthread.h>
 
@@ -32,6 +34,18 @@ static void *slide_writer(void *opaque) {
     return NULL;
 }
 
+typedef struct {
+    cce_kv_pager *pager;
+    atomic_int done;
+} sync_wait_ctx;
+
+static void *sync_waiter(void *opaque) {
+    sync_wait_ctx *ctx = (sync_wait_ctx *)opaque;
+    cce_kv_pager_sync(ctx->pager);
+    atomic_store(&ctx->done, 1);
+    return NULL;
+}
+
 int main(void) {
     cce_kv_pager_opts o;
     cce_kv_pager *p = NULL;
@@ -40,6 +54,18 @@ int main(void) {
     char dir[] = "kv_archive_test_XXXXXX";
 
     printf("== CNET async paged KV (hot/warm/cold) ==\n");
+
+    {
+        cce_kv_pager_opts bad;
+        cce_kv_pager *bad_pager = NULL;
+        cce_kv_pager_opts_default(&bad, 4, 4, 256);
+        bad.page_len = INT_MAX;
+        bad.n_hot = 2;
+        check(cce_kv_pager_open(&bad_pager, &bad) == CCE_ERR_INVALID_ARG &&
+                  bad_pager == NULL,
+              "overflowing page geometry is refused before allocation");
+    }
+
     if (!mkdtemp(dir)) {
         perror("mkdtemp");
         return 1;
@@ -98,6 +124,8 @@ int main(void) {
     }
     cce_kv_pager_sync(p);
     check(cce_kv_pager_pages_flushed(p) >= 1, "async cold flush completed");
+    check(cce_kv_pager_write_failures(p) == 0,
+          "normal cold flush has no hidden storage failures");
     check(cce_kv_pager_verify_cold(p, 0, 0) == 0, "cold page file verifies");
     check(cce_kv_pager_quant_cold(p) == 1, "quant cold enabled");
 
@@ -148,6 +176,13 @@ int main(void) {
            cce_kv_pager_pages_rehydrated(p), cce_kv_pager_window_start(p),
            cce_kv_pager_cur_pos(p), dir);
 
+    /* clear() starts a new sequence generation. COLD files from the previous
+     * generation may remain on disk, but must never be rehydrated as current
+     * KV state before that position is evicted and rewritten again. */
+    check(cce_kv_pager_clear(p) == 0, "clear starts a fresh KV generation");
+    check(cce_kv_pager_rehydrate_pos(p, 32) != 0,
+          "clear rejects stale COLD pages from the prior generation");
+
     cce_kv_pager_close(p);
     /* clean archive dir without shell */
     {
@@ -159,6 +194,108 @@ int main(void) {
             unlink(path);
         }
         rmdir(dir);
+    }
+
+    /* sync must include a dequeued write that is still blocked in storage I/O,
+     * not only jobs that remain in the queue. A FIFO makes that state
+     * deterministic: the worker dequeues page 0, then blocks opening it until
+     * this test supplies a reader. */
+    {
+        cce_kv_pager_opts os;
+        cce_kv_pager *ps = NULL;
+        char sdir[] = "kv_sync_wait_XXXXXX";
+        char page_path[400];
+        pthread_t sync_thr;
+        sync_wait_ctx sw;
+        int sync_started = 0;
+
+        if (mkdtemp(sdir)) {
+            snprintf(page_path, sizeof page_path, "%s/page_000000.kvc", sdir);
+            check(mkfifo(page_path, 0600) == 0, "sync: blocking cold sink created");
+            cce_kv_pager_opts_default(&os, 4, 4, 256);
+            os.page_len = 16;
+            os.n_hot = 2;
+            os.archive_dir = sdir;
+            os.async = 1;
+            os.quant_cold = 0;
+            check(cce_kv_pager_open(&ps, &os) == CCE_OK, "sync: pager open");
+            if (ps) {
+                float kf[4] = {1, 2, 3, 4}, vf[4] = {5, 6, 7, 8};
+                int spins = 0;
+                int stream_ok = 1;
+                for (t = 0; t < 33; ++t)
+                    if (cce_kv_pager_write(ps, t, kf, vf) != 0) stream_ok = 0;
+                check(stream_ok, "sync: stream writes");
+                while (cce_kv_pager_queue_depth(ps) != 0 && spins++ < 2000)
+                    usleep(1000);
+                check(cce_kv_pager_queue_depth(ps) == 0,
+                      "sync: worker dequeued blocked write");
+                sw.pager = ps;
+                atomic_init(&sw.done, 0);
+                sync_started = pthread_create(&sync_thr, NULL, sync_waiter, &sw) == 0;
+                check(sync_started, "sync: waiter thread started");
+                usleep(20000);
+                check(!atomic_load(&sw.done),
+                      "sync: waits for dequeued in-flight write");
+                {
+                    FILE *drain = fopen(page_path, "rb");
+                    unsigned char buf[1024];
+                    check(drain != NULL, "sync: cold sink reader opens");
+                    if (drain) {
+                        while (fread(buf, 1, sizeof buf, drain) > 0) { }
+                        fclose(drain);
+                    }
+                }
+                if (sync_started) pthread_join(sync_thr, NULL);
+                check(atomic_load(&sw.done), "sync: completes after storage I/O");
+                cce_kv_pager_close(ps);
+            }
+            unlink(page_path);
+            snprintf(page_path, sizeof page_path, "%s/ledger.tsv", sdir);
+            unlink(page_path);
+            rmdir(sdir);
+        }
+    }
+
+    /* A synchronous archive failure must not recycle HOT state. */
+    {
+        cce_kv_pager_opts of;
+        cce_kv_pager *pf = NULL;
+        char fdir[] = "kv_sync_fail_XXXXXX";
+        char blocked_path[400];
+        if (mkdtemp(fdir)) {
+            snprintf(blocked_path, sizeof blocked_path,
+                     "%s/page_000000.kvc", fdir);
+            check(mkdir(blocked_path, 0700) == 0,
+                  "storage failure: blocked page path created");
+            cce_kv_pager_opts_default(&of, 4, 4, 256);
+            of.page_len = 16;
+            of.n_hot = 2;
+            of.archive_dir = fdir;
+            of.async = 0;
+            of.quant_cold = 0;
+            check(cce_kv_pager_open(&pf, &of) == CCE_OK,
+                  "storage failure: pager open");
+            if (pf) {
+                float kf[4] = {1, 2, 3, 4}, vf[4] = {5, 6, 7, 8};
+                int fill_ok = 1;
+                for (t = 0; t < 32; ++t)
+                    if (cce_kv_pager_write(pf, t, kf, vf) != 0) fill_ok = 0;
+                check(fill_ok, "storage failure: initial HOT window filled");
+                check(cce_kv_pager_write(pf, 32, kf, vf) != 0,
+                      "storage failure: slide reports COLD write failure");
+                check(cce_kv_pager_window_start(pf) == 0 &&
+                          cce_kv_pager_k_row(pf, 0) != NULL,
+                      "storage failure: HOT window is preserved");
+                check(cce_kv_pager_write_failures(pf) == 1,
+                      "storage failure: failure telemetry increments");
+                cce_kv_pager_close(pf);
+            }
+            rmdir(blocked_path);
+            snprintf(blocked_path, sizeof blocked_path, "%s/ledger.tsv", fdir);
+            unlink(blocked_path);
+            rmdir(fdir);
+        }
     }
 
     /* f32 cold path (CNET_KV_QUANT=0 style) */
@@ -223,7 +360,7 @@ int main(void) {
             ov.archive_dir = vdir;
             ov.async = 0;          /* sync so file exists when we verify */
             ov.quant_cold = 0;      /* f32 → body bytes == floats, easy flip */
-            ov.rehydrate = 0;
+            ov.rehydrate = 1;
             check(cce_kv_pager_open(&pv, &ov) == CCE_OK, "audit: vhash open");
             if (pv) {
                 int rr;
@@ -287,6 +424,8 @@ int main(void) {
                 rr = cce_kv_pager_verify_cold(pv, 0, dig_stored);
                 check(rr != 0,
                       "audit: vhash verify_cold REJECTS flipped body byte");
+                check(cce_kv_pager_rehydrate_pos(pv, 0) != 0,
+                      "audit: rehydrate REJECTS flipped body byte");
                 cce_kv_pager_close(pv);
             }
             {

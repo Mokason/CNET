@@ -336,6 +336,35 @@ static void test_role_distribution_via_probe(void) {
     CHECK(prc == CNET_HARNESS_ERR_INVALID || prc == CNET_HARNESS_ERR_STATE,
           "route: NULL role rejected");
 
+    /* Known agent roles: AUTO sampling starts from policy preference
+     * (uncertainty may only downgrade). Explicit override still wins. */
+    memset(&info, 0, sizeof(info));
+    info.abi_version = CNET_HARNESS_ABI_VERSION;
+    info.struct_size = (uint32_t)sizeof(info);
+    prc = cnet_harness_probe_route(
+        s, "auditor", CNET_HARNESS_SAMPLING_AUTO, &info);
+    CHECK(prc == CNET_HARNESS_OK, "agent_role: auditor probe ok");
+    CHECK(info.effective_sampling == CNET_HARNESS_SAMPLING_DETERMINISTIC,
+          "agent_role: auditor prefers DETERMINISTIC");
+
+    memset(&info, 0, sizeof(info));
+    info.abi_version = CNET_HARNESS_ABI_VERSION;
+    info.struct_size = (uint32_t)sizeof(info);
+    prc = cnet_harness_probe_route(
+        s, "memory_witness", CNET_HARNESS_SAMPLING_AUTO, &info);
+    CHECK(prc == CNET_HARNESS_OK, "agent_role: memory_witness alias ok");
+    CHECK(info.effective_sampling == CNET_HARNESS_SAMPLING_DETERMINISTIC,
+          "agent_role: memory-witness prefers DETERMINISTIC");
+
+    memset(&info, 0, sizeof(info));
+    info.abi_version = CNET_HARNESS_ABI_VERSION;
+    info.struct_size = (uint32_t)sizeof(info);
+    prc = cnet_harness_probe_route(
+        s, "coder", CNET_HARNESS_SAMPLING_EXPLORATORY, &info);
+    CHECK(prc == CNET_HARNESS_OK, "agent_role: coder override probe ok");
+    CHECK(info.effective_sampling == CNET_HARNESS_SAMPLING_EXPLORATORY,
+          "agent_role: explicit sampling override wins over coder policy");
+
     /* Reset teardown-order tracker and observe. */
     fake_teardown_stage = 0;
     fake_teardown_order_ok = 1;
@@ -565,6 +594,78 @@ static void test_additive_offload_policy(void) {
     fprintf(stderr, "  test_additive_offload_policy: done\n");
 }
 
+/* Real routing log: mechanism, selected expert, entropy, outcome, latency, cost. */
+static void test_route_decision_log(void) {
+    char log_path[] = "tmp_harness_route_XXXXXX";
+    int fd = mkstemp(log_path);
+    CHECK(fd >= 0, "route_log: mkstemp");
+    if (fd >= 0) close(fd);
+    unlink(log_path);
+    setenv("CNET_ROUTE_LOG", log_path, 1);
+
+    CnetHarnessConfig c = valid_config();
+    CnetHarnessSession *s = NULL;
+    int rc = cnet_harness_open(&c, &s);
+    CHECK(rc == CNET_HARNESS_OK && s != NULL, "route_log: open ok");
+
+    CnetHarnessRouteInfo info;
+    memset(&info, 0, sizeof(info));
+    info.abi_version = CNET_HARNESS_ABI_VERSION;
+    info.struct_size = (uint32_t)sizeof(info);
+    int prc = cnet_harness_probe_route(
+        s, "coder", CNET_HARNESS_SAMPLING_AUTO, &info);
+    CHECK(prc == CNET_HARNESS_OK, "route_log: probe coder ok");
+
+    CnetHarnessGenerateOptions o;
+    memset(&o, 0, sizeof(o));
+    o.abi_version = CNET_HARNESS_ABI_VERSION;
+    o.struct_size = (uint32_t)sizeof(o);
+    o.user = "implement route log";
+    o.role = "coder";
+    o.max_tokens = 16;
+    o.seed = 1;
+    o.sampling = CNET_HARNESS_SAMPLING_AUTO;
+    CnetHarnessGeneration *gen = (CnetHarnessGeneration *)0x1;
+    int grc = cnet_harness_generate(s, &o, &gen);
+    CHECK(grc == CNET_HARNESS_ERR_BACKEND, "route_log: generate hits fake backend");
+    CHECK(gen == NULL, "route_log: no generation leak");
+
+    cnet_harness_close(s);
+    unsetenv("CNET_ROUTE_LOG");
+
+    FILE *f = fopen(log_path, "r");
+    CHECK(f != NULL, "route_log: log file exists");
+    int lines = 0;
+    int has_mech = 0, has_expert = 0, has_entropy = 0, has_outcome = 0;
+    int has_latency = 0, has_cost = 0, has_agent = 0, has_backend = 0;
+    char line[1600];
+    if (f) {
+        while (fgets(line, sizeof line, f)) {
+            lines++;
+            if (strstr(line, "\"mechanism\"")) has_mech = 1;
+            if (strstr(line, "\"selected_expert\"")) has_expert = 1;
+            if (strstr(line, "\"entropy\"")) has_entropy = 1;
+            if (strstr(line, "\"outcome\"")) has_outcome = 1;
+            if (strstr(line, "route_latency_ms")) has_latency = 1;
+            if (strstr(line, "\"cost\"")) has_cost = 1;
+            if (strstr(line, "aicimo_agent_role")) has_agent = 1;
+            if (strstr(line, "err_backend")) has_backend = 1;
+        }
+        fclose(f);
+    }
+    CHECK(lines >= 2, "route_log: at least probe+generate lines");
+    CHECK(has_mech, "route_log: mechanism field");
+    CHECK(has_expert, "route_log: selected_expert field");
+    CHECK(has_entropy, "route_log: entropy field");
+    CHECK(has_outcome, "route_log: outcome field");
+    CHECK(has_latency, "route_log: latency field");
+    CHECK(has_cost, "route_log: cost field");
+    CHECK(has_agent, "route_log: coder uses aicimo_agent_role");
+    CHECK(has_backend, "route_log: generate outcome err_backend");
+    unlink(log_path);
+    fprintf(stderr, "  test_route_decision_log: done (lines=%d)\n", lines);
+}
+
 int main(void) {
     printf("=== CNET harness contract test ===\n");
     make_temp_model_file();
@@ -577,6 +678,7 @@ int main(void) {
     test_safe_null_teardown();
     test_generate_options_validated();
     test_additive_offload_policy();
+    test_route_decision_log();
 
     remove_temp_model_file();
 

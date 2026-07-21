@@ -13,6 +13,8 @@
 #include "cnet_harness_private.h"
 
 #include "../../include/cce/cce_aicimo.h"
+#include "../../include/cnet_agent_role.h"
+#include "../../include/cnet_route_log.h"
 #include "../../include/model_runtime.h"
 #include "../../include/model_probe.h"
 
@@ -21,6 +23,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <unistd.h>
 
 /* ---- weak default backend hooks ---- */
@@ -62,6 +65,52 @@ static char *dup_string(const char *src) {
     if (!dst) return NULL;
     memcpy(dst, src, len + 1u);
     return dst;
+}
+
+static double mono_ms_now(void) {
+    struct timespec ts;
+    if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0) return 0.0;
+    return (double)ts.tv_sec * 1000.0 + (double)ts.tv_nsec / 1.0e6;
+}
+
+/* Best-effort append; never fails the caller. */
+static void emit_route_log(struct CnetHarnessSession *session,
+                           const char *event,
+                           const char *role,
+                           uint32_t selected_expert,
+                           float entropy,
+                           CnetHarnessSamplingMode profile,
+                           int override_used,
+                           int outcome_code,
+                           double route_latency_ms,
+                           double total_latency_ms,
+                           uint32_t prompt_tokens,
+                           uint32_t generated_tokens) {
+    CnetRouteLogEvent ev;
+    CnetAgentRolePolicy pol;
+    int known;
+    if (!session || !session->route_log_path || !session->route_log_path[0])
+        return;
+    if (!role) role = "";
+    known = (cnet_agent_role_resolve(role, &pol) == 0);
+    memset(&ev, 0, sizeof ev);
+    ev.event = event ? event : "route";
+    ev.mechanism = known ? CNET_ROUTE_MECH_AGENT_ROLE : CNET_ROUTE_MECH_ROLE_HASH;
+    ev.role = role;
+    ev.role_canonical = known ? pol.name : role;
+    ev.selected_expert = selected_expert;
+    ev.expert_profile = cnet_route_log_profile_name((int)profile);
+    ev.entropy = entropy;
+    ev.outcome = cnet_route_log_outcome_name(outcome_code);
+    ev.outcome_code = outcome_code;
+    ev.route_latency_ms = route_latency_ms;
+    ev.total_latency_ms = total_latency_ms;
+    ev.prompt_tokens = prompt_tokens;
+    ev.generated_tokens = generated_tokens;
+    ev.cost = cnet_route_log_cost(prompt_tokens, generated_tokens);
+    ev.aicimo_override = override_used ? 1 : 0;
+    ev.model_id = session->model_id_owned;
+    (void)cnet_route_log_append(session->route_log_path, &ev);
 }
 
 static int is_single_bit(uint64_t v) {
@@ -216,6 +265,7 @@ static void session_release(struct CnetHarnessSession *session) {
     }
     free(session->model_id_owned);
     free(session->model_path_owned);
+    free(session->route_log_path);
     session->magic = 0u;
     free(session);
 }
@@ -257,6 +307,14 @@ static int cnet_harness_open_internal(
     }
     session->model_id_owned = dup_string(config->model_id);
     session->model_path_owned = dup_string(config->model_path);
+    {
+        const char *logp = cnet_route_log_path_from_env();
+        session->route_log_path = logp ? dup_string(logp) : NULL;
+        if (logp && !session->route_log_path) {
+            session_release(session);
+            return CNET_HARNESS_ERR_INTERNAL;
+        }
+    }
     if (!session->model_id_owned || !session->model_path_owned) {
         session_release(session);
         return CNET_HARNESS_ERR_INTERNAL;
@@ -328,8 +386,10 @@ void cnet_harness_generation_free(CnetHarnessGeneration *generation) {
 }
 
 /* Perform one AICIMO decision against this session's persistent router and
- * translate it into a sampling profile. Optionally applied override wins but
- * is still reported honestly. */
+ * translate it into a sampling profile. Known agent roles (cnet_agent_role)
+ * route on their canonical name and, under AUTO sampling, start from the
+ * role policy's preferred profile (uncertainty may still downgrade). Explicit
+ * sampling overrides always win. Free-form roles keep the adapter→profile map. */
 static int route_and_profile(struct CnetHarnessSession *session,
                               const char *role,
                               CnetHarnessSamplingMode override_mode,
@@ -342,6 +402,10 @@ static int route_and_profile(struct CnetHarnessSession *session,
     }
     if (!role || role[0] == '\0') return CNET_HARNESS_ERR_INVALID;
     if (!session->router_ready) return CNET_HARNESS_ERR_STATE;
+
+    CnetAgentRolePolicy agent_pol;
+    int known_agent = (cnet_agent_role_resolve(role, &agent_pol) == 0);
+    const char *route_role = known_agent ? agent_pol.name : role;
 
     size_t dim = (size_t)session->config_copy.aicimo_base_dim;
     float *scratch_in  = (float *)calloc(dim, sizeof(float));
@@ -357,13 +421,19 @@ static int route_and_profile(struct CnetHarnessSession *session,
     cce_result rc = cce_aicimo_route_decision(&session->router,
                                                scratch_in, dim,
                                                scratch_out, dim,
-                                               role, &selected, &uncertainty);
+                                               route_role, &selected,
+                                               &uncertainty);
     free(scratch_in);
     free(scratch_out);
     if (rc != CCE_OK) return CNET_HARNESS_ERR_INTERNAL;
 
-    CnetHarnessSamplingMode profile = cnet_harness__adapter_to_profile(
-        (uint32_t)selected);
+    CnetHarnessSamplingMode profile;
+    if (known_agent) {
+        /* CnetAgentSamplingPref values match CnetHarnessSamplingMode 1..4. */
+        profile = (CnetHarnessSamplingMode)agent_pol.preferred_sampling;
+    } else {
+        profile = cnet_harness__adapter_to_profile((uint32_t)selected);
+    }
     profile = cnet_harness__downgrade_for_uncertainty(profile, uncertainty);
 
     int override_used = 0;
@@ -403,9 +473,16 @@ int cnet_harness_probe_route(CnetHarnessSession *session,
     float unc = 1.0f;
     CnetHarnessSamplingMode profile = CNET_HARNESS_SAMPLING_DETERMINISTIC;
     int override_used = 0;
+    double t0 = mono_ms_now();
     int rc = route_and_profile(session, role, override_mode,
                                 &adapter, &unc, &profile, &override_used);
-    if (rc != CNET_HARNESS_OK) return rc;
+    double route_ms = mono_ms_now() - t0;
+    if (rc != CNET_HARNESS_OK) {
+        emit_route_log(session, "probe_route", role, 0, 1.0f,
+                       CNET_HARNESS_SAMPLING_AUTO, 0, rc, route_ms, route_ms,
+                       0, 0);
+        return rc;
+    }
 
     CnetHarnessSamplingParams params = cnet_harness__profile_params(profile);
     info_out->selected_adapter = adapter;
@@ -415,6 +492,9 @@ int cnet_harness_probe_route(CnetHarnessSession *session,
     info_out->effective_top_p = params.top_p;
     info_out->effective_top_k = params.top_k;
     info_out->effective_min_p = params.min_p;
+
+    emit_route_log(session, "probe_route", role, adapter, unc, profile,
+                   override_used, CNET_HARNESS_OK, route_ms, route_ms, 0, 0);
     return CNET_HARNESS_OK;
 }
 
@@ -432,13 +512,26 @@ int cnet_harness_generate(CnetHarnessSession *session,
     float unc = 1.0f;
     CnetHarnessSamplingMode profile = CNET_HARNESS_SAMPLING_DETERMINISTIC;
     int override_used = 0;
+    double t_all0 = mono_ms_now();
+    double t_route0 = t_all0;
     int rc = route_and_profile(session, options->role, options->sampling,
                                 &adapter, &unc, &profile, &override_used);
-    if (rc != CNET_HARNESS_OK) return rc;
+    double route_ms = mono_ms_now() - t_route0;
+    if (rc != CNET_HARNESS_OK) {
+        emit_route_log(session, "generate", options->role, 0, 1.0f,
+                       CNET_HARNESS_SAMPLING_AUTO, 0, rc, route_ms,
+                       mono_ms_now() - t_all0, 0, 0);
+        return rc;
+    }
 
     CnetHarnessGeneration *gen = (CnetHarnessGeneration *)
         calloc(1, sizeof(*gen));
-    if (!gen) return CNET_HARNESS_ERR_INTERNAL;
+    if (!gen) {
+        emit_route_log(session, "generate", options->role, adapter, unc,
+                       profile, override_used, CNET_HARNESS_ERR_INTERNAL,
+                       route_ms, mono_ms_now() - t_all0, 0, 0);
+        return CNET_HARNESS_ERR_INTERNAL;
+    }
     gen->abi_version = CNET_HARNESS_ABI_VERSION;
     gen->struct_size = (uint32_t)sizeof(*gen);
     gen->selected_adapter = adapter;
@@ -452,7 +545,39 @@ int cnet_harness_generate(CnetHarnessSession *session,
     gen->effective_top_k = params.top_k;
     gen->effective_min_p = params.min_p;
 
-    int brc = harness_backend_generate(session, options, profile, params, gen);
+    /* Known agent roles: prepend the policy system fragment and route on the
+     * canonical role name so backends see a stable stance. */
+    CnetHarnessGenerateOptions opts = *options;
+    char *composed_system = NULL;
+    CnetAgentRolePolicy agent_pol;
+    if (cnet_agent_role_resolve(options->role, &agent_pol) == 0) {
+        composed_system = cnet_agent_role_compose_system(&agent_pol,
+                                                         options->system);
+        if (!composed_system) {
+            cnet_harness_generation_free(gen);
+            emit_route_log(session, "generate", options->role, adapter, unc,
+                           profile, override_used, CNET_HARNESS_ERR_INTERNAL,
+                           route_ms, mono_ms_now() - t_all0, 0, 0);
+            return CNET_HARNESS_ERR_INTERNAL;
+        }
+        opts.system = composed_system;
+        opts.role = agent_pol.name;
+    }
+
+    int brc = harness_backend_generate(session, &opts, profile, params, gen);
+    free(composed_system);
+    {
+        double total_ms = mono_ms_now() - t_all0;
+        uint32_t pt = (brc == CNET_HARNESS_OK) ? gen->prompt_tokens : 0u;
+        uint32_t gt = (brc == CNET_HARNESS_OK) ? gen->generated_tokens : 0u;
+        /* Prefer backend-reported wall times when present. */
+        if (brc == CNET_HARNESS_OK &&
+            (gen->prompt_ms > 0.0 || gen->generation_ms > 0.0)) {
+            total_ms = route_ms + gen->prompt_ms + gen->generation_ms;
+        }
+        emit_route_log(session, "generate", options->role, adapter, unc,
+                       profile, override_used, brc, route_ms, total_ms, pt, gt);
+    }
     if (brc != CNET_HARNESS_OK) {
         cnet_harness_generation_free(gen);
         return brc;

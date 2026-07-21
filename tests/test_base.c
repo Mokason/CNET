@@ -5,6 +5,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#ifndef _WIN32
+#include <sys/stat.h>
+#include <unistd.h>
+#endif
 
 #include "../include/base.h"
 #include "../include/contract/unit.h"
@@ -222,6 +226,28 @@ int main(void) {
         cnb_free(&b);
         remove("test_base_resave.cnb");
     }
+
+#ifndef _WIN32
+    printf("[3b] failed replacement preserves the existing destination\n");
+    {
+        CnetBase b;
+        struct stat st;
+        const char *target = "test_base_existing_dir.cnb";
+
+        (void)remove(target);
+        check(mkdir(target, 0700) == 0, "replacement-refusal directory exists");
+        cnb_init(&b);
+        check(cnb_add_unit(&b, hexv, &hexv_c, NULL) == 0,
+              "replacement-refusal base builds");
+        check(cnb_save(&b, target) == -1,
+              "save refuses a non-replaceable destination");
+        check(stat(target, &st) == 0 && S_ISDIR(st.st_mode),
+              "failed save preserves the existing destination");
+        cnb_free(&b);
+        check(rmdir(target) == 0, "replacement-refusal directory cleanup");
+        remove("test_base_existing_dir.cnb.tmp");
+    }
+#endif
 
     printf("[4] tag governance\n");
     {

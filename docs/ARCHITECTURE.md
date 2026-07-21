@@ -31,18 +31,15 @@ before it can plan, execute, accrue evidence, or certify.
   linear-head model, and an external oracle — `HET_PLAN_PASS`. Integration
   would let the three coexist; only unification lets them chain inside a
   single plan under one lifecycle.
-- **Health.** `specialist_health_pass` (`make specialist_health`) is the
-  maintenance loop over the type: audit → label faults (contract exemplars
-  first, teacher second) → heal (retrain + passing re-certify, the only way
-  back to FROZEN) → promote on evidence → shadow hot-swap. It drives only
-  existing certified paths and reports exact counts plus a trust histogram;
-  a healthy registry is a gated no-op, and adapters that cannot retrain stay
-  RESET for the acquisition loop — fix by evidence, never by fiat.
-  The pass is wired into the running system: `soul_health_tick` on the
-  SoulHost ABI (the sealed base is the contract source, so heal re-certifies
-  against the same truth the unit was admitted with), the `cnet_health_tick`
-  MCP tool, and an opt-in periodic timer (`CNET_HEALTH_TICK_SECONDS`,
-  0 = off — zero-init changes nothing).
+- **Health.** Two complementary surfaces:
+  - **Fix:** `specialist_health_pass` (`make specialist_health`) — audit →
+    label → heal → promote → shadow-swap; gated no-op on a healthy registry;
+    wired as `soul_health_tick` / `cnet_health_tick` / `CNET_HEALTH_TICK_SECONDS`.
+  - **Measure:** `cnet_health_layers` (`make health_layers`) — five independent
+    diagnostics: **registry** presence, **loadable**, **execution**, **semantic**
+    acceptance, **production utility**. A FAIL at layer *k* SKIPs layers above;
+    `soul_unit_health_layers` returns JSON. Does not demote or heal.
+  See `plans/health_layers.md`.
 - **Generated claims.** `make claims` first executes the hermetic `make unified`, then writes
   `docs/verified-today.generated.md` + `logs/claims.jsonl` from exact terminal
   markers under a run sentinel: every in-scope log must be fresh, and missing,

@@ -1,6 +1,7 @@
 #include "../../include/cce/cce_kv_page.h"
 
 #include <errno.h>
+#include <limits.h>
 #include <math.h>
 #include <pthread.h>
 #include <stdio.h>
@@ -66,6 +67,8 @@ struct cce_kv_pager {
     int pages_flushed;
     int pages_reused;
     int pages_rehydrated;
+    int writes_inflight;
+    int write_failures;
     FILE *ledger;
 
     /* Telemetry for the ring_rw read leases below. */
@@ -165,7 +168,13 @@ static void dequant_page(const int8_t *src, size_t n, float scale, float *dst) {
     for (i = 0; i < n; ++i) dst[i] = (float)src[i] * scale;
 }
 
-/* Write cold file: ver=2 supports quant. Returns 0 and sets *digest_out. */
+static int write_exact(FILE *f, const void *buf, size_t size, size_t count) {
+    if (count == 0) return 0;
+    return fwrite(buf, size, count, f) == count ? 0 : -1;
+}
+
+/* Write cold file: ver=2 supports quant. Returns 0 only after the complete
+ * body is visible and flushed; partial files are removed fail-closed. */
 static int write_cold_file(cce_kv_pager *p, cce_kv_flush_job *job) {
     char path[400];
     FILE *f;
@@ -173,6 +182,8 @@ static int write_cold_file(cce_kv_pager *p, cce_kv_flush_job *job) {
     uint32_t ver = 2;
     int quant = job->quant ? 1 : 0;
     size_t npos, nk, nv;
+    int ok = 0;
+
     snprintf(path, sizeof path, "%s/page_%06d.kvc", p->archive_dir,
              job->page_id);
     f = fopen(path, "wb");
@@ -180,43 +191,60 @@ static int write_cold_file(cce_kv_pager *p, cce_kv_flush_job *job) {
     npos = (size_t)(job->pos_hi - job->pos_lo);
     nk = npos * (size_t)p->k_slot;
     nv = npos * (size_t)p->v_slot;
-    fwrite(&magic, 4, 1, f);
-    fwrite(&ver, 4, 1, f);
-    fwrite(&job->page_id, 4, 1, f);
-    fwrite(&job->pos_lo, 4, 1, f);
-    fwrite(&job->pos_hi, 4, 1, f);
-    fwrite(&p->k_slot, 4, 1, f);
-    fwrite(&p->v_slot, 4, 1, f);
-    fwrite(&quant, 4, 1, f);
-    if (quant) {
-        int8_t *kq = (int8_t *)malloc(nk);
-        int8_t *vq = (int8_t *)malloc(nv);
+    if (write_exact(f, &magic, 4, 1) || write_exact(f, &ver, 4, 1) ||
+        write_exact(f, &job->page_id, 4, 1) ||
+        write_exact(f, &job->pos_lo, 4, 1) ||
+        write_exact(f, &job->pos_hi, 4, 1) ||
+        write_exact(f, &p->k_slot, 4, 1) ||
+        write_exact(f, &p->v_slot, 4, 1) ||
+        write_exact(f, &quant, 4, 1))
+        ok = -1;
+
+    if (ok == 0 && quant) {
+        int8_t *kq = (int8_t *)malloc(nk ? nk : 1);
+        int8_t *vq = (int8_t *)malloc(nv ? nv : 1);
         float sk = 1.f, sv = 1.f;
         uint64_t dig;
         if (!kq || !vq) {
             free(kq);
             free(vq);
-            fclose(f);
-            return -1;
+            ok = -1;
+        } else {
+            quant_page_maxabs(job->k, nk, kq, &sk);
+            quant_page_maxabs(job->v, nv, vq, &sv);
+            dig = fnv1a_buf(kq, nk) ^ (fnv1a_buf(vq, nv) << 1);
+            dig ^= (uint64_t)(sk * 1e6f) ^ ((uint64_t)(sv * 1e6f) << 32);
+            job->digest = dig;
+            if (write_exact(f, &dig, 8, 1) || write_exact(f, &sk, 4, 1) ||
+                write_exact(f, &sv, 4, 1) || write_exact(f, kq, 1, nk) ||
+                write_exact(f, vq, 1, nv))
+                ok = -1;
+            free(kq);
+            free(vq);
         }
-        quant_page_maxabs(job->k, nk, kq, &sk);
-        quant_page_maxabs(job->v, nv, vq, &sv);
-        dig = fnv1a_buf(kq, nk) ^ (fnv1a_buf(vq, nv) << 1);
-        dig ^= (uint64_t)(sk * 1e6f) ^ ((uint64_t)(sv * 1e6f) << 32);
-        job->digest = dig;
-        fwrite(&dig, 8, 1, f);
-        fwrite(&sk, 4, 1, f);
-        fwrite(&sv, 4, 1, f);
-        fwrite(kq, 1, nk, f);
-        fwrite(vq, 1, nv, f);
-        free(kq);
-        free(vq);
-    } else {
-        fwrite(&job->digest, 8, 1, f);
-        fwrite(job->k, 1, job->k_bytes, f);
-        fwrite(job->v, 1, job->v_bytes, f);
+    } else if (ok == 0) {
+        if (write_exact(f, &job->digest, 8, 1) ||
+            write_exact(f, job->k, 1, job->k_bytes) ||
+            write_exact(f, job->v, 1, job->v_bytes))
+            ok = -1;
     }
-    fclose(f);
+    if (ok == 0 && fflush(f) != 0) ok = -1;
+    if (ok == 0 && fsync(fileno(f)) != 0) ok = -1;
+    if (fclose(f) != 0) ok = -1;
+    if (ok != 0) (void)remove(path);
+    return ok;
+}
+
+static int record_cold_file(cce_kv_pager *p, const cce_kv_flush_job *job) {
+    if (!p->ledger ||
+        fprintf(p->ledger,
+                "page_id=%d pos_lo=%d pos_hi=%d digest=0x%016llx "
+                "file=page_%06d.kvc tier=COLD quant=%d\n",
+                job->page_id, job->pos_lo, job->pos_hi,
+                (unsigned long long)job->digest, job->page_id,
+                job->quant) < 0 ||
+        fflush(p->ledger) != 0)
+        return -1;
     return 0;
 }
 
@@ -236,22 +264,31 @@ static void *kv_flush_thread(void *arg) {
         p->q[p->q_head].valid = 0;
         p->q_head = (p->q_head + 1) % CCE_KV_QMAX;
         p->q_count--;
-        pthread_cond_signal(&p->cv_space);
+        p->writes_inflight++;
+        pthread_cond_broadcast(&p->cv_space);
         pthread_mutex_unlock(&p->mu);
 
-        if (!job.valid || !job.k || !job.v) continue;
-        (void)write_cold_file(p, &job);
-        pthread_mutex_lock(&p->mu);
-        if (p->ledger) {
-            fprintf(p->ledger,
-                    "page_id=%d pos_lo=%d pos_hi=%d digest=0x%016llx "
-                    "file=page_%06d.kvc tier=COLD quant=%d\n",
-                    job.page_id, job.pos_lo, job.pos_hi,
-                    (unsigned long long)job.digest, job.page_id, job.quant);
-            fflush(p->ledger);
+        {
+            int ok = (!job.valid || !job.k || !job.v) ? -1 : 0;
+            int attempt;
+            if (ok == 0) {
+                for (attempt = 0; attempt < 3; ++attempt) {
+                    ok = write_cold_file(p, &job);
+                    if (ok == 0) break;
+                    if (attempt < 2)
+                        usleep((useconds_t)(10000u << attempt));
+                }
+            }
+            pthread_mutex_lock(&p->mu);
+            if (ok == 0) ok = record_cold_file(p, &job);
+            if (ok == 0)
+                p->pages_flushed++;
+            else
+                p->write_failures++;
+            p->writes_inflight--;
+            pthread_cond_broadcast(&p->cv_space);
+            pthread_mutex_unlock(&p->mu);
         }
-        p->pages_flushed++;
-        pthread_mutex_unlock(&p->mu);
         free(job.k);
         free(job.v);
     }
@@ -264,8 +301,19 @@ cce_result cce_kv_pager_open(cce_kv_pager **out, const cce_kv_pager_opts *opts) 
     size_t ring_k, ring_v;
     int i;
     if (!out || !opts) return CCE_ERR_INVALID_ARG;
+    *out = NULL;
     o = *opts;
     if (o.page_len < 16 || o.n_hot < 2 || o.k_slot < 1 || o.v_slot < 1)
+        return CCE_ERR_INVALID_ARG;
+    if ((size_t)o.page_len > (size_t)INT_MAX / (size_t)o.n_hot)
+        return CCE_ERR_INVALID_ARG;
+    {
+        size_t capacity = (size_t)o.page_len * (size_t)o.n_hot;
+        if (capacity > SIZE_MAX / (size_t)o.k_slot / sizeof(float) ||
+            capacity > SIZE_MAX / (size_t)o.v_slot / sizeof(float))
+            return CCE_ERR_INVALID_ARG;
+    }
+    if (o.archive_dir && strlen(o.archive_dir) >= sizeof p->archive_dir)
         return CCE_ERR_INVALID_ARG;
     p = (cce_kv_pager *)calloc(1, sizeof *p);
     if (!p) return CCE_ERR_OOM;
@@ -390,13 +438,26 @@ int cce_kv_pager_rehydrate_enabled(const cce_kv_pager *p) {
     return p ? p->rehydrate : 0;
 }
 int cce_kv_pager_pages_flushed(const cce_kv_pager *p) {
-    return p ? p->pages_flushed : 0;
+    int n;
+    if (!p) return 0;
+    pthread_mutex_lock((pthread_mutex_t *)&p->mu);
+    n = p->pages_flushed;
+    pthread_mutex_unlock((pthread_mutex_t *)&p->mu);
+    return n;
 }
 int cce_kv_pager_pages_reused(const cce_kv_pager *p) {
     return p ? p->pages_reused : 0;
 }
 int cce_kv_pager_pages_rehydrated(const cce_kv_pager *p) {
     return p ? p->pages_rehydrated : 0;
+}
+int cce_kv_pager_write_failures(const cce_kv_pager *p) {
+    int n;
+    if (!p) return 0;
+    pthread_mutex_lock((pthread_mutex_t *)&p->mu);
+    n = p->write_failures;
+    pthread_mutex_unlock((pthread_mutex_t *)&p->mu);
+    return n;
 }
 int cce_kv_pager_queue_depth(const cce_kv_pager *p) {
     int d;
@@ -542,18 +603,15 @@ static int enqueue_flush(cce_kv_pager *p, int page_id, int pos_lo, int pos_hi,
     job.valid = 1;
 
     if (!p->async || !p->thr_started) {
-        if (write_cold_file(p, &job) == 0 && p->ledger) {
-            fprintf(p->ledger,
-                    "page_id=%d pos_lo=%d pos_hi=%d digest=0x%016llx "
-                    "file=page_%06d.kvc tier=COLD quant=%d\n",
-                    job.page_id, job.pos_lo, job.pos_hi,
-                    (unsigned long long)job.digest, job.page_id, job.quant);
-            fflush(p->ledger);
-        }
-        p->pages_flushed++;
+        int ok = write_cold_file(p, &job);
+        if (ok == 0) ok = record_cold_file(p, &job);
+        if (ok == 0)
+            p->pages_flushed++;
+        else
+            p->write_failures++;
         free(job.k);
         free(job.v);
-        return 0;
+        return ok;
     }
 
     pthread_mutex_lock(&p->mu);
@@ -588,11 +646,17 @@ static int slide_one_page(cce_kv_pager *p) {
     k_src = p->k_ring;
     v_src = p->v_ring;
 
-    /* Double-buffer: copy to stage (WARM), then shift ring left, then
-     * enqueue stage for async COLD write — writer continues into freed tail. */
+    /* Double-buffer into WARM, then secure ownership of a complete COLD job
+     * before recycling HOT. On synchronous storage failure the ring is left
+     * untouched instead of silently losing the oldest page. */
     memcpy(p->stage_k, k_src, npos * (size_t)p->k_slot * sizeof(float));
     memcpy(p->stage_v, v_src, npos * (size_t)p->v_slot * sizeof(float));
     p->stage_busy = 1;
+    if (enqueue_flush(p, page_id, pos_lo, pos_hi, p->stage_k, p->stage_v) !=
+        0) {
+        p->stage_busy = 0;
+        return -1;
+    }
 
     /* Shift hot ring left by one page (reuse storage). */
     if (p->n_hot > 1) {
@@ -625,9 +689,6 @@ static int slide_one_page(cce_kv_pager *p) {
     p->window_start += p->page_len;
     p->pages_reused++;
 
-    if (enqueue_flush(p, page_id, pos_lo, pos_hi, p->stage_k, p->stage_v) !=
-        0)
-        return -1;
     p->stage_busy = 0;
     return 0;
 }
@@ -677,14 +738,10 @@ int cce_kv_pager_write(cce_kv_pager *p, int pos, const float *k,
 void cce_kv_pager_sync(cce_kv_pager *p) {
     if (!p) return;
     if (!p->async || !p->thr_started) return;
-    for (;;) {
-        int c;
-        pthread_mutex_lock(&p->mu);
-        c = p->q_count;
-        pthread_mutex_unlock(&p->mu);
-        if (c == 0) break;
-        usleep(1000);
-    }
+    pthread_mutex_lock(&p->mu);
+    while (p->q_count > 0 || p->writes_inflight > 0)
+        pthread_cond_wait(&p->cv_space, &p->mu);
+    pthread_mutex_unlock(&p->mu);
 }
 
 int cce_kv_pager_verify_cold(const cce_kv_pager *p, int page_id,
@@ -706,7 +763,9 @@ int cce_kv_pager_verify_cold(const cce_kv_pager *p, int page_id,
         fclose(f);
         return -1;
     }
-    if (ks != p->k_slot || vs != p->v_slot || pid != page_id) {
+    if (page_id < 0 || page_id > INT_MAX / p->page_len ||
+        ks != p->k_slot || vs != p->v_slot || pid != page_id || hi <= lo ||
+        lo != page_id * p->page_len) {
         fclose(f);
         return -1;
     }
@@ -720,10 +779,11 @@ int cce_kv_pager_verify_cold(const cce_kv_pager *p, int page_id,
     nk = npos * (size_t)ks;
     nv = npos * (size_t)vs;
 
-    if (magic == 0x43564B32u) {
+    if (magic == 0x43564B32u && ver == 2u) {
         float sk = 1.f, sv = 1.f;
         int8_t *kq = NULL, *vq = NULL;
-        if (fread(&quant, 4, 1, f) != 1 || fread(&dig, 8, 1, f) != 1) {
+        if (fread(&quant, 4, 1, f) != 1 || fread(&dig, 8, 1, f) != 1 ||
+            (quant != 0 && quant != 1)) {
             fclose(f);
             return -1;
         }
@@ -763,7 +823,7 @@ int cce_kv_pager_verify_cold(const cce_kv_pager *p, int page_id,
             free(kb); free(vb);
             if (body_dig != dig) { fclose(f); return -1; }
         }
-    } else if (magic == 0x43564B31u) {
+    } else if (magic == 0x43564B31u && ver == 1u) {
         size_t kb_bytes = nk * sizeof(float);
         size_t vb_bytes = nv * sizeof(float);
         float *kb, *vb;
@@ -834,7 +894,9 @@ static int load_cold_page(cce_kv_pager *p, int page_id, int *out_lo,
         fclose(f);
         return -1;
     }
-    if (ks != p->k_slot || vs != p->v_slot || pid != page_id) {
+    if (page_id < 0 || page_id > INT_MAX / p->page_len ||
+        ks != p->k_slot || vs != p->v_slot || pid != page_id || hi <= lo ||
+        lo != page_id * p->page_len) {
         fclose(f);
         return -1;
     }
@@ -845,22 +907,33 @@ static int load_cold_page(cce_kv_pager *p, int page_id, int *out_lo,
     }
     nk = npos * (size_t)ks;
     nv = npos * (size_t)vs;
-    if (magic == 0x43564B32u) {
+    if (magic == 0x43564B32u && ver == 2u) {
         float sk = 1.f, sv = 1.f;
         int8_t *kq, *vq;
-        if (fread(&quant, 4, 1, f) != 1 || fread(&dig, 8, 1, f) != 1) {
+        if (fread(&quant, 4, 1, f) != 1 || fread(&dig, 8, 1, f) != 1 ||
+            (quant != 0 && quant != 1)) {
             fclose(f);
             return -1;
         }
         if (quant) {
+            uint64_t body_dig;
             if (fread(&sk, 4, 1, f) != 1 || fread(&sv, 4, 1, f) != 1) {
                 fclose(f);
                 return -1;
             }
-            kq = (int8_t *)malloc(nk);
-            vq = (int8_t *)malloc(nv);
+            kq = (int8_t *)malloc(nk ? nk : 1);
+            vq = (int8_t *)malloc(nv ? nv : 1);
             if (!kq || !vq || fread(kq, 1, nk, f) != nk ||
                 fread(vq, 1, nv, f) != nv) {
+                free(kq);
+                free(vq);
+                fclose(f);
+                return -1;
+            }
+            body_dig = fnv1a_buf(kq, nk) ^ (fnv1a_buf(vq, nv) << 1);
+            body_dig ^= (uint64_t)(sk * 1e6f) ^
+                        ((uint64_t)(sv * 1e6f) << 32);
+            if (body_dig != dig) {
                 free(kq);
                 free(vq);
                 fclose(f);
@@ -871,16 +944,30 @@ static int load_cold_page(cce_kv_pager *p, int page_id, int *out_lo,
             free(kq);
             free(vq);
         } else {
+            uint64_t body_dig;
             if (fread(p->rehyd_k, sizeof(float), nk, f) != nk ||
                 fread(p->rehyd_v, sizeof(float), nv, f) != nv) {
                 fclose(f);
                 return -1;
             }
+            body_dig = fnv1a_buf(p->rehyd_k, nk * sizeof(float)) ^
+                       (fnv1a_buf(p->rehyd_v, nv * sizeof(float)) << 1);
+            if (body_dig != dig) {
+                fclose(f);
+                return -1;
+            }
         }
-    } else if (magic == 0x43564B31u) {
+    } else if (magic == 0x43564B31u && ver == 1u) {
+        uint64_t body_dig;
         if (fread(&dig, 8, 1, f) != 1 ||
             fread(p->rehyd_k, sizeof(float), nk, f) != nk ||
             fread(p->rehyd_v, sizeof(float), nv, f) != nv) {
+            fclose(f);
+            return -1;
+        }
+        body_dig = fnv1a_buf(p->rehyd_k, nk * sizeof(float)) ^
+                   (fnv1a_buf(p->rehyd_v, nv * sizeof(float)) << 1);
+        if (body_dig != dig) {
             fclose(f);
             return -1;
         }
@@ -895,8 +982,6 @@ static int load_cold_page(cce_kv_pager *p, int page_id, int *out_lo,
     p->pages_rehydrated++;
     if (out_lo) *out_lo = lo;
     if (out_hi) *out_hi = hi;
-    (void)ver;
-    (void)dig;
     return 0;
 }
 
@@ -904,6 +989,11 @@ int cce_kv_pager_rehydrate_pos(cce_kv_pager *p, int pos) {
     int page_id, lo;
     if (!p || !p->rehydrate || pos < 0) return -1;
     if (ring_index(p, pos) >= 0) return 0; /* already hot */
+    /* Only positions evicted from the current generation can be COLD. After
+     * clear(), window_start is reset to zero; this rejects stale files left by
+     * the previous generation until the corresponding current page is really
+     * evicted and rewritten. */
+    if (pos >= p->window_start) return -1;
     if (p->rehyd_lo >= 0 && pos >= p->rehyd_lo && pos < p->rehyd_hi)
         return 0; /* already in rehyd cache */
     /* Cold page ids are assigned in order: page covering [i*page_len, ...)

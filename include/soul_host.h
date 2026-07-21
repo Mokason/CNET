@@ -86,7 +86,12 @@ CNET_API int soul_run(SoulHost *h, const char *name,
 
 /* Route to the unit that owns `goal_tag`, using its REAL input/output ports
    (route_plan over the loaded registry + route_execute). Returns out_total
-   written (>= 0) or <0 (e.g. -3 = no plan). A genuine typed-port route. */
+   written (>= 0) or <0 (e.g. -3 = no plan). A genuine typed-port route.
+
+   When CNET_ROUTE_LOG is set at soul_open, each soul_route / soul_request
+   appends one JSONL decision line (mechanism, selected_unit, entropy,
+   outcome, latency, cost) via cnet_route_log — report-only; never changes
+   the serve result (see include/cnet_route_log.h). */
 CNET_API int soul_route(SoulHost *h, const char *goal_tag,
                         const double *in, int in_cap, double *out, int out_cap);
 
@@ -138,6 +143,20 @@ CNET_API int soul_health_tick(SoulHost *h, long long *counts, int counts_cap);
    be NULL. 0 on success, <0 if the unit is not in the live registry. */
 CNET_API int soul_unit_axes(SoulHost *h, const char *name,
                             int *trust, int *role);
+
+/* Evidence bundle for a learned unit (contract/dataset/artifact/runtime
+   digests, reliability samples, optional counterfactual stability, rollback
+   target). Prefer the JSONL store next to the base when present; otherwise
+   rebuild live from the sealed CNB. Fills a compact report into out
+   (NUL-terminated). Returns 0, -1 bad args, -2 unit missing, -4 out_cap. */
+CNET_API int soul_unit_evidence(SoulHost *h, const char *name,
+                                char *out, int out_cap);
+
+/* Five-layer health diagnostics (registry / loadable / execution / semantic /
+   utility). Diagnostic only — does not heal. Writes JSON into out.
+   Returns 0, -1 bad args, -2 unit missing, -4 out_cap. */
+CNET_API int soul_unit_health_layers(SoulHost *h, const char *name,
+                                     char *out, int out_cap);
 
 /* Novel-goal request by EXPLICIT typed signature (families are PortFamily
    values). BOTH tags are required: an untagged input is a wildcard, which

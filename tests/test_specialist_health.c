@@ -78,6 +78,17 @@ static int identity_forward(void *opaque,
     return 0;
 }
 
+static int rotate_forward(void *opaque,
+                          const double *input, size_t input_count,
+                          double *output, size_t output_count) {
+    size_t i;
+    (void)opaque;
+    if (input_count != SYM || output_count != SYM) return -1;
+    for (i = 0; i < SYM; i++) output[i] = 0.0;
+    for (i = 0; i < SYM; i++) output[(i + 1) % SYM] = input[i];
+    return 0;
+}
+
 static void train_identity(BinaryTransformNetwork *btn, unsigned int seed,
                            Port in, Port out,
                            const double *inputs, const double *targets) {
@@ -249,6 +260,43 @@ int main(void) {
           rep.trust[SPECIALIST_TRUST_UNCERTIFIED] +
           rep.trust[SPECIALIST_TRUST_DEMOTED] == reg.count,
           "trust histogram accounts for every entry");
+
+    /* -- J: teacher labeling must never use the faulting entry itself ---- */
+    {
+        PrimitiveRegistry tr;
+        BinaryTransformNetwork faulting, good;
+        double input[SYM], invalid[SYM] = {0.5, 0.5, 0.5, 0.5};
+        static int fault_ctx, good_ctx;
+        int target_is_identity = 0;
+
+        memset(&faulting, 0, sizeof faulting);
+        memset(&good, 0, sizeof good);
+        onehot_row(input, 0);
+        registry_init(&tr); /* lifecycle off: a RESET entry is otherwise usable */
+        check(btn_init_adapter(&faulting, SYM, SYM, &in_port, 1, &out_port, 1,
+                               rotate_forward, NULL, &fault_ctx,
+                               0x48535431ULL, SYM) == 0 &&
+              btn_init_adapter(&good, SYM, SYM, &in_port, 1, &out_port, 1,
+                               identity_forward, NULL, &good_ctx,
+                               0x48535432ULL, SYM) == 0 &&
+              registry_add(&tr, &faulting, "faulting") == 0 &&
+              registry_add(&tr, &good, "good_teacher") == 0,
+              "teacher-self fixture registers faulting entry first");
+        check(registry_record_fault(&tr, "faulting", input, invalid) == 0,
+              "teacher-self fixture parks one unlabeled input");
+        check(registry_label_via_teacher(&tr, "faulting") == 1,
+              "teacher labeling adopts exactly one external answer");
+        if (tr.entries[0].queue && tr.entries[0].queue->labeled_count == 1) {
+            const double *target = tr.entries[0].queue->labeled_targets;
+            target_is_identity = target[0] == 1.0 && target[1] == 0.0 &&
+                                 target[2] == 0.0 && target[3] == 0.0;
+        }
+        check(target_is_identity,
+              "teacher labeling skips self and records external identity");
+        registry_free(&tr);
+        btn_free(&faulting);
+        btn_free(&good);
+    }
 
     registry_free(&reg);
     contract_free(&subject_c);

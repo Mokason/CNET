@@ -138,6 +138,11 @@ static bool gguf_read_u32(FILE* f, uint32_t* v) { return fread(v, 4, 1, f) == 1;
 static bool gguf_read_u64(FILE* f, uint64_t* v) { return fread(v, 8, 1, f) == 1; }
 static bool gguf_read_f32(FILE* f, float* v)    { return fread(v, 4, 1, f) == 1; }
 
+static bool gguf_skip_u64(FILE* f, uint64_t len) {
+    if (!f || len > (uint64_t)INT64_MAX) return false;
+    return _fseeki64(f, (int64_t)len, SEEK_CUR) == 0;
+}
+
 static float gguf_f16_to_f32(uint16_t h) {
     uint32_t sign = (h & 0x8000) << 16;
     uint32_t exp  = (h & 0x7C00) >> 10;
@@ -180,7 +185,7 @@ static bool gguf_read_string(FILE* f, char* buf, size_t cap, uint64_t* out_len) 
     if (out_len) *out_len = len;
     if (len >= cap) {
         /* skip large string */
-        fseek(f, (long)len, SEEK_CUR);
+        if (!gguf_skip_u64(f, len)) return false;
         if (buf && cap > 0) buf[0] = 0;
         return true;
     }
@@ -210,8 +215,9 @@ static bool gguf_read_kv(FILE* f, gguf_kv* kv) {
         case GGUF_TYPE_STRING: {
             uint64_t slen = 0;
             if (!gguf_read_u64(f, &slen)) return false;
+            if (slen > (uint64_t)SIZE_MAX - 1u) return false;
             char* s = (char*)malloc((size_t)slen + 1);
-            if (!s) { fseek(f, (long)slen, SEEK_CUR); return false; }
+            if (!s) return false;
             if (slen > 0 && fread(s, 1, (size_t)slen, f) != slen) { free(s); return false; }
             s[slen] = 0;
             kv->val.str = s;
@@ -232,7 +238,9 @@ static bool gguf_read_kv(FILE* f, gguf_kv* kv) {
             }
             for (uint64_t k=0; k < n; k++) {
                 if (elem_type == GGUF_TYPE_STRING) {
-                    uint64_t sl = 0; gguf_read_u64(f, &sl); fseek(f, (long)sl, SEEK_CUR);
+                    uint64_t sl = 0;
+                    if (!gguf_read_u64(f, &sl) || !gguf_skip_u64(f, sl))
+                        return false;
                 } else {
                     uint8_t buf[8] = {0};
                     size_t esz = 4;
@@ -255,7 +263,7 @@ static bool gguf_read_kv(FILE* f, gguf_kv* kv) {
                         default: kv->arr[k] = 0; break;
                         }
                     } else {
-                        fseek(f, (long)esz, SEEK_CUR);
+                        if (!gguf_skip_u64(f, (uint64_t)esz)) return false;
                     }
                 }
             }
@@ -606,7 +614,9 @@ static cce_result gguf_dequant_seq(const cce_gguf* g, uint32_t ggml_type,
             for (size_t i = 0; i < this_block; i++) {
                 buf[b*block_size + i] = qs[i] * d;
             }
-            if (this_block < block_size) fseek(g->f, (long)(block_size - this_block), SEEK_CUR);
+            if (this_block < block_size &&
+                !gguf_skip_u64(g->f, (uint64_t)(block_size - this_block)))
+                return CCE_ERR_IO;
         }
     } else if (ggml_type == 2 /* Q4_0 */) {
         /* Q4_0: 32 values, f16 d, 16 bytes qs (nibbles) */

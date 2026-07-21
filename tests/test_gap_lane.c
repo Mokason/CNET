@@ -80,6 +80,20 @@ int main(void) {
 
     printf("== gap lane: the 24/7 learning loop ==\n");
 
+    {
+        GapLane corrupt;
+        FILE *bad = fopen(base_path, "wb");
+        check(bad != NULL, "corrupt-base fixture creates present file");
+        if (bad) {
+            const unsigned char junk[7] = {0x43, 0x4e, 0x42, 0xff, 1, 2, 3};
+            fwrite(junk, 1, sizeof junk, bad);
+            fclose(bad);
+        }
+        check(gap_lane_open(&corrupt, base_path, ledger_path, inbox_path) != 0,
+              "present corrupt base fails closed instead of becoming fresh");
+        remove(base_path);
+    }
+
     check(gap_lane_open(&lane, base_path, ledger_path, inbox_path) == 0 &&
           lane.reg.count == 0,
           "fresh lane opens with an empty certified registry");
