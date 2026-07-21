@@ -1,0 +1,28 @@
+# CNET G4 actuator charter — human-approved goal/actuator families.
+# Lines: allow PREFIX or exact name. # comments.
+# When CNET_CHARTER_ENFORCE=1, novel freeform goals outside this list
+# are parked as deferred (waiting_charter) instead of taught.
+#
+# Core always allowed:
+skill_
+research_
+chunk_
+tk
+acq_
+json_tool
+jtc_feat
+w_cur
+cce_cond
+le8_
+calculator
+memory_
+file_
+web_
+wiki_
+final
+# Personal research domains
+unity_
+rpg_
+game_
+story_
+memory_witness

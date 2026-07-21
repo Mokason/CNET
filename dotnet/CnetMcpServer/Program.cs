@@ -313,7 +313,8 @@ class Program
                                         properties = new
                                         {
                                             text = new { type = "string", description = "Chat snippet or skill description to learn" },
-                                            k = new { type = "integer", description = "top-k outputs (default 3)" }
+                                            k = new { type = "integer", description = "top-k outputs (default 3)" },
+                                            skill = new { type = "string", description = "Optional structured skill name → skill_<slug> unit" }
                                         },
                                         required = new[] { "text" }
                                     }
@@ -498,7 +499,8 @@ class Program
                                         ReadDoubleList(toolArgs, "input")),
                                     "cnet_learn_from_chat" => tools.LearnFromChat(
                                         SafeGetString(toolArgs, "text"),
-                                        toolArgs.TryGetProperty("k", out var lk) && lk.ValueKind == JsonValueKind.Number ? lk.GetInt32() : 3),
+                                        toolArgs.TryGetProperty("k", out var lk) && lk.ValueKind == JsonValueKind.Number ? lk.GetInt32() : 3,
+                                        toolArgs.TryGetProperty("skill", out var sk) && sk.ValueKind == JsonValueKind.String ? sk.GetString() : null),
                                     "cnet_health_tick" => tools.HealthTick(),
                                     "cnet_classify_toolcall" => tools.ClassifyToolCall(
                                         SafeGetString(toolArgs, "json")),

@@ -44,6 +44,57 @@ public static partial class JsonToolCall
         return ToolNames[best];
     }
 
+    /// <summary>Argmax + margin confidence in [0,1] (max - second_max, floored by max).</summary>
+    public static (string? Tool, double Confidence, double MaxAct) DecodeToolScored(ReadOnlySpan<double> onehot)
+    {
+        if (onehot.Length < ToolCount) return (null, 0, 0);
+        int best = 0, second = 0;
+        for (int i = 1; i < ToolCount; i++)
+        {
+            if (onehot[i] > onehot[best]) { second = best; best = i; }
+            else if (onehot[i] > onehot[second] || second == best) second = i;
+        }
+        double max = onehot[best];
+        double sec = best == second ? 0 : onehot[second];
+        double conf = max <= 0 ? 0 : Math.Min(1.0, Math.Max(0.0, max - sec + max * 0.25));
+        if (max < 1e-9) conf = 0;
+        return (ToolNames[best], conf, max);
+    }
+
+    /// <summary>CNET_JTC_MIN_CONF (default 0.20). Below → refuse as unknown.</summary>
+    public static double MinConfidence
+    {
+        get
+        {
+            var e = Environment.GetEnvironmentVariable("CNET_JTC_MIN_CONF");
+            if (string.IsNullOrEmpty(e)) return 0.20;
+            return double.TryParse(e, System.Globalization.NumberStyles.Float,
+                System.Globalization.CultureInfo.InvariantCulture, out var v)
+                ? Math.Clamp(v, 0, 1) : 0.20;
+        }
+    }
+
+    /// <summary>
+    /// If JSON names an explicit tool not in the closed set → unknown.
+    /// Empty feature vector → unknown. Low confidence → unknown.
+    /// </summary>
+    public static bool TryExplicitUnknown(string? jsonText, out string? named)
+    {
+        named = null;
+        if (string.IsNullOrWhiteSpace(jsonText)) return false;
+        if (!TryParseAgentJson(jsonText, out var tool, out _, out _)) return false;
+        if (string.IsNullOrEmpty(tool)) return false;
+        named = tool;
+        return !IsKnownTool(tool);
+    }
+
+    public static bool FeaturesEmpty(ReadOnlySpan<double> feat)
+    {
+        for (int i = 0; i < feat.Length; i++)
+            if (feat[i] > 0.5) return false;
+        return true;
+    }
+
     public static int DecodeToolId(ReadOnlySpan<double> onehot)
     {
         if (onehot.Length < ToolCount) return -1;
@@ -114,31 +165,16 @@ public static partial class JsonToolCall
         return DecodeTool(output) ?? "final";
     }
 
-    public static (bool Served, string Source, string? Tool, bool GapNoted) RequestClassify(
-        SoulHost soul, string jsonText)
-    {
-        ArgumentNullException.ThrowIfNull(soul);
-        var feat = Encode(jsonText);
-        var (served, gapNoted, residual, source, output) = soul.Request(
-            inFamily: PortRaw, inWidth: FeatureCount, inCount: 1, inTag: InputTag,
-            goalFamily: PortOneHot, goalWidth: ToolCount, goalCount: 1, goalTag: GoalTag,
-            input: feat);
-        if (!served || output == null)
-            return (false, source, null, gapNoted || residual);
-        return (true, source, DecodeTool(output), gapNoted || residual);
-    }
-
     /// <summary>
     /// Append a NO_PLAN line for jtc_feat→json_tool so the gap lane can see demand.
-    /// Format matches gap_inbox_note_no_plan (PORT_RAW=0, PORT_ONEHOT=1).
     /// </summary>
     public static bool NoteGap(string? inboxPath)
     {
         if (string.IsNullOrWhiteSpace(inboxPath)) return false;
         try
         {
-            Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(inboxPath))!);
-            // NO_PLAN fam width count tag fam width count tag
+            var dir = Path.GetDirectoryName(Path.GetFullPath(inboxPath));
+            if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
             File.AppendAllText(inboxPath,
                 $"NO_PLAN {PortRaw} {FeatureCount} 1 {InputTag} {PortOneHot} {ToolCount} 1 {GoalTag}\n");
             return true;
@@ -149,8 +185,33 @@ public static partial class JsonToolCall
         }
     }
 
+    public static (bool Served, string Source, string? Tool, bool GapNoted) RequestClassify(
+        SoulHost soul, string jsonText)
+    {
+        ArgumentNullException.ThrowIfNull(soul);
+        if (TryExplicitUnknown(jsonText, out var named))
+        {
+            bool noted = NoteGap(null); // caller path notes with inbox
+            return (false, "unknown_tool", named, noted);
+        }
+        var feat = Encode(jsonText);
+        if (FeaturesEmpty(feat))
+            return (false, "unknown_empty", null, false);
+        var (served, gapNoted, residual, source, output) = soul.Request(
+            inFamily: PortRaw, inWidth: FeatureCount, inCount: 1, inTag: InputTag,
+            goalFamily: PortOneHot, goalWidth: ToolCount, goalCount: 1, goalTag: GoalTag,
+            input: feat);
+        if (!served || output == null)
+            return (false, source, null, gapNoted || residual);
+        var (tool, conf, maxAct) = DecodeToolScored(output);
+        if (tool == null || conf < MinConfidence || maxAct < MinConfidence * 0.5)
+            return (false, "unknown_low_conf", tool, gapNoted || residual);
+        return (true, source, tool, gapNoted || residual);
+    }
+
     /// <summary>
     /// Classify with certified unit when present; on miss/error note gap and return null.
+    /// Unknown tools / empty / low-confidence → tool null, source starts with unknown_.
     /// </summary>
     public static (string? Tool, string Source, bool GapNoted) ClassifyOrGap(
         SoulHost? soul, string jsonText, string? inboxPath = null)
@@ -162,13 +223,36 @@ public static partial class JsonToolCall
         }
         try
         {
+            if (TryExplicitUnknown(jsonText, out _))
+            {
+                bool noted = NoteGap(inboxPath);
+                return (null, "unknown_tool", noted);
+            }
+            var feat = Encode(jsonText);
+            if (FeaturesEmpty(feat))
+            {
+                bool noted = NoteGap(inboxPath);
+                return (null, "unknown_empty", noted);
+            }
             var (served, source, tool, gapNoted) = RequestClassify(soul, jsonText);
+            if (source.StartsWith("unknown", StringComparison.Ordinal))
+            {
+                bool noted = NoteGap(inboxPath) || gapNoted;
+                return (null, source, noted);
+            }
             if (served && tool != null)
                 return (tool, source, gapNoted);
             // Fall back to named unit if request path failed but unit exists
             try
             {
                 string t = Classify(soul, jsonText);
+                var outVec = soul.RunUnit(UnitName, feat);
+                var (_, conf, maxAct) = DecodeToolScored(outVec);
+                if (conf < MinConfidence || maxAct < MinConfidence * 0.5)
+                {
+                    bool noted = NoteGap(inboxPath);
+                    return (null, "unknown_low_conf", noted);
+                }
                 return (t, "certified", false);
             }
             catch

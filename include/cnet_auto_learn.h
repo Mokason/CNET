@@ -36,6 +36,12 @@ CNET_API int cnet_auto_learn_make_teachable(Port *in, Port *goal,
 CNET_API int cnet_auto_learn_note_text(const char *inbox_path,
                                        const char *text, size_t k_override);
 
+/* Structured skill: goal tag skill_<slug> (or research_/chunk_ prefix kept).
+ * Teaches a named unit instead of opaque tk*q*. text optional context. */
+CNET_API int cnet_auto_learn_note_skill(const char *inbox_path,
+                                        const char *skill_name,
+                                        const char *text, size_t k_override);
+
 #ifdef __cplusplus
 }
 #endif

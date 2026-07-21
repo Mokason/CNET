@@ -9,6 +9,7 @@
 
 #include "../include/gap_lane.h"
 #include "../include/cnet_auto_learn.h"
+#include "../include/cnet_charter.h"
 #include "../include/specialist.h"
 #include "../include/specialist_health.h"
 #include "../include/cnet_evidence_bundle.h"
@@ -245,8 +246,14 @@ int gap_inbox_note_no_plan(const char *inbox_path,
     FILE *f;
     Port in = input_port, goal = goal_port;
     if (!inbox_path || !inbox_path[0]) return -1;
-    /* Automatic learning: freeform Hermes goals → window-teachable shapes. */
-    (void)cnet_auto_learn_make_teachable(&in, &goal, goal.tag[0] ? goal.tag : in.tag);
+    /* G4: when enforce on, refuse unchartered goal tags (caller may retry). */
+    if (cnet_charter_enforce() && goal.tag[0] &&
+        !cnet_charter_allows(goal.tag)) {
+        fprintf(stderr, "gap_inbox: charter refuse goal=%s\n", goal.tag);
+        return -2;
+    }
+    (void)cnet_auto_learn_make_teachable(&in, &goal,
+                                         goal.tag[0] ? goal.tag : NULL);
     f = fopen(inbox_path, "a");
     if (!f) return -1;
     fprintf(f, "NO_PLAN ");
