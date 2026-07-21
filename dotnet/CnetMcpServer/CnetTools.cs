@@ -1254,20 +1254,186 @@ namespace CnetMcpServer
             });
         }
 
+        /// <summary>
+        /// Exercise a sealed named skill (skill_* / research_* / acq_*).
+        /// Builds a w_cur one-hot from query text and requests the goal tag.
+        /// </summary>
+        public string UseSkill(string skill, string? query = null, int goalCount = 3)
+        {
+            EnsureFreshSoulHost();
+            if (_soulHost == null) return SoulUnavailable("use_skill");
+            if (string.IsNullOrWhiteSpace(skill))
+                return JsonSerializer.Serialize(new { ok = false, error = "empty skill" });
+
+            string raw = skill.Trim();
+            // Normalize to goal tag without acq_ prefix
+            string goal = raw.StartsWith("acq_", StringComparison.Ordinal)
+                ? raw.Substring(4)
+                : raw;
+            if (!(goal.StartsWith("skill_", StringComparison.Ordinal)
+                  || goal.StartsWith("research_", StringComparison.Ordinal)
+                  || goal.StartsWith("chunk_", StringComparison.Ordinal)
+                  || goal.StartsWith("tk", StringComparison.Ordinal)))
+            {
+                // bare name → prefer skill_ then research_
+                string s1 = "skill_" + goal;
+                string s2 = "research_" + goal;
+                bool has1 = false, has2 = false;
+                try
+                {
+                    foreach (var u in _soulHost.Units())
+                    {
+                        if (u == "acq_" + s1 || u == s1) has1 = true;
+                        if (u == "acq_" + s2 || u == s2) has2 = true;
+                    }
+                }
+                catch { /* ignore */ }
+                goal = has1 ? s1 : (has2 ? s2 : s1);
+            }
+
+            int width = 256;
+            if (goalCount < 1) goalCount = 3;
+            if (goalCount > 8) goalCount = 8;
+
+            // Deterministic one-hot from query (or skill name)
+            string seed = string.IsNullOrWhiteSpace(query) ? goal : query!;
+            uint h = 2166136261;
+            foreach (var ch in seed)
+            {
+                h ^= ch;
+                h *= 16777619;
+            }
+            int idx = (int)(h % (uint)width);
+            var input = new List<double>(width);
+            for (int i = 0; i < width; i++) input.Add(i == idx ? 1.0 : 0.0);
+
+            string unitName = "acq_" + goal;
+            bool unitPresent = false;
+            try
+            {
+                foreach (var u in _soulHost.Units())
+                    if (u == unitName || u == goal) { unitPresent = true; break; }
+            }
+            catch { /* ignore */ }
+
+            var (served, gapNoted, residual, source, output) = _soulHost.Request(
+                inFamily: 1, inWidth: width, inCount: 1, inTag: "w_cur",
+                goalFamily: 1, goalWidth: width, goalCount: goalCount, goalTag: goal,
+                input: input.ToArray());
+
+            // Fallback: direct unit run if request plan miss but unit exists
+            if (!served && unitPresent)
+            {
+                try
+                {
+                    // Expand input for goal_count fields if needed
+                    var full = new double[width * goalCount];
+                    for (int g = 0; g < goalCount; g++)
+                        for (int i = 0; i < width; i++)
+                            full[g * width + i] = input[i];
+                    // Many units expect in_total=width only
+                    output = _soulHost.RunUnit(unitName, input.ToArray());
+                    served = true;
+                    source = "certified_unit";
+                    residual = false;
+                    gapNoted = false;
+                }
+                catch (Exception ex)
+                {
+                    return JsonSerializer.Serialize(new
+                    {
+                        ok = false,
+                        skill = goal,
+                        unit = unitName,
+                        unit_present = unitPresent,
+                        served = false,
+                        error = ex.Message
+                    });
+                }
+            }
+
+            // Top-k field picks for readability
+            var picks = new List<int>();
+            if (output != null && output.Length > 0)
+            {
+                int fields = Math.Max(1, output.Length / width);
+                for (int f = 0; f < fields && f < goalCount; f++)
+                {
+                    int baseOff = f * (output.Length / fields);
+                    int best = 0;
+                    double bestV = double.NegativeInfinity;
+                    int span = output.Length / fields;
+                    for (int i = 0; i < span && baseOff + i < output.Length; i++)
+                    {
+                        if (output[baseOff + i] > bestV)
+                        {
+                            bestV = output[baseOff + i];
+                            best = i;
+                        }
+                    }
+                    picks.Add(best);
+                }
+            }
+
+            return JsonSerializer.Serialize(new
+            {
+                ok = served,
+                skill = goal,
+                unit = unitName,
+                unit_present = unitPresent,
+                served,
+                residual,
+                gap_noted = gapNoted,
+                source,
+                query = seed,
+                input_idx = idx,
+                picks,
+                output_len = output?.Length ?? 0,
+                note = served
+                    ? "named skill exercised (certified or residual)"
+                    : "not served — gap noted if novel"
+            });
+        }
+
+        /// <summary>List sealed skill_/research_/chunk_ units in the live base.</summary>
+        public string ListSkills()
+        {
+            EnsureFreshSoulHost();
+            if (_soulHost == null) return SoulUnavailable("list_skills");
+            var skills = new List<string>();
+            try
+            {
+                foreach (var u in _soulHost.Units())
+                {
+                    if (u.StartsWith("acq_skill_", StringComparison.Ordinal)
+                        || u.StartsWith("acq_research_", StringComparison.Ordinal)
+                        || u.StartsWith("acq_chunk_", StringComparison.Ordinal)
+                        || u.StartsWith("skill_", StringComparison.Ordinal)
+                        || u.StartsWith("research_", StringComparison.Ordinal))
+                        skills.Add(u);
+                }
+            }
+            catch (Exception ex)
+            {
+                return JsonSerializer.Serialize(new { ok = false, error = ex.Message });
+            }
+            skills.Sort(StringComparer.Ordinal);
+            return JsonSerializer.Serialize(new { ok = true, count = skills.Count, skills });
+        }
 
         /// <summary>
-                /// Queue freeform Hermes chat as a teachable gap.
-                /// If skill is set → skill_&lt;slug&gt; structured unit; else opaque tk*q*.
-                /// </summary>
-                public string LearnFromChat(string text, int k = 3, string? skill = null)
-                {
-                    EnsureFreshSoulHost();
-                    string inbox = Environment.GetEnvironmentVariable("CNET_GAP_INBOX")
-                        ?? (_basePath + ".inbox");
-                    if (string.IsNullOrWhiteSpace(text) && string.IsNullOrWhiteSpace(skill))
-                        return JsonSerializer.Serialize(new { ok = false, error = "empty text" });
-                    try
-                    {
+        /// Queue freeform Hermes chat as a teachable gap.
+        /// If skill is set → skill_&lt;slug&gt; structured unit; else opaque tk*q*.
+        /// </summary>
+        public string LearnFromChat(string text, int k = 3, string? skill = null)
+        {
+            EnsureFreshSoulHost();
+            string inbox = Environment.GetEnvironmentVariable("CNET_GAP_INBOX")
+                ?? (_basePath + ".inbox");
+            if (string.IsNullOrWhiteSpace(text) && string.IsNullOrWhiteSpace(skill))
+                return JsonSerializer.Serialize(new { ok = false, error = "empty text" });
+            try
+            {
                         if (k < 1) k = 3;
                         if (k > 8) k = 8;
                         string goal;

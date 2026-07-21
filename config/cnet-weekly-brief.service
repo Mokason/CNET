@@ -1,0 +1,13 @@
+[Unit]
+Description=CNET weekly governance brief + skill map + pin prune
+After=default.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/marble/AI/CNET
+Environment=CNET_BASE_PATH=/home/marble/AI/CNET/soul_gemma4v2_final.cnb
+ExecStart=/bin/bash -c '/home/marble/AI/CNET/scripts/cnet_governance_brief.sh && /home/marble/AI/CNET/scripts/write_skill_map.sh && /home/marble/AI/CNET/scripts/cnet_pin_prune.sh && /home/marble/AI/CNET/scripts/serve_named_skills.sh'
+Nice=10
+
+[Install]
+WantedBy=default.target

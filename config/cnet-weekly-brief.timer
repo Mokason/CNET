@@ -1,0 +1,10 @@
+[Unit]
+Description=Weekly CNET brief/skill-map timer
+
+[Timer]
+OnCalendar=Sun *-*-* 10:00:00
+Persistent=true
+RandomizedDelaySec=600
+
+[Install]
+WantedBy=timers.target

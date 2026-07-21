@@ -305,6 +305,28 @@ class Program
                                 },
                                 new
                                 {
+                                    name = "cnet_list_skills",
+                                    description = "List sealed skill_/research_/chunk_ units in the live CNET base",
+                                    inputSchema = (object)new { type = "object", properties = new { } }
+                                },
+                                new
+                                {
+                                    name = "cnet_use_skill",
+                                    description = "Exercise a sealed named skill (skill_*/research_*). Builds w_cur one-hot from query and serves certified unit when present.",
+                                    inputSchema = (object)new
+                                    {
+                                        type = "object",
+                                        properties = new
+                                        {
+                                            skill = new { type = "string", description = "skill name or acq_* unit / goal tag" },
+                                            query = new { type = "string", description = "optional query text for input one-hot" },
+                                            goal_count = new { type = "integer", description = "top-k fields (default 3)" }
+                                        },
+                                        required = new[] { "skill" }
+                                    }
+                                },
+                                new
+                                {
                                     name = "cnet_learn_from_chat",
                                     description = "Queue freeform Hermes chat text as a teachable CNET gap (auto-learn). The personal-AI lane trains and seals a certified unit from the local teacher while you keep chatting.",
                                     inputSchema = (object)new
@@ -497,6 +519,11 @@ class Program
                                         toolArgs.TryGetProperty("count", out var rcnt) && rcnt.ValueKind == JsonValueKind.Number ? rcnt.GetInt32() : 1,
                                         toolArgs.TryGetProperty("goal_count", out var rgc) && rgc.ValueKind == JsonValueKind.Number ? rgc.GetInt32() : 1,
                                         ReadDoubleList(toolArgs, "input")),
+                                    "cnet_list_skills" => tools.ListSkills(),
+                                    "cnet_use_skill" => tools.UseSkill(
+                                        SafeGetString(toolArgs, "skill"),
+                                        toolArgs.TryGetProperty("query", out var uq) && uq.ValueKind == JsonValueKind.String ? uq.GetString() : null,
+                                        toolArgs.TryGetProperty("goal_count", out var ugc) && ugc.ValueKind == JsonValueKind.Number ? ugc.GetInt32() : 3),
                                     "cnet_learn_from_chat" => tools.LearnFromChat(
                                         SafeGetString(toolArgs, "text"),
                                         toolArgs.TryGetProperty("k", out var lk) && lk.ValueKind == JsonValueKind.Number ? lk.GetInt32() : 3,

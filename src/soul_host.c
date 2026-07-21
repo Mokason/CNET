@@ -395,13 +395,15 @@ CNET_API int soul_open(const char *base_path, const char *model_path,
     return 0;
 }
 
-/* Lazy residual bind: real GGUF if CNET_RESIDUAL_GGUF set, else hermetic rot1. */
+/* Lazy residual bind: real GGUF if CNET_RESIDUAL_GGUF set, else hermetic rot1.
+ * CNET_SOUL_RESIDUAL_PREFER_HERMETIC=1 skips GGUF and binds hermetic first
+ * (avoids dual-GPU contention with the personal-AI teacher). */
 static int soul_ensure_residual(SoulHost *h, size_t want_dim) {
     const char *path;
+    const char *prefer;
     if (!h) return -1;
     if (h->hybrid.residual.bound) {
-        if (h->hermetic_residual && want_dim > 0) {
-            /* Rebind hermetic with matching dim for this request. */
+        if (h->hermetic_residual && want_dim > 0 && !h->owned_residual) {
             hybrid_bind_residual(&h->hybrid, "hermetic_residual",
                                  hybrid_hermetic_residual,
                                  (void *)(uintptr_t)want_dim);
@@ -410,6 +412,19 @@ static int soul_ensure_residual(SoulHost *h, size_t want_dim) {
         return 0;
     }
     if (h->residual_tried && !h->hermetic_residual) return -1;
+
+    prefer = getenv("CNET_SOUL_RESIDUAL_PREFER_HERMETIC");
+    if (prefer && prefer[0] == '1' && h->hermetic_residual) {
+        size_t d = want_dim > 0 ? want_dim : 256;
+        if (hybrid_bind_residual(&h->hybrid, "hermetic_residual",
+                                 hybrid_hermetic_residual,
+                                 (void *)(uintptr_t)d) != 0)
+            return -1;
+        h->residual_window = (int)d;
+        h->residual_tried = 1;
+        return 0;
+    }
+
     path = getenv("CNET_RESIDUAL_GGUF");
     if (path && path[0]) {
         ResidualGguf *r = NULL;
@@ -419,7 +434,6 @@ static int soul_ensure_residual(SoulHost *h, size_t want_dim) {
             fprintf(stderr, "soul_host: residual GGUF open failed (%s)%s\n", path,
                     h->hermetic_residual ? " — falling back to hermetic" : "");
             if (!h->hermetic_residual) return -1;
-            /* fall through to hermetic */
         } else if (hybrid_bind_residual(&h->hybrid, "residual_gguf",
                                         residual_gguf_oracle, r) != 0) {
             residual_gguf_close(r);
