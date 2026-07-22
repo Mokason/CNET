@@ -381,6 +381,54 @@ Anything that helps from here has to move fewer bytes, not do less work per byte
 Further Q8_0 dot-product micro-optimization is not on that list, and this file
 now carries five measurements saying so.
 
+### Speculative decoding: correct, and a 2.6-3.9x loss here
+
+`CNET.Llm.Engine` implements greedy speculative decoding, and it works — output
+is byte-identical to non-speculative greedy (same sha256), so the verification
+and rollback logic is sound. It is also a large loss with the models available:
+
+| | decode | acceptance |
+| --- | ---: | ---: |
+| baseline | **~170 tok/s** | — |
+| K=1 | 66 tok/s | 1.00 |
+| K=2 | 52 tok/s | 0.51 |
+| K=3 | 44 tok/s | 0.35 |
+
+Decode time goes 537 ms to 1,754 ms at K=2.
+
+This is a model-availability problem, not an implementation one. Speculation wins
+only when `draft/target < (n̄ - 1) / K`, where n̄ is expected accepted tokens per
+step. At the acceptance rates measured that means the draft must be under 0.39x
+the target at K=2, or 0.17x at K=3. The only same-vocabulary pair on this machine
+is SmolLM-135M Q4_K_M drafting for Q8_0 — **0.73x**. Structurally impossible.
+
+Two compounding problems:
+
+- **The draft is barely smaller than the target.** Speculation assumes roughly a
+  10x gap. Using a lower quantization of the same model gets 0.73x, so K draft
+  passes cost more than the target pass they were meant to save.
+- **Acceptance collapses with K** (1.00 / 0.51 / 0.35). A Q4 version of a model
+  diverges from its Q8 self quickly, so deeper speculation drafts tokens that are
+  mostly thrown away — and each rejected token still cost a full weight pass.
+
+Even K=1, where the byte accounting predicts ~1.15x, measured 0.39x. The extra
+~2.5x is the two models being resident at once: 239 MB of combined weights
+competing for the same memory bandwidth the target is already saturating, plus
+two KV caches. In a bandwidth-bound regime a second model is not free the way it
+is in a compute-bound one.
+
+**What would actually work is draft-free speculation.** Prompt-lookup / n-gram
+decoding proposes continuations by matching the recent suffix against text
+already in the context — no second model, so **zero extra bytes streamed**. In a
+regime pinned at the DRAM roof that is the only variant whose accounting works
+out: cost per step stays one target pass, and any acceptance above zero is a
+straight win. It is not implemented here — `ISpeculativeDecoder` takes an
+`IModel` draft — and it is the single highest-value thing left on this list,
+especially for the repetitive, structured outputs CCE tends to request.
+
+Failing that, a purpose-built draft sharing the target's vocabulary at ~0.1x its
+size would satisfy the inequality above with room to spare.
+
 ## Tests
 
 `dotnet test dotnet/Cce.Llm.Tests` — 19 tests. The generation tests need a local
