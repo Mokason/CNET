@@ -23,6 +23,7 @@
     <Project Path="Cce.Llm/CNET.Cce.Llm.csproj" />
     <Project Path="Cce.Llm.Tests/CNET.Cce.Llm.Tests.csproj" />
     <Project Path="Cce.Llm.Benchmarks/CNET.Cce.Llm.Benchmarks.csproj" />
+    <Project Path="GhostChat/GhostChat.csproj" />
   </Folder>
   <Folder Name="/llm/">
     <Project Path="Llm/src/CNET.Llm.Cli/CNET.Llm.Cli.csproj" />
