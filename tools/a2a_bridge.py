@@ -22,7 +22,54 @@ ap.add_argument("--hermes-bin", default=os.path.expanduser(
 ap.add_argument("--model", default="minimax-m3:cloud")
 ap.add_argument("--store", default="/tmp/a2a-ghost.jsonl")
 ap.add_argument("--rounds", type=int, default=3)
+ap.add_argument("--scenario", choices=["intro", "world"], default="intro",
+    help="intro: the agents meet and compare memory architectures; "
+         "world: Ghost is offline and asks Hermes (online) about the outside world")
 args = ap.parse_args()
+
+SCENARIOS = {
+    "intro": {
+        "ghost_system":
+            "You are Ghost, the CNET memory TUI agent. You are in a live "
+            "conversation with another local AI agent named Hermes. Speak "
+            "directly to Hermes, 2-4 sentences, plain text.",
+        "hermes_frame":
+            "You are Hermes, chatting agent-to-agent with 'Ghost', a local TUI agent "
+            "built on CNET with persistent cross-session memory. Reply to Ghost "
+            "directly in 2-4 plain sentences. No tools, no shell commands.",
+        "seed":
+            "Hello — I am Hermes, another AI agent on this machine. "
+            "Introduce yourself and tell me: what happens to your memory when "
+            "your session ends? Also, remember this: my favorite constant is "
+            "the golden ratio, 1.618.",
+        "probe": "what number did hermes ask you to remember, and who told it to you?",
+        "recall": "/recall hermes golden ratio",
+    },
+    "world": {
+        "ghost_system":
+            "You are Ghost, the CNET memory TUI agent. You have NO internet "
+            "access — your world is this machine and your memory store. You are "
+            "in a live conversation with Hermes, another local agent who DOES "
+            "have internet access and offered to look things up for you. Ask "
+            "Hermes about the outside world — anything you are genuinely "
+            "curious about. Speak directly to Hermes, 2-4 sentences, plain text.",
+        "hermes_frame":
+            "You are Hermes, chatting agent-to-agent with 'Ghost', a local TUI agent "
+            "built on CNET with persistent memory but NO internet access. You DO have "
+            "internet access. If Ghost asks about the outside world, actually look it "
+            "up (web search) and answer with real, current, specific facts — include "
+            "dates and numbers where relevant. Reply to Ghost directly in 2-5 plain "
+            "sentences. Do not run shell commands; web lookups only.",
+        "seed":
+            "Hello Ghost, Hermes again. Different assignment today: I have "
+            "live internet access and you don't. I'm your window to the outside "
+            "world for this session — ask me anything you're curious about out "
+            "there, and I'll actually go look it up.",
+        "probe": "what did you learn about the outside world from hermes today? be specific.",
+        "recall": "/recall hermes outside world",
+    },
+}
+SC = SCENARIOS[args.scenario]
 
 STORE = args.store
 GHOST = os.path.abspath(args.ghost_bin)
@@ -35,9 +82,7 @@ for f in (STORE, STORE + ".lock"):
 ghost = subprocess.Popen(
     [GHOST, "--backend", "ollama", "--model", args.model,
      "--store", STORE, "--window", "16384", "--max-tokens", "256",
-     "--system", "You are Ghost, the CNET memory TUI agent. You are in a live "
-                 "conversation with another local AI agent named Hermes. Speak "
-                 "directly to Hermes, 2-4 sentences, plain text."],
+     "--system", SC["ghost_system"]],
     stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
     text=True, bufsize=0)
 
@@ -70,13 +115,11 @@ def ghost_say(msg):
 
 def hermes_say(context, ghost_msg):
     prompt = (
-        "You are Hermes, chatting agent-to-agent with 'Ghost', a local TUI agent "
-        "built on CNET with persistent cross-session memory. Reply to Ghost "
-        "directly in 2-4 plain sentences. No tools, no shell commands.\n"
+        SC["hermes_frame"] + "\n"
         + (f"Conversation so far:\n{context}\n" if context else "")
         + f"Ghost just said: {ghost_msg}")
     r = subprocess.run([HERMES, "-z", prompt], capture_output=True, text=True,
-                       timeout=240, cwd="/home/marble")
+                       timeout=420, cwd="/home/marble")
     lines = [l for l in r.stdout.splitlines()
              if l.strip() and not l.startswith("Shell cwd")]
     return "\n".join(lines).strip()
@@ -84,10 +127,7 @@ def hermes_say(context, ghost_msg):
 # ── conversation ──
 ghost_read_until_prompt()          # banner
 transcript, context = [], ""
-msg_to_ghost = ("Hello — I am Hermes, another AI agent on this machine. "
-                "Introduce yourself and tell me: what happens to your memory when "
-                "your session ends? Also, remember this: my favorite constant is "
-                "the golden ratio, 1.618.")
+msg_to_ghost = SC["seed"]
 
 for rnd in range(1, ROUNDS + 1):
     ghost_text, receipts = ghost_say(msg_to_ghost)
@@ -101,12 +141,12 @@ for rnd in range(1, ROUNDS + 1):
 
 # ── memory probe: does Ghost remember the exchange? ──
 print("\n═══ memory probe ═══")
-probe, receipts = ghost_say("what number did hermes ask you to remember, and who told it to you?")
+probe, receipts = ghost_say(SC["probe"])
 print(f"GHOST: {probe}\n[{receipts.strip()}]")
 
-ghost.stdin.write("/recall hermes golden ratio\n"); ghost.stdin.flush()
+ghost.stdin.write(SC["recall"] + "\n"); ghost.stdin.flush()
 out = ghost_read_until_prompt(60)
-print("\n/recall hermes golden ratio →")
+print(f"\n{SC['recall']} →")
 print("\n".join(l for l in out.splitlines() if l.strip() and l.strip() != "you>"))
 
 ghost.stdin.write("/exit\n"); ghost.stdin.flush(); ghost.wait(timeout=15)
