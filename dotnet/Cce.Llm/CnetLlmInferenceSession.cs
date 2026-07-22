@@ -110,11 +110,17 @@ public sealed class CnetLlmInferenceSession : ICnetInferenceSession
         {
             gguf = GgufFile.Open(config.ModelPath);
             ModelConfig modelConfig = GgufModelConfigExtractor.Extract(gguf.Metadata);
-            model = TransformerModel.LoadFromGguf(gguf, modelConfig);
+
+            // Threading MUST be passed here. TransformerModel builds its
+            // ComputeThreadPool at load time from this argument; the two-arg
+            // overload defaults to ThreadingConfig.SingleThreaded, and setting
+            // InferenceOptions.Threading afterwards does NOT create a pool. Load
+            // without it and every matmul runs on one thread.
+            var threading = new ThreadingConfig((int)config.Threads);
+            model = TransformerModel.LoadFromGguf(gguf, modelConfig, threading);
+
             ITokenizer tokenizer = GgufBpeTokenizerFactory.Load(gguf.Metadata);
             IChatTemplate? chatTemplate = GgufChatTemplateFactory.TryCreate(gguf.Metadata, tokenizer);
-
-            var threading = new ThreadingConfig((int)config.Threads);
             var generator = new TextGenerator(model, tokenizer);
 
             return new CnetLlmInferenceSession(
