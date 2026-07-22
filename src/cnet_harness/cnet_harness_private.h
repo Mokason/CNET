@@ -67,6 +67,9 @@ CnetHarnessSamplingParams cnet_harness__profile_params(
  * (cnet_harness_llama.cpp) provides strong overrides. Tests that need a
  * hermetic route-only path must provide their own strong fakes. */
 int harness_backend_open(struct CnetHarnessSession *session);
+int harness_backend_count_tokens(struct CnetHarnessSession *session,
+                                  const char *text,
+                                  int32_t *count_out);
 int harness_backend_generate(struct CnetHarnessSession *session,
                               const CnetHarnessGenerateOptions *options,
                               CnetHarnessSamplingMode effective,

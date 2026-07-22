@@ -912,6 +912,36 @@ public sealed class CnetHarnessTests
         }
     }
 
+    [Fact]
+    public void CountTokens_PlumbsThroughAndValidates()
+    {
+        var fake = new FakeNative { CountTokensValue = 42 };
+        using var session = CnetHarnessSession.Open(MakeConfig(), fake);
+
+        Assert.Equal(42, session.CountTokens("some text"));
+        Assert.Equal("some text", fake.LastCountedText);
+        Assert.Equal(0, session.CountTokens(""));       // short-circuit, no P/Invoke
+        Assert.Throws<ArgumentNullException>(() => session.CountTokens(null!));
+    }
+
+    [Fact]
+    public void CountTokens_NonOkStatus_BecomesException()
+    {
+        var fake = new FakeNative { CountTokensReturn = -3 /* BACKEND */ };
+        using var session = CnetHarnessSession.Open(MakeConfig(), fake);
+
+        var ex = Assert.Throws<CnetHarnessException>(() => session.CountTokens("x"));
+        Assert.Equal(CnetHarnessStatus.BackendFailure, ex.Status);
+    }
+
+    [Fact]
+    public void CountTokens_AfterDispose_Throws()
+    {
+        var session = CnetHarnessSession.Open(MakeConfig(), new FakeNative());
+        session.Dispose();
+        Assert.Throws<ObjectDisposedException>(() => session.CountTokens("x"));
+    }
+
     private sealed class FakeNative : ICnetHarnessNative
     {
         public int OpenReturn = 0;
@@ -947,6 +977,17 @@ public sealed class CnetHarnessTests
         public ProbeRouteHandler? ProbeRouteImpl;
 
         private const int SessionSentinel = 0x1234;
+
+        public int CountTokensReturn = 0;
+        public int CountTokensValue = 7;
+        public string LastCountedText = "";
+
+        public int CountTokens(IntPtr session, string text, out int count)
+        {
+            LastCountedText = text;
+            count = CountTokensReturn == 0 ? CountTokensValue : 0;
+            return CountTokensReturn;
+        }
 
         public int Open(in NativeConfig config, out IntPtr session)
         {

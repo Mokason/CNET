@@ -18,6 +18,7 @@ internal interface ICnetHarnessNative
     int ProbeRoute(IntPtr session, string role,
                    CnetHarnessSamplingMode overrideMode,
                    ref NativeRouteInfo info);
+    int CountTokens(IntPtr session, string text, out int count);
     NativeGenerationLayout ReadGeneration(IntPtr generation);
     void GenerationFree(IntPtr generation);
     int Close(IntPtr session);

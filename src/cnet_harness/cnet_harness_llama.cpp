@@ -485,6 +485,33 @@ int harness_backend_open(struct CnetHarnessSession *session) {
     return CNET_HARNESS_OK;
 }
 
+int harness_backend_count_tokens(struct CnetHarnessSession *session,
+                                  const char *text,
+                                  int32_t *count_out) {
+    if (!session || !text || !count_out) return CNET_HARNESS_ERR_INTERNAL;
+    auto *state = static_cast<BackendState *>(session->backend_state);
+    if (!state || !state->model) return CNET_HARNESS_ERR_STATE;
+
+    const std::size_t len = std::strlen(text);
+    if (len > static_cast<std::size_t>(INT32_MAX)) return CNET_HARNESS_ERR_INVALID;
+
+    try {
+        const llama_vocab *vocab = llama_model_get_vocab(state->model);
+        /* add_special=false, parse_special=false: the caller is costing a text
+         * fragment, not building a prompt — BOS/EOS and template markup belong
+         * to the prompt builder, and special-token markup inside user text
+         * must count as the literal text it is. A NULL buffer makes
+         * llama_tokenize return the negated required count. */
+        int32_t count = llama_tokenize(vocab, text, static_cast<int32_t>(len),
+                                       nullptr, 0, false, false);
+        if (count < 0) count = -count;
+        *count_out = count;
+        return CNET_HARNESS_OK;
+    } catch (...) {
+        return CNET_HARNESS_ERR_INTERNAL;
+    }
+}
+
 int harness_backend_generate(struct CnetHarnessSession *session,
                               const CnetHarnessGenerateOptions *options,
                               CnetHarnessSamplingMode effective,

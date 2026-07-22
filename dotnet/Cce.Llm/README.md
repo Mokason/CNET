@@ -486,6 +486,12 @@ verbatim blobs in an append-only JSON-lines file; each turn rebuilds a budgeted
 prompt from keyword recall plus the most recent turns. The window is not the
 memory — the file is.
 
+Both backends provide exact token counting for the budgeter —
+`CnetLlmInferenceSession.CountTokens` (managed tokenizer) and
+`CnetHarnessSession.CountTokens` (native `cnet_harness_count_tokens` ABI export;
+no BOS/EOS, no special-token parsing — the cost of text as a prompt fragment).
+The two agree on the same GGUF within BOS policy, and a test pins that.
+
 ```csharp
 using var session = CnetLlmInferenceSession.Open(config);          // PrefixCache on by default
 using var store   = BlobStore.Open("~/.cnet-llm/ghost/memory.jsonl");

@@ -143,6 +143,10 @@ internal static partial class CnetHarnessNativeImports
                                         ref NativeGenerateOptions options,
                                         out IntPtr generation);
 
+    [LibraryImport(LibraryName, EntryPoint = "cnet_harness_count_tokens",
+                   StringMarshalling = StringMarshalling.Utf8)]
+    public static partial int CountTokens(IntPtr session, string text, out int count);
+
     [LibraryImport(LibraryName, EntryPoint = "cnet_harness_probe_route",
                    StringMarshalling = StringMarshalling.Utf8)]
     public static partial int ProbeRoute(IntPtr session, string role,
@@ -167,6 +171,9 @@ internal sealed class LibraryCnetHarnessNative : ICnetHarnessNative
         NativeConfig local = config;
         return CnetHarnessNativeImports.Open(ref local, out session);
     }
+
+    public int CountTokens(IntPtr session, string text, out int count)
+        => CnetHarnessNativeImports.CountTokens(session, text, out count);
 
     public int OpenWithOffload(in NativeConfig config,
                                in NativeOffloadPolicy policy,

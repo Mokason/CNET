@@ -209,6 +209,16 @@ CNET_API int cnet_harness_probe_route(CnetHarnessSession *session,
                                        CnetHarnessSamplingMode override_mode,
                                        CnetHarnessRouteInfo *info_out);
 
+/* Count the tokens of a UTF-8 text with the session model's vocabulary,
+ * WITHOUT adding BOS/EOS and without special-token parsing: the cost of the
+ * text as a fragment inside a larger prompt, which is what budget arithmetic
+ * needs. Chat-template overhead is NOT included; callers keep their own
+ * margin for it. Empty text counts as 0 and returns OK.
+ * Additive export like open_with_offload: ABI v1 callers are unaffected. */
+CNET_API int cnet_harness_count_tokens(CnetHarnessSession *session,
+                                        const char *text,
+                                        int32_t *count_out);
+
 #ifdef __cplusplus
 }
 #endif

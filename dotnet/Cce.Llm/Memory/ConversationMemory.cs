@@ -45,8 +45,10 @@ public sealed class ConversationMemory
 
     /// <param name="store">Persistent blob store; owned by the caller.</param>
     /// <param name="countTokens">
-    /// Token counter of the live model (e.g. <c>CnetLlmInferenceSession.CountTokens</c>).
-    /// Budgets are enforced with real token counts, not character heuristics.
+    /// Token counter of the live model — <c>CnetLlmInferenceSession.CountTokens</c>
+    /// (managed) or <c>CnetHarnessSession.CountTokens</c> (native, via the
+    /// <c>cnet_harness_count_tokens</c> ABI export). Budgets are enforced with
+    /// real token counts, not character heuristics.
     /// </param>
     /// <param name="options">Tunables; defaults favour precision.</param>
     public ConversationMemory(BlobStore store, Func<string, int> countTokens, MemoryOptions? options = null)

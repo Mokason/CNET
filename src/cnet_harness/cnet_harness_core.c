@@ -47,6 +47,14 @@ int harness_backend_generate(struct CnetHarnessSession *session,
 }
 
 __attribute__((weak))
+int harness_backend_count_tokens(struct CnetHarnessSession *session,
+                                  const char *text,
+                                  int32_t *count_out) {
+    (void)session; (void)text; (void)count_out;
+    return CNET_HARNESS_ERR_BACKEND;
+}
+
+__attribute__((weak))
 void harness_backend_prepare_close(struct CnetHarnessSession *session) {
     (void)session;
 }
@@ -447,6 +455,19 @@ static int route_and_profile(struct CnetHarnessSession *session,
     if (effective_out)   *effective_out   = profile;
     if (override_used_out) *override_used_out = override_used;
     return CNET_HARNESS_OK;
+}
+
+int cnet_harness_count_tokens(CnetHarnessSession *session,
+                               const char *text,
+                               int32_t *count_out) {
+    if (!count_out) return CNET_HARNESS_ERR_INVALID;
+    *count_out = 0;
+    if (!session || session->magic != CNET_HARNESS_SESSION_MAGIC) {
+        return CNET_HARNESS_ERR_STATE;
+    }
+    if (!text) return CNET_HARNESS_ERR_INVALID;
+    if (text[0] == '\0') return CNET_HARNESS_OK;   /* empty counts as 0 */
+    return harness_backend_count_tokens(session, text, count_out);
 }
 
 int cnet_harness_probe_route(CnetHarnessSession *session,

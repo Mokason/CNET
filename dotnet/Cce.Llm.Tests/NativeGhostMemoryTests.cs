@@ -10,10 +10,10 @@ namespace CNET.Cce.Llm.Tests;
 ///
 /// The memory layer claims backend-agnosticism because it only touches
 /// <see cref="ICnetInferenceSession"/> — these tests make that claim empirical
-/// rather than architectural. The native path differs in two ways that matter:
-/// there is no managed tokenizer (the layer gets a conservative approximation,
-/// and the harness's own n_ctx guard backstops the budget), and the prompt is
-/// rendered by llama.cpp's chat templating instead of the managed one.
+/// rather than architectural. The native path renders prompts through
+/// llama.cpp's chat templating instead of the managed one, and counts tokens
+/// through the cnet_harness_count_tokens ABI export (exact, same GGUF vocab —
+/// see the agreement test below).
 /// </summary>
 public sealed class NativeGhostMemoryTests : IDisposable
 {
@@ -41,13 +41,9 @@ public sealed class NativeGhostMemoryTests : IDisposable
         Threads = 8,
     };
 
-    /// <summary>
-    /// Conservative token estimate for the native path (no tokenizer in the
-    /// ABI): ~3 chars/token over-counts English, which under-fills the prompt —
-    /// the safe direction. The harness's own prompt >= n_ctx rejection is the
-    /// hard backstop.
-    /// </summary>
-    private static int ApproxTokens(string text) => text.Length / 3 + 1;
+    // Exact counting now comes from cnet_harness_count_tokens via
+    // CnetHarnessSession.CountTokens; the old ~3-chars/token approximation is
+    // only needed against plugins that predate the export.
 
     [NativeFact]
     public void GhostMemory_CarriesFactsAcrossNativeSessions()
@@ -59,7 +55,7 @@ public sealed class NativeGhostMemoryTests : IDisposable
         using (var storeA = BlobStore.Open(storePath))
         {
             var ghostA = new MemorySession(sessionA,
-                new ConversationMemory(storeA, ApproxTokens), contextWindowTokens: 2048);
+                new ConversationMemory(storeA, sessionA.CountTokens), contextWindowTokens: 2048);
 
             var r = ghostA.Generate(
                 system: "You are a terse assistant.",
@@ -75,7 +71,7 @@ public sealed class NativeGhostMemoryTests : IDisposable
         using var sessionB = CnetHarnessSession.Open(Config());
         using var storeB = BlobStore.Open(storePath);
         var ghostB = new MemorySession(sessionB,
-            new ConversationMemory(storeB, ApproxTokens), contextWindowTokens: 2048);
+            new ConversationMemory(storeB, sessionB.CountTokens), contextWindowTokens: 2048);
 
         var recalled = ghostB.Generate(
             system: "You are a terse assistant.",
@@ -123,7 +119,7 @@ public sealed class NativeGhostMemoryTests : IDisposable
         using var native = CnetHarnessSession.Open(Config());
         using var store2 = BlobStore.Open(storePath);
         var nativeGhost = new MemorySession(native,
-            new ConversationMemory(store2, ApproxTokens), contextWindowTokens: 2048);
+            new ConversationMemory(store2, native.CountTokens), contextWindowTokens: 2048);
 
         var recalled = nativeGhost.Generate(
             "You are terse.", "What is the artifact checksum?",
@@ -132,6 +128,37 @@ public sealed class NativeGhostMemoryTests : IDisposable
         Assert.NotEmpty(recalled.UsedBlobIds);
         Assert.Contains("delta-7c4f-omega", recalled.PromptSystemText);
         Assert.False(string.IsNullOrEmpty(recalled.Result.Text));
+    }
+
+    /// <summary>
+    /// The native counter and the managed tokenizer read the same GGUF vocab,
+    /// so their counts must agree. Any drift here means one side's budget
+    /// arithmetic is wrong for the model.
+    /// </summary>
+    [NativeFact]
+    public void NativeCountTokens_AgreesWithManagedTokenizer()
+    {
+        using var native = CnetHarnessSession.Open(Config());
+        using var managed = CnetLlmInferenceSession.Open(Config());
+
+        string[] samples =
+        [
+            "The capital of France is",
+            "GEMM kernels dequantize Q8_0 tiles to f32 above sixteen tokens.",
+            "caf\u00e9 \u2713 unicode text with 7291 numbers",
+            "[#12 | 2026-07-22 | user] a rendered memory blob line",
+        ];
+
+        foreach (string text in samples)
+        {
+            int n = native.CountTokens(text);
+            int m = managed.CountTokens(text);
+            Assert.True(n > 0);
+            Assert.True(Math.Abs(n - m) <= 1,
+                $"native={n} managed={m} for \"{text}\" — tokenizers disagree beyond BOS policy");
+        }
+
+        Assert.Equal(0, native.CountTokens(""));
     }
 
     /// <summary>Native precision parity: an unrelated question recalls nothing.</summary>
@@ -143,7 +170,7 @@ public sealed class NativeGhostMemoryTests : IDisposable
         using var session = CnetHarnessSession.Open(Config());
         using var store = BlobStore.Open(storePath);
         var ghost = new MemorySession(session,
-            new ConversationMemory(store, ApproxTokens), contextWindowTokens: 2048);
+            new ConversationMemory(store, session.CountTokens), contextWindowTokens: 2048);
 
         ghost.Generate(null, "Remember: the vault code is 7291.", 16,
             CnetHarnessSamplingMode.Deterministic);

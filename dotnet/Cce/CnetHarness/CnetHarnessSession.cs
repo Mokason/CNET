@@ -217,6 +217,43 @@ public sealed class CnetHarnessSession : IDisposable, ICnetInferenceSession
         }
     }
 
+    /// <summary>
+    /// Counts the tokens of <paramref name="text"/> with the session model's
+    /// vocabulary — no BOS/EOS, no special-token parsing: the cost of the text
+    /// as a fragment inside a larger prompt, which is what budget arithmetic
+    /// needs. Chat-template overhead is not included.
+    /// </summary>
+    /// <exception cref="CnetHarnessException">
+    /// <see cref="CnetHarnessStatus.InvalidState"/> when the loaded
+    /// libcnet_harness.so predates this entry point — rebuild it with
+    /// <c>make cnet_harness_plugin</c>.
+    /// </exception>
+    public int CountTokens(string text)
+    {
+        ArgumentNullException.ThrowIfNull(text);
+        lock (_gate)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            if (text.Length == 0) return 0;
+
+            int rc;
+            int count;
+            try
+            {
+                rc = _native.CountTokens(_handle.Raw, text, out count);
+            }
+            catch (EntryPointNotFoundException ex)
+            {
+                throw new CnetHarnessException(CnetHarnessStatus.InvalidState,
+                    "the loaded libcnet_harness.so has no cnet_harness_count_tokens " +
+                    "export; rebuild the plugin with `make cnet_harness_plugin` (" + ex.Message + ")");
+            }
+            if (rc != (int)CnetHarnessStatus.Ok)
+                throw MakeException(_native, rc, "cnet_harness_count_tokens");
+            return count;
+        }
+    }
+
     /// <summary>Perform the AICIMO decision without generating any tokens.</summary>
     public CnetHarnessRouteInfo ProbeRoute(string role,
         CnetHarnessSamplingMode overrideMode = CnetHarnessSamplingMode.Auto)

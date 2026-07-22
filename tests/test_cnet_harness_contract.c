@@ -407,6 +407,39 @@ static void test_profile_params_distinct(void) {
     fprintf(stderr, "  test_profile_params_distinct: done\n");
 }
 
+static void test_count_tokens_validation(void) {
+    CnetHarnessConfig c = valid_config();
+    CnetHarnessSession *s = NULL;
+    int rc = cnet_harness_open(&c, &s);
+    CHECK(rc == CNET_HARNESS_OK && s != NULL, "count_tokens: open ok");
+
+    int32_t n = -1;
+    rc = cnet_harness_count_tokens(NULL, "abc", &n);
+    CHECK(rc == CNET_HARNESS_ERR_STATE, "count_tokens: NULL session -> STATE");
+
+    rc = cnet_harness_count_tokens(s, NULL, &n);
+    CHECK(rc == CNET_HARNESS_ERR_INVALID, "count_tokens: NULL text -> INVALID");
+
+    rc = cnet_harness_count_tokens(s, "abc", NULL);
+    CHECK(rc == CNET_HARNESS_ERR_INVALID, "count_tokens: NULL out -> INVALID");
+
+    n = -1;
+    rc = cnet_harness_count_tokens(s, "", &n);
+    CHECK(rc == CNET_HARNESS_OK && n == 0, "count_tokens: empty text -> 0, OK");
+
+    /* No backend linked here and the fakes don't override the hook, so the
+     * weak default must fail closed rather than invent a count. */
+    n = -1;
+    rc = cnet_harness_count_tokens(s, "abc", &n);
+    CHECK(rc == CNET_HARNESS_ERR_BACKEND && n == 0,
+          "count_tokens: hermetic build fails closed with count zeroed");
+
+    /* Close frees the session, so probing it afterwards would be
+     * use-after-free — the magic guard is best-effort against stale pointers,
+     * not a testable contract. */
+    cnet_harness_close(s);
+}
+
 static void test_error_strings(void) {
     const int codes[] = {
         CNET_HARNESS_OK,
@@ -675,6 +708,7 @@ int main(void) {
     test_role_distribution_via_probe();
     test_profile_params_distinct();
     test_error_strings();
+    test_count_tokens_validation();
     test_safe_null_teardown();
     test_generate_options_validated();
     test_additive_offload_policy();
