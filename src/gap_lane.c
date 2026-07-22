@@ -307,9 +307,14 @@ static void ingest_inbox(GapLane *L, GapLaneTickReport *r) {
         p += used;
         while (*p == ' ') p++;
         if (port_parse(p, &goal, &used2) != 0) { r->inbox_malformed++; continue; }
-        /* Normalize freeform → teachable before ledger note. */
-        (void)cnet_auto_learn_make_teachable(&in, &goal,
-                                            goal.tag[0] ? goal.tag : in.tag);
+        /* Ingest the signature AS RECORDED. Coalescing in acquire_note_no_plan
+           is exact-signature equality, so rewriting here forked every
+           structured miss into a phantom w_cur->tk* gap that could never
+           coalesce with (or close as) the gap actually requested — the drain
+           then deferred the phantom forever. Freeform entries need no rewrite
+           at this point either: cnet_auto_learn_note_text / note_skill
+           canonicalize before the line is ever written, so teachable lines
+           arrive here already teachable. */
         if (acquire_note_no_plan(&L->ledger, in, goal) >= 0)
             r->inbox_ingested++;
         else
