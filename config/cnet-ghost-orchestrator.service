@@ -1,0 +1,23 @@
+[Unit]
+Description=CNET ghost orchestrator — reconcile loop over episodic memory and the gap lane
+Documentation=file:///home/marble/AI/CNET/dotnet/Cce.Llm/README.md
+# Fail-safe: skip cleanly if the binary is not built.
+ConditionFileIsExecutable=/home/marble/AI/CNET/dotnet/GhostOrchestrator/bin/Release/net10.0/ghost-orchestrator
+After=default.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/marble/AI/CNET
+Environment=CNET_GAP_INBOX=/home/marble/AI/CNET/soul_gemma4v2_final.cnb.inbox
+# systemd user units do not inherit the shell's DOTNET_ROOT.
+Environment=DOTNET_ROOT=/home/marble/dotnet
+# Self-governance under governors: consolidation and advisories only.
+# Starting the GPU teacher lane stays a human decision unless the operator
+# adds --allow-teacher-start via a drop-in.
+ExecStart=/home/marble/AI/CNET/dotnet/GhostOrchestrator/bin/Release/net10.0/ghost-orchestrator --interval 300
+Restart=on-failure
+RestartSec=30
+Nice=10
+
+[Install]
+WantedBy=default.target

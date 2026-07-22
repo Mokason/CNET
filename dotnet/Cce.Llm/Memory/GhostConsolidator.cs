@@ -39,7 +39,7 @@ public sealed record ConsolidationReceipt(TeachableItem Item, bool Emitted, stri
 /// </remarks>
 public sealed class GhostConsolidator
 {
-    private readonly BlobStore _store;
+    private readonly IMemoryView _store;
 
     /// <summary>Usage rule: minimum served-into-prompt count.</summary>
     public int MinUses { get; init; } = 2;
@@ -53,7 +53,7 @@ public sealed class GhostConsolidator
     /// <summary>Native seam, injectable for tests.</summary>
     internal Func<string, string, string, int>? NoteSkillOverride { get; set; }
 
-    public GhostConsolidator(BlobStore store) =>
+    public GhostConsolidator(IMemoryView store) =>
         _store = store ?? throw new ArgumentNullException(nameof(store));
 
     private static readonly string[] ImperativeMarkers =

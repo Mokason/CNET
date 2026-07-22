@@ -4,6 +4,50 @@ using System.Text.Json;
 namespace CNET.Cce.Llm.Memory;
 
 /// <summary>
+/// What consolidation needs to see of a store — implemented by the live
+/// <see cref="BlobStore"/> and by <see cref="GhostSnapshot"/>, the read-only
+/// view an orchestrator takes while another process holds the writer lock.
+/// </summary>
+public interface IMemoryView
+{
+    IReadOnlyList<MemoryBlob> All();
+    int UsageCount(long id);
+    int UsageSessions(long id);
+}
+
+/// <summary>
+/// A point-in-time, lock-free view of a store file. The data file is opened
+/// FileShare.Read by writers, so snapshots work while a session is live; a
+/// torn tail line parses as corrupt and is skipped, same as the loader.
+/// </summary>
+public sealed class GhostSnapshot : IMemoryView
+{
+    private readonly List<MemoryBlob> _blobs;
+    private readonly Dictionary<long, int> _useCounts;
+    private readonly Dictionary<long, HashSet<string>> _useSessions;
+
+    /// <summary>Highest id seen, tombstoned included — the consolidation watermark.</summary>
+    public long MaxSeenId { get; }
+    public int CorruptLinesSkipped { get; }
+
+    internal GhostSnapshot(List<MemoryBlob> blobs, Dictionary<long, int> useCounts,
+                           Dictionary<long, HashSet<string>> useSessions,
+                           long maxSeenId, int corrupt)
+    {
+        _blobs = blobs;
+        _useCounts = useCounts;
+        _useSessions = useSessions;
+        MaxSeenId = maxSeenId;
+        CorruptLinesSkipped = corrupt;
+    }
+
+    public IReadOnlyList<MemoryBlob> All() => _blobs;
+    public int UsageCount(long id) => _useCounts.GetValueOrDefault(id);
+    public int UsageSessions(long id) =>
+        _useSessions.TryGetValue(id, out var set) ? set.Count : 0;
+}
+
+/// <summary>
 /// Append-only JSON-lines store of conversation blobs — the "ghost memory" that
 /// persists across sessions.
 /// </summary>
@@ -20,7 +64,7 @@ namespace CNET.Cce.Llm.Memory;
 /// Sequential sessions — the ghost-memory pattern — share it naturally.
 /// </para>
 /// </remarks>
-public sealed class BlobStore : IDisposable
+public sealed class BlobStore : IDisposable, IMemoryView
 {
     /// <summary>A deletion event. The blob's original line stays in the file
     /// as history; this line masks it from loading and recall.</summary>
@@ -135,66 +179,8 @@ public sealed class BlobStore : IDisposable
         {
             // Tombstones are applied IN FILE ORDER, so a hand-recovered file
             // with blob/tombstone/blob sequences resolves exactly as written.
-            var byId = new Dictionary<long, MemoryBlob>();
-            var order = new List<long>();
-            var useCounts = new Dictionary<long, int>();
-            var useSessions = new Dictionary<long, HashSet<string>>();
-            long maxSeen = 0;
-            int corrupt = 0;
-            if (File.Exists(path))
-            {
-                foreach (string line in File.ReadLines(path))
-                {
-                    if (string.IsNullOrWhiteSpace(line)) continue;
-                    try
-                    {
-                        using JsonDocument doc = JsonDocument.Parse(line);
-                        JsonElement root = doc.RootElement;
-
-                        if (root.TryGetProperty("del", out JsonElement del))
-                        {
-                            long dead = del.GetInt64();
-                            if (dead > maxSeen) maxSeen = dead;
-                            if (byId.Remove(dead)) order.Remove(dead);
-                            continue;
-                        }
-
-                        if (root.TryGetProperty("used", out JsonElement used))
-                        {
-                            string sid = root.TryGetProperty("sid", out JsonElement se)
-                                ? se.GetString() ?? "" : "";
-                            foreach (JsonElement e in used.EnumerateArray())
-                            {
-                                long uid = e.GetInt64();
-                                useCounts[uid] = useCounts.GetValueOrDefault(uid) + 1;
-                                if (sid.Length > 0)
-                                    (useSessions.TryGetValue(uid, out var set)
-                                        ? set : useSessions[uid] = new HashSet<string>(StringComparer.Ordinal))
-                                        .Add(sid);
-                            }
-                            continue;
-                        }
-
-                        MemoryBlob? blob = root.Deserialize<MemoryBlob>(JsonOptions);
-                        if (blob is not null && blob.Text.Length > 0)
-                        {
-                            if (!byId.ContainsKey(blob.Id)) order.Add(blob.Id);
-                            byId[blob.Id] = blob;
-                            if (blob.Id > maxSeen) maxSeen = blob.Id;
-                        }
-                        else
-                        {
-                            corrupt++;
-                        }
-                    }
-                    catch (JsonException)
-                    {
-                        corrupt++;
-                    }
-                }
-            }
-            var loaded = new List<MemoryBlob>(order.Count);
-            foreach (long id in order) loaded.Add(byId[id]);
+            (List<MemoryBlob> loaded, var useCounts, var useSessions,
+             long maxSeen, int corrupt) = LoadFile(path);
 
             // bufferSize: 1 disables user-space buffering, so a failed write
             // (disk full) cannot leave a half-line lurking in a buffer to be
@@ -237,6 +223,90 @@ public sealed class BlobStore : IDisposable
             lockStream.Dispose();
             throw;
         }
+    }
+
+    /// <summary>
+    /// A point-in-time read-only view — no writer lock taken, safe while a
+    /// live session owns the store. This is how an orchestrator observes.
+    /// </summary>
+    public static GhostSnapshot Snapshot(string path)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(path);
+        (List<MemoryBlob> blobs, var useCounts, var useSessions, long maxSeen, int corrupt)
+            = LoadFile(path);
+        return new GhostSnapshot(blobs, useCounts, useSessions, maxSeen, corrupt);
+    }
+
+    /// <summary>
+    /// Parses a store file: blobs, tombstones, and usage events, in file order.
+    /// Shared by the live open and the read-only snapshot so the two views can
+    /// never diverge on semantics.
+    /// </summary>
+    private static (List<MemoryBlob> Loaded, Dictionary<long, int> UseCounts,
+                    Dictionary<long, HashSet<string>> UseSessions,
+                    long MaxSeen, int Corrupt) LoadFile(string path)
+    {
+        var byId = new Dictionary<long, MemoryBlob>();
+        var order = new List<long>();
+        var useCounts = new Dictionary<long, int>();
+        var useSessions = new Dictionary<long, HashSet<string>>();
+        long maxSeen = 0;
+        int corrupt = 0;
+        if (File.Exists(path))
+        {
+            foreach (string line in File.ReadLines(path))
+            {
+                if (string.IsNullOrWhiteSpace(line)) continue;
+                try
+                {
+                    using JsonDocument doc = JsonDocument.Parse(line);
+                    JsonElement root = doc.RootElement;
+
+                    if (root.TryGetProperty("del", out JsonElement del))
+                    {
+                        long dead = del.GetInt64();
+                        if (dead > maxSeen) maxSeen = dead;
+                        if (byId.Remove(dead)) order.Remove(dead);
+                        continue;
+                    }
+
+                    if (root.TryGetProperty("used", out JsonElement used))
+                    {
+                        string sid = root.TryGetProperty("sid", out JsonElement se)
+                            ? se.GetString() ?? "" : "";
+                        foreach (JsonElement e in used.EnumerateArray())
+                        {
+                            long uid = e.GetInt64();
+                            useCounts[uid] = useCounts.GetValueOrDefault(uid) + 1;
+                            if (sid.Length > 0)
+                                (useSessions.TryGetValue(uid, out var set)
+                                    ? set : useSessions[uid] = new HashSet<string>(StringComparer.Ordinal))
+                                    .Add(sid);
+                        }
+                        continue;
+                    }
+
+                    MemoryBlob? blob = root.Deserialize<MemoryBlob>(JsonOptions);
+                    if (blob is not null && blob.Text.Length > 0)
+                    {
+                        if (!byId.ContainsKey(blob.Id)) order.Add(blob.Id);
+                        byId[blob.Id] = blob;
+                        if (blob.Id > maxSeen) maxSeen = blob.Id;
+                    }
+                    else
+                    {
+                        corrupt++;
+                    }
+                }
+                catch (JsonException)
+                {
+                    corrupt++;
+                }
+            }
+        }
+        var loaded = new List<MemoryBlob>(order.Count);
+        foreach (long id in order) loaded.Add(byId[id]);
+        return (loaded, useCounts, useSessions, maxSeen, corrupt);
     }
 
     /// <summary>Appends one blob, assigning its id, and indexes it. Durable on return.</summary>

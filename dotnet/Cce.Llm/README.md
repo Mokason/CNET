@@ -748,6 +748,45 @@ extracted from the real store (1 genuine correction + 8 cross-session
 re-queries of the recurring quest-JSON topic), 9/9 noted into the active
 personal-ai lane's inbox through cnet.so.
 
+## The orchestrator: self-governance from state, not notifications
+
+`ghost-orchestrator` (dotnet/GhostOrchestrator) closes the loop around the
+whole stack. It is a reconcile loop, not an event handler: every tick it
+re-derives the world — store growth via lock-free `BlobStore.Snapshot`
+(works while a live session holds the writer lock), inbox age, ledger gap
+statuses, which lane daemons systemd reports alive — plans whatever actions
+close the observed/desired gap, and executes them. A missed event costs
+nothing; a restart costs nothing; the next tick reaches the same conclusions
+from the same facts. That is what "reinitiate tasks from the info at hand"
+means mechanically.
+
+Self-governance under governors (`Orchestration/GhostOrchestration.cs` — the
+policy layer is a pure function of observations × state × config, fully
+unit-tested):
+- every decision journaled with its evidence (`orchestrator.journal.jsonl`);
+- per-action cooldowns; exponential backoff on consecutive failures (no
+  flapping); a per-tick action budget; `--dry-run` plans without touching
+  anything;
+- resource-costing actions are permission-gated: the orchestrator will
+  *recommend* starting the GPU teacher lane but only starts it under
+  `--allow-teacher-start`;
+- durable state is only what cannot be re-derived (the consolidation
+  watermark, last-run times, failure counts) — atomic tmp+rename saves,
+  corrupt state degrades to a conservative restart, never a crash.
+
+Policies today: consolidate when ≥N new blobs pass the watermark; start (or
+recommend) the teacher lane when ghost gaps sit `waiting_oracle`; warn when
+the inbox has no active drainer or a drainer stopped draining; warn on store
+corruption. Deployed as `config/cnet-ghost-orchestrator.service` (5-minute
+ticks, consolidation + advisories only by default).
+
+Overnight proof that the pipeline the orchestrator governs actually closes:
+the 9 ghost skills consolidated on 2026-07-22 were picked up by the
+personal-ai lane, taught against the gemma4 LM teacher, certified, and sealed
+into the base at 00:12 — all nine `acq_skill_gh_*` units present, including
+`acq_skill_gh_03dc611b_wrong`: a certified specialist distilled from the
+user's live correction in the TUI.
+
 ## Tests
 
 `dotnet test dotnet/Cce.Llm.Tests` — 19 tests. The generation tests need a local
