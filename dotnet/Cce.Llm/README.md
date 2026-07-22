@@ -177,23 +177,27 @@ End-to-end, like-for-like (Balanced, 64 generated tokens both builds, 8 threads)
 That closes the prefill gap to the native harness from ~9.2x to ~3.7x. Decode was
 never expected to move and did not.
 
-**This changes numerics for prompts of 16+ tokens.** The quantized path rounds
-activations through Q8_0 before the dot; the f32 path does not, so it is strictly
-*closer* to exact `dequant(W) · x` — `MatMulDequantF32Tests` asserts that
-direction explicitly, not merely that the two paths are near each other. Observed
-consequences:
+**This changes numerics for prompts of 16+ tokens**, though not — as far as
+measured — the tokens that come out. The quantized path rounds activations
+through Q8_0 before the dot; the f32 path does not, so it is strictly *closer* to
+exact `dequant(W) · x`. `MatMulDequantF32Tests` asserts that direction against a
+double-precision reference, rather than merely that the two paths are near each
+other.
 
-- Prompts under 16 tokens are bit-identical (verified: same output sha256 as the
-  previous build).
-- Prompts of 16+ tokens can generate different text. On the 237-token benchmark
-  prompt, greedy decoding went from stopping at 33 tokens to running the full 64.
-- All 83 forward-pass integration tests (Llama, Qwen, Q4_K, Bielik) still pass
-  against their reference outputs, which is the strongest evidence available that
-  the shift is an accuracy improvement rather than a regression.
+Observed effect on generation, via the golden set in
+`CNET.Llm.Tests.Integration/Goldens/prefill_greedy.tsv` (six prompts from 5 to 47
+tokens, 24 greedy tokens each):
 
-If you have goldens pinned to the old activation-quantized behaviour, they will
-need regenerating for 16+ token prompts. Raise `DequantF32TokenThreshold` to
-`int.MaxValue` to restore the previous numerics exactly.
+- **Greedy output is identical on every case**, on both sides of the threshold,
+  with the dequant path enabled or disabled. The logit shift is well below what
+  it takes to change an argmax selection here. It can still diverge where the
+  top-two logits are near-tied, so this is "no observed change", not a guarantee.
+- All 85 integration tests, including the Llama/Qwen/Q4_K/Bielik forward passes,
+  pass against their references.
+
+`DequantF32TokenThreshold` set to `int.MaxValue` restores the previous numerics
+exactly, if a certification path needs bit-identical arithmetic rather than
+merely identical output.
 
 ### Rejected: token-blocked GEMM (tried, reverted, do not repeat)
 

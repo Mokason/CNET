@@ -213,6 +213,47 @@ public class ManagedGenerationTests
         Assert.Equal(session.Generate(options).Text, session.Generate(options).Text);
     }
 
+    /// <summary>
+    /// Deterministic must be greedy argmax, not seeded sampling. The difference
+    /// is invisible to a same-seed reproducibility check, so it is pinned by
+    /// varying the seed: greedy consults no RNG, so the seed cannot matter.
+    /// </summary>
+    [ModelFact]
+    public void Deterministic_IsGreedy_SoSeedIsIrrelevant()
+    {
+        using var session = CnetLlmInferenceSession.Open(Config());
+
+        CnetHarnessGenerationResult Run(uint seed) => session.Generate(new CnetHarnessGenerateOptions
+        {
+            User = "The capital of France is",
+            Role = "test",
+            MaxTokens = 16,
+            Seed = seed,
+            Sampling = CnetHarnessSamplingMode.Deterministic,
+        });
+
+        Assert.Equal(Run(1).Text, Run(999_983).Text);
+    }
+
+    /// <summary>A stochastic profile must actually consult the seed.</summary>
+    [ModelFact]
+    public void Exploratory_RespectsSeed()
+    {
+        using var session = CnetLlmInferenceSession.Open(Config());
+
+        CnetHarnessGenerationResult Run(uint seed) => session.Generate(new CnetHarnessGenerateOptions
+        {
+            User = "Write one surprising sentence about the sea:",
+            Role = "test",
+            MaxTokens = 24,
+            Seed = seed,
+            Sampling = CnetHarnessSamplingMode.Exploratory,
+        });
+
+        Assert.Equal(Run(7).Text, Run(7).Text);          // same seed reproduces
+        Assert.NotEqual(Run(7).Text, Run(1_234_567).Text); // different seed diverges
+    }
+
     [ModelFact]
     public void ProbeRoute_AgreesWithWhatGenerateApplies()
     {

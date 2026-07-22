@@ -167,9 +167,16 @@ public sealed class CnetLlmInferenceSession : ICnetInferenceSession
         CnetLlmSamplingProfile profile = CnetLlmSamplingProfile.Resolve(options.Sampling);
         string prompt = BuildPrompt(options);
 
+        // Greedy has to go through InferenceOptions' auto-build path:
+        // SamplerPipeline only sets its greedy flag when SamplerSteps is null.
+        // An empty step array is NOT greedy — it samples categorically from the
+        // raw distribution, which is the opposite of what Deterministic means.
+        bool greedy = profile.Temperature <= 0.0f;
+
         var inferenceOptions = new InferenceOptions
         {
-            SamplerSteps = BuildSamplerSteps(profile),
+            SamplerSteps = greedy ? null : BuildSamplerSteps(profile),
+            Temperature = profile.Temperature,
             StopConditions =
             [
                 new EosStopCondition(_tokenizer.EosTokenId),
@@ -269,14 +276,13 @@ public sealed class CnetLlmInferenceSession : ICnetInferenceSession
             new ChatTemplateOptions { AddGenerationPrompt = true });
     }
 
+    /// <summary>
+    /// Sampler steps for the stochastic profiles. Never called for the
+    /// deterministic profile — that one passes <c>SamplerSteps = null</c> so the
+    /// pipeline takes its greedy path; see the note in <see cref="GenerateCore"/>.
+    /// </summary>
     private static ISamplerStep[] BuildSamplerSteps(CnetLlmSamplingProfile p)
     {
-        // Temperature 0 means greedy: emitting a TemperatureSampler(0) would
-        // divide by zero, so the deterministic profile uses an empty pipeline
-        // and lets argmax selection stand.
-        if (p.Temperature <= 0.0f)
-            return [];
-
         var steps = new List<ISamplerStep>(4) { new TemperatureSampler(p.Temperature) };
         if (p.TopK > 0) steps.Add(new TopKSampler((int)p.TopK));
         if (p.TopP is > 0.0f and < 1.0f) steps.Add(new TopPSampler(p.TopP));
