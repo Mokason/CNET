@@ -325,35 +325,61 @@ Turn it on only where weights are genuinely cache-resident. Note also that
 this path at all — SmolLM-135M's projections are 612 byte rows, so none of this
 applies to them.
 
-### The pattern across all four attempts
+### Vectorized fp16 convert: kept — 1.64x kernel, 0% end to end
 
-Token blocking (0.2%), VNNI (1%), multiple accumulators (2-3%), and the scale
-plane (1.5-1.7x in a microbenchmark, -5.3% in reality). Every one targeted
-compute. The measured conclusion is that **decode is memory-bound, so compute
-optimizations on the Q8_0 dot cannot pay off, and anything that adds bytes
-actively costs throughput**.
+`(float)Half` is not a cheap hardware conversion on .NET 10. Measured at the
+kernel's own stride (one fp16 per 34-byte block), 128 conversions cost 86.5 ns
+against 27.8 ns for a hand-written sequence — roughly 3x. `MatMul.HalfToFloat`
+replaces it at all 34 Q8_0 scale-read sites, adding **zero bytes**.
 
-The one lead consistent with that: the fp16 conversion is ~72% of the kernel and
-a vectorized fp16->f32 convert would remove much of it while adding *zero* bytes.
-Since the plane's +11.8% traffic cost roughly half its compute saving, a
-zero-byte version should land around +5%. Modest, and the only shape left that
-the evidence supports.
+Correctness is not assumed: it handles Inf/NaN and subnormals explicitly, and
+`MatMulHalfConvertTests` checks all **65,536** fp16 bit patterns bitwise against
+`(float)Half`. Subnormals are the range a naive shift-and-rebias gets wrong, and
+a broken fp16 subnormal decode has already cost this project a debugging cycle
+once.
 
-Note this is not a port regression: `CNET.Llm` benchmarked identical to upstream
-dotLLM (20 of 22 CPU kernels within +/-1.1%, end-to-end decode within 0.34%). The
-gap is dotLLM vs llama.cpp and predates the vendoring.
+| | before | after |
+| --- | ---: | ---: |
+| `VecDotQ8_0Avx2`, K=4096 | 263.4 ns | **160.8 ns (1.64x)** |
+| Llama-3.2-1B decode, end to end | 30.72 tok/s | 30.58 tok/s |
+| SmolLM-135M decode, end to end | ~270 tok/s | ~271 tok/s |
 
-Practical read: with threading configured correctly the managed backend is a
-reasonable decode-side substitute, but it still pays ~9x on prefill. Long-prompt,
-short-answer workloads (classification, routing, extraction) suffer most;
-short-prompt, long-generation workloads are close to parity.
+Kept because it is free: bit-identical, no added bytes, no regression, and a
+strictly faster kernel that pays off on any workload not pinned at the memory
+roof. It just does not help the one measured here.
 
-```bash
-make cnet_harness_plugin LLAMA_CPP_BUILD=/home/marble/llama.cpp/build-cpu
-CNET_HARNESS_LIBRARY=$PWD/bin/libcnet_harness.so \
-  dotnet run -c Release --project dotnet/Cce.Llm.Benchmarks -- <model.gguf> 5 64 8 12 1
-#                                     model, reps, maxTokens, threads, promptRepeat, uniquePrompts
-```
+### The wall, after five attempts
+
+Token blocking 0.2%, VNNI 1%, multiple accumulators 2-3%, weight scale plane
+-5.3%, vectorized fp16 convert 0%. Four of the five made the kernel genuinely
+faster in isolation — the last by 1.64x — and none moved end-to-end decode.
+
+The reason is one number. Decode throughput on this machine:
+
+| model | weights | decode | effective bandwidth |
+| --- | ---: | ---: | ---: |
+| SmolLM-135M Q8_0 | 0.145 GB | 265 tok/s | **38.4 GB/s** |
+| Llama-3.2-1B Q8_0 | 1.32 GB | 30.6 tok/s | **40.4 GB/s** |
+
+Two models an order of magnitude apart in size land within 5% of the same
+bandwidth. Decode streams every weight byte exactly once per token and is pinned
+at the DRAM roof; the arithmetic between those loads is not what anyone is
+waiting for. That is why compute optimizations keep winning microbenchmarks and
+vanishing in practice, and why the scale plane — which bought compute by *adding*
+bytes — actively regressed.
+
+Anything that helps from here has to move fewer bytes, not do less work per byte:
+
+1. **Lower-precision weights.** Q4_K instead of Q8_0 roughly halves the stream.
+   The big one, and a model-quality tradeoff rather than a kernel change.
+2. **Keep weights off DRAM.** GPU residency, or a model small enough to sit in
+   L3 — the 71 MB microbenchmark still showed kernel wins because it partly fit.
+3. **Move less per token.** MoE sparsity, or speculative decoding, which
+   amortises one weight pass over several accepted tokens. `CNET.Llm.Engine`
+   already has the speculative path.
+
+Further Q8_0 dot-product micro-optimization is not on that list, and this file
+now carries five measurements saying so.
 
 ## Tests
 
