@@ -20,11 +20,20 @@ namespace CNET.Cce.Llm.Ollama;
 /// Fidelity notes, stated plainly like the managed backend's: no AICIMO
 /// (<c>SelectedAdapter</c>/<c>RouteUncertainty</c> are 0, profile resolution is
 /// the same static table via <see cref="CnetLlmSamplingProfile"/>); and Ollama
-/// exposes no tokenizer API, so <see cref="CountTokens"/> is a ~4-chars/token
-/// estimate — callers should keep generous margins, and the server's own
-/// context handling is the backstop. Thinking models (e.g. minimax-m3) spend
+/// exposes no tokenizer API, so <see cref="CountTokens"/> is a character-class
+/// estimate (ASCII ~3 chars/token, non-ASCII 1 token/char) that errs toward
+/// over-counting; set <see cref="ContextTokens"/> so the server's window
+/// matches the budgeter's. Thinking models (e.g. minimax-m3) spend
 /// part of <c>num_predict</c> on reasoning that is returned separately; only
 /// <c>message.content</c> is surfaced as the result text.
+/// </para>
+/// <para>
+/// Concurrency contract, identical to the other backends (the harness ABI
+/// requires per-session serialization): <see cref="Generate"/> holds the
+/// session lock for the WHOLE streamed exchange, so a concurrent Generate or
+/// Dispose blocks until the in-flight call completes —
+/// <see cref="RequestTimeout"/> bounds that wait. Use separate sessions for
+/// concurrent conversations.
 /// </para>
 /// </remarks>
 public sealed class OllamaSession : ICnetInferenceSession
@@ -53,6 +62,22 @@ public sealed class OllamaSession : ICnetInferenceSession
     /// </summary>
     public bool? Think { get; set; }
 
+    /// <summary>
+    /// Hard bound on one Generate call, INCLUDING reading the streamed body.
+    /// HttpClient.Timeout does not cover body reads under
+    /// ResponseHeadersRead, so without this a stalled stream would hang
+    /// Generate forever while holding the session lock.
+    /// </summary>
+    public TimeSpan RequestTimeout { get; set; } = TimeSpan.FromMinutes(10);
+
+    /// <summary>
+    /// When set, forwarded as <c>options.num_ctx</c>. Without it the server
+    /// applies the model's default context and SILENTLY truncates longer
+    /// prompts — a memory-packed prompt would lose its oldest blobs with no
+    /// error. Hosts that budget against a window must set this to that window.
+    /// </summary>
+    public int? ContextTokens { get; set; }
+
     private OllamaSession(HttpClient http, bool ownsHttp, string model)
     {
         _http = http;
@@ -75,7 +100,31 @@ public sealed class OllamaSession : ICnetInferenceSession
 
         bool owns = httpClient is null;
         HttpClient http = httpClient ?? new HttpClient { Timeout = TimeSpan.FromMinutes(10) };
-        http.BaseAddress ??= new Uri(baseUrl.TrimEnd('/') + "/");
+        // Precedence: a caller-supplied client that already carries a
+        // BaseAddress keeps it (test injection, custom routing); otherwise
+        // baseUrl is applied. A malformed baseUrl is the caller's error, not a
+        // backend failure.
+        if (http.BaseAddress is null)
+        {
+            try
+            {
+                http.BaseAddress = new Uri(baseUrl.TrimEnd('/') + "/");
+            }
+            catch (UriFormatException ex)
+            {
+                if (owns) http.Dispose();
+                throw new CnetHarnessException(CnetHarnessStatus.InvalidArgument,
+                    $"invalid ollama baseUrl '{baseUrl}': {ex.Message}");
+            }
+            catch (InvalidOperationException ex)
+            {
+                // An injected client that has already sent a request cannot
+                // accept a BaseAddress.
+                if (owns) http.Dispose();
+                throw new CnetHarnessException(CnetHarnessStatus.InvalidArgument,
+                    $"supplied HttpClient cannot take a BaseAddress: {ex.Message}");
+            }
+        }
 
         try
         {
@@ -85,7 +134,12 @@ public sealed class OllamaSession : ICnetInferenceSession
                 throw new CnetHarnessException(CnetHarnessStatus.BackendFailure,
                     $"ollama server at {http.BaseAddress} answered {(int)probe.StatusCode} to api/version");
         }
-        catch (HttpRequestException ex)
+        catch (CnetHarnessException)
+        {
+            if (owns) http.Dispose();
+            throw;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or IOException)
         {
             if (owns) http.Dispose();
             throw new CnetHarnessException(CnetHarnessStatus.BackendFailure,
@@ -134,10 +188,14 @@ public sealed class OllamaSession : ICnetInferenceSession
                 ["top_p"] = profile.TopP,
                 ["top_k"] = (int)profile.TopK,
                 ["min_p"] = profile.MinP,
-                ["seed"] = (int)(options.Seed & 0x7FFFFFFFu),
+                ["seed"] = (long)options.Seed,   // full uint range; masking to
+                                                 // int31 collided seeds differing
+                                                 // only in the top bit
                 ["num_predict"] = (int)Math.Min(options.MaxTokens, int.MaxValue),
             },
         };
+        if (ContextTokens is int nctx)
+            ((Dictionary<string, object>)body["options"]!)["num_ctx"] = nctx;
         if (Think is not null) body["think"] = Think;
 
         using var request = new HttpRequestMessage(HttpMethod.Post, "api/chat")
@@ -146,10 +204,11 @@ public sealed class OllamaSession : ICnetInferenceSession
                 Encoding.UTF8, "application/json"),
         };
 
+        using var timeout = new CancellationTokenSource(RequestTimeout);
         try
         {
             using HttpResponseMessage response = _http
-                .Send(request, HttpCompletionOption.ResponseHeadersRead);
+                .Send(request, HttpCompletionOption.ResponseHeadersRead, timeout.Token);
 
             if (!response.IsSuccessStatusCode)
             {
@@ -161,22 +220,38 @@ public sealed class OllamaSession : ICnetInferenceSession
                     $"ollama api/chat for '{_model}' failed with {(int)response.StatusCode}: {detail}");
             }
 
-            return ReadStream(response, profile);
+            return ReadStream(response, profile, timeout.Token);
         }
         catch (HttpRequestException ex)
         {
             throw new CnetHarnessException(CnetHarnessStatus.BackendFailure,
                 $"ollama request failed: {ex.Message}");
         }
-        catch (TaskCanceledException ex)
+        catch (NotSupportedException ex)
+        {
+            // Injected handlers that implement only SendAsync cannot serve the
+            // synchronous Send this session uses.
+            throw new CnetHarnessException(CnetHarnessStatus.BackendFailure,
+                $"supplied HttpClient handler does not support synchronous Send: {ex.Message}");
+        }
+        catch (IOException ex)
+        {
+            // A dropped connection mid-stream surfaces as IOException from the
+            // response stream, not HttpRequestException from Send.
+            throw new CnetHarnessException(CnetHarnessStatus.BackendFailure,
+                $"ollama stream broke mid-response: {ex.Message}");
+        }
+        catch (OperationCanceledException)
         {
             throw new CnetHarnessException(CnetHarnessStatus.BackendFailure,
-                $"ollama request timed out: {ex.Message}");
+                $"ollama request exceeded RequestTimeout ({RequestTimeout.TotalSeconds:F0}s) — " +
+                "stalled stream or overloaded server");
         }
     }
 
     private CnetHarnessGenerationResult ReadStream(HttpResponseMessage response,
-                                                   CnetLlmSamplingProfile profile)
+                                                   CnetLlmSamplingProfile profile,
+                                                   CancellationToken cancel)
     {
         var text = new StringBuilder();
         long promptEvalNs = 0, evalNs = 0;
@@ -187,7 +262,9 @@ public sealed class OllamaSession : ICnetInferenceSession
         using var reader = new StreamReader(stream, Encoding.UTF8);
 
         string? line;
-        while ((line = reader.ReadLine()) is not null)
+        // ReadLineAsync honors the token; the sync ReadLine cannot be
+        // interrupted and is exactly how the stall-hang happened.
+        while ((line = reader.ReadLineAsync(cancel).AsTask().GetAwaiter().GetResult()) is not null)
         {
             if (string.IsNullOrWhiteSpace(line)) continue;
 
@@ -291,7 +368,17 @@ public sealed class OllamaSession : ICnetInferenceSession
     public int CountTokens(string text)
     {
         ArgumentNullException.ThrowIfNull(text);
-        return text.Length / 3 + 1;
+        // Length/3 alone UNDER-estimates token-dense scripts (CJK is roughly a
+        // token per character), which would let the budgeter overpack. Count
+        // non-ASCII characters as one token each; that over-estimates a little
+        // for accented European text, which is the safe direction.
+        int ascii = 0, other = 0;
+        foreach (char c in text)
+        {
+            if (c < 128) ascii++;
+            else other++;
+        }
+        return ascii / 3 + other + 1;
     }
 
     public void Dispose()

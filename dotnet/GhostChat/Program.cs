@@ -18,9 +18,22 @@ using CNET.Cce.Llm;
 using CNET.Cce.Llm.Memory;
 using CNET.Cce.Llm.Ollama;
 
-var args_ = ParseArgs(args);
-if (args_ is null) return 2;
+var args_ = ParseArgs(args, out bool helpRequested);
+if (args_ is null) return helpRequested ? 0 : 2;
 var a = args_.Value;
+
+if (a.Window < 256 || a.Window > 1u << 20)
+{
+    Console.Error.WriteLine($"--window must be in [256, {1u << 20}], got {a.Window}");
+    return 2;
+}
+if (a.MaxTokens == 0 || a.MaxTokens > 65536)
+{
+    // 65536 is the harness ABI's shared generate-options ceiling; exceeding it
+    // surfaces as a raw ArgumentException from the native backend mid-REPL.
+    Console.Error.WriteLine($"--max-tokens must be in [1, 65536], got {a.MaxTokens}");
+    return 2;
+}
 
 string storePath = a.Store ?? Path.Combine(
     Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
@@ -32,6 +45,8 @@ Func<string, int> countTokens;
 int window;
 OllamaSession? ollama = null;
 
+try
+{
 switch (a.Backend)
 {
     case "managed":
@@ -53,6 +68,9 @@ switch (a.Backend)
     case "ollama":
     {
         ollama = OllamaSession.Open(a.Model, a.OllamaUrl);
+        // Keep the server's context equal to the budgeter's window, or the
+        // server silently truncates memory-packed prompts to its default.
+        ollama.ContextTokens = (int)a.Window;
         session = ollama;
         countTokens = ollama.CountTokens;
         window = (int)a.Window;
@@ -61,6 +79,17 @@ switch (a.Backend)
     default:
         Console.Error.WriteLine($"unknown backend '{a.Backend}' (managed|native|ollama)");
         return 2;
+}
+}
+catch (CnetHarnessException ex)
+{
+    Console.Error.WriteLine($"cannot open {a.Backend} session: [{ex.Status}] {ex.Message}");
+    return 1;
+}
+catch (Exception ex) when (ex is IOException or ArgumentException)
+{
+    Console.Error.WriteLine($"cannot start: {ex.Message}");
+    return 1;
 }
 
 using var _ = session;
@@ -111,6 +140,13 @@ while (true)
         continue;
     }
 
+    if (input.StartsWith('/'))
+    {
+        // Unknown or malformed command: never generate from it, never store it.
+        Console.WriteLine("  commands: /exit /stats /show <id> /recall <query>");
+        continue;
+    }
+
     try
     {
         var sw = System.Diagnostics.Stopwatch.StartNew();
@@ -139,6 +175,12 @@ while (true)
     {
         Console.WriteLine($"  budget error: {ex.Message}");
     }
+    catch (ArgumentException ex)
+    {
+        // The native backend validates generate options with raw
+        // ArgumentExceptions rather than CnetHarnessException.
+        Console.WriteLine($"  invalid request: {ex.Message}");
+    }
 }
 
 return 0;
@@ -154,26 +196,46 @@ static CnetHarnessConfig HarnessConfig(in Args a) => new()
     Threads = (uint)Math.Max(1, Environment.ProcessorCount / 2),
 };
 
-static Args? ParseArgs(string[] argv)
+static Args? ParseArgs(string[] argv, out bool helpRequested)
 {
+    helpRequested = false;
     var a = new Args();
     for (int i = 0; i < argv.Length; i++)
     {
         string? Next() => i + 1 < argv.Length ? argv[++i] : null;
+        bool ParseU(string flag, out uint value)
+        {
+            string? raw = Next();
+            if (uint.TryParse(raw, out value)) return true;
+            Console.Error.WriteLine($"{flag} needs a positive integer, got '{raw}'");
+            return false;
+        }
         switch (argv[i])
         {
             case "--backend": a.Backend = Next() ?? a.Backend; break;
             case "--model": a.Model = Next() ?? a.Model; break;
             case "--store": a.Store = Next(); break;
             case "--system": a.System = Next(); break;
-            case "--window": a.Window = uint.TryParse(Next(), out uint w) ? w : a.Window; break;
-            case "--max-tokens": a.MaxTokens = uint.TryParse(Next(), out uint m) ? m : a.MaxTokens; break;
+            case "--window":
+                if (!ParseU("--window", out uint w)) return null;
+                a.Window = w; break;
+            case "--max-tokens":
+                if (!ParseU("--max-tokens", out uint m)) return null;
+                a.MaxTokens = m; break;
             case "--sampling":
-                a.Sampling = Enum.TryParse(Next(), ignoreCase: true,
-                    out CnetHarnessSamplingMode s) ? s : a.Sampling;
-                break;
+            {
+                string? raw = Next();
+                if (!Enum.TryParse(raw, ignoreCase: true, out CnetHarnessSamplingMode s))
+                {
+                    Console.Error.WriteLine($"--sampling: unknown mode '{raw}'");
+                    return null;
+                }
+                a.Sampling = s; break;
+            }
             case "--ollama-url": a.OllamaUrl = Next() ?? a.OllamaUrl; break;
             case "--help":
+                helpRequested = true;
+                goto default;
             default:
                 Console.Error.WriteLine(
                     "usage: ghost-chat --backend managed|native|ollama --model <gguf-path|ollama-name>\n" +

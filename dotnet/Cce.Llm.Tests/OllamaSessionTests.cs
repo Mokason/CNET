@@ -154,6 +154,34 @@ public sealed class OllamaSessionTests
         session.Generate(Options());
         using (JsonDocument doc = JsonDocument.Parse(handler.LastChatBody!))
             Assert.False(doc.RootElement.GetProperty("think").GetBoolean());
+
+        session.Think = true;
+        session.Generate(Options());
+        using (JsonDocument doc = JsonDocument.Parse(handler.LastChatBody!))
+            Assert.True(doc.RootElement.GetProperty("think").GetBoolean());
+    }
+
+    [Fact]
+    public void Seed_PassesTheFullUintRange_NoBit31Collision()
+    {
+        var handler = HandlerWith(CannedStream());
+        using var session = OpenFake(handler);
+
+        session.Generate(new CnetHarnessGenerateOptions
+        {
+            User = "hi", Role = "chat", MaxTokens = 8, Seed = 0x80000001u,
+        });
+        using JsonDocument doc = JsonDocument.Parse(handler.LastChatBody!);
+        Assert.Equal(0x80000001L, doc.RootElement.GetProperty("options")
+            .GetProperty("seed").GetInt64());
+    }
+
+    [Fact]
+    public void MalformedBaseUrl_IsInvalidArgument()
+    {
+        var ex = Assert.Throws<CnetHarnessException>(
+            () => OllamaSession.Open("m", baseUrl: "not a url"));
+        Assert.Equal(CnetHarnessStatus.InvalidArgument, ex.Status);
     }
 
     [Fact]
@@ -210,6 +238,131 @@ public sealed class OllamaSessionTests
             () => OllamaSession.Open("m", httpClient: http));
         Assert.Equal(CnetHarnessStatus.BackendFailure, ex.Status);
         Assert.Contains("not reachable", ex.Message);
+    }
+
+    [Fact]
+    public void ContextTokens_ForwardsAsNumCtx_OnlyWhenSet()
+    {
+        var handler = HandlerWith(CannedStream());
+        using var session = OpenFake(handler);
+
+        session.Generate(Options());
+        using (JsonDocument doc = JsonDocument.Parse(handler.LastChatBody!))
+            Assert.False(doc.RootElement.GetProperty("options").TryGetProperty("num_ctx", out _));
+
+        session.ContextTokens = 16384;
+        session.Generate(Options());
+        using (JsonDocument doc = JsonDocument.Parse(handler.LastChatBody!))
+            Assert.Equal(16384, doc.RootElement.GetProperty("options")
+                .GetProperty("num_ctx").GetInt32());
+    }
+
+    [Fact]
+    public void MidStreamIOFailure_MapsTo_BackendFailure_NotACrash()
+    {
+        var handler = new FakeHandler
+        {
+            Respond = (req, _) => req.RequestUri!.AbsolutePath.EndsWith("api/version", StringComparison.Ordinal)
+                ? Ok(Version())
+                : new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StreamContent(new BrokenStream()),
+                },
+        };
+        using var session = OpenFake(handler);
+
+        var ex = Assert.Throws<CnetHarnessException>(() => session.Generate(Options()));
+        Assert.Equal(CnetHarnessStatus.BackendFailure, ex.Status);
+        Assert.Contains("mid-response", ex.Message);
+    }
+
+    private sealed class BrokenStream : Stream
+    {
+        private bool _first = true;
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+        public override long Position { get => 0; set => throw new NotSupportedException(); }
+        public override void Flush() { }
+        public override int Read(byte[] buffer, int offset, int count)
+        {
+            if (_first)
+            {
+                _first = false;
+                byte[] chunk = Encoding.UTF8.GetBytes(
+                    "{\"message\":{\"content\":\"par\"},\"done\":false}\n");
+                Array.Copy(chunk, 0, buffer, offset, chunk.Length);
+                return chunk.Length;
+            }
+            throw new IOException("connection reset mid-stream");
+        }
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+    }
+
+    [Fact]
+    public void StalledStream_TimesOutViaRequestTimeout_InsteadOfHangingForever()
+    {
+        var handler = new FakeHandler
+        {
+            Respond = (req, _) => req.RequestUri!.AbsolutePath.EndsWith("api/version", StringComparison.Ordinal)
+                ? Ok(Version())
+                : new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StreamContent(new HangingStream()),
+                },
+        };
+        using var session = OpenFake(handler);
+        session.RequestTimeout = TimeSpan.FromMilliseconds(300);
+
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        var ex = Assert.Throws<CnetHarnessException>(() => session.Generate(Options()));
+        sw.Stop();
+
+        Assert.Equal(CnetHarnessStatus.BackendFailure, ex.Status);
+        Assert.Contains("RequestTimeout", ex.Message);
+        Assert.True(sw.Elapsed < TimeSpan.FromSeconds(10),
+            $"timeout took {sw.Elapsed.TotalSeconds:F1}s — the stall guard is not working");
+    }
+
+    /// <summary>Delivers nothing, forever — until cancellation interrupts the read.</summary>
+    private sealed class HangingStream : Stream
+    {
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+        public override long Position { get => 0; set => throw new NotSupportedException(); }
+        public override void Flush() { }
+        public override int Read(byte[] buffer, int offset, int count)
+            => ReadAsync(buffer.AsMemory(offset, count), CancellationToken.None)
+                .AsTask().GetAwaiter().GetResult();
+        public override async ValueTask<int> ReadAsync(Memory<byte> buffer,
+            CancellationToken cancellationToken = default)
+        {
+            await Task.Delay(Timeout.Infinite, cancellationToken);
+            return 0;
+        }
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+    }
+
+    [Fact]
+    public void CountTokens_DoesNotUnderestimate_TokenDenseText()
+    {
+        using var session = OpenFake(HandlerWith(CannedStream()));
+
+        // CJK is roughly one token per character; a pure length/3 heuristic
+        // would claim ~10 tokens for 30 chars and let the budgeter overpack.
+        string cjk = new string('\u4e2d', 30);
+        Assert.True(session.CountTokens(cjk) >= 30,
+            $"CJK estimate {session.CountTokens(cjk)} under-counts 30 chars");
+
+        Assert.True(session.CountTokens("plain ascii words here") >= 5);
+        Assert.Equal(1, session.CountTokens(""));
     }
 
     [Fact]
