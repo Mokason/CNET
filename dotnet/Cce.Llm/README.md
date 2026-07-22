@@ -149,10 +149,50 @@ has to be reused across several tokens in registers, which neither kernel does.
 
 A consequence worth flagging: **beyond N=4, `GemmF32` beats `GemmQ8_0` outright**
 — 1.64x at N=512 — despite F32 weights being 4x larger. At N=1 Q8_0 wins 2.1x, as
-quantization should. So for prefill specifically, dequantizing a weight tile once
-and running the F32 GEMM would be faster than the current quantized path. That is
-the single highest-value fix, and it is upstream in `CNET.Llm.Cpu`, not in this
-bridge.
+quantization should.
+
+### Attempted fix: token-blocked GEMM (tried, reverted, do not repeat)
+
+The obvious reading of "no batching win" is that the weight matrix is being
+re-streamed per token, so the fix is to block the token axis and reuse each
+loaded weight block across several tokens. That was implemented — a 4-token
+kernel for AVX2 and AVX-512, hoisting the weight load and its `abs` form out of
+the token loop, correct and fully tested — and it **did not work**:
+
+| | before | after |
+| --- | ---: | ---: |
+| `GemmQ8_0` micro, N=512 | 343,492 us | 342,799 us (**0.2%**, vs 0.3% StdDev) |
+| end-to-end prefill | 536 tok/s | 488-499 tok/s (no gain) |
+
+The reason is that the kernel is **instruction-throughput-bound, not load-bound**.
+Per 256-bit vector the Q8_0 inner loop spends ~6 ops (sign, maddubs, madd,
+cvtdq2ps, scale broadcast, fma) on 32 MACs = 0.1875 ops/MAC, where F32 spends
+1 op (fma) on 8 MACs = 0.125. That predicts a 1.50x Q8_0/F32 gap; the measured
+gap is 1.63x. The kernel is already running near its op-throughput limit, so
+removing one load and one sign per four tokens — about 8% of the op budget in
+the best case — buys nothing measurable. Weight reloading was never the
+bottleneck, which is also why M-tiling only ever bought ~5%.
+
+So the ranked options for anyone picking this up are:
+
+1. **Dequantize a weight tile once per tile and run the F32 GEMM.** Already
+   measured at 1.64x for N>=16 by the table above; needs a scratch tile and a
+   crossover check around N=4, below which Q8_0 still wins 2.1x.
+2. **AVX-512 VNNI (`vpdpbusd`)** fuses maddubs+madd, removing one of ~6 ops
+   (~15%). Zen 4/5 and Ice Lake+ have it; needs a fallback path.
+3. **Hoist the per-block scale broadcast** out of the inner loop — an
+   algorithmic restructure of how block scales are applied.
+
+Token blocking is not on that list. It is the intuitive fix and it is the wrong
+one for this kernel.
+
+A latent detail surfaced while testing the reverted kernel, recorded because it
+is easy to trip over: the legacy per-token kernels take `abs` of the *activation*
+side and compute `sign(w, x)`, which for `w = -128` and `x < 0` needs +128 in a
+signed byte and wraps to -128, flipping that term's sign. `QuantizeF32ToQ8_0`
+scales by `maxAbs / 127`, so -128 is not reachable from this quantizer and the
+bug is currently unobservable — but a hand-built or third-party Q8_0 block
+containing -128 would hit it.
 
 Note this is not a port regression: `CNET.Llm` benchmarked identical to upstream
 dotLLM (20 of 22 CPU kernels within +/-1.1%, end-to-end decode within 0.34%). The
