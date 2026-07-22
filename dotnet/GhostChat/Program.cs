@@ -159,6 +159,11 @@ while (true)
             Console.Write(r.Result.Text.Trim());
         Console.WriteLine();
 
+        if (string.IsNullOrWhiteSpace(r.Result.Text) && r.Result.GeneratedTokens > 0)
+            Console.WriteLine(
+                $"  (no visible answer — the model spent all {r.Result.GeneratedTokens} tokens on " +
+                "hidden reasoning; raise --max-tokens or use a non-thinking model)");
+
         string receipts = r.UsedBlobIds.Count > 0
             ? string.Join(" ", r.UsedBlobIds.Select(i => $"#{i}"))
             : "none";

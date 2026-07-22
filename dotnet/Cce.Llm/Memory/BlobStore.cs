@@ -228,6 +228,26 @@ public sealed class BlobStore : IDisposable
         }
     }
 
+    /// <summary>
+    /// The earliest blobs of one session, in order. This is how temporal
+    /// questions ("what was the first thing I said?") get answered: keyword
+    /// recall cannot see ordering, but the store can.
+    /// </summary>
+    public List<MemoryBlob> SessionStart(string sessionId, int maxResults)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(sessionId);
+        ArgumentOutOfRangeException.ThrowIfLessThan(maxResults, 1);
+        lock (_gate)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            return _blobs.Values
+                .Where(b => b.SessionId == sessionId)
+                .OrderBy(b => b.Id)
+                .Take(maxResults)
+                .ToList();
+        }
+    }
+
     /// <summary>Fetches a blob by id, for provenance display.</summary>
     public MemoryBlob? Get(long id)
     {

@@ -34,6 +34,20 @@ public sealed class ConversationMemory
     private readonly Func<string, int> _countTokens;
     private readonly MemoryOptions _options;
     private readonly List<(string Role, string Text)> _recent = [];
+
+    /// <summary>
+    /// Question terms that signal an ORDERING query about the conversation.
+    /// Keyword recall cannot serve those — "what was the first thing I said"
+    /// shares no keyword with the blob "hey" — so their presence additionally
+    /// pulls the session's earliest blobs as verbatim anchors. A false positive
+    /// ("the first emperor of Rome") costs a little budget, is fully visible in
+    /// the receipts, and can never inject invented text.
+    /// </summary>
+    private static readonly HashSet<string> TemporalTerms = new(StringComparer.Ordinal)
+    {
+        "first", "start", "started", "starting", "begin", "began", "beginning",
+        "earliest", "initially", "originally", "opening",
+    };
     private readonly string _sessionId;
     private int _turn;
 
@@ -98,7 +112,9 @@ public sealed class ConversationMemory
 
         string recentBlock = RenderRecent();
         if (recentBlock.Length > 0)
-            recentBlock = "\n### Recent turns\n" + recentBlock;   // header counts too
+            recentBlock = $"\n### Recent turns (last {_options.RecentTurns} only — " +
+                "earlier turns are recallable from memory, do not guess beyond them)\n"
+                + recentBlock;   // header counts too
         int fixedTokens = _countTokens(baseSystem ?? string.Empty)
                         + _countTokens(recentBlock)
                         + _countTokens(question)
@@ -117,9 +133,22 @@ public sealed class ConversationMemory
         int remaining = promptBudgetTokens - fixedTokens - _countTokens(memoryHeader);
 
         // Over-fetch, then pack by score under the real token budget.
+        // Temporal anchors first: an ordering question gets the session's
+        // earliest blobs regardless of keyword overlap. They pack with priority
+        // because they ARE the answer to such a question.
+        var candidates = new List<MemoryBlob>();
+        foreach (string term in BlobAnalyzer.Tokenize(question))
+        {
+            if (!TemporalTerms.Contains(term)) continue;
+            candidates.AddRange(_store.SessionStart(_sessionId, _options.TemporalAnchorBlobs));
+            break;
+        }
+
         // Over-fetch beyond TopK: the recent-window exclusion below happens
         // after this cap, and recency-boosted recent blobs tend to rank first.
-        var candidates = _store.Recall(question, _options.TopK * 2 + _options.RecentTurns * 8);
+        foreach (MemoryBlob hit in _store.Recall(question, _options.TopK * 2 + _options.RecentTurns * 8))
+            if (!candidates.Exists(c => c.Id == hit.Id))
+                candidates.Add(hit);
         var selected = new List<(MemoryBlob Blob, string Rendered)>();
         foreach (MemoryBlob blob in candidates)
         {

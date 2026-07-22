@@ -464,4 +464,121 @@ public sealed class MemoryLayerTests : IDisposable
 
         Assert.Equal(128u, session.LastOptions!.MaxTokens);   // 256 - 128 reserve
     }
+
+    // ───────────────────── temporal anchors ─────────────────────
+
+    /// <summary>
+    /// The live failure this exists for: "what was the first thing i said"
+    /// shares NO keyword with the stored "hey", so keyword recall alone
+    /// returns nothing and the model guesses from its recent window.
+    /// Ordering questions must pull the session's earliest blobs.
+    /// </summary>
+    [Fact]
+    public void TemporalQuestion_RecallsSessionStart_DespiteZeroKeywordOverlap()
+    {
+        using var store = BlobStore.Open(StorePath());
+        var memory = NewMemory(store);
+
+        // Reproduce the user's transcript shape: several turns of small talk.
+        memory.Remember("user", "hey");
+        memory.Remember("assistant", "Hey! How can I help you today?");
+        memory.NextTurn();
+        memory.Remember("user", "what can you do?");
+        memory.Remember("assistant", "many things: writing, coding, analysis");
+        memory.NextTurn();
+        memory.Remember("user", "how many languages do you know");
+        memory.Remember("assistant", "dozens of languages");
+        memory.NextTurn();
+        memory.Remember("user", "can you look stuff up online?");
+        memory.Remember("assistant", "no, I cannot browse");
+        memory.NextTurn();
+
+        var ctx = memory.BuildContext(null, "what was the first thing i said in this chat?", 400);
+
+        Assert.Contains("hey", ctx.SystemText);
+        Assert.Contains(1L, ctx.UsedBlobIds);          // blob #1 IS "hey"
+        Assert.Contains("### Memory", ctx.SystemText);
+    }
+
+    [Fact]
+    public void TemporalAnchors_DoNotDuplicate_RecentTurns()
+    {
+        using var store = BlobStore.Open(StorePath());
+        var memory = new ConversationMemory(store, FakeCount,
+            new MemoryOptions { RecentTurns = 4, SafetyMarginTokens = 4 });
+
+        memory.Remember("user", "opening line about quasar drift");
+        memory.Remember("assistant", "noted");
+        memory.NextTurn();
+
+        // Only one turn exists and it is inside the recent window: the anchor
+        // path must not re-inject it as a memory blob.
+        var ctx = memory.BuildContext(null, "what did i say first?", 400);
+
+        Assert.Empty(ctx.UsedBlobIds);
+        Assert.Contains("quasar", ctx.SystemText);      // present via recent turns
+        Assert.DoesNotContain("### Memory", ctx.SystemText);
+    }
+
+    [Fact]
+    public void TemporalAnchors_AreSessionScoped()
+    {
+        using (var storeA = BlobStore.Open(StorePath()))
+        {
+            var memA = NewMemory(storeA);
+            memA.Remember("user", "previous-session opener about falcon telemetry");
+            memA.NextTurn();
+        }
+
+        using var storeB = BlobStore.Open(StorePath());
+        var memB = NewMemory(storeB);
+        memB.Remember("user", "current session begins here");
+        memB.Remember("assistant", "ok");
+        memB.NextTurn();
+        memB.Remember("user", "filler turn");
+        memB.Remember("assistant", "ok");
+        memB.NextTurn();
+        memB.Remember("user", "more filler");
+        memB.Remember("assistant", "ok");
+        memB.NextTurn();
+
+        var ctx = memB.BuildContext(null, "what was the first thing i said?", 400);
+
+        // The anchor is THIS session's opener, not the previous session's.
+        Assert.Contains("current session begins here", ctx.SystemText);
+        Assert.DoesNotContain("falcon telemetry", ctx.SystemText);
+    }
+
+    [Fact]
+    public void NonTemporalIrrelevantQuery_StillRecallsNothing()
+    {
+        using var store = SeededStore();
+        var memory = NewMemory(store);
+        var ctx = memory.BuildContext(null, "compose a haiku about rain", 300);
+        Assert.Empty(ctx.UsedBlobIds);
+    }
+
+    [Fact]
+    public void TemporalAnchors_RespectTheBudget()
+    {
+        using var store = BlobStore.Open(StorePath());
+        var memory = new ConversationMemory(store, FakeCount,
+            new MemoryOptions { SafetyMarginTokens = 4 });
+
+        memory.Remember("user", string.Join(' ', Enumerable.Repeat("opening", 50)));
+        memory.Remember("assistant", string.Join(' ', Enumerable.Repeat("reply", 50)));
+        memory.NextTurn();
+        for (int t = 0; t < 3; t++)
+        {
+            memory.Remember("user", $"filler turn {t}");
+            memory.Remember("assistant", "ok");
+            memory.NextTurn();
+        }
+
+        int budget = 60;   // too small for the 50-word opener
+        var ctx = memory.BuildContext(null, "what came first?", budget);
+
+        int total = FakeCount(ctx.SystemText) + FakeCount("what came first?");
+        Assert.True(total <= budget, $"context used {total} of {budget}");
+    }
 }

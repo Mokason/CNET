@@ -18,6 +18,13 @@ public sealed class MemoryOptions
     public int RecentTurns { get; init; } = 2;
 
     /// <summary>
+    /// Earliest session blobs injected when the question contains an ordering
+    /// term ("first", "beginning", …) — keyword recall cannot see ordering, so
+    /// temporal questions get the session's opening verbatim.
+    /// </summary>
+    public int TemporalAnchorBlobs { get; init; } = 4;
+
+    /// <summary>
     /// Messages longer than this are split at paragraph boundaries into multiple
     /// blobs, so recall stays granular without producing orphaned fragments.
     /// </summary>
