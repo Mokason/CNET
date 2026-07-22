@@ -948,16 +948,22 @@ public sealed class TextGenerator
                         goto cacheMiss;
                 }
 
-                // Verify the cache is large enough for the new prompt + generation
-                int requiredSize = promptLen + maxTokens;
-                if (entry.KvCache.MaxLength >= requiredSize || entry.KvCache.MaxLength >= promptLen)
+                // Verify the cache is large enough for the new prompt + generation.
+                // Reusing a cache that only fits the PROMPT is not acceptable:
+                // generation would hit the pos >= cacheSize break early and
+                // silently truncate the answer with FinishReason.Length even
+                // though the model window had room.
+                int requiredSize = Math.Min(promptLen + maxTokens, _model.Config.MaxSequenceLength);
+                if (entry.KvCache.MaxLength >= requiredSize)
                     return (entry.KvCache, matchedTokens, false);
 
                 // Cache too small — fall through to allocate fresh
             }
             cacheMiss:
 
-            // Cache miss or incompatible — allocate with full model context for future reuse
+            // Cache miss or incompatible — allocate for this request. (Callers
+            // that want cross-call reuse should size maxTokens to their session
+            // window so consecutive entries stay reusable.)
             int cacheSize = Math.Min(promptLen + maxTokens, _model.Config.MaxSequenceLength);
             var kvCache = AllocateKvCache(cacheSize);
             return (kvCache, 0, false); // ownsKvCache=false: will be transferred to prefix cache

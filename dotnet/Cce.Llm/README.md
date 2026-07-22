@@ -546,6 +546,36 @@ monotonic across reopens. Single-writer is enforced with a sidecar `.lock`
 held with `FileShare.None` (the only share mode Unix actually enforces); the
 OS releases it automatically if the process dies, so no stale-lock deadlock.
 
+### Review findings, fixed before they shipped far
+
+An adversarial review fan-out (3 finder lenses, 2 verifiers per finding, each
+required to refute or reproduce against the live code) confirmed and led to
+fixing, in the follow-up commit:
+
+- **Engine (pre-existing, HIGH):** `TextGenerator.ResolveKvCache` reused a
+  prefix-cached KV that fit the *prompt* but not prompt+answer
+  (`|| MaxLength >= promptLen`), silently truncating answers. Fixed; a
+  regression test proves it bites against the old code. The bridge now also
+  sizes the engine cache to the session window per call, so retained entries
+  are always reusable and truncation is structurally impossible.
+- `MemorySession` crashed on `maxTokens >= window` (negative budget, int
+  overflow past 2³¹) instead of clamping — now clamps, leaving a 128-token
+  prompt reserve.
+- Recent-turn off-by-one injected the oldest recent turn twice (memory block +
+  recent block).
+- Budget under-counting: the `### Recent turns` header and per-blob newlines
+  were appended but never costed.
+- `BlobStore.Open` read the file *before* taking the writer lock (handoff race
+  on ids), leaked the lock if a later step threw (wedging reopen in-process),
+  and buffered failed appends that a later success could resurrect — all three
+  reordered/fixed; writes are now unbuffered (still 8 µs/blob).
+- Oversized-message splitting altered text (collapsed newline runs); the
+  splitter now emits exact substrings whose concatenation reproduces the
+  message byte-for-byte, with word-boundary fallback for punctuation-free runs.
+- Lone UTF-16 surrogates are sanitized at append (UTF-8 cannot carry them), so
+  in-session recall equals post-reopen recall; the verbatim guarantee is over
+  valid Unicode.
+
 ### Keyword analysis
 
 Terms are `[A-Za-z0-9_]+` runs, lowercased, stopwords dropped. Underscores stay

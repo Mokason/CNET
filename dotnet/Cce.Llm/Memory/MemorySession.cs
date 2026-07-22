@@ -62,6 +62,15 @@ public sealed class MemorySession
     {
         ArgumentException.ThrowIfNullOrEmpty(user);
 
+        // The window must fit the answer AND a usable prompt. Clamp the answer
+        // budget rather than crash on a negative prompt budget; reserve at
+        // least 128 tokens of prompt so a clamped call still carries the
+        // question. (Arithmetic in long: maxTokens is uint and may exceed int.)
+        // The constructor floors the window at 256, so the clamp target is
+        // always >= 128 — this can reduce maxTokens but never zero it.
+        const int MinPromptReserve = 128;
+        maxTokens = (uint)Math.Min((long)maxTokens, _contextWindowTokens - MinPromptReserve);
+
         int promptBudget = _contextWindowTokens - (int)maxTokens;
         MemoryContext context = _memory.BuildContext(system, user, promptBudget);
 

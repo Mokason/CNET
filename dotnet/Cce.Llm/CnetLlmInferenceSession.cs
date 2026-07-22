@@ -51,6 +51,13 @@ public sealed class CnetLlmInferenceSession : ICnetInferenceSession
     /// min(ContextTokens, model MaxSequenceLength). Prompt plus answer must fit
     /// inside it, mirroring the native harness's n_ctx.
     /// </summary>
+    /// <remarks>
+    /// Deliberate divergence: the native backend passes ContextTokens to
+    /// llama.cpp unclamped, which can extend context past the trained length
+    /// via RoPE tricks. This engine validates positions against the model's
+    /// MaxSequenceLength and cannot, so a larger ContextTokens is clamped here
+    /// rather than accepted and crashed on later.
+    /// </remarks>
     public int EffectiveContextTokens => Math.Min(_contextTokens, _maxSequenceLength);
 
     /// <summary>Architecture reported by the loaded GGUF, for host diagnostics.</summary>
@@ -226,6 +233,13 @@ public sealed class CnetLlmInferenceSession : ICnetInferenceSession
         }
         uint maxTokens = Math.Min(options.MaxTokens, (uint)(window - promptTokens));
 
+        // The engine sizes its KV cache (and prefix-cache entries) from
+        // InferenceOptions.MaxTokens. Sizing to the remaining window — rather
+        // than the caller's ask — keeps every retained cache window-sized, so
+        // consecutive turns always pass the reuse check and can never truncate.
+        // The stop condition below still halts at the caller's clamped request.
+        int engineCacheBudget = window - promptTokens;
+
         // Greedy has to go through InferenceOptions' auto-build path:
         // SamplerPipeline only sets its greedy flag when SamplerSteps is null.
         // An empty step array is NOT greedy — it samples categorically from the
@@ -244,7 +258,7 @@ public sealed class CnetLlmInferenceSession : ICnetInferenceSession
             // CnetHarness seeds are uint; InferenceOptions takes a signed seed.
             // Mask rather than cast so a high seed cannot land negative.
             Seed = (int)(options.Seed & 0x7FFFFFFFu),
-            MaxTokens = (int)maxTokens,
+            MaxTokens = engineCacheBudget,
             Threading = _threading,
         };
 

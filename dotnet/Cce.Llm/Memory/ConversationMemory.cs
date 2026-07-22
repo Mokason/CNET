@@ -95,6 +95,8 @@ public sealed class ConversationMemory
         ArgumentOutOfRangeException.ThrowIfLessThan(promptBudgetTokens, 1);
 
         string recentBlock = RenderRecent();
+        if (recentBlock.Length > 0)
+            recentBlock = "\n### Recent turns\n" + recentBlock;   // header counts too
         int fixedTokens = _countTokens(baseSystem ?? string.Empty)
                         + _countTokens(recentBlock)
                         + _countTokens(question)
@@ -113,14 +115,16 @@ public sealed class ConversationMemory
         int remaining = promptBudgetTokens - fixedTokens - _countTokens(memoryHeader);
 
         // Over-fetch, then pack by score under the real token budget.
-        var candidates = _store.Recall(question, _options.TopK * 2);
+        // Over-fetch beyond TopK: the recent-window exclusion below happens
+        // after this cap, and recency-boosted recent blobs tend to rank first.
+        var candidates = _store.Recall(question, _options.TopK * 2 + _options.RecentTurns * 8);
         var selected = new List<(MemoryBlob Blob, string Rendered)>();
         foreach (MemoryBlob blob in candidates)
         {
             if (selected.Count == _options.TopK) break;
             if (IsWithinRecentWindow(blob)) continue;   // already present verbatim
 
-            string rendered = RenderBlob(blob);
+            string rendered = RenderBlob(blob) + "\n";   // costed exactly as appended
             int cost = _countTokens(rendered);
             if (cost > remaining) continue;             // try the next, cheaper hit
 
@@ -138,7 +142,7 @@ public sealed class ConversationMemory
         {
             sb.Append(memoryHeader);
             foreach ((_, string rendered) in selected)
-                sb.Append(rendered).Append('\n');
+                sb.Append(rendered);
             memoryTokens = promptBudgetTokens - fixedTokens - remaining;
         }
         else
@@ -146,7 +150,7 @@ public sealed class ConversationMemory
             memoryTokens = 0;
         }
         if (recentBlock.Length > 0)
-            sb.Append("\n### Recent turns\n").Append(recentBlock);
+            sb.Append(recentBlock);
 
         return new MemoryContext(
             sb.ToString(),
@@ -155,7 +159,10 @@ public sealed class ConversationMemory
     }
 
     private bool IsWithinRecentWindow(MemoryBlob blob)
-        => blob.SessionId == _sessionId && blob.Turn > _turn - _options.RecentTurns;
+        // The recent list holds turns [_turn - RecentTurns, _turn - 1]; the
+        // boundary turn must be INCLUDED in the exclusion or its blobs appear
+        // twice (memory block + recent block).
+        => blob.SessionId == _sessionId && blob.Turn >= _turn - _options.RecentTurns;
 
     private static string RenderBlob(MemoryBlob blob)
     {
@@ -174,7 +181,13 @@ public sealed class ConversationMemory
         return sb.ToString();
     }
 
-    /// <summary>Splits at blank lines first, then hard-wraps any oversized paragraph.</summary>
+    /// <summary>
+    /// Splits into parts that are exact substrings of the input — concatenating
+    /// the parts reproduces the message byte-for-byte, so blobs stay verbatim
+    /// even when split. Paragraph boundaries first, then sentence enders, then
+    /// word boundaries for punctuation-free runs (logs, code), then a hard cut
+    /// for a single pathological token.
+    /// </summary>
     private IEnumerable<string> Split(string text)
     {
         if (_countTokens(text) <= _options.MaxBlobTokens)
@@ -183,62 +196,95 @@ public sealed class ConversationMemory
             yield break;
         }
 
-        var current = new StringBuilder();
-        foreach (string paragraph in text.Split("\n\n", StringSplitOptions.RemoveEmptyEntries))
+        foreach (string part in MergeToBudget(SliceAt(text, FindBoundaries(text, "\n\n"))))
         {
-            string candidate = current.Length == 0
-                ? paragraph
-                : current + "\n\n" + paragraph;
-
-            if (_countTokens(candidate) <= _options.MaxBlobTokens)
+            if (_countTokens(part) <= _options.MaxBlobTokens)
             {
-                current.Clear();
-                current.Append(candidate);
+                yield return part;
                 continue;
             }
-
-            if (current.Length > 0)
+            foreach (string sub in MergeToBudget(SliceAt(part, FindSentenceBoundaries(part))))
             {
-                yield return current.ToString();
-                current.Clear();
+                if (_countTokens(sub) <= _options.MaxBlobTokens)
+                {
+                    yield return sub;
+                    continue;
+                }
+                // Punctuation-free run: fall back to word boundaries, then to a
+                // hard character cut for a single oversized token.
+                foreach (string w in MergeToBudget(SliceAt(sub, FindBoundaries(sub, " "))))
+                {
+                    if (_countTokens(w) <= _options.MaxBlobTokens)
+                    {
+                        yield return w;
+                        continue;
+                    }
+                    int hard = Math.Max(16, _options.MaxBlobTokens * 3);
+                    for (int i = 0; i < w.Length; i += hard)
+                        yield return w[i..Math.Min(w.Length, i + hard)];
+                }
             }
-
-            // Paragraph alone exceeds the cap: hard-split by sentences.
-            foreach (string piece in SplitOversized(paragraph))
-                yield return piece;
         }
-
-        if (current.Length > 0)
-            yield return current.ToString();
     }
 
-    private IEnumerable<string> SplitOversized(string paragraph)
+    /// <summary>End indices of slices cut after each occurrence of a separator run.</summary>
+    private static List<int> FindBoundaries(string text, string separator)
+    {
+        var cuts = new List<int>();
+        int idx = 0;
+        while ((idx = text.IndexOf(separator, idx, StringComparison.Ordinal)) >= 0)
+        {
+            int end = idx + separator.Length;
+            // Extend across a run of the separator's characters so a cut never
+            // lands inside "\n\n\n" and splits it between two parts oddly.
+            while (end < text.Length && separator.Contains(text[end])) end++;
+            cuts.Add(end);
+            idx = end;
+        }
+        return cuts;
+    }
+
+    /// <summary>End indices of slices cut after sentence-ending punctuation.</summary>
+    private static List<int> FindSentenceBoundaries(string text)
+    {
+        var cuts = new List<int>();
+        for (int i = 0; i < text.Length; i++)
+            if (text[i] is '.' or '!' or '?')
+                cuts.Add(i + 1);
+        return cuts;
+    }
+
+    /// <summary>Exact slices between consecutive cut points; concatenation == input.</summary>
+    private static IEnumerable<string> SliceAt(string text, List<int> cuts)
+    {
+        int from = 0;
+        foreach (int cut in cuts)
+        {
+            if (cut <= from || cut >= text.Length) continue;
+            yield return text[from..cut];
+            from = cut;
+        }
+        if (from < text.Length)
+            yield return text[from..];
+    }
+
+    /// <summary>Greedily merges consecutive slices while they fit the blob cap.</summary>
+    private IEnumerable<string> MergeToBudget(IEnumerable<string> slices)
     {
         var current = new StringBuilder();
-        int from = 0;
-        while (from < paragraph.Length)
+        foreach (string slice in slices)
         {
-            int end = paragraph.IndexOfAny(['.', '!', '?'], from);
-            string sentence = end < 0
-                ? paragraph[from..]
-                : paragraph[from..(end + 1)];
-            from = end < 0 ? paragraph.Length : end + 1;
-
-            string candidate = current.Length == 0 ? sentence : current + sentence;
-            if (_countTokens(candidate) <= _options.MaxBlobTokens || current.Length == 0)
+            if (current.Length > 0 && _countTokens(current.ToString() + slice) <= _options.MaxBlobTokens)
             {
-                current.Clear();
-                current.Append(candidate);
+                current.Append(slice);
                 continue;
             }
-
-            yield return current.ToString().Trim();
+            if (current.Length > 0)
+                yield return current.ToString();
             current.Clear();
-            current.Append(sentence);
+            current.Append(slice);
         }
-
-        string tail = current.ToString().Trim();
-        if (tail.Length > 0)
-            yield return tail;
+        if (current.Length > 0)
+            yield return current.ToString();
     }
 }

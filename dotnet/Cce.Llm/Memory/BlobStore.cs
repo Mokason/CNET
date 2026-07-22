@@ -79,33 +79,13 @@ public sealed class BlobStore : IDisposable
         if (!string.IsNullOrEmpty(dir))
             Directory.CreateDirectory(dir);
 
-        var loaded = new List<MemoryBlob>();
-        int corrupt = 0;
-        if (File.Exists(path))
-        {
-            foreach (string line in File.ReadLines(path))
-            {
-                if (string.IsNullOrWhiteSpace(line)) continue;
-                try
-                {
-                    MemoryBlob? blob = JsonSerializer.Deserialize<MemoryBlob>(line, JsonOptions);
-                    if (blob is not null && blob.Text.Length > 0)
-                        loaded.Add(blob);
-                    else
-                        corrupt++;
-                }
-                catch (JsonException)
-                {
-                    corrupt++;
-                }
-            }
-        }
-
         // Single-writer enforcement needs its own lock handle: on Unix, .NET
         // only maps FileShare.None to a real (flock) exclusive lock — other
         // share modes are advisory-only there, so two writers on the data file
-        // would NOT conflict. The sidecar lock is exclusive on every platform;
-        // the data file itself stays readable for tailing.
+        // would NOT conflict. The sidecar lock is exclusive on every platform,
+        // released by the OS if the process dies; the data file itself stays
+        // readable for tailing. Acquired BEFORE the load so a session handoff
+        // cannot read a stale tail and mint duplicate ids.
         FileStream lockStream;
         try
         {
@@ -118,23 +98,70 @@ public sealed class BlobStore : IDisposable
                 $"ghost-memory store '{path}' is already open for writing in another session", ex);
         }
 
-        var stream = new FileStream(path, FileMode.Append, FileAccess.Write, FileShare.Read);
-
-        // Heal a crash-truncated tail: FileMode.Append positions after the
-        // garbage, so without this the next blob would concatenate onto the
-        // truncated line and BOTH would be unparseable on the following load.
-        if (stream.Length > 0)
+        try
         {
-            using var tailCheck = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-            tailCheck.Seek(-1, SeekOrigin.End);
-            if (tailCheck.ReadByte() != '\n')
+            var loaded = new List<MemoryBlob>();
+            int corrupt = 0;
+            if (File.Exists(path))
             {
-                stream.WriteByte((byte)'\n');
-                stream.Flush();
+                foreach (string line in File.ReadLines(path))
+                {
+                    if (string.IsNullOrWhiteSpace(line)) continue;
+                    try
+                    {
+                        MemoryBlob? blob = JsonSerializer.Deserialize<MemoryBlob>(line, JsonOptions);
+                        if (blob is not null && blob.Text.Length > 0)
+                            loaded.Add(blob);
+                        else
+                            corrupt++;
+                    }
+                    catch (JsonException)
+                    {
+                        corrupt++;
+                    }
+                }
+            }
+
+            // bufferSize: 1 disables user-space buffering, so a failed write
+            // (disk full) cannot leave a half-line lurking in a buffer to be
+            // flushed by a LATER append, resurrecting a blob the caller was
+            // told failed. Throughput is unaffected at this write size
+            // (measured 8 us/blob including durability).
+            var stream = new FileStream(path, FileMode.Append, FileAccess.Write,
+                FileShare.Read, bufferSize: 1);
+            try
+            {
+                // Heal a crash-truncated tail: FileMode.Append positions after
+                // the garbage, so without this the next blob would concatenate
+                // onto the truncated line and BOTH would be unparseable on the
+                // following load.
+                if (stream.Length > 0)
+                {
+                    using var tailCheck = new FileStream(path, FileMode.Open,
+                        FileAccess.Read, FileShare.ReadWrite);
+                    tailCheck.Seek(-1, SeekOrigin.End);
+                    if (tailCheck.ReadByte() != '\n')
+                    {
+                        stream.WriteByte((byte)'\n');
+                        stream.Flush();
+                    }
+                }
+
+                return new BlobStore(path, stream, lockStream, loaded, corrupt, options);
+            }
+            catch
+            {
+                stream.Dispose();
+                throw;
             }
         }
-
-        return new BlobStore(path, stream, lockStream, loaded, corrupt, options);
+        catch
+        {
+            // Any failure after the lock was acquired must release it, or every
+            // later Open in this process reports a bogus "already open".
+            lockStream.Dispose();
+            throw;
+        }
     }
 
     /// <summary>Appends one blob, assigning its id, and indexes it. Durable on return.</summary>
@@ -143,6 +170,13 @@ public sealed class BlobStore : IDisposable
         ArgumentException.ThrowIfNullOrEmpty(sessionId);
         ArgumentException.ThrowIfNullOrEmpty(role);
         ArgumentException.ThrowIfNullOrEmpty(text);
+
+        // UTF-8 cannot represent unpaired UTF-16 surrogates; the JSON encoder
+        // replaces them with U+FFFD on disk. Apply the same replacement to the
+        // in-memory copy so recall is identical before and after a reopen —
+        // the verbatim guarantee is over valid Unicode text.
+        if (text.AsSpan().IndexOfAnyInRange('\ud800', '\udfff') >= 0)
+            text = string.Concat(text.EnumerateRunes());   // valid pairs survive; lone -> U+FFFD
 
         lock (_gate)
         {
