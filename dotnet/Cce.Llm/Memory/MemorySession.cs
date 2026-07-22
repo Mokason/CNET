@@ -410,6 +410,10 @@ public sealed class MemorySession
             GenerationMs = totalGenMs,
         };
 
+        // Durable usage signal for consolidation: which memories actually
+        // earned a slot in this prompt (gate-recalled and looked-up alike).
+        _memory.RecordUsage(usedIds);
+
         // Only the real exchange is stored — RECALL scaffolding and resume
         // prompts never become memory, and the answer is stored as one whole.
         _memory.Remember("user", user);

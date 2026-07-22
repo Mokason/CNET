@@ -119,7 +119,7 @@ ghost.OnLookup = round =>
 Console.WriteLine($"ghost-chat | backend={a.Backend} model={a.Model} window={window}");
 Console.WriteLine($"store={storePath} ({store.Count} memories" +
     (store.CorruptLinesSkipped > 0 ? $", {store.CorruptLinesSkipped} corrupt lines skipped" : "") + ")");
-Console.WriteLine("/exit /stats /show <id> /recall <query> /forget <id>");
+Console.WriteLine("/exit /stats /show <id> /recall <query> /forget <id> /consolidate [commit]");
 Console.WriteLine();
 
 // Ollama streams; local backends print at once.
@@ -185,10 +185,50 @@ while (true)
         continue;
     }
 
+    if (input == "/consolidate" || input == "/consolidate commit")
+    {
+        // The hippocampus->cortex seam: extract memories worth teaching and
+        // (on commit) note them into the gap-lane inbox, where the native
+        // teaching cycle trains certified specialists from them.
+        var consolidator = new GhostConsolidator(store);
+        var items = consolidator.Extract();
+        if (items.Count == 0)
+        {
+            Console.WriteLine("  (nothing to consolidate — no memory has earned teaching yet)");
+            continue;
+        }
+        foreach (var item in items)
+            Console.WriteLine($"  [#{item.BlobId} -> {item.SkillName}] {item.Reason}: " +
+                $"{(item.Text.Length > 70 ? item.Text[..70] + "\u2026" : item.Text)}");
+
+        if (input == "/consolidate")
+        {
+            Console.WriteLine($"  ({items.Count} teachable — dry run; '/consolidate commit' notes them into the gap lane)");
+            continue;
+        }
+
+        string inbox = a.GapInbox
+            ?? Environment.GetEnvironmentVariable("CNET_GAP_INBOX")
+            ?? "";
+        if (inbox.Length == 0)
+        {
+            Console.WriteLine("  no gap inbox: pass --gap-inbox <path> or set CNET_GAP_INBOX");
+            continue;
+        }
+        var receipts = consolidator.Emit(items, inbox);
+        foreach (var r in receipts)
+            Console.WriteLine(r.Emitted
+                ? $"  noted {r.Item.SkillName} -> {inbox}"
+                : $"  FAILED {r.Item.SkillName}: {r.Error}");
+        int ok = receipts.Count(r => r.Emitted);
+        Console.WriteLine($"  ({ok}/{receipts.Count} noted — the gap-lane daemon trains specialists from these on its next tick)");
+        continue;
+    }
+
     if (input.StartsWith('/'))
     {
         // Unknown or malformed command: never generate from it, never store it.
-        Console.WriteLine("  commands: /exit /stats /show <id> /recall <query> /forget <id>");
+        Console.WriteLine("  commands: /exit /stats /show <id> /recall <query> /forget <id> /consolidate [commit]");
         continue;
     }
 
@@ -289,6 +329,7 @@ static Args? ParseArgs(string[] argv, out bool helpRequested)
                 a.Sampling = s; break;
             }
             case "--ollama-url": a.OllamaUrl = Next() ?? a.OllamaUrl; break;
+            case "--gap-inbox": a.GapInbox = Next(); break;
             case "--auto-continue":
                 if (!ParseU("--auto-continue", out uint ac)) return null;
                 a.AutoContinue = ac; break;
@@ -322,6 +363,7 @@ struct Args
     public uint Window = 8192;
     public uint MaxTokens = 512;
     public uint AutoContinue = 8;
+    public string? GapInbox = null;
     public CnetHarnessSamplingMode Sampling = CnetHarnessSamplingMode.Balanced;
     public string OllamaUrl = "http://localhost:11434";
     public Args() { }

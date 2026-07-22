@@ -717,6 +717,37 @@ minimax-m3 makes occasional JSON typos deep inside a single chunk
 larger `--max-tokens` per round beats more rounds for strict structured
 output.
 
+## Consolidation: the ghost store teaches the gap lane
+
+Recall remembers; it never generalizes. CNET's native gap lane generalizes —
+it trains a fresh certified specialist per gap against an LM teacher — but had
+no episodic feed. `GhostConsolidator` is the seam (hippocampus → cortex):
+
+1. **Extract** (pure read, precision-first like the recall gate itself):
+   explicit "remember this" imperatives; user corrections that open by
+   overruling an adjacent assistant turn; facts re-queried in a *later*
+   session (proven to matter beyond one conversation); and blobs served into
+   ≥2 prompts across ≥2 distinct sessions. That last signal comes from new
+   durable usage events — `{"used":[ids],"sid":…,"ts":…}` lines the store now
+   appends whenever memories earn a prompt slot. Forgotten blobs never
+   surface: /forget is anti-teaching by construction.
+2. **Emit**: each teachable is noted into the gap-lane inbox via the native
+   `cnet_auto_learn_note_skill` from cnet.so — the canonical tagging every
+   other producer uses, no managed reimplementation to drift. Skill names are
+   deterministic (`gh_<8-hex FNV of text>_<term>`, goal tag within
+   PORT_TAG_MAX), so re-consolidating the same memory coalesces in the ledger
+   as `times_hit++` — and teachers bind in times_hit order, so repetition
+   literally raises teaching priority. Replay strength, mechanically.
+3. **Teach**: nothing new — the existing `gap_lane_run` daemon drains the
+   inbox, mines the teacher, trains a per-gap MLP, certifies it, and seals it
+   into the base with provenance.
+
+ghost-chat: `/consolidate` previews (dry run), `/consolidate commit` emits to
+`--gap-inbox <path>` or `CNET_GAP_INBOX`. First live run: 9 teachables
+extracted from the real store (1 genuine correction + 8 cross-session
+re-queries of the recurring quest-JSON topic), 9/9 noted into the active
+personal-ai lane's inbox through cnet.so.
+
 ## Tests
 
 `dotnet test dotnet/Cce.Llm.Tests` — 19 tests. The generation tests need a local

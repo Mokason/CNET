@@ -200,6 +200,13 @@ public sealed class ConversationMemory
         // twice (memory block + recent block).
         => blob.SessionId == _sessionId && blob.Turn >= _turn - _options.RecentTurns;
 
+    /// <summary>Durably records that these blobs were served into a prompt
+    /// this session — the consolidation pass's usage signal.</summary>
+    public void RecordUsage(IReadOnlyCollection<long> ids)
+    {
+        if (ids.Count > 0) _store.RecordUsage(ids, _sessionId);
+    }
+
     /// <summary>
     /// Renders one blob exactly as the prompt does — provenance tag included.
     /// Public so the model-directed recall loop injects lookups in the same

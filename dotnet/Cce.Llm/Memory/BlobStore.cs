@@ -33,6 +33,21 @@ public sealed class BlobStore : IDisposable
         public required string TimestampUtc { get; init; }
     }
 
+    /// <summary>A usage event: these blob ids were served into a prompt. The
+    /// consolidation pass reads these to find memories worth teaching — "served
+    /// into a prompt" is a stronger signal than "keyword-matched".</summary>
+    private sealed record UsageEvent
+    {
+        [System.Text.Json.Serialization.JsonPropertyName("used")]
+        public required long[] Ids { get; init; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("sid")]
+        public required string SessionId { get; init; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("ts")]
+        public required string TimestampUtc { get; init; }
+    }
+
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
@@ -41,6 +56,8 @@ public sealed class BlobStore : IDisposable
     private readonly FileStream _appendStream;
     private readonly FileStream _lockStream;
     private readonly Dictionary<long, MemoryBlob> _blobs = [];
+    private readonly Dictionary<long, int> _useCounts = [];
+    private readonly Dictionary<long, HashSet<string>> _useSessions = [];
     private readonly KeywordIndex _index;
     private readonly object _gate = new();
     private long _nextId;
@@ -60,8 +77,12 @@ public sealed class BlobStore : IDisposable
 
     private BlobStore(string path, FileStream appendStream, FileStream lockStream,
                       List<MemoryBlob> loaded, long maxSeenId, int corruptLines,
-                      MemoryOptions options)
+                      MemoryOptions options,
+                      Dictionary<long, int> useCounts,
+                      Dictionary<long, HashSet<string>> useSessions)
     {
+        _useCounts = useCounts;
+        _useSessions = useSessions;
         Path = path;
         _appendStream = appendStream;
         _lockStream = lockStream;
@@ -116,6 +137,8 @@ public sealed class BlobStore : IDisposable
             // with blob/tombstone/blob sequences resolves exactly as written.
             var byId = new Dictionary<long, MemoryBlob>();
             var order = new List<long>();
+            var useCounts = new Dictionary<long, int>();
+            var useSessions = new Dictionary<long, HashSet<string>>();
             long maxSeen = 0;
             int corrupt = 0;
             if (File.Exists(path))
@@ -133,6 +156,22 @@ public sealed class BlobStore : IDisposable
                             long dead = del.GetInt64();
                             if (dead > maxSeen) maxSeen = dead;
                             if (byId.Remove(dead)) order.Remove(dead);
+                            continue;
+                        }
+
+                        if (root.TryGetProperty("used", out JsonElement used))
+                        {
+                            string sid = root.TryGetProperty("sid", out JsonElement se)
+                                ? se.GetString() ?? "" : "";
+                            foreach (JsonElement e in used.EnumerateArray())
+                            {
+                                long uid = e.GetInt64();
+                                useCounts[uid] = useCounts.GetValueOrDefault(uid) + 1;
+                                if (sid.Length > 0)
+                                    (useSessions.TryGetValue(uid, out var set)
+                                        ? set : useSessions[uid] = new HashSet<string>(StringComparer.Ordinal))
+                                        .Add(sid);
+                            }
                             continue;
                         }
 
@@ -182,7 +221,8 @@ public sealed class BlobStore : IDisposable
                     }
                 }
 
-                return new BlobStore(path, stream, lockStream, loaded, maxSeen, corrupt, options);
+                return new BlobStore(path, stream, lockStream, loaded, maxSeen, corrupt, options,
+                                     useCounts, useSessions);
             }
             catch
             {
@@ -309,6 +349,63 @@ public sealed class BlobStore : IDisposable
                 .OrderBy(b => b.Id)
                 .Take(maxResults)
                 .ToList();
+        }
+    }
+
+    /// <summary>
+    /// Durably records that these blobs were served into a prompt. Feeds the
+    /// consolidation pass: memories that keep earning a slot in real prompts —
+    /// across distinct sessions — are the ones worth teaching into weights.
+    /// </summary>
+    public void RecordUsage(IReadOnlyCollection<long> ids, string sessionId)
+    {
+        ArgumentNullException.ThrowIfNull(ids);
+        ArgumentException.ThrowIfNullOrEmpty(sessionId);
+        if (ids.Count == 0) return;
+
+        lock (_gate)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            var evt = new UsageEvent
+            {
+                Ids = ids.ToArray(),
+                SessionId = sessionId,
+                TimestampUtc = DateTime.UtcNow.ToString("o"),
+            };
+            byte[] line = Encoding.UTF8.GetBytes(
+                JsonSerializer.Serialize(evt, JsonOptions) + "\n");
+            _appendStream.Write(line);
+            _appendStream.Flush();
+
+            foreach (long id in ids)
+            {
+                _useCounts[id] = _useCounts.GetValueOrDefault(id) + 1;
+                (_useSessions.TryGetValue(id, out var set)
+                    ? set : _useSessions[id] = new HashSet<string>(StringComparer.Ordinal))
+                    .Add(sessionId);
+            }
+        }
+    }
+
+    /// <summary>How many prompts this blob has been served into, over the store's life.</summary>
+    public int UsageCount(long id)
+    {
+        lock (_gate) return _useCounts.GetValueOrDefault(id);
+    }
+
+    /// <summary>How many distinct sessions served this blob into a prompt.</summary>
+    public int UsageSessions(long id)
+    {
+        lock (_gate) return _useSessions.TryGetValue(id, out var set) ? set.Count : 0;
+    }
+
+    /// <summary>All live (non-forgotten) blobs, oldest first. A snapshot.</summary>
+    public IReadOnlyList<MemoryBlob> All()
+    {
+        lock (_gate)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            return _blobs.Values.OrderBy(b => b.Id).ToList();
         }
     }
 
