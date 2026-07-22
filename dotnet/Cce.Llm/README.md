@@ -478,6 +478,82 @@ docs. The test pins the current magnitude so that both a regression and a fix ar
 visible; reconciling the two paths would make speculation genuinely
 output-identical and is the prerequisite for enabling any of it by default.
 
+## Ghost memory: the persistent blob store
+
+`CNET.Cce.Llm.Memory` gives a session unbounded, cross-session memory while the
+live context window stays small and fast. Past conversation is stored as
+verbatim blobs in an append-only JSON-lines file; each turn rebuilds a budgeted
+prompt from keyword recall plus the most recent turns. The window is not the
+memory — the file is.
+
+```csharp
+using var session = CnetLlmInferenceSession.Open(config);          // PrefixCache on by default
+using var store   = BlobStore.Open("~/.cnet-llm/ghost/memory.jsonl");
+var memory = new ConversationMemory(store, session.CountTokens);
+var ghost  = new MemorySession(session, memory, session.EffectiveContextTokens);
+
+var r = ghost.Generate(system: "You are terse.", user: "What did we decide about GEMM tiles?");
+// r.UsedBlobIds  -> exactly which memories were in the prompt (resolve via store.Get)
+// r.PromptSystemText -> the full audited context that was sent
+```
+
+### Why this architecture (measured)
+
+- A conversation that accumulates history dies at the model window — measured:
+  prompt past 2048 tokens on SmolLM is a hard `InvalidArgument`. With per-turn
+  rebuild, each call stays inside the window forever; conversation length is
+  unbounded.
+- Big windows are not the answer even where the model has them: at 8.6k context
+  Llama-1B decode fell 30 → 13 tok/s and prefill took 57 s. Small focused
+  contexts are *faster*, not just safer.
+- Rebuilding is cheap because both backends skip re-prefilling the longest
+  unchanged prompt prefix (managed `PrefixCache`, native
+  `cached_prompt_tokens`): measured 604 → 50 ms prefill for a stable ~700-token
+  header. Hence the prompt layout: stable system text first, then recalled
+  blobs chronologically, recent turns, question last.
+- Store overhead at 10,000 blobs (1.9 MB): open+index 50 ms once per session,
+  append 8 µs/blob (flushed durable), recall 320–630 µs/query — ~0.1% of one
+  turn's prefill. An irrelevant query early-outs at ~0 µs.
+
+### Anti-hallucination, mechanically
+
+The layer cannot make the model truthful, but it makes memory *auditable* and
+*precise*:
+
+- **Verbatim or nothing.** Recalled text is quoted exactly as stored — never
+  summarized, never rewritten. `NewlinesInText_RoundTripExactly` pins the
+  round-trip byte-for-byte.
+- **Provenance on every memory.** Blobs render as `[#id | date | role] text`,
+  and `MemoryGenerationResult.UsedBlobIds` lists exactly what was injected, so
+  a host can show receipts for any "I remember".
+- **A relevance gate that prefers silence.** A blob is recalled only when the
+  query shares a discriminative keyword (document frequency ≤ 25% of the store,
+  df=1 always allowed) or at least two distinct query terms. Generic queries
+  recall nothing rather than the least-irrelevant blob;
+  `IrrelevantQuery_RecallsNothing` pins it. The prompt header additionally
+  instructs the model to say when memory does not cover the answer.
+- **Budgets are enforced with the live tokenizer** and the bridge now enforces
+  the window exactly like the native harness (`prompt >= n_ctx` →
+  `InvalidArgument`; `max_tokens` clamped to the room left — previously
+  `ContextTokens` was silently ignored on the managed path).
+
+### Store durability
+
+Append-only JSONL, flushed per write, never rewritten. A crash costs at most
+the final line: the loader skips unparseable lines (`CorruptLinesSkipped`) and
+heals a truncated tail so the next append starts on a fresh line. Ids stay
+monotonic across reopens. Single-writer is enforced with a sidecar `.lock`
+held with `FileShare.None` (the only share mode Unix actually enforces); the
+OS releases it automatically if the process dies, so no stale-lock deadlock.
+
+### Keyword analysis
+
+Terms are `[A-Za-z0-9_]+` runs, lowercased, stopwords dropped. Underscores stay
+inside terms (`q8_0`, `cnet_harness` are single, highly discriminative keys)
+and pure numbers are kept ("the vault code is 7291" must be recallable by
+"7291"). Scoring is BM25 (k1=1.2, b=0.75) with a mild recency bonus; ties break
+newest-first; results are deterministic.
+
 ## Tests
 
 `dotnet test dotnet/Cce.Llm.Tests` — 19 tests. The generation tests need a local

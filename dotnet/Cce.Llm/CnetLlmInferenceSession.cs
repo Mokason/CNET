@@ -18,6 +18,7 @@ using CNET.Llm.Core.Configuration;
 using CNET.Llm.Core.Models;
 using CNET.Llm.Core.Sampling;
 using CNET.Llm.Engine;
+using CNET.Llm.Engine.PromptCache;
 using CNET.Llm.Engine.Samplers;
 using CNET.Llm.Engine.Samplers.StopConditions;
 using CNET.Llm.Models.Architectures;
@@ -40,8 +41,17 @@ public sealed class CnetLlmInferenceSession : ICnetInferenceSession
     private readonly TextGenerator _generator;
     private readonly ThreadingConfig _threading;
     private readonly int _contextTokens;
+    private readonly int _maxSequenceLength;
+    private readonly PrefixCache? _prefixCache;
     private readonly object _gate = new();
     private bool _disposed;
+
+    /// <summary>
+    /// The per-call token window this session enforces:
+    /// min(ContextTokens, model MaxSequenceLength). Prompt plus answer must fit
+    /// inside it, mirroring the native harness's n_ctx.
+    /// </summary>
+    public int EffectiveContextTokens => Math.Min(_contextTokens, _maxSequenceLength);
 
     /// <summary>Architecture reported by the loaded GGUF, for host diagnostics.</summary>
     public string Architecture { get; }
@@ -52,7 +62,8 @@ public sealed class CnetLlmInferenceSession : ICnetInferenceSession
     private CnetLlmInferenceSession(GgufFile gguf, TransformerModel model,
                                     ITokenizer tokenizer, IChatTemplate? chatTemplate,
                                     TextGenerator generator, ThreadingConfig threading,
-                                    int contextTokens, string architecture)
+                                    int contextTokens, int maxSequenceLength,
+                                    PrefixCache? prefixCache, string architecture)
     {
         _gguf = gguf;
         _model = model;
@@ -61,6 +72,8 @@ public sealed class CnetLlmInferenceSession : ICnetInferenceSession
         _generator = generator;
         _threading = threading;
         _contextTokens = contextTokens;
+        _maxSequenceLength = maxSequenceLength;
+        _prefixCache = prefixCache;
         Architecture = architecture;
     }
 
@@ -73,8 +86,16 @@ public sealed class CnetLlmInferenceSession : ICnetInferenceSession
     /// <see cref="CnetHarnessStatus.ModelLoadFailed"/> when the model cannot be read.
     /// </exception>
     public static CnetLlmInferenceSession Open(CnetHarnessConfig config)
+        => Open(config, null);
+
+    /// <summary>
+    /// Open a managed session with managed-backend-specific options (the shared
+    /// <see cref="CnetHarnessConfig"/> stays backend-neutral).
+    /// </summary>
+    public static CnetLlmInferenceSession Open(CnetHarnessConfig config, CnetLlmSessionOptions? options)
     {
         ArgumentNullException.ThrowIfNull(config);
+        options ??= new CnetLlmSessionOptions();
 
         // Same validation the native backend applies — one source of truth.
         try
@@ -121,11 +142,20 @@ public sealed class CnetLlmInferenceSession : ICnetInferenceSession
 
             ITokenizer tokenizer = GgufBpeTokenizerFactory.Load(gguf.Metadata);
             IChatTemplate? chatTemplate = GgufChatTemplateFactory.TryCreate(gguf.Metadata, tokenizer);
-            var generator = new TextGenerator(model, tokenizer);
+
+            // The prefix cache keeps the KV of recent prompts alive so a
+            // rebuilt prompt only prefills from its first divergent token —
+            // measured 13x cheaper for a stable ~700-token header. The native
+            // backend does the equivalent with cached_prompt_tokens.
+            PrefixCache? prefixCache = options.PrefixCacheEntries > 0
+                ? new PrefixCache(options.PrefixCacheEntries)
+                : null;
+            var generator = new TextGenerator(model, tokenizer, prefixCache: prefixCache);
 
             return new CnetLlmInferenceSession(
                 gguf, model, tokenizer, chatTemplate, generator, threading,
-                (int)config.ContextTokens, modelConfig.Architecture.ToString());
+                (int)config.ContextTokens, modelConfig.MaxSequenceLength,
+                prefixCache, modelConfig.Architecture.ToString());
         }
         catch (CnetHarnessException)
         {
@@ -140,6 +170,17 @@ public sealed class CnetLlmInferenceSession : ICnetInferenceSession
             throw new CnetHarnessException(CnetHarnessStatus.ModelLoadFailed,
                 $"failed to load {config.ModelPath}: {ex.Message}");
         }
+    }
+
+    /// <summary>
+    /// Counts tokens with this session's own tokenizer. Budget arithmetic done
+    /// with any other tokenizer is wrong for this model — use this one.
+    /// </summary>
+    public int CountTokens(string text)
+    {
+        ArgumentNullException.ThrowIfNull(text);
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        return _tokenizer.Encode(text).Length;
     }
 
     /// <inheritdoc />
@@ -167,6 +208,24 @@ public sealed class CnetLlmInferenceSession : ICnetInferenceSession
         CnetLlmSamplingProfile profile = CnetLlmSamplingProfile.Resolve(options.Sampling);
         string prompt = BuildPrompt(options);
 
+        // Window enforcement, matching the native harness exactly: a prompt that
+        // fills the window is InvalidArgument before any decode
+        // ("if (prompt_tokens.size() >= n_ctx) return CNET_HARNESS_ERR_INVALID"),
+        // and the answer budget is clamped to the room that remains
+        // ("cap_max_tokens = min(options->max_tokens, n_ctx - prompt_tokens)").
+        // Without this, ContextTokens was silently ignored on the managed path
+        // and an oversized prompt surfaced as an opaque BackendFailure.
+        int window = EffectiveContextTokens;
+        int promptTokens = _tokenizer.Encode(prompt).Length;
+        if (promptTokens >= window)
+        {
+            throw new CnetHarnessException(CnetHarnessStatus.InvalidArgument,
+                $"prompt is {promptTokens} tokens but the session window is {window} " +
+                $"(ContextTokens={_contextTokens}, model max={_maxSequenceLength}); " +
+                "shorten the prompt or open the session with a larger ContextTokens");
+        }
+        uint maxTokens = Math.Min(options.MaxTokens, (uint)(window - promptTokens));
+
         // Greedy has to go through InferenceOptions' auto-build path:
         // SamplerPipeline only sets its greedy flag when SamplerSteps is null.
         // An empty step array is NOT greedy — it samples categorically from the
@@ -180,12 +239,12 @@ public sealed class CnetLlmInferenceSession : ICnetInferenceSession
             StopConditions =
             [
                 new EosStopCondition(_tokenizer.EosTokenId),
-                new MaxTokensStopCondition((int)options.MaxTokens),
+                new MaxTokensStopCondition((int)maxTokens),
             ],
             // CnetHarness seeds are uint; InferenceOptions takes a signed seed.
             // Mask rather than cast so a high seed cannot land negative.
             Seed = (int)(options.Seed & 0x7FFFFFFFu),
-            MaxTokens = (int)options.MaxTokens,
+            MaxTokens = (int)maxTokens,
             Threading = _threading,
         };
 
@@ -297,6 +356,7 @@ public sealed class CnetLlmInferenceSession : ICnetInferenceSession
         {
             if (_disposed) return;
             _disposed = true;
+            _prefixCache?.Dispose();
             _model.Dispose();
             _gguf.Dispose();
         }
