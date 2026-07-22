@@ -168,13 +168,21 @@ public sealed class OllamaSession : ICnetInferenceSession
         }
     }
 
+    /// <inheritdoc />
+    public bool SupportsContinuation => true;
+
     private CnetHarnessGenerationResult GenerateCore(CnetHarnessGenerateOptions options)
     {
         CnetLlmSamplingProfile profile = CnetLlmSamplingProfile.Resolve(options.Sampling);
 
-        var messages = new List<object>(2);
+        var messages = new List<object>(4);
         if (!string.IsNullOrEmpty(options.System))
             messages.Add(new { role = "system", content = options.System });
+        // Structural continuation: the partial reply is a genuine assistant
+        // turn and User carries the resume instruction — the conversation
+        // shape chat models are trained to continue.
+        if (!string.IsNullOrEmpty(options.ContinueFrom))
+            messages.Add(new { role = "assistant", content = options.ContinueFrom });
         messages.Add(new { role = "user", content = options.User });
 
         var body = new Dictionary<string, object?>
@@ -196,7 +204,10 @@ public sealed class OllamaSession : ICnetInferenceSession
         };
         if (ContextTokens is int nctx)
             ((Dictionary<string, object>)body["options"]!)["num_ctx"] = nctx;
-        if (Think is not null) body["think"] = Think;
+        // Per-call override beats the session default; null sends nothing and
+        // leaves the model's own default in charge.
+        bool? think = options.Think ?? Think;
+        if (think is not null) body["think"] = think;
 
         using var request = new HttpRequestMessage(HttpMethod.Post, "api/chat")
         {

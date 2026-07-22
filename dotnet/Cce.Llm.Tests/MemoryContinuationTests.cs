@@ -51,9 +51,14 @@ public sealed class MemoryContinuationTests : IDisposable
         public void Dispose() { }
     }
 
+    /// <summary>Manual-path ghost: auto-continue off, as before it existed.</summary>
     private MemorySession NewGhost(BlobStore store, ScriptedSession session) =>
         new(session, new ConversationMemory(store, s => s.Length / 4 + 1), 4096,
-            s => s.Length / 4 + 1);
+            s => s.Length / 4 + 1, maxAutoContinues: 0);
+
+    private MemorySession NewAutoGhost(BlobStore store, ScriptedSession session, int rounds) =>
+        new(session, new ConversationMemory(store, s => s.Length / 4 + 1), 4096,
+            s => s.Length / 4 + 1, maxAutoContinues: rounds);
 
     [Fact]
     public void CappedAnswer_ReportsTruncated_AndContinueResumesAtCut()
@@ -176,4 +181,382 @@ public sealed class MemoryContinuationTests : IDisposable
     [InlineData("what next?", false)]
     public void IsContinueRequest_IsDeliberatelyNarrow(string user, bool expected) =>
         Assert.Equal(expected, MemorySession.IsContinueRequest(user));
+
+    // ─────────────── auto-continue ───────────────
+
+    /// <summary>The headline behavior: capped chunks are resumed and stitched
+    /// into one answer without the user typing anything.</summary>
+    [Fact]
+    public void AutoContinue_StitchesChunksIntoOneAnswer()
+    {
+        using var store = BlobStore.Open(StorePath());
+        var session = new ScriptedSession(
+            ("{ \"stages\": [ { \"stage\": 0", true),
+            (" }, { \"stage\": 1", true),
+            (" } ] }", false));
+        var ghost = NewAutoGhost(store, session, rounds: 3);
+
+        var r = ghost.Generate(null, "write the quest json");
+
+        Assert.Equal(3, session.Calls.Count);
+        Assert.Equal("{ \"stages\": [ { \"stage\": 0 }, { \"stage\": 1 } ] }", r.Result.Text);
+        Assert.False(r.Truncated);
+        Assert.Equal(2, r.AutoContinues);
+
+        // Round 2's resume block quotes the WHOLE answer so far — the
+        // in-progress answer is not in recent turns, unlike manual continue.
+        string secondResume = session.Calls[2].System!;
+        Assert.Contains("### Continuation", secondResume);
+        Assert.Contains("stage\": 0", secondResume);
+        Assert.Contains("stage\": 1", secondResume);
+        Assert.DoesNotContain("### Memory lookup", secondResume);
+    }
+
+    [Fact]
+    public void AutoContinue_StoresTheStitchedWhole_AsOneMemoryTurn()
+    {
+        using var store = BlobStore.Open(StorePath());
+        var session = new ScriptedSession(
+            ("alpha-part", true), ("-omega-end", false));
+        var ghost = NewAutoGhost(store, session, rounds: 3);
+
+        ghost.Generate(null, "go");
+
+        // user blob + assistant blob(s) holding the full text, no fragments.
+        var all = new List<string>();
+        for (long i = 1; i <= store.Count; i++)
+            if (store.Get(i) is { } b) all.Add($"{b.Role}:{b.Text}");
+        Assert.Contains("assistant:alpha-part-omega-end", all);
+        Assert.DoesNotContain(all, t => t == "assistant:alpha-part");
+    }
+
+    /// <summary>Cap exhausted and still unfinished: report truncated and arm
+    /// the manual path with the stitched text.</summary>
+    [Fact]
+    public void AutoContinue_CapExhausted_ArmsManualContinue()
+    {
+        using var store = BlobStore.Open(StorePath());
+        var session = new ScriptedSession(
+            ("one", true), ("-two", true), ("-three", true),
+            ("-four is the end", false));
+        var ghost = NewAutoGhost(store, session, rounds: 2);
+
+        var r = ghost.Generate(null, "go");
+        Assert.True(r.Truncated);
+        Assert.Equal(2, r.AutoContinues);
+        Assert.Equal("one-two-three", r.Result.Text);
+
+        var r2 = ghost.Generate(null, "continue");
+        Assert.Equal("-four is the end", r2.Result.Text);
+        Assert.Contains("one-two-three", session.Calls[3].System!);   // manual anchor = stitched tail
+        Assert.False(r2.Truncated);
+    }
+
+    [Fact]
+    public void AutoContinue_AggregatesTokenAccounting()
+    {
+        using var store = BlobStore.Open(StorePath());
+        var session = new ScriptedSession(("a", true), ("b", true), ("c", false));
+        var ghost = NewAutoGhost(store, session, rounds: 3);
+
+        var r = ghost.Generate(null, "go", maxTokens: 256);
+
+        // Two capped rounds at 256 + one final at 64 (ScriptedSession: max/4).
+        Assert.Equal(256u + 256u + 64u, r.Result.GeneratedTokens);
+    }
+
+    /// <summary>
+    /// A round that comes back empty (a thinking model that ignored
+    /// think:false and deliberated through its whole budget — observed live)
+    /// is retried once with a no-deliberation nudge and double budget.
+    /// </summary>
+    [Fact]
+    public void AutoContinue_EmptyRound_RetriesWithNudgeAndDoubleBudget()
+    {
+        using var store = BlobStore.Open(StorePath());
+        var session = new ScriptedSession(
+            ("real text", true), ("   ", true), (" salvaged end", false));
+        var ghost = NewAutoGhost(store, session, rounds: 5);
+
+        var r = ghost.Generate(null, "go", maxTokens: 300);
+
+        Assert.Equal(3, session.Calls.Count);
+        Assert.Equal("real text salvaged end", r.Result.Text);
+        Assert.False(r.Truncated);
+        Assert.Equal(300u, session.Calls[1].MaxTokens);
+        Assert.Equal(600u, session.Calls[2].MaxTokens);           // doubled for the retry
+        Assert.Contains("Do not spend tokens deliberating", session.Calls[2].System!);
+        Assert.False(session.Calls[2].Think);
+    }
+
+    [Fact]
+    public void AutoContinue_TwoEmptyRounds_StopTheLoop()
+    {
+        using var store = BlobStore.Open(StorePath());
+        var session = new ScriptedSession(
+            ("real text", true), ("   ", true), ("", true), ("never reached", false));
+        var ghost = NewAutoGhost(store, session, rounds: 5);
+
+        var r = ghost.Generate(null, "go");
+
+        Assert.Equal(3, session.Calls.Count);      // round + retry, then stop paying
+        Assert.Equal("real text", r.Result.Text);  // whitespace never stitched
+        Assert.True(r.Truncated);                  // manual path armed
+    }
+
+    /// <summary>Auto-continue composes with the lookup loop: search first,
+    /// then the (post-lookup) answer is resumed when capped.</summary>
+    [Fact]
+    public void AutoContinue_ComposesWithModelLookups()
+    {
+        using var store = BlobStore.Open(StorePath());
+        store.Append("old", 0, "user", "the quest hero is named Torvald", 8);
+        var session = new ScriptedSession(
+            ("RECALL: quest hero name", false),
+            ("Torvald's saga begins", true),
+            (" and ends in glory.", false));
+        var ghost = new MemorySession(session,
+            new ConversationMemory(store, s => s.Length / 4 + 1), 4096,
+            s => s.Length / 4 + 1, maxLookupRounds: 2, maxAutoContinues: 3);
+
+        var r = ghost.Generate(null, "write the hero saga");
+
+        Assert.Single(r.Lookups);
+        Assert.Equal(1, r.AutoContinues);
+        Assert.Equal("Torvald's saga begins and ends in glory.", r.Result.Text);
+        Assert.False(r.Truncated);
+    }
+
+    // ─────────────── hidden-reasoning suppression on resumes ───────────────
+
+    /// <summary>
+    /// The live failure that motivated Think plumbing: a thinking model spent
+    /// its entire 512-token budget deliberating about the resume and emitted
+    /// nothing. Resume rounds — manual and auto — must request think=false;
+    /// ordinary turns must leave the backend default untouched.
+    /// </summary>
+    [Fact]
+    public void ResumeRounds_SuppressHiddenReasoning_OrdinaryTurnsDoNot()
+    {
+        using var store = BlobStore.Open(StorePath());
+        var session = new ScriptedSession(
+            ("chunk one", true),      // ordinary turn, capped -> auto resume
+            (" chunk two", true),     // auto resume, still capped (cap: 1)
+            (" tail", false));        // manual "continue" turn
+        var ghost = NewAutoGhost(store, session, rounds: 1);
+
+        ghost.Generate(null, "write something long");
+        ghost.Generate(null, "continue");
+
+        Assert.Null(session.Calls[0].Think);          // ordinary turn: backend default
+        Assert.False(session.Calls[1].Think);         // auto resume
+        Assert.False(session.Calls[2].Think);         // manual resume
+    }
+
+    // ─────────────── structural continuation ───────────────
+
+    /// <summary>Scripted session that supports structural resumes.</summary>
+    private sealed class StructuralSession : ICnetInferenceSession
+    {
+        private readonly Queue<(string Text, bool Capped)> _script;
+        public List<CnetHarnessGenerateOptions> Calls { get; } = new();
+        public bool SupportsContinuation => true;
+
+        public StructuralSession(params (string, bool)[] outputs) => _script = new(outputs);
+
+        public CnetHarnessGenerationResult Generate(CnetHarnessGenerateOptions options)
+        {
+            Calls.Add(options);
+            var (text, capped) = _script.Count > 0 ? _script.Dequeue() : ("(exhausted)", false);
+            uint generated = capped ? options.MaxTokens : Math.Max(1, options.MaxTokens / 4);
+            return new CnetHarnessGenerationResult(text, 10, generated, 1, 1, 0, 0,
+                CnetHarnessSamplingMode.Deterministic, false, 0, 1, 0, 0);
+        }
+
+        public CnetHarnessRouteInfo ProbeRoute(string role,
+            CnetHarnessSamplingMode overrideMode = CnetHarnessSamplingMode.Auto) =>
+            throw new NotSupportedException();
+
+        public void Dispose() { }
+    }
+
+    /// <summary>
+    /// On a continuation-capable backend the partial answer rides as a real
+    /// assistant turn (ContinueFrom), not as a quote inside the system prompt —
+    /// quote-based resumes degraded live as the partial grew, until the model
+    /// restarted with fresh content mid-string.
+    /// </summary>
+    [Fact]
+    public void StructuralAutoResume_SendsPartialAsAssistantTurn()
+    {
+        using var store = BlobStore.Open(StorePath());
+        var session = new StructuralSession(
+            ("part-one", true), (" part-two", true), (" done.", false));
+        var ghost = new MemorySession(session,
+            new ConversationMemory(store, s => s.Length / 4 + 1), 4096,
+            s => s.Length / 4 + 1, maxAutoContinues: 5);
+
+        var r = ghost.Generate(null, "write something long");
+
+        Assert.Equal("part-one part-two done.", r.Result.Text);
+        Assert.False(r.Truncated);
+        Assert.Equal(2, r.AutoContinues);
+
+        Assert.Null(session.Calls[0].ContinueFrom);                 // ordinary turn
+        Assert.Equal("part-one", session.Calls[1].ContinueFrom);
+        Assert.Equal("part-one part-two", session.Calls[2].ContinueFrom);
+        Assert.StartsWith("Continue your message exactly", session.Calls[1].User);
+        Assert.DoesNotContain("### Continuation", session.Calls[1].System ?? "");
+        Assert.False(session.Calls[1].Think);
+    }
+
+    [Fact]
+    public void StructuralManualContinue_AlsoUsesAssistantTurn()
+    {
+        using var store = BlobStore.Open(StorePath());
+        var session = new StructuralSession(
+            ("cut-off-here", true), (" and the rest.", false));
+        var ghost = new MemorySession(session,
+            new ConversationMemory(store, s => s.Length / 4 + 1), 4096,
+            s => s.Length / 4 + 1, maxAutoContinues: 0);   // manual path only
+
+        var r1 = ghost.Generate(null, "go");
+        Assert.True(r1.Truncated);
+
+        var r2 = ghost.Generate(null, "continue");
+        Assert.Equal(" and the rest.", r2.Result.Text);
+        Assert.Equal("cut-off-here", session.Calls[1].ContinueFrom);
+        Assert.Contains("continue", session.Calls[1].User);          // user's own words kept
+        Assert.Contains("Continue your message exactly", session.Calls[1].User);
+        Assert.DoesNotContain("### Continuation", session.Calls[1].System ?? "");
+    }
+
+    [Fact]
+    public void StructuralEmptyRound_RetriesWithNudge()
+    {
+        using var store = BlobStore.Open(StorePath());
+        var session = new StructuralSession(
+            ("part-one", true), ("  ", true), (" salvaged.", false));
+        var ghost = new MemorySession(session,
+            new ConversationMemory(store, s => s.Length / 4 + 1), 4096,
+            s => s.Length / 4 + 1, maxAutoContinues: 5);
+
+        var r = ghost.Generate(null, "go", maxTokens: 300);
+
+        Assert.Equal("part-one salvaged.", r.Result.Text);
+        Assert.Equal(600u, session.Calls[2].MaxTokens);
+        Assert.Contains("deliberating", session.Calls[2].User);
+        Assert.Equal("part-one", session.Calls[2].ContinueFrom);     // same anchor
+    }
+
+    // ─────────────── seam overlap trimming ───────────────
+
+    [Theory]
+    [InlineData("\"isStart", "\"isStart\": false", "\"isStart\": false")]   // live case: 8-char dup
+    [InlineData("ends here", " and continues", "ends here and continues")]      // clean seam untouched
+    [InlineData("say the", "the answer", "say thethe answer")]                  // <6 chars: never trimmed
+    public void SeamOverlap_IsTrimmedOnlyWhenUnambiguous(string tail, string next, string expected)
+    {
+        string stitched = tail + MemorySession.TrimSeamOverlap(tail, next);
+        Assert.Equal(expected == "\"isStart\": false" ? tail + "\": false" : expected, stitched);
+    }
+
+    [Fact]
+    public void AutoContinue_TrimsDuplicatedSeam()
+    {
+        using var store = BlobStore.Open(StorePath());
+        var session = new StructuralSession(
+            ("\"quest\": { \"isStart", true),
+            ("\"isStart\": false }", false));
+        var ghost = new MemorySession(session,
+            new ConversationMemory(store, s => s.Length / 4 + 1), 4096,
+            s => s.Length / 4 + 1, maxAutoContinues: 3);
+
+        var r = ghost.Generate(null, "go");
+        Assert.Equal("\"quest\": { \"isStart\": false }", r.Result.Text);
+    }
+
+    /// <summary>The live seam: cut at "type inside an open ```json block; the
+    /// resume re-emitted fence markers before continuing with perfect content.</summary>
+    [Theory]
+    [InlineData("```json\n{ \"type",      "```json\n\": \"Interact\"",       "\": \"Interact\"")]
+    [InlineData("```json\n{ \"type",      "\n```\n```json\n\": \"x\"",     "\": \"x\"")]
+    [InlineData("no open fence here",       "```json\ncontent",                   "```json\ncontent")]
+    [InlineData("```json\nabc\n```\nok", "```python\nnew block",               "```python\nnew block")]
+    public void FenceChurn_IsStrippedOnlyInsideAnOpenFence(string soFar, string next, string expected) =>
+        Assert.Equal(expected, MemorySession.CleanResumeChunk(soFar, next));
+
+    /// <summary>
+    /// A natural stop inside an open code fence is not finished (observed
+    /// live: the model emitted EOS with 11 unclosed braces). The unclosed
+    /// fence triggers a resume round even though the token budget was not hit.
+    /// </summary>
+    [Fact]
+    public void NaturalStop_InsideOpenFence_StillResumes()
+    {
+        using var store = BlobStore.Open(StorePath());
+        var session = new StructuralSession(
+            ("```json\n{ \"a\": 1", false),      // natural stop, fence open
+            (" }\n```", false));                    // closes it
+        var ghost = new MemorySession(session,
+            new ConversationMemory(store, s => s.Length / 4 + 1), 4096,
+            s => s.Length / 4 + 1, maxAutoContinues: 3);
+
+        var r = ghost.Generate(null, "json please");
+
+        Assert.Equal(1, r.AutoContinues);
+        Assert.Equal("```json\n{ \"a\": 1 }\n```", r.Result.Text);
+        Assert.False(r.Truncated);
+    }
+
+    [Fact]
+    public void NaturalStop_WithBalancedFences_DoesNotResume()
+    {
+        using var store = BlobStore.Open(StorePath());
+        var session = new StructuralSession(("```json\n{}\n``` done", false));
+        var ghost = new MemorySession(session,
+            new ConversationMemory(store, s => s.Length / 4 + 1), 4096,
+            s => s.Length / 4 + 1, maxAutoContinues: 3);
+
+        var r = ghost.Generate(null, "json please");
+        Assert.Equal(0, r.AutoContinues);
+        Assert.False(r.Truncated);
+    }
+
+    [Fact]
+    public void ResumeRounds_UseFocusedSampling_UnlessDeterministic()
+    {
+        using var store = BlobStore.Open(StorePath());
+        var session = new StructuralSession(("cut", true), (" done", false));
+        var ghost = new MemorySession(session,
+            new ConversationMemory(store, s => s.Length / 4 + 1), 4096,
+            s => s.Length / 4 + 1, maxAutoContinues: 3);
+
+        ghost.Generate(null, "go", sampling: CnetHarnessSamplingMode.Balanced);
+
+        Assert.Equal(CnetHarnessSamplingMode.Balanced, session.Calls[0].Sampling);
+        Assert.Equal(CnetHarnessSamplingMode.Focused, session.Calls[1].Sampling);
+
+        var session2 = new StructuralSession(("cut", true), (" done", false));
+        var ghost2 = new MemorySession(session2,
+            new ConversationMemory(store, s => s.Length / 4 + 1), 4096,
+            s => s.Length / 4 + 1, maxAutoContinues: 3);
+        ghost2.Generate(null, "go", sampling: CnetHarnessSamplingMode.Deterministic);
+        Assert.Equal(CnetHarnessSamplingMode.Deterministic, session2.Calls[1].Sampling);
+    }
+
+    /// <summary>The exact live seam of run A: cut inside '"id": "', resume
+    /// re-emitted a fence marker AND re-typed the fragment behind fresh
+    /// indentation. Both artifacts removed, content preserved.</summary>
+    [Fact]
+    public void CompoundSeam_FenceChurnPlusReindentedOverlap_IsCleaned()
+    {
+        string soFar = "```json\n{\n          {\n            \"id\": \"";
+        string next = "```json\n            \"id\": \"obj_009\",\n            \"type\": \"ReturnTo\"";
+
+        string cleaned = MemorySession.CleanResumeChunk(soFar, next);
+
+        Assert.Equal("obj_009\",\n            \"type\": \"ReturnTo\"", cleaned);
+        Assert.Contains("\"id\": \"obj_009\"", soFar + cleaned);
+    }
 }

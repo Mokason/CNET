@@ -125,6 +125,27 @@ public sealed class CnetHarnessGenerateOptions
     public uint MaxTokens { get; init; } = 128;
     public uint Seed { get; init; } = 424242;
     public CnetHarnessSamplingMode Sampling { get; init; } = CnetHarnessSamplingMode.Auto;
+
+    /// <summary>
+    /// Per-call hidden-reasoning override for backends that support it (Ollama
+    /// thinking models): false suppresses the thinking phase, true forces it,
+    /// null keeps the backend/session default. Backends without hidden
+    /// reasoning (native, managed) ignore it. Continuation resumes set false —
+    /// a thinking model given a resume-exactly-here anchor otherwise spends
+    /// its entire token budget deliberating and emits nothing (observed live).
+    /// </summary>
+    public bool? Think { get; init; }
+
+    /// <summary>
+    /// Partial assistant reply to resume. Backends whose
+    /// <see cref="ICnetInferenceSession.SupportsContinuation"/> is true render
+    /// this as a real assistant turn preceding <see cref="User"/>, which is the
+    /// shape chat models are trained to continue — far more reliable than
+    /// quoting the partial text inside the system prompt (observed live:
+    /// quote-based resumes degrade as the partial grows, until the model
+    /// restarts with fresh content mid-string). Other backends ignore it.
+    /// </summary>
+    public string? ContinueFrom { get; init; }
 }
 
 /// <summary>Result of a single generation call.</summary>

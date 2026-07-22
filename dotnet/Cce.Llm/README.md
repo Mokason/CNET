@@ -674,6 +674,49 @@ Arch-Mage.` — and the resume began ` He asked me to confirm the tremors were
 magical in nature…"`, completing the same sentence and structure with zero
 repetition.
 
+## Auto-continue: unfinished answers resume themselves
+
+Manual "continue" still left the user stitching by hand, so `MemorySession`
+now runs the resume loop itself (`maxAutoContinues`, library default 3,
+ghost-chat default 8, `--auto-continue N`, 0 = manual only). Two signals mark
+an answer unfinished: it stopped at the token budget, or it ends inside an
+open ``` fence — a model that emits a natural stop mid-code-block believes it
+is done but structurally is not (observed live: EOS with 11 unclosed braces).
+Either way the layer resumes, stitches the chunks into one text, stores the
+whole as one memory turn, and reports `AutoContinues` (ghost-chat:
+`auto-continued ×N` in the receipts). Still unfinished after the cap →
+`Truncated` stays true and the manual path is armed with the stitched whole.
+
+Getting seams right took five live failure rounds against minimax-m3:cloud,
+each fix earned by a transcript:
+
+- **Structural resumes.** Quoting the partial answer in the system prompt
+  degrades as it grows — by round ~5 the model abandoned the resume and
+  started a fresh answer mid-string. `ContinueFrom` +
+  `ICnetInferenceSession.SupportsContinuation` (Ollama: true) render the
+  partial as a real assistant turn — the shape chat models are trained to
+  continue. Backends without it keep the quote fallback.
+- **Thinking burnout.** think:false is plumbed per-call but the cloud model
+  ignores it and can spend an entire round deliberating, emitting nothing. An
+  empty round is retried once with a no-deliberation nudge and double budget;
+  two empty rounds stop the loop.
+- **Seam artifacts** are cleaned mechanically (`CleanResumeChunk`): fence
+  churn (a resume inside an open block re-emits ``` markers) is stripped, and
+  short re-typed overlaps — including re-typed-with-fresh-indentation — are
+  trimmed (6-char minimum so real text is never eaten).
+- **Resume sampling.** Deterministic answers resume byte-exact but greedy
+  drives long structured output into degenerate repetition loops (observed:
+  endless `"flags"` objects), so ghost-chat's default sampling is now
+  Balanced; resume rounds drop to Focused (0.3) because at 0.7 the model
+  occasionally drops tokens at the seam. Explicit Deterministic is respected.
+
+What the layer guarantees: mechanical stitching is seamless and the loop is
+cost-bounded. What it cannot guarantee: the model's own long-form syntax —
+minimax-m3 makes occasional JSON typos deep inside a single chunk
+(`"type": "choice": "branch"`) with no seam involved. Fewer seams help:
+larger `--max-tokens` per round beats more rounds for strict structured
+output.
+
 ## Tests
 
 `dotnet test dotnet/Cce.Llm.Tests` — 19 tests. The generation tests need a local

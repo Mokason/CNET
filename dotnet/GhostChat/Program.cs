@@ -35,6 +35,12 @@ if (a.MaxTokens == 0 || a.MaxTokens > 65536)
     return 2;
 }
 
+if (a.AutoContinue > 16)
+{
+    Console.Error.WriteLine($"--auto-continue must be in [0, 16], got {a.AutoContinue}");
+    return 2;
+}
+
 string storePath = a.Store ?? Path.Combine(
     Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
     ".cnet-llm", "ghost", "memory.jsonl");
@@ -95,7 +101,8 @@ catch (Exception ex) when (ex is IOException or ArgumentException)
 using var _ = session;
 using var store = BlobStore.Open(storePath);
 var memory = new ConversationMemory(store, countTokens);
-var ghost = new MemorySession(session, memory, window, countTokens);
+var ghost = new MemorySession(session, memory, window, countTokens,
+                              maxAutoContinues: (int)a.AutoContinue);
 
 // Narrate model-directed lookups: when the model decides its context is
 // missing a memory, it emits "RECALL: <keywords>" instead of an answer; the
@@ -203,15 +210,17 @@ while (true)
                 "hidden reasoning; raise --max-tokens or use a non-thinking model)");
 
         if (r.Truncated)
-            Console.WriteLine(
-                "  (cut off by --max-tokens — type \"continue\" to resume exactly where it stopped)");
+            Console.WriteLine(a.AutoContinue > 0
+                ? $"  (still unfinished after {r.AutoContinues} auto-continues — type \"continue\" for more, or raise --auto-continue)"
+                : "  (cut off by --max-tokens — type \"continue\" to resume exactly where it stopped)");
 
         string receipts = r.UsedBlobIds.Count > 0
             ? string.Join(" ", r.UsedBlobIds.Select(i => $"#{i}"))
             : "none";
+        string autoNote = r.AutoContinues > 0 ? $" | auto-continued ×{r.AutoContinues}" : "";
         Console.WriteLine(
             $"  ── memory: {receipts} | prompt {r.Result.PromptTokens} tok | " +
-            $"{r.Result.GeneratedTokens} tok in {sw.Elapsed.TotalSeconds:F1}s ──");
+            $"{r.Result.GeneratedTokens} tok in {sw.Elapsed.TotalSeconds:F1}s{autoNote} ──");
         Console.WriteLine();
     }
     catch (CnetHarnessException ex)
@@ -280,6 +289,9 @@ static Args? ParseArgs(string[] argv, out bool helpRequested)
                 a.Sampling = s; break;
             }
             case "--ollama-url": a.OllamaUrl = Next() ?? a.OllamaUrl; break;
+            case "--auto-continue":
+                if (!ParseU("--auto-continue", out uint ac)) return null;
+                a.AutoContinue = ac; break;
             case "--help":
                 helpRequested = true;
                 goto default;
@@ -288,6 +300,7 @@ static Args? ParseArgs(string[] argv, out bool helpRequested)
                     "usage: ghost-chat --backend managed|native|ollama --model <gguf-path|ollama-name>\n" +
                     "       [--store <jsonl>] [--system <text>] [--window N] [--max-tokens N]\n" +
                     "       [--sampling auto|deterministic|focused|balanced|exploratory]\n" +
+                    "       [--auto-continue N   resume truncated answers automatically, default 8]\n" +
                     "       [--ollama-url http://localhost:11434]");
                 return null;
         }
@@ -308,7 +321,8 @@ struct Args
     public string? System = "You are a helpful, terse assistant with persistent memory.";
     public uint Window = 8192;
     public uint MaxTokens = 512;
-    public CnetHarnessSamplingMode Sampling = CnetHarnessSamplingMode.Deterministic;
+    public uint AutoContinue = 8;
+    public CnetHarnessSamplingMode Sampling = CnetHarnessSamplingMode.Balanced;
     public string OllamaUrl = "http://localhost:11434";
     public Args() { }
 }

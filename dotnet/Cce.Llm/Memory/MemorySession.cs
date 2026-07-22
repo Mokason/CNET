@@ -14,13 +14,18 @@ public sealed record LookupRound(string Query, IReadOnlyList<long> BlobIds);
 /// <param name="PromptSystemText">The final system text sent, for audit.</param>
 /// <param name="Lookups">Model-directed recall rounds, in order.</param>
 /// <param name="Truncated">The answer stopped because it hit the token budget,
-/// not because it finished — a "continue" next turn will resume at the cut.</param>
+/// not because it finished — a "continue" next turn will resume at the cut.
+/// With auto-continue enabled this is only true once the round cap is also
+/// exhausted.</param>
+/// <param name="AutoContinues">Automatic resume rounds this answer needed;
+/// <see cref="CnetHarnessGenerationResult.Text"/> is the stitched whole.</param>
 public sealed record MemoryGenerationResult(
     CnetHarnessGenerationResult Result,
     IReadOnlyList<long> UsedBlobIds,
     string PromptSystemText,
     IReadOnlyList<LookupRound> Lookups,
-    bool Truncated);
+    bool Truncated,
+    int AutoContinues);
 
 /// <summary>
 /// Composes an <see cref="ICnetInferenceSession"/> with a
@@ -53,12 +58,22 @@ public sealed class MemorySession
         "Only after a lookup finds nothing, say memory does not contain it — " +
         "never invent memories.\n";
 
+    /// <summary>User-slot instruction for structural resumes.</summary>
+    private const string ResumeInstruction =
+        "Continue your message exactly where it was cut off. Output only the " +
+        "remaining text — do not repeat anything already written, do not restart, no preamble.";
+
+    /// <summary>Appended on the salvage retry when a resume round emits nothing.</summary>
+    private const string NoDeliberationNudge =
+        " Do not spend tokens deliberating — output the continuation text immediately.";
+
     private readonly ICnetInferenceSession _session;
     private readonly ConversationMemory _memory;
     private readonly int _contextWindowTokens;
     private readonly Func<string, int> _countTokens;
     private readonly int _maxLookupRounds;
     private readonly int _resultsPerLookup;
+    private readonly int _maxAutoContinues;
 
     /// <summary>
     /// The full text of the immediately previous answer iff it was cut off by
@@ -87,19 +102,28 @@ public sealed class MemorySession
     /// simply never trigger it.
     /// </param>
     /// <param name="resultsPerLookup">Most blobs served per lookup.</param>
+    /// <param name="maxAutoContinues">
+    /// Automatic resume rounds when an answer hits the token budget: the layer
+    /// re-prompts with the answer-so-far and stitches the chunks into one text,
+    /// no user intervention. 0 restores manual-only continuation. Each round is
+    /// one extra inner generation, so this bounds worst-case cost per turn.
+    /// </param>
     public MemorySession(ICnetInferenceSession session, ConversationMemory memory,
                          int contextWindowTokens, Func<string, int>? countTokens = null,
-                         int maxLookupRounds = 2, int resultsPerLookup = 5)
+                         int maxLookupRounds = 2, int resultsPerLookup = 5,
+                         int maxAutoContinues = 3)
     {
         _session = session ?? throw new ArgumentNullException(nameof(session));
         _memory = memory ?? throw new ArgumentNullException(nameof(memory));
         ArgumentOutOfRangeException.ThrowIfLessThan(contextWindowTokens, 256);
         ArgumentOutOfRangeException.ThrowIfNegative(maxLookupRounds);
         ArgumentOutOfRangeException.ThrowIfLessThan(resultsPerLookup, 1);
+        ArgumentOutOfRangeException.ThrowIfNegative(maxAutoContinues);
         _contextWindowTokens = contextWindowTokens;
         _countTokens = countTokens ?? (text => text.Length / 3 + 1);
         _maxLookupRounds = maxLookupRounds;
         _resultsPerLookup = resultsPerLookup;
+        _maxAutoContinues = maxAutoContinues;
     }
 
     /// <summary>
@@ -154,24 +178,41 @@ public sealed class MemorySession
         // The previous answer hit the token budget and the user asked to go on:
         // anchor the model at the exact cut so it resumes instead of restarting
         // from the top (the observed failure: a truncated JSON reply + "continue"
-        // regenerated the same opening stages and truncated again). The tail is
-        // quoted because the cut point is mid-structure — recent turns alone
-        // leave "where exactly did I stop?" to the model's imagination.
+        // regenerated the same opening stages and truncated again). Preferred
+        // anchor is structural — the partial reply as a real assistant turn,
+        // the shape chat models are trained to continue. Backends without that
+        // get the partial quoted into the system prompt instead.
         bool continuing = _pendingContinuation is not null && IsContinueRequest(user);
+        bool structural = _session.SupportsContinuation;
+        string innerUser = user;
+        string? continueFrom = null;
         if (continuing)
         {
-            string tail = _pendingContinuation!;
-            if (tail.Length > 600) tail = tail[^600..];
-            string block =
-                "\n### Continuation\n" +
-                "Your previous reply was cut off mid-output by the token limit. " +
-                "It ended with:\n…" + tail + "\n" +
-                "Resume EXACTLY at that cut — output only the remaining text. " +
-                "Do not repeat anything already written, do not restart, no preamble.\n";
-            if (_countTokens(block) <= headroom)
+            if (structural)
             {
-                systemText += block;
-                headroom -= _countTokens(block);
+                continueFrom = ClipForResume(_pendingContinuation!,
+                    headroom - _countTokens(ResumeInstruction) - 32);
+                if (continueFrom is not null)
+                {
+                    innerUser = user + "\n(" + ResumeInstruction + ")";
+                    headroom -= _countTokens(continueFrom) + _countTokens(ResumeInstruction);
+                }
+            }
+            if (continueFrom is null)
+            {
+                string tail = _pendingContinuation!;
+                if (tail.Length > 600) tail = tail[^600..];
+                string block =
+                    "\n### Continuation\n" +
+                    "Your previous reply was cut off mid-output by the token limit. " +
+                    "It ended with:\n…" + tail + "\n" +
+                    "Resume EXACTLY at that cut — output only the remaining text. " +
+                    "Do not repeat anything already written, do not restart, no preamble.\n";
+                if (_countTokens(block) <= headroom)
+                {
+                    systemText += block;
+                    headroom -= _countTokens(block);
+                }
             }
         }
 
@@ -185,7 +226,13 @@ public sealed class MemorySession
             headroom -= _countTokens(LookupProtocol);
         }
 
-        CnetHarnessGenerationResult result = GenerateOnce(systemText, user, maxTokens, sampling, seed, role);
+        // A resume turn (manual or auto) suppresses hidden reasoning: the anchor
+        // makes continuation mechanical, and a thinking model otherwise spends
+        // the whole budget deliberating and emits nothing (observed live).
+        CnetHarnessGenerationResult result = GenerateOnce(
+            systemText, innerUser, maxTokens,
+            continuing ? ResumeSampling(sampling) : sampling, seed, role,
+            think: continuing ? false : null, continueFrom: continueFrom);
 
         int rounds = 0;
         while (loopEnabled && rounds < _maxLookupRounds && TryParseRecall(result.Text, out string query))
@@ -242,18 +289,242 @@ public sealed class MemorySession
             }
         }
 
-        // Only the real exchange is stored — RECALL scaffolding never becomes memory.
+        // ── auto-continue ──
+        // A budget-capped chunk is unfinished; instead of handing the seam to
+        // the user, resume automatically and stitch. Unlike a manual
+        // "continue" (whose previous chunk is already stored and visible in
+        // recent turns), the answer-in-progress exists nowhere else — so each
+        // round quotes the whole answer so far, clipped from the head when the
+        // budget demands, since the cut end is what anchors the resume.
+        var chunks = new List<string> { result.Text };
+        uint totalGenerated = result.GeneratedTokens;
+        double totalPromptMs = result.PromptMs, totalGenMs = result.GenerationMs;
+        int autoRounds = 0;
+        // Two unfinished signals: the token budget cut the answer, or the
+        // answer ends inside an open ``` fence — a model emitting a natural
+        // stop mid-code-block believes it is done but structurally is not
+        // (observed live twice: JSON with 11 unclosed braces, fence never
+        // closed). Both resume identically; the round cap bounds either.
+        bool capped = (result.GeneratedTokens >= maxTokens || HasUnclosedFence(result.Text)) &&
+                      !string.IsNullOrWhiteSpace(result.Text);
+
+        void Tally(CnetHarnessGenerationResult r)
+        {
+            totalGenerated += r.GeneratedTokens;
+            totalPromptMs += r.PromptMs;
+            totalGenMs += r.GenerationMs;
+        }
+
+        while (capped && autoRounds < _maxAutoContinues)
+        {
+            string soFar = string.Concat(chunks);
+            int resumeHeadroom = promptBudget - _countTokens(context.SystemText);
+            uint roundBudget = maxTokens;
+            CnetHarnessGenerationResult next;
+
+            if (structural)
+            {
+                // The partial answer rides as a real assistant turn. The
+                // quote-in-system alternative degrades as the partial grows —
+                // observed live: by round ~5 the model abandoned the resume
+                // and started a fresh answer mid-string.
+                string? anchor = ClipForResume(soFar,
+                    resumeHeadroom - _countTokens(ResumeInstruction) - 32);
+                if (anchor is null) break;                // window too tight to anchor
+
+                next = GenerateOnce(context.SystemText, ResumeInstruction, roundBudget,
+                    ResumeSampling(sampling), seed, role, think: false, continueFrom: anchor);
+                autoRounds++;
+                Tally(next);
+                systemText = context.SystemText;
+
+                if (string.IsNullOrWhiteSpace(next.Text))
+                {
+                    // think:false is advisory — minimax-m3:cloud thinks
+                    // regardless and can spend the whole round deliberating.
+                    // Salvage once: explicit nudge + double budget so thinking
+                    // AND content both fit (the changed prompt also lets a
+                    // greedy same-seed retry take a different path).
+                    roundBudget = Math.Min(maxTokens * 2, 65536u);
+                    next = GenerateOnce(context.SystemText,
+                        ResumeInstruction + NoDeliberationNudge, roundBudget,
+                        ResumeSampling(sampling), seed, role, think: false, continueFrom: anchor);
+                    Tally(next);
+                    if (string.IsNullOrWhiteSpace(next.Text)) break;  // truly stuck
+                }
+            }
+            else
+            {
+                string? block = BuildResumeBlock(soFar, resumeHeadroom - _countTokens(user));
+                if (block is null) break;                 // window too tight to anchor
+
+                next = GenerateOnce(context.SystemText + block, user, roundBudget,
+                    ResumeSampling(sampling), seed, role, think: false);
+                autoRounds++;
+                Tally(next);
+                systemText = context.SystemText + block;
+
+                if (string.IsNullOrWhiteSpace(next.Text))
+                {
+                    roundBudget = Math.Min(maxTokens * 2, 65536u);
+                    string retrySystem = context.SystemText + block +
+                        "Do not spend tokens deliberating — output the continuation text immediately.\n";
+                    next = GenerateOnce(retrySystem, user, roundBudget,
+                        ResumeSampling(sampling), seed, role, think: false);
+                    Tally(next);
+                    systemText = retrySystem;
+                    if (string.IsNullOrWhiteSpace(next.Text)) break;  // truly stuck
+                }
+            }
+
+            chunks.Add(CleanResumeChunk(soFar, next.Text));
+            result = next;
+            capped = next.GeneratedTokens >= roundBudget ||
+                     HasUnclosedFence(string.Concat(chunks));
+        }
+
+        string fullText = string.Concat(chunks);
+        result = result with
+        {
+            Text = fullText,
+            GeneratedTokens = totalGenerated,
+            PromptMs = totalPromptMs,
+            GenerationMs = totalGenMs,
+        };
+
+        // Only the real exchange is stored — RECALL scaffolding and resume
+        // prompts never become memory, and the answer is stored as one whole.
         _memory.Remember("user", user);
-        _memory.Remember("assistant", result.Text);
+        _memory.Remember("assistant", fullText);
         _memory.NextTurn();
 
-        // Budget-capped output means "stopped", not "finished" — arm the next
-        // turn's continuation. A whitespace answer has nothing to resume.
-        bool truncated = result.GeneratedTokens >= maxTokens &&
-                         !string.IsNullOrWhiteSpace(result.Text);
-        _pendingContinuation = truncated ? result.Text : null;
+        // Still capped after every allowed round: arm the manual path. A
+        // whitespace answer has nothing to resume.
+        bool truncated = capped && !string.IsNullOrWhiteSpace(fullText);
+        _pendingContinuation = truncated ? fullText : null;
 
-        return new MemoryGenerationResult(result, usedIds, systemText, lookups, truncated);
+        return new MemoryGenerationResult(result, usedIds, systemText, lookups, truncated, autoRounds);
+    }
+
+    /// <summary>
+    /// Removes the two seam artifacts models produce when resuming a cut
+    /// (both observed live): markdown fence churn — a resume inside an open
+    /// code block re-emits ``` markers before continuing — and short overlap,
+    /// re-typing a few characters from the cut point. The content either side
+    /// of the artifacts is untouched.
+    /// </summary>
+    internal static string CleanResumeChunk(string soFar, string next)
+    {
+        // Fence churn only makes sense inside an unclosed fence.
+        if (CountFences(soFar) % 2 == 1)
+        {
+            for (int guard = 0; guard < 3; guard++)
+            {
+                string probe = next.TrimStart();
+                if (!probe.StartsWith("```", StringComparison.Ordinal)) break;
+                int pos = next.IndexOf("```", StringComparison.Ordinal) + 3;
+                while (pos < next.Length && char.IsLetter(next[pos])) pos++;   // language tag
+                if (pos < next.Length && next[pos] == '\n') pos++;
+                next = next[pos..];
+            }
+        }
+        return TrimSeamOverlap(soFar, next);
+    }
+
+    /// <summary>
+    /// Sampling for resume rounds: continuation of existing text wants a much
+    /// colder distribution than open-ended generation — at temperature 0.7 the
+    /// model occasionally drops or re-types tokens at the seam (observed live:
+    /// a missing "}," between objects), while greedy resumes were byte-exact.
+    /// Focused (0.3) keeps seams faithful without greedy's repetition traps.
+    /// An explicit Deterministic request is respected.
+    /// </summary>
+    private static CnetHarnessSamplingMode ResumeSampling(CnetHarnessSamplingMode requested) =>
+        requested == CnetHarnessSamplingMode.Deterministic
+            ? requested
+            : CnetHarnessSamplingMode.Focused;
+
+    /// <summary>An odd number of ``` markers means the text ends inside a code block.</summary>
+    internal static bool HasUnclosedFence(string text) => CountFences(text) % 2 == 1;
+
+    private static int CountFences(string text)
+    {
+        int count = 0;
+        for (int i = text.IndexOf("```", StringComparison.Ordinal); i >= 0;
+             i = text.IndexOf("```", i + 3, StringComparison.Ordinal))
+            count++;
+        return count;
+    }
+
+    /// <summary>
+    /// If the new chunk starts with a suffix of the text so far, drop the
+    /// duplicated prefix (observed live: an 8-char token re-typed, corrupting
+    /// JSON). Six-char minimum so common short sequences ("the ") are never
+    /// mistaken for a seam.
+    /// </summary>
+    internal static string TrimSeamOverlap(string soFar, string next)
+    {
+        string? trimmed = TryTrimOverlap(soFar, next);
+        if (trimmed is not null) return trimmed;
+
+        // Whitespace-tolerant pass: models re-typing from the cut often start
+        // at the beginning of the line, with fresh indentation the text so far
+        // already contains (observed live: '\"id\": \"' re-typed behind
+        // 12 spaces of indent). The indentation is part of the artifact.
+        string nextTrim = next.TrimStart();
+        if (nextTrim.Length != next.Length)
+        {
+            trimmed = TryTrimOverlap(soFar, nextTrim);
+            if (trimmed is not null) return trimmed;
+        }
+        return next;
+    }
+
+    private static string? TryTrimOverlap(string soFar, string next)
+    {
+        int max = Math.Min(120, Math.Min(soFar.Length, next.Length));
+        for (int len = max; len >= 6; len--)
+            if (string.CompareOrdinal(soFar, soFar.Length - len, next, 0, len) == 0)
+                return next[len..];
+        return null;
+    }
+
+    /// <summary>
+    /// Head-clips a partial answer to fit a structural-resume token budget —
+    /// the cut end is what anchors the resume, so the head is expendable.
+    /// Null when even a 300-char tail cannot fit.
+    /// </summary>
+    private string? ClipForResume(string soFar, int budgetTokens)
+    {
+        foreach (int keep in new[] { soFar.Length, 4800, 2400, 1200, 600, 300 })
+        {
+            if (keep > soFar.Length) continue;
+            string tail = keep == soFar.Length ? soFar : soFar[^keep..];
+            if (_countTokens(tail) <= budgetTokens) return tail;
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// The resume prompt for an unfinished answer: quote it (head-clipped to
+    /// fit <paramref name="headroom"/>) and demand exact continuation. Null
+    /// when even a 300-char anchor cannot fit.
+    /// </summary>
+    private string? BuildResumeBlock(string soFar, int headroom)
+    {
+        foreach (int keep in new[] { soFar.Length, 4800, 2400, 1200, 600, 300 })
+        {
+            if (keep > soFar.Length) continue;
+            string quoted = keep == soFar.Length ? soFar : "…" + soFar[^keep..];
+            string block =
+                "\n### Continuation\n" +
+                "Your reply below was cut off mid-output by the token limit:\n" +
+                quoted + "\n" +
+                "Resume EXACTLY at that cut — output only the remaining text. " +
+                "Do not repeat anything already written, do not restart, no preamble.\n";
+            if (_countTokens(block) <= headroom) return block;
+        }
+        return null;
     }
 
     /// <summary>
@@ -271,7 +542,8 @@ public sealed class MemorySession
 
     private CnetHarnessGenerationResult GenerateOnce(
         string systemText, string user, uint maxTokens,
-        CnetHarnessSamplingMode sampling, uint seed, string role) =>
+        CnetHarnessSamplingMode sampling, uint seed, string role,
+        bool? think = null, string? continueFrom = null) =>
         _session.Generate(new CnetHarnessGenerateOptions
         {
             System = systemText.Length > 0 ? systemText : null,
@@ -280,6 +552,8 @@ public sealed class MemorySession
             MaxTokens = maxTokens,
             Seed = seed,
             Sampling = sampling,
+            Think = think,
+            ContinueFrom = continueFrom,
         });
 
     /// <summary>

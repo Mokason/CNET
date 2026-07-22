@@ -26,6 +26,14 @@ public interface ICnetInferenceSession : IDisposable
     CnetHarnessGenerationResult Generate(CnetHarnessGenerateOptions options);
 
     /// <summary>
+    /// Whether <see cref="CnetHarnessGenerateOptions.ContinueFrom"/> is honored
+    /// — i.e. the backend can resume a partial assistant reply structurally,
+    /// as its own turn in the conversation. Callers fall back to prompt-side
+    /// anchoring when false. Default false so implementations opt in.
+    /// </summary>
+    bool SupportsContinuation => false;
+
+    /// <summary>
     /// Report the sampling profile a generation would apply, without producing
     /// any tokens.
     /// </summary>

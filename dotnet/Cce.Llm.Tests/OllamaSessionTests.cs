@@ -396,4 +396,45 @@ public sealed class OllamaSessionTests
         using ICnetInferenceSession session = OpenFake(HandlerWith(CannedStream()));
         Assert.Equal("Hello ghost", session.Generate(Options()).Text);
     }
+
+    [Fact]
+    public void ContinueFrom_RendersAsAssistantTurn_BeforeTheUserMessage()
+    {
+        var handler = HandlerWith(CannedStream());
+        using var session = OpenFake(handler);
+
+        session.Generate(new CnetHarnessGenerateOptions
+        {
+            System = "sys",
+            User = "continue please",
+            Role = "t",
+            MaxTokens = 8,
+            ContinueFrom = "partial answer text",
+        });
+
+        Assert.True(session.SupportsContinuation);
+        using var doc = JsonDocument.Parse(handler.LastChatBody!);
+        JsonElement messages = doc.RootElement.GetProperty("messages");
+        Assert.Equal(3, messages.GetArrayLength());
+        Assert.Equal("system", messages[0].GetProperty("role").GetString());
+        Assert.Equal("assistant", messages[1].GetProperty("role").GetString());
+        Assert.Equal("partial answer text", messages[1].GetProperty("content").GetString());
+        Assert.Equal("user", messages[2].GetProperty("role").GetString());
+        Assert.Equal("continue please", messages[2].GetProperty("content").GetString());
+    }
+
+    [Fact]
+    public void NoContinueFrom_SendsNoAssistantTurn()
+    {
+        var handler = HandlerWith(CannedStream());
+        using var session = OpenFake(handler);
+
+        session.Generate(Options());
+
+        using var doc = JsonDocument.Parse(handler.LastChatBody!);
+        JsonElement messages = doc.RootElement.GetProperty("messages");
+        Assert.Equal(2, messages.GetArrayLength());
+        Assert.Equal("system", messages[0].GetProperty("role").GetString());
+        Assert.Equal("user", messages[1].GetProperty("role").GetString());
+    }
 }
