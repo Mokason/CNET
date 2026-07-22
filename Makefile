@@ -3332,13 +3332,17 @@ cnet_harness_gpu_benchmark: cnet_harness_plugin
 		logs/cnet_harness_gpu_benchmark.json
 
 .PHONY: cnet_harness_contract_test
-cnet_harness_contract_test: $(CCE) $(CCE_MODEL_CATALOG) $(MODEL_RUNTIME) $(MODEL_PROBE) $(CNET_HARNESS_CORE) $(AGENT_ROLE_SRC) $(ROUTE_LOG_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) tests/test_cnet_harness_contract.c tests/test_cnet_harness_failclosed.c $(CNET_HARNESS_HEADERS)
+cnet_harness_contract_test: $(CCE) $(CCE_MODEL_CATALOG) $(MODEL_RUNTIME) $(MODEL_PROBE) $(CNET_HARNESS_CORE) $(AGENT_ROLE_SRC) $(ROUTE_LOG_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(SPECIALIST_SRC) $(SPECIALIST_ADAPTERS) $(CNET_CCE_ADAPTER) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) tests/test_cnet_harness_contract.c tests/test_cnet_harness_failclosed.c $(CNET_HARNESS_HEADERS)
 	@mkdir -p $(BIN_DIR) logs
 	# Main contract test: links strong fake backend hooks so the route-only
 	# ABI surface can be exercised without llama.cpp.
+	# cnet_health_layers.c calls specialist_axes and btn_reliability, whose
+	# definers pull the specialist/contract/registry support set — the same
+	# known-good closure gap_lane links. Still hermetic in the sense that
+	# matters: no llama.cpp, no GGUF.
 	$(CC) $(CFLAGS) -o $(BIN_DIR)/cnet_harness_contract_test \
 		$(CCE) $(CCE_MODEL_CATALOG) $(MODEL_RUNTIME) $(MODEL_PROBE) \
-		$(CNET_HARNESS_CORE) $(AGENT_ROLE_SRC) $(ROUTE_LOG_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) tests/test_cnet_harness_contract.c \
+		$(CNET_HARNESS_CORE) $(AGENT_ROLE_SRC) $(ROUTE_LOG_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(SPECIALIST_SRC) $(SPECIALIST_ADAPTERS) $(CNET_CCE_ADAPTER) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) tests/test_cnet_harness_contract.c \
 		$(LDFLAGS) -pthread
 	./$(BIN_DIR)/cnet_harness_contract_test > logs/cnet_harness_contract_test.log 2>&1
 	@grep -q "CNET_HARNESS_CONTRACT_TEST_PASS" logs/cnet_harness_contract_test.log
@@ -3347,7 +3351,7 @@ cnet_harness_contract_test: $(CCE) $(CCE_MODEL_CATALOG) $(MODEL_RUNTIME) $(MODEL
 	# dummy path.
 	$(CC) $(CFLAGS) -o $(BIN_DIR)/cnet_harness_failclosed_test \
 		$(CCE) $(CCE_MODEL_CATALOG) $(MODEL_RUNTIME) $(MODEL_PROBE) \
-		$(CNET_HARNESS_CORE) $(AGENT_ROLE_SRC) $(ROUTE_LOG_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) tests/test_cnet_harness_failclosed.c \
+		$(CNET_HARNESS_CORE) $(AGENT_ROLE_SRC) $(ROUTE_LOG_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(SPECIALIST_SRC) $(SPECIALIST_ADAPTERS) $(CNET_CCE_ADAPTER) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) tests/test_cnet_harness_failclosed.c \
 		$(LDFLAGS) -pthread
 	./$(BIN_DIR)/cnet_harness_failclosed_test > logs/cnet_harness_failclosed_test.log 2>&1
 	@grep -q "CNET_HARNESS_FAILCLOSED_TEST_PASS" logs/cnet_harness_failclosed_test.log
