@@ -289,6 +289,23 @@ public sealed class MemorySession
             }
         }
 
+        // ── all-thinking burnout salvage ──
+        // A capped answer with no visible text means the model spent the whole
+        // budget on hidden reasoning (bit a live agent-to-agent test twice in a
+        // row). One retry: double budget, think:false. Same prompt and seed —
+        // the deterministic thinking prefix simply gets room to finish.
+        uint mainBudget = maxTokens;
+        uint burnedGenerated = 0; double burnedPromptMs = 0, burnedGenMs = 0;
+        if (string.IsNullOrWhiteSpace(result.Text) && result.GeneratedTokens >= maxTokens)
+        {
+            burnedGenerated = result.GeneratedTokens;
+            burnedPromptMs = result.PromptMs;
+            burnedGenMs = result.GenerationMs;
+            mainBudget = Math.Min(maxTokens * 2, 65536u);
+            result = GenerateOnce(systemText, innerUser, mainBudget, sampling, seed, role,
+                think: false, continueFrom: continueFrom);
+        }
+
         // ── auto-continue ──
         // A budget-capped chunk is unfinished; instead of handing the seam to
         // the user, resume automatically and stitch. Unlike a manual
@@ -297,15 +314,16 @@ public sealed class MemorySession
         // round quotes the whole answer so far, clipped from the head when the
         // budget demands, since the cut end is what anchors the resume.
         var chunks = new List<string> { result.Text };
-        uint totalGenerated = result.GeneratedTokens;
-        double totalPromptMs = result.PromptMs, totalGenMs = result.GenerationMs;
+        uint totalGenerated = result.GeneratedTokens + burnedGenerated;
+        double totalPromptMs = result.PromptMs + burnedPromptMs;
+        double totalGenMs = result.GenerationMs + burnedGenMs;
         int autoRounds = 0;
         // Two unfinished signals: the token budget cut the answer, or the
         // answer ends inside an open ``` fence — a model emitting a natural
         // stop mid-code-block believes it is done but structurally is not
         // (observed live twice: JSON with 11 unclosed braces, fence never
         // closed). Both resume identically; the round cap bounds either.
-        bool capped = (result.GeneratedTokens >= maxTokens || HasUnclosedFence(result.Text)) &&
+        bool capped = (result.GeneratedTokens >= mainBudget || HasUnclosedFence(result.Text)) &&
                       !string.IsNullOrWhiteSpace(result.Text);
 
         void Tally(CnetHarnessGenerationResult r)

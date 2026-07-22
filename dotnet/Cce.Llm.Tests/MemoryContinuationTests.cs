@@ -559,4 +559,43 @@ public sealed class MemoryContinuationTests : IDisposable
         Assert.Equal("obj_009\",\n            \"type\": \"ReturnTo\"", cleaned);
         Assert.Contains("\"id\": \"obj_009\"", soFar + cleaned);
     }
+
+    /// <summary>
+    /// A capped answer with no visible text = the model deliberated through
+    /// its entire budget (bit a live agent-to-agent test). One retry with
+    /// double budget and think:false; accounting includes the burned round.
+    /// </summary>
+    [Fact]
+    public void AllThinkingEmptyAnswer_IsRetriedWithDoubleBudget()
+    {
+        using var store = BlobStore.Open(StorePath());
+        var session = new StructuralSession(("   ", true), ("A real answer.", false));
+        var ghost = new MemorySession(session,
+            new ConversationMemory(store, s => s.Length / 4 + 1), 4096,
+            s => s.Length / 4 + 1, maxAutoContinues: 3);
+
+        var r = ghost.Generate(null, "hello", maxTokens: 200);
+
+        Assert.Equal(2, session.Calls.Count);
+        Assert.Equal(400u, session.Calls[1].MaxTokens);
+        Assert.False(session.Calls[1].Think);
+        Assert.Equal("A real answer.", r.Result.Text);
+        Assert.False(r.Truncated);
+        Assert.Equal(200u + 100u, r.Result.GeneratedTokens);   // burned + retry (400/4)
+    }
+
+    [Fact]
+    public void EmptySalvage_StillEmpty_DoesNotLoop()
+    {
+        using var store = BlobStore.Open(StorePath());
+        var session = new StructuralSession(("", true), ("", true));
+        var ghost = new MemorySession(session,
+            new ConversationMemory(store, s => s.Length / 4 + 1), 4096,
+            s => s.Length / 4 + 1, maxAutoContinues: 3);
+
+        var r = ghost.Generate(null, "hello");
+
+        Assert.Equal(2, session.Calls.Count);   // main + one salvage, then stop
+        Assert.False(r.Truncated);              // nothing to resume
+    }
 }
