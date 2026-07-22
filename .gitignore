@@ -8,7 +8,9 @@ dotnet/**/obj/
 
 # large model & cache artifacts (external or regenerable; never in history)
 artifacts/
-Models/
+# Anchored: only the repo-root weights directory. Unanchored, this also matched
+# source directories such as dotnet/Llm/src/CNET.Llm.Core/Models/.
+/Models/
 supra_cache/
 altmodel_cache/
 altmodel_gpt2_cache/

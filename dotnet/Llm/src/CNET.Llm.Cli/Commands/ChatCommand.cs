@@ -1,0 +1,803 @@
+using System.ComponentModel;
+using System.Diagnostics;
+using System.Text;
+using System.Text.Json;
+using System.Text.RegularExpressions;
+using CNET.Llm.Cli.Helpers;
+using CNET.Llm.Core.Configuration;
+using CNET.Llm.Core.Models;
+using CNET.Llm.Engine;
+using CNET.Llm.Engine.Constraints;
+using CNET.Llm.Engine.PromptCache;
+using CNET.Llm.Models.Architectures;
+using CNET.Llm.Models.Gguf;
+using CNET.Llm.Tokenizers;
+using CNET.Llm.Tokenizers.ChatTemplates;
+using CNET.Llm.Tokenizers.ToolCallParsers;
+using Spectre.Console;
+using Spectre.Console.Cli;
+
+namespace CNET.Llm.Cli.Commands;
+
+/// <summary>
+/// Interactive multi-turn chat REPL: load model → apply chat template → stream tokens.
+/// Maintains conversation history across turns with Jinja2 template formatting.
+/// </summary>
+internal sealed class ChatCommand : AsyncCommand<ChatCommand.Settings>
+{
+    public sealed class Settings : CommandSettings
+    {
+        /// <summary>Path to a GGUF file or HuggingFace repo ID.</summary>
+        [CommandArgument(0, "<model>")]
+        [Description("Path to a GGUF file or HuggingFace repo ID (e.g., QuantFactory/SmolLM-135M-GGUF).")]
+        public string Model { get; set; } = string.Empty;
+
+        /// <summary>System prompt for the conversation.</summary>
+        [CommandOption("--system|-s")]
+        [Description("System prompt for the conversation.")]
+        public string? SystemPrompt { get; set; }
+
+        /// <summary>Maximum tokens per response.</summary>
+        [CommandOption("--max-tokens|-n")]
+        [Description("Maximum number of tokens to generate per response.")]
+        [DefaultValue(512)]
+        public int MaxTokens { get; set; } = 512;
+
+        /// <summary>Sampling temperature.</summary>
+        [CommandOption("--temp|-t")]
+        [Description("Sampling temperature. 0 = greedy (default).")]
+        [DefaultValue(0f)]
+        public float Temperature { get; set; }
+
+        /// <summary>Top-K sampling.</summary>
+        [CommandOption("--top-k")]
+        [Description("Top-K sampling. 0 = disabled.")]
+        [DefaultValue(0)]
+        public int TopK { get; set; }
+
+        /// <summary>Top-P sampling.</summary>
+        [CommandOption("--top-p")]
+        [Description("Top-P (nucleus) sampling threshold.")]
+        [DefaultValue(1.0f)]
+        public float TopP { get; set; } = 1.0f;
+
+        /// <summary>Min-P sampling.</summary>
+        [CommandOption("--min-p")]
+        [Description("Min-P sampling threshold. 0 = disabled.")]
+        [DefaultValue(0f)]
+        public float MinP { get; set; }
+
+        /// <summary>Repetition penalty.</summary>
+        [CommandOption("--repeat-penalty")]
+        [Description("Repetition penalty factor. 1.0 = disabled.")]
+        [DefaultValue(1.0f)]
+        public float RepeatPenalty { get; set; } = 1.0f;
+
+        /// <summary>Repetition penalty lookback window.</summary>
+        [CommandOption("--repeat-last-n")]
+        [Description("Number of recent tokens for repetition penalty lookback. 0 = full history.")]
+        [DefaultValue(0)]
+        public int RepeatLastN { get; set; }
+
+        /// <summary>Random seed for reproducibility.</summary>
+        [CommandOption("--seed")]
+        [Description("Random seed for reproducible sampling. Omit for non-deterministic.")]
+        public int? Seed { get; set; }
+
+        /// <summary>CPU thread count.</summary>
+        [CommandOption("--threads")]
+        [Description("Number of CPU threads for inference. 0 = auto/all cores (default).")]
+        [DefaultValue(0)]
+        public int Threads { get; set; }
+
+        /// <summary>Decode thread count.</summary>
+        [CommandOption("--decode-threads")]
+        [Description("Number of threads for decode. 0 = auto (caps at memory channel count).")]
+        [DefaultValue(0)]
+        public int DecodeThreads { get; set; }
+
+        /// <summary>NUMA pinning.</summary>
+        [CommandOption("--numa-pin")]
+        [Description("Pin workers to NUMA-local cores on multi-socket systems.")]
+        [DefaultValue(false)]
+        public bool NumaPin { get; set; }
+
+        /// <summary>P-core pinning.</summary>
+        [CommandOption("--pcore-only")]
+        [Description("Pin workers to P-cores only (Intel hybrid architectures).")]
+        [DefaultValue(false)]
+        public bool PCoreOnly { get; set; }
+
+        /// <summary>Compute device.</summary>
+        [CommandOption("--device|-d")]
+        [Description("Compute device: 'cpu' (default), 'gpu', 'gpu:0', 'gpu:1'.")]
+        [DefaultValue("cpu")]
+        public string Device { get; set; } = "cpu";
+
+        /// <summary>Number of GPU layers for hybrid offloading.</summary>
+        [CommandOption("--gpu-layers")]
+        [Description("Number of transformer layers to offload to GPU. 0 = CPU only. " +
+                     "Omit for default (0 with --device cpu, all with --device gpu).")]
+        public int? GpuLayers { get; set; }
+
+        /// <summary>Quantization filter.</summary>
+        [CommandOption("--quant|-q")]
+        [Description("Quantization filter when multiple GGUF files exist (e.g., Q4_K_M, Q8_0).")]
+        public string? Quant { get; set; }
+
+        /// <summary>Constrain model output format.</summary>
+        [CommandOption("--response-format")]
+        [Description("Constrain model output format: 'text' (default), 'json_object', 'json_schema', 'regex', or 'grammar'.")]
+        [DefaultValue("text")]
+        public string ResponseFormat { get; set; } = "text";
+
+        /// <summary>JSON Schema for json_schema response format.</summary>
+        [CommandOption("--schema")]
+        [Description("JSON Schema string or file path (prefixed with @) for json_schema response format.")]
+        public string? Schema { get; set; }
+
+        /// <summary>Regex pattern for regex response format.</summary>
+        [CommandOption("--pattern")]
+        [Description("Regex pattern for regex response format. Entire output must match.")]
+        public string? Pattern { get; set; }
+
+        /// <summary>GBNF grammar for grammar response format.</summary>
+        [CommandOption("--grammar")]
+        [Description("GBNF grammar string or file path (prefixed with @) for grammar response format.")]
+        public string? Grammar { get; set; }
+
+        /// <summary>Tool definitions.</summary>
+        [CommandOption("--tools")]
+        [Description("Tool definitions: JSON array string or file path (prefixed with @). " +
+                     "Each tool: {\"name\": \"...\", \"description\": \"...\", \"parameters\": {...}}.")]
+        public string? Tools { get; set; }
+
+        /// <summary>Tool choice strategy.</summary>
+        [CommandOption("--tool-choice")]
+        [Description("Tool choice: 'auto' (default), 'none', 'required', or a function name.")]
+        [DefaultValue("auto")]
+        public string ToolChoiceStr { get; set; } = "auto";
+
+        /// <summary>KV-cache key quantization type.</summary>
+        [CommandOption("--cache-type-k")]
+        [Description("KV-cache key quantization: f32 (default), q8_0, q4_0.")]
+        [DefaultValue("f32")]
+        public string CacheTypeK { get; set; } = "f32";
+
+        /// <summary>KV-cache value quantization type.</summary>
+        [CommandOption("--cache-type-v")]
+        [Description("KV-cache value quantization: f32 (default), q8_0, q4_0.")]
+        [DefaultValue("f32")]
+        public string CacheTypeV { get; set; } = "f32";
+
+        /// <summary>Mixed-precision window size for KV-cache quantization.</summary>
+        [CommandOption("--cache-window")]
+        [Description("Mixed-precision window: recent N tokens in full precision (0 = all quantized). Only used when --cache-type-k or --cache-type-v is set.")]
+        [DefaultValue(0)]
+        public int CacheWindow { get; set; }
+
+        /// <summary>Use paged KV-cache (block-based allocation).</summary>
+        [CommandOption("--paged")]
+        [Description("Use paged KV-cache with block-based allocation instead of pre-allocated simple cache.")]
+        [DefaultValue(false)]
+        public bool Paged { get; set; }
+
+        /// <summary>Disable prompt caching (enabled by default).</summary>
+        [CommandOption("--no-prompt-cache")]
+        [Description("Disable prompt caching. When enabled (default), KV-cache state is reused across turns.")]
+        [DefaultValue(false)]
+        public bool NoPromptCache { get; set; }
+
+        /// <summary>Maximum number of cached sessions for prompt caching.</summary>
+        [CommandOption("--prompt-cache-size")]
+        [Description("Maximum number of cached sessions for prompt caching.")]
+        [DefaultValue(1)]
+        public int PromptCacheSize { get; set; } = 1;
+
+        /// <summary>Verbose debug output.</summary>
+        [CommandOption("--verbose|-v")]
+        [Description("Show debug info: finish reason, raw text before stop-sequence stripping, tool call detection details.")]
+        [DefaultValue(false)]
+        public bool Verbose { get; set; }
+    }
+
+    /// <inheritdoc/>
+    public override async Task<int> ExecuteAsync(CommandContext context, Settings settings)
+    {
+        var resolvedPath = GgufFileResolver.Resolve(settings.Model, settings.Quant);
+        if (resolvedPath is null)
+            return 1;
+
+        GgufFile? gguf = null;
+        ModelConfig? config = null;
+        Tokenizers.Bpe.BpeTokenizer? tokenizer = null;
+        IModel? model = null;
+
+        AnsiConsole.Status()
+            .Spinner(Spinner.Known.Dots)
+            .Start("Loading model...", ctx =>
+            {
+                ctx.Status("Opening GGUF file...");
+                gguf = GgufFile.Open(resolvedPath);
+
+                ctx.Status("Extracting model config...");
+                config = GgufModelConfigExtractor.Extract(gguf.Metadata);
+
+                ctx.Status("Loading tokenizer...");
+                tokenizer = GgufBpeTokenizerFactory.Load(gguf.Metadata);
+
+                int gpuLayers = ResolveGpuLayers(settings, config);
+                if (gpuLayers <= 0)
+                {
+                    var threading = new ThreadingConfig(settings.Threads, settings.DecodeThreads, settings.NumaPin, settings.PCoreOnly);
+                    ctx.Status($"Loading {config.Architecture} model ({config.NumLayers} layers, {threading.EffectiveThreadCount} threads)...");
+                    model = TransformerModel.LoadFromGguf(gguf, config, threading);
+                }
+                else if (gpuLayers >= config.NumLayers)
+                {
+                    int gpuId = settings.Device.IndexOf(':') is int ci and > 0
+                        ? int.Parse(settings.Device.AsSpan(ci + 1))
+                        : 0;
+                    ctx.Status($"Loading {config.Architecture} model on GPU {gpuId}...");
+                    model = CNET.Llm.Cuda.CudaTransformerModel.LoadFromGguf(gguf, config, gpuId);
+                }
+                else
+                {
+                    int gpuId = settings.Device.IndexOf(':') is int ci2 and > 0
+                        ? int.Parse(settings.Device.AsSpan(ci2 + 1))
+                        : 0;
+                    var threading = new ThreadingConfig(settings.Threads, settings.DecodeThreads, settings.NumaPin, settings.PCoreOnly);
+                    ctx.Status($"Loading {config.Architecture} model ({gpuLayers} GPU + {config.NumLayers - gpuLayers} CPU layers)...");
+                    model = CNET.Llm.Cuda.HybridTransformerModel.LoadFromGguf(gguf, config, gpuLayers, gpuId, threading);
+                }
+            });
+
+        // Display VRAM warning after spinner completes (so it stays visible)
+        string? vramWarning = (model as CNET.Llm.Cuda.CudaTransformerModel)?.VramWarning
+                           ?? (model as CNET.Llm.Cuda.HybridTransformerModel)?.VramWarning;
+        if (vramWarning is not null)
+            AnsiConsole.MarkupLine($"[yellow]WARNING: {Markup.Escape(vramWarning)}[/]");
+
+        // Create chat template from GGUF metadata, fallback to ChatML
+        string bosTokenStr = tokenizer!.DecodeToken(tokenizer.BosTokenId);
+        string eosTokenStr = tokenizer.DecodeToken(tokenizer.EosTokenId);
+        IChatTemplate chatTemplate;
+        var jinjaTemplate = GgufChatTemplateFactory.TryCreate(gguf!.Metadata, tokenizer);
+        chatTemplate = jinjaTemplate ?? new JinjaChatTemplate(DefaultChatMlTemplateText, bosTokenStr, eosTokenStr);
+
+        // Parse tool definitions
+        ToolDefinition[]? tools = ParseToolDefinitions(settings.Tools);
+        IToolCallParser? toolCallParser = tools is { Length: > 0 }
+            ? GgufChatTemplateFactory.CreateToolCallParser(gguf.Metadata, config!.Architecture)
+            : null;
+        ToolChoice toolChoice = ParseToolChoice(settings.ToolChoiceStr, tools);
+
+        // Common end-of-turn markers used by chat templates.
+        // The EOS stop condition handles eos_token_id, but the end-of-turn marker
+        // may be a different token (e.g., <|im_end|> in ChatML, <|eot_id|> in Llama 3).
+        var stopSequences = new List<string>();
+        foreach (var marker in new[] { "<|im_end|>", "<|eot_id|>", "<|eom_id|>", "<|end|>", "</s>", "</tool_call>" })
+        {
+            if (marker != eosTokenStr) // avoid duplicate with EOS stop condition
+                stopSequences.Add(marker);
+        }
+
+        var responseFormat = settings.ResponseFormat.ToLowerInvariant() switch
+        {
+            "json_object" => (Core.Configuration.ResponseFormat)new Core.Configuration.ResponseFormat.JsonObject(),
+            "json_schema" => BuildJsonSchemaFormat(settings.Schema),
+            "regex" => BuildRegexFormat(settings.Pattern),
+            "grammar" => BuildGrammarFormat(settings.Grammar),
+            _ => null
+        };
+
+        // When tool_choice is required or specific function, constrain output to valid tool call JSON
+        if (responseFormat is null && tools is { Length: > 0 })
+        {
+            string? argumentsKey = toolCallParser is LlamaToolCallParser ? "parameters" : "arguments";
+            responseFormat = toolChoice switch
+            {
+                ToolChoice.Required => new Core.Configuration.ResponseFormat.JsonSchema
+                {
+                    Schema = ToolCallSchemaBuilder.BuildForRequired(tools, argumentsKey),
+                    Name = "tool_call"
+                },
+                ToolChoice.Function fn => new Core.Configuration.ResponseFormat.JsonSchema
+                {
+                    Schema = ToolCallSchemaBuilder.BuildForFunction(
+                        tools.First(t => t.Name == fn.Name), argumentsKey),
+                    Name = "tool_call"
+                },
+                _ => null // auto/none — no constraint
+            };
+        }
+
+        var inferenceOptions = new InferenceOptions
+        {
+            Temperature = settings.Temperature,
+            TopK = settings.TopK,
+            TopP = settings.TopP,
+            MinP = settings.MinP,
+            RepetitionPenalty = settings.RepeatPenalty,
+            RepetitionPenaltyWindow = settings.RepeatLastN,
+            MaxTokens = settings.MaxTokens,
+            Seed = settings.Seed,
+            StopSequences = stopSequences,
+            ResponseFormat = responseFormat,
+            Threading = new ThreadingConfig(settings.Threads, settings.DecodeThreads, settings.NumaPin, settings.PCoreOnly)
+        };
+
+        // Print header
+        var threadingInfo = new ThreadingConfig(settings.Threads, settings.DecodeThreads, settings.NumaPin, settings.PCoreOnly);
+        var quantLabel = InferQuantLabel(resolvedPath, settings.Quant);
+        var samplingLabel = BuildSamplingLabel(settings);
+        var deviceLabel = model is CNET.Llm.Cuda.CudaTransformerModel
+            ? CNET.Llm.Cuda.CudaDevice.GetDevice(settings.Device.IndexOf(':') is int ci and > 0
+                ? int.Parse(settings.Device.AsSpan(ci + 1)) : 0).ToString()
+            : $"{threadingInfo.EffectiveThreadCount} threads";
+        var toolsLabel = tools is { Length: > 0 } ? $" | {tools.Length} tool(s)" : "";
+        var segments = $"{config!.Architecture} {config.NumLayers}L/{config.HiddenSize}H | {quantLabel} | {deviceLabel} | {samplingLabel}{toolsLabel}";
+        AnsiConsole.Write(new Rule($"[grey]cnet-llm chat | {Markup.Escape(segments)}[/]").LeftJustified());
+        AnsiConsole.MarkupLine("[dim]Type /exit to quit, /clear to reset history, /system <text> to set system prompt.[/]");
+        AnsiConsole.WriteLine();
+
+        // Initialize conversation
+        var history = new List<ChatMessage>();
+        if (!string.IsNullOrEmpty(settings.SystemPrompt))
+            history.Add(new ChatMessage { Role = "system", Content = settings.SystemPrompt });
+
+        var kvConfig = new KvCacheConfig(
+            KvCacheConfig.ParseDType(settings.CacheTypeK),
+            KvCacheConfig.ParseDType(settings.CacheTypeV),
+            settings.CacheWindow);
+
+        Func<ModelConfig, int, CNET.Llm.Core.Attention.IKvCache>? kvFactory = null;
+        CNET.Llm.Engine.KvCache.PagedKvCacheFactory? pagedFactory = null;
+        if (model is CNET.Llm.Cuda.CudaTransformerModel cudaModel)
+        {
+            if (settings.Paged)
+                AnsiConsole.MarkupLine("[yellow]WARNING: Paged KV-cache not supported with CUDA, using GPU cache.[/]");
+            kvFactory = kvConfig.IsQuantized
+                ? (cfg, size) => cudaModel.CreateKvCache(size, kvConfig)
+                : (cfg, size) => cudaModel.CreateKvCache(size);
+        }
+        else if (model is CNET.Llm.Cuda.HybridTransformerModel hybridModel)
+        {
+            if (settings.Paged)
+                AnsiConsole.MarkupLine("[yellow]WARNING: Paged KV-cache not supported with hybrid GPU, using hybrid cache.[/]");
+            kvFactory = (cfg, size) => hybridModel.CreateKvCache(size);
+        }
+        else if (settings.Paged && !kvConfig.IsQuantized)
+        {
+            pagedFactory = new CNET.Llm.Engine.KvCache.PagedKvCacheFactory(
+                config!.NumLayers, config.NumKvHeads, config.HeadDim);
+            kvFactory = (cfg, size) => pagedFactory.Create(size);
+        }
+        else if (settings.Paged && kvConfig.IsQuantized)
+        {
+            AnsiConsole.MarkupLine("[yellow]WARNING: Paged KV-cache does not support quantization yet, using quantized simple cache.[/]");
+            kvFactory = (cfg, size) => new CNET.Llm.Engine.KvCache.QuantizedKvCache(
+                cfg.NumLayers, cfg.NumKvHeads, cfg.HeadDim, size,
+                kvConfig.KeyDType, kvConfig.ValueDType, kvConfig.MixedPrecisionWindowSize);
+        }
+        else if (kvConfig.IsQuantized)
+        {
+            kvFactory = (cfg, size) => new CNET.Llm.Engine.KvCache.QuantizedKvCache(
+                cfg.NumLayers, cfg.NumKvHeads, cfg.HeadDim, size,
+                kvConfig.KeyDType, kvConfig.ValueDType, kvConfig.MixedPrecisionWindowSize);
+        }
+
+        PrefixCache? prefixCache = !settings.NoPromptCache
+            ? new PrefixCache(settings.PromptCacheSize)
+            : null;
+        var generator = new TextGenerator(model!, tokenizer!, kvFactory, prefixCache);
+
+        try
+        {
+            await RunRepl(generator, chatTemplate, inferenceOptions, history, settings, tools, toolCallParser, toolChoice, settings.Verbose, prefixCache);
+        }
+        finally
+        {
+            pagedFactory?.Dispose();
+            model?.Dispose();
+            gguf?.Dispose();
+        }
+
+        return 0;
+    }
+
+    private static async Task RunRepl(
+        TextGenerator generator,
+        IChatTemplate chatTemplate,
+        InferenceOptions options,
+        List<ChatMessage> history,
+        Settings settings,
+        ToolDefinition[]? tools,
+        IToolCallParser? toolCallParser,
+        ToolChoice toolChoice,
+        bool verbose,
+        PrefixCache? prefixCache)
+    {
+        while (true)
+        {
+            string input;
+            try
+            {
+                input = AnsiConsole.Prompt(new TextPrompt<string>(">>>").AllowEmpty());
+            }
+            catch (InvalidOperationException)
+            {
+                break; // stdin redirected or closed
+            }
+
+            input = input.Trim();
+            if (string.IsNullOrEmpty(input))
+                continue;
+
+            // Handle special commands
+            if (input.Equals("/exit", StringComparison.OrdinalIgnoreCase) ||
+                input.Equals("/quit", StringComparison.OrdinalIgnoreCase))
+            {
+                break;
+            }
+
+            if (input.Equals("/clear", StringComparison.OrdinalIgnoreCase))
+            {
+                // Keep system prompt if present
+                var systemMsg = history.Find(m => m.Role == "system");
+                history.Clear();
+                if (systemMsg != null)
+                    history.Add(systemMsg);
+                prefixCache?.Clear();
+                AnsiConsole.MarkupLine("[dim]History cleared.[/]");
+                continue;
+            }
+
+            if (input.StartsWith("/system ", StringComparison.OrdinalIgnoreCase))
+            {
+                string systemText = input[8..].Trim();
+                // Remove existing system message and add new one
+                history.RemoveAll(m => m.Role == "system");
+                history.Insert(0, new ChatMessage { Role = "system", Content = systemText });
+                AnsiConsole.MarkupLine($"[dim]System prompt set.[/]");
+                continue;
+            }
+
+            if (input.Equals("/tools", StringComparison.OrdinalIgnoreCase))
+            {
+                if (tools is not { Length: > 0 })
+                    AnsiConsole.MarkupLine("[dim]No tools configured. Use --tools to provide tool definitions.[/]");
+                else
+                {
+                    foreach (var tool in tools)
+                        AnsiConsole.MarkupLine($"[blue]{Markup.Escape(tool.Name)}[/]: {Markup.Escape(tool.Description)}");
+                }
+                continue;
+            }
+
+            // Add user message
+            history.Add(new ChatMessage { Role = "user", Content = input });
+
+            // Generate (with tool call detection loop)
+            await GenerateAndHandleToolCalls(generator, chatTemplate, options, history, tools, toolCallParser, toolChoice, verbose);
+        }
+    }
+
+    private const int MaxToolCallRounds = 5;
+
+    private static Task GenerateAndHandleToolCalls(
+        TextGenerator generator,
+        IChatTemplate chatTemplate,
+        InferenceOptions options,
+        List<ChatMessage> history,
+        ToolDefinition[]? tools,
+        IToolCallParser? toolCallParser,
+        ToolChoice toolChoice,
+        bool verbose)
+        => GenerateAndHandleToolCallsInner(generator, chatTemplate, options, history, tools, toolCallParser, toolChoice, verbose, 0);
+
+    private static async Task GenerateAndHandleToolCallsInner(
+        TextGenerator generator,
+        IChatTemplate chatTemplate,
+        InferenceOptions options,
+        List<ChatMessage> history,
+        ToolDefinition[]? tools,
+        IToolCallParser? toolCallParser,
+        ToolChoice toolChoice,
+        bool verbose,
+        int round)
+    {
+        var templateOptions = new ChatTemplateOptions
+        {
+            AddGenerationPrompt = true,
+            Tools = tools
+        };
+        string prompt = chatTemplate.Apply(history, templateOptions);
+
+        if (verbose)
+            AnsiConsole.MarkupLine($"[dim grey][[verbose]] prompt ({prompt.Length} chars):\n{Markup.Escape(prompt)}[/]");
+
+        // Generate response via streaming
+        var sw = Stopwatch.StartNew();
+        int tokenCount = 0;
+        long firstTokenTicks = 0;
+        var sb = new StringBuilder();
+        // Only suppress streaming output for required/function — model MUST produce a tool call.
+        // For auto, let text flow to the user and detect tool calls post-hoc.
+        bool suppressToolCallText = toolChoice is ToolChoice.Required or ToolChoice.Function;
+        var accumulator = toolCallParser is not null && suppressToolCallText
+            ? new StreamingToolCallAccumulator(toolCallParser) : null;
+        FinishReason finishReason = FinishReason.Length;
+        InferenceTimings timings = default;
+        int promptTokenCount = 0;
+
+        await foreach (var token in generator.GenerateStreamingTokensAsync(prompt, options))
+        {
+            if (tokenCount == 0 && token.Text.Length > 0)
+                firstTokenTicks = sw.ElapsedTicks;
+
+            bool suppress = accumulator?.Append(token.Text) ?? false;
+            if (!suppress)
+                Console.Write(token.Text);
+
+            sb.Append(token.Text);
+            if (token.FinishReason is null || token.Text.Length > 0)
+                tokenCount++;
+            if (token.FinishReason.HasValue)
+            {
+                finishReason = token.FinishReason.Value;
+                timings = token.Timings ?? default;
+                promptTokenCount = timings.PrefillTokenCount;
+            }
+        }
+
+        sw.Stop();
+        Console.WriteLine();
+
+        // Strip any remaining stop sequence suffixes from the response text
+        string rawText = sb.ToString();
+        string assistantText = rawText;
+        string? matchedStopSequence = null;
+        foreach (var seq in options.StopSequences)
+        {
+            if (assistantText.EndsWith(seq, StringComparison.Ordinal))
+            {
+                matchedStopSequence = seq;
+                assistantText = assistantText[..^seq.Length];
+                break;
+            }
+        }
+
+        if (verbose)
+        {
+            AnsiConsole.MarkupLine($"[dim grey][[verbose]] finish_reason={finishReason}, tokens={tokenCount}[/]");
+            if (matchedStopSequence is not null)
+                AnsiConsole.MarkupLine($"[dim grey][[verbose]] stopped by: {Markup.Escape(matchedStopSequence)}[/]");
+            if (rawText != assistantText)
+                AnsiConsole.MarkupLine($"[dim grey][[verbose]] raw text: {Markup.Escape(rawText)}[/]");
+        }
+
+        // Check for tool calls
+        ToolCall[]? detectedCalls = toolCallParser?.TryParse(assistantText);
+
+        if (detectedCalls is { Length: > 0 })
+        {
+            finishReason = FinishReason.ToolCalls;
+
+            // Add assistant message with tool calls to history
+            history.Add(new ChatMessage
+            {
+                Role = "assistant",
+                Content = assistantText.TrimEnd(),
+                ToolCalls = detectedCalls
+            });
+
+            // Display detected tool calls
+            AnsiConsole.MarkupLine("[dim]Tool calls detected:[/]");
+            foreach (var tc in detectedCalls)
+            {
+                AnsiConsole.MarkupLine(
+                    $"  [blue][[{Markup.Escape(tc.Id)}]][/] [green]{Markup.Escape(tc.FunctionName)}[/]({Markup.Escape(tc.Arguments)})");
+            }
+
+            // Print timing info for tool call generation
+            PrintTimingInfo(firstTokenTicks, promptTokenCount, tokenCount, timings);
+
+            // Prompt user for tool results
+            bool anyResultProvided = false;
+            foreach (var tc in detectedCalls)
+            {
+                string result;
+                try
+                {
+                    result = AnsiConsole.Prompt(
+                        new TextPrompt<string>($"  [dim]result for[/] [green]{Markup.Escape(tc.FunctionName)}[/] [dim]>>>[/]")
+                            .AllowEmpty());
+                }
+                catch (InvalidOperationException)
+                {
+                    result = "";
+                }
+
+                if (!string.IsNullOrWhiteSpace(result))
+                    anyResultProvided = true;
+
+                history.Add(new ChatMessage
+                {
+                    Role = "tool",
+                    Content = string.IsNullOrWhiteSpace(result) ? "{}" : result,
+                    ToolCallId = tc.Id
+                });
+            }
+
+            // Re-generate with tool results — but guard against infinite loops
+            if (round >= MaxToolCallRounds)
+            {
+                AnsiConsole.MarkupLine($"[yellow]Max tool call rounds ({MaxToolCallRounds}) reached.[/]");
+            }
+            else if (!anyResultProvided)
+            {
+                // User skipped all tool results — don't re-generate, just add placeholder
+                AnsiConsole.MarkupLine("[dim]No tool results provided, skipping re-generation.[/]");
+            }
+            else
+            {
+                AnsiConsole.MarkupLine("[dim]Generating response with tool results...[/]");
+                await GenerateAndHandleToolCallsInner(generator, chatTemplate, options, history, tools, toolCallParser, toolChoice, verbose, round + 1);
+            }
+        }
+        else
+        {
+            if (verbose && toolCallParser is not null)
+                AnsiConsole.MarkupLine("[dim grey][[verbose]] no tool calls detected by parser[/]");
+
+            // Normal text response — add to history
+            history.Add(new ChatMessage { Role = "assistant", Content = assistantText.TrimEnd() });
+            PrintTimingInfo(firstTokenTicks, promptTokenCount, tokenCount, timings);
+        }
+    }
+
+    private static void PrintTimingInfo(long firstTokenTicks, int promptTokenCount, int tokenCount, InferenceTimings timings)
+    {
+        double ttftMs = firstTokenTicks > 0 ? firstTokenTicks * 1000.0 / Stopwatch.Frequency : 0;
+        double prefillTokSec = timings.PrefillTokensPerSec;
+        double decodeTokSec = timings.DecodeTokensPerSec;
+        string cacheInfo = timings.CachedTokenCount > 0
+            ? $", {timings.CachedTokenCount} cached"
+            : "";
+        AnsiConsole.MarkupLine(
+            $"[dim][[{promptTokenCount} prompt tokens{cacheInfo}, {tokenCount} generated tokens, " +
+            $"{ttftMs:F0} ms TTFT, {prefillTokSec:F1} prefill tok/s, {decodeTokSec:F1} decode tok/s]][/]");
+        Console.WriteLine();
+    }
+
+    private static int ResolveGpuLayers(Settings settings, ModelConfig config)
+    {
+        if (settings.GpuLayers.HasValue)
+            return Math.Clamp(settings.GpuLayers.Value, 0, config.NumLayers);
+        return settings.Device.StartsWith("gpu", StringComparison.OrdinalIgnoreCase)
+            ? config.NumLayers : 0;
+    }
+
+    private static string InferQuantLabel(string resolvedPath, string? quantFlag)
+    {
+        if (!string.IsNullOrEmpty(quantFlag))
+            return quantFlag;
+
+        var match = Regex.Match(Path.GetFileName(resolvedPath), @"\.(Q[\w]+)\.gguf$", RegexOptions.IgnoreCase);
+        return match.Success ? match.Groups[1].Value : "unknown";
+    }
+
+    private static Core.Configuration.ResponseFormat BuildJsonSchemaFormat(string? schema)
+    {
+        if (string.IsNullOrEmpty(schema))
+            throw new InvalidOperationException("--schema is required when --response-format is json_schema");
+
+        string schemaJson = schema.StartsWith('@')
+            ? File.ReadAllText(schema[1..])
+            : schema;
+
+        return new Core.Configuration.ResponseFormat.JsonSchema { Schema = schemaJson };
+    }
+
+    private static Core.Configuration.ResponseFormat BuildRegexFormat(string? pattern)
+    {
+        if (string.IsNullOrEmpty(pattern))
+            throw new InvalidOperationException("--pattern is required when --response-format is regex");
+
+        return new Core.Configuration.ResponseFormat.Regex { Pattern = pattern };
+    }
+
+    private static Core.Configuration.ResponseFormat BuildGrammarFormat(string? grammar)
+    {
+        if (string.IsNullOrEmpty(grammar))
+            throw new InvalidOperationException("--grammar is required when --response-format is grammar");
+
+        string grammarText = grammar.StartsWith('@')
+            ? File.ReadAllText(grammar[1..])
+            : grammar;
+
+        return new Core.Configuration.ResponseFormat.Grammar { GbnfGrammar = grammarText };
+    }
+
+    private static string BuildSamplingLabel(Settings settings)
+    {
+        if (settings.Temperature <= 0)
+            return "greedy";
+
+        var parts = new List<string> { $"temp={settings.Temperature:F1}" };
+        if (settings.TopK > 0) parts.Add($"top-k={settings.TopK}");
+        if (settings.TopP < 1.0f) parts.Add($"top-p={settings.TopP:F2}");
+        if (settings.MinP > 0f) parts.Add($"min-p={settings.MinP:F2}");
+        if (settings.RepeatPenalty != 1.0f) parts.Add($"rep={settings.RepeatPenalty:F2}");
+        if (settings.Seed.HasValue) parts.Add($"seed={settings.Seed.Value}");
+        return string.Join(", ", parts);
+    }
+
+    internal static ToolDefinition[]? ParseToolDefinitions(string? toolsInput)
+    {
+        if (string.IsNullOrEmpty(toolsInput))
+            return null;
+
+        string json = toolsInput.StartsWith('@')
+            ? File.ReadAllText(toolsInput[1..])
+            : toolsInput;
+
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+            if (root.ValueKind != JsonValueKind.Array)
+                throw new InvalidOperationException("--tools must be a JSON array of tool definitions.");
+
+            var tools = new List<ToolDefinition>();
+            foreach (var element in root.EnumerateArray())
+            {
+                // Support both flat format and OpenAI-style {"type":"function","function":{...}}
+                JsonElement funcElement = element;
+                if (element.TryGetProperty("type", out var typeProp) &&
+                    typeProp.GetString() == "function" &&
+                    element.TryGetProperty("function", out var funcProp))
+                {
+                    funcElement = funcProp;
+                }
+
+                string name = funcElement.GetProperty("name").GetString()!;
+                string description = funcElement.TryGetProperty("description", out var descProp)
+                    ? descProp.GetString() ?? ""
+                    : "";
+                string parameters = funcElement.TryGetProperty("parameters", out var paramsProp)
+                    ? paramsProp.GetRawText()
+                    : "{}";
+
+                tools.Add(new ToolDefinition(name, description, parameters));
+            }
+            return tools.ToArray();
+        }
+        catch (JsonException ex)
+        {
+            throw new InvalidOperationException($"Invalid --tools JSON: {ex.Message}");
+        }
+    }
+
+    private static ToolChoice ParseToolChoice(string choice, ToolDefinition[]? tools)
+    {
+        return choice.ToLowerInvariant() switch
+        {
+            "auto" => new ToolChoice.Auto(),
+            "none" => new ToolChoice.None(),
+            "required" => new ToolChoice.Required(),
+            _ => tools?.Any(t => t.Name == choice) == true
+                ? new ToolChoice.Function(choice)
+                : throw new InvalidOperationException(
+                    $"Unknown --tool-choice '{choice}'. Use 'auto', 'none', 'required', or a function name.")
+        };
+    }
+
+    // Default ChatML template used as fallback when GGUF has no chat_template
+    internal const string DefaultChatMlTemplateText =
+        "{% for message in messages %}" +
+        "{{'<|im_start|>' + message['role'] + '\n' + message['content'] + '<|im_end|>' + '\n'}}" +
+        "{% endfor %}" +
+        "{% if add_generation_prompt %}{{ '<|im_start|>assistant\n' }}{% endif %}";
+}

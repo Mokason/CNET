@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <Description>Model loaders and transformer architectures for CNET LLM — memory-mapped GGUF/SafeTensors, parameterized TransformerBlock supporting Llama, Mistral, Phi, Qwen, and DeepSeek.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="CNET.Llm.Cuda" />
+    <InternalsVisibleTo Include="CNET.Llm.Tests.Unit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\CNET.Llm.Core\CNET.Llm.Core.csproj" />
+    <ProjectReference Include="..\CNET.Llm.Cpu\CNET.Llm.Cpu.csproj" />
+    <ProjectReference Include="..\CNET.Llm.Tokenizers\CNET.Llm.Tokenizers.csproj" />
+  </ItemGroup>
+
+</Project>

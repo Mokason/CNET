@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\CNET.Llm.Core\CNET.Llm.Core.csproj" />
+    <ProjectReference Include="..\..\src\CNET.Llm.Models\CNET.Llm.Models.csproj" />
+    <ProjectReference Include="..\..\src\CNET.Llm.Tokenizers\CNET.Llm.Tokenizers.csproj" />
+    <ProjectReference Include="..\..\src\CNET.Llm.Cpu\CNET.Llm.Cpu.csproj" />
+    <ProjectReference Include="..\..\src\CNET.Llm.Engine\CNET.Llm.Engine.csproj" />
+    <ProjectReference Include="..\..\src\CNET.Llm.Cuda\CNET.Llm.Cuda.csproj" />
+    <ProjectReference Include="..\..\src\CNET.Llm.Diagnostics\CNET.Llm.Diagnostics.csproj" />
+    <ProjectReference Include="..\..\src\CNET.Llm.Telemetry\CNET.Llm.Telemetry.csproj" />
+    <ProjectReference Include="..\..\src\CNET.Llm.Server\CNET.Llm.Server.csproj" />
+    <ProjectReference Include="..\..\src\CNET.Llm.HuggingFace\CNET.Llm.HuggingFace.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="Xunit.SkippableFact" />
+  </ItemGroup>
+
+</Project>

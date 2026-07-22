@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\CNET.Llm.Core\CNET.Llm.Core.csproj" />
+    <ProjectReference Include="..\..\src\CNET.Llm.Models\CNET.Llm.Models.csproj" />
+    <ProjectReference Include="..\..\src\CNET.Llm.Engine\CNET.Llm.Engine.csproj" />
+    <ProjectReference Include="..\..\src\CNET.Llm.Diagnostics\CNET.Llm.Diagnostics.csproj" />
+  </ItemGroup>
+
+</Project>

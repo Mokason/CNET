@@ -1,0 +1,497 @@
+/* Offline fallback — ensures usable UI without Tailwind CDN */
+body {
+    background: #18181b;
+    color: #e4e4e7;
+    font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', Consolas, monospace;
+    margin: 0;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #3f3f46; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #52525b; }
+* { scrollbar-width: thin; scrollbar-color: #3f3f46 transparent; }
+
+/* Blinking cursor during streaming */
+@keyframes blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0; }
+}
+.cursor-blink::after {
+    content: '\2588';
+    animation: blink 0.8s step-end infinite;
+    color: #22d3ee;
+    margin-left: 1px;
+}
+
+/* Textarea auto-resize */
+#user-input {
+    field-sizing: content;
+    min-height: 2.5rem;
+}
+
+/* Code blocks */
+.msg-content pre {
+    background: #09090b;
+    border: 1px solid #27272a;
+    border-radius: 0.375rem;
+    padding: 0.75rem 1rem;
+    overflow-x: auto;
+    margin: 0.5rem 0;
+    font-size: 0.8rem;
+    line-height: 1.5;
+}
+.msg-content code {
+    background: #27272a;
+    padding: 0.125rem 0.375rem;
+    border-radius: 0.25rem;
+    font-size: 0.85em;
+}
+.msg-content pre code {
+    background: transparent;
+    padding: 0;
+    border-radius: 0;
+}
+
+/* Message content typography */
+.msg-content p { margin: 0.25rem 0; }
+.msg-content strong { color: #e4e4e7; font-weight: 600; }
+.msg-content ul, .msg-content ol { padding-left: 1.5rem; margin: 0.25rem 0; }
+.msg-content li { margin: 0.125rem 0; }
+.msg-content a { color: #22d3ee; text-decoration: underline; }
+
+/* Stats bar (inline text) */
+.stats-bar {
+    font-size: 0.65rem;
+    line-height: 1.4;
+    color: #71717a;
+    border-top: 1px solid #27272a;
+    padding-top: 0.375rem;
+    margin-top: 0.5rem;
+    font-variant-numeric: tabular-nums;
+    position: relative;
+    cursor: default;
+}
+.stats-bar .stat-label { color: #52525b; }
+
+/* Stats hover card */
+.stats-hover {
+    display: none;
+    position: absolute;
+    bottom: calc(100% + 6px);
+    left: 0;
+    background: #18181b;
+    border: 1px solid #3f3f46;
+    border-radius: 8px;
+    padding: 10px 14px;
+    z-index: 50;
+    min-width: 320px;
+    max-width: 420px;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.5);
+    font-size: 0.625rem;
+    color: #a1a1aa;
+    font-variant-numeric: tabular-nums;
+}
+.stats-bar:hover .stats-hover { display: block; }
+
+.stats-hover .sh-seg-bar { display: flex; height: 10px; border-radius: 5px; overflow: hidden; background: #27272a; margin-bottom: 2px; }
+.stats-hover .sh-seg { height: 100%; position: relative; }
+.stats-hover .sh-seg-cached  { background: #22d3ee; }
+.stats-hover .sh-seg-prompt  { background: #a78bfa; }
+.stats-hover .sh-seg-decode  { background: #34d399; }
+
+/* Numbered markers on bar */
+.stats-hover .sh-marker {
+    position: absolute; top: -3px;
+    width: 16px; height: 16px; border-radius: 50%;
+    background: #27272a; border: 1.5px solid #52525b;
+    color: #d4d4d8; font-size: 0.5rem; font-weight: 600;
+    display: flex; align-items: center; justify-content: center;
+    z-index: 1; pointer-events: none;
+}
+
+/* Legend table below bar */
+.stats-hover .sh-legend { font-size: 0.5625rem; margin-top: 10px; display: flex; flex-direction: column; gap: 3px; }
+.stats-hover .sh-legend-row { display: flex; align-items: center; gap: 6px; }
+.stats-hover .sh-legend-num {
+    width: 14px; height: 14px; border-radius: 50%;
+    background: #27272a; border: 1.5px solid #52525b;
+    color: #d4d4d8; font-size: 0.5rem; font-weight: 600;
+    display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.stats-hover .sh-legend-color { width: 8px; height: 8px; border-radius: 2px; flex-shrink: 0; }
+.stats-hover .sh-legend-text { color: #a1a1aa; }
+.stats-hover .sh-legend-val { color: #d4d4d8; font-weight: 500; margin-left: auto; padding-left: 8px; white-space: nowrap; }
+
+.stats-hover .sh-divider { border-top: 1px solid #27272a; margin: 6px 0; }
+
+.stats-hover .sh-row { display: flex; justify-content: space-between; gap: 1rem; }
+.stats-hover .sh-metric { display: flex; flex-direction: column; align-items: center; }
+.stats-hover .sh-val { color: #d4d4d8; font-weight: 500; font-size: 0.6875rem; }
+.stats-hover .sh-desc { color: #52525b; font-size: 0.5625rem; }
+
+.stats-hover .sh-spec-bar { display: flex; height: 8px; border-radius: 4px; overflow: hidden; background: #27272a; margin-top: 4px; }
+.stats-hover .sh-spec-yes { background: #34d399; }
+.stats-hover .sh-spec-no  { background: #f87171; }
+
+/* Settings / Tools panel slide transition */
+#settings-panel.open,
+#tools-panel.open {
+    transform: translateX(0);
+}
+
+/* Loading spinner */
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+.spinner {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    border: 2px solid #3f3f46;
+    border-top-color: #22d3ee;
+    border-radius: 50%;
+    animation: spin 0.6s linear infinite;
+}
+
+/* Model list item */
+.model-item {
+    padding: 0.375rem 0.5rem;
+    border: 1px solid #27272a;
+    border-radius: 0.375rem;
+    cursor: pointer;
+    transition: border-color 0.15s;
+}
+.model-item:hover { border-color: #3f3f46; }
+.model-item.active { border-color: #22d3ee; background: rgba(34, 211, 238, 0.05); }
+
+/* Live generation indicator */
+.gen-live {
+    font-size: 0.6rem;
+    color: #22d3ee;
+    opacity: 0.7;
+}
+
+/* ── LOGPROBS VISUALIZATION ── */
+
+.lp-token {
+    cursor: pointer;
+    border-radius: 2px;
+    padding: 0 1px;
+    transition: background-color 0.1s;
+    position: relative;
+}
+.lp-token:hover {
+    filter: brightness(1.5);
+    outline: 1px solid rgba(255,255,255,0.2);
+}
+
+/* Diagnostic underlines */
+.lp-low-confidence {
+    text-decoration: underline;
+    text-decoration-color: #ef4444;
+    text-decoration-style: solid;
+    text-underline-offset: 3px;
+    text-decoration-thickness: 1.5px;
+}
+.lp-ambiguous {
+    text-decoration: underline;
+    text-decoration-color: #eab308;
+    text-decoration-style: dashed;
+    text-underline-offset: 3px;
+    text-decoration-thickness: 1.5px;
+}
+.lp-sampling-effect {
+    text-decoration: underline;
+    text-decoration-color: #a78bfa;
+    text-decoration-style: wavy;
+    text-underline-offset: 3px;
+    text-decoration-thickness: 1.5px;
+}
+
+/* Tooltip */
+.lp-tooltip {
+    position: fixed;
+    background: #18181b;
+    border: 1px solid #3f3f46;
+    border-radius: 6px;
+    padding: 8px 10px;
+    z-index: 200;
+    font-size: 0.65rem;
+    line-height: 1.6;
+    color: #a1a1aa;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+    max-width: 420px;
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+}
+.lp-tooltip-header {
+    color: #e4e4e7;
+    font-weight: 500;
+    margin-bottom: 2px;
+}
+.lp-tooltip-divider {
+    border-top: 1px solid #27272a;
+    margin: 4px 0;
+}
+.lp-tooltip-table {
+    border-collapse: collapse;
+    width: 100%;
+    font-variant-numeric: tabular-nums;
+}
+.lp-tooltip-table td {
+    padding: 1px 0;
+    white-space: nowrap;
+}
+.lp-tooltip-table tr.lp-tooltip-current td {
+    color: #22d3ee;
+    font-weight: 500;
+}
+.lp-tt-marker { width: 12px; text-align: center; color: #22d3ee; }
+.lp-tt-rank   { width: 18px; text-align: right; padding-right: 6px; color: #52525b; }
+.lp-tt-token  { padding-left: 2px; padding-right: 10px; max-width: 160px; overflow: hidden; text-overflow: ellipsis; }
+.lp-tt-logprob { text-align: right; padding-right: 8px; }
+.lp-tt-prob    { text-align: right; }
+
+/* Legend badge (inline with "assistant" label) */
+.lp-legend {
+    display: inline-block;
+    position: relative;
+    margin-left: 8px;
+    cursor: default;
+    vertical-align: middle;
+}
+.lp-legend-label {
+    font-size: 0.55rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 1px 5px;
+    border-radius: 3px;
+    background: rgba(34,211,238,0.1);
+    border: 1px solid rgba(34,211,238,0.2);
+    color: #22d3ee;
+}
+.lp-legend-tooltip {
+    display: none;
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    background: #18181b;
+    border: 1px solid #3f3f46;
+    border-radius: 8px;
+    padding: 10px 14px;
+    z-index: 100;
+    min-width: 260px;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.5);
+    font-size: 0.625rem;
+    color: #a1a1aa;
+    white-space: nowrap;
+}
+.lp-legend:hover .lp-legend-tooltip {
+    display: block;
+}
+.lp-legend-title {
+    color: #d4d4d8;
+    font-weight: 600;
+    font-size: 0.6rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 4px;
+}
+.lp-legend-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    line-height: 1.8;
+}
+.lp-legend-swatch {
+    display: inline-block;
+    width: 14px;
+    height: 10px;
+    border-radius: 2px;
+    flex-shrink: 0;
+}
+.lp-legend-indicator {
+    display: inline-block;
+    font-size: 0.625rem;
+    color: #d4d4d8;
+    flex-shrink: 0;
+    width: 28px;
+    text-align: center;
+}
+.lp-legend-divider {
+    border-top: 1px solid #27272a;
+    margin: 5px 0;
+}
+.lp-legend-hint {
+    color: #52525b;
+    font-style: italic;
+    font-size: 0.5625rem;
+}
+
+/* ──────────────── THEME TOGGLE ICONS ──────────────── */
+/* Sun shown by default (dark mode); moon shown only when html.light is active. */
+.theme-icon-moon { display: none; }
+html.light .theme-icon-sun { display: none; }
+html.light .theme-icon-moon { display: block; }
+
+/* ──────────────── LIGHT MODE ──────────────── */
+/*
+ * Additive overrides. The base stylesheet and inline Tailwind utilities encode
+ * the dark palette; these rules win by specificity (`html.light .foo` has
+ * class-count 2 vs Tailwind's 1) without requiring any HTML class refactor.
+ */
+
+html.light body {
+    background: #fafafa;
+    color: #18181b;
+}
+
+/* Tailwind utility overrides (compound class selectors beat Tailwind's 0,1,0). */
+html.light .bg-zinc-900 { background-color: #fafafa; }
+html.light .bg-zinc-950 { background-color: #f4f4f5; }
+html.light .bg-zinc-950\/80 { background-color: rgba(244, 244, 245, 0.85); }
+html.light .bg-zinc-900\/80 { background-color: rgba(250, 250, 250, 0.85); }
+html.light .bg-zinc-800 { background-color: #e4e4e7; }
+html.light .bg-zinc-800\/50 { background-color: rgba(228, 228, 231, 0.5); }
+
+html.light .text-zinc-100 { color: #18181b; }
+html.light .text-zinc-200 { color: #27272a; }
+html.light .text-zinc-300 { color: #3f3f46; }
+html.light .text-zinc-400 { color: #52525b; }
+html.light .text-zinc-500 { color: #71717a; }
+html.light .text-zinc-600 { color: #a1a1aa; }
+
+html.light .border-zinc-700 { border-color: #d4d4d8; }
+html.light .border-zinc-800 { border-color: #e4e4e7; }
+
+html.light .placeholder-zinc-600::placeholder { color: #a1a1aa; }
+
+/* Modal scrim — softer on light. */
+html.light .bg-black\/40 { background-color: rgba(0, 0, 0, 0.2); }
+html.light .bg-black\/60 { background-color: rgba(0, 0, 0, 0.3); }
+
+/* Hover states for borders/text used in the header buttons. */
+html.light .hover\:text-zinc-200:hover { color: #18181b; }
+html.light .hover\:text-zinc-300:hover { color: #27272a; }
+html.light .hover\:border-zinc-500:hover { border-color: #71717a; }
+
+/*
+ * Accent color family — re-mapped from cyan-400 (#22d3ee) to cyan-700 (#0e7490).
+ * The bright dark-mode cyan washes out on a near-white background; cyan-700 keeps
+ * the same hue identity while giving AA contrast for text (5.3:1 on #fafafa) and
+ * making the low-alpha button backgrounds actually visible.
+ */
+html.light .text-accent { color: #0e7490; }
+html.light .text-accent\/60 { color: rgba(14, 116, 144, 0.75); }
+
+html.light .bg-accent\/20 { background-color: rgba(14, 116, 144, 0.12); }
+html.light .bg-accent\/30 { background-color: rgba(14, 116, 144, 0.2); }
+html.light .hover\:bg-accent\/30:hover { background-color: rgba(14, 116, 144, 0.2); }
+
+html.light .border-accent\/20 { border-color: rgba(14, 116, 144, 0.35); }
+html.light .border-accent\/30 { border-color: rgba(14, 116, 144, 0.4); }
+html.light .focus\:border-accent\/50:focus { border-color: rgba(14, 116, 144, 0.6); }
+
+/* Native form element accent (checkboxes, radios, range sliders). */
+html.light .accent-cyan-500 { accent-color: #0e7490; }
+
+/* Scrollbars. */
+html.light ::-webkit-scrollbar-thumb { background: #d4d4d8; }
+html.light ::-webkit-scrollbar-thumb:hover { background: #a1a1aa; }
+html.light * { scrollbar-color: #d4d4d8 transparent; }
+
+/* Streaming cursor — keep cyan accent for continuity. */
+html.light .cursor-blink::after { color: #0e7490; }
+
+/* Message content (code blocks, links, emphasis). */
+html.light .msg-content pre {
+    background: #f4f4f5;
+    border-color: #d4d4d8;
+    color: #18181b;
+}
+html.light .msg-content code {
+    background: #e4e4e7;
+    color: #18181b;
+}
+html.light .msg-content pre code { background: transparent; }
+html.light .msg-content strong { color: #18181b; }
+html.light .msg-content a { color: #0e7490; }
+
+/* Stats bar (inline below assistant messages). */
+html.light .stats-bar {
+    color: #52525b;
+    border-top-color: #e4e4e7;
+}
+html.light .stats-bar .stat-label { color: #71717a; }
+
+/* Stats hover card. */
+html.light .stats-hover {
+    background: #fafafa;
+    border-color: #d4d4d8;
+    color: #52525b;
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.15);
+}
+html.light .stats-hover .sh-seg-bar { background: #e4e4e7; }
+html.light .stats-hover .sh-marker {
+    background: #e4e4e7;
+    border-color: #a1a1aa;
+    color: #27272a;
+}
+html.light .stats-hover .sh-legend-num {
+    background: #e4e4e7;
+    border-color: #a1a1aa;
+    color: #27272a;
+}
+html.light .stats-hover .sh-legend-text { color: #52525b; }
+html.light .stats-hover .sh-legend-val { color: #18181b; }
+html.light .stats-hover .sh-divider { border-top-color: #e4e4e7; }
+html.light .stats-hover .sh-val { color: #18181b; }
+html.light .stats-hover .sh-desc { color: #71717a; }
+html.light .stats-hover .sh-spec-bar { background: #e4e4e7; }
+
+/* Spinner. */
+html.light .spinner {
+    border-color: #d4d4d8;
+    border-top-color: #0e7490;
+}
+
+/* Model list items (load modal). */
+html.light .model-item { border-color: #e4e4e7; }
+html.light .model-item:hover { border-color: #a1a1aa; }
+html.light .model-item.active {
+    border-color: #0e7490;
+    background: rgba(14, 116, 144, 0.06);
+}
+
+/* Live generation indicator. */
+html.light .gen-live { color: #0e7490; }
+
+/* Logprobs token tooltip. */
+html.light .lp-tooltip {
+    background: #fafafa;
+    border-color: #d4d4d8;
+    color: #52525b;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+}
+html.light .lp-tooltip-header { color: #18181b; }
+html.light .lp-tooltip-divider { border-top-color: #e4e4e7; }
+html.light .lp-tooltip-table tr.lp-tooltip-current td { color: #0e7490; }
+html.light .lp-tt-marker { color: #0e7490; }
+html.light .lp-tt-rank { color: #71717a; }
+
+/* Logprobs legend badge + hover tooltip. */
+html.light .lp-legend-label {
+    background: rgba(14, 116, 144, 0.1);
+    border-color: rgba(14, 116, 144, 0.3);
+    color: #0e7490;
+}
+html.light .lp-legend-tooltip {
+    background: #fafafa;
+    border-color: #d4d4d8;
+    color: #52525b;
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.15);
+}
+html.light .lp-legend-title { color: #18181b; }
+html.light .lp-legend-divider { border-top-color: #e4e4e7; }
+html.light .lp-legend-hint { color: #a1a1aa; }

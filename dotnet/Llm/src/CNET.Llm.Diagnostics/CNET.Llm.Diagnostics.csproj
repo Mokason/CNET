@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <Description>Interpretability and diagnostics for CNET LLM — zero-cost inference hooks for activation capture, logit lens, logprobs, and SAE integration.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\CNET.Llm.Core\CNET.Llm.Core.csproj" />
+  </ItemGroup>
+
+</Project>

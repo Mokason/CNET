@@ -1,0 +1,19 @@
+using CNET.Llm.Server.Models;
+
+namespace CNET.Llm.Server.Endpoints;
+
+/// <summary>
+/// GET /health and /ready — health and readiness probes.
+/// </summary>
+public static class HealthEndpoint
+{
+    public static void Map(WebApplication app)
+    {
+        app.MapGet("/health", () => Results.Ok(new StatusResponse { Status = "ok" }));
+
+        app.MapGet("/ready", (ServerState state) =>
+            state.IsReady
+                ? Results.Ok(new StatusResponse { Status = "ready" })
+                : Results.StatusCode(503));
+    }
+}

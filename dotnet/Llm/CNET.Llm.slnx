@@ -1,0 +1,50 @@
+<Solution>
+  <Folder Name="/benchmarks/">
+    <Project Path="benchmarks/CNET.Llm.Benchmarks/CNET.Llm.Benchmarks.csproj" />
+  </Folder>
+  <Folder Name="/docs/">
+    <File Path="docs/ARCHITECTURE.md" />
+    <File Path="docs/ATTENTION.md" />
+    <File Path="docs/BENCHMARKS.md" />
+    <File Path="docs/CONSTRAINED_DECODING.md" />
+    <File Path="docs/DIAGNOSTICS.md" />
+    <File Path="docs/GGUF_FORMAT.md" />
+    <File Path="docs/KV_CACHE.md" />
+    <File Path="docs/LORA.md" />
+    <File Path="docs/MODEL_CONFIG.md" />
+    <File Path="docs/MULTI_GPU.md" />
+    <File Path="docs/POSITION_ENCODING.md" />
+    <File Path="docs/QUANTIZATION.md" />
+    <File Path="docs/ROADMAP.md" />
+    <File Path="docs/SAMPLING.md" />
+    <File Path="docs/SCHEDULING.md" />
+    <File Path="docs/SERVER.md" />
+    <File Path="docs/SPECULATIVE.md" />
+    <File Path="docs/TELEMETRY.md" />
+    <File Path="docs/TOKENIZERS.md" />
+  </Folder>
+  <Folder Name="/samples/">
+    <Project Path="samples/CNET.Llm.Sample.Console/CNET.Llm.Sample.Console.csproj" />
+    <Project Path="samples/CNET.Llm.Sample.Interpretability/CNET.Llm.Sample.Interpretability.csproj" />
+    <Project Path="samples/CNET.Llm.Sample.Logprobs/CNET.Llm.Sample.Logprobs.csproj" />
+    <Project Path="samples/CNET.Llm.Sample.Server/CNET.Llm.Sample.Server.csproj" />
+    <Project Path="samples/CNET.Llm.Sample.ToolCalling/CNET.Llm.Sample.ToolCalling.csproj" />
+  </Folder>
+  <Folder Name="/src/">
+    <Project Path="src/CNET.Llm.Cli/CNET.Llm.Cli.csproj" />
+    <Project Path="src/CNET.Llm.Core/CNET.Llm.Core.csproj" />
+    <Project Path="src/CNET.Llm.Cpu/CNET.Llm.Cpu.csproj" />
+    <Project Path="src/CNET.Llm.Cuda/CNET.Llm.Cuda.csproj" />
+    <Project Path="src/CNET.Llm.Diagnostics/CNET.Llm.Diagnostics.csproj" />
+    <Project Path="src/CNET.Llm.Engine/CNET.Llm.Engine.csproj" />
+    <Project Path="src/CNET.Llm.HuggingFace/CNET.Llm.HuggingFace.csproj" />
+    <Project Path="src/CNET.Llm.Models/CNET.Llm.Models.csproj" />
+    <Project Path="src/CNET.Llm.Server/CNET.Llm.Server.csproj" />
+    <Project Path="src/CNET.Llm.Telemetry/CNET.Llm.Telemetry.csproj" />
+    <Project Path="src/CNET.Llm.Tokenizers/CNET.Llm.Tokenizers.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/CNET.Llm.Tests.Integration/CNET.Llm.Tests.Integration.csproj" />
+    <Project Path="tests/CNET.Llm.Tests.Unit/CNET.Llm.Tests.Unit.csproj" />
+  </Folder>
+</Solution>

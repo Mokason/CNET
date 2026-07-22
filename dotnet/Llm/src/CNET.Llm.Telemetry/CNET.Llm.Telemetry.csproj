@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <Description>Telemetry and observability for CNET LLM — System.Diagnostics.Metrics counters, Activity-based request tracing, and OpenTelemetry-friendly instrumentation.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\CNET.Llm.Core\CNET.Llm.Core.csproj" />
+  </ItemGroup>
+
+</Project>

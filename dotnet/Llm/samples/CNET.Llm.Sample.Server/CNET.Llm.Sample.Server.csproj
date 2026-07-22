@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\CNET.Llm.Core\CNET.Llm.Core.csproj" />
+    <ProjectReference Include="..\..\src\CNET.Llm.Models\CNET.Llm.Models.csproj" />
+    <ProjectReference Include="..\..\src\CNET.Llm.Tokenizers\CNET.Llm.Tokenizers.csproj" />
+    <ProjectReference Include="..\..\src\CNET.Llm.Engine\CNET.Llm.Engine.csproj" />
+    <ProjectReference Include="..\..\src\CNET.Llm.Server\CNET.Llm.Server.csproj" />
+  </ItemGroup>
+
+</Project>

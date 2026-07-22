@@ -1,0 +1,44 @@
+<Solution>
+  <!-- Whole-tree solution: the pre-existing CNET managed projects plus the
+       vendored CNET.Llm inference stack. The two halves have no project
+       references between them - this file only makes `dotnet build` cover both
+       in one command. Build either half alone with its own entry point:
+         dotnet build dotnet/Cce/Cce.csproj
+         dotnet build dotnet/Llm/CNET.Llm.slnx -->
+  <Folder Name="/cce/">
+    <Project Path="Cce/Cce.csproj" />
+    <Project Path="CceHost/CceHost.csproj" />
+    <Project Path="CnetHarnessSmoke/CnetHarnessSmoke.csproj" />
+    <Project Path="CnetMcpServer/CnetMcpServer.csproj" />
+  </Folder>
+  <Folder Name="/cce/tests/">
+    <Project Path="Cce.Tests/Cce.Tests.csproj" />
+    <Project Path="CnetMcpServer.Tests/CnetMcpServer.Tests.csproj" />
+    <Project Path="Cce.Benchmarks/Cce.Benchmarks.csproj" />
+  </Folder>
+  <Folder Name="/llm/">
+    <Project Path="Llm/src/CNET.Llm.Cli/CNET.Llm.Cli.csproj" />
+    <Project Path="Llm/src/CNET.Llm.Core/CNET.Llm.Core.csproj" />
+    <Project Path="Llm/src/CNET.Llm.Cpu/CNET.Llm.Cpu.csproj" />
+    <Project Path="Llm/src/CNET.Llm.Cuda/CNET.Llm.Cuda.csproj" />
+    <Project Path="Llm/src/CNET.Llm.Diagnostics/CNET.Llm.Diagnostics.csproj" />
+    <Project Path="Llm/src/CNET.Llm.Engine/CNET.Llm.Engine.csproj" />
+    <Project Path="Llm/src/CNET.Llm.HuggingFace/CNET.Llm.HuggingFace.csproj" />
+    <Project Path="Llm/src/CNET.Llm.Models/CNET.Llm.Models.csproj" />
+    <Project Path="Llm/src/CNET.Llm.Server/CNET.Llm.Server.csproj" />
+    <Project Path="Llm/src/CNET.Llm.Telemetry/CNET.Llm.Telemetry.csproj" />
+    <Project Path="Llm/src/CNET.Llm.Tokenizers/CNET.Llm.Tokenizers.csproj" />
+  </Folder>
+  <Folder Name="/llm/tests/">
+    <Project Path="Llm/tests/CNET.Llm.Tests.Integration/CNET.Llm.Tests.Integration.csproj" />
+    <Project Path="Llm/tests/CNET.Llm.Tests.Unit/CNET.Llm.Tests.Unit.csproj" />
+    <Project Path="Llm/benchmarks/CNET.Llm.Benchmarks/CNET.Llm.Benchmarks.csproj" />
+  </Folder>
+  <Folder Name="/llm/samples/">
+    <Project Path="Llm/samples/CNET.Llm.Sample.Console/CNET.Llm.Sample.Console.csproj" />
+    <Project Path="Llm/samples/CNET.Llm.Sample.Interpretability/CNET.Llm.Sample.Interpretability.csproj" />
+    <Project Path="Llm/samples/CNET.Llm.Sample.Logprobs/CNET.Llm.Sample.Logprobs.csproj" />
+    <Project Path="Llm/samples/CNET.Llm.Sample.Server/CNET.Llm.Sample.Server.csproj" />
+    <Project Path="Llm/samples/CNET.Llm.Sample.ToolCalling/CNET.Llm.Sample.ToolCalling.csproj" />
+  </Folder>
+</Solution>

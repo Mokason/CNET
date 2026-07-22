@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <Description>HuggingFace Hub integration for CNET LLM — model search, metadata queries, and GGUF download/caching under ~/.cnet-llm/models/.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\CNET.Llm.Core\CNET.Llm.Core.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,62 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>cnet-llm</ToolCommandName>
+    <Description>Command-line tool for CNET LLM — run, chat, serve, and manage GGUF models. Install with: dotnet tool install -g CNET.Llm.Cli</Description>
+    <PackageTags>llm;inference;cli;dotnet-tool;llama;mistral;phi;qwen;gguf;cuda</PackageTags>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\CNET.Llm.Core\CNET.Llm.Core.csproj" />
+    <ProjectReference Include="..\CNET.Llm.Models\CNET.Llm.Models.csproj" />
+    <ProjectReference Include="..\CNET.Llm.Cpu\CNET.Llm.Cpu.csproj" />
+    <ProjectReference Include="..\CNET.Llm.Cuda\CNET.Llm.Cuda.csproj" />
+    <ProjectReference Include="..\CNET.Llm.Engine\CNET.Llm.Engine.csproj" />
+    <ProjectReference Include="..\CNET.Llm.Tokenizers\CNET.Llm.Tokenizers.csproj" />
+    <ProjectReference Include="..\CNET.Llm.Server\CNET.Llm.Server.csproj" />
+    <ProjectReference Include="..\CNET.Llm.HuggingFace\CNET.Llm.HuggingFace.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Spectre.Console" />
+    <PackageReference Include="Spectre.Console.Cli" />
+  </ItemGroup>
+
+  <!-- Rename the exe to `cnet-llm` for both Native AOT and self-contained single-file publish.
+       Opt-in via `dotnet publish -p:PublishAot=true -r <rid>` or
+       `dotnet publish -p:PublishSingleFile=true -p:SelfContained=true -r <rid>`. -->
+  <PropertyGroup Condition="'$(PublishAot)' == 'true' or '$(PublishSingleFile)' == 'true'">
+    <AssemblyName>cnet-llm</AssemblyName>
+  </PropertyGroup>
+
+  <!-- Native AOT-only settings -->
+  <PropertyGroup Condition="'$(PublishAot)' == 'true'">
+    <StripSymbols>true</StripSymbols>
+    <DebugType>none</DebugType>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <InvariantGlobalization>false</InvariantGlobalization>
+    <!-- Spectre.Console 0.49.1 is not yet fully AOT-annotated — suppress its trim/AOT warnings.
+         Our own code is clean; types are preserved via TrimmerRoots.xml. -->
+    <NoWarn>$(NoWarn);IL2104;IL3053;IL3000;IL3002</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(PublishAot)' == 'true'">
+    <TrimmerRootDescriptor Include="TrimmerRoots.xml" />
+  </ItemGroup>
+
+  <!-- Publish cleanup: remove dependency PDBs, XML docs, and IIS assets that aren't needed
+       in the release binary output. Fires for both AOT and self-contained single-file publish.
+       Leaves only the single cnet-llm[.exe] + ptx/ -->
+  <Target Name="CleanPublishOutput" AfterTargets="Publish" Condition="'$(PublishAot)' == 'true' or '$(PublishSingleFile)' == 'true'">
+    <ItemGroup>
+      <_FilesToRemove Include="$(PublishDir)*.pdb" />
+      <_FilesToRemove Include="$(PublishDir)*.xml" />
+      <_FilesToRemove Include="$(PublishDir)*.runtimeconfig.json" />
+      <_FilesToRemove Include="$(PublishDir)aspnetcorev2_inprocess.dll" />
+    </ItemGroup>
+    <Delete Files="@(_FilesToRemove)" />
+  </Target>
+
+</Project>

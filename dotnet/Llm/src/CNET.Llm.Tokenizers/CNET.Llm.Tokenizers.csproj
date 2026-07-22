@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <Description>Tokenizers and chat templates for CNET LLM — BPE, SentencePiece, HuggingFace tokenizer.json, and a Jinja2-subset chat template interpreter.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="CNET.Llm.Tests.Unit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\CNET.Llm.Core\CNET.Llm.Core.csproj" />
+  </ItemGroup>
+
+</Project>

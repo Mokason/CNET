@@ -1,0 +1,59 @@
+using CNET.Llm.Core.Tensors;
+
+namespace CNET.Llm.Core.Attention;
+
+/// <summary>
+/// Key-Value cache for autoregressive attention. Stores projected K and V tensors across decoding steps.
+/// </summary>
+public interface IKvCache : IDisposable
+{
+    /// <summary>Current number of cached positions.</summary>
+    int CurrentLength { get; }
+
+    /// <summary>Maximum number of positions this cache can hold.</summary>
+    int MaxLength { get; }
+
+    /// <summary>
+    /// Appends new key and value projections at the given positions.
+    /// </summary>
+    /// <param name="keys">Key projections for the new tokens.</param>
+    /// <param name="values">Value projections for the new tokens.</param>
+    /// <param name="positions">Position indices for the new entries.</param>
+    /// <param name="layerIndex">Transformer layer index.</param>
+    void Update(ITensor keys, ITensor values, ReadOnlySpan<int> positions, int layerIndex);
+
+    /// <summary>Gets the cached key tensor for a given layer.</summary>
+    /// <param name="layerIndex">Transformer layer index.</param>
+    /// <returns>Key tensor covering all cached positions.</returns>
+    ITensor GetKeys(int layerIndex);
+
+    /// <summary>Gets the cached value tensor for a given layer.</summary>
+    /// <param name="layerIndex">Transformer layer index.</param>
+    /// <returns>Value tensor covering all cached positions.</returns>
+    ITensor GetValues(int layerIndex);
+
+    /// <summary>
+    /// Zero-allocation update using <see cref="TensorRef"/>. Preferred on the inference hot path.
+    /// </summary>
+    /// <param name="keys">Key projections as a lightweight tensor reference.</param>
+    /// <param name="values">Value projections as a lightweight tensor reference.</param>
+    /// <param name="positions">Position indices for the new entries.</param>
+    /// <param name="layerIndex">Transformer layer index.</param>
+    void Update(TensorRef keys, TensorRef values, ReadOnlySpan<int> positions, int layerIndex);
+
+    /// <summary>Gets cached keys as a zero-allocation <see cref="TensorRef"/>.</summary>
+    /// <param name="layerIndex">Transformer layer index.</param>
+    TensorRef GetKeysRef(int layerIndex);
+
+    /// <summary>Gets cached values as a zero-allocation <see cref="TensorRef"/>.</summary>
+    /// <param name="layerIndex">Transformer layer index.</param>
+    TensorRef GetValuesRef(int layerIndex);
+
+    /// <summary>
+    /// Rolls back the cache to the given length, discarding entries beyond that position.
+    /// Used by speculative decoding to discard rejected draft tokens.
+    /// Allocated memory is retained and overwritten on subsequent Update calls.
+    /// </summary>
+    /// <param name="length">The new current length (must be &lt;= <see cref="CurrentLength"/>).</param>
+    void Rollback(int length);
+}

@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <Description>Inference engine for CNET LLM — KV-cache (paged / quantized), scheduler, composable samplers, constrained decoding (JSON / regex / grammar), speculative decoding, and prefix caching.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="CNET.Llm.Tests.Unit" />
+    <InternalsVisibleTo Include="CNET.Llm.Tests.Integration" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\CNET.Llm.Core\CNET.Llm.Core.csproj" />
+    <ProjectReference Include="..\CNET.Llm.Models\CNET.Llm.Models.csproj" />
+    <ProjectReference Include="..\CNET.Llm.Tokenizers\CNET.Llm.Tokenizers.csproj" />
+  </ItemGroup>
+
+</Project>

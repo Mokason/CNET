@@ -1,0 +1,50 @@
+<Project>
+  <!-- Scope note: this file governs ONLY the projects under dotnet/Llm/.
+       MSBuild stops its upward Directory.Build.props walk here, and the
+       pre-existing CNET projects (dotnet/Cce, dotnet/CceHost, dotnet/Cce.Tests,
+       dotnet/CnetMcpServer, ...) sit *above* this directory, so they keep their
+       own per-project settings untouched. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <Product>CNET.Llm</Product>
+    <!-- Vendored from dotLLM (https://github.com/kkokosa/dotLLM), GPL-3.0-only.
+         Upstream authorship and license are preserved verbatim; only namespaces,
+         assembly names, and user-facing naming were changed to the CNET scheme. -->
+    <Authors>Konrad Kokosa</Authors>
+    <Company>CNET</Company>
+    <Copyright>Copyright (c) Konrad Kokosa</Copyright>
+    <PackageLicenseExpression>GPL-3.0-only</PackageLicenseExpression>
+    <RepositoryUrl>https://github.com/kkokosa/dotLLM</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageTags>llm;inference;transformer;llama;mistral;phi;qwen;gguf;cuda;simd;ai;cnet</PackageTags>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+  </PropertyGroup>
+
+  <!-- Upstream derives the version from git tags via MinVer. CNET's tags are not
+       dotLLM release tags, so the version is pinned here instead; this keeps the
+       subtree build hermetic and tag-independent. -->
+  <PropertyGroup>
+    <Version>0.1.0</Version>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(GITHUB_ACTIONS)' == 'true'">
+    <ContinuousIntegrationBuild>true</ContinuousIntegrationBuild>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(IsPackable)' != 'false'">
+    <None Include="$(MSBuildThisFileDirectory)README.md" Pack="true" PackagePath="\" Condition="Exists('$(MSBuildThisFileDirectory)README.md')" />
+    <None Include="$(MSBuildThisFileDirectory)docs\icon.png" Pack="true" PackagePath="\" Condition="Exists('$(MSBuildThisFileDirectory)docs\icon.png')" />
+  </ItemGroup>
+</Project>
