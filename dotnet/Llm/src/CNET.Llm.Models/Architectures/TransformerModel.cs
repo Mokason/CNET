@@ -581,7 +581,7 @@ public sealed unsafe class TransformerModel : IModel
             int xQ8Bytes = blockCount * Q8_0BlockBytes;
             byte* xQ8 = (byte*)(_threadPool?.GetWorkerScratch(0, xQ8Bytes) ?? (nint)inputQ8Scratch);
             MatMul.QuantizeF32ToQ8_0(x, xQ8, k);
-            MatMul.ComputeRowsQ8_0Interleaved((byte*)rw.Ptr, xQ8, y, rw.FullGroupCount, rw.TailRows, blockCount, _threadPool);
+            MatMul.ComputeRowsQ8_0Interleaved((byte*)rw.Ptr, xQ8, y, rw.FullGroupCount, rw.TailRows, blockCount, _threadPool, (float*)rw.ScalesPtr);
         }
         else if (qt == QuantizationType.Q5_0)
         {
@@ -631,7 +631,7 @@ public sealed unsafe class TransformerModel : IModel
         if (preQuantizedInput != null)
         {
             DispatchInterleavedComputeRows(qt, (byte*)rw.Ptr, preQuantizedInput, c,
-                rw.FullGroupCount, rw.TailRows, k);
+                rw.FullGroupCount, rw.TailRows, k, (float*)rw.ScalesPtr);
             return;
         }
 
@@ -644,11 +644,12 @@ public sealed unsafe class TransformerModel : IModel
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private void DispatchInterleavedComputeRows(QuantizationType qt, byte* repackedWeights,
-        byte* preQuantInput, float* result, int fullGroups, int tailRows, int k)
+        byte* preQuantInput, float* result, int fullGroups, int tailRows, int k,
+        float* weightScales = null)
     {
         if (qt == QuantizationType.Q8_0)
             MatMul.ComputeRowsQ8_0Interleaved(repackedWeights, preQuantInput, result,
-                fullGroups, tailRows, k / 32, _threadPool);
+                fullGroups, tailRows, k / 32, _threadPool, weightScales);
         else if (qt == QuantizationType.Q5_0)
             MatMul.ComputeRowsQ5_0Interleaved(repackedWeights, preQuantInput, result,
                 fullGroups, tailRows, k / 32, _threadPool);

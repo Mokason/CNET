@@ -243,6 +243,69 @@ public static unsafe partial class MatMul
         }
         return sumf;
     }
+    /// <summary>
+    /// R4 4-row Q8_0 dot product using weight scales pre-converted to f32 at
+    /// repack time, instead of reading an fp16 scale from each block header.
+    /// </summary>
+    /// <remarks>
+    /// Bit-identical to <see cref="VecDotQ8_0Avx2_4RowsR4"/>: the stored floats
+    /// are exactly what <c>(float)Half</c> produces, so only *when* the
+    /// conversion happens changes. The four scales for a block sit adjacent in
+    /// the plane, mirroring the interleaved weight bytes, so they arrive on one
+    /// cache line.
+    /// </remarks>
+    /// <param name="groupBase">Interleaved weight bytes for this 4-row group.</param>
+    /// <param name="groupScales">Scale plane for this group: <c>blockCount * 4</c> floats.</param>
+    /// <param name="x">Q8_0 activation row.</param>
+    /// <param name="blockCount">Q8_0 blocks per row.</param>
+    /// <param name="results">Receives the four row dot products.</param>
+    [SkipLocalsInit]
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+    internal static void VecDotQ8_0Avx2_4RowsR4Scaled(
+        byte* groupBase, float* groupScales, byte* x, int blockCount, float* results)
+    {
+        Vector256<float> acc0 = Vector256<float>.Zero;
+        Vector256<float> acc1 = Vector256<float>.Zero;
+        Vector256<float> acc2 = Vector256<float>.Zero;
+        Vector256<float> acc3 = Vector256<float>.Zero;
+        Vector256<short> ones = Vector256.Create((short)1);
+        const int wStride = 4 * Q8_0BlockBytes;
+
+        for (int block = 0; block < blockCount; block++)
+        {
+            byte* xBlock = x + block * Q8_0BlockBytes;
+            float dx = (float)Unsafe.ReadUnaligned<Half>(xBlock);
+            Vector256<sbyte> vx = Unsafe.ReadUnaligned<Vector256<sbyte>>(xBlock + 2);
+            Vector256<byte> absX = Avx2.Sign(vx, vx).AsByte();
+
+            byte* blockBase = groupBase + block * wStride;
+            float* scales = groupScales + block * 4;
+
+            acc0 = R4RowScaled(blockBase, scales[0], dx, vx, absX, ones, acc0);
+            acc1 = R4RowScaled(blockBase + Q8_0BlockBytes, scales[1], dx, vx, absX, ones, acc1);
+            acc2 = R4RowScaled(blockBase + 2 * Q8_0BlockBytes, scales[2], dx, vx, absX, ones, acc2);
+            acc3 = R4RowScaled(blockBase + 3 * Q8_0BlockBytes, scales[3], dx, vx, absX, ones, acc3);
+        }
+
+        results[0] = HorizontalSumAvx2Float(acc0);
+        results[1] = HorizontalSumAvx2Float(acc1);
+        results[2] = HorizontalSumAvx2Float(acc2);
+        results[3] = HorizontalSumAvx2Float(acc3);
+    }
+
+    /// <summary>One row's contribution within a scaled R4 block.</summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static Vector256<float> R4RowScaled(byte* wBlock, float dw, float dx,
+        Vector256<sbyte> vx, Vector256<byte> absX, Vector256<short> ones, Vector256<float> acc)
+    {
+        Vector256<sbyte> vw = Unsafe.ReadUnaligned<Vector256<sbyte>>(wBlock + 2);
+        Vector256<sbyte> adjW = Avx2.Sign(vw, vx);
+        Vector256<int> isum = DotBytesToInt32(absX, adjW, ones);
+        Vector256<float> fsum = Avx.ConvertToVector256Single(isum);
+        Vector256<float> scale = Vector256.Create(dx * dw);
+        return Fma.IsSupported ? Fma.MultiplyAdd(scale, fsum, acc) : acc + fsum * scale;
+    }
+
 
     /// <summary>
     /// AVX2 4-row Q8_0 dot product for R4-interleaved layout.
@@ -333,14 +396,29 @@ public static unsafe partial class MatMul
     /// stored contiguously: [r0_b0][r1_b0][r2_b0][r3_b0][r0_b1][r1_b1]...
     /// Reads sequentially instead of striding, improving cache and prefetch behavior.
     /// </summary>
+    /// <remarks>
+    /// A non-null <c>scales</c> is the f32 weight-scale plane built at repack
+    /// time; the kernel then skips the per-block fp16 conversion, which
+    /// dominates this dot product. Results are unchanged either way — the stored
+    /// floats are exactly what the conversion would produce.
+    /// </remarks>
     [SkipLocalsInit]
     [MethodImpl(MethodImplOptions.AggressiveInlining | MethodImplOptions.AggressiveOptimization)]
     internal static void ComputeRowsQ8_0Interleaved(byte* repackedWeights, byte* xQ8, float* result,
-        int fullGroups, int tailRows, int blockCount)
+        int fullGroups, int tailRows, int blockCount, float* scales = null)
     {
         int groupBytes = 4 * blockCount * Q8_0BlockBytes;
 
-        if (Avx2.IsSupported)
+        if (Avx2.IsSupported && scales != null)
+        {
+            for (int g = 0; g < fullGroups; g++)
+            {
+                byte* groupBase = repackedWeights + (long)g * groupBytes;
+                VecDotQ8_0Avx2_4RowsR4Scaled(groupBase, scales + (long)g * blockCount * 4,
+                                             xQ8, blockCount, result + g * 4);
+            }
+        }
+        else if (Avx2.IsSupported)
         {
             for (int g = 0; g < fullGroups; g++)
             {
@@ -377,18 +455,18 @@ public static unsafe partial class MatMul
     [SkipLocalsInit]
     [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     internal static void ComputeRowsQ8_0Interleaved(byte* repackedWeights, byte* xQ8, float* result,
-        int fullGroups, int tailRows, int blockCount, ComputeThreadPool? pool)
+        int fullGroups, int tailRows, int blockCount, ComputeThreadPool? pool, float* scales = null)
     {
         int m = fullGroups * 4 + tailRows;
         if (pool is null || m < ParallelMinRows)
         {
-            ComputeRowsQ8_0Interleaved(repackedWeights, xQ8, result, fullGroups, tailRows, blockCount);
+            ComputeRowsQ8_0Interleaved(repackedWeights, xQ8, result, fullGroups, tailRows, blockCount, scales);
             return;
         }
 
         var ctx = new ComputeRowsR4Ctx
         {
-            RepackedWeights = repackedWeights, XQ = xQ8, Result = result,
+            RepackedWeights = repackedWeights, XQ = xQ8, Result = result, Scales = scales,
             M = m, FullGroups = fullGroups, TailRows = tailRows,
             BlockCount = blockCount, BlockBytes = Q8_0BlockBytes
         };
@@ -2150,6 +2228,7 @@ public static unsafe partial class MatMul
         public byte* RepackedWeights;
         public byte* XQ;
         public float* Result;
+        public float* Scales;
         public int M;
         public int FullGroups;
         public int TailRows;
@@ -2175,7 +2254,10 @@ public static unsafe partial class MatMul
         for (int g = startGroup; g < endGroup; g++)
         {
             byte* groupBase = ctx.RepackedWeights + (long)g * groupBytes;
-            if (Avx2.IsSupported)
+            if (Avx2.IsSupported && ctx.Scales != null)
+                VecDotQ8_0Avx2_4RowsR4Scaled(groupBase, ctx.Scales + (long)g * ctx.BlockCount * 4,
+                                             ctx.XQ, ctx.BlockCount, ctx.Result + g * 4);
+            else if (Avx2.IsSupported)
                 VecDotQ8_0Avx2_4RowsR4(groupBase, ctx.XQ, ctx.BlockCount, ctx.Result + g * 4);
             else
                 for (int r = 0; r < 4; r++)

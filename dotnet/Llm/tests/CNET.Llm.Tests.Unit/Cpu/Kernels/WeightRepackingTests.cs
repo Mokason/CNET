@@ -357,6 +357,8 @@ public sealed unsafe class WeightRepackingTests
             Assert.Equal(2, rw.TailRows);            // 10 % 4
             Assert.Equal(4, rw.BlocksPerRow);         // 128 / 32
             Assert.Equal(Q8_0BlockBytes, rw.BlockBytes);
+            // The f32 scale plane is opt-in and off here, so AllocatedBytes is
+            // just the repacked weights.
             Assert.Equal(totalBytes, rw.AllocatedBytes);
             Assert.Equal(blockCount * Q8_0BlockBytes, rw.RowBytes);
         }

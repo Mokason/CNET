@@ -289,18 +289,55 @@ row loop — one activation conversion plus four weight conversions per block, s
 of the fix is therefore mostly already taken on the path that matters, and the
 remaining cost is the *weight* scales.
 
-Capturing those needs a layout change: store f32 scales alongside the repacked
-weights. That is +4 bytes per 34-byte block, **+11.8% weight memory** — a real
-tradeoff on large models, and the reason it has not simply been done here. The
-repacking infrastructure (`WeightRepacking`) already exists to carry it.
+### Weight scale plane: built, opt-in, off by default
 
-A latent detail surfaced while testing the reverted kernel, recorded because it
-is easy to trip over: the legacy per-token kernels take `abs` of the *activation*
-side and compute `sign(w, x)`, which for `w = -128` and `x < 0` needs +128 in a
-signed byte and wraps to -128, flipping that term's sign. `QuantizeF32ToQ8_0`
-scales by `maxAbs / 127`, so -128 is not reachable from this quantizer and the
-bug is currently unobservable — but a hand-built or third-party Q8_0 block
-containing -128 would hit it.
+The layout change was implemented: `WeightRepacking.RepackR4(..., buildScalePlane: true)`
+builds an f32 plane mirroring the R4 interleave, and the decode kernel reads it
+instead of converting an fp16 scale per block. It is bit-identical (13 tests
+assert exact equality, and the generation goldens are byte-unchanged), and in
+isolation it is a large win:
+
+| | fp16 per block | scale plane | speedup |
+| --- | ---: | ---: | ---: |
+| R4 kernel, K=4096, M=256 (cache-resident) | 39.6 us | 22.9 us | **1.73x** |
+| R4 kernel, K=4096, M=16384 (71 MB) | 2,780 us | 1,883 us | **1.48x** |
+
+**It still makes real decode slower, so it defaults off.** End to end on
+Llama-3.2-1B Q8_0, five runs per arm with no overlap between them:
+
+| | decode |
+| --- | ---: |
+| plane off | **30.72 tok/s** |
+| plane on | 29.08 tok/s (**-5.3%**) |
+
+Decode is memory-bound — 1.3 GB of weights at ~30 tok/s is already ~40 GB/s —
+and the plane adds 11.8% to the bytes streamed per token. The compute it saves
+offsets roughly half of that, and the rest is a net loss.
+
+The microbenchmarks disagree because they hammer one tensor in a loop and get
+cache reuse. Decode touches every weight byte exactly once per token and gets
+none. That gap is the single most useful thing on this page: a kernel
+microbenchmark cannot tell you whether a decode optimization will work, because
+it cannot reproduce decode's access pattern.
+
+Turn it on only where weights are genuinely cache-resident. Note also that
+`InterleavedMinRowBytes = 1024` means models with small hidden sizes never reach
+this path at all — SmolLM-135M's projections are 612 byte rows, so none of this
+applies to them.
+
+### The pattern across all four attempts
+
+Token blocking (0.2%), VNNI (1%), multiple accumulators (2-3%), and the scale
+plane (1.5-1.7x in a microbenchmark, -5.3% in reality). Every one targeted
+compute. The measured conclusion is that **decode is memory-bound, so compute
+optimizations on the Q8_0 dot cannot pay off, and anything that adds bytes
+actively costs throughput**.
+
+The one lead consistent with that: the fp16 conversion is ~72% of the kernel and
+a vectorized fp16->f32 convert would remove much of it while adding *zero* bytes.
+Since the plane's +11.8% traffic cost roughly half its compute saving, a
+zero-byte version should land around +5%. Modest, and the only shape left that
+the evidence supports.
 
 Note this is not a port regression: `CNET.Llm` benchmarked identical to upstream
 dotLLM (20 of 22 CPU kernels within +/-1.1%, end-to-end decode within 0.34%). The
