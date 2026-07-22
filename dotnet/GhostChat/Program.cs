@@ -100,7 +100,7 @@ var ghost = new MemorySession(session, memory, window);
 Console.WriteLine($"ghost-chat | backend={a.Backend} model={a.Model} window={window}");
 Console.WriteLine($"store={storePath} ({store.Count} memories" +
     (store.CorruptLinesSkipped > 0 ? $", {store.CorruptLinesSkipped} corrupt lines skipped" : "") + ")");
-Console.WriteLine("/exit /stats /show <id> /recall <query>");
+Console.WriteLine("/exit /stats /show <id> /recall <query> /forget <id>");
 Console.WriteLine();
 
 // Ollama streams; local backends print at once.
@@ -140,10 +140,27 @@ while (true)
         continue;
     }
 
+    if (input.StartsWith("/forget ", StringComparison.Ordinal) &&
+        long.TryParse(input[8..].Trim().TrimStart('#'), out long forgetId))
+    {
+        MemoryBlob? victim = store.Get(forgetId);
+        if (victim is null)
+        {
+            Console.WriteLine($"  no memory #{forgetId}");
+        }
+        else if (store.Forget(forgetId))
+        {
+            string snippet = victim.Text.Length > 80 ? victim.Text[..80] + "…" : victim.Text;
+            Console.WriteLine($"  forgot [#{forgetId} | {victim.Role}] {snippet}");
+            Console.WriteLine("  (the line stays in the store file as history; recall will never serve it again)");
+        }
+        continue;
+    }
+
     if (input.StartsWith('/'))
     {
         // Unknown or malformed command: never generate from it, never store it.
-        Console.WriteLine("  commands: /exit /stats /show <id> /recall <query>");
+        Console.WriteLine("  commands: /exit /stats /show <id> /recall <query> /forget <id>");
         continue;
     }
 

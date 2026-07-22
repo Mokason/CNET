@@ -543,6 +543,16 @@ The layer cannot make the model truthful, but it makes memory *auditable* and
   `InvalidArgument`; `max_tokens` clamped to the room left — previously
   `ContextTokens` was silently ignored on the managed path).
 
+### Forgetting
+
+`BlobStore.Forget(id)` (TUI: `/forget <id>`) prunes a bad memory — the wrong
+answer a model gave, a fact you typo'd. Deletion is an **event, not an
+erasure**: a tombstone line (`{"del":id}`) is appended, recall and `Get` stop
+serving the blob immediately and durably, index statistics shrink so scoring
+does not drift — but the original line stays in the file as auditable history,
+and the id is never reused, so receipts from any point in the past remain
+unambiguous. Rewriting the file is exactly what this store never does.
+
 ### Store durability
 
 Append-only JSONL, flushed per write, never rewritten. A crash costs at most

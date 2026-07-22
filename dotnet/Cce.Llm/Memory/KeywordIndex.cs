@@ -49,6 +49,21 @@ internal sealed class KeywordIndex
         }
     }
 
+    /// <summary>Removes one blob's contributions (postings, lengths, totals).</summary>
+    public void Remove(MemoryBlob blob)
+    {
+        if (!_blobTermCounts.Remove(blob.Id, out int termCount)) return;
+        _totalTerms -= termCount;
+
+        foreach (string term in new HashSet<string>(BlobAnalyzer.Tokenize(blob.Text), StringComparer.Ordinal))
+        {
+            if (!_postings.TryGetValue(term, out var list)) continue;
+            list.RemoveAll(posting => posting.BlobId == blob.Id);
+            if (list.Count == 0)
+                _postings.Remove(term);   // df must shrink or idf drifts
+        }
+    }
+
     /// <summary>
     /// Scores blobs against the query. Returns (blobId, score) sorted best-first;
     /// empty when no blob passes the relevance gate.

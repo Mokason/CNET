@@ -581,4 +581,117 @@ public sealed class MemoryLayerTests : IDisposable
         int total = FakeCount(ctx.SystemText) + FakeCount("what came first?");
         Assert.True(total <= budget, $"context used {total} of {budget}");
     }
+
+    // ───────────────────── forgetting (tombstones) ─────────────────────
+
+    [Fact]
+    public void Forget_RemovesFromRecall_Immediately()
+    {
+        using var store = SeededStore();
+        long id = store.Recall("vault code", 1).Single().Id;
+
+        Assert.True(store.Forget(id));
+
+        Assert.Empty(store.Recall("vault code", 4));
+        Assert.Null(store.Get(id));
+        Assert.Equal(3, store.Count);
+    }
+
+    [Fact]
+    public void Forget_PersistsAcrossReopen()
+    {
+        long id;
+        using (var store = SeededStore())
+        {
+            id = store.Recall("vault code", 1).Single().Id;
+            Assert.True(store.Forget(id));
+        }
+
+        using var reopened = BlobStore.Open(StorePath());
+        Assert.Empty(reopened.Recall("vault code", 4));
+        Assert.Null(reopened.Get(id));
+        Assert.Equal(3, reopened.Count);
+        Assert.Equal(0, reopened.CorruptLinesSkipped);   // tombstones are not corruption
+    }
+
+    /// <summary>Deletion is an event, not an erasure: the file keeps history.</summary>
+    [Fact]
+    public void Forget_KeepsTheOriginalLine_InTheFile()
+    {
+        using (var store = SeededStore())
+            store.Forget(1);
+
+        string file = File.ReadAllText(StorePath());
+        Assert.Contains("7291", file);          // the forgotten text is still history
+        Assert.Contains("\"del\":1", file);     // masked by a tombstone
+    }
+
+    /// <summary>
+    /// Ids are never reused after a forget — receipts from any point in history
+    /// must stay unambiguous forever.
+    /// </summary>
+    [Fact]
+    public void ForgottenIds_AreNeverReused()
+    {
+        long newId;
+        using (var store = SeededStore())
+        {
+            long last = store.Recall("bandwidth", 1).Single().Id;   // the newest blob
+            store.Forget(last);
+            newId = store.Append("s3", 0, "user", "a brand new memory", 4).Id;
+            Assert.True(newId > last, $"id {newId} reused the forgotten range (last was {last})");
+        }
+
+        using var reopened = BlobStore.Open(StorePath());
+        Assert.Equal("a brand new memory", reopened.Get(newId)!.Text);
+        long nextAfterReopen = reopened.Append("s4", 0, "user", "and another", 2).Id;
+        Assert.True(nextAfterReopen > newId);
+    }
+
+    [Fact]
+    public void Forget_UnknownOrAlreadyForgotten_ReturnsFalse()
+    {
+        using var store = SeededStore();
+        Assert.False(store.Forget(9999));
+        Assert.True(store.Forget(1));
+        Assert.False(store.Forget(1));
+    }
+
+    /// <summary>Forgetting must shrink document frequency, or idf drifts and
+    /// scoring degrades as the store ages.</summary>
+    [Fact]
+    public void Forget_UpdatesIndexStatistics()
+    {
+        using var store = BlobStore.Open(StorePath());
+        long a = store.Append("s1", 0, "user", "zephyr protocol details alpha", 4).Id;
+        store.Append("s1", 1, "user", "zephyr protocol details beta", 4);
+
+        store.Forget(a);
+
+        var hits = store.Recall("zephyr protocol", 4);
+        Assert.Single(hits);
+        Assert.Contains("beta", hits[0].Text);
+    }
+
+    [Fact]
+    public void ForgottenBlob_NoLongerServesTemporalAnchors()
+    {
+        using var store = BlobStore.Open(StorePath());
+        var memory = NewMemory(store);
+        memory.Remember("user", "embarrassing opener about llamas");
+        memory.Remember("assistant", "noted");
+        memory.NextTurn();
+        for (int t = 0; t < 3; t++)
+        {
+            memory.Remember("user", $"filler {t}");
+            memory.Remember("assistant", "ok");
+            memory.NextTurn();
+        }
+
+        store.Forget(1);   // the opener
+
+        var ctx = memory.BuildContext(null, "what was the first thing i said?", 400);
+        Assert.DoesNotContain("llamas", ctx.SystemText);
+        Assert.DoesNotContain(1L, ctx.UsedBlobIds);
+    }
 }

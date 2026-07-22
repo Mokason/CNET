@@ -22,6 +22,17 @@ namespace CNET.Cce.Llm.Memory;
 /// </remarks>
 public sealed class BlobStore : IDisposable
 {
+    /// <summary>A deletion event. The blob's original line stays in the file
+    /// as history; this line masks it from loading and recall.</summary>
+    private sealed record Tombstone
+    {
+        [System.Text.Json.Serialization.JsonPropertyName("del")]
+        public required long Id { get; init; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("ts")]
+        public required string TimestampUtc { get; init; }
+    }
+
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
@@ -48,7 +59,8 @@ public sealed class BlobStore : IDisposable
     public string Path { get; }
 
     private BlobStore(string path, FileStream appendStream, FileStream lockStream,
-                      List<MemoryBlob> loaded, int corruptLines, MemoryOptions options)
+                      List<MemoryBlob> loaded, long maxSeenId, int corruptLines,
+                      MemoryOptions options)
     {
         Path = path;
         _appendStream = appendStream;
@@ -56,14 +68,14 @@ public sealed class BlobStore : IDisposable
         CorruptLinesSkipped = corruptLines;
         _index = new KeywordIndex(options);
 
-        long maxId = 0;
         foreach (MemoryBlob blob in loaded)
         {
             _blobs[blob.Id] = blob;
             _index.Add(blob);
-            if (blob.Id > maxId) maxId = blob.Id;
         }
-        _nextId = maxId + 1;
+        // maxSeenId covers tombstoned ids too: a forgotten id is never reused,
+        // so a receipt from any point in history stays unambiguous forever.
+        _nextId = maxSeenId + 1;
     }
 
     /// <summary>
@@ -100,7 +112,11 @@ public sealed class BlobStore : IDisposable
 
         try
         {
-            var loaded = new List<MemoryBlob>();
+            // Tombstones are applied IN FILE ORDER, so a hand-recovered file
+            // with blob/tombstone/blob sequences resolves exactly as written.
+            var byId = new Dictionary<long, MemoryBlob>();
+            var order = new List<long>();
+            long maxSeen = 0;
             int corrupt = 0;
             if (File.Exists(path))
             {
@@ -109,11 +125,28 @@ public sealed class BlobStore : IDisposable
                     if (string.IsNullOrWhiteSpace(line)) continue;
                     try
                     {
-                        MemoryBlob? blob = JsonSerializer.Deserialize<MemoryBlob>(line, JsonOptions);
+                        using JsonDocument doc = JsonDocument.Parse(line);
+                        JsonElement root = doc.RootElement;
+
+                        if (root.TryGetProperty("del", out JsonElement del))
+                        {
+                            long dead = del.GetInt64();
+                            if (dead > maxSeen) maxSeen = dead;
+                            if (byId.Remove(dead)) order.Remove(dead);
+                            continue;
+                        }
+
+                        MemoryBlob? blob = root.Deserialize<MemoryBlob>(JsonOptions);
                         if (blob is not null && blob.Text.Length > 0)
-                            loaded.Add(blob);
+                        {
+                            if (!byId.ContainsKey(blob.Id)) order.Add(blob.Id);
+                            byId[blob.Id] = blob;
+                            if (blob.Id > maxSeen) maxSeen = blob.Id;
+                        }
                         else
+                        {
                             corrupt++;
+                        }
                     }
                     catch (JsonException)
                     {
@@ -121,6 +154,8 @@ public sealed class BlobStore : IDisposable
                     }
                 }
             }
+            var loaded = new List<MemoryBlob>(order.Count);
+            foreach (long id in order) loaded.Add(byId[id]);
 
             // bufferSize: 1 disables user-space buffering, so a failed write
             // (disk full) cannot leave a half-line lurking in a buffer to be
@@ -147,7 +182,7 @@ public sealed class BlobStore : IDisposable
                     }
                 }
 
-                return new BlobStore(path, stream, lockStream, loaded, corrupt, options);
+                return new BlobStore(path, stream, lockStream, loaded, maxSeen, corrupt, options);
             }
             catch
             {
@@ -225,6 +260,35 @@ public sealed class BlobStore : IDisposable
                 if (result.Count == maxResults) break;
             }
             return result;
+        }
+    }
+
+    /// <summary>
+    /// Forgets one blob: recall and provenance lookups stop serving it, and a
+    /// tombstone line makes the deletion durable. The original line remains in
+    /// the file as history — deletion is an event, not an erasure — and the id
+    /// is never reused.
+    /// </summary>
+    /// <returns>False when no such blob exists (or it was already forgotten).</returns>
+    public bool Forget(long id)
+    {
+        lock (_gate)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            if (!_blobs.Remove(id, out MemoryBlob? blob)) return false;
+
+            var tombstone = new Tombstone
+            {
+                Id = id,
+                TimestampUtc = DateTime.UtcNow.ToString("o"),
+            };
+            byte[] line = Encoding.UTF8.GetBytes(
+                JsonSerializer.Serialize(tombstone, JsonOptions) + "\n");
+            _appendStream.Write(line);
+            _appendStream.Flush();
+
+            _index.Remove(blob);
+            return true;
         }
     }
 
