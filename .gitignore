@@ -60,3 +60,6 @@ tmp_gap_lane.*
 soul_serve.stats
 artifacts/live_eight*
 artifacts/janitor/
+
+# BenchmarkDotNet run artifacts (regenerable)
+dotnet/**/BenchmarkDotNet.Artifacts/

@@ -212,10 +212,46 @@ instruction-throughput-bound. Hoisting one load and one sign per four tokens is
 ~8% of the op budget at best. That analysis is what pointed at dequantization
 instead, since the f32 loop simply needs fewer ops per MAC.
 
-Remaining headroom, unexplored: AVX-512 VNNI (`vpdpbusd`) would fuse maddubs+madd
-in the sub-threshold quantized path (~15% of its op budget), and the dequant path
-still carries ~11% overhead versus a pure f32 GEMM (237,354 us vs 209,890 us at
-N=512) from writing the dequantized tiles.
+### Also tried: VNNI (`vpdpbusd`) — kept, but it buys ~nothing
+
+The Q8_0 kernels now fuse their `maddubs` + `madd(ones)` pair into a single
+`VPDPBUSD` via `MatMul.DotBytesToInt32` when `AvxVnni` is available (.NET exposes
+VNNI only through `AvxVnni`; there is no `Avx512Vnni` class, and every call site
+here is 256-bit anyway). It is bit-identical, not merely close: `maddubs`
+saturates its int16 pair sums where `VPDPBUSD` does not, but Q8_0 operands cap a
+pair sum at 128*127*2 = 32512, inside int16. `MatMulVnniTests` pins that, and
+the generation goldens are byte-unchanged.
+
+Measured with a controlled same-binary A/B (`DOTNET_EnableAVXVNNI=0/1`):
+
+| | VNNI on | VNNI off |
+| --- | ---: | ---: |
+| decode, end-to-end (median of 3) | 263 tok/s | 270 tok/s |
+| `GemvQ8_0` micro, K=4096 | 10,821 ns | 10,899 ns |
+| `GemvQ8_0` micro, K=11008 | 29,292 ns | 29,553 ns |
+
+Around 1%, in both directions — noise. The earlier ~15% estimate in this file was
+wrong, and it was wrong the same way the token-blocking estimate was: it assumed
+the kernel is limited by the count of vector ops. It is not.
+
+`VecDotQ8_0_Avx2` at K=4096 runs 128 blocks in 253 ns = **7.9 cycles/block** on
+L1-resident data (4,352 bytes, 17 GB/s — nowhere near memory). Five vector ops
+would issue in ~2 cycles on this core, so the kernel is neither issue-limited nor
+bandwidth-limited: it is **latency-limited on the serial FMA accumulator chain**
+across blocks. Removing one op off that chain's side cannot lower a floor set by
+FMA latency. End-to-end decode has the opposite problem — 143 MB of weights per
+token at 265 tok/s is ~38 GB/s, near the DRAM roof, so it is bandwidth-bound.
+
+The change is kept because it is bit-identical, never slower, and a net
+simplification (21 two-line idioms collapse into one documented helper with an
+explicit saturation-safety argument). It is not kept because it made anything
+faster.
+
+The lead it points at, unexplored: give the single-row Q8_0 dot **multiple
+independent accumulators** so the FMA chain is not serial — the 4-row kernels
+already have four and are correspondingly less latency-bound. Separately, the
+dequant path still carries ~11% overhead versus a pure f32 GEMM (237,354 us vs
+209,890 us at N=512) from writing the dequantized tiles.
 
 A latent detail surfaced while testing the reverted kernel, recorded because it
 is easy to trip over: the legacy per-token kernels take `abs` of the *activation*

@@ -43,6 +43,42 @@ public static unsafe partial class MatMul
     }
 
     /// <summary>
+    /// Unsigned-by-signed byte dot product, accumulated four-wide into int32
+    /// lanes. This is the <c>maddubs</c> + <c>madd(ones)</c> pair fused into a
+    /// single <c>VPDPBUSD</c> when VNNI is available.
+    /// </summary>
+    /// <remarks>
+    /// Bit-identical to the two-instruction form for every value these kernels
+    /// can produce. <c>VPDPBUSD</c> accumulates straight to int32, whereas
+    /// <c>maddubs</c> saturates its intermediate int16 pair sums — but reaching
+    /// saturation needs a pair sum past 32767, and here one operand is
+    /// <c>abs()</c> of a Q8_0 value (at most 128) and the other a Q8_0 value
+    /// (magnitude at most 127), so the largest attainable pair sum is
+    /// 128*127*2 = 32512. <c>MatMulVnniTests</c> checks that exhaustively at the
+    /// extremes and randomly across the reachable range.
+    /// <para>
+    /// The <c>IsSupported</c> checks are JIT-time constants, so exactly one arm
+    /// survives codegen and there is no runtime branch.
+    /// </para>
+    /// </remarks>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal static Vector256<int> DotBytesToInt32(
+        Vector256<byte> u, Vector256<sbyte> s, Vector256<short> ones)
+    {
+        // .NET exposes VPDPBUSD through AvxVnni (VEX-encoded), which covers
+        // Vector256 — the width every call site here uses. There is no separate
+        // 512-bit VNNI class to reach for; the "Avx512" kernels in this file all
+        // compute 256-bit halves and only widen for the float accumulate.
+        if (AvxVnni.IsSupported)
+            return AvxVnni.MultiplyWideningAndAdd(Vector256<int>.Zero, u, s);
+
+        return Avx2.MultiplyAddAdjacent(Avx2.MultiplyAddAdjacent(u, s), ones);
+    }
+
+    /// <summary>True when the fused VNNI path is in use — for diagnostics and tests.</summary>
+    internal static bool VnniEnabled => AvxVnni.IsSupported;
+
+    /// <summary>
     /// f32 GEMV: <c>result[m] = dot(A[m,:], x)</c>.
     /// A is [M,K] row-major, x is [K], result is [M].
     /// </summary>
@@ -239,8 +275,7 @@ public static unsafe partial class MatMul
                 float dw = (float)Unsafe.ReadUnaligned<Half>(wBlock);
                 Vector256<sbyte> vw = Unsafe.ReadUnaligned<Vector256<sbyte>>(wBlock + 2);
                 Vector256<sbyte> adjW = Avx2.Sign(vw, vx);
-                Vector256<short> prod = Avx2.MultiplyAddAdjacent(absX.AsByte(), adjW);
-                Vector256<int> isum = Avx2.MultiplyAddAdjacent(prod, ones);
+                Vector256<int> isum = DotBytesToInt32(absX.AsByte(), adjW, ones);
                 if (Fma.IsSupported)
                     acc0 = Fma.MultiplyAdd(Vector256.Create(dx * dw), Avx.ConvertToVector256Single(isum), acc0);
                 else
@@ -253,8 +288,7 @@ public static unsafe partial class MatMul
                 float dw = (float)Unsafe.ReadUnaligned<Half>(wBlock);
                 Vector256<sbyte> vw = Unsafe.ReadUnaligned<Vector256<sbyte>>(wBlock + 2);
                 Vector256<sbyte> adjW = Avx2.Sign(vw, vx);
-                Vector256<short> prod = Avx2.MultiplyAddAdjacent(absX.AsByte(), adjW);
-                Vector256<int> isum = Avx2.MultiplyAddAdjacent(prod, ones);
+                Vector256<int> isum = DotBytesToInt32(absX.AsByte(), adjW, ones);
                 if (Fma.IsSupported)
                     acc1 = Fma.MultiplyAdd(Vector256.Create(dx * dw), Avx.ConvertToVector256Single(isum), acc1);
                 else
@@ -267,8 +301,7 @@ public static unsafe partial class MatMul
                 float dw = (float)Unsafe.ReadUnaligned<Half>(wBlock);
                 Vector256<sbyte> vw = Unsafe.ReadUnaligned<Vector256<sbyte>>(wBlock + 2);
                 Vector256<sbyte> adjW = Avx2.Sign(vw, vx);
-                Vector256<short> prod = Avx2.MultiplyAddAdjacent(absX.AsByte(), adjW);
-                Vector256<int> isum = Avx2.MultiplyAddAdjacent(prod, ones);
+                Vector256<int> isum = DotBytesToInt32(absX.AsByte(), adjW, ones);
                 if (Fma.IsSupported)
                     acc2 = Fma.MultiplyAdd(Vector256.Create(dx * dw), Avx.ConvertToVector256Single(isum), acc2);
                 else
@@ -281,8 +314,7 @@ public static unsafe partial class MatMul
                 float dw = (float)Unsafe.ReadUnaligned<Half>(wBlock);
                 Vector256<sbyte> vw = Unsafe.ReadUnaligned<Vector256<sbyte>>(wBlock + 2);
                 Vector256<sbyte> adjW = Avx2.Sign(vw, vx);
-                Vector256<short> prod = Avx2.MultiplyAddAdjacent(absX.AsByte(), adjW);
-                Vector256<int> isum = Avx2.MultiplyAddAdjacent(prod, ones);
+                Vector256<int> isum = DotBytesToInt32(absX.AsByte(), adjW, ones);
                 if (Fma.IsSupported)
                     acc3 = Fma.MultiplyAdd(Vector256.Create(dx * dw), Avx.ConvertToVector256Single(isum), acc3);
                 else
@@ -424,11 +456,8 @@ public static unsafe partial class MatMul
             Vector256<sbyte> absA = Avx2.Sign(va, va);
             Vector256<sbyte> adjB = Avx2.Sign(vb, va);
 
-            // ubyte × sbyte → int16 pairs
-            Vector256<short> prod = Avx2.MultiplyAddAdjacent(absA.AsByte(), adjB);
-
-            // int16 pairs → int32
-            Vector256<int> isum = Avx2.MultiplyAddAdjacent(prod, ones);
+            // ubyte × sbyte → int32, one VPDPBUSD where VNNI is present
+            Vector256<int> isum = DotBytesToInt32(absA.AsByte(), adjB, ones);
 
             // Convert to float, scale, and accumulate.
             Vector256<float> fsum = Avx.ConvertToVector256Single(isum);
@@ -470,8 +499,7 @@ public static unsafe partial class MatMul
                 float dw = (float)Unsafe.ReadUnaligned<Half>(wBlock);
                 Vector256<sbyte> vw = Unsafe.ReadUnaligned<Vector256<sbyte>>(wBlock + 2);
                 Vector256<sbyte> adjW = Avx2.Sign(vw, vx);
-                Vector256<short> prod = Avx2.MultiplyAddAdjacent(absX.AsByte(), adjW);
-                Vector256<int> isum = Avx2.MultiplyAddAdjacent(prod, ones);
+                Vector256<int> isum = DotBytesToInt32(absX.AsByte(), adjW, ones);
                 Vector256<float> fsum = Avx.ConvertToVector256Single(isum);
                 Vector256<float> scale = Vector256.Create(dx * dw);
                 if (Fma.IsSupported)
@@ -486,8 +514,7 @@ public static unsafe partial class MatMul
                 float dw = (float)Unsafe.ReadUnaligned<Half>(wBlock);
                 Vector256<sbyte> vw = Unsafe.ReadUnaligned<Vector256<sbyte>>(wBlock + 2);
                 Vector256<sbyte> adjW = Avx2.Sign(vw, vx);
-                Vector256<short> prod = Avx2.MultiplyAddAdjacent(absX.AsByte(), adjW);
-                Vector256<int> isum = Avx2.MultiplyAddAdjacent(prod, ones);
+                Vector256<int> isum = DotBytesToInt32(absX.AsByte(), adjW, ones);
                 Vector256<float> fsum = Avx.ConvertToVector256Single(isum);
                 Vector256<float> scale = Vector256.Create(dx * dw);
                 if (Fma.IsSupported)
@@ -502,8 +529,7 @@ public static unsafe partial class MatMul
                 float dw = (float)Unsafe.ReadUnaligned<Half>(wBlock);
                 Vector256<sbyte> vw = Unsafe.ReadUnaligned<Vector256<sbyte>>(wBlock + 2);
                 Vector256<sbyte> adjW = Avx2.Sign(vw, vx);
-                Vector256<short> prod = Avx2.MultiplyAddAdjacent(absX.AsByte(), adjW);
-                Vector256<int> isum = Avx2.MultiplyAddAdjacent(prod, ones);
+                Vector256<int> isum = DotBytesToInt32(absX.AsByte(), adjW, ones);
                 Vector256<float> fsum = Avx.ConvertToVector256Single(isum);
                 Vector256<float> scale = Vector256.Create(dx * dw);
                 if (Fma.IsSupported)
@@ -518,8 +544,7 @@ public static unsafe partial class MatMul
                 float dw = (float)Unsafe.ReadUnaligned<Half>(wBlock);
                 Vector256<sbyte> vw = Unsafe.ReadUnaligned<Vector256<sbyte>>(wBlock + 2);
                 Vector256<sbyte> adjW = Avx2.Sign(vw, vx);
-                Vector256<short> prod = Avx2.MultiplyAddAdjacent(absX.AsByte(), adjW);
-                Vector256<int> isum = Avx2.MultiplyAddAdjacent(prod, ones);
+                Vector256<int> isum = DotBytesToInt32(absX.AsByte(), adjW, ones);
                 Vector256<float> fsum = Avx.ConvertToVector256Single(isum);
                 Vector256<float> scale = Vector256.Create(dx * dw);
                 if (Fma.IsSupported)
@@ -576,10 +601,8 @@ public static unsafe partial class MatMul
             Vector256<sbyte> adjB1 = Avx2.Sign(vb1, va1);
 
             // MAD to int16 then int32 on each half.
-            Vector256<short> prod0 = Avx2.MultiplyAddAdjacent(absA0.AsByte(), adjB0);
-            Vector256<int> isum0 = Avx2.MultiplyAddAdjacent(prod0, ones256);
-            Vector256<short> prod1 = Avx2.MultiplyAddAdjacent(absA1.AsByte(), adjB1);
-            Vector256<int> isum1 = Avx2.MultiplyAddAdjacent(prod1, ones256);
+            Vector256<int> isum0 = DotBytesToInt32(absA0.AsByte(), adjB0, ones256);
+            Vector256<int> isum1 = DotBytesToInt32(absA1.AsByte(), adjB1, ones256);
 
             // Combine into 512-bit vectors.
             Vector512<int> isum512 = Vector512.Create(isum0, isum1);
@@ -609,8 +632,7 @@ public static unsafe partial class MatMul
 
             Vector256<sbyte> absA = Avx2.Sign(va, va);
             Vector256<sbyte> adjB = Avx2.Sign(vb, va);
-            Vector256<short> prod = Avx2.MultiplyAddAdjacent(absA.AsByte(), adjB);
-            Vector256<int> isum = Avx2.MultiplyAddAdjacent(prod, Vector256.Create((short)1));
+            Vector256<int> isum = DotBytesToInt32(absA.AsByte(), adjB, Vector256.Create((short)1));
             Vector256<float> fsum = Avx.ConvertToVector256Single(isum);
 
             result += da * db * HorizontalSumAvx2Float(fsum);
@@ -697,10 +719,8 @@ public static unsafe partial class MatMul
         Vector256<sbyte> adjW0 = Avx2.Sign(vw0, vx0);
         Vector256<sbyte> adjW1 = Avx2.Sign(vw1, vx1);
 
-        Vector256<short> prod0 = Avx2.MultiplyAddAdjacent(absX0.AsByte(), adjW0);
-        Vector256<int> isum0 = Avx2.MultiplyAddAdjacent(prod0, ones256);
-        Vector256<short> prod1 = Avx2.MultiplyAddAdjacent(absX1.AsByte(), adjW1);
-        Vector256<int> isum1 = Avx2.MultiplyAddAdjacent(prod1, ones256);
+        Vector256<int> isum0 = DotBytesToInt32(absX0.AsByte(), adjW0, ones256);
+        Vector256<int> isum1 = DotBytesToInt32(absX1.AsByte(), adjW1, ones256);
 
         Vector512<int> isum512 = Vector512.Create(isum0, isum1);
         Vector512<float> fsum512 = Avx512F.ConvertToVector512Single(isum512);
@@ -722,8 +742,7 @@ public static unsafe partial class MatMul
         float dw = (float)Unsafe.ReadUnaligned<Half>(wBlock);
         Vector256<sbyte> vw = Unsafe.ReadUnaligned<Vector256<sbyte>>(wBlock + 2);
         Vector256<sbyte> adjW = Avx2.Sign(vw, vx);
-        Vector256<short> prod = Avx2.MultiplyAddAdjacent(absX.AsByte(), adjW);
-        Vector256<int> isum = Avx2.MultiplyAddAdjacent(prod, ones);
+        Vector256<int> isum = DotBytesToInt32(absX.AsByte(), adjW, ones);
         Vector256<float> fsum = Avx.ConvertToVector256Single(isum);
         return dx * dw * HorizontalSumAvx2Float(fsum);
     }
@@ -1476,8 +1495,7 @@ public static unsafe partial class MatMul
                 Vector256<sbyte> vx0 = Unsafe.ReadUnaligned<Vector256<sbyte>>(xb0 + 2);
                 Vector256<sbyte> adjW0 = Avx2.Sign(vw, vx0);
                 Vector256<sbyte> absX0 = Avx2.Sign(vx0, vx0);
-                Vector256<short> prod0 = Avx2.MultiplyAddAdjacent(absX0.AsByte(), adjW0);
-                Vector256<int> isum0 = Avx2.MultiplyAddAdjacent(prod0, ones);
+                Vector256<int> isum0 = DotBytesToInt32(absX0.AsByte(), adjW0, ones);
                 a0 = Fma.IsSupported
                     ? Fma.MultiplyAdd(Vector256.Create(dx0 * dw), Avx.ConvertToVector256Single(isum0), a0)
                     : a0 + Avx.ConvertToVector256Single(isum0) * Vector256.Create(dx0 * dw);
@@ -1488,8 +1506,7 @@ public static unsafe partial class MatMul
                 Vector256<sbyte> vx1 = Unsafe.ReadUnaligned<Vector256<sbyte>>(xb1 + 2);
                 Vector256<sbyte> adjW1 = Avx2.Sign(vw, vx1);
                 Vector256<sbyte> absX1 = Avx2.Sign(vx1, vx1);
-                Vector256<short> prod1 = Avx2.MultiplyAddAdjacent(absX1.AsByte(), adjW1);
-                Vector256<int> isum1 = Avx2.MultiplyAddAdjacent(prod1, ones);
+                Vector256<int> isum1 = DotBytesToInt32(absX1.AsByte(), adjW1, ones);
                 a1 = Fma.IsSupported
                     ? Fma.MultiplyAdd(Vector256.Create(dx1 * dw), Avx.ConvertToVector256Single(isum1), a1)
                     : a1 + Avx.ConvertToVector256Single(isum1) * Vector256.Create(dx1 * dw);
@@ -1500,8 +1517,7 @@ public static unsafe partial class MatMul
                 Vector256<sbyte> vx2 = Unsafe.ReadUnaligned<Vector256<sbyte>>(xb2 + 2);
                 Vector256<sbyte> adjW2 = Avx2.Sign(vw, vx2);
                 Vector256<sbyte> absX2 = Avx2.Sign(vx2, vx2);
-                Vector256<short> prod2 = Avx2.MultiplyAddAdjacent(absX2.AsByte(), adjW2);
-                Vector256<int> isum2 = Avx2.MultiplyAddAdjacent(prod2, ones);
+                Vector256<int> isum2 = DotBytesToInt32(absX2.AsByte(), adjW2, ones);
                 a2 = Fma.IsSupported
                     ? Fma.MultiplyAdd(Vector256.Create(dx2 * dw), Avx.ConvertToVector256Single(isum2), a2)
                     : a2 + Avx.ConvertToVector256Single(isum2) * Vector256.Create(dx2 * dw);
@@ -1694,12 +1710,10 @@ public static unsafe partial class MatMul
         ref Vector512<float> acc)
     {
         Vector256<sbyte> adj0 = Avx2.Sign(vwLo, vxLo);
-        Vector256<short> prod0 = Avx2.MultiplyAddAdjacent(absXLo.AsByte(), adj0);
-        Vector256<int> isum0 = Avx2.MultiplyAddAdjacent(prod0, ones256);
+        Vector256<int> isum0 = DotBytesToInt32(absXLo.AsByte(), adj0, ones256);
 
         Vector256<sbyte> adj1 = Avx2.Sign(vwHi, vxHi);
-        Vector256<short> prod1 = Avx2.MultiplyAddAdjacent(absXHi.AsByte(), adj1);
-        Vector256<int> isum1 = Avx2.MultiplyAddAdjacent(prod1, ones256);
+        Vector256<int> isum1 = DotBytesToInt32(absXHi.AsByte(), adj1, ones256);
 
         Vector512<int> isum512 = Vector512.Create(isum0, isum1);
         Vector512<float> fsum = Avx512F.ConvertToVector512Single(isum512);
@@ -1725,8 +1739,7 @@ public static unsafe partial class MatMul
             float dw = HalfBitsToFloat(wb);
             Vector256<sbyte> vw = Unsafe.ReadUnaligned<Vector256<sbyte>>(wb + 2);
             Vector256<sbyte> adjW = Avx2.Sign(vw, vxt);
-            Vector256<short> prod = Avx2.MultiplyAddAdjacent(absXt.AsByte(), adjW);
-            Vector256<int> isum = Avx2.MultiplyAddAdjacent(prod, ones);
+            Vector256<int> isum = DotBytesToInt32(absXt.AsByte(), adjW, ones);
             c[tokenIdx * cStride + r] += dxt * dw * HorizontalSumAvx2Float(Avx.ConvertToVector256Single(isum));
         }
     }
