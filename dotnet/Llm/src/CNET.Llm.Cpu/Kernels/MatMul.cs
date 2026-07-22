@@ -1096,6 +1096,66 @@ public static unsafe partial class MatMul
         }
     }
 
+    // ──────── Dequantize-to-f32 prefill path for Q8_0 ────────
+
+    /// <summary>
+    /// Token count at or above which Q8_0 GEMM dequantizes weight tiles to f32
+    /// and runs the f32 GEMM instead of the quantized kernel.
+    /// </summary>
+    /// <remarks>
+    /// The quantized inner loop spends ~6 vector ops per 32 MACs (sign, maddubs,
+    /// madd, cvtdq2ps, scale broadcast, fma) against the f32 loop's 1 op per 8
+    /// MACs, so it is instruction-throughput-bound at roughly 1.5x the f32 cost
+    /// per MAC. Dequantizing a tile once costs O(tileRows*k) and amortizes over
+    /// all n tokens, so past a small n the f32 GEMM wins outright despite
+    /// touching 4x more weight bytes. Below the threshold the dequantization is
+    /// not amortized and Q8_0 wins — by ~2x at n=1.
+    /// </remarks>
+    internal const int DequantF32TokenThreshold = 16;
+
+    /// <summary>
+    /// Q8_0 GEMM via per-tile dequantization: each weight tile is expanded to
+    /// f32 once, then all tokens run against it through the f32 GEMV.
+    /// </summary>
+    /// <remarks>
+    /// Numerics differ from the quantized path: activations are consumed at full
+    /// f32 precision rather than being round-tripped through Q8_0, so this is
+    /// strictly closer to exact <c>dequant(W) · x</c>. Weight precision is
+    /// unchanged — dequantization of stored Q8_0 is exact.
+    /// </remarks>
+    private static void ComputeGemmDequantF32(byte* weightsQ8, float* b, float* c,
+                                              int m, int k, int n,
+                                              float* tileScratch, int tileRowsMax)
+    {
+        int q8RowBytes = (k / Q8_0GroupSize) * Q8_0BlockBytes;
+
+        for (int mStart = 0; mStart < m; mStart += tileRowsMax)
+        {
+            int tileRows = Math.Min(tileRowsMax, m - mStart);
+
+            Dequantize.ToFloat32(
+                (nint)(weightsQ8 + (long)mStart * q8RowBytes),
+                (long)tileRows * k,
+                Core.Configuration.QuantizationType.Q8_0,
+                new Span<float>(tileScratch, tileRows * k));
+
+            for (int t = 0; t < n; t++)
+                GemvF32(tileScratch, b + (long)t * k, c + (long)t * m + mStart, tileRows, k);
+        }
+    }
+
+    /// <summary>Rows per dequantized tile, sized so the f32 tile fits the L2 budget.</summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static int DequantTileRows(int k) => ComputeTileM(k * sizeof(float));
+
+    /// <summary>
+    /// Whether the dequantize-to-f32 path applies. Requires f32 inputs — callers
+    /// that only supply pre-quantized activations keep the quantized kernel.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static bool UseDequantF32(float* b, int n) =>
+        b != null && n >= DequantF32TokenThreshold;
+
     // ──────────────────── GEMM ────────────────────
 
     /// <summary>
@@ -1172,6 +1232,18 @@ public static unsafe partial class MatMul
 
         int blockCount2 = k / Q8_0GroupSize;
         int q8RowBytes = blockCount2 * Q8_0BlockBytes;
+
+        // Past the threshold, expanding each weight tile to f32 once beats the
+        // quantized kernel outright — see DequantF32TokenThreshold.
+        if (UseDequantF32(b, n))
+        {
+            int tileRows = DequantTileRows(k);
+            float[] tileRented = ArrayPool<float>.Shared.Rent(tileRows * k);
+            fixed (float* tilePtr = tileRented)
+                ComputeGemmDequantF32(weightsQ8, b, c, m, k, n, tilePtr, tileRows);
+            ArrayPool<float>.Shared.Return(tileRented);
+            return;
+        }
 
         if (preQuantizedInput != null)
         {
@@ -1989,6 +2061,54 @@ public static unsafe partial class MatMul
         public int Q8RowBytes;
     }
 
+    private struct GemmDequantF32Ctx
+    {
+        public byte* WeightsQ8;
+        public float* B;
+        public float* C;
+        /// <summary>Per-worker dequantization tiles, indexed by thread.</summary>
+        public nint* Scratch;
+        public int M;
+        public int N;
+        public int K;
+        public int TileRows;
+        public int Q8RowBytes;
+    }
+
+    /// <summary>
+    /// Parallel dequantize-to-f32 GEMM. Tiles are split across workers; each
+    /// dequantizes into its own scratch buffer, so no worker writes a tile
+    /// another reads.
+    /// </summary>
+    private static void GemmDequantF32Worker(nint ctxPtr, int threadIdx, int threadCount)
+    {
+        ref var ctx = ref Unsafe.AsRef<GemmDequantF32Ctx>((void*)ctxPtr);
+        int totalTiles = (ctx.M + ctx.TileRows - 1) / ctx.TileRows;
+        int tilesPerThread = (totalTiles + threadCount - 1) / threadCount;
+        int startTile = threadIdx * tilesPerThread;
+        int endTile = Math.Min(startTile + tilesPerThread, totalTiles);
+
+        float* scratch = (float*)ctx.Scratch[threadIdx];
+
+        for (int tile = startTile; tile < endTile; tile++)
+        {
+            int mStart = tile * ctx.TileRows;
+            int tileRows = Math.Min(ctx.TileRows, ctx.M - mStart);
+
+            Dequantize.ToFloat32(
+                (nint)(ctx.WeightsQ8 + (long)mStart * ctx.Q8RowBytes),
+                (long)tileRows * ctx.K,
+                Core.Configuration.QuantizationType.Q8_0,
+                new Span<float>(scratch, tileRows * ctx.K));
+
+            for (int t = 0; t < ctx.N; t++)
+            {
+                GemvF32(scratch, ctx.B + (long)t * ctx.K,
+                        ctx.C + (long)t * ctx.M + mStart, tileRows, ctx.K);
+            }
+        }
+    }
+
     private struct GemmTiledF32Ctx
     {
         public float* A;
@@ -2301,6 +2421,27 @@ public static unsafe partial class MatMul
         int q8RowBytes = blockCount2 * Q8_0BlockBytes;
         int tileM = ComputeTileM(q8RowBytes);
         int totalTiles = (m + tileM - 1) / tileM;
+
+        if (UseDequantF32(b, n))
+        {
+            int dqTileRows = DequantTileRows(k);
+            int tileBytes = dqTileRows * k * sizeof(float);
+            int workers = pool.ThreadCount;
+
+            // Fetched here, before dispatch, so each worker only touches its own
+            // slot once running.
+            nint* scratch = stackalloc nint[workers];
+            for (int i = 0; i < workers; i++)
+                scratch[i] = pool.GetWorkerScratch(i, tileBytes);
+
+            var dqCtx = new GemmDequantF32Ctx
+            {
+                WeightsQ8 = weightsQ8, B = b, C = c, Scratch = scratch,
+                M = m, N = n, K = k, TileRows = dqTileRows, Q8RowBytes = q8RowBytes
+            };
+            pool.Dispatch((nint)(&dqCtx), &GemmDequantF32Worker);
+            return;
+        }
 
         if (preQuantizedInput != null)
         {

@@ -854,12 +854,16 @@ public sealed unsafe class MatMulTests
         }
     }
 
+    // Only below MatMul.DequantF32TokenThreshold. At or above it, GEMM switches
+    // to dequantizing weight tiles to f32 and consuming activations unquantized,
+    // so it deliberately no longer equals the per-token quantized GEMV — it is
+    // closer to exact arithmetic than that reference. MatMulDequantF32Tests
+    // covers the batched path above the threshold, against an exact reference.
     [Theory]
     [InlineData(1)]
     [InlineData(2)]
     [InlineData(7)]
-    [InlineData(16)]
-    [InlineData(128)]
+    [InlineData(15)]
     public void GemmQ8_0_VaryingN_MatchesSequentialGemv(int n)
     {
         var rng = new Random(42);

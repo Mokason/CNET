@@ -151,40 +151,67 @@ A consequence worth flagging: **beyond N=4, `GemmF32` beats `GemmQ8_0` outright*
 — 1.64x at N=512 — despite F32 weights being 4x larger. At N=1 Q8_0 wins 2.1x, as
 quantization should.
 
-### Attempted fix: token-blocked GEMM (tried, reverted, do not repeat)
+### Fix applied: dequantize weight tiles to f32 for prefill
 
-The obvious reading of "no batching win" is that the weight matrix is being
-re-streamed per token, so the fix is to block the token axis and reuse each
-loaded weight block across several tokens. That was implemented — a 4-token
-kernel for AVX2 and AVX-512, hoisting the weight load and its `abs` form out of
-the token loop, correct and fully tested — and it **did not work**:
+`MatMul.GemmQ8_0` now expands each weight tile to f32 **once** and runs the f32
+GEMV across all tokens, whenever n >= `DequantF32TokenThreshold` (16). Below that
+the quantized kernel is kept — it wins by ~2x at n=1, where a per-tile
+dequantization has nothing to amortize against.
+
+| N | Q8_0 GEMM before | after | speedup |
+| ---: | ---: | ---: | ---: |
+| 1 | 733 us | 722 us | unchanged (below threshold) |
+| 4 | 2,891 us | 2,780 us | unchanged (below threshold) |
+| 16 | 10,983 us | 8,071 us | **1.36x** |
+| 64 | 43,174 us | 30,561 us | **1.41x** |
+| 256 | 171,704 us | 118,871 us | **1.44x** |
+| 512 | 343,492 us | 237,354 us | **1.45x** |
+
+End-to-end, like-for-like (Balanced, 64 generated tokens both builds, 8 threads):
 
 | | before | after |
 | --- | ---: | ---: |
-| `GemmQ8_0` micro, N=512 | 343,492 us | 342,799 us (**0.2%**, vs 0.3% StdDev) |
-| end-to-end prefill | 536 tok/s | 488-499 tok/s (no gain) |
+| prefill | 499 tok/s | **1,286 tok/s (2.58x)** |
+| decode | 220 tok/s | 235 tok/s (unchanged — decode is n=1) |
 
-The reason is that the kernel is **instruction-throughput-bound, not load-bound**.
-Per 256-bit vector the Q8_0 inner loop spends ~6 ops (sign, maddubs, madd,
-cvtdq2ps, scale broadcast, fma) on 32 MACs = 0.1875 ops/MAC, where F32 spends
-1 op (fma) on 8 MACs = 0.125. That predicts a 1.50x Q8_0/F32 gap; the measured
-gap is 1.63x. The kernel is already running near its op-throughput limit, so
-removing one load and one sign per four tokens — about 8% of the op budget in
-the best case — buys nothing measurable. Weight reloading was never the
-bottleneck, which is also why M-tiling only ever bought ~5%.
+That closes the prefill gap to the native harness from ~9.2x to ~3.7x. Decode was
+never expected to move and did not.
 
-So the ranked options for anyone picking this up are:
+**This changes numerics for prompts of 16+ tokens.** The quantized path rounds
+activations through Q8_0 before the dot; the f32 path does not, so it is strictly
+*closer* to exact `dequant(W) · x` — `MatMulDequantF32Tests` asserts that
+direction explicitly, not merely that the two paths are near each other. Observed
+consequences:
 
-1. **Dequantize a weight tile once per tile and run the F32 GEMM.** Already
-   measured at 1.64x for N>=16 by the table above; needs a scratch tile and a
-   crossover check around N=4, below which Q8_0 still wins 2.1x.
-2. **AVX-512 VNNI (`vpdpbusd`)** fuses maddubs+madd, removing one of ~6 ops
-   (~15%). Zen 4/5 and Ice Lake+ have it; needs a fallback path.
-3. **Hoist the per-block scale broadcast** out of the inner loop — an
-   algorithmic restructure of how block scales are applied.
+- Prompts under 16 tokens are bit-identical (verified: same output sha256 as the
+  previous build).
+- Prompts of 16+ tokens can generate different text. On the 237-token benchmark
+  prompt, greedy decoding went from stopping at 33 tokens to running the full 64.
+- All 83 forward-pass integration tests (Llama, Qwen, Q4_K, Bielik) still pass
+  against their reference outputs, which is the strongest evidence available that
+  the shift is an accuracy improvement rather than a regression.
 
-Token blocking is not on that list. It is the intuitive fix and it is the wrong
-one for this kernel.
+If you have goldens pinned to the old activation-quantized behaviour, they will
+need regenerating for 16+ token prompts. Raise `DequantF32TokenThreshold` to
+`int.MaxValue` to restore the previous numerics exactly.
+
+### Rejected: token-blocked GEMM (tried, reverted, do not repeat)
+
+The intuitive fix — block the token axis so each loaded weight block serves
+several tokens — was implemented for AVX2 and AVX-512, fully tested, and
+**delivered nothing**: 343,492 -> 342,799 us at N=512 (0.2%, against 0.3%
+StdDev), and no end-to-end gain. Weight reloading was never the bottleneck. The
+quantized inner loop spends ~6 vector ops per 32 MACs (sign, maddubs, madd,
+cvtdq2ps, scale broadcast, fma) = 0.1875 ops/MAC against f32's 1 op per 8 MACs =
+0.125, predicting a 1.50x gap where 1.63x was measured — it is
+instruction-throughput-bound. Hoisting one load and one sign per four tokens is
+~8% of the op budget at best. That analysis is what pointed at dequantization
+instead, since the f32 loop simply needs fewer ops per MAC.
+
+Remaining headroom, unexplored: AVX-512 VNNI (`vpdpbusd`) would fuse maddubs+madd
+in the sub-threshold quantized path (~15% of its op budget), and the dequant path
+still carries ~11% overhead versus a pure f32 GEMM (237,354 us vs 209,890 us at
+N=512) from writing the dequantized tiles.
 
 A latent detail surfaced while testing the reverted kernel, recorded because it
 is easy to trip over: the legacy per-token kernels take `abs` of the *activation*
