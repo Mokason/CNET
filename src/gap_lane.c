@@ -244,22 +244,26 @@ static void port_write(FILE *f, Port p) {
 int gap_inbox_note_no_plan(const char *inbox_path,
                            Port input_port, Port goal_port) {
     FILE *f;
-    Port in = input_port, goal = goal_port;
     if (!inbox_path || !inbox_path[0]) return -1;
     /* G4: when enforce on, refuse unchartered goal tags (caller may retry). */
-    if (cnet_charter_enforce() && goal.tag[0] &&
-        !cnet_charter_allows(goal.tag)) {
-        fprintf(stderr, "gap_inbox: charter refuse goal=%s\n", goal.tag);
+    if (cnet_charter_enforce() && goal_port.tag[0] &&
+        !cnet_charter_allows(goal_port.tag)) {
+        fprintf(stderr, "gap_inbox: charter refuse goal=%s\n", goal_port.tag);
         return -2;
     }
-    (void)cnet_auto_learn_make_teachable(&in, &goal,
-                                         goal.tag[0] ? goal.tag : NULL);
+    /* The inbox is the verbatim record of what was requested and could not be
+       planned — signatures persist UNREWRITTEN. Teachable normalization
+       (CNET_AUTO_LEARN) happens on the ingest side (ingest_inbox), so the lane
+       still trains window shapes while the file keeps true provenance, and the
+       freeform entry points (cnet_auto_learn_note_text / note_skill) already
+       canonicalize before calling here. Rewriting at write time made the lane
+       teach a hash-tag window instead of the signature actually requested. */
     f = fopen(inbox_path, "a");
     if (!f) return -1;
     fprintf(f, "NO_PLAN ");
-    port_write(f, in);
+    port_write(f, input_port);
     fprintf(f, " ");
-    port_write(f, goal);
+    port_write(f, goal_port);
     fprintf(f, "\n");
     fclose(f);
     return 0;
