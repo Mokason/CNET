@@ -202,6 +202,10 @@ while (true)
                 $"  (no visible answer — the model spent all {r.Result.GeneratedTokens} tokens on " +
                 "hidden reasoning; raise --max-tokens or use a non-thinking model)");
 
+        if (r.Truncated)
+            Console.WriteLine(
+                "  (cut off by --max-tokens — type \"continue\" to resume exactly where it stopped)");
+
         string receipts = r.UsedBlobIds.Count > 0
             ? string.Join(" ", r.UsedBlobIds.Select(i => $"#{i}"))
             : "none";

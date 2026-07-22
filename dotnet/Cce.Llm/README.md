@@ -649,6 +649,31 @@ The receipts stay honest even when the model is not: in one pre-fix run the
 model invented memories outright ("an old AIS alarm system", a date) — and the
 receipt line said `memory: none`, exposing the fabrication mechanically.
 
+## Continuation of truncated answers
+
+A reply that stops because `GeneratedTokens` hit the budget is unfinished, not
+done. Observed live: a 512-token quest JSON cut mid-stage, and a bare
+"continue" made the model restart from the top and truncate again — recent
+turns showed it the text, but nothing said *where the cut was*, so it guessed.
+
+`MemorySession` now arms a continuation when an answer is budget-capped (and
+non-whitespace). If the very next message is a resume request ("continue…",
+"go on", "keep going", "resume", "finish" — deliberately narrow, and
+`continue <anything>` counts), the prompt gets a `### Continuation` block
+quoting the final ~600 characters of the cut text with the instruction to
+resume exactly there, output only the remainder, repeat nothing. The lookup
+protocol is omitted on resume turns (the two instruction blocks conflict).
+Chained continues re-arm on each new chunk; an intervening completed turn
+clears the pending continuation, so a stale resume is impossible.
+`MemoryGenerationResult.Truncated` exposes the state; ghost-chat prints
+`(cut off by --max-tokens — type "continue" …)` after any capped answer.
+
+Measured live (minimax-m3:cloud, 400-token cap): the first chunk ended
+mid-sentence inside a JSON string — `"journal_entry": "Drevis sent me to the
+Arch-Mage.` — and the resume began ` He asked me to confirm the tremors were
+magical in nature…"`, completing the same sentence and structure with zero
+repetition.
+
 ## Tests
 
 `dotnet test dotnet/Cce.Llm.Tests` — 19 tests. The generation tests need a local

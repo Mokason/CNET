@@ -13,11 +13,14 @@ public sealed record LookupRound(string Query, IReadOnlyList<long> BlobIds);
 /// gate-recalled and model-looked-up alike; resolve via <see cref="BlobStore.Get"/>.</param>
 /// <param name="PromptSystemText">The final system text sent, for audit.</param>
 /// <param name="Lookups">Model-directed recall rounds, in order.</param>
+/// <param name="Truncated">The answer stopped because it hit the token budget,
+/// not because it finished — a "continue" next turn will resume at the cut.</param>
 public sealed record MemoryGenerationResult(
     CnetHarnessGenerationResult Result,
     IReadOnlyList<long> UsedBlobIds,
     string PromptSystemText,
-    IReadOnlyList<LookupRound> Lookups);
+    IReadOnlyList<LookupRound> Lookups,
+    bool Truncated);
 
 /// <summary>
 /// Composes an <see cref="ICnetInferenceSession"/> with a
@@ -56,6 +59,14 @@ public sealed class MemorySession
     private readonly Func<string, int> _countTokens;
     private readonly int _maxLookupRounds;
     private readonly int _resultsPerLookup;
+
+    /// <summary>
+    /// The full text of the immediately previous answer iff it was cut off by
+    /// the token budget; null once a turn completes normally. "Continue" only
+    /// ever refers to the turn just before it — an intervening completed turn
+    /// clears this, so a stale resume is impossible.
+    /// </summary>
+    private string? _pendingContinuation;
 
     /// <summary>Invoked after each model-directed lookup — lets a UI narrate the search.</summary>
     public Action<LookupRound>? OnLookup { get; set; }
@@ -138,7 +149,36 @@ public sealed class MemorySession
         // packed SystemText under promptBudget; everything we append must fit
         // in what it left over (the user message was already costed there).
         int headroom = promptBudget - _countTokens(systemText) - _countTokens(user);
-        bool loopEnabled = _maxLookupRounds > 0 && headroom > _countTokens(LookupProtocol) + 32;
+
+        // ── continuation ──
+        // The previous answer hit the token budget and the user asked to go on:
+        // anchor the model at the exact cut so it resumes instead of restarting
+        // from the top (the observed failure: a truncated JSON reply + "continue"
+        // regenerated the same opening stages and truncated again). The tail is
+        // quoted because the cut point is mid-structure — recent turns alone
+        // leave "where exactly did I stop?" to the model's imagination.
+        bool continuing = _pendingContinuation is not null && IsContinueRequest(user);
+        if (continuing)
+        {
+            string tail = _pendingContinuation!;
+            if (tail.Length > 600) tail = tail[^600..];
+            string block =
+                "\n### Continuation\n" +
+                "Your previous reply was cut off mid-output by the token limit. " +
+                "It ended with:\n…" + tail + "\n" +
+                "Resume EXACTLY at that cut — output only the remaining text. " +
+                "Do not repeat anything already written, do not restart, no preamble.\n";
+            if (_countTokens(block) <= headroom)
+            {
+                systemText += block;
+                headroom -= _countTokens(block);
+            }
+        }
+
+        // A resume turn needs no lookups — and the two instruction blocks
+        // ("reply with one line" vs "output only the remaining text") conflict.
+        bool loopEnabled = !continuing && _maxLookupRounds > 0 &&
+                           headroom > _countTokens(LookupProtocol) + 32;
         if (loopEnabled)
         {
             systemText += LookupProtocol;
@@ -207,7 +247,26 @@ public sealed class MemorySession
         _memory.Remember("assistant", result.Text);
         _memory.NextTurn();
 
-        return new MemoryGenerationResult(result, usedIds, systemText, lookups);
+        // Budget-capped output means "stopped", not "finished" — arm the next
+        // turn's continuation. A whitespace answer has nothing to resume.
+        bool truncated = result.GeneratedTokens >= maxTokens &&
+                         !string.IsNullOrWhiteSpace(result.Text);
+        _pendingContinuation = truncated ? result.Text : null;
+
+        return new MemoryGenerationResult(result, usedIds, systemText, lookups, truncated);
+    }
+
+    /// <summary>
+    /// True when the message is a bare resume request. Deliberately narrow:
+    /// "continue …" with any suffix still counts ("continue the json"), but a
+    /// message that merely mentions continuing does not.
+    /// </summary>
+    internal static bool IsContinueRequest(string user)
+    {
+        string t = user.Trim().TrimEnd('.', '!', '?', '…').Trim().ToLowerInvariant();
+        return t.StartsWith("continue", StringComparison.Ordinal) ||
+               t is "go on" or "keep going" or "carry on" or "resume" or "finish"
+                 or "keep writing" or "finish it" or "more please";
     }
 
     private CnetHarnessGenerationResult GenerateOnce(
