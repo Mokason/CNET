@@ -16,6 +16,13 @@
     <Project Path="CnetMcpServer.Tests/CnetMcpServer.Tests.csproj" />
     <Project Path="Cce.Benchmarks/Cce.Benchmarks.csproj" />
   </Folder>
+  <!-- The one place the two halves meet. CNET.Cce holds the backend-agnostic
+       ICnetInferenceSession; this bridge is the only assembly that links CCE
+       against the GPL-3.0 CNET.Llm engine. -->
+  <Folder Name="/bridge/">
+    <Project Path="Cce.Llm/CNET.Cce.Llm.csproj" />
+    <Project Path="Cce.Llm.Tests/CNET.Cce.Llm.Tests.csproj" />
+  </Folder>
   <Folder Name="/llm/">
     <Project Path="Llm/src/CNET.Llm.Cli/CNET.Llm.Cli.csproj" />
     <Project Path="Llm/src/CNET.Llm.Core/CNET.Llm.Core.csproj" />

@@ -59,7 +59,12 @@ internal sealed class CnetHarnessGenerationHandle : SafeHandle
 /// A CNET inference harness session. Wraps the versioned C ABI. Callers
 /// dispose the session to release the native lease and llama context.
 /// </summary>
-public sealed class CnetHarnessSession : IDisposable
+/// <remarks>
+/// This is the native backend and remains the default. It implements
+/// <see cref="ICnetInferenceSession"/> so callers can be written against the
+/// backend-agnostic contract; the members below are unchanged.
+/// </remarks>
+public sealed class CnetHarnessSession : IDisposable, ICnetInferenceSession
 {
     private readonly ICnetHarnessNative _native;
     private readonly CnetHarnessSessionHandle _handle;
@@ -271,7 +276,7 @@ public sealed class CnetHarnessSession : IDisposable
                 CnetHarnessResource.Gpu1 | CnetHarnessResource.Gpu2 |
                 CnetHarnessResource.Gpu3);
 
-    private static void ValidateConfig(CnetHarnessConfig c)
+    internal static void ValidateConfig(CnetHarnessConfig c)
     {
         if (string.IsNullOrEmpty(c.ModelId))
             throw new ArgumentException("ModelId is required", nameof(c));
@@ -420,7 +425,7 @@ public sealed class CnetHarnessSession : IDisposable
             info.OffloadKqv != 0u);
     }
 
-    private static void ValidateGenerateOptions(CnetHarnessGenerateOptions o)
+    internal static void ValidateGenerateOptions(CnetHarnessGenerateOptions o)
     {
         if (string.IsNullOrEmpty(o.User))
             throw new ArgumentException("User is required", nameof(o));
@@ -432,7 +437,7 @@ public sealed class CnetHarnessSession : IDisposable
             throw new ArgumentOutOfRangeException(nameof(o.Sampling));
     }
 
-    private static bool SamplingModeValid(CnetHarnessSamplingMode mode) =>
+    internal static bool SamplingModeValid(CnetHarnessSamplingMode mode) =>
         mode is CnetHarnessSamplingMode.Auto or
             CnetHarnessSamplingMode.Deterministic or
             CnetHarnessSamplingMode.Focused or

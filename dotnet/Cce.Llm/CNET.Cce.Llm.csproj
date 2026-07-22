@@ -1,0 +1,34 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>CNET.Cce.Llm</RootNamespace>
+    <AssemblyName>CNET.Cce.Llm</AssemblyName>
+    <LangVersion>latest</LangVersion>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <!-- GPL-3.0-only, not Apache-2.0 like CNET.Cce: this assembly links against
+         the vendored CNET.Llm engine. Keeping the bridge in its own assembly is
+         what stops that obligation from reaching CNET.Cce itself. -->
+    <PackageLicenseExpression>GPL-3.0-only</PackageLicenseExpression>
+    <!-- Deliberately NOT IsAotCompatible: CNET.Cce sets IsAotCompatible=true and
+         must stay that way. The LLM engine is not part of that guarantee, so the
+         bridge does not claim it. -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Cce\Cce.csproj" />
+    <ProjectReference Include="..\Llm\src\CNET.Llm.Engine\CNET.Llm.Engine.csproj" />
+    <ProjectReference Include="..\Llm\src\CNET.Llm.Models\CNET.Llm.Models.csproj" />
+    <ProjectReference Include="..\Llm\src\CNET.Llm.Tokenizers\CNET.Llm.Tokenizers.csproj" />
+    <ProjectReference Include="..\Llm\src\CNET.Llm.Cpu\CNET.Llm.Cpu.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="CNET.Cce.Llm.Tests" />
+  </ItemGroup>
+
+</Project>

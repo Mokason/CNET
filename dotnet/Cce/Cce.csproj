@@ -22,6 +22,10 @@
          Place it next to your app, or in the output directory.
          For development, the test/benchmark projects below will try to copy it. -->
     <InternalsVisibleTo Include="CNET.Cce.Tests" />
+    <!-- The managed inference bridge shares this assembly's config/option
+         validators so the two backends cannot drift on what they accept.
+         This grants visibility only; CNET.Cce takes no reference to CNET.Llm. -->
+    <InternalsVisibleTo Include="CNET.Cce.Llm" />
   </ItemGroup>
 
   <ItemGroup>
