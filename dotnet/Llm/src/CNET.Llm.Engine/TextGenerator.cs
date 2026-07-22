@@ -29,6 +29,8 @@ public sealed class TextGenerator
     private readonly IModel? _draftModel;
     private readonly Func<ModelConfig, int, Core.Attention.IKvCache>? _draftKvCacheFactory;
     private readonly int _speculativeCandidates;
+    private readonly PromptLookupDrafter? _promptLookupDrafter;
+    private readonly PromptLookupDecoder? _promptLookup;
 
     /// <summary>
     /// Creates a new text generator.
@@ -42,12 +44,18 @@ public sealed class TextGenerator
     /// <param name="draftModel">Optional draft model for speculative decoding.</param>
     /// <param name="draftKvCacheFactory">Optional factory for creating the draft model's KV-cache.</param>
     /// <param name="speculativeCandidates">Number of draft tokens per speculative step (K). Default 5.</param>
+    /// <param name="promptLookupDrafter">
+    /// Enables draft-free speculation: candidates come from n-gram matches against
+    /// the context instead of a draft model, so no extra weights are streamed.
+    /// Ignored when <paramref name="draftModel"/> is supplied.
+    /// </param>
     public TextGenerator(IModel model, ITokenizer tokenizer,
                           Func<ModelConfig, int, Core.Attention.IKvCache>? kvCacheFactory = null,
                           PrefixCache? prefixCache = null,
                           IModel? draftModel = null,
                           Func<ModelConfig, int, Core.Attention.IKvCache>? draftKvCacheFactory = null,
-                          int speculativeCandidates = 5)
+                          int speculativeCandidates = 5,
+                          PromptLookupDrafter? promptLookupDrafter = null)
     {
         _model = model;
         _tokenizer = tokenizer;
@@ -56,6 +64,8 @@ public sealed class TextGenerator
         _draftModel = draftModel;
         _draftKvCacheFactory = draftKvCacheFactory;
         _speculativeCandidates = speculativeCandidates;
+        _promptLookupDrafter = promptLookupDrafter;
+        _promptLookup = promptLookupDrafter is null ? null : new PromptLookupDecoder(promptLookupDrafter);
     }
 
     /// <summary>
@@ -337,6 +347,99 @@ public sealed class TextGenerator
                 {
                     draftKvCache.Dispose();
                     ArrayPool<int>.Shared.Return(specBuffer);
+                }
+            }
+            else if (_promptLookup != null && _promptLookupDrafter != null
+                     && !captureLogprobs && constraint == null && IsEffectivelyGreedy(options))
+            {
+                // ── Prompt-lookup decode loop ──
+                // Draft-free speculation: propose from n-gram matches against the
+                // context, verify in one batched pass. A miss is the ordinary case,
+                // not an error — it falls through to a single-token step, so the
+                // only cost of a miss is the suffix scan. Gated off when logprobs
+                // or a constraint are in play, since neither is threaded through
+                // the speculative verification path.
+                int[] plBuffer = ArrayPool<int>.Shared.Rent(_promptLookupDrafter.MaxCandidates + 1);
+
+                // The drafter matches over prompt + generated, which is where the
+                // repetition worth exploiting actually lives.
+                var context = new List<int>(promptLen + maxTokens);
+                context.AddRange(promptIds);
+                context.AddRange(generatedIds);
+                try
+                {
+                    int step = 1;
+                    while (step < maxTokens)
+                    {
+                        int pos = promptLen + step - 1;
+                        if (pos >= cacheSize) break;
+
+                        long specStart = Stopwatch.GetTimestamp();
+                        var lookup = _promptLookup.DraftAndVerify(
+                            _model, kvCache, System.Runtime.InteropServices.CollectionsMarshal.AsSpan(context),
+                            pos, vocabSize, plBuffer);
+                        decodeTicks += Stopwatch.GetTimestamp() - specStart;
+
+                        int emitCount;
+                        if (lookup.AcceptedCount > 0)
+                        {
+                            specDrafted += lookup.DraftedCount;
+                            emitCount = Math.Min(lookup.AcceptedCount, maxTokens - step);
+                        }
+                        else
+                        {
+                            // No match — ordinary single-token step.
+                            long fwdStart = Stopwatch.GetTimestamp();
+                            using (ITensor logits = _model.Forward([context[^1]], [pos], deviceId: -1, kvCache))
+                            {
+                                decodeTicks += Stopwatch.GetTimestamp() - fwdStart;
+                                unsafe
+                                {
+                                    long samplerStart = Stopwatch.GetTimestamp();
+                                    var logitSpan = new Span<float>((void*)logits.DataPointer, vocabSize);
+                                    plBuffer[0] = pipeline.Sample(logitSpan, generatedIds);
+                                    samplerTicks += Stopwatch.GetTimestamp() - samplerStart;
+                                }
+                            }
+                            emitCount = 1;
+                        }
+
+                        bool shouldBreak = false;
+                        for (int i = 0; i < emitCount; i++)
+                        {
+                            int tokenId = plBuffer[i];
+                            generatedIds.Add(tokenId);
+                            context.Add(tokenId);
+                            detok.Append(tokenId);
+
+                            stopResult = CheckStopConditions(stopConditions, tokenId, generatedIds,
+                                detok.GetTailView(stopTailSize, stopScratch));
+                            if (stopResult != StopResult.Continue)
+                            {
+                                if (stopResult == StopResult.Stop)
+                                    generatedIds.RemoveAt(generatedIds.Count - 1);
+                                else
+                                {
+                                    if (lookup.AcceptedCount > 0) specAccepted++;
+                                    onTokenGenerated?.Invoke(tokenId);
+                                }
+
+                                finishReason = stopResult == StopResult.StopInclude ? FinishReason.Length : FinishReason.Stop;
+                                shouldBreak = true;
+                                break;
+                            }
+
+                            if (lookup.AcceptedCount > 0) specAccepted++;
+                            onTokenGenerated?.Invoke(tokenId);
+                            step++;
+                        }
+
+                        if (shouldBreak) break;
+                    }
+                }
+                finally
+                {
+                    ArrayPool<int>.Shared.Return(plBuffer);
                 }
             }
             else

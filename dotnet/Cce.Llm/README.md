@@ -429,6 +429,55 @@ especially for the repetitive, structured outputs CCE tends to request.
 Failing that, a purpose-built draft sharing the target's vocabulary at ~0.1x its
 size would satisfy the inequality above with room to spare.
 
+### Prompt-lookup decoding: wired, measured, opt-in
+
+`PromptLookupDrafter` + `PromptLookupDecoder`, wired into `TextGenerator.Generate`
+via the optional `promptLookupDrafter` constructor argument. Draft-free: candidates
+come from n-gram matches against the context, so no second model is streamed. On a
+miss it falls through to a normal single-token step.
+
+Measured on SmolLM-135M Q8_0, 48 greedy tokens, best config per case:
+
+| context | baseline | prompt-lookup | |
+| --- | ---: | ---: | --- |
+| repetitive | 225 ms | **138 ms (1.63x)** | identical output |
+| structured (JSON) | 211 ms | 229 ms (0.92x) | **diverges** |
+| prose | 196 ms | 195 ms (1.00x) | identical output |
+
+**It is off by default and should stay off unless the workload is genuinely
+repetitive.** Two reasons.
+
+First, it only wins where the output repeats context. Elsewhere it ranges from
+break-even to 0.63x. The loss is not the n-gram scan — it is that a partial hit
+still pays a `(K+1)`-position batched forward to accept one or two tokens, and the
+batched path does not get the decode-specific kernels (fused QKV, R4 interleave)
+that a single-token step does. Over-proposing is therefore *not* free, contrary to
+the assumption the drafter was first written under.
+
+Second, and more important:
+
+### Batched and sequential forwards disagree by ~0.5 in logit space
+
+`BatchedVsSequentialForwardTests` feeds the same tokens at the same positions two
+ways — one at a time, and in a single batched call — and compares logits. They
+differ by up to **0.5**. That is not rounding; they are different
+implementations (`seqLen == 1` takes fused RMSNorm+quantize and the R4
+kernels, `seqLen > 1` takes unfused norm and the tiled GEMM path).
+
+The consequence is structural: **every** speculative decoder verifies with a
+batched forward while the baseline it is compared against was produced
+token-at-a-time. On a near-tie the two pick different argmax and speculation
+stops being output-identical to plain greedy. Measured here on JSON-ish text,
+which produces near-tied logits over plausible keys, output diverges around token
+29-45 in five of six drafter configurations. Free-form prose and highly
+repetitive text did not diverge.
+
+This is pre-existing and applies equally to the model-based `SpeculativeDecoder`,
+which carries the same "preserves the target distribution" claim in its own
+docs. The test pins the current magnitude so that both a regression and a fix are
+visible; reconciling the two paths would make speculation genuinely
+output-identical and is the prerequisite for enabling any of it by default.
+
 ## Tests
 
 `dotnet test dotnet/Cce.Llm.Tests` — 19 tests. The generation tests need a local
