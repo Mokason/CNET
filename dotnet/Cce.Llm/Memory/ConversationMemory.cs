@@ -47,6 +47,9 @@ public sealed class ConversationMemory
     {
         "first", "start", "started", "starting", "begin", "began", "beginning",
         "earliest", "initially", "originally", "opening",
+        // Relative-order questions ("what did I ask after that?") need the
+        // session timeline just as much as absolute ones.
+        "after", "before", "next", "previous", "previously", "prior",
     };
     private readonly string _sessionId;
     private int _turn;
@@ -128,8 +131,10 @@ public sealed class ConversationMemory
 
         // The memory block's own header text competes for the same budget as
         // the blobs it introduces — count it before packing anything.
-        const string memoryHeader = "\n\n### Memory — verbatim excerpts from past sessions." +
-            " Only rely on them for facts; if memory does not cover the answer, say so rather than invent one.\n";
+        const string memoryHeader = "\n\n### Memory — verbatim excerpts from stored history." +
+            " Entries marked 'this session' are earlier turns of THIS conversation;" +
+            " dated entries are from past sessions. Only rely on them for facts;" +
+            " if memory does not cover the answer, say so rather than invent one.\n";
         int remaining = promptBudgetTokens - fixedTokens - _countTokens(memoryHeader);
 
         // Over-fetch, then pack by score under the real token budget.
@@ -195,8 +200,15 @@ public sealed class ConversationMemory
         // twice (memory block + recent block).
         => blob.SessionId == _sessionId && blob.Turn >= _turn - _options.RecentTurns;
 
-    private static string RenderBlob(MemoryBlob blob)
+    private string RenderBlob(MemoryBlob blob)
     {
+        // Current-session blobs must say so, with their turn number: without
+        // the marker a model reading "excerpts from past sessions" classified
+        // this session's own opening turn as history and answered ordering
+        // questions from its 2-turn window instead.
+        if (blob.SessionId == _sessionId)
+            return $"[#{blob.Id} | this session, turn {blob.Turn} | {blob.Role}] {blob.Text}";
+
         // Hand-edited or foreign store lines may carry short timestamps; render
         // what exists rather than throwing at prompt-build time.
         string date = blob.TimestampUtc.Length >= 10 ? blob.TimestampUtc[..10] : blob.TimestampUtc;

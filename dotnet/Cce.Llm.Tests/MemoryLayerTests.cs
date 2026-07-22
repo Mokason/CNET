@@ -694,4 +694,76 @@ public sealed class MemoryLayerTests : IDisposable
         Assert.DoesNotContain("llamas", ctx.SystemText);
         Assert.DoesNotContain(1L, ctx.UsedBlobIds);
     }
+
+    // ─────────────── session provenance in the prompt ───────────────
+
+    /// <summary>
+    /// The second live failure: anchors were IN the prompt but labelled as
+    /// "past sessions", so the model classified this session's own opening as
+    /// history and answered from its recent window. Current-session blobs must
+    /// be marked as such, with turn numbers.
+    /// </summary>
+    [Fact]
+    public void CurrentSessionBlobs_AreMarkedThisSession_WithTurn()
+    {
+        using var store = BlobStore.Open(StorePath());
+        var memory = NewMemory(store);
+
+        memory.Remember("user", "opening question about wormholes");
+        memory.Remember("assistant", "noted");
+        memory.NextTurn();
+        for (int t = 0; t < 3; t++)
+        {
+            memory.Remember("user", $"filler {t}");
+            memory.Remember("assistant", "ok");
+            memory.NextTurn();
+        }
+
+        var ctx = memory.BuildContext(null, "what was the first thing i said?", 500);
+
+        Assert.Contains("this session, turn 0 | user] opening question about wormholes", ctx.SystemText);
+        Assert.Contains("Entries marked 'this session'", ctx.SystemText);
+    }
+
+    [Fact]
+    public void PastSessionBlobs_KeepDateProvenance_NotThisSession()
+    {
+        using (var storeA = BlobStore.Open(StorePath()))
+        {
+            var memA = NewMemory(storeA);
+            memA.Remember("user", "archived fact about krakens");
+            memA.NextTurn();
+        }
+
+        using var storeB = BlobStore.Open(StorePath());
+        var memB = NewMemory(storeB);
+        var ctx = memB.BuildContext(null, "tell me about krakens", 300);
+
+        Assert.Contains("krakens", ctx.SystemText);
+        int idx = ctx.SystemText.IndexOf("krakens", StringComparison.Ordinal);
+        string line = ctx.SystemText[..idx];
+        int lineStart = line.LastIndexOf("[#", StringComparison.Ordinal);
+        Assert.DoesNotContain("this session", ctx.SystemText[lineStart..idx]);
+    }
+
+    /// <summary>Relative-order questions gate the anchors too.</summary>
+    [Fact]
+    public void RelativeOrderQuestion_AlsoPullsSessionTimeline()
+    {
+        using var store = BlobStore.Open(StorePath());
+        var memory = NewMemory(store);
+
+        memory.Remember("user", "greetings zorp");
+        memory.Remember("assistant", "hello");
+        memory.NextTurn();
+        for (int t = 0; t < 3; t++)
+        {
+            memory.Remember("user", $"padding {t}");
+            memory.Remember("assistant", "ok");
+            memory.NextTurn();
+        }
+
+        var ctx = memory.BuildContext(null, "what did i ask after that?", 500);
+        Assert.Contains("zorp", ctx.SystemText);   // timeline present despite zero keyword overlap
+    }
 }

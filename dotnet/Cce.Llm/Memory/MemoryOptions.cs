@@ -22,7 +22,7 @@ public sealed class MemoryOptions
     /// term ("first", "beginning", …) — keyword recall cannot see ordering, so
     /// temporal questions get the session's opening verbatim.
     /// </summary>
-    public int TemporalAnchorBlobs { get; init; } = 4;
+    public int TemporalAnchorBlobs { get; init; } = 10;
 
     /// <summary>
     /// Messages longer than this are split at paragraph boundaries into multiple

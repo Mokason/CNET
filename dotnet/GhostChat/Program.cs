@@ -135,7 +135,16 @@ while (true)
 
     if (input.StartsWith("/recall ", StringComparison.Ordinal))
     {
-        foreach (MemoryBlob b in store.Recall(input[8..], 5))
+        string query = input[8..].Trim();
+        if (long.TryParse(query.TrimStart('#'), out long asId))
+        {
+            Console.WriteLine($"  (that looks like an id — try /show {asId}; /recall takes keywords)");
+            continue;
+        }
+        var found = store.Recall(query, 5);
+        if (found.Count == 0)
+            Console.WriteLine("  (nothing recalled — no stored memory shares a distinctive keyword with that)");
+        foreach (MemoryBlob b in found)
             Console.WriteLine($"  [#{b.Id} | {b.Role}] {(b.Text.Length > 100 ? b.Text[..100] + "…" : b.Text)}");
         continue;
     }
