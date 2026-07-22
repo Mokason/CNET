@@ -247,11 +247,52 @@ simplification (21 two-line idioms collapse into one documented helper with an
 explicit saturation-safety argument). It is not kept because it made anything
 faster.
 
-The lead it points at, unexplored: give the single-row Q8_0 dot **multiple
-independent accumulators** so the FMA chain is not serial — the 4-row kernels
-already have four and are correspondingly less latency-bound. Separately, the
-dequant path still carries ~11% overhead versus a pure f32 GEMM (237,354 us vs
-209,890 us at N=512) from writing the dequantized tiles.
+### Multiple accumulators: tried, 2-3%, reverted
+
+Splitting the single-row Q8_0 dot across four independent accumulators, to break
+the serial block-to-block FMA chain, measured 268.3 -> 261.2 ns at K=4096 and
+707.4 -> 692.2 ns at K=11008. Two to three percent, and it changes float
+summation order (addition is not associative), for a kernel that only handles
+`m % 4` row tails. Not worth a numerics change; reverted.
+
+### What the bottleneck actually is
+
+Three optimizations in a row under-delivered — token blocking (0.2%), VNNI (1%),
+multiple accumulators (2-3%) — so the kernel was finally decomposed rather than
+reasoned about. `Q8DotAnatomyBenchmarks` strips one layer at a time off
+`VecDotQ8_0Avx2` at K=4096:
+
+| variant | time | delta |
+| --- | ---: | --- |
+| LoadsOnly | 32.9 ns | — |
+| DotOnly (+ dpbusd) | 34.9 ns | +2 ns |
+| IntAccum (+ sign normalisation) | 48.8 ns | +14 ns |
+| ConstScale (+ cvt, fma) | 72.2 ns | +23 ns |
+| **Full** (+ per-block fp16 scales) | **263.4 ns** | **+191 ns** |
+
+**The per-block fp16 scale handling is ~72% of the kernel** — two `Half`->`float`
+conversions, a scalar multiply and a broadcast. Everything the three failed
+attempts touched lives inside the other 28%. That single fact explains all three
+results, and is why they should not be retried.
+
+Measured targets for fixing the actual cost:
+
+| | time | vs Full |
+| --- | ---: | ---: |
+| activation scales precomputed to f32 | 146.8 ns | 1.79x |
+| both scale sets precomputed to f32 | 93.3 ns | 2.82x |
+
+With one caveat that matters for how much of this is available: the decode path
+runs the **4-row** kernels, which already hoist the activation scale out of the
+row loop — one activation conversion plus four weight conversions per block, so
+1.25 conversions per row-block against the single-row kernel's 2. The cheap half
+of the fix is therefore mostly already taken on the path that matters, and the
+remaining cost is the *weight* scales.
+
+Capturing those needs a layout change: store f32 scales alongside the repacked
+weights. That is +4 bytes per 34-byte block, **+11.8% weight memory** — a real
+tradeoff on large models, and the reason it has not simply been done here. The
+repacking infrastructure (`WeightRepacking`) already exists to carry it.
 
 A latent detail surfaced while testing the reverted kernel, recorded because it
 is easy to trip over: the legacy per-token kernels take `abs` of the *activation*
