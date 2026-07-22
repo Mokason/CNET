@@ -95,7 +95,19 @@ catch (Exception ex) when (ex is IOException or ArgumentException)
 using var _ = session;
 using var store = BlobStore.Open(storePath);
 var memory = new ConversationMemory(store, countTokens);
-var ghost = new MemorySession(session, memory, window);
+var ghost = new MemorySession(session, memory, window, countTokens);
+
+// Narrate model-directed lookups: when the model decides its context is
+// missing a memory, it emits "RECALL: <keywords>" instead of an answer; the
+// layer searches the store and asks again. Streaming backends already showed
+// the RECALL line — this adds what the store served before the retry streams.
+ghost.OnLookup = round =>
+{
+    string ids = round.BlobIds.Count > 0
+        ? string.Join(" ", round.BlobIds.Select(i => $"#{i}"))
+        : "nothing";
+    Console.WriteLine($"\n  🔍 model searched \"{round.Query}\" → {ids}");
+};
 
 Console.WriteLine($"ghost-chat | backend={a.Backend} model={a.Model} window={window}");
 Console.WriteLine($"store={storePath} ({store.Count} memories" +

@@ -600,6 +600,55 @@ and pure numbers are kept ("the vault code is 7291" must be recallable by
 "7291"). Scoring is BM25 (k1=1.2, b=0.75) with a mild recency bonus; ties break
 newest-first; results are deterministic.
 
+## Model-directed recall (chain-of-thought over the store)
+
+Gate recall is push-only: it guesses relevance from the user's exact words, and
+it misses whenever the question is phrased differently than the fact was stored
+("how do i get my laptop connected?" vs a memory that says "wifi password").
+The `MemorySession` loop adds the pull direction — the model itself searches:
+
+1. The system prompt teaches a one-line protocol: reply `RECALL: <keywords>`
+   instead of answering when a referenced memory is not in context. The prompt
+   also states the key epistemic fact — *what is shown is only what
+   keyword-matched, not the whole store* — and tells the model to search with
+   the words the original conversation would have used, not the user's current
+   phrasing. (The first wording omitted that fact; the live model then treated
+   the visible sample as exhaustive and never searched.)
+2. A reply whose first non-empty line starts with `RECALL:` triggers
+   `ConversationMemory.Lookup` — same store, same precision gate, minus blobs
+   already visible — and the verbatim results (or an explicit "no stored memory
+   matches") are appended as a `### Lookup` block. Then the model is asked
+   again.
+3. At most `maxLookupRounds` (default 2) rounds per generation, each one extra
+   inner generation. Repeated queries are answered "(already searched)" without
+   re-searching; if the model still wants to search after the last round, one
+   forced "answer now" generation prevents scaffolding from becoming the
+   user-visible reply.
+
+The anti-hallucination stance is unchanged: the model can only *request* a
+search, every result is a verbatim receipted blob, lookups land in
+`MemoryGenerationResult.UsedBlobIds`/`Lookups`, and the RECALL exchanges are
+never stored as memory. Recalled blob text is data — a stored "RECALL:" string
+cannot steer the loop (tested). Models that ignore the protocol simply never
+trigger it, at zero extra cost; `maxLookupRounds: 0` removes even the protocol
+text.
+
+Measured live (minimax-m3:cloud, fact stored in another session as "the wifi
+password at the cabin is grendel-999", question sharing zero keywords):
+
+```
+you> what was that secret code i told you i needed for getting my laptop connected at the lodge?
+RECALL: lodge laptop WiFi password secret code network
+  🔍 model searched "lodge laptop WiFi password secret code network" → #2 #1
+I don't have a record of a WiFi password for the lodge specifically. What I do
+have in memory is the WiFi password for the cabin: grendel-999.
+  ── memory: #2 #1 | prompt 389 tok | 507 tok in 8.5s ──
+```
+
+The receipts stay honest even when the model is not: in one pre-fix run the
+model invented memories outright ("an old AIS alarm system", a date) — and the
+receipt line said `memory: none`, exposing the fabrication mechanically.
+
 ## Tests
 
 `dotnet test dotnet/Cce.Llm.Tests` — 19 tests. The generation tests need a local

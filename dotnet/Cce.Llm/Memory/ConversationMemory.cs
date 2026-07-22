@@ -200,6 +200,30 @@ public sealed class ConversationMemory
         // twice (memory block + recent block).
         => blob.SessionId == _sessionId && blob.Turn >= _turn - _options.RecentTurns;
 
+    /// <summary>
+    /// Renders one blob exactly as the prompt does — provenance tag included.
+    /// Public so the model-directed recall loop injects lookups in the same
+    /// format the model already understands.
+    /// </summary>
+    public string RenderMemory(MemoryBlob blob) => RenderBlob(blob);
+
+    /// <summary>
+    /// A model-requested lookup: same store, same precision gate, minus blobs
+    /// already visible (recent window or <paramref name="exclude"/>).
+    /// </summary>
+    public List<MemoryBlob> Lookup(string query, int maxResults, IReadOnlySet<long> exclude)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(query);
+        var hits = new List<MemoryBlob>();
+        foreach (MemoryBlob blob in _store.Recall(query, maxResults + exclude.Count))
+        {
+            if (hits.Count == maxResults) break;
+            if (exclude.Contains(blob.Id) || IsWithinRecentWindow(blob)) continue;
+            hits.Add(blob);
+        }
+        return hits;
+    }
+
     private string RenderBlob(MemoryBlob blob)
     {
         // Current-session blobs must say so, with their turn number: without
