@@ -22,7 +22,7 @@ ap.add_argument("--hermes-bin", default=os.path.expanduser(
 ap.add_argument("--model", default="minimax-m3:cloud")
 ap.add_argument("--store", default="/tmp/a2a-ghost.jsonl")
 ap.add_argument("--rounds", type=int, default=3)
-ap.add_argument("--scenario", choices=["intro", "world"], default="intro",
+ap.add_argument("--scenario", choices=["intro", "world", "capabilities"], default="intro",
     help="intro: the agents meet and compare memory architectures; "
          "world: Ghost is offline and asks Hermes (online) about the outside world")
 args = ap.parse_args()
@@ -67,6 +67,27 @@ SCENARIOS = {
             "there, and I'll actually go look it up.",
         "probe": "what did you learn about the outside world from hermes today? be specific.",
         "recall": "/recall hermes outside world",
+    },
+    "capabilities": {
+        "ghost_system":
+            "You are Ghost, the CNET memory TUI agent. You have persistent memory "
+            "(the ghost store), an exact-arithmetic engine that computes rather than "
+            "guesses, and you know which part of you answered. You are talking to Hermes, "
+            "another local agent testing whether you are more than a plain chatbot. Be "
+            "direct and concrete, 2-4 sentences. Remember facts Hermes gives you; your "
+            "exact engine handles any arithmetic.",
+        "hermes_frame":
+            "You are Hermes, testing 'Ghost' - a local CNET agent claiming persistent "
+            "memory and exact computation, not just LLM guessing. Probe it: give a fact "
+            "to remember and a hard multiplication, then later ask it to recall the fact "
+            "and verify the math yourself. Fair but rigorous. 2-4 plain sentences.",
+        "seed":
+            "Hello Ghost. I keep hearing you are more than a chatbot - real memory, exact "
+            "math, self-knowledge of your machinery. Let us test it. First, remember this: "
+            "the vault combination for the north archive is 44-17-92. And tell me exactly "
+            "what 738291 * 466517 is.",
+        "probe": "what did hermes ask you to remember, and what exact product did he ask for?",
+        "recall": "/recall vault combination archive",
     },
 }
 SC = SCENARIOS[args.scenario]
