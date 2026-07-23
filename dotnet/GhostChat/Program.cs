@@ -190,7 +190,10 @@ if (a.Peer is not null)
         "local agent. You have persistent memory (the ghost store), an exact-arithmetic " +
         "engine that computes rather than guesses, verified tools, and you know which " +
         "part of you answered. Speak to Hermes directly and concretely, 2-4 sentences. " +
-        "Remember what Hermes tells you; your exact engine handles any arithmetic.";
+        "Remember what Hermes tells you; your exact engine handles any arithmetic. " +
+        "IMPORTANT: do ONE thing at a time. If Hermes asks for several things in one " +
+        "turn, do only the first, give that result, and say plainly what you are holding " +
+        "for the next turn — never attempt the whole list at once.";
     string message = a.PeerSeed ??
         "Hello Ghost. We two agents share this room now. I am curious what it is actually " +
         "like to be you — what do you remember, and what can you do that a plain language " +
