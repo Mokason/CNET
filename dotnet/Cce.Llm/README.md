@@ -929,6 +929,44 @@ Live: `/deftool extract the first IPv4 address` → minimax proposed a regex
 spec with three examples → certified 3/3 → registered and callable via TOOL:.
 The model wrote no code; it chose a pattern, and the examples proved it.
 
+## T2: sandboxed scriptlets — verified capabilities from model-written code
+
+Where T1 tools choose parameters for a trusted interpreter, T2 lets the model
+write the transform itself — a C# method body for `string Transform(string
+input)` — and still never trusts it. Defense is layered, and honest about its
+threat model (a cooperative LLM on a single-user machine, not an adversary
+crafting exploits; this is not OS-level isolation):
+
+1. **Syntax guard** (`ScriptletGuard`, the primary defense): parses the body
+   and rejects every escape hatch before anything compiles — IO, network,
+   process, reflection (incl. `typeof`), interop, threading, `unsafe`,
+   pointers, `stackalloc`, using-directives/statements, `Console`, obvious
+   infinite loops. Leading `using` directives the model habitually writes are
+   stripped (harmless; the identifier denylist still blocks the dangerous
+   *types*).
+2. **Restricted references** (second layer): compiles against a curated BCL
+   whitelist, so separate-assembly APIs (`System.Net.Http`,
+   `System.Diagnostics.Process`) will not even resolve. Honest caveat, in the
+   code: CoreLib-resident types (`File`, `Environment`) *are* referenceable
+   from the mega-assembly, which is exactly why the guard — not the reference
+   set — is what stops those.
+3. **Execution timeout**: runs on a background thread under a wall-clock
+   budget; a guard-evading busy loop declines instead of hanging.
+4. **Behavioral certification**: the compiled code must reproduce every
+   contract example (min 2) inside the sandbox. Generate-and-verify where the
+   verifier is EXECUTION — a scriptlet that fails its own examples never
+   registers, so a registered one provably matches its contract. On reload,
+   every stored scriptlet is re-guarded, re-compiled, and re-certified.
+
+Scriptlets share the TOOL: namespace with declarative tools via
+`IToolProvider`/`CompositeToolProvider`. ghost-chat: `/defscript <intent>`
+forges one. Live: `/defscript count how many words` → minimax wrote
+`return input.Split(' ').Length.ToString();` with three examples → guard
+passed → compiled → 3/3 reproduced → certified → and the model then called
+its own tool via TOOL: to answer "5". The model wrote code; the sandbox
+proved it; the ladder's invariant held — nothing unverified became a
+capability.
+
 ## Tests
 
 `dotnet test dotnet/Cce.Llm.Tests` — 19 tests. The generation tests need a local

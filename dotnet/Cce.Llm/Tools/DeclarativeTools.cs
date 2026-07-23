@@ -183,8 +183,32 @@ public static class ToolVerifier
     }
 }
 
+/// <summary>What the TOOL: action needs of any tool source — declarative
+/// tools and sandboxed scriptlets both implement it, so one namespace covers
+/// both.</summary>
+public interface IToolProvider
+{
+    bool TryInvoke(string name, string input, out string output);
+    IReadOnlyList<(string Name, string Kind, int Uses, bool Retired)> List();
+}
+
+/// <summary>Two tool sources behind one namespace; names must not collide.</summary>
+public sealed class CompositeToolProvider(params IToolProvider[] providers) : IToolProvider
+{
+    public bool TryInvoke(string name, string input, out string output)
+    {
+        foreach (IToolProvider p in providers)
+            if (p.TryInvoke(name, input, out output)) return true;
+        output = "";
+        return false;
+    }
+
+    public IReadOnlyList<(string Name, string Kind, int Uses, bool Retired)> List() =>
+        providers.SelectMany(p => p.List()).ToList();
+}
+
 /// <summary>Durable set of certified tools, with usage accounting.</summary>
-public sealed class ToolRegistry
+public sealed class ToolRegistry : IToolProvider
 {
     private sealed class Entry
     {

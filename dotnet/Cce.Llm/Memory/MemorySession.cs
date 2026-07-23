@@ -129,7 +129,7 @@ public sealed class MemorySession
     /// tools the model proposed and the verifier certified. Sandboxed by
     /// construction — no code runs, only the trusted interpreter.
     /// </summary>
-    public Tools.ToolRegistry? Tools { get; set; }
+    public Tools.IToolProvider? Tools { get; set; }
 
     private string? _lastAssistantText;
 

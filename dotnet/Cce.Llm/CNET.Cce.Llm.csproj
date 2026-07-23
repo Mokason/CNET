@@ -33,4 +33,9 @@
     <InternalsVisibleTo Include="CNET.Cce.Llm.Tests" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- T2 scriptlet sandbox: compile untrusted transforms in-process against
+         a restricted reference set. No new runtime; Roslyn only. -->
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.12.0" />
+  </ItemGroup>
 </Project>

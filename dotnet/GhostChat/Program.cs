@@ -114,7 +114,8 @@ var ghost = new MemorySession(session, memory, window, countTokens,
 // construction — the model chooses parameters for a trusted interpreter.
 string toolStateDir = Path.GetDirectoryName(Path.GetFullPath(storePath))!;
 var tools = new ToolRegistry(Path.Combine(toolStateDir, "tools.json"));
-ghost.Tools = tools;
+var scriptlets = new ScriptletRegistry(Path.Combine(toolStateDir, "scriptlets.json"));
+ghost.Tools = new CompositeToolProvider(tools, scriptlets);
 
 // Primitive common sense: adaptive good/bad taste, learned from consequences
 // (forgets, corrections, confirmations). Veto power over teaching candidates
@@ -156,7 +157,7 @@ ghost.OnLookup = round =>
 Console.WriteLine($"ghost-chat | backend={a.Backend} model={a.Model} window={window}");
 Console.WriteLine($"store={storePath} ({store.Count} memories" +
     (store.CorruptLinesSkipped > 0 ? $", {store.CorruptLinesSkipped} corrupt lines skipped" : "") + ")");
-Console.WriteLine("/exit /stats /show <id> /recall /forget <id> /read <file> /tools /deftool <intent> /consolidate [commit] /distill /judge <text>");
+Console.WriteLine("/exit /stats /show /recall /forget <id> /read <file> /tools /deftool /defscript /consolidate /distill /judge");
 Console.WriteLine();
 
 // Ollama streams; local backends print at once.
@@ -226,10 +227,39 @@ while (true)
 
     if (input == "/tools")
     {
-        var list = tools.List();
-        if (list.Count == 0) Console.WriteLine("  (no certified tools yet — /deftool <intent> forges one)");
+        var list = new CompositeToolProvider(tools, scriptlets).List();
+        if (list.Count == 0) Console.WriteLine("  (no certified tools yet — /deftool or /defscript forges one)");
         foreach (var t in list)
             Console.WriteLine($"  {(t.Retired ? "✗" : "🔧")} {t.Name} [{t.Kind}] used {t.Uses}×");
+        continue;
+    }
+
+    if (input.StartsWith("/defscript ", StringComparison.Ordinal))
+    {
+        // T2: the model writes a sandboxed C# transform; guard -> compile ->
+        // verify-against-examples. Scaffolding, not chat — do not stream.
+        if (ollama is not null) ollama.OnToken = null;
+        try
+        {
+            var forge = new ScriptletForge(scriptlets);
+            var probe = session.Generate(new CnetHarnessGenerateOptions
+            {
+                System = ScriptletForge.Protocol,
+                User = "Write a scriptlet for: " + input["/defscript ".Length..].Trim(),
+                Role = "forge",
+                MaxTokens = Math.Max(1600u, a.MaxTokens),
+                Sampling = CnetHarnessSamplingMode.Focused,
+                Think = false,
+            });
+            var (sl, verdict) = forge.TryForge(probe.Text);
+            Console.WriteLine(verdict.Certified
+                ? $"  🔧 certified scriptlet {sl!.Name} — compiled and {verdict.Passed}/{verdict.Total} examples reproduced; usable via TOOL:"
+                : $"  ✗ not certified: {verdict.FirstFailure} ({verdict.Passed}/{verdict.Total} passed)");
+        }
+        finally
+        {
+            if (ollama is not null) ollama.OnToken = chunk => Console.Write(chunk);
+        }
         continue;
     }
 
