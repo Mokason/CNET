@@ -787,6 +787,54 @@ into the base at 00:12 — all nine `acq_skill_gh_*` units present, including
 `acq_skill_gh_03dc611b_wrong`: a certified specialist distilled from the
 user's live correction in the TUI.
 
+## Rung 1: record-as-oracle — learning past the teacher
+
+Everything the gap lane taught before this was distillation: the LM teacher
+was ground truth, so the LM was the ceiling. The record teacher
+(src/cnet_record_teacher.c, `make record_teacher` gate) breaks that bound for
+the first, narrowest case: **user corrections**.
+
+The loop: `ExtractCorrections()` reconstructs (question → wrong answer →
+correction) triples from the ghost store; `EmitCorrections()` writes each
+correction verbatim as a record file (`<base>.records/skill_corr_<fnv8>.txt`)
+and notes a k=1 skill gap. At the lane, `cnet_record_bind` compiles the
+record's in-window word transitions into a total function over the window
+vocabulary (identity where the record is silent — never abstains, so the
+oracle_unfit gate stays quiet, and per-point-distinct, so class_imbalance
+cannot trip) and registers it as the gap's oracle with the record bytes as
+its identity digest. Standard machinery does the rest: exhaustive 256-point
+mine, SGD, `CERT_PROVEN`, sealed unit.
+
+What is different, precisely: the certifying truth is the RECORD — words the
+user typed, which the LM teacher never produced. The hermetic gate proves the
+sealed unit reproduces the record's transitions exactly, from weights, with
+no model loaded. The unit's provenance names `rec_skill_corr_*` as teacher,
+not `lm_*`. Narrow as it is (a word-transition function over a 256-word
+window), the structural property is the real cargo: **the admission criterion
+no longer requires a model's opinion** — any source of verified truth can now
+certify a specialist. Rung 2 (generate-and-verify against mechanical
+checkers) is the same seam with a different verifier.
+
+## Rung 2 (first verifier): the exact-arithmetic lane
+
+Ported from AICIMO (SkillRouterDriver, 5f7b374 — measured there: escalation
+90%→30%). Arithmetic questions short-circuit the model entirely:
+`MemorySession` runs `ExactArithmetic.TryAnswer` before building any context,
+answers in microseconds by decimal computation, stores the exchange as memory
+like any turn, and reports `Exact` (ghost-chat: `── exact: computed — no
+model, cannot be wrong ──`; `--no-exact` restores the model path for A/B).
+
+The AICIMO decline discipline is preserved verbatim — a wrong exact answer is
+worse than escalating: character whitelist, full-consumption parse ("47 times
+89 apples" declines rather than answering 4183), every exception path
+declines. One deliberate tightening: division must terminate (reduced
+denominator 2^a·5^b, decided by BigInteger factor arithmetic because
+decimal's own rounding defeats a round-trip check) — 100/8 answers 12.5,
+1/3 declines instead of shipping 28 rounded digits labeled "exact".
+
+This is the template verifier for generate-and-verify: truth by construction,
+model opinion not consulted.
+
 ## Tests
 
 `dotnet test dotnet/Cce.Llm.Tests` — 19 tests. The generation tests need a local

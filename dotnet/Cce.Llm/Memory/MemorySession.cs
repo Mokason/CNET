@@ -19,13 +19,16 @@ public sealed record LookupRound(string Query, IReadOnlyList<long> BlobIds);
 /// exhausted.</param>
 /// <param name="AutoContinues">Automatic resume rounds this answer needed;
 /// <see cref="CnetHarnessGenerationResult.Text"/> is the stitched whole.</param>
+/// <param name="Exact">Answered by the exact-arithmetic lane — computed, not
+/// generated; no model was invoked and no memory context was built.</param>
 public sealed record MemoryGenerationResult(
     CnetHarnessGenerationResult Result,
     IReadOnlyList<long> UsedBlobIds,
     string PromptSystemText,
     IReadOnlyList<LookupRound> Lookups,
     bool Truncated,
-    int AutoContinues);
+    int AutoContinues,
+    bool Exact = false);
 
 /// <summary>
 /// Composes an <see cref="ICnetInferenceSession"/> with a
@@ -86,6 +89,14 @@ public sealed class MemorySession
     /// <summary>Invoked after each model-directed lookup — lets a UI narrate the search.</summary>
     public Action<LookupRound>? OnLookup { get; set; }
 
+    /// <summary>
+    /// The exact-arithmetic lane (ported from AICIMO): arithmetic questions
+    /// are answered by computation before any model runs — 0.2 ms of decimal
+    /// parsing instead of seconds of decode, and never wrong. Declines fall
+    /// through to the model untouched. Disable for A/B comparison.
+    /// </summary>
+    public bool ExactLane { get; set; } = true;
+
     /// <param name="session">Inner session; not owned, caller disposes.</param>
     /// <param name="memory">Memory layer; its token counter must belong to this session's model.</param>
     /// <param name="contextWindowTokens">
@@ -143,6 +154,23 @@ public sealed class MemorySession
         uint seed = 424242, string role = "memory")
     {
         ArgumentException.ThrowIfNullOrEmpty(user);
+
+        // ── exact lane: computed truth beats generated truth ──
+        // Runs before context building because no context can improve an
+        // exact answer, and a model's opinion can only degrade one. The
+        // exchange still becomes memory — exact answers are conversation too.
+        if (ExactLane && Verify.ExactArithmetic.TryAnswer(user, out string exact))
+        {
+            _memory.Remember("user", user);
+            _memory.Remember("assistant", exact);
+            _memory.NextTurn();
+            _pendingContinuation = null;
+            var exactResult = new CnetHarnessGenerationResult(
+                exact, 0, 0, 0, 0, 0, 0, CnetHarnessSamplingMode.Deterministic,
+                false, 0, 1, 0, 0);
+            return new MemoryGenerationResult(exactResult, [], "", [],
+                Truncated: false, AutoContinues: 0, Exact: true);
+        }
 
         // The window must fit the answer AND a usable prompt. Clamp the answer
         // budget rather than crash on a negative prompt budget; reserve at

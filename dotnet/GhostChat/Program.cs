@@ -102,7 +102,10 @@ using var _ = session;
 using var store = BlobStore.Open(storePath);
 var memory = new ConversationMemory(store, countTokens);
 var ghost = new MemorySession(session, memory, window, countTokens,
-                              maxAutoContinues: (int)a.AutoContinue);
+                              maxAutoContinues: (int)a.AutoContinue)
+{
+    ExactLane = !a.NoExact,
+};
 
 // Narrate model-directed lookups: when the model decides its context is
 // missing a memory, it emits "RECALL: <keywords>" instead of an answer; the
@@ -216,6 +219,13 @@ while (true)
             continue;
         }
         var receipts = consolidator.Emit(items, inbox);
+        // Corrections go through the record-as-oracle path: the user's own
+        // words become the certifying truth, no LM teacher in the loop.
+        string recordsDir = inbox.EndsWith(".inbox", StringComparison.Ordinal)
+            ? inbox[..^".inbox".Length] + ".records"
+            : inbox + ".records";
+        receipts.AddRange(consolidator.EmitCorrections(
+            consolidator.ExtractCorrections(), inbox, recordsDir));
         foreach (var r in receipts)
             Console.WriteLine(r.Emitted
                 ? $"  noted {r.Item.SkillName} -> {inbox}"
@@ -240,7 +250,8 @@ while (true)
         sw.Stop();
 
         // Local backends did not stream; print now. Ollama already streamed.
-        if (ollama is null)
+        // Exact answers never touched a backend — print them always.
+        if (ollama is null || r.Exact)
             Console.Write(r.Result.Text.Trim());
         Console.WriteLine();
 
@@ -258,9 +269,10 @@ while (true)
             ? string.Join(" ", r.UsedBlobIds.Select(i => $"#{i}"))
             : "none";
         string autoNote = r.AutoContinues > 0 ? $" | auto-continued ×{r.AutoContinues}" : "";
-        Console.WriteLine(
-            $"  ── memory: {receipts} | prompt {r.Result.PromptTokens} tok | " +
-            $"{r.Result.GeneratedTokens} tok in {sw.Elapsed.TotalSeconds:F1}s{autoNote} ──");
+        Console.WriteLine(r.Exact
+            ? $"  ── exact: computed in {sw.Elapsed.TotalMilliseconds:F1}ms — no model, cannot be wrong ──"
+            : $"  ── memory: {receipts} | prompt {r.Result.PromptTokens} tok | " +
+              $"{r.Result.GeneratedTokens} tok in {sw.Elapsed.TotalSeconds:F1}s{autoNote} ──");
         Console.WriteLine();
     }
     catch (CnetHarnessException ex)
@@ -330,6 +342,7 @@ static Args? ParseArgs(string[] argv, out bool helpRequested)
             }
             case "--ollama-url": a.OllamaUrl = Next() ?? a.OllamaUrl; break;
             case "--gap-inbox": a.GapInbox = Next(); break;
+            case "--no-exact": a.NoExact = true; break;
             case "--auto-continue":
                 if (!ParseU("--auto-continue", out uint ac)) return null;
                 a.AutoContinue = ac; break;
@@ -364,6 +377,7 @@ struct Args
     public uint MaxTokens = 512;
     public uint AutoContinue = 8;
     public string? GapInbox = null;
+    public bool NoExact = false;
     public CnetHarnessSamplingMode Sampling = CnetHarnessSamplingMode.Balanced;
     public string OllamaUrl = "http://localhost:11434";
     public Args() { }

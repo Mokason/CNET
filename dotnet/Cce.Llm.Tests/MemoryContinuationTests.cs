@@ -598,4 +598,49 @@ public sealed class MemoryContinuationTests : IDisposable
         Assert.Equal(2, session.Calls.Count);   // main + one salvage, then stop
         Assert.False(r.Truncated);              // nothing to resume
     }
+
+    // ─────────────── exact lane in the chat path ───────────────
+
+    [Fact]
+    public void ExactArithmetic_ShortCircuitsTheModel_AndBecomesMemory()
+    {
+        using var store = BlobStore.Open(StorePath());
+        var session = new ScriptedSession(("must never run", false));
+        var ghost = NewGhost(store, session);
+
+        var r = ghost.Generate(null, "what is 47 times 89?");
+
+        Assert.True(r.Exact);
+        Assert.Equal("4183", r.Result.Text);
+        Assert.Empty(session.Calls);                       // no model invoked
+        Assert.Equal(2, store.Count);                      // exchange still remembered
+        Assert.Contains(store.All(), b => b.Text == "4183");
+    }
+
+    [Fact]
+    public void NonArithmetic_FallsThroughToTheModel()
+    {
+        using var store = BlobStore.Open(StorePath());
+        var session = new ScriptedSession(("a real answer", false));
+        var ghost = NewGhost(store, session);
+
+        var r = ghost.Generate(null, "what is 47 times 89 apples worth?");
+
+        Assert.False(r.Exact);                             // residual text declined
+        Assert.Single(session.Calls);
+    }
+
+    [Fact]
+    public void ExactLane_CanBeDisabledForAB()
+    {
+        using var store = BlobStore.Open(StorePath());
+        var session = new ScriptedSession(("model answer", false));
+        var ghost = NewGhost(store, session);
+        ghost.ExactLane = false;
+
+        var r = ghost.Generate(null, "2+2");
+
+        Assert.False(r.Exact);
+        Assert.Single(session.Calls);
+    }
 }
