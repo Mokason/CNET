@@ -18,6 +18,7 @@ using CNET.Cce.Llm;
 using CNET.Cce.Llm.Memory;
 using CNET.Cce.Llm.Ollama;
 using CNET.Cce.Llm.Verify;
+using CNET.Cce.Llm.Tools;
 
 var args_ = ParseArgs(args, out bool helpRequested);
 if (args_ is null) return helpRequested ? 0 : 2;
@@ -108,6 +109,13 @@ var ghost = new MemorySession(session, memory, window, countTokens,
     ExactLane = !a.NoExact,
 };
 
+// Certified tool registry (T1): declarative tools the model forges and the
+// verifier certifies, invocable via the TOOL: action. Sandboxed by
+// construction — the model chooses parameters for a trusted interpreter.
+string toolStateDir = Path.GetDirectoryName(Path.GetFullPath(storePath))!;
+var tools = new ToolRegistry(Path.Combine(toolStateDir, "tools.json"));
+ghost.Tools = tools;
+
 // Primitive common sense: adaptive good/bad taste, learned from consequences
 // (forgets, corrections, confirmations). Veto power over teaching candidates
 // only — never over verifiers, certification, or explicit user requests.
@@ -139,6 +147,7 @@ ghost.OnLookup = round =>
     {
         "read" => $"📄 model read \"{round.Query}\" → {ids}",
         "calc" => $"🧮 model computed \"{round.Query}\" → {round.Output ?? "declined"}",
+        "tool" => $"🔧 model ran tool \"{round.Query}\" → {round.Output ?? "declined"}",
         _ => $"🔍 model searched \"{round.Query}\" → {ids}",
     };
     Console.WriteLine($"\n  {line}");
@@ -147,7 +156,7 @@ ghost.OnLookup = round =>
 Console.WriteLine($"ghost-chat | backend={a.Backend} model={a.Model} window={window}");
 Console.WriteLine($"store={storePath} ({store.Count} memories" +
     (store.CorruptLinesSkipped > 0 ? $", {store.CorruptLinesSkipped} corrupt lines skipped" : "") + ")");
-Console.WriteLine("/exit /stats /show <id> /recall <query> /forget <id> /read <file> /consolidate [commit] /distill <prompt> /judge <text>");
+Console.WriteLine("/exit /stats /show <id> /recall /forget <id> /read <file> /tools /deftool <intent> /consolidate [commit] /distill /judge <text>");
 Console.WriteLine();
 
 // Ollama streams; local backends print at once.
@@ -212,6 +221,38 @@ while (true)
             // A forget is a consequence-label: the user judged this bad.
             judge.Learn(victim.Text, good: false, source: "forget");
         }
+        continue;
+    }
+
+    if (input == "/tools")
+    {
+        var list = tools.List();
+        if (list.Count == 0) Console.WriteLine("  (no certified tools yet — /deftool <intent> forges one)");
+        foreach (var t in list)
+            Console.WriteLine($"  {(t.Retired ? "✗" : "🔧")} {t.Name} [{t.Kind}] used {t.Uses}×");
+        continue;
+    }
+
+    if (input.StartsWith("/deftool ", StringComparison.Ordinal))
+    {
+        // Generate-and-verify a tool: the model proposes a declarative spec,
+        // the verifier certifies it against its own examples.
+        var forge = new ToolForge(tools);
+        // Forge needs headroom past a thinking model's reasoning phase (which
+        // produces no content), and no hidden reasoning helps here.
+        var probe = session.Generate(new CnetHarnessGenerateOptions
+        {
+            System = ToolForge.Protocol,
+            User = "Define a tool for: " + input["/deftool ".Length..].Trim(),
+            Role = "forge",
+            MaxTokens = Math.Max(1200u, a.MaxTokens),
+            Sampling = CnetHarnessSamplingMode.Focused,
+            Think = false,
+        });
+        var (spec, verdict) = forge.TryForge(probe.Text);
+        Console.WriteLine(verdict.Certified
+            ? $"  🔧 certified {spec!.Name} [{spec.Kind}] — {verdict.Passed}/{verdict.Total} examples reproduced; usable via TOOL:"
+            : $"  ✗ not certified: {verdict.FirstFailure} ({verdict.Passed}/{verdict.Total} passed)");
         continue;
     }
 

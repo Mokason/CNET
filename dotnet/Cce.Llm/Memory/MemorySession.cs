@@ -124,6 +124,13 @@ public sealed class MemorySession
     /// </summary>
     public Judgment.AdaptiveJudge? Judge { get; set; }
 
+    /// <summary>
+    /// Optional certified-tool registry: the TOOL: action invokes declarative
+    /// tools the model proposed and the verifier certified. Sandboxed by
+    /// construction — no code runs, only the trusted interpreter.
+    /// </summary>
+    public Tools.ToolRegistry? Tools { get; set; }
+
     private string? _lastAssistantText;
 
     private static readonly string[] CorrectionOpeners =
@@ -319,8 +326,16 @@ public sealed class MemorySession
                            headroom > _countTokens(LookupProtocol) + 32;
         if (loopEnabled)
         {
-            systemText += LookupProtocol;
-            headroom -= _countTokens(LookupProtocol);
+            string protocol = LookupProtocol;
+            if (Tools is { } reg && reg.List().Any(t => !t.Retired))
+            {
+                string names = string.Join(", ", reg.List()
+                    .Where(t => !t.Retired).Select(t => t.Name));
+                protocol +=
+                    "TOOL: <name> <input>             — run a certified tool (" + names + ")\n";
+            }
+            systemText += protocol;
+            headroom -= _countTokens(protocol);
         }
 
         // A resume turn (manual or auto) suppresses hidden reasoning: the anchor
@@ -354,6 +369,25 @@ public sealed class MemorySession
                     ? $"{query} = {answer}\n"
                     : $"{query} — declined (not pure arithmetic; do not guess a value)\n");
                 output = answer.Length > 0 ? answer : null;
+            }
+            else if (kind == "tool")
+            {
+                // A certified declarative tool as a thought-step. First token
+                // is the tool name; the remainder is its input.
+                string name = query.Split(' ', 2)[0];
+                string toolInput = query.Length > name.Length
+                    ? query[(name.Length + 1)..].Trim() : "";
+                block.Append($"\n### Tool {name}\n");
+                if (Tools is { } reg && reg.TryInvoke(name, toolInput, out string toolOut))
+                {
+                    block.Append($"{name}({toolInput}) = {toolOut}\n");
+                    output = toolOut;
+                }
+                else
+                {
+                    block.Append($"{name} — no such certified tool, or it declined this " +
+                                 "input (do not guess a value)\n");
+                }
             }
             else
             {
@@ -766,7 +800,8 @@ public sealed class MemorySession
             string line = rawLine.Trim();
             if (line.Length == 0) continue;
             (string Prefix, string Kind)[] actions =
-                [("RECALL:", "recall"), ("READ:", "read"), ("CALC:", "calc")];
+                [("RECALL:", "recall"), ("READ:", "read"), ("CALC:", "calc"),
+                 ("TOOL:", "tool")];
             foreach ((string prefix, string k) in actions)
             {
                 if (!line.StartsWith(prefix, StringComparison.Ordinal)) continue;

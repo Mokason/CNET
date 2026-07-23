@@ -902,6 +902,33 @@ never overruled, and nothing it says certifies anything. Opinion filters
 the queue; proof guards the gate. `/judge <text>` in ghost-chat shows any
 verdict with its feature receipts and evidence count.
 
+## T1: declarative tools — verified capabilities, zero code execution
+
+The system extends its own toolbox without running any code the model writes.
+A tool (`Tools/DeclarativeTools.cs`) is a fixed interpreter KIND (regex,
+replace, json_field, formula) plus parameters the model chose — the model
+selects a transform and its arguments, never supplies logic, so a tool is
+**sandboxed by construction: there is nothing to execute.** Every kind is a
+total function (declines on bad input, never throws) with its own bounds
+(regex runs under a 100ms match timeout — ReDoS declines instead of hanging;
+output capped; formula routes through the exact-arithmetic engine).
+
+A tool ships with contract examples that DEFINE its behavior, and is certified
+only when it reproduces every one (min 2). The `ToolForge` is generate-and-
+verify for capabilities: the model proposes a spec as JSON, the verifier
+certifies it against its own examples, and only survivors register — a
+registered tool provably does what its examples say, even though the model may
+have been wrong about its own regex. The registry is durable
+(`tools.json`), invocation is recorded, tools can be retired.
+
+Invocation is a thought-step: the action protocol gains `TOOL: <name> <input>`
+alongside RECALL/READ/CALC, advertised only when certified tools exist.
+ghost-chat: `/deftool <intent>` forges one, `/tools` lists them.
+
+Live: `/deftool extract the first IPv4 address` → minimax proposed a regex
+spec with three examples → certified 3/3 → registered and callable via TOOL:.
+The model wrote no code; it chose a pattern, and the examples proved it.
+
 ## Tests
 
 `dotnet test dotnet/Cce.Llm.Tests` — 19 tests. The generation tests need a local
