@@ -21,6 +21,8 @@ public sealed record LookupRound(string Query, IReadOnlyList<long> BlobIds);
 /// <see cref="CnetHarnessGenerationResult.Text"/> is the stitched whole.</param>
 /// <param name="Exact">Answered by the exact-arithmetic lane — computed, not
 /// generated; no model was invoked and no memory context was built.</param>
+/// <param name="CertifiedUnit">Answered from certified knowledge: the sealed
+/// specialist whose record was served verbatim; null for model answers.</param>
 public sealed record MemoryGenerationResult(
     CnetHarnessGenerationResult Result,
     IReadOnlyList<long> UsedBlobIds,
@@ -28,7 +30,8 @@ public sealed record MemoryGenerationResult(
     IReadOnlyList<LookupRound> Lookups,
     bool Truncated,
     int AutoContinues,
-    bool Exact = false);
+    bool Exact = false,
+    string? CertifiedUnit = null);
 
 /// <summary>
 /// Composes an <see cref="ICnetInferenceSession"/> with a
@@ -97,6 +100,13 @@ public sealed class MemorySession
     /// </summary>
     public bool ExactLane { get; set; } = true;
 
+    /// <summary>
+    /// Rung 4's routing layer: when set, questions grounded in a certified
+    /// record are answered from that record — the sealed specialist's exact
+    /// content — before the model is consulted. Declines route onward.
+    /// </summary>
+    public Routing.RecordRouter? Router { get; set; }
+
     /// <param name="session">Inner session; not owned, caller disposes.</param>
     /// <param name="memory">Memory layer; its token counter must belong to this session's model.</param>
     /// <param name="contextWindowTokens">
@@ -155,6 +165,10 @@ public sealed class MemorySession
     {
         ArgumentException.ThrowIfNullOrEmpty(user);
 
+        // Outcome feedback for the PREVIOUS turn's certified serve (if any):
+        // a correction-shaped turn demotes the unit that earned it.
+        Router?.ObserveUserTurn(user);
+
         // ── exact lane: computed truth beats generated truth ──
         // Runs before context building because no context can improve an
         // exact answer, and a model's opinion can only degrade one. The
@@ -170,6 +184,21 @@ public sealed class MemorySession
                 false, 0, 1, 0, 0);
             return new MemoryGenerationResult(exactResult, [], "", [],
                 Truncated: false, AutoContinues: 0, Exact: true);
+        }
+
+        // ── certified knowledge before model opinion ──
+        if (Router?.TryRoute(user) is { } serve)
+        {
+            _memory.Remember("user", user);
+            _memory.Remember("assistant", serve.RecordText);
+            _memory.NextTurn();
+            _pendingContinuation = null;
+            var servedResult = new CnetHarnessGenerationResult(
+                serve.RecordText, 0, 0, 0, 0, 0, 0,
+                CnetHarnessSamplingMode.Deterministic, false, 0, 1, 0, 0);
+            return new MemoryGenerationResult(servedResult, [], "", [],
+                Truncated: false, AutoContinues: 0, Exact: false,
+                CertifiedUnit: serve.UnitName);
         }
 
         // The window must fit the answer AND a usable prompt. Clamp the answer

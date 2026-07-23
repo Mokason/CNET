@@ -121,4 +121,28 @@ public sealed class SurpriseScannerTests : IDisposable
         var surprises = new SurpriseScanner(WordsPath, RecordsDir).Scan(store, 0);
         Assert.Contains(surprises, s => s.Kind == "contradiction");   // vrf records teach too
     }
+
+    [Fact]
+    public void ObservationRecord_CapsEvidence_ContradictionsFirst()
+    {
+        File.WriteAllText(Path.Combine(RecordsDir, "skill_corr_aaaa.txt"),
+            "the port is nine");
+        using var store = BlobStore.Open(StorePath());
+        long contra = store.Append("s1", 0, "user", "the port is eight", 5).Id;
+        // Fillers whose transitions start from UNTAUGHT words (open, closed):
+        // genuine novelty, so the contradiction must outrank their evidence.
+        for (int i = 0; i < 6; i++)
+            store.Append("s1", i + 1, "user", $"open closed now {i}", 5);
+
+        var scanner = new SurpriseScanner(WordsPath, RecordsDir) { MaxEvidenceBlobs = 2 };
+        var surprises = scanner.Scan(store, 0);
+        var rec = scanner.BuildObservationRecord(store, surprises)!.Value;
+
+        // The contradiction blob is always packed; total evidence respects the cap.
+        Assert.Contains("the port is eight", rec.Record);
+        int evidenceLines = rec.Record.Split('\n')
+            .Count(l => l.Length > 0 && !l.StartsWith('#'));
+        Assert.True(evidenceLines <= 2, $"evidence lines: {evidenceLines}");
+        _ = contra;
+    }
 }

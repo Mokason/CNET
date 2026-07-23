@@ -108,6 +108,17 @@ var ghost = new MemorySession(session, memory, window, countTokens,
     ExactLane = !a.NoExact,
 };
 
+// Rung 4: certified records answer before the model when the gap inbox (and
+// therefore the records dir + ledger) is known.
+string? routeInbox = a.GapInbox ?? Environment.GetEnvironmentVariable("CNET_GAP_INBOX");
+if (routeInbox is not null && routeInbox.EndsWith(".inbox", StringComparison.Ordinal))
+{
+    string baseNoExt = routeInbox[..^".inbox".Length];
+    if (File.Exists(baseNoExt + ".gaps.txt"))
+        ghost.Router = new CNET.Cce.Llm.Routing.RecordRouter(
+            baseNoExt + ".records", baseNoExt + ".gaps.txt");
+}
+
 // Narrate model-directed lookups: when the model decides its context is
 // missing a memory, it emits "RECALL: <keywords>" instead of an answer; the
 // layer searches the store and asks again. Streaming backends already showed
@@ -288,8 +299,8 @@ while (true)
         sw.Stop();
 
         // Local backends did not stream; print now. Ollama already streamed.
-        // Exact answers never touched a backend — print them always.
-        if (ollama is null || r.Exact)
+        // Exact and certified answers never touched a backend — print always.
+        if (ollama is null || r.Exact || r.CertifiedUnit is not null)
             Console.Write(r.Result.Text.Trim());
         Console.WriteLine();
 
@@ -309,6 +320,8 @@ while (true)
         string autoNote = r.AutoContinues > 0 ? $" | auto-continued ×{r.AutoContinues}" : "";
         Console.WriteLine(r.Exact
             ? $"  ── exact: computed in {sw.Elapsed.TotalMilliseconds:F1}ms — no model, cannot be wrong ──"
+            : r.CertifiedUnit is not null
+            ? $"  ── certified: {r.CertifiedUnit} — served from sealed knowledge, model not consulted ──"
             : $"  ── memory: {receipts} | prompt {r.Result.PromptTokens} tok | " +
               $"{r.Result.GeneratedTokens} tok in {sw.Elapsed.TotalSeconds:F1}s{autoNote} ──");
         Console.WriteLine();

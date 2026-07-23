@@ -46,6 +46,15 @@ public sealed class SurpriseScanner
     /// <summary>Most surprises reported per scan.</summary>
     public int MaxSurprises { get; init; } = 8;
 
+    /// <summary>
+    /// Most evidence blobs compiled into one observation record. Learned the
+    /// hard way: the first live obs record concatenated all 8 surprises'
+    /// evidence and the resulting transition function FAILED certification —
+    /// the evidence gate refusing to seal what training couldn't prove.
+    /// Smaller records certify; later scans catch what a cap defers.
+    /// </summary>
+    public int MaxEvidenceBlobs { get; init; } = 4;
+
     public SurpriseScanner(string wordsPath, string recordsDir)
     {
         _words = LoadWords(wordsPath);
@@ -108,8 +117,11 @@ public sealed class SurpriseScanner
         IMemoryView store, IReadOnlyList<Surprise> surprises)
     {
         if (surprises.Count == 0) return null;
-        var evidenceIds = surprises.SelectMany(s => s.EvidenceBlobIds)
-                                   .Distinct().Order().ToList();
+        // Contradictions carry the teaching value; their evidence packs first.
+        var evidenceIds = surprises.OrderBy(s => s.Kind == "contradiction" ? 0 : 1)
+                                   .SelectMany(s => s.EvidenceBlobIds)
+                                   .Distinct().Take(MaxEvidenceBlobs).ToList();
+        evidenceIds.Sort();
         var texts = evidenceIds.Select(id => store.All().FirstOrDefault(b => b.Id == id))
                                .Where(b => b is not null)
                                .Select(b => b!.Text);

@@ -856,6 +856,29 @@ First live scan of the real store: 8 surprises — one genuine contradiction
 recurring novelties — compiled to `skill_obs_afd18cdc` and taught by the
 lane from the observed conversation itself.
 
+## Rung 4: routing — certified knowledge before model opinion
+
+`RecordRouter` (Routing/) completes the ladder's serving side: a question is
+answered by, in order, the exact lane (computed), a certified record (sealed
+knowledge), and only then the model. Serving a certified record is gated by
+AICIMO's model-free guards, ported from SkillRouterDriver:
+- **subject grounding** — ≥3 of the record's distinctive words (≥4 chars)
+  whole-word present in the question; best grounding wins;
+- **certification as the warrant** — the ledger must show the tag CLOSED with
+  its `acq_` unit minted; a record file alone serves nothing;
+- **reliability** — the learned part: every certified serve is counted, a
+  correction-shaped user turn in the immediately following exchange demotes
+  the unit, and below 0.6 served-minus-corrected it stops serving (the model
+  takes over again). Durable in `routing.json` beside the records, so every
+  session and the orchestrator share one view of which units earned trust.
+Declining is the default: a wrong confident answer is worse than escalating.
+
+Live: "what is the name of the ruler of Riften…?" served from
+`acq_skill_vrf_cbf93dad` — the parser-verified, lane-certified unit — with
+the receipt `── certified: … — served from sealed knowledge, model not
+consulted ──`. The full circle: a model's own verified output, certified
+past it, now outranks it.
+
 ## Tests
 
 `dotnet test dotnet/Cce.Llm.Tests` — 19 tests. The generation tests need a local
