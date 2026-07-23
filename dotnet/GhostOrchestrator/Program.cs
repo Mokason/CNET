@@ -79,11 +79,17 @@ var executors = new Dictionary<string, Func<PlannedAction, OrchestratorState, st
         var consolidator = new GhostConsolidator(snapshot);
         var items = consolidator.Extract();
         var receipts = consolidator.Emit(items, inbox);
+        string recordsDir = inbox.EndsWith(".inbox", StringComparison.Ordinal)
+            ? inbox[..^".inbox".Length] + ".records"
+            : inbox + ".records";
+        var corrections = consolidator.ExtractCorrections();
+        receipts.AddRange(consolidator.EmitCorrections(corrections, inbox, recordsDir));
         int ok = receipts.Count(r => r.Emitted);
-        if (ok == 0 && items.Count > 0)
+        if (ok == 0 && receipts.Count > 0)
             throw new InvalidOperationException(receipts[0].Error ?? "all emissions failed");
         s.LastConsolidatedMaxId = snapshot.MaxSeenId;   // watermark even when 0 teachable
-        return $"extracted {items.Count}, noted {ok}/{items.Count} into {inbox}";
+        return $"extracted {items.Count}+{corrections.Count} corrections, " +
+               $"noted {ok}/{receipts.Count} into {inbox}";
     },
     ["start-teacher-lane"] = (_, _) =>
     {

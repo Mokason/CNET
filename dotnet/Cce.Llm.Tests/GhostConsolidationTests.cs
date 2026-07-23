@@ -219,6 +219,90 @@ public sealed class GhostConsolidationTests : IDisposable
         Assert.False(r.Emitted);
         Assert.Contains("-1", r.Error);
     }
+    // ─────────────── correction triples (rung 1 raw material) ───────────────
+
+    [Fact]
+    public void ExtractCorrections_ReconstructsQuestionWrongAnswerCorrection()
+    {
+        using var store = BlobStore.Open(StorePath());
+        store.Append("s1", 0, "user", "what did i ask after hi?", 8);
+        store.Append("s1", 0, "assistant", "you asked about the weather", 8);
+        store.Append("s1", 1, "user", "wrong, i asked after \"who are you?\"", 10);
+
+        var triples = new GhostConsolidator(store).ExtractCorrections();
+
+        var t = Assert.Single(triples);
+        Assert.Equal("what did i ask after hi?", t.Question.Text);
+        Assert.Contains("weather", t.WrongAnswer.Text);
+        Assert.StartsWith("wrong", t.Correction.Text);
+    }
+
+    [Fact]
+    public void ExtractCorrections_RequiresFullTripleShape()
+    {
+        using var store = BlobStore.Open(StorePath());
+        // correction with no preceding assistant turn
+        store.Append("s1", 0, "user", "hello there", 4);
+        store.Append("s1", 1, "user", "wrong, that is not it", 6);
+        // correction whose triple spans two sessions
+        store.Append("s2", 0, "user", "question?", 3);
+        store.Append("s2", 0, "assistant", "answer", 3);
+        store.Append("s3", 0, "user", "no, incorrect", 5);
+
+        Assert.Empty(new GhostConsolidator(store).ExtractCorrections());
+    }
+
+    [Fact]
+    public void EmitCorrections_WritesRecordFile_AndNotesK1Gap()
+    {
+        using var store = BlobStore.Open(StorePath());
+        store.Append("s1", 0, "user", "what is the port?", 5);
+        store.Append("s1", 0, "assistant", "the port is 8080", 5);
+        store.Append("s1", 1, "user", "wrong, the port is 9119", 6);
+        string recordsDir = Path.Combine(_dir, "records");
+
+        var calls = new List<(string Skill, string Text)>();
+        var consolidator = new GhostConsolidator(store)
+        {
+            NoteSkillOverride = (_, skill, text) => { calls.Add((skill, text)); return 0; },
+        };
+        var receipts = consolidator.EmitCorrections(
+            consolidator.ExtractCorrections(), "/tmp/fake.inbox", recordsDir);
+
+        var r = Assert.Single(receipts);
+        Assert.True(r.Emitted);
+        Assert.StartsWith("corr_", r.Item.SkillName);
+        Assert.Matches("^corr_[0-9a-f]{8}$", r.Item.SkillName);
+
+        // The record file: verbatim question + correction, named by goal tag.
+        string recordPath = Path.Combine(recordsDir, $"skill_{r.Item.SkillName}.txt");
+        Assert.True(File.Exists(recordPath));
+        string record = File.ReadAllText(recordPath);
+        Assert.Contains("what is the port?", record);
+        Assert.Contains("wrong, the port is 9119", record);
+        Assert.DoesNotContain("8080", record);   // the wrong answer is not teaching material
+
+        var call = Assert.Single(calls);
+        Assert.Equal(record, call.Text);
+    }
+
+    [Fact]
+    public void EmitCorrections_SameTriple_ProducesSameRecordName()
+    {
+        using var store = BlobStore.Open(StorePath());
+        store.Append("s1", 0, "user", "q?", 2);
+        store.Append("s1", 0, "assistant", "a", 2);
+        store.Append("s1", 1, "user", "wrong, b", 4);
+        string recordsDir = Path.Combine(_dir, "records2");
+
+        var consolidator = new GhostConsolidator(store)
+        { NoteSkillOverride = (_, _, _) => 0 };
+        var r1 = consolidator.EmitCorrections(consolidator.ExtractCorrections(), "/t.inbox", recordsDir);
+        var r2 = consolidator.EmitCorrections(consolidator.ExtractCorrections(), "/t.inbox", recordsDir);
+
+        Assert.Equal(r1[0].Item.SkillName, r2[0].Item.SkillName);   // coalesces in the lane
+        Assert.Single(Directory.GetFiles(recordsDir));               // one record, rewritten
+    }
 }
 
 /// <summary>
@@ -276,4 +360,5 @@ public sealed class NativeConsolidationTests
             try { Directory.Delete(dir, recursive: true); } catch (IOException) { }
         }
     }
+
 }

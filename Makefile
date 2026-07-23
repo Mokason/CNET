@@ -195,7 +195,7 @@ CCE := $(CCE_TENSOR) $(CCE_BLOCK) $(CCE_CASCADE) $(CCE_ARCHIVE) $(CCE_FOREST) $(
 CNET_CCE_ADAPTER := src/cce/cce_contract_adapter.c
 SPECIALIST_ADAPTERS := src/specialist_adapters.c
 SPECIALIST_SRC := src/specialist.c src/specialist_health.c
-GAP_LANE_SRC := src/gap_lane.c src/cnet_auto_learn.c src/cnet_charter.c
+GAP_LANE_SRC := src/gap_lane.c src/cnet_auto_learn.c src/cnet_charter.c src/cnet_record_teacher.c
 GOV_SRC := src/cnet_governance.c
 ASYNC_RUNTIME := src/async_runtime.c
 MODEL_RUNTIME := src/model_runtime.c
@@ -2086,6 +2086,17 @@ gap_lane: $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(S
 		tests/test_gap_lane.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -pthread
 	@./$(BIN_DIR)/test_gap_lane > logs/gap_lane.log 2>&1
 	@grep -q "GAP_LANE_PASS" logs/gap_lane.log
+
+record_teacher: $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) tests/test_record_teacher.c include/cnet_record_teacher.h
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/test_record_teacher \
+		$(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) \
+		$(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) \
+		$(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) \
+		tests/test_record_teacher.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -pthread
+	@./$(BIN_DIR)/test_record_teacher > logs/record_teacher.log 2>&1
+	@grep -q "RECORD_TEACHER_PASS" logs/record_teacher.log
+	@echo "record teacher gate: PASS (logs/record_teacher.log)"
 
 # The 24/7 daemon (REAL local-model teacher via the CCE GGUF runner).
 .PHONY: gap_lane_run_build

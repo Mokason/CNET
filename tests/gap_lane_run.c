@@ -70,6 +70,7 @@
 #include "../include/cnet_eg.h"
 #include "../include/cnet_auto_learn.h"
 #include "../include/json_toolcall.h"
+#include "../include/cnet_record_teacher.h"
 #include "../include/base.h"
 #include "../include/cce/cce_detect.h"
 #include "../include/cce/cce_gguf.h"
@@ -503,6 +504,13 @@ static size_t bind_model_teachers(GapLane *L, cce_gguf_qwen2 *m,
         Port in, goal;
         if (!gap_oracle_candidate(gap) || !gap_ports(L, gap, &in, &goal))
             continue;
+        /* Record-owned gaps: consolidated corrections certify against the
+           RECORD (cnet_record_bind), never against the LM — the whole point
+           is truth the model didn't produce. Binding the LM here would
+           shadow the record teacher (find_oracle returns the first port
+           match) and quietly reinstate the parrot. */
+        if (strncmp(goal.tag, CNET_RECORD_TAG_PREFIX,
+                    sizeof CNET_RECORD_TAG_PREFIX - 1) == 0) continue;
         if (!lm_shape_ok(in, goal, vocab, base)) continue;
         /* Auto-learn: rewrite freeform tags so bind name/ports stay teachable */
         if (cnet_auto_learn_enabled()) {
@@ -910,6 +918,28 @@ int main(int argc, char **argv) {
             }
             /* JTC hermetic teacher (works with or without GGUF). */
             (void)bind_jtc_teachers(&lane);
+            /* Record-as-oracle teachers: consolidated corrections certify
+               against recorded text, no LM in the loop (works with or
+               without GGUF). Records default to <base>.records/. */
+            {
+                const char *rdir = getenv("CNET_RECORD_DIR");
+                char rbuf[600], wbuf[600];
+                const char *wfile = getenv("CNET_WINDOW_FILE");
+                if (!rdir || !rdir[0]) {
+                    snprintf(rbuf, sizeof rbuf, "%s.records", argv[1]);
+                    rdir = rbuf;
+                }
+                if (wfile && wfile[0]) {
+                    size_t wl = strlen(wfile);
+                    if (wl > 4 && strcmp(wfile + wl - 4, ".txt") == 0 &&
+                        wl - 4 + sizeof ".words.txt" <= sizeof wbuf) {
+                        memcpy(wbuf, wfile, wl - 4);
+                        strcpy(wbuf + wl - 4, ".words.txt");
+                        (void)cnet_record_bind(&lane, rdir, wbuf,
+                                               lm_toolchain_fp64);
+                    }
+                }
+            }
 
             if (gap_lane_tick(&lane, &r, 0) != 0) {
                 fprintf(stderr, "gap_lane_run: tick failed; retrying\n");

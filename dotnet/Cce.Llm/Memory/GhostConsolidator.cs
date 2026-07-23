@@ -63,6 +63,43 @@ public sealed class GhostConsolidator
         ["wrong", "no,", "no.", "nope", "incorrect", "that's wrong", "thats wrong",
          "that's not", "thats not", "actually,", "i said", "i meant", "not true"];
 
+    /// <summary>
+    /// A correction event reconstructed from the store: the question that was
+    /// answered wrongly, the wrong answer, and the user's overruling turn.
+    /// The correction is the record — the ground truth a specialist can be
+    /// certified against WITHOUT any LM teacher in the loop. This is the seam
+    /// where the system stops being bounded by its teachers: the teacher never
+    /// produced this knowledge; the user did.
+    /// </summary>
+    public sealed record CorrectionTriple(
+        MemoryBlob Question, MemoryBlob WrongAnswer, MemoryBlob Correction);
+
+    /// <summary>
+    /// Reconstructs correction triples: a user turn opening with a correction
+    /// marker, immediately after an assistant turn, whose own preceding user
+    /// turn is the question. Same precision-first stance as extraction.
+    /// </summary>
+    public List<CorrectionTriple> ExtractCorrections()
+    {
+        IReadOnlyList<MemoryBlob> all = _store.All();
+        var triples = new List<CorrectionTriple>();
+        for (int i = 2; i < all.Count; i++)
+        {
+            MemoryBlob c = all[i];
+            if (c.Role != "user") continue;
+            string head = c.Text.TrimStart().ToLowerInvariant();
+            if (!CorrectionOpeners.Any(head.StartsWith)) continue;
+
+            MemoryBlob a = all[i - 1];
+            MemoryBlob q = all[i - 2];
+            if (a.Role != "assistant" || q.Role != "user") continue;
+            if (a.SessionId != c.SessionId || q.SessionId != c.SessionId) continue;
+
+            triples.Add(new CorrectionTriple(q, a, c));
+        }
+        return triples;
+    }
+
     /// <summary>Extracts teachable items. Pure read — emits nothing.</summary>
     public List<TeachableItem> Extract()
     {
@@ -164,6 +201,61 @@ public sealed class GhostConsolidator
     }
 
     /// <summary>
+    /// Consolidates correction triples through the record-as-oracle path:
+    /// writes each correction's verbatim record file (the certifying truth —
+    /// the gap lane's record teacher mines it, no LM in the loop) and notes a
+    /// k=1 skill gap. Record name is a pure function of the record bytes, so
+    /// re-consolidation coalesces and an edited record is truthfully a
+    /// different teacher.
+    /// </summary>
+    public List<ConsolidationReceipt> EmitCorrections(
+        IEnumerable<CorrectionTriple> triples, string inboxPath, string recordsDir)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(inboxPath);
+        ArgumentException.ThrowIfNullOrEmpty(recordsDir);
+        Directory.CreateDirectory(recordsDir);
+
+        var receipts = new List<ConsolidationReceipt>();
+        foreach (CorrectionTriple t in triples)
+        {
+            // The record: the question and the user's authoritative correction,
+            // verbatim. The wrong answer is provenance, not teaching material.
+            // "#v2" is a format-version marker: digits-only, so it adds no word
+            // tokens, but it changes the record hash — v1 records were taught
+            // before the LM-shadowing fix and their unit names are sealed
+            // forever (cnb names are append-only; base_precheck refuses reuse).
+            string record = "#v2\n" + t.Question.Text + "\n" + t.Correction.Text + "\n";
+            string name = $"corr_{Fnv8(record)}";
+            var item = new TeachableItem(name, record, t.Correction.Id,
+                $"correction of #{t.WrongAnswer.Id} (record-as-oracle)");
+            try
+            {
+                File.WriteAllText(
+                    System.IO.Path.Combine(recordsDir, $"skill_{name}.txt"), record);
+                int rc = NoteSkillOverride is not null
+                    ? NoteSkillOverride(inboxPath, name, record)
+                    : CnetAutoLearnNative.NoteSkill(inboxPath, name, record, k: 1);
+                receipts.Add(new ConsolidationReceipt(item, rc == 0,
+                    rc == 0 ? null : $"native note_skill returned {rc}"));
+            }
+            catch (Exception ex) when (ex is DllNotFoundException
+                or EntryPointNotFoundException or IOException)
+            {
+                receipts.Add(new ConsolidationReceipt(item, false, ex.Message));
+            }
+        }
+        return receipts;
+    }
+
+    private static string Fnv8(string text)
+    {
+        ulong h = 14695981039346656037UL;
+        foreach (byte c in System.Text.Encoding.UTF8.GetBytes(text))
+            h = (h ^ c) * 1099511628211UL;
+        return ((uint)h).ToString("x8");
+    }
+
+    /// <summary>
     /// Deterministic skill name: gh_&lt;8-hex FNV-1a of the text&gt;_&lt;first
     /// distinctive term&gt;. Stable across runs and stores, short enough that
     /// the native goal tag ("skill_" + this) stays within PORT_TAG_MAX (32).
@@ -200,9 +292,13 @@ internal static partial class CnetAutoLearnNative
 
     /// <summary>Notes a named teachable skill into the inbox. 0 on success.</summary>
     public static int NoteSkill(string inboxPath, string skillName, string text)
+        => NoteSkill(inboxPath, skillName, text, 0);   // 0 = default top-k
+
+    /// <summary>k override: correction records teach exact next words (k=1).</summary>
+    public static int NoteSkill(string inboxPath, string skillName, string text, uint k)
     {
         EnsureResolver();
-        return NoteSkillImport(inboxPath, skillName, text, 0);   // 0 = default top-k
+        return NoteSkillImport(inboxPath, skillName, text, k);
     }
 
     private static void EnsureResolver()
