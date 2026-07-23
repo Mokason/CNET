@@ -879,6 +879,29 @@ the receipt `── certified: … — served from sealed knowledge, model not
 consulted ──`. The full circle: a model's own verified output, certified
 past it, now outranks it.
 
+## Primitive common sense: the adaptive judge
+
+The most primitive adaptive good/bad filter (`Judgment/AdaptiveJudge`):
+eight cheap transparent text features (length, vocabulary variety, trigram
+degeneracy — the live `"flags": false` loop lights that one up — symbol
+soup, near-emptiness…), a margin perceptron, three-way verdicts where
+**Unsure is first-class** and changes nothing. Seeds are conservative
+priors; everything after that is learned ONLINE from consequences the stack
+already produces, nobody labels by hand: /forget marks a memory bad,
+correction-shaped turns mark the previous answer bad, confirmation-shaped
+turns mark it good, correction records feed both sides. Evidence is
+journaled (`judgment.evidence.jsonl` — provenance today, the exemplar table
+for a future natively-certified judge tomorrow); weights are durable and
+shared by the TUI and the orchestrator: one taste, adapting to one user.
+
+Constitutional position, non-negotiable: **taste, never truth.** The judge
+may veto teaching candidates (consolidation drops what it judges Bad) and
+that is all — explicit user imperatives outrank it ("remember this" IS the
+judgment), correction records are never vetoed, mechanical verifiers are
+never overruled, and nothing it says certifies anything. Opinion filters
+the queue; proof guards the gate. `/judge <text>` in ghost-chat shows any
+verdict with its feature receipts and evidence count.
+
 ## Tests
 
 `dotnet test dotnet/Cce.Llm.Tests` — 19 tests. The generation tests need a local

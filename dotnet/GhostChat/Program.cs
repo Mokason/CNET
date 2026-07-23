@@ -108,6 +108,13 @@ var ghost = new MemorySession(session, memory, window, countTokens,
     ExactLane = !a.NoExact,
 };
 
+// Primitive common sense: adaptive good/bad taste, learned from consequences
+// (forgets, corrections, confirmations). Veto power over teaching candidates
+// only — never over verifiers, certification, or explicit user requests.
+var judge = new CNET.Cce.Llm.Judgment.AdaptiveJudge(
+    Path.GetDirectoryName(Path.GetFullPath(storePath))!);
+ghost.Judge = judge;
+
 // Rung 4: certified records answer before the model when the gap inbox (and
 // therefore the records dir + ledger) is known.
 string? routeInbox = a.GapInbox ?? Environment.GetEnvironmentVariable("CNET_GAP_INBOX");
@@ -134,7 +141,7 @@ ghost.OnLookup = round =>
 Console.WriteLine($"ghost-chat | backend={a.Backend} model={a.Model} window={window}");
 Console.WriteLine($"store={storePath} ({store.Count} memories" +
     (store.CorruptLinesSkipped > 0 ? $", {store.CorruptLinesSkipped} corrupt lines skipped" : "") + ")");
-Console.WriteLine("/exit /stats /show <id> /recall <query> /forget <id> /consolidate [commit] /distill <prompt>");
+Console.WriteLine("/exit /stats /show <id> /recall <query> /forget <id> /consolidate [commit] /distill <prompt> /judge <text>");
 Console.WriteLine();
 
 // Ollama streams; local backends print at once.
@@ -196,7 +203,17 @@ while (true)
             string snippet = victim.Text.Length > 80 ? victim.Text[..80] + "…" : victim.Text;
             Console.WriteLine($"  forgot [#{forgetId} | {victim.Role}] {snippet}");
             Console.WriteLine("  (the line stays in the store file as history; recall will never serve it again)");
+            // A forget is a consequence-label: the user judged this bad.
+            judge.Learn(victim.Text, good: false, source: "forget");
         }
+        continue;
+    }
+
+    if (input.StartsWith("/judge ", StringComparison.Ordinal))
+    {
+        var j = judge.Judge(input["/judge ".Length..].Trim());
+        Console.WriteLine($"  {j.Value} (score {j.Score:F2}; {string.Join(", ", j.TopFeatures)}; " +
+                          $"{judge.EvidenceCount} exemplars learned)");
         continue;
     }
 

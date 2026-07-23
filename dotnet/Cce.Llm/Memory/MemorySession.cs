@@ -107,6 +107,24 @@ public sealed class MemorySession
     /// </summary>
     public Routing.RecordRouter? Router { get; set; }
 
+    /// <summary>
+    /// Optional adaptive judge: live conversation labels it — a
+    /// correction-shaped turn marks the previous answer bad, a
+    /// confirmation-shaped turn marks it good. The judge never gates
+    /// anything here; chat answers are the user's to judge, not taste's.
+    /// </summary>
+    public Judgment.AdaptiveJudge? Judge { get; set; }
+
+    private string? _lastAssistantText;
+
+    private static readonly string[] CorrectionOpeners =
+        ["wrong", "no,", "no.", "nope", "incorrect", "that's wrong", "thats wrong",
+         "that's not", "thats not", "actually,", "i said", "i meant", "not true"];
+
+    private static readonly string[] ConfirmationOpeners =
+        ["thanks", "thank you", "perfect", "correct", "exactly", "great",
+         "nice", "awesome", "it works", "that works", "good job", "well done"];
+
     /// <param name="session">Inner session; not owned, caller disposes.</param>
     /// <param name="memory">Memory layer; its token counter must belong to this session's model.</param>
     /// <param name="contextWindowTokens">
@@ -169,6 +187,17 @@ public sealed class MemorySession
         // a correction-shaped turn demotes the unit that earned it.
         Router?.ObserveUserTurn(user);
 
+        // Consequence-labeled judge evidence from live conversation.
+        if (Judge is not null && _lastAssistantText is not null)
+        {
+            string head = user.TrimStart().ToLowerInvariant();
+            if (CorrectionOpeners.Any(head.StartsWith))
+                Judge.Learn(_lastAssistantText, good: false, source: "chat-correction");
+            else if (ConfirmationOpeners.Any(head.StartsWith))
+                Judge.Learn(_lastAssistantText, good: true, source: "chat-confirmation");
+            _lastAssistantText = null;   // feedback window is one turn
+        }
+
         // ── exact lane: computed truth beats generated truth ──
         // Runs before context building because no context can improve an
         // exact answer, and a model's opinion can only degrade one. The
@@ -179,6 +208,7 @@ public sealed class MemorySession
             _memory.Remember("assistant", exact);
             _memory.NextTurn();
             _pendingContinuation = null;
+            _lastAssistantText = exact;
             var exactResult = new CnetHarnessGenerationResult(
                 exact, 0, 0, 0, 0, 0, 0, CnetHarnessSamplingMode.Deterministic,
                 false, 0, 1, 0, 0);
@@ -193,6 +223,7 @@ public sealed class MemorySession
             _memory.Remember("assistant", serve.RecordText);
             _memory.NextTurn();
             _pendingContinuation = null;
+            _lastAssistantText = serve.RecordText;
             var servedResult = new CnetHarnessGenerationResult(
                 serve.RecordText, 0, 0, 0, 0, 0, 0,
                 CnetHarnessSamplingMode.Deterministic, false, 0, 1, 0, 0);
@@ -476,6 +507,8 @@ public sealed class MemorySession
         _memory.Remember("user", user);
         _memory.Remember("assistant", fullText);
         _memory.NextTurn();
+
+        _lastAssistantText = fullText;
 
         // Still capped after every allowed round: arm the manual path. A
         // whitespace answer has nothing to resume.

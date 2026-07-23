@@ -53,6 +53,14 @@ public sealed class GhostConsolidator
     /// <summary>Native seam, injectable for tests.</summary>
     internal Func<string, string, string, int>? NoteSkillOverride { get; set; }
 
+    /// <summary>
+    /// Optional adaptive judge. Constitutional position: it may VETO a
+    /// teaching candidate it judges Bad, and that is all — explicit user
+    /// imperatives ("remember this") and correction records are never
+    /// vetoed (the user outranks taste), and Unsure changes nothing.
+    /// </summary>
+    public Judgment.AdaptiveJudge? Judge { get; set; }
+
     public GhostConsolidator(IMemoryView store) =>
         _store = store ?? throw new ArgumentNullException(nameof(store));
 
@@ -110,6 +118,11 @@ public sealed class GhostConsolidator
         void Take(MemoryBlob blob, string reason)
         {
             if (items.Count >= MaxItems || !taken.Add(blob.Id)) return;
+            // Taste may veto — except the user's explicit imperative, which
+            // outranks it (asking to remember something IS the judgment).
+            if (Judge is not null && reason != "explicit remember request" &&
+                Judge.Judge(blob.Text).Value == Judgment.Verdict.Bad)
+                return;
             items.Add(new TeachableItem(SkillNameFor(blob), blob.Text, blob.Id, reason));
         }
 
@@ -226,6 +239,10 @@ public sealed class GhostConsolidator
             // forever (cnb names are append-only; base_precheck refuses reuse).
             string record = "#v2\n" + t.Question.Text + "\n" + t.Correction.Text + "\n";
             string name = $"corr_{Fnv8(record)}";
+            // Consequence-labeled evidence: the corrected answer was bad, the
+            // user's own words are good. Nobody labeled anything by hand.
+            Judge?.Learn(t.WrongAnswer.Text, good: false, source: "corrected-answer");
+            Judge?.Learn(t.Correction.Text, good: true, source: "user-correction");
             var item = new TeachableItem(name, record, t.Correction.Id,
                 $"correction of #{t.WrongAnswer.Id} (record-as-oracle)");
             try

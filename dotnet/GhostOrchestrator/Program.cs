@@ -111,7 +111,12 @@ var executors = new Dictionary<string, Func<PlannedAction, OrchestratorState, st
         if (inbox is null)
             throw new InvalidOperationException("no inbox configured (--inbox or CNET_GAP_INBOX)");
         GhostSnapshot snapshot = BlobStore.Snapshot(store);
-        var consolidator = new GhostConsolidator(snapshot);
+        var consolidator = new GhostConsolidator(snapshot)
+        {
+            // Shared taste: same judgment state the TUI learns into.
+            Judge = new CNET.Cce.Llm.Judgment.AdaptiveJudge(
+                Path.GetDirectoryName(Path.GetFullPath(store))!),
+        };
         var items = consolidator.Extract();
         var receipts = consolidator.Emit(items, inbox);
         string recordsDir = inbox.EndsWith(".inbox", StringComparison.Ordinal)
