@@ -93,4 +93,17 @@ public sealed class StreamGateTests
         Assert.Equal("part one part two",
             RunCharByChar("part one", " part two"));
     }
+
+    [Fact]
+    public void SuppressCurrentGeneration_WithholdsTheWholeGeneration()
+    {
+        var sink = new System.Text.StringBuilder();
+        var gate = new StreamGate(x => sink.Append(x));
+        gate.BeginGeneration();
+        gate.SuppressCurrentGeneration();           // resume round: suppress raw tokens
+        gate.Feed("meant to ask");                  // the re-typed seam
+        gate.EndGeneration();
+        Assert.Equal("", sink.ToString());          // nothing streamed; the deduped
+                                                    // chunk arrives via OnStitchedChunk
+    }
 }

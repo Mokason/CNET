@@ -643,4 +643,16 @@ public sealed class MemoryContinuationTests : IDisposable
         Assert.False(r.Exact);
         Assert.Single(session.Calls);
     }
+
+    // ─────────────── seam-space restoration ───────────────
+
+    [Theory]
+    [InlineData("standing roughly 100", "to 140 meters", " to 140 meters")]   // digit->word
+    [InlineData("the question you meant", "to ask", " to ask")]               // boundary word
+    [InlineData("but if", "the question is", " the question is")]             // boundary word
+    [InlineData("I won", "der about it", "der about it")]                     // mid-word: left alone
+    [InlineData("value is ", "42 exactly", "42 exactly")]                     // already spaced
+    [InlineData("the total 5", "0 units", "0 units")]                         // digit+digit: no space
+    public void RestoreSeamSpace_FixesBoundaries_NotMidWord(string soFar, string chunk, string expected) =>
+        Assert.Equal(expected, MemorySession.RestoreSeamSpace(soFar, chunk));
 }

@@ -36,6 +36,15 @@ public sealed class StreamGate(Action<string> sink)
         _suppress = false;
     }
 
+    /// <summary>Suppress this whole generation from the live stream — used for
+    /// auto-continue resume rounds, whose raw tokens re-type the seam; the
+    /// deduped stitched chunk is streamed separately instead.</summary>
+    public void SuppressCurrentGeneration()
+    {
+        _decided = true;
+        _suppress = true;
+    }
+
     /// <summary>Feeds one streamed chunk; emits or withholds per the classification.</summary>
     public void Feed(string chunk)
     {

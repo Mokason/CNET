@@ -169,8 +169,15 @@ var streamGate = new StreamGate(chunk => Console.Write(chunk));
 if (ollama is not null)
 {
     ollama.OnToken = streamGate.Feed;
-    ghost.OnInnerGenerationStart = streamGate.BeginGeneration;
+    ghost.OnInnerGenerationStart = isResume =>
+    {
+        streamGate.BeginGeneration();
+        // Resume rounds re-type the seam; suppress their raw tokens and stream
+        // the deduped stitched chunk instead (via OnStitchedChunk).
+        if (isResume) streamGate.SuppressCurrentGeneration();
+    };
     ghost.OnInnerGenerationEnd = streamGate.EndGeneration;
+    ghost.OnStitchedChunk = chunk => Console.Write(chunk);
 }
 
 // ── salon mode: two agents share this room ──────────────────────────────

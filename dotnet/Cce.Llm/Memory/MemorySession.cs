@@ -104,11 +104,18 @@ public sealed class MemorySession
     public Action<LookupRound>? OnLookup { get; set; }
 
     /// <summary>Fired before each inner model generation, so a streaming UI can
-    /// reset its filter per generation (action scaffolding vs the real answer).</summary>
-    public Action? OnInnerGenerationStart { get; set; }
+    /// reset its filter per generation. The bool is true for auto-continue
+    /// RESUME rounds, whose raw tokens re-type the seam and should be
+    /// suppressed live — the deduped chunk arrives via <see cref="OnStitchedChunk"/>.</summary>
+    public Action<bool>? OnInnerGenerationStart { get; set; }
 
     /// <summary>Fired after each inner model generation completes.</summary>
     public Action? OnInnerGenerationEnd { get; set; }
+
+    /// <summary>Fired with the cleaned, seam-deduped chunk after each
+    /// auto-continue stitch, so a streaming UI shows correct text instead of
+    /// the model's raw re-typed resume tokens.</summary>
+    public Action<string>? OnStitchedChunk { get; set; }
 
     /// <summary>
     /// The exact-arithmetic lane (ported from AICIMO): arithmetic questions
@@ -511,7 +518,8 @@ public sealed class MemorySession
                 if (anchor is null) break;                // window too tight to anchor
 
                 next = GenerateOnce(context.SystemText, ResumeInstruction, roundBudget,
-                    ResumeSampling(sampling), seed, role, think: false, continueFrom: anchor);
+                    ResumeSampling(sampling), seed, role, think: false, continueFrom: anchor,
+                    isResume: true);
                 autoRounds++;
                 Tally(next);
                 systemText = context.SystemText;
@@ -526,7 +534,8 @@ public sealed class MemorySession
                     roundBudget = Math.Min(maxTokens * 2, 65536u);
                     next = GenerateOnce(context.SystemText,
                         ResumeInstruction + NoDeliberationNudge, roundBudget,
-                        ResumeSampling(sampling), seed, role, think: false, continueFrom: anchor);
+                        ResumeSampling(sampling), seed, role, think: false, continueFrom: anchor,
+                        isResume: true);
                     Tally(next);
                     if (string.IsNullOrWhiteSpace(next.Text)) break;  // truly stuck
                 }
@@ -537,7 +546,7 @@ public sealed class MemorySession
                 if (block is null) break;                 // window too tight to anchor
 
                 next = GenerateOnce(context.SystemText + block, user, roundBudget,
-                    ResumeSampling(sampling), seed, role, think: false);
+                    ResumeSampling(sampling), seed, role, think: false, isResume: true);
                 autoRounds++;
                 Tally(next);
                 systemText = context.SystemText + block;
@@ -548,14 +557,16 @@ public sealed class MemorySession
                     string retrySystem = context.SystemText + block +
                         "Do not spend tokens deliberating — output the continuation text immediately.\n";
                     next = GenerateOnce(retrySystem, user, roundBudget,
-                        ResumeSampling(sampling), seed, role, think: false);
+                        ResumeSampling(sampling), seed, role, think: false, isResume: true);
                     Tally(next);
                     systemText = retrySystem;
                     if (string.IsNullOrWhiteSpace(next.Text)) break;  // truly stuck
                 }
             }
 
-            chunks.Add(CleanResumeChunk(soFar, next.Text));
+            string cleanedChunk = RestoreSeamSpace(soFar, CleanResumeChunk(soFar, next.Text));
+            chunks.Add(cleanedChunk);
+            OnStitchedChunk?.Invoke(cleanedChunk);
             result = next;
             capped = next.GeneratedTokens >= roundBudget ||
                      HasUnclosedFence(string.Concat(chunks));
@@ -672,6 +683,36 @@ public sealed class MemorySession
     /// <summary>An odd number of ``` markers means the text ends inside a code block.</summary>
     internal static bool HasUnclosedFence(string text) => CountFences(text) % 2 == 1;
 
+    // Common short words that are almost never the tail of a longer word, so a
+    // resume chunk starting with one after an alphanumeric character is a
+    // dropped word-boundary space, not a mid-word split.
+    private static readonly HashSet<string> BoundaryWords = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "the", "a", "an", "to", "of", "and", "or", "in", "on", "at", "by", "as",
+        "is", "it", "be", "for", "with", "that", "this", "but", "if", "so", "was",
+        "are", "from", "into", "than", "then", "when", "which", "while", "were",
+    };
+
+    /// <summary>
+    /// Restores the inter-word space a structural resume drops when it continues
+    /// without a leading space and without a re-typed overlap (observed live:
+    /// "100to", "meantto", "ifthe"). Only the unambiguous cases — a digit↔word
+    /// transition, or a chunk starting with a common boundary word — get a
+    /// space; a genuine mid-word split ("won"+"der") is left alone.
+    /// </summary>
+    internal static string RestoreSeamSpace(string soFar, string chunk)
+    {
+        if (soFar.Length == 0 || chunk.Length == 0) return chunk;
+        char last = soFar[^1];
+        char first = chunk[0];
+        if (!char.IsLetterOrDigit(last) || !char.IsLetterOrDigit(first)) return chunk;
+
+        bool digitBoundary = char.IsDigit(last) != char.IsDigit(first);
+        string firstWord = new string(chunk.TakeWhile(char.IsLetterOrDigit).ToArray());
+        bool wordBoundary = BoundaryWords.Contains(firstWord);
+        return digitBoundary || wordBoundary ? " " + chunk : chunk;
+    }
+
     private static int CountFences(string text)
     {
         int count = 0;
@@ -768,9 +809,9 @@ public sealed class MemorySession
     private CnetHarnessGenerationResult GenerateOnce(
         string systemText, string user, uint maxTokens,
         CnetHarnessSamplingMode sampling, uint seed, string role,
-        bool? think = null, string? continueFrom = null)
+        bool? think = null, string? continueFrom = null, bool isResume = false)
     {
-        OnInnerGenerationStart?.Invoke();
+        OnInnerGenerationStart?.Invoke(isResume);
         try
         {
             return _session.Generate(new CnetHarnessGenerateOptions
