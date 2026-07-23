@@ -835,6 +835,27 @@ decimal's own rounding defeats a round-trip check) — 100/8 answers 12.5,
 This is the template verifier for generate-and-verify: truth by construction,
 model opinion not consulted.
 
+## Rung 3: surprise-driven curriculum
+
+The system now chooses what to learn next from where its knowledge fails.
+`SurpriseScanner` (Orchestration) compiles the record corpus — every
+`skill_corr_`/`skill_vrf_`/`skill_obs_` record file — into transition tables
+(exactly as the native teacher does) and tests them against fresh
+conversation past a watermark. A **contradiction** (taught A→B, observed
+A→C) surfaces from a single observation: a live disagreement is never noise,
+and it is the rung-1 correction loop firing *without the user having to say
+"wrong"*. **Novelty** (a transition nothing teaches) is gated by recurrence
+(≥3 occurrences, ≥2 distinct blobs) so one-off phrasing never becomes
+curriculum. Surprises compile into one `skill_obs_` record per scan — the
+verbatim evidence blobs — taught by the record teacher like every record
+family. "curiosity" is a governed orchestrator action: own watermark,
+cooldowns, backoff, journaled evidence per surprise.
+
+First live scan of the real store: 8 surprises — one genuine contradiction
+("the→to" in conversation vs "the→keep" taught by the Riften record) and
+recurring novelties — compiled to `skill_obs_afd18cdc` and taught by the
+lane from the observed conversation itself.
+
 ## Tests
 
 `dotnet test dotnet/Cce.Llm.Tests` — 19 tests. The generation tests need a local
