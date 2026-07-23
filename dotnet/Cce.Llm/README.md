@@ -967,6 +967,35 @@ its own tool via TOOL: to answer "5". The model wrote code; the sandbox
 proved it; the ladder's invariant held — nothing unverified became a
 capability.
 
+## The evaluation harness: does the whole beat the bare model?
+
+`ghost-eval` (dotnet/GhostEval) poses each suite question to two lanes over
+the SAME model — the raw model alone, and the model behind the full stack —
+and scores both mechanically. The capstone measurement of the whole thesis,
+and (because it runs every organ on one path) the integration test the pieces
+never had. Categories: arithmetic (exact lane fires automatically), memory
+(recall fires automatically), and a neutral general-knowledge category
+included so the harness measures parity and harm honestly, not a rigged win.
+Regressions — the bare model right, the stack wrong — are surfaced loudly, not
+hidden.
+
+First live run (minimax-m3:cloud, 17 cases):
+
+```
+  category           model-only   full-stack    delta
+  memory                    0/5          5/5       +5
+  arithmetic                3/6          6/6       +3
+  general                   5/6          5/6       +0
+  TOTAL                    8/17        16/17       +8
+```
+
+The full stack answered nearly twice as many correctly, won decisively where
+it has structure (every seeded fact recalled; every hard multiplication the
+model missed computed exactly), and did zero harm on general knowledge. No
+regressions. The harness also caught two arithmetic errors in its own test
+data — the exact lane computed correctly where the author had typed the
+product wrong, which is the thesis in miniature.
+
 ## Tests
 
 `dotnet test dotnet/Cce.Llm.Tests` — 19 tests. The generation tests need a local

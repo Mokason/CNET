@@ -25,6 +25,7 @@
     <Project Path="Cce.Llm.Benchmarks/CNET.Cce.Llm.Benchmarks.csproj" />
     <Project Path="GhostChat/GhostChat.csproj" />
     <Project Path="GhostOrchestrator/GhostOrchestrator.csproj" />
+    <Project Path="GhostEval/GhostEval.csproj" />
   </Folder>
   <Folder Name="/llm/">
     <Project Path="Llm/src/CNET.Llm.Cli/CNET.Llm.Cli.csproj" />
