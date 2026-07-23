@@ -1,0 +1,32 @@
+# Isolation-forcing scripted salon: the strict gate CANNOT surface the buried
+# fact, so the relaxed auto-recall is provably the sole retriever live.
+#
+#   ghost-chat --backend ollama --model minimax-m3:cloud \
+#     --store /tmp/salon.jsonl --window 16384 --max-tokens 800 \
+#     --peer-script dotnet/GhostChat/salon-scripts/auto-recall-isolated.salon
+#
+# Design (see KeywordIndex: maxDiscriminativeDf = max(1, floor(n*0.25)); a blob
+# also passes on >=2 distinct query-term matches):
+#   - The plant carries the retrieval key "sign" and forces the confirm to echo
+#     it, so df("sign") >= 2. In a <=7-blob store maxDisc=1, so "sign" is
+#     non-discriminative — the strict gate rejects it.
+#   - The plant deliberately AVOIDS "exact" and "value", so the retrieval shares
+#     exactly ONE term ("sign") with it — the >=2-distinct-matches clause fails.
+#   - The two distractors avoid every retrieval-query word, so they neither
+#     surface the plant nor crowd it out of the relaxed top-5.
+# Result on the retrieval turn: strict /recall of the query misses the plant,
+# yet the receipt shows ·auto-recall (and NO model RECALL action) and Ghost
+# quotes OBSIDIAN-HARBOR-FOUR — the relaxed auto-recall alone bridged the miss.
+# Observed caveat: the generic term needed to force the gate-miss ("sign") is
+# ambiguous, so the model quoted the value correctly but then hedged with a
+# contradictory "I don't have a sign" disclaimer. Isolation is a retrieval-layer
+# property (proven here); clean PRESENTATION needs a term specific enough that
+# the model trusts the injected block (cf. auto-recall-forced.salon, "cipher").
+%%%
+Ghost, memorize this token: the vault sign is OBSIDIAN-HARBOR-FOUR. Confirm by repeating the sentence "the vault sign is OBSIDIAN-HARBOR-FOUR" once, then wait for my questions.
+%%%
+Unrelated: do you append every message to your record the instant it arrives, or only once you judge a message worth keeping?
+%%%
+Different topic: would you rather run with a small focused memory or a huge sprawling one, and what degrades first as it grows?
+%%%
+give me the sign — state its exact value verbatim
