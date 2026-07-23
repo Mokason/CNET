@@ -17,11 +17,17 @@
 # Result on the retrieval turn: strict /recall of the query misses the plant,
 # yet the receipt shows ·auto-recall (and NO model RECALL action) and Ghost
 # quotes OBSIDIAN-HARBOR-FOUR — the relaxed auto-recall alone bridged the miss.
-# Observed caveat: the generic term needed to force the gate-miss ("sign") is
-# ambiguous, so the model quoted the value correctly but then hedged with a
-# contradictory "I don't have a sign" disclaimer. Isolation is a retrieval-layer
-# property (proven here); clean PRESENTATION needs a term specific enough that
-# the model trusts the injected block (cf. auto-recall-forced.salon, "cipher").
+# Observed caveat (robust across 3 escalating injected-block framings): the
+# generic term needed to force the gate-miss ("sign") is ambiguous, so the model
+# quotes the value correctly AND THEN hedges with a contradictory disclaimer
+# ("it isn't in the turns I can see"). Tightening the block framing — even an
+# explicit line saying "not in your visible turns is NOT evidence of absence" —
+# did NOT remove the hedge; the model made that exact forbidden inference anyway.
+# Conclusion: isolation is a retrieval-layer property (proven here), but clean
+# PRESENTATION under a pathologically generic term is a model disposition that
+# text framing cannot compel — the same lesson that made retrieval deterministic.
+# A term specific enough to be unambiguous (cf. "cipher" in auto-recall-forced)
+# presents cleanly; the isolation test cannot use one by construction.
 %%%
 Ghost, memorize this token: the vault sign is OBSIDIAN-HARBOR-FOUR. Confirm by repeating the sentence "the vault sign is OBSIDIAN-HARBOR-FOUR" once, then wait for my questions.
 %%%

@@ -353,8 +353,10 @@ public sealed class MemoryLookupLoopTests : IDisposable
 
         var r = ghost.Generate(null, "retrieve the override please");
 
-        // The layer injected the fact deterministically before the model ran.
+        // The layer injected the fact deterministically before the model ran,
+        // with assertive framing so the model quotes it instead of hedging.
         Assert.Contains("### Retrieved from your store", session.Calls[0].System);
+        Assert.Contains("quote that value exactly", session.Calls[0].System);
         Assert.Contains("amber-lark-3", session.Calls[0].System);
         Assert.Contains(factId, r.UsedBlobIds);
     }
