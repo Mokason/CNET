@@ -105,4 +105,27 @@ public sealed class ExactArithmeticTests
         Assert.Equal("12.5", a);
         Assert.False(ExactArithmetic.TryAnswer("1 / 3", out _));   // non-terminating still declines
     }
+
+    // ─────────────── integer square root and friends ───────────────
+
+    [Theory]
+    [InlineData("floor(sqrt(2^127 - 1))", "13043817825332782212")]   // Hermes's question
+    [InlineData("isqrt(2^127 - 1)", "13043817825332782212")]
+    [InlineData("sqrt(20736)", "144")]                               // perfect square: exact
+    [InlineData("isqrt(1000)", "31")]
+    [InlineData("abs(0 - 4827)", "4827")]
+    [InlineData("floor(144)", "144")]                                // floor of an integer
+    public void IntegerFunctions_ComputeExactly(string prompt, string expected)
+    {
+        Assert.True(ExactArithmetic.TryAnswer(prompt, out string answer), prompt);
+        Assert.Equal(expected, answer);
+    }
+
+    [Theory]
+    [InlineData("sqrt(2)")]          // irrational: exact sqrt declines (isqrt would not)
+    [InlineData("sqrt(20735)")]      // not a perfect square
+    [InlineData("bogus(5)")]         // unknown function
+    [InlineData("2 apples")]         // letters allowed by whitelist, still declines on residual
+    public void IntegerFunctions_DeclineHonestly(string prompt) =>
+        Assert.False(ExactArithmetic.TryAnswer(prompt, out _));
 }

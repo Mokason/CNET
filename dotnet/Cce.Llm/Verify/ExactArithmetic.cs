@@ -75,7 +75,7 @@ public static class ExactArithmetic
         if (expr.Length == 0 || expr.Length > 512) return false;
         if (!expr.Any(char.IsAsciiDigit)) return false;
         foreach (char c in expr)
-            if (!char.IsAsciiDigit(c) && !" .,+-*/%^()".Contains(c))
+            if (!char.IsAsciiDigit(c) && !char.IsAsciiLetter(c) && !" .,+-*/%^()".Contains(c))
                 return false;
 
         // Pure-integer expressions (no '.' and no '/') evaluate over BigInteger:
@@ -179,6 +179,47 @@ public static class ExactArithmetic
     private static System.Numerics.BigInteger BigPrimary(string s, ref int pos)
     {
         SkipSpace(s, ref pos);
+
+        // Function calls: sqrt/isqrt/floor/abs. sqrt is exact only for perfect
+        // squares (a non-integer root cannot be an exact answer — decline);
+        // isqrt is the integer square root; floor(sqrt(x)) is the standard
+        // idiom for isqrt and is handled as such.
+        if (pos < s.Length && char.IsAsciiLetter(s[pos]))
+        {
+            int fstart = pos;
+            while (pos < s.Length && char.IsAsciiLetter(s[pos])) pos++;
+            string fn = s[fstart..pos];
+            SkipSpace(s, ref pos);
+            if (pos >= s.Length || s[pos] != '(') throw new FormatException("expected (");
+            pos++;
+
+            if (fn == "floor")
+            {
+                SkipSpace(s, ref pos);
+                if (pos + 5 <= s.Length && s.Substring(pos, 5) == "sqrt(")
+                {
+                    pos += 5;
+                    System.Numerics.BigInteger inner = BigExpr(s, ref pos);
+                    Expect(s, ref pos, ')');
+                    Expect(s, ref pos, ')');
+                    return ISqrt(inner);        // floor(sqrt(x)) == isqrt(x)
+                }
+                System.Numerics.BigInteger v = BigExpr(s, ref pos);
+                Expect(s, ref pos, ')');
+                return v;                       // floor of an integer is itself
+            }
+
+            System.Numerics.BigInteger arg = BigExpr(s, ref pos);
+            Expect(s, ref pos, ')');
+            return fn switch
+            {
+                "isqrt" => ISqrt(arg),
+                "abs" => System.Numerics.BigInteger.Abs(arg),
+                "sqrt" => PerfectSqrt(arg),
+                _ => throw new FormatException($"unknown function {fn}"),
+            };
+        }
+
         if (pos < s.Length && s[pos] == '(')
         {
             pos++;
@@ -358,6 +399,37 @@ public static class ExactArithmetic
         decimal p = 1m;
         for (int i = 0; i < n; i++) p *= 10m;
         return p;
+    }
+
+    private static void Expect(string s, ref int pos, char c)
+    {
+        SkipSpace(s, ref pos);
+        if (pos >= s.Length || s[pos] != c) throw new FormatException($"expected {c}");
+        pos++;
+    }
+
+    /// <summary>Exact integer square root (floor of the real root) via Newton's
+    /// method — correct at any magnitude.</summary>
+    private static System.Numerics.BigInteger ISqrt(System.Numerics.BigInteger n)
+    {
+        if (n < 0) throw new FormatException("sqrt of negative");
+        if (n < 2) return n;
+        System.Numerics.BigInteger x = System.Numerics.BigInteger.One << ((int)(n.GetBitLength() + 1) / 2);
+        while (true)
+        {
+            System.Numerics.BigInteger y = (x + n / x) >> 1;
+            if (y >= x) return x;
+            x = y;
+        }
+    }
+
+    /// <summary>Exact square root iff a perfect square; otherwise declines
+    /// (an irrational root is not an exact integer answer).</summary>
+    private static System.Numerics.BigInteger PerfectSqrt(System.Numerics.BigInteger n)
+    {
+        System.Numerics.BigInteger r = ISqrt(n);
+        if (r * r != n) throw new FormatException("not a perfect square");
+        return r;
     }
 
     /// <summary>Canonical rendering: trims trailing zeros, no scientific notation, -0 → 0.</summary>

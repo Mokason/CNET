@@ -68,7 +68,9 @@ public sealed class MemorySession
         "act before answering: reply with EXACTLY one line and nothing else.\n" +
         "RECALL: <two to five keywords>   — search stored conversation memory\n" +
         "READ: <document keywords>        — pull matching document sections\n" +
-        "CALC: <arithmetic expression>    — exact computation, never wrong\n" +
+        "CALC: <arithmetic expression>    — exact computation, never wrong;\n" +
+        "     USE IT for ANY non-trivial arithmetic — large products, powers, roots\n" +
+        "     (isqrt/sqrt/floor/abs supported) — instead of computing digits yourself\n" +
         "Results will be added and you will be asked again. Use the words the " +
         "original material would use. Only after a search finds nothing, say the " +
         "memory or documents do not cover it — never invent.\n";
