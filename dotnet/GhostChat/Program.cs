@@ -236,23 +236,32 @@ while (true)
     if (input.StartsWith("/deftool ", StringComparison.Ordinal))
     {
         // Generate-and-verify a tool: the model proposes a declarative spec,
-        // the verifier certifies it against its own examples.
-        var forge = new ToolForge(tools);
-        // Forge needs headroom past a thinking model's reasoning phase (which
-        // produces no content), and no hidden reasoning helps here.
-        var probe = session.Generate(new CnetHarnessGenerateOptions
+        // the verifier certifies it against its own examples. The raw spec is
+        // scaffolding, not conversation — do not stream it.
+        if (ollama is not null) ollama.OnToken = null;
+        try
         {
-            System = ToolForge.Protocol,
-            User = "Define a tool for: " + input["/deftool ".Length..].Trim(),
-            Role = "forge",
-            MaxTokens = Math.Max(1200u, a.MaxTokens),
-            Sampling = CnetHarnessSamplingMode.Focused,
-            Think = false,
-        });
-        var (spec, verdict) = forge.TryForge(probe.Text);
-        Console.WriteLine(verdict.Certified
-            ? $"  🔧 certified {spec!.Name} [{spec.Kind}] — {verdict.Passed}/{verdict.Total} examples reproduced; usable via TOOL:"
-            : $"  ✗ not certified: {verdict.FirstFailure} ({verdict.Passed}/{verdict.Total} passed)");
+            var forge = new ToolForge(tools);
+            // Forge needs headroom past a thinking model's reasoning phase
+            // (which produces no content); no hidden reasoning helps here.
+            var probe = session.Generate(new CnetHarnessGenerateOptions
+            {
+                System = ToolForge.Protocol,
+                User = "Define a tool for: " + input["/deftool ".Length..].Trim(),
+                Role = "forge",
+                MaxTokens = Math.Max(1200u, a.MaxTokens),
+                Sampling = CnetHarnessSamplingMode.Focused,
+                Think = false,
+            });
+            var (spec, verdict) = forge.TryForge(probe.Text);
+            Console.WriteLine(verdict.Certified
+                ? $"  🔧 certified {spec!.Name} [{spec.Kind}] — {verdict.Passed}/{verdict.Total} examples reproduced; usable via TOOL:"
+                : $"  ✗ not certified: {verdict.FirstFailure} ({verdict.Passed}/{verdict.Total} passed)");
+        }
+        finally
+        {
+            if (ollama is not null) ollama.OnToken = chunk => Console.Write(chunk);
+        }
         continue;
     }
 
