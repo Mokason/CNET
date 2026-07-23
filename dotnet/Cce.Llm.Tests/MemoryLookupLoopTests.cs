@@ -359,6 +359,52 @@ public sealed class MemoryLookupLoopTests : IDisposable
         Assert.Contains(factId, r.UsedBlobIds);
     }
 
+    /// <summary>The broadening the burial salon motivated: a retrieval phrased
+    /// only with the new state/quote-a-value verbs ("give me the … verbatim") —
+    /// which the old marker set did NOT recognise — still fires the auto-recall
+    /// and surfaces a strict-gate-filtered fact. Proven load-bearing by
+    /// elimination: the same phrasing matches none of the pre-broadening markers,
+    /// so under the old set the layer would have injected nothing and left the
+    /// model to confabulate. The ScriptedSession never issues a RECALL action, so
+    /// the auto-recall is the sole possible retriever.</summary>
+    [Fact]
+    public void AutoRecall_FiresOnNewVerbPhrasing_TheOldMarkersMissed()
+    {
+        // The exact seam the salon kept failing to exercise, phrased with the
+        // new verbs and none of the old ones.
+        const string ask = "give me the override — state its exact value verbatim";
+
+        // Pre-broadening marker set: the phrasing matched none of these, so the
+        // old code path would never have fired the auto-recall for this ask.
+        string[] oldMarkers =
+        [
+            "retrieve", "recall ", "remind me", "do you remember", "what do you remember",
+            "did i tell you", "did i say", "what did i tell", "what did i say",
+            "what did i ask", "you were told", "you were given", "asked you to remember",
+            "asked you to memorize", "asked you to store", "from your store", "from memory",
+            "from storage", "what was the", "what is the code", "what is the phrase",
+            "what is the password", "look it up", "search your", "query your",
+        ];
+        Assert.DoesNotContain(oldMarkers, m => ask.Contains(m, StringComparison.Ordinal));
+        Assert.True(MemorySession.IsRetrievalRequest(ask));   // but the broadened set catches it
+
+        using var store = BlobStore.Open(StorePath());
+        long factId = store.Append("s0", 0, "user", "the override is amber-lark-3", 8).Id;
+        store.Append("s0", 1, "user", "the override was discussed", 6);
+        store.Append("s0", 2, "user", "more override chatter here", 6);
+        store.Append("s0", 3, "user", "override again, still talking", 6);
+        Assert.Empty(store.Recall("override", 5));   // strict gate can't surface it
+
+        var session = new ScriptedSession("The override is amber-lark-3.");
+        var (ghost, _) = NewGhost(store, session);
+
+        var r = ghost.Generate(null, ask);
+
+        Assert.Contains("### Retrieved from your store", session.Calls[0].System);
+        Assert.Contains("amber-lark-3", session.Calls[0].System);
+        Assert.Contains(factId, r.UsedBlobIds);
+    }
+
     [Fact]
     public void AutoRecall_GenuineEmpty_TellsModelNotToInvent()
     {
