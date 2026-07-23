@@ -184,7 +184,7 @@ if (ollama is not null)
 // Hermes (a peer agent, one-shot per turn) and Ghost (this full CNET stack)
 // converse live: Hermes speaks, Ghost answers through memory/exact/tools with
 // its receipts, Hermes replies, and so on. The human watches (Ctrl-C to stop).
-if (a.Peer is not null)
+if (a.Peer is not null || a.PeerScript is not null)
 {
     const string cyan = "\u001b[36m", green = "\u001b[32m", dim = "\u001b[2m", reset = "\u001b[0m";
     string peerPersona =
@@ -214,15 +214,19 @@ if (a.Peer is not null)
         "'Retrieved from your store' appears in your context, that is the store " +
         "answering a retrieval — report its contents verbatim as the answer; if it says " +
         "nothing was found, say you could not retrieve it and do not invent a value.";
-    string message = a.PeerSeed ??
+    List<string>? script = a.PeerScript;
+    uint rounds = script is not null ? (uint)script.Count : a.PeerRounds;
+    string message = script is not null ? script[0]
+        : a.PeerSeed ??
         "Hello Ghost. We two agents share this room now. I am curious what it is actually " +
         "like to be you — what do you remember, and what can you do that a plain language " +
         "model cannot? Test me if you like.";
 
-    Console.WriteLine($"{dim}── salon: Hermes ⇄ Ghost ({a.PeerRounds} rounds) ──{reset}\n");
+    string who = script is not null ? "SCRIPTED peer" : "Hermes";
+    Console.WriteLine($"{dim}── salon: {who} ⇄ Ghost ({rounds} rounds) ──{reset}\n");
     var transcript = new List<(string Who, string Text)>();
 
-    for (uint round = 1; round <= a.PeerRounds; round++)
+    for (uint round = 1; round <= rounds; round++)
     {
         Console.WriteLine($"{cyan}🔷 hermes>{reset} {message}\n");
         transcript.Add(("Hermes", message));
@@ -237,6 +241,7 @@ if (a.Peer is not null)
             ghostReply = r.Result.Text.Trim();
             string tag = r.Exact ? " ·exact" : r.CertifiedUnit is not null ? " ·certified"
                        : r.Lookups.Count > 0 ? $" ·{r.Lookups.Count} action(s)" : "";
+            if (r.AutoRecalled) tag += " ·auto-recall";   // the layer's relaxed retrieval fired
             // Thinking-model burnout: a capped answer with no visible text. Say
             // so honestly and hand the peer a note, rather than leaving silence
             // it mistakes for a broken channel.
@@ -257,8 +262,10 @@ if (a.Peer is not null)
         }
         transcript.Add(("Ghost", ghostReply));
 
-        if (round == a.PeerRounds) break;
-        message = PeerSay(a.PeerBin, peerPersona, transcript, ghostReply);
+        if (round == rounds) break;
+        message = script is not null
+            ? script[(int)round]                             // next scripted turn (0-based)
+            : PeerSay(a.PeerBin, peerPersona, transcript, ghostReply);
         if (string.IsNullOrWhiteSpace(message))
         {
             Console.WriteLine($"{dim}── Hermes fell silent; ending salon ──{reset}");
@@ -679,6 +686,35 @@ static Args? ParseArgs(string[] argv, out bool helpRequested)
             case "--peer": a.Peer = Next(); break;
             case "--peer-bin": a.PeerBin = Next(); break;
             case "--peer-seed": a.PeerSeed = Next(); break;
+            case "--peer-script":
+            {
+                string? path = Next();
+                if (path is null || !File.Exists(path))
+                {
+                    Console.Error.WriteLine($"--peer-script: file not found: {path}");
+                    return null;
+                }
+                var recs = new List<string>();
+                var cur = new System.Text.StringBuilder();
+                foreach (string ln in File.ReadAllLines(path))
+                {
+                    if (ln.TrimStart().StartsWith('#')) continue;   // comment line
+                    if (ln.Trim() == "%%%")
+                    {
+                        if (cur.ToString().Trim().Length > 0) recs.Add(cur.ToString().Trim());
+                        cur.Clear();
+                    }
+                    else cur.AppendLine(ln);
+                }
+                if (cur.ToString().Trim().Length > 0) recs.Add(cur.ToString().Trim());
+                if (recs.Count == 0)
+                {
+                    Console.Error.WriteLine("--peer-script: no turns (separate turns with a line: %%%)");
+                    return null;
+                }
+                a.PeerScript = recs;
+                break;
+            }
             case "--peer-rounds":
                 if (!ParseU("--peer-rounds", out uint pr)) return null;
                 a.PeerRounds = pr; break;
@@ -736,6 +772,11 @@ struct Args
         Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
         ".hermes", "hermes-agent", "venv", "bin", "hermes");
     public string? PeerSeed = null;
+    // Scripted peer: the exact utterances Ghost faces, in order, replacing the
+    // live Hermes generation. Forces a precise phrasing a free peer would drift
+    // from — the only way to drive one specific code path (e.g. a retrieval
+    // marker) live. Turns are separated by a line containing only %%%.
+    public List<string>? PeerScript = null;
     public uint PeerRounds = 6;
     public CnetHarnessSamplingMode Sampling = CnetHarnessSamplingMode.Balanced;
     public string OllamaUrl = "http://localhost:11434";

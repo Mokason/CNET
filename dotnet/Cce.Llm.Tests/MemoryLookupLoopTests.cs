@@ -400,6 +400,7 @@ public sealed class MemoryLookupLoopTests : IDisposable
 
         var r = ghost.Generate(null, ask);
 
+        Assert.True(r.AutoRecalled);   // the observable signal the scripted salon surfaces
         Assert.Contains("### Retrieved from your store", session.Calls[0].System);
         Assert.Contains("amber-lark-3", session.Calls[0].System);
         Assert.Contains(factId, r.UsedBlobIds);
@@ -429,8 +430,9 @@ public sealed class MemoryLookupLoopTests : IDisposable
         var session = new ScriptedSession("A nice poem about waves.");
         var (ghost, _) = NewGhost(store, session);
 
-        ghost.Generate(null, "write me a short poem about the ocean");
+        var r = ghost.Generate(null, "write me a short poem about the ocean");
 
+        Assert.False(r.AutoRecalled);
         Assert.DoesNotContain("### Retrieved from your store", session.Calls[0].System ?? "");
     }
 }

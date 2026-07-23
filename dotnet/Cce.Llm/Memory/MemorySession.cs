@@ -30,6 +30,10 @@ public sealed record LookupRound(string Query, IReadOnlyList<long> BlobIds,
 /// <param name="Reflections">Output-reflection rounds: the judge flagged a
 /// draft and one clean regeneration was attempted. Bounded at 1 by design —
 /// awareness without a cap is a system stuck with its own thoughts.</param>
+/// <param name="AutoRecalled">The layer's own relaxed auto-recall fired for this
+/// turn: an explicit retrieval ask triggered a deterministic store search whose
+/// result (a hit block or an honest "nothing found") was injected before the
+/// model ran — independent of whether the model also chose to RECALL.</param>
 public sealed record MemoryGenerationResult(
     CnetHarnessGenerationResult Result,
     IReadOnlyList<long> UsedBlobIds,
@@ -39,7 +43,8 @@ public sealed record MemoryGenerationResult(
     int AutoContinues,
     bool Exact = false,
     string? CertifiedUnit = null,
-    int Reflections = 0);
+    int Reflections = 0,
+    bool AutoRecalled = false);
 
 /// <summary>
 /// Composes an <see cref="ICnetInferenceSession"/> with a
@@ -343,6 +348,7 @@ public sealed class MemorySession
         // not). Search the store ourselves with a RELAXED gate — an explicit
         // ask lowers the precision bar — and inject what we find, or an honest
         // "searched, nothing" so the model cannot invent a false absence.
+        bool autoRecalled = false;
         if (!continuing && IsRetrievalRequest(user))
         {
             List<MemoryBlob> retrieved = _memory
@@ -366,6 +372,7 @@ public sealed class MemorySession
             {
                 systemText += rblock.ToString();
                 headroom -= rcost;
+                autoRecalled = true;
             }
         }
 
@@ -684,7 +691,8 @@ public sealed class MemorySession
 
         return new MemoryGenerationResult(result, usedIds, systemText, lookups,
                                           truncated, autoRounds,
-                                          Reflections: reflections);
+                                          Reflections: reflections,
+                                          AutoRecalled: autoRecalled);
     }
 
     /// <summary>

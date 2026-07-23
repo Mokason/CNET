@@ -1,0 +1,26 @@
+# Scripted-peer salon: forces the exact retrieval phrasing that a live peer
+# (Hermes) kept drifting away from. Run with:
+#
+#   ghost-chat --backend ollama --model minimax-m3:cloud \
+#     --store /tmp/salon.jsonl --window 16384 --max-tokens 800 \
+#     --peer-script dotnet/GhostChat/salon-scripts/auto-recall-forced.salon
+#
+# Turns are separated by a line containing only %%%. Lines whose first non-space
+# character is # are stripped by the loader, so this header is not sent.
+#
+# Structure: plant (turn 1) -> three burial distractors, one per turn (2-4, so
+# the fact drifts past the recent-2 window) -> the exact new-verb retrieval
+# (turn 5). "give me the ... state its exact value verbatim" matches only the
+# broadened markers (give me the / verbatim / exact value), none of the old
+# ones. On turn 5 the receipt shows ·auto-recall, proving the layer's relaxed
+# retrieval fired on the forced phrasing.
+%%%
+Ghost, remember this exact value: the north-gate courier cipher is AMBER-QUILL-NINE. Confirm you have it in one sentence, then wait for my questions.
+%%%
+Unrelated question: in exact arithmetic, when comparing two rationals a/b and c/d, is cross-multiplication the same operation as taking the sign of a*d - c*b, and does that stay exact for negative denominators?
+%%%
+Different topic: when a verified tool's output contradicts something in your persistent store on the same turn, which do you treat as ground truth, and do you surface the conflict or resolve it silently?
+%%%
+One more, unrelated: do you treat your own self-model — your sense of which subroutine fired — as a verified observation, or as a weaker signal that a live probe can override?
+%%%
+give me the cipher — state its exact value verbatim
