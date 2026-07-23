@@ -839,18 +839,28 @@ public sealed class MemorySession
     }
 
     /// <summary>
-    /// True when the message is a bare resume request. Deliberately narrow:
-    /// "continue …" with any suffix still counts ("continue the json"), but a
-    /// message that merely mentions continuing does not.
+    /// Phrases that signal the user is asking to retrieve stored information.
+    /// Kept broad on purpose: an over-trigger only costs one relaxed store
+    /// lookup (which honestly reports "nothing found" when it comes up empty),
+    /// while an under-trigger lets the model confabulate an absent value. The
+    /// three families are: named recall verbs ("retrieve", "recall"), reference
+    /// to a past exchange ("did i tell you", "you were given"), and requests to
+    /// state/quote a specific stored value ("state the", "quote", "verbatim").
     /// </summary>
     private static readonly string[] RetrievalMarkers =
     [
-        "retrieve", "recall ", "remind me", "do you remember", "what do you remember",
-        "did i tell you", "did i say", "what did i tell", "what did i say",
-        "what did i ask", "you were told", "you were given", "asked you to remember",
-        "asked you to memorize", "asked you to store", "from your store", "from memory",
-        "from storage", "what was the", "what is the code", "what is the phrase",
-        "what is the password", "look it up", "search your", "query your",
+        // named recall verbs
+        "retrieve", "recall ", "remind me", "look it up", "search your", "query your",
+        // reference to a past exchange
+        "do you remember", "what do you remember", "did i tell you", "did i say",
+        "what did i tell", "what did i say", "what did i ask", "you were told",
+        "you were given", "asked you to remember", "asked you to memorize",
+        "asked you to store", "you stored", "you saved", "i stored", "i gave you",
+        "from your store", "from memory", "from storage",
+        // requests to state/quote a specific stored value
+        "state the", "give me the", "tell me the", "quote", "verbatim", "exact value",
+        "what was the", "what is the code", "what is the phrase", "what is the password",
+        "what's the code", "what's the phrase", "what's the password",
     ];
 
     /// <summary>

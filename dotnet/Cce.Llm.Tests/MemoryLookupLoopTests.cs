@@ -317,6 +317,13 @@ public sealed class MemoryLookupLoopTests : IDisposable
     [InlineData("what did i tell you earlier", true)]
     [InlineData("remind me of the code", true)]
     [InlineData("what is the code for sector nine", true)]
+    // state/quote-a-stored-value family — the seam the burial salon exposed
+    [InlineData("state the failsafe token verbatim", true)]
+    [InlineData("quote its exact value", true)]
+    [InlineData("give me the token you were given", true)]
+    [InlineData("tell me the passphrase from earlier", true)]
+    [InlineData("what's the password i set", true)]
+    [InlineData("the value you stored for bay seven", true)]
     [InlineData("write a poem about the sea", false)]
     [InlineData("what is 2 + 2", false)]
     public void IsRetrievalRequest_DetectsExplicitAsks(string user, bool expected) =>
