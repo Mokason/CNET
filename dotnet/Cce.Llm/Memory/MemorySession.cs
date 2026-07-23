@@ -23,6 +23,9 @@ public sealed record LookupRound(string Query, IReadOnlyList<long> BlobIds);
 /// generated; no model was invoked and no memory context was built.</param>
 /// <param name="CertifiedUnit">Answered from certified knowledge: the sealed
 /// specialist whose record was served verbatim; null for model answers.</param>
+/// <param name="Reflections">Output-reflection rounds: the judge flagged a
+/// draft and one clean regeneration was attempted. Bounded at 1 by design —
+/// awareness without a cap is a system stuck with its own thoughts.</param>
 public sealed record MemoryGenerationResult(
     CnetHarnessGenerationResult Result,
     IReadOnlyList<long> UsedBlobIds,
@@ -31,7 +34,8 @@ public sealed record MemoryGenerationResult(
     bool Truncated,
     int AutoContinues,
     bool Exact = false,
-    string? CertifiedUnit = null);
+    string? CertifiedUnit = null,
+    int Reflections = 0);
 
 /// <summary>
 /// Composes an <see cref="ICnetInferenceSession"/> with a
@@ -498,12 +502,51 @@ public sealed class MemorySession
             GenerationMs = totalGenMs,
         };
 
+        // ── reflection: taste inspects the draft before the user sees it ──
+        // Multi-layer thought, bounded: if the judge flags the assembled
+        // answer as Bad (degenerate repetition, tangle, junk), regenerate
+        // ONCE with the critique in context and keep whichever draft scores
+        // better. One round only — a reflection loop without a cap is a
+        // system stuck with its own thoughts. The judge still certifies
+        // nothing: both drafts are model output; taste just picks.
+        int reflections = 0;
+        if (Judge is not null && !continuing &&
+            !string.IsNullOrWhiteSpace(fullText))
+        {
+            Judgment.Judgment draftJudgment = Judge.Judge(fullText);
+            if (draftJudgment.Value == Judgment.Verdict.Bad)
+            {
+                string critique =
+                    "\n(Your previous draft was rejected by an output-quality filter: " +
+                    string.Join(", ", draftJudgment.TopFeatures) +
+                    ". Answer the user's message directly and cleanly — no unrelated " +
+                    "content, no repetition.)\n";
+                CnetHarnessGenerationResult retry = GenerateOnce(
+                    context.SystemText + critique, user, mainBudget, sampling,
+                    seed + 1, role);
+                reflections = 1;
+                totalGenerated += retry.GeneratedTokens;
+                if (!string.IsNullOrWhiteSpace(retry.Text) &&
+                    Judge.Judge(retry.Text).Score > draftJudgment.Score)
+                {
+                    fullText = retry.Text;
+                    result = retry with
+                    {
+                        Text = fullText,
+                        GeneratedTokens = totalGenerated,
+                    };
+                    capped = false;   // the reflected answer stands as-is
+                }
+            }
+        }
+
         // Durable usage signal for consolidation: which memories actually
         // earned a slot in this prompt (gate-recalled and looked-up alike).
         _memory.RecordUsage(usedIds);
 
-        // Only the real exchange is stored — RECALL scaffolding and resume
-        // prompts never become memory, and the answer is stored as one whole.
+        // Only the real exchange is stored — RECALL scaffolding, resume
+        // prompts, and REJECTED reflection drafts never become memory: the
+        // store keeps exactly what the user saw.
         _memory.Remember("user", user);
         _memory.Remember("assistant", fullText);
         _memory.NextTurn();
@@ -515,7 +558,9 @@ public sealed class MemorySession
         bool truncated = capped && !string.IsNullOrWhiteSpace(fullText);
         _pendingContinuation = truncated ? fullText : null;
 
-        return new MemoryGenerationResult(result, usedIds, systemText, lookups, truncated, autoRounds);
+        return new MemoryGenerationResult(result, usedIds, systemText, lookups,
+                                          truncated, autoRounds,
+                                          Reflections: reflections);
     }
 
     /// <summary>

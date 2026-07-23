@@ -133,4 +133,86 @@ public sealed class AdaptiveJudgeTests : IDisposable
 
         Assert.Equal(2, judge.EvidenceCount);   // wrong answer bad + correction good
     }
+
+    // ─────────────── reflection: bounded multi-layer thought ───────────────
+
+    private sealed class ScriptedSession(params string[] outputs)
+        : CNET.Cce.CnetHarness.ICnetInferenceSession
+    {
+        private readonly Queue<string> _script = new(outputs);
+        public List<CNET.Cce.CnetHarness.CnetHarnessGenerateOptions> Calls { get; } = new();
+
+        public CNET.Cce.CnetHarness.CnetHarnessGenerationResult Generate(
+            CNET.Cce.CnetHarness.CnetHarnessGenerateOptions options)
+        {
+            Calls.Add(options);
+            string text = _script.Count > 0 ? _script.Dequeue() : "";
+            return new CNET.Cce.CnetHarness.CnetHarnessGenerationResult(text, 10, 5, 1, 1, 0, 0,
+                CNET.Cce.CnetHarness.CnetHarnessSamplingMode.Balanced, false, 0, 1, 0, 0);
+        }
+
+        public CNET.Cce.CnetHarness.CnetHarnessRouteInfo ProbeRoute(string role,
+            CNET.Cce.CnetHarness.CnetHarnessSamplingMode overrideMode =
+                CNET.Cce.CnetHarness.CnetHarnessSamplingMode.Auto) =>
+            throw new NotSupportedException();
+
+        public void Dispose() { }
+    }
+
+    [Fact]
+    public void Reflection_RegeneratesAFlaggedDraft_StoresWhatTheUserSaw()
+    {
+        string storePath = Path.Combine(_dir, "r.jsonl");
+        using var store = BlobStore.Open(storePath);
+        var session = new ScriptedSession(Degenerate(), Clean());
+        var ghost = new MemorySession(session, new ConversationMemory(store, t => t.Length / 4 + 1),
+                                      4096, t => t.Length / 4 + 1)
+        {
+            Judge = new AdaptiveJudge(_dir),
+        };
+
+        var r = ghost.Generate(null, "tell me about the lighthouse keeper");
+
+        Assert.Equal(1, r.Reflections);
+        Assert.Equal(Clean(), r.Result.Text);                       // clean draft won
+        Assert.Equal(2, session.Calls.Count);
+        Assert.Contains("output-quality filter", session.Calls[1].System);
+        Assert.Contains(store.All(), b => b.Text == Clean());       // stored = shown
+        Assert.DoesNotContain(store.All(), b => b.Text == Degenerate());
+    }
+
+    [Fact]
+    public void Reflection_KeepsTheDraft_WhenTheRetryIsWorse()
+    {
+        string storePath = Path.Combine(_dir, "r2.jsonl");
+        using var store = BlobStore.Open(storePath);
+        var session = new ScriptedSession(Degenerate(), Degenerate() + Degenerate());
+        var ghost = new MemorySession(session, new ConversationMemory(store, t => t.Length / 4 + 1),
+                                      4096, t => t.Length / 4 + 1)
+        {
+            Judge = new AdaptiveJudge(_dir),
+        };
+
+        var r = ghost.Generate(null, "hello there");
+
+        Assert.Equal(1, r.Reflections);                             // one round, then stop
+        Assert.Equal(2, session.Calls.Count);                       // never loops
+    }
+
+    [Fact]
+    public void Reflection_LeavesCleanAnswersUntouched()
+    {
+        string storePath = Path.Combine(_dir, "r3.jsonl");
+        using var store = BlobStore.Open(storePath);
+        var session = new ScriptedSession(Clean());
+        var ghost = new MemorySession(session, new ConversationMemory(store, t => t.Length / 4 + 1),
+                                      4096, t => t.Length / 4 + 1)
+        {
+            Judge = new AdaptiveJudge(_dir),
+        };
+
+        var r = ghost.Generate(null, "tell me about the lighthouse");
+        Assert.Equal(0, r.Reflections);
+        Assert.Single(session.Calls);
+    }
 }

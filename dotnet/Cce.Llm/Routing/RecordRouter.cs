@@ -47,6 +47,15 @@ public sealed class RecordRouter
     /// <summary>Distinct grounded terms required to route (subject grounding).</summary>
     public int MinGroundedTerms { get; init; } = 3;
 
+    /// <summary>
+    /// Fraction of the QUESTION's distinctive words the record must cover.
+    /// Learned live: absolute-count grounding scales terribly with record
+    /// size — a chatty sentence shares three words with any large record.
+    /// Coverage is proportional, so focused questions route and conversation
+    /// does not.
+    /// </summary>
+    public double MinQuestionCoverage { get; init; } = 0.6;
+
     /// <summary>Below this served-vs-corrected ratio a unit stops serving.</summary>
     public double MinReliability { get; init; } = 0.6;
 
@@ -70,9 +79,17 @@ public sealed class RecordRouter
         CertifiedServe? best = null;
         int bestScore = 0;
 
+        var questionDistinct = questionWords.Where(w => w.Length >= 4).ToHashSet();
+        if (questionDistinct.Count < MinGroundedTerms) return null;
+
         foreach (string path in Directory.GetFiles(_recordsDir, "skill_*.txt").Order())
         {
             string tag = Path.GetFileNameWithoutExtension(path);
+            // Only answer-shaped families serve: corrections (the user's own
+            // words) and verified records. Observation records are teaching
+            // evidence — serving one as an answer was the live tangle bug.
+            if (!tag.StartsWith("skill_corr_", StringComparison.Ordinal) &&
+                !tag.StartsWith("skill_vrf_", StringComparison.Ordinal)) continue;
             string unit = "acq_" + tag;
             if (!LedgerCertifiesClosed(tag, unit)) continue;
 
@@ -89,6 +106,9 @@ public sealed class RecordRouter
                                         .Where(questionWords.Contains)
                                         .Distinct().Order().ToList();
             if (grounded.Count < MinGroundedTerms) continue;
+            // Proportional: the record must cover MOST of what the question
+            // asks about, not merely brush against it.
+            if ((double)grounded.Count / questionDistinct.Count < MinQuestionCoverage) continue;
             if (grounded.Count > bestScore)
             {
                 bestScore = grounded.Count;

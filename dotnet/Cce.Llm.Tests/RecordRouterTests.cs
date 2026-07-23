@@ -167,4 +167,41 @@ public sealed class RecordRouterTests : IDisposable
         Assert.True(r.Exact);                            // computed beats certified
         Assert.Null(r.CertifiedUnit);
     }
+
+    // ─────────────── the live tangle bug, pinned ───────────────
+
+    /// <summary>The exact live failure: an observation record (conversation
+    /// evidence, not answer-shaped) served as a chat answer. obs records are
+    /// teaching material — they must NEVER serve.</summary>
+    [Fact]
+    public void ObservationRecords_NeverServe_EvenWhenGrounded()
+    {
+        Seal("skill_obs_afd18cdc",
+            "#v2\nexplore harder problems in physics and philosophy with beacon lighthouse frequency\n");
+        Assert.Null(NewRouter().TryRoute(
+            "what was the beacon frequency at the lighthouse in physics?"));
+    }
+
+    /// <summary>Absolute-count grounding scaled terribly with record size: a
+    /// chatty sentence shares three words with any large record. Coverage is
+    /// proportional to the QUESTION now.</summary>
+    [Fact]
+    public void ChattyMessage_DoesNotGround_AgainstALargeRecord()
+    {
+        // A large record sharing a FEW conversational words (the old
+        // absolute-count guard passed at >=3 shared) but not the question's
+        // actual subject.
+        string big = "#v2\nthings could give route " +
+            string.Join(" ", Enumerable.Range(0, 40).Select(i => $"unrelated{i}")) +
+            " beacon frequency lighthouse megahertz\n";
+        Seal("skill_vrf_bigrec", big);
+
+        // Four shared words out of ~16 distinctive: low coverage, declines.
+        Assert.Null(NewRouter().TryRoute(
+            "i am thinking more of the things i could give you so you can improve " +
+            "while not being just a parrot because majority of created parts these days go that route"));
+
+        // A focused question still routes: high coverage.
+        Assert.NotNull(NewRouter().TryRoute("beacon frequency lighthouse megahertz?"));
+    }
 }

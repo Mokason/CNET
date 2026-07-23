@@ -334,7 +334,8 @@ while (true)
         string receipts = r.UsedBlobIds.Count > 0
             ? string.Join(" ", r.UsedBlobIds.Select(i => $"#{i}"))
             : "none";
-        string autoNote = r.AutoContinues > 0 ? $" | auto-continued ×{r.AutoContinues}" : "";
+        string autoNote = (r.AutoContinues > 0 ? $" | auto-continued ×{r.AutoContinues}" : "") +
+                          (r.Reflections > 0 ? " | reflected" : "");
         Console.WriteLine(r.Exact
             ? $"  ── exact: computed in {sw.Elapsed.TotalMilliseconds:F1}ms — no model, cannot be wrong ──"
             : r.CertifiedUnit is not null
