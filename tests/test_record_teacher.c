@@ -122,15 +122,30 @@ int main(void) {
     check(cnet_record_bind(&lane, records_dir, words_path, 0) == 0,
           "bind before ingest finds no candidate gaps yet");
 
-    check(gap_lane_tick(&lane, &tick, 0) == 0 && tick.inbox_ingested == 1,
+    /* generate-and-verify records (skill_vrf_*) are record-owned too */
+    write_file("tmp_record_teacher.records/skill_vrf_t2.txt",
+               "port nine is correct");
+    {
+        Port in_port = onehot_port("w_cur", 1);
+        Port goal_port = onehot_port("skill_vrf_t2", 1);
+        check(cnet_record_tag_owned("skill_vrf_t2") &&
+              cnet_record_tag_owned("skill_corr_t1") &&
+              cnet_record_tag_owned("skill_obs_t3") &&
+              !cnet_record_tag_owned("skill_gh_x"),
+              "record-owned tag families are corr_, vrf_, obs_ exactly");
+        check(gap_inbox_note_no_plan(inbox_path, in_port, goal_port) == 0,
+              "verified-record gap noted to the inbox");
+    }
+
+    check(gap_lane_tick(&lane, &tick, 0) == 0 && tick.inbox_ingested == 2,
           "tick ingests the correction gap");
     /* The gap either parks waiting_oracle (no teacher yet) or stays open;
        binding now must find it. */
-    check(cnet_record_bind(&lane, records_dir, words_path, 0) == 1,
-          "record oracle binds to the ingested gap");
+    check(cnet_record_bind(&lane, records_dir, words_path, 0) == 2,
+          "record oracles bind to both record-owned gaps");
 
-    check(gap_lane_tick(&lane, &tick, 0) == 0 && tick.drain.closed == 1,
-          "drain closes the gap: mined from the RECORD, trained, sealed");
+    check(gap_lane_tick(&lane, &tick, 0) == 0 && tick.drain.closed == 2,
+          "drain closes both gaps: mined from RECORDS, trained, sealed");
     check(tick.drain.last_verdict == CERT_PROVEN,
           "certified as PROOF over the whole window domain");
 

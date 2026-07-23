@@ -17,6 +17,7 @@ using CNET.Cce.CnetHarness;
 using CNET.Cce.Llm;
 using CNET.Cce.Llm.Memory;
 using CNET.Cce.Llm.Ollama;
+using CNET.Cce.Llm.Verify;
 
 var args_ = ParseArgs(args, out bool helpRequested);
 if (args_ is null) return helpRequested ? 0 : 2;
@@ -122,7 +123,7 @@ ghost.OnLookup = round =>
 Console.WriteLine($"ghost-chat | backend={a.Backend} model={a.Model} window={window}");
 Console.WriteLine($"store={storePath} ({store.Count} memories" +
     (store.CorruptLinesSkipped > 0 ? $", {store.CorruptLinesSkipped} corrupt lines skipped" : "") + ")");
-Console.WriteLine("/exit /stats /show <id> /recall <query> /forget <id> /consolidate [commit]");
+Console.WriteLine("/exit /stats /show <id> /recall <query> /forget <id> /consolidate [commit] /distill <prompt>");
 Console.WriteLine();
 
 // Ollama streams; local backends print at once.
@@ -184,6 +185,43 @@ while (true)
             string snippet = victim.Text.Length > 80 ? victim.Text[..80] + "…" : victim.Text;
             Console.WriteLine($"  forgot [#{forgetId} | {victim.Role}] {snippet}");
             Console.WriteLine("  (the line stays in the store file as history; recall will never serve it again)");
+        }
+        continue;
+    }
+
+    if (input.StartsWith("/distill ", StringComparison.Ordinal))
+    {
+        // Generate-and-verify: sample the model, keep only what the JSON
+        // verifier accepts, distill the survivor into a teaching record.
+        // The model proposes; the parser disposes; the lane certifies.
+        string inbox0 = a.GapInbox ?? Environment.GetEnvironmentVariable("CNET_GAP_INBOX") ?? "";
+        if (inbox0.Length == 0)
+        {
+            Console.WriteLine("  no gap inbox: pass --gap-inbox <path> or set CNET_GAP_INBOX");
+            continue;
+        }
+        string recordsDir0 = inbox0.EndsWith(".inbox", StringComparison.Ordinal)
+            ? inbox0[..^".inbox".Length] + ".records" : inbox0 + ".records";
+        var distiller = new VerifiedRecords(session, new JsonVerifier());
+        Console.WriteLine("  sampling (verifier: json)...");
+        // Candidates are raw material, not conversation — do not stream them.
+        if (ollama is not null) ollama.OnToken = null;
+        try
+        {
+            var receipt = distiller.Distill(input["/distill ".Length..].Trim(),
+                inbox0, recordsDir0, samples: 4, maxTokens: a.MaxTokens);
+            Console.WriteLine(receipt.SkillName is null
+                ? $"  nothing verified in {receipt.Candidates} samples — no record, nothing taught"
+                : $"  verified after {receipt.Candidates} sample(s) -> {receipt.SkillName} " +
+                  $"({receipt.RecordPath}) — the lane certifies it from the record on its next tick");
+        }
+        catch (CnetHarnessException ex)
+        {
+            Console.WriteLine($"  distill error [{ex.Status}]: {ex.Message}");
+        }
+        finally
+        {
+            if (ollama is not null) ollama.OnToken = chunk => Console.Write(chunk);
         }
         continue;
     }

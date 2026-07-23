@@ -509,8 +509,7 @@ static size_t bind_model_teachers(GapLane *L, cce_gguf_qwen2 *m,
            is truth the model didn't produce. Binding the LM here would
            shadow the record teacher (find_oracle returns the first port
            match) and quietly reinstate the parrot. */
-        if (strncmp(goal.tag, CNET_RECORD_TAG_PREFIX,
-                    sizeof CNET_RECORD_TAG_PREFIX - 1) == 0) continue;
+        if (cnet_record_tag_owned(goal.tag)) continue;
         if (!lm_shape_ok(in, goal, vocab, base)) continue;
         /* Auto-learn: rewrite freeform tags so bind name/ports stay teachable */
         if (cnet_auto_learn_enabled()) {

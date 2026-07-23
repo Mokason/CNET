@@ -26,9 +26,18 @@
 extern "C" {
 #endif
 
-/* Gaps this teacher binds: goal tags with this prefix (note_skill output for
- * consolidated corrections). */
+/* Gaps this teacher binds — the record-owned tag families. skill_corr_* are
+ * consolidated user corrections; skill_vrf_* are generate-and-verify records
+ * (model samples that survived a mechanical verifier); skill_obs_* are
+ * surprise-driven observations (fresh conversation contradicting or exceeding
+ * taught knowledge). All certify against record bytes; the LM never teaches
+ * any of them. */
 #define CNET_RECORD_TAG_PREFIX "skill_corr_"
+#define CNET_RECORD_TAG_PREFIX_VRF "skill_vrf_"
+#define CNET_RECORD_TAG_PREFIX_OBS "skill_obs_"
+
+/* True when a goal tag belongs to a record-owned family. */
+CNET_API int cnet_record_tag_owned(const char *tag);
 
 #define CNET_RECORD_W_MAX 4096   /* matches CNET_AUTO_LEARN_W clamp ceiling */
 #define CNET_RECORD_WORD_MAX 32

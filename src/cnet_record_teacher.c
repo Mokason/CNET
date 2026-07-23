@@ -19,6 +19,16 @@ static unsigned long long fnv1a(const void *data, size_t len) {
     return h;
 }
 
+int cnet_record_tag_owned(const char *tag) {
+    if (!tag) return 0;
+    return strncmp(tag, CNET_RECORD_TAG_PREFIX,
+                   sizeof CNET_RECORD_TAG_PREFIX - 1) == 0 ||
+           strncmp(tag, CNET_RECORD_TAG_PREFIX_VRF,
+                   sizeof CNET_RECORD_TAG_PREFIX_VRF - 1) == 0 ||
+           strncmp(tag, CNET_RECORD_TAG_PREFIX_OBS,
+                   sizeof CNET_RECORD_TAG_PREFIX_OBS - 1) == 0;
+}
+
 int cnet_record_words_load(const char *words_path,
                            char (*words)[CNET_RECORD_WORD_MAX], size_t cap) {
     FILE *f;
@@ -124,8 +134,7 @@ size_t cnet_record_bind(GapLane *L, const char *records_dir,
         CnetRecordCtx *ctx;
 
         if (!record_candidate(gap) || gap->kind != GAP_NO_PLAN) continue;
-        if (strncmp(gap->goal_port.tag, CNET_RECORD_TAG_PREFIX,
-                    sizeof CNET_RECORD_TAG_PREFIX - 1) != 0) continue;
+        if (!cnet_record_tag_owned(gap->goal_port.tag)) continue;
         if (gap->input_port.family != PORT_ONEHOT ||
             gap->goal_port.family != PORT_ONEHOT ||
             gap->input_port.field_width != (size_t)w ||
