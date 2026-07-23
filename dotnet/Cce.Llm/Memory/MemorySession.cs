@@ -360,21 +360,21 @@ public sealed class MemorySession
                               "if the answer is not above, say you could not retrieve it, " +
                               "and do not invent a value)\n");
             else
-                // Assertive framing targeting the exact hedge the model produces: it
-                // quotes a retrieved value and then contradicts itself ("it isn't in
-                // the turns I can see") — using absence from its VISIBLE turns as false
-                // evidence of absence, the very inference the store exists to defeat.
+                // Assertive framing: the model tends to quote a retrieved value and
+                // then contradict itself, using absence from its VISIBLE recent turns
+                // as false evidence of absence — the very inference the store exists
+                // to defeat.
                 rblock.Append("The lines below are verbatim excerpts your store returned " +
                               "for THIS request — genuinely in your memory, surfaced by " +
                               "search. They need NOT appear in your recent visible turns; " +
-                              "the store holds far more than what is shown, so \"it isn't in " +
-                              "the turns I can see\" is NOT evidence of absence — this " +
-                              "retrieval IS your check. If a line contains the value the " +
-                              "request asks for, quote that value exactly as your answer; do " +
-                              "NOT deny having it or say nothing was given to you. Match by " +
-                              "meaning, not exact wording — a general term in the request " +
-                              "(e.g. \"the code\") is answered by a more specific stored " +
-                              "phrase that contains it.\n");
+                              "the store holds far more than is shown, so a fact being " +
+                              "absent from the visible conversation is NOT evidence it is " +
+                              "absent from memory — this retrieval IS your check. If a line " +
+                              "contains the value the request asks for, quote that value " +
+                              "exactly as your answer; do NOT deny having it or say nothing " +
+                              "was given to you. Match by meaning, not exact wording — a " +
+                              "general term in the request (e.g. \"the code\") is answered " +
+                              "by a more specific stored phrase that contains it.\n");
             foreach (MemoryBlob b in retrieved)
             {
                 string line = _memory.RenderMemory(b) + "\n";
