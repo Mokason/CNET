@@ -11,6 +11,8 @@ WorkingDirectory=/home/marble/AI/CNET
 Environment=CNET_GAP_INBOX=/home/marble/AI/CNET/soul_gemma4v2_final.cnb.inbox
 # systemd user units do not inherit the shell's DOTNET_ROOT.
 Environment=DOTNET_ROOT=/home/marble/dotnet
+# The curiosity scanner tokenizes against the lane's window vocabulary.
+Environment=CNET_WINDOW_FILE=/home/marble/AI/CNET/english_window_256.txt
 # Self-governance under governors: consolidation and advisories only.
 # Starting the GPU teacher lane stays a human decision unless the operator
 # adds --allow-teacher-start via a drop-in.
