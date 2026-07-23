@@ -50,6 +50,9 @@ public sealed class OrchestratorConfig
 
     /// <summary>Janitor trigger: dead fraction of the store (with at least 10 dead).</summary>
     public double JanitorDeadFraction { get; init; } = 0.25;
+
+    /// <summary>Idle minutes (no store growth) before the sleep phase may run.</summary>
+    public double SleepIdleMinutes { get; init; } = 30;
 }
 
 /// <summary>Planned by policy; the reconciler decides whether it may run now.</summary>
@@ -68,6 +71,9 @@ public sealed class OrchestratorState
 {
     public long LastConsolidatedMaxId { get; set; }
     public long LastCuriosityMaxId { get; set; }
+    public long LastSeenMaxId { get; set; }
+    public DateTime LastGrowthUtc { get; set; }
+    public long SleptForMaxId { get; set; }
     public Dictionary<string, DateTime> LastRunUtc { get; set; } = [];
     public Dictionary<string, int> ConsecutiveFailures { get; set; } = [];
 
@@ -128,6 +134,16 @@ public static class GhostPolicies
                     $"{o.LedgerGhostWaiting} ghost gaps waiting_oracle; teacher start not permitted " +
                     "(run with --allow-teacher-start to let the orchestrator start it)",
                     JournalOnly: true));
+
+        // Rest: genuinely idle (no growth for the idle window) with unslept
+        // material. Idleness is re-verified structurally in the executor —
+        // sleep requires the writer lock, so a live session means awake.
+        bool idle = s.LastGrowthUtc != default &&
+                    (o.NowUtc - s.LastGrowthUtc).TotalMinutes >= c.SleepIdleMinutes;
+        if (idle && o.StoreMaxSeenId > s.SleptForMaxId && o.StoreMaxSeenId > 0)
+            plan.Add(new PlannedAction("sleep",
+                $"idle {(o.NowUtc - s.LastGrowthUtc).TotalMinutes:F0} min with unslept " +
+                $"material (maxId {o.StoreMaxSeenId} > slept {s.SleptForMaxId})"));
 
         // Housekeeping: the store carries archived-able dead weight. The
         // janitor moves history aside, never destroys it — and only compacts
@@ -193,6 +209,14 @@ public sealed class Reconciler(
     /// <summary>Runs one reconcile pass. Returns the decisions taken.</summary>
     public List<Decision> Tick(Observations obs, bool dryRun = false)
     {
+        // The idleness clock: any growth in the store resets it. Kept in
+        // durable state so restarts do not fake a long sleep-worthy idle.
+        if (obs.StoreMaxSeenId != state.LastSeenMaxId || state.LastGrowthUtc == default)
+        {
+            state.LastSeenMaxId = obs.StoreMaxSeenId;
+            state.LastGrowthUtc = obs.NowUtc;
+        }
+
         var decisions = new List<Decision>();
         int executed = 0;
 

@@ -21,6 +21,8 @@ string store = Path.Combine(home, ".cnet-llm", "ghost", "memory.jsonl");
 string? inbox = Environment.GetEnvironmentVariable("CNET_GAP_INBOX");
 string? ledger = null;
 string stateDir = Path.Combine(home, ".cnet-llm", "ghost");
+string model = "minimax-m3:cloud";
+string ollamaUrl = "http://localhost:11434";
 string drainerSvc = "cnet-personal-ai-lane.service";
 string teacherSvc = "cnet-gap-lane.service";
 int intervalSec = 60;
@@ -36,6 +38,8 @@ for (int i = 0; i < args.Length; i++)
         case "--inbox": inbox = Next(); break;
         case "--ledger": ledger = Next(); break;
         case "--state-dir": stateDir = Next() ?? stateDir; break;
+        case "--model": model = Next() ?? model; break;
+        case "--ollama-url": ollamaUrl = Next() ?? ollamaUrl; break;
         case "--drainer-service": drainerSvc = Next() ?? drainerSvc; break;
         case "--teacher-service": teacherSvc = Next() ?? teacherSvc; break;
         case "--interval": intervalSec = int.Parse(Next() ?? "60"); break;
@@ -81,6 +85,25 @@ if (windowFile is not null && windowFile.EndsWith(".txt", StringComparison.Ordin
 
 var executors = new Dictionary<string, Func<PlannedAction, OrchestratorState, string>>
 {
+    ["sleep"] = (_, s) =>
+    {
+        string? recDir = inbox is not null && inbox.EndsWith(".inbox", StringComparison.Ordinal)
+            ? inbox[..^".inbox".Length] + ".records" : null;
+        var sleep = new SleepPhase(store,
+            () => CNET.Cce.Llm.Ollama.OllamaSession.Open(model, ollamaUrl))
+        {
+            Judge = new CNET.Cce.Llm.Judgment.AdaptiveJudge(
+                Path.GetDirectoryName(Path.GetFullPath(store))!),
+        };
+        SleepReport? report = sleep.Run(wordsPath, recDir, inbox);
+        if (report is null) return "awake (a live session holds the store) — will retry";
+        GhostSnapshot after = BlobStore.Snapshot(store);
+        s.SleptForMaxId = after.MaxSeenId;   // dreams count as slept material
+        return $"slept: {report.SessionsSummarized} sessions summarized " +
+               $"({report.SummariesRejected} rejected by taste), " +
+               $"{report.Surprises} surprises re-scanned, " +
+               $"{report.LinesCompacted} lines compacted";
+    },
     ["janitor"] = (_, _) =>
     {
         int archived = BlobStore.Compact(store);
