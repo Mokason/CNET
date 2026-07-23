@@ -148,7 +148,7 @@ public sealed class MemoryLookupLoopTests : IDisposable
 
         // initial + 2 lookup rounds + 1 forced answer
         Assert.Equal(4, session.Calls.Count);
-        Assert.Contains("No more lookups available", session.Calls[3].System);
+        Assert.Contains("No more actions available", session.Calls[3].System);
         Assert.Equal("Fine, here is my answer.", r.Result.Text);
         Assert.Equal(2, r.Lookups.Count);
     }
@@ -167,7 +167,7 @@ public sealed class MemoryLookupLoopTests : IDisposable
 
         var r = ghost.Generate(null, "network access?");
 
-        Assert.Contains("already searched", session.Calls[2].System);
+        Assert.Contains("already done", session.Calls[2].System);
         Assert.Equal(2, r.Lookups.Count);
         Assert.Empty(r.Lookups[1].BlobIds);       // second round served nothing new
         Assert.Equal("The password is grendel-999.", r.Result.Text);

@@ -2,10 +2,14 @@ using CNET.Cce.CnetHarness;
 
 namespace CNET.Cce.Llm.Memory;
 
-/// <summary>One model-directed memory lookup performed during a generation.</summary>
-/// <param name="Query">The keywords the model asked for.</param>
+/// <summary>One model-directed action performed during a generation.</summary>
+/// <param name="Query">The keywords or expression the model asked for.</param>
 /// <param name="BlobIds">What the store served — empty when nothing matched.</param>
-public sealed record LookupRound(string Query, IReadOnlyList<long> BlobIds);
+/// <param name="Kind">"recall" (memory search), "read" (document sections),
+/// or "calc" (exact computation).</param>
+/// <param name="Output">The computed result, for calc actions.</param>
+public sealed record LookupRound(string Query, IReadOnlyList<long> BlobIds,
+                                 string Kind = "recall", string? Output = null);
 
 /// <summary>One memory-augmented generation: the inner result plus provenance.</summary>
 /// <param name="Result">The final result from the inner session.</param>
@@ -58,15 +62,16 @@ public sealed class MemorySession
     /// gate recall, and an empty result is stated rather than papered over.
     /// </summary>
     private const string LookupProtocol =
-        "\n### Memory lookup\n" +
-        "Any memory shown above is only what keyword-matched this question — the " +
-        "store may hold the answer under different words. Before saying you have " +
-        "no record of something the user refers to, search for it: reply with " +
-        "EXACTLY one line and nothing else:\nRECALL: <two to five keywords>\n" +
-        "Use the words the original conversation would have used, not the user's " +
-        "current phrasing. Results will be added and you will be asked again. " +
-        "Only after a lookup finds nothing, say memory does not contain it — " +
-        "never invent memories.\n";
+        "\n### Actions\n" +
+        "Memory and documents shown above are only what keyword-matched this " +
+        "question — the store may hold the answer under different words. You can " +
+        "act before answering: reply with EXACTLY one line and nothing else.\n" +
+        "RECALL: <two to five keywords>   — search stored conversation memory\n" +
+        "READ: <document keywords>        — pull matching document sections\n" +
+        "CALC: <arithmetic expression>    — exact computation, never wrong\n" +
+        "Results will be added and you will be asked again. Use the words the " +
+        "original material would use. Only after a search finds nothing, say the " +
+        "memory or documents do not cover it — never invent.\n";
 
     /// <summary>User-slot instruction for structural resumes.</summary>
     private const string ResumeInstruction =
@@ -327,24 +332,44 @@ public sealed class MemorySession
             think: continuing ? false : null, continueFrom: continueFrom);
 
         int rounds = 0;
-        while (loopEnabled && rounds < _maxLookupRounds && TryParseRecall(result.Text, out string query))
+        while (loopEnabled && rounds < _maxLookupRounds &&
+               TryParseAction(result.Text, out string kind, out string query))
         {
             rounds++;
             var served = new List<long>();
-            string header = $"\n### Lookup \"{query}\"\n";
-            var block = new System.Text.StringBuilder(header);
+            string? output = null;
+            var block = new System.Text.StringBuilder();
 
-            if (!seenQueries.Add(query))
+            if (!seenQueries.Add(kind + ":" + query))
             {
-                block.Append("(already searched — answer now with what is shown)\n");
+                block.Append($"\n### {kind.ToUpperInvariant()} \"{query}\"\n" +
+                             "(already done — answer now with what is shown)\n");
+            }
+            else if (kind == "calc")
+            {
+                // The exact lane as a callable thought-step: computed truth
+                // mid-deliberation, with the same decline discipline.
+                block.Append($"\n### Calculation\n");
+                block.Append(Verify.ExactArithmetic.TryAnswer(query, out string answer)
+                    ? $"{query} = {answer}\n"
+                    : $"{query} — declined (not pure arithmetic; do not guess a value)\n");
+                output = answer.Length > 0 ? answer : null;
             }
             else
             {
-                List<MemoryBlob> hits = _memory.Lookup(query, _resultsPerLookup, visibleIds);
+                // recall (conversation memory) or read (document sections).
+                string? roleFilter = kind == "read" ? "doc" : null;
+                block.Append(kind == "read"
+                    ? $"\n### Document sections \"{query}\"\n"
+                    : $"\n### Lookup \"{query}\"\n");
+                List<MemoryBlob> hits = _memory.Lookup(query, _resultsPerLookup,
+                                                       visibleIds, roleFilter);
                 if (hits.Count == 0)
                 {
-                    block.Append("(no stored memory matches — if that was the missing fact, " +
-                                 "say memory does not contain it)\n");
+                    block.Append(kind == "read"
+                        ? "(no document section matches — say the documents do not cover it)\n"
+                        : "(no stored memory matches — if that was the missing fact, " +
+                          "say memory does not contain it)\n");
                 }
                 foreach (MemoryBlob hit in hits)
                 {
@@ -361,7 +386,7 @@ public sealed class MemorySession
             headroom -= blockTokens;
             systemText += block.ToString();
 
-            var round = new LookupRound(query, served);
+            var round = new LookupRound(query, served, kind, output);
             lookups.Add(round);
             usedIds.AddRange(served);
             OnLookup?.Invoke(round);
@@ -369,11 +394,11 @@ public sealed class MemorySession
             result = GenerateOnce(systemText, user, maxTokens, sampling, seed, role);
         }
 
-        // Rounds exhausted but the model still wants to search: one forced
-        // answer, so a lookup-happy model cannot return scaffolding as a reply.
-        if (loopEnabled && TryParseRecall(result.Text, out _))
+        // Rounds exhausted but the model still wants to act: one forced
+        // answer, so an action-happy model cannot return scaffolding as a reply.
+        if (loopEnabled && TryParseAction(result.Text, out _, out _))
         {
-            const string NoMore = "\n(No more lookups available — answer now using only what is shown.)\n";
+            const string NoMore = "\n(No more actions available — answer now using only what is shown.)\n";
             if (_countTokens(NoMore) <= headroom)
             {
                 systemText += NoMore;
@@ -721,16 +746,37 @@ public sealed class MemorySession
     /// </summary>
     internal static bool TryParseRecall(string? text, out string query)
     {
-        query = "";
+        bool ok = TryParseAction(text, out string kind, out query) && kind == "recall";
+        if (!ok) query = "";
+        return ok;
+    }
+
+    /// <summary>
+    /// A reply is an action iff its first non-empty line starts with RECALL:,
+    /// READ:, or CALC:. Anything after that line is ignored. Only the model's
+    /// own output reaches this — stored text is data and cannot steer the loop.
+    /// </summary>
+    internal static bool TryParseAction(string? text, out string kind, out string arg)
+    {
+        kind = "";
+        arg = "";
         if (string.IsNullOrWhiteSpace(text)) return false;
         foreach (string rawLine in text.Split('\n'))
         {
             string line = rawLine.Trim();
             if (line.Length == 0) continue;
-            if (!line.StartsWith("RECALL:", StringComparison.Ordinal)) return false;
-            query = line["RECALL:".Length..].Trim().Trim('"', '\'', '`');
-            if (query.Length > 200) query = query[..200];
-            return query.Length > 0;
+            (string Prefix, string Kind)[] actions =
+                [("RECALL:", "recall"), ("READ:", "read"), ("CALC:", "calc")];
+            foreach ((string prefix, string k) in actions)
+            {
+                if (!line.StartsWith(prefix, StringComparison.Ordinal)) continue;
+                arg = line[prefix.Length..].Trim().Trim('"', '\'', '`');
+                if (arg.Length > 200) arg = arg[..200];
+                if (arg.Length == 0) return false;
+                kind = k;
+                return true;
+            }
+            return false;   // first non-empty line is not an action: it is the answer
         }
         return false;
     }

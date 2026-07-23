@@ -135,13 +135,19 @@ ghost.OnLookup = round =>
     string ids = round.BlobIds.Count > 0
         ? string.Join(" ", round.BlobIds.Select(i => $"#{i}"))
         : "nothing";
-    Console.WriteLine($"\n  🔍 model searched \"{round.Query}\" → {ids}");
+    string line = round.Kind switch
+    {
+        "read" => $"📄 model read \"{round.Query}\" → {ids}",
+        "calc" => $"🧮 model computed \"{round.Query}\" → {round.Output ?? "declined"}",
+        _ => $"🔍 model searched \"{round.Query}\" → {ids}",
+    };
+    Console.WriteLine($"\n  {line}");
 };
 
 Console.WriteLine($"ghost-chat | backend={a.Backend} model={a.Model} window={window}");
 Console.WriteLine($"store={storePath} ({store.Count} memories" +
     (store.CorruptLinesSkipped > 0 ? $", {store.CorruptLinesSkipped} corrupt lines skipped" : "") + ")");
-Console.WriteLine("/exit /stats /show <id> /recall <query> /forget <id> /consolidate [commit] /distill <prompt> /judge <text>");
+Console.WriteLine("/exit /stats /show <id> /recall <query> /forget <id> /read <file> /consolidate [commit] /distill <prompt> /judge <text>");
 Console.WriteLine();
 
 // Ollama streams; local backends print at once.
@@ -205,6 +211,35 @@ while (true)
             Console.WriteLine("  (the line stays in the store file as history; recall will never serve it again)");
             // A forget is a consequence-label: the user judged this bad.
             judge.Learn(victim.Text, good: false, source: "forget");
+        }
+        continue;
+    }
+
+    if (input.StartsWith("/read ", StringComparison.Ordinal))
+    {
+        string docPath = input["/read ".Length..].Trim();
+        try
+        {
+            var info = new FileInfo(docPath);
+            if (!info.Exists) { Console.WriteLine($"  no such file: {docPath}"); continue; }
+            if (info.Length > 2_000_000)
+            {
+                Console.WriteLine($"  too large ({info.Length / 1024} KB > 2 MB) — split it first");
+                continue;
+            }
+            string content = File.ReadAllText(docPath);
+            if (content.Contains('\0'))
+            {
+                Console.WriteLine("  binary file — /read takes plain text");
+                continue;
+            }
+            var ids = memory.IngestDocument(Path.GetFileName(docPath), content);
+            Console.WriteLine($"  ingested {Path.GetFileName(docPath)}: {ids.Count} sections " +
+                $"(#{ids[0]}…#{ids[^1]}) — recallable by keyword; the model can READ: them mid-answer");
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Console.WriteLine($"  cannot read: {ex.Message}");
         }
         continue;
     }

@@ -218,17 +218,48 @@ public sealed class ConversationMemory
     /// A model-requested lookup: same store, same precision gate, minus blobs
     /// already visible (recent window or <paramref name="exclude"/>).
     /// </summary>
-    public List<MemoryBlob> Lookup(string query, int maxResults, IReadOnlySet<long> exclude)
+    public List<MemoryBlob> Lookup(string query, int maxResults, IReadOnlySet<long> exclude,
+                                   string? role = null)
     {
         ArgumentException.ThrowIfNullOrEmpty(query);
         var hits = new List<MemoryBlob>();
-        foreach (MemoryBlob blob in _store.Recall(query, maxResults + exclude.Count))
+        // Role-filtered lookups (READ: wants documents only) must over-fetch:
+        // the store ranks across all roles.
+        int fetch = role is null ? maxResults + exclude.Count
+                                 : (maxResults + exclude.Count) * 4;
+        foreach (MemoryBlob blob in _store.Recall(query, fetch))
         {
             if (hits.Count == maxResults) break;
+            if (role is not null && blob.Role != role) continue;
             if (exclude.Contains(blob.Id) || IsWithinRecentWindow(blob)) continue;
             hits.Add(blob);
         }
         return hits;
+    }
+
+    /// <summary>
+    /// Ingests a document into the store: chunked by the same splitter as
+    /// conversation, each chunk headed with its source and position, stored
+    /// under a document session id (never the live session — documents are
+    /// material, not turns, so they can never flood the recent window or the
+    /// temporal anchors). Recall and the READ: action find them by keyword;
+    /// quotes carry [#id] receipts like any memory.
+    /// </summary>
+    /// <returns>The appended blob ids, in document order.</returns>
+    public List<long> IngestDocument(string sourceName, string content)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(sourceName);
+        ArgumentException.ThrowIfNullOrEmpty(content);
+
+        var parts = Split(content.Trim()).ToList();
+        string docSession = "doc:" + sourceName;
+        var ids = new List<long>(parts.Count);
+        for (int i = 0; i < parts.Count; i++)
+        {
+            string text = $"[doc:{sourceName} §{i + 1}/{parts.Count}]\n{parts[i]}";
+            ids.Add(_store.Append(docSession, i, "doc", text, _countTokens(text)).Id);
+        }
+        return ids;
     }
 
     private string RenderBlob(MemoryBlob blob)
