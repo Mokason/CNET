@@ -128,4 +128,14 @@ public sealed class ExactArithmeticTests
     [InlineData("2 apples")]         // letters allowed by whitelist, still declines on residual
     public void IntegerFunctions_DeclineHonestly(string prompt) =>
         Assert.False(ExactArithmetic.TryAnswer(prompt, out _));
+
+    [Theory]
+    [InlineData("3**100", "515377520732011331036461129765621272702107522001")]
+    [InlineData("what is 2**16?", "65536")]
+    [InlineData("2 ** 10", "1024")]
+    public void PythonStyleExponent_IsAccepted(string prompt, string expected)
+    {
+        Assert.True(ExactArithmetic.TryAnswer(prompt, out string answer), prompt);
+        Assert.Equal(expected, answer);
+    }
 }

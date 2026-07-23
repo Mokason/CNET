@@ -412,14 +412,26 @@ public sealed class MemorySession
                 block.Append(kind == "read"
                     ? $"\n### Document sections \"{query}\"\n"
                     : $"\n### Lookup \"{query}\"\n");
-                List<MemoryBlob> hits = _memory.Lookup(query, _resultsPerLookup,
-                                                       visibleIds, roleFilter);
+                var outcome = _memory.Lookup(query, _resultsPerLookup, visibleIds, roleFilter);
+                List<MemoryBlob> hits = outcome.Hits;
                 if (hits.Count == 0)
                 {
-                    block.Append(kind == "read"
-                        ? "(no document section matches — say the documents do not cover it)\n"
-                        : "(no stored memory matches — if that was the missing fact, " +
-                          "say memory does not contain it)\n");
+                    // Distinguish "already shown" from a genuine miss — a lookup
+                    // that came back empty because the match is already in your
+                    // context must NOT be reported as absence (that licensed a
+                    // live confabulation: the model declared the store empty of
+                    // a fact it actually held).
+                    block.Append(outcome.MatchesAllAlreadyVisible
+                        ? (kind == "read"
+                            ? "(the matching document section is already shown above — use it; " +
+                              "do not claim the documents lack it)\n"
+                            : "(the matching memory is already shown above — use it; " +
+                              "do not claim memory does not contain it)\n")
+                        : (kind == "read"
+                            ? "(no document section matched those keywords — the documents may " +
+                              "not cover it, or try more specific terms)\n"
+                            : "(no memory matched those keywords — memory may not contain it, " +
+                              "or the words are too common here; try more distinctive terms)\n"));
                 }
                 foreach (MemoryBlob hit in hits)
                 {

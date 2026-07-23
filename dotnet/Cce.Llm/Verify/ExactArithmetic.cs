@@ -27,6 +27,7 @@ public static class ExactArithmetic
 {
     private static readonly (string Phrase, string Op)[] OperatorWords =
     [
+        ("**", "^"),                    // Python-style exponent — the model writes it
         ("multiplied by", "*"), ("divided by", "/"), ("to the power of", "^"),
         ("times", "*"), ("plus", "+"), ("minus", "-"), ("modulo", "%"), ("mod ", "% "),
     ];

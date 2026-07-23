@@ -127,7 +127,7 @@ public sealed class MemoryLookupLoopTests : IDisposable
 
         var r = ghost.Generate(null, "where is the treasure?");
 
-        Assert.Contains("no stored memory matches", session.Calls[1].System);
+        Assert.Contains("no memory matched those keywords", session.Calls[1].System);
         var round = Assert.Single(r.Lookups);
         Assert.Empty(round.BlobIds);
     }
@@ -266,5 +266,47 @@ public sealed class MemoryLookupLoopTests : IDisposable
         // One model-issued lookup; the blob's own RECALL: text triggered nothing.
         Assert.Single(r.Lookups);
         Assert.Equal(2, session.Calls.Count);
+    }
+
+    // ─────────────── honest empty-lookup messages (anti-confabulation) ───────────────
+
+    /// <summary>The live confabulation trigger: a RECALL whose only matches are
+    /// already in the prompt was reported as absence, licensing the model to
+    /// declare the store empty of a fact it actually held. Now it says
+    /// "already shown".</summary>
+    [Fact]
+    public void Lookup_MatchAlreadyVisible_TellsModelSo_NotAbsent()
+    {
+        using var store = BlobStore.Open(StorePath());
+        long factId = SeedFact(store, "the reactor decommission code is tangent-seven-nine");
+
+        // First round the gate recalls the fact (shared keywords), so it is in
+        // the prompt; the model RECALLs the same thing anyway.
+        var session = new ScriptedSession(
+            "RECALL: reactor decommission code",
+            "It is tangent-seven-nine, already in view.");
+        var (ghost, _) = NewGhost(store, session);
+
+        var r = ghost.Generate(null, "what is the reactor decommission code?");
+
+        Assert.Contains("already shown above", session.Calls[1].System);
+        Assert.Contains("do not claim memory does not contain it", session.Calls[1].System);
+        Assert.Contains(factId, r.UsedBlobIds);   // it was in context all along
+    }
+
+    [Fact]
+    public void Lookup_GenuineMiss_SaysKeywordsDidNotMatch()
+    {
+        using var store = BlobStore.Open(StorePath());
+        SeedFact(store, "the wifi password is grendel-999");
+
+        var session = new ScriptedSession(
+            "RECALL: dragon hoard location",
+            "Memory does not contain that.");
+        var (ghost, _) = NewGhost(store, session);
+
+        ghost.Generate(null, "where is the dragon treasure?");
+
+        Assert.Contains("no memory matched those keywords", session.Calls[1].System);
     }
 }

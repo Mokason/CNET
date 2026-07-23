@@ -144,7 +144,7 @@ public sealed class ActionProtocolTests : IDisposable
 
         var round = Assert.Single(r.Lookups);
         Assert.Empty(round.BlobIds);
-        Assert.Contains("no document section matches", session.Calls[1].System);
+        Assert.Contains("no document section matched those keywords", session.Calls[1].System);
     }
 
     [Fact]

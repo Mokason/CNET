@@ -214,12 +214,13 @@ public sealed class ConversationMemory
     /// </summary>
     public string RenderMemory(MemoryBlob blob) => RenderBlob(blob);
 
-    /// <summary>
-    /// A model-requested lookup: same store, same precision gate, minus blobs
-    /// already visible (recent window or <paramref name="exclude"/>).
-    /// </summary>
-    public List<MemoryBlob> Lookup(string query, int maxResults, IReadOnlySet<long> exclude,
-                                   string? role = null)
+    /// <summary>The result of a model-directed lookup, with WHY it is empty —
+    /// so the caller can tell the model "already shown" from "not in memory"
+    /// instead of licensing a false claim of absence.</summary>
+    public sealed record LookupOutcome(List<MemoryBlob> Hits, bool MatchesAllAlreadyVisible);
+
+    public LookupOutcome Lookup(string query, int maxResults, IReadOnlySet<long> exclude,
+                                string? role = null)
     {
         ArgumentException.ThrowIfNullOrEmpty(query);
         var hits = new List<MemoryBlob>();
@@ -227,14 +228,22 @@ public sealed class ConversationMemory
         // the store ranks across all roles.
         int fetch = role is null ? maxResults + exclude.Count
                                  : (maxResults + exclude.Count) * 4;
+        int rawMatches = 0, excludedAsVisible = 0;
         foreach (MemoryBlob blob in _store.Recall(query, fetch))
         {
-            if (hits.Count == maxResults) break;
             if (role is not null && blob.Role != role) continue;
-            if (exclude.Contains(blob.Id) || IsWithinRecentWindow(blob)) continue;
-            hits.Add(blob);
+            rawMatches++;
+            if (exclude.Contains(blob.Id) || IsWithinRecentWindow(blob))
+            {
+                excludedAsVisible++;
+                continue;
+            }
+            if (hits.Count < maxResults) hits.Add(blob);
         }
-        return hits;
+        // Empty because everything that matched is already in the prompt — the
+        // fact IS in memory, just already shown. Distinct from a real miss.
+        bool allVisible = hits.Count == 0 && rawMatches > 0 && excludedAsVisible == rawMatches;
+        return new LookupOutcome(hits, allVisible);
     }
 
     /// <summary>
