@@ -101,6 +101,13 @@ public sealed class MemorySession
     /// <summary>Invoked after each model-directed lookup — lets a UI narrate the search.</summary>
     public Action<LookupRound>? OnLookup { get; set; }
 
+    /// <summary>Fired before each inner model generation, so a streaming UI can
+    /// reset its filter per generation (action scaffolding vs the real answer).</summary>
+    public Action? OnInnerGenerationStart { get; set; }
+
+    /// <summary>Fired after each inner model generation completes.</summary>
+    public Action? OnInnerGenerationEnd { get; set; }
+
     /// <summary>
     /// The exact-arithmetic lane (ported from AICIMO): arithmetic questions
     /// are answered by computation before any model runs — 0.2 ms of decimal
@@ -759,18 +766,25 @@ public sealed class MemorySession
     private CnetHarnessGenerationResult GenerateOnce(
         string systemText, string user, uint maxTokens,
         CnetHarnessSamplingMode sampling, uint seed, string role,
-        bool? think = null, string? continueFrom = null) =>
-        _session.Generate(new CnetHarnessGenerateOptions
+        bool? think = null, string? continueFrom = null)
+    {
+        OnInnerGenerationStart?.Invoke();
+        try
         {
-            System = systemText.Length > 0 ? systemText : null,
-            User = user,
-            Role = role,
-            MaxTokens = maxTokens,
-            Seed = seed,
-            Sampling = sampling,
-            Think = think,
-            ContinueFrom = continueFrom,
-        });
+            return _session.Generate(new CnetHarnessGenerateOptions
+            {
+                System = systemText.Length > 0 ? systemText : null,
+                User = user,
+                Role = role,
+                MaxTokens = maxTokens,
+                Seed = seed,
+                Sampling = sampling,
+                Think = think,
+                ContinueFrom = continueFrom,
+            });
+        }
+        finally { OnInnerGenerationEnd?.Invoke(); }
+    }
 
     /// <summary>
     /// A reply is a lookup request iff its first non-empty line starts with

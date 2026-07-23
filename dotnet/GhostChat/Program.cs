@@ -161,9 +161,16 @@ Console.WriteLine($"store={storePath} ({store.Count} memories" +
 Console.WriteLine("/exit /stats /status /show /recall /forget /read /tools /deftool /defscript /consolidate /distill /judge");
 Console.WriteLine();
 
-// Ollama streams; local backends print at once.
+// Ollama streams; local backends print at once. The stream gate withholds
+// action scaffolding (CALC:/RECALL:/READ:/TOOL:) that the deliberation loop
+// generates before the real answer, while still streaming the answer live.
+var streamGate = new StreamGate(chunk => Console.Write(chunk));
 if (ollama is not null)
-    ollama.OnToken = chunk => Console.Write(chunk);
+{
+    ollama.OnToken = streamGate.Feed;
+    ghost.OnInnerGenerationStart = streamGate.BeginGeneration;
+    ghost.OnInnerGenerationEnd = streamGate.EndGeneration;
+}
 
 while (true)
 {
@@ -266,7 +273,7 @@ while (true)
         }
         finally
         {
-            if (ollama is not null) ollama.OnToken = chunk => Console.Write(chunk);
+            if (ollama is not null) ollama.OnToken = streamGate.Feed;
         }
         continue;
     }
@@ -298,7 +305,7 @@ while (true)
         }
         finally
         {
-            if (ollama is not null) ollama.OnToken = chunk => Console.Write(chunk);
+            if (ollama is not null) ollama.OnToken = streamGate.Feed;
         }
         continue;
     }
@@ -372,7 +379,7 @@ while (true)
         }
         finally
         {
-            if (ollama is not null) ollama.OnToken = chunk => Console.Write(chunk);
+            if (ollama is not null) ollama.OnToken = streamGate.Feed;
         }
         continue;
     }
