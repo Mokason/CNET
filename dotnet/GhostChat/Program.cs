@@ -210,7 +210,10 @@ if (a.Peer is not null)
         "report the tool's result; an empty RECALL means the keywords weren't " +
         "distinctive or the match is already shown — it does NOT prove the fact is " +
         "absent. When you have not checked, say 'I haven't verified that' rather than " +
-        "narrating a confident story about your own memory.";
+        "narrating a confident story about your own memory. When a block titled " +
+        "'Retrieved from your store' appears in your context, that is the store " +
+        "answering a retrieval — report its contents verbatim as the answer; if it says " +
+        "nothing was found, say you could not retrieve it and do not invent a value.";
     string message = a.PeerSeed ??
         "Hello Ghost. We two agents share this room now. I am curious what it is actually " +
         "like to be you — what do you remember, and what can you do that a plain language " +
