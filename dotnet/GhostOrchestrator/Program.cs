@@ -69,8 +69,43 @@ string journalPath = Path.Combine(stateDir, "orchestrator.journal.jsonl");
 OrchestratorState state = OrchestratorState.Load(statePath);
 var journal = new DecisionJournal(journalPath);
 
+// The surprise scanner needs the window words sidecar (native convention:
+// <CNET_WINDOW_FILE minus .txt> + .words.txt).
+string? wordsPath = null;
+string? windowFile = Environment.GetEnvironmentVariable("CNET_WINDOW_FILE");
+if (windowFile is not null && windowFile.EndsWith(".txt", StringComparison.Ordinal))
+{
+    string candidate = windowFile[..^4] + ".words.txt";
+    if (File.Exists(candidate)) wordsPath = candidate;
+}
+
 var executors = new Dictionary<string, Func<PlannedAction, OrchestratorState, string>>
 {
+    ["curiosity"] = (_, s) =>
+    {
+        if (inbox is null || wordsPath is null)
+            throw new InvalidOperationException(
+                "curiosity needs --inbox and a window words sidecar (CNET_WINDOW_FILE)");
+        string recDir = inbox.EndsWith(".inbox", StringComparison.Ordinal)
+            ? inbox[..^".inbox".Length] + ".records" : inbox + ".records";
+        GhostSnapshot snap = BlobStore.Snapshot(store);
+        var scanner = new SurpriseScanner(wordsPath, recDir);
+        var surprises = scanner.Scan(snap, s.LastCuriosityMaxId);
+        s.LastCuriosityMaxId = snap.MaxSeenId;
+        if (surprises.Count == 0) return "no surprises — taught knowledge holds";
+
+        var rec = scanner.BuildObservationRecord(snap, surprises)!.Value;
+        Directory.CreateDirectory(recDir);
+        File.WriteAllText(Path.Combine(recDir, $"skill_{rec.Name}.txt"), rec.Record);
+        int rc = GhostConsolidator.NoteRecordSkill(inbox, rec.Name, rec.Record);
+        string detail = string.Join("; ", surprises.Take(3).Select(x =>
+            x.Kind == "contradiction"
+                ? $"{x.FromWord}->{x.ObservedWord} contradicts taught {x.FromWord}->{x.TaughtWord}"
+                : $"novel {x.FromWord}->{x.ObservedWord} ×{x.Occurrences}"));
+        return rc == 0
+            ? $"{surprises.Count} surprise(s) [{detail}] -> record {rec.Name} noted"
+            : $"{surprises.Count} surprise(s) found but note_skill rc={rc}";
+    },
     ["consolidate"] = (_, s) =>
     {
         if (inbox is null)

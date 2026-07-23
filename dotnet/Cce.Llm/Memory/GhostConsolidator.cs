@@ -256,6 +256,14 @@ public sealed class GhostConsolidator
     }
 
     /// <summary>
+    /// Public seam to the native note_skill for record-family gaps (k=1) —
+    /// hosts outside this assembly (the orchestrator's curiosity executor)
+    /// note observation records through the same canonical path.
+    /// </summary>
+    public static int NoteRecordSkill(string inboxPath, string skillName, string record)
+        => CnetAutoLearnNative.NoteSkill(inboxPath, skillName, record, k: 1);
+
+    /// <summary>
     /// Deterministic skill name: gh_&lt;8-hex FNV-1a of the text&gt;_&lt;first
     /// distinctive term&gt;. Stable across runs and stores, short enough that
     /// the native goal tag ("skill_" + this) stays within PORT_TAG_MAX (32).

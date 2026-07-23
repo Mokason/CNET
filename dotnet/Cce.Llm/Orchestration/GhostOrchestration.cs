@@ -59,6 +59,7 @@ public sealed record PlannedAction(string Name, string Reason, bool JournalOnly 
 public sealed class OrchestratorState
 {
     public long LastConsolidatedMaxId { get; set; }
+    public long LastCuriosityMaxId { get; set; }
     public Dictionary<string, DateTime> LastRunUtc { get; set; } = [];
     public Dictionary<string, int> ConsecutiveFailures { get; set; } = [];
 
@@ -101,6 +102,14 @@ public static class GhostPolicies
         if (newBlobs >= c.MinNewBlobs)
             plan.Add(new PlannedAction("consolidate",
                 $"{newBlobs} new blobs since watermark #{s.LastConsolidatedMaxId}"));
+
+        // Prediction-error curriculum: fresh conversation may contradict or
+        // exceed the taught record corpus — the system's own choice of what
+        // to learn next comes from where its knowledge failed.
+        long unscanned = o.StoreMaxSeenId - s.LastCuriosityMaxId;
+        if (unscanned >= c.MinNewBlobs)
+            plan.Add(new PlannedAction("curiosity",
+                $"{unscanned} blobs unscanned for surprises since watermark #{s.LastCuriosityMaxId}"));
 
         // Teachables parked with nobody to teach them.
         if (o.LedgerGhostWaiting > 0 && !o.TeacherLaneActive)

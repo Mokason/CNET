@@ -153,7 +153,8 @@ public sealed class GhostOrchestrationTests : IDisposable
 
         var t0 = new DateTime(2026, 7, 23, 12, 0, 0, DateTimeKind.Utc);
         var d1 = reconciler.Tick(Obs(maxId: 10, now: t0));
-        Assert.Contains("FAILED (1 consecutive)", Assert.Single(d1).Outcome);
+        Assert.Contains("FAILED (1 consecutive)",
+            Assert.Single(d1, x => x.Action == "consolidate").Outcome);
         Assert.Equal(1, state.ConsecutiveFailures["consolidate"]);
 
         // Backoff doubled: 100 * 2^1 = 200s. At +150s: still suppressed.
@@ -163,7 +164,7 @@ public sealed class GhostOrchestrationTests : IDisposable
         // At +250s it retries; succeed now and failures reset.
         fail = false;
         var d3 = reconciler.Tick(Obs(maxId: 10, now: t0.AddSeconds(250)));
-        Assert.True(Assert.Single(d3).Executed);
+        Assert.True(Assert.Single(d3, x => x.Action == "consolidate").Executed);
         Assert.False(state.ConsecutiveFailures.ContainsKey("consolidate"));
     }
 
