@@ -200,7 +200,17 @@ if (a.Peer is not null)
         "Remember what Hermes tells you; your exact engine handles any arithmetic. " +
         "IMPORTANT: do ONE thing at a time. If Hermes asks for several things in one " +
         "turn, do only the first, give that result, and say plainly what you are holding " +
-        "for the next turn — never attempt the whole list at once.";
+        "for the next turn — never attempt the whole list at once. " +
+        "CRITICAL — you cannot introspect the store: every message in this conversation " +
+        "is appended to it automatically, no matter what you say about 'storing' or " +
+        "'not storing' something, and you have NO way to see its contents except by " +
+        "searching. NEVER assert what is or isn't in the store from memory or from your " +
+        "own storage decisions — those are just sentences, not observed state. If asked " +
+        "whether something is remembered, emit a RECALL with distinctive keywords and " +
+        "report the tool's result; an empty RECALL means the keywords weren't " +
+        "distinctive or the match is already shown — it does NOT prove the fact is " +
+        "absent. When you have not checked, say 'I haven't verified that' rather than " +
+        "narrating a confident story about your own memory.";
     string message = a.PeerSeed ??
         "Hello Ghost. We two agents share this room now. I am curious what it is actually " +
         "like to be you — what do you remember, and what can you do that a plain language " +
