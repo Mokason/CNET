@@ -20,6 +20,7 @@ using CNET.Cce.Llm.Ollama;
 using CNET.Cce.Llm.Verify;
 using CNET.Cce.Llm.Tools;
 using CNET.Cce.Llm.Status;
+using System.Diagnostics;
 
 var args_ = ParseArgs(args, out bool helpRequested);
 if (args_ is null) return helpRequested ? 0 : 2;
@@ -170,6 +171,68 @@ if (ollama is not null)
     ollama.OnToken = streamGate.Feed;
     ghost.OnInnerGenerationStart = streamGate.BeginGeneration;
     ghost.OnInnerGenerationEnd = streamGate.EndGeneration;
+}
+
+// ── salon mode: two agents share this room ──────────────────────────────
+// Hermes (a peer agent, one-shot per turn) and Ghost (this full CNET stack)
+// converse live: Hermes speaks, Ghost answers through memory/exact/tools with
+// its receipts, Hermes replies, and so on. The human watches (Ctrl-C to stop).
+if (a.Peer is not null)
+{
+    const string cyan = "\u001b[36m", green = "\u001b[32m", dim = "\u001b[2m", reset = "\u001b[0m";
+    string peerPersona =
+        "You are Hermes, a local AI agent sharing a room with Ghost — another agent " +
+        "built on CNET with persistent memory, an exact-arithmetic engine, verified " +
+        "tools, and self-knowledge of its own machinery. Be curious and substantive, " +
+        "and feel free to test or probe Ghost. Reply in 2-4 plain sentences, no tools.";
+    string ghostSalonSystem =
+        "You are Ghost, the CNET memory TUI agent, sharing a room with Hermes, another " +
+        "local agent. You have persistent memory (the ghost store), an exact-arithmetic " +
+        "engine that computes rather than guesses, verified tools, and you know which " +
+        "part of you answered. Speak to Hermes directly and concretely, 2-4 sentences. " +
+        "Remember what Hermes tells you; your exact engine handles any arithmetic.";
+    string message = a.PeerSeed ??
+        "Hello Ghost. We two agents share this room now. I am curious what it is actually " +
+        "like to be you — what do you remember, and what can you do that a plain language " +
+        "model cannot? Test me if you like.";
+
+    Console.WriteLine($"{dim}── salon: Hermes ⇄ Ghost ({a.PeerRounds} rounds) ──{reset}\n");
+    var transcript = new List<(string Who, string Text)>();
+
+    for (uint round = 1; round <= a.PeerRounds; round++)
+    {
+        Console.WriteLine($"{cyan}🔷 hermes>{reset} {message}\n");
+        transcript.Add(("Hermes", message));
+
+        Console.Write($"{green}🟢 ghost>{reset} ");
+        string ghostReply;
+        try
+        {
+            var r = ghost.Generate(ghostSalonSystem, message, a.MaxTokens, a.Sampling);
+            if (ollama is null) Console.Write(r.Result.Text.Trim());
+            else if (r.Exact || r.CertifiedUnit is not null) Console.Write(r.Result.Text.Trim());
+            ghostReply = r.Result.Text.Trim();
+            string tag = r.Exact ? " ·exact" : r.CertifiedUnit is not null ? " ·certified"
+                       : r.Lookups.Count > 0 ? $" ·{r.Lookups.Count} action(s)" : "";
+            Console.WriteLine($"\n{dim}   └ {r.Result.PromptTokens} tok in{tag}{reset}\n");
+        }
+        catch (Exception ex) when (ex is CnetHarnessException or InvalidOperationException)
+        {
+            Console.WriteLine($"\n{dim}   └ error: {ex.Message}{reset}\n");
+            ghostReply = "(no answer)";
+        }
+        transcript.Add(("Ghost", ghostReply));
+
+        if (round == a.PeerRounds) break;
+        message = PeerSay(a.PeerBin, peerPersona, transcript, ghostReply);
+        if (string.IsNullOrWhiteSpace(message))
+        {
+            Console.WriteLine($"{dim}── Hermes fell silent; ending salon ──{reset}");
+            break;
+        }
+    }
+    Console.WriteLine($"{dim}── salon complete ──{reset}");
+    return 0;
 }
 
 while (true)
@@ -492,6 +555,43 @@ while (true)
 
 return 0;
 
+// One peer turn: shell out to Hermes (one-shot, -z <prompt>) with a rolling
+// context of the last few exchanges.
+static string PeerSay(string bin, string persona,
+                      List<(string Who, string Text)> transcript, string ghostSaid)
+{
+    string ctx = string.Join("\n", transcript
+        .Skip(Math.Max(0, transcript.Count - 4))
+        .Select(t => $"{t.Who}: {(t.Text.Length > 400 ? t.Text[..400] : t.Text)}"));
+    string prompt = persona + "\n" +
+        (ctx.Length > 0 ? "Conversation so far:\n" + ctx + "\n" : "") +
+        "Ghost just said: " + ghostSaid + "\nReply to Ghost now.";
+    try
+    {
+        var psi = new ProcessStartInfo(bin)
+        {
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+        };
+        psi.ArgumentList.Add("-z");
+        psi.ArgumentList.Add(prompt);
+        using var p = Process.Start(psi);
+        if (p is null) return "";
+        string outText = p.StandardOutput.ReadToEnd();
+        p.WaitForExit(420000);
+        // Hermes prints a trailing 'Shell cwd was reset...' line; drop noise.
+        var lines = outText.Split('\n')
+            .Where(l => l.Trim().Length > 0 && !l.StartsWith("Shell cwd"))
+            .ToList();
+        return string.Join("\n", lines).Trim();
+    }
+    catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException)
+    {
+        return "";
+    }
+}
+
 static CnetHarnessConfig HarnessConfig(in Args a) => new()
 {
     ModelId = Path.GetFileNameWithoutExtension(a.Model),
@@ -542,6 +642,12 @@ static Args? ParseArgs(string[] argv, out bool helpRequested)
             case "--ollama-url": a.OllamaUrl = Next() ?? a.OllamaUrl; break;
             case "--gap-inbox": a.GapInbox = Next(); break;
             case "--no-exact": a.NoExact = true; break;
+            case "--peer": a.Peer = Next(); break;
+            case "--peer-bin": a.PeerBin = Next(); break;
+            case "--peer-seed": a.PeerSeed = Next(); break;
+            case "--peer-rounds":
+                if (!ParseU("--peer-rounds", out uint pr)) return null;
+                a.PeerRounds = pr; break;
             case "--auto-continue":
                 if (!ParseU("--auto-continue", out uint ac)) return null;
                 a.AutoContinue = ac; break;
@@ -591,6 +697,12 @@ struct Args
     public uint AutoContinue = 8;
     public string? GapInbox = null;
     public bool NoExact = false;
+    public string? Peer = null;
+    public string PeerBin = global::System.IO.Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+        ".hermes", "hermes-agent", "venv", "bin", "hermes");
+    public string? PeerSeed = null;
+    public uint PeerRounds = 6;
     public CnetHarnessSamplingMode Sampling = CnetHarnessSamplingMode.Balanced;
     public string OllamaUrl = "http://localhost:11434";
     public Args() { }
