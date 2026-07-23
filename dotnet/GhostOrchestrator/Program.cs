@@ -81,6 +81,22 @@ if (windowFile is not null && windowFile.EndsWith(".txt", StringComparison.Ordin
 
 var executors = new Dictionary<string, Func<PlannedAction, OrchestratorState, string>>
 {
+    ["janitor"] = (_, _) =>
+    {
+        int archived = BlobStore.Compact(store);
+        if (archived < 0) return "store busy (live session holds the lock) — will retry";
+        // Rotate the orchestrator's own journal when it outgrows 1 MB. Own
+        // file only: rotating another process's append target misdirects it.
+        string journalFile = Path.Combine(stateDir, "orchestrator.journal.jsonl");
+        string rotated = "";
+        var info = new FileInfo(journalFile);
+        if (info.Exists && info.Length > 1_000_000)
+        {
+            File.Move(journalFile, journalFile + ".1", overwrite: true);
+            rotated = "; journal rotated";
+        }
+        return $"archived {archived} dead lines to {store}.archive.jsonl{rotated}";
+    },
     ["curiosity"] = (_, s) =>
     {
         if (inbox is null || wordsPath is null)
@@ -193,7 +209,8 @@ Observations Observe()
     return new Observations(
         DateTime.UtcNow, snap.MaxSeenId, snap.All().Count, snap.CorruptLinesSkipped,
         inboxExists, inboxLines, inboxAge, ghostGaps, ghostWaiting,
-        ServiceActive(drainerSvc), ServiceActive(teacherSvc));
+        ServiceActive(drainerSvc), ServiceActive(teacherSvc),
+        snap.DeadLines, snap.TotalLines);
 }
 
 static bool ServiceActive(string service)

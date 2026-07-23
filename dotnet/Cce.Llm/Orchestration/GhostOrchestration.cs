@@ -19,7 +19,9 @@ public sealed record Observations(
     int LedgerGhostGaps,
     int LedgerGhostWaiting,
     bool DrainerActive,
-    bool TeacherLaneActive);
+    bool TeacherLaneActive,
+    int StoreDeadLines = 0,
+    int StoreTotalLines = 0);
 
 /// <summary>Tunables and permissions. Actions that cost real resources are
 /// opt-in — self-governance means governed, not unbounded.</summary>
@@ -42,6 +44,12 @@ public sealed class OrchestratorConfig
 
     /// <summary>Permission to start the teacher lane service (loads a large model).</summary>
     public bool AllowTeacherStart { get; init; }
+
+    /// <summary>Janitor trigger: dead lines in the store before compaction is due.</summary>
+    public int JanitorMinDeadLines { get; init; } = 40;
+
+    /// <summary>Janitor trigger: dead fraction of the store (with at least 10 dead).</summary>
+    public double JanitorDeadFraction { get; init; } = 0.25;
 }
 
 /// <summary>Planned by policy; the reconciler decides whether it may run now.</summary>
@@ -120,6 +128,15 @@ public static class GhostPolicies
                     $"{o.LedgerGhostWaiting} ghost gaps waiting_oracle; teacher start not permitted " +
                     "(run with --allow-teacher-start to let the orchestrator start it)",
                     JournalOnly: true));
+
+        // Housekeeping: the store carries archived-able dead weight. The
+        // janitor moves history aside, never destroys it — and only compacts
+        // what the user already forgot; content judgment is not its job.
+        if (o.StoreDeadLines >= c.JanitorMinDeadLines ||
+            (o.StoreTotalLines > 0 && o.StoreDeadLines >= 10 &&
+             (double)o.StoreDeadLines / o.StoreTotalLines >= c.JanitorDeadFraction))
+            plan.Add(new PlannedAction("janitor",
+                $"{o.StoreDeadLines} dead lines of {o.StoreTotalLines} in the store"));
 
         // Work emitted into a void, or a drainer that stopped draining.
         if (o.InboxExists && !o.DrainerActive && !o.TeacherLaneActive)

@@ -30,15 +30,25 @@ public sealed class GhostSnapshot : IMemoryView
     public long MaxSeenId { get; }
     public int CorruptLinesSkipped { get; }
 
+    /// <summary>Total physical lines in the file.</summary>
+    public int TotalLines { get; }
+
+    /// <summary>Lines that are dead weight: tombstoned blobs, their tombstones,
+    /// usage events referencing only dead ids, corrupt lines. The janitor's
+    /// trigger signal.</summary>
+    public int DeadLines { get; }
+
     internal GhostSnapshot(List<MemoryBlob> blobs, Dictionary<long, int> useCounts,
                            Dictionary<long, HashSet<string>> useSessions,
-                           long maxSeenId, int corrupt)
+                           long maxSeenId, int corrupt, int totalLines, int deadLines)
     {
         _blobs = blobs;
         _useCounts = useCounts;
         _useSessions = useSessions;
         MaxSeenId = maxSeenId;
         CorruptLinesSkipped = corrupt;
+        TotalLines = totalLines;
+        DeadLines = deadLines;
     }
 
     public IReadOnlyList<MemoryBlob> All() => _blobs;
@@ -180,7 +190,7 @@ public sealed class BlobStore : IDisposable, IMemoryView
             // Tombstones are applied IN FILE ORDER, so a hand-recovered file
             // with blob/tombstone/blob sequences resolves exactly as written.
             (List<MemoryBlob> loaded, var useCounts, var useSessions,
-             long maxSeen, int corrupt) = LoadFile(path);
+             long maxSeen, int corrupt, _) = LoadFile(path);
 
             // bufferSize: 1 disables user-space buffering, so a failed write
             // (disk full) cannot leave a half-line lurking in a buffer to be
@@ -232,9 +242,127 @@ public sealed class BlobStore : IDisposable, IMemoryView
     public static GhostSnapshot Snapshot(string path)
     {
         ArgumentException.ThrowIfNullOrEmpty(path);
-        (List<MemoryBlob> blobs, var useCounts, var useSessions, long maxSeen, int corrupt)
-            = LoadFile(path);
-        return new GhostSnapshot(blobs, useCounts, useSessions, maxSeen, corrupt);
+        (List<MemoryBlob> blobs, var useCounts, var useSessions, long maxSeen,
+         int corrupt, int totalLines) = LoadFile(path);
+        // Live weight: one line per live blob, plus usage lines that mention
+        // at least one live id, plus at most one sentinel. Everything else in
+        // the file is dead weight the janitor may archive.
+        var liveIds = blobs.Select(b => b.Id).ToHashSet();
+        bool hasSentinel = File.Exists(path) &&
+            File.ReadLines(path).Any(l => l.Contains("\"maxseen\"", StringComparison.Ordinal));
+        int liveLines = blobs.Count + CountLiveUsageLines(path, liveIds) + (hasSentinel ? 1 : 0);
+        int deadLines = Math.Max(0, totalLines - liveLines);
+        return new GhostSnapshot(blobs, useCounts, useSessions, maxSeen, corrupt,
+                                 totalLines, deadLines);
+    }
+
+    private static int CountLiveUsageLines(string path, HashSet<long> liveIds)
+    {
+        int count = 0;
+        if (!File.Exists(path)) return 0;
+        foreach (string line in File.ReadLines(path))
+        {
+            if (!line.Contains("\"used\"", StringComparison.Ordinal)) continue;
+            try
+            {
+                using JsonDocument doc = JsonDocument.Parse(line);
+                if (doc.RootElement.TryGetProperty("used", out JsonElement used) &&
+                    used.EnumerateArray().Any(e => liveIds.Contains(e.GetInt64())))
+                    count++;
+            }
+            catch (JsonException) { }
+        }
+        return count;
+    }
+
+    /// <summary>
+    /// The janitor: archives dead weight (tombstoned blobs and their
+    /// tombstones, usage events for dead ids, corrupt lines) into
+    /// <c>&lt;path&gt;.archive.jsonl</c> and rewrites the store lean.
+    /// History is preserved — moved, never destroyed; deletion stays an
+    /// event. A <c>maxseen</c> sentinel keeps the never-reuse-ids guarantee.
+    /// Takes the writer lock itself; returns false without touching anything
+    /// when a live session holds the store.
+    /// </summary>
+    /// <returns>Archived line count, or -1 when the store is busy.</returns>
+    public static int Compact(string path)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(path);
+        if (!File.Exists(path)) return 0;
+
+        FileStream lockStream;
+        try
+        {
+            lockStream = new FileStream(path + ".lock", FileMode.OpenOrCreate,
+                FileAccess.ReadWrite, FileShare.None);
+        }
+        catch (IOException)
+        {
+            return -1;   // a live session owns the store; the janitor yields
+        }
+
+        try
+        {
+            (List<MemoryBlob> blobs, _, _, long maxSeen, _, _) = LoadFile(path);
+            var liveIds = blobs.Select(b => b.Id).ToHashSet();
+            var byId = blobs.ToDictionary(b => b.Id);
+
+            // Canonical rebuild: sentinel + live blobs re-serialized from the
+            // authoritative loaded state (last-write-wins already applied) +
+            // original usage lines that mention a live id. Everything else —
+            // tombstones, dead/stale blob lines, dead usage, corrupt lines,
+            // old sentinels — is archived. One path, no order ambiguity.
+            var keep = new List<string>
+            {
+                JsonSerializer.Serialize(new Dictionary<string, object>
+                    { ["maxseen"] = maxSeen,
+                      ["ts"] = DateTime.UtcNow.ToString("o") }, JsonOptions),
+            };
+            keep.AddRange(blobs.Select(b => JsonSerializer.Serialize(b, JsonOptions)));
+
+            var archive = new List<string>();
+            foreach (string line in File.ReadLines(path))
+            {
+                if (string.IsNullOrWhiteSpace(line)) continue;
+                bool skip = false, isLiveUsage = false;
+                try
+                {
+                    using JsonDocument doc = JsonDocument.Parse(line);
+                    JsonElement root = doc.RootElement;
+                    if (root.TryGetProperty("maxseen", out _))
+                        skip = true;   // folded into the new sentinel
+                    else if (root.TryGetProperty("used", out JsonElement u))
+                        isLiveUsage = u.EnumerateArray()
+                                       .Any(e => liveIds.Contains(e.GetInt64()));
+                    else if (root.TryGetProperty("id", out JsonElement idEl) &&
+                             idEl.TryGetInt64(out long id) &&
+                             byId.TryGetValue(id, out MemoryBlob? live))
+                        // Identity comparison, not bytes: a foreign-written
+                        // line with different spacing is still THIS live blob
+                        // (kept in canonical form above), while a stale
+                        // duplicate with different text is history to archive.
+                        skip = root.TryGetProperty("text", out JsonElement t) &&
+                               t.GetString() == live.Text;
+                }
+                catch (JsonException) { }
+
+                if (skip) continue;
+                if (isLiveUsage) keep.Add(line);
+                else archive.Add(line);
+            }
+
+            if (archive.Count == 0) return 0;                   // nothing to do
+
+            File.AppendAllLines(path + ".archive.jsonl", archive);
+            string tmp = path + ".compact.tmp";
+            File.WriteAllLines(tmp, keep);
+            File.Move(tmp, path, overwrite: true);
+            return archive.Count;
+        }
+        finally
+        {
+            lockStream.Dispose();
+        }
     }
 
     /// <summary>
@@ -244,7 +372,7 @@ public sealed class BlobStore : IDisposable, IMemoryView
     /// </summary>
     private static (List<MemoryBlob> Loaded, Dictionary<long, int> UseCounts,
                     Dictionary<long, HashSet<string>> UseSessions,
-                    long MaxSeen, int Corrupt) LoadFile(string path)
+                    long MaxSeen, int Corrupt, int TotalLines) LoadFile(string path)
     {
         var byId = new Dictionary<long, MemoryBlob>();
         var order = new List<long>();
@@ -252,15 +380,26 @@ public sealed class BlobStore : IDisposable, IMemoryView
         var useSessions = new Dictionary<long, HashSet<string>>();
         long maxSeen = 0;
         int corrupt = 0;
+        int totalLines = 0;
         if (File.Exists(path))
         {
             foreach (string line in File.ReadLines(path))
             {
                 if (string.IsNullOrWhiteSpace(line)) continue;
+                totalLines++;
                 try
                 {
                     using JsonDocument doc = JsonDocument.Parse(line);
                     JsonElement root = doc.RootElement;
+
+                    // Compaction sentinel: preserves the never-reuse-ids
+                    // guarantee after dead ids are archived away.
+                    if (root.TryGetProperty("maxseen", out JsonElement ms))
+                    {
+                        long v = ms.GetInt64();
+                        if (v > maxSeen) maxSeen = v;
+                        continue;
+                    }
 
                     if (root.TryGetProperty("del", out JsonElement del))
                     {
@@ -306,7 +445,7 @@ public sealed class BlobStore : IDisposable, IMemoryView
         }
         var loaded = new List<MemoryBlob>(order.Count);
         foreach (long id in order) loaded.Add(byId[id]);
-        return (loaded, useCounts, useSessions, maxSeen, corrupt);
+        return (loaded, useCounts, useSessions, maxSeen, corrupt, totalLines);
     }
 
     /// <summary>Appends one blob, assigning its id, and indexes it. Durable on return.</summary>
