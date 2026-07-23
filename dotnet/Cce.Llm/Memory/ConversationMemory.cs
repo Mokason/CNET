@@ -220,7 +220,7 @@ public sealed class ConversationMemory
     public sealed record LookupOutcome(List<MemoryBlob> Hits, bool MatchesAllAlreadyVisible);
 
     public LookupOutcome Lookup(string query, int maxResults, IReadOnlySet<long> exclude,
-                                string? role = null)
+                                string? role = null, bool relaxed = false)
     {
         ArgumentException.ThrowIfNullOrEmpty(query);
         var hits = new List<MemoryBlob>();
@@ -229,7 +229,7 @@ public sealed class ConversationMemory
         int fetch = role is null ? maxResults + exclude.Count
                                  : (maxResults + exclude.Count) * 4;
         int rawMatches = 0, excludedAsVisible = 0;
-        foreach (MemoryBlob blob in _store.Recall(query, fetch))
+        foreach (MemoryBlob blob in _store.Recall(query, fetch, relaxed))
         {
             if (role is not null && blob.Role != role) continue;
             rawMatches++;

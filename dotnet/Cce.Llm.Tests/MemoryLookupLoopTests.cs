@@ -309,4 +309,75 @@ public sealed class MemoryLookupLoopTests : IDisposable
 
         Assert.Contains("no memory matched those keywords", session.Calls[1].System);
     }
+
+    // ─────────────── deterministic retrieval on genuine misses ───────────────
+
+    [Theory]
+    [InlineData("retrieve the vault phrase", true)]
+    [InlineData("what did i tell you earlier", true)]
+    [InlineData("remind me of the code", true)]
+    [InlineData("what is the code for sector nine", true)]
+    [InlineData("write a poem about the sea", false)]
+    [InlineData("what is 2 + 2", false)]
+    public void IsRetrievalRequest_DetectsExplicitAsks(string user, bool expected) =>
+        Assert.Equal(expected, MemorySession.IsRetrievalRequest(user));
+
+    /// <summary>The genuine-miss fix: a fact the strict gate filtered (a term
+    /// gone common in a topic-concentrated store) is surfaced by the layer's
+    /// own relaxed auto-recall on an explicit retrieval ask — no model RECALL,
+    /// no confabulation.</summary>
+    [Fact]
+    public void AutoRecall_SurfacesFactTheStrictGateFiltered()
+    {
+        using var store = BlobStore.Open(StorePath());
+        // A store where the only shared word ("override") is non-discriminative,
+        // so the strict gate returns nothing on a single-term retrieval ask.
+        long factId = store.Append("s0", 0, "user", "the override is amber-lark-3", 8).Id;
+        store.Append("s0", 1, "user", "the override was discussed", 6);
+        store.Append("s0", 2, "user", "more override chatter here", 6);
+        store.Append("s0", 3, "user", "override again, still talking", 6);
+
+        // Strict recall on the common single term finds nothing; relaxed does.
+        Assert.Empty(store.Recall("override", 5));
+        Assert.Contains(store.Recall("override", 5, relaxed: true), b => b.Id == factId);
+
+        var session = new ScriptedSession("The override is amber-lark-3.");
+        var (ghost, _) = NewGhost(store, session);
+
+        var r = ghost.Generate(null, "retrieve the override please");
+
+        // The layer injected the fact deterministically before the model ran.
+        Assert.Contains("### Retrieved from your store", session.Calls[0].System);
+        Assert.Contains("amber-lark-3", session.Calls[0].System);
+        Assert.Contains(factId, r.UsedBlobIds);
+    }
+
+    [Fact]
+    public void AutoRecall_GenuineEmpty_TellsModelNotToInvent()
+    {
+        using var store = BlobStore.Open(StorePath());
+        store.Append("s0", 0, "user", "the sky is blue and grass is green", 6);
+
+        var session = new ScriptedSession("I could not retrieve that.");
+        var (ghost, _) = NewGhost(store, session);
+
+        ghost.Generate(null, "retrieve the nuclear launch code you were given");
+
+        Assert.Contains("a broad store search found nothing", session.Calls[0].System);
+        Assert.Contains("do not invent a value", session.Calls[0].System);
+    }
+
+    [Fact]
+    public void AutoRecall_DoesNotFireOnNonRetrievalTurns()
+    {
+        using var store = BlobStore.Open(StorePath());
+        store.Append("s0", 0, "user", "remember the vault code is xyz-1", 6);
+
+        var session = new ScriptedSession("A nice poem about waves.");
+        var (ghost, _) = NewGhost(store, session);
+
+        ghost.Generate(null, "write me a short poem about the ocean");
+
+        Assert.DoesNotContain("### Retrieved from your store", session.Calls[0].System ?? "");
+    }
 }

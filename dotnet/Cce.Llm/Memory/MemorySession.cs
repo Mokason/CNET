@@ -336,6 +336,39 @@ public sealed class MemorySession
             }
         }
 
+        // ── deterministic retrieval on genuine misses ──
+        // When the user explicitly asks to retrieve something, do not depend on
+        // the model choosing to RECALL (it reaches for the tool only when the
+        // fact is already in front of it, and confabulates absence when it is
+        // not). Search the store ourselves with a RELAXED gate — an explicit
+        // ask lowers the precision bar — and inject what we find, or an honest
+        // "searched, nothing" so the model cannot invent a false absence.
+        if (!continuing && IsRetrievalRequest(user))
+        {
+            List<MemoryBlob> retrieved = _memory
+                .Lookup(user, _resultsPerLookup, visibleIds, role: null, relaxed: true).Hits;
+            var rblock = new System.Text.StringBuilder(
+                "\n### Retrieved from your store for this request\n");
+            if (retrieved.Count == 0)
+                rblock.Append("(a broad store search found nothing beyond what is shown — " +
+                              "if the answer is not above, say you could not retrieve it, " +
+                              "and do not invent a value)\n");
+            foreach (MemoryBlob b in retrieved)
+            {
+                string line = _memory.RenderMemory(b) + "\n";
+                if (_countTokens(rblock.ToString()) + _countTokens(line) > headroom) break;
+                rblock.Append(line);
+                usedIds.Add(b.Id);
+                visibleIds.Add(b.Id);
+            }
+            int rcost = _countTokens(rblock.ToString());
+            if (rcost <= headroom)
+            {
+                systemText += rblock.ToString();
+                headroom -= rcost;
+            }
+        }
+
         // A resume turn needs no lookups — and the two instruction blocks
         // ("reply with one line" vs "output only the remaining text") conflict.
         bool loopEnabled = !continuing && _maxLookupRounds > 0 &&
@@ -810,6 +843,26 @@ public sealed class MemorySession
     /// "continue …" with any suffix still counts ("continue the json"), but a
     /// message that merely mentions continuing does not.
     /// </summary>
+    private static readonly string[] RetrievalMarkers =
+    [
+        "retrieve", "recall ", "remind me", "do you remember", "what do you remember",
+        "did i tell you", "did i say", "what did i tell", "what did i say",
+        "what did i ask", "you were told", "you were given", "asked you to remember",
+        "asked you to memorize", "asked you to store", "from your store", "from memory",
+        "from storage", "what was the", "what is the code", "what is the phrase",
+        "what is the password", "look it up", "search your", "query your",
+    ];
+
+    /// <summary>
+    /// True when the user is explicitly asking to retrieve stored information —
+    /// the signal to search the store ourselves rather than trust the model to.
+    /// </summary>
+    internal static bool IsRetrievalRequest(string user)
+    {
+        string t = user.ToLowerInvariant();
+        return RetrievalMarkers.Any(m => t.Contains(m, StringComparison.Ordinal));
+    }
+
     internal static bool IsContinueRequest(string user)
     {
         string t = user.Trim().TrimEnd('.', '!', '?', '…').Trim().ToLowerInvariant();

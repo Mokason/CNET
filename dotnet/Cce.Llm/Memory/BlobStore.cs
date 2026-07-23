@@ -492,7 +492,7 @@ public sealed class BlobStore : IDisposable, IMemoryView
     /// Empty when nothing in the store shares a discriminative keyword with the
     /// query — by design, never "closest anyway" matches.
     /// </summary>
-    public List<MemoryBlob> Recall(string query, int maxResults)
+    public List<MemoryBlob> Recall(string query, int maxResults, bool relaxed = false)
     {
         ArgumentNullException.ThrowIfNull(query);
         ArgumentOutOfRangeException.ThrowIfLessThan(maxResults, 1);
@@ -501,7 +501,7 @@ public sealed class BlobStore : IDisposable, IMemoryView
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
 
-            var hits = _index.Query(query, _nextId - 1);
+            var hits = _index.Query(query, _nextId - 1, relaxed);
             var result = new List<MemoryBlob>(Math.Min(maxResults, hits.Count));
             foreach ((long id, _) in hits)
             {

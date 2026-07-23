@@ -76,7 +76,8 @@ internal sealed class KeywordIndex
     /// recall anything, so a generic query returns nothing rather than the
     /// least-irrelevant blob. Recall that returns nothing is a feature.
     /// </remarks>
-    public List<(long BlobId, double Score)> Query(string query, long newestBlobId)
+    public List<(long BlobId, double Score)> Query(string query, long newestBlobId,
+                                                   bool relaxed = false)
     {
         int n = DocumentCount;
         if (n == 0) return [];
@@ -119,6 +120,14 @@ internal sealed class KeywordIndex
         // recalls nothing.
         foreach ((long id, int matches) in distinctMatches)
             if (matches >= 2) gatePassed.Add(id);
+
+        // Relaxed mode: the caller explicitly asked to retrieve, so the
+        // precision gate is dropped — any term match is a candidate, ranked by
+        // score. This surfaces facts the strict gate filtered (a term that
+        // became common in a topic-concentrated store), turning a genuine
+        // recall miss into a hit instead of a confabulated absence.
+        if (relaxed)
+            foreach (long id in scores.Keys) gatePassed.Add(id);
 
         if (gatePassed.Count == 0) return [];
 
