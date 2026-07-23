@@ -78,6 +78,13 @@ public static class ExactArithmetic
             if (!char.IsAsciiDigit(c) && !" .,+-*/%^()".Contains(c))
                 return false;
 
+        // Pure-integer expressions (no '.' and no '/') evaluate over BigInteger:
+        // exact at any magnitude, so 2^127 - 1 computes instead of overflowing
+        // decimal or hitting the exponent cap. Fractions and division keep the
+        // decimal path (terminating-division discipline lives there).
+        if (!expr.Contains('.') && !expr.Contains('/'))
+            return TryAnswerBigInteger(expr, out answer);
+
         try
         {
             int pos = 0;
@@ -92,6 +99,111 @@ public static class ExactArithmetic
         {
             return false;
         }
+    }
+
+    // ── BigInteger path: exact integer arithmetic at any magnitude ──
+
+    private static bool TryAnswerBigInteger(string expr, out string answer)
+    {
+        answer = "";
+        try
+        {
+            int pos = 0;
+            System.Numerics.BigInteger value = BigExpr(expr, ref pos);
+            SkipSpace(expr, ref pos);
+            if (pos != expr.Length) return false;
+            answer = value.ToString();
+            return true;
+        }
+        catch (Exception ex) when (ex is FormatException or OverflowException
+                                       or DivideByZeroException)
+        {
+            return false;
+        }
+    }
+
+    private static System.Numerics.BigInteger BigExpr(string s, ref int pos)
+    {
+        System.Numerics.BigInteger left = BigTerm(s, ref pos);
+        while (true)
+        {
+            SkipSpace(s, ref pos);
+            if (pos < s.Length && s[pos] == '+') { pos++; left += BigTerm(s, ref pos); }
+            else if (pos < s.Length && s[pos] == '-') { pos++; left -= BigTerm(s, ref pos); }
+            else return left;
+        }
+    }
+
+    private static System.Numerics.BigInteger BigTerm(string s, ref int pos)
+    {
+        System.Numerics.BigInteger left = BigFactor(s, ref pos);
+        while (true)
+        {
+            SkipSpace(s, ref pos);
+            if (pos < s.Length && s[pos] == '*') { pos++; left *= BigFactor(s, ref pos); }
+            else if (pos < s.Length && s[pos] == '%')
+            {
+                pos++;
+                System.Numerics.BigInteger m = BigFactor(s, ref pos);
+                if (m == 0) throw new DivideByZeroException();
+                left %= m;
+            }
+            else return left;
+        }
+    }
+
+    private static System.Numerics.BigInteger BigFactor(string s, ref int pos)
+    {
+        System.Numerics.BigInteger baseValue = BigUnary(s, ref pos);
+        SkipSpace(s, ref pos);
+        if (pos < s.Length && s[pos] == '^')
+        {
+            pos++;
+            System.Numerics.BigInteger exp = BigFactor(s, ref pos);   // right-associative
+            // Bounded to keep the result and the work finite; 2^127 is trivial,
+            // 2^100000 (~30k digits) is the ceiling, beyond which we decline.
+            if (exp < 0 || exp > 100000) throw new FormatException("exponent out of range");
+            return System.Numerics.BigInteger.Pow(baseValue, (int)exp);
+        }
+        return baseValue;
+    }
+
+    private static System.Numerics.BigInteger BigUnary(string s, ref int pos)
+    {
+        SkipSpace(s, ref pos);
+        if (pos < s.Length && s[pos] == '-') { pos++; return -BigUnary(s, ref pos); }
+        if (pos < s.Length && s[pos] == '+') { pos++; return BigUnary(s, ref pos); }
+        return BigPrimary(s, ref pos);
+    }
+
+    private static System.Numerics.BigInteger BigPrimary(string s, ref int pos)
+    {
+        SkipSpace(s, ref pos);
+        if (pos < s.Length && s[pos] == '(')
+        {
+            pos++;
+            System.Numerics.BigInteger inner = BigExpr(s, ref pos);
+            SkipSpace(s, ref pos);
+            if (pos >= s.Length || s[pos] != ')') throw new FormatException("unbalanced paren");
+            pos++;
+            return inner;
+        }
+
+        int start = pos;
+        while (pos < s.Length && (char.IsAsciiDigit(s[pos]) || s[pos] == ','))
+            pos++;
+        if (pos == start) throw new FormatException("number expected");
+        string token = s[start..pos];
+
+        if (token.Contains(','))   // strict thousands grouping, same as decimal
+        {
+            string[] groups = token.Split(',');
+            if (groups.Length < 2 || groups[0].Length is < 1 or > 3 ||
+                groups.Skip(1).Any(g => g.Length != 3))
+                throw new FormatException("malformed thousands grouping");
+            token = token.Replace(",", "");
+        }
+        return System.Numerics.BigInteger.Parse(token);
     }
 
     // ── strict recursive descent over decimal ──

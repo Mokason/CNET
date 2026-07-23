@@ -39,9 +39,7 @@ public sealed class ExactArithmeticTests
     [InlineData("2+")]                           // dangling operator
     [InlineData("(2+3")]                         // unbalanced paren
     [InlineData("1,2 + 1")]                      // malformed thousands grouping
-    [InlineData("2^2.5")]                        // fractional exponent
-    [InlineData("9^999")]                        // exponent out of range
-    [InlineData("79228162514264337593543950335 * 10")]   // decimal overflow
+    [InlineData("2^2.5")]                        // fractional exponent (decimal path)
     [InlineData("what is the capital of france")]
     [InlineData("two plus two")]                 // no digits
     [InlineData("")]
@@ -76,5 +74,35 @@ public sealed class ExactArithmeticTests
     {
         Assert.True(ExactArithmetic.TryAnswer(prompt, out string answer));
         Assert.Equal(expected, answer);
+    }
+
+    // ─────────────── big-integer path (no exponent cap, no 28-digit ceiling) ───────────────
+
+    [Theory]
+    [InlineData("What is 2 to the power of 127 minus 1?", "170141183460469231731687303715884105727")]
+    [InlineData("2^127 - 1", "170141183460469231731687303715884105727")]
+    [InlineData("What is 123456789 * 987654321?", "121932631112635269")]
+    [InlineData("2^64", "18446744073709551616")]
+    [InlineData("9^999", "194207916858072401073330513240517841169895831937243168645765334645631807358586165476831829984964567897289883410682808509863485381763945405279379355788182053541434708898886353264614403164257835946591015853500491562156765579388944516423770646547300211711400609344237550775485394558425026601257627110879613741893863295847627378504481736441703291029360564416718984718052676789493826372811349572386149787861703350363229770343522164432121091627871310618608734044108407173015970850780786711471108639762810760748899301375323974504010469298672123113693793242558662498267897607159946316136440215024585534972601864730717278590674861331708227340510282977338127859756479389076075528672989549862138485404935127984793120586289288424045660573066638008624179879066798350622453419082976217706653276687992598885030141711458658381360884807741768071789239593772708382532520992894115725948613681993478965648216640862698897925988931145600683858128653568049999074868783790048889")]
+    [InlineData("999999999999 * 999999999999", "999999999998000000000001")]
+    public void BigInteger_ComputesExactly_BeyondDecimal(string prompt, string expected)
+    {
+        Assert.True(ExactArithmetic.TryAnswer(prompt, out string answer), prompt);
+        Assert.Equal(expected, answer);
+    }
+
+    [Fact]
+    public void BigInteger_HugeExponent_Declines_NotHangs()
+    {
+        // Beyond the 100000 exponent bound: declines rather than blowing memory.
+        Assert.False(ExactArithmetic.TryAnswer("2^999999999", out _));
+    }
+
+    [Fact]
+    public void Fractions_StillUseTheDecimalPath()
+    {
+        Assert.True(ExactArithmetic.TryAnswer("100 / 8", out string a));
+        Assert.Equal("12.5", a);
+        Assert.False(ExactArithmetic.TryAnswer("1 / 3", out _));   // non-terminating still declines
     }
 }

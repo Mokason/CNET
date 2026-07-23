@@ -214,7 +214,18 @@ if (a.Peer is not null)
             ghostReply = r.Result.Text.Trim();
             string tag = r.Exact ? " ·exact" : r.CertifiedUnit is not null ? " ·certified"
                        : r.Lookups.Count > 0 ? $" ·{r.Lookups.Count} action(s)" : "";
-            Console.WriteLine($"\n{dim}   └ {r.Result.PromptTokens} tok in{tag}{reset}\n");
+            // Thinking-model burnout: a capped answer with no visible text. Say
+            // so honestly and hand the peer a note, rather than leaving silence
+            // it mistakes for a broken channel.
+            if (ghostReply.Length == 0)
+            {
+                Console.Write($"{dim}(no visible answer — the reasoning budget was spent " +
+                              $"before any text was emitted; a harder --max-tokens helps){reset}");
+                ghostReply = "(I produced no visible answer that turn — my reasoning budget " +
+                             "was exhausted before I emitted text. Ask something narrower or " +
+                             "one thing at a time.)";
+            }
+            Console.WriteLine($"\n{dim}   └ {r.Result.PromptTokens}→{r.Result.GeneratedTokens} tok{tag}{reset}\n");
         }
         catch (Exception ex) when (ex is CnetHarnessException or InvalidOperationException)
         {
