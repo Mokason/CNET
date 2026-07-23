@@ -27,7 +27,7 @@ string drainerSvc = "cnet-personal-ai-lane.service";
 string teacherSvc = "cnet-gap-lane.service";
 int intervalSec = 60;
 int minNewBlobs = 6;
-bool once = false, dryRun = false, allowTeacherStart = false;
+bool once = false, dryRun = false, allowTeacherStart = false, statusOnly = false;
 
 for (int i = 0; i < args.Length; i++)
 {
@@ -47,6 +47,7 @@ for (int i = 0; i < args.Length; i++)
         case "--once": once = true; break;
         case "--dry-run": dryRun = true; break;
         case "--allow-teacher-start": allowTeacherStart = true; break;
+        case "--status": statusOnly = true; break;
         default:
             Console.Error.WriteLine(
                 "usage: ghost-orchestrator [--store <jsonl>] [--inbox <path>] [--ledger <path>]\n" +
@@ -61,6 +62,13 @@ if (ledger is null && inbox is not null && inbox.EndsWith(".inbox", StringCompar
 {
     string candidate = inbox[..^".inbox".Length] + ".gaps.txt";
     if (File.Exists(candidate)) ledger = candidate;
+}
+
+if (statusOnly)
+{
+    var snap = CNET.Cce.Llm.Status.SystemStatus.Gather(store, inbox, stateDir);
+    Console.Write(CNET.Cce.Llm.Status.SystemStatus.Format(snap));
+    return 0;
 }
 
 var config = new OrchestratorConfig

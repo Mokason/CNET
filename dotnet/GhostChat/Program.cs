@@ -19,6 +19,7 @@ using CNET.Cce.Llm.Memory;
 using CNET.Cce.Llm.Ollama;
 using CNET.Cce.Llm.Verify;
 using CNET.Cce.Llm.Tools;
+using CNET.Cce.Llm.Status;
 
 var args_ = ParseArgs(args, out bool helpRequested);
 if (args_ is null) return helpRequested ? 0 : 2;
@@ -157,7 +158,7 @@ ghost.OnLookup = round =>
 Console.WriteLine($"ghost-chat | backend={a.Backend} model={a.Model} window={window}");
 Console.WriteLine($"store={storePath} ({store.Count} memories" +
     (store.CorruptLinesSkipped > 0 ? $", {store.CorruptLinesSkipped} corrupt lines skipped" : "") + ")");
-Console.WriteLine("/exit /stats /show /recall /forget <id> /read <file> /tools /deftool /defscript /consolidate /distill /judge");
+Console.WriteLine("/exit /stats /status /show /recall /forget /read /tools /deftool /defscript /consolidate /distill /judge");
 Console.WriteLine();
 
 // Ollama streams; local backends print at once.
@@ -222,6 +223,13 @@ while (true)
             // A forget is a consequence-label: the user judged this bad.
             judge.Learn(victim.Text, good: false, source: "forget");
         }
+        continue;
+    }
+
+    if (input == "/status")
+    {
+        var snap = SystemStatus.Gather(storePath, routeInbox, toolStateDir);
+        Console.Write(SystemStatus.Format(snap));
         continue;
     }
 
