@@ -25,6 +25,26 @@ public static partial class JsonToolCall
     public static string[] FeatureNames => FeatureNamesGen;
     public static string[] ExampleJson => ExampleJsonGen;
 
+    private static readonly object TrafficLogLock = new();
+
+    /// <summary>Append a tool-call request to the recorded-traffic log. No-op
+    /// unless CNET_JTC_TRAFFIC_LOG is set (read per call so it stays runtime-
+    /// configurable). One single-line JSON record per line, so the personal-AI
+    /// lane can replay real host traffic for fault-mining and adapter
+    /// certification. Failures never affect serving.</summary>
+    public static void LogTraffic(string? jsonText)
+    {
+        var path = Environment.GetEnvironmentVariable("CNET_JTC_TRAFFIC_LOG");
+        if (string.IsNullOrEmpty(path) || string.IsNullOrEmpty(jsonText)) return;
+        try
+        {
+            string line = jsonText.Replace('\r', ' ').Replace('\n', ' ').Trim();
+            if (line.Length == 0) return;
+            lock (TrafficLogLock) File.AppendAllText(path, line + "\n");
+        }
+        catch { /* recording must never break serving */ }
+    }
+
     /// <summary>Encode JSON text into the closed feature vector (0/1 doubles).</summary>
     public static double[] Encode(string? jsonText)
     {
@@ -216,6 +236,7 @@ public static partial class JsonToolCall
     public static (string? Tool, string Source, bool GapNoted) ClassifyOrGap(
         SoulHost? soul, string jsonText, string? inboxPath = null)
     {
+        LogTraffic(jsonText);   // capture the production request stream (env-gated)
         if (soul == null)
         {
             bool noted = NoteGap(inboxPath);

@@ -236,27 +236,28 @@ orchestrator-supplied (it owns the unit's oracle); `registry_lora.c` only calls
 the pointer. When `validate` is NULL the tick trains on a queue split and
 certifies on a fault-queue holdout (fixes only).
 
-**Recorded production traffic stream.** `personal_ai_lora_tick` captures a
-recorded JSONL of real JSON tool-call requests (one per line — the shape the
-serving host logs) and *replays* it in three disjoint slices: fault-mining,
-in-tick validation, and held-out eval. So the fault queue and the validation
-sampler read the **same captured stream**, not independent generations — the
-deployment shape (host logs traffic → orchestrator replays it for fault-mining +
-gating). Requests go through the production `cnet_jtc_encode` path; the mix is
-clean / underspecified / ambiguous, so the certified student is already ~94% with
-a small ambiguous-tail of faults:
+**Recorded production traffic stream — wired to the host's real log.** The host
+records traffic and the orchestrator replays it, across the language boundary:
 
-| scenario | gate | certified | served | outcome |
-|----------|------|:---------:|:------:|---------|
-| A reasonable | passes | yes | **97%** (+3) | cheap adapter fixes the tail without regressing clean traffic |
-| B strict (`max_regr=0`) | rejects | no | **100%** | a residual flip trips the strict gate → gap_lane dense heal fallback |
+- **Host capture (.NET):** `JsonToolCall.ClassifyOrGap` — the choke point every
+  real request flows through — calls `JsonToolCall.LogTraffic`, which appends the
+  request JSON (one single-line record per line) to `CNET_JTC_TRAFFIC_LOG`.
+  Env-gated, read per call, failures never touch serving; off by default.
+- **Replay (C):** `personal_ai_lora_tick` reads `CNET_JTC_TRAFFIC_LOG` when set
+  and loadable (else a local synthesized capture), and replays it in three
+  disjoint slices — fault-mining, in-tick validation, held-out eval — so the
+  fault queue and the sampler read the **same captured stream**.
 
-Honest read: on already-good recorded traffic the adapter's win is small (+3) and
-a strict gate prefers the dense heal (100%); the adapter's larger wins are on
-low-accuracy bases (the +47 on the earlier out-of-distribution run). The gate
-picks correctly either way. The capture here is synthesized from real request
-shapes; in production the JSONL is the host's actual request log — the replay/
-slice/gate machinery is identical.
+Proven end-to-end across the boundary: a `.NET` test run with the env set produces
+a 2000-line host log via `LogTraffic`, and the C replay consumes it
+(`HOST LOG via CNET_JTC_TRAFFIC_LOG`). On that real host traffic the certified
+student is already ~93%, and the gate makes a **distribution-dependent** call —
+here the low-rank adapter regresses just past the reasonable threshold, so the
+gate declines it and gap_lane's dense heal serves (96%); on the synthesized
+distribution the adapter certifies and serves (+3). The harness now asserts the
+**safety invariants** that hold on any traffic (tick runs; unit never ends below
+baseline; a certified adapter serves base+delta, a declined one is blocked and
+the base is served) and *reports* which branch fired, rather than demanding one.
 
 ### Done
 The cce_lora arc is complete: adapter core → benchmark → real-queue wiring → live

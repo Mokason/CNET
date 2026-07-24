@@ -121,4 +121,59 @@ public class JsonToolCallTests
             if (File.Exists(path)) File.Delete(path);
         }
     }
+
+    /// <summary>The host-side recorded-traffic capture: LogTraffic appends each
+    /// request as single-line JSONL to CNET_JTC_TRAFFIC_LOG, replayable through
+    /// Encode. When the env is set externally, produce a larger host log at that
+    /// path and leave it (so the C personal-AI replay can consume it); otherwise
+    /// self-contained with a temp file.</summary>
+    [Fact]
+    public void LogTraffic_ProducesReplayableHostLog()
+    {
+        string? external = Environment.GetEnvironmentVariable("CNET_JTC_TRAFFIC_LOG");
+        bool demo = !string.IsNullOrEmpty(external);
+        string path = demo ? external! : Path.Combine(Path.GetTempPath(), $"jtc_traffic_{Guid.NewGuid():N}.jsonl");
+        if (!demo) Environment.SetEnvironmentVariable("CNET_JTC_TRAFFIC_LOG", path);
+        if (File.Exists(path)) File.Delete(path);
+        try
+        {
+            int n = demo ? 2000 : 80;
+            var rng = new Random(20260724);
+            for (int i = 0; i < n; i++)
+                JsonToolCall.LogTraffic(GenRequest(rng));      // the host capture path
+            var lines = File.ReadAllLines(path);
+            Assert.True(lines.Length >= n * 9 / 10, $"expected ~{n}, got {lines.Length}");
+            Assert.All(lines, l => Assert.DoesNotContain('\n', l));                 // single-line JSONL
+            Assert.All(lines, l => Assert.Contains(JsonToolCall.Encode(l), x => x != 0.0)); // encodable
+        }
+        finally
+        {
+            if (!demo)
+            {
+                Environment.SetEnvironmentVariable("CNET_JTC_TRAFFIC_LOG", null);
+                if (File.Exists(path)) File.Delete(path);
+            }
+            // demo mode: leave the file as the replayable host log
+        }
+    }
+
+    // Realistic tool-call request shapes (clean / underspecified / ambiguous),
+    // mirroring the personal-AI replay harness so a produced host log exercises
+    // the same fault distribution.
+    private static string GenRequest(Random rng)
+    {
+        string[] tool = JsonToolCall.ToolNames;
+        string[] args =
+        {
+            "\"expr\":\"n\"", "\"key\":\"k\",\"value\":\"v\"", "\"query\":\"q\"",
+            "\"path\":\"f.txt\"", "\"cond\":0,\"current\":1", "\"query\":\"web thing\"",
+            "\"query\":\"topic\"", "\"answer\":\"ok\""
+        };
+        int t = rng.Next(8), style = rng.Next(10);
+        if (t == 7) return "{\"final\":\"stop\"," + args[7] + "}";
+        if (style < 6) return "{\"tool\":\"" + tool[t] + "\",\"args\":{" + args[t] + "}}";
+        if (style < 8) return "{\"args\":{" + args[t] + "}}";
+        int t2 = rng.Next(7);
+        return "{\"tool\":\"" + tool[t] + "\",\"args\":{" + args[t] + ",\"note\":\"see " + tool[t2] + "\"}}";
+    }
 }
