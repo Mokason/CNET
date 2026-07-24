@@ -294,7 +294,7 @@ SYNONYMS_TEST := tests/test_synonyms.c
 TILEINDEX_TEST := tests/test_tile_index.c
 CONSOLIDATE_TEST := tests/test_tile_consolidate.c
 
-.PHONY: all run test verify verify-long recipe_gate demos compat unified unified_native unified_adapter unified_cce_adapter unified_oracle_adapter unified_specialist specialist_health gap_lane gap_lane_run_build dispatch_story claims claims_model model_evidence oracle_v2_test soul_host_test legacy_test compose route dag hetero split chunk certify property coverage conformal logicgate decimal circuit study capacity library margin fuzzy stochastic fastpath throughput residue expr attention attention_study lifecycle_bench lbench proposal_sidecar probe_overhead belowbeam_chars struct_pref dgate_bench compounding_bench cce_smoke counterfactual_router_test sparse_kv_test narrative_coherence_test phase4_uncertainty_test register_compression_improvements phase5_integration_test cce_train_bench cce_view forest_view wordlm wordlm_bitnet cce_dll cnet_dll cce_safetensors_test cce_gguf_test cce_model_test cce_autograd_test endgate jsonstory pdftest pdflearn compound tiermem_test graduate fontdecode tfidf synonyms tileindex consolidate clean aicimo_smoke aicimo_core_test cnet_harness_contract_test cnet_harness_plugin dotnet_harness_test cce_lora_test cce_lora_bench cce_lily_test cce_lily_serve cce_lily_collect cce_lily_teacher registry_lily_test registry_lily_compute registry_lora_test jtc_lora_live jtc_lora_faultq personal_ai_lora_tick
+.PHONY: all run test verify verify-long recipe_gate demos compat unified unified_native unified_adapter unified_cce_adapter unified_oracle_adapter unified_specialist specialist_health gap_lane gap_lane_run_build dispatch_story claims claims_model model_evidence oracle_v2_test soul_host_test legacy_test compose route dag hetero split chunk certify property coverage conformal logicgate decimal circuit study capacity library margin fuzzy stochastic fastpath throughput residue expr attention attention_study lifecycle_bench lbench proposal_sidecar probe_overhead belowbeam_chars struct_pref dgate_bench compounding_bench cce_smoke counterfactual_router_test sparse_kv_test narrative_coherence_test phase4_uncertainty_test register_compression_improvements phase5_integration_test cce_train_bench cce_view forest_view wordlm wordlm_bitnet cce_dll cnet_dll cce_safetensors_test cce_gguf_test cce_model_test cce_autograd_test endgate jsonstory pdftest pdflearn compound tiermem_test graduate fontdecode tfidf synonyms tileindex consolidate clean aicimo_smoke aicimo_core_test cnet_harness_contract_test cnet_harness_plugin dotnet_harness_test cce_lora_test cce_lora_bench cce_lily_test cce_lily_serve cce_lily_collect cce_lily_teacher registry_lily_test registry_lily_compute registry_lora_test jtc_lora_live jtc_lora_faultq personal_ai_lora_tick gigatok_bench
 
 all: nn_demo
 
@@ -1155,6 +1155,14 @@ endif
 cce_smoke: $(CCE) $(CCE_CUDA_OBJ) tests/cce_smoke.c
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) tests/cce_smoke.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 	@echo "cce_smoke built. Run manually: ./cce_smoke"
+
+# gigatoken confirmation: SWAR GPT-2 pretokenizer (regex-replacement lever) ported
+# to C, benchmarked on this host. Gate: scalar==SWAR boundaries byte-for-byte.
+# Run a bigger/real corpus with:  ./bin/gigatok_bench owt_train.txt
+gigatok_bench: src/cce/cce_pretok_swar.c tests/gigatok_bench.c include/cce/cce_pretok_swar.h
+	@mkdir -p $(BIN_DIR)
+	$(CC) $(CFLAGS) $(OMPFLAGS) -o $(BIN_DIR)/$@ src/cce/cce_pretok_swar.c tests/gigatok_bench.c -lm
+	./$(BIN_DIR)/gigatok_bench
 
 # DSA-inspired Sparse Softmax (SSMax) — no dense tail mass under the curve.
 .PHONY: ssmax
