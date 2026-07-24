@@ -12,6 +12,9 @@
 #ifndef _WIN32
 #include <unistd.h>
 #include <sys/types.h>
+#ifdef __linux__
+#include <sys/mman.h> /* madvise(MADV_HUGEPAGE) for the pretoken cache table */
+#endif
 #define cce_fseeko fseeko
 #else
 #define cce_fseeko _fseeki64
@@ -830,41 +833,83 @@ static int skip_other(const char *s, int n, int i) {
     return i;
 }
 
-/* ---- pretoken cache: span bytes -> token ids (open addressing) ---- */
-typedef struct { uint64_t h; char *b; int bl; int *ids; int nids; } PtcE;
+/* ---- pretoken cache: span bytes -> token ids ----------------------------
+ * Cache-line-packed (gigatoken pretoken_cache.rs style): each entry is exactly
+ * one 64-byte cache line with the span key AND token ids inlined, so a hit
+ * touches ONE line with no pointer chasing (the old design followed two heap
+ * pointers per hit). The table is 2 MiB-aligned + MADV_HUGEPAGE so a large table
+ * stays in the dTLB. Spans that don't fit inline (key > PTC_KEYMAX, or > PTC_IDMAX
+ * tokens) are encoded directly and not cached — rare for natural text. */
+enum { PTC_KEYMAX = 22, PTC_IDMAX = 8 };
+typedef struct {
+    uint64_t h;                 /* hash; 0 = empty slot */
+    uint8_t  blen;              /* span byte length (<= PTC_KEYMAX) */
+    uint8_t  nids;              /* token count (<= PTC_IDMAX) */
+    uint8_t  key[PTC_KEYMAX];   /* inline span bytes */
+    int32_t  ids[PTC_IDMAX];    /* inline token ids */
+} PtcE;
 typedef struct Ptc { PtcE *e; int cap; int cnt; } Ptc;
+_Static_assert(sizeof(PtcE) == 64, "PtcE must be exactly one cache line");
+
 static uint64_t ptc_hash(const char *s, int n) {
     uint64_t h = 1469598103934665603ULL; int k;
     for (k = 0; k < n; k++) { h ^= (unsigned char)s[k]; h *= 1099511628211ULL; }
     return h ? h : 1;
 }
-static Ptc *ptc_new(int cap0) { Ptc *c = (Ptc *)calloc(1, sizeof *c); if (!c) return NULL; c->cap = cap0; c->e = (PtcE *)calloc((size_t)cap0, sizeof(PtcE)); if (!c->e) { free(c); return NULL; } return c; }
-static void ptc_free(Ptc *c) { int k; if (!c) return; for (k = 0; k < c->cap; k++) { free(c->e[k].b); free(c->e[k].ids); } free(c->e); free(c); }
+/* Zeroed slot array; 2 MiB-aligned + MADV_HUGEPAGE once it outgrows one huge
+   page (madvise BEFORE the zeroing fault so it maps as 2 MiB pages). */
+static PtcE *ptc_alloc(int cap) {
+    size_t bytes = (size_t)cap * sizeof(PtcE);
+    PtcE *e = NULL;
+#if defined(__linux__) && defined(MADV_HUGEPAGE)
+    if (bytes >= 2u * 1024 * 1024) {
+        if (posix_memalign((void **)&e, 2u * 1024 * 1024, bytes) != 0) e = NULL;
+        if (e) { madvise(e, bytes, MADV_HUGEPAGE); memset(e, 0, bytes); return e; }
+    }
+#endif
+    return (PtcE *)calloc((size_t)cap, sizeof(PtcE));
+}
+static Ptc *ptc_new(int cap0) {
+    Ptc *c = (Ptc *)calloc(1, sizeof *c); if (!c) return NULL;
+    c->cap = cap0; c->e = ptc_alloc(cap0);
+    if (!c->e) { free(c); return NULL; } return c;
+}
+static void ptc_free(Ptc *c) { if (!c) return; free(c->e); free(c); } /* entries are inline */
 static void ptc_grow(Ptc *c) {
-    int nc = c->cap * 2, k; PtcE *ne = (PtcE *)calloc((size_t)nc, sizeof(PtcE));
+    int nc = c->cap * 2, k; PtcE *ne = ptc_alloc(nc);
     if (!ne) return;
-    for (k = 0; k < c->cap; k++) if (c->e[k].h) { uint64_t idx = c->e[k].h & (uint64_t)(nc - 1); while (ne[idx].h) idx = (idx + 1) & (uint64_t)(nc - 1); ne[idx] = c->e[k]; }
+    for (k = 0; k < c->cap; k++) if (c->e[k].h) {
+        uint64_t idx = c->e[k].h & (uint64_t)(nc - 1);
+        while (ne[idx].h) idx = (idx + 1) & (uint64_t)(nc - 1);
+        ne[idx] = c->e[k];
+    }
     free(c->e); c->e = ne; c->cap = nc;
 }
 /* Look up (or compute+store) the encoding of span [w,wlen); append its ids. */
 static void emit_word(const cce_gguf_tok *t, Ptc *cache, const char *w, int wlen,
                       int *ids, int *cnt, int max_ids) {
-    uint64_t h; uint64_t idx; PtcE *e; int tmp[128], tn = 0, k;
-    if (!cache || wlen <= 0 || wlen > 96) { bpe_word(t, w, wlen, ids, cnt, max_ids); return; }
+    uint64_t h, idx; PtcE *e; int tmp[128], tn = 0, k;
+    if (!cache || wlen <= 0 || wlen > PTC_KEYMAX) { bpe_word(t, w, wlen, ids, cnt, max_ids); return; }
     if ((cache->cnt + 1) * 4 >= cache->cap * 3) ptc_grow(cache);
     h = ptc_hash(w, wlen);
     idx = h & (uint64_t)(cache->cap - 1);
-    for (;;) { e = &cache->e[idx];
-        if (!e->h) break;
-        if (e->h == h && e->bl == wlen && memcmp(e->b, w, (size_t)wlen) == 0) {
+    for (;;) {
+        e = &cache->e[idx];
+        if (!e->h) break;                                       /* empty -> miss */
+        if (e->h == h && e->blen == wlen && memcmp(e->key, w, (size_t)wlen) == 0) {
             for (k = 0; k < e->nids && *cnt < max_ids; k++) ids[(*cnt)++] = e->ids[k];
-            return; }
-        idx = (idx + 1) & (uint64_t)(cache->cap - 1); }
-    bpe_word(t, w, wlen, tmp, &tn, 128);
-    e->h = h; e->bl = wlen; e->b = (char *)malloc((size_t)wlen); if (e->b) memcpy(e->b, w, (size_t)wlen);
-    e->ids = (int *)malloc((size_t)(tn > 0 ? tn : 1) * sizeof(int)); if (e->ids) memcpy(e->ids, tmp, (size_t)tn * sizeof(int));
-    e->nids = tn; cache->cnt++;
+            return;                                             /* hit: one cache line */
+        }
+        idx = (idx + 1) & (uint64_t)(cache->cap - 1);
+    }
+    bpe_word(t, w, wlen, tmp, &tn, 128);                        /* miss: compute + output */
     for (k = 0; k < tn && *cnt < max_ids; k++) ids[(*cnt)++] = tmp[k];
+    if (tn <= PTC_IDMAX) {                                      /* store inline if it fits */
+        e->h = h; e->blen = (uint8_t)wlen; e->nids = (uint8_t)tn;
+        memcpy(e->key, w, (size_t)wlen);
+        for (k = 0; k < tn; k++) e->ids[k] = tmp[k];
+        cache->cnt++;
+    }
 }
 
 /* Same grammar as pretok_encode, with SWAR run-skips (swar) + cache emit. */

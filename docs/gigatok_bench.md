@@ -144,6 +144,32 @@ matters for a data loader, and it's why gigatoken keeps its cache resident for t
 whole run. (Not thread-safe: one encoder thread per tokenizer, or use the per-call
 cache; a sharded/persistent cache is the concurrency extension.)
 
-Absolute numbers are still below gigatoken's per-family-SIMD BPE + huge-page
-cache; the point here is the *decomposition* (where each speedup lives) at
-byte-for-byte identical output.
+### Cache memory layout (`make gigatok_cache_bench`)
+
+The cache is **cache-line-packed** (gigatoken's `pretoken_cache.rs` design): each
+entry is exactly one 64-byte cache line with the span key AND token ids inlined,
+so a hit touches **one line** — the old design followed two heap pointers (`key`,
+`ids`) per hit, i.e. ~3 dependent loads. The table is 2 MiB-aligned +
+`MADV_HUGEPAGE`. This only pays when the table outgrows L3 (gigatoken's ~1.3M
+unique pretokens); the 50-word synthetic corpus keeps it L2-resident, so the
+encode bench above can't show it. A dedicated microbench (4M entries, ~540 MB
+table, 20M random hits) isolates the layout:
+
+| layout | ns/lookup | vs pointer-chase |
+|---|---:|---:|
+| pointer-chase (old, key+ids via pointers) | 88.6 | 1.00× |
+| packed, 4 KiB pages | 67.4 | **1.32×** |
+| packed + hugepage | 67.5 | 1.31× |
+
+**The cache-line packing is the real win (1.3×)** — inlining the key and ids
+removes two dependent DRAM loads per hit. The **huge-page hint shows no
+measurable benefit on this host** (THP=`madvise`, AMD box): at ~69 ns/hit
+we are DRAM-latency-bound, so the page-walk/dTLB cost is largely hidden behind the
+line fetch. It's kept because it's correct (madvise-before-fault ordering, faults
+in as 2 MiB pages) and gigatoken measured +7–15% from it on Zen — a real
+uarch/allocator-dependent effect we simply don't hit here. Honest: on this machine
+the packing matters and the huge-pages don't.
+
+Absolute numbers are still below gigatoken's per-family-SIMD BPE; the point here
+is the *decomposition* — where each speedup lives — at byte-for-byte identical
+output.
