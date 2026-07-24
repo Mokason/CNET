@@ -114,7 +114,25 @@ int main(void) {
         fprintf(stderr, "cnet_fault_test failures=%d\n", g_fail);
         return 1;
     }
-    printf("CNET_FAULT_PASS checks=15\n");
+    /* dedupe: same labeled pair twice → one new line */
+    {
+        size_t before, after;
+        CnetFaultLog lg;
+        CnetFaultRecord rr;
+        double in2[4]={1,0,1,0}, tg2[2]={0,1};
+        setenv("CNET_FAULT_LOG", path, 1);
+        unsetenv("CNET_FAULT_DEDUPE");
+        before = cnet_fault_count_file(path);
+        memset(&rr,0,sizeof rr);
+        rr.source=CNET_FAULT_SRC_JTC;
+        snprintf(rr.unit,sizeof rr.unit,"dedup_unit");
+        rr.in_dim=4; rr.out_dim=2;
+        cnet_fault_mirror_labeled("dedup_unit", in2, tg2, 4, 2, "jtc");
+        cnet_fault_mirror_labeled("dedup_unit", in2, tg2, 4, 2, "jtc");
+        after = cnet_fault_count_file(path);
+        CHECK(after == before + 1, "dedupe collapses second");
+    }
+    printf("CNET_FAULT_PASS checks=16\n");
     printf("CNET_PROMOTE_PASS checks=5\n");
     return 0;
 }

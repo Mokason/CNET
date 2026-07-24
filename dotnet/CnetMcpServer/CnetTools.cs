@@ -1389,9 +1389,14 @@ namespace CnetMcpServer
                 query = seed,
                 input_idx = idx,
                 picks,
-                decoded_text = picks.Count > 0
-                    ? string.Join(", ", picks.Select(p => p.ToString()))
-                    : "",
+                decoded_text = picks.Count == 0
+                    ? ""
+                    : (unitName != null && unitName.Contains("json_toolcall", StringComparison.Ordinal)
+                        ? string.Join(", ", picks.Select(p =>
+                            p >= 0 && p < JsonToolCall.ToolNames.Length
+                                ? JsonToolCall.ToolNames[p]
+                                : p.ToString()))
+                        : string.Join(", ", picks.Select(p => p.ToString()))),
                 output_len = output?.Length ?? 0,
                 note = served
                     ? "named skill exercised (certified or residual)"

@@ -42,3 +42,28 @@ int cnet_serve_decode_json(const int *picks, size_t n_picks,
     if (tn < 0) text[0] = 0;
     return snprintf(out, out_cap, "{\"picks\":[%s],\"text\":\"%s\"}", parr, text);
 }
+
+/* Weak: available when json_toolcall is linked */
+const char *const *cnet_jtc_tool_names(void) __attribute__((weak));
+
+int cnet_serve_decode_with_jtc(const int *picks, size_t n_picks,
+                               char *out, size_t out_cap) {
+    const char *const *names = NULL;
+    size_t nlab = 0;
+    if (cnet_jtc_tool_names) {
+        names = cnet_jtc_tool_names();
+        nlab = 8;
+    }
+    return cnet_serve_decode_picks(picks, n_picks, names, nlab, out, out_cap);
+}
+
+int cnet_serve_present(const int *picks, size_t n_picks,
+                       const char *const *labels, size_t n_labels,
+                       int use_jtc_alphabet,
+                       char *text_out, size_t text_cap) {
+    if (!text_out || text_cap < 2) return -1;
+    if (use_jtc_alphabet)
+        return cnet_serve_decode_with_jtc(picks, n_picks, text_out, text_cap);
+    return cnet_serve_decode_picks(picks, n_picks, labels, n_labels, text_out,
+                                   text_cap);
+}

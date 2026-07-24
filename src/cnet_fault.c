@@ -294,6 +294,41 @@ size_t cnet_fault_load_vectors(const char *path, const char *unit,
     return n;
 }
 
+
+/* Dedupe recent labeled faults (same unit+in vector). */
+#define CNET_FAULT_DEDUP_CAP 256
+static struct {
+    unsigned long long h;
+    int used;
+} g_dedup[CNET_FAULT_DEDUP_CAP];
+static size_t g_dedup_i;
+
+static unsigned long long fault_hash(const char *unit, const double *in, int in_dim) {
+    unsigned long long h = 14695981039346656037ULL;
+    const unsigned char *u = (const unsigned char *)(unit ? unit : "");
+    int i;
+    for (; *u; u++) { h ^= *u; h *= 1099511628211ULL; }
+    for (i = 0; i < in_dim; i++) {
+        union { double d; unsigned long long u; } x;
+        x.d = in[i];
+        h ^= x.u + (unsigned long long)i * 0x9e3779b97f4a7c15ULL;
+        h *= 1099511628211ULL;
+    }
+    return h ? h : 1ULL;
+}
+
+static int fault_dedup_check_add(unsigned long long h) {
+    size_t i;
+    const char *off = getenv("CNET_FAULT_DEDUPE");
+    if (off && off[0] == '0' && off[1] == '\0') return 0; /* dedupe off */
+    for (i = 0; i < CNET_FAULT_DEDUP_CAP; i++)
+        if (g_dedup[i].used && g_dedup[i].h == h) return 1; /* duplicate */
+    g_dedup[g_dedup_i].h = h;
+    g_dedup[g_dedup_i].used = 1;
+    g_dedup_i = (g_dedup_i + 1) % CNET_FAULT_DEDUP_CAP;
+    return 0;
+}
+
 void cnet_fault_mirror_labeled(const char *unit, const double *input,
                                const double *target, int in_dim, int out_dim,
                                const char *source_name) {
@@ -305,6 +340,14 @@ void cnet_fault_mirror_labeled(const char *unit, const double *input,
     fl = getenv("CNET_FAULT_LOG");
     if (!fl || !fl[0]) return;
     if (!unit || !input || !target || in_dim <= 0 || out_dim <= 0) return;
+    {
+        unsigned long long h = fault_hash(unit, input, in_dim);
+        if (fault_dedup_check_add(h)) {
+            extern void cnet_acct_add_fault_dedup_skip(void) __attribute__((weak));
+            if (cnet_acct_add_fault_dedup_skip) cnet_acct_add_fault_dedup_skip();
+            return;
+        }
+    }
     if (cnet_fault_open(&log, fl) != 0) return;
     memset(&rec, 0, sizeof rec);
     rec.source = cnet_fault_source_parse(source_name);

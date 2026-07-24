@@ -24,6 +24,9 @@ typedef struct {
     uint64_t adapter_tick_pass;
     uint64_t adapter_tick_reject;
     uint64_t dense_heal_skips; /* certified adapter avoided dense heal */
+    uint64_t teacher_forward_calls; /* hermetic/oracle label costs */
+    uint64_t fault_dedup_skips;
+    uint64_t peft_train_calls;
 } CnetAcct;
 
 CNET_API void cnet_acct_reset(void);
@@ -38,6 +41,9 @@ CNET_API void cnet_acct_add_abstain(void);
 CNET_API void cnet_acct_add_error(void);
 CNET_API void cnet_acct_add_adapter_pass(void);
 CNET_API void cnet_acct_add_adapter_reject(void);
+CNET_API void cnet_acct_add_teacher_forward(void);
+CNET_API void cnet_acct_add_fault_dedup_skip(void);
+CNET_API void cnet_acct_add_peft_train(void);
 
 /* Append one JSON line to path (CNET_ACCT_LOG or arg). Returns 0/-1. */
 CNET_API int cnet_acct_dump(const char *path);

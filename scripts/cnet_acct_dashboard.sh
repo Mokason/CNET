@@ -25,7 +25,7 @@ try:
   d=json.loads(sys.stdin.read().strip() or "{}")
 except Exception as e:
   print("- (parse error)", e); sys.exit(0)
-keys=["tier_a","hard","tier_b","tier_c","teacher","gaps","abstain","err","steps","adapter_pass","adapter_reject"]
+keys=["tier_a","hard","tier_b","tier_c","teacher","gaps","abstain","err","steps","adapter_pass","adapter_reject","teacher_fwd","dedup_skip","peft_train"]
 print("| metric | value |")
 print("|---|---:|")
 for k in keys:

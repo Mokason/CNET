@@ -1046,6 +1046,15 @@ test_full: test gpu_equiv_build
 verify-long: verify cce_train_bench supra_head_qat supra_head_qat_corpus transformer_qat_joint wordlm_bitnet wordlm_holdout compat
 	@sh tests/verify_logs.sh long
 
+
+# Fast PR gate: light PEFT/fault only (no full-runtime JTC campaigns)
+verify-fast: recipe_gate claims_test cce_dll cnet_fault_test cce_adapter_bank_test cce_dora_test cnet_serve_decode_test
+	@echo VERIFY_FAST_PASS
+
+# Nightly: full verify + heavy PEFT/fault/openlab/grade campaigns + procedure chunks
+verify-nightly: verify cnet_fault_loop_test registry_lora_store_test jtc_adapter_bench cnet_openlab_import cnet_grade_up cnet_a_grade procedure_chunks
+	@echo VERIFY_NIGHTLY_PASS
+
 test: verify
 
 # (Legacy individual targets removed to enforce single-exe policy for tests.
@@ -3632,6 +3641,17 @@ alt_paths_gate: $(CCE) tests/test_alt_paths_gate.c include/cce/cce_gpu.h include
 # Grade-up campaign: live traffic MoE + fault + store + acct (raise C/B- areas)
 
 # A-grade hermetic campaign (no live Hermes weeks required)
+
+procedure_chunks: json_toolcall_alphabet $(MULTIMODAL_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(REGISTRY_LORA) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) src/soul_host.c $(ROUTE_LOG_SRC) tests/procedure_chunks_test.c
+	@mkdir -p $(BIN_DIR) artifacts/janitor
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/procedure_chunks \
+		$(MULTIMODAL_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) \
+		$(SRC) $(ROUTER) $(REGISTRY_LORA) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) \
+		$(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) \
+		src/soul_host.c $(ROUTE_LOG_SRC) tests/procedure_chunks_test.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -pthread
+	./$(BIN_DIR)/procedure_chunks
+
+
 cnet_a_grade: json_toolcall_alphabet $(MULTIMODAL_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(REGISTRY_LORA) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) src/soul_host.c $(ROUTE_LOG_SRC) tests/cnet_a_grade_test.c
 	@mkdir -p $(BIN_DIR) logs artifacts/janitor
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/cnet_a_grade \
@@ -3648,7 +3668,7 @@ cnet_grade_up: json_toolcall_alphabet $(MULTIMODAL_SRC) $(MODEL_RUNTIME) $(CCE) 
 		$(SRC) $(ROUTER) $(REGISTRY_LORA) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) \
 		$(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) \
 		src/soul_host.c $(ROUTE_LOG_SRC) tests/cnet_grade_up_test.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -pthread
-	./$(BIN_DIR)/cnet_grade_up cnet_a_grade
+	./$(BIN_DIR)/cnet_grade_up
 	@bash scripts/cnet_library_quality.sh
 	@bash scripts/cnet_acct_dashboard.sh
 	@bash scripts/cnet_openlab_doctor.sh
@@ -3665,3 +3685,11 @@ cnet_openlab_import: json_toolcall_alphabet $(MULTIMODAL_SRC) $(MODEL_RUNTIME) $
 
 cnet_replace_improve: cnet_fault_test cce_adapter_bank_test cce_dora_test cnet_serve_decode_test cnet_fault_loop_test registry_lora_store_test jtc_adapter_bench cnet_openlab_import cnet_grade_up cnet_a_grade cnet_a_grade
 	@echo CNET_REPLACE_IMPROVE_PASS
+
+# Next-5 improvements umbrella
+cnet_next5: procedure_chunks cnet_serve_decode_test cnet_fault_test
+	@mkdir -p logs artifacts/janitor
+	@bash scripts/cnet_live_smoke.sh artifacts/janitor/LIVE_SMOKE.md
+	@bash scripts/cnet_library_quality.sh
+	@bash scripts/cnet_acct_dashboard.sh
+	@echo CNET_NEXT5_PASS

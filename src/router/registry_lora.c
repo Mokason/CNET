@@ -76,6 +76,7 @@ static int teach_pairs(RegistryEntry *e, const double *inputs, const double *tar
     if (getenv("CNET_LORA_VERA") && getenv("CNET_LORA_VERA")[0] == '1')
         cce_lora_set_train_A(adp, 0);
     double post = cce_lora_train(adp, X, R, n, &o->train);
+    cnet_acct_add_peft_train();
     if (post < 0.0) { cce_lora_free(adp); free(adp); free(X); free(R); return -1; }
 
     if (e->lora) { cce_lora_free(e->lora); free(e->lora); }
