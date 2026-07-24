@@ -71,6 +71,61 @@ static inline size_t sw_other(const uint8_t *s, size_t n, size_t i) {
     return i;
 }
 
+/* ---- AVX-512 run scans (64 bytes / iteration) ----------------------------
+   The per-arch "fast path": one aligned-width compare per byte-class yields a
+   64-bit mask directly, and tzcnt on the first non-matching bit gives the run
+   end. Falls through to the SWAR scan for the <64-byte tail (and the whole
+   scan when not compiled with AVX-512). Same classification as is_letter/etc.,
+   so boundaries are identical (the bench gates avx512 == scalar). */
+#ifdef __AVX512BW__
+#include <immintrin.h>
+static inline size_t av_letter(const uint8_t *s, size_t n, size_t i) {
+    while (i + 64 <= n) {
+        __m512i v = _mm512_loadu_si512((const void *)(s + i));
+        __m512i lo = _mm512_or_si512(v, _mm512_set1_epi8(0x20));
+        __mmask64 alpha = _mm512_cmpge_epu8_mask(lo, _mm512_set1_epi8('a')) & _mm512_cmple_epu8_mask(lo, _mm512_set1_epi8('z'));
+        __mmask64 nonl = ~(alpha | _mm512_cmpge_epu8_mask(v, _mm512_set1_epi8((char)0x80)));
+        if (nonl) return i + (size_t)__builtin_ctzll((unsigned long long)nonl);
+        i += 64;
+    }
+    return sw_letter(s, n, i);
+}
+static inline size_t av_digit(const uint8_t *s, size_t n, size_t i) {
+    while (i + 64 <= n) {
+        __m512i v = _mm512_loadu_si512((const void *)(s + i));
+        __mmask64 nond = ~(_mm512_cmpge_epu8_mask(v, _mm512_set1_epi8('0')) & _mm512_cmple_epu8_mask(v, _mm512_set1_epi8('9')));
+        if (nond) return i + (size_t)__builtin_ctzll((unsigned long long)nond);
+        i += 64;
+    }
+    return sw_digit(s, n, i);
+}
+static inline __mmask64 av_ws_mask(__m512i v) {
+    return _mm512_cmpeq_epi8_mask(v, _mm512_set1_epi8(0x20)) | _mm512_cmpeq_epi8_mask(v, _mm512_set1_epi8(0x09))
+         | _mm512_cmpeq_epi8_mask(v, _mm512_set1_epi8(0x0A)) | _mm512_cmpeq_epi8_mask(v, _mm512_set1_epi8(0x0D));
+}
+static inline size_t av_ws(const uint8_t *s, size_t n, size_t i) {
+    while (i + 64 <= n) {
+        __m512i v = _mm512_loadu_si512((const void *)(s + i));
+        __mmask64 nonw = ~av_ws_mask(v);
+        if (nonw) return i + (size_t)__builtin_ctzll((unsigned long long)nonw);
+        i += 64;
+    }
+    return sw_ws(s, n, i);
+}
+static inline size_t av_other(const uint8_t *s, size_t n, size_t i) {
+    while (i + 64 <= n) {
+        __m512i v = _mm512_loadu_si512((const void *)(s + i));
+        __m512i lo = _mm512_or_si512(v, _mm512_set1_epi8(0x20));
+        __mmask64 alpha = _mm512_cmpge_epu8_mask(lo, _mm512_set1_epi8('a')) & _mm512_cmple_epu8_mask(lo, _mm512_set1_epi8('z'));
+        __mmask64 dig = _mm512_cmpge_epu8_mask(v, _mm512_set1_epi8('0')) & _mm512_cmple_epu8_mask(v, _mm512_set1_epi8('9'));
+        __mmask64 stop = alpha | dig | av_ws_mask(v) | _mm512_cmpge_epu8_mask(v, _mm512_set1_epi8((char)0x80));
+        if (stop) return i + (size_t)__builtin_ctzll((unsigned long long)stop);
+        i += 64;
+    }
+    return sw_other(s, n, i);
+}
+#endif /* __AVX512BW__ */
+
 /* ---- shared grammar: next pretoken boundary ------------------------------ */
 /* SL/SD/SW/SO are the letter/digit/ws/other scan helpers (scalar or SWAR). The
  * two instantiations are identical apart from those, so their output matches. */
@@ -104,6 +159,9 @@ static inline size_t NAME(const uint8_t *s, size_t n, size_t i) {               
 
 DEFINE_NEXT_BOUNDARY(nb_scalar, sc_letter, sc_digit, sc_ws, sc_other)
 DEFINE_NEXT_BOUNDARY(nb_swar, sw_letter, sw_digit, sw_ws, sw_other)
+#ifdef __AVX512BW__
+DEFINE_NEXT_BOUNDARY(nb_avx, av_letter, av_digit, av_ws, av_other)
+#endif
 
 /* Per-codepoint scans (decode each UTF-8 char), mirroring cce_gguf_tok's style. */
 static inline int cp_len(uint8_t b) {
@@ -164,4 +222,36 @@ size_t cce_pretok_count_swar_dual(const uint8_t *s, size_t n) {
     while (p1 < m) { p1 = nb_swar(s, m, p1); c++; }
     while (p2 < n) { p2 = nb_swar(s, n, p2); c++; }
     return c;
+}
+
+/* ---- AVX-512 public (falls back to SWAR when not compiled with AVX-512) ---- */
+size_t cce_pretok_avx512(const uint8_t *s, size_t n, uint32_t *bounds, size_t cap) {
+#ifdef __AVX512BW__
+    size_t i = 0, c = 0;
+    while (i < n) { if (bounds && c < cap) bounds[c] = (uint32_t)i; c++; i = nb_avx(s, n, i); }
+    return c;
+#else
+    return cce_pretok_swar(s, n, bounds, cap);
+#endif
+}
+size_t cce_pretok_count_avx512(const uint8_t *s, size_t n) {
+#ifdef __AVX512BW__
+    size_t i = 0, c = 0; while (i < n) { c++; i = nb_avx(s, n, i); } return c;
+#else
+    return cce_pretok_count_swar(s, n);
+#endif
+}
+size_t cce_pretok_count_avx512_dual(const uint8_t *s, size_t n) {
+#ifdef __AVX512BW__
+    if (n < 4096) return cce_pretok_count_avx512(s, n);
+    size_t m = cce_pretok_safe_split(s, n, n / 2);
+    if (m >= n) return cce_pretok_count_avx512(s, n);
+    size_t p1 = 0, p2 = m, c = 0;
+    while (p1 < m && p2 < n) { p1 = nb_avx(s, m, p1); p2 = nb_avx(s, n, p2); c += 2; }
+    while (p1 < m) { p1 = nb_avx(s, m, p1); c++; }
+    while (p2 < n) { p2 = nb_avx(s, n, p2); c++; }
+    return c;
+#else
+    return cce_pretok_count_swar_dual(s, n);
+#endif
 }

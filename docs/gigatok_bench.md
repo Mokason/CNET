@@ -27,12 +27,29 @@ Build/run: `make gigatok_bench` (generates a pseudo-OpenWebText corpus), or
 | CNET-style (codepoint decode) | ~0.70 GiB/s | today's style |
 | SWAR | ~0.90 GiB/s | 1.3× |
 | **SWAR + dual-cursor** | **~1.15 GiB/s** | **1.7×**, matches the log's ~1.05 GiB/s target |
-| SWAR + dual, 32 threads | **~24 GB/s** | in gigatoken's 20–24 GB/s range |
+| AVX-512 (single cursor) | ~0.73 GiB/s | **0.81× vs SWAR** — wider *loses* here |
+| **AVX-512 + dual-cursor** | **~1.28 GiB/s** | 1.11× vs SWAR+dual |
+| SWAR + dual, 32 threads | ~24 GB/s | in gigatoken's 20–24 GB/s range |
+| **AVX-512 + dual, 32 threads** | **~28 GB/s** | 1.19× vs SWAR |
 
 **Confirmed:** the single-thread SWAR+dual pretokenizer really does cross
 ~1 GiB/s/thread; the dual-cursor ILP really does add ~25–30%; and it scales to
 ~24 GB/s aggregate — i.e. gigatoken's *core throughput mechanism* reproduces
 independently in C.
+
+**Per-arch SIMD (AVX-512), and why gigatoken leans on SWAR anyway.** The AVX-512
+pretokenizer (64 bytes/iteration, one compare-mask per byte class + `tzcnt`)
+produces byte-for-byte identical boundaries, but the result is a *modest* and
+conditional win: **single-cursor AVX-512 is slower than 8-byte SWAR (0.81×)** —
+natural-text runs are short (words ~5 bytes), so a 64-byte load + full-width
+compare is mostly wasted and SWAR's finer granularity ends the run sooner. Only
+with dual-cursor ILP does AVX-512 pull ahead, and only by ~10% single-thread /
+~19% at 32 threads (~28 vs ~24 GB/s). That matches the optimization log's own
+verdict — "SWAR is the single biggest win" — and is exactly why gigatoken chose
+portable SWAR over hand-tuning wide SIMD for every family: the wide path is a
+small, fiddly, sometimes-negative delta on top of the ~90% SWAR already delivers.
+(It also invites the all-core AVX-512 downclock; the bench measures both back to
+back to keep that honest.)
 
 ## What it does NOT confirm (honest scope)
 - **Not the "1000× vs HF" headline.** That needs the full stack (BPE merge +
@@ -46,6 +63,9 @@ independently in C.
 - ASCII fast path: non-ASCII bytes are treated as letter-continuation (applied
   identically to both paths, so parity holds). Full `\p{L}` Unicode property
   matching and the BPE merge/cache are out of scope for this confirmation.
+- The AVX-512 path speeds up *pretokenization in isolation* only. End-to-end
+  encode is cache/merge-bound (see below), where pretok is ~0% — so the encode
+  path keeps the portable SWAR skip; AVX-512 there would buy nothing.
 
 ## End-to-end: wired into cce_gguf_tok (`make gigatok_encode_bench`)
 

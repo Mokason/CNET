@@ -44,6 +44,13 @@ size_t cce_pretok_count_swar_dual(const uint8_t *s, size_t n);
  * integration speedup. */
 size_t cce_pretok_count_codepoint(const uint8_t *s, size_t n);
 
+/* AVX-512 (per-arch wide SIMD): 64 bytes/iteration, one compare-mask per byte
+ * class. Same boundaries as the scalar/SWAR paths (gated in the bench). Falls
+ * back to SWAR when the build has no AVX-512. */
+size_t cce_pretok_avx512(const uint8_t *s, size_t n, uint32_t *bounds, size_t cap);
+size_t cce_pretok_count_avx512(const uint8_t *s, size_t n);
+size_t cce_pretok_count_avx512_dual(const uint8_t *s, size_t n);
+
 /* A guaranteed pretoken boundary at/after `from` (a 0x20 space followed by a
  * non-whitespace byte), or n if none — used to split work for the dual cursor
  * and for the multithreaded fan-out. */

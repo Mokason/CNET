@@ -108,11 +108,15 @@ int main(int argc, char **argv) {
     size_t cap_b = vlim; /* at most one boundary per byte */
     uint32_t *ba = (uint32_t *)malloc(cap_b * sizeof(uint32_t));
     uint32_t *bb = (uint32_t *)malloc(cap_b * sizeof(uint32_t));
+    uint32_t *bc = (uint32_t *)malloc(cap_b * sizeof(uint32_t));
     size_t na = cce_pretok_scalar(buf, vlim, ba, cap_b);
     size_t nb = cce_pretok_swar(buf, vlim, bb, cap_b);
-    int parity = (na == nb) && (memcmp(ba, bb, na * sizeof(uint32_t)) == 0);
-    printf("parity (first %.0f MB): scalar=%zu swar=%zu boundaries -> %s\n",
-           (double)vlim / 1e6, na, nb, parity ? "IDENTICAL" : "MISMATCH");
+    size_t nc = cce_pretok_avx512(buf, vlim, bc, cap_b);
+    int parity = (na == nb) && (na == nc)
+              && (memcmp(ba, bb, na * sizeof(uint32_t)) == 0)
+              && (memcmp(ba, bc, na * sizeof(uint32_t)) == 0);
+    printf("parity (first %.0f MB): scalar=%zu swar=%zu avx512=%zu boundaries -> %s\n",
+           (double)vlim / 1e6, na, nb, nc, parity ? "IDENTICAL" : "MISMATCH");
     if (!parity) {
         size_t k; for (k = 0; k < na && k < nb; k++) if (ba[k] != bb[k]) {
             size_t o = (ba[k] < bb[k] ? ba[k] : bb[k]); size_t z = o > 6 ? o - 6 : 0, j;
@@ -123,25 +127,29 @@ int main(int argc, char **argv) {
             break; }
         fail = 1;
     }
-    free(ba); free(bb);
+    free(ba); free(bb); free(bc);
 
     /* ---- single-thread throughput ---- */
     int iters = n > 200u * 1024 * 1024 ? 3 : 5;
-    size_t c_cp, c_sc, c_sw, c_du;
+    size_t c_cp, c_sc, c_sw, c_du, c_av, c_avd;
     (void)best_mibs(cce_pretok_count_swar, buf, n, 1, NULL); /* warm caches */
     double cp = best_mibs(cce_pretok_count_codepoint, buf, n, iters, &c_cp);
     double sc = best_mibs(cce_pretok_count_scalar, buf, n, iters, &c_sc);
     double sw = best_mibs(cce_pretok_count_swar, buf, n, iters, &c_sw);
     double du = best_mibs(cce_pretok_count_swar_dual, buf, n, iters, &c_du);
-    int counts_ok = (c_cp == c_sc) && (c_sc == c_sw) && (c_sw == c_du);
+    double av = best_mibs(cce_pretok_count_avx512, buf, n, iters, &c_av);
+    double avd = best_mibs(cce_pretok_count_avx512_dual, buf, n, iters, &c_avd);
+    int counts_ok = (c_cp == c_sc) && (c_sc == c_sw) && (c_sw == c_du) && (c_du == c_av) && (c_av == c_avd);
 
     printf("\nsingle-thread pretokenization (best of %d):\n", iters);
     printf("  CNET-style (cp decode) : %8.1f MiB/s   (%zu pretokens)\n", cp, c_cp);
     printf("  scalar (byte class)    : %8.1f MiB/s   %.2fx vs CNET-style\n", sc, sc / cp);
     printf("  SWAR                   : %8.1f MiB/s   %.2fx vs CNET-style\n", sw, sw / cp);
     printf("  SWAR + dual-cursor     : %8.1f MiB/s   %.2fx vs CNET-style, %.2fx vs SWAR\n", du, du / cp, du / sw);
+    printf("  AVX-512                : %8.1f MiB/s   %.2fx vs SWAR\n", av, av / sw);
+    printf("  AVX-512 + dual-cursor  : %8.1f MiB/s   %.2fx vs SWAR+dual, %.2fx vs CNET-style\n", avd, avd / du, avd / cp);
     printf("  (log reference: ~380 MiB/s scalar / ~1049 MiB/s SWAR+dual on Apple M-series)\n");
-    if (!counts_ok) { fprintf(stderr, "count mismatch cp=%zu sc=%zu sw=%zu du=%zu\n", c_cp, c_sc, c_sw, c_du); fail = 1; }
+    if (!counts_ok) { fprintf(stderr, "count mismatch cp=%zu sc=%zu sw=%zu du=%zu av=%zu avd=%zu\n", c_cp, c_sc, c_sw, c_du, c_av, c_avd); fail = 1; }
 
 #ifdef _OPENMP
     /* ---- multithreaded aggregate GB/s ---- */
@@ -150,19 +158,22 @@ int main(int argc, char **argv) {
     int t;
     for (t = 0; t < T; t++) starts[t] = cce_pretok_safe_split(buf, n, (size_t)t * n / (size_t)T);
     starts[T] = n;
-    double best = 1e300; int rep;
+    double best_sw = 1e300, best_av = 1e300; int rep;
     size_t total = 0;
     for (rep = 0; rep < 3; rep++) {
         double t0 = now_s(); size_t acc = 0;
         #pragma omp parallel for reduction(+:acc) schedule(static)
         for (t = 0; t < T; t++) acc += cce_pretok_count_swar_dual(buf + starts[t], starts[t + 1] - starts[t]);
-        double dt = now_s() - t0; if (dt < best) { best = dt; total = acc; }
+        double dt = now_s() - t0; if (dt < best_sw) { best_sw = dt; total = acc; }
+        t0 = now_s(); acc = 0;
+        #pragma omp parallel for reduction(+:acc) schedule(static)
+        for (t = 0; t < T; t++) acc += cce_pretok_count_avx512_dual(buf + starts[t], starts[t + 1] - starts[t]);
+        dt = now_s() - t0; if (dt < best_av) best_av = dt;
     }
-    double gbs = ((double)n / 1e9) / best;
-    printf("\nmultithreaded (%d threads, SWAR+dual):\n", T);
-    printf("  aggregate       : %8.2f GB/s   (%.2f GiB/s), %zu pretokens\n",
-           gbs, ((double)n / (1024.0 * 1024.0 * 1024.0)) / best, total);
-    printf("  vs single-SWAR  : %.1fx\n", (gbs * 1e9 / (1024.0 * 1024.0)) / sw);
+    printf("\nmultithreaded aggregate (%d threads), %zu pretokens:\n", T, total);
+    printf("  SWAR + dual     : %8.2f GB/s\n", ((double)n / 1e9) / best_sw);
+    printf("  AVX-512 + dual  : %8.2f GB/s   %.2fx vs SWAR (watch the all-core AVX-512 downclock)\n",
+           ((double)n / 1e9) / best_av, best_sw / best_av);
     free(starts);
 #else
     printf("\n(built without OpenMP; skipping multithreaded aggregate)\n");
