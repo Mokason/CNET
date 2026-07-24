@@ -283,6 +283,9 @@ registry_lora_tick_opts registry_lora_tick_defaults(void) {
     o.teach = registry_lora_defaults();
     o.cert = registry_lora_cert_defaults();
     o.cert.max_regressions = -1;   /* set by policy; -1 => rate-agnostic, rely on net gain */
+    o.validate = NULL;
+    o.validate_ctx = NULL;
+    o.validate_cap = 256;
     return o;
 }
 
@@ -299,19 +302,38 @@ int registry_lora_tick(PrimitiveRegistry *reg, const registry_lora_tick_opts *op
         if (n < o.min_faults) continue;
         const int in = (int)q->input_count, out = (int)q->output_count;
         if (in <= 0 || out <= 0) continue;
-        size_t nh = (size_t)((double)n * o.holdout_frac);
-        if (nh < 1) nh = 1;
-        if (nh >= n) nh = n / 2;
-        size_t nt = n - nh;
-        if (nt < 1) continue;
         seen++;
-        /* teach on the first nt pairs, certify on the last nh */
-        if (teach_pairs(e, q->labeled_inputs, q->labeled_targets, nt, &o.teach, NULL) != 0)
-            continue;
-        taught++;
-        int pass = registry_certify_lora(reg, e->name,
+
+        int pass = 0;
+        if (o.validate) {
+            /* Regression-aware: teach on the whole fault queue, certify on a
+               representative sample (base-correct AND base-wrong cases). */
+            if (teach_pairs(e, q->labeled_inputs, q->labeled_targets, n, &o.teach, NULL) != 0)
+                continue;
+            taught++;
+            size_t cap = o.validate_cap ? o.validate_cap : 256;
+            double *vi = malloc(cap * (size_t)in * sizeof(double));
+            double *vt = malloc(cap * (size_t)out * sizeof(double));
+            if (vi && vt) {
+                size_t nv = o.validate(e->name, in, out, vi, vt, cap, o.validate_ctx);
+                if (nv > 0)
+                    pass = registry_certify_lora(reg, e->name, vi, vt, nv, &o.cert, NULL);
+            }
+            free(vi); free(vt);
+        } else {
+            /* Fault-queue holdout (fixes only, no regression signal). */
+            size_t nh = (size_t)((double)n * o.holdout_frac);
+            if (nh < 1) nh = 1;
+            if (nh >= n) nh = n / 2;
+            size_t nt = n - nh;
+            if (nt < 1) { seen--; continue; }
+            if (teach_pairs(e, q->labeled_inputs, q->labeled_targets, nt, &o.teach, NULL) != 0)
+                continue;
+            taught++;
+            pass = registry_certify_lora(reg, e->name,
                        q->labeled_inputs + nt * (size_t)in,
                        q->labeled_targets + nt * (size_t)out, nh, &o.cert, NULL);
+        }
         if (pass == 1) {
             certd++;
             /* handled by the adapter — clear PRIM_RESET so a dense-heal pass

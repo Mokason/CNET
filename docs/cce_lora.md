@@ -224,19 +224,22 @@ So the cheap ~200-param adapter is tried first (78% here); only when it fails to
 certify does the expensive dense retrain run (97%). That's the tradeoff the
 policy buys — cheaper, slightly less accurate, with dense as the safety net.
 
-Honest limitation surfaced by this run: `registry_lora_tick` certifies on a
-holdout drawn from the **fault queue** (all base-wrong inputs), so it can measure
-*fixes* but never *regressions* — a regression-rate gate needs a representative
-(correct+incorrect) set, as `jtc_lora_faultq` uses. The in-tick gate therefore
-keys on net fixes; the standalone `registry_certify_lora` still supports the full
-regression policy.
+**Regression-aware in-tick gate.** `registry_lora_tick_opts.validate` is an
+optional per-unit sampler `(unit, in, out, inputs, targets, cap, ctx) → n` that
+returns a representative set spanning the distribution (base-correct AND
+base-wrong). When provided, the tick teaches on the whole fault queue and
+certifies on that sample — so the gate measures **regressions**, not just fixes
+(a fault-queue holdout is all base-wrong and can't see a right→wrong flip). The
+sampler is orchestrator-supplied (it owns the unit's oracle); `registry_lora.c`
+only calls the pointer, staying domain-agnostic. With it wired, scenario B's
+`max_regressions=0` policy rejects on genuine right→wrong flips — no artificial
+threshold — and the dense-heal fallback runs. When `validate` is NULL the tick
+falls back to the fault-queue holdout (fixes only).
 
 ### Not done / next
-- Feed `registry_lora_tick` a representative validation sample (not just the
-  fault queue) so the in-tick gate can enforce a regression bound, not only a
-  fix count.
-- The input stream is sampled sparse-feature vectors (oracle-labeled); the final
-  step is a queue from real production tool-call traffic.
+- The input stream (and the validation sampler) use synthetic sparse-feature
+  vectors labeled by the shared oracle; the final step is real production
+  tool-call traffic for both the fault queue and the validation set.
 - Try `diff_mode=EXACT` via the `cce_learn` cascade path as an alternative
   trainer; measure vs the explicit Adam here.
 - Head-width `B:[r,out]` grows with vocab for a true logit head — benchmark the

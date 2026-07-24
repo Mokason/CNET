@@ -43,6 +43,20 @@ static int serve_tool(const RoutePlan *plan, const double *feat, int IN, int OUT
     return cnet_jtc_decode_tool(out);
 }
 
+/* Representative validation sampler handed to registry_lora_tick: sparse
+   features across the distribution (base-correct AND base-wrong), labeled by the
+   shared hermetic teacher — so the in-tick gate can measure regressions. */
+static size_t jtc_validate(const char *unit, int in_dim, int out_dim,
+                           double *inputs, double *targets, size_t cap, void *ctx) {
+    (void)unit; (void)ctx;
+    for (size_t s = 0; s < cap; s++) {
+        double *f = inputs + s * (size_t)in_dim;
+        sample_feat(f, in_dim);
+        cnet_jtc_hermetic_teacher(f, targets + s * (size_t)out_dim, NULL);
+    }
+    return cap;
+}
+
 /* returns 1 if the scenario matched its expectation, else 0 */
 static int run_scenario(const char *tag, int strict_gate) {
     const char *base_path = "tmp_pa_lora.cnb", *ledger = "tmp_pa_lora.ledger", *inbox = "tmp_pa_lora.inbox";
@@ -89,14 +103,13 @@ static int run_scenario(const char *tag, int strict_gate) {
     topt.min_faults = 64; topt.holdout_frac = 0.25;
     topt.teach.rank = 8; topt.teach.alpha = 16.0f;
     topt.teach.train.epochs = 1500; topt.teach.train.lr = 0.02f;
+    /* Regression-aware in-tick gate: certify on a representative sample, so
+       strict (max_regressions=0) genuinely rejects on right->wrong flips. */
+    topt.validate = jtc_validate;
+    topt.validate_cap = 200;
     topt.cert.argmax_mode = 1;
-    topt.cert.max_regressions = faults / 10;
-    /* NOTE: the in-tick holdout is drawn from the FAULT queue (all base-wrong),
-       so it can only measure fixes, never regressions — a regression-rate gate
-       needs a representative set (see jtc_lora_faultq). To exercise the reject/
-       fallback path here, the strict gate demands more net fixes than the tiny
-       holdout can supply, so the adapter is declined and the unit stays RESET. */
-    topt.cert.min_net_gain = strict_gate ? 1000000 : 1;
+    topt.cert.max_regressions = strict_gate ? 0 : faults / 10;
+    topt.cert.min_net_gain = 1;
     registry_lora_install_orchestrator(reg, &topt);
 
     GapLaneTickReport trep; memset(&trep, 0, sizeof trep);

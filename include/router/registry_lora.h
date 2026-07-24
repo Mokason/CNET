@@ -93,11 +93,28 @@ void registry_lora_enable_serving(PrimitiveRegistry *reg);
 void registry_lora_disable_serving(PrimitiveRegistry *reg);
 
 /* ---- governed adapter action (orchestrator tick) ------------------------- */
+/* Optional per-unit representative validation sampler. Fill up to `cap`
+   (input, oracle-target) pairs for `unit` (dims given) into inputs[cap*in_dim]
+   and targets[cap*out_dim]; return the count filled. Because it spans the input
+   distribution (base-correct AND base-wrong cases), certifying on it lets the
+   in-tick gate enforce a REGRESSION bound — unlike a fault-queue holdout, which
+   is all base-wrong and can only measure fixes. Provided by the orchestrator
+   (it owns the unit's oracle); registry_lora.c only calls the pointer. */
+typedef size_t (*RegistryLoraValidateFn)(const char *unit, int in_dim, int out_dim,
+                                         double *inputs, double *targets,
+                                         size_t cap, void *ctx);
+
 typedef struct {
     size_t min_faults;                 /* act only on units with >= this many labeled pairs */
-    double holdout_frac;               /* fraction of pairs reserved for certification */
+    double holdout_frac;               /* fault-queue split used only when validate == NULL */
     registry_lora_opts teach;          /* rank / alpha / training */
     registry_lora_cert_policy cert;    /* accept/reject policy */
+    /* Representative validation: when set, teach on the whole fault queue and
+       certify on this sampler's output (regression-aware). NULL => certify on a
+       fault-queue holdout (fixes only). */
+    RegistryLoraValidateFn validate;
+    void  *validate_ctx;
+    size_t validate_cap;               /* samples to request (0 => 256) */
 } registry_lora_tick_opts;
 registry_lora_tick_opts registry_lora_tick_defaults(void);
 
