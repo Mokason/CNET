@@ -98,15 +98,42 @@ the real forward. In deployment the `target_res` is a teacher's per-layer
 residual stream (a stronger same-width model, or a corrected path); here it is
 planted to prove the pipeline.
 
+## Real teacher residual stream (`make cce_lily_teacher`)
+A genuine (non-planted) teacher: the SAME base run on the FULL input is the
+teacher; the SAME base on a low-rank-COMPRESSED input is the cheap student. Both
+residual streams are captured from the real forward via `cce_lily_collect`, and a
+Lily adapter is distilled from the teacher's per-layer residuals — the student
+learns to recover the quality lost to compression. (The other natural teacher —
+same model at more experts / dense attention — is the deployment target, but this
+synthetic CI model's forward is near-identity and invariant to those compute
+knobs, so it shows no gap there; input compression is a gap the real forward does
+exhibit, gap 1.2e-2.)
+
+Two things fall out, one of them important:
+
+- Distillation fits the per-layer gap offline (mse 4.7e-9), and a correctly-
+  credited adapter serves the **cheap student at near-teacher quality: the
+  final-output gap closes 99%** (1.2e-2 → 6.8e-5).
+- **FINDING (real, surfaced by this run):** per-layer residual distillation trains
+  each layer to close the *full* gap, so applying all L deltas free-running
+  **over-corrects — the deltas compound (−102% here)**. The layer whose delta does
+  not compound is the last (it feeds the output directly); serving only it
+  recovers the gap. General multi-layer free-running credit needs **serve-in-the-
+  loop training** (run the forward *with* the adapter and adjust) — the honest
+  next step, not the offline per-layer target used here.
+
 ## Scope / not done (honest)
 - Serving + collection are wired into the **DS residual runtime**; the GGUF token
-  path and the q/k/v/o-projection variants are not — this adapts the residual
-  stream, the simplest and most general injection.
-- Residual distillation needs a **teacher that exposes its per-layer residual
-  stream** aligned to the base (same width). The prototype plants the target; a
-  real teacher (stronger model / corrected path) is the deployment input. The
-  `registry_lora` certify/orchestrator machinery (teach → certify → serve,
-  regression gate) is parametrization-agnostic and would host Lily unchanged.
+  path and the q/k/v/o-projection variants are not.
+- **Multi-layer credit assignment through the free-running forward is the open
+  problem.** Offline per-layer distillation compounds; last-layer serving works;
+  the general fix is serve-in-the-loop training (needs the forward in the training
+  loop). The `registry_lora` certify/orchestrator machinery (teach → certify →
+  serve, regression gate) is parametrization-agnostic and would host Lily
+  unchanged.
+- Deep chains need EXACT-mode gradients; CNET's per-layer local-credit learner
+  would not couple the shared `A` correctly. Raw-float storage is self-contained;
+  the weight-store/streaming path can be adopted later.
 - Deep chains need EXACT-mode gradients (implemented here) — CNET's per-layer
   local-credit learner would not couple the shared `A` correctly.
 - Raw-float storage keeps the prototype self-contained; the weight-store /
