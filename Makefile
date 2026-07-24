@@ -110,6 +110,7 @@ CCE_UNCERTAINTY := src/cce/cce_uncertainty.c
 CCE_COMPRESSION := src/cce/cce_compression.c
 CCE_LEARN   := src/cce/cce_learn.c
 CCE_LORA    := src/cce/cce_lora.c
+CCE_LILY    := src/cce/cce_lily.c
 CCE_PATCH   := src/cce/cce_block_patch.c
 CCE_GPU     := src/cce/cce_gpu.c
 CCE_WORDLM  := src/cce/cce_wordlm.c
@@ -192,7 +193,7 @@ CCE_SIMILAR := src/cce/cce_similar.c
 CCE_CLGEMM  := src/cce/cce_clgemm.c
 CCE_HIPGEMM := src/cce/cce_hipgemm.c
 CCE_TRANSFORMER_QAT := src/cce/cce_transformer_qat.c
-CCE := $(CCE_TENSOR) $(CCE_BLOCK) $(CCE_CASCADE) $(CCE_ARCHIVE) $(CCE_FOREST) $(CCE_ROUTER) $(CCE_SPARSE_KV) $(CCE_DSA) $(CCE_KV_PAGE) $(CCE_MTK) $(CCE_MLA) $(CCE_DS_MAP) $(CCE_DS_RT) $(CCE_INFER) $(CCE_UNCERTAINTY) $(CCE_COMPRESSION) $(CCE_LEARN) $(CCE_LORA) $(CCE_PATCH) $(CCE_GPU) $(CCE_ABI) $(CCE_CUDA_OBJ) $(CCE_PERCEPTUAL) $(CCE_WORDLM) $(CCE_MODEL) $(CCE_MODEL_IO) $(CCE_DATASET) $(CCE_AUTOGRAD) $(CCE_SAFETENSORS) $(CCE_GGUF) $(CCE_AICIMO) $(CCE_QGKP) $(CCE_DETECT) $(CCE_SSM) $(CCE_HYBRID) $(CCE_QWEN35) $(CCE_GGUF_QWEN35) $(CCE_ST_LLAMA) $(CCE_SPECGRAPH) $(CCE_WSTORE) $(CCE_TIERRT) $(CCE_SIMILAR) $(CCE_CLGEMM) $(CCE_HIPGEMM) $(CCE_TRANSFORMER_QAT)
+CCE := $(CCE_TENSOR) $(CCE_BLOCK) $(CCE_CASCADE) $(CCE_ARCHIVE) $(CCE_FOREST) $(CCE_ROUTER) $(CCE_SPARSE_KV) $(CCE_DSA) $(CCE_KV_PAGE) $(CCE_MTK) $(CCE_MLA) $(CCE_DS_MAP) $(CCE_DS_RT) $(CCE_INFER) $(CCE_UNCERTAINTY) $(CCE_COMPRESSION) $(CCE_LEARN) $(CCE_LORA) $(CCE_LILY) $(CCE_PATCH) $(CCE_GPU) $(CCE_ABI) $(CCE_CUDA_OBJ) $(CCE_PERCEPTUAL) $(CCE_WORDLM) $(CCE_MODEL) $(CCE_MODEL_IO) $(CCE_DATASET) $(CCE_AUTOGRAD) $(CCE_SAFETENSORS) $(CCE_GGUF) $(CCE_AICIMO) $(CCE_QGKP) $(CCE_DETECT) $(CCE_SSM) $(CCE_HYBRID) $(CCE_QWEN35) $(CCE_GGUF_QWEN35) $(CCE_ST_LLAMA) $(CCE_SPECGRAPH) $(CCE_WSTORE) $(CCE_TIERRT) $(CCE_SIMILAR) $(CCE_CLGEMM) $(CCE_HIPGEMM) $(CCE_TRANSFORMER_QAT)
 CNET_CCE_ADAPTER := src/cce/cce_contract_adapter.c
 SPECIALIST_ADAPTERS := src/specialist_adapters.c
 SPECIALIST_SRC := src/specialist.c src/specialist_health.c
@@ -291,7 +292,7 @@ SYNONYMS_TEST := tests/test_synonyms.c
 TILEINDEX_TEST := tests/test_tile_index.c
 CONSOLIDATE_TEST := tests/test_tile_consolidate.c
 
-.PHONY: all run test verify verify-long recipe_gate demos compat unified unified_native unified_adapter unified_cce_adapter unified_oracle_adapter unified_specialist specialist_health gap_lane gap_lane_run_build dispatch_story claims claims_model model_evidence oracle_v2_test soul_host_test legacy_test compose route dag hetero split chunk certify property coverage conformal logicgate decimal circuit study capacity library margin fuzzy stochastic fastpath throughput residue expr attention attention_study lifecycle_bench lbench proposal_sidecar probe_overhead belowbeam_chars struct_pref dgate_bench compounding_bench cce_smoke counterfactual_router_test sparse_kv_test narrative_coherence_test phase4_uncertainty_test register_compression_improvements phase5_integration_test cce_train_bench cce_view forest_view wordlm wordlm_bitnet cce_dll cnet_dll cce_safetensors_test cce_gguf_test cce_model_test cce_autograd_test endgate jsonstory pdftest pdflearn compound tiermem_test graduate fontdecode tfidf synonyms tileindex consolidate clean aicimo_smoke aicimo_core_test cnet_harness_contract_test cnet_harness_plugin dotnet_harness_test cce_lora_test cce_lora_bench registry_lora_test jtc_lora_live jtc_lora_faultq personal_ai_lora_tick
+.PHONY: all run test verify verify-long recipe_gate demos compat unified unified_native unified_adapter unified_cce_adapter unified_oracle_adapter unified_specialist specialist_health gap_lane gap_lane_run_build dispatch_story claims claims_model model_evidence oracle_v2_test soul_host_test legacy_test compose route dag hetero split chunk certify property coverage conformal logicgate decimal circuit study capacity library margin fuzzy stochastic fastpath throughput residue expr attention attention_study lifecycle_bench lbench proposal_sidecar probe_overhead belowbeam_chars struct_pref dgate_bench compounding_bench cce_smoke counterfactual_router_test sparse_kv_test narrative_coherence_test phase4_uncertainty_test register_compression_improvements phase5_integration_test cce_train_bench cce_view forest_view wordlm wordlm_bitnet cce_dll cnet_dll cce_safetensors_test cce_gguf_test cce_model_test cce_autograd_test endgate jsonstory pdftest pdflearn compound tiermem_test graduate fontdecode tfidf synonyms tileindex consolidate clean aicimo_smoke aicimo_core_test cnet_harness_contract_test cnet_harness_plugin dotnet_harness_test cce_lora_test cce_lora_bench cce_lily_test registry_lora_test jtc_lora_live jtc_lora_faultq personal_ai_lora_tick
 
 all: nn_demo
 
@@ -1718,6 +1719,11 @@ cce_lora_test: $(CCE) $(CCE_CUDA_OBJ) tests/cce_lora_test.c
 cce_lora_bench: $(CCE) $(CCE_CUDA_OBJ) tests/bench_cce_lora.c
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) tests/bench_cce_lora.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 	./$(BIN_DIR)/cce_lora_bench
+
+# cce_lily: interconnected multi-layer low-rank adapter (Lily) + interconnection bench.
+cce_lily_test: $(CCE) $(CCE_CUDA_OBJ) tests/cce_lily_test.c
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) tests/cce_lily_test.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+	./$(BIN_DIR)/cce_lily_test
 
 # registry_lora: adapter wired into a real registry unit's retrain queue (opt-in).
 REGISTRY_LORA := src/router/registry_lora.c

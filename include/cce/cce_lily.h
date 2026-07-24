@@ -1,0 +1,86 @@
+#ifndef CCE_LILY_H
+#define CCE_LILY_H
+
+#include "cce_defs.h"
+#include <stdint.h>
+#include <stddef.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/* ---------------------------------------------------------------------------
+   cce_lily — Low-rank Interconnected Adaptation across Layers (prototype).
+
+   Adapts a FROZEN stack of L same-width linear layers (a residual stream of
+   width d): base h_{l+1} = W_l h_l. Lily adds a low-rank correction at each
+   layer, and INTERCONNECTS the layers by sharing the down-projection basis A
+   across them (Tied/VeRA-style), so the adaptation lives in one coherent rank-r
+   subspace instead of L independent ones:
+
+       h_{l+1} = W_l h_l + (alpha/r) * B_l (A h_l)      A shared [d,r], B_l [r,d]
+
+   Params: r*d*(L+1)  (one shared A + L per-layer B_l), vs 2*L*r*d for
+   independent per-layer LoRA and L*d*d for a dense per-layer update. Set
+   shared=0 to get the independent baseline (per-layer A_l) with the same code —
+   the benchmark toggles this to test whether the interconnection helps.
+
+   This prototype is the parametrization + exact-backprop training + a
+   generalization benchmark. It deliberately does NOT wire deltas into a deep
+   model's serving forward (that is the invasive part); the certify/orchestrator
+   machinery (registry_lora) is parametrization-agnostic and would host it
+   unchanged. Raw-float storage keeps the prototype self-contained; the weight-
+   store/streaming path (as in cce_lora) can be adopted later.
+   --------------------------------------------------------------------------- */
+typedef struct cce_lily {
+    int    width;     /* d — residual-stream width (all layers d->d)  */
+    int    rank;      /* r                                            */
+    int    layers;    /* L                                            */
+    int    shared;    /* 1 => one A shared across layers (Lily); 0 => per-layer A */
+    float  alpha;     /* delta scale = alpha/rank                     */
+    float *A;         /* [(shared?1:L) * d * r] down-projection(s)    */
+    float *B;         /* [L * r * d] per-layer up-projections         */
+} cce_lily;
+
+/* A: small deterministic init; B: zero (delta starts at 0). */
+cce_result cce_lily_init(cce_lily *ly, int width, int layers, int rank,
+                         float alpha, uint32_t seed, int shared);
+void       cce_lily_free(cce_lily *ly);
+
+/* Forward through the frozen stack baseW[L*d*d] with the Lily deltas.
+   x[d] -> y[d]. baseW[l] is row-major [d,d]: out[o] = sum_i in[i]*W[l][i*d+o]. */
+cce_result cce_lily_apply(const cce_lily *ly, const float *baseW,
+                          const float *x, float *y);
+
+/* Fold the deltas into the stack in place: W_l[i,o] += (alpha/r) sum_k A[i,k]B_l[k,o]. */
+cce_result cce_lily_merge(const cce_lily *ly, float *baseW /*[L*d*d]*/);
+
+size_t cce_lily_param_count(const cce_lily *ly);        /* trained params */
+size_t cce_lily_indep_param_count(const cce_lily *ly);  /* 2*L*r*d (independent LoRA) */
+size_t cce_lily_dense_param_count(const cce_lily *ly);  /* L*d*d (dense per-layer) */
+
+typedef struct {
+    int   epochs;
+    float lr;
+    int   use_adam;
+    float target_loss;   /* early stop when MSE <= this (0 => off) */
+    int   log_every;
+} cce_lily_train_opts;
+cce_lily_train_opts cce_lily_train_defaults(void);
+
+/* Fit A + B_l (base frozen) so apply(baseW, x_i) ~= targets_i, by exact backprop
+   through the L-layer chain (Adam). inputs[n*d], targets[n*d]. Returns final MSE
+   or a negative cce_result. The shared A accumulates gradient from every layer —
+   that cross-layer coupling is the "interconnection". */
+double cce_lily_train(cce_lily *ly, const float *baseW,
+                      const float *inputs, const float *targets, size_t n,
+                      const cce_lily_train_opts *opt);
+
+double cce_lily_eval_mse(const cce_lily *ly, const float *baseW,
+                         const float *inputs, const float *targets, size_t n);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* CCE_LILY_H */
