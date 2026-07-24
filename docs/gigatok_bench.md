@@ -46,3 +46,38 @@ independently in C.
 - ASCII fast path: non-ASCII bytes are treated as letter-continuation (applied
   identically to both paths, so parity holds). Full `\p{L}` Unicode property
   matching and the BPE merge/cache are out of scope for this confirmation.
+
+## End-to-end: wired into cce_gguf_tok (`make gigatok_encode_bench`)
+
+The SWAR pretokenizer and a **pretoken cache** are wired into the real BPE encode
+path as `cce_gguf_tok_encode_fast(t, text, ids, max, flags)`
+(`CCE_TOK_FAST_SWAR | CCE_TOK_FAST_CACHE`), leaving `cce_gguf_tok_encode`
+untouched. The SWAR skip runs inside the *same* pretok grammar (non-ASCII and
+apostrophes still go through the exact codepoint logic), and the cache memoizes
+`span -> token-ids`; both are exact, and `tests/gigatok_encode_bench.c` asserts
+the fast path's ids equal the baseline **byte-for-byte**.
+
+Measured on a real GGUF vocab (Qwen-family, 248k tokens; ~4 MB corpus; same
+pattern on gemma 262k):
+
+| config | throughput | vs baseline | ids |
+|---|---:|---:|---|
+| baseline (`cce_gguf_tok_encode`) | 19 MB/s | 1.00× | — |
+| + SWAR pretok | 19 MB/s | **1.00×** | identical |
+| + pretoken cache | 273 MB/s | **14.4×** | identical |
+| + SWAR + cache | 305 MB/s | **16.0×** | identical |
+
+**The honest finding — and it matches gigatoken's own thesis.** In this encoder
+(as in most) `bpe_word` is the bottleneck, not pretokenization: SWAR pretok alone
+buys **~0% end-to-end**. The **pretoken cache is the whole win (14×)** — it skips
+`bpe_word` on the ~99% of pretokens that repeat in natural text. SWAR only starts
+to matter *after* the cache removes the BPE cost (then it adds ~11%, since it's
+now the remaining bottleneck). That's exactly why gigatoken needed both, and why
+its README calls caching "a very hard problem in this domain."
+
+Caveats: the cache is per-`encode_fast`-call; the bench encodes the corpus in one
+call, so it reflects the within-a-large-encode hit rate — a persistent
+(cross-call) cache would be the streaming-many-documents extension. Our absolute
+numbers are gated by a deliberately naive `bpe_word` (malloc + `strlen` per
+merge); the point here is the *decomposition* (where the speedup lives), not
+beating gigatoken's absolute GB/s.

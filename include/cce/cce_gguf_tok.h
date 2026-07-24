@@ -35,6 +35,15 @@ const char *cce_gguf_tok_piece(const cce_gguf_tok *t, int id); /* raw piece or N
 int cce_gguf_tok_encode(const cce_gguf_tok *t, const char *text,
                         int *ids, int max_ids);
 
+/* Same result as cce_gguf_tok_encode, with gigatoken-style acceleration selected
+ * by flags: CCE_TOK_FAST_SWAR skips ASCII pretoken runs with SWAR; the pretoken
+ * cache memoizes span->ids to skip BPE on repeats. Output is byte-for-byte equal
+ * to cce_gguf_tok_encode (verified by gigatok_encode_bench). */
+#define CCE_TOK_FAST_SWAR  1
+#define CCE_TOK_FAST_CACHE 2
+int cce_gguf_tok_encode_fast(const cce_gguf_tok *t, const char *text,
+                             int *ids, int max_ids, int flags);
+
 /* Decode to UTF-8. skip_special drops CONTROL/USER_DEFINED tokens.
  * Returns bytes written excluding NUL; out always NUL-terminated if max_out>0. */
 int cce_gguf_tok_decode(const cce_gguf_tok *t, const int *ids, int n_ids,

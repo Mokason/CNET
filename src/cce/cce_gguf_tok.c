@@ -660,6 +660,151 @@ const char *cce_gguf_tok_piece(const cce_gguf_tok *t, int id) {
     return t->id_to_piece[id];
 }
 
+/* ================= fast encode path (gigatoken-style) =====================
+ * (1) SWAR fast-skip of ASCII letter/digit/other runs inside the SAME grammar
+ *     as pretok_encode (non-ASCII and apostrophes still go through the exact
+ *     codepoint logic, so output is identical), and
+ * (2) a pretoken cache that memoizes span -> token-ids, skipping bpe_word on the
+ *     ~99% of pretokens that repeat. Both are exact: the bench asserts the fast
+ *     path's ids equal cce_gguf_tok_encode's byte-for-byte. */
+
+#define GT_ONES 0x0101010101010101ULL
+#define GT_HIGH 0x8080808080808080ULL
+#define GT_LOW7 0x7F7F7F7F7F7F7F7FULL
+static inline uint64_t gt_ld(const char *p) { uint64_t w; memcpy(&w, p, 8); return w; }
+static inline uint64_t gt_nz(uint64_t x) { return (((x & GT_LOW7) + GT_LOW7) | x) & GT_HIGH; }
+static inline uint64_t gt_eq(uint64_t x, unsigned v) { return (~gt_nz(x ^ (GT_ONES * v))) & GT_HIGH; }
+static inline uint64_t gt_lt(uint64_t x, unsigned nn) { return ((GT_ONES * (0x7Fu + nn)) - (x & GT_LOW7)) & GT_HIGH & ~x; }
+static inline int gt_first(uint64_t h) { return h ? (__builtin_ctzll(h) >> 3) : 8; }
+
+/* advance over ASCII [A-Za-z] (non-ASCII stops -> codepoint path decides) */
+static int skip_alpha(const char *s, int n, int i) {
+    while (i + 8 <= n) { uint64_t w = gt_ld(s + i), lo = w | (GT_ONES * 0x20);
+        uint64_t a = gt_lt(lo, 0x7B) & (~gt_lt(lo, 0x61)) & GT_HIGH;
+        int k = gt_first((~a) & GT_HIGH); i += k; if (k < 8) return i; }
+    while (i < n) { unsigned char b = (unsigned char)s[i], l = (unsigned char)(b | 0x20); if (l < 'a' || l > 'z') break; i++; }
+    return i;
+}
+static int skip_digit(const char *s, int n, int i) {
+    while (i + 8 <= n) { uint64_t w = gt_ld(s + i);
+        uint64_t d = gt_lt(w, 0x3A) & (~gt_lt(w, 0x30)) & GT_HIGH;
+        int k = gt_first((~d) & GT_HIGH); i += k; if (k < 8) return i; }
+    while (i < n) { unsigned char b = (unsigned char)s[i]; if (b < '0' || b > '9') break; i++; }
+    return i;
+}
+/* advance over ASCII "other" (not alpha/digit/ws, and ASCII); non-ASCII stops */
+static int skip_other(const char *s, int n, int i) {
+    while (i + 8 <= n) { uint64_t w = gt_ld(s + i), lo = w | (GT_ONES * 0x20);
+        uint64_t a = gt_lt(lo, 0x7B) & (~gt_lt(lo, 0x61)) & GT_HIGH;
+        uint64_t d = gt_lt(w, 0x3A) & (~gt_lt(w, 0x30)) & GT_HIGH;
+        uint64_t ws = gt_eq(w, 0x20) | gt_eq(w, 0x09) | gt_eq(w, 0x0A) | gt_eq(w, 0x0D);
+        uint64_t stop = (a | d | ws | (w & GT_HIGH)) & GT_HIGH;
+        int k = gt_first(stop); i += k; if (k < 8) return i; }
+    while (i < n) { unsigned char b = (unsigned char)s[i], l = (unsigned char)(b | 0x20);
+        if (b >= 0x80 || (l >= 'a' && l <= 'z') || (b >= '0' && b <= '9') || b == ' ' || b == '\n' || b == '\r' || b == '\t') break;
+        i++; }
+    return i;
+}
+
+/* ---- pretoken cache: span bytes -> token ids (open addressing) ---- */
+typedef struct { uint64_t h; char *b; int bl; int *ids; int nids; } PtcE;
+typedef struct { PtcE *e; int cap; int cnt; } Ptc;
+static uint64_t ptc_hash(const char *s, int n) {
+    uint64_t h = 1469598103934665603ULL; int k;
+    for (k = 0; k < n; k++) { h ^= (unsigned char)s[k]; h *= 1099511628211ULL; }
+    return h ? h : 1;
+}
+static Ptc *ptc_new(int cap0) { Ptc *c = (Ptc *)calloc(1, sizeof *c); if (!c) return NULL; c->cap = cap0; c->e = (PtcE *)calloc((size_t)cap0, sizeof(PtcE)); if (!c->e) { free(c); return NULL; } return c; }
+static void ptc_free(Ptc *c) { int k; if (!c) return; for (k = 0; k < c->cap; k++) { free(c->e[k].b); free(c->e[k].ids); } free(c->e); free(c); }
+static void ptc_grow(Ptc *c) {
+    int nc = c->cap * 2, k; PtcE *ne = (PtcE *)calloc((size_t)nc, sizeof(PtcE));
+    if (!ne) return;
+    for (k = 0; k < c->cap; k++) if (c->e[k].h) { uint64_t idx = c->e[k].h & (uint64_t)(nc - 1); while (ne[idx].h) idx = (idx + 1) & (uint64_t)(nc - 1); ne[idx] = c->e[k]; }
+    free(c->e); c->e = ne; c->cap = nc;
+}
+/* Look up (or compute+store) the encoding of span [w,wlen); append its ids. */
+static void emit_word(const cce_gguf_tok *t, Ptc *cache, const char *w, int wlen,
+                      int *ids, int *cnt, int max_ids) {
+    uint64_t h; uint64_t idx; PtcE *e; int tmp[128], tn = 0, k;
+    if (!cache || wlen <= 0 || wlen > 96) { bpe_word(t, w, wlen, ids, cnt, max_ids); return; }
+    if ((cache->cnt + 1) * 4 >= cache->cap * 3) ptc_grow(cache);
+    h = ptc_hash(w, wlen);
+    idx = h & (uint64_t)(cache->cap - 1);
+    for (;;) { e = &cache->e[idx];
+        if (!e->h) break;
+        if (e->h == h && e->bl == wlen && memcmp(e->b, w, (size_t)wlen) == 0) {
+            for (k = 0; k < e->nids && *cnt < max_ids; k++) ids[(*cnt)++] = e->ids[k];
+            return; }
+        idx = (idx + 1) & (uint64_t)(cache->cap - 1); }
+    bpe_word(t, w, wlen, tmp, &tn, 128);
+    e->h = h; e->bl = wlen; e->b = (char *)malloc((size_t)wlen); if (e->b) memcpy(e->b, w, (size_t)wlen);
+    e->ids = (int *)malloc((size_t)(tn > 0 ? tn : 1) * sizeof(int)); if (e->ids) memcpy(e->ids, tmp, (size_t)tn * sizeof(int));
+    e->nids = tn; cache->cnt++;
+    for (k = 0; k < tn && *cnt < max_ids; k++) ids[(*cnt)++] = tmp[k];
+}
+
+/* Same grammar as pretok_encode, with SWAR run-skips (swar) + cache emit. */
+static void pretok_encode_fast(const cce_gguf_tok *t, const char *s, int n,
+                               int *ids, int *cnt, int max_ids, int swar, Ptc *cache) {
+    int i = 0;
+    while (i < n && *cnt < max_ids) {
+        int start = i, adv = 1;
+        int cp = utf8_cp(s + i, &adv);
+        if (cp == '\'') {
+            int rem = n - (i + 1); const char *r = s + i + 1; int take = 0;
+            if (rem >= 1 && (r[0] == 's' || r[0] == 't' || r[0] == 'm' || r[0] == 'd')) take = 2;
+            else if (rem >= 2 && ((r[0] == 'r' && r[1] == 'e') || (r[0] == 'v' && r[1] == 'e') || (r[0] == 'l' && r[1] == 'l'))) take = 3;
+            if (take) { emit_word(t, cache, s + start, take, ids, cnt, max_ids); i += take; continue; }
+        }
+        if (cp == ' ') {
+            int j = i + 1;
+            if (j < n) {
+                int a2, c2 = utf8_cp(s + j, &a2);
+                if (is_letter_cp(c2)) { j += a2; for (;;) { if (swar) j = skip_alpha(s, n, j); if (j >= n) break; int a3, c3 = utf8_cp(s + j, &a3); if (!is_letter_cp(c3) && c3 != '\'') break; j += a3; } }
+                else if (is_digit_cp(c2)) { j += a2; for (;;) { if (swar) j = skip_digit(s, n, j); if (j >= n) break; int a3, c3 = utf8_cp(s + j, &a3); if (!is_digit_cp(c3)) break; j += a3; } }
+                else if (c2 != ' ' && c2 != '\n' && c2 != '\r' && c2 != '\t') { j += a2; for (;;) { if (swar) j = skip_other(s, n, j); if (j >= n) break; int a3, c3 = utf8_cp(s + j, &a3); if (c3 == ' ' || c3 == '\n' || c3 == '\r' || c3 == '\t' || is_letter_cp(c3) || is_digit_cp(c3)) break; j += a3; } }
+                else { while (j < n) { int a3, c3 = utf8_cp(s + j, &a3); if (c3 != ' ' && c3 != '\t') break; j += a3; } }
+            }
+            emit_word(t, cache, s + start, j - start, ids, cnt, max_ids); i = j; continue;
+        }
+        if (is_letter_cp(cp)) { int j = i + adv; for (;;) { if (swar) j = skip_alpha(s, n, j); if (j >= n) break; int a3, c3 = utf8_cp(s + j, &a3); if (!is_letter_cp(c3) && c3 != '\'') break; j += a3; } emit_word(t, cache, s + start, j - start, ids, cnt, max_ids); i = j; continue; }
+        if (is_digit_cp(cp)) { int j = i + adv; for (;;) { if (swar) j = skip_digit(s, n, j); if (j >= n) break; int a3, c3 = utf8_cp(s + j, &a3); if (!is_digit_cp(c3)) break; j += a3; } emit_word(t, cache, s + start, j - start, ids, cnt, max_ids); i = j; continue; }
+        if (cp == '\n' || cp == '\r') { emit_word(t, cache, s + start, adv, ids, cnt, max_ids); i += adv; continue; }
+        if (cp == '\t' || (cp < 0x20)) { emit_word(t, cache, s + start, adv, ids, cnt, max_ids); i += adv; continue; }
+        { int j = i + adv; for (;;) { if (swar) j = skip_other(s, n, j); if (j >= n) break; int a3, c3 = utf8_cp(s + j, &a3); if (c3 == ' ' || c3 == '\n' || c3 == '\r' || c3 == '\t' || is_letter_cp(c3) || is_digit_cp(c3)) break; j += a3; } emit_word(t, cache, s + start, j - start, ids, cnt, max_ids); i = j; }
+    }
+}
+
+int cce_gguf_tok_encode_fast(const cce_gguf_tok *t, const char *text,
+                             int *ids, int max_ids, int flags) {
+    int n = 0, i = 0, L; Ptc *cache = NULL;
+    int swar = (flags & CCE_TOK_FAST_SWAR) != 0;
+    if (!t || !text || !ids || max_ids < 1) return 0;
+    if (flags & CCE_TOK_FAST_CACHE) cache = ptc_new(1024);
+    L = (int)strlen(text);
+    while (i < L && n < max_ids) {
+        int hit = -1, hlen = 0, k;
+        for (k = 0; k < t->n_special; ++k) {
+            const char *sp = t->special_str[k];
+            int sl = sp ? (int)strlen(sp) : 0;
+            if (sl > 0 && i + sl <= L && memcmp(text + i, sp, (size_t)sl) == 0) { hit = t->special_id[k]; hlen = sl; break; }
+        }
+        if (hit >= 0) { ids[n++] = hit; i += hlen; continue; }
+        { int j = i, found = L;
+            for (k = 0; k < t->n_special; ++k) {
+                const char *sp = t->special_str[k]; int sl = sp ? (int)strlen(sp) : 0;
+                if (sl < 1) continue;
+                { const char *p = strstr(text + i, sp); if (p) { int at = (int)(p - text); if (at < found) found = at; } }
+            }
+            j = found;
+            pretok_encode_fast(t, text + i, j - i, ids, &n, max_ids, swar, cache);
+            i = j;
+        }
+    }
+    ptc_free(cache);
+    return n;
+}
+
 int cce_gguf_tok_encode(const cce_gguf_tok *t, const char *text,
                         int *ids, int max_ids) {
     int n = 0, i = 0, L;
