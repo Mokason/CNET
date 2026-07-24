@@ -291,7 +291,7 @@ SYNONYMS_TEST := tests/test_synonyms.c
 TILEINDEX_TEST := tests/test_tile_index.c
 CONSOLIDATE_TEST := tests/test_tile_consolidate.c
 
-.PHONY: all run test verify verify-long recipe_gate demos compat unified unified_native unified_adapter unified_cce_adapter unified_oracle_adapter unified_specialist specialist_health gap_lane gap_lane_run_build dispatch_story claims claims_model model_evidence oracle_v2_test soul_host_test legacy_test compose route dag hetero split chunk certify property coverage conformal logicgate decimal circuit study capacity library margin fuzzy stochastic fastpath throughput residue expr attention attention_study lifecycle_bench lbench proposal_sidecar probe_overhead belowbeam_chars struct_pref dgate_bench compounding_bench cce_smoke counterfactual_router_test sparse_kv_test narrative_coherence_test phase4_uncertainty_test register_compression_improvements phase5_integration_test cce_train_bench cce_view forest_view wordlm wordlm_bitnet cce_dll cnet_dll cce_safetensors_test cce_gguf_test cce_model_test cce_autograd_test endgate jsonstory pdftest pdflearn compound tiermem_test graduate fontdecode tfidf synonyms tileindex consolidate clean aicimo_smoke aicimo_core_test cnet_harness_contract_test cnet_harness_plugin dotnet_harness_test cce_lora_test cce_lora_bench registry_lora_test
+.PHONY: all run test verify verify-long recipe_gate demos compat unified unified_native unified_adapter unified_cce_adapter unified_oracle_adapter unified_specialist specialist_health gap_lane gap_lane_run_build dispatch_story claims claims_model model_evidence oracle_v2_test soul_host_test legacy_test compose route dag hetero split chunk certify property coverage conformal logicgate decimal circuit study capacity library margin fuzzy stochastic fastpath throughput residue expr attention attention_study lifecycle_bench lbench proposal_sidecar probe_overhead belowbeam_chars struct_pref dgate_bench compounding_bench cce_smoke counterfactual_router_test sparse_kv_test narrative_coherence_test phase4_uncertainty_test register_compression_improvements phase5_integration_test cce_train_bench cce_view forest_view wordlm wordlm_bitnet cce_dll cnet_dll cce_safetensors_test cce_gguf_test cce_model_test cce_autograd_test endgate jsonstory pdftest pdflearn compound tiermem_test graduate fontdecode tfidf synonyms tileindex consolidate clean aicimo_smoke aicimo_core_test cnet_harness_contract_test cnet_harness_plugin dotnet_harness_test cce_lora_test cce_lora_bench registry_lora_test jtc_lora_live
 
 all: nn_demo
 
@@ -1724,6 +1724,17 @@ REGISTRY_LORA := src/router/registry_lora.c
 registry_lora_test: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(SCAN) $(REGISTRY_LORA) $(CCE) $(CCE_CUDA_OBJ) tests/test_registry_lora.c
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(SCAN) $(REGISTRY_LORA) $(CCE) $(CCE_CUDA_OBJ) tests/test_registry_lora.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 	./$(BIN_DIR)/registry_lora_test
+
+# jtc_lora_live: registry_teach_lora on the real certified json_toolcall_v2 unit.
+# Mirrors the json_toolcall link line + the registry_lora TU.
+jtc_lora_live: json_toolcall_alphabet $(MULTIMODAL_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(REGISTRY_LORA) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) src/soul_host.c $(ROUTE_LOG_SRC) tests/jtc_lora_live.c include/json_toolcall.h include/json_toolcall_alphabet.inc
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/jtc_lora_live \
+		$(MULTIMODAL_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) \
+		$(SRC) $(ROUTER) $(REGISTRY_LORA) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) \
+		$(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) \
+		src/soul_host.c $(ROUTE_LOG_SRC) tests/jtc_lora_live.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -pthread
+	./$(BIN_DIR)/jtc_lora_live
 
 # --- SIMD re-enable for the CCE/Supra targets ---
 # The global -mno-avx works around the MinGW AVX struct-copy segfault triggered by

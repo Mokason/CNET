@@ -91,12 +91,35 @@ teaches and serves: 300 pairs, in=16/out=8/rank=4, **pre_mse 7.35e-5 →
 post_mse 7e-11**, held-out adapter-vs-teacher L1 = 0.0000 (base-vs-teacher
 0.0073), 96 params vs 128 dense, and detach restores the byte-exact base.
 
+## Live json_toolcall run (`make jtc_lora_live`)
+`registry_teach_lora` on the **real** certified `json_toolcall_v2` unit: mine +
+admit the genuine student (external teacher = `cnet_jtc_hermetic_teacher`), fill
+its retrain queue with 500 (feature → teacher one-hot) pairs, teach, and serve.
+The student is 8/8 on the canonical exemplars but generalises to **32.8%** on a
+broader sampled input distribution (sparse feature activations labeled by the
+same teacher) — it was certified against a finite exemplar set. The adapter
+closes that gap:
+
+| rank | params | held-out acc | vs baseline |
+|-----:|-------:|-------------:|------------:|
+| 2 | 52 | 58% | +24.8 |
+| **4** | **104** | **80%** | **+47.2** |
+| 8 | 208 | 82% | +49.2 |
+
+Baseline 32.8%; dense-equivalent output update = 144 params. **rank-4 lifts
+held-out accuracy +47 points at *fewer* params than dense** — the sweet spot.
+Honest note: for this tiny 18→8 head, rank-8 (208) exceeds dense (144), because
+rank-8 is full rank for an 8-output layer — low-rank only compresses when
+`rank < min(in,out)`; the parameter win lives in wide layers (see the bench),
+while the accuracy win holds even here. The +47 points is measured on the broad
+sparse-feature distribution; the production gain depends on the real tool-call
+input distribution.
+
 ### Not done / next
-- Measure on a live `json_toolcall_v*` unit's port-validated queue (the test uses
-  a real queue but a planted low-rank correction; a production queue is populated
-  at runtime by faults + the teacher).
 - Call `registry_forward_with_lora` from the live executors (route.c/dag_full.c)
   behind a registry flag, so a trained adapter reaches production serving.
+- Repeat on a production queue populated by real faults (this run samples inputs
+  and labels them with the shared teacher rather than harvesting live faults).
 - Try `diff_mode=EXACT` via the `cce_learn` cascade path as an alternative
   trainer; measure vs the explicit Adam here.
 - Head-width `B:[r,out]` grows with vocab for a true logit head — benchmark the
