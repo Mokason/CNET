@@ -70,3 +70,4 @@ tmp_*.jsonl
 
 # Registry metadata sidecar written by tests/test_expansion (regenerable)
 registry.meta
+*.procedure_queue

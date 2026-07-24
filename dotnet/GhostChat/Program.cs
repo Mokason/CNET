@@ -573,7 +573,7 @@ while (true)
         Console.WriteLine(r.Exact
             ? $"  ── exact: computed in {sw.Elapsed.TotalMilliseconds:F1}ms — no model, cannot be wrong ──"
             : r.CertifiedUnit is not null
-            ? $"  ── certified: {r.CertifiedUnit} — served from sealed knowledge, model not consulted ──"
+            ? $"  ── {CNET.Cce.Llm.SkillPresentation.FormatCertified(r.CertifiedUnit!, null, null)} — sealed knowledge, model not consulted ──"
             : $"  ── memory: {receipts} | prompt {r.Result.PromptTokens} tok | " +
               $"{r.Result.GeneratedTokens} tok in {sw.Elapsed.TotalSeconds:F1}s{autoNote} ──");
         Console.WriteLine();

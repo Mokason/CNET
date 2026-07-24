@@ -199,6 +199,23 @@ int personal_ai_open(PersonalAi *ai, const char *base_path,
             }
         }
     }
+    /* Auto-install LoRA orchestrator when enabled (default ON if store/fault set). */
+    {
+        const char *ao = getenv("CNET_LORA_AUTO_ORCH");
+        int want = 0;
+        if (ao && ao[0])
+            want = !(ao[0] == '0' && ao[1] == '\0');
+        else if (getenv("CNET_FAULT_LOG") || getenv("CNET_LORA_STORE_DIR"))
+            want = 1;
+        if (want) {
+            /* Weak: binaries without registry_lora still link. */
+            extern void registry_lora_install_orchestrator(PrimitiveRegistry *reg,
+                                                          const void *opt)
+                __attribute__((weak));
+            if (registry_lora_install_orchestrator)
+                registry_lora_install_orchestrator(&ai->lane.reg, NULL);
+        }
+    }
     return 0;
 }
 
@@ -315,19 +332,47 @@ int personal_ai_serve(PersonalAi *ai, Port input_port, Port goal_port,
     if (ai->policy.allow_residual && ai->hybrid.residual.bound &&
         hybrid_try_residual(&ai->hybrid, input_port, goal_port, input, in_len,
                             output, out_cap) == 0) {
-        /* Optional personal adapter delta after residual */
-        hybrid_adapter_apply(&ai->hybrid, output, out_cap);
-        serve_record_hit(ai, rep, PERSONAL_AI_RESIDUAL,
-                         HYBRID_TRUST_UNCERTIFIED, HYBRID_TIER_C);
-        cnet_acct_add_tier_c();
-        if (ai->policy.structure_mine_on_serve) {
-            BinaryTransformNetwork *stu = NULL;
-            if (personal_ai_structure_mine(ai, &stu) == 0) {
-                rep->structure_mined = 1;
-                (void)stu; /* registry borrows */
+        /* Margin gate: refuse low-confidence residual when configured */
+        {
+            const char *rm = getenv("CNET_RESIDUAL_MIN_MARGIN");
+            int accept = 1;
+            if (rm && rm[0]) {
+                double need = atof(rm);
+                size_t od = goal_port.field_width * goal_port.field_count;
+                if (od == 0) od = out_cap;
+                if (od > out_cap) od = out_cap;
+                if (need > 0.0 && od >= 2) {
+                    double t1 = -1e300, t2 = -1e300;
+                    size_t j;
+                    for (j = 0; j < od; j++) {
+                        double x = output[j];
+                        if (x > t1) {
+                            t2 = t1;
+                            t1 = x;
+                        } else if (x > t2) {
+                            t2 = x;
+                        }
+                    }
+                    if ((t1 - t2) < need) accept = 0;
+                }
+            }
+            if (!accept) {
+                /* fall through to teacher/gap */
+            } else {
+                hybrid_adapter_apply(&ai->hybrid, output, out_cap);
+                serve_record_hit(ai, rep, PERSONAL_AI_RESIDUAL,
+                                 HYBRID_TRUST_UNCERTIFIED, HYBRID_TIER_C);
+                cnet_acct_add_tier_c();
+                if (ai->policy.structure_mine_on_serve) {
+                    BinaryTransformNetwork *stu = NULL;
+                    if (personal_ai_structure_mine(ai, &stu) == 0) {
+                        rep->structure_mined = 1;
+                        (void)stu;
+                    }
+                }
+                return 0;
             }
         }
-        return 0;
     }
 
     /* ---- Legacy teacher oracle path (signature-matched big AI) ---- */
