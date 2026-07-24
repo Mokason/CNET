@@ -115,11 +115,29 @@ while the accuracy win holds even here. The +47 points is measured on the broad
 sparse-feature distribution; the production gain depends on the real tool-call
 input distribution.
 
+## Live-serving in the executors (behind a flag)
+The route and DAG executors apply attached adapters during execution, gated by
+`reg->lora_serving_enabled` (zero-init = OFF, byte-identical legacy path). The
+mechanism is a CCE-free global hook `g_cnet_lora_serve_hook` (declared in
+router.h, defined in route.c) that `route_execute_ex` and `eval_node` call right
+after `btn_forward` — so the delta is added *before* port validation and is what
+gets served. Core router TUs stay CCE-free (verified: route.c/dag_full.c/
+registry.c compile standalone; route_demo/dag_demo link without CCE). The hook is
+installed only by the opt-in adapter layer:
+
+- `registry_lora_enable_serving(reg)` — sets the flag + installs the hook.
+- `registry_lora_disable_serving(reg)` — clears both, restoring the frozen base.
+
+`test_registry_lora` proves it end to end through the real `route_execute_ex`:
+serving OFF → executor output is the **byte-exact** base (diff 0.0); serving ON →
+output == base + adapter delta (diff 0.0), and differs from the base by the
+delta. Prototype scope: one active serving registry at a time (last enable wins).
+
 ### Not done / next
-- Call `registry_forward_with_lora` from the live executors (route.c/dag_full.c)
-  behind a registry flag, so a trained adapter reaches production serving.
-- Repeat on a production queue populated by real faults (this run samples inputs
-  and labels them with the shared teacher rather than harvesting live faults).
+- A DAG-path integration test (route path is covered; dag_full.c uses the same
+  one-line hook, verified to compile+link but not yet exercised with a built DAG).
+- Repeat on a production queue populated by real faults (jtc_lora_live samples
+  inputs and labels them with the shared teacher rather than harvesting faults).
 - Try `diff_mode=EXACT` via the `cce_learn` cascade path as an alternative
   trainer; measure vs the explicit Adam here.
 - Head-width `B:[r,out]` grows with vocab for a true logit head — benchmark the

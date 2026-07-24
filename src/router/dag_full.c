@@ -2899,6 +2899,10 @@ static const double *eval_node(
         }
 
         raw = btn_forward(p, assembled);
+        /* Live adapter: add any attached low-rank delta in place before the
+           reliability check, so the adapted output is validated and served. */
+        if (g_cnet_lora_serve_hook)
+            g_cnet_lora_serve_hook(p, assembled, (double *)raw, p->output_count);
 
         /* Learned reliability covers the WHOLE output: a primitive whose
            unconsumed segment is out-of-domain is not healthy. Recording

@@ -173,7 +173,21 @@ typedef struct {
        Opt out: CNET_REGISTRY_LINEAR=1 forces linear scan (debug). */
     size_t *name_hash;
     size_t name_hash_cap;
+
+    /* Opt-in live-serving of attached cce_lora adapters. Zero-init = off (the
+       executors serve the frozen base, byte-identical to legacy). Flipped by
+       registry_lora_enable_serving(); the executors consult the hook below. */
+    int lora_serving_enabled;
 } PrimitiveRegistry;  /* note: rank_artifact defined later in this header */
+
+/* Live-serving adapter hook (implemented in registry_lora.*). NULL => off, with
+   zero overhead — the default. The executors call it right after btn_forward to
+   add any attached low-rank delta to the primitive's raw output IN PLACE. The
+   signature is CCE-free so core router TUs (route.c/dag_full.c) need no CCE
+   dependency; only the opt-in adapter layer installs it. */
+typedef void (*CnetLoraServeHook)(const BinaryTransformNetwork *btn,
+                                  const double *input, double *raw, size_t out_len);
+extern CnetLoraServeHook g_cnet_lora_serve_hook;
 
 typedef struct {
     const BinaryTransformNetwork *steps[ROUTE_MAX_STEPS];

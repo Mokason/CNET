@@ -27,6 +27,10 @@ static double rd(void) { return ((rnd() >> 8) * (1.0 / 16777216.0)) * 2.0 - 1.0;
 
 static Port P(PortFamily f, size_t w, size_t c) { Port p; p.family = f; p.field_width = w; p.field_count = c; p.tag[0] = '\0'; return p; }
 
+static double maxabsdiff(const double *a, const double *b, int n) {
+    double m = 0.0; for (int i = 0; i < n; i++) { double d = fabs(a[i] - b[i]); if (d > m) m = d; } return m;
+}
+
 int main(void) {
     const int in = 16, out = 8, k = 2;
     /* low-rank teacher correction Wc = U V (scaled small) */
@@ -36,7 +40,9 @@ int main(void) {
 
     BinaryTransformNetwork base = {0};
     CHECK(btn_init(&base, in, out, 8, 16, 0.1, 1u) == 0, "btn_init base");
-    btn_set_ports(&base, P(PORT_ONEHOT, in, 1), P(PORT_ONEHOT, out, 1));
+    /* RAW ports: port_canonicalize is identity, so the executor feeds the btn
+       (and the adapter) the exact input — keeps the numeric check clean. */
+    btn_set_ports(&base, P(PORT_RAW, in, 1), P(PORT_RAW, out, 1));
 
     PrimitiveRegistry reg;
     registry_init(&reg);
@@ -98,6 +104,36 @@ int main(void) {
     printf("   (held-out L1: base-vs-teacher=%.4f  adapter-vs-teacher=%.4f)\n",
            err_base / (m * out), err_adp / (m * out));
     CHECK(err_adp < err_base * 0.25, "served adapter recovers teacher on held-out inputs");
+
+    /* ---- executor path: route_execute_ex applies the delta only when serving on ---- */
+    {
+        RoutePlan plan;
+        memset(&plan, 0, sizeof plan);
+        plan.steps[0] = &base; plan.names[0] = "unit"; plan.length = 1; plan.strict = 0;
+        for (int i = 0; i < in; i++) x[i] = rd();
+        const double *bp = btn_forward(&base, x);
+        double base_only[8]; for (int o = 0; o < out; o++) base_only[o] = bp[o];
+        double ref_on[8];   /* base + delta, via the direct serve path */
+        registry_forward_with_lora(&reg, "unit", x, ref_on);
+
+        double out_off[8], out_on[8];
+        registry_lora_disable_serving(&reg);
+        int rc_off = route_execute_ex(&plan, x, in, out_off, out, NULL);
+        registry_lora_enable_serving(&reg);
+        CHECK(reg.lora_serving_enabled, "enable_serving sets the flag");
+        int rc_on = route_execute_ex(&plan, x, in, out_on, out, NULL);
+        registry_lora_disable_serving(&reg);
+
+        CHECK(rc_off == 0 && rc_on == 0, "route_execute_ex runs with serving off and on");
+        double d_off = maxabsdiff(out_off, base_only, out);
+        double d_on_vs_off = maxabsdiff(out_on, out_off, out);
+        double d_on_vs_ref = maxabsdiff(out_on, ref_on, out);
+        printf("   (executor: off-vs-base=%.2e  on-vs-off=%.3e  on-vs-(base+delta)=%.2e)\n",
+               d_off, d_on_vs_off, d_on_vs_ref);
+        CHECK(d_off == 0.0, "serving OFF: executor output is the exact frozen base");
+        CHECK(d_on_vs_off > 1e-6, "serving ON: executor output changed (delta applied)");
+        CHECK(d_on_vs_ref < 1e-4, "serving ON: executor output == base + adapter delta");
+    }
 
     registry_lora_detach(&reg, "unit");
     CHECK(!registry_has_lora(&reg, "unit"), "detach removes the adapter");

@@ -187,6 +187,10 @@ int route_plan(
 
 /* --- execution --------------------------------------------------------- */
 
+/* Live-serving adapter hook; NULL until the opt-in adapter layer installs it.
+   Defined here (a core router TU) so route.c and dag_full.c share one symbol. */
+CnetLoraServeHook g_cnet_lora_serve_hook = NULL;
+
 int route_execute_ex(
     const RoutePlan *plan,
     const double *input,
@@ -259,6 +263,10 @@ int route_execute_ex(
             return -1;
         }
         raw = btn_forward(p, next);
+        /* Live adapter: add any attached low-rank delta to the raw output before
+           validation, so the adapted output is what is validated and served. */
+        if (g_cnet_lora_serve_hook)
+            g_cnet_lora_serve_hook(p, next, (double *)raw, p->output_count);
 
         if (port_validate(p->output_ports[0], raw)) {
 #if defined(_WIN32) || defined(__WIN32__) || defined(__MINGW32__)

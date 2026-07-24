@@ -124,3 +124,41 @@ void registry_lora_detach(PrimitiveRegistry *reg, const char *name) {
     RegistryEntry *e = find_entry(reg, name);
     if (e && e->lora) { cce_lora_free(e->lora); free(e->lora); e->lora = NULL; }
 }
+
+/* ---- live-serving hook (executors call this after btn_forward) ------------- */
+static const PrimitiveRegistry *g_lora_reg = NULL;
+
+static void lora_serve_impl(const BinaryTransformNetwork *btn,
+                            const double *input, double *raw, size_t out_len) {
+    const PrimitiveRegistry *reg = g_lora_reg;
+    if (!reg || !reg->lora_serving_enabled || !btn || !input || !raw) return;
+    for (size_t i = 0; i < reg->count; i++) {
+        const RegistryEntry *e = &reg->entries[i];
+        if (e->btn != btn || !e->lora) continue;
+        const cce_lora *lo = (const cce_lora *)e->lora;
+        int inc = lo->in_dim, outc = lo->out_dim;
+        if ((size_t)outc > out_len) outc = (int)out_len;   /* never overrun caller's buffer */
+        cce_tensor x, y; int xs[1] = { inc }, ys[1] = { lo->out_dim };
+        if (cce_tensor_alloc(&x, xs, 1) != CCE_OK) return;
+        if (cce_tensor_alloc(&y, ys, 1) != CCE_OK) { cce_tensor_free(&x); return; }
+        for (int j = 0; j < inc; j++) x.data[j] = (float)input[j];
+        for (int o = 0; o < lo->out_dim; o++) y.data[o] = 0.0f;
+        if (cce_lora_apply(lo, &x, &y) == CCE_OK)
+            for (int o = 0; o < outc; o++) raw[o] += (double)y.data[o];
+        cce_tensor_free(&x); cce_tensor_free(&y);
+        return;                                            /* one entry per btn */
+    }
+}
+
+void registry_lora_enable_serving(PrimitiveRegistry *reg) {
+    if (!reg) return;
+    g_lora_reg = reg;
+    reg->lora_serving_enabled = 1;
+    g_cnet_lora_serve_hook = lora_serve_impl;
+}
+
+void registry_lora_disable_serving(PrimitiveRegistry *reg) {
+    if (reg) reg->lora_serving_enabled = 0;
+    g_lora_reg = NULL;
+    g_cnet_lora_serve_hook = NULL;
+}

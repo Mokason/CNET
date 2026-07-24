@@ -51,6 +51,14 @@ int registry_has_lora(const PrimitiveRegistry *reg, const char *name);
 /* Detach and free the adapter on `name` (no-op if none). */
 void registry_lora_detach(PrimitiveRegistry *reg, const char *name);
 
+/* Live-serving toggle. Enabling sets reg->lora_serving_enabled and installs the
+   global executor hook (route.c/dag_full.c), so any primitive with an attached
+   adapter is served as base + delta during route/DAG execution; disabling clears
+   both, restoring the byte-identical frozen-base path. OFF by default.
+   Prototype scope: one active serving registry at a time (last enable wins). */
+void registry_lora_enable_serving(PrimitiveRegistry *reg);
+void registry_lora_disable_serving(PrimitiveRegistry *reg);
+
 #ifdef __cplusplus
 }
 #endif

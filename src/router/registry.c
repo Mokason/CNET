@@ -392,6 +392,7 @@ void registry_init(PrimitiveRegistry *reg) {
     reg->streamer = NULL;
     reg->name_hash = NULL;
     reg->name_hash_cap = 0;
+    reg->lora_serving_enabled = 0;   /* opt-in; see registry_lora_enable_serving */
 }
 
 /* ---- name hash (Phase A: registry_find chokepoint) --------------------- */
