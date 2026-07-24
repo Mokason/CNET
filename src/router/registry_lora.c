@@ -92,68 +92,7 @@ int registry_teach_lora(PrimitiveRegistry *reg, const char *name,
     return teach_pairs(e, q->labeled_inputs, q->labeled_targets, q->labeled_count, &o, stats);
 }
 
-/* legacy body retained below only as reference; superseded by teach_pairs. */
-#if 0
-int registry_teach_lora_OLD(PrimitiveRegistry *reg, const char *name,
-                        const registry_lora_opts *opt, registry_lora_stats *stats) {
-    RegistryEntry *e = find_entry(reg, name);
-    if (!e || !e->btn || !e->queue) return -1;
-    RetrainQueue *q = e->queue;
-    const size_t n = q->labeled_count;
-    const int in = (int)q->input_count, out = (int)q->output_count;
-    if (n == 0 || in <= 0 || out <= 0) return -1;
-
-    registry_lora_opts o = opt ? *opt : registry_lora_defaults();
-
-    /* Build (input, residual) float sets. residual = target - base(input).
-       btn_forward reuses an internal buffer, so copy the base out per pair. */
-    float *X = malloc(n * (size_t)in * sizeof(float));
-    float *R = malloc(n * (size_t)out * sizeof(float));
-    if (!X || !R) { free(X); free(R); return -1; }
-
-    double pre = 0.0;
-    for (size_t s = 0; s < n; s++) {
-        const double *xin = q->labeled_inputs + s * (size_t)in;
-        const double *tgt = q->labeled_targets + s * (size_t)out;
-        const double *base = btn_forward(e->btn, xin);  /* borrowed buffer */
-        if (!base) { free(X); free(R); return -1; }
-        for (int i = 0; i < in; i++) X[s * in + i] = (float)xin[i];
-        for (int oo = 0; oo < out; oo++) {
-            double resid = tgt[oo] - base[oo];
-            R[s * out + oo] = (float)resid;
-            pre += resid * resid;
-        }
-    }
-    pre /= (double)(n * (size_t)out);
-
-    cce_lora *adp = malloc(sizeof(*adp));
-    if (!adp) { free(X); free(R); return -1; }
-    if (cce_lora_init(adp, in, out, o.rank, o.alpha, 0x51A17u + (uint32_t)o.rank) != CCE_OK) {
-        free(adp); free(X); free(R); return -1;
-    }
-    double post = cce_lora_train(adp, X, R, n, &o.train);
-    if (post < 0.0) { cce_lora_free(adp); free(adp); free(X); free(R); return -1; }
-
-    /* Attach as an uncertified candidate (replace any prior). The executor hook
-       will not serve it until registry_certify_lora passes. Borrowed by reg. */
-    if (e->lora) { cce_lora_free(e->lora); free(e->lora); }
-    e->lora = adp;
-    e->lora_certified = 0;
-
-    if (stats) {
-        stats->pairs = n;
-        stats->pre_mse = pre;
-        stats->post_mse = post;
-        stats->in_dim = in;
-        stats->out_dim = out;
-        stats->rank = o.rank;
-        stats->params = cce_lora_param_count(adp);
-        stats->dense_params = cce_lora_dense_param_count(adp);
-    }
-    free(X); free(R);
-    return 0;
-}
-#endif /* legacy registry_teach_lora reference */
+/* registry_teach_lora_OLD removed (Tier3 cleanup) */
 
 int registry_forward_with_lora(PrimitiveRegistry *reg, const char *name,
                                const double *input, double *out) {
