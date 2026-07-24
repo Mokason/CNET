@@ -127,6 +127,12 @@ typedef struct { size_t units_seen, taught, certified, rejected; } registry_lora
 int registry_lora_tick(PrimitiveRegistry *reg, const registry_lora_tick_opts *opt,
                        registry_lora_tick_report *report);
 
+/* Ingest labeled (in,tgt) pairs from the unified fault JSONL into unit queues.
+ * path NULL => CNET_FAULT_LOG. unit_filter NULL => all units present in reg.
+ * Returns pairs ingested, or -1. */
+int registry_lora_ingest_fault_bus(PrimitiveRegistry *reg, const char *path,
+                                   const char *unit_filter);
+
 /* Install/uninstall the adapter action in the live orchestrator: enables serving
    AND arms the tick hook (g_cnet_lora_tick_hook), so personal_ai_tick runs
    registry_lora_tick each pass. `opt` NULL => defaults. OFF until installed. */

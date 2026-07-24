@@ -10,9 +10,12 @@
 #include "../../include/router/registry_lora.h"
 #include "../../include/nn.h"          /* btn_forward, BinaryTransformNetwork */
 #include "../../include/cce/cce_tensor.h"
+#include "../../include/cnet_fault.h"
+#include "../../include/cnet_promote.h"
 
 #include <stdlib.h>
 #include <string.h>
+#include <stdio.h>
 
 registry_lora_opts registry_lora_defaults(void) {
     registry_lora_opts o;
@@ -228,11 +231,54 @@ registry_lora_tick_opts registry_lora_tick_defaults(void) {
     return o;
 }
 
+int registry_lora_ingest_fault_bus(PrimitiveRegistry *reg, const char *path,
+                                   const char *unit_filter) {
+    const char *p;
+    size_t total = 0;
+    size_t i;
+    if (!reg) return -1;
+    p = path;
+    if (!p || !p[0]) p = getenv("CNET_FAULT_LOG");
+    if (!p || !p[0]) return 0;
+    for (i = 0; i < reg->count; i++) {
+        RegistryEntry *e = &reg->entries[i];
+        int in, out;
+        size_t cap = 4096, n, k;
+        double *ins = NULL, *tgts = NULL;
+        if (!e->btn || !e->name) continue;
+        if (unit_filter && unit_filter[0] && strcmp(e->name, unit_filter) != 0)
+            continue;
+        in = (int)e->btn->input_count;
+        out = (int)e->btn->output_count;
+        if (in <= 0 || out <= 0) continue;
+        ins = malloc(cap * (size_t)in * sizeof(double));
+        tgts = malloc(cap * (size_t)out * sizeof(double));
+        if (!ins || !tgts) {
+            free(ins);
+            free(tgts);
+            return -1;
+        }
+        n = cnet_fault_load_vectors(p, e->name, in, out, ins, tgts, cap);
+        for (k = 0; k < n; k++) {
+            if (registry_add_labeled_pair(reg, e->name,
+                                          ins + k * (size_t)in,
+                                          tgts + k * (size_t)out) == 0)
+                total++;
+        }
+        free(ins);
+        free(tgts);
+    }
+    return (int)total;
+}
+
 int registry_lora_tick(PrimitiveRegistry *reg, const registry_lora_tick_opts *opt,
                        registry_lora_tick_report *report) {
     if (!reg) return -1;
     registry_lora_tick_opts o = opt ? *opt : registry_lora_tick_defaults();
     size_t seen = 0, taught = 0, certd = 0, rej = 0;
+    /* Pull cross-process labeled pairs before teaching (Ghost/JTC/MCP bus). */
+    if (getenv("CNET_FAULT_LOG") && getenv("CNET_FAULT_LOG")[0])
+        (void)registry_lora_ingest_fault_bus(reg, NULL, NULL);
     for (size_t i = 0; i < reg->count; i++) {
         RegistryEntry *e = &reg->entries[i];
         if (!e->btn || !e->queue || !e->name) continue;
@@ -290,6 +336,19 @@ int registry_lora_tick(PrimitiveRegistry *reg, const registry_lora_tick_opts *op
             pass = registry_certify_lora(reg, e->name,
                        q->labeled_inputs + nt * (size_t)in,
                        q->labeled_targets + nt * (size_t)out, nh, &o.cert, NULL);
+        }
+        if (pass == 1) {
+            /* Optional promote gate when CNET_PROMOTE=1 */
+            if (getenv("CNET_PROMOTE") && getenv("CNET_PROMOTE")[0] == '1') {
+                CnetPromoteInput pin;
+                CnetPromoteDecision dec;
+                cnet_promote_defaults(&pin);
+                pin.fixes = 1;
+                pin.regressions = 0;
+                pin.min_net_gain = o.cert.min_net_gain > 0 ? o.cert.min_net_gain : 1;
+                dec = cnet_promote_decide(&pin);
+                if (!dec.allowed) pass = 0;
+            }
         }
         if (pass == 1) {
             certd++;

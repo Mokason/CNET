@@ -967,6 +967,13 @@ size_t registry_pending_labels(const PrimitiveRegistry *reg, const char *name) {
     return q ? q->unlabeled_count : 0;
 }
 
+/* Optional dual-write into the unified fault bus (cnet_fault.c). Weak so
+ * binaries that don't link the fault TU stay unchanged. */
+void cnet_fault_mirror_labeled(const char *unit, const double *input,
+                               const double *target, int in_dim, int out_dim,
+                               const char *source_name)
+    __attribute__((weak));
+
 int registry_supply_label(PrimitiveRegistry *reg, const char *name,
                           const double *input, const double *target) {
     size_t i, j;
@@ -983,10 +990,41 @@ int registry_supply_label(PrimitiveRegistry *reg, const char *name,
             if (retrain_queue_add_labeled(q, input, target, q->input_count, q->output_count) != 0)
                 return -1;
             retrain_queue_drop_unlabeled(q, j);
+            /* Cross-process bus: labeled pair survives for registry_lora_tick. */
+            if (cnet_fault_mirror_labeled) {
+                cnet_fault_mirror_labeled(name, input, target,
+                                          (int)q->input_count, (int)q->output_count,
+                                          "jtc");
+            }
             return 0;
         }
     }
     return -1;
+}
+
+int registry_add_labeled_pair(PrimitiveRegistry *reg, const char *name,
+                              const double *input, const double *target) {
+    size_t i;
+    RegistryEntry *e;
+    RetrainQueue *q;
+    if (!reg || !name || !input || !target) return -1;
+    i = registry_find(reg, name);
+    if (i == reg->count) return -1;
+    e = &reg->entries[i];
+    if (!e->btn) return -1;
+    if (e->queue == NULL) {
+        q = calloc(1, sizeof *q);
+        if (!q) return -1;
+        q->input_count = e->btn->input_count;
+        q->output_count = e->btn->output_count;
+        e->queue = q;
+    } else {
+        q = e->queue;
+    }
+    if (retrain_queue_add_labeled(q, input, target, q->input_count,
+                                  q->output_count) != 0)
+        return -1;
+    return 0;
 }
 
 size_t registry_label_via_teacher(PrimitiveRegistry *reg, const char *name) {

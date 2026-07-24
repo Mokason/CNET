@@ -293,6 +293,11 @@ size_t registry_pending_labels(const PrimitiveRegistry *reg, const char *name);
 int registry_supply_label(PrimitiveRegistry *reg, const char *name,
                           const double *input, const double *target);
 
+/* Direct labeled pair (no unlabeled park). For fault-bus ingest / offline
+   replay. Does not change PRIM state. Returns 0 or -1. */
+int registry_add_labeled_pair(PrimitiveRegistry *reg, const char *name,
+                              const double *input, const double *target);
+
 /* Teacher labeling (target source B): for each UNLABELED failure of `name`, if
    any OTHER registry primitive with matching dims/ports produces an in-domain
    (cleanly canonicalizing) output for that input, adopt it as the target and

@@ -259,6 +259,8 @@ public static partial class JsonToolCall
             if (source.StartsWith("unknown", StringComparison.Ordinal))
             {
                 bool noted = NoteGap(inboxPath) || gapNoted;
+                try { FaultBus.Append(UnitName, source: "jtc", note: source, input: feat); }
+                catch { /* ignore */ }
                 return (null, source, noted);
             }
             if (served && tool != null)
@@ -272,6 +274,8 @@ public static partial class JsonToolCall
                 if (conf < MinConfidence || maxAct < MinConfidence * 0.5)
                 {
                     bool noted = NoteGap(inboxPath);
+                    try { FaultBus.Append(UnitName, source: "jtc", note: "unknown_low_conf", input: feat); }
+                    catch { /* ignore */ }
                     return (null, "unknown_low_conf", noted);
                 }
                 return (t, "certified", false);
@@ -279,6 +283,8 @@ public static partial class JsonToolCall
             catch
             {
                 bool noted = NoteGap(inboxPath) || gapNoted;
+                try { FaultBus.Append(UnitName, source: "jtc", note: "error_fallback", input: feat); }
+                catch { /* ignore */ }
                 return (null, source, noted);
             }
         }

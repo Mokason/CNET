@@ -108,3 +108,13 @@ make cnet_replace_improve
 
 ## Status 2026-07-24
 `make cnet_replace_improve` → **CNET_REPLACE_IMPROVE_PASS** on master.
+
+
+## Fault loop closed (2026-07-24)
+
+`make cnet_fault_loop_test` → **CNET_FAULT_LOOP_PASS**
+
+- `registry_supply_label` → weak `cnet_fault_mirror_labeled` → `CNET_FAULT_LOG`
+- `registry_lora_ingest_fault_bus` + tick auto-ingest when log set
+- Host `FaultBus` + JTC ClassifyOrGap breadcrumbs
+- Env: `CNET_FAULT_LOG`, `CNET_FAULT_MIRROR=0` to disable mirror, `CNET_PROMOTE=1` optional

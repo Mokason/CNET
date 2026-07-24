@@ -197,7 +197,8 @@ CCE := $(CCE_TENSOR) $(CCE_BLOCK) $(CCE_CASCADE) $(CCE_ARCHIVE) $(CCE_FOREST) $(
 CNET_CCE_ADAPTER := src/cce/cce_contract_adapter.c
 SPECIALIST_ADAPTERS := src/specialist_adapters.c
 SPECIALIST_SRC := src/specialist.c src/specialist_health.c
-GAP_LANE_SRC := src/gap_lane.c src/cnet_auto_learn.c src/cnet_charter.c src/cnet_record_teacher.c src/cnet_fault.c src/cnet_promote.c src/cnet_serve_decode.c
+FAULT_SRC := src/cnet_fault.c src/cnet_promote.c src/cnet_serve_decode.c
+GAP_LANE_SRC := src/gap_lane.c src/cnet_auto_learn.c src/cnet_charter.c src/cnet_record_teacher.c $(FAULT_SRC)
 GOV_SRC := src/cnet_governance.c
 ASYNC_RUNTIME := src/async_runtime.c
 MODEL_RUNTIME := src/model_runtime.c
@@ -1744,6 +1745,17 @@ cce_lily_teacher: $(CCE) $(CCE_CUDA_OBJ) tests/cce_lily_teacher_test.c
 REGISTRY_LILY := src/router/registry_lily.c
 
 # Unified fault bus + promote gate (Tier 0 replace/improve)
+
+# Cross-process fault bus → ingest → lora tick (JTC closed loop)
+cnet_fault_loop_test: json_toolcall_alphabet $(MULTIMODAL_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(REGISTRY_LORA) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) src/soul_host.c $(ROUTE_LOG_SRC) tests/cnet_fault_loop_test.c include/json_toolcall.h
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/cnet_fault_loop_test \
+		$(MULTIMODAL_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) \
+		$(SRC) $(ROUTER) $(REGISTRY_LORA) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) \
+		$(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) \
+		src/soul_host.c $(ROUTE_LOG_SRC) tests/cnet_fault_loop_test.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -pthread
+	./$(BIN_DIR)/cnet_fault_loop_test
+
 cnet_fault_test: src/cnet_fault.c src/cnet_promote.c tests/cnet_fault_test.c
 	@mkdir -p $(BIN_DIR)
 	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ src/cnet_fault.c src/cnet_promote.c tests/cnet_fault_test.c $(LDFLAGS)
@@ -1777,8 +1789,8 @@ registry_lily_compute: $(CCE) $(CCE_CUDA_OBJ) $(REGISTRY_LILY) tests/registry_li
 
 # registry_lora: adapter wired into a real registry unit's retrain queue (opt-in).
 REGISTRY_LORA := src/router/registry_lora.c
-registry_lora_test: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(SCAN) $(REGISTRY_LORA) $(CCE) $(CCE_CUDA_OBJ) tests/test_registry_lora.c
-	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(SCAN) $(REGISTRY_LORA) $(CCE) $(CCE_CUDA_OBJ) tests/test_registry_lora.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+registry_lora_test: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(SCAN) $(REGISTRY_LORA) $(FAULT_SRC) $(CCE) $(CCE_CUDA_OBJ) tests/test_registry_lora.c
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(SCAN) $(REGISTRY_LORA) $(FAULT_SRC) $(CCE) $(CCE_CUDA_OBJ) tests/test_registry_lora.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 	./$(BIN_DIR)/registry_lora_test
 
 # jtc_lora_live: registry_teach_lora on the real certified json_toolcall_v2 unit.
@@ -3592,5 +3604,5 @@ alt_paths_gate: $(CCE) tests/test_alt_paths_gate.c include/cce/cce_gpu.h include
 
 
 # Umbrella: replace/improve Tier0–2 focused gates
-cnet_replace_improve: cnet_fault_test cce_adapter_bank_test cce_dora_test cnet_serve_decode_test
+cnet_replace_improve: cnet_fault_test cce_adapter_bank_test cce_dora_test cnet_serve_decode_test cnet_fault_loop_test
 	@echo CNET_REPLACE_IMPROVE_PASS

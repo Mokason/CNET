@@ -89,6 +89,24 @@ int main(void) {
     dec = cnet_promote_decide(&pin);
     CHECK(dec.allowed == 0, "promote eval fail");
 
+    /* vector round-trip */
+    {
+        CnetFaultLog log2;
+        CnetFaultRecord r2;
+        double in[4] = {1,0,1,0}, tg[2] = {0,1}, I[8], T[4];
+        size_t nv;
+        CHECK(cnet_fault_open(&log2, path) == 0, "reopen");
+        memset(&r2, 0, sizeof r2);
+        r2.source = CNET_FAULT_SRC_JTC;
+        snprintf(r2.unit, sizeof r2.unit, "json_toolcall_v2");
+        r2.in_dim = 4; r2.out_dim = 2;
+        CHECK(cnet_fault_append_labeled(&log2, &r2, in, tg) == 0, "append_labeled");
+        cnet_fault_close(&log2);
+        nv = cnet_fault_load_vectors(path, "json_toolcall_v2", 4, 2, I, T, 2);
+        CHECK(nv >= 1, "load_vectors");
+        CHECK(I[0] == 1.0 && T[1] == 1.0, "vec values");
+    }
+
     unlink(path);
     unlink(delta_path);
 
@@ -96,7 +114,7 @@ int main(void) {
         fprintf(stderr, "cnet_fault_test failures=%d\n", g_fail);
         return 1;
     }
-    printf("CNET_FAULT_PASS checks=12\n");
+    printf("CNET_FAULT_PASS checks=15\n");
     printf("CNET_PROMOTE_PASS checks=5\n");
     return 0;
 }
