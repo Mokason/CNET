@@ -188,8 +188,17 @@ Two things here, both instructive:
   makes a hit touch one line, for a stable **~5–7%** on the uncached encode
   (~75 → ~80 MB/s). Marginal here (Qwen's ~4 MB merge table is L3-resident) but
   free and correct, and it scales the way the pretoken-cache packing does.
+- **Robin Hood probing — tried, measured, reverted.** It works exactly as
+  advertised: at 0.95 load it cuts the *max* probe from 4593 to 110 (a 40× tighter
+  tail) at identical *average* probe length. But it is **slower on average
+  throughput** — its lookup recomputes each probed entry's home slot (an extra
+  multiply per probe) to enable the early miss-exit, which costs more than it saves
+  for a hit-heavy table at ~0.5 load (21.8 vs 20.7 ns/hit; the encode baseline went
+  80→78). Bounded-tail matters at high load or under adversarial input; our merge
+  table is neither, so linear wins. The A/B lives in `gigatok_cache_bench`.
 
 Absolute numbers are still below gigatoken's per-family-SIMD BPE; the point here
 is the *decomposition* — where each speedup lives — at byte-for-byte identical
-output. And twice now the honest move was to *measure a plausible optimization
-and keep the simpler code* (FNV over a wide hash; SWAR over AVX-512 single-cursor).
+output. Three times now the honest move was to *measure a plausible optimization
+and keep the simpler code*: FNV over a wide hash, SWAR over single-cursor AVX-512,
+and linear probing over Robin Hood. The measurement decides — not the instinct.

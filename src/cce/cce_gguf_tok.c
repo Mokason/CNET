@@ -192,24 +192,34 @@ static int merges_get(const cce_gguf_tok *t, const char *key) {
 static inline uint64_t pair_key(int ida, int idb) {
     return (((uint64_t)(uint32_t)(ida + 1)) << 32) | (uint64_t)(uint32_t)(idb + 1);
 }
+static inline uint32_t pair_home(uint64_t key, uint32_t mask) {
+    return (uint32_t)((key * 0x9E3779B97F4A7C15ULL >> 32) & mask);
+}
+/* Linear probing. Robin Hood was tried (git history) and MEASURED slower here
+   (gigatok_cache_bench): it bounds the worst-case probe (max 4593 -> 110 at 0.95
+   load) but its per-probe home recompute makes average hit lookups slower, and
+   this table runs at ~0.5 load (hit-heavy), where the bounded tail isn't needed.
+   Keep linear. */
 static void pair_put(cce_gguf_tok *t, int ida, int idb, int rank, int merged) {
+    uint32_t mask = (uint32_t)(t->pcap - 1);
     uint64_t key = pair_key(ida, idb);
-    int i = (int)((key * 0x9E3779B97F4A7C15ULL >> 32) & (uint32_t)(t->pcap - 1));
+    uint32_t i = pair_home(key, mask);
     for (;;) {
         PairE *e = &t->pe[i];
         if (!e->key) { e->key = key; e->rank = rank; e->merged = merged; return; }
-        if (e->key == key) return; /* merges are rank-ordered; keep the first (lowest) */
-        i = (i + 1) & (t->pcap - 1);
+        if (e->key == key) return;                     /* rank-ordered inserts: keep the first */
+        i = (i + 1) & mask;
     }
 }
 static inline int pair_get(const cce_gguf_tok *t, int ida, int idb, int *merged) {
+    uint32_t mask = (uint32_t)(t->pcap - 1);
     uint64_t key = pair_key(ida, idb);
-    int i = (int)((key * 0x9E3779B97F4A7C15ULL >> 32) & (uint32_t)(t->pcap - 1));
+    uint32_t i = pair_home(key, mask);
     for (;;) {
-        const PairE *e = &t->pe[i];          /* key + value share one cache line */
+        const PairE *e = &t->pe[i];              /* key + value share one cache line */
         if (!e->key) return -1;
         if (e->key == key) { *merged = e->merged; return e->rank; }
-        i = (i + 1) & (t->pcap - 1);
+        i = (i + 1) & mask;
     }
 }
 
