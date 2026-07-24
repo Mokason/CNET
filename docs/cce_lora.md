@@ -128,14 +128,14 @@ installed only by the opt-in adapter layer:
 - `registry_lora_enable_serving(reg)` — sets the flag + installs the hook.
 - `registry_lora_disable_serving(reg)` — clears both, restoring the frozen base.
 
-`test_registry_lora` proves it end to end through the real `route_execute_ex`:
-serving OFF → executor output is the **byte-exact** base (diff 0.0); serving ON →
-output == base + adapter delta (diff 0.0), and differs from the base by the
-delta. Prototype scope: one active serving registry at a time (last enable wins).
+`test_registry_lora` proves it end to end through **both** real executors —
+`route_execute_ex` (a 1-step RoutePlan) and `dag_execute` (a planned
+single-primitive DAG): serving OFF → output is the **byte-exact** base (diff
+0.0); serving ON → output == base + adapter delta (diff 0.0), and differs from
+the base by the delta. Prototype scope: one active serving registry at a time
+(last enable wins).
 
 ### Not done / next
-- A DAG-path integration test (route path is covered; dag_full.c uses the same
-  one-line hook, verified to compile+link but not yet exercised with a built DAG).
 - Repeat on a production queue populated by real faults (jtc_lora_live samples
   inputs and labels them with the shared teacher rather than harvesting faults).
 - Try `diff_mode=EXACT` via the `cce_learn` cascade path as an alternative

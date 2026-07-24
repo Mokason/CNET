@@ -135,6 +135,39 @@ int main(void) {
         CHECK(d_on_vs_ref < 1e-4, "serving ON: executor output == base + adapter delta");
     }
 
+    /* ---- DAG executor path: dag_execute applies the delta only when serving on ---- */
+    {
+        registry_set_state(&reg, "unit", PRIM_FUZZY);   /* record_fault left it RESET */
+        for (int i = 0; i < in; i++) x[i] = rd();
+        DagSource src; src.type = P(PORT_RAW, in, 1); src.values = x;
+        DagPlan plan; memset(&plan, 0, sizeof plan);
+        int planned = dag_plan(&reg, &src, 1, P(PORT_RAW, out, 1), &plan);
+        CHECK(planned == 0, "dag_plan built a single-primitive DAG over the unit");
+
+        const double *bp = btn_forward(&base, x);
+        double base_only[8]; for (int o = 0; o < out; o++) base_only[o] = bp[o];
+        double ref_on[8];
+        registry_forward_with_lora(&reg, "unit", x, ref_on);   /* base + delta */
+
+        double out_off[8], out_on[8];
+        registry_lora_disable_serving(&reg);
+        int rc_off = dag_execute(&plan, &src, 1, out_off, out);
+        registry_lora_enable_serving(&reg);
+        int rc_on = dag_execute(&plan, &src, 1, out_on, out);
+        registry_lora_disable_serving(&reg);
+        dag_free(&plan);
+
+        CHECK(rc_off == 0 && rc_on == 0, "dag_execute runs with serving off and on");
+        double d_off = maxabsdiff(out_off, base_only, out);
+        double d_on_off = maxabsdiff(out_on, out_off, out);
+        double d_on_ref = maxabsdiff(out_on, ref_on, out);
+        printf("   (DAG: off-vs-base=%.2e  on-vs-off=%.3e  on-vs-(base+delta)=%.2e)\n",
+               d_off, d_on_off, d_on_ref);
+        CHECK(d_off == 0.0, "DAG serving OFF: output is the exact frozen base");
+        CHECK(d_on_off > 1e-6, "DAG serving ON: output changed (delta applied)");
+        CHECK(d_on_ref < 1e-4, "DAG serving ON: output == base + adapter delta");
+    }
+
     registry_lora_detach(&reg, "unit");
     CHECK(!registry_has_lora(&reg, "unit"), "detach removes the adapter");
     for (int t = 0; t < m; t++) {
