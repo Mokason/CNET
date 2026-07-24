@@ -136,10 +136,22 @@ Two gaps found and **closed** (`2624bec`):
   light/deterministic ones into `verify` as prerequisites — `cnet_fault_test`
   (covers `CNET_FAULT_PASS` + `CNET_PROMOTE_PASS`), `cce_adapter_bank_test`,
   `cce_dora_test`, `cnet_serve_decode_test`. The 3 heavy-link targets
-  (`cnet_fault_loop_test`, `registry_lora_store_test`, `jtc_adapter_bench`) stay
-  on-demand to keep `make test` fast.
+  (`cnet_fault_loop_test`, `registry_lora_store_test`, `jtc_adapter_bench`) were
+  initially left on-demand for speed, then also wired in (see below).
 - ✅ **Stray `registry.meta`** (regenerable `tests/test_expansion` sidecar) removed
   and added to `.gitignore`.
 
 Open follow-ups (not blocking): T3.2 specialist_adapters thin wrappers still a
-façade note only; the 3 heavy gates remain outside `make test` by design.
+façade note only.
+
+## All 7 new gates now in CI (2026-07-24)
+
+Followed up on the "heavy gates stay on-demand" decision: wired the remaining 3
+(`cnet_fault_loop_test`, `registry_lora_store_test`, `jtc_adapter_bench`) into
+`verify` as well. `make test` now runs **all 8 new PASS markers** (7 targets;
+`cnet_fault_test` emits both `CNET_FAULT_PASS` and `CNET_PROMOTE_PASS`) alongside
+the core 25-suite log gate. All three are deterministic (fixed LCG seeds) and
+write only to `/tmp` or gitignored `logs/`, so CI stays clean. Trade-off
+accepted: `make test` is slower (the three link the full runtime SRC), in
+exchange for the fault-loop, adapter-store, and JTC accuracy bench being guarded
+on every run.
