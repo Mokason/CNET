@@ -57,27 +57,38 @@ apostrophes still go through the exact codepoint logic), and the cache memoizes
 `span -> token-ids`; both are exact, and `tests/gigatok_encode_bench.c` asserts
 the fast path's ids equal the baseline **byte-for-byte**.
 
+`bpe_word` itself was also rewritten with **fixed symbol arrays (no malloc, no
+`strlen`)**: symbols are (offset,length) slices of one contiguous byte-encoded
+buffer, so a merge just extends the left slice; adjacent pair-ranks are cached
+and only the two neighbours of a merge are recomputed (replacing the original
+full O(ns²) rescan). Output is byte-for-byte identical (verified by an id-stream
+hash across the old and new versions) — it is **~1.9× faster** on its own.
+
 Measured on a real GGUF vocab (Qwen-family, 248k tokens; ~4 MB corpus; same
-pattern on gemma 262k):
+pattern on gemma 262k), all outputs byte-for-byte identical:
 
 | config | throughput | vs baseline | ids |
 |---|---:|---:|---|
-| baseline (`cce_gguf_tok_encode`) | 19 MB/s | 1.00× | — |
-| + SWAR pretok | 19 MB/s | **1.00×** | identical |
-| + pretoken cache | 273 MB/s | **14.4×** | identical |
-| + SWAR + cache | 305 MB/s | **16.0×** | identical |
+| **old** `bpe_word` (malloc/strlen) | 19 MB/s | 0.5× | identical |
+| baseline (`cce_gguf_tok_encode`, rewritten `bpe_word`) | 37 MB/s | 1.00× | — |
+| + SWAR pretok | 35 MB/s | **~1.0×** (noise) | identical |
+| + pretoken cache | 269 MB/s | **7.3×** | identical |
+| + SWAR + cache | 300 MB/s | **8.1×** | identical |
 
 **The honest finding — and it matches gigatoken's own thesis.** In this encoder
-(as in most) `bpe_word` is the bottleneck, not pretokenization: SWAR pretok alone
-buys **~0% end-to-end**. The **pretoken cache is the whole win (14×)** — it skips
-`bpe_word` on the ~99% of pretokens that repeat in natural text. SWAR only starts
-to matter *after* the cache removes the BPE cost (then it adds ~11%, since it's
-now the remaining bottleneck). That's exactly why gigatoken needed both, and why
-its README calls caching "a very hard problem in this domain."
+(as in most) the BPE merge is the bottleneck, not pretokenization: SWAR pretok
+alone buys **~0% end-to-end**. Two levers move it: the `bpe_word` rewrite (1.9×,
+by killing the per-symbol malloc + per-pair `strlen`), and the **pretoken cache**
+(7.3× on top, by skipping the merge entirely on the ~99% of pretokens that repeat
+in natural text). SWAR only starts to matter *after* those remove the BPE cost.
+That's exactly why gigatoken needed the cache, and why its README calls caching
+"a very hard problem in this domain."
+
+Combined, the fast path is ~300 MB/s vs the original 19 MB/s (~16×), decomposed
+as bpe-rewrite ×1.9 then cache ×7.3.
 
 Caveats: the cache is per-`encode_fast`-call; the bench encodes the corpus in one
 call, so it reflects the within-a-large-encode hit rate — a persistent
-(cross-call) cache would be the streaming-many-documents extension. Our absolute
-numbers are gated by a deliberately naive `bpe_word` (malloc + `strlen` per
-merge); the point here is the *decomposition* (where the speedup lives), not
-beating gigatoken's absolute GB/s.
+(cross-call) cache would be the streaming-many-documents extension. Absolute
+numbers are still below gigatoken's per-family-SIMD BPE; the point here is the
+*decomposition* (where the speedup lives) at verified-identical output.

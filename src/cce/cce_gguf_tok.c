@@ -231,56 +231,80 @@ static int is_letter_cp(int cp) {
 
 static int is_digit_cp(int cp) { return cp >= '0' && cp <= '9'; }
 
-/* ---- BPE one pretoken (raw UTF-8 bytes of the pretok span) ---- */
-static void bpe_word(const cce_gguf_tok *t, const char *w, int wlen,
-                     int *ids, int *cnt, int max_ids) {
-    char **sym = NULL;
-    int ns = 0, k, iter;
-    if (wlen <= 0 || !w) return;
-    sym = (char **)malloc(sizeof(char *) * (size_t)wlen);
-    if (!sym) return;
+/* ---- BPE one pretoken (raw UTF-8 bytes of the pretok span) ----
+ * Fixed-array rewrite of the original malloc-per-symbol / strlen-per-pair loop.
+ * Symbols are (offset,length) slices of ONE contiguous byte-encoded buffer, so a
+ * merge just extends the left slice and drops the right (adjacent slices touch);
+ * no malloc, no strlen, no per-symbol copies. Adjacent pair-ranks are cached and
+ * only the two neighbours of a merge are recomputed, replacing the original full
+ * O(ns^2) rescan of merges_get with O(ns) lookups. The 512-byte merge-key cap is
+ * kept identical to the original, so output is byte-for-byte the same. */
+static int bpe_mk_key(char *key, const unsigned char *a, int alen,
+                      const unsigned char *b, int blen_) {
+    if (alen + blen_ + 2 > 512) return -1; /* same cap as the original keybuf */
+    memcpy(key, a, (size_t)alen); key[alen] = '\x1f';
+    memcpy(key + alen + 1, b, (size_t)blen_); key[alen + 1 + blen_] = 0;
+    return alen + 1 + blen_;
+}
+static void bpe_core(const cce_gguf_tok *t, const char *w, int wlen,
+                     int *ids, int *cnt, int max_ids,
+                     unsigned char *buf, int *soff, int *slen, int *rnk,
+                     char *vkey, size_t vcap) {
+    int ns = 0, blen = 0, k;
+    char mkey[512];
     for (k = 0; k < wlen; ++k) {
-        int bl = t->byte_enc_len[(unsigned char)w[k]];
-        char *p = (char *)malloc((size_t)bl + 1);
-        if (!p) { ns = 0; break; }
-        memcpy(p, t->byte_enc[(unsigned char)w[k]], (size_t)bl + 1);
-        sym[ns++] = p;
+        int b = (unsigned char)w[k], bl = t->byte_enc_len[b];
+        memcpy(buf + blen, t->byte_enc[b], (size_t)bl);
+        soff[ns] = blen; slen[ns] = bl; blen += bl; ns++;
     }
-    for (iter = 0; ns > 1 && iter < 100000; ++iter) {
-        int best_rank = 0x7fffffff, best_i = -1, i;
-        char keybuf[512];
-        for (i = 0; i + 1 < ns; ++i) {
-            size_t la = strlen(sym[i]), lb = strlen(sym[i + 1]);
-            int r;
-            if (la + lb + 2 > sizeof keybuf) continue;
-            memcpy(keybuf, sym[i], la);
-            keybuf[la] = '\x1f';
-            memcpy(keybuf + la + 1, sym[i + 1], lb);
-            keybuf[la + 1 + lb] = 0;
-            r = merges_get(t, keybuf);
-            if (r >= 0 && r < best_rank) { best_rank = r; best_i = i; }
+    for (k = 0; k + 1 < ns; ++k) {
+        int kl = bpe_mk_key(mkey, buf + soff[k], slen[k], buf + soff[k] + slen[k], slen[k + 1]);
+        int r = (kl < 0) ? -1 : merges_get(t, mkey);
+        rnk[k] = (r < 0) ? 0x7fffffff : r;
+    }
+    while (ns > 1) {
+        int best = 0x7fffffff, bi = -1;
+        for (k = 0; k + 1 < ns; ++k) if (rnk[k] < best) { best = rnk[k]; bi = k; }
+        if (bi < 0) break;                          /* no mergeable adjacent pair */
+        slen[bi] += slen[bi + 1];                   /* extend left slice over right */
+        for (k = bi + 1; k + 1 < ns; ++k) { soff[k] = soff[k + 1]; slen[k] = slen[k + 1]; rnk[k] = rnk[k + 1]; }
+        ns--;
+        if (bi + 1 < ns) {                          /* recompute pair (bi, bi+1) */
+            int kl = bpe_mk_key(mkey, buf + soff[bi], slen[bi], buf + soff[bi] + slen[bi], slen[bi + 1]);
+            int r = (kl < 0) ? -1 : merges_get(t, mkey);
+            rnk[bi] = (r < 0) ? 0x7fffffff : r;
         }
-        if (best_i < 0) break;
-        {
-            size_t la = strlen(sym[best_i]), lb = strlen(sym[best_i + 1]);
-            char *merged = (char *)malloc(la + lb + 1);
-            if (!merged) break;
-            memcpy(merged, sym[best_i], la);
-            memcpy(merged + la, sym[best_i + 1], lb);
-            merged[la + lb] = 0;
-            free(sym[best_i]);
-            free(sym[best_i + 1]);
-            sym[best_i] = merged;
-            for (i = best_i + 1; i < ns - 1; ++i) sym[i] = sym[i + 1];
-            ns--;
+        if (bi > 0) {                               /* recompute pair (bi-1, bi) */
+            int kl = bpe_mk_key(mkey, buf + soff[bi - 1], slen[bi - 1], buf + soff[bi - 1] + slen[bi - 1], slen[bi]);
+            int r = (kl < 0) ? -1 : merges_get(t, mkey);
+            rnk[bi - 1] = (r < 0) ? 0x7fffffff : r;
         }
     }
     for (k = 0; k < ns; ++k) {
-        int id = vocab_get(t, sym[k]);
+        int id;
+        if ((size_t)slen[k] + 1 > vcap) continue;
+        memcpy(vkey, buf + soff[k], (size_t)slen[k]); vkey[slen[k]] = 0;
+        id = vocab_get(t, vkey);
         if (id >= 0 && *cnt < max_ids) ids[(*cnt)++] = id;
-        free(sym[k]);
     }
-    free(sym);
+}
+static void bpe_word(const cce_gguf_tok *t, const char *w, int wlen,
+                     int *ids, int *cnt, int max_ids) {
+    if (wlen <= 0 || !w) return;
+    if (wlen <= 256) { /* hot path: pure stack, zero allocation */
+        unsigned char buf[256 * 4]; int soff[256], slen[256], rnk[256]; char vkey[256 * 4 + 8];
+        bpe_core(t, w, wlen, ids, cnt, max_ids, buf, soff, slen, rnk, vkey, sizeof vkey);
+    } else { /* rare long span: one bulk allocation, not per-symbol */
+        size_t bs = (size_t)wlen * 4 + 8;
+        unsigned char *buf = (unsigned char *)malloc(bs);
+        int *soff = (int *)malloc((size_t)wlen * sizeof(int));
+        int *slen = (int *)malloc((size_t)wlen * sizeof(int));
+        int *rnk = (int *)malloc((size_t)wlen * sizeof(int));
+        char *vkey = (char *)malloc(bs);
+        if (buf && soff && slen && rnk && vkey)
+            bpe_core(t, w, wlen, ids, cnt, max_ids, buf, soff, slen, rnk, vkey, bs);
+        free(buf); free(soff); free(slen); free(rnk); free(vkey);
+    }
 }
 
 /* Qwen/GPT-2-ish pretok over a non-special span */

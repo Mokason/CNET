@@ -72,7 +72,8 @@ int main(int argc, char **argv) {
     /* baseline once for reference ids + count */
     int nb = cce_gguf_tok_encode(t, corpus, base, max_ids);
     double bytes_mb = (double)n / 1e6;
-    printf("baseline produced %d tokens (%.3f bytes/token)\n\n", nb, (double)n / (nb ? nb : 1));
+    { uint64_t hsh = 1469598103934665603ULL; int k; for (k = 0; k < nb; k++) { hsh ^= (uint64_t)(unsigned)base[k]; hsh *= 1099511628211ULL; }
+      printf("baseline produced %d tokens (%.3f bytes/token)  idhash=%016llx\n\n", nb, (double)n / (nb ? nb : 1), (unsigned long long)hsh); }
 
     struct { const char *name; int flags; int is_base; } cfg[] = {
         { "baseline (encode)",        0,                                   1 },
