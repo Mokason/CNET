@@ -3,6 +3,8 @@
 #include "../include/acquire.h"
 #include "../include/residual_gguf.h"
 #include "../include/cnet_curiosity.h"
+#include "../include/cnet_moe.h"
+#include "../include/cnet_acct.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -256,7 +258,21 @@ int personal_ai_serve(PersonalAi *ai, Port input_port, Port goal_port,
 
     if (!ai || !ai->loaded || !input || !output) {
         rep->source = PERSONAL_AI_ERROR;
+        cnet_acct_add_error();
         return -1;
+    }
+
+    /* ---- MoE hard expert: goal tag names a certified unit ---- */
+    {
+        CnetMoeHit mh;
+        int mr = cnet_moe_try_hard(&ai->lane.reg, input_port, goal_port, input,
+                                   in_len, output, out_cap, &mh);
+        if (mr == 0 && mh.hit) {
+            serve_record_hit(ai, rep, PERSONAL_AI_LOCAL, HYBRID_TRUST_CERTIFIED,
+                             HYBRID_TIER_A);
+            cnet_acct_add_hard((uint64_t)mh.steps);
+            return 0;
+        }
     }
 
     /* ---- Tier A: certified plan ---- */
@@ -266,10 +282,12 @@ int personal_ai_serve(PersonalAi *ai, Port input_port, Port goal_port,
         if (route_execute(&plan, input, in_len, output, out_cap) != 0) {
             rep->source = PERSONAL_AI_ERROR;
             ai->totals.abstains++;
+            cnet_acct_add_error();
             return -1;
         }
         serve_record_hit(ai, rep, PERSONAL_AI_LOCAL, HYBRID_TRUST_CERTIFIED,
                          HYBRID_TIER_A);
+        cnet_acct_add_tier_a((uint64_t)plan.length);
         return 0;
     }
 
@@ -279,6 +297,7 @@ int personal_ai_serve(PersonalAi *ai, Port input_port, Port goal_port,
                           output, out_cap) == 0) {
         serve_record_hit(ai, rep, PERSONAL_AI_SOFT, HYBRID_TRUST_PROVISIONAL,
                          HYBRID_TIER_B);
+        cnet_acct_add_tier_b();
         return 0;
     }
     if (ai->policy.allow_soft) {
@@ -287,16 +306,20 @@ int personal_ai_serve(PersonalAi *ai, Port input_port, Port goal_port,
                             output, out_cap, sn, sizeof sn) == 0) {
             serve_record_hit(ai, rep, PERSONAL_AI_SOFT,
                              HYBRID_TRUST_PROVISIONAL, HYBRID_TIER_B);
+            cnet_acct_add_tier_b();
             return 0;
         }
     }
 
-    /* ---- Tier C: residual generative ---- */
+    /* ---- Tier C: residual generative (only after A/B miss) ---- */
     if (ai->policy.allow_residual && ai->hybrid.residual.bound &&
         hybrid_try_residual(&ai->hybrid, input_port, goal_port, input, in_len,
                             output, out_cap) == 0) {
+        /* Optional personal adapter delta after residual */
+        hybrid_adapter_apply(&ai->hybrid, output, out_cap);
         serve_record_hit(ai, rep, PERSONAL_AI_RESIDUAL,
                          HYBRID_TRUST_UNCERTIFIED, HYBRID_TIER_C);
+        cnet_acct_add_tier_c();
         if (ai->policy.structure_mine_on_serve) {
             BinaryTransformNetwork *stu = NULL;
             if (personal_ai_structure_mine(ai, &stu) == 0) {
@@ -312,9 +335,11 @@ int personal_ai_serve(PersonalAi *ai, Port input_port, Port goal_port,
         rc = gap_lane_execute(&ai->lane, input_port, goal_port, input, in_len,
                               output, out_cap);
         rep->gap_noted = 1;
+        cnet_acct_add_gap();
         if (rc == 0) {
             serve_record_hit(ai, rep, PERSONAL_AI_TEACHER,
                              HYBRID_TRUST_UNCERTIFIED, HYBRID_TIER_C);
+            cnet_acct_add_teacher();
             if (ai->policy.teach_inline &&
                 (!ai->policy.max_inline_teaches ||
                  ai->inline_teaches_done < ai->policy.max_inline_teaches)) {
@@ -337,11 +362,13 @@ int personal_ai_serve(PersonalAi *ai, Port input_port, Port goal_port,
             (void)gap_inbox_note_no_plan(ai->lane.inbox_path, input_port,
                                          goal_port);
         rep->gap_noted = 1;
+        cnet_acct_add_gap();
     }
 
     rep->source = PERSONAL_AI_ABSTAIN;
     rep->trust = HYBRID_TRUST_UNCERTIFIED;
     ai->totals.abstains++;
+    cnet_acct_add_abstain();
     return -1;
 }
 

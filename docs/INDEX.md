@@ -17,6 +17,7 @@ claim is stale.
 | How does evidence stick? | Per-base `<base>.state/*.stats` + `soul_serve.stats` on close/open | `make serve_feedback` · `make cnet_deep_use_loop` |
 | How are teachers governed? | Oracle v2 + Tier A/B teacher runtime (attest/lease/scorecard/batch) | `make oracle_v2_test` · `make oracle_teacher_runtime` |
 | Replace/improve Tier0–2 | fault bus, promote, adapter bank, DoRA, serve decode | `make cnet_replace_improve` |
+| Open-lab MoE/acct import | hard expert + tier acct + doctor | `make cnet_openlab_import` |
 | What is the product loop? | Personal AI: local certified first; residual/teacher on miss; tick seals | `make personal_ai` · `make post_seal_serve` |
 | End-to-end use-loop umbrella | Deep multi-priority + product surfaces | `make cnet_use_loop_acceptance` |
 

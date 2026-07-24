@@ -14,6 +14,7 @@
 #include "../../include/cnet_promote.h"
 #include "../../include/router/registry_lora_store.h"
 #include "../../include/cce/cce_adapter_bank.h"
+#include "../../include/cnet_acct.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -397,7 +398,8 @@ int registry_lora_tick(PrimitiveRegistry *reg, const registry_lora_tick_opts *op
                 (void)cce_adapter_bank_put(&g_peft_bank, e->name, e->lora, /*lora*/1, 1);
                 (void)cce_adapter_bank_select(&g_peft_bank, e->name);
             }
-        } else { registry_lora_detach(reg, e->name); rej++; }
+            cnet_acct_add_adapter_pass();
+        } else { registry_lora_detach(reg, e->name); rej++; cnet_acct_add_adapter_reject(); }
     }
     if (report) { report->units_seen = seen; report->taught = taught;
                   report->certified = certd; report->rejected = rej; }
