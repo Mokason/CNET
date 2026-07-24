@@ -139,6 +139,18 @@ compounding. Measured through the real forward:
 All-layer serving now closes the gap essentially perfectly — better than the
 single-layer workaround, using the full multi-layer capacity correctly.
 
+
+## Hosted by registry_lora's certify gate (`make registry_lily_test`)
+`registry_lily_certify` / `registry_lily_teach_certify` host a Lily deep-base
+adapter under the SAME `registry_lora_cert_policy` / `registry_lora_cert_report`
+used for cce_lora: teach via serve-in-the-loop, then certify on held-out
+(input, teacher-output) pairs by counting per-sample error fixes/regressions of
+the FROZEN base vs (base+adapter) served through the DS forward, applying the
+policy. Verified: the gate REJECTS a no-op adapter (fixes=0, net gain 0) and
+ACCEPTS a serve-loop-trained one (fixes=128/128, regress=0, base_mse 2.6e-4 ->
+adapter_mse 2.6e-10). The "certify/orchestrator machinery is parametrization-
+agnostic" claim is now real: teach -> certify -> serve, same gate.
+
 ## Scope / not done (honest)
 - Serving + collection are wired into the **DS residual runtime**; the GGUF token
   path and the q/k/v/o-projection variants are not.
