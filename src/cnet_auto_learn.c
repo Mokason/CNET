@@ -1,4 +1,5 @@
 #include "../include/cnet_auto_learn.h"
+#include "../include/cnet_fault.h"
 #include "../include/gap_lane.h"
 
 #include <stdio.h>
