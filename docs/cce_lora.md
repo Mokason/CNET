@@ -135,9 +135,35 @@ single-primitive DAG): serving OFF → output is the **byte-exact** base (diff
 the base by the delta. Prototype scope: one active serving registry at a time
 (last enable wins).
 
+## Real-fault-queue validation (`make jtc_lora_faultq`)
+The stronger test: build the queue from **only the unit's genuine runtime
+misclassifications**, then check the adapter fixes them without regressing the
+cases the unit already handles. Inputs are streamed through the actual
+`route_execute_ex`; a fault is parked (via `registry_record_fault` +
+oracle-labeled with `registry_supply_label`) only when the served tool ≠ the
+hermetic-teacher tool. The adapter is taught on that fault-only queue and
+evaluated on a held-out stream through the executor, serving on vs off:
+
+Phase 1 streamed 900 inputs, parked **600 real faults** (66.7% error rate).
+Held-out baseline 28.7%.
+
+| rank | params | acc on | fixes (wrong→right) | regress (right→wrong) | net |
+|-----:|-------:|-------:|--------------------:|----------------------:|----:|
+| 4 | 104 | 75.7% | 153 | 12 | +141 |
+| 8 | 208 | 80.0% | 173 | 19 | +154 |
+
+An adapter trained on **only the real faults** is a clear net win (~13:1 fixes
+to regressions at rank-4, +47 points), but the regressions are **real and
+non-zero** — fault-only training perturbs a few of the correct cases, so a
+production rollout should watch the right→wrong count, not just accuracy. rank-4
+(104 params) again beats dense (144) on params.
+
 ### Not done / next
-- Repeat on a production queue populated by real faults (jtc_lora_live samples
-  inputs and labels them with the shared teacher rather than harvesting faults).
+- The input stream is sampled sparse-feature vectors (oracle-labeled); faults are
+  now genuinely executor-detected, but the *distribution* is still synthetic —
+  the final step is a queue from real production tool-call traffic.
+- Guard rollout on the regression count (a certify-before-serve gate on the
+  adapter, using the held-out right→wrong rate).
 - Try `diff_mode=EXACT` via the `cce_learn` cascade path as an alternative
   trainer; measure vs the explicit Adam here.
 - Head-width `B:[r,out]` grows with vocab for a true logit head — benchmark the
