@@ -306,12 +306,30 @@ int registry_lora_tick(PrimitiveRegistry *reg, const registry_lora_tick_opts *op
 
         int pass = 0;
         if (o.validate) {
-            /* Regression-aware: teach on the whole fault queue, certify on a
-               representative sample (base-correct AND base-wrong cases). */
-            if (teach_pairs(e, q->labeled_inputs, q->labeled_targets, n, &o.teach, NULL) != 0)
-                continue;
-            taught++;
             size_t cap = o.validate_cap ? o.validate_cap : 256;
+            /* Train on faults UNION a representative sample, so the adapter learns
+               delta≈0 on already-correct cases (safe on a good base) while fixing
+               the faults — mirrors registry_heal's "exemplars ∪ labeled faults".
+               Certify on a fresh representative sample (regression-aware). */
+            double *ai = malloc(cap * (size_t)in * sizeof(double));
+            double *at = malloc(cap * (size_t)out * sizeof(double));
+            size_t na = (ai && at) ? o.validate(e->name, in, out, ai, at, cap, o.validate_ctx) : 0;
+            size_t ntot = n + na;
+            double *ti = malloc(ntot * (size_t)in * sizeof(double));
+            double *tt = malloc(ntot * (size_t)out * sizeof(double));
+            int taught_ok = 0;
+            if (ti && tt) {
+                memcpy(ti, q->labeled_inputs, n * (size_t)in * sizeof(double));
+                memcpy(tt, q->labeled_targets, n * (size_t)out * sizeof(double));
+                if (na) {
+                    memcpy(ti + n * (size_t)in, ai, na * (size_t)in * sizeof(double));
+                    memcpy(tt + n * (size_t)out, at, na * (size_t)out * sizeof(double));
+                }
+                taught_ok = (teach_pairs(e, ti, tt, ntot, &o.teach, NULL) == 0);
+            }
+            free(ai); free(at); free(ti); free(tt);
+            if (!taught_ok) continue;
+            taught++;
             double *vi = malloc(cap * (size_t)in * sizeof(double));
             double *vt = malloc(cap * (size_t)out * sizeof(double));
             if (vi && vt) {

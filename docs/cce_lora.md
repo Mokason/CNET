@@ -224,22 +224,38 @@ So the cheap ~200-param adapter is tried first (78% here); only when it fails to
 certify does the expensive dense retrain run (97%). That's the tradeoff the
 policy buys — cheaper, slightly less accurate, with dense as the safety net.
 
-**Regression-aware in-tick gate.** `registry_lora_tick_opts.validate` is an
-optional per-unit sampler `(unit, in, out, inputs, targets, cap, ctx) → n` that
-returns a representative set spanning the distribution (base-correct AND
-base-wrong). When provided, the tick teaches on the whole fault queue and
-certifies on that sample — so the gate measures **regressions**, not just fixes
-(a fault-queue holdout is all base-wrong and can't see a right→wrong flip). The
-sampler is orchestrator-supplied (it owns the unit's oracle); `registry_lora.c`
-only calls the pointer, staying domain-agnostic. With it wired, scenario B's
-`max_regressions=0` policy rejects on genuine right→wrong flips — no artificial
-threshold — and the dense-heal fallback runs. When `validate` is NULL the tick
-falls back to the fault-queue holdout (fixes only).
+**Regression-aware in-tick gate + safe training.**
+`registry_lora_tick_opts.validate` is an optional per-unit sampler
+`(unit, in, out, inputs, targets, cap, ctx) → n` returning a representative set
+(base-correct AND base-wrong). When provided, the tick (a) **trains on the fault
+queue ∪ a representative sample**, so the adapter learns delta≈0 on
+already-correct cases and doesn't regress a good base, and (b) **certifies on a
+fresh representative sample**, so the gate measures *regressions* (a fault-queue
+holdout is all base-wrong and can only see fixes). The sampler is
+orchestrator-supplied (it owns the unit's oracle); `registry_lora.c` only calls
+the pointer. When `validate` is NULL the tick trains on a queue split and
+certifies on a fault-queue holdout (fixes only).
+
+**Real production traffic.** `personal_ai_lora_tick` now drives *both* the fault
+queue and the sampler from realistic JSON tool-call requests — real tool names +
+arg keywords through the production `cnet_jtc_encode` path, mixing clean,
+underspecified, and ambiguous requests — not random feature bits. On this
+traffic the certified student is already **91%** (it was mined on these
+patterns), with ~70 real faults (the ambiguous/underspecified tail):
+
+| scenario | gate | certified | served | outcome |
+|----------|------|:---------:|:------:|---------|
+| A reasonable | passes | yes | **95%** (+4) | cheap adapter fixes the tail without regressing clean traffic |
+| B strict (`max_regr=0`) | rejects | no | **100%** | a residual flip trips the strict gate → gap_lane dense heal fallback |
+
+Honest read: on already-good real traffic the adapter's win is small (+4) and a
+strict gate prefers the dense heal (100%); the adapter's larger wins are on
+low-accuracy bases (see the +47 on the earlier out-of-distribution run). The gate
+picks correctly either way.
 
 ### Not done / next
-- The input stream (and the validation sampler) use synthetic sparse-feature
-  vectors labeled by the shared oracle; the final step is real production
-  tool-call traffic for both the fault queue and the validation set.
+- (open) The traffic is generated from real request *shapes* rather than a
+  captured production log; wiring a recorded live traffic stream is the last mile.
 - Try `diff_mode=EXACT` via the `cce_learn` cascade path as an alternative
   trainer; measure vs the explicit Adam here.
 - Head-width `B:[r,out]` grows with vocab for a true logit head — benchmark the

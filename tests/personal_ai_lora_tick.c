@@ -26,10 +26,42 @@
 
 static uint32_t S = 0x9E3779B9u;
 static uint32_t rnd(void) { S = S * 1664525u + 1013904223u; return S; }
+
+/* Real production tool-call traffic: realistic JSON requests built from the
+   actual tool names + arg keywords, encoded through the production
+   cnet_jtc_encode path (substring keyword match) — not random feature bits. The
+   mix mirrors real traffic: mostly clean canonical requests, plus underspecified
+   (no "tool" wrapper — infer from args) and ambiguous (a second tool's name in a
+   value) requests, which are where the closed-set student actually errs. */
+static const char *const TRAFFIC_TOOL[8] = {
+    "calculator", "memory_store", "memory_recall", "file_read",
+    "cnet_recall", "web_search", "wiki_lookup", "final"
+};
+static const char *const TRAFFIC_ARGS[8] = {
+    "\"expr\":\"n\"", "\"key\":\"k\",\"value\":\"v\"", "\"query\":\"q\"",
+    "\"path\":\"f.txt\"", "\"cond\":0,\"current\":1", "\"query\":\"web thing\"",
+    "\"query\":\"topic\"", "\"answer\":\"ok\""
+};
+static void gen_traffic(char *buf, size_t cap) {
+    int t = (int)(rnd() % 8);
+    int style = (int)(rnd() % 10);
+    if (t == 7)                                   /* final: no tool wrapper */
+        snprintf(buf, cap, "{\"final\":\"stop\",%s}", TRAFFIC_ARGS[7]);
+    else if (style < 6)                           /* 60% clean canonical */
+        snprintf(buf, cap, "{\"tool\":\"%s\",\"args\":{%s}}", TRAFFIC_TOOL[t], TRAFFIC_ARGS[t]);
+    else if (style < 8)                           /* 20% underspecified (args only) */
+        snprintf(buf, cap, "{\"args\":{%s}}", TRAFFIC_ARGS[t]);
+    else {                                        /* 20% ambiguous (2nd tool named in a value) */
+        int t2 = (int)(rnd() % 7);
+        snprintf(buf, cap, "{\"tool\":\"%s\",\"args\":{%s,\"note\":\"see %s\"}}",
+                 TRAFFIC_TOOL[t], TRAFFIC_ARGS[t], TRAFFIC_TOOL[t2]);
+    }
+}
 static void sample_feat(double *feat, int nfeat) {
-    for (int i = 0; i < nfeat; i++) feat[i] = 0.0;
-    int k = 1 + (int)(rnd() % 4);
-    for (int j = 0; j < k; j++) feat[rnd() % nfeat] = 1.0;
+    char json[256];
+    gen_traffic(json, sizeof json);
+    cnet_jtc_encode(json, feat);      /* production encoder -> CNET_JTC_N_FEAT bits */
+    (void)nfeat;
 }
 static BinaryTransformNetwork *find_btn(PrimitiveRegistry *reg, const char *name) {
     for (size_t i = 0; i < reg->count; i++)
