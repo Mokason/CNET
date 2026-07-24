@@ -39,6 +39,10 @@ enum {
 struct Ptc; /* persistent pretoken cache (defined below) */
 static void ptc_free(struct Ptc *c);
 
+/* id-space merge table entry, packed AoS so a pair_get hit touches ONE cache
+   line (key + value together) instead of three separate arrays. key 0 = empty. */
+typedef struct { uint64_t key; int32_t rank; int32_t merged; } PairE;
+
 struct cce_gguf_tok {
     char **id_to_piece;       /* [vocab] owned UTF-8 pieces (Ġ/Ċ form) */
     unsigned char *tok_type;  /* [vocab] */
@@ -76,9 +80,7 @@ struct cce_gguf_tok {
      * every byte and every merge resolves to a valid id, so the integer path is
      * provably identical to the string path (else the string path is used). */
     int byte_to_id[256];
-    uint64_t *pk;          /* [pcap] packed key ((id_a+1)<<32|(id_b+1)); 0 = empty */
-    int *pr;               /* [pcap] merge rank */
-    int *pm;               /* [pcap] merged token id */
+    PairE *pe;             /* [pcap] packed (key,rank,merged); key 0 = empty */
     int pcap;
     int id_bpe;
 
@@ -194,8 +196,9 @@ static void pair_put(cce_gguf_tok *t, int ida, int idb, int rank, int merged) {
     uint64_t key = pair_key(ida, idb);
     int i = (int)((key * 0x9E3779B97F4A7C15ULL >> 32) & (uint32_t)(t->pcap - 1));
     for (;;) {
-        if (!t->pk[i]) { t->pk[i] = key; t->pr[i] = rank; t->pm[i] = merged; return; }
-        if (t->pk[i] == key) return; /* merges are rank-ordered; keep the first (lowest) */
+        PairE *e = &t->pe[i];
+        if (!e->key) { e->key = key; e->rank = rank; e->merged = merged; return; }
+        if (e->key == key) return; /* merges are rank-ordered; keep the first (lowest) */
         i = (i + 1) & (t->pcap - 1);
     }
 }
@@ -203,9 +206,9 @@ static inline int pair_get(const cce_gguf_tok *t, int ida, int idb, int *merged)
     uint64_t key = pair_key(ida, idb);
     int i = (int)((key * 0x9E3779B97F4A7C15ULL >> 32) & (uint32_t)(t->pcap - 1));
     for (;;) {
-        uint64_t e = t->pk[i];
-        if (!e) return -1;
-        if (e == key) { *merged = t->pm[i]; return t->pr[i]; }
+        const PairE *e = &t->pe[i];          /* key + value share one cache line */
+        if (!e->key) return -1;
+        if (e->key == key) { *merged = e->merged; return e->rank; }
         i = (i + 1) & (t->pcap - 1);
     }
 }
@@ -678,10 +681,8 @@ cce_result cce_gguf_tok_load(const char *gguf_path, cce_gguf_tok **out) {
        is already populated above). pair_ok drops to 0 if any merge fails to
        resolve all three ids, forcing the safe string path. */
     t->pcap = t->mcap;
-    t->pk = (uint64_t *)calloc((size_t)t->pcap, sizeof(uint64_t));
-    t->pr = (int *)malloc((size_t)t->pcap * sizeof(int));
-    t->pm = (int *)malloc((size_t)t->pcap * sizeof(int));
-    if (!t->pk || !t->pr || !t->pm) goto fail_oom;
+    t->pe = (PairE *)calloc((size_t)t->pcap, sizeof(PairE));
+    if (!t->pe) goto fail_oom;
     {
         int pair_ok = 1;
         for (i = 0; i < n_merges; ++i) {
@@ -761,9 +762,7 @@ void cce_gguf_tok_free(cce_gguf_tok *t) {
         free(t->mkey);
     }
     free(t->mrank);
-    free(t->pk);
-    free(t->pr);
-    free(t->pm);
+    free(t->pe);
     ptc_free(t->pcache);
     free(t->special_str); /* aliases into id_to_piece */
     free(t->special_id);
@@ -851,6 +850,10 @@ typedef struct {
 typedef struct Ptc { PtcE *e; int cap; int cnt; } Ptc;
 _Static_assert(sizeof(PtcE) == 64, "PtcE must be exactly one cache line");
 
+/* FNV-1a over the span bytes. NB: an 8-byte-at-a-time multiply-mix hash was
+   tried and MEASURED SLOWER here (gigatok_cache_bench: 4.3 vs 2.5 ns) — for the
+   short 4-14 byte pretokens this table sees, FNV's byte loop pipelines well and
+   avoids a variable-length tail memcpy. Keep FNV. */
 static uint64_t ptc_hash(const char *s, int n) {
     uint64_t h = 1469598103934665603ULL; int k;
     for (k = 0; k < n; k++) { h ^= (unsigned char)s[k]; h *= 1099511628211ULL; }

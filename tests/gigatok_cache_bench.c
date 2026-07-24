@@ -27,6 +27,13 @@
 
 static double now_s(void) { struct timespec ts; clock_gettime(CLOCK_MONOTONIC, &ts); return (double)ts.tv_sec + (double)ts.tv_nsec * 1e-9; }
 static uint64_t fnv(const uint8_t *s, int n) { uint64_t h = 1469598103934665603ULL; int k; for (k = 0; k < n; k++) { h ^= s[k]; h *= 1099511628211ULL; } return h ? h : 1; }
+static uint64_t fasthash(const uint8_t *s, int n) {
+    const uint64_t Mm = 0xC2B2AE3D27D4EB4FULL;
+    uint64_t h = 0x9E3779B97F4A7C15ULL ^ ((uint64_t)(unsigned)n * Mm); int k = 0; uint64_t w;
+    for (; k + 8 <= n; k += 8) { memcpy(&w, s + k, 8); h = (h ^ w) * Mm; h ^= h >> 29; }
+    if (k < n) { w = 0; memcpy(&w, s + k, (size_t)(n - k)); h = (h ^ w) * Mm; h ^= h >> 29; }
+    return h ? h : 1;
+}
 /* deterministic unique 8-byte key + 2 ids for index i (golden-ratio bijection) */
 static int makekey(uint64_t i, uint8_t *key) { uint64_t x = (i + 1) * 0x9E3779B97F4A7C15ULL; memcpy(key, &x, 8); return 8; }
 
@@ -93,5 +100,18 @@ int main(int argc, char **argv) {
     BENCH("packed, 4K pages", plookup, p4);
     BENCH("packed + hugepage", plookup, ph);
     printf("(sink=%lld)\n", (long long)sink);
+
+    /* ---- short-key hash compute: FNV (per-byte) vs fast (8B multiply-mix) ---- */
+    {
+        enum { NK = 4096 };                       /* L1-resident so we time compute, not memory */
+        uint8_t keys[NK][14]; int klen[NK]; size_t j, reps = M / NK, r; uint64_t acc;
+        for (j = 0; j < NK; j++) { uint64_t x = (j + 1) * 0x9E3779B97F4A7C15ULL; klen[j] = 4 + (int)(x % 11); memcpy(keys[j], &x, 8); memcpy(keys[j] + 8, &x, 6); }
+        printf("\nshort-key hash compute (4-14 B keys, %zu hashes, best of 3):\n", reps * NK);
+        double bf = 1e300, bx = 1e300;
+        for (r = 0; r < 3; r++) { double t0 = now_s(); acc = 0; size_t rp; for (rp = 0; rp < reps; rp++) for (j = 0; j < NK; j++) acc += fnv(keys[j], klen[j]); double dt = now_s() - t0; if (dt < bf) bf = dt; sink += (int64_t)acc; }
+        for (r = 0; r < 3; r++) { double t0 = now_s(); acc = 0; size_t rp; for (rp = 0; rp < reps; rp++) for (j = 0; j < NK; j++) acc += fasthash(keys[j], klen[j]); double dt = now_s() - t0; if (dt < bx) bx = dt; sink += (int64_t)acc; }
+        printf("  FNV-1a (per byte)   %5.2f ns/hash   1.00x\n", bf / (double)(reps * NK) * 1e9);
+        printf("  fast (8B mul-mix)   %5.2f ns/hash   %.2fx\n", bx / (double)(reps * NK) * 1e9, bf / bx);
+    }
     return 0;
 }

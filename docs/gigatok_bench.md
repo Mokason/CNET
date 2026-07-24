@@ -170,6 +170,26 @@ in as 2 MiB pages) and gigatoken measured +7–15% from it on Zen — a real
 uarch/allocator-dependent effect we simply don't hit here. Honest: on this machine
 the packing matters and the huge-pages don't.
 
+### The merge-table lookup (`pair_get`) and its hash
+
+Two things here, both instructive:
+
+- **The hash was already fast.** `pair_get` keys on a `u64` `(id_a,id_b)` pair and
+  hashes it with one multiply-shift (`key * φ⁻¹ >> 32`, Fibonacci hashing), not
+  FNV. The *actual* FNV is `ptc_hash` over the pretoken cache's short byte spans.
+- **A "faster" hash made it slower — measured, then reverted.** Replacing that
+  FNV byte-loop with an 8-byte-at-a-time multiply-mix was **slower** for the 4–14
+  byte pretokens this table sees: `gigatok_cache_bench` clocks FNV at 2.5 ns/hash
+  vs 4.3 ns for the "fast" version (0.58×). The byte loop pipelines well and the
+  8-byte path pays a variable-length tail `memcpy`. Kept FNV.
+- **The real `pair_get` lever was layout, not hashing.** The rank/merged values
+  lived in two arrays separate from the keys (struct-of-arrays), so a hit loaded
+  from three arrays. Packing `(key, rank, merged)` into one 16-byte entry (AoS)
+  makes a hit touch one line, for a stable **~5–7%** on the uncached encode
+  (~75 → ~80 MB/s). Marginal here (Qwen's ~4 MB merge table is L3-resident) but
+  free and correct, and it scales the way the pretoken-cache packing does.
+
 Absolute numbers are still below gigatoken's per-family-SIMD BPE; the point here
 is the *decomposition* — where each speedup lives — at byte-for-byte identical
-output.
+output. And twice now the honest move was to *measure a plausible optimization
+and keep the simpler code* (FNV over a wide hash; SWAR over AVX-512 single-cursor).
