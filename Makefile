@@ -1742,6 +1742,15 @@ cce_lily_teacher: $(CCE) $(CCE_CUDA_OBJ) tests/cce_lily_teacher_test.c
 
 # registry_lily: cce_lily deep-base adapter hosted by registry_lora's certify gate (serve-loop teach).
 REGISTRY_LILY := src/router/registry_lily.c
+
+# Unified fault bus + promote gate (Tier 0 replace/improve)
+cnet_fault_test: src/cnet_fault.c src/cnet_promote.c tests/cnet_fault_test.c
+	@mkdir -p $(BIN_DIR)
+	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ src/cnet_fault.c src/cnet_promote.c tests/cnet_fault_test.c $(LDFLAGS)
+	./$(BIN_DIR)/cnet_fault_test
+
+cnet_promote_test: cnet_fault_test
+
 registry_lily_test: $(CCE) $(CCE_CUDA_OBJ) $(REGISTRY_LILY) tests/registry_lily_test.c
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) $(REGISTRY_LILY) tests/registry_lily_test.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 	./$(BIN_DIR)/registry_lily_test

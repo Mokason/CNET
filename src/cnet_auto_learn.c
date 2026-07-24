@@ -15,6 +15,14 @@ static uint64_t fnv1a(const char *s) {
     return h;
 }
 
+int cnet_auto_learn_freeform_enabled(void) {
+    const char *e = getenv("CNET_AUTO_LEARN_FREEFORM");
+    /* Default OFF: freeform chat must not mint tk*q* sludge.
+     * Set CNET_AUTO_LEARN_FREEFORM=1 to restore legacy rewrite. */
+    if (!e || !e[0]) return 0;
+    return !(e[0] == '0' && e[1] == '\0');
+}
+
 int cnet_auto_learn_enabled(void) {
     const char *e = getenv("CNET_AUTO_LEARN");
     if (!e || !e[0]) return 1; /* default ON for automatic learning */
@@ -66,6 +74,8 @@ static int is_tk_tag(const char *tag) {
 }
 
 int cnet_auto_learn_make_teachable(Port *in, Port *goal, const char *seed_text) {
+    if (!cnet_auto_learn_freeform_enabled()) return 0; /* structured path only */
+
     size_t W, k;
     uint64_t h;
     unsigned long id;

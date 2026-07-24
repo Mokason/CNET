@@ -15,6 +15,9 @@ extern "C" {
 /* 1 when auto-learn rewrite is active (CNET_AUTO_LEARN not "0"). */
 CNET_API int cnet_auto_learn_enabled(void);
 
+/* 1 when freeform→tk*q* rewrite allowed (CNET_AUTO_LEARN_FREEFORM=1). Default 0. */
+CNET_API int cnet_auto_learn_freeform_enabled(void);
+
 /* Window width for teachable shapes (CNET_AUTO_LEARN_W, default 256). */
 CNET_API size_t cnet_auto_learn_window(void);
 
