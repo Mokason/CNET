@@ -12,6 +12,8 @@
 #include "../../include/cce/cce_tensor.h"
 #include "../../include/cnet_fault.h"
 #include "../../include/cnet_promote.h"
+#include "../../include/router/registry_lora_store.h"
+#include "../../include/cce/cce_adapter_bank.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -69,6 +71,9 @@ static int teach_pairs(RegistryEntry *e, const double *inputs, const double *tar
     if (cce_lora_init(adp, in, out, o->rank, o->alpha, 0x51A17u + (uint32_t)o->rank) != CCE_OK) {
         free(adp); free(X); free(R); return -1;
     }
+    /* VeRA-lite: freeze random A, train B only */
+    if (getenv("CNET_LORA_VERA") && getenv("CNET_LORA_VERA")[0] == '1')
+        cce_lora_set_train_A(adp, 0);
     double post = cce_lora_train(adp, X, R, n, &o->train);
     if (post < 0.0) { cce_lora_free(adp); free(adp); free(X); free(R); return -1; }
 
@@ -218,6 +223,15 @@ int registry_lora_is_certified(const PrimitiveRegistry *reg, const char *name) {
 }
 
 /* ---- governed tick action (orchestrator) ---------------------------------- */
+static cce_adapter_bank g_peft_bank;
+static int g_peft_bank_inited = 0;
+static void peft_bank_ensure(void) {
+    if (!g_peft_bank_inited) {
+        cce_adapter_bank_init(&g_peft_bank);
+        g_peft_bank_inited = 1;
+    }
+}
+
 registry_lora_tick_opts registry_lora_tick_defaults(void) {
     registry_lora_tick_opts o;
     o.min_faults = 64;         /* enough pairs for a meaningful train+holdout split */
@@ -338,16 +352,30 @@ int registry_lora_tick(PrimitiveRegistry *reg, const registry_lora_tick_opts *op
                        q->labeled_targets + nt * (size_t)out, nh, &o.cert, NULL);
         }
         if (pass == 1) {
-            /* Optional promote gate when CNET_PROMOTE=1 */
+            /* Optional promote gate when CNET_PROMOTE=1 (optionally needs eval delta) */
             if (getenv("CNET_PROMOTE") && getenv("CNET_PROMOTE")[0] == '1') {
                 CnetPromoteInput pin;
                 CnetPromoteDecision dec;
+                const char *edp;
                 cnet_promote_defaults(&pin);
                 pin.fixes = 1;
                 pin.regressions = 0;
                 pin.min_net_gain = o.cert.min_net_gain > 0 ? o.cert.min_net_gain : 1;
-                dec = cnet_promote_decide(&pin);
-                if (!dec.allowed) pass = 0;
+                edp = getenv("CNET_PROMOTE_EVAL_DELTA");
+                if (edp && edp[0]) {
+                    double dlt = 0;
+                    if (cnet_promote_read_eval_delta(edp, &dlt) == 0) {
+                        pin.require_eval_delta = 1;
+                        pin.eval_delta = dlt;
+                        pin.min_eval_delta = 0.0;
+                    } else {
+                        pass = 0; /* required file missing/unreadable */
+                    }
+                }
+                if (pass == 1) {
+                    dec = cnet_promote_decide(&pin);
+                    if (!dec.allowed) pass = 0;
+                }
             }
         }
         if (pass == 1) {
@@ -356,6 +384,19 @@ int registry_lora_tick(PrimitiveRegistry *reg, const registry_lora_tick_opts *op
                (specialist_health, gated on PRIM_RESET) skips this unit; dense
                heal remains the fallback for units left RESET below. */
             if (e->state == PRIM_RESET) registry_set_state(reg, e->name, PRIM_PROVISIONAL);
+            /* Persist certified adapter when CNET_LORA_STORE_AUTOSAVE=1 */
+            {
+                const char *as = getenv("CNET_LORA_STORE_AUTOSAVE");
+                const char *dir = registry_lora_store_dir_env();
+                if (as && as[0] == '1' && dir)
+                    (void)registry_lora_store_save(reg, e->name, dir);
+            }
+            /* Hard-routed multi-adapter bank (CNET_ADAPTER_BANK=1) */
+            if (getenv("CNET_ADAPTER_BANK") && getenv("CNET_ADAPTER_BANK")[0] == '1' && e->lora) {
+                peft_bank_ensure();
+                (void)cce_adapter_bank_put(&g_peft_bank, e->name, e->lora, /*lora*/1, 1);
+                (void)cce_adapter_bank_select(&g_peft_bank, e->name);
+            }
         } else { registry_lora_detach(reg, e->name); rej++; }
     }
     if (report) { report->units_seen = seen; report->taught = taught;
@@ -377,6 +418,13 @@ void registry_lora_install_orchestrator(PrimitiveRegistry *reg, const registry_l
     g_tick_opts_set = 1;
     registry_lora_enable_serving(reg);   /* serve hook + g_lora_reg */
     g_cnet_lora_tick_hook = lora_tick_impl;
+    /* Reload durable certified adapters if requested */
+    {
+        const char *al = getenv("CNET_LORA_STORE_AUTOLOAD");
+        const char *dir = registry_lora_store_dir_env();
+        if (al && al[0] == '1' && dir)
+            (void)registry_lora_store_load_all(reg, dir, /*mark_certified=*/1);
+    }
 }
 
 void registry_lora_uninstall_orchestrator(PrimitiveRegistry *reg) {

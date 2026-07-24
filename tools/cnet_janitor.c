@@ -437,9 +437,33 @@ int main(int argc, char **argv) {
                 "(default report-only)._\\n\\n");
         if (getenv("CNET_JANITOR_PRUNE_GH") &&
             getenv("CNET_JANITOR_PRUNE_GH")[0] == '1') {
+            FILE *pf = NULL;
+            const char *outdir = getenv("CNET_JANITOR_OUT");
+            char ppath[512];
+            int vj;
+            if (!outdir || !outdir[0]) outdir = "artifacts/janitor";
+            snprintf(ppath, sizeof ppath, "%s/gh_prune_candidates.txt", outdir);
+            {
+                char cmd[640];
+                snprintf(cmd, sizeof cmd, "mkdir -p '%s'", outdir);
+                (void)system(cmd);
+            }
+            pf = fopen(ppath, "w");
             fprintf(md,
-                    "PRUNE_GH requested — report-only in this build "
-                    "(no destructive delete without pin policy).\\n\\n");
+                    "PRUNE_GH: candidates → `%s` (no CNB rewrite; pin-aware "
+                    "list for operator/janitor apply).\\n\\n",
+                    ppath);
+            if (pf) {
+                for (vj = 0; vj < nunits; vj++) {
+                    char nm[128];
+                    if (soul_unit_name(host, vj, nm, (int)sizeof nm) != 0)
+                        continue;
+                    if (strncmp(nm, "acq_skill_gh_", 13) == 0 ||
+                        strstr(nm, "_gh_"))
+                        fprintf(pf, "%s\n", nm);
+                }
+                fclose(pf);
+            }
         }
     }
 

@@ -1,4 +1,6 @@
 #include "../../include/cce/cce_gguf.h"
+
+cce_gguf_layer_adapt_fn g_cce_gguf_layer_adapt_hook = 0;
 #include "../../include/cce/cce_weight_store.h"
 #include "../../include/cce/cce_safetensors.h" /* for some helpers if needed, but we'll be self-contained */
 #include "../../include/cce/cce_sparse_kv.h"   /* opt-in sparse KV routing (the ONE selector) */

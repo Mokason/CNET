@@ -32,6 +32,7 @@ cce_result cce_lora_init(cce_lora* lo, int in_dim, int out_dim, int rank,
     if (!lo || in_dim <= 0 || out_dim <= 0 || rank <= 0) return CCE_ERR_INVALID_ARG;
     memset(lo, 0, sizeof(*lo));
     lo->in_dim = in_dim; lo->out_dim = out_dim; lo->rank = rank; lo->alpha = alpha;
+    lo->train_A = 1;
 
     int ash[2] = { in_dim, rank };
     int bsh[2] = { rank, out_dim };
@@ -196,6 +197,7 @@ double cce_lora_train(cce_lora* lo, const float* inputs, const float* residuals,
         }
         const float invn = 1.0f / (float)n;
         /* Adam / SGD step */
+        if (lo->train_A) {
         for (size_t i = 0; i < na; i++) {
             float g = gA[i] * invn + o.weight_decay * lo->A.data[i];
             if (o.use_adam) {
@@ -205,6 +207,7 @@ double cce_lora_train(cce_lora* lo, const float* inputs, const float* residuals,
                 float vh = vA[i] / (1 - powf(b2, (float)ep));
                 lo->A.data[i] -= o.lr * mh / (sqrtf(vh) + eps);
             } else lo->A.data[i] -= o.lr * g;
+        }
         }
         for (size_t i = 0; i < nb; i++) {
             float g = gB[i] * invn + o.weight_decay * lo->B.data[i];
@@ -322,4 +325,8 @@ double cce_lora_fit_residual(cce_lora* lo, const float* inputs,
     double mse = cce_lora_train(lo, inputs, resid, n, opt);
     free(resid);
     return mse;
+}
+
+void cce_lora_set_train_A(cce_lora* lo, int train_A) {
+    if (lo) lo->train_A = train_A ? 1 : 0;
 }

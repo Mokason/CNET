@@ -33,6 +33,11 @@ internal sealed class KeywordIndex
     public void Add(MemoryBlob blob)
     {
         List<string> terms = BlobAnalyzer.Tokenize(blob.Text);
+        if (_options.UseHashEmbedBoost)
+        {
+            foreach (string tri in CharTrigrams(blob.Text))
+                terms.Add(tri);
+        }
         _blobTermCounts[blob.Id] = terms.Count;
         _totalTerms += terms.Count;
 
@@ -84,11 +89,15 @@ internal sealed class KeywordIndex
 
         // Distinct query terms; duplicate query words don't multiply evidence.
         var queryTerms = new HashSet<string>(BlobAnalyzer.Tokenize(query), StringComparer.Ordinal);
+        if (_options.UseHashEmbedBoost)
+            foreach (string tri in CharTrigrams(query))
+                queryTerms.Add(tri);
         if (queryTerms.Count == 0) return [];
 
         int maxDiscriminativeDf = Math.Max(1, (int)Math.Floor(n * _options.RelevanceGateMaxDf));
         double avgLen = Math.Max(1.0, _totalTerms / (double)n);
         double k1 = _options.Bm25K1, b = _options.Bm25B;
+        double embedW = _options.UseHashEmbedBoost ? _options.HashEmbedWeight : 0.0;
 
         var scores = new Dictionary<long, double>();
         var gatePassed = new HashSet<long>();
@@ -101,15 +110,18 @@ internal sealed class KeywordIndex
             int df = postings.Count;
             double idf = Math.Log(1.0 + (n - df + 0.5) / (df + 0.5));
             bool discriminative = df <= maxDiscriminativeDf;
+            bool isTri = term.StartsWith("§t:", StringComparison.Ordinal);
+            double w = isTri ? embedW : 1.0;
 
             foreach (Posting p in postings)
             {
                 double len = _blobTermCounts[p.BlobId];
                 double tfNorm = p.TermFrequency * (k1 + 1)
                               / (p.TermFrequency + k1 * (1 - b + b * len / avgLen));
-                scores[p.BlobId] = scores.GetValueOrDefault(p.BlobId) + idf * tfNorm;
-                if (discriminative) gatePassed.Add(p.BlobId);
-                distinctMatches[p.BlobId] = distinctMatches.GetValueOrDefault(p.BlobId) + 1;
+                scores[p.BlobId] = scores.GetValueOrDefault(p.BlobId) + w * idf * tfNorm;
+                if (discriminative && !isTri) gatePassed.Add(p.BlobId);
+                if (!isTri)
+                    distinctMatches[p.BlobId] = distinctMatches.GetValueOrDefault(p.BlobId) + 1;
             }
         }
 
@@ -146,5 +158,19 @@ internal sealed class KeywordIndex
             return c != 0 ? c : y.BlobId.CompareTo(x.BlobId);
         });
         return results;
+    }
+
+    /// <summary>Character trigrams as pseudo-terms (§t:abc) for hash-embed boost.</summary>
+    private static IEnumerable<string> CharTrigrams(string text)
+    {
+        if (string.IsNullOrEmpty(text) || text.Length < 3) yield break;
+        string s = text.ToLowerInvariant();
+        for (int i = 0; i + 2 < s.Length; i++)
+        {
+            char a = s[i], b = s[i + 1], c = s[i + 2];
+            if (!char.IsLetterOrDigit(a) || !char.IsLetterOrDigit(b) || !char.IsLetterOrDigit(c))
+                continue;
+            yield return $"§t:{a}{b}{c}";
+        }
     }
 }

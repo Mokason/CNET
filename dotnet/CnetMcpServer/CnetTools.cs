@@ -1,5 +1,6 @@
 using CNET.Cce;
 using System;
+using System.Linq;
 using System.IO;
 using System.Collections.Generic;
 using System.Globalization;
@@ -1388,6 +1389,9 @@ namespace CnetMcpServer
                 query = seed,
                 input_idx = idx,
                 picks,
+                decoded_text = picks.Count > 0
+                    ? string.Join(", ", picks.Select(p => p.ToString()))
+                    : "",
                 output_len = output?.Length ?? 0,
                 note = served
                     ? "named skill exercised (certified or residual)"

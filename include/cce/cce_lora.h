@@ -38,6 +38,7 @@ typedef struct cce_lora {
     int   rank;
     float alpha;           /* effective delta scaled by alpha/rank        */
     uint64_t base_digest;  /* identity of the frozen base (0 if unbound)  */
+    int   train_A;         /* 1=train A+B default; 0=VeRA freeze A */
 } cce_lora;
 
 /* Allocate A (small deterministic gaussian, seeded) and B (zeros). */
@@ -108,6 +109,9 @@ cce_result cce_lora_head_forward(const cce_block* head, const cce_lora* lo,
    teacher's corrected outputs and the frozen head's outputs over n
    port-validated pairs. inputs:[n*in], base_out/teacher_out:[n*out]. Returns
    final MSE or a negative cce_result. */
+/* VeRA-style: mark A non-trainable (train only B). Call after init. */
+void cce_lora_set_train_A(cce_lora* lo, int train_A);
+
 double cce_lora_fit_residual(cce_lora* lo, const float* inputs,
                              const float* base_out, const float* teacher_out,
                              size_t n, const cce_lora_train_opts* opt);

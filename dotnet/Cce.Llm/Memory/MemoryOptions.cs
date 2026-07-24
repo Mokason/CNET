@@ -48,6 +48,15 @@ public sealed class MemoryOptions
     public double Bm25B { get; init; } = 0.75;
 
     /// <summary>
+    /// When true, boost recall scores with hashed character-trigram overlap
+    /// (cheap embedding-like signal) so near-paraphrase queries still hit.
+    /// </summary>
+    public bool UseHashEmbedBoost { get; init; } = true;
+
+    /// <summary>Weight of hash-embed boost relative to BM25 (0..1 typical).</summary>
+    public double HashEmbedWeight { get; init; } = 0.35;
+
+    /// <summary>
     /// Tokens held back from the prompt budget to absorb chat-template overhead
     /// (role markers, separators) that raw text counts miss.
     /// </summary>

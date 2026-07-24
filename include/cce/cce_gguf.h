@@ -633,6 +633,10 @@ cce_result cce_gguf_qwen2_export_packed(cce_gguf_qwen2* m, const char* path);
 /* Load packed 1.6-bit version */
 cce_result cce_gguf_qwen2_load_packed(cce_gguf_qwen2** out, const char* path);
 
+/* Optional residual adapter hook (NULL = byte-identical). Mirrors DS lily hook. */
+typedef void (*cce_gguf_layer_adapt_fn)(int layer, float *residual, int width, void *ctx);
+extern cce_gguf_layer_adapt_fn g_cce_gguf_layer_adapt_hook;
+
 #ifdef __cplusplus
 }
 #endif

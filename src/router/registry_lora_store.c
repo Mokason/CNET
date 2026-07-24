@@ -1,5 +1,6 @@
 #include "../../include/router/registry_lora_store.h"
 #include "../../include/cce/cce_lora.h"
+#include <dirent.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -19,6 +20,12 @@ static int ensure_dir(const char *dir) {
     if (!dir || !dir[0]) return -1;
     if (stat(dir, &st) == 0) return S_ISDIR(st.st_mode) ? 0 : -1;
     return mkdir(dir, 0755);
+}
+
+const char *registry_lora_store_dir_env(void) {
+    const char *d = getenv("CNET_LORA_STORE_DIR");
+    if (d && d[0]) return d;
+    return NULL;
 }
 
 int registry_lora_store_save(PrimitiveRegistry *reg, const char *unit,
@@ -56,4 +63,44 @@ int registry_lora_store_load(PrimitiveRegistry *reg, const char *unit,
     e->lora = adp;
     e->lora_certified = mark_certified ? 1 : 0;
     return 0;
+}
+
+int registry_lora_store_save_all(PrimitiveRegistry *reg, const char *dir) {
+    size_t i;
+    int n = 0;
+    if (!reg || !dir) return -1;
+    for (i = 0; i < reg->count; i++) {
+        const char *name = reg->entries[i].name;
+        if (!name || !reg->entries[i].lora || !reg->entries[i].lora_certified)
+            continue;
+        if (registry_lora_store_save(reg, name, dir) == 0) n++;
+    }
+    return n;
+}
+
+int registry_lora_store_load_all(PrimitiveRegistry *reg, const char *dir,
+                                 int mark_certified) {
+    DIR *d;
+    struct dirent *ent;
+    int n = 0;
+    if (!reg || !dir) return -1;
+    d = opendir(dir);
+    if (!d) return 0;
+    while ((ent = readdir(d)) != NULL) {
+        size_t len;
+        char unit[256];
+        const char *dot;
+        if (ent->d_name[0] == '.') continue;
+        len = strlen(ent->d_name);
+        if (len < 6 || strcmp(ent->d_name + len - 5, ".lora") != 0) continue;
+        if (len - 5 >= sizeof unit) continue;
+        memcpy(unit, ent->d_name, len - 5);
+        unit[len - 5] = 0;
+        (void)dot;
+        if (find_entry(reg, unit) &&
+            registry_lora_store_load(reg, unit, dir, mark_certified) == 0)
+            n++;
+    }
+    closedir(d);
+    return n;
 }

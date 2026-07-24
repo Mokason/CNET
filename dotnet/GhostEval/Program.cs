@@ -100,6 +100,21 @@ if (regressions.Count > 0)
 }
 
 try { Directory.Delete(dir, recursive: true); } catch (IOException) { }
+
+// Optional promote delta for CNET_PROMOTE_EVAL_DELTA (adapter/stack gates).
+{
+    string? deltaPath = Environment.GetEnvironmentVariable("CNET_PROMOTE_EVAL_DELTA");
+    if (!string.IsNullOrEmpty(deltaPath) && report.Total > 0)
+    {
+        double mo = report.ModelOnlyTotal / (double)report.Total;
+        double fs = report.FullStackTotal / (double)report.Total;
+        string? parent = Path.GetDirectoryName(Path.GetFullPath(deltaPath));
+        if (!string.IsNullOrEmpty(parent)) Directory.CreateDirectory(parent);
+        File.WriteAllText(deltaPath,
+            FormattableString.Invariant($"delta {fs - mo:F6}\nacc_off {mo:F6}\nacc_on {fs:F6}\n"));
+        Console.WriteLine($"wrote promote delta → {deltaPath} (Δ={fs - mo:+0.###})");
+    }
+}
 return 0;
 
 static string Trunc(string s, int n) =>
