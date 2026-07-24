@@ -205,5 +205,24 @@ int cnet_auto_learn_note_skill(const char *inbox_path, const char *skill_name,
     goal.field_count = k;
     port_set_tag(&goal, gtag);
     (void)text; /* seed reserved for future exemplar attach */
-    return gap_inbox_note_no_plan(inbox_path, in, goal);
+    if (gap_inbox_note_no_plan(inbox_path, in, goal) != 0) return -1;
+    /* Best-effort fault-bus breadcrumb when CNET_FAULT_LOG is set. */
+    {
+        const char *fl = getenv("CNET_FAULT_LOG");
+        if (fl && fl[0]) {
+            CnetFaultLog log;
+            CnetFaultRecord rec;
+            if (cnet_fault_open(&log, fl) == 0) {
+                memset(&rec, 0, sizeof rec);
+                rec.source = CNET_FAULT_SRC_MCP;
+                snprintf(rec.skill, sizeof rec.skill, "%s", gtag);
+                snprintf(rec.unit, sizeof rec.unit, "acq_%s", gtag);
+                snprintf(rec.label_kind, sizeof rec.label_kind, "text");
+                snprintf(rec.note, sizeof rec.note, "auto_learn_note_skill");
+                (void)cnet_fault_append(&log, &rec);
+                cnet_fault_close(&log);
+            }
+        }
+    }
+    return 0;
 }
