@@ -3,6 +3,7 @@
    projection A accumulates gradient from every layer (the interconnection). */
 
 #include "../../include/cce/cce_lily.h"
+#include "../../include/cce/cce_ds_runtime.h"   /* g_cce_layer_adapt_hook */
 
 #include <math.h>
 #include <stdio.h>
@@ -120,6 +121,33 @@ double cce_lily_eval_mse(const cce_lily *ly, const float *baseW,
     }
     free(y);
     return se / (double)(n * (size_t)d);
+}
+
+/* ---- interior-layer serving hook -----------------------------------------
+   Called from the DS forward after each layer: residual += (alpha/r) B_L (A_L r). */
+static void lily_serve_impl(int layer, float *residual, int width, void *ctx) {
+    const cce_lily *ly = (const cce_lily *)ctx;
+    if (!ly || !residual || layer < 0 || layer >= ly->layers || width != ly->width) return;
+    const int d = ly->width, r = ly->rank;
+    const float s = scale(ly);
+    const float *A = Aptr(ly, layer);
+    const float *B = ly->B + (size_t)layer * r * d;
+    float stackbuf[64];
+    float *tmp = (r <= 64) ? stackbuf : (float *)malloc((size_t)r * sizeof(float));
+    if (!tmp) return;
+    for (int k = 0; k < r; k++) { float a = 0; for (int i = 0; i < d; i++) a += residual[i] * A[i * r + k]; tmp[k] = a; }
+    for (int k = 0; k < r; k++) { float t = s * tmp[k]; if (t == 0.0f) continue;
+        const float *Bk = B + (size_t)k * d; for (int o = 0; o < d; o++) residual[o] += t * Bk[o]; }
+    if (tmp != stackbuf) free(tmp);
+}
+
+void cce_lily_install_serving(const cce_lily *ly) {
+    g_cce_layer_adapt_ctx = (void *)ly;
+    g_cce_layer_adapt_hook = ly ? lily_serve_impl : NULL;
+}
+void cce_lily_uninstall_serving(void) {
+    g_cce_layer_adapt_hook = NULL;
+    g_cce_layer_adapt_ctx = NULL;
 }
 
 double cce_lily_train(cce_lily *ly, const float *baseW,

@@ -57,15 +57,37 @@ expected case for a coherent skill correction on a deep model), and underfits
 when it does not. That's the honest signal for whether to invest in the deep
 serving integration.
 
+## Interior-layer serving on the deep base (`make cce_lily_serve`)
+The invasive part is now built: Lily's deltas inject into the **real DS residual
+forward** (`cce_ds_runtime.c`), whose loop is a residual stream over `n_layer`
+layers of width `d_model` — a one-to-one match for Lily. A CCE-free hook
+`g_cce_layer_adapt_hook(layer, residual, width, ctx)` is called after each layer's
+residual update; `cce_lily_install_serving(ly)` binds an adapter to it so the
+residual gets `+= (alpha/r) B_L (A_L·residual)` at each layer.
+
+Verified against the synthetic DS runtime (real MLA attention + MoE FFN):
+- the hook fires once per layer, in order;
+- the served residual equals `base + (alpha/r)B(A·residual)` at the layer — diff
+  **0.00e+00** (bit-exact);
+- a zero-delta adapter and an uninstalled hook leave decode **byte-identical**
+  (off by default, zero overhead — `DS_STACK_PASS` is unchanged, 38/38).
+
+The hook is a plain function pointer (no adapter dependency in the DS runtime),
+one active adapter at a time (prototype). `ly->width` must equal `d_model` and
+`ly->layers` its `n_layer`.
+
 ## Scope / not done (honest)
-- This is the **parametrization + training + generalization benchmark** on a
-  synthetic deep linear stack. It deliberately does **not** wire deltas into a
-  real deep model's serving forward — that interior-layer injection is the
-  invasive part flagged in the design note (the current `cce_lora` serve hook
-  only adds one delta after `btn_forward`).
-- The `registry_lora` certify/orchestrator machinery is parametrization-agnostic
-  and would host Lily unchanged (teach → certify → serve, same regression gate).
-- Raw-float storage keeps the prototype self-contained; the weight-store /
-  streaming path (as in `cce_lora`) can be adopted later.
+- Serving is wired into the **DS residual runtime**; the GGUF token path and the
+  attention/MLP-projection variants (adapting q/k/v/o instead of the residual)
+  are not — this hook adapts the residual stream, the simplest and most general
+  injection.
+- **Training an adapter against the deep forward is not wired end-to-end here.**
+  `cce_lily_train` fits against a supplied frozen linear stack; teaching a real
+  DS-base adapter would collect (residual-in, teacher-out) pairs from the live
+  forward and train through it — a next step. The `registry_lora`
+  certify/orchestrator machinery (teach → certify → serve, regression gate) is
+  parametrization-agnostic and would host Lily unchanged.
 - Deep chains need EXACT-mode gradients (implemented here) — CNET's per-layer
   local-credit learner would not couple the shared `A` correctly.
+- Raw-float storage keeps the prototype self-contained; the weight-store /
+  streaming path (as in `cce_lora`) can be adopted later.

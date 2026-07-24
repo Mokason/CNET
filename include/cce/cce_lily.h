@@ -79,6 +79,14 @@ double cce_lily_train(cce_lily *ly, const float *baseW,
 double cce_lily_eval_mse(const cce_lily *ly, const float *baseW,
                          const float *inputs, const float *targets, size_t n);
 
+/* ---- interior-layer serving (deep-base residual stream) ------------------ */
+/* Install this adapter as the DS forward's interior-layer hook: after each layer
+   L, the residual gets += (alpha/r) B_L (A_L · residual). Off by default (hook
+   NULL); one active adapter at a time (prototype). ly->width must equal the
+   model's d_model and ly->layers its n_layer. */
+void cce_lily_install_serving(const cce_lily *ly);
+void cce_lily_uninstall_serving(void);
+
 #ifdef __cplusplus
 }
 #endif

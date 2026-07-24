@@ -115,6 +115,15 @@ void       cce_ds_host_reset(cce_ds_host* h);
 cce_result cce_ds_host_set_input(cce_ds_host* h, const float* x, int d);
 cce_result cce_ds_host_forward_token(cce_ds_host* h); /* residual += layers */
 
+/* Interior-layer adaptation hook: called after each layer's residual update in
+   the DS forward, so a per-layer low-rank adapter (cce_lily) can add its delta
+   to the residual stream. NULL => off, zero overhead — byte-identical decode
+   unless armed. CCE-free signature so the DS runtime needs no adapter
+   dependency; installed by cce_lily_install_serving. */
+typedef void (*CceLayerAdaptHook)(int layer, float* residual, int width, void* ctx);
+extern CceLayerAdaptHook g_cce_layer_adapt_hook;
+extern void*             g_cce_layer_adapt_ctx;
+
 /* Demand-load one COLD expert leaf from pack into forest (idempotent). */
 cce_result cce_ds_host_ensure_expert(cce_ds_host* h, int layer, int expert);
 

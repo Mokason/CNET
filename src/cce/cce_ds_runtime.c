@@ -918,6 +918,10 @@ static void mtp_sim_launch_tax(void) {
     (void)acc;
 }
 
+/* Interior-layer adaptation hook (see header). NULL => off. */
+CceLayerAdaptHook g_cce_layer_adapt_hook = NULL;
+void*             g_cce_layer_adapt_ctx  = NULL;
+
 /* Core trunk step. time_it=0 for inner MTP verify (outer wall clock owns timing).
  * pay_launch=1 applies optional sim launch tax (once per decode step). */
 static cce_result forward_token_core(cce_ds_host* h, int time_it, int pay_launch) {
@@ -949,6 +953,10 @@ static cce_result forward_token_core(cce_ds_host* h, int time_it, int pay_launch
         if (moe_ffn(h, L, x, ffny) != CCE_OK)
             memset(ffny, 0, (size_t)h->d_model * sizeof(float));
         for (i = 0; i < h->d_model; ++i) h->residual[i] += ffny[i];
+
+        /* Interior-layer adapter: add any bound low-rank delta to the residual. */
+        if (g_cce_layer_adapt_hook)
+            g_cce_layer_adapt_hook(L, h->residual, h->d_model, g_cce_layer_adapt_ctx);
     }
     h->pos++;
     h->tokens_fwd++;
