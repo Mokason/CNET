@@ -203,13 +203,29 @@ certifies a faulted unit (train/holdout split) leaving it served, and skips unit
 below `min_faults`. Full orchestrator stack (jtc_lora_live links personal_ai) and
 the no-CCE router targets build unchanged.
 
+## End-to-end orchestrator run (`make personal_ai_lora_tick`)
+Seals `json_toolcall_v2` into a fresh base, `personal_ai_open()`s it, streams
+inputs through the real executor to park 598 oracle-labeled faults into the
+unit's queue, installs the orchestrator, and runs `personal_ai_tick` — the actual
+live loop, no GPU/teacher lane.
+
+Finding: the tick lifts the unit **35% → 97%**, but via `gap_lane`'s existing
+dense heal, not the adapter. `gap_lane_tick` runs first in the tick and densely
+retrains the unit from the same labeled queue; the adapter hook runs at the end,
+sees an already-healed base, and the **gate correctly declines the now-redundant
+adapter** (`certified=0`, +0 points over the healed base). So the adapter and
+`gap_lane`'s dense heal are *alternatives*: with the current hook order the
+adapter only serves on units `gap_lane` does not heal (or if the hook is moved
+ahead of the dense heal). That ordering is a policy decision, surfaced honestly
+rather than papered over — the run itself confirms the full loop (open → fault →
+governed tick → gated serve) executes on a loaded base.
+
 ### Not done / next
-- The input stream is sampled sparse-feature vectors (oracle-labeled); faults are
-  now genuinely executor-detected, but the *distribution* is still synthetic —
-  the final step is a queue from real production tool-call traffic.
-- An end-to-end run of `personal_ai_tick` driving the action needs a loaded base
-  (`personal_ai_open`); the governed action itself is unit-tested via
-  `registry_lora_tick`, and the tick's hook call is compiled into the orchestrator.
+- Decide the adapter-vs-dense-heal policy: run the adapter *before* gap-lane's
+  dense heal (cheap-retrain-first, dense as fallback), or scope it to units the
+  heal skips. The mechanism supports either; only the hook order/gating changes.
+- The input stream is sampled sparse-feature vectors (oracle-labeled); the final
+  step is a queue from real production tool-call traffic.
 - Try `diff_mode=EXACT` via the `cce_learn` cascade path as an alternative
   trainer; measure vs the explicit Adam here.
 - Head-width `B:[r,out]` grows with vocab for a true logit head — benchmark the
