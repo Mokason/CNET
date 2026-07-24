@@ -3634,13 +3634,12 @@ alt_paths_gate: $(CCE) tests/test_alt_paths_gate.c include/cce/cce_gpu.h include
 	@grep -q "ALT_PATHS_GATE_PASS" logs/alt_paths_gate.log
 
 
-# Umbrella: replace/improve Tier0–2 focused gates
-
-# Open-lab import: MoE hard expert + accounting
-
-# Grade-up campaign: live traffic MoE + fault + store + acct (raise C/B- areas)
-
-# A-grade hermetic campaign (no live Hermes weeks required)
+# Replace/improve Tier0-2 campaign gates (each links the full runtime SRC;
+# aggregated by cnet_replace_improve and verify-nightly):
+#   procedure_chunks     - multi-step skill chunk sealer (served + deduped)
+#   cnet_a_grade         - A-grade hermetic campaign (no live Hermes weeks required)
+#   cnet_grade_up        - raise C/B- areas: live-traffic MoE + fault + store + acct
+#   cnet_openlab_import  - open-lab import: MoE hard expert + tiered accounting
 
 procedure_chunks: json_toolcall_alphabet $(MULTIMODAL_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(REGISTRY_LORA) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) src/soul_host.c $(ROUTE_LOG_SRC) tests/procedure_chunks_test.c
 	@mkdir -p $(BIN_DIR) artifacts/janitor
@@ -3683,7 +3682,7 @@ cnet_openlab_import: json_toolcall_alphabet $(MULTIMODAL_SRC) $(MODEL_RUNTIME) $
 	./$(BIN_DIR)/cnet_openlab_import
 	@bash scripts/cnet_openlab_doctor.sh
 
-cnet_replace_improve: cnet_fault_test cce_adapter_bank_test cce_dora_test cnet_serve_decode_test cnet_fault_loop_test registry_lora_store_test jtc_adapter_bench cnet_openlab_import cnet_grade_up cnet_a_grade cnet_a_grade
+cnet_replace_improve: cnet_fault_test cce_adapter_bank_test cce_dora_test cnet_serve_decode_test cnet_fault_loop_test registry_lora_store_test jtc_adapter_bench cnet_openlab_import cnet_grade_up cnet_a_grade
 	@echo CNET_REPLACE_IMPROVE_PASS
 
 # Next-5 improvements umbrella
