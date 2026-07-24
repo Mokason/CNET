@@ -118,19 +118,38 @@ Two things fall out, one of them important:
   each layer to close the *full* gap, so applying all L deltas free-running
   **over-corrects — the deltas compound (−102% here)**. The layer whose delta does
   not compound is the last (it feeds the output directly); serving only it
-  recovers the gap. General multi-layer free-running credit needs **serve-in-the-
-  loop training** (run the forward *with* the adapter and adjust) — the honest
-  next step, not the offline per-layer target used here.
+  recovers the gap (99%).
+
+## Serve-in-the-loop training (fixes the compounding)
+`cce_lily_train_serve_loop` solves the multi-layer free-running credit problem
+**without autograd through the frozen MLA+MoE base**. DAgger-style, it iterates:
+(1) run the forward WITH the current adapter, capturing (via
+`cce_lily_collect_served`) the pre-delta residual each layer *actually* sees;
+(2) refit the deltas toward the teacher on THOSE served residuals. Because each
+layer's target now accounts for earlier layers' corrections, the deltas stop
+compounding. Measured through the real forward:
+
+| serving | final gap to teacher | closed |
+|---------|---------------------:|-------:|
+| student (no adapter) | 1.176e-02 | — |
+| offline per-layer, all layers | 2.378e-02 | **−102%** (over-corrects) |
+| last-layer-only workaround | 6.85e-05 | 99% |
+| **serve-in-the-loop, all layers** | **9.78e-08** | **100%** |
+
+All-layer serving now closes the gap essentially perfectly — better than the
+single-layer workaround, using the full multi-layer capacity correctly.
 
 ## Scope / not done (honest)
 - Serving + collection are wired into the **DS residual runtime**; the GGUF token
   path and the q/k/v/o-projection variants are not.
-- **Multi-layer credit assignment through the free-running forward is the open
-  problem.** Offline per-layer distillation compounds; last-layer serving works;
-  the general fix is serve-in-the-loop training (needs the forward in the training
-  loop). The `registry_lora` certify/orchestrator machinery (teach → certify →
-  serve, regression gate) is parametrization-agnostic and would host Lily
-  unchanged.
+- Multi-layer credit assignment through the free-running forward — the problem
+  offline distillation hit — is **solved by serve-in-the-loop training** above
+  (all-layer serving closes 100%). The `registry_lora` certify/orchestrator
+  machinery (teach → certify → serve, regression gate) is parametrization-
+  agnostic and would host Lily unchanged.
+- The serve-loop is validated on the input-compression teacher (the gap this CI
+  model exhibits); a **compute-quality teacher** (more experts / dense attention)
+  is the deployment target but needs a non-degenerate real model to show a gap.
 - Deep chains need EXACT-mode gradients; CNET's per-layer local-credit learner
   would not couple the shared `A` correctly. Raw-float storage is self-contained;
   the weight-store/streaming path can be adopted later.

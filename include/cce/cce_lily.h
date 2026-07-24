@@ -100,6 +100,23 @@ double cce_lily_train_residual(cce_lily *ly, const float *base_res,
                                const float *target_res, size_t n,
                                const cce_lily_train_opts *opt);
 
+/* ---- serve-in-the-loop training ------------------------------------------ */
+/* Collect the pre-delta residual each layer sees while `ly` is applied — the
+   served trajectory under the current adapter. out is [n*layers*width]. */
+cce_result cce_lily_collect_served(struct cce_ds_host *h, const cce_lily *ly,
+                                   const float *inputs, size_t n, float *out);
+
+/* Serve-in-the-loop training (DAgger-style): repeatedly (1) run the forward WITH
+   the current adapter and capture the pre-delta residual each layer actually
+   sees, then (2) refit the deltas toward `teacher_res` on THOSE served residuals.
+   Because each layer's target accounts for earlier layers' corrections, the
+   deltas stop compounding (unlike offline per-layer distillation), so serving
+   ALL layers no longer over-corrects. teacher_res is [n*layers*width]. Returns
+   final MSE. */
+double cce_lily_train_serve_loop(struct cce_ds_host *h, const float *inputs,
+                                 const float *teacher_res, size_t n, cce_lily *ly,
+                                 int outer_iters, const cce_lily_train_opts *inner);
+
 /* ---- interior-layer serving (deep-base residual stream) ------------------ */
 /* Install this adapter as the DS forward's interior-layer hook: after each layer
    L, the residual gets += (alpha/r) B_L (A_L · residual). Off by default (hook

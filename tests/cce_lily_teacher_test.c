@@ -121,6 +121,23 @@ int main(void) {
     CHECK(glast < gb * 0.5, "correct-credit (last-layer) adapter recovers >=50%% of the teacher gap");
     free(saveB);
 
+    /* mode 3: SERVE-IN-THE-LOOP training — refit on the residuals each layer
+       actually sees while the adapter runs, so ALL-layer serving stops
+       over-correcting. */
+    cce_lily sl; cce_lily_init(&sl, d, L, r, 2.0f, 17, 1);
+    cce_lily_train_opts inner = cce_lily_train_defaults(); inner.epochs = 300; inner.lr = 0.02f;
+    cce_lily_train_serve_loop(h, Xd, teach_res, ntr, &sl, 10, &inner);
+    double gsl = 0;
+    for (size_t s = 0; s < nte; s++) {
+        forward_final(h, Xtf + s*d, Rt);
+        cce_lily_install_serving(&sl); forward_final(h, Xtd + s*d, Ra); cce_lily_uninstall_serving();
+        gsl += l1(Ra, Rt, d);
+    }
+    gsl /= nte;
+    printf("   (serve-in-the-loop, ALL-layer serve %.3e — closed %.0f%%)\n", gsl, 100.0 * (gb - gsl) / (gb + 1e-30));
+    CHECK(gsl < gb * 0.5, "serve-in-the-loop training: ALL-layer serving closes the gap (no over-correction)");
+    cce_lily_free(&sl);
+
     free(U); free(W); free(Xf); free(Xd); free(Xtf); free(Xtd);
     free(teach_res); free(stud_res); free(Rt); free(Rs); free(Ra);
     cce_lily_free(&fit); cce_ds_host_close(h);

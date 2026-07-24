@@ -207,9 +207,7 @@ double cce_lily_train_residual(cce_lily *ly, const float *base_res,
 
 /* ---- interior-layer serving hook -----------------------------------------
    Called from the DS forward after each layer: residual += (alpha/r) B_L (A_L r). */
-static void lily_serve_impl(int layer, float *residual, int width, void *ctx) {
-    const cce_lily *ly = (const cce_lily *)ctx;
-    if (!ly || !residual || layer < 0 || layer >= ly->layers || width != ly->width) return;
+static void lily_apply_delta(const cce_lily *ly, int layer, float *residual) {
     const int d = ly->width, r = ly->rank;
     const float s = scale(ly);
     const float *A = Aptr(ly, layer);
@@ -221,6 +219,57 @@ static void lily_serve_impl(int layer, float *residual, int width, void *ctx) {
     for (int k = 0; k < r; k++) { float t = s * tmp[k]; if (t == 0.0f) continue;
         const float *Bk = B + (size_t)k * d; for (int o = 0; o < d; o++) residual[o] += t * Bk[o]; }
     if (tmp != stackbuf) free(tmp);
+}
+static void lily_serve_impl(int layer, float *residual, int width, void *ctx) {
+    const cce_lily *ly = (const cce_lily *)ctx;
+    if (!ly || !residual || layer < 0 || layer >= ly->layers || width != ly->width) return;
+    lily_apply_delta(ly, layer, residual);
+}
+
+/* ---- serve-in-the-loop training ------------------------------------------- */
+/* Collect the pre-delta residual each layer sees WHILE the adapter is applied
+   (capture then apply), i.e. the served trajectory under `ly`. */
+typedef struct { float *out; int L, d; int cur; const cce_lily *ly; } lily_srv_cap_t;
+static void lily_served_hook(int layer, float *residual, int width, void *ctx) {
+    lily_srv_cap_t *c = (lily_srv_cap_t *)ctx;
+    if (layer < 0 || layer >= c->L || width != c->d) return;
+    memcpy(c->out + ((size_t)c->cur * c->L + layer) * c->d, residual, (size_t)c->d * sizeof(float)); /* pre-delta */
+    if (c->ly) lily_apply_delta(c->ly, layer, residual);                                             /* then serve */
+}
+
+cce_result cce_lily_collect_served(struct cce_ds_host *h, const cce_lily *ly,
+                                   const float *inputs, size_t n, float *out) {
+    if (!h || !inputs || !out || n == 0) return CCE_ERR_INVALID_ARG;
+    const int d = h->d_model, L = h->n_layer;
+    lily_srv_cap_t c = { out, L, d, 0, ly };
+    CceLayerAdaptHook oldh = g_cce_layer_adapt_hook; void *oldc = g_cce_layer_adapt_ctx;
+    g_cce_layer_adapt_hook = lily_served_hook; g_cce_layer_adapt_ctx = &c;
+    for (size_t s = 0; s < n; s++) {
+        c.cur = (int)s;
+        cce_ds_host_reset(h);
+        memcpy(h->residual, inputs + s * (size_t)d, (size_t)d * sizeof(float));
+        cce_ds_host_forward_token(h);
+    }
+    g_cce_layer_adapt_hook = oldh; g_cce_layer_adapt_ctx = oldc;
+    return CCE_OK;
+}
+
+double cce_lily_train_serve_loop(struct cce_ds_host *h, const float *inputs,
+                                 const float *teacher_res, size_t n, cce_lily *ly,
+                                 int outer_iters, const cce_lily_train_opts *inner) {
+    if (!h || !inputs || !teacher_res || !ly || n == 0) return -1.0;
+    const int d = h->d_model, L = h->n_layer;
+    float *served = malloc(n * (size_t)L * d * sizeof(float));
+    if (!served) return -1.0;
+    double last = -1.0;
+    for (int it = 0; it < (outer_iters > 0 ? outer_iters : 1); it++) {
+        /* run the forward WITH the current adapter, capture what each layer sees */
+        if (cce_lily_collect_served(h, ly, inputs, n, served) != CCE_OK) break;
+        /* refit the deltas to the teacher on THOSE served residuals */
+        last = cce_lily_train_residual(ly, served, teacher_res, n, inner);
+    }
+    free(served);
+    return last;
 }
 
 void cce_lily_install_serving(const cce_lily *ly) {
