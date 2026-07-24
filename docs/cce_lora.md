@@ -209,21 +209,32 @@ inputs through the real executor to park 598 oracle-labeled faults into the
 unit's queue, installs the orchestrator, and runs `personal_ai_tick` — the actual
 live loop, no GPU/teacher lane.
 
-Finding: the tick lifts the unit **35% → 97%**, but via `gap_lane`'s existing
-dense heal, not the adapter. `gap_lane_tick` runs first in the tick and densely
-retrains the unit from the same labeled queue; the adapter hook runs at the end,
-sees an already-healed base, and the **gate correctly declines the now-redundant
-adapter** (`certified=0`, +0 points over the healed base). So the adapter and
-`gap_lane`'s dense heal are *alternatives*: with the current hook order the
-adapter only serves on units `gap_lane` does not heal (or if the hook is moved
-ahead of the dense heal). That ordering is a policy decision, surfaced honestly
-rather than papered over — the run itself confirms the full loop (open → fault →
-governed tick → gated serve) executes on a loaded base.
+Policy: **cheap-adapter-first, dense-heal-fallback.** The adapter hook runs
+*ahead* of `gap_lane`'s dense heal in `personal_ai_tick`, and on a PASS
+`registry_lora_tick` marks the unit non-RESET — so `gap_lane`'s heal (gated on
+`PRIM_RESET` in `specialist_health`) skips it. The two are mutually exclusive per
+unit. Both branches are proven end-to-end through the real tick:
+
+| scenario | gate | certified | base student | served | who retrained |
+|----------|------|:---------:|:------------:|:------:|---------------|
+| A reasonable | passes | yes | 35% (heal skipped) | **78%** | the low-rank adapter |
+| B strict | rejects | no | **97%** (heal ran) | 97% | gap_lane dense heal (fallback) |
+
+So the cheap ~200-param adapter is tried first (78% here); only when it fails to
+certify does the expensive dense retrain run (97%). That's the tradeoff the
+policy buys — cheaper, slightly less accurate, with dense as the safety net.
+
+Honest limitation surfaced by this run: `registry_lora_tick` certifies on a
+holdout drawn from the **fault queue** (all base-wrong inputs), so it can measure
+*fixes* but never *regressions* — a regression-rate gate needs a representative
+(correct+incorrect) set, as `jtc_lora_faultq` uses. The in-tick gate therefore
+keys on net fixes; the standalone `registry_certify_lora` still supports the full
+regression policy.
 
 ### Not done / next
-- Decide the adapter-vs-dense-heal policy: run the adapter *before* gap-lane's
-  dense heal (cheap-retrain-first, dense as fallback), or scope it to units the
-  heal skips. The mechanism supports either; only the hook order/gating changes.
+- Feed `registry_lora_tick` a representative validation sample (not just the
+  fault queue) so the in-tick gate can enforce a regression bound, not only a
+  fix count.
 - The input stream is sampled sparse-feature vectors (oracle-labeled); the final
   step is a queue from real production tool-call traffic.
 - Try `diff_mode=EXACT` via the `cce_learn` cascade path as an alternative

@@ -312,8 +312,13 @@ int registry_lora_tick(PrimitiveRegistry *reg, const registry_lora_tick_opts *op
         int pass = registry_certify_lora(reg, e->name,
                        q->labeled_inputs + nt * (size_t)in,
                        q->labeled_targets + nt * (size_t)out, nh, &o.cert, NULL);
-        if (pass == 1) certd++;
-        else { registry_lora_detach(reg, e->name); rej++; }
+        if (pass == 1) {
+            certd++;
+            /* handled by the adapter — clear PRIM_RESET so a dense-heal pass
+               (specialist_health, gated on PRIM_RESET) skips this unit; dense
+               heal remains the fallback for units left RESET below. */
+            if (e->state == PRIM_RESET) registry_set_state(reg, e->name, PRIM_PROVISIONAL);
+        } else { registry_lora_detach(reg, e->name); rej++; }
     }
     if (report) { report->units_seen = seen; report->taught = taught;
                   report->certified = certd; report->rejected = rej; }

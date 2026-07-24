@@ -350,6 +350,13 @@ int personal_ai_tick(PersonalAi *ai, GapLaneTickReport *tick_rep) {
     size_t open_gaps = 0, gi;
     if (!ai || !ai->loaded) return -1;
     cnet_gov_begin_drain(&ai->gov);
+    /* Cheap low-rank adapters FIRST, ahead of the dense heal: when installed,
+       teach + certify adapters from units' fault queues. registry_lora_tick
+       marks a certified unit non-RESET, so gap_lane's PRIM_RESET-gated heal
+       below skips it — the adapter is the retrainer, dense heal the fallback for
+       units the adapter can't certify. NULL by default => no-op. CCE-free. */
+    if (g_cnet_lora_tick_hook)
+        g_cnet_lora_tick_hook(&ai->lane.reg);
     rc = gap_lane_tick(&ai->lane, tick_rep, 0);
     /* P5: structure mine only if residual traces exist (skip empty scan). */
     if (ai->hybrid.trace_count > 0) {
@@ -398,12 +405,6 @@ int personal_ai_tick(PersonalAi *ai, GapLaneTickReport *tick_rep) {
                         cr.proposed, cr.skipped_covered);
         }
     }
-    /* Governed adapter maintenance: when installed (opt-in via
-       registry_lora_install_orchestrator), teach + certify low-rank adapters
-       from units' accumulated fault queues. NULL by default => no-op, so the
-       tick is byte-identical unless a caller arms the hook. CCE-free call. */
-    if (g_cnet_lora_tick_hook)
-        g_cnet_lora_tick_hook(&ai->lane.reg);
     return rc;
 }
 

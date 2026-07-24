@@ -1,16 +1,16 @@
-/* personal_ai_lora_tick — end-to-end: run the LIVE orchestrator (personal_ai_tick)
-   with a LOADED base and let its governed adapter action teach + certify a
-   low-rank adapter from a unit's fault queue.
+/* personal_ai_lora_tick — end-to-end: the LIVE orchestrator (personal_ai_tick)
+   with a LOADED base, adapter hook reordered AHEAD of gap_lane's dense heal.
 
-   1. Seal the certified json_toolcall_v2 unit into a fresh base file.
-   2. personal_ai_open() -> loads it; ai.lane.reg holds the unit.
-   3. Stream inputs through the real route executor, park + oracle-label the
-      unit's genuine misclassifications into its retrain queue.
-   4. registry_lora_install_orchestrator() -> arms the serve + tick hooks.
-   5. personal_ai_tick() -> the governed action teaches on a train split and
-      certifies on a held-out split; a PASS opens the serve gate.
-   6. Verify the unit is now certified and serves an improved answer through the
-      executor. No GPU / teacher lane (allow_teacher=0). */
+   Two scenarios prove "cheap-retrain-first, dense-heal-fallback":
+     A. reasonable gate -> the low-rank adapter CERTIFIES, is marked non-RESET so
+        gap_lane's PRIM_RESET-gated heal SKIPS the unit, and the adapter serves
+        (base student unchanged, executor serves base+delta).
+     B. strict gate     -> the adapter is REJECTED, the unit stays PRIM_RESET, and
+        gap_lane's dense heal runs as the fallback (base student itself improves).
+
+   Seals json_toolcall_v2 into a fresh base, personal_ai_open()s it, parks
+   oracle-labeled executor-detected faults, installs the orchestrator, ticks. No
+   GPU / teacher lane. */
 
 #include "../include/personal_ai.h"
 #include "../include/gap_lane.h"
@@ -43,118 +43,100 @@ static int serve_tool(const RoutePlan *plan, const double *feat, int IN, int OUT
     return cnet_jtc_decode_tool(out);
 }
 
-int main(void) {
-    S = 0x9E3779B9u;
-    const char *base_path = "tmp_pa_lora.cnb";
-    const char *ledger    = "tmp_pa_lora.ledger";
-    const char *inbox     = "tmp_pa_lora.inbox";
+/* returns 1 if the scenario matched its expectation, else 0 */
+static int run_scenario(const char *tag, int strict_gate) {
+    const char *base_path = "tmp_pa_lora.cnb", *ledger = "tmp_pa_lora.ledger", *inbox = "tmp_pa_lora.inbox";
     remove(base_path);
+    { CnetBase base; cnb_init(&base);
+      if (cnet_jtc_ensure_sealed(&base, NULL) < 0 || cnb_save(&base, base_path) != 0) {
+          printf("FAIL: seal/save\n"); cnb_free(&base); return 0; }
+      cnb_free(&base); }
 
-    /* 1. seal the jtc unit into a fresh base */
-    {
-        CnetBase base; cnb_init(&base);
-        int sr = cnet_jtc_ensure_sealed(&base, NULL);
-        if (sr < 0) { printf("FAIL: ensure_sealed rc=%d\n", sr); return 1; }
-        if (cnb_save(&base, base_path) != 0) { printf("FAIL: cnb_save\n"); cnb_free(&base); return 1; }
-        cnb_free(&base);
-    }
-
-    /* 2. open the orchestrator on the loaded base (no teacher lane) */
     PersonalAiPolicy pol; personal_ai_policy_defaults(&pol);
     pol.allow_teacher = 0; pol.teach_inline = 0;
     PersonalAi ai;
-    if (personal_ai_open(&ai, base_path, ledger, inbox, &pol) != 0) {
-        printf("FAIL: personal_ai_open\n"); return 1;
-    }
+    if (personal_ai_open(&ai, base_path, ledger, inbox, &pol) != 0) { printf("FAIL: open\n"); return 0; }
     PrimitiveRegistry *reg = &ai.lane.reg;
     const char *unit = CNET_JTC_UNIT_NAME;
     BinaryTransformNetwork *stu = find_btn(reg, unit);
-    if (!stu) { printf("FAIL: unit '%s' not in loaded base\n", unit); personal_ai_close(&ai); return 1; }
+    if (!stu) { printf("FAIL: no unit\n"); personal_ai_close(&ai); return 0; }
     const int IN = (int)stu->input_count, OUT = (int)stu->output_count;
-    printf("loaded base -> unit '%s' in=%d out=%d\n", unit, IN, OUT);
 
     RoutePlan plan; memset(&plan, 0, sizeof plan);
     plan.steps[0] = stu; plan.names[0] = unit; plan.length = 1; plan.strict = 0;
 
-    /* held-out eval set (fresh), teacher labels */
     const int nte = 300;
     double *HF = malloc((size_t)nte * IN * sizeof(double));
     int *HT = malloc((size_t)nte * sizeof(int));
     double toh[CNET_JTC_N_TOOL];
-    for (int s = 0; s < nte; s++) {
-        double *f = HF + (size_t)s * IN; sample_feat(f, IN);
-        cnet_jtc_hermetic_teacher(f, toh, NULL); HT[s] = cnet_jtc_decode_tool(toh);
-    }
-    /* baseline accuracy through the executor, no adapter installed */
+    for (int s = 0; s < nte; s++) { double *f = HF + (size_t)s * IN; sample_feat(f, IN);
+        cnet_jtc_hermetic_teacher(f, toh, NULL); HT[s] = cnet_jtc_decode_tool(toh); }
     int base_ok = 0;
-    for (int s = 0; s < nte; s++)
-        if (serve_tool(&plan, HF + (size_t)s * IN, IN, OUT) == HT[s]) base_ok++;
-    printf("baseline (no adapter): %d/%d = %.1f%%\n", base_ok, nte, 100.0 * base_ok / nte);
+    for (int s = 0; s < nte; s++) if (serve_tool(&plan, HF + (size_t)s * IN, IN, OUT) == HT[s]) base_ok++;
 
-    /* 3. populate the unit's fault queue from genuine executor misclassifications */
-    double feat[CNET_JTC_N_FEAT];
-    int faults = 0;
+    double feat[CNET_JTC_N_FEAT]; int faults = 0;
     for (int i = 0; i < 900; i++) {
-        sample_feat(feat, IN);
-        cnet_jtc_hermetic_teacher(feat, toh, NULL);
-        int tt = cnet_jtc_decode_tool(toh);
-        if (serve_tool(&plan, feat, IN, OUT) != tt) {
-            double bad[CNET_JTC_N_TOOL];
-            const double *so = btn_forward(stu, feat);
+        sample_feat(feat, IN); cnet_jtc_hermetic_teacher(feat, toh, NULL);
+        if (serve_tool(&plan, feat, IN, OUT) != cnet_jtc_decode_tool(toh)) {
+            double bad[CNET_JTC_N_TOOL]; const double *so = btn_forward(stu, feat);
             for (int o = 0; o < OUT; o++) bad[o] = so ? so[o] : 0.0;
             if (registry_record_fault(reg, unit, feat, bad) == 0 &&
                 registry_supply_label(reg, unit, feat, toh) == 0) faults++;
         }
     }
-    printf("parked %d real faults into the unit's queue\n", faults);
 
-    /* 4. arm the governed adapter action in the orchestrator */
     registry_lora_tick_opts topt = registry_lora_tick_defaults();
     topt.min_faults = 64; topt.holdout_frac = 0.25;
     topt.teach.rank = 8; topt.teach.alpha = 16.0f;
     topt.teach.train.epochs = 1500; topt.teach.train.lr = 0.02f;
-    topt.cert.argmax_mode = 1;             /* classifier */
-    topt.cert.max_regressions = faults / 10;  /* tolerate <=10% right->wrong on holdout */
-    topt.cert.min_net_gain = 1;
+    topt.cert.argmax_mode = 1;
+    topt.cert.max_regressions = faults / 10;
+    /* NOTE: the in-tick holdout is drawn from the FAULT queue (all base-wrong),
+       so it can only measure fixes, never regressions — a regression-rate gate
+       needs a representative set (see jtc_lora_faultq). To exercise the reject/
+       fallback path here, the strict gate demands more net fixes than the tiny
+       holdout can supply, so the adapter is declined and the unit stays RESET. */
+    topt.cert.min_net_gain = strict_gate ? 1000000 : 1;
     registry_lora_install_orchestrator(reg, &topt);
-    int cert_before = registry_lora_is_certified(reg, unit);
 
-    /* 5. RUN THE LIVE ORCHESTRATOR TICK */
     GapLaneTickReport trep; memset(&trep, 0, sizeof trep);
     int rc = personal_ai_tick(&ai, &trep);
     int cert_after = registry_lora_is_certified(reg, unit);
-    printf("personal_ai_tick rc=%d  unit certified: before=%d after=%d\n", rc, cert_before, cert_after);
 
-    /* 6. separate the two mechanisms: the base student (btn_forward, unhooked)
-       vs the gated served output (route_execute_ex). */
     int base_post = 0, served_post = 0;
     for (int s = 0; s < nte; s++) {
         const double *so = btn_forward(stu, HF + (size_t)s * IN);
         if (so && cnet_jtc_decode_tool(so) == HT[s]) base_post++;
         if (serve_tool(&plan, HF + (size_t)s * IN, IN, OUT) == HT[s]) served_post++;
     }
-    printf("after tick: base-student=%d/%d  served(gated)=%d/%d  (baseline was %d/%d)\n",
-           base_post, nte, served_post, nte, base_ok, nte);
-    printf("  gap_lane heal effect  : %+d points on the base student\n",
-           100 * (base_post - base_ok) / nte);
-    printf("  adapter effect (gated): %+d points over the base student (certified=%d)\n",
-           100 * (served_post - base_post) / nte, cert_after);
+    int heal = 100 * (base_post - base_ok) / nte;
+    int adapt = 100 * (served_post - base_post) / nte;
+    printf("\n[%s]  faults=%d  rc=%d  certified=%d\n", tag, faults, rc, cert_after);
+    printf("  baseline %d%% | base-student post %d%% (heal %+d) | served %d%% (adapter %+d)\n",
+           100*base_ok/nte, 100*base_post/nte, heal, 100*served_post/nte, adapt);
 
-    int ok = (rc == 0 && served_post >= base_ok);
-    printf("%s: personal_ai_tick ran on the loaded base; unit improved %d%% -> %d%%\n",
-           ok ? "PASS" : "FAIL", 100 * base_ok / nte, 100 * served_post / nte);
-    if (cert_after)
-        printf("  (improvement served via the certified low-rank adapter)\n");
-    else
-        printf("  NOTE: gap_lane_tick densely re-healed the base from the same fault queue\n"
-               "  before the adapter hook (which runs at the end of the tick), so the gate\n"
-               "  correctly declined a now-redundant adapter. On a unit gap_lane does not\n"
-               "  heal, the adapter is the retrainer instead.\n");
-
+    int ok;
+    if (strict_gate) {   /* expect: adapter rejected, dense heal fallback ran */
+        ok = (rc == 0 && cert_after == 0 && heal > 0);
+        printf("  -> %s: gate REJECTED the adapter; gap_lane dense heal served as fallback\n",
+               ok ? "PASS" : "FAIL");
+    } else {             /* expect: adapter certified + serves, dense heal skipped */
+        ok = (rc == 0 && cert_after == 1 && adapt > 0 && heal == 0);
+        printf("  -> %s: adapter CERTIFIED + served; dense heal skipped (unit marked non-RESET)\n",
+               ok ? "PASS" : "FAIL");
+    }
     registry_lora_uninstall_orchestrator(reg);
-    free(HF); free(HT);
-    personal_ai_close(&ai);
+    free(HF); free(HT); personal_ai_close(&ai);
     remove(base_path); remove(ledger); remove(inbox);
+    return ok;
+}
+
+int main(void) {
+    int a = run_scenario("A: adapter-first, reasonable gate", 0);
+    S = 0x9E3779B9u;   /* same stream so both scenarios see the same data */
+    int b = run_scenario("B: strict gate -> dense-heal fallback", 1);
+    printf("\n%s: cheap-adapter-first with dense-heal fallback, driven by personal_ai_tick\n",
+           (a && b) ? "ALL PASS" : "FAIL");
     printf("PA_LORA_TICK_DONE\n");
-    return ok ? 0 : 1;
+    return (a && b) ? 0 : 1;
 }
