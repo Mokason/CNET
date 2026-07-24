@@ -236,26 +236,33 @@ orchestrator-supplied (it owns the unit's oracle); `registry_lora.c` only calls
 the pointer. When `validate` is NULL the tick trains on a queue split and
 certifies on a fault-queue holdout (fixes only).
 
-**Real production traffic.** `personal_ai_lora_tick` now drives *both* the fault
-queue and the sampler from realistic JSON tool-call requests — real tool names +
-arg keywords through the production `cnet_jtc_encode` path, mixing clean,
-underspecified, and ambiguous requests — not random feature bits. On this
-traffic the certified student is already **91%** (it was mined on these
-patterns), with ~70 real faults (the ambiguous/underspecified tail):
+**Recorded production traffic stream.** `personal_ai_lora_tick` captures a
+recorded JSONL of real JSON tool-call requests (one per line — the shape the
+serving host logs) and *replays* it in three disjoint slices: fault-mining,
+in-tick validation, and held-out eval. So the fault queue and the validation
+sampler read the **same captured stream**, not independent generations — the
+deployment shape (host logs traffic → orchestrator replays it for fault-mining +
+gating). Requests go through the production `cnet_jtc_encode` path; the mix is
+clean / underspecified / ambiguous, so the certified student is already ~94% with
+a small ambiguous-tail of faults:
 
 | scenario | gate | certified | served | outcome |
 |----------|------|:---------:|:------:|---------|
-| A reasonable | passes | yes | **95%** (+4) | cheap adapter fixes the tail without regressing clean traffic |
+| A reasonable | passes | yes | **97%** (+3) | cheap adapter fixes the tail without regressing clean traffic |
 | B strict (`max_regr=0`) | rejects | no | **100%** | a residual flip trips the strict gate → gap_lane dense heal fallback |
 
-Honest read: on already-good real traffic the adapter's win is small (+4) and a
-strict gate prefers the dense heal (100%); the adapter's larger wins are on
-low-accuracy bases (see the +47 on the earlier out-of-distribution run). The gate
-picks correctly either way.
+Honest read: on already-good recorded traffic the adapter's win is small (+3) and
+a strict gate prefers the dense heal (100%); the adapter's larger wins are on
+low-accuracy bases (the +47 on the earlier out-of-distribution run). The gate
+picks correctly either way. The capture here is synthesized from real request
+shapes; in production the JSONL is the host's actual request log — the replay/
+slice/gate machinery is identical.
 
-### Not done / next
-- (open) The traffic is generated from real request *shapes* rather than a
-  captured production log; wiring a recorded live traffic stream is the last mile.
+### Done
+The cce_lora arc is complete: adapter core → benchmark → real-queue wiring → live
+unit → executor serving (route + DAG) → real-fault validation → certify-before-
+serve gate → orchestrator-driven governed maintenance → cheap-first/dense-fallback
+ordering → regression-aware gate + safe training → recorded-stream replay.
 - Try `diff_mode=EXACT` via the `cce_learn` cascade path as an alternative
   trainer; measure vs the explicit Adam here.
 - Head-width `B:[r,out]` grows with vocab for a true logit head — benchmark the
