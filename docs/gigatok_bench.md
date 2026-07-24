@@ -100,8 +100,30 @@ Combined, the encode path went from 19 → 75 MB/s baseline (~4×, no cache) and
 → 307 MB/s with cache (~16× over the original), all at verified-identical output.
 The baseline (no cache) is now faster than HF `tokenizers`' single-config numbers.
 
-Caveats: the cache is per-`encode_fast`-call; the bench encodes the corpus in one
-call, so it reflects the within-a-large-encode hit rate — a persistent
-(cross-call) cache would be the streaming-many-documents extension. Absolute
-numbers are still below gigatoken's per-family-SIMD BPE + huge-page cache; the
-point here is the *decomposition* (where the speedup lives) at identical output.
+The table above encodes the corpus in one call, so the per-call cache fills once
+and serves the whole corpus. That is *not* how training data streams.
+
+### Persistent cross-call cache (streaming many small documents)
+
+`cce_gguf_tok_cache_enable(t)` allocates a cache that lives on the tokenizer and
+survives across `encode_fast` calls; encode with `CCE_TOK_FAST_PERSIST` to reuse
+it. Streaming the same corpus as 16k ~256-byte documents (Qwen vocab):
+
+| streaming config | throughput | vs no-cache | ids |
+|---|---:|---:|---|
+| baseline (no cache) | 73 MB/s | 1.00× | — |
+| per-call cache (`CCE_TOK_FAST_CACHE`) | 38 MB/s | **0.51×** | identical |
+| persistent cache (`CCE_TOK_FAST_PERSIST`) | 224 MB/s | **3.1×** | identical |
+
+The sharp result: **a per-call cache is *worse than no cache* when streaming small
+documents** — it allocates and frees a table every document that barely fills, so
+you pay setup with almost no reuse. The **persistent cache accumulates hits across
+the whole stream** (common words are encoded once, then reused everywhere) for
+~3× on Qwen and ~6.7× on gemma's slower string path. This is the shape that
+matters for a data loader, and it's why gigatoken keeps its cache resident for the
+whole run. (Not thread-safe: one encoder thread per tokenizer, or use the per-call
+cache; a sharded/persistent cache is the concurrency extension.)
+
+Absolute numbers are still below gigatoken's per-family-SIMD BPE + huge-page
+cache; the point here is the *decomposition* (where each speedup lives) at
+byte-for-byte identical output.

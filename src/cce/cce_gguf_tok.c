@@ -33,6 +33,9 @@ enum {
     GGUF_STR = 8, GGUF_ARR = 9, GGUF_U64 = 10, GGUF_I64 = 11, GGUF_F64 = 12
 };
 
+struct Ptc; /* persistent pretoken cache (defined below) */
+static void ptc_free(struct Ptc *c);
+
 struct cce_gguf_tok {
     char **id_to_piece;       /* [vocab] owned UTF-8 pieces (Ġ/Ċ form) */
     unsigned char *tok_type;  /* [vocab] */
@@ -75,6 +78,11 @@ struct cce_gguf_tok {
     int *pm;               /* [pcap] merged token id */
     int pcap;
     int id_bpe;
+
+    /* Optional persistent pretoken cache: survives across encode_fast calls, so
+     * streaming many small documents accumulates hits (a per-call cache would
+     * reset each call). Enabled via cce_gguf_tok_cache_enable; NULL = off. */
+    struct Ptc *pcache;
 };
 
 /* ---- tiny IO ---- */
@@ -753,6 +761,7 @@ void cce_gguf_tok_free(cce_gguf_tok *t) {
     free(t->pk);
     free(t->pr);
     free(t->pm);
+    ptc_free(t->pcache);
     free(t->special_str); /* aliases into id_to_piece */
     free(t->special_id);
     free(t);
@@ -823,7 +832,7 @@ static int skip_other(const char *s, int n, int i) {
 
 /* ---- pretoken cache: span bytes -> token ids (open addressing) ---- */
 typedef struct { uint64_t h; char *b; int bl; int *ids; int nids; } PtcE;
-typedef struct { PtcE *e; int cap; int cnt; } Ptc;
+typedef struct Ptc { PtcE *e; int cap; int cnt; } Ptc;
 static uint64_t ptc_hash(const char *s, int n) {
     uint64_t h = 1469598103934665603ULL; int k;
     for (k = 0; k < n; k++) { h ^= (unsigned char)s[k]; h *= 1099511628211ULL; }
@@ -890,12 +899,21 @@ static void pretok_encode_fast(const cce_gguf_tok *t, const char *s, int n,
     }
 }
 
+/* Allocate the persistent pretoken cache on `t` (idempotent). After this, encode
+   with CCE_TOK_FAST_PERSIST to reuse it across calls. */
+void cce_gguf_tok_cache_enable(cce_gguf_tok *t) {
+    if (t && !t->pcache) t->pcache = ptc_new(1024);
+}
+
 int cce_gguf_tok_encode_fast(const cce_gguf_tok *t, const char *text,
                              int *ids, int max_ids, int flags) {
-    int n = 0, i = 0, L; Ptc *cache = NULL;
+    int n = 0, i = 0, L; Ptc *cache = NULL; int owns = 0;
     int swar = (flags & CCE_TOK_FAST_SWAR) != 0;
     if (!t || !text || !ids || max_ids < 1) return 0;
-    if (flags & CCE_TOK_FAST_CACHE) cache = ptc_new(1024);
+    /* Persistent cache (on t) survives across calls; a per-call cache does not.
+       Reading t->pcache through const t is fine — only *cache is mutated. */
+    if ((flags & CCE_TOK_FAST_PERSIST) && t->pcache) cache = t->pcache;
+    else if (flags & CCE_TOK_FAST_CACHE) { cache = ptc_new(1024); owns = 1; }
     L = (int)strlen(text);
     while (i < L && n < max_ids) {
         int hit = -1, hlen = 0, k;
@@ -916,7 +934,7 @@ int cce_gguf_tok_encode_fast(const cce_gguf_tok *t, const char *text,
             i = j;
         }
     }
-    ptc_free(cache);
+    if (owns) ptc_free(cache); /* persistent cache is owned by t, not freed here */
     return n;
 }
 

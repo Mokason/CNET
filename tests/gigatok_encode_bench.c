@@ -104,6 +104,50 @@ int main(int argc, char **argv) {
         }
     }
 
+    /* ---- streaming: many small documents (where the persistent cache pays) ----
+     * A per-call cache resets every document; the persistent cache accumulates
+     * across the whole stream. All three modes use the SAME doc splits, so they
+     * must produce byte-for-byte identical token streams. */
+    {
+        size_t target = 256, p = 0, capd = n / 64 + 16, nd = 0, d;
+        size_t *doff = (size_t *)malloc(capd * sizeof(size_t));
+        int *dlen = (int *)malloc(capd * sizeof(int));
+        while (p < n && nd < capd) {
+            size_t e = p + target;
+            if (e >= n) e = n; else { while (e < n && corpus[e] != ' ' && corpus[e] != '\n') e++; }
+            doff[nd] = p; dlen[nd] = (int)(e - p); nd++; p = e;
+        }
+        int *sref = (int *)malloc((size_t)max_ids * sizeof(int)); int nref = 0;
+        for (d = 0; d < nd; d++) { char sv = corpus[doff[d] + dlen[d]]; corpus[doff[d] + dlen[d]] = 0;
+            nref += cce_gguf_tok_encode(t, corpus + doff[d], sref + nref, max_ids - nref);
+            corpus[doff[d] + dlen[d]] = sv; }
+
+        printf("\nstreaming %zu docs (~%zu B each), best of %d:\n", nd, target, iters);
+        struct { const char *name; int flags; int persist; } sm[] = {
+            { "baseline (no cache)", 0, 0 },
+            { "per-call cache",      CCE_TOK_FAST_CACHE,   0 },
+            { "persistent cache",    CCE_TOK_FAST_PERSIST, 1 },
+        };
+        double sbase = 0; int m;
+        for (m = 0; m < 3; m++) {
+            double best = 1e300; int it, nn = 0;
+            if (sm[m].persist) cce_gguf_tok_cache_enable(t);
+            for (it = 0; it < iters; it++) {
+                double t0 = now_s(); nn = 0;
+                for (d = 0; d < nd; d++) { char sv = corpus[doff[d] + dlen[d]]; corpus[doff[d] + dlen[d]] = 0;
+                    nn += sm[m].flags ? cce_gguf_tok_encode_fast(t, corpus + doff[d], fast + nn, max_ids - nn, sm[m].flags)
+                                      : cce_gguf_tok_encode(t, corpus + doff[d], fast + nn, max_ids - nn);
+                    corpus[doff[d] + dlen[d]] = sv; }
+                double dt = now_s() - t0; if (dt < best) best = dt;
+            }
+            double mbs = bytes_mb / best; if (m == 0) sbase = mbs;
+            int ok = (nn == nref) && (memcmp(fast, sref, (size_t)nref * sizeof(int)) == 0);
+            printf("  %-20s %7.1f MB/s  %5.2fx  %s\n", sm[m].name, mbs, mbs / sbase, sm[m].persist || sm[m].flags ? (ok ? "ids OK" : "ids MISMATCH") : "");
+            if ((sm[m].flags || sm[m].persist) && !ok) fail = 1;
+        }
+        free(doff); free(dlen); free(sref);
+    }
+
     free(base); free(fast); free(corpus); cce_gguf_tok_free(t);
     printf("\n%s\n", fail ? "GIGATOK_ENCODE_FAIL" : "GIGATOK_ENCODE_PASS");
     return fail ? 1 : 0;

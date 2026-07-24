@@ -39,10 +39,18 @@ int cce_gguf_tok_encode(const cce_gguf_tok *t, const char *text,
  * by flags: CCE_TOK_FAST_SWAR skips ASCII pretoken runs with SWAR; the pretoken
  * cache memoizes span->ids to skip BPE on repeats. Output is byte-for-byte equal
  * to cce_gguf_tok_encode (verified by gigatok_encode_bench). */
-#define CCE_TOK_FAST_SWAR  1
-#define CCE_TOK_FAST_CACHE 2
+#define CCE_TOK_FAST_SWAR    1
+#define CCE_TOK_FAST_CACHE   2  /* per-call pretoken cache (freed after the call) */
+#define CCE_TOK_FAST_PERSIST 4  /* use the persistent cache on t (see cache_enable) */
 int cce_gguf_tok_encode_fast(const cce_gguf_tok *t, const char *text,
                              int *ids, int max_ids, int flags);
+
+/* Allocate a persistent pretoken cache on t (idempotent). Then encode with
+ * CCE_TOK_FAST_PERSIST to reuse it across calls — the win when streaming many
+ * small documents, where a per-call cache resets every call. Freed by
+ * cce_gguf_tok_free. Not thread-safe: one encoder thread per tokenizer, or use
+ * per-call CCE_TOK_FAST_CACHE. */
+void cce_gguf_tok_cache_enable(cce_gguf_tok *t);
 
 /* Decode to UTF-8. skip_special drops CONTROL/USER_DEFINED tokens.
  * Returns bytes written excluding NUL; out always NUL-terminated if max_out>0. */
