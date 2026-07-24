@@ -118,3 +118,28 @@ make cnet_replace_improve
 - `registry_lora_ingest_fault_bus` + tick auto-ingest when log set
 - Host `FaultBus` + JTC ClassifyOrGap breadcrumbs
 - Env: `CNET_FAULT_LOG`, `CNET_FAULT_MIRROR=0` to disable mirror, `CNET_PROMOTE=1` optional
+
+## Post-merge audit recheck + gaps closed (2026-07-24, `2624bec`)
+
+Independent recheck of the Tier 0–3 commits (`87abb26`…`decc861`): full `make test`
+green (25-suite log gate) **and** all 7 new gates pass (`CNET_FAULT_PASS`,
+`CNET_PROMOTE_PASS`, `CCE_ADAPTER_BANK_PASS`, `CCE_DORA_PASS`,
+`CNET_SERVE_DECODE_PASS`, `CNET_FAULT_LOOP_PASS`, `CNET_LORA_STORE_PASS`,
+`JTC_ADAPTER_BENCH_PASS` — `acc_off=0.2975 → acc_on=0.7375`, Δ+0.44 reproduced on
+held-out). No core regression; claims (DoRA-lite, VeRA-lite freeze-A, +0.44 bench)
+verified honest; `registry_teach_lora_OLD` cleanly removed.
+
+Two gaps found and **closed** (`2624bec`):
+
+- ✅ **New gates were not in CI.** The 7 new tests lived only under the on-demand
+  `cnet_replace_improve` umbrella, so `make test` did not guard them. Wired the 4
+  light/deterministic ones into `verify` as prerequisites — `cnet_fault_test`
+  (covers `CNET_FAULT_PASS` + `CNET_PROMOTE_PASS`), `cce_adapter_bank_test`,
+  `cce_dora_test`, `cnet_serve_decode_test`. The 3 heavy-link targets
+  (`cnet_fault_loop_test`, `registry_lora_store_test`, `jtc_adapter_bench`) stay
+  on-demand to keep `make test` fast.
+- ✅ **Stray `registry.meta`** (regenerable `tests/test_expansion` sidecar) removed
+  and added to `.gitignore`.
+
+Open follow-ups (not blocking): T3.2 specialist_adapters thin wrappers still a
+façade note only; the 3 heavy gates remain outside `make test` by design.
