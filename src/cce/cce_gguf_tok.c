@@ -63,6 +63,18 @@ struct cce_gguf_tok {
     char byte_enc[256][4]; /* NUL-terminated UTF-8 of mapped char */
     int byte_enc_len[256];
     int cp_to_byte[1024];  /* unicode codepoint → byte, -1 if none */
+
+    /* id-space BPE (hot path): avoids string hashing/compare in the merge loop.
+     * byte_to_id[b] = vocab id of byte_enc[b]; the pair table maps
+     * (id_a,id_b) -> (rank, merged id). Built at load; id_bpe is set only when
+     * every byte and every merge resolves to a valid id, so the integer path is
+     * provably identical to the string path (else the string path is used). */
+    int byte_to_id[256];
+    uint64_t *pk;          /* [pcap] packed key ((id_a+1)<<32|(id_b+1)); 0 = empty */
+    int *pr;               /* [pcap] merge rank */
+    int *pm;               /* [pcap] merged token id */
+    int pcap;
+    int id_bpe;
 };
 
 /* ---- tiny IO ---- */
@@ -163,6 +175,30 @@ static int merges_get(const cce_gguf_tok *t, const char *key) {
     }
 }
 
+/* ---- id-space merge table: (id_a,id_b) -> (rank, merged id) ---- */
+static inline uint64_t pair_key(int ida, int idb) {
+    return (((uint64_t)(uint32_t)(ida + 1)) << 32) | (uint64_t)(uint32_t)(idb + 1);
+}
+static void pair_put(cce_gguf_tok *t, int ida, int idb, int rank, int merged) {
+    uint64_t key = pair_key(ida, idb);
+    int i = (int)((key * 0x9E3779B97F4A7C15ULL >> 32) & (uint32_t)(t->pcap - 1));
+    for (;;) {
+        if (!t->pk[i]) { t->pk[i] = key; t->pr[i] = rank; t->pm[i] = merged; return; }
+        if (t->pk[i] == key) return; /* merges are rank-ordered; keep the first (lowest) */
+        i = (i + 1) & (t->pcap - 1);
+    }
+}
+static inline int pair_get(const cce_gguf_tok *t, int ida, int idb, int *merged) {
+    uint64_t key = pair_key(ida, idb);
+    int i = (int)((key * 0x9E3779B97F4A7C15ULL >> 32) & (uint32_t)(t->pcap - 1));
+    for (;;) {
+        uint64_t e = t->pk[i];
+        if (!e) return -1;
+        if (e == key) { *merged = t->pm[i]; return t->pr[i]; }
+        i = (i + 1) & (t->pcap - 1);
+    }
+}
+
 /* ---- GPT-2 bytes_to_unicode ---- */
 static void build_byte_tables(cce_gguf_tok *t) {
     int bs[512], cs[512], n = 0, i, b, n2;
@@ -246,7 +282,7 @@ static int bpe_mk_key(char *key, const unsigned char *a, int alen,
     memcpy(key + alen + 1, b, (size_t)blen_); key[alen + 1 + blen_] = 0;
     return alen + 1 + blen_;
 }
-static void bpe_core(const cce_gguf_tok *t, const char *w, int wlen,
+static void bpe_core_str(const cce_gguf_tok *t, const char *w, int wlen,
                      int *ids, int *cnt, int max_ids,
                      unsigned char *buf, int *soff, int *slen, int *rnk,
                      char *vkey, size_t vcap) {
@@ -288,12 +324,46 @@ static void bpe_core(const cce_gguf_tok *t, const char *w, int wlen,
         if (id >= 0 && *cnt < max_ids) ids[(*cnt)++] = id;
     }
 }
+/* Integer BPE: symbols are token ids, ranks/merges come from the id-pair table,
+   so the merge loop touches no strings — no fnv1a, no strcmp, no key building.
+   Used whenever id_bpe is set (all bytes+merges resolve to ids); byte-for-byte
+   identical to bpe_core_str. */
+static void bpe_core_id(const cce_gguf_tok *t, const char *w, int wlen,
+                        int *ids, int *cnt, int max_ids,
+                        int *sid, int *rnk, int *mrg) {
+    int ns = 0, k;
+    for (k = 0; k < wlen; ++k) sid[ns++] = t->byte_to_id[(unsigned char)w[k]];
+    for (k = 0; k + 1 < ns; ++k) { int m = -1, r = pair_get(t, sid[k], sid[k + 1], &m); rnk[k] = (r < 0) ? 0x7fffffff : r; mrg[k] = m; }
+    while (ns > 1) {
+        int best = 0x7fffffff, bi = -1;
+        for (k = 0; k + 1 < ns; ++k) if (rnk[k] < best) { best = rnk[k]; bi = k; }
+        if (bi < 0) break;
+        sid[bi] = mrg[bi];                          /* merged symbol id */
+        for (k = bi + 1; k + 1 < ns; ++k) { sid[k] = sid[k + 1]; rnk[k] = rnk[k + 1]; mrg[k] = mrg[k + 1]; }
+        ns--;
+        if (bi + 1 < ns) { int m = -1, r = pair_get(t, sid[bi], sid[bi + 1], &m); rnk[bi] = (r < 0) ? 0x7fffffff : r; mrg[bi] = m; }
+        if (bi > 0) { int m = -1, r = pair_get(t, sid[bi - 1], sid[bi], &m); rnk[bi - 1] = (r < 0) ? 0x7fffffff : r; mrg[bi - 1] = m; }
+    }
+    for (k = 0; k < ns; ++k) if (*cnt < max_ids) ids[(*cnt)++] = sid[k];
+}
 static void bpe_word(const cce_gguf_tok *t, const char *w, int wlen,
                      int *ids, int *cnt, int max_ids) {
     if (wlen <= 0 || !w) return;
-    if (wlen <= 256) { /* hot path: pure stack, zero allocation */
+    if (t->id_bpe) { /* integer path */
+        if (wlen <= 256) { int sid[256], rnk[256], mrg[256];
+            bpe_core_id(t, w, wlen, ids, cnt, max_ids, sid, rnk, mrg);
+        } else {
+            int *sid = (int *)malloc((size_t)wlen * sizeof(int));
+            int *rnk = (int *)malloc((size_t)wlen * sizeof(int));
+            int *mrg = (int *)malloc((size_t)wlen * sizeof(int));
+            if (sid && rnk && mrg) bpe_core_id(t, w, wlen, ids, cnt, max_ids, sid, rnk, mrg);
+            free(sid); free(rnk); free(mrg);
+        }
+        return;
+    }
+    if (wlen <= 256) { /* string path (fallback), pure stack */
         unsigned char buf[256 * 4]; int soff[256], slen[256], rnk[256]; char vkey[256 * 4 + 8];
-        bpe_core(t, w, wlen, ids, cnt, max_ids, buf, soff, slen, rnk, vkey, sizeof vkey);
+        bpe_core_str(t, w, wlen, ids, cnt, max_ids, buf, soff, slen, rnk, vkey, sizeof vkey);
     } else { /* rare long span: one bulk allocation, not per-symbol */
         size_t bs = (size_t)wlen * 4 + 8;
         unsigned char *buf = (unsigned char *)malloc(bs);
@@ -302,7 +372,7 @@ static void bpe_word(const cce_gguf_tok *t, const char *w, int wlen,
         int *rnk = (int *)malloc((size_t)wlen * sizeof(int));
         char *vkey = (char *)malloc(bs);
         if (buf && soff && slen && rnk && vkey)
-            bpe_core(t, w, wlen, ids, cnt, max_ids, buf, soff, slen, rnk, vkey, bs);
+            bpe_core_str(t, w, wlen, ids, cnt, max_ids, buf, soff, slen, rnk, vkey, bs);
         free(buf); free(soff); free(slen); free(rnk); free(vkey);
     }
 }
@@ -593,29 +663,47 @@ cce_result cce_gguf_tok_load(const char *gguf_path, cce_gguf_tok **out) {
     t->mkey = (char **)calloc((size_t)t->mcap, sizeof(char *));
     t->mrank = (int *)calloc((size_t)t->mcap, sizeof(int));
     if (!t->mkey || !t->mrank) goto fail_oom;
-    for (i = 0; i < n_merges; ++i) {
-        char *m = merges[i];
-        char *sp;
-        if (!m) continue;
-        sp = strchr(m, ' ');
-        if (!sp) { free(m); continue; }
-        *sp = 0;
-        {
-            size_t la = strlen(m), lb = strlen(sp + 1);
-            char *key = (char *)malloc(la + lb + 2);
-            if (!key) { free(m); continue; }
-            memcpy(key, m, la);
-            key[la] = '\x1f';
-            memcpy(key + la + 1, sp + 1, lb);
-            key[la + 1 + lb] = 0;
-            merges_put(t, key, i);
+    /* id-space merge table, built alongside the string table (needs vocab, which
+       is already populated above). pair_ok drops to 0 if any merge fails to
+       resolve all three ids, forcing the safe string path. */
+    t->pcap = t->mcap;
+    t->pk = (uint64_t *)calloc((size_t)t->pcap, sizeof(uint64_t));
+    t->pr = (int *)malloc((size_t)t->pcap * sizeof(int));
+    t->pm = (int *)malloc((size_t)t->pcap * sizeof(int));
+    if (!t->pk || !t->pr || !t->pm) goto fail_oom;
+    {
+        int pair_ok = 1;
+        for (i = 0; i < n_merges; ++i) {
+            char *m = merges[i];
+            char *sp;
+            if (!m) continue;
+            sp = strchr(m, ' ');
+            if (!sp) { free(m); continue; }
+            *sp = 0;
+            {
+                size_t la = strlen(m), lb = strlen(sp + 1);
+                char *key = (char *)malloc(la + lb + 2);
+                if (!key) { free(m); continue; }
+                memcpy(key, m, la);
+                key[la] = '\x1f';
+                memcpy(key + la + 1, sp + 1, lb);
+                key[la + 1 + lb] = 0;
+                merges_put(t, key, i);
+                { int ida = vocab_get(t, m), idb = vocab_get(t, sp + 1), idab = -1;
+                  char *ab = (char *)malloc(la + lb + 1);
+                  if (ab) { memcpy(ab, m, la); memcpy(ab + la, sp + 1, lb); ab[la + lb] = 0; idab = vocab_get(t, ab); free(ab); }
+                  if (ida >= 0 && idb >= 0 && idab >= 0) pair_put(t, ida, idb, i, idab); else pair_ok = 0; }
+            }
+            free(m);
         }
-        free(m);
-    }
-    free(merges);
-    merges = NULL;
+        free(merges);
+        merges = NULL;
 
-    build_byte_tables(t);
+        build_byte_tables(t);
+        { int b, bytes_ok = 1;
+          for (b = 0; b < 256; ++b) { int id = vocab_get(t, t->byte_enc[b]); t->byte_to_id[b] = id; if (id < 0) bytes_ok = 0; }
+          t->id_bpe = (pair_ok && bytes_ok) ? 1 : 0; }
+    }
     *out = t;
     return CCE_OK;
 
@@ -662,6 +750,9 @@ void cce_gguf_tok_free(cce_gguf_tok *t) {
         free(t->mkey);
     }
     free(t->mrank);
+    free(t->pk);
+    free(t->pr);
+    free(t->pm);
     free(t->special_str); /* aliases into id_to_piece */
     free(t->special_id);
     free(t);

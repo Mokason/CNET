@@ -57,38 +57,51 @@ apostrophes still go through the exact codepoint logic), and the cache memoizes
 `span -> token-ids`; both are exact, and `tests/gigatok_encode_bench.c` asserts
 the fast path's ids equal the baseline **byte-for-byte**.
 
-`bpe_word` itself was also rewritten with **fixed symbol arrays (no malloc, no
-`strlen`)**: symbols are (offset,length) slices of one contiguous byte-encoded
-buffer, so a merge just extends the left slice; adjacent pair-ranks are cached
-and only the two neighbours of a merge are recomputed (replacing the original
-full O(ns²) rescan). Output is byte-for-byte identical (verified by an id-stream
-hash across the old and new versions) — it is **~1.9× faster** on its own.
+Two more optimizations landed on the encode path, both byte-for-byte identical
+(verified by an id-stream hash: old and new both give `idhash=01037b4e45cc7116`
+on the deterministic Qwen/4 MB case):
 
-Measured on a real GGUF vocab (Qwen-family, 248k tokens; ~4 MB corpus; same
-pattern on gemma 262k), all outputs byte-for-byte identical:
+1. **`bpe_word` fixed-array rewrite** — symbols are (offset,length) slices of one
+   contiguous byte-encoded buffer, so a merge just extends the left slice; no
+   malloc, no `strlen`, no per-symbol copies. Adjacent pair-ranks are cached and
+   only the two neighbours of a merge are recomputed (vs the original full O(ns²)
+   rescan). **~1.9×.**
+2. **id-space merge table** — at load, `byte_to_id[256]` and a
+   `(id_a,id_b) → (rank, merged_id)` table are built, so the merge loop is pure
+   integer: no `fnv1a`, no `strcmp`, no key building. `merges_get`/`vocab_get`
+   leave the hot loop entirely. Guarded by a load check that every byte and merge
+   resolves to a valid id (clean BPE like Qwen/GPT-2); tokenizers where it
+   doesn't (SentencePiece-style, e.g. gemma) safely keep the string path.
+   **~2× more.**
+
+Measured on a real GGUF vocab (Qwen-family, 248k tokens; ~4 MB corpus), all
+outputs byte-for-byte identical:
 
 | config | throughput | vs baseline | ids |
 |---|---:|---:|---|
-| **old** `bpe_word` (malloc/strlen) | 19 MB/s | 0.5× | identical |
-| baseline (`cce_gguf_tok_encode`, rewritten `bpe_word`) | 37 MB/s | 1.00× | — |
-| + SWAR pretok | 35 MB/s | **~1.0×** (noise) | identical |
-| + pretoken cache | 269 MB/s | **7.3×** | identical |
-| + SWAR + cache | 300 MB/s | **8.1×** | identical |
+| **original** `bpe_word` (malloc/strlen) | 19 MB/s | 0.25× | identical |
+| + fixed-array `bpe_word` | 37 MB/s | 0.49× | identical |
+| baseline (`cce_gguf_tok_encode`, +id-space) | 75 MB/s | 1.00× | — |
+| + SWAR pretok | 76 MB/s | **~1.0×** (noise) | identical |
+| + pretoken cache | 280 MB/s | **3.7×** | identical |
+| + SWAR + cache | 307 MB/s | **4.1×** | identical |
 
 **The honest finding — and it matches gigatoken's own thesis.** In this encoder
 (as in most) the BPE merge is the bottleneck, not pretokenization: SWAR pretok
-alone buys **~0% end-to-end**. Two levers move it: the `bpe_word` rewrite (1.9×,
-by killing the per-symbol malloc + per-pair `strlen`), and the **pretoken cache**
-(7.3× on top, by skipping the merge entirely on the ~99% of pretokens that repeat
-in natural text). SWAR only starts to matter *after* those remove the BPE cost.
-That's exactly why gigatoken needed the cache, and why its README calls caching
-"a very hard problem in this domain."
+alone buys **~0% end-to-end**. Three levers moved the *merge* itself: the
+fixed-array rewrite (1.9×, killing per-symbol malloc + per-pair `strlen`), the
+id-space table (~2× more, killing string hashing/compare in the loop), and the
+**pretoken cache** (skips the merge entirely on the ~99% of repeated pretokens).
+Note how the cache's *relative* win shrank from 14× → 3.7× as the baseline merge
+got ~4× faster — caching matters less once the thing you'd cache is cheap. SWAR
+only ever mattered *after* the merge cost was removed.
 
-Combined, the fast path is ~300 MB/s vs the original 19 MB/s (~16×), decomposed
-as bpe-rewrite ×1.9 then cache ×7.3.
+Combined, the encode path went from 19 → 75 MB/s baseline (~4×, no cache) and
+→ 307 MB/s with cache (~16× over the original), all at verified-identical output.
+The baseline (no cache) is now faster than HF `tokenizers`' single-config numbers.
 
 Caveats: the cache is per-`encode_fast`-call; the bench encodes the corpus in one
 call, so it reflects the within-a-large-encode hit rate — a persistent
 (cross-call) cache would be the streaming-many-documents extension. Absolute
-numbers are still below gigatoken's per-family-SIMD BPE; the point here is the
-*decomposition* (where the speedup lives) at verified-identical output.
+numbers are still below gigatoken's per-family-SIMD BPE + huge-page cache; the
+point here is the *decomposition* (where the speedup lives) at identical output.
