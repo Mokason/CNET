@@ -155,3 +155,29 @@ write only to `/tmp` or gitignored `logs/`, so CI stays clean. Trade-off
 accepted: `make test` is slower (the three link the full runtime SRC), in
 exchange for the fault-loop, adapter-store, and JTC accuracy bench being guarded
 on every run.
+
+## Open-lab / grade campaign recheck + Makefile tidy (2026-07-24, `43dea84`)
+
+Independent recheck of the campaign commits (`912860c`…`b59c88a`: MoE hard
+expert, tiered accounting, grade-up/A-grade/open-lab campaigns, procedure
+chunks, CI split): all green — `make test` (core 25-suite log gate + all 7 PEFT/
+fault gates, with `CNET_FAULT_PASS` strengthened 15→16) **and** all 4 campaigns
+(`CNET_OPENLAB_IMPORT_PASS`, `CNET_GRADE_UP_PASS`, `CNET_A_GRADE_PASS checks=32`,
+`CNET_PROCEDURE_CHUNKS_PASS`) plus their scripts (library-quality, acct-dashboard,
+doctor ok=8 warn=0). The `verify:`/`test:` line was untouched by the CI split, so
+the 7-gate wiring above is intact; `verify-fast` (quick PR subset) and
+`verify-nightly` (verify + heavy + campaigns) were added alongside. Claims honest
+(hard-expert router, tiered acct, "Non-goals stay non-goals" / "Not claimed"
+plan sections); working tree clean after the full campaign run.
+
+Two cosmetic Makefile nits found and **fixed** (`43dea84`):
+
+- ✅ **Orphaned comment headers** — 4 floating comments stranded above the wrong
+  target after reordering, consolidated into one accurate header block over the
+  campaign gates.
+- ✅ **Duplicate prerequisite** — `cnet_a_grade` listed twice in
+  `cnet_replace_improve`, collapsed to one.
+
+Comment/dedup only — no recipe or build-behavior change; `make -n verify` still
+resolves all 7 gates. `rg` (ripgrep) is a build-time dependency of the campaign
+scripts — present here (14.1.0); note for any CI host that runs `verify-nightly`.
