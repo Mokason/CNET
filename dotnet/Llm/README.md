@@ -1,3 +1,5 @@
+> **DEPRECATED for new work:** prefer `dotnet/Cce.Llm` + GhostChat. This tree is quarantined (Tier3 A–F cleanup).
+
 # CNET.Llm
 
 Managed (C#/.NET 10) transformer inference stack living inside the CNET tree:

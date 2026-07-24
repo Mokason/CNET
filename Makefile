@@ -1761,6 +1761,9 @@ cce_dora_test: $(CCE) $(CCE_CUDA_OBJ) src/cce/cce_dora.c tests/cce_dora_test.c
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) src/cce/cce_dora.c tests/cce_dora_test.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 	./$(BIN_DIR)/cce_dora_test
 
+cnet_serve_decode_test: src/cnet_serve_decode.c tests/cnet_serve_decode_test.c
+	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ src/cnet_serve_decode.c tests/cnet_serve_decode_test.c $(LDFLAGS)
+	./$(BIN_DIR)/cnet_serve_decode_test
 
 registry_lily_test: $(CCE) $(CCE_CUDA_OBJ) $(REGISTRY_LILY) tests/registry_lily_test.c
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) $(REGISTRY_LILY) tests/registry_lily_test.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
@@ -3586,3 +3589,8 @@ alt_paths_gate: $(CCE) tests/test_alt_paths_gate.c include/cce/cce_gpu.h include
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/test_alt_paths_gate $(CCE) tests/test_alt_paths_gate.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 	./$(BIN_DIR)/test_alt_paths_gate > logs/alt_paths_gate.log 2>&1
 	@grep -q "ALT_PATHS_GATE_PASS" logs/alt_paths_gate.log
+
+
+# Umbrella: replace/improve Tier0–2 focused gates
+cnet_replace_improve: cnet_fault_test cce_adapter_bank_test cce_dora_test cnet_serve_decode_test
+	@echo CNET_REPLACE_IMPROVE_PASS

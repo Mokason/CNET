@@ -269,3 +269,9 @@ ordering → regression-aware gate + safe training → recorded-stream replay.
 - Head-width `B:[r,out]` grows with vocab for a true logit head — benchmark the
   hidden→hidden projection variant for large `V`.
 - No GPU teacher-lane involvement; trains on CPU over the existing labeled queue.
+
+## VeRA-style option (planned switch)
+
+Freeze random shared A, train only B (+ optional scales) for multi-skill storage
+density. Not default — enable only when adapter bank fan-out dominates. Same
+certify-before-serve gate applies.

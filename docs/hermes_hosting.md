@@ -81,3 +81,10 @@ The legacy Phase 4 `hermes --model <artifact-path>` suggestion is not executable
 
 - Doc hub: [`INDEX.md`](INDEX.md)
 - Use-loop: `make cnet_use_loop_acceptance`
+
+
+## AICIMO / RouteOnRole honesty
+
+MCP `RouteOnRole` may use a deterministic role-hash fallback when the native
+Drole slice is unavailable. Clients must not treat the wrapper name as proof of
+neural role routing — check the returned mechanism field when present.

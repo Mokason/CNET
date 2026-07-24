@@ -136,7 +136,9 @@ static void dedupe_scan(SoulHost *host, int nunits, FILE *md, int *out_buckets,
     DimBucket *bk = NULL;
     size_t nb = 0, cap = 0;
     int ui, flagged = 0, big = 0;
-    fprintf(md, "## Near-duplicate dim census (report only)\n\n");
+    fprintf(md, "## Near-duplicate dim census (report only)
+
+");
     fprintf(md, "Groups units by (in_dim, out_dim). No deletion.\n\n");
     for (ui = 0; ui < nunits; ui++) {
         char name[128];
@@ -414,6 +416,32 @@ int main(int argc, char **argv) {
 
     if (note_low && low_noted > 0)
         (void)acquire_ledger_save(&ledger, ledger_path);
+
+
+    /* Janitor v2: gh_ skill noise census (report-only; prune opt-in later) */
+    {
+        size_t gh_n = 0;
+        int vi;
+        fprintf(md, "## Janitor v2 skill quality\n\n");
+        fprintf(md, "| class | count |\n|---|---:|\n");
+        for (vi = 0; vi < nunits; vi++) {
+            char name[128];
+            if (soul_unit_name(host, vi, name, (int)sizeof name) != 0) continue;
+            if (strncmp(name, "acq_skill_gh_", 13) == 0 || strstr(name, "_gh_"))
+                gh_n++;
+        }
+        fprintf(md, "| gh_ noise names | %zu |\n", gh_n);
+        fprintf(md, "| units total | %d |\n\n", nunits);
+        fprintf(md,
+                "_Prune apply is opt-in via CNET_JANITOR_PRUNE_GH=1 "
+                "(default report-only)._\\n\\n");
+        if (getenv("CNET_JANITOR_PRUNE_GH") &&
+            getenv("CNET_JANITOR_PRUNE_GH")[0] == '1') {
+            fprintf(md,
+                    "PRUNE_GH requested — report-only in this build "
+                    "(no destructive delete without pin policy).\\n\\n");
+        }
+    }
 
     dedupe_scan(host, nunits, md, &dedupe_buckets, &dedupe_units);
 

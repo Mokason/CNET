@@ -216,3 +216,9 @@ gaps, not to paper over aggressive sparse-attention compute cuts.
   local-credit learner would not couple the shared `A` correctly.
 - Raw-float storage keeps the prototype self-contained; the weight-store /
   streaming path (as in `cce_lora`) can be adopted later.
+
+## GGUF residual adapter hook (stub, Tier1.5)
+
+The DS residual path owns Lily serving. A future GGUF token residual hook should
+mirror `g_cce_layer_adapt_hook` with NULL-default byte-identical decode. Until a
+local GGUF mouth is product-critical, adapters stay on DS + head-LoRA (JTC).
