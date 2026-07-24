@@ -70,10 +70,33 @@ only needed for near-full-rank corrections. Teach-time crossover is ~rank-16 (th
 current apply/grad loops are less cache-optimised than the dense path); the win
 is at the small ranks that matter.
 
+## Registry wiring (real skill queue)
+`include/router/registry_lora.h` + `src/router/registry_lora.c` train and serve
+an adapter from a **real** unit's retrain queue. `RegistryEntry` gains one
+borrowed, NULL-initialised `struct cce_lora *lora` (forward-declared — core
+registry TUs pull in no CCE dependency and no new link deps); all adapter logic
+lives in the separate `registry_lora` TU, linked only by targets that opt in.
+
+- `registry_teach_lora(reg, name, opt, stats)` — reads the unit's LABELED
+  `RetrainQueue` pairs, forms `residual = teacher_target − btn_forward(base)`,
+  trains a rank-r adapter, and attaches it to the entry. The base BTN is never
+  modified.
+- `registry_forward_with_lora(reg, name, input, out)` — `out = btn_forward(base)
+  + delta`; with no adapter it is the exact base (zero overhead).
+- `registry_lora_detach` / `registry_has_lora` — lifecycle.
+
+`make registry_lora_test` (all green) builds a real BTN, parks faults +
+`registry_supply_label`s teacher-corrected targets into the genuine queue, then
+teaches and serves: 300 pairs, in=16/out=8/rank=4, **pre_mse 7.35e-5 →
+post_mse 7e-11**, held-out adapter-vs-teacher L1 = 0.0000 (base-vs-teacher
+0.0073), 96 params vs 128 dense, and detach restores the byte-exact base.
+
 ### Not done / next
-- Wire `cce_lora_fit_residual` into `registry_label_via_teacher` behind an opt-in
-  flag, and measure on a real `json_toolcall_v*` unit's port-validated queue
-  (this prototype uses synthetic low-rank+noise residuals).
+- Measure on a live `json_toolcall_v*` unit's port-validated queue (the test uses
+  a real queue but a planted low-rank correction; a production queue is populated
+  at runtime by faults + the teacher).
+- Call `registry_forward_with_lora` from the live executors (route.c/dag_full.c)
+  behind a registry flag, so a trained adapter reaches production serving.
 - Try `diff_mode=EXACT` via the `cce_learn` cascade path as an alternative
   trainer; measure vs the explicit Adam here.
 - Head-width `B:[r,out]` grows with vocab for a true logit head — benchmark the

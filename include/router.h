@@ -109,6 +109,12 @@ typedef struct {
     int    compute_beneficial;
     ExpansionRecipe *recipe;  /* owned; NULL unless this is an expandable chunk */
     int    expand_in_low;
+    /* Optional rank-r output adapter (cce_lora), borrowed like `btn`: the
+       registry NULL-inits it and never owns it — the adapter layer
+       (registry_lora.*) attaches, serves, and frees it. NULL => the base is
+       served unchanged (zero overhead, default). Forward-declared so core
+       registry TUs need no CCE dependency. */
+    struct cce_lora *lora;
 } RegistryEntry;
 
 typedef struct {
