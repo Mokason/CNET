@@ -117,6 +117,39 @@ double cce_lily_train_serve_loop(struct cce_ds_host *h, const float *inputs,
                                  const float *teacher_res, size_t n, cce_lily *ly,
                                  int outer_iters, const cce_lily_train_opts *inner);
 
+/* ---- multi-token (context) variants --------------------------------------
+   The compute-quality gap (dense vs sparse attention, all vs few experts) is a
+   MULTI-TOKEN phenomenon: it lives in the attention/KV over accumulated
+   positions and is exactly zero at a single token. These variants prefill T-1
+   context tokens, then capture / serve per-layer residuals at the QUERY (last)
+   token. `seqs` is [n*T*width] (n sequences of T tokens); out is
+   [n*layers*width] (query token only).
+
+   The host's CURRENT config (dsa_enable/dsa_fraction, map.hp.n_expert_used) is
+   the QUERY-token compute — the caller's cheap-student knob. `prefill`, if
+   non-NULL, is the compute for the T-1 context tokens (restored to the host's
+   config for the query). Two scenarios:
+     prefill == NULL  -> cheap everywhere (student prefill + student query): the
+       gap includes the divergent KV cache, only partly recoverable at the query.
+     prefill == full  -> cached full-compute context + cheap decode: the gap is
+       purely the query token's compute, which the adapter recovers cleanly. */
+typedef struct cce_lily_compute {
+    int   dsa_enable;
+    float dsa_fraction;
+    int   n_expert_used;
+} cce_lily_compute;
+
+cce_result cce_lily_collect_ctx(struct cce_ds_host *h, const cce_lily_compute *prefill,
+                                const float *seqs, size_t n, int T, float *out);
+cce_result cce_lily_collect_served_ctx(struct cce_ds_host *h, const cce_lily_compute *prefill,
+                                       const cce_lily *ly,
+                                       const float *seqs, size_t n, int T, float *out);
+double cce_lily_train_serve_loop_ctx(struct cce_ds_host *h, const cce_lily_compute *prefill,
+                                     const float *seqs,
+                                     const float *teacher_res, size_t n, int T,
+                                     cce_lily *ly, int outer_iters,
+                                     const cce_lily_train_opts *inner);
+
 /* ---- interior-layer serving (deep-base residual stream) ------------------ */
 /* Install this adapter as the DS forward's interior-layer hook: after each layer
    L, the residual gets += (alpha/r) B_L (A_L · residual). Off by default (hook

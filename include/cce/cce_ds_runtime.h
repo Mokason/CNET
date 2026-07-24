@@ -124,6 +124,11 @@ typedef void (*CceLayerAdaptHook)(int layer, float* residual, int width, void* c
 extern CceLayerAdaptHook g_cce_layer_adapt_hook;
 extern void*             g_cce_layer_adapt_ctx;
 
+/* Synthetic weight amplitude for cce_ds_host_open(synthetic=1). Default 0.02
+   keeps existing synthetic hosts bit-identical; raise it to drive the forward
+   (and any compute-quality gap) into a measurable regime. Set before open. */
+void cce_ds_set_synth_scale(float s);
+
 /* Demand-load one COLD expert leaf from pack into forest (idempotent). */
 cce_result cce_ds_host_ensure_expert(cce_ds_host* h, int layer, int expert);
 

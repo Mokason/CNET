@@ -506,11 +506,17 @@ static uint32_t ds_lcg(uint32_t* s) {
     return *s;
 }
 
+/* Synthetic weight amplitude (per-fanin). Default 0.02 keeps every existing
+   synthetic host bit-identical; a test can raise it (cce_ds_set_synth_scale) to
+   drive the forward — and any compute-quality gap — into a measurable regime. */
+static float g_ds_synth_scale = 0.02f;
+void cce_ds_set_synth_scale(float s) { g_ds_synth_scale = (s > 0.0f) ? s : 0.02f; }
+
 static void ds_fill_synthetic(float* w, int in_d, int out_d, uint32_t seed) {
     /* cce_block layout: weights[i*out + o], shape [in,out] */
     int i, o;
     uint32_t s = seed;
-    float scale = 0.02f / sqrtf((float)(in_d > 0 ? in_d : 1));
+    float scale = g_ds_synth_scale / sqrtf((float)(in_d > 0 ? in_d : 1));
     for (i = 0; i < in_d; ++i)
         for (o = 0; o < out_d; ++o) {
             float u = (float)(ds_lcg(&s) >> 8) / (float)(1u << 24);

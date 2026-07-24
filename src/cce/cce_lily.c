@@ -272,6 +272,91 @@ double cce_lily_train_serve_loop(struct cce_ds_host *h, const float *inputs,
     return last;
 }
 
+/* ---- multi-token (context) collection + serve ----------------------------
+   The compute-quality gap is a multi-token phenomenon (attention/KV over
+   accumulated positions). These prefill T-1 context tokens (in `prefill` compute
+   if given, else the host's current query compute), then capture/serve per-layer
+   residuals at the query (last) token in the host's current compute. */
+static void lily_get_compute(struct cce_ds_host *h, cce_lily_compute *c) {
+    c->dsa_enable = h->dsa_enable; c->dsa_fraction = h->dsa_fraction;
+    c->n_expert_used = h->map.hp.n_expert_used;
+}
+static void lily_set_compute(struct cce_ds_host *h, const cce_lily_compute *c) {
+    h->dsa_enable = c->dsa_enable; h->dsa_fraction = c->dsa_fraction;
+    h->map.hp.n_expert_used = c->n_expert_used;
+}
+
+cce_result cce_lily_collect_ctx(struct cce_ds_host *h, const cce_lily_compute *prefill,
+                                const float *seqs, size_t n, int T, float *out) {
+    if (!h || !seqs || !out || n == 0 || T < 1) return CCE_ERR_INVALID_ARG;
+    const int d = h->d_model, L = h->n_layer;
+    lily_cap_t c = { out, L, d, 0 };
+    cce_lily_compute q; lily_get_compute(h, &q);                         /* query compute = current */
+    CceLayerAdaptHook oldh = g_cce_layer_adapt_hook; void *oldc = g_cce_layer_adapt_ctx;
+    for (size_t s = 0; s < n; s++) {
+        const float *seq = seqs + s * (size_t)T * d;
+        cce_ds_host_reset(h);
+        g_cce_layer_adapt_hook = NULL; g_cce_layer_adapt_ctx = NULL;     /* context: no capture */
+        if (prefill) lily_set_compute(h, prefill);
+        for (int t = 0; t < T - 1; t++) {
+            memcpy(h->residual, seq + (size_t)t * d, (size_t)d * sizeof(float));
+            cce_ds_host_forward_token(h);
+        }
+        if (prefill) lily_set_compute(h, &q);                            /* restore query compute */
+        c.cur = (int)s;                                                  /* query: capture per layer */
+        g_cce_layer_adapt_hook = lily_capture_hook; g_cce_layer_adapt_ctx = &c;
+        memcpy(h->residual, seq + (size_t)(T - 1) * d, (size_t)d * sizeof(float));
+        cce_ds_host_forward_token(h);
+    }
+    g_cce_layer_adapt_hook = oldh; g_cce_layer_adapt_ctx = oldc;
+    return CCE_OK;
+}
+
+cce_result cce_lily_collect_served_ctx(struct cce_ds_host *h, const cce_lily_compute *prefill,
+                                       const cce_lily *ly,
+                                       const float *seqs, size_t n, int T, float *out) {
+    if (!h || !ly || !seqs || !out || n == 0 || T < 1) return CCE_ERR_INVALID_ARG;
+    const int d = h->d_model, L = h->n_layer;
+    lily_srv_cap_t c = { out, L, d, 0, ly };
+    cce_lily_compute q; lily_get_compute(h, &q);
+    CceLayerAdaptHook oldh = g_cce_layer_adapt_hook; void *oldc = g_cce_layer_adapt_ctx;
+    for (size_t s = 0; s < n; s++) {
+        const float *seq = seqs + s * (size_t)T * d;
+        cce_ds_host_reset(h);
+        g_cce_layer_adapt_hook = NULL; g_cce_layer_adapt_ctx = NULL;     /* prefill: no adapter */
+        if (prefill) lily_set_compute(h, prefill);
+        for (int t = 0; t < T - 1; t++) {
+            memcpy(h->residual, seq + (size_t)t * d, (size_t)d * sizeof(float));
+            cce_ds_host_forward_token(h);
+        }
+        if (prefill) lily_set_compute(h, &q);
+        c.cur = (int)s;                                                  /* query: capture pre-delta each layer, then serve */
+        g_cce_layer_adapt_hook = lily_served_hook; g_cce_layer_adapt_ctx = &c;
+        memcpy(h->residual, seq + (size_t)(T - 1) * d, (size_t)d * sizeof(float));
+        cce_ds_host_forward_token(h);
+    }
+    g_cce_layer_adapt_hook = oldh; g_cce_layer_adapt_ctx = oldc;
+    return CCE_OK;
+}
+
+double cce_lily_train_serve_loop_ctx(struct cce_ds_host *h, const cce_lily_compute *prefill,
+                                     const float *seqs,
+                                     const float *teacher_res, size_t n, int T,
+                                     cce_lily *ly, int outer_iters,
+                                     const cce_lily_train_opts *inner) {
+    if (!h || !seqs || !teacher_res || !ly || n == 0 || T < 1) return -1.0;
+    const int d = h->d_model, L = h->n_layer;
+    float *served = malloc(n * (size_t)L * d * sizeof(float));
+    if (!served) return -1.0;
+    double last = -1.0;
+    for (int it = 0; it < (outer_iters > 0 ? outer_iters : 1); it++) {
+        if (cce_lily_collect_served_ctx(h, prefill, ly, seqs, n, T, served) != CCE_OK) break;
+        last = cce_lily_train_residual(ly, served, teacher_res, n, inner);
+    }
+    free(served);
+    return last;
+}
+
 void cce_lily_install_serving(const cce_lily *ly) {
     g_cce_layer_adapt_ctx = (void *)ly;
     g_cce_layer_adapt_hook = ly ? lily_serve_impl : NULL;
