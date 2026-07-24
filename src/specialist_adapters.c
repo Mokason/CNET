@@ -1,3 +1,5 @@
+/* Facade note: PEFT path of record is registry_lora / registry_lily / cce_adapter_bank.
+ * This file remains CCE/specialist glue; do not fork a third adapter lifecycle. */
 #include "../include/specialist_adapters.h"
 
 #include <stdint.h>
