@@ -190,6 +190,7 @@ int route_plan(
 /* Live-serving adapter hook; NULL until the opt-in adapter layer installs it.
    Defined here (a core router TU) so route.c and dag_full.c share one symbol. */
 CnetLoraServeHook g_cnet_lora_serve_hook = NULL;
+CnetLoraTickHook  g_cnet_lora_tick_hook  = NULL;
 
 int route_execute_ex(
     const RoutePlan *plan,

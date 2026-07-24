@@ -33,7 +33,68 @@ static RegistryEntry *find_entry(PrimitiveRegistry *reg, const char *name) {
     return NULL;
 }
 
+/* Train + attach a rank-r adapter to `e` from explicit (input, target) double
+   pairs (residual = target - btn_forward(base)). Attaches as an uncertified
+   candidate. Shared by registry_teach_lora (whole queue) and registry_lora_tick
+   (a train split). */
+static int teach_pairs(RegistryEntry *e, const double *inputs, const double *targets,
+                       size_t n, const registry_lora_opts *o, registry_lora_stats *stats) {
+    const int in = (int)e->btn->input_count, out = (int)e->btn->output_count;
+    if (n == 0 || in <= 0 || out <= 0) return -1;
+
+    float *X = malloc(n * (size_t)in * sizeof(float));
+    float *R = malloc(n * (size_t)out * sizeof(float));
+    if (!X || !R) { free(X); free(R); return -1; }
+
+    double pre = 0.0;
+    for (size_t s = 0; s < n; s++) {
+        const double *xin = inputs + s * (size_t)in;
+        const double *tgt = targets + s * (size_t)out;
+        const double *base = btn_forward(e->btn, xin);
+        if (!base) { free(X); free(R); return -1; }
+        for (int i = 0; i < in; i++) X[s * in + i] = (float)xin[i];
+        for (int oo = 0; oo < out; oo++) {
+            double resid = tgt[oo] - base[oo];
+            R[s * out + oo] = (float)resid;
+            pre += resid * resid;
+        }
+    }
+    pre /= (double)(n * (size_t)out);
+
+    cce_lora *adp = malloc(sizeof(*adp));
+    if (!adp) { free(X); free(R); return -1; }
+    if (cce_lora_init(adp, in, out, o->rank, o->alpha, 0x51A17u + (uint32_t)o->rank) != CCE_OK) {
+        free(adp); free(X); free(R); return -1;
+    }
+    double post = cce_lora_train(adp, X, R, n, &o->train);
+    if (post < 0.0) { cce_lora_free(adp); free(adp); free(X); free(R); return -1; }
+
+    if (e->lora) { cce_lora_free(e->lora); free(e->lora); }
+    e->lora = adp;
+    e->lora_certified = 0;
+
+    if (stats) {
+        stats->pairs = n; stats->pre_mse = pre; stats->post_mse = post;
+        stats->in_dim = in; stats->out_dim = out; stats->rank = o->rank;
+        stats->params = cce_lora_param_count(adp);
+        stats->dense_params = cce_lora_dense_param_count(adp);
+    }
+    free(X); free(R);
+    return 0;
+}
+
 int registry_teach_lora(PrimitiveRegistry *reg, const char *name,
+                        const registry_lora_opts *opt, registry_lora_stats *stats) {
+    RegistryEntry *e = find_entry(reg, name);
+    if (!e || !e->btn || !e->queue) return -1;
+    RetrainQueue *q = e->queue;
+    registry_lora_opts o = opt ? *opt : registry_lora_defaults();
+    return teach_pairs(e, q->labeled_inputs, q->labeled_targets, q->labeled_count, &o, stats);
+}
+
+/* legacy body retained below only as reference; superseded by teach_pairs. */
+#if 0
+int registry_teach_lora_OLD(PrimitiveRegistry *reg, const char *name,
                         const registry_lora_opts *opt, registry_lora_stats *stats) {
     RegistryEntry *e = find_entry(reg, name);
     if (!e || !e->btn || !e->queue) return -1;
@@ -92,6 +153,7 @@ int registry_teach_lora(PrimitiveRegistry *reg, const char *name,
     free(X); free(R);
     return 0;
 }
+#endif /* legacy registry_teach_lora reference */
 
 int registry_forward_with_lora(PrimitiveRegistry *reg, const char *name,
                                const double *input, double *out) {
@@ -211,6 +273,73 @@ int registry_certify_lora(PrimitiveRegistry *reg, const char *name,
 int registry_lora_is_certified(const PrimitiveRegistry *reg, const char *name) {
     RegistryEntry *e = find_entry((PrimitiveRegistry *)reg, name);
     return (e && e->lora && e->lora_certified) ? 1 : 0;
+}
+
+/* ---- governed tick action (orchestrator) ---------------------------------- */
+registry_lora_tick_opts registry_lora_tick_defaults(void) {
+    registry_lora_tick_opts o;
+    o.min_faults = 64;         /* enough pairs for a meaningful train+holdout split */
+    o.holdout_frac = 0.25;
+    o.teach = registry_lora_defaults();
+    o.cert = registry_lora_cert_defaults();
+    o.cert.max_regressions = -1;   /* set by policy; -1 => rate-agnostic, rely on net gain */
+    return o;
+}
+
+int registry_lora_tick(PrimitiveRegistry *reg, const registry_lora_tick_opts *opt,
+                       registry_lora_tick_report *report) {
+    if (!reg) return -1;
+    registry_lora_tick_opts o = opt ? *opt : registry_lora_tick_defaults();
+    size_t seen = 0, taught = 0, certd = 0, rej = 0;
+    for (size_t i = 0; i < reg->count; i++) {
+        RegistryEntry *e = &reg->entries[i];
+        if (!e->btn || !e->queue || !e->name) continue;
+        RetrainQueue *q = e->queue;
+        const size_t n = q->labeled_count;
+        if (n < o.min_faults) continue;
+        const int in = (int)q->input_count, out = (int)q->output_count;
+        if (in <= 0 || out <= 0) continue;
+        size_t nh = (size_t)((double)n * o.holdout_frac);
+        if (nh < 1) nh = 1;
+        if (nh >= n) nh = n / 2;
+        size_t nt = n - nh;
+        if (nt < 1) continue;
+        seen++;
+        /* teach on the first nt pairs, certify on the last nh */
+        if (teach_pairs(e, q->labeled_inputs, q->labeled_targets, nt, &o.teach, NULL) != 0)
+            continue;
+        taught++;
+        int pass = registry_certify_lora(reg, e->name,
+                       q->labeled_inputs + nt * (size_t)in,
+                       q->labeled_targets + nt * (size_t)out, nh, &o.cert, NULL);
+        if (pass == 1) certd++;
+        else { registry_lora_detach(reg, e->name); rej++; }
+    }
+    if (report) { report->units_seen = seen; report->taught = taught;
+                  report->certified = certd; report->rejected = rej; }
+    return 0;
+}
+
+/* ---- orchestrator install (arms the serve + tick hooks) ------------------- */
+static registry_lora_tick_opts g_tick_opts;
+static int g_tick_opts_set = 0;
+
+static void lora_tick_impl(PrimitiveRegistry *reg) {
+    registry_lora_tick(reg, g_tick_opts_set ? &g_tick_opts : NULL, NULL);
+}
+
+void registry_lora_install_orchestrator(PrimitiveRegistry *reg, const registry_lora_tick_opts *opt) {
+    if (!reg) return;
+    g_tick_opts = opt ? *opt : registry_lora_tick_defaults();
+    g_tick_opts_set = 1;
+    registry_lora_enable_serving(reg);   /* serve hook + g_lora_reg */
+    g_cnet_lora_tick_hook = lora_tick_impl;
+}
+
+void registry_lora_uninstall_orchestrator(PrimitiveRegistry *reg) {
+    g_cnet_lora_tick_hook = NULL;
+    g_tick_opts_set = 0;
+    registry_lora_disable_serving(reg);
 }
 
 /* ---- live-serving hook (executors call this after btn_forward) ------------- */

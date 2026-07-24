@@ -194,6 +194,13 @@ typedef void (*CnetLoraServeHook)(const BinaryTransformNetwork *btn,
                                   const double *input, double *raw, size_t out_len);
 extern CnetLoraServeHook g_cnet_lora_serve_hook;
 
+/* Governed adapter-maintenance hook: the orchestrator (personal_ai_tick) calls
+   it once per tick to teach/certify/attach adapters from units' fault queues.
+   NULL => off (default). Installed by registry_lora_install_orchestrator. CCE-
+   free so personal_ai.c and the core stay free of any CCE dependency. */
+typedef void (*CnetLoraTickHook)(PrimitiveRegistry *reg);
+extern CnetLoraTickHook g_cnet_lora_tick_hook;
+
 typedef struct {
     const BinaryTransformNetwork *steps[ROUTE_MAX_STEPS];
     const char *names[ROUTE_MAX_STEPS];

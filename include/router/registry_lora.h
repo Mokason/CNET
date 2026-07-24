@@ -92,6 +92,30 @@ void registry_lora_detach(PrimitiveRegistry *reg, const char *name);
 void registry_lora_enable_serving(PrimitiveRegistry *reg);
 void registry_lora_disable_serving(PrimitiveRegistry *reg);
 
+/* ---- governed adapter action (orchestrator tick) ------------------------- */
+typedef struct {
+    size_t min_faults;                 /* act only on units with >= this many labeled pairs */
+    double holdout_frac;               /* fraction of pairs reserved for certification */
+    registry_lora_opts teach;          /* rank / alpha / training */
+    registry_lora_cert_policy cert;    /* accept/reject policy */
+} registry_lora_tick_opts;
+registry_lora_tick_opts registry_lora_tick_defaults(void);
+
+typedef struct { size_t units_seen, taught, certified, rejected; } registry_lora_tick_report;
+
+/* One governed pass over the registry: for each unit with >= min_faults labeled
+   pairs, teach a rank-r adapter on a train split and certify on a held-out split
+   (the gate). PASS opens the serve gate; FAIL detaches the candidate. Returns 0.
+   This is the action the live orchestrator invokes each tick. */
+int registry_lora_tick(PrimitiveRegistry *reg, const registry_lora_tick_opts *opt,
+                       registry_lora_tick_report *report);
+
+/* Install/uninstall the adapter action in the live orchestrator: enables serving
+   AND arms the tick hook (g_cnet_lora_tick_hook), so personal_ai_tick runs
+   registry_lora_tick each pass. `opt` NULL => defaults. OFF until installed. */
+void registry_lora_install_orchestrator(PrimitiveRegistry *reg, const registry_lora_tick_opts *opt);
+void registry_lora_uninstall_orchestrator(PrimitiveRegistry *reg);
+
 #ifdef __cplusplus
 }
 #endif

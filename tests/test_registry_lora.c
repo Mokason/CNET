@@ -229,6 +229,31 @@ int main(void) {
     }
     CHECK(err_detach == 0.0, "after detach, serving is the exact frozen base (zero overhead)");
 
+    /* ---- governed orchestrator action: registry_lora_tick (teach+certify) ---- */
+    {
+        /* the unit's 300-pair labeled queue survives the detach above */
+        registry_lora_tick_opts topt = registry_lora_tick_defaults();
+        topt.min_faults = 64;
+        topt.cert.argmax_mode = 0;          /* regression target => MSE-mode cert */
+        topt.cert.max_regressions = -1;     /* rate-agnostic; rely on net gain */
+        registry_lora_tick_report trep;
+        int trc = registry_lora_tick(&reg, &topt, &trep);
+        printf("   (tick: seen=%zu taught=%zu certified=%zu rejected=%zu)\n",
+               trep.units_seen, trep.taught, trep.certified, trep.rejected);
+        CHECK(trc == 0, "registry_lora_tick returns 0");
+        CHECK(trep.taught == 1 && trep.certified == 1,
+              "tick taught AND certified the faulted unit (train/holdout split)");
+        CHECK(registry_lora_is_certified(&reg, "unit"),
+              "tick left the unit's adapter certified — the executor will serve it");
+
+        registry_lora_tick_opts hi = topt; hi.min_faults = 100000;
+        registry_lora_tick_report r2;
+        registry_lora_tick(&reg, &hi, &r2);
+        CHECK(r2.units_seen == 0, "tick skips units below min_faults");
+
+        registry_lora_detach(&reg, "unit");
+    }
+
     registry_free(&reg);
     btn_free(&base);
     printf("\n%s (%d failures)\n", g_fail ? "TESTS FAILED" : "ALL TESTS PASSED", g_fail);

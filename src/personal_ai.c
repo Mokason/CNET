@@ -398,6 +398,12 @@ int personal_ai_tick(PersonalAi *ai, GapLaneTickReport *tick_rep) {
                         cr.proposed, cr.skipped_covered);
         }
     }
+    /* Governed adapter maintenance: when installed (opt-in via
+       registry_lora_install_orchestrator), teach + certify low-rank adapters
+       from units' accumulated fault queues. NULL by default => no-op, so the
+       tick is byte-identical unless a caller arms the hook. CCE-free call. */
+    if (g_cnet_lora_tick_hook)
+        g_cnet_lora_tick_hook(&ai->lane.reg);
     return rc;
 }
 

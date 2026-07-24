@@ -180,10 +180,36 @@ adapters pass a ≤5% regression policy (rank-4 +98/−4 on the val set) and get
 served, while a zero-regression policy rejects (rank-8 +114/−9 → FAIL) and the
 executor falls back to the base (accuracy stays at the 86/300 baseline).
 
+## Orchestrator wiring (governed adapter maintenance)
+The full lifecycle — teach → certify → serve — runs as a governed action in the
+live orchestrator. `personal_ai_tick` (which already drives gap-lane, structure-
+mine, and curiosity over `ai->lane.reg`) calls a CCE-free hook
+`g_cnet_lora_tick_hook` once per tick; NULL by default, so the tick is
+byte-identical unless armed. `registry_lora_install_orchestrator(reg, opts)`
+arms both the serve hook and the tick hook (opt-in). Each pass,
+`registry_lora_tick`:
+
+- skips units with fewer than `min_faults` labeled queue pairs;
+- for the rest, splits the queue train/holdout, teaches a rank-r adapter on the
+  train split, and **certifies on the held-out split** (the gate);
+- a PASS opens the serve gate (the executor now serves base+delta); a FAIL
+  detaches the candidate. So an adapter only ever reaches production after
+  clearing the held-out check — automatically, each tick.
+
+`personal_ai.c` stays CCE-free (it only calls the fn-ptr hook); the action lives
+in the `registry_lora` TU, installed by whatever entry point opts in.
+`test_registry_lora` covers it: one governed `registry_lora_tick` teaches AND
+certifies a faulted unit (train/holdout split) leaving it served, and skips units
+below `min_faults`. Full orchestrator stack (jtc_lora_live links personal_ai) and
+the no-CCE router targets build unchanged.
+
 ### Not done / next
 - The input stream is sampled sparse-feature vectors (oracle-labeled); faults are
   now genuinely executor-detected, but the *distribution* is still synthetic —
   the final step is a queue from real production tool-call traffic.
+- An end-to-end run of `personal_ai_tick` driving the action needs a loaded base
+  (`personal_ai_open`); the governed action itself is unit-tested via
+  `registry_lora_tick`, and the tick's hook call is compiled into the orchestrator.
 - Try `diff_mode=EXACT` via the `cce_learn` cascade path as an alternative
   trainer; measure vs the explicit Adam here.
 - Head-width `B:[r,out]` grows with vocab for a true logit head — benchmark the
