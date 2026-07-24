@@ -123,6 +123,88 @@ double cce_lily_eval_mse(const cce_lily *ly, const float *baseW,
     return se / (double)(n * (size_t)d);
 }
 
+/* ---- training-data collection through the deep forward --------------------- */
+typedef struct { float *out; int L, d; int cur; } lily_cap_t;
+static void lily_capture_hook(int layer, float *residual, int width, void *ctx) {
+    lily_cap_t *c = (lily_cap_t *)ctx;
+    if (!c || layer < 0 || layer >= c->L || width != c->d) return;
+    memcpy(c->out + ((size_t)c->cur * c->L + layer) * c->d, residual, (size_t)c->d * sizeof(float));
+}
+
+cce_result cce_lily_collect(struct cce_ds_host *h, const float *inputs, size_t n, float *out) {
+    if (!h || !inputs || !out || n == 0) return CCE_ERR_INVALID_ARG;
+    const int d = h->d_model, L = h->n_layer;
+    lily_cap_t c = { out, L, d, 0 };
+    CceLayerAdaptHook oldh = g_cce_layer_adapt_hook; void *oldc = g_cce_layer_adapt_ctx;
+    g_cce_layer_adapt_hook = lily_capture_hook; g_cce_layer_adapt_ctx = &c;
+    for (size_t s = 0; s < n; s++) {
+        c.cur = (int)s;
+        cce_ds_host_reset(h);
+        memcpy(h->residual, inputs + s * (size_t)d, (size_t)d * sizeof(float));
+        cce_ds_host_forward_token(h);
+    }
+    g_cce_layer_adapt_hook = oldh; g_cce_layer_adapt_ctx = oldc;
+    return CCE_OK;
+}
+
+/* Per-layer residual distillation (no base backprop). */
+double cce_lily_train_residual(cce_lily *ly, const float *base_res,
+                               const float *target_res, size_t n, const cce_lily_train_opts *opt) {
+    if (!ly || !base_res || !target_res || n == 0) return -1.0;
+    cce_lily_train_opts o = opt ? *opt : cce_lily_train_defaults();
+    const int d = ly->width, r = ly->rank, L = ly->layers;
+    const float s = scale(ly);
+    const size_t na = (size_t)(ly->shared ? 1 : L) * d * r, nb = (size_t)L * r * d;
+    float *gA = calloc(na, sizeof(float)), *gB = calloc(nb, sizeof(float));
+    float *mA = calloc(na, sizeof(float)), *vA = calloc(na, sizeof(float));
+    float *mB = calloc(nb, sizeof(float)), *vB = calloc(nb, sizeof(float));
+    float *tmp = malloc((size_t)r * sizeof(float)), *e = malloc((size_t)d * sizeof(float));
+    if (!gA || !gB || !mA || !vA || !mB || !vB || !tmp || !e) {
+        free(gA); free(gB); free(mA); free(vA); free(mB); free(vB); free(tmp); free(e); return -1.0;
+    }
+    const float b1 = 0.9f, b2 = 0.999f, eps = 1e-8f;
+    double last = -1.0;
+    for (int ep = 1; ep <= o.epochs; ep++) {
+        memset(gA, 0, na * sizeof(float)); memset(gB, 0, nb * sizeof(float));
+        double se = 0.0;
+        for (size_t sIdx = 0; sIdx < n; sIdx++) {
+            for (int l = 0; l < L; l++) {
+                const float *ri = base_res + ((size_t)sIdx * L + l) * d;
+                const float *to = target_res + ((size_t)sIdx * L + l) * d;
+                const float *A = Aptr(ly, l);
+                const float *B = ly->B + (size_t)l * r * d;
+                float *gAl = gA + (size_t)(ly->shared ? 0 : l) * d * r;
+                float *gBl = gB + (size_t)l * r * d;
+                for (int k = 0; k < r; k++) { float a = 0; for (int i = 0; i < d; i++) a += ri[i] * A[i * r + k]; tmp[k] = a; }
+                for (int oo = 0; oo < d; oo++) {
+                    float pred = 0; for (int k = 0; k < r; k++) pred += s * tmp[k] * B[k * d + oo];
+                    e[oo] = pred - (to[oo] - ri[oo]); se += (double)e[oo] * e[oo];
+                }
+                for (int k = 0; k < r; k++) {
+                    float accb = 0; float *gBk = gBl + (size_t)k * d; const float *Bk = B + (size_t)k * d; float st = s * tmp[k];
+                    for (int oo = 0; oo < d; oo++) { gBk[oo] += st * e[oo]; accb += e[oo] * Bk[oo]; }
+                    float sb = s * accb;
+                    for (int i = 0; i < d; i++) gAl[(size_t)i * r + k] += ri[i] * sb;
+                }
+            }
+        }
+        const float invn = 1.0f / (float)(n * (size_t)L);
+        for (size_t i = 0; i < na; i++) { float g = gA[i] * invn;
+            if (o.use_adam) { mA[i]=b1*mA[i]+(1-b1)*g; vA[i]=b2*vA[i]+(1-b2)*g*g;
+                float mh=mA[i]/(1-powf(b1,(float)ep)), vh=vA[i]/(1-powf(b2,(float)ep)); ly->A[i]-=o.lr*mh/(sqrtf(vh)+eps); }
+            else ly->A[i]-=o.lr*g; }
+        for (size_t i = 0; i < nb; i++) { float g = gB[i] * invn;
+            if (o.use_adam) { mB[i]=b1*mB[i]+(1-b1)*g; vB[i]=b2*vB[i]+(1-b2)*g*g;
+                float mh=mB[i]/(1-powf(b1,(float)ep)), vh=vB[i]/(1-powf(b2,(float)ep)); ly->B[i]-=o.lr*mh/(sqrtf(vh)+eps); }
+            else ly->B[i]-=o.lr*g; }
+        last = se / (double)(n * (size_t)L * d);
+        if (o.log_every && (ep % o.log_every == 0 || ep == 1)) printf("  [lily-distill] epoch %d mse=%.6g\n", ep, last);
+        if (o.target_loss > 0.0f && last <= o.target_loss) break;
+    }
+    free(gA); free(gB); free(mA); free(vA); free(mB); free(vB); free(tmp); free(e);
+    return last;
+}
+
 /* ---- interior-layer serving hook -----------------------------------------
    Called from the DS forward after each layer: residual += (alpha/r) B_L (A_L r). */
 static void lily_serve_impl(int layer, float *residual, int width, void *ctx) {

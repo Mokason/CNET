@@ -76,17 +76,37 @@ The hook is a plain function pointer (no adapter dependency in the DS runtime),
 one active adapter at a time (prototype). `ly->width` must equal `d_model` and
 `ly->layers` its `n_layer`.
 
+## Training-data collection through the deep forward (`make cce_lily_collect`)
+The teach half is now wired end to end — **no autograd through the frozen
+MLA+MoE base required**:
+
+- `cce_lily_collect(host, inputs, n, out)` runs the real DS forward on each input
+  and captures the residual at **every layer's hook point** into
+  `out[n * n_layer * d_model]` (via a capture variant of the same layer hook).
+  That is the per-layer training-data collection loop through the live forward.
+- `cce_lily_train_residual(ly, base_res, target_res, n)` fits the adapter by
+  **residual distillation**: at each layer, `delta_L(base_res_L) ≈ target_res_L −
+  base_res_L`, training the shared `A` + per-layer `B_L` with Adam. Each layer's
+  target is the collected residual correction, so there is no backprop through
+  the base — it works through a frozen deep forward that has no autograd.
+
+`cce_lily_collect` verifies against the synthetic DS runtime: it captures the
+live forward's evolved residual (not the input), a planted per-layer correction
+distill-trains to mse 1.2e-9, and the adapter **recovers that correction on
+held-out residuals** (max diff 2.2e-4) — collect → distill → recover, all through
+the real forward. In deployment the `target_res` is a teacher's per-layer
+residual stream (a stronger same-width model, or a corrected path); here it is
+planted to prove the pipeline.
+
 ## Scope / not done (honest)
-- Serving is wired into the **DS residual runtime**; the GGUF token path and the
-  attention/MLP-projection variants (adapting q/k/v/o instead of the residual)
-  are not — this hook adapts the residual stream, the simplest and most general
-  injection.
-- **Training an adapter against the deep forward is not wired end-to-end here.**
-  `cce_lily_train` fits against a supplied frozen linear stack; teaching a real
-  DS-base adapter would collect (residual-in, teacher-out) pairs from the live
-  forward and train through it — a next step. The `registry_lora`
-  certify/orchestrator machinery (teach → certify → serve, regression gate) is
-  parametrization-agnostic and would host Lily unchanged.
+- Serving + collection are wired into the **DS residual runtime**; the GGUF token
+  path and the q/k/v/o-projection variants are not — this adapts the residual
+  stream, the simplest and most general injection.
+- Residual distillation needs a **teacher that exposes its per-layer residual
+  stream** aligned to the base (same width). The prototype plants the target; a
+  real teacher (stronger model / corrected path) is the deployment input. The
+  `registry_lora` certify/orchestrator machinery (teach → certify → serve,
+  regression gate) is parametrization-agnostic and would host Lily unchanged.
 - Deep chains need EXACT-mode gradients (implemented here) — CNET's per-layer
   local-credit learner would not couple the shared `A` correctly.
 - Raw-float storage keeps the prototype self-contained; the weight-store /

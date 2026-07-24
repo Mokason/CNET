@@ -79,6 +79,27 @@ double cce_lily_train(cce_lily *ly, const float *baseW,
 double cce_lily_eval_mse(const cce_lily *ly, const float *baseW,
                          const float *inputs, const float *targets, size_t n);
 
+/* ---- training-data collection through the deep forward ------------------- */
+struct cce_ds_host;   /* forward decl (cce_ds_runtime.h) */
+
+/* Run the DS forward on each input (n rows of width d_model, each set as the
+   initial residual) and CAPTURE the residual at every layer's hook point into
+   out_residuals[n * n_layer * d_model] (row-major [sample][layer][d]) — the
+   per-layer training-data collection loop through the live deep forward. Any
+   previously-installed layer hook is saved and restored. */
+cce_result cce_lily_collect(struct cce_ds_host *h, const float *inputs, size_t n,
+                            float *out_residuals);
+
+/* Fit the adapter from collected per-layer data by residual distillation: at
+   each layer L, delta_L(base_res_L) ~= (target_res_L - base_res_L). Trains A
+   (shared) + B_L per layer with Adam and NO base backprop — each layer's target
+   is the collected residual correction, so it works through a frozen MLA+MoE
+   base that has no autograd. base_res/target_res are [n * layers * width].
+   Returns final MSE (>=0) or a negative cce_result. */
+double cce_lily_train_residual(cce_lily *ly, const float *base_res,
+                               const float *target_res, size_t n,
+                               const cce_lily_train_opts *opt);
+
 /* ---- interior-layer serving (deep-base residual stream) ------------------ */
 /* Install this adapter as the DS forward's interior-layer hook: after each layer
    L, the residual gets += (alpha/r) B_L (A_L · residual). Off by default (hook
