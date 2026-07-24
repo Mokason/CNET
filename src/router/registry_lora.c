@@ -73,9 +73,11 @@ int registry_teach_lora(PrimitiveRegistry *reg, const char *name,
     double post = cce_lora_train(adp, X, R, n, &o.train);
     if (post < 0.0) { cce_lora_free(adp); free(adp); free(X); free(R); return -1; }
 
-    /* Attach (replace any prior). Borrowed by the registry. */
+    /* Attach as an uncertified candidate (replace any prior). The executor hook
+       will not serve it until registry_certify_lora passes. Borrowed by reg. */
     if (e->lora) { cce_lora_free(e->lora); free(e->lora); }
     e->lora = adp;
+    e->lora_certified = 0;
 
     if (stats) {
         stats->pairs = n;
@@ -122,7 +124,93 @@ int registry_has_lora(const PrimitiveRegistry *reg, const char *name) {
 
 void registry_lora_detach(PrimitiveRegistry *reg, const char *name) {
     RegistryEntry *e = find_entry(reg, name);
-    if (e && e->lora) { cce_lora_free(e->lora); free(e->lora); e->lora = NULL; }
+    if (e && e->lora) { cce_lora_free(e->lora); free(e->lora); e->lora = NULL; e->lora_certified = 0; }
+}
+
+/* ---- certify-before-serve ------------------------------------------------- */
+registry_lora_cert_policy registry_lora_cert_defaults(void) {
+    registry_lora_cert_policy p;
+    p.argmax_mode = 1;       /* classifiers are the common case */
+    p.max_regressions = 0;   /* set >0 to tolerate a few right->wrong flips */
+    p.min_net_gain = 1;      /* must fix at least one net */
+    return p;
+}
+
+static int argmax_d(const double *v, int n) {
+    int mi = 0; for (int i = 1; i < n; i++) if (v[i] > v[mi]) mi = i; return mi;
+}
+
+int registry_certify_lora(PrimitiveRegistry *reg, const char *name,
+                          const double *inputs, const double *targets, size_t n,
+                          const registry_lora_cert_policy *policy,
+                          registry_lora_cert_report *report) {
+    RegistryEntry *e = find_entry(reg, name);
+    if (!e || !e->btn || !e->lora || !inputs || !targets || n == 0) return -1;
+    const cce_lora *lo = (const cce_lora *)e->lora;
+    const int in = lo->in_dim, out = lo->out_dim;
+    if (out > 64) return -1;   /* per-sample scratch cap (prototype) */
+    registry_lora_cert_policy pol = policy ? *policy : registry_lora_cert_defaults();
+
+    cce_tensor x, y; int xs[1] = { in }, ys[1] = { out };
+    if (cce_tensor_alloc(&x, xs, 1) != CCE_OK) return -1;
+    if (cce_tensor_alloc(&y, ys, 1) != CCE_OK) { cce_tensor_free(&x); return -1; }
+
+    int base_correct = 0, adp_correct = 0, fixes = 0, regress = 0;
+    double base_se = 0.0, adp_se = 0.0;
+    for (size_t s = 0; s < n; s++) {
+        const double *xin = inputs + s * (size_t)in;
+        const double *tgt = targets + s * (size_t)out;
+        const double *base = btn_forward(e->btn, xin);      /* borrowed buffer */
+        if (!base) { cce_tensor_free(&x); cce_tensor_free(&y); return -1; }
+        for (int j = 0; j < in; j++) x.data[j] = (float)xin[j];
+        for (int o = 0; o < out; o++) y.data[o] = 0.0f;
+        cce_lora_apply(lo, &x, &y);                          /* delta */
+
+        double be = 0.0, ae = 0.0;
+        double adapted[64]; double basecpy[64];
+        for (int o = 0; o < out; o++) {
+            basecpy[o] = base[o];
+            adapted[o] = base[o] + (double)y.data[o];
+            double db = base[o] - tgt[o], da = adapted[o] - tgt[o];
+            be += db * db; ae += da * da;
+        }
+        base_se += be; adp_se += ae;
+
+        if (pol.argmax_mode) {
+            int tt = argmax_d(tgt, out);
+            int bc = (argmax_d(basecpy, out) == tt);
+            int ac = (argmax_d(adapted, out) == tt);
+            base_correct += bc; adp_correct += ac;
+            if (!bc && ac) fixes++;
+            if (bc && !ac) regress++;
+        } else {
+            if (ae < be - 1e-12) fixes++;
+            else if (ae > be + 1e-12) regress++;
+        }
+    }
+    cce_tensor_free(&x); cce_tensor_free(&y);
+
+    int passed = 1;
+    if (pol.max_regressions >= 0 && regress > pol.max_regressions) passed = 0;
+    if ((fixes - regress) < pol.min_net_gain) passed = 0;
+    e->lora_certified = passed;
+
+    if (report) {
+        report->passed = passed;
+        report->n = n;
+        report->base_correct = base_correct;
+        report->adapter_correct = adp_correct;
+        report->fixes = fixes;
+        report->regressions = regress;
+        report->base_mse = base_se / (double)(n * (size_t)out);
+        report->adapter_mse = adp_se / (double)(n * (size_t)out);
+    }
+    return passed;
+}
+
+int registry_lora_is_certified(const PrimitiveRegistry *reg, const char *name) {
+    RegistryEntry *e = find_entry((PrimitiveRegistry *)reg, name);
+    return (e && e->lora && e->lora_certified) ? 1 : 0;
 }
 
 /* ---- live-serving hook (executors call this after btn_forward) ------------- */
@@ -134,7 +222,7 @@ static void lora_serve_impl(const BinaryTransformNetwork *btn,
     if (!reg || !reg->lora_serving_enabled || !btn || !input || !raw) return;
     for (size_t i = 0; i < reg->count; i++) {
         const RegistryEntry *e = &reg->entries[i];
-        if (e->btn != btn || !e->lora) continue;
+        if (e->btn != btn || !e->lora || !e->lora_certified) continue;  /* certify-before-serve */
         const cce_lora *lo = (const cce_lora *)e->lora;
         int inc = lo->in_dim, outc = lo->out_dim;
         if ((size_t)outc > out_len) outc = (int)out_len;   /* never overrun caller's buffer */

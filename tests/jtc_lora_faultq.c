@@ -92,9 +92,19 @@ int main(void) {
     printf("held-out baseline (serving off): %d/%d = %.1f%%\n",
            base_ok, nte, 100.0 * base_ok / nte);
 
-    /* ---- teach on the fault-only queue, sweep rank, measure fixes/regressions ---- */
-    printf("\n%-6s %8s %9s %9s %8s %11s\n",
-           "rank", "params", "acc_on", "fixes", "regress", "net");
+    /* ---- separate certification/validation set (one-hot targets) ---- */
+    const int nvc = 200;
+    double *VF = malloc((size_t)nvc * IN * sizeof(double));
+    double *VT = malloc((size_t)nvc * OUT * sizeof(double));   /* teacher one-hot */
+    for (int s = 0; s < nvc; s++) {
+        double *f = VF + (size_t)s * IN;
+        sample_feat(f, IN);
+        cnet_jtc_hermetic_teacher(f, VT + (size_t)s * OUT, NULL);
+    }
+
+    /* ---- teach on the fault-only queue, sweep rank, CERTIFY, then measure ---- */
+    printf("\n%-6s %8s %14s %9s %9s %8s %11s\n",
+           "rank", "params", "cert(val)", "acc_on", "fixes", "regress", "net");
     int ranks[] = { 4, 8 };
     for (size_t ri = 0; ri < sizeof(ranks) / sizeof(ranks[0]); ri++) {
         registry_lora_opts opt = registry_lora_defaults();
@@ -103,21 +113,52 @@ int main(void) {
         registry_lora_stats st;
         if (registry_teach_lora(&reg, unit, &opt, &st) != 0) { printf("FAIL teach r%d\n", ranks[ri]); return 1; }
 
-        registry_lora_enable_serving(&reg);
+        /* certify-before-serve: gate on held-out regressions (argmax) */
+        registry_lora_cert_policy cp = registry_lora_cert_defaults();  /* argmax_mode */
+        cp.max_regressions = nvc / 20;   /* tolerate <=5% right->wrong on the val set */
+        cp.min_net_gain = 1;
+        registry_lora_cert_report cr;
+        int certified = registry_certify_lora(&reg, unit, VF, VT, nvc, &cp, &cr);
+        char cert_str[16];
+        snprintf(cert_str, sizeof cert_str, "%s(+%d/-%d)",
+                 certified ? "PASS" : "FAIL", cr.fixes, cr.regressions);
+
         int on_ok = 0, fixes = 0, regress = 0;
+        registry_lora_enable_serving(&reg);            /* hook only serves if certified */
         for (int s = 0; s < nte; s++) {
             int on = serve_tool(&plan, HF + (size_t)s * IN, IN, OUT);
             int correct = (on == HT[s]);
             if (correct) on_ok++;
-            if (base_tool[s] != HT[s] && correct) fixes++;         /* wrong -> right */
-            if (base_tool[s] == HT[s] && !correct) regress++;       /* right -> wrong */
+            if (base_tool[s] != HT[s] && correct) fixes++;
+            if (base_tool[s] == HT[s] && !correct) regress++;
         }
         registry_lora_disable_serving(&reg);
-        printf("%-6d %8zu %6d/%d %8d %8d %+9d\n",
-               ranks[ri], st.params, on_ok, nte, fixes, regress, fixes - regress);
+        printf("%-6d %8zu %14s %6d/%d %8d %8d %+9d\n",
+               ranks[ri], st.params, cert_str, on_ok, nte, fixes, regress, fixes - regress);
         registry_lora_detach(&reg, unit);
     }
-    printf("(queue = %d real faults; fixes should exceed regressions for a net win)\n", faults);
+    printf("(queue = %d real faults; only a certified adapter is served — else acc_on stays at baseline)\n", faults);
+
+    /* the gate has teeth: a zero-regression policy rejects the fault adapter
+       (it perturbs a few correct val cases), so the executor serves the base. */
+    {
+        registry_lora_opts opt = registry_lora_defaults();
+        opt.rank = 8; opt.alpha = 16.0f; opt.train.epochs = 1500; opt.train.lr = 0.02f;
+        registry_teach_lora(&reg, unit, &opt, NULL);
+        registry_lora_cert_policy strict = registry_lora_cert_defaults();
+        strict.max_regressions = 0;
+        registry_lora_cert_report cr;
+        int certified = registry_certify_lora(&reg, unit, VF, VT, nvc, &strict, &cr);
+        registry_lora_enable_serving(&reg);
+        int served_ok = 0;
+        for (int s = 0; s < nte; s++)
+            if (serve_tool(&plan, HF + (size_t)s * IN, IN, OUT) == HT[s]) served_ok++;
+        registry_lora_disable_serving(&reg);
+        printf("strict gate (max_regress=0): cert=%s(+%d/-%d) -> executor acc %d/%d == baseline %d (rejected: base served)\n",
+               certified ? "PASS" : "FAIL", cr.fixes, cr.regressions, served_ok, nte, base_ok);
+        registry_lora_detach(&reg, unit);
+    }
+    free(VF); free(VT);
 
     free(HF); free(HT); free(base_tool);
     registry_free(&reg);

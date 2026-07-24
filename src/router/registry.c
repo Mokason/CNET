@@ -511,6 +511,7 @@ int registry_add(PrimitiveRegistry *reg, BinaryTransformNetwork *btn, const char
     reg->entries[idx].recipe = NULL;
     reg->entries[idx].expand_in_low = 0;
     reg->entries[idx].lora = NULL;   /* borrowed adapter, attached by registry_lora.* */
+    reg->entries[idx].lora_certified = 0;   /* uncertified until registry_certify_lora */
     reg->count++;
 
     /* Index name; fail-open to linear find if hash OOM (table cleared).

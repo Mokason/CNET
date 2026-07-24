@@ -115,6 +115,11 @@ typedef struct {
        served unchanged (zero overhead, default). Forward-declared so core
        registry TUs need no CCE dependency. */
     struct cce_lora *lora;
+    /* Certify-before-serve gate: the executor hook applies `lora` only when this
+       is nonzero. registry_teach_lora attaches a candidate with it 0;
+       registry_certify_lora sets it from a held-out fixes-vs-regressions check.
+       Zero-init default => an untested adapter never reaches production. */
+    int lora_certified;
 } RegistryEntry;
 
 typedef struct {

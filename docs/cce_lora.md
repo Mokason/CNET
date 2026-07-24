@@ -158,12 +158,32 @@ non-zero** — fault-only training perturbs a few of the correct cases, so a
 production rollout should watch the right→wrong count, not just accuracy. rank-4
 (104 params) again beats dense (144) on params.
 
+## Certify-before-serve gate
+An adapter reaches the executor only after passing a held-out check — the
+regressions the fault-queue run exposed are gated on explicitly. `RegistryEntry`
+gains one `int lora_certified` (NULL-init 0); the executor hook serves an adapter
+only when `lora && lora_certified`, so `registry_teach_lora` attaches an
+**uncertified candidate that never serves**. `registry_certify_lora(reg, name,
+inputs, targets, n, policy, &report)` runs the adapter vs the base on held-out
+data and sets the gate from the result:
+
+- `policy.argmax_mode` — correctness = argmax match (classifiers) or per-sample
+  squared error.
+- `policy.max_regressions` — reject if right→wrong exceeds this.
+- `policy.min_net_gain` — require `fixes − regressions ≥ this`.
+
+`test_registry_lora` proves the gate: a freshly-taught adapter is uncertified and
+the executor returns the **frozen base**; after `registry_certify_lora` PASS the
+same executor serves base+delta; a policy the adapter can't meet clears the gate
+again. In `jtc_lora_faultq` the gate runs in the real scenario — the fault-only
+adapters pass a ≤5% regression policy (rank-4 +98/−4 on the val set) and get
+served, while a zero-regression policy rejects (rank-8 +114/−9 → FAIL) and the
+executor falls back to the base (accuracy stays at the 86/300 baseline).
+
 ### Not done / next
 - The input stream is sampled sparse-feature vectors (oracle-labeled); faults are
   now genuinely executor-detected, but the *distribution* is still synthetic —
   the final step is a queue from real production tool-call traffic.
-- Guard rollout on the regression count (a certify-before-serve gate on the
-  adapter, using the held-out right→wrong rate).
 - Try `diff_mode=EXACT` via the `cce_learn` cascade path as an alternative
   trainer; measure vs the explicit Adam here.
 - Head-width `B:[r,out]` grows with vocab for a true logit head — benchmark the

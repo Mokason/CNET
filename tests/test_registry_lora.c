@@ -105,6 +105,55 @@ int main(void) {
            err_base / (m * out), err_adp / (m * out));
     CHECK(err_adp < err_base * 0.25, "served adapter recovers teacher on held-out inputs");
 
+    /* ---- certify-before-serve gate: uncertified adapter must NOT be served ---- */
+    {
+        RoutePlan plan; memset(&plan, 0, sizeof plan);
+        plan.steps[0] = &base; plan.names[0] = "unit"; plan.length = 1; plan.strict = 0;
+        for (int i = 0; i < in; i++) x[i] = rd();
+        const double *bp = btn_forward(&base, x);
+        double base_only[8]; for (int o = 0; o < out; o++) base_only[o] = bp[o];
+
+        registry_lora_enable_serving(&reg);
+        CHECK(!registry_lora_is_certified(&reg, "unit"), "freshly-taught adapter is uncertified");
+        double out_uncert[8];
+        route_execute_ex(&plan, x, in, out_uncert, out, NULL);
+        CHECK(maxabsdiff(out_uncert, base_only, out) == 0.0,
+              "GATE: uncertified adapter is NOT served (executor returns frozen base)");
+
+        /* validation set: target = base + the same planted correction (MSE mode) */
+        const size_t nv = 96;
+        double *vx = malloc(nv * in * sizeof(double)), *vt = malloc(nv * out * sizeof(double));
+        for (size_t s = 0; s < nv; s++) {
+            double xx[16]; for (int i = 0; i < in; i++) xx[i] = rd();
+            const double *b = btn_forward(&base, xx);
+            double corr[8]; MKCORR(xx, corr);
+            for (int i = 0; i < in; i++) vx[s * in + i] = xx[i];
+            for (int o = 0; o < out; o++) vt[s * out + o] = b[o] + corr[o];
+        }
+        registry_lora_cert_policy pol = registry_lora_cert_defaults();
+        pol.argmax_mode = 0; pol.max_regressions = 0; pol.min_net_gain = 1;
+        registry_lora_cert_report rep;
+        int pass = registry_certify_lora(&reg, "unit", vx, vt, nv, &pol, &rep);
+        printf("   (cert: base_mse=%.4g adapter_mse=%.4g fixes=%d regress=%d -> %s)\n",
+               rep.base_mse, rep.adapter_mse, rep.fixes, rep.regressions, pass ? "PASS" : "FAIL");
+        CHECK(pass == 1 && registry_lora_is_certified(&reg, "unit"), "certify PASS sets the serve gate");
+        double out_cert[8];
+        route_execute_ex(&plan, x, in, out_cert, out, NULL);
+        CHECK(maxabsdiff(out_cert, base_only, out) > 1e-6,
+              "GATE: certified adapter IS served (delta applied)");
+
+        /* a policy the adapter can't meet clears the gate */
+        registry_lora_cert_policy strict = pol; strict.min_net_gain = (int)nv + 999;
+        int pass2 = registry_certify_lora(&reg, "unit", vx, vt, nv, &strict, NULL);
+        CHECK(pass2 == 0 && !registry_lora_is_certified(&reg, "unit"),
+              "GATE: a failing certification clears the serve gate");
+
+        registry_certify_lora(&reg, "unit", vx, vt, nv, &pol, NULL);  /* re-arm for the delta tests */
+        CHECK(registry_lora_is_certified(&reg, "unit"), "re-certified for the executor delta checks");
+        registry_lora_disable_serving(&reg);
+        free(vx); free(vt);
+    }
+
     /* ---- executor path: route_execute_ex applies the delta only when serving on ---- */
     {
         RoutePlan plan;

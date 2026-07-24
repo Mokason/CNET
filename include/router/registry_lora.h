@@ -39,6 +39,39 @@ typedef struct {
 int registry_teach_lora(PrimitiveRegistry *reg, const char *name,
                         const registry_lora_opts *opt, registry_lora_stats *stats);
 
+/* ---- certify-before-serve gate ------------------------------------------- */
+/* Policy for accepting a trained adapter. In argmax_mode a sample is "correct"
+   when argmax(output) == argmax(target) (classifiers/one-hot); otherwise
+   correctness is per-sample squared error (an adapter that lowers a sample's
+   error is a fix, one that raises it a regression). */
+typedef struct {
+    int argmax_mode;       /* 1 => argmax correctness; 0 => per-sample MSE */
+    int max_regressions;   /* reject if right->wrong count exceeds this (<0 => ignore) */
+    int min_net_gain;      /* require (fixes - regressions) >= this */
+} registry_lora_cert_policy;
+
+registry_lora_cert_policy registry_lora_cert_defaults(void);
+
+typedef struct {
+    int    passed;
+    size_t n;
+    int    base_correct, adapter_correct;   /* argmax_mode counts */
+    int    fixes, regressions;
+    double base_mse, adapter_mse;           /* always computed */
+} registry_lora_cert_report;
+
+/* Validate the adapter attached to `name` on a held-out set and set the entry's
+   certified gate accordingly: only a PASS lets the executor hook serve it.
+   inputs:[n*in], targets:[n*out]. Returns 1 (passed, gate set), 0 (failed, gate
+   cleared), or -1 (no adapter / dim mismatch / error). */
+int registry_certify_lora(PrimitiveRegistry *reg, const char *name,
+                          const double *inputs, const double *targets, size_t n,
+                          const registry_lora_cert_policy *policy,
+                          registry_lora_cert_report *report);
+
+/* Whether `name`'s adapter is attached AND certified (i.e. will be served). */
+int registry_lora_is_certified(const PrimitiveRegistry *reg, const char *name);
+
 /* Serve `name` on `input`: out = btn_forward(base)(input) + adapter delta.
    `out` holds output_count doubles. With no adapter attached this is exactly the
    base output (zero overhead). Returns 0 or -1. */
