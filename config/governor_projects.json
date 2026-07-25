@@ -2,6 +2,16 @@
   "version": 1,
   "projects": [
     {
+      "id": "moe_floor",
+      "title": "Close the gap to the analytic entropy floor (H2)",
+      "comment": "Held-out CE on a freshly-sampled order-2 stream. Unlike eval_jtc_delta (hermetic, fixed synthetic set, constant by construction) this metric can only fall by genuine generalisation: the model never sees a sequence twice, and H2 is computed analytically from the source.",
+      "metric": "moe_gap_to_floor",
+      "target": 0.05,
+      "weight": 3.5,
+      "active": true,
+      "prefer_lower": true
+    },
+    {
       "id": "jtc_lift",
       "title": "Raise JTC adapter lift",
       "metric": "eval_jtc_delta",

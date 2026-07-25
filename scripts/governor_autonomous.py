@@ -44,6 +44,7 @@ PINS = Path(os.environ.get("CNET_GOVERNOR_PINS", ROOT / "config/governor_pins.ya
 PROJECTS = Path(os.environ.get("CNET_GOVERNOR_PROJECTS", ROOT / "config/governor_projects.json"))
 GOAL_GRAPH = Path(os.environ.get("CNET_GOVERNOR_GOAL_GRAPH", ROOT / "config/governor_goal_graph.json"))
 META_PATH = GOV / "meta_evolved.json"
+MOE_DIR = Path(os.environ.get("CNET_MOE_DIR", ROOT / "artifacts/moe"))
 HTTP = os.environ.get("CNET_RESIDUAL_HTTP", "http://127.0.0.1:8080")
 HERMES_ERR = Path(
     os.environ.get("HERMES_ERRORS_LOG", Path.home() / ".hermes/logs/errors.log")
@@ -426,6 +427,8 @@ def collect(state: dict, pins: dict, meta: dict) -> dict[str, Any]:
 
     res = load_json(GOV / "resource_snap.json", {})
     ev = load_json(GOV / "eval_probe.json", {})
+    # MoE learning substrate: held-out CE against an analytic entropy floor.
+    moe = load_json(MOE_DIR / "state.json", {})
 
     open_n = def_n = closed_n = 0
     gaps = Path(str(BASE) + ".gaps.txt")
@@ -512,6 +515,21 @@ def collect(state: dict, pins: dict, meta: dict) -> dict[str, Any]:
         "eval_acc_on": float(ev.get("acc_on") or 0.0),
         "eval_acc_off": float(ev.get("acc_off") or 0.0),
         "seal_reject_new": int(ev.get("seal_reject_new") or 0),
+        # ---- MoE learning substrate ----
+        # moe_gap_to_floor is the one metric here that CANNOT be gamed by
+        # memorisation: the stream is freshly sampled every sequence and H2 is
+        # analytic, so it falls only on real generalisation. 99.0 when there is
+        # no state yet, so the goal fires and the first tick runs.
+        "moe_heldout_ce": float(moe.get("heldout_ce") or 0.0),
+        "moe_best_ce": float(moe.get("best_ce") or 0.0),
+        "moe_h1": float(moe.get("h1") or 0.0),
+        "moe_h2": float(moe.get("h2") or 0.0),
+        "moe_gap_to_floor": float(moe["gap_to_floor"]) if moe.get("gap_to_floor") is not None else 99.0,
+        "moe_below_h1": 1 if moe.get("below_h1") else 0,
+        "moe_certified": 1 if moe.get("certified") else 0,
+        "moe_step": int(moe.get("step") or 0),
+        "moe_action": moe.get("action") or "none",
+        "hours_since_moe": hrs("last_moe_unix"),
         "web_notes": web_notes,
         "busy": int(res.get("busy") or 0),
         "allow_heavy": int(res.get("allow_heavy") if res.get("allow_heavy") is not None else 1),
@@ -763,6 +781,17 @@ def act(name: str, sb: dict, pins: dict, state: dict, meta: dict) -> bool:
         )
         if ok:
             state["last_peft_unix"] = time.time()
+        return ok
+    if name == "run_moe_tick":
+        if pins.get("freeze_seals"):
+            return True
+        ok = run(
+            f"CNET_MOE_DIR={MOE_DIR} bash {ROOT}/scripts/cnet_moe_tick.sh "
+            f">>{GOV}/muscle.log 2>&1",
+            t=int(os.environ.get("MOE_TIMEOUT", "3000")),
+        )
+        if ok:
+            state["last_moe_unix"] = time.time()
         return ok
     if name == "run_structure_mine":
         if pins.get("freeze_seals") or sb.get("eval_veto"):

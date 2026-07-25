@@ -661,8 +661,17 @@ static void gap_lane_persist_stats(GapLane *L) {
     for (i = 0; i < L->reg.count; i++) {
         const RegistryEntry *e = &L->reg.entries[i];
         if (!e->btn || !e->name) continue;
+        /* Only for units that are actually sealed in the base. The registry
+           also holds entries with no unit behind them (rebuild candidates,
+           shadows), and stats for those can never be applied on load — they
+           would accumulate as orphan records and push stats_count past
+           unit_count, which is exactly what the honesty suite caught. */
+        if (!cnb_has_unit(&L->base, e->name)) continue;
         (void)cnb_put_stats(&L->base, e->name, e->btn);
     }
+    /* Clear records left behind by earlier writes (and by consolidation or a
+       rebuild removing a unit); the guard above only stops NEW orphans. */
+    (void)cnb_prune_orphan_stats(&L->base);
 }
 
 int gap_lane_checkpoint(GapLane *L) {

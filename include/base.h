@@ -155,6 +155,12 @@ int cnb_put_stats(CnetBase *b, const char *unit_name,
 int cnb_apply_stats(const CnetBase *b, const char *unit_name,
                     BinaryTransformNetwork *btn);
 
+/* Drop stats records whose unit is no longer sealed in the base. Such records
+   can never be applied on load and otherwise accumulate without bound (a
+   consolidation or a rebuild leaves them behind). Returns how many were
+   removed. */
+size_t cnb_prune_orphan_stats(CnetBase *b);
+
 /* ---- oracle descriptors ----------------------------------------------------
    Functions cannot persist; intent can. bind resolves each descriptor to a
    runtime fn via the caller's resolver (NULL fn = skip, counted in

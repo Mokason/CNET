@@ -97,9 +97,24 @@ def lane_totals(since_unix: float) -> dict:
     return tot
 
 
+def moe() -> dict:
+    """Primary learning substrate: held-out CE against an analytic floor."""
+    p = repo / 'artifacts/moe/state.json'
+    if not p.exists():
+        return {}
+    try:
+        d = json.loads(p.read_text())
+    except Exception:
+        return {}
+    return {k: d.get(k) for k in
+            ('step', 'heldout_ce', 'best_ce', 'h1', 'h2', 'gap_to_floor',
+             'below_h1', 'certified', 'eval_n', 'device')}
+
+
 def snapshot() -> dict:
     f = faults()
     return {
+        'moe': moe(),
         'ts': datetime.now().astimezone().isoformat(timespec='seconds'),
         't_unix': time.time(),
         'units': units(),
@@ -150,12 +165,36 @@ rep = {'baseline': b0, 'now': now, 'delta': delta,
 (gov / 'report_12h.json').write_text(json.dumps(rep, indent=2) + '\n')
 
 close_rate = (lane['closed'] / lane['examined']) if lane['examined'] else 0.0
+
+m0, m1 = b0.get('moe') or {}, now.get('moe') or {}
+if m1:
+    def _d(k):
+        a, b = m0.get(k), m1.get(k)
+        return f"{a} → {b}" if a is not None else str(b)
+    moe_md = f"""## Learning substrate: transformer-MoE vs analytic entropy floor
+
+The metric that cannot be gamed by memorisation — the markov2 stream is sampled
+fresh every sequence and H2 is computed from the source, so CE falls only on
+genuine generalisation. Certified means held-out CE below H1, the order-1
+plateau, which requires the attention to use the previous token.
+
+- step: {_d('step')}
+- held-out CE: {_d('heldout_ce')}   (uniform ~4.159)
+- floors: H1 {m1.get('h1')} (order-1 plateau) → H2 {m1.get('h2')} (true floor)
+- gap to floor: {_d('gap_to_floor')}
+- below H1 (certified): {m1.get('below_h1')} / {m1.get('certified')}
+- eval_n {m1.get('eval_n')} on {m1.get('device')}
+"""
+else:
+    moe_md = "## Learning substrate\n\n- no MoE state yet (run `make moe_tick`)\n"
+
 (gov / 'report_12h.md').write_text(f"""# CNET auto-teach 12h report
 
 - when: {now['ts']}
 - elapsed_h: {elapsed_h}
 
-## Learning (real counts, not byte proxies)
+{moe_md}
+## Lookup coverage (gap lane — secondary)
 - units: {b0['units']} → {now['units']} ({delta['units']:+d})  [{units_per_h}/h]
 - gaps closed: {b0['gaps']['closed']} → {now['gaps']['closed']} ({delta['gaps_closed']:+d})
 - gaps open: {b0['gaps']['open']} → {now['gaps']['open']} ({delta['gaps_open']:+d})

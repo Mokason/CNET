@@ -18,14 +18,17 @@ cd "$ROOT"
 # discards uncommitted work: it silently reverted an in-flight fix to
 # governor_miss_ingest.sh that had not been committed yet. The .mutbak copy is
 # the exact pre-mutation content, so it is both sufficient and safe.
+# find, not a fixed glob list: src/*.mutbak would silently miss
+# src/cce/cce_moe_xf.c.mutbak and leave that source mutated on disk.
+find_backups() { find scripts src tests tools -name '*.mutbak' 2>/dev/null; }
+
 restore() {
   local rc=$? f
-  shopt -s nullglob
-  for f in scripts/*.mutbak src/*.mutbak tests/*.mutbak tools/*.mutbak; do
+  while IFS= read -r f; do
+    [[ -n "$f" ]] || continue
     mv -f "$f" "${f%.mutbak}"
     echo "restored ${f%.mutbak}"
-  done
-  shopt -u nullglob
+  done < <(find_backups)
   # Rebuild the probe from pristine source so a later run is not poisoned.
   make cnet_fault_dedupe_probe >/dev/null 2>&1 || true
   exit $rc
@@ -33,11 +36,10 @@ restore() {
 trap restore EXIT INT TERM
 
 # Any leftover backup means a previous run died mid-mutation.
-shopt -s nullglob
-STALE=(scripts/*.mutbak src/*.mutbak tests/*.mutbak tools/*.mutbak)
-shopt -u nullglob
-if ((${#STALE[@]})); then
-  echo "REFUSE: stale mutation backups present: ${STALE[*]}" >&2
+STALE="$(find_backups)"
+if [[ -n "$STALE" ]]; then
+  echo "REFUSE: stale mutation backups present:" >&2
+  echo "$STALE" >&2
   echo "        A previous run was interrupted. Restore them first." >&2
   exit 2
 fi
@@ -85,9 +87,11 @@ PY
 
   # C mutations only take effect once the dependent binary is rebuilt.
   case "$file" in
-    src/cnet_fault.c) make cnet_fault_dedupe_probe >/dev/null 2>&1 || true ;;
-    src/gap_lane.c)   echo "   (rebuilding gap_lane…)"
-                      make gap_lane >/dev/null 2>&1 || true ;;
+    src/cnet_fault.c)     make cnet_fault_dedupe_probe >/dev/null 2>&1 || true ;;
+    src/gap_lane.c)       echo "   (rebuilding gap_lane…)"
+                          make gap_lane >/dev/null 2>&1 || true ;;
+    tools/moe_xf_tick.c)  make moe_xf_tick >/dev/null 2>&1 || true ;;
+    src/cce/cce_moe_xf.c) make moe_xf_tick moe_ckpt_test >/dev/null 2>&1 || true ;;
   esac
 
   if python3 tests/test_metric_honesty.py "${sel[@]}" >/tmp/mut_$$.log 2>&1; then
@@ -101,8 +105,10 @@ PY
   rm -f /tmp/mut_$$.log
   mv "$file.mutbak" "$file"
   case "$file" in
-    src/cnet_fault.c) make cnet_fault_dedupe_probe >/dev/null 2>&1 || true ;;
-    src/gap_lane.c)   make gap_lane >/dev/null 2>&1 || true ;;
+    src/cnet_fault.c)     make cnet_fault_dedupe_probe >/dev/null 2>&1 || true ;;
+    src/gap_lane.c)       make gap_lane >/dev/null 2>&1 || true ;;
+    tools/moe_xf_tick.c)  make moe_xf_tick >/dev/null 2>&1 || true ;;
+    src/cce/cce_moe_xf.c) make moe_xf_tick moe_ckpt_test >/dev/null 2>&1 || true ;;
   esac
 }
 
@@ -186,6 +192,41 @@ mutate "units metric back to the byte-marker proxy" \
   'import re
 s = re.sub(r"    audit = ROOT / \"bin/cnb_audit\".*?            pass\n", "", s, flags=re.DOTALL, count=1)' \
   TestUnitCountIsAuthoritative.test_no_byte_marker_proxy_on_the_primary_path
+
+mutate "held-out set redrawn each tick (CE deltas become noise)" \
+  tools/moe_xf_tick.c \
+  's = s.replace("    g_eval_rng = 0xE7A15EEDu;", "    g_eval_rng = 0xE7A15EEDu ^ (unsigned)step0;")' \
+  TestMoeFloorMetric.test_heldout_set_is_fixed_across_ticks
+
+mutate "training draws from the held-out stream" \
+  tools/moe_xf_tick.c \
+  's = s.replace("    g_train_rng = 0x1234u + (unsigned)step0 * 2654435761u;", "    g_train_rng = 0xE7A15EEDu;")' \
+  TestMoeFloorMetric.test_training_stream_does_not_replay_after_resume
+
+mutate "resume ignored — every tick restarts from scratch" \
+  tools/moe_xf_tick.c \
+  's = s.replace("    m = cce_moe_xf_load(ckpt, &step0);", "    m = NULL;")' \
+  TestMoeFloorMetric.test_resume_is_cumulative
+
+mutate "gap_to_floor measured against H1 instead of H2" \
+  tools/moe_xf_tick.c \
+  's = s.replace("ce_eval - h2, ce_eval < h1 ? 1 : 0", "ce_eval - h1, ce_eval < h1 ? 1 : 0")' \
+  TestMoeFloorMetric.test_gap_to_floor_is_ce_minus_h2
+
+mutate "checkpoint drops the Adam moments" \
+  src/cce/cce_moe_xf.c \
+  's = s.replace("        rc |= xf_w(f, p->m, bytes, &h);   /* Adam first moment  */\n        rc |= xf_w(f, p->v, bytes, &h);   /* Adam second moment */\n", "        { float *z = (float *)calloc((size_t)p->n, sizeof(float)); rc |= xf_w(f, z, bytes, &h); rc |= xf_w(f, z, bytes, &h); free(z); }\n")' \
+  TestMoeFloorMetric.test_checkpoint_contract_holds
+
+mutate "ratchet promotes regardless of improvement" \
+  scripts/cnet_moe_tick.sh \
+  's = s.replace("    if best is None or ce < best:", "    if True:")' \
+  TestMoeFloorMetric.test_promotion_requires_improvement
+
+mutate "eval_n change silently keeps the old baseline" \
+  scripts/cnet_moe_tick.sh \
+  's = s.replace("basis_changed = prev_n is not None and int(prev_n) != eval_n", "basis_changed = False")' \
+  TestMoeFloorMetric.test_changing_eval_n_resets_the_ratchet
 
 echo
 echo "════════════════════════════════════════"

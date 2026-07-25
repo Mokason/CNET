@@ -12,9 +12,20 @@ goals:
     when: "bonsai_ok == 0 or lane_ok == 0"
     actions: [ensure_bonsai, ensure_lane]
 
-  - id: drain_open_gaps
+  - id: train_moe
     priority: 1
-    description: Teachable backlog / waiting_oracle
+    description: >
+      Primary learning substrate. A gap-lane unit is a one-hot -> one-hot table
+      row certified by exact replay; one-hot input space has no metric, so rows
+      never compose into generalisation. This trains the transformer-MoE block
+      against a held-out entropy floor on a freshly-sampled stream, where
+      beating H1 provably requires order-2 structure.
+    when: "moe_gap_to_floor > 0.01 and allow_heavy == 1 and hours_since_moe >= 0.15"
+    actions: [run_moe_tick]
+
+  - id: drain_open_gaps
+    priority: 2
+    description: Teachable backlog / waiting_oracle (secondary — lookup coverage)
     when: "open_gaps + deferred_oracle >= 8 or backlog_pressure >= 8 or real_miss_rate >= 0.15"
     actions: [ensure_lane, inject_window_gaps, nudge_lane_tick]
 

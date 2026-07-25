@@ -251,6 +251,100 @@ void cce_moe_xf_adam(cce_moe_xf *m, float lr, int step) {
             if (wd > 0 && decay) p->w[i] -= lr * wd * p->w[i]; } }
 }
 
+/* ---- checkpointing (see header) ---- */
+
+#define XF_CKPT_MAGIC "CCEMOEXF"
+#define XF_CKPT_VERSION 1u
+
+static unsigned long long xf_fnv(const void *buf, size_t n, unsigned long long h) {
+    const unsigned char *p = (const unsigned char *)buf;
+    size_t i;
+    for (i = 0; i < n; i++) { h ^= p[i]; h *= 1099511628211ULL; }
+    return h;
+}
+
+/* write + accumulate the checksum in one place so save and load cannot drift */
+static int xf_w(FILE *f, const void *buf, size_t n, unsigned long long *h) {
+    *h = xf_fnv(buf, n, *h);
+    return fwrite(buf, 1, n, f) == n ? 0 : -1;
+}
+static int xf_r(FILE *f, void *buf, size_t n, unsigned long long *h) {
+    if (fread(buf, 1, n, f) != n) return -1;
+    *h = xf_fnv(buf, n, *h);
+    return 0;
+}
+
+int cce_moe_xf_save(const cce_moe_xf *m, const char *path, int step) {
+    FILE *f;
+    unsigned long long h = 14695981039346656037ULL;
+    unsigned ver = XF_CKPT_VERSION;
+    int pi, rc = 0;
+    char tmp[1200];
+    if (!m || !path || !path[0]) return -1;
+    if (snprintf(tmp, sizeof tmp, "%s.tmp", path) >= (int)sizeof tmp) return -1;
+    f = fopen(tmp, "wb");
+    if (!f) return -2;
+    rc |= xf_w(f, XF_CKPT_MAGIC, 8, &h);
+    rc |= xf_w(f, &ver, sizeof ver, &h);
+    rc |= xf_w(f, &m->c, sizeof m->c, &h);
+    rc |= xf_w(f, &step, sizeof step, &h);
+    rc |= xf_w(f, &m->rng, sizeof m->rng, &h);
+    rc |= xf_w(f, &m->np, sizeof m->np, &h);
+    for (pi = 0; pi < m->np && !rc; pi++) {
+        const Param *p = &m->p[pi];
+        size_t bytes = (size_t)p->n * sizeof(float);
+        rc |= xf_w(f, &p->n, sizeof p->n, &h);
+        rc |= xf_w(f, p->w, bytes, &h);
+        rc |= xf_w(f, p->m, bytes, &h);   /* Adam first moment  */
+        rc |= xf_w(f, p->v, bytes, &h);   /* Adam second moment */
+    }
+    if (!rc && fwrite(&h, sizeof h, 1, f) != 1) rc = -1;
+    if (fclose(f) != 0) rc = -1;
+    if (rc) { remove(tmp); return -3; }
+    /* atomic publish: a crash mid-write must never leave a torn checkpoint */
+    if (rename(tmp, path) != 0) { remove(tmp); return -4; }
+    return 0;
+}
+
+cce_moe_xf *cce_moe_xf_load(const char *path, int *step_out) {
+    FILE *f;
+    unsigned long long h = 14695981039346656037ULL, stored = 0;
+    unsigned ver = 0;
+    char magic[8];
+    cce_moe_xf_cfg cfg;
+    cce_moe_xf *m = NULL;
+    int step = 0, np = 0, pi;
+    if (!path || !path[0]) return NULL;
+    f = fopen(path, "rb");
+    if (!f) return NULL;
+    if (xf_r(f, magic, 8, &h) || memcmp(magic, XF_CKPT_MAGIC, 8) != 0) goto bad;
+    if (xf_r(f, &ver, sizeof ver, &h) || ver != XF_CKPT_VERSION) goto bad;
+    if (xf_r(f, &cfg, sizeof cfg, &h)) goto bad;
+    if (xf_r(f, &step, sizeof step, &h)) goto bad;
+    m = cce_moe_xf_create(&cfg);
+    if (!m) goto bad;
+    if (xf_r(f, &m->rng, sizeof m->rng, &h)) goto bad;
+    if (xf_r(f, &np, sizeof np, &h) || np != m->np) goto bad;
+    for (pi = 0; pi < np; pi++) {
+        Param *p = &m->p[pi];
+        int n = 0;
+        size_t bytes;
+        if (xf_r(f, &n, sizeof n, &h) || n != p->n) goto bad;
+        bytes = (size_t)p->n * sizeof(float);
+        if (xf_r(f, p->w, bytes, &h)) goto bad;
+        if (xf_r(f, p->m, bytes, &h)) goto bad;
+        if (xf_r(f, p->v, bytes, &h)) goto bad;
+    }
+    if (fread(&stored, sizeof stored, 1, f) != 1 || stored != h) goto bad;
+    fclose(f);
+    if (step_out) *step_out = step;
+    return m;
+bad:
+    if (m) cce_moe_xf_free(m);
+    fclose(f);
+    return NULL;
+}
+
 /* Directional finite-difference check on the CURRENT device (call with GPU on to
    validate the GPU backward against the GPU forward). */
 double cce_moe_xf_grad_check(cce_moe_xf *m, const int *tokens) {

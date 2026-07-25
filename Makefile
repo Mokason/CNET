@@ -1033,7 +1033,7 @@ recipe_gate:
 
 # Test recipes propagate their exit codes directly. This positive-marker gate
 # runs after every prerequisite and rejects missing or stale-success logs.
-verify: recipe_gate claims_test cce_dll cce_safetensors_test cce_autograd_test cce_model_test cce_view forest_view cce_detect cce_ssm cce_hybrid cce_qwen35 cce_st_llama cce_specgraph cce_wstore cce_tiers cce_similar merge_family hybrid_catalog transformer_qat contract_secure contract_unit heal_mismatch mutate acquire base flagship demos leakcheck cnet_fault_test cce_adapter_bank_test cce_dora_test cnet_serve_decode_test cnet_fault_loop_test registry_lora_store_test jtc_adapter_bench metric_honesty
+verify: recipe_gate claims_test cce_dll cce_safetensors_test cce_autograd_test cce_model_test cce_view forest_view cce_detect cce_ssm cce_hybrid cce_qwen35 cce_st_llama cce_specgraph cce_wstore cce_tiers cce_similar merge_family hybrid_catalog transformer_qat contract_secure contract_unit heal_mismatch mutate acquire base flagship demos leakcheck cnet_fault_test cce_adapter_bank_test cce_dora_test cnet_serve_decode_test cnet_fault_loop_test registry_lora_store_test jtc_adapter_bench metric_honesty moe_ckpt_test
 	@sh tests/verify_logs.sh
 
 # Everything verify covers PLUS the GPU equivalence gate (needs model + GPU;
@@ -3815,6 +3815,24 @@ moe_xf: src/cce/cce_moe_xf.c src/cce/cce_clgemm.c tests/moe_xf.c include/cce/cce
 	@mkdir -p $(BIN_DIR)
 	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ src/cce/cce_moe_xf.c $(CCE_CLGEMM) tests/moe_xf.c -lm -ldl -lpthread
 	./$(BIN_DIR)/moe_xf 200
+
+# One bounded, resumable training tick for the 24/7 loop, plus its checkpoint
+# round-trip test. This is the learning substrate the autoteach loop points at:
+# a checkpoint that beats a held-out entropy floor, not a replay-exact table row.
+.PHONY: moe_tick moe_ckpt_test
+moe_xf_tick: src/cce/cce_moe_xf.c src/cce/cce_clgemm.c tools/moe_xf_tick.c include/cce/cce_moe_xf.h
+	@mkdir -p $(BIN_DIR)
+	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ src/cce/cce_moe_xf.c $(CCE_CLGEMM) tools/moe_xf_tick.c -lm -ldl -lpthread
+	@echo built $(BIN_DIR)/$@
+
+moe_ckpt_test: src/cce/cce_moe_xf.c src/cce/cce_clgemm.c tests/moe_ckpt_test.c include/cce/cce_moe_xf.h
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ src/cce/cce_moe_xf.c $(CCE_CLGEMM) tests/moe_ckpt_test.c -lm -ldl -lpthread
+	@MOE_XF_CPU=1 ./$(BIN_DIR)/moe_ckpt_test | tee logs/moe_ckpt_test.log
+	@grep -q MOE_CKPT_PASS logs/moe_ckpt_test.log
+
+moe_tick: moe_xf_tick
+	@bash scripts/cnet_moe_tick.sh
 
 # Bonsai residual → fault bus seed (standalone light link)
 .PHONY: bonsai_residual_fault_seed_run

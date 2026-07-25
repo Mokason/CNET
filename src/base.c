@@ -822,6 +822,23 @@ int cnb_put_stats(CnetBase *b, const char *unit_name,
     return 0;
 }
 
+size_t cnb_prune_orphan_stats(CnetBase *b) {
+    size_t i = 0, removed = 0;
+    if (!b) return 0;
+    /* Evidence bound to a name with no sealed unit behind it can never be
+       applied on load; left in place it accumulates and pushes stats_count
+       past unit_count. Compact in place, preserving order. */
+    while (i < b->stats_count) {
+        if (cnb_has_unit(b, b->stats[i].name)) { i++; continue; }
+        if (i + 1 < b->stats_count)
+            memmove(&b->stats[i], &b->stats[i + 1],
+                    (b->stats_count - i - 1) * sizeof b->stats[0]);
+        b->stats_count--;
+        removed++;
+    }
+    return removed;
+}
+
 int cnb_apply_stats(const CnetBase *b, const char *unit_name,
                     BinaryTransformNetwork *btn) {
     size_t i;

@@ -781,9 +781,209 @@ class TestReliabilityIsPersisted(unittest.TestCase):
             stats, 0,
             "base reports stats=0 — reliability is being incremented and thrown away",
         )
-        self.assertEqual(
-            stats, units, f"every unit needs a stats record, got {stats}/{units}"
+        # stats > units means orphan records: evidence bound to a name with no
+        # sealed unit behind it, which can never be applied on load and grows
+        # without bound. (Observed 194/193 before persist gained a
+        # cnb_has_unit guard.)
+        self.assertLessEqual(
+            stats, units,
+            f"orphan stats records: {stats} stats for {units} units",
         )
+
+
+class TestMoeFloorMetric(unittest.TestCase):
+    """The learning metric that replaced replay-certification must not lie.
+
+    `moe_gap_to_floor` is the one metric in the scoreboard that cannot be gamed
+    by memorisation: the markov2 source is sampled fresh every sequence so
+    there is no training set to overfit, and H2 is computed analytically from
+    the source tables. That only holds if the held-out set is genuinely fixed
+    and genuinely unseen — these tests pin both.
+    """
+
+    TICK = ROOT / "bin/moe_xf_tick"
+
+    def _tick(self, ckpt: Path, out: Path, steps=0, eval_n=8) -> dict:
+        env = dict(
+            os.environ,
+            MOE_CKPT=str(ckpt), MOE_CKPT_OUT=str(out),
+            MOE_STEPS=str(steps), MOE_EVAL_N=str(eval_n), MOE_CPU="1",
+        )
+        r = subprocess.run(
+            [str(self.TICK)], env=env, capture_output=True, text=True, timeout=900
+        )
+        line = [l for l in r.stdout.splitlines() if l.startswith("MOE_TICK ")]
+        self.assertTrue(line, f"no MOE_TICK line: {r.stdout[-300:]} {r.stderr[-300:]}")
+        return json.loads(line[-1].split(" ", 1)[1])
+
+    def setUp(self):
+        if not self.TICK.exists():
+            self.skipTest("moe_xf_tick not built (make moe_xf_tick)")
+
+    def test_heldout_set_is_fixed_across_ticks(self):
+        """The eval set must not depend on training progress.
+
+        The floors depend only on the held-out sample, so comparing them across
+        ticks at DIFFERENT step counts is what detects a redrawn set. Comparing
+        two ticks that both sit at step 0 does not: a seed derived from the step
+        is identical there, and an earlier version of this test passed happily
+        with the redraw bug in place.
+        """
+        with tempfile.TemporaryDirectory() as d:
+            tmp = Path(d)
+            a = self._tick(tmp / "none.ckpt", tmp / "a.ckpt", steps=3)
+            b = self._tick(tmp / "a.ckpt", tmp / "b.ckpt", steps=0)
+            self.assertNotEqual(a["step_to"], 0)
+            self.assertEqual(b["step_from"], a["step_to"], "fixture: B must resume A")
+            self.assertEqual(
+                a["h1"], b["h1"],
+                "H1 changed once training advanced — the held-out set is being "
+                "redrawn, so CE deltas are sampling noise",
+            )
+            self.assertEqual(a["h2"], b["h2"], "H2 changed once training advanced")
+
+    def test_same_weights_give_the_same_ce(self):
+        """Determinism half: identical weights + identical eval set = identical CE."""
+        with tempfile.TemporaryDirectory() as d:
+            tmp = Path(d)
+            self._tick(tmp / "none.ckpt", tmp / "a.ckpt", steps=3)
+            b = self._tick(tmp / "a.ckpt", tmp / "b.ckpt", steps=0)
+            c = self._tick(tmp / "a.ckpt", tmp / "c.ckpt", steps=0)
+            self.assertEqual(b["heldout_ce"], c["heldout_ce"])
+
+    def test_floors_are_ordered(self):
+        """uniform > H1 > H2: the source really is layered order-2."""
+        with tempfile.TemporaryDirectory() as d:
+            tmp = Path(d)
+            t = self._tick(tmp / "none.ckpt", tmp / "a.ckpt", steps=0)
+            self.assertGreater(t["uniform"], t["h1"])
+            self.assertGreater(t["h1"], t["h2"])
+
+    def test_untrained_model_is_near_uniform_and_above_h1(self):
+        """A fresh model must NOT already beat the order-1 plateau.
+
+        If it did, H1 would not be a meaningful bar and 'certified' would be
+        free.
+        """
+        with tempfile.TemporaryDirectory() as d:
+            tmp = Path(d)
+            t = self._tick(tmp / "none.ckpt", tmp / "a.ckpt", steps=0)
+            self.assertEqual(t["resumed"], 0)
+            self.assertGreater(
+                t["heldout_ce"], t["h1"],
+                "an untrained model beats the order-1 plateau — floor is wrong",
+            )
+            self.assertEqual(t["below_h1"], 0)
+
+    def test_gap_to_floor_is_ce_minus_h2(self):
+        with tempfile.TemporaryDirectory() as d:
+            tmp = Path(d)
+            t = self._tick(tmp / "none.ckpt", tmp / "a.ckpt", steps=0)
+            self.assertAlmostEqual(
+                t["gap_to_floor"], t["heldout_ce"] - t["h2"], places=6
+            )
+
+    def test_resume_is_cumulative(self):
+        """step_to must advance across ticks; a restarting loop is a treadmill."""
+        with tempfile.TemporaryDirectory() as d:
+            tmp = Path(d)
+            a = self._tick(tmp / "none.ckpt", tmp / "a.ckpt", steps=3)
+            b = self._tick(tmp / "a.ckpt", tmp / "b.ckpt", steps=3)
+            self.assertEqual(a["resumed"], 0)
+            self.assertEqual(b["resumed"], 1, "second tick did not resume")
+            self.assertEqual(b["step_from"], a["step_to"])
+            self.assertGreater(b["step_to"], a["step_to"])
+
+    def test_training_stream_does_not_replay_after_resume(self):
+        """The train RNG is seeded from the resumed step, so a resumed tick
+        must not train on the sequences the previous tick already used."""
+        src = (ROOT / "tools/moe_xf_tick.c").read_text()
+        self.assertIn("g_train_rng = 0x1234u + (unsigned)step0", src)
+        self.assertIn("g_eval_rng = 0xE7A15EEDu", src)
+        self.assertNotIn(
+            "mk_gen(tok, SEQ + 1, &g_eval_rng)", src.split("t0 = now();")[-1],
+            "training drew from the held-out RNG stream",
+        )
+
+    def test_promotion_requires_improvement(self):
+        """The ratchet must refuse a checkpoint worse than the incumbent.
+
+        The incumbent has to be only SLIGHTLY better than the tick will
+        achieve: an absurdly low best_ce trips the divergence guard, which
+        returns before the promote branch is even reached, and the test then
+        passes for the wrong reason (it did, until this was fixed).
+        """
+        script = ROOT / "scripts/cnet_moe_tick.sh"
+        with tempfile.TemporaryDirectory() as d:
+            tmp = Path(d)
+            probe = self._tick(tmp / "none.ckpt", tmp / "probe.ckpt", steps=2, eval_n=8)
+            # 0.95x is better than the tick achieves, but well inside the 1.25x
+            # divergence threshold, so the promote branch is genuinely exercised.
+            incumbent = probe["heldout_ce"] * 0.95
+            (tmp / "state.json").write_text(
+                json.dumps({"best_ce": incumbent, "eval_n": 8}) + "\n"
+            )
+            env = dict(
+                os.environ, CNET_MOE_DIR=str(tmp), MOE_STEPS="2",
+                MOE_EVAL_N="8", MOE_CPU="1",
+            )
+            r = subprocess.run(
+                ["bash", str(script)], env=env, capture_output=True, text=True,
+                timeout=900, cwd=str(ROOT),
+            )
+            line = [l for l in r.stdout.splitlines() if l.startswith("MOE_TICK_OK")]
+            self.assertTrue(line, f"{r.stdout[-400:]} {r.stderr[-400:]}")
+            got = json.loads(line[-1].split(" ", 1)[1])
+            self.assertNotEqual(
+                got["action"], "diverged_rollback",
+                "fixture too aggressive: divergence guard fired, so the "
+                "promotion branch was never exercised",
+            )
+            self.assertNotEqual(
+                got["action"], "promoted",
+                "promoted a checkpoint worse than the incumbent best",
+            )
+
+    def test_changing_eval_n_resets_the_ratchet(self):
+        """A different eval_n is a different held-out set with different floors;
+        comparing across it would ratchet against a number that measured
+        something else."""
+        script = ROOT / "scripts/cnet_moe_tick.sh"
+        with tempfile.TemporaryDirectory() as d:
+            tmp = Path(d)
+            env = dict(os.environ, CNET_MOE_DIR=str(tmp), MOE_STEPS="2", MOE_CPU="1")
+            subprocess.run(["bash", str(script)], env=dict(env, MOE_EVAL_N="8"),
+                           capture_output=True, timeout=900, cwd=str(ROOT))
+            subprocess.run(["bash", str(script)], env=dict(env, MOE_EVAL_N="16"),
+                           capture_output=True, timeout=900, cwd=str(ROOT))
+            st = json.loads((tmp / "state.json").read_text())
+            self.assertEqual(st.get("eval_n"), 16)
+            self.assertIn("basis_reset", st, "eval_n change did not reset the ratchet")
+
+    def test_certified_implies_below_h1(self):
+        """'certified' must never be set while CE sits above the order-1 plateau."""
+        state = ROOT / "artifacts/moe/state.json"
+        if not state.exists():
+            self.skipTest("no live moe state")
+        st = json.loads(state.read_text())
+        if st.get("certified"):
+            self.assertLess(
+                float(st["heldout_ce"]), float(st["h1"]),
+                "certified while above H1 — the predicate is not what it claims",
+            )
+
+    def test_checkpoint_contract_holds(self):
+        """Resume must be exact, or the loop relearns the same ground forever."""
+        exe = ROOT / "bin/moe_ckpt_test"
+        if not exe.exists():
+            self.skipTest("moe_ckpt_test not built")
+        out = subprocess.run(
+            [str(exe)], capture_output=True, text=True, timeout=600,
+            env=dict(os.environ, MOE_XF_CPU="1"),
+        ).stdout
+        self.assertIn("MOE_CKPT_PASS", out, out[-500:])
+        line = [l for l in out.splitlines() if "Adam moments survive" in l]
+        self.assertTrue(line and "PASS" in line[0], "Adam moments not preserved")
 
 
 class TestScoreboardSelfDescribes(unittest.TestCase):

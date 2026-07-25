@@ -58,6 +58,20 @@ void cce_moe_xf_adam(cce_moe_xf *m, float lr, int step);
  * device is currently active (call with GPU on to validate the GPU backward). */
 double cce_moe_xf_grad_check(cce_moe_xf *m, const int *tokens);
 
+/* ---- checkpointing --------------------------------------------------------
+ * Persist weights AND the Adam moments plus the step counter, so a resumed run
+ * continues the same optimisation rather than restarting it: without the
+ * moments, every resume re-enters the bias-correction warmup and throws away
+ * the accumulated second-moment scale. Gradients are not stored (recomputed).
+ *
+ * The file records the full cce_moe_xf_cfg and an FNV-1a checksum over the
+ * payload; load REFUSES a config mismatch or a truncated/corrupt file rather
+ * than silently reinterpreting it. Returns 0 on success, negative on error.
+ * cce_moe_xf_load returns NULL on any failure and sets *step_out only on
+ * success. */
+int cce_moe_xf_save(const cce_moe_xf *m, const char *path, int step);
+cce_moe_xf *cce_moe_xf_load(const char *path, int *step_out);
+
 #ifdef __cplusplus
 }
 #endif
