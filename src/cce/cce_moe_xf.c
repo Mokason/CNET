@@ -15,8 +15,8 @@ typedef struct { float *w, *g, *m, *v; int n; } Param;
 
 struct cce_moe_xf {
     cce_moe_xf_cfg c;
-    float *emb, *Wq, *Wk, *Wv, *Wo, *Wr, *W1, *b1, *W2, *Wh, *bh;
-    Param p[11]; int np;
+    float *emb, *Wq, *Wk, *Wv, *Wo, *Wr, *W1, *b1, *W2, *Wh, *bh, *pos;
+    Param p[12]; int np;
     /* caches (per sequence) */
     float *X, *Q, *K, *V, *ATT, *CTX, *X1, *G, *He, *Ue, *X2, *P;
     float usage[64];
@@ -47,6 +47,7 @@ cce_moe_xf *cce_moe_xf_create(const cce_moe_xf_cfg *cfg) {
     reg(m, &m->Wr, d * E, s1);
     reg(m, &m->W1, E * d * f, s1); reg(m, &m->b1, E * f, 0.0f); reg(m, &m->W2, E * f * d, sf);
     reg(m, &m->Wh, d * V, s1); reg(m, &m->bh, V, 0.0f);
+    reg(m, &m->pos, T * d, 0.02f);   /* learned positional embedding (param 11) */
     m->X = calloc((size_t)T * d, 4); m->Q = calloc((size_t)T * d, 4); m->K = calloc((size_t)T * d, 4); m->V = calloc((size_t)T * d, 4);
     m->ATT = calloc((size_t)T * T, 4); m->CTX = calloc((size_t)T * d, 4); m->X1 = calloc((size_t)T * d, 4);
     m->G = calloc((size_t)T * E, 4); m->He = calloc((size_t)T * E * f, 4); m->Ue = calloc((size_t)T * E * d, 4);
@@ -112,7 +113,8 @@ double cce_moe_xf_seq(cce_moe_xf *m, const int *tokens, int do_backward, double 
     float *G = m->G, *He = m->He, *Ue = m->Ue, *X2 = m->X2, *P = m->P;
 
     /* ---- forward ---- */
-    for (t = 0; t < T; t++) memcpy(X + (size_t)t * d, m->emb + (size_t)tokens[t] * d, (size_t)d * 4);
+    for (t = 0; t < T; t++) { const float *e0 = m->emb + (size_t)tokens[t] * d, *pp = m->pos + (size_t)t * d;
+        float *xt = X + (size_t)t * d; for (i = 0; i < d; i++) xt[i] = e0[i] + pp[i]; }   /* token + positional */
     mm(m, X, T, d, m->Wq, NULL, d, Q); mm(m, X, T, d, m->Wk, NULL, d, Kk); mm(m, X, T, d, m->Wv, NULL, d, Vv);
     for (t = 0; t < T; t++) {                              /* causal single-head attention */
         float *a = ATT + (size_t)t * T; const float *q = Q + (size_t)t * d;
@@ -232,7 +234,8 @@ double cce_moe_xf_seq(cce_moe_xf *m, const int *tokens, int do_backward, double 
     wg(m, X, T, d, dQ, d, m->p[1].g); mmT(m, dQ, T, d, m->Wq, d, m->tmpTN); for (i = 0; i < T * d; i++) dX[i] += m->tmpTN[i];
     wg(m, X, T, d, dK, d, m->p[2].g); mmT(m, dK, T, d, m->Wk, d, m->tmpTN); for (i = 0; i < T * d; i++) dX[i] += m->tmpTN[i];
     wg(m, X, T, d, dV, d, m->p[3].g); mmT(m, dV, T, d, m->Wv, d, m->tmpTN); for (i = 0; i < T * d; i++) dX[i] += m->tmpTN[i];
-    for (t = 0; t < T; t++) { float *eg = m->p[0].g + (size_t)tokens[t] * d; for (i = 0; i < d; i++) eg[i] += dX[(size_t)t * d + i]; }
+    for (t = 0; t < T; t++) { float *eg = m->p[0].g + (size_t)tokens[t] * d, *pg = m->p[11].g + (size_t)t * d;
+        const float *dx = dX + (size_t)t * d; for (i = 0; i < d; i++) { eg[i] += dx[i]; pg[i] += dx[i]; } }  /* emb + pos grad */
     return ce + aux;
 }
 
@@ -241,7 +244,7 @@ void cce_moe_xf_zero_grad(cce_moe_xf *m) { int i; for (i = 0; i < m->np; i++) me
 void cce_moe_xf_adam(cce_moe_xf *m, float lr, int step) {
     const float b1 = 0.9f, b2 = 0.999f, eps = 1e-8f, wd = m->c.weight_decay;
     float c1 = 1 - powf(b1, (float)step), c2 = 1 - powf(b2, (float)step); int pi, i;
-    for (pi = 0; pi < m->np; pi++) { Param *p = &m->p[pi]; int decay = (pi != 7 && pi != 10);
+    for (pi = 0; pi < m->np; pi++) { Param *p = &m->p[pi]; int decay = (pi != 7 && pi != 10 && pi != 11);
         for (i = 0; i < p->n; i++) { float g = p->g[i];
             p->m[i] = b1 * p->m[i] + (1 - b1) * g; p->v[i] = b2 * p->v[i] + (1 - b2) * g * g;
             p->w[i] -= lr * (p->m[i] / c1) / (sqrtf(p->v[i] / c2) + eps);

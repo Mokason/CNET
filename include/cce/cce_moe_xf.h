@@ -4,7 +4,7 @@
 /* Per-token transformer MoE block trainer — the scale-up path from cce_moe_train.
  *
  * One transformer block over a length-`seq` sequence, trained for next-token CE:
- *   x  = embed(tokens)
+ *   x  = embed(tokens) + pos          (learned token + positional embeddings)
  *   x1 = x  + Attention(x)            (single-head, causal)
  *   x2 = x1 + MoE_FFN(x1)             (softmax router, top-k experts, residual)
  *   logits = x2 @ Wh + bh ;  loss = CE + lb_coef*aux
