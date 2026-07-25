@@ -2,6 +2,7 @@
 #include "../include/self_improve.h"
 #include "../include/acquire.h"
 #include "../include/residual_gguf.h"
+#include "../include/residual_http.h"
 #include "../include/cnet_curiosity.h"
 #include "../include/cnet_moe.h"
 #include "../include/cnet_acct.h"
@@ -183,9 +184,24 @@ int personal_ai_open(PersonalAi *ai, const char *base_path,
 
     hybrid_ai_init(&ai->hybrid);
     ai->owned_residual = NULL;
+    ai->owned_residual_http = NULL;
     ai->loaded = 1;
-    /* Auto-bind real Tier C residual when operator set CNET_RESIDUAL_GGUF. */
+    /* Prefer HTTP residual (Bonsai Q1 etc.) over in-process GGUF. */
     {
+        ResidualHttp *rh = NULL;
+        int arh = personal_ai_auto_residual_http(ai, &rh);
+        if (arh == 0 && rh) {
+            ai->owned_residual_http = rh;
+        } else if (arh < 0) {
+            const char *want = getenv("CNET_RESIDUAL_HTTP");
+            if (want && want[0]) {
+                personal_ai_close(ai);
+                return -4;
+            }
+        }
+    }
+    /* Auto-bind real Tier C residual when operator set CNET_RESIDUAL_GGUF. */
+    if (!ai->hybrid.residual.bound) {
         ResidualGguf *r = NULL;
         int ar = personal_ai_auto_residual_gguf(ai, &r);
         if (ar == 0 && r) {
@@ -501,6 +517,10 @@ void personal_ai_close(PersonalAi *ai) {
     if (ai->owned_residual) {
         residual_gguf_close(ai->owned_residual);
         ai->owned_residual = NULL;
+    }
+    if (ai->owned_residual_http) {
+        residual_http_close(ai->owned_residual_http);
+        ai->owned_residual_http = NULL;
     }
     gap_lane_close(&ai->lane);
     cnet_gov_close(&ai->gov);

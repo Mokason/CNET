@@ -65,6 +65,7 @@ typedef struct {
 } PersonalAiPolicy;
 
 struct ResidualGguf; /* opaque; see residual_gguf.h */
+struct ResidualHttp; /* opaque; see residual_http.h */
 
 typedef struct {
     GapLane lane;
@@ -76,6 +77,8 @@ typedef struct {
     int loaded;
     /* Owned when CNET_RESIDUAL_GGUF auto-bound at open; freed in close. */
     struct ResidualGguf *owned_residual;
+    /* Owned when CNET_RESIDUAL_HTTP auto-bound at open; freed in close. */
+    struct ResidualHttp *owned_residual_http;
 } PersonalAi;
 
 CNET_API void personal_ai_policy_defaults(PersonalAiPolicy *p);

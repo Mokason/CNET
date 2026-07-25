@@ -16,6 +16,7 @@
 #include "../include/cce/cce_router.h"
 #include "../include/hybrid_ai.h"
 #include "../include/residual_gguf.h"
+#include "../include/residual_http.h"
 #include "../include/cnet_route_log.h"
 #include "../include/cnet_evidence_bundle.h"
 #include "../include/cnet_health_layers.h"
@@ -63,6 +64,7 @@ struct SoulHost {
     char base_path[512];
     HybridAi hybrid;
     ResidualGguf *owned_residual;
+    ResidualHttp *owned_residual_http;
     int residual_tried;       /* lazy init attempted */
     int hermetic_residual;    /* rot1 stand-in (tests) */
     int residual_window;
@@ -382,6 +384,7 @@ CNET_API int soul_open(const char *base_path, const char *model_path,
     }
     hybrid_ai_init(&h->hybrid);
     h->owned_residual = NULL;
+    h->owned_residual_http = NULL;
     h->residual_tried = 0;
     h->hermetic_residual = 0;
     h->residual_window = 0;
@@ -429,6 +432,36 @@ static int soul_ensure_residual(SoulHost *h, size_t want_dim) {
     if (h->residual_tried && !h->hermetic_residual) return -1;
 
     prefer = getenv("CNET_SOUL_RESIDUAL_PREFER_HERMETIC");
+    /* Real HTTP residual (Bonsai) outranks soft hermetic when URL is set. */
+    {
+        const char *http = getenv("CNET_RESIDUAL_HTTP");
+        if (http && http[0]) {
+            ResidualHttp *rh = NULL;
+            const char *win = getenv("CNET_RESIDUAL_WINDOW");
+            h->residual_tried = 1;
+            if (residual_http_open(&rh, http, win, 32) != 0 || !rh) {
+                fprintf(stderr, "soul_host: residual HTTP open failed (%s)%s\n",
+                        http,
+                        h->hermetic_residual ? " — falling back" : "");
+                if (!h->hermetic_residual && !(prefer && prefer[0] == '1'))
+                    return -1;
+            } else if (hybrid_bind_residual(&h->hybrid, "residual_http",
+                                            residual_http_oracle, rh) != 0) {
+                residual_http_close(rh);
+                fprintf(stderr, "soul_host: residual HTTP bind failed%s\n",
+                        h->hermetic_residual ? " — falling back" : "");
+                if (!h->hermetic_residual && !(prefer && prefer[0] == '1'))
+                    return -1;
+            } else {
+                h->owned_residual_http = rh;
+                h->residual_window = residual_http_window_n(rh);
+                fprintf(stderr, "soul_host: residual HTTP bound window=%d url=%s\n",
+                        h->residual_window, http);
+                return 0;
+            }
+        }
+    }
+
     if (prefer && prefer[0] == '1' && h->hermetic_residual) {
         size_t d = want_dim > 0 ? want_dim : 256;
         if (hybrid_bind_residual(&h->hybrid, "hermetic_residual",
@@ -487,7 +520,11 @@ static int soul_try_residual_answer(SoulHost *h, Port input, Port goal,
     if (soul_ensure_residual(h, in_total) != 0) return -1;
     if (!h->hybrid.residual.bound) return -1;
     /* Real GGUF residual only answers its fixed window size. */
+    /* Real GGUF residual only answers its fixed window size.
+     * HTTP residual same rule when bound. */
     if (h->owned_residual && (int)in_total != h->residual_window) return -1;
+    if (h->owned_residual_http && (int)in_total != h->residual_window)
+        return -1;
     if (hybrid_try_residual(&h->hybrid, input, goal, in, in_total, out,
                             out_total) != 0)
         return -1;
@@ -1414,6 +1451,10 @@ CNET_API void soul_close(SoulHost *h) {
         if (h->owned_residual) {
             residual_gguf_close(h->owned_residual);
             h->owned_residual = NULL;
+        }
+        if (h->owned_residual_http) {
+            residual_http_close(h->owned_residual_http);
+            h->owned_residual_http = NULL;
         }
         /* registry_free first: it drops the registry's borrows of the adapter
            BTNs and their (base-owned) names. Then release each mounted adapter

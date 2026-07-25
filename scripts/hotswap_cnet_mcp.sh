@@ -38,14 +38,15 @@ export CNET_BASE_PATH="$BASE"
 export CNET_GAP_INBOX="$BASE.inbox"
 export CNET_HEALTH_TICK_SECONDS=60
 export CNET_ORACLE_INT8="\${CNET_ORACLE_INT8:-1}"
-export CNET_RESIDUAL_GGUF="/home/marble/AI/Models/gemma4-v2-Q4_K_M.gguf"
-export CNET_RESIDUAL_WINDOW="$REPO/english_window_256.txt"
+# Bonsai 1-bit residual via llama-server (must be pre-exec).
+export CNET_RESIDUAL_HTTP="\${CNET_RESIDUAL_HTTP:-http://127.0.0.1:8080}"
+export CNET_RESIDUAL_WINDOW="\${CNET_RESIDUAL_WINDOW:-$REPO/english_window_256_bonsai.txt}"
 export CNET_PERSONAL_STRUCTURE_MINE_ON_SERVE=1
 export CNET_PERSONAL_STRUCTURE_MIN_HITS=2
 export CNET_PERSONAL_ALLOW_RESIDUAL=1
-# Soft residual without dual GGUF fight vs personal-ai teacher (must be pre-exec).
+# Hermetic last-resort; HTTP residual wins when URL set.
 export CNET_SOUL_RESIDUAL_HERMETIC="\${CNET_SOUL_RESIDUAL_HERMETIC:-1}"
-export CNET_SOUL_RESIDUAL_PREFER_HERMETIC="\${CNET_SOUL_RESIDUAL_PREFER_HERMETIC:-1}"
+export CNET_SOUL_RESIDUAL_PREFER_HERMETIC="\${CNET_SOUL_RESIDUAL_PREFER_HERMETIC:-0}"
 # PEFT spine: fault bus + durable adapters + acct (shared with personal-ai.env).
 export CNET_FAULT_LOG="\${CNET_FAULT_LOG:-$REPO/logs/cnet_faults.jsonl}"
 export CNET_FAULT_MIRROR="\${CNET_FAULT_MIRROR:-1}"
@@ -60,7 +61,7 @@ export CNET_JTC_MIN_CONF="\${CNET_JTC_MIN_CONF:-0.20}"
 exec "$DEPLOY/CnetMcpServer" "\$@"
 EOS
 chmod +x "$DEPLOY/launch.sh"
-# Static order gate: hermetic residual env must appear before exec (never after).
+# Static order gate: residual/PEFT env must appear before exec (never after).
 python3 - <<'PY'
 from pathlib import Path
 import os, sys
@@ -75,8 +76,8 @@ if exec_i < 0:
 assert exec_i >= 0, "no exec in launch.sh"
 pre, post = body[:exec_i], body[exec_i:]
 for key in (
+    "CNET_RESIDUAL_HTTP",
     "CNET_SOUL_RESIDUAL_HERMETIC",
-    "CNET_SOUL_RESIDUAL_PREFER_HERMETIC",
     "CNET_FAULT_LOG",
     "CNET_LORA_STORE_DIR",
     "CNET_ACCT_LOG",

@@ -30,6 +30,9 @@ ifeq ($(OS),Windows_NT)
 CFLAGS += -mno-avx
 endif
 LDFLAGS := -lm -lpthread
+CURL_LDFLAGS := -lcurl
+# Pull curl into all residual/personal_ai-linked binaries (HTTP residual).
+LDFLAGS += $(CURL_LDFLAGS)
 MCP_LDFLAGS :=
 ifeq ($(OS),Windows_NT)
 MCP_LDFLAGS := -lwininet
@@ -214,7 +217,7 @@ JSON_TOOLCALL_SRC := src/json_toolcall.c
 MULTIMODAL_SRC := $(EXT_TEACHER_SRC) $(MODALITY_VOICE_SRC) $(MODALITY_VISION_SRC) $(JSON_TOOLCALL_SRC)
 PERSONAL_AI_SRC := src/personal_ai.c $(OPENLAB_SRC)
 HYBRID_AI_SRC := src/hybrid_ai.c
-RESIDUAL_GGUF_SRC := src/residual_gguf.c
+RESIDUAL_GGUF_SRC := src/residual_gguf.c src/residual_http.c
 PILOT_SRC := src/cnet_pilot.c
 CURIOSITY_SRC := src/cnet_curiosity.c
 EG_SRC := src/cnet_eg.c
@@ -2567,10 +2570,42 @@ residual_gguf: $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_
 		$(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) \
 		$(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) \
 		$(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) \
-		tests/test_residual_gguf.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -pthread
+		tests/test_residual_gguf.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) $(CURL_LDFLAGS) -pthread
 	@./$(BIN_DIR)/test_residual_gguf > logs/residual_gguf.log 2>&1
 	@grep -q "RESIDUAL_GGUF_PASS" logs/residual_gguf.log
 	@grep "RESIDUAL_GGUF_PASS" logs/residual_gguf.log
+
+# HTTP residual (Bonsai / llama-server). Hermetic mock via unset URL; real with CNET_RESIDUAL_HTTP.
+.PHONY: residual_http residual_http_real
+residual_http: $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(EXT_TEACHER_SRC) $(CURIOSITY_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) tests/test_residual_http.c include/residual_http.h
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/test_residual_http \
+		$(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(EXT_TEACHER_SRC) $(CURIOSITY_SRC) \
+		$(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) \
+		$(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) \
+		$(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) \
+		tests/test_residual_http.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) $(CURL_LDFLAGS) -pthread
+	@./$(BIN_DIR)/test_residual_http > logs/residual_http.log 2>&1
+	@grep -q "RESIDUAL_HTTP_PASS" logs/residual_http.log
+	@grep "RESIDUAL_HTTP_PASS" logs/residual_http.log
+
+residual_http_real: residual_http
+	@if [ -z "$$CNET_RESIDUAL_HTTP" ]; then \
+		echo "Set CNET_RESIDUAL_HTTP=http://127.0.0.1:8080"; exit 2; \
+	fi
+	@mkdir -p logs
+	@CNET_REQUIRE_REAL_RESIDUAL_HTTP=1 \
+		./$(BIN_DIR)/test_residual_http > logs/residual_http_real.log 2>&1
+	@grep -q "RESIDUAL_HTTP_PASS" logs/residual_http_real.log
+	@grep -E "http residual|RESIDUAL_HTTP_PASS|ping|oracle" logs/residual_http_real.log
+
+.PHONY: bonsai_residual_fault_seed
+bonsai_residual_fault_seed: $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(GAP_LANE_SRC) $(SRC) tools/bonsai_residual_fault_seed.c
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -o $(BIN_DIR)/bonsai_residual_fault_seed \
+		$(RESIDUAL_GGUF_SRC) $(PILOT_SRC) src/cnet_fault.c src/cnet_promote.c src/cnet_acct.c $(GAP_LANE_SRC) \
+		$(SRC) tools/bonsai_residual_fault_seed.c $(LDFLAGS) -pthread
+	@echo "built bin/bonsai_residual_fault_seed"
 
 # Requires CNET_RESIDUAL_GGUF (and optional CNET_RESIDUAL_WINDOW). Uses int8 diet.
 # Structure-mines residual traces into a certified unit (P5) when real.
@@ -3732,3 +3767,19 @@ moe_xf: src/cce/cce_moe_xf.c src/cce/cce_clgemm.c tests/moe_xf.c include/cce/cce
 	@mkdir -p $(BIN_DIR)
 	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ src/cce/cce_moe_xf.c $(CCE_CLGEMM) tests/moe_xf.c -lm -ldl -lpthread
 	./$(BIN_DIR)/moe_xf 200
+
+# Bonsai residual → fault bus seed (standalone light link)
+.PHONY: bonsai_residual_fault_seed_run
+bonsai_residual_fault_seed_run: tools/bonsai_residual_fault_seed.c src/residual_http.c src/cnet_fault.c src/cnet_promote.c src/cnet_acct.c
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -o $(BIN_DIR)/bonsai_residual_fault_seed \
+		src/residual_http.c src/cnet_fault.c src/cnet_promote.c src/cnet_acct.c \
+		src/gap_lane.c src/nn.c tools/bonsai_residual_fault_seed.c $(LDFLAGS) -pthread
+	@test -n "$$CNET_RESIDUAL_HTTP" || export CNET_RESIDUAL_HTTP=http://127.0.0.1:8080; \
+	test -n "$$CNET_FAULT_LOG" || export CNET_FAULT_LOG=$(CURDIR)/logs/cnet_faults.jsonl; \
+	test -n "$$CNET_RESIDUAL_WINDOW" || export CNET_RESIDUAL_WINDOW=$(CURDIR)/english_window_256_bonsai.txt; \
+	test -n "$$CNET_ACCT_LOG" || export CNET_ACCT_LOG=$(CURDIR)/logs/cnet_acct.jsonl; \
+	CNET_RESIDUAL_HTTP=$${CNET_RESIDUAL_HTTP} CNET_FAULT_LOG=$${CNET_FAULT_LOG} \
+	CNET_RESIDUAL_WINDOW=$${CNET_RESIDUAL_WINDOW} CNET_ACCT_LOG=$${CNET_ACCT_LOG} \
+	./$(BIN_DIR)/bonsai_residual_fault_seed $${N:-16} | tee logs/bonsai_residual_fault_seed.log
+	@grep -q BONSAI_FAULT_SEED logs/bonsai_residual_fault_seed.log
