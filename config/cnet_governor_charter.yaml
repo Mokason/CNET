@@ -20,19 +20,19 @@ goals:
   - id: drain_open_gaps
     priority: 1
     description: Open/deferred teachable gaps need Bonsai teaching
-    when: "open_gaps + deferred_oracle >= 8"
+    when: "open_gaps + deferred_oracle >= 8 or backlog_pressure >= 8"
     actions: [ensure_lane, inject_window_gaps, nudge_lane_tick]
 
   - id: peft_jtc
     priority: 2
     description: Keep JTC PEFT warm from fault bus
-    when: "fault_lines >= 64 and hours_since_peft >= 0.5"
+    when: "fault_lines >= 64 and (hours_since_peft >= 0.5 or plateau == 1)"
     actions: [run_cert_learn]
 
   - id: structure_mine
     priority: 3
     description: Distill residual traces into certified A units
-    when: "bonsai_ok == 1 and hours_since_mine >= 1.5"
+    when: "bonsai_ok == 1 and (hours_since_mine >= 1.5 or (plateau == 1 and hours_since_mine >= 0.4))"
     actions: [run_structure_mine]
 
   - id: procedure_curriculum
@@ -43,9 +43,15 @@ goals:
 
   - id: coverage_curiosity
     priority: 5
-    description: Idle healthy system — grow window coverage
-    when: "bonsai_ok == 1 and lane_ok == 1 and open_gaps + deferred_oracle < 8"
+    description: Idle healthy system — grow window coverage (skip hard if plateau)
+    when: "bonsai_ok == 1 and lane_ok == 1 and backlog_pressure < 8 and plateau == 0"
     actions: [inject_window_gaps, ensure_curiosity]
+
+  - id: break_plateau
+    priority: 2
+    description: Learning velocity stalled — force PEFT + mine + inject
+    when: "plateau == 1 and teacher_uptime >= 0.5"
+    actions: [run_cert_learn, run_structure_mine, inject_window_gaps]
 
   - id: health_hold
     priority: 9

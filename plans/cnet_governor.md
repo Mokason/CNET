@@ -48,11 +48,21 @@ systemctl --user start cnet-governor.service
 cat logs/governor/last_decision.json
 ```
 
-## Relation to autoteach
+## Runtime-evolving scoreboard
 
-- **Governor** = self-direction (what/why)  
-- **Autoteach timer** = default muscle bundle (can still run)  
-- Governor *hires* inject / cert_learn / mine rather than only waiting on a queue  
+Each cycle the governor:
+
+1. **Snapshots** live metrics → `logs/governor/scoreboard.json`
+2. **Appends** history → `logs/governor/scoreboard_history.jsonl`
+3. **Updates EWMA** → `logs/governor/scoreboard_ewma.json`
+4. **Derives** deltas / rates / `backlog_pressure` / `learning_velocity` / `plateau`
+5. **Evolves goal_health** (0..1) from action success + metric movement
+6. **Re-ranks** goals using health + plateau (not static priority only)
+
+Charter `when` clauses may use evolved fields:
+`backlog_pressure`, `plateau`, `learning_velocity`, `teacher_uptime`, `d_*`, `rate_*`.
+
+`break_plateau` goal fires when velocity stalls while teacher is up.
 
 ## Safety
 
