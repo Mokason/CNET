@@ -1,32 +1,29 @@
-# CNET self-direction governor (native C)
+# CNET autonomous governor
 
-## Purpose
+## Engines
+| | |
+|---|---|
+| **v2 (default systemd)** | `scripts/governor_autonomous.py` |
+| **C core** | `bin/cnet_governor` (`make governor`) |
 
-**Autonomy of agenda**, not queue polling.
+## v2 capabilities (all 10 + safe web)
+1. Real miss_bus (faults + waiting_oracle)
+2. Independent JTC eval probe (`eval_jtc_delta`)
+3. Outcome close (backlog/eval → goal_health)
+4. Standing projects (`config/governor_projects.json`)
+5. Resource snap (busy / allow_heavy / night)
+6. Expanded muscles (eval, safe_web, research)
+7. Human pins (`config/governor_pins.yaml`)
+8. Eval-gated PEFT (charter uses eval_jtc_delta)
+9. MTK left as optional serve path (not auto-seal)
+10. No unbounded crawl
 
-```
-charter (human) + evolving scoreboard
-    → pick ≤3 goals
-    → hire muscles (lane / Bonsai / PEFT / mine)
-```
+### Safe web
+- Allowlist only: `config/governor_verified_urls.txt`
+- HTTPS, max size, no creds, text notes under `logs/governor/web_notes/`
 
-## Binary
-
+## Gates
 ```bash
-make governor_build          # bin/cnet_governor
-make governor                # GOVERNOR_PASS
-./bin/cnet_governor          # one cycle
-./bin/cnet_governor --daemon 900
+make governor_v2       # GOVERNOR_V2_PASS
+make governor_quality  # GOVERNOR_QUALITY_PASS
 ```
-
-Python `scripts/cnet_governor.py` is legacy prototype only.
-
-## systemd
-
-- `cnet-governor.timer` → oneshot `bin/cnet_governor` every 15m (default)
-- `cnet-governor-daemon.service` → optional always-on `--daemon 900`
-
-## Artifacts (`logs/governor/`)
-
-scoreboard.json, history.jsonl, ewma.json, last_decision.json, state.json  
-All tagged `"engine": "cnet_governor_c"`.
