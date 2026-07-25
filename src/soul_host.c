@@ -393,12 +393,25 @@ CNET_API int soul_open(const char *base_path, const char *model_path,
         const char *hr = getenv("CNET_SOUL_RESIDUAL_HERMETIC");
         if (hr && hr[0] == '1') h->hermetic_residual = 1;
     }
-    /* Eager soft residual when hermetic is preferred: health_tick/MCP roster
-     * then report residual_bound=1 without waiting for a Tier-C miss. Avoids
-     * dual-GGUF contention; real GGUF residual stays lazy. */
+    /* Eager HTTP residual when configured — health_tick reports residual_bound
+     * without waiting for a Tier-C miss (Bonsai path). */
     {
+        const char *http = getenv("CNET_RESIDUAL_HTTP");
         const char *prefer = getenv("CNET_SOUL_RESIDUAL_PREFER_HERMETIC");
-        if (h->hermetic_residual && prefer && prefer[0] == '1') {
+        if (http && http[0] && !(prefer && prefer[0] == '1' && h->hermetic_residual)) {
+            ResidualHttp *rh = NULL;
+            const char *win = getenv("CNET_RESIDUAL_WINDOW");
+            if (residual_http_open(&rh, http, win, 32) == 0 && rh &&
+                hybrid_bind_residual(&h->hybrid, "residual_http",
+                                     residual_http_oracle, rh) == 0) {
+                h->owned_residual_http = rh;
+                h->residual_window = residual_http_window_n(rh);
+                h->residual_tried = 1;
+            } else if (rh) {
+                residual_http_close(rh);
+            }
+        } else if (h->hermetic_residual && prefer && prefer[0] == '1') {
+            /* Eager soft residual when hermetic is preferred */
             size_t d = 256;
             if (hybrid_bind_residual(&h->hybrid, "hermetic_residual",
                                      hybrid_hermetic_residual,

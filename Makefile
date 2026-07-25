@@ -2271,12 +2271,13 @@ record_teacher: $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTER
 # toolchain attestation: the daemon's teacher identity folds in the build
 # flags and source revision (see lm_toolchain_identity in gap_lane_run.c)
 gap_lane_run_build: CNET_SRC_REV := $(shell git rev-parse --short=16 HEAD 2>/dev/null || echo unknown)
-gap_lane_run_build: CFLAGS := $(CFLAGS) $(OMPFLAGS) -DCNET_TOOLCHAIN_CFLAGS="\"$(CFLAGS) $(OMPFLAGS)\"" -DCNET_SOURCE_REV="\"$(CNET_SRC_REV)\""
+gap_lane_run_build: CFLAGS := $(CFLAGS) $(OMPFLAGS) -DCNET_RESIDUAL_HTTP_STANDALONE -DCNET_TOOLCHAIN_CFLAGS="\"$(CFLAGS) $(OMPFLAGS)\"" -DCNET_SOURCE_REV="\"$(CNET_SRC_REV)\""
 gap_lane_run_build: $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(CURIOSITY_SRC) $(EG_SRC) $(JSON_TOOLCALL_SRC) $(EXT_TEACHER_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) tests/gap_lane_run.c include/json_toolcall.h
 	@mkdir -p $(BIN_DIR)
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/gap_lane_run \
 		$(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) \
 		$(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(CURIOSITY_SRC) $(EG_SRC) $(JSON_TOOLCALL_SRC) $(EXT_TEACHER_SRC) \
+		src/residual_http.c \
 		$(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) \
 		$(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) \
 		tests/gap_lane_run.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -pthread

@@ -284,7 +284,7 @@ int residual_http_oracle(const double *in, double *out, void *ctx) {
     /* llama.cpp completion: prompt as token id array, greedy next, probs. */
     snprintf(body, sizeof body,
              "{\"prompt\":[%d],\"n_predict\":1,\"temperature\":0,"
-             "\"n_probs\":32,\"return_tokens\":true}",
+             "\"n_probs\":64,\"return_tokens\":true}",
              tok);
     if (http_post_json(r->completion_url, body, r->timeout_ms, &mb, &code) !=
         0) {
@@ -303,6 +303,99 @@ int residual_http_oracle(const double *in, double *out, void *ctx) {
     return 0;
 }
 
+/* Parse top_logprobs into per-window-slot scores. */
+static void fill_wl_from_json(const ResidualHttp *r, const char *json,
+                              float *wl) {
+    const char *p;
+    int j;
+    if (!r || !json || !wl) return;
+    for (j = 0; j < r->n_win; j++) wl[j] = -1e30f;
+    p = json;
+    while ((p = strstr(p, "\"id\"")) != NULL) {
+        const char *q = strchr(p, ':');
+        const char *lp;
+        long idv;
+        double logp = -1e9;
+        int slot = -1;
+        p += 4;
+        if (!q) continue;
+        if (parse_int_after(q + 1, &idv) != 0) continue;
+        for (j = 0; j < r->n_win; j++) {
+            if (r->win[j] == (int)idv) {
+                slot = j;
+                break;
+            }
+        }
+        if (slot < 0) continue;
+        lp = strstr(q, "\"logprob\"");
+        if (lp && lp - q < 120) {
+            const char *c = strchr(lp, ':');
+            if (c) logp = strtod(c + 1, NULL);
+        }
+        if ((float)logp > wl[slot]) wl[slot] = (float)logp;
+    }
+}
+
+int residual_http_window_logits(ResidualHttp *r, int hot_slot, float *wl) {
+    char body[256];
+    struct MemBuf mb;
+    long code = 0;
+    int tok;
+    if (!r || !wl || hot_slot < 0 || hot_slot >= r->n_win) return -1;
+    tok = r->win[hot_slot];
+    snprintf(body, sizeof body,
+             "{\"prompt\":[%d],\"n_predict\":1,\"temperature\":0,"
+             "\"n_probs\":128,\"return_tokens\":true}",
+             tok);
+    if (http_post_json(r->completion_url, body, r->timeout_ms, &mb, &code) !=
+        0) {
+        free(mb.data);
+        return -2;
+    }
+    if (code < 200 || code >= 300 || !mb.data) {
+        free(mb.data);
+        return -3;
+    }
+    fill_wl_from_json(r, mb.data, wl);
+    free(mb.data);
+    return 0;
+}
+
+int residual_http_oracle_topk(const double *in, double *out, void *ctx, int k) {
+    ResidualHttp *r = (ResidualHttp *)ctx;
+    float *wl = NULL;
+    int hot, i, rnk, j;
+    int used[8];
+    if (!r || !in || !out || r->n_win <= 0) return -1;
+    if (k < 1) k = 1;
+    if (k > 8) k = 8;
+    hot = argmax_d(in, r->n_win);
+    if (hot < 0 || hot >= r->n_win) return -1;
+    wl = (float *)malloc((size_t)r->n_win * sizeof(float));
+    if (!wl) return -2;
+    if (residual_http_window_logits(r, hot, wl) != 0) {
+        free(wl);
+        return -3;
+    }
+    for (i = 0; i < k * r->n_win; i++) out[i] = 0.0;
+    for (rnk = 0; rnk < k; rnk++) {
+        int best = -1;
+        for (j = 0; j < r->n_win; j++) {
+            int taken = 0, u;
+            for (u = 0; u < rnk; u++)
+                if (used[u] == j) taken = 1;
+            if (taken) continue;
+            if (best < 0 || wl[j] > wl[best]) best = j;
+        }
+        if (best < 0) best = 0;
+        used[rnk] = best;
+        out[rnk * r->n_win + best] = 1.0;
+    }
+    free(wl);
+    return 0;
+}
+
+#ifndef CNET_RESIDUAL_HTTP_STANDALONE
 int personal_ai_bind_residual_http(PersonalAi *ai, ResidualHttp *r,
                                    const char *name) {
     if (!ai || !r) return -1;
@@ -335,3 +428,4 @@ int personal_ai_auto_residual_http(PersonalAi *ai, ResidualHttp **owned) {
     if (owned) *owned = r;
     return 0;
 }
+#endif

@@ -310,7 +310,9 @@ int hybrid_trace_residual(HybridAi *h, Port in_port, Port out_port,
     return 0;
 }
 
-/* Fill expand_n one-hot rows; label via residual oracle or copy exemplar. */
+/* Fill expand_n one-hot rows; label via residual oracle or copy exemplar.
+ * Rows are spread across the window (not only the first expand_n slots) so
+ * large W (e.g. Bonsai 256) still get representative coverage. */
 static int label_expand_rows(HybridAi *h, HybridTrace *tr, size_t n_rows,
                              double *inputs, double *targets) {
     size_t r, j;
@@ -320,9 +322,9 @@ static int label_expand_rows(HybridAi *h, HybridTrace *tr, size_t n_rows,
     if (h->residual.bound && h->residual.fn == residual_gguf_oracle &&
         h->residual.ctx) {
         ResidualGguf *rg = (ResidualGguf *)h->residual.ctx;
-        int slots[64];
+        int slots[256];
         int ns = (int)n_rows;
-        if (ns > 64) ns = 64;
+        if (ns > 256) ns = 256;
         residual_gguf_pilot_consume(rg, slots, ns);
         if (residual_gguf_label_batch(rg, slots, ns, inputs, targets,
                                       (int)tr->in_dim, (int)tr->out_dim) == 0) {
@@ -333,8 +335,13 @@ static int label_expand_rows(HybridAi *h, HybridTrace *tr, size_t n_rows,
     }
 
     for (r = 0; r < n_rows; r++) {
+        size_t slot;
+        if (n_rows >= tr->in_dim)
+            slot = r % tr->in_dim;
+        else
+            slot = (r * tr->in_dim) / n_rows;
         for (j = 0; j < tr->in_dim; j++)
-            inputs[r * tr->in_dim + j] = (j == r) ? 1.0 : 0.0;
+            inputs[r * tr->in_dim + j] = (j == slot) ? 1.0 : 0.0;
         if (h->residual.bound) {
             if (h->residual.fn(inputs + r * tr->in_dim,
                                targets + r * tr->out_dim,
@@ -378,12 +385,23 @@ int hybrid_structure_mine(HybridAi *h, PrimitiveRegistry *reg, size_t min_hits,
     tr = &h->traces[best];
     {
         size_t expand_n = 0;
+        size_t expand_cap = 64;
+        {
+            const char *ee = getenv("CNET_STRUCTURE_EXPAND_N");
+            if (ee && ee[0]) {
+                long v = atol(ee);
+                if (v >= 4 && v <= 512) expand_cap = (size_t)v;
+            }
+        }
         if (tr->input_port.family == PORT_ONEHOT &&
             tr->input_port.field_count == 1) {
             if (tr->in_dim <= 16)
                 expand_n = tr->in_dim;
-            else if (h->residual.bound)
-                expand_n = 16;
+            else if (h->residual.bound) {
+                /* Large residual windows (Bonsai 256): sample up to expand_cap
+                 * rows spread across the alphabet for structure mine. */
+                expand_n = tr->in_dim < expand_cap ? tr->in_dim : expand_cap;
+            }
         }
         if (expand_n > 0) {
             int labeled;
@@ -421,7 +439,14 @@ int hybrid_structure_mine(HybridAi *h, PrimitiveRegistry *reg, size_t min_hits,
         id.artifact_digest = 0x53545255435401ULL; /* STRUCT */
         id.contract_digest = 0x4D494E45ULL;
         external_teacher_init(&teacher);
-        if (h->residual.bound) {
+        /* Prefer table teacher from labeled expand rows for large windows —
+         * callback residual over full domain is too slow/unbounded for admit. */
+        if (n_rows >= 4) {
+            rc = external_teacher_bind_table(
+                &teacher, CNET_MODALITY_TEXT, "structure_table",
+                tr->input_port, tr->goal_port, inputs, targets, n_rows, &id,
+                0);
+        } else if (h->residual.bound) {
             rc = external_teacher_bind_callback(
                 &teacher, CNET_MODALITY_TEXT, "structure_teacher",
                 tr->input_port, tr->goal_port, h->residual.fn, h->residual.ctx,
@@ -441,7 +466,7 @@ int hybrid_structure_mine(HybridAi *h, PrimitiveRegistry *reg, size_t min_hits,
         {
             size_t ih = tr->in_dim > 16 ? 64 : 8;
             size_t mh = tr->in_dim > 16 ? 256 : 64;
-            size_t ep = tr->in_dim > 16 ? 30000 : 12000;
+            size_t ep = tr->in_dim > 16 ? 40000 : 12000;
             rc = external_teacher_mine_admit(
                 &teacher, reg, inputs, targets, n_rows, ih, mh, ep, 99u, name,
                 student_out);

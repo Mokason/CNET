@@ -37,6 +37,15 @@ CNET_API void residual_http_close(ResidualHttp *r);
 
 CNET_API int residual_http_oracle(const double *in, double *out, void *ctx);
 
+/* Window-restricted next-token scores (logprob if seen, else -1e30).
+ * wl has length residual_http_window_n(r). Returns 0 or <0. */
+CNET_API int residual_http_window_logits(ResidualHttp *r, int hot_slot,
+                                         float *wl);
+
+/* Top-k one-hot fields (out length = k * W). k in [1,8]. */
+CNET_API int residual_http_oracle_topk(const double *in, double *out, void *ctx,
+                                       int k);
+
 CNET_API int residual_http_window_n(const ResidualHttp *r);
 CNET_API const int *residual_http_window_ids(const ResidualHttp *r);
 

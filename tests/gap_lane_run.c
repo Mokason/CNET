@@ -46,6 +46,9 @@
  *   CNET_JTC_TEACHER          0 = disable closed-set JSON tool-call teacher
  *                             (default on). Binds jtc_hermetic_v0 and drains
  *                             jtc_feat→json_tool gaps via finite mine+seal.
+ *   CNET_TEACHER_HTTP         if set (e.g. http://127.0.0.1:8080), bind a
+ *                             Bonsai/llama.cpp HTTP window teacher even when
+ *                             no GGUF argv[3] is given (light certifying path).
  *   CNET_ACQ_HIDDEN / CNET_ACQ_MAXHIDDEN / CNET_ACQ_EPOCHS
  *                             student structure budget (dynamic growth)
  *   CNET_ACQ_TARGET_LOSS / CNET_ACQ_MIN_IMPROVEMENT
@@ -74,6 +77,7 @@
 #include "../include/base.h"
 #include "../include/cce/cce_detect.h"
 #include "../include/cce/cce_gguf.h"
+#include "../include/residual_http.h"
 
 #define LM_MAX_K 8
 
@@ -393,10 +397,104 @@ static int gap_ports(const GapLane *L, const GapRecord *gap,
 }
 
 static int gap_model_teachable(const GapLane *L, const GapRecord *gap,
+                               int vocab, int base);
+
+static long env_long(const char *name, long dflt);
+static double env_double(const char *name, double dflt);
+
+/* ---- HTTP teacher (Bonsai residual server) -------------------------------- */
+static ResidualHttp *g_http_teacher = NULL;
+
+typedef struct {
+    ResidualHttp *r;
+    int width;
+    int k;
+    double eps;
+} HttpTask;
+
+static HttpTask http_tasks[ACQUIRE_MAX_ORACLES];
+static size_t http_task_count;
+
+static int http_teach(const double *in, double *out, void *ctx) {
+    HttpTask *t = (HttpTask *)ctx;
+    if (!t || !t->r || !in || !out) return -1;
+    if (t->k <= 1) return residual_http_oracle(in, out, t->r);
+    return residual_http_oracle_topk(in, out, t->r, t->k);
+}
+
+static int http_shape_ok(Port in, Port goal, int W) {
+    if (W <= 0) return 0;
+    if (!(in.family == PORT_ONEHOT && in.field_count == 1 &&
+          goal.family == PORT_ONEHOT && goal.field_width == in.field_width &&
+          (int)in.field_width == W && goal.field_count >= 1 &&
+          goal.field_count <= LM_MAX_K))
+        return 0;
+    return 1;
+}
+
+static int gap_model_teachable(const GapLane *L, const GapRecord *gap,
                                int vocab, int base) {
     Port in, goal;
-    return gap_oracle_candidate(gap) && gap_ports(L, gap, &in, &goal) &&
-           lm_shape_ok(in, goal, vocab, base);
+    if (!(gap_oracle_candidate(gap) && gap_ports(L, gap, &in, &goal)))
+        return 0;
+    if (g_http_teacher) {
+        int W = residual_http_window_n(g_http_teacher);
+        if (http_shape_ok(in, goal, W)) return 1;
+    }
+    if (vocab <= 0) return 0;
+    return lm_shape_ok(in, goal, vocab, base);
+}
+
+static size_t bind_http_teachers(GapLane *L) {
+    size_t g, bound = 0, n_cand = 0, ci;
+    size_t order[512];
+    int W;
+    double eps;
+    if (!L || !g_http_teacher) return 0;
+    W = residual_http_window_n(g_http_teacher);
+    if (W <= 0) return 0;
+    eps = env_double("CNET_LANE_MARGIN_EPS", 1e-4);
+    http_task_count = 0;
+    memset(&L->oracles, 0, sizeof L->oracles);
+    for (g = 0; g < L->ledger.count && n_cand < 512; g++) {
+        const GapRecord *gap = &L->ledger.gaps[g];
+        Port in, goal;
+        if (!gap_oracle_candidate(gap) || !gap_ports(L, gap, &in, &goal))
+            continue;
+        if (cnet_record_tag_owned(goal.tag)) continue;
+        if (!http_shape_ok(in, goal, W)) continue;
+        order[n_cand++] = g;
+    }
+    for (ci = 1; ci < n_cand; ci++) {
+        size_t key = order[ci], j = ci;
+        while (j > 0 && L->ledger.gaps[order[j - 1]].times_hit <
+                            L->ledger.gaps[key].times_hit) {
+            order[j] = order[j - 1];
+            j--;
+        }
+        order[j] = key;
+    }
+    for (ci = 0; ci < n_cand && bound < ACQUIRE_MAX_ORACLES; ci++) {
+        const GapRecord *gap = &L->ledger.gaps[order[ci]];
+        Port in, goal;
+        char name[ACQUIRE_NAME_MAX];
+        HttpTask *t;
+        if (!gap_ports(L, gap, &in, &goal) || !http_shape_ok(in, goal, W))
+            continue;
+        snprintf(name, sizeof name, "http_%.56s",
+                 goal.tag[0] ? goal.tag : "untagged");
+        t = &http_tasks[http_task_count];
+        t->r = g_http_teacher;
+        t->width = W;
+        t->k = (int)goal.field_count;
+        t->eps = eps;
+        if (acquire_oracle_register(&L->oracles, name, in, goal, http_teach,
+                                    t) == 0) {
+            http_task_count++;
+            bound++;
+        }
+    }
+    return bound;
 }
 
 /* JTC teacher: closed-set hermetic oracle for jtc_feat → json_tool.
@@ -851,7 +949,29 @@ int main(int argc, char **argv) {
             fflush(stdout);
         }
     } else {
-        printf("gap_lane_run: maintenance mode (no teacher bound)\n");
+        const char *http = getenv("CNET_TEACHER_HTTP");
+        if (!http || !http[0]) http = getenv("CNET_RESIDUAL_HTTP");
+        if (http && http[0]) {
+            const char *win = getenv("CNET_WINDOW_FILE");
+            if (!win || !win[0]) win = getenv("CNET_RESIDUAL_WINDOW");
+            if (residual_http_open(&g_http_teacher, http, win, 32) == 0 &&
+                g_http_teacher) {
+                int W = residual_http_window_n(g_http_teacher);
+                /* Align window mode so http_shape_ok matches ledger gaps. */
+                if (W > 0 && lm_window_n == 0) {
+                    const int *ids = residual_http_window_ids(g_http_teacher);
+                    int i;
+                    lm_window_n = W < LM_WINDOW_MAX ? W : LM_WINDOW_MAX;
+                    for (i = 0; i < lm_window_n; i++) lm_window[i] = ids[i];
+                }
+                printf("gap_lane_run: HTTP teacher %s window=%d\n", http, W);
+            } else {
+                printf("gap_lane_run: HTTP teacher open failed (%s)\n", http);
+                g_http_teacher = NULL;
+            }
+        } else {
+            printf("gap_lane_run: maintenance mode (no teacher bound)\n");
+        }
     }
     printf("gap_lane_run: base=%s ledger=%s inbox=%s interval=%lds "
            "units=%zu\n",
@@ -912,6 +1032,10 @@ int main(int argc, char **argv) {
             if (model) {
                 bind_model_teachers(&lane, model, logits, vocab,
                                     (int)token_base, eps);
+            } else if (g_http_teacher) {
+                size_t hb = bind_http_teachers(&lane);
+                if (tick_no == 1 || (tick_no % 10) == 0)
+                    printf("gap_lane_run: http_teacher bound=%zu\n", hb);
             } else {
                 memset(&lane.oracles, 0, sizeof lane.oracles);
             }
