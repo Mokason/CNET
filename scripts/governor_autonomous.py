@@ -22,22 +22,15 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-try:
-    from governor_v4_ext import (
-        run_structured,
-        score_goal_graph,
-        stable_evolve,
-        maybe_novel_curriculum,
-    )
-except ImportError:
-    import sys as _sys
-    _sys.path.insert(0, str(Path(__file__).resolve().parent))
-    from governor_v4_ext import (
-        run_structured,
-        score_goal_graph,
-        stable_evolve,
-        maybe_novel_curriculum,
-    )
+# scripts/ on path when run as file
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import governor_personality as persona_org
+from governor_v4_ext import (
+    run_structured,
+    score_goal_graph,
+    stable_evolve,
+    maybe_novel_curriculum,
+)
 
 ROOT = Path(os.environ.get("CNET_ROOT", Path(__file__).resolve().parents[1]))
 GOV = Path(os.environ.get("CNET_GOVERNOR_DIR", ROOT / "logs/governor"))
@@ -608,6 +601,14 @@ def pick(charter: dict, sb: dict, pins: dict, meta: dict) -> list[dict]:
             bias += 5  # push away unless override
         if sb.get("pending_outcome") and gid == "outcome_review":
             bias -= 2
+        # personality organ (soft, never overrides safety)
+        pb = float((sb.get("persona_bias") or {}).get(gid, 0) or 0)
+        bias += pb  # persona bias already signed (neg=prefer)
+        # high caution: avoid break_plateau slightly more
+        if float(sb.get("persona_caution") or 0.5) > 0.75 and gid == "break_plateau":
+            bias += 1
+        if float(sb.get("persona_loyalty") or 0.5) > 0.75 and gid == "outcome_review":
+            bias -= 1
         health = {
             "drain_open_gaps": sb.get("goal_health_drain", 0.5),
             "peft_jtc": sb.get("goal_health_peft", 0.5),
@@ -846,7 +847,21 @@ def persist(sb: dict, state: dict, picked: list, results: list, pins: dict, meta
                 "eval_veto",
                 "top_project",
                 "dt_h",
+                "persona",
+                "persona_consistency",
+                "trait_drift",
+                "charter_alignment",
+                "affect_reward",
+                "affect_frustration",
+                "persona_caution",
             )
+        },
+        "persona": {
+            "profile": sb.get("persona"),
+            "title": sb.get("persona_title"),
+            "traits": sb.get("persona_traits"),
+            "affect": sb.get("persona_affect"),
+            "bias": sb.get("persona_bias"),
         },
         "projects": sb.get("projects"),
         "meta": {
@@ -920,7 +935,8 @@ def self_test() -> int:
     # graph loads
     g = score_goal_graph({"eval_jtc_delta": 0.1, "backlog_pressure": 20, "teacher_uptime": 1, "hermes_task_fail_rate": 0.3, "hours_since_procedure": 10, "web_notes": 1}, GOAL_GRAPH, META_DEFAULTS)
     assert g and g[0]["urgency"] >= 0
-    print("GOVERNOR_V4_SELFTEST_PASS checks=6")
+    assert persona_org.self_test() == 0
+    print("GOVERNOR_V4_SELFTEST_PASS checks=7")
     return 0
 
 
@@ -938,6 +954,24 @@ def main() -> int:
     charter = parse_charter()
 
     sb = collect(state, pins, meta)
+    # Homeostatic personality organ (affect + traits); soft bias only
+    try:
+        pstate = persona_org.tick(sb)
+        sb["persona"] = pstate.get("profile")
+        sb["persona_title"] = pstate.get("title")
+        sb["persona_consistency"] = pstate.get("consistency")
+        sb["trait_drift"] = pstate.get("trait_drift")
+        sb["charter_alignment"] = pstate.get("charter_alignment")
+        sb["affect_reward"] = (pstate.get("affect") or {}).get("reward")
+        sb["affect_frustration"] = (pstate.get("affect") or {}).get("frustration")
+        sb["affect_vigilance"] = (pstate.get("affect") or {}).get("vigilance")
+        sb["persona_caution"] = (pstate.get("traits") or {}).get("caution")
+        sb["persona_loyalty"] = (pstate.get("traits") or {}).get("loyalty_to_charter")
+        sb["persona_bias"] = pstate.get("last_bias") or {}
+        sb["persona_traits"] = pstate.get("traits")
+        sb["persona_affect"] = pstate.get("affect")
+    except Exception as _e:
+        sb["persona_error"] = str(_e)[:120]
     meta = stable_evolve(meta, sb, state, META_DEFAULTS)
     maybe_novel_curriculum(ROOT, GOV, sb, meta, state)
     save_json(META_PATH, meta)
@@ -1010,6 +1044,9 @@ def main() -> int:
                 "top_project": sb.get("top_project"),
                 "evolve": state.get("evolve_note"),
                 "meta_w_eval": meta.get("w_eval"),
+                "persona": sb.get("persona"),
+                "affect_reward": sb.get("affect_reward"),
+                "consistency": sb.get("persona_consistency"),
             }
         ),
     )

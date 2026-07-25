@@ -3845,3 +3845,12 @@ governor_a_gate: governor_v4
 	@python3 -c "import json;d=json.load(open('logs/governor/last_decision.json')); assert 'v4' in d.get('engine',''); h=json.load(open('logs/governor/hermes_structured.json')); print('engine',d['engine']); print('goals',d['goals']); print('hermes', {k:h.get(k) for k in ['fails','oks','hermes_task_fail_rate','noisy']}); print('meta', d.get('meta')); print('top', d.get('scoreboard_focus',{}).get('top_project')); print('evolve', d.get('evolve_note'))"
 	@scripts/dev-sandbox.sh --persistent --from-prod python3 scripts/governor_autonomous.py --test
 	@echo GOVERNOR_A_GATE_PASS
+
+.PHONY: personality_test governor_persona
+personality_test:
+	@python3 scripts/governor_personality.py --test
+
+governor_persona: personality_test
+	@python3 scripts/governor_autonomous.py --test
+	@test -f logs/governor/personality_state.json
+	@echo GOVERNOR_PERSONA_PASS
