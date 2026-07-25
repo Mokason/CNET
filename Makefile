@@ -3785,14 +3785,20 @@ bonsai_residual_fault_seed_run: tools/bonsai_residual_fault_seed.c src/residual_
 	./$(BIN_DIR)/bonsai_residual_fault_seed $${N:-16} | tee logs/bonsai_residual_fault_seed.log
 	@grep -q BONSAI_FAULT_SEED logs/bonsai_residual_fault_seed.log
 
-# Self-direction governor (charter → scoreboard → emit work)
-.PHONY: governor governor_dry
-governor:
-	@python3 scripts/cnet_governor.py --test
-	@python3 scripts/cnet_governor.py --dry-run
+# Self-direction governor (native C — charter → evolving scoreboard → muscles)
+.PHONY: governor governor_build governor_dry
+governor_build: tools/cnet_governor.c
+	@mkdir -p $(BIN_DIR)
+	$(CC) $(CFLAGS) -O2 -o $(BIN_DIR)/cnet_governor tools/cnet_governor.c -lm
+	@echo built $(BIN_DIR)/cnet_governor
+
+governor: governor_build
+	@./$(BIN_DIR)/cnet_governor --test
+	@CNET_ROOT=$(CURDIR) CNET_BASE_PATH=$(CURDIR)/soul_gemma4v2_final.cnb 	  CNET_GOVERNOR_DIR=$(CURDIR)/logs/governor 	  CNET_GOVERNOR_CHARTER=$(CURDIR)/config/cnet_governor_charter.yaml 	  CNET_RESIDUAL_HTTP=http://127.0.0.1:8080 	  CNET_RESIDUAL_WINDOW=$(CURDIR)/english_window_256_bonsai.txt 	  ./$(BIN_DIR)/cnet_governor --dry-run
 	@test -f logs/governor/last_decision.json
+	@grep -q cnet_governor_c logs/governor/last_decision.json
 	@echo GOVERNOR_PASS
 
-governor_dry:
-	@python3 scripts/cnet_governor.py --test
-	@python3 scripts/cnet_governor.py --dry-run
+governor_dry: governor_build
+	@./$(BIN_DIR)/cnet_governor --test
+	@./$(BIN_DIR)/cnet_governor --dry-run
