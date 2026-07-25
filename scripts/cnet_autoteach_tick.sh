@@ -130,9 +130,9 @@ random.seed(int(time.time()) // 3600)  # stable within hour
 picks = random.sample(ids, min(n, len(ids)))
 lines = []
 for tid in picks:
-    # ONEHOT family=0, width=W, count=1 tag w_cur -> goal tk{N}q{N} k fields
+    # PORT_ONEHOT=1 (PORT_RAW=0). Width=W slots over window alphabet.
     lines.append(
-        f"NO_PLAN 0 {W} 1 w_cur 0 {W} {k} tk{tid}q{tid}\n"
+        f"NO_PLAN 1 {W} 1 w_cur 1 {W} {k} tk{tid}q{tid}\n"
     )
 inbox.parent.mkdir(parents=True, exist_ok=True)
 with inbox.open("a") as f:

@@ -424,8 +424,11 @@ static int http_teach(const double *in, double *out, void *ctx) {
 
 static int http_shape_ok(Port in, Port goal, int W) {
     if (W <= 0) return 0;
-    if (!(in.family == PORT_ONEHOT && in.field_count == 1 &&
-          goal.family == PORT_ONEHOT && goal.field_width == in.field_width &&
+    /* Prefer ONEHOT; also accept RAW with matching dims (legacy inbox lines). */
+    if (!((in.family == PORT_ONEHOT || in.family == PORT_RAW) &&
+          (goal.family == PORT_ONEHOT || goal.family == PORT_RAW)))
+        return 0;
+    if (!(in.field_count == 1 && goal.field_width == in.field_width &&
           (int)in.field_width == W && goal.field_count >= 1 &&
           goal.field_count <= LM_MAX_K))
         return 0;
