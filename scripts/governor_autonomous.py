@@ -25,6 +25,7 @@ from typing import Any
 # scripts/ on path when run as file
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import governor_personality as persona_org
+import governor_zen_reflect as zen_org
 from governor_v4_ext import (
     run_structured,
     score_goal_graph,
@@ -856,6 +857,7 @@ def persist(sb: dict, state: dict, picked: list, results: list, pins: dict, meta
                 "persona_caution",
             )
         },
+        "zen": {"mode": sb.get("zen_mode"), "principles": sb.get("zen_principles"), "goals": sb.get("zen_goals")},
         "persona": {
             "profile": sb.get("persona"),
             "title": sb.get("persona_title"),
@@ -936,7 +938,8 @@ def self_test() -> int:
     g = score_goal_graph({"eval_jtc_delta": 0.1, "backlog_pressure": 20, "teacher_uptime": 1, "hermes_task_fail_rate": 0.3, "hours_since_procedure": 10, "web_notes": 1}, GOAL_GRAPH, META_DEFAULTS)
     assert g and g[0]["urgency"] >= 0
     assert persona_org.self_test() == 0
-    print("GOVERNOR_V4_SELFTEST_PASS checks=7")
+    assert zen_org.self_test() == 0
+    print("GOVERNOR_V4_SELFTEST_PASS checks=8")
     return 0
 
 
@@ -982,6 +985,19 @@ def main() -> int:
         pins["freeze_seals"] = 1
 
     picked = pick(charter, sb, pins, meta)
+    # Zen: sit still / non-attachment before committing agenda
+    try:
+        pstate = {
+            "affect": sb.get("persona_affect") or {},
+            "traits": sb.get("persona_traits") or {},
+        }
+        picked, zen_log = zen_org.reflect(picked, sb, state, pstate)
+        sb["zen_mode"] = zen_log.get("mode")
+        sb["zen_principles"] = zen_log.get("principles")
+        sb["zen_goals"] = zen_log.get("goals_after")
+    except Exception as _ze:
+        sb["zen_error"] = str(_ze)[:120]
+        zen_log = {}
     results = []
     seen = set()
     for g in picked:
@@ -1047,6 +1063,7 @@ def main() -> int:
                 "persona": sb.get("persona"),
                 "affect_reward": sb.get("affect_reward"),
                 "consistency": sb.get("persona_consistency"),
+                "zen": sb.get("zen_mode"),
             }
         ),
     )

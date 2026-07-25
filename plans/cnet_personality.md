@@ -29,3 +29,9 @@ driven by backlog/eval/Hermes/plateau/busy/veto
 python3 scripts/governor_personality.py --test
 python3 scripts/governor_autonomous.py --test
 ```
+
+## Marble imprint + Zen commit gate
+- Active profile: `marble` (zen spine + light anime/VTuber delivery)
+- Voice: `config/voice_marble.md` (+ `~/.hermes/identity/voice_marble.md`, SOUL pointer)
+- Zen gate: `scripts/governor_zen_reflect.py` — sit/see before heavy commit; never delay infra fires
+- Decision log includes `persona` + `zen.principles`
