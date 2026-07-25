@@ -1,0 +1,54 @@
+# CNET self-direction charter (human-owned).
+# Governor reads this file and may ONLY pursue listed goals.
+# priority: lower number = more important when scores tie.
+# max_tasks_per_cycle: hard cap on emitted work items (1-3).
+# budget_sec: soft wall for hired muscles this cycle.
+
+version: 1
+max_tasks_per_cycle: 3
+budget_sec: 900
+quiet_hours: []  # e.g. ["02:00-07:00"] — skip heavy emit (optional)
+
+# Standing goals. metric keys match scoreboard fields.
+goals:
+  - id: keep_teacher_alive
+    priority: 0
+    description: Bonsai HTTP teacher and lane must be up
+    when: "bonsai_ok == 0 or lane_ok == 0"
+    actions: [ensure_bonsai, ensure_lane]
+
+  - id: drain_open_gaps
+    priority: 1
+    description: Open/deferred teachable gaps need Bonsai teaching
+    when: "open_gaps + deferred_oracle >= 8"
+    actions: [ensure_lane, inject_window_gaps, nudge_lane_tick]
+
+  - id: peft_jtc
+    priority: 2
+    description: Keep JTC PEFT warm from fault bus
+    when: "fault_lines >= 64 and hours_since_peft >= 0.5"
+    actions: [run_cert_learn]
+
+  - id: structure_mine
+    priority: 3
+    description: Distill residual traces into certified A units
+    when: "bonsai_ok == 1 and hours_since_mine >= 1.5"
+    actions: [run_structure_mine]
+
+  - id: procedure_curriculum
+    priority: 4
+    description: Re-seed structured procedure/research skills
+    when: "hours_since_procedure >= 3"
+    actions: [seed_procedures]
+
+  - id: coverage_curiosity
+    priority: 5
+    description: Idle healthy system — grow window coverage
+    when: "bonsai_ok == 1 and lane_ok == 1 and open_gaps + deferred_oracle < 8"
+    actions: [inject_window_gaps, ensure_curiosity]
+
+  - id: health_hold
+    priority: 9
+    description: Nothing urgent — record hold, no thrash
+    when: "true"
+    actions: [log_hold]
