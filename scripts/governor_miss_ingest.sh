@@ -34,27 +34,34 @@ if fault.exists():
         if "jtc" in u.lower() or "json_tool" in u.lower():
             jtc += 1
 
+# A waiting_oracle row is an OPEN row carrying an annotation, not a third
+# state (verified against the live ledger: every waiting row has state 1).
+# Counting both independently double-counted them; governor_autonomous.collect()
+# instead partitions outstanding rows into waiting XOR open, so mirror that or
+# backlog_pressure and real_miss_rate silently disagree about the same ledger.
 waiting = 0
 open_n = 0
 closed_n = 0
 if gaps.exists():
     for i,line in enumerate(gaps.read_text(errors="replace").splitlines()):
         if i < 2: continue
+        parts=line.split()
+        state = parts[1] if len(parts)>1 else ""
         if "waiting_oracle" in line or "waiting_charter" in line:
             waiting += 1
-        parts=line.split()
-        if len(parts)>1 and parts[1]=="1":
+        elif state=="1":
             open_n += 1
-        elif len(parts)>1 and parts[1]=="2":
+        elif state=="2":
             closed_n += 1
 
-# real_miss_rate: share of the whole ledger that is NOT resolved.
+# real_miss_rate: share of the ledger still outstanding.
 # The old denominator was (waiting + open + 1) — it excluded every closed gap,
 # so the rate could never fall below ~0.3 no matter how well the lane drained,
 # and real_miss_cut permanently dominated project ranking. Successes must be in
 # the denominator for this to be a rate at which 0 means "healthy".
-denom = max(1, waiting + open_n + closed_n)
-real_miss_rate = min(1.0, (waiting + open_n) / denom)
+outstanding = waiting + open_n
+denom = max(1, outstanding + closed_n)
+real_miss_rate = min(1.0, outstanding / denom)
 top = units.most_common(12)
 rep = {
   "ts": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
@@ -64,7 +71,7 @@ rep = {
   "open_gaps": open_n,
   "closed_gaps": closed_n,
   "real_miss_rate": round(real_miss_rate, 4),
-  "real_miss_formula": "(waiting_oracle + open_gaps) / (waiting_oracle + open_gaps + closed_gaps)",
+  "real_miss_formula": "(waiting_oracle + open_gaps) / (waiting_oracle + open_gaps + closed_gaps); waiting XOR open partition the outstanding set",
   "top_units": [{"unit": u, "n": n} for u,n in top],
 }
 out.write_text(json.dumps(rep, indent=2)+"\n")

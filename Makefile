@@ -1033,7 +1033,7 @@ recipe_gate:
 
 # Test recipes propagate their exit codes directly. This positive-marker gate
 # runs after every prerequisite and rejects missing or stale-success logs.
-verify: recipe_gate claims_test cce_dll cce_safetensors_test cce_autograd_test cce_model_test cce_view forest_view cce_detect cce_ssm cce_hybrid cce_qwen35 cce_st_llama cce_specgraph cce_wstore cce_tiers cce_similar merge_family hybrid_catalog transformer_qat contract_secure contract_unit heal_mismatch mutate acquire base flagship demos leakcheck cnet_fault_test cce_adapter_bank_test cce_dora_test cnet_serve_decode_test cnet_fault_loop_test registry_lora_store_test jtc_adapter_bench
+verify: recipe_gate claims_test cce_dll cce_safetensors_test cce_autograd_test cce_model_test cce_view forest_view cce_detect cce_ssm cce_hybrid cce_qwen35 cce_st_llama cce_specgraph cce_wstore cce_tiers cce_similar merge_family hybrid_catalog transformer_qat contract_secure contract_unit heal_mismatch mutate acquire base flagship demos leakcheck cnet_fault_test cce_adapter_bank_test cce_dora_test cnet_serve_decode_test cnet_fault_loop_test registry_lora_store_test jtc_adapter_bench metric_honesty
 	@sh tests/verify_logs.sh
 
 # Everything verify covers PLUS the GPU equivalence gate (needs model + GPU;
@@ -1055,7 +1055,7 @@ verify-fast: recipe_gate claims_test cce_dll cnet_fault_test cce_adapter_bank_te
 	@echo VERIFY_FAST_PASS
 
 # Nightly: full verify + heavy PEFT/fault/openlab/grade campaigns + procedure chunks
-verify-nightly: verify cnet_fault_loop_test registry_lora_store_test jtc_adapter_bench cnet_openlab_import cnet_grade_up cnet_a_grade procedure_chunks
+verify-nightly: verify cnet_fault_loop_test registry_lora_store_test jtc_adapter_bench cnet_openlab_import cnet_grade_up cnet_a_grade procedure_chunks metric_honesty_mutation
 	@echo VERIFY_NIGHTLY_PASS
 
 test: verify
@@ -1830,6 +1830,28 @@ cnet_fault_loop_test: json_toolcall_alphabet $(MULTIMODAL_SRC) $(MODEL_RUNTIME) 
 		$(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) \
 		src/soul_host.c $(ROUTE_LOG_SRC) tests/cnet_fault_loop_test.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -pthread
 	./$(BIN_DIR)/cnet_fault_loop_test
+
+# Metric honesty: tests that fail when a governor metric lies.
+# Every 2026-07-25 defect was an instrument bug, not a mechanism bug; these
+# encode the invariant each metric must satisfy and are verified by mutation
+# (make metric_honesty_mutation) to go red when the old behaviour returns.
+.PHONY: metric_honesty metric_honesty_mutation
+cnet_fault_dedupe_probe: src/cnet_fault.c tests/cnet_fault_dedupe_probe.c
+	@mkdir -p $(BIN_DIR)
+	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ src/cnet_fault.c tests/cnet_fault_dedupe_probe.c $(LDFLAGS)
+
+metric_honesty: cnet_fault_dedupe_probe
+	@mkdir -p logs
+	@python3 tests/test_metric_honesty.py > logs/metric_honesty.log 2>&1 \
+		|| { tail -40 logs/metric_honesty.log; false; }
+	@grep -q "METRIC_HONESTY_PASS" logs/metric_honesty.log
+	@grep -E "^Ran [0-9]+ tests" logs/metric_honesty.log
+	@echo METRIC_HONESTY_PASS
+
+metric_honesty_mutation: cnet_fault_dedupe_probe
+	@mkdir -p logs
+	@bash tests/metric_honesty_mutation.sh 2>&1 | tee logs/metric_honesty_mutation.log
+	@grep -q "MUTATION_GATE_PASS" logs/metric_honesty_mutation.log
 
 cnet_fault_test: src/cnet_fault.c src/cnet_promote.c tests/cnet_fault_test.c
 	@mkdir -p $(BIN_DIR)

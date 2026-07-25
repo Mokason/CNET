@@ -448,6 +448,72 @@ int main(void) {
               "reconciles WITHOUT a link — lineage is never guessed");
     }
 
+    /* -- reliability evidence survives a checkpoint round-trip -----------
+       registry.c has always incremented output_successes/failures on serve,
+       but nothing persisted them: cnb_put_stats had no production caller, so
+       every base reported stats=0, every evidence record read 0.5 / 0 / 0, and
+       the lane's low-reliability heal path could never accumulate the evidence
+       it gates on. A source grep for the call cannot catch its removal; this
+       round-trip can.
+
+       Run last, on a settled lane: a unit healed mid-test is legitimately
+       retrained, and stats are digest-bound, so evidence recorded before the
+       rebuild is correctly refused (asserted as the second property below). */
+    {
+        const char *sname = NULL;
+        BinaryTransformNetwork *sbtn = NULL;
+        size_t si;
+        for (si = 0; si < lane.reg.count; si++) {
+            if (lane.reg.entries[si].name && lane.reg.entries[si].btn) {
+                sname = lane.reg.entries[si].name;
+                sbtn = lane.reg.entries[si].btn;
+                break;
+            }
+        }
+        check(sname != NULL, "stats fixture: a unit is registered");
+        if (sname) {
+            char keep[ACQUIRE_NAME_MAX];
+            snprintf(keep, sizeof keep, "%s", sname);
+            sbtn->output_successes = 7;
+            sbtn->output_failures = 3;
+            check(gap_lane_checkpoint(&lane) == 0,
+                  "checkpoint persists reliability counters");
+            gap_lane_close(&lane);
+            check(gap_lane_open(&lane, base_path, ledger_path, inbox_path) == 0,
+                  "reopen after a stats checkpoint");
+            {
+                unsigned long s = 0, f = 0;
+                int found = 0;
+                for (si = 0; si < lane.reg.count; si++) {
+                    if (lane.reg.entries[si].name &&
+                        strcmp(lane.reg.entries[si].name, keep) == 0) {
+                        s = lane.reg.entries[si].btn->output_successes;
+                        f = lane.reg.entries[si].btn->output_failures;
+                        found = 1;
+                        break;
+                    }
+                }
+                check(found && s == 7 && f == 3,
+                      "reliability counters survive checkpoint + reopen "
+                      "(restored, not reset to zero)");
+                /* retrainer-invalidates: perturb the weights and the bound
+                   evidence must be refused rather than silently carried over */
+                if (found) {
+                    BinaryTransformNetwork *b2 = lane.reg.entries[si].btn;
+                    if (b2->output_bias) {
+                        b2->output_bias[0] += 1.0;
+                        b2->output_successes = 0;
+                        b2->output_failures = 0;
+                        check(cnb_apply_stats(&lane.base, keep, b2) == -1 &&
+                              b2->output_successes == 0,
+                              "stats bound to the old digest are refused after "
+                              "a weight change (retrainer invalidates)");
+                    }
+                }
+            }
+        }
+    }
+
     gap_lane_close(&lane);
     remove(base_path);
     remove(ledger_path);
