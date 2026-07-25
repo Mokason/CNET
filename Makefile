@@ -3784,3 +3784,15 @@ bonsai_residual_fault_seed_run: tools/bonsai_residual_fault_seed.c src/residual_
 	CNET_RESIDUAL_WINDOW=$${CNET_RESIDUAL_WINDOW} CNET_ACCT_LOG=$${CNET_ACCT_LOG} \
 	./$(BIN_DIR)/bonsai_residual_fault_seed $${N:-16} | tee logs/bonsai_residual_fault_seed.log
 	@grep -q BONSAI_FAULT_SEED logs/bonsai_residual_fault_seed.log
+
+# Self-direction governor (charter → scoreboard → emit work)
+.PHONY: governor governor_dry
+governor:
+	@python3 scripts/cnet_governor.py --test
+	@python3 scripts/cnet_governor.py --dry-run
+	@test -f logs/governor/last_decision.json
+	@echo GOVERNOR_PASS
+
+governor_dry:
+	@python3 scripts/cnet_governor.py --test
+	@python3 scripts/cnet_governor.py --dry-run
