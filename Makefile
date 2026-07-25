@@ -3802,3 +3802,22 @@ governor: governor_build
 governor_dry: governor_build
 	@./$(BIN_DIR)/cnet_governor --test
 	@./$(BIN_DIR)/cnet_governor --dry-run
+
+.PHONY: governor_v2 governor_quality
+governor_v2:
+	@python3 scripts/governor_autonomous.py --test
+	@python3 scripts/governor_autonomous.py --dry-run
+	@test -f logs/governor/last_decision.json
+	@grep -q governor_autonomous_v2 logs/governor/last_decision.json
+	@echo GOVERNOR_V2_PASS
+
+governor_quality: governor_v2
+	@bash scripts/governor_hooks.sh pre
+	@bash scripts/governor_safe_web.sh || true
+	@python3 scripts/governor_autonomous.py
+	@test -f logs/governor/miss_bus.json
+	@test -f logs/governor/resource_snap.json
+	@test -f logs/governor/last_decision.json
+	@python3 -c "import json;d=json.load(open('logs/governor/last_decision.json')); assert d.get('engine')=='governor_autonomous_v2'; assert d.get('goals'); print('quality_goals', d['goals']); print('quality_actions', d.get('actions')); print('focus', d.get('scoreboard_focus'))"
+	@echo GOVERNOR_QUALITY_PASS
+

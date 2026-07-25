@@ -1,0 +1,13 @@
+# Verified pages only — one URL per line. Governor safe_web will refuse anything else.
+# Prefer https, stable docs, no login walls. No wild crawl.
+
+https://hermes-agent.nousresearch.com/docs
+https://github.com/NousResearch/hermes-agent
+https://arxiv.org/abs/2402.03300
+https://arxiv.org/list/cs.LG/recent
+https://docs.python.org/3/library/json.html
+https://en.wikipedia.org/wiki/Low-rank_adaptation
+https://en.wikipedia.org/wiki/Mixture_of_experts
+https://pytorch.org/docs/stable/index.html
+https://huggingface.co/docs/hub/en/index
+https://prismml.com/news/bonsai-27b

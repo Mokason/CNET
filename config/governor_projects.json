@@ -1,0 +1,48 @@
+{
+  "version": 1,
+  "projects": [
+    {
+      "id": "jtc_lift",
+      "title": "Raise JTC adapter lift",
+      "metric": "eval_jtc_delta",
+      "target": 0.40,
+      "weight": 3.0,
+      "active": true
+    },
+    {
+      "id": "gap_backlog",
+      "title": "Keep teachable backlog under control",
+      "metric": "backlog_pressure",
+      "target": 8.0,
+      "weight": 2.5,
+      "active": true,
+      "prefer_lower": true
+    },
+    {
+      "id": "procedure_coverage",
+      "title": "Maintain procedure curriculum pulse",
+      "metric": "hours_since_procedure",
+      "target": 6.0,
+      "weight": 1.5,
+      "active": true,
+      "prefer_lower": true
+    },
+    {
+      "id": "real_miss_cut",
+      "title": "Cut real miss rate from fault bus",
+      "metric": "real_miss_rate",
+      "target": 0.05,
+      "weight": 2.0,
+      "active": true,
+      "prefer_lower": true
+    },
+    {
+      "id": "web_knowledge",
+      "title": "Verified-web knowledge notes (bounded)",
+      "metric": "web_notes",
+      "target": 20.0,
+      "weight": 1.0,
+      "active": true
+    }
+  ]
+}
