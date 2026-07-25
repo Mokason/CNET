@@ -1,13 +1,9 @@
 # Human veto / pins for CNET governor. Always honored.
-# force_goal: if set, only this goal (plus keep_teacher_alive) may run
-# freeze_seals: 1 = do not run cert_learn / structure_mine
-# pause_inject: 1 = no window gap inject
-# pause_web: 1 = no internet explore
-# max_tasks_override: 0 = use charter; else cap
-
 force_goal:
 freeze_seals: 0
 pause_inject: 0
 pause_web: 0
 max_tasks_override: 0
+# 1 = ignore automatic eval veto (dangerous)
+eval_veto_override: 0
 notes: "edit anytime; governor reloads each cycle"
