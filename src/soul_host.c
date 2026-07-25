@@ -1063,6 +1063,19 @@ CNET_API int soul_unit_reliability_milli(SoulHost *h, const char *name) {
     return (int)(rel * 1000.0 + 0.5);
 }
 
+CNET_API long soul_unit_evidence_count(SoulHost *h, const char *name) {
+    RegistryEntry *entry = soul_find_unit(h, name);
+    if (!entry || !entry->btn) return -1;
+#if defined(__STDC_NO_ATOMICS__)
+    return (long)(entry->btn->output_successes + entry->btn->output_failures);
+#else
+    return (long)(atomic_load_explicit(&entry->btn->output_successes,
+                                       memory_order_relaxed) +
+                  atomic_load_explicit(&entry->btn->output_failures,
+                                       memory_order_relaxed));
+#endif
+}
+
 CNET_API int soul_health_tick(SoulHost *h, long long *counts, int counts_cap) {
     SpecialistHealthConfig cfg;
     SpecialistHealthReport rep;

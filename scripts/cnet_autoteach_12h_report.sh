@@ -1,63 +1,185 @@
 #!/usr/bin/env bash
+# 12h progress report for the 24/7 auto-teach loop.
+#
+# Every metric here used to be a byte-marker proxy: units_proxy counted
+# b"acq_"/b"json_toolcall"/b"hyb_struct" substrings in the base and read 355 on
+# both sides of a window in which the real unit count moved 102 -> 120, so the
+# report announced "zero progress" during an hour of genuine learning. It also
+# counted raw fault_lines as activity when those lines were duplicate synthetic
+# seed records.
+#
+# Now: authoritative unit count from cnb_audit, gap states from the ledger,
+# DISTINCT fault pairs rather than lines, and closure totals from the lane's own
+# hill-climb ledger.
 set -euo pipefail
 REPO=/home/marble/AI/CNET
 cd "$REPO"
 python3 - <<'PY'
-import json, time, subprocess
+import json, re, subprocess, time
 from pathlib import Path
 from datetime import datetime
+
 repo = Path('/home/marble/AI/CNET')
 base = repo / 'soul_gemma4v2_final.cnb'
-b0 = json.loads((repo/'logs/autoteach/baseline_12h.json').read_text())
-b = open(base,'rb').read() if base.exists() else b''
-now = {
-  'ts': datetime.now().astimezone().isoformat(timespec='seconds'),
-  'elapsed_h': round((time.time()-b0['t_unix'])/3600, 2),
-  'base_size': base.stat().st_size if base.exists() else 0,
-  'fault_lines': sum(1 for _ in open(repo/'logs/cnet_faults.jsonl')) if (repo/'logs/cnet_faults.jsonl').exists() else 0,
-  'lora_files': len(list((repo/'logs/lora_store').glob('*'))) if (repo/'logs/lora_store').exists() else 0,
-  'hyb_struct': b.count(b'hyb_struct'),
-  'units_proxy': b.count(b'acq_')+b.count(b'json_toolcall')+b.count(b'hyb_struct'),
-  'services': {
-    'bonsai': subprocess.getoutput('systemctl --user is-active bonsai-server'),
-    'lane': subprocess.getoutput('systemctl --user is-active cnet-personal-ai-lane'),
-    'autoteach_timer': subprocess.getoutput('systemctl --user is-active cnet-autoteach.timer'),
-  },
-  'last_tick': json.loads((repo/'logs/autoteach/last_tick.json').read_text()) if (repo/'logs/autoteach/last_tick.json').exists() else None,
-}
+gov = repo / 'logs/autoteach'
+gov.mkdir(parents=True, exist_ok=True)
+
+
+def units() -> int:
+    audit = repo / 'bin/cnb_audit'
+    if audit.exists() and base.exists():
+        try:
+            out = subprocess.run([str(audit), str(base), '--count'],
+                                 capture_output=True, text=True, timeout=120).stdout
+            m = re.search(r'units=(\d+)', out)
+            if m:
+                return int(m.group(1))
+        except Exception:
+            pass
+    return 0
+
+
+def gap_states() -> dict:
+    p = Path(str(base) + '.gaps.txt')
+    st = {'open': 0, 'closed': 0, 'waiting': 0}
+    if not p.exists():
+        return st
+    for i, line in enumerate(p.read_text(errors='replace').splitlines()):
+        if i < 2:
+            continue
+        if 'waiting_oracle' in line or 'waiting_charter' in line:
+            st['waiting'] += 1
+        parts = line.split()
+        if len(parts) > 1 and parts[1] == '1':
+            st['open'] += 1
+        elif len(parts) > 1 and parts[1] == '2':
+            st['closed'] += 1
+    return st
+
+
+def faults() -> dict:
+    p = repo / 'logs/cnet_faults.jsonl'
+    if not p.exists():
+        return {'lines': 0, 'distinct': 0, 'units': 0}
+    pairs, us, n = set(), set(), 0
+    for line in p.open(errors='replace'):
+        line = line.strip()
+        if not line:
+            continue
+        n += 1
+        try:
+            d = json.loads(line)
+        except Exception:
+            continue
+        us.add(d.get('unit'))
+        pairs.add((d.get('unit'), tuple(d.get('in') or []), tuple(d.get('tgt') or [])))
+    return {'lines': n, 'distinct': len(pairs), 'units': len(us)}
+
+
+def lane_totals(since_unix: float) -> dict:
+    p = Path(str(base) + '.hill_climb.jsonl')
+    tot = {'examined': 0, 'closed': 0, 'deferred': 0, 'no_oracle': 0, 'ticks': 0}
+    if not p.exists():
+        return tot
+    for line in p.open(errors='replace'):
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            r = json.loads(line)
+        except Exception:
+            continue
+        if float(r.get('ts') or 0) < since_unix:
+            continue
+        tot['ticks'] += 1
+        for k in ('examined', 'closed', 'deferred', 'no_oracle'):
+            tot[k] += int(r.get(k) or 0)
+    return tot
+
+
+def snapshot() -> dict:
+    f = faults()
+    return {
+        'ts': datetime.now().astimezone().isoformat(timespec='seconds'),
+        't_unix': time.time(),
+        'units': units(),
+        'gaps': gap_states(),
+        'fault_lines': f['lines'],
+        'fault_distinct': f['distinct'],
+        'lora_files': len(list((repo / 'logs/lora_store').glob('*')))
+        if (repo / 'logs/lora_store').is_dir() else 0,
+        'base_size': base.stat().st_size if base.exists() else 0,
+        'services': {
+            'bonsai': subprocess.getoutput('systemctl --user is-active bonsai-server'),
+            'lane': subprocess.getoutput('systemctl --user is-active cnet-personal-ai-lane'),
+            'autoteach_timer': subprocess.getoutput('systemctl --user is-active cnet-autoteach.timer'),
+            'governor_timer': subprocess.getoutput('systemctl --user is-active cnet-governor.timer'),
+        },
+        'schema': 2,
+    }
+
+
+now = snapshot()
+bp = gov / 'baseline_12h.json'
+b0 = json.loads(bp.read_text()) if bp.exists() else {}
+if b0.get('schema') != 2:
+    # Old baseline used byte-marker proxies; its numbers are not comparable to
+    # the real counts. Re-baseline rather than print a fabricated delta.
+    b0 = dict(now)
+    b0['horizon_h'] = 12
+    b0['due_unix'] = now['t_unix'] + 12 * 3600
+    b0['rebaselined_from_proxy_schema'] = True
+    bp.write_text(json.dumps(b0, indent=2) + '\n')
+
+elapsed_h = round((now['t_unix'] - float(b0['t_unix'])) / 3600, 2)
+lane = lane_totals(float(b0['t_unix']))
 delta = {
-  'base_size_delta': now['base_size']-b0['base_size'],
-  'fault_lines_delta': now['fault_lines']-b0['fault_lines'],
-  'lora_files_delta': now['lora_files']-b0['lora_files'],
-  'hyb_struct_delta': now['hyb_struct']-b0['hyb_struct'],
-  'units_proxy_delta': now['units_proxy']-b0['units_proxy'],
+    'units': now['units'] - b0['units'],
+    'gaps_closed': now['gaps']['closed'] - b0['gaps']['closed'],
+    'gaps_open': now['gaps']['open'] - b0['gaps']['open'],
+    'gaps_waiting': now['gaps']['waiting'] - b0['gaps']['waiting'],
+    'fault_lines': now['fault_lines'] - b0['fault_lines'],
+    'fault_distinct': now['fault_distinct'] - b0['fault_distinct'],
+    'lora_files': now['lora_files'] - b0['lora_files'],
+    'base_size': now['base_size'] - b0['base_size'],
 }
-rep = {'baseline': b0, 'now': now, 'delta': delta}
-out = repo/'logs/autoteach/report_12h.json'
-out.write_text(json.dumps(rep, indent=2)+'\n')
-md = repo/'logs/autoteach/report_12h.md'
-md.write_text(f"""# CNET auto-teach 12h report
+units_per_h = round(delta['units'] / elapsed_h, 2) if elapsed_h > 0 else 0.0
+
+rep = {'baseline': b0, 'now': now, 'delta': delta,
+       'elapsed_h': elapsed_h, 'units_per_h': units_per_h, 'lane_since_baseline': lane}
+(gov / 'report_12h.json').write_text(json.dumps(rep, indent=2) + '\n')
+
+close_rate = (lane['closed'] / lane['examined']) if lane['examined'] else 0.0
+(gov / 'report_12h.md').write_text(f"""# CNET auto-teach 12h report
 
 - when: {now['ts']}
-- elapsed_h: {now['elapsed_h']}
+- elapsed_h: {elapsed_h}
 
-## Delta
-- units_proxy: {b0['units_proxy']} → {now['units_proxy']} ({delta['units_proxy_delta']:+d})
-- hyb_struct markers: {b0['hyb_struct']} → {now['hyb_struct']} ({delta['hyb_struct_delta']:+d})
-- fault_lines: {b0['fault_lines']} → {now['fault_lines']} ({delta['fault_lines_delta']:+d})
-- lora_files: {b0['lora_files']} → {now['lora_files']} ({delta['lora_files_delta']:+d})
-- base_size: {b0['base_size']} → {now['base_size']} ({delta['base_size_delta']:+d} bytes)
+## Learning (real counts, not byte proxies)
+- units: {b0['units']} → {now['units']} ({delta['units']:+d})  [{units_per_h}/h]
+- gaps closed: {b0['gaps']['closed']} → {now['gaps']['closed']} ({delta['gaps_closed']:+d})
+- gaps open: {b0['gaps']['open']} → {now['gaps']['open']} ({delta['gaps_open']:+d})
+- gaps waiting oracle: {b0['gaps']['waiting']} → {now['gaps']['waiting']} ({delta['gaps_waiting']:+d})
+
+## Lane activity since baseline
+- ticks {lane['ticks']}, examined {lane['examined']}, closed {lane['closed']}, \
+deferred {lane['deferred']}, no_oracle {lane['no_oracle']}
+- close rate: {close_rate:.0%}
+
+## Fault bus
+- lines: {b0['fault_lines']} → {now['fault_lines']} ({delta['fault_lines']:+d})
+- DISTINCT (unit,in,tgt): {b0['fault_distinct']} → {now['fault_distinct']} ({delta['fault_distinct']:+d})
+- lora adapters: {b0['lora_files']} → {now['lora_files']} ({delta['lora_files']:+d})
+
+Line growth without distinct growth means duplicate records, not new signal.
 
 ## Services now
 - bonsai: {now['services']['bonsai']}
 - lane: {now['services']['lane']}
 - autoteach_timer: {now['services']['autoteach_timer']}
-
-## Last tick
-```json
-{json.dumps(now.get('last_tick'), indent=2)}
-```
+- governor_timer: {now['services']['governor_timer']}
 """)
-print('WROTE', out)
-print(json.dumps(delta, indent=2))
+print('WROTE', gov / 'report_12h.json')
+print(json.dumps({'elapsed_h': elapsed_h, 'units_per_h': units_per_h,
+                  'delta': delta, 'lane': lane}, indent=2))
 PY

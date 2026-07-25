@@ -359,6 +359,17 @@ int gap_lane_open(GapLane *L, const char *base_path,
     }
     L->reg.require_certified = 1;
     L->reg.lifecycle_enabled = 1;
+    /* Restore digest-bound reliability counters so evidence accumulates across
+       restarts instead of resetting to zero (see gap_lane_persist_stats).
+       A digest mismatch — the unit was retrained — leaves counters at zero,
+       which is the intended retrainer-invalidates rule. */
+    {
+        size_t si;
+        for (si = 0; si < L->reg.count; si++) {
+            RegistryEntry *e = &L->reg.entries[si];
+            if (e->btn && e->name) (void)cnb_apply_stats(&L->base, e->name, e->btn);
+        }
+    }
     acquire_ledger_init(&L->ledger);
     acquire_ledger_load(&L->ledger, ledger_path);   /* absent = empty */
     memset(&L->oracles, 0, sizeof L->oracles);
@@ -634,8 +645,29 @@ static int ledger_save_atomic(const AcquireLedger *l, const char *path) {
     return 0;
 }
 
+/* Persist per-unit reliability counters into the CNB before saving.
+ *
+ * registry.c increments output_successes/output_failures on every serve, but
+ * nothing ever wrote them to disk: cnb_put_stats had no production caller, so
+ * every base reported `stats=0`, every evidence record read
+ * reliability 0.5 / successes 0 / failures 0, and the lane's own low-reliability
+ * heal path (CNET_LANE_LOW_REL, min evidence CNET_LANE_LOW_REL_MIN_EV — see the
+ * evidence check further up this file) could never fire because the evidence
+ * count restarted at zero on every load. Stats are digest-bound, so a retrained
+ * unit's stale counters are rejected on restore rather than carried over.
+ */
+static void gap_lane_persist_stats(GapLane *L) {
+    size_t i;
+    for (i = 0; i < L->reg.count; i++) {
+        const RegistryEntry *e = &L->reg.entries[i];
+        if (!e->btn || !e->name) continue;
+        (void)cnb_put_stats(&L->base, e->name, e->btn);
+    }
+}
+
 int gap_lane_checkpoint(GapLane *L) {
     if (!L || !L->loaded) return -1;
+    gap_lane_persist_stats(L);
     if (cnb_save(&L->base, L->base_path) != 0) return -2;
     if (ledger_save_atomic(&L->ledger, L->ledger_path) != 0) return -3;
     return 0;

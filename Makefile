@@ -1797,6 +1797,31 @@ jtc_adapter_bench: json_toolcall_alphabet $(MULTIMODAL_SRC) $(MODEL_RUNTIME) $(C
 		src/soul_host.c $(ROUTE_LOG_SRC) tests/jtc_adapter_bench.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -pthread
 	CNET_PROMOTE_EVAL_DELTA=logs/ghost_eval_delta.txt ./$(BIN_DIR)/jtc_adapter_bench
 
+# Production autoteach binaries. These ship in bin/ and are invoked by the
+# 24/7 loop (cnet_autoteach_tick.sh) and the governor, but had no recipe — they
+# were built ad hoc, so a change to e.g. src/cnet_fault.c silently did not reach
+# them. Same link line as the benches above.
+.PHONY: autoteach_bins
+autoteach_bins: cnet_cert_learn_tick struct_mine_persist
+
+cnet_cert_learn_tick: json_toolcall_alphabet $(MULTIMODAL_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(REGISTRY_LORA) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) src/soul_host.c $(ROUTE_LOG_SRC) tools/cnet_cert_learn_tick.c
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ \
+		$(MULTIMODAL_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) \
+		$(SRC) $(ROUTER) $(REGISTRY_LORA) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) \
+		$(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) \
+		src/soul_host.c $(ROUTE_LOG_SRC) tools/cnet_cert_learn_tick.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -pthread
+	@echo built $(BIN_DIR)/$@
+
+struct_mine_persist: json_toolcall_alphabet $(MULTIMODAL_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(REGISTRY_LORA) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) src/soul_host.c $(ROUTE_LOG_SRC) tools/struct_mine_persist.c
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ \
+		$(MULTIMODAL_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) \
+		$(SRC) $(ROUTER) $(REGISTRY_LORA) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) \
+		$(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) \
+		src/soul_host.c $(ROUTE_LOG_SRC) tools/struct_mine_persist.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -pthread
+	@echo built $(BIN_DIR)/$@
+
 cnet_fault_loop_test: json_toolcall_alphabet $(MULTIMODAL_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(REGISTRY_LORA) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) src/soul_host.c $(ROUTE_LOG_SRC) tests/cnet_fault_loop_test.c include/json_toolcall.h
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/cnet_fault_loop_test \
@@ -3785,26 +3810,20 @@ bonsai_residual_fault_seed_run: tools/bonsai_residual_fault_seed.c src/residual_
 	./$(BIN_DIR)/bonsai_residual_fault_seed $${N:-16} | tee logs/bonsai_residual_fault_seed.log
 	@grep -q BONSAI_FAULT_SEED logs/bonsai_residual_fault_seed.log
 
-# Self-direction governor (native C — charter → evolving scoreboard → muscles)
-.PHONY: governor governor_build governor_dry
-governor_build: tools/cnet_governor.c
-	@mkdir -p $(BIN_DIR)
-	$(CC) $(CFLAGS) -O2 -o $(BIN_DIR)/cnet_governor tools/cnet_governor.c -lm
-	@echo built $(BIN_DIR)/cnet_governor
+# Self-direction governor. ONE engine: scripts/governor_autonomous.py (v4),
+# which is what cnet-governor.service runs. The earlier engines — the native C
+# tools/cnet_governor.c and the first-cut scripts/cnet_governor.py — were
+# superseded within the hour and removed; `governor` now aliases the live one so
+# existing muscle memory keeps working.
+.PHONY: governor governor_dry
+governor: governor_v4
 
-governor: governor_build
-	@./$(BIN_DIR)/cnet_governor --test
-	@CNET_ROOT=$(CURDIR) CNET_BASE_PATH=$(CURDIR)/soul_gemma4v2_final.cnb 	  CNET_GOVERNOR_DIR=$(CURDIR)/logs/governor 	  CNET_GOVERNOR_CHARTER=$(CURDIR)/config/cnet_governor_charter.yaml 	  CNET_RESIDUAL_HTTP=http://127.0.0.1:8080 	  CNET_RESIDUAL_WINDOW=$(CURDIR)/english_window_256_bonsai.txt 	  ./$(BIN_DIR)/cnet_governor --dry-run
-	@test -f logs/governor/last_decision.json
-	@grep -q cnet_governor_c logs/governor/last_decision.json
-	@echo GOVERNOR_PASS
-
-governor_dry: governor_build
-	@./$(BIN_DIR)/cnet_governor --test
-	@./$(BIN_DIR)/cnet_governor --dry-run
+governor_dry:
+	@python3 scripts/governor_autonomous.py --test
+	@python3 scripts/governor_autonomous.py --dry-run
 
 
-.PHONY: governor_v2 governor_v3 governor_quality
+.PHONY: governor_v2 governor_v3 governor_v4 governor_quality
 governor_v4:
 	@python3 scripts/governor_autonomous.py --test
 	@python3 scripts/governor_autonomous.py --dry-run

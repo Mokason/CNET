@@ -24,6 +24,7 @@ from typing import Any
 
 # scripts/ on path when run as file
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import gap_inject
 import governor_personality as persona_org
 import governor_zen_reflect as zen_org
 from governor_v4_ext import (
@@ -251,6 +252,37 @@ def count_hermes_errors(hours: float = 6.0) -> dict[str, Any]:
     }
 
 
+def log_line(msg: str) -> None:
+    """Append a governor note to muscle.log (same sink the actions write to)."""
+    try:
+        GOV.mkdir(parents=True, exist_ok=True)
+        with (GOV / "muscle.log").open("a") as f:
+            f.write(f"{datetime.now().astimezone().isoformat(timespec='seconds')} {msg}\n")
+    except Exception:
+        pass
+
+
+def real_units() -> int:
+    """Authoritative unit count from the CNB header (cnb_audit --count, ~0.3s).
+
+    The old byte-marker proxy (counting b"acq_"/b"json_toolcall"/b"hyb_struct"
+    substrings in the base) saturated: it read 355 while the true count moved
+    102 -> 120, so d_units_proxy, learning_velocity and plateau were all blind.
+    Falls back to the proxy only if the audit binary is unavailable.
+    """
+    audit = ROOT / "bin/cnb_audit"
+    if audit.exists() and BASE.exists():
+        try:
+            r = sh(f"{audit} {BASE} --count", timeout=60)
+            m = re.search(r"units=(\d+)", r.stdout or "")
+            if m:
+                return int(m.group(1))
+        except Exception:
+            pass
+    b = BASE.read_bytes() if BASE.exists() else b""
+    return b.count(b"acq_") + b.count(b"json_toolcall") + b.count(b"hyb_struct")
+
+
 def project_scores(sb: dict[str, Any], meta: dict[str, Any]) -> list[dict[str, Any]]:
     conf = load_json(PROJECTS, {"projects": []})
     out = []
@@ -417,8 +449,7 @@ def collect(state: dict, pins: dict, meta: dict) -> dict[str, Any]:
         if (ROOT / "logs/lora_store").is_dir()
         else 0
     )
-    b = BASE.read_bytes() if BASE.exists() else b""
-    units = b.count(b"acq_") + b.count(b"json_toolcall") + b.count(b"hyb_struct")
+    units = real_units()
     web_notes = (
         int((GOV / "web_notes_count").read_text())
         if (GOV / "web_notes_count").exists()
@@ -438,8 +469,11 @@ def collect(state: dict, pins: dict, meta: dict) -> dict[str, Any]:
     d_eval = ev.get("d_eval_jtc")
     d_eval_f = float(d_eval) if d_eval is not None else 0.0
 
-    # combined real miss: waiting oracle + hermes errors
-    real_miss = max(float(miss.get("real_miss_rate") or 0), float(hermes.get("hermes_err_rate") or 0))
+    # CNET's own miss signal ONLY. Hermes tool-error rate is a *different system's*
+    # health metric: it is reported alongside (hermes_err_rate) and can bias goal
+    # ranking, but it must never masquerade as CNET's miss rate — doing so made
+    # real_miss_cut the top project on the strength of Hermes noise.
+    real_miss = float(miss.get("real_miss_rate") or 0)
 
     sb: dict[str, Any] = {
         "ts": datetime.now().astimezone().isoformat(timespec="seconds"),
@@ -457,6 +491,7 @@ def collect(state: dict, pins: dict, meta: dict) -> dict[str, Any]:
         "fault_lines": fault_lines,
         "lora_files": lora,
         "units_proxy": units,
+        "units_source": "cnb_audit",
         "hours_since_peft": hrs("last_peft_unix"),
         "hours_since_mine": hrs("last_mine_unix"),
         "hours_since_procedure": hrs("last_procedure_unix"),
@@ -467,6 +502,16 @@ def collect(state: dict, pins: dict, meta: dict) -> dict[str, Any]:
         "hermes_err_rate": hermes.get("hermes_err_rate", 0),
         "eval_jtc_delta": eval_f,
         "d_eval_jtc": d_eval_f,
+        # The JTC bench is hermetic over a FIXED synthetic fault set, so
+        # eval_jtc_delta is a constant by construction (d_eval_jtc == 0 forever).
+        # eval_source records that so nothing treats it as evidence of progress;
+        # cert_regress is the signal that actually moves.
+        "eval_source": ev.get("eval_source") or "unknown",
+        "eval_cert_fixes": int(ev.get("cert_fixes") or 0),
+        "eval_cert_regress": int(ev.get("cert_regress") or 0),
+        "eval_acc_on": float(ev.get("acc_on") or 0.0),
+        "eval_acc_off": float(ev.get("acc_off") or 0.0),
+        "seal_reject_new": int(ev.get("seal_reject_new") or 0),
         "web_notes": web_notes,
         "busy": int(res.get("busy") or 0),
         "allow_heavy": int(res.get("allow_heavy") if res.get("allow_heavy") is not None else 1),
@@ -485,6 +530,11 @@ def collect(state: dict, pins: dict, meta: dict) -> dict[str, Any]:
 
     for k in ("open_gaps", "closed_gaps", "fault_lines", "units_proxy", "backlog_pressure"):
         sb[f"d_{k}"] = float(sb.get(k, 0)) - float(prev.get(k, sb.get(k, 0)))
+    # units_proxy switched from byte-marker proxy to the real CNB count; the first
+    # cycle after the switch would otherwise report a fake ~-200 unit "loss".
+    if prev and not prev.get("units_source"):
+        sb["d_units_proxy"] = 0.0
+        sb["units_scale_changed"] = 1
 
     # velocity only if dt sufficient
     if dt_h >= float(meta.get("min_dt_h") or 0.05):
@@ -545,13 +595,24 @@ def collect(state: dict, pins: dict, meta: dict) -> dict[str, Any]:
     prev_h = float(prev.get("hermes_task_fail_rate") or sb["hermes_task_fail_rate"])
     sb["d_hermes_task_fail_rate"] = sb["hermes_task_fail_rate"] - prev_h
 
+    # Certification regressions on the fixed bench set are stable unless real
+    # behaviour changed, so a RISE in cert_regress is the honest veto trigger.
+    # d_eval_jtc alone can never fire it (constant delta by construction).
+    sb["d_eval_cert_regress"] = float(sb["eval_cert_regress"]) - float(
+        prev.get("eval_cert_regress", sb["eval_cert_regress"])
+    )
+
     # eval veto auto
-    if not pins.get("eval_veto_override") and d_eval_f < -float(
-        meta.get("threshold_eval_veto") or 0.05
+    if not pins.get("eval_veto_override") and (
+        d_eval_f < -float(meta.get("threshold_eval_veto") or 0.05)
+        or sb["d_eval_cert_regress"] > 0
     ):
         sb["eval_veto"] = 1
         sb["freeze_seals"] = 1
         pins["freeze_seals"] = 1
+        sb["eval_veto_reason"] = (
+            "cert_regress_up" if sb["d_eval_cert_regress"] > 0 else "eval_delta_drop"
+        )
 
     return sb
 
@@ -675,19 +736,20 @@ def act(name: str, sb: dict, pins: dict, state: dict, meta: dict) -> bool:
                 "CNET_RESIDUAL_WINDOW", ROOT / "english_window_256_bonsai.txt"
             )
         )
-        ids = [int(x) for x in win.read_text().split() if x.strip().isdigit()]
-        if not ids:
+        lines, info = gap_inject.pick(BASE, win, int(meta.get("inject_n") or 4))
+        sb["inject_reason"] = info.get("reason")
+        sb["inject_remaining"] = info.get("remaining", 0)
+        if info.get("reason") == "window_exhausted":
+            # Every id in the curriculum window is sealed or queued. Report it
+            # instead of re-proposing covered ids and looking productive.
+            log_line(f"INJECT_WINDOW_EXHAUSTED window={win} covered={info.get('covered')}")
+            return True
+        if not lines:
             return False
-        W = len(ids)
-        k = 3
-        n = min(int(meta.get("inject_n") or 4), len(ids))
-        random.seed(int(time.time()) // 600)
-        picks = random.sample(ids, n)
-        inbox = Path(str(BASE) + ".inbox")
         if not dry:
+            inbox = Path(str(BASE) + ".inbox")
             with inbox.open("a") as f:
-                for tid in picks:
-                    f.write(f"NO_PLAN 1 {W} 1 w_cur 1 {W} {k} tk{tid}q{tid}\n")
+                f.writelines(lines)
         return True
     if name == "nudge_lane_tick":
         return True
@@ -695,7 +757,7 @@ def act(name: str, sb: dict, pins: dict, state: dict, meta: dict) -> bool:
         if pins.get("freeze_seals") or sb.get("eval_veto"):
             return True  # skipped under veto — not failure
         ok = run(
-            f"CNET_BASE_PATH={BASE} CNET_FAULT_DEDUPE=0 CNET_RESIDUAL_HTTP={HTTP} "
+            f"CNET_BASE_PATH={BASE} CNET_RESIDUAL_HTTP={HTTP} "
             f"CNET_RESIDUAL_WINDOW={os.environ.get('CNET_RESIDUAL_WINDOW', ROOT / 'english_window_256_bonsai.txt')} "
             f"timeout 600 {ROOT}/bin/cnet_cert_learn_tick >>{GOV}/muscle.log 2>&1"
         )
@@ -807,6 +869,10 @@ def persist(sb: dict, state: dict, picked: list, results: list, pins: dict, meta
                         "real_miss_rate",
                         "hermes_err_rate",
                         "eval_jtc_delta",
+                        "eval_source",
+                        "eval_cert_regress",
+                        "d_eval_cert_regress",
+                        "units_source",
                         "web_notes",
                         "busy",
                         "allow_heavy",

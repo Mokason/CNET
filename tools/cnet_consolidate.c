@@ -36,6 +36,7 @@ typedef struct {
     int score; /* reliability milli + small tiebreak */
     int keep;
     int protected;
+    int unmeasured;  /* no recorded execution outcomes -> never rank/drop it */
 } UnitRow;
 
 typedef struct {
@@ -127,6 +128,7 @@ int main(int argc, char **argv) {
     int apply, replace;
     KeepSet keep;
     size_t kept = 0, dropped = 0;
+    size_t unmeasured_spared = 0;
     time_t now = time(NULL);
     struct tm tm_now;
     FILE *plan;
@@ -187,6 +189,16 @@ int main(int argc, char **argv) {
         reli = soul_unit_reliability_milli(host, row.name);
         if (reli < 0) reli = 500;
         row.score = reli;
+        /* Evidence gate.
+         *
+         * Nothing persisted reliability counters until gap_lane_persist_stats
+         * existed, so soul_unit_reliability_milli returned the Laplace prior
+         * (500) for EVERY unit and this bucket sort ranked a constant. The
+         * 2026-07-25 16:14 apply dropped 108 certified acq_tk* units as
+         * "lowest reliability" on the strength of that constant. Units with no
+         * recorded outcomes are now unmeasured, not low-scoring, and are never
+         * dropped. */
+        row.unmeasured = soul_unit_evidence_count(host, row.name) <= 0;
         row.protected = is_protected_name(row.name);
         if (nrows == rcap) {
             size_t nc = rcap ? rcap * 2 : 128;
@@ -270,7 +282,17 @@ int main(int argc, char **argv) {
                     bucket[k]->keep = 1;
                     keep_add(&keep, bucket[k]->name);
                 }
-                for (k = take; k < bcount; k++) bucket[k]->keep = 0;
+                /* Below the cut: drop only what we actually measured. An
+                   unmeasured unit has no score to lose a ranking on. */
+                for (k = take; k < bcount; k++) {
+                    if (bucket[k]->unmeasured) {
+                        bucket[k]->keep = 1;
+                        keep_add(&keep, bucket[k]->name);
+                        unmeasured_spared++;
+                    } else {
+                        bucket[k]->keep = 0;
+                    }
+                }
             }
             free(bucket);
         }
@@ -326,6 +348,10 @@ int main(int argc, char **argv) {
     printf("CONSOLIDATE_PLAN in=%zu keep=%zu drop=%zu plan=%s%s\n", nrows, kept,
            dropped, plan_path,
            env_flag("CNET_CONSOLIDATE_DROP_GH") ? " drop_gh=1" : "");
+    if (unmeasured_spared)
+        printf("CONSOLIDATE_SPARED_UNMEASURED %zu (no execution outcomes "
+               "recorded — not rankable, not dropped)\n",
+               unmeasured_spared);
 
     if (!apply) {
         printf("CONSOLIDATE_DRY_RUN (set CNET_CONSOLIDATE_APPLY=1 to export "
@@ -388,6 +414,39 @@ int main(int argc, char **argv) {
             goto done;
         }
         printf("CONSOLIDATE_REPLACED_BASE %s\n", base);
+    }
+
+    /* Durable audit record.
+     *
+     * An apply on 2026-07-25 16:14 took the live base from 228 units to 101 and
+     * left no trace: logs/consolidate.log still held a DRY_RUN line from four
+     * days earlier because that run's stdout was never captured. A prune of
+     * certified work must be reconstructible regardless of who invoked the tool
+     * or where its stdout went, so write the record here rather than relying on
+     * the caller to redirect. */
+    {
+        const char *audit_path = getenv("CNET_CONSOLIDATE_AUDIT");
+        char def[1200];
+        FILE *af;
+        if (!audit_path || !audit_path[0]) {
+            snprintf(def, sizeof def, "%s/consolidate_audit.jsonl", report_dir);
+            audit_path = def;
+        }
+        af = fopen(audit_path, "a");
+        if (af) {
+            fprintf(af,
+                    "{\"ts\":%lld,\"base\":\"%s\",\"pin\":\"%s\",\"out\":\"%s\","
+                    "\"plan\":\"%s\",\"in\":%zu,\"kept\":%zu,\"dropped\":%zu,"
+                    "\"replaced_base\":%d}\n",
+                    (long long)time(NULL), base, pin_path, out_path, plan_path,
+                    nrows, kept, dropped, replace ? 1 : 0);
+            fclose(af);
+            printf("CONSOLIDATE_AUDIT %s\n", audit_path);
+        } else {
+            fprintf(stderr,
+                    "cnet_consolidate: WARNING could not write audit %s\n",
+                    audit_path);
+        }
     }
 
     printf("CONSOLIDATE_APPLY_OK keep=%zu drop=%zu\n", kept, dropped);

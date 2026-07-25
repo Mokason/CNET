@@ -296,12 +296,13 @@ size_t cnet_fault_load_vectors(const char *path, const char *unit,
 
 
 /* Dedupe recent labeled faults (same unit+in vector). */
-#define CNET_FAULT_DEDUP_CAP 256
+#define CNET_FAULT_DEDUP_CAP 8192
 static struct {
     unsigned long long h;
     int used;
 } g_dedup[CNET_FAULT_DEDUP_CAP];
 static size_t g_dedup_i;
+static int g_dedup_seeded;
 
 static unsigned long long fault_hash(const char *unit, const double *in, int in_dim) {
     unsigned long long h = 14695981039346656037ULL;
@@ -317,15 +318,85 @@ static unsigned long long fault_hash(const char *unit, const double *in, int in_
     return h ? h : 1ULL;
 }
 
+static void fault_dedup_insert(unsigned long long h) {
+    size_t i;
+    for (i = 0; i < CNET_FAULT_DEDUP_CAP; i++)
+        if (g_dedup[i].used && g_dedup[i].h == h) return;
+    g_dedup[g_dedup_i].h = h;
+    g_dedup[g_dedup_i].used = 1;
+    g_dedup_i = (g_dedup_i + 1) % CNET_FAULT_DEDUP_CAP;
+}
+
+/* Seed the dedupe set from records already on disk.
+ *
+ * The dedupe set used to be purely in-process, so every fresh
+ * cnet_cert_learn_tick / struct_mine_persist invocation started empty and
+ * re-appended its whole seed batch. That is how logs/cnet_faults.jsonl reached
+ * 4385 lines holding only 311 distinct (unit, input) pairs. Seeding from the
+ * existing log makes the bus idempotent across processes.
+ *
+ * Parsing is deliberately minimal string scanning rather than a JSON parser:
+ * the writer's own format is fixed, and "in":[ disambiguates from "in_dim":.
+ */
+static void fault_dedup_seed_from_log(const char *path) {
+    FILE *fp;
+    char *line;
+    double *vec;
+    if (g_dedup_seeded) return;
+    g_dedup_seeded = 1;
+    if (!path || !path[0]) return;
+    fp = fopen(path, "r");
+    if (!fp) return;
+    line = (char *)malloc(CNET_FAULT_LINE_MAX);
+    vec = (double *)malloc(sizeof(double) * CNET_FAULT_MAX_DIM);
+    if (!line || !vec) {
+        free(line);
+        free(vec);
+        fclose(fp);
+        return;
+    }
+    while (fgets(line, CNET_FAULT_LINE_MAX, fp)) {
+        char unit[128];
+        const char *u, *p;
+        char *end;
+        size_t ul = 0;
+        int n = 0;
+
+        if (!strchr(line, '\n') && !feof(fp)) {
+            int c; /* over-long line: discard the remainder */
+            while ((c = fgetc(fp)) != EOF && c != '\n') { }
+            continue;
+        }
+        u = strstr(line, "\"unit\":\"");
+        if (!u) continue;
+        u += 8;
+        while (*u && *u != '"' && ul + 1 < sizeof unit) unit[ul++] = *u++;
+        unit[ul] = '\0';
+
+        p = strstr(line, "\"in\":[");
+        if (!p) continue;
+        p += 6;
+        while (*p && *p != ']' && n < CNET_FAULT_MAX_DIM) {
+            double d = strtod(p, &end);
+            if (end == p) break;
+            vec[n++] = d;
+            p = end;
+            while (*p == ',' || *p == ' ') p++;
+        }
+        if (n > 0) fault_dedup_insert(fault_hash(unit, vec, n));
+    }
+    free(line);
+    free(vec);
+    fclose(fp);
+}
+
 static int fault_dedup_check_add(unsigned long long h) {
     size_t i;
     const char *off = getenv("CNET_FAULT_DEDUPE");
     if (off && off[0] == '0' && off[1] == '\0') return 0; /* dedupe off */
     for (i = 0; i < CNET_FAULT_DEDUP_CAP; i++)
         if (g_dedup[i].used && g_dedup[i].h == h) return 1; /* duplicate */
-    g_dedup[g_dedup_i].h = h;
-    g_dedup[g_dedup_i].used = 1;
-    g_dedup_i = (g_dedup_i + 1) % CNET_FAULT_DEDUP_CAP;
+    fault_dedup_insert(h);
     return 0;
 }
 
@@ -340,6 +411,7 @@ void cnet_fault_mirror_labeled(const char *unit, const double *input,
     fl = getenv("CNET_FAULT_LOG");
     if (!fl || !fl[0]) return;
     if (!unit || !input || !target || in_dim <= 0 || out_dim <= 0) return;
+    fault_dedup_seed_from_log(fl);
     {
         unsigned long long h = fault_hash(unit, input, in_dim);
         if (fault_dedup_check_add(h)) {

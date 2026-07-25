@@ -121,6 +121,12 @@ CNET_API int soul_counterfactual_last(SoulHost *h, char *out, int out_cap);
    the actual evidence, not a hard-coded constant. <0 if not found. */
 CNET_API int soul_unit_reliability_milli(SoulHost *h, const char *name);
 
+/* Recorded execution outcomes behind that reliability figure
+   (successes + failures). 0 means the score is the Laplace prior, i.e. the unit
+   has never been measured — callers that rank or prune MUST NOT treat an
+   unmeasured 0.5 as a real score. -1 if the unit is missing. */
+CNET_API long soul_unit_evidence_count(SoulHost *h, const char *name);
+
 /* ---- runtime health (specialist_health_pass over the live registry) ----
    One maintenance pass with the base as the contract source: contracts are
    rematerialized on demand from the sealed unit blobs (cnb_get_unit) and

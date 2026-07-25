@@ -15,11 +15,10 @@ DB = Path(os.environ.get("HERMES_STATE_DB", Path.home() / ".hermes/state.db"))
 FAIL_MARKERS = (
     "tool error",
     "tool_call failed",
-    "traceback",
+    "traceback (most recent call last)",
     "exception:",
     "timeout waiting",
     "command failed",
-    "exit code 1",
     '"ok": false',
     '"ok":false',
     "error running tool",
@@ -31,8 +30,57 @@ OK_MARKERS = (
     "completed successfully",
     "GOVERNOR_QUALITY_PASS",
     "VERIFY_FAST_PASS",
-    "exit code 0",
 )
+# status values that are terminal failures / not-yet-outcomes
+FAIL_STATUS = {"error", "blocked", "failed", "denied", "rejected"}
+PENDING_STATUS = {"pending_approval", "pending", "awaiting_approval", "running"}
+
+
+def classify(text: str, tool_name: str | None) -> str:
+    """Classify one tool result as 'ok' | 'fail' | 'skip'.
+
+    The Hermes tool envelope is {"output":..., "error":..., "exit_code":...} and
+    the `error` key is present on EVERY terminal result, usually empty. The old
+    rule (`"error" in text.lower()` -> fail) therefore flagged essentially every
+    tool message as a failure — 470 "fails" vs 54 oks, a fixed ~0.90 rate whose
+    stored samples were plainly successful runs. Decide on the envelope fields;
+    fall back to text markers only for non-JSON payloads.
+    """
+    stripped = text.strip()
+    obj = None
+    if stripped[:1] in ("{", "["):
+        try:
+            obj = json.loads(stripped)
+        except Exception:
+            obj = None
+
+    if isinstance(obj, dict):
+        status = str(obj.get("status") or "").strip().lower()
+        if status in PENDING_STATUS:
+            return "skip"
+        if status in FAIL_STATUS:
+            return "fail"
+        err = obj.get("error")
+        if isinstance(err, str) and err.strip():
+            return "fail"
+        if err not in (None, "", [], {}, False) and not isinstance(err, str):
+            return "fail"
+        code = obj.get("exit_code")
+        if code is not None:
+            try:
+                if int(code) != 0:
+                    return "fail"
+            except Exception:
+                return "fail"
+        return "ok"
+
+    low = stripped.lower()
+    if any(m in low for m in FAIL_MARKERS):
+        return "fail"
+    if any(m.lower() in low for m in OK_MARKERS):
+        return "ok"
+    # A returned tool payload with no error signal is a success.
+    return "ok"
 
 
 def main() -> int:
@@ -65,7 +113,7 @@ def main() -> int:
     ).fetchall()
     conn.close()
 
-    fails = oks = 0
+    fails = oks = skipped = 0
     samples = []
     tool_fail = {}
     for role, content, tool_name, ts in rows:
@@ -84,21 +132,22 @@ def main() -> int:
         if not keep:
             continue
         text = str(content or "")
-        low = text.lower()
         role_l = str(role or "").lower()
-        if role_l == "system":
+        # Only tool results carry task outcomes. Assistant/user prose mentioning
+        # "traceback" or "failed" is discussion, not a failed task.
+        if role_l != "tool":
             continue
-        is_fail = any(m in low for m in FAIL_MARKERS)
-        is_ok = any(m in low for m in OK_MARKERS)
-        if role_l == "tool" and tool_name and "error" in low:
-            is_fail = True
-        if is_fail:
+        verdict = classify(text, tool_name)
+        if verdict == "skip":
+            skipped += 1
+            continue
+        if verdict == "fail":
             fails += 1
             tn = tool_name or "unknown"
             tool_fail[tn] = tool_fail.get(tn, 0) + 1
             if len(samples) < 6:
                 samples.append(text[:160].replace("\n", " "))
-        elif is_ok:
+        else:
             oks += 1
 
     total = fails + oks
@@ -118,11 +167,13 @@ def main() -> int:
         "hours": HOURS,
         "fails": fails,
         "oks": oks,
+        "pending_skipped": skipped,
         "hermes_task_fail_rate": round(rate, 4),
         "tool_fail_top": sorted(tool_fail.items(), key=lambda x: -x[1])[:8],
         "samples": samples,
         "sufficient": total >= 8,
         "noisy": noisy,
+        "classifier": "envelope_v2",
     }
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps(rep, indent=2) + "\n")

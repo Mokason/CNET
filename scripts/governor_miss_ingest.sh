@@ -36,6 +36,7 @@ if fault.exists():
 
 waiting = 0
 open_n = 0
+closed_n = 0
 if gaps.exists():
     for i,line in enumerate(gaps.read_text(errors="replace").splitlines()):
         if i < 2: continue
@@ -44,10 +45,16 @@ if gaps.exists():
         parts=line.split()
         if len(parts)>1 and parts[1]=="1":
             open_n += 1
+        elif len(parts)>1 and parts[1]=="2":
+            closed_n += 1
 
-# real_miss_rate proxy: waiting / (waiting+closed-ish) capped
-denom = max(1, waiting + open_n + 1)
-real_miss_rate = min(1.0, waiting / denom)
+# real_miss_rate: share of the whole ledger that is NOT resolved.
+# The old denominator was (waiting + open + 1) — it excluded every closed gap,
+# so the rate could never fall below ~0.3 no matter how well the lane drained,
+# and real_miss_cut permanently dominated project ranking. Successes must be in
+# the denominator for this to be a rate at which 0 means "healthy".
+denom = max(1, waiting + open_n + closed_n)
+real_miss_rate = min(1.0, (waiting + open_n) / denom)
 top = units.most_common(12)
 rep = {
   "ts": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
@@ -55,7 +62,9 @@ rep = {
   "jtc_faults": jtc,
   "waiting_oracle": waiting,
   "open_gaps": open_n,
+  "closed_gaps": closed_n,
   "real_miss_rate": round(real_miss_rate, 4),
+  "real_miss_formula": "(waiting_oracle + open_gaps) / (waiting_oracle + open_gaps + closed_gaps)",
   "top_units": [{"unit": u, "n": n} for u,n in top],
 }
 out.write_text(json.dumps(rep, indent=2)+"\n")
