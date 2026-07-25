@@ -3805,11 +3805,17 @@ governor_dry: governor_build
 
 
 .PHONY: governor_v2 governor_v3 governor_quality
+governor_v4:
+	@python3 scripts/governor_autonomous.py --test
+	@python3 scripts/governor_autonomous.py --dry-run
+	@grep -q governor_autonomous_v4 logs/governor/last_decision.json
+	@echo GOVERNOR_V4_PASS
+
 governor_v3:
 	@python3 scripts/governor_autonomous.py --test
 	@python3 scripts/governor_autonomous.py --dry-run
 	@test -f logs/governor/last_decision.json
-	@grep -q governor_autonomous_v3 logs/governor/last_decision.json
+	@grep -q governor_autonomous_v4 logs/governor/last_decision.json
 	@echo GOVERNOR_V3_PASS
 
 governor_v2: governor_v3
@@ -3820,6 +3826,22 @@ governor_quality: governor_v3
 	@test -f logs/governor/miss_bus.json
 	@test -f logs/governor/meta_evolved.json
 	@test -f logs/governor/hermes_miss.json
-	@python3 -c "import json;d=json.load(open('logs/governor/last_decision.json')); assert d.get('engine')=='governor_autonomous_v3'; m=json.load(open('logs/governor/meta_evolved.json')); assert 'w_eval' in m; print('quality_goals', d['goals']); print('quality_actions', d.get('actions')); print('focus', d.get('scoreboard_focus')); print('meta', d.get('meta')); print('evolve', d.get('evolve_note'))"
+	@python3 -c "import json;d=json.load(open('logs/governor/last_decision.json')); assert 'v4' in d.get('engine',''); m=json.load(open('logs/governor/meta_evolved.json')); assert 'w_eval' in m; print('quality_goals', d['goals']); print('quality_actions', d.get('actions')); print('focus', d.get('scoreboard_focus')); print('meta', d.get('meta')); print('evolve', d.get('evolve_note'))"
 	@echo GOVERNOR_QUALITY_PASS
 
+
+.PHONY: governor_sandbox governor_a_gate
+governor_sandbox:
+	@chmod +x scripts/dev-sandbox.sh
+	@scripts/dev-sandbox.sh --persistent --from-prod python3 scripts/governor_autonomous.py --test
+	@echo GOVERNOR_SANDBOX_PASS
+
+governor_a_gate: governor_v4
+	@python3 scripts/governor_hermes_structured.py
+	@test -f logs/governor/hermes_structured.json
+	@python3 scripts/governor_autonomous.py
+	@test -f logs/governor/meta_evolved.json
+	@test -f config/governor_goal_graph.json
+	@python3 -c "import json;d=json.load(open('logs/governor/last_decision.json')); assert 'v4' in d.get('engine',''); h=json.load(open('logs/governor/hermes_structured.json')); print('engine',d['engine']); print('goals',d['goals']); print('hermes', {k:h.get(k) for k in ['fails','oks','hermes_task_fail_rate','noisy']}); print('meta', d.get('meta')); print('top', d.get('scoreboard_focus',{}).get('top_project')); print('evolve', d.get('evolve_note'))"
+	@scripts/dev-sandbox.sh --persistent --from-prod python3 scripts/governor_autonomous.py --test
+	@echo GOVERNOR_A_GATE_PASS

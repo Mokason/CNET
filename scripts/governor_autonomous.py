@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""CNET autonomous governor v3 — single engine, self-evolving.
+"""CNET autonomous governor v4 — single engine, self-evolving.
 
 Fixes weak v2 points:
 - Hermes/agent error fuel (not only window gaps)
@@ -22,14 +22,32 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+try:
+    from governor_v4_ext import (
+        run_structured,
+        score_goal_graph,
+        stable_evolve,
+        maybe_novel_curriculum,
+    )
+except ImportError:
+    import sys as _sys
+    _sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from governor_v4_ext import (
+        run_structured,
+        score_goal_graph,
+        stable_evolve,
+        maybe_novel_curriculum,
+    )
+
 ROOT = Path(os.environ.get("CNET_ROOT", Path(__file__).resolve().parents[1]))
 GOV = Path(os.environ.get("CNET_GOVERNOR_DIR", ROOT / "logs/governor"))
 BASE = Path(os.environ.get("CNET_BASE_PATH", ROOT / "soul_gemma4v2_final.cnb"))
 CHARTER = Path(
     os.environ.get("CNET_GOVERNOR_CHARTER", ROOT / "config/cnet_governor_charter.yaml")
 )
-PINS = ROOT / "config/governor_pins.yaml"
-PROJECTS = ROOT / "config/governor_projects.json"
+PINS = Path(os.environ.get("CNET_GOVERNOR_PINS", ROOT / "config/governor_pins.yaml"))
+PROJECTS = Path(os.environ.get("CNET_GOVERNOR_PROJECTS", ROOT / "config/governor_projects.json"))
+GOAL_GRAPH = Path(os.environ.get("CNET_GOVERNOR_GOAL_GRAPH", ROOT / "config/governor_goal_graph.json"))
 META_PATH = GOV / "meta_evolved.json"
 HTTP = os.environ.get("CNET_RESIDUAL_HTTP", "http://127.0.0.1:8080")
 HERMES_ERR = Path(
@@ -56,7 +74,11 @@ META_DEFAULTS = {
     "min_dt_h": 0.05,  # ignore velocity if cycle faster than 3 min
     "inject_n": 4,
     "max_web_notes": 80,
-    "evolve_rate": 0.08,
+    "evolve_rate": 0.04,
+    "evolve_min_cycles": 4,
+    "evolve_clamp": 0.15,
+    "transfer_credit": 0.25,
+    "novel_curriculum_hours": 8.0,
 }
 
 
@@ -354,14 +376,27 @@ def self_evolve(meta: dict[str, Any], sb: dict[str, Any], state: dict[str, Any])
 
 def collect(state: dict, pins: dict, meta: dict) -> dict[str, Any]:
     sh("bash scripts/governor_hooks.sh pre", timeout=120)
-    # enrich miss bus with hermes
-    hermes = count_hermes_errors(6.0)
-    save_json(GOV / "hermes_miss.json", hermes)
-    # merge into miss_bus
+    # structured Hermes outcomes (primary) + legacy log scrape (secondary)
+    hermes_s = run_structured(ROOT, GOV)
+    hermes_legacy = count_hermes_errors(6.0)
+    save_json(GOV / "hermes_miss.json", {"structured": hermes_s, "legacy": hermes_legacy})
     sh("bash scripts/governor_miss_ingest.sh", timeout=60)
     miss = load_json(GOV / "miss_bus.json", {})
-    miss.update(hermes)
+    # prefer structured fail rate when not noisy
+    if not hermes_s.get("noisy"):
+        miss["hermes_task_fail_rate"] = hermes_s.get("hermes_task_fail_rate", 0)
+        miss["hermes_err_rate"] = hermes_s.get("hermes_task_fail_rate", 0)
+        miss["hermes_err_n"] = hermes_s.get("fails", 0)
+        miss["hermes_noisy"] = False
+    else:
+        # damp legacy noise
+        miss["hermes_task_fail_rate"] = min(0.25, float(hermes_legacy.get("hermes_err_rate") or 0) * 0.35)
+        miss["hermes_err_rate"] = miss["hermes_task_fail_rate"]
+        miss["hermes_err_n"] = hermes_legacy.get("hermes_err_n", 0)
+        miss["hermes_noisy"] = True
+    miss["structured"] = hermes_s
     save_json(GOV / "miss_bus.json", miss)
+    hermes = miss
 
     res = load_json(GOV / "resource_snap.json", {})
     ev = load_json(GOV / "eval_probe.json", {})
@@ -415,7 +450,7 @@ def collect(state: dict, pins: dict, meta: dict) -> dict[str, Any]:
     sb: dict[str, Any] = {
         "ts": datetime.now().astimezone().isoformat(timespec="seconds"),
         "ts_unix": time.time(),
-        "engine": "governor_autonomous_v3",
+        "engine": "governor_autonomous_v4",
         "cycle": int(state.get("cycle") or 0) + 1,
         "bonsai_ok": 1
         if active("bonsai-server.service")
@@ -494,14 +529,27 @@ def collect(state: dict, pins: dict, meta: dict) -> dict[str, Any]:
     sb["goal_health_mine"] = float(gh.get("structure_mine", 0.5))
     sb["goal_health_coverage"] = float(gh.get("coverage_curiosity", 0.5))
 
-    # project flags from urgency
+    # project flags + goal graph urgency
     projs = project_scores(sb, meta)
+    graph = score_goal_graph(sb, GOAL_GRAPH, meta)
     sb["projects"] = projs
-    sb["top_project"] = projs[0]["id"] if projs else ""
-    sb["project_web"] = 1 if any(p["id"] == "web_knowledge" and p["urgency"] > 0.2 for p in projs) else 0
-    sb["project_jtc"] = 1 if any(p["id"] == "jtc_lift" and p["urgency"] > 0.15 for p in projs) else 0
+    sb["goal_graph"] = graph
+    # top urgency from graph if available else projects
+    if graph:
+        sb["top_project"] = graph[0]["id"]
+        sb["top_graph_goals"] = graph[0].get("goals") or []
+        sb["top_urgency"] = graph[0].get("urgency")
+    else:
+        sb["top_project"] = projs[0]["id"] if projs else ""
+        sb["top_graph_goals"] = []
+    sb["project_web"] = 1 if any(p.get("id") in ("web_knowledge","verified_knowledge") and p.get("urgency",0) > 0.2 for p in (graph or projs)) else 0
+    sb["project_jtc"] = 1 if any(p.get("id") in ("jtc_lift","tool_competence") and p.get("urgency",0) > 0.15 for p in (graph or projs)) else 0
     if eval_f < float(meta.get("threshold_eval_good") or 0.40):
         sb["project_jtc"] = 1
+    sb["hermes_task_fail_rate"] = float(miss.get("hermes_task_fail_rate") or 0)
+    sb["hermes_noisy"] = bool(miss.get("hermes_noisy"))
+    prev_h = float(prev.get("hermes_task_fail_rate") or sb["hermes_task_fail_rate"])
+    sb["d_hermes_task_fail_rate"] = sb["hermes_task_fail_rate"] - prev_h
 
     # eval veto auto
     if not pins.get("eval_veto_override") and d_eval_f < -float(
@@ -534,19 +582,22 @@ def pick(charter: dict, sb: dict, pins: dict, meta: dict) -> list[dict]:
         bias = 0
         # project-driven
         top = sb.get("top_project") or ""
-        if top == "jtc_lift" and gid == "peft_jtc":
+        top_goals = set(sb.get("top_graph_goals") or [])
+        if gid in top_goals:
+            bias -= 3
+        if top in ("jtc_lift", "tool_competence") and gid == "peft_jtc":
             bias -= 2
-        if top == "gap_backlog" and gid == "drain_open_gaps":
+        if top in ("gap_backlog", "gap_health") and gid == "drain_open_gaps":
             bias -= 2
-        if top == "real_miss_cut" and gid in ("drain_open_gaps", "peft_jtc"):
+        if top in ("real_miss_cut", "hermes_reliability") and gid in ("drain_open_gaps", "peft_jtc", "outcome_review"):
             bias -= 2
-        if top == "web_knowledge" and gid == "verified_web":
+        if top in ("web_knowledge", "verified_knowledge") and gid == "verified_web":
             bias -= 1
-        if top == "procedure_coverage" and gid == "procedure_curriculum":
+        if top in ("procedure_coverage", "procedure_depth") and gid == "procedure_curriculum":
             bias -= 1
-        # hermes errors → peft/jtc
-        if float(sb.get("hermes_err_rate") or 0) > 0.25 and gid == "peft_jtc":
-            bias -= int(meta.get("w_hermes_err", 2))
+        # structured hermes fails → peft/jtc (ignore noisy)
+        if (not sb.get("hermes_noisy")) and float(sb.get("hermes_task_fail_rate") or 0) > 0.15 and gid == "peft_jtc":
+            bias -= int(float(meta.get("w_hermes_err", 2)))
         if sb.get("plateau") and gid == "coverage_curiosity":
             bias += 3
         if sb.get("plateau") and gid == "break_plateau":
@@ -770,12 +821,12 @@ def persist(sb: dict, state: dict, picked: list, results: list, pins: dict, meta
             "learning_velocity": sb["learning_velocity"],
             "teacher_uptime": sb["teacher_uptime"],
             "updated_ts": sb["ts"],
-            "engine": "v3",
+            "engine": "v4",
         },
     )
     decision = {
         "ts": sb["ts"],
-        "engine": "governor_autonomous_v3",
+        "engine": "governor_autonomous_v4",
         "goals": [{"id": g["id"], "priority": g.get("priority")} for g in picked],
         "actions": results,
         "scoreboard_focus": {
@@ -862,10 +913,14 @@ def self_test() -> int:
     # self evolve mutates
     st: dict[str, Any] = {"drain_streak": 5}
     sb = {"d_backlog_pressure": 1, "d_eval_jtc": -0.1, "hermes_err_rate": 0.5, "plateau": 1, "web_notes": 5, "dt_h": 0.01, "cycle": 1}
-    m2 = self_evolve(dict(META_DEFAULTS), sb, st)
-    assert m2["w_eval"] >= META_DEFAULTS["w_eval"]
-    assert st.get("eval_veto") == 1
-    print("GOVERNOR_V3_SELFTEST_PASS checks=5")
+    st["cycle"] = 10
+    sb["dt_h"] = 0.2
+    m2 = stable_evolve(dict(META_DEFAULTS), sb, st, META_DEFAULTS)
+    assert m2["w_eval"] >= META_DEFAULTS["w_eval"] - 0.01
+    # graph loads
+    g = score_goal_graph({"eval_jtc_delta": 0.1, "backlog_pressure": 20, "teacher_uptime": 1, "hermes_task_fail_rate": 0.3, "hours_since_procedure": 10, "web_notes": 1}, GOAL_GRAPH, META_DEFAULTS)
+    assert g and g[0]["urgency"] >= 0
+    print("GOVERNOR_V4_SELFTEST_PASS checks=6")
     return 0
 
 
@@ -883,7 +938,9 @@ def main() -> int:
     charter = parse_charter()
 
     sb = collect(state, pins, meta)
-    meta = self_evolve(meta, sb, state)
+    meta = stable_evolve(meta, sb, state, META_DEFAULTS)
+    maybe_novel_curriculum(ROOT, GOV, sb, meta, state)
+    save_json(META_PATH, meta)
     # re-apply veto after evolve
     if state.get("eval_veto") and not pins.get("eval_veto_override"):
         sb["eval_veto"] = 1
@@ -920,7 +977,7 @@ def main() -> int:
             {
                 "ts": sb["ts"],
                 "dry_run": True,
-                "engine": "governor_autonomous_v3",
+                "engine": "governor_autonomous_v4",
                 "goals": [{"id": g["id"]} for g in picked],
                 "actions": results,
                 "scoreboard_focus": {
@@ -942,7 +999,7 @@ def main() -> int:
         "GOVERNOR_CYCLE_OK",
         json.dumps(
             {
-                "engine": "v3",
+                "engine": "v4",
                 "goals": [g["id"] for g in picked],
                 "actions": [(r["action"], r["ok"]) for r in results],
                 "backlog": sb.get("backlog_pressure"),

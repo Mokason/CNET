@@ -1,0 +1,79 @@
+{
+  "version": 1,
+  "description": "Multi-day goal graph for governor v4. Nodes have deps; transfer edges share credit.",
+  "nodes": [
+    {
+      "id": "infra_alive",
+      "title": "Teacher + lane healthy",
+      "kind": "infra",
+      "metric": "teacher_uptime",
+      "target": 0.95,
+      "prefer_lower": false,
+      "weight": 4.0,
+      "goals": ["keep_teacher_alive"]
+    },
+    {
+      "id": "tool_competence",
+      "title": "JTC / tool-call competence",
+      "kind": "skill",
+      "metric": "eval_jtc_delta",
+      "target": 0.42,
+      "prefer_lower": false,
+      "weight": 3.5,
+      "goals": ["peft_jtc", "run_eval_probe"],
+      "deps": ["infra_alive"]
+    },
+    {
+      "id": "gap_health",
+      "title": "Teachable backlog healthy",
+      "kind": "ops",
+      "metric": "backlog_pressure",
+      "target": 8.0,
+      "prefer_lower": true,
+      "weight": 3.0,
+      "goals": ["drain_open_gaps"],
+      "deps": ["infra_alive"]
+    },
+    {
+      "id": "hermes_reliability",
+      "title": "Hermes structured task success",
+      "kind": "real_world",
+      "metric": "hermes_task_fail_rate",
+      "target": 0.08,
+      "prefer_lower": true,
+      "weight": 4.0,
+      "goals": ["peft_jtc", "drain_open_gaps", "outcome_review"],
+      "deps": ["infra_alive", "tool_competence"]
+    },
+    {
+      "id": "procedure_depth",
+      "title": "Procedure / research curriculum",
+      "kind": "skill",
+      "metric": "hours_since_procedure",
+      "target": 6.0,
+      "prefer_lower": true,
+      "weight": 1.5,
+      "goals": ["procedure_curriculum"],
+      "deps": ["infra_alive"]
+    },
+    {
+      "id": "verified_knowledge",
+      "title": "Allowlisted web notes",
+      "kind": "knowledge",
+      "metric": "web_notes",
+      "target": 25.0,
+      "prefer_lower": false,
+      "weight": 1.0,
+      "goals": ["verified_web"],
+      "deps": ["infra_alive"]
+    },
+    {
+      "id": "transfer_jtc_to_hermes",
+      "title": "JTC lift should reduce Hermes tool fails",
+      "kind": "transfer",
+      "from": "tool_competence",
+      "to": "hermes_reliability",
+      "weight": 2.0
+    }
+  ]
+}

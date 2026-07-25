@@ -1,28 +1,28 @@
-# CNET autonomous governor v3 (self-evolving)
+# CNET autonomous governor v4 (A-path)
 
-## Single engine
-`scripts/governor_autonomous.py` — systemd default.  
-C `bin/cnet_governor` remains optional legacy (`make governor`).
+## Single production engine
+`scripts/governor_autonomous.py` (engine `governor_autonomous_v4`) via systemd.
 
-## Weak-point fixes
-| Weakness | Fix |
+## Caps closed toward A/A+
+| Cap | Fix |
 |---|---|
-| Window-only fuel | Hermes errors.log + agent.log + miss_bus |
-| Dual engines | v3 is sole systemd entry |
-| Soft projects | top_project hard-biases ranking |
-| Soft eval | eval_veto freezes seals on regression |
-| Flashy velocity | min_dt_h; suppress rates on tiny cycles |
-| Static policy | meta_evolved.json self-tunes weights |
+| Noisy Hermes logs | `governor_hermes_structured.py` → `state.db` messages |
+| Flat projects | `governor_goal_graph.json` multi-node + transfer edges |
+| Flashy meta | `stable_evolve` min cycles, clamp, min_dt |
+| No sandbox | `scripts/dev-sandbox.sh` Hermes-style isolated venv/state |
+| No novel path | `novel_curriculum.jsonl` bounded proposals |
 
-## Self-evolution
-Each cycle writes/updates `logs/governor/meta_evolved.json`:
-- w_eval, w_real_miss, w_hermes_err, w_backlog
-- threshold_backlog, inject_n
-- eval_veto flag
-- meta_history.jsonl audit trail
+## Sandbox (like Hermes dev-sandbox)
+```bash
+scripts/dev-sandbox.sh --persistent --from-prod
+scripts/dev-sandbox.sh --persistent python3 scripts/governor_autonomous.py --test
+scripts/dev-sandbox.sh --delete
+```
+State under `.cnet-sandbox/` (gitignored). Code from live tree.
 
 ## Gates
 ```bash
-make governor_v3
-make governor_quality   # GOVERNOR_QUALITY_PASS
+make governor_v4
+make governor_a_gate    # GOVERNOR_A_GATE_PASS
+make governor_sandbox
 ```
