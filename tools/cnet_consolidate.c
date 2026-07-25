@@ -15,6 +15,7 @@
  *   CNET_GOV_BUCKET_MIN        only shrink buckets larger than this (default 32)
  *   CNET_CONSOLIDATE_OUT       output path (default <base>.consolidated.cnb)
  *   CNET_CONSOLIDATE_REPLACE=1 after apply, replace base with out (needs pin)
+ *   CNET_CONSOLIDATE_DROP_GH=1 also drop acq_skill_gh_* noise (never keep)
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -52,10 +53,20 @@ static long env_l(const char *k, long d) {
     return (v && v[0]) ? atol(v) : d;
 }
 
+/* Ghost/freeform skill noise minted as acq_skill_gh_* — opt-in drop. */
+static int is_gh_noise_name(const char *nm) {
+    if (!nm || !nm[0]) return 0;
+    if (strncmp(nm, "acq_skill_gh_", 13) == 0) return 1;
+    /* near-miss clones like acq_skill_gh_*x / *y / *z suffixes still match prefix */
+    return 0;
+}
+
 static int is_protected_name(const char *nm) {
     if (!nm || !nm[0]) return 1;
     if (strncmp(nm, "json_toolcall", 13) == 0) return 1;
     if (strncmp(nm, "le8_", 4) == 0) return 1;
+    /* Explicit gh_ drop overrides the non-token protect rule. */
+    if (env_flag("CNET_CONSOLIDATE_DROP_GH") && is_gh_noise_name(nm)) return 0;
     if (strncmp(nm, "acq_tk", 6) != 0) return 1; /* non-token units kept */
     return 0;
 }
@@ -265,6 +276,24 @@ int main(int argc, char **argv) {
         }
     }
 
+    /* Force-drop gh_ noise even if a small dim-bucket would have kept them. */
+    if (env_flag("CNET_CONSOLIDATE_DROP_GH")) {
+        size_t i, j;
+        for (i = 0; i < nrows; i++) {
+            if (!is_gh_noise_name(rows[i].name)) continue;
+            rows[i].keep = 0;
+            rows[i].protected = 0;
+        }
+        /* Rebuild keep set from rows with keep==1 */
+        for (j = 0; j < keep.n; j++) free(keep.names[j]);
+        free(keep.names);
+        memset(&keep, 0, sizeof keep);
+        for (i = 0; i < nrows; i++)
+            if (rows[i].keep) keep_add(&keep, rows[i].name);
+    }
+
+    kept = 0;
+    dropped = 0;
     for (size_t i = 0; i < nrows; i++) {
         if (rows[i].keep) kept++;
         else dropped++;
@@ -294,8 +323,9 @@ int main(int argc, char **argv) {
     fclose(plan);
     plan = NULL;
 
-    printf("CONSOLIDATE_PLAN in=%zu keep=%zu drop=%zu plan=%s\n", nrows, kept,
-           dropped, plan_path);
+    printf("CONSOLIDATE_PLAN in=%zu keep=%zu drop=%zu plan=%s%s\n", nrows, kept,
+           dropped, plan_path,
+           env_flag("CNET_CONSOLIDATE_DROP_GH") ? " drop_gh=1" : "");
 
     if (!apply) {
         printf("CONSOLIDATE_DRY_RUN (set CNET_CONSOLIDATE_APPLY=1 to export "

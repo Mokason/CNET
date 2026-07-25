@@ -117,7 +117,6 @@ int main(void) {
     /* dedupe: same labeled pair twice → one new line */
     {
         size_t before, after;
-        CnetFaultLog lg;
         CnetFaultRecord rr;
         double in2[4]={1,0,1,0}, tg2[2]={0,1};
         setenv("CNET_FAULT_LOG", path, 1);

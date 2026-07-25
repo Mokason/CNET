@@ -50,6 +50,7 @@ int main(void) {
     remove("tmp_soul_residual.inbox");
     setenv("CNET_GAP_INBOX", "tmp_soul_residual.inbox", 1);
     setenv("CNET_SOUL_RESIDUAL_HERMETIC", "1", 1);
+    setenv("CNET_SOUL_RESIDUAL_PREFER_HERMETIC", "1", 1);
     unsetenv("CNET_RESIDUAL_GGUF");
 
     printf("== soul residual live serve + structure mine ==\n");
@@ -78,6 +79,9 @@ int main(void) {
     cnb_free(&base);
 
     check(soul_open(base_path, NULL, &host) == 0 && host, "soul_open");
+    check(soul_serve_stats(host, &st) == 0, "stats after open");
+    check(st.residual_bound == 1,
+          "eager hermetic residual_bound on open (prefer+hermetic)");
 
     /* Known certified goal */
     {
@@ -155,6 +159,7 @@ int main(void) {
     remove("tmp_soul_residual.cnb.tmp");
     remove("tmp_soul_residual.inbox");
     unsetenv("CNET_SOUL_RESIDUAL_HERMETIC");
+    unsetenv("CNET_SOUL_RESIDUAL_PREFER_HERMETIC");
     unsetenv("CNET_GAP_INBOX");
 
     if (failures) {

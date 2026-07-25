@@ -41,7 +41,7 @@ claim is stale.
 | Plan | Gate |
 |---|---|
 | [`../plans/deep_eight_priorities.md`](../plans/deep_eight_priorities.md) | `make cnet_deep_use_loop` |
-| [`../plans/live_eight_priorities.md`](../plans/live_eight_priorities.md) | `make live_eight_campaign · make auto_learn · make janitor · make consolidate / cnet_janitor_build` |
+| [`../plans/live_eight_priorities.md`](../plans/live_eight_priorities.md) | `make live_eight_campaign · make auto_learn · make janitor · make cnet_consolidate / cnet_janitor_build` |
 | [`../plans/six_priority_improvement.md`](../plans/six_priority_improvement.md) | `make cnet_use_loop_acceptance` |
 | [`../plans/oracle_teacher_runtime.md`](../plans/oracle_teacher_runtime.md) | `make oracle_teacher_runtime` |
 | [`../plans/personal_ai_local_first.md`](../plans/personal_ai_local_first.md) | `make personal_ai` |

@@ -390,6 +390,21 @@ CNET_API int soul_open(const char *base_path, const char *model_path,
         const char *hr = getenv("CNET_SOUL_RESIDUAL_HERMETIC");
         if (hr && hr[0] == '1') h->hermetic_residual = 1;
     }
+    /* Eager soft residual when hermetic is preferred: health_tick/MCP roster
+     * then report residual_bound=1 without waiting for a Tier-C miss. Avoids
+     * dual-GGUF contention; real GGUF residual stays lazy. */
+    {
+        const char *prefer = getenv("CNET_SOUL_RESIDUAL_PREFER_HERMETIC");
+        if (h->hermetic_residual && prefer && prefer[0] == '1') {
+            size_t d = 256;
+            if (hybrid_bind_residual(&h->hybrid, "hermetic_residual",
+                                     hybrid_hermetic_residual,
+                                     (void *)(uintptr_t)d) == 0) {
+                h->residual_window = (int)d;
+                h->residual_tried = 1;
+            }
+        }
+    }
     h->loaded = 1;
     *out = h;
     return 0;

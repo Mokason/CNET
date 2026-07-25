@@ -2804,7 +2804,8 @@ serve_named_skills: cnet_janitor_build tools/serve_named_skills.c
 	@grep -q SERVE_NAMED_SKILLS_ logs/serve_named_skills.log
 
 
-.PHONY: consolidate cnet_consolidate_build
+# G3 dense-bucket library consolidate (NOT the tile-memory PPMI `consolidate` target).
+.PHONY: cnet_consolidate cnet_consolidate_build
 cnet_consolidate_build: src/cnet_governance.c tools/cnet_consolidate.c include/cnet_governance.h include/base.h $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EXT_TEACHER_SRC) $(JSON_TOOLCALL_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) src/soul_host.c $(ROUTE_LOG_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC)
 	@mkdir -p $(BIN_DIR) logs artifacts/janitor
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/cnet_consolidate \
@@ -2814,9 +2815,9 @@ cnet_consolidate_build: src/cnet_governance.c tools/cnet_consolidate.c include/c
 		$(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) src/soul_host.c $(ROUTE_LOG_SRC) \
 		tools/cnet_consolidate.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -pthread
 
-consolidate: cnet_consolidate_build
-	@./$(BIN_DIR)/cnet_consolidate $${CNET_BASE_PATH:-soul_gemma4v2_final.cnb} | tee logs/consolidate.log
-	@grep -q CONSOLIDATE_PLAN logs/consolidate.log
+cnet_consolidate: cnet_consolidate_build
+	@./$(BIN_DIR)/cnet_consolidate $${CNET_BASE_PATH:-soul_gemma4v2_final.cnb} | tee logs/cnet_consolidate.log
+	@grep -q CONSOLIDATE_PLAN logs/cnet_consolidate.log
 
 
 .PHONY: live_eight_campaign
