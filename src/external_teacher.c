@@ -157,7 +157,25 @@ int external_teacher_bind_table(
     tc->n_rows = n_rows;
     tc->in_dim = in_dim;
     tc->out_dim = out_dim;
-    tc->onehot_in = (input_port.family == PORT_ONEHOT);
+    /* The one-hot fast path uses argmax(in) as a ROW INDEX, which is only
+     * correct when the table is the identity basis in order — row r hot at r.
+     * That holds for a synthetic expand basis; it does NOT hold for a
+     * multi-field port (argmax is field 0's symbol, not the row) nor for rows
+     * captured from real traffic in arrival order. Getting this wrong silently
+     * mislabels the student's training set, so verify the invariant instead of
+     * inferring it from the port family alone; otherwise fall back to the exact
+     * nearest-neighbour match below. */
+    tc->onehot_in = 0;
+    if (input_port.family == PORT_ONEHOT && input_port.field_count == 1 &&
+        n_rows == in_dim) {
+        size_t r;
+        int ordered = 1;
+        for (r = 0; r < n_rows && ordered; r++) {
+            if (argmax_first(tc->inputs + r * in_dim, in_dim) != (int)r)
+                ordered = 0;
+        }
+        tc->onehot_in = ordered;
+    }
     if (external_teacher_bind_callback(t, modality, name, input_port,
                                        output_port, table_teacher_fn, tc,
                                        identity, behavior_digest) != 0) {

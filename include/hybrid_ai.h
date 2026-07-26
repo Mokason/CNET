@@ -28,6 +28,9 @@ extern "C" {
 #define HYBRID_MED_MAX 8
 #define HYBRID_TRACE_MAX 64
 #define HYBRID_ADAPTER_DIM 64
+/* Default K: distinct real (in,out) samples retained per port shape.
+   Override with CNET_RESIDUAL_RESERVOIR_K (1..1024). */
+#define HYBRID_RESERVOIR_K 64
 
 typedef enum {
     HYBRID_TIER_A = 0, /* certified */
@@ -83,7 +86,14 @@ typedef struct {
     int enabled;
 } HybridAdapter;
 
-/* Trace of residual successes for structure mining. */
+/* Trace of residual successes for structure mining.
+ *
+ * in/out hold the most recent exemplar (kept for callers that read one pair).
+ * The reservoir holds up to res_cap DISTINCT real (in,out) pairs actually seen
+ * on this port shape, so the miner can train on traffic instead of a synthetic
+ * one-hot basis. It is port-family agnostic — raw doubles keyed by port shape —
+ * so non-ONEHOT families get real training rows too. Eviction is FIFO, i.e.
+ * "the most recent K distinct inputs", which keeps gates deterministic. */
 typedef struct {
     Port input_port;
     Port goal_port;
@@ -96,6 +106,13 @@ typedef struct {
     size_t hits;
     uint32_t heat;      /* Colibrì-style heat for mine priority */
     uint32_t last_tick; /* recency for LFRU score */
+    /* Reservoir of real traffic (B2 fix). */
+    double *res_in;     /* res_cap * in_dim */
+    double *res_out;    /* res_cap * out_dim */
+    size_t res_cap;
+    size_t res_count;   /* distinct pairs retained */
+    size_t res_next;    /* FIFO write cursor once full */
+    size_t res_offered; /* total pairs offered (pre-dedup) */
 } HybridTrace;
 
 typedef struct {
@@ -118,6 +135,8 @@ typedef struct {
     size_t adapter_applies;
     size_t prefer_warm_hits; /* served without residual (A/B) */
     size_t batch_label_rows; /* residual labels produced in batch mine */
+    size_t reservoir_mines;  /* mines trained on real traffic, not synthetic */
+    size_t synthetic_mines;  /* mines that fell back to the one-hot basis */
     uint64_t medium_resident_bytes;
 } HybridAi;
 
@@ -173,6 +192,14 @@ CNET_API int hybrid_trace_residual(HybridAi *h, Port in_port, Port out_port,
 CNET_API int hybrid_structure_mine(HybridAi *h, PrimitiveRegistry *reg,
                                    size_t min_hits,
                                    BinaryTransformNetwork **student_out);
+
+/* Total real (in,out) rows retained across every trace's reservoir. This is
+ * the size of the real-traffic training set the miner can draw on. */
+CNET_API size_t hybrid_reservoir_rows(const HybridAi *h);
+
+/* Reservoir rows retained for one port shape (0 if no matching trace). */
+CNET_API size_t hybrid_reservoir_rows_for(const HybridAi *h, Port in_port,
+                                          Port out_port);
 
 /* Hermetic residual: maps one-hot input → rotated one-hot (open-ended stand-in). */
 CNET_API int hybrid_hermetic_residual(const double *in, double *out, void *ctx);

@@ -197,8 +197,8 @@ runs on a **held-out** split the adapter never trained on.
 |---|---|---|
 | **M1** | **Organic intake.** Tier-C residual serve emits labelled fault (`source=surprise`, `label_kind=residual`), env-gated, dedup-aware. | `make own_learning_loop` → `OWN_LEARNING_LOOP_PASS` ✅ *shipped this session* |
 | **M2** | **Substitution KPI persisted.** `personal_ai_kpi_json` + `logs/own_learning_kpi.json`. | folded into `own_learning_loop` ✅ *shipped this session* |
-| **M3** | **Input reservoir.** Retain K real (in,out) samples per port shape instead of one overwritten exemplar; miner trains on real traffic. | `make residual_reservoir` → `RESIDUAL_RESERVOIR_PASS` |
-| **M4** | **Replay bench.** Capture N real requests, measure residual_rate before/after one consolidation cycle. Floor: rate must **fall**. | `make residual_substitution_bench` → `SUBSTITUTION_BENCH_PASS rate_before>rate_after` |
+| **M3** | **Input reservoir.** Retain K real (in,out) samples per port shape instead of one overwritten exemplar; miner trains on real traffic. | `make residual_reservoir` → `RESIDUAL_RESERVOIR_PASS` ✅ *shipped (checks=12, K=6)* |
+| **M4** | **Replay bench.** Capture N real requests, measure residual_rate before/after one consolidation cycle. Floor: rate must **fall**. | `make residual_substitution_bench` → `SUBSTITUTION_BENCH_PASS` ✅ *shipped: 1.0000 → 0.0000, accuracy flat at 1.0000* |
 
 ### 90 days — make it compound
 
@@ -217,7 +217,8 @@ Emitted to `logs/own_learning_kpi.json`; the first four are the scoreboard.
 
 | KPI | Definition | Direction | Gaming risk / joint guard |
 |---|---|---|---|
-| `residual_rate` | `residual_hits / served` | **↓** | Falls if CNET abstains more — **must** be read with `abstain_rate`. |
+| `residual_rate` | `residual_hits / served` | **↓** | Falls if CNET abstains more, **and** falls when a unit answers out-of-coverage inputs wrongly (measured, §10 E2). Never read without `abstain_rate` **and** held-out accuracy. |
+| `heldout_accuracy` | correct / served on inputs absent from capture | **flat or ↑** | The guard that makes `residual_rate` safe to read. A fall here voids any substitution win. |
 | `substitution_rate` | `local_hits / (local_hits + residual_hits)` | **↑** | The headline own-learning number. |
 | `certified_serves` | Tier-A hits | ↑ | — |
 | `organic_fault_rows` | fault rows with `source=surprise` | **↑ from 0** | Today: **0**. Any value > 0 is new capability. |
@@ -278,8 +279,9 @@ Emitted to `logs/own_learning_kpi.json`; the first four are the scoreboard.
 | S | Spike | Falsifies | Status |
 |---|---|---|---|
 | **S1** | Residual serve → organic fault row + persisted KPI | "the loop cannot be closed without redesign" | ✅ **shipped** — `make own_learning_loop` |
-| **S2** | Reservoir of K real inputs per port shape | "real traffic is too sparse/heterogeneous to train on" | next |
-| **S3** | Replay bench: residual_rate before/after a cycle | **"certified units actually displace residual calls"** — the core claim | next, highest value |
+| **S2** | Reservoir of K real inputs per port shape | "real traffic is too sparse/heterogeneous to train on" | ✅ **shipped** — `make residual_reservoir` |
+| **S3** | Replay bench: residual_rate before/after a cycle | **"certified units actually displace residual calls"** — the core claim | ✅ **confirmed** (§10 E1); limit measured (§10 E2) |
+| **S6** | Coverage-gated abstention: a unit abstains outside certified coverage | "CNET can refuse to answer what it did not learn" — closes §10 E2 | **next, highest value** |
 | **S4** | Sleep graduates one real BTN unit | "consolidation can change serve behaviour" | 90d |
 | **S5** | Graded floor for one binary capability | "certs can measure improvement, not just breakage" | 90d |
 
@@ -290,8 +292,81 @@ runnable.
 
 ---
 
+## 10. S3 result (2026-07-26) — the flywheel works, and its limit is now measured
+
+`make residual_substitution_bench` runs two experiments on a **multi-field** one-hot port
+(`field_count=2`), a shape the old miner could not expand at all — it would have mined a
+single exemplar. Two arms, identical traffic, one difference (consolidation).
+
+### E1 — in-coverage substitution (this gates)
+
+```
+arm=control      replay served=16 local=0  residual=16   (no consolidation)
+arm=consolidate  replay served=16 local=16 residual=0    (mined from 16 real rows)
+
+residual_rate      1.0000 → 0.0000  (Δ -1.0000)
+substitution_rate  0.0000 → 1.0000
+accuracy           1.0000 → 1.0000  (no capability traded away)
+abstain_rate       0.0000 → 0.0000  (the drop was not bought by abstaining)
+```
+
+**The core claim of the path is confirmed:** units mined from captured real traffic displace
+100% of the teacher's calls on that port shape, with no loss of accuracy and no extra
+abstention. Own weights genuinely substitute for the residual.
+
+### E2 — out-of-coverage generalisation (reported, deliberately tested to failure)
+
+Mined from 12 of 16 pairs, then replayed the 4 pairs never seen during capture:
+
+```
+heldout served from own weights: 4/4 (1.0000)
+heldout CORRECT:                 0/4
+replay accuracy:                 0.7500   (was 1.0000 under the teacher)
+```
+
+**The unit answered every unseen input from its own weights and got every one wrong.** It
+replaced a correct teacher answer with a confident wrong one, and `residual_rate` reported
+that as a total win. This is the single most important result of the session:
+
+> **Substitution without generalisation is a capability regression that the headline KPI
+> scores as success.**
+
+Mining memorises captured coverage; it does not extrapolate. Three consequences, now
+evidence-backed rather than speculative:
+
+1. **M7 is not optional, it is load-bearing.** Promotion must require beating the teacher on
+   *held-out* evidence. Serving more traffic is not evidence of learning.
+2. **Coverage-gated abstention is the missing guard.** A certified unit should abstain
+   outside its certified coverage and fall through to Tier C, rather than answer confidently.
+   This is CNET's own distinctive (contracts + abstention) applied to its own units.
+3. **`residual_rate` must never be read alone.** The KPI dashboard already pairs it with
+   `abstain_rate`; this result proves it must also be paired with **accuracy on held-out**.
+   Added to §5 as a gating KPI, not a nice-to-have.
+
+The bench's PASS marker deliberately carries `heldout_correct=0/4` so a green gate can never
+be misread as "CNET generalises".
+
+### Latent bug found and fixed en route
+
+`external_teacher.c` set `tc->onehot_in = (input_port.family == PORT_ONEHOT)`, ignoring
+`field_count`. The one-hot fast path uses `argmax(in)` as a **row index** into the teacher
+table, which is only valid when row *r* is hot at index *r*. For a multi-field port that
+argmax is field 0's symbol, so the teacher returned the **wrong target** and the student
+trained on mislabelled data — admission then failed certification (`mine_rc=1`).
+
+Dormant until now because multi-field ports never reached this path before the reservoir. The
+fix verifies the identity-basis invariant at bind time instead of inferring it from the port
+family, and falls back to exact nearest-neighbour otherwise. It also silently affected the
+large-window (Bonsai W=256) path, where `argmax` exceeded `n_rows` and the teacher returned
+an error every row, forcing a fallback — correct by luck, now correct by construction.
+
+---
+
 ## 9. First concrete next step
 
-`make residual_substitution_bench` (S3) — build on the S1 capture that now exists. Files to
-touch: `src/hybrid_ai.c` (reservoir, B2), `tests/residual_substitution_bench.c` (new), one
-manifest in `config/capability_manifests/`.
+**S6 — coverage-gated abstention.** §10 E2 proved a mined unit answers out-of-coverage
+inputs confidently and wrongly. The unit must abstain outside its certified coverage and fall
+through to Tier C. Files to touch: `src/router/` route admission or `src/personal_ai.c`
+Tier-A branch (coverage check before serve), `src/hybrid_ai.c` (record covered inputs
+alongside the reservoir), and a `heldout_accuracy` floor added to the substitution bench so
+the gate fails if a unit ever trades accuracy for substitution.

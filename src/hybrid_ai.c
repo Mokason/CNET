@@ -70,8 +70,88 @@ void hybrid_ai_free(HybridAi *h) {
     for (i = 0; i < h->trace_count; i++) {
         free(h->traces[i].in);
         free(h->traces[i].out);
+        free(h->traces[i].res_in);
+        free(h->traces[i].res_out);
     }
     memset(h, 0, sizeof *h);
+}
+
+/* K distinct real pairs retained per port shape. */
+static size_t reservoir_cap_env(void) {
+    const char *e = getenv("CNET_RESIDUAL_RESERVOIR_K");
+    if (e && e[0]) {
+        long v = atol(e);
+        if (v >= 1 && v <= 1024) return (size_t)v;
+    }
+    return HYBRID_RESERVOIR_K;
+}
+
+/* Retain a real (in,out) pair for this port shape.
+ *
+ * Same input seen again => refresh its target with the newer teacher label
+ * rather than storing a duplicate, so the reservoir stays a set of DISTINCT
+ * real inputs. Full => FIFO-evict the oldest. Allocation failure is not fatal:
+ * the trace still works, the miner just falls back to synthetic expansion. */
+static void reservoir_offer(HybridTrace *tr, const double *in, size_t in_dim,
+                            const double *out, size_t out_dim) {
+    size_t i, slot;
+    if (!tr || !in || !out || in_dim != tr->in_dim || out_dim != tr->out_dim)
+        return;
+    tr->res_offered++;
+    if (!tr->res_in || !tr->res_out) {
+        size_t cap = reservoir_cap_env();
+        double *ri = (double *)calloc(cap * in_dim, sizeof(double));
+        double *ro = (double *)calloc(cap * out_dim, sizeof(double));
+        if (!ri || !ro) {
+            free(ri);
+            free(ro);
+            return;
+        }
+        tr->res_in = ri;
+        tr->res_out = ro;
+        tr->res_cap = cap;
+        tr->res_count = 0;
+        tr->res_next = 0;
+    }
+    for (i = 0; i < tr->res_count; i++) {
+        if (memcmp(tr->res_in + i * in_dim, in, in_dim * sizeof(double)) == 0) {
+            memcpy(tr->res_out + i * out_dim, out, out_dim * sizeof(double));
+            return; /* distinct-input set: refresh label, do not grow */
+        }
+    }
+    if (tr->res_count < tr->res_cap) {
+        slot = tr->res_count++;
+    } else {
+        slot = tr->res_next;
+        tr->res_next = (tr->res_next + 1) % tr->res_cap;
+    }
+    memcpy(tr->res_in + slot * in_dim, in, in_dim * sizeof(double));
+    memcpy(tr->res_out + slot * out_dim, out, out_dim * sizeof(double));
+}
+
+size_t hybrid_reservoir_rows(const HybridAi *h) {
+    size_t i, n = 0;
+    if (!h) return 0;
+    for (i = 0; i < h->trace_count; i++) n += h->traces[i].res_count;
+    return n;
+}
+
+size_t hybrid_reservoir_rows_for(const HybridAi *h, Port in_port,
+                                 Port out_port) {
+    size_t i;
+    uint64_t ik, gk;
+    if (!h) return 0;
+    ik = port_key(in_port);
+    gk = port_key(out_port);
+    for (i = 0; i < h->trace_count; i++) {
+        const HybridTrace *tr = &h->traces[i];
+        if (tr->in_key != ik || tr->goal_key != gk) continue;
+        if (!port_match_keys(tr->input_port, in_port, tr->in_key, ik) ||
+            !port_match_keys(tr->goal_port, out_port, tr->goal_key, gk))
+            continue;
+        return tr->res_count;
+    }
+    return 0;
 }
 
 static const char *const k_tier_names[] = {
@@ -280,6 +360,7 @@ int hybrid_trace_residual(HybridAi *h, Port in_port, Port out_port,
             continue;
         memcpy(tr->in, in, in_dim * sizeof(double));
         memcpy(tr->out, out, out_dim * sizeof(double));
+        reservoir_offer(tr, in, in_dim, out, out_dim);
         tr->hits++;
         if (tr->heat < 0xffffff00u) tr->heat++;
         tr->last_tick = ++h->heat_clock;
@@ -304,6 +385,7 @@ int hybrid_trace_residual(HybridAi *h, Port in_port, Port out_port,
     }
     memcpy(tr->in, in, in_dim * sizeof(double));
     memcpy(tr->out, out, out_dim * sizeof(double));
+    reservoir_offer(tr, in, in_dim, out, out_dim);
     tr->hits = 1;
     tr->heat = 1;
     tr->last_tick = ++h->heat_clock;
@@ -386,11 +468,20 @@ int hybrid_structure_mine(HybridAi *h, PrimitiveRegistry *reg, size_t min_hits,
     {
         size_t expand_n = 0;
         size_t expand_cap = 64;
+        size_t min_res_rows = 2;
+        int from_reservoir = 0;
         {
             const char *ee = getenv("CNET_STRUCTURE_EXPAND_N");
             if (ee && ee[0]) {
                 long v = atol(ee);
                 if (v >= 4 && v <= 512) expand_cap = (size_t)v;
+            }
+        }
+        {
+            const char *me = getenv("CNET_RESERVOIR_MIN_ROWS");
+            if (me && me[0]) {
+                long v = atol(me);
+                if (v >= 1 && v <= 1024) min_res_rows = (size_t)v;
             }
         }
         if (tr->input_port.family == PORT_ONEHOT &&
@@ -403,7 +494,34 @@ int hybrid_structure_mine(HybridAi *h, PrimitiveRegistry *reg, size_t min_hits,
                 expand_n = tr->in_dim < expand_cap ? tr->in_dim : expand_cap;
             }
         }
-        if (expand_n > 0) {
+        /* Real traffic beats a synthetic basis — but never at the cost of
+         * coverage. For a small one-hot alphabet the synthetic expansion spans
+         * the WHOLE input domain, so partial traffic there would admit a unit
+         * with less coverage than before. Take the reservoir only when it is at
+         * least as wide as the basis would have been; when no expansion exists
+         * (non-ONEHOT, or no residual bound) any real rows beat one exemplar. */
+        if (tr->res_count >= min_res_rows && tr->res_count >= expand_n &&
+            tr->res_in && tr->res_out) {
+            n_rows = tr->res_count;
+            inputs = (double *)calloc(n_rows * tr->in_dim, sizeof(double));
+            targets = (double *)calloc(n_rows * tr->out_dim, sizeof(double));
+            if (!inputs || !targets) {
+                free(inputs);
+                free(targets);
+                return -3;
+            }
+            memcpy(inputs, tr->res_in, n_rows * tr->in_dim * sizeof(double));
+            memcpy(targets, tr->res_out, n_rows * tr->out_dim * sizeof(double));
+            from_reservoir = 1;
+            /* These rows are residual-produced labels just like the expanded
+               basis — the reservoir captured them at serve time instead of
+               re-deriving them here, so the mine consumed the same number of
+               residual labels and batch_label_rows must still see them. */
+            h->batch_label_rows += n_rows;
+        }
+        if (from_reservoir) {
+            /* inputs/targets already filled from real traffic. */
+        } else if (expand_n > 0) {
             int labeled;
             n_rows = expand_n;
             inputs = (double *)calloc(n_rows * tr->in_dim, sizeof(double));
@@ -440,8 +558,10 @@ int hybrid_structure_mine(HybridAi *h, PrimitiveRegistry *reg, size_t min_hits,
         id.contract_digest = 0x4D494E45ULL;
         external_teacher_init(&teacher);
         /* Prefer table teacher from labeled expand rows for large windows —
-         * callback residual over full domain is too slow/unbounded for admit. */
-        if (n_rows >= 4) {
+         * callback residual over full domain is too slow/unbounded for admit.
+         * Reservoir rows are already real labelled pairs, so always table:
+         * re-labelling a synthetic domain would discard the traffic we kept. */
+        if (from_reservoir || n_rows >= 4) {
             rc = external_teacher_bind_table(
                 &teacher, CNET_MODALITY_TEXT, "structure_table",
                 tr->input_port, tr->goal_port, inputs, targets, n_rows, &id,
@@ -462,6 +582,13 @@ int hybrid_structure_mine(HybridAi *h, PrimitiveRegistry *reg, size_t min_hits,
             free(targets);
             return -4;
         }
+        if (getenv("CNET_MINE_DEBUG"))
+            fprintf(stderr,
+                    "[mine] bind rc=%d n_rows=%zu in_dim=%zu out_dim=%zu "
+                    "from_reservoir=%d fam=%d fc=%zu fw=%zu\n",
+                    rc, n_rows, tr->in_dim, tr->out_dim, from_reservoir,
+                    (int)tr->input_port.family, tr->input_port.field_count,
+                    tr->input_port.field_width);
         snprintf(name, sizeof name, "hyb_struct_%zu", h->structure_mines);
         {
             size_t ih = tr->in_dim > 16 ? 64 : 8;
@@ -477,6 +604,10 @@ int hybrid_structure_mine(HybridAi *h, PrimitiveRegistry *reg, size_t min_hits,
         if (rc != 0) return rc;
         tr->hits = 0;
         h->structure_mines++;
+        /* Count admitted units, not attempts — a counter that ticks on failure
+           would overstate how much of the library came from real traffic. */
+        if (from_reservoir) h->reservoir_mines++;
+        else h->synthetic_mines++;
         return 0;
     }
 }
