@@ -1,5 +1,43 @@
 # CNET Changelog
 
+## 2026-07-26 (later) — Classification lane fixed: constant predictor → measured
+
+The lane now prints `CLASSIFICATION_LANE_HEALTHY` / `CLASSIFICATION_GATE_PASS
+status=measured` under default `make cce_train_bench`: **held-out accuracy 0.829
+over 1000 fresh draws against a 0.269 majority baseline (lift 0.560), all 4
+classes used**, from 0.384-vs-0.384 (zero lift, 1 class) earlier the same day.
+
+**Root cause was premature block freezing, not the objective.** Freezing trips at
+`goodness_threshold * 1.6`, and a hidden block's local error is derived from the
+*mean* of the final error vector — which softmax cross-entropy drives to ~0 by
+construction, since probabilities and one-hot targets both sum to 1. Hidden
+blocks therefore looked perfect within a few hundred steps and froze, leaving a
+network that could only emit a constant class. At threshold 0.4 the run froze
+2–3 of 3 blocks and scored the majority baseline exactly; at 0.9 nothing freezes
+and the same architecture learns. The other changes (raw-logit
+`CCE_BLOCK_LINEAR_HEAD`, `classify = 1` softmax CE, hard `{0,1}` targets) are
+each necessary but were **not sufficient while blocks froze** — which is why
+earlier attempts that fixed only the objective still measured chance.
+
+Also: the label rule moved off `((int)(sum*2) % 4)`, a sawtooth of a truncation
+that aliased a 1-D projection of half the input into four imbalanced bands, to
+"which of four disjoint input pairs has the largest sum" — balanced by
+construction and a function of all eight inputs. Training and held-out eval now
+share one label definition; the rule was previously inlined twice.
+
+**The floors were raised, not relaxed.** The old 0.30/0.05/2 bars were written
+while the lane was known-broken and only had to describe failure; they were loose
+enough to certify a degenerate model — reverting just the freeze threshold gives
+accuracy 0.416, lift 0.159, 2 of 4 classes, which cleared them and printed
+HEALTHY. Bars are now 0.45 accuracy / 0.20 lift / all 4 classes, set from the
+measured worst case over 10 seeds (accuracy 0.685–0.920, lift 0.425–0.660, 4/4
+classes on every seed) and verified to refuse that degenerate run.
+
+Measured but **not** used: `diff_mode = CCE_DIFF_EXACT` is inert on this cascade
+— it produces bit-identical weights to `CCE_DIFF_LOCAL` (verified by weight-sum
+comparison after training), so it is not claimed as part of the fix.
+`grad_clip = 1.0` measurably *hurts* here (0.83 → 0.48) and stays disabled.
+
 ## 2026-07-26 — Loader egress policy, honest classification lane, ROCm CI lane
 
 **Loader egress is default-deny (SSRF).** `cce_safetensors_load_url` previously

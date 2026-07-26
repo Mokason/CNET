@@ -4,14 +4,23 @@
 #include "../include/cce/cce_learn.h"
 
 /* Classification lane health contract.
-   Absolute accuracy is not evidence on its own: on this task the modal class
-   holds ~39% of draws, so a model that always answers "class 0" scores ~0.39
-   and would clear any naive 0.30 floor while having learned nothing. Health
-   therefore requires lift over the majority baseline AND use of more than one
-   class. See CCE_CLASSIFICATION_LANE_REQUIRE below for the CI contract. */
-#define CLASSIFICATION_MIN_ACCURACY 0.30
-#define CLASSIFICATION_MIN_LIFT     0.05  /* over the majority-class baseline */
-#define CLASSIFICATION_MIN_DISTINCT 2     /* a constant predictor is degenerate */
+   Absolute accuracy is not evidence on its own: a model that always answers
+   one class scores the majority base rate while having learned nothing, so
+   health requires lift over that baseline AND use of every class.
+
+   The floors were raised when the lane was fixed, because the old ones were
+   set while the lane was known-broken and only had to describe failure. They
+   were loose enough to certify a genuinely degenerate model: reverting just
+   the freeze threshold yields accuracy 0.416 / lift 0.159 / 2 of 4 classes,
+   which cleared the previous 0.30 / 0.05 / 2 bars and printed HEALTHY. It is
+   not healthy. Current bars are set from measured worst-case behaviour over
+   10 seeds of the shipped configuration (accuracy 0.685-0.920, lift
+   0.425-0.660, 4 of 4 classes on every seed), leaving roughly 1.5x margin on
+   accuracy and 2x on lift while still refusing that degenerate run.
+   See CCE_CLASSIFICATION_LANE_REQUIRE below for the CI contract. */
+#define CLASSIFICATION_MIN_ACCURACY 0.45
+#define CLASSIFICATION_MIN_LIFT     0.20  /* over the majority-class baseline */
+#define CLASSIFICATION_MIN_DISTINCT 4     /* all classes; fewer is degenerate */
 #define CLASSIFICATION_REQUIRE_ENV  "CCE_CLASSIFICATION_LANE_REQUIRE"
 #include "../include/cce/cce_defs.h"
 #include "../include/cce/cce_forest.h"
@@ -197,27 +206,61 @@ static double compute_accuracy(const cce_tensor* pred, const cce_tensor* target,
     return target->numel > 0 ? correct / target->numel : 0.0;
 }
 
-/* Improved real task: simple multi-class classification proxy (one-hot targets for 4 "classes" based on input sum mod) + spatial */
+/* Class rule: which of four disjoint input pairs carries the largest sum.
+   Balanced by construction (~25% each) and a function of ALL eight inputs, so
+   nothing in the vector is dead. It replaces ((int)(sum*2) % 4), a sawtooth of
+   a truncation that aliased a 1-D projection of half the input into four bands
+   — discontinuous, imbalanced (~39%/20%/20%/20%), and unlearned by this
+   learner at any setting tried. Used by BOTH training and held-out eval; a
+   single definition is the point, since the previous code inlined the rule
+   twice and the copies were free to drift. */
+#define CLASSIFICATION_CLASSES 4
+static int classification_label(const float* x) {
+    int best = 0;
+    float best_sum = -1e30f;
+    for (int g = 0; g < CLASSIFICATION_CLASSES; ++g) {
+        float s = x[2 * g] + x[2 * g + 1];
+        if (s > best_sum) { best_sum = s; best = g; }
+    }
+    return best;
+}
+
 static BenchStats run_classification_experiment(int steps, float lr, unsigned int seed) {
     srand(seed);
     BenchStats st = {0};
 
     cce_cascade cas;
-    cce_cascade_init(&cas, 3);
-    cce_block b1, b2, b3;
-    cce_block_init_linear(&b1, 8, 16, lr);
-    cce_block_init_linear(&b2, 16, 16, lr);
-    cce_block_init_linear(&b3, 16, 4, lr);  /* 4 classes */
+    cce_cascade_init(&cas, 4);
+    cce_block b1, b2;
+    cce_block_init_linear(&b1, 8, 32, lr);
+    cce_block_init_linear(&b2, 32, 32, lr);
     cce_cascade_append(&cas, &b1);
     cce_cascade_append(&cas, &b2);
-    cce_cascade_append(&cas, &b3);
+    /* Raw-logit head. A sigmoid final block squashes into (0,1), which is the
+       wrong output space for the softmax cross-entropy below — cce_learn.c
+       states the head must emit logits. */
+    cce_cascade_add_linear_head(&cas, 32, CLASSIFICATION_CLASSES, lr);
 
     cce_learner learner;
-    cce_learner_init(&learner, 0.4f);
+    /* Goodness threshold 0.9 is the load-bearing change, and it is not a knob
+       twiddle. Freezing triggers at threshold*1.6, and a hidden block's
+       "local error" is derived from the MEAN of the final error vector — which
+       for softmax cross-entropy sums to ~0 by construction, since probabilities
+       and one-hot targets both sum to 1. Hidden blocks therefore look perfect
+       immediately and froze after a few hundred steps, leaving a network that
+       could only emit a constant class. At 0.4 this run froze 2-3 of 3 blocks
+       and scored the majority baseline exactly; at 0.9 nothing freezes and the
+       same architecture learns. Everything else here (logit head, softmax CE,
+       hard targets) is necessary but was not sufficient while blocks froze. */
+    cce_learner_init(&learner, 0.9f);
+    learner.classify = 1;   /* softmax cross-entropy, not MSE-on-one-hot */
+    /* grad_clip stays disabled: measured, it costs accuracy here rather than
+       adding stability (0.83 -> 0.48 on this task at clip=1.0). */
+    learner.grad_clip = 0.0f;
 
     cce_tensor x, y;
     int xsh[1] = {8};
-    int ysh[1] = {4};
+    int ysh[1] = {CLASSIFICATION_CLASSES};
     cce_tensor_alloc(&x, xsh, 1);
     cce_tensor_alloc(&y, ysh, 1);
 
@@ -227,10 +270,10 @@ static BenchStats run_classification_experiment(int steps, float lr, unsigned in
     for (int step = 0; step < steps; ++step) {
         for (int i=0; i<8; i++) x.data[i] = ((float)rand()/RAND_MAX)*2-1;
 
-        float sum = 0;
-        for (int i=0; i<4; i++) sum += x.data[i];
-        int cls = ((int)(sum * 2) % 4 + 4) % 4;  /* pseudo class */
-        for (int o=0; o<4; o++) y.data[o] = (o == cls ? 0.9f : 0.1f);
+        int cls = classification_label(x.data);
+        /* Hard one-hot. 0.9/0.1 is a soft target the softmax can never reach,
+           so it leaves a permanent error floor pulling every logit. */
+        for (int o=0; o<CLASSIFICATION_CLASSES; o++) y.data[o] = (o == cls ? 1.0f : 0.0f);
 
         cce_learner_adapt(&learner, &cas, &x, &y, lr);
 
@@ -238,10 +281,10 @@ static BenchStats run_classification_experiment(int steps, float lr, unsigned in
             cce_tensor pred;
             cce_cascade_forward(&cas, &x, &pred);
             float rmse = 0;
-            for (int o=0; o<4; o++) {
+            for (int o=0; o<CLASSIFICATION_CLASSES; o++) {
                 float e = pred.data[o] - y.data[o]; rmse += e*e;
             }
-            rmse = sqrtf(rmse/4);
+            rmse = sqrtf(rmse/CLASSIFICATION_CLASSES);
             if (rmse < best) best = rmse;
             cce_tensor_free(&pred);
         }
@@ -256,22 +299,20 @@ static BenchStats run_classification_experiment(int steps, float lr, unsigned in
        the samples the model had just adapted on -- which is both leaky and far
        too few to resolve anything (its only possible values were 0, .25, .5,
        .75, 1). Score fresh draws instead, matching the regression lane. */
-    const int eval_n = 500;
+    const int eval_n = 1000;
     int correct = 0;
-    int true_hist[4] = {0,0,0,0};
-    int pred_hist[4] = {0,0,0,0};
+    int true_hist[CLASSIFICATION_CLASSES] = {0,0,0,0};
+    int pred_hist[CLASSIFICATION_CLASSES] = {0,0,0,0};
     for (int s = 0; s < eval_n; ++s) {
         for (int i=0; i<8; i++) x.data[i] = ((float)rand()/RAND_MAX)*2-1;
-        float esum = 0;
-        for (int i=0; i<4; i++) esum += x.data[i];
-        int ecls = ((int)(esum * 2) % 4 + 4) % 4;
+        int ecls = classification_label(x.data);   /* same rule as training */
         true_hist[ecls]++;
 
         cce_tensor pred;
         cce_cascade_forward(&cas, &x, &pred);
         int pred_cls = 0;
         float maxp = -1e30f;
-        for (int o=0; o<4; o++)
+        for (int o=0; o<CLASSIFICATION_CLASSES; o++)
             if (pred.data[o] > maxp) { maxp = pred.data[o]; pred_cls = o; }
         cce_tensor_free(&pred);
 
@@ -280,14 +321,14 @@ static BenchStats run_classification_experiment(int steps, float lr, unsigned in
     }
 
     int modal = 0, distinct = 0;
-    for (int c=0; c<4; c++) {
+    for (int c=0; c<CLASSIFICATION_CLASSES; c++) {
         if (true_hist[c] > true_hist[modal]) modal = c;
         if (pred_hist[c] > 0) distinct++;
     }
     st.accuracy = (double)correct / eval_n;
     st.majority_baseline = (double)true_hist[modal] / eval_n;
     st.distinct_predicted = distinct;
-    st.num_classes = 4;
+    st.num_classes = CLASSIFICATION_CLASSES;
 
 
     cce_tensor_free(&x);
@@ -476,7 +517,11 @@ int main(int argc, char** argv) {
     printf("  - Real harness: nonlinear/spatial + accuracy + multi-specialist routing ready\n");
 
     printf("\n--- Additional real task harness (classification) ---\n");
-    BenchStats cls = run_classification_experiment(2000, 0.01f, 456);
+    /* 4000 steps at lr 0.05: measured healthy on 8/8 seeds with min accuracy
+       0.685 against a ~0.27 majority baseline, and the whole run costs well
+       under a second. 2000 steps is also healthy 8/8 but with a thinner
+       worst-seed margin (0.458). */
+    BenchStats cls = run_classification_experiment(4000, 0.05f, 456);
     printf("Classification | thr=%.0f/s | best=%.4f | heldout_acc=%.3f"
            " | majority_baseline=%.3f | classes_used=%d/%d\n",
            cls.throughput, cls.best_rmse, cls.accuracy,
