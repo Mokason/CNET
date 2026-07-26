@@ -51,6 +51,7 @@ typedef struct {
     size_t abstains;
     size_t teaches;
     size_t residual_captures; /* Tier-C pairs offered to the fault bus */
+    size_t coverage_abstains; /* Tier-A declined: outside certified coverage */
 } PersonalAiReport;
 
 typedef struct {

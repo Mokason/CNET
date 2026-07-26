@@ -281,7 +281,8 @@ Emitted to `logs/own_learning_kpi.json`; the first four are the scoreboard.
 | **S1** | Residual serve → organic fault row + persisted KPI | "the loop cannot be closed without redesign" | ✅ **shipped** — `make own_learning_loop` |
 | **S2** | Reservoir of K real inputs per port shape | "real traffic is too sparse/heterogeneous to train on" | ✅ **shipped** — `make residual_reservoir` |
 | **S3** | Replay bench: residual_rate before/after a cycle | **"certified units actually displace residual calls"** — the core claim | ✅ **confirmed** (§10 E1); limit measured (§10 E2) |
-| **S6** | Coverage-gated abstention: a unit abstains outside certified coverage | "CNET can refuse to answer what it did not learn" — closes §10 E2 | **next, highest value** |
+| **S6** | Coverage-gated abstention: a unit abstains outside certified coverage | "CNET can refuse to answer what it did not learn" — closes §10 E2 | ✅ **shipped** — `make coverage_abstain`, §11 |
+| **S7** | Persist coverage into the CNB so it survives a lane restart | "the S6 protection is durable, not process-local" | **next, highest value** |
 | **S4** | Sleep graduates one real BTN unit | "consolidation can change serve behaviour" | 90d |
 | **S5** | Graded floor for one binary capability | "certs can measure improvement, not just breakage" | 90d |
 
@@ -316,7 +317,8 @@ abstention. Own weights genuinely substitute for the residual.
 
 ### E2 — out-of-coverage generalisation (reported, deliberately tested to failure)
 
-Mined from 12 of 16 pairs, then replayed the 4 pairs never seen during capture:
+Mined from 12 of 16 pairs, then replayed the 4 pairs never seen during capture.
+**These are the pre-S6 numbers; §11 shows what they became.**
 
 ```
 heldout served from own weights: 4/4 (1.0000)
@@ -364,9 +366,91 @@ an error every row, forcing a fallback — correct by luck, now correct by const
 
 ## 9. First concrete next step
 
-**S6 — coverage-gated abstention.** §10 E2 proved a mined unit answers out-of-coverage
-inputs confidently and wrongly. The unit must abstain outside its certified coverage and fall
-through to Tier C. Files to touch: `src/router/` route admission or `src/personal_ai.c`
-Tier-A branch (coverage check before serve), `src/hybrid_ai.c` (record covered inputs
-alongside the reservoir), and a `heldout_accuracy` floor added to the substitution bench so
-the gate fails if a unit ever trades accuracy for substitution.
+**S7 — persist certified coverage.** S6 (§11) closed the confident-wrong hole, but coverage
+lives in `HybridAi` memory only. A mined unit reloaded from the CNB after a lane restart has
+no coverage record and default-allows, so the protection silently lapses exactly where it
+matters most — the long-running deployed learner. Files to touch: `src/base.c` /
+`src/library.c` (persist the certified input set beside the unit), `src/hybrid_ai.c`
+(rehydrate on load), and a restart round-trip assertion in `make coverage_abstain`.
+
+---
+
+## 11. S6 result (2026-07-26) — coverage-gated abstention closes E2
+
+`make coverage_abstain` → `COVERAGE_ABSTAIN_PASS checks=18 heldout_correct=4/4 was=0/4`
+
+### Margin cannot solve this (measured first, before building anything)
+
+The obvious reuse — `CNET_RESIDUAL_MIN_MARGIN`, hybrid soft `min_margin`,
+`cnet_governance_decide` — is **blind to this failure**. Probing every replay serve of the
+E2 unit:
+
+```
+idx  held  tier    margin    correct
+  0        local  1.00000    yes
+  3  HELD  local  1.00000    NO      [0.000 0.000 1.000 0.000]
+  6  HELD  local  1.00000    NO      [0.000 1.000 0.000 0.000]
+  9  HELD  local  1.00000    NO      [1.000 0.000 0.000 0.000]
+ 12  HELD  local  1.00000    NO      [0.000 1.000 0.000 0.000]
+```
+
+A mined BTN emits a **saturated one-hot**. Margin is exactly 1.00000 on the inputs it has
+never seen and gets wrong — identical to the ones it gets right. Confidence carries zero
+information here, so every margin-keyed abstention surface in the tree is structurally
+incapable of catching an out-of-coverage answer. **Coverage has to be membership, not
+confidence.** This is worth recording because "just add a margin threshold" is the natural
+first instinct and it would have shipped a gate that does nothing.
+
+### Mechanism
+
+A contract certifies over a **domain**. `hybrid_structure_mine` now records the exact input
+rows a unit was certified on (`hybrid_coverage_record`), and the Tier-A serve branch consults
+`hybrid_coverage_admits` before claiming a certified answer. Outside coverage it declines and
+falls through to Tier B/C, so the teacher answers instead. Default-allow when no record
+exists, so hand-admitted and full-basis units are untouched.
+
+### E2 before → after
+
+| E2 (mined from 12 of 16) | before S6 | after S6 |
+|---|---|---|
+| held-out served from own weights | 4/4 | **0/4** |
+| held-out deferred to teacher | 0/4 | **4/4** |
+| held-out **correct** | 0/4 | **4/4** |
+| replay accuracy | 0.7500 | **1.0000** |
+| coverage abstains | — | 4 |
+
+E1 is unchanged — `residual_rate 1.0000 → 0.0000`, `substitution_rate 1.0000`,
+`accuracy 1.0000`, `abstain_rate` flat. **In-coverage substitution is fully preserved; only
+the unearned claims are refused.**
+
+The bench now fails closed on this: it refuses to pass if any held-out input is answered from
+own weights and wrong (`reason=out_of_coverage_wrong`), and equally if abstention merely drops
+the request instead of deferring (`reason=heldout_not_answered`). Abstaining into silence is
+not a fix.
+
+`make coverage_abstain` also reproduces the regression on demand: with
+`CNET_COVERAGE_ABSTAIN=0` the unit answers all 4 held-out inputs itself and gets all 4 wrong
+again. The gate is demonstrably the thing doing the work, not an incidental change.
+
+### Scope and limits (honest)
+
+- **`PORT_RAW` is not gated.** Exact membership is meaningless for continuous values; gating
+  it would abstain on everything. Asserted in the gate so it cannot drift silently. RAW-port
+  units remain exposed to the E2 failure — a real remaining hole.
+- **Exact match only.** Discrete families (`ONEHOT`, `BINARY_*`) are gated bitwise. Anything
+  needing near-neighbour or interval coverage is future work.
+- **The MoE hard-expert branch** (`cnet_moe_try_hard`, ahead of Tier A) is **not** gated.
+  Mined units are named `hyb_struct_N` and are not reachable by goal-tag dispatch today, so
+  the path is currently unexposed — but it is an ungated door if that ever changes.
+- **`HYBRID_COVERAGE_MAX` is 8** port shapes; a ninth mined shape records no coverage and
+  therefore default-allows. Bound to raise when more shapes are mined.
+- Coverage is **in-memory**, not persisted to the CNB. After a restart a mined unit reloads
+  from the base with no coverage record and default-allows — so this protection does not yet
+  survive a lane restart. **Highest-priority follow-up.**
+
+### KPI
+
+`coverage_abstains` is now in `personal_ai_kpi_json`. Read it beside `residual_rate`: a
+healthy loop shows residual_rate falling *while* coverage_abstains stays proportional to
+genuinely novel traffic. Coverage abstains climbing toward the serve count means the mined
+library has gone stale relative to what users are asking.

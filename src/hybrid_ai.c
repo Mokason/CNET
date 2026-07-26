@@ -73,6 +73,7 @@ void hybrid_ai_free(HybridAi *h) {
         free(h->traces[i].res_in);
         free(h->traces[i].res_out);
     }
+    for (i = 0; i < h->coverage_count; i++) free(h->coverage[i].rows);
     memset(h, 0, sizeof *h);
 }
 
@@ -127,6 +128,88 @@ static void reservoir_offer(HybridTrace *tr, const double *in, size_t in_dim,
     }
     memcpy(tr->res_in + slot * in_dim, in, in_dim * sizeof(double));
     memcpy(tr->res_out + slot * out_dim, out, out_dim * sizeof(double));
+}
+
+/* Exact membership is only meaningful where inputs are discrete and
+   canonicalised. PORT_RAW carries continuous values that never match bitwise,
+   so gating it would abstain on everything. */
+static int coverage_family_gated(Port p) {
+    return p.family == PORT_ONEHOT || p.family == PORT_BINARY_MSB ||
+           p.family == PORT_BINARY_LSB;
+}
+
+static HybridCoverage *coverage_find(HybridAi *h, uint64_t ik, uint64_t gk,
+                                     Port in_port, Port out_port) {
+    size_t i;
+    for (i = 0; i < h->coverage_count; i++) {
+        HybridCoverage *c = &h->coverage[i];
+        if (!c->active || c->in_key != ik || c->goal_key != gk) continue;
+        if (!port_match_keys(c->input_port, in_port, c->in_key, ik) ||
+            !port_match_keys(c->goal_port, out_port, c->goal_key, gk))
+            continue;
+        return c;
+    }
+    return NULL;
+}
+
+int hybrid_coverage_record(HybridAi *h, Port in_port, Port out_port,
+                           const char *unit, const double *inputs,
+                           size_t n_rows, size_t in_dim) {
+    HybridCoverage *c;
+    uint64_t ik, gk;
+    double *rows;
+    if (!h || !unit || !inputs || n_rows == 0 || in_dim == 0) return -1;
+    ik = port_key(in_port);
+    gk = port_key(out_port);
+    rows = (double *)malloc(n_rows * in_dim * sizeof(double));
+    if (!rows) return -2;
+    memcpy(rows, inputs, n_rows * in_dim * sizeof(double));
+    c = coverage_find(h, ik, gk, in_port, out_port);
+    if (!c) {
+        if (h->coverage_count >= HYBRID_COVERAGE_MAX) {
+            free(rows);
+            return -3;
+        }
+        c = &h->coverage[h->coverage_count++];
+        memset(c, 0, sizeof *c);
+    } else {
+        free(c->rows); /* a re-mine supersedes the older certified domain */
+    }
+    c->input_port = in_port;
+    c->goal_port = out_port;
+    c->in_key = ik;
+    c->goal_key = gk;
+    snprintf(c->unit, sizeof c->unit, "%s", unit);
+    c->rows = rows;
+    c->n_rows = n_rows;
+    c->in_dim = in_dim;
+    c->active = 1;
+    return 0;
+}
+
+int hybrid_coverage_admits(const HybridAi *h, Port in_port, Port out_port,
+                           const double *in, size_t in_len) {
+    const HybridCoverage *c;
+    size_t i;
+    if (!h || !in) return 1;
+    if (!coverage_family_gated(in_port)) return 1;
+    c = coverage_find((HybridAi *)h, port_key(in_port), port_key(out_port),
+                      in_port, out_port);
+    if (!c || !c->rows || c->in_dim != in_len) return 1; /* default-allow */
+    for (i = 0; i < c->n_rows; i++) {
+        if (memcmp(c->rows + i * c->in_dim, in,
+                   c->in_dim * sizeof(double)) == 0)
+            return 1;
+    }
+    return 0;
+}
+
+size_t hybrid_coverage_rows(const HybridAi *h, Port in_port, Port out_port) {
+    const HybridCoverage *c;
+    if (!h) return 0;
+    c = coverage_find((HybridAi *)h, port_key(in_port), port_key(out_port),
+                      in_port, out_port);
+    return c ? c->n_rows : 0;
 }
 
 size_t hybrid_reservoir_rows(const HybridAi *h) {
@@ -599,6 +682,13 @@ int hybrid_structure_mine(HybridAi *h, PrimitiveRegistry *reg, size_t min_hits,
                 student_out);
         }
         external_teacher_unbind(&teacher);
+        if (rc == 0) {
+            /* The unit is certified over exactly these rows — remember them so
+               the serve path can refuse to claim certified authority outside
+               the domain the contract actually covers. */
+            (void)hybrid_coverage_record(h, tr->input_port, tr->goal_port, name,
+                                         inputs, n_rows, tr->in_dim);
+        }
         free(inputs);
         free(targets);
         if (rc != 0) return rc;

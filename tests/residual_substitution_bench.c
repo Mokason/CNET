@@ -54,8 +54,11 @@ typedef struct {
     size_t abstain;
     size_t heldout_local;
     size_t heldout_total;
-    size_t correct;         /* served answer matched ground truth */
-    size_t heldout_correct; /* ... on inputs never seen during capture */
+    size_t correct;          /* served answer matched ground truth */
+    size_t heldout_correct;  /* ... on inputs never seen during capture */
+    size_t heldout_residual; /* held-out answered by the teacher instead */
+    size_t coverage_abstains;
+    size_t coverage_rows;
     size_t reservoir_rows;
     size_t reservoir_mines;
     int admitted;
@@ -183,10 +186,13 @@ static int run_arm(int consolidate, int capture_all, const char *tag,
         if (held) {
             res->heldout_total++;
             if (rep.local_hits) res->heldout_local++;
-            if (ok && rep.local_hits) res->heldout_correct++;
+            if (rep.residual_hits) res->heldout_residual++;
+            if (ok) res->heldout_correct++;
         }
     }
     personal_ai_totals(&ai, &after);
+    res->coverage_abstains = after.coverage_abstains - before.coverage_abstains;
+    res->coverage_rows = hybrid_coverage_rows(h, pin, pout);
 
     res->local = after.local_hits - before.local_hits;
     res->residual = after.residual_hits - before.residual_hits;
@@ -264,24 +270,43 @@ int main(void) {
     printf("  accuracy          before=%.4f after=%.4f delta=%+.4f\n",
            acc_before, acc_after, acc_after - acc_before);
 
-    printf("\n  E2 out-of-coverage (mined from %d of %d pairs):\n",
-           DOMAIN - N_HELDOUT, DOMAIN);
+    printf("\n  E2 out-of-coverage (mined from %d of %d pairs, coverage_rows=%zu):\n",
+           DOMAIN - N_HELDOUT, DOMAIN, gen.coverage_rows);
     printf("    heldout served from own weights: %zu/%zu (%.4f)\n",
            gen.heldout_local, gen.heldout_total, heldout_gen);
+    printf("    heldout deferred to teacher:     %zu/%zu\n",
+           gen.heldout_residual, gen.heldout_total);
     printf("    heldout CORRECT:                 %zu/%zu\n",
            gen.heldout_correct, gen.heldout_total);
-    printf("    replay accuracy: %.4f  residual_rate: %.4f\n",
-           gen_acc, rate(gen.residual, gen.served));
+    printf("    coverage abstains: %zu   replay accuracy: %.4f\n",
+           gen.coverage_abstains, gen_acc);
     if (gen.heldout_local > gen.heldout_correct) {
         printf("    WARNING: the unit answered %zu unseen input(s) from its own\n"
-               "             weights and got them WRONG — it displaced a correct\n"
-               "             teacher answer with a confident wrong one. Mining\n"
-               "             does not generalise beyond captured coverage; this\n"
-               "             is why promotion must beat the teacher on held-out\n"
-               "             evidence (plan M7), not merely serve more traffic.\n",
+               "             weights and got them WRONG — a certified badge on an\n"
+               "             uncertified claim. S6 coverage gating is not holding.\n",
                gen.heldout_local - gen.heldout_correct);
     }
 
+    /* S6: out-of-coverage inputs must never be answered from own weights and
+       got wrong. Abstaining to the teacher is the correct behaviour; a wrong
+       local answer is a certified badge on an uncertified claim. */
+    if (gen.heldout_local > gen.heldout_correct) {
+        printf("\nSUBSTITUTION_BENCH_INCONCLUSIVE reason=out_of_coverage_wrong "
+               "heldout_local=%zu heldout_correct=%zu heldout_total=%zu "
+               "coverage_abstains=%zu\n",
+               gen.heldout_local, gen.heldout_correct, gen.heldout_total,
+               gen.coverage_abstains);
+        return 1;
+    }
+    /* The teacher must still answer what the unit declined — abstention that
+       drops the request on the floor is not a fix. */
+    if (gen.heldout_correct < gen.heldout_total) {
+        printf("\nSUBSTITUTION_BENCH_INCONCLUSIVE reason=heldout_not_answered "
+               "heldout_correct=%zu/%zu residual=%zu local=%zu\n",
+               gen.heldout_correct, gen.heldout_total, gen.heldout_residual,
+               gen.heldout_local);
+        return 1;
+    }
     /* Displacing the teacher with wrong answers is a regression, not a win. */
     if (acc_after < acc_before - 1e-9) {
         printf("\nSUBSTITUTION_BENCH_INCONCLUSIVE reason=accuracy_regressed "
@@ -310,9 +335,11 @@ int main(void) {
        never be read as "CNET generalises beyond what it captured". */
     printf("\nSUBSTITUTION_BENCH_PASS rate_before=%.4f rate_after=%.4f "
            "delta=%+.4f substitution=%.4f accuracy=%.4f abstain_flat=%d "
-           "heldout_served=%zu/%zu heldout_correct=%zu/%zu\n",
+           "heldout_local=%zu/%zu heldout_deferred=%zu/%zu "
+           "heldout_correct=%zu/%zu coverage_abstains=%zu\n",
            r_before, r_after, r_after - r_before, sub_after, acc_after,
            a_after <= a_before + 1e-9, gen.heldout_local, gen.heldout_total,
-           gen.heldout_correct, gen.heldout_total);
+           gen.heldout_residual, gen.heldout_total, gen.heldout_correct,
+           gen.heldout_total, gen.coverage_abstains);
     return 0;
 }

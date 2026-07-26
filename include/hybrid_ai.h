@@ -31,6 +31,8 @@ extern "C" {
 /* Default K: distinct real (in,out) samples retained per port shape.
    Override with CNET_RESIDUAL_RESERVOIR_K (1..1024). */
 #define HYBRID_RESERVOIR_K 64
+/* Mined units whose certified coverage is tracked for abstention. */
+#define HYBRID_COVERAGE_MAX 8
 
 typedef enum {
     HYBRID_TIER_A = 0, /* certified */
@@ -115,6 +117,24 @@ typedef struct {
     size_t res_offered; /* total pairs offered (pre-dedup) */
 } HybridTrace;
 
+/* Certified coverage of a mined unit: the exact input rows its contract was
+ * certified on. A contract certifies over a DOMAIN, so answering outside that
+ * domain is an uncertified claim wearing a certified badge. Measured on this
+ * substrate, output margin cannot detect it — a mined BTN emits a saturated
+ * one-hot and scores margin 1.0 on inputs it has never seen and gets wrong —
+ * so coverage has to be membership, not confidence. */
+typedef struct {
+    Port input_port;
+    Port goal_port;
+    uint64_t in_key;
+    uint64_t goal_key;
+    char unit[64];
+    double *rows;   /* n_rows * in_dim — the certified input set */
+    size_t n_rows;
+    size_t in_dim;
+    int active;
+} HybridCoverage;
+
 typedef struct {
     HybridSoftSlot soft[HYBRID_SOFT_MAX];
     size_t soft_count;
@@ -137,6 +157,9 @@ typedef struct {
     size_t batch_label_rows; /* residual labels produced in batch mine */
     size_t reservoir_mines;  /* mines trained on real traffic, not synthetic */
     size_t synthetic_mines;  /* mines that fell back to the one-hot basis */
+    HybridCoverage coverage[HYBRID_COVERAGE_MAX];
+    size_t coverage_count;
+    size_t coverage_abstains; /* Tier-A refusals outside certified coverage */
     uint64_t medium_resident_bytes;
 } HybridAi;
 
@@ -200,6 +223,27 @@ CNET_API size_t hybrid_reservoir_rows(const HybridAi *h);
 /* Reservoir rows retained for one port shape (0 if no matching trace). */
 CNET_API size_t hybrid_reservoir_rows_for(const HybridAi *h, Port in_port,
                                           Port out_port);
+
+/* ---- S6 coverage-gated abstention ---------------------------------------
+ * Record the input set a mined unit was certified on. Called by the miner on
+ * successful admit; replaces any prior record for the same port shape. */
+CNET_API int hybrid_coverage_record(HybridAi *h, Port in_port, Port out_port,
+                                    const char *unit, const double *inputs,
+                                    size_t n_rows, size_t in_dim);
+
+/* May a certified (Tier A) answer be claimed for this input?
+ *   1 = yes — no coverage record for this shape, or the input is inside it
+ *   0 = no  — a record exists and the input is outside the certified domain
+ * Default-allow keeps units certified over their whole domain (hand-admitted,
+ * or mined from a full basis) untouched. Exact membership is only meaningful
+ * for discrete port families; PORT_RAW is always allowed (see plan risks). */
+CNET_API int hybrid_coverage_admits(const HybridAi *h, Port in_port,
+                                    Port out_port, const double *in,
+                                    size_t in_len);
+
+/* Rows recorded for a port shape (0 if none). */
+CNET_API size_t hybrid_coverage_rows(const HybridAi *h, Port in_port,
+                                     Port out_port);
 
 /* Hermetic residual: maps one-hot input → rotated one-hot (open-ended stand-in). */
 CNET_API int hybrid_hermetic_residual(const double *in, double *out, void *ctx);

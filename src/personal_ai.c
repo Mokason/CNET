@@ -54,6 +54,19 @@ static int residual_capture(Port input_port, Port goal_port,
     return 1;
 }
 
+/* S6: may Tier A claim this input? Off only by explicit operator override —
+   the default is safe, because the failure it prevents (a confident wrong
+   answer replacing a correct teacher one) is invisible to the residual_rate
+   KPI, which scores it as a win. */
+static int coverage_gate_open(const PersonalAi *ai, Port input_port,
+                              Port goal_port, const double *input,
+                              size_t in_len) {
+    const char *e = getenv("CNET_COVERAGE_ABSTAIN");
+    if (e && e[0] == '0' && e[1] == '\0') return 1;
+    return hybrid_coverage_admits(&ai->hybrid, input_port, goal_port, input,
+                                  in_len);
+}
+
 /* Dense name table for PersonalAiSource (enum values are 0..5). */
 static const char *const k_source_names[] = {
     "local",    /* PERSONAL_AI_LOCAL */
@@ -351,20 +364,32 @@ int personal_ai_serve(PersonalAi *ai, Port input_port, Port goal_port,
         }
     }
 
-    /* ---- Tier A: certified plan ---- */
+    /* ---- Tier A: certified plan ----
+       Gated by certified coverage: a mined unit answers inputs outside its
+       contract's domain confidently and wrongly (measured — margin is 1.0 on
+       exactly those), which would displace a correct teacher answer with a
+       wrong own one. Outside coverage we decline Tier A and fall through to
+       B/C rather than claim certified authority we did not earn. */
     memset(&plan, 0, sizeof plan);
     if (route_plan(&ai->lane.reg, input_port, goal_port, &plan) == 0 &&
         plan.length > 0) {
-        if (route_execute(&plan, input, in_len, output, out_cap) != 0) {
-            rep->source = PERSONAL_AI_ERROR;
-            ai->totals.abstains++;
-            cnet_acct_add_error();
-            return -1;
+        if (!coverage_gate_open(ai, input_port, goal_port, input, in_len)) {
+            ai->hybrid.coverage_abstains++;
+            ai->totals.coverage_abstains++;
+            rep->coverage_abstains = 1;
+            cnet_acct_add_abstain();
+        } else {
+            if (route_execute(&plan, input, in_len, output, out_cap) != 0) {
+                rep->source = PERSONAL_AI_ERROR;
+                ai->totals.abstains++;
+                cnet_acct_add_error();
+                return -1;
+            }
+            serve_record_hit(ai, rep, PERSONAL_AI_LOCAL, HYBRID_TRUST_CERTIFIED,
+                             HYBRID_TIER_A);
+            cnet_acct_add_tier_a((uint64_t)plan.length);
+            return 0;
         }
-        serve_record_hit(ai, rep, PERSONAL_AI_LOCAL, HYBRID_TRUST_CERTIFIED,
-                         HYBRID_TIER_A);
-        cnet_acct_add_tier_a((uint64_t)plan.length);
-        return 0;
     }
 
     /* ---- Tier B: medium modules then soft specialists ---- */
@@ -605,11 +630,12 @@ int personal_ai_kpi_json(const PersonalAi *ai, char *out, size_t out_capacity) {
         "{\"schema_version\":1,\"served\":%zu,\"local_hits\":%zu,"
         "\"soft_hits\":%zu,\"residual_hits\":%zu,\"teacher_helps\":%zu,"
         "\"abstains\":%zu,\"teaches\":%zu,\"residual_captures\":%zu,"
+        "\"coverage_abstains\":%zu,"
         "\"residual_rate\":%.6f,\"substitution_rate\":%.6f,"
         "\"abstain_rate\":%.6f}",
         served, t->local_hits, t->soft_hits, t->residual_hits,
         t->teacher_helps, t->abstains, t->teaches, t->residual_captures,
-        residual_rate, substitution_rate, abstain_rate);
+        t->coverage_abstains, residual_rate, substitution_rate, abstain_rate);
     if (written < 0 || (size_t)written >= out_capacity) return -2;
     return written;
 }
