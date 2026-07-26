@@ -315,7 +315,7 @@ SYNONYMS_TEST := tests/test_synonyms.c
 TILEINDEX_TEST := tests/test_tile_index.c
 CONSOLIDATE_TEST := tests/test_tile_consolidate.c
 
-.PHONY: hipgemm_res ci_rocm int8_matvec_bench
+.PHONY: hipgemm_res ci_rocm int8_matvec_bench artifact_isa_gate runtime_artifact_hygiene
 .PHONY: all run test verify verify-long recipe_gate demos compat unified unified_native unified_adapter unified_cce_adapter unified_oracle_adapter unified_specialist specialist_health gap_lane gap_lane_run_build dispatch_story claims claims_model model_evidence oracle_v2_test soul_host_test legacy_test compose route dag hetero split chunk certify property coverage conformal logicgate decimal circuit study capacity library margin fuzzy stochastic fastpath throughput residue expr attention attention_study lifecycle_bench lbench proposal_sidecar probe_overhead belowbeam_chars struct_pref dgate_bench compounding_bench cce_smoke counterfactual_router_test sparse_kv_test narrative_coherence_test phase4_uncertainty_test register_compression_improvements phase5_integration_test cce_train_bench cce_view forest_view wordlm wordlm_bitnet cce_dll cnet_dll cce_safetensors_test cce_gguf_test cce_model_test cce_autograd_test endgate jsonstory pdftest pdflearn compound tiermem_test graduate fontdecode tfidf synonyms tileindex consolidate clean aicimo_smoke aicimo_core_test cnet_harness_contract_test cnet_harness_plugin dotnet_harness_test cce_lora_test cce_lora_bench cce_lily_test cce_lily_serve cce_lily_collect cce_lily_teacher registry_lily_test registry_lily_compute registry_lora_test jtc_lora_live jtc_lora_faultq personal_ai_lora_tick gigatok_bench gigatok_encode_bench gigatok_cache_bench moe_train moe_xf gigatok_encode_bench
 
 all: nn_demo
@@ -3205,7 +3205,26 @@ dotnet_cce_tests:
 	@grep -q '^DOTNET_CCE_TESTS_PASS$$' logs/dotnet_cce_tests.log
 	@grep -q '^DOTNET_CCE_LLM_TESTS_PASS$$' logs/dotnet_cce_llm_tests.log
 
-ci_core: ci_config_gate warning_debt_strict release_warning_gate flagship_prefix_cache campaign_provenance_unit execution_tiers_doc_gate alt_paths_gate
+# cnet.so is versioned on purpose (docs/RELEASE_POLICY.md), so the committed
+# blob is what build-only clones receive. This pins the ISA it was built with;
+# it reads the committed blob rather than the working tree, because `verify`
+# rebuilds these files at whatever ARCH_CFLAGS the current invocation carries.
+artifact_isa_gate: tests/test_artifact_isa.sh cnet.so cce.dll
+	@mkdir -p logs
+	@bash tests/test_artifact_isa.sh > logs/artifact_isa_gate.log 2>&1; rc=$$?; \
+		cat logs/artifact_isa_gate.log; exit $$rc
+	@grep -q '^ARTIFACT_ISA_PASS' logs/artifact_isa_gate.log
+
+# Asserts the tracked/ignored split matches release policy: runtime state and
+# private caches stay local, the versioned release library stays tracked. The
+# script predates this wiring and was referenced by no target.
+runtime_artifact_hygiene: tests/test_runtime_artifact_hygiene.sh
+	@mkdir -p logs
+	@bash tests/test_runtime_artifact_hygiene.sh > logs/runtime_artifact_hygiene.log 2>&1; \
+		rc=$$?; cat logs/runtime_artifact_hygiene.log; exit $$rc
+	@grep -q '^RUNTIME_ARTIFACT_HYGIENE_PASS' logs/runtime_artifact_hygiene.log
+
+ci_core: ci_config_gate warning_debt_strict release_warning_gate flagship_prefix_cache campaign_provenance_unit execution_tiers_doc_gate alt_paths_gate artifact_isa_gate runtime_artifact_hygiene
 	@echo "CNET_CI_CORE_PASS"
 
 ci: ci_core release_package test dotnet_cce_tests cce_train_bench int8_matvec_bench
