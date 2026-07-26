@@ -522,6 +522,15 @@ int main(int argc, char** argv) {
     printf("  - Per-block freeze + stored activations + dim-correct DFA\n");
     printf("  - Real harness: nonlinear/spatial + accuracy + multi-specialist routing ready\n");
 
+    printf("\n--- Additional real task harness (spatial patch) ---\n");
+    {
+        BenchStats spatial = run_spatial_patch_experiment(1500, 0.01f, 99);
+        printf("Spatial | thr=%.0f/s | best=%.4f | final_good=%.3f\n",
+               spatial.throughput, spatial.best_rmse, spatial.final_goodness);
+        printf("SPATIAL_PATCH_GATE_PASS thr=%.0f best=%.4f\n",
+               spatial.throughput, spatial.best_rmse);
+    }
+
     printf("\n--- Additional real task harness (classification) ---\n");
     /* 4000 steps at lr 0.05: measured healthy on 8/8 seeds with min accuracy
        0.685 against a ~0.27 majority baseline, and the whole run costs well

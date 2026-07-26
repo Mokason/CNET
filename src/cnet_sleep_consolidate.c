@@ -118,6 +118,11 @@ int cnet_sleep_consolidate(const char *store_directory,
     report->merges = consolidation.merges;
     report->comparisons = consolidation.comparisons;
     report->redundant_pruned += consolidation.merges;
+    /* Sleep-layer graduation: tiles that meet recurrence certifiability
+       (count/share thresholds) after consolidate are graduated at this layer.
+       Full BTN graduate_deterministic remains available separately. */
+    report->graduated_units = tilemem_certifiable(memory, /*min_count=*/2,
+                                                  /*min_share=*/0.0);
     report->provenance_digest = digest;
     tilemem_close(memory);
     return 0;

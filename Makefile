@@ -3623,6 +3623,31 @@ cognitive_runtime_smoke: $(SHARED_WORKSPACE_SRC) $(SEMANTIC_CORTEX_SRC) $(CALIBR
 cognitive_runtime: shared_workspace semantic_cortex sleep_consolidate calibrated_governance cognitive_runtime_smoke capability_cert cce_train_bench
 	@echo "COGNITIVE_RUNTIME_PASS capabilities=5 classification=measured"
 
+# Live residual lane (Bonsai HTTP). Default soft-skip if server down unless
+# CNET_REQUIRE_REAL_RESIDUAL_HTTP=1. Uses residual_http_real + cortex live bind.
+.PHONY: semantic_cortex_live cognitive_runtime_live
+semantic_cortex_live: $(SHARED_WORKSPACE_SRC) $(SEMANTIC_CORTEX_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(EXT_TEACHER_SRC) $(CURIOSITY_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) tests/test_cnet_semantic_cortex_live.c include/cnet_semantic_cortex.h include/residual_http.h
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -Iinclude -o $(BIN_DIR)/semantic_cortex_live \
+		$(SHARED_WORKSPACE_SRC) $(SEMANTIC_CORTEX_SRC) \
+		$(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) \
+		$(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) \
+		$(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(EXT_TEACHER_SRC) \
+		$(CURIOSITY_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) \
+		$(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) \
+		$(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) \
+		$(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) \
+		tests/test_cnet_semantic_cortex_live.c \
+		$(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) $(CURL_LDFLAGS) -pthread
+	@$(BIN_DIR)/semantic_cortex_live > logs/semantic_cortex_live.log 2>&1; status=$$?; \
+		cat logs/semantic_cortex_live.log; test $$status -eq 0 && \
+		grep -q "SEMANTIC_CORTEX_LIVE_PASS" logs/semantic_cortex_live.log
+
+cognitive_runtime_live: residual_http_real semantic_cortex_live cognitive_runtime
+	@grep -q "RESIDUAL_HTTP_PASS" logs/residual_http_real.log
+	@grep -q "SEMANTIC_CORTEX_LIVE_PASS status=measured" logs/semantic_cortex_live.log
+	@echo "COGNITIVE_RUNTIME_LIVE_PASS residual_http=measured cortex_live=measured"
+
 
 # ---- Six-priority use-loop gates (2026-07-21) ----------------------------
 .PHONY: serve_feedback oracle_unattested benchmark_taxonomy miner_efficiency_bench cnet_use_loop_acceptance

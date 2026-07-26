@@ -2,18 +2,21 @@
   "capability_id": "sleep_consolidation",
   "cases": [
     {
-      "episodes": 3,
-      "duplicate_episodes": 1,
-      "expected_semantic_promotions": 1,
+      "episodes": 5,
+      "duplicate_episodes": 2,
+      "expected_semantic_promotions": 2,
       "expected_procedural_promotions": 1,
-      "minimum_pruned": 1
+      "minimum_pruned": 1,
+      "minimum_merges": 1,
+      "minimum_graduated": 1
     }
   ],
   "expected_markers": [
-    "semantic=1",
+    "semantic=2",
     "procedural=1",
-    "graduated=0",
-    "pruned=1",
+    "graduated=2",
+    "merges=1",
+    "pruned=3",
     "provenance="
   ]
 }
