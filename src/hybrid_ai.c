@@ -2,6 +2,7 @@
 #include "../include/external_teacher.h"
 #include "../include/cnet_lfru.h"
 #include "../include/residual_gguf.h"
+#include "../include/base.h"
 
 #include <math.h>
 #include <stdint.h>
@@ -73,7 +74,10 @@ void hybrid_ai_free(HybridAi *h) {
         free(h->traces[i].res_in);
         free(h->traces[i].res_out);
     }
-    for (i = 0; i < h->coverage_count; i++) free(h->coverage[i].rows);
+    for (i = 0; i < h->coverage_count; i++) {
+        free(h->coverage[i].rows);
+        free(h->coverage[i].targets);
+    }
     memset(h, 0, sizeof *h);
 }
 
@@ -154,26 +158,39 @@ static HybridCoverage *coverage_find(HybridAi *h, uint64_t ik, uint64_t gk,
 
 int hybrid_coverage_record(HybridAi *h, Port in_port, Port out_port,
                            const char *unit, const double *inputs,
-                           size_t n_rows, size_t in_dim) {
+                           const double *targets, size_t n_rows, size_t in_dim,
+                           size_t out_dim) {
     HybridCoverage *c;
     uint64_t ik, gk;
-    double *rows;
+    double *rows, *tgts = NULL;
     if (!h || !unit || !inputs || n_rows == 0 || in_dim == 0) return -1;
     ik = port_key(in_port);
     gk = port_key(out_port);
     rows = (double *)malloc(n_rows * in_dim * sizeof(double));
     if (!rows) return -2;
     memcpy(rows, inputs, n_rows * in_dim * sizeof(double));
+    /* Labels are optional: a record restored from the sidecar carries inputs
+       only (it gates, it does not re-seal). A fresh mine carries both. */
+    if (targets && out_dim > 0) {
+        tgts = (double *)malloc(n_rows * out_dim * sizeof(double));
+        if (!tgts) {
+            free(rows);
+            return -2;
+        }
+        memcpy(tgts, targets, n_rows * out_dim * sizeof(double));
+    }
     c = coverage_find(h, ik, gk, in_port, out_port);
     if (!c) {
         if (h->coverage_count >= HYBRID_COVERAGE_MAX) {
             free(rows);
+            free(tgts);
             return -3;
         }
         c = &h->coverage[h->coverage_count++];
         memset(c, 0, sizeof *c);
     } else {
         free(c->rows); /* a re-mine supersedes the older certified domain */
+        free(c->targets);
     }
     c->input_port = in_port;
     c->goal_port = out_port;
@@ -181,9 +198,35 @@ int hybrid_coverage_record(HybridAi *h, Port in_port, Port out_port,
     c->goal_key = gk;
     snprintf(c->unit, sizeof c->unit, "%s", unit);
     c->rows = rows;
+    c->targets = tgts;
     c->n_rows = n_rows;
     c->in_dim = in_dim;
+    c->out_dim = tgts ? out_dim : 0;
     c->active = 1;
+    return 0;
+}
+
+int hybrid_seal_mined_unit(HybridAi *h, struct CnetBase *base,
+                           BinaryTransformNetwork *stu, int *reused_out) {
+    const HybridCoverage *c;
+    Contract ct;
+    int rc, reused = 0;
+    if (!h || !base || !stu) return -1;
+    if (stu->input_port_count < 1 || stu->output_port_count < 1) return -1;
+    c = coverage_find(h, port_key(stu->input_ports[0]),
+                      port_key(stu->output_ports[0]), stu->input_ports[0],
+                      stu->output_ports[0]);
+    /* No record, or a record restored from disk without labels: nothing to
+       seal from. Never invent rows — that is the bug this function replaces. */
+    if (!c || !c->rows || !c->targets || c->n_rows == 0) return 1;
+    memset(&ct, 0, sizeof ct);
+    if (contract_init_borrowed(&ct, c->unit, stu, c->rows, c->targets,
+                               c->n_rows) != 0)
+        return -2;
+    rc = cnb_add_unit(base, stu, &ct, &reused);
+    contract_free(&ct);
+    if (rc != 0) return -3;
+    if (reused_out) *reused_out = reused;
     return 0;
 }
 
@@ -327,7 +370,7 @@ int hybrid_coverage_load(HybridAi *h, const char *path) {
         coverage_tag_in(gtag, pout.tag, sizeof pout.tag);
         (void)hybrid_coverage_record(h, pin, pout,
                                      strcmp(unit, "~") ? unit : "restored",
-                                     rows, n_rows, in_dim);
+                                     rows, NULL, n_rows, in_dim, 0);
         free(rows);
     }
     fclose(fp);
@@ -809,7 +852,8 @@ int hybrid_structure_mine(HybridAi *h, PrimitiveRegistry *reg, size_t min_hits,
                the serve path can refuse to claim certified authority outside
                the domain the contract actually covers. */
             (void)hybrid_coverage_record(h, tr->input_port, tr->goal_port, name,
-                                         inputs, n_rows, tr->in_dim);
+                                         inputs, targets, n_rows, tr->in_dim,
+                                         tr->out_dim);
         }
         free(inputs);
         free(targets);

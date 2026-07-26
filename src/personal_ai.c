@@ -609,9 +609,22 @@ int personal_ai_structure_mine(PersonalAi *ai,
     if (!ai || !ai->loaded) return -1;
     rc = hybrid_structure_mine(&ai->hybrid, &ai->lane.reg,
                                ai->policy.structure_min_hits, student_out);
-    /* A newly admitted unit brings a new certified domain with it — write it
-       out now, so a restart before the next mine cannot lose the gate. */
-    if (rc == 0) coverage_persist(ai);
+    if (rc == 0) {
+        /* S8: a unit that only reaches the registry dies with the process, and
+           unattended mining that forgets everything on restart is not learning.
+           Seal it into the base from the rows it was certified on, write the
+           coverage that guards it, and checkpoint both — the mine already cost
+           thousands of training epochs, so the I/O is noise beside it. */
+        int seal = hybrid_seal_mined_unit(&ai->hybrid, &ai->lane.base,
+                                          student_out ? *student_out : NULL,
+                                          NULL);
+        if (seal < 0)
+            fprintf(stderr, "personal_ai: mined unit not sealed (rc=%d) — it "
+                            "will not survive restart\n", seal);
+        coverage_persist(ai);
+        if (gap_lane_checkpoint(&ai->lane) != 0)
+            fprintf(stderr, "personal_ai: checkpoint after mine failed\n");
+    }
     return rc;
 }
 

@@ -129,9 +129,11 @@ typedef struct {
     uint64_t in_key;
     uint64_t goal_key;
     char unit[64];
-    double *rows;   /* n_rows * in_dim — the certified input set */
+    double *rows;    /* n_rows * in_dim — the certified input set */
+    double *targets; /* n_rows * out_dim — its canonical labels (for sealing) */
     size_t n_rows;
     size_t in_dim;
+    size_t out_dim;
     int active;
 } HybridCoverage;
 
@@ -229,7 +231,8 @@ CNET_API size_t hybrid_reservoir_rows_for(const HybridAi *h, Port in_port,
  * successful admit; replaces any prior record for the same port shape. */
 CNET_API int hybrid_coverage_record(HybridAi *h, Port in_port, Port out_port,
                                     const char *unit, const double *inputs,
-                                    size_t n_rows, size_t in_dim);
+                                    const double *targets, size_t n_rows,
+                                    size_t in_dim, size_t out_dim);
 
 /* May a certified (Tier A) answer be claimed for this input?
  *   1 = yes — no coverage record for this shape, or the input is inside it
@@ -252,6 +255,26 @@ CNET_API size_t hybrid_coverage_rows(const HybridAi *h, Port in_port,
  * success; load returns 0 when the file is simply absent (nothing mined yet). */
 CNET_API int hybrid_coverage_save(const HybridAi *h, const char *path);
 CNET_API int hybrid_coverage_load(HybridAi *h, const char *path);
+
+struct CnetBase;
+
+/* S8: THE durable seal for a mined unit — one implementation, every caller.
+ *
+ * A mined unit that only reaches the PrimitiveRegistry is process-local and
+ * dies on restart. Sealing it needs a Contract, and the only rows that can
+ * legitimately certify it are the ones it was mined and certified on: those are
+ * canonical for the port by construction, and they are exactly what the
+ * coverage record already holds. Reconstructing a basis at seal time instead
+ * (a) certifies a domain the unit was never trained on, and (b) produces rows
+ * that are not valid for multi-field ports, so contract_slice_valid refuses
+ * them and the seal silently no-ops.
+ *
+ * Ports come from stu, so the matching coverage record is found automatically.
+ * Returns 0 on success, 1 when there is no coverage record to seal from,
+ * negative on error. Does not save the base — the caller checkpoints. */
+CNET_API int hybrid_seal_mined_unit(HybridAi *h, struct CnetBase *base,
+                                    BinaryTransformNetwork *stu,
+                                    int *reused_out);
 
 /* Hermetic residual: maps one-hot input → rotated one-hot (open-ended stand-in). */
 CNET_API int hybrid_hermetic_residual(const double *in, double *out, void *ctx);

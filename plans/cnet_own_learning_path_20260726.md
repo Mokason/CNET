@@ -283,6 +283,7 @@ Emitted to `logs/own_learning_kpi.json`; the first four are the scoreboard.
 | **S3** | Replay bench: residual_rate before/after a cycle | **"certified units actually displace residual calls"** — the core claim | ✅ **confirmed** (§10 E1); limit measured (§10 E2) |
 | **S6** | Coverage-gated abstention: a unit abstains outside certified coverage | "CNET can refuse to answer what it did not learn" — closes §10 E2 | ✅ **shipped** — `make coverage_abstain`, §11 |
 | **S7** | Persist coverage so it survives a lane restart | "the S6 protection is durable, not process-local" | ✅ **shipped** — `<base>.coverage`, §12 |
+| **S8** | One shared durable seal for mined units | "a mined unit survives restart, and both callers seal identically" | ✅ **shipped** — `hybrid_seal_mined_unit`, §13 |
 | **S4** | Sleep graduates one real BTN unit | "consolidation can change serve behaviour" | 90d |
 | **S5** | Graded floor for one binary capability | "certs can measure improvement, not just breakage" | 90d |
 
@@ -366,15 +367,9 @@ an error every row, forcing a fallback — correct by luck, now correct by const
 
 ## 9. First concrete next step
 
-**S8 — make `personal_ai`'s mine path seal durably.** §12 found that
-`hybrid_structure_mine` admits into the registry only; nothing calls `cnb_add_unit`, so a unit
-mined through `personal_ai` is process-local and lost on restart. `soul_host` carries a
-separate seal for this (`src/soul_host.c:621`) — and it seals against raw `btn_forward`
-output, which fails `contract_slice_valid` because the student's raw vector is not canonical
-for the port, then silently returns 0 ("durable seal optional"). So mined units may not be
-persisting in production at all. Verify that first, then give the mine path one seal both
-callers share, canonicalising labels to the port. Gate: extend `make coverage_abstain`'s
-round-trip to mine → restart → unit present *without* the test doing the sealing.
+**S9 — see §13.** S8 landed: one shared durable seal (`hybrid_seal_mined_unit`) used by both
+`personal_ai_structure_mine` and `soul_host`, certifying on the rows the unit was actually
+mined on. Next load-bearing items are tracked in §13.
 
 ---
 
@@ -533,3 +528,59 @@ optional") — worth checking under S8.
   branch ungated. All as §11.
 - The sidecar is **not** written atomically (no temp+rename); a crash mid-write can truncate
   it, which degrades to fail-open on next load.
+
+---
+
+## 13. S8 result (2026-07-26) — one durable seal, shared
+
+`make coverage_abstain` → `COVERAGE_ABSTAIN_PASS checks=37 heldout_correct=4/4 was=0/4`
+
+### The bug was worse than "not sealed"
+
+`hybrid_structure_mine` admits into the `PrimitiveRegistry` only, so a unit mined through
+`personal_ai` was process-local. `soul_host` had the only durable seal — and it **rebuilt a
+synthetic basis** at seal time rather than using the rows the unit was mined on:
+
+```c
+n_rows = in_dim <= 16 ? in_dim : 16;
+for (r = 0; r < n_rows; r++)
+    for (j = 0; j < in_dim; j++)
+        inputs[r * in_dim + j] = (j == r) ? 1.0 : 0.0;   /* single hot bit */
+```
+
+Two independent defects:
+
+1. **It certified a domain the unit was never trained on.** The sealed contract's exemplars
+   and the coverage record would disagree about what the unit is certified for.
+2. **For any multi-field port those rows are invalid.** A 2-field one-hot needs one hot bit
+   *per field*; a single hot bit over the whole vector leaves field 1 all zeros, so
+   `contract_slice_valid` → `port_validate` rejects it, `contract_init_borrowed` fails, and
+   the code logged and `return 0`'d as "durable seal optional". **The unit silently never
+   became durable** — the exact failure reproduced as `rc=-5` while building §12's gate.
+
+### The fix
+
+`hybrid_seal_mined_unit(h, base, stu, &reused)` is now the single seal, used by both
+`personal_ai_structure_mine` and `soul_structure_mine`. It finds the coverage record by the
+student's own ports and certifies on **the rows the unit was mined and certified on** —
+canonical for the port by construction, and identical to what coverage gates. It never
+invents rows; with no labelled record it returns 1 rather than sealing something arbitrary.
+
+`personal_ai_structure_mine` now seals, persists coverage, and checkpoints on every
+successful mine. The mine already costs thousands of training epochs, so the I/O is noise
+beside it, and the unit plus its guard become durable the moment they exist.
+
+### Evidence
+
+The gate no longer hand-seals anything — the product does it:
+
+```
+S8: capture 12/16, mine — product seals+checkpoints            PASS
+S8: mined unit itself restored from the CNB (no hand-seal)     PASS   (cnb_has_unit)
+S7: 12 certified rows restored from disk                       PASS
+S7: coverage abstains survive the restart                      PASS   (4)
+S7: in-coverage traffic still served locally after restart     PASS   (>=12 local)
+S7: held-out still CORRECT 4/4 after restart                   PASS
+```
+
+Both negative controls still hold (`CNET_COVERAGE_ABSTAIN=0`, and deleting only the sidecar).

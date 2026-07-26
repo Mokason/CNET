@@ -569,66 +569,24 @@ CNET_API int soul_structure_mine(SoulHost *h) {
     if (!stu) return -2;
     h->structure_mines++;
 
-    /* Rebuild labeled table for durable seal (cnb_add_unit needs a contract). */
-    if (stu->input_port_count < 1 || stu->output_port_count < 1) return -3;
-    in_dim = stu->input_ports[0].field_width * stu->input_ports[0].field_count;
-    out_dim = stu->output_ports[0].field_width * stu->output_ports[0].field_count;
-    if (in_dim == 0 || out_dim == 0) return -3;
-    n_rows = in_dim <= 16 ? in_dim : 16;
-    inputs = (double *)calloc(n_rows * in_dim, sizeof(double));
-    targets = (double *)calloc(n_rows * out_dim, sizeof(double));
-    if (!inputs || !targets) {
-        free(inputs);
-        free(targets);
-        return -4;
-    }
-    for (r = 0; r < n_rows; r++) {
-        for (j = 0; j < in_dim; j++)
-            inputs[r * in_dim + j] = (j == r) ? 1.0 : 0.0;
-        if (h->hybrid.residual.bound &&
-            h->hybrid.residual.fn(inputs + r * in_dim, targets + r * out_dim,
-                                  h->hybrid.residual.ctx) != 0) {
-            /* fallback: student forward */
-            const double *pred = btn_forward(stu, inputs + r * in_dim);
-            if (pred)
-                memcpy(targets + r * out_dim, pred, out_dim * sizeof(double));
-        } else if (!h->hybrid.residual.bound) {
-            const double *pred = btn_forward(stu, inputs + r * in_dim);
-            if (pred)
-                memcpy(targets + r * out_dim, pred, out_dim * sizeof(double));
-        }
-    }
-    /* hybrid_structure_mine already bumped structure_mines; name matches admit. */
+    /* S8: seal through the one shared path. It certifies the unit on the rows
+       it was actually mined and certified on — canonical for the port by
+       construction. The previous code rebuilt a single-hot basis here, which
+       certified a domain the unit was never trained on and, for any multi-field
+       port, produced rows contract_slice_valid rightly refuses; the seal then
+       soft-returned 0 and the unit silently never became durable. */
     snprintf(name, sizeof name, "hyb_struct_%zu",
              h->hybrid.structure_mines > 0 ? h->hybrid.structure_mines - 1
                                            : 0);
-    memset(&c, 0, sizeof c);
-    /* Prefer student self-labels for seal: unit already admitted via residual
-     * teacher; self-consistency is what cnb_add_unit certification needs. */
-    for (r = 0; r < n_rows; r++) {
-        const double *pred = btn_forward(stu, inputs + r * in_dim);
-        if (pred)
-            memcpy(targets + r * out_dim, pred, out_dim * sizeof(double));
+    {
+        int src = hybrid_seal_mined_unit(&h->hybrid, &h->base, stu, &reused);
+        if (src != 0) {
+            fprintf(stderr,
+                    "soul_host: structure seal failed name=%s rc=%d\n",
+                    name, src);
+            return 0; /* mined live; durable seal optional */
+        }
     }
-    if (contract_init_borrowed(&c, name, stu, inputs, targets, n_rows) != 0) {
-        fprintf(stderr, "soul_host: structure seal contract failed name=%s\n",
-                name);
-        free(inputs);
-        free(targets);
-        /* Live registry still has the mined unit. */
-        return 0;
-    }
-    if (cnb_add_unit(&h->base, stu, &c, &reused) != 0) {
-        fprintf(stderr, "soul_host: structure seal cnb_add_unit failed name=%s\n",
-                name);
-        contract_free(&c);
-        free(inputs);
-        free(targets);
-        return 0; /* mined live; durable seal optional */
-    }
-    contract_free(&c);
-    free(inputs);
-    free(targets);
     if (h->evidence_store[0]) {
         CnetEvidenceOpts eopts;
         memset(&eopts, 0, sizeof eopts);

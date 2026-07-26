@@ -124,33 +124,7 @@ static int build_and_replay_ex(PersonalAi *ai, ResCtx *ctx, const char *tag,
                                     &rep);
         }
         if (personal_ai_structure_mine(ai, &stu) != 0) return -2;
-        /* Durably seal the mined unit the way the live serve path does
-           (soul_host structure seal: student self-labels + cnb_add_unit), so
-           the reopened base really does hold a mined unit for coverage to
-           gate. personal_ai's own mine path admits to the registry only. */
-        if (seal && stu) {
-            double si[DOMAIN * IN_DIM], st[DOMAIN * OUT_DIM];
-            Contract c;
-            size_t n = 0;
-            for (idx = 0; idx < DOMAIN; idx++) {
-                if (is_heldout(idx)) continue;
-                encode_pair(si + n * IN_DIM, idx / FW, idx % FW);
-                /* Seal against the teacher labels the unit was certified on —
-                   the same rows the coverage record holds. Raw btn_forward
-                   output is not canonical for the port and the contract
-                   rightly refuses it. */
-                res_addmod(si + n * IN_DIM, st + n * OUT_DIM, ctx);
-                n++;
-            }
-            memset(&c, 0, sizeof c);
-            if (contract_init_borrowed(&c, "hyb_struct_0", stu, si, st, n) != 0)
-                return -5;
-            if (cnb_add_unit(&ai->lane.base, stu, &c, NULL) != 0) {
-                contract_free(&c);
-                return -6;
-            }
-            contract_free(&c);
-        }
+        (void)seal; /* S8: personal_ai_structure_mine seals + checkpoints */
         if (gap_lane_checkpoint(&ai->lane) != 0) return -3;
     }
 
@@ -251,7 +225,7 @@ int main(void) {
     {
         int rc = build_and_replay_ex(&ai, &ctx, "rt", 0, 1, &hl, &hc, &hr, &ab);
         if (rc != 0) printf("      build_and_replay_ex(seal) rc=%d\n", rc);
-        check(rc == 0, "S7: capture 12/16, mine, durable seal, checkpoint");
+        check(rc == 0, "S8: capture 12/16, mine — product seals+checkpoints");
     }
     check(ab == 4, "S7: gate holds in the original process");
     personal_ai_close(&ai);
@@ -270,6 +244,8 @@ int main(void) {
        disk, exactly as it would after a lane restart. */
     check(build_and_replay_ex(&ai, &ctx, "rt", 1, 0, &hl, &hc, &hr, &ab) == 0,
           "S7: reopen base without re-mining");
+    check(cnb_has_unit(&ai.lane.base, "hyb_struct_0") == 1,
+          "S8: mined unit itself restored from the CNB (no hand-seal)");
     check(hybrid_coverage_rows(personal_ai_hybrid(&ai), pin, pout) == 12,
           "S7: 12 certified rows restored from disk");
     check(hl == 0, "S7: still no held-out input answered from own weights");
@@ -327,7 +303,7 @@ int main(void) {
         snprintf(rin.tag, sizeof rin.tag, "raw_in");
         rout = rin;
         snprintf(rout.tag, sizeof rout.tag, "raw_out");
-        check(hybrid_coverage_record(&h, rin, rout, "raw_unit", rows, 1, 4) == 0,
+        check(hybrid_coverage_record(&h, rin, rout, "raw_unit", rows, NULL, 1, 4, 0) == 0,
               "coverage can be recorded for a RAW port");
         check(hybrid_coverage_admits(&h, rin, rout, v, 4) == 1,
               "RAW inputs stay ungated — exact match is meaningless there");
