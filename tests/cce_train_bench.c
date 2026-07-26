@@ -3,7 +3,16 @@
 #include "../include/cce/cce_cascade.h"
 #include "../include/cce/cce_learn.h"
 
+/* Classification lane health contract.
+   Absolute accuracy is not evidence on its own: on this task the modal class
+   holds ~39% of draws, so a model that always answers "class 0" scores ~0.39
+   and would clear any naive 0.30 floor while having learned nothing. Health
+   therefore requires lift over the majority baseline AND use of more than one
+   class. See CCE_CLASSIFICATION_LANE_REQUIRE below for the CI contract. */
 #define CLASSIFICATION_MIN_ACCURACY 0.30
+#define CLASSIFICATION_MIN_LIFT     0.05  /* over the majority-class baseline */
+#define CLASSIFICATION_MIN_DISTINCT 2     /* a constant predictor is degenerate */
+#define CLASSIFICATION_REQUIRE_ENV  "CCE_CLASSIFICATION_LANE_REQUIRE"
 #include "../include/cce/cce_defs.h"
 #include "../include/cce/cce_forest.h"
 #include "../include/cce/cce_block_patch.h"
@@ -43,6 +52,13 @@ typedef struct {
     double final_goodness;
     int    num_frozen_blocks;
     double accuracy; /* for classification-style real tasks */
+    /* Classification honesty triplet. Accuracy alone cannot distinguish a real
+       classifier from one that emits a single constant class on an imbalanced
+       task, so the lane reports what it is being compared against and how many
+       classes it actually used. See the gate in main(). */
+    double majority_baseline;  /* accuracy of always predicting the modal class */
+    int    distinct_predicted; /* number of classes the model ever emitted */
+    int    num_classes;
 } BenchStats;
 
 static BenchStats run_one_experiment(int in_dim, int hidden, int out_dim, int steps, float lr, unsigned int seed) {
@@ -207,8 +223,6 @@ static BenchStats run_classification_experiment(int steps, float lr, unsigned in
 
     double start = get_time_ms();
     double best = 1e9;
-    double acc_sum = 0;
-    int acc_cnt = 0;
 
     for (int step = 0; step < steps; ++step) {
         for (int i=0; i<8; i++) x.data[i] = ((float)rand()/RAND_MAX)*2-1;
@@ -224,16 +238,11 @@ static BenchStats run_classification_experiment(int steps, float lr, unsigned in
             cce_tensor pred;
             cce_cascade_forward(&cas, &x, &pred);
             float rmse = 0;
-            int pred_cls = 0;
-            float maxp = -1;
             for (int o=0; o<4; o++) {
                 float e = pred.data[o] - y.data[o]; rmse += e*e;
-                if (pred.data[o] > maxp) { maxp = pred.data[o]; pred_cls = o; }
             }
             rmse = sqrtf(rmse/4);
             if (rmse < best) best = rmse;
-            double acc = (pred_cls == cls) ? 1.0 : 0.0;
-            acc_sum += acc; acc_cnt++;
             cce_tensor_free(&pred);
         }
     }
@@ -241,8 +250,45 @@ static BenchStats run_classification_experiment(int steps, float lr, unsigned in
     st.time_per_step_ms = (get_time_ms() - start) / steps;
     st.throughput = steps * 1000.0 / (get_time_ms() - start);
     st.best_rmse = best;
-    st.accuracy = acc_cnt > 0 ? acc_sum / acc_cnt : 0;
     st.final_goodness = cas.goodness;
+
+    /* Held-out evaluation. The previous version scored four training points --
+       the samples the model had just adapted on -- which is both leaky and far
+       too few to resolve anything (its only possible values were 0, .25, .5,
+       .75, 1). Score fresh draws instead, matching the regression lane. */
+    const int eval_n = 500;
+    int correct = 0;
+    int true_hist[4] = {0,0,0,0};
+    int pred_hist[4] = {0,0,0,0};
+    for (int s = 0; s < eval_n; ++s) {
+        for (int i=0; i<8; i++) x.data[i] = ((float)rand()/RAND_MAX)*2-1;
+        float esum = 0;
+        for (int i=0; i<4; i++) esum += x.data[i];
+        int ecls = ((int)(esum * 2) % 4 + 4) % 4;
+        true_hist[ecls]++;
+
+        cce_tensor pred;
+        cce_cascade_forward(&cas, &x, &pred);
+        int pred_cls = 0;
+        float maxp = -1e30f;
+        for (int o=0; o<4; o++)
+            if (pred.data[o] > maxp) { maxp = pred.data[o]; pred_cls = o; }
+        cce_tensor_free(&pred);
+
+        pred_hist[pred_cls]++;
+        if (pred_cls == ecls) correct++;
+    }
+
+    int modal = 0, distinct = 0;
+    for (int c=0; c<4; c++) {
+        if (true_hist[c] > true_hist[modal]) modal = c;
+        if (pred_hist[c] > 0) distinct++;
+    }
+    st.accuracy = (double)correct / eval_n;
+    st.majority_baseline = (double)true_hist[modal] / eval_n;
+    st.distinct_predicted = distinct;
+    st.num_classes = 4;
+
 
     cce_tensor_free(&x);
     cce_tensor_free(&y);
@@ -375,8 +421,10 @@ int main(int argc, char** argv) {
         if (s.time_per_step_ms < min_time) min_time = s.time_per_step_ms;
         if (s.time_per_step_ms > max_time) max_time = s.time_per_step_ms;
 
-        printf("Run %d | time/step=%.4f ms | thr=%.0f/s | heldout=%.4f | best=%.4f | good=%.3f | frozen=%d/%d | acc=%.2f\n",
-               r+1, s.time_per_step_ms, s.throughput, s.final_rmse, s.best_rmse, s.final_goodness, s.num_frozen_blocks, 4, s.accuracy);
+        /* No acc= here: this is a regression lane with no notion of accuracy,
+           and printing a hard-wired "acc=0.00" reads as a measured zero. */
+        printf("Run %d | time/step=%.4f ms | thr=%.0f/s | heldout=%.4f | best=%.4f | good=%.3f | frozen=%d/%d\n",
+               r+1, s.time_per_step_ms, s.throughput, s.final_rmse, s.best_rmse, s.final_goodness, s.num_frozen_blocks, 4);
     /* Polish: per-block goodness snapshot (from last adapt state via cascade) */
     if (r == 0) printf("  [per-block goodness example from deeper run] layer0~%.3f layerN~%.3f\n", 0.6f, s.final_goodness);
     }
@@ -429,14 +477,48 @@ int main(int argc, char** argv) {
 
     printf("\n--- Additional real task harness (classification) ---\n");
     BenchStats cls = run_classification_experiment(2000, 0.01f, 456);
-    printf("Classification | thr=%.0f/s | best=%.4f | acc=%.2f\n", cls.throughput, cls.best_rmse, cls.accuracy);
-    if (cls.accuracy < CLASSIFICATION_MIN_ACCURACY) {
-        printf("CLASSIFICATION_LANE_SKIPPED accuracy=%.2f required=%.2f reason=below_quality_floor\n",
-               cls.accuracy, CLASSIFICATION_MIN_ACCURACY);
-        printf("CLASSIFICATION_GATE_PASS status=skipped\n");
+    printf("Classification | thr=%.0f/s | best=%.4f | heldout_acc=%.3f"
+           " | majority_baseline=%.3f | classes_used=%d/%d\n",
+           cls.throughput, cls.best_rmse, cls.accuracy,
+           cls.majority_baseline, cls.distinct_predicted, cls.num_classes);
+
+    double lift = cls.accuracy - cls.majority_baseline;
+    int healthy = cls.accuracy >= CLASSIFICATION_MIN_ACCURACY &&
+                  lift >= CLASSIFICATION_MIN_LIFT &&
+                  cls.distinct_predicted >= CLASSIFICATION_MIN_DISTINCT;
+    /* Opt-in strictness: anyone claiming this lane works must prove it. */
+    const char* require_env = getenv(CLASSIFICATION_REQUIRE_ENV);
+    int required = require_env && *require_env && strcmp(require_env, "0") != 0;
+
+    if (healthy) {
+        printf("CLASSIFICATION_LANE_HEALTHY accuracy=%.3f baseline=%.3f lift=%.3f"
+               " classes_used=%d\n",
+               cls.accuracy, cls.majority_baseline, lift, cls.distinct_predicted);
+        printf("CLASSIFICATION_GATE_PASS status=measured accuracy=%.3f lift=%.3f\n",
+               cls.accuracy, lift);
     } else {
-        printf("CLASSIFICATION_GATE_PASS status=measured accuracy=%.2f required=%.2f\n",
-               cls.accuracy, CLASSIFICATION_MIN_ACCURACY);
+        /* Declared-open, not "skipped": the lane is a known research gap in the
+           local-credit learner (it collapses toward a constant class), recorded
+           as a contract rather than silently floored. The accuracy printed above
+           is real and held-out -- it is simply not evidence of a classifier. */
+        const char* reason = cls.distinct_predicted < CLASSIFICATION_MIN_DISTINCT
+                                 ? "constant_predictor"
+                                 : (lift < CLASSIFICATION_MIN_LIFT ? "no_lift_over_majority"
+                                                                   : "below_absolute_floor");
+        printf("CLASSIFICATION_LANE_DECLARED_OPEN accuracy=%.3f baseline=%.3f"
+               " lift=%.3f classes_used=%d/%d required_lift=%.2f reason=%s\n",
+               cls.accuracy, cls.majority_baseline, lift, cls.distinct_predicted,
+               cls.num_classes, CLASSIFICATION_MIN_LIFT, reason);
+        printf("CLASSIFICATION_LANE_NOT_MEASURED do_not_cite_this_accuracy_as_quality\n");
+        if (required) {
+            printf("CLASSIFICATION_GATE_FAIL status=required_but_unhealthy reason=%s\n",
+                   reason);
+            printf("%s=1 asserts a working classification lane; it is not.\n",
+                   CLASSIFICATION_REQUIRE_ENV);
+            return 1;
+        }
+        printf("CLASSIFICATION_GATE_PASS status=declared_open contract=%s\n",
+               CLASSIFICATION_REQUIRE_ENV);
     }
 
     /* Real tasks note: the router-learn loop (ABI + forest) + deeper cascades enable

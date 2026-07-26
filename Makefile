@@ -297,6 +297,7 @@ SYNONYMS_TEST := tests/test_synonyms.c
 TILEINDEX_TEST := tests/test_tile_index.c
 CONSOLIDATE_TEST := tests/test_tile_consolidate.c
 
+.PHONY: hipgemm_res ci_rocm
 .PHONY: all run test verify verify-long recipe_gate demos compat unified unified_native unified_adapter unified_cce_adapter unified_oracle_adapter unified_specialist specialist_health gap_lane gap_lane_run_build dispatch_story claims claims_model model_evidence oracle_v2_test soul_host_test legacy_test compose route dag hetero split chunk certify property coverage conformal logicgate decimal circuit study capacity library margin fuzzy stochastic fastpath throughput residue expr attention attention_study lifecycle_bench lbench proposal_sidecar probe_overhead belowbeam_chars struct_pref dgate_bench compounding_bench cce_smoke counterfactual_router_test sparse_kv_test narrative_coherence_test phase4_uncertainty_test register_compression_improvements phase5_integration_test cce_train_bench cce_view forest_view wordlm wordlm_bitnet cce_dll cnet_dll cce_safetensors_test cce_gguf_test cce_model_test cce_autograd_test endgate jsonstory pdftest pdflearn compound tiermem_test graduate fontdecode tfidf synonyms tileindex consolidate clean aicimo_smoke aicimo_core_test cnet_harness_contract_test cnet_harness_plugin dotnet_harness_test cce_lora_test cce_lora_bench cce_lily_test cce_lily_serve cce_lily_collect cce_lily_teacher registry_lily_test registry_lily_compute registry_lora_test jtc_lora_live jtc_lora_faultq personal_ai_lora_tick gigatok_bench gigatok_encode_bench gigatok_cache_bench moe_train moe_xf gigatok_encode_bench
 
 all: nn_demo
@@ -1477,7 +1478,8 @@ cce_smoke_pure: $(CCE) $(CCE_CUDA_OBJ) tests/cce_smoke.c
 
 cce_train_bench: $(CCE) $(CCE_CUDA_OBJ) tests/cce_train_bench.c
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) tests/cce_train_bench.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
-	./$(BIN_DIR)/cce_train_bench | tee logs/cce_train_bench.log
+	@./$(BIN_DIR)/cce_train_bench > logs/cce_train_bench.log 2>&1; rc=$$?; \
+		cat logs/cce_train_bench.log; exit $$rc
 	@grep -q '^CLASSIFICATION_GATE_PASS ' logs/cce_train_bench.log
 
 cce_json_bench: $(CCE) $(CCE_CUDA_OBJ) tests/cce_json_bench.c
@@ -3190,6 +3192,28 @@ ci_core: ci_config_gate warning_debt_strict release_warning_gate flagship_prefix
 
 ci: ci_core release_package test dotnet_cce_tests cce_train_bench
 	@echo "CNET_CI_PASS"
+
+# ---- ROCm / AMD GPU lane ---------------------------------------------------
+# cce_hipgemm dlopens ROCm at runtime and needs no SDK to compile, so this gate
+# builds on every host and self-skips where there is no device. That makes it
+# safe to keep in the portable lane, but a skip must never be mistaken for a
+# device result -- see CNET_REQUIRE_ROCM in tests/test_hipgemm.c.
+hipgemm_res: $(CCE) $(CCE_CUDA_OBJ) tests/test_hipgemm.c include/cce/cce_hipgemm.h
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) \
+		tests/test_hipgemm.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+	@./$(BIN_DIR)/hipgemm_res > logs/hipgemm_res.log 2>&1; rc=$$?; \
+		cat logs/hipgemm_res.log; exit $$rc
+	@grep -q '^HIPGEMM_RES_PASS' logs/hipgemm_res.log
+
+# The authoritative GPU gate for this project: portable CI plus a bounded, real
+# device slice. GitHub-hosted runners have no AMD GPU, so `make ci_rocm` on an
+# AMD/ROCm host is the authority -- CI itself can only run the portable lane.
+# CNET_REQUIRE_ROCM=1 turns the self-skip into a failure, so this target cannot
+# report success on a machine whose GPU is missing or broken.
+ci_rocm: ci
+	@CNET_REQUIRE_ROCM=1 $(MAKE) --no-print-directory hipgemm_res
+	@echo "CNET_CI_ROCM_PASS"
 
 .PHONY: unified_models
 unified_models: qgkp_envelope_test $(MODEL_RUNTIME) $(CCE_MODEL_CATALOG) $(MODEL_PROBE) tests/test_model_runtime.c tests/test_model_catalog.c

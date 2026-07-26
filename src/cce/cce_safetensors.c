@@ -1263,7 +1263,163 @@ static size_t st_download_write(void* data, size_t size, size_t count, void* use
     return chunk;
 }
 
-static int st_parse_https_url(const char* url, int* is_hf_host) {
+/* ---- Outbound host policy (SSRF containment) -------------------------------
+   cce_safetensors_load_url() dials a URL the caller may not fully control, so
+   egress is default-deny. Two independent layers, because either alone leaks:
+
+     1. name policy    (st_host_allowed)  - the URL host must match the built-in
+        Hugging Face set or an operator entry in CCE_ST_URL_ALLOWLIST.
+     2. address policy (st_prereq_public_ip) - libcurl invokes this after DNS on
+        *every* hop, so a redirect or a rebound DNS record aimed at loopback,
+        RFC1918, link-local (incl. 169.254.169.254 cloud metadata) or CGNAT
+        space is refused at connect time, after the name check has passed.
+
+   Layer 2 is what makes FOLLOWLOCATION safe: layer 1 only ever sees the first
+   URL. IP literals and localhost are rejected ahead of the allowlist so an
+   operator entry cannot re-enable them. */
+#define CCE_ST_ENV_ALLOWLIST "CCE_ST_URL_ALLOWLIST"
+
+static const char* const st_default_allowlist[] = {
+    "huggingface.co",
+    "hf.co",
+};
+
+/* Case-insensitive "host is `pattern` or a subdomain of `pattern`". Matching on
+   a label boundary is what stops huggingface.co.evil.invalid from passing. */
+static int st_host_matches(const char* host, const char* pattern) {
+    size_t hl, pl;
+    if (!host || !pattern || !*pattern) return 0;
+    hl = strlen(host);
+    pl = strlen(pattern);
+    if (hl == pl) return curl_strequal(host, pattern);
+    return hl > pl && host[hl - pl - 1] == '.' && curl_strequal(host + hl - pl, pattern);
+}
+
+/* Strict dotted-quad parse. Hand-rolled to avoid pulling inet_pton (and the
+   ws2tcpip.h/arpa-inet split) into an otherwise portable translation unit. */
+static int st_parse_ipv4(const char* s, unsigned char out[4]) {
+    int octet = 0;
+    for (; octet < 4; ++octet) {
+        int value = 0, digits = 0;
+        if (octet > 0) {
+            if (*s != '.') return 0;
+            ++s;
+        }
+        while (*s >= '0' && *s <= '9') {
+            value = value * 10 + (*s - '0');
+            if (++digits > 3 || value > 255) return 0;
+            ++s;
+        }
+        if (digits == 0) return 0;
+        out[octet] = (unsigned char)value;
+    }
+    return *s == '\0';
+}
+
+static int st_ipv4_is_public(const unsigned char a[4]) {
+    if (a[0] == 0 || a[0] == 10 || a[0] == 127) return 0;        /* this-net, RFC1918, loopback */
+    if (a[0] == 169 && a[1] == 254) return 0;                    /* link-local + metadata */
+    if (a[0] == 172 && a[1] >= 16 && a[1] <= 31) return 0;       /* RFC1918 */
+    if (a[0] == 192 && a[1] == 168) return 0;                    /* RFC1918 */
+    if (a[0] == 192 && a[1] == 0 && a[2] == 0) return 0;         /* IETF protocol assignments */
+    if (a[0] == 100 && a[1] >= 64 && a[1] <= 127) return 0;      /* CGNAT */
+    if (a[0] == 198 && (a[1] == 18 || a[1] == 19)) return 0;     /* benchmarking */
+    if (a[0] >= 224) return 0;                                   /* multicast + reserved */
+    return 1;
+}
+
+/* Textual IPv6 reject-list: loopback/unspecified, unique-local (fc00::/7),
+   link-local (fe80::/10), and IPv4-mapped forms carrying a private v4. */
+static int st_ipv6_is_public(const char* ip) {
+    unsigned char v4[4];
+    const char* mapped;
+    if (!ip || !*ip) return 0;
+    if (strcmp(ip, "::1") == 0 || strcmp(ip, "::") == 0) return 0;
+    if ((ip[0] == 'f' || ip[0] == 'F') && ip[1] != '\0') {
+        char c1 = (char)tolower((unsigned char)ip[1]);
+        if (c1 == 'c' || c1 == 'd') return 0;                    /* fc00::/7 */
+        if (c1 == 'e' && ip[2] != '\0') {
+            char c2 = (char)tolower((unsigned char)ip[2]);
+            if (c2 >= '8' && c2 <= '9') return 0;                /* fe80::/10 */
+            if (c2 == 'a' || c2 == 'b') return 0;
+        }
+    }
+    mapped = strrchr(ip, ':');
+    if (mapped && strchr(mapped, '.') == NULL) return 1;
+    if (mapped && st_parse_ipv4(mapped + 1, v4)) return st_ipv4_is_public(v4);
+    return 1;
+}
+
+static int st_ip_literal_is_public(const char* ip) {
+    unsigned char v4[4];
+    if (!ip || !*ip) return 0;
+    if (st_parse_ipv4(ip, v4)) return st_ipv4_is_public(v4);
+    if (strchr(ip, ':') != NULL) return st_ipv6_is_public(ip);
+    return 1;  /* not an address literal; the name policy governs it */
+}
+
+static int st_host_is_ip_literal(const char* host) {
+    unsigned char v4[4];
+    if (!host || !*host) return 0;
+    return st_parse_ipv4(host, v4) || strchr(host, ':') != NULL;
+}
+
+/* Name policy. Returns 1 only for a host the operator has actually blessed. */
+static int st_host_allowed(const char* host) {
+    const char* env;
+    size_t i;
+
+    if (!host || !*host) return 0;
+    /* Unconditional denies: an allowlist entry must not be able to re-open
+       these, and a bare IP has no name to police in the first place. */
+    if (st_host_is_ip_literal(host)) return 0;
+    if (st_host_matches(host, "localhost") || st_host_matches(host, "local") ||
+        st_host_matches(host, "internal") || st_host_matches(host, "home.arpa"))
+        return 0;
+
+    for (i = 0; i < sizeof(st_default_allowlist) / sizeof(st_default_allowlist[0]); ++i)
+        if (st_host_matches(host, st_default_allowlist[i])) return 1;
+
+    env = getenv(CCE_ST_ENV_ALLOWLIST);
+    if (env && *env) {
+        /* Comma-separated; bounded copy so a hostile env cannot overrun. */
+        char buf[512];
+        char* save;
+        size_t len = strlen(env);
+        if (len >= sizeof(buf)) return 0;
+        memcpy(buf, env, len + 1);
+        for (save = buf; *save;) {
+            char* comma = strchr(save, ',');
+            if (comma) *comma = '\0';
+            while (*save == ' ' || *save == '\t') ++save;
+            if (*save && st_host_matches(host, save)) return 1;
+            if (!comma) break;
+            save = comma + 1;
+        }
+    }
+    return 0;
+}
+
+/* Address policy: runs once per connection, including each redirect hop. */
+static int st_prereq_public_ip(void* clientp, char* conn_primary_ip,
+                               char* conn_local_ip, int conn_primary_port,
+                               int conn_local_port) {
+    (void)clientp; (void)conn_local_ip; (void)conn_primary_port; (void)conn_local_port;
+    if (!conn_primary_ip || !st_ip_literal_is_public(conn_primary_ip))
+        return CURL_PREREQFUNC_ABORT;
+    return CURL_PREREQFUNC_OK;
+}
+
+#ifdef CCE_SAFETENSORS_TESTING
+int cce_safetensors_test_host_policy(const char* host) { return st_host_allowed(host); }
+int cce_safetensors_test_ip_public(const char* ip) { return st_ip_literal_is_public(ip); }
+#endif
+
+/* Pure URL-syntax validation: shape, scheme and credential checks only.
+   `is_hf_host` scopes the bearer token; `host_allowed` reports the egress name
+   policy. Policy is reported, never enforced here, so callers that only need to
+   classify a URL stay separable from the ones that dial it. */
+static int st_parse_https_url(const char* url, int* is_hf_host, int* host_allowed) {
     CURLU* parsed = NULL;
     char* scheme = NULL;
     char* host = NULL;
@@ -1289,6 +1445,7 @@ static int st_parse_https_url(const char* url, int* is_hf_host) {
                        host[host_len - hf_len - 1] == '.' &&
                        curl_strequal(host + host_len - hf_len, hf_host));
     }
+    if (host_allowed) *host_allowed = st_host_allowed(host);
     valid = 1;
 
 done:
@@ -1301,7 +1458,7 @@ done:
 }
 
 static int st_is_https_url(const char* url) {
-    return st_parse_https_url(url, NULL);
+    return st_parse_https_url(url, NULL, NULL);
 }
 
 static int st_download_curl(const char* url, const char* dest, const char* bearer) {
@@ -1353,6 +1510,9 @@ static int st_download_curl(const char* url, const char* dest, const char* beare
     curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, st_download_write);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &sink);
+    /* Re-checked on every redirect hop, so FOLLOWLOCATION cannot be steered at
+       loopback/RFC1918/metadata addresses that the name policy never sees. */
+    curl_easy_setopt(curl, CURLOPT_PREREQFUNCTION, st_prereq_public_ip);
 
     rc = curl_easy_perform(curl);
 
@@ -1369,10 +1529,19 @@ done:
     return rc == CURLE_OK ? 0 : -1;
 }
 
+/* Sole egress choke point: every download (single file and index shards) lands
+   here, so the name policy is enforced once, for all of them. */
 static int st_download_to_file(const char* url, const char* dest) {
     int is_hf_host = 0;
+    int host_allowed = 0;
     const char* token = NULL;
-    if (!st_parse_https_url(url, &is_hf_host)) return -1;
+    if (!st_parse_https_url(url, &is_hf_host, &host_allowed)) return -1;
+    if (!host_allowed) {
+        st_set_err(NULL,
+                   "host not permitted by egress policy; set " CCE_ST_ENV_ALLOWLIST
+                   " to opt in additional hosts");
+        return -1;
+    }
     if (is_hf_host) token = st_get_hf_token();
     return st_download_curl(url, dest, token);
 }
@@ -1393,14 +1562,14 @@ int cce_safetensors_test_download_cap(void) {
 
 int cce_safetensors_test_token_scope(void) {
     int is_hf_host = 0;
-    return st_parse_https_url("https://huggingface.co/model", &is_hf_host) &&
+    return st_parse_https_url("https://huggingface.co/model", &is_hf_host, NULL) &&
            is_hf_host &&
-           st_parse_https_url("https://cdn.huggingface.co/model", &is_hf_host) &&
+           st_parse_https_url("https://cdn.huggingface.co/model", &is_hf_host, NULL) &&
            is_hf_host &&
            st_parse_https_url("https://huggingface.co.evil.invalid/model",
-                              &is_hf_host) &&
+                              &is_hf_host, NULL) &&
            !is_hf_host &&
-           st_parse_https_url("https://example.invalid/model", &is_hf_host) &&
+           st_parse_https_url("https://example.invalid/model", &is_hf_host, NULL) &&
            !is_hf_host;
 }
 #endif
@@ -1419,8 +1588,15 @@ int cce_hf_build_resolve_url(char* buf, size_t cap,
 cce_result cce_safetensors_load_url(const char* url, cce_safetensors** st_out) {
     if (!url || !st_out) return CCE_ERR_INVALID_ARG;
     *st_out = NULL;
-    if (!st_is_https_url(url)) {
+    int host_allowed = 0;
+    if (!st_parse_https_url(url, NULL, &host_allowed)) {
         st_set_err(NULL, "SafeTensors URL must be a valid HTTPS URL without credentials");
+        return CCE_ERR_INVALID_ARG;
+    }
+    if (!host_allowed) {
+        st_set_err(NULL,
+                   "SafeTensors URL host is not on the egress allowlist; set "
+                   CCE_ST_ENV_ALLOWLIST " to opt in additional hosts");
         return CCE_ERR_INVALID_ARG;
     }
 

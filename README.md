@@ -59,7 +59,7 @@ lanes stay explicitly out of scope unless their own gates are run. Start from
 
 | Area | Verified by | Status |
 |---|---|---|
-| CCE runtime (tensor → block → cascade → archive → forest → router → learn) | `make cce_smoke`, `make cce_train_bench` | passing (standalone gates) |
+| CCE runtime (tensor → block → cascade → archive → forest → router → learn) | `make cce_smoke`, `make cce_train_bench` | passing (standalone gates). The regression lane is measured on a 200-sample held-out set. The **classification lane is a declared-open gap, not a measured result**: the local-credit learner collapses to a constant class (`CLASSIFICATION_LANE_DECLARED_OPEN`, held-out accuracy 0.384 vs a 0.384 majority-class baseline — zero lift, 1 of 4 classes used). The bench prints the baseline and class count next to the accuracy so the number cannot be cited as quality, and `CCE_CLASSIFICATION_LANE_REQUIRE=1` makes the gate **fail** rather than pass for anyone asserting the lane works |
 | CCE storage + loaders (C ABI/DLL, safetensors, autograd, model save/load, zero-copy WARM views) | `cce_dll`, `cce_safetensors_test`, `cce_autograd_test`, `cce_model_test`, `cce_view`, `forest_view` | passing, in `make test` |
 | Contract security + one-file sealed units | `make contract_secure`, `make contract_unit` | passing, in `make test` |
 | Contract correctness + robust promotion quality/speed | `make contract_optimized` | malformed authored/frozen contracts refused atomically; stronger certified margin wins with one replay per model |
@@ -225,12 +225,49 @@ make DESTDIR=/tmp/stage PREFIX=/usr uninstall
 
 The install layout is versioned (`libcnet.so.<version>` plus ABI and linker
 symlinks), installs all public headers below `include/cnet`, and publishes
-`cnet.pc`. The GitHub Actions workflow exposes the same portable `make ci`
-path by manual dispatch only; pushes and pull requests do not trigger paid CI.
+`cnet.pc`. The GitHub Actions workflow runs the same portable `make ci` path on
+pushes to `master`, on pull requests, and on manual dispatch.
 The local `native_warning_gate` compiles the complete shared-library source set
 with `-Werror` under `-Wall -Wextra -Wpedantic`. Inactive OpenMP pragmas are
 source-guarded, so the portable serial build is diagnostic-free without warning
 suppressions.
+
+### GPU lane (AMD / ROCm)
+
+Hosted runners have no AMD GPU, so the portable lane above is CPU-only and the
+device lane is local-authoritative:
+
+```sh
+make ci_rocm          # portable ci + bounded AMD/ROCm device gate
+make hipgemm_res      # just the device slice
+```
+
+`hipgemm_res` links the hipBLAS seam, which `dlopen`s ROCm at runtime and needs
+no SDK to compile — so it builds on every host and self-skips where no device
+is present (`HIPGEMM_RES_PASS status=skipped_no_device`). Because a skip must
+never read as a device result, `ci_rocm` sets `CNET_REQUIRE_ROCM=1`, which turns
+an absent or broken GPU into `HIPGEMM_RES_FAIL` instead of a pass. A successful
+device run is marked `status=measured_on_device`. The `rocm-device` workflow job
+runs the same target when dispatched with the `rocm` input against a self-hosted
+runner labelled `rocm`; `tests/test_ci_workflow.py` enforces that the target
+exists, still runs the portable gate, and keeps the strict flag.
+
+### Loader egress policy
+
+`cce_safetensors_load_url` is HTTPS-only and **default-deny** on hosts: only
+Hugging Face (`huggingface.co`, `hf.co`, and their subdomains) is reachable out
+of the box. Add hosts with a comma-separated list:
+
+```sh
+CCE_ST_URL_ALLOWLIST=mirror.example.org,weights.example.net make ...
+```
+
+Address literals, `localhost`, `*.internal`, `*.local` and `*.home.arpa` are
+refused even if named in the allowlist. Because redirects are followed, every
+connection — including each redirect hop — is additionally checked to resolve to
+a public address, so a redirect or rebound DNS record aimed at loopback,
+RFC1918, CGNAT or link-local space (including `169.254.169.254`) is refused at
+connect time. The bearer token is only ever attached to Hugging Face hosts.
 
 On Windows the Makefile works under MinGW (`mingw32-make` or `make` from
 MSYS2); binaries get an `.exe` suffix automatically. The build uses

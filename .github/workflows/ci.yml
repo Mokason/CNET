@@ -6,6 +6,14 @@ name: CNET CI
     branches: [master]
   pull_request:
   workflow_dispatch:
+    inputs:
+      rocm:
+        description: >-
+          Also run the AMD/ROCm device lane. Requires a self-hosted runner
+          labelled `rocm`; leave false on GitHub-hosted runners, which have
+          no AMD GPU.
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -25,3 +33,23 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y build-essential libcurl4-openssl-dev pkg-config python3-yaml
       - name: Run portable CPU release gate
         run: make --no-print-directory PORTABLE=1 ci
+
+  # AMD/ROCm device lane. GitHub-hosted runners have no AMD GPU, so this job is
+  # opt-in and only schedules when a self-hosted `rocm` runner exists. Local
+  # `make ci_rocm` on an AMD host remains the authority for GPU results; this
+  # job exists so that authority is reproducible in CI where a runner is
+  # available. CNET_REQUIRE_ROCM=1 is set by ci_rocm, so the lane fails rather
+  # than silently skipping if the device is missing.
+  rocm-device:
+    if: github.event_name == 'workflow_dispatch' && inputs.rocm
+    runs-on: [self-hosted, linux, rocm]
+    timeout-minutes: 60
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Install .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Run ROCm device gate
+        run: make --no-print-directory ci_rocm

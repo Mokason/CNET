@@ -10,6 +10,8 @@
 #ifdef CCE_SAFETENSORS_TESTING
 int cce_safetensors_test_download_cap(void);
 int cce_safetensors_test_token_scope(void);
+int cce_safetensors_test_host_policy(const char* host);
+int cce_safetensors_test_ip_public(const char* ip);
 #endif
 
 static void write_le64(FILE* f, uint64_t v) {
@@ -255,12 +257,80 @@ cleanup:
         printf("FAIL: URL text executed by a shell\n"); failures++;
     }
 
+    /* Egress policy is default-deny: a well-formed HTTPS URL on an unblessed
+       host must be refused before any connection is attempted. */
+    if (cce_safetensors_load_url("https://example.com/model.safetensors", &bad) !=
+        CCE_ERR_INVALID_ARG) {
+        printf("FAIL: non-allowlisted host accepted by load_url\n"); failures++;
+    }
+
 #ifdef CCE_SAFETENSORS_TESTING
     if (!cce_safetensors_test_download_cap()) {
         printf("FAIL: oversized download did not fail closed\n"); failures++;
     }
     if (!cce_safetensors_test_token_scope()) {
         printf("FAIL: HF bearer token host scope is too broad\n"); failures++;
+    }
+
+    /* --- Egress name policy (SSRF containment) --- */
+    static const char* allowed_hosts[] = {
+        "huggingface.co", "cdn-lfs.huggingface.co", "hf.co",
+    };
+    for (size_t i = 0; i < sizeof(allowed_hosts)/sizeof(allowed_hosts[0]); ++i) {
+        if (!cce_safetensors_test_host_policy(allowed_hosts[i])) {
+            printf("FAIL: allowlisted host rejected: %s\n", allowed_hosts[i]);
+            failures++;
+        }
+    }
+    /* Suffix confusion, bare addresses and loopback names must all fail closed. */
+    static const char* denied_hosts[] = {
+        "example.com", "evil.invalid", "huggingface.co.evil.invalid",
+        "nothuggingface.co", "localhost", "foo.localhost", "svc.internal",
+        "printer.local", "127.0.0.1", "169.254.169.254", "10.0.0.1", "::1",
+    };
+    for (size_t i = 0; i < sizeof(denied_hosts)/sizeof(denied_hosts[0]); ++i) {
+        if (cce_safetensors_test_host_policy(denied_hosts[i])) {
+            printf("FAIL: host should be denied: %s\n", denied_hosts[i]);
+            failures++;
+        }
+    }
+
+    /* Opt-in extra hosts, and the opt-in must not re-open the hard denies. */
+    setenv("CCE_ST_URL_ALLOWLIST", "mirror.example.org, weights.internal-cdn.net", 1);
+    if (!cce_safetensors_test_host_policy("mirror.example.org") ||
+        !cce_safetensors_test_host_policy("eu.weights.internal-cdn.net")) {
+        printf("FAIL: CCE_ST_URL_ALLOWLIST opt-in host not honoured\n"); failures++;
+    }
+    if (cce_safetensors_test_host_policy("other.example.org")) {
+        printf("FAIL: allowlist matched a host it does not name\n"); failures++;
+    }
+    setenv("CCE_ST_URL_ALLOWLIST", "127.0.0.1,localhost", 1);
+    if (cce_safetensors_test_host_policy("127.0.0.1") ||
+        cce_safetensors_test_host_policy("localhost")) {
+        printf("FAIL: allowlist re-enabled a hard-denied host\n"); failures++;
+    }
+    unsetenv("CCE_ST_URL_ALLOWLIST");
+
+    /* --- Egress address policy (redirect / DNS-rebind containment) --- */
+    static const char* private_ips[] = {
+        "127.0.0.1", "10.1.2.3", "192.168.1.1", "172.16.0.1", "172.31.255.255",
+        "169.254.169.254", "100.64.0.1", "0.0.0.0", "224.0.0.1",
+        "::1", "::", "fe80::1", "fd00::1", "::ffff:127.0.0.1",
+    };
+    for (size_t i = 0; i < sizeof(private_ips)/sizeof(private_ips[0]); ++i) {
+        if (cce_safetensors_test_ip_public(private_ips[i])) {
+            printf("FAIL: private address treated as public: %s\n", private_ips[i]);
+            failures++;
+        }
+    }
+    static const char* public_ips[] = {
+        "8.8.8.8", "1.1.1.1", "172.32.0.1", "99.63.255.1", "2606:4700::1111",
+    };
+    for (size_t i = 0; i < sizeof(public_ips)/sizeof(public_ips[0]); ++i) {
+        if (!cce_safetensors_test_ip_public(public_ips[i])) {
+            printf("FAIL: public address treated as private: %s\n", public_ips[i]);
+            failures++;
+        }
     }
 #endif
 

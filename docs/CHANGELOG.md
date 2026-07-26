@@ -1,5 +1,48 @@
 # CNET Changelog
 
+## 2026-07-26 — Loader egress policy, honest classification lane, ROCm CI lane
+
+**Loader egress is default-deny (SSRF).** `cce_safetensors_load_url` previously
+accepted any HTTPS host. Egress now has two independent layers: a name policy
+(Hugging Face by default, extended via `CCE_ST_URL_ALLOWLIST`, with address
+literals / `localhost` / `*.internal` / `*.local` / `*.home.arpa` refused even
+when named in the allowlist), and an address policy on `CURLOPT_PREREQFUNCTION`
+that re-checks **every redirect hop** so a redirect or rebound DNS record aimed
+at loopback/RFC1918/CGNAT/link-local space (incl. `169.254.169.254`) is refused
+at connect time. Enforced at the single choke point every download reaches, so
+index-shard fetches are covered too. Gate: `make cce_safetensors_test`.
+
+**Classification lane tells the truth.** The lane reported `acc=0.00`, which was
+a measurement artifact: accuracy was averaged over 4 samples the model had just
+trained on. Held-out over 500 fresh draws it is **0.384 — exactly the 0.384
+majority-class base rate, using 1 of 4 classes**, i.e. a constant predictor with
+zero lift. Fixing only the metric would have printed 0.38 and silently cleared
+the old 0.30 floor while nothing had been learned. Health now requires lift over
+the majority baseline **and** more than one class used; failing that, the lane
+reports `CLASSIFICATION_LANE_DECLARED_OPEN` + `CLASSIFICATION_LANE_NOT_MEASURED`
+rather than a "skip" that reads as success, and `CCE_CLASSIFICATION_LANE_REQUIRE=1`
+makes the gate **fail** for anyone asserting the lane works. Root cause is the
+local-credit learner, not the harness: the correct objective (`classify=1`
+softmax CE) with a `CCE_BLOCK_LINEAR_HEAD`, EXACT backprop, 10× steps and grad
+clipping still yields {0.218, 0.256, 0.268, 0.470, 0.240} across seeds against
+0.25 chance — declared open, not silently floored.
+
+**ROCm/GPU lane wired.** `tests/test_hipgemm.c` existed but no target ran it.
+New `make hipgemm_res` (bounded device slice) and `make ci_rocm` (portable `ci`
+plus the device gate). The hipBLAS seam `dlopen`s ROCm, so it builds everywhere
+and self-skips without a device; `ci_rocm` sets `CNET_REQUIRE_ROCM=1` so a skip
+can never stand in for a device result. `tests/test_ci_workflow.py` enforces the
+target exists, still runs the portable gate, keeps the strict flag, and that any
+device job is conditionally gated. Verified on AMD Radeon AI PRO R9700 (gfx1201):
+`HIPGEMM_RES_PASS status=measured_on_device`, `CNET_CI_ROCM_PASS`.
+
+**MoE tick: stale `certified` flag.** `state.json` wrote `certified` only on
+promotion, so a later merely-advancing tick left a stale `true` beside a
+held-out CE **above** H1 — and `governor_autonomous.py` reads that field as the
+live `moe_certified` signal. It is now written every tick like the fields beside
+it; the durable per-promotion record remains the evidence log's
+`certified_below_h1`. Caught by `test_metric_honesty.py`.
+
 ## 2026-07-21 — Documentation rewire + use-loop / Oracle teacher runtime (index)
 
 **Doc hub:** [`docs/INDEX.md`](INDEX.md) is the single navigation entry.

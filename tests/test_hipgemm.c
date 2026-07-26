@@ -183,14 +183,24 @@ int main(void) {
     printf("== HIP backend resource/correctness gate ==");
 
     if (!hip_present()) {
+        /* A self-skip is correct on a CPU-only runner and wrong on a GPU host:
+           it would report success for tests that never executed. `make ci_rocm`
+           sets CNET_REQUIRE_ROCM=1 so the ROCm lane cannot pass by skipping. */
+        const char* require = getenv("CNET_REQUIRE_ROCM");
+        if (require && *require && strcmp(require, "0") != 0) {
+            printf("\n  HIP unavailable but CNET_REQUIRE_ROCM=1 — the ROCm lane"
+                   " cannot be satisfied by a skip.\n");
+            printf("HIPGEMM_RES_FAIL reason=rocm_required_but_absent\n");
+            return 1;
+        }
         printf("\n  HIP unavailable — SKIP (CPU/hermetic). HIPGEMM_RES_PASS\n");
-        printf("HIPGEMM_RES_PASS\nfailures=0\n");
+        printf("HIPGEMM_RES_PASS status=skipped_no_device\nfailures=0\n");
         return 0;
     }
 
     test_q8_cache_freed_on_close();
     test_resident_eviction_no_silent_fallback();
 
-    printf("\nHIPGEMM_RES_PASS\nfailures=%d\n", failures);
+    printf("\nHIPGEMM_RES_PASS status=measured_on_device\nfailures=%d\n", failures);
     return failures != 0;
 }

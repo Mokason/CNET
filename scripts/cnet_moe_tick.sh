@@ -133,12 +133,17 @@ st.update({
     "device": t["device"],
     "eval_n": t["eval_n"],
     "secs": t["secs"],
+    # Describes THIS tick, exactly like every field beside it. Writing it only
+    # on promotion left a stale True sitting next to a held-out CE above H1
+    # once a later tick merely advanced -- and the governor reads this field as
+    # a live signal (governor_autonomous.py: moe_certified). The durable
+    # per-promotion record is the evidence log's certified_below_h1.
+    "certified": certified,
 })
 if promoted:
     st["best_ce"] = ce
     st["best_step"] = t["step_to"]
     st["best_sha256"] = sha(BEST)
-    st["certified"] = certified
 st.setdefault("best_ce", ce if promoted else (best if best is not None else ce))
 STATE.write_text(json.dumps(st, indent=2) + "\n")
 
