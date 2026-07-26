@@ -77,6 +77,47 @@ static void coverage_persist(const PersonalAi *ai) {
         fprintf(stderr, "personal_ai: could not write coverage to %s\n", path);
 }
 
+/* A2/B2 startup self-check. A base can hold mined units while the coverage
+   sidecar is missing, truncated or stale — deleted by a janitor, lost to a
+   crash, or restored from an older snapshot. Default-allow would then serve
+   those units unguarded, which is exactly the confident-wrong failure the gate
+   exists to stop, and it would do it silently.
+   Returns the number of mined units in the base that have no coverage record;
+   nonzero arms fail-closed for them and logs an ERROR. */
+static size_t coverage_selfcheck(PersonalAi *ai, int load_failed) {
+    size_t i, mined = 0, unguarded = 0, stale = 0;
+    /* Drop records for units the base no longer holds. A sidecar outliving its
+       base (base deleted or rolled back, sidecar left behind) would otherwise
+       claim a shape as already-mined forever and block it from ever being
+       learned again. Nothing is mined yet at open, so every live record must
+       correspond to a base unit. */
+    for (i = 0; i < ai->hybrid.coverage_count; i++) {
+        const char *nm = ai->hybrid.coverage[i].unit;
+        if (!ai->hybrid.coverage[i].active || !nm[0]) continue;
+        if (cnb_has_unit(&ai->lane.base, nm)) continue;
+        if (hybrid_coverage_forget_unit(&ai->hybrid, nm)) stale++;
+    }
+    if (stale > 0)
+        fprintf(stderr,
+                "personal_ai: dropped %zu stale coverage record(s) with no unit "
+                "in the base\n", stale);
+    for (i = 0; i < ai->lane.base.unit_count; i++) {
+        const char *nm = ai->lane.base.units[i].name;
+        if (!hybrid_unit_is_mined(nm)) continue;
+        mined++;
+        if (!hybrid_coverage_has_unit(&ai->hybrid, nm)) unguarded++;
+    }
+    if (unguarded > 0) {
+        hybrid_coverage_arm_fail_closed(&ai->hybrid, 1);
+        fprintf(stderr,
+                "personal_ai: ERROR coverage missing for %zu of %zu mined "
+                "unit(s)%s — refusing to serve them until a re-mine restores "
+                "the guard (fail-closed)\n",
+                unguarded, mined, load_failed ? " (coverage file unreadable)" : "");
+    }
+    return unguarded;
+}
+
 /* S6: may Tier A claim this input? Off only by explicit operator override —
    the default is safe, because the failure it prevents (a confident wrong
    answer replacing a correct teacher one) is invisible to the residual_rate
@@ -92,6 +133,22 @@ static int coverage_gate_open(const PersonalAi *ai, Port input_port,
     if (coverage_gate_disabled()) return 1;
     return hybrid_coverage_admits(&ai->hybrid, input_port, goal_port, input,
                                   in_len);
+}
+
+/* Plan-level check: the shape lookup above only sees the request's ports, so a
+   mined unit whose guard was lost still needs refusing by name. */
+static int plan_coverage_open(const PersonalAi *ai, const RoutePlan *plan,
+                              const double *input, size_t in_len) {
+    size_t i;
+    if (coverage_gate_disabled()) return 1;
+    if (!ai->hybrid.coverage_fail_closed) return 1;
+    for (i = 0; i < plan->length; i++) {
+        const char *nm = plan->names[i];
+        if (!hybrid_unit_is_mined(nm)) continue;
+        if (!hybrid_coverage_admits_unit(&ai->hybrid, nm, input, in_len))
+            return 0;
+    }
+    return 1;
 }
 
 /* Dense name table for PersonalAiSource (enum values are 0..5). */
@@ -271,12 +328,19 @@ int personal_ai_open(PersonalAi *ai, const char *base_path,
        the confident-wrong answers S6 blocks would come straight back. */
     {
         char path[512];
+        int load_failed = 0;
         if (coverage_path(ai, path, sizeof path) == 0)
-            (void)hybrid_coverage_load(&ai->hybrid, path);
+            load_failed = hybrid_coverage_load(&ai->hybrid, path) < 0;
+        (void)coverage_selfcheck(ai, load_failed);
     }
     ai->owned_residual = NULL;
     ai->owned_residual_http = NULL;
     ai->loaded = 1;
+    /* B1: the gate is default-on and turning it off is break-glass. Say so at
+       startup rather than let a stale env var silently reinstate the failure. */
+    if (coverage_gate_disabled())
+        fprintf(stderr, "personal_ai: WARNING CNET_COVERAGE_ABSTAIN=0 — mined "
+                        "units may answer outside their certified domain\n");
     /* Prefer HTTP residual (Bonsai Q1 etc.) over in-process GGUF. */
     {
         ResidualHttp *rh = NULL;
@@ -306,6 +370,15 @@ int personal_ai_open(PersonalAi *ai, const char *base_path,
             }
         }
     }
+    /* B4: mine-on-serve only fires inside the Tier-C branch, so with no
+       residual bound and no teacher it can never run. Silently doing nothing
+       reads as "learning is on" in every dashboard — say it plainly instead. */
+    if (ai->policy.structure_mine_on_serve && !ai->hybrid.residual.bound &&
+        !ai->policy.allow_teacher)
+        fprintf(stderr, "personal_ai: ERROR STRUCTURE_MINE_ON_SERVE=1 with no "
+                        "residual bound and no teacher — nothing can be mined; "
+                        "check CNET_RESIDUAL_HTTP/CNET_RESIDUAL_GGUF\n");
+
     /* Auto-install LoRA orchestrator when enabled (default ON if store/fault set). */
     {
         const char *ao = getenv("CNET_LORA_AUTO_ORCH");
@@ -424,7 +497,8 @@ int personal_ai_serve(PersonalAi *ai, Port input_port, Port goal_port,
     memset(&plan, 0, sizeof plan);
     if (route_plan(&ai->lane.reg, input_port, goal_port, &plan) == 0 &&
         plan.length > 0) {
-        if (!coverage_gate_open(ai, input_port, goal_port, input, in_len)) {
+        if (!coverage_gate_open(ai, input_port, goal_port, input, in_len) ||
+            !plan_coverage_open(ai, &plan, input, in_len)) {
             ai->hybrid.coverage_abstains++;
             ai->totals.coverage_abstains++;
             rep->coverage_abstains = 1;

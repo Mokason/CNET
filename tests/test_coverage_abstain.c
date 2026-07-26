@@ -274,18 +274,72 @@ int main(void) {
         personal_ai_close(&a2);
     }
 
-    /* The sidecar is what carries the gate across the restart: delete it,
-       reopen the same base (unit still sealed in the CNB), and the confident
-       wrong answers come straight back. */
+    /* A2: losing the sidecar must not read as "no restriction". With the unit
+       still sealed in the CNB but its guard gone, the startup self-check arms
+       fail-closed and the unit is refused outright until a re-mine restores
+       coverage — the teacher answers instead, correctly. Before A2 this same
+       scenario served 4/4 held-out from own weights and got 0/4 right. */
     {
         PersonalAi a3;
-        check(remove("tmp_cov_rt.cnb.coverage") == 0, "S7: remove sidecar only");
+        check(remove("tmp_cov_rt.cnb.coverage") == 0, "A2: remove sidecar only");
         check(build_and_replay_ex(&a3, &ctx, "rt", 1, 0, &hl, &hc, &hr, &ab) == 0,
-              "S7: reopen with unit but no coverage file");
-        check(ab == 0, "S7: no coverage restored => no abstains");
-        check(hl == 4, "S7: unit answers all held-out itself again");
-        check(hc == 0, "S7: and gets all 4 WRONG — the sidecar is load-bearing");
+              "A2: reopen with mined unit but no coverage file");
+        check(hl == 0, "A2: mined unit refused, not default-allowed");
+        check(ab == 4, "A2: refusals recorded as coverage abstains");
+        check(hr == 4, "A2: teacher answers every request instead");
+        check(hc == 4, "A2: answers still CORRECT (was 0/4 before fail-closed)");
+        {
+            PersonalAiReport tot;
+            personal_ai_totals(&a3, &tot);
+            check(tot.local_hits == 0,
+                  "A2: even in-coverage traffic refused while the guard is lost");
+        }
         personal_ai_close(&a3);
+    }
+
+    /* ---- A3: refuse to mine a family whose coverage cannot be enforced --- */
+    {
+        PersonalAi a6;
+        PersonalAiPolicy pol;
+        PersonalAiReport rep;
+        Port rin, rout;
+        BinaryTransformNetwork *stu = NULL;
+        double v[IN_DIM], o[OUT_DIM];
+        size_t k;
+        int mrc;
+        remove("tmp_cov_raw.cnb");
+        remove("tmp_cov_raw.gaps.txt");
+        remove("tmp_cov_raw.cnb.coverage");
+        personal_ai_policy_defaults(&pol);
+        pol.allow_teacher = 0;
+        pol.allow_soft = 0;
+        pol.allow_residual = 1;
+        pol.structure_mine_on_serve = 0;
+        pol.structure_min_hits = 2;
+        check(personal_ai_open(&a6, "tmp_cov_raw.cnb", "tmp_cov_raw.gaps.txt",
+                               NULL, &pol) == 0, "A3: open");
+        a6.lane.acq.min_evidence = 1;
+        personal_ai_bind_residual(&a6, "addmod", res_addmod, &ctx);
+        memset(&rin, 0, sizeof rin);
+        rin.family = PORT_RAW;
+        rin.field_width = IN_DIM;
+        rin.field_count = 1;
+        snprintf(rin.tag, sizeof rin.tag, "raw_mine_in");
+        rout = PMF("cov_out", OUT_DIM, 1);
+        for (k = 0; k < 4; k++) {
+            encode_pair(v, k, k);
+            memset(&rep, 0, sizeof rep);
+            (void)personal_ai_serve(&a6, rin, rout, v, IN_DIM, o, OUT_DIM, &rep);
+        }
+        check(a6.hybrid.trace_count >= 1, "A3: RAW traffic traced");
+        mrc = personal_ai_structure_mine(&a6, &stu);
+        check(mrc == 3, "A3: RAW mine REFUSED (ungateable family)");
+        check(cnb_has_unit(&a6.lane.base, "hyb_struct_0") == 0,
+              "A3: no RAW unit sealed");
+        personal_ai_close(&a6);
+        remove("tmp_cov_raw.cnb");
+        remove("tmp_cov_raw.gaps.txt");
+        remove("tmp_cov_raw.cnb.coverage");
     }
 
     /* ---- 6. atomic sidecar write ---------------------------------------- */

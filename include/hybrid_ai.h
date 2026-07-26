@@ -38,6 +38,10 @@ extern "C" {
    a slot BEFORE admitting (see hybrid_structure_mine): a unit that cannot be
    gated is never created. */
 #define HYBRID_COVERAGE_MAX HYBRID_TRACE_MAX
+/* Every structure-mined unit is named with this prefix. It is how a reloaded
+   base tells "unit that must carry certified coverage" from a hand-admitted
+   full-domain unit that legitimately never had a record. */
+#define HYBRID_MINED_UNIT_PREFIX "hyb_struct_"
 
 typedef enum {
     HYBRID_TIER_A = 0, /* certified */
@@ -167,6 +171,10 @@ typedef struct {
     HybridCoverage coverage[HYBRID_COVERAGE_MAX];
     size_t coverage_count;
     size_t coverage_abstains; /* Tier-A refusals outside certified coverage */
+    /* Armed when the base holds mined units whose coverage could not be
+       loaded. While armed, those units are refused outright rather than
+       default-allowed — a missing guard must not read as "no restriction". */
+    int coverage_fail_closed;
     uint64_t medium_resident_bytes;
 } HybridAi;
 
@@ -259,6 +267,22 @@ CNET_API size_t hybrid_coverage_rows(const HybridAi *h, Port in_port,
  * and default-allow. Same 1=admit / 0=refuse contract. */
 CNET_API int hybrid_coverage_admits_unit(const HybridAi *h, const char *unit,
                                          const double *in, size_t in_len);
+
+/* 1 if this name is a structure-mined unit (must carry coverage). */
+CNET_API int hybrid_unit_is_mined(const char *unit);
+
+/* Arm/disarm fail-closed mode. Armed => a mined unit with no coverage record
+ * is refused instead of default-allowed. Hand-admitted units are unaffected. */
+CNET_API void hybrid_coverage_arm_fail_closed(HybridAi *h, int on);
+
+/* 1 if a coverage record exists for this unit name. */
+CNET_API int hybrid_coverage_has_unit(const HybridAi *h, const char *unit);
+
+/* Drop the record for a unit that no longer exists. Returns 1 if one went. */
+CNET_API int hybrid_coverage_forget_unit(HybridAi *h, const char *unit);
+
+/* Number of active coverage records. */
+CNET_API size_t hybrid_coverage_count(const HybridAi *h);
 
 /* S7 durability: coverage lives beside the base as <base>.coverage, because an
  * in-memory-only gate lapses on the one process that matters — the long-running

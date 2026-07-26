@@ -1,0 +1,21 @@
+{
+  "capability_id": "json_toolcall_adapter",
+  "cases": [
+    {
+      "skill": "json_toolcall_v2",
+      "description": "Tool-call routing accuracy with the certified LoRA adapter serving.",
+      "metric": "acc_on",
+      "held_out_pairs_from": "fault bus labelled vectors (source=jtc)",
+      "adapter_off_baseline": 0.2975,
+      "adapter_on_baseline": 0.7375,
+      "minimum_accuracy_with_adapter": 0.55,
+      "certify_before_serve": true,
+      "note": "Graded, not pass/fail: this number is expected to move as the adapter is retrained from bus traffic."
+    }
+  ],
+  "expected_markers": [
+    "JTC_ADAPTER_BENCH_PASS",
+    "acc_off=",
+    "acc_on="
+  ]
+}

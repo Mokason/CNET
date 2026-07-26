@@ -712,3 +712,65 @@ graded capability certs (B4), sleep graduating real units (B5), multimodal/visio
 M7 beat-the-teacher promotion — which coverage gating largely subsumes for mined units, since
 an admitted unit now only serves inside a domain where its contract certifies exact
 reproduction of the teacher's labels.
+
+---
+
+## 17. Product A− bars (2026-07-26)
+
+| Bar | Gate | Marker / result |
+|---|---|---|
+| 1. Real-traffic substitution KPI | `make residual_substitution_bench_live` | `SUBSTITUTION_BENCH_LIVE_PASS local=4 residual=10 coverage_rows=64 heldout_correct=4/4` against live Bonsai on the **real W=256 window port**. Server absent → `_SKIP`; `CNET_REQUIRE_REAL_RESIDUAL_HTTP=1` turns that into `_FAIL`. Artifact `logs/own_learning_kpi.json`. |
+| 2. Fail-closed on a lost guard | `make coverage_abstain` (A2 block) | Sidecar deleted with the unit still sealed → **refused**, teacher answers, 4/4 correct. Before: 4/4 answered locally, 0/4 correct. |
+| 3. `PORT_RAW` policy | `make coverage_abstain` (A3 block) | `A3: RAW mine REFUSED (ungateable family)` — `rc=3`, no unit sealed. Break-glass `CNET_MINE_UNGATEABLE=1`. |
+| 4. A graded capability | `make capability_cert` | `json_toolcall_adapter status=certified metric=0.738` (floor 0.55, baseline 0.7375, budget 0.12). `certified=6/6`, two graded. |
+| 5. Mine-on-serve durability | `make structure_mine_serve_durable` | `STRUCTURE_MINE_SERVE_DURABLE_PASS checks=13` — serve → mine → seal → reopen → unit + coverage present, **no test-side sealing**. |
+
+### The bug bar 5 found: mine-on-serve was minting ungated orphans
+
+With `STRUCTURE_MINE_ON_SERVE=1`, every Tier-C miss could fire a mine, each minting a fresh
+`hyb_struct_N`. Coverage is keyed by **shape**, so mine N+1 overwrote the record naming mine
+N — leaving N sealed, certified and **unguarded**. Measured: **15 serves produced 7 mined
+units, 6 of them orphaned.** Before fail-closed those orphans would answer anything asked.
+
+Re-mining a shape cannot currently be made consistent — the base has no unit-removal call and
+`cnb_add_unit` refuses same-name-different-bytes, so an improved unit can neither replace nor
+supersede the old one. The miner therefore mines each shape **once** (`rc=4` afterwards).
+Improving an already-mined shape is backlog and needs base-level unit replacement.
+
+Related: a `.coverage` sidecar outliving its base would claim shapes as already-mined forever.
+Startup now drops coverage records with no matching unit in the base.
+
+### Unattended safety is now enforced, not documented
+
+`make own_learning_health` (tool: `bin/cnet_own_learning_health`) reads the deployed
+`config/personal-ai.env` plus on-disk state and prints one JSON object:
+
+```
+{"base":"...","mined_units":0,"coverage_records":0,"unguarded_mined":0,
+ "coverage_file":"missing","mine_on_serve":1,"coverage_gate":"on",
+ "residual_configured":1,"dangerous":[],"status":"ok"}
+```
+
+Exits non-zero on: `mine_on_serve_with_coverage_gate_off`,
+`mine_on_serve_without_residual`, `mined_units_without_coverage`,
+`coverage_file_unreadable`. The gate **self-tests both danger paths** — a watchdog that
+cannot fail is decoration.
+
+Startup also now says so out loud: `CNET_COVERAGE_ABSTAIN=0` logs a WARNING at open, and
+mine-on-serve with no residual and no teacher logs an ERROR instead of silently doing nothing.
+
+### Grade: A−, with named limits
+
+Substitution is proven on real traffic, every known fail-open around the gate is closed or
+fails loud, the dangerous env combination is machine-checked, and one capability is graded
+rather than binary. What still keeps it off an A:
+
+- **Re-mining a shape is not possible** (see above) — CNET learns each shape once per base.
+  This is the biggest functional limit and it needs base-level unit replacement.
+- Mine-on-serve fires at `structure_min_hits`, so coverage is small (the durability gate
+  mines at `rows=2`) and most traffic still defers to the teacher. Safe, but substitution is
+  far below what the reservoir could support — a maturity policy (mine when the reservoir is
+  wide, not when hits first cross the floor) is the obvious next lever.
+- `PORT_RAW` is refused rather than supported; interval coverage is unbuilt.
+- Corrupt sidecar fails closed for mined units but the base is still degraded until a re-mine
+  — which, per the first bullet, is currently impossible without operator intervention.

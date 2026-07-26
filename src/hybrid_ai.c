@@ -247,6 +247,49 @@ int hybrid_coverage_admits(const HybridAi *h, Port in_port, Port out_port,
     return 0;
 }
 
+int hybrid_unit_is_mined(const char *unit) {
+    static const char pfx[] = HYBRID_MINED_UNIT_PREFIX;
+    if (!unit) return 0;
+    return strncmp(unit, pfx, sizeof pfx - 1) == 0;
+}
+
+void hybrid_coverage_arm_fail_closed(HybridAi *h, int on) {
+    if (h) h->coverage_fail_closed = on ? 1 : 0;
+}
+
+int hybrid_coverage_has_unit(const HybridAi *h, const char *unit) {
+    size_t i;
+    if (!h || !unit || !unit[0]) return 0;
+    for (i = 0; i < h->coverage_count; i++) {
+        if (h->coverage[i].active && h->coverage[i].rows &&
+            strcmp(h->coverage[i].unit, unit) == 0)
+            return 1;
+    }
+    return 0;
+}
+
+int hybrid_coverage_forget_unit(HybridAi *h, const char *unit) {
+    size_t i;
+    if (!h || !unit || !unit[0]) return 0;
+    for (i = 0; i < h->coverage_count; i++) {
+        HybridCoverage *c = &h->coverage[i];
+        if (!c->active || strcmp(c->unit, unit) != 0) continue;
+        free(c->rows);
+        free(c->targets);
+        memset(c, 0, sizeof *c);
+        return 1;
+    }
+    return 0;
+}
+
+size_t hybrid_coverage_count(const HybridAi *h) {
+    size_t i, n = 0;
+    if (!h) return 0;
+    for (i = 0; i < h->coverage_count; i++)
+        if (h->coverage[i].active) n++;
+    return n;
+}
+
 int hybrid_coverage_admits_unit(const HybridAi *h, const char *unit,
                                 const double *in, size_t in_len) {
     size_t i, r;
@@ -264,7 +307,11 @@ int hybrid_coverage_admits_unit(const HybridAi *h, const char *unit,
         }
         return 0;
     }
-    return 1; /* not a mined unit — default-allow */
+    /* No record. A mined unit MUST have one, so when fail-closed is armed its
+       absence means the guard was lost (deleted or corrupt sidecar), not that
+       the unit is unrestricted — refuse rather than serve it blind. */
+    if (h->coverage_fail_closed && hybrid_unit_is_mined(unit)) return 0;
+    return 1; /* hand-admitted / full-domain unit — default-allow */
 }
 
 size_t hybrid_coverage_rows(const HybridAi *h, Port in_port, Port out_port) {
@@ -749,6 +796,43 @@ int hybrid_structure_mine(HybridAi *h, PrimitiveRegistry *reg, size_t min_hits,
     if (best == (size_t)-1) return 1;
 
     tr = &h->traces[best];
+    /* A3: refuse to mine a port family whose coverage cannot be enforced.
+     * Membership is an exact match, which is meaningless for PORT_RAW's
+     * continuous values — so a RAW unit could never be gated and would answer
+     * anything it was asked, confidently and wrongly, forever. Mining it at all
+     * is the mistake; interval coverage is the prerequisite, not a workaround.
+     * CNET_MINE_UNGATEABLE=1 is a break-glass override for experiments. */
+    if (!coverage_family_gated(tr->input_port)) {
+        const char *ov = getenv("CNET_MINE_UNGATEABLE");
+        if (!(ov && ov[0] == '1' && ov[1] == '\0')) {
+            fprintf(stderr,
+                    "hybrid: refusing to mine port family %d (tag='%s') — "
+                    "coverage cannot be enforced for it\n",
+                    (int)tr->input_port.family, tr->input_port.tag);
+            tr->hits = 0; /* do not re-attempt every tick */
+            return 3;
+        }
+    }
+    /* One mined unit per port shape, ever.
+     *
+     * Under CNET_PERSONAL_STRUCTURE_MINE_ON_SERVE=1 every Tier-C miss can fire
+     * a mine, and each one used to mint a fresh hyb_struct_N. Coverage is keyed
+     * by SHAPE, so mine N+1 overwrote the record naming mine N — leaving N as a
+     * sealed, certified, *unguarded* unit in the base. Measured: 15 serves
+     * produced 7 mined units, 6 of them orphaned. Before fail-closed those
+     * orphans answered anything asked of them.
+     *
+     * Re-mining the same shape cannot currently be made consistent: the base
+     * has no unit-removal call, and cnb_add_unit refuses same-name-different-
+     * bytes, so an improved unit can neither replace nor supersede the old one.
+     * Until that exists, mining a shape once is the only state that keeps the
+     * unit, its contract and its coverage in agreement. Improving an already
+     * mined shape is backlog and needs base-level unit replacement. */
+    if (coverage_find(h, port_key(tr->input_port), port_key(tr->goal_port),
+                      tr->input_port, tr->goal_port)) {
+        tr->hits = 0; /* do not re-attempt on every serve */
+        return 4;
+    }
     /* Fail closed: a unit we cannot gate must never exist. Reserve the coverage
        slot BEFORE admitting, because once external_teacher_mine_admit has put
        the unit in the registry it will serve, and with no coverage record the
