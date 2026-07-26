@@ -226,8 +226,10 @@ make DESTDIR=/tmp/stage PREFIX=/usr uninstall
 
 The install layout is versioned (`libcnet.so.<version>` plus ABI and linker
 symlinks), installs all public headers below `include/cnet`, and publishes
-`cnet.pc`. The GitHub Actions workflow runs the same portable `make ci` path on
-pushes to `master`, on pull requests, and on manual dispatch.
+`cnet.pc`. Local release verification is `make PORTABLE=1 ci` (and `make ci_rocm`
+on AMD hosts). GitHub Actions CI was intentionally removed after a one-shot green
+proof to avoid per-commit Actions spend; the portable Makefile graph remains the
+authority.
 The local `native_warning_gate` compiles the complete shared-library source set
 with `-Werror` under `-Wall -Wextra -Wpedantic`. Inactive OpenMP pragmas are
 source-guarded, so the portable serial build is diagnostic-free without warning
@@ -248,10 +250,9 @@ no SDK to compile — so it builds on every host and self-skips where no device
 is present (`HIPGEMM_RES_PASS status=skipped_no_device`). Because a skip must
 never read as a device result, `ci_rocm` sets `CNET_REQUIRE_ROCM=1`, which turns
 an absent or broken GPU into `HIPGEMM_RES_FAIL` instead of a pass. A successful
-device run is marked `status=measured_on_device`. The `rocm-device` workflow job
-runs the same target when dispatched with the `rocm` input against a self-hosted
-runner labelled `rocm`; `tests/test_ci_workflow.py` enforces that the target
-exists, still runs the portable gate, and keeps the strict flag.
+device run is marked `status=measured_on_device`. `tests/test_ci_workflow.py`
+enforces that `ci_rocm` exists, still runs the portable gate, and keeps the
+strict device-required flag.
 
 ### Loader egress policy
 

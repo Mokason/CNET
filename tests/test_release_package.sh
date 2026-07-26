@@ -38,7 +38,6 @@ test "$sha_a" = "$sha_b" || {
     exit 1
 }
 tar -tzf "$archive_a" | grep -q "^cnet-$version/VERSION$"
-tar -tzf "$archive_a" | grep -q "^cnet-$version/.github/workflows/ci.yml$"
 tar -tzf "$archive_a" | grep -q "^cnet-$version/dotnet/Cce/Cce.csproj$"
 tar -tzf "$archive_a" | grep -q "^cnet-$version/dotnet/CnetMcpServer/CnetMcpServer.csproj$"
 if tar -tzf "$archive_a" | grep -Eq '\.(so|dll)$'; then

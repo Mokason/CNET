@@ -3115,7 +3115,7 @@ uninstall:
 	@echo "CNET_UNINSTALL_PASS prefix=$(PREFIX)"
 
 .PHONY: dist
-dist: VERSION .github/workflows/ci.yml include/cnet_version.h
+dist: VERSION include/cnet_version.h
 	@mkdir -p "$(DIST_DIR)"
 	@set -eu; out="$(DIST_DIR)/cnet-$(CNET_VERSION).tar.gz"; tmp="$$out.tmp"; \
 		tar --sort=name --mtime='@0' --owner=0 --group=0 --numeric-owner \
@@ -3189,11 +3189,11 @@ specialist_authority: specialist_unit admission_bypass_audit admission_abi_audit
 	@echo "SPECIALIST_AUTHORITY_PASS"
 
 .PHONY: ci_config_gate release_package dotnet_cce_tests ci_core ci
-ci_config_gate: .github/workflows/ci.yml tests/test_ci_workflow.py
+ci_config_gate: tests/test_ci_workflow.py Makefile
 	@python3 tests/test_ci_workflow.py > logs/ci_config_gate.log 2>&1
 	@grep -q "CI_WORKFLOW_PASS" logs/ci_config_gate.log
 
-release_package: json_toolcall_alphabet_check tests/test_release_package.sh VERSION include/cnet_version.h .github/workflows/ci.yml
+release_package: json_toolcall_alphabet_check tests/test_release_package.sh VERSION include/cnet_version.h
 	@sh tests/test_release_package.sh > logs/release_package.log 2>&1
 	@grep -q "RELEASE_PACKAGE_PASS" logs/release_package.log
 
