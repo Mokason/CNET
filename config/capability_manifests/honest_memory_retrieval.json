@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "capability_id": "honest_memory_retrieval",
+  "title": "Honest explicit memory retrieval",
+  "owner": "cognitive-runtime",
+  "held_out_fixture": "tests/fixtures/capability_honest_memory_retrieval.json",
+  "evaluator": [
+    "dotnet",
+    "test",
+    "dotnet/Cce.Llm.Tests/CNET.Cce.Llm.Tests.csproj",
+    "--no-restore",
+    "--filter",
+    "FullyQualifiedName~AutoRecall_GenuineEmpty_TellsModelNotToInvent",
+    "--logger",
+    "console;verbosity=normal"
+  ],
+  "required_marker": "AutoRecall_GenuineEmpty_TellsModelNotToInvent",
+  "evidence_artifact": "logs/capability_cert/honest_memory_retrieval.log",
+  "failure_envelope": "Fails if weak overlap turns an unrelated memory into an asserted recall.",
+  "absolute_floor": 1.0,
+  "baseline_metric": 1.0,
+  "regression_budget": 0.0,
+  "timeout_seconds": 180
+}

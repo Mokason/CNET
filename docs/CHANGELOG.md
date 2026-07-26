@@ -1,5 +1,24 @@
 # CNET Changelog
 
+## 2026-07-26 (cognitive runtime) — held-out capabilities and governed memory
+
+Added the hermetic cognitive-runtime umbrella: a fixed-capacity shared workspace,
+semantic-cortex proposal backends (hermetic plus a `residual_http_oracle_topk`-
+compatible adapter), episodic tile consolidation into semantic/procedural
+records, per-route calibrated abstention, and claim/evidence binding. Semantic
+backends can only publish `UNCERTIFIED` candidates; the integration smoke proves
+that CNET verification and an evidence reference are required before a claim.
+
+Five machine-readable capability manifests now run frozen held-out definitions
+without a shell and emit `logs/capability_cert.json` plus per-capability logs
+bound by SHA-256 digests. `make capability_cert` prints
+`CAPABILITY_CERT_PASS certified=5/5`; `make cognitive_runtime` runs all focused
+gates and prints `COGNITIVE_RUNTIME_PASS`.
+
+The classification certificate selects `CCE_DIFF_EXACT` and keeps gradient
+clipping enabled at 20.0. On the fixed 1000-example held-out run it measures
+0.861 accuracy against a 0.274 majority baseline (lift 0.587), all four classes.
+
 ## 2026-07-26 (later) — Classification lane fixed: constant predictor → measured
 
 The lane now prints `CLASSIFICATION_LANE_HEALTHY` / `CLASSIFICATION_GATE_PASS
@@ -33,10 +52,12 @@ HEALTHY. Bars are now 0.45 accuracy / 0.20 lift / all 4 classes, set from the
 measured worst case over 10 seeds (accuracy 0.685–0.920, lift 0.425–0.660, 4/4
 classes on every seed) and verified to refuse that degenerate run.
 
-Measured but **not** used: `diff_mode = CCE_DIFF_EXACT` is inert on this cascade
-— it produces bit-identical weights to `CCE_DIFF_LOCAL` (verified by weight-sum
-comparison after training), so it is not claimed as part of the fix.
-`grad_clip = 1.0` measurably *hurts* here (0.83 → 0.48) and stays disabled.
+The later cognitive-runtime certificate explicitly selects
+`diff_mode = CCE_DIFF_EXACT` even though it is currently bit-identical to
+`CCE_DIFF_LOCAL` on this cascade, preventing a future default change from
+silently weakening the lane. Gradient clipping is also enabled: 1.0 measured
+0.477, while a 20.0 safety bound retains the learned result (0.861 on the fixed
+held-out seed).
 
 ## 2026-07-26 — Loader egress policy, honest classification lane, ROCm CI lane
 

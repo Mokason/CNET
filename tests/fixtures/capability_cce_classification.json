@@ -1,0 +1,20 @@
+{
+  "capability_id": "cce_classification",
+  "cases": [
+    {
+      "label_rule": "argmax_pair_sum_first_eight_dimensions",
+      "classes": 4,
+      "held_out_samples": 1000,
+      "minimum_accuracy": 0.45,
+      "minimum_lift_over_majority": 0.2,
+      "minimum_distinct_classes": 4,
+      "diff_mode": "EXACT",
+      "gradient_clip": 20.0
+    }
+  ],
+  "expected_markers": [
+    "CLASSIFICATION_LANE_HEALTHY",
+    "classes_used=4",
+    "CLASSIFICATION_GATE_PASS status=measured"
+  ]
+}

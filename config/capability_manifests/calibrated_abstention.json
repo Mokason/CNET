@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "capability_id": "calibrated_abstention",
+  "title": "Calibrated abstention and claim binding",
+  "owner": "cognitive-runtime",
+  "held_out_fixture": "tests/fixtures/capability_calibrated_abstention.json",
+  "evaluator": ["make", "calibrated_governance"],
+  "required_marker": "CALIBRATED_GOVERNANCE_PASS",
+  "evidence_artifact": "logs/capability_cert/calibrated_abstention.log",
+  "failure_envelope": "Fails if weak routes answer or evidence-free claims can be published.",
+  "metric_regex": "metric=([0-9.]+)",
+  "absolute_floor": 1.0,
+  "baseline_metric": 1.0,
+  "regression_budget": 0.0,
+  "timeout_seconds": 120
+}

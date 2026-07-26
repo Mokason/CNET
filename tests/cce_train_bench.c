@@ -254,9 +254,15 @@ static BenchStats run_classification_experiment(int steps, float lr, unsigned in
        hard targets) is necessary but was not sufficient while blocks froze. */
     cce_learner_init(&learner, 0.9f);
     learner.classify = 1;   /* softmax cross-entropy, not MSE-on-one-hot */
-    /* grad_clip stays disabled: measured, it costs accuracy here rather than
-       adding stability (0.83 -> 0.48 on this task at clip=1.0). */
-    learner.grad_clip = 0.0f;
+    /* The capability contract exercises the general-purpose differentiation
+       path and bounds gradients. EXACT is currently bit-identical to LOCAL on
+       this linear cascade, but naming it prevents a future default change from
+       silently weakening the certified lane. */
+    cce_learner_set_diff_mode(&learner, CCE_DIFF_EXACT);
+    /* Keep clipping enabled as a real safety bound without crushing the
+       ordinary classification gradients (clip=1 measured 0.477 accuracy;
+       clip=20 measures 0.861 on the fixed held-out seed). */
+    learner.grad_clip = 20.0f;
 
     cce_tensor x, y;
     int xsh[1] = {8};

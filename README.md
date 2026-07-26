@@ -59,7 +59,7 @@ lanes stay explicitly out of scope unless their own gates are run. Start from
 
 | Area | Verified by | Status |
 |---|---|---|
-| CCE runtime (tensor → block → cascade → archive → forest → router → learn) | `make cce_smoke`, `make cce_train_bench` | passing (standalone gates). The regression lane is measured on a 200-sample held-out set. The **classification lane is healthy and measured**: `CLASSIFICATION_LANE_HEALTHY` / `CLASSIFICATION_GATE_PASS status=measured`, held-out accuracy **0.829 over 1000 fresh draws vs a 0.269 majority-class baseline (lift 0.560), using all 4 classes**. It was a constant predictor until 2026-07-26; the cause was premature block freezing, not the objective — a hidden block's local error derives from the *mean* of the final error vector, which softmax cross-entropy makes ~0 by construction, so hidden blocks looked perfect and froze. Health requires lift over the majority baseline **and** use of every class, so a degenerate model cannot certify; `CCE_CLASSIFICATION_LANE_REQUIRE=1` makes the gate **fail** rather than pass if the lane ever regresses |
+| CCE runtime (tensor → block → cascade → archive → forest → router → learn) | `make cce_smoke`, `make cce_train_bench` | passing (standalone gates). The regression lane is measured on a 200-sample held-out set. The **classification lane is healthy and measured**: `CLASSIFICATION_LANE_HEALTHY` / `CLASSIFICATION_GATE_PASS status=measured`, held-out accuracy **0.861 over 1000 fresh draws vs a 0.274 majority-class baseline (lift 0.587), using all 4 classes**. It was a constant predictor until 2026-07-26; the cause was premature block freezing, not the objective — a hidden block's local error derives from the *mean* of the final error vector, which softmax cross-entropy makes ~0 by construction, so hidden blocks looked perfect and froze. The certified configuration explicitly selects EXACT differentiation and positive gradient clipping. Health requires lift over the majority baseline **and** use of every class, so a degenerate model cannot certify; `CCE_CLASSIFICATION_LANE_REQUIRE=1` makes the gate **fail** rather than pass if the lane ever regresses |
 | CCE storage + loaders (C ABI/DLL, safetensors, autograd, model save/load, zero-copy WARM views) | `cce_dll`, `cce_safetensors_test`, `cce_autograd_test`, `cce_model_test`, `cce_view`, `forest_view` | passing, in `make test` |
 | Contract security + one-file sealed units | `make contract_secure`, `make contract_unit` | passing, in `make test` |
 | Contract correctness + robust promotion quality/speed | `make contract_optimized` | malformed authored/frozen contracts refused atomically; stronger certified margin wins with one replay per model |
@@ -87,6 +87,7 @@ lanes stay explicitly out of scope unless their own gates are run. Start from
 | **Post-seal serve proof** — teach → seal → SoulHost reopen → `SOUL_SOURCE_CERTIFIED` Tier A; live CNB sample CLI | `make post_seal_serve` / `scripts/personal_ai_serve_proof.sh` | `POST_SEAL_SERVE_PASS`; live: `bin/serve_proof` |
 | **Personal AI automation** — user systemd learner + optional Hermes serve; one script prepare/install/start/status/doctor | `make personal_ai_auto`; `scripts/personal_ai_auto.sh start` | `PERSONAL_AI_AUTO_PASS`; full loop: `SERVE=1 scripts/personal_ai_auto.sh start` |
 | **Hybrid A/B/C (universally stronger serve)** — Tier A certified → B soft/medium → C residual; structure mine C→A; adapter; distill hook | `make hybrid_ai`, `make hybrid_bench` | `HYBRID_AI_PASS` (21); bench skill/open **100%**, ops ratio **0.625** vs dense (`logs/hybrid_bench.json`); plan: `plans/hybrid_universal_architecture.md` |
+| **Cognitive runtime** — shared workspace, hermetic/residual semantic proposals, calibrated abstention, provenance-bound claims, episodic→semantic/procedural sleep consolidation, and held-out capability certificates | `make cognitive_runtime`, `make capability_cert` | `COGNITIVE_RUNTIME_PASS`; five frozen capability manifests certify classification, honest memory misses, hybrid serving authority, abstention, and sleep consolidation. Semantic cortex entries are always uncertified proposals until CNET verifies them. The certificate report is `logs/capability_cert.json`; plan: `plans/cognitive_runtime_integration_20260726.md` |
 | **Real Tier C residual (GGUF) + P5 structure mine** — local transformer as open-ended residual; auto-bind on `personal_ai_open`; residual traces mine into certified local units | `make residual_gguf`; real: `make residual_gguf_real` / `residual_structure_mine_real` | Hermetic `RESIDUAL_GGUF_PASS`; real gemma4-v2: serve Tier C then **post-mine source=local Tier A** (checks=15); env: `config/personal-ai.env` |
 | **Colibrì placement/LFRU/PILOT (P0–P5)** — plan/doctor dual-load safety, forest LFRU, heat-ranked mine, session KV, pilot hints | `make colibri_integrate`; `bin/cnet_plan doctor` | `COLIBRI_INTEGRATE_PASS` (21); plan: `plans/colibri_integration.md` |
 | **Live residual on SoulHost/Hermes** — certified miss → residual answer + gap note; health tick structure-mines; serve stats; grow/report scripts | `make soul_residual_serve`; deploy: `scripts/deploy_hermes_mcp.sh` | `SOUL_RESIDUAL_SERVE_PASS` (19); MCP `source`/`residual` on request; residual env on live CnetMcpServer |
@@ -291,6 +292,12 @@ annotated table is in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md#make-targets
 
 The design documents in `docs/superpowers/specs/` record rationale for
 the overall approach.
+
+The cognitive runtime’s memory cycle is deliberately explicit: episodic records
+are deduplicated into tile memory, promoted with semantic or procedural labels,
+optionally merged/graduated when evidence supports it, and emitted with source
+provenance and pruning counts. No semantic-cortex candidate becomes an answer
+merely by entering the shared workspace.
 
 ## License
 

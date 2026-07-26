@@ -235,6 +235,10 @@ JSON_TOOLCALL_SRC := src/json_toolcall.c
 MULTIMODAL_SRC := $(EXT_TEACHER_SRC) $(MODALITY_VOICE_SRC) $(MODALITY_VISION_SRC) $(JSON_TOOLCALL_SRC)
 PERSONAL_AI_SRC := src/personal_ai.c $(OPENLAB_SRC)
 HYBRID_AI_SRC := src/hybrid_ai.c
+SHARED_WORKSPACE_SRC := src/cnet_shared_workspace.c
+SEMANTIC_CORTEX_SRC := src/cnet_semantic_cortex.c
+SLEEP_CONSOLIDATE_SRC := src/cnet_sleep_consolidate.c
+CALIBRATED_GOVERNANCE_SRC := src/cnet_calibrated_governance.c
 RESIDUAL_GGUF_SRC := src/residual_gguf.c src/residual_http.c
 PILOT_SRC := src/cnet_pilot.c
 CURIOSITY_SRC := src/cnet_curiosity.c
@@ -3556,6 +3560,68 @@ evidence_bundle: $(EVIDENCE_BUNDLE_SRC) $(BASE_SRC) $(ACQUIRE_SRC) $(SRC) $(ROUT
 		tests/test_cnet_evidence_bundle.c $(LDFLAGS) -pthread
 	./$(BIN_DIR)/test_cnet_evidence_bundle > logs/evidence_bundle.log 2>&1
 	@grep -q "EVIDENCE_BUNDLE_PASS" logs/evidence_bundle.log
+
+.PHONY: shared_workspace semantic_cortex sleep_consolidate calibrated_governance
+.PHONY: capability_cert_runner_test capability_cert cognitive_runtime_smoke cognitive_runtime
+shared_workspace: $(SHARED_WORKSPACE_SRC) tests/test_cnet_shared_workspace.c include/cnet_shared_workspace.h
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -Werror -Iinclude -o $(BIN_DIR)/$@ \
+		$(SHARED_WORKSPACE_SRC) tests/test_cnet_shared_workspace.c $(LDFLAGS)
+	@$(BIN_DIR)/$@ > logs/shared_workspace.log 2>&1; status=$$?; \
+		cat logs/shared_workspace.log; test $$status -eq 0 && \
+		grep -q "SHARED_WORKSPACE_PASS" logs/shared_workspace.log
+
+semantic_cortex: $(SHARED_WORKSPACE_SRC) $(SEMANTIC_CORTEX_SRC) tests/test_cnet_semantic_cortex.c include/cnet_shared_workspace.h include/cnet_semantic_cortex.h
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -Werror -Iinclude -o $(BIN_DIR)/$@ \
+		$(SHARED_WORKSPACE_SRC) $(SEMANTIC_CORTEX_SRC) \
+		tests/test_cnet_semantic_cortex.c $(LDFLAGS)
+	@$(BIN_DIR)/$@ > logs/semantic_cortex.log 2>&1; status=$$?; \
+		cat logs/semantic_cortex.log; test $$status -eq 0 && \
+		grep -q "SEMANTIC_CORTEX_PASS" logs/semantic_cortex.log
+
+sleep_consolidate: $(SLEEP_CONSOLIDATE_SRC) $(TILEMEM_SRC) $(SYNONYMS_SRC) tests/test_cnet_sleep_consolidate.c include/cnet_sleep_consolidate.h include/corpus/tile_memory.h include/corpus/synonyms.h
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -Werror -Iinclude -o $(BIN_DIR)/$@ \
+		$(SLEEP_CONSOLIDATE_SRC) $(TILEMEM_SRC) $(SYNONYMS_SRC) \
+		tests/test_cnet_sleep_consolidate.c $(LDFLAGS)
+	@$(BIN_DIR)/$@ > logs/sleep_consolidate.log 2>&1; status=$$?; \
+		cat logs/sleep_consolidate.log; test $$status -eq 0 && \
+		grep -q "SLEEP_CONSOLIDATE_PASS" logs/sleep_consolidate.log
+
+calibrated_governance: $(CALIBRATED_GOVERNANCE_SRC) tests/test_cnet_calibrated_governance.c include/cnet_calibrated_governance.h
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -Werror -Iinclude -o $(BIN_DIR)/$@ \
+		$(CALIBRATED_GOVERNANCE_SRC) \
+		tests/test_cnet_calibrated_governance.c $(LDFLAGS)
+	@$(BIN_DIR)/$@ > logs/calibrated_governance.log 2>&1; status=$$?; \
+		cat logs/calibrated_governance.log; test $$status -eq 0 && \
+		grep -q "CALIBRATED_GOVERNANCE_PASS" logs/calibrated_governance.log
+
+capability_cert_runner_test: tests/run_capability_cert.py tests/test_capability_cert_runner.py
+	@mkdir -p logs
+	@python3 tests/test_capability_cert_runner.py \
+		> logs/capability_cert_runner.log 2>&1; status=$$?; \
+		cat logs/capability_cert_runner.log; test $$status -eq 0 && \
+		grep -q "CAPABILITY_CERT_RUNNER_PASS" \
+			logs/capability_cert_runner.log
+
+capability_cert: capability_cert_runner_test
+	@python3 tests/run_capability_cert.py
+
+cognitive_runtime_smoke: $(SHARED_WORKSPACE_SRC) $(SEMANTIC_CORTEX_SRC) $(CALIBRATED_GOVERNANCE_SRC) tests/test_cnet_cognitive_runtime.c include/cnet_shared_workspace.h include/cnet_semantic_cortex.h include/cnet_calibrated_governance.h
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -Werror -Iinclude -o $(BIN_DIR)/$@ \
+		$(SHARED_WORKSPACE_SRC) $(SEMANTIC_CORTEX_SRC) \
+		$(CALIBRATED_GOVERNANCE_SRC) \
+		tests/test_cnet_cognitive_runtime.c $(LDFLAGS)
+	@$(BIN_DIR)/$@ > logs/cognitive_runtime_smoke.log 2>&1; status=$$?; \
+		cat logs/cognitive_runtime_smoke.log; test $$status -eq 0 && \
+		grep -q "COGNITIVE_RUNTIME_SMOKE_PASS" \
+			logs/cognitive_runtime_smoke.log
+
+cognitive_runtime: shared_workspace semantic_cortex sleep_consolidate calibrated_governance cognitive_runtime_smoke capability_cert cce_train_bench
+	@echo "COGNITIVE_RUNTIME_PASS capabilities=5 classification=measured"
 
 
 # ---- Six-priority use-loop gates (2026-07-21) ----------------------------

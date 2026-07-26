@@ -1,0 +1,18 @@
+{
+  "capability_id": "hybrid_skill_serve",
+  "cases": [
+    {
+      "query": "adaptive memory consolidation",
+      "backend": "hermetic",
+      "expected_authority": "uncertified"
+    },
+    {
+      "query": "held out query",
+      "backend": "residual_compatible",
+      "expected_authority": "uncertified"
+    }
+  ],
+  "expected_markers": [
+    "authority=cnet"
+  ]
+}

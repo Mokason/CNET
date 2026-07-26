@@ -1,0 +1,25 @@
+{
+  "capability_id": "calibrated_abstention",
+  "cases": [
+    {
+      "margin": 0.2,
+      "reliability": 0.95,
+      "samples": 30,
+      "expected": "abstain"
+    },
+    {
+      "margin": 0.3,
+      "reliability": 0.95,
+      "samples": 30,
+      "expected": "answer_with_evidence"
+    },
+    {
+      "evidence_refs": [],
+      "expected": "claim_rejected"
+    }
+  ],
+  "expected_markers": [
+    "abstention=fail_closed",
+    "claims=provenance_bound"
+  ]
+}
