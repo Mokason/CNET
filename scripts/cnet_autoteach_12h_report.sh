@@ -40,6 +40,21 @@ def units() -> int:
 
 
 def gap_states() -> dict:
+    """Partition the ledger: every row lands in exactly one bucket.
+
+    waiting_oracle is an ANNOTATION on a row, not a third state — the state
+    lives in field 1 (1=open, 2=closed) and an annotated row still carries it.
+    Without the `else` this reader counted such a row twice, once as waiting
+    and again as open/closed, so the totals exceeded the row count: on an
+    819-row ledger it read open=23 waiting=10 closed=796 (sum 829) where the
+    governor's partitioning reader read open=14 deferred=10 closed=795. The
+    9 rows that were both state=1 and waiting inflated outstanding work by 38%
+    and made the report and the scoreboard contradict each other.
+
+    Same bug, same fix, as governor_miss_ingest.sh — see
+    tests/test_metric_honesty.py::TestParsersAgree, which pins all three
+    readers to governor_autonomous.collect() as the reference.
+    """
     p = Path(str(base) + '.gaps.txt')
     st = {'open': 0, 'closed': 0, 'waiting': 0}
     if not p.exists():
@@ -49,11 +64,12 @@ def gap_states() -> dict:
             continue
         if 'waiting_oracle' in line or 'waiting_charter' in line:
             st['waiting'] += 1
-        parts = line.split()
-        if len(parts) > 1 and parts[1] == '1':
-            st['open'] += 1
-        elif len(parts) > 1 and parts[1] == '2':
-            st['closed'] += 1
+        else:
+            parts = line.split()
+            if len(parts) > 1 and parts[1] == '1':
+                st['open'] += 1
+            elif len(parts) > 1 and parts[1] == '2':
+                st['closed'] += 1
     return st
 
 
@@ -130,16 +146,18 @@ def snapshot() -> dict:
             'autoteach_timer': subprocess.getoutput('systemctl --user is-active cnet-autoteach.timer'),
             'governor_timer': subprocess.getoutput('systemctl --user is-active cnet-governor.timer'),
         },
-        'schema': 2,
+        'schema': 3,
     }
 
 
 now = snapshot()
 bp = gov / 'baseline_12h.json'
 b0 = json.loads(bp.read_text()) if bp.exists() else {}
-if b0.get('schema') != 2:
-    # Old baseline used byte-marker proxies; its numbers are not comparable to
-    # the real counts. Re-baseline rather than print a fabricated delta.
+if b0.get('schema') != 3:
+    # schema 1 used byte-marker proxies; schema 2 double-counted waiting rows
+    # as open. Neither is comparable to a partitioned count, and differencing
+    # across the change would print a phantom gaps_open drop that no lane tick
+    # earned. Re-baseline rather than print a fabricated delta.
     b0 = dict(now)
     b0['horizon_h'] = 12
     b0['due_unix'] = now['t_unix'] + 12 * 3600

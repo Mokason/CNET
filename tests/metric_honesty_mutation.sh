@@ -123,6 +123,15 @@ mutate "waiting rows double-counted as open" \
   's = s.replace("        elif state==\"1\":", "        if state==\"1\":")' \
   TestMissRateDenominator.test_waiting_rows_are_not_double_counted TestParsersAgree
 
+mutate "12h report double-counts waiting rows as open" \
+  scripts/cnet_autoteach_12h_report.sh \
+  'import re
+s = re.sub(r"        else:\n((?:            .*\n)+)",
+           lambda m: "".join(l[4:] for l in m.group(1).splitlines(True)), s, count=1)' \
+  TestParsersAgree.test_autoteach_report_partitions_rows \
+  TestParsersAgree.test_autoteach_report_agrees_with_governor \
+  TestParsersAgree.test_autoteach_report_agrees_on_the_real_ledger
+
 mutate "real_miss max()-ed with the Hermes error rate" \
   scripts/governor_autonomous.py \
   's = s.replace("real_miss = float(miss.get(\"real_miss_rate\") or 0)", "real_miss = max(float(miss.get(\"real_miss_rate\") or 0), float(hermes.get(\"hermes_err_rate\") or 0))")' \

@@ -141,13 +141,42 @@ class TestMissRateDenominator(unittest.TestCase):
             self.assertEqual(rep["real_miss_rate"], 1.0)
 
 
+def load_autoteach_gap_states():
+    """Extract gap_states() from the 12h report's embedded python.
+
+    The reader lives in a heredoc, so it cannot be imported. Pulling the
+    function out and exec'ing it tests the real code path instead of asserting
+    on source text — a comment claiming to partition would still fail here.
+    """
+    src = (ROOT / "scripts/cnet_autoteach_12h_report.sh").read_text()
+    m = re.search(r"^def gap_states\(\).*?(?=\n\ndef )", src, re.S | re.M)
+    if not m:
+        raise AssertionError("gap_states() not found in cnet_autoteach_12h_report.sh")
+    ns: dict = {"Path": Path}
+    exec(compile(m.group(0), "cnet_autoteach_12h_report.sh", "exec"), ns)
+    return ns
+
+
 class TestParsersAgree(unittest.TestCase):
-    """Two readers of the same ledger must not report contradictory totals.
+    """Readers of the same ledger must not report contradictory totals.
 
     governor_autonomous.collect() partitions rows (waiting XOR open), while
     miss_ingest counted waiting rows as open as well — so backlog_pressure and
     real_miss_rate disagreed about how much work was outstanding.
+
+    The 12h autoteach report was a THIRD reader with the identical defect,
+    missed because this class only covered the first two. On the live 819-row
+    ledger it published open=23 waiting=10 closed=796 — 829 rows' worth of
+    state from 819 rows — against the scoreboard's open=14 deferred=10
+    closed=795. Every reader is pinned to the governor here.
     """
+
+    @staticmethod
+    def _autoteach_parse(tmp: Path, text: str) -> dict:
+        ns = load_autoteach_gap_states()
+        ns["base"] = tmp / "base.cnb"
+        Path(str(ns["base"]) + ".gaps.txt").write_text(text)
+        return ns["gap_states"]()
 
     @staticmethod
     def _governor_parse(text: str) -> tuple[int, int, int]:
@@ -202,6 +231,54 @@ class TestParsersAgree(unittest.TestCase):
                 "in the real ledger",
             )
             self.assertEqual(rep["closed_gaps"], g_closed)
+
+    def test_autoteach_report_partitions_rows(self):
+        """Buckets must sum to the row count — no row in two buckets."""
+        with tempfile.TemporaryDirectory() as d:
+            tmp = Path(d)
+            g = tmp / "g.txt"
+            write_gaps(g, closed=200, open_=15, waiting=7)
+            st = self._autoteach_parse(tmp, g.read_text())
+            self.assertEqual(
+                st["open"] + st["closed"] + st["waiting"], 222,
+                f"222 rows read as {st} — waiting rows counted twice",
+            )
+            # The discriminating case: the buggy reader gave open=22, not 15.
+            self.assertEqual(st, {"open": 15, "closed": 200, "waiting": 7})
+
+    def test_autoteach_report_agrees_with_governor(self):
+        with tempfile.TemporaryDirectory() as d:
+            tmp = Path(d)
+            g = tmp / "g.txt"
+            write_gaps(g, closed=200, open_=15, waiting=7)
+            st = self._autoteach_parse(tmp, g.read_text())
+            g_open, g_def, g_closed = self._governor_parse(g.read_text())
+            self.assertEqual(
+                st["waiting"] + st["open"], g_open + g_def,
+                "12h report and the governor disagree on outstanding work",
+            )
+            self.assertEqual(st["closed"], g_closed)
+
+    def test_autoteach_report_agrees_on_the_real_ledger(self):
+        """One snapshot, both readers — the live ledger moves under us."""
+        ledger = ROOT / "soul_gemma4v2_final.cnb.gaps.txt"
+        if not ledger.exists():
+            self.skipTest("no live ledger")
+        text = ledger.read_text(errors="replace")
+        rows = max(0, len(text.splitlines()) - 2)
+        with tempfile.TemporaryDirectory() as d:
+            st = self._autoteach_parse(Path(d), text)
+            g_open, g_def, g_closed = self._governor_parse(text)
+            self.assertEqual(
+                st["open"] + st["closed"] + st["waiting"], rows,
+                f"{rows} real rows read as {st}",
+            )
+            self.assertEqual(
+                st["waiting"] + st["open"], g_open + g_def,
+                "12h report and the governor disagree on outstanding work "
+                "in the real ledger",
+            )
+            self.assertEqual(st["closed"], g_closed)
 
 
 class TestMissRateProvenance(unittest.TestCase):
