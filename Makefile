@@ -14,8 +14,26 @@ CNET_ABI_VERSION := $(word 1,$(subst ., ,$(CNET_VERSION)))
 
 # -march=native: measured 1.25x on the training loops, bit-identical weights
 # (FP contraction stays off under -std=c11). PORTABLE=1 omits host-specific ISA.
+#
+# PORTABLE=v3 targets x86-64-v3 (AVX2+FMA, every x86-64 CPU since ~2013) and is
+# what the shipped cce.dll/cnet.so are built with. Rationale, measured on the
+# int8 oracle matvec (3840x4096, best-of-3 ms/call, this Zen 5 host):
+#
+#            1 thread   4 threads   32 threads
+#   baseline   1.310       0.334        0.212
+#   v3         0.683       0.176        0.195
+#   v4/native  0.427       0.124        0.183
+#
+# Baseline costs ~3x when the call is thread-constrained; past ~8 threads the
+# loop is bandwidth-bound and ISA stops mattering. v3 recovers most of that and
+# still runs everywhere. v4 (AVX-512) matches native but SIGILLs on CPUs without
+# it -- including current Intel consumer parts -- which is the failure PORTABLE
+# exists to prevent. Output is bit-identical across all four (verified by FNV
+# over the result vector), so this is purely a speed/reach tradeoff.
 ifeq ($(PORTABLE),1)
 ARCH_CFLAGS :=
+else ifeq ($(PORTABLE),v3)
+ARCH_CFLAGS := -march=x86-64-v3
 else
 ARCH_CFLAGS := -march=native
 endif
