@@ -584,3 +584,73 @@ S7: held-out still CORRECT 4/4 after restart                   PASS
 ```
 
 Both negative controls still hold (`CNET_COVERAGE_ABSTAIN=0`, and deleting only the sidecar).
+
+---
+
+## 14. Fail-open sweep (2026-07-26) — four doors closed
+
+`make coverage_abstain` → `COVERAGE_ABSTAIN_PASS checks=49 heldout_correct=4/4 was=0/4`
+
+After S8 the gate was correct but several paths around it could still silently drop it.
+Each of these is a *fail-open*: the protection disappears and nothing reports it.
+
+### 1. Coverage sidecar was truncated in place
+
+`hybrid_coverage_save` opened the live file with `"w"`. A crash or a full disk mid-write
+leaves a corrupt sidecar, which loads as "no coverage" and reopens the confident-wrong hole.
+Now written to `<path>.tmp` and `rename(2)`d over — the same temp+rename pattern
+`ledger_save_atomic` already uses. Gated: no `.tmp` survives a successful save, and a failed
+write leaves the previous good file intact.
+
+### 2. A unit could be admitted with no coverage record
+
+`HYBRID_COVERAGE_MAX` was **8** while `HYBRID_TRACE_MAX` is **64**, and the miner discarded
+`hybrid_coverage_record`'s return. Mining a 9th distinct port shape therefore admitted a
+certified unit with no coverage record — and `hybrid_coverage_admits` default-allows, so the
+unit served ungated. Reachable with ordinary multi-shape traffic; this was a broken door, not
+a tuning constant.
+
+Two changes: the table is sized to `HYBRID_TRACE_MAX` (a mine can only come from a trace, so
+in-process overflow is now unreachable), and the miner **reserves the slot before admitting**
+— if the shape cannot be gated, it refuses to mine at all (`rc=2`) rather than create a unit
+it cannot constrain. Demotion was considered and rejected: `PRIM_RESET` only excludes from
+planning when `reg->lifecycle_enabled`, which `registry_init` leaves zero.
+
+### 3. Mined units had a dangling name pointer (memory-safety)
+
+`registry_add` stores the name **pointer**, not a copy (`src/router/registry.c:501`), and
+`hybrid_structure_mine` passed its stack-local `char name[64]`. Every structure-mined
+registry entry therefore held a pointer into a dead stack frame — undefined behaviour on any
+later read (`find_named`, `gap_lane_persist_stats` → `cnb_has_unit`, diagnostics).
+
+It also had a security-relevant side effect: `find_named` could never match a mined unit, so
+the MoE hard-expert path *appeared* unreachable. That apparent safety was an accident of
+undefined behaviour, not a property.
+
+Fixed with a deliberately never-freed copy. The registry does not own names and can outlive
+the `HybridAi`, so no other lifetime is safe; it is one small allocation per successful mine,
+bounded by the coverage table.
+
+### 4. The MoE hard-expert door bypassed the coverage gate
+
+`cnet_moe_try_hard` runs **ahead of** the Tier-A plan and dispatches on `goal_port.tag`
+naming a unit, so it reaches certified weights without passing the gate. With defect 3 fixed
+this became genuinely reachable — the gate and the memory fix belong together.
+
+Gating it by port shape would not work: the request's goal port carries the unit *name* as
+its tag, so a shape lookup misses and default-allows. `hybrid_coverage_admits_unit` keys on
+the unit name instead. Gated both ways:
+
+```
+moe: in-coverage still served by the expert                     PASS
+moe: out-of-coverage refused at the hard-expert door            PASS
+```
+
+### Still open, deliberately
+
+- `PORT_RAW` ungated (exact match is meaningless for continuous values) — **backlog**.
+- Near-neighbour / interval coverage — **backlog, research**.
+- Corrupt sidecar still fails open (logged); fail-closed needs a separate record of which
+  shapes were mined, which is what the file itself is — **must-fix later, not now**.
+- Other `specialist_wrap_btn` callers pass caller-owned names; only the mine path was proven
+  to pass a stack buffer. A sweep of the rest is **must-fix later**.

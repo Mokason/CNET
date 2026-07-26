@@ -288,6 +288,115 @@ int main(void) {
         personal_ai_close(&a3);
     }
 
+    /* ---- 6. atomic sidecar write ---------------------------------------- */
+    {
+        HybridAi h;
+        double rows[IN_DIM];
+        FILE *fp;
+        hybrid_ai_init(&h);
+        encode_pair(rows, 1, 1);
+        check(hybrid_coverage_record(&h, pin, pout, "u", rows, NULL, 1, IN_DIM,
+                                     0) == 0, "atomic: record one shape");
+        check(hybrid_coverage_save(&h, "tmp_cov_atomic") == 0,
+              "atomic: save succeeds");
+        fp = fopen("tmp_cov_atomic.tmp", "r");
+        check(fp == NULL, "atomic: no .tmp left behind (renamed, not truncated)");
+        if (fp) fclose(fp);
+        /* An existing good file must survive a failed write rather than be
+           truncated in place. */
+        check(hybrid_coverage_save(&h, "tmp_cov_atomic/nope") != 0,
+              "atomic: unwritable path reports failure");
+        fp = fopen("tmp_cov_atomic", "r");
+        check(fp != NULL, "atomic: previous good file still intact");
+        if (fp) fclose(fp);
+        hybrid_ai_free(&h);
+        remove("tmp_cov_atomic");
+    }
+
+    /* ---- 7. fail closed when coverage cannot be recorded ----------------- */
+    {
+        PersonalAi a4;
+        BinaryTransformNetwork *stu = NULL;
+        PersonalAiReport rep;
+        Port fin, fout;
+        double in[IN_DIM], out[OUT_DIM];
+        size_t i;
+        int mrc;
+        remove("tmp_cov_full.cnb");
+        remove("tmp_cov_full.gaps.txt");
+        remove("tmp_cov_full.cnb.coverage");
+        {
+            PersonalAiPolicy pol;
+            personal_ai_policy_defaults(&pol);
+            pol.allow_teacher = 0;
+            pol.allow_soft = 0;
+            pol.allow_residual = 1;
+            pol.structure_mine_on_serve = 0;
+            pol.structure_min_hits = 2;
+            check(personal_ai_open(&a4, "tmp_cov_full.cnb",
+                                   "tmp_cov_full.gaps.txt", NULL, &pol) == 0,
+                  "full: open");
+            a4.lane.acq.min_evidence = 1;
+            personal_ai_bind_residual(&a4, "addmod", res_addmod, &ctx);
+        }
+        /* Saturate the coverage table with distinct shapes. */
+        for (i = 0; i < HYBRID_COVERAGE_MAX; i++) {
+            double r0[IN_DIM];
+            char tag[32];
+            snprintf(tag, sizeof tag, "fill%zu", i);
+            fin = PMF(tag, FW, FC);
+            fout = PMF("cov_out", OUT_DIM, 1);
+            encode_pair(r0, 0, 0);
+            if (hybrid_coverage_record(&a4.hybrid, fin, fout, tag, r0, NULL, 1,
+                                       IN_DIM, 0) != 0)
+                break;
+        }
+        check(i == HYBRID_COVERAGE_MAX, "full: coverage table saturated");
+        /* Now generate traffic on a shape with no record and try to mine. */
+        for (i = 0; i < 4; i++) {
+            encode_pair(in, i, i);
+            memset(&rep, 0, sizeof rep);
+            (void)personal_ai_serve(&a4, pin, pout, in, IN_DIM, out, OUT_DIM,
+                                    &rep);
+        }
+        mrc = personal_ai_structure_mine(&a4, &stu);
+        check(mrc == 2, "full: mine REFUSED rather than admit an ungated unit");
+        check(cnb_has_unit(&a4.lane.base, "hyb_struct_0") == 0,
+              "full: no ungated unit was sealed");
+        personal_ai_close(&a4);
+        remove("tmp_cov_full.cnb");
+        remove("tmp_cov_full.gaps.txt");
+        remove("tmp_cov_full.cnb.coverage");
+    }
+
+    /* ---- 8. the MoE hard-expert door obeys coverage too ------------------ */
+    {
+        PersonalAi a5;
+        Port moe_goal;
+        double seen[IN_DIM], unseen[IN_DIM], out[OUT_DIM];
+        PersonalAiReport rep;
+        check(build_and_replay_ex(&a5, &ctx, "moe", 0, 0, &hl, &hc, &hr, &ab)
+                  == 0, "moe: capture 12/16 and mine");
+        /* Dispatch by goal tag naming the mined unit — this reaches certified
+           weights WITHOUT the Tier-A plan, so it needs its own check. */
+        moe_goal = PMF("hyb_struct_0", OUT_DIM, 1);
+        encode_pair(seen, 0, 0);   /* captured */
+        encode_pair(unseen, 0, 3); /* held out */
+        memset(&rep, 0, sizeof rep);
+        (void)personal_ai_serve(&a5, pin, moe_goal, seen, IN_DIM, out, OUT_DIM,
+                                &rep);
+        check(rep.local_hits == 1, "moe: in-coverage still served by the expert");
+        memset(&rep, 0, sizeof rep);
+        (void)personal_ai_serve(&a5, pin, moe_goal, unseen, IN_DIM, out,
+                                OUT_DIM, &rep);
+        check(rep.coverage_abstains == 1 && rep.local_hits == 0,
+              "moe: out-of-coverage refused at the hard-expert door");
+        personal_ai_close(&a5);
+        remove("tmp_cov_moe.cnb");
+        remove("tmp_cov_moe.gaps.txt");
+        remove("tmp_cov_moe.cnb.coverage");
+    }
+
     /* ---- 6. PORT_RAW is not gated (documented limit) -------------------- */
     {
         HybridAi h;

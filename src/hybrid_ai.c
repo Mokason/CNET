@@ -247,6 +247,26 @@ int hybrid_coverage_admits(const HybridAi *h, Port in_port, Port out_port,
     return 0;
 }
 
+int hybrid_coverage_admits_unit(const HybridAi *h, const char *unit,
+                                const double *in, size_t in_len) {
+    size_t i, r;
+    if (!h || !unit || !unit[0] || !in) return 1;
+    for (i = 0; i < h->coverage_count; i++) {
+        const HybridCoverage *c = &h->coverage[i];
+        if (!c->active || !c->rows) continue;
+        if (strcmp(c->unit, unit) != 0) continue;
+        if (!coverage_family_gated(c->input_port)) return 1;
+        if (c->in_dim != in_len) return 1;
+        for (r = 0; r < c->n_rows; r++) {
+            if (memcmp(c->rows + r * c->in_dim, in,
+                       c->in_dim * sizeof(double)) == 0)
+                return 1;
+        }
+        return 0;
+    }
+    return 1; /* not a mined unit — default-allow */
+}
+
 size_t hybrid_coverage_rows(const HybridAi *h, Port in_port, Port out_port) {
     const HybridCoverage *c;
     if (!h) return 0;
@@ -280,8 +300,16 @@ static void coverage_tag_in(const char *tok, char *out, size_t cap) {
 int hybrid_coverage_save(const HybridAi *h, const char *path) {
     FILE *fp;
     size_t i, r, j;
+    char tmp[576];
+    /* Write-then-rename: truncating the live file in place means a crash or a
+       full disk mid-write leaves a corrupt sidecar, which loads as "no
+       coverage" and silently reopens the confident-wrong hole. rename(2) over
+       the same directory is atomic, so a reader sees either the old complete
+       file or the new one. */
     if (!h || !path || !path[0]) return -1;
-    fp = fopen(path, "w");
+    if (strlen(path) + 5 >= sizeof tmp) return -1;
+    snprintf(tmp, sizeof tmp, "%s.tmp", path);
+    fp = fopen(tmp, "w");
     if (!fp) return -2;
     fprintf(fp, "CNET_COVERAGE v1\n");
     for (i = 0; i < h->coverage_count; i++) {
@@ -305,9 +333,17 @@ int hybrid_coverage_save(const HybridAi *h, const char *path) {
     }
     if (fflush(fp) != 0) {
         fclose(fp);
+        remove(tmp);
         return -3;
     }
-    if (fclose(fp) != 0) return -3;
+    if (fclose(fp) != 0) {
+        remove(tmp);
+        return -3;
+    }
+    if (rename(tmp, path) != 0) {
+        remove(tmp);
+        return -4;
+    }
     return 0;
 }
 
@@ -713,6 +749,20 @@ int hybrid_structure_mine(HybridAi *h, PrimitiveRegistry *reg, size_t min_hits,
     if (best == (size_t)-1) return 1;
 
     tr = &h->traces[best];
+    /* Fail closed: a unit we cannot gate must never exist. Reserve the coverage
+       slot BEFORE admitting, because once external_teacher_mine_admit has put
+       the unit in the registry it will serve, and with no coverage record the
+       serve path default-allows — silently reopening the confident-wrong hole
+       this whole mechanism exists to close. Demotion is not an alternative:
+       PRIM_RESET only excludes from planning when reg->lifecycle_enabled, which
+       registry_init leaves zero. */
+    if (!coverage_find(h, port_key(tr->input_port), port_key(tr->goal_port),
+                       tr->input_port, tr->goal_port) &&
+        h->coverage_count >= HYBRID_COVERAGE_MAX) {
+        fprintf(stderr, "hybrid: coverage table full (%d shapes) — refusing to "
+                        "mine an ungated unit\n", HYBRID_COVERAGE_MAX);
+        return 2;
+    }
     {
         size_t expand_n = 0;
         size_t expand_cap = 64;
@@ -842,18 +892,43 @@ int hybrid_structure_mine(HybridAi *h, PrimitiveRegistry *reg, size_t min_hits,
             size_t ih = tr->in_dim > 16 ? 64 : 8;
             size_t mh = tr->in_dim > 16 ? 256 : 64;
             size_t ep = tr->in_dim > 16 ? 40000 : 12000;
+            /* registry_add stores the name POINTER, not a copy
+               (src/router/registry.c). Passing this function's stack buffer
+               left every mined entry with a dangling name: undefined behaviour
+               on any later read, and find_named could never match it, which
+               silently disabled MoE hard-expert dispatch for mined units. The
+               registry does not own names and can outlive this HybridAi, so the
+               only safe lifetime is "never freed" — one small allocation per
+               successful mine, and mines are bounded by the coverage table. */
+            size_t nlen = strlen(name) + 1;
+            char *stable = (char *)malloc(nlen);
+            if (!stable) {
+                external_teacher_unbind(&teacher);
+                free(inputs);
+                free(targets);
+                return -3;
+            }
+            memcpy(stable, name, nlen);
             rc = external_teacher_mine_admit(
-                &teacher, reg, inputs, targets, n_rows, ih, mh, ep, 99u, name,
+                &teacher, reg, inputs, targets, n_rows, ih, mh, ep, 99u, stable,
                 student_out);
+            if (rc != 0) free(stable); /* nothing borrowed it */
         }
         external_teacher_unbind(&teacher);
         if (rc == 0) {
             /* The unit is certified over exactly these rows — remember them so
                the serve path can refuse to claim certified authority outside
                the domain the contract actually covers. */
-            (void)hybrid_coverage_record(h, tr->input_port, tr->goal_port, name,
-                                         inputs, targets, n_rows, tr->in_dim,
-                                         tr->out_dim);
+            if (hybrid_coverage_record(h, tr->input_port, tr->goal_port, name,
+                                       inputs, targets, n_rows, tr->in_dim,
+                                       tr->out_dim) != 0) {
+                /* Slot was reserved above, so this is allocation failure. The
+                   unit is already admitted and would serve ungated; say so
+                   loudly rather than let it look like a clean mine. */
+                fprintf(stderr, "hybrid: unit '%s' admitted but coverage NOT "
+                                "recorded — it will serve ungated\n", name);
+                rc = -5;
+            }
         }
         free(inputs);
         free(targets);

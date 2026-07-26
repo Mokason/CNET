@@ -81,11 +81,15 @@ static void coverage_persist(const PersonalAi *ai) {
    the default is safe, because the failure it prevents (a confident wrong
    answer replacing a correct teacher one) is invisible to the residual_rate
    KPI, which scores it as a win. */
+static int coverage_gate_disabled(void) {
+    const char *e = getenv("CNET_COVERAGE_ABSTAIN");
+    return e && e[0] == '0' && e[1] == '\0';
+}
+
 static int coverage_gate_open(const PersonalAi *ai, Port input_port,
                               Port goal_port, const double *input,
                               size_t in_len) {
-    const char *e = getenv("CNET_COVERAGE_ABSTAIN");
-    if (e && e[0] == '0' && e[1] == '\0') return 1;
+    if (coverage_gate_disabled()) return 1;
     return hybrid_coverage_admits(&ai->hybrid, input_port, goal_port, input,
                                   in_len);
 }
@@ -387,6 +391,22 @@ int personal_ai_serve(PersonalAi *ai, Port input_port, Port goal_port,
         CnetMoeHit mh;
         int mr = cnet_moe_try_hard(&ai->lane.reg, input_port, goal_port, input,
                                    in_len, output, out_cap, &mh);
+        /* This branch dispatches on goal_port.tag naming a unit, so it reaches
+           certified weights without passing the Tier-A plan below. Same
+           coverage rule applies — otherwise it is a second door into the exact
+           behaviour the gate exists to stop. Default-allow keeps every
+           non-mined shape unaffected. */
+        if (getenv("CNET_MOE_DEBUG"))
+            fprintf(stderr, "[moe] mr=%d hit=%d unit=%s tag=%s\n", mr, mh.hit,
+                    mh.unit, goal_port.tag);
+        if (mr == 0 && mh.hit && !coverage_gate_disabled() &&
+            !hybrid_coverage_admits_unit(&ai->hybrid, mh.unit, input, in_len)) {
+            ai->hybrid.coverage_abstains++;
+            ai->totals.coverage_abstains++;
+            rep->coverage_abstains = 1;
+            cnet_acct_add_abstain();
+            mh.hit = 0;
+        }
         if (mr == 0 && mh.hit) {
             serve_record_hit(ai, rep, PERSONAL_AI_LOCAL, HYBRID_TRUST_CERTIFIED,
                              HYBRID_TIER_A);

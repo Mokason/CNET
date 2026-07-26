@@ -31,8 +31,13 @@ extern "C" {
 /* Default K: distinct real (in,out) samples retained per port shape.
    Override with CNET_RESIDUAL_RESERVOIR_K (1..1024). */
 #define HYBRID_RESERVOIR_K 64
-/* Mined units whose certified coverage is tracked for abstention. */
-#define HYBRID_COVERAGE_MAX 8
+/* Mined units whose certified coverage is tracked for abstention. One record
+   per port shape, and a mine can only come from a trace, so matching
+   HYBRID_TRACE_MAX keeps in-process overflow unreachable. Records restored
+   from a previous run can still push past it, which is why the miner reserves
+   a slot BEFORE admitting (see hybrid_structure_mine): a unit that cannot be
+   gated is never created. */
+#define HYBRID_COVERAGE_MAX HYBRID_TRACE_MAX
 
 typedef enum {
     HYBRID_TIER_A = 0, /* certified */
@@ -247,6 +252,13 @@ CNET_API int hybrid_coverage_admits(const HybridAi *h, Port in_port,
 /* Rows recorded for a port shape (0 if none). */
 CNET_API size_t hybrid_coverage_rows(const HybridAi *h, Port in_port,
                                      Port out_port);
+
+/* Same question keyed by UNIT NAME rather than port shape. The MoE hard-expert
+ * path dispatches on goal_port.tag naming a unit, so the request's goal port
+ * does not match the one the unit was mined under — a shape lookup would miss
+ * and default-allow. Same 1=admit / 0=refuse contract. */
+CNET_API int hybrid_coverage_admits_unit(const HybridAi *h, const char *unit,
+                                         const double *in, size_t in_len);
 
 /* S7 durability: coverage lives beside the base as <base>.coverage, because an
  * in-memory-only gate lapses on the one process that matters — the long-running
