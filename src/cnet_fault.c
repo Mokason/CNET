@@ -400,9 +400,10 @@ static int fault_dedup_check_add(unsigned long long h) {
     return 0;
 }
 
-void cnet_fault_mirror_labeled(const char *unit, const double *input,
-                               const double *target, int in_dim, int out_dim,
-                               const char *source_name) {
+void cnet_fault_mirror_kind(const char *unit, const double *input,
+                            const double *target, int in_dim, int out_dim,
+                            const char *source_name, const char *label_kind,
+                            const char *note) {
     const char *fl, *mir;
     CnetFaultLog log;
     CnetFaultRecord rec;
@@ -427,8 +428,17 @@ void cnet_fault_mirror_labeled(const char *unit, const double *input,
     snprintf(rec.unit, sizeof rec.unit, "%s", unit);
     rec.in_dim = in_dim;
     rec.out_dim = out_dim;
-    snprintf(rec.label_kind, sizeof rec.label_kind, "argmax");
-    snprintf(rec.note, sizeof rec.note, "mirror_labeled");
+    snprintf(rec.label_kind, sizeof rec.label_kind, "%s",
+             label_kind && label_kind[0] ? label_kind : "argmax");
+    snprintf(rec.note, sizeof rec.note, "%s",
+             note && note[0] ? note : "mirror_labeled");
     (void)cnet_fault_append_labeled(&log, &rec, input, target);
     cnet_fault_close(&log);
+}
+
+void cnet_fault_mirror_labeled(const char *unit, const double *input,
+                               const double *target, int in_dim, int out_dim,
+                               const char *source_name) {
+    cnet_fault_mirror_kind(unit, input, target, in_dim, out_dim, source_name,
+                           "argmax", "mirror_labeled");
 }

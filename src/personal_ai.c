@@ -7,9 +7,52 @@
 #include "../include/cnet_moe.h"
 #include "../include/cnet_acct.h"
 
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+/* Organic Tier-C capture — dual-write into the unified fault bus (cnet_fault.c).
+ * Weak so binaries that don't link the fault TU stay unchanged. */
+void cnet_fault_mirror_kind(const char *unit, const double *input,
+                            const double *target, int in_dim, int out_dim,
+                            const char *source_name, const char *label_kind,
+                            const char *note) __attribute__((weak));
+
+/* Tier-C residual answers are the only labelled pairs CNET may learn from: the
+ * label comes from an external model, never from CNET's own certified output.
+ * Rows are stamped source=surprise/label_kind=residual so a consumer can tell
+ * organic capture from a synthetic seeder by provenance alone. No-op unless
+ * CNET_FAULT_LOG is set (mirror enforces that) and capture is not disabled.
+ *
+ * Returns 1 when a pair was offered to the bus, 0 when policy/env/shape ruled
+ * it out. The bus may still dedup an offered pair, so the row count in the log
+ * — not this counter — is the source of truth for organic intake volume. */
+static int residual_capture(Port input_port, Port goal_port,
+                            const double *input, size_t in_len,
+                            const double *output, size_t out_cap) {
+    char unit[96];
+    size_t out_dim = goal_port.field_width * goal_port.field_count;
+    const char *en, *nm, *fl;
+    if (!cnet_fault_mirror_kind) return 0;
+    en = getenv("CNET_RESIDUAL_CAPTURE");
+    if (en && en[0] == '0' && en[1] == '\0') return 0; /* explicit off */
+    fl = getenv("CNET_FAULT_LOG");
+    if (!fl || !fl[0]) return 0; /* no bus addressed */
+    if (!input || !output || in_len == 0) return 0;
+    if (out_dim == 0 || out_dim > out_cap) out_dim = out_cap;
+    if (out_dim == 0) return 0;
+    if (in_len > (size_t)INT_MAX || out_dim > (size_t)INT_MAX) return 0;
+    (void)input_port;
+    nm = getenv("CNET_RESIDUAL_CAPTURE_UNIT");
+    if (nm && nm[0])
+        snprintf(unit, sizeof unit, "%s", nm);
+    else
+        snprintf(unit, sizeof unit, "res_%zux%zu", in_len, out_dim);
+    cnet_fault_mirror_kind(unit, input, output, (int)in_len, (int)out_dim,
+                           "surprise", "residual", "residual_serve");
+    return 1;
+}
 
 /* Dense name table for PersonalAiSource (enum values are 0..5). */
 static const char *const k_source_names[] = {
@@ -379,6 +422,14 @@ int personal_ai_serve(PersonalAi *ai, Port input_port, Port goal_port,
                 serve_record_hit(ai, rep, PERSONAL_AI_RESIDUAL,
                                  HYBRID_TRUST_UNCERTIFIED, HYBRID_TIER_C);
                 cnet_acct_add_tier_c();
+                /* Organic intake: the teacher just answered a miss — keep the
+                   (input, answer) pair so the PEFT learner has real traffic to
+                   train on instead of only seeded rows. */
+                if (residual_capture(input_port, goal_port, input, in_len,
+                                     output, out_cap)) {
+                    rep->residual_captures = 1;
+                    ai->totals.residual_captures++;
+                }
                 if (ai->policy.structure_mine_on_serve) {
                     BinaryTransformNetwork *stu = NULL;
                     if (personal_ai_structure_mine(ai, &stu) == 0) {
@@ -530,6 +581,52 @@ void personal_ai_close(PersonalAi *ai) {
 void personal_ai_totals(const PersonalAi *ai, PersonalAiReport *out) {
     if (!ai || !out) return;
     *out = ai->totals;
+}
+
+int personal_ai_kpi_json(const PersonalAi *ai, char *out, size_t out_capacity) {
+    const PersonalAiReport *t;
+    size_t served, own;
+    double residual_rate = 0.0, substitution_rate = 0.0, abstain_rate = 0.0;
+    int written;
+    if (!ai || !out || out_capacity == 0) return -1;
+    t = &ai->totals;
+    /* served = answered requests; abstains are counted separately so a fall in
+       residual_rate bought by abstaining more is visible, not hidden. */
+    served = t->local_hits + t->soft_hits + t->residual_hits + t->teacher_helps;
+    own = t->local_hits + t->soft_hits;
+    if (served > 0) {
+        residual_rate = (double)t->residual_hits / (double)served;
+        substitution_rate = (double)own / (double)served;
+    }
+    if (served + t->abstains > 0)
+        abstain_rate = (double)t->abstains / (double)(served + t->abstains);
+    written = snprintf(
+        out, out_capacity,
+        "{\"schema_version\":1,\"served\":%zu,\"local_hits\":%zu,"
+        "\"soft_hits\":%zu,\"residual_hits\":%zu,\"teacher_helps\":%zu,"
+        "\"abstains\":%zu,\"teaches\":%zu,\"residual_captures\":%zu,"
+        "\"residual_rate\":%.6f,\"substitution_rate\":%.6f,"
+        "\"abstain_rate\":%.6f}",
+        served, t->local_hits, t->soft_hits, t->residual_hits,
+        t->teacher_helps, t->abstains, t->teaches, t->residual_captures,
+        residual_rate, substitution_rate, abstain_rate);
+    if (written < 0 || (size_t)written >= out_capacity) return -2;
+    return written;
+}
+
+int personal_ai_kpi_write(const PersonalAi *ai, const char *path) {
+    char buf[512];
+    FILE *fp;
+    if (!ai || !path || !path[0]) return -1;
+    if (personal_ai_kpi_json(ai, buf, sizeof buf) < 0) return -2;
+    fp = fopen(path, "w");
+    if (!fp) return -3;
+    if (fprintf(fp, "%s\n", buf) < 0) {
+        fclose(fp);
+        return -4;
+    }
+    if (fclose(fp) != 0) return -5;
+    return 0;
 }
 
 const HybridAi *personal_ai_hybrid(const PersonalAi *ai) {

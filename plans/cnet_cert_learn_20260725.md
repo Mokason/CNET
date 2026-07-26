@@ -27,11 +27,21 @@
 - `tools/cnet_cert_learn_tick.c` → `bin/cnet_cert_learn_tick`
 - Env: `CNET_FAULT_DEDUPE=0` when seeding diverse JTC pairs
 
-## Known gap (next)
+## Known gap (next) — RESOLVED 2026-07-26
 
-Structure-mine from Bonsai residual needs either:
-- window width ≤16 for expand labeling, or
-- extend `hybrid_structure_mine` expand path for large windows / sample subsets.
+~~Structure-mine from Bonsai residual needs either:~~
+- ~~window width ≤16 for expand labeling, or~~
+- ~~extend `hybrid_structure_mine` expand path for large windows / sample subsets.~~
+
+Fixed: `hybrid_structure_mine` now samples up to `expand_cap` (default 64,
+`CNET_STRUCTURE_EXPAND_N`) rows spread across the window instead of only the
+first 16 slots — `src/hybrid_ai.c:388-403`, `label_expand_rows` at `:313-357`.
+W=256 Bonsai traces no longer skip expand labeling.
+
+The live blocker is upstream of this: the mine trains on a **synthetic one-hot
+basis** rather than real traffic, because traces keep one overwritten exemplar
+per port shape (`src/hybrid_ai.c:281-282`). See
+`plans/cnet_own_learning_path_20260726.md` (B2).
 
 ## Run
 

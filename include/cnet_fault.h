@@ -79,6 +79,15 @@ void cnet_fault_mirror_labeled(const char *unit, const double *input,
                                const double *target, int in_dim, int out_dim,
                                const char *source_name);
 
+/* As above, but the caller names label_kind ("argmax" | "residual" | "text")
+ * and note. Used by the Tier-C organic capture so a residual-taught row is
+ * distinguishable from a synthetic seeder row by provenance alone. NULL/empty
+ * label_kind or note fall back to the mirror_labeled defaults. */
+void cnet_fault_mirror_kind(const char *unit, const double *input,
+                            const double *target, int in_dim, int out_dim,
+                            const char *source_name, const char *label_kind,
+                            const char *note);
+
 #ifdef __cplusplus
 }
 #endif

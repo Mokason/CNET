@@ -50,6 +50,7 @@ typedef struct {
     size_t residual_hits;
     size_t abstains;
     size_t teaches;
+    size_t residual_captures; /* Tier-C pairs offered to the fault bus */
 } PersonalAiReport;
 
 typedef struct {
@@ -135,6 +136,16 @@ CNET_API int personal_ai_distill_plan(PersonalAi *ai, const RoutePlan *plan,
 
 CNET_API void personal_ai_close(PersonalAi *ai);
 CNET_API void personal_ai_totals(const PersonalAi *ai, PersonalAiReport *out);
+
+/* Own-learning KPI as one JSON line. The scoreboard for "is CNET actually
+ * displacing the residual": substitution_rate up, residual_rate down, read
+ * jointly with abstain_rate so a drop in residual_rate cannot be bought by
+ * abstaining more. Returns bytes written, or negative on error/truncation. */
+CNET_API int personal_ai_kpi_json(const PersonalAi *ai, char *out,
+                                  size_t out_capacity);
+
+/* Write personal_ai_kpi_json to path (truncating). Returns 0 or negative. */
+CNET_API int personal_ai_kpi_write(const PersonalAi *ai, const char *path);
 CNET_API const char *personal_ai_source_name(PersonalAiSource s);
 
 /* Access hybrid counters. */
