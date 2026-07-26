@@ -245,6 +245,14 @@ CNET_API int hybrid_coverage_admits(const HybridAi *h, Port in_port,
 CNET_API size_t hybrid_coverage_rows(const HybridAi *h, Port in_port,
                                      Port out_port);
 
+/* S7 durability: coverage lives beside the base as <base>.coverage, because an
+ * in-memory-only gate lapses on the one process that matters — the long-running
+ * lane. Saved after every successful mine, reloaded on open. Text with %.17g so
+ * doubles round-trip bit-exactly (membership is an exact match). Returns 0 on
+ * success; load returns 0 when the file is simply absent (nothing mined yet). */
+CNET_API int hybrid_coverage_save(const HybridAi *h, const char *path);
+CNET_API int hybrid_coverage_load(HybridAi *h, const char *path);
+
 /* Hermetic residual: maps one-hot input → rotated one-hot (open-ended stand-in). */
 CNET_API int hybrid_hermetic_residual(const double *in, double *out, void *ctx);
 

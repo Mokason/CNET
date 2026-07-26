@@ -54,6 +54,29 @@ static int residual_capture(Port input_port, Port goal_port,
     return 1;
 }
 
+/* S7: coverage travels beside the base, like the gap ledger and curiosity
+   state. Returns 0 and fills out on success. */
+static int coverage_path(const PersonalAi *ai, char *out, size_t cap) {
+    static const char suffix[] = ".coverage";
+    size_t n;
+    if (!ai || !out || !ai->lane.base_path[0]) return -1;
+    n = strlen(ai->lane.base_path);
+    if (n + sizeof suffix > cap) return -1;
+    memcpy(out, ai->lane.base_path, n);
+    memcpy(out + n, suffix, sizeof suffix);
+    return 0;
+}
+
+/* Persist after a successful mine so a restart cannot silently drop the gate.
+   Best-effort: a write failure must not fail the serve that triggered it, but
+   it is reported because the protection is weaker until the next mine. */
+static void coverage_persist(const PersonalAi *ai) {
+    char path[512];
+    if (coverage_path(ai, path, sizeof path) != 0) return;
+    if (hybrid_coverage_save(&ai->hybrid, path) != 0)
+        fprintf(stderr, "personal_ai: could not write coverage to %s\n", path);
+}
+
 /* S6: may Tier A claim this input? Off only by explicit operator override —
    the default is safe, because the failure it prevents (a confident wrong
    answer replacing a correct teacher one) is invisible to the residual_rate
@@ -239,6 +262,14 @@ int personal_ai_open(PersonalAi *ai, const char *base_path,
     }
 
     hybrid_ai_init(&ai->hybrid);
+    /* Rehydrate certified coverage before anything can serve: a mined unit
+       reloaded from the base with no coverage record would default-allow, and
+       the confident-wrong answers S6 blocks would come straight back. */
+    {
+        char path[512];
+        if (coverage_path(ai, path, sizeof path) == 0)
+            (void)hybrid_coverage_load(&ai->hybrid, path);
+    }
     ai->owned_residual = NULL;
     ai->owned_residual_http = NULL;
     ai->loaded = 1;
@@ -525,8 +556,8 @@ int personal_ai_tick(PersonalAi *ai, GapLaneTickReport *tick_rep) {
     /* P5: structure mine only if residual traces exist (skip empty scan). */
     if (ai->hybrid.trace_count > 0) {
         BinaryTransformNetwork *stu = NULL;
-        if (hybrid_structure_mine(&ai->hybrid, &ai->lane.reg,
-                                  ai->policy.structure_min_hits, &stu) == 0) {
+        /* Via the wrapper so the tick path persists coverage too. */
+        if (personal_ai_structure_mine(ai, &stu) == 0) {
             (void)stu;
             (void)gap_lane_checkpoint(&ai->lane);
         }
@@ -574,9 +605,14 @@ int personal_ai_tick(PersonalAi *ai, GapLaneTickReport *tick_rep) {
 
 int personal_ai_structure_mine(PersonalAi *ai,
                                BinaryTransformNetwork **student_out) {
+    int rc;
     if (!ai || !ai->loaded) return -1;
-    return hybrid_structure_mine(&ai->hybrid, &ai->lane.reg,
-                                 ai->policy.structure_min_hits, student_out);
+    rc = hybrid_structure_mine(&ai->hybrid, &ai->lane.reg,
+                               ai->policy.structure_min_hits, student_out);
+    /* A newly admitted unit brings a new certified domain with it — write it
+       out now, so a restart before the next mine cannot lose the gate. */
+    if (rc == 0) coverage_persist(ai);
+    return rc;
 }
 
 int personal_ai_distill_plan(PersonalAi *ai, const RoutePlan *plan,

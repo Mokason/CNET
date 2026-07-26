@@ -117,15 +117,17 @@ static int run_arm(int consolidate, int capture_all, const char *tag,
     Port pin = PMF("sub_in", FW, FC);
     Port pout = PMF("sub_out", OUT_DIM, 1);
     double in[FW * FC], out[OUT_DIM];
-    char base[128], led[128];
+    char base[128], led[128], cov[160];
     const HybridAi *h;
     size_t idx;
 
     memset(res, 0, sizeof *res);
     snprintf(base, sizeof base, "tmp_subbench_%s.cnb", tag);
     snprintf(led, sizeof led, "tmp_subbench_%s.gaps.txt", tag);
+    snprintf(cov, sizeof cov, "%s.coverage", base);
     remove(base);
     remove(led);
+    remove(cov);
 
     ctx.fw = FW;
     ctx.fc = FC;
@@ -202,6 +204,7 @@ static int run_arm(int consolidate, int capture_all, const char *tag,
     personal_ai_close(&ai);
     remove(base);
     remove(led);
+    remove(cov);
     return 0;
 }
 

@@ -212,6 +212,128 @@ size_t hybrid_coverage_rows(const HybridAi *h, Port in_port, Port out_port) {
     return c ? c->n_rows : 0;
 }
 
+/* Port tags are identifiers at every call site; whitespace would break the
+   token-based reader, so fold it rather than emit a file we cannot parse back.
+   Empty tags travel as "~" (a wildcard tag is meaningful — see port_compatible). */
+static void coverage_tag_out(const char *tag, char *out, size_t cap) {
+    size_t i;
+    if (!tag || !tag[0]) {
+        snprintf(out, cap, "~");
+        return;
+    }
+    snprintf(out, cap, "%s", tag);
+    for (i = 0; out[i]; i++)
+        if (out[i] == ' ' || out[i] == '\t' || out[i] == '\n') out[i] = '_';
+}
+
+static void coverage_tag_in(const char *tok, char *out, size_t cap) {
+    if (!strcmp(tok, "~")) {
+        out[0] = '\0';
+        return;
+    }
+    snprintf(out, cap, "%s", tok);
+}
+
+int hybrid_coverage_save(const HybridAi *h, const char *path) {
+    FILE *fp;
+    size_t i, r, j;
+    if (!h || !path || !path[0]) return -1;
+    fp = fopen(path, "w");
+    if (!fp) return -2;
+    fprintf(fp, "CNET_COVERAGE v1\n");
+    for (i = 0; i < h->coverage_count; i++) {
+        const HybridCoverage *c = &h->coverage[i];
+        char itag[PORT_TAG_MAX + 4], gtag[PORT_TAG_MAX + 4];
+        if (!c->active || !c->rows) continue;
+        coverage_tag_out(c->input_port.tag, itag, sizeof itag);
+        coverage_tag_out(c->goal_port.tag, gtag, sizeof gtag);
+        fprintf(fp, "U %zu %zu %d %zu %zu %d %zu %zu %s %s %s\n",
+                c->n_rows, c->in_dim, (int)c->input_port.family,
+                c->input_port.field_width, c->input_port.field_count,
+                (int)c->goal_port.family, c->goal_port.field_width,
+                c->goal_port.field_count, itag, gtag,
+                c->unit[0] ? c->unit : "~");
+        for (r = 0; r < c->n_rows; r++) {
+            fputc('R', fp);
+            for (j = 0; j < c->in_dim; j++)
+                fprintf(fp, " %.17g", c->rows[r * c->in_dim + j]);
+            fputc('\n', fp);
+        }
+    }
+    if (fflush(fp) != 0) {
+        fclose(fp);
+        return -3;
+    }
+    if (fclose(fp) != 0) return -3;
+    return 0;
+}
+
+int hybrid_coverage_load(HybridAi *h, const char *path) {
+    FILE *fp;
+    char tok[64];
+    int ver = 0;
+    if (!h || !path || !path[0]) return -1;
+    fp = fopen(path, "r");
+    if (!fp) return 0; /* nothing mined yet is not an error */
+    if (fscanf(fp, "%15s v%d", tok, &ver) != 2 ||
+        strcmp(tok, "CNET_COVERAGE") != 0 || ver != 1) {
+        fclose(fp);
+        fprintf(stderr, "hybrid: unreadable coverage file %s — mined units "
+                        "will default-allow until the next mine\n", path);
+        return -4;
+    }
+    for (;;) {
+        size_t n_rows, in_dim, iw, ic, gw, gc, r, j;
+        int ifam, gfam;
+        char itag[PORT_TAG_MAX], gtag[PORT_TAG_MAX], unit[80];
+        Port pin, pout;
+        double *rows;
+        if (fscanf(fp, " %15s", tok) != 1) break; /* clean EOF */
+        if (strcmp(tok, "U") != 0) break;
+        if (fscanf(fp, " %zu %zu %d %zu %zu %d %zu %zu %31s %31s %79s",
+                   &n_rows, &in_dim, &ifam, &iw, &ic, &gfam, &gw, &gc,
+                   itag, gtag, unit) != 11)
+            break;
+        if (n_rows == 0 || in_dim == 0 || in_dim > 1u << 20 ||
+            n_rows > 1u << 20 || n_rows > SIZE_MAX / in_dim)
+            break;
+        rows = (double *)calloc(n_rows * in_dim, sizeof(double));
+        if (!rows) break;
+        for (r = 0; r < n_rows; r++) {
+            if (fscanf(fp, " %15s", tok) != 1 || strcmp(tok, "R") != 0) {
+                free(rows);
+                rows = NULL;
+                break;
+            }
+            for (j = 0; j < in_dim; j++) {
+                if (fscanf(fp, " %lf", &rows[r * in_dim + j]) != 1) {
+                    free(rows);
+                    rows = NULL;
+                    break;
+                }
+            }
+            if (!rows) break;
+        }
+        if (!rows) break;
+        memset(&pin, 0, sizeof pin);
+        memset(&pout, 0, sizeof pout);
+        pin.family = (PortFamily)ifam;
+        pin.field_width = iw;
+        pin.field_count = ic;
+        coverage_tag_in(itag, pin.tag, sizeof pin.tag);
+        pout.family = (PortFamily)gfam;
+        pout.field_width = gw;
+        pout.field_count = gc;
+        coverage_tag_in(gtag, pout.tag, sizeof pout.tag);
+        (void)hybrid_coverage_record(h, pin, pout,
+                                     strcmp(unit, "~") ? unit : "restored",
+                                     rows, n_rows, in_dim);
+        free(rows);
+    }
+    fclose(fp);
+    return 0;
+}
+
 size_t hybrid_reservoir_rows(const HybridAi *h) {
     size_t i, n = 0;
     if (!h) return 0;

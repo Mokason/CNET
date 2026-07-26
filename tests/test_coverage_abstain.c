@@ -30,6 +30,8 @@
 #include "../include/hybrid_ai.h"
 #include "../include/nn.h"
 #include "../include/router.h"
+#include "../include/base.h"
+#include "../include/contract/contract.h"
 
 #define FW 4
 #define FC 2
@@ -81,10 +83,13 @@ static void encode_pair(double *in, size_t a, size_t b) {
 
 static int is_heldout(size_t i) { return i == 3 || i == 6 || i == 9 || i == 12; }
 
-/* Capture 12 of 16 pairs, mine, then replay everything. */
-static int build_and_replay(PersonalAi *ai, ResCtx *ctx, const char *tag,
-                            size_t *heldout_local, size_t *heldout_correct,
-                            size_t *heldout_residual, size_t *abstains) {
+/* Open an instance on a named base, optionally capturing+mining first, then
+ * replay the whole domain. reopen=1 skips capture/mine so the run exercises
+ * only what survived on disk. */
+static int build_and_replay_ex(PersonalAi *ai, ResCtx *ctx, const char *tag,
+                               int reopen, int seal,
+                               size_t *heldout_local, size_t *heldout_correct,
+                               size_t *heldout_residual, size_t *abstains) {
     PersonalAiPolicy pol;
     PersonalAiReport rep;
     Port pin = PMF("cov_in", FW, FC), pout = PMF("cov_out", OUT_DIM, 1);
@@ -95,8 +100,10 @@ static int build_and_replay(PersonalAi *ai, ResCtx *ctx, const char *tag,
 
     snprintf(base, sizeof base, "tmp_cov_%s.cnb", tag);
     snprintf(led, sizeof led, "tmp_cov_%s.gaps.txt", tag);
-    remove(base);
-    remove(led);
+    if (!reopen) {
+        remove(base);
+        remove(led);
+    }
 
     personal_ai_policy_defaults(&pol);
     pol.allow_teacher = 0;
@@ -108,13 +115,44 @@ static int build_and_replay(PersonalAi *ai, ResCtx *ctx, const char *tag,
     ai->lane.acq.min_evidence = 1;
     if (personal_ai_bind_residual(ai, "addmod", res_addmod, ctx) != 0) return -1;
 
-    for (idx = 0; idx < DOMAIN; idx++) {
-        if (is_heldout(idx)) continue;
-        encode_pair(in, idx / FW, idx % FW);
-        memset(&rep, 0, sizeof rep);
-        (void)personal_ai_serve(ai, pin, pout, in, IN_DIM, out, OUT_DIM, &rep);
+    if (!reopen) {
+        for (idx = 0; idx < DOMAIN; idx++) {
+            if (is_heldout(idx)) continue;
+            encode_pair(in, idx / FW, idx % FW);
+            memset(&rep, 0, sizeof rep);
+            (void)personal_ai_serve(ai, pin, pout, in, IN_DIM, out, OUT_DIM,
+                                    &rep);
+        }
+        if (personal_ai_structure_mine(ai, &stu) != 0) return -2;
+        /* Durably seal the mined unit the way the live serve path does
+           (soul_host structure seal: student self-labels + cnb_add_unit), so
+           the reopened base really does hold a mined unit for coverage to
+           gate. personal_ai's own mine path admits to the registry only. */
+        if (seal && stu) {
+            double si[DOMAIN * IN_DIM], st[DOMAIN * OUT_DIM];
+            Contract c;
+            size_t n = 0;
+            for (idx = 0; idx < DOMAIN; idx++) {
+                if (is_heldout(idx)) continue;
+                encode_pair(si + n * IN_DIM, idx / FW, idx % FW);
+                /* Seal against the teacher labels the unit was certified on —
+                   the same rows the coverage record holds. Raw btn_forward
+                   output is not canonical for the port and the contract
+                   rightly refuses it. */
+                res_addmod(si + n * IN_DIM, st + n * OUT_DIM, ctx);
+                n++;
+            }
+            memset(&c, 0, sizeof c);
+            if (contract_init_borrowed(&c, "hyb_struct_0", stu, si, st, n) != 0)
+                return -5;
+            if (cnb_add_unit(&ai->lane.base, stu, &c, NULL) != 0) {
+                contract_free(&c);
+                return -6;
+            }
+            contract_free(&c);
+        }
+        if (gap_lane_checkpoint(&ai->lane) != 0) return -3;
     }
-    if (personal_ai_structure_mine(ai, &stu) != 0) return -2;
 
     *heldout_local = *heldout_correct = *heldout_residual = *abstains = 0;
     for (idx = 0; idx < DOMAIN; idx++) {
@@ -133,6 +171,13 @@ static int build_and_replay(PersonalAi *ai, ResCtx *ctx, const char *tag,
         if (truth[am] > 0.5) (*heldout_correct)++;
     }
     return 0;
+}
+
+static int build_and_replay(PersonalAi *ai, ResCtx *ctx, const char *tag,
+                            size_t *heldout_local, size_t *heldout_correct,
+                            size_t *heldout_residual, size_t *abstains) {
+    return build_and_replay_ex(ai, ctx, tag, 0, 0, heldout_local,
+                               heldout_correct, heldout_residual, abstains);
 }
 
 int main(void) {
@@ -202,7 +247,72 @@ int main(void) {
     personal_ai_close(&ai);
     unsetenv("CNET_COVERAGE_ABSTAIN");
 
-    /* ---- 5. PORT_RAW is not gated (documented limit) -------------------- */
+    /* ---- 5. S7: the gate survives a restart ----------------------------- */
+    {
+        int rc = build_and_replay_ex(&ai, &ctx, "rt", 0, 1, &hl, &hc, &hr, &ab);
+        if (rc != 0) printf("      build_and_replay_ex(seal) rc=%d\n", rc);
+        check(rc == 0, "S7: capture 12/16, mine, durable seal, checkpoint");
+    }
+    check(ab == 4, "S7: gate holds in the original process");
+    personal_ai_close(&ai);
+    {
+        FILE *fp = fopen("tmp_cov_rt.cnb.coverage", "r");
+        check(fp != NULL, "S7: coverage persisted beside the base");
+        if (fp) {
+            char hdr[32] = {0};
+            check(fgets(hdr, sizeof hdr, fp) != NULL &&
+                      strncmp(hdr, "CNET_COVERAGE v1", 16) == 0,
+                  "S7: sidecar carries a versioned header");
+            fclose(fp);
+        }
+    }
+    /* Reopen the same base — no capture, no mine. Whatever gates now came off
+       disk, exactly as it would after a lane restart. */
+    check(build_and_replay_ex(&ai, &ctx, "rt", 1, 0, &hl, &hc, &hr, &ab) == 0,
+          "S7: reopen base without re-mining");
+    check(hybrid_coverage_rows(personal_ai_hybrid(&ai), pin, pout) == 12,
+          "S7: 12 certified rows restored from disk");
+    check(hl == 0, "S7: still no held-out input answered from own weights");
+    check(ab == 4, "S7: coverage abstains survive the restart");
+    check(hr == 4, "S7: teacher still answers the declined requests");
+    check(hc == 4, "S7: held-out still CORRECT 4/4 after restart");
+    {
+        PersonalAiReport tot;
+        personal_ai_totals(&ai, &tot);
+        check(tot.local_hits >= 12,
+              "S7: in-coverage traffic still served locally after restart");
+    }
+    personal_ai_close(&ai);
+
+    /* Bit-exactness: membership is memcmp, so a lossy round-trip would
+       silently abstain on inputs that ARE covered. */
+    {
+        PersonalAi a2;
+        double seen[IN_DIM];
+        check(build_and_replay_ex(&a2, &ctx, "rt", 1, 0, &hl, &hc, &hr, &ab) == 0,
+              "S7: second reopen");
+        encode_pair(seen, 0, 0);
+        check(hybrid_coverage_admits(personal_ai_hybrid(&a2), pin, pout, seen,
+                                     IN_DIM) == 1,
+              "S7: restored rows match bit-exactly (%.17g round-trip)");
+        personal_ai_close(&a2);
+    }
+
+    /* The sidecar is what carries the gate across the restart: delete it,
+       reopen the same base (unit still sealed in the CNB), and the confident
+       wrong answers come straight back. */
+    {
+        PersonalAi a3;
+        check(remove("tmp_cov_rt.cnb.coverage") == 0, "S7: remove sidecar only");
+        check(build_and_replay_ex(&a3, &ctx, "rt", 1, 0, &hl, &hc, &hr, &ab) == 0,
+              "S7: reopen with unit but no coverage file");
+        check(ab == 0, "S7: no coverage restored => no abstains");
+        check(hl == 4, "S7: unit answers all held-out itself again");
+        check(hc == 0, "S7: and gets all 4 WRONG — the sidecar is load-bearing");
+        personal_ai_close(&a3);
+    }
+
+    /* ---- 6. PORT_RAW is not gated (documented limit) -------------------- */
     {
         HybridAi h;
         Port rin, rout;
@@ -226,8 +336,13 @@ int main(void) {
 
     remove("tmp_cov_on.cnb");
     remove("tmp_cov_on.gaps.txt");
+    remove("tmp_cov_on.cnb.coverage");
     remove("tmp_cov_off.cnb");
     remove("tmp_cov_off.gaps.txt");
+    remove("tmp_cov_off.cnb.coverage");
+    remove("tmp_cov_rt.cnb");
+    remove("tmp_cov_rt.gaps.txt");
+    remove("tmp_cov_rt.cnb.coverage");
 
     printf("checks=%d failures=%d\n", checks, failures);
     if (failures == 0) {

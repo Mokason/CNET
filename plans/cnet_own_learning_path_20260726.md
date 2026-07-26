@@ -282,7 +282,7 @@ Emitted to `logs/own_learning_kpi.json`; the first four are the scoreboard.
 | **S2** | Reservoir of K real inputs per port shape | "real traffic is too sparse/heterogeneous to train on" | ✅ **shipped** — `make residual_reservoir` |
 | **S3** | Replay bench: residual_rate before/after a cycle | **"certified units actually displace residual calls"** — the core claim | ✅ **confirmed** (§10 E1); limit measured (§10 E2) |
 | **S6** | Coverage-gated abstention: a unit abstains outside certified coverage | "CNET can refuse to answer what it did not learn" — closes §10 E2 | ✅ **shipped** — `make coverage_abstain`, §11 |
-| **S7** | Persist coverage into the CNB so it survives a lane restart | "the S6 protection is durable, not process-local" | **next, highest value** |
+| **S7** | Persist coverage so it survives a lane restart | "the S6 protection is durable, not process-local" | ✅ **shipped** — `<base>.coverage`, §12 |
 | **S4** | Sleep graduates one real BTN unit | "consolidation can change serve behaviour" | 90d |
 | **S5** | Graded floor for one binary capability | "certs can measure improvement, not just breakage" | 90d |
 
@@ -366,12 +366,15 @@ an error every row, forcing a fallback — correct by luck, now correct by const
 
 ## 9. First concrete next step
 
-**S7 — persist certified coverage.** S6 (§11) closed the confident-wrong hole, but coverage
-lives in `HybridAi` memory only. A mined unit reloaded from the CNB after a lane restart has
-no coverage record and default-allows, so the protection silently lapses exactly where it
-matters most — the long-running deployed learner. Files to touch: `src/base.c` /
-`src/library.c` (persist the certified input set beside the unit), `src/hybrid_ai.c`
-(rehydrate on load), and a restart round-trip assertion in `make coverage_abstain`.
+**S8 — make `personal_ai`'s mine path seal durably.** §12 found that
+`hybrid_structure_mine` admits into the registry only; nothing calls `cnb_add_unit`, so a unit
+mined through `personal_ai` is process-local and lost on restart. `soul_host` carries a
+separate seal for this (`src/soul_host.c:621`) — and it seals against raw `btn_forward`
+output, which fails `contract_slice_valid` because the student's raw vector is not canonical
+for the port, then silently returns 0 ("durable seal optional"). So mined units may not be
+persisting in production at all. Verify that first, then give the mine path one seal both
+callers share, canonicalising labels to the port. Gate: extend `make coverage_abstain`'s
+round-trip to mine → restart → unit present *without* the test doing the sealing.
 
 ---
 
@@ -454,3 +457,79 @@ again. The gate is demonstrably the thing doing the work, not an incidental chan
 healthy loop shows residual_rate falling *while* coverage_abstains stays proportional to
 genuinely novel traffic. Coverage abstains climbing toward the serve count means the mined
 library has gone stale relative to what users are asking.
+
+---
+
+## 12. S7 result (2026-07-26) — the gate survives a restart
+
+`make coverage_abstain` → `COVERAGE_ABSTAIN_PASS checks=36 heldout_correct=4/4 was=0/4`
+
+S6 protected a running process. The deployed lane runs for days with
+`CNET_PERSONAL_STRUCTURE_MINE_ON_SERVE=1`, so a gate that lapses on restart is a gate that
+lapses exactly where it matters.
+
+### Mechanism
+
+Coverage travels beside the base as **`<base>.coverage`**, the same sidecar convention already
+used by `<base>.gaps.txt`, `<base>.inbox`, `<base>.curiosity` and `<base>.evidence.jsonl`.
+Written on every successful mine (`personal_ai_structure_mine`, which the tick path now also
+routes through), reloaded in `personal_ai_open` **before anything can serve**. Text format
+with `%.17g` so doubles round-trip bit-exactly — membership is a `memcmp`, and a lossy
+round-trip would silently abstain on inputs that *are* covered. The gate asserts that
+bit-exactness directly.
+
+CNB-native was considered and rejected: the coverage set belongs to a *mined* unit, the CNB
+unit record has no field for a certified input domain, and widening the on-disk format would
+version every existing base for a property only mined units carry. The sidecar reloads with
+the base and costs nothing when absent.
+
+### Round-trip evidence
+
+The gate seals the mined unit durably the way the live path does (`soul_host` structure seal:
+`cnb_add_unit` + checkpoint), closes, and reopens the same base:
+
+```
+S7: 12 certified rows restored from disk                       PASS
+S7: coverage abstains survive the restart                      PASS   (4)
+S7: in-coverage traffic still served locally after restart     PASS   (>=12 local hits)
+S7: held-out still CORRECT 4/4 after restart                   PASS
+S7: restored rows match bit-exactly (%.17g round-trip)         PASS
+```
+
+And the negative control that proves the sidecar is the thing doing the work — delete only
+the coverage file, reopen the same base with the unit still sealed in the CNB:
+
+```
+S7: no coverage restored => no abstains                        PASS   (0)
+S7: unit answers all held-out itself again                     PASS   (4/4)
+S7: and gets all 4 WRONG — the sidecar is load-bearing         PASS   (0/4 correct)
+```
+
+### Found en route: personal_ai's mine path never sealed durably
+
+`hybrid_structure_mine` admits into the `PrimitiveRegistry` only; nothing calls `cnb_add_unit`.
+`gap_lane_checkpoint` saves `L->base`, which the mined unit was never added to — so a unit
+mined through `personal_ai` is **process-local and lost on restart**. This is why `soul_host`
+carries its own separate structure seal (`src/soul_host.c:621`, student self-labels +
+`cnb_add_unit`, commented "durable seal optional").
+
+Not fixed here — it is a behaviour change to the mine path, not a safety hole, and S7's job
+was the gate. Recorded as **S8**. Note the interaction: while mined units are process-local,
+a restart loses the unit *and* the risk with it; the dangerous configuration is precisely the
+one `soul_host` creates, which is what §12's round-trip reproduces.
+
+One detail worth keeping: sealing against raw `btn_forward` output fails
+`contract_slice_valid` — the student's raw vector is not canonical for the port. The gate
+seals against the teacher labels the unit was certified on, which are canonical by
+construction and are the same rows the coverage record holds. `soul_host`'s self-label seal
+is likely failing the same way in production and silently returning 0 ("durable seal
+optional") — worth checking under S8.
+
+### Remaining limits (unchanged from §11 unless noted)
+
+- **Corrupt/absent sidecar fails open**, logging to stderr. Fail-closed is not possible
+  without knowing which shapes were mined — which is what the file itself carries.
+- `PORT_RAW` ungated; exact-match only; `HYBRID_COVERAGE_MAX` 8 shapes; MoE hard-expert
+  branch ungated. All as §11.
+- The sidecar is **not** written atomically (no temp+rename); a crash mid-write can truncate
+  it, which degrades to fail-open on next load.
