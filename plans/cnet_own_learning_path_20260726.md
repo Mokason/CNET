@@ -2,7 +2,7 @@
 
 **Repo:** `/home/marble/AI/CNET` @ `7d19354`
 **Baseline verified this session:** `HYBRID_AI_PASS checks=21`, `CAPABILITY_CERT_PASS certified=5/5`.
-**Do not push.** Local commits OK when green.
+**Status:** M1–M4 + S6/S7 shipped and pushed to `origin/master` (2026-07-26). Next: S8 (§12).
 
 ---
 
