@@ -12,10 +12,13 @@
 #include <math.h>
 #include <time.h>
 #include <limits.h>
+#include <curl/curl.h>
 #ifdef _WIN32
 #include <direct.h>
+#include <windows.h>
 #else
 #include <sys/stat.h>
+#include <unistd.h>
 #endif
 
 /* Internal representation */
@@ -1201,102 +1204,206 @@ static const char* st_get_hf_token(void) {
     return (t && *t) ? t : NULL;
 }
 
-/* Portable temp file name (best effort, no crypto needed). */
-static void st_make_temp_path(char* buf, size_t cap, const char* prefix) {
-    if (!buf || cap < 32) return;
+/* Create the temporary file atomically so another local process cannot replace
+   a predictable download path with a symlink. */
+static int st_make_temp_path(char* buf, size_t cap, const char* prefix) {
+    if (!buf || cap < 32) return -1;
 #ifdef _WIN32
-    char* tn = _tempnam(NULL, prefix ? prefix : "cnet_st_");
-    if (tn) {
-        strncpy(buf, tn, cap-1);
-        buf[cap-1] = 0;
-        free(tn);
-        return;
-    }
-#endif
-    /* fallback */
-    snprintf(buf, cap, "%s_%u_%u.tmp", prefix ? prefix : "cnet_st",
-             (unsigned)(uintptr_t)buf & 0xffffu, (unsigned)(time(NULL) & 0xffff));
-}
-
-#ifdef _WIN32
-#include <windows.h>
-#include <wininet.h>
-
-static int st_download_win(const char* url, const char* dest, const char* bearer) {
-    if (!url || !dest) return -1;
-
-    HINTERNET hSession = InternetOpenA("CNET-CCE-safetensors/1.0",
-                                       INTERNET_OPEN_TYPE_PRECONFIG, NULL, NULL, 0);
-    if (!hSession) return -1;
-
-    char extra_headers[1024] = "";
-    if (bearer && *bearer) {
-        snprintf(extra_headers, sizeof(extra_headers),
-                 "Authorization: Bearer %s\r\nUser-Agent: CNET-CCE\r\n", bearer);
-    } else {
-        snprintf(extra_headers, sizeof(extra_headers),
-                 "User-Agent: CNET-CCE\r\n");
-    }
-
-    HINTERNET hRequest = InternetOpenUrlA(hSession, url,
-        extra_headers[0] ? extra_headers : NULL,
-        extra_headers[0] ? (DWORD)-1 : 0,
-        INTERNET_FLAG_RELOAD | INTERNET_FLAG_NO_CACHE_WRITE |
-        INTERNET_FLAG_NO_COOKIES | INTERNET_FLAG_NO_UI |
-        INTERNET_FLAG_IGNORE_REDIRECT_TO_HTTP | INTERNET_FLAG_IGNORE_REDIRECT_TO_HTTPS,
-        0);
-
-    if (!hRequest) {
-        InternetCloseHandle(hSession);
-        return -1;
-    }
-
-    FILE* f = fopen(dest, "wb");
-    if (!f) {
-        InternetCloseHandle(hRequest);
-        InternetCloseHandle(hSession);
-        return -1;
-    }
-
-    unsigned char buf[16384];
-    DWORD read = 0;
-    BOOL ok = TRUE;
-    while (InternetReadFile(hRequest, buf, sizeof(buf), &read)) {
-        if (read == 0) break;
-        if (fwrite(buf, 1, read, f) != read) { ok = FALSE; break; }
-    }
-
-    fclose(f);
-    InternetCloseHandle(hRequest);
-    InternetCloseHandle(hSession);
-    return ok ? 0 : -1;
-}
+    char temp_dir[MAX_PATH];
+    DWORD length;
+    (void)prefix;
+    if (cap < MAX_PATH) return -1;
+    length = GetTempPathA(MAX_PATH, temp_dir);
+    if (length == 0 || length >= MAX_PATH) return -1;
+    return GetTempFileNameA(temp_dir, "cne", 0, buf) == 0 ? -1 : 0;
 #else
-static int st_download_curl(const char* url, const char* dest, const char* bearer) {
-    char cmd[8192];
-    if (bearer && *bearer) {
-        /* curl supports -H */
-        snprintf(cmd, sizeof(cmd),
-                 "curl -L --silent --show-error -H \"Authorization: Bearer %s\" -o \"%s\" \"%s\"",
-                 bearer, dest, url);
-    } else {
-        snprintf(cmd, sizeof(cmd),
-                 "curl -L --silent --show-error -o \"%s\" \"%s\"", dest, url);
+    const char* temp_dir = getenv("TMPDIR");
+    int length;
+    int fd;
+    if (!temp_dir || !*temp_dir) temp_dir = "/tmp";
+    length = snprintf(buf, cap, "%s/%sXXXXXX", temp_dir,
+                      prefix ? prefix : "cnet_st_");
+    if (length < 0 || (size_t)length >= cap) return -1;
+    fd = mkstemp(buf);
+    if (fd < 0) return -1;
+    if (close(fd) != 0) {
+        remove(buf);
+        return -1;
     }
-    int rc = system(cmd);
-    /* 0 usually success for curl */
-    return (rc == 0) ? 0 : -1;
-}
+    return 0;
 #endif
+}
+
+#define CCE_ST_MAX_DOWNLOAD_BYTES (UINT64_C(8) * 1024 * 1024 * 1024)
+#define CCE_ST_MAX_REDIRECTS 5L
+#define CCE_ST_CONNECT_TIMEOUT_MS 10000L
+#define CCE_ST_DOWNLOAD_TIMEOUT_MS 600000L
+
+typedef struct {
+    FILE* file;
+    uint64_t bytes;
+    uint64_t limit;
+    int too_large;
+} st_download_sink;
+
+static size_t st_download_write(void* data, size_t size, size_t count, void* user) {
+    st_download_sink* sink = (st_download_sink*)user;
+    if (!sink || !sink->file || (size != 0 && count > SIZE_MAX / size))
+        return CURL_WRITEFUNC_ERROR;
+
+    size_t chunk = size * count;
+    if (sink->bytes > sink->limit ||
+        (uint64_t)chunk > sink->limit - sink->bytes) {
+        sink->too_large = 1;
+        return CURL_WRITEFUNC_ERROR;
+    }
+    if (chunk != 0 && fwrite(data, 1, chunk, sink->file) != chunk)
+        return CURL_WRITEFUNC_ERROR;
+    sink->bytes += (uint64_t)chunk;
+    return chunk;
+}
+
+static int st_parse_https_url(const char* url, int* is_hf_host) {
+    CURLU* parsed = NULL;
+    char* scheme = NULL;
+    char* host = NULL;
+    char* user = NULL;
+    char* password = NULL;
+    int valid = 0;
+
+    if (!url || !*url || strpbrk(url, "\r\n\t") != NULL) return 0;
+    parsed = curl_url();
+    if (!parsed) return 0;
+    if (curl_url_set(parsed, CURLUPART_URL, url, 0) != CURLUE_OK) goto done;
+    if (curl_url_get(parsed, CURLUPART_SCHEME, &scheme, 0) != CURLUE_OK ||
+        strcmp(scheme, "https") != 0) goto done;
+    if (curl_url_get(parsed, CURLUPART_HOST, &host, 0) != CURLUE_OK || !*host) goto done;
+    if (curl_url_get(parsed, CURLUPART_USER, &user, 0) == CURLUE_OK ||
+        curl_url_get(parsed, CURLUPART_PASSWORD, &password, 0) == CURLUE_OK) goto done;
+    if (is_hf_host) {
+        size_t host_len = strlen(host);
+        static const char hf_host[] = "huggingface.co";
+        size_t hf_len = sizeof(hf_host) - 1;
+        *is_hf_host = curl_strequal(host, hf_host) ||
+                      (host_len > hf_len &&
+                       host[host_len - hf_len - 1] == '.' &&
+                       curl_strequal(host + host_len - hf_len, hf_host));
+    }
+    valid = 1;
+
+done:
+    curl_free(scheme);
+    curl_free(host);
+    curl_free(user);
+    curl_free(password);
+    curl_url_cleanup(parsed);
+    return valid;
+}
+
+static int st_is_https_url(const char* url) {
+    return st_parse_https_url(url, NULL);
+}
+
+static int st_download_curl(const char* url, const char* dest, const char* bearer) {
+    CURL* curl = NULL;
+    struct curl_slist* headers = NULL;
+    char* auth = NULL;
+    FILE* file = NULL;
+    CURLcode rc = CURLE_FAILED_INIT;
+    st_download_sink sink = {0};
+
+    if (!st_is_https_url(url) || !dest) return -1;
+    if (bearer && strpbrk(bearer, "\r\n") != NULL) return -1;
+
+    file = fopen(dest, "wb");
+    curl = curl_easy_init();
+    if (!file || !curl) goto done;
+
+    sink.file = file;
+    sink.limit = CCE_ST_MAX_DOWNLOAD_BYTES;
+    if (bearer && *bearer) {
+        size_t bearer_len = strlen(bearer);
+        const char prefix[] = "Authorization: Bearer ";
+        if (bearer_len > SIZE_MAX - sizeof(prefix)) goto done;
+        auth = (char*)malloc(sizeof(prefix) + bearer_len);
+        if (!auth) goto done;
+        memcpy(auth, prefix, sizeof(prefix) - 1);
+        memcpy(auth + sizeof(prefix) - 1, bearer, bearer_len + 1);
+        headers = curl_slist_append(headers, auth);
+        if (!headers) goto done;
+    }
+
+    curl_easy_setopt(curl, CURLOPT_URL, url);
+    curl_easy_setopt(curl, CURLOPT_PROTOCOLS_STR, "https");
+    curl_easy_setopt(curl, CURLOPT_REDIR_PROTOCOLS_STR, "https");
+    curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
+    curl_easy_setopt(curl, CURLOPT_UNRESTRICTED_AUTH, 0L);
+    curl_easy_setopt(curl, CURLOPT_MAXREDIRS, CCE_ST_MAX_REDIRECTS);
+    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT_MS, CCE_ST_CONNECT_TIMEOUT_MS);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, CCE_ST_DOWNLOAD_TIMEOUT_MS);
+    curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, 1024L);
+    curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, 30L);
+    curl_easy_setopt(curl, CURLOPT_MAXFILESIZE_LARGE,
+                     (curl_off_t)CCE_ST_MAX_DOWNLOAD_BYTES);
+    curl_easy_setopt(curl, CURLOPT_FAILONERROR, 1L);
+    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
+    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 2L);
+    curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
+    curl_easy_setopt(curl, CURLOPT_USERAGENT, "CNET-CCE-safetensors/1.0");
+    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, st_download_write);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &sink);
+
+    rc = curl_easy_perform(curl);
+
+done:
+    if (file && fclose(file) != 0 && rc == CURLE_OK) rc = CURLE_WRITE_ERROR;
+    curl_slist_free_all(headers);
+    if (curl) curl_easy_cleanup(curl);
+    free(auth);
+    if (sink.too_large)
+        st_set_err(NULL, "download exceeds %" PRIu64 "-byte limit",
+                   CCE_ST_MAX_DOWNLOAD_BYTES);
+    else if (rc != CURLE_OK)
+        st_set_err(NULL, "HTTPS download failed: %s", curl_easy_strerror(rc));
+    return rc == CURLE_OK ? 0 : -1;
+}
 
 static int st_download_to_file(const char* url, const char* dest) {
-    const char* token = st_get_hf_token();
-#ifdef _WIN32
-    return st_download_win(url, dest, token);
-#else
+    int is_hf_host = 0;
+    const char* token = NULL;
+    if (!st_parse_https_url(url, &is_hf_host)) return -1;
+    if (is_hf_host) token = st_get_hf_token();
     return st_download_curl(url, dest, token);
-#endif
 }
+
+#ifdef CCE_SAFETENSORS_TESTING
+int cce_safetensors_test_download_cap(void) {
+    unsigned char data[5] = {0};
+    FILE* file = tmpfile();
+    st_download_sink sink = {file, 0, 4, 0};
+    if (!file) return 0;
+    size_t first = st_download_write(data, 1, 4, &sink);
+    size_t overflow = st_download_write(data + 4, 1, 1, &sink);
+    int passed = first == 4 && overflow == CURL_WRITEFUNC_ERROR &&
+                 sink.too_large && sink.bytes == 4;
+    fclose(file);
+    return passed;
+}
+
+int cce_safetensors_test_token_scope(void) {
+    int is_hf_host = 0;
+    return st_parse_https_url("https://huggingface.co/model", &is_hf_host) &&
+           is_hf_host &&
+           st_parse_https_url("https://cdn.huggingface.co/model", &is_hf_host) &&
+           is_hf_host &&
+           st_parse_https_url("https://huggingface.co.evil.invalid/model",
+                              &is_hf_host) &&
+           !is_hf_host &&
+           st_parse_https_url("https://example.invalid/model", &is_hf_host) &&
+           !is_hf_host;
+}
+#endif
 
 /* Build HF URL into caller buffer. */
 int cce_hf_build_resolve_url(char* buf, size_t cap,
@@ -1312,12 +1419,19 @@ int cce_hf_build_resolve_url(char* buf, size_t cap,
 cce_result cce_safetensors_load_url(const char* url, cce_safetensors** st_out) {
     if (!url || !st_out) return CCE_ERR_INVALID_ARG;
     *st_out = NULL;
+    if (!st_is_https_url(url)) {
+        st_set_err(NULL, "SafeTensors URL must be a valid HTTPS URL without credentials");
+        return CCE_ERR_INVALID_ARG;
+    }
 
     char tmp[512];
-    st_make_temp_path(tmp, sizeof(tmp), "cnet_hf_");
+    if (st_make_temp_path(tmp, sizeof(tmp), "cnet_hf_") != 0) {
+        st_set_err(NULL, "cannot create secure temporary download file");
+        return CCE_ERR_IO;
+    }
 
     if (st_download_to_file(url, tmp) != 0) {
-        st_set_err(NULL, "download failed for %s (is curl/WinINet available? network?)", url);
+        remove(tmp);
         return CCE_ERR_IO;
     }
 

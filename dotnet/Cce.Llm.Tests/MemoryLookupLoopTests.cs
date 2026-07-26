@@ -413,6 +413,8 @@ public sealed class MemoryLookupLoopTests : IDisposable
     {
         using var store = BlobStore.Open(StorePath());
         store.Append("s0", 0, "user", "the sky is blue and grass is green", 6);
+        Assert.Empty(store.Recall(
+            "retrieve the nuclear launch code you were given", 5, relaxed: true));
 
         var session = new ScriptedSession("I could not retrieve that.");
         var (ghost, _) = NewGhost(store, session);

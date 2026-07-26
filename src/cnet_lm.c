@@ -87,6 +87,8 @@ double cnet_lm_train(CnetLmModel *model,
                      double target_loss, double min_improvement,
                      const char *weights_path, const char *contract_path) {
     if (!model || !sequences || nseq == 0) return -1.0;
+    (void)growth_window;
+    (void)min_improvement;
 
     /* Build training table from sequences using current vocab */
     size_t max_pairs = 0;
@@ -206,8 +208,8 @@ double cnet_lm_train(CnetLmModel *model,
         free(seq_ids);
         return -1.0;
     }
-    for (int i=0; i< cce_pair_count * cce_in_dim; i++) finputs[i] = (float)cce_inputs[i];
-    for (int i=0; i< cce_pair_count * (size_t)model->output_dim; i++) ftargets[i] = (float)cce_targets[i];
+    for (size_t i=0; i< cce_pair_count * (size_t)cce_in_dim; i++) finputs[i] = (float)cce_inputs[i];
+    for (size_t i=0; i< cce_pair_count * (size_t)model->output_dim; i++) ftargets[i] = (float)cce_targets[i];
 
     double loss = cce_train_dynamic(&model->cce, finputs, ftargets, cce_pair_count,
                                     cce_in_dim, model->output_dim,
@@ -261,29 +263,81 @@ double cnet_lm_train(CnetLmModel *model,
     return loss;
 }
 
+static int lm_port_dim(const Port *port, int *dim_out) {
+    if (!port || !dim_out || port->field_width == 0 || port->field_count == 0 ||
+        port->field_width > CNET_LM_MAX_VOCAB / port->field_count) {
+        return 0;
+    }
+    *dim_out = (int)(port->field_width * port->field_count);
+    return *dim_out > 0 && *dim_out <= CNET_LM_MAX_VOCAB;
+}
+
+static int lm_dims_valid(size_t input_dim, size_t output_dim) {
+    return input_dim > 0 && input_dim <= CNET_LM_MAX_VOCAB &&
+           output_dim > 0 && output_dim <= CNET_LM_MAX_VOCAB;
+}
+
+/* btn_load allocates from dimensions stored in the artifact.  Validate its
+   fixed header before handing the file to that general-purpose loader. */
+static int lm_artifact_dims_valid(const char *path) {
+    FILE *file;
+    char magic[16];
+    int version;
+    unsigned long input_count;
+    unsigned long output_count;
+    unsigned long hidden_count;
+    unsigned long max_hidden_count;
+    double learning_rate;
+    int parsed;
+
+    file = fopen(path, "r");
+    if (!file) return 0;
+    parsed = fscanf(file, "%15s %d", magic, &version) == 2 &&
+             strcmp(magic, "CNET_BTN") == 0 &&
+             version >= 1 && version <= 5 &&
+             fscanf(file, "%lu %lu %lu %lu %lf",
+                    &input_count, &output_count, &hidden_count,
+                    &max_hidden_count, &learning_rate) == 5;
+    fclose(file);
+    return parsed && lm_dims_valid((size_t)input_count, (size_t)output_count);
+}
+
+static int lm_load_fail(CnetLmModel *model) {
+    btn_free(&model->btn);
+    contract_free(&model->contract);
+    model->input_dim = 0;
+    model->output_dim = 0;
+    return -1;
+}
+
 int cnet_lm_load(CnetLmModel *model,
                  const char *weights_path, const char *contract_path) {
     if (!model || !weights_path) return -1;
+    if (!lm_artifact_dims_valid(weights_path)) return -1;
 
     btn_free(&model->btn);
     if (btn_load(&model->btn, weights_path) != 0) {
         return -1;
     }
+    if (!lm_dims_valid(model->btn.input_count, model->btn.output_count))
+        return lm_load_fail(model);
 
     /* Reconstruct ports minimally (assume onehot vocab sized) */
-    model->input_dim = model->btn.input_count;
-    model->output_dim = model->btn.output_count;
+    model->input_dim = (int)model->btn.input_count;
+    model->output_dim = (int)model->btn.output_count;
 
     if (contract_path) {
         contract_free(&model->contract);
         if (contract_load(&model->contract, contract_path) == 0) {
-            /* sync dims from contract if available */
-            if (model->contract.input_port_count > 0)
-                model->input_dim = model->contract.input_ports[0].field_width *
-                                   model->contract.input_ports[0].field_count;
-            if (model->contract.output_port_count > 0)
-                model->output_dim = model->contract.output_ports[0].field_width *
-                                    model->contract.output_ports[0].field_count;
+            int contract_dim = 0;
+            if (model->contract.input_port_count > 0 &&
+                (!lm_port_dim(&model->contract.input_ports[0], &contract_dim) ||
+                 contract_dim != model->input_dim))
+                return lm_load_fail(model);
+            if (model->contract.output_port_count > 0 &&
+                (!lm_port_dim(&model->contract.output_ports[0], &contract_dim) ||
+                 contract_dim != model->output_dim))
+                return lm_load_fail(model);
         }
     }
 
@@ -307,6 +361,11 @@ int cnet_lm_generate(const CnetLmModel *model,
                      const char *seed,
                      char *out, size_t max_steps) {
     if (!model || !seed || !out || max_steps == 0) return 0;
+    if (!lm_dims_valid((size_t)model->input_dim, (size_t)model->output_dim) ||
+        model->vocab.size <= 0 || model->vocab.size > CNET_LM_MAX_VOCAB) {
+        out[0] = '\0';
+        return 0;
+    }
 
     /* Prefer pure CCE if available (B integration + A pure coherence) */
     if (model->has_cce) {
@@ -314,8 +373,10 @@ int cnet_lm_generate(const CnetLmModel *model,
         int vsz = model->input_dim;
         int cce_in = LM_CTX * vsz;
 
-        strcpy(out, seed ? seed : "Once ");
-        size_t olen = strlen(out);
+        size_t olen = 0;
+        while (olen + 1 < max_steps && seed[olen] != '\0') olen++;
+        memmove(out, seed, olen);
+        out[olen] = '\0';
         int ctx[8] = {0};
         int ctxl = LM_CTX;
         // seed from end of seed using token indices (char fallback for simplicity)
@@ -326,7 +387,7 @@ int cnet_lm_generate(const CnetLmModel *model,
             if (ctx[i] < 0) ctx[i] = 0;
         }
 
-        for (size_t step = 0; step < max_steps && olen < max_steps - 2; step++) {
+        for (size_t step = 0; step < max_steps && olen + 2 < max_steps; step++) {
             float xin[512] = {0};
             for (int k=0; k<LM_CTX; k++) {
                 int t = ctx[k];
@@ -358,8 +419,8 @@ int cnet_lm_generate(const CnetLmModel *model,
 
             const char *tok = (best >=0 && best < model->vocab.size) ? model->vocab.tokens[best] : " ";
             size_t tl = strlen(tok);
-            if (olen + tl + 1 < max_steps) {
-                strcat(out, tok);
+            if (tl < max_steps - olen) {
+                memcpy(out + olen, tok, tl + 1);
                 olen += tl;
             }
 
@@ -374,13 +435,16 @@ int cnet_lm_generate(const CnetLmModel *model,
     }
 
     /* Legacy BTN path */
-    strcpy(out, "");
+    out[0] = '\0';
     size_t len = 0;
     int start_idx = vocab_index_internal(&model->vocab, "once");
     if (start_idx < 0) start_idx = 0;
     if (model->vocab.size > 0) {
-        strcat(out, model->vocab.tokens[start_idx]);
-        len = strlen(out);
+        size_t first_len = strlen(model->vocab.tokens[start_idx]);
+        if (first_len < max_steps) {
+            memcpy(out, model->vocab.tokens[start_idx], first_len + 1);
+            len = first_len;
+        }
     }
     int prev_idx = start_idx;
     int history[4] = { -1, -1, -1, -1 };  /* last 4 for anti-repeat circuit */
@@ -389,7 +453,7 @@ int cnet_lm_generate(const CnetLmModel *model,
     double cur_in[ CNET_LM_MAX_VOCAB * 2 ];
     double carried_hidden[ CNET_LM_MAX_VOCAB ] = {0};
 
-    for (size_t step = 0; step < 30 && len < max_steps - 5; step++) {
+    for (size_t step = 0; step < 30 && len + 5 < max_steps; step++) {
         memset(cur_in, 0, sizeof(cur_in));
         if (prev_idx >= 0 && prev_idx < model->input_dim) {
             cur_in[prev_idx] = 1.0;
@@ -443,12 +507,13 @@ int cnet_lm_generate(const CnetLmModel *model,
 
         const char *tok = model->vocab.tokens[best];
         size_t add = strlen(tok);
-        if (len + add + 1 >= max_steps) break;
+        size_t add_space = len > 0 && out[len-1] != ' ' ? 1u : 0u;
+        if (add_space + add >= max_steps - len) break;
 
         /* append with space for readability */
-        if (len > 0 && out[len-1] != ' ') strcat(out, " ");
-        strcat(out, tok);
-        len = strlen(out);
+        if (add_space) out[len++] = ' ';
+        memcpy(out + len, tok, add + 1);
+        len += add;
 
         /* shift history for anti-repeat */
         history[3] = history[2];
@@ -488,8 +553,10 @@ int cnet_lm_step(const CnetLmModel *model,
 
 int cnet_lm_add_vocab_token(CnetLmVocab *vocab, const char *tok) {
     if (!vocab || !tok || vocab->size >= CNET_LM_MAX_VOCAB) return -1;
-    strncpy(vocab->tokens[vocab->size], tok, CNET_LM_MAX_VOCAB_NAME-1);
-    vocab->tokens[vocab->size][CNET_LM_MAX_VOCAB_NAME-1] = '\0';
+    size_t len = strlen(tok);
+    if (len >= CNET_LM_MAX_VOCAB_NAME) len = CNET_LM_MAX_VOCAB_NAME - 1;
+    memcpy(vocab->tokens[vocab->size], tok, len);
+    vocab->tokens[vocab->size][len] = '\0';
     return vocab->size++;
 }
 
@@ -655,7 +722,10 @@ double cnet_lm_train_from_multiple_hf(CnetLmModel *model,
                 }
             }
             if (!got) {
-                strncpy(extracted, line, sizeof(extracted)-1);
+                size_t copy_len = strlen(line);
+                if (copy_len >= sizeof(extracted)) copy_len = sizeof(extracted) - 1;
+                memcpy(extracted, line, copy_len);
+                extracted[copy_len] = '\0';
                 got = 1;
             }
             if (got && strlen(extracted) > 3) {
@@ -685,9 +755,7 @@ double cnet_lm_train_from_multiple_hf(CnetLmModel *model,
     memset(&model->vocab, 0, sizeof(model->vocab));
     model->vocab.size = 0;
     for (int i = 0; i < vsize && model->vocab.size < CNET_LM_MAX_VOCAB; i++) {
-        strncpy(model->vocab.tokens[model->vocab.size], collected_words[i], CNET_LM_MAX_VOCAB_NAME-1);
-        model->vocab.tokens[model->vocab.size][CNET_LM_MAX_VOCAB_NAME-1] = 0;
-        model->vocab.size++;
+        if (cnet_lm_add_vocab_token(&model->vocab, collected_words[i]) < 0) break;
     }
 
     model->input_dim = model->vocab.size;
@@ -697,7 +765,8 @@ double cnet_lm_train_from_multiple_hf(CnetLmModel *model,
     char *seq_list[256];
     int nseq = 0;
     char work[32768];
-    strncpy(work, all_text, sizeof(work)-1);
+    memcpy(work, all_text, sizeof(work));
+    work[sizeof(work)-1] = '\0';
     char *seg = strtok(work, ".");
     while (seg && nseq < 256) {
         /* clean and keep if substantial */

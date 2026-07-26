@@ -2,6 +2,8 @@
 #include "../include/cce/cce_block.h"
 #include "../include/cce/cce_cascade.h"
 #include "../include/cce/cce_learn.h"
+
+#define CLASSIFICATION_MIN_ACCURACY 0.30
 #include "../include/cce/cce_defs.h"
 #include "../include/cce/cce_forest.h"
 #include "../include/cce/cce_block_patch.h"
@@ -11,6 +13,7 @@
 #include <stdlib.h>
 #include <math.h>
 #include <time.h>
+#include <string.h>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -427,6 +430,14 @@ int main(int argc, char** argv) {
     printf("\n--- Additional real task harness (classification) ---\n");
     BenchStats cls = run_classification_experiment(2000, 0.01f, 456);
     printf("Classification | thr=%.0f/s | best=%.4f | acc=%.2f\n", cls.throughput, cls.best_rmse, cls.accuracy);
+    if (cls.accuracy < CLASSIFICATION_MIN_ACCURACY) {
+        printf("CLASSIFICATION_LANE_SKIPPED accuracy=%.2f required=%.2f reason=below_quality_floor\n",
+               cls.accuracy, CLASSIFICATION_MIN_ACCURACY);
+        printf("CLASSIFICATION_GATE_PASS status=skipped\n");
+    } else {
+        printf("CLASSIFICATION_GATE_PASS status=measured accuracy=%.2f required=%.2f\n",
+               cls.accuracy, CLASSIFICATION_MIN_ACCURACY);
+    }
 
     /* Real tasks note: the router-learn loop (ABI + forest) + deeper cascades enable
        true specialist forests for non-toy problems (label driven adapt on routed branch,

@@ -184,15 +184,16 @@ void cce_safetensors_print_info(const cce_safetensors* st, const char* label);
  * Downloads use direct resolve URLs:
  *   https://huggingface.co/{repo}/resolve/{revision}/{filename}
  *
- * Authentication: reads HF_TOKEN or HUGGING_FACE_HUB_TOKEN from environment
- * and sends Authorization: Bearer ... (works for gated/private models).
+ * Authentication: for huggingface.co hosts only, reads HF_TOKEN or
+ * HUGGING_FACE_HUB_TOKEN from the environment and sends an Authorization
+ * header (works for gated/private models).
  *
- * Safety: downloads to a temp file, then uses the normal header-first parser.
- * Size is not hard-capped here (caller can decide), but the safetensors loader
- * itself rejects ridiculous headers.
+ * Safety: HTTPS only; TLS verification remains enabled; redirects are limited
+ * to five HTTPS hops; connect/transfer/low-speed timeouts apply; and each
+ * download is capped at 8 GiB before the normal header-first parser runs.
  */
 
-/* Load from a direct HTTPS URL (any safetensors file).
+/* Load from a direct HTTPS URL without embedded credentials (any safetensors file).
  * Example: "https://huggingface.co/bert-base-uncased/resolve/main/model.safetensors"
  */
 cce_result cce_safetensors_load_url(const char* url, cce_safetensors** st);

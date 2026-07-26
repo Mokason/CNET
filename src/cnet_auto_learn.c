@@ -79,7 +79,7 @@ int cnet_auto_learn_make_teachable(Port *in, Port *goal, const char *seed_text) 
 
     size_t W, k;
     uint64_t h;
-    unsigned long id;
+    unsigned int id;
     char gtag[PORT_TAG_MAX];
     const char *seed;
 
@@ -120,7 +120,7 @@ int cnet_auto_learn_make_teachable(Port *in, Port *goal, const char *seed_text) 
            : (goal->tag[0] ? goal->tag
               : (in->tag[0] ? in->tag : "chat"));
     h = fnv1a(seed);
-    id = (unsigned long)(h % (uint64_t)W);
+    id = (unsigned int)(h % (uint64_t)W);
     if (id == 0) id = 1;
 
     memset(in, 0, sizeof *in);
@@ -133,7 +133,7 @@ int cnet_auto_learn_make_teachable(Port *in, Port *goal, const char *seed_text) 
     goal->family = PORT_ONEHOT;
     goal->field_width = W;
     goal->field_count = k;
-    snprintf(gtag, sizeof gtag, "tk%luq%lu", id, id);
+    snprintf(gtag, sizeof gtag, "tk%uq%u", id, id);
     port_set_tag(goal, gtag);
     return 1;
 }

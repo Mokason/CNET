@@ -32,12 +32,7 @@ internal sealed class KeywordIndex
     /// <summary>Adds one blob. Ids must be added in increasing order.</summary>
     public void Add(MemoryBlob blob)
     {
-        List<string> terms = BlobAnalyzer.Tokenize(blob.Text);
-        if (_options.UseHashEmbedBoost)
-        {
-            foreach (string tri in CharTrigrams(blob.Text))
-                terms.Add(tri);
-        }
+        List<string> terms = IndexTerms(blob.Text);
         _blobTermCounts[blob.Id] = terms.Count;
         _totalTerms += terms.Count;
 
@@ -60,7 +55,7 @@ internal sealed class KeywordIndex
         if (!_blobTermCounts.Remove(blob.Id, out int termCount)) return;
         _totalTerms -= termCount;
 
-        foreach (string term in new HashSet<string>(BlobAnalyzer.Tokenize(blob.Text), StringComparer.Ordinal))
+        foreach (string term in new HashSet<string>(IndexTerms(blob.Text), StringComparer.Ordinal))
         {
             if (!_postings.TryGetValue(term, out var list)) continue;
             list.RemoveAll(posting => posting.BlobId == blob.Id);
@@ -107,6 +102,16 @@ internal sealed class KeywordIndex
         {
             if (!_postings.TryGetValue(term, out var postings)) continue;
 
+            // A posting without length metadata is stale and cannot be scored.
+            // Remove it defensively so an older/corrupt in-memory index fails
+            // closed instead of throwing or influencing document frequency.
+            postings.RemoveAll(p => !_blobTermCounts.ContainsKey(p.BlobId));
+            if (postings.Count == 0)
+            {
+                _postings.Remove(term);
+                continue;
+            }
+
             int df = postings.Count;
             double idf = Math.Log(1.0 + (n - df + 0.5) / (df + 0.5));
             bool discriminative = df <= maxDiscriminativeDf;
@@ -133,13 +138,11 @@ internal sealed class KeywordIndex
         foreach ((long id, int matches) in distinctMatches)
             if (matches >= 2) gatePassed.Add(id);
 
-        // Relaxed mode: the caller explicitly asked to retrieve, so the
-        // precision gate is dropped — any term match is a candidate, ranked by
-        // score. This surfaces facts the strict gate filtered (a term that
-        // became common in a topic-concentrated store), turning a genuine
-        // recall miss into a hit instead of a confabulated absence.
+        // Relaxed mode drops the document-frequency gate, but still requires
+        // at least one lexical token match. Character trigrams may improve the
+        // ranking of a supported match; they are never evidence on their own.
         if (relaxed)
-            foreach (long id in scores.Keys) gatePassed.Add(id);
+            foreach (long id in distinctMatches.Keys) gatePassed.Add(id);
 
         if (gatePassed.Count == 0) return [];
 
@@ -158,6 +161,14 @@ internal sealed class KeywordIndex
             return c != 0 ? c : y.BlobId.CompareTo(x.BlobId);
         });
         return results;
+    }
+
+    private List<string> IndexTerms(string text)
+    {
+        List<string> terms = BlobAnalyzer.Tokenize(text);
+        if (_options.UseHashEmbedBoost)
+            terms.AddRange(CharTrigrams(text));
+        return terms;
     }
 
     /// <summary>Character trigrams as pseudo-terms (§t:abc) for hash-embed boost.</summary>

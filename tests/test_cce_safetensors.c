@@ -7,6 +7,11 @@
 #include "../include/cce/cce.h"   /* for cce_result etc */
 #include "../include/nn.h"        /* BinaryTransformNetwork */
 
+#ifdef CCE_SAFETENSORS_TESTING
+int cce_safetensors_test_download_cap(void);
+int cce_safetensors_test_token_scope(void);
+#endif
+
 static void write_le64(FILE* f, uint64_t v) {
     for (int i=0; i<8; i++) {
         unsigned char b = (unsigned char)((v >> (i*8)) & 0xFF);
@@ -232,6 +237,32 @@ cleanup:
         printf("FAIL: load_url on invalid host succeeded\n"); failures++;
         if (bad) cce_safetensors_free(bad);
     }
+
+    /* The public boundary is HTTPS-only and never evaluates URL text in a shell. */
+    if (cce_safetensors_load_url("file:///etc/passwd", &bad) != CCE_ERR_INVALID_ARG ||
+        cce_safetensors_load_url("http://example.invalid/model.safetensors", &bad) !=
+            CCE_ERR_INVALID_ARG) {
+        printf("FAIL: non-HTTPS URL accepted\n"); failures++;
+    }
+    const char* injection_marker = "/tmp/cnet_st_shell_injection";
+    remove(injection_marker);
+    (void)cce_safetensors_load_url(
+        "https://example.invalid/\";touch /tmp/cnet_st_shell_injection;#", &bad);
+    FILE* marker = fopen(injection_marker, "rb");
+    if (marker) {
+        fclose(marker);
+        remove(injection_marker);
+        printf("FAIL: URL text executed by a shell\n"); failures++;
+    }
+
+#ifdef CCE_SAFETENSORS_TESTING
+    if (!cce_safetensors_test_download_cap()) {
+        printf("FAIL: oversized download did not fail closed\n"); failures++;
+    }
+    if (!cce_safetensors_test_token_scope()) {
+        printf("FAIL: HF bearer token host scope is too broad\n"); failures++;
+    }
+#endif
 
     if (failures == 0) {
         printf("ALL SAFETENSORS TESTS PASSED\n");

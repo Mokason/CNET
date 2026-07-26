@@ -1033,7 +1033,7 @@ recipe_gate:
 
 # Test recipes propagate their exit codes directly. This positive-marker gate
 # runs after every prerequisite and rejects missing or stale-success logs.
-verify: recipe_gate claims_test cce_dll cce_safetensors_test cce_autograd_test cce_model_test cce_view forest_view cce_detect cce_ssm cce_hybrid cce_qwen35 cce_st_llama cce_specgraph cce_wstore cce_tiers cce_similar merge_family hybrid_catalog transformer_qat contract_secure contract_unit heal_mismatch mutate acquire base flagship demos leakcheck cnet_fault_test cce_adapter_bank_test cce_dora_test cnet_serve_decode_test cnet_fault_loop_test registry_lora_store_test jtc_adapter_bench metric_honesty moe_ckpt_test
+verify: recipe_gate claims_test cce_dll cce_safetensors_test cnet_lm_bounds_test cce_autograd_test cce_model_test cce_view forest_view cce_detect cce_ssm cce_hybrid cce_qwen35 cce_st_llama cce_specgraph cce_wstore cce_tiers cce_similar merge_family hybrid_catalog transformer_qat contract_secure contract_unit heal_mismatch mutate acquire base flagship demos leakcheck cnet_fault_test cce_adapter_bank_test cce_dora_test cnet_serve_decode_test cnet_fault_loop_test registry_lora_store_test jtc_adapter_bench metric_honesty moe_ckpt_test
 	@sh tests/verify_logs.sh
 
 # Everything verify covers PLUS the GPU equivalence gate (needs model + GPU;
@@ -1477,7 +1477,8 @@ cce_smoke_pure: $(CCE) $(CCE_CUDA_OBJ) tests/cce_smoke.c
 
 cce_train_bench: $(CCE) $(CCE_CUDA_OBJ) tests/cce_train_bench.c
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) tests/cce_train_bench.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
-	./$(BIN_DIR)/cce_train_bench
+	./$(BIN_DIR)/cce_train_bench | tee logs/cce_train_bench.log
+	@grep -q '^CLASSIFICATION_GATE_PASS ' logs/cce_train_bench.log
 
 cce_json_bench: $(CCE) $(CCE_CUDA_OBJ) tests/cce_json_bench.c
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) tests/cce_json_bench.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
@@ -1840,7 +1841,7 @@ cnet_fault_dedupe_probe: src/cnet_fault.c tests/cnet_fault_dedupe_probe.c
 	@mkdir -p $(BIN_DIR)
 	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ src/cnet_fault.c tests/cnet_fault_dedupe_probe.c $(LDFLAGS)
 
-metric_honesty: cnet_fault_dedupe_probe
+metric_honesty: cnet_fault_dedupe_probe gap_lane
 	@mkdir -p logs
 	@python3 tests/test_metric_honesty.py > logs/metric_honesty.log 2>&1 \
 		|| { tail -40 logs/metric_honesty.log; false; }
@@ -1935,8 +1936,15 @@ AVX_CFLAGS := $(filter-out -mno-avx,$(CFLAGS))
 cce_safetensors_test supra_console supra_chat_mock supra_context_probe supra_longform supra_head_qat supra_head_qat_corpus transformer_qat_joint transformer_qat_real transformer_qat_altmodel transformer_qat_gpt2names proj_qat_recon proj_qat_gemma proj_qat_stack proj_qat_gpu gptq_solver proj_qat_gemma_e2e proj_qat_bitwidth dense_stream_real moe_loader moe_forward moe_stream moe_expert_quant moe_e2e moe_gen wordlm wordlm_bitnet wordlm_holdout trit_bench: CFLAGS := $(AVX_CFLAGS) $(OMPFLAGS)
 
 cce_safetensors_test: $(CCE) $(CCE_CUDA_OBJ) src/nn.c tests/test_cce_safetensors.c
-	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) src/nn.c tests/test_cce_safetensors.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+	$(CC) $(CFLAGS) -DCCE_SAFETENSORS_TESTING $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) src/nn.c tests/test_cce_safetensors.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 	./$(BIN_DIR)/cce_safetensors_test > logs/cce_safetensors_test.log 2>&1
+
+cnet_lm_bounds_test: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(CCE) src/cnet_lm.c src/contract/anti_repeat.c tests/test_cnet_lm_bounds.c
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(CCE) \
+		src/cnet_lm.c src/contract/anti_repeat.c tests/test_cnet_lm_bounds.c \
+		$(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+	@./$(BIN_DIR)/cnet_lm_bounds_test > logs/cnet_lm_bounds_test.log 2>&1
+	@grep -q '^CNET_LM_BOUNDS_PASS$$' logs/cnet_lm_bounds_test.log
 
 # Dedicated GGUF loader + Qwen2 forest + full K dequant + packed 1.6-bit roundtrip test
 # Mirrors the Supra flow end-to-end (load -> specialists -> pack_trits -> export -> load_packed -> forward/generate)
@@ -3156,7 +3164,7 @@ admission_abi_audit: cnet_dll tests/audit_admission_abi.sh
 specialist_authority: specialist_unit admission_bypass_audit admission_abi_audit
 	@echo "SPECIALIST_AUTHORITY_PASS"
 
-.PHONY: ci_config_gate release_package ci_core ci
+.PHONY: ci_config_gate release_package dotnet_cce_tests ci_core ci
 ci_config_gate: .github/workflows/ci.yml tests/test_ci_workflow.py
 	@python3 tests/test_ci_workflow.py > logs/ci_config_gate.log 2>&1
 	@grep -q "CI_WORKFLOW_PASS" logs/ci_config_gate.log
@@ -3165,10 +3173,22 @@ release_package: json_toolcall_alphabet_check tests/test_release_package.sh VERS
 	@sh tests/test_release_package.sh > logs/release_package.log 2>&1
 	@grep -q "RELEASE_PACKAGE_PASS" logs/release_package.log
 
+dotnet_cce_tests:
+	$(call dotnet_guard)
+	@set -e; \
+		$(DOTNET) test dotnet/Cce.Tests/Cce.Tests.csproj -c Release --verbosity minimal \
+			> logs/dotnet_cce_tests.log 2>&1; \
+		$(DOTNET) test dotnet/Cce.Llm.Tests/CNET.Cce.Llm.Tests.csproj -c Release --verbosity minimal \
+			> logs/dotnet_cce_llm_tests.log 2>&1; \
+		echo "DOTNET_CCE_TESTS_PASS" >> logs/dotnet_cce_tests.log; \
+		echo "DOTNET_CCE_LLM_TESTS_PASS" >> logs/dotnet_cce_llm_tests.log
+	@grep -q '^DOTNET_CCE_TESTS_PASS$$' logs/dotnet_cce_tests.log
+	@grep -q '^DOTNET_CCE_LLM_TESTS_PASS$$' logs/dotnet_cce_llm_tests.log
+
 ci_core: ci_config_gate warning_debt_strict release_warning_gate flagship_prefix_cache campaign_provenance_unit execution_tiers_doc_gate alt_paths_gate
 	@echo "CNET_CI_CORE_PASS"
 
-ci: ci_core release_package
+ci: ci_core release_package test dotnet_cce_tests cce_train_bench
 	@echo "CNET_CI_PASS"
 
 .PHONY: unified_models

@@ -11,6 +11,12 @@
 *.yaml text eol=lf
 Makefile text eol=lf
 
+# These legacy files are CRLF in history; preserve them until a dedicated
+# normalization change can avoid hiding functional edits in whole-file churn.
+src/cce/cce_safetensors.c -text whitespace=cr-at-eol
+include/cce/cce_safetensors.h -text whitespace=cr-at-eol
+src/cnet_lm.c -text whitespace=cr-at-eol
+
 *.so binary
 *.dll binary
 *.bin binary
