@@ -123,13 +123,31 @@ int self_improve_distill_route(
     }
 
     memset(&s, 0, sizeof s);
-    if (specialist_wrap_btn(&s, student, name) != 0 ||
-        specialist_admit(reg, &s, &c) != 0) {
-        contract_free(&c);
-        btn_free(student);
-        free(student);
-        if (report) report->refused++;
-        return -3;
+    /* registry_add stores the name POINTER (src/router/registry.c), so handing
+       it this function's stack buffer leaves the admitted entry with a dangling
+       name — undefined behaviour for find_named, cnb_has_unit and every
+       diagnostic that reads it. The registry does not own names, so the copy is
+       deliberately never freed; one small allocation per distilled chunk. */
+    {
+        size_t nlen = strlen(name) + 1;
+        char *stable = (char *)malloc(nlen);
+        if (!stable) {
+            contract_free(&c);
+            btn_free(student);
+            free(student);
+            if (report) report->refused++;
+            return -3;
+        }
+        memcpy(stable, name, nlen);
+        if (specialist_wrap_btn(&s, student, stable) != 0 ||
+            specialist_admit(reg, &s, &c) != 0) {
+            free(stable);
+            contract_free(&c);
+            btn_free(student);
+            free(student);
+            if (report) report->refused++;
+            return -3;
+        }
     }
     contract_free(&c);
 

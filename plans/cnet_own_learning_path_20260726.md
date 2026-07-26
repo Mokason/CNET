@@ -654,3 +654,61 @@ moe: out-of-coverage refused at the hard-expert door            PASS
   shapes were mined, which is what the file itself is — **must-fix later, not now**.
 - Other `specialist_wrap_btn` callers pass caller-owned names; only the mine path was proven
   to pass a stack buffer. A sweep of the rest is **must-fix later**.
+
+---
+
+## 15. Same dangling-name bug in the distill path
+
+`self_improve_distill_route` built `si_chunk_%zu` in a stack buffer
+(`char name[CONTRACT_NAME_MAX]`) and handed it to `specialist_admit`, so every distilled
+chunk had the same dangling registry name as §14.3. Reached in production through
+`personal_ai_distill_plan` / `hybrid_distill_plan`. Fixed the same way.
+
+Other `specialist_wrap_btn` callers (`acquire.c`, `base.c`, `library.c`, `corpus/graduate.c`)
+take the name from *their* caller, so their lifetime depends on call sites not audited here.
+No failing gate today — recorded as **must-fix later**, not backlog.
+
+---
+
+## 16. Is unattended `CNET_PERSONAL_STRUCTURE_MINE_ON_SERVE=1` safe now?
+
+**Conditionally yes, for discrete port families.** That is a real change of state: before this
+session it was **no**.
+
+What now holds end-to-end, each with a gate:
+
+| Property | Gate |
+|---|---|
+| A mined unit never answers outside its certified domain | `coverage_abstain` (S6) |
+| That holds after a lane restart | `coverage_abstain` S7 round-trip |
+| The mined unit itself survives restart, sealed by the product | `coverage_abstain` S8 + `cnb_has_unit` |
+| The guard file cannot be corrupted by a partial write | `coverage_abstain` atomic |
+| A unit that cannot be gated is never created | `coverage_abstain` full → `mine_rc=2` |
+| The MoE door honours coverage too | `coverage_abstain` moe |
+| Substitution still works, with no accuracy loss | `residual_substitution_bench` E1 |
+| Learning only ever trains on external teacher answers | `own_learning_loop` anti-collapse |
+
+**The conditions.** Unattended operation is safe only while all of these hold:
+
+1. **`CNET_COVERAGE_ABSTAIN` is unset or not `0`.** Setting it to `0` provably restores the
+   confident-wrong behaviour — the gate reproduces that on demand.
+2. **Mined port families are discrete** (`ONEHOT`, `BINARY_*`). A `PORT_RAW` mined unit is
+   still ungated and still exposed to the §10 E2 failure. The deployed residual window is
+   one-hot, so this holds today, but it is an assumption about traffic, not an invariant.
+3. **The `<base>.coverage` sidecar is intact.** A corrupt file logs to stderr and fails
+   **open**. Atomic writes make corruption much less likely; they do not make it impossible.
+4. **Operators watch `coverage_abstains` beside `residual_rate`.** Abstains climbing toward
+   the serve count means the mined library has gone stale relative to real traffic.
+
+**What would make it unconditionally safe** — the honest remaining list, in order:
+
+- Fail **closed** on a corrupt sidecar (needs a durable record of which shapes were mined,
+  independent of the file that carries the coverage).
+- Gate `PORT_RAW`, which needs interval/near-neighbour coverage rather than exact match.
+- Audit the remaining `specialist_wrap_btn` call sites for the §15 lifetime bug.
+
+**Explicitly NOT blocking unattended use** (backlog, recorded so they are not re-litigated):
+graded capability certs (B4), sleep graduating real units (B5), multimodal/vision (B7),
+M7 beat-the-teacher promotion — which coverage gating largely subsumes for mined units, since
+an admitted unit now only serves inside a domain where its contract certifies exact
+reproduction of the teacher's labels.
