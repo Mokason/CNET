@@ -31,6 +31,10 @@ jobs:
           dotnet-version: 10.0.x
       - name: Install native build dependencies
         run: sudo apt-get update && sudo apt-get install -y build-essential libcurl4-openssl-dev pkg-config python3-yaml
+      # managed_warning_gate builds --no-restore (offline by design). Provision
+      # assets here so GitHub-hosted runners have project.assets.json.
+      - name: Restore .NET packages
+        run: make --no-print-directory dotnet_restore
       - name: Run portable CPU release gate
         run: make --no-print-directory PORTABLE=1 ci
 
@@ -51,5 +55,7 @@ jobs:
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 10.0.x
+      - name: Restore .NET packages
+        run: make --no-print-directory dotnet_restore
       - name: Run ROCm device gate
         run: make --no-print-directory ci_rocm
