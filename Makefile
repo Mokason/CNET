@@ -3753,7 +3753,7 @@ cognitive_runtime_smoke: $(SHARED_WORKSPACE_SRC) $(SEMANTIC_CORTEX_SRC) $(CALIBR
 		grep -q "COGNITIVE_RUNTIME_SMOKE_PASS" \
 			logs/cognitive_runtime_smoke.log
 
-cognitive_runtime: shared_workspace semantic_cortex sleep_consolidate calibrated_governance cognitive_runtime_smoke capability_cert cce_train_bench
+cognitive_runtime: shared_workspace semantic_cortex sleep_consolidate calibrated_governance cognitive_runtime_smoke capability_cert knowledge_capsule cce_train_bench
 	@n=$$(python3 -c "import json;d=json.load(open('logs/capability_cert.json'));print(d['certified'])"); \
 		echo "COGNITIVE_RUNTIME_PASS capabilities=$$n classification=measured"
 

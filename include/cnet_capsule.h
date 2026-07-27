@@ -20,7 +20,18 @@
  *   - runtime compatibility       CNB container format version
  *   - certification evidence      behaviour digest checked after materialise
  *   - coverage / abstention       the certified input domain travels WITH it
- *   - provenance + integrity      teacher provenance + FNV-1a over the payload
+ *   - provenance                  whatever the source base recorded, bound and
+ *                                 verified against the payload. It is NOT
+ *                                 mandatory: an empty provenance exports and
+ *                                 imports fine, so this proves "unchanged in
+ *                                 transit", never "came from a trusted party".
+ *   - integrity                   FNV-1a over the payload AND over every
+ *                                 security-relevant manifest field
+ *
+ * TRUST BOUNDARY: a capsule is a LOCAL transfer object. Its checksums are
+ * unkeyed, so they detect ACCIDENT — truncation, bit-rot, a partial write, a
+ * mismatched build — and nothing else. Anyone who can rewrite a capsule can
+ * recompute them. This is not authenticity; signing is out of scope.
  *
  * The coverage binding is the load-bearing part. cnb_export_subset already
  * moved units between bases, but coverage lives in a <base>.coverage sidecar,
@@ -52,13 +63,14 @@ typedef struct {
     size_t coverage_rows;
     size_t payload_bytes;
     unsigned cnb_version;
+    char provenance[128]; /* "" when the source base recorded none */
     char reject_reason[CNET_CAPSULE_REASON_MAX]; /* "" on success */
 } CnetCapsuleReport;
 
-/* Write dir/{unit.cnb,manifest.cknow}. cov may be NULL (a unit with no
- * coverage record exports with coverage_rows=0 and imports ungated, which is
- * correct only for units certified over their whole domain). Returns 0 on
- * success, negative on error. */
+/* Write dir/{unit.cnb,manifest.cknow}. cov may be NULL, in which case the
+ * capsule carries coverage_rows=0 — correct only for a unit certified over its
+ * whole domain. A capsule that DOES carry coverage refuses to import with a
+ * NULL registry rather than quietly shipping an ungated unit. */
 CNET_API int cnet_capsule_export(const CnetBase *src, const HybridAi *cov,
                                  const char *unit, const char *dir,
                                  CnetCapsuleReport *rep);

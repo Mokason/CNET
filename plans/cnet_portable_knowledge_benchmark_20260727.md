@@ -76,7 +76,51 @@ prevent. Transfer was un-gating capability.
 
 ---
 
-## 2. TDD evidence
+## 2. Review round 2 — what the first pass got wrong
+
+Independent review of `9adaffe` found merge blockers. All are fixed here, RED first.
+Claims disproved by review are **removed**, not softened.
+
+**RED**, `logs/knowledge_capsule_RED2.log` — 9 failures before any fix:
+
+```
+neg: tampered coverage row REJECTED                            FAIL
+neg: tampered coverage target REJECTED                         FAIL
+neg: manifest tag not matching payload REJECTED                FAIL
+neg: provenance rewritten and resealed                         FAIL
+neg: provenance not matching payload REJECTED                  FAIL
+neg: symlinked payload REJECTED                                FAIL
+neg: coverage-bearing capsule with cov=NULL REJECTED           FAIL
+transactional: NO ungated unit left behind                     FAIL
+checks=39 failures=9
+```
+
+**GREEN**: `KNOWLEDGE_CAPSULE_PASS checks=39 coverage_rows=5`, warning-clean.
+
+Two of my own tests initially passed for the wrong reason and were tightened before
+counting: the symlink case used a *relative* target so it merely dangled
+(`payload_missing`), and the hostile-dimension case was caught by the `cov_rows`
+bound while `cov_out` — the actually unbounded one — was never probed. Both now
+assert the specific rejection.
+
+| # | Blocker | Fix | Proven by |
+|---|---|---|---|
+| 1 | Import not transactional | Coverage is stored **first** because only it can be rolled back (`cnb_add_unit` has no removal counterpart); a failed admit calls `hybrid_coverage_forget_unit` | `coverage_restore_failed`, no unit left |
+| 2 | Coverage silently dropped when `cov==NULL` | Refuse | `coverage_present_but_no_target_registry` |
+| 3 | Manifest tags overwrote verified ports | Payload ports are authoritative; manifest must **agree** including tags, then is never substituted | `contract_port_mismatch` (tag rewritten **and resealed**) |
+| 4 | Manifest metadata unprotected | Trailing checksum covers every preceding byte — ports, provenance, all coverage values | `manifest_integrity_mismatch` on row and target tamper |
+| 5 | Provenance claim exceeded validation | Bound and verified against payload; header now states it is **not mandatory** and proves "unchanged in transit", never "from a trusted party" | `provenance_mismatch` |
+| 6 | Unbounded coverage allocation | Every dimension bounded + checked multiplication before `calloc` | `coverage_bounds` on both rows/in and out_dim (**by bound, not by `oom`**) |
+| 12 | Wrong FNV-1a basis | `14695981039346656037ULL` (was a digit short) | — |
+| 13 | Symlink / TOCTOU / export partials | `O_NOFOLLOW` + `fstat` regular-file check; hash the exact bytes then load them from a private temp; manifest written temp+rename | `payload_missing_or_symlink` |
+
+`src/acquire.c` carries the same FNV typo in two places. **Not changed**: those feed
+stored `recipe_fp` values and correcting them would invalidate existing ledgers.
+
+---
+
+## 3. TDD evidence (round 1)
+
 
 **RED** — test written first, `logs/knowledge_capsule_RED.log`:
 
@@ -103,7 +147,7 @@ finding — see §5.
 
 ---
 
-## 3. The capsule
+## 4. The capsule
 
 `dir/{unit.cnb, manifest.cknow}`. Binds, and refuses to import without:
 
@@ -124,56 +168,61 @@ claiming authenticity would be dishonest.
 
 ---
 
-## 4. Benchmark
+## 5. Benchmark (corrected)
 
-`make knowledge_accumulation_bench` → `logs/knowledge_accumulation_bench.json`
+`make knowledge_accumulation_bench` → `logs/knowledge_accumulation_bench.json` (schema 2)
 
 ```
-KNOWLEDGE_ACCUMULATION_BENCH_PASS units=32 isolation=32/32 roundtrip=8/8 ood_refused=96
+KNOWLEDGE_ACCUMULATION_BENCH_PASS units=32 distinct=1 isolation=32/32 replay=8/8
+  cov_exact=8 pre_unservable=8/8 ood_refused=96
 ```
 
 | Measure | Floor | Result |
 |---|---|---|
-| Isolation — each of 32 disjoint units individually correct | == 32 | **32/32** |
-| Interference — unit 0 answer vector at N=1 vs after 31 later adds | drift == 0 | **0/8 drift** |
-| Portable round-trip — export → fresh base → identical behaviour | 100% | **8/8** |
-| Corruption rejected | == 1 | **1** (`payload_integrity_mismatch`) |
-| Incompatible version rejected | == 1 | **1** (`incompatible_cnb_version=99_expected=5`) |
-| OOD abstention — uncovered inputs refused | == 96 | **96** refused / **160** admitted |
-| Baseline (negative control) — no import | == 0.0 | **0.0** |
+| **Distinctness** — 32 unit functions differ pairwise | all differ | **1 (asserted)** |
+| Isolation — each unit individually correct | == 32 | **32/32** |
+| Interference — unit 0 answers at N=1 vs after 31 adds | drift == 0 | **0/8** |
+| **Contract replay** after transfer | 100% | **8/8** |
+| **Coverage round-trip** — rows+targets+tags vs source | bit-identical | **8/8** |
+| **Pre-import unservable** (same queries, fresh target) | == total | **8/8** |
+| Post-import served | == units | **8/8** |
+| Corrupted capsule rejected | == 1 | **1** |
+| Truncated payload rejected | == 1 | **1** |
+| OOD — uncovered refused | == 96 | **96** (160 admitted) |
 | Composition | — | **WITHHELD** |
-| Semantic intent understanding | — | **WITHHELD** (no semantic path exercised) |
-| Broad intelligence | — | **WITHHELD** |
+| Semantic intent / broad intelligence | — | **WITHHELD** |
 
-Scaling (CPU only, fresh temp base):
-
-| N | units | build_ms | lookup_ms/unit | serve_ms/query |
+| N | units | build_ms | lookup_ms (materialise) | serve_ms/query |
 |---|---|---|---|---|
-| 1 | 1 | 21.5 | 0.0001 | 0.0002 |
-| 8 | 8 | 174.2 | 0.0000 | 0.0002 |
-| 32 | 32 | 698.1 | 0.0001 | 0.0003 |
+| 1 | 1 | 23.1 | 0.0051 | 0.00006 |
+| 8 | 8 | 179.2 | 0.0050 | 0.00006 |
+| 32 | 32 | 716.9 | 0.0050 | 0.00006 |
 
-Capsule payload: **2583 bytes** per unit. Build cost is linear in N (training
-dominates); lookup and serve are flat — accumulation does not slow recall at
-this scale.
+Capsule payload **2583 bytes**.
 
-**What the green means, precisely.** Exact mechanism proof: isolation,
-interference, round-trip, refusal, abstention. Held-out specialized recall: each
-unit reproduces its own rotation on all 8 symbols after transfer. It does **not**
-show reasoning, composition, generalisation beyond the certified domain, or
-intent understanding. The baseline is the honest comparison: without the capsule
-the target base cannot answer at all (0.0), so 8/8 measures transfer, not a
-model that already knew the answer.
+### What review corrected in the numbers
 
-**Composition is withheld, not failed.** `route_plan` was asked for a 2-step plan
-across two independently stored units with disjoint tags and did not produce
-one. That is arguably *correct* — bridging unrelated tags would be a typing
-violation — but since nothing verified a genuine composition, the JSON says
-`withheld_planner_does_not_chain_disjoint_tags` rather than reporting a score.
+- **"32 disjoint units" was false.** `(x+k+1)%8` repeats every 8, so it was 8 functions
+  with 4 copies each. Units are now distinct permutations in factorial order, and
+  pairwise distinctness is **asserted before training**.
+- **"Held-out recall" was false.** All 8 probes ARE the certified exemplars. Renamed
+  everywhere to **exhaustive contract replay = serialization fidelity**, with that
+  caveat carried inside the JSON itself.
+- **The 0.0 baseline was tautological** (an empty base scoring "accuracy"). Replaced
+  with pre-import unservability of the *same* queries on the *same* target: 8/8
+  unservable before, 8/8 served after.
+- **Coverage round-trip probed `P("x")/P("y")`**, which could never match. It now
+  compares the actual imported record's rows, targets and port tags against source.
+- **Lookup timing measured `cnb_has_unit`** (a name scan). Now real `cnb_get_unit`
+  materialisation incl. CNU1 verify, mean of 200 reps — which moved it from 0.0001 to
+  0.0050 ms. **The "flat scaling" claim is withdrawn**: this is one run with no
+  variance estimate, so the table is reported as measured and nothing is inferred
+  about asymptotics.
+- `system()` calls replaced with C helpers; both new gates compile warning-clean.
 
 ---
 
-## 5. Finding: tag governance blocks numbered skill families
+## 5b. Finding: tag governance blocks numbered skill families
 
 The benchmark's first run died at `build FAILED at k=1`. Cause: `cnb_add_unit`
 mints port tags, and `cnb_tag_mint` refuses **near-misses** — case-insensitive
@@ -197,24 +246,26 @@ for exactly the Wikipedia-style breadth this thesis depends on.
 
 | File | Change |
 |---|---|
-| `include/cnet_capsule.h`, `src/cnet_capsule.c` | new — capsule export/import, fail-closed |
-| `tests/test_knowledge_capsule.c` | new — RED-first capsule gate |
-| `tests/knowledge_accumulation_bench.c` | new — accumulation benchmark + JSON |
-| `include/base.h`, `src/base.c` | `cnb_format_version()` accessor for compatibility pinning |
-| `Makefile` | `knowledge_capsule`, `knowledge_accumulation_bench`, `asi_framing`; `claims` depends on `asi_framing` |
+| `include/cnet_capsule.h`, `src/cnet_capsule.c` | capsule export/import; transactional commit, manifest checksum, port+provenance binding, bounded coverage, `O_NOFOLLOW`/regular-file, verified-bytes temp load, temp+rename manifest, standard FNV basis |
+| `tests/test_knowledge_capsule.c` | 39 checks incl. 9 RED-first negative controls; C helpers, no `system()` |
+| `tests/knowledge_accumulation_bench.c` | distinct permutations + distinctness assert, coverage-vs-source comparison, pre-import unservability baseline, real materialisation timing, replay relabelled, no `system()` |
+| `include/base.h`, `src/base.c` | `cnb_format_version()` accessor |
+| `src/soul_host.c` | removed stale locals left by the earlier S8 seal refactor (warning-clean) |
+| `Makefile` | `knowledge_capsule` into `cognitive_runtime`; `asi_framing` in `claims` |
 | `README.md`, `AGENTS.md`, `docs/INDEX.md`, `docs/ARCHITECTURE.md` | canonical ASI framing |
 
-Not touched: `config/personal-ai.env`, `scripts/cnet_offhours_watchdog.sh`.
-Production `soul_gemma4v2_final.cnb` was never opened by any gate here — its
-mtime moves because the running lane service checkpoints it.
+Untouched: `config/personal-ai.env`, `scripts/cnet_offhours_watchdog.sh`.
+Production `soul_gemma4v2_final.cnb` is never opened by these gates (its mtime moves
+because the running lane service checkpoints it).
 
 ---
 
 ## 7. Verification run
 
 ```
-KNOWLEDGE_CAPSULE_PASS checks=19 coverage_rows=5
-KNOWLEDGE_ACCUMULATION_BENCH_PASS units=32 isolation=32/32 roundtrip=8/8 ood_refused=96
+KNOWLEDGE_CAPSULE_PASS checks=39 coverage_rows=5
+KNOWLEDGE_ACCUMULATION_BENCH_PASS units=32 distinct=1 isolation=32/32 replay=8/8
+  cov_exact=8 pre_unservable=8/8 ood_refused=96
 ASI_FRAMING_PASS files=4
 COVERAGE_ABSTAIN_PASS checks=55 heldout_correct=4/4 was=0/4
 OWN_LEARNING_LOOP_PASS checks=31
@@ -224,27 +275,60 @@ COLIBRI_INTEGRATE_PASS checks=26
 STRUCTURE_MINE_SERVE_DURABLE_PASS checks=13 rows=2
 SUBSTITUTION_BENCH_PASS ... heldout_correct=4/4 coverage_abstains=4
 CAPABILITY_CERT_PASS certified=6/6
-COGNITIVE_RUNTIME_PASS capabilities=6 classification=measured
+COGNITIVE_RUNTIME_PASS capabilities=6 classification=measured   (now includes knowledge_capsule)
 ```
 
+`make claims` does **not** pass on this tree: `soul_reopen_test` fails
+`SoulHost fails closed on malformed adjacent runtime state`, **pre-existing**, verified
+identical on the stashed baseline. Not in scope here, and not masked.
+
+JSON artifact: `logs/knowledge_accumulation_bench.json` (schema 2).
+
 ---
 
-## 8. Does the evidence support the thesis?
+## 8. Trust boundary (explicit)
+
+A capsule is a **local transfer object**. Its checksums are **unkeyed**: they detect
+accident — truncation, bit-rot, a partial write, a mismatched build — and nothing more.
+Anyone who can rewrite a capsule can recompute them. This is **not authenticity**, and
+signing/PKI is deliberately out of scope. Provenance is *bound and verified*, but an
+empty provenance is accepted, so it proves "unchanged in transit", never "came from a
+trusted party". The owner's portable-company use case will eventually need real
+provenance identity; that is named backlog, not something claimed here.
+
+Hardened within that scope: `O_NOFOLLOW` + regular-file check (symlinked/special
+payloads refused), hash-the-bytes-then-load-those-bytes via a private temp (no
+hash-then-reopen window), and temp+rename manifest writes (no partial capsule).
+
+## 9. Umbrella placement
+
+`knowledge_capsule` (~16 s) now runs inside **`cognitive_runtime`**, which is green, so
+the regression is not orphaned. It is deliberately **not** in `claims`: `claims` is
+already red on this tree for a **pre-existing** reason unrelated to this work —
+`soul_reopen_test` fails `SoulHost fails closed on malformed adjacent runtime state`,
+verified identical on the stashed baseline. Wiring into a broken umbrella would have
+hidden the regression. `asi_framing` stays in `claims` (docs claim → docs gate).
+
+The full accumulation bench stays explicit: it trains 41 BTNs (~1 s + 700 ms build).
+
+## 10. Does the evidence support the thesis?
 
 **Specialized portable knowledge: yes, mechanism-proven at small scale.** 32
-disjoint certified units coexist without interference, any one transfers to a
-fresh runtime with byte-identical behaviour and its abstention gate intact, and
-corrupt or incompatible artifacts are refused with a named reason.
+*genuinely distinct* certified units coexist with zero interference drift; any one
+transfers to a fresh runtime with byte-identical contract replay **and** bit-identical
+coverage; the same queries are unservable before import and served after; corrupt,
+truncated, symlinked, over-dimensioned, tag-mismatched and provenance-mismatched
+capsules are all refused with named reasons and leave nothing behind.
 
-**Anything broader: no, and the gate says so.** Composition, semantic intent and
-broad capability are WITHHELD. The units are 8-symbol rotations — this proves
-the *container and the accounting*, not that CNET knows anything hard. Nothing
-here supports a general-capability claim, and the framing gate now makes it
-awkward for a future agent to imply one.
+**Anything broader: no, and the gate says so.** Composition, semantic intent and broad
+capability are WITHHELD. The units are 8-symbol permutations — this proves the
+*container and the accounting*, not that CNET knows anything hard. Contract replay is
+serialization fidelity, **not** generalisation; the honest reading is "what was
+certified survives transfer", nothing more.
 
 ---
 
-## 9. Next highest-leverage milestone
+## 11. Next highest-leverage milestone
 
 **Make composition real, or prove it cannot be.** Accumulation without
 composition is a filing cabinet: N units answer N questions and never the

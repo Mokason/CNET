@@ -552,9 +552,6 @@ CNET_API int soul_structure_mine(SoulHost *h) {
     size_t min_hits = 3;
     const char *mh;
     int mrc;
-    size_t in_dim, out_dim, n_rows, r, j;
-    double *inputs = NULL, *targets = NULL;
-    Contract c;
     int reused = 0;
     char name[64];
 
