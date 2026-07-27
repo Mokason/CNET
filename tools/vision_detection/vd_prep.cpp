@@ -25,11 +25,24 @@
 #include <vector>
 
 static const int SS_WIDTH   = 300;
-static const int HOG_SIDE   = 32;
-static const int HOG_DIM    = 324;
-static const int PCA_DIM    = 64;
 static const int MAX_PROP   = 300;   /* per image, after SS ordering */
 static const uint64_t SEED  = 20260727ULL;
+
+/* Variant table. V1 is frozen evidence (commit 6ffc5f1) and must keep reproducing
+   byte-for-byte; V2 changes exactly the feature description and the holdout slice.
+   Protocol: plans/cnet_vision_object_detection_v2_20260727.md */
+struct Variant {
+    const char *name;
+    int hog_side;      /* crop is resized to hog_side x hog_side */
+    int color;         /* 1 = HOG on BGR (max-magnitude channel gradient), 0 = gray */
+    int hog_dim;
+    int pca_dim;
+    int test_offset;   /* slice into the seed-20260727 shuffle of the 4952 test IDs */
+    int pca_fit_images;/* 0 = fit on every train image; else first N (memory bound) */
+};
+static const Variant V1 = {"v1", 32, 0,  324,  64,    0,   0};
+static const Variant V2 = {"v2", 64, 1, 1764, 256, 1000, 600};
+static Variant VAR = V1;
 
 struct Box { int x, y, w, h; };
 struct GT  { Box b; int difficult; };
@@ -37,7 +50,7 @@ struct GT  { Box b; int difficult; };
 struct Prop {
     Box b;
     int label;        /* 1 = car (IoU>=0.5 with non-difficult GT), 0 = bg, -1 = ignore */
-    float feat[HOG_DIM];
+    std::vector<float> feat;   /* PCA-projected after phase B */
 };
 
 /* ---------- deterministic helpers ---------------------------------------- */
@@ -140,26 +153,27 @@ static double iou(const Box &a, const Box &b) {
     return in / ((double)a.w * a.h + (double)b.w * b.h - in);
 }
 
-/* ---------- fixed HOG ---------------------------------------------------- */
+/* ---------- fixed HOG ----------------------------------------------------
+   V1: 32x32 grayscale -> 324-D.  V2: 64x64 colour (BGR) -> 1764-D. OpenCV's
+   HOG takes the per-pixel maximum-magnitude channel gradient on a 3-channel
+   input, so the colour path is genuinely different data at the same dimension
+   as a grayscale 64x64 descriptor (probe: logs/vision/v2_hog_probe.log). */
 static cv::HOGDescriptor &hog() {
-    static cv::HOGDescriptor h(cv::Size(HOG_SIDE, HOG_SIDE), cv::Size(16, 16),
+    static cv::HOGDescriptor h(cv::Size(VAR.hog_side, VAR.hog_side), cv::Size(16, 16),
                                cv::Size(8, 8), cv::Size(8, 8), 9);
     return h;
 }
 
-static bool hog_of(const cv::Mat &img, const Box &b, float *out) {
+static bool hog_of(const cv::Mat &img, const Box &b, std::vector<float> &out) {
     cv::Rect r(b.x, b.y, b.w, b.h);
     r &= cv::Rect(0, 0, img.cols, img.rows);
     if (r.width < 8 || r.height < 8) return false;
-    cv::Mat crop, gray, res;
-    crop = img(r);
-    cv::cvtColor(crop, gray, cv::COLOR_BGR2GRAY);
-    cv::resize(gray, res, cv::Size(HOG_SIDE, HOG_SIDE));
-    std::vector<float> d;
-    hog().compute(res, d);
-    if ((int)d.size() != HOG_DIM) return false;
-    memcpy(out, d.data(), sizeof(float) * HOG_DIM);
-    return true;
+    cv::Mat crop = img(r), src, res;
+    if (VAR.color) src = crop;
+    else cv::cvtColor(crop, src, cv::COLOR_BGR2GRAY);
+    cv::resize(src, res, cv::Size(VAR.hog_side, VAR.hog_side));
+    hog().compute(res, out);
+    return (int)out.size() == VAR.hog_dim;
 }
 
 /* ---------- per-image worker --------------------------------------------- */
@@ -167,12 +181,18 @@ struct ImgOut {
     std::string id, sha;
     std::vector<Prop> props;
     std::vector<GT> gts;
+    std::vector<std::vector<float>> raw;  /* phase A, PCA-fit subset only */
     int ok;
     std::string err;
 };
 
+/* Phase A: Selective Search + boxes + labels. HOG is always computed so that
+   proposal filtering is identical everywhere, but the raw descriptor is only
+   retained for the PCA-fit subset -- at 1764-D, keeping every train proposal
+   resident would cost ~7.4 GB before the PCA solve's own copy. */
 static void do_image(const std::string &root, const std::string &id,
-                     const std::string &cls, bool label_props, ImgOut &o) {
+                     const std::string &cls, bool label_props, bool keep_raw,
+                     ImgOut &o) {
     cv::setNumThreads(1);
     o.id = id; o.ok = 0;
     std::string jp = root + "/JPEGImages/" + id + ".jpg";
@@ -192,13 +212,36 @@ static void do_image(const std::string &root, const std::string &id,
     std::vector<cv::Rect> rects;
     ss->process(rects);
 
-    int n = std::min((int)rects.size(), MAX_PROP);
+    /* OpenCV's selective search returns a deterministic candidate SET in a
+       NONDETERMINISTIC ORDER -- it perturbs region priority with the global
+       rand(), so the sequence changes run to run and with worker count.
+       Measured over 30 images: set identical 30/30, sequence differs 30/30,
+       and the naive "first MAX_PROP" truncation therefore selected a different
+       subset on 29/30. Canonicalise the order, then subsample deterministically
+       from a per-image seed, so the kept proposals depend only on the image. */
+    auto canon = [](const cv::Rect &a, const cv::Rect &b) {
+        if (a.x != b.x) return a.x < b.x;
+        if (a.y != b.y) return a.y < b.y;
+        if (a.width != b.width) return a.width < b.width;
+        return a.height < b.height;
+    };
+    std::sort(rects.begin(), rects.end(), canon);
+    if ((int)rects.size() > MAX_PROP) {
+        uint64_t st = fnv1a(id) ^ SEED;
+        for (size_t i = rects.size(); i > 1; i--)
+            std::swap(rects[i - 1], rects[(size_t)(splitmix(st) % i)]);
+        rects.resize(MAX_PROP);
+        std::sort(rects.begin(), rects.end(), canon);
+    }
+
+    int n = (int)rects.size();
     for (int i = 0; i < n; i++) {
         Prop p;
+        std::vector<float> f;
         p.b.x = (int)(rects[i].x / sc); p.b.y = (int)(rects[i].y / sc);
         p.b.w = (int)(rects[i].width / sc); p.b.h = (int)(rects[i].height / sc);
         if (p.b.w < 16 || p.b.h < 16) continue;
-        if (!hog_of(img, p.b, p.feat)) continue;
+        if (!hog_of(img, p.b, f)) continue;
         p.label = 0;
         if (label_props) {
             double best = 0.0; int best_dif = 0;
@@ -210,21 +253,67 @@ static void do_image(const std::string &root, const std::string &id,
             else if (best >= 0.3) p.label = -1;      /* ambiguous zone: ignore */
         }
         o.props.push_back(p);
+        if (keep_raw) o.raw.push_back(f);
     }
     o.ok = 1;
+}
+
+/* Phase B: recompute HOG for the boxes phase A already fixed, then project
+   through the frozen train-only PCA. Boxes are reused verbatim, so the data the
+   basis was fitted on and the data it is applied to line up by construction. */
+static void project_image(const std::string &root, const std::string &id,
+                          const cv::PCA &pca, ImgOut &o) {
+    cv::setNumThreads(1);
+    cv::Mat img;
+    if (!o.raw.empty() && o.raw.size() != o.props.size()) { o.ok = 0; o.err = "raw_prop_mismatch:" + id; return; }
+    if (o.raw.empty() && !o.props.empty()) {
+        img = cv::imread(root + "/JPEGImages/" + id + ".jpg");
+        if (img.empty()) { o.ok = 0; o.err = "image_corrupt:" + id; return; }
+    }
+    for (size_t i = 0; i < o.props.size(); i++) {
+        std::vector<float> f;
+        if (!o.raw.empty()) f = o.raw[i];
+        else if (!hog_of(img, o.props[i].b, f)) { o.ok = 0; o.err = "hog_replay_failed:" + id; return; }
+        cv::Mat in(1, VAR.hog_dim, CV_32F, f.data()), pr;
+        pca.project(in, pr);
+        o.props[i].feat.assign(pr.ptr<float>(0), pr.ptr<float>(0) + VAR.pca_dim);
+    }
+    std::vector<std::vector<float>>().swap(o.raw);   /* release phase-A memory */
 }
 
 /* ---------- pack IO ------------------------------------------------------ */
 struct PackHdr { char magic[8]; int32_t dim, n_img; int64_t n_prop; };
 
-static void write_pack(const std::string &path, const std::vector<ImgOut> &imgs,
-                       int dim, const std::vector<std::vector<float>> &feats) {
+/* Read just the image IDs out of an existing pack. Used to assert the V2 holdout
+   is disjoint from the images V1 actually scored -- checked against the real
+   artefact on disk, not against a re-derivation of the same shuffle. */
+static std::vector<std::string> read_pack_ids(const std::string &path) {
+    std::vector<std::string> ids;
+    std::ifstream f(path, std::ios::binary);
+    if (!f) return ids;
+    PackHdr h;
+    f.read((char*)&h, sizeof h);
+    if (memcmp(h.magic, "VDPACK1", 7) != 0) return ids;
+    for (int i = 0; i < h.n_img; i++) {
+        int32_t idlen = 0, np = 0, ng = 0;
+        f.read((char*)&idlen, 4);
+        if (!f || idlen <= 0 || idlen > 30) return ids;
+        std::string id(idlen, '\0');
+        f.read(&id[0], idlen);
+        f.read((char*)&np, 4); f.read((char*)&ng, 4);
+        if (!f) return ids;
+        f.seekg((std::streamoff)ng * 20 + (std::streamoff)np * (20 + 4LL * h.dim), std::ios::cur);
+        ids.push_back(id);
+    }
+    return ids;
+}
+
+static void write_pack(const std::string &path, const std::vector<ImgOut> &imgs, int dim) {
     std::ofstream f(path, std::ios::binary);
     PackHdr h; memcpy(h.magic, "VDPACK1", 8);
     h.dim = dim; h.n_img = (int32_t)imgs.size(); h.n_prop = 0;
     for (auto &im : imgs) h.n_prop += (int64_t)im.props.size();
     f.write((char*)&h, sizeof h);
-    size_t k = 0;
     for (size_t i = 0; i < imgs.size(); i++) {
         const ImgOut &im = imgs[i];
         int32_t np = (int32_t)im.props.size(), ng = (int32_t)im.gts.size();
@@ -238,14 +327,13 @@ static void write_pack(const std::string &path, const std::vector<ImgOut> &imgs,
         for (const Prop &p : im.props) {
             int32_t v[5] = {p.b.x, p.b.y, p.b.w, p.b.h, p.label};
             f.write((char*)v, sizeof v);
-            f.write((char*)feats[k].data(), sizeof(float) * dim);
-            k++;
+            f.write((char*)p.feat.data(), sizeof(float) * dim);
         }
     }
 }
 
 int main(int argc, char **argv) {
-    std::string root, cls = "car", outdir = "data/vision_cache";
+    std::string root, cls = "car", outdir = "data/vision_cache", v1cache;
     int n_test = 1000, workers = 8;
     for (int i = 1; i < argc; i++) {
         std::string a = argv[i];
@@ -254,9 +342,19 @@ int main(int argc, char **argv) {
         else if (a == "--out" && i + 1 < argc) outdir = argv[++i];
         else if (a == "--ntest" && i + 1 < argc) n_test = atoi(argv[++i]);
         else if (a == "--workers" && i + 1 < argc) workers = atoi(argv[++i]);
+        else if (a == "--v1cache" && i + 1 < argc) v1cache = argv[++i];
+        else if (a == "--variant" && i + 1 < argc) {
+            std::string v = argv[++i];
+            if (v == "v1") VAR = V1;
+            else if (v == "v2") VAR = V2;
+            else { fprintf(stderr, "VD_PREP_FAIL unknown_variant:%s\n", v.c_str()); return 2; }
+        }
     }
     if (root.empty()) { fprintf(stderr, "VD_PREP_FAIL need --root\n"); return 2; }
     fprintf(stderr, "vd_prep: CPU-only (ROCR/HIP/CUDA_VISIBLE_DEVICES empty), workers=%d\n", workers);
+    fprintf(stderr, "variant=%s hog=%dx%d %s raw_dim=%d pca_dim=%d test_slice=[%d,%d)\n",
+            VAR.name, VAR.hog_side, VAR.hog_side, VAR.color ? "colour" : "gray",
+            VAR.hog_dim, VAR.pca_dim, VAR.test_offset, VAR.test_offset + n_test);
 
     auto read_ids = [&](const std::string &p) {
         std::vector<std::string> v; std::ifstream f(p); std::string s;
@@ -307,7 +405,11 @@ int main(int argc, char **argv) {
             size_t j = (size_t)(splitmix(st) % i);
             std::swap(shuf[i - 1], shuf[j]);
         }
-        te.assign(shuf.begin(), shuf.begin() + std::min((size_t)n_test, shuf.size()));
+        /* One fixed permutation of the official 4952. V1 spent [0,1000); V2 takes
+           [1000,2000) from the 3952 V1 never saw; [2000,4952) stays unspent. */
+        size_t lo = (size_t)VAR.test_offset, hi = lo + (size_t)n_test;
+        if (hi > shuf.size()) { fprintf(stderr, "VD_PREP_FAIL test_slice_overflow\n"); return 2; }
+        te.assign(shuf.begin() + lo, shuf.begin() + hi);
     }
     fprintf(stderr, "split train=%zu val=%zu test=%zu\n", tr.size(), va.size(), te.size());
 
@@ -318,8 +420,30 @@ int main(int argc, char **argv) {
         for (auto &x : c) if (a.count(x) || b.count(x)) { fprintf(stderr, "VD_PREP_FAIL id_leak_test:%s\n", x.c_str()); return 3; }
     }
 
+    /* V1's holdout is spent. If a previous variant's cache is on disk, the new
+       holdout must not intersect the images it actually scored -- checked by ID
+       here (fail fast) and by content hash below, once the SHAs exist. */
+    std::vector<std::string> v1_ids;
+    size_t v1_id_checked = 0;
+    if (!v1cache.empty()) {
+        v1_ids = read_pack_ids(v1cache + "/test.pack");
+        if (v1_ids.empty()) { fprintf(stderr, "VD_PREP_FAIL v1cache_unreadable:%s\n", v1cache.c_str()); return 3; }
+        std::set<std::string> prev(v1_ids.begin(), v1_ids.end());
+        for (auto &x : te)
+            if (prev.count(x)) { fprintf(stderr, "VD_PREP_FAIL v1_v2_test_id_leak:%s\n", x.c_str()); return 3; }
+        v1_id_checked = v1_ids.size();
+        fprintf(stderr, "disjoint: v2 holdout vs %zu scored v1 ids -> 0 id overlap\n", v1_id_checked);
+    }
+
+    /* first N train images carry the PCA-fit sample (see protocol §3) */
+    std::set<std::string> fit_ids;
+    {
+        size_t nfit = VAR.pca_fit_images > 0 ? std::min((size_t)VAR.pca_fit_images, tr.size()) : tr.size();
+        for (size_t i = 0; i < nfit; i++) fit_ids.insert(tr[i]);
+    }
+
     auto run_split = [&](const std::vector<std::string> &ids, bool label_props,
-                         std::vector<ImgOut> &out) {
+                         std::vector<ImgOut> &out, bool raw_for_fit) {
         out.resize(ids.size());
         std::vector<std::thread> th;
         std::atomic<size_t> next(0);
@@ -328,7 +452,8 @@ int main(int argc, char **argv) {
                 for (;;) {
                     size_t i = next.fetch_add(1);
                     if (i >= ids.size()) break;
-                    do_image(root, ids[i], cls, label_props, out[i]);
+                    do_image(root, ids[i], cls, label_props,
+                             raw_for_fit && fit_ids.count(ids[i]) != 0, out[i]);
                 }
             });
         for (auto &t : th) t.join();
@@ -337,9 +462,36 @@ int main(int argc, char **argv) {
     };
 
     std::vector<ImgOut> Otr, Ova, Ote;
-    fprintf(stderr, "proposals: train...\n");  run_split(tr, true,  Otr);
-    fprintf(stderr, "proposals: val...\n");    run_split(va, true,  Ova);
-    fprintf(stderr, "proposals: test...\n");   run_split(te, false, Ote);
+    fprintf(stderr, "proposals: train...\n");  run_split(tr, true,  Otr, true);
+    fprintf(stderr, "proposals: val...\n");    run_split(va, true,  Ova, false);
+    fprintf(stderr, "proposals: test...\n");   run_split(te, false, Ote, false);
+
+    /* content-level V1 vs V2 holdout check: a duplicate image under a different
+       ID must not slip past the ID check above. */
+    size_t v1_sha_checked = 0;
+    if (!v1_ids.empty()) {
+        std::set<std::string> prev;
+        std::vector<std::string> vs(v1_ids.size());
+        std::vector<std::thread> th;
+        std::atomic<size_t> next(0);
+        for (int w = 0; w < workers; w++)
+            th.emplace_back([&]() {
+                for (;;) {
+                    size_t i = next.fetch_add(1);
+                    if (i >= v1_ids.size()) break;
+                    vs[i] = sha256_file(root + "/JPEGImages/" + v1_ids[i] + ".jpg");
+                }
+            });
+        for (auto &t : th) t.join();
+        for (auto &s : vs) if (!s.empty()) prev.insert(s);
+        for (auto &o : Ote)
+            if (prev.count(o.sha)) {
+                fprintf(stderr, "VD_PREP_FAIL v1_v2_test_content_leak:%s\n", o.id.c_str());
+                return 3;
+            }
+        v1_sha_checked = prev.size();
+        fprintf(stderr, "disjoint: v2 holdout vs %zu scored v1 content hashes -> 0 overlap\n", v1_sha_checked);
+    }
 
     /* leakage: content hashes must be disjoint across splits */
     {
@@ -358,39 +510,65 @@ int main(int argc, char **argv) {
         add(Otr, "train"); add(Ova, "val"); add(Ote, "test");
     }
 
-    /* PCA fitted on TRAIN ONLY */
-    fprintf(stderr, "pca: fitting on train only...\n");
-    std::vector<float> flat;
-    size_t ntr = 0;
-    for (auto &o : Otr) ntr += o.props.size();
-    flat.reserve(ntr * HOG_DIM);
-    for (auto &o : Otr) for (auto &p : o.props) flat.insert(flat.end(), p.feat, p.feat + HOG_DIM);
-    cv::Mat trainM((int)ntr, HOG_DIM, CV_32F, flat.data());
-    cv::PCA pca(trainM, cv::Mat(), cv::PCA::DATA_AS_ROW, PCA_DIM);
+    /* PCA fitted on TRAIN ONLY, on the images reserved for it in the protocol */
+    size_t nfit_rows = 0, nfit_img = 0;
+    for (auto &o : Otr) if (!o.raw.empty()) { nfit_rows += o.raw.size(); nfit_img++; }
+    if (nfit_rows < (size_t)VAR.pca_dim * 4) {
+        fprintf(stderr, "VD_PREP_FAIL pca_fit_rows_too_few=%zu\n", nfit_rows); return 5;
+    }
+    fprintf(stderr, "pca: fitting %d comps on %zu train rows from %zu train images...\n",
+            VAR.pca_dim, nfit_rows, nfit_img);
+    cv::PCA pca;
+    {
+        std::vector<float> flat;
+        flat.reserve(nfit_rows * (size_t)VAR.hog_dim);
+        for (auto &o : Otr)
+            for (auto &r : o.raw) flat.insert(flat.end(), r.begin(), r.end());
+        cv::Mat fitM((int)nfit_rows, VAR.hog_dim, CV_32F, flat.data());
+        pca = cv::PCA(fitM, cv::Mat(), cv::PCA::DATA_AS_ROW, VAR.pca_dim);
+    }
 
-    auto project = [&](std::vector<ImgOut> &v, std::vector<std::vector<float>> &out) {
-        for (auto &o : v) for (auto &p : o.props) {
-            cv::Mat in(1, HOG_DIM, CV_32F, p.feat), pr;
-            pca.project(in, pr);
-            std::vector<float> row(PCA_DIM);
-            memcpy(row.data(), pr.ptr<float>(0), sizeof(float) * PCA_DIM);
-            out.push_back(row);
-        }
+    /* phase B: replay HOG on the fixed boxes and project through the frozen basis */
+    auto project_split = [&](const std::vector<std::string> &ids, std::vector<ImgOut> &v,
+                             const char *tag) {
+        fprintf(stderr, "project: %s...\n", tag);
+        std::vector<std::thread> th;
+        std::atomic<size_t> next(0);
+        for (int w = 0; w < workers; w++)
+            th.emplace_back([&]() {
+                for (;;) {
+                    size_t i = next.fetch_add(1);
+                    if (i >= v.size()) break;
+                    project_image(root, ids[i], pca, v[i]);
+                }
+            });
+        for (auto &t : th) t.join();
+        for (auto &o : v)
+            if (!o.ok) { fprintf(stderr, "VD_PREP_FAIL %s\n", o.err.c_str()); exit(4); }
     };
-    std::vector<std::vector<float>> Ftr, Fva, Fte;
-    project(Otr, Ftr); project(Ova, Fva); project(Ote, Fte);
+    project_split(tr, Otr, "train"); project_split(va, Ova, "val"); project_split(te, Ote, "test");
 
     if (system(("mkdir -p " + outdir).c_str()) != 0) { fprintf(stderr, "VD_PREP_FAIL mkdir\n"); return 5; }
-    write_pack(outdir + "/train.pack", Otr, PCA_DIM, Ftr);
-    write_pack(outdir + "/val.pack",   Ova, PCA_DIM, Fva);
-    write_pack(outdir + "/test.pack",  Ote, PCA_DIM, Fte);
+    write_pack(outdir + "/train.pack", Otr, VAR.pca_dim);
+    write_pack(outdir + "/val.pack",   Ova, VAR.pca_dim);
+    write_pack(outdir + "/test.pack",  Ote, VAR.pca_dim);
     {
         std::ofstream f(outdir + "/pca.bin", std::ios::binary);
-        int32_t d1 = HOG_DIM, d2 = PCA_DIM;
+        int32_t d1 = VAR.hog_dim, d2 = VAR.pca_dim;
         f.write((char*)&d1, 4); f.write((char*)&d2, 4);
         cv::Mat mean = pca.mean.reshape(1, 1), ev = pca.eigenvectors;
-        f.write((char*)mean.ptr<float>(0), sizeof(float) * HOG_DIM);
-        for (int i = 0; i < PCA_DIM; i++) f.write((char*)ev.ptr<float>(i), sizeof(float) * HOG_DIM);
+        f.write((char*)mean.ptr<float>(0), sizeof(float) * VAR.hog_dim);
+        for (int i = 0; i < VAR.pca_dim; i++) f.write((char*)ev.ptr<float>(i), sizeof(float) * VAR.hog_dim);
+    }
+    {   /* provenance the bench reads back into its JSON */
+        std::ofstream f(outdir + "/meta.txt");
+        f << "variant " << VAR.name << "\n"
+          << "hog_side " << VAR.hog_side << "\ncolor " << VAR.color
+          << "\nhog_dim " << VAR.hog_dim << "\npca_dim " << VAR.pca_dim
+          << "\ntest_offset " << VAR.test_offset << "\ntest_count " << te.size()
+          << "\npca_fit_images " << nfit_img << "\npca_fit_rows " << nfit_rows
+          << "\nprev_test_ids_checked " << v1_id_checked
+          << "\nprev_test_sha_checked " << v1_sha_checked << "\n";
     }
 
     size_t pt = 0, pv = 0, pe = 0, gt_tr = 0, gt_te = 0, pos_tr = 0;
@@ -398,10 +576,10 @@ int main(int argc, char **argv) {
                           for (auto &p : o.props) if (p.label == 1) pos_tr++; }
     for (auto &o : Ova) pv += o.props.size();
     for (auto &o : Ote) { pe += o.props.size(); for (auto &g : o.gts) if (!g.difficult) gt_te++; }
-    printf("VD_PREP_OK class=%s dim=%d train_img=%zu val_img=%zu test_img=%zu "
+    printf("VD_PREP_OK variant=%s class=%s dim=%d train_img=%zu val_img=%zu test_img=%zu "
            "train_prop=%zu val_prop=%zu test_prop=%zu train_pos_prop=%zu "
            "train_gt=%zu test_gt=%zu\n",
-           cls.c_str(), PCA_DIM, Otr.size(), Ova.size(), Ote.size(),
+           VAR.name, cls.c_str(), VAR.pca_dim, Otr.size(), Ova.size(), Ote.size(),
            pt, pv, pe, pos_tr, gt_tr, gt_te);
     return 0;
 }

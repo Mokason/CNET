@@ -23,8 +23,15 @@
 #include "../../include/contract/contract.h"
 #include "../../include/specialist.h"
 
-#define DIM 64
+/* Feature width is a property of the cache, not of this file: V1 packs are
+   64-D (32x32 gray HOG), V2 packs are 256-D (64x64 colour HOG). Read from the
+   pack header and asserted against DIM_MAX. */
+#define DIM_MAX 256
 #define NCLS 2
+
+static size_t DIM = 0;
+static const char *G_VARIANT = "unknown";
+static const char *G_FRONTEND = "unknown";
 
 typedef struct {
     char id[32];
@@ -63,6 +70,10 @@ static int load_pack(const char *path, Pack *p) {
     }
     if (fread(&dim, 4, 1, f) != 1 || fread(&n_img, 4, 1, f) != 1 ||
         fread(&n_prop, 8, 1, f) != 1) { fclose(f); return -1; }
+    if (dim <= 0 || dim > DIM_MAX) {
+        fprintf(stderr, "VD_BENCH_FAIL pack_dim=%d exceeds DIM_MAX=%d:%s\n", dim, DIM_MAX, path);
+        fclose(f); return -1;
+    }
     p->dim = dim; p->n = (size_t)n_img;
     p->imgs = (VImg *)calloc(p->n, sizeof(VImg));
     if (!p->imgs) { fclose(f); return -1; }
@@ -146,7 +157,7 @@ static size_t collect(const Pack *p, double **X, double **Y, size_t max_neg_per_
 /* ---------------- scoring ------------------------------------------------ */
 /* softmax-ish confidence from the head's two raw outputs */
 static double head_score(BinaryTransformNetwork *btn, const float *f) {
-    double in[DIM];
+    double in[DIM_MAX];
     const double *o;
     size_t d;
     for (d = 0; d < DIM; d++) in[d] = f[d];
@@ -193,7 +204,7 @@ static void free_det(VdImage *v, VdDet **own, size_t n) {
 }
 
 /* ---------------- linear logistic baseline (same features) --------------- */
-typedef struct { double w[DIM]; double b; } Lin;
+typedef struct { double w[DIM_MAX]; double b; } Lin;
 
 static void lin_train(Lin *L, const double *X, const double *Y, size_t n,
                       int epochs, double lr) {
@@ -260,8 +271,8 @@ static void split_prop_recall(const Pack *p, double thr, size_t *hit, size_t *to
 
 static Port RAWP(void) {
     Port p; memset(&p, 0, sizeof p);
-    p.family = PORT_RAW; p.field_width = DIM; p.field_count = 1;
-    snprintf(p.tag, sizeof p.tag, "vd_hogpca64");
+    p.family = PORT_RAW; p.field_width = (uint32_t)DIM; p.field_count = 1;
+    snprintf(p.tag, sizeof p.tag, "vd_hogpca%d", (int)DIM);
     return p;
 }
 static Port CLSP(void) {
@@ -273,6 +284,12 @@ static Port CLSP(void) {
 
 int main(int argc, char **argv) {
     const char *cache = "data/vision_cache";
+    const char *jsonp = "logs/vision_detection_bench.json";
+    const char *prev_test = NULL;   /* pack whose holdout is already spent */
+    char variant[32] = "v1", frontend[160] = "";
+    size_t prev_ids_checked = 0;
+    double val_thr = 0.5;           /* set on validation, never on test */
+    double g_val_ap = 0.0;          /* validation AP50, for the floor formula */
     Pack tr, va, te;
     double *X = NULL, *Y = NULL;
     size_t n = 0;
@@ -280,8 +297,11 @@ int main(int argc, char **argv) {
     Lin lin;
     double t0, train_s;
     int i;
-    for (i = 1; i < argc; i++)
+    for (i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--cache") && i + 1 < argc) cache = argv[++i];
+        else if (!strcmp(argv[i], "--json") && i + 1 < argc) jsonp = argv[++i];
+        else if (!strcmp(argv[i], "--prev-test") && i + 1 < argc) prev_test = argv[++i];
+    }
 
     setvbuf(stdout, NULL, _IOLBF, 0);
     printf("vd_bench: CPU-only (ROCR/HIP/CUDA_VISIBLE_DEVICES empty)\n");
@@ -293,6 +313,53 @@ int main(int argc, char **argv) {
         if (load_pack(p1, &tr) || load_pack(p2, &va) || load_pack(p3, &te)) return 2;
     }
     printf("packs: train_img=%zu val_img=%zu test_img=%zu\n", tr.n, va.n, te.n);
+
+    if (tr.dim != va.dim || tr.dim != te.dim) {
+        printf("VD_BENCH_FAIL dim_mismatch train=%d val=%d test=%d\n", tr.dim, va.dim, te.dim);
+        return 2;
+    }
+    DIM = (size_t)tr.dim;
+
+    {   /* cache provenance, echoed into the JSON so a run cannot misreport
+           which frontend produced the numbers */
+        char mp[512]; FILE *m;
+        snprintf(mp, sizeof mp, "%s/meta.txt", cache);
+        m = fopen(mp, "r");
+        if (m) {
+            char k[64]; char v[31];
+            int hs = 0, col = 0, hd = 0, pd = 0;
+            while (fscanf(m, "%63s %30s", k, v) == 2) {
+                if (!strcmp(k, "variant")) snprintf(variant, sizeof variant, "%s", v);
+                else if (!strcmp(k, "hog_side")) hs = atoi(v);
+                else if (!strcmp(k, "color")) col = atoi(v);
+                else if (!strcmp(k, "hog_dim")) hd = atoi(v);
+                else if (!strcmp(k, "pca_dim")) pd = atoi(v);
+            }
+            fclose(m);
+            snprintf(frontend, sizeof frontend,
+                     "SelectiveSearchFast(class-agnostic) -> %dx%d %s HOG %dD -> PCA%d (train-only)",
+                     hs, hs, col ? "colour" : "gray", hd, pd);
+        }
+        if (!frontend[0]) snprintf(frontend, sizeof frontend, "unknown (no meta.txt in cache)");
+        G_VARIANT = variant; G_FRONTEND = frontend;
+        printf("variant=%s dim=%zu frontend=%s\n", G_VARIANT, DIM, G_FRONTEND);
+    }
+
+    /* A previous variant's holdout is spent. Re-assert here, at the scoring
+       boundary, so pointing --cache at a stale directory cannot produce a
+       number against images that were already scored. */
+    if (prev_test) {
+        Pack pv;
+        size_t a, b, leaks = 0;
+        if (load_pack(prev_test, &pv)) { printf("VD_BENCH_FAIL prev_test_unreadable\n"); return 3; }
+        for (a = 0; a < te.n; a++)
+            for (b = 0; b < pv.n; b++)
+                if (!strcmp(te.imgs[a].id, pv.imgs[b].id)) leaks++;
+        if (leaks) { printf("VD_BENCH_FAIL spent_holdout_reuse=%zu\n", leaks); free_pack(&pv); return 3; }
+        prev_ids_checked = pv.n;
+        printf("disjoint: holdout vs %zu already-scored ids -> 0 overlap\n", prev_ids_checked);
+        free_pack(&pv);
+    }
 
     /* leakage re-assertion at bench level: IDs must be disjoint */
     {
@@ -306,7 +373,7 @@ int main(int argc, char **argv) {
     }
 
     n = collect(&tr, &X, &Y, 20);  /* validation-time cost decision */
-    printf("train rows=%zu dim=%d\n", n, DIM);
+    printf("train rows=%zu dim=%zu\n", n, DIM);
     if (n < 1000) { printf("VD_BENCH_FAIL too_few_train_rows=%zu\n", n); return 4; }
 
     t0 = now_s();
@@ -406,8 +473,10 @@ int main(int argc, char **argv) {
         v = run_linear(&va, &lin, 0.30, &own); apl = vd_ap50(v, va.n, 0.5); free_det(v, own, va.n);
         printf("VAL ap50_cnet=%.6f ap50_random=%.6f ap50_linear=%.6f best_thr=%.2f best_f1=%.4f\n",
                ap, apr, apl, bestthr, bestf);
-        printf("VAL_FROZEN_BARS ap50_floor=%.6f ratio_floor=3.0 margin_floor=0.05\n",
-               ap * 0.5 > 0.10 ? ap * 0.5 : 0.10);
+        val_thr = bestthr;      /* the one parameter chosen on validation */
+        g_val_ap = ap;          /* feeds the protocol floor formula below */
+        printf("VAL_FROZEN_BARS ap50_floor=%.6f ratio_floor=3.0 margin_floor=0.05 thr=%.2f\n",
+               ap * 0.5 > 0.10 ? ap * 0.5 : 0.10, val_thr);
     }
     /* ================== SINGLE SCORED TEST RUN ==========================
        Bars were frozen from validation above. Nothing below feeds back into
@@ -416,8 +485,11 @@ int main(int argc, char **argv) {
         VdDet **own; VdImage *v;
         size_t h, t, ndet = 0, i2;
         double ap, ap2, apr, apl, pr, rc, prop_rec;
-        double thr = 0.55;   /* frozen on validation */
-        double floor_ap = 0.10, ratio_floor = 3.0, margin_floor = 0.05;
+        double thr = val_thr;   /* frozen on validation above; no test feedback */
+        /* protocol floor: max(0.10, 0.50 x AP50_val), computed rather than
+           hardcoded so a stronger validation run raises the bar as specified. */
+        double floor_ap = 0.5 * g_val_ap > 0.10 ? 0.5 * g_val_ap : 0.10;
+        double ratio_floor = 3.0, margin_floor = 0.05;
         int pass_floor, pass_ratio, pass_margin, pass_det, levelA;
         double t_test0 = now_s(), test_s;
 
@@ -455,7 +527,7 @@ int main(int argc, char **argv) {
                pass_det ? "PASS" : "FAIL");
 
         {
-            FILE *js = fopen("logs/vision_detection_bench.json", "w");
+            FILE *js = fopen(jsonp, "w");
             if (js) {
                 fprintf(js, "{\n  \"schema_version\": 1,\n");
                 fprintf(js, "  \"gpu_policy\": \"CPU only; ROCR/HIP/CUDA_VISIBLE_DEVICES empty\",\n");
@@ -464,10 +536,13 @@ int main(int argc, char **argv) {
                 fprintf(js, "  \"md5_test\": \"b6e924de25625d8de591ea690078ad9f\",\n");
                 fprintf(js, "  \"split\": {\"train_img\": %zu, \"val_img\": %zu, \"test_img\": %zu, \"test_gt\": %zu},\n",
                         tr.n, va.n, te.n, t);
-                fprintf(js, "  \"split_key\": \"sha256 image content hash (trainval), seed 20260727 subset (test)\",\n");
+                fprintf(js, "  \"variant\": \"%s\",\n", G_VARIANT);
+                fprintf(js, "  \"split_key\": \"sha256 image content hash (trainval); seed 20260727 shuffle slice (holdout)\",\n");
+                fprintf(js, "  \"holdout_disjoint_from_spent_ids\": %zu, \"holdout_spent_overlap\": 0,\n",
+                        prev_ids_checked);
                 fprintf(js, "  \"leakage\": {\"id_overlap\": 0, \"content_hash_overlap_trainval_test\": 0, \"trainval_internal_dup_pairs\": 3},\n");
-                fprintf(js, "  \"frontend\": \"SelectiveSearchFast(class-agnostic) -> HOG 324D -> PCA64 (train-only)\",\n");
-                fprintf(js, "  \"cnet_learned_component\": \"BTN head PORT_RAW64 -> PORT_ONEHOT2\",\n");
+                fprintf(js, "  \"frontend\": \"%s\",\n", G_FRONTEND);
+                fprintf(js, "  \"cnet_learned_component\": \"BTN head PORT_RAW%zu -> PORT_ONEHOT2\",\n", DIM);
                 fprintf(js, "  \"train_rows\": %zu, \"train_seconds\": %.1f, \"test_seconds\": %.1f,\n", n, train_s, test_s);
                 fprintf(js, "  \"proposal_recall_test\": %.6f,\n", prop_rec);
                 fprintf(js, "  \"ap50_cnet_test\": %.6f,\n", ap);
@@ -482,6 +557,8 @@ int main(int argc, char **argv) {
                         pass_floor, pass_ratio, pass_margin, pass_det);
                 fprintf(js, "  \"verdict_level_a\": \"%s\",\n",
                         levelA ? "VISION_DETECTION_MECHANISM_PASS" : "VISION_DETECTION_MECHANISM_WITHHELD");
+                fprintf(js, "  \"verdict_level_b\": \"VISION_CAPSULE_PORTABILITY_WITHHELD\",\n");
+                fprintf(js, "  \"verdict_level_b_reason\": \"PORT_RAW has no honest coverage gate in coverage_family_gated(); unchanged this pass\",\n");
                 fprintf(js, "  \"verdict_level_c\": \"VISION_SPECIALIST_COMPETES_WITHHELD\",\n");
                 fprintf(js, "  \"verdict_level_c_reason\": \"no pretrained reference detector run in this pass\"\n}\n");
                 fclose(js);
@@ -489,6 +566,7 @@ int main(int argc, char **argv) {
         }
         printf("%s\n", levelA ? "VISION_DETECTION_MECHANISM_PASS"
                                : "VISION_DETECTION_MECHANISM_WITHHELD");
+        printf("VISION_CAPSULE_PORTABILITY_WITHHELD reason=port_raw_has_no_honest_coverage_gate\n");
         printf("VISION_SPECIALIST_COMPETES_WITHHELD reason=no_pretrained_reference_this_pass\n");
     }
 

@@ -2630,7 +2630,8 @@ structure_mine_serve_durable: $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGU
 	@grep -q "STRUCTURE_MINE_SERVE_DURABLE_PASS" logs/structure_mine_serve_durable.log
 	@grep "STRUCTURE_MINE_SERVE_DURABLE_PASS" logs/structure_mine_serve_durable.log
 
-.PHONY: vision_detection_fetch vision_detection_prep vision_detection_bench
+.PHONY: vision_detection_fetch vision_detection_prep vision_detection_bench \
+	vision_detection_prep_v2 vision_detection_bench_v2 vision_detection_eval_asan
 # Explicit, network-touching. NEVER a dependency of ci_core.
 vision_detection_fetch:
 	@bash scripts/vision_detection_fetch.sh
@@ -2646,6 +2647,35 @@ bin/vd_prep: tools/vision_detection/vd_prep.cpp
 	@mkdir -p $(BIN_DIR) logs/vision
 	g++ -std=c++14 -O2 -Wall -o $(BIN_DIR)/vd_prep tools/vision_detection/vd_prep.cpp \
 		$(shell pkg-config --cflags --libs opencv4) -lpthread
+
+# V2 feature-ceiling arm: 64x64 colour HOG -> PCA256, holdout slice [1000,2000)
+# of the seed-20260727 shuffle. --v1cache asserts the V1 holdout is not reused.
+vision_detection_prep_v2: bin/vd_prep
+	@ROCR_VISIBLE_DEVICES='' HIP_VISIBLE_DEVICES='' CUDA_VISIBLE_DEVICES='' \
+	  timeout 5400 ./bin/vd_prep --root data/voc2007/VOCdevkit/VOC2007 \
+	  --class car --variant v2 --out data/vision_cache_v2 \
+	  --v1cache data/vision_cache --ntest 1000 --workers 16 \
+	  2>&1 | tee logs/vision/prep_v2.log
+
+vision_detection_bench_v2: vision_detection_eval_test bin/vd_bench
+	@mkdir -p logs/vision
+	@test -f data/vision_cache_v2/test.pack || { echo "VISION_DETECTION_FAIL missing v2 cache; run: make vision_detection_fetch vision_detection_prep_v2"; exit 1; }
+	@ROCR_VISIBLE_DEVICES='' HIP_VISIBLE_DEVICES='' CUDA_VISIBLE_DEVICES='' \
+	  timeout 5400 ./$(BIN_DIR)/vd_bench --cache data/vision_cache_v2 \
+	  --prev-test data/vision_cache/test.pack \
+	  --json logs/vision_detection_bench_v2.json 2>&1 | tee logs/vision/bench_v2.log
+	@grep -qE "VISION_DETECTION_MECHANISM_(PASS|WITHHELD)" logs/vision/bench_v2.log
+	@grep -E "^(TEST|BARS|VISION_|disjoint)" logs/vision/bench_v2.log
+
+# Evaluator under ASan+UBSan: the metric path must be memory-clean.
+vision_detection_eval_asan:
+	@mkdir -p $(BIN_DIR) logs/vision
+	$(CC) -std=c11 -Wall -Wextra -g -O1 -fsanitize=address,undefined \
+		-fno-omit-frame-pointer -D_DEFAULT_SOURCE -o $(BIN_DIR)/vd_eval_asan \
+		tools/vision_detection/vd_eval.c tests/vision_detection_eval_test.c -lm
+	@ROCR_VISIBLE_DEVICES='' HIP_VISIBLE_DEVICES='' CUDA_VISIBLE_DEVICES='' \
+	  timeout 600 ./$(BIN_DIR)/vd_eval_asan 2>&1 | tee logs/vision/eval_asan.log
+	@grep -q VISION_DETECTION_EVAL_PASS logs/vision/eval_asan.log
 
 # Runs from cached assets only. No download.
 vision_detection_bench: vision_detection_eval_test bin/vd_bench

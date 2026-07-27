@@ -77,9 +77,9 @@ registry.meta
 
 
 # vision detection benchmark: datasets, caches, artifacts (never committed)
-data/voc2007/
-data/vision_cache/
+data/
 logs/vision/
-logs/vision_detection_bench.json
+logs/vision_detection_bench*.json
 bin/vd_prep
 bin/vd_bench
+bin/vd_eval_asan
