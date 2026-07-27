@@ -2631,7 +2631,8 @@ structure_mine_serve_durable: $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGU
 	@grep "STRUCTURE_MINE_SERVE_DURABLE_PASS" logs/structure_mine_serve_durable.log
 
 .PHONY: vision_detection_fetch vision_detection_prep vision_detection_bench \
-	vision_detection_prep_v2 vision_detection_bench_v2 vision_detection_eval_asan
+	vision_detection_prep_v2 vision_detection_bench_v2 vision_detection_eval_asan \
+	vision_detection_integrity_test vision_detection_integrity_asan vision_detection_evidence_test
 # Explicit, network-touching. NEVER a dependency of ci_core.
 vision_detection_fetch:
 	@bash scripts/vision_detection_fetch.sh
@@ -2643,9 +2644,13 @@ vision_detection_prep: bin/vd_prep
 	  --class car --out data/vision_cache --ntest 1000 --workers 8 \
 	  2>&1 | tee logs/vision/prep.log
 
-bin/vd_prep: tools/vision_detection/vd_prep.cpp
+bin/vd_prep: tools/vision_detection/vd_prep.cpp tools/vision_detection/vd_io.c \
+		tools/vision_detection/vd_sha256.c tools/vision_detection/vd_pack.c
 	@mkdir -p $(BIN_DIR) logs/vision
-	g++ -std=c++14 -O2 -Wall -o $(BIN_DIR)/vd_prep tools/vision_detection/vd_prep.cpp \
+	g++ -std=c++14 -O2 -Wall -Wextra -I tools/vision_detection \
+		-o $(BIN_DIR)/vd_prep tools/vision_detection/vd_prep.cpp \
+		tools/vision_detection/vd_io.c tools/vision_detection/vd_sha256.c \
+		tools/vision_detection/vd_pack.c tools/vision_detection/vd_eval.c \
 		$(shell pkg-config --cflags --libs opencv4) -lpthread
 
 # V2 feature-ceiling arm: 64x64 colour HOG -> PCA256, holdout slice [1000,2000)
@@ -2668,6 +2673,40 @@ vision_detection_bench_v2: vision_detection_eval_test bin/vd_bench
 	@grep -E "^(TEST|BARS|VISION_|disjoint)" logs/vision/bench_v2.log
 
 # Evaluator under ASan+UBSan: the metric path must be memory-clean.
+vision_detection_evidence_test: bin/vd_bench bin/vd_mkcache
+	@mkdir -p logs/vision
+	@ROCR_VISIBLE_DEVICES='' HIP_VISIBLE_DEVICES='' CUDA_VISIBLE_DEVICES='' \
+	  timeout 900 bash scripts/vision_detection_evidence_test.sh 2>&1 | tee logs/vision/evidence_test.log
+	@grep -q VISION_DETECTION_EVIDENCE_PASS logs/vision/evidence_test.log
+
+bin/vd_mkcache: tools/vision_detection/vd_mkcache.c tools/vision_detection/vd_io.c \
+		tools/vision_detection/vd_sha256.c
+	@mkdir -p $(BIN_DIR)
+	$(CC) -std=c11 -Wall -Wextra -O2 -D_DEFAULT_SOURCE -I tools/vision_detection \
+		-o $(BIN_DIR)/vd_mkcache tools/vision_detection/vd_mkcache.c \
+		tools/vision_detection/vd_io.c tools/vision_detection/vd_sha256.c -lm
+
+vision_detection_integrity_test:
+	@mkdir -p $(BIN_DIR) logs/vision
+	$(CC) -std=c11 -Wall -Wextra -O2 -D_DEFAULT_SOURCE -o $(BIN_DIR)/vision_detection_integrity_test \
+		tools/vision_detection/vd_eval.c tools/vision_detection/vd_pack.c \
+		tools/vision_detection/vd_io.c tools/vision_detection/vd_sha256.c \
+		tests/vision_detection_integrity_test.c -lm
+	@ROCR_VISIBLE_DEVICES='' HIP_VISIBLE_DEVICES='' CUDA_VISIBLE_DEVICES='' \
+	  timeout 600 ./$(BIN_DIR)/vision_detection_integrity_test 2>&1 | tee logs/vision/integrity_test.log
+	@grep -q VISION_DETECTION_INTEGRITY_PASS logs/vision/integrity_test.log
+
+vision_detection_integrity_asan:
+	@mkdir -p $(BIN_DIR) logs/vision
+	$(CC) -std=c11 -Wall -Wextra -g -O1 -fsanitize=address,undefined -fno-omit-frame-pointer \
+		-D_DEFAULT_SOURCE -o $(BIN_DIR)/vd_integrity_asan \
+		tools/vision_detection/vd_eval.c tools/vision_detection/vd_pack.c \
+		tools/vision_detection/vd_io.c tools/vision_detection/vd_sha256.c \
+		tests/vision_detection_integrity_test.c -lm
+	@ROCR_VISIBLE_DEVICES='' HIP_VISIBLE_DEVICES='' CUDA_VISIBLE_DEVICES='' \
+	  timeout 900 ./$(BIN_DIR)/vd_integrity_asan 2>&1 | tee logs/vision/integrity_asan.log
+	@grep -q VISION_DETECTION_INTEGRITY_PASS logs/vision/integrity_asan.log
+
 vision_detection_eval_asan:
 	@mkdir -p $(BIN_DIR) logs/vision
 	$(CC) -std=c11 -Wall -Wextra -g -O1 -fsanitize=address,undefined \
@@ -2686,11 +2725,14 @@ vision_detection_bench: vision_detection_eval_test bin/vd_bench
 	@grep -qE "VISION_DETECTION_MECHANISM_(PASS|WITHHELD)" logs/vision/bench.log
 	@grep -E "^(TEST|BARS|VISION_)" logs/vision/bench.log
 
-bin/vd_bench: tools/vision_detection/vd_bench.c tools/vision_detection/vd_eval.c tools/vision_detection/vd_eval.h
+bin/vd_bench: tools/vision_detection/vd_bench.c tools/vision_detection/vd_eval.c \
+		tools/vision_detection/vd_pack.c tools/vision_detection/vd_io.c tools/vision_detection/vd_sha256.c
 	@mkdir -p $(BIN_DIR) logs/vision
 	$(CC) -std=c11 -Wall -Wextra -O2 -D_DEFAULT_SOURCE -I include \
 		-o $(BIN_DIR)/vd_bench tools/vision_detection/vd_bench.c \
-		tools/vision_detection/vd_eval.c $(SRC_NN_MIN) -lm -lpthread
+		tools/vision_detection/vd_eval.c tools/vision_detection/vd_pack.c \
+		tools/vision_detection/vd_io.c tools/vision_detection/vd_sha256.c \
+		$(SRC_NN_MIN) -lm -lpthread
 
 SRC_NN_MIN := src/nn.c src/contract/contract.c src/contract/unit.c src/property.c \
               src/scan.c src/contract/coverage.c src/router/registry.c \

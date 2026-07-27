@@ -1,21 +1,51 @@
 #include "vd_eval.h"
 
+#include <math.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
+/* Geometry is evaluated in int64: every int32 corner sum is then exactly
+   representable, so a box near INT_MAX cannot wrap into a bogus overlap. The
+   only thing an int32 box cannot express usefully is a non-positive extent. */
+int vd_box_valid(VdBox b) { return (b.w > 0 && b.h > 0) ? 0 : -1; }
+
 double vd_iou(VdBox a, VdBox b) {
-    int x1 = a.x > b.x ? a.x : b.x;
-    int y1 = a.y > b.y ? a.y : b.y;
-    int ax2 = a.x + a.w, ay2 = a.y + a.h;
-    int bx2 = b.x + b.w, by2 = b.y + b.h;
-    int x2 = ax2 < bx2 ? ax2 : bx2;
-    int y2 = ay2 < by2 ? ay2 : by2;
-    int iw = x2 - x1, ih = y2 - y1;
+    int64_t ax = a.x, ay = a.y, bx = b.x, by = b.y;
+    int64_t ax2 = ax + (int64_t)a.w, ay2 = ay + (int64_t)a.h;
+    int64_t bx2 = bx + (int64_t)b.w, by2 = by + (int64_t)b.h;
+    int64_t x1 = ax > bx ? ax : bx, y1 = ay > by ? ay : by;
+    int64_t x2 = ax2 < bx2 ? ax2 : bx2, y2 = ay2 < by2 ? ay2 : by2;
+    int64_t iw = x2 - x1, ih = y2 - y1;
     double inter, uni;
+    if (vd_box_valid(a) != 0 || vd_box_valid(b) != 0) return NAN;
     if (iw <= 0 || ih <= 0) return 0.0;
     inter = (double)iw * (double)ih;
-    uni = (double)a.w * a.h + (double)b.w * b.h - inter;
-    return uni > 0.0 ? inter / uni : 0.0;
+    uni = (double)a.w * (double)a.h + (double)b.w * (double)b.h - inter;
+    if (!(uni > 0.0)) return 0.0;
+    return inter / uni;
+}
+
+/* Every box that will be touched must be sane before any scoring starts;
+   scoring half a malformed set and reporting the number is the failure mode
+   this guards. */
+static int dets_valid(const VdDet *d, size_t n) {
+    size_t i;
+    if (!d && n) return -1;
+    for (i = 0; i < n; i++)
+        if (vd_box_valid(d[i].box) != 0 || !isfinite(d[i].score)) return -1;
+    return 0;
+}
+static int imgs_valid(const VdImage *imgs, size_t n_img) {
+    size_t i, j;
+    if (!imgs && n_img) return -1;
+    for (i = 0; i < n_img; i++) {
+        if (dets_valid(imgs[i].dets, imgs[i].n_det) != 0) return -1;
+        if (!imgs[i].gts && imgs[i].n_gt) return -1;
+        for (j = 0; j < imgs[i].n_gt; j++)
+            if (vd_box_valid(imgs[i].gts[j]) != 0) return -1;
+    }
+    return 0;
 }
 
 /* index + score, sorted by descending score with a stable index tiebreak so
@@ -42,11 +72,13 @@ size_t vd_nms(const VdDet *dets, size_t n, double iou_thr, int *keep_out) {
     Rank *r;
     char *dead;
     size_t i, j, k = 0;
-    if (!dets || n == 0 || !keep_out) return 0;
+    if (n == 0) return 0;
+    if (!dets || !keep_out) return VD_NMS_FAIL;
+    if (dets_valid(dets, n) != 0) return VD_NMS_FAIL;
     r = rank_dets(dets, n);
-    if (!r) return 0;
+    if (!r) return VD_NMS_FAIL;
     dead = (char *)calloc(n, 1);
-    if (!dead) { free(r); return 0; }
+    if (!dead) { free(r); return VD_NMS_FAIL; }
     for (i = 0; i < n; i++) {
         size_t ii = r[i].i;
         if (dead[ii]) continue;
@@ -92,6 +124,7 @@ double vd_ap50(const VdImage *imgs, size_t n_img, double iou_thr) {
     double *prec, *rec, ap = 0.0, prev_rec = 0.0;
     size_t tp = 0, fp = 0, npts = 0;
 
+    if (imgs_valid(imgs, n_img) != 0) return NAN;
     if (npos == 0) return 0.0;
     for (i = 0; i < n_img; i++) total_det += imgs[i].n_det;
     if (total_det == 0) return 0.0;
@@ -103,7 +136,7 @@ double vd_ap50(const VdImage *imgs, size_t n_img, double iou_thr) {
     if (!g || !matched || !prec || !rec) {
         free(g); free(prec); free(rec);
         if (matched) free(matched);
-        return 0.0;
+        return NAN;   /* allocation failure must never look like a score of 0 */
     }
     for (i = 0; i < n_img; i++) {
         matched[i] = imgs[i].n_gt ? (char *)calloc(imgs[i].n_gt, 1) : NULL;
@@ -162,13 +195,20 @@ void vd_pr_at(const VdImage *imgs, size_t n_img, double iou_thr,
               double score_thr, double *precision, double *recall) {
     size_t npos = count_real_gt(imgs, n_img);
     size_t i, j, tp = 0, fp = 0;
-    char **matched = (char **)calloc(n_img, sizeof *matched);
-    if (!matched) { if (precision) *precision = 0; if (recall) *recall = 0; return; }
+    char **matched;
+    if (imgs_valid(imgs, n_img) != 0) {
+        if (precision) *precision = NAN;
+        if (recall) *recall = NAN;
+        return;
+    }
+    matched = (char **)calloc(n_img, sizeof *matched);
+    if (!matched) { if (precision) *precision = NAN; if (recall) *recall = NAN; return; }
     for (i = 0; i < n_img; i++)
         matched[i] = imgs[i].n_gt ? (char *)calloc(imgs[i].n_gt, 1) : NULL;
     for (i = 0; i < n_img; i++) {
         const VdImage *im = &imgs[i];
         Rank *r = im->n_det ? rank_dets(im->dets, im->n_det) : NULL;
+        if (im->n_det && !r) { if (precision) *precision = NAN; if (recall) *recall = NAN; }
         for (j = 0; j < im->n_det; j++) {
             size_t di = r ? r[j].i : j;
             const VdDet *d = &im->dets[di];
@@ -205,9 +245,14 @@ void vd_proposal_recall(const VdImage *imgs, size_t n_img, const VdBox *props,
         for (j = 0; j < imgs[i].n_gt; j++) {
             int covered = 0;
             if (imgs[i].gt_difficult && imgs[i].gt_difficult[j]) continue;
+            if (vd_box_valid(imgs[i].gts[j]) != 0) continue;
             t++;
-            for (k = 0; k < n_props; k++)
-                if (vd_iou(props[k], imgs[i].gts[j]) >= iou_thr) { covered = 1; break; }
+            for (k = 0; k < n_props; k++) {
+                double v;
+                if (vd_box_valid(props[k]) != 0) continue;   /* diagnostic only */
+                v = vd_iou(props[k], imgs[i].gts[j]);
+                if (isfinite(v) && v >= iou_thr) { covered = 1; break; }
+            }
             if (covered) h++;
         }
     }

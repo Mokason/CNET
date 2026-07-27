@@ -34,11 +34,21 @@ typedef struct {
 
 double vd_iou(VdBox a, VdBox b);
 
-/* Greedy NMS. Writes kept indices (into dets) in score order; returns count. */
+/* Sentinel returned by vd_nms when the input is malformed or an allocation
+   fails. Distinct from 0, which legitimately means "nothing kept". */
+#define VD_NMS_FAIL ((size_t)-1)
+
+/* Greedy NMS. Writes kept indices (into dets) in score order; returns count,
+   or VD_NMS_FAIL. */
 size_t vd_nms(const VdDet *dets, size_t n, double iou_thr, int *keep_out);
 
-/* AP50 over a set of images. */
+/* AP50 over a set of images. Returns NaN if the input geometry is invalid or an
+   allocation fails -- callers must treat a non-finite result as a benchmark
+   failure, never as a score of zero. */
 double vd_ap50(const VdImage *imgs, size_t n_img, double iou_thr);
+
+/* 0 if every box in the set is usable geometry, nonzero otherwise. */
+int vd_box_valid(VdBox b);
 
 /* Precision/recall at a score threshold (same matching rules). */
 void vd_pr_at(const VdImage *imgs, size_t n_img, double iou_thr,

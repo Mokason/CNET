@@ -83,3 +83,4 @@ logs/vision_detection_bench*.json
 bin/vd_prep
 bin/vd_bench
 bin/vd_eval_asan
+bin/vd_mkcache

@@ -8,6 +8,10 @@
  *
  * Protocol: plans/cnet_vision_object_detection_20260727.md
  */
+#include "vd_io.h"
+#include "vd_pack.h"
+#include "vd_sha256.h"
+
 #include <opencv2/opencv.hpp>
 #include <opencv2/ximgproc/segmentation.hpp>
 
@@ -21,6 +25,8 @@
 #include <sstream>
 #include <string>
 #include <atomic>
+#include <cctype>
+#include <cerrno>
 #include <thread>
 #include <vector>
 
@@ -28,8 +34,12 @@ static const int SS_WIDTH   = 300;
 static const int MAX_PROP   = 300;   /* per image, after SS ordering */
 static const uint64_t SEED  = 20260727ULL;
 
-/* Variant table. V1 is frozen evidence (commit 6ffc5f1) and must keep reproducing
-   byte-for-byte; V2 changes exactly the feature description and the holdout slice.
+/* Variant table. V1 is retained so its configuration stays readable and
+   runnable; it does NOT reproduce commit 6ffc5f1 byte-for-byte, because the
+   proposal-selection determinism repair (see protocol section 3b) changed which
+   300 candidates are kept. The V1 artefact and verdict are frozen in that
+   commit as the V1 record; this variant is its configuration, not its output.
+   V2 changes the feature description and the holdout slice.
    Protocol: plans/cnet_vision_object_detection_v2_20260727.md */
 struct Variant {
     const char *name;
@@ -67,41 +77,10 @@ static uint64_t splitmix(uint64_t &x) {
     return z ^ (z >> 31);
 }
 
-/* SHA-256 (small, for content-hash leakage assertions) */
-struct Sha256 {
-    uint32_t s[8]; uint64_t len; uint8_t buf[64]; size_t n;
-    static uint32_t rr(uint32_t x, int c){return (x>>c)|(x<<(32-c));}
-    Sha256(){reset();}
-    void reset(){ static const uint32_t iv[8]={0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19}; memcpy(s,iv,sizeof s); len=0; n=0; }
-    void block(const uint8_t*p){
-        static const uint32_t k[64]={
-        0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,
-        0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,
-        0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,
-        0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,
-        0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,
-        0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,
-        0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,
-        0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2};
-        uint32_t w[64];
-        for(int i=0;i<16;i++) w[i]=(p[i*4]<<24)|(p[i*4+1]<<16)|(p[i*4+2]<<8)|p[i*4+3];
-        for(int i=16;i<64;i++){uint32_t a=rr(w[i-15],7)^rr(w[i-15],18)^(w[i-15]>>3),b=rr(w[i-2],17)^rr(w[i-2],19)^(w[i-2]>>10);w[i]=w[i-16]+a+w[i-7]+b;}
-        uint32_t a=s[0],b=s[1],c=s[2],d=s[3],e=s[4],f=s[5],g=s[6],h=s[7];
-        for(int i=0;i<64;i++){uint32_t S1=rr(e,6)^rr(e,11)^rr(e,25),ch=(e&f)^((~e)&g),t1=h+S1+ch+k[i]+w[i],S0=rr(a,2)^rr(a,13)^rr(a,22),mj=(a&b)^(a&c)^(b&c),t2=S0+mj;h=g;g=f;f=e;e=d+t1;d=c;c=b;b=a;a=t1+t2;}
-        s[0]+=a;s[1]+=b;s[2]+=c;s[3]+=d;s[4]+=e;s[5]+=f;s[6]+=g;s[7]+=h;
-    }
-    void update(const uint8_t*p,size_t l){ len+=l; while(l){ size_t t=std::min(l,64-n); memcpy(buf+n,p,t); n+=t; p+=t; l-=t; if(n==64){block(buf);n=0;} } }
-    std::string hex(){ uint64_t bl=len*8; uint8_t pad=0x80; update(&pad,1); uint8_t z=0; while(n!=56) update(&z,1);
-        uint8_t e[8]; for(int i=0;i<8;i++) e[i]=(uint8_t)(bl>>(56-i*8)); update(e,8);
-        char o[65]; for(int i=0;i<8;i++) sprintf(o+i*8,"%08x",s[i]); return std::string(o,64); }
-};
-
 static std::string sha256_file(const std::string &p) {
-    std::ifstream f(p, std::ios::binary);
-    if (!f) return "";
-    Sha256 h; std::vector<uint8_t> b(65536);
-    while (f) { f.read((char*)b.data(), (std::streamsize)b.size()); std::streamsize g=f.gcount(); if(g>0) h.update(b.data(),(size_t)g); }
-    return h.hex();
+    char hex[65];
+    if (vd_sha256_file(p.c_str(), hex) != 0) return "";
+    return std::string(hex, 64);
 }
 
 /* ---------- VOC annotation parsing (fails loud on malformed) ------------- */
@@ -113,10 +92,32 @@ static bool tag_val(const std::string &s, const char *tag, std::string &out) {
     return true;
 }
 
+/* strtol with full-consumption and range checking: atoi silently returns 0 for
+   garbage, which would turn a malformed annotation into a plausible box. */
+static bool parse_int(const std::string &t, long lo, long hi, long &out) {
+    if (t.empty() || t.size() > 24) return false;
+    errno = 0;
+    char *end = NULL;
+    long v = strtol(t.c_str(), &end, 10);
+    if (errno == ERANGE || end == t.c_str()) return false;
+    while (end && *end && isspace((unsigned char)*end)) end++;
+    if (end && *end) return false;
+    if (v < lo || v > hi) return false;
+    out = v;
+    return true;
+}
+
+static const size_t MAX_ANN_BYTES = 1u << 20;   /* 1 MiB; VOC files are ~1 KiB */
+
 static bool parse_ann(const std::string &path, const std::string &cls,
-                      std::vector<GT> &gts, std::string &err) {
-    std::ifstream f(path);
+                      std::vector<GT> &gts, int img_w, int img_h, std::string &err) {
+    std::ifstream f(path, std::ios::binary);
     if (!f) { err = "annotation_missing:" + path; return false; }
+    f.seekg(0, std::ios::end);
+    std::streamoff sz = f.tellg();
+    if (sz < 0) { err = "annotation_unreadable:" + path; return false; }
+    if ((size_t)sz > MAX_ANN_BYTES) { err = "annotation_too_large:" + path; return false; }
+    f.seekg(0, std::ios::beg);
     std::stringstream ss; ss << f.rdbuf();
     std::string s = ss.str();
     if (s.find("<annotation>") == std::string::npos) { err = "annotation_malformed:" + path; return false; }
@@ -132,10 +133,19 @@ static bool parse_ann(const std::string &path, const std::string &cls,
                 !tag_val(ob, "xmax", xe) || !tag_val(ob, "ymax", ye)) {
                 err = "object_no_bndbox:" + path; return false;
             }
-            GT g; g.difficult = tag_val(ob, "difficult", dif) ? atoi(dif.c_str()) : 0;
-            int x1 = atoi(xs.c_str()), y1 = atoi(ys.c_str());
-            int x2 = atoi(xe.c_str()), y2 = atoi(ye.c_str());
+            GT g;
+            long d = 0, x1 = 0, y1 = 0, x2 = 0, y2 = 0;
+            if (tag_val(ob, "difficult", dif)) {
+                if (!parse_int(dif, 0, 1, d)) { err = "object_bad_difficult:" + path; return false; }
+            }
+            g.difficult = (int)d;
+            if (!parse_int(xs, 0, VD_MAX_COORD, x1) || !parse_int(ys, 0, VD_MAX_COORD, y1) ||
+                !parse_int(xe, 0, VD_MAX_COORD, x2) || !parse_int(ye, 0, VD_MAX_COORD, y2)) {
+                err = "object_bad_coord:" + path; return false;
+            }
             if (x2 <= x1 || y2 <= y1) { err = "object_bad_box:" + path; return false; }
+            /* the box must lie inside the image that was actually decoded */
+            if (x2 > img_w || y2 > img_h) { err = "object_box_outside_image:" + path; return false; }
             g.b.x = x1; g.b.y = y1; g.b.w = x2 - x1; g.b.h = y2 - y1;
             gts.push_back(g);
         }
@@ -201,7 +211,7 @@ static void do_image(const std::string &root, const std::string &id,
     if (o.sha.empty()) { o.err = "image_missing:" + jp; return; }
     cv::Mat img = cv::imread(jp);
     if (img.empty()) { o.err = "image_corrupt:" + jp; return; }
-    if (!parse_ann(ap, cls, o.gts, o.err)) return;
+    if (!parse_ann(ap, cls, o.gts, img.cols, img.rows, o.err)) return;
 
     double sc = (double)SS_WIDTH / img.cols;
     cv::Mat small;
@@ -284,28 +294,17 @@ static void project_image(const std::string &root, const std::string &id,
 /* ---------- pack IO ------------------------------------------------------ */
 struct PackHdr { char magic[8]; int32_t dim, n_img; int64_t n_prop; };
 
-/* Read just the image IDs out of an existing pack. Used to assert the V2 holdout
-   is disjoint from the images V1 actually scored -- checked against the real
-   artefact on disk, not against a re-derivation of the same shuffle. */
-static std::vector<std::string> read_pack_ids(const std::string &path) {
-    std::vector<std::string> ids;
-    std::ifstream f(path, std::ios::binary);
-    if (!f) return ids;
-    PackHdr h;
-    f.read((char*)&h, sizeof h);
-    if (memcmp(h.magic, "VDPACK1", 7) != 0) return ids;
-    for (int i = 0; i < h.n_img; i++) {
-        int32_t idlen = 0, np = 0, ng = 0;
-        f.read((char*)&idlen, 4);
-        if (!f || idlen <= 0 || idlen > 30) return ids;
-        std::string id(idlen, '\0');
-        f.read(&id[0], idlen);
-        f.read((char*)&np, 4); f.read((char*)&ng, 4);
-        if (!f) return ids;
-        f.seekg((std::streamoff)ng * 20 + (std::streamoff)np * (20 + 4LL * h.dim), std::ios::cur);
-        ids.push_back(id);
-    }
-    return ids;
+/* Image IDs of an existing pack, via the shared validating reader: a file the
+   bench would refuse must not be usable as disjointness evidence here. */
+static std::vector<std::string> read_pack_ids(const std::string &path, int &rc) {
+    std::vector<std::string> out;
+    char **ids = NULL;
+    size_t n = 0;
+    rc = vd_pack_read_ids(path.c_str(), &ids, &n);
+    if (rc != VD_PACK_OK) return out;
+    for (size_t i = 0; i < n; i++) out.push_back(std::string(ids[i]));
+    vd_pack_free_ids(ids, n);
+    return out;
 }
 
 static void write_pack(const std::string &path, const std::vector<ImgOut> &imgs, int dim) {
@@ -425,13 +424,33 @@ int main(int argc, char **argv) {
        here (fail fast) and by content hash below, once the SHAs exist. */
     std::vector<std::string> v1_ids;
     size_t v1_id_checked = 0;
+    std::string prev_pack_sha;
+    if (VAR.test_offset > 0 && v1cache.empty()) {
+        fprintf(stderr, "VD_PREP_FAIL variant_%s_requires_--v1cache\n", VAR.name);
+        return 3;
+    }
     if (!v1cache.empty()) {
-        v1_ids = read_pack_ids(v1cache + "/test.pack");
-        if (v1_ids.empty()) { fprintf(stderr, "VD_PREP_FAIL v1cache_unreadable:%s\n", v1cache.c_str()); return 3; }
+        int rc = 0;
+        std::string ppath = v1cache + "/test.pack";
+        v1_ids = read_pack_ids(ppath, rc);
+        if (rc != VD_PACK_OK) {
+            fprintf(stderr, "VD_PREP_FAIL v1cache_invalid:%s (%s)\n",
+                    ppath.c_str(), vd_pack_strerror(rc));
+            return 3;
+        }
+        /* Partial evidence is not evidence: the spent holdout must be exactly
+           the size the protocol says it is, with no duplicate IDs. */
         std::set<std::string> prev(v1_ids.begin(), v1_ids.end());
+        if (v1_ids.size() != (size_t)n_test || prev.size() != (size_t)n_test) {
+            fprintf(stderr, "VD_PREP_FAIL v1_evidence_incomplete ids=%zu unique=%zu expected=%d\n",
+                    v1_ids.size(), prev.size(), n_test);
+            return 3;
+        }
         for (auto &x : te)
             if (prev.count(x)) { fprintf(stderr, "VD_PREP_FAIL v1_v2_test_id_leak:%s\n", x.c_str()); return 3; }
         v1_id_checked = v1_ids.size();
+        prev_pack_sha = sha256_file(ppath);
+        if (prev_pack_sha.empty()) { fprintf(stderr, "VD_PREP_FAIL v1cache_unhashable\n"); return 3; }
         fprintf(stderr, "disjoint: v2 holdout vs %zu scored v1 ids -> 0 id overlap\n", v1_id_checked);
     }
 
@@ -483,7 +502,20 @@ int main(int argc, char **argv) {
                 }
             });
         for (auto &t : th) t.join();
-        for (auto &s : vs) if (!s.empty()) prev.insert(s);
+        for (size_t q = 0; q < vs.size(); q++) {
+            if (vs[q].empty()) {
+                /* a silently dropped hash would weaken the content check to
+                   "the files we happened to be able to read" */
+                fprintf(stderr, "VD_PREP_FAIL v1_content_hash_missing:%s\n", v1_ids[q].c_str());
+                return 3;
+            }
+            prev.insert(vs[q]);
+        }
+        if (prev.size() != v1_ids.size()) {
+            fprintf(stderr, "VD_PREP_FAIL v1_content_hash_not_unique unique=%zu of %zu\n",
+                    prev.size(), v1_ids.size());
+            return 3;
+        }
         for (auto &o : Ote)
             if (prev.count(o.sha)) {
                 fprintf(stderr, "VD_PREP_FAIL v1_v2_test_content_leak:%s\n", o.id.c_str());
@@ -548,7 +580,10 @@ int main(int argc, char **argv) {
     };
     project_split(tr, Otr, "train"); project_split(va, Ova, "val"); project_split(te, Ote, "test");
 
-    if (system(("mkdir -p " + outdir).c_str()) != 0) { fprintf(stderr, "VD_PREP_FAIL mkdir\n"); return 5; }
+    if (vd_mkdir_p(outdir.c_str()) != 0) {
+        fprintf(stderr, "VD_PREP_FAIL mkdir_refused:%s\n", outdir.c_str());
+        return 5;
+    }
     write_pack(outdir + "/train.pack", Otr, VAR.pca_dim);
     write_pack(outdir + "/val.pack",   Ova, VAR.pca_dim);
     write_pack(outdir + "/test.pack",  Ote, VAR.pca_dim);
@@ -560,15 +595,64 @@ int main(int argc, char **argv) {
         f.write((char*)mean.ptr<float>(0), sizeof(float) * VAR.hog_dim);
         for (int i = 0; i < VAR.pca_dim; i++) f.write((char*)ev.ptr<float>(i), sizeof(float) * VAR.hog_dim);
     }
-    {   /* provenance the bench reads back into its JSON */
-        std::ofstream f(outdir + "/meta.txt");
-        f << "variant " << VAR.name << "\n"
-          << "hog_side " << VAR.hog_side << "\ncolor " << VAR.color
-          << "\nhog_dim " << VAR.hog_dim << "\npca_dim " << VAR.pca_dim
-          << "\ntest_offset " << VAR.test_offset << "\ntest_count " << te.size()
-          << "\npca_fit_images " << nfit_img << "\npca_fit_rows " << nfit_rows
-          << "\nprev_test_ids_checked " << v1_id_checked
-          << "\nprev_test_sha_checked " << v1_sha_checked << "\n";
+    /* Manifest: the single binding between a cache directory and the run that
+       produced it. It carries the SHA-256 of every artefact the bench will
+       score, so a bench invocation cannot pair packs from different preps, nor
+       score a pack that was edited after extraction. Published last, and
+       atomically, so a manifest that exists is a manifest whose artefacts are
+       already on disk and final. */
+    {
+        char sh_tr[65], sh_va[65], sh_te[65], sh_pca[65];
+        std::string ptr = outdir + "/train.pack", pva = outdir + "/val.pack";
+        std::string pte = outdir + "/test.pack", ppc = outdir + "/pca.bin";
+        if (vd_sha256_file(ptr.c_str(), sh_tr) != 0 || vd_sha256_file(pva.c_str(), sh_va) != 0 ||
+            vd_sha256_file(pte.c_str(), sh_te) != 0 || vd_sha256_file(ppc.c_str(), sh_pca) != 0) {
+            fprintf(stderr, "VD_PREP_FAIL manifest_hash_failed\n");
+            return 6;
+        }
+        size_t np_tr = 0, np_va = 0, np_te = 0;
+        for (auto &o : Otr) np_tr += o.props.size();
+        for (auto &o : Ova) np_va += o.props.size();
+        for (auto &o : Ote) np_te += o.props.size();
+
+        std::ostringstream m;
+        m << "manifest_version 1\n"
+          << "variant "        << VAR.name       << "\n"
+          << "class "          << cls            << "\n"
+          << "seed "           << SEED           << "\n"
+          << "hog_side "       << VAR.hog_side   << "\n"
+          << "color "          << VAR.color      << "\n"
+          << "hog_dim "        << VAR.hog_dim    << "\n"
+          << "pca_dim "        << VAR.pca_dim    << "\n"
+          << "test_offset "    << VAR.test_offset<< "\n"
+          << "test_count "     << te.size()      << "\n"
+          << "train_img "      << Otr.size()     << "\n"
+          << "val_img "        << Ova.size()     << "\n"
+          << "test_img "       << Ote.size()     << "\n"
+          << "train_prop "     << np_tr          << "\n"
+          << "val_prop "       << np_va          << "\n"
+          << "test_prop "      << np_te          << "\n"
+          << "pca_fit_images " << nfit_img       << "\n"
+          << "pca_fit_rows "   << nfit_rows      << "\n"
+          << "split_key sha256_content_hash_trainval\n"
+          << "trainval_id_overlap 0\n"
+          << "trainval_content_overlap 0\n"
+          << "prev_test_ids_checked "   << v1_id_checked  << "\n"
+          << "prev_test_sha_checked "   << v1_sha_checked << "\n"
+          << "prev_test_id_overlap 0\n"
+          << "prev_test_content_overlap 0\n"
+          << "sha256_prev_test_pack " << (prev_pack_sha.empty() ? "none" : prev_pack_sha) << "\n"
+          << "sha256_train_pack " << sh_tr  << "\n"
+          << "sha256_val_pack "   << sh_va  << "\n"
+          << "sha256_test_pack "  << sh_te  << "\n"
+          << "sha256_pca_bin "    << sh_pca << "\n";
+        std::string body = m.str();
+        std::string mpath = outdir + "/manifest.txt";
+        if (vd_publish_file(mpath.c_str(), body.data(), body.size()) != 0) {
+            fprintf(stderr, "VD_PREP_FAIL manifest_publish_failed:%s\n", mpath.c_str());
+            return 6;
+        }
+        fprintf(stderr, "manifest published: %s\n", mpath.c_str());
     }
 
     size_t pt = 0, pv = 0, pe = 0, gt_tr = 0, gt_te = 0, pos_tr = 0;

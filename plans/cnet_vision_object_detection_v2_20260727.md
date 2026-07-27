@@ -16,7 +16,7 @@ Branch `feature/vision-object-detection-benchmark`. Local commits only.
 ## 1. The one hypothesis under test
 
 V1's own §14 named the feature description as the top blocker: 32×32 **grayscale** HOG
-reduced to 64-D cannot describe a car. V2 changes **exactly that**, and nothing else:
+reduced to 64-D cannot describe a car. The intended change is exactly that:
 
 | | V1 (spent) | V2 |
 |---|---|---|
@@ -24,11 +24,17 @@ reduced to 64-D cannot describe a car. V2 changes **exactly that**, and nothing 
 | HOG | 324-D | **1764-D** |
 | PCA (train-only) | 64-D | **256-D** |
 
-Everything else is held fixed by construction: Selective Search Fast at width 300,
-class-agnostic, `MAX_PROP` 300, min proposal side 16 px, class `car`, seed `20260727`,
-NMS IoU 0.30, the evaluator, the label rule (IoU≥0.5 pos, 0.3–0.5 ignore), hard-negative
-mining (2 rounds, threshold 0.5, 15/image, train only), BTN shape (24/192), and every
-PASS bar.
+Held fixed by construction: Selective Search Fast at width 300, class-agnostic,
+`MAX_PROP` 300, min proposal side 16 px, class `car`, seed `20260727`, NMS IoU 0.30, the
+evaluator, the label rule (IoU≥0.5 pos, 0.3–0.5 ignore), hard-negative mining (2 rounds,
+threshold 0.5, 15/image, train only), BTN shape (24/192), and every PASS bar.
+
+**Two further things do differ between the V1 and V2 runs, and are named here rather than
+buried:** the holdout is a different 1000 images (§2 — V1's are spent), and *which* 300
+Selective Search candidates are kept changed as a result of the determinism repair in §3b.
+Both were fixed before any V2 number existed. Their consequence for what may be claimed is
+spelled out in §10: the V2 **frontend as a whole** is what the bars are evidence for, and
+attribution of the improvement to the descriptor alone is withheld.
 
 **Colour HOG is a real change, not a relabelling.** Probed directly: OpenCV's
 `HOGDescriptor::compute` on a 3-channel BGR crop uses the per-pixel maximum-magnitude
@@ -156,9 +162,10 @@ in this pass either. **Stays WITHHELD**, reason recorded.
 ## 7. Controls re-run in full
 
 Randomized/untrained head of identical shape · logistic baseline on identical features ·
-label-shuffle control · proposal-recall ceiling · determinism rerun · ID and content-hash
-leakage assertions · V1↔V2 holdout disjointness · evaluator's 17 analytic fixtures ·
-ASan/UBSan build of the scored path.
+label-shuffle control, evaluated with the identical full pipeline on **both** validation
+and the holdout · proposal-recall ceiling · determinism rerun · ID and content-hash
+leakage assertions · V1↔V2 holdout disjointness · evaluator's analytic fixtures ·
+evidence-gate negative controls · sanitizer coverage as scoped in §12.
 
 ## 8. Validation results and frozen threshold
 
@@ -180,14 +187,21 @@ Floor from the protocol formula: `max(0.10, 0.50 × 0.088587) = 0.10`. Threshold
 
 ```
 TEST proposal_recall=0.828244 (217/262)
-TEST ap50_cnet=0.114518 ap50_random=0.000988 ap50_linear=0.009932
+TEST ap50_cnet=0.114518 ap50_random=0.000988 ap50_linear=0.009932 ap50_labelshuffle=0.002435
 TEST precision@0.70=0.156951 recall@0.70=0.267176 detections=75989 gt=262
 TEST determinism |ap-ap_rerun|=0
 BARS floor=0.100 -> PASS | ratio>=3.0 -> PASS (115.9x) | margin>=0.050 -> PASS (0.1135) | det -> PASS
+EVIDENCE manifest=1 prev_holdout=1 leakage=1 eval_fault=0
 ```
+
+**Reproduced three times** with identical bar-bearing metrics, the last run under the full
+hardened evidence gate (verified artefact hashes, hash-bound spent-holdout check,
+transactional publication). The label-shuffle control now also runs the identical full
+evaluation on the holdout: **0.002435**, i.e. the head scores 47× that with real labels.
 
 | Bar | Required | Measured | Result |
 |---|---|---|---|
+| Evidence: manifest / spent-holdout / leakage / eval-fault | all | 1 / 1 / 1 / 0 | **PASS** |
 | Absolute AP50 | ≥ 0.100 | **0.114518** | **PASS** |
 | Ratio vs randomized head | ≥ 3.0× | **115.9×** | **PASS** |
 | Absolute margin vs randomized | ≥ 0.050 | **0.113530** | **PASS** |
@@ -217,12 +231,21 @@ independent gates was solved in this pass, and Level A passing does not unlock t
 | AP50 randomized head | 0.000733 | 0.000988 |
 | ratio | 63.3× | **115.9×** |
 | AP50 linear baseline | 0.017864 | 0.009932 |
-| AP50 label-shuffle | 0.001388 | 0.002049 |
+| AP50 label-shuffle (holdout) | not run on test | **0.002435** |
 | verdict | WITHHELD (floor + margin) | **MECHANISM PASS** |
 
-The hypothesis V1 named as its top blocker held: **the feature description was the binding
-constraint, not the CNET substrate.** Changing only the descriptor moved AP50 2.47× and
-took the result across a floor that was fixed before either run.
+**What passed is the complete V2 frontend, and causal attribution of the 2.47× to the
+descriptor alone is WITHHELD.** Three things differ between the V1 and V2 rows above, not
+one: the feature descriptor (32×32 gray/PCA64 → 64×64 colour/PCA256), the holdout (slice
+`[0,1000)` → `[1000,2000)`, different images and different GT counts), and the proposal
+selection (the §3b determinism repair changed *which* 300 candidates are kept, and roughly
+doubled the positive proposals available for training: 3572 → 7027).
+
+The descriptor hypothesis from V1 §14 remains **consistent** with the result, and no
+observation contradicts it — but a 2.47× movement across three simultaneous changes cannot
+be assigned to one of them. Establishing that would need an ablation holding the holdout
+and the proposal set fixed and varying only the descriptor. That ablation was not run, so
+the honest claim is the weaker one: **the V2 frontend as a whole clears the bars.**
 
 Two honest caveats on the surrounding numbers:
 
@@ -244,6 +267,21 @@ The bar-bearing evidence does not depend on that baseline: the randomized-head a
 (115.9×, same shape, same features, same proposals) and the label-shuffle collapse
 (0.0020) are what establish that the CNET-learned head is causally responsible.
 
+## 11a. Sanitizer scope — stated precisely
+
+ASan+UBSan coverage is **not** the whole benchmark, and should not be read as such:
+
+| Component | ASan+UBSan | How |
+|---|---|---|
+| Evaluator (`vd_eval.c`: IoU, NMS, AP50, PR, proposal recall) | **yes** | `make vision_detection_eval_asan`, 17 analytic fixtures |
+| Pack parser, path/mkdir, atomic publication, SHA-256 (`vd_pack.c`, `vd_io.c`, `vd_sha256.c`) | **yes** | `make vision_detection_integrity_asan`, 50 hostile-input fixtures |
+| Evidence gate end to end (`vd_bench` manifest/prev-holdout/publish paths) | **no** — functional negative controls only, not sanitized | `make vision_detection_evidence_test`, 10 fail-closed controls |
+| The scored training run itself (~45 min, `vd_bench` + `src/nn.c`) | **no** | run optimised and unsanitized; sanitizing it was not attempted |
+| Extraction (`vd_prep.cpp`, OpenCV) | **no** | not sanitized |
+
+So: the metric path and the file/parse paths that turn bytes into evidence are sanitized
+against hostile input. The long training run is not, and no claim is made that it is.
+
 ## 11. Where it still stands, honestly
 
 AP50 0.115 is a **real but weak** detector. A modern VOC car detector scores several times
@@ -259,6 +297,8 @@ Remaining ceilings, in order:
    the protocol forbids rescuing or inflating a result with test-side thresholding.
 3. **Under-fit linear control** (§10, caveat 2) — must be repaired before any future claim
    compares CNET to "a simple learned baseline".
+3b. **No same-holdout/same-proposal descriptor ablation**, so the 2.47× stays attributed to
+   the V2 frontend as a whole rather than to the descriptor (§10).
 4. **Level C** still needs a pretrained reference detector on the identical holdout.
 5. **Level B** still needs an honest continuous-domain coverage gate for `PORT_RAW`;
    `coverage_family_gated()` is unchanged.
