@@ -454,6 +454,66 @@ for sig in INT TERM; do
   fi
 done
 
+# ---- signal AFTER the child is reaped, before handlers are restored --------
+# g_child_pid_sig is already zero here, so there is no child to collect. An
+# interruption at this point must terminate immediately: no results JSON, no
+# verdict marker of any kind, and a signal-derived exit code.
+for sig in INT TERM; do
+  build_cache
+  rm -f "$JSON"
+  before=$(pgrep -x vd_bench | wc -l)
+  out=$(timeout 200 $BENCH --protocol synthetic-test --cache "$W/cache" \
+          --prev-test "$W/prev.pack" --jobs 2 --signal-after-reap $sig \
+          --shuffle-deadline-s 60 --json "$JSON" 2>&1); rc=$?
+  sleep 0.4
+  after=$(pgrep -x vd_bench | wc -l)
+  want=130; [ "$sig" = "TERM" ] && want=143
+  checks=$((checks+1))
+  if [ -f "$JSON" ]; then
+    echo "  SIG$sig after reap: FAIL (results JSON was published)"; fails=$((fails+1))
+  elif grep -qE "VISION_DETECTION_MECHANISM_(PASS|WITHHELD)" <<<"$out"; then
+    echo "  SIG$sig after reap: FAIL (verdict marker emitted)"; fails=$((fails+1))
+  elif [ "$after" -gt "$before" ]; then
+    echo "  SIG$sig after reap: FAIL (orphan $before -> $after)"; fails=$((fails+1))
+  elif [ $rc -ne $want ]; then
+    echo "  SIG$sig after reap: FAIL (exit $rc, expected $want)"; fails=$((fails+1))
+  else
+    echo "  SIG$sig after reap: PASS (exit $rc, no JSON, no verdict)"
+  fi
+done
+
+# ---- a recorded interruption must gate publication itself ------------------
+build_cache
+rm -f "$JSON"
+out=$(timeout 200 $BENCH --protocol synthetic-test --cache "$W/cache" \
+        --prev-test "$W/prev.pack" --jobs 2 --signal-before-publish INT \
+        --shuffle-deadline-s 60 --json "$JSON" 2>&1); rc=$?
+checks=$((checks+1))
+if [ -f "$JSON" ]; then
+  echo "  recorded signal gates publication: FAIL (JSON written)"; fails=$((fails+1))
+elif grep -qE "VISION_DETECTION_MECHANISM_(PASS|WITHHELD)" <<<"$out"; then
+  echo "  recorded signal gates publication: FAIL (verdict emitted)"; fails=$((fails+1))
+elif [ $rc -eq 0 ]; then
+  echo "  recorded signal gates publication: FAIL (exit 0)"; fails=$((fails+1))
+else
+  echo "  recorded signal gates publication: PASS (exit $rc, no JSON, no verdict)"
+fi
+
+# ---- prep quarantines on an uncaught C++ exception after staging -----------
+build_cache
+q=$(./bin/vd_prep --selftest-stage-exception "$W/exc_stage" 2>&1 || true)
+checks=$((checks+1))
+if grep -q "VD_STAGE_QUARANTINE" <<<"$q"; then
+  qpath=$(grep -o "VD_STAGE_QUARANTINE .*" <<<"$q" | awk "{print \$2}")
+  if [ -d "$qpath" ]; then
+    echo "  prep exception quarantines the stage: PASS"
+  else
+    echo "  prep exception quarantines the stage: FAIL (path not present)"; fails=$((fails+1))
+  fi
+else
+  echo "  prep exception quarantines the stage: FAIL (no quarantine reported)"; fails=$((fails+1))
+fi
+
 # ---- signals delivered to the parent must not leave the worker behind ------
 for sig in INT TERM; do
   build_cache

@@ -114,8 +114,8 @@ static int load_rc(PackSpec s) {
     return rc;
 }
 
-/* Swaps the destination directory for another one at a chosen commit phase, so
-   the continuity and rollback paths are exercised deterministically. */
+/* Swaps the destination directory for another one at a chosen publication
+   phase, so the identity checks are exercised deterministically. */
 static const char *g_hook_swap_from, *g_hook_swap_to;
 static int g_hook_phase_to_fire;
 
@@ -307,7 +307,7 @@ int main(void) {
         check(vd_stage_begin(qdest, &st) == 0, "quarantine: staging begins");
         check(write_full_cache(&st) == 0, "quarantine: staging is complete");
         {
-            int sn = snprintf(stagepath, sizeof stagepath, "%s/%s", DIR, st.stage);
+            int sn = snprintf(stagepath, sizeof stagepath, "%s", st.stage_full);
             check(sn > 0 && (size_t)sn < sizeof stagepath, "quarantine: stage path bounded");
         }
         vd_stage_abort(&st);
@@ -327,7 +327,7 @@ int main(void) {
             check(vd_stage_begin(occupied, &st) == 0, "quarantine: second staging begins");
             check(write_full_cache(&st) == 0, "quarantine: second staging complete");
             {
-                int sn = snprintf(stagepath, sizeof stagepath, "%s/%s", DIR, st.stage);
+                int sn = snprintf(stagepath, sizeof stagepath, "%s", st.stage_full);
                 check(sn > 0 && (size_t)sn < sizeof stagepath, "quarantine: path bounded");
             }
             check(vd_stage_commit(&st) != 0, "quarantine: publish over existing is refused");
@@ -780,7 +780,7 @@ int main(void) {
             check(stat(h1, &hb) == 0, "hook: baseline stat");
             g_hook_swap_from = decoy;
             g_hook_swap_to = h1;
-            g_hook_phase_to_fire = VD_HOOK_AFTER_VALIDATE;
+            g_hook_phase_to_fire = VD_HOOK_BEFORE_PUBLISH;
             vd_stage_set_hook(swap_hook, NULL);
             {
                 char h2[600];

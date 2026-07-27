@@ -53,7 +53,9 @@ static double g_worker_deadline = 0.0;
 static const char *g_worker_fault = "";
 static int g_parent_fault_after_fork = 0;
 static int g_fail_random_init = 0;
-static int g_sig_in_window = 0;   /* test hook: raise inside the fork window */
+static int g_sig_in_window = 0;      /* test hook: raise inside the fork window */
+static int g_sig_after_reap = 0;     /* test hook: raise once the child is collected */
+static int g_sig_before_publish = 0; /* test hook: recorded signal before publication */
 static const char *G_VARIANT = "unknown";
 static const char *G_FRONTEND = "unknown";
 
@@ -441,13 +443,30 @@ typedef struct { int ok; double ap_val, ap_test, elapsed; } ShufResult;
 static volatile sig_atomic_t g_child_pid_sig;   /* async-signal-safe copy */
 static volatile sig_atomic_t g_signal_caught;   /* set by the handler, read by control */
 
-/* Async-signal-safe only: record the signal and terminate the child. It does
-   NOT _exit -- normal control performs the bounded reap, so a signal can never
-   leave the worker behind or skip collection. */
+/* Two async-signal-safe states, chosen by whether a child is still outstanding.
+ *
+ *  - A child is live (g_child_pid_sig > 0): record the signal and TERM the
+ *    child, then return, so normal control performs the bounded reap. Exiting
+ *    here would abandon the worker.
+ *  - The child has already been collected (g_child_pid_sig == 0): there is
+ *    nothing left to reap, so exit immediately. This is what makes it
+ *    impossible for a results file or a verdict marker to be emitted after an
+ *    interruption -- the window between reaping the worker and restoring the
+ *    original handlers previously allowed exactly that. */
 static void child_signal_cleanup(int sig) {
-    g_signal_caught = sig;
-    if (g_child_pid_sig > 0) kill((pid_t)g_child_pid_sig, SIGTERM);
+    if (g_child_pid_sig > 0) {
+        g_signal_caught = sig;
+        kill((pid_t)g_child_pid_sig, SIGTERM);
+        return;
+    }
+    _exit(128 + sig);
 }
+
+/* A recorded interruption must never leave a bar-bearing artefact behind.
+   Checked after collection, before accepting the worker result, before handler
+   restoration, before building the JSON, before publishing it, and before any
+   verdict marker. */
+static int interrupted(void) { return g_signal_caught != 0; }
 
 /* Signal state saved across the fork window. SIGINT/SIGTERM are blocked and the
    parent handlers installed BEFORE fork(), so there is no interval in which a
@@ -703,6 +722,14 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--worker-fault") && i + 1 < argc) g_worker_fault = argv[++i];
         else if (!strcmp(argv[i], "--parent-fault-after-fork")) g_parent_fault_after_fork = 1;
         else if (!strcmp(argv[i], "--fail-random-init")) g_fail_random_init = 1;
+        else if (!strcmp(argv[i], "--signal-after-reap") && i + 1 < argc) {
+            const char *v = argv[++i];
+            g_sig_after_reap = !strcmp(v, "TERM") ? SIGTERM : SIGINT;
+        }
+        else if (!strcmp(argv[i], "--signal-before-publish") && i + 1 < argc) {
+            const char *v = argv[++i];
+            g_sig_before_publish = !strcmp(v, "TERM") ? SIGTERM : SIGINT;
+        }
         else if (!strcmp(argv[i], "--signal-in-fork-window") && i + 1 < argc) {
             const char *v = argv[++i];
             g_sig_in_window = !strcmp(v, "TERM") ? SIGTERM : SIGINT;
@@ -1100,11 +1127,19 @@ int main(int argc, char **argv) {
                 printf("VD_BENCH_FAIL shuffle_worker_bad_result\n");
                 bad = 1;
             } else {
-                shuf = r;
                 shuf_pid = -1;              /* collected */
+                if (g_sig_after_reap) raise(g_sig_after_reap);
+                if (interrupted()) {
+                    printf("VD_BENCH_FAIL interrupted_after_reap=%d\n", (int)g_signal_caught);
+                    bad = 1;
+                } else {
+                    shuf = r;               /* accepted only under zero signal */
+                }
             }
         }
-        if (bad) { g_eval_fault = 1; rc_final = 6; goto worker_cleanup; }
+        if (bad) { g_eval_fault = 1; if (!rc_final) rc_final = 6; goto worker_cleanup; }
+        if (interrupted()) { rc_final = 128 + (int)g_signal_caught; goto worker_cleanup; }
+        /* handlers restored only now, with the result accepted and no signal */
         sigwindow_leave(&sigwin);
     } else {
         double c0 = now_s();
@@ -1208,6 +1243,12 @@ int main(int argc, char **argv) {
         /* Results are evidence: build the document in memory, then publish it
            atomically. If publication fails the run has produced no record, so
            it must fail -- printing PASS with no artefact is not an option. */
+        if (g_sig_before_publish) g_signal_caught = g_sig_before_publish;
+        if (interrupted()) {
+            printf("VD_BENCH_FAIL interrupted_before_publication=%d\n", (int)g_signal_caught);
+            rc_final = 128 + (int)g_signal_caught;
+            goto worker_cleanup;
+        }
         {
             char *buf = (char *)malloc(8192);
             size_t cap = 8192, len = 0;
@@ -1260,6 +1301,12 @@ int main(int argc, char **argv) {
             JS("  \"verdict_level_c_reason\": \"no pretrained reference detector run in this pass\"\n}\n");
 #undef JS
             if (trunc) { free(buf); printf("VD_BENCH_FAIL json_truncated\n"); rc_final = 7; goto worker_cleanup; }
+            if (interrupted()) {
+                free(buf);
+                printf("VD_BENCH_FAIL interrupted_before_publication=%d\n", (int)g_signal_caught);
+                rc_final = 128 + (int)g_signal_caught;
+                goto worker_cleanup;
+            }
             if (vd_publish_file(jsonp, buf, len) != 0) {
                 free(buf);
                 printf("VD_BENCH_FAIL json_publish_failed:%s\n", jsonp);
@@ -1268,6 +1315,11 @@ int main(int argc, char **argv) {
             }
             free(buf);
             printf("results published: %s (%zu bytes)\n", jsonp, len);
+        }
+        if (interrupted()) {
+            printf("VD_BENCH_FAIL interrupted_before_verdict=%d\n", (int)g_signal_caught);
+            rc_final = 128 + (int)g_signal_caught;
+            goto worker_cleanup;
         }
         printf("%s\n", levelA ? "VISION_DETECTION_MECHANISM_PASS"
                                : "VISION_DETECTION_MECHANISM_WITHHELD");

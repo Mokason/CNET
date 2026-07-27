@@ -66,6 +66,7 @@ typedef struct {
     int lock_fd;                /* parent-local publication lock, held through */
     char base[VD_PATH_MAX];     /* destination basename */
     char stage[VD_PATH_MAX];    /* staging basename */
+    char stage_full[VD_PATH_MAX]; /* staging path as the caller would see it */
     int done;
     int created;                /* staging directory exists on disk */
     /* Staging is never deleted. If a stage was created and not published, its
@@ -74,14 +75,14 @@ typedef struct {
     char quarantine[VD_PATH_MAX];
 } VdStage;
 
-/* Name of the left-behind cache after a quarantined publish, or NULL. */
+/* Full path of the left-behind staging directory, or NULL. */
 const char *vd_stage_quarantine(const VdStage *st);
 
-/* Test-only hook, fired inside vd_stage_commit so the continuity and rollback
-   paths can be exercised deterministically instead of raced. */
+/* Test-only hook, fired inside vd_stage_commit so the fresh-publication
+   identity checks can be exercised deterministically instead of raced. */
 typedef enum {
-    VD_HOOK_AFTER_VALIDATE = 1,   /* stage identity checked, not yet published */
-    VD_HOOK_AFTER_EXCHANGE = 2    /* published, visibility not yet confirmed */
+    VD_HOOK_BEFORE_PUBLISH = 1,   /* stage identity checked, not yet published */
+    VD_HOOK_AFTER_PUBLISH  = 2    /* published, visibility not yet confirmed */
 } VdStageHookPhase;
 void vd_stage_set_hook(void (*fn)(VdStageHookPhase, void *), void *ctx);
 

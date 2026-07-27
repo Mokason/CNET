@@ -26,6 +26,8 @@
 #include <sstream>
 #include <string>
 #include <atomic>
+#include <new>
+#include <stdexcept>
 #include <cctype>
 #include <cerrno>
 #include <thread>
@@ -359,6 +361,25 @@ static bool write_text_staged(VdStage &st, const char *name, const std::string &
     return true;
 }
 
+/* Scope guard: if control leaves the staged region for ANY reason -- an early
+   return, or a C++ exception thrown by an allocation or string operation --
+   the stage is aborted and its quarantine path reported. Without this, an
+   uncaught exception after staging would leave a directory on disk that
+   nothing ever mentions. */
+struct StageGuard {
+    VdStage *st;
+    std::string out;
+    bool released;
+    StageGuard(VdStage *s, const std::string &o) : st(s), out(o), released(false) {}
+    ~StageGuard() {
+        if (released || !st) return;
+        vd_stage_abort(st);
+        const char *q = vd_stage_quarantine(st);
+        if (q) fprintf(stderr, "VD_STAGE_QUARANTINE %s\n", q);
+    }
+    void release() { released = true; }
+};
+
 /* Every early failure after staging begins funnels through here, so a
    quarantined staging directory is never left silently on disk. */
 static int stage_fail(VdStage &st, const std::string &outdir, const char *why, int rc) {
@@ -387,7 +408,7 @@ static std::string lines_of(std::vector<std::string> v) {
 }
 
 int main(int argc, char **argv) {
-    std::string root, cls = "car", outdir = "data/vision_cache", v1cache;
+    std::string root, cls = "car", outdir = "data/vision_cache", v1cache, selftest_exc;
     int n_test = 1000, workers = 8;
     for (int i = 1; i < argc; i++) {
         std::string a = argv[i];
@@ -397,6 +418,7 @@ int main(int argc, char **argv) {
         else if (a == "--ntest" && i + 1 < argc) n_test = atoi(argv[++i]);
         else if (a == "--workers" && i + 1 < argc) workers = atoi(argv[++i]);
         else if (a == "--v1cache" && i + 1 < argc) v1cache = argv[++i];
+        else if (a == "--selftest-stage-exception" && i + 1 < argc) selftest_exc = argv[++i];
         else if (a == "--replace") {
             fprintf(stderr,
                 "VD_PREP_FAIL replace_retired: in-place cache replacement is no longer\n"
@@ -410,6 +432,22 @@ int main(int argc, char **argv) {
             if (v == "v1") VAR = V1;
             else if (v == "v2") VAR = V2;
             else { fprintf(stderr, "VD_PREP_FAIL unknown_variant:%s\n", v.c_str()); return 2; }
+        }
+    }
+    if (!selftest_exc.empty()) {
+        /* Deterministic proof that the guard reports quarantine when an
+           exception unwinds out of the staged region. */
+        VdStage st;
+        if (vd_stage_begin(selftest_exc.c_str(), &st) != 0) {
+            fprintf(stderr, "VD_PREP_FAIL selftest_stage_begin\n");
+            return 2;
+        }
+        try {
+            StageGuard guard(&st, selftest_exc);
+            throw std::bad_alloc();
+        } catch (const std::exception &e) {
+            fprintf(stderr, "VD_PREP_FAIL staged_exception:%s\n", e.what());
+            return 7;
         }
     }
     if (root.empty()) { fprintf(stderr, "VD_PREP_FAIL need --root\n"); return 2; }
@@ -653,10 +691,11 @@ int main(int argc, char **argv) {
     if (vd_stage_begin(outdir.c_str(), &st) != 0) {
         fprintf(stderr, "VD_PREP_FAIL stage_begin_refused:%s\n", outdir.c_str());
         const char *q = vd_stage_quarantine(&st);
-        if (q) fprintf(stderr, "VD_STAGE_QUARANTINE %s/%s\n", outdir.c_str(), q);
+        if (q) fprintf(stderr, "VD_STAGE_QUARANTINE %s\n", q);
         return 5;
     }
 
+    StageGuard stage_guard(&st, outdir);
     auto ids_of = [](const std::vector<ImgOut> &v) {
         std::vector<std::string> r;
         for (auto &o : v) r.push_back(o.id);
@@ -773,7 +812,7 @@ int main(int argc, char **argv) {
                     "  The destination must not already exist: publication creates it or\n"
                     "  fails. Nothing is ever swapped out or deleted.\n", outdir.c_str());
             const char *q = vd_stage_quarantine(&st);
-            if (q) fprintf(stderr, "VD_STAGE_QUARANTINE %s/%s\n", outdir.c_str(), q);
+            if (q) fprintf(stderr, "VD_STAGE_QUARANTINE %s\n", q);
             return 6;
         }
         /* Printed so the roots can be pinned in vd_roots.h; the bench refuses
@@ -784,6 +823,7 @@ int main(int argc, char **argv) {
         printf("VD_ROOTS content_train=%s\n", r_cotr.c_str());
         printf("VD_ROOTS content_val=%s\n", r_cova.c_str());
         printf("VD_ROOTS content_test=%s\n", r_cote.c_str());
+        stage_guard.release();   /* published: the guard must not abort it */
         printf("VD_ARTIFACT_ROOT %s\n", aroot);
     }
 

@@ -370,12 +370,12 @@ of their larger apparent speedups is machine variance in the training phase itse
 parallelism. The observed range is **1.19×–1.35×** and the conservative end is the one
 reported; the larger figures are recorded but not claimed.
 
-All three multicore runs produced bit-identical metrics and the identical
+Every multicore run produced bit-identical metrics and the identical
 `btn_calls_total = 3427852`.
 
-Both multicore runs produced bit-identical metrics and an identical
+The multicore runs produced bit-identical metrics and an identical
 `btn_calls_total = 3427852`, which is a further determinism signal: the same number of BTN
-initialisations and forward passes were executed in each.
+initialisations and forward passes was executed in each.
 
 **What the worker evaluates, precisely.** The forked worker trains the label-shuffle head
 and evaluates it on validation *and* on the holdout before the parent reaps it. That
@@ -412,6 +412,16 @@ lock; an existing destination is a hard refusal and no path — successful or ot
 deletes or swaps anything. `vd_prep --replace` returns a nonzero retired diagnostic and
 callers choose a fresh `--out` path.
 
+**No verdict survives an interruption.** The signal handler has two
+async-signal-safe states. While the worker is outstanding it records the signal and TERMs
+the child, returning so normal control performs the bounded reap. Once the child has been
+collected there is nothing left to reap, so a caught SIGINT/SIGTERM exits immediately with
+`128 + sig`. That closes the window in which a signal arriving after the reap but before
+handler restoration could still have produced a results file and a verdict. In addition,
+a recorded interruption is rechecked before the worker result is accepted, before handlers
+are restored, before the JSON is built, before it is published, and before every verdict
+marker — so no bar-bearing artefact can outlive an interruption.
+
 **Worker signal safety.** `SIGINT`/`SIGTERM` are blocked and `sigaction` handlers installed
 *before* `fork()`, so there is no interval in which a signal can arrive with no handler, or
 with a handler but no child PID to act on. The child restores default dispositions and the
@@ -436,9 +446,9 @@ ASan+UBSan coverage is **not** the whole benchmark, and should not be read as su
 | Component | Sanitizer | How |
 |---|---|---|
 | Evaluator (`vd_eval.c`: IoU, NMS, AP50, PR, proposal recall) | **ASan+UBSan** | `make vision_detection_eval_asan`, **17** analytic fixtures |
-| Pack parser, manifest schema, artifact root, component-wise traversal, directory-atomic publication, SHA-256 (`vd_pack.c`, `vd_protocol.c`, `vd_io.c`, `vd_sha256.c`) | **ASan+UBSan** | `make vision_detection_integrity_asan`, **135** hostile-input fixtures |
+| Pack parser, manifest schema, artifact root, component-wise traversal, directory-atomic publication, SHA-256 (`vd_pack.c`, `vd_protocol.c`, `vd_io.c`, `vd_sha256.c`) | **ASan+UBSan** | `make vision_detection_integrity_asan`, **146** hostile-input fixtures |
 | Allocation-failure paths in the evaluator, pack loader and manifest parser | **UBSan** (`make vision_detection_allocfail_ubsan`, **13** checks) — **not ASan** | ASan replaces `malloc`/`calloc`/`realloc`, so the linker's `--wrap` cannot intercept them and the injection would silently never fire. The same functions are covered under ASan by the integrity lane above; the injection lane runs under UBSan so the two together cover both concerns. |
-| Evidence gate end to end (`vd_bench` protocol / artifact root / snapshot / prev-holdout / worker / publish paths) | **no sanitizer** — functional negative controls only | `make vision_detection_evidence_test`, **44** fail-closed controls |
+| Evidence gate end to end (`vd_bench` protocol / artifact root / snapshot / prev-holdout / worker / publish paths) | **no sanitizer** — functional negative controls only | `make vision_detection_evidence_test`, **62** fail-closed controls |
 | The scored training run itself (~44–50 min) | **no sanitizer** | run optimised and unsanitized; not attempted |
 | Extraction (`vd_prep.cpp`, OpenCV) | **no sanitizer** | not sanitized; it produces the cache, and the cache is bound by the artifact root that the scorer verifies |
 

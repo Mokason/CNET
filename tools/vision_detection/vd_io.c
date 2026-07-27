@@ -164,9 +164,11 @@ int vd_stage_begin(const char *dest, VdStage *st) {
         if (vd_mkdir_p_nofollow(parent) != 0) return -1;
         st->parent_fd = vd_open_dir_nofollow(parent);
         snprintf(st->base, sizeof st->base, "%s", slash + 1);
+        snprintf(st->stage_full, sizeof st->stage_full, "%s", parent);
     } else {
         st->parent_fd = open(".", O_RDONLY | O_DIRECTORY);
         snprintf(st->base, sizeof st->base, "%s", tmp);
+        snprintf(st->stage_full, sizeof st->stage_full, ".");
     }
     if (strchr(st->base, '/')) { if (st->parent_fd >= 0) close(st->parent_fd); st->parent_fd = -1; return -1; }
     if (st->parent_fd < 0) return -1;
@@ -181,6 +183,13 @@ int vd_stage_begin(const char *dest, VdStage *st) {
     }
     if ((size_t)snprintf(st->stage, sizeof st->stage, "%s.stage.%s", st->base, suffix)
         >= sizeof st->stage) { close(st->parent_fd); st->parent_fd = -1; return -1; }
+    {   /* the staging directory is a SIBLING of the destination, so record the
+           path a caller can actually act on */
+        char full[VD_PATH_MAX];
+        if ((size_t)snprintf(full, sizeof full, "%s/%s", st->stage_full, st->stage)
+            >= sizeof full) { close(st->parent_fd); st->parent_fd = -1; return -1; }
+        memcpy(st->stage_full, full, sizeof full);
+    }
 
     if (mkdirat(st->parent_fd, st->stage, 0777) != 0) {   /* exclusive by definition */
         close(st->parent_fd); st->parent_fd = -1; return -1;
@@ -207,9 +216,9 @@ int vd_stage_begin(const char *dest, VdStage *st) {
  * no automatic collection is performed here. */
 void vd_stage_abort(VdStage *st) {
     if (!st) return;
-    if (st->created && !st->done && st->stage[0]) {
+    if (st->created && !st->done && st->stage_full[0]) {
         st->quarantined = 1;
-        snprintf(st->quarantine, sizeof st->quarantine, "%s", st->stage);
+        snprintf(st->quarantine, sizeof st->quarantine, "%s", st->stage_full);
     }
     if (st->dir_fd >= 0) { close(st->dir_fd); st->dir_fd = -1; }
     if (st->lock_fd >= 0) { close(st->lock_fd); st->lock_fd = -1; }
@@ -236,20 +245,6 @@ static int same_inode(const struct stat *a, const struct stat *b) {
     return a->st_dev == b->st_dev && a->st_ino == b->st_ino;
 }
 
-/* Publication is a transaction over identities, not pathnames.
- *
- * The destination is opened and validated once, and its (st_dev, st_ino) is
- * held for the whole operation. After the exchange, BOTH sides are checked: the
- * new cache must be the staged inode and the displaced cache must be exactly
- * the inode that was validated. If either differs, or any post-exchange check
- * or fsync fails, the exchange is undone and the rollback verified. Nothing is
- * ever removed by an unvalidated pathname generation -- if identity-safe
- * cleanup cannot be proven, the displaced cache is left under the unique
- * staging name and reported instead of deleted.
- *
- * Cooperating publishers serialise on a parent-local no-follow lock held across
- * validate, exchange, commit and cleanup.
- */
 /* Publication is fresh-stage -> absent destination. Nothing else.
  *
  * The previous design validated an existing cache, exchanged it out and then
@@ -278,7 +273,7 @@ int vd_stage_commit(VdStage *st) {
     if (fstatat(st->parent_fd, st->stage, &chk, AT_SYMLINK_NOFOLLOW) != 0 ||
         !same_inode(&chk, &stage_sb)) { vd_stage_abort(st); return -1; }
 
-    fire_hook(VD_HOOK_AFTER_VALIDATE);
+    fire_hook(VD_HOOK_BEFORE_PUBLISH);
 
 #ifdef __linux__
     /* RENAME_NOREPLACE or nothing: never a replacing rename, so an existing
@@ -293,7 +288,7 @@ int vd_stage_commit(VdStage *st) {
     return -1;
 #endif
 
-    fire_hook(VD_HOOK_AFTER_EXCHANGE);
+    fire_hook(VD_HOOK_AFTER_PUBLISH);
 
     /* what is now visible must be exactly what was staged */
     if (fstatat(st->parent_fd, st->base, &chk, AT_SYMLINK_NOFOLLOW) != 0 ||
@@ -301,7 +296,7 @@ int vd_stage_commit(VdStage *st) {
         /* Do NOT try to undo by pathname: that is the deletion gap this design
            removed. Report and fail closed. */
         st->quarantined = 1;
-        snprintf(st->quarantine, sizeof st->quarantine, "%s", st->base);
+        snprintf(st->quarantine, sizeof st->quarantine, "%s", st->base);   /* destination */
         if (st->lock_fd >= 0) { close(st->lock_fd); st->lock_fd = -1; }
         if (st->dir_fd >= 0) { close(st->dir_fd); st->dir_fd = -1; }
         close(st->parent_fd); st->parent_fd = -1;
