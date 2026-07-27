@@ -368,9 +368,8 @@ static bool write_text_staged(VdStage &st, const char *name, const std::string &
    nothing ever mentions. */
 struct StageGuard {
     VdStage *st;
-    std::string out;
     bool released;
-    StageGuard(VdStage *s, const std::string &o) : st(s), out(o), released(false) {}
+    explicit StageGuard(VdStage *s) : st(s), released(false) {}
     ~StageGuard() {
         if (released || !st) return;
         vd_stage_abort(st);
@@ -382,11 +381,13 @@ struct StageGuard {
 
 /* Every early failure after staging begins funnels through here, so a
    quarantined staging directory is never left silently on disk. */
-static int stage_fail(VdStage &st, const std::string &outdir, const char *why, int rc) {
+static int stage_fail(VdStage &st, const char *why, int rc) {
     fprintf(stderr, "VD_PREP_FAIL %s\n", why);
     vd_stage_abort(&st);
+    /* vd_stage_quarantine() already returns the full, actionable path; joining
+       it to outdir again produced a path that did not exist. */
     const char *q = vd_stage_quarantine(&st);
-    if (q) fprintf(stderr, "VD_STAGE_QUARANTINE %s/%s\n", outdir.c_str(), q);
+    if (q) fprintf(stderr, "VD_STAGE_QUARANTINE %s\n", q);
     return rc;
 }
 
@@ -408,7 +409,7 @@ static std::string lines_of(std::vector<std::string> v) {
 }
 
 int main(int argc, char **argv) {
-    std::string root, cls = "car", outdir = "data/vision_cache", v1cache, selftest_exc;
+    std::string root, cls = "car", outdir = "data/vision_cache", v1cache, selftest_exc, selftest_fail;
     int n_test = 1000, workers = 8;
     for (int i = 1; i < argc; i++) {
         std::string a = argv[i];
@@ -419,6 +420,7 @@ int main(int argc, char **argv) {
         else if (a == "--workers" && i + 1 < argc) workers = atoi(argv[++i]);
         else if (a == "--v1cache" && i + 1 < argc) v1cache = argv[++i];
         else if (a == "--selftest-stage-exception" && i + 1 < argc) selftest_exc = argv[++i];
+        else if (a == "--selftest-stage-fail" && i + 1 < argc) selftest_fail = argv[++i];
         else if (a == "--replace") {
             fprintf(stderr,
                 "VD_PREP_FAIL replace_retired: in-place cache replacement is no longer\n"
@@ -434,6 +436,17 @@ int main(int argc, char **argv) {
             else { fprintf(stderr, "VD_PREP_FAIL unknown_variant:%s\n", v.c_str()); return 2; }
         }
     }
+    if (!selftest_fail.empty()) {
+        /* Exercises the EXPLICIT staged-write failure path (stage_fail), which
+           is a different route from the exception unwinding covered by
+           --selftest-stage-exception. */
+        VdStage st;
+        if (vd_stage_begin(selftest_fail.c_str(), &st) != 0) {
+            fprintf(stderr, "VD_PREP_FAIL selftest_stage_begin\n");
+            return 2;
+        }
+        return stage_fail(st, "selftest_staged_write", 5);
+    }
     if (!selftest_exc.empty()) {
         /* Deterministic proof that the guard reports quarantine when an
            exception unwinds out of the staged region. */
@@ -443,7 +456,7 @@ int main(int argc, char **argv) {
             return 2;
         }
         try {
-            StageGuard guard(&st, selftest_exc);
+            StageGuard guard(&st);
             throw std::bad_alloc();
         } catch (const std::exception &e) {
             fprintf(stderr, "VD_PREP_FAIL staged_exception:%s\n", e.what());
@@ -695,7 +708,7 @@ int main(int argc, char **argv) {
         return 5;
     }
 
-    StageGuard stage_guard(&st, outdir);
+    StageGuard stage_guard(&st);
     auto ids_of = [](const std::vector<ImgOut> &v) {
         std::vector<std::string> r;
         for (auto &o : v) r.push_back(o.id);
@@ -714,13 +727,13 @@ int main(int argc, char **argv) {
     long long msize[VD_N_MEMBERS];
     memset(msize, 0, sizeof msize);
     if (!write_pack_staged(st, "train.pack", Otr, VAR.pca_dim, &sh_tr))
-        return stage_fail(st, outdir, "pack_write_failed:train", 5);
+        return stage_fail(st, "pack_write_failed:train", 5);
     msize[0] = g_last_written_size;
     if (!write_pack_staged(st, "val.pack", Ova, VAR.pca_dim, &sh_va))
-        return stage_fail(st, outdir, "pack_write_failed:val", 5);
+        return stage_fail(st, "pack_write_failed:val", 5);
     msize[1] = g_last_written_size;
     if (!write_pack_staged(st, "test.pack", Ote, VAR.pca_dim, &sh_te))
-        return stage_fail(st, outdir, "pack_write_failed:test", 5);
+        return stage_fail(st, "pack_write_failed:test", 5);
     msize[2] = g_last_written_size;
     {
         std::string pca_blob;
@@ -732,7 +745,7 @@ int main(int argc, char **argv) {
         for (int i2 = 0; i2 < VAR.pca_dim; i2++)
             pca_blob.append((const char *)ev.ptr<float>(i2), sizeof(float) * VAR.hog_dim);
         if (!write_text_staged(st, "pca.bin", pca_blob, &sh_pca))
-            return stage_fail(st, outdir, "pca_write_failed", 5);
+            return stage_fail(st, "pca_write_failed", 5);
         msize[3] = g_last_written_size;
     }
     /* Sidecars carry the canonical source identity of each split so the bench
@@ -745,7 +758,7 @@ int main(int argc, char **argv) {
         std::string *sdig[6] = {&sh_idtr, &sh_idva, &sh_idte, &sh_cotr, &sh_cova, &sh_cote};
         for (int k = 0; k < 6; k++) {
             if (!write_text_staged(st, snames[k], sbody[k], sdig[k]))
-                return stage_fail(st, outdir, "sidecar_write_failed", 5);
+                return stage_fail(st, "sidecar_write_failed", 5);
             msize[4 + k] = g_last_written_size;
         }
     }
@@ -771,7 +784,7 @@ int main(int argc, char **argv) {
             snprintf(mem[mi].sha, sizeof mem[mi].sha, "%s", dig[mi].c_str());
         }
         if (vd_artifact_root(mem, VD_N_MEMBERS, 1, aroot) != 0)
-            return stage_fail(st, outdir, "artifact_root_failed", 6);
+            return stage_fail(st, "artifact_root_failed", 6);
 
         std::ostringstream m;
         m << "manifest_version 1\n"
@@ -806,7 +819,7 @@ int main(int argc, char **argv) {
           << "content_root_test " << r_cote << "\n"
           << "artifact_root " << aroot << "\n";
         if (!write_text_staged(st, "manifest.txt", m.str()))
-            return stage_fail(st, outdir, "manifest_write_failed", 6);
+            return stage_fail(st, "manifest_write_failed", 6);
         if (vd_stage_commit(&st) != 0) {
             fprintf(stderr, "VD_PREP_FAIL publish_refused:%s\n"
                     "  The destination must not already exist: publication creates it or\n"

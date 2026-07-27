@@ -514,6 +514,39 @@ else
   echo "  prep exception quarantines the stage: FAIL (no quarantine reported)"; fails=$((fails+1))
 fi
 
+# ---- quarantine paths must be exact and actionable -------------------------
+# Both routes out of a staged failure -- an explicit staged-write failure and an
+# exception unwinding -- must report a path that exists and is the sibling stage
+# directory of the requested destination, with no duplicated prefix.
+for mode in fail exception; do
+  d="$W/q_$mode"
+  rm -rf "$d" "$d".stage.* 2>/dev/null
+  if [ "$mode" = "fail" ]; then
+    o=$(./bin/vd_prep --selftest-stage-fail "$d/cache" 2>&1 || true)
+  else
+    o=$(./bin/vd_prep --selftest-stage-exception "$d/cache" 2>&1 || true)
+  fi
+  qp=$(grep -o "VD_STAGE_QUARANTINE .*" <<<"$o" | head -1 | cut -d" " -f2)
+  checks=$((checks+1))
+  if [ -z "${qp:-}" ]; then
+    echo "  quarantine path ($mode): FAIL (nothing reported)"; fails=$((fails+1))
+  elif [ ! -d "$qp" ]; then
+    echo "  quarantine path ($mode): FAIL (reported path does not exist: $qp)"; fails=$((fails+1))
+  elif [[ "$qp" != "$d/cache.stage."* ]]; then
+    echo "  quarantine path ($mode): FAIL (not the sibling stage: $qp)"; fails=$((fails+1))
+  else
+    echo "  quarantine path ($mode): PASS (exact sibling stage exists)"
+  fi
+done
+
+# no code path may re-prefix an already-full quarantine path
+checks=$((checks+1))
+if grep -nE 'VD_STAGE_QUARANTINE [^"]*%s/%s' tools/vision_detection/*.cpp tools/vision_detection/*.c 2>/dev/null; then
+  echo "  no duplicated quarantine prefix formatting: FAIL"; fails=$((fails+1))
+else
+  echo "  no duplicated quarantine prefix formatting: PASS"
+fi
+
 # ---- signals delivered to the parent must not leave the worker behind ------
 for sig in INT TERM; do
   build_cache
