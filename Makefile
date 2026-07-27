@@ -2768,8 +2768,8 @@ bin/vd_bench: tools/vision_detection/vd_bench.c tools/vision_detection/vd_eval.c
 		-o $(BIN_DIR)/vd_bench tools/vision_detection/vd_bench.c \
 		tools/vision_detection/vd_eval.c tools/vision_detection/vd_pack.c \
 		tools/vision_detection/vd_io.c tools/vision_detection/vd_sha256.c \
-		tools/vision_detection/vd_protocol.c \
-		$(SRC_NN_MIN) -lm -lpthread
+		tools/vision_detection/vd_protocol.c tools/vision_detection/vd_coverage.c \
+		$(CAPSULE_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(EXT_TEACHER_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) -lm -lpthread -lcurl
 
 SRC_NN_MIN := src/nn.c src/contract/contract.c src/contract/unit.c src/property.c \
               src/scan.c src/contract/coverage.c src/router/registry.c \
@@ -2849,6 +2849,32 @@ bin/vd_gate: tools/vision_detection/vd_gate.c tools/vision_detection/vd_coverage
 	@mkdir -p $(BIN_DIR) logs/vision
 	$(CC) -std=c11 -Wall -Wextra -Werror -O2 -D_DEFAULT_SOURCE -I tools/vision_detection \
 		-o $(BIN_DIR)/vd_gate $^ -lm -lpthread
+
+bin/vd_runner: tools/vision_detection/vd_runner.cpp tools/vision_detection/vd_coverage.c \
+		tools/vision_detection/vd_eval.c tools/vision_detection/vd_pack.c \
+		tools/vision_detection/vd_io.c tools/vision_detection/vd_sha256.c
+	@mkdir -p $(BIN_DIR) $(BIN_DIR)/objs_runner logs/vision
+	@# C sources are compiled by the C compiler; g++ only sees the C++ runner.
+	@for f in $(CAPSULE_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(EXT_TEACHER_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) tools/vision_detection/vd_coverage.c tools/vision_detection/vd_eval.c \
+		  tools/vision_detection/vd_pack.c tools/vision_detection/vd_io.c \
+		  tools/vision_detection/vd_sha256.c; do \
+		o=$(BIN_DIR)/objs_runner/$$(echo $$f | tr '/' '_' | sed 's/\.c$$/.o/'); \
+		$(CC) -std=c11 -Wall -Wextra -O2 -D_DEFAULT_SOURCE -I include \
+			-I tools/vision_detection -c $$f -o $$o || exit 1; \
+	  done
+	g++ -std=c++14 -O2 -Wall -Wextra -I tools/vision_detection -I include \
+		-o $(BIN_DIR)/vd_runner tools/vision_detection/vd_runner.cpp \
+		$(BIN_DIR)/objs_runner/*.o \
+		$(shell pkg-config --cflags --libs opencv4) -lm -lpthread -lcurl
+
+.PHONY: port_raw_unit_seam
+port_raw_unit_seam: $(CAPSULE_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(EXT_TEACHER_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) tests/test_port_raw_unit_seam.c
+	@mkdir -p $(BIN_DIR) logs/vision
+	$(CC) -std=c11 -Wall -Wextra -Werror -O2 -D_DEFAULT_SOURCE -I include \
+		-o $(BIN_DIR)/port_raw_unit_seam $^ -lm -lpthread -lcurl
+	@ROCR_VISIBLE_DEVICES='' HIP_VISIBLE_DEVICES='' CUDA_VISIBLE_DEVICES='' \
+	  timeout 600 ./$(BIN_DIR)/port_raw_unit_seam 2>&1 | tee logs/vision/port_raw_seam.log
+	@grep -q PORT_RAW_UNIT_SEAM_PASS logs/vision/port_raw_seam.log
 
 .PHONY: vision_coverage_test vision_coverage_asan
 vision_coverage_test:

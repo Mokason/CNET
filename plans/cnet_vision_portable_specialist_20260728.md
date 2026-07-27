@@ -228,9 +228,59 @@ pre-registered on unspent slices before it is fitted.
 The gate machinery itself is independently sound and stays: 22 analytic fixtures, clean
 under ASan+UBSan+Leak, deterministic and fixed-partition parallel.
 
-## 11b. Remaining results
+## 11b. Transfer artifact — BLOCKED at a canonical seam
 
-**Not reached.** No slice in §2 has been touched, so there are no results to report and
+The detector was retrained deterministically (metrics bit-identical: AP50 0.114518, random
+0.000988, shuffle 0.002435, artifact root unchanged) and export was attempted. It failed at
+`cnb_add_unit`, and the cause is structural rather than incidental.
+
+**A continuous `PORT_RAW` unit cannot enter a `CnetBase` at all**, so it cannot become a
+capsule. The two layers disagree:
+
+- `src/contract/contract.c:105` **exempts** `PORT_RAW` from the canonical 0/1 exemplar
+  check, so a `Contract` legitimately holds continuous exemplars.
+- `src/contract/unit.c` (`unit_save_mem`, the CNU blob that is the capsule payload)
+  bit-packs every exemplar value and refuses anything that is not exactly `0.0` or `1.0`,
+  with **no** `PORT_RAW` branch.
+
+Pinned as evidence by `make port_raw_unit_seam` (8 checks): the *identical* `PORT_RAW`
+topology serialises when its exemplars are 0/1 and is refused when they are continuous, so
+the blocker is exemplar **values**, not the port family, the dimension or the topology. The
+refusal leaves the base unmutated.
+
+### The canonical extension seam
+
+The fix belongs in the CNU exemplar section, not in a second packaging system:
+version the unit blob so that when any port is `PORT_RAW` the exemplar block is stored as
+`float64` instead of bit-packed bits, with the reader selecting on the blob version. That
+keeps one unit format, one seal, one behaviour digest, and leaves every existing 0/1 unit
+byte-identical.
+
+It is **not** done here. `unit_save_mem`/`unit_load_mem` are load-bearing for every capsule,
+base, accumulation and composition gate, and changing the blob format is a decision that
+deserves explicit review rather than an improvisation at the end of this pass. The
+alternatives were both rejected: fabricating 0/1 exemplars would make the contract,
+certification and behaviour digest meaningless, and writing a bespoke archive would be the
+conflicting second format the assignment forbids.
+
+**`VISION_TRANSFER_ARTIFACT_WITHHELD`** — no capsule was produced, so no fresh-runtime
+replay, compatibility-control or coexistence result is claimed either. The runner
+(`vd_runner`, imports a capsule and detects from JPEG using only the package) and the
+transfer-proof harness are built and committed, but they cannot be exercised end to end
+until a capsule exists.
+
+## 12. Verdicts
+
+| claim | verdict |
+|---|---|
+| `VISION_TRANSFER_ARTIFACT` | **WITHHELD** — blocked at the CNU continuous-exemplar seam (§11b) |
+| `VISION_CONTINUOUS_COVERAGE` | **WITHHELD** — floors measured and not met (§11) |
+| `VISION_CAPSULE_PORTABILITY` | **WITHHELD** — requires both of the above |
+| `VISION_SPECIALIST_COMPOSITION` | **WITHHELD** — not attempted; no capsule to compose |
+| `VISION_SPECIALIST_COMPETES` | **WITHHELD** — no reference detector on the V3 holdout |
+
+The V3 transfer holdout (`shuf[2800,3800)`) was extracted but **never scored**. Its one
+frozen evaluation remains unspent, so the next attempt starts from an untouched holdout. No slice in §2 has been touched, so there are no results to report and
 every verdict in §8 stands WITHHELD. The only thing this checkpoint establishes is that
 the capsule format can carry a frontend asset as one bound object (§3), verified by
 `make vision_capsule_asset` (39 checks) and its ASan+UBSan+Leak lane.

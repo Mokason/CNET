@@ -21,6 +21,12 @@
 #include "vd_io.h"
 #include "vd_pack.h"
 #include "vd_protocol.h"
+#include "vd_frontend.h"
+#include "vd_roots.h"
+#include "vd_coverage.h"
+#include "../../include/base.h"
+#include "../../include/cnet_capsule.h"
+#include "../../include/hybrid_ai.h"
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -56,6 +62,9 @@ static int g_fail_random_init = 0;
 static int g_sig_in_window = 0;      /* test hook: raise inside the fork window */
 static int g_sig_after_reap = 0;     /* test hook: raise once the child is collected */
 static int g_sig_before_publish = 0; /* test hook: recorded signal before publication */
+static const char *g_export_dir = NULL;
+static const char *g_gate_file = NULL;
+static const char *g_pca_file = NULL;
 static const char *G_VARIANT = "unknown";
 static const char *G_FRONTEND = "unknown";
 
@@ -688,6 +697,120 @@ static void split_prop_recall(const Pack *p, double thr, size_t *hit, size_t *to
     *hit = h; *tot = t;
 }
 
+
+/* ---------------- capsule export ----------------------------------------
+   Publishes the trained head as ONE portable specialist: the certified BTN and
+   its typed contract in the payload, the coverage reference rows as the
+   capsule's coverage section, and the whole frontend -- proposal rule,
+   descriptor, projection basis, class map, thresholds, gate constants and
+   provenance -- as the schema-2 bound asset. */
+static int export_specialist(const char *dir, BinaryTransformNetwork *head,
+                             const double *X, const double *Y, size_t n,
+                             const char *gate_file, const char *pca_file,
+                             double thr) {
+    CnetBase base;
+    Contract c;
+    HybridAi cov;
+    CnetCapsuleReport rep;
+    unsigned char *asset = NULL;
+    size_t asset_len = 0;
+    double *refrows = NULL;
+    size_t nref = 0, refdim = 0, gate_k = 0;
+    double tau = 0.0;
+    int rc = -1;
+    const size_t EXEMPLARS = 64;
+
+    memset(&base, 0, sizeof base);
+    memset(&c, 0, sizeof c);
+    memset(&cov, 0, sizeof cov);
+    cnb_init(&base);
+
+    /* gate: reference rows + tau */
+    {
+        FILE *f = fopen(gate_file, "rb");
+        uint64_t hdr[4];
+        if (!f) { printf("VD_EXPORT_FAIL gate_open\n"); goto done; }
+        if (fread(hdr, sizeof hdr, 1, f) != 1) { fclose(f); printf("VD_EXPORT_FAIL gate_hdr\n"); goto done; }
+        nref = (size_t)hdr[0]; refdim = (size_t)hdr[1]; gate_k = (size_t)hdr[2];
+        memcpy(&tau, &hdr[3], sizeof(double));
+        if (refdim != DIM) { fclose(f); printf("VD_EXPORT_FAIL gate_dim\n"); goto done; }
+        refrows = (double *)malloc(nref * refdim * sizeof(double));
+        if (!refrows || fread(refrows, sizeof(double), nref * refdim, f) != nref * refdim) {
+            fclose(f); printf("VD_EXPORT_FAIL gate_rows\n"); goto done;
+        }
+        fclose(f);
+    }
+
+    if (contract_init_borrowed(&c, "vd_car_detector", head, X, Y,
+                               n < EXEMPLARS ? n : EXEMPLARS) != 0) {
+        printf("VD_EXPORT_FAIL contract\n"); goto done;
+    }
+    if (cnb_add_unit(&base, head, &c, NULL) != 0) { printf("VD_EXPORT_FAIL add_unit\n"); goto done; }
+    if (hybrid_coverage_record(&cov, RAWP(), CLSP(), "vd_car_detector",
+                               refrows, NULL, nref, refdim, 0) != 0) {
+        printf("VD_EXPORT_FAIL coverage_record\n"); goto done;
+    }
+
+    /* frontend asset */
+    {
+        VdFrontendHdr h;
+        FILE *f = fopen(pca_file, "rb");
+        int32_t d1 = 0, d2 = 0;
+        size_t nfloat;
+        float *fl = NULL;
+        if (!f) { printf("VD_EXPORT_FAIL pca_open\n"); goto done; }
+        if (fread(&d1, 4, 1, f) != 1 || fread(&d2, 4, 1, f) != 1) {
+            fclose(f); printf("VD_EXPORT_FAIL pca_hdr\n"); goto done;
+        }
+        nfloat = (size_t)d1 + (size_t)d2 * (size_t)d1;
+        fl = (float *)malloc(nfloat * sizeof(float));
+        if (!fl || fread(fl, sizeof(float), nfloat, f) != nfloat) {
+            fclose(f); free(fl); printf("VD_EXPORT_FAIL pca_body\n"); goto done;
+        }
+        fclose(f);
+        memset(&h, 0, sizeof h);
+        memcpy(h.magic, VD_FRONTEND_MAGIC, 8);
+        h.schema = VD_FRONTEND_SCHEMA;
+        h.hog_side = 64; h.color = 1; h.hog_dim = (uint32_t)d1; h.pca_dim = (uint32_t)d2;
+        h.ss_width = 300; h.max_prop = 300; h.min_side = 16;
+        h.nms_iou_x100 = 30; h.score_thr_x100 = (uint32_t)(thr * 100.0 + 0.5);
+        h.match_iou_x100 = 50;
+        h.gate_k = (uint32_t)gate_k; h.gate_tau = tau;
+        h.n_classes = 2;
+        snprintf(h.class0, sizeof h.class0, "background");
+        snprintf(h.class1, sizeof h.class1, "car");
+        snprintf(h.extractor, sizeof h.extractor,
+                 "SelectiveSearchFast/ximgproc;HOG64x64c9b16s8;PCA%u", (unsigned)d2);
+        snprintf(h.protocol, sizeof h.protocol, "cnet_vision_v2_20260727");
+        snprintf(h.artifact_root, sizeof h.artifact_root, "%s", VD_ARTIFACT_ROOT_V2);
+        asset_len = sizeof h + nfloat * sizeof(float);
+        asset = (unsigned char *)malloc(asset_len);
+        if (!asset) { free(fl); printf("VD_EXPORT_FAIL asset_alloc\n"); goto done; }
+        memcpy(asset, &h, sizeof h);
+        memcpy(asset + sizeof h, fl, nfloat * sizeof(float));
+        free(fl);
+    }
+
+    if (vd_mkdir_p(dir) != 0) { printf("VD_EXPORT_FAIL mkdir:%s\n", dir); goto done; }
+    if (cnet_capsule_export_asset(&base, &cov, "vd_car_detector", dir,
+                                  asset, asset_len, VD_FRONTEND_SCHEMA, &rep) != 0) {
+        printf("VD_EXPORT_FAIL capsule:%s\n", rep.reject_reason);
+        goto done;
+    }
+    printf("VD_EXPORT_OK dir=%s schema=%u payload_bytes=%zu asset_bytes=%zu "
+           "coverage_rows=%zu digest=%llu\n",
+           dir, rep.schema, rep.payload_bytes, rep.asset_bytes, rep.coverage_rows,
+           rep.behavior_digest);
+    rc = 0;
+done:
+    free(asset);
+    free(refrows);
+    contract_free(&c);
+    hybrid_ai_free(&cov);
+    cnb_free(&base);
+    return rc;
+}
+
 int main(int argc, char **argv) {
     const char *cache = "data/vision_cache";
     const char *jsonp = "logs/vision_detection_bench.json";
@@ -722,6 +845,9 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--worker-fault") && i + 1 < argc) g_worker_fault = argv[++i];
         else if (!strcmp(argv[i], "--parent-fault-after-fork")) g_parent_fault_after_fork = 1;
         else if (!strcmp(argv[i], "--fail-random-init")) g_fail_random_init = 1;
+        else if (!strcmp(argv[i], "--export-capsule") && i + 1 < argc) g_export_dir = argv[++i];
+        else if (!strcmp(argv[i], "--gate-file") && i + 1 < argc) g_gate_file = argv[++i];
+        else if (!strcmp(argv[i], "--pca-file") && i + 1 < argc) g_pca_file = argv[++i];
         else if (!strcmp(argv[i], "--signal-after-reap") && i + 1 < argc) {
             const char *v = argv[++i];
             g_sig_after_reap = !strcmp(v, "TERM") ? SIGTERM : SIGINT;
@@ -1243,6 +1369,13 @@ int main(int argc, char **argv) {
         /* Results are evidence: build the document in memory, then publish it
            atomically. If publication fails the run has produced no record, so
            it must fail -- printing PASS with no artefact is not an option. */
+        if (g_export_dir) {
+            if (export_specialist(g_export_dir, &head, X, Y, n,
+                                  g_gate_file, g_pca_file, thr) != 0) {
+                rc_final = 8;
+                goto worker_cleanup;
+            }
+        }
         if (g_sig_before_publish) g_signal_caught = g_sig_before_publish;
         if (interrupted()) {
             printf("VD_BENCH_FAIL interrupted_before_publication=%d\n", (int)g_signal_caught);

@@ -93,3 +93,7 @@ bin/vision_coverage_asan
 bin/vd_gate
 data/vision_slice_*
 data/vision_gate
+bin/vd_runner
+data/vision_specialist
+data/ood
+bin/port_raw_unit_seam
