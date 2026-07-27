@@ -85,3 +85,6 @@ bin/vd_bench
 bin/vd_eval_asan
 bin/vd_mkcache
 bin/vision_detection_allocfail_test
+bin/vision_capsule_asset
+bin/vision_capsule_asset_san
+logs/vision/capsule_asset*.log

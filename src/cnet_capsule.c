@@ -135,9 +135,10 @@ static const char *cap_provenance_of(const CnetBase *b, const char *unit) {
     return "";
 }
 
-int cnet_capsule_export(const CnetBase *src, const HybridAi *cov,
+int cnet_capsule_export_asset(const CnetBase *src, const HybridAi *cov,
                         const char *unit, const char *dir,
-                        CnetCapsuleReport *rep) {
+                        const void *asset, size_t asset_len,
+                        unsigned asset_schema, CnetCapsuleReport *rep) {
     CnetBase sub;
     BinaryTransformNetwork btn;
     Contract c;
@@ -207,7 +208,8 @@ int cnet_capsule_export(const CnetBase *src, const HybridAi *cov,
         mlen += (size_t)_n;                                                    \
     } while (0)
 
-    CAP_EMIT("CNET_CAPSULE %d\n", CNET_CAPSULE_SCHEMA);
+    CAP_EMIT("CNET_CAPSULE %d\n",
+             asset ? CNET_CAPSULE_SCHEMA_ASSET : CNET_CAPSULE_SCHEMA);
     CAP_EMIT("unit %s\n", unit);
     CAP_EMIT("behavior_digest %llu\n", digest);
     CAP_EMIT("cnb_version %u\n", cnb_format_version());
@@ -244,7 +246,43 @@ int cnet_capsule_export(const CnetBase *src, const HybridAi *cov,
     } else {
         CAP_EMIT("coverage 0 0 0\n");
     }
+    /* Bound the sidecar the same way the payload is bound, inside the region
+       the trailing manifest_fnv already covers. */
+    if (asset)
+        CAP_EMIT("asset %u %zu %llu %s\n", asset_schema, asset_len,
+                 cap_fnv_buf((const unsigned char *)asset, asset_len),
+                 CNET_CAPSULE_ASSET_FILE);
 #undef CAP_EMIT
+
+    if (asset) {
+        char apath[600], atmp[600];
+        int afd;
+        if (asset_len > CNET_CAPSULE_MAX_ASSET) {
+            cap_fail(rep, "asset_too_large"); goto done;
+        }
+        if (cap_path(apath, sizeof apath, dir, CNET_CAPSULE_ASSET_FILE) != 0 ||
+            cap_path(atmp, sizeof atmp, dir, CNET_CAPSULE_ASSET_FILE ".tmp") != 0) {
+            cap_fail(rep, "path_too_long"); goto done;
+        }
+        (void)remove(atmp);
+        afd = open(atmp, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0600);
+        if (afd < 0) { cap_fail(rep, "asset_write_failed"); goto done; }
+        {
+            const unsigned char *b = (const unsigned char *)asset;
+            size_t off = 0;
+            while (off < asset_len) {
+                ssize_t w = write(afd, b + off, asset_len - off);
+                if (w <= 0) { close(afd); (void)remove(atmp);
+                              cap_fail(rep, "asset_write_failed"); goto done; }
+                off += (size_t)w;
+            }
+        }
+        if (fsync(afd) != 0 || close(afd) != 0 || rename(atmp, apath) != 0) {
+            (void)remove(atmp);
+            cap_fail(rep, "asset_publish_failed");
+            goto done;
+        }
+    }
 
     /* Exclusive + no-follow: a predictable sibling temp opened with fopen("wb")
        would follow an attacker-planted symlink and truncate the target. This is
@@ -282,6 +320,10 @@ int cnet_capsule_export(const CnetBase *src, const HybridAi *cov,
         rep->exemplars = exemplars;
         rep->coverage_rows = hc ? hc->n_rows : 0;
         rep->payload_bytes = bytes;
+        rep->schema = asset ? CNET_CAPSULE_SCHEMA_ASSET : CNET_CAPSULE_SCHEMA;
+        rep->asset_schema = asset ? asset_schema : 0u;
+        rep->asset_bytes = asset ? asset_len : 0u;
+        rep->asset_fnv = asset ? cap_fnv_buf((const unsigned char *)asset, asset_len) : 0ull;
         rep->cnb_version = cnb_format_version();
         snprintf(rep->provenance, sizeof rep->provenance, "%s",
                  (prov && prov[0]) ? prov : "");
@@ -295,8 +337,16 @@ done:
     return rc;
 }
 
-int cnet_capsule_import(CnetBase *dst, HybridAi *cov, const char *dir,
+int cnet_capsule_export(const CnetBase *src, const HybridAi *cov,
+                        const char *unit, const char *dir,
                         CnetCapsuleReport *rep) {
+    return cnet_capsule_export_asset(src, cov, unit, dir, NULL, 0, 0u, rep);
+}
+
+int cnet_capsule_import_asset(CnetBase *dst, HybridAi *cov, const char *dir,
+                              void **asset_out, size_t *asset_len_out,
+                              unsigned *asset_schema_out,
+                              CnetCapsuleReport *rep) {
     CnetBase sub;
     BinaryTransformNetwork btn;
     Contract c;
@@ -304,8 +354,11 @@ int cnet_capsule_import(CnetBase *dst, HybridAi *cov, const char *dir,
     char unit[96] = {0}, itag[PORT_TAG_MAX + 4], gtag[PORT_TAG_MAX + 4];
     char prov[CNB_NAME_MAX] = {0};
     char prov_raw[256] = {0}; /* scratch: %255s matches THIS size, not prov */
-    unsigned char *pay = NULL, *manbuf = NULL;
-    size_t paylen = 0, manlen = 0;
+    unsigned char *pay = NULL, *manbuf = NULL, *abuf = NULL;
+    size_t paylen = 0, manlen = 0, alen = 0;
+    unsigned a_schema_seen = 0;
+    size_t a_bytes_seen = 0;
+    unsigned long long a_fnv_seen = 0;
     unsigned long long want_fnv = 0, want_digest = 0, want_man = 0;
     size_t want_bytes = 0, exemplars = 0, cov_rows = 0, cov_in = 0, cov_out = 0;
     double *cin = NULL, *cout = NULL;
@@ -353,7 +406,8 @@ int cnet_capsule_import(CnetBase *dst, HybridAi *cov, const char *dir,
     fp = fmemopen(manbuf, manlen, "rb");
     if (!fp) { cap_fail(rep, "manifest_unreadable"); goto done; }
     if (fscanf(fp, "%15s %d", tok, &schema) != 2 ||
-        strcmp(tok, "CNET_CAPSULE") != 0 || schema != CNET_CAPSULE_SCHEMA) {
+        strcmp(tok, "CNET_CAPSULE") != 0 ||
+        (schema != CNET_CAPSULE_SCHEMA && schema != CNET_CAPSULE_SCHEMA_ASSET)) {
         cap_fail(rep, "bad_manifest_header");
         fclose(fp);
         goto done;
@@ -459,7 +513,46 @@ int cnet_capsule_import(CnetBase *dst, HybridAi *cov, const char *dir,
                 }
         }
     }
-    fclose(fp);
+    /* ---- optional sidecar asset ------------------------------------------
+       Present iff the manifest declared schema 2. Bound by declared size and
+       FNV exactly as the payload is, and refused to a caller that cannot
+       receive it rather than dropped. */
+    if (schema == CNET_CAPSULE_SCHEMA_ASSET) {
+        char aleaf[64] = {0}, apath[600];
+        unsigned long long a_fnv = 0;
+        size_t a_bytes = 0;
+        unsigned a_schema = 0;
+        if (fscanf(fp, " asset %u %zu %llu %63s", &a_schema, &a_bytes, &a_fnv, aleaf) != 4) {
+            fclose(fp); cap_fail(rep, "asset_manifest_parse_failed"); goto done;
+        }
+        if (a_bytes == 0 || a_bytes > CNET_CAPSULE_MAX_ASSET ||
+            strcmp(aleaf, CNET_CAPSULE_ASSET_FILE) != 0) {
+            fclose(fp); cap_fail(rep, "asset_declaration_invalid"); goto done;
+        }
+        if (!asset_out || !asset_len_out) {
+            fclose(fp); cap_fail(rep, "asset_capsule_needs_asset_aware_import"); goto done;
+        }
+        fclose(fp);
+        fp = NULL;
+        if (cap_path(apath, sizeof apath, dir, CNET_CAPSULE_ASSET_FILE) != 0) {
+            cap_fail(rep, "path_too_long"); goto done;
+        }
+        if (cap_slurp(apath, &abuf, &alen, &why) != 0) {
+            cap_fail(rep, "asset_missing_or_symlink"); goto done;
+        }
+        if (alen != a_bytes || cap_fnv_buf(abuf, alen) != a_fnv) {
+            cap_fail(rep, "asset_integrity_mismatch"); goto done;
+        }
+        a_schema_seen = a_schema;
+        a_bytes_seen = a_bytes;
+        a_fnv_seen = a_fnv;
+    } else {
+        if (asset_out) *asset_out = NULL;
+        if (asset_len_out) *asset_len_out = 0;
+        fclose(fp);
+        fp = NULL;
+    }
+    if (fp) { fclose(fp); fp = NULL; }
 
     /* ---- payload: hash the exact bytes we will load ---------------------- */
     if (cap_slurp(unit_path, &pay, &paylen, &why) != 0) {
@@ -614,6 +707,18 @@ int cnet_capsule_import(CnetBase *dst, HybridAi *cov, const char *dir,
         rep->cnb_version = ver;
         snprintf(rep->provenance, sizeof rep->provenance, "%s",
                  (prov[0] && strcmp(prov, "~")) ? prov : "");
+        rep->schema = (unsigned)schema;
+        rep->asset_schema = a_schema_seen;
+        rep->asset_bytes = a_bytes_seen;
+        rep->asset_fnv = a_fnv_seen;
+    }
+    /* Hand the verified blob over only once every other check has passed, so a
+       refused import never leaves the caller holding a frontend. */
+    if (abuf && asset_out && asset_len_out) {
+        *asset_out = abuf;
+        *asset_len_out = alen;
+        abuf = NULL;
+        if (asset_schema_out) *asset_schema_out = a_schema_seen;
     }
     rc = 0;
 done:
@@ -624,6 +729,14 @@ done:
     free(cout);
     free(pay);
     free(manbuf);
+    free(abuf);
     cnb_free(&sub);
     return rc;
+}
+
+/* Schema-1 entry point. An asset-bearing capsule is refused here rather than
+   imported without its frontend. */
+int cnet_capsule_import(CnetBase *dst, HybridAi *cov, const char *dir,
+                        CnetCapsuleReport *rep) {
+    return cnet_capsule_import_asset(dst, cov, dir, NULL, NULL, NULL, rep);
 }

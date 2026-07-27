@@ -70,6 +70,19 @@ extern "C" {
 #endif
 
 #define CNET_CAPSULE_SCHEMA 1
+/* Schema 2 == schema 1 plus ONE manifest-bound sidecar blob, bound exactly the
+   way unit.cnb already is (declared bytes + FNV, inside the region the trailing
+   manifest_fnv already covers). It exists because a visual specialist's head is
+   useless without the frontend that produced its features: the PCA basis, the
+   HOG and Selective Search configuration and identity, the class map and the
+   thresholds. Carrying those is what makes the capsule the whole specialist
+   rather than a set of weights.
+   Compatibility is fail-closed by schema number: a runtime that does not
+   understand assets rejects 2 outright rather than importing a head without its
+   frontend. This is an extension of the one capsule format, not a second one. */
+#define CNET_CAPSULE_SCHEMA_ASSET 2
+#define CNET_CAPSULE_ASSET_FILE "frontend.cvfa"
+#define CNET_CAPSULE_MAX_ASSET (16UL * 1024UL * 1024UL)
 #define CNET_CAPSULE_REASON_MAX 160
 
 typedef struct {
@@ -80,6 +93,10 @@ typedef struct {
     size_t payload_bytes;
     unsigned cnb_version;
     char provenance[128]; /* "" when the source base recorded none */
+    unsigned schema;          /* 1 = no asset, 2 = asset-bearing */
+    unsigned asset_schema;    /* 0 when no asset */
+    size_t asset_bytes;       /* 0 when no asset */
+    unsigned long long asset_fnv;
     char reject_reason[CNET_CAPSULE_REASON_MAX]; /* "" on success */
 } CnetCapsuleReport;
 
@@ -96,6 +113,25 @@ CNET_API int cnet_capsule_export(const CnetBase *src, const HybridAi *cov,
  * which check refused it. Returns 0 on success, negative on rejection. */
 CNET_API int cnet_capsule_import(CnetBase *dst, HybridAi *cov, const char *dir,
                                  CnetCapsuleReport *rep);
+
+/* Schema-2 export: as above, plus one sidecar blob written to
+   dir/CNET_CAPSULE_ASSET_FILE and bound by the manifest. asset may be NULL, in
+   which case this behaves exactly like cnet_capsule_export and emits schema 1. */
+CNET_API int cnet_capsule_export_asset(const CnetBase *src, const HybridAi *cov,
+                                       const char *unit, const char *dir,
+                                       const void *asset, size_t asset_len,
+                                       unsigned asset_schema,
+                                       CnetCapsuleReport *rep);
+
+/* Schema-2 import. On success *asset_out is a malloc'd copy of the verified
+   blob (caller frees) and *asset_len_out its length; both are set to NULL/0 for
+   a schema-1 capsule. Fails closed identically to cnet_capsule_import, and a
+   caller that passes NULL for asset_out is refused an asset-bearing capsule
+   rather than silently given a head with no frontend. */
+CNET_API int cnet_capsule_import_asset(CnetBase *dst, HybridAi *cov, const char *dir,
+                                       void **asset_out, size_t *asset_len_out,
+                                       unsigned *asset_schema_out,
+                                       CnetCapsuleReport *rep);
 
 #ifdef __cplusplus
 }
