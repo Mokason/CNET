@@ -2633,7 +2633,7 @@ structure_mine_serve_durable: $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGU
 .PHONY: vision_detection_fetch vision_detection_prep vision_detection_bench \
 	vision_detection_prep_v2 vision_detection_bench_v2 vision_detection_eval_asan \
 	vision_detection_integrity_test vision_detection_integrity_asan vision_detection_evidence_test \
-	vision_detection_allocfail_test
+	vision_detection_allocfail_test vision_detection_allocfail_ubsan
 # Explicit, network-touching. NEVER a dependency of ci_core.
 vision_detection_fetch:
 	@bash scripts/vision_detection_fetch.sh
@@ -2669,24 +2669,47 @@ vision_detection_bench_v2: vision_detection_eval_test bin/vd_bench
 	@mkdir -p logs/vision
 	@test -f data/vision_cache_v2/test.pack || { echo "VISION_DETECTION_FAIL missing v2 cache; run: make vision_detection_fetch vision_detection_prep_v2"; exit 1; }
 	@ROCR_VISIBLE_DEVICES='' HIP_VISIBLE_DEVICES='' CUDA_VISIBLE_DEVICES='' \
-	  timeout 5400 ./$(BIN_DIR)/vd_bench --protocol v2 --cache data/vision_cache_v2 \
-	  --prev-test data/vision_cache/test.pack \
-	  --json logs/vision_detection_bench_v2.json 2>&1 | tee logs/vision/bench_v2.log
+	  OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 \
+	  timeout 5400 /usr/bin/time -v ./$(BIN_DIR)/vd_bench --protocol v2 \
+	  --cache data/vision_cache_v2 --prev-test data/vision_cache/test.pack \
+	  --jobs 2 --json logs/vision_detection_bench_v2.json 2>&1 | tee logs/vision/bench_v2.log
 	@grep -qE "VISION_DETECTION_MECHANISM_(PASS|WITHHELD)" logs/vision/bench_v2.log
 	@grep -E "^(TEST|BARS|VISION_|disjoint)" logs/vision/bench_v2.log
 
 # Evaluator under ASan+UBSan: the metric path must be memory-clean.
 vision_detection_allocfail_test:
 	@mkdir -p $(BIN_DIR) logs/vision
-	$(CC) -std=c11 -Wall -Wextra -O2 -D_DEFAULT_SOURCE -I tools/vision_detection \
+	$(CC) -std=c11 -Wall -Wextra -Werror -O2 -D_DEFAULT_SOURCE -I tools/vision_detection \
 		-Wl,--wrap=malloc,--wrap=calloc,--wrap=realloc \
 		-o $(BIN_DIR)/vision_detection_allocfail_test \
 		tools/vision_detection/vd_eval.c tools/vision_detection/vd_pack.c \
 		tools/vision_detection/vd_sha256.c tools/vision_detection/vd_protocol.c \
-		tests/vision_detection_allocfail_test.c -lm
+		tools/vision_detection/vd_io.c tests/vision_detection_allocfail_test.c -lm
 	@ROCR_VISIBLE_DEVICES='' HIP_VISIBLE_DEVICES='' CUDA_VISIBLE_DEVICES='' \
 	  timeout 600 ./$(BIN_DIR)/vision_detection_allocfail_test 2>&1 | tee logs/vision/allocfail_test.log
 	@grep -q VISION_DETECTION_ALLOCFAIL_PASS logs/vision/allocfail_test.log
+
+vision_detection_allocfail_ubsan:
+	@mkdir -p $(BIN_DIR) logs/vision
+	$(CC) -std=c11 -Wall -Wextra -Werror -g -O1 -fsanitize=undefined \
+		-fno-omit-frame-pointer -D_DEFAULT_SOURCE -I tools/vision_detection \
+		-Wl,--wrap=malloc,--wrap=calloc,--wrap=realloc \
+		-o $(BIN_DIR)/vd_allocfail_ubsan \
+		tools/vision_detection/vd_eval.c tools/vision_detection/vd_pack.c \
+		tools/vision_detection/vd_sha256.c tools/vision_detection/vd_protocol.c \
+		tools/vision_detection/vd_io.c tests/vision_detection_allocfail_test.c -lm
+	@ROCR_VISIBLE_DEVICES='' HIP_VISIBLE_DEVICES='' CUDA_VISIBLE_DEVICES='' \
+	  UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1 \
+	  timeout 900 ./$(BIN_DIR)/vd_allocfail_ubsan 2>&1 | tee logs/vision/allocfail_ubsan.log
+	@grep -q VISION_DETECTION_ALLOCFAIL_PASS logs/vision/allocfail_ubsan.log
+
+# Retired: V1 has no pinned protocol authority, so it cannot be scored.
+vision_detection_bench:
+	@echo "VISION_DETECTION_BENCH_RETIRED: the V1 arm has no pinned protocol"
+	@echo "  authority (artifact root, canonical roots, spent-holdout digest) and"
+	@echo "  therefore cannot produce a verdict. Its result is frozen in commit"
+	@echo "  6ffc5f1. Use: make vision_detection_bench_v2"
+	@exit 2
 
 vision_detection_evidence_test: bin/vd_bench bin/vd_mkcache
 	@mkdir -p logs/vision
@@ -2704,7 +2727,7 @@ bin/vd_mkcache: tools/vision_detection/vd_mkcache.c tools/vision_detection/vd_io
 
 vision_detection_integrity_test:
 	@mkdir -p $(BIN_DIR) logs/vision
-	$(CC) -std=c11 -Wall -Wextra -O2 -D_DEFAULT_SOURCE -o $(BIN_DIR)/vision_detection_integrity_test \
+	$(CC) -std=c11 -Wall -Wextra -Werror -O2 -D_DEFAULT_SOURCE -I tools/vision_detection -o $(BIN_DIR)/vision_detection_integrity_test \
 		tools/vision_detection/vd_eval.c tools/vision_detection/vd_pack.c \
 		tools/vision_detection/vd_io.c tools/vision_detection/vd_sha256.c \
 		tools/vision_detection/vd_protocol.c \
@@ -2715,8 +2738,8 @@ vision_detection_integrity_test:
 
 vision_detection_integrity_asan:
 	@mkdir -p $(BIN_DIR) logs/vision
-	$(CC) -std=c11 -Wall -Wextra -g -O1 -fsanitize=address,undefined -fno-omit-frame-pointer \
-		-D_DEFAULT_SOURCE -o $(BIN_DIR)/vd_integrity_asan \
+	$(CC) -std=c11 -Wall -Wextra -Werror -g -O1 -fsanitize=address,undefined -fno-omit-frame-pointer \
+		-D_DEFAULT_SOURCE -I tools/vision_detection -o $(BIN_DIR)/vd_integrity_asan \
 		tools/vision_detection/vd_eval.c tools/vision_detection/vd_pack.c \
 		tools/vision_detection/vd_io.c tools/vision_detection/vd_sha256.c \
 		tools/vision_detection/vd_protocol.c \
@@ -2727,7 +2750,7 @@ vision_detection_integrity_asan:
 
 vision_detection_eval_asan:
 	@mkdir -p $(BIN_DIR) logs/vision
-	$(CC) -std=c11 -Wall -Wextra -g -O1 -fsanitize=address,undefined \
+	$(CC) -std=c11 -Wall -Wextra -Werror -g -O1 -fsanitize=address,undefined \
 		-fno-omit-frame-pointer -D_DEFAULT_SOURCE -o $(BIN_DIR)/vd_eval_asan \
 		tools/vision_detection/vd_eval.c tests/vision_detection_eval_test.c -lm
 	@ROCR_VISIBLE_DEVICES='' HIP_VISIBLE_DEVICES='' CUDA_VISIBLE_DEVICES='' \
@@ -2735,14 +2758,6 @@ vision_detection_eval_asan:
 	@grep -q VISION_DETECTION_EVAL_PASS logs/vision/eval_asan.log
 
 # Runs from cached assets only. No download.
-vision_detection_bench: vision_detection_eval_test bin/vd_bench
-	@mkdir -p logs/vision
-	@test -f data/vision_cache/test.pack || { echo "VISION_DETECTION_FAIL missing cache; run: make vision_detection_fetch vision_detection_prep"; exit 1; }
-	@ROCR_VISIBLE_DEVICES='' HIP_VISIBLE_DEVICES='' CUDA_VISIBLE_DEVICES='' \
-	  timeout 5400 ./$(BIN_DIR)/vd_bench --cache data/vision_cache 2>&1 | tee logs/vision/bench.log
-	@grep -qE "VISION_DETECTION_MECHANISM_(PASS|WITHHELD)" logs/vision/bench.log
-	@grep -E "^(TEST|BARS|VISION_)" logs/vision/bench.log
-
 bin/vd_bench: tools/vision_detection/vd_bench.c tools/vision_detection/vd_eval.c \
 		tools/vision_detection/vd_pack.c tools/vision_detection/vd_io.c \
 		tools/vision_detection/vd_sha256.c tools/vision_detection/vd_protocol.c \

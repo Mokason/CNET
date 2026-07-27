@@ -25,7 +25,7 @@
 #include "../tools/vision_detection/vd_sha256.h"
 
 static int failures, checks;
-static char DIR[512];
+static char DIR[64];   /* small enough that every derived path is provably bounded */
 
 static void check(int ok, const char *name) {
     checks++;
@@ -112,6 +112,25 @@ static int load_rc(PackSpec s) {
     rc = vd_pack_load(p, &pk);
     if (rc == VD_PACK_OK) vd_pack_free(&pk);
     return rc;
+}
+
+/* The required members of a recognised cache, so a replace test operates on a
+   destination the publisher will actually accept. */
+static int write_full_cache(VdStage *st) {
+    static const char *names[] = {
+        "manifest.txt", "train.pack", "val.pack", "test.pack", "pca.bin",
+        "ids_train.txt", "ids_val.txt", "ids_test.txt",
+        "content_train.txt", "content_val.txt", "content_test.txt"
+    };
+    size_t i;
+    for (i = 0; i < sizeof names / sizeof names[0]; i++) {
+        VdOut o;
+        const char *body = strcmp(names[i], "manifest.txt") ? "x\n" : "manifest_version 1\n";
+        if (vd_out_open(st, names[i], &o) != 0) return -1;
+        if (vd_out_write(&o, body, strlen(body)) != 0) { vd_out_finish(&o); return -1; }
+        if (vd_out_finish(&o) != 0) return -1;
+    }
+    return 0;
 }
 
 int main(void) {
@@ -331,7 +350,8 @@ int main(void) {
             "id_root_test eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee\n"
             "content_root_train ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff\n"
             "content_root_val 0000000000000000000000000000000000000000000000000000000000000000\n"
-            "content_root_test 1010101010101010101010101010101010101010101010101010101010101010\n";
+            "content_root_test 1010101010101010101010101010101010101010101010101010101010101010\n"
+            "artifact_root 2020202020202020202020202020202020202020202020202020202020202020\n";
         snprintf(mp, sizeof mp, "%s/manifest.txt", DIR);
 
 #define WRITE_MAN(body) do { f = fopen(mp, "wb"); fputs((body), f); fclose(f); } while (0)
@@ -473,6 +493,7 @@ int main(void) {
 
         snprintf(dest, sizeof dest, "%s/cachepub", DIR);
         check(vd_stage_begin(dest, &st) == 0, "stage: begins on a clean destination");
+        check(write_full_cache(&st) == 0, "stage: creates a complete cache");
         check(vd_out_open(&st, "a.pack", &o) == 0, "stage: creates a member");
         check(vd_out_write(&o, "hello", 5) == 0, "stage: writes a member");
         check(vd_out_finish(&o) == 0, "stage: finishes a member");
@@ -484,6 +505,7 @@ int main(void) {
         check(vd_stage_begin(dest, &st) == 0, "stage: begins again");
         check(vd_stage_commit(&st, 0) != 0, "stage: refuses to clobber an existing cache");
         check(vd_stage_begin(dest, &st) == 0, "stage: begins for replace");
+        check(write_full_cache(&st) == 0, "stage: writes replacement cache");
         check(vd_out_open(&st, "b.pack", &o) == 0 && vd_out_write(&o, "x", 1) == 0
               && vd_out_finish(&o) == 0, "stage: writes replacement member");
         check(vd_stage_commit(&st, 1) == 0, "stage: replaces atomically");
@@ -498,6 +520,7 @@ int main(void) {
         /* incomplete staging must leave nothing behind */
         snprintf(ext, sizeof ext, "%s/aborted", DIR);
         check(vd_stage_begin(ext, &st) == 0, "stage: begins for abort case");
+        (void)write_full_cache(&st);
         check(vd_out_open(&st, "partial.pack", &o) == 0 && vd_out_write(&o, "zz", 2) == 0
               && vd_out_finish(&o) == 0, "stage: writes into aborted staging");
         vd_stage_abort(&st);
@@ -524,13 +547,14 @@ int main(void) {
         }
         /* a planted member symlink must not be written through */
         {
-            char target[700], staged[900];
+            char target[700];
+            char staged[VD_PATH_MAX + 128];   /* st.stage is VD_PATH_MAX */
             snprintf(target, sizeof target, "%s/never_touch", DIR);
             f = fopen(target, "wb"); if (f) { fputs("ORIGINAL", f); fclose(f); }
             snprintf(dest, sizeof dest, "%s/plantcache", DIR);
             if (vd_stage_begin(dest, &st) == 0) {
-                snprintf(staged, sizeof staged, "%s/%s/c.pack", DIR, st.stage);
-                if (symlink(target, staged) == 0) {
+                int sn = snprintf(staged, sizeof staged, "%s/%s/c.pack", DIR, st.stage);
+                if (sn > 0 && (size_t)sn < sizeof staged && symlink(target, staged) == 0) {
                     check(vd_out_open(&st, "c.pack", &o) != 0,
                           "stage: refuses to open through a planted member symlink");
                 } else check(1, "stage: planted member case skipped");
@@ -544,6 +568,132 @@ int main(void) {
                 check(got == 8 && !memcmp(rb, "ORIGINAL", 8),
                       "stage: external symlink target is unmodified");
             }
+        }
+    }
+
+    /* ---- artifact root binds bytes, names, sizes and order --------------- */
+    {
+        VdMember m[VD_N_MEMBERS], m2[VD_N_MEMBERS];
+        char r1[65], r2[65];
+        int k;
+        for (k = 0; k < VD_N_MEMBERS; k++) {
+            m[k].name = VD_MEMBERS[k];
+            m[k].size = 100 + k;
+            memset(m[k].sha, 'a', 64); m[k].sha[63] = (char)('0' + k); m[k].sha[64] = 0;
+        }
+        check(vd_artifact_root(m, VD_N_MEMBERS, 1, r1) == 0, "artifact: root computes");
+        memcpy(m2, m, sizeof m);
+        m2[0].sha[0] = 'b';
+        check(vd_artifact_root(m2, VD_N_MEMBERS, 1, r2) == 0 && strcmp(r1, r2) != 0,
+              "artifact: changed member bytes change the root");
+        memcpy(m2, m, sizeof m);
+        m2[2].size += 1;
+        check(vd_artifact_root(m2, VD_N_MEMBERS, 1, r2) == 0 && strcmp(r1, r2) != 0,
+              "artifact: changed member size changes the root");
+        memcpy(m2, m, sizeof m);
+        check(vd_artifact_root(m2, VD_N_MEMBERS, 2, r2) == 0 && strcmp(r1, r2) != 0,
+              "artifact: changed schema changes the root");
+        memcpy(m2, m, sizeof m);
+        { VdMember t = m2[0]; m2[0] = m2[1]; m2[1] = t; }
+        check(vd_artifact_root(m2, VD_N_MEMBERS, 1, r2) != 0,
+              "artifact: reordered members are refused, not silently hashed");
+        memcpy(m2, m, sizeof m);
+        m2[4].name = "not_a_member.txt";
+        check(vd_artifact_root(m2, VD_N_MEMBERS, 1, r2) != 0,
+              "artifact: renamed member is refused");
+        check(vd_artifact_root(m, VD_N_MEMBERS - 1, 1, r2) != 0,
+              "artifact: wrong member count is refused");
+        {   /* the pinned v2 root must actually be pinned */
+            const VdProtocol *pv = vd_protocol_get("v2");
+            check(pv && pv->artifact_root && strlen(pv->artifact_root) == 64,
+                  "artifact: v2 protocol carries a pinned artifact root");
+        }
+    }
+
+    /* ---- component-wise no-follow traversal ------------------------------ */
+    {
+        char base[600], real[700], link[700], via[900];
+        int fd;
+        snprintf(base, sizeof base, "%s/trav", DIR);
+        snprintf(real, sizeof real, "%s/trav/a/b", DIR);
+        check(vd_mkdir_p_nofollow(real) == 0, "traverse: creates a nested path");
+        fd = vd_open_dir_nofollow(real);
+        check(fd >= 0, "traverse: opens a clean nested path");
+        if (fd >= 0) close(fd);
+        /* symlink at an INTERMEDIATE component, not the leaf */
+        snprintf(link, sizeof link, "%s/trav/a_link", DIR);
+        (void)unlink(link);
+        if (symlink("a", link) == 0) {
+            snprintf(via, sizeof via, "%s/trav/a_link/b", DIR);
+            check(vd_open_dir_nofollow(via) < 0,
+                  "traverse: symlink at an intermediate component refused");
+            check(vd_mkdir_p_nofollow(via) != 0,
+                  "traverse: mkdir through an intermediate symlink refused");
+        } else check(1, "traverse: intermediate symlink case skipped");
+        /* symlink at the FIRST component */
+        {
+            char l2[700], v2[900];
+            snprintf(l2, sizeof l2, "%s/trav_link", DIR);
+            (void)unlink(l2);
+            if (symlink("trav", l2) == 0) {
+                snprintf(v2, sizeof v2, "%s/trav_link/a", DIR);
+                check(vd_open_dir_nofollow(v2) < 0,
+                      "traverse: symlink at the first component refused");
+            } else check(1, "traverse: first-component symlink case skipped");
+        }
+        /* a non-directory in the middle */
+        {
+            char fp[700], v3[900];
+            FILE *g;
+            snprintf(fp, sizeof fp, "%s/trav/plain", DIR);
+            g = fopen(fp, "wb"); if (g) { fputc('x', g); fclose(g); }
+            snprintf(v3, sizeof v3, "%s/trav/plain/x", DIR);
+            check(vd_open_dir_nofollow(v3) < 0, "traverse: non-directory component refused");
+        }
+        {
+            char up[700];
+            snprintf(up, sizeof up, "%s/trav/../trav", DIR);
+            check(vd_open_dir_nofollow(up) < 0, "traverse: .. component refused");
+        }
+    }
+
+    /* ---- replacement authority ------------------------------------------- */
+    {
+        char dest[600];
+        VdStage st;
+        FILE *g;
+        struct stat sb;
+        /* an arbitrary directory is not a cache and must not be swapped over */
+        snprintf(dest, sizeof dest, "%s/notacache", DIR);
+        check(vd_mkdir_p_nofollow(dest) == 0, "replace: creates a non-cache directory");
+        {
+            char fp[800];
+            snprintf(fp, sizeof fp, "%s/precious.txt", dest);
+            g = fopen(fp, "wb"); if (g) { fputs("KEEP", g); fclose(g); }
+        }
+        check(vd_stage_begin(dest, &st) == 0, "replace: staging begins");
+        check(vd_stage_commit(&st, 1) != 0,
+              "replace: refuses to swap over a directory that is not a cache");
+        {
+            char fp[800], rb[16] = {0};
+            size_t got = 0;
+            snprintf(fp, sizeof fp, "%s/precious.txt", dest);
+            g = fopen(fp, "rb");
+            if (g) { got = fread(rb, 1, sizeof rb - 1, g); fclose(g); }
+            check(got == 4 && !memcmp(rb, "KEEP", 4),
+                  "replace: the non-cache destination is untouched");
+        }
+        /* a plain file as destination */
+        {
+            char fdst[600];
+            snprintf(fdst, sizeof fdst, "%s/plainfile_dest", DIR);
+            g = fopen(fdst, "wb"); if (g) { fputs("F", g); fclose(g); }
+            if (vd_stage_begin(fdst, &st) == 0) {
+                check(vd_stage_commit(&st, 1) != 0,
+                      "replace: refuses a non-directory destination");
+            } else check(1, "replace: non-directory destination refused at begin");
+            check(stat(fdst, &sb) == 0 && S_ISREG(sb.st_mode),
+                  "replace: the plain-file destination survives");
         }
     }
 

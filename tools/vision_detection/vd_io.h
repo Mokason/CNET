@@ -8,6 +8,7 @@
 #define VD_IO_H
 
 #include <stddef.h>
+#include <sys/types.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -25,6 +26,21 @@ int vd_path_ok(const char *path);
    non-directory is an error. Returns 0 on success, -1 on failure. */
 #define VD_MKDIR_MAX_DEPTH 32
 int vd_mkdir_p(const char *path);
+
+/* ---------------- component-wise no-follow traversal ---------------------
+   Every path component is opened with O_DIRECTORY|O_NOFOLLOW from a trusted
+   start, so a symlink planted at ANY intermediate position is refused, not just
+   at the leaf. ".." components, non-directories, over-long paths and excessive
+   depth are rejected at every level. */
+int vd_open_dir_nofollow(const char *path);        /* dirfd, or -1 */
+int vd_mkdir_p_nofollow(const char *path);         /* component-wise mkdirat */
+
+/* Open a regular file below dirfd with O_NOFOLLOW and validate it really is a
+   regular file. Returns the fd, or -1. */
+int vd_openat_regular(int dirfd, const char *name, off_t *size_out);
+
+/* A FILE* over a dup of fd, positioned at 0. Caller fcloses it; fd is untouched. */
+void *vd_fdopen_ro(int fd);
 
 /* Write buf to path atomically: O_NOFOLLOW|O_EXCL temp beside the target,
    checked write loop, fsync, close, rename, then fsync of the directory.
@@ -62,6 +78,7 @@ typedef struct {
     int err;
     void *sha;                  /* VdSha256, hashed as it is written */
     char hex[65];
+    unsigned long long written;
 } VdOut;
 
 int vd_out_open(VdStage *st, const char *name, VdOut *o);

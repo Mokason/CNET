@@ -175,14 +175,15 @@ int vd_stage_begin(const char *dest, VdStage *st) {
         if (pn == 0) pn = 1;
         memcpy(parent, tmp, pn);
         parent[pn] = 0;
-        if (vd_mkdir_p(parent) != 0) return -1;
-        /* O_NOFOLLOW here is what rejects a symlinked parent directory. */
-        st->parent_fd = open(parent, O_RDONLY | O_DIRECTORY | O_NOFOLLOW);
+        /* component-wise: a symlink at ANY level of the parent is refused */
+        if (vd_mkdir_p_nofollow(parent) != 0) return -1;
+        st->parent_fd = vd_open_dir_nofollow(parent);
         snprintf(st->base, sizeof st->base, "%s", slash + 1);
     } else {
         st->parent_fd = open(".", O_RDONLY | O_DIRECTORY);
         snprintf(st->base, sizeof st->base, "%s", tmp);
     }
+    if (strchr(st->base, '/')) { if (st->parent_fd >= 0) close(st->parent_fd); st->parent_fd = -1; return -1; }
     if (st->parent_fd < 0) return -1;
 
     /* A destination that is itself a symlink is refused rather than replaced. */
@@ -217,6 +218,39 @@ void vd_stage_abort(VdStage *st) {
     }
 }
 
+/* A destination is replaceable only if it is a no-follow directory that looks
+   like a complete cache: the marker manifest plus every required member. */
+static const char *CACHE_REQUIRED[] = {
+    "manifest.txt", "train.pack", "val.pack", "test.pack", "pca.bin",
+    "ids_train.txt", "ids_val.txt", "ids_test.txt",
+    "content_train.txt", "content_val.txt", "content_test.txt"
+};
+
+static int dest_is_cache(int parent_fd, const char *base) {
+    int dfd = openat(parent_fd, base, O_RDONLY | O_DIRECTORY | O_NOFOLLOW);
+    size_t i;
+    int ok = 1;
+    if (dfd < 0) return 0;
+    for (i = 0; i < sizeof CACHE_REQUIRED / sizeof CACHE_REQUIRED[0]; i++) {
+        struct stat mb;
+        if (fstatat(dfd, CACHE_REQUIRED[i], &mb, AT_SYMLINK_NOFOLLOW) != 0 ||
+            !S_ISREG(mb.st_mode)) { ok = 0; break; }
+    }
+    if (ok) {   /* marker: the manifest must actually declare a cache schema */
+        int mfd = openat(dfd, "manifest.txt", O_RDONLY | O_NOFOLLOW);
+        char head[32];
+        ssize_t got;
+        ok = 0;
+        if (mfd >= 0) {
+            got = pread(mfd, head, sizeof head - 1, 0);
+            if (got > 18) { head[got] = 0; ok = (strncmp(head, "manifest_version ", 17) == 0); }
+            close(mfd);
+        }
+    }
+    close(dfd);
+    return ok;
+}
+
 int vd_stage_commit(VdStage *st, int replace) {
     struct stat sb;
     int existed;
@@ -235,6 +269,11 @@ int vd_stage_commit(VdStage *st, int replace) {
     } else if (!replace) {
         vd_stage_abort(st);
         return -1;   /* fail loud rather than write into an existing cache */
+    } else if (!S_ISDIR(sb.st_mode) || !dest_is_cache(st->parent_fd, st->base)) {
+        /* --replace swaps out a recognised, complete CNET vision cache. It is
+           not a general-purpose "overwrite whatever is here". */
+        vd_stage_abort(st);
+        return -1;
     } else {
 #ifdef __linux__
         /* Exchange leaves no instant where the destination is a mixed cache. */
@@ -288,6 +327,7 @@ int vd_out_write(VdOut *o, const void *p, size_t n) {
     if (!o || o->fd < 0 || o->err) return -1;
     if (!b && n) { o->err = 1; return -1; }
     if (o->sha) vd_sha256_update((VdSha256 *)o->sha, p, n);
+    o->written += (unsigned long long)n;
     while (n) {
         size_t t = o->cap - o->n;
         if (t > n) t = n;
@@ -318,4 +358,83 @@ int vd_out_digest(VdOut *o, char *hex_out) {
     if (!o || !hex_out || !o->hex[0]) return -1;
     memcpy(hex_out, o->hex, 65);
     return 0;
+}
+
+/* ---------------- component-wise no-follow traversal --------------------- */
+
+/* Walk `path` one component at a time from a trusted start, never following a
+   symlink at any level. If `create` is set, missing directories are made with
+   mkdirat. Returns a dirfd for the final component. */
+static int walk_components(const char *path, int create) {
+    char tmp[VD_PATH_MAX];
+    size_t n, i = 0;
+    int depth = 0, dfd;
+    if (vd_path_ok(path) != 0) return -1;
+    n = strlen(path);
+    memcpy(tmp, path, n + 1);
+    while (n > 1 && tmp[n - 1] == '/') tmp[--n] = 0;
+
+    if (tmp[0] == '/') { dfd = open("/", O_RDONLY | O_DIRECTORY); i = 1; }
+    else               { dfd = open(".", O_RDONLY | O_DIRECTORY); }
+    if (dfd < 0) return -1;
+
+    while (i < n) {
+        char comp[VD_PATH_MAX];
+        size_t j = i, len;
+        int next;
+        struct stat sb;
+        while (j < n && tmp[j] != '/') j++;
+        len = j - i;
+        if (len == 0) { i = j + 1; continue; }          /* collapse // */
+        if (len >= sizeof comp) { close(dfd); return -1; }
+        memcpy(comp, tmp + i, len);
+        comp[len] = 0;
+        if (!strcmp(comp, "..")) { close(dfd); return -1; }
+        if (!strcmp(comp, ".")) { i = j + 1; continue; }
+        if (++depth > VD_MKDIR_MAX_DEPTH) { close(dfd); return -1; }
+
+        if (create) {
+            if (mkdirat(dfd, comp, 0777) != 0 && errno != EEXIST) { close(dfd); return -1; }
+        }
+        /* O_NOFOLLOW at EVERY component, not just the last one. */
+        next = openat(dfd, comp, O_RDONLY | O_DIRECTORY | O_NOFOLLOW);
+        close(dfd);
+        if (next < 0) return -1;
+        if (fstat(next, &sb) != 0 || !S_ISDIR(sb.st_mode)) { close(next); return -1; }
+        dfd = next;
+        i = j + 1;
+    }
+    return dfd;
+}
+
+int vd_open_dir_nofollow(const char *path) { return walk_components(path, 0); }
+
+int vd_mkdir_p_nofollow(const char *path) {
+    int fd = walk_components(path, 1);
+    if (fd < 0) return -1;
+    close(fd);
+    return 0;
+}
+
+int vd_openat_regular(int dirfd, const char *name, off_t *size_out) {
+    struct stat sb;
+    int fd;
+    if (dirfd < 0 || !name || strchr(name, '/')) return -1;
+    fd = openat(dirfd, name, O_RDONLY | O_NOFOLLOW);
+    if (fd < 0) return -1;
+    if (fstat(fd, &sb) != 0 || !S_ISREG(sb.st_mode) || sb.st_size < 0) { close(fd); return -1; }
+    if (size_out) *size_out = sb.st_size;
+    return fd;
+}
+
+void *vd_fdopen_ro(int fd) {
+    int d;
+    FILE *f;
+    if (fd < 0) return NULL;
+    d = dup(fd);
+    if (d < 0) return NULL;
+    f = fdopen(d, "rb");
+    if (!f) { close(d); return NULL; }
+    rewind(f);
+    return f;
 }

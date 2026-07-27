@@ -10,6 +10,7 @@
  */
 #include "vd_io.h"
 #include "vd_pack.h"
+#include "vd_protocol.h"
 #include "vd_sha256.h"
 
 #include <opencv2/opencv.hpp>
@@ -307,6 +308,8 @@ static std::vector<std::string> read_pack_ids(const std::string &path, int &rc) 
     return out;
 }
 
+static long long g_last_written_size = 0;
+
 static bool write_pack_staged(VdStage &st, const char *name,
                               const std::vector<ImgOut> &imgs, int dim,
                               std::string *digest) {
@@ -335,6 +338,7 @@ static bool write_pack_staged(VdStage &st, const char *name,
             }
         }
     }
+    g_last_written_size = (long long)o.written;
     if (vd_out_finish(&o) != 0) return false;
     char hex[65];
     if (vd_out_digest(&o, hex) != 0) return false;
@@ -347,6 +351,7 @@ static bool write_text_staged(VdStage &st, const char *name, const std::string &
     VdOut o;
     if (vd_out_open(&st, name, &o) != 0) return false;
     if (vd_out_write(&o, body.data(), body.size()) != 0) { vd_out_finish(&o); return false; }
+    g_last_written_size = (long long)o.written;
     if (vd_out_finish(&o) != 0) return false;
     char hex[65];
     if (vd_out_digest(&o, hex) != 0) return false;
@@ -648,13 +653,22 @@ int main(int argc, char **argv) {
 
     std::string sh_tr, sh_va, sh_te, sh_pca;
     std::string sh_idtr, sh_idva, sh_idte, sh_cotr, sh_cova, sh_cote;
-    if (!write_pack_staged(st, "train.pack", Otr, VAR.pca_dim, &sh_tr) ||
-        !write_pack_staged(st, "val.pack",   Ova, VAR.pca_dim, &sh_va) ||
-        !write_pack_staged(st, "test.pack",  Ote, VAR.pca_dim, &sh_te)) {
+    long long msize[VD_N_MEMBERS];
+    memset(msize, 0, sizeof msize);
+    if (!write_pack_staged(st, "train.pack", Otr, VAR.pca_dim, &sh_tr)) {
+        fprintf(stderr, "VD_PREP_FAIL pack_write_failed\n"); vd_stage_abort(&st); return 5;
+    }
+    msize[0] = g_last_written_size;
+    if (!write_pack_staged(st, "val.pack", Ova, VAR.pca_dim, &sh_va)) {
+        fprintf(stderr, "VD_PREP_FAIL pack_write_failed\n"); vd_stage_abort(&st); return 5;
+    }
+    msize[1] = g_last_written_size;
+    if (!write_pack_staged(st, "test.pack", Ote, VAR.pca_dim, &sh_te)) {
         fprintf(stderr, "VD_PREP_FAIL pack_write_failed\n");
         vd_stage_abort(&st);
         return 5;
     }
+    msize[2] = g_last_written_size;
     {
         std::string pca_blob;
         int32_t d1 = VAR.hog_dim, d2 = VAR.pca_dim;
@@ -669,18 +683,24 @@ int main(int argc, char **argv) {
             vd_stage_abort(&st);
             return 5;
         }
+        msize[3] = g_last_written_size;
     }
     /* Sidecars carry the canonical source identity of each split so the bench
        can recompute the roots itself instead of believing a declared digest. */
-    if (!write_text_staged(st, "ids_train.txt",     lines_of(idtr), &sh_idtr) ||
-        !write_text_staged(st, "ids_val.txt",       lines_of(idva), &sh_idva) ||
-        !write_text_staged(st, "ids_test.txt",      lines_of(idte), &sh_idte) ||
-        !write_text_staged(st, "content_train.txt", lines_of(shtr), &sh_cotr) ||
-        !write_text_staged(st, "content_val.txt",   lines_of(shva), &sh_cova) ||
-        !write_text_staged(st, "content_test.txt",  lines_of(shte), &sh_cote)) {
-        fprintf(stderr, "VD_PREP_FAIL sidecar_write_failed\n");
-        vd_stage_abort(&st);
-        return 5;
+    {
+        const char *snames[6] = {"ids_train.txt","ids_val.txt","ids_test.txt",
+                                 "content_train.txt","content_val.txt","content_test.txt"};
+        std::string sbody[6] = {lines_of(idtr), lines_of(idva), lines_of(idte),
+                                lines_of(shtr), lines_of(shva), lines_of(shte)};
+        std::string *sdig[6] = {&sh_idtr, &sh_idva, &sh_idte, &sh_cotr, &sh_cova, &sh_cote};
+        for (int k = 0; k < 6; k++) {
+            if (!write_text_staged(st, snames[k], sbody[k], sdig[k])) {
+                fprintf(stderr, "VD_PREP_FAIL sidecar_write_failed\n");
+                vd_stage_abort(&st);
+                return 5;
+            }
+            msize[4 + k] = g_last_written_size;
+        }
     }
 
     {
@@ -690,6 +710,24 @@ int main(int argc, char **argv) {
         for (auto &o : Ote) np_te += o.props.size();
         std::string r_idtr = root_of(idtr), r_idva = root_of(idva), r_idte = root_of(idte);
         std::string r_cotr = root_of(shtr), r_cova = root_of(shva), r_cote = root_of(shte);
+
+        /* artifact root over the exact bytes, sizes, names and canonical order
+           of every scored member */
+        VdMember mem[VD_N_MEMBERS];
+        const std::string dig[VD_N_MEMBERS] = {sh_tr, sh_va, sh_te, sh_pca,
+                                               sh_idtr, sh_idva, sh_idte,
+                                               sh_cotr, sh_cova, sh_cote};
+        char aroot[65];
+        for (int mi = 0; mi < VD_N_MEMBERS; mi++) {
+            mem[mi].name = VD_MEMBERS[mi];
+            mem[mi].size = (long long)msize[mi];
+            snprintf(mem[mi].sha, sizeof mem[mi].sha, "%s", dig[mi].c_str());
+        }
+        if (vd_artifact_root(mem, VD_N_MEMBERS, 1, aroot) != 0) {
+            fprintf(stderr, "VD_PREP_FAIL artifact_root_failed\n");
+            vd_stage_abort(&st);
+            return 6;
+        }
 
         std::ostringstream m;
         m << "manifest_version 1\n"
@@ -721,7 +759,8 @@ int main(int argc, char **argv) {
           << "id_root_train " << r_idtr << "\nid_root_val " << r_idva << "\n"
           << "id_root_test " << r_idte << "\n"
           << "content_root_train " << r_cotr << "\ncontent_root_val " << r_cova << "\n"
-          << "content_root_test " << r_cote << "\n";
+          << "content_root_test " << r_cote << "\n"
+          << "artifact_root " << aroot << "\n";
         if (!write_text_staged(st, "manifest.txt", m.str())) {
             fprintf(stderr, "VD_PREP_FAIL manifest_write_failed\n");
             vd_stage_abort(&st);
@@ -740,6 +779,7 @@ int main(int argc, char **argv) {
         printf("VD_ROOTS content_train=%s\n", r_cotr.c_str());
         printf("VD_ROOTS content_val=%s\n", r_cova.c_str());
         printf("VD_ROOTS content_test=%s\n", r_cote.c_str());
+        printf("VD_ARTIFACT_ROOT %s\n", aroot);
     }
 
     size_t pt = 0, pv = 0, pe = 0, gt_tr = 0, gt_te = 0, pos_tr = 0;

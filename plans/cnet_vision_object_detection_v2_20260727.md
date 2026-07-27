@@ -291,6 +291,78 @@ The bar-bearing evidence does not depend on that baseline: the randomized-head a
 (115.9×, same shape, same features, same proposals) and the label-shuffle collapse
 (0.0020) are what establish that the CNET-learned head is causally responsible.
 
+## 10b. Multicore policy — pre-registered before the run
+
+The benchmark is dominated by four strictly sequential BTN trainings whose update
+order is fixed by the protocol and must not change. Profiling the accepted serial run:
+main-head training `train_s` ≈ 2667–2975 s of a ≈ 3540 s wall, with the label-shuffle
+control training a further ≈ 700–900 s and everything else (pack loading, the linear
+baseline, all evaluations) under ≈ 200 s.
+
+**Strategy: process-level overlap of one independent arm.** After the final
+hard-negative round appends its rows, the training matrix is frozen. The final main-head
+training and the label-shuffle control training both consume that same frozen matrix and
+are independent of each other, so the control is run in a `fork()`ed worker while the
+parent performs the final main training. Only the *final* main training is deferred past
+the fork — the earlier hard-negative retrainings must exist before the next scan, so they
+stay in place. The child inherits the frozen matrix copy-on-write, starts from the same
+RNG state, uses the same seed, and issues the identical `btn_train_dynamic` call.
+**No BTN update order is changed and no training is multithreaded.**
+
+Concurrency is capped at **2 processes** (`--jobs 2`, clamped in code — only one
+independent arm exists). `OMP_NUM_THREADS=1` and `OPENBLAS_NUM_THREADS=1` are set to
+prevent library oversubscription, and OpenCV is not involved in the scoring binary.
+
+**Pre-registered tolerance: exact equality, tolerance 0.** Every metric below must be
+bit-identical to the serial run or the optimisation is reverted:
+
+| quantity | required value |
+|---|---|
+| `ap50_cnet_test` | 0.114518 |
+| `ap50_random_head_test` | 0.000988 |
+| `ap50_linear_baseline_test` | 0.009932 |
+| `ap50_label_shuffle_test` | 0.002435 |
+| `VAL ap50_cnet` / `ap50_labelshuffle` | 0.088587 / 0.002049 |
+| proposal recall (holdout) | 0.828244 |
+| detections | 75989 |
+| determinism `|ap − ap_rerun|` | 0 |
+| artifact root | `8c70c932…4ce4908b` |
+
+If any differs, the fork is reverted and the run repeated serially. The holdout is scored
+once, after the worker has been reaped; there is no additional peeking.
+
+### Measured result
+
+| | serial baseline | multicore run |
+|---|---|---|
+| processes / live core cap | 1 | **2** (`--jobs 2`, clamped in code) |
+| main-head training `train_s` | 2975.0 s | **2975.0 s** (identical) |
+| final main training (post-fork) | — | 1115.4 s |
+| label-shuffle control training | — | 1117.0 s (concurrent) |
+| average CPU utilisation | ~100 % | **137 %** |
+| peak RSS | — | **1.92 GiB** |
+| **wall clock** | **3540 s (59:00)** | **2984.9 s (49:45)** |
+| **speedup** | — | **1.19×** |
+
+**Every pre-registered quantity reproduced exactly**, tolerance 0: AP50 0.114518, random
+0.000988, linear 0.009932, shuffle 0.002435, val 0.088587 / 0.002049, proposal recall
+0.828244, detections 75989, determinism 0, artifact root `8c70c932…`. `train_s` being
+identical to the baseline is the control that makes the wall comparison meaningful.
+
+**The honest speedup is 1.19×, not the 1.37× a naive overlap accounting suggests.** The
+concurrent window is 1115 s, but the two trainings contend for memory bandwidth and both
+dilate, so the real saving is the measured 555 s. The console field is named
+`overlap_window_s` rather than `saved` for exactly this reason.
+
+**What was deliberately not done.** The dominant cost is four sequential BTN trainings
+(`train_s` 2975 s of a 3540 s serial wall) whose update order is fixed by the protocol.
+Parallelising *inside* `btn_train_dynamic` would change that order and is out of scope, so
+it was not attempted. The remaining candidates were measured and rejected as below run
+variance: parallelising the hard-negative scan and the detector forward passes together
+account for well under 60 s, and the linear baseline under 20 s. Only one genuinely
+independent arm exists at 2 processes, which is why `--jobs` is clamped to 2 rather than
+consuming available cores.
+
 ## 11a. Sanitizer scope — stated precisely
 
 ASan+UBSan coverage is **not** the whole benchmark, and should not be read as such:

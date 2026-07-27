@@ -60,6 +60,9 @@ const char *vd_pack_strerror(int code);
 /* Load a full pack. On any nonzero return, *p is left zeroed and every partial
    allocation is released (transactional). */
 int vd_pack_load(const char *path, VdPack *p);
+/* Load from a descriptor the caller already holds -- the scored path, so the
+   bytes parsed are the bytes that were hashed. */
+int vd_pack_load_fd(int fd, VdPack *p);
 void vd_pack_free(VdPack *p);
 
 /* Structural walk that returns only the image IDs. Applies the identical

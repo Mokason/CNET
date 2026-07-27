@@ -1,6 +1,7 @@
 #include "vd_sha256.h"
 
 #include <stdio.h>
+#include <unistd.h>
 #include <string.h>
 
 static uint32_t rr(uint32_t x, int c) { return (x >> c) | (x << (32 - c)); }
@@ -84,6 +85,23 @@ int vd_sha256_file(const char *path, char *out) {
     while ((got = fread(buf, 1, sizeof buf, f)) > 0) vd_sha256_update(&c, buf, got);
     if (ferror(f)) { fclose(f); return -1; }
     fclose(f);
+    vd_sha256_hex(&c, out);
+    return 0;
+}
+
+int vd_sha256_fd(int fd, char *out) {
+    VdSha256 c;
+    unsigned char buf[65536];
+    off_t off = 0;
+    if (fd < 0 || !out) return -1;
+    vd_sha256_init(&c);
+    for (;;) {
+        ssize_t got = pread(fd, buf, sizeof buf, off);
+        if (got < 0) return -1;
+        if (got == 0) break;
+        vd_sha256_update(&c, buf, (size_t)got);
+        off += got;
+    }
     vd_sha256_hex(&c, out);
     return 0;
 }

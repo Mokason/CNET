@@ -181,7 +181,7 @@ expect_fail "artefact_hash_mismatch" "mixed sidecar (val list as test)" \
 # 7c. a missing sidecar entirely
 build_cache
 rm -f "$W/cache/content_test.txt"
-expect_fail "artefact_unreadable" "missing sidecar" \
+expect_fail "member_unopenable" "missing sidecar" \
   $BENCH --protocol synthetic-test --cache "$W/cache" --prev-test "$W/prev.pack" --json "$JSON"
 
 # 8. corrupt pack body
@@ -194,6 +194,124 @@ expect_fail "pack_invalid" "val.pack truncated" \
 build_cache
 expect_fail "json_publish_failed" "unwritable json destination" \
   $BENCH --protocol synthetic-test --cache "$W/cache" --prev-test "$W/prev.pack" --json "$W/no_such_dir/out.json"
+
+# ---- artifact authority: canonical sidecars, substituted pack bytes --------
+# The manufactured cache keeps every canonical identity sidecar and rewrites the
+# manifest member digests to match its own tampered pack. Only the committed
+# artifact root catches it.
+build_cache
+python3 - "$W/cache" <<'PYEOF'
+import hashlib, os, sys
+d = sys.argv[1]
+# substitute feature bytes inside the pack, then repair every manifest digest
+p = os.path.join(d, "test.pack")
+b = bytearray(open(p, "rb").read())
+b[-4:] = b"\x01\x02\x03\x04"
+open(p, "wb").write(b)
+man = open(os.path.join(d, "manifest.txt")).read().split("\n")
+out = []
+for line in man:
+    if line.startswith("sha256_test_pack "):
+        h = hashlib.sha256(open(p, "rb").read()).hexdigest()
+        out.append("sha256_test_pack " + h)
+    else:
+        out.append(line)
+open(os.path.join(d, "manifest.txt"), "w").write("\n".join(out))
+PYEOF
+expect_fail "artifact_root_vs_manifest" "substituted pack bytes with repaired digests" \
+  $BENCH --protocol synthetic-test --cache "$W/cache" --prev-test "$W/prev.pack" --json "$JSON"
+
+# ---- BTN failure paths must never yield a verdict -------------------------
+for nth in 1 2 3; do
+  build_cache
+  expect_fail "VD_BENCH_FAIL" "BTN failure injected at call $nth" \
+    $BENCH --protocol synthetic-test --cache "$W/cache" --prev-test "$W/prev.pack" \
+           --btn-fail-at "$nth" --json "$JSON"
+done
+
+# A forward failure anywhere in the run -- including in the RANDOM control,
+# where a silent 0.0 would LOWER its AP and flatter the ratio and margin -- must
+# make the verdict ineligible. Indices are taken from the actual call count of a
+# clean run so the injection is guaranteed to be reachable.
+build_cache
+clean=$(timeout 200 $BENCH --protocol synthetic-test --cache "$W/cache" \
+          --prev-test "$W/prev.pack" --json "$JSON" 2>&1 | grep -o 'btn_calls_total=[0-9]*' | cut -d= -f2)
+if [ -z "${clean:-}" ] || [ "$clean" -lt 10 ]; then
+  echo "  BTN forward injection: FAIL (no call count to target)"; fails=$((fails+1))
+else
+  for frac in 50 75 95; do
+    nth=$(( clean * frac / 100 ))
+    build_cache
+    out=$(timeout 200 $BENCH --protocol synthetic-test --cache "$W/cache" \
+            --prev-test "$W/prev.pack" --btn-fail-at "$nth" --json "$JSON" 2>&1); rc=$?
+    checks=$((checks+1))
+    if [ $rc -ne 0 ]; then
+      echo "  BTN forward failure at ${frac}% of calls: PASS (refused, exit $rc)"
+    elif grep -q "eval_fault=1" <<<"$out"; then
+      echo "  BTN forward failure at ${frac}% of calls: PASS (verdict ineligible)"
+    else
+      echo "  BTN forward failure at ${frac}% of calls: FAIL (fault not recorded)"
+      fails=$((fails+1))
+    fi
+  done
+fi
+
+# ---- one-snapshot race ------------------------------------------------------
+# The cache pathname is exchanged for a DIFFERENT, individually valid cache
+# while the scorer runs. Because every scored member is opened once from a
+# single dirfd, the run must either complete on the old generation or refuse --
+# it must never validate one generation and score another.
+build_cache
+"$MK" --out "$W/gen2" --prev "$W/gen2.pack" --variant synthetic-test --test-offset 1000 \
+      --prev-base 700000 >/dev/null
+mkdir -p "$W/race"
+cp -r "$W/cache" "$W/race/live"
+cp "$W/prev.pack" "$W/race/prev.pack"
+(
+  sleep 0.35
+  rm -rf "$W/race/live.old"
+  mv "$W/race/live" "$W/race/live.old" 2>/dev/null
+  cp -r "$W/gen2" "$W/race/live" 2>/dev/null
+) &
+racer=$!
+out=$(timeout 200 $BENCH --protocol synthetic-test --cache "$W/race/live" \
+        --prev-test "$W/race/prev.pack" --json "$JSON" 2>&1); rc=$?
+wait $racer 2>/dev/null
+checks=$((checks+1))
+if [ $rc -ne 0 ]; then
+  echo "  directory exchanged mid-run: PASS (refused, exit $rc)"
+elif grep -q "artifact root verified" <<<"$out" && grep -q "results published" <<<"$out"; then
+  # completed: it must have used exactly one generation's artifact root
+  got=$(grep -o "artifact root verified from held descriptors: [0-9a-f]*" <<<"$out" | awk "{print \$NF}")
+  if [ "$got" = "ca9bb6112e7170becc292c5aff9118ab3403ea1f700ddd6ba190bb3408111441" ]; then
+    echo "  directory exchanged mid-run: PASS (single consistent snapshot)"
+  else
+    echo "  directory exchanged mid-run: FAIL (mixed generations: $got)"; fails=$((fails+1))
+  fi
+else
+  echo "  directory exchanged mid-run: FAIL (indeterminate)"; fails=$((fails+1))
+fi
+
+# Deterministic variant: replace the pathname with a cache whose bytes differ,
+# after the snapshot is taken. The held descriptors must still govern.
+build_cache
+cp -r "$W/cache" "$W/swap_live"
+cp "$W/prev.pack" "$W/swap_prev.pack"
+(
+  sleep 0.25
+  rm -rf "$W/swap_live"
+  cp -r "$W/gen2" "$W/swap_live" 2>/dev/null
+) &
+racer2=$!
+out=$(timeout 200 $BENCH --protocol synthetic-test --cache "$W/swap_live" \
+        --prev-test "$W/swap_prev.pack" --json "$JSON" 2>&1); rc=$?
+wait $racer2 2>/dev/null
+checks=$((checks+1))
+if [ $rc -ne 0 ] || grep -q "results published" <<<"$out"; then
+  echo "  cache replaced mid-run: PASS (one snapshot or clean refusal)"
+else
+  echo "  cache replaced mid-run: FAIL (indeterminate)"; fails=$((fails+1))
+fi
 
 echo "checks=$checks failures=$fails"
 if [ "$fails" -eq 0 ]; then

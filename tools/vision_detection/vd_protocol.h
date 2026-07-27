@@ -41,6 +41,7 @@ typedef struct {
     char sha_content_train[VD_HEX], sha_content_val[VD_HEX], sha_content_test[VD_HEX];
     char id_root_train[VD_HEX], id_root_val[VD_HEX], id_root_test[VD_HEX];
     char content_root_train[VD_HEX], content_root_val[VD_HEX], content_root_test[VD_HEX];
+    char artifact_root[VD_HEX];
 } VdManifest;
 
 /* Everything a scored run must be, fixed in code before the run. */
@@ -58,7 +59,27 @@ typedef struct {
     const char *prev_pack_sha;   /* "" until pinned */
     const char *id_root_train, *id_root_val, *id_root_test;
     const char *content_root_train, *content_root_val, *content_root_test;
+    /* Binds the exact bytes of every scored member. Canonical sidecars with
+       substituted features, GT, proposals or PCA change this root. */
+    const char *artifact_root;
 } VdProtocol;
+
+/* The scored members, in the ONE canonical order that goes into the artifact
+   root. Order, names, sizes and digests are all bound, so a member cannot be
+   substituted, reordered, renamed or resized without changing the root. */
+#define VD_N_MEMBERS 10
+extern const char *const VD_MEMBERS[VD_N_MEMBERS];
+
+typedef struct {
+    const char *name;
+    long long size;
+    char sha[VD_HEX];
+} VdMember;
+
+/* sha256 over the canonical serialisation:
+     "VDCACHEROOT1\n" "schema <v>\n" "members <n>\n" then "<name> <size> <sha>\n"
+   for each member in VD_MEMBERS order. */
+int vd_artifact_root(const VdMember *m, size_t n, long schema, char *hex_out);
 
 const VdProtocol *vd_protocol_get(const char *name);
 
@@ -66,6 +87,8 @@ const VdProtocol *vd_protocol_get(const char *name);
    keys, duplicates, missing keys, malformed or out-of-range numbers, embedded
    or smuggled whitespace, and trailing bytes are all refused. */
 int vd_manifest_parse(const char *path, VdManifest *m, char *err, size_t errn);
+/* Same, from an already-open descriptor -- the snapshot the scorer holds. */
+int vd_manifest_parse_fd(int fd, VdManifest *m, char *err, size_t errn);
 
 /* Compare a parsed manifest against a pre-registered protocol. */
 int vd_manifest_check(const VdManifest *m, const VdProtocol *p, char *err, size_t errn);
@@ -73,6 +96,10 @@ int vd_manifest_check(const VdManifest *m, const VdProtocol *p, char *err, size_
 /* sha256 of the file's sorted "value\n" lines, and the line count. Used to
    recompute a root from a sidecar rather than trusting a declared digest. */
 int vd_root_of_file(const char *path, char *hex_out, size_t *n_lines);
+int vd_root_of_fd(int fd, char *hex_out, size_t *n_lines);
+/* Sorted lines of a sidecar, read from the held descriptor. */
+int vd_lines_of_fd(int fd, char ***out, size_t *n);
+void vd_lines_free(char **v, size_t n);
 
 #ifdef __cplusplus
 }

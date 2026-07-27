@@ -9,6 +9,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 
 #include "vd_io.h"
 #include "vd_pack.h"
@@ -60,7 +61,7 @@ int main(int argc, char **argv) {
     int test_offset = 1000, prev_count = 40, prev_base = 900000;
     int i;
     char p[VD_PATH_MAX], sh_tr[65], sh_va[65], sh_te[65], sh_pca[65], sh_prev[65];
-    char sh_side[6][65], rt[6][65];
+    char sh_side[6][65], rt[6][65], aroot[65];
     char body[8192];
     size_t len;
     FILE *f;
@@ -132,6 +133,22 @@ int main(int argc, char **argv) {
         }
     }
 
+    {   /* artifact root over this cache's own members */
+        VdMember mem[VD_N_MEMBERS];
+        const char *dg[VD_N_MEMBERS] = {sh_tr, sh_va, sh_te, sh_pca,
+                                        sh_side[0], sh_side[1], sh_side[2],
+                                        sh_side[3], sh_side[4], sh_side[5]};
+        struct stat sb;
+        int k2;
+        for (k2 = 0; k2 < VD_N_MEMBERS; k2++) {
+            snprintf(p, sizeof p, "%s/%s", out, VD_MEMBERS[k2]);
+            if (stat(p, &sb) != 0) return 3;
+            mem[k2].name = VD_MEMBERS[k2];
+            mem[k2].size = (long long)sb.st_size;
+            snprintf(mem[k2].sha, sizeof mem[k2].sha, "%s", dg[k2]);
+        }
+        if (vd_artifact_root(mem, VD_N_MEMBERS, 1, aroot) != 0) return 3;
+    }
     len = (size_t)snprintf(body, sizeof body,
         "manifest_version 1\nvariant %s\ndataset SYNTHETIC_TEST\nclass car\n"
         "split_key sha256_content_hash_trainval\nseed 20260727\n"
@@ -151,13 +168,14 @@ int main(int argc, char **argv) {
         "sha256_ids_train %s\nsha256_ids_val %s\nsha256_ids_test %s\n"
         "sha256_content_train %s\nsha256_content_val %s\nsha256_content_test %s\n"
         "id_root_train %s\nid_root_val %s\nid_root_test %s\n"
-        "content_root_train %s\ncontent_root_val %s\ncontent_root_test %s\n",
+        "content_root_train %s\ncontent_root_val %s\ncontent_root_test %s\n"
+        "artifact_root %s\n",
         variant, dim, test_offset, n_te, n_tr, n_va, n_te,
         n_tr * n_prop, n_va * n_prop, n_te * n_prop,
         test_offset > 0 ? prev_count : 0, test_offset > 0 ? prev_count : 0,
         sh_prev, sh_tr, sh_va, sh_te, sh_pca,
         sh_side[0], sh_side[1], sh_side[2], sh_side[3], sh_side[4], sh_side[5],
-        rt[0], rt[1], rt[2], rt[3], rt[4], rt[5]);
+        rt[0], rt[1], rt[2], rt[3], rt[4], rt[5], aroot);
     if (len >= sizeof body) return 3;
 
     {   /* roots of the synthetic sidecars, so the test protocol can pin them */
@@ -174,6 +192,7 @@ int main(int argc, char **argv) {
         }
         if (prev && vd_sha256_file(prev, hex) == 0)
             printf("VD_MKCACHE_ROOT prev_pack=%s\n", hex);
+        printf("VD_MKCACHE_ROOT artifact=%s\n", aroot);
     }
     snprintf(p, sizeof p, "%s/manifest.txt", out);
     if (vd_publish_file(p, body, len) != 0) return 3;

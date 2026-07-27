@@ -20,4 +20,9 @@
 #define VD_ROOT_CONTENT_VAL    "2dd568091adcc02ae30a9463744121bbc091a0608707020e194b894d2c956273"
 #define VD_ROOT_CONTENT_TEST   "0a0e1ce705abe301016119b37c5e2e44a7041a817663a10c60224f21a64baffa"
 
+/* Binds the exact bytes, sizes and ordering of every scored cache member.
+   Pinned from a prep run and thereafter REPRODUCED, never updated to match a
+   changed prep without independent protocol review. */
+#define VD_ARTIFACT_ROOT_V2    "8c70c9327daf39623e5b3cc1fa0c5cffe0389f4c497c8e8a9e66769c4ce4908b"
+
 #endif

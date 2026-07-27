@@ -1,4 +1,5 @@
 #include "vd_pack.h"
+#include "vd_io.h"
 
 #include <math.h>
 #include <stdint.h>
@@ -53,8 +54,7 @@ static int box_ok(const int32_t v[4]) {
     return 0;
 }
 
-int vd_pack_load(const char *path, VdPack *p) {
-    FILE *f;
+static int pack_load_stream(FILE *f, VdPack *p) {
     char magic[8];
     int32_t dim, n_img;
     int64_t declared_prop;
@@ -65,22 +65,19 @@ int vd_pack_load(const char *path, VdPack *p) {
 
     if (!p) return VD_PACK_E_OPEN;
     memset(p, 0, sizeof *p);
-    if (!path) return VD_PACK_E_OPEN;
-    f = fopen(path, "rb");
     if (!f) return VD_PACK_E_OPEN;
 
     if (rd(f, magic, 8) != 0 || memcmp(magic, "VDPACK1", 7) != 0) {
-        fclose(f); return VD_PACK_E_MAGIC;
+        return VD_PACK_E_MAGIC;
     }
     if (rd(f, &dim, 4) != 0 || rd(f, &n_img, 4) != 0 || rd(f, &declared_prop, 8) != 0) {
-        fclose(f); return VD_PACK_E_HEADER;
+        return VD_PACK_E_HEADER;
     }
     /* Bound every count BEFORE it is used to allocate or index. */
-    if (dim <= 0 || dim > VD_MAX_DIM) { fclose(f); return VD_PACK_E_COUNT; }
-    if (n_img < 0 || n_img > VD_MAX_IMAGES) { fclose(f); return VD_PACK_E_COUNT; }
-    if (declared_prop < 0 || declared_prop > (int64_t)VD_MAX_TOTAL_PROPS) {
-        fclose(f); return VD_PACK_E_COUNT;
-    }
+    if (dim <= 0 || dim > VD_MAX_DIM) return VD_PACK_E_COUNT;
+    if (n_img < 0 || n_img > VD_MAX_IMAGES) return VD_PACK_E_COUNT;
+    if (declared_prop < 0 || declared_prop > (int64_t)VD_MAX_TOTAL_PROPS)
+        return VD_PACK_E_COUNT;
 
     p->dim = dim;
     p->n = (size_t)n_img;
@@ -90,7 +87,6 @@ int vd_pack_load(const char *path, VdPack *p) {
             /* p->n is already set; leaving it would hand the caller a pack that
                claims images it does not have. */
             memset(p, 0, sizeof *p);
-            fclose(f);
             return VD_PACK_E_ALLOC;
         }
     }
@@ -158,12 +154,35 @@ int vd_pack_load(const char *path, VdPack *p) {
     if (ferror(f)) { rc = VD_PACK_E_TRUNC; goto fail; }
 
     p->total_prop = (size_t)total;
-    fclose(f);
     return VD_PACK_OK;
 
 fail:
-    fclose(f);
     vd_pack_free(p);   /* transactional: no partial pack ever escapes */
+    return rc;
+}
+
+int vd_pack_load(const char *path, VdPack *p) {
+    FILE *f;
+    int rc;
+    if (!p) return VD_PACK_E_OPEN;
+    memset(p, 0, sizeof *p);
+    if (!path) return VD_PACK_E_OPEN;
+    f = fopen(path, "rb");
+    if (!f) return VD_PACK_E_OPEN;
+    rc = pack_load_stream(f, p);
+    fclose(f);
+    return rc;
+}
+
+int vd_pack_load_fd(int fd, VdPack *p) {
+    FILE *f;
+    int rc;
+    if (!p) return VD_PACK_E_OPEN;
+    memset(p, 0, sizeof *p);
+    f = (FILE *)vd_fdopen_ro(fd);
+    if (!f) return VD_PACK_E_OPEN;
+    rc = pack_load_stream(f, p);
+    fclose(f);
     return rc;
 }
 

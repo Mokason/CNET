@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "vd_io.h"
 #include "vd_sha256.h"
 #include "vd_roots.h"
 
@@ -16,6 +17,35 @@
    plans/cnet_vision_object_detection_v2_20260727.md, and pinned here. A cache
    that does not reproduce them is not this protocol's cache.
    ------------------------------------------------------------------------ */
+const char *const VD_MEMBERS[VD_N_MEMBERS] = {
+    "train.pack", "val.pack", "test.pack", "pca.bin",
+    "ids_train.txt", "ids_val.txt", "ids_test.txt",
+    "content_train.txt", "content_val.txt", "content_test.txt"
+};
+
+int vd_artifact_root(const VdMember *m, size_t n, long schema, char *hex_out) {
+    VdSha256 c;
+    char line[512];
+    size_t i;
+    if (!m || !hex_out || n != VD_N_MEMBERS) return -1;
+    vd_sha256_init(&c);
+    vd_sha256_update(&c, "VDCACHEROOT1\n", 13);
+    snprintf(line, sizeof line, "schema %ld\n", schema);
+    vd_sha256_update(&c, line, strlen(line));
+    snprintf(line, sizeof line, "members %zu\n", n);
+    vd_sha256_update(&c, line, strlen(line));
+    for (i = 0; i < n; i++) {
+        /* names come from VD_MEMBERS, so ordering is fixed by the protocol and
+           not by whatever the cache happens to contain */
+        if (!m[i].name || strcmp(m[i].name, VD_MEMBERS[i]) != 0) return -1;
+        if (m[i].size < 0 || strlen(m[i].sha) != 64) return -1;
+        snprintf(line, sizeof line, "%s %lld %s\n", m[i].name, m[i].size, m[i].sha);
+        vd_sha256_update(&c, line, strlen(line));
+    }
+    vd_sha256_hex(&c, hex_out);
+    return 0;
+}
+
 static const VdProtocol PROTOCOLS[] = {
     {
         "v2",
@@ -36,7 +66,8 @@ static const VdProtocol PROTOCOLS[] = {
         /* id_root_test */ VD_ROOT_ID_TEST,
         /* content_root_train */ VD_ROOT_CONTENT_TRAIN,
         /* content_root_val */ VD_ROOT_CONTENT_VAL,
-        /* content_root_test */ VD_ROOT_CONTENT_TEST
+        /* content_root_test */ VD_ROOT_CONTENT_TEST,
+        /* artifact_root */ VD_ARTIFACT_ROOT_V2
     },
     /* Test-only protocol for the evidence-gate negative controls. It is pinned
        to the synthetic fixtures produced by vd_mkcache and declares
@@ -62,7 +93,8 @@ static const VdProtocol PROTOCOLS[] = {
         /* id_root_test */ "13b3104aef253ed23bd4214de08a0971d28116d1bebd2bbcc175c486c8f98c70",
         /* content_root_train */ "c4a4f3282236f6c821878d63107bf6715582e334719d0d8039293cdd1ab5ddfe",
         /* content_root_val */ "a860d640fade02e0fa739c588ee7218db7d8b55960d6d55918b9185f3f6b20dc",
-        /* content_root_test */ "1c69eea3f257843ffa3a417be0c5b17cc09c19f36dd86332162d19f0d7304436"
+        /* content_root_test */ "1c69eea3f257843ffa3a417be0c5b17cc09c19f36dd86332162d19f0d7304436",
+        /* artifact_root */ "ca9bb6112e7170becc292c5aff9118ab3403ea1f700ddd6ba190bb3408111441"
     }
 };
 
@@ -119,7 +151,8 @@ static const Field FIELDS[] = {
     F_H("id_root_test", id_root_test),
     F_H("content_root_train", content_root_train),
     F_H("content_root_val", content_root_val),
-    F_H("content_root_test", content_root_test)
+    F_H("content_root_test", content_root_test),
+    F_H("artifact_root", artifact_root)
 };
 #define NFIELDS (sizeof FIELDS / sizeof FIELDS[0])
 
@@ -147,8 +180,7 @@ static int strict_long(const char *t, long *out) {
     return 0;
 }
 
-int vd_manifest_parse(const char *path, VdManifest *m, char *err, size_t errn) {
-    FILE *f;
+static int manifest_parse_stream(FILE *f, VdManifest *m, char *err, size_t errn) {
     char *buf;
     long sz;
     size_t got, pos = 0, i;
@@ -157,21 +189,17 @@ int vd_manifest_parse(const char *path, VdManifest *m, char *err, size_t errn) {
     memset(m, 0, sizeof *m);
     memset(seen, 0, sizeof seen);
     if (err && errn) err[0] = 0;
-
-    f = fopen(path, "rb");
     if (!f) { if (err) snprintf(err, errn, "manifest_unreadable"); return -1; }
     fseek(f, 0, SEEK_END);
     sz = ftell(f);
     fseek(f, 0, SEEK_SET);
     if (sz <= 0 || sz > 65536) {
-        fclose(f);
         if (err) snprintf(err, errn, "manifest_size_out_of_range");
         return -1;
     }
     buf = (char *)malloc((size_t)sz + 1);
-    if (!buf) { fclose(f); if (err) snprintf(err, errn, "manifest_alloc"); return -1; }
+    if (!buf) { if (err) snprintf(err, errn, "manifest_alloc"); return -1; }
     got = fread(buf, 1, (size_t)sz, f);
-    fclose(f);
     if (got != (size_t)sz) { free(buf); if (err) snprintf(err, errn, "manifest_short_read"); return -1; }
     buf[sz] = 0;
     if (memchr(buf, 0, (size_t)sz)) { free(buf); if (err) snprintf(err, errn, "manifest_nul_byte"); return -1; }
@@ -244,6 +272,24 @@ int vd_manifest_parse(const char *path, VdManifest *m, char *err, size_t errn) {
             return -1;
         }
     return 0;
+}
+
+int vd_manifest_parse(const char *path, VdManifest *m, char *err, size_t errn) {
+    FILE *f = fopen(path, "rb");
+    int rc;
+    if (!f) { memset(m, 0, sizeof *m); if (err) snprintf(err, errn, "manifest_unreadable"); return -1; }
+    rc = manifest_parse_stream(f, m, err, errn);
+    fclose(f);
+    return rc;
+}
+
+int vd_manifest_parse_fd(int fd, VdManifest *m, char *err, size_t errn) {
+    FILE *f = (FILE *)vd_fdopen_ro(fd);
+    int rc;
+    if (!f) { memset(m, 0, sizeof *m); if (err) snprintf(err, errn, "manifest_unreadable"); return -1; }
+    rc = manifest_parse_stream(f, m, err, errn);
+    fclose(f);
+    return rc;
 }
 
 #define WANT_L(field, expect) \
@@ -320,6 +366,10 @@ int vd_manifest_check(const VdManifest *m, const VdProtocol *p, char *err, size_
         if (err) snprintf(err, errn, "protocol_mismatch:content_root_val");
         return -1;
     }
+    if (*p->artifact_root && strcmp(m->artifact_root, p->artifact_root) != 0) {
+        if (err) snprintf(err, errn, "protocol_mismatch:artifact_root");
+        return -1;
+    }
     return 0;
 }
 
@@ -328,45 +378,85 @@ static int cmp_str(const void *a, const void *b) {
     return strcmp(*(const char *const *)a, *(const char *const *)b);
 }
 
-int vd_root_of_file(const char *path, char *hex_out, size_t *n_lines) {
-    FILE *f = fopen(path, "rb");
+static int lines_of_stream(FILE *f, char ***out, size_t *n_out) {
     char line[256];
     char **v = NULL;
     size_t n = 0, cap = 0, i;
-    VdSha256 c;
     if (!f) return -1;
     while (fgets(line, sizeof line, f)) {
         size_t l = strlen(line);
-        if (l == 0 || line[l - 1] != '\n') { fclose(f); goto fail; }
+        if (l == 0 || line[l - 1] != '\n') goto fail;
         line[--l] = 0;
-        if (l == 0 || l > 200) { fclose(f); goto fail; }
+        if (l == 0 || l > 200) goto fail;
         if (n == cap) {
             char **nv;
             cap = cap ? cap * 2 : 1024;
             nv = (char **)realloc(v, cap * sizeof *v);
-            if (!nv) { fclose(f); goto fail; }
+            if (!nv) goto fail;
             v = nv;
         }
         v[n] = (char *)malloc(l + 1);
-        if (!v[n]) { fclose(f); goto fail; }
+        if (!v[n]) goto fail;
         memcpy(v[n], line, l + 1);
         n++;
     }
-    fclose(f);
     if (n == 0) goto fail;
     qsort(v, n, sizeof *v, cmp_str);
+    *out = v;
+    *n_out = n;
+    return 0;
+fail:
+    for (i = 0; i < n; i++) free(v[i]);
+    free(v);
+    return -1;
+}
+
+void vd_lines_free(char **v, size_t n) {
+    size_t i;
+    if (!v) return;
+    for (i = 0; i < n; i++) free(v[i]);
+    free(v);
+}
+
+static int root_of_stream(FILE *f, char *hex_out, size_t *n_lines) {
+    char **v = NULL;
+    size_t n = 0, i;
+    VdSha256 c;
+    if (lines_of_stream(f, &v, &n) != 0) return -1;
     vd_sha256_init(&c);
     for (i = 0; i < n; i++) {
         vd_sha256_update(&c, v[i], strlen(v[i]));
         vd_sha256_update(&c, "\n", 1);
     }
     vd_sha256_hex(&c, hex_out);
-    for (i = 0; i < n; i++) free(v[i]);
-    free(v);
+    vd_lines_free(v, n);
     if (n_lines) *n_lines = n;
     return 0;
-fail:
-    for (i = 0; i < n; i++) free(v[i]);
-    free(v);
-    return -1;
+}
+
+int vd_root_of_file(const char *path, char *hex_out, size_t *n_lines) {
+    FILE *f = fopen(path, "rb");
+    int rc;
+    if (!f) return -1;
+    rc = root_of_stream(f, hex_out, n_lines);
+    fclose(f);
+    return rc;
+}
+
+int vd_root_of_fd(int fd, char *hex_out, size_t *n_lines) {
+    FILE *f = (FILE *)vd_fdopen_ro(fd);
+    int rc;
+    if (!f) return -1;
+    rc = root_of_stream(f, hex_out, n_lines);
+    fclose(f);
+    return rc;
+}
+
+int vd_lines_of_fd(int fd, char ***out, size_t *n) {
+    FILE *f = (FILE *)vd_fdopen_ro(fd);
+    int rc;
+    if (!f) return -1;
+    rc = lines_of_stream(f, out, n);
+    fclose(f);
+    return rc;
 }

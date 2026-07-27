@@ -31,6 +31,11 @@ void vd_sha256_hex(VdSha256 *c, char *out);
    out must hold >= 65 bytes. */
 int vd_sha256_file(const char *path, char *out);
 
+/* Hash an already-open descriptor from offset 0 using pread, leaving the file
+   position untouched. Scored evidence is hashed from the SAME descriptor it was
+   read through, so a pathname swapped underneath cannot substitute the bytes. */
+int vd_sha256_fd(int fd, char *out);
+
 #ifdef __cplusplus
 }
 #endif

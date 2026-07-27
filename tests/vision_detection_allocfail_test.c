@@ -40,6 +40,7 @@ void *__wrap_realloc(void *p, size_t n) { return should_fail() ? NULL : __real_r
 
 static void inject(long nth) { alloc_count = 0; alloc_fail_at = nth; }
 static void no_inject(void) { alloc_count = 0; alloc_fail_at = -1; }
+static long clean_allocs(void) { return alloc_count; }
 
 static int failures, checks;
 static void check(int ok, const char *name) {
@@ -65,7 +66,6 @@ static void build(void) {
 }
 
 int main(void) {
-    const long DEPTH = 24;
     long i;
     char path[256];
 
@@ -83,51 +83,73 @@ int main(void) {
     }
     report("baseline sanity");
 
-    /* vd_ap50: every allocation failed in turn */
+    /* vd_ap50: every allocation it actually performs is failed in turn, and the
+       result must be EXACTLY NaN -- not merely "plausible". */
     {
         int bad = 0;
-        for (i = 1; i <= DEPTH; i++) {
+        long reach;
+        no_inject();
+        (void)vd_ap50(IMGS, 2, 0.5);
+        reach = clean_allocs();
+        check(reach > 0, "vd_ap50: performs allocations to inject into");
+        for (i = 1; i <= reach; i++) {
             double ap;
             inject(i);
             ap = vd_ap50(IMGS, 2, 0.5);
             no_inject();
-            /* Either the allocation was not reached (real score) or it failed
-               and the result is NaN. A finite wrong number is the bug. */
-            if (!isnan(ap) && !(ap > 0.0)) bad++;
+            if (!isnan(ap)) bad++;   /* every reachable failure must be NaN */
         }
-        check(bad == 0, "vd_ap50: no allocation failure yields a bogus finite score");
-        report("vd_ap50 injection depth 24");
+        check(bad == 0, "vd_ap50: every reachable allocation failure returns exactly NaN");
+        for (i = reach + 1; i <= reach + 4; i++) {
+            double ap;
+            inject(i);
+            ap = vd_ap50(IMGS, 2, 0.5);
+            no_inject();
+            if (!(isfinite(ap) && ap > 0.0)) bad++;   /* unreachable: must still work */
+        }
+        check(bad == 0, "vd_ap50: unreached injection still yields the real score");
+        report("vd_ap50 exact injection");
     }
 
-    /* vd_pr_at: failure must be reported AND outputs left non-finite */
+    /* vd_pr_at: every reachable failure must report -1 AND leave NaN outputs */
     {
         int bad = 0;
-        for (i = 1; i <= DEPTH; i++) {
+        long reach;
+        double pr0 = 0, rc0 = 0;
+        no_inject();
+        (void)vd_pr_at(IMGS, 2, 0.5, 0.5, &pr0, &rc0);
+        reach = clean_allocs();
+        check(reach > 0, "vd_pr_at: performs allocations to inject into");
+        for (i = 1; i <= reach; i++) {
             double pr = 123.0, rc = 123.0;
             int st;
             inject(i);
             st = vd_pr_at(IMGS, 2, 0.5, 0.5, &pr, &rc);
             no_inject();
-            if (st != 0 && (isfinite(pr) || isfinite(rc))) bad++;   /* failed but numeric */
-            if (st == 0 && (!isfinite(pr) || !isfinite(rc))) bad++; /* succeeded but NaN */
+            if (st != -1) bad++;
+            if (isfinite(pr) || isfinite(rc)) bad++;
         }
-        check(bad == 0, "vd_pr_at: status and outputs never disagree");
-        report("vd_pr_at injection depth 24");
+        check(bad == 0, "vd_pr_at: every reachable failure is -1 with NaN outputs");
+        report("vd_pr_at exact injection");
     }
 
-    /* vd_nms: must return the sentinel, never a plausible count */
+    /* vd_nms: every reachable failure must be exactly VD_NMS_FAIL */
     {
-        int bad = 0;
-        for (i = 1; i <= 8; i++) {
-            int keep[3];
-            size_t n;
+        int bad = 0, keep[3];
+        long reach;
+        no_inject();
+        (void)vd_nms(DET, 3, 0.3, keep);
+        reach = clean_allocs();
+        check(reach > 0, "vd_nms: performs allocations to inject into");
+        for (i = 1; i <= reach; i++) {
+            size_t nn;
             inject(i);
-            n = vd_nms(DET, 3, 0.3, keep);
+            nn = vd_nms(DET, 3, 0.3, keep);
             no_inject();
-            if (n != VD_NMS_FAIL && n > 3) bad++;
+            if (nn != VD_NMS_FAIL) bad++;
         }
-        check(bad == 0, "vd_nms: allocation failure returns VD_NMS_FAIL, never a count");
-        report("vd_nms injection depth 8");
+        check(bad == 0, "vd_nms: every reachable failure returns exactly VD_NMS_FAIL");
+        report("vd_nms exact injection");
     }
 
     /* vd_pack_load: must refuse, never hand back a partial pack */
@@ -161,17 +183,48 @@ int main(void) {
         no_inject();
         if (vd_pack_load(path, &pk) == VD_PACK_OK) { loaded_ok = 1; vd_pack_free(&pk); }
         check(loaded_ok, "baseline: fixture pack loads without injection");
-        for (i = 1; i <= 12; i++) {
-            int rc;
-            inject(i);
-            rc = vd_pack_load(path, &pk);
+        {
+            long reach;
             no_inject();
-            if (rc == VD_PACK_OK) vd_pack_free(&pk);   /* allocation not reached */
-            else if (pk.imgs != NULL || pk.n != 0) bad++;  /* must be fully zeroed */
+            if (vd_pack_load(path, &pk) == VD_PACK_OK) vd_pack_free(&pk);
+            reach = clean_allocs();
+            check(reach > 0, "vd_pack_load: performs allocations to inject into");
+            for (i = 1; i <= reach; i++) {
+                int rc;
+                inject(i);
+                rc = vd_pack_load(path, &pk);
+                no_inject();
+                if (rc != VD_PACK_E_ALLOC) bad++;             /* exact status */
+                if (pk.imgs != NULL || pk.n != 0) bad++;      /* fully zeroed */
+            }
+            check(bad == 0, "vd_pack_load: every reachable failure is E_ALLOC and zeroed");
         }
-        check(bad == 0, "vd_pack_load: refusal leaves no partial pack behind");
-        report("vd_pack_load injection depth 12");
+        report("vd_pack_load exact injection");
         unlink(path);
+    }
+
+    /* manifest parser: allocation failure must refuse, never half-populate */
+    {
+        char mp[256];
+        FILE *mf;
+        VdManifest m;
+        char err[256];
+        long reach;
+        int bad = 0;
+        snprintf(mp, sizeof mp, "/tmp/vd_allocfail_%d.manifest", (int)getpid());
+        mf = fopen(mp, "wb");
+        if (mf) { fputs("manifest_version 1\n", mf); fclose(mf); }
+        no_inject();
+        (void)vd_manifest_parse(mp, &m, err, sizeof err);
+        reach = clean_allocs();
+        for (i = 1; i <= reach; i++) {
+            inject(i);
+            if (vd_manifest_parse(mp, &m, err, sizeof err) == 0) bad++;
+            no_inject();
+        }
+        check(bad == 0, "vd_manifest_parse: allocation failure never yields a parsed manifest");
+        report("vd_manifest_parse exact injection");
+        unlink(mp);
     }
 
     printf("checks=%d failures=%d\n", checks, failures);
