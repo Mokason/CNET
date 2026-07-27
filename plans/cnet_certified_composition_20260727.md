@@ -12,7 +12,7 @@ nothing shows composition beyond the chain actually executed.
 ## 1. What was proven
 
 `make knowledge_composition_bench` → `KNOWLEDGE_COMPOSITION_BENCH_PASS members=3
-hops_guarded=every refusals=root+intermediate` (**55 checks**, 0 failures).
+hops_guarded=every refusals=root+intermediate` (**74 checks**, 0 failures).
 
 ```
 num_raw --kc_incr--> val_incr --kc_double--> qty_dbl --kc_offset--> res_final
@@ -68,15 +68,18 @@ guard is enabled** — unsupported, not merely untested. Legacy `NULL` guard is 
 | Case (owner + rows correct, only the binding wrong) | Result |
 |---|---|
 | wrong input **tag** | refused at B, C never consulted, B's `btn_forward` did not run |
-| wrong input width / `in_dim` | same |
+| wrong input **width** | same |
+| exact ports, record `in_dim` != assembled length | same — only the independent dimension check can refuse this |
 | wrong output **tag** | same |
 | wrong output shape | same |
 | coverage record **missing** | same |
 | multi-input primitive under v1 | refused, `refuse_kind=unsupported_shape` |
 | multi-output primitive under v1 | refused |
 
-Every refusal snapshots the primitive's `output_successes`/`output_failures` before the
-run and asserts them unchanged afterwards, so "did not serve" is proven by the executor's
+Each wrong-binding case first asserts its own SETUP — the record stored and the metadata
+is present — so a negative cannot pass for the missing-metadata reason while claiming to
+test port binding. Every refusal then snapshots the primitive's
+`output_successes`/`output_failures` before the run and asserts them unchanged afterwards, so "did not serve" is proven by the executor's
 own counters rather than inferred from a wrong answer. Restoring the correct binding
 admits the hop and computes exactly.
 
@@ -164,8 +167,8 @@ training schedule.
 
 ```
 KNOWLEDGE_COMPOSITION_BENCH_PASS members=3 hops_guarded=every refusals=root+intermediate
-  (55 checks, 0 failures)
-make knowledge_composition_sanitize -> same 23 under ASAN+UBSAN+LeakSanitizer, clean
+  (74 checks, 0 failures)
+make knowledge_composition_sanitize -> same 74 under ASAN+UBSAN+LeakSanitizer, clean
 KNOWLEDGE_CAPSULE_PASS checks=88
 KNOWLEDGE_ACCUMULATION_BENCH_PASS units=32 distinct=1 isolation=32/32 replay=8/8
 COVERAGE_ABSTAIN_PASS checks=55 heldout_correct=4/4 was=0/4

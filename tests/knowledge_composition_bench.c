@@ -415,13 +415,28 @@ int main(void) {
             if (i != 9 && op_a(i) != 4) { x_ok = i; break; }
         check(x_ok >= 0, "bind: found a fully in-coverage composed input");
 
-#define REBIND(IP, OP)                                                         \
+/* Setup must be PROVEN, not assumed: if the forget or the record silently
+   failed, the record would simply be absent and every wrong-binding negative
+   below would "pass" for the missing-metadata reason instead of the port-binding
+   reason it claims to test. Fail immediately with a specific setup reason. */
+#define REBIND_DIM(IP, OP, IND, LBL)                                           \
         do {                                                                   \
+            int rc_;                                                           \
+            /* Prior record may legitimately be absent (the missing-metadata    \
+               case ran just before), so the forget count is not asserted; what \
+               MUST hold is that the intended wrong binding actually landed. */ \
             (void)hybrid_coverage_forget_unit(&cov_dst, B_UNIT);               \
-            (void)hybrid_coverage_record(&cov_dst, (IP), (OP), B_UNIT,         \
+            rc_ = hybrid_coverage_record(&cov_dst, (IP), (OP), B_UNIT,         \
                                          (const double *)brow,                 \
-                                         (const double *)btg, (size_t)nb, W, W); \
+                                         (const double *)btg, (size_t)nb,      \
+                                         (size_t)(IND), W);                    \
+            check(rc_ == 0, LBL ": SETUP wrong-binding record stored");        \
+            if (rc_ != 0) { failures++; goto bind_setup_failed; }              \
+            check(hybrid_coverage_has_unit(&cov_dst, B_UNIT) == 1,             \
+                  LBL ": SETUP metadata present (so refusal is about binding)"); \
         } while (0)
+
+#define REBIND(IP, OP, LBL) REBIND_DIM(IP, OP, W, LBL)
 
 #define EXPECT_REFUSED_AT_B(label)                                             \
         do {                                                                   \
@@ -444,35 +459,48 @@ int main(void) {
         } while (0)
 
         /* 1. wrong input TAG (family/dims correct, rows correct) */
-        REBIND(BP("wrong_intag"), P_DBL());
+        REBIND(BP("wrong_intag"), P_DBL(), "bind-in-tag");
         EXPECT_REFUSED_AT_B("bind-in-tag");
 
         /* 2. wrong input width/dim */
         {
             Port narrow = P_INCR();
             narrow.field_width = 2;
-            REBIND(narrow, P_DBL());
-            EXPECT_REFUSED_AT_B("bind-in-dim");
+            REBIND(narrow, P_DBL(), "bind-in-width");
+            EXPECT_REFUSED_AT_B("bind-in-width");
         }
 
+        /* 2b. EXACT ports on both sides, but the record's own in_dim disagrees
+           with the assembled input length. The ports match perfectly here, so
+           only the independent dimension check can refuse this — a port-width
+           change would have been caught by the port comparison instead. */
+        REBIND_DIM(P_INCR(), P_DBL(), 2, "bind-covdim");
+        check(hybrid_coverage_admits_exact(&cov_dst, B_UNIT, P_INCR(), P_DBL(),
+                                           brow[0], W) == 0,
+              "bind-covdim: strict query refuses in_dim != assembled length");
+        EXPECT_REFUSED_AT_B("bind-covdim");
+
         /* 3. wrong OUTPUT tag (input side perfectly correct) */
-        REBIND(P_INCR(), BP("wrong_outtag"));
+        REBIND(P_INCR(), BP("wrong_outtag"), "bind-out-tag");
         EXPECT_REFUSED_AT_B("bind-out-tag");
 
         /* 4. wrong output shape */
         {
             Port wide = P_DBL();
             wide.field_count = 2;
-            REBIND(P_INCR(), wide);
+            REBIND(P_INCR(), wide, "bind-out-shape");
             EXPECT_REFUSED_AT_B("bind-out-shape");
         }
 
         /* 5. missing metadata entirely */
-        (void)hybrid_coverage_forget_unit(&cov_dst, B_UNIT);
+        check(hybrid_coverage_forget_unit(&cov_dst, B_UNIT) == 1,
+              "bind-missing: SETUP record actually removed");
+        check(hybrid_coverage_has_unit(&cov_dst, B_UNIT) == 0,
+              "bind-missing: SETUP metadata really absent");
         EXPECT_REFUSED_AT_B("bind-missing");
 
         /* restore the correct binding and prove the chain works again */
-        REBIND(P_INCR(), P_DBL());
+        REBIND(P_INCR(), P_DBL(), "bind-restore");
         enc(xin, x_ok);
         memset(&gt, 0, sizeof gt);
         gt.cov = &cov_dst;
@@ -482,7 +510,10 @@ int main(void) {
                   dec(out) == composed(x_ok),
               "bind-restore: correct port binding admits and computes exactly");
 #undef REBIND
+#undef REBIND_DIM
 #undef EXPECT_REFUSED_AT_B
+bind_setup_failed:
+        ;
     }
 
     /* ---- guard v1 shape support: multi-port primitives fail closed ------- */
