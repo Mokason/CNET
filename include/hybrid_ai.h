@@ -268,6 +268,21 @@ CNET_API size_t hybrid_coverage_rows(const HybridAi *h, Port in_port,
 CNET_API int hybrid_coverage_admits_unit(const HybridAi *h, const char *unit,
                                          const double *in, size_t in_len);
 
+/* STRICT per-hop coverage query, bound to the executing primitive's typed
+ * contract. Unlike hybrid_coverage_admits_unit — which matches by owner name
+ * and row, and DEFAULT-ALLOWS an unsupported family or a dimension mismatch —
+ * this admits only when one active record matches ALL of:
+ *   owner name exactly; input family/width/count/tag exactly; output
+ *   family/width/count/tag exactly; in_dim == in_len; and the assembled row is
+ *   one of the certified rows.
+ * Missing metadata, unsupported family, dimension mismatch, or any port/tag
+ * mismatch REFUSES. Tags compare exactly — empty is not a wildcard here,
+ * because a wildcard would reintroduce the hole this closes.
+ * Returns 1 = admit, 0 = refuse. Legacy admits_unit is deliberately unchanged. */
+CNET_API int hybrid_coverage_admits_exact(const HybridAi *h, const char *unit,
+                                          Port in_port, Port out_port,
+                                          const double *in, size_t in_len);
+
 /* 1 if this name is a structure-mined unit (must carry coverage). */
 CNET_API int hybrid_unit_is_mined(const char *unit);
 

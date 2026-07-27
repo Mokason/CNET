@@ -247,6 +247,35 @@ int hybrid_coverage_admits(const HybridAi *h, Port in_port, Port out_port,
     return 0;
 }
 
+/* Exact port identity: no empty-tag wildcard, no family/dimension leniency. */
+static int port_identical(Port a, Port b) {
+    return a.family == b.family && a.field_width == b.field_width &&
+           a.field_count == b.field_count && strcmp(a.tag, b.tag) == 0;
+}
+
+int hybrid_coverage_admits_exact(const HybridAi *h, const char *unit,
+                                 Port in_port, Port out_port, const double *in,
+                                 size_t in_len) {
+    size_t i, r;
+    if (!h || !unit || !unit[0] || !in || in_len == 0) return 0;
+    /* A family whose membership cannot be decided is not "unrestricted". */
+    if (!coverage_family_gated(in_port)) return 0;
+    for (i = 0; i < h->coverage_count; i++) {
+        const HybridCoverage *c = &h->coverage[i];
+        if (!c->active || !c->rows) continue;
+        if (strcmp(c->unit, unit) != 0) continue;
+        if (!port_identical(c->input_port, in_port)) continue;
+        if (!port_identical(c->goal_port, out_port)) continue;
+        if (c->in_dim != in_len) continue;
+        for (r = 0; r < c->n_rows; r++)
+            if (memcmp(c->rows + r * c->in_dim, in,
+                       c->in_dim * sizeof(double)) == 0)
+                return 1;
+        return 0; /* right record, row not certified */
+    }
+    return 0; /* no record binding this unit to THESE ports */
+}
+
 int hybrid_unit_is_mined(const char *unit) {
     static const char pfx[] = HYBRID_MINED_UNIT_PREFIX;
     if (!unit) return 0;

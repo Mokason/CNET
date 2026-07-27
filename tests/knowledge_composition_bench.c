@@ -81,24 +81,41 @@ typedef struct {
     char seen[8][64];   /* hops the guard was consulted for, in order */
     int seen_n;
     char refused_at[64];
+    char refuse_kind[32];
     int refusals;
 } GuardTrace;
 
+/* Guard v1.
+ *
+ * Binds the hop to the EXECUTING primitive's typed contract via `btn`, not to
+ * the unit name. Name-only matching (hybrid_coverage_admits_unit) admits a hop
+ * whose record describes different ports, and default-allows an unsupported
+ * family or a dimension mismatch — so "coverage enforced at every hop" was not
+ * actually true of the ports being executed.
+ *
+ * Shape support is explicit: exactly one input port and one output port.
+ * Branching / multi-input nodes are UNSUPPORTED under v1 and fail closed while
+ * the guard is enabled; they are not merely untested. */
 static int guard_allow(const char *unit, const BinaryTransformNetwork *btn,
                        const double *in, size_t in_len, void *ctx) {
     GuardTrace *g = (GuardTrace *)ctx;
-    (void)btn;
     if (g->seen_n < 8)
         snprintf(g->seen[g->seen_n++], 64, "%s", unit ? unit : "?");
-    if (!unit) return -1;
-    /* Fail closed on missing metadata: a unit with no record is not "unrestricted". */
-    if (!hybrid_coverage_has_unit(g->cov, unit)) {
-        snprintf(g->refused_at, sizeof g->refused_at, "%s", unit);
+    if (!unit || !btn) {
+        snprintf(g->refused_at, sizeof g->refused_at, "%s", unit ? unit : "?");
         g->refusals++;
         return -1;
     }
-    if (!hybrid_coverage_admits_unit(g->cov, unit, in, in_len)) {
+    if (btn->input_port_count != 1 || btn->output_port_count != 1) {
         snprintf(g->refused_at, sizeof g->refused_at, "%s", unit);
+        snprintf(g->refuse_kind, sizeof g->refuse_kind, "unsupported_shape");
+        g->refusals++;
+        return -1;
+    }
+    if (!hybrid_coverage_admits_exact(g->cov, unit, btn->input_ports[0],
+                                      btn->output_ports[0], in, in_len)) {
+        snprintf(g->refused_at, sizeof g->refused_at, "%s", unit);
+        snprintf(g->refuse_kind, sizeof g->refuse_kind, "coverage");
         g->refusals++;
         return -1;
     }
@@ -220,6 +237,8 @@ int main(void) {
     double xin[W], out[W];
     char members[8][64];
     int mcount = 0, i, exported = 0, imported = 0;
+    /* Registry BORROWS registered BTNs, so this must outlive registry_free. */
+    BinaryTransformNetwork *shortcut = NULL;
     size_t skipped = 0;
     /* A covers all but 9; B covers all but 4; C covers everything. */
     static const int cov_a[] = {0,1,2,3,4,5,6,7,8,10,11,12,13,14,15};
@@ -374,6 +393,179 @@ int main(void) {
                x, op_a(x));
     }
 
+    /* ================= exact port binding (RED on 0395a6b) ==================
+       Every case below leaves the OWNER NAME and the certified ROWS correct and
+       changes only the ports the record is bound to. The old name-only query
+       admitted all of them; several it default-allowed outright. */
+    {
+        static double brow[DOMAIN][W], btg[DOMAIN][W];
+        const int *cb = cov_b;
+        int nb = (int)(sizeof cov_b / sizeof cov_b[0]);
+        int k, x_ok = -1;
+        const BinaryTransformNetwork *bbtn = NULL;
+        unsigned long s0, f0;
+
+        for (k = 0; k < nb; k++) { enc(brow[k], cb[k]); enc(btg[k], op_b(cb[k])); }
+        for (i = 0; i < (int)reg.count; i++)
+            if (reg.entries[i].name && !strcmp(reg.entries[i].name, B_UNIT))
+                bbtn = reg.entries[i].btn;
+        check(bbtn != NULL, "bind: located B's live BTN in the registry");
+        /* an x whose intermediate IS inside B's certified rows */
+        for (i = 0; i < DOMAIN; i++)
+            if (i != 9 && op_a(i) != 4) { x_ok = i; break; }
+        check(x_ok >= 0, "bind: found a fully in-coverage composed input");
+
+#define REBIND(IP, OP)                                                         \
+        do {                                                                   \
+            (void)hybrid_coverage_forget_unit(&cov_dst, B_UNIT);               \
+            (void)hybrid_coverage_record(&cov_dst, (IP), (OP), B_UNIT,         \
+                                         (const double *)brow,                 \
+                                         (const double *)btg, (size_t)nb, W, W); \
+        } while (0)
+
+#define EXPECT_REFUSED_AT_B(label)                                             \
+        do {                                                                   \
+            int rc_;                                                           \
+            s0 = bbtn ? bbtn->output_successes : 0;                            \
+            f0 = bbtn ? bbtn->output_failures : 0;                             \
+            enc(xin, x_ok);                                                    \
+            memset(&gt, 0, sizeof gt);                                         \
+            gt.cov = &cov_dst;                                                 \
+            plan.guard.allow = guard_allow;                                    \
+            plan.guard.ctx = &gt;                                              \
+            rc_ = dag_execute(&plan, srcs, 1, out, W);                         \
+            check(rc_ == DAG_EXEC_REFUSED_GUARD, label ": refused (-2)");      \
+            check(strcmp(gt.refused_at, B_UNIT) == 0, label ": refused AT B"); \
+            check(gt.seen_n == 2 && !strcmp(gt.seen[1], B_UNIT),               \
+                  label ": C never consulted");                                \
+            check(bbtn && bbtn->output_successes == s0 &&                      \
+                      bbtn->output_failures == f0,                             \
+                  label ": B's btn_forward did not run");                      \
+        } while (0)
+
+        /* 1. wrong input TAG (family/dims correct, rows correct) */
+        REBIND(BP("wrong_intag"), P_DBL());
+        EXPECT_REFUSED_AT_B("bind-in-tag");
+
+        /* 2. wrong input width/dim */
+        {
+            Port narrow = P_INCR();
+            narrow.field_width = 2;
+            REBIND(narrow, P_DBL());
+            EXPECT_REFUSED_AT_B("bind-in-dim");
+        }
+
+        /* 3. wrong OUTPUT tag (input side perfectly correct) */
+        REBIND(P_INCR(), BP("wrong_outtag"));
+        EXPECT_REFUSED_AT_B("bind-out-tag");
+
+        /* 4. wrong output shape */
+        {
+            Port wide = P_DBL();
+            wide.field_count = 2;
+            REBIND(P_INCR(), wide);
+            EXPECT_REFUSED_AT_B("bind-out-shape");
+        }
+
+        /* 5. missing metadata entirely */
+        (void)hybrid_coverage_forget_unit(&cov_dst, B_UNIT);
+        EXPECT_REFUSED_AT_B("bind-missing");
+
+        /* restore the correct binding and prove the chain works again */
+        REBIND(P_INCR(), P_DBL());
+        enc(xin, x_ok);
+        memset(&gt, 0, sizeof gt);
+        gt.cov = &cov_dst;
+        plan.guard.allow = guard_allow;
+        plan.guard.ctx = &gt;
+        check(dag_execute(&plan, srcs, 1, out, W) == 0 &&
+                  dec(out) == composed(x_ok),
+              "bind-restore: correct port binding admits and computes exactly");
+#undef REBIND
+#undef EXPECT_REFUSED_AT_B
+    }
+
+    /* ---- guard v1 shape support: multi-port primitives fail closed ------- */
+    {
+        BinaryTransformNetwork fake;
+        GuardTrace g2;
+        double probe[W];
+        memset(&fake, 0, sizeof fake);
+        fake.input_port_count = 2;   /* branching node */
+        fake.output_port_count = 1;
+        fake.input_ports[0] = P_INCR();
+        fake.output_ports[0] = P_DBL();
+        memset(&g2, 0, sizeof g2);
+        g2.cov = &cov_dst;
+        for (i = 0; i < W; i++) probe[i] = 0.0;
+        check(guard_allow(B_UNIT, &fake, probe, W, &g2) != 0,
+              "shape-v1: multi-INPUT primitive refused (unsupported, not allowed)");
+        check(strcmp(g2.refuse_kind, "unsupported_shape") == 0,
+              "shape-v1: refusal names the unsupported shape");
+        memset(&g2, 0, sizeof g2);
+        g2.cov = &cov_dst;
+        fake.input_port_count = 1;
+        fake.output_port_count = 2;
+        check(guard_allow(B_UNIT, &fake, probe, W, &g2) != 0,
+              "shape-v1: multi-OUTPUT primitive refused");
+    }
+
+    /* ---- adversarial: an UNCERTIFIED compatible shortcut must be excluded - */
+    {
+        DagPlan p4;
+        char m4[8][64];
+        int n4 = 0, rc4;
+        static double si[DOMAIN][W], st[DOMAIN][W];
+        shortcut = (BinaryTransformNetwork *)calloc(1, sizeof *shortcut);
+        check(shortcut != NULL, "uncert: shortcut btn allocated");
+        for (i = 0; i < DOMAIN; i++) { enc(si[i], i); enc(st[i], composed(i)); }
+        if (shortcut && btn_init(shortcut, W, W, 1, 128, 0.8, 3) == 0) {
+            btn_set_ports(shortcut, P_RAW(), P_FINAL());
+            btn_train_dynamic(shortcut, (const double *)si, (const double *)st,
+                              DOMAIN, 40000, 1000, 0.0015, 0.01);
+            /* registry_add admits WITHOUT certification */
+            check(registry_add(&reg, shortcut, "kc_shortcut") == 0,
+                  "uncert: uncertified direct num_raw->res_final registered");
+            check(reg.entries[reg.count - 1].certified == 0,
+                  "uncert: it really is uncertified");
+
+            /* With the certified chain intact the planner picks it regardless
+               of the flag (measured), so that comparison isolates nothing.
+               Break the chain instead: reset B, leaving the uncertified
+               shortcut as the ONLY num_raw -> res_final route, then toggle the
+               flag. Now the flag is the only variable. */
+            registry_set_state(&reg, B_UNIT, PRIM_RESET);
+            reg.lifecycle_enabled = 1;
+
+            reg.require_certified = 1;
+            memset(&p4, 0, sizeof p4);
+            rc4 = dag_plan(&reg, srcs, 1, P_FINAL(), &p4);
+            check(rc4 != 0 || p4.root == NULL,
+                  "uncert: require_certified=1 -> uncertified shortcut NOT usable");
+            if (rc4 == 0) dag_free(&p4);
+
+            reg.require_certified = 0;
+            n4 = 0;
+            memset(&p4, 0, sizeof p4);
+            rc4 = dag_plan(&reg, srcs, 1, P_FINAL(), &p4);
+            check(rc4 == 0 && p4.root != NULL,
+                  "uncert: causality — with the gate off the same shortcut IS usable");
+            if (rc4 == 0) {
+                walk(p4.root, m4, &n4);
+                printf("      uncert causality members (%d):", n4);
+                for (i = 0; i < n4; i++) printf(" %s", m4[i]);
+                printf("\n");
+                check(n4 == 1 && !strcmp(m4[0], "kc_shortcut"),
+                      "uncert: and the chosen member is exactly kc_shortcut");
+                dag_free(&p4);
+            }
+
+            reg.require_certified = 1;
+            reg.lifecycle_enabled = 0;
+            registry_set_state(&reg, B_UNIT, PRIM_FROZEN);
+        }
+    }
+
     /* ---- negative: remove B, composite goal must become unplannable ----- */
     {
         DagPlan p2;
@@ -402,6 +594,7 @@ int main(void) {
 
     dag_free(&plan);
     registry_free(&reg);
+    if (shortcut) { btn_free(shortcut); free(shortcut); }
     cnb_free(&src); cnb_free(&dst);
     hybrid_ai_free(&cov_src); hybrid_ai_free(&cov_dst);
 
