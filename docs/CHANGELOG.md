@@ -1,5 +1,39 @@
 # CNET Changelog
 
+## 2026-07-28 — Real vision mechanism passes; portability remains gated
+
+The preregistered V2 VOC2007 car-detection benchmark cleared
+`VISION_DETECTION_MECHANISM_PASS` on one frozen, class-agnostic 1,000-image
+holdout: AP50 **0.114518**, randomized-head AP50 **0.000988** (115.9×),
+label-shuffle AP50 **0.002435**, proposal recall **0.828244** (217/262), and an
+AP50 rerun delta of **0**. The learned component is a CNET BTN head with typed
+contract `PORT_RAW` (256) → `PORT_ONEHOT` (2); the deterministic Selective Search,
+colour-HOG and train-only PCA frontend contains no pretrained detector weights.
+The final scored artifact root is
+`8c70c9327daf39623e5b3cc1fa0c5cffe0389f4c497c8e8a9e66769c4ce4908b`.
+
+The result is bound to the frozen protocol, spent-holdout and artifact hashes,
+zero ID/content leakage, deterministic proposal selection, evaluator and
+allocation-failure fixtures, normal plus sanitizer integrity gates, bounded
+worker cleanup and interruption refusal. Independent review closed with
+`PASS_NO_CRITICAL_HIGH`. See
+[`plans/cnet_vision_object_detection_v2_20260727.md`](../plans/cnet_vision_object_detection_v2_20260727.md).
+
+This is deliberately a mechanism claim, not a broad-vision or competitive-model
+claim. V1 remains immutable and WITHHELD at AP50 0.046434; the V2 improvement is
+attributed to the complete reproducible frontend, not to HOG alone.
+
+The published portability checkpoint extends the canonical capsule format with
+one schema-2, manifest-bound frontend asset. `make vision_capsule_asset` passes
+39/39 normal fixtures and 39/39 under ASan+UBSan+LeakSanitizer, including
+corruption/missing/mixed-package refusal and destination immutability. It does
+**not** yet establish continuous `PORT_RAW` (256) coverage or fresh-runtime replay.
+`VISION_TRANSFER_ARTIFACT`, `VISION_CONTINUOUS_COVERAGE`,
+`VISION_CAPSULE_PORTABILITY`, `VISION_SPECIALIST_COMPOSITION` and
+`VISION_SPECIALIST_COMPETES` remain **WITHHELD** pending their own frozen gates.
+See
+[`plans/cnet_vision_portable_specialist_20260728.md`](../plans/cnet_vision_portable_specialist_20260728.md).
+
 ## 2026-07-26 (cognitive runtime) — held-out capabilities and governed memory
 
 Added the hermetic cognitive-runtime umbrella: a fixed-capacity shared workspace,

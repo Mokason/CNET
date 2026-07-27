@@ -32,9 +32,48 @@ compose into larger behavior instead of forcing a retrained monolith — a
 planner wires them by contract, an executor restores the signal at every
 handoff, evidence ranks the alternatives, and a proven plan distills into a new
 part. The core stays domain-agnostic; knowledge grows by *adding primitives*,
-not by changing the engine. The demos run at toy scale (hex digits, bytes,
-decimal arithmetic, noisy glyphs) on purpose — the point is the mechanism, and
+not by changing the engine. The smaller demos use controlled domains (hex digits,
+bytes, decimal arithmetic and noisy glyphs) to isolate the mechanism; the real
+vision benchmark below tests the same specialist idea against natural images.
 **Knowing the Edge** maps where the mechanism stops working.
+
+## Real vision benchmark (verified 2026-07-28)
+
+CNET now has a real, CPU-only object-detection mechanism result on the official
+VOC2007 data: a **car** detector whose learned component is a CNET BTN head with
+the typed contract `PORT_RAW` (256) → `PORT_ONEHOT` (2). The frontend is deterministic
+Selective Search plus colour HOG and train-only PCA; it uses **no pretrained
+detector weights**.
+
+The V2 protocol was frozen before extraction and scored once on a reserved,
+class-agnostic 1,000-image test slice disjoint from training and the spent V1
+holdout. It produced:
+
+- holdout AP50 **0.114518** versus **0.000988** for an identical randomized head
+  (**115.9×**), with label-shuffle AP50 **0.002435**;
+- proposal recall **0.828244** (217/262), 75,989 detections, and AP50 rerun delta
+  **0**;
+- zero ID/content leakage, hash-bound protocol and artifacts, deterministic
+  proposal selection, allocation-failure coverage, sanitizer coverage, and
+  interruption-safe worker cleanup;
+- independent review verdict `PASS_NO_CRITICAL_HIGH` and final artifact root
+  `8c70c9327daf39623e5b3cc1fa0c5cffe0389f4c497c8e8a9e66769c4ce4908b`.
+
+This establishes **`VISION_DETECTION_MECHANISM_PASS` only**: one specialized
+car-detection mechanism cleared its preregistered bars. It does not establish
+broad vision, a competitive detector, or general intelligence. Full protocol,
+controls, exact commands and limitations:
+[`plans/cnet_vision_object_detection_v2_20260727.md`](plans/cnet_vision_object_detection_v2_20260727.md).
+
+The next gate is portability. Schema-2 capsules can now carry one
+manifest-bound frontend asset (`make vision_capsule_asset`: 39/39 normal and
+sanitizer fixtures), but continuous `PORT_RAW` (256) coverage, full-image replay in
+a fresh runtime, coexistence and typed composition are still under test.
+Therefore `VISION_TRANSFER_ARTIFACT`, `VISION_CONTINUOUS_COVERAGE`,
+`VISION_CAPSULE_PORTABILITY`, `VISION_SPECIALIST_COMPOSITION` and
+`VISION_SPECIALIST_COMPETES` remain **WITHHELD** until their independent gates
+run. See
+[`plans/cnet_vision_portable_specialist_20260728.md`](plans/cnet_vision_portable_specialist_20260728.md).
 
 ## The Loop
 
@@ -80,6 +119,7 @@ lanes stay explicitly out of scope unless their own gates are run. Start from
 | Area | Verified by | Status |
 |---|---|---|
 | CCE runtime (tensor → block → cascade → archive → forest → router → learn) | `make cce_smoke`, `make cce_train_bench` | passing (standalone gates). The regression lane is measured on a 200-sample held-out set. The **classification lane is healthy and measured**: `CLASSIFICATION_LANE_HEALTHY` / `CLASSIFICATION_GATE_PASS status=measured`, held-out accuracy **0.861 over 1000 fresh draws vs a 0.274 majority-class baseline (lift 0.587), using all 4 classes**. It was a constant predictor until 2026-07-26; the cause was premature block freezing, not the objective — a hidden block's local error derives from the *mean* of the final error vector, which softmax cross-entropy makes ~0 by construction, so hidden blocks looked perfect and froze. The certified configuration explicitly selects EXACT differentiation and positive gradient clipping. Health requires lift over the majority baseline **and** use of every class, so a degenerate model cannot certify; `CCE_CLASSIFICATION_LANE_REQUIRE=1` makes the gate **fail** rather than pass if the lane ever regresses |
+| **Real VOC2007 car-detection mechanism** — deterministic Selective Search + colour HOG + train-only PCA256 feeding a CNET BTN `PORT_RAW` (256) → `PORT_ONEHOT` (2) head; no pretrained detector weights | `make vision_detection_bench_v2`; integrity/evidence/evaluator/alloc-failure gates under `vision_detection_*` | **`VISION_DETECTION_MECHANISM_PASS`**: AP50 0.114518 on one frozen 1,000-image holdout, random-head 0.000988 (115.9×), label-shuffle 0.002435, proposal recall 0.828244, rerun delta 0; portability and competition remain **WITHHELD** |
 | CCE storage + loaders (C ABI/DLL, safetensors, autograd, model save/load, zero-copy WARM views) | `cce_dll`, `cce_safetensors_test`, `cce_autograd_test`, `cce_model_test`, `cce_view`, `forest_view` | passing, in `make test` |
 | Contract security + one-file sealed units | `make contract_secure`, `make contract_unit` | passing, in `make test` |
 | Contract correctness + robust promotion quality/speed | `make contract_optimized` | malformed authored/frozen contracts refused atomically; stronger certified margin wins with one replay per model |
@@ -157,6 +197,8 @@ it reads as graded structure in that context rather than a capacity wall. See
 | [`docs/hermes_hosting.md`](docs/hermes_hosting.md) | Hermes/MCP hosting |
 | [`docs/cnet-history.md`](docs/cnet-history.md) | long mechanism chronology |
 | [`docs/verified-today.generated.md`](docs/verified-today.generated.md) | machine claim verdicts (`make claims`; do not hand-edit) |
+| [`plans/cnet_vision_object_detection_v2_20260727.md`](plans/cnet_vision_object_detection_v2_20260727.md) | frozen real VOC2007 car-detection protocol, controls and accepted V2 evidence |
+| [`plans/cnet_vision_portable_specialist_20260728.md`](plans/cnet_vision_portable_specialist_20260728.md) | preregistered schema-2/continuous-coverage/fresh-runtime portability gate; incomplete claims remain WITHHELD |
 | [`plans/deep_eight_priorities.md`](plans/deep_eight_priorities.md) | use-loop P1–P8 deep gate |
 | [`plans/oracle_teacher_runtime.md`](plans/oracle_teacher_runtime.md) | Oracle A+B teacher governance |
 | [`plans/delegation_master_report.md`](plans/delegation_master_report.md) | master execution report |
