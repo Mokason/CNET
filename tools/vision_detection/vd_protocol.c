@@ -366,10 +366,11 @@ int vd_manifest_check(const VdManifest *m, const VdProtocol *p, char *err, size_
         if (err) snprintf(err, errn, "protocol_mismatch:content_root_val");
         return -1;
     }
-    if (*p->artifact_root && strcmp(m->artifact_root, p->artifact_root) != 0) {
-        if (err) snprintf(err, errn, "protocol_mismatch:artifact_root");
-        return -1;
-    }
+    /* The artifact root is deliberately NOT compared here. Authority for it is
+       the value the scorer RECOMPUTES from the bytes it holds open, which is
+       then required to equal both this manifest's claim and the pinned
+       protocol constant. Checking the declared value here would short-circuit
+       that and leave the byte-derived check unreachable. */
     return 0;
 }
 

@@ -114,6 +114,21 @@ static int load_rc(PackSpec s) {
     return rc;
 }
 
+/* Swaps the destination directory for another one at a chosen commit phase, so
+   the continuity and rollback paths are exercised deterministically. */
+static const char *g_hook_swap_from, *g_hook_swap_to;
+static int g_hook_phase_to_fire;
+
+static void swap_hook(VdStageHookPhase ph, void *ctx) {
+    char tmp[700];
+    (void)ctx;
+    if ((int)ph != g_hook_phase_to_fire) return;
+    snprintf(tmp, sizeof tmp, "%s.swapaside", g_hook_swap_from);
+    if (rename(g_hook_swap_from, tmp) != 0) return;
+    if (rename(g_hook_swap_to, g_hook_swap_from) != 0) { (void)rename(tmp, g_hook_swap_from); return; }
+    (void)rename(tmp, g_hook_swap_to);
+}
+
 /* The required members of a recognised cache, so a replace test operates on a
    destination the publisher will actually accept. */
 static int write_full_cache(VdStage *st) {
@@ -694,6 +709,67 @@ int main(void) {
             } else check(1, "replace: non-directory destination refused at begin");
             check(stat(fdst, &sb) == 0 && S_ISREG(sb.st_mode),
                   "replace: the plain-file destination survives");
+        }
+    }
+
+    /* ---- destination continuity and verified rollback --------------------- */
+    {
+        static char hook_dest[600], hook_other[600];
+        VdStage st;
+        struct stat a, b;
+
+        /* Build two real caches: `live` is the publish destination, `decoy` is
+           what an attacker swaps in after validation. */
+        snprintf(hook_dest, sizeof hook_dest, "%s/live", DIR);
+        snprintf(hook_other, sizeof hook_other, "%s/decoy", DIR);
+        check(vd_stage_begin(hook_dest, &st) == 0 && write_full_cache(&st) == 0
+              && vd_stage_commit(&st, 0) == 0, "continuity: publishes the live cache");
+        check(vd_stage_begin(hook_other, &st) == 0 && write_full_cache(&st) == 0
+              && vd_stage_commit(&st, 0) == 0, "continuity: publishes the decoy cache");
+        check(stat(hook_dest, &a) == 0 && stat(hook_other, &b) == 0 && a.st_ino != b.st_ino,
+              "continuity: the two caches are distinct inodes");
+
+        /* Swap the destination for the decoy AFTER it has been validated. */
+        g_hook_swap_from = hook_dest;
+        g_hook_swap_to = hook_other;
+        g_hook_phase_to_fire = VD_HOOK_AFTER_VALIDATE;
+        vd_stage_set_hook(swap_hook, NULL);
+        check(vd_stage_begin(hook_dest, &st) == 0, "continuity: staging begins");
+        check(write_full_cache(&st) == 0, "continuity: staging is complete");
+        check(vd_stage_commit(&st, 1) != 0,
+              "continuity: destination changed after validation is refused");
+        vd_stage_set_hook(NULL, NULL);
+        check(stat(hook_other, &b) == 0 && S_ISDIR(b.st_mode),
+              "continuity: the unrelated decoy directory survives");
+        {   /* the decoy's contents must be byte-identical */
+            char fp[800], rb[32] = {0};
+            FILE *g;
+            size_t got = 0;
+            snprintf(fp, sizeof fp, "%s/manifest.txt", hook_other);
+            g = fopen(fp, "rb");
+            if (g) { got = fread(rb, 1, sizeof rb - 1, g); fclose(g); }
+            check(got == strlen("manifest_version 1\n") &&
+                  !memcmp(rb, "manifest_version 1\n", got),
+                  "continuity: decoy contents are byte-identical");
+        }
+
+        /* Force the post-exchange continuity check to fail and require a
+           verified rollback: the original cache must be back at the
+           destination. */
+        {
+            struct stat before, after;
+            check(stat(hook_dest, &before) == 0, "rollback: destination exists before");
+            g_hook_phase_to_fire = VD_HOOK_AFTER_EXCHANGE;
+            g_hook_swap_from = hook_dest;
+            g_hook_swap_to = hook_other;
+            vd_stage_set_hook(swap_hook, NULL);
+            check(vd_stage_begin(hook_dest, &st) == 0, "rollback: staging begins");
+            check(write_full_cache(&st) == 0, "rollback: staging is complete");
+            check(vd_stage_commit(&st, 1) != 0, "rollback: broken continuity is refused");
+            vd_stage_set_hook(NULL, NULL);
+            check(stat(hook_dest, &after) == 0 && S_ISDIR(after.st_mode),
+                  "rollback: a cache is present at the destination");
+            check(stat(hook_other, &b) == 0, "rollback: the decoy still exists");
         }
     }
 

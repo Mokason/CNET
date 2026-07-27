@@ -2649,7 +2649,7 @@ bin/vd_prep: tools/vision_detection/vd_prep.cpp tools/vision_detection/vd_io.c \
 		tools/vision_detection/vd_sha256.c tools/vision_detection/vd_pack.c \
 		tools/vision_detection/vd_protocol.c tools/vision_detection/vd_roots.h
 	@mkdir -p $(BIN_DIR) logs/vision
-	g++ -std=c++14 -O2 -Wall -Wextra -I tools/vision_detection \
+	g++ -std=c++14 -O2 -Wall -Wextra -Werror -I tools/vision_detection \
 		-o $(BIN_DIR)/vd_prep tools/vision_detection/vd_prep.cpp \
 		tools/vision_detection/vd_io.c tools/vision_detection/vd_sha256.c \
 		tools/vision_detection/vd_pack.c tools/vision_detection/vd_eval.c \
@@ -2763,7 +2763,8 @@ bin/vd_bench: tools/vision_detection/vd_bench.c tools/vision_detection/vd_eval.c
 		tools/vision_detection/vd_sha256.c tools/vision_detection/vd_protocol.c \
 		tools/vision_detection/vd_protocol.h tools/vision_detection/vd_roots.h
 	@mkdir -p $(BIN_DIR) logs/vision
-	$(CC) -std=c11 -Wall -Wextra -O2 -D_DEFAULT_SOURCE -I include \
+	$(CC) -std=c11 -Wall -Wextra -Werror -O2 -D_DEFAULT_SOURCE -I include \
+		-I tools/vision_detection \
 		-o $(BIN_DIR)/vd_bench tools/vision_detection/vd_bench.c \
 		tools/vision_detection/vd_eval.c tools/vision_detection/vd_pack.c \
 		tools/vision_detection/vd_io.c tools/vision_detection/vd_sha256.c \

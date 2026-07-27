@@ -25,6 +25,9 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <sys/wait.h>
+#include <poll.h>
+#include <signal.h>
+#include <errno.h>
 #include "vd_sha256.h"
 #include "../../include/nn.h"
 #include "../../include/router.h"
@@ -42,7 +45,12 @@ static int g_eval_fault = 0;
 static long g_intra_dups = 0;
 static char g_artifact_root[65] = "";
 static int g_jobs = 1;
-static double g_t_fork = 0.0, g_final_train_s = 0.0, g_t_start = 0.0;   /* set by any non-finite metric or NMS refusal */
+static double g_t_fork = 0.0, g_final_train_s = 0.0, g_t_start = 0.0;
+/* Production deadline: the measured shuffle arm is ~1117 s, so 3600 s is more
+   than 3x headroom. Tests override it with a short value. */
+static double g_shuffle_deadline_s = 3600.0;
+static const char *g_worker_fault = "";
+static int g_parent_fault_after_fork = 0;   /* set by any non-finite metric or NMS refusal */
 static const char *G_VARIANT = "unknown";
 static const char *G_FRONTEND = "unknown";
 
@@ -64,12 +72,6 @@ static double now_s(void) {
     return t.tv_sec + t.tv_nsec / 1e9;
 }
 
-static int load_pack(const char *path, Pack *p) {
-    int rc = vd_pack_load(path, p);
-    if (rc != VD_PACK_OK)
-        fprintf(stderr, "VD_BENCH_FAIL pack_invalid:%s (%s)\n", path, vd_pack_strerror(rc));
-    return rc;
-}
 static void free_pack(Pack *p) { vd_pack_free(p); }
 
 
@@ -425,8 +427,68 @@ static Port CLSP(void) {
     return p;
 }
 
-/* ---------------- label-shuffle control ---------------------------------- */
+/* ---------------- label-shuffle worker lifecycle -------------------------
+   The worker is a child process, so every failure mode has to be handled
+   explicitly: a hang, an early exit, a partial write, a crash, or a parent
+   error after the fork. There is exactly ONE parent cleanup path -- nothing
+   returns while the child is live -- the read is bounded by a monotonic
+   deadline, and the child is terminated and reaped on any fault. */
 typedef struct { int ok; double ap_val, ap_test, elapsed; } ShufResult;
+
+static volatile sig_atomic_t g_child_pid_sig;   /* async-signal-safe copy */
+
+static void child_signal_cleanup(int sig) {
+    if (g_child_pid_sig > 0) kill((pid_t)g_child_pid_sig, SIGKILL);
+    _exit(128 + sig);
+}
+
+/* Bounded reap: SIGTERM, wait, escalate to SIGKILL, wait again. Returns 0 only
+   if the child was actually collected. */
+static int reap_child(pid_t pid, int grace_ms) {
+    int status = 0, waited = 0;
+    if (pid <= 0) return 0;
+    kill(pid, SIGTERM);
+    while (waited < grace_ms) {
+        pid_t r = waitpid(pid, &status, WNOHANG);
+        if (r == pid) { g_child_pid_sig = 0; return 0; }
+        if (r < 0 && errno != EINTR) break;
+        usleep(20000);
+        waited += 20;
+    }
+    kill(pid, SIGKILL);
+    for (waited = 0; waited < 2000; waited += 20) {
+        pid_t r = waitpid(pid, &status, WNOHANG);
+        if (r == pid) { g_child_pid_sig = 0; return 0; }
+        if (r < 0 && errno != EINTR) break;
+        usleep(20000);
+    }
+    g_child_pid_sig = 0;
+    return -1;   /* could not collect: caller must fail closed */
+}
+
+/* Read exactly n bytes before the deadline, tolerating EINTR and short reads.
+   Returns 0 on a complete message, -1 on timeout/EOF/error. */
+static int read_exact_deadline(int fd, void *buf, size_t n, double deadline_s) {
+    unsigned char *p = (unsigned char *)buf;
+    size_t got = 0;
+    while (got < n) {
+        struct pollfd pfd;
+        double left = deadline_s - now_s();
+        int pr;
+        ssize_t r;
+        if (left <= 0) return -1;
+        pfd.fd = fd; pfd.events = POLLIN; pfd.revents = 0;
+        pr = poll(&pfd, 1, (int)(left * 1000.0 > 1000.0 ? 1000.0 : left * 1000.0));
+        if (pr < 0) { if (errno == EINTR) continue; return -1; }
+        if (pr == 0) continue;                      /* re-check the deadline */
+        if (!(pfd.revents & (POLLIN | POLLHUP))) return -1;
+        r = read(fd, p + got, n - got);
+        if (r < 0) { if (errno == EINTR) continue; return -1; }
+        if (r == 0) return -1;                      /* EOF before full message */
+        got += (size_t)r;
+    }
+    return 0;
+}
 
 /* Trains the shuffled-label head and evaluates it with the identical full
    pipeline on validation and the holdout. Returns 1 on success. */
@@ -543,7 +605,8 @@ int main(int argc, char **argv) {
     Pack tr, va, te;
     double *X = NULL, *Y = NULL;
     size_t n = 0;
-    BinaryTransformNetwork head, rndhead;
+    BinaryTransformNetwork head, rndhead;   /* zeroed below: the cleanup path may
+                                               run before either is initialised */
     Lin lin;
     double t0, train_s;
     int i;
@@ -551,11 +614,16 @@ int main(int argc, char **argv) {
     int shuf_pipe[2] = {-1, -1};
     pid_t shuf_pid = -1;
     ShufResult shuf = {0, 0.0, 0.0, 0.0};
+    int rc_final = 0;
     for (i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--cache") && i + 1 < argc) cache = argv[++i];
         else if (!strcmp(argv[i], "--json") && i + 1 < argc) jsonp = argv[++i];
         else if (!strcmp(argv[i], "--prev-test") && i + 1 < argc) prev_test = argv[++i];
         else if (!strcmp(argv[i], "--btn-fail-at") && i + 1 < argc) g_btn_fail_at = atol(argv[++i]);
+        else if (!strcmp(argv[i], "--worker-fault") && i + 1 < argc) g_worker_fault = argv[++i];
+        else if (!strcmp(argv[i], "--parent-fault-after-fork")) g_parent_fault_after_fork = 1;
+        else if (!strcmp(argv[i], "--shuffle-deadline-s") && i + 1 < argc)
+            g_shuffle_deadline_s = atof(argv[++i]);
         else if (!strcmp(argv[i], "--jobs") && i + 1 < argc) {
             g_jobs = atoi(argv[++i]);
             if (g_jobs < 1) g_jobs = 1;
@@ -568,6 +636,8 @@ int main(int argc, char **argv) {
     }
 
     g_t_start = now_s();
+    memset(&head, 0, sizeof head);
+    memset(&rndhead, 0, sizeof rndhead);
     setvbuf(stdout, NULL, _IOLBF, 0);
     printf("vd_bench: CPU-only (ROCR/HIP/CUDA_VISIBLE_DEVICES empty)\n");
     if (snap_open(cache, &snap) != 0) return 3;
@@ -719,17 +789,30 @@ int main(int argc, char **argv) {
             printf("VD_BENCH_FAIL prev_test_required protocol=%s\n", PROTO->name);
             return 3;
         }
-        if (load_pack(prev_test, &pv)) { printf("VD_BENCH_FAIL prev_test_unreadable\n"); return 3; }
+        /* The spent holdout is ONE held object: opened once with component-wise
+           no-follow traversal, then parsed and hashed from that same descriptor.
+           It is never reopened by pathname, so the pack that is counted is the
+           pack that is digested. */
+        off_t psz = 0;
+        int pfd = vd_open_file_nofollow(prev_test, &psz, (off_t)1 << 31);
+        int prc;
+        if (pfd < 0) { printf("VD_BENCH_FAIL prev_test_unopenable\n"); return 3; }
+        prc = vd_pack_load_fd(pfd, &pv);
+        if (prc != VD_PACK_OK) {
+            printf("VD_BENCH_FAIL prev_test_invalid (%s)\n", vd_pack_strerror(prc));
+            close(pfd); return 3;
+        }
         if ((long)pv.n != PROTO->prev_test_count) {
             printf("VD_BENCH_FAIL prev_test_count got=%zu want=%ld\n",
                    pv.n, PROTO->prev_test_count);
-            free_pack(&pv); return 3;
+            free_pack(&pv); close(pfd); return 3;
         }
-        if (vd_sha256_file(prev_test, pvsha) != 0 ||
+        if (vd_sha256_fd(pfd, pvsha) != 0 ||
             strcmp(pvsha, PROTO->prev_pack_sha) != 0) {
             printf("VD_BENCH_FAIL prev_test_digest_mismatch\n");
-            free_pack(&pv); return 3;
+            free_pack(&pv); close(pfd); return 3;
         }
+        close(pfd);
         for (a = 0; a < te.n; a++)
             for (b = 0; b < pv.n; b++)
                 if (!strcmp(te.imgs[a].id, pv.imgs[b].id)) leaks++;
@@ -813,26 +896,43 @@ int main(int argc, char **argv) {
         if (shuf_pid < 0) { printf("VD_BENCH_FAIL shuffle_fork\n"); return 6; }
         if (shuf_pid == 0) {
             ShufResult r;
-            close(shuf_pipe[0]);
+            close(shuf_pipe[0]);              /* child never reads */
             memset(&r, 0, sizeof r);
+            if (!strcmp(g_worker_fault, "hang")) { for (;;) pause(); }
+            if (!strcmp(g_worker_fault, "exit")) _exit(3);
+            if (!strcmp(g_worker_fault, "crash")) abort();
             {
                 double c0 = now_s();
                 r.ok = run_shuffle_arm(&va, &te, X, Y, n, &r.ap_val, &r.ap_test);
                 r.elapsed = now_s() - c0;
             }
+            if (!strcmp(g_worker_fault, "partial")) {
+                (void)!write(shuf_pipe[1], &r, sizeof r / 2);
+                close(shuf_pipe[1]);
+                for (;;) pause();             /* hold the pipe open, no EOF */
+            }
             if (write(shuf_pipe[1], &r, sizeof r) != (ssize_t)sizeof r) _exit(2);
             close(shuf_pipe[1]);
             _exit(0);
         }
-        close(shuf_pipe[1]);
+        close(shuf_pipe[1]);                  /* parent never writes */
+        g_child_pid_sig = (sig_atomic_t)shuf_pid;
+        signal(SIGINT, child_signal_cleanup);
+        signal(SIGTERM, child_signal_cleanup);
     }
 
     g_t_fork = now_s();
     if (need_final_train) {
         btn_free(&head);
-        if (vd_btn_init_guarded(&head, DIM, NCLS, 24, 192, 0.5, 7u, "final") != 0) return 5;
+        if (vd_btn_init_guarded(&head, DIM, NCLS, 24, 192, 0.5, 7u, "final") != 0)
+            goto worker_cleanup;              /* never return while the child lives */
         btn_set_ports(&head, RAWP(), CLSP());
         btn_train_dynamic(&head, X, Y, n, 2000, 200, 1e-5, 1e-7);
+    }
+    if (g_parent_fault_after_fork) {
+        printf("VD_BENCH_FAIL parent_fault_after_fork (injected)\n");
+        g_eval_fault = 1;
+        goto worker_cleanup;
     }
     g_final_train_s = now_s() - g_t_fork;
     train_s = now_s() - t0;
@@ -849,15 +949,40 @@ int main(int argc, char **argv) {
        it here. Either way it is the same computation. */
     if (shuf_pid > 0) {
         ShufResult r;
-        int status = 0;
-        ssize_t got = read(shuf_pipe[0], &r, sizeof r);
+        int status = 0, bad = 0;
+        pid_t w;
+        double deadline = now_s() + g_shuffle_deadline_s;
+        memset(&r, 0, sizeof r);
+        if (read_exact_deadline(shuf_pipe[0], &r, sizeof r, deadline) != 0) {
+            printf("VD_BENCH_FAIL shuffle_worker_no_message (timeout/EOF/partial)\n");
+            bad = 1;
+        }
         close(shuf_pipe[0]);
-        waitpid(shuf_pid, &status, 0);
-        if (got != (ssize_t)sizeof r || !WIFEXITED(status) || WEXITSTATUS(status) != 0 || !r.ok) {
-            printf("VD_BENCH_FAIL shuffle_worker_failed\n");
+        if (bad) {
+            if (reap_child(shuf_pid, 2000) != 0)
+                printf("VD_BENCH_FAIL shuffle_worker_unreapable\n");
             g_eval_fault = 1;
         } else {
-            shuf = r;
+            do { w = waitpid(shuf_pid, &status, 0); } while (w < 0 && errno == EINTR);
+            g_child_pid_sig = 0;
+            if (w != shuf_pid) {
+                printf("VD_BENCH_FAIL shuffle_worker_wait_failed\n"); g_eval_fault = 1;
+            } else if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
+                printf("VD_BENCH_FAIL shuffle_worker_status=%d\n", status); g_eval_fault = 1;
+            } else if (r.ok != 1 || !isfinite(r.ap_val) || !isfinite(r.ap_test) ||
+                       !isfinite(r.elapsed)) {
+                printf("VD_BENCH_FAIL shuffle_worker_bad_result\n"); g_eval_fault = 1;
+            } else {
+                shuf = r;
+            }
+        }
+        shuf_pid = -1;
+        signal(SIGINT, SIG_DFL);
+        signal(SIGTERM, SIG_DFL);
+        if (g_eval_fault) {
+            printf("VD_BENCH_FAIL shuffle_worker_failed\n");
+            rc_final = 6;
+            goto done;
         }
     } else {
         double c0 = now_s();
@@ -1027,10 +1152,25 @@ int main(int argc, char **argv) {
         printf("VISION_SPECIALIST_COMPETES_WITHHELD reason=no_pretrained_reference_this_pass\n");
     }
 
+worker_cleanup:
+    if (shuf_pid > 0) {
+        /* the only way out while a worker is live */
+        close(shuf_pipe[0]);
+        if (reap_child(shuf_pid, 2000) != 0)
+            printf("VD_BENCH_FAIL shuffle_worker_unreapable\n");
+        shuf_pid = -1;
+        signal(SIGINT, SIG_DFL);
+        signal(SIGTERM, SIG_DFL);
+        if (!rc_final) rc_final = 6;
+        g_eval_fault = 1;
+    }
+done:
     free(X); free(Y);
     free_pack(&tr); free_pack(&va);
     btn_free(&head); btn_free(&rndhead);
     free_pack(&te);
+    snap_close(&snap);
+    if (rc_final) return rc_final;
     printf("PERF wall_s=%.1f\n", now_s() - g_t_start);
     printf("btn_calls_total=%ld\n", g_btn_calls);
     printf("VD_BENCH_DONE\n");

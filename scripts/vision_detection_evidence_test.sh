@@ -195,6 +195,15 @@ build_cache
 expect_fail "json_publish_failed" "unwritable json destination" \
   $BENCH --protocol synthetic-test --cache "$W/cache" --prev-test "$W/prev.pack" --json "$W/no_such_dir/out.json"
 
+# ---- artifact authority ----------------------------------------------------
+# A manifest that merely declares the wrong root: caught by the byte-recomputed
+# comparison against the committed protocol constant.
+build_cache
+sed -i 's/^artifact_root .*/artifact_root 0000000000000000000000000000000000000000000000000000000000000000/' \
+    "$W/cache/manifest.txt"
+expect_fail "artifact_root_vs_manifest" "manifest declares a false artifact root" \
+  $BENCH --protocol synthetic-test --cache "$W/cache" --prev-test "$W/prev.pack" --json "$JSON"
+
 # ---- artifact authority: canonical sidecars, substituted pack bytes --------
 # The manufactured cache keeps every canonical identity sidecar and rewrites the
 # manifest member digests to match its own tampered pack. Only the committed
@@ -202,23 +211,33 @@ expect_fail "json_publish_failed" "unwritable json destination" \
 build_cache
 python3 - "$W/cache" <<'PYEOF'
 import hashlib, os, sys
+# Manufacture a fully SELF-CONSISTENT cache: substitute feature bytes in a pack,
+# then repair the member digest AND recompute the manifest's own artifact root so
+# nothing inside the cache disagrees with anything else. Only the root committed
+# in the protocol can catch this.
+MEM = ["train.pack","val.pack","test.pack","pca.bin","ids_train.txt","ids_val.txt",
+       "ids_test.txt","content_train.txt","content_val.txt","content_test.txt"]
 d = sys.argv[1]
-# substitute feature bytes inside the pack, then repair every manifest digest
 p = os.path.join(d, "test.pack")
 b = bytearray(open(p, "rb").read())
 b[-4:] = b"\x01\x02\x03\x04"
 open(p, "wb").write(b)
-man = open(os.path.join(d, "manifest.txt")).read().split("\n")
+digest = {n: hashlib.sha256(open(os.path.join(d, n), "rb").read()).hexdigest() for n in MEM}
+buf = b"VDCACHEROOT1\nschema 1\nmembers 10\n"
+for n in MEM:
+    buf += ("%s %d %s\n" % (n, os.path.getsize(os.path.join(d, n)), digest[n])).encode()
+root = hashlib.sha256(buf).hexdigest()
 out = []
-for line in man:
+for line in open(os.path.join(d, "manifest.txt")).read().split("\n"):
     if line.startswith("sha256_test_pack "):
-        h = hashlib.sha256(open(p, "rb").read()).hexdigest()
-        out.append("sha256_test_pack " + h)
+        out.append("sha256_test_pack " + digest["test.pack"])
+    elif line.startswith("artifact_root "):
+        out.append("artifact_root " + root)
     else:
         out.append(line)
 open(os.path.join(d, "manifest.txt"), "w").write("\n".join(out))
 PYEOF
-expect_fail "artifact_root_vs_manifest" "substituted pack bytes with repaired digests" \
+expect_fail "artifact_root_vs_protocol" "self-consistent manufactured cache" \
   $BENCH --protocol synthetic-test --cache "$W/cache" --prev-test "$W/prev.pack" --json "$JSON"
 
 # ---- BTN failure paths must never yield a verdict -------------------------
@@ -312,6 +331,105 @@ if [ $rc -ne 0 ] || grep -q "results published" <<<"$out"; then
 else
   echo "  cache replaced mid-run: FAIL (indeterminate)"; fails=$((fails+1))
 fi
+
+# ---- previous (spent) holdout is one held object ---------------------------
+# The prev pack is opened once and both parsed and hashed from that descriptor.
+# Replacing the pathname with a DIFFERENT valid pack while the run proceeds must
+# never produce a mixed outcome: the run either used the original object
+# throughout, or refused cleanly. Repeated across timings.
+"$MK" --out "$W/pv2" --prev "$W/prev_other.pack" --variant synthetic-test \
+      --test-offset 1000 --prev-base 600000 >/dev/null
+if cmp -s "$W/prev.pack" "$W/prev_other.pack"; then
+  echo "  prev-pack race: FAIL (packs identical, control would be vacuous)"; fails=$((fails+1))
+fi
+for delay in 0.02 0.10 0.30; do
+  build_cache
+  cp "$W/prev.pack" "$W/race_prev.pack"
+  ( sleep "$delay"; cp "$W/prev_other.pack" "$W/race_prev.pack" 2>/dev/null ) &
+  swapper=$!
+  out=$(timeout 200 $BENCH --protocol synthetic-test --cache "$W/cache" \
+          --prev-test "$W/race_prev.pack" --json "$JSON" 2>&1); rc=$?
+  wait $swapper 2>/dev/null
+  checks=$((checks+1))
+  if [ $rc -ge 128 ]; then
+    echo "  prev-pack replaced at ${delay}s: FAIL (signal $((rc-128)))"; fails=$((fails+1))
+  elif [ $rc -eq 0 ] && grep -q "results published" <<<"$out"; then
+    echo "  prev-pack replaced at ${delay}s: PASS (one held object throughout)"
+  elif grep -qE "VD_BENCH_FAIL prev_test_" <<<"$out"; then
+    echo "  prev-pack replaced at ${delay}s: PASS (clean refusal)"
+  else
+    echo "  prev-pack replaced at ${delay}s: FAIL (indeterminate, exit $rc)"; fails=$((fails+1))
+  fi
+done
+
+# ---- worker lifecycle fault matrix ----------------------------------------
+# Every worker failure mode must refuse and leave no child behind. Short
+# test-only deadlines; the production deadline is 3600 s against a measured
+# ~1117 s shuffle arm.
+count_children() { pgrep -P $$ -x vd_bench 2>/dev/null | wc -l; }
+
+worker_case() {
+  local name="$1"; shift
+  local out rc before after
+  before=$(pgrep -x vd_bench | wc -l)
+  out=$(timeout 300 "$@" 2>&1); rc=$?
+  sleep 0.4
+  after=$(pgrep -x vd_bench | wc -l)
+  checks=$((checks+1))
+  if [ $rc -eq 0 ]; then
+    echo "  $name: FAIL (exit 0, expected refusal)"; fails=$((fails+1)); return
+  fi
+  if [ $rc -ge 128 ]; then
+    # a signal death is a crash, not a controlled refusal
+    echo "  $name: FAIL (died on signal $((rc-128)), expected clean refusal)"
+    fails=$((fails+1)); return
+  fi
+  if grep -q "VISION_DETECTION_MECHANISM_PASS" <<<"$out"; then
+    echo "  $name: FAIL (PASS printed despite worker fault)"; fails=$((fails+1)); return
+  fi
+  if [ "$after" -gt "$before" ]; then
+    echo "  $name: FAIL (orphaned worker: $before -> $after)"; fails=$((fails+1)); return
+  fi
+  echo "  $name: PASS (refused exit $rc, no orphan)"
+}
+
+build_cache
+worker_case "worker hangs (deadline enforced)" \
+  $BENCH --protocol synthetic-test --cache "$W/cache" --prev-test "$W/prev.pack" \
+         --jobs 2 --worker-fault hang --shuffle-deadline-s 3 --json "$JSON"
+build_cache
+worker_case "worker exits early" \
+  $BENCH --protocol synthetic-test --cache "$W/cache" --prev-test "$W/prev.pack" \
+         --jobs 2 --worker-fault exit --shuffle-deadline-s 20 --json "$JSON"
+build_cache
+worker_case "worker writes a partial message" \
+  $BENCH --protocol synthetic-test --cache "$W/cache" --prev-test "$W/prev.pack" \
+         --jobs 2 --worker-fault partial --shuffle-deadline-s 5 --json "$JSON"
+build_cache
+worker_case "worker crashes abnormally" \
+  $BENCH --protocol synthetic-test --cache "$W/cache" --prev-test "$W/prev.pack" \
+         --jobs 2 --worker-fault crash --shuffle-deadline-s 20 --json "$JSON"
+build_cache
+worker_case "parent faults after fork" \
+  $BENCH --protocol synthetic-test --cache "$W/cache" --prev-test "$W/prev.pack" \
+         --jobs 2 --parent-fault-after-fork --shuffle-deadline-s 20 --json "$JSON"
+build_cache
+worker_case "BTN init fails after fork" \
+  $BENCH --protocol synthetic-test --cache "$W/cache" --prev-test "$W/prev.pack" \
+         --jobs 2 --btn-fail-at 4 --shuffle-deadline-s 20 --json "$JSON"
+
+# jobs=1 and jobs=2 must both produce a complete, published run
+for j in 1 2; do
+  build_cache
+  out=$(timeout 300 $BENCH --protocol synthetic-test --cache "$W/cache" \
+          --prev-test "$W/prev.pack" --jobs $j --json "$JSON" 2>&1); rc=$?
+  checks=$((checks+1))
+  if [ $rc -eq 0 ] && grep -q "results published" <<<"$out"; then
+    echo "  jobs=$j smoke run completes: PASS"
+  else
+    echo "  jobs=$j smoke run completes: FAIL (exit $rc)"; fails=$((fails+1))
+  fi
+done
 
 echo "checks=$checks failures=$fails"
 if [ "$fails" -eq 0 ]; then

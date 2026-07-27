@@ -42,6 +42,12 @@ int vd_openat_regular(int dirfd, const char *name, off_t *size_out);
 /* A FILE* over a dup of fd, positioned at 0. Caller fcloses it; fd is untouched. */
 void *vd_fdopen_ro(int fd);
 
+/* Open a regular file at `path` by traversing its parent component-wise with
+   no-follow semantics and openat-ing the leaf. Returns the fd and its size. The
+   caller then parses AND hashes that one descriptor, so a pathname swapped
+   afterwards cannot substitute the bytes. */
+int vd_open_file_nofollow(const char *path, off_t *size_out, off_t max_bytes);
+
 /* Write buf to path atomically: O_NOFOLLOW|O_EXCL temp beside the target,
    checked write loop, fsync, close, rename, then fsync of the directory.
    Never follows a symlink at the destination. Returns 0 on success, -1 on any
@@ -57,10 +63,26 @@ int vd_publish_file(const char *path, const void *buf, size_t len);
 typedef struct {
     int parent_fd;              /* destination's parent, opened O_NOFOLLOW */
     int dir_fd;                 /* the staging directory */
+    int lock_fd;                /* parent-local publication lock, held through */
     char base[VD_PATH_MAX];     /* destination basename */
     char stage[VD_PATH_MAX];    /* staging basename */
     int done;
+    /* If the transaction could not prove it was safe to remove the displaced
+       cache, it is left at the unique staging name instead of being deleted. */
+    int quarantined;
+    char quarantine[VD_PATH_MAX];
 } VdStage;
+
+/* Name of the left-behind cache after a quarantined publish, or NULL. */
+const char *vd_stage_quarantine(const VdStage *st);
+
+/* Test-only hook, fired inside vd_stage_commit so the continuity and rollback
+   paths can be exercised deterministically instead of raced. */
+typedef enum {
+    VD_HOOK_AFTER_VALIDATE = 1,   /* destination validated, exchange not yet done */
+    VD_HOOK_AFTER_EXCHANGE = 2    /* exchange done, continuity not yet verified */
+} VdStageHookPhase;
+void vd_stage_set_hook(void (*fn)(VdStageHookPhase, void *), void *ctx);
 
 /* Rejects a symlinked parent or a symlinked destination outright. */
 int vd_stage_begin(const char *dest, VdStage *st);

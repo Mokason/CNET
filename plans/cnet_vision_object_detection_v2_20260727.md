@@ -354,6 +354,25 @@ concurrent window is 1115 s, but the two trainings contend for memory bandwidth 
 dilate, so the real saving is the measured 555 s. The console field is named
 `overlap_window_s` rather than `saved` for exactly this reason.
 
+### Second multicore run (round-4 code)
+
+| | baseline | multicore run 1 | multicore run 2 |
+|---|---|---|---|
+| `train_s` (main head) | 2975.0 s | 2975.0 s | **2611.6 s** |
+| wall | 3540 s | 2984.9 s | **2622.4 s** |
+| apparent speedup | — | 1.19× | 1.35× |
+| CPU / peak RSS | ~100 % | 137 % / 1.92 GiB | 137 % / 1.92 GiB |
+
+**The attributable speedup is 1.19×, not 1.35×.** Run 2's `train_s` was itself 12 % faster
+than the baseline's, so part of its wall reduction is machine variance in the training
+phase rather than the overlap. Run 1 is the clean comparison because its `train_s` matched
+the baseline *exactly* (2975.0 s both times). The observed range across runs is
+**1.19×–1.35×**, and 1.19× is the figure that survives the control.
+
+Both multicore runs produced bit-identical metrics and an identical
+`btn_calls_total = 3427852`, which is a further determinism signal: the same number of BTN
+initialisations and forward passes were executed in each.
+
 **What was deliberately not done.** The dominant cost is four sequential BTN trainings
 (`train_s` 2975 s of a 3540 s serial wall) whose update order is fixed by the protocol.
 Parallelising *inside* `btn_train_dynamic` would change that order and is out of scope, so
@@ -367,13 +386,15 @@ consuming available cores.
 
 ASan+UBSan coverage is **not** the whole benchmark, and should not be read as such:
 
-| Component | ASan+UBSan | How |
+| Component | Sanitizer | How |
 |---|---|---|
-| Evaluator (`vd_eval.c`: IoU, NMS, AP50, PR, proposal recall) | **yes** | `make vision_detection_eval_asan`, 17 analytic fixtures |
-| Pack parser, manifest schema, path/mkdir, directory-atomic publication, SHA-256 (`vd_pack.c`, `vd_protocol.c`, `vd_io.c`, `vd_sha256.c`) | **yes** | `make vision_detection_integrity_asan`, 98 hostile-input fixtures |
-| Allocation-failure paths in the evaluator and pack loader | **no** sanitizer, but **deterministically injected** | `make vision_detection_allocfail_test`, `--wrap` malloc/calloc/realloc |
-| Evidence gate end to end (`vd_bench` protocol/manifest/prev-holdout/publish paths) | **no** — functional negative controls only, not sanitized | `make vision_detection_evidence_test`, 23 fail-closed controls |
-| The scored training run itself (~45 min, `vd_bench` + `src/nn.c`) | **no** | run optimised and unsanitized; sanitizing it was not attempted |
+| Evaluator (`vd_eval.c`: IoU, NMS, AP50, PR, proposal recall) | **ASan+UBSan** | `make vision_detection_eval_asan`, **17** analytic fixtures |
+| Pack parser, manifest schema, artifact root, component-wise traversal, directory-atomic publication, SHA-256 (`vd_pack.c`, `vd_protocol.c`, `vd_io.c`, `vd_sha256.c`) | **ASan+UBSan** | `make vision_detection_integrity_asan`, **135** hostile-input fixtures |
+| Allocation-failure paths in the evaluator, pack loader and manifest parser | **UBSan** (`make vision_detection_allocfail_ubsan`, **13** checks) — **not ASan** | ASan replaces `malloc`/`calloc`/`realloc`, so the linker's `--wrap` cannot intercept them and the injection would silently never fire. The same functions are covered under ASan by the integrity lane above; the injection lane runs under UBSan so the two together cover both concerns. |
+| Evidence gate end to end (`vd_bench` protocol / artifact root / snapshot / prev-holdout / worker / publish paths) | **no sanitizer** — functional negative controls only | `make vision_detection_evidence_test`, **44** fail-closed controls |
+| The scored training run itself (~50 min) | **no** | run optimised and unsanitized; not attempted |
+
+All focused lanes, and the real `vd_bench` and `vd_prep` binaries, compile with `-Werror`.
 | Extraction (`vd_prep.cpp`, OpenCV) | **no** | not sanitized |
 
 So: the metric path and the file/parse paths that turn bytes into evidence are sanitized

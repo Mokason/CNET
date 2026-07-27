@@ -109,6 +109,7 @@ int vd_publish_file(const char *path, const void *buf, size_t len) {
 
 /* ---------------- directory-atomic cache publication --------------------- */
 #include <dirent.h>
+#include <sys/file.h>
 
 #ifdef __linux__
 #include <linux/fs.h>
@@ -162,7 +163,7 @@ int vd_stage_begin(const char *dest, VdStage *st) {
 
     if (!st) return -1;
     memset(st, 0, sizeof *st);
-    st->parent_fd = st->dir_fd = -1;
+    st->parent_fd = st->dir_fd = st->lock_fd = -1;
     if (vd_path_ok(dest) != 0) return -1;
 
     n = strlen(dest);
@@ -211,6 +212,7 @@ int vd_stage_begin(const char *dest, VdStage *st) {
 void vd_stage_abort(VdStage *st) {
     if (!st) return;
     if (st->dir_fd >= 0) { close(st->dir_fd); st->dir_fd = -1; }
+    if (st->lock_fd >= 0) { close(st->lock_fd); st->lock_fd = -1; }
     if (st->parent_fd >= 0) {
         if (!st->done) (void)rm_flat_dir_at(st->parent_fd, st->stage);
         close(st->parent_fd);
@@ -251,44 +253,141 @@ static int dest_is_cache(int parent_fd, const char *base) {
     return ok;
 }
 
-int vd_stage_commit(VdStage *st, int replace) {
-    struct stat sb;
-    int existed;
-    if (!st || st->dir_fd < 0 || st->parent_fd < 0) return -1;
-    if (fsync(st->dir_fd) != 0) return -1;
-    close(st->dir_fd);
-    st->dir_fd = -1;
+static void (*g_stage_hook)(VdStageHookPhase, void *);
+static void *g_stage_hook_ctx;
 
-    existed = (fstatat(st->parent_fd, st->base, &sb, AT_SYMLINK_NOFOLLOW) == 0);
-    if (existed && S_ISLNK(sb.st_mode)) { vd_stage_abort(st); return -1; }
+void vd_stage_set_hook(void (*fn)(VdStageHookPhase, void *), void *ctx) {
+    g_stage_hook = fn;
+    g_stage_hook_ctx = ctx;
+}
+
+static void fire_hook(VdStageHookPhase ph) {
+    if (g_stage_hook) g_stage_hook(ph, g_stage_hook_ctx);
+}
+
+const char *vd_stage_quarantine(const VdStage *st) {
+    return (st && st->quarantined) ? st->quarantine : NULL;
+}
+
+static int same_inode(const struct stat *a, const struct stat *b) {
+    return a->st_dev == b->st_dev && a->st_ino == b->st_ino;
+}
+
+/* Publication is a transaction over identities, not pathnames.
+ *
+ * The destination is opened and validated once, and its (st_dev, st_ino) is
+ * held for the whole operation. After the exchange, BOTH sides are checked: the
+ * new cache must be the staged inode and the displaced cache must be exactly
+ * the inode that was validated. If either differs, or any post-exchange check
+ * or fsync fails, the exchange is undone and the rollback verified. Nothing is
+ * ever removed by an unvalidated pathname generation -- if identity-safe
+ * cleanup cannot be proven, the displaced cache is left under the unique
+ * staging name and reported instead of deleted.
+ *
+ * Cooperating publishers serialise on a parent-local no-follow lock held across
+ * validate, exchange, commit and cleanup.
+ */
+int vd_stage_commit(VdStage *st, int replace) {
+    struct stat dest_sb, stage_sb, chk;
+    int existed, dest_fd = -1;
+
+    if (!st || st->dir_fd < 0 || st->parent_fd < 0) return -1;
+    if (fstat(st->dir_fd, &stage_sb) != 0) { vd_stage_abort(st); return -1; }
+    if (fsync(st->dir_fd) != 0) { vd_stage_abort(st); return -1; }
+
+    /* lock first: everything below is inside the critical section */
+    st->lock_fd = openat(st->parent_fd, ".vd_publish.lock",
+                         O_CREAT | O_RDWR | O_NOFOLLOW, 0644);
+    if (st->lock_fd < 0) { vd_stage_abort(st); return -1; }
+    if (flock(st->lock_fd, LOCK_EX) != 0) { vd_stage_abort(st); return -1; }
+
+    existed = (fstatat(st->parent_fd, st->base, &dest_sb, AT_SYMLINK_NOFOLLOW) == 0);
+    if (existed && S_ISLNK(dest_sb.st_mode)) { vd_stage_abort(st); return -1; }
 
     if (!existed) {
         if (renameat(st->parent_fd, st->stage, st->parent_fd, st->base) != 0) {
             vd_stage_abort(st); return -1;
         }
+        /* the thing now visible must be exactly what was staged */
+        if (fstatat(st->parent_fd, st->base, &chk, AT_SYMLINK_NOFOLLOW) != 0 ||
+            !same_inode(&chk, &stage_sb)) {
+            vd_stage_abort(st); return -1;
+        }
     } else if (!replace) {
         vd_stage_abort(st);
         return -1;   /* fail loud rather than write into an existing cache */
-    } else if (!S_ISDIR(sb.st_mode) || !dest_is_cache(st->parent_fd, st->base)) {
-        /* --replace swaps out a recognised, complete CNET vision cache. It is
-           not a general-purpose "overwrite whatever is here". */
-        vd_stage_abort(st);
-        return -1;
     } else {
 #ifdef __linux__
-        /* Exchange leaves no instant where the destination is a mixed cache. */
+        /* Hold the validated destination open for the whole transaction. */
+        dest_fd = openat(st->parent_fd, st->base, O_RDONLY | O_DIRECTORY | O_NOFOLLOW);
+        if (dest_fd < 0) { vd_stage_abort(st); return -1; }
+        if (fstat(dest_fd, &dest_sb) != 0 || !S_ISDIR(dest_sb.st_mode) ||
+            !dest_is_cache(st->parent_fd, st->base)) {
+            close(dest_fd); vd_stage_abort(st); return -1;
+        }
+        fire_hook(VD_HOOK_AFTER_VALIDATE);
+        /* the validated inode must still be the one at the pathname */
+        if (fstatat(st->parent_fd, st->base, &chk, AT_SYMLINK_NOFOLLOW) != 0 ||
+            !same_inode(&chk, &dest_sb)) {
+            close(dest_fd); vd_stage_abort(st); return -1;
+        }
         if (do_renameat2(st->parent_fd, st->stage, st->parent_fd, st->base,
                          RENAME_EXCHANGE) != 0) {
-            vd_stage_abort(st); return -1;
+            close(dest_fd); vd_stage_abort(st); return -1;
         }
-        (void)rm_flat_dir_at(st->parent_fd, st->stage);   /* now the old cache */
+        fire_hook(VD_HOOK_AFTER_EXCHANGE);
+        /* Post-exchange continuity: new cache at the destination, and the
+           displaced cache at the staging name is the inode we validated. */
+        {
+            struct stat now_dest, now_stage;
+            int ok = (fstatat(st->parent_fd, st->base, &now_dest, AT_SYMLINK_NOFOLLOW) == 0 &&
+                      same_inode(&now_dest, &stage_sb) &&
+                      fstatat(st->parent_fd, st->stage, &now_stage, AT_SYMLINK_NOFOLLOW) == 0 &&
+                      same_inode(&now_stage, &dest_sb));
+            if (ok && fsync(st->parent_fd) != 0) ok = 0;
+            if (!ok) {
+                /* undo, then prove the rollback actually restored both sides */
+                struct stat r1, r2;
+                if (do_renameat2(st->parent_fd, st->base, st->parent_fd, st->stage,
+                                 RENAME_EXCHANGE) == 0 &&
+                    fstatat(st->parent_fd, st->base, &r1, AT_SYMLINK_NOFOLLOW) == 0 &&
+                    same_inode(&r1, &dest_sb) &&
+                    fstatat(st->parent_fd, st->stage, &r2, AT_SYMLINK_NOFOLLOW) == 0 &&
+                    same_inode(&r2, &stage_sb)) {
+                    (void)fsync(st->parent_fd);
+                }
+                close(dest_fd);
+                vd_stage_abort(st);
+                return -1;
+            }
+        }
+        /* Re-verify immediately before removal; otherwise quarantine. */
+        {
+            struct stat pre;
+            if (fstatat(st->parent_fd, st->stage, &pre, AT_SYMLINK_NOFOLLOW) == 0 &&
+                same_inode(&pre, &dest_sb) &&
+                rm_flat_dir_at(st->parent_fd, st->stage) == 0) {
+                /* removed exactly the validated old cache */
+            } else {
+                st->quarantined = 1;
+                snprintf(st->quarantine, sizeof st->quarantine, "%s", st->stage);
+            }
+        }
+        close(dest_fd);
 #else
         vd_stage_abort(st);
         return -1;
 #endif
     }
     st->done = 1;
-    (void)fsync(st->parent_fd);
+    if (fsync(st->parent_fd) != 0) {
+        if (st->lock_fd >= 0) { close(st->lock_fd); st->lock_fd = -1; }
+        close(st->parent_fd); st->parent_fd = -1;
+        if (st->dir_fd >= 0) { close(st->dir_fd); st->dir_fd = -1; }
+        return -1;
+    }
+    if (st->dir_fd >= 0) { close(st->dir_fd); st->dir_fd = -1; }
+    if (st->lock_fd >= 0) { close(st->lock_fd); st->lock_fd = -1; }   /* releases flock */
     close(st->parent_fd);
     st->parent_fd = -1;
     return 0;
@@ -437,4 +536,37 @@ void *vd_fdopen_ro(int fd) {
     if (!f) { close(d); return NULL; }
     rewind(f);
     return f;
+}
+
+int vd_open_file_nofollow(const char *path, off_t *size_out, off_t max_bytes) {
+    char tmp[VD_PATH_MAX];
+    const char *slash;
+    int dfd, fd;
+    off_t sz = 0;
+    size_t n;
+    if (vd_path_ok(path) != 0) return -1;
+    n = strlen(path);
+    memcpy(tmp, path, n + 1);
+    while (n > 1 && tmp[n - 1] == '/') tmp[--n] = 0;
+    slash = strrchr(tmp, '/');
+    if (slash) {
+        char parent[VD_PATH_MAX];
+        size_t pn = (size_t)(slash - tmp);
+        if (pn == 0) pn = 1;
+        memcpy(parent, tmp, pn);
+        parent[pn] = 0;
+        dfd = vd_open_dir_nofollow(parent);
+        if (dfd < 0) return -1;
+        fd = vd_openat_regular(dfd, slash + 1, &sz);
+        close(dfd);
+    } else {
+        dfd = open(".", O_RDONLY | O_DIRECTORY);
+        if (dfd < 0) return -1;
+        fd = vd_openat_regular(dfd, tmp, &sz);
+        close(dfd);
+    }
+    if (fd < 0) return -1;
+    if (max_bytes > 0 && sz > max_bytes) { close(fd); return -1; }
+    if (size_out) *size_out = sz;
+    return fd;
 }
