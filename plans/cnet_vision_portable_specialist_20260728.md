@@ -183,7 +183,52 @@ If the gate cannot meet these floors honestly, the artifact machinery is committ
 independently sound, and the verdict is `VISION_CONTINUOUS_COVERAGE_WITHHELD` and therefore
 `VISION_CAPSULE_PORTABILITY_WITHHELD`. **The floors are not weakened to obtain a pass.**
 
-## 11. Results
+## 11. Results — continuous coverage gate: FLOORS NOT MET
+
+Slices extracted against the frozen V2 basis, both asserted disjoint from all 2000 spent
+V1+V2 holdout IDs: calibration 800 images / 216 469 proposals, transfer holdout 1000
+images / 272 413 proposals.
+
+Gate fitted exactly as pre-registered: 4096 reference rows (seed 20260728) drawn from the
+certified training features, `k = 8`, `τ` = 95th percentile of the calibration score
+distribution = **4.251561562**. Latency **33 µs/proposal** (cap 5 ms) and ~8 MiB of
+reference rows (cap 64 MiB), so the cost bars pass.
+
+| set | proposals | median score | refuse rate | pre-registered floor | result |
+|---|---|---|---|---|---|
+| in-domain (calibration) | 216 469 | 3.4065 | 0.0500 | — (by construction) | — |
+| external natural OOD (Kodak 24 + wallpapers 12) | 8 731 | 3.3122 | **0.0906** | ≥ 0.30 **and** ≥ 3× in-domain | **FAIL** |
+| gross synthetic OOD (blank/grey/black/hue/noise) | 163 | **1.8082** | **0.0245** | ≥ 0.99 | **FAIL** |
+
+**`VISION_CONTINUOUS_COVERAGE_WITHHELD`.** The floors were not met and are not being
+relaxed.
+
+### Why it failed — the useful part
+
+The synthetic row is the diagnosis. Degenerate images do not merely evade the gate, they
+score **lower** than real in-domain proposals: median 1.81 against 3.41. A texture-free
+crop has near-zero HOG response, its PCA projection therefore lands near the training
+mean, and the training mean is precisely where the reference rows are densest. So
+distance-to-reference is *anti-correlated* with out-of-domain-ness for the most important
+OOD class — the degenerate inputs a coverage gate most needs to refuse.
+
+Natural OOD is the second half of the same story: median 3.31 against in-domain 3.41, i.e.
+no separation at all. Consumer photographs produce HOG-PCA statistics indistinguishable
+from VOC proposals, which was anticipated in §5, but the measured refusal (0.091) is only
+1.8× the in-domain rate, short of the 3× term that was meant to make the bar non-vacuous.
+
+**A distance-to-reference gate is structurally the wrong instrument in this feature
+space.** Nothing about `k`, `τ` or `|R|` fixes an anti-correlated score; a gate that would
+work has to be sensitive to *degeneracy* (descriptor energy, gradient support) and to
+class-conditional structure, not to proximity alone. That is a different family, and
+choosing it now — after seeing these numbers — would be exactly the post-hoc selection the
+pre-registration forbids. It is recorded here as the next honest experiment, to be
+pre-registered on unspent slices before it is fitted.
+
+The gate machinery itself is independently sound and stays: 22 analytic fixtures, clean
+under ASan+UBSan+Leak, deterministic and fixed-partition parallel.
+
+## 11b. Remaining results
 
 **Not reached.** No slice in §2 has been touched, so there are no results to report and
 every verdict in §8 stands WITHHELD. The only thing this checkpoint establishes is that

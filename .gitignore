@@ -88,3 +88,8 @@ bin/vision_detection_allocfail_test
 bin/vision_capsule_asset
 bin/vision_capsule_asset_san
 logs/vision/capsule_asset*.log
+bin/vision_coverage_test
+bin/vision_coverage_asan
+bin/vd_gate
+data/vision_slice_*
+data/vision_gate

@@ -410,6 +410,9 @@ static std::string lines_of(std::vector<std::string> v) {
 
 int main(int argc, char **argv) {
     std::string root, cls = "car", outdir = "data/vision_cache", v1cache, selftest_exc, selftest_fail;
+    std::string pca_from, image_list;
+    std::vector<std::string> spent;
+    int slice_off = -1, slice_cnt = 0;
     int n_test = 1000, workers = 8;
     for (int i = 1; i < argc; i++) {
         std::string a = argv[i];
@@ -420,6 +423,11 @@ int main(int argc, char **argv) {
         else if (a == "--workers" && i + 1 < argc) workers = atoi(argv[++i]);
         else if (a == "--v1cache" && i + 1 < argc) v1cache = argv[++i];
         else if (a == "--selftest-stage-exception" && i + 1 < argc) selftest_exc = argv[++i];
+        else if (a == "--image-list" && i + 1 < argc) image_list = argv[++i];
+        else if (a == "--slice-offset" && i + 1 < argc) slice_off = atoi(argv[++i]);
+        else if (a == "--slice-count" && i + 1 < argc) slice_cnt = atoi(argv[++i]);
+        else if (a == "--pca-from" && i + 1 < argc) pca_from = argv[++i];
+        else if (a == "--spent" && i + 1 < argc) spent.push_back(argv[++i]);
         else if (a == "--selftest-stage-fail" && i + 1 < argc) selftest_fail = argv[++i];
         else if (a == "--replace") {
             fprintf(stderr,
@@ -435,6 +443,294 @@ int main(int argc, char **argv) {
             else if (v == "v2") VAR = V2;
             else { fprintf(stderr, "VD_PREP_FAIL unknown_variant:%s\n", v.c_str()); return 2; }
         }
+    }
+    if (!image_list.empty()) {
+        /* Arbitrary images through the IDENTICAL frontend (same Selective
+           Search, same 64x64 colour HOG, same frozen PCA), so an out-of-domain
+           probe differs from in-domain data only in the images themselves. */
+        if (pca_from.empty()) { fprintf(stderr, "VD_PREP_FAIL image_list_needs_pca\n"); return 2; }
+        VAR = V2;
+        std::vector<std::string> paths;
+        { std::ifstream f(image_list); std::string t;
+          while (std::getline(f, t)) if (!t.empty()) paths.push_back(t); }
+        if (paths.empty()) { fprintf(stderr, "VD_PREP_FAIL image_list_empty\n"); return 2; }
+        fprintf(stderr, "vd_prep: CPU-only, image-list mode n=%zu workers=%d\n",
+                paths.size(), workers);
+        cv::PCA pca;
+        {
+            std::ifstream f(pca_from, std::ios::binary);
+            int32_t d1 = 0, d2 = 0;
+            if (!f.read((char*)&d1, 4) || !f.read((char*)&d2, 4) ||
+                d1 != VAR.hog_dim || d2 != VAR.pca_dim) {
+                fprintf(stderr, "VD_PREP_FAIL pca_basis_mismatch\n"); return 3;
+            }
+            cv::Mat mean(1, d1, CV_32F), ev(d2, d1, CV_32F);
+            f.read((char*)mean.ptr<float>(0), sizeof(float) * (size_t)d1);
+            for (int r2 = 0; r2 < d2; r2++)
+                f.read((char*)ev.ptr<float>(r2), sizeof(float) * (size_t)d1);
+            pca.mean = mean; pca.eigenvectors = ev;
+        }
+        std::vector<ImgOut> O(paths.size());
+        std::atomic<size_t> next(0);
+        {
+            std::vector<std::thread> th;
+            for (int w = 0; w < workers; w++)
+                th.emplace_back([&]() {
+                    for (;;) {
+                        size_t i2 = next.fetch_add(1);
+                        if (i2 >= paths.size()) break;
+                        ImgOut &o = O[i2];
+                        cv::setNumThreads(1);
+                        o.id = std::string("ood") + std::to_string(i2);
+                        o.sha = sha256_file(paths[i2]);
+                        cv::Mat img = cv::imread(paths[i2]);
+                        if (img.empty() || img.cols < 32 || img.rows < 32) {
+                            o.ok = 0; o.err = "image_unreadable:" + paths[i2]; continue;
+                        }
+                        double sc = (double)SS_WIDTH / img.cols;
+                        cv::Mat small;
+                        cv::resize(img, small, cv::Size(), sc, sc);
+                        auto ss = cv::ximgproc::segmentation::createSelectiveSearchSegmentation();
+                        ss->setBaseImage(small);
+                        ss->switchToSelectiveSearchFast();
+                        std::vector<cv::Rect> rects;
+                        ss->process(rects);
+                        auto canon = [](const cv::Rect &a, const cv::Rect &b) {
+                            if (a.x != b.x) return a.x < b.x;
+                            if (a.y != b.y) return a.y < b.y;
+                            if (a.width != b.width) return a.width < b.width;
+                            return a.height < b.height; };
+                        std::sort(rects.begin(), rects.end(), canon);
+                        if ((int)rects.size() > MAX_PROP) {
+                            uint64_t st2 = fnv1a(o.id) ^ SEED;
+                            for (size_t q = rects.size(); q > 1; q--)
+                                std::swap(rects[q-1], rects[(size_t)(splitmix(st2) % q)]);
+                            rects.resize(MAX_PROP);
+                            std::sort(rects.begin(), rects.end(), canon);
+                        }
+                        for (size_t r2 = 0; r2 < rects.size(); r2++) {
+                            Prop pr;
+                            std::vector<float> fr;
+                            pr.b.x = (int)(rects[r2].x / sc); pr.b.y = (int)(rects[r2].y / sc);
+                            pr.b.w = (int)(rects[r2].width / sc); pr.b.h = (int)(rects[r2].height / sc);
+                            if (pr.b.w < 16 || pr.b.h < 16) continue;
+                            if (!hog_of(img, pr.b, fr)) continue;
+                            pr.label = 0;
+                            cv::Mat in(1, VAR.hog_dim, CV_32F, fr.data()), prj;
+                            pca.project(in, prj);
+                            pr.feat.assign(prj.ptr<float>(0), prj.ptr<float>(0) + VAR.pca_dim);
+                            o.props.push_back(pr);
+                        }
+                        o.ok = 1;
+                    }
+                });
+            for (auto &t : th) t.join();
+        }
+        {
+            std::vector<ImgOut> keep;
+            size_t bad = 0;
+            for (auto &o : O) { if (o.ok && !o.props.empty()) keep.push_back(o); else bad++; }
+            if (keep.empty()) { fprintf(stderr, "VD_PREP_FAIL image_list_no_usable\n"); return 4; }
+            VdStage st;
+            if (vd_stage_begin(outdir.c_str(), &st) != 0) {
+                fprintf(stderr, "VD_PREP_FAIL stage_begin_refused:%s\n", outdir.c_str());
+                return 5;
+            }
+            StageGuard sg(&st);
+            std::string sh;
+            if (!write_pack_staged(st, "slice.pack", keep, VAR.pca_dim, &sh))
+                return stage_fail(st, "ood_pack_write_failed", 5);
+            std::vector<std::string> sid, ssha;
+            for (auto &o : keep) { sid.push_back(o.id); ssha.push_back(o.sha); }
+            if (!write_text_staged(st, "ids.txt", lines_of(sid)))
+                return stage_fail(st, "ood_ids_write_failed", 5);
+            if (!write_text_staged(st, "content.txt", lines_of(ssha)))
+                return stage_fail(st, "ood_content_write_failed", 5);
+            {
+                size_t np = 0;
+                for (auto &o : keep) np += o.props.size();
+                std::ostringstream m;
+                m << "slice_version 1\nvariant " << VAR.name << "\nsource image_list\n"
+                  << "images " << keep.size() << "\nskipped " << bad
+                  << "\nproposals " << np << "\nsha256_slice_pack " << sh << "\n";
+                if (!write_text_staged(st, "slice.txt", m.str()))
+                    return stage_fail(st, "ood_manifest_write_failed", 5);
+            }
+            if (vd_stage_commit(&st) != 0) {
+                fprintf(stderr, "VD_PREP_FAIL ood_publish_refused\n");
+                const char *q = vd_stage_quarantine(&st);
+                if (q) fprintf(stderr, "VD_STAGE_QUARANTINE %s\n", q);
+                return 6;
+            }
+            sg.release();
+            size_t np = 0;
+            for (auto &o : keep) np += o.props.size();
+            printf("VD_OOD_OK images=%zu skipped=%zu proposals=%zu\n", keep.size(), bad, np);
+        }
+        return 0;
+    }
+    if (slice_off >= 0) {
+        /* Reserved-slice extraction against a FROZEN PCA basis. Nothing is
+           fitted here: the basis, the descriptor and the proposal rule all come
+           from the accepted V2 cache, so a slice extracted this way is directly
+           comparable to what the head was trained on. */
+        if (root.empty() || pca_from.empty() || slice_cnt <= 0) {
+            fprintf(stderr, "VD_PREP_FAIL slice_mode_needs_root_pca_count\n");
+            return 2;
+        }
+        VAR = V2;
+        fprintf(stderr, "vd_prep: CPU-only, slice mode offset=%d count=%d workers=%d\n",
+                slice_off, slice_cnt, workers);
+
+        std::vector<std::string> testall;
+        {
+            std::ifstream f(root + "/ImageSets/Main/test.txt");
+            std::string t;
+            while (f >> t) testall.push_back(t);
+        }
+        if (testall.size() != 4952) {
+            fprintf(stderr, "VD_PREP_FAIL unexpected_test_size %zu\n", testall.size());
+            return 2;
+        }
+        std::vector<std::string> shuf = testall;
+        {
+            uint64_t st2 = SEED;
+            for (size_t i2 = shuf.size(); i2 > 1; i2--)
+                std::swap(shuf[i2 - 1], shuf[(size_t)(splitmix(st2) % i2)]);
+        }
+        if ((size_t)(slice_off + slice_cnt) > shuf.size()) {
+            fprintf(stderr, "VD_PREP_FAIL slice_out_of_range\n"); return 2;
+        }
+        std::vector<std::string> ids(shuf.begin() + slice_off,
+                                     shuf.begin() + slice_off + slice_cnt);
+
+        /* Every already-spent holdout is loaded and asserted disjoint by ID. */
+        size_t spent_checked = 0;
+        {
+            std::set<std::string> used;
+            for (auto &sp : spent) {
+                int rc2 = 0;
+                std::vector<std::string> prev = read_pack_ids(sp, rc2);
+                if (rc2 != VD_PACK_OK) {
+                    fprintf(stderr, "VD_PREP_FAIL spent_pack_invalid:%s (%s)\n",
+                            sp.c_str(), vd_pack_strerror(rc2));
+                    return 3;
+                }
+                for (auto &x : prev) used.insert(x);
+                spent_checked += prev.size();
+            }
+            for (auto &x : ids)
+                if (used.count(x)) {
+                    fprintf(stderr, "VD_PREP_FAIL slice_reuses_spent_id:%s\n", x.c_str());
+                    return 3;
+                }
+            fprintf(stderr, "disjoint: slice vs %zu already-scored ids -> 0 overlap\n",
+                    spent_checked);
+        }
+
+        /* frozen basis */
+        cv::PCA pca;
+        {
+            std::ifstream f(pca_from, std::ios::binary);
+            int32_t d1 = 0, d2 = 0;
+            if (!f.read((char*)&d1, 4) || !f.read((char*)&d2, 4) ||
+                d1 != VAR.hog_dim || d2 != VAR.pca_dim) {
+                fprintf(stderr, "VD_PREP_FAIL pca_basis_mismatch\n"); return 3;
+            }
+            cv::Mat mean(1, d1, CV_32F), ev(d2, d1, CV_32F);
+            if (!f.read((char*)mean.ptr<float>(0), sizeof(float) * (size_t)d1)) {
+                fprintf(stderr, "VD_PREP_FAIL pca_basis_truncated\n"); return 3;
+            }
+            for (int r2 = 0; r2 < d2; r2++)
+                if (!f.read((char*)ev.ptr<float>(r2), sizeof(float) * (size_t)d1)) {
+                    fprintf(stderr, "VD_PREP_FAIL pca_basis_truncated\n"); return 3;
+                }
+            pca.mean = mean;
+            pca.eigenvectors = ev;
+        }
+
+        std::vector<ImgOut> O(ids.size());
+        {
+            std::vector<std::thread> th;
+            std::atomic<size_t> next(0);
+            for (int w = 0; w < workers; w++)
+                th.emplace_back([&]() {
+                    for (;;) {
+                        size_t i2 = next.fetch_add(1);
+                        if (i2 >= ids.size()) break;
+                        do_image(root, ids[i2], cls, true, false, O[i2]);
+                    }
+                });
+            for (auto &t : th) t.join();
+            for (auto &o : O)
+                if (!o.ok) { fprintf(stderr, "VD_PREP_FAIL %s\n", o.err.c_str()); return 4; }
+        }
+        {
+            std::vector<std::thread> th;
+            std::atomic<size_t> next(0);
+            for (int w = 0; w < workers; w++)
+                th.emplace_back([&]() {
+                    for (;;) {
+                        size_t i2 = next.fetch_add(1);
+                        if (i2 >= O.size()) break;
+                        project_image(root, ids[i2], pca, O[i2]);
+                    }
+                });
+            for (auto &t : th) t.join();
+            for (auto &o : O)
+                if (!o.ok) { fprintf(stderr, "VD_PREP_FAIL %s\n", o.err.c_str()); return 4; }
+        }
+
+        VdStage st;
+        if (vd_stage_begin(outdir.c_str(), &st) != 0) {
+            fprintf(stderr, "VD_PREP_FAIL stage_begin_refused:%s\n", outdir.c_str());
+            const char *q = vd_stage_quarantine(&st);
+            if (q) fprintf(stderr, "VD_STAGE_QUARANTINE %s\n", q);
+            return 5;
+        }
+        StageGuard sg(&st);
+        std::vector<std::string> sid, ssha;
+        for (auto &o : O) { sid.push_back(o.id); ssha.push_back(o.sha); }
+        std::string sh_pack, sh_ids, sh_con;
+        if (!write_pack_staged(st, "slice.pack", O, VAR.pca_dim, &sh_pack))
+            return stage_fail(st, "slice_pack_write_failed", 5);
+        long long pack_size = g_last_written_size;
+        if (!write_text_staged(st, "ids.txt", lines_of(sid), &sh_ids))
+            return stage_fail(st, "slice_ids_write_failed", 5);
+        if (!write_text_staged(st, "content.txt", lines_of(ssha), &sh_con))
+            return stage_fail(st, "slice_content_write_failed", 5);
+        {
+            size_t nprop = 0, ngt = 0;
+            for (auto &o : O) { nprop += o.props.size();
+                for (auto &g : o.gts) if (!g.difficult) ngt++; }
+            std::ostringstream m;
+            m << "slice_version 1\nvariant " << VAR.name << "\nclass " << cls
+              << "\nseed " << SEED << "\npca_dim " << VAR.pca_dim
+              << "\nslice_offset " << slice_off << "\nslice_count " << ids.size()
+              << "\nimages " << O.size() << "\nproposals " << nprop
+              << "\ngt " << ngt << "\nspent_ids_checked " << spent_checked
+              << "\nspent_id_overlap 0\n"
+              << "id_root " << root_of(sid) << "\ncontent_root " << root_of(ssha) << "\n"
+              << "sha256_slice_pack " << sh_pack << "\nsha256_ids " << sh_ids
+              << "\nsha256_content " << sh_con << "\n";
+            if (!write_text_staged(st, "slice.txt", m.str()))
+                return stage_fail(st, "slice_manifest_write_failed", 5);
+        }
+        if (vd_stage_commit(&st) != 0) {
+            fprintf(stderr, "VD_PREP_FAIL slice_publish_refused:%s\n", outdir.c_str());
+            const char *q = vd_stage_quarantine(&st);
+            if (q) fprintf(stderr, "VD_STAGE_QUARANTINE %s\n", q);
+            return 6;
+        }
+        sg.release();
+        {
+            size_t nprop = 0, ngt = 0;
+            for (auto &o : O) { nprop += o.props.size();
+                for (auto &g : o.gts) if (!g.difficult) ngt++; }
+            printf("VD_SLICE_OK offset=%d images=%zu proposals=%zu gt=%zu bytes=%lld\n",
+                   slice_off, O.size(), nprop, ngt, pack_size);
+        }
+        return 0;
     }
     if (!selftest_fail.empty()) {
         /* Exercises the EXPLICIT staged-write failure path (stage_fail), which

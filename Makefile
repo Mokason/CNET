@@ -2843,6 +2843,34 @@ knowledge_capsule_sanitize: $(CAPSULE_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $
 	@grep -q "KNOWLEDGE_CAPSULE_PASS" logs/knowledge_capsule_sanitize.log
 	@grep "KNOWLEDGE_CAPSULE_PASS" logs/knowledge_capsule_sanitize.log
 
+bin/vd_gate: tools/vision_detection/vd_gate.c tools/vision_detection/vd_coverage.c \
+		tools/vision_detection/vd_pack.c tools/vision_detection/vd_io.c \
+		tools/vision_detection/vd_sha256.c tools/vision_detection/vd_eval.c
+	@mkdir -p $(BIN_DIR) logs/vision
+	$(CC) -std=c11 -Wall -Wextra -Werror -O2 -D_DEFAULT_SOURCE -I tools/vision_detection \
+		-o $(BIN_DIR)/vd_gate $^ -lm -lpthread
+
+.PHONY: vision_coverage_test vision_coverage_asan
+vision_coverage_test:
+	@mkdir -p $(BIN_DIR) logs/vision
+	$(CC) -std=c11 -Wall -Wextra -Werror -O2 -D_DEFAULT_SOURCE -I tools/vision_detection \
+		-o $(BIN_DIR)/vision_coverage_test tools/vision_detection/vd_coverage.c \
+		tests/vision_coverage_test.c -lm
+	@ROCR_VISIBLE_DEVICES='' HIP_VISIBLE_DEVICES='' CUDA_VISIBLE_DEVICES='' \
+	  timeout 600 ./$(BIN_DIR)/vision_coverage_test 2>&1 | tee logs/vision/coverage_test.log
+	@grep -q VISION_COVERAGE_TEST_PASS logs/vision/coverage_test.log
+
+vision_coverage_asan:
+	@mkdir -p $(BIN_DIR) logs/vision
+	$(CC) -std=c11 -Wall -Wextra -Werror -g -O1 -fsanitize=address,undefined \
+		-fno-omit-frame-pointer -D_DEFAULT_SOURCE -I tools/vision_detection \
+		-o $(BIN_DIR)/vision_coverage_asan tools/vision_detection/vd_coverage.c \
+		tests/vision_coverage_test.c -lm
+	@ROCR_VISIBLE_DEVICES='' HIP_VISIBLE_DEVICES='' CUDA_VISIBLE_DEVICES='' \
+	  ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=halt_on_error=1 \
+	  timeout 900 ./$(BIN_DIR)/vision_coverage_asan 2>&1 | tee logs/vision/coverage_asan.log
+	@grep -q VISION_COVERAGE_TEST_PASS logs/vision/coverage_asan.log
+
 .PHONY: vision_capsule_asset vision_capsule_asset_san
 vision_capsule_asset: $(CAPSULE_SRC) $(CAPSULE_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(EXT_TEACHER_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) tests/test_vision_capsule_asset.c include/cnet_capsule.h
 	@mkdir -p $(BIN_DIR) logs/vision
