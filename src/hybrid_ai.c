@@ -268,6 +268,15 @@ int hybrid_coverage_has_unit(const HybridAi *h, const char *unit) {
     return 0;
 }
 
+const char *hybrid_coverage_owner(const HybridAi *h, Port in_port,
+                                  Port out_port) {
+    const HybridCoverage *c;
+    if (!h) return NULL;
+    c = coverage_find((HybridAi *)h, port_key(in_port), port_key(out_port),
+                      in_port, out_port);
+    return (c && c->active && c->rows) ? c->unit : NULL;
+}
+
 int hybrid_coverage_forget_unit(HybridAi *h, const char *unit) {
     size_t i;
     if (!h || !unit || !unit[0]) return 0;

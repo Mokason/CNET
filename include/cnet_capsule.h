@@ -28,6 +28,14 @@
  *   - integrity                   FNV-1a over the payload AND over every
  *                                 security-relevant manifest field
  *
+ * PACKAGE ATOMICITY: the two files are published separately, so a capsule
+ * directory CAN be observed half-written (payload present, manifest not, or
+ * vice versa). That is not prevented — it is REJECTED: import requires both
+ * files, a manifest checksum over every security-relevant field, and a payload
+ * checksum, so a partial package fails closed rather than importing something
+ * incomplete. Each file is individually written to an exclusive O_NOFOLLOW temp
+ * and renamed, so neither file is ever seen partially written.
+ *
  * TRUST BOUNDARY: a capsule is a LOCAL transfer object. Its checksums are
  * unkeyed, so they detect ACCIDENT — truncation, bit-rot, a partial write, a
  * mismatched build — and nothing else. Anyone who can rewrite a capsule can

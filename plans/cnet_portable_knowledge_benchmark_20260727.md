@@ -119,6 +119,47 @@ stored `recipe_fp` values and correcting them would invalidate existing ledgers.
 
 ---
 
+## 2b. Review round 3 — memory safety and true atomicity
+
+Re-review of `66134af` found unresolved Critical/High blockers. Fixed RED first;
+`logs/knowledge_capsule_RED3.log` holds 7 failures before any implementation.
+
+**GREEN**: `KNOWLEDGE_CAPSULE_PASS checks=52` (was 39), warning-clean under `-Werror`,
+and clean under ASAN/UBSAN via `make knowledge_capsule_san`.
+
+Two of the new tests again passed for the wrong reason and were tightened before
+counting: overlong provenance was refused by downstream *parse fallout* (the overflow
+still occurred), and `cov_out` mismatch by a COVOUT row-count accident. Both now assert
+the specific reason (`provenance_field_too_long`, `coverage_out_dim_mismatch`).
+
+| # | Blocker | Fix | Proven by |
+|---|---|---|---|
+| 1 | **Stack overflow**: `%127s` into `prov[CNB_NAME_MAX=64]` | read into a 256-byte scratch matching a `%255s` bound, range-check, then copy | `provenance_field_too_long` + ASAN clean |
+| 2 | **OOB read**: `cap_slurp` sized exactly `st_size`, `strstr` assumed NUL | allocate checked `size+1`, terminate, keep logical length separate | ASAN/UBSAN clean on the manifest path |
+| 3 | **Coverage displacement / non-transactional rollback** | coverage is keyed by PORTS, so import now asks `hybrid_coverage_owner` and **refuses a conflicting shape** rather than freeing the incumbent's rows | `coverage_port_conflict_owned_by=…`; incumbent rows/targets/tags asserted byte-identical after rejection |
+| 4 | **CnetBase left partially mutated on failed admit** | fixed in the owning abstraction: blob-collision decided **before** minting, and tag mint wrapped in an exact rollback (`tag_count` + `next_mint_seq`), since mint is append-only | `atomicity: tag/blob/unit_count unchanged after refusal` |
+| 5 | `cov_out` not bound to the output port | bound to the manifest's **declared** goal dims at parse time (before COVOUT rows) with checked multiply, and re-verified against the payload port | `coverage_out_dim_mismatch` |
+| 6 | Predictable `manifest.cknow.tmp` via `fopen` follows symlinks | exclusive `O_CREAT\|O_EXCL\|O_NOFOLLOW` temp + rename | — |
+| 7 | Regression not in a CI path | `knowledge_capsule` added to **`ci_core`**; `-Werror` on both focused targets | `CNET_CI_CORE_PASS` |
+
+### Finding 4 — the trigger worth recording
+
+The tag preflight compares each tag against the **base**, never against the unit's own
+other tags. So a unit whose in/out tags near-miss each other (`pair_aa` / `pair_ab`,
+Levenshtein 1) passed preflight, minted the first, and failed on the second — leaving a
+tag behind. Deterministic, reachable, and now asserted.
+
+### Scope honestly declined
+
+- `src/cnet_auto_learn.c` has pre-existing format-truncation warnings that `-O1` surfaces.
+  `knowledge_capsule_san` therefore does **not** use `-Werror`; `-Werror` is enforced on
+  the two focused targets at the project's standard flags. Unrelated TUs were not edited
+  to manufacture a clean sanitizer build.
+- `src/acquire.c` still carries the short FNV basis in two places; correcting it would
+  invalidate stored `recipe_fp` values.
+
+---
+
 ## 3. TDD evidence (round 1)
 
 
@@ -161,7 +202,7 @@ finding — see §5.
 | coverage / abstention | rows **and** targets serialised at `%.17g`, restored via `hybrid_coverage_record` |
 | provenance | carried by `cnb_export_subset` |
 | integrity | FNV-1a 64 over the payload, checked before parsing it |
-| explicit rejection | 16 named `reject_reason` values; **nothing** is written to the target before every check passes |
+| explicit rejection | 20+ named `reject_reason` values. Transaction semantics, exactly: all validation completes before any mutation; then coverage is written first (the only rollbackable half) and the base admit follows, with coverage forgotten if the admit fails. A conflicting coverage port shape is refused outright rather than displaced. |
 
 Integrity here is a **corruption check, not a signature** — no PKI is present and
 claiming authenticity would be dishonest.
@@ -302,14 +343,20 @@ hash-then-reopen window), and temp+rename manifest writes (no partial capsule).
 
 ## 9. Umbrella placement
 
-`knowledge_capsule` (~16 s) now runs inside **`cognitive_runtime`**, which is green, so
-the regression is not orphaned. It is deliberately **not** in `claims`: `claims` is
-already red on this tree for a **pre-existing** reason unrelated to this work —
+`knowledge_capsule` (~16 s, `-Werror`) runs in **`ci_core`** — the continuously run core
+CI path — verified by `CNET_CI_CORE_PASS`. It also runs inside `cognitive_runtime`.
+`asi_framing` stays in `claims`. `make claims` still does not pass on this tree:
 `soul_reopen_test` fails `SoulHost fails closed on malformed adjacent runtime state`,
-verified identical on the stashed baseline. Wiring into a broken umbrella would have
-hidden the regression. `asi_framing` stays in `claims` (docs claim → docs gate).
+**pre-existing**, verified identical on the stashed baseline — not masked, not in scope.
 
-The full accumulation bench stays explicit: it trains 41 BTNs (~1 s + 700 ms build).
+`make knowledge_capsule_san` gives an ASAN/UBSAN run of the same 52 checks.
+
+The full accumulation benchmark stays explicit (trains 41 BTNs).
+
+**Parent-reported `honest_memory_retrieval=0`:** not reproduced here —
+`CAPABILITY_CERT_PASS certified=6/6` with `honest_memory_retrieval metric=1.000`, and
+`COGNITIVE_RUNTIME_PASS`. That capability is a dotnet test unrelated to anything in this
+diff (base/capsule/hybrid). Treated as transient runtime state; **no floor was lowered**.
 
 ## 10. Does the evidence support the thesis?
 

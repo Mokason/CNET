@@ -278,6 +278,13 @@ CNET_API void hybrid_coverage_arm_fail_closed(HybridAi *h, int on);
 /* 1 if a coverage record exists for this unit name. */
 CNET_API int hybrid_coverage_has_unit(const HybridAi *h, const char *unit);
 
+/* Which unit owns the coverage record for this port shape, or NULL. Coverage
+ * is keyed by PORTS, so an importer must ask this before recording: writing a
+ * record for an occupied shape frees the incumbent's rows and silently leaves
+ * that older unit default-allow. */
+CNET_API const char *hybrid_coverage_owner(const HybridAi *h, Port in_port,
+                                           Port out_port);
+
 /* Drop the record for a unit that no longer exists. Returns 1 if one went. */
 CNET_API int hybrid_coverage_forget_unit(HybridAi *h, const char *unit);
 

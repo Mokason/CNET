@@ -445,6 +445,141 @@ int main(void) {
         cnb_free(&b);
     }
 
+    /* R1: provenance longer than CNB_NAME_MAX must not overflow the parse
+       buffer. Self-checksummed so the manifest is internally consistent and
+       only the field bound can refuse it. */
+    {
+        char longprov[256];
+        int i2;
+        memset(longprov, 0, sizeof longprov);
+        strcpy(longprov, "provenance ");
+        for (i2 = 0; i2 < 200; i2++) longprov[11 + i2] = 'A';
+        check(clone_pack(dir, bad) == 0 &&
+                  edit_manifest(bad, "provenance", longprov, 1) == 0,
+              "neg: overlong provenance written and resealed");
+        check(refused(bad, reason, sizeof reason) &&
+                  strstr(reason, "provenance") != NULL,
+              "neg: overlong provenance REJECTED by FIELD BOUND (no overwrite)");
+        printf("      %s\n", reason);
+        rm_pack(bad);
+    }
+
+    /* R5: coverage output dimension must match the unit's OUTPUT port, not just
+       generic caps. cov_out=7 is small and legal by caps, wrong for an 8-wide
+       output port. */
+    {
+        char covline[64];
+        snprintf(covline, sizeof covline, "coverage %d %d 7", COV_ROWS, SYM);
+        check(clone_pack(dir, bad) == 0 &&
+                  edit_manifest(bad, "coverage ", covline, 1) == 0,
+              "neg: coverage out_dim mismatched to output port");
+        check(refused(bad, reason, sizeof reason) &&
+                  strstr(reason, "out_dim") != NULL,
+              "neg: cov_out REJECTED by OUTPUT-PORT BINDING (not parse fallout)");
+        printf("      %s\n", reason);
+        rm_pack(bad);
+    }
+
+    /* R3: a DIFFERENT unit already owning this coverage port shape must not be
+       displaced. Coverage is keyed by ports, so importing here would free the
+       incumbent's rows and leave that older unit default-allow. */
+    {
+        CnetBase b;
+        HybridAi occupied;
+        double orow[SYM], otgt[SYM];
+        const HybridCoverage *before_rec, *after_rec;
+        double keep_rows[SYM * SYM], keep_tgts[SYM * SYM];
+        size_t kn = 0, kin = 0, kout = 0;
+        char keep_unit[96];
+        cnb_init(&b);
+        hybrid_ai_init(&occupied);
+        oh(orow, 1);
+        oh(otgt, 4);
+        check(hybrid_coverage_record(&occupied, pin, pout, "incumbent_unit",
+                                     orow, otgt, 1, SYM, SYM) == 0,
+              "conflict: incumbent owns the coverage port shape");
+        before_rec = NULL;
+        {
+            size_t z;
+            for (z = 0; z < occupied.coverage_count; z++)
+                if (occupied.coverage[z].active &&
+                    strcmp(occupied.coverage[z].unit, "incumbent_unit") == 0)
+                    before_rec = &occupied.coverage[z];
+        }
+        if (before_rec) {
+            kn = before_rec->n_rows;
+            kin = before_rec->in_dim;
+            kout = before_rec->out_dim;
+            memcpy(keep_rows, before_rec->rows, kn * kin * sizeof(double));
+            if (before_rec->targets)
+                memcpy(keep_tgts, before_rec->targets, kn * kout * sizeof(double));
+            snprintf(keep_unit, sizeof keep_unit, "%s", before_rec->unit);
+        }
+        memset(&rep, 0, sizeof rep);
+        rc = cnet_capsule_import(&b, &occupied, dir, &rep);
+        check(rc != 0, "conflict: import REFUSED rather than displacing");
+        printf("      %s\n", rep.reject_reason);
+        check(!cnb_has_unit(&b, unit), "conflict: no unit admitted");
+        after_rec = NULL;
+        {
+            size_t z;
+            for (z = 0; z < occupied.coverage_count; z++)
+                if (occupied.coverage[z].active &&
+                    strcmp(occupied.coverage[z].unit, "incumbent_unit") == 0)
+                    after_rec = &occupied.coverage[z];
+        }
+        check(after_rec != NULL, "conflict: incumbent record still present");
+        check(after_rec && after_rec->n_rows == kn && after_rec->in_dim == kin &&
+                  after_rec->out_dim == kout &&
+                  memcmp(after_rec->rows, keep_rows, kn * kin * sizeof(double)) == 0 &&
+                  after_rec->targets &&
+                  memcmp(after_rec->targets, keep_tgts, kn * kout * sizeof(double)) == 0 &&
+                  strcmp(after_rec->unit, keep_unit) == 0,
+              "conflict: incumbent rows/targets/tags byte-identical");
+        cnb_free(&b);
+        hybrid_ai_free(&occupied);
+    }
+
+    /* R4: a failed cnb_add_unit must not leave the base partially mutated. The
+       tag preflight compares each tag against the BASE, not against the unit's
+       own other tags, so two mutually near-miss tags pass preflight, mint the
+       first and fail on the second. */
+    {
+        CnetBase b;
+        BinaryTransformNetwork *btn2;
+        Contract c3;
+        double in2[SYM][SYM], tg2[SYM][SYM];
+        Port ain, aout;
+        size_t tags_before, blobs_before, units_before;
+        int i3, addrc;
+        cnb_init(&b);
+        ain = P("pair_aa");
+        aout = P("pair_ab"); /* Levenshtein 1 from pair_aa */
+        btn2 = (BinaryTransformNetwork *)calloc(1, sizeof *btn2);
+        for (i3 = 0; i3 < SYM; i3++) { oh(in2[i3], i3); oh(tg2[i3], rot3(i3)); }
+        btn_init(btn2, SYM, SYM, 16, 64, 0.5, 11);
+        btn_set_ports(btn2, ain, aout);
+        btn_train_dynamic(btn2, (const double *)in2, (const double *)tg2, SYM,
+                          8000, 200, 1e-6, 1e-8);
+        memset(&c3, 0, sizeof c3);
+        if (contract_init_borrowed(&c3, "pair_unit", btn2, (const double *)in2,
+                                   (const double *)tg2, SYM) == 0) {
+            tags_before = b.tag_count;
+            blobs_before = b.blob_count;
+            units_before = b.unit_count;
+            addrc = cnb_add_unit(&b, btn2, &c3, NULL);
+            check(addrc != 0, "atomicity: mutually near-miss tags REFUSED");
+            check(b.tag_count == tags_before,
+                  "atomicity: tag_count unchanged after refusal");
+            check(b.blob_count == blobs_before,
+                  "atomicity: blob_count unchanged after refusal");
+            check(b.unit_count == units_before,
+                  "atomicity: unit_count unchanged after refusal");
+            contract_free(&c3);
+        }
+        cnb_free(&b);
+    }
+
     /* transactional: coverage cannot be stored -> unit must not land either */
     {
         CnetBase b;

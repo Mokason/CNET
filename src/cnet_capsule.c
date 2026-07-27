@@ -72,7 +72,14 @@ static int cap_slurp(const char *path, unsigned char **out, size_t *len,
         *why = "payload_size_out_of_bounds";
         return -1;
     }
-    buf = (unsigned char *)malloc((size_t)st.st_size);
+    /* +1 and NUL so callers may use string scans (strstr) on the manifest
+       without reading one past the allocation; *len stays the logical size. */
+    if ((unsigned long long)st.st_size + 1ULL > CAP_MAX_PAYLOAD) {
+        close(fd);
+        *why = "payload_size_out_of_bounds";
+        return -1;
+    }
+    buf = (unsigned char *)malloc((size_t)st.st_size + 1);
     if (!buf) {
         close(fd);
         *why = "oom";
@@ -89,6 +96,7 @@ static int cap_slurp(const char *path, unsigned char **out, size_t *len,
         off += (size_t)got;
     }
     close(fd);
+    buf[off] = '\0';
     *out = buf;
     *len = off;
     return 0;
@@ -238,8 +246,23 @@ int cnet_capsule_export(const CnetBase *src, const HybridAi *cov,
     }
 #undef CAP_EMIT
 
-    fp = fopen(tmp_path, "wb");
-    if (!fp) { cap_fail(rep, "manifest_write_failed"); goto done; }
+    /* Exclusive + no-follow: a predictable sibling temp opened with fopen("wb")
+       would follow an attacker-planted symlink and truncate the target. This is
+       still only ACCIDENT hardening for a local artifact — see the trust
+       boundary in the header. */
+    {
+        int tfd = open(tmp_path, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW |
+                                     O_CLOEXEC, 0600);
+        if (tfd < 0) {
+            (void)remove(tmp_path);
+            tfd = open(tmp_path, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW |
+                                     O_CLOEXEC, 0600);
+        }
+        if (tfd < 0) { cap_fail(rep, "manifest_write_failed"); goto done; }
+        fp = fdopen(tfd, "wb");
+        if (!fp) { close(tfd); (void)remove(tmp_path);
+                   cap_fail(rep, "manifest_write_failed"); goto done; }
+    }
     if (fwrite(man, 1, mlen, fp) != mlen ||
         fprintf(fp, "manifest_fnv %llu\n", cap_fnv_buf(man, mlen)) < 0 ||
         fclose(fp) != 0) {
@@ -280,6 +303,7 @@ int cnet_capsule_import(CnetBase *dst, HybridAi *cov, const char *dir,
     char unit_path[600], man_path[600], tok[64];
     char unit[96] = {0}, itag[PORT_TAG_MAX + 4], gtag[PORT_TAG_MAX + 4];
     char prov[CNB_NAME_MAX] = {0};
+    char prov_raw[256] = {0}; /* scratch: %255s matches THIS size, not prov */
     unsigned char *pay = NULL, *manbuf = NULL;
     size_t paylen = 0, manlen = 0;
     unsigned long long want_fnv = 0, want_digest = 0, want_man = 0;
@@ -340,7 +364,7 @@ int cnet_capsule_import(CnetBase *dst, HybridAi *cov, const char *dir,
         fscanf(fp, " exemplars %zu", &exemplars) != 1 ||
         fscanf(fp, " payload_fnv %llu", &want_fnv) != 1 ||
         fscanf(fp, " payload_bytes %zu", &want_bytes) != 1 ||
-        fscanf(fp, " provenance %127s", prov) != 1 ||
+        fscanf(fp, " provenance %255s", prov_raw) != 1 ||
         fscanf(fp, " in %d %zu %zu %35s", &ifam, &iw, &ic, itag) != 4 ||
         fscanf(fp, " goal %d %zu %zu %35s", &gfam, &gw, &gc, gtag) != 4 ||
         fscanf(fp, " coverage %zu %zu %zu", &cov_rows, &cov_in, &cov_out) != 3) {
@@ -348,6 +372,15 @@ int cnet_capsule_import(CnetBase *dst, HybridAi *cov, const char *dir,
         fclose(fp);
         goto done;
     }
+    /* Read into a scratch whose size matches the %255s bound, then range-check
+       before it reaches prov[CNB_NAME_MAX]. The previous "%127s" into a
+       64-byte buffer could write 128 bytes onto the stack. */
+    if (strlen(prov_raw) >= CNB_NAME_MAX) {
+        cap_fail(rep, "provenance_field_too_long");
+        fclose(fp);
+        goto done;
+    }
+    memcpy(prov, prov_raw, strlen(prov_raw) + 1);
     if (ver != cnb_format_version()) {
         char w[CNET_CAPSULE_REASON_MAX];
         snprintf(w, sizeof w, "incompatible_cnb_version=%u_expected=%u", ver,
@@ -366,6 +399,25 @@ int cnet_capsule_import(CnetBase *dst, HybridAi *cov, const char *dir,
             fclose(fp);
             goto done;
         }
+    /* Bind cov_out to the goal port the manifest DECLARES, before parsing any
+       COVOUT rows — otherwise a wrong cov_out is caught by a row-count parse
+       accident instead of by the contract. The declared ports are themselves
+       verified against the payload further down, so this cannot be gamed by
+       editing the goal line. */
+    if (cov_rows && cov_out != 0) {
+        size_t decl_out;
+        if (gc && gw > (size_t)-1 / gc) {
+            cap_fail(rep, "port_dim_overflow");
+            fclose(fp);
+            goto done;
+        }
+        decl_out = gw * gc;
+        if (cov_out != decl_out) {
+            cap_fail(rep, "coverage_out_dim_mismatch");
+            fclose(fp);
+            goto done;
+        }
+    }
         /* A capsule that carries a gate must not import where the gate cannot
            be stored: dropping it would hand over an ungated certified unit. */
         if (!cov) {
@@ -475,9 +527,29 @@ int cnet_capsule_import(CnetBase *dst, HybridAi *cov, const char *dir,
             goto done;
         }
     }
-    if (cov_rows && cov_in != pin.field_width * pin.field_count) {
-        cap_fail(rep, "coverage_dim_mismatch");
-        goto done;
+    if (cov_rows) {
+        size_t in_tot, out_tot;
+        if (pin.field_count && pin.field_width > (size_t)-1 / pin.field_count) {
+            cap_fail(rep, "port_dim_overflow");
+            goto done;
+        }
+        if (pout.field_count && pout.field_width > (size_t)-1 / pout.field_count) {
+            cap_fail(rep, "port_dim_overflow");
+            goto done;
+        }
+        in_tot = pin.field_width * pin.field_count;
+        out_tot = pout.field_width * pout.field_count;
+        if (cov_in != in_tot) {
+            cap_fail(rep, "coverage_in_dim_mismatch");
+            goto done;
+        }
+        /* Generic caps let a legal-but-wrong cov_out through; bind it to the
+           unit's real output port so a mismatch is refused by the CONTRACT and
+           not by a downstream parse accident. */
+        if (cov_out != 0 && cov_out != out_tot) {
+            cap_fail(rep, "coverage_out_dim_mismatch");
+            goto done;
+        }
     }
 
     /* ---- commit: gate FIRST, because only it can be rolled back ----------
@@ -485,6 +557,17 @@ int cnet_capsule_import(CnetBase *dst, HybridAi *cov, const char *dir,
        forgetting it on failure is the only ordering where a failed import
        cannot leave an ungated certified unit behind. */
     if (cov_rows) {
+        /* Coverage records are keyed by PORTS, not unit names. Writing one for
+           an occupied shape frees the incumbent's rows and leaves that older
+           unit default-allow, and forget_unit cannot put it back. Refuse the
+           conflict instead of displacing it. */
+        const char *owner = hybrid_coverage_owner(cov, pin, pout);
+        if (owner && strcmp(owner, unit) != 0) {
+            char w[CNET_CAPSULE_REASON_MAX];
+            snprintf(w, sizeof w, "coverage_port_conflict_owned_by=%.90s", owner);
+            cap_fail(rep, w);
+            goto done;
+        }
         if (hybrid_coverage_record(cov, pin, pout, unit, cin, cout, cov_rows,
                                    cov_in, cov_out) != 0) {
             cap_fail(rep, "coverage_restore_failed");

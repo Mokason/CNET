@@ -310,7 +310,14 @@ static int cnb_add_unit_bytes(CnetBase *b, const char *name,
         return -1;      /* same name, different content: refused */
     }
 
-    /* tag governance, all-or-nothing: check every tag first, then mint */
+    /* ---- PREFLIGHT: every refusal happens before ANY mutation ------------
+       Two orderings used to leave the base half-changed. The blob-collision
+       check ran AFTER tags were minted, so a refused collision kept the tags;
+       and the tag preflight compares each tag against the BASE only, so a unit
+       whose own in/out tags near-miss each other (e.g. "pair_aa"/"pair_ab")
+       passed preflight, minted the first and failed on the second. Preflight
+       everything that can say no, then commit with a tag rollback for the
+       residual mint-order case. */
     for (i = 0; i < n_in; ++i)
         if (in_ports[i].tag[0] && cnb_tag_lookup(b, in_ports[i].tag) < 0 &&
             cnb_tag_near_miss(b, in_ports[i].tag, NULL, 0)) {
@@ -321,29 +328,48 @@ static int cnb_add_unit_bytes(CnetBase *b, const char *name,
             cnb_tag_near_miss(b, out_ports[i].tag, NULL, 0)) {
             free(bytes); return -1;
         }
-    for (i = 0; i < n_in; ++i)
-        if (in_ports[i].tag[0] && cnb_tag_mint(b, in_ports[i].tag, name) < 0) {
-            free(bytes); return -1;
-        }
-    for (i = 0; i < n_out; ++i)
-        if (out_ports[i].tag[0] && cnb_tag_mint(b, out_ports[i].tag, name) < 0) {
-            free(bytes); return -1;
-        }
 
-    /* content-addressed blob: byte-verified dedup, collision refused */
+    /* Blob decision made BEFORE minting so a collision refusal mints nothing. */
     blob_index = b->blob_count;
     for (i = 0; i < b->blob_count; ++i) {
         if (b->blobs[i].digest == digest) {
             if (b->blobs[i].len == len &&
                 memcmp(b->blobs[i].bytes, bytes, len) == 0) {
                 blob_index = i;
-                free(bytes);
-                bytes = NULL;
                 break;
             }
             free(bytes);
             return -1;   /* digest collision, different bytes: refused */
         }
+    }
+
+    /* ---- COMMIT ---------------------------------------------------------
+       Tag mint can still refuse when two of THIS unit's tags near-miss each
+       other, which no base-relative preflight can see. Tags are append-only
+       (cnb_tag_mint pushes and bumps next_mint_seq), so restoring both counters
+       is an exact rollback. */
+    {
+        size_t tag_mark = b->tag_count;
+        unsigned long long seq_mark = b->next_mint_seq;
+        int minted_ok = 1;
+        for (i = 0; i < n_in && minted_ok; ++i)
+            if (in_ports[i].tag[0] &&
+                cnb_tag_mint(b, in_ports[i].tag, name) < 0)
+                minted_ok = 0;
+        for (i = 0; i < n_out && minted_ok; ++i)
+            if (out_ports[i].tag[0] &&
+                cnb_tag_mint(b, out_ports[i].tag, name) < 0)
+                minted_ok = 0;
+        if (!minted_ok) {
+            b->tag_count = tag_mark;
+            b->next_mint_seq = seq_mark;
+            free(bytes);
+            return -1;
+        }
+    }
+    if (blob_index < b->blob_count) {
+        free(bytes);
+        bytes = NULL;
     }
     if (blob_index == b->blob_count) {
         CNB_PUSH(b->blobs, b->blob_count, b->blob_cap, CnbBlob);
