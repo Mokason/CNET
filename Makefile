@@ -2662,7 +2662,7 @@ vision_detection_prep_v2: bin/vd_prep
 	@ROCR_VISIBLE_DEVICES='' HIP_VISIBLE_DEVICES='' CUDA_VISIBLE_DEVICES='' \
 	  timeout 5400 ./bin/vd_prep --root data/voc2007/VOCdevkit/VOC2007 \
 	  --class car --variant v2 --out data/vision_cache_v2 \
-	  --v1cache data/vision_cache --ntest 1000 --workers 16 --replace \
+	  --v1cache data/vision_cache --ntest 1000 --workers 16 \
 	  2>&1 | tee logs/vision/prep_v2.log
 
 vision_detection_bench_v2: vision_detection_eval_test bin/vd_bench

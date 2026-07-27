@@ -378,7 +378,7 @@ static std::string lines_of(std::vector<std::string> v) {
 
 int main(int argc, char **argv) {
     std::string root, cls = "car", outdir = "data/vision_cache", v1cache;
-    int n_test = 1000, workers = 8, replace = 0;
+    int n_test = 1000, workers = 8;
     for (int i = 1; i < argc; i++) {
         std::string a = argv[i];
         if (a == "--root" && i + 1 < argc) root = argv[++i];
@@ -387,7 +387,14 @@ int main(int argc, char **argv) {
         else if (a == "--ntest" && i + 1 < argc) n_test = atoi(argv[++i]);
         else if (a == "--workers" && i + 1 < argc) workers = atoi(argv[++i]);
         else if (a == "--v1cache" && i + 1 < argc) v1cache = argv[++i];
-        else if (a == "--replace") replace = 1;
+        else if (a == "--replace") {
+            fprintf(stderr,
+                "VD_PREP_FAIL replace_retired: in-place cache replacement is no longer\n"
+                "  supported. Publication only ever creates an absent destination, so a\n"
+                "  prep can never destroy an existing cache. Choose a fresh --out path,\n"
+                "  or remove the existing directory deliberately before re-prepping.\n");
+            return 2;
+        }
         else if (a == "--variant" && i + 1 < argc) {
             std::string v = argv[++i];
             if (v == "v1") VAR = V1;
@@ -766,9 +773,13 @@ int main(int argc, char **argv) {
             vd_stage_abort(&st);
             return 6;
         }
-        if (vd_stage_commit(&st, replace) != 0) {
-            fprintf(stderr, "VD_PREP_FAIL publish_refused:%s (destination exists? use --replace)\n",
-                    outdir.c_str());
+        if (vd_stage_commit(&st) != 0) {
+            const char *q = vd_stage_quarantine(&st);
+            if (q) fprintf(stderr, "VD_PREP_NOTE quarantined staging left at: %s/%s\n",
+                           outdir.c_str(), q);
+            fprintf(stderr, "VD_PREP_FAIL publish_refused:%s\n"
+                    "  The destination must not already exist: publication creates it or\n"
+                    "  fails. Nothing is ever swapped out or deleted.\n", outdir.c_str());
             return 6;
         }
         /* Printed so the roots can be pinned in vd_roots.h; the bench refuses

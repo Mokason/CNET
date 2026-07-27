@@ -356,22 +356,46 @@ dilate, so the real saving is the measured 555 s. The console field is named
 
 ### Second multicore run (round-4 code)
 
-| | baseline | multicore run 1 | multicore run 2 |
-|---|---|---|---|
-| `train_s` (main head) | 2975.0 s | 2975.0 s | **2611.6 s** |
-| wall | 3540 s | 2984.9 s | **2622.4 s** |
-| apparent speedup | — | 1.19× | 1.35× |
-| CPU / peak RSS | ~100 % | 137 % / 1.92 GiB | 137 % / 1.92 GiB |
+| | baseline | run 1 | run 2 | run 3 (round-5 code) |
+|---|---|---|---|---|
+| `train_s` (main head) | 2975.0 s | **2975.0 s** | 2611.6 s | 2665.9 s |
+| wall | 3540 s | 2984.9 s | 2622.4 s | **2674.8 s** |
+| apparent speedup | — | **1.19×** | 1.35× | 1.32× |
+| CPU / peak RSS | ~100 % | 137 % / 1.92 GiB | 137 % / 1.92 GiB | 137 % / 1.92 GiB |
 
-**The attributable speedup is 1.19×, not 1.35×.** Run 2's `train_s` was itself 12 % faster
-than the baseline's, so part of its wall reduction is machine variance in the training
-phase rather than the overlap. Run 1 is the clean comparison because its `train_s` matched
-the baseline *exactly* (2975.0 s both times). The observed range across runs is
-**1.19×–1.35×**, and 1.19× is the figure that survives the control.
+**The claimed speedup is 1.19×.** Only run 1 is a controlled comparison: its `train_s`
+matched the baseline *exactly* (2975.0 s both times), so its wall reduction is attributable
+to the overlap. Runs 2 and 3 each had a `train_s` 10–12 % below the baseline, meaning part
+of their larger apparent speedups is machine variance in the training phase itself, not
+parallelism. The observed range is **1.19×–1.35×** and the conservative end is the one
+reported; the larger figures are recorded but not claimed.
+
+All three multicore runs produced bit-identical metrics and the identical
+`btn_calls_total = 3427852`.
 
 Both multicore runs produced bit-identical metrics and an identical
 `btn_calls_total = 3427852`, which is a further determinism signal: the same number of BTN
 initialisations and forward passes were executed in each.
+
+**What the worker evaluates, precisely.** The forked worker trains the label-shuffle head
+and evaluates it on validation *and* on the holdout before the parent reaps it. That
+holdout evaluation is a **pre-registered control** (§7, §10): the shuffle arm's AP is
+recorded as evidence that the head is learning labels rather than a proposal artefact. It
+is not tuning — nothing about the model, threshold, bars or protocol is derived from it,
+and it is computed with the identical full pipeline used for every other arm. The
+bar-bearing holdout evaluation of the main head happens once, in the parent, after the
+worker has been collected.
+
+**Publication is fresh-only.** In-place cache replacement was retired entirely rather than
+made safer. Publication now only ever creates an **absent** destination, via
+`renameat2(RENAME_NOREPLACE)` from the held parent dirfd under a parent-local no-follow
+lock; an existing destination is a hard refusal and no successful path deletes or swaps
+anything. The abort path removes the staging directory only while it is still provably the
+inode that was created, and otherwise leaves it as a reported quarantine. `vd_prep
+--replace` returns a nonzero retired diagnostic and callers choose a fresh `--out` path.
+The previous exchange-and-delete design needed every guarantee to rest on a deletion
+targeting the right inode, which is a check/use gap POSIX cannot fully close; removing the
+capability removes the gap.
 
 **What was deliberately not done.** The dominant cost is four sequential BTN trainings
 (`train_s` 2975 s of a 3540 s serial wall) whose update order is fixed by the protocol.
@@ -392,10 +416,10 @@ ASan+UBSan coverage is **not** the whole benchmark, and should not be read as su
 | Pack parser, manifest schema, artifact root, component-wise traversal, directory-atomic publication, SHA-256 (`vd_pack.c`, `vd_protocol.c`, `vd_io.c`, `vd_sha256.c`) | **ASan+UBSan** | `make vision_detection_integrity_asan`, **135** hostile-input fixtures |
 | Allocation-failure paths in the evaluator, pack loader and manifest parser | **UBSan** (`make vision_detection_allocfail_ubsan`, **13** checks) — **not ASan** | ASan replaces `malloc`/`calloc`/`realloc`, so the linker's `--wrap` cannot intercept them and the injection would silently never fire. The same functions are covered under ASan by the integrity lane above; the injection lane runs under UBSan so the two together cover both concerns. |
 | Evidence gate end to end (`vd_bench` protocol / artifact root / snapshot / prev-holdout / worker / publish paths) | **no sanitizer** — functional negative controls only | `make vision_detection_evidence_test`, **44** fail-closed controls |
-| The scored training run itself (~50 min) | **no** | run optimised and unsanitized; not attempted |
+| The scored training run itself (~44–50 min) | **no sanitizer** | run optimised and unsanitized; not attempted |
+| Extraction (`vd_prep.cpp`, OpenCV) | **no sanitizer** | not sanitized; it produces the cache, and the cache is bound by the artifact root that the scorer verifies |
 
 All focused lanes, and the real `vd_bench` and `vd_prep` binaries, compile with `-Werror`.
-| Extraction (`vd_prep.cpp`, OpenCV) | **no** | not sanitized |
 
 So: the metric path and the file/parse paths that turn bytes into evidence are sanitized
 against hostile input. The long training run is not, and no claim is made that it is.

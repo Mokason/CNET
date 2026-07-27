@@ -513,23 +513,18 @@ int main(void) {
         check(vd_out_write(&o, "hello", 5) == 0, "stage: writes a member");
         check(vd_out_finish(&o) == 0, "stage: finishes a member");
         check(stat(dest, &sb) != 0, "stage: destination is invisible before commit");
-        check(vd_stage_commit(&st, 0) == 0, "stage: commits");
+        check(vd_stage_commit(&st) == 0, "stage: commits");
         check(stat(dest, &sb) == 0 && S_ISDIR(sb.st_mode), "stage: destination appears whole");
 
-        /* an existing destination must not be written into silently */
-        check(vd_stage_begin(dest, &st) == 0, "stage: begins again");
-        check(vd_stage_commit(&st, 0) != 0, "stage: refuses to clobber an existing cache");
-        check(vd_stage_begin(dest, &st) == 0, "stage: begins for replace");
-        check(write_full_cache(&st) == 0, "stage: writes replacement cache");
-        check(vd_out_open(&st, "b.pack", &o) == 0 && vd_out_write(&o, "x", 1) == 0
-              && vd_out_finish(&o) == 0, "stage: writes replacement member");
-        check(vd_stage_commit(&st, 1) == 0, "stage: replaces atomically");
+        /* publishing again over the same destination is always refused */
         {
-            char q[700];
-            snprintf(q, sizeof q, "%s/b.pack", dest);
-            check(stat(q, &sb) == 0, "stage: replacement content is present");
-            snprintf(q, sizeof q, "%s/a.pack", dest);
-            check(stat(q, &sb) != 0, "stage: old content is gone, not mixed");
+            struct stat b1, b2;
+            check(stat(dest, &b1) == 0, "stage: existing destination stat");
+            check(vd_stage_begin(dest, &st) == 0, "stage: begins again");
+            check(write_full_cache(&st) == 0, "stage: second staging is complete");
+            check(vd_stage_commit(&st) != 0, "stage: refuses to publish over an existing cache");
+            check(stat(dest, &b2) == 0 && b1.st_dev == b2.st_dev && b1.st_ino == b2.st_ino,
+                  "stage: the existing cache keeps its exact device+inode");
         }
 
         /* incomplete staging must leave nothing behind */
@@ -672,104 +667,89 @@ int main(void) {
         }
     }
 
-    /* ---- replacement authority ------------------------------------------- */
+    /* ---- publication is fresh-only, and never destroys anything ----------- */
     {
-        char dest[600];
+        char dest[600], decoy[600];
         VdStage st;
+        struct stat before, after, dbefore, dafter;
         FILE *g;
-        struct stat sb;
-        /* an arbitrary directory is not a cache and must not be swapped over */
-        snprintf(dest, sizeof dest, "%s/notacache", DIR);
-        check(vd_mkdir_p_nofollow(dest) == 0, "replace: creates a non-cache directory");
+
+        /* an existing cache destination is a hard refusal, byte- and
+           inode-identical afterwards */
+        snprintf(dest, sizeof dest, "%s/fresh", DIR);
+        check(vd_stage_begin(dest, &st) == 0 && write_full_cache(&st) == 0
+              && vd_stage_commit(&st) == 0, "fresh: publishes into an absent destination");
+        check(stat(dest, &before) == 0 && S_ISDIR(before.st_mode),
+              "fresh: destination exists after publish");
+        check(vd_stage_begin(dest, &st) == 0, "fresh: staging begins over an existing cache");
+        check(write_full_cache(&st) == 0, "fresh: staging is complete");
+        check(vd_stage_commit(&st) != 0, "fresh: existing destination is refused");
+        check(stat(dest, &after) == 0 && after.st_dev == before.st_dev
+              && after.st_ino == before.st_ino,
+              "fresh: existing cache keeps its exact device+inode");
+
+        /* an arbitrary directory is equally safe */
+        snprintf(decoy, sizeof decoy, "%s/arbitrary", DIR);
+        check(vd_mkdir_p_nofollow(decoy) == 0, "fresh: creates an arbitrary directory");
         {
             char fp[800];
-            snprintf(fp, sizeof fp, "%s/precious.txt", dest);
+            snprintf(fp, sizeof fp, "%s/precious.txt", decoy);
             g = fopen(fp, "wb"); if (g) { fputs("KEEP", g); fclose(g); }
         }
-        check(vd_stage_begin(dest, &st) == 0, "replace: staging begins");
-        check(vd_stage_commit(&st, 1) != 0,
-              "replace: refuses to swap over a directory that is not a cache");
+        check(stat(decoy, &dbefore) == 0, "fresh: arbitrary directory stat");
+        check(vd_stage_begin(decoy, &st) == 0 && write_full_cache(&st) == 0
+              && vd_stage_commit(&st) != 0,
+              "fresh: arbitrary existing directory is refused");
+        check(stat(decoy, &dafter) == 0 && dafter.st_dev == dbefore.st_dev
+              && dafter.st_ino == dbefore.st_ino,
+              "fresh: arbitrary directory keeps its exact device+inode");
         {
             char fp[800], rb[16] = {0};
             size_t got = 0;
-            snprintf(fp, sizeof fp, "%s/precious.txt", dest);
+            snprintf(fp, sizeof fp, "%s/precious.txt", decoy);
             g = fopen(fp, "rb");
             if (g) { got = fread(rb, 1, sizeof rb - 1, g); fclose(g); }
             check(got == 4 && !memcmp(rb, "KEEP", 4),
-                  "replace: the non-cache destination is untouched");
+                  "fresh: arbitrary directory contents are byte-identical");
         }
-        /* a plain file as destination */
+        /* a plain file destination */
         {
             char fdst[600];
-            snprintf(fdst, sizeof fdst, "%s/plainfile_dest", DIR);
+            struct stat fb, fa;
+            snprintf(fdst, sizeof fdst, "%s/plainfile_dest2", DIR);
             g = fopen(fdst, "wb"); if (g) { fputs("F", g); fclose(g); }
+            check(stat(fdst, &fb) == 0, "fresh: plain-file destination stat");
             if (vd_stage_begin(fdst, &st) == 0) {
-                check(vd_stage_commit(&st, 1) != 0,
-                      "replace: refuses a non-directory destination");
-            } else check(1, "replace: non-directory destination refused at begin");
-            check(stat(fdst, &sb) == 0 && S_ISREG(sb.st_mode),
-                  "replace: the plain-file destination survives");
+                check(vd_stage_commit(&st) != 0, "fresh: plain-file destination refused");
+            } else check(1, "fresh: plain-file destination refused at begin");
+            check(stat(fdst, &fa) == 0 && fa.st_ino == fb.st_ino && S_ISREG(fa.st_mode),
+                  "fresh: plain-file destination keeps its exact inode");
         }
-    }
-
-    /* ---- destination continuity and verified rollback --------------------- */
-    {
-        static char hook_dest[600], hook_other[600];
-        VdStage st;
-        struct stat a, b;
-
-        /* Build two real caches: `live` is the publish destination, `decoy` is
-           what an attacker swaps in after validation. */
-        snprintf(hook_dest, sizeof hook_dest, "%s/live", DIR);
-        snprintf(hook_other, sizeof hook_other, "%s/decoy", DIR);
-        check(vd_stage_begin(hook_dest, &st) == 0 && write_full_cache(&st) == 0
-              && vd_stage_commit(&st, 0) == 0, "continuity: publishes the live cache");
-        check(vd_stage_begin(hook_other, &st) == 0 && write_full_cache(&st) == 0
-              && vd_stage_commit(&st, 0) == 0, "continuity: publishes the decoy cache");
-        check(stat(hook_dest, &a) == 0 && stat(hook_other, &b) == 0 && a.st_ino != b.st_ino,
-              "continuity: the two caches are distinct inodes");
-
-        /* Swap the destination for the decoy AFTER it has been validated. */
-        g_hook_swap_from = hook_dest;
-        g_hook_swap_to = hook_other;
-        g_hook_phase_to_fire = VD_HOOK_AFTER_VALIDATE;
-        vd_stage_set_hook(swap_hook, NULL);
-        check(vd_stage_begin(hook_dest, &st) == 0, "continuity: staging begins");
-        check(write_full_cache(&st) == 0, "continuity: staging is complete");
-        check(vd_stage_commit(&st, 1) != 0,
-              "continuity: destination changed after validation is refused");
-        vd_stage_set_hook(NULL, NULL);
-        check(stat(hook_other, &b) == 0 && S_ISDIR(b.st_mode),
-              "continuity: the unrelated decoy directory survives");
-        {   /* the decoy's contents must be byte-identical */
-            char fp[800], rb[32] = {0};
-            FILE *g;
-            size_t got = 0;
-            snprintf(fp, sizeof fp, "%s/manifest.txt", hook_other);
-            g = fopen(fp, "rb");
-            if (g) { got = fread(rb, 1, sizeof rb - 1, g); fclose(g); }
-            check(got == strlen("manifest_version 1\n") &&
-                  !memcmp(rb, "manifest_version 1\n", got),
-                  "continuity: decoy contents are byte-identical");
-        }
-
-        /* Force the post-exchange continuity check to fail and require a
-           verified rollback: the original cache must be back at the
-           destination. */
+        /* a deterministic change at the pre-publication hook must not destroy
+           any unrelated inode */
         {
-            struct stat before, after;
-            check(stat(hook_dest, &before) == 0, "rollback: destination exists before");
-            g_hook_phase_to_fire = VD_HOOK_AFTER_EXCHANGE;
-            g_hook_swap_from = hook_dest;
-            g_hook_swap_to = hook_other;
+            char h1[600];
+            struct stat hb, ha, db2;
+            snprintf(h1, sizeof h1, "%s/hooked", DIR);
+            check(vd_stage_begin(h1, &st) == 0 && write_full_cache(&st) == 0
+                  && vd_stage_commit(&st) == 0, "hook: publishes a cache to swap in");
+            check(stat(h1, &hb) == 0, "hook: baseline stat");
+            g_hook_swap_from = decoy;
+            g_hook_swap_to = h1;
+            g_hook_phase_to_fire = VD_HOOK_AFTER_VALIDATE;
             vd_stage_set_hook(swap_hook, NULL);
-            check(vd_stage_begin(hook_dest, &st) == 0, "rollback: staging begins");
-            check(write_full_cache(&st) == 0, "rollback: staging is complete");
-            check(vd_stage_commit(&st, 1) != 0, "rollback: broken continuity is refused");
+            {
+                char h2[600];
+                snprintf(h2, sizeof h2, "%s/hooked_target", DIR);
+                check(vd_stage_begin(h2, &st) == 0 && write_full_cache(&st) == 0,
+                      "hook: staging for the hooked publish");
+                (void)vd_stage_commit(&st);
+            }
             vd_stage_set_hook(NULL, NULL);
-            check(stat(hook_dest, &after) == 0 && S_ISDIR(after.st_mode),
-                  "rollback: a cache is present at the destination");
-            check(stat(hook_other, &b) == 0, "rollback: the decoy still exists");
+            check(stat(h1, &ha) == 0 && stat(decoy, &db2) == 0,
+                  "hook: both directories still exist");
+            check((ha.st_ino == hb.st_ino) || (db2.st_ino == hb.st_ino),
+                  "hook: the original inode was moved, never deleted");
         }
     }
 

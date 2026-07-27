@@ -79,17 +79,21 @@ const char *vd_stage_quarantine(const VdStage *st);
 /* Test-only hook, fired inside vd_stage_commit so the continuity and rollback
    paths can be exercised deterministically instead of raced. */
 typedef enum {
-    VD_HOOK_AFTER_VALIDATE = 1,   /* destination validated, exchange not yet done */
-    VD_HOOK_AFTER_EXCHANGE = 2    /* exchange done, continuity not yet verified */
+    VD_HOOK_AFTER_VALIDATE = 1,   /* stage identity checked, not yet published */
+    VD_HOOK_AFTER_EXCHANGE = 2    /* published, visibility not yet confirmed */
 } VdStageHookPhase;
 void vd_stage_set_hook(void (*fn)(VdStageHookPhase, void *), void *ctx);
 
 /* Rejects a symlinked parent or a symlinked destination outright. */
 int vd_stage_begin(const char *dest, VdStage *st);
 
-/* replace: 0 = fail if the destination exists, 1 = atomically swap it out.
-   Returns 0 only when the complete cache is visible at the destination. */
-int vd_stage_commit(VdStage *st, int replace);
+/* Publish the staged cache into an ABSENT destination, and only that.
+   RENAME_NOREPLACE from the held parent dirfd; if the destination exists, or
+   RENAME_NOREPLACE is unavailable, this fails closed. There is deliberately no
+   replace mode: nothing here ever swaps out or deletes an existing cache, so a
+   publication can never destroy one. Callers that want to re-prep choose a
+   fresh output path. Returns 0 only when the complete cache is visible. */
+int vd_stage_commit(VdStage *st);
 void vd_stage_abort(VdStage *st);
 
 /* Buffered, fully checked writer for one member of the staging directory. */

@@ -49,8 +49,10 @@ static double g_t_fork = 0.0, g_final_train_s = 0.0, g_t_start = 0.0;
 /* Production deadline: the measured shuffle arm is ~1117 s, so 3600 s is more
    than 3x headroom. Tests override it with a short value. */
 static double g_shuffle_deadline_s = 3600.0;
+static double g_worker_deadline = 0.0;
 static const char *g_worker_fault = "";
-static int g_parent_fault_after_fork = 0;   /* set by any non-finite metric or NMS refusal */
+static int g_parent_fault_after_fork = 0;
+static int g_fail_random_init = 0;   /* set by any non-finite metric or NMS refusal */
 static const char *G_VARIANT = "unknown";
 static const char *G_FRONTEND = "unknown";
 
@@ -436,34 +438,48 @@ static Port CLSP(void) {
 typedef struct { int ok; double ap_val, ap_test, elapsed; } ShufResult;
 
 static volatile sig_atomic_t g_child_pid_sig;   /* async-signal-safe copy */
+static volatile sig_atomic_t g_signal_caught;   /* set by the handler, read by control */
 
+/* Async-signal-safe only: terminate the child and record the signal. It does
+   NOT _exit -- normal control performs the bounded reap, so a signal can never
+   leave the worker behind or skip collection. */
 static void child_signal_cleanup(int sig) {
-    if (g_child_pid_sig > 0) kill((pid_t)g_child_pid_sig, SIGKILL);
-    _exit(128 + sig);
+    g_signal_caught = sig;
+    if (g_child_pid_sig > 0) kill((pid_t)g_child_pid_sig, SIGTERM);
 }
 
-/* Bounded reap: SIGTERM, wait, escalate to SIGKILL, wait again. Returns 0 only
-   if the child was actually collected. */
-static int reap_child(pid_t pid, int grace_ms) {
-    int status = 0, waited = 0;
+/* Bounded, non-blocking collection against an absolute monotonic deadline:
+   TERM, WNOHANG poll, escalate to KILL, WNOHANG poll again. Never uses a
+   blocking waitpid. Returns 0 only if the child was actually collected. */
+static int reap_child_bounded(pid_t pid, double term_deadline, double kill_deadline) {
+    int status = 0;
     if (pid <= 0) return 0;
     kill(pid, SIGTERM);
-    while (waited < grace_ms) {
+    while (now_s() < term_deadline) {
         pid_t r = waitpid(pid, &status, WNOHANG);
         if (r == pid) { g_child_pid_sig = 0; return 0; }
         if (r < 0 && errno != EINTR) break;
         usleep(20000);
-        waited += 20;
     }
     kill(pid, SIGKILL);
-    for (waited = 0; waited < 2000; waited += 20) {
+    while (now_s() < kill_deadline) {
         pid_t r = waitpid(pid, &status, WNOHANG);
         if (r == pid) { g_child_pid_sig = 0; return 0; }
         if (r < 0 && errno != EINTR) break;
         usleep(20000);
     }
-    g_child_pid_sig = 0;
-    return -1;   /* could not collect: caller must fail closed */
+    return -1;   /* could not collect: caller must fail loud and report the PID */
+}
+
+/* Collect an already-exited child without ever blocking indefinitely. */
+static int wait_child_deadline(pid_t pid, int *status, double deadline) {
+    for (;;) {
+        pid_t r = waitpid(pid, status, WNOHANG);
+        if (r == pid) { g_child_pid_sig = 0; return 0; }
+        if (r < 0 && errno != EINTR) return -1;
+        if (now_s() >= deadline) return -1;
+        usleep(20000);
+    }
 }
 
 /* Read exactly n bytes before the deadline, tolerating EINTR and short reads.
@@ -622,6 +638,7 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--btn-fail-at") && i + 1 < argc) g_btn_fail_at = atol(argv[++i]);
         else if (!strcmp(argv[i], "--worker-fault") && i + 1 < argc) g_worker_fault = argv[++i];
         else if (!strcmp(argv[i], "--parent-fault-after-fork")) g_parent_fault_after_fork = 1;
+        else if (!strcmp(argv[i], "--fail-random-init")) g_fail_random_init = 1;
         else if (!strcmp(argv[i], "--shuffle-deadline-s") && i + 1 < argc)
             g_shuffle_deadline_s = atof(argv[++i]);
         else if (!strcmp(argv[i], "--jobs") && i + 1 < argc) {
@@ -913,9 +930,14 @@ int main(int argc, char **argv) {
             }
             if (write(shuf_pipe[1], &r, sizeof r) != (ssize_t)sizeof r) _exit(2);
             close(shuf_pipe[1]);
+            if (!strcmp(g_worker_fault, "nowait")) for (;;) pause();   /* message, no exit */
             _exit(0);
         }
         close(shuf_pipe[1]);                  /* parent never writes */
+        /* ONE absolute monotonic deadline, fixed at the successful fork. The
+           message read and the post-message wait both consume it, so parent
+           training time cannot silently extend the worker's budget. */
+        g_worker_deadline = now_s() + g_shuffle_deadline_s;
         g_child_pid_sig = (sig_atomic_t)shuf_pid;
         signal(SIGINT, child_signal_cleanup);
         signal(SIGTERM, child_signal_cleanup);
@@ -939,7 +961,16 @@ int main(int argc, char **argv) {
     printf("head trained hidden=%lu train_s=%.1f\n", (unsigned long)head.hidden_count, train_s);
 
     /* randomized/untrained ablation: same shape, never trained */
-    if (vd_btn_init_guarded(&rndhead, DIM, NCLS, 24, 192, 0.5, 999u, "random") != 0) return 5;
+    if (g_fail_random_init) {
+        printf("VD_BENCH_FAIL btn_init_failed:random (injected)\n");
+        g_eval_fault = 1;
+        rc_final = 5;
+        goto worker_cleanup;
+    }
+    if (vd_btn_init_guarded(&rndhead, DIM, NCLS, 24, 192, 0.5, 999u, "random") != 0) {
+        rc_final = 5;
+        goto worker_cleanup;
+    }
     btn_set_ports(&rndhead, RAWP(), CLSP());
 
     /* linear logistic baseline on identical features */
@@ -950,40 +981,38 @@ int main(int argc, char **argv) {
     if (shuf_pid > 0) {
         ShufResult r;
         int status = 0, bad = 0;
-        pid_t w;
-        double deadline = now_s() + g_shuffle_deadline_s;
         memset(&r, 0, sizeof r);
-        if (read_exact_deadline(shuf_pipe[0], &r, sizeof r, deadline) != 0) {
+        if (read_exact_deadline(shuf_pipe[0], &r, sizeof r, g_worker_deadline) != 0) {
             printf("VD_BENCH_FAIL shuffle_worker_no_message (timeout/EOF/partial)\n");
             bad = 1;
         }
         close(shuf_pipe[0]);
-        if (bad) {
-            if (reap_child(shuf_pid, 2000) != 0)
-                printf("VD_BENCH_FAIL shuffle_worker_unreapable\n");
-            g_eval_fault = 1;
-        } else {
-            do { w = waitpid(shuf_pid, &status, 0); } while (w < 0 && errno == EINTR);
-            g_child_pid_sig = 0;
-            if (w != shuf_pid) {
-                printf("VD_BENCH_FAIL shuffle_worker_wait_failed\n"); g_eval_fault = 1;
+        shuf_pipe[0] = -1;
+        if (g_signal_caught) {
+            printf("VD_BENCH_FAIL interrupted_by_signal=%d\n", (int)g_signal_caught);
+            bad = 1;
+        }
+        if (!bad) {
+            /* The message arriving does not mean the child exited: the wait is
+               bounded by the SAME absolute deadline and never blocks. */
+            if (wait_child_deadline(shuf_pid, &status, g_worker_deadline) != 0) {
+                printf("VD_BENCH_FAIL shuffle_worker_wait_timeout\n");
+                bad = 1;
             } else if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
-                printf("VD_BENCH_FAIL shuffle_worker_status=%d\n", status); g_eval_fault = 1;
+                printf("VD_BENCH_FAIL shuffle_worker_status=%d\n", status);
+                bad = 1;
             } else if (r.ok != 1 || !isfinite(r.ap_val) || !isfinite(r.ap_test) ||
                        !isfinite(r.elapsed)) {
-                printf("VD_BENCH_FAIL shuffle_worker_bad_result\n"); g_eval_fault = 1;
+                printf("VD_BENCH_FAIL shuffle_worker_bad_result\n");
+                bad = 1;
             } else {
                 shuf = r;
+                shuf_pid = -1;              /* collected */
             }
         }
-        shuf_pid = -1;
+        if (bad) { g_eval_fault = 1; rc_final = 6; goto worker_cleanup; }
         signal(SIGINT, SIG_DFL);
         signal(SIGTERM, SIG_DFL);
-        if (g_eval_fault) {
-            printf("VD_BENCH_FAIL shuffle_worker_failed\n");
-            rc_final = 6;
-            goto done;
-        }
     } else {
         double c0 = now_s();
         shuf.ok = run_shuffle_arm(&va, &te, X, Y, n, &shuf.ap_val, &shuf.ap_test);
@@ -1094,7 +1123,7 @@ int main(int argc, char **argv) {
     int _n = snprintf(buf + len, cap - len, __VA_ARGS__); \
     if (_n < 0 || (size_t)_n >= cap - len) trunc = 1; else len += (size_t)_n; \
 } while (0)
-            if (!buf) { printf("VD_BENCH_FAIL json_alloc\n"); return 7; }
+            if (!buf) { printf("VD_BENCH_FAIL json_alloc\n"); rc_final = 7; goto worker_cleanup; }
             JS("{\n  \"schema_version\": 2,\n");
             JS("  \"gpu_policy\": \"CPU only; ROCR/HIP/CUDA_VISIBLE_DEVICES empty\",\n");
             JS("  \"dataset\": \"%s\", \"class\": \"%s\",\n", PROTO->dataset, PROTO->cls);
@@ -1137,11 +1166,12 @@ int main(int argc, char **argv) {
             JS("  \"verdict_level_c\": \"VISION_SPECIALIST_COMPETES_WITHHELD\",\n");
             JS("  \"verdict_level_c_reason\": \"no pretrained reference detector run in this pass\"\n}\n");
 #undef JS
-            if (trunc) { free(buf); printf("VD_BENCH_FAIL json_truncated\n"); return 7; }
+            if (trunc) { free(buf); printf("VD_BENCH_FAIL json_truncated\n"); rc_final = 7; goto worker_cleanup; }
             if (vd_publish_file(jsonp, buf, len) != 0) {
                 free(buf);
                 printf("VD_BENCH_FAIL json_publish_failed:%s\n", jsonp);
-                return 7;
+                rc_final = 7;
+                goto worker_cleanup;
             }
             free(buf);
             printf("results published: %s (%zu bytes)\n", jsonp, len);
@@ -1153,18 +1183,21 @@ int main(int argc, char **argv) {
     }
 
 worker_cleanup:
+    /* The single exit route while a worker may be live. Every post-fork failure
+       path -- training, random-head init, allocation, evaluation, signal,
+       publication -- arrives here rather than returning. */
     if (shuf_pid > 0) {
-        /* the only way out while a worker is live */
-        close(shuf_pipe[0]);
-        if (reap_child(shuf_pid, 2000) != 0)
-            printf("VD_BENCH_FAIL shuffle_worker_unreapable\n");
+        if (shuf_pipe[0] >= 0) { close(shuf_pipe[0]); shuf_pipe[0] = -1; }
+        if (reap_child_bounded(shuf_pid, now_s() + 2.0, now_s() + 4.0) != 0) {
+            printf("VD_BENCH_FAIL shuffle_worker_uncollectable pid=%d\n", (int)shuf_pid);
+        }
         shuf_pid = -1;
         signal(SIGINT, SIG_DFL);
         signal(SIGTERM, SIG_DFL);
         if (!rc_final) rc_final = 6;
         g_eval_fault = 1;
     }
-done:
+    if (g_signal_caught && !rc_final) rc_final = 128 + (int)g_signal_caught;
     free(X); free(Y);
     free_pack(&tr); free_pack(&va);
     btn_free(&head); btn_free(&rndhead);

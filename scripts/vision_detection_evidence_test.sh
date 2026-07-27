@@ -414,9 +414,79 @@ worker_case "parent faults after fork" \
   $BENCH --protocol synthetic-test --cache "$W/cache" --prev-test "$W/prev.pack" \
          --jobs 2 --parent-fault-after-fork --shuffle-deadline-s 20 --json "$JSON"
 build_cache
+worker_case "message arrives but worker never exits" \
+  $BENCH --protocol synthetic-test --cache "$W/cache" --prev-test "$W/prev.pack" \
+         --jobs 2 --worker-fault nowait --shuffle-deadline-s 4 --json "$JSON"
+build_cache
 worker_case "BTN init fails after fork" \
   $BENCH --protocol synthetic-test --cache "$W/cache" --prev-test "$W/prev.pack" \
          --jobs 2 --btn-fail-at 4 --shuffle-deadline-s 20 --json "$JSON"
+
+# random-head init fails AFTER the fork: must route through cleanup, not return
+build_cache
+worker_case "random-head init fails after fork" \
+  $BENCH --protocol synthetic-test --cache "$W/cache" --prev-test "$W/prev.pack" \
+         --jobs 2 --fail-random-init --shuffle-deadline-s 20 --json "$JSON"
+
+# ---- signals delivered to the parent must not leave the worker behind ------
+for sig in INT TERM; do
+  build_cache
+  $BENCH --protocol synthetic-test --cache "$W/cache" --prev-test "$W/prev.pack" \
+         --jobs 2 --worker-fault hang --shuffle-deadline-s 120 --json "$JSON" \
+         >"$W/sig_$sig.out" 2>&1 &
+  bpid=$!
+  # wait until the worker exists, then signal the parent
+  for _ in $(seq 1 100); do
+    kids=$(pgrep -P $bpid 2>/dev/null | wc -l)
+    [ "$kids" -ge 1 ] && break
+    sleep 0.1
+  done
+  kidpid=$(pgrep -P $bpid 2>/dev/null | head -1)
+  kill -$sig $bpid 2>/dev/null
+  wait $bpid 2>/dev/null; rc=$?
+  sleep 0.5
+  checks=$((checks+1))
+  if [ -n "${kidpid:-}" ] && kill -0 "$kidpid" 2>/dev/null; then
+    echo "  SIG$sig to parent: FAIL (worker $kidpid still alive)"; fails=$((fails+1))
+  elif grep -q "VISION_DETECTION_MECHANISM_PASS" "$W/sig_$sig.out" 2>/dev/null; then
+    echo "  SIG$sig to parent: FAIL (published a verdict)"; fails=$((fails+1))
+  else
+    echo "  SIG$sig to parent: PASS (exit $rc, worker gone)"
+  fi
+done
+
+# repeated runs must leave no zombies or orphans
+build_cache
+zbefore=$(ps -eo stat= | grep -c '^Z' || true)
+for _ in 1 2 3; do
+  timeout 200 $BENCH --protocol synthetic-test --cache "$W/cache" \
+    --prev-test "$W/prev.pack" --jobs 2 --json "$JSON" >/dev/null 2>&1
+done
+sleep 0.5
+zafter=$(ps -eo stat= | grep -c '^Z' || true)
+checks=$((checks+1))
+if [ "$zafter" -le "$zbefore" ]; then
+  echo "  repeated runs leave no zombies: PASS"
+else
+  echo "  repeated runs leave no zombies: FAIL ($zbefore -> $zafter)"; fails=$((fails+1))
+fi
+
+# ---- source assertion: destructive publication must be absent --------------
+checks=$((checks+1))
+if grep -qE "RENAME_EXCHANGE|dest_is_cache" tools/vision_detection/vd_io.c; then
+  echo "  production publication has no exchange/replace: FAIL"; fails=$((fails+1))
+elif ! grep -q "RENAME_NOREPLACE" tools/vision_detection/vd_io.c; then
+  echo "  production publication has no exchange/replace: FAIL (no NOREPLACE)"; fails=$((fails+1))
+else
+  echo "  production publication has no exchange/replace: PASS"
+fi
+checks=$((checks+1))
+prep_out=$(./bin/vd_prep --root /nonexistent --replace 2>&1 || true)
+if grep -q "replace_retired" <<<"$prep_out"; then
+  echo "  prep --replace is retired with a diagnostic: PASS"
+else
+  echo "  prep --replace is retired with a diagnostic: FAIL"; fails=$((fails+1))
+fi
 
 # jobs=1 and jobs=2 must both produce a complete, published run
 for j in 1 2; do
