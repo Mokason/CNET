@@ -21,6 +21,7 @@
 #include "../tools/vision_detection/vd_eval.h"
 #include "../tools/vision_detection/vd_io.h"
 #include "../tools/vision_detection/vd_pack.h"
+#include "../tools/vision_detection/vd_protocol.h"
 #include "../tools/vision_detection/vd_sha256.h"
 
 static int failures, checks;
@@ -293,6 +294,257 @@ int main(void) {
         d[1] = (VdDet){{0, 0, -1, 10}, 0.8, 0};
         n = vd_nms(d, 2, 0.3, keep);
         check(n == VD_NMS_FAIL, "eval: nms refuses a malformed box");
+    }
+
+    /* ---- strict manifest schema ------------------------------------------
+       A manifest is an identity claim; anything ambiguous about it must be
+       refused rather than interpreted generously. */
+    {
+        char mp[600], err[256];
+        VdManifest m;
+        FILE *f;
+        const char *base =
+            "manifest_version 1\nvariant v2\ndataset PASCAL_VOC_2007\nclass car\n"
+            "split_key sha256_content_hash_trainval\nseed 20260727\n"
+            "hog_side 64\ncolor 1\nhog_dim 1764\npca_dim 256\n"
+            "ss_width 300\nmax_prop 300\nmin_side 16\n"
+            "nms_iou_x100 30\nmatch_iou_x100 50\n"
+            "test_offset 1000\ntest_count 1000\ntrain_img 4042\nval_img 969\ntest_img 1000\n"
+            "train_prop 10\nval_prop 10\ntest_prop 10\n"
+            "pca_fit_images 600\npca_fit_rows 162983\n"
+            "trainval_id_overlap 0\ntrainval_content_overlap 0\n"
+            "prev_test_ids_checked 1000\nprev_test_sha_checked 1000\n"
+            "prev_test_id_overlap 0\nprev_test_content_overlap 0\n"
+            "sha256_prev_test_pack 1111111111111111111111111111111111111111111111111111111111111111\n"
+            "sha256_train_pack 2222222222222222222222222222222222222222222222222222222222222222\n"
+            "sha256_val_pack 3333333333333333333333333333333333333333333333333333333333333333\n"
+            "sha256_test_pack 4444444444444444444444444444444444444444444444444444444444444444\n"
+            "sha256_pca_bin 5555555555555555555555555555555555555555555555555555555555555555\n"
+            "sha256_ids_train 6666666666666666666666666666666666666666666666666666666666666666\n"
+            "sha256_ids_val 7777777777777777777777777777777777777777777777777777777777777777\n"
+            "sha256_ids_test 8888888888888888888888888888888888888888888888888888888888888888\n"
+            "sha256_content_train 9999999999999999999999999999999999999999999999999999999999999999\n"
+            "sha256_content_val aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n"
+            "sha256_content_test bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n"
+            "id_root_train cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\n"
+            "id_root_val dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\n"
+            "id_root_test eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee\n"
+            "content_root_train ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff\n"
+            "content_root_val 0000000000000000000000000000000000000000000000000000000000000000\n"
+            "content_root_test 1010101010101010101010101010101010101010101010101010101010101010\n";
+        snprintf(mp, sizeof mp, "%s/manifest.txt", DIR);
+
+#define WRITE_MAN(body) do { f = fopen(mp, "wb"); fputs((body), f); fclose(f); } while (0)
+        WRITE_MAN(base);
+        check(vd_manifest_parse(mp, &m, err, sizeof err) == 0,
+              "manifest: complete well-formed manifest parses");
+
+        {   /* unknown key */
+            char b[8192]; snprintf(b, sizeof b, "%sextra_key 1\n", base);
+            WRITE_MAN(b);
+            check(vd_manifest_parse(mp, &m, err, sizeof err) != 0, "manifest: unknown key refused");
+        }
+        {   /* duplicate key */
+            char b[8192]; snprintf(b, sizeof b, "%sseed 20260727\n", base);
+            WRITE_MAN(b);
+            check(vd_manifest_parse(mp, &m, err, sizeof err) != 0, "manifest: duplicate key refused");
+        }
+        {   /* missing key */
+            char b[8192]; const char *cut = strstr(base, "seed 20260727\n");
+            size_t pre = (size_t)(cut - base);
+            snprintf(b, sizeof b, "%.*s%s", (int)pre, base, cut + strlen("seed 20260727\n"));
+            WRITE_MAN(b);
+            check(vd_manifest_parse(mp, &m, err, sizeof err) != 0, "manifest: missing key refused");
+        }
+        {   /* whitespace smuggling */
+            char b[8192]; snprintf(b, sizeof b, " %s", base);
+            WRITE_MAN(b);
+            check(vd_manifest_parse(mp, &m, err, sizeof err) != 0, "manifest: leading space refused");
+        }
+        {   /* tab-separated */
+            char b[8192]; snprintf(b, sizeof b, "%s", base);
+            { char *t = strstr(b, "seed 20260727"); if (t) t[4] = '\t'; }
+            WRITE_MAN(b);
+            check(vd_manifest_parse(mp, &m, err, sizeof err) != 0, "manifest: tab separator refused");
+        }
+        {   /* trailing bytes without newline */
+            char b[8192]; snprintf(b, sizeof b, "%strailing", base);
+            WRITE_MAN(b);
+            check(vd_manifest_parse(mp, &m, err, sizeof err) != 0, "manifest: trailing bytes refused");
+        }
+        {   /* malformed number */
+            char b[8192]; snprintf(b, sizeof b, "%s", base);
+            { char *t = strstr(b, "seed 20260727"); if (t) memcpy(t + 5, "2026072x", 8); }
+            WRITE_MAN(b);
+            check(vd_manifest_parse(mp, &m, err, sizeof err) != 0, "manifest: non-numeric value refused");
+        }
+        {   /* overflow */
+            char b[8192]; snprintf(b, sizeof b, "%s", base);
+            { char *t = strstr(b, "train_prop 10"); if (t) memcpy(t + 11, "99999999999999999999", 20); }
+            WRITE_MAN(b);
+            check(vd_manifest_parse(mp, &m, err, sizeof err) != 0, "manifest: overflowing number refused");
+        }
+        {   /* short digest */
+            char b[8192]; snprintf(b, sizeof b, "%s", base);
+            { char *t = strstr(b, "id_root_test ee"); if (t) memcpy(t + 13, "eeee\n", 5); }
+            WRITE_MAN(b);
+            check(vd_manifest_parse(mp, &m, err, sizeof err) != 0, "manifest: malformed digest refused");
+        }
+        {   /* blank line */
+            char b[8192]; snprintf(b, sizeof b, "%s\n", base);
+            WRITE_MAN(b);
+            check(vd_manifest_parse(mp, &m, err, sizeof err) != 0, "manifest: blank line refused");
+        }
+#undef WRITE_MAN
+    }
+
+    /* ---- protocol identity is not negotiable by the cache ---------------- */
+    {
+        const VdProtocol *p = vd_protocol_get("v2");
+        check(p != NULL, "protocol: v2 is registered");
+        if (p) {
+            check(p->requires_prev == 1,
+                  "protocol: v2 requires the spent-holdout check unconditionally");
+            check(p->test_offset == 1000 && p->test_count == 1000,
+                  "protocol: v2 holdout slice is pinned at [1000,2000)");
+            check(p->seed == 20260727 && !strcmp(p->cls, "car"),
+                  "protocol: v2 seed and class are pinned");
+            check(p->train_img == 4042 && p->val_img == 969,
+                  "protocol: v2 train/val counts are pinned");
+            check(p->pca_fit_images == 600 && p->pca_fit_rows == 162983,
+                  "protocol: v2 PCA-fit provenance is pinned");
+            check(p->hog_side == 64 && p->color == 1 && p->hog_dim == 1764 && p->pca_dim == 256,
+                  "protocol: v2 descriptor config is pinned");
+            check(p->ss_width == 300 && p->max_prop == 300 && p->min_side == 16,
+                  "protocol: v2 proposal parameters are pinned");
+            check(p->prev_test_count == 1000 && strlen(p->prev_pack_sha) == 64,
+                  "protocol: v2 previous-holdout count and digest are pinned");
+        }
+        check(vd_protocol_get("v0") == NULL, "protocol: unknown name is refused");
+    }
+
+    /* A manifest that self-declares a weaker protocol must not satisfy v2.
+       This is Codex's bypass expressed at the unit level. */
+    {
+        const VdProtocol *p = vd_protocol_get("v2");
+        VdManifest m;
+        char err[256];
+        memset(&m, 0, sizeof m);
+        m.manifest_version = 1;
+        snprintf(m.variant, sizeof m.variant, "v2");
+        snprintf(m.dataset, sizeof m.dataset, "PASCAL_VOC_2007");
+        snprintf(m.cls, sizeof m.cls, "car");
+        snprintf(m.split_key, sizeof m.split_key, "sha256_content_hash_trainval");
+        m.seed = 20260727;
+        m.hog_side = 64; m.color = 1; m.hog_dim = 1764; m.pca_dim = 256;
+        m.ss_width = 300; m.max_prop = 300; m.min_side = 16;
+        m.nms_iou_x100 = 30; m.match_iou_x100 = 50;
+        m.test_offset = 0;            /* <-- the bypass */
+        m.test_count = 1000; m.test_img = 1000;
+        m.train_img = 4042; m.val_img = 969;
+        m.pca_fit_images = 600; m.pca_fit_rows = 162983;
+        check(vd_manifest_check(&m, p, err, sizeof err) != 0,
+              "protocol: cache declaring test_offset 0 cannot satisfy v2");
+        m.test_offset = 1000;
+        m.cls[0] = 'b';
+        check(vd_manifest_check(&m, p, err, sizeof err) != 0, "protocol: wrong class refused");
+        snprintf(m.cls, sizeof m.cls, "car");
+        m.seed = 1;
+        check(vd_manifest_check(&m, p, err, sizeof err) != 0, "protocol: wrong seed refused");
+        m.seed = 20260727; m.pca_fit_rows = 5;
+        check(vd_manifest_check(&m, p, err, sizeof err) != 0,
+              "protocol: wrong PCA-fit provenance refused");
+        m.pca_fit_rows = 162983; m.train_img = 10;
+        check(vd_manifest_check(&m, p, err, sizeof err) != 0, "protocol: wrong train count refused");
+        m.train_img = 4042; m.trainval_id_overlap = 1;
+        check(vd_manifest_check(&m, p, err, sizeof err) != 0,
+              "protocol: nonzero declared leakage refused");
+    }
+
+    /* ---- directory-atomic cache publication ------------------------------
+       A cache is only meaningful whole, and a planted symlink at any member
+       path must never be written through. */
+    {
+        char dest[600], ext[600], link[700], probe[700];
+        struct stat sb;
+        VdStage st;
+        VdOut o;
+        FILE *f;
+
+        snprintf(dest, sizeof dest, "%s/cachepub", DIR);
+        check(vd_stage_begin(dest, &st) == 0, "stage: begins on a clean destination");
+        check(vd_out_open(&st, "a.pack", &o) == 0, "stage: creates a member");
+        check(vd_out_write(&o, "hello", 5) == 0, "stage: writes a member");
+        check(vd_out_finish(&o) == 0, "stage: finishes a member");
+        check(stat(dest, &sb) != 0, "stage: destination is invisible before commit");
+        check(vd_stage_commit(&st, 0) == 0, "stage: commits");
+        check(stat(dest, &sb) == 0 && S_ISDIR(sb.st_mode), "stage: destination appears whole");
+
+        /* an existing destination must not be written into silently */
+        check(vd_stage_begin(dest, &st) == 0, "stage: begins again");
+        check(vd_stage_commit(&st, 0) != 0, "stage: refuses to clobber an existing cache");
+        check(vd_stage_begin(dest, &st) == 0, "stage: begins for replace");
+        check(vd_out_open(&st, "b.pack", &o) == 0 && vd_out_write(&o, "x", 1) == 0
+              && vd_out_finish(&o) == 0, "stage: writes replacement member");
+        check(vd_stage_commit(&st, 1) == 0, "stage: replaces atomically");
+        {
+            char q[700];
+            snprintf(q, sizeof q, "%s/b.pack", dest);
+            check(stat(q, &sb) == 0, "stage: replacement content is present");
+            snprintf(q, sizeof q, "%s/a.pack", dest);
+            check(stat(q, &sb) != 0, "stage: old content is gone, not mixed");
+        }
+
+        /* incomplete staging must leave nothing behind */
+        snprintf(ext, sizeof ext, "%s/aborted", DIR);
+        check(vd_stage_begin(ext, &st) == 0, "stage: begins for abort case");
+        check(vd_out_open(&st, "partial.pack", &o) == 0 && vd_out_write(&o, "zz", 2) == 0
+              && vd_out_finish(&o) == 0, "stage: writes into aborted staging");
+        vd_stage_abort(&st);
+        check(stat(ext, &sb) != 0, "stage: aborted staging never becomes visible");
+
+        /* a symlinked destination is refused outright */
+        snprintf(probe, sizeof probe, "%s/external_target", DIR);
+        if (vd_mkdir_p(probe) == 0) {
+            snprintf(link, sizeof link, "%s/linked_cache", DIR);
+            (void)unlink(link);
+            if (symlink(probe, link) == 0) {
+                check(vd_stage_begin(link, &st) != 0, "stage: symlinked destination refused");
+            } else check(1, "stage: symlink destination case skipped");
+        }
+        /* a symlinked PARENT is refused */
+        {
+            char linkp[700], inner[900];
+            snprintf(linkp, sizeof linkp, "%s/linked_parent", DIR);
+            (void)unlink(linkp);
+            if (symlink(probe, linkp) == 0) {
+                snprintf(inner, sizeof inner, "%s/child", linkp);
+                check(vd_stage_begin(inner, &st) != 0, "stage: symlinked parent refused");
+            } else check(1, "stage: symlink parent case skipped");
+        }
+        /* a planted member symlink must not be written through */
+        {
+            char target[700], staged[900];
+            snprintf(target, sizeof target, "%s/never_touch", DIR);
+            f = fopen(target, "wb"); if (f) { fputs("ORIGINAL", f); fclose(f); }
+            snprintf(dest, sizeof dest, "%s/plantcache", DIR);
+            if (vd_stage_begin(dest, &st) == 0) {
+                snprintf(staged, sizeof staged, "%s/%s/c.pack", DIR, st.stage);
+                if (symlink(target, staged) == 0) {
+                    check(vd_out_open(&st, "c.pack", &o) != 0,
+                          "stage: refuses to open through a planted member symlink");
+                } else check(1, "stage: planted member case skipped");
+                vd_stage_abort(&st);
+            }
+            {   /* the external file must be byte-identical */
+                char rb[32] = {0};
+                size_t got = 0;
+                f = fopen(target, "rb");
+                if (f) { got = fread(rb, 1, sizeof rb - 1, f); fclose(f); }
+                check(got == 8 && !memcmp(rb, "ORIGINAL", 8),
+                      "stage: external symlink target is unmodified");
+            }
+        }
     }
 
     printf("checks=%d failures=%d\n", checks, failures);

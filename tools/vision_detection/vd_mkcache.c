@@ -12,6 +12,7 @@
 
 #include "vd_io.h"
 #include "vd_pack.h"
+#include "vd_protocol.h"
 #include "vd_sha256.h"
 
 static void w32(FILE *f, int32_t v) { fwrite(&v, 4, 1, f); }
@@ -59,7 +60,8 @@ int main(int argc, char **argv) {
     int test_offset = 1000, prev_count = 40, prev_base = 900000;
     int i;
     char p[VD_PATH_MAX], sh_tr[65], sh_va[65], sh_te[65], sh_pca[65], sh_prev[65];
-    char body[4096];
+    char sh_side[6][65], rt[6][65];
+    char body[8192];
     size_t len;
     FILE *f;
 
@@ -99,26 +101,80 @@ int main(int argc, char **argv) {
     snprintf(p, sizeof p, "%s/test.pack", out);  if (vd_sha256_file(p, sh_te) != 0) return 3;
     snprintf(p, sizeof p, "%s/pca.bin", out);    if (vd_sha256_file(p, sh_pca) != 0) return 3;
 
+    {   /* sidecars, so the gate has something to recompute roots from */
+        const char *names[6] = {"ids_train.txt","ids_val.txt","ids_test.txt",
+                                "content_train.txt","content_val.txt","content_test.txt"};
+        int counts[6]; int bases[6]; int k2;
+        counts[0]=n_tr; counts[1]=n_va; counts[2]=n_te;
+        counts[3]=n_tr; counts[4]=n_va; counts[5]=n_te;
+        bases[0]=100000; bases[1]=200000; bases[2]=300000;
+        bases[3]=100000; bases[4]=200000; bases[5]=300000;
+        for (k2 = 0; k2 < 6; k2++) {
+            int q;
+            snprintf(p, sizeof p, "%s/%s", out, names[k2]);
+            f = fopen(p, "wb");
+            if (!f) return 3;
+            for (q = 0; q < counts[k2]; q++) {
+                if (k2 < 3) fprintf(f, "%06d\n", bases[k2] + q);
+                else fprintf(f, "%064d\n", bases[k2] + q);
+            }
+            fclose(f);
+        }
+    }
+    {
+        const char *names[6] = {"ids_train.txt","ids_val.txt","ids_test.txt",
+                                "content_train.txt","content_val.txt","content_test.txt"};
+        int k2;
+        for (k2 = 0; k2 < 6; k2++) {
+            snprintf(p, sizeof p, "%s/%s", out, names[k2]);
+            if (vd_sha256_file(p, sh_side[k2]) != 0) return 3;
+            if (vd_root_of_file(p, rt[k2], NULL) != 0) return 3;
+        }
+    }
+
     len = (size_t)snprintf(body, sizeof body,
-        "manifest_version 1\nvariant %s\nclass car\nseed 20260727\n"
+        "manifest_version 1\nvariant %s\ndataset SYNTHETIC_TEST\nclass car\n"
+        "split_key sha256_content_hash_trainval\nseed 20260727\n"
         "hog_side 64\ncolor 1\nhog_dim 1764\npca_dim %d\n"
+        "ss_width 300\nmax_prop 300\nmin_side 16\n"
+        "nms_iou_x100 30\nmatch_iou_x100 50\n"
         "test_offset %d\ntest_count %d\n"
         "train_img %d\nval_img %d\ntest_img %d\n"
         "train_prop %d\nval_prop %d\ntest_prop %d\n"
         "pca_fit_images 2\npca_fit_rows 8\n"
-        "split_key sha256_content_hash_trainval\n"
         "trainval_id_overlap 0\ntrainval_content_overlap 0\n"
         "prev_test_ids_checked %d\nprev_test_sha_checked %d\n"
         "prev_test_id_overlap 0\nprev_test_content_overlap 0\n"
         "sha256_prev_test_pack %s\n"
         "sha256_train_pack %s\nsha256_val_pack %s\n"
-        "sha256_test_pack %s\nsha256_pca_bin %s\n",
+        "sha256_test_pack %s\nsha256_pca_bin %s\n"
+        "sha256_ids_train %s\nsha256_ids_val %s\nsha256_ids_test %s\n"
+        "sha256_content_train %s\nsha256_content_val %s\nsha256_content_test %s\n"
+        "id_root_train %s\nid_root_val %s\nid_root_test %s\n"
+        "content_root_train %s\ncontent_root_val %s\ncontent_root_test %s\n",
         variant, dim, test_offset, n_te, n_tr, n_va, n_te,
         n_tr * n_prop, n_va * n_prop, n_te * n_prop,
         test_offset > 0 ? prev_count : 0, test_offset > 0 ? prev_count : 0,
-        sh_prev, sh_tr, sh_va, sh_te, sh_pca);
+        sh_prev, sh_tr, sh_va, sh_te, sh_pca,
+        sh_side[0], sh_side[1], sh_side[2], sh_side[3], sh_side[4], sh_side[5],
+        rt[0], rt[1], rt[2], rt[3], rt[4], rt[5]);
     if (len >= sizeof body) return 3;
 
+    {   /* roots of the synthetic sidecars, so the test protocol can pin them */
+        const char *names[6] = {"ids_train.txt","ids_val.txt","ids_test.txt",
+                                "content_train.txt","content_val.txt","content_test.txt"};
+        const char *labels[6] = {"id_train","id_val","id_test",
+                                 "content_train","content_val","content_test"};
+        char hex[65];
+        int k2;
+        for (k2 = 0; k2 < 6; k2++) {
+            snprintf(p, sizeof p, "%s/%s", out, names[k2]);
+            if (vd_root_of_file(p, hex, NULL) == 0)
+                printf("VD_MKCACHE_ROOT %s=%s\n", labels[k2], hex);
+        }
+        if (prev && vd_sha256_file(prev, hex) == 0)
+            printf("VD_MKCACHE_ROOT prev_pack=%s\n", hex);
+    }
     snprintf(p, sizeof p, "%s/manifest.txt", out);
     if (vd_publish_file(p, body, len) != 0) return 3;
     printf("VD_MKCACHE_OK %s\n", out);

@@ -84,3 +84,4 @@ bin/vd_prep
 bin/vd_bench
 bin/vd_eval_asan
 bin/vd_mkcache
+bin/vision_detection_allocfail_test

@@ -32,6 +32,44 @@ int vd_mkdir_p(const char *path);
    failure with the temp removed. */
 int vd_publish_file(const char *path, const void *buf, size_t len);
 
+/* ---------------- directory-atomic cache publication ---------------------
+   A cache is only meaningful whole. These build it in a fresh, exclusively
+   created sibling staging directory, create every member with
+   openat(O_CREAT|O_EXCL|O_NOFOLLOW) so a planted symlink can never be written
+   through, and publish the finished directory in one step. A partially written
+   staging directory is never visible at the destination. */
+typedef struct {
+    int parent_fd;              /* destination's parent, opened O_NOFOLLOW */
+    int dir_fd;                 /* the staging directory */
+    char base[VD_PATH_MAX];     /* destination basename */
+    char stage[VD_PATH_MAX];    /* staging basename */
+    int done;
+} VdStage;
+
+/* Rejects a symlinked parent or a symlinked destination outright. */
+int vd_stage_begin(const char *dest, VdStage *st);
+
+/* replace: 0 = fail if the destination exists, 1 = atomically swap it out.
+   Returns 0 only when the complete cache is visible at the destination. */
+int vd_stage_commit(VdStage *st, int replace);
+void vd_stage_abort(VdStage *st);
+
+/* Buffered, fully checked writer for one member of the staging directory. */
+typedef struct {
+    int fd;
+    unsigned char *buf;
+    size_t cap, n;
+    int err;
+    void *sha;                  /* VdSha256, hashed as it is written */
+    char hex[65];
+} VdOut;
+
+int vd_out_open(VdStage *st, const char *name, VdOut *o);
+int vd_out_write(VdOut *o, const void *p, size_t n);
+int vd_out_finish(VdOut *o);    /* flush + fsync + close; 0 only if all ok */
+/* Digest of everything written. Valid only after a successful vd_out_finish. */
+int vd_out_digest(VdOut *o, char *hex_out);
+
 #ifdef __cplusplus
 }
 #endif

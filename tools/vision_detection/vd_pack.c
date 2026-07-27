@@ -86,7 +86,13 @@ int vd_pack_load(const char *path, VdPack *p) {
     p->n = (size_t)n_img;
     if (p->n) {
         p->imgs = (VdPackImg *)calloc(p->n, sizeof(VdPackImg));
-        if (!p->imgs) { fclose(f); return VD_PACK_E_ALLOC; }
+        if (!p->imgs) {
+            /* p->n is already set; leaving it would hand the caller a pack that
+               claims images it does not have. */
+            memset(p, 0, sizeof *p);
+            fclose(f);
+            return VD_PACK_E_ALLOC;
+        }
     }
 
     for (i = 0; i < p->n; i++) {

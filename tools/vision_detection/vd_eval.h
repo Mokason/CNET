@@ -50,9 +50,11 @@ double vd_ap50(const VdImage *imgs, size_t n_img, double iou_thr);
 /* 0 if every box in the set is usable geometry, nonzero otherwise. */
 int vd_box_valid(VdBox b);
 
-/* Precision/recall at a score threshold (same matching rules). */
-void vd_pr_at(const VdImage *imgs, size_t n_img, double iou_thr,
-              double score_thr, double *precision, double *recall);
+/* Precision/recall at a score threshold (same matching rules).
+   Returns 0 on success, -1 on invalid input or allocation failure; on failure
+   both outputs are set NaN and are never later overwritten with a number. */
+int vd_pr_at(const VdImage *imgs, size_t n_img, double iou_thr,
+             double score_thr, double *precision, double *recall);
 
 /* How many non-difficult GTs are covered by at least one proposal. */
 void vd_proposal_recall(const VdImage *imgs, size_t n_img, const VdBox *props,

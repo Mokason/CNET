@@ -140,6 +140,12 @@ double vd_ap50(const VdImage *imgs, size_t n_img, double iou_thr) {
     }
     for (i = 0; i < n_img; i++) {
         matched[i] = imgs[i].n_gt ? (char *)calloc(imgs[i].n_gt, 1) : NULL;
+        if (imgs[i].n_gt && !matched[i]) {   /* fail loud, never score partially */
+            size_t q;
+            for (q = 0; q < n_img; q++) free(matched[q]);
+            free(matched); free(g); free(prec); free(rec);
+            return NAN;
+        }
         for (j = 0; j < imgs[i].n_det; j++) {
             g[k].img = i; g[k].det = j; g[k].score = imgs[i].dets[j].score; k++;
         }
@@ -191,24 +197,34 @@ double vd_ap50(const VdImage *imgs, size_t n_img, double iou_thr) {
     return ap;
 }
 
-void vd_pr_at(const VdImage *imgs, size_t n_img, double iou_thr,
-              double score_thr, double *precision, double *recall) {
+int vd_pr_at(const VdImage *imgs, size_t n_img, double iou_thr,
+             double score_thr, double *precision, double *recall) {
     size_t npos = count_real_gt(imgs, n_img);
     size_t i, j, tp = 0, fp = 0;
     char **matched;
-    if (imgs_valid(imgs, n_img) != 0) {
-        if (precision) *precision = NAN;
-        if (recall) *recall = NAN;
-        return;
-    }
+    if (precision) *precision = NAN;
+    if (recall) *recall = NAN;
+    if (imgs_valid(imgs, n_img) != 0) return -1;
     matched = (char **)calloc(n_img, sizeof *matched);
-    if (!matched) { if (precision) *precision = NAN; if (recall) *recall = NAN; return; }
-    for (i = 0; i < n_img; i++)
+    if (!matched) return -1;
+    for (i = 0; i < n_img; i++) {
         matched[i] = imgs[i].n_gt ? (char *)calloc(imgs[i].n_gt, 1) : NULL;
+        if (imgs[i].n_gt && !matched[i]) {
+            size_t q;
+            for (q = 0; q < n_img; q++) free(matched[q]);
+            free(matched);
+            return -1;   /* outputs stay NaN */
+        }
+    }
     for (i = 0; i < n_img; i++) {
         const VdImage *im = &imgs[i];
         Rank *r = im->n_det ? rank_dets(im->dets, im->n_det) : NULL;
-        if (im->n_det && !r) { if (precision) *precision = NAN; if (recall) *recall = NAN; }
+        if (im->n_det && !r) {
+            size_t q;
+            for (q = 0; q < n_img; q++) free(matched[q]);
+            free(matched);
+            return -1;
+        }
         for (j = 0; j < im->n_det; j++) {
             size_t di = r ? r[j].i : j;
             const VdDet *d = &im->dets[di];
@@ -235,6 +251,7 @@ void vd_pr_at(const VdImage *imgs, size_t n_img, double iou_thr,
     if (recall) *recall = npos ? (double)tp / (double)npos : 0.0;
     for (i = 0; i < n_img; i++) free(matched[i]);
     free(matched);
+    return 0;
 }
 
 void vd_proposal_recall(const VdImage *imgs, size_t n_img, const VdBox *props,

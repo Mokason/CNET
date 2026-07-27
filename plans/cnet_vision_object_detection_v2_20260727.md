@@ -194,6 +194,30 @@ BARS floor=0.100 -> PASS | ratio>=3.0 -> PASS (115.9x) | margin>=0.050 -> PASS (
 EVIDENCE manifest=1 prev_holdout=1 leakage=1 eval_fault=0
 ```
 
+### Evidence binding (hardening round 2)
+
+Identity is no longer self-described. The scoring target passes `--protocol v2`, and the
+protocol constants live in `tools/vision_detection/vd_protocol.c`: schema version, dataset,
+class, seed, holdout offset/count, train/val counts, PCA-fit provenance, descriptor and
+proposal parameters, the required previous-holdout count, its pinned digest, and canonical
+**ID and content roots** (sha256 over the sorted canonical lines) derived from the official
+VOC archives and committed in `vd_roots.h`. The bench recomputes every root from the
+cache's sidecars and requires it to equal both the manifest's claim and the pinned
+constant. `requires_prev` is a protocol constant, so a cache cannot declare its way out of
+the spent-holdout check.
+
+The bench also **measures** leakage rather than reading it: cross-split ID overlap 0,
+cross-split content overlap 0, and **3 intra-split duplicate images** — an independent
+confirmation, from the artefacts, of the three VOC2007 trainval duplicate pairs recorded in
+§2. Since content-addressed splitting puts both copies of a duplicate on the same side,
+intra-split duplicates are expected and are reported separately from leakage.
+
+Level A now requires all four evidence predicates alongside the metric bars. This was not
+theoretical: one scored run in this round returned **WITHHELD with all four metric bars
+passing**, because a gate rewrite had removed the bench's own ID-disjointness computation
+and `leakage` was therefore 0. The verdict was withheld until the check was restored — the
+fail-closed design behaving exactly as intended on a real run.
+
 **Reproduced three times** with identical bar-bearing metrics, the last run under the full
 hardened evidence gate (verified artefact hashes, hash-bound spent-holdout check,
 transactional publication). The label-shuffle control now also runs the identical full
@@ -274,8 +298,9 @@ ASan+UBSan coverage is **not** the whole benchmark, and should not be read as su
 | Component | ASan+UBSan | How |
 |---|---|---|
 | Evaluator (`vd_eval.c`: IoU, NMS, AP50, PR, proposal recall) | **yes** | `make vision_detection_eval_asan`, 17 analytic fixtures |
-| Pack parser, path/mkdir, atomic publication, SHA-256 (`vd_pack.c`, `vd_io.c`, `vd_sha256.c`) | **yes** | `make vision_detection_integrity_asan`, 50 hostile-input fixtures |
-| Evidence gate end to end (`vd_bench` manifest/prev-holdout/publish paths) | **no** — functional negative controls only, not sanitized | `make vision_detection_evidence_test`, 10 fail-closed controls |
+| Pack parser, manifest schema, path/mkdir, directory-atomic publication, SHA-256 (`vd_pack.c`, `vd_protocol.c`, `vd_io.c`, `vd_sha256.c`) | **yes** | `make vision_detection_integrity_asan`, 98 hostile-input fixtures |
+| Allocation-failure paths in the evaluator and pack loader | **no** sanitizer, but **deterministically injected** | `make vision_detection_allocfail_test`, `--wrap` malloc/calloc/realloc |
+| Evidence gate end to end (`vd_bench` protocol/manifest/prev-holdout/publish paths) | **no** — functional negative controls only, not sanitized | `make vision_detection_evidence_test`, 23 fail-closed controls |
 | The scored training run itself (~45 min, `vd_bench` + `src/nn.c`) | **no** | run optimised and unsanitized; sanitizing it was not attempted |
 | Extraction (`vd_prep.cpp`, OpenCV) | **no** | not sanitized |
 

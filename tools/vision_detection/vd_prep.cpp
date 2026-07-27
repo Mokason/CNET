@@ -307,33 +307,73 @@ static std::vector<std::string> read_pack_ids(const std::string &path, int &rc) 
     return out;
 }
 
-static void write_pack(const std::string &path, const std::vector<ImgOut> &imgs, int dim) {
-    std::ofstream f(path, std::ios::binary);
+static bool write_pack_staged(VdStage &st, const char *name,
+                              const std::vector<ImgOut> &imgs, int dim,
+                              std::string *digest) {
+    VdOut o;
+    if (vd_out_open(&st, name, &o) != 0) return false;
     PackHdr h; memcpy(h.magic, "VDPACK1", 8);
     h.dim = dim; h.n_img = (int32_t)imgs.size(); h.n_prop = 0;
     for (auto &im : imgs) h.n_prop += (int64_t)im.props.size();
-    f.write((char*)&h, sizeof h);
+    if (vd_out_write(&o, &h, sizeof h) != 0) { vd_out_finish(&o); return false; }
     for (size_t i = 0; i < imgs.size(); i++) {
         const ImgOut &im = imgs[i];
         int32_t np = (int32_t)im.props.size(), ng = (int32_t)im.gts.size();
         int32_t idlen = (int32_t)im.id.size();
-        f.write((char*)&idlen, 4); f.write(im.id.data(), idlen);
-        f.write((char*)&np, 4); f.write((char*)&ng, 4);
+        if (vd_out_write(&o, &idlen, 4) != 0) { vd_out_finish(&o); return false; }
+        if (vd_out_write(&o, im.id.data(), (size_t)idlen) != 0) { vd_out_finish(&o); return false; }
+        if (vd_out_write(&o, &np, 4) != 0 || vd_out_write(&o, &ng, 4) != 0) { vd_out_finish(&o); return false; }
         for (const GT &g : im.gts) {
             int32_t v[5] = {g.b.x, g.b.y, g.b.w, g.b.h, g.difficult};
-            f.write((char*)v, sizeof v);
+            if (vd_out_write(&o, v, sizeof v) != 0) { vd_out_finish(&o); return false; }
         }
         for (const Prop &p : im.props) {
             int32_t v[5] = {p.b.x, p.b.y, p.b.w, p.b.h, p.label};
-            f.write((char*)v, sizeof v);
-            f.write((char*)p.feat.data(), sizeof(float) * dim);
+            if (vd_out_write(&o, v, sizeof v) != 0) { vd_out_finish(&o); return false; }
+            if (vd_out_write(&o, p.feat.data(), sizeof(float) * (size_t)dim) != 0) {
+                vd_out_finish(&o); return false;
+            }
         }
     }
+    if (vd_out_finish(&o) != 0) return false;
+    char hex[65];
+    if (vd_out_digest(&o, hex) != 0) return false;
+    if (digest) *digest = std::string(hex, 64);
+    return true;
+}
+
+static bool write_text_staged(VdStage &st, const char *name, const std::string &body,
+                              std::string *digest = NULL) {
+    VdOut o;
+    if (vd_out_open(&st, name, &o) != 0) return false;
+    if (vd_out_write(&o, body.data(), body.size()) != 0) { vd_out_finish(&o); return false; }
+    if (vd_out_finish(&o) != 0) return false;
+    char hex[65];
+    if (vd_out_digest(&o, hex) != 0) return false;
+    if (digest) *digest = std::string(hex, 64);
+    return true;
+}
+
+/* sha256 over the sorted "value\n" lines -- the canonical root form */
+static std::string root_of(std::vector<std::string> v) {
+    std::sort(v.begin(), v.end());
+    VdSha256 c;
+    vd_sha256_init(&c);
+    for (auto &x : v) { vd_sha256_update(&c, x.data(), x.size()); vd_sha256_update(&c, "\n", 1); }
+    char hex[65];
+    vd_sha256_hex(&c, hex);
+    return std::string(hex, 64);
+}
+static std::string lines_of(std::vector<std::string> v) {
+    std::sort(v.begin(), v.end());
+    std::string s;
+    for (auto &x : v) { s += x; s += "\n"; }
+    return s;
 }
 
 int main(int argc, char **argv) {
     std::string root, cls = "car", outdir = "data/vision_cache", v1cache;
-    int n_test = 1000, workers = 8;
+    int n_test = 1000, workers = 8, replace = 0;
     for (int i = 1; i < argc; i++) {
         std::string a = argv[i];
         if (a == "--root" && i + 1 < argc) root = argv[++i];
@@ -342,6 +382,7 @@ int main(int argc, char **argv) {
         else if (a == "--ntest" && i + 1 < argc) n_test = atoi(argv[++i]);
         else if (a == "--workers" && i + 1 < argc) workers = atoi(argv[++i]);
         else if (a == "--v1cache" && i + 1 < argc) v1cache = argv[++i];
+        else if (a == "--replace") replace = 1;
         else if (a == "--variant" && i + 1 < argc) {
             std::string v = argv[++i];
             if (v == "v1") VAR = V1;
@@ -580,79 +621,125 @@ int main(int argc, char **argv) {
     };
     project_split(tr, Otr, "train"); project_split(va, Ova, "val"); project_split(te, Ote, "test");
 
-    if (vd_mkdir_p(outdir.c_str()) != 0) {
-        fprintf(stderr, "VD_PREP_FAIL mkdir_refused:%s\n", outdir.c_str());
+    /* ---- publish the cache as one unit ------------------------------------
+       Everything is written into a freshly created, exclusively named staging
+       directory whose members are all created O_CREAT|O_EXCL|O_NOFOLLOW, then
+       the finished directory is put in place in a single step. A partially
+       written cache is never visible at the destination, and no planted
+       symlink at any member path can be written through. */
+    VdStage st;
+    if (vd_stage_begin(outdir.c_str(), &st) != 0) {
+        fprintf(stderr, "VD_PREP_FAIL stage_begin_refused:%s\n", outdir.c_str());
         return 5;
     }
-    write_pack(outdir + "/train.pack", Otr, VAR.pca_dim);
-    write_pack(outdir + "/val.pack",   Ova, VAR.pca_dim);
-    write_pack(outdir + "/test.pack",  Ote, VAR.pca_dim);
-    {
-        std::ofstream f(outdir + "/pca.bin", std::ios::binary);
-        int32_t d1 = VAR.hog_dim, d2 = VAR.pca_dim;
-        f.write((char*)&d1, 4); f.write((char*)&d2, 4);
-        cv::Mat mean = pca.mean.reshape(1, 1), ev = pca.eigenvectors;
-        f.write((char*)mean.ptr<float>(0), sizeof(float) * VAR.hog_dim);
-        for (int i = 0; i < VAR.pca_dim; i++) f.write((char*)ev.ptr<float>(i), sizeof(float) * VAR.hog_dim);
+
+    auto ids_of = [](const std::vector<ImgOut> &v) {
+        std::vector<std::string> r;
+        for (auto &o : v) r.push_back(o.id);
+        return r;
+    };
+    auto shas_of = [](const std::vector<ImgOut> &v) {
+        std::vector<std::string> r;
+        for (auto &o : v) r.push_back(o.sha);
+        return r;
+    };
+    std::vector<std::string> idtr = ids_of(Otr), idva = ids_of(Ova), idte = ids_of(Ote);
+    std::vector<std::string> shtr = shas_of(Otr), shva = shas_of(Ova), shte = shas_of(Ote);
+
+    std::string sh_tr, sh_va, sh_te, sh_pca;
+    std::string sh_idtr, sh_idva, sh_idte, sh_cotr, sh_cova, sh_cote;
+    if (!write_pack_staged(st, "train.pack", Otr, VAR.pca_dim, &sh_tr) ||
+        !write_pack_staged(st, "val.pack",   Ova, VAR.pca_dim, &sh_va) ||
+        !write_pack_staged(st, "test.pack",  Ote, VAR.pca_dim, &sh_te)) {
+        fprintf(stderr, "VD_PREP_FAIL pack_write_failed\n");
+        vd_stage_abort(&st);
+        return 5;
     }
-    /* Manifest: the single binding between a cache directory and the run that
-       produced it. It carries the SHA-256 of every artefact the bench will
-       score, so a bench invocation cannot pair packs from different preps, nor
-       score a pack that was edited after extraction. Published last, and
-       atomically, so a manifest that exists is a manifest whose artefacts are
-       already on disk and final. */
     {
-        char sh_tr[65], sh_va[65], sh_te[65], sh_pca[65];
-        std::string ptr = outdir + "/train.pack", pva = outdir + "/val.pack";
-        std::string pte = outdir + "/test.pack", ppc = outdir + "/pca.bin";
-        if (vd_sha256_file(ptr.c_str(), sh_tr) != 0 || vd_sha256_file(pva.c_str(), sh_va) != 0 ||
-            vd_sha256_file(pte.c_str(), sh_te) != 0 || vd_sha256_file(ppc.c_str(), sh_pca) != 0) {
-            fprintf(stderr, "VD_PREP_FAIL manifest_hash_failed\n");
-            return 6;
+        std::string pca_blob;
+        int32_t d1 = VAR.hog_dim, d2 = VAR.pca_dim;
+        pca_blob.append((const char *)&d1, 4);
+        pca_blob.append((const char *)&d2, 4);
+        cv::Mat mean = pca.mean.reshape(1, 1), ev = pca.eigenvectors;
+        pca_blob.append((const char *)mean.ptr<float>(0), sizeof(float) * VAR.hog_dim);
+        for (int i2 = 0; i2 < VAR.pca_dim; i2++)
+            pca_blob.append((const char *)ev.ptr<float>(i2), sizeof(float) * VAR.hog_dim);
+        if (!write_text_staged(st, "pca.bin", pca_blob, &sh_pca)) {
+            fprintf(stderr, "VD_PREP_FAIL pca_write_failed\n");
+            vd_stage_abort(&st);
+            return 5;
         }
+    }
+    /* Sidecars carry the canonical source identity of each split so the bench
+       can recompute the roots itself instead of believing a declared digest. */
+    if (!write_text_staged(st, "ids_train.txt",     lines_of(idtr), &sh_idtr) ||
+        !write_text_staged(st, "ids_val.txt",       lines_of(idva), &sh_idva) ||
+        !write_text_staged(st, "ids_test.txt",      lines_of(idte), &sh_idte) ||
+        !write_text_staged(st, "content_train.txt", lines_of(shtr), &sh_cotr) ||
+        !write_text_staged(st, "content_val.txt",   lines_of(shva), &sh_cova) ||
+        !write_text_staged(st, "content_test.txt",  lines_of(shte), &sh_cote)) {
+        fprintf(stderr, "VD_PREP_FAIL sidecar_write_failed\n");
+        vd_stage_abort(&st);
+        return 5;
+    }
+
+    {
         size_t np_tr = 0, np_va = 0, np_te = 0;
         for (auto &o : Otr) np_tr += o.props.size();
         for (auto &o : Ova) np_va += o.props.size();
         for (auto &o : Ote) np_te += o.props.size();
+        std::string r_idtr = root_of(idtr), r_idva = root_of(idva), r_idte = root_of(idte);
+        std::string r_cotr = root_of(shtr), r_cova = root_of(shva), r_cote = root_of(shte);
 
         std::ostringstream m;
         m << "manifest_version 1\n"
-          << "variant "        << VAR.name       << "\n"
-          << "class "          << cls            << "\n"
-          << "seed "           << SEED           << "\n"
-          << "hog_side "       << VAR.hog_side   << "\n"
-          << "color "          << VAR.color      << "\n"
-          << "hog_dim "        << VAR.hog_dim    << "\n"
-          << "pca_dim "        << VAR.pca_dim    << "\n"
-          << "test_offset "    << VAR.test_offset<< "\n"
-          << "test_count "     << te.size()      << "\n"
-          << "train_img "      << Otr.size()     << "\n"
-          << "val_img "        << Ova.size()     << "\n"
-          << "test_img "       << Ote.size()     << "\n"
-          << "train_prop "     << np_tr          << "\n"
-          << "val_prop "       << np_va          << "\n"
-          << "test_prop "      << np_te          << "\n"
-          << "pca_fit_images " << nfit_img       << "\n"
-          << "pca_fit_rows "   << nfit_rows      << "\n"
+          << "variant " << VAR.name << "\n"
+          << "dataset PASCAL_VOC_2007\n"
+          << "class " << cls << "\n"
           << "split_key sha256_content_hash_trainval\n"
-          << "trainval_id_overlap 0\n"
-          << "trainval_content_overlap 0\n"
-          << "prev_test_ids_checked "   << v1_id_checked  << "\n"
-          << "prev_test_sha_checked "   << v1_sha_checked << "\n"
-          << "prev_test_id_overlap 0\n"
-          << "prev_test_content_overlap 0\n"
+          << "seed " << SEED << "\n"
+          << "hog_side " << VAR.hog_side << "\ncolor " << VAR.color << "\n"
+          << "hog_dim " << VAR.hog_dim << "\npca_dim " << VAR.pca_dim << "\n"
+          << "ss_width " << SS_WIDTH << "\nmax_prop " << MAX_PROP << "\nmin_side 16\n"
+          << "nms_iou_x100 30\nmatch_iou_x100 50\n"
+          << "test_offset " << VAR.test_offset << "\ntest_count " << te.size() << "\n"
+          << "train_img " << Otr.size() << "\nval_img " << Ova.size()
+          << "\ntest_img " << Ote.size() << "\n"
+          << "train_prop " << np_tr << "\nval_prop " << np_va << "\ntest_prop " << np_te << "\n"
+          << "pca_fit_images " << nfit_img << "\npca_fit_rows " << nfit_rows << "\n"
+          << "trainval_id_overlap 0\ntrainval_content_overlap 0\n"
+          << "prev_test_ids_checked " << v1_id_checked << "\n"
+          << "prev_test_sha_checked " << v1_sha_checked << "\n"
+          << "prev_test_id_overlap 0\nprev_test_content_overlap 0\n"
           << "sha256_prev_test_pack " << (prev_pack_sha.empty() ? "none" : prev_pack_sha) << "\n"
-          << "sha256_train_pack " << sh_tr  << "\n"
-          << "sha256_val_pack "   << sh_va  << "\n"
-          << "sha256_test_pack "  << sh_te  << "\n"
-          << "sha256_pca_bin "    << sh_pca << "\n";
-        std::string body = m.str();
-        std::string mpath = outdir + "/manifest.txt";
-        if (vd_publish_file(mpath.c_str(), body.data(), body.size()) != 0) {
-            fprintf(stderr, "VD_PREP_FAIL manifest_publish_failed:%s\n", mpath.c_str());
+          << "sha256_train_pack " << sh_tr << "\nsha256_val_pack " << sh_va << "\n"
+          << "sha256_test_pack " << sh_te << "\nsha256_pca_bin " << sh_pca << "\n"
+          << "sha256_ids_train " << sh_idtr << "\nsha256_ids_val " << sh_idva << "\n"
+          << "sha256_ids_test " << sh_idte << "\n"
+          << "sha256_content_train " << sh_cotr << "\nsha256_content_val " << sh_cova << "\n"
+          << "sha256_content_test " << sh_cote << "\n"
+          << "id_root_train " << r_idtr << "\nid_root_val " << r_idva << "\n"
+          << "id_root_test " << r_idte << "\n"
+          << "content_root_train " << r_cotr << "\ncontent_root_val " << r_cova << "\n"
+          << "content_root_test " << r_cote << "\n";
+        if (!write_text_staged(st, "manifest.txt", m.str())) {
+            fprintf(stderr, "VD_PREP_FAIL manifest_write_failed\n");
+            vd_stage_abort(&st);
             return 6;
         }
-        fprintf(stderr, "manifest published: %s\n", mpath.c_str());
+        if (vd_stage_commit(&st, replace) != 0) {
+            fprintf(stderr, "VD_PREP_FAIL publish_refused:%s (destination exists? use --replace)\n",
+                    outdir.c_str());
+            return 6;
+        }
+        /* Printed so the roots can be pinned in vd_roots.h; the bench refuses
+           to score a protocol whose roots are still unpinned. */
+        printf("VD_ROOTS id_train=%s\n", r_idtr.c_str());
+        printf("VD_ROOTS id_val=%s\n", r_idva.c_str());
+        printf("VD_ROOTS id_test=%s\n", r_idte.c_str());
+        printf("VD_ROOTS content_train=%s\n", r_cotr.c_str());
+        printf("VD_ROOTS content_val=%s\n", r_cova.c_str());
+        printf("VD_ROOTS content_test=%s\n", r_cote.c_str());
     }
 
     size_t pt = 0, pv = 0, pe = 0, gt_tr = 0, gt_te = 0, pos_tr = 0;

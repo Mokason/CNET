@@ -20,6 +20,7 @@
 #include "vd_eval.h"
 #include "vd_io.h"
 #include "vd_pack.h"
+#include "vd_protocol.h"
 #include "vd_sha256.h"
 #include "../../include/nn.h"
 #include "../../include/router.h"
@@ -33,7 +34,8 @@
 #define NCLS 2
 
 static size_t DIM = 0;
-static int g_eval_fault = 0;   /* set by any non-finite metric or NMS refusal */
+static int g_eval_fault = 0;
+static long g_intra_dups = 0;   /* set by any non-finite metric or NMS refusal */
 static const char *G_VARIANT = "unknown";
 static const char *G_FRONTEND = "unknown";
 
@@ -63,72 +65,189 @@ static int load_pack(const char *path, Pack *p) {
 }
 static void free_pack(Pack *p) { vd_pack_free(p); }
 
-/* ---------------- manifest ----------------------------------------------- */
-/* Binds a cache directory to the prep run that produced it. Without this the
-   bench will happily score whatever packs it is pointed at. */
-typedef struct {
-    int present;
-    char variant[80];
-    long pca_dim, test_offset, test_count;
-    long train_img, val_img, test_img;
-    long train_prop, val_prop, test_prop;
-    long hog_side, color, hog_dim;
-    long prev_ids_checked, prev_sha_checked;
-    long prev_id_overlap, prev_content_overlap;
-    long tv_id_overlap, tv_content_overlap;
-    char sha_train[80], sha_val[80], sha_test[80], sha_pca[80], sha_prev[80];
-} Manifest;
+/* ---------------- evidence gate ------------------------------------------
+   Identity comes from a protocol chosen by the scoring target and compiled into
+   vd_protocol.c. The cache is checked against it. Nothing the cache says about
+   itself is allowed to decide what is required of it -- that was the hole that
+   let a cache declaring test_offset 0 skip the spent-holdout check entirely. */
 
-static int man_read(const char *cache, Manifest *m) {
-    char path[VD_PATH_MAX], k[64], v[80];
-    FILE *f;
-    memset(m, 0, sizeof *m);
-    if ((size_t)snprintf(path, sizeof path, "%s/manifest.txt", cache) >= sizeof path) return -1;
-    f = fopen(path, "r");
-    if (!f) return -1;
-    while (fscanf(f, "%63s %79s", k, v) == 2) {
-        if (!strcmp(k, "variant")) snprintf(m->variant, sizeof m->variant, "%s", v);
-        else if (!strcmp(k, "pca_dim")) m->pca_dim = atol(v);
-        else if (!strcmp(k, "hog_side")) m->hog_side = atol(v);
-        else if (!strcmp(k, "color")) m->color = atol(v);
-        else if (!strcmp(k, "hog_dim")) m->hog_dim = atol(v);
-        else if (!strcmp(k, "test_offset")) m->test_offset = atol(v);
-        else if (!strcmp(k, "test_count")) m->test_count = atol(v);
-        else if (!strcmp(k, "train_img")) m->train_img = atol(v);
-        else if (!strcmp(k, "val_img")) m->val_img = atol(v);
-        else if (!strcmp(k, "test_img")) m->test_img = atol(v);
-        else if (!strcmp(k, "train_prop")) m->train_prop = atol(v);
-        else if (!strcmp(k, "val_prop")) m->val_prop = atol(v);
-        else if (!strcmp(k, "test_prop")) m->test_prop = atol(v);
-        else if (!strcmp(k, "prev_test_ids_checked")) m->prev_ids_checked = atol(v);
-        else if (!strcmp(k, "prev_test_sha_checked")) m->prev_sha_checked = atol(v);
-        else if (!strcmp(k, "prev_test_id_overlap")) m->prev_id_overlap = atol(v);
-        else if (!strcmp(k, "prev_test_content_overlap")) m->prev_content_overlap = atol(v);
-        else if (!strcmp(k, "trainval_id_overlap")) m->tv_id_overlap = atol(v);
-        else if (!strcmp(k, "trainval_content_overlap")) m->tv_content_overlap = atol(v);
-        else if (!strcmp(k, "sha256_train_pack")) snprintf(m->sha_train, sizeof m->sha_train, "%s", v);
-        else if (!strcmp(k, "sha256_val_pack")) snprintf(m->sha_val, sizeof m->sha_val, "%s", v);
-        else if (!strcmp(k, "sha256_test_pack")) snprintf(m->sha_test, sizeof m->sha_test, "%s", v);
-        else if (!strcmp(k, "sha256_pca_bin")) snprintf(m->sha_pca, sizeof m->sha_pca, "%s", v);
-        else if (!strcmp(k, "sha256_prev_test_pack")) snprintf(m->sha_prev, sizeof m->sha_prev, "%s", v);
-    }
-    fclose(f);
-    m->present = 1;
-    return 0;
-}
-
-/* Recompute the artefact hash and compare. A manifest that does not match the
-   bytes on disk is worse than no manifest, so a mismatch is fatal. */
-static int man_check_file(const char *cache, const char *name, const char *want) {
+static int hash_matches(const char *cache, const char *name, const char *want,
+                        const char *label) {
     char path[VD_PATH_MAX], got[65];
-    if (!want || !*want) return -1;
+    if (!want || !*want || !strcmp(want, "none")) {
+        printf("VD_BENCH_FAIL missing_digest:%s\n", label);
+        return -1;
+    }
     if ((size_t)snprintf(path, sizeof path, "%s/%s", cache, name) >= sizeof path) return -1;
-    if (vd_sha256_file(path, got) != 0) return -1;
+    if (vd_sha256_file(path, got) != 0) {
+        printf("VD_BENCH_FAIL artefact_unreadable:%s\n", name);
+        return -1;
+    }
     if (strcmp(got, want) != 0) {
         printf("VD_BENCH_FAIL artefact_hash_mismatch:%s\n", name);
         return -1;
     }
     return 0;
+}
+
+/* Recompute a root from the sidecar itself and require it to equal BOTH the
+   manifest's claim and the protocol's pinned constant. */
+static int root_matches(const char *cache, const char *name, const char *declared,
+                        const char *pinned, size_t expect_lines, const char *label) {
+    char path[VD_PATH_MAX], got[65];
+    size_t nlines = 0;
+    if ((size_t)snprintf(path, sizeof path, "%s/%s", cache, name) >= sizeof path) return -1;
+    if (vd_root_of_file(path, got, &nlines) != 0) {
+        printf("VD_BENCH_FAIL sidecar_unreadable:%s\n", name);
+        return -1;
+    }
+    if (expect_lines && nlines != expect_lines) {
+        printf("VD_BENCH_FAIL sidecar_count:%s got=%zu want=%zu\n", label, nlines, expect_lines);
+        return -1;
+    }
+    if (strcmp(got, declared) != 0) {
+        printf("VD_BENCH_FAIL root_vs_manifest:%s\n", label);
+        return -1;
+    }
+    if (!pinned || !*pinned) {
+        printf("VD_BENCH_FAIL root_unpinned:%s (protocol has no committed root)\n", label);
+        return -1;
+    }
+    if (strcmp(got, pinned) != 0) {
+        printf("VD_BENCH_FAIL root_vs_protocol:%s\n", label);
+        return -1;
+    }
+    return 0;
+}
+
+/* The sidecar must describe the same images the pack actually contains. */
+static int ids_match_pack(const char *cache, const char *name, const Pack *pk,
+                          const char *label) {
+    char path[VD_PATH_MAX], line[256];
+    FILE *f;
+    size_t n = 0, i;
+    char **have;
+    int bad = 0;
+    if ((size_t)snprintf(path, sizeof path, "%s/%s", cache, name) >= sizeof path) return -1;
+    f = fopen(path, "rb");
+    if (!f) return -1;
+    have = (char **)calloc(pk->n ? pk->n : 1, sizeof(char *));
+    if (!have) { fclose(f); return -1; }
+    while (fgets(line, sizeof line, f)) {
+        size_t l = strlen(line);
+        if (l && line[l - 1] == '\n') line[--l] = 0;
+        if (!l) continue;
+        if (n >= pk->n) { bad = 1; break; }
+        have[n] = strdup(line);
+        if (!have[n]) { bad = 1; break; }
+        n++;
+    }
+    fclose(f);
+    if (!bad && n != pk->n) bad = 1;
+    if (!bad) {
+        for (i = 0; i < pk->n && !bad; i++) {
+            size_t k;
+            int found = 0;
+            for (k = 0; k < n; k++)
+                if (!strcmp(have[k], pk->imgs[i].id)) { found = 1; break; }
+            if (!found) bad = 1;
+        }
+    }
+    for (i = 0; i < n; i++) free(have[i]);
+    free(have);
+    if (bad) { printf("VD_BENCH_FAIL sidecar_pack_mismatch:%s\n", label); return -1; }
+    return 0;
+}
+
+
+/* Leakage computed by the bench itself, from the packs and sidecars on disk --
+   never taken from the manifest's own claim about itself. */
+static int str_cmp(const void *a, const void *b) {
+    return strcmp(*(const char *const *)a, *(const char *const *)b);
+}
+
+static size_t count_dup_across(char **v, size_t n) {
+    size_t i, dups = 0;
+    qsort(v, n, sizeof *v, str_cmp);
+    for (i = 1; i < n; i++)
+        if (!strcmp(v[i - 1], v[i])) dups++;
+    return dups;
+}
+
+/* IDs of all three packs pooled; any repeat is a split overlap. */
+static long bench_id_overlap(const Pack *a, const Pack *b, const Pack *c) {
+    size_t n = a->n + b->n + c->n, k = 0, i;
+    char **v = (char **)malloc(n * sizeof *v);
+    long dups;
+    if (!v) return -1;
+    for (i = 0; i < a->n; i++) v[k++] = a->imgs[i].id;
+    for (i = 0; i < b->n; i++) v[k++] = b->imgs[i].id;
+    for (i = 0; i < c->n; i++) v[k++] = c->imgs[i].id;
+    dups = (long)count_dup_across(v, n);
+    free(v);
+    return dups;
+}
+
+/* Same, for the source-content hashes carried by the sidecars.
+   The question is CROSS-split overlap: a hash appearing under two different
+   splits. A hash repeated inside one split is a duplicate image, not leakage --
+   VOC2007 trainval genuinely contains 3 such pairs, and the content-addressed
+   split deliberately keeps both copies on the same side. Those are counted
+   separately and reported as a diagnostic. */
+typedef struct { char *h; int split; } CHash;
+
+static int chash_cmp(const void *a, const void *b) {
+    const CHash *x = (const CHash *)a, *y = (const CHash *)b;
+    int c = strcmp(x->h, y->h);
+    if (c) return c;
+    return x->split - y->split;
+}
+
+static long bench_content_overlap(const char *cache, long *intra_dups) {
+    static const char *files[3] = {"content_train.txt", "content_val.txt", "content_test.txt"};
+    char path[VD_PATH_MAX], line[256];
+    CHash *v = NULL;
+    size_t n = 0, cap = 0, i;
+    long cross = 0, intra = 0;
+    int f_i;
+    if (intra_dups) *intra_dups = 0;
+    for (f_i = 0; f_i < 3; f_i++) {
+        FILE *f;
+        if ((size_t)snprintf(path, sizeof path, "%s/%s", cache, files[f_i]) >= sizeof path) goto fail;
+        f = fopen(path, "rb");
+        if (!f) goto fail;
+        while (fgets(line, sizeof line, f)) {
+            size_t l = strlen(line);
+            if (l && line[l - 1] == '\n') line[--l] = 0;
+            if (!l) continue;
+            if (n == cap) {
+                CHash *nv;
+                cap = cap ? cap * 2 : 4096;
+                nv = (CHash *)realloc(v, cap * sizeof *v);
+                if (!nv) { fclose(f); goto fail; }
+                v = nv;
+            }
+            v[n].h = strdup(line);
+            if (!v[n].h) { fclose(f); goto fail; }
+            v[n].split = f_i;
+            n++;
+        }
+        fclose(f);
+    }
+    qsort(v, n, sizeof *v, chash_cmp);
+    for (i = 1; i < n; i++) {
+        if (strcmp(v[i - 1].h, v[i].h) != 0) continue;
+        if (v[i - 1].split != v[i].split) cross++;
+        else intra++;
+    }
+    for (i = 0; i < n; i++) free(v[i].h);
+    free(v);
+    if (intra_dups) *intra_dups = intra;
+    return cross;
+fail:
+    for (i = 0; i < n; i++) free(v[i].h);
+    free(v);
+    return -1;
 }
 
 /* ---------------- training set assembly --------------------------------- */
@@ -182,14 +301,16 @@ static double head_score(BinaryTransformNetwork *btn, const float *f) {
 /* Build VdImage detections for a whole split, NMS applied per image. */
 static VdImage *run_detector(const Pack *p, BinaryTransformNetwork *btn,
                              double nms_iou, VdDet ***own) {
-    VdImage *out = (VdImage *)calloc(p->n, sizeof(VdImage));
-    VdDet **keepbuf = (VdDet **)calloc(p->n, sizeof(VdDet *));
+    VdImage *out = (VdImage *)calloc(p->n ? p->n : 1, sizeof(VdImage));
+    VdDet **keepbuf = (VdDet **)calloc(p->n ? p->n : 1, sizeof(VdDet *));
     size_t i, j;
+    if (!out || !keepbuf) { g_eval_fault = 1; free(out); free(keepbuf); *own = NULL; return NULL; }
     for (i = 0; i < p->n; i++) {
         const VImg *im = &p->imgs[i];
         VdDet *raw = im->n_prop ? (VdDet *)calloc(im->n_prop, sizeof(VdDet)) : NULL;
         int *keep = im->n_prop ? (int *)calloc(im->n_prop, sizeof(int)) : NULL;
         size_t nk = 0;
+        if (im->n_prop && (!raw || !keep)) { g_eval_fault = 1; free(raw); free(keep); continue; }
         for (j = 0; j < im->n_prop; j++) {
             raw[j].box = im->pb[j];
             raw[j].cls = 0;
@@ -198,6 +319,7 @@ static VdImage *run_detector(const Pack *p, BinaryTransformNetwork *btn,
         if (im->n_prop) nk = vd_nms(raw, im->n_prop, nms_iou, keep);
         if (nk == VD_NMS_FAIL) { g_eval_fault = 1; nk = 0; }
         keepbuf[i] = nk ? (VdDet *)calloc(nk, sizeof(VdDet)) : NULL;
+        if (nk && !keepbuf[i]) { g_eval_fault = 1; nk = 0; }
         for (j = 0; j < nk; j++) keepbuf[i][j] = raw[keep[j]];
         out[i].gts = im->gts; out[i].gt_difficult = im->gt_dif; out[i].n_gt = im->n_gt;
         out[i].dets = keepbuf[i]; out[i].n_det = nk;
@@ -209,8 +331,15 @@ static VdImage *run_detector(const Pack *p, BinaryTransformNetwork *btn,
 
 static void free_det(VdImage *v, VdDet **own, size_t n) {
     size_t i;
-    for (i = 0; i < n; i++) free(own[i]);
+    if (own) for (i = 0; i < n; i++) free(own[i]);
     free(own); free(v);
+}
+
+/* A detector arm that could not allocate returns NULL; scoring it as 0.0 would
+   quietly turn an out-of-memory event into a benchmark number. */
+static double ap_or_fault(VdImage *v, size_t n) {
+    if (!v) { g_eval_fault = 1; return NAN; }
+    return vd_ap50(v, n, 0.5);
 }
 
 /* ---------------- linear logistic baseline (same features) --------------- */
@@ -239,14 +368,16 @@ static double lin_score(const Lin *L, const float *f) {
     return 1.0 / (1.0 + exp(-z));
 }
 static VdImage *run_linear(const Pack *p, const Lin *L, double nms_iou, VdDet ***own) {
-    VdImage *out = (VdImage *)calloc(p->n, sizeof(VdImage));
-    VdDet **kb = (VdDet **)calloc(p->n, sizeof(VdDet *));
+    VdImage *out = (VdImage *)calloc(p->n ? p->n : 1, sizeof(VdImage));
+    VdDet **kb = (VdDet **)calloc(p->n ? p->n : 1, sizeof(VdDet *));
     size_t i, j;
+    if (!out || !kb) { g_eval_fault = 1; free(out); free(kb); *own = NULL; return NULL; }
     for (i = 0; i < p->n; i++) {
         const VImg *im = &p->imgs[i];
         VdDet *raw = im->n_prop ? (VdDet *)calloc(im->n_prop, sizeof(VdDet)) : NULL;
         int *keep = im->n_prop ? (int *)calloc(im->n_prop, sizeof(int)) : NULL;
         size_t nk = 0;
+        if (im->n_prop && (!raw || !keep)) { g_eval_fault = 1; free(raw); free(keep); continue; }
         for (j = 0; j < im->n_prop; j++) {
             raw[j].box = im->pb[j]; raw[j].cls = 0;
             raw[j].score = lin_score(L, im->pf + j * DIM);
@@ -254,6 +385,7 @@ static VdImage *run_linear(const Pack *p, const Lin *L, double nms_iou, VdDet **
         if (im->n_prop) nk = vd_nms(raw, im->n_prop, nms_iou, keep);
         if (nk == VD_NMS_FAIL) { g_eval_fault = 1; nk = 0; }
         kb[i] = nk ? (VdDet *)calloc(nk, sizeof(VdDet)) : NULL;
+        if (nk && !kb[i]) { g_eval_fault = 1; nk = 0; }
         for (j = 0; j < nk; j++) kb[i][j] = raw[keep[j]];
         out[i].gts = im->gts; out[i].gt_difficult = im->gt_dif; out[i].n_gt = im->n_gt;
         out[i].dets = kb[i]; out[i].n_det = nk;
@@ -297,11 +429,13 @@ int main(int argc, char **argv) {
     const char *cache = "data/vision_cache";
     const char *jsonp = "logs/vision_detection_bench.json";
     const char *prev_test = NULL;   /* pack whose holdout is already spent */
-    char variant[80] = "v1", frontend[200] = "";
+    char variant[80] = "", frontend[200] = "";
     size_t prev_ids_checked = 0;
     double val_thr = 0.5;           /* set on validation, never on test */
     double g_val_ap = 0.0;          /* validation AP50, for the floor formula */
-    Manifest man;
+    VdManifest man;
+    const VdProtocol *PROTO = NULL;
+    char mpath[VD_PATH_MAX];
     int evidence_manifest = 0, evidence_prev = 0, evidence_leak = 0;
     Pack tr, va, te;
     double *X = NULL, *Y = NULL;
@@ -314,6 +448,10 @@ int main(int argc, char **argv) {
         if (!strcmp(argv[i], "--cache") && i + 1 < argc) cache = argv[++i];
         else if (!strcmp(argv[i], "--json") && i + 1 < argc) jsonp = argv[++i];
         else if (!strcmp(argv[i], "--prev-test") && i + 1 < argc) prev_test = argv[++i];
+        else if (!strcmp(argv[i], "--protocol") && i + 1 < argc) {
+            PROTO = vd_protocol_get(argv[++i]);
+            if (!PROTO) { printf("VD_BENCH_FAIL unknown_protocol:%s\n", argv[i]); return 3; }
+        }
     }
 
     setvbuf(stdout, NULL, _IOLBF, 0);
@@ -333,92 +471,135 @@ int main(int argc, char **argv) {
     }
     DIM = (size_t)tr.dim;
 
-    /* ---- evidence gate: the cache must prove where it came from ---------
-       Every predicate below is part of Level A. A run that cannot establish
-       them does not get to print PASS. */
-    if (man_read(cache, &man) != 0) {
-        printf("VD_BENCH_FAIL manifest_missing:%s/manifest.txt\n", cache);
-        return 3;
+    /* ---- evidence gate --------------------------------------------------
+       Identity comes from a protocol chosen by the scoring target and compiled
+       into vd_protocol.c. The cache is checked against it; nothing the cache
+       says about itself decides what is required of it. That was the hole that
+       let a cache declaring test_offset 0 skip the spent-holdout check. */
+    {
+        char err[256];
+        if (!PROTO) {
+            printf("VD_BENCH_FAIL protocol_required (pass --protocol <name>)\n");
+            return 3;
+        }
+        snprintf(mpath, sizeof mpath, "%s/manifest.txt", cache);
+        if (vd_manifest_parse(mpath, &man, err, sizeof err) != 0) {
+            printf("VD_BENCH_FAIL %s\n", err); return 3;
+        }
+        if (vd_manifest_check(&man, PROTO, err, sizeof err) != 0) {
+            printf("VD_BENCH_FAIL %s\n", err); return 3;
+        }
+        if (man.pca_dim != (long)DIM ||
+            man.train_img != (long)tr.n || man.val_img != (long)va.n ||
+            man.test_img != (long)te.n ||
+            man.train_prop != (long)tr.total_prop || man.val_prop != (long)va.total_prop ||
+            man.test_prop != (long)te.total_prop) {
+            printf("VD_BENCH_FAIL manifest_counts_mismatch\n"); return 3;
+        }
+        if (hash_matches(cache, "train.pack", man.sha_train, "train.pack") != 0 ||
+            hash_matches(cache, "val.pack",   man.sha_val,   "val.pack")   != 0 ||
+            hash_matches(cache, "test.pack",  man.sha_test,  "test.pack")  != 0 ||
+            hash_matches(cache, "pca.bin",    man.sha_pca,   "pca.bin")    != 0 ||
+            hash_matches(cache, "ids_train.txt",     man.sha_ids_train,     "ids_train")     != 0 ||
+            hash_matches(cache, "ids_val.txt",       man.sha_ids_val,       "ids_val")       != 0 ||
+            hash_matches(cache, "ids_test.txt",      man.sha_ids_test,      "ids_test")      != 0 ||
+            hash_matches(cache, "content_train.txt", man.sha_content_train, "content_train") != 0 ||
+            hash_matches(cache, "content_val.txt",   man.sha_content_val,   "content_val")   != 0 ||
+            hash_matches(cache, "content_test.txt",  man.sha_content_test,  "content_test")  != 0) {
+            return 3;
+        }
+        if (root_matches(cache, "ids_test.txt", man.id_root_test, PROTO->id_root_test,
+                         (size_t)PROTO->test_count, "id_root_test") != 0 ||
+            root_matches(cache, "content_test.txt", man.content_root_test,
+                         PROTO->content_root_test, (size_t)PROTO->test_count,
+                         "content_root_test") != 0 ||
+            root_matches(cache, "ids_train.txt", man.id_root_train, PROTO->id_root_train,
+                         (size_t)PROTO->train_img, "id_root_train") != 0 ||
+            root_matches(cache, "ids_val.txt", man.id_root_val, PROTO->id_root_val,
+                         (size_t)PROTO->val_img, "id_root_val") != 0 ||
+            root_matches(cache, "content_train.txt", man.content_root_train,
+                         PROTO->content_root_train, (size_t)PROTO->train_img,
+                         "content_root_train") != 0 ||
+            root_matches(cache, "content_val.txt", man.content_root_val,
+                         PROTO->content_root_val, (size_t)PROTO->val_img,
+                         "content_root_val") != 0) {
+            return 3;
+        }
+        if (ids_match_pack(cache, "ids_train.txt", &tr, "train") != 0 ||
+            ids_match_pack(cache, "ids_val.txt",   &va, "val")   != 0 ||
+            ids_match_pack(cache, "ids_test.txt",  &te, "test")  != 0) {
+            return 3;
+        }
+        snprintf(variant, sizeof variant, "%s", man.variant);
+        snprintf(frontend, sizeof frontend,
+                 "SelectiveSearchFast(class-agnostic) -> %ldx%ld %s HOG %ldD -> PCA%ld (train-only)",
+                 man.hog_side, man.hog_side, man.color ? "colour" : "gray",
+                 man.hog_dim, man.pca_dim);
+        G_VARIANT = variant; G_FRONTEND = frontend;
+        printf("protocol=%s (pre-registered, not cache-declared)\n", PROTO->name);
+        printf("variant=%s dim=%zu frontend=%s\n", G_VARIANT, DIM, G_FRONTEND);
+        printf("manifest: schema ok; artefact+sidecar digests verified; "
+               "id/content roots match pinned protocol roots\n");
+        evidence_manifest = 1;
     }
-    if (man_check_file(cache, "train.pack", man.sha_train) != 0 ||
-        man_check_file(cache, "val.pack",   man.sha_val)   != 0 ||
-        man_check_file(cache, "test.pack",  man.sha_test)  != 0 ||
-        man_check_file(cache, "pca.bin",    man.sha_pca)   != 0) {
-        printf("VD_BENCH_FAIL manifest_artefact_mismatch\n");
-        return 3;
-    }
-    if (man.pca_dim != (long)DIM ||
-        man.train_img != (long)tr.n || man.val_img != (long)va.n || man.test_img != (long)te.n ||
-        man.train_prop != (long)tr.total_prop || man.val_prop != (long)va.total_prop ||
-        man.test_prop != (long)te.total_prop || man.test_count != (long)te.n) {
-        printf("VD_BENCH_FAIL manifest_counts_mismatch dim=%ld/%zu imgs=%ld/%zu,%ld/%zu,%ld/%zu\n",
-               man.pca_dim, DIM, man.train_img, tr.n, man.val_img, va.n, man.test_img, te.n);
-        return 3;
-    }
-    if (man.tv_id_overlap != 0 || man.tv_content_overlap != 0 ||
-        man.prev_id_overlap != 0 || man.prev_content_overlap != 0) {
-        printf("VD_BENCH_FAIL manifest_declares_leakage\n");
-        return 3;
-    }
-    snprintf(variant, sizeof variant, "%s", man.variant);
-    snprintf(frontend, sizeof frontend,
-             "SelectiveSearchFast(class-agnostic) -> %ldx%ld %s HOG %ldD -> PCA%ld (train-only)",
-             man.hog_side, man.hog_side, man.color ? "colour" : "gray", man.hog_dim, man.pca_dim);
-    G_VARIANT = variant; G_FRONTEND = frontend;
-    printf("variant=%s dim=%zu frontend=%s\n", G_VARIANT, DIM, G_FRONTEND);
-    printf("manifest: verified sha256 of train/val/test/pca artefacts\n");
-    evidence_manifest = 1;
 
-    /* A previous variant's holdout is spent. Re-assert here, at the scoring
-       boundary, so pointing --cache at a stale directory cannot produce a
-       number against images that were already scored. */
-    if (man.test_offset > 0 && !prev_test) {
-        printf("VD_BENCH_FAIL prev_test_required variant=%s test_offset=%ld\n",
-               G_VARIANT, man.test_offset);
-        return 3;
+    /* Leakage: measured here, from the artefacts, not read off the manifest. */
+    {
+        long id_dups = bench_id_overlap(&tr, &va, &te);
+        long intra_dups = 0;
+        long ct_dups = bench_content_overlap(cache, &intra_dups);
+        if (id_dups < 0 || ct_dups < 0) {
+            printf("VD_BENCH_FAIL leakage_check_failed\n");
+            return 3;
+        }
+        if (id_dups != 0 || ct_dups != 0) {
+            printf("VD_BENCH_FAIL measured_leakage id=%ld content=%ld\n", id_dups, ct_dups);
+            return 3;
+        }
+        printf("leakage: measured across train/val/holdout -> cross-split id overlap 0, "
+               "cross-split content overlap 0 (intra-split duplicate images: %ld)\n", intra_dups);
+        g_intra_dups = intra_dups;
+        evidence_leak = 1;
     }
-    if (man.test_offset > 0 &&
-        (man.prev_ids_checked != man.test_count || man.prev_sha_checked != man.test_count)) {
-        printf("VD_BENCH_FAIL prev_evidence_incomplete ids=%ld sha=%ld expected=%ld\n",
-               man.prev_ids_checked, man.prev_sha_checked, man.test_count);
-        return 3;
-    }
-    if (prev_test) {
+
+    /* The spent-holdout requirement comes from the PROTOCOL. */
+    if (PROTO->requires_prev) {
         Pack pv;
         size_t a, b, leaks = 0;
         char pvsha[65];
+        if (!prev_test) {
+            printf("VD_BENCH_FAIL prev_test_required protocol=%s\n", PROTO->name);
+            return 3;
+        }
         if (load_pack(prev_test, &pv)) { printf("VD_BENCH_FAIL prev_test_unreadable\n"); return 3; }
-        /* the spent pack must be the exact one prep checked against */
-        if (vd_sha256_file(prev_test, pvsha) != 0 || strcmp(pvsha, man.sha_prev) != 0) {
-            printf("VD_BENCH_FAIL prev_test_hash_mismatch\n");
+        if ((long)pv.n != PROTO->prev_test_count) {
+            printf("VD_BENCH_FAIL prev_test_count got=%zu want=%ld\n",
+                   pv.n, PROTO->prev_test_count);
+            free_pack(&pv); return 3;
+        }
+        if (vd_sha256_file(prev_test, pvsha) != 0 ||
+            strcmp(pvsha, PROTO->prev_pack_sha) != 0) {
+            printf("VD_BENCH_FAIL prev_test_digest_mismatch\n");
             free_pack(&pv); return 3;
         }
         for (a = 0; a < te.n; a++)
             for (b = 0; b < pv.n; b++)
                 if (!strcmp(te.imgs[a].id, pv.imgs[b].id)) leaks++;
-        if (leaks) { printf("VD_BENCH_FAIL spent_holdout_reuse=%zu\n", leaks); free_pack(&pv); return 3; }
+        if (leaks) {
+            printf("VD_BENCH_FAIL spent_holdout_reuse=%zu\n", leaks);
+            free_pack(&pv); return 3;
+        }
         prev_ids_checked = pv.n;
-        printf("disjoint: holdout vs %zu already-scored ids -> 0 overlap (pack hash bound)\n",
-               prev_ids_checked);
+        printf("disjoint: holdout vs %zu already-scored ids -> 0 overlap "
+               "(count and digest pinned by protocol)\n", prev_ids_checked);
         free_pack(&pv);
         evidence_prev = 1;
-    } else if (man.test_offset == 0) {
-        evidence_prev = 1;   /* first slice: nothing was spent before it */
-    }
-
-    /* leakage re-assertion at bench level: IDs must be disjoint */
-    {
-        size_t a, b, leaks = 0;
-        for (a = 0; a < te.n; a++) {
-            for (b = 0; b < tr.n; b++) if (!strcmp(te.imgs[a].id, tr.imgs[b].id)) leaks++;
-            for (b = 0; b < va.n; b++) if (!strcmp(te.imgs[a].id, va.imgs[b].id)) leaks++;
-        }
-        if (leaks) { printf("VD_BENCH_FAIL id_leak=%zu\n", leaks); return 3; }
-        printf("leakage: test-vs-train/val id overlap = 0\n");
-        evidence_leak = 1;
+    } else {
+        evidence_prev = 1;
     }
 
     n = collect(&tr, &X, &Y, 20);  /* validation-time cost decision */
+    if (!X || !Y) { printf("VD_BENCH_FAIL collect_alloc\n"); return 6; }
     printf("train rows=%zu dim=%zu\n", n, DIM);
     if (n < 1000) { printf("VD_BENCH_FAIL too_few_train_rows=%zu\n", n); return 4; }
 
@@ -478,6 +659,7 @@ int main(int argc, char **argv) {
     {
         double *Ys = (double *)malloc(n * NCLS * sizeof(double));
         size_t k;
+        if (!Ys) { printf("VD_BENCH_FAIL shuffle_alloc\n"); return 6; }
         memcpy(Ys, Y, n * NCLS * sizeof(double));
         for (k = n; k > 1; k--) {
             size_t j = (size_t)(rnd() % k);
@@ -491,7 +673,7 @@ int main(int argc, char **argv) {
         btn_train_dynamic(&sh, X, Ys, n, 2000, 200, 1e-5, 1e-7);
         {
             VdDet **own; VdImage *v = run_detector(&va, &sh, 0.30, &own);
-            printf("VAL ap50_labelshuffle=%.6f\n", vd_ap50(v, va.n, 0.5));
+            printf("VAL ap50_labelshuffle=%.6f\n", ap_or_fault(v, va.n));
             free_det(v, own, va.n);
         }
         free(Ys);
@@ -506,16 +688,16 @@ int main(int argc, char **argv) {
         split_prop_recall(&va, 0.5, &h, &t);
         printf("VAL proposal_recall=%.6f (%zu/%zu)\n", t ? (double)h/t : 0.0, h, t);
         v = run_detector(&va, &head, 0.30, &own);
-        ap = vd_ap50(v, va.n, 0.5);
+        ap = ap_or_fault(v, va.n);
         for (s = 1; s < 20; s++) {
             double thr = s * 0.05, pr, rc, f1;
-            vd_pr_at(v, va.n, 0.5, thr, &pr, &rc);
+            if (vd_pr_at(v, va.n, 0.5, thr, &pr, &rc) != 0) g_eval_fault = 1;
             f1 = (pr + rc) > 0 ? 2 * pr * rc / (pr + rc) : 0.0;
             if (f1 > bestf) { bestf = f1; bestthr = thr; }
         }
         free_det(v, own, va.n);
-        v = run_detector(&va, &rndhead, 0.30, &own); apr = vd_ap50(v, va.n, 0.5); free_det(v, own, va.n);
-        v = run_linear(&va, &lin, 0.30, &own); apl = vd_ap50(v, va.n, 0.5); free_det(v, own, va.n);
+        v = run_detector(&va, &rndhead, 0.30, &own); apr = ap_or_fault(v, va.n); free_det(v, own, va.n);
+        v = run_linear(&va, &lin, 0.30, &own); apl = ap_or_fault(v, va.n); free_det(v, own, va.n);
         printf("VAL ap50_cnet=%.6f ap50_random=%.6f ap50_linear=%.6f best_thr=%.2f best_f1=%.4f\n",
                ap, apr, apl, bestthr, bestf);
         val_thr = bestthr;      /* the one parameter chosen on validation */
@@ -542,18 +724,18 @@ int main(int argc, char **argv) {
         prop_rec = t ? (double)h / t : 0.0;
 
         v = run_detector(&te, &head, 0.30, &own);
-        ap = vd_ap50(v, te.n, 0.5);
-        vd_pr_at(v, te.n, 0.5, thr, &pr, &rc);
+        ap = ap_or_fault(v, te.n);
+        if (vd_pr_at(v, te.n, 0.5, thr, &pr, &rc) != 0) g_eval_fault = 1;
         for (i2 = 0; i2 < te.n; i2++) ndet += v[i2].n_det;
         free_det(v, own, te.n);
 
         /* determinism: identical rerun of the same scored path */
-        v = run_detector(&te, &head, 0.30, &own); ap2 = vd_ap50(v, te.n, 0.5); free_det(v, own, te.n);
+        v = run_detector(&te, &head, 0.30, &own); ap2 = ap_or_fault(v, te.n); free_det(v, own, te.n);
 
-        v = run_detector(&te, &rndhead, 0.30, &own); apr = vd_ap50(v, te.n, 0.5); free_det(v, own, te.n);
-        v = run_linear(&te, &lin, 0.30, &own); apl = vd_ap50(v, te.n, 0.5); free_det(v, own, te.n);
+        v = run_detector(&te, &rndhead, 0.30, &own); apr = ap_or_fault(v, te.n); free_det(v, own, te.n);
+        v = run_linear(&te, &lin, 0.30, &own); apl = ap_or_fault(v, te.n); free_det(v, own, te.n);
         /* identical full evaluation of the frozen label-shuffle head */
-        v = run_detector(&te, &sh, 0.30, &own); aps = vd_ap50(v, te.n, 0.5); free_det(v, own, te.n);
+        v = run_detector(&te, &sh, 0.30, &own); aps = ap_or_fault(v, te.n); free_det(v, own, te.n);
         test_s = now_s() - t_test0;
 
         if (!isfinite(ap) || !isfinite(ap2) || !isfinite(apr) || !isfinite(apl) ||
@@ -596,9 +778,9 @@ int main(int argc, char **argv) {
             if (!buf) { printf("VD_BENCH_FAIL json_alloc\n"); return 7; }
             JS("{\n  \"schema_version\": 2,\n");
             JS("  \"gpu_policy\": \"CPU only; ROCR/HIP/CUDA_VISIBLE_DEVICES empty\",\n");
-            JS("  \"dataset\": \"PASCAL VOC 2007\", \"class\": \"car\",\n");
-            JS("  \"md5_trainval\": \"c52e279531787c972589f7e41ab4ae64\",\n");
-            JS("  \"md5_test\": \"b6e924de25625d8de591ea690078ad9f\",\n");
+            JS("  \"dataset\": \"%s\", \"class\": \"%s\",\n", PROTO->dataset, PROTO->cls);
+            JS("  \"protocol\": \"%s\", \"protocol_source\": \"pre-registered in vd_protocol.c; not cache-declared\",\n", PROTO->name);
+            JS("  \"note_md5\": \"VOC tar MD5s are verified by the fetch step, not by this binary; not asserted here\",\n");
             JS("  \"variant\": \"%s\",\n", G_VARIANT);
             JS("  \"split\": {\"train_img\": %zu, \"val_img\": %zu, \"test_img\": %zu, \"test_gt\": %zu},\n",
                tr.n, va.n, te.n, t);
@@ -610,7 +792,7 @@ int main(int argc, char **argv) {
                evidence_manifest, man.sha_train, man.sha_val, man.sha_test, man.sha_pca, man.sha_prev);
             JS("  \"evidence\": {\"manifest\": %d, \"prev_holdout\": %d, \"leakage\": %d, \"eval_fault\": %d},\n",
                evidence_manifest, evidence_prev, evidence_leak, g_eval_fault);
-            JS("  \"leakage\": {\"id_overlap\": 0, \"content_hash_overlap_trainval_test\": 0, \"trainval_internal_dup_pairs\": 3},\n");
+            JS("  \"leakage\": {\"measured_cross_split_id_overlap\": 0, \"measured_cross_split_content_overlap\": 0, \"measured_intra_split_duplicate_images\": %ld},\n", g_intra_dups);
             JS("  \"frontend\": \"%s\",\n", G_FRONTEND);
             JS("  \"cnet_learned_component\": \"BTN head PORT_RAW%zu -> PORT_ONEHOT2\",\n", DIM);
             JS("  \"train_rows\": %zu, \"train_seconds\": %.1f, \"test_seconds\": %.1f,\n", n, train_s, test_s);
