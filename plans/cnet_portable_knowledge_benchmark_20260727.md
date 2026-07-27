@@ -124,8 +124,7 @@ stored `recipe_fp` values and correcting them would invalidate existing ledgers.
 Re-review of `66134af` found unresolved Critical/High blockers. Fixed RED first;
 `logs/knowledge_capsule_RED3.log` holds 7 failures before any implementation.
 
-**GREEN**: `KNOWLEDGE_CAPSULE_PASS checks=52` (was 39), warning-clean under `-Werror`,
-and clean under ASAN/UBSAN via `make knowledge_capsule_san`.
+**GREEN (round 3)**: `KNOWLEDGE_CAPSULE_PASS checks=52`. Round 4 takes this to **80**.
 
 Two of the new tests again passed for the wrong reason and were tightened before
 counting: overlong provenance was refused by downstream *parse fallout* (the overflow
@@ -157,6 +156,33 @@ tag behind. Deterministic, reachable, and now asserted.
   to manufacture a clean sanitizer build.
 - `src/acquire.c` still carries the short FNV basis in two places; correcting it would
   invalidate stored `recipe_fp` values.
+
+---
+
+## 2c. Review round 4 — final Critical/High closure
+
+Re-review of `a496642`. RED first: `logs/knowledge_capsule_RED4.log`, 4 failures /73.
+**GREEN: `KNOWLEDGE_CAPSULE_PASS checks=80`**, `-Werror`, and clean under
+ASAN + UBSAN + **LeakSanitizer**.
+
+| # | Blocker | Fix | Proven by |
+|---|---|---|---|
+| 1 | Same-owner rollback destroyed the old gate | target-side preflight before any mutation: same name + same digest + byte-identical coverage = idempotent no-op; anything else refused | `target_unit_conflict_same_name_different_content`; old rows/targets and base counts asserted byte-identical |
+| 2 | Failed imports stranded registry slots | `hybrid_coverage_forget_unit` now moves the last record into the hole and decrements `coverage_count` | `reclaim: count decreased / array compacted / all remaining preserved`; `HYBRID_COVERAGE_MAX+8` rejected imports leave the count flat and the registry usable |
+| 3 | `cnb_add_unit_bytes` not allocation-failure atomic | reserve tags/blobs/units **before** any mutation via `cnb_reserve`, then a commit that cannot allocate; test-only `cnb_test_alloc_fail_in(n)` injects failure at each reservation | 3/3 injected failures refused with `tag/blob/unit_count` unchanged, then a normal admit still succeeds |
+| 4 | Payload temp symlink clobber | fixed in `cnb_save` itself (benefits every caller): `O_CREAT\|O_EXCL\|O_NOFOLLOW` + rename | planted symlink at `unit.cnb.tmp`; victim file byte-identical after export |
+| 5 | `cov_out==0` contract undefined | **permitted and documented**: `HybridCoverage` treats labels as optional (sidecar restores carry inputs only), so 0 means "rows, no labels"; nonzero must equal the checked output-port dim | `cov0` export+import round-trip; `coverage_out_dim_mismatch` for nonzero mismatch |
+| 6 | Test leaked its own BTNs | every BTN `btn_free`+`free` on all paths | LeakSanitizer clean (was 49,960 bytes in 33 allocations) |
+| 7 | Bench unprotected | `knowledge_accumulation_bench` (~1 s) added to `ci_core` alongside `knowledge_capsule` | `CNET_CI_CORE_PASS` runs both |
+| 9 | Sanitizer target unguessable | renamed **`make knowledge_capsule_sanitize`** (`knowledge_capsule_san` kept as an alias) | — |
+
+### A bug the sanitizer caught in my own fix
+
+Reserving capacity up front let me replace `CNB_PUSH` with direct writes in the commit
+path — but `CNB_PUSH` also **zeroed the new slot**, and dropping that left
+`units[].provenance` uninitialised, so `cnb_save`'s `strlen` ran off the end. ASAN
+reported a heap-buffer-overflow; the slots are now explicitly zeroed. This is the
+argument for the sanitizer target existing at all.
 
 ---
 
@@ -339,24 +365,33 @@ provenance identity; that is named backlog, not something claimed here.
 
 Hardened within that scope: `O_NOFOLLOW` + regular-file check (symlinked/special
 payloads refused), hash-the-bytes-then-load-those-bytes via a private temp (no
-hash-then-reopen window), and temp+rename manifest writes (no partial capsule).
+hash-then-reopen window), and exclusive O_NOFOLLOW temp + rename for BOTH the
+payload and the manifest. A half-written package is rejected, not prevented — see
+§9 for the exact guarantees.
 
-## 9. Umbrella placement
+## 9. Umbrella placement and exact guarantees
 
-`knowledge_capsule` (~16 s, `-Werror`) runs in **`ci_core`** — the continuously run core
-CI path — verified by `CNET_CI_CORE_PASS`. It also runs inside `cognitive_runtime`.
-`asi_framing` stays in `claims`. `make claims` still does not pass on this tree:
-`soul_reopen_test` fails `SoulHost fails closed on malformed adjacent runtime state`,
-**pre-existing**, verified identical on the stashed baseline — not masked, not in scope.
+`knowledge_capsule` (80 checks, `-Werror`) and `knowledge_accumulation_bench` both run in
+**`ci_core`** — verified by `CNET_CI_CORE_PASS`. `knowledge_capsule` also runs in
+`cognitive_runtime`. `asi_framing` is in `claims`.
 
-`make knowledge_capsule_san` gives an ASAN/UBSAN run of the same 52 checks.
+Sanitizer: **`make knowledge_capsule_sanitize`** (alias `knowledge_capsule_san`) — ASAN +
+UBSAN + LeakSanitizer over the same 80 checks. It deliberately omits `-Werror`: `-O1`
+surfaces pre-existing format-truncation warnings in `src/cnet_auto_learn.c`, and unrelated
+TUs were not edited to manufacture a clean build. `-Werror` IS enforced on both focused
+targets at the project's standard flags.
 
-The full accumulation benchmark stays explicit (trains 41 BTNs).
+`make claims` still does not pass: `soul_reopen_test` fails `SoulHost fails closed on
+malformed adjacent runtime state`, **pre-existing**, verified identical on the stashed
+baseline. Not masked, not in scope.
 
-**Parent-reported `honest_memory_retrieval=0`:** not reproduced here —
-`CAPABILITY_CERT_PASS certified=6/6` with `honest_memory_retrieval metric=1.000`, and
-`COGNITIVE_RUNTIME_PASS`. That capability is a dotnet test unrelated to anything in this
-diff (base/capsule/hybrid). Treated as transient runtime state; **no floor was lowered**.
+**Package guarantees, stated exactly.** There is **no atomic directory publication**: the
+payload and manifest publish separately, so a capsule directory can be observed
+half-written. What is guaranteed is that such a package is **rejected** — both files, a
+manifest checksum over every security-relevant field, and a payload checksum are all
+required. Per file, each is written to an exclusive `O_CREAT|O_EXCL|O_NOFOLLOW` temp and
+renamed, so no reader sees a partial file and a planted symlink at either temp path cannot
+be followed. Every earlier "no partial capsule" phrasing is removed.
 
 ## 10. Does the evidence support the thesis?
 

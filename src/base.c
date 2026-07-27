@@ -286,6 +286,35 @@ static int find_unit(const CnetBase *b, const char *name) {
     return -1;
 }
 
+/* ---- capacity reservation (+ test-only fault injection) ------------------
+   Reserving every array BEFORE any mutation is what makes admission
+   all-or-nothing: once minting starts, nothing left can allocate, so nothing
+   left can fail for want of memory. */
+static size_t g_cnb_alloc_fail_in = 0;
+
+void cnb_test_alloc_fail_in(size_t n) { g_cnb_alloc_fail_in = n; }
+
+static int cnb_reserve(void **arr, size_t count, size_t extra, size_t *cap,
+                       size_t elem) {
+    size_t want, nc;
+    void *na;
+    if (g_cnb_alloc_fail_in && --g_cnb_alloc_fail_in == 0) return -1;
+    if (extra > (size_t)-1 - count) return -1;
+    want = count + extra;
+    if (want <= *cap) return 0;
+    nc = *cap ? *cap : 8;
+    while (nc < want) {
+        if (nc > (size_t)-1 / 2) return -1;
+        nc *= 2;
+    }
+    if (nc > (size_t)-1 / elem) return -1;
+    na = realloc(*arr, nc * elem);
+    if (!na) return -1;
+    *arr = na;
+    *cap = nc;
+    return 0;
+}
+
 static int cnb_add_unit_bytes(CnetBase *b, const char *name,
                               unsigned long long behavior_digest,
                               const Port *in_ports, size_t n_in,
@@ -343,6 +372,26 @@ static int cnb_add_unit_bytes(CnetBase *b, const char *name,
         }
     }
 
+    /* Reserve every array now, while nothing has been mutated. A CNB_PUSH
+       failure after minting used to leave tags behind, or a unit-reserve
+       failure could leave tags plus an orphan blob. */
+    if (cnb_reserve((void **)&b->tags, b->tag_count, n_in + n_out, &b->tag_cap,
+                    sizeof(CnbTag)) != 0) {
+        free(bytes);
+        return -1;
+    }
+    if (blob_index == b->blob_count &&
+        cnb_reserve((void **)&b->blobs, b->blob_count, 1, &b->blob_cap,
+                    sizeof(CnbBlob)) != 0) {
+        free(bytes);
+        return -1;
+    }
+    if (cnb_reserve((void **)&b->units, b->unit_count, 1, &b->unit_cap,
+                    sizeof(CnbUnitRef)) != 0) {
+        free(bytes);
+        return -1;
+    }
+
     /* ---- COMMIT ---------------------------------------------------------
        Tag mint can still refuse when two of THIS unit's tags near-miss each
        other, which no base-relative preflight can see. Tags are append-only
@@ -372,14 +421,17 @@ static int cnb_add_unit_bytes(CnetBase *b, const char *name,
         bytes = NULL;
     }
     if (blob_index == b->blob_count) {
-        CNB_PUSH(b->blobs, b->blob_count, b->blob_cap, CnbBlob);
+        /* Capacity is reserved, but the slot still needs zeroing — CNB_PUSH
+           did that and this path replaced it. Skipping it left units[].provenance
+           uninitialised and cnb_save's strlen ran off the end (caught by ASAN). */
+        memset(&b->blobs[b->blob_count], 0, sizeof b->blobs[0]);
         b->blobs[b->blob_count].digest = digest;
         b->blobs[b->blob_count].bytes = bytes;   /* base owns them now */
         b->blobs[b->blob_count].len = len;
         b->blob_count++;
     }
 
-    CNB_PUSH(b->units, b->unit_count, b->unit_cap, CnbUnitRef);
+    memset(&b->units[b->unit_count], 0, sizeof b->units[0]);
     snprintf(b->units[b->unit_count].name, CNB_NAME_MAX, "%s", name);
     b->units[b->unit_count].blob_index = blob_index;
     b->units[b->unit_count].behavior_digest = behavior_digest;
@@ -589,8 +641,19 @@ int cnb_save(const CnetBase *b, const char *path) {
     if (w_u64(&w, seal)) goto done;
 
     snprintf(tmp, sizeof tmp, "%s.tmp", path);
-    f = fopen(tmp, "wb");
-    if (f == NULL) goto done;
+    /* The temp name is predictable, so fopen("wb") would follow a planted
+       symlink and truncate whatever it points at. Remove any existing entry
+       (unlinking a symlink removes the link, never its target) and create
+       exclusively without following. */
+    {
+        int tfd;
+        (void)remove(tmp);
+        tfd = open(tmp, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC,
+                   0600);
+        if (tfd < 0) goto done;
+        f = fdopen(tfd, "wb");
+        if (f == NULL) { close(tfd); (void)remove(tmp); goto done; }
+    }
     ok = (fwrite(w.buf, 1, w.len, f) == w.len) ? 0 : -1;
     if (ok == 0 && cnb_sync_file(f) != 0) ok = -1;
     if (fclose(f) != 0) ok = -1;

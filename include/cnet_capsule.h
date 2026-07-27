@@ -19,7 +19,13 @@
  *   - payload                     a single-unit CNB (per-blob CNU1 seal)
  *   - runtime compatibility       CNB container format version
  *   - certification evidence      behaviour digest checked after materialise
- *   - coverage / abstention       the certified input domain travels WITH it
+ *   - coverage / abstention       the certified input rows travel WITH it, plus
+ *                                 OPTIONAL targets. HybridCoverage treats labels
+ *                                 as optional by design (a record restored from
+ *                                 the sidecar carries inputs only and still
+ *                                 gates), so cov_out==0 is permitted and means
+ *                                 "rows, no labels". A NONZERO cov_out must equal
+ *                                 the unit's checked output-port dimension.
  *   - provenance                  whatever the source base recorded, bound and
  *                                 verified against the payload. It is NOT
  *                                 mandatory: an empty provenance exports and
@@ -28,13 +34,15 @@
  *   - integrity                   FNV-1a over the payload AND over every
  *                                 security-relevant manifest field
  *
- * PACKAGE ATOMICITY: the two files are published separately, so a capsule
- * directory CAN be observed half-written (payload present, manifest not, or
- * vice versa). That is not prevented — it is REJECTED: import requires both
- * files, a manifest checksum over every security-relevant field, and a payload
- * checksum, so a partial package fails closed rather than importing something
- * incomplete. Each file is individually written to an exclusive O_NOFOLLOW temp
- * and renamed, so neither file is ever seen partially written.
+ * PACKAGE ATOMICITY — exactly what is and is not guaranteed:
+ *   NOT guaranteed: the two files publish separately, so a capsule directory
+ *     CAN be observed half-written. There is no atomic directory publication.
+ *   Guaranteed: a half-written package is REJECTED. Import requires both files,
+ *     a manifest checksum over every security-relevant field, and a payload
+ *     checksum, so an incomplete package fails closed.
+ *   Guaranteed per file: each is written to an exclusive O_CREAT|O_EXCL|
+ *     O_NOFOLLOW temp and renamed, so no reader sees a partially written file
+ *     and a planted symlink at either temp path cannot be followed.
  *
  * TRUST BOUNDARY: a capsule is a LOCAL transfer object. Its checksums are
  * unkeyed, so they detect ACCIDENT — truncation, bit-rot, a partial write, a

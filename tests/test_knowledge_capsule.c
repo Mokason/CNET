@@ -184,24 +184,34 @@ static int build_unit(CnetBase *base, HybridAi *cov, const char *name) {
         oh(in[i], i);
         oh(tg[i], rot3(i));
     }
-    if (btn_init(btn, SYM, SYM, 16, 64, 0.5, 7) != 0) return -1;
+    if (btn_init(btn, SYM, SYM, 16, 64, 0.5, 7) != 0) { free(btn); return -1; }
     btn_set_ports(btn, pin, pout);
     btn_train_dynamic(btn, (const double *)in, (const double *)tg, SYM, 20000,
                       200, 1e-6, 1e-8);
     btn_train(btn, (const double *)in, (const double *)tg, SYM, 4000);
     memset(&c, 0, sizeof c);
     if (contract_init_borrowed(&c, name, btn, (const double *)in,
-                               (const double *)tg, SYM) != 0)
-        return -1;
+                               (const double *)tg, SYM) != 0) {
+        btn_free(btn); free(btn); return -1;
+    }
     memset(&s, 0, sizeof s);
-    if (specialist_wrap_btn(&s, btn, name) != 0) { contract_free(&c); return -1; }
-    if (cnb_add_unit(base, btn, &c, NULL) != 0) { contract_free(&c); return -1; }
+    if (specialist_wrap_btn(&s, btn, name) != 0) {
+        contract_free(&c); btn_free(btn); free(btn); return -1;
+    }
+    if (cnb_add_unit(base, btn, &c, NULL) != 0) {
+        contract_free(&c); btn_free(btn); free(btn); return -1;
+    }
     if (hybrid_coverage_record(cov, pin, pout, name, (const double *)in,
                                (const double *)tg, COV_ROWS, SYM, SYM) != 0) {
         contract_free(&c);
+        btn_free(btn);
+        free(btn);
         return -1;
     }
+    /* cnb_add_unit copies the serialized image, so the BTN stays caller-owned. */
     contract_free(&c);
+    btn_free(btn);
+    free(btn);
     return 0;
 }
 
@@ -577,7 +587,247 @@ int main(void) {
                   "atomicity: unit_count unchanged after refusal");
             contract_free(&c3);
         }
+        btn_free(btn2);
+        free(btn2);
         cnb_free(&b);
+    }
+
+    /* R4-1: SAME owner, different incoming payload. The old gate must survive:
+       replacing coverage then failing cnb_add_unit (same name, different
+       content) used to delete the replacement and lose the original. */
+    {
+        CnetBase b;
+        HybridAi h;
+        BinaryTransformNetwork *other;
+        Contract oc;
+        double in2[SYM][SYM], tg2[SYM][SYM];
+        double oldrow[SYM], oldtgt[SYM], keep_rows[SYM], keep_tgts[SYM];
+        const HybridCoverage *rec;
+        size_t tags0, blobs0, units0;
+        int i4;
+        cnb_init(&b);
+        hybrid_ai_init(&h);
+        /* a DIFFERENT unit body under the SAME name */
+        other = (BinaryTransformNetwork *)calloc(1, sizeof *other);
+        check(other != NULL, "same-owner: scratch btn allocated");
+        for (i4 = 0; i4 < SYM; i4++) { oh(in2[i4], i4); oh(tg2[i4], (i4 + 5) % SYM); }
+        if (other && btn_init(other, SYM, SYM, 16, 64, 0.5, 21) == 0) {
+            btn_set_ports(other, pin, pout);
+            btn_train_dynamic(other, (const double *)in2, (const double *)tg2,
+                              SYM, 8000, 200, 1e-6, 1e-8);
+            memset(&oc, 0, sizeof oc);
+            if (contract_init_borrowed(&oc, unit, other, (const double *)in2,
+                                       (const double *)tg2, SYM) == 0) {
+                (void)cnb_add_unit(&b, other, &oc, NULL);
+                contract_free(&oc);
+            }
+        }
+        oh(oldrow, 2);
+        oh(oldtgt, 6);
+        check(hybrid_coverage_record(&h, pin, pout, unit, oldrow, oldtgt, 1,
+                                     SYM, SYM) == 0,
+              "same-owner: pre-existing gate for the same unit name");
+        memcpy(keep_rows, oldrow, sizeof keep_rows);
+        memcpy(keep_tgts, oldtgt, sizeof keep_tgts);
+        tags0 = b.tag_count; blobs0 = b.blob_count; units0 = b.unit_count;
+        memset(&rep, 0, sizeof rep);
+        rc = cnet_capsule_import(&b, &h, dir, &rep);
+        check(rc != 0, "same-owner: conflicting payload REJECTED");
+        printf("      %s\n", rep.reject_reason);
+        rec = NULL;
+        { size_t z; for (z = 0; z < h.coverage_count; z++)
+            if (h.coverage[z].active && strcmp(h.coverage[z].unit, unit) == 0)
+                rec = &h.coverage[z]; }
+        check(rec != NULL, "same-owner: old gate still present");
+        check(rec && rec->n_rows == 1 && rec->in_dim == SYM &&
+                  rec->out_dim == SYM &&
+                  memcmp(rec->rows, keep_rows, sizeof keep_rows) == 0 &&
+                  rec->targets &&
+                  memcmp(rec->targets, keep_tgts, sizeof keep_tgts) == 0,
+              "same-owner: old rows/targets byte-identical");
+        check(b.tag_count == tags0 && b.blob_count == blobs0 &&
+                  b.unit_count == units0,
+              "same-owner: base counts unchanged");
+        cnb_free(&b);
+        hybrid_ai_free(&h);
+        if (other) { btn_free(other); }
+        free(other);
+    }
+
+    /* R4-2: repeated REJECTED imports must not consume registry slots. */
+    {
+        HybridAi h;
+        size_t before, after, i5;
+        hybrid_ai_init(&h);
+        /* occupy the shape with a foreign owner so every import is rejected */
+        {
+            double row[SYM], tgt[SYM];
+            oh(row, 0); oh(tgt, 3);
+            (void)hybrid_coverage_record(&h, pin, pout, "foreign_owner", row,
+                                         tgt, 1, SYM, SYM);
+        }
+        before = hybrid_coverage_count(&h);
+        for (i5 = 0; i5 < HYBRID_COVERAGE_MAX + 8; i5++) {
+            CnetBase b;
+            cnb_init(&b);
+            memset(&rep, 0, sizeof rep);
+            (void)cnet_capsule_import(&b, &h, dir, &rep);
+            cnb_free(&b);
+        }
+        after = hybrid_coverage_count(&h);
+        check(after == before, "slots: rejected imports consume no registry slots");
+        check(h.coverage_count <= HYBRID_COVERAGE_MAX,
+              "slots: coverage_count stays within bound");
+        /* registry must still work afterwards */
+        {
+            double row[SYM];
+            oh(row, 1);
+            check(hybrid_coverage_record(&h, P("fresh_in"), P("fresh_out"),
+                                         "fresh_unit", row, NULL, 1, SYM,
+                                         0) == 0,
+                  "slots: registry still usable after the loop");
+        }
+        hybrid_ai_free(&h);
+    }
+
+    /* R4-3: forget must reclaim its slot, not strand it. */
+    {
+        HybridAi h;
+        double row[SYM];
+        size_t i6, c0;
+        hybrid_ai_init(&h);
+        oh(row, 0);
+        for (i6 = 0; i6 < 4; i6++) {
+            char t1[32], t2[32], un[32];
+            snprintf(t1, sizeof t1, "rc_%c%c%zu_in", (char)('a' + i6),
+                     (char)('m' + i6), i6);
+            snprintf(t2, sizeof t2, "rc_%c%c%zu_out", (char)('a' + i6),
+                     (char)('m' + i6), i6);
+            snprintf(un, sizeof un, "rc_unit_%zu", i6);
+            (void)hybrid_coverage_record(&h, P(t1), P(t2), un, row, NULL, 1,
+                                         SYM, 0);
+        }
+        c0 = hybrid_coverage_count(&h);
+        check(c0 == 4, "reclaim: four records stored");
+        check(hybrid_coverage_forget_unit(&h, "rc_unit_1") == 1,
+              "reclaim: middle record forgotten");
+        check(hybrid_coverage_count(&h) == 3, "reclaim: count decreased");
+        check(h.coverage_count == 3, "reclaim: array compacted, no stranded slot");
+        check(hybrid_coverage_has_unit(&h, "rc_unit_0") &&
+                  hybrid_coverage_has_unit(&h, "rc_unit_2") &&
+                  hybrid_coverage_has_unit(&h, "rc_unit_3"),
+              "reclaim: all remaining records preserved");
+        hybrid_ai_free(&h);
+    }
+
+    /* R4-4: a pre-created payload temp SYMLINK must not clobber its target. */
+    {
+        char victim[512], tmplink[512];
+        FILE *vf;
+        char vbuf[64];
+        rm_pack(bad);
+        (void)mkdir(bad, 0777);
+        snprintf(victim, sizeof victim, "%s/victim.txt", bad);
+        vf = fopen(victim, "wb");
+        if (vf) { fputs("DO_NOT_CLOBBER", vf); fclose(vf); }
+        snprintf(tmplink, sizeof tmplink, "%s/unit.cnb.tmp", bad);
+        (void)remove(tmplink);
+        {
+            char abs[600], cwd[256];
+            if (!getcwd(cwd, sizeof cwd)) cwd[0] = '\0';
+            snprintf(abs, sizeof abs, "%s/%s", cwd, victim);
+            check(symlink(abs, tmplink) == 0, "symlink: payload temp planted");
+        }
+        memset(&rep, 0, sizeof rep);
+        (void)cnet_capsule_export(&src, &cov_src, unit, bad, &rep);
+        vf = fopen(victim, "rb");
+        memset(vbuf, 0, sizeof vbuf);
+        if (vf) { size_t vr = fread(vbuf, 1, sizeof vbuf - 1, vf); vbuf[vr] = 0; fclose(vf); }
+        check(strcmp(vbuf, "DO_NOT_CLOBBER") == 0,
+              "symlink: victim file byte-identical (temp not followed)");
+        (void)remove(victim);
+        (void)remove(tmplink);
+        rm_pack(bad);
+    }
+
+    /* R4-5: cov_out==0 is a documented, permitted contract (targets optional). */
+    {
+        CnetBase b;
+        HybridAi h, src2;
+        CnetBase srcb;
+        double row[SYM];
+        cnb_init(&srcb);
+        hybrid_ai_init(&src2);
+        check(build_unit(&srcb, &src2, "cap_norows") == 0,
+              "cov0: source unit built");
+        oh(row, 0);
+        /* replace with an inputs-only record, as the sidecar restore path makes */
+        (void)hybrid_coverage_forget_unit(&src2, "cap_norows");
+        check(hybrid_coverage_record(&src2, P("cap_in"), P("cap_out"),
+                                     "cap_norows", row, NULL, 1, SYM, 0) == 0,
+              "cov0: inputs-only coverage recorded");
+        rm_pack("tmp_capsule_cov0");
+        memset(&rep, 0, sizeof rep);
+        check(cnet_capsule_export(&srcb, &src2, "cap_norows",
+                                  "tmp_capsule_cov0", &rep) == 0,
+              "cov0: exports with targets omitted");
+        cnb_init(&b);
+        hybrid_ai_init(&h);
+        memset(&rep, 0, sizeof rep);
+        check(cnet_capsule_import(&b, &h, "tmp_capsule_cov0", &rep) == 0,
+              "cov0: imports (targets are optional by design)");
+        check(hybrid_coverage_rows(&h, P("cap_in"), P("cap_out")) == 1,
+              "cov0: inputs-only gate restored");
+        cnb_free(&b); hybrid_ai_free(&h);
+        cnb_free(&srcb); hybrid_ai_free(&src2);
+        rm_pack("tmp_capsule_cov0");
+    }
+
+    /* R4-6: allocation failure at each reservation point must leave the base
+       byte-identical. Without executable failure-path evidence, "all-or-nothing"
+       is an assertion, not a property. */
+    {
+        CnetBase b;
+        BinaryTransformNetwork *u1;
+        Contract c1;
+        double in3[SYM][SYM], tg3[SYM][SYM];
+        size_t t0, b0, n0;
+        int i7, fail_at, injected_refusals = 0;
+        cnb_init(&b);
+        u1 = (BinaryTransformNetwork *)calloc(1, sizeof *u1);
+        check(u1 != NULL, "allocfail: scratch btn allocated");
+        for (i7 = 0; i7 < SYM; i7++) { oh(in3[i7], i7); oh(tg3[i7], rot3(i7)); }
+        if (u1 && btn_init(u1, SYM, SYM, 16, 64, 0.5, 31) == 0) {
+            btn_set_ports(u1, P("af_alpha_in"), P("af_omega_out"));
+            btn_train_dynamic(u1, (const double *)in3, (const double *)tg3, SYM,
+                              8000, 200, 1e-6, 1e-8);
+            memset(&c1, 0, sizeof c1);
+            if (contract_init_borrowed(&c1, "af_unit", u1, (const double *)in3,
+                                       (const double *)tg3, SYM) == 0) {
+                t0 = b.tag_count; b0 = b.blob_count; n0 = b.unit_count;
+                /* Three reservations happen: tags, blob, unit. */
+                for (fail_at = 1; fail_at <= 3; fail_at++) {
+                    int arc;
+                    cnb_test_alloc_fail_in((size_t)fail_at);
+                    arc = cnb_add_unit(&b, u1, &c1, NULL);
+                    cnb_test_alloc_fail_in(0);
+                    if (arc != 0) injected_refusals++;
+                    check(b.tag_count == t0 && b.blob_count == b0 &&
+                              b.unit_count == n0,
+                          "allocfail: base unchanged after injected failure");
+                }
+                check(injected_refusals == 3,
+                      "allocfail: every injected reservation failure refused");
+                /* and the base still works with injection disabled */
+                check(cnb_add_unit(&b, u1, &c1, NULL) == 0,
+                      "allocfail: normal admit still succeeds afterwards");
+                check(b.unit_count == n0 + 1, "allocfail: exactly one unit added");
+                contract_free(&c1);
+            }
+        }
+        cnb_free(&b);
+        if (u1) { btn_free(u1); }
+        free(u1);
     }
 
     /* transactional: coverage cannot be stored -> unit must not land either */

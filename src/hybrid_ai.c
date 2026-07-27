@@ -277,6 +277,12 @@ const char *hybrid_coverage_owner(const HybridAi *h, Port in_port,
     return (c && c->active && c->rows) ? c->unit : NULL;
 }
 
+/* Reclaims the slot rather than stranding it: zeroing in place left
+   coverage_count high, so repeated failed imports could exhaust a fixed-size
+   registry that was in fact empty. The last record is moved into the hole and
+   the count drops, which keeps the array dense and preserves every remaining
+   record. Callers must not hold a HybridCoverage* (or a name returned by
+   hybrid_coverage_owner) across this call. */
 int hybrid_coverage_forget_unit(HybridAi *h, const char *unit) {
     size_t i;
     if (!h || !unit || !unit[0]) return 0;
@@ -285,7 +291,10 @@ int hybrid_coverage_forget_unit(HybridAi *h, const char *unit) {
         if (!c->active || strcmp(c->unit, unit) != 0) continue;
         free(c->rows);
         free(c->targets);
-        memset(c, 0, sizeof *c);
+        if (i + 1 < h->coverage_count)
+            *c = h->coverage[h->coverage_count - 1];
+        memset(&h->coverage[h->coverage_count - 1], 0, sizeof h->coverage[0]);
+        h->coverage_count--;
         return 1;
     }
     return 0;

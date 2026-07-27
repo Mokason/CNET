@@ -125,6 +125,12 @@ CNET_API int cnb_get_unit(const CnetBase *b, const char *name,
    than half-parsed. */
 CNET_API unsigned cnb_format_version(void);
 
+/* TEST-ONLY allocation fault injection. n=0 disables (the default, and the
+ * only state production ever sees); n>=1 makes the n-th subsequent internal
+ * capacity reservation fail, so the all-or-nothing behaviour of cnb_add_unit
+ * can be proven on the failure path instead of asserted. */
+CNET_API void cnb_test_alloc_fail_in(size_t n);
+
 /* 1 if a unit with this name exists in the base, else 0. */
 int cnb_has_unit(const CnetBase *b, const char *name);
 
