@@ -386,16 +386,39 @@ and it is computed with the identical full pipeline used for every other arm. Th
 bar-bearing holdout evaluation of the main head happens once, in the parent, after the
 worker has been collected.
 
+**Staging is never deleted, by anything.** Identity-bound directory removal is not
+expressible in portable POSIX — the inode can only be checked and then removed by
+pathname, and that gap cannot be closed. So `vd_stage_abort` deletes nothing under any
+condition: it releases held descriptors and reports the unique staging path, and every
+`vd_prep` failure after staging begins funnels through one cleanup that prints
+`VD_STAGE_QUARANTINE <path>`. Reclaiming quarantined directories is deliberately an
+operator/offline task; no automatic collection is performed.
+
+**Remaining Medium, stated precisely rather than overclaimed.** Publication checks the
+staging inode immediately before `renameat2(RENAME_NOREPLACE)` and again immediately
+after. If the staging *pathname* were re-pointed at a different directory between those
+two operations, a wrong inode could become visible at the destination. The post-check
+detects this and fails closed, marking the destination as quarantine — but it does **not**
+delete or undo it, because that would reintroduce exactly the deletion gap this design
+removed. The practical consequence is bounded: a cache published that way cannot be
+scored, because `vd_bench` recomputes the artifact root from its own held descriptors and
+requires it to equal the constant pinned in `vd_protocol.c`. This is a fail-closed
+residual, not a prevented one, and is recorded here as such.
+
 **Publication is fresh-only.** In-place cache replacement was retired entirely rather than
 made safer. Publication now only ever creates an **absent** destination, via
 `renameat2(RENAME_NOREPLACE)` from the held parent dirfd under a parent-local no-follow
-lock; an existing destination is a hard refusal and no successful path deletes or swaps
-anything. The abort path removes the staging directory only while it is still provably the
-inode that was created, and otherwise leaves it as a reported quarantine. `vd_prep
---replace` returns a nonzero retired diagnostic and callers choose a fresh `--out` path.
-The previous exchange-and-delete design needed every guarantee to rest on a deletion
-targeting the right inode, which is a check/use gap POSIX cannot fully close; removing the
-capability removes the gap.
+lock; an existing destination is a hard refusal and no path — successful or otherwise —
+deletes or swaps anything. `vd_prep --replace` returns a nonzero retired diagnostic and
+callers choose a fresh `--out` path.
+
+**Worker signal safety.** `SIGINT`/`SIGTERM` are blocked and `sigaction` handlers installed
+*before* `fork()`, so there is no interval in which a signal can arrive with no handler, or
+with a handler but no child PID to act on. The child restores default dispositions and the
+original mask before doing any work. The parent publishes the child PID and the absolute
+deadline while still blocked and only then restores the mask, so a signal delivered inside
+that window is merely pending and reaches a fully initialised handler. The original actions
+and mask are restored exactly on every exit path.
 
 **What was deliberately not done.** The dominant cost is four sequential BTN trainings
 (`train_s` 2975 s of a 3540 s serial wall) whose update order is fixed by the protocol.

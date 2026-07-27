@@ -41,7 +41,7 @@
 #define NCLS 2
 
 static size_t DIM = 0;
-static int g_eval_fault = 0;
+static int g_eval_fault = 0;   /* set by any non-finite metric or NMS refusal */
 static long g_intra_dups = 0;
 static char g_artifact_root[65] = "";
 static int g_jobs = 1;
@@ -52,7 +52,8 @@ static double g_shuffle_deadline_s = 3600.0;
 static double g_worker_deadline = 0.0;
 static const char *g_worker_fault = "";
 static int g_parent_fault_after_fork = 0;
-static int g_fail_random_init = 0;   /* set by any non-finite metric or NMS refusal */
+static int g_fail_random_init = 0;
+static int g_sig_in_window = 0;   /* test hook: raise inside the fork window */
 static const char *G_VARIANT = "unknown";
 static const char *G_FRONTEND = "unknown";
 
@@ -440,12 +441,74 @@ typedef struct { int ok; double ap_val, ap_test, elapsed; } ShufResult;
 static volatile sig_atomic_t g_child_pid_sig;   /* async-signal-safe copy */
 static volatile sig_atomic_t g_signal_caught;   /* set by the handler, read by control */
 
-/* Async-signal-safe only: terminate the child and record the signal. It does
+/* Async-signal-safe only: record the signal and terminate the child. It does
    NOT _exit -- normal control performs the bounded reap, so a signal can never
    leave the worker behind or skip collection. */
 static void child_signal_cleanup(int sig) {
     g_signal_caught = sig;
     if (g_child_pid_sig > 0) kill((pid_t)g_child_pid_sig, SIGTERM);
+}
+
+/* Signal state saved across the fork window. SIGINT/SIGTERM are blocked and the
+   parent handlers installed BEFORE fork(), so there is no interval in which a
+   signal can arrive with no handler, or with a handler but no child PID to act
+   on. The mask is restored only after the PID and the deadline are published,
+   which means a signal that arrives inside the window is merely pending and is
+   delivered to a fully initialised handler. */
+typedef struct {
+    sigset_t old_mask;
+    struct sigaction old_int, old_term;
+    int armed;
+} SigWindow;
+
+static int sigwindow_enter(SigWindow *w) {
+    sigset_t block;
+    struct sigaction sa;
+    memset(w, 0, sizeof *w);
+    sigemptyset(&block);
+    sigaddset(&block, SIGINT);
+    sigaddset(&block, SIGTERM);
+    if (sigprocmask(SIG_BLOCK, &block, &w->old_mask) != 0) return -1;
+    memset(&sa, 0, sizeof sa);
+    sa.sa_handler = child_signal_cleanup;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = 0;                       /* no SA_RESTART: poll must see EINTR */
+    if (sigaction(SIGINT, &sa, &w->old_int) != 0) {
+        (void)sigprocmask(SIG_SETMASK, &w->old_mask, NULL);
+        return -1;
+    }
+    if (sigaction(SIGTERM, &sa, &w->old_term) != 0) {
+        (void)sigaction(SIGINT, &w->old_int, NULL);
+        (void)sigprocmask(SIG_SETMASK, &w->old_mask, NULL);
+        return -1;
+    }
+    w->armed = 1;
+    return 0;
+}
+
+/* Restore the mask only; handlers stay armed while the worker is live. */
+static void sigwindow_unblock(SigWindow *w) {
+    if (w->armed) (void)sigprocmask(SIG_SETMASK, &w->old_mask, NULL);
+}
+
+/* Restore the original actions and mask exactly. */
+static void sigwindow_leave(SigWindow *w) {
+    if (!w->armed) return;
+    (void)sigaction(SIGINT, &w->old_int, NULL);
+    (void)sigaction(SIGTERM, &w->old_term, NULL);
+    (void)sigprocmask(SIG_SETMASK, &w->old_mask, NULL);
+    w->armed = 0;
+}
+
+/* Child: default dispositions and the caller's original mask, before any work. */
+static void sigwindow_child_reset(SigWindow *w) {
+    struct sigaction dfl;
+    memset(&dfl, 0, sizeof dfl);
+    dfl.sa_handler = SIG_DFL;
+    sigemptyset(&dfl.sa_mask);
+    (void)sigaction(SIGINT, &dfl, NULL);
+    (void)sigaction(SIGTERM, &dfl, NULL);
+    (void)sigprocmask(SIG_SETMASK, &w->old_mask, NULL);
 }
 
 /* Bounded, non-blocking collection against an absolute monotonic deadline:
@@ -631,6 +694,7 @@ int main(int argc, char **argv) {
     pid_t shuf_pid = -1;
     ShufResult shuf = {0, 0.0, 0.0, 0.0};
     int rc_final = 0;
+    SigWindow sigwin;
     for (i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--cache") && i + 1 < argc) cache = argv[++i];
         else if (!strcmp(argv[i], "--json") && i + 1 < argc) jsonp = argv[++i];
@@ -639,6 +703,10 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--worker-fault") && i + 1 < argc) g_worker_fault = argv[++i];
         else if (!strcmp(argv[i], "--parent-fault-after-fork")) g_parent_fault_after_fork = 1;
         else if (!strcmp(argv[i], "--fail-random-init")) g_fail_random_init = 1;
+        else if (!strcmp(argv[i], "--signal-in-fork-window") && i + 1 < argc) {
+            const char *v = argv[++i];
+            g_sig_in_window = !strcmp(v, "TERM") ? SIGTERM : SIGINT;
+        }
         else if (!strcmp(argv[i], "--shuffle-deadline-s") && i + 1 < argc)
             g_shuffle_deadline_s = atof(argv[++i]);
         else if (!strcmp(argv[i], "--jobs") && i + 1 < argc) {
@@ -653,6 +721,7 @@ int main(int argc, char **argv) {
     }
 
     g_t_start = now_s();
+    memset(&sigwin, 0, sizeof sigwin);
     memset(&head, 0, sizeof head);
     memset(&rndhead, 0, sizeof rndhead);
     setvbuf(stdout, NULL, _IOLBF, 0);
@@ -909,9 +978,20 @@ int main(int argc, char **argv) {
        untouched. Nothing else is parallelised. */
     if (g_jobs > 1) {
         if (pipe(shuf_pipe) != 0) { printf("VD_BENCH_FAIL shuffle_pipe\n"); return 6; }
-        shuf_pid = fork();
-        if (shuf_pid < 0) { printf("VD_BENCH_FAIL shuffle_fork\n"); return 6; }
+        if (sigwindow_enter(&sigwin) != 0) {
+            printf("VD_BENCH_FAIL signal_setup\n");
+            close(shuf_pipe[0]); close(shuf_pipe[1]);
+            return 6;
+        }
+        shuf_pid = fork();                 /* forked with SIGINT/SIGTERM blocked */
+        if (shuf_pid < 0) {
+            printf("VD_BENCH_FAIL shuffle_fork\n");
+            sigwindow_leave(&sigwin);
+            close(shuf_pipe[0]); close(shuf_pipe[1]);
+            return 6;
+        }
         if (shuf_pid == 0) {
+            sigwindow_child_reset(&sigwin);
             ShufResult r;
             close(shuf_pipe[0]);              /* child never reads */
             memset(&r, 0, sizeof r);
@@ -934,13 +1014,22 @@ int main(int argc, char **argv) {
             _exit(0);
         }
         close(shuf_pipe[1]);                  /* parent never writes */
+        /* Test hook: raise inside the exact window after fork and before the
+           PID is published, while signals are still blocked. */
+        if (g_sig_in_window) raise(g_sig_in_window);
         /* ONE absolute monotonic deadline, fixed at the successful fork. The
            message read and the post-message wait both consume it, so parent
            training time cannot silently extend the worker's budget. */
         g_worker_deadline = now_s() + g_shuffle_deadline_s;
         g_child_pid_sig = (sig_atomic_t)shuf_pid;
-        signal(SIGINT, child_signal_cleanup);
-        signal(SIGTERM, child_signal_cleanup);
+        /* PID and deadline are now published; only here does a pending signal
+           become deliverable. */
+        sigwindow_unblock(&sigwin);
+        if (g_signal_caught) {
+            printf("VD_BENCH_FAIL interrupted_in_fork_window=%d\n", (int)g_signal_caught);
+            rc_final = 128 + (int)g_signal_caught;
+            goto worker_cleanup;
+        }
     }
 
     g_t_fork = now_s();
@@ -950,6 +1039,11 @@ int main(int argc, char **argv) {
             goto worker_cleanup;              /* never return while the child lives */
         btn_set_ports(&head, RAWP(), CLSP());
         btn_train_dynamic(&head, X, Y, n, 2000, 200, 1e-5, 1e-7);
+    }
+    if (g_signal_caught) {   /* checked again after the parent's own training */
+        printf("VD_BENCH_FAIL interrupted_by_signal=%d\n", (int)g_signal_caught);
+        rc_final = 128 + (int)g_signal_caught;
+        goto worker_cleanup;
     }
     if (g_parent_fault_after_fork) {
         printf("VD_BENCH_FAIL parent_fault_after_fork (injected)\n");
@@ -1011,8 +1105,7 @@ int main(int argc, char **argv) {
             }
         }
         if (bad) { g_eval_fault = 1; rc_final = 6; goto worker_cleanup; }
-        signal(SIGINT, SIG_DFL);
-        signal(SIGTERM, SIG_DFL);
+        sigwindow_leave(&sigwin);
     } else {
         double c0 = now_s();
         shuf.ok = run_shuffle_arm(&va, &te, X, Y, n, &shuf.ap_val, &shuf.ap_test);
@@ -1192,11 +1285,10 @@ worker_cleanup:
             printf("VD_BENCH_FAIL shuffle_worker_uncollectable pid=%d\n", (int)shuf_pid);
         }
         shuf_pid = -1;
-        signal(SIGINT, SIG_DFL);
-        signal(SIGTERM, SIG_DFL);
         if (!rc_final) rc_final = 6;
         g_eval_fault = 1;
     }
+    sigwindow_leave(&sigwin);
     if (g_signal_caught && !rc_final) rc_final = 128 + (int)g_signal_caught;
     free(X); free(Y);
     free_pack(&tr); free_pack(&va);

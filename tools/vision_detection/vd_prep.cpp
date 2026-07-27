@@ -359,6 +359,16 @@ static bool write_text_staged(VdStage &st, const char *name, const std::string &
     return true;
 }
 
+/* Every early failure after staging begins funnels through here, so a
+   quarantined staging directory is never left silently on disk. */
+static int stage_fail(VdStage &st, const std::string &outdir, const char *why, int rc) {
+    fprintf(stderr, "VD_PREP_FAIL %s\n", why);
+    vd_stage_abort(&st);
+    const char *q = vd_stage_quarantine(&st);
+    if (q) fprintf(stderr, "VD_STAGE_QUARANTINE %s/%s\n", outdir.c_str(), q);
+    return rc;
+}
+
 /* sha256 over the sorted "value\n" lines -- the canonical root form */
 static std::string root_of(std::vector<std::string> v) {
     std::sort(v.begin(), v.end());
@@ -642,6 +652,8 @@ int main(int argc, char **argv) {
     VdStage st;
     if (vd_stage_begin(outdir.c_str(), &st) != 0) {
         fprintf(stderr, "VD_PREP_FAIL stage_begin_refused:%s\n", outdir.c_str());
+        const char *q = vd_stage_quarantine(&st);
+        if (q) fprintf(stderr, "VD_STAGE_QUARANTINE %s/%s\n", outdir.c_str(), q);
         return 5;
     }
 
@@ -662,19 +674,14 @@ int main(int argc, char **argv) {
     std::string sh_idtr, sh_idva, sh_idte, sh_cotr, sh_cova, sh_cote;
     long long msize[VD_N_MEMBERS];
     memset(msize, 0, sizeof msize);
-    if (!write_pack_staged(st, "train.pack", Otr, VAR.pca_dim, &sh_tr)) {
-        fprintf(stderr, "VD_PREP_FAIL pack_write_failed\n"); vd_stage_abort(&st); return 5;
-    }
+    if (!write_pack_staged(st, "train.pack", Otr, VAR.pca_dim, &sh_tr))
+        return stage_fail(st, outdir, "pack_write_failed:train", 5);
     msize[0] = g_last_written_size;
-    if (!write_pack_staged(st, "val.pack", Ova, VAR.pca_dim, &sh_va)) {
-        fprintf(stderr, "VD_PREP_FAIL pack_write_failed\n"); vd_stage_abort(&st); return 5;
-    }
+    if (!write_pack_staged(st, "val.pack", Ova, VAR.pca_dim, &sh_va))
+        return stage_fail(st, outdir, "pack_write_failed:val", 5);
     msize[1] = g_last_written_size;
-    if (!write_pack_staged(st, "test.pack", Ote, VAR.pca_dim, &sh_te)) {
-        fprintf(stderr, "VD_PREP_FAIL pack_write_failed\n");
-        vd_stage_abort(&st);
-        return 5;
-    }
+    if (!write_pack_staged(st, "test.pack", Ote, VAR.pca_dim, &sh_te))
+        return stage_fail(st, outdir, "pack_write_failed:test", 5);
     msize[2] = g_last_written_size;
     {
         std::string pca_blob;
@@ -685,11 +692,8 @@ int main(int argc, char **argv) {
         pca_blob.append((const char *)mean.ptr<float>(0), sizeof(float) * VAR.hog_dim);
         for (int i2 = 0; i2 < VAR.pca_dim; i2++)
             pca_blob.append((const char *)ev.ptr<float>(i2), sizeof(float) * VAR.hog_dim);
-        if (!write_text_staged(st, "pca.bin", pca_blob, &sh_pca)) {
-            fprintf(stderr, "VD_PREP_FAIL pca_write_failed\n");
-            vd_stage_abort(&st);
-            return 5;
-        }
+        if (!write_text_staged(st, "pca.bin", pca_blob, &sh_pca))
+            return stage_fail(st, outdir, "pca_write_failed", 5);
         msize[3] = g_last_written_size;
     }
     /* Sidecars carry the canonical source identity of each split so the bench
@@ -701,11 +705,8 @@ int main(int argc, char **argv) {
                                 lines_of(shtr), lines_of(shva), lines_of(shte)};
         std::string *sdig[6] = {&sh_idtr, &sh_idva, &sh_idte, &sh_cotr, &sh_cova, &sh_cote};
         for (int k = 0; k < 6; k++) {
-            if (!write_text_staged(st, snames[k], sbody[k], sdig[k])) {
-                fprintf(stderr, "VD_PREP_FAIL sidecar_write_failed\n");
-                vd_stage_abort(&st);
-                return 5;
-            }
+            if (!write_text_staged(st, snames[k], sbody[k], sdig[k]))
+                return stage_fail(st, outdir, "sidecar_write_failed", 5);
             msize[4 + k] = g_last_written_size;
         }
     }
@@ -730,11 +731,8 @@ int main(int argc, char **argv) {
             mem[mi].size = (long long)msize[mi];
             snprintf(mem[mi].sha, sizeof mem[mi].sha, "%s", dig[mi].c_str());
         }
-        if (vd_artifact_root(mem, VD_N_MEMBERS, 1, aroot) != 0) {
-            fprintf(stderr, "VD_PREP_FAIL artifact_root_failed\n");
-            vd_stage_abort(&st);
-            return 6;
-        }
+        if (vd_artifact_root(mem, VD_N_MEMBERS, 1, aroot) != 0)
+            return stage_fail(st, outdir, "artifact_root_failed", 6);
 
         std::ostringstream m;
         m << "manifest_version 1\n"
@@ -768,18 +766,14 @@ int main(int argc, char **argv) {
           << "content_root_train " << r_cotr << "\ncontent_root_val " << r_cova << "\n"
           << "content_root_test " << r_cote << "\n"
           << "artifact_root " << aroot << "\n";
-        if (!write_text_staged(st, "manifest.txt", m.str())) {
-            fprintf(stderr, "VD_PREP_FAIL manifest_write_failed\n");
-            vd_stage_abort(&st);
-            return 6;
-        }
+        if (!write_text_staged(st, "manifest.txt", m.str()))
+            return stage_fail(st, outdir, "manifest_write_failed", 6);
         if (vd_stage_commit(&st) != 0) {
-            const char *q = vd_stage_quarantine(&st);
-            if (q) fprintf(stderr, "VD_PREP_NOTE quarantined staging left at: %s/%s\n",
-                           outdir.c_str(), q);
             fprintf(stderr, "VD_PREP_FAIL publish_refused:%s\n"
                     "  The destination must not already exist: publication creates it or\n"
                     "  fails. Nothing is ever swapped out or deleted.\n", outdir.c_str());
+            const char *q = vd_stage_quarantine(&st);
+            if (q) fprintf(stderr, "VD_STAGE_QUARANTINE %s/%s\n", outdir.c_str(), q);
             return 6;
         }
         /* Printed so the roots can be pinned in vd_roots.h; the bench refuses

@@ -67,8 +67,9 @@ typedef struct {
     char base[VD_PATH_MAX];     /* destination basename */
     char stage[VD_PATH_MAX];    /* staging basename */
     int done;
-    /* If the transaction could not prove it was safe to remove the displaced
-       cache, it is left at the unique staging name instead of being deleted. */
+    int created;                /* staging directory exists on disk */
+    /* Staging is never deleted. If a stage was created and not published, its
+       unique path is reported here for offline operator cleanup. */
     int quarantined;
     char quarantine[VD_PATH_MAX];
 } VdStage;

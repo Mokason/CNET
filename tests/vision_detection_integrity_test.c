@@ -296,6 +296,50 @@ int main(void) {
         }
     }
 
+    /* ---- abort never deletes; it quarantines ----------------------------- */
+    {
+        char qdest[600], stagepath[VD_PATH_MAX + 128];
+        VdStage st;
+        struct stat sb;
+        const char *q;
+
+        snprintf(qdest, sizeof qdest, "%s/quarantined", DIR);
+        check(vd_stage_begin(qdest, &st) == 0, "quarantine: staging begins");
+        check(write_full_cache(&st) == 0, "quarantine: staging is complete");
+        {
+            int sn = snprintf(stagepath, sizeof stagepath, "%s/%s", DIR, st.stage);
+            check(sn > 0 && (size_t)sn < sizeof stagepath, "quarantine: stage path bounded");
+        }
+        vd_stage_abort(&st);
+        q = vd_stage_quarantine(&st);
+        check(q != NULL && *q, "quarantine: abort reports the staging path");
+        check(stat(stagepath, &sb) == 0 && S_ISDIR(sb.st_mode),
+              "quarantine: abort did NOT delete the staging directory");
+        check(stat(qdest, &sb) != 0, "quarantine: the destination was never created");
+
+        {   /* refused publish: destination intact, staging preserved+reported */
+            char occupied[600];
+            struct stat b1, b2;
+            snprintf(occupied, sizeof occupied, "%s/occupied", DIR);
+            check(vd_stage_begin(occupied, &st) == 0 && write_full_cache(&st) == 0
+                  && vd_stage_commit(&st) == 0, "quarantine: first publish succeeds");
+            check(stat(occupied, &b1) == 0, "quarantine: destination stat");
+            check(vd_stage_begin(occupied, &st) == 0, "quarantine: second staging begins");
+            check(write_full_cache(&st) == 0, "quarantine: second staging complete");
+            {
+                int sn = snprintf(stagepath, sizeof stagepath, "%s/%s", DIR, st.stage);
+                check(sn > 0 && (size_t)sn < sizeof stagepath, "quarantine: path bounded");
+            }
+            check(vd_stage_commit(&st) != 0, "quarantine: publish over existing is refused");
+            q = vd_stage_quarantine(&st);
+            check(q != NULL && *q, "quarantine: refused publish reports the staging path");
+            check(stat(stagepath, &sb) == 0 && S_ISDIR(sb.st_mode),
+                  "quarantine: refused publish preserved the staging directory");
+            check(stat(occupied, &b2) == 0 && b1.st_dev == b2.st_dev && b1.st_ino == b2.st_ino,
+                  "quarantine: destination keeps its exact device+inode");
+        }
+    }
+
     /* ---- evaluator geometry under extreme boxes -------------------------- */
     {
         VdBox big = {2147483000, 2147483000, 1000, 1000};

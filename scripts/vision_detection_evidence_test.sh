@@ -428,6 +428,32 @@ worker_case "random-head init fails after fork" \
   $BENCH --protocol synthetic-test --cache "$W/cache" --prev-test "$W/prev.pack" \
          --jobs 2 --fail-random-init --shuffle-deadline-s 20 --json "$JSON"
 
+# ---- signal raised in the EXACT post-fork/pre-PID-publication window -------
+# Signals are blocked across that window, so the raise is pending and is only
+# delivered once the PID and deadline are published. The run must refuse
+# nonzero, reap the exact child, and leave nothing behind.
+for sig in INT TERM; do
+  build_cache
+  before=$(pgrep -x vd_bench | wc -l)
+  out=$(timeout 200 $BENCH --protocol synthetic-test --cache "$W/cache" \
+          --prev-test "$W/prev.pack" --jobs 2 --signal-in-fork-window $sig \
+          --shuffle-deadline-s 30 --json "$JSON" 2>&1); rc=$?
+  sleep 0.4
+  after=$(pgrep -x vd_bench | wc -l)
+  checks=$((checks+1))
+  if [ $rc -eq 0 ]; then
+    echo "  SIG$sig inside fork window: FAIL (exit 0)"; fails=$((fails+1))
+  elif [ "$after" -gt "$before" ]; then
+    echo "  SIG$sig inside fork window: FAIL (orphan $before -> $after)"; fails=$((fails+1))
+  elif grep -q "VISION_DETECTION_MECHANISM_PASS" <<<"$out"; then
+    echo "  SIG$sig inside fork window: FAIL (published a verdict)"; fails=$((fails+1))
+  elif grep -q "interrupted_in_fork_window" <<<"$out"; then
+    echo "  SIG$sig inside fork window: PASS (pending signal handled after PID publish)"
+  else
+    echo "  SIG$sig inside fork window: FAIL (no window marker, exit $rc)"; fails=$((fails+1))
+  fi
+done
+
 # ---- signals delivered to the parent must not leave the worker behind ------
 for sig in INT TERM; do
   build_cache
@@ -469,6 +495,54 @@ if [ "$zafter" -le "$zbefore" ]; then
   echo "  repeated runs leave no zombies: PASS"
 else
   echo "  repeated runs leave no zombies: FAIL ($zbefore -> $zafter)"; fails=$((fails+1))
+fi
+
+# ---- prep reports quarantine on every staged failure path -----------------
+# (the behaviour itself is exercised in-process by the integrity suite; here we
+# assert prep cannot fail after staging without surfacing the path)
+checks=$((checks+1))
+prep_src=$(sed -n '/vd_stage_begin(outdir/,$p' tools/vision_detection/vd_prep.cpp)
+bare=$(grep -cE "vd_stage_abort\(&st\);[[:space:]]*$" <<<"$prep_src" || true)
+if [ "$bare" -eq 0 ] && grep -q "VD_STAGE_QUARANTINE" tools/vision_detection/vd_prep.cpp; then
+  echo "  prep surfaces VD_STAGE_QUARANTINE on staged failures: PASS"
+else
+  echo "  prep surfaces VD_STAGE_QUARANTINE on staged failures: FAIL"; fails=$((fails+1))
+fi
+
+# ---- source audit: staging never deletes anything --------------------------
+# Extract only the stage lifecycle functions and assert no deletion primitive
+# appears in them. vd_publish_file's own O_EXCL temp is a separate single-file
+# mechanism and is deliberately out of scope.
+stage_src=$(awk '/^int vd_stage_begin|^void vd_stage_abort|^int vd_stage_commit/{f=1}
+                 /^}/{if(f){print;f=0;next}} f{print}' tools/vision_detection/vd_io.c)
+checks=$((checks+1))
+if grep -qE "unlinkat|rmdir|remove\(|rm_flat_dir_at|RENAME_EXCHANGE" <<<"$stage_src"; then
+  echo "  staging code contains no deletion primitive: FAIL"
+  grep -nE "unlinkat|rmdir|remove\(|rm_flat_dir_at|RENAME_EXCHANGE" <<<"$stage_src" | head -3 | sed 's/^/      /'
+  fails=$((fails+1))
+else
+  echo "  staging code contains no deletion primitive: PASS"
+fi
+checks=$((checks+1))
+if grep -qE "\brm_flat_dir_at\b" tools/vision_detection/vd_io.c; then
+  echo "  rm_flat_dir_at is gone from production: FAIL"; fails=$((fails+1))
+else
+  echo "  rm_flat_dir_at is gone from production: PASS"
+fi
+
+# ---- source audit: signals blocked and handlers installed before fork -------
+checks=$((checks+1))
+if awk '/sigprocmask\(SIG_BLOCK/{b=NR} /sigaction\(SIGINT/{a=NR} /shuf_pid = fork\(\)/{f=NR}
+        END{exit !(b>0 && a>0 && f>0 && b<f && a<f)}' tools/vision_detection/vd_bench.c; then
+  echo "  signals blocked + handlers installed before fork: PASS"
+else
+  echo "  signals blocked + handlers installed before fork: FAIL"; fails=$((fails+1))
+fi
+checks=$((checks+1))
+if grep -q "signal(SIGINT, child_signal_cleanup)" tools/vision_detection/vd_bench.c; then
+  echo "  no legacy signal() handler registration: FAIL"; fails=$((fails+1))
+else
+  echo "  no legacy signal() handler registration: PASS"
 fi
 
 # ---- source assertion: destructive publication must be absent --------------

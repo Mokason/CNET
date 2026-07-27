@@ -138,25 +138,6 @@ static int rand_suffix(char *out, size_t n) {
     return 0;
 }
 
-/* Flat directories only -- the cache has no subdirectories, and refusing to
-   recurse keeps this from becoming a general-purpose deletion routine. */
-static int rm_flat_dir_at(int parent_fd, const char *name) {
-    int dfd = openat(parent_fd, name, O_RDONLY | O_DIRECTORY | O_NOFOLLOW);
-    DIR *d;
-    struct dirent *e;
-    if (dfd < 0) return -1;
-    d = fdopendir(dfd);
-    if (!d) { close(dfd); return -1; }
-    while ((e = readdir(d)) != NULL) {
-        if (!strcmp(e->d_name, ".") || !strcmp(e->d_name, "..")) continue;
-        if (unlinkat(dirfd(d), e->d_name, 0) != 0) {
-            if (unlinkat(dirfd(d), e->d_name, AT_REMOVEDIR) != 0) { closedir(d); return -1; }
-        }
-    }
-    closedir(d);
-    return unlinkat(parent_fd, name, AT_REMOVEDIR);
-}
-
 int vd_stage_begin(const char *dest, VdStage *st) {
     char tmp[VD_PATH_MAX], suffix[16];
     const char *slash;
@@ -166,6 +147,7 @@ int vd_stage_begin(const char *dest, VdStage *st) {
     if (!st) return -1;
     memset(st, 0, sizeof *st);
     st->parent_fd = st->dir_fd = st->lock_fd = -1;
+    st->created = 0;
     if (vd_path_ok(dest) != 0) return -1;
 
     n = strlen(dest);
@@ -203,33 +185,31 @@ int vd_stage_begin(const char *dest, VdStage *st) {
     if (mkdirat(st->parent_fd, st->stage, 0777) != 0) {   /* exclusive by definition */
         close(st->parent_fd); st->parent_fd = -1; return -1;
     }
+    /* Recorded BEFORE anything else can fail, so a caller can always read
+       vd_stage_quarantine() even when begin itself fails after creation. */
+    st->created = 1;
     st->dir_fd = openat(st->parent_fd, st->stage, O_RDONLY | O_DIRECTORY | O_NOFOLLOW);
     if (st->dir_fd < 0) {
-        (void)unlinkat(st->parent_fd, st->stage, AT_REMOVEDIR);
-        close(st->parent_fd); st->parent_fd = -1; return -1;
+        /* no unlink: the directory exists and is reported, never removed here */
+        vd_stage_abort(st);
+        return -1;
     }
     return 0;
 }
 
+/* Abort deletes NOTHING, under any condition.
+ *
+ * Identity-bound directory removal is not expressible with portable POSIX: the
+ * inode can only be checked, then removed by pathname, and the gap between the
+ * two cannot be closed. Rather than keep narrowing that window, aborting simply
+ * releases every held descriptor and reports the unique staging path as
+ * quarantine. Reclaiming quarantine is deliberately an operator/offline task;
+ * no automatic collection is performed here. */
 void vd_stage_abort(VdStage *st) {
     if (!st) return;
-    if (st->parent_fd >= 0 && !st->done) {
-        /* Remove the staging directory ONLY while it is still provably the
-           inode we created. If that cannot be shown, leave it under its unique
-           name and report it -- never delete an unproven pathname generation. */
-        struct stat held, now;
-        int proven = (st->dir_fd >= 0 && fstat(st->dir_fd, &held) == 0 &&
-                      fstatat(st->parent_fd, st->stage, &now, AT_SYMLINK_NOFOLLOW) == 0 &&
-                      same_inode(&held, &now));
-        if (proven) {
-            if (rm_flat_dir_at(st->parent_fd, st->stage) != 0) {
-                st->quarantined = 1;
-                snprintf(st->quarantine, sizeof st->quarantine, "%s", st->stage);
-            }
-        } else if (fstatat(st->parent_fd, st->stage, &now, AT_SYMLINK_NOFOLLOW) == 0) {
-            st->quarantined = 1;
-            snprintf(st->quarantine, sizeof st->quarantine, "%s", st->stage);
-        }
+    if (st->created && !st->done && st->stage[0]) {
+        st->quarantined = 1;
+        snprintf(st->quarantine, sizeof st->quarantine, "%s", st->stage);
     }
     if (st->dir_fd >= 0) { close(st->dir_fd); st->dir_fd = -1; }
     if (st->lock_fd >= 0) { close(st->lock_fd); st->lock_fd = -1; }
