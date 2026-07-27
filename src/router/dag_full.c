@@ -1776,6 +1776,10 @@ static int plan_cache_clone_single(const PlanCacheEntry *entry, DagPlan *out) {
     out->owned = map.copy;
     out->owned_count = map.count;
     out->strict = 0;
+    /* Guard is opt-in: planning never enables it, so a plan handed to a
+       legacy caller executes byte-identically to before. */
+    out->guard.allow = NULL;
+    out->guard.ctx = NULL;
     free((void *)map.orig);
     return 0;
 }
@@ -2168,6 +2172,10 @@ int dag_plan(
     /* Zero everything including new attention telemetry (v0.5.3 purity: no leftover) */
     memset(out, 0, sizeof(*out));
     out->strict = 0;
+    /* Guard is opt-in: planning never enables it, so a plan handed to a
+       legacy caller executes byte-identically to before. */
+    out->guard.allow = NULL;
+    out->guard.ctx = NULL;
     plan_cache_clear();
 
     cache_sig = plan_cache_signature(sources, n_sources, &goal_port, 1);
@@ -2802,11 +2810,19 @@ static int output_segment(const BinaryTransformNetwork *p, size_t sel,
    validate-then-canonicalize discipline: each consumer slices its edge's
    segment of the child's output and validates THAT against its own slot
    before snapping. Reliability is recorded once per node per run. */
+/* Execution context: strict policy plus the opt-in per-hop guard and a sticky
+   refusal flag, so a guard veto is distinguishable from a shape error. */
+typedef struct {
+    int strict;
+    const DagNodeGuard *guard;
+    int refused;
+} EvalCtx;
+
 static const double *eval_node(
     const DagNode *node,
     const DagSource *sources,
     size_t n_sources,
-    int strict,
+    EvalCtx *ec,
     EvalMemo *memo,
     size_t *out_len
 ) {
@@ -2873,7 +2889,7 @@ static const double *eval_node(
             size_t slot_total = slot.field_width * slot.field_count;
             const DagNode *child = node->children[s];
             const double *child_full = eval_node(child, sources, n_sources,
-                                                 strict, memo, &child_len);
+                                                 ec, memo, &child_len);
             const double *seg = child_full;
 
             if (child_full == NULL) {
@@ -2896,6 +2912,17 @@ static const double *eval_node(
                 return NULL;
             }
             offset += slot_total;
+        }
+
+        /* Per-hop coverage check on the EXACT concatenated input this
+           primitive is about to consume — intermediate values included. Runs
+           before the forward, so a refused hop never executes. */
+        if (ec->guard && ec->guard->allow &&
+            ec->guard->allow(node->name, p, assembled, p->input_count,
+                             ec->guard->ctx) != 0) {
+            ec->refused = 1;
+            free(assembled);
+            return NULL;
         }
 
         raw = btn_forward(p, assembled);
@@ -2934,7 +2961,7 @@ static const double *eval_node(
 #endif
                 /* Strict policy: do not launder an out-of-domain output
                    through the snap; the evidence above is already recorded. */
-                if (strict) {
+                if (ec->strict) {
                     free(assembled);
                     return NULL;
                 }
@@ -3016,6 +3043,7 @@ int dag_execute(
     size_t out_cap
 ) {
     EvalMemo memo = {NULL, 0, 0};
+    EvalCtx ec;
     const double *full;
     const double *seg;
     size_t full_len = 0;
@@ -3026,8 +3054,14 @@ int dag_execute(
         return -1;
     }
 
-    full = eval_node(plan->root, sources, n_sources, plan->strict, &memo,
-                     &full_len);
+    ec.strict = plan->strict;
+    ec.guard = (plan->guard.allow != NULL) ? &plan->guard : NULL;
+    ec.refused = 0;
+    full = eval_node(plan->root, sources, n_sources, &ec, &memo, &full_len);
+    if (full == NULL && ec.refused) {
+        eval_memo_destroy(&memo);
+        return DAG_EXEC_REFUSED_GUARD;
+    }
     if (full == NULL ||
         root_segment(plan->root, plan->root->output_index, full, full_len,
                      &seg, &len) != 0 ||
@@ -3051,6 +3085,7 @@ int dag_execute_circuit(
     CircuitBlackboard *blackboard  /* nullable: execution trace only */
 ) {
     EvalMemo memo = {NULL, 0, 0};
+    EvalCtx cec;
     size_t offset = 0;
     size_t g;
     size_t i;
@@ -3071,7 +3106,10 @@ int dag_execute_circuit(
             eval_memo_destroy(&memo);
             return -1;
         }
-        full = eval_node(plan->roots[g], sources, n_sources, plan->strict,
+        cec.strict = plan->strict;
+        cec.guard = NULL; /* v1 scopes the guard to dag_execute; see report */
+        cec.refused = 0;
+        full = eval_node(plan->roots[g], sources, n_sources, &cec,
                          &memo, &full_len);
         if (full == NULL ||
             root_segment(plan->roots[g], plan->root_ports[g], full,

@@ -49,6 +49,7 @@ knowledge extends `cnb_export_subset` + the capsule manifest.
 | `make knowledge_accumulation_bench` | isolation, interference, portable round-trip, corruption/incompatibility refusal, OOD abstention |
 | `make knowledge_capsule` | one certified capability transfers with its gate intact |
 | `make coverage_abstain` | a unit never answers outside its certified domain |
+| `make knowledge_composition_bench` | certified typed composition mechanism at small scale: planner chains 3 independently certified capsules, coverage enforced at **every** hop |
 | `make own_learning_health` | refuses dangerous unattended mine/serve configurations |
 | `make capability_cert` | held-out capability floors (two graded, not all binary) |
 

@@ -281,7 +281,7 @@ KNOWLEDGE_ACCUMULATION_BENCH_PASS units=32 distinct=1 isolation=32/32 replay=8/8
 | Corrupted capsule rejected | == 1 | **1** |
 | Truncated payload rejected | == 1 | **1** |
 | OOD — uncovered refused | == 96 | **96** (160 admitted) |
-| Composition | — | **WITHHELD** |
+| Composition | — | **WITHHELD in this bench** (disjoint tags by construction). Proven separately: `plans/cnet_certified_composition_20260727.md` |
 | Semantic intent / broad intelligence | — | **WITHHELD** |
 
 | N | units | build_ms | lookup_ms (materialise) | serve_ms/query |
@@ -427,7 +427,10 @@ coverage; the same queries are unservable before import and served after; corrup
 truncated, symlinked, over-dimensioned, tag-mismatched and provenance-mismatched
 capsules are all refused with named reasons and leave nothing behind.
 
-**Anything broader: no, and the gate says so.** Composition, semantic intent and broad
+**Anything broader: no, and the gate says so.** Composition is now proven as a typed
+mechanism at small scale in `plans/cnet_certified_composition_20260727.md` (planner
+chains 3 independently certified capsules; coverage enforced at every hop). Within THIS
+bench it stays withheld. Semantic intent and broad
 capability are WITHHELD. The units are 8-symbol permutations — this proves the
 *container and the accounting*, not that CNET knows anything hard. Contract replay is
 serialization fidelity, **not** generalisation; the honest reading is "what was
@@ -437,7 +440,8 @@ certified survives transfer", nothing more.
 
 ## 11. Next highest-leverage milestone
 
-**Make composition real, or prove it cannot be.** Accumulation without
+**DONE — see `plans/cnet_certified_composition_20260727.md` (COMPOSITION_PASS).**
+Original framing: make composition real, or prove it cannot be. Accumulation without
 composition is a filing cabinet: N units answer N questions and never the
 N+1'th. The capsule now makes units portable, so the next question is whether
 two independently certified kernels can be *chained* on a held-out task under

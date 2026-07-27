@@ -424,8 +424,34 @@ typedef struct DagNode {
     size_t child_count;
 } DagNode;
 
+/* Per-hop execution guard (opt-in; zero-init = legacy behaviour byte-for-byte).
+ *
+ * dag_execute gates only what a caller can see: the plan's selected output. A
+ * composed plan forwards INTERMEDIATE values into primitives whose certified
+ * coverage nobody checked, so a chain could serve an answer built from a hop
+ * operating outside its contract. This lets a caller check the exact
+ * concatenated input at EVERY primitive hop before that primitive runs.
+ *
+ * allow() returns 0 to permit the hop, non-zero to refuse it. A refusal aborts
+ * the whole execution and dag_execute returns DAG_EXEC_REFUSED_GUARD — it never
+ * falls back to a residual or a partial result, so the caller keeps ownership
+ * of that policy. Refusal is NOT a wrong model output: reliability/evidence
+ * accounting is skipped for a hop that never ran. */
+typedef struct {
+    int (*allow)(const char *unit, const BinaryTransformNetwork *btn,
+                 const double *input, size_t in_len, void *ctx);
+    void *ctx;
+} DagNodeGuard;
+
+/* dag_execute: distinct from -1 (plan/shape/domain error) so a caller can tell
+   "the guard said no" from "the plan could not run". */
+#define DAG_EXEC_REFUSED_GUARD (-2)
+
 typedef struct {
     DagNode *root;
+    /* Per-hop guard; NULL allow = disabled. dag_plan zeroes it, so opting in is
+       an explicit post-planning act and planning behaviour never changes. */
+    DagNodeGuard guard;
     /* Execution policy: nonzero -> an out-of-domain RAW output (ANY segment
        of a multi-output primitive) aborts the run instead of being snapped;
        reliability evidence is recorded either way. dag_plan resets this to
