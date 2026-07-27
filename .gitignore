@@ -75,3 +75,11 @@ registry.meta
 # Governor / Python dev sandbox
 .cnet-sandbox/
 
+
+# vision detection benchmark: datasets, caches, artifacts (never committed)
+data/voc2007/
+data/vision_cache/
+logs/vision/
+logs/vision_detection_bench.json
+bin/vd_prep
+bin/vd_bench

@@ -2630,6 +2630,51 @@ structure_mine_serve_durable: $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGU
 	@grep -q "STRUCTURE_MINE_SERVE_DURABLE_PASS" logs/structure_mine_serve_durable.log
 	@grep "STRUCTURE_MINE_SERVE_DURABLE_PASS" logs/structure_mine_serve_durable.log
 
+.PHONY: vision_detection_fetch vision_detection_prep vision_detection_bench
+# Explicit, network-touching. NEVER a dependency of ci_core.
+vision_detection_fetch:
+	@bash scripts/vision_detection_fetch.sh
+
+# Proposals + HOG + train-only PCA into data/vision_cache (CPU only, ~7 min).
+vision_detection_prep: bin/vd_prep
+	@ROCR_VISIBLE_DEVICES='' HIP_VISIBLE_DEVICES='' CUDA_VISIBLE_DEVICES='' \
+	  timeout 5400 ./bin/vd_prep --root data/voc2007/VOCdevkit/VOC2007 \
+	  --class car --out data/vision_cache --ntest 1000 --workers 8 \
+	  2>&1 | tee logs/vision/prep.log
+
+bin/vd_prep: tools/vision_detection/vd_prep.cpp
+	@mkdir -p $(BIN_DIR) logs/vision
+	g++ -std=c++14 -O2 -Wall -o $(BIN_DIR)/vd_prep tools/vision_detection/vd_prep.cpp \
+		$(shell pkg-config --cflags --libs opencv4) -lpthread
+
+# Runs from cached assets only. No download.
+vision_detection_bench: vision_detection_eval_test bin/vd_bench
+	@mkdir -p logs/vision
+	@test -f data/vision_cache/test.pack || { echo "VISION_DETECTION_FAIL missing cache; run: make vision_detection_fetch vision_detection_prep"; exit 1; }
+	@ROCR_VISIBLE_DEVICES='' HIP_VISIBLE_DEVICES='' CUDA_VISIBLE_DEVICES='' \
+	  timeout 5400 ./$(BIN_DIR)/vd_bench --cache data/vision_cache 2>&1 | tee logs/vision/bench.log
+	@grep -qE "VISION_DETECTION_MECHANISM_(PASS|WITHHELD)" logs/vision/bench.log
+	@grep -E "^(TEST|BARS|VISION_)" logs/vision/bench.log
+
+bin/vd_bench: tools/vision_detection/vd_bench.c tools/vision_detection/vd_eval.c tools/vision_detection/vd_eval.h
+	@mkdir -p $(BIN_DIR) logs/vision
+	$(CC) -std=c11 -Wall -Wextra -O2 -D_DEFAULT_SOURCE -I include \
+		-o $(BIN_DIR)/vd_bench tools/vision_detection/vd_bench.c \
+		tools/vision_detection/vd_eval.c $(SRC_NN_MIN) -lm -lpthread
+
+SRC_NN_MIN := src/nn.c src/contract/contract.c src/contract/unit.c src/property.c \
+              src/scan.c src/contract/coverage.c src/router/registry.c \
+              src/router/route.c src/router/dag_full.c src/plan_table.c src/consolidate.c
+
+.PHONY: vision_detection_eval_test
+vision_detection_eval_test: tools/vision_detection/vd_eval.c tools/vision_detection/vd_eval.h tests/vision_detection_eval_test.c
+	@mkdir -p $(BIN_DIR) logs/vision
+	$(CC) $(CFLAGS) -Werror -o $(BIN_DIR)/vision_detection_eval_test \
+		tools/vision_detection/vd_eval.c tests/vision_detection_eval_test.c -lm
+	@./$(BIN_DIR)/vision_detection_eval_test > logs/vision/eval_test.log 2>&1
+	@grep -q "VISION_DETECTION_EVAL_PASS" logs/vision/eval_test.log
+	@grep "VISION_DETECTION_EVAL_PASS" logs/vision/eval_test.log
+
 knowledge_composition_bench: $(CAPSULE_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(EXT_TEACHER_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) tests/knowledge_composition_bench.c include/hybrid_ai.h include/personal_ai.h
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) $(CFLAGS) -Werror $(CUDA_CFLAGS) -o $(BIN_DIR)/knowledge_composition_bench \
