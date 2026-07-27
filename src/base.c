@@ -388,6 +388,8 @@ int cnb_get_unit(const CnetBase *b, const char *name,
                          b->blobs[b->units[idx].blob_index].len);
 }
 
+unsigned cnb_format_version(void) { return CNB_VERSION; }
+
 int cnb_export_subset(const CnetBase *src, CnetBase *dst,
                       int (*keep)(const char *name, void *ctx), void *ctx) {
     size_t i;

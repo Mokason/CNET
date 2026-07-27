@@ -234,6 +234,7 @@ MODALITY_VISION_SRC := src/modality_vision.c
 JSON_TOOLCALL_SRC := src/json_toolcall.c
 MULTIMODAL_SRC := $(EXT_TEACHER_SRC) $(MODALITY_VOICE_SRC) $(MODALITY_VISION_SRC) $(JSON_TOOLCALL_SRC)
 PERSONAL_AI_SRC := src/personal_ai.c $(OPENLAB_SRC)
+CAPSULE_SRC := src/cnet_capsule.c
 HYBRID_AI_SRC := src/hybrid_ai.c
 SHARED_WORKSPACE_SRC := src/cnet_shared_workspace.c
 SEMANTIC_CORTEX_SRC := src/cnet_semantic_cortex.c
@@ -2629,6 +2630,30 @@ structure_mine_serve_durable: $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGU
 	@grep -q "STRUCTURE_MINE_SERVE_DURABLE_PASS" logs/structure_mine_serve_durable.log
 	@grep "STRUCTURE_MINE_SERVE_DURABLE_PASS" logs/structure_mine_serve_durable.log
 
+knowledge_accumulation_bench: $(CAPSULE_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(EXT_TEACHER_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) tests/knowledge_accumulation_bench.c include/hybrid_ai.h include/personal_ai.h
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/knowledge_accumulation_bench \
+		$(CAPSULE_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(EXT_TEACHER_SRC) \
+		$(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) \
+		$(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) \
+		$(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) \
+		tests/knowledge_accumulation_bench.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -pthread
+	@./$(BIN_DIR)/knowledge_accumulation_bench > logs/knowledge_accumulation_bench.log 2>&1
+	@grep -q "KNOWLEDGE_ACCUMULATION_BENCH_PASS" logs/knowledge_accumulation_bench.log
+	@grep "KNOWLEDGE_ACCUMULATION_BENCH_PASS" logs/knowledge_accumulation_bench.log
+
+knowledge_capsule: $(CAPSULE_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(EXT_TEACHER_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) tests/test_knowledge_capsule.c include/hybrid_ai.h include/personal_ai.h
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/test_knowledge_capsule \
+		$(CAPSULE_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(EXT_TEACHER_SRC) \
+		$(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) \
+		$(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) \
+		$(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) \
+		tests/test_knowledge_capsule.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -pthread
+	@./$(BIN_DIR)/test_knowledge_capsule > logs/knowledge_capsule.log 2>&1
+	@grep -q "KNOWLEDGE_CAPSULE_PASS" logs/knowledge_capsule.log
+	@grep "KNOWLEDGE_CAPSULE_PASS" logs/knowledge_capsule.log
+
 coverage_abstain: $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(EXT_TEACHER_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) tests/test_coverage_abstain.c include/hybrid_ai.h include/personal_ai.h
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/test_coverage_abstain \
@@ -3561,8 +3586,23 @@ unified: json_toolcall_alphabet_check
 claims_test: tests/test_claims.sh scripts/gen_claims.sh
 	@bash tests/test_claims.sh
 
-claims: unified
+claims: unified asi_framing
 	@grep -q '^# Verified Today (generated)' docs/verified-today.generated.md
+
+# The one claim that must never drift: what CNET says it is building. Four
+# authoritative surfaces, one canonical sentence, checked by grep rather than a
+# snapshot file that would rot on the first reflow.
+.PHONY: asi_framing
+asi_framing:
+	@for f in README.md AGENTS.md docs/INDEX.md docs/ARCHITECTURE.md; do \
+		grep -q 'ASI — Artificial Specialized Intelligence' $$f || \
+			{ echo "ASI_FRAMING_FAIL missing canonical sentence in $$f"; exit 1; }; \
+		grep -q 'never' $$f && grep -q 'Artificial Superintelligence' $$f || \
+			{ echo "ASI_FRAMING_FAIL missing superintelligence disclaimer in $$f"; exit 1; }; \
+		grep -q 'not claiming AGI' $$f || \
+			{ echo "ASI_FRAMING_FAIL missing AGI disclaimer in $$f"; exit 1; }; \
+	done
+	@echo "ASI_FRAMING_PASS files=4"
 
 claims_all: claims_test
 	@bash scripts/gen_claims.sh --strict

@@ -1,5 +1,25 @@
 # CNET — Compositional Neural Primitives in C
 
+## What CNET is building (read this first)
+
+> **CNET builds ASI — Artificial Specialized Intelligence. In CNET, ASI never
+> means Artificial Superintelligence. CNET is not claiming AGI. Broad semantic
+> grounding exists to understand intent; deep competence comes from isolated,
+> certified, portable Micro Tensor Kernels. Wikipedia-like accumulation may
+> broaden coverage and composition over time, but unit count alone is not
+> intelligence and all broader claims remain benchmark-gated.**
+
+```
+base semantic grounding → typed intent → CNET isolated knowledge registry
+      → certified kernels → verifier / abstention → residual teacher (uncovered)
+```
+
+Rationale and evidence: `plans/cnet_portable_knowledge_benchmark_20260727.md`.
+Gate: `make knowledge_accumulation_bench` (isolation, interference, portable
+round-trip, corruption/incompatibility refusal, OOD abstention). Composition,
+semantic intent understanding and broad intelligence are reported **WITHHELD**
+by that gate rather than inferred from it.
+
 **CNET tests one idea:**
 
 > Neural networks can compound knowledge the way software does — **when the

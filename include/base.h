@@ -120,6 +120,11 @@ int cnb_add_unit(CnetBase *b, const BinaryTransformNetwork *btn,
 CNET_API int cnb_get_unit(const CnetBase *b, const char *name,
                  BinaryTransformNetwork *btn, Contract *c);
 
+/* On-disk container format version this build reads and writes. A portable
+   capsule pins it so an artifact from an incompatible build is refused rather
+   than half-parsed. */
+CNET_API unsigned cnb_format_version(void);
+
 /* 1 if a unit with this name exists in the base, else 0. */
 int cnb_has_unit(const CnetBase *b, const char *name);
 

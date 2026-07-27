@@ -1,5 +1,22 @@
 # CNET Documentation Index
 
+## What CNET is building (read this first)
+
+> **CNET builds ASI — Artificial Specialized Intelligence. In CNET, ASI never
+> means Artificial Superintelligence. CNET is not claiming AGI. Broad semantic
+> grounding exists to understand intent; deep competence comes from isolated,
+> certified, portable Micro Tensor Kernels. Wikipedia-like accumulation may
+> broaden coverage and composition over time, but unit count alone is not
+> intelligence and all broader claims remain benchmark-gated.**
+
+```
+base semantic grounding → typed intent → CNET isolated knowledge registry
+      → certified kernels → verifier / abstention → residual teacher (uncovered)
+```
+
+Gate: `make knowledge_accumulation_bench`. Decision + evidence:
+`plans/cnet_portable_knowledge_benchmark_20260727.md`.
+
 **Current HEAD focus (2026-07-21):** compositional primitives + **use-loop**
 (serve → evidence → distill → teach) + **Oracle teacher runtime** governance.
 
