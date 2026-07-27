@@ -314,7 +314,6 @@ int cnet_capsule_import(CnetBase *dst, HybridAi *cov, const char *dir,
     int tmpfd = -1, have_tmp = 0;
     unsigned ver = 0;
     int schema = 0, ifam = 0, gfam = 0, loaded = 0, rc = -1, cov_stored = 0;
-    int idempotent = 0, coverage_already_matches = 0;
     size_t iw = 0, ic = 0, gw = 0, gc = 0, r, j;
     Port pin, pout;
     FILE *fp;
@@ -554,54 +553,27 @@ int cnet_capsule_import(CnetBase *dst, HybridAi *cov, const char *dir,
     }
 
     /* ---- target-side preflight: refuse before touching anything ---------
-       A unit of this name may already exist. If its content differs,
-       cnb_add_unit will refuse LATER — and the old code had already replaced
-       (and freed) the incumbent coverage by then, so rollback destroyed a gate
-       it could not rebuild. Decide here instead:
-         same name + same digest + byte-identical coverage -> idempotent no-op
-         anything else                                     -> reject, mutate nothing */
+       Duplicate import is REJECTED, not merged. The previous "idempotent"
+       path compared behaviour digests, which two units can share while their
+       sealed contract or provenance differ, and matched existing coverage by
+       unit name plus rows — so a record the same owner held on DIFFERENT ports
+       could suppress restoring the gate on the ports that actually matter.
+       Both are answered by the same blunt rule: if the target already knows
+       this unit name, in the base or in the coverage registry on any ports,
+       refuse and mutate nothing. Re-importing is an operator decision, not
+       something to infer from a digest. */
     if (cnb_has_unit(dst, unit)) {
-        BinaryTransformNetwork eb;
-        Contract ec;
-        unsigned long long edig;
-        memset(&eb, 0, sizeof eb);
-        memset(&ec, 0, sizeof ec);
-        if (cnb_get_unit(dst, unit, &eb, &ec) != 0) {
-            cap_fail(rep, "target_unit_unreadable");
-            goto done;
-        }
-        edig = (unsigned long long)contract_btn_digest(&eb);
-        btn_free(&eb);
-        contract_free(&ec);
-        if (edig != want_digest) {
-            cap_fail(rep, "target_unit_conflict_same_name_different_content");
-            goto done;
-        }
-        idempotent = 1;
+        cap_fail(rep, "target_already_has_unit_refusing_duplicate_import");
+        goto done;
     }
-    if (cov_rows && cov) {
-        const HybridCoverage *ex = NULL;
+    if (cov) {
         size_t z;
-        for (z = 0; z < cov->coverage_count; z++)
-            if (cov->coverage[z].active &&
-                strcmp(cov->coverage[z].unit, unit) == 0)
-                ex = &cov->coverage[z];
-        if (ex) {
-            /* An existing record for THIS unit is only safe to leave alone when
-               it already matches; replacing it is a free() that cannot be undone. */
-            int same = ex->n_rows == cov_rows && ex->in_dim == cov_in &&
-                       ex->out_dim == cov_out && ex->rows &&
-                       memcmp(ex->rows, cin,
-                              cov_rows * cov_in * sizeof(double)) == 0 &&
-                       ((cov_out == 0 && !ex->targets) ||
-                        (cov_out && ex->targets && cout &&
-                         memcmp(ex->targets, cout,
-                                cov_rows * cov_out * sizeof(double)) == 0));
-            if (!same) {
-                cap_fail(rep, "existing_coverage_differs_refusing_to_replace");
-                goto done;
-            }
-            coverage_already_matches = 1;
+        for (z = 0; z < cov->coverage_count; z++) {
+            if (!cov->coverage[z].active) continue;
+            if (strcmp(cov->coverage[z].unit, unit) != 0) continue;
+            cap_fail(rep,
+                     "target_already_has_coverage_for_unit_refusing_duplicate");
+            goto done;
         }
     }
 
@@ -609,7 +581,7 @@ int cnet_capsule_import(CnetBase *dst, HybridAi *cov, const char *dir,
        cnb_add_unit has no removal counterpart, so storing coverage first and
        forgetting it on failure is the only ordering where a failed import
        cannot leave an ungated certified unit behind. */
-    if (cov_rows && !coverage_already_matches) {
+    if (cov_rows) {
         /* Coverage records are keyed by PORTS, not unit names. Writing one for
            an occupied shape frees the incumbent's rows and leaves that older
            unit default-allow, and forget_unit cannot put it back. Refuse the
@@ -628,7 +600,7 @@ int cnet_capsule_import(CnetBase *dst, HybridAi *cov, const char *dir,
         }
         cov_stored = 1;
     }
-    if (!idempotent && cnb_add_unit(dst, &btn, &c, NULL) != 0) {
+    if (cnb_add_unit(dst, &btn, &c, NULL) != 0) {
         if (cov_stored) (void)hybrid_coverage_forget_unit(cov, unit);
         cap_fail(rep, "target_admit_refused");
         goto done;

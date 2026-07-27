@@ -830,6 +830,68 @@ int main(void) {
         free(u1);
     }
 
+    /* R5-1: same unit name AND same behaviour digest, but a different sealed
+       contract/provenance. A digest-only equality test called these identical
+       and imported "idempotently"; duplicate import is now simply refused. */
+    {
+        CnetBase b;
+        HybridAi h;
+        size_t t0, b0, n0;
+        cnb_init(&b);
+        hybrid_ai_init(&h);
+        check(build_unit(&b, &h, unit) == 0, "dup-name: same unit built in target");
+        (void)cnb_set_unit_provenance(&b, unit, "some_other_teacher");
+        t0 = b.tag_count; b0 = b.blob_count; n0 = b.unit_count;
+        memset(&rep, 0, sizeof rep);
+        rc = cnet_capsule_import(&b, &h, dir, &rep);
+        check(rc != 0, "dup-name: duplicate import REJECTED (not idempotent)");
+        printf("      %s\n", rep.reject_reason);
+        check(b.tag_count == t0 && b.blob_count == b0 && b.unit_count == n0,
+              "dup-name: base counts preserved");
+        cnb_free(&b);
+        hybrid_ai_free(&h);
+    }
+
+    /* R5-2: no unit in the base, but the SAME OWNER already holds a coverage
+       record on DIFFERENT ports. Matching by name+rows alone could leave the
+       real ports ungated, so any record owned by that name refuses the import. */
+    {
+        CnetBase b;
+        HybridAi h;
+        double row[SYM], tgt[SYM];
+        const HybridCoverage *rec;
+        double keep_rows[SYM], keep_tgts[SYM];
+        size_t cov0;
+        cnb_init(&b);
+        hybrid_ai_init(&h);
+        oh(row, 3);
+        oh(tgt, 7);
+        check(hybrid_coverage_record(&h, P("other_in"), P("other_out"), unit,
+                                     row, tgt, 1, SYM, SYM) == 0,
+              "other-ports: owner holds a record on different ports");
+        memcpy(keep_rows, row, sizeof keep_rows);
+        memcpy(keep_tgts, tgt, sizeof keep_tgts);
+        cov0 = hybrid_coverage_count(&h);
+        memset(&rep, 0, sizeof rep);
+        rc = cnet_capsule_import(&b, &h, dir, &rep);
+        check(rc != 0, "other-ports: import REJECTED");
+        printf("      %s\n", rep.reject_reason);
+        check(!cnb_has_unit(&b, unit), "other-ports: no unit admitted");
+        check(hybrid_coverage_count(&h) == cov0,
+              "other-ports: coverage count preserved");
+        rec = NULL;
+        { size_t z; for (z = 0; z < h.coverage_count; z++)
+            if (h.coverage[z].active && strcmp(h.coverage[z].unit, unit) == 0)
+                rec = &h.coverage[z]; }
+        check(rec && memcmp(rec->rows, keep_rows, sizeof keep_rows) == 0 &&
+                  rec->targets &&
+                  memcmp(rec->targets, keep_tgts, sizeof keep_tgts) == 0 &&
+                  strcmp(rec->input_port.tag, "other_in") == 0,
+              "other-ports: existing record byte-identical");
+        cnb_free(&b);
+        hybrid_ai_free(&h);
+    }
+
     /* transactional: coverage cannot be stored -> unit must not land either */
     {
         CnetBase b;

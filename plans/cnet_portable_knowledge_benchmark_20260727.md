@@ -163,11 +163,11 @@ tag behind. Deterministic, reachable, and now asserted.
 
 Re-review of `a496642`. RED first: `logs/knowledge_capsule_RED4.log`, 4 failures /73.
 **GREEN: `KNOWLEDGE_CAPSULE_PASS checks=80`**, `-Werror`, and clean under
-ASAN + UBSAN + **LeakSanitizer**.
+ASAN + UBSAN + **LeakSanitizer**. Round 5 takes this to **88**.
 
 | # | Blocker | Fix | Proven by |
 |---|---|---|---|
-| 1 | Same-owner rollback destroyed the old gate | target-side preflight before any mutation: same name + same digest + byte-identical coverage = idempotent no-op; anything else refused | `target_unit_conflict_same_name_different_content`; old rows/targets and base counts asserted byte-identical |
+| 1 | Same-owner rollback destroyed the old gate | target-side preflight before any mutation (round 5: **duplicate import is rejected outright**, see §2d) | old rows/targets and base counts asserted byte-identical |
 | 2 | Failed imports stranded registry slots | `hybrid_coverage_forget_unit` now moves the last record into the hole and decrements `coverage_count` | `reclaim: count decreased / array compacted / all remaining preserved`; `HYBRID_COVERAGE_MAX+8` rejected imports leave the count flat and the registry usable |
 | 3 | `cnb_add_unit_bytes` not allocation-failure atomic | reserve tags/blobs/units **before** any mutation via `cnb_reserve`, then a commit that cannot allocate; test-only `cnb_test_alloc_fail_in(n)` injects failure at each reservation | 3/3 injected failures refused with `tag/blob/unit_count` unchanged, then a normal admit still succeeds |
 | 4 | Payload temp symlink clobber | fixed in `cnb_save` itself (benefits every caller): `O_CREAT\|O_EXCL\|O_NOFOLLOW` + rename | planted symlink at `unit.cnb.tmp`; victim file byte-identical after export |
@@ -183,6 +183,31 @@ path — but `CNB_PUSH` also **zeroed the new slot**, and dropping that left
 `units[].provenance` uninitialised, so `cnb_save`'s `strlen` ran off the end. ASAN
 reported a heap-buffer-overflow; the slots are now explicitly zeroed. This is the
 argument for the sanitizer target existing at all.
+
+---
+
+## 2d. Review round 5 — duplicate import rejects, never merges
+
+Two High issues remained in the idempotence path. Behaviour-digest equality can
+call two units identical while their sealed contract or provenance differ; and
+matching existing coverage by unit name plus rows let a record the same owner
+held on **different ports** suppress restoring the gate on the ports that
+actually matter.
+
+Both are answered by one blunt fail-closed rule, applied before any mutation:
+if the target already knows this unit name — in the `CnetBase`, or as ANY
+coverage record owned by that name on ANY ports — the import is **refused**.
+The successful duplicate/idempotent path is removed entirely. Re-importing over
+an existing capability is an operator decision, not something to infer from a
+digest.
+
+Reasons: `target_already_has_unit_refusing_duplicate_import`,
+`target_already_has_coverage_for_unit_refusing_duplicate`.
+
+RED (`logs/knowledge_capsule_RED5.log`) → GREEN **88 checks**: same name with
+altered contract/provenance rejects with base counts preserved; same owner on
+different ports rejects with the existing record byte-identical. Fresh-target
+import and 32-unit accumulation are unaffected.
 
 ---
 
