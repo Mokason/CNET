@@ -430,20 +430,35 @@ def collect(state: dict, pins: dict, meta: dict) -> dict[str, Any]:
     # MoE learning substrate: held-out CE against an analytic entropy floor.
     moe = load_json(MOE_DIR / "state.json", {})
 
-    open_n = def_n = closed_n = 0
+    # Ledger status is GAP_OPEN=0, GAP_DEFERRED=1, GAP_CLOSED=2 (include/acquire.h:212).
+    # This used to score status "1" as OPEN, so every DEFERRED gap was reported as
+    # drainable backlog. With 0 truly-open gaps the governor still saw
+    # open_gaps=14 / backlog_pressure=24 and chased drain_open_gaps forever
+    # (drain_streak=20, same_goals_streak=20, plateau=1) against work no drain
+    # can touch. Count the three states apart and let pressure mean *actionable*.
+    open_n = def_n = closed_n = parked_n = 0
     gaps = Path(str(BASE) + ".gaps.txt")
     if gaps.exists():
         for i, ln in enumerate(gaps.read_text(errors="replace").splitlines()):
             if i < 2:
                 continue
-            if "waiting_oracle" in ln or "waiting_charter" in ln:
-                def_n += 1
-            else:
-                p = ln.split()
-                if len(p) > 1 and p[1] == "2":
-                    closed_n += 1
-                elif len(p) > 1 and p[1] == "1":
-                    open_n += 1
+            p = ln.split()
+            if len(p) < 2:
+                continue
+            status = p[1]
+            if status == "2":
+                closed_n += 1
+            elif status == "0":
+                open_n += 1
+            elif status == "1":
+                # waiting_oracle/charter is revivable the moment a matching
+                # teacher binds (src/acquire.c:1638). Everything else is parked
+                # on a terminal reason (tag_collision, unbounded_domain,
+                # certify_failed, register_refused) that no drain retries.
+                if "waiting_oracle" in ln or "waiting_charter" in ln:
+                    def_n += 1
+                else:
+                    parked_n += 1
 
     fault = Path(os.environ.get("CNET_FAULT_LOG", ROOT / "logs/cnet_faults.jsonl"))
     fault_lines = sum(1 for _ in fault.open()) if fault.exists() else 0
@@ -490,6 +505,7 @@ def collect(state: dict, pins: dict, meta: dict) -> dict[str, Any]:
         "lane_ok": 1 if active("cnet-personal-ai-lane.service") else 0,
         "open_gaps": open_n,
         "deferred_oracle": def_n,
+        "parked_gaps": parked_n,
         "closed_gaps": closed_n,
         "fault_lines": fault_lines,
         "lora_files": lora,
@@ -539,7 +555,12 @@ def collect(state: dict, pins: dict, meta: dict) -> dict[str, Any]:
         "freeze_seals": int(pins.get("freeze_seals") or 0),
         "pending_outcome": int(state.get("pending_outcome") or 0),
         "eval_veto": int(state.get("eval_veto") or 0),
+        # Actionable only: open gaps plus those a newly-bound teacher would
+        # revive. Parked gaps need a code or policy change, not another drain,
+        # so counting them as pressure just pins the goal ranker on an
+        # impossible task.
         "backlog_pressure": float(open_n + def_n),
+        "parked_pressure": float(parked_n),
         "teacher_uptime": 1.0 if active("bonsai-server.service") else 0.0,
         "dt_h": round(dt_h, 4),
         "threshold_backlog": float(meta.get("threshold_backlog") or 8),

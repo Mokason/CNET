@@ -459,14 +459,34 @@ static size_t bind_http_teachers(GapLane *L) {
     eps = env_double("CNET_LANE_MARGIN_EPS", 1e-4);
     http_task_count = 0;
     memset(&L->oracles, 0, sizeof L->oracles);
-    for (g = 0; g < L->ledger.count && n_cand < 512; g++) {
-        const GapRecord *gap = &L->ledger.gaps[g];
-        Port in, goal;
-        if (!gap_oracle_candidate(gap) || !gap_ports(L, gap, &in, &goal))
-            continue;
-        if (cnet_record_tag_owned(goal.tag)) continue;
-        if (!http_shape_ok(in, goal, W)) continue;
-        order[n_cand++] = g;
+    {
+        /* "bound=0" on its own is unreadable: it cannot distinguish "nothing
+           is waiting" from "everything waiting is the wrong shape for this
+           teacher". Both were true here at different times, and the second one
+           silently pinned the lane at drained=0 for hundreds of ticks because
+           the retry in acquire_drain only revives a parked gap when a matching
+           oracle exists. Count the rejects so the log says which. */
+        size_t cand_seen = 0, rej_shape = 0, rej_owned = 0;
+        for (g = 0; g < L->ledger.count && n_cand < 512; g++) {
+            const GapRecord *gap = &L->ledger.gaps[g];
+            Port in, goal;
+            if (!gap_oracle_candidate(gap) || !gap_ports(L, gap, &in, &goal))
+                continue;
+            cand_seen++;
+            if (cnet_record_tag_owned(goal.tag)) {
+                rej_owned++;
+                continue;
+            }
+            if (!http_shape_ok(in, goal, W)) {
+                rej_shape++;
+                continue;
+            }
+            order[n_cand++] = g;
+        }
+        if (n_cand == 0 && cand_seen > 0)
+            printf("gap_lane_run: http_teacher no-match W=%d candidates=%zu "
+                   "rejected_shape=%zu rejected_record_owned=%zu\n",
+                   W, cand_seen, rej_shape, rej_owned);
     }
     for (ci = 1; ci < n_cand; ci++) {
         size_t key = order[ci], j = ci;
@@ -1065,6 +1085,34 @@ int main(int argc, char **argv) {
                                                lm_toolchain_fp64);
                     }
                 }
+            }
+
+            /* Why-is-nothing-draining, independent of which teacher bound.
+               acquire_drain only revives a parked NO_PLAN gap when a matching
+               oracle exists, so when every retry candidate is the wrong shape
+               for the live teacher the tick reports drained=0 closed=0
+               deferred=0 no_oracle=0 — four zeros that look like "no work" but
+               actually mean "work no teacher here can take". Name it. */
+            if (tick_no == 1 || (tick_no % 10) == 0) {
+                size_t gi, cand = 0, teachable = 0;
+                for (gi = 0; gi < lane.ledger.count; gi++) {
+                    const GapRecord *gp = &lane.ledger.gaps[gi];
+                    if (!gap_oracle_candidate(gp)) continue;
+                    cand++;
+                    if (gap_model_teachable(&lane, gp, vocab, (int)token_base))
+                        teachable++;
+                }
+                if (cand > 0 && teachable == 0)
+                    printf("gap_lane_run: retry_candidates=%zu teachable=0 "
+                           "(shape unmatched by live teacher; lm_vocab=%d "
+                           "http_window=%d) — drain will stay at 0\n",
+                           cand, vocab,
+                           g_http_teacher ? residual_http_window_n(g_http_teacher)
+                                          : 0);
+                else if (cand > 0)
+                    printf("gap_lane_run: retry_candidates=%zu teachable=%zu\n",
+                           cand, teachable);
+                fflush(stdout);
             }
 
             if (gap_lane_tick(&lane, &r, 0) != 0) {
