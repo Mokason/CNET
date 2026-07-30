@@ -132,8 +132,13 @@ check "$([ "$(json_get 'len(d["run_id"])')" -ge 32 ] && echo 0 || echo 1)" \
     "the binding carries a run id"
 check "$([ "$(json_get 'len(d["evidence_sha256"])')" = "64" ] && echo 0 || echo 1)" \
     "the binding carries the digest of the log it wrote"
-check "$([ "$(json_get '"assume_unchanged_files" in d["binding_pre"]')" = "True" ] && echo 0 || echo 1)" \
-    "the binding discloses the assume-unchanged count"
+# A COUNT of assume-unchanged paths, which this used to require, names a blind
+# spot without closing it: `git status` cannot see those paths, so a producer
+# could rewrite one and the digest would not move. Require the digest itself.
+check "$([ "$(json_get 'len(d["binding_pre"]["special_index_sha256"])')" = "64" ] && echo 0 || echo 1)" \
+    "the binding carries a content digest of the special-index paths"
+check "$([ "$(json_get '"special_index_files" in d["binding_pre"] and "special_index_bytes" in d["binding_pre"]')" = "True" ] && echo 0 || echo 1)" \
+    "the binding discloses how many special-index paths it covered, and their size"
 check "$([ "$(json_get 'd["binding_stable"]')" = "True" ] && echo 0 || echo 1)" \
     "an honest run reports a stable binding"
 

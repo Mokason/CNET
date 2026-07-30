@@ -36,6 +36,11 @@
       "proves": "recipes propagate producer status, action gates are .PHONY, WITHHELD is non-success, gate evidence is run-bound"
     },
     {
+      "target": "evidence_special_index",
+      "status": "required",
+      "proves": "both evidence runners bind assume-unchanged/skip-worktree paths by content, and bind symlinks by identity rather than following them"
+    },
+    {
       "target": "certify",
       "status": "required",
       "proves": "all four demo primitives certify against their contracts, combine at 256/256"

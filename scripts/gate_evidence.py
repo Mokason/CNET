@@ -19,8 +19,16 @@ defects that all come from that choice:
   is not JSON; and it matched the marker as a **substring**, so ``X_PASSED``,
   ``NOT_X_PASS`` and a log stating both ``X_PASS`` and ``X_FAIL`` all passed.
 
+A later review found a fifth: the binding walked ``git status``, which does not
+report paths marked assume-unchanged or skip-worktree, so 83 tracked CNET files
+-- ``src/nn.c``, ``include/nn.h`` and ``src/legacy/main.c`` among them -- could
+be rewritten mid-run without moving the digest. Their *count* was recorded,
+which proves how many blind spots existed, not that nothing moved inside one.
+Those paths are now bound by content (see ``special_index_binding``).
+
 Everything here is content-addressed, captured twice, and serialized with
-``json.dumps``.
+``json.dumps``. Nothing here follows a symlink: a link is bound by where it
+points, and only regular files are opened.
 
 Usage: python3 scripts/gate_evidence.py GATE LOG MARKER -- CMD [ARG...]
 """
@@ -32,6 +40,7 @@ import json
 import os
 from pathlib import Path
 import re
+import stat
 import subprocess
 import sys
 import time
@@ -41,6 +50,13 @@ import uuid
 # same prefix has not asserted one.
 TERMINAL_WORDS = ("PASS", "FAIL", "WITHHELD", "BLOCKED", "NO_VERDICT", "AMBIGUOUS")
 
+# Special-index content is hashed twice per gate. CNET's 83 such paths hold
+# ~1.3 MB, so this ceiling is ~400x the real cost and still far below anything
+# that would stall a gate. Crossing it REFUSES rather than silently sampling:
+# a binding that quietly stopped covering part of the tree is the exact failure
+# this whole mechanism exists to prevent.
+SPECIAL_INDEX_BYTE_CAP = 512 * 1024 * 1024
+
 
 def sha256_file(path: Path) -> str:
     digest = hashlib.sha256()
@@ -48,6 +64,65 @@ def sha256_file(path: Path) -> str:
         for chunk in iter(lambda: stream.read(65536), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def path_identity(path: Path) -> bytes:
+    """Content identity that never follows a link and never opens a device.
+
+    ``Path.is_file()`` follows symlinks, so a link to ``/dev/zero`` inside a
+    bound set would read until the gate died, and a link to somewhere outside
+    the repository would bind bytes this tree does not own. A link is bound by
+    WHERE IT POINTS; only a regular file is ever opened.
+    """
+    try:
+        info = path.lstat()
+    except OSError:
+        return b"absent"
+    if stat.S_ISLNK(info.st_mode):
+        try:
+            return b"symlink:" + os.readlink(path).encode("utf-8", "surrogateescape")
+        except OSError:
+            return b"absent"
+    if not stat.S_ISREG(info.st_mode):
+        return b"special:%o" % stat.S_IFMT(info.st_mode)
+    try:
+        return bytes.fromhex(sha256_file(path))
+    except OSError:
+        return b"absent"
+
+
+def special_index_binding(root: Path) -> tuple[str, int, int]:
+    """Digest every path git was told to stop watching, plus its bytes.
+
+    ``git status`` deliberately omits assume-unchanged (lowercase flag) and
+    skip-worktree (``S``) entries -- suppressing them is exactly what those bits
+    are for. Recording only their COUNT, as this did before, proves how many
+    blind spots there were, not that nothing moved inside one. In CNET that gap
+    covered 83 tracked paths including ``src/nn.c``, ``include/nn.h`` and
+    ``src/legacy/main.c``.
+
+    An ordinary cached path (flag ``H``) is skipped here on purpose: any change
+    to one appears in ``git status`` and is already bound by the dirty walk, so
+    hashing all 2000 of them twice per gate would buy nothing. The flag letter
+    is part of the digest, so setting or clearing a bit is itself drift.
+    """
+    digest = hashlib.sha256()
+    entries: list[tuple[str, str]] = []
+    for record in git(root, "ls-files", "-v", "-z").split("\0"):
+        if len(record) < 3 or record[1] != " " or record[0] == "H":
+            continue
+        entries.append((record[2:], record[0]))
+    total = 0
+    for entry, flag in sorted(entries):
+        candidate = root / entry
+        try:
+            total += candidate.lstat().st_size
+        except OSError:
+            pass
+        digest.update(flag.encode("utf-8"))
+        digest.update(entry.encode("utf-8", "surrogateescape"))
+        digest.update(path_identity(candidate))
+    return digest.hexdigest(), len(entries), total
 
 
 def git(root: Path, *args: str) -> str:
@@ -66,7 +141,7 @@ def git(root: Path, *args: str) -> str:
     return done.stdout if done.returncode == 0 else ""
 
 
-def tracked_binding(root: Path) -> tuple[str, int, int]:
+def tracked_binding(root: Path) -> tuple[str, int]:
     """Digest the status of every changed tracked path AND its bytes."""
     digest = hashlib.sha256()
     dirty = 0
@@ -76,15 +151,9 @@ def tracked_binding(root: Path) -> tuple[str, int, int]:
         entry = line[3:].split(" -> ")[-1].strip().strip('"')
         digest.update(line[:3].encode("utf-8"))
         digest.update(entry.encode("utf-8"))
-        candidate = root / entry
-        digest.update(
-            bytes.fromhex(sha256_file(candidate)) if candidate.is_file() else b"absent"
-        )
+        digest.update(path_identity(root / entry))
         dirty += 1
-    assume_unchanged = sum(
-        1 for line in git(root, "ls-files", "-v").splitlines() if line[:1].islower()
-    )
-    return digest.hexdigest(), dirty, assume_unchanged
+    return digest.hexdigest(), dirty
 
 
 def untracked_binding(root: Path) -> str:
@@ -93,20 +162,20 @@ def untracked_binding(root: Path) -> str:
     listing = git(root, "ls-files", "--others", "--exclude-standard", "-z")
     for entry in sorted(item for item in listing.split("\0") if item):
         digest.update(entry.encode("utf-8"))
-        candidate = root / entry
-        digest.update(
-            bytes.fromhex(sha256_file(candidate)) if candidate.is_file() else b"absent"
-        )
+        digest.update(path_identity(root / entry))
     return digest.hexdigest()
 
 
 def capture(root: Path) -> dict[str, object]:
-    tracked, dirty, assume_unchanged = tracked_binding(root)
+    tracked, dirty = tracked_binding(root)
+    special, special_count, special_bytes = special_index_binding(root)
     return {
         "commit": git(root, "rev-parse", "HEAD").strip() or "unknown",
         "worktree_sha256": tracked,
         "worktree_dirty_files": dirty,
-        "assume_unchanged_files": assume_unchanged,
+        "special_index_sha256": special,
+        "special_index_files": special_count,
+        "special_index_bytes": special_bytes,
         "untracked_sha256": untracked_binding(root),
     }
 
@@ -172,12 +241,20 @@ def main(argv: list[str]) -> int:
     run_id = str(uuid.uuid4())
     started = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     pre = capture(root)
+    if int(pre["special_index_bytes"]) > SPECIAL_INDEX_BYTE_CAP:
+        print(
+            f"GATE_FAIL gate={gate} reason=special_index_too_large:"
+            f"{pre['special_index_bytes']}>{SPECIAL_INDEX_BYTE_CAP} "
+            "refusing to produce a binding that does not cover the tree"
+        )
+        return 1
     print(
         f"GATE_RUN gate={gate} run_id={run_id} started={started} "
         f"commit={pre['commit']} worktree={str(pre['worktree_sha256'])[:16]} "
         f"untracked={str(pre['untracked_sha256'])[:16]} "
+        f"special_index={str(pre['special_index_sha256'])[:16]} "
         f"dirty={pre['worktree_dirty_files']} "
-        f"assume_unchanged={pre['assume_unchanged_files']}",
+        f"special_index_files={pre['special_index_files']}",
         flush=True,
     )
 

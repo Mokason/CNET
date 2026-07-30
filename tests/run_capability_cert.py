@@ -18,9 +18,14 @@ alone. Both holes are closed here:
   the receipt or a declared regex supplies the number.
 
 The report binds each result to the run: commit, working-tree digest,
-assume-unchanged count, evaluator argv, evaluator binary digest, declared
+special-index digest, evaluator argv, evaluator binary digest, declared
 source-set digest, environment digest, run UUID and start time. A PASS that
 cannot be tied back to the tree that produced it is not evidence.
+
+A later review found the working-tree digest walked ``git status``, which does
+not report assume-unchanged or skip-worktree paths -- 83 of them in CNET,
+including the trainer. Only their count was recorded, which names a blind spot
+without closing it. ``special_index_binding`` now binds their bytes.
 """
 
 from __future__ import annotations
@@ -31,6 +36,7 @@ import json
 import os
 from pathlib import Path
 import re
+import stat
 import subprocess
 import sys
 import tempfile
@@ -44,6 +50,13 @@ CAPABILITY_ID = re.compile(r"^[a-z][a-z0-9_]{2,63}$")
 CASE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 METRIC_SOURCES = {"heldout_receipt", "regex"}
 
+# Special-index content is hashed three times per capability. CNET's 83 such
+# paths hold ~1.3 MB, so this ceiling is far above the real cost and far below
+# anything that would stall a run. Crossing it REFUSES rather than silently
+# sampling: a binding that quietly stopped covering part of the tree is the
+# exact failure this mechanism exists to prevent.
+SPECIAL_INDEX_BYTE_CAP = 512 * 1024 * 1024
+
 RECEIPT_RE = re.compile(
     r"^HELDOUT_FIXTURE capability=(\S+) sha256=([0-9a-f]{64}) "
     r"cases=(\d+) consumed=(\d+)$",
@@ -55,6 +68,58 @@ RECEIPT_METRIC_RE = re.compile(
     r"metric=([0-9.]+) errors=(\d+)$",
     re.MULTILINE,
 )
+
+
+# Terminal words a verdict marker can end with. A log asserting two of them for
+# the same prefix has not asserted one.
+TERMINAL_WORDS = ("PASS", "FAIL", "WITHHELD", "BLOCKED", "NO_VERDICT", "AMBIGUOUS")
+
+
+def looks_terminal(marker: str) -> bool:
+    """Is this string shaped like a verdict rather than a field probe?"""
+    return any(marker.endswith("_" + word) for word in TERMINAL_WORDS)
+
+
+def marker_lines(text: str, marker: str) -> int:
+    """Count lines that ARE this marker, not lines that merely contain it."""
+    pattern = re.compile(r"^" + re.escape(marker) + r"(?:\s|$)", re.MULTILINE)
+    return len(pattern.findall(text))
+
+
+def terminal_marker_ok(output: str, marker: str) -> tuple[bool, list[str]]:
+    """Exactly one anchored whole-line marker, and no rival verdict beside it.
+
+    The runner used to ask ``marker in output``. A raw substring test certifies
+    on ``CAP_X_PASSED``, on ``NOT_CAP_X_PASS``, on a mid-sentence mention, and
+    on a log that prints ``CAP_X_PASS`` once and ``CAP_X_FAIL`` right after it;
+    it also cannot see a duplicate, so two concatenated evaluator runs read as
+    one. Cardinality is part of a verdict, so it is checked here.
+
+    A marker that does not end in a terminal word (a fixture's progress
+    assertion, say) is only required to appear exactly once -- demanding a
+    verdict family of it would invent a rule the manifest never made.
+    """
+    problems: list[str] = []
+    count = marker_lines(output, marker)
+    if count == 0:
+        problems.append(f"required marker {marker!r} is not present on its own line")
+    elif count > 1:
+        problems.append(
+            f"marker {marker!r} appears {count} times; exactly one is a verdict"
+        )
+    prefix = None
+    for word in TERMINAL_WORDS:
+        if marker.endswith("_" + word):
+            prefix = marker[: -len(word) - 1]
+            break
+    if prefix:
+        for word in TERMINAL_WORDS:
+            other = f"{prefix}_{word}"
+            if other != marker and marker_lines(output, other):
+                problems.append(
+                    f"output also asserts {other!r}; a run cannot claim two verdicts"
+                )
+    return not problems, problems
 
 
 def sha256(path: Path) -> str:
@@ -104,8 +169,10 @@ def _git(root: Path, *args: str) -> str:
 def git_binding(root: Path) -> dict[str, Any]:
     """Commit plus an exact digest of how the working tree differs from it.
 
-    ``git status`` cannot see paths marked assume-unchanged, so the count of
-    those is reported alongside rather than left as a silent blind spot.
+    ``git status`` cannot see paths marked assume-unchanged or skip-worktree.
+    An earlier version reported the COUNT of those alongside the digest, which
+    names the blind spot without closing it: a run could rewrite ``src/nn.c``
+    and still produce an identical binding. Their bytes are now bound too.
     """
     commit = _git(root, "rev-parse", "HEAD").strip() or "unknown"
     status = _git(root, "status", "--porcelain=v1")
@@ -117,20 +184,16 @@ def git_binding(root: Path) -> dict[str, Any]:
         entry = line[3:].split(" -> ")[-1].strip().strip('"')
         digest.update(line[:3].encode("utf-8"))
         digest.update(entry.encode("utf-8"))
-        candidate = root / entry
-        if candidate.is_file():
-            digest.update(bytes.fromhex(sha256(candidate)))
+        digest.update(path_identity(root / entry))
         dirty_files += 1
-    assume_unchanged = sum(
-        1
-        for line in _git(root, "ls-files", "-v").splitlines()
-        if line[:1].islower()
-    )
+    special, special_files, special_bytes = special_index_binding(root)
     return {
         "commit": commit,
         "worktree_sha256": digest.hexdigest(),
         "worktree_dirty_files": dirty_files,
-        "assume_unchanged_files": assume_unchanged,
+        "special_index_sha256": special,
+        "special_index_files": special_files,
+        "special_index_bytes": special_bytes,
     }
 
 
@@ -191,6 +254,63 @@ def _digest_file(path: Path) -> str:
     return sha256(path) if path.is_file() else "absent"
 
 
+def path_identity(path: Path) -> bytes:
+    """Content identity that never follows a link and never opens a device.
+
+    `Path.is_file()` follows symlinks, so a link to `/dev/zero` inside a bound
+    set would read until the run died, and a link pointing outside the
+    repository would bind bytes this tree does not own. A link is bound by
+    WHERE IT POINTS; only a regular file is ever opened.
+    """
+    try:
+        info = path.lstat()
+    except OSError:
+        return b"absent"
+    if stat.S_ISLNK(info.st_mode):
+        try:
+            return b"symlink:" + os.readlink(path).encode("utf-8", "surrogateescape")
+        except OSError:
+            return b"absent"
+    if not stat.S_ISREG(info.st_mode):
+        return b"special:%o" % stat.S_IFMT(info.st_mode)
+    try:
+        return bytes.fromhex(sha256(path))
+    except OSError:
+        return b"absent"
+
+
+def special_index_binding(root: Path) -> tuple[str, int, int]:
+    """Digest every path git was told to stop watching, plus its bytes.
+
+    `git status` deliberately omits assume-unchanged (lowercase flag) and
+    skip-worktree (`S`) entries -- suppressing them is what those bits are for.
+    Recording only their COUNT, as this did before, proves how many blind spots
+    there were, not that nothing moved inside one. In CNET that gap covered 83
+    tracked paths, including the trainer and its public header.
+
+    Ordinary cached paths (flag `H`) are skipped on purpose: a change to one
+    appears in `git status` and is already bound by the dirty walk. The flag
+    letter is part of the digest, so setting or clearing a bit is drift too.
+    """
+    digest = hashlib.sha256()
+    entries: list[tuple[str, str]] = []
+    for record in _git(root, "ls-files", "-v", "-z").split("\0"):
+        if len(record) < 3 or record[1] != " " or record[0] == "H":
+            continue
+        entries.append((record[2:], record[0]))
+    total = 0
+    for entry, flag in sorted(entries):
+        candidate = root / entry
+        try:
+            total += candidate.lstat().st_size
+        except OSError:
+            pass
+        digest.update(flag.encode("utf-8"))
+        digest.update(entry.encode("utf-8", "surrogateescape"))
+        digest.update(path_identity(candidate))
+    return digest.hexdigest(), len(entries), total
+
+
 def untracked_binding(root: Path) -> str:
     """Digest of every untracked, non-ignored file's path and content.
 
@@ -202,11 +322,7 @@ def untracked_binding(root: Path) -> str:
     listing = _git(root, "ls-files", "--others", "--exclude-standard", "-z")
     for entry in sorted(item for item in listing.split("\0") if item):
         digest.update(entry.encode("utf-8"))
-        candidate = root / entry
-        if candidate.is_file():
-            digest.update(bytes.fromhex(sha256(candidate)))
-        else:
-            digest.update(b"absent")
+        digest.update(path_identity(root / entry))
     return digest.hexdigest()
 
 
@@ -553,9 +669,28 @@ def run_manifest(root: Path, manifest_path: Path, run: dict[str, Any]) -> dict[s
     receipt_ok, receipt_problems, receipt = check_receipt(
         completed.stdout, capability_id, fixture_sha, case_ids
     )
-    markers = [manifest["required_marker"], *fixture["expected_markers"]]
-    missing_markers = [marker for marker in markers if marker not in completed.stdout]
+    # The manifest's required_marker IS the verdict, so it is held to the
+    # anchored, single-occurrence, no-rival-verdict rule. A fixture's
+    # expected_markers are field probes ("acc_on=", "semantic=2") that are meant
+    # to match inside a line, so they stay substring checks -- EXCEPT when one
+    # is shaped like a verdict itself, which would otherwise be a way to smuggle
+    # a terminal claim through the weaker path.
+    missing_markers: list[str] = []
+    marker_problems: list[str] = []
+    found, issues = terminal_marker_ok(completed.stdout, manifest["required_marker"])
+    if not found:
+        missing_markers.append(manifest["required_marker"])
+        marker_problems.extend(issues)
+    for marker in fixture["expected_markers"]:
+        if looks_terminal(marker):
+            found, issues = terminal_marker_ok(completed.stdout, marker)
+            if not found:
+                missing_markers.append(marker)
+                marker_problems.extend(issues)
+        elif marker not in completed.stdout:
+            missing_markers.append(marker)
     markers_ok = not missing_markers
+    receipt_problems.extend(marker_problems)
 
     # The metric is only meaningful once the receipt proves which cases ran.
     metric = 0.0
@@ -657,11 +792,20 @@ def main() -> int:
         "started_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         **git_binding(root),
     }
+    if run["special_index_bytes"] > SPECIAL_INDEX_BYTE_CAP:
+        print(
+            "CAPABILITY_CERT_FAIL reason=special_index_too_large:"
+            f"{run['special_index_bytes']}>{SPECIAL_INDEX_BYTE_CAP} "
+            "refusing to certify against a binding that does not cover the tree",
+            file=sys.stderr,
+        )
+        return 1
     print(
         f"CAPABILITY_CERT_RUN run_id={run['run_id']} started={run['started_at']} "
         f"commit={run['commit']} worktree={run['worktree_sha256'][:16]} "
         f"dirty={run['worktree_dirty_files']} "
-        f"assume_unchanged={run['assume_unchanged_files']}"
+        f"special_index={run['special_index_sha256'][:16]} "
+        f"special_index_files={run['special_index_files']}"
     )
     results: list[dict[str, Any]] = []
     seen_capabilities: set[str] = set()

@@ -441,6 +441,101 @@ class CapabilityCertRunnerTest(unittest.TestCase):
                 {},
             )
 
+    # --- terminal marker cardinality --------------------------------------
+    #
+    # The runner accepted `marker in stdout`, a raw substring test. That makes
+    # `X_PASSED`, `NOT_X_PASS` and a mid-sentence mention all count as the
+    # verdict `X_PASS`, counts no duplicates, and lets a log asserting both
+    # `X_PASS` and `X_FAIL` certify. `gate_evidence.py` already solved this;
+    # the certificate runner is the stricter of the two and had the weaker test.
+
+    def test_the_substring_predicate_this_replaced_accepted_a_non_verdict(self) -> None:
+        """A standing witness for the defect, not just for its absence.
+
+        The old check was literally ``marker in completed.stdout``. This pins
+        that a string which SATISFIED that predicate does not satisfy the
+        current one -- so a future edit back to a substring test fails here.
+        """
+        output = "NOT_CAP_X_PASSED_YET waiting for the real gate\n"
+        self.assertIn("CAP_X_PASS", output)  # the predicate that used to certify
+        found, _ = RUNNER.terminal_marker_ok(output, "CAP_X_PASS")
+        self.assertFalse(found)
+
+    def test_exact_marker_line_is_accepted(self) -> None:
+        found, problems = RUNNER.terminal_marker_ok("CAP_X_PASS\n", "CAP_X_PASS")
+        self.assertTrue(found, problems)
+        self.assertEqual(problems, [])
+
+    def test_marker_with_trailing_fields_is_accepted(self) -> None:
+        found, problems = RUNNER.terminal_marker_ok(
+            "CAP_X_PASS checks=7 cases=3\n", "CAP_X_PASS"
+        )
+        self.assertTrue(found, problems)
+
+    def test_suffixed_marker_is_refused(self) -> None:
+        found, problems = RUNNER.terminal_marker_ok("CAP_X_PASSED\n", "CAP_X_PASS")
+        self.assertFalse(found)
+        self.assertTrue(any("not present" in p for p in problems), problems)
+
+    def test_prefixed_marker_is_refused(self) -> None:
+        found, _ = RUNNER.terminal_marker_ok("NOT_CAP_X_PASS\n", "CAP_X_PASS")
+        self.assertFalse(found)
+
+    def test_marker_mentioned_mid_line_is_refused(self) -> None:
+        found, _ = RUNNER.terminal_marker_ok(
+            "we hope to reach CAP_X_PASS one day\n", "CAP_X_PASS"
+        )
+        self.assertFalse(found)
+
+    def test_indented_marker_is_refused(self) -> None:
+        found, _ = RUNNER.terminal_marker_ok("    CAP_X_PASS\n", "CAP_X_PASS")
+        self.assertFalse(found)
+
+    def test_duplicate_marker_lines_are_refused(self) -> None:
+        found, problems = RUNNER.terminal_marker_ok(
+            "CAP_X_PASS\nCAP_X_PASS\n", "CAP_X_PASS"
+        )
+        self.assertFalse(found)
+        self.assertTrue(any("2 times" in p for p in problems), problems)
+
+    def test_conflicting_terminal_verdict_is_refused(self) -> None:
+        found, problems = RUNNER.terminal_marker_ok(
+            "CAP_X_PASS\nCAP_X_FAIL\n", "CAP_X_PASS"
+        )
+        self.assertFalse(found)
+        self.assertTrue(any("CAP_X_FAIL" in p for p in problems), problems)
+
+    def test_conflicting_withheld_verdict_is_refused(self) -> None:
+        found, problems = RUNNER.terminal_marker_ok(
+            "CAP_X_PASS\nCAP_X_WITHHELD reason=no_data\n", "CAP_X_PASS"
+        )
+        self.assertFalse(found)
+        self.assertTrue(any("CAP_X_WITHHELD" in p for p in problems), problems)
+
+    def test_non_terminal_marker_has_no_conflict_set(self) -> None:
+        # A fixture's expected_markers need not end in a terminal word; those
+        # are progress assertions, and demanding a verdict family of them would
+        # be inventing a rule the manifest never made.
+        found, problems = RUNNER.terminal_marker_ok(
+            "HELDOUT_STAGE_TWO ok\n", "HELDOUT_STAGE_TWO"
+        )
+        self.assertTrue(found, problems)
+
+    # A fixture's expected_markers are field probes meant to match inside a
+    # line ("acc_on=", "semantic=2"), so they stay substring checks. Anything
+    # SHAPED like a verdict must not get in through that weaker path.
+
+    def test_field_probes_are_not_treated_as_verdicts(self) -> None:
+        for probe in ("acc_on=", "semantic=2", "authority=cnet", "Passed"):
+            self.assertFalse(RUNNER.looks_terminal(probe), probe)
+
+    def test_verdict_shaped_expected_markers_are_treated_as_verdicts(self) -> None:
+        for verdict in (
+            "CAP_X_PASS", "CAP_X_FAIL", "CAP_X_WITHHELD",
+            "CAP_X_BLOCKED", "CAP_X_NO_VERDICT", "CAP_X_AMBIGUOUS",
+        ):
+            self.assertTrue(RUNNER.looks_terminal(verdict), verdict)
+
     # --- metric sourcing --------------------------------------------------
 
     def test_metric_comes_from_the_receipt_not_a_default(self) -> None:

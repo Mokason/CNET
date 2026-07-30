@@ -9,6 +9,7 @@
     }
   ],
   "expected_markers": [
-    "Passed"
+    "CNET.Cce.Llm.Tests.MemoryLookupLoopTests.AutoRecall_GenuineEmpty_TellsModelNotToInvent",
+    "Passed: 1"
   ]
 }

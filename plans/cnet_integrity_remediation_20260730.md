@@ -1897,3 +1897,247 @@ binary=0
 $ grep -q 'vmpeak_withheld=0' <log> ; echo guard=$?
 guard=1
 ```
+
+# Phase 3 — Codex re-review (2 High, 4 Medium)
+
+## F1 — assume-unchanged paths escaped evidence binding (HIGH)
+
+Both canonical evidence runners bound the working tree by walking
+`git status --porcelain`, which deliberately does not report paths marked
+assume-unchanged or skip-worktree. Both noticed and recorded a **count** of
+such paths, which names a blind spot without closing it.
+
+In this repository the gap is not hypothetical:
+
+```
+$ git ls-files -v | awk '{print substr($0,1,1)}' | sort | uniq -c
+   1937 H
+     83 h
+```
+
+83 of 2020 tracked paths, including `src/nn.c`, `include/nn.h` and
+`src/legacy/main.c` — the trainer, its public header and the legacy persistence
+path.
+
+### RED (re-runnable: `CNET_EVIDENCE_LEGACY=<rev>` installs the pre-fix runners)
+
+```
+$ CNET_EVIDENCE_LEGACY=HEAD python3 tests/test_evidence_special_index.py
+GATE_EVIDENCE_MUTATED exit=0
+FAIL: gate_evidence must REFUSE a run that rewrote an assume-unchanged tracked file (exit was 0)
+FAIL: gate_evidence must name the drift it refused on
+GATE_EVIDENCE_PRISTINE exit=0
+CAPABILITY_CERT_MUTATED exit=0
+FAIL: run_capability_cert must REFUSE to certify a run that rewrote an assume-unchanged tracked file (exit was 0)
+FAIL: run_capability_cert must name the drift it refused on
+CAPABILITY_CERT_PRISTINE exit=0
+GATE_EVIDENCE_SYMLINK exit=0
+FAIL: the evidence JSON must record a special-index digest; a runner that does not emit one cannot have bound those paths
+GATE_EVIDENCE_SYMLINK_REPOINTED exit=0
+FAIL: a bound symlink must be identified by WHERE IT POINTS: /dev/zero and /dev/null both read as empty, so an equal digest proves the binding followed the link instead of recording it
+GATE_EVIDENCE_SYMLINK_MOVED exit=0
+FAIL: repointing a bound symlink mid-run must be refused as drift (exit was 0)
+EVIDENCE_SPECIAL_INDEX_FAIL checks=15 failures=7
+##EXIT=1
+```
+
+Both PRISTINE controls pass in the RED lane, so the suite is not merely
+refusing everything, and the two premise checks confirm `git status` really is
+blind to the mutation — otherwise the RED would prove nothing.
+
+### GREEN
+
+```
+$ python3 tests/test_evidence_special_index.py
+GATE_EVIDENCE_MUTATED exit=1
+GATE_EVIDENCE_PRISTINE exit=0
+CAPABILITY_CERT_MUTATED exit=1
+CAPABILITY_CERT_PRISTINE exit=0
+GATE_EVIDENCE_SYMLINK exit=0
+GATE_EVIDENCE_SYMLINK_REPOINTED exit=0
+GATE_EVIDENCE_SYMLINK_MOVED exit=1
+EVIDENCE_SPECIAL_INDEX_PASS checks=15 runners=2 special_index=bound symlinks=identity_only
+##EXIT=0
+
+$ make evidence_special_index
+GATE_RUN gate=evidence_special_index ... special_index=f9344f9ffe6909c4 dirty=4 special_index_files=83
+EVIDENCE_SPECIAL_INDEX_PASS checks=15 runners=2 special_index=bound symlinks=identity_only
+GATE_PASS gate=evidence_special_index ...
+EVIDENCE_SPECIAL_INDEX_RED_CONFIRMED rev=dc3b2a2
+##EXIT=0
+```
+
+### What was implemented
+
+* `special_index_binding()` in **both** runners digests flag + path + content
+  for every non-`H` index entry (assume-unchanged and skip-worktree). Ordinary
+  cached paths are skipped on purpose — a change to one appears in
+  `git status` and is already bound by the dirty walk, so hashing all 2020
+  twice per gate would buy nothing. The flag letter is part of the digest, so
+  setting or clearing a bit is drift too.
+* `path_identity()` replaces every `Path.is_file()` content read in both
+  runners. `is_file()` FOLLOWS symlinks: a link to `/dev/zero` in a bound set
+  reads until the gate dies, and a link outside the repository binds bytes this
+  tree does not own. A link is now bound by where it points; only regular files
+  are opened; fifos/sockets/devices bind their mode.
+* A 512 MiB ceiling on special-index content. CNET's 83 paths hold 1.27 MB, so
+  the ceiling is ~400x the real cost. Crossing it REFUSES rather than sampling.
+* `make evidence_special_index` runs the suite AND re-runs it against the
+  pre-fix runners, failing if those pass.
+
+`tests/test_gate_evidence.sh` previously asserted "the binding discloses the
+assume-unchanged count". That assertion was replaced by two stricter ones — a
+64-char `special_index_sha256` and disclosure of file count and byte size —
+because the count was the inferior disclosure, not because it was inconvenient.
+
+## F5 — capability terminal marker was a substring test (MEDIUM)
+
+`run_capability_cert.py` asked `marker not in completed.stdout`. A raw substring
+test certifies on `CAP_X_PASSED`, on `NOT_CAP_X_PASS`, on a mid-sentence
+mention, and on a log printing `CAP_X_PASS` and `CAP_X_FAIL` one line apart; it
+also counts no duplicates, so two concatenated evaluator runs read as one.
+
+### RED
+
+```
+$ python3 tests/test_capability_cert_runner.py
+AttributeError: module 'capability_cert_runner' has no attribute 'terminal_marker_ok'
+   (10 errors)
+##EXIT=1
+```
+
+with a standing witness for the defect itself, which survives as a regression
+test rather than only proving the API was absent:
+
+```python
+output = "NOT_CAP_X_PASSED_YET waiting for the real gate\n"
+self.assertIn("CAP_X_PASS", output)          # the predicate that used to certify
+found, _ = RUNNER.terminal_marker_ok(output, "CAP_X_PASS")
+self.assertFalse(found)                      # the current one refuses
+```
+
+### GREEN
+
+```
+$ python3 tests/test_capability_cert_runner.py
+Ran 52 tests in 0.078s
+OK
+CAPABILITY_CERT_RUNNER_PASS shell=disabled receipt=required checks=52
+##EXIT=0
+```
+
+39 -> 52 checks.
+
+### The split, and why it is not a loophole
+
+Auditing the six real manifests showed `required_marker` is always a whole-line
+verdict, but a fixture's `expected_markers` are deliberately FIELD PROBES —
+`acc_on=`, `semantic=2`, `classes_used=4`, `authority=cnet` — meant to match
+inside a line. Anchoring those would have broken six honest capabilities for no
+integrity gain. So:
+
+* `required_marker` — the verdict — gets the anchored, exactly-once,
+  no-rival-terminal-verdict rule;
+* `expected_markers` stay substring probes, **except** any that is SHAPED like a
+  verdict (`looks_terminal`), which would otherwise be a way to smuggle a
+  terminal claim through the weaker path. Two tests pin both halves.
+
+### One manifest was genuinely wrong, and got stronger
+
+`honest_memory_retrieval` declared its `required_marker` as a dotnet test METHOD
+NAME:
+
+```
+  Passed CNET.Cce.Llm.Tests.MemoryLookupLoopTests.AutoRecall_GenuineEmpty_TellsModelNotToInvent [25 ms]
+```
+
+That substring is present whether the line says `Passed` or `Failed` — the
+marker proved the test was *mentioned*, never that it passed, and only
+`returncode == 0` was actually catching a failure. Fixed by asserting the run
+verdict and demoting the method name to what it always was:
+
+```
+required_marker : "AutoRecall_GenuineEmpty_TellsModelNotToInvent"
+               -> "Test Run Successful."
+expected_markers: ["Passed"]
+               -> ["CNET.Cce.Llm.Tests.MemoryLookupLoopTests.AutoRecall_GenuineEmpty_TellsModelNotToInvent",
+                   "Passed: 1"]
+```
+
+No floor moved: `absolute_floor` stays 1.0. The assertion is strictly stronger —
+a failed run now fails the marker itself, not merely the exit code.
+
+All six manifests re-verified against their committed evidence logs under the
+new rule: `BAD: 0`.
+
+## F6 — the fault harness accepted any abnormal exit (MEDIUM)
+
+`tests/test_accumulation_faults.sh` asserted the forced-failure line appeared
+and that the exit status was **not 99** (the ASan exitcode). Nothing else was
+checked, so a bench that printed the right words and then exited 0, exited 7,
+segfaulted, or was killed by `timeout` all counted as a clean fault path. A
+harness whose whole job is to prove the failure path is clean cannot treat
+"crashed" and "refused correctly" as the same outcome.
+
+The documented contract for an injected failure, read off the bench itself:
+print `build FAILED at k=<at>`, print `KNOWLEDGE_ACCUMULATION_BENCH_FAIL`, exit
+exactly **1**.
+
+### RED — false-green fakes, run against the real harness
+
+`tests/test_accumulation_faults_harness.sh` writes six fake benches into a
+mkdtemp root. All six print exactly what an honest injected failure prints; only
+what they do next differs.
+
+```
+$ sh tests/test_accumulation_faults_harness.sh
+ACCFAULT_CASE bench=honest        harness_exit=0
+FAIL: a bench that prints the failure marker and then exits 0 must be REFUSED (harness exit 0, expected nonzero)
+ACCFAULT_CASE bench=exit_zero     harness_exit=0
+FAIL: a bench that exits 7 instead of the documented 1 must be REFUSED (harness exit 0, expected nonzero)
+ACCFAULT_CASE bench=exit_wrong    harness_exit=0
+FAIL: a bench that prints the marker and then segfaults must be REFUSED (harness exit 0, expected nonzero)
+ACCFAULT_CASE bench=crash         harness_exit=0
+ACCFAULT_CASE bench=hang          harness_exit=124
+ACCFAULT_CASE bench=asan_finding  harness_exit=1
+FAIL: a crash must be reported as a signal, not as a wrong exit code
+FAIL: a timeout must be reported as a timeout
+ACCUMULATION_FAULTS_HARNESS_FAIL checks=8 failures=5
+##EXIT=1
+```
+
+The `hang` case returned 124 only because the *outer* `timeout` in the test
+killed it — the harness had no budget of its own that it honoured.
+
+### GREEN
+
+```
+$ sh tests/test_accumulation_faults_harness.sh
+ACCFAULT_CASE bench=honest        harness_exit=0
+ACCFAULT_CASE bench=exit_zero     harness_exit=1
+ACCFAULT_CASE bench=exit_wrong    harness_exit=1
+ACCFAULT_CASE bench=crash         harness_exit=1
+ACCFAULT_CASE bench=hang          harness_exit=1
+ACCFAULT_CASE bench=asan_finding  harness_exit=1
+ACCUMULATION_FAULTS_HARNESS_PASS checks=8 exit_code=exact signals=refused timeouts=refused
+##EXIT=0
+
+$ make knowledge_accumulation_faults
+ACCUMULATION_FAULTS_HARNESS_PASS checks=8 exit_code=exact signals=refused timeouts=refused
+ACCUMULATION_FAULTS_PASS checks=12 forced_failures=3 sanitizers=asan+ubsan+leak
+##EXIT=0
+```
+
+The real bench still passes, at 9 -> 12 checks. What changed:
+
+* the exit status must be exactly 1;
+* 124 is reported as a timeout, `>= 128` as `signal N`, 99 as a sanitizer
+  finding — three distinct refusals rather than one generic failure, because a
+  harness that cannot say which of those happened is not much better than one
+  that ignores all three;
+* `KNOWLEDGE_ACCUMULATION_BENCH_FAIL` must be present, so the bench's own
+  verdict is asserted and not just its progress line;
+* `ACC_FAULT_TIMEOUT` makes the budget injectable so the hang fixture is
+  bounded at 3s instead of 900s. The default is unchanged at 900.
+
+ASan/UBSan/leak detection is untouched and still asserted.

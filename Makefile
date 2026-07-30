@@ -2948,6 +2948,10 @@ knowledge_accumulation_faults: $(CAPSULE_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC
 		$(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) \
 		$(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) \
 		tests/knowledge_accumulation_bench.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -pthread
+	@# The harness itself is checked first, with fakes that print the right
+	@# words and then exit 0, exit 7, segfault, or hang. Before this, all four
+	@# counted as a clean fault path.
+	@sh tests/test_accumulation_faults_harness.sh
 	@sh tests/test_accumulation_faults.sh $(BIN_DIR)/knowledge_accumulation_faults
 
 .PHONY: knowledge_accumulation_faults
@@ -3811,7 +3815,7 @@ admission_abi_audit: cnet_dll tests/audit_admission_abi.sh
 specialist_authority: specialist_unit admission_bypass_audit admission_abi_audit
 	@echo "SPECIALIST_AUTHORITY_PASS"
 
-.PHONY: ci_config_gate release_package dotnet_cce_tests ci_core ci ci_contract_gate
+.PHONY: ci_config_gate release_package dotnet_cce_tests ci_core ci ci_contract_gate evidence_special_index
 ci_config_gate: tests/test_ci_workflow.py Makefile
 	@mkdir -p logs
 	@python3 scripts/gate_evidence.py ci_config_gate logs/ci_config_gate.log \
@@ -3861,7 +3865,30 @@ ci_contract_gate: config/ci_contract.json tests/test_ci_contract.py Makefile
 	@python3 scripts/gate_evidence.py ci_contract_gate logs/ci_contract.log \
 		CI_CONTRACT_PASS -- python3 tests/test_ci_contract.py
 
-ci_core: ci_contract_gate recipe_gate certify btn_train_plateau knowledge_capsule capsule_scope_lineage knowledge_accumulation_bench knowledge_composition_bench personal_ai_hop_guard coverage_abstain coverage_sidecar_seal cnu_budget vd_frontend_parse port_raw_unit_seam vision_coverage_test vision_capsule_asset capability_cert ci_config_gate warning_debt_strict release_warning_gate flagship_prefix_cache campaign_provenance_unit execution_tiers_doc_gate alt_paths_gate artifact_isa_gate runtime_artifact_hygiene
+# The evidence runners bound the tree by walking `git status`, which does not
+# report assume-unchanged or skip-worktree paths -- 83 of them here, including
+# src/nn.c. Only their count was recorded, so a producer could rewrite the
+# trainer mid-run and still be certified. Disposable-repo gate, no network.
+evidence_special_index: scripts/gate_evidence.py tests/run_capability_cert.py \
+		tests/test_evidence_special_index.py
+	@mkdir -p logs
+	@python3 scripts/gate_evidence.py evidence_special_index \
+		logs/evidence_special_index.log EVIDENCE_SPECIAL_INDEX_PASS -- \
+		python3 tests/test_evidence_special_index.py
+	@# ... and the RED it was written against stays re-runnable: the same suite
+	@# against the runners as they were before the fix must FAIL.
+	@if CNET_EVIDENCE_LEGACY=$(EVIDENCE_LEGACY_REV) python3 \
+		tests/test_evidence_special_index.py > logs/evidence_special_index_red.log 2>&1; \
+	then \
+		echo "EVIDENCE_SPECIAL_INDEX_RED_FAIL the pre-fix runners passed; the gate proves nothing"; \
+		exit 1; \
+	fi
+	@echo "EVIDENCE_SPECIAL_INDEX_RED_CONFIRMED rev=$(EVIDENCE_LEGACY_REV)"
+
+# The last commit before special-index paths were bound.
+EVIDENCE_LEGACY_REV ?= dc3b2a2
+
+ci_core: ci_contract_gate evidence_special_index recipe_gate certify btn_train_plateau knowledge_capsule capsule_scope_lineage knowledge_accumulation_bench knowledge_composition_bench personal_ai_hop_guard coverage_abstain coverage_sidecar_seal cnu_budget vd_frontend_parse port_raw_unit_seam vision_coverage_test vision_capsule_asset capability_cert ci_config_gate warning_debt_strict release_warning_gate flagship_prefix_cache campaign_provenance_unit execution_tiers_doc_gate alt_paths_gate artifact_isa_gate runtime_artifact_hygiene
 	@echo "CNET_CI_CORE_PASS"
 
 ci: ci_core release_package test dotnet_cce_tests cce_train_bench int8_matvec_bench
