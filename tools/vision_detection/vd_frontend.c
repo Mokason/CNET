@@ -86,6 +86,25 @@ const char *vd_frontend_validate(const void *asset, size_t len,
     total = sizeof h + floats * sizeof(float);
     if (len != total) return "asset_size_mismatch";
 
+    /* The BODY, not just the header. The PCA mean and eigenbasis are fed
+       straight into cv::PCA::project and then into the certified head; a single
+       NaN or Inf there makes every projected feature NaN, every score NaN, and
+       the coverage gate's distance comparisons meaningless — a silently
+       degraded guard rather than a refusal. Validated here, before OpenCV ever
+       sees the bytes. memcpy per value: nothing in the format guarantees the
+       body is aligned for float access. */
+    {
+        const unsigned char *body = (const unsigned char *)asset + sizeof h;
+        size_t i;
+        for (i = 0; i < floats; i++) {
+            float v;
+            memcpy(&v, body + i * sizeof(float), sizeof v);
+            if (!isfinite((double)v))
+                return i < (size_t)h.hog_dim ? "pca_mean_not_finite"
+                                             : "pca_matrix_not_finite";
+        }
+    }
+
     if (out) *out = h;
     if (float_count_out) *float_count_out = floats;
     return NULL;

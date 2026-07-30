@@ -132,6 +132,36 @@ static void reject(void (*mutate)(VdFrontendHdr *h, size_t *len),
     free(buf);
 }
 
+/* Poison one float in the asset BODY (the PCA mean or the eigenbasis) and
+   require a refusal. `index` is a float index into the body: indices below
+   hog_dim are the mean, the rest are the matrix. */
+static void reject_body(size_t index, unsigned bits, const char *want_reason,
+                        const char *description) {
+    size_t len = 0;
+    unsigned char *buf = make_good(&len);
+    VdFrontendHdr out;
+    const char *why;
+    char message[256];
+    unsigned char *body;
+
+    if (!buf) {
+        check(0, "fixture allocation");
+        return;
+    }
+    body = buf + sizeof(VdFrontendHdr);
+    memcpy(body + index * sizeof(float), &bits, sizeof bits);
+
+    why = validate(buf, len, &out, NULL);
+    snprintf(message, sizeof message, "%s is refused", description);
+    check(why != NULL, message);
+    if (why && want_reason && !legacy_mode) {
+        snprintf(message, sizeof message, "%s is refused as %s (saw %s)",
+                 description, want_reason, why);
+        check(strcmp(why, want_reason) == 0, message);
+    }
+    free(buf);
+}
+
 /* ---- structured mutations ------------------------------------------------ */
 
 static void m_magic(VdFrontendHdr *h, size_t *len) { (void)len; h->magic[3] ^= 0x40; }
@@ -324,6 +354,32 @@ int main(void) {
     reject(m_size_mismatch, "asset_size_mismatch", "a body one float short");
     reject(m_size_too_long, "asset_size_mismatch", "a body one float long");
 
+    /* --- body finiteness -------------------------------------------------
+       IEEE-754 binary32 bit patterns, so the mutation is exactly bytes:
+       0x7FC00000 quiet NaN, 0x7F800000 +Inf, 0xFF800000 -Inf. */
+    {
+        const size_t mean_last = GOOD_HOG_DIM - 1;
+        const size_t matrix_first = GOOD_HOG_DIM;
+        const size_t matrix_last =
+            (size_t)GOOD_HOG_DIM +
+            (size_t)GOOD_PCA_DIM * (size_t)GOOD_HOG_DIM - 1;
+        reject_body(0, 0x7FC00000u, "pca_mean_not_finite",
+                    "a NaN as the first PCA mean value");
+        reject_body(mean_last, 0x7F800000u, "pca_mean_not_finite",
+                    "a +Inf as the last PCA mean value");
+        reject_body(mean_last, 0xFF800000u, "pca_mean_not_finite",
+                    "a -Inf in the PCA mean");
+        reject_body(matrix_first, 0x7FC00000u, "pca_matrix_not_finite",
+                    "a NaN as the first eigenbasis value");
+        reject_body(matrix_last, 0x7F800000u, "pca_matrix_not_finite",
+                    "a +Inf as the last eigenbasis value");
+        reject_body(matrix_last, 0xFF800000u, "pca_matrix_not_finite",
+                    "a -Inf in the eigenbasis");
+        /* A signalling NaN is still not a number. */
+        reject_body(matrix_first + 7, 0x7F800001u, "pca_matrix_not_finite",
+                    "a signalling NaN in the eigenbasis");
+    }
+
     /* --- deterministic byte fuzz over the header ------------------------- */
     {
         uint64_t state = 20260730u;
@@ -376,6 +432,6 @@ int main(void) {
         printf("VD_FRONTEND_LEGACY_UNEXPECTEDLY_CLEAN checks=%d\n", checks);
         return 1;
     }
-    printf("VD_FRONTEND_PARSE_PASS checks=%d mutations=31 fuzz=20000\n", checks);
+    printf("VD_FRONTEND_PARSE_PASS checks=%d mutations=31 body_mutations=7 fuzz=20000\n", checks);
     return 0;
 }
