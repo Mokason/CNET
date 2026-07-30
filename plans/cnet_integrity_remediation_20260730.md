@@ -2976,3 +2976,176 @@ the nine `btn_train_dynamic` / `nn_train_dynamic` call expressions, each quoted
 verbatim by its anchor. Staged with `git hash-object -w --no-filters` plus
 `git update-index --cacheinfo`; the committed blob and the raw worktree bytes
 hash identically for all three, and `assume-unchanged` was restored afterwards.
+
+# Phase 5 — one blocker: the managed warning gate never restored what it built
+
+Base: `7396275` (phase 4, Codex APPROVED, blockers=0). Input: an independent
+Hermes full-matrix run in a truly fresh detached worktree at that exact commit,
+in which every focused target exits 0, `own_learning_health` exits 2 as designed,
+and `ci_core` exits 2.
+
+No floor, target loss, seed, exemplar, split minimum, refusal floor or label was
+changed. The managed warning POLICY is unchanged: it still scans build output
+only, with `-warnaserror` and `TreatWarningsAsErrors=true`, over the same seven
+projects. `ci_core` was not weakened and `managed_warning_gate` was not removed.
+
+## The failure
+
+`/tmp/hermes-cnet-final2-verify-20260730/summary.tsv`:
+
+```
+recipe_gate ... vision_capsule_asset_san   all 0
+own_learning_health                        2      (BLOCKED by design)
+ci_core                                    2
+HEAD  73962757b6f598b4c6f76d097ff1872574eb29ef
+```
+
+`/tmp/hermes-cnet-final2-verify-20260730/ci_core.log` ends at:
+
+```
+NATIVE_TEST_WARNING_GATE_PASS
+JSON_TOOLCALL_ALPHABET_CHECK_PASS
+  Cce -> .../dotnet/Cce/bin/Debug/net10.0/CNET.Cce.dll
+Build succeeded.
+/home/marble/dotnet/sdk/10.0.203/Sdks/Microsoft.NET.Sdk/targets/Microsoft.PackageDependencyResolution.targets(266,5): error NETSDK1004: Assets file '.../dotnet/Cce.Tests/obj/project.assets.json' not found. Run a NuGet package restore to generate this file. [.../dotnet/Cce.Tests/Cce.Tests.csproj]
+Build FAILED.
+make: *** [Makefile:3714: managed_warning_gate] Error 1
+```
+
+Reproduced here at `7396275`, in a disposable detached worktree with the same
+94-path assume-unchanged baseline and **zero** dotnet build state:
+
+```
+$ find dotnet -maxdepth 3 -type d \( -name obj -o -name bin \) | wc -l
+0
+$ make managed_warning_gate
+JSON_TOOLCALL_ALPHABET_CHECK_PASS
+error NETSDK1004: Assets file '.../dotnet/Cce/obj/project.assets.json' not found.
+Build FAILED.
+make: *** [Makefile:3714: managed_warning_gate] Error 1
+##EXIT=2
+```
+
+It fails one project earlier here than in the Hermes worktree — on
+`dotnet/Cce/Cce.csproj` rather than `dotnet/Cce.Tests/Cce.Tests.csproj` —
+because the phase-4 `evaluator_prepare` step had already restored `Cce`
+transitively there. Same defect, different first casualty.
+
+## Root cause
+
+`managed_warning_gate` ran `dotnet build --no-restore` over seven projects. The
+recipe's own comment says the gate is *deliberately offline*, and `--no-restore`
+was how that was achieved — but `--no-restore` does not make a gate offline, it
+makes provisioning **somebody else's problem**, and a fresh checkout does not
+have one. The writer's worktree passed because it happened to hold ignored
+`obj/` state. This is the F9 defect class in a different gate: a gate whose
+prerequisites live outside the tree.
+
+## Fix — restore first, offline, or refuse by name
+
+Each project is restored before it is built, against an explicitly EMPTY local
+source created with `mktemp -d` and removed by a trap:
+
+```
+timeout $(MANAGED_RESTORE_TIMEOUT) $(DOTNET) restore "$project" \
+    --source "$empty_source" --nologo -v:minimal
+```
+
+`--source` REPLACES the configured feeds rather than adding to them, so no
+network feed can be contacted, while the machine's existing global package cache
+still resolves. A package that is not already cached fails closed instead of
+reaching out. Measured on a cold fresh worktree, offline:
+
+```
+$ EMPTY=$(mktemp -d /tmp/cnet-empty-nuget-XXXXXX); ls -A "$EMPTY" | wc -l
+0
+$ dotnet restore dotnet/Cce/Cce.csproj --source "$EMPTY" --nologo -v:minimal
+  Restored .../dotnet/Cce/Cce.csproj (in 54 ms).
+  -> rc=0 assets=present                                        0.49 s
+$ dotnet restore dotnet/Cce.Tests/Cce.Tests.csproj --source "$EMPTY" --nologo -v:minimal
+  Restored .../dotnet/Cce.Tests/Cce.Tests.csproj (in 47 ms).
+  -> rc=0 assets=present                                        0.70 s
+```
+
+Three refusals, each naming its reason, each stopping before the build:
+
+* `MANAGED_WARNING_GATE_FAIL reason=restore_failed project=<p> status=<n>` —
+  including `status=124`, a restore that exceeded `MANAGED_RESTORE_TIMEOUT`;
+* `MANAGED_WARNING_GATE_FAIL reason=assets_absent project=<p> path=<p>/obj/project.assets.json`
+  — exit 0 is not evidence that a restore happened;
+* `MANAGED_WARNING_GATE_FAIL reason=build_failed project=<p>`.
+
+Restore output goes to `logs/managed_warning_restore.log`, so the warning policy
+scan still reads build output only and is textually unchanged.
+
+## The harness, and why it is causal
+
+`tests/test_managed_warning_prereq.sh` drives **this same recipe** through a fake
+`dotnet` that records every invocation and, at call time, whether the directory
+handed to `--source` was empty — a fact that cannot be checked afterwards,
+because the gate deletes it. Five scenarios, all under `mktemp -d`; no project in
+the repository is restored, built or written.
+
+GREEN:
+
+```
+$ sh tests/test_managed_warning_prereq.sh
+MANAGED_PREREQ_NORMAL rc=0 restores=3 builds=3 sources=3
+MANAGED_PREREQ_RESTORE_FAIL rc=2 builds=1
+MANAGED_PREREQ_ASSETS_ABSENT rc=2 builds=0
+MANAGED_PREREQ_TIMEOUT rc=2
+MANAGED_PREREQ_DECLARED projects=7 missing=0
+MANAGED_WARNING_PREREQ_PASS checks=25 projects=7 order=restore_before_build source=empty_local_only refusals=failed,absent,timeout
+##EXIT=0
+```
+
+What each line is worth:
+
+* `restores=3 builds=3` with a per-project ordering assertion — restore precedes
+  build for EVERY declared project, and each project's restore comes after the
+  previous project's build, so the sequence is not merely "a restore happened
+  somewhere";
+* `sources=3` with an emptiness check per call, exactly one `--source` per
+  restore, and a refusal of any `http://`, `https://` or `nuget.org` argument;
+* `builds=1` in the restore-failure scenario: the first project built, the
+  second's restore failed, and NOTHING after it ran — not its build, not the
+  third project;
+* `builds=0` in the assets-absent and timeout scenarios;
+* `projects=7 missing=0` binds the committed list: every declared project path
+  exists, so the list cannot quietly stop covering a project.
+
+RED, re-runnable, replaying the recipe as it was at `7396275`:
+
+```
+$ CNET_MANAGED_PREREQ_LEGACY=7396275 sh tests/test_managed_warning_prereq.sh
+MANAGED_PREREQ_LEGACY rev=7396275 makefile=/tmp/cnet-managed-legacy-XXXXXX.mk
+FAIL: every declared project is restored (saw 0 of 3)
+FAIL: restore precedes build for .../alpha.csproj (restore@0 build@0)
+FAIL: restore precedes build for .../beta.csproj  (restore@0 build@0)
+FAIL: restore precedes build for .../gamma.csproj (restore@0 build@0)
+FAIL: a failed restore fails the gate (rc=0)
+FAIL: a restore that exits 0 without producing assets fails the gate (rc=0)
+FAIL: a restore that hangs fails the gate rather than waiting forever (rc=0)
+MANAGED_PREREQ_NORMAL rc=0 restores=0 builds=7 sources=0
+MANAGED_WARNING_PREREQ_FAIL checks=25 failures=...
+##EXIT=1
+```
+
+`restores=0 builds=7` is the defect stated as a number: the pre-fix recipe never
+restored, and it ignored the project-list override because its list was
+hard-coded — so it built the seven real projects with a fake compiler and
+reported success.
+
+`make managed_warning_prereq` runs the GREEN lane under `gate_evidence.py`, then
+re-runs the legacy lane and requires it to fail **on the ordering property
+specifically**, not on something incidental:
+
+```
+MANAGED_WARNING_PREREQ_PASS checks=25 ...
+GATE_PASS gate=managed_warning_prereq ...
+MANAGED_WARNING_PREREQ_RED_CONFIRMED rev=7396275
+```
+
+It is a prerequisite of `release_warning_gate`, which `ci_core` already requires.
+It is deliberately NOT a prerequisite of `managed_warning_gate` itself, because
+the harness invokes that target and would otherwise recurse.
