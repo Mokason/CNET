@@ -46,6 +46,11 @@
       "proves": "all four demo primitives certify against their contracts, combine at 256/256"
     },
     {
+      "target": "legacy_persist_guard",
+      "status": "required",
+      "proves": "each of the nine demo trained artifacts is refused persistence when its own training run fails, and an unchanged run still persists all nine"
+    },
+    {
       "target": "btn_train_plateau",
       "status": "required",
       "proves": "dynamic growth escapes a local minimum instead of stacking neurons that cannot help"

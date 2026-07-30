@@ -914,6 +914,17 @@ certify: nn_demo certify_demo
 	./$(BIN_DIR)/nn_demo
 	./$(BIN_DIR)/certify_demo
 
+# A trained artifact that FAILED must leave no artifact behind. Each run fails
+# exactly one of the demo's nine artifacts for real (a zero-epoch budget), and
+# the gate proves its weights and contract are absent while everything written
+# before it is still there. Then one unchanged run must persist all nine.
+.PHONY: legacy_persist_guard
+legacy_persist_guard: nn_demo tests/test_legacy_persist_guard.sh
+	@mkdir -p logs
+	@python3 scripts/gate_evidence.py legacy_persist_guard \
+		logs/legacy_persist_guard.log LEGACY_PERSIST_GUARD_PASS -- \
+		sh tests/test_legacy_persist_guard.sh
+
 run: nn_demo
 	./$(BIN_DIR)/nn_demo
 
@@ -3906,7 +3917,7 @@ evidence_special_index: scripts/gate_evidence.py tests/run_capability_cert.py \
 # The last commit before special-index paths were bound.
 EVIDENCE_LEGACY_REV ?= dc3b2a2
 
-ci_core: ci_contract_gate evidence_special_index recipe_gate certify btn_train_plateau knowledge_capsule capsule_scope_lineage knowledge_accumulation_bench knowledge_composition_bench personal_ai_hop_guard coverage_abstain coverage_sidecar_seal cnu_budget vd_frontend_parse port_raw_unit_seam vision_coverage_test vision_capsule_asset capability_cert ci_config_gate warning_debt_strict release_warning_gate flagship_prefix_cache campaign_provenance_unit execution_tiers_doc_gate alt_paths_gate artifact_isa_gate runtime_artifact_hygiene
+ci_core: ci_contract_gate evidence_special_index recipe_gate certify legacy_persist_guard btn_train_plateau knowledge_capsule capsule_scope_lineage knowledge_accumulation_bench knowledge_composition_bench personal_ai_hop_guard coverage_abstain coverage_sidecar_seal cnu_budget vd_frontend_parse port_raw_unit_seam vision_coverage_test vision_capsule_asset capability_cert ci_config_gate warning_debt_strict release_warning_gate flagship_prefix_cache campaign_provenance_unit execution_tiers_doc_gate alt_paths_gate artifact_isa_gate runtime_artifact_hygiene
 	@echo "CNET_CI_CORE_PASS"
 
 ci: ci_core release_package test dotnet_cce_tests cce_train_bench int8_matvec_bench

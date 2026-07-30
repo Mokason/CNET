@@ -283,6 +283,31 @@ int btn_train_dynamic_checked(
    must use this rather than writing `loss <= target` itself. */
 int btn_train_loss_is_success(double loss);
 
+/* The same question, asked of the scalar-output NeuralNetwork trainer.
+
+   nn_train_dynamic returns `previous_loss` when the epoch budget runs
+   out -- a plausible finite number carrying no signal that the run did
+   NOT reach the target it was given. That is F2b's defect in the sibling
+   API, and src/legacy/main.c persisted the nibble layer on it.
+
+   The status codes are the BTN_TRAIN_* values above: one training
+   vocabulary, not two. *loss_out is ALWAYS nn_average_loss over every
+   sample of the net actually handed back, so a caller can reproduce it
+   exactly, and the status is decided by that recomputation rather than
+   by whichever number the loop happened to be holding. loss_out may be
+   NULL. */
+int nn_train_dynamic_checked(
+    NeuralNetwork *nn,
+    const double *inputs,
+    const double *targets,
+    size_t sample_count,
+    size_t max_epochs,
+    size_t growth_window,
+    double target_loss,
+    double min_improvement,
+    double *loss_out
+);
+
 /* Compatibility form. Returns the whole-dataset loss on success and
    BTN_TRAIN_LOSS_FAILED on plateau or invalid argument -- never a
    negative, and never a finite number that could pass for a good run. */

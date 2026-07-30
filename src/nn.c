@@ -274,6 +274,42 @@ double nn_train_dynamic(
     return previous_loss;
 }
 
+int nn_train_dynamic_checked(
+    NeuralNetwork *nn,
+    const double *inputs,
+    const double *targets,
+    size_t sample_count,
+    size_t max_epochs,
+    size_t growth_window,
+    double target_loss,
+    double min_improvement,
+    double *loss_out
+) {
+    double loss;
+
+    if (loss_out != NULL) *loss_out = BTN_TRAIN_LOSS_FAILED;
+    if (nn == NULL || inputs == NULL || targets == NULL || sample_count == 0) {
+        return BTN_TRAIN_INVALID;
+    }
+    (void)nn_train_dynamic(nn, inputs, targets, sample_count, max_epochs,
+                           growth_window, target_loss, min_improvement);
+    /* Decide the status from a fresh PUBLIC recomputation over the net
+       actually handed back. nn_train_dynamic returns `previous_loss`,
+       which on the budget-exhausted path is a measurement taken before
+       the last neuron was added -- a number describing a net that no
+       longer exists. A caller can reproduce THIS one exactly. */
+    loss = nn_average_loss(nn, inputs, targets, sample_count);
+    if (loss_out != NULL) *loss_out = loss;
+    if (!isfinite(loss) || loss < 0.0) {
+        if (loss_out != NULL) *loss_out = BTN_TRAIN_LOSS_FAILED;
+        return BTN_TRAIN_INVALID;
+    }
+    /* SUCCESS means one thing here too: the run reached the target it was
+       given. Running out of epochs while still descending is not success,
+       however healthy the number beside it looks. */
+    return loss <= target_loss ? BTN_TRAIN_OK : BTN_TRAIN_PLATEAU_STATUS;
+}
+
 int nn_predict_hex_digit(NeuralNetwork *nn, const double bits[4], char *digit) {
     static const char hex_digits[] = "0123456789ABCDEF";
     int value;

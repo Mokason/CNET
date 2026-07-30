@@ -110,51 +110,153 @@ static int btn_reproduces_exemplars(BinaryTransformNetwork *btn,
     return 1;
 }
 
+/* Forced-failure hook for the persistence gate.
+
+   CNET_DEMO_FAIL_ARTIFACT=<name> gives THAT artifact's training run a
+   zero-epoch budget, so it genuinely cannot reach the target it is given.
+   It can only ever cause a failure -- there is no value of it that makes
+   a run succeed, and it never touches a target, a seed or the guard
+   itself -- so it cannot manufacture a pass. It exists because the only
+   honest test of a persistence guard is a run that really did fail:
+   see tests/test_legacy_persist_guard.sh. */
+static size_t demo_epochs(const char *name, size_t epochs) {
+    const char *forced = getenv("CNET_DEMO_FAIL_ARTIFACT");
+    if (forced != NULL && strcmp(forced, name) == 0) {
+        return 0;
+    }
+    return epochs;
+}
+
+/* The whole-exemplar-set loss a CALLER can reproduce, through the PUBLIC
+   forward. A number nobody can recompute is not a measurement, so the
+   gate below refuses to write unless the trainer's number and this one
+   agree exactly. */
+static double whole_set_loss(BinaryTransformNetwork *btn,
+                             const double *inputs, const double *targets,
+                             size_t exemplars) {
+    double total = 0.0;
+    size_t s, o;
+    if (btn == NULL || inputs == NULL || targets == NULL || exemplars == 0) {
+        return BTN_TRAIN_LOSS_FAILED;
+    }
+    for (s = 0; s < exemplars; ++s) {
+        const double *out = btn_forward(btn, inputs + s * btn->input_count);
+        if (out == NULL) return BTN_TRAIN_LOSS_FAILED;
+        for (o = 0; o < btn->output_count; ++o) {
+            double error = targets[s * btn->output_count + o] - out[o];
+            total += error * error;
+        }
+    }
+    return total / (double)(exemplars * btn->output_count);
+}
+
 /* May this net be written to disk?
 
-   It used to be written unconditionally, with its loss printed beside it.
-   That is how `combine` shipped weights that failed certification while the
-   demo printed a healthy-looking number: nothing here ever looked at the
-   training result, and the result could not have been trusted anyway,
-   because failure was encoded as -2.0 and every threshold check in this
-   tree is `loss <= bar`.
+   Every trained artifact in this file used to be written unconditionally,
+   with its loss printed beside it. That is how `combine` shipped weights
+   that failed certification while the demo printed a healthy-looking
+   number. A first pass gated four of the nine; a review found the other
+   five still writing whatever training produced -- and two of them,
+   `hex_char` and `word`, were at that moment persisting nets whose runs
+   had reported +inf, i.e. NOT FIT TO CERTIFY.
 
-   Now: a run that reached its target may persist. A run that did NOT may
-   persist only if it independently reproduces every exemplar -- the
-   stronger, separate bar that `make certify` applies. A run that produced
-   nothing usable may not persist at all. Every case says which it was.  */
-static int persist_allowed(const char *name, double loss, double target,
+   Four conditions, all required, none of them a substitute for another:
+
+     1. STATUS. The trainer said BTN_TRAIN_OK -- it reached the target it
+        was given, on the data it was allowed to train on. A plateau, an
+        exhausted budget or an invalid argument is not success, however
+        healthy the number beside it looks.
+     2. MEASUREMENT. The reported loss is finite and non-negative (so
+        neither the old -2.0 plateau encoding nor the +inf failure value
+        passes), AND a fresh whole-set recomputation through the public
+        forward reproduces it EXACTLY. A number the caller cannot
+        recompute describes nothing.
+     3. TARGET. That recomputed loss meets the exact, unchanged target
+        THIS demo asked for.
+     4. REPRODUCTION. The net independently reproduces every exemplar
+        under the certification predicate.
+
+   Certification is an ADDITIONAL bar, never a way around a training run
+   that did not do what it was asked. Every case says which it was.  */
+static int persist_allowed(const char *name, int status, double loss,
+                           double target,
                            BinaryTransformNetwork *btn,
                            const double *inputs, const double *targets,
                            size_t exemplars) {
-    /* Three conditions, all required, none of them substitutes for
-       another:
-         1. the training result is a real measurement -- finite and
-            non-negative, so neither the old -2.0 plateau encoding nor
-            the +inf failure value can pass;
-         2. it meets the target THIS demo asked for, unchanged;
-         3. the net independently reproduces every exemplar under the
-            certification predicate.
-       Certification is an ADDITIONAL bar, not a way around a training
-       run that did not do what it was asked. */
-    int measured = btn_train_loss_is_success(loss);
-    int met_target = measured && loss <= target;
+    double recomputed = whole_set_loss(btn, inputs, targets, exemplars);
+    int checked = (status == BTN_TRAIN_OK);
+    int measured = btn_train_loss_is_success(loss) &&
+                   btn_train_loss_is_success(recomputed) &&
+                   recomputed == loss;
+    int met_target = measured && recomputed <= target;
     int reproduces = btn_reproduces_exemplars(btn, inputs, targets,
                                              exemplars);
-    if (measured && met_target && reproduces) {
+    if (checked && measured && met_target && reproduces) {
         printf("TRAIN_STATUS name=%s status=reached_target loss=%.8f "
-               "target=%.8f exemplars=reproduced persist=allowed\n",
-               name, loss, target);
+               "recomputed=%.8f target=%.8f exemplars=reproduced "
+               "persist=allowed\n",
+               name, loss, recomputed, target);
         return 1;
     }
-    printf("TRAIN_STATUS name=%s status=NOT_reached_target "
-           "measured=%d met_target=%d exemplars_reproduced=%d "
-           "target=%.8f persist=REFUSED\n",
-           name, measured, met_target, reproduces, target);
+    printf("TRAIN_STATUS name=%s status=NOT_reached_target checked=%d "
+           "measured=%d met_target=%d exemplars_reproduced=%d loss=%.8f "
+           "recomputed=%.8f target=%.8f persist=REFUSED\n",
+           name, checked, measured, met_target, reproduces, loss, recomputed,
+           target);
     fprintf(stderr,
-            "refusing to persist %s: measured=%d met_target=%d "
+            "refusing to persist %s: checked=%d measured=%d met_target=%d "
             "reproduces_exemplars=%d\n",
-            name, measured, met_target, reproduces);
+            name, checked, measured, met_target, reproduces);
+    return 0;
+}
+
+/* The nibble layer is a NeuralNetwork rather than a BTN, and it was the
+   one trained artifact with no gate of any kind. Its exemplar predicate
+   is the decidable one the demo itself prints: every 4-bit input must
+   decode to its own hex digit. */
+static int nibble_reproduces_exemplars(NeuralNetwork *nn,
+                                       double inputs[16][4]) {
+    static const char hex_digits[] = "0123456789ABCDEF";
+    int value;
+    if (nn == NULL || inputs == NULL) return 0;
+    for (value = 0; value < 16; ++value) {
+        char digit = 0;
+        if (nn_predict_hex_digit(nn, inputs[value], &digit) != 0) return 0;
+        if (digit != hex_digits[value]) return 0;
+    }
+    return 1;
+}
+
+/* The same four conditions, for the nibble layer. */
+static int persist_allowed_nibble(const char *name, int status, double loss,
+                                  double target, NeuralNetwork *nn,
+                                  double inputs[16][4],
+                                  const double *targets) {
+    double recomputed = (nn == NULL)
+        ? BTN_TRAIN_LOSS_FAILED
+        : nn_average_loss(nn, &inputs[0][0], targets, 16);
+    int checked = (status == BTN_TRAIN_OK);
+    int measured = btn_train_loss_is_success(loss) &&
+                   btn_train_loss_is_success(recomputed) &&
+                   recomputed == loss;
+    int met_target = measured && recomputed <= target;
+    int reproduces = nibble_reproduces_exemplars(nn, inputs);
+    if (checked && measured && met_target && reproduces) {
+        printf("TRAIN_STATUS name=%s status=reached_target loss=%.8f "
+               "recomputed=%.8f target=%.8f exemplars=reproduced "
+               "persist=allowed\n",
+               name, loss, recomputed, target);
+        return 1;
+    }
+    printf("TRAIN_STATUS name=%s status=NOT_reached_target checked=%d "
+           "measured=%d met_target=%d exemplars_reproduced=%d loss=%.8f "
+           "recomputed=%.8f target=%.8f persist=REFUSED\n",
+           name, checked, measured, met_target, reproduces, loss, recomputed,
+           target);
+    fprintf(stderr,
+            "refusing to persist %s: checked=%d measured=%d met_target=%d "
+            "reproduces_exemplars=%d\n",
+            name, checked, measured, met_target, reproduces);
     return 0;
 }
 
@@ -467,6 +569,18 @@ int main(int argc, char **argv) {
     double hex_char_loss;
     double word_loss;
     double raw_word_loss;
+    /* One status per trained artifact. A status is a status; it is not
+       recoverable from the loss, which is exactly the confusion that let
+       an uncertifiable net ship with a healthy-looking number. */
+    int nibble_status;
+    int increment_status;
+    int combine_status;
+    int split_status;
+    int cond_inc_status;
+    int hex_value_status;
+    int hex_char_status;
+    int word_status;
+    int raw_word_status;
     int value;
 
     if (argc > 1) {
@@ -507,15 +621,16 @@ int main(int argc, char **argv) {
         return EXIT_FAILURE;
     }
 
-    final_loss = nn_train_dynamic(
+    nibble_status = nn_train_dynamic_checked(
         &nn,
         &inputs[0][0],
         targets,
         16,
-        max_epochs,
+        demo_epochs("nibble", max_epochs),
         1000,
         0.00005,
-        0.01
+        0.01,
+        &final_loss
     );
 
     puts("Dynamic neural network trained on binary to hex:");
@@ -537,6 +652,11 @@ int main(int argc, char **argv) {
                value);
     }
 
+    if (!persist_allowed_nibble("nibble", nibble_status, final_loss,
+                                0.00005, &nn, inputs, targets)) {
+        nn_free(&nn);
+        return EXIT_FAILURE;
+    }
     if (nn_save(&nn, weights_path) != 0) {
         fprintf(stderr, "Could not save trained nibble layer.\n");
         nn_free(&nn);
@@ -579,15 +699,16 @@ int main(int argc, char **argv) {
         set_ports_or_die(&increment, inc_in, inc_out, "increment");
     }
 
-    increment_loss = btn_train_dynamic(
+    increment_status = btn_train_dynamic_checked(
         &increment,
         &inc_inputs[0][0],
         &inc_targets[0][0],
         16,
-        160000,
+        demo_epochs("increment", 160000),
         1000,
         0.0015,
-        0.01
+        0.01,
+        &increment_loss
     );
 
     printf("\nbinary transform learned increment:\n");
@@ -602,7 +723,8 @@ int main(int argc, char **argv) {
     btn_predict_bits(&increment, inc_inputs[15], increment_bits, sizeof(increment_bits));
     printf("1111 + 1 -> %s\n", increment_bits);
 
-    if (!persist_allowed("increment", increment_loss, 0.0015, &increment,
+    if (!persist_allowed("increment", increment_status, increment_loss,
+                         0.0015, &increment,
                          &inc_inputs[0][0], &inc_targets[0][0], 16)) {
         nn_free(&nn);
         nn_free(&frozen);
@@ -643,15 +765,16 @@ int main(int argc, char **argv) {
                                combine_out, "combine");
     }
 
-    combine_loss = btn_train_dynamic(
+    combine_status = btn_train_dynamic_checked(
         &combine_net,
         &combine_inputs[0][0],
         &combine_targets[0][0],
         256,
-        150000,
+        demo_epochs("combine", 150000),
         1000,
         0.0008,
-        0.03
+        0.03,
+        &combine_loss
     );
 
     printf("\nbinary transform learned nibble-pair join (combine):\n");
@@ -659,7 +782,8 @@ int main(int argc, char **argv) {
            (unsigned long)combine_net.hidden_count);
     printf("combine final loss: %.6f\n", combine_loss);
 
-    if (!persist_allowed("combine", combine_loss, 0.0008, &combine_net,
+    if (!persist_allowed("combine", combine_status, combine_loss, 0.0008,
+                         &combine_net,
                          &combine_inputs[0][0], &combine_targets[0][0],
                          256)) {
         nn_free(&nn);
@@ -707,15 +831,16 @@ int main(int argc, char **argv) {
         }
     }
 
-    split_loss = btn_train_dynamic(
+    split_status = btn_train_dynamic_checked(
         &split_net,
         &combine_inputs[0][0],
         &combine_targets[0][0],
         256,
-        150000,
+        demo_epochs("split", 150000),
         1000,
         0.0008,
-        0.03
+        0.03,
+        &split_loss
     );
 
     printf("\nbinary transform learned byte-to-nibbles (split, multi-output):\n");
@@ -723,7 +848,8 @@ int main(int argc, char **argv) {
            (unsigned long)split_net.hidden_count);
     printf("split final loss: %.6f\n", split_loss);
 
-    if (!persist_allowed("split", split_loss, 0.0008, &split_net,
+    if (!persist_allowed("split", split_status, split_loss, 0.0008,
+                         &split_net,
                          &combine_inputs[0][0], &combine_targets[0][0],
                          256)) {
         nn_free(&nn);
@@ -767,15 +893,16 @@ int main(int argc, char **argv) {
                                "conditional_increment");
     }
 
-    cond_inc_loss = btn_train_dynamic(
+    cond_inc_status = btn_train_dynamic_checked(
         &cond_inc,
         &cond_inc_inputs[0][0],
         &cond_inc_targets[0][0],
         32,
-        120000,
+        demo_epochs("conditional_increment", 120000),
         1000,
         0.001,
-        0.03
+        0.03,
+        &cond_inc_loss
     );
 
     printf("\nbinary transform learned conditional increment "
@@ -784,6 +911,17 @@ int main(int argc, char **argv) {
            (unsigned long)cond_inc.hidden_count);
     printf("conditional_increment final loss: %.6f\n", cond_inc_loss);
 
+    if (!persist_allowed("conditional_increment", cond_inc_status,
+                         cond_inc_loss, 0.001, &cond_inc,
+                         &cond_inc_inputs[0][0], &cond_inc_targets[0][0],
+                         32)) {
+        nn_free(&nn);
+        nn_free(&frozen);
+        btn_free(&increment);
+        btn_free(&combine_net);
+        btn_free(&cond_inc);
+        return EXIT_FAILURE;
+    }
     if (btn_save(&cond_inc, "cond_increment_weights.txt") != 0) {
         fprintf(stderr, "Could not persist conditional_increment layer.\n");
         nn_free(&nn);
@@ -813,18 +951,20 @@ int main(int argc, char **argv) {
         set_ports_or_die(&hex_values, hv_in, hv_out, "hex_value");
     }
 
-    hex_value_loss = btn_train_dynamic(
+    hex_value_status = btn_train_dynamic_checked(
         &hex_values,
         &hex_value_inputs[0][0],
         &hex_value_targets[0][0],
         16,
-        50000,
+        demo_epochs("hex_value", 50000),
         1000,
         0.003,
-        0.01
+        0.01,
+        &hex_value_loss
     );
 
-    if (!persist_allowed("hex_value", hex_value_loss, 0.003, &hex_values,
+    if (!persist_allowed("hex_value", hex_value_status, hex_value_loss,
+                         0.003, &hex_values,
                          &hex_value_inputs[0][0],
                          &hex_value_targets[0][0], 16)) {
         nn_free(&nn);
@@ -884,15 +1024,31 @@ int main(int argc, char **argv) {
         set_ports_or_die(&hex_chars, hc_in, hc_out, "hex_char");
     }
 
-    hex_char_loss = btn_train_dynamic(
+    /* 120000 epochs, not 50000. The target, seed, exemplars and floor are
+       UNCHANGED; only the compute budget is, and only because the budget
+       was never enough for the target this run declares. Measured on this
+       trainer, seed 61u, target 0.0005 held fixed:
+
+           30000 -> 0.01276283 MISS     80000 -> 0.00214472 MISS
+           50000 -> 0.01105855 MISS    120000 -> 0.00000538 OK
+                                       200000 -> 0.00000538 OK
+
+       At 50000 the run is still descending when the budget ends; it does
+       not plateau, it runs out. It has therefore missed this target under
+       every version of this trainer -- 0.001912 at dc3b2a2, +inf (a
+       reported non-success) at 6f9c859 -- and the demo persisted it
+       anyway. 120000 is the budget `conditional_increment` and `raw_word`
+       already use, and it is where this run converges and stops. */
+    hex_char_status = btn_train_dynamic_checked(
         &hex_chars,
         &hex_char_inputs[0][0],
         &hex_char_targets[0][0],
         26,
-        50000,
+        demo_epochs("hex_char", 120000),
         1000,
         0.0005,
-        0.01
+        0.01,
+        &hex_char_loss
     );
 
     if (btn_init(&word_net, WORD_INPUT_COUNT, WORD_COUNT, 1, 32, 0.7, 51u) != 0) {
@@ -914,17 +1070,41 @@ int main(int argc, char **argv) {
         set_ports_or_die(&word_net, w_in, w_out, "word");
     }
 
-    word_loss = btn_train_dynamic(
+    /* 120000 epochs, not 30000, for the same reason and on the same
+       evidence as hex_char above. Seed 51u, target 0.0005 held fixed:
+
+           30000 -> 0.01978993 MISS     80000 -> 0.00309570 MISS
+           50000 -> 0.00382671 MISS    120000 -> 0.00000000 OK
+
+       `raw_word` learns the SAME eight words to the SAME target from a
+       harder encoding, and already asks for 120000. */
+    word_status = btn_train_dynamic_checked(
         &word_net,
         &word_inputs[0][0],
         &word_targets[0][0],
         WORD_COUNT,
-        30000,
+        demo_epochs("word", 120000),
         1000,
         0.0005,
-        0.01
+        0.01,
+        &word_loss
     );
 
+    if (!persist_allowed("hex_char", hex_char_status, hex_char_loss,
+                         0.0005, &hex_chars, &hex_char_inputs[0][0],
+                         &hex_char_targets[0][0], 26) ||
+        !persist_allowed("word", word_status, word_loss, 0.0005, &word_net,
+                         &word_inputs[0][0], &word_targets[0][0],
+                         WORD_COUNT)) {
+        nn_free(&nn);
+        nn_free(&frozen);
+        btn_free(&increment);
+        btn_free(&hex_values);
+        btn_free(&frozen_hex_values);
+        btn_free(&hex_chars);
+        btn_free(&word_net);
+        return EXIT_FAILURE;
+    }
     if (btn_save(&hex_chars, hex_char_weights_path) != 0 ||
         btn_load(&frozen_hex_chars, hex_char_weights_path) != 0 ||
         btn_save(&word_net, word_weights_path) != 0 ||
@@ -1016,17 +1196,33 @@ int main(int argc, char **argv) {
         set_ports_or_die(&raw_word_net, rw_in, rw_out, "raw_word");
     }
 
-    raw_word_loss = btn_train_dynamic(
+    raw_word_status = btn_train_dynamic_checked(
         &raw_word_net,
         &raw_word_inputs[0][0],
         &raw_word_targets[0][0],
         WORD_COUNT,
-        120000,
+        demo_epochs("raw_word", 120000),
         1000,
         0.0005,
-        0.01
+        0.01,
+        &raw_word_loss
     );
 
+    if (!persist_allowed("raw_word", raw_word_status, raw_word_loss,
+                         0.0005, &raw_word_net, &raw_word_inputs[0][0],
+                         &raw_word_targets[0][0], WORD_COUNT)) {
+        nn_free(&nn);
+        nn_free(&frozen);
+        btn_free(&increment);
+        btn_free(&hex_values);
+        btn_free(&frozen_hex_values);
+        btn_free(&hex_chars);
+        btn_free(&frozen_hex_chars);
+        btn_free(&word_net);
+        btn_free(&frozen_word_net);
+        btn_free(&raw_word_net);
+        return EXIT_FAILURE;
+    }
     if (btn_save(&raw_word_net, raw_word_weights_path) != 0 ||
         btn_load(&frozen_raw_word_net, raw_word_weights_path) != 0) {
         fprintf(stderr, "Could not persist raw word layer.\n");
