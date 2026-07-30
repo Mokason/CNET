@@ -92,15 +92,31 @@ def build_repo(tmp: Path) -> Path:
     # instead of the working tree, so the RED this gate was written against
     # stays re-runnable instead of being a screenshot in a report.
     legacy = os.environ.get("CNET_EVIDENCE_LEGACY")
-    for source, destination in (
-        ("scripts/gate_evidence.py", repo / "scripts" / "gate_evidence.py"),
-        ("tests/run_capability_cert.py", repo / "tests" / "run_capability_cert.py"),
+    for source, destination, required in (
+        ("scripts/gate_evidence.py", repo / "scripts" / "gate_evidence.py", True),
+        ("tests/run_capability_cert.py",
+         repo / "tests" / "run_capability_cert.py", True),
+        # The prerequisite module the runner imports. It does not exist at the
+        # legacy revisions this gate replays, and the runners there do not
+        # import it, so its absence THERE is expected -- while its absence in
+        # the working tree would silently turn every capability case into an
+        # import error that reads like a refusal.
+        ("scripts/capability_evaluator_prereq.py",
+         repo / "scripts" / "capability_evaluator_prereq.py", False),
     ):
         if legacy:
             shown = subprocess.run(
                 ["git", "show", f"{legacy}:{source}"],
-                cwd=ROOT, stdout=subprocess.PIPE, timeout=60, check=True,
+                cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                timeout=60, check=False,
             )
+            if shown.returncode != 0:
+                if required:
+                    raise RuntimeError(
+                        f"{source} does not exist at {legacy}, and this gate "
+                        "cannot replay a runner it cannot install"
+                    )
+                continue
             destination.write_bytes(shown.stdout)
         else:
             shutil.copy2(ROOT / source, destination)
@@ -162,7 +178,10 @@ def build_repo(tmp: Path) -> Path:
     (repo / "config" / "capability_manifests" / "special_index_probe.json").write_text(
         json.dumps(manifest, indent=2) + "\n", encoding="utf-8"
     )
-    (repo / ".gitignore").write_text("logs/\n", encoding="utf-8")
+    # `__pycache__/` is ignored here for the same reason it is ignored in CNET:
+    # importing the runner writes a bytecode cache, and an ignored build
+    # artifact is not the untracked change this gate is looking for.
+    (repo / ".gitignore").write_text("logs/\n__pycache__/\n", encoding="utf-8")
 
     git(repo, "init", "-q", "-b", "main")
     git(repo, "config", "user.email", "integrity@example.invalid")
