@@ -144,5 +144,58 @@ if [ "$fail" -gt 0 ]; then
     exit 1
 fi
 
-printf 'RECIPE_GATE_PASS: no swallowed executable exits in Makefile recipes.\n'
+# --- pipeline status propagation ------------------------------------------
+# The `|| echo` scan above is blind to `producer | tee log`: tee exits 0 no
+# matter what the producer did, so a crash, timeout or sanitizer teardown
+# failure after the PASS marker was still a green recipe. Declaring this gate
+# sound while ignoring every pipeline is exactly the kind of misleading gate
+# the re-analysis flagged, so the declaration is now a hard requirement.
+if ! grep -qE '^SHELL[[:space:]]*:?=[[:space:]]*.*bash' "$MAKEFILE"; then
+    printf 'RECIPE_GATE: FAIL — no bash SHELL declared; pipefail is unavailable.\n'
+    exit 1
+fi
+if ! grep -qE '^\.SHELLFLAGS[[:space:]]*:?=.*pipefail' "$MAKEFILE"; then
+    printf 'RECIPE_GATE: FAIL — .SHELLFLAGS does not enable pipefail; %s\n' \
+        'a producer that prints PASS then exits non-zero would be green.'
+    exit 1
+fi
+pipelines=$(grep -c '| tee' "$MAKEFILE")
+
+# --- headline gates must be .PHONY ----------------------------------------
+# A same-named root file newer than its prerequisites makes Make declare an
+# action target up to date: the gate reports success without compiling,
+# running, or refreshing any evidence.
+HEADLINE_GATES='recipe_gate capability_cert capability_fixture_causality
+heldout_fixture_test knowledge_capsule knowledge_accumulation_bench
+knowledge_composition_bench coverage_abstain own_learning_health
+port_raw_unit_seam vision_coverage_test vision_capsule_asset
+vision_detection_bench_v2 ci_core'
+
+phony_lines=$(grep '^\.PHONY:' "$MAKEFILE")
+missing_phony=""
+missing_count=0
+for gate in $HEADLINE_GATES; do
+    # The target must exist at all -- a renamed gate silently passing this
+    # check would be worse than a red one.
+    if ! grep -qE "^${gate}:" "$MAKEFILE"; then
+        missing_phony="${missing_phony}  MISSING TARGET: ${gate}\n"
+        missing_count=$((missing_count + 1))
+        continue
+    fi
+    if ! printf '%s\n' "$phony_lines" | grep -qE "(^|[[:space:]])${gate}([[:space:]]|$)"; then
+        missing_phony="${missing_phony}  NOT PHONY: ${gate}\n"
+        missing_count=$((missing_count + 1))
+    fi
+done
+
+if [ "$missing_count" -gt 0 ]; then
+    printf 'RECIPE_GATE: %d headline gate(s) are shadowable:\n' "$missing_count"
+    printf '%b' "$missing_phony"
+    printf '\nRECIPE_GATE: FAIL — every action/headline gate must be .PHONY.\n'
+    exit 1
+fi
+
+gate_count=$(printf '%s\n' $HEADLINE_GATES | wc -l | tr -d ' ')
+printf 'RECIPE_GATE_PASS: no swallowed executable exits; pipefail on for %s pipeline(s); %s headline gate(s) .PHONY.\n' \
+    "$pipelines" "$gate_count"
 exit 0

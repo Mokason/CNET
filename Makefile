@@ -1,3 +1,15 @@
+# Every recipe runs under bash with pipefail. Without it `producer | tee log`
+# reports tee's exit status, so a gate whose producer printed its PASS marker
+# and then crashed, timed out, or failed a sanitizer teardown was still green --
+# the 2026-07-30 re-analysis reproduced exactly that against 35+ pipelines.
+# `tests/test_pipeline_status.sh` instantiates every real pipeline shape with a
+# producer that prints the marker and exits 7, and requires each one to fail.
+# Note this is pipefail only, deliberately not `-e`: recipes already rely on
+# Make checking each line's status, and errexit would change unrelated control
+# flow inside multi-command lines.
+SHELL := /bin/bash
+.SHELLFLAGS := -o pipefail -c
+
 CC := gcc
 CXX := g++
 PORTABLE ?= 0
@@ -1053,10 +1065,14 @@ leakcheck: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE)
 	./$(BIN_DIR)/leakcheck > logs/leakcheck.log 2>&1
 	@grep "leakcheck" logs/leakcheck.log || true
 
-# The static recipe-gate: prevents regressions that re-introduce `|| echo`
-# swallowed-exit patterns in Makefile test/model/demo recipes.
+# The recipe-integrity gate. Static analysis alone declared exit propagation
+# sound while ignoring every pipeline, so it now also executes the false-green
+# mutation (a producer that prints the PASS marker then exits 7) against each
+# real recipe shape, and pins WITHHELD to a non-success exit code.
 recipe_gate:
 	@sh tests/test_recipe_gates.sh
+	@bash tests/test_pipeline_status.sh
+	@sh tests/test_benchmark_verdict.sh
 
 # Test recipes propagate their exit codes directly. This positive-marker gate
 # runs after every prerequisite and rejects missing or stale-success logs.
@@ -2668,7 +2684,9 @@ vision_detection_prep_v2: bin/vd_prep
 	  --v1cache data/vision_cache --ntest 1000 --workers 16 \
 	  2>&1 | tee logs/vision/prep_v2.log
 
-vision_detection_bench_v2: vision_detection_eval_test bin/vd_bench
+# Evidence collection. Its job is to produce the record, not to judge it, so it
+# returns 0 for any verdict the benchmark actually reached -- including WITHHELD.
+vision_detection_bench_v2_evidence: vision_detection_eval_test bin/vd_bench
 	@mkdir -p logs/vision
 	@test -f data/vision_cache_v2/test.pack || { echo "VISION_DETECTION_FAIL missing v2 cache; run: make vision_detection_fetch vision_detection_prep_v2"; exit 1; }
 	@ROCR_VISIBLE_DEVICES='' HIP_VISIBLE_DEVICES='' CUDA_VISIBLE_DEVICES='' \
@@ -2676,8 +2694,16 @@ vision_detection_bench_v2: vision_detection_eval_test bin/vd_bench
 	  timeout 5400 /usr/bin/time -v ./$(BIN_DIR)/vd_bench --protocol v2 \
 	  --cache data/vision_cache_v2 --prev-test data/vision_cache/test.pack \
 	  --jobs 2 --json logs/vision_detection_bench_v2.json 2>&1 | tee logs/vision/bench_v2.log
-	@grep -qE "VISION_DETECTION_MECHANISM_(PASS|WITHHELD)" logs/vision/bench_v2.log
+	@grep -qE "VISION_DETECTION_MECHANISM_(PASS|WITHHELD|BLOCKED)" logs/vision/bench_v2.log
 	@grep -E "^(TEST|BARS|VISION_|disjoint)" logs/vision/bench_v2.log
+
+# The benchmark GATE. This target used to accept PASS *or* WITHHELD and exit 0
+# either way, so no automation could distinguish an earned result from one the
+# benchmark explicitly declined to claim. WITHHELD keeps its honest name and
+# gets its own non-success exit code (3); BLOCKED gets 4.
+vision_detection_bench_v2: vision_detection_bench_v2_evidence
+	@sh scripts/benchmark_verdict.sh logs/vision/bench_v2.log \
+		VISION_DETECTION_MECHANISM VISION_DETECTION_BENCH_V2
 
 # Evaluator under ASan+UBSan: the metric path must be memory-clean.
 vision_detection_allocfail_test:
@@ -2786,6 +2812,15 @@ vision_detection_eval_test: tools/vision_detection/vd_eval.c tools/vision_detect
 	@./$(BIN_DIR)/vision_detection_eval_test > logs/vision/eval_test.log 2>&1
 	@grep -q "VISION_DETECTION_EVAL_PASS" logs/vision/eval_test.log
 	@grep "VISION_DETECTION_EVAL_PASS" logs/vision/eval_test.log
+
+# Action gates, not files. Without .PHONY a same-named root file newer than the
+# prerequisites makes Make report the gate up to date: it "passes" without
+# compiling, running, or refreshing any evidence. tests/test_recipe_gates.sh
+# enumerates these and rejects omissions.
+.PHONY: knowledge_composition_bench knowledge_accumulation_bench knowledge_capsule
+.PHONY: coverage_abstain own_learning_health port_raw_unit_seam
+.PHONY: vision_coverage_test vision_capsule_asset vision_detection_bench_v2
+.PHONY: vision_detection_bench_v2_evidence vision_detection_prep_v2
 
 knowledge_composition_bench: $(CAPSULE_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(EXT_TEACHER_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) tests/knowledge_composition_bench.c include/hybrid_ai.h include/personal_ai.h
 	@mkdir -p $(BIN_DIR) logs
