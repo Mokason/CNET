@@ -1822,3 +1822,78 @@ Nothing was trained, fitted, extracted, calibrated or scored. Therefore:
 
 Neither floor was relaxed, restated or moved. The executable schema, parser and
 `PORT_RAW` safety gates all remain green and were re-run this pass.
+
+## R15 — The sanitized seal gate could not run its own resource assertion
+
+Found by running the full verification matrix rather than the narrow tests:
+`make coverage_sidecar_seal_san` exited **2** while `make coverage_sidecar_seal`
+exited 0.
+
+### RED — the actual failure
+
+```
+$ make coverage_sidecar_seal_san
+==67222==ERROR: Failed to mmap
+##EXIT=2
+```
+
+ASan reserves a ~20 TB shadow mapping before `main()`, so the child's
+`RLIMIT_AS` of 2 GB kills it on startup. Every amplification case died before
+reaching the loader, so the target proved nothing at all — and the gate was
+correctly non-zero about it.
+
+The wrong fix is to drop `RLIMIT_AS` and let the target report a bare
+`COVERAGE_SIDECAR_SEAL_PASS`: the log would then be indistinguishable from a run
+that measured the bound and found it held.
+
+### GREEN — withhold one assertion, name it, and prevent it from spreading
+
+1. Only `RLIMIT_AS` is skipped under `COVSEAL_NO_RLIMIT`. **`RLIMIT_CPU` stays
+   armed unconditionally** — ASan has no conflict with it, so the runaway guard
+   is not given up.
+2. Each skipped case prints
+   `COVERAGE_AMPLIFIED_VMPEAK_WITHHELD reason=sanitizer_shadow_map <case>`,
+   and the verdict line carries `vmpeak_withheld=<n>`. A reader can tell
+   "bounded" from "not measured".
+3. The sanitized recipe **requires** the withheld line to be present; the
+   non-sanitized recipe **requires `vmpeak_withheld=0`**, so if the exemption
+   ever leaks into that lane the amplification bound stops being measured
+   anywhere and CI fails.
+
+```
+$ make coverage_sidecar_seal_san
+COVERAGE_AMPLIFIED_VMPEAK_WITHHELD reason=sanitizer_shadow_map 2^20 rows x 2^20 dimensions declared by a two-line file
+COVERAGE_AMPLIFIED_VMPEAK_WITHHELD reason=sanitizer_shadow_map 2^20 rows of 1024 dimensions declared by a two-line file
+COVERAGE_AMPLIFIED_VMPEAK_WITHHELD reason=sanitizer_shadow_map 4096 rows of 2^16 dimensions declared by a two-line file
+COVERAGE_AMPLIFIED_VMPEAK_WITHHELD reason=sanitizer_shadow_map 2^20 tiny rows declared by a two-line file
+COVERAGE_AMPLIFIED_VMPEAK_WITHHELD reason=sanitizer_shadow_map a two-line file declaring a gigabyte of coverage rows
+COVERAGE_SIDECAR_SEAL_PASS checks=134 mutations=20 amplified=5 owners=multi partial_state=none vmpeak_withheld=5
+##EXIT=0
+
+$ make coverage_sidecar_seal
+COVERAGE_AMPLIFIED verdict=0 vm_peak_kb=24296 cpu=0.000 2^20 rows x 2^20 dimensions declared by a two-line file
+COVERAGE_AMPLIFIED verdict=0 vm_peak_kb=24296 cpu=0.000 2^20 rows of 1024 dimensions declared by a two-line file
+COVERAGE_AMPLIFIED verdict=0 vm_peak_kb=24296 cpu=0.000 4096 rows of 2^16 dimensions declared by a two-line file
+COVERAGE_AMPLIFIED verdict=0 vm_peak_kb=24296 cpu=0.000 2^20 tiny rows declared by a two-line file
+COVERAGE_AMPLIFIED verdict=0 vm_peak_kb=24296 cpu=0.000 a two-line file declaring a gigabyte of coverage rows
+COVERAGE_SIDECAR_SEAL_PASS checks=140 mutations=20 amplified=5 owners=multi partial_state=none vmpeak_withheld=0
+##EXIT=0
+```
+
+All five bounds are still measured, in the target that can measure them: VmPeak
+flat at the 24296 kB control for a file declaring a gigabyte of rows. The 6-check
+difference (140 vs 134) is exactly the 5 skipped assertions plus the baseline
+`the child reports its peak address space`.
+
+### RED for the anti-spread guard
+
+Simulating the exemption leaking into the non-sanitized lane — the binary alone
+is happy, the gate is not:
+
+```
+$ COVSEAL_NO_RLIMIT=1 ./bin/test_coverage_sidecar_seal ; echo binary=$?
+COVERAGE_SIDECAR_SEAL_PASS checks=134 ... vmpeak_withheld=5
+binary=0
+$ grep -q 'vmpeak_withheld=0' <log> ; echo guard=$?
+guard=1
+```

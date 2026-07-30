@@ -3119,6 +3119,10 @@ coverage_sidecar_seal: $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) 
 	@python3 scripts/gate_evidence.py coverage_sidecar_seal \
 		logs/coverage_sidecar_seal.log COVERAGE_SIDECAR_SEAL_PASS -- \
 		./$(BIN_DIR)/test_coverage_sidecar_seal
+	@# The sanitized target is allowed to withhold the address-space assertion;
+	@# this one is not. If COVSEAL_NO_RLIMIT ever leaks into this lane, the
+	@# amplification bound stops being measured anywhere and this fails.
+	@grep -q "vmpeak_withheld=0" logs/coverage_sidecar_seal.log
 
 # Same negatives under ASan+UBSan: a transactional loader that leaks or reads
 # freed rows on the reject path has not really rolled anything back.
@@ -3132,11 +3136,20 @@ coverage_sidecar_seal_san: $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_S
 		$(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) \
 		$(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) \
 		tests/test_coverage_sidecar_seal.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -pthread
+	@# ASan reserves a ~20 TB shadow mapping before main(), so RLIMIT_AS at any
+	@# sane ceiling kills the child outright and a VmPeak comparison against a
+	@# 20 TB baseline would pass for anything. That one assertion is withheld
+	@# here and belongs to the non-sanitized target, which greps for
+	@# vmpeak_withheld=0. RLIMIT_CPU, the CPU budget, the refusal verdicts and
+	@# the leak/UB checks -- the reason this target exists -- all still apply.
 	@ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1 \
-		timeout 900 ./$(BIN_DIR)/coverage_sidecar_seal_san \
+		COVSEAL_NO_RLIMIT=1 timeout 900 ./$(BIN_DIR)/coverage_sidecar_seal_san \
 		> logs/coverage_sidecar_seal_san.log 2>&1; \
 		status=$$?; cat logs/coverage_sidecar_seal_san.log; test $$status -eq 0
 	@grep -q "COVERAGE_SIDECAR_SEAL_PASS" logs/coverage_sidecar_seal_san.log
+	@# ... and the withholding must be stated in the log, not inferred.
+	@grep -q "COVERAGE_AMPLIFIED_VMPEAK_WITHHELD reason=sanitizer_shadow_map" \
+		logs/coverage_sidecar_seal_san.log
 
 own_learning_health: $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(EXT_TEACHER_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) tools/cnet_own_learning_health.c include/hybrid_ai.h include/base.h
 	@mkdir -p $(BIN_DIR) logs

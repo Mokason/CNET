@@ -149,6 +149,9 @@ static int write_sidecar(const char *path, const SidecarSpec *s) {
 #define CPU_BUDGET_SECS     2.0
 
 static long baseline_vm_peak_kb = -1;
+/* How many address-space assertions were NOT made, so the final line can say
+   so instead of reporting a bare pass. */
+static int amplification_withheld;
 
 static long read_vm_peak_kb(void) {
     FILE *fp = fopen("/proc/self/status", "r");
@@ -182,12 +185,16 @@ static int load_in_child(const char *path, long *vm_peak_kb,
         HybridAi h;
         int rc;
         close(fds[0]);
+        /* RLIMIT_AS is the one a sanitizer cannot live with -- ASan reserves a
+           ~20 TB shadow mapping before main() and dies at any sane ceiling.
+           RLIMIT_CPU has no such conflict, so the runaway guard stays armed
+           unconditionally. */
         if (!getenv("COVSEAL_NO_RLIMIT")) {
             as.rlim_cur = as.rlim_max = ADDRESS_LIMIT_BYTES;
             (void)setrlimit(RLIMIT_AS, &as);
-            cpu.rlim_cur = cpu.rlim_max = CPU_LIMIT_SECONDS;
-            (void)setrlimit(RLIMIT_CPU, &cpu);
         }
+        cpu.rlim_cur = cpu.rlim_max = CPU_LIMIT_SECONDS;
+        (void)setrlimit(RLIMIT_CPU, &cpu);
         hybrid_ai_init(&h);
         rc = hybrid_coverage_load(&h, path);
         hybrid_ai_free(&h);
@@ -241,12 +248,26 @@ static void amplified_case(const char *leaf, const SidecarSpec *spec,
     snprintf(message, sizeof message, "%s is refused (verdict=%d)", description,
              verdict);
     check(verdict == 0, message);
-    snprintf(message, sizeof message,
-             "%s reserves no extra address space (VmPeak %ld kB vs control %ld kB)",
-             description, vm, baseline_vm_peak_kb);
-    check(vm >= 0 && baseline_vm_peak_kb >= 0 &&
-              vm <= baseline_vm_peak_kb + VM_SLACK_KB,
-          message);
+    /* ASan reserves a ~20 TB shadow mapping, so neither RLIMIT_AS nor a VmPeak
+       comparison means anything under it. The address-space assertion is the
+       job of the non-sanitized target; here the verdict and the CPU budget
+       still are. Skipping it is stated rather than silently passing a
+       comparison against a 20 TB baseline. */
+    if (!getenv("COVSEAL_NO_RLIMIT")) {
+        snprintf(message, sizeof message,
+                 "%s reserves no extra address space (VmPeak %ld kB vs control %ld kB)",
+                 description, vm, baseline_vm_peak_kb);
+        check(vm >= 0 && baseline_vm_peak_kb >= 0 &&
+                  vm <= baseline_vm_peak_kb + VM_SLACK_KB,
+              message);
+    } else {
+        /* Say what is not being asserted. A run whose log does not distinguish
+           "bounded" from "not measured" is the failure mode this suite exists
+           to prevent. */
+        amplification_withheld++;
+        printf("COVERAGE_AMPLIFIED_VMPEAK_WITHHELD reason=sanitizer_shadow_map "
+               "%s\n", description);
+    }
     snprintf(message, sizeof message, "%s is refused within the CPU budget (%.3fs)",
              description, cpu);
     check(cpu < CPU_BUDGET_SECS, message);
@@ -625,7 +646,9 @@ int main(void) {
               "the control sidecar still loads inside the address limit");
         printf("COVERAGE_AMPLIFIED_BASELINE vm_peak_kb=%ld cpu=%.3f\n",
                baseline_vm_peak_kb, cpu);
-        check(baseline_vm_peak_kb > 0, "the child reports its peak address space");
+        if (!getenv("COVSEAL_NO_RLIMIT"))
+            check(baseline_vm_peak_kb > 0,
+                  "the child reports its peak address space");
     }
 
     /* Each scalar within its documented limit, the product far outside any. */
@@ -782,6 +805,7 @@ int main(void) {
         return 1;
     }
     printf("COVERAGE_SIDECAR_SEAL_PASS checks=%d mutations=20 amplified=5 owners=multi "
-           "partial_state=none\n", checks);
+           "partial_state=none vmpeak_withheld=%d\n", checks,
+           amplification_withheld);
     return 0;
 }
