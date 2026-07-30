@@ -15,7 +15,9 @@
 set -u
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
-VERDICT="$ROOT/scripts/benchmark_verdict.sh"
+# CNET_VERDICT_SCRIPT lets the RED run point at the pre-fix script without
+# copying these cases anywhere.
+VERDICT=${CNET_VERDICT_SCRIPT:-$ROOT/scripts/benchmark_verdict.sh}
 
 if [ ! -f "$VERDICT" ]; then
     printf 'FAIL: %s not found\n' "$VERDICT"
@@ -77,11 +79,49 @@ the producer died before printing any verdict' 1 'SYNTH_GATE_NO_VERDICT' \
 
 expect NONE 4 'SYNTH_GATE_BLOCKED' 'a missing evidence log is BLOCKED, never PASS'
 
-# PASS must win over an earlier WITHHELD line only when it is genuinely present;
-# a log that contains WITHHELD alone must never be read as PASS.
+# --- cardinality -----------------------------------------------------------
+# `grep -q PREFIX_PASS` is a substring test over the whole file. It answered
+# PASS for a log that also said WITHHELD, for a log that said PASS twice, and
+# for lines that merely CONTAIN the marker. A benchmark reporting more than one
+# terminal verdict has not reported a verdict.
+
+expect 'TEST rows=1000
+SYNTH_MECHANISM_PASS ap50=0.114518
+SYNTH_MECHANISM_WITHHELD refusal=0.0906' 5 'SYNTH_GATE_AMBIGUOUS' \
+    'a log claiming both PASS and WITHHELD is ambiguous, not PASS'
+
+expect 'SYNTH_MECHANISM_WITHHELD refusal=0.09
+SYNTH_MECHANISM_PASS ap50=0.11' 5 'SYNTH_GATE_AMBIGUOUS' \
+    'order does not decide an ambiguous log'
+
+expect 'SYNTH_MECHANISM_PASS one
+SYNTH_MECHANISM_PASS two' 5 'SYNTH_GATE_AMBIGUOUS' \
+    'a duplicated PASS is ambiguous'
+
 expect 'SYNTH_MECHANISM_WITHHELD first
-SYNTH_MECHANISM_WITHHELD second' 3 'SYNTH_GATE_WITHHELD' \
-    'repeated WITHHELD stays WITHHELD'
+SYNTH_MECHANISM_WITHHELD second' 5 'SYNTH_GATE_AMBIGUOUS' \
+    'a duplicated WITHHELD is ambiguous'
+
+expect 'SYNTH_MECHANISM_PASS ok
+SYNTH_MECHANISM_BLOCKED nope' 5 'SYNTH_GATE_AMBIGUOUS' \
+    'PASS with BLOCKED is ambiguous'
+
+# --- substring and prefix markers ------------------------------------------
+expect 'SYNTH_MECHANISM_PASSED ap50=0.11' 1 'SYNTH_GATE_NO_VERDICT' \
+    'PASSED is not PASS'
+
+expect 'NOT_SYNTH_MECHANISM_PASS ap50=0.11' 1 'SYNTH_GATE_NO_VERDICT' \
+    'a marker with a prefix in front of it is not the marker'
+
+expect 'note: we hope to reach SYNTH_MECHANISM_PASS next quarter' 1 \
+    'SYNTH_GATE_NO_VERDICT' 'a marker mentioned mid-line is not a verdict'
+
+expect 'SYNTH_MECHANISM_PASS_EXTRA ap50=0.11' 1 'SYNTH_GATE_NO_VERDICT' \
+    'a marker with a suffix is not the marker'
+
+# A verdict alone on its line, with no trailing fields, is still a verdict.
+expect 'SYNTH_MECHANISM_PASS' 0 'SYNTH_GATE_PASS' \
+    'a bare verdict line with no fields is accepted'
 
 if [ "$failures" -gt 0 ]; then
     printf 'BENCHMARK_VERDICT_FAIL checks=%d failures=%d\n' "$checks" "$failures"

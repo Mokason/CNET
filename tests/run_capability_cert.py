@@ -134,22 +134,114 @@ def git_binding(root: Path) -> dict[str, Any]:
     }
 
 
-def environment_binding(environment: dict[str, str]) -> dict[str, Any]:
-    """Digest the whole environment; surface only the project's own knobs.
+# Knobs whose VALUES may be written into a report. Each is a documented,
+# non-secret switch or path; everything else CNET_*/CCE_* is recorded by NAME
+# only. The previous version serialized every CNET_*/CCE_* value, which is a
+# leak waiting for the first operator who names a token or an auth header with
+# a project prefix -- and `logs/capability_cert.json` is a file people paste.
+ENV_VALUE_ALLOWLIST = frozenset(
+    {
+        "CNET_HELD_OUT_FIXTURE",
+        "CNET_COVERAGE_ABSTAIN",
+        "CNET_PERSONAL_STRUCTURE_MINE_ON_SERVE",
+        "CNET_BASE_PATH",
+        "CNET_PROMOTE_EVAL_DELTA",
+        "CNET_ORACLE_INT8",
+        "CNET_TRAIN_FAST",
+        "CNET_GGUF_MMAP",
+        "CNET_REQUIRE_REAL_MODEL",
+        "CCE_CLASSIFICATION_LANE_REQUIRE",
+    }
+)
 
-    The digest binds the run without copying arbitrary secrets into a report.
+
+def environment_binding(environment: dict[str, str]) -> dict[str, Any]:
+    """Bind the environment without copying any of it into the report.
+
+    The digest covers every variable, so the run is bound. Only allowlisted
+    non-secret knobs have their values recorded; every other CNET_*/CCE_* knob
+    contributes its NAME and a per-value digest, which is enough to notice that
+    it changed without disclosing what it is.
     """
     serialized = "\n".join(f"{key}={environment[key]}" for key in sorted(environment))
-    knobs = {
-        key: environment[key]
-        for key in sorted(environment)
-        if key.startswith(("CNET_", "CCE_"))
+    cnet_names = sorted(
+        key for key in environment if key.startswith(("CNET_", "CCE_"))
+    )
+    allowlisted = {
+        key: environment[key] for key in cnet_names if key in ENV_VALUE_ALLOWLIST
+    }
+    redacted = {
+        key: "sha256:" + hashlib.sha256(environment[key].encode("utf-8")).hexdigest()
+        for key in cnet_names
+        if key not in ENV_VALUE_ALLOWLIST
     }
     return {
         "env_sha256": hashlib.sha256(serialized.encode("utf-8")).hexdigest(),
         "env_variables": len(environment),
-        "env_cnet_knobs": knobs,
+        "env_knob_names": cnet_names,
+        "env_allowlisted_knobs": allowlisted,
+        "env_redacted_knobs": redacted,
     }
+
+
+# --- pre/post state binding ------------------------------------------------
+
+
+def _digest_file(path: Path) -> str:
+    return sha256(path) if path.is_file() else "absent"
+
+
+def untracked_binding(root: Path) -> str:
+    """Digest of every untracked, non-ignored file's path and content.
+
+    `git status --porcelain` names untracked paths but the earlier binding
+    hashed only the status TEXT for them, so a new source file could change
+    content between the pre and post capture without moving a single digest.
+    """
+    digest = hashlib.sha256()
+    listing = _git(root, "ls-files", "--others", "--exclude-standard", "-z")
+    for entry in sorted(item for item in listing.split("\0") if item):
+        digest.update(entry.encode("utf-8"))
+        candidate = root / entry
+        if candidate.is_file():
+            digest.update(bytes.fromhex(sha256(candidate)))
+        else:
+            digest.update(b"absent")
+    return digest.hexdigest()
+
+
+def capture_state(
+    root: Path,
+    sources: list[str],
+    fixture_path: Path,
+    binary: str | None,
+    include_binary: bool,
+) -> dict[str, Any]:
+    """Everything the certificate claims about the tree, captured at one instant.
+
+    Taken twice per capability and compared: a mutation of a declared source,
+    the fixture, the evaluator binary, a dirty tracked file, or an untracked
+    file between the two captures invalidates the run. A one-sided hash proves
+    only what was true at one instant, which is not what a certificate asserts.
+    """
+    state: dict[str, Any] = dict(git_binding(root))
+    state["untracked_sha256"] = untracked_binding(root)
+    source_sha, resolved = source_set_digest(root, sources)
+    state["evaluator_source_set_sha256"] = source_sha
+    state["evaluator_sources"] = resolved
+    state["fixture_sha256"] = _digest_file(fixture_path)
+    if include_binary and binary:
+        state["evaluator_binary_sha256"] = _digest_file(repo_path(root, binary))
+    return state
+
+
+def compare_states(before: dict[str, Any], after: dict[str, Any]) -> list[str]:
+    """Names of the bound components that moved between two captures."""
+    drift: list[str] = []
+    for key in sorted(set(before) | set(after)):
+        if before.get(key) != after.get(key):
+            drift.append(key)
+    return drift
 
 
 def source_set_digest(root: Path, sources: list[str]) -> tuple[str, list[str]]:
@@ -274,13 +366,29 @@ def validate_manifest(root: Path, path: Path) -> tuple[dict[str, Any], Path, dic
 def check_receipt(
     output: str, capability_id: str, fixture_sha: str, case_ids: list[str]
 ) -> tuple[bool, list[str], dict[str, Any]]:
-    """Verify the evaluator proved it consumed THIS fixture's declared cases."""
+    """Verify the evaluator proved it consumed THIS fixture's declared cases.
+
+    Cardinality is part of the proof. `re.search` takes the FIRST match, so an
+    evaluator that emitted two receipts -- or a run that concatenated two
+    evaluators' output -- was judged on whichever appeared first, and duplicate
+    per-case lines collapsed silently into a dict. Exactly one fixture receipt,
+    exactly one metric receipt, and exactly one line per declared case, with no
+    line for a case the fixture does not declare.
+    """
     problems: list[str] = []
     detail: dict[str, Any] = {"receipt_present": False}
-    receipt = RECEIPT_RE.search(output)
-    if receipt is None:
+    receipts = RECEIPT_RE.findall(output)
+    if not receipts:
         problems.append("no HELDOUT_FIXTURE receipt in evaluator output")
         return False, problems, detail
+    if len(receipts) > 1:
+        problems.append(
+            f"{len(receipts)} HELDOUT_FIXTURE receipts in one run; exactly one is a proof"
+        )
+        detail["receipt_count"] = len(receipts)
+        return False, problems, detail
+    receipt = RECEIPT_RE.search(output)
+    assert receipt is not None
     detail["receipt_present"] = True
     detail["receipt_capability"] = receipt.group(1)
     detail["receipt_fixture_sha256"] = receipt.group(2)
@@ -303,14 +411,40 @@ def check_receipt(
             f"only {receipt.group(4)}/{len(case_ids)} declared cases were consumed"
         )
 
-    reads = {match.group(1): int(match.group(2)) for match in CASE_RE.finditer(output)}
+    case_lines: list[tuple[str, int]] = [
+        (match.group(1), int(match.group(2))) for match in CASE_RE.finditer(output)
+    ]
+    reads: dict[str, int] = {}
+    seen_twice: list[str] = []
+    for case_id, count in case_lines:
+        if case_id in reads:
+            seen_twice.append(case_id)
+        reads[case_id] = count
     detail["case_reads"] = reads
+    detail["case_line_count"] = len(case_lines)
+    for case_id in sorted(set(seen_twice)):
+        problems.append(f"case {case_id} is reported more than once")
+    for case_id in sorted(set(reads) - set(case_ids)):
+        problems.append(
+            f"receipt reports case {case_id}, which the fixture does not declare"
+        )
+    if len(case_lines) != len(case_ids):
+        problems.append(
+            f"receipt has {len(case_lines)} case lines for {len(case_ids)} declared cases"
+        )
     for case_id in case_ids:
         if case_id not in reads:
             problems.append(f"case {case_id} is absent from the receipt")
         elif reads[case_id] == 0:
             problems.append(f"case {case_id} was declared but never read")
 
+    metric_lines = RECEIPT_METRIC_RE.findall(output)
+    if len(metric_lines) > 1:
+        problems.append(
+            f"{len(metric_lines)} HELDOUT_METRIC lines in one run; exactly one is a proof"
+        )
+        detail["metric_line_count"] = len(metric_lines)
+        return False, problems, detail
     metric_line = RECEIPT_METRIC_RE.search(output)
     if metric_line is None:
         problems.append("no HELDOUT_METRIC line in evaluator output")
@@ -344,8 +478,18 @@ def extract_metric(manifest: dict[str, Any], output: str, receipt: dict[str, Any
     pattern = manifest["metric_regex"]
     if not isinstance(pattern, str) or len(pattern) > 256:
         raise ValueError("metric_regex must be a bounded string")
-    match = re.search(pattern, output)
-    if not match or match.lastindex != 1:
+    compiled = re.compile(pattern)
+    matches = list(compiled.finditer(output))
+    if not matches:
+        raise ValueError("metric_regex did not match the evaluator output")
+    # `re.search` silently took the first of several. Two matches mean two
+    # candidate metrics and no way to know which the certificate is about.
+    if len(matches) > 1:
+        raise ValueError(
+            f"metric_regex matched {len(matches)} times; exactly one is a measurement"
+        )
+    match = matches[0]
+    if match.lastindex != 1:
         raise ValueError("metric_regex did not produce exactly one capture")
     return float(match.group(1))
 
@@ -371,12 +515,17 @@ def write_json_atomic(path: Path, value: dict[str, Any]) -> None:
 def run_manifest(root: Path, manifest_path: Path, run: dict[str, Any]) -> dict[str, Any]:
     manifest, fixture_path, fixture = validate_manifest(root, manifest_path)
     capability_id = manifest["capability_id"]
-    source_sha, sources = source_set_digest(root, manifest["evaluator_sources"])
+    binary = manifest.get("evaluator_binary")
+    sources = list(manifest["evaluator_sources"])
     environment = os.environ.copy()
     environment["CNET_HELD_OUT_FIXTURE"] = str(fixture_path)
     timeout_seconds = int(manifest.get("timeout_seconds", 300))
     if timeout_seconds < 1 or timeout_seconds > 1800:
         raise ValueError(f"{manifest_path}: timeout_seconds outside 1..1800")
+
+    # Capture BEFORE the evaluator runs. The binary is excluded here because the
+    # recipe legitimately builds it; everything else must be identical after.
+    pre = capture_state(root, sources, fixture_path, binary, include_binary=False)
     started = time.time()
     completed = subprocess.run(
         manifest["evaluator"],
@@ -389,6 +538,12 @@ def run_manifest(root: Path, manifest_path: Path, run: dict[str, Any]) -> dict[s
         check=False,
     )
     duration = time.time() - started
+
+    # Capture immediately after the evaluator exits: this is the state that
+    # actually produced the receipt, binary included.
+    post_run = capture_state(root, sources, fixture_path, binary,
+                             include_binary=True)
+
     evidence_path = repo_path(root, manifest["evidence_artifact"])
     evidence_path.parent.mkdir(parents=True, exist_ok=True)
     evidence_path.write_text(completed.stdout, encoding="utf-8")
@@ -423,14 +578,28 @@ def run_manifest(root: Path, manifest_path: Path, run: dict[str, Any]) -> dict[s
         and metric >= regression_floor
     )
 
-    binary = manifest.get("evaluator_binary")
-    binary_sha = None
-    if binary:
-        binary_path = repo_path(root, binary)
-        binary_sha = sha256(binary_path) if binary_path.is_file() else "missing"
-        if binary_sha == "missing":
-            passed = False
-            receipt_problems.append(f"declared evaluator binary is absent: {binary}")
+    binary_sha = post_run.get("evaluator_binary_sha256")
+    if binary and binary_sha in (None, "absent"):
+        passed = False
+        receipt_problems.append(f"declared evaluator binary is absent: {binary}")
+
+    # Capture again once every digest above has been taken. A source, fixture,
+    # binary, dirty tracked file or untracked file that moved after the receipt
+    # was accepted invalidates the certificate: the report would describe a tree
+    # that no longer exists.
+    post_bind = capture_state(root, sources, fixture_path, binary,
+                              include_binary=True)
+    pre_drift = [
+        key for key in compare_states(pre, post_run)
+        if key != "evaluator_binary_sha256"
+    ]
+    post_drift = compare_states(post_run, post_bind)
+    binding_drift = sorted(set(pre_drift) | set(post_drift))
+    if binding_drift:
+        passed = False
+        receipt_problems.append(
+            "bound state changed during the run: " + ", ".join(binding_drift)
+        )
 
     return {
         "capability_id": capability_id,
@@ -453,9 +622,14 @@ def run_manifest(root: Path, manifest_path: Path, run: dict[str, Any]) -> dict[s
         "declared_case_ids": case_ids,
         "evaluator_argv": list(manifest["evaluator"]),
         "evaluator_sources": sources,
-        "evaluator_source_set_sha256": source_sha,
+        "evaluator_source_set_sha256": post_run["evaluator_source_set_sha256"],
         "evaluator_binary": binary,
         "evaluator_binary_sha256": binary_sha,
+        "binding_pre": pre,
+        "binding_post_run": post_run,
+        "binding_post_bind": post_bind,
+        "binding_stable": not binding_drift,
+        "binding_drift": binding_drift,
         "duration_seconds": round(duration, 3),
         "run_id": run["run_id"],
         **environment_binding(environment),

@@ -905,3 +905,308 @@ fixed here — `managed_warning_gate` depends on ambient restore state it does n
 declare as a prerequisite — but it is outside the requested slices and adding
 `dotnet_restore` as a dependency would give `ci_core` a network side effect. It
 is **reported, not silently fixed**.
+
+---
+
+# Phase 2 — Codex review findings
+
+Second strict RED→GREEN pass against the Codex final-review verdict
+(REQUEST CHANGES). Same rules: no floor lowered, no negative weakened, no
+FAILED/WITHHELD/BLOCKED renamed, no path from the CRLF baseline touched.
+
+A method note that applies to R1, R2 and everything else in this phase that
+concerns resource amplification: **a verdict alone cannot detect it.** A parser
+that reserves a gigabyte and only then discovers the file is two lines long has
+still "refused", and `calloc`/`malloc` of untouched pages leaves RSS flat. So
+the harnesses fork a child under `RLIMIT_AS` and `RLIMIT_CPU` and read the
+child's **`VmPeak`** from `/proc/self/status` just before it exits. Peak address
+space is what the defect actually moves.
+
+## R1 — CNU exemplar-count amplification
+
+### Defect
+
+`exemplar_count` was bounded only by `UNIT_MAX_EXEMPLARS` (2^24), and its
+products with the port totals were checked only for overflow — never against
+the bytes remaining in the sealed payload. Exemplars are packed one **bit** per
+value with each row byte-aligned, so a declared row count implies an exact
+payload length; nothing compared the two before two `malloc`s.
+
+### RED — FRESH
+
+```
+cd <scratch>/red-head && ./bin/red_cnu_budget        # exit 1
+```
+
+```
+CNU_BUDGET_BASELINE peak_kb=1092 vm_peak_kb=3836 cpu=0.000
+CNU_BUDGET_CASE verdict=0 peak_kb=1348 vm_peak_kb=1052420 cpu=0.000 a tiny CNU declaring 2^24 exemplars
+FAIL: a tiny CNU declaring 2^24 exemplars reserves no extra address space (VmPeak 1052420 kB vs control 3836 kB)
+CNU_BUDGET_CASE verdict=0 peak_kb=1348 vm_peak_kb=1052412 cpu=0.000 a tiny CNU one under the exemplar ceiling
+CNU_BUDGET_CASE verdict=0 peak_kb=1348 vm_peak_kb=69380 cpu=0.000 a tiny CNU declaring 2^20 exemplars
+CNU_BUDGET_FAIL checks=54 failures=8
+```
+
+**1,052,420 kB of address space reserved by a 764-byte file.**
+
+### Fix
+
+`src/contract/unit.c`, before both `malloc`s, all products checked against
+`SIZE_MAX` first:
+
+* **read budget** — `exemplar_count * ceil((in_total + out_total) / 8)` packed
+  bytes must fit in the payload that remains;
+* **allocation budget** — the two exemplar arrays must be within
+  `UNIT_MAX_CELLS` absolutely and within `UNIT_ALLOC_SLACK` (64x) of the
+  artifact size.
+
+### GREEN — FRESH
+
+```
+make cnu_budget
+CNU_BUDGET_BASELINE peak_kb=1076 vm_peak_kb=3836 cpu=0.000
+CNU_BUDGET_PASS checks=54 amplified=7 exemplar_amplified=6 address_limit=2048MB   # exit 0
+make cnu_budget_san                                                               # exit 0
+```
+
+Every exemplar case now returns to the control's `vm_peak_kb=3836`. The six
+pre-existing topology cases and the honest-unit control are unchanged.
+
+## R2 — Coverage sidecar cell/byte amplification
+
+### Defect
+
+`n_rows` and `in_dim` were each bounded at 2^20 and their product checked only
+for overflow, so a two-line sidecar could declare 2^40 doubles (8 TB) and reach
+`calloc` before anything compared the declaration to the file's own length.
+
+### RED — FRESH
+
+```
+make coverage_sidecar_seal        # exit 2
+```
+
+```
+COVERAGE_AMPLIFIED_BASELINE vm_peak_kb=24288 cpu=0.000
+COVERAGE_AMPLIFIED verdict=0 vm_peak_kb=57060 cpu=0.000 2^20 tiny rows declared by a two-line file
+COVERAGE_AMPLIFIED verdict=0 vm_peak_kb=1072868 cpu=0.000 a two-line file declaring a gigabyte of coverage rows
+FAIL: a two-line file declaring a gigabyte of coverage rows reserves no extra address space (VmPeak 1072868 kB vs control 24288 kB)
+COVERAGE_SIDECAR_SEAL_FAIL checks=115 failures=2
+```
+
+### Fix
+
+`src/hybrid_ai.c` measures the file's length at open and, before each record's
+`calloc`:
+
+* a row costs at least `2 + 2*in_dim` bytes (`R`, then per value a separator and
+  one digit, then a newline), so `n_rows * (2 + 2*in_dim)` must fit in the bytes
+  that remain — a safe lower bound that cannot reject a real encoding;
+* `n_rows * in_dim` must be within `COVERAGE_MAX_CELLS` (2^24 doubles) and
+  within `COVERAGE_ALLOC_SLACK` (16x) of the file size.
+
+### GREEN — FRESH
+
+```
+make coverage_sidecar_seal
+COVERAGE_SIDECAR_SEAL_PASS checks=115 mutations=20 amplified=5 partial_state=none  # exit 0
+make coverage_sidecar_seal_san                                                     # exit 0
+```
+
+All five amplified fixtures return to the control's `vm_peak_kb=24288`.
+
+## R7 — Vision asset body finiteness
+
+### Defect
+
+`vd_frontend_validate` checked every header field but never looked at the body.
+The PCA mean and eigenbasis go straight into `cv::PCA::project` and then into
+the certified head, so one NaN or Inf makes every projected feature NaN, every
+score NaN, and the coverage gate's comparisons meaningless — a silently degraded
+guard rather than a refusal.
+
+### RED — FRESH
+
+```
+CNET_VD_FRONTEND_LEGACY=1 ./bin/vd_frontend_parse    # exit 1
+FAIL: a NaN as the first PCA mean value is refused
+FAIL: a +Inf as the last PCA mean value is refused
+FAIL: a -Inf in the PCA mean is refused
+FAIL: a NaN as the first eigenbasis value is refused
+FAIL: a +Inf as the last eigenbasis value is refused
+FAIL: a -Inf in the eigenbasis is refused
+FAIL: a signalling NaN in the eigenbasis is refused
+VD_FRONTEND_PARSE_FAIL checks=406 failures=31
+```
+
+### Fix
+
+Every body float is `memcpy`'d out (nothing guarantees body alignment) and
+required to be `isfinite`, with the refusal naming whether it was in the mean
+(`pca_mean_not_finite`) or the matrix (`pca_matrix_not_finite`).
+
+### GREEN — FRESH
+
+```
+make vd_frontend_parse
+VD_FRONTEND_PARSE_PASS checks=25897 mutations=31 body_mutations=7 fuzz=20000   # exit 0
+make vd_frontend_parse_san                                                     # exit 0
+```
+
+## R8 — Verdict and receipt cardinality
+
+### Defect
+
+`grep -q PREFIX_PASS` is a substring test over a whole file. A log stating both
+PASS and WITHHELD answered PASS; a log stating PASS twice looked like a log
+stating it once; `PREFIX_PASSED`, `NOT_PREFIX_PASS` and a marker mentioned
+mid-sentence all answered PASS. On the capability side, `re.search` took the
+FIRST `HELDOUT_FIXTURE` / `HELDOUT_METRIC` receipt and per-case lines collapsed
+into a dict, so duplicates and undeclared cases were invisible, and a
+`metric_regex` matching twice silently used the first number.
+
+### RED — FRESH
+
+Both suites can be pointed at the pre-fix implementation, so the reproduction
+stays runnable:
+
+```
+CNET_VERDICT_SCRIPT=<pre-fix> sh tests/test_benchmark_verdict.sh    # exit 1
+FAIL: a log claiming both PASS and WITHHELD is ambiguous, not PASS -- expected exit 5, got 0
+FAIL: a duplicated PASS is ambiguous -- expected exit 5, got 0
+FAIL: PASSED is not PASS -- expected exit 1, got 0
+FAIL: a marker with a prefix in front of it is not the marker -- expected exit 1, got 0
+FAIL: a marker mentioned mid-line is not a verdict -- expected exit 1, got 0
+BENCHMARK_VERDICT_FAIL checks=21 failures=9
+
+CNET_CERT_RUNNER=<pre-fix> python3 tests/test_capability_cert_runner.py   # exit 1
+FAIL: test_two_fixture_receipts_are_refused
+FAIL: test_two_metric_receipts_are_refused
+FAIL: test_duplicate_case_line_is_refused
+FAIL: test_conflicting_duplicate_case_lines_are_refused
+FAIL: test_undeclared_case_line_is_refused
+FAIL: test_metric_regex_matching_twice_is_refused
+FAIL: test_metric_regex_matching_never_is_refused
+```
+
+### Fix
+
+* `scripts/benchmark_verdict.sh` counts **lines** matching
+  `^PREFIX_<VERDICT>([[:space:]]|$)`. Exactly one terminal verdict line is
+  required; more than one is `AMBIGUOUS` with its own exit code **5**.
+* `run_capability_cert.py` requires exactly one fixture receipt, exactly one
+  metric receipt, exactly one line per declared case, no line for an undeclared
+  case, and a `metric_regex` that matches exactly once.
+
+### GREEN — FRESH
+
+```
+sh tests/test_benchmark_verdict.sh
+BENCHMARK_VERDICT_PASS checks=30 pass=0 withheld=3 blocked=4 no_verdict=1   # exit 0
+python3 tests/test_capability_cert_runner.py
+CAPABILITY_CERT_RUNNER_PASS shell=disabled receipt=required checks=39       # exit 0
+```
+
+## R3 — Capability report: no secrets, and a two-sided binding
+
+### Defect
+
+`environment_binding` serialized the raw value of every `CNET_*`/`CCE_*`
+variable into `logs/capability_cert.json` — a file people paste. And every
+binding was one-sided: the source-set digest was taken before the run, the
+binary digest after, the tree digest once at the start. Nothing could notice a
+source, fixture, binary, dirty tracked file or untracked file that moved *after*
+a valid receipt was accepted, which is exactly when it matters.
+
+### RED — FRESH
+
+```
+CNET_CERT_RUNNER=<pre-fix> python3 tests/test_capability_cert_runner.py   # exit 1
+FAIL: test_secret_env_values_never_reach_the_report
+ERROR: test_binding_is_stable_when_nothing_moves
+ERROR: test_source_mutation_after_the_receipt_is_detected
+ERROR: test_fixture_mutation_after_the_receipt_is_detected
+ERROR: test_binary_mutation_after_the_receipt_is_detected
+ERROR: test_tracked_dirty_content_mutation_is_detected
+ERROR: test_committed_file_content_mutation_is_detected
+ERROR: test_untracked_file_appearing_is_detected
+Ran 39 tests -- FAILED (failures=8, errors=9)
+```
+
+The `ERROR`s are the honest shape of this RED: the pre-fix runner has no
+`capture_state` or `compare_states` at all, so there is nothing to call.
+
+### Fix
+
+* Values are recorded only for an explicit `ENV_VALUE_ALLOWLIST` of documented
+  non-secret knobs. Every other `CNET_*`/`CCE_*` knob contributes its **name**
+  and a per-value SHA-256, so a knob that changed is still visible without
+  disclosing what it is. The whole-environment digest is unchanged.
+* `capture_state()` takes commit, a **content** digest of every changed tracked
+  path, a content digest of every untracked non-ignored path, the declared
+  source set, the fixture, and (optionally) the binary. It is called **three**
+  times per capability: before the run, immediately after the evaluator exits,
+  and once every other digest has been taken. `compare_states()` names anything
+  that moved; any drift fails the capability. The binary is excluded from the
+  first comparison only, because the recipe legitimately builds it.
+
+### GREEN — FRESH
+
+```
+python3 tests/test_capability_cert_runner.py     # 39 tests OK, exit 0
+make capability_cert                             # exit 0
+CAPABILITY_CERT_PASS certified=6/6 run_id=0dfc1e70-... commit=bb85301...
+```
+
+with `binding_stable = True`, `binding_drift = []`, and no raw knob value in
+`logs/capability_cert.json`.
+
+## R4 — Gate evidence integrity
+
+### Defect
+
+`scripts/gate_evidence.sh` was POSIX `sh`, and four defects followed from that:
+it hashed `git status` **text** (so a tracked file whose bytes changed while its
+status line stayed `" M path"` produced an identical binding, and untracked
+content was never hashed); it had no post-state; it recorded the command as
+`"$*"` (losing argv boundaries and breaking on a quote, backslash or newline);
+and it emitted JSON with `printf` and matched the marker as a **substring**.
+
+### RED — FRESH
+
+```
+CNET_GATE_EVIDENCE=<pre-fix> bash tests/test_gate_evidence.sh      # exit 1
+FAIL: an honest run reports a stable binding
+FAIL: one argument 'a b' binds differently from two arguments 'a' 'b'
+FAIL: the binding records argv as a list, not a joined string
+FAIL: an argument with a quote, backslash and newline keeps the JSON valid
+FAIL: such an argument round-trips exactly
+FAIL: the knob NAME is still recorded
+FAIL: a marker printed twice is refused (exit 0)
+FAIL: a log asserting both PASS and FAIL is refused (exit 0)
+FAIL: PASSED, a prefixed marker and a mid-line mention are not the marker (exit 0)
+GATE_EVIDENCE_FAIL checks=32 failures=13
+```
+
+### Fix
+
+`scripts/gate_evidence.py` replaces it (the `.sh` is removed; the Makefile's six
+call sites now use `python3`). Content-addressed tracked **and** untracked
+digests, captured before and after and compared; argv serialized as a real JSON
+array via `json.dumps`; the marker matched anchored at line start and required
+to appear exactly once, with any other terminal verdict for the same prefix
+(`_FAIL`, `_WITHHELD`, `_BLOCKED`, `_AMBIGUOUS`, `_NO_VERDICT`) refused as
+conflicting; environment recorded as a digest plus knob **names** only.
+
+### GREEN — FRESH
+
+```
+bash tests/test_gate_evidence.sh
+GATE_EVIDENCE_PASS checks=29 stale=refused marker_then_exit=refused silent=refused
+  duplicate=refused conflicting=refused substring=refused argv=exact secrets=redacted  # exit 0
+```
+
+One control matters as much as the negatives: **ignored build output changing
+during a run must not fail the gate.** `logs/` and `bin/` move on every
+invocation; a binding that failed on those would be unusable, so the digests
+deliberately cover only tracked and untracked non-ignored paths.

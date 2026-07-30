@@ -11,12 +11,19 @@ fixture declares.
 
 import importlib.util
 import json
+import os
 from pathlib import Path
+import subprocess
 import tempfile
 import unittest
 
 
-RUNNER_PATH = Path(__file__).with_name("run_capability_cert.py")
+# CNET_CERT_RUNNER lets a RED run point these cases at the pre-fix runner
+# without copying them anywhere.
+RUNNER_PATH = Path(
+    os.environ.get("CNET_CERT_RUNNER", "")
+    or Path(__file__).with_name("run_capability_cert.py")
+)
 SPEC = importlib.util.spec_from_file_location("capability_cert_runner", RUNNER_PATH)
 assert SPEC and SPEC.loader
 RUNNER = importlib.util.module_from_spec(SPEC)
@@ -237,6 +244,202 @@ class CapabilityCertRunnerTest(unittest.TestCase):
         )
         self.assertFalse(ok)
         self.assertTrue(any("cases passed" in problem for problem in problems))
+
+    # --- environment redaction -------------------------------------------
+
+    def test_secret_env_values_never_reach_the_report(self) -> None:
+        sentinel = "SENTINEL-2f9a4c1e-DO-NOT-LEAK"
+        binding = RUNNER.environment_binding(
+            {
+                "CNET_RESIDUAL_TOKEN": sentinel,
+                "CCE_API_KEY": sentinel + "-2",
+                "CNET_HELD_OUT_FIXTURE": "tests/fixtures/x.json",
+                "PATH": "/usr/bin",
+            }
+        )
+        serialized = json.dumps(binding)
+        self.assertNotIn(sentinel, serialized)
+        self.assertNotIn(sentinel + "-2", serialized)
+        # The names are still there: a knob that appeared or vanished must be
+        # visible, only its value is withheld.
+        self.assertIn("CNET_RESIDUAL_TOKEN", binding["env_knob_names"])
+        self.assertIn("CCE_API_KEY", binding["env_knob_names"])
+        self.assertTrue(
+            binding["env_redacted_knobs"]["CNET_RESIDUAL_TOKEN"].startswith("sha256:")
+        )
+
+    def test_allowlisted_knobs_keep_their_values(self) -> None:
+        binding = RUNNER.environment_binding(
+            {"CNET_HELD_OUT_FIXTURE": "tests/fixtures/x.json"}
+        )
+        self.assertEqual(
+            binding["env_allowlisted_knobs"]["CNET_HELD_OUT_FIXTURE"],
+            "tests/fixtures/x.json",
+        )
+
+    def test_a_changed_secret_still_changes_the_binding(self) -> None:
+        first = RUNNER.environment_binding({"CNET_RESIDUAL_TOKEN": "a"})
+        second = RUNNER.environment_binding({"CNET_RESIDUAL_TOKEN": "b"})
+        self.assertNotEqual(first["env_sha256"], second["env_sha256"])
+        self.assertNotEqual(
+            first["env_redacted_knobs"]["CNET_RESIDUAL_TOKEN"],
+            second["env_redacted_knobs"]["CNET_RESIDUAL_TOKEN"],
+        )
+
+    # --- pre/post state binding -------------------------------------------
+
+    def git_root(self) -> Path:
+        """A throwaway git repo, so tracked/dirty/untracked bindings are real."""
+        root = self.root
+        env = dict(os.environ, GIT_CONFIG_GLOBAL="/dev/null", GIT_CONFIG_SYSTEM="/dev/null")
+        def run(*args: str) -> None:
+            subprocess.run(["git", *args], cwd=root, env=env, check=True,
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        run("init", "-q")
+        run("config", "user.email", "t@example.invalid")
+        run("config", "user.name", "test")
+        run("add", "-A")
+        run("commit", "-qm", "fixture")
+        return root
+
+    def state(self, include_binary: bool = True) -> dict:
+        return RUNNER.capture_state(
+            self.root, ["src/evaluator.c"], self.fixture, "src/evaluator.c",
+            include_binary,
+        )
+
+    def test_binding_is_stable_when_nothing_moves(self) -> None:
+        self.git_root()
+        self.assertEqual(RUNNER.compare_states(self.state(), self.state()), [])
+
+    def test_source_mutation_after_the_receipt_is_detected(self) -> None:
+        self.git_root()
+        before = self.state()
+        (self.root / "src" / "evaluator.c").write_text("int main(void){return 2;}\n")
+        drift = RUNNER.compare_states(before, self.state())
+        self.assertIn("evaluator_source_set_sha256", drift)
+
+    def test_fixture_mutation_after_the_receipt_is_detected(self) -> None:
+        self.git_root()
+        before = self.state()
+        self.fixture.write_text(self.fixture.read_text() + "\n", encoding="utf-8")
+        drift = RUNNER.compare_states(before, self.state())
+        self.assertIn("fixture_sha256", drift)
+
+    def test_binary_mutation_after_the_receipt_is_detected(self) -> None:
+        self.git_root()
+        before = self.state()
+        (self.root / "src" / "evaluator.c").write_text("swapped\n")
+        drift = RUNNER.compare_states(before, self.state())
+        self.assertIn("evaluator_binary_sha256", drift)
+
+    def test_tracked_dirty_content_mutation_is_detected(self) -> None:
+        self.git_root()
+        other = self.root / "unrelated.txt"
+        other.write_text("one\n")
+        before = self.state()
+        other.write_text("two\n")      # same path, same status text, new bytes
+        drift = RUNNER.compare_states(before, self.state())
+        self.assertIn("untracked_sha256", drift)
+
+    def test_committed_file_content_mutation_is_detected(self) -> None:
+        root = self.git_root()
+        tracked = root / "tracked.txt"
+        tracked.write_text("one\n")
+        subprocess.run(["git", "add", "tracked.txt"], cwd=root, check=True,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.run(
+            ["git", "-c", "user.email=t@example.invalid", "-c", "user.name=test",
+             "commit", "-qm", "tracked"],
+            cwd=root, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+        before = self.state()
+        tracked.write_text("two\n")
+        drift = RUNNER.compare_states(before, self.state())
+        self.assertIn("worktree_sha256", drift)
+
+    def test_untracked_file_appearing_is_detected(self) -> None:
+        self.git_root()
+        before = self.state()
+        (self.root / "src" / "smuggled.c").write_text("int extra(void){return 0;}\n")
+        drift = RUNNER.compare_states(before, self.state())
+        self.assertIn("untracked_sha256", drift)
+
+    # --- receipt cardinality ---------------------------------------------
+
+    def test_two_fixture_receipts_are_refused(self) -> None:
+        ok, problems, _ = RUNNER.check_receipt(
+            receipt() + receipt(), "test_capability", FIXTURE_SHA, ["only-case"]
+        )
+        self.assertFalse(ok)
+        self.assertTrue(any("exactly one is a proof" in p for p in problems))
+
+    def test_two_metric_receipts_are_refused(self) -> None:
+        text = receipt() + (
+            "HELDOUT_METRIC cases_passed=1 cases_declared=1 "
+            "metric=1.000000 errors=0\n"
+        )
+        ok, problems, _ = RUNNER.check_receipt(
+            text, "test_capability", FIXTURE_SHA, ["only-case"]
+        )
+        self.assertFalse(ok)
+        self.assertTrue(any("HELDOUT_METRIC lines" in p for p in problems))
+
+    def test_duplicate_case_line_is_refused(self) -> None:
+        text = receipt(case_ids=("only-case", "only-case"))
+        ok, problems, _ = RUNNER.check_receipt(
+            text, "test_capability", FIXTURE_SHA, ["only-case"]
+        )
+        self.assertFalse(ok)
+        self.assertTrue(any("more than once" in p for p in problems))
+
+    def test_conflicting_duplicate_case_lines_are_refused(self) -> None:
+        text = (
+            "HELDOUT_CASE id=only-case reads=3\n"
+            "HELDOUT_CASE id=only-case reads=0\n"
+            "HELDOUT_FIXTURE capability=test_capability "
+            f"sha256={FIXTURE_SHA} cases=1 consumed=1\n"
+            "HELDOUT_METRIC cases_passed=1 cases_declared=1 metric=1.000000 errors=0\n"
+        )
+        ok, problems, _ = RUNNER.check_receipt(
+            text, "test_capability", FIXTURE_SHA, ["only-case"]
+        )
+        self.assertFalse(ok)
+        self.assertTrue(any("more than once" in p for p in problems))
+
+    def test_undeclared_case_line_is_refused(self) -> None:
+        text = receipt(case_ids=("only-case", "smuggled-case"))
+        ok, problems, _ = RUNNER.check_receipt(
+            text, "test_capability", FIXTURE_SHA, ["only-case"]
+        )
+        self.assertFalse(ok)
+        self.assertTrue(
+            any("which the fixture does not declare" in p for p in problems)
+        )
+
+    def test_metric_regex_matching_twice_is_refused(self) -> None:
+        with self.assertRaisesRegex(ValueError, "matched 2 times"):
+            RUNNER.extract_metric(
+                {"metric_source": "regex", "metric_regex": r"acc_on=([0-9.]+)"},
+                "acc_on=0.7375\nacc_on=0.9999\n",
+                {},
+            )
+
+    def test_metric_regex_matching_once_is_accepted(self) -> None:
+        value = RUNNER.extract_metric(
+            {"metric_source": "regex", "metric_regex": r"acc_on=([0-9.]+)"},
+            "JTC_ADAPTER_BENCH_PASS acc_off=0.2975 acc_on=0.7375\n",
+            {},
+        )
+        self.assertEqual(value, 0.7375)
+
+    def test_metric_regex_matching_never_is_refused(self) -> None:
+        with self.assertRaisesRegex(ValueError, "did not match"):
+            RUNNER.extract_metric(
+                {"metric_source": "regex", "metric_regex": r"acc_on=([0-9.]+)"},
+                "nothing here\n",
+                {},
+            )
 
     # --- metric sourcing --------------------------------------------------
 
