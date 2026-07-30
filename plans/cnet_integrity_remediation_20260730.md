@@ -788,3 +788,73 @@ CNU_BUDGET_PASS checks=22 amplified=7 address_limit=2048MB      # exit 0
 `RLIMIT_AS` is disabled under the sanitizer because ASan reserves an enormous
 shadow mapping that the limit would refuse; the RSS and CPU assertions still
 apply, and they are the ones that detect the defect.
+
+---
+
+## D10 — Evidence discipline within this patch
+
+### Defect
+
+Headline gate logs live at stable paths under an ignored `logs/` tree and carry
+no run identity, so "the marker is present" proves only that *some* process once
+wrote it. The re-analysis observed fresh-looking `2026-07-30` logs that no
+reviewer had created and correctly refused to count them as evidence. Marker
+output cannot distinguish fresh from carried.
+
+The broad remedy (relocating runtime state, content-addressed run directories) is
+explicitly **out of scope for this patch**. What is in scope: the gates this
+patch adds or changes must emit run-bound evidence and must not treat a stale
+mutable log as authority.
+
+### Fix
+
+`scripts/gate_evidence.sh`, used by every gate added here
+(`heldout_fixture_test`, `capability_fixture_causality`,
+`coverage_sidecar_seal`, `capsule_scope_lineage`, `vd_frontend_parse`,
+`cnu_budget`):
+
+1. **deletes any pre-existing log first**, so a stale file can never be read as
+   this run's evidence;
+2. runs the producer with direct redirection, so its exit status is the status —
+   no pipe to lose it;
+3. writes `<log>.evidence.json` binding gate name, run UUID, start time, commit,
+   working-tree digest, assume-unchanged count, exact argv, producer exit status,
+   the SHA-256 of the log it just wrote, and whether the marker was found. The
+   binding is a sidecar, not appended to the log, so the log's digest is the
+   digest of exactly what the producer wrote;
+4. fails on a non-zero producer status **or** a missing marker — status first,
+   marker as corroboration, never the other way round.
+
+`tests/run_capability_cert.py` does the same for the certificate itself, and
+additionally binds the evaluator's declared source-set and binary digests.
+
+### GREEN — FRESH
+
+```
+bash tests/test_gate_evidence.sh
+GATE_EVIDENCE_PASS checks=13 stale=refused marker_then_exit=refused silent=refused  # exit 0
+```
+
+13 checks: an honest producer passes and writes a complete binding; two runs of
+the same gate get different run ids; a **stale passing log left at the same path
+cannot be inherited** by a producer that then fails; a producer that prints the
+marker and exits 7 fails with 7; a producer that exits 0 without printing the
+marker fails too.
+
+Live example from `make heldout_fixture_test`:
+
+```
+GATE_RUN gate=heldout_fixture_test run_id=725ca340-76e4-4775-87e7-6f0f470a24de started=2026-07-30T10:13:38Z commit=68dfdfafbe1b1473d3cc192dec3b691fe63cdbf5 worktree=ed0c21fd9fdb0849 dirty=2 assume_unchanged=83
+CNET_HELDOUT_TEST_PASS checks=42
+GATE_PASS gate=heldout_fixture_test run_id=725ca340-... commit=68dfdfa... evidence_sha256=539ad0f0...
+```
+
+`recipe_gate` runs this test, so the discipline is enforced on every invocation.
+
+### What this does NOT establish
+
+This binds the gates **this patch touches**. The other ~40 recipes still write
+unbound logs to stable ignored paths, and the P0 item "separate evidence from
+runtime state" (content-addressed run directories, a quiesced learner) is
+**not done** — it was explicitly out of scope here. Treat any log outside the
+list above exactly as the re-analysis did: as untrusted until re-executed.

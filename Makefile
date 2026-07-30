@@ -1073,6 +1073,7 @@ recipe_gate:
 	@sh tests/test_recipe_gates.sh
 	@bash tests/test_pipeline_status.sh
 	@sh tests/test_benchmark_verdict.sh
+	@bash tests/test_gate_evidence.sh
 
 # Test recipes propagate their exit codes directly. This positive-marker gate
 # runs after every prerequisite and rejects missing or stale-success logs.
@@ -2915,9 +2916,9 @@ vd_frontend_parse: tools/vision_detection/vd_frontend.c tools/vision_detection/v
 	$(CC) -std=c11 -Wall -Wextra -pedantic -Werror -O2 -D_DEFAULT_SOURCE \
 		-I tools/vision_detection -o $(BIN_DIR)/vd_frontend_parse \
 		tools/vision_detection/vd_frontend.c tests/test_vd_frontend_parse.c -lm
-	@timeout 600 ./$(BIN_DIR)/vd_frontend_parse > logs/vision/frontend_parse.log 2>&1; \
-		status=$$?; cat logs/vision/frontend_parse.log; test $$status -eq 0
-	@grep -q VD_FRONTEND_PARSE_PASS logs/vision/frontend_parse.log
+	@sh scripts/gate_evidence.sh vd_frontend_parse \
+		logs/vision/frontend_parse.log VD_FRONTEND_PARSE_PASS -- \
+		timeout 600 ./$(BIN_DIR)/vd_frontend_parse
 
 vd_frontend_parse_san: tools/vision_detection/vd_frontend.c tools/vision_detection/vd_frontend.h tests/test_vd_frontend_parse.c
 	@mkdir -p $(BIN_DIR) logs/vision
@@ -2944,9 +2945,8 @@ cnu_budget: $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(PLAN_TA
 		-I include -o $(BIN_DIR)/test_cnu_budget \
 		$(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(PLAN_TABLE) \
 		$(ROUTER) $(SRC) $(LIBRARY) tests/test_cnu_budget.c -lm -lpthread -lcurl
-	@timeout 900 ./$(BIN_DIR)/test_cnu_budget > logs/cnu_budget.log 2>&1; \
-		status=$$?; cat logs/cnu_budget.log; test $$status -eq 0
-	@grep -q CNU_BUDGET_PASS logs/cnu_budget.log
+	@sh scripts/gate_evidence.sh cnu_budget logs/cnu_budget.log \
+		CNU_BUDGET_PASS -- timeout 900 ./$(BIN_DIR)/test_cnu_budget
 
 cnu_budget_san: $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(PLAN_TABLE) $(ROUTER) $(SRC) $(LIBRARY) tests/test_cnu_budget.c include/contract/unit.h
 	@mkdir -p $(BIN_DIR) logs
@@ -3055,9 +3055,9 @@ capsule_scope_lineage: $(CAPSULE_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESI
 		$(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) \
 		$(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) \
 		tests/test_capsule_scope_lineage.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -pthread
-	@./$(BIN_DIR)/test_capsule_scope_lineage > logs/capsule_scope_lineage.log 2>&1; \
-		status=$$?; cat logs/capsule_scope_lineage.log; test $$status -eq 0
-	@grep -q "CAPSULE_SCOPE_LINEAGE_PASS" logs/capsule_scope_lineage.log
+	@sh scripts/gate_evidence.sh capsule_scope_lineage \
+		logs/capsule_scope_lineage.log CAPSULE_SCOPE_LINEAGE_PASS -- \
+		./$(BIN_DIR)/test_capsule_scope_lineage
 
 # The durable half of abstention: the sidecar itself must be sealed. Every
 # corruption mutation must reject the WHOLE file and leave no partial state,
@@ -3070,9 +3070,9 @@ coverage_sidecar_seal: $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) 
 		$(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) \
 		$(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) \
 		tests/test_coverage_sidecar_seal.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -pthread
-	@./$(BIN_DIR)/test_coverage_sidecar_seal > logs/coverage_sidecar_seal.log 2>&1; \
-		status=$$?; cat logs/coverage_sidecar_seal.log; test $$status -eq 0
-	@grep -q "COVERAGE_SIDECAR_SEAL_PASS" logs/coverage_sidecar_seal.log
+	@sh scripts/gate_evidence.sh coverage_sidecar_seal \
+		logs/coverage_sidecar_seal.log COVERAGE_SIDECAR_SEAL_PASS -- \
+		./$(BIN_DIR)/test_coverage_sidecar_seal
 
 # Same negatives under ASan+UBSan: a transactional loader that leaks or reads
 # freed rows on the reject path has not really rolled anything back.
@@ -4193,19 +4193,18 @@ heldout_fixture_test: $(HELDOUT_SRC) tests/test_cnet_heldout.c include/cnet_held
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) $(CFLAGS) -Werror -Iinclude -o $(BIN_DIR)/$@ \
 		$(HELDOUT_SRC) tests/test_cnet_heldout.c $(LDFLAGS)
-	@$(BIN_DIR)/$@ > logs/heldout_fixture_test.log 2>&1; status=$$?; \
-		cat logs/heldout_fixture_test.log; test $$status -eq 0 && \
-		grep -q "CNET_HELDOUT_TEST_PASS" logs/heldout_fixture_test.log
+	@sh scripts/gate_evidence.sh heldout_fixture_test \
+		logs/heldout_fixture_test.log CNET_HELDOUT_TEST_PASS -- \
+		$(BIN_DIR)/heldout_fixture_test
 
 # The decisive truthfulness experiment: mutate one declared expectation while
 # leaving every marker string byte-identical, and require the evaluator to fail.
 capability_fixture_causality: tests/test_capability_fixture_causality.py
 	@mkdir -p logs
-	@python3 tests/test_capability_fixture_causality.py \
-		> logs/capability_fixture_causality.log 2>&1; status=$$?; \
-		cat logs/capability_fixture_causality.log; test $$status -eq 0 && \
-		grep -q "CAPABILITY_FIXTURE_CAUSALITY_PASS" \
-			logs/capability_fixture_causality.log
+	@sh scripts/gate_evidence.sh capability_fixture_causality \
+		logs/capability_fixture_causality.log \
+		CAPABILITY_FIXTURE_CAUSALITY_PASS -- \
+		python3 tests/test_capability_fixture_causality.py
 
 capability_cert: capability_cert_runner_test heldout_fixture_test capability_fixture_causality
 	@python3 tests/run_capability_cert.py
