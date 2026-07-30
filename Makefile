@@ -2891,12 +2891,13 @@ bin/vd_gate: tools/vision_detection/vd_gate.c tools/vision_detection/vd_coverage
 
 bin/vd_runner: tools/vision_detection/vd_runner.cpp tools/vision_detection/vd_coverage.c \
 		tools/vision_detection/vd_eval.c tools/vision_detection/vd_pack.c \
-		tools/vision_detection/vd_io.c tools/vision_detection/vd_sha256.c
+		tools/vision_detection/vd_io.c tools/vision_detection/vd_sha256.c \
+		tools/vision_detection/vd_frontend.c tools/vision_detection/vd_frontend.h
 	@mkdir -p $(BIN_DIR) $(BIN_DIR)/objs_runner logs/vision
 	@# C sources are compiled by the C compiler; g++ only sees the C++ runner.
 	@for f in $(CAPSULE_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(EXT_TEACHER_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) tools/vision_detection/vd_coverage.c tools/vision_detection/vd_eval.c \
 		  tools/vision_detection/vd_pack.c tools/vision_detection/vd_io.c \
-		  tools/vision_detection/vd_sha256.c; do \
+		  tools/vision_detection/vd_sha256.c tools/vision_detection/vd_frontend.c; do \
 		o=$(BIN_DIR)/objs_runner/$$(echo $$f | tr '/' '_' | sed 's/\.c$$/.o/'); \
 		$(CC) -std=c11 -Wall -Wextra -O2 -D_DEFAULT_SOURCE -I include \
 			-I tools/vision_detection -c $$f -o $$o || exit 1; \
@@ -2905,6 +2906,32 @@ bin/vd_runner: tools/vision_detection/vd_runner.cpp tools/vision_detection/vd_co
 		-o $(BIN_DIR)/vd_runner tools/vision_detection/vd_runner.cpp \
 		$(BIN_DIR)/objs_runner/*.o \
 		$(shell pkg-config --cflags --libs opencv4) -lm -lpthread -lcurl
+
+# Schema-2 asset parser, mutated field by field plus a deterministic byte fuzz.
+# Pure C and no OpenCV on purpose: a parser that can only be reached through a
+# runner needing OpenCV, VOC images and an imported capsule never gets fuzzed.
+vd_frontend_parse: tools/vision_detection/vd_frontend.c tools/vision_detection/vd_frontend.h tests/test_vd_frontend_parse.c
+	@mkdir -p $(BIN_DIR) logs/vision
+	$(CC) -std=c11 -Wall -Wextra -pedantic -Werror -O2 -D_DEFAULT_SOURCE \
+		-I tools/vision_detection -o $(BIN_DIR)/vd_frontend_parse \
+		tools/vision_detection/vd_frontend.c tests/test_vd_frontend_parse.c -lm
+	@timeout 600 ./$(BIN_DIR)/vd_frontend_parse > logs/vision/frontend_parse.log 2>&1; \
+		status=$$?; cat logs/vision/frontend_parse.log; test $$status -eq 0
+	@grep -q VD_FRONTEND_PARSE_PASS logs/vision/frontend_parse.log
+
+vd_frontend_parse_san: tools/vision_detection/vd_frontend.c tools/vision_detection/vd_frontend.h tests/test_vd_frontend_parse.c
+	@mkdir -p $(BIN_DIR) logs/vision
+	$(CC) -std=c11 -Wall -Wextra -pedantic -Werror -g -O1 \
+		-fsanitize=address,undefined -fno-omit-frame-pointer -D_DEFAULT_SOURCE \
+		-I tools/vision_detection -o $(BIN_DIR)/vd_frontend_parse_san \
+		tools/vision_detection/vd_frontend.c tests/test_vd_frontend_parse.c -lm
+	@ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1 \
+		timeout 900 ./$(BIN_DIR)/vd_frontend_parse_san \
+		> logs/vision/frontend_parse_san.log 2>&1; \
+		status=$$?; cat logs/vision/frontend_parse_san.log; test $$status -eq 0
+	@grep -q VD_FRONTEND_PARSE_PASS logs/vision/frontend_parse_san.log
+
+.PHONY: vd_frontend_parse vd_frontend_parse_san
 
 .PHONY: port_raw_unit_seam
 port_raw_unit_seam: $(CAPSULE_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(EXT_TEACHER_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) tests/test_port_raw_unit_seam.c

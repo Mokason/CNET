@@ -13,6 +13,11 @@
 #include <opencv2/opencv.hpp>
 #include <opencv2/ximgproc/segmentation.hpp>
 
+/* The protocol this runtime implements. An asset naming a different one is
+   refused rather than reinterpreted -- identity comes from the binary, never
+   from the artifact describing itself. */
+#define VD_RUNNER_PROTOCOL "cnet_vision_v2_20260727"
+
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
@@ -69,18 +74,26 @@ int main(int argc, char **argv) {
         printf("VD_RUNNER_REFUSED reason=%s\n", rep.reject_reason);
         return 3;
     }
-    if (!asset || alen < sizeof(VdFrontendHdr)) { printf("VD_RUNNER_FAIL asset_short\n"); return 3; }
+    /* Validate EVERY field before any of them is used: the header used to be
+       trusted after a magic/schema check, and pca_dim then drove a loop into a
+       fixed double[512] while hog_dim*pca_dim was multiplied unchecked and cast
+       to OpenCV int. vd_frontend_validate is a standalone C unit precisely so
+       tests/test_vd_frontend_parse.c can mutate it under ASan/UBSan. */
     VdFrontendHdr h;
-    memcpy(&h, asset, sizeof h);
-    if (memcmp(h.magic, VD_FRONTEND_MAGIC, 8) != 0 || h.schema != VD_FRONTEND_SCHEMA) {
-        printf("VD_RUNNER_REFUSED reason=frontend_schema\n"); return 3;
+    size_t nfloat = 0;
+    if (const char *bad = vd_frontend_validate(asset, alen, &h, &nfloat)) {
+        printf("VD_RUNNER_REFUSED reason=frontend_%s\n", bad);
+        return 3;
     }
+    if (const char *bad = vd_frontend_check_protocol(&h, VD_RUNNER_PROTOCOL)) {
+        printf("VD_RUNNER_REFUSED reason=frontend_%s\n", bad);
+        return 3;
+    }
+    /* Only now is h.extractor known to be a terminated string. */
     printf("imported unit=%s schema=%u asset=%zu coverage_rows=%zu extractor=%s\n",
            rep.unit, rep.schema, alen, rep.coverage_rows, h.extractor);
 
     /* ---- rebuild the frontend from the asset ----------------------------- */
-    size_t nfloat = (size_t)h.hog_dim + (size_t)h.pca_dim * (size_t)h.hog_dim;
-    if (alen != sizeof h + nfloat * sizeof(float)) { printf("VD_RUNNER_FAIL asset_size\n"); return 3; }
     const float *fl = (const float *)((const unsigned char *)asset + sizeof h);
     cv::PCA pca;
     {
@@ -98,6 +111,14 @@ int main(int argc, char **argv) {
     BinaryTransformNetwork btn; Contract ct;
     memset(&btn, 0, sizeof btn); memset(&ct, 0, sizeof ct);
     if (cnb_get_unit(&base, rep.unit, &btn, &ct) != 0) { printf("VD_RUNNER_FAIL get_unit\n"); return 3; }
+    /* The frontend must describe the head that arrived with it. Without this a
+       checksum-valid capsule could project into one width and feed a head
+       certified on another -- a confident function of the wrong input. */
+    if (const char *bad = vd_frontend_check_contract(&h, btn.input_count,
+                                                     btn.output_count)) {
+        printf("VD_RUNNER_REFUSED reason=%s\n", bad);
+        return 3;
+    }
     VdCoverage gate; memset(&gate, 0, sizeof gate);
     if (use_gate) {
         const HybridCoverage *hc = NULL;
@@ -162,7 +183,7 @@ int main(int argc, char **argv) {
             if (desc.size() != h.hog_dim) continue;
             cv::Mat in(1, (int)h.hog_dim, CV_32F, desc.data()), prj;
             pca.project(in, prj);
-            double x[512];
+            double x[VD_FRONTEND_MAX_PCA_DIM];  /* pca_dim is validated <= this */
             for (unsigned d = 0; d < h.pca_dim; d++) x[d] = prj.ptr<float>(0)[d];
             total_prop++;
             if (use_gate && !vd_cov_admit(&gate, x)) continue;   /* abstain */

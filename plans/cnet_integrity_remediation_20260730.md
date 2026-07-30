@@ -567,3 +567,100 @@ make port_raw_unit_seam             exit 0
 units simply cannot travel without coverage — which is the correct fail-closed
 outcome, not a solution to continuous certification. The re-analysis verdict
 that portable continuous specialists remain **BLOCKED** is unchanged.
+
+---
+
+## C6 — Schema-2 vision asset parser hardening
+
+### Defect
+
+`tools/vision_detection/vd_runner.cpp` validated the magic, the schema, and one
+size expression, then used every other asset-controlled field directly:
+
+* `pca_dim` drove a loop writing into a fixed `double x[512]` with **no bound**;
+* `hog_dim * pca_dim` was multiplied with no overflow check and cast to OpenCV
+  `int`;
+* `extractor` and the other fixed char arrays were printed with `%s` with no
+  proof of NUL termination;
+* nothing required the frontend's projection width to match the head that
+  arrived with it, so a checksum-valid capsule could compute a confident
+  function of the wrong input.
+
+Capsule FNV is unkeyed and detects accident, not authorship, so none of this was
+caught by the checksum.
+
+### RED — FRESH
+
+The pre-fix parser is transcribed into the test as an executable control, so the
+reproduction stays runnable rather than living in a scratch directory:
+
+```
+CNET_VD_FRONTEND_LEGACY=1 ./bin/vd_frontend_parse      # exit 1
+```
+
+Observed (24 mutations accepted by the pre-fix parser):
+
+```
+VD_FRONTEND_LEGACY_MODE parser=pre_fix_vd_runner_3edac49
+FAIL: an unterminated class0 is refused
+FAIL: an unterminated extractor is refused
+FAIL: an unterminated protocol is refused
+FAIL: a pca_dim past the fixed projection buffer is refused
+FAIL: a pca_dim larger than hog_dim is refused
+FAIL: an enormous hog_side is refused
+FAIL: an enormous ss_width is refused
+FAIL: an enormous proposal budget is refused
+FAIL: an out-of-range colour flag is refused
+FAIL: a NaN gate tau is refused
+...
+VD_FRONTEND_PARSE_FAIL checks=399 failures=24
+```
+
+`a pca_dim past the fixed projection buffer` is the stack overflow: an asset
+declaring `pca_dim = 4096` writes 3584 doubles past `double x[512]`.
+
+### Fix
+
+* `tools/vision_detection/vd_frontend.c` — the validator, extracted into its own
+  plain-C translation unit with **no OpenCV**. That is deliberate: a parser only
+  reachable through a runner that needs OpenCV, VOC images and an imported
+  capsule is a parser that never gets fuzzed.
+* `vd_frontend_validate()` proves, before any field is used: magic (all 8 bytes,
+  it is not a C string), schema, NUL termination of every fixed char array,
+  every dimension in range, `pca_dim <= VD_FRONTEND_MAX_PCA_DIM` (the size of
+  the projection buffer, named so the coupling is explicit), `pca_dim <=
+  hog_dim`, finite non-negative `gate_tau`, and checked arithmetic for
+  `hog_dim + pca_dim*hog_dim` and the total byte count, which must equal `len`
+  exactly.
+* `vd_frontend_check_contract()` requires `pca_dim == btn.input_count` and
+  `btn.output_count == n_classes`.
+* `vd_frontend_check_protocol()` requires the asset to name the protocol
+  compiled into the runner — identity comes from the binary, never from the
+  artifact describing itself.
+* `vd_runner.cpp` now calls all three and declares
+  `double x[VD_FRONTEND_MAX_PCA_DIM]`.
+
+### GREEN — FRESH
+
+```
+make vd_frontend_parse
+VD_FRONTEND_FUZZ iterations=20000 accepted=12894
+VD_FRONTEND_PARSE_PASS checks=25883 mutations=31 fuzz=20000     # exit 0
+
+make vd_frontend_parse_san      # ASan + UBSan, detect_leaks=1, halt_on_error=1
+VD_FRONTEND_PARSE_PASS checks=25883 mutations=31 fuzz=20000     # exit 0
+
+make bin/vd_runner              # exit 0, warning-free with the validator wired in
+```
+
+31 structured mutations (one per field) plus a deterministic splitmix64 byte
+fuzz over the header. Every fuzz-accepted mutant is additionally asserted to be
+self-consistent — `pca_dim` within the projection buffer and the declared size
+equal to the buffer length — so "accepted" can never mean "unchecked".
+
+### BLOCKED in this worktree
+
+An end-to-end `bin/vd_runner` run against a real capsule could not be executed:
+there is no `data/` tree here, and the vision capsule itself remains BLOCKED
+upstream because CNU1 rejects continuous exemplars. The parser is proven by
+mutation and fuzz; the full runtime path is unchanged and unproven here.
