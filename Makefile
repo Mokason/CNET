@@ -3681,6 +3681,7 @@ warning_debt_strict:
 # disabled; every -Wall/-Wextra/-Wpedantic diagnostic is a release failure for
 # the complete shared-library source set.
 .PHONY: native_warning_gate native_test_warning_gate managed_warning_gate release_warning_gate
+.PHONY: print-%
 native_warning_gate:
 	@mkdir -p logs
 	@$(MAKE) --no-print-directory PORTABLE=1 \
@@ -3708,30 +3709,110 @@ native_test_warning_gate:
 
 # Managed warning policy is deliberately offline: dependency restoration is a
 # provisioning step, while release verification must not gain network egress.
+#
+# `--no-restore` alone made that provisioning step SOMEBODY ELSE'S PROBLEM, and
+# a fresh checkout does not have one. At 7396275 `make ci_core` passed here and
+# exited 2 in a truly fresh detached worktree of the same commit:
+#
+#   error NETSDK1004: Assets file '.../dotnet/Cce.Tests/obj/project.assets.json'
+#   not found. Run a NuGet package restore to generate this file.
+#
+# The writer's tree passed only because it held ignored `obj/` state. So each
+# project is restored here, first, against an explicitly EMPTY local source:
+# `--source` REPLACES the configured feeds, so no network feed can be contacted,
+# while the machine's existing global package cache still resolves. A package
+# that is not already cached fails closed instead of reaching out. Measured on a
+# cold fresh worktree, offline: ~50 ms per project.
+#
+# Restore output goes to its own log, so the warning POLICY below is unchanged
+# -- it still scans build output only.
+MANAGED_WARNING_PROJECTS ?= \
+	dotnet/Cce/Cce.csproj \
+	dotnet/Cce.Tests/Cce.Tests.csproj \
+	dotnet/CnetMcpServer/CnetMcpServer.csproj \
+	dotnet/CnetMcpServer.Tests/CnetMcpServer.Tests.csproj \
+	dotnet/CceHost/CceHost.csproj \
+	dotnet/CnetHarnessSmoke/CnetHarnessSmoke.csproj \
+	dotnet/Cce.Benchmarks/Cce.Benchmarks.csproj
+MANAGED_WARNING_LOG ?= logs/managed_warning_gate.log
+MANAGED_RESTORE_LOG ?= logs/managed_warning_restore.log
+MANAGED_RESTORE_TIMEOUT ?= 300
+
+print-%:
+	@echo "$($*)"
+
 managed_warning_gate: json_toolcall_alphabet_check
 	@mkdir -p logs
-	@: > logs/managed_warning_gate.log
-	@set -e; for project in \
-		dotnet/Cce/Cce.csproj \
-		dotnet/Cce.Tests/Cce.Tests.csproj \
-		dotnet/CnetMcpServer/CnetMcpServer.csproj \
-		dotnet/CnetMcpServer.Tests/CnetMcpServer.Tests.csproj \
-		dotnet/CceHost/CceHost.csproj \
-		dotnet/CnetHarnessSmoke/CnetHarnessSmoke.csproj \
-		dotnet/Cce.Benchmarks/Cce.Benchmarks.csproj; do \
+	@: > $(MANAGED_WARNING_LOG)
+	@: > $(MANAGED_RESTORE_LOG)
+	@empty_source=`mktemp -d "$${TMPDIR:-/tmp}/cnet-empty-nuget-XXXXXX"` || { \
+		echo "MANAGED_WARNING_GATE_FAIL reason=no_empty_source"; exit 1; }; \
+	trap 'rm -rf "$$empty_source"' EXIT HUP INT TERM; \
+	for project in $(MANAGED_WARNING_PROJECTS); do \
+		echo "restoring $$project" >> $(MANAGED_RESTORE_LOG); \
+		timeout $(MANAGED_RESTORE_TIMEOUT) $(DOTNET) restore "$$project" \
+			--source "$$empty_source" --nologo -v:minimal \
+			>> $(MANAGED_RESTORE_LOG) 2>&1; \
+		status=$$?; \
+		if [ $$status -ne 0 ]; then \
+			cat $(MANAGED_RESTORE_LOG); \
+			echo "MANAGED_WARNING_GATE_FAIL reason=restore_failed project=$$project status=$$status"; \
+			exit 1; \
+		fi; \
+		assets="$${project%/*}/obj/project.assets.json"; \
+		if [ ! -f "$$assets" ]; then \
+			cat $(MANAGED_RESTORE_LOG); \
+			echo "MANAGED_WARNING_GATE_FAIL reason=assets_absent project=$$project path=$$assets"; \
+			exit 1; \
+		fi; \
 		$(DOTNET) build "$$project" --no-restore --nologo -v:minimal \
 			-p:TreatWarningsAsErrors=true -warnaserror \
-			>> logs/managed_warning_gate.log 2>&1 || { \
-				cat logs/managed_warning_gate.log; exit 1; \
+			>> $(MANAGED_WARNING_LOG) 2>&1 || { \
+				cat $(MANAGED_WARNING_LOG); \
+				echo "MANAGED_WARNING_GATE_FAIL reason=build_failed project=$$project"; \
+				exit 1; \
 			}; \
 	done
-	@if grep -Eq '(^|[[:space:]])(warning|error) [A-Z]+[0-9]+:' logs/managed_warning_gate.log; then \
-		cat logs/managed_warning_gate.log; \
+	@if grep -Eq '(^|[[:space:]])(warning|error) [A-Z]+[0-9]+:' $(MANAGED_WARNING_LOG); then \
+		cat $(MANAGED_WARNING_LOG); \
 		exit 1; \
 	fi
-	@echo "MANAGED_WARNING_GATE_PASS" | tee -a logs/managed_warning_gate.log
+	@echo "MANAGED_WARNING_GATE_PASS" | tee -a $(MANAGED_WARNING_LOG)
 
-release_warning_gate: native_warning_gate native_test_warning_gate managed_warning_gate
+# The harness for the property above. It drives this same recipe with a fake
+# `dotnet` that records every invocation, so "restore precedes build, offline,
+# for every project" is measured rather than asserted in a comment.
+.PHONY: managed_warning_prereq
+managed_warning_prereq: tests/test_managed_warning_prereq.sh Makefile
+	@mkdir -p logs
+	@python3 scripts/gate_evidence.py managed_warning_prereq \
+		logs/managed_warning_prereq.log MANAGED_WARNING_PREREQ_PASS -- \
+		sh tests/test_managed_warning_prereq.sh
+	@# ... and the RED it was written against stays re-runnable: the same
+	@# harness against the recipe as it was before the restore step must FAIL,
+	@# and must fail ON THE ORDERING PROPERTY, not on something incidental.
+	@saved=`mktemp "$${TMPDIR:-/tmp}/cnet-managed-log-XXXXXX"`; \
+	cp $(MANAGED_WARNING_LOG) "$$saved" 2>/dev/null || : > "$$saved"; \
+	CNET_MANAGED_PREREQ_LEGACY=$(MANAGED_PREREQ_LEGACY_REV) \
+		sh tests/test_managed_warning_prereq.sh \
+		> logs/managed_warning_prereq_red.log 2>&1; \
+	red=$$?; \
+	cp "$$saved" $(MANAGED_WARNING_LOG) 2>/dev/null || :; rm -f "$$saved"; \
+	if [ $$red -eq 0 ]; then \
+		echo "MANAGED_WARNING_PREREQ_RED_FAIL the pre-fix recipe passed; the gate proves nothing"; \
+		exit 1; \
+	fi; \
+	if ! grep -q 'restore precedes build' logs/managed_warning_prereq_red.log; then \
+		echo "MANAGED_WARNING_PREREQ_RED_FAIL the pre-fix recipe failed for some OTHER reason"; \
+		cat logs/managed_warning_prereq_red.log; \
+		exit 1; \
+	fi
+	@echo "MANAGED_WARNING_PREREQ_RED_CONFIRMED rev=$(MANAGED_PREREQ_LEGACY_REV)"
+
+# The last commit before the managed gate restored what it builds.
+MANAGED_PREREQ_LEGACY_REV ?= 7396275
+
+release_warning_gate: native_warning_gate native_test_warning_gate managed_warning_prereq managed_warning_gate
 	@mkdir -p logs
 	@printf '%s\n' 'RELEASE_WARNING_GATE_PASS' > logs/release_warning_gate.log
 	@echo "RELEASE_WARNING_GATE_PASS"
