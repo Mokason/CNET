@@ -234,3 +234,121 @@ at its own `test -f data/vision_cache_v2/test.pack` guard. The WITHHELD→exit-3
 mapping is therefore proven by `tests/test_benchmark_verdict.sh` against
 synthetic logs, **not** by an end-to-end benchmark run. Recorded as BLOCKED
 rather than claimed.
+
+---
+
+## A3 — own_learning_health strict deployed mode
+
+### Defect
+
+The watchdog certified an uninspectable deployment as healthy. It left
+`base_ok=0` silently when the requested base was missing or unloadable, omitted
+that from its danger checks, and printed `OWN_LEARNING_HEALTH_PASS` on zero
+dangers. It also read booleans loosely — only exact `"0"` meant the coverage
+gate was off and only exact `"1"` meant mining was on — so `CNET_COVERAGE_ABSTAIN=off`
+reported the gate as **on**. A nonempty residual URL counted as a configured
+teacher regardless of whether anything was listening.
+
+### RED — FRESH
+
+The re-analysis's exact reproduction, plus the boolean case, plus the real gate:
+
+```
+make own_learning_health
+CNET_PERSONAL_STRUCTURE_MINE_ON_SERVE=1 CNET_COVERAGE_ABSTAIN=1 \
+CNET_RESIDUAL_HTTP=http://127.0.0.1:1 \
+  ./bin/cnet_own_learning_health --base /definitely/not/a/cnet/base.cnb
+CNET_PERSONAL_STRUCTURE_MINE_ON_SERVE=yes CNET_COVERAGE_ABSTAIN=off \
+  ./bin/cnet_own_learning_health --base /definitely/not/a/cnet/base.cnb
+```
+
+Observed — all three **exit 0**:
+
+```
+{"base":"/home/marble/AI/CNET/logs/personal.cnb","base_loaded":0,...,"dangerous":[],"status":"ok"}
+OWN_LEARNING_HEALTH_PASS
+make own_learning_health EXIT=0
+
+{"base":"/definitely/not/a/cnet/base.cnb","base_loaded":0,...,"status":"ok"}
+OWN_LEARNING_HEALTH_PASS
+repro EXIT=0
+
+{"base":"/definitely/not/a/cnet/base.cnb","base_loaded":0,...,"mine_on_serve":0,"coverage_gate":"on",...}
+OWN_LEARNING_HEALTH_PASS
+invalid-bool EXIT=0
+```
+
+Note the middle line of the third run: `MINE_ON_SERVE=yes` was reported as
+`mine_on_serve:0` and `COVERAGE_ABSTAIN=off` as `coverage_gate:"on"` — both
+typos silently resolved in the deployment's favour. Note also that the gate's
+own default base, `$HOME/AI/CNET/logs/personal.cnb`, **does not exist on this
+host**, so `make own_learning_health` was passing while inspecting nothing.
+
+### Fix
+
+`tools/cnet_own_learning_health.c`:
+
+* **Strict deployed mode is the default.** New dangers: `base_not_specified`,
+  `base_not_loaded`, `coverage_file_missing` (an armed gate with no sidecar is
+  an unenforced guard, not "nothing to check"), `invalid_boolean_mine_on_serve`,
+  `invalid_boolean_coverage_abstain`, `residual_http_unreachable`,
+  `residual_gguf_unreadable`.
+* Booleans must be exactly `"0"` or `"1"`. While a garbage value is reported it
+  is also *interpreted at its most dangerous* (mining on, gate off), so a typo
+  can never be resolved in the deployment's favour even for one line of output.
+* A configured HTTP teacher is probed with a plain non-blocking TCP connect and
+  a 2 s timeout — no request is sent and no body read, so it cannot perturb
+  whatever is on the other end. A configured GGUF teacher must be readable.
+* `--config-only` inspects knob relationships alone and emits
+  **`CONFIG_ONLY_PASS` / `CONFIG_ONLY_FAIL`**, never the deployment marker,
+  because it has not looked at a deployment. The JSON carries `"mode"` and the
+  raw knob strings so a report cannot be misread as deployment health.
+
+`tests/mk_test_base.c` builds a real loadable CNB (and optionally a valid
+coverage sidecar) through the ordinary API, so the "base exists but the state
+around it is wrong" cases test the loader rather than a hand-written fixture.
+
+### GREEN — FRESH
+
+```
+bash tests/test_own_learning_health.sh
+OWN_LEARNING_HEALTH_STRICT_PASS checks=33          # exit 0
+```
+
+33 checks covering: missing base, unloadable base, unnamed base, garbage
+booleans (both knobs), dead configured teacher, armed gate with no sidecar,
+mined unit with no record, truncated sidecar, config-only pass, config-only
+catching the mine-on/gate-off typo, and a positive control — a fully inspected
+healthy deployment still passes, so the gate is not unconditionally red.
+
+The re-analysis reproduction now:
+
+```
+{"mode":"deployed","base":"/definitely/not/a/cnet/base.cnb","base_loaded":0,...,
+ "residual_teacher":"unreachable",
+ "dangerous":["base_not_loaded","residual_http_unreachable"],"status":"danger"}
+OWN_LEARNING_HEALTH_FAIL count=2                    # exit 1
+```
+
+### Gate status on this host — BLOCKED, reported not hidden
+
+```
+make own_learning_health                            # exit 4
+OWN_LEARNING_HEALTH_STRICT_PASS checks=33
+CONFIG_ONLY_PASS knobs=checked deployment=not_inspected
+OWN_LEARNING_HEALTH_BLOCKED reason=no_deployed_base path=/home/marble/AI/CNET/logs/personal.cnb
+Strict deployed health cannot be assessed here. This is not a PASS.
+```
+
+The configured deployed base does not exist in this environment. The recipe
+therefore reports **BLOCKED with exit 4** — a deployment that is not present
+cannot be certified healthy, and the previous behaviour (PASS) was the defect.
+An operator on the real deployment host, or anyone setting `CNET_BASE_PATH`,
+gets a genuine strict verdict. This gate is recorded as BLOCKED in the final
+matrix, not as passing.
+
+### Regression commands — FRESH
+
+`own_learning_health` is not a prerequisite of `verify` or `ci_core`, so the
+new non-zero exit does not cascade. Confirmed by re-running `make recipe_gate`
+(exit 0), which enumerates it as a headline gate.

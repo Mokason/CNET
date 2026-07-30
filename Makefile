@@ -2990,18 +2990,38 @@ own_learning_health: $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(
 		$(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) \
 		$(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) \
 		tools/cnet_own_learning_health.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -pthread
-	@./$(BIN_DIR)/cnet_own_learning_health --env-file config/personal-ai.env \
-		--base $${CNET_BASE_PATH:-$(HOME)/AI/CNET/logs/personal.cnb} \
-		| tee logs/own_learning_health.json
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/mk_test_base \
+		$(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(EXT_TEACHER_SRC) \
+		$(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) \
+		$(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) \
+		$(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) \
+		tests/mk_test_base.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -pthread
+	@# A watchdog that cannot fail is decoration. This proves strict mode
+	@# rejects a missing base, an unloadable base, an unnamed base, garbage
+	@# booleans, a dead configured teacher, a missing sidecar under an armed
+	@# gate, and a truncated sidecar -- all under mkdtemp roots.
+	@bash tests/test_own_learning_health.sh $(BIN_DIR)/cnet_own_learning_health \
+		$(BIN_DIR)/mk_test_base
+	@# Config-only inspection of the committed profile. This is NOT deployment
+	@# health and must never print the deployment marker.
+	@./$(BIN_DIR)/cnet_own_learning_health --config-only \
+		--env-file config/personal-ai.env \
+		> logs/own_learning_health.config.json 2>&1; status=$$?; \
+		cat logs/own_learning_health.config.json; test $$status -eq 0
+	@grep -q "CONFIG_ONLY_PASS" logs/own_learning_health.config.json
+	@# Deployed health against the configured base. An absent base is BLOCKED,
+	@# never PASS: a deployment that is not here cannot be certified healthy.
+	@set -e; base=$${CNET_BASE_PATH:-$(HOME)/AI/CNET/logs/personal.cnb}; \
+		if [ ! -f "$$base" ]; then \
+			echo "OWN_LEARNING_HEALTH_BLOCKED reason=no_deployed_base path=$$base" \
+				| tee logs/own_learning_health.json; \
+			echo "Strict deployed health cannot be assessed here. This is not a PASS."; \
+			exit 4; \
+		fi; \
+		./$(BIN_DIR)/cnet_own_learning_health --env-file config/personal-ai.env \
+			--base "$$base" > logs/own_learning_health.json 2>&1; status=$$?; \
+			cat logs/own_learning_health.json; test $$status -eq 0
 	@grep -q "OWN_LEARNING_HEALTH_PASS" logs/own_learning_health.json
-	@# A watchdog that cannot fail is decoration: prove both danger paths trip.
-	@CNET_COVERAGE_ABSTAIN=0 CNET_PERSONAL_STRUCTURE_MINE_ON_SERVE=1 \
-		./$(BIN_DIR)/cnet_own_learning_health >/dev/null 2>&1; \
-		if [ $$? -eq 0 ]; then echo "HEALTH SELFTEST FAIL: gate-off not caught"; exit 1; fi
-	@CNET_PERSONAL_STRUCTURE_MINE_ON_SERVE=1 CNET_RESIDUAL_HTTP= CNET_RESIDUAL_GGUF= \
-		./$(BIN_DIR)/cnet_own_learning_health >/dev/null 2>&1; \
-		if [ $$? -eq 0 ]; then echo "HEALTH SELFTEST FAIL: no-residual not caught"; exit 1; fi
-	@echo "OWN_LEARNING_HEALTH_SELFTEST_PASS danger paths trip"
 
 residual_substitution_bench_live: $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(EXT_TEACHER_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) tests/residual_substitution_bench_live.c include/hybrid_ai.h include/personal_ai.h
 	@mkdir -p $(BIN_DIR) logs
