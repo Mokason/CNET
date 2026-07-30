@@ -57,12 +57,17 @@ if workflow.is_file():
         raise SystemExit(f"CI_WORKFLOW_FAIL: invalid YAML: {exc}") from exc
     if not isinstance(doc, dict):
         raise SystemExit("CI_WORKFLOW_FAIL: root must be a mapping")
-    print("CI_WORKFLOW_PASS status=gha_present local_gates=ok")
+    print("CI_WORKFLOW_LOCAL_PASS status=local_gates_ok hosted_workflow=PRESENT")
 else:
-    print("CI_WORKFLOW_PASS status=gha_disabled local_gates=ok")
+    # A local structural check is not evidence that anything ran per-change on
+    # a machine other than this one. Saying PASS here labelled an absence as a
+    # result; the local gates are reported for what they are, and the hosted
+    # workflow is explicitly WITHHELD. config/ci_contract.json records the same
+    # status, and tests/test_ci_contract.py refuses to let it become a pass.
+    print("CI_WORKFLOW_LOCAL_PASS status=local_gates_ok hosted_workflow=WITHHELD")
     print(
-        "note: GitHub Actions workflow intentionally removed after green proof; "
-        "local `make ci` / `make ci_rocm` remain the authority"
+        "note: no executing hosted workflow. `make ci` / `make ci_rocm` are the "
+        "local authority; per-change enforcement elsewhere is NOT established"
     )
 
 sys.exit(0)

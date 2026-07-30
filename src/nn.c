@@ -1289,6 +1289,73 @@ static void btn_train_fast_epoch(BinaryTransformNetwork *btn,
     }
 }
 
+/* ---- plateau escape ------------------------------------------------
+ *
+ * Dynamic growth had exactly one lever -- add a neuron -- and a net that
+ * has settled into a local minimum does not leave it because capacity
+ * appeared. Measured on the `combine` primitive: raising the ceiling from
+ * 64 to 256 let the trainer add 49 more neurons and left the loss
+ * BIT-IDENTICAL at 0.008750, certifying 240/256, while seed 123u reached
+ * 0.002188 and certified 256/256. Capacity was never the constraint.
+ *
+ * So when growth is exhausted and a window buys nothing, perturb the
+ * weights and keep going. The best net ever seen is snapshotted and
+ * restored at the end, so a perturbation can never make the returned net
+ * worse than the one it started from -- which is what makes this an escape
+ * rather than a gamble. Perturbation draws from the same rand() stream the
+ * caller seeded, so a run stays reproducible for a given seed.
+ */
+#define BTN_TRAIN_STUCK_WINDOWS 64
+#define BTN_TRAIN_SHAKE 0.45
+#define BTN_TRAIN_PLATEAU (-2.0)
+
+static size_t btn_weight_cells(const BinaryTransformNetwork *btn) {
+    return btn->input_count * btn->max_hidden_count +
+           btn->max_hidden_count * btn->output_count +
+           btn->max_hidden_count + btn->output_count;
+}
+
+static void btn_weights_copy(double *dst, const BinaryTransformNetwork *btn) {
+    size_t ih = btn->input_count * btn->max_hidden_count;
+    size_t ho = btn->max_hidden_count * btn->output_count;
+    memcpy(dst, btn->input_hidden, ih * sizeof(double));
+    memcpy(dst + ih, btn->hidden_output_weights, ho * sizeof(double));
+    memcpy(dst + ih + ho, btn->hidden_bias,
+           btn->max_hidden_count * sizeof(double));
+    memcpy(dst + ih + ho + btn->max_hidden_count, btn->output_bias,
+           btn->output_count * sizeof(double));
+}
+
+static void btn_weights_restore(BinaryTransformNetwork *btn, const double *src) {
+    size_t ih = btn->input_count * btn->max_hidden_count;
+    size_t ho = btn->max_hidden_count * btn->output_count;
+    memcpy(btn->input_hidden, src, ih * sizeof(double));
+    memcpy(btn->hidden_output_weights, src + ih, ho * sizeof(double));
+    memcpy(btn->hidden_bias, src + ih + ho,
+           btn->max_hidden_count * sizeof(double));
+    memcpy(btn->output_bias, src + ih + ho + btn->max_hidden_count,
+           btn->output_count * sizeof(double));
+}
+
+/* Bounded additive perturbation of every live weight. */
+static void btn_weights_shake(BinaryTransformNetwork *btn, double amount) {
+    size_t hidden, input, output;
+    for (hidden = 0; hidden < btn->hidden_count; ++hidden) {
+        for (input = 0; input < btn->input_count; ++input) {
+            btn->input_hidden[btn_input_hidden_index(btn, input, hidden)] +=
+                random_weight() * amount;
+        }
+        btn->hidden_bias[hidden] += random_weight() * amount;
+        for (output = 0; output < btn->output_count; ++output) {
+            btn->hidden_output_weights[btn_hidden_output_index(btn, hidden, output)] +=
+                random_weight() * amount;
+        }
+    }
+    for (output = 0; output < btn->output_count; ++output) {
+        btn->output_bias[output] += random_weight() * amount;
+    }
+}
+
 double btn_train_dynamic(
     BinaryTransformNetwork *btn,
     const double *inputs,
@@ -1325,6 +1392,11 @@ double btn_train_dynamic(
     double mom = 0.0;
     double *v_ho = NULL, *v_ob = NULL, *v_ih = NULL, *v_hb = NULL;
     int fast = 0;
+    size_t stuck_windows = 0;
+    size_t escapes = 0;
+    double *best_weights = NULL;
+    double best_loss = -1.0;
+    size_t best_hidden = 0;
 
 
     if (btn == NULL || btn_is_adapter(btn) || inputs == NULL || targets == NULL || sample_count == 0) {
@@ -1558,12 +1630,79 @@ double btn_train_dynamic(
         improvement = ema_prev - ema_loss;
         relative_improvement =
             ema_prev > 0.0 ? improvement / ema_prev : 0.0;
-        if (relative_improvement < min_improvement &&
-            btn_add_hidden_neuron(btn) == 0) {
-            previous_loss = train_loss;
-        } else {
-            previous_loss = train_loss;
+        /* Keep the best net ever seen, so nothing below can lose ground.
+           Scored on the WHOLE sample set, not the held-out slice: with 16
+           exemplars the slice is three rows, and picking a net by three
+           rows demonstrably returns one that is worse on the other
+           thirteen -- which is what certification replays. The stuck
+           counter resets only on a MEANINGFUL gain, because a run creeping
+           down by a thousandth of a percent per window is still stuck and
+           resetting on those never lets the escape escalate. */
+        {
+        double full_loss = (val_sample_count > 0 && train_sample_count > 0)
+            ? (train_loss * (double)train_sample_count +
+               validation_loss * (double)val_sample_count) /
+              (double)(train_sample_count + val_sample_count)
+            : validation_loss;
+        if (best_loss < 0.0 || full_loss < best_loss) {
+            int meaningful = best_loss < 0.0 ||
+                full_loss < best_loss * (1.0 - min_improvement);
+            if (best_weights == NULL) {
+                best_weights = malloc(btn_weight_cells(btn) * sizeof(double));
+            }
+            if (best_weights != NULL) {
+                btn_weights_copy(best_weights, btn);
+                best_loss = full_loss;
+                best_hidden = btn->hidden_count;
+                if (meaningful) {
+                    stuck_windows = 0;
+                }
+            }
         }
+        }
+
+        if (relative_improvement < min_improvement) {
+            /* Engage only for a run that has NOT met the target it was
+               given. A run already at or below its target has nothing to
+               escape from, and perturbing it can only cost exemplars:
+               lower MSE is not the same as more exemplars certifying, and
+               a converged 16-exemplar primitive measurably loses rows to
+               a restart it did not need. Those runs take the path below
+               unchanged, and return exactly what they used to. */
+            if (btn_add_hidden_neuron(btn) != 0 && best_loss > target_loss) {
+                /* Growth is exhausted and this window bought too little to
+                   be worth a neuron -- which is the plateau condition the
+                   outer test already states. More
+                   capacity cannot reach past a local minimum, so escalate:
+                   perturb every weight, and every fourth stuck window
+                   re-draw a slice of the hidden layer outright. The
+                   snapshot above is what is returned if none of it helps,
+                   so escalating costs nothing. */
+                ++stuck_windows;
+                ++escapes;
+                if (best_weights != NULL) {
+                    if ((stuck_windows % 4u) == 0u) {
+                        /* Restart FROM THE BEST, not from wherever the
+                           random walk wandered to, then re-draw half the
+                           hidden layer. Perturbing the current point over
+                           and over just explores one basin; restarting
+                           from the best each time makes each attempt an
+                           independent draw around the best net found. */
+                        size_t redraw = 1 + btn->hidden_count / 2;
+                        size_t k;
+                        btn->hidden_count = best_hidden;
+                        btn_weights_restore(btn, best_weights);
+                        for (k = 0; k < redraw; ++k) {
+                            size_t victim = (size_t)rand() % btn->hidden_count;
+                            btn_initialize_hidden_neuron(btn, victim);
+                        }
+                    } else {
+                        btn_weights_shake(btn, BTN_TRAIN_SHAKE);
+                    }
+                }
+            }
+        }
+        previous_loss = train_loss;
     }
 
 done:
@@ -1571,6 +1710,28 @@ done:
     free(hidden_errors);
     free(validation_mask);
     free(v_ho); free(v_ob); free(v_ih); free(v_hb);
+    /* Return the best net seen, not the last one trained: a perturbation
+       that did not pay must cost nothing. Only for runs that actually
+       perturbed -- a run that never escaped returns exactly what it
+       always did. */
+    if (best_weights != NULL) {
+        if (escapes > 0 && best_loss >= 0.0 && best_hidden > 0) {
+            btn->hidden_count = best_hidden;
+            btn_weights_restore(btn, best_weights);
+            previous_loss = best_loss;
+        }
+        free(best_weights);
+        best_weights = NULL;
+    }
+    /* A run that never escaped -- growth exhausted, perturbation tried, and
+       no new best for many consecutive windows -- must SAY so. Returning a
+       plausible loss let a caller persist an uncertifiable net with no
+       signal that anything had gone wrong, which is exactly how `combine`
+       shipped weights that failed certification while the demo printed a
+       healthy-looking number. */
+    if (stuck_windows >= BTN_TRAIN_STUCK_WINDOWS) {
+        return BTN_TRAIN_PLATEAU;
+    }
     return previous_loss;
 
 fail:
@@ -1578,6 +1739,7 @@ fail:
     free(hidden_errors);
     free(validation_mask);
     free(v_ho); free(v_ob); free(v_ih); free(v_hb);
+    free(best_weights);
     return -1.0;
 }
 

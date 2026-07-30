@@ -1613,3 +1613,212 @@ PERSONAL_AI_HOP_GUARD_PASS checks=15 hops_guarded=every refusals=root+intermedia
 `source=2` is `PERSONAL_AI_ABSTAIN`. The controls matter as much: a fully
 covered chain is still served Tier-A certified, and still is *after* a refusal,
 so the guard is not simply refusing everything.
+
+---
+
+## R10 (resumed under a narrow authorized exception) — the trainer plateau
+
+The stop-and-report above was answered with an explicit, narrow authorization:
+edit **`src/nn.c` only**, byte-preserving, leaving `include/nn.h`,
+`src/legacy/main.c`, `tests/certify_demo.c` and every other baseline path
+untouched. What follows is that work.
+
+### RED — FRESH, in a new LF test that targets the TRAINER
+
+The defect is in the trainer, so the reproduction is too — no protected test was
+touched and `certify_demo` was not involved. `tests/test_btn_train_plateau.c`
+uses the exact shape, data, hyperparameters and seed the failing primitive uses,
+and applies the same certification predicate (`port_validate` →
+`port_canonicalize` → exact compare) to all 256 exemplars.
+
+```
+make btn_train_plateau        # exit 2
+BTN_PLATEAU_RUN seed=91 max_hidden=64 hidden_used=64 loss=0.008750 certifiable=240/256
+BTN_PLATEAU_FIRST_MISS input=24 bit=3
+FAIL: every exemplar certifies after dynamic growth
+FAIL: a run that misses its target loss does not report success silently
+BTN_PLATEAU_CONTROL seed=123 hidden_used=64 loss=0.002188 certifiable=256/256
+BTN_TRAIN_PLATEAU_FAIL checks=5 failures=2
+```
+
+`input=24 bit=3` is exactly the first failure `certify_demo` reported, now
+reproduced with no dependency on the demo or the certifier.
+
+### What the fix is, and the two things it is not
+
+Dynamic growth had exactly one lever — add a neuron — and a net that has settled
+into a local minimum does not leave it because capacity appeared. `src/nn.c` now:
+
+* **snapshots the best net ever seen**, scored on the **whole** sample set
+  rather than the held-out slice. That detail was not optional: with 16
+  exemplars the slice is three rows, and selecting by three rows measurably
+  returned a net that was worse on the other thirteen — `hex_value` dropped to
+  `DENIED (14/16)` until the score was corrected;
+* when growth is exhausted and a window buys too little to be worth a neuron,
+  **escalates**: perturb every weight, and every fourth stuck window **restart
+  from the best snapshot** and re-draw half the hidden layer. Perturbing the
+  current point repeatedly only explores one basin; restarting from the best
+  makes each attempt an independent draw around the best net found;
+* **engages only for a run that has not met the target it was given.** A run
+  already at its target has nothing to escape from, and perturbing it can only
+  cost exemplars — lower MSE is not the same as more exemplars certifying. Those
+  runs take the unchanged path and return exactly what they always did;
+* **reports a run that never escaped** as `BTN_TRAIN_PLATEAU` (-2.0) instead of a
+  plausible loss, so a caller cannot persist an uncertifiable net with no signal
+  that anything went wrong — which is exactly how `combine` shipped weights that
+  failed certification while the demo printed a healthy-looking number.
+
+Two things this deliberately is **not**: the seed was not changed (that is tuning
+around the defect — the trainer would still have a plateau it cannot escape),
+and nothing in `port_validate`, `port_canonicalize` or the certification
+comparison was relaxed (that is hiding a confidently wrong bit).
+
+### GREEN — FRESH
+
+```
+make btn_train_plateau
+BTN_PLATEAU_RUN seed=91 max_hidden=64 hidden_used=64 loss=0.001718 certifiable=256/256
+BTN_PLATEAU_CONTROL seed=123 hidden_used=64 loss=0.001254 certifiable=256/256
+BTN_PLATEAU_IMPOSSIBLE loss=0.155344
+BTN_TRAIN_PLATEAU_PASS checks=5 certifiable=256/256      # exit 0
+
+make certify                                              # exit 0
+  hex_value    vs hex_value_contract      : CERTIFIED (16/16)
+  increment    vs increment_contract      : CERTIFIED (16/16)
+  combine      vs combine_contract        : CERTIFIED (256/256)
+  split        vs split_contract          : CERTIFIED (256/256)
+CERTIFY PASS: tags are earned, imposters are refused, and plans can be certified end-to-end.
+```
+
+`combine` went from `DENIED (240/256)` at loss 0.008750 to `CERTIFIED (256/256)`
+at loss 0.001718, with the exemplars, the contract, the port semantics and the
+certification floors exactly as they were.
+
+### The CRLF containment, handled explicitly
+
+`src/nn.c` is 89510 bytes of pure CRLF (2756 line endings, zero lone LF, zero
+lone CR) and was flagged assume-unchanged. The edit was applied by a script that
+**refuses to write** unless: the file matches the expected size, CRLF count and
+SHA-256 before the edit; every inserted line carries an explicit `\r\n`; no lone
+LF or CR exists afterwards; the CRLF count equals the original plus exactly the
+intended line delta; and **every old line the diff removes is quoted verbatim by
+one of the anchors**. It printed the changed regions and the removed lines for
+inspection on every run.
+
+```
+removed old lines: 5, all inside anchors
+patched: 89510 -> 97764 bytes, CRLF 2756 -> 2918 (+162 lines)
+```
+
+Five lines removed — the old growth decision — and the rest pure insertion. The
+blob was staged with `git hash-object -w --no-filters` so the raw CRLF bytes are
+what lands in the index, not a clean-filtered LF copy.
+
+---
+
+## R13 — CI declares what it proves; the fault paths are executable
+
+### Defect
+
+`make ci_core` ran two scientific gates (capsule and accumulation) and nothing
+recorded what CI was supposed to cover, so a gate could stop being enforced with
+no signal. `tests/test_ci_workflow.py` printed
+`CI_WORKFLOW_PASS status=gha_disabled` when there was **no hosted workflow at
+all** — a local structural check labelled as a workflow pass. Separately, the
+accumulation benchmark's failure paths read `names[k]` entries it had never
+written and leaked the BTN they had just allocated; a green run never takes
+those paths, so both were invisible.
+
+### Fix
+
+* `config/ci_contract.json` enumerates every gate with a **status**: `required`
+  (must be a `ci_core` prerequisite and must pass), `blocked` (cannot run here,
+  with the reason), `withheld` (a claim CI does not establish). It also records
+  four withheld/failed *claims* — useful accumulation, portable continuous
+  specialist, continuous coverage floors, evidence separated from runtime state
+  — so the things CI does **not** prove are written down next to the things it
+  does.
+* `tests/test_ci_contract.py` enforces the contract against the Makefile: every
+  `required` gate exists and is a prerequisite; every `blocked` gate is **not**
+  a prerequisite (a gate that cannot run here cannot be part of a passing CI);
+  `ci_core` declares no scientific gate the contract omits; and an absent hosted
+  workflow may never be `pass`.
+* `ci_core` grew from 2 scientific gates to **16**: recipe_gate, certify,
+  btn_train_plateau, knowledge_capsule, capsule_scope_lineage, both benches,
+  personal_ai_hop_guard, coverage_abstain, coverage_sidecar_seal, cnu_budget,
+  vd_frontend_parse, port_raw_unit_seam, vision_coverage_test,
+  vision_capsule_asset, capability_cert.
+* `own_learning_health` and `vision_detection_bench_v2` are recorded as
+  **blocked** with their reasons, and are deliberately *not* prerequisites.
+  Making CI green by including a gate that cannot run here would be the same
+  category of error this whole remediation is about.
+* `tests/test_ci_workflow.py` now prints
+  `CI_WORKFLOW_LOCAL_PASS status=local_gates_ok hosted_workflow=WITHHELD`.
+* `tests/knowledge_accumulation_bench.c`: one cleanup path in `add_unit`,
+  `name_out` written **only** on success, and the build loop tracks `built` so
+  nothing indexes a name it did not build. `CNET_ACC_FAIL_AT` makes the fault
+  path executable.
+
+### RED → GREEN — FRESH
+
+The forced-failure gate found a leak on the **success** path that no green run
+had ever shown:
+
+```
+make knowledge_accumulation_faults        # exit 2
+FAIL: no sanitizer finding on the k=3 fault path (exit 99)
+  Direct leak of 7560 byte(s) in 7 object(s) allocated from:
+    #1 add_unit tests/knowledge_accumulation_bench.c:186
+  SUMMARY: AddressSanitizer: 72968 byte(s) leaked in 49 allocation(s).
+```
+
+`cnb_add_unit` serialises the unit into the base as a sealed byte image and
+keeps no pointer, so the caller owns the BTN on **every** path — the success
+path never freed it either. After the fix:
+
+```
+make knowledge_accumulation_faults
+ACCUMULATION_FAULTS_PASS checks=9 forced_failures=3 sanitizers=asan+ubsan+leak  # exit 0
+make knowledge_accumulation_bench
+KNOWLEDGE_ACCUMULATION_BENCH_PASS units=32 ... ood_refused=96                   # exit 0
+python3 tests/test_ci_contract.py
+CI_CONTRACT_PASS required=16 blocked=2 withheld_claims=4 hosted_workflow=withheld  # exit 0
+```
+
+### One generated vision status, history intact
+
+`plans/cnet_vision_portable_specialist_20260728.md` contradicted itself about
+whether slices exist, whether a runner is committed, and whether anything had
+been touched. A single **CURRENT STATUS — generated 2026-07-30** section is
+appended, stating what was verified fresh and what is FAILED/BLOCKED. Nothing
+above it was rewritten: the earlier snapshots are the historical record and are
+left exactly as they were.
+
+## R14 — Continuous vision boundary: prerequisites do not exist here
+
+### What was inspected
+
+```
+ls -d data                          -> No such file or directory
+find . -name 'vision_cache*' -o -name 'VOC*' -o -name '*.pack'   -> nothing
+```
+
+The only VOC cache is under the original checkout `/home/marble/AI/CNET/data`,
+which this remediation may not touch and which a live learner writes to.
+
+### Decision, and why it is the only honest one
+
+A valid continuous-coverage rerun needs three things this worktree does not
+have: **the data**; **a preregistered gate with immutable split hashes** (fitting
+before the gate exists is how a floor gets chosen to match a result); and **an
+unspent slice that stays unspent**. The ledger records `shuf[2800,3800)` and
+`shuf[3800…4951]` as unspent, and this pass touched **neither**.
+
+Nothing was trained, fitted, extracted, calibrated or scored. Therefore:
+
+* **continuous coverage — FAILED**, against its own unchanged floors: natural
+  OOD refusal 0.0906 vs ≥0.30 and ≥3× in-domain, synthetic 0.0245 vs ≥0.99;
+* **portable continuous CNU — BLOCKED**, CNU1 rejects continuous exemplars.
+
+Neither floor was relaxed, restated or moved. The executable schema, parser and
+`PORT_RAW` safety gates all remain green and were re-run this pass.

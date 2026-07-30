@@ -284,3 +284,53 @@ frozen evaluation remains unspent, so the next attempt starts from an untouched 
 every verdict in §8 stands WITHHELD. The only thing this checkpoint establishes is that
 the capsule format can carry a frontend asset as one bound object (§3), verified by
 `make vision_capsule_asset` (39 checks) and its ASan+UBSan+Leak lane.
+
+---
+
+# CURRENT STATUS — generated 2026-07-30 (supersedes every narrative snapshot above)
+
+The sections above are a **historical record** and are deliberately left intact:
+they were written at different points and contradict each other about whether
+slices exist, whether a runner is committed, and whether anything has been
+touched. Nothing above is rewritten. This section is the single current status,
+and where it disagrees with an earlier paragraph, this one is what holds.
+
+## What was verified fresh on 2026-07-30, in this worktree
+
+| Claim | Status | Evidence, executed this pass |
+|---|---|---|
+| Schema-2 asset parser validates every field and body float before use | **PASS** | `make vd_frontend_parse` / `vd_frontend_parse_san` — 25897 checks, 31 structured mutations, 7 body-finiteness mutations, 20000-iteration fuzz, clean under ASan+UBSan |
+| Schema-2 byte binding for the tested inputs | **PASS** | `make vision_capsule_asset` / `_san` — 39 checks |
+| Analytic kNN coverage primitive | **PASS** | `make vision_coverage_test` / `vision_coverage_asan` — 22 checks |
+| CNU1 rejects continuous `PORT_RAW` exemplars | **PASS** (the blocker is real) | `make port_raw_unit_seam` — 8 checks |
+| Continuous coverage floors | **FAILED**, carried, **not re-run** | natural OOD refusal 0.0906 vs ≥0.30 and ≥3× in-domain; synthetic 0.0245 vs ≥0.99 |
+| Portable continuous specialist / CNU2 | **BLOCKED** | CNU1 cannot serialize continuous exemplars, and continuous certification semantics do not exist |
+| V2 detection benchmark | **BLOCKED here** | `data/` does not exist in this worktree, so the VOC2007 v2 cache is absent and `make vision_detection_bench_v2` stops at its own guard |
+
+## Why no continuous-coverage rerun was attempted
+
+A rerun needs three things this worktree does not have:
+
+1. **The data.** There is no `data/` tree here. The only cache lives in the
+   original checkout, which this remediation is not permitted to touch and which
+   a live learner writes to.
+2. **A preregistered gate.** Fitting a coverage mechanism before the gate and
+   the immutable split hashes exist is how a floor gets chosen to match a
+   result. Nothing was fitted, trained, or scored.
+3. **An unspent slice that stays unspent.** The ledger records
+   `shuf[2800,3800)` and `shuf[3800…4951]` as unspent. **This pass did not touch
+   either**, and did not extract, calibrate or score anything.
+
+So continuous coverage remains **FAILED** against its own unchanged floors and
+portable continuous transfer remains **BLOCKED**. Neither was relaxed, restated,
+or moved.
+
+## What did change on 2026-07-30
+
+Only the executable safety gates around the vision path, none of which touch a
+holdout: the schema-2 parser now validates magic, schema, string termination,
+every dimension, `pca_dim` against the fixed projection buffer, checked
+arithmetic for the body size, every body float's finiteness, agreement with the
+imported head's typed interface, and the protocol the runtime was built for.
+`bin/vd_runner` builds warning-free against it. The end-to-end runner was **not**
+executed, because that needs the data above.

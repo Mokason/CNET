@@ -2935,6 +2935,37 @@ vd_frontend_parse_san: tools/vision_detection/vd_frontend.c tools/vision_detecti
 
 .PHONY: vd_frontend_parse vd_frontend_parse_san
 
+# The accumulation benchmark's FAULT paths, which a green run never takes. A
+# forced failure mid-build exercises the cleanup that used to leak the BTN it
+# had just allocated and leave the caller reading an unwritten name.
+knowledge_accumulation_faults: $(CAPSULE_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(EXT_TEACHER_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) tests/knowledge_accumulation_bench.c
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) -std=c11 -Wall -Wextra -g -O1 -fsanitize=address,undefined \
+		-fno-omit-frame-pointer -D_DEFAULT_SOURCE -I include $(CUDA_CFLAGS) \
+		-o $(BIN_DIR)/knowledge_accumulation_faults \
+		$(CAPSULE_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(EXT_TEACHER_SRC) \
+		$(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) \
+		$(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) \
+		$(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) \
+		tests/knowledge_accumulation_bench.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -pthread
+	@sh tests/test_accumulation_faults.sh $(BIN_DIR)/knowledge_accumulation_faults
+
+.PHONY: knowledge_accumulation_faults
+
+# The trainer defect behind `make certify`: dynamic growth must escape a
+# dead-neuron plateau instead of stacking more neurons that cannot contribute.
+# Same shape, data, hyperparameters and seed the failing primitive uses.
+btn_train_plateau: src/nn.c tests/test_btn_train_plateau.c include/nn.h
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) -std=c11 -Wall -Wextra -O2 -D_DEFAULT_SOURCE -I include \
+		-o $(BIN_DIR)/test_btn_train_plateau \
+		src/nn.c tests/test_btn_train_plateau.c -lm
+	@python3 scripts/gate_evidence.py btn_train_plateau \
+		logs/btn_train_plateau.log BTN_TRAIN_PLATEAU_PASS -- \
+		timeout 900 ./$(BIN_DIR)/test_btn_train_plateau
+
+.PHONY: btn_train_plateau
+
 # CNU header budgets: a tiny sealed unit must not be able to make the parser
 # allocate or touch its way into a denial of service. The child process runs
 # under RLIMIT_AS and RLIMIT_CPU and its peak RSS is measured, because a parser
@@ -3767,10 +3798,11 @@ admission_abi_audit: cnet_dll tests/audit_admission_abi.sh
 specialist_authority: specialist_unit admission_bypass_audit admission_abi_audit
 	@echo "SPECIALIST_AUTHORITY_PASS"
 
-.PHONY: ci_config_gate release_package dotnet_cce_tests ci_core ci
+.PHONY: ci_config_gate release_package dotnet_cce_tests ci_core ci ci_contract_gate
 ci_config_gate: tests/test_ci_workflow.py Makefile
-	@python3 tests/test_ci_workflow.py > logs/ci_config_gate.log 2>&1
-	@grep -q "CI_WORKFLOW_PASS" logs/ci_config_gate.log
+	@mkdir -p logs
+	@python3 scripts/gate_evidence.py ci_config_gate logs/ci_config_gate.log \
+		CI_WORKFLOW_LOCAL_PASS -- python3 tests/test_ci_workflow.py
 
 release_package: json_toolcall_alphabet_check tests/test_release_package.sh VERSION include/cnet_version.h
 	@sh tests/test_release_package.sh > logs/release_package.log 2>&1
@@ -3807,7 +3839,16 @@ runtime_artifact_hygiene: tests/test_runtime_artifact_hygiene.sh
 		rc=$$?; cat logs/runtime_artifact_hygiene.log; exit $$rc
 	@grep -q '^RUNTIME_ARTIFACT_HYGIENE_PASS' logs/runtime_artifact_hygiene.log
 
-ci_core: knowledge_capsule knowledge_accumulation_bench ci_config_gate warning_debt_strict release_warning_gate flagship_prefix_cache campaign_provenance_unit execution_tiers_doc_gate alt_paths_gate artifact_isa_gate runtime_artifact_hygiene
+# What CI proves is declared in config/ci_contract.json and enforced by
+# ci_contract_gate: every gate the contract marks `required` must be a
+# prerequisite here, every gate it marks `blocked` must NOT be, and an absent
+# hosted workflow is WITHHELD rather than a pass.
+ci_contract_gate: config/ci_contract.json tests/test_ci_contract.py Makefile
+	@mkdir -p logs
+	@python3 scripts/gate_evidence.py ci_contract_gate logs/ci_contract.log \
+		CI_CONTRACT_PASS -- python3 tests/test_ci_contract.py
+
+ci_core: ci_contract_gate recipe_gate certify btn_train_plateau knowledge_capsule capsule_scope_lineage knowledge_accumulation_bench knowledge_composition_bench personal_ai_hop_guard coverage_abstain coverage_sidecar_seal cnu_budget vd_frontend_parse port_raw_unit_seam vision_coverage_test vision_capsule_asset capability_cert ci_config_gate warning_debt_strict release_warning_gate flagship_prefix_cache campaign_provenance_unit execution_tiers_doc_gate alt_paths_gate artifact_isa_gate runtime_artifact_hygiene
 	@echo "CNET_CI_CORE_PASS"
 
 ci: ci_core release_package test dotnet_cce_tests cce_train_bench int8_matvec_bench

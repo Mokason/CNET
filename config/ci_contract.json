@@ -1,0 +1,148 @@
+{
+  "schema_version": 1,
+  "note": [
+    "The machine-readable contract for what CI actually proves.",
+    "",
+    "Before this file, `make ci_core` ran two scientific gates (capsule and",
+    "accumulation) and `tests/test_ci_workflow.py` printed CI_WORKFLOW_PASS when",
+    "no hosted workflow existed at all -- a structural check labelled as a",
+    "workflow pass. Nothing enumerated what CI was supposed to cover, so a gate",
+    "could quietly stop being enforced without any signal.",
+    "",
+    "Every gate below carries a STATUS, and the status is the claim:",
+    "  required  a hermetic gate that must be a prerequisite of `ci_core` and",
+    "            must pass. tests/test_ci_contract.py enforces both.",
+    "  blocked   cannot run in this environment. The reason is recorded and it",
+    "            is NEVER reported as a pass.",
+    "  withheld  a claim CI does not currently establish. Also never a pass.",
+    "",
+    "Adding a gate here without wiring it into ci_core fails the contract gate,",
+    "and so does wiring a gate whose status says it cannot run."
+  ],
+  "hosted_workflow": {
+    "status": "withheld",
+    "path": ".github/workflows",
+    "reason": [
+      "There is no executing hosted workflow. The local `make ci` / `make ci_rocm`",
+      "lanes are the authority, and a local structural check is not evidence that",
+      "anything ran per-change on a machine other than this one. Absence is",
+      "reported as WITHHELD, never as a pass."
+    ]
+  },
+  "gates": [
+    {
+      "target": "recipe_gate",
+      "status": "required",
+      "proves": "recipes propagate producer status, action gates are .PHONY, WITHHELD is non-success, gate evidence is run-bound"
+    },
+    {
+      "target": "certify",
+      "status": "required",
+      "proves": "all four demo primitives certify against their contracts, combine at 256/256"
+    },
+    {
+      "target": "btn_train_plateau",
+      "status": "required",
+      "proves": "dynamic growth escapes a local minimum instead of stacking neurons that cannot help"
+    },
+    {
+      "target": "knowledge_capsule",
+      "status": "required",
+      "proves": "sealed transport, corruption/conflict refusal, transactional import with byte-identical rollback"
+    },
+    {
+      "target": "capsule_scope_lineage",
+      "status": "required",
+      "proves": "machine-verified certification scope, atomic lineage restore, least-disclosure subset export"
+    },
+    {
+      "target": "knowledge_accumulation_bench",
+      "status": "required",
+      "proves": "isolation and exact replay of 32 discrete units; NOT useful accumulation"
+    },
+    {
+      "target": "knowledge_composition_bench",
+      "status": "required",
+      "proves": "a planner-found 3-hop chain with coverage enforced at every hop"
+    },
+    {
+      "target": "personal_ai_hop_guard",
+      "status": "required",
+      "proves": "ordinary PersonalAi serving guards every hop, not just the original request"
+    },
+    {
+      "target": "coverage_abstain",
+      "status": "required",
+      "proves": "exact discrete membership, and no Tier-A answer outside a certified domain"
+    },
+    {
+      "target": "coverage_sidecar_seal",
+      "status": "required",
+      "proves": "the durable sidecar is transactional, amplification-bounded, and owner-keyed"
+    },
+    {
+      "target": "cnu_budget",
+      "status": "required",
+      "proves": "a tiny CNU cannot make the parser allocate or touch its way into a denial of service"
+    },
+    {
+      "target": "vd_frontend_parse",
+      "status": "required",
+      "proves": "every schema-2 asset field and body float is validated before use"
+    },
+    {
+      "target": "port_raw_unit_seam",
+      "status": "required",
+      "proves": "continuous PORT_RAW contracts cannot enter CNU1 -- the portability blocker is real"
+    },
+    {
+      "target": "vision_coverage_test",
+      "status": "required",
+      "proves": "the analytic kNN coverage primitive; NOT natural-OOD discrimination"
+    },
+    {
+      "target": "vision_capsule_asset",
+      "status": "required",
+      "proves": "schema-2 byte binding for the tested inputs"
+    },
+    {
+      "target": "capability_cert",
+      "status": "required",
+      "proves": "declared held-out cases are consumed and mutating one fails the certificate"
+    },
+    {
+      "target": "own_learning_health",
+      "status": "blocked",
+      "reason": "no deployed base exists at the configured path in this environment; the gate reports OWN_LEARNING_HEALTH_BLOCKED and is never a pass",
+      "proves": "nothing here -- its strict negatives pass, the deployed assessment cannot run"
+    },
+    {
+      "target": "vision_detection_bench_v2",
+      "status": "blocked",
+      "reason": "data/ is absent in this worktree, so the VOC2007 v2 cache does not exist",
+      "proves": "nothing here"
+    }
+  ],
+  "withheld_claims": [
+    {
+      "claim": "useful autonomous knowledge accumulation",
+      "status": "withheld",
+      "reason": "32 synthetic permutations coexist and replay exactly; no held-out generalisation is measured"
+    },
+    {
+      "claim": "portable continuous-domain specialist",
+      "status": "blocked",
+      "reason": "CNU1 rejects continuous exemplars, and continuous certification semantics do not exist"
+    },
+    {
+      "claim": "continuous coverage floors",
+      "status": "failed",
+      "reason": "natural OOD refusal 0.0906 vs >=0.30 and >=3x in-domain; synthetic 0.0245 vs >=0.99. Floors were not relaxed and are not re-run here"
+    },
+    {
+      "claim": "evidence separated from runtime state",
+      "status": "withheld",
+      "reason": "the gates this remediation touches emit run-bound evidence; the remaining recipes still write unbound logs to stable ignored paths"
+    }
+  ]
+}

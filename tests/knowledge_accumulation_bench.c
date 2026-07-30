@@ -158,8 +158,10 @@ static int add_unit(CnetBase *base, HybridAi *cov, int k, char *name_out,
     Contract c;
     Specialist s;
     char itag[32], gtag[32];
+    char name_out_scratch[96];
     Port pin, pout;
     int i, rc = -1;
+    int btn_ready = 0, contract_ready = 0;
 
     /* Tag governance refuses NEAR-MISS tags (case-insensitive equality,
        underscore-stripped equality, or Levenshtein distance 1 — see
@@ -169,34 +171,65 @@ static int add_unit(CnetBase *base, HybridAi *cov, int k, char *name_out,
        Two characters vary per unit so consecutive skills stay >=2 apart. */
     snprintf(itag, sizeof itag, "kb_%c%c%d_in", 'a' + k / 26, 'a' + k % 26, k);
     snprintf(gtag, sizeof gtag, "kb_%c%c%d_out", 'a' + k / 26, 'a' + k % 26, k);
-    snprintf(name_out, cap, "kb_unit_%c%c%d", 'a' + k / 26, 'a' + k % 26, k);
+    snprintf(name_out_scratch, sizeof name_out_scratch, "kb_unit_%c%c%d",
+             'a' + k / 26, 'a' + k % 26, k);
     pin = P(itag);
     pout = P(gtag);
 
+    /* One cleanup path. Every early return used to leak the BTN it had just
+       allocated -- and worse, leave name_out unwritten, which the caller then
+       read. A normal green run never takes those paths, so the leak and the
+       uninitialised read were invisible until something actually failed. */
+    memset(&c, 0, sizeof c);
+    memset(&s, 0, sizeof s);
+    if (name_out && cap) name_out[0] = '\0';
     btn = (BinaryTransformNetwork *)calloc(1, sizeof *btn);
-    if (!btn) return -1;
+    if (!btn) goto out;
     for (i = 0; i < SYM; i++) {
         oh(in[i], i);
         oh(tg[i], fn_k(k, i));
     }
-    if (btn_init(btn, SYM, SYM, 16, 64, 0.5, (unsigned)(7 + k)) != 0) return -1;
+    if (btn_init(btn, SYM, SYM, 16, 64, 0.5, (unsigned)(7 + k)) != 0) {
+        free(btn);
+        btn = NULL;
+        goto out;
+    }
+    btn_ready = 1;
+    /* Forced-failure hook. The cleanup path above is unreachable in a green run,
+       which is exactly why it was wrong: it leaked the BTN and left name_out
+       unwritten for the caller to read. CNET_ACC_FAIL_AT makes it executable so
+       a sanitizer can see it. Honoured only when the variable is set. */
+    {
+        const char *fail_at = getenv("CNET_ACC_FAIL_AT");
+        if (fail_at && fail_at[0] && atoi(fail_at) == k) goto out;
+    }
     btn_set_ports(btn, pin, pout);
     btn_train_dynamic(btn, (const double *)in, (const double *)tg, SYM, 12000,
                       200, 1e-6, 1e-8);
     btn_train(btn, (const double *)in, (const double *)tg, SYM, 3000);
-    memset(&c, 0, sizeof c);
-    if (contract_init_borrowed(&c, name_out, btn, (const double *)in,
+    if (contract_init_borrowed(&c, name_out_scratch, btn, (const double *)in,
                                (const double *)tg, SYM) != 0)
-        return -1;
-    memset(&s, 0, sizeof s);
-    if (specialist_wrap_btn(&s, btn, name_out) == 0 &&
+        goto out;
+    contract_ready = 1;
+    if (specialist_wrap_btn(&s, btn, name_out_scratch) == 0 &&
         cnb_add_unit(base, btn, &c, NULL) == 0)
         rc = 0;
     if (rc == 0 && cov)
-        (void)hybrid_coverage_record(cov, pin, pout, name_out,
+        (void)hybrid_coverage_record(cov, pin, pout, name_out_scratch,
                                      (const double *)in, (const double *)tg,
                                      COV_ROWS, SYM, SYM);
-    contract_free(&c);
+out:
+    if (contract_ready) contract_free(&c);
+    if (rc == 0) {
+        /* Only a SUCCESSFUL build may hand a name back; the caller reads it. */
+        snprintf(name_out, cap, "%s", name_out_scratch);
+    }
+    /* cnb_add_unit serialises the unit into the base as a sealed byte image and
+       keeps no pointer to this BTN, so the caller owns it on EVERY path. The
+       success path never freed it either -- 7 objects and 28 KiB per scale --
+       which only became visible once the fault paths were run under LSan. */
+    if (btn_ready) btn_free(btn);
+    free(btn);
     return rc;
 }
 
@@ -256,18 +289,30 @@ int main(void) {
     for (si = 0; si < N_SCALES; si++) {
         int N = SCALE_N[si];
         double t0;
+        int built;
         cnb_init(&base);
         hybrid_ai_init(&cov);
         t0 = now_ms();
+        built = 0;
         for (k = 0; k < N; k++) {
             if (add_unit(&base, &cov, k, names[k], sizeof names[k]) != 0) {
                 printf("  build FAILED at k=%d (tag mint refusal or admit "
                        "refusal) — bench cannot measure accumulation\n", k);
                 break;
             }
+            built++;
         }
         build_ms[si] = now_ms() - t0;
         scale_units[si] = (int)base.unit_count;
+        /* Everything below indexes names[]. Only the first `built` entries were
+           written; the rest are whatever the stack held. The loops used N. */
+        if (built <= 0) {
+            printf("  no unit was built — nothing to measure\n");
+            hybrid_ai_free(&cov);
+            cnb_free(&base);
+            failures++;
+            continue;
+        }
 
         /* lookup latency: name -> sealed unit materialise */
         /* Lookup = REAL materialisation (cnb_get_unit + CNU1 seal verify),
@@ -277,7 +322,7 @@ int main(void) {
             double l0 = now_ms();
             int reps = 0;
             while (reps < TIMING_REPS) {
-                for (k = 0; k < N && reps < TIMING_REPS; k++) {
+                for (k = 0; k < built && reps < TIMING_REPS; k++) {
                     BinaryTransformNetwork b2;
                     Contract c2;
                     memset(&b2, 0, sizeof b2);
