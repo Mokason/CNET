@@ -3149,3 +3149,176 @@ MANAGED_WARNING_PREREQ_RED_CONFIRMED rev=7396275
 It is a prerequisite of `release_warning_gate`, which `ci_core` already requires.
 It is deliberately NOT a prerequisite of `managed_warning_gate` itself, because
 the harness invokes that target and would otherwise recurse.
+
+# Phase 6 — two blockers: `--source` is not isolation, and evidence must follow the code
+
+Base: `cb240b5`. Input: a Codex phase-5 review, REQUEST CHANGES with exactly two
+HIGH blockers. Every ordering and failure guard from phase 5 passed; what was
+refused was the OFFLINE claim, and the ORDER in which the phase-5 report was
+written relative to its own evidence.
+
+No floor, target loss, seed, exemplar, split minimum, refusal floor or label
+changed. The managed warning POLICY is unchanged: same seven projects, same
+`-warnaserror` and `TreatWarningsAsErrors=true`, same scan pattern over build
+output only. No protected CRLF path was touched.
+
+## Blocker A — `--source` does not cover `auditSources`
+
+### RED, measured at `cb240b5`
+
+A user `NuGet.Config` declaring a package feed AND an audit source, both on
+local HTTP endpoints nothing is listening on, so any contact shows up as a
+`connect()` and as a NuGet error rather than as a silent success:
+
+```xml
+<packageSources>
+  <add key="hostile-feed"  value="http://127.0.0.1:28080/v3/index.json" />
+</packageSources>
+<auditSources>
+  <add key="hostile-audit" value="http://127.0.0.1:28081/v3/index.json" />
+</auditSources>
+```
+
+Run with `HOME` pointing at it, `NUGET_PACKAGES` still pointing at the real
+cache, telemetry disabled, under `strace -f -e trace=network`, using the
+phase-5 restore command verbatim:
+
+```
+$ dotnet restore dotnet/Cce.Tests/Cce.Tests.csproj --source "$EMPTY" --nologo -v:minimal
+error NU1905: Audit source 'hostile-audit' did not provide any vulnerability data.
+error NU1900: Error occurred while getting package vulnerability data:
+  Unable to load the service index for source http://127.0.0.1:28081/v3/index.json
+
+strace: connect AF_INET/AF_INET6 : 6      all to ::ffff:127.0.0.1 port 28081
+        socket AF_INET/AF_INET6  : 12
+        connect AF_UNIX          : 98     (local IPC, not counted)
+```
+
+Six real connects to the hostile AUDIT endpoint, and none to the hostile FEED —
+which is the finding stated exactly: `--source` overrides `packageSources` and
+does not touch `auditSources`, so the offline claim phase 5 made on `--source`
+alone was not established. The review was right to withhold it.
+
+### Fix
+
+The restore is handed an isolated `NuGet.Config` generated inside the same
+unique temp root as the empty source. It CLEARS `packageSources`,
+`disabledPackageSources`, `fallbackPackageFolders` and `auditSources`, and names
+exactly one source: the run's own empty directory. It is passed with
+`--configfile`, which makes NuGet read that file INSTEAD OF the user and machine
+configurations rather than merging with them, and every restore additionally
+passes `-p:NuGetAudit=false` — two independent reasons no audit endpoint can be
+reached. The empty `--source`, the timeout, the missing-assets check and the
+build guard are all unchanged.
+
+### Causal proof 1 — the fake-dotnet harness, in `ci_core`
+
+`tests/test_managed_warning_prereq.sh` gained the isolation half. The fake
+`dotnet` now COPIES the file named by `--configfile` at the moment of the call,
+because the gate deletes its temp root on exit and the config cannot be
+inspected afterwards. `HOME` points at the hostile fixture for the whole run, so
+anything inherited from it would appear in the captured copies.
+
+```
+$ sh tests/test_managed_warning_prereq.sh
+MANAGED_PREREQ_NORMAL rc=0 restores=3 builds=3 sources=3 configfile=3 audit_off=3 configs=3
+MANAGED_PREREQ_RESTORE_FAIL rc=2 builds=1
+MANAGED_PREREQ_ASSETS_ABSENT rc=2 builds=0
+MANAGED_PREREQ_TIMEOUT rc=2
+MANAGED_PREREQ_DECLARED projects=7 missing=0
+MANAGED_WARNING_PREREQ_PASS checks=30 projects=7 order=restore_before_build
+  source=empty_local_only config=isolated audit=cleared_and_disabled
+  refusals=failed,absent,timeout
+##EXIT=0
+```
+
+Per captured config it asserts: `packageSources` contains `<clear />` and
+exactly one `<add>`; that one entry is an ABSOLUTE LOCAL PATH which the trace
+independently recorded as the directory passed to `--source` and as EMPTY at
+call time; `auditSources` contains `<clear />` and zero `<add>`; and no
+`http://`, `https://`, `nuget.org` or `127.0.0.1` survives anywhere in the file.
+
+Two RED replays now run, each required to fail on ITS OWN property:
+
+```
+MANAGED_WARNING_PREREQ_RED_CONFIRMED rev=7396275 property=restore precedes build
+MANAGED_WARNING_PREREQ_RED_CONFIRMED rev=cb240b5 property=isolated config with --configfile
+```
+
+### Causal proof 2 — the real gate at the syscall boundary
+
+`tests/test_managed_warning_offline.sh` (`make managed_warning_offline_proof`)
+runs the REAL gate over the REAL seven projects with the hostile user config
+in `HOME`, the real package cache still reachable through `NUGET_PACKAGES`,
+telemetry and MSBuild node reuse disabled, under
+`strace -f -qq -e trace=network`.
+
+```
+                                      cb240b5 (pre-fix)   HEAD (isolated)
+gate exit                                    2                  0
+projects restored                            1                  7
+projects built                               0                  7
+NU1900 / NU1905 audit errors                 2                  0
+connect() AF_INET / AF_INET6                 6                  0
+send/sendto/sendmsg to an inet address       0                  0
+further network syscalls on inet fds        48                  0
+connect() AF_UNIX (local IPC, ignored)      26                492
+MANAGED_WARNING_OFFLINE_PROOF_...          FAIL               PASS
+```
+
+The GREEN run still opens 26 `AF_INET`/`AF_INET6` sockets, and that is
+diagnosed rather than excused: every one is a bare
+`socket(AF_INET*, SOCK_DGRAM|SOCK_CLOEXEC, IPPROTO_IP)` that is never bound,
+connected, sent on or read from — the check walks every descriptor those calls
+returned and counts ZERO subsequent network syscalls on any of them. They are
+.NET capability probes (does this machine have IPv4 / IPv6), which require no
+packet. The 492 `AF_UNIX` connects are MSBuild worker pipes and the dotnet host,
+counted separately and deliberately not treated as feed access.
+
+### One thing this exposed about the phase-5 evidence
+
+The first "passes under a hostile HOME" run taken during this phase was weaker
+than it looked: without `NUGET_PACKAGES` the cache moved with `HOME`, every
+project was already restored, and the restores were no-ops. The proof above sets
+`NUGET_PACKAGES` explicitly and asserts seven real restores and seven real
+builds, and it is resolved BEFORE the assignment list rather than inside it —
+POSIX performs those assignments in order and lets later ones see earlier ones,
+so a `~` expanded there resolves against the hostile HOME and silently measures
+a restore that found nothing.
+
+### And the same class, found once the whole matrix ran under a hostile config
+
+Running `ci_core` under the hostile user configuration for the first time — which
+is what blocker B asks for — found the same defect in a SECOND place, in phase
+4's own fix:
+
+```
+CAPABILITY_PREREQ id=honest_memory_retrieval problem=evaluator_prepare failed (rc=1):
+  dotnet build dotnet/Cce.Llm.Tests/CNET.Cce.Llm.Tests.csproj -c Debug --nologo
+error NU1302: You are running the 'restore' operation with an 'HTTP' source:
+  http://127.0.0.1:28080/v3/index.json.
+CAPABILITY_EVALUATOR_PREREQ_UNIT_FAIL checks=15 failures=1
+make: *** [Makefile: capability_evaluator_prereq] Error 1     ##EXIT=2
+```
+
+`dotnet build` performs an implicit restore, and that restore read the user's
+configuration. Note what it did NOT do: it did not use the hostile feed. It
+failed closed and named it, which is the guard working — what was missing is
+that it should never have been able to see it.
+
+`scripts/capability_evaluator_prereq.py` now pins any `dotnet` prepare step to
+the same kind of isolated configuration, through MSBuild properties rather than
+`--configfile` because `dotnet build` takes restore settings that way and
+rejects the restore-only flag:
+
+```
+-p:RestoreConfigFile=<temp>/NuGet.Config   packageSources and auditSources cleared
+-p:RestoreSources=<temp>/empty-source      empty, created for this call
+-p:NuGetAudit=false
+```
+
+A `make` prepare step gets nothing added: make is not what reads a NuGet
+configuration. Three tests cover it, and removing the injection fails exactly
+two of them — including one that puts a recording `dotnet` on PATH, so the
+assertion is that the flags REACH the command rather than that a helper can
+produce them.

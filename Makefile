@@ -3719,10 +3719,26 @@ native_test_warning_gate:
 #
 # The writer's tree passed only because it held ignored `obj/` state. So each
 # project is restored here, first, against an explicitly EMPTY local source:
-# `--source` REPLACES the configured feeds, so no network feed can be contacted,
-# while the machine's existing global package cache still resolves. A package
-# that is not already cached fails closed instead of reaching out. Measured on a
-# cold fresh worktree, offline: ~50 ms per project.
+# `--source` REPLACES the configured package feeds, so no configured feed can be
+# contacted, while the machine's existing global package cache still resolves. A
+# package that is not already cached fails closed instead of reaching out.
+# Measured on a cold fresh worktree, offline: ~50 ms per project.
+#
+# `--source` IS NOT ENOUGH, and a review was right to refuse the offline claim
+# on it. NuGet's `auditSources` is a SEPARATE section that `--source` does not
+# touch, and NuGetAudit reaches it during restore. Measured at cb240b5 with a
+# user config declaring an audit source on a local HTTP endpoint:
+#
+#   error NU1900: Error occurred while getting package vulnerability data:
+#   Unable to load the service index for source http://127.0.0.1:28081/v3/index.json
+#   strace -f -e trace=network: 6 connect() to AF_INET6 ::ffff:127.0.0.1:28081
+#
+# So the restore is handed an isolated NuGet.Config generated inside the same
+# unique temp root as the empty source. It CLEARS packageSources and
+# auditSources, names only the empty local directory, and is passed with
+# `--configfile`, which makes NuGet read that file INSTEAD OF the user and
+# machine configs rather than merging with them. `-p:NuGetAudit=false` is
+# defense in depth: two independent reasons no audit endpoint can be reached.
 #
 # Restore output goes to its own log, so the warning POLICY below is unchanged
 # -- it still scans build output only.
@@ -3745,13 +3761,36 @@ managed_warning_gate: json_toolcall_alphabet_check
 	@mkdir -p logs
 	@: > $(MANAGED_WARNING_LOG)
 	@: > $(MANAGED_RESTORE_LOG)
-	@empty_source=`mktemp -d "$${TMPDIR:-/tmp}/cnet-empty-nuget-XXXXXX"` || { \
+	@temp_root=`mktemp -d "$${TMPDIR:-/tmp}/cnet-nuget-isolated-XXXXXX"` || { \
+		echo "MANAGED_WARNING_GATE_FAIL reason=no_temp_root"; exit 1; }; \
+	trap 'rm -rf "$$temp_root"' EXIT HUP INT TERM; \
+	empty_source="$$temp_root/empty-source"; \
+	nuget_config="$$temp_root/NuGet.Config"; \
+	mkdir -p "$$empty_source" || { \
 		echo "MANAGED_WARNING_GATE_FAIL reason=no_empty_source"; exit 1; }; \
-	trap 'rm -rf "$$empty_source"' EXIT HUP INT TERM; \
+	printf '%s\n' \
+		'<?xml version="1.0" encoding="utf-8"?>' \
+		'<configuration>' \
+		'  <packageSources>' \
+		'    <clear />' \
+		'    <add key="cnet-empty-local" value="'"$$empty_source"'" />' \
+		'  </packageSources>' \
+		'  <disabledPackageSources>' \
+		'    <clear />' \
+		'  </disabledPackageSources>' \
+		'  <fallbackPackageFolders>' \
+		'    <clear />' \
+		'  </fallbackPackageFolders>' \
+		'  <auditSources>' \
+		'    <clear />' \
+		'  </auditSources>' \
+		'</configuration>' > "$$nuget_config" || { \
+		echo "MANAGED_WARNING_GATE_FAIL reason=no_isolated_config"; exit 1; }; \
 	for project in $(MANAGED_WARNING_PROJECTS); do \
 		echo "restoring $$project" >> $(MANAGED_RESTORE_LOG); \
 		timeout $(MANAGED_RESTORE_TIMEOUT) $(DOTNET) restore "$$project" \
-			--source "$$empty_source" --nologo -v:minimal \
+			--configfile "$$nuget_config" --source "$$empty_source" \
+			-p:NuGetAudit=false --nologo -v:minimal \
 			>> $(MANAGED_RESTORE_LOG) 2>&1; \
 		status=$$?; \
 		if [ $$status -ne 0 ]; then \
@@ -3782,35 +3821,58 @@ managed_warning_gate: json_toolcall_alphabet_check
 # The harness for the property above. It drives this same recipe with a fake
 # `dotnet` that records every invocation, so "restore precedes build, offline,
 # for every project" is measured rather than asserted in a comment.
+# The empirical half of the offline claim: run the REAL gate against the REAL
+# projects under a hostile user NuGet config and read the syscalls. This is an
+# EVIDENCE lane, not a ci_core prerequisite -- it needs strace, and the property
+# it confirms is already enforced in ci_core by managed_warning_prereq. It fails
+# closed rather than skipping when strace or the package cache is missing.
+.PHONY: managed_warning_offline_proof
+managed_warning_offline_proof: tests/test_managed_warning_offline.sh Makefile
+	@mkdir -p logs
+	@python3 scripts/gate_evidence.py managed_warning_offline_proof \
+		logs/managed_warning_offline_proof.log \
+		MANAGED_WARNING_OFFLINE_PROOF_PASS -- \
+		sh tests/test_managed_warning_offline.sh
+
 .PHONY: managed_warning_prereq
 managed_warning_prereq: tests/test_managed_warning_prereq.sh Makefile
 	@mkdir -p logs
 	@python3 scripts/gate_evidence.py managed_warning_prereq \
 		logs/managed_warning_prereq.log MANAGED_WARNING_PREREQ_PASS -- \
 		sh tests/test_managed_warning_prereq.sh
-	@# ... and the RED it was written against stays re-runnable: the same
-	@# harness against the recipe as it was before the restore step must FAIL,
-	@# and must fail ON THE ORDERING PROPERTY, not on something incidental.
+	@# ... and both REDs it was written against stay re-runnable. Each replayed
+	@# revision must FAIL, and must fail ON ITS OWN PROPERTY rather than on
+	@# something incidental, or the replay proves nothing about what changed.
 	@saved=`mktemp "$${TMPDIR:-/tmp}/cnet-managed-log-XXXXXX"`; \
 	cp $(MANAGED_WARNING_LOG) "$$saved" 2>/dev/null || : > "$$saved"; \
-	CNET_MANAGED_PREREQ_LEGACY=$(MANAGED_PREREQ_LEGACY_REV) \
-		sh tests/test_managed_warning_prereq.sh \
-		> logs/managed_warning_prereq_red.log 2>&1; \
-	red=$$?; \
+	rc=0; \
+	set -- "$(MANAGED_PREREQ_LEGACY_REV_ORDER):restore precedes build" \
+	       "$(MANAGED_PREREQ_LEGACY_REV_ISOLATION):isolated config with --configfile"; \
+	for pair in "$$@"; do \
+		rev=$${pair%%:*}; want=$${pair#*:}; \
+		CNET_MANAGED_PREREQ_LEGACY=$$rev \
+			sh tests/test_managed_warning_prereq.sh \
+			> logs/managed_warning_prereq_red_$$rev.log 2>&1; \
+		red=$$?; \
+		if [ $$red -eq 0 ]; then \
+			echo "MANAGED_WARNING_PREREQ_RED_FAIL rev=$$rev the pre-fix recipe passed; the gate proves nothing"; \
+			rc=1; \
+		elif ! grep -q "$$want" logs/managed_warning_prereq_red_$$rev.log; then \
+			echo "MANAGED_WARNING_PREREQ_RED_FAIL rev=$$rev failed for some OTHER reason than: $$want"; \
+			cat logs/managed_warning_prereq_red_$$rev.log; \
+			rc=1; \
+		else \
+			echo "MANAGED_WARNING_PREREQ_RED_CONFIRMED rev=$$rev property=$$want"; \
+		fi; \
+	done; \
 	cp "$$saved" $(MANAGED_WARNING_LOG) 2>/dev/null || :; rm -f "$$saved"; \
-	if [ $$red -eq 0 ]; then \
-		echo "MANAGED_WARNING_PREREQ_RED_FAIL the pre-fix recipe passed; the gate proves nothing"; \
-		exit 1; \
-	fi; \
-	if ! grep -q 'restore precedes build' logs/managed_warning_prereq_red.log; then \
-		echo "MANAGED_WARNING_PREREQ_RED_FAIL the pre-fix recipe failed for some OTHER reason"; \
-		cat logs/managed_warning_prereq_red.log; \
-		exit 1; \
-	fi
-	@echo "MANAGED_WARNING_PREREQ_RED_CONFIRMED rev=$(MANAGED_PREREQ_LEGACY_REV)"
+	exit $$rc
 
-# The last commit before the managed gate restored what it builds.
-MANAGED_PREREQ_LEGACY_REV ?= 7396275
+# The last commit before the managed gate restored what it builds at all ...
+MANAGED_PREREQ_LEGACY_REV_ORDER ?= 7396275
+# ... and the last one before that restore was isolated from the user's NuGet
+# configuration, whose auditSources `--source` does not cover.
+MANAGED_PREREQ_LEGACY_REV_ISOLATION ?= cb240b5
 
 release_warning_gate: native_warning_gate native_test_warning_gate managed_warning_prereq managed_warning_gate
 	@mkdir -p logs

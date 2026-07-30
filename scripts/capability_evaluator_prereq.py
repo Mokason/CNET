@@ -47,6 +47,7 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+import tempfile
 from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -113,6 +114,62 @@ def declaration_problems(manifest: dict[str, Any]) -> list[str]:
     return problems
 
 
+# The isolated NuGet configuration a `dotnet` prepare step is given. It is the
+# same shape the managed warning gate generates, and it exists for the same
+# reason: a prepare step that inherits the user's NuGet configuration is a
+# prerequisite living outside the tree.
+#
+# This was found the hard way. Running the whole matrix under a hostile user
+# config for the first time, `dotnet build` -- whose implicit restore reads that
+# config -- reported:
+#
+#   error NU1302: You are running the 'restore' operation with an 'HTTP'
+#   source: http://127.0.0.1:28080/v3/index.json.
+#
+# It failed CLOSED and named the problem, which is the guard working. What was
+# missing is that it should not have been able to see that source at all.
+ISOLATED_CONFIG = """<?xml version="1.0" encoding="utf-8"?>
+<configuration>
+  <packageSources>
+    <clear />
+    <add key="cnet-empty-local" value="{empty}" />
+  </packageSources>
+  <disabledPackageSources>
+    <clear />
+  </disabledPackageSources>
+  <fallbackPackageFolders>
+    <clear />
+  </fallbackPackageFolders>
+  <auditSources>
+    <clear />
+  </auditSources>
+</configuration>
+"""
+
+
+def nuget_isolation_argv(prepare: list[str], isolated: Path) -> list[str]:
+    """Extra argv that pins a `dotnet` prepare step to an empty local source.
+
+    MSBuild properties rather than `--configfile`, because `dotnet build` -- the
+    prepare command a test project needs -- takes restore settings as properties
+    and would reject the restore-only flag outright.
+
+    A non-`dotnet` prepare gets nothing: `make` is not the thing that reads a
+    NuGet configuration, and inventing flags for it would be noise.
+    """
+    if not prepare or prepare[0] != "dotnet":
+        return []
+    empty = isolated / "empty-source"
+    empty.mkdir(parents=True, exist_ok=True)
+    config = isolated / "NuGet.Config"
+    config.write_text(ISOLATED_CONFIG.format(empty=empty), encoding="utf-8")
+    return [
+        f"-p:RestoreConfigFile={config}",
+        f"-p:RestoreSources={empty}",
+        "-p:NuGetAudit=false",
+    ]
+
+
 def _mtime_ns(path: Path) -> int:
     return path.stat().st_mtime_ns
 
@@ -157,16 +214,18 @@ def run_prepare(
     # A nested make must not inherit this run's jobserver or goal list.
     environment.pop("MAKEFLAGS", None)
     environment.pop("MFLAGS", None)
-    completed = subprocess.run(
-        list(prepare),
-        cwd=root,
-        env=environment,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        timeout=PREPARE_TIMEOUT_SECONDS,
-        check=False,
-    )
+    with tempfile.TemporaryDirectory(prefix="cnet-prepare-nuget-") as isolated:
+        argv = list(prepare) + nuget_isolation_argv(prepare, Path(isolated))
+        completed = subprocess.run(
+            argv,
+            cwd=root,
+            env=environment,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            timeout=PREPARE_TIMEOUT_SECONDS,
+            check=False,
+        )
     return completed.returncode, completed.stdout
 
 

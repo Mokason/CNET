@@ -207,6 +207,93 @@ class ReadinessTests(unittest.TestCase):
         )
 
 
+class NuGetIsolationTests(unittest.TestCase):
+    """A `dotnet` prepare step must not be able to see the user's feeds.
+
+    Found by running the whole matrix under a hostile user NuGet.Config for the
+    first time: `dotnet build`'s implicit restore read it and reported
+    `error NU1302: ... 'HTTP' source: http://127.0.0.1:28080/v3/index.json`.
+    It failed closed and said so, which is the guard working -- but it should
+    not have been able to see that source at all.
+    """
+
+    def setUp(self) -> None:
+        self.directory = tempfile.TemporaryDirectory(prefix="cnet-prep-iso-")
+        self.root = Path(self.directory.name)
+
+    def tearDown(self) -> None:
+        self.directory.cleanup()
+
+    def test_dotnet_prepare_is_pinned_to_an_empty_local_source(self) -> None:
+        argv = PREREQ.nuget_isolation_argv(["dotnet", "build", "x.csproj"], self.root)
+        joined = " ".join(argv)
+        self.assertIn("-p:NuGetAudit=false", argv)
+        self.assertIn("-p:RestoreConfigFile=", joined)
+        self.assertIn("-p:RestoreSources=", joined)
+
+        config = Path(
+            [a for a in argv if a.startswith("-p:RestoreConfigFile=")][0].split("=", 1)[1]
+        )
+        source = Path(
+            [a for a in argv if a.startswith("-p:RestoreSources=")][0].split("=", 1)[1]
+        )
+        self.assertTrue(config.is_file())
+        self.assertTrue(source.is_dir())
+        self.assertEqual(list(source.iterdir()), [], "the pinned source must be empty")
+
+        body = config.read_text(encoding="utf-8")
+        package_block = body.split("<packageSources>")[1].split("</packageSources>")[0]
+        audit_block = body.split("<auditSources>")[1].split("</auditSources>")[0]
+        self.assertIn("<clear />", package_block)
+        self.assertEqual(package_block.count("<add "), 1)
+        self.assertIn(str(source), package_block)
+        # auditSources is the section `--source` and RestoreSources do NOT cover.
+        self.assertIn("<clear />", audit_block)
+        self.assertEqual(audit_block.count("<add "), 0)
+        for hostile in ("http://", "https://", "nuget.org"):
+            self.assertNotIn(hostile, body)
+
+    def test_make_prepare_gets_no_nuget_flags(self) -> None:
+        self.assertEqual(
+            PREREQ.nuget_isolation_argv(["make", "target"], self.root), []
+        )
+
+    def test_the_flags_actually_reach_the_prepare_command(self) -> None:
+        # A `dotnet` on PATH that records its argv: this asserts the injection
+        # happens in run_prepare, not merely that a helper can produce it.
+        binroot = self.root / "bin"
+        binroot.mkdir()
+        trace = self.root / "argv.txt"
+        shim = binroot / "dotnet"
+        shim.write_text(
+            "#!/bin/sh\nprintf '%s\\n' \"$@\" >> " + str(trace) + "\nexit 0\n",
+            encoding="utf-8",
+        )
+        shim.chmod(0o755)
+        manifest = {
+            "capability_id": "fixture_capability",
+            "evaluator": ["dotnet", "test", "p"],
+            "evaluator_prepare": ["dotnet", "build", "p.csproj"],
+            "evaluator_sources": ["src/evaluator.c"],
+            "evaluator_binary": "bin/evaluator",
+        }
+        previous = os.environ["PATH"]
+        os.environ["PATH"] = f"{binroot}:{previous}"
+        try:
+            code, _ = PREREQ.run_prepare(self.root, manifest)
+        finally:
+            os.environ["PATH"] = previous
+        self.assertEqual(code, 0)
+        recorded = trace.read_text(encoding="utf-8").splitlines()
+        self.assertIn("-p:NuGetAudit=false", recorded)
+        self.assertTrue(
+            any(a.startswith("-p:RestoreConfigFile=") for a in recorded), recorded
+        )
+        self.assertTrue(
+            any(a.startswith("-p:RestoreSources=") for a in recorded), recorded
+        )
+
+
 class CommandLineTests(unittest.TestCase):
     """The CLI is what `make` runs, so its verdict line is part of the gate."""
 

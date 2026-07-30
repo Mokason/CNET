@@ -85,11 +85,22 @@ verb=$1
 project=${2:-}
 if [ "$verb" = "restore" ]; then
     src=""
+    cfg=""
     prev=""
     for a in "$@"; do
         if [ "$prev" = "--source" ]; then src=$a; fi
+        if [ "$prev" = "--configfile" ]; then cfg=$a; fi
         prev=$a
     done
+    # The isolated NuGet.Config lives in a temp root the gate deletes on exit,
+    # so it can only be inspected HERE, while the call is happening.
+    if [ -n "$cfg" ] && [ -f "$cfg" ]; then
+        n=$(ls "$CNET_FAKE_CONFIG_DIR" 2>/dev/null | wc -l)
+        cp "$cfg" "$CNET_FAKE_CONFIG_DIR/$n.config"
+        printf 'CONFIG %s captured=%s\n' "$cfg" "$n.config" >> "$trace"
+    else
+        printf 'CONFIG_MISSING %s\n' "$cfg" >> "$trace"
+    fi
     if [ -n "$src" ] && [ -d "$src" ]; then
         n=$(ls -A "$src" 2>/dev/null | wc -l)
         printf 'SOURCE %s entries=%s\n' "$src" "$n" >> "$trace"
@@ -122,9 +133,11 @@ run_gate() {
     work=$1
     shift
     CNET_FAKE_TRACE="$work/trace" \
+    CNET_FAKE_CONFIG_DIR="$work/configs" \
     CNET_FAKE_RESTORE_FAIL="${FAKE_RESTORE_FAIL:-}" \
     CNET_FAKE_SKIP_ASSETS="${FAKE_SKIP_ASSETS:-}" \
     CNET_FAKE_RESTORE_HANG="${FAKE_RESTORE_HANG:-}" \
+    HOME="${FAKE_HOME:-$HOME}" \
     make -C "$ROOT" -f "$MAKEFILE" managed_warning_gate \
         DOTNET="$work/fake_dotnet" \
         MANAGED_WARNING_LOG="$work/gate.log" \
@@ -133,10 +146,30 @@ run_gate() {
     echo $? > "$work/rc"
 }
 
+# A user NuGet.Config that declares BOTH a package feed and an audit source on
+# a local HTTP endpoint. At cb240b5 the audit source in a config exactly like
+# this was reached over the network during a real restore; see the RED below.
+make_hostile_home() {
+    mkdir -p "$1/.nuget/NuGet"
+    cat > "$1/.nuget/NuGet/NuGet.Config" <<'XML'
+<?xml version="1.0" encoding="utf-8"?>
+<configuration>
+  <packageSources>
+    <add key="hostile-feed" value="http://127.0.0.1:28080/v3/index.json" protocolVersion="3" />
+  </packageSources>
+  <auditSources>
+    <add key="hostile-audit" value="http://127.0.0.1:28081/v3/index.json" protocolVersion="3" />
+  </auditSources>
+</configuration>
+XML
+}
+
 new_work() {
     work=$(mktemp -d "${TMPDIR:-/tmp}/cnet-managed-prereq-XXXXXX") || exit 1
     make_fake_dotnet "$work/fake_dotnet"
     : > "$work/trace"
+    mkdir -p "$work/configs"
+    make_hostile_home "$work/hostile_home"
     mkdir -p "$work/proj/alpha" "$work/proj/beta" "$work/proj/gamma"
     : > "$work/proj/alpha/alpha.csproj"
     : > "$work/proj/beta/beta.csproj"
@@ -166,7 +199,9 @@ work=$(new_work)
 P1="$work/proj/alpha/alpha.csproj"
 P2="$work/proj/beta/beta.csproj"
 P3="$work/proj/gamma/gamma.csproj"
-FAKE_RESTORE_FAIL= FAKE_SKIP_ASSETS= FAKE_RESTORE_HANG= \
+# HOME points at the hostile user config for the whole run, so anything the
+# generated config inherited from it would show up in the captured copies.
+FAKE_RESTORE_FAIL= FAKE_SKIP_ASSETS= FAKE_RESTORE_HANG= FAKE_HOME="$work/hostile_home" \
     run_gate "$work" MANAGED_WARNING_PROJECTS="$P1 $P2 $P3"
 rc=$(cat "$work/rc")
 check "$(yes_no "$rc")" "normal sequence: the gate passes (rc=$rc)
@@ -222,7 +257,65 @@ norestore=$(grep '^ARGV|build|' "$work/trace" | grep -c -- '|--no-restore|')
 check "$([ "$norestore" = "3" ] && echo 0 || echo 1)" \
     "every build still runs --no-restore, so the restore above is the only one \
 that can have happened (saw $norestore of 3)"
-echo "MANAGED_PREREQ_NORMAL rc=$rc restores=$restores builds=$builds sources=$sources"
+
+# ---- config isolation: --source is NOT enough --------------------------
+# NuGet's auditSources is a separate section --source does not touch, and
+# NuGetAudit reaches it during restore. So every restore must be handed an
+# isolated config with --configfile (which REPLACES the user and machine
+# configs rather than merging), and that config's contents are checked here.
+cfg_flags=$(grep '^ARGV|restore|' "$work/trace" | grep -c -- '|--configfile|')
+check "$([ "$cfg_flags" = "3" ] && echo 0 || echo 1)" \
+    "every restore is handed an isolated config with --configfile (saw $cfg_flags of 3)"
+audit_off=$(grep '^ARGV|restore|' "$work/trace" | grep -c -- '|-p:NuGetAudit=false|')
+check "$([ "$audit_off" = "3" ] && echo 0 || echo 1)" \
+    "every restore passes -p:NuGetAudit=false as defense in depth (saw $audit_off of 3)"
+check "$([ "$(grep -c '^CONFIG_MISSING' "$work/trace")" = "0" ] && echo 0 || echo 1)" \
+    "the config named by --configfile exists at the moment of the call"
+
+captured=$(ls "$work/configs" 2>/dev/null | wc -l)
+check "$([ "$captured" = "3" ] && echo 0 || echo 1)" \
+    "one isolated config was captured per restore (saw $captured of 3)"
+bad_config=0
+for cfg in "$work/configs"/*.config; do
+    [ -f "$cfg" ] || continue
+    pkg=$(sed -n '/<packageSources>/,/<\/packageSources>/p' "$cfg")
+    aud=$(sed -n '/<auditSources>/,/<\/auditSources>/p' "$cfg")
+    # packageSources: cleared, then exactly one entry, and it is the empty dir.
+    printf '%s\n' "$pkg" | grep -q '<clear */>' || {
+        bad_config=1; echo "FAIL: packageSources is not cleared in $cfg"; }
+    n=$(printf '%s\n' "$pkg" | grep -c '<add ')
+    [ "$n" = "1" ] || {
+        bad_config=1; echo "FAIL: packageSources declares $n sources, want 1, in $cfg"; }
+    # ... and that one entry must be the very directory this run passed to
+    # --source, which the fake recorded as EMPTY at call time. Checking it
+    # against the trace rather than against a spelled-out path is what makes
+    # this an isolation check and not a string match.
+    value=$(printf '%s\n' "$pkg" | sed -n 's/.*<add [^>]*value="\([^"]*\)".*/\1/p' | head -1)
+    case "$value" in
+        /*) ;;
+        *) bad_config=1; echo "FAIL: the package source is not an absolute local path ($value) in $cfg" ;;
+    esac
+    grep -q "^SOURCE $value entries=0$" "$work/trace" || {
+        bad_config=1
+        echo "FAIL: the config's package source $value is not the empty directory this run passed to --source, in $cfg"; }
+    # auditSources: present and cleared, with nothing added back.
+    printf '%s\n' "$aud" | grep -q '<clear */>' || {
+        bad_config=1; echo "FAIL: auditSources is not cleared in $cfg -- --source does not cover it"; }
+    n=$(printf '%s\n' "$aud" | grep -c '<add ')
+    [ "$n" = "0" ] || {
+        bad_config=1; echo "FAIL: auditSources declares $n sources, want 0, in $cfg"; }
+    # and nothing that could be a feed survived from anywhere.
+    if grep -Eq 'https?://|nuget\.org|127\.0\.0\.1' "$cfg"; then
+        bad_config=1
+        echo "FAIL: a URL survived into the isolated config $cfg:"
+        grep -nE 'https?://|nuget\.org|127\.0\.0\.1' "$cfg"
+    fi
+done
+check "$bad_config" \
+    "the isolated config clears packageSources AND auditSources, names only the \
+run's own empty directory, and inherits no URL from the hostile user config"
+echo "MANAGED_PREREQ_NORMAL rc=$rc restores=$restores builds=$builds sources=$sources \
+configfile=$cfg_flags audit_off=$audit_off configs=$captured"
 rm -rf "$work"
 
 # ---- S2: a restore that FAILS stops the gate ---------------------------
@@ -298,5 +391,6 @@ if [ "$failures" != "0" ]; then
     exit 1
 fi
 echo "MANAGED_WARNING_PREREQ_PASS checks=$checks projects=$count \
-order=restore_before_build source=empty_local_only refusals=failed,absent,timeout"
+order=restore_before_build source=empty_local_only config=isolated \
+audit=cleared_and_disabled refusals=failed,absent,timeout"
 exit 0
