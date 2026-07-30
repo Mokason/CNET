@@ -639,6 +639,11 @@ static void btn_initialize_hidden_neuron(BinaryTransformNetwork *btn, size_t hid
     }
 }
 
+/* Scale of a newly grown neuron's output weights. Small enough not to
+   disturb the function learned so far, non-zero so the neuron has a
+   gradient path at all (see below). */
+#define BTN_NEW_NEURON_OUTPUT_SCALE 0.01
+
 static int btn_add_hidden_neuron(BinaryTransformNetwork *btn) {
     size_t hidden;
     size_t output;
@@ -650,8 +655,30 @@ static int btn_add_hidden_neuron(BinaryTransformNetwork *btn) {
     hidden = btn->hidden_count;
     btn_initialize_hidden_neuron(btn, hidden);
     if (hidden > 0) {
+        /* ROOT CAUSE of the growth plateau, and the reason `combine`
+           shipped weights that failed certification.
+
+           These output weights used to be set to exactly 0.0, so that
+           adding a neuron would not disturb the function learned so far.
+           It also made the neuron useless: the gradient reaching its
+           INPUT weights is
+
+               hidden_errors[h] = SUM_o output_deltas[o] * W_ho[h][o]
+
+           which is identically zero while every W_ho[h][o] is zero. The
+           new neuron's input weights therefore could not move until its
+           output weights had crawled off zero on their own, and stacking
+           more neurons behind it could not help. Measured: raising the
+           ceiling 64 -> 256 added 49 neurons and left the loss
+           BIT-IDENTICAL at 0.008750.
+
+           A small non-zero value restores the gradient path immediately
+           while keeping the perturbation to the learned function two
+           orders of magnitude below an ordinary weight, which is what
+           zeroing was protecting. */
         for (output = 0; output < btn->output_count; ++output) {
-            btn->hidden_output_weights[btn_hidden_output_index(btn, hidden, output)] = 0.0;
+            btn->hidden_output_weights[btn_hidden_output_index(btn, hidden, output)] =
+                random_weight() * BTN_NEW_NEURON_OUTPUT_SCALE;
         }
     }
     btn->hidden_count += 1;
@@ -1306,6 +1333,38 @@ static void btn_train_fast_epoch(BinaryTransformNetwork *btn,
  * caller seeded, so a run stays reproducible for a given seed.
  */
 #define BTN_TRAIN_STUCK_WINDOWS 64
+/* Consecutive windows that bought less than min_improvement WHILE a
+   neuron was still being added each time. Past this, growth is not the
+   answer and the escape engages even though the ceiling is not reached. */
+#define BTN_TRAIN_STALLED_GROWTH 16
+/* Windows a freshly restarted net is left alone to actually train.
+
+   Without this the restart is self-defeating: the fresh draw is worse
+   than the best-so-far by construction, so nothing resets the stuck
+   counter, and the next window shakes it and the one after restarts it
+   again -- it never accumulates the consecutive epochs it needs. Measured:
+   `increment` reaches MSE 0.0 at ANY fixed width, and 1000 epochs (one
+   window) is nowhere near enough to get there from a random start. */
+#define BTN_TRAIN_SETTLE_WINDOWS 24
+/* `adaptive_lr` was set once from btn->learning_rate and then never
+   touched -- adaptive in name only. A constant step of 0.8 cannot settle
+   into a narrow optimum; it oscillates across it, which is why every
+   demo primitive missed the target loss it asked for (measured on
+   pristine HEAD: combine 0.00172 against 0.0008, split 0.00188 against
+   0.0008, increment 0.00175 against 0.0015) while the code reported the
+   number without ever comparing it to the target.
+
+   A window that bought less than min_improvement now shortens the step.
+   The floor keeps it from freezing, and an escape restores mobility
+   because a restarted net needs to move again. */
+#define BTN_TRAIN_LR_DECAY 0.7
+#define BTN_TRAIN_LR_FLOOR 1e-3
+/* BTN_NEW_NEURON_OUTPUT_SCALE is defined above btn_add_hidden_neuron,
+   which is where it is used. */
+/* Smallest sample count that gets a held-out split (see the comment at
+   the split itself). Below this the growth signal uses the training
+   loss and no validation claim is made. */
+#define BTN_TRAIN_MIN_SPLIT_SAMPLES 64
 #define BTN_TRAIN_SHAKE 0.45
 #define BTN_TRAIN_PLATEAU (-2.0)
 
@@ -1356,7 +1415,40 @@ static void btn_weights_shake(BinaryTransformNetwork *btn, double amount) {
     }
 }
 
-double btn_train_dynamic(
+/* The whole-dataset loss a CALLER can reproduce: mean squared error over
+   EVERY sample, through the public btn_forward. The trainer used to report
+   an internal blend of a training loss (which secretly included the
+   held-out rows) and a validation loss (which added those same rows a
+   second time), so the number it returned matched no computation the
+   caller could perform. A measurement nobody can reproduce is not one. */
+static double btn_whole_set_loss(
+    BinaryTransformNetwork *btn,
+    const double *inputs,
+    const double *targets,
+    size_t sample_count
+) {
+    double total = 0.0;
+    size_t sample, output;
+    for (sample = 0; sample < sample_count; ++sample) {
+        const double *out = btn_forward(btn, inputs + sample * btn->input_count);
+        if (out == NULL) return BTN_TRAIN_LOSS_FAILED;
+        for (output = 0; output < btn->output_count; ++output) {
+            double error = targets[sample * btn->output_count + output] - out[output];
+            total += error * error;
+        }
+    }
+    return total / (double)(sample_count * btn->output_count);
+}
+
+int btn_train_loss_is_success(double loss) {
+    /* Finite and non-negative. BTN_TRAIN_LOSS_FAILED is +inf, so it fails
+       the finiteness test; the old -1.0 and -2.0 encodings fail the sign
+       test. NaN fails both, which is why this is a predicate and not an
+       inequality a caller writes by hand. */
+    return isfinite(loss) && loss >= 0.0;
+}
+
+static int btn_train_dynamic_core(
     BinaryTransformNetwork *btn,
     const double *inputs,
     const double *targets,
@@ -1364,7 +1456,8 @@ double btn_train_dynamic(
     size_t max_epochs,
     size_t growth_window,
     double target_loss,
-    double min_improvement
+    double min_improvement,
+    double *loss_out
 ) {
     size_t target_val_sample_count = 0;
     size_t val_sample_count = 0;
@@ -1393,20 +1486,43 @@ double btn_train_dynamic(
     double *v_ho = NULL, *v_ob = NULL, *v_ih = NULL, *v_hb = NULL;
     int fast = 0;
     size_t stuck_windows = 0;
+    size_t stalled_growth = 0;
+    size_t settle_windows = 0;
     size_t escapes = 0;
     double *best_weights = NULL;
     double best_loss = -1.0;
     size_t best_hidden = 0;
+    int converged = 0;
 
 
+    if (loss_out != NULL) *loss_out = BTN_TRAIN_LOSS_FAILED;
     if (btn == NULL || btn_is_adapter(btn) || inputs == NULL || targets == NULL || sample_count == 0) {
-        return -1.0;
+        return BTN_TRAIN_INVALID;
     }
     if (growth_window == 0) {
         growth_window = 1;
     }
 
-    if (sample_count > 1) {
+    /* A split is only made when holding rows out can mean something.
+
+       Once the held-out rows are GENUINELY held out -- never stepped on,
+       never counted in the training loss -- taking a fifth of a 16-row
+       set removes three rows of what is, for a CNET primitive, a
+       specification rather than a sample of some larger population.
+       `hex_value` maps 16 characters to 16 arbitrary values; there is no
+       structure in it to generalise from, so three unseen rows are three
+       rows the unit cannot possibly certify. Measured: hex_value fell to
+       13/16 and increment to 15/16 with a fifth held out, while the
+       256-row primitives were unaffected (combine 256/256).
+
+       Below the floor there is no split and no validation claim: the
+       growth signal falls back to the training loss, which is what it
+       effectively was before -- the difference is that the code now says
+       so instead of computing a `validation_loss` over rows it had
+       already fitted. Above the floor the split is real. 64 is the
+       smallest set where a fifth is a dozen rows, enough to be a signal
+       rather than noise. */
+    if (sample_count >= BTN_TRAIN_MIN_SPLIT_SAMPLES) {
         target_val_sample_count = sample_count / 5;
         if (target_val_sample_count == 0) {
             target_val_sample_count = 1;
@@ -1419,7 +1535,7 @@ double btn_train_dynamic(
     if (target_val_sample_count > 0) {
         validation_mask = calloc(sample_count, sizeof(*validation_mask));
         if (validation_mask == NULL) {
-            return -1.0;
+            return BTN_TRAIN_INVALID;
         }
 
         stride = sample_count / target_val_sample_count;
@@ -1436,7 +1552,16 @@ double btn_train_dynamic(
         }
     }
 
-    train_sample_count = sample_count;
+    /* The held-out rows are HELD OUT. They were previously walked by the
+       SGD loop and counted in train_sample_count, so the "validation" loss
+       measured rows the optimiser had already fitted -- a split that
+       measured nothing and could not detect overfitting by construction. */
+    train_sample_count = sample_count - val_sample_count;
+    if (train_sample_count == 0) {
+        /* Degenerate split: train on everything rather than on nothing. */
+        train_sample_count = sample_count;
+        val_sample_count = 0;
+    }
 
     output_deltas = calloc(btn->output_count, sizeof(*output_deltas));
     hidden_errors = calloc(btn->max_hidden_count, sizeof(*hidden_errors));
@@ -1462,13 +1587,22 @@ double btn_train_dynamic(
 
     /* CNET_TRAIN_FAST: byte-identical fast step, plain SGD only (see the
        comment block above btn_train_fast_on). */
-    fast = (mom == 0.0) && btn_train_fast_on();
+    /* btn_train_fast_epoch walks every sample and takes no mask, so it
+       cannot hold rows out. Correctness outranks an opt-in speed knob:
+       with a split present, take the exact loop that honours the mask. */
+    fast = (mom == 0.0) && btn_train_fast_on() && val_sample_count == 0;
 
     previous_loss = 0.0;
     for (sample = 0; sample < sample_count; ++sample) {
-        const double *train_input = inputs + (sample * btn->input_count);
-        const double *train_target = targets + (sample * btn->output_count);
-        const double *outputs = fast
+        const double *train_input;
+        const double *train_target;
+        const double *outputs;
+        if (validation_mask != NULL && validation_mask[sample]) {
+            continue;
+        }
+        train_input = inputs + (sample * btn->input_count);
+        train_target = targets + (sample * btn->output_count);
+        outputs = fast
             ? btn_forward_fast(btn, train_input)
             : btn_forward_full_precision(btn, train_input);
 
@@ -1516,10 +1650,16 @@ double btn_train_dynamic(
                 continue;
             }
             for (sample = 0; sample < sample_count; ++sample) {
-                const double *train_input = inputs + sample * btn->input_count;
-                const double *train_target = targets + sample * btn->output_count;
+                const double *train_input;
+                const double *train_target;
                 const double *outputs;
 
+                /* Never take a gradient step on a held-out row. */
+                if (validation_mask != NULL && validation_mask[sample]) {
+                    continue;
+                }
+                train_input = inputs + sample * btn->input_count;
+                train_target = targets + sample * btn->output_count;
                 outputs = btn_forward_full_precision(btn, train_input);
                 for (output = 0; output < btn->output_count; ++output) {
                     double error = train_target[output] - outputs[output];
@@ -1586,9 +1726,15 @@ double btn_train_dynamic(
 
         train_loss = 0.0;
         for (sample = 0; sample < sample_count; ++sample) {
-            const double *train_input = inputs + (sample * btn->input_count);
-            const double *train_target = targets + (sample * btn->output_count);
-            const double *outputs = fast
+            const double *train_input;
+            const double *train_target;
+            const double *outputs;
+            if (validation_mask != NULL && validation_mask[sample]) {
+                continue;
+            }
+            train_input = inputs + (sample * btn->input_count);
+            train_target = targets + (sample * btn->output_count);
+            outputs = fast
                 ? btn_forward_fast(btn, train_input)
                 : btn_forward_full_precision(btn, train_input);
 
@@ -1599,6 +1745,20 @@ double btn_train_dynamic(
         }
         train_loss /= (double)(train_sample_count * btn->output_count);
         if (train_loss <= target_loss) {
+            /* SNAPSHOT THE WINNER before leaving. Jumping straight to
+               cleanup let it restore an older, worse net over the one that
+               had just succeeded, and left a stale stuck counter to report
+               a plateau for a run that reached its target. */
+            converged = 1;
+            stuck_windows = 0;
+            if (best_weights == NULL) {
+                best_weights = malloc(btn_weight_cells(btn) * sizeof(double));
+            }
+            if (best_weights != NULL) {
+                btn_weights_copy(best_weights, btn);
+                best_hidden = btn->hidden_count;
+                best_loss = train_loss;
+            }
             previous_loss = train_loss;
             goto done;
         }
@@ -1639,11 +1799,12 @@ double btn_train_dynamic(
            down by a thousandth of a percent per window is still stuck and
            resetting on those never lets the escape escalate. */
         {
-        double full_loss = (val_sample_count > 0 && train_sample_count > 0)
-            ? (train_loss * (double)train_sample_count +
-               validation_loss * (double)val_sample_count) /
-              (double)(train_sample_count + val_sample_count)
-            : validation_loss;
+        /* Computed directly over every sample in one pass. The old blend
+           weighted train_loss and validation_loss -- but train_loss then
+           covered ALL rows including the held-out ones, so those rows were
+           counted twice and the "whole-set" number was not one. */
+        double full_loss = btn_whole_set_loss(btn, inputs, targets,
+                                              sample_count);
         if (best_loss < 0.0 || full_loss < best_loss) {
             int meaningful = best_loss < 0.0 ||
                 full_loss < best_loss * (1.0 - min_improvement);
@@ -1656,12 +1817,20 @@ double btn_train_dynamic(
                 best_hidden = btn->hidden_count;
                 if (meaningful) {
                     stuck_windows = 0;
+                    stalled_growth = 0;
                 }
             }
         }
         }
 
-        if (relative_improvement < min_improvement) {
+        if (settle_windows > 0) {
+            /* A freshly restarted net is training. Leave it alone. */
+            --settle_windows;
+        } else if (relative_improvement < min_improvement) {
+            /* Shorten the step before doing anything more drastic. */
+            if (adaptive_lr > btn->learning_rate * BTN_TRAIN_LR_FLOOR) {
+                adaptive_lr *= BTN_TRAIN_LR_DECAY;
+            }
             /* Engage only for a run that has NOT met the target it was
                given. A run already at or below its target has nothing to
                escape from, and perturbing it can only cost exemplars:
@@ -1669,7 +1838,27 @@ double btn_train_dynamic(
                a converged 16-exemplar primitive measurably loses rows to
                a restart it did not need. Those runs take the path below
                unchanged, and return exactly what they used to. */
-            if (btn_add_hidden_neuron(btn) != 0 && best_loss > target_loss) {
+            /* Growth that is not paying for itself is still a plateau.
+
+               The escape used to be reachable only once
+               btn_add_hidden_neuron FAILED, i.e. once the ceiling was
+               reached. A run with headroom therefore spent its whole
+               budget adding neurons that bought nothing and never tried
+               anything else: `increment` (ceiling 128) ran 160000 epochs,
+               grew to 91 neurons and finished at 0.00337 against a target
+               of 0.0015, with the escape never once engaged.
+
+               So count consecutive stalled windows even while growth is
+               still available, and once enough of them have gone by with
+               nothing to show, escape as well as grow. */
+            int growth_failed = btn_add_hidden_neuron(btn) != 0;
+            if (!growth_failed) {
+                ++stalled_growth;
+            }
+            if ((growth_failed ||
+                 stalled_growth >= BTN_TRAIN_STALLED_GROWTH) &&
+                best_loss > target_loss) {
+                stalled_growth = 0;
                 /* Growth is exhausted and this window bought too little to
                    be worth a neuron -- which is the plateau condition the
                    outer test already states. More
@@ -1680,22 +1869,54 @@ double btn_train_dynamic(
                    so escalating costs nothing. */
                 ++stuck_windows;
                 ++escapes;
+                /* A perturbed or restarted net has to be able to move
+                   again, so give the step back. */
+                adaptive_lr = btn->learning_rate;
                 if (best_weights != NULL) {
-                    if ((stuck_windows % 4u) == 0u) {
-                        /* Restart FROM THE BEST, not from wherever the
-                           random walk wandered to, then re-draw half the
-                           hidden layer. Perturbing the current point over
-                           and over just explores one basin; restarting
-                           from the best each time makes each attempt an
-                           independent draw around the best net found. */
-                        size_t redraw = 1 + btn->hidden_count / 2;
+                    /* Restart on EVERY escape, not every fourth.
+
+                       Gating on `stuck_windows % 4` meant the restart
+                       depended on a counter that only advances when an
+                       escape happens, so a run whose escapes are rare
+                       never restarted at all: traced on `increment`,
+                       stuck_windows reached 3 across the whole 160000
+                       epochs and the full-width restart -- the thing that
+                       actually works -- fired zero times, while the loss
+                       sat at 0.002749 from epoch 110000 onward.
+
+                       Restarting every time is safe here for two reasons
+                       that did not hold before: the best net is kept and
+                       returned unless the fresh draw beats it, and the
+                       fresh draw is given BTN_TRAIN_SETTLE_WINDOWS to
+                       train before anything perturbs it again. */
+                    if (1) {
+                        /* Restart the WHOLE hidden layer at the width
+                           reached, rather than re-drawing half of it
+                           around the best net found.
+
+                           Growing one neuron at a time from a single
+                           unit is what puts this net in a bad basin in
+                           the first place, and a redraw anchored on the
+                           best keeps it there: measured on pristine HEAD,
+                           every demo primitive missed the target loss it
+                           asked for -- combine 0.00172 against 0.0008.
+                           The same architecture initialised at full width
+                           and trained plainly reaches 0.0000132 in 500
+                           epochs, sixty times better than the target. The
+                           width was never the problem; the schedule that
+                           arrived at it was.
+
+                           This can cost nothing, because best_weights is
+                           kept and is what gets returned unless the fresh
+                           draw beats it. */
                         size_t k;
-                        btn->hidden_count = best_hidden;
-                        btn_weights_restore(btn, best_weights);
-                        for (k = 0; k < redraw; ++k) {
-                            size_t victim = (size_t)rand() % btn->hidden_count;
-                            btn_initialize_hidden_neuron(btn, victim);
+                        for (k = 0; k < btn->hidden_count; ++k) {
+                            btn_initialize_hidden_neuron(btn, k);
                         }
+                        for (k = 0; k < btn->output_count; ++k) {
+                            btn->output_bias[k] = random_weight();
+                        }
+                        settle_windows = BTN_TRAIN_SETTLE_WINDOWS;
                     } else {
                         btn_weights_shake(btn, BTN_TRAIN_SHAKE);
                     }
@@ -1715,10 +1936,12 @@ done:
        perturbed -- a run that never escaped returns exactly what it
        always did. */
     if (best_weights != NULL) {
-        if (escapes > 0 && best_loss >= 0.0 && best_hidden > 0) {
+        /* `converged` runs already hold the winning weights, and restoring
+           over them is exactly the defect this guards: a run that crossed
+           its target could be handed back an older, worse net. */
+        if (!converged && escapes > 0 && best_loss >= 0.0 && best_hidden > 0) {
             btn->hidden_count = best_hidden;
             btn_weights_restore(btn, best_weights);
-            previous_loss = best_loss;
         }
         free(best_weights);
         best_weights = NULL;
@@ -1729,10 +1952,27 @@ done:
        signal that anything had gone wrong, which is exactly how `combine`
        shipped weights that failed certification while the demo printed a
        healthy-looking number. */
-    if (stuck_windows >= BTN_TRAIN_STUCK_WINDOWS) {
-        return BTN_TRAIN_PLATEAU;
+    /* loss_out is ALWAYS the whole-set loss of the net actually handed
+       back, through the public forward, whatever the status. A caller
+       that wants a whole-set bar checks it; a caller that wants to know
+       whether the run did what it was asked reads the status. */
+    if (loss_out != NULL) {
+        *loss_out = btn_whole_set_loss(btn, inputs, targets, sample_count);
     }
-    return previous_loss;
+    /* SUCCESS means one thing: the run reached the target it was given,
+       on the data it was allowed to train on. Anything else -- stuck on a
+       plateau, or simply out of epochs -- did NOT do what it was asked,
+       and reporting that as success is how an uncertifiable net gets
+       persisted with a healthy-looking number beside it.
+
+       The held-out rows are not part of this question. They were never
+       trained on, so requiring the WHOLE-set loss to meet the target
+       would mean the split could only ever be reported as failure. What
+       they are for is the growth and escape signal above; what they cost
+       is that loss_out (whole set) can legitimately exceed target_loss on
+       a successful run. That is a real generalisation gap, reported
+       rather than hidden. */
+    return converged ? BTN_TRAIN_OK : BTN_TRAIN_PLATEAU_STATUS;
 
 fail:
     free(output_deltas);
@@ -1740,7 +1980,46 @@ fail:
     free(validation_mask);
     free(v_ho); free(v_ob); free(v_ih); free(v_hb);
     free(best_weights);
-    return -1.0;
+    return BTN_TRAIN_INVALID;
+}
+
+int btn_train_dynamic_checked(
+    BinaryTransformNetwork *btn,
+    const double *inputs,
+    const double *targets,
+    size_t sample_count,
+    size_t max_epochs,
+    size_t growth_window,
+    double target_loss,
+    double min_improvement,
+    double *loss_out
+) {
+    return btn_train_dynamic_core(btn, inputs, targets, sample_count,
+                                  max_epochs, growth_window, target_loss,
+                                  min_improvement, loss_out);
+}
+
+double btn_train_dynamic(
+    BinaryTransformNetwork *btn,
+    const double *inputs,
+    const double *targets,
+    size_t sample_count,
+    size_t max_epochs,
+    size_t growth_window,
+    double target_loss,
+    double min_improvement
+) {
+    double loss = BTN_TRAIN_LOSS_FAILED;
+    int status = btn_train_dynamic_core(btn, inputs, targets, sample_count,
+                                        max_epochs, growth_window,
+                                        target_loss, min_improvement,
+                                        &loss);
+    /* Failure must not be representable as a good loss. The previous
+       encodings were -2.0 and -1.0, and every threshold check in this tree
+       is `loss <= bar`, which a negative satisfies. +inf satisfies no
+       finite bar and prints as `inf`. */
+    if (status != BTN_TRAIN_OK) return BTN_TRAIN_LOSS_FAILED;
+    return loss;
 }
 
 int btn_predict_bits(

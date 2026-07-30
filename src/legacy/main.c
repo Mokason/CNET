@@ -71,6 +71,93 @@ static void emit_contract(const char *name,
     free(canon);
 }
 
+/* Does this net reproduce EVERY exemplar it was trained against, under the
+   same predicate certification uses -- validate against the output port,
+   canonicalize, compare exactly? */
+static int btn_reproduces_exemplars(BinaryTransformNetwork *btn,
+                                    const double *inputs,
+                                    const double *targets,
+                                    size_t exemplars) {
+    size_t i, p, out_total = 0;
+    if (btn == NULL || inputs == NULL || targets == NULL) return 0;
+    for (p = 0; p < btn->output_port_count; ++p) {
+        out_total += btn->output_ports[p].field_width *
+                     btn->output_ports[p].field_count;
+    }
+    if (out_total == 0) return 0;
+    for (i = 0; i < exemplars; ++i) {
+        const double *raw = btn_forward(btn, inputs + i * btn->input_count);
+        size_t offset = 0;
+        if (raw == NULL) return 0;
+        for (p = 0; p < btn->output_port_count; ++p) {
+            size_t tot = btn->output_ports[p].field_width *
+                         btn->output_ports[p].field_count;
+            double want[64], got[64];
+            size_t k;
+            if (tot > 64) return 0;
+            if (!port_validate(btn->output_ports[p], raw + offset)) return 0;
+            if (port_canonicalize(btn->output_ports[p], raw + offset,
+                                  got) != 0) return 0;
+            if (port_canonicalize(btn->output_ports[p],
+                                  targets + i * out_total + offset,
+                                  want) != 0) return 0;
+            for (k = 0; k < tot; ++k) {
+                if (got[k] != want[k]) return 0;
+            }
+            offset += tot;
+        }
+    }
+    return 1;
+}
+
+/* May this net be written to disk?
+
+   It used to be written unconditionally, with its loss printed beside it.
+   That is how `combine` shipped weights that failed certification while the
+   demo printed a healthy-looking number: nothing here ever looked at the
+   training result, and the result could not have been trusted anyway,
+   because failure was encoded as -2.0 and every threshold check in this
+   tree is `loss <= bar`.
+
+   Now: a run that reached its target may persist. A run that did NOT may
+   persist only if it independently reproduces every exemplar -- the
+   stronger, separate bar that `make certify` applies. A run that produced
+   nothing usable may not persist at all. Every case says which it was.  */
+static int persist_allowed(const char *name, double loss, double target,
+                           BinaryTransformNetwork *btn,
+                           const double *inputs, const double *targets,
+                           size_t exemplars) {
+    /* Three conditions, all required, none of them substitutes for
+       another:
+         1. the training result is a real measurement -- finite and
+            non-negative, so neither the old -2.0 plateau encoding nor
+            the +inf failure value can pass;
+         2. it meets the target THIS demo asked for, unchanged;
+         3. the net independently reproduces every exemplar under the
+            certification predicate.
+       Certification is an ADDITIONAL bar, not a way around a training
+       run that did not do what it was asked. */
+    int measured = btn_train_loss_is_success(loss);
+    int met_target = measured && loss <= target;
+    int reproduces = btn_reproduces_exemplars(btn, inputs, targets,
+                                             exemplars);
+    if (measured && met_target && reproduces) {
+        printf("TRAIN_STATUS name=%s status=reached_target loss=%.8f "
+               "target=%.8f exemplars=reproduced persist=allowed\n",
+               name, loss, target);
+        return 1;
+    }
+    printf("TRAIN_STATUS name=%s status=NOT_reached_target "
+           "measured=%d met_target=%d exemplars_reproduced=%d "
+           "target=%.8f persist=REFUSED\n",
+           name, measured, met_target, reproduces, target);
+    fprintf(stderr,
+            "refusing to persist %s: measured=%d met_target=%d "
+            "reproduces_exemplars=%d\n",
+            name, measured, met_target, reproduces);
+    return 0;
+}
+
 static void build_binary_hex_data(double inputs[16][4], double targets[16]) {
     int value;
     int bit;
@@ -515,6 +602,13 @@ int main(int argc, char **argv) {
     btn_predict_bits(&increment, inc_inputs[15], increment_bits, sizeof(increment_bits));
     printf("1111 + 1 -> %s\n", increment_bits);
 
+    if (!persist_allowed("increment", increment_loss, 0.0015, &increment,
+                         &inc_inputs[0][0], &inc_targets[0][0], 16)) {
+        nn_free(&nn);
+        nn_free(&frozen);
+        btn_free(&increment);
+        return EXIT_FAILURE;
+    }
     if (btn_save(&increment, "increment_weights.txt") != 0) {
         fprintf(stderr, "Could not persist increment layer.\n");
         nn_free(&nn);
@@ -565,6 +659,15 @@ int main(int argc, char **argv) {
            (unsigned long)combine_net.hidden_count);
     printf("combine final loss: %.6f\n", combine_loss);
 
+    if (!persist_allowed("combine", combine_loss, 0.0008, &combine_net,
+                         &combine_inputs[0][0], &combine_targets[0][0],
+                         256)) {
+        nn_free(&nn);
+        nn_free(&frozen);
+        btn_free(&increment);
+        btn_free(&combine_net);
+        return EXIT_FAILURE;
+    }
     if (btn_save(&combine_net, "combine_weights.txt") != 0) {
         fprintf(stderr, "Could not persist combine layer.\n");
         nn_free(&nn);
@@ -620,6 +723,16 @@ int main(int argc, char **argv) {
            (unsigned long)split_net.hidden_count);
     printf("split final loss: %.6f\n", split_loss);
 
+    if (!persist_allowed("split", split_loss, 0.0008, &split_net,
+                         &combine_inputs[0][0], &combine_targets[0][0],
+                         256)) {
+        nn_free(&nn);
+        nn_free(&frozen);
+        btn_free(&increment);
+        btn_free(&combine_net);
+        btn_free(&split_net);
+        return EXIT_FAILURE;
+    }
     if (btn_save(&split_net, "split_weights.txt") != 0) {
         fprintf(stderr, "Could not persist split layer.\n");
         nn_free(&nn);
@@ -711,6 +824,15 @@ int main(int argc, char **argv) {
         0.01
     );
 
+    if (!persist_allowed("hex_value", hex_value_loss, 0.003, &hex_values,
+                         &hex_value_inputs[0][0],
+                         &hex_value_targets[0][0], 16)) {
+        nn_free(&nn);
+        nn_free(&frozen);
+        btn_free(&increment);
+        btn_free(&hex_values);
+        return EXIT_FAILURE;
+    }
     if (btn_save(&hex_values, hex_value_weights_path) != 0 ||
         btn_load(&frozen_hex_values, hex_value_weights_path) != 0) {
         fprintf(stderr, "Could not persist hex value layer.\n");

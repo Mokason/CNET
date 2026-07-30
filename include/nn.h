@@ -228,6 +228,64 @@ int btn_train(
     size_t epochs
 );
 
+/* ---- dynamic training: status is a STATUS, not a number ------------
+ *
+ * btn_train_dynamic returns a loss, and for a long time it also smuggled
+ * failure into that same double as -2.0 (plateau) or -1.0 (bad argument).
+ * Every threshold check in this tree is written `loss <= bar`, and a
+ * negative satisfies every positive bar -- so the one value meaning THIS
+ * NET IS NOT FIT TO CERTIFY read as the best result possible, and
+ * src/legacy/main.c persisted such a net without a word.
+ *
+ * New code should call btn_train_dynamic_checked and branch on the
+ * status. The double-returning form is kept for the ~110 existing call
+ * sites and now returns a value that CANNOT satisfy any finite threshold
+ * (see btn_train_loss_is_success).
+ */
+typedef enum {
+    /* Trained. *loss_out is the whole-dataset mean squared error,
+       computed through the PUBLIC btn_forward, so a caller can
+       reproduce it exactly. */
+    BTN_TRAIN_OK = 0,
+    /* Growth was exhausted, escapes were tried, and no new best appeared
+       for BTN_TRAIN_STUCK_WINDOWS consecutive windows. The net is the
+       best one seen, but it did not reach the target and must not be
+       persisted or certified as though it had. */
+    BTN_TRAIN_PLATEAU_STATUS = 1,
+    /* NULL/adapter btn, no samples, or an allocation failure. Nothing
+       was trained and *loss_out is not a measurement. */
+    BTN_TRAIN_INVALID = 2
+} BtnTrainStatus;
+
+/* The failure value the compatibility form returns: positive infinity.
+   It is ordered (unlike NaN, every comparison with which is false, so
+   `loss > bar` would ALSO be false and an `if (loss > bar) reject` would
+   pass it), it can never satisfy `loss <= bar` for any finite bar, and it
+   prints as `inf` rather than as a plausible measurement. */
+#define BTN_TRAIN_LOSS_FAILED (1.0 / 0.0)
+
+/* Train, and say what happened. loss_out may be NULL. */
+int btn_train_dynamic_checked(
+    BinaryTransformNetwork *btn,
+    const double *inputs,
+    const double *targets,
+    size_t sample_count,
+    size_t max_epochs,
+    size_t growth_window,
+    double target_loss,
+    double min_improvement,
+    double *loss_out
+);
+
+/* THE predicate for a caller holding only the double: 1 when this value
+   is a real loss that met `target`, 0 for every failure encoding and for
+   anything non-finite. A caller that persists or certifies on success
+   must use this rather than writing `loss <= target` itself. */
+int btn_train_loss_is_success(double loss);
+
+/* Compatibility form. Returns the whole-dataset loss on success and
+   BTN_TRAIN_LOSS_FAILED on plateau or invalid argument -- never a
+   negative, and never a finite number that could pass for a good run. */
 double btn_train_dynamic(
     BinaryTransformNetwork *btn,
     const double *inputs,

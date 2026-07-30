@@ -2216,3 +2216,215 @@ make knowledge_accumulation_bench   0
 make knowledge_composition_bench    0
 make capsule_scope_lineage          0
 ```
+
+## F2 + F3 — trainer status, snapshot, and validation correctness (HIGH + MEDIUM)
+
+Five defects, all in `btn_train_dynamic`:
+
+* **F2a** reaching `target_loss` jumped to cleanup WITHOUT snapshotting the
+  successful net, so cleanup could restore older, worse weights over a run that
+  had just succeeded, and a stale stuck counter could report a plateau for it;
+* **F2b** the failure sentinel was an undocumented `-2.0`. Every threshold check
+  in this tree is `btn_train_dynamic(...) <= bar` — about twenty of them — and
+  a negative satisfies every positive bar, so the one value meaning THIS NET IS
+  NOT FIT TO CERTIFY read as the best result possible. `src/legacy/main.c` then
+  persisted such a net unconditionally;
+* **F3a** the held-out rows were still trained on: the SGD loop walked every
+  sample and `train_sample_count` stayed at the full count;
+* **F3b** the whole-set loss double-counted those rows, because `train_loss`
+  already covered them and the validation term was added again;
+* the old impossible-case test only checked `loss != 0`, so `-2.0` false-greened.
+
+### RED — behavioural, not a compile error
+
+The new API was first implemented as a SHIM over the existing code, so the RED
+shows what the pre-fix trainer actually did:
+
+```
+$ make btn_train_plateau
+BTN_PLATEAU_RUN seed=91 ... status=0 reported=0.0017183183750214205 recomputed=0.0017188275264164714 certifiable=256/256
+FAIL: the reported loss is exactly a fresh whole-dataset recomputation
+FAIL: a run reporting success actually met the target it was given
+FAIL: the control's reported loss is reproducible too
+BTN_PLATEAU_IMPOSSIBLE status=0 reported=0.15534415599324192
+FAIL: an unlearnable target does not report success
+BTN_PLATEAU_COMPAT value=0.15534415599324192 finite=1
+FAIL: the failure value is not a plausible loss a report could print as if it were a measurement
+BTN_PLATEAU_HELDOUT status=0 reported=0.080094359345505392 recomputed=0.064040073542628889
+FAIL: a held-out split still reports a reproducible loss
+FAIL: the documented success predicate refuses a plateau result
+BTN_TRAIN_PLATEAU_FAIL checks=33 failures=7
+##EXIT=2
+```
+
+`reported=0.0800` vs `recomputed=0.0640` is F3b visible in the numbers: the
+held-out rows counted twice.
+
+### GREEN
+
+```
+$ make btn_train_plateau
+BTN_PLATEAU_RUN seed=91 max_hidden=64 hidden_used=24 status=0 reported=9.6426205171653065e-06 recomputed=9.6426205171653065e-06 certifiable=256/256
+BTN_PLATEAU_CONTROL seed=123 hidden_used=24 status=0 reported=7.2030096578960136e-06 certifiable=256/256 trained=205/205 heldout=51/51
+BTN_PLATEAU_IMPOSSIBLE status=1 reported=0.16000455713028103
+BTN_PLATEAU_COMPAT value=inf finite=0
+BTN_PLATEAU_HELDOUT status=1 reported=0.064000357194244975 recomputed=0.064000357194244975
+BTN_SPLIT_RULE below_n=63 status=1 loss=0.0083103128395549068 | at_floor_n=64 status=0 loss=0.0099931170714829317
+BTN_PLATEAU_SEEDS tried=8 succeeded=8
+BTN_TRAIN_PLATEAU_PASS checks=38 certifiable=256/256 status=checked loss=reproducible heldout=excluded
+##EXIT=0
+```
+
+### The API
+
+* `btn_train_dynamic_checked(..., double *loss_out)` returns a documented
+  `BtnTrainStatus`: `BTN_TRAIN_OK`, `BTN_TRAIN_PLATEAU_STATUS`,
+  `BTN_TRAIN_INVALID`. `*loss_out` is ALWAYS the whole-set loss of the net
+  actually handed back, computed through the PUBLIC `btn_forward`, so a caller
+  can reproduce it exactly — asserted bit-for-bit by the gate.
+* `BTN_TRAIN_OK` means one thing: the run reached the target it was given, on
+  the data it was allowed to train on.
+* The compatibility `double btn_train_dynamic(...)` returns
+  `BTN_TRAIN_LOSS_FAILED` (+infinity) on any non-success. Infinity rather than
+  NaN because it is ORDERED: with NaN, `loss > bar` is also false, so an
+  `if (loss > bar) reject` would pass it. Infinity satisfies no finite bar,
+  fails `< 0`, and prints as `inf`.
+* `btn_train_loss_is_success(double)` is THE predicate for a caller holding
+  only the double. Tested against +inf, -1.0 and an ordinary loss.
+
+### Validation rows are genuinely excluded
+
+Excluded from the SGD loop, from `train_sample_count`, and from the training
+loss. `btn_train_fast_epoch` takes no mask and cannot hold rows out, so the
+fast path is disabled whenever a split exists — correctness outranks an opt-in
+speed knob. The whole-set loss is computed once over every row, not blended
+from two overlapping sets.
+
+**No second full-data phase was added.** An earlier attempt refitted on
+everything after the split phase; that trains on validation rows and was
+removed on instruction.
+
+### The split floor, and why it is not a fudge
+
+A fifth of a 16-row set is three rows, and for a CNET primitive the exemplars
+are a SPECIFICATION, not a sample of a population: `hex_value` maps 16
+characters to 16 arbitrary values, so three unseen rows are three rows the unit
+cannot possibly reproduce. Measured: with a fifth held out, `hex_value` fell to
+13/16 and `increment` to 15/16 while the 256-row primitives were unaffected.
+
+So below `BTN_TRAIN_MIN_SPLIT_SAMPLES` (64) there is **no split and no
+validation claim** — those rows are trained on like any other and are never
+called held-out. At or above it the split is real. The boundary is TESTED, not
+just documented: both fixtures carry a contradiction at index 2, the first
+index the mask takes.
+
+```
+BTN_SPLIT_RULE below_n=63 status=1 ... | at_floor_n=64 status=0 ...
+```
+
+Below the floor the contradictory row is trained on and no run can report
+success; at the floor it is excluded from training and the optimiser converges
+on what remains. The whole-set loss contains the contradiction on both sides.
+
+### The demo targets had never been met by any version
+
+This is the finding behind the persistence work. Measured on **pristine HEAD**,
+with the demo's own configurations:
+
+```
+PRISTINE increment: loss=0.00175000 hidden=91  target=0.0015  MISS
+PRISTINE split:     loss=0.00188305 hidden=64  target=0.0008  MISS
+PRISTINE combine:   loss=0.00171832 hidden=64  target=0.0008  MISS
+```
+
+`make certify` passed anyway, because certification is a coarser bit-level
+predicate than the MSE target — and because nothing ever compared the returned
+loss to the target it was given.
+
+The growth schedule was the whole cause. The same architectures, initialised at
+full width and trained plainly, reach far below their targets almost at once:
+
+```
+combine, 64 hidden from the start, 500 epochs: mse=0.00001316   (target 0.0008)
+increment, any fixed width, 40000 epochs:      mse=0.00000000   (target 0.0015)
+```
+
+Three changes, each traced to that evidence:
+
+1. **`btn_add_hidden_neuron` no longer zeroes the new neuron's output weights.**
+   The gradient reaching a new neuron's INPUT weights is
+   `SUM_o output_deltas[o] * W_ho[h][o]`, identically zero while every
+   `W_ho[h][o]` is zero — the documented reason capacity added to a plateau
+   changed nothing. A small non-zero scale restores the gradient path while
+   keeping the perturbation two orders of magnitude below an ordinary weight.
+2. **The escape restarts the WHOLE hidden layer at the width reached**, instead
+   of restoring the best and re-drawing half of it. Anchoring on the best keeps
+   the net in the basin the growth schedule put it in. Safe because the best
+   snapshot is kept and returned unless the fresh draw beats it.
+3. **The restart fires on every escape, and a fresh net is left alone for
+   `BTN_TRAIN_SETTLE_WINDOWS` windows.** Traced on `increment`: gating the
+   restart on `stuck_windows % 4` meant it fired ZERO times in 160000 epochs
+   while the loss sat at 0.002749 from epoch 110000 onward. Without the settling
+   period the restart is self-defeating — a fresh draw is worse than the best by
+   construction, so nothing resets the counter and the next window shakes it
+   before it can train.
+
+Result, with **no seed, target, floor or exemplar change**:
+
+```
+increment: status=0 loss=0.00021869 h=20 target=0.0015 OK
+split:     status=0 loss=0.00000757 h=23 target=0.0008 OK
+combine:   status=0 loss=0.00000964 h=24 target=0.0008 OK
+hex_value: status=0 loss=0.00226470 h=4  target=0.003  OK
+```
+
+All four now genuinely reach the targets the demo asks for — none of them ever
+had before — and with a quarter of the neurons.
+
+### Caller audit
+
+Every `btn_train_dynamic` call site was reviewed. About twenty use
+`... <= 0.05`; all are fixed at a stroke because failure is now +infinity rather
+than a negative. The persisting/certifying caller is `src/legacy/main.c`, which
+wrote weights unconditionally. It now requires all three of:
+
+1. the result is a real measurement (`btn_train_loss_is_success`);
+2. it meets the **exact unchanged target** for that primitive;
+3. the net independently reproduces every exemplar under the certification
+   predicate.
+
+Certification is an ADDITIONAL bar, never a substitute for a training run that
+did not do what it was asked.
+
+```
+TRAIN_STATUS name=increment status=reached_target loss=0.00021869 target=0.00150000 exemplars=reproduced persist=allowed
+TRAIN_STATUS name=combine   status=reached_target loss=0.00000964 target=0.00080000 exemplars=reproduced persist=allowed
+TRAIN_STATUS name=split     status=reached_target loss=0.00000757 target=0.00080000 exemplars=reproduced persist=allowed
+TRAIN_STATUS name=hex_value status=reached_target loss=0.00226470 target=0.00300000 exemplars=reproduced persist=allowed
+  hex_value    vs hex_value_contract      : CERTIFIED (16/16)
+  increment    vs increment_contract      : CERTIFIED (16/16)
+  combine      vs combine_contract        : CERTIFIED (256/256)
+  split        vs split_contract          : CERTIFIED (256/256)
+CERTIFY PASS
+##EXIT=0
+```
+
+### The three authorized CRLF paths
+
+```
+src/nn.c           112203 bytes  CRLF 3197  lone LF 0  lone CR 0
+include/nn.h        17764 bytes  CRLF  475  lone LF 0  lone CR 0
+src/legacy/main.c   42205 bytes  CRLF 1186  lone LF 0  lone CR 0
+
+git diff --cached --numstat
+  58    0   include/nn.h        (purely additive)
+  122   0   src/legacy/main.c   (purely additive)
+  322  43   src/nn.c
+git -c core.whitespace=cr-at-eol diff --check   ->  exit 0
+```
+
+All 43 removed lines in `src/nn.c` are inside `btn_train_dynamic` and
+`btn_add_hidden_neuron`, and every one was quoted verbatim by a patch anchor —
+the patcher refuses to write otherwise. Staged with
+`git hash-object -w --no-filters`, so the raw CRLF bytes are what landed in the
+index; staged blob and worktree compare identical for all three.
