@@ -1313,3 +1313,175 @@ OWN_LEARNING_HEALTH_STRICT_PASS checks=45      # exit 0
 45 checks, up from 33. `make own_learning_health` still ends
 `OWN_LEARNING_HEALTH_BLOCKED reason=no_deployed_base` on this host — unchanged
 and still not a PASS.
+
+## R9 — Adapter baselines must be causal
+
+### Defect
+
+The declared `adapter_on_baseline` / `adapter_off_baseline` were only required
+to satisfy `on > off` — a condition any pair of numbers in the right order
+meets, so both could be edited freely and the certificate stayed green. Three
+more fields (`description`, `note`, and — as it turned out — one `query`) were
+read by nobody at all.
+
+The general problem: **one mutation per capability proves the fixture is
+consumed; it does not prove every declared field is causal.** A field nobody
+reads sits in the fixture looking like a commitment.
+
+### RED — FRESH
+
+`tests/test_capability_fixture_causality.py` now enumerates a mutation for every
+declared field name and every declared case, and refuses to pass if any is
+uncovered. Running it first reported exactly which fields had no mutation:
+
+```
+FAIL: calibrated_abstention: every declared field has a mutation (uncovered: [(0, 'reliability'), (0, 'samples'), (1, 'expected'), (1, 'margin'), (1, 'reliability'), (1, 'samples'), (2, 'evidence_refs')])
+FAIL: cce_classification: ... (uncovered: [(0, 'minimum_lift_over_majority')])
+FAIL: honest_memory_retrieval: ... (uncovered: [(0, 'query')])
+FAIL: hybrid_skill_serve: ... (uncovered: [(0, 'query'), (1, 'backend'), (1, 'query')])
+CAPABILITY_FIXTURE_CAUSALITY_FAIL failures=4
+```
+
+Adding the mutations then exposed the fields that were genuinely decorative:
+
+```
+FAIL: hybrid_skill_serve: mutating case[0].query -> 'totally different words entirely' must fail the evaluator (rc=0)
+```
+
+### Fix
+
+* **`json_toolcall_adapter`**: the measured arms are compared to the declared
+  baselines within a declared `baseline_tolerance` (`HELDOUT_BASELINE_DRIFT` on
+  failure). `skill` and `held_out_pairs_from` are compared to what the binary
+  actually is and where its pairs actually come from. `description` and `note`
+  are removed — prose cannot be made causal, and the manifest's
+  `failure_envelope` is where that narrative belongs.
+* **`hybrid_skill_serve`**: binding a query to a proposal *derived from that
+  query* proves nothing, because both move together. The fixture now declares
+  the `expected_proposals` the run must produce, so mutating either the query or
+  the expectation breaks the match. The residual case's `query` is **removed**:
+  that path publishes `residual-token:<id>` chosen by the injected top-k
+  callback, so nothing observable is a function of the query text, and a
+  declared field there would be a claim the fixture cannot keep.
+* Coverage is checked at **field-name** level plus **per-case** level, not per
+  (case, field) slot. That is deliberate and stated in the gate: an input can
+  only flip the verdict in some cases — `reliability` cannot flip a case whose
+  margin already forces abstention — and demanding a verdict-flipping mutation
+  in every slot would mean deleting real inputs to satisfy the gate.
+
+### GREEN — FRESH
+
+```
+python3 tests/test_capability_fixture_causality.py json_toolcall_adapter
+CAPABILITY_FIXTURE_CAUSALITY_PASS capabilities=1 mutations_rejected=8 scope=selected   # exit 0
+```
+
+All eight retained `json_toolcall_adapter` fields are individually causal,
+including both baselines.
+
+---
+
+## R10 — `make certify`: root-caused, and BLOCKED on a CRLF-baseline file
+
+**Status: STOPPED AND REPORTED, as instructed. Not fixed, not worked around.**
+
+### The failure, reproduced fresh on this branch
+
+```
+make certify          # exit 2
+binary transform learned nibble-pair join (combine):
+combine hidden neurons selected: 64
+combine final loss: 0.008750
+FAIL: combine did not certify against combine_contract.
+  hex_value    vs hex_value_contract      : CERTIFIED (16/16)
+  increment    vs increment_contract      : CERTIFIED (16/16)
+  combine      vs combine_contract        : DENIED (240/256)
+  split        vs split_contract          : CERTIFIED (256/256)
+CERTIFY FAIL.
+```
+
+### Root cause — established, not guessed
+
+A read-only probe replayed `btn_certify`'s exact per-exemplar logic
+(`port_validate` → `port_canonicalize` → compare) against the saved weights and
+contract. All 16 failures are one defect, not sixteen:
+
+```
+FAILEX s= 24 in=0x18 validate=1 canon_match=0 raw= 0.1000 0.0000 0.0000 0.0000 0.9000 0.1000 0.1000 0.1000 want= 0.0 0.0 0.0 1.0 1.0 0.0 0.0 0.0
+FAILEX s= 28 in=0x1C validate=1 canon_match=0 raw= 0.1000 0.0000 0.0000 0.0000 0.8998 1.0000 0.1000 0.1000 want= 0.0 0.0 0.0 1.0 1.0 1.0 0.0 0.0
+... 14 more, identical shape
+failing=16
+```
+
+* Every failure passes `port_validate` — nothing is in the ambiguous band. The
+  net is **confidently wrong**.
+* Every failure is the **same output bit**, index 3, emitting `0.0000` where
+  `1.0` is required.
+* The failing inputs are exactly the 16 values with `(v & 0x1B) == 0x18` — bit 3
+  and bit 4 both set, low two bits clear. `combine` is the identity per bit, so
+  the net simply never learned bit 3 in that neighbourhood.
+
+Two controlled experiments in a read-only scratch extraction:
+
+| Change | Neurons | Final loss | Verdict |
+|---|---|---|---|
+| baseline (`max_hidden=64`, seed `91u`) | 64 | 0.008750 | DENIED (240/256) |
+| `max_hidden` 64 → **256** | 113 | **0.008750** (bit-identical) | DENIED (240/256) |
+| seed `91u` → `7u` | 64 | 0.027500 | DENIED (192/256) |
+| seed `91u` → `123u` | 64 | 0.002188 | **CERTIFIED (256/256)** |
+| seed `91u` → `20260730u` | 64 | 0.001875 | **CERTIFIED (256/256)** |
+
+**The root cause is `btn_train_dynamic` converging to a seed-dependent local
+minimum it cannot escape.** The capacity experiment is the decisive one: raising
+the ceiling let the trainer add 49 more neurons and the loss did not move by a
+single bit. Adding capacity to a plateau changes nothing, which is a trainer
+defect, not a hyperparameter that wants tuning.
+
+### Why this stops here
+
+The fix has to make the trainer escape that plateau — for example, re-seeding a
+neuron whose addition produced no loss improvement, or detecting the plateau and
+restarting from a different initialization. That code is
+`btn_train_dynamic` / `btn_add_hidden_neuron` in **`src/nn.c`**. The only other
+place a legitimate fix could live is the demo's training setup in
+**`src/legacy/main.c`**, and the certifier itself is **`tests/certify_demo.c`**.
+
+```
+PROTECTED  src/legacy/main.c
+PROTECTED  src/nn.c
+PROTECTED  tests/certify_demo.c
+PROTECTED  include/nn.h
+editable   src/contract/contract.c
+editable   Makefile
+```
+
+**All four candidate files are on `/tmp/cnet-integrity-lineending-baseline.json`.**
+The instruction is explicit — stop before editing a listed path and report the
+exact need — so this slice stops here.
+
+The two things I could have done instead are both forbidden and both wrong:
+
+* changing the seed to `123u` would make `make certify` green in one line. It is
+  tuning around the defect: the trainer would still have a plateau it cannot
+  escape, and the next primitive to land on a bad initialization would fail the
+  same way.
+* relaxing `port_validate`, `port_canonicalize` or the certification comparison
+  would be increasing permissiveness globally to hide a confidently wrong bit.
+
+### Exact need, to unblock
+
+1. Permission to edit **`src/nn.c`** (and possibly `include/nn.h` if a new
+   trainer entry point is wanted), with the CRLF/index containment handled
+   deliberately — a targeted edit, **not** a whole-file line-ending
+   normalization, which is what the containment exists to prevent.
+2. The intended change: in `btn_train_dynamic`, when adding a hidden neuron does
+   not reduce loss by more than epsilon over its patience window, re-initialize
+   that neuron from a fresh draw rather than keeping a dead one; and surface a
+   non-zero return when training ends on a plateau above the target loss, so a
+   demo cannot silently persist an uncertifiable net.
+3. Acceptance, unchanged: `make certify` exits 0 with all four primitives
+   certified and `combine` at 256/256, with the exemplars, the contract, the
+   port semantics and the certification floors exactly as they are today.
+
+`make certify` therefore remains **FAILED** in this phase's matrix, with the
+same fresh, deterministic `DENIED (240/256)` it had at `3edac49`.

@@ -5,11 +5,11 @@
       "id": "hermetic-uncertified",
       "query": "adaptive memory consolidation",
       "backend": "hermetic",
-      "expected_authority": "uncertified"
+      "expected_authority": "uncertified",
+      "expected_proposals": "semantic-candidate:consolidation|semantic-candidate:memory|semantic-candidate:adaptive"
     },
     {
       "id": "residual-uncertified",
-      "query": "held out query",
       "backend": "residual_compatible",
       "expected_authority": "uncertified"
     }

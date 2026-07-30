@@ -17,6 +17,11 @@
    in the fixture are what this run is judged against. */
 #define JTC_CAPABILITY_ID "json_toolcall_adapter"
 #define JTC_HELDOUT_CASE  "adapter-on-routing-accuracy"
+/* What this binary actually is and where its held-out pairs actually come
+   from. Declared fields are compared against these, so a fixture describing a
+   different skill or a different source is describing a different experiment. */
+#define JTC_SKILL_ID      "json_toolcall_v2"
+#define JTC_PAIRS_SOURCE  "fault bus labelled vectors (source=jtc)"
 
 static uint32_t S = 0xADA07B01u;
 static uint32_t rnd(void) { S = S * 1664525u + 1013904223u; return S; }
@@ -140,37 +145,77 @@ int main(void) {
     acc_on = (double)on_ok / (double)nte;
     delta = acc_on - acc_off;
 
-    /* --- declared held-out grading ---------------------------------------- */
+    /* --- declared held-out grading ----------------------------------------
+       Every field retained in the declared case is compared against something
+       this run MEASURED. The previous version only required
+       `on_baseline > off_baseline`, which any pair of numbers in the right
+       order satisfies -- so the two baselines could be edited freely and the
+       certificate stayed green. They are now compared to the measured arms
+       within the tolerance the fixture itself declares. */
     {
-        char metric_name[32];
+        char metric_name[32], skill_name[64], pairs_from[96];
         double floor = cnet_heldout_num(&heldout, JTC_HELDOUT_CASE,
                                         "minimum_accuracy_with_adapter", 0.55);
         double on_baseline = cnet_heldout_num(&heldout, JTC_HELDOUT_CASE,
                                              "adapter_on_baseline", 0.7375);
         double off_baseline = cnet_heldout_num(&heldout, JTC_HELDOUT_CASE,
                                               "adapter_off_baseline", 0.2975);
+        double tolerance = cnet_heldout_num(&heldout, JTC_HELDOUT_CASE,
+                                            "baseline_tolerance", 0.05);
+        double on_drift, off_drift;
         (void)cnet_heldout_str(&heldout, JTC_HELDOUT_CASE, "metric",
                                metric_name, sizeof metric_name, "acc_on");
+        (void)cnet_heldout_str(&heldout, JTC_HELDOUT_CASE, "skill",
+                               skill_name, sizeof skill_name, JTC_SKILL_ID);
+        (void)cnet_heldout_str(&heldout, JTC_HELDOUT_CASE, "held_out_pairs_from",
+                               pairs_from, sizeof pairs_from, JTC_PAIRS_SOURCE);
         if (strcmp(metric_name, "acc_on") != 0) {
             printf("HELDOUT_SHAPE_MISMATCH metric declared=%s graded=acc_on\n",
                    metric_name);
+            heldout_ok = 0;
+        }
+        if (strcmp(skill_name, JTC_SKILL_ID) != 0) {
+            printf("HELDOUT_SHAPE_MISMATCH skill declared=%s ran=%s\n",
+                   skill_name, JTC_SKILL_ID);
+            heldout_ok = 0;
+        }
+        if (strcmp(pairs_from, JTC_PAIRS_SOURCE) != 0) {
+            printf("HELDOUT_SHAPE_MISMATCH held_out_pairs_from declared=%s "
+                   "ran=%s\n", pairs_from, JTC_PAIRS_SOURCE);
+            heldout_ok = 0;
+        }
+        if (!(tolerance > 0.0) || tolerance > 0.5) {
+            printf("HELDOUT_SHAPE_MISMATCH baseline_tolerance=%.4f "
+                   "outside (0,0.5]\n", tolerance);
             heldout_ok = 0;
         }
         if (acc_on < floor) {
             printf("HELDOUT_FLOOR_MISS acc_on=%.4f floor=%.4f\n", acc_on, floor);
             heldout_ok = 0;
         }
-        /* The declared baselines describe the arms this bench measures; a
-           fixture whose off-baseline already exceeds its on-baseline is not
-           describing an adapter that helps. */
-        if (!(on_baseline > off_baseline)) {
-            printf("HELDOUT_SHAPE_MISMATCH baselines on=%.4f off=%.4f\n",
-                   on_baseline, off_baseline);
+        /* Causal baselines: the declared numbers describe the arms this bench
+           measures, so they are checked against what it measured. */
+        on_drift = acc_on - on_baseline;
+        if (on_drift < 0) on_drift = -on_drift;
+        off_drift = acc_off - off_baseline;
+        if (off_drift < 0) off_drift = -off_drift;
+        if (on_drift > tolerance) {
+            printf("HELDOUT_BASELINE_DRIFT arm=adapter_on measured=%.4f "
+                   "declared=%.4f drift=%.4f tolerance=%.4f\n",
+                   acc_on, on_baseline, on_drift, tolerance);
+            heldout_ok = 0;
+        }
+        if (off_drift > tolerance) {
+            printf("HELDOUT_BASELINE_DRIFT arm=adapter_off measured=%.4f "
+                   "declared=%.4f drift=%.4f tolerance=%.4f\n",
+                   acc_off, off_baseline, off_drift, tolerance);
             heldout_ok = 0;
         }
         printf("HELDOUT_GRADED metric=acc_on value=%.4f floor=%.4f "
-               "declared_on_baseline=%.4f declared_off_baseline=%.4f\n",
-               acc_on, floor, on_baseline, off_baseline);
+               "declared_on_baseline=%.4f declared_off_baseline=%.4f "
+               "tolerance=%.4f skill=%s source=%s\n",
+               acc_on, floor, on_baseline, off_baseline, tolerance, skill_name,
+               pairs_from);
         cnet_heldout_verdict(&heldout, JTC_HELDOUT_CASE, heldout_ok);
     }
     if (!heldout_ok) {

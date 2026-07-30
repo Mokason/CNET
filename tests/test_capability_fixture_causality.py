@@ -40,17 +40,70 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 MANIFEST_DIR = ROOT / "config" / "capability_manifests"
 
-# One semantic mutation per capability: (case index, key, replacement value).
-# Every value here is an EXPECTATION or a FLOOR the evaluator must honour, and
-# none of them appears in the fixture's `expected_markers`, so a marker-scanning
-# runner cannot notice the change.
-MUTATIONS: dict[str, tuple[int, str, Any]] = {
-    "calibrated_abstention": (0, "expected", "answer_with_evidence"),
-    "cce_classification": (0, "minimum_accuracy", 0.999),
-    "honest_memory_retrieval": (0, "expected", "hit"),
-    "hybrid_skill_serve": (0, "expected_authority", "certified"),
-    "json_toolcall_adapter": (0, "minimum_accuracy_with_adapter", 0.999),
-    "sleep_consolidation": (0, "expected_semantic_promotions", 4),
+# Semantic mutations per capability: (case index, key, replacement value).
+# Every value here is an EXPECTATION, a FLOOR or a declared SHAPE the evaluator
+# must honour, and none appears in the fixture's `expected_markers`, so a
+# marker-scanning runner cannot notice the change.
+#
+# One mutation per capability proves the fixture is consumed. It does NOT prove
+# every declared field is causal -- a field nobody reads can sit in the fixture
+# looking like a commitment. So each field a capability retains gets its own
+# entry, mutated one at a time.
+MUTATIONS: dict[str, list[tuple[int, str, Any]]] = {
+    "calibrated_abstention": [
+        (0, "expected", "answer_with_evidence"),
+        (0, "margin", 0.9),
+        (1, "expected", "abstain"),
+        (1, "reliability", 0.10),
+        (1, "samples", 1),
+        (2, "expected", "claim_bound"),
+        (2, "evidence_refs", ["evidence://memory/fact-17"]),
+    ],
+    "cce_classification": [
+        (0, "minimum_accuracy", 0.999),
+        (0, "classes", 3),
+        (0, "held_out_samples", 999),
+        (0, "diff_mode", "APPROX"),
+        (0, "gradient_clip", 1.0),
+        (0, "label_rule", "argmin_pair_sum_first_eight_dimensions"),
+        (0, "minimum_distinct_classes", 5),
+        (0, "minimum_lift_over_majority", 0.99),
+    ],
+    "honest_memory_retrieval": [
+        (0, "expected", "hit"),
+        (0, "stored", "the launch code is amber-lark-3"),
+        (0, "query", "the sky is blue"),
+    ],
+    "hybrid_skill_serve": [
+        (0, "expected_authority", "certified"),
+        (0, "backend", "residual_compatible"),
+        (0, "query", "totally different words entirely"),
+        (0, "expected_proposals", "semantic-candidate:nope"),
+        (1, "expected_authority", "provisional"),
+        (1, "backend", "hermetic"),
+    ],
+    # Every field this capability retains, one at a time. The two baselines are
+    # the reason this list exists: before R9 they were only required to satisfy
+    # `on > off`, so both could be edited freely.
+    "json_toolcall_adapter": [
+        (0, "minimum_accuracy_with_adapter", 0.999),
+        (0, "adapter_on_baseline", 0.30),
+        (0, "adapter_off_baseline", 0.70),
+        (0, "baseline_tolerance", -1.0),
+        (0, "metric", "acc_off"),
+        (0, "skill", "json_toolcall_v1"),
+        (0, "held_out_pairs_from", "somewhere else entirely"),
+        (0, "certify_before_serve", False),
+    ],
+    "sleep_consolidation": [
+        (0, "expected_semantic_promotions", 4),
+        (0, "expected_procedural_promotions", 3),
+        (0, "episodes", 6),
+        (0, "duplicate_episodes", 4),
+        (0, "minimum_pruned", 9),
+        (0, "minimum_merges", 9),
+        (0, "minimum_graduated", 9),
+    ],
 }
 
 RECEIPT = re.compile(
@@ -92,8 +145,10 @@ def run_evaluator(argv: list[str], fixture: Path, timeout: int):
     )
 
 
-def mutate(fixture: dict[str, Any], capability_id: str) -> dict[str, Any]:
-    index, key, value = MUTATIONS[capability_id]
+def mutate(
+    fixture: dict[str, Any], capability_id: str, mutation: tuple[int, str, Any]
+) -> dict[str, Any]:
+    index, key, value = mutation
     mutated = json.loads(json.dumps(fixture))
     case = mutated["cases"][index]
     if key not in case:
@@ -102,6 +157,16 @@ def mutate(fixture: dict[str, Any], capability_id: str) -> dict[str, Any]:
         raise ValueError(f"{capability_id}: mutation is a no-op for {key!r}")
     case[key] = value
     return mutated
+
+
+def declared_field_keys(fixture: dict[str, Any]) -> set[tuple[int, str]]:
+    """Every (case index, field) a fixture declares, except the case id."""
+    return {
+        (index, key)
+        for index, case in enumerate(fixture["cases"])
+        for key in case
+        if key != "id"
+    }
 
 
 def check_capability(manifest_path: Path) -> None:
@@ -164,24 +229,50 @@ def check_capability(manifest_path: Path) -> None:
             f"{capability_id}: case {case_id} reported as consumed",
         )
 
-    print(f"--- {capability_id}: mutation run (one expected value changed)")
-    mutated = mutate(fixture, capability_id)
-    markers_before = json.dumps(fixture.get("expected_markers"), sort_keys=True)
-    markers_after = json.dumps(mutated.get("expected_markers"), sort_keys=True)
+    # Coverage, in two parts, because a fixture can carry a field nobody reads
+    # that looks like a commitment:
+    #   * every declared field NAME must have a mutation somewhere, and
+    #   * every declared CASE must have at least one.
+    # Name-level rather than (case, field)-level on purpose: a field can be an
+    # input that only changes the verdict in one of several cases -- e.g.
+    # `reliability` cannot flip a case whose margin already forces abstention --
+    # and demanding a verdict-flipping mutation in every slot would mean
+    # deleting real inputs to satisfy the gate.
+    mutations = MUTATIONS[capability_id]
+    declared = declared_field_keys(fixture)
+    covered_names = {key for _, key, _ in mutations}
+    covered_cases = {index for index, _, _ in mutations}
+    uncovered_names = sorted({key for _, key in declared} - covered_names)
+    uncovered_cases = sorted({index for index, _ in declared} - covered_cases)
     check(
-        markers_before == markers_after,
-        f"{capability_id}: mutation leaves expected_markers untouched",
+        not uncovered_names,
+        f"{capability_id}: every declared field name has a mutation "
+        f"(uncovered: {uncovered_names})",
     )
-    with tempfile.TemporaryDirectory(prefix="cnet-causality-") as directory:
-        path = Path(directory) / fixture_path.name
-        path.write_text(json.dumps(mutated, indent=2) + "\n", encoding="utf-8")
-        result = run_evaluator(argv, path, timeout)
-    index, key, value = MUTATIONS[capability_id]
     check(
-        result.returncode != 0,
-        f"{capability_id}: mutating case[{index}].{key} -> {value!r} must fail "
-        f"the evaluator (rc={result.returncode})",
+        not uncovered_cases,
+        f"{capability_id}: every declared case has a mutation "
+        f"(uncovered: {uncovered_cases})",
     )
+
+    for index, key, value in mutations:
+        print(f"--- {capability_id}: mutation run (case[{index}].{key})")
+        mutated = mutate(fixture, capability_id, (index, key, value))
+        markers_before = json.dumps(fixture.get("expected_markers"), sort_keys=True)
+        markers_after = json.dumps(mutated.get("expected_markers"), sort_keys=True)
+        check(
+            markers_before == markers_after,
+            f"{capability_id}: mutating {key} leaves expected_markers untouched",
+        )
+        with tempfile.TemporaryDirectory(prefix="cnet-causality-") as directory:
+            path = Path(directory) / fixture_path.name
+            path.write_text(json.dumps(mutated, indent=2) + "\n", encoding="utf-8")
+            result = run_evaluator(argv, path, timeout)
+        check(
+            result.returncode != 0,
+            f"{capability_id}: mutating case[{index}].{key} -> {value!r} must "
+            f"fail the evaluator (rc={result.returncode})",
+        )
 
 
 def main(argv: list[str]) -> int:
@@ -216,9 +307,15 @@ def main(argv: list[str]) -> int:
     # Report what this invocation actually checked, never the manifest count:
     # `... capabilities=6` after checking one is exactly the vanity metric this
     # gate exists to eliminate.
+    total_mutations = sum(
+        len(MUTATIONS[json.loads(path.read_text())["capability_id"]])
+        for path in manifests
+        if json.loads(path.read_text())["capability_id"] in MUTATIONS
+        and (not wanted or json.loads(path.read_text())["capability_id"] in wanted)
+    )
     print(
         "CAPABILITY_FIXTURE_CAUSALITY_PASS "
-        f"capabilities={checked} mutations_rejected={checked} "
+        f"capabilities={checked} mutations_rejected={total_mutations} "
         f"scope={'selected' if wanted else 'all'}"
     )
     return 0

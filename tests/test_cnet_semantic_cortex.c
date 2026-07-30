@@ -6,6 +6,7 @@
 #include <string.h>
 
 #define CAPABILITY_ID "hybrid_skill_serve"
+#define RESIDUAL_QUERY "held out query"
 
 static int failures;
 
@@ -58,9 +59,13 @@ int main(void) {
     (void)cnet_heldout_str(&heldout, "hermetic-uncertified", "query",
                            hermetic_query, sizeof hermetic_query,
                            "adaptive memory consolidation");
-    (void)cnet_heldout_str(&heldout, "residual-uncertified", "query",
-                           residual_query, sizeof residual_query,
-                           "held out query");
+    /* The residual arm's query is a compiled-in constant, not a declared
+       field. The residual path publishes "residual-token:<id>" chosen by the
+       injected top-k callback, so nothing the test can observe is a function of
+       the query text -- a declared `query` there would be a field the fixture
+       claims to control and does not. The hermetic arm below is different: its
+       proposals are built from the query's own tokens, so that one IS bound. */
+    snprintf(residual_query, sizeof residual_query, "%s", RESIDUAL_QUERY);
 
     check(cnet_workspace_init(&workspace, 8) == 0, "workspace initializes");
     check(cnet_semantic_cortex_init_hermetic(&cortex, NULL) == 0,
@@ -90,13 +95,38 @@ int main(void) {
                             "%s, this arm exercises hermetic\n", backend);
             failures++;
         }
-        ok = (strcmp(saw, want_authority) == 0) &&
-             (strcmp(backend, "hermetic") == 0);
-        if (!ok) {
-            fprintf(stderr, "FAIL: case hermetic-uncertified expected "
-                            "authority %s, workspace recorded %s\n",
-                    want_authority, saw);
-            failures++;
+        /* Binding the query to a proposal DERIVED from the query proves
+           nothing: both move together, so any query matches its own output.
+           The fixture therefore declares the proposals it expects, and the run
+           is compared against that. Mutating either the query or the expected
+           proposals now breaks the match. */
+        {
+            char want_join[CNET_WORKSPACE_TEXT_MAX * 3];
+            char got_join[CNET_WORKSPACE_TEXT_MAX * 3];
+            size_t k, used = 0;
+            (void)cnet_heldout_str(&heldout, "hermetic-uncertified",
+                                   "expected_proposals", want_join,
+                                   sizeof want_join,
+                                   "semantic-candidate:consolidation|"
+                                   "semantic-candidate:memory|"
+                                   "semantic-candidate:adaptive");
+            got_join[0] = '\0';
+            for (k = 0; k < 3; k++) {
+                int n = snprintf(got_join + used, sizeof got_join - used,
+                                 "%s%s", k ? "|" : "",
+                                 entries[k].text_or_latent_ref);
+                if (n < 0 || (size_t)n >= sizeof got_join - used) break;
+                used += (size_t)n;
+            }
+            if (strcmp(want_join, got_join) != 0) {
+                fprintf(stderr, "FAIL: case hermetic-uncertified expected "
+                                "proposals %s, run produced %s\n",
+                        want_join, got_join);
+                failures++;
+            }
+            ok = (strcmp(saw, want_authority) == 0) &&
+                 (strcmp(backend, "hermetic") == 0) &&
+                 (strcmp(want_join, got_join) == 0);
         }
         cnet_heldout_verdict(&heldout, "hermetic-uncertified", ok);
     }
