@@ -98,6 +98,67 @@ static double whole_set_loss(BinaryTransformNetwork *net, const double *inputs,
     return total / (double)(n * out_dim);
 }
 
+/* ---- the n>=64 exclusion experiment: apparatus -------------------------
+   Everything below exists to answer one question DIRECTLY rather than by
+   inference: does a held-out row's TARGET reach the gradient?
+
+   The earlier held-out test used 10 samples, which is below
+   BTN_TRAIN_MIN_SPLIT_SAMPLES, so no mask was ever built and the exclusion
+   path was never executed by any test in this tree. */
+#define EX_WIDTH 8
+#define EX_N 64
+/* The mask the trainer builds at n=64 is deterministic and documented:
+   target_val = 64/5 = 12, stride = 64/12 = 5, offset = stride/2 = 2, and the
+   scan stops once 12 rows are taken. So rows 2,7,12,...,57 are held out and
+   row 62 -- which also satisfies s%5==2 -- is not. This test does not trust
+   that arithmetic: it MEASURES which rows are excluded and requires the
+   measured set to be exactly this one. */
+#define EX_VAL_ROWS 12
+#define EX_CELLS (EX_WIDTH * 64 + 64 * EX_WIDTH + 64 + EX_WIDTH)
+
+static size_t weight_cells(const BinaryTransformNetwork *net) {
+    return net->input_count * net->max_hidden_count +
+           net->max_hidden_count * net->output_count +
+           net->max_hidden_count + net->output_count;
+}
+
+/* Every gradient-updated cell, in one flat buffer, so "unchanged" can mean
+   BYTE-IDENTICAL rather than "close enough". */
+static void snapshot_weights(const BinaryTransformNetwork *net, double *out) {
+    size_t ih = net->input_count * net->max_hidden_count;
+    size_t ho = net->max_hidden_count * net->output_count;
+    memcpy(out, net->input_hidden, ih * sizeof(double));
+    memcpy(out + ih, net->hidden_output_weights, ho * sizeof(double));
+    memcpy(out + ih + ho, net->hidden_bias,
+           net->max_hidden_count * sizeof(double));
+    memcpy(out + ih + ho + net->max_hidden_count, net->output_bias,
+           net->output_count * sizeof(double));
+}
+
+/* One run of the fixture, from an identical initial net and RNG seed. */
+static int run_exclusion_case(const double *inputs, const double *targets,
+                              size_t hidden0, size_t max_hidden,
+                              size_t max_epochs, size_t window,
+                              double target, double min_improvement,
+                              double *weights_out, size_t *cells_out,
+                              double *loss_out, size_t *hidden_out) {
+    BinaryTransformNetwork net;
+    int status;
+    memset(&net, 0, sizeof net);
+    if (btn_init(&net, EX_WIDTH, EX_WIDTH, hidden0, max_hidden, 0.5,
+                 4242u) != 0) {
+        return BTN_TRAIN_INVALID;
+    }
+    status = btn_train_dynamic_checked(&net, inputs, targets, EX_N, max_epochs,
+                                       window, target, min_improvement,
+                                       loss_out);
+    *cells_out = weight_cells(&net);
+    *hidden_out = net.hidden_count;
+    snapshot_weights(&net, weights_out);
+    btn_free(&net);
+    return status;
+}
+
 /* The certification predicate, applied per exemplar: validate the raw output
    against the port, canonicalize it, and compare to the canonical target. */
 static size_t certifiable(BinaryTransformNetwork *net,
@@ -337,12 +398,17 @@ int main(void) {
         }
     }
 
-    /* ---- F3a: the held-out rows must not be trained on -------------------
-       With 10 samples the mask takes indices 2 and 7. Those two rows are made
-       to CONTRADICT row 0 outright. If the optimiser walks them, it thrashes;
-       if they are excluded, it fits the other eight cleanly -- and either way
-       the whole-set loss the trainer reports must include them, so it cannot
-       come out near zero. */
+    /* ---- contradictions cannot be reported as learned --------------------
+       NOTE ON WHAT THIS DOES AND DOES NOT TEST. With 10 samples there is NO
+       split at all -- BTN_TRAIN_MIN_SPLIT_SAMPLES is 64 -- so this exercises
+       the below-floor path, where every row is trained on and none is called
+       held out. It was previously labelled as the held-out test, which it
+       cannot be: at n=10 the mask is never built. The decisive exclusion
+       experiment is the n>=64 one further down.
+
+       What it does prove: two rows contradict row 0 outright, so no run can
+       report a near-zero loss for this set, and the whole-set loss the
+       trainer reports must contain them. */
     {
         enum { VN = 10 };
         static double vin[VN][WIDTH];
@@ -450,12 +516,142 @@ int main(void) {
               "the reported loss covers the whole set on both sides of the floor");
     }
 
+    /* ---- THE exclusion experiment, at n = 64 -----------------------------
+       Identical initial net, identical seed, identical everything -- then ONE
+       row's target is changed, and the trained weights are compared BYTE FOR
+       BYTE against the unmutated run.
+
+       A row whose target reaches the gradient must move some weight. A row
+       that is genuinely held out cannot move any. So the set of rows whose
+       mutation leaves every weight cell identical IS the set of rows the
+       optimiser never stepped on, measured rather than assumed -- and it must
+       be exactly the 12 rows the documented mask takes.
+
+       Two configurations, because the exclusion has to hold on both paths the
+       trainer can take:
+
+         A. CONVERGED, one window. max_epochs == growth_window, and the target
+            is reached on the training rows, so the run snapshots and leaves
+            through the success path.
+         B. NOT CONVERGED, ten windows, growing every window. min_improvement
+            is 2.0, so every window counts as stalled and a neuron is added
+            each time; the escape needs BTN_TRAIN_STALLED_GROWTH (16)
+            consecutive stalls or exhausted capacity, and ten windows starting
+            from eight neurons under a ceiling of 64 reach neither. So this
+            path runs the growth machinery and the multi-window SGD loop.
+
+       What this deliberately does NOT claim: that the held-out rows have no
+       influence at all. They are the growth, escape and best-net SELECTION
+       signal -- that is what a validation split IS FOR -- and a run that
+       escapes therefore CAN land somewhere else because of them. The claim
+       proved here is the exact one the split has to earn: their targets never
+       reach a gradient step. */
+    {
+        static double ex_in[EX_N][EX_WIDTH];
+        static double ex_tg[EX_N][EX_WIDTH];
+        static double mutated[EX_N][EX_WIDTH];
+        static double base_w[EX_CELLS];
+        static double case_w[EX_CELLS];
+        static int excluded[EX_N];
+        size_t s, i, row, cells = 0, mut_cells = 0, hidden = 0, mut_hidden = 0;
+        size_t config, unchanged_rows, changed_rows, expected_rows = 0;
+        double base_loss = 0.0, mut_loss = 0.0;
+        int base_status, mut_status;
+
+        for (s = 0; s < EX_N; ++s) {
+            for (i = 0; i < EX_WIDTH; ++i) {
+                ex_in[s][i] = ((s >> (EX_WIDTH - 1 - i)) & 1) ? 1.0 : 0.0;
+                ex_tg[s][i] = ex_in[s][i] ? 0.9 : 0.1;
+            }
+        }
+
+        for (config = 0; config < 2; ++config) {
+            /* A: converge inside one window.  B: ten windows, never converge. */
+            size_t hidden0 = 8, max_hidden = 64;
+            size_t epochs = config == 0 ? 4000 : 5000;
+            size_t window = config == 0 ? 4000 : 500;
+            double target = config == 0 ? 0.01 : 1e-9;
+            double min_improvement = config == 0 ? 0.01 : 2.0;
+            const char *label = config == 0 ? "converged" : "growing";
+
+            base_status = run_exclusion_case(&ex_in[0][0], &ex_tg[0][0],
+                                             hidden0, max_hidden, epochs,
+                                             window, target, min_improvement,
+                                             base_w, &cells, &base_loss,
+                                             &hidden);
+            check(cells <= EX_CELLS, "the weight snapshot buffer holds the net");
+            check(base_status ==
+                      (config == 0 ? BTN_TRAIN_OK : BTN_TRAIN_PLATEAU_STATUS),
+                  config == 0
+                      ? "config A reaches its target inside one window, so the "
+                        "run leaves through the success path"
+                      : "config B does not converge, so the growth path is the "
+                        "one under test");
+
+            unchanged_rows = 0;
+            changed_rows = 0;
+            for (row = 0; row < EX_N; ++row) {
+                memcpy(mutated, ex_tg, sizeof ex_tg);
+                /* Flip this row's target outright: 0.9 <-> 0.1 on every bit.
+                   Nothing else in the dataset moves. */
+                for (i = 0; i < EX_WIDTH; ++i) {
+                    mutated[row][i] = ex_tg[row][i] > 0.5 ? 0.1 : 0.9;
+                }
+                mut_status = run_exclusion_case(&ex_in[0][0], &mutated[0][0],
+                                                hidden0, max_hidden, epochs,
+                                                window, target, min_improvement,
+                                                case_w, &mut_cells, &mut_loss,
+                                                &mut_hidden);
+                excluded[row] =
+                    mut_cells == cells &&
+                    memcmp(base_w, case_w, cells * sizeof(double)) == 0;
+                if (excluded[row]) {
+                    unchanged_rows++;
+                    /* A row that changed NOTHING about the fit must still
+                       change the number the run reports, because the reported
+                       loss covers every row. Otherwise the mutation never
+                       reached the measurement either, and this test would be
+                       proving that nothing happened at all. */
+                    check(mut_loss != base_loss,
+                          "an excluded row still moves the reported whole-set "
+                          "loss -- the mutation is real");
+                    check(mut_status == base_status,
+                          "an excluded row does not change the run's status");
+                    check(mut_hidden == hidden,
+                          "an excluded row does not change the width reached");
+                } else {
+                    changed_rows++;
+                }
+            }
+
+            /* The measured exclusion set must be exactly the documented mask. */
+            expected_rows = 0;
+            for (row = 0; row < EX_N; ++row) {
+                int want = (row % 5) == 2 && expected_rows < EX_VAL_ROWS;
+                if (want) expected_rows++;
+                check(excluded[row] == want,
+                      want ? "a documented validation row's target never "
+                             "reaches a gradient step"
+                           : "a training row's target DOES reach the gradient "
+                             "-- so the byte comparison can detect an update");
+            }
+            printf("BTN_EXCLUSION_%s n=%d cells=%zu excluded=%zu trained=%zu "
+                   "expected_excluded=%zu status=%d hidden=%zu\n",
+                   label, EX_N, cells, unchanged_rows, changed_rows,
+                   expected_rows, base_status, hidden);
+            check(unchanged_rows == EX_VAL_ROWS,
+                  "exactly the 12 masked rows are excluded from every update");
+            check(changed_rows == EX_N - EX_VAL_ROWS,
+                  "every one of the other 52 rows moves the weights");
+        }
+    }
+
     /* ---- property: across seeds, a reported loss is always reproducible --
        The two seeds above are the ones the defect was found with. A rule that
        only holds for the cases it was written against is not a rule. */
     {
         unsigned seeds[] = {1u, 17u, 42u, 91u, 123u, 777u, 2024u, 31337u};
-        size_t k, ok_runs = 0;
+        size_t k, ok_runs = 0, independent_ok = 0;
         for (k = 0; k < sizeof seeds / sizeof seeds[0]; ++k) {
             memset(&net, 0, sizeof net);
             if (btn_init(&net, WIDTH, WIDTH, 1, 32, 0.8, seeds[k]) != 0) continue;
@@ -468,9 +664,16 @@ int main(void) {
                   "every seed reports a documented status");
             if (status == BTN_TRAIN_OK) {
                 ok_runs++;
+                /* 91 and 123 are the two seeds this file was WRITTEN against.
+                   Counting only the others is what makes the bar below a
+                   property rather than a restatement of the fixture. */
+                if (seeds[k] != 91u && seeds[k] != 123u) independent_ok++;
                 check(reported == loss,
                       "for every seed that succeeds, the reported loss is a "
                       "fresh whole-dataset recomputation");
+                check(reported <= 0.0008,
+                      "a seed reporting success is at or below the target it "
+                      "was given");
             } else {
                 check(!isfinite(reported) || reported > 0.0008,
                       "a seed that did not succeed does not report a loss "
@@ -478,8 +681,16 @@ int main(void) {
             }
             btn_free(&net);
         }
-        printf("BTN_PLATEAU_SEEDS tried=%zu succeeded=%zu\n",
-               sizeof seeds / sizeof seeds[0], ok_runs);
+        printf("BTN_PLATEAU_SEEDS tried=%zu succeeded=%zu independent=%zu\n",
+               sizeof seeds / sizeof seeds[0], ok_runs, independent_ok);
+        /* The previous form asserted only that each seed reported A DOCUMENTED
+           STATUS, which every seed satisfies by plateauing -- a trainer that
+           converged for nothing at all would have passed it. At least one seed
+           that this file was NOT built around has to actually reach the target
+           and report it. */
+        check(independent_ok >= 1,
+              "at least one seed other than the two this test was written "
+              "against converges and reports BTN_TRAIN_OK");
     }
 
     /* ---- F2b at the caller: the predicate a persisting caller uses -------
