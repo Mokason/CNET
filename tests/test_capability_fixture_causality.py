@@ -21,6 +21,15 @@ An evaluator that does not run at all cannot emit the receipt, so this also
 catches the silent-success mode (`dotnet test --no-restore` against an
 unrestored project exits 0 having run zero tests).
 
+That mode was not hypothetical, and catching it is not the same as surviving
+it: at 6f9c859 a fresh detached worktree failed this gate with five failures
+for `honest_memory_retrieval` -- no receipt, no case consumed, three mutations
+returning rc=0 -- because nothing in the tree ever built the evaluator it then
+asked to run. The gate was right and the tree was unbuildable. So every
+capability is now made ready first, by its own declared prepare step, and a
+capability that cannot be made ready is refused BY NAME before its evaluator
+runs (see `scripts/capability_evaluator_prereq.py`).
+
 Usage: python3 tests/test_capability_fixture_causality.py [capability_id ...]
 Exit 0 = every capability is causal, 1 = at least one is decorative.
 """
@@ -39,6 +48,9 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 MANIFEST_DIR = ROOT / "config" / "capability_manifests"
+
+sys.path.insert(0, str(ROOT / "scripts"))
+from capability_evaluator_prereq import ensure_ready  # noqa: E402
 
 # Semantic mutations per capability: (case index, key, replacement value).
 # Every value here is an EXPECTATION, a FLOOR or a declared SHAPE the evaluator
@@ -188,6 +200,16 @@ def check_capability(manifest_path: Path) -> None:
         len(set(ids)) == len(ids), f"{capability_id}: case ids are unique"
     ):
         return
+
+    # Build first, or refuse first. Running an evaluator whose output is
+    # missing or stale is how a fresh checkout got five failures out of a
+    # correct gate: the evaluator exited 0 having done nothing at all.
+    ready_problems = ensure_ready(ROOT, manifest)
+    for problem in ready_problems:
+        check(False, f"{capability_id}: evaluator is not ready: {problem}")
+    if ready_problems:
+        return
+    print(f"--- {capability_id}: evaluator prepared")
 
     print(f"--- {capability_id}: control run (pristine fixture)")
     control = run_evaluator(argv, fixture_path, timeout)

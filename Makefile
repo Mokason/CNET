@@ -4257,6 +4257,7 @@ evidence_bundle: $(EVIDENCE_BUNDLE_SRC) $(BASE_SRC) $(ACQUIRE_SRC) $(SRC) $(ROUT
 .PHONY: shared_workspace semantic_cortex sleep_consolidate calibrated_governance
 .PHONY: capability_cert_runner_test capability_cert cognitive_runtime_smoke cognitive_runtime
 .PHONY: heldout_fixture_test capability_fixture_causality
+.PHONY: capability_evaluator_prereq
 shared_workspace: $(SHARED_WORKSPACE_SRC) tests/test_cnet_shared_workspace.c include/cnet_shared_workspace.h
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) $(CFLAGS) -Werror -Iinclude -o $(BIN_DIR)/$@ \
@@ -4311,16 +4312,32 @@ heldout_fixture_test: $(HELDOUT_SRC) tests/test_cnet_heldout.c include/cnet_held
 		logs/heldout_fixture_test.log CNET_HELDOUT_TEST_PASS -- \
 		$(BIN_DIR)/heldout_fixture_test
 
+# A fresh checkout must be able to BUILD what it is about to believe. This
+# exists because `make capability_cert` passed here and exited 2 in a fresh
+# detached worktree of the same commit: `dotnet test --no-restore` against an
+# unrestored project emits zero bytes and exits 0, and nothing in the tree ever
+# built it. The unit lane proves the guard's negatives; the CLI prepares every
+# committed manifest and refuses missing or stale output by name.
+capability_evaluator_prereq: scripts/capability_evaluator_prereq.py \
+		tests/test_capability_evaluator_prereq.py \
+		$(wildcard config/capability_manifests/*.json)
+	@mkdir -p logs
+	@python3 scripts/gate_evidence.py capability_evaluator_prereq \
+		logs/capability_evaluator_prereq.log \
+		CAPABILITY_EVALUATOR_PREREQ_UNIT_PASS -- \
+		python3 tests/test_capability_evaluator_prereq.py
+
 # The decisive truthfulness experiment: mutate one declared expectation while
 # leaving every marker string byte-identical, and require the evaluator to fail.
-capability_fixture_causality: tests/test_capability_fixture_causality.py
+capability_fixture_causality: tests/test_capability_fixture_causality.py \
+		scripts/capability_evaluator_prereq.py
 	@mkdir -p logs
 	@python3 scripts/gate_evidence.py capability_fixture_causality \
 		logs/capability_fixture_causality.log \
 		CAPABILITY_FIXTURE_CAUSALITY_PASS -- \
 		python3 tests/test_capability_fixture_causality.py
 
-capability_cert: capability_cert_runner_test heldout_fixture_test capability_fixture_causality
+capability_cert: capability_cert_runner_test capability_evaluator_prereq heldout_fixture_test capability_fixture_causality
 	@python3 tests/run_capability_cert.py
 
 cognitive_runtime_smoke: $(SHARED_WORKSPACE_SRC) $(SEMANTIC_CORTEX_SRC) $(CALIBRATED_GOVERNANCE_SRC) tests/test_cnet_cognitive_runtime.c include/cnet_shared_workspace.h include/cnet_semantic_cortex.h include/cnet_calibrated_governance.h

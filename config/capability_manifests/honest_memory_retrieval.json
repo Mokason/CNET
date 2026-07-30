@@ -14,6 +14,14 @@
     "--logger",
     "console;verbosity=normal"
   ],
+  "evaluator_prepare": [
+    "dotnet",
+    "build",
+    "dotnet/Cce.Llm.Tests/CNET.Cce.Llm.Tests.csproj",
+    "-c",
+    "Debug",
+    "--nologo"
+  ],
   "evaluator_sources": [
     "dotnet/Cce.Llm.Tests/CNET.Cce.Llm.Tests.csproj",
     "dotnet/Cce.Llm.Tests/HeldOutFixture.cs",

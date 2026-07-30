@@ -26,6 +26,15 @@ A later review found the working-tree digest walked ``git status``, which does
 not report assume-unchanged or skip-worktree paths -- 83 of them in CNET,
 including the trainer. Only their count was recorded, which names a blind spot
 without closing it. ``special_index_binding`` now binds their bytes.
+
+A later one still found that the silent-success mode named above had no
+counterpart in the tree: nothing ever *built* the dotnet evaluator, so a fresh
+checkout ran ``--no-restore`` against an unrestored project, got zero bytes and
+exit 0, and was refused -- correctly, and permanently. Every manifest whose
+evaluator is not itself a build command now declares ``evaluator_prepare``, it
+runs before the evaluator, and its declared binary must exist and be no older
+than the sources that define what the evaluator does
+(``scripts/capability_evaluator_prereq.py``).
 """
 
 from __future__ import annotations
@@ -43,6 +52,12 @@ import tempfile
 import time
 import uuid
 from typing import Any
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+from capability_evaluator_prereq import (  # noqa: E402
+    declaration_problems,
+    ensure_ready,
+)
 
 SCHEMA_VERSION = 1
 ALLOWED_EVALUATORS = {"make", "dotnet"}
@@ -450,6 +465,12 @@ def validate_manifest(root: Path, path: Path) -> tuple[dict[str, Any], Path, dic
     binary = manifest.get("evaluator_binary")
     if binary is not None and (not isinstance(binary, str) or not binary):
         raise ValueError(f"{path}: evaluator_binary must be a nonempty path")
+    # An evaluator that does not build itself must say how it gets built. A
+    # manifest that stays silent is one whose gate can only pass on a machine
+    # that happens to hold the right ignored build state.
+    declaration = declaration_problems(manifest)
+    if declaration:
+        raise ValueError(f"{path}: " + "; ".join(declaration))
     fixture_path = repo_path(root, manifest["held_out_fixture"])
     fixture = load_json_object(fixture_path)
     if fixture.get("capability_id") != capability_id:
@@ -639,6 +660,30 @@ def run_manifest(root: Path, manifest_path: Path, run: dict[str, Any]) -> dict[s
     if timeout_seconds < 1 or timeout_seconds > 1800:
         raise ValueError(f"{manifest_path}: timeout_seconds outside 1..1800")
 
+    # Make the evaluator runnable, or refuse before running it. This happens
+    # before the pre-capture on purpose: a prepare step writes build output,
+    # and build output is ignored, so binding it as "state that must not move"
+    # would fail every run that legitimately compiled something.
+    ready_problems = ensure_ready(root, manifest)
+    if ready_problems:
+        return {
+            "capability_id": capability_id,
+            "status": "failed",
+            "return_code": None,
+            "metric": 0.0,
+            "metric_source": manifest["metric_source"],
+            "receipt_ok": False,
+            "receipt_problems": [
+                f"evaluator is not ready: {problem}" for problem in ready_problems
+            ],
+            "markers_ok": False,
+            "missing_markers": [],
+            "evaluator_argv": list(manifest["evaluator"]),
+            "evaluator_prepare": manifest.get("evaluator_prepare"),
+            "evaluator_binary": binary,
+            "run_id": run["run_id"],
+        }
+
     # Capture BEFORE the evaluator runs. The binary is excluded here because the
     # recipe legitimately builds it; everything else must be identical after.
     pre = capture_state(root, sources, fixture_path, binary, include_binary=False)
@@ -756,6 +801,7 @@ def run_manifest(root: Path, manifest_path: Path, run: dict[str, Any]) -> dict[s
         "receipt": receipt,
         "declared_case_ids": case_ids,
         "evaluator_argv": list(manifest["evaluator"]),
+        "evaluator_prepare": manifest.get("evaluator_prepare"),
         "evaluator_sources": sources,
         "evaluator_source_set_sha256": post_run["evaluator_source_set_sha256"],
         "evaluator_binary": binary,

@@ -116,6 +116,38 @@ class CapabilityCertRunnerTest(unittest.TestCase):
                 self.root, self.manifest(evaluator=["sh", "-c", "touch /tmp/pwned"])
             )
 
+    def test_evaluator_that_does_not_build_itself_must_declare_prepare(self) -> None:
+        # `dotnet test --no-restore` exits 0 emitting nothing when the project
+        # was never restored, so a manifest that never says how its evaluator
+        # gets built can only certify on a machine already holding the right
+        # ignored build state. That is what a fresh worktree proved at 6f9c859.
+        with self.assertRaisesRegex(ValueError, "evaluator_prepare"):
+            RUNNER.validate_manifest(
+                self.root,
+                self.manifest(evaluator=["dotnet", "test", "project.csproj"]),
+            )
+
+    def test_declared_prepare_makes_a_dotnet_evaluator_acceptable(self) -> None:
+        manifest, _, _ = RUNNER.validate_manifest(
+            self.root,
+            self.manifest(
+                evaluator=["dotnet", "test", "project.csproj"],
+                evaluator_prepare=["dotnet", "build", "project.csproj"],
+                evaluator_binary="src/evaluator.c",
+            ),
+        )
+        self.assertEqual(manifest["evaluator_prepare"][0], "dotnet")
+
+    def test_shell_prepare_is_rejected(self) -> None:
+        with self.assertRaisesRegex(ValueError, "allowlisted"):
+            RUNNER.validate_manifest(
+                self.root,
+                self.manifest(
+                    evaluator_prepare=["sh", "-c", "touch /tmp/pwned"],
+                    evaluator_binary="src/evaluator.c",
+                ),
+            )
+
     def test_fixture_path_cannot_escape_repository(self) -> None:
         with self.assertRaisesRegex(ValueError, "escapes repository"):
             RUNNER.validate_manifest(
