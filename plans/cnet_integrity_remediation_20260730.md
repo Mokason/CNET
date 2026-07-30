@@ -195,6 +195,13 @@ already rejected it — the defect was specific to pipelines.
 * `recipe_gate` runs all three checks, so the false-green mutation executes on
   every invocation instead of being a one-off experiment.
 
+**A limitation worth stating plainly:** GNU Make exits **2** for any failed
+recipe, so a `make` invocation cannot itself surface 3-for-WITHHELD or
+4-for-BLOCKED. The distinct code is available where automation should read it —
+`sh scripts/benchmark_verdict.sh <log> <prefix>` — and through `make` the
+guarantee is the weaker but still correct one: WITHHELD and BLOCKED are
+non-zero, and PASS is the only zero. The marker line names which it was.
+
 ### GREEN — FRESH
 
 ```
@@ -858,3 +865,43 @@ unbound logs to stable ignored paths, and the P0 item "separate evidence from
 runtime state" (content-addressed run directories, a quiesced learner) is
 **not done** — it was explicitly out of scope here. Treat any log outside the
 list above exactly as the re-analysis did: as untrusted until re-executed.
+
+---
+
+## Verification contract — outcome
+
+Every gate in the contract was executed fresh against the final tree. Nine of
+eleven pass; the two that do not are reported as they are.
+
+| Command | Exit | Result |
+|---|---|---|
+| `make recipe_gate` | 0 | PASS |
+| `make capability_cert` | 0 | PASS 6/6, run-bound |
+| `make own_learning_health` | 2 (recipe 4) | **BLOCKED** — no deployed base on this host |
+| `make coverage_abstain` | 0 | PASS checks=55 |
+| `make knowledge_capsule` | 0 | PASS checks=88 |
+| `make knowledge_accumulation_bench` | 0 | PASS units=32 |
+| `make knowledge_composition_bench` | 0 | PASS members=3 |
+| `make port_raw_unit_seam` | 0 | PASS checks=8 |
+| `make vision_coverage_test` | 0 | PASS checks=22 |
+| `make vision_capsule_asset` | 0 | PASS checks=39 |
+| `make ci_core` | 2 then **0** | see below |
+
+### `ci_core` — failed once on ambient state, then passed
+
+First invocation failed at `managed_warning_gate`:
+
+```
+error NETSDK1004: Assets file '.../dotnet/Cce.Tests/obj/project.assets.json' not found.
+make: *** [Makefile:3622: managed_warning_gate] Error 1
+```
+
+`dotnet/Cce.Tests` had never been NuGet-restored in this worktree. That project
+is not touched by this patch. After `make dotnet_restore` (exit 0,
+`DOTNET_RESTORE_PASS`), `make ci_core` exits **0** with `CNET_CI_CORE_PASS`.
+
+This is itself a small gate-integrity defect of the same family as the ones
+fixed here — `managed_warning_gate` depends on ambient restore state it does not
+declare as a prerequisite — but it is outside the requested slices and adding
+`dotnet_restore` as a dependency would give `ci_core` a network side effect. It
+is **reported, not silently fixed**.
