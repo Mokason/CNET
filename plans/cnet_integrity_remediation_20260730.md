@@ -2428,3 +2428,551 @@ All 43 removed lines in `src/nn.c` are inside `btn_train_dynamic` and
 the patcher refuses to write otherwise. Staged with
 `git hash-object -w --no-filters`, so the raw CRLF bytes are what landed in the
 index; staged blob and worktree compare identical for all three.
+
+# Phase 4 — Codex residuals (F7, F8) + one independent failure (F9)
+
+Base: `6f9c859`. Input: two residual Codex findings and one fresh-worktree
+capability failure found independently by Hermes at that exact commit.
+
+No floor, target loss, seed, exemplar, split minimum, refusal floor or label was
+lowered or changed. No vision holdout was spent. Every FAILED / BLOCKED /
+WITHHELD item carried into this phase is still exactly what it was.
+
+## F9 — a fresh checkout could not certify at all (INDEPENDENT)
+
+### The failure, reproduced before anything was changed
+
+Hermes ran `make capability_cert` in `/home/marble/AI/CNET-worktrees/integrity-final-verify`,
+a fresh detached worktree at `6f9c859`, and got exit 2 with five failures for
+`honest_memory_retrieval` (durable log
+`/tmp/hermes-cnet-final-verify-20260730/capability_cert.log`, lines 63-71).
+
+Reproduced here, in a **disposable** worktree, never in the writer's tree and
+never in `/home/marble/AI/CNET`:
+
+```
+$ git worktree add --detach <scratch>/f9repro 6f9c859
+$ cd <scratch>/f9repro
+$ git status --porcelain | awk '$1=="M"{print $2}' | sort   # 94 CRLF paths
+$ xargs -a - -d'\n' git update-index --assume-unchanged     # same baseline Hermes had
+$ git status --short | wc -l
+0
+$ make capability_cert
+...
+--- honest_memory_retrieval: control run (pristine fixture)
+FAIL: honest_memory_retrieval: evaluator emits a HELDOUT_FIXTURE receipt
+FAIL: honest_memory_retrieval: case unrelated-query-misses reported as consumed
+--- honest_memory_retrieval: mutation run (case[0].expected)
+FAIL: honest_memory_retrieval: mutating case[0].expected -> 'hit' must fail the evaluator (rc=0)
+--- honest_memory_retrieval: mutation run (case[0].stored)
+FAIL: honest_memory_retrieval: mutating case[0].stored -> 'the launch code is amber-lark-3' must fail the evaluator (rc=0)
+--- honest_memory_retrieval: mutation run (case[0].query)
+FAIL: honest_memory_retrieval: mutating case[0].query -> 'the sky is blue' must fail the evaluator (rc=0)
+CAPABILITY_FIXTURE_CAUSALITY_FAIL failures=5
+GATE_FAIL gate=capability_fixture_causality reason=producer_exit_1
+##EXIT=2
+```
+
+The run binding is byte-identical to Hermes's: `worktree=e3b0c44298fc1c14
+untracked=e3b0c44298fc1c14 dirty=0 special_index_files=94`.
+
+### Root cause — measured, not inferred
+
+The difference between the two trees is not in any tracked file. It is
+`dotnet/Cce.Llm.Tests/obj`, ignored build state the writer's worktree happens to
+hold and a fresh checkout never does:
+
+```
+$ ls -d dotnet/Cce.Llm.Tests/obj dotnet/Cce.Llm.Tests/bin      # writer worktree
+dotnet/Cce.Llm.Tests/bin
+dotnet/Cce.Llm.Tests/obj
+$ ls -d dotnet/Cce.Llm.Tests/obj dotnet/Cce.Llm.Tests/bin      # fresh worktree
+ls: cannot access 'dotnet/Cce.Llm.Tests/obj': No such file or directory
+ls: cannot access 'dotnet/Cce.Llm.Tests/bin': No such file or directory
+```
+
+The evaluator itself, run by hand in the fresh worktree, at `6f9c859`:
+
+```
+$ dotnet test dotnet/Cce.Llm.Tests/CNET.Cce.Llm.Tests.csproj --no-restore \
+    --filter FullyQualifiedName~AutoRecall_GenuineEmpty_TellsModelNotToInvent \
+    --logger 'console;verbosity=normal' > out.log 2>&1
+$ echo "##EXIT=$?"; wc -c out.log
+##EXIT=0
+0 out.log
+```
+
+**Zero bytes, exit 0, no test run.** That is the silent-success mode
+`tests/run_capability_cert.py` names in its own docstring — and nothing in the
+tree ever built the thing it then asked to run.
+
+Two things follow, and only one of them is a bug:
+
+* the gate was RIGHT. An evaluator that does not run cannot emit a consumption
+  receipt, so nothing was ever falsely certified. It failed closed.
+* the tree was UNBUILDABLE. There was no way for a fresh checkout to be
+  certifiable at all, and the writer's worktree passed only because it happened
+  to hold the right ignored directory.
+
+`dotnet build` fixes it, offline, in 5.5 seconds from a cold fresh worktree, and
+the evaluator then behaves:
+
+```
+$ dotnet build dotnet/Cce.Llm.Tests/CNET.Cce.Llm.Tests.csproj -c Debug
+Build succeeded.    real 0m5.452s
+$ CNET_HELD_OUT_FIXTURE=$PWD/tests/fixtures/capability_honest_memory_retrieval.json \
+  dotnet test ... --no-restore --filter ...
+HELDOUT_CASE id=unrelated-query-misses reads=3
+HELDOUT_FIXTURE capability=honest_memory_retrieval sha256=85d4fc96... cases=1 consumed=1
+HELDOUT_METRIC cases_passed=1 cases_declared=1 metric=1.000000 errors=0
+Test Run Successful.
+##EXIT=0
+```
+
+### Fix
+
+`scripts/capability_evaluator_prereq.py` enforces two halves of one rule:
+
+* **DECLARATION** — an evaluator whose argv[0] is not a build command must
+  declare `evaluator_prepare`: a non-shell, allowlisted argv that makes it
+  runnable from a clean checkout. `make TARGET` is exempt because make *is* a
+  build system: it rebuilds its target from its own prerequisites and fails
+  loudly when it cannot, which is exactly why all five `make` capabilities
+  survived the fresh worktree untouched and the one `dotnet` capability did not.
+  Enforced statically in `validate_manifest`, so a silent manifest is refused
+  before anything runs.
+* **READINESS** — `evaluator_prepare` runs to success, and afterwards the
+  declared `evaluator_binary` must exist and be no older than every declared
+  `evaluator_source`. A prepare that exits 0 without producing the binary, or
+  that leaves output older than the sources defining what the evaluator does, is
+  refused by name. Nothing silently uses missing or stale output.
+
+Both `tests/test_capability_fixture_causality.py` and
+`tests/run_capability_cert.py` call it before running any evaluator;
+`make capability_cert` gained `capability_evaluator_prereq` as a prerequisite.
+
+### RED for the guard itself — each negative is causal
+
+The four decisive checks were disabled one build at a time in a scratch copy and
+the unit lane re-run:
+
+```
+$ python3 tests/test_capability_evaluator_prereq.py     # guards disabled
+FAIL: test_non_building_evaluator_without_prepare_is_refused
+FAIL: test_prepare_that_fails_is_refused
+FAIL: test_prepare_that_produces_nothing_is_refused
+FAIL: test_stale_binary_is_refused
+Ran 15 tests -- FAILED (failures=4)
+CAPABILITY_EVALUATOR_PREREQ_UNIT_FAIL checks=15 failures=4 errors=0
+##EXIT=1
+
+$ python3 tests/test_capability_evaluator_prereq.py     # restored
+Ran 15 tests -- OK
+CAPABILITY_EVALUATOR_PREREQ_UNIT_PASS checks=15 refusals=missing,stale,failed,undeclared
+##EXIT=0
+```
+
+### One fixture had to be told about the new import
+
+`tests/test_evidence_special_index.py` builds a throwaway repo holding the real
+runners, and copied exactly two files. `run_capability_cert.py` now imports the
+prerequisite module, so every capability case in that gate became an ImportError
+that read as a refusal:
+
+```
+$ make evidence_special_index
+CAPABILITY_CERT_PRISTINE exit=1
+FAIL: a pristine tree with special-index paths must still certify (exit was 1)
+FAIL: the evaluator really did append to the assume-unchanged file
+FAIL: run_capability_cert must name the drift it refused on
+EVIDENCE_SPECIAL_INDEX_FAIL checks=15 failures=3
+##EXIT=2
+```
+
+The module is installed into the fixture too; its absence at a replayed legacy
+revision is expected (those runners do not import it) while a missing REQUIRED
+runner still raises. `__pycache__/` joins `logs/` in the fixture's `.gitignore`
+for the reason CNET ignores it — importing a module writes a bytecode cache, and
+an ignored build artifact is not the untracked change that gate is looking for.
+The legacy RED is still RED:
+
+```
+$ CNET_EVIDENCE_LEGACY=dc3b2a2 python3 tests/test_evidence_special_index.py
+EVIDENCE_SPECIAL_INDEX_FAIL checks=15 failures=7
+##EXIT=1
+```
+
+## F7 — five of nine trained artifacts had no persistence gate (HIGH)
+
+### RED — measured on the tree at `6f9c859`, in an isolated CWD
+
+```
+$ mkdir <scratch>/demorun && cd <scratch>/demorun && bin/nn_demo
+...
+hex character final loss: inf
+word final loss: inf
+$ ls -l hex_char_weights.txt word_weights.txt hex_char_contract.txt word_contract.txt
+3530  hex_char_weights.txt
+6136  word_weights.txt
+2177  hex_char_contract.txt
+2424  word_contract.txt
+$ ls -l nibble_weights.txt cond_increment_weights.txt raw_word_weights.txt
+ 412  nibble_weights.txt
+5099  cond_increment_weights.txt
+21281 raw_word_weights.txt
+```
+
+`inf` is `BTN_TRAIN_LOSS_FAILED`, the value phase 3 introduced to mean THIS NET
+IS NOT FIT TO CERTIFY. Two artifacts were shipping weights **and a contract** for
+runs that said exactly that. Three more (`nibble`, `conditional_increment`,
+`raw_word`) had no gate of any kind — `nibble` is not even a BTN and had no
+checked API to call.
+
+### Fix — four conditions, none a substitute for another
+
+`persist_allowed` (and `persist_allowed_nibble`) now require:
+
+1. **STATUS** — the trainer returned `BTN_TRAIN_OK`. Every training call in
+   `src/legacy/main.c` moved from the double-returning form to
+   `btn_train_dynamic_checked` / `nn_train_dynamic_checked`, so the status is a
+   status and is not inferred from the number.
+2. **MEASUREMENT** — the reported loss is finite and non-negative, AND a fresh
+   whole-set recomputation through the PUBLIC forward reproduces it exactly.
+3. **TARGET** — that recomputed loss meets the artifact's exact unchanged target.
+4. **REPRODUCTION** — the net independently reproduces every exemplar under the
+   certification predicate (for `nibble`, every 4-bit input decodes to its own
+   hex digit).
+
+Certification remains an ADDITIONAL bar, never a substitute for status or loss.
+
+`nn_train_dynamic_checked` is new: `nn_train_dynamic` returns `previous_loss`
+when the budget runs out — a plausible finite number describing a net it may
+since have grown — which is F2b's defect in the sibling API. The checked form
+decides the status from a public `nn_average_loss` recomputation over the net
+actually handed back.
+
+### The two artifacts that had never met their targets
+
+Neither `hex_char` nor `word` has ever reached the target it declares, under any
+version of this trainer:
+
+```
+dc3b2a2 (pre-phase-3):  hex character final loss: 0.001912   target 0.0005  MISS
+                        word final loss:          0.019539   target 0.0005  MISS
+6f9c859 (phase-3):      hex character final loss: inf        (honest non-success)
+                        word final loss:          inf        (honest non-success)
+```
+
+Traced per window, the cause is not a plateau: both runs are still descending
+when the budget ends, and the growth trigger never fires because the EMA's lag
+keeps `relative_improvement` above `min_improvement` right up to the last window.
+
+```
+word,     window 30/30:  h=2 train=0.019790 best=0.019790 stall=0 settle=0 esc=0
+hex_char, window 50/50:  h=4 train=0.011050 best=0.010318 stall=1 settle=0 esc=0
+```
+
+Measured against budget, with **target, seed, exemplars and floor held fixed**:
+
+```
+hex_char  30000 -> 0.01276283 MISS    80000 -> 0.00214472 MISS
+          50000 -> 0.01105855 MISS   120000 -> 0.00000538 OK    200000 -> same
+word      30000 -> 0.01978993 MISS    80000 -> 0.00309570 MISS
+          50000 -> 0.00382671 MISS   120000 -> 0.00000000 OK    200000 -> same
+```
+
+So both were given 120000 epochs — the budget `conditional_increment` and
+`raw_word` already ask for, and `raw_word` learns the SAME eight words to the
+SAME target from a harder encoding. **This is a compute budget, not a claim.**
+Nothing about what the artifact asserts moved; it now actually meets what it
+always asserted. The alternative was to let the guard refuse and report `certify`
+FAILED; that was the fallback, and it is recorded here so the choice is
+reviewable rather than invisible.
+
+### GREEN — all nine artifacts, all four conditions
+
+```
+$ bin/nn_demo        (isolated CWD, 4.3s)
+TRAIN_STATUS name=nibble                status=reached_target loss=0.00004178 recomputed=0.00004178 target=0.00005000 exemplars=reproduced persist=allowed
+TRAIN_STATUS name=increment             status=reached_target loss=0.00021869 recomputed=0.00021869 target=0.00150000 exemplars=reproduced persist=allowed
+TRAIN_STATUS name=combine               status=reached_target loss=0.00000964 recomputed=0.00000964 target=0.00080000 exemplars=reproduced persist=allowed
+TRAIN_STATUS name=split                 status=reached_target loss=0.00000757 recomputed=0.00000757 target=0.00080000 exemplars=reproduced persist=allowed
+TRAIN_STATUS name=conditional_increment status=reached_target loss=0.00039430 recomputed=0.00039430 target=0.00100000 exemplars=reproduced persist=allowed
+TRAIN_STATUS name=hex_value             status=reached_target loss=0.00226470 recomputed=0.00226470 target=0.00300000 exemplars=reproduced persist=allowed
+TRAIN_STATUS name=hex_char              status=reached_target loss=0.00000538 recomputed=0.00000538 target=0.00050000 exemplars=reproduced persist=allowed
+TRAIN_STATUS name=word                  status=reached_target loss=0.00000000 recomputed=0.00000000 target=0.00050000 exemplars=reproduced persist=allowed
+TRAIN_STATUS name=raw_word              status=reached_target loss=0.00000027 recomputed=0.00000027 target=0.00050000 exemplars=reproduced persist=allowed
+##EXIT=0
+```
+
+Reported equals recomputed bit-for-bit for all nine.
+
+### The forced-failure gate
+
+`tests/test_legacy_persist_guard.sh` fails one artifact at a time FOR REAL:
+`CNET_DEMO_FAIL_ARTIFACT=<name>` gives that run a zero-epoch budget, so it
+genuinely cannot reach its target. The guard is not bypassed, no target moves,
+and no value of the variable can make a run succeed. Per artifact it requires a
+non-zero exit, a `persist=REFUSED` line, that artifact's weights AND contract to
+be absent, every artifact written before it to still be present, and every one
+after it to be absent. Everything runs under `mktemp -d`.
+
+RED (the five guards this phase added, removed) vs GREEN:
+
+```
+                                  RED                    GREEN
+PERSIST_GUARD forced=nibble                rc=0 failures=19   rc=1 failures=0
+PERSIST_GUARD forced=increment             rc=1 failures=0    rc=1 failures=0
+PERSIST_GUARD forced=combine               rc=1 failures=0    rc=1 failures=0
+PERSIST_GUARD forced=split                 rc=1 failures=0    rc=1 failures=0
+PERSIST_GUARD forced=conditional_increment rc=0 failures=12   rc=1 failures=0
+PERSIST_GUARD forced=hex_value             rc=1 failures=0    rc=1 failures=0
+PERSIST_GUARD forced=hex_char              rc=0 failures=8    rc=1 failures=0
+PERSIST_GUARD forced=word                  rc=0 failures=8    rc=1 failures=0
+PERSIST_GUARD forced=raw_word              rc=0 failures=4    rc=1 failures=0
+PERSIST_GUARD_CLEAN            persist_allowed=4/9    persist_allowed=9/9
+LEGACY_PERSIST_GUARD_FAIL checks=208 failures=56
+LEGACY_PERSIST_GUARD_PASS checks=208 artifacts=9 forced_failures=9 unchanged_run=persists_all
+##EXIT=1                                  ##EXIT=0
+```
+
+The four that pass in the RED column are exactly the four already guarded at
+`6f9c859`. Registered in `config/ci_contract.json` as `required` and wired into
+`ci_core`.
+
+### Caller audit — every site, not a sample
+
+| # | artifact | trainer call | target | gate before write |
+|---|---|---|---|---|
+| 1 | `nibble` | `nn_train_dynamic_checked` | 0.00005 | `persist_allowed_nibble` -> `nn_save` |
+| 2 | `increment` | `btn_train_dynamic_checked` | 0.0015 | `persist_allowed` -> `btn_save` |
+| 3 | `combine` | `btn_train_dynamic_checked` | 0.0008 | `persist_allowed` -> `btn_save` |
+| 4 | `split` | `btn_train_dynamic_checked` | 0.0008 | `persist_allowed` -> `btn_save` |
+| 5 | `conditional_increment` | `btn_train_dynamic_checked` | 0.001 | `persist_allowed` -> `btn_save` |
+| 6 | `hex_value` | `btn_train_dynamic_checked` | 0.003 | `persist_allowed` -> `btn_save` + `btn_load` |
+| 7 | `hex_char` | `btn_train_dynamic_checked` | 0.0005 | `persist_allowed` -> `btn_save` + `btn_load` |
+| 8 | `word` | `btn_train_dynamic_checked` | 0.0005 | `persist_allowed` -> `btn_save` + `btn_load` |
+| 9 | `raw_word` | `btn_train_dynamic_checked` | 0.0005 | `persist_allowed` -> `btn_save` + `btn_load` |
+
+`emit_contract` for each artifact sits after its guard, so a refused artifact
+emits no contract either — asserted per artifact by the gate. No
+`btn_train_dynamic` / `nn_train_dynamic` call and no `btn_save` / `nn_save` call
+remains in `src/legacy/main.c` outside this table.
+
+## F8 — the validation test never exercised the split (MEDIUM)
+
+### The defect
+
+The held-out test used `VN = 10`. `BTN_TRAIN_MIN_SPLIT_SAMPLES` is 64, so no
+mask was ever built and **no test in this tree executed the exclusion path at
+all**. What that block actually proves — that a set carrying outright
+contradictions cannot be reported as learned — is now what it says.
+
+### The experiment, at n = 64
+
+Identical initial net, identical seed, identical everything; then ONE row's
+target is flipped and the trained weights are compared BYTE FOR BYTE (all 1096
+cells: `input_hidden`, `hidden_output_weights`, `hidden_bias`, `output_bias`)
+against the unmutated run. A row whose target reaches the gradient must move some
+weight; a row that is genuinely held out cannot move any. So the set of rows
+whose mutation leaves every cell identical IS the set the optimiser never stepped
+on — measured, not assumed — and it must be exactly the 12 rows the documented
+mask takes.
+
+Run on both paths the trainer can take:
+
+* **converged**: `max_epochs == growth_window`, target reached on the training
+  rows, so the run leaves through the success path;
+* **growing**: ten windows, `min_improvement = 2.0` so every window counts as
+  stalled and a neuron is added each time. The escape needs
+  `BTN_TRAIN_STALLED_GROWTH` (16) consecutive stalls or exhausted capacity, and
+  ten windows from eight neurons under a ceiling of 64 reach neither — so this
+  exercises the growth machinery and the multi-window SGD loop.
+
+```
+$ make btn_train_plateau
+BTN_EXCLUSION_converged n=64 cells=1096 excluded=12 trained=52 expected_excluded=12 status=0 hidden=8
+BTN_EXCLUSION_growing   n=64 cells=1096 excluded=12 trained=52 expected_excluded=12 status=1 hidden=18
+```
+
+RED — the mask check deleted from the SGD loop (F3a restored) in a scratch build:
+
+```
+BTN_EXCLUSION_converged n=64 cells=1096 excluded=0 trained=64 expected_excluded=12 status=0 hidden=8
+BTN_EXCLUSION_growing   n=64 cells=1096 excluded=0 trained=64 expected_excluded=12 status=1 hidden=18
+FAIL: a documented validation row's target never reaches a gradient step   (x12, twice)
+BTN_TRAIN_PLATEAU_FAIL checks=183 failures=28
+```
+
+An excluded row must ALSO move the reported whole-set loss, or the mutation never
+reached the measurement either and byte-identity would be proving that nothing
+happened at all. That is asserted for every excluded row, along with an unchanged
+status and an unchanged width.
+
+**What this deliberately does not claim.** The held-out rows are the growth,
+escape and best-net SELECTION signal — that is what a validation split IS FOR —
+so a run that escapes can legitimately land elsewhere because of them. The claim
+proved is the exact one the split has to earn: their targets never reach a
+gradient step.
+
+### The multi-seed property
+
+The old bar asserted only that each seed reported A DOCUMENTED STATUS, which
+every seed satisfies by plateauing: a trainer that converged for nothing at all
+would have passed it. At least one seed other than the two this file was written
+against (91, 123) must now converge and report `BTN_TRAIN_OK`, and a seed
+reporting success must be at or below the target it was given.
+
+```
+$ make btn_train_plateau
+BTN_PLATEAU_SEEDS tried=8 succeeded=8 independent=6
+BTN_TRAIN_PLATEAU_PASS checks=255 certifiable=256/256 status=checked loss=reproducible heldout=excluded
+```
+
+RED — every run forced to report a plateau. The OLD assertion still passes; the
+new one does not, which is the point:
+
+```
+BTN_PLATEAU_SEEDS tried=8 succeeded=0 independent=0
+FAIL: at least one seed other than the two this test was written against converges and reports BTN_TRAIN_OK
+BTN_TRAIN_PLATEAU_FAIL checks=248 failures=13
+```
+
+(`every seed reports a documented status` is absent from that failure list.)
+
+No full-data retraining was added, and the seed-123 control is unchanged: it
+still branches on the status it gets and asserts only what that status licenses.
+
+## Phase-4 verification matrix
+
+`##EXIT=` is the literal shell exit code. Every target below was run to
+completion in the writer worktree at the phase-4 HEAD.
+
+| Target | Exit | Result |
+|---|---|---|
+| `make recipe_gate` | 0 | PASS |
+| `make evidence_special_index` | 0 | PASS — re-run after the fix below |
+| `make capability_evaluator_prereq` | 0 | PASS |
+| `make capability_cert` | 0 | PASS — re-run after the fix below |
+| `make legacy_persist_guard` | 0 | PASS |
+| `make btn_train_plateau` | 0 | PASS |
+| `make certify` | 0 | PASS |
+| `make knowledge_accumulation_faults` | 0 | PASS |
+| `make coverage_sidecar_seal` | 0 | PASS |
+| `make coverage_sidecar_seal_san` | 0 | PASS |
+| `make coverage_owner_seal` | 0 | PASS |
+| `make coverage_abstain` | 0 | PASS |
+| `make knowledge_capsule` | 0 | PASS |
+| `make capsule_scope_lineage` | 0 | PASS |
+| `make knowledge_accumulation_bench` | 0 | PASS |
+| `make knowledge_composition_bench` | 0 | PASS |
+| `make personal_ai_hop_guard` | 0 | PASS |
+| `make vd_frontend_parse` | 0 | PASS |
+| `make vd_frontend_parse_san` | 0 | PASS |
+| `make cnu_budget` | 0 | PASS |
+| `make cnu_budget_san` | 0 | PASS |
+| `make port_raw_unit_seam` | 0 | PASS |
+| `make vision_coverage_test` | 0 | PASS |
+| `make vision_capsule_asset` | 0 | PASS |
+| `make vision_capsule_asset_san` | 0 | PASS |
+| `make own_learning_health` | 2 | **exit 2** |
+| `make ci_core` | 0 | PASS |
+
+### Narrow gates
+
+| Command | Exit |
+|---|---|
+| `python3 tests/test_evidence_special_index.py` | 0 |
+| `python3 tests/test_capability_cert_runner.py` | 0 |
+| `python3 tests/test_capability_evaluator_prereq.py` | 0 |
+| `python3 tests/test_capability_fixture_causality.py` | 0 |
+| `python3 tests/test_ci_contract.py` | 0 |
+| `python3 tests/test_ci_workflow.py` | 0 |
+| `bash tests/test_gate_evidence.sh` | 0 |
+| `bash tests/test_benchmark_verdict.sh` | 0 |
+| `bash tests/test_own_learning_health.sh` | 0 |
+| `sh tests/test_accumulation_faults_harness.sh` | 0 |
+| `sh tests/test_legacy_persist_guard.sh` | 0 |
+
+37 of 38 exit 0.
+
+The single non-zero is the one that must be, unchanged from phase 3:
+
+```
+OWN_LEARNING_HEALTH_STRICT_PASS checks=45
+CONFIG_ONLY_PASS
+OWN_LEARNING_HEALTH_BLOCKED reason=no_deployed_base path=/home/marble/AI/CNET/logs/personal.cnb
+##EXIT=2
+```
+
+Two entries are recorded as re-runs rather than quietly replaced:
+
+* `make evidence_special_index` first exited 2 because the runner it replays
+  had gained an import its fixture did not install. Fixed in `0092a74`; the
+  first result is the RED quoted above.
+* `make capability_cert` first exited 2 with
+  `GATE_FAIL ... reason=bound_state_changed:commit`. That was **self-inflicted
+  and correct**: a commit landed while the gate was running, so the tree it had
+  bound no longer existed and it refused to certify against it. Recorded here
+  rather than deleted, because it is the evidence discipline working.
+
+### The decisive fresh-worktree result
+
+A throwaway detached worktree, created from the phase-4 HEAD, given the same
+94-path assume-unchanged baseline, with **no dotnet build state of any kind**:
+
+```
+$ ls -d dotnet/Cce.Llm.Tests/obj
+ls: cannot access 'dotnet/Cce.Llm.Tests/obj': No such file or directory
+$ git status --short | wc -l
+0
+$ make capability_cert
+CAPABILITY_EVALUATOR_PREREQ_UNIT_PASS checks=15 refusals=missing,stale,failed,undeclared
+CAPABILITY_FIXTURE_CAUSALITY_PASS capabilities=6 mutations_rejected=39 scope=all
+CAPABILITY_CERT_RUN ... worktree=e3b0c44298fc1c14 dirty=0 special_index_files=94
+CAPABILITY id=calibrated_abstention   status=certified metric=1.000 receipt=ok
+CAPABILITY id=cce_classification      status=certified metric=0.861 receipt=ok
+CAPABILITY id=honest_memory_retrieval status=certified metric=1.000 receipt=ok
+CAPABILITY id=hybrid_skill_serve      status=certified metric=1.000 receipt=ok
+CAPABILITY id=json_toolcall_adapter   status=certified metric=0.775 receipt=ok
+CAPABILITY id=sleep_consolidation     status=certified metric=1.000 receipt=ok
+CAPABILITY_CERT_PASS certified=6/6
+##EXIT=0
+```
+
+6/6 certified and 39 mutations rejected in a tree that, at `6f9c859`, could not
+run one of its six evaluators at all. No fixture, marker or floor was weakened
+to get there.
+
+### Protected CRLF paths
+
+```
+include/nn.h        18767 bytes CRLF  500 lone_LF 0 lone_CR 0
+src/nn.c           113727 bytes CRLF 3233 lone_LF 0 lone_CR 0
+src/legacy/main.c   51282 bytes CRLF 1382 lone_LF 0 lone_CR 0
+
+83 recorded baseline paths: checked 83  missing 0  unchanged 80  changed 3
+  CHANGED include/nn.h        42d9ae1b63446fc3
+  CHANGED src/legacy/main.c   44ca0e2e5034af1a
+  CHANGED src/nn.c            b506143a8da0512c
+
+git diff --numstat 6f9c859..HEAD -- <the three>
+  25    0   include/nn.h        (purely additive)
+  260  64   src/legacy/main.c
+  36    0   src/nn.c            (purely additive)
+
+git -c core.whitespace=cr-at-eol diff --check          exit 0
+git -c core.whitespace=cr-at-eol diff --check --cached exit 0
+git ls-files -v  ->  h include/nn.h / h src/legacy/main.c / h src/nn.c
+                     h tests/certify_demo.c   (untouched)
+```
+
+The three changed paths are exactly the three this phase authorized. Every one
+was patched by a byte-level patcher that refuses to write unless the file
+matches its expected size, CRLF count and SHA-256 beforehand, every anchor
+matches exactly once, and no lone LF or CR exists before or after. All 64
+removed lines in `src/legacy/main.c` are the replaced `persist_allowed` body and
+the nine `btn_train_dynamic` / `nn_train_dynamic` call expressions, each quoted
+verbatim by its anchor. Staged with `git hash-object -w --no-filters` plus
+`git update-index --cacheinfo`; the committed blob and the raw worktree bytes
+hash identically for all three, and `assume-unchanged` was restored afterwards.
