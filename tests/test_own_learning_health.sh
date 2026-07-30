@@ -153,8 +153,8 @@ if [ -x "$MKBASE" ]; then
         # The mined unit has no coverage record either: also reported.
         checks=$((checks + 1))
         case "$LAST_OUT" in
-            *mined_units_without_coverage*) ;;
-            *) printf 'FAIL: a mined unit with no record must be reported\n'
+            *mined_units_without_bound_coverage*) ;;
+            *) printf 'FAIL: a mined unit with no bound record must be reported\n'
                failures=$((failures + 1)) ;;
         esac
 
@@ -167,6 +167,37 @@ if [ -x "$MKBASE" ]; then
                 env CNET_COVERAGE_ABSTAIN=1 CNET_PERSONAL_STRUCTURE_MINE_ON_SERVE=0 \
                     CNET_RESIDUAL_HTTP= CNET_RESIDUAL_GGUF="$TMP/teacher.gguf" \
                     "$HEALTH" --base "$TMP/ok.cnb"
+
+            # --- health/serving equivalence ----------------------------
+            # A record that names the unit but binds a DIFFERENT interface
+            # loads perfectly well. `hybrid_coverage_has_unit` said "guarded",
+            # `hybrid_coverage_binds_unit` -- which is what serving asks --
+            # says no. A deployment PASS that disagrees with the serving
+            # decision is worse than no gate at all.
+            for variant in "--cov-in-tag hfixture_othertag:a different input port tag" \
+                           "--cov-out-tag hfixture_othergoal:a different goal port tag" \
+                           "--cov-in-width 8:a different input dimension" \
+                           "--cov-in-family 2:a different port family"; do
+                opts=${variant%%:*}
+                label=${variant#*:}
+                name=$(printf '%s' "$opts" | tr -d ' -')
+                base="$TMP/mis_$name.cnb"
+                if "$MKBASE" "$base" --mined --coverage "$base.coverage" \
+                        $opts > "$TMP/mk_$name.log" 2>&1; then
+                    run_health 1 "mined_units_without_bound_coverage" \
+                        "OWN_LEARNING_HEALTH_PASS" \
+                        "a record with $label must not count as guarded" -- \
+                        env CNET_COVERAGE_ABSTAIN=1 \
+                            CNET_PERSONAL_STRUCTURE_MINE_ON_SERVE=0 \
+                            CNET_RESIDUAL_HTTP= CNET_RESIDUAL_GGUF="$TMP/teacher.gguf" \
+                            "$HEALTH" --base "$base"
+                else
+                    printf 'FAIL: mk_test_base could not build the %s fixture\n' "$label"
+                    cat "$TMP/mk_$name.log"
+                    failures=$((failures + 1))
+                    checks=$((checks + 1))
+                fi
+            done
 
             # A truncated sidecar must not read as coverage.
             head -c 12 "$TMP/ok.cnb.coverage" > "$TMP/trunc.coverage"

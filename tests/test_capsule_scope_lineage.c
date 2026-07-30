@@ -172,6 +172,21 @@ static int retamper(const char *dir, const char *from, const char *to) {
     return 0;
 }
 
+/* FNV-1a over a whole file: byte identity of the saved destination is a
+   stronger statement than "the counts match". */
+static unsigned long long file_fnv(const char *path) {
+    FILE *fp = fopen(path, "rb");
+    unsigned long long h = 14695981039346656037ULL;
+    int ch;
+    if (!fp) return 0;
+    while ((ch = fgetc(fp)) != EOF) {
+        h ^= (unsigned long long)(unsigned char)ch;
+        h *= 1099511628211ULL;
+    }
+    fclose(fp);
+    return h;
+}
+
 /* ---- destination non-mutation ------------------------------------------- */
 
 typedef struct {
@@ -410,6 +425,74 @@ int main(void) {
 
 #endif /* CNET_CAPSULE_REPORT_HAS_SCOPE */
 
+    /* --- 6b. atomic rollback after admission ------------------------------
+       include/cnet_capsule.h promises the destination is not mutated when an
+       import is refused, but cnb_add_unit has no removal counterpart, so a
+       failure after admission left the unit in the base. The window is
+       unreachable by construction -- which is not the same as recoverable, so
+       CNET_CAPSULE_FAIL_AFTER_ADMIT makes the recovery path executable and this
+       asserts BYTE identity of the saved destination across the refusal. */
+    {
+        CnetBase victim;
+        HybridAi victim_cov;
+        char before_path[700], after_path[700];
+        unsigned long long before_fnv = 0, after_fnv = 0;
+        size_t units_before, oracles_before, cov_before;
+        int rc_inject;
+
+        snprintf(before_path, sizeof before_path, "%s/rollback_before.cnb",
+                 scratch);
+        snprintf(after_path, sizeof after_path, "%s/rollback_after.cnb", scratch);
+
+        cnb_init(&victim);
+        hybrid_ai_init(&victim_cov);
+        /* A destination that already holds something, so the assertion is not
+           trivially about an empty base. */
+        check(cnb_add_oracle_desc(&victim, "capscope_teacher", "builtin",
+                                  oracle_in, oracle_out) == 0,
+              "rollback victim registers a descriptor");
+        check(build_unit(&victim, &victim_cov, "capscope_resident",
+                         "capscope_residin", "capscope_residout", SYM,
+                         SYM) == 0,
+              "rollback victim holds a resident unit");
+
+        units_before = victim.unit_count;
+        oracles_before = victim.oracle_count;
+        cov_before = hybrid_coverage_count(&victim_cov);
+        check(cnb_save(&victim, before_path) == 0,
+              "the destination saves before the refused import");
+        before_fnv = file_fnv(before_path);
+
+        setenv("CNET_CAPSULE_FAIL_AFTER_ADMIT", "1", 1);
+        rc_inject = cnet_capsule_import(&victim, &victim_cov, exh_dir, &rep);
+        unsetenv("CNET_CAPSULE_FAIL_AFTER_ADMIT");
+
+        check(rc_inject != 0, "an injected failure after admission refuses");
+        check(strcmp(rep.reject_reason, "injected_failure_after_admit") == 0,
+              "the refusal names the injected failure");
+        check(victim.unit_count == units_before,
+              "the admitted unit is rolled back out of the base");
+        check(victim.oracle_count == oracles_before,
+              "the restored descriptor is rolled back too");
+        check(hybrid_coverage_count(&victim_cov) == cov_before,
+              "the stored coverage record is rolled back");
+        check(cnb_save(&victim, after_path) == 0,
+              "the destination saves after the refused import");
+        after_fnv = file_fnv(after_path);
+        check(before_fnv == after_fnv,
+              "the destination is BYTE-identical across the refused import");
+
+        /* And the same destination must still accept an honest import, so the
+           rollback did not leave it subtly broken. */
+        check(cnet_capsule_import(&victim, &victim_cov, exh_dir, &rep) == 0,
+              "the rolled-back destination still accepts an honest import");
+        check(victim.unit_count == units_before + 1,
+              "the honest import lands after the rollback");
+
+        hybrid_ai_free(&victim_cov);
+        cnb_free(&victim);
+    }
+
     /* --- 7. export/import schema parity ----------------------------------- */
     {
         static const unsigned char nothing[1] = {0};
@@ -432,6 +515,6 @@ int main(void) {
         return 1;
     }
     printf("CAPSULE_SCOPE_LINEAGE_PASS checks=%d scope=machine_verified "
-           "lineage=restored disclosure=referenced_only\n", checks);
+           "lineage=restored disclosure=referenced_only rollback=byte_identical\n", checks);
     return 0;
 }

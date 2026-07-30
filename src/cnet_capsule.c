@@ -475,6 +475,7 @@ int cnet_capsule_import_asset(CnetBase *dst, HybridAi *cov, const char *dir,
     char scope[16] = {0};
     const char *prov_wanted = "";
     size_t oracles_before = 0;
+    CnbMark dst_mark;
     unsigned char *pay = NULL, *manbuf = NULL, *abuf = NULL;
     size_t paylen = 0, manlen = 0, alen = 0;
     unsigned a_schema_seen = 0;
@@ -501,6 +502,7 @@ int cnet_capsule_import_asset(CnetBase *dst, HybridAi *cov, const char *dir,
     }
     memset(&btn, 0, sizeof btn);
     memset(&c, 0, sizeof c);
+    memset(&dst_mark, 0, sizeof dst_mark);
     cnb_init(&sub);
 
     /* ---- manifest: read whole, verify its own checksum, THEN parse -------
@@ -853,8 +855,14 @@ int cnet_capsule_import_asset(CnetBase *dst, HybridAi *cov, const char *dir,
        can be restored too. Both mutations are undone if the unit admit fails:
        oracle descriptors are appended, so truncating the count is an exact
        rollback (CnbOracleDesc owns no heap). */
+    /* Take the mark BEFORE the first destination mutation. Every base mutation
+       is an append, so this is an exact inverse, and it covers the descriptor,
+       the blob, the unit ref, the minted tags and the mint sequence together --
+       the previous ad-hoc `oracle_count` truncation covered only one of them. */
+    cnb_mark(dst, &dst_mark);
     prov_wanted = (prov[0] && strcmp(prov, "~")) ? prov : "";
     oracles_before = dst->oracle_count;
+    (void)oracles_before;
     if (prov_wanted[0]) {
         size_t d;
         const CnbOracleDesc *from = NULL;
@@ -865,6 +873,7 @@ int cnet_capsule_import_asset(CnetBase *dst, HybridAi *cov, const char *dir,
             }
         if (!from) {
             if (cov_stored) (void)hybrid_coverage_forget_unit(cov, unit);
+            (void)cnb_rollback(dst, &dst_mark);
             cap_fail(rep, "provenance_descriptor_absent_from_payload");
             goto done;
         }
@@ -882,6 +891,7 @@ int cnet_capsule_import_asset(CnetBase *dst, HybridAi *cov, const char *dir,
                                                   from->goal_port);
             if (added != 0) {
                 if (cov_stored) (void)hybrid_coverage_forget_unit(cov, unit);
+                (void)cnb_rollback(dst, &dst_mark);
                 cap_fail(rep, "provenance_descriptor_restore_failed");
                 goto done;
             }
@@ -889,19 +899,27 @@ int cnet_capsule_import_asset(CnetBase *dst, HybridAi *cov, const char *dir,
     }
     if (cnb_add_unit(dst, &btn, &c, NULL) != 0) {
         if (cov_stored) (void)hybrid_coverage_forget_unit(cov, unit);
-        dst->oracle_count = oracles_before;
+        (void)cnb_rollback(dst, &dst_mark);
         cap_fail(rep, "target_admit_refused");
         goto done;
     }
-    if (prov_wanted[0] &&
-        cnb_set_unit_provenance(dst, unit, prov_wanted) != 0) {
-        /* cnb_add_unit has no removal counterpart, so this must not be
-           reachable: the descriptor was ensured above and the unit was just
-           added. Report it rather than return a success whose lineage is a
-           fiction. */
-        if (cov_stored) (void)hybrid_coverage_forget_unit(cov, unit);
-        cap_fail(rep, "provenance_restore_failed");
-        goto done;
+    /* Fault injection, honoured only when the variable is set. The window
+       between admission and provenance restore is unreachable by construction
+       (the descriptor was ensured above and the unit was just added with empty
+       provenance) -- and "unreachable" is not the same as "recoverable". This
+       makes the recovery path executable so a test can prove the destination
+       really is byte-identical after a failure there. */
+    {
+        const char *inject = getenv("CNET_CAPSULE_FAIL_AFTER_ADMIT");
+        int forced = inject && inject[0] == '1' && inject[1] == '\0';
+        if (forced || (prov_wanted[0] &&
+                       cnb_set_unit_provenance(dst, unit, prov_wanted) != 0)) {
+            if (cov_stored) (void)hybrid_coverage_forget_unit(cov, unit);
+            (void)cnb_rollback(dst, &dst_mark);
+            cap_fail(rep, forced ? "injected_failure_after_admit"
+                                 : "provenance_restore_failed");
+            goto done;
+        }
     }
     if (rep) {
         snprintf(rep->unit, sizeof rep->unit, "%s", unit);

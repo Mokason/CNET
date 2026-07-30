@@ -14,6 +14,11 @@
  *   --coverage  also write a VALID sidecar for the unit at <path>. Corruption
  *               fixtures are produced by mutating that file, so the mutation is
  *               always a one-byte-level difference from something that loads.
+ *   --cov-in-tag / --cov-out-tag / --cov-in-width / --cov-in-family
+ *               write a sidecar that LOADS but binds a DIFFERENT interface than
+ *               the unit's. These are the health-vs-serving equivalence
+ *               fixtures: the record still carries the unit NAME, which is all
+ *               the old health check ever looked at.
  *
  * It writes only where it is told. Callers pass mkdtemp paths; nothing here
  * touches a real base, the repository, or any runtime state.
@@ -53,6 +58,8 @@ int main(int argc, char **argv) {
     double in[SYM][SYM], target[SYM][SYM];
     char name[CNB_NAME_MAX];
     const char *coverage_path = NULL;
+    const char *cov_in_tag = NULL, *cov_out_tag = NULL;
+    long cov_in_width = 0, cov_in_family = -1;
     int mined = 1;
     int i, a, rc = 1;
 
@@ -67,6 +74,14 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[a], "--plain")) mined = 0;
         else if (!strcmp(argv[a], "--coverage") && a + 1 < argc)
             coverage_path = argv[++a];
+        else if (!strcmp(argv[a], "--cov-in-tag") && a + 1 < argc)
+            cov_in_tag = argv[++a];
+        else if (!strcmp(argv[a], "--cov-out-tag") && a + 1 < argc)
+            cov_out_tag = argv[++a];
+        else if (!strcmp(argv[a], "--cov-in-width") && a + 1 < argc)
+            cov_in_width = strtol(argv[++a], NULL, 10);
+        else if (!strcmp(argv[a], "--cov-in-family") && a + 1 < argc)
+            cov_in_family = strtol(argv[++a], NULL, 10);
         else {
             fprintf(stderr, "unknown option %s\n", argv[a]);
             return 2;
@@ -117,16 +132,50 @@ int main(int argc, char **argv) {
     }
 
     if (coverage_path) {
-        if (hybrid_coverage_record(&hybrid, pin, pout, name, (const double *)in,
-                                   (const double *)target, SYM, SYM, SYM) != 0) {
+        /* The record may deliberately describe a different interface than the
+           unit's while still being a perfectly loadable record that names the
+           unit -- which is exactly the state the name-only health check could
+           not tell apart from a real guard. */
+        Port cin = pin, cout_port = pout;
+        size_t width = (size_t)(cov_in_width > 0 ? cov_in_width : SYM);
+        double *rows = NULL, *tgts = NULL;
+        size_t r, j;
+
+        if (cov_in_tag) snprintf(cin.tag, sizeof cin.tag, "%s", cov_in_tag);
+        if (cov_out_tag)
+            snprintf(cout_port.tag, sizeof cout_port.tag, "%s", cov_out_tag);
+        if (cov_in_family >= 0) cin.family = (PortFamily)cov_in_family;
+        cin.field_width = width;
+        cin.field_count = 1;
+
+        rows = (double *)calloc((size_t)SYM * width, sizeof(double));
+        tgts = (double *)calloc((size_t)SYM * (size_t)SYM, sizeof(double));
+        if (!rows || !tgts) {
+            free(rows); free(tgts);
+            fprintf(stderr, "mk_test_base: coverage row allocation failed\n");
+            goto done;
+        }
+        for (r = 0; r < (size_t)SYM; r++) {
+            for (j = 0; j < width; j++) rows[r * width + j] = (j == r) ? 1.0 : 0.0;
+            for (j = 0; j < (size_t)SYM; j++)
+                tgts[r * SYM + j] = (j == (r + 1) % SYM) ? 1.0 : 0.0;
+        }
+        if (hybrid_coverage_record(&hybrid, cin, cout_port, name, rows, tgts,
+                                   SYM, width, SYM) != 0) {
+            free(rows); free(tgts);
             fprintf(stderr, "mk_test_base: hybrid_coverage_record failed\n");
             goto done;
         }
+        free(rows);
+        free(tgts);
         if (hybrid_coverage_save(&hybrid, coverage_path) != 0) {
             fprintf(stderr, "mk_test_base: hybrid_coverage_save failed\n");
             goto done;
         }
-        printf("MK_TEST_BASE_COVERAGE path=%s rows=%d\n", coverage_path, SYM);
+        printf("MK_TEST_BASE_COVERAGE path=%s rows=%d in_dim=%zu family=%d "
+               "in_tag=%s out_tag=%s\n",
+               coverage_path, SYM, width, (int)cin.family, cin.tag,
+               cout_port.tag);
     }
 
     printf("MK_TEST_BASE_OK path=%s unit=%s mined=%d\n", argv[1], name, mined);

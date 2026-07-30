@@ -468,6 +468,44 @@ int cnb_get_unit(const CnetBase *b, const char *name,
 
 unsigned cnb_format_version(void) { return CNB_VERSION; }
 
+void cnb_mark(const CnetBase *b, CnbMark *out) {
+    if (!out) return;
+    memset(out, 0, sizeof *out);
+    if (!b) return;
+    out->units = b->unit_count;
+    out->blobs = b->blob_count;
+    out->tags = b->tag_count;
+    out->oracles = b->oracle_count;
+    out->stats = b->stats_count;
+    out->next_mint_seq = b->next_mint_seq;
+}
+
+int cnb_rollback(CnetBase *b, const CnbMark *mark) {
+    size_t i;
+    if (!b || !mark) return -1;
+    /* Only ever backwards. A mark longer than the current state did not come
+       from this base, and truncating "forward" would invent entries. */
+    if (mark->units > b->unit_count || mark->blobs > b->blob_count ||
+        mark->tags > b->tag_count || mark->oracles > b->oracle_count ||
+        mark->stats > b->stats_count)
+        return -1;
+    /* Blob payloads are the only owned heap past the mark; unit refs, tags,
+       oracle descriptors and stats are plain structs in growable arrays. */
+    for (i = mark->blobs; i < b->blob_count; ++i) {
+        free(b->blobs[i].bytes);
+        b->blobs[i].bytes = NULL;
+        b->blobs[i].len = 0;
+        b->blobs[i].digest = 0;
+    }
+    b->unit_count = mark->units;
+    b->blob_count = mark->blobs;
+    b->tag_count = mark->tags;
+    b->oracle_count = mark->oracles;
+    b->stats_count = mark->stats;
+    b->next_mint_seq = mark->next_mint_seq;
+    return 0;
+}
+
 int cnb_export_subset(const CnetBase *src, CnetBase *dst,
                       int (*keep)(const char *name, void *ctx), void *ctx) {
     size_t i;

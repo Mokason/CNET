@@ -40,7 +40,9 @@
 #include <unistd.h>
 
 #include "../include/base.h"
+#include "../include/contract/contract.h"
 #include "../include/hybrid_ai.h"
+#include "../include/nn.h"
 
 #define MAX_DANGER 16
 #define PROBE_TIMEOUT_MS_DEFAULT 2000
@@ -214,7 +216,7 @@ int main(int argc, char **argv) {
     HybridAi h;
     const char *danger[MAX_DANGER];
     size_t ndanger = 0, i;
-    size_t mined = 0, unguarded = 0, records = 0;
+    size_t mined = 0, unguarded = 0, records = 0, unreadable_units = 0;
     const char *cov_state = "missing";
     const char *teacher_state = "none";
     int base_ok = 0, base_named = 0, mine_flag, gate_off, residual_cfg;
@@ -277,9 +279,32 @@ int main(int argc, char **argv) {
             records = hybrid_coverage_count(&h);
             for (i = 0; i < base.unit_count; i++) {
                 const char *nm = base.units[i].name;
+                BinaryTransformNetwork btn;
+                Contract ct;
+                int bound = 0;
                 if (!hybrid_unit_is_mined(nm)) continue;
                 mined++;
-                if (!hybrid_coverage_has_unit(&h, nm)) unguarded++;
+                /* Ask the SAME question serving asks. `hybrid_coverage_has_unit`
+                   answers "is this name mentioned", so a record that named the
+                   unit but bound a different family, tag, port or dimension
+                   made this gate report health while personal_ai's startup --
+                   which binds the exact interface -- armed fail-closed for the
+                   very same unit. A deployment PASS that disagrees with the
+                   serving decision is worse than no gate. */
+                memset(&btn, 0, sizeof btn);
+                memset(&ct, 0, sizeof ct);
+                if (cnb_get_unit(&base, nm, &btn, &ct) == 0) {
+                    if (btn.input_port_count >= 1 && btn.output_port_count >= 1)
+                        bound = hybrid_coverage_binds_unit(&h, nm,
+                                                           btn.input_ports[0],
+                                                           btn.output_ports[0],
+                                                           btn.input_count);
+                    contract_free(&ct);
+                    btn_free(&btn);
+                } else {
+                    unreadable_units++;
+                }
+                if (!bound) unguarded++;
             }
         }
     }
@@ -309,7 +334,9 @@ int main(int argc, char **argv) {
            (fail-closed), but the library is degraded and an operator must
            re-mine. */
         if (unguarded > 0 && ndanger < MAX_DANGER)
-            danger[ndanger++] = "mined_units_without_coverage";
+            danger[ndanger++] = "mined_units_without_bound_coverage";
+        if (unreadable_units > 0 && ndanger < MAX_DANGER)
+            danger[ndanger++] = "mined_units_unreadable";
         if (base_ok && strcmp(cov_state, "unreadable") == 0 &&
             ndanger < MAX_DANGER)
             danger[ndanger++] = "coverage_file_unreadable";
@@ -345,12 +372,13 @@ int main(int argc, char **argv) {
     printf("{\"mode\":\"%s\",\"base\":\"%s\",\"base_loaded\":%d,"
            "\"mined_units\":%zu,"
            "\"coverage_records\":%zu,\"unguarded_mined\":%zu,"
+           "\"unreadable_mined\":%zu,"
            "\"coverage_file\":\"%s\",\"mine_on_serve\":%d,"
            "\"mine_on_serve_raw\":\"%s\",\"coverage_abstain_raw\":\"%s\","
            "\"coverage_gate\":\"%s\",\"residual_configured\":%d,"
            "\"residual_teacher\":\"%s\",\"dangerous\":[",
            config_only ? "config_only" : "deployed", base_escaped, base_ok,
-           mined, records, unguarded, cov_state, mine_flag,
+           mined, records, unguarded, unreadable_units, cov_state, mine_flag,
            mine_escaped, gate_escaped,
            gate_off ? "off" : "on", residual_cfg, teacher_state);
     for (i = 0; i < ndanger; i++)

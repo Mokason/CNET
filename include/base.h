@@ -137,6 +137,25 @@ int cnb_has_unit(const CnetBase *b, const char *name);
 /* Build dst as a subset of src: keep only units where keep(name,ctx)!=0.
  * Copies matching oracle descriptors and stats. Tags are re-minted via
  * cnb_add_unit. Does not modify src. Returns 0 on success. */
+/* ---- append mark / rollback ------------------------------------------------
+   cnb_add_unit has no removal counterpart, so an importer that mutates a
+   destination and then fails has no way back: cnet_capsule's header promises
+   destination non-mutation on refusal, and a provenance failure after admission
+   broke that promise. Every base mutation is an APPEND, so recording the array
+   lengths is an exact inverse.
+
+   Take a mark before the first mutation; on any later failure, cnb_rollback
+   frees whatever was appended past it and restores the mint sequence. Rolling
+   back to a mark taken from a DIFFERENT base, or forward to a longer state, is
+   refused rather than guessed at. */
+typedef struct {
+    size_t units, blobs, tags, oracles, stats;
+    unsigned long long next_mint_seq;
+} CnbMark;
+
+CNET_API void cnb_mark(const CnetBase *b, CnbMark *out);
+CNET_API int cnb_rollback(CnetBase *b, const CnbMark *mark);
+
 int cnb_export_subset(const CnetBase *src, CnetBase *dst,
                       int (*keep)(const char *name, void *ctx), void *ctx);
 

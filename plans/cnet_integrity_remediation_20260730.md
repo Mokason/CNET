@@ -1210,3 +1210,106 @@ One control matters as much as the negatives: **ignored build output changing
 during a run must not fail the gate.** `logs/` and `bin/` move on every
 invocation; a binding that failed on those would be unusable, so the digests
 deliberately cover only tracked and untracked non-ignored paths.
+
+## R5 — Capsule import atomic rollback
+
+### Defect
+
+`include/cnet_capsule.h` promises the destination is not mutated when an import
+is refused, but `cnb_add_unit` has no removal counterpart, so any failure after
+admission left the unit in the base. The only rollback was an ad-hoc
+`dst->oracle_count = oracles_before`, which covers the descriptor and nothing
+else — not the blob, the unit ref, the minted tags, or the mint sequence.
+
+The window between admission and provenance restore is unreachable by
+construction (the descriptor is ensured beforehand and the unit is added with
+empty provenance). **Unreachable is not the same as recoverable**, so
+`CNET_CAPSULE_FAIL_AFTER_ADMIT=1` makes the recovery path executable.
+
+### RED — FRESH
+
+Same test, same fault injected, with the `cnb_rollback` calls removed from
+`src/cnet_capsule.c` — i.e. exactly the pre-slice behaviour:
+
+```
+<scratch>/r5-red/red_capsule_rollback        # exit 1
+FAIL: the admitted unit is rolled back out of the base
+FAIL: the destination is BYTE-identical across the refused import
+FAIL: the rolled-back destination still accepts an honest import
+CAPSULE_SCOPE_LINEAGE_FAIL checks=45 failures=3
+```
+
+The third failure is the compounding one: the half-imported unit makes the
+destination refuse the *honest* retry as a duplicate.
+
+### Fix
+
+`cnb_mark()` / `cnb_rollback()` in `src/base.c`. Every base mutation is an
+append, so recording the array lengths and the mint sequence is an exact
+inverse; rollback frees the blob payloads past the mark (the only owned heap)
+and truncates. Rolling back to a mark from a different base, or "forward", is
+refused rather than guessed at. `cnet_capsule_import_asset` takes the mark
+before its first destination mutation and rolls back on every later failure.
+
+### GREEN — FRESH
+
+```
+make capsule_scope_lineage
+CAPSULE_SCOPE_LINEAGE_PASS checks=45 scope=machine_verified lineage=restored
+  disclosure=referenced_only rollback=byte_identical                     # exit 0
+```
+
+The assertion is byte identity: the destination is saved with `cnb_save` before
+and after the refused import and the two files are compared by FNV, on a base
+that already holds a unit, a coverage record and a descriptor — not an empty
+one. It then still accepts an honest import, so the rollback left nothing subtly
+broken.
+
+## R6 — Health and serving must agree
+
+### Defect
+
+`tools/cnet_own_learning_health.c` asked `hybrid_coverage_has_unit` — "is this
+name mentioned anywhere" — while `personal_ai`'s startup asks
+`hybrid_coverage_binds_unit`, the exact unit + ports + dimension. A sidecar
+record carrying the right unit name but a different port tag, goal tag, input
+dimension or port family loads perfectly well, so the deployment gate reported
+**healthy** for exactly the unit serving had armed fail-closed against.
+
+### RED — FRESH
+
+The pre-fix tool, built from `HEAD` against the current libraries and driven by
+the same fixtures:
+
+```
+bash tests/test_own_learning_health.sh <pre-fix-binary> ./bin/mk_test_base   # exit 1
+FAIL: a record with a different input port tag must not count as guarded -- expected exit 1, got 0
+FAIL: ... -- forbidden marker OWN_LEARNING_HEALTH_PASS was printed
+FAIL: a record with a different goal port tag must not count as guarded -- expected exit 1, got 0
+FAIL: a record with a different input dimension must not count as guarded -- expected exit 1, got 0
+FAIL: a record with a different port family must not count as guarded -- expected exit 1, got 0
+OWN_LEARNING_HEALTH_STRICT_FAIL checks=45 failures=13
+```
+
+All four mismatched-interface records produced `OWN_LEARNING_HEALTH_PASS`.
+
+### Fix
+
+The health tool materializes each mined unit with `cnb_get_unit` and calls the
+**same predicate serving calls**. A unit it cannot materialize is its own danger
+(`mined_units_unreadable`), and the existing danger is renamed to
+`mined_units_without_bound_coverage` because "without coverage" was never what
+was being measured. `tests/mk_test_base.c` grows
+`--cov-in-tag/--cov-out-tag/--cov-in-width/--cov-in-family` so a fixture can be
+a record that **loads** and does not **bind**.
+
+### GREEN — FRESH
+
+```
+bash tests/test_own_learning_health.sh
+OWN_LEARNING_HEALTH_STRICT_PASS checks=45      # exit 0
+```
+
+45 checks, up from 33. `make own_learning_health` still ends
+`OWN_LEARNING_HEALTH_BLOCKED reason=no_deployed_base` on this host — unchanged
+and still not a PASS.
