@@ -2933,6 +2933,39 @@ vd_frontend_parse_san: tools/vision_detection/vd_frontend.c tools/vision_detecti
 
 .PHONY: vd_frontend_parse vd_frontend_parse_san
 
+# CNU header budgets: a tiny sealed unit must not be able to make the parser
+# allocate or touch its way into a denial of service. The child process runs
+# under RLIMIT_AS and RLIMIT_CPU and its peak RSS is measured, because a parser
+# that commits a gigabyte and only THEN discovers the payload is empty has still
+# refused -- and that is the defect.
+cnu_budget: $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(PLAN_TABLE) $(ROUTER) $(SRC) $(LIBRARY) tests/test_cnu_budget.c include/contract/unit.h
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) -std=c11 -Wall -Wextra -pedantic -Werror -O2 -D_DEFAULT_SOURCE \
+		-I include -o $(BIN_DIR)/test_cnu_budget \
+		$(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(PLAN_TABLE) \
+		$(ROUTER) $(SRC) $(LIBRARY) tests/test_cnu_budget.c -lm -lpthread -lcurl
+	@timeout 900 ./$(BIN_DIR)/test_cnu_budget > logs/cnu_budget.log 2>&1; \
+		status=$$?; cat logs/cnu_budget.log; test $$status -eq 0
+	@grep -q CNU_BUDGET_PASS logs/cnu_budget.log
+
+cnu_budget_san: $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(PLAN_TABLE) $(ROUTER) $(SRC) $(LIBRARY) tests/test_cnu_budget.c include/contract/unit.h
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) -std=c11 -Wall -Wextra -g -O1 -fsanitize=address,undefined \
+		-fno-omit-frame-pointer -D_DEFAULT_SOURCE -I include \
+		-o $(BIN_DIR)/cnu_budget_san \
+		$(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(PLAN_TABLE) \
+		$(ROUTER) $(SRC) $(LIBRARY) tests/test_cnu_budget.c -lm -lpthread -lcurl
+	@# ASan reserves a large shadow map, so the child's RLIMIT_AS guard is not
+	@# meaningful here; allow_user_segv_handler keeps the forked children usable.
+	@ASAN_OPTIONS=detect_leaks=0:allow_user_segv_handler=1 \
+		UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1 \
+		CNU_BUDGET_NO_RLIMIT=1 timeout 900 ./$(BIN_DIR)/cnu_budget_san \
+		> logs/cnu_budget_san.log 2>&1; \
+		status=$$?; cat logs/cnu_budget_san.log; test $$status -eq 0
+	@grep -q CNU_BUDGET_PASS logs/cnu_budget_san.log
+
+.PHONY: cnu_budget cnu_budget_san
+
 .PHONY: port_raw_unit_seam
 port_raw_unit_seam: $(CAPSULE_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(EXT_TEACHER_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) tests/test_port_raw_unit_seam.c
 	@mkdir -p $(BIN_DIR) logs/vision

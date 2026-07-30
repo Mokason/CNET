@@ -664,3 +664,127 @@ An end-to-end `bin/vd_runner` run against a real capsule could not be executed:
 there is no `data/` tree here, and the vision capsule itself remains BLOCKED
 upstream because CNU1 rejects continuous exemplars. The parser is proven by
 mutation and fuzz; the full runtime path is unchanged and unproven here.
+
+---
+
+## C7 — CNU parser topology budgets
+
+### Defect
+
+`unit_load_mem` bounded each dimension individually against `UNIT_MAX_DIM`
+(2^20) but never bounded their **products**, and called `btn_init` before
+anything proved the sealed payload carried the arrays those products imply.
+`btn_init` `calloc`s `input x max_hidden` and `max_hidden x output`, then runs
+`btn_add_hidden_neuron` `hidden_count` times — and each pass *writes*
+`input_count` doubles. So a correctly resealed 764-byte CNU could make the
+parser touch a gigabyte of real memory and burn seconds of CPU before the
+bounded reads discovered there were no weights to read. Capsule payload size
+caps do not cap expansion implied by header dimensions.
+
+### RED — FRESH
+
+The same test compiled against pristine `HEAD` sources in a read-only scratch
+extraction. Fixtures are built from a real saved unit, have their four
+dimensions **and their port widths** rewritten (the parser cross-checks the two,
+so a fixture that only changed the dimensions would be refused for the wrong
+reason), and are re-sealed with the format's own FNV-1a.
+
+```
+cd <scratch>/red-head && ./bin/red_cnu_budget      # exit 1
+```
+
+Observed:
+
+```
+CNU_BUDGET_CONTROL bytes=764
+CNU_BUDGET_BASELINE peak_kb=568 cpu=0.000
+CNU_BUDGET_CASE verdict=1 peak_kb=824 cpu=0.000 a tiny CNU whose max_hidden_count alone is amplified
+FAIL: a tiny CNU whose max_hidden_count alone is amplified is refused (verdict=1)
+CNU_BUDGET_CASE verdict=0 peak_kb=1060408 cpu=1.406 a tiny CNU that makes the parser touch a gigabyte
+FAIL: a tiny CNU that makes the parser touch a gigabyte is refused BEFORE allocating (peak 1060408 kB vs control 568 kB)
+CNU_BUDGET_FAIL checks=22 failures=2
+```
+
+**1,060,408 kB and 1.406 s of CPU from a 764-byte file**, and one header
+accepted outright. Measuring cost rather than only the verdict is the point: a
+parser that commits a gigabyte and *then* refuses has still refused, and that is
+exactly the denial of service.
+
+### Fix
+
+`src/contract/unit.c`, before `btn_init`, with every product checked against
+`SIZE_MAX` first:
+
+* **Read budget** — the doubles the parser is about to read
+  (`output_bias + hidden_bias + input x hidden + hidden x output`) must fit in
+  the bytes that actually remain in the sealed payload. This pins `hidden_count`
+  to what the file can possibly contain.
+* **Allocation budget** — what `max_hidden_count` implies must be neither absurd
+  in absolute terms (`UNIT_MAX_CELLS`, 64M doubles ≈ 512 MB) nor more than
+  `UNIT_ALLOC_SLACK` (64x) the size of the artifact describing it. The relative
+  bound is what "header-amplified" actually means: a real unit's payload already
+  contains its matrices, so the honest ratio is near 1.
+
+### GREEN — FRESH
+
+```
+make cnu_budget
+CNU_BUDGET_CONTROL bytes=764
+CNU_BUDGET_BASELINE peak_kb=556 cpu=0.000
+CNU_BUDGET_CASE verdict=0 peak_kb=556 cpu=0.000 a tiny CNU declaring 2^20 in every dimension
+CNU_BUDGET_CASE verdict=0 peak_kb=556 cpu=0.000 a tiny CNU whose max_hidden_count alone is amplified
+CNU_BUDGET_CASE verdict=0 peak_kb=556 cpu=0.000 a tiny CNU with an amplified input x hidden matrix
+CNU_BUDGET_CASE verdict=0 peak_kb=556 cpu=0.000 a tiny CNU with an amplified hidden x output matrix
+CNU_BUDGET_CASE verdict=0 peak_kb=556 cpu=0.000 a tiny CNU whose products would wrap unchecked arithmetic
+CNU_BUDGET_CASE verdict=0 peak_kb=556 cpu=0.000 a tiny CNU just past the absolute cell ceiling
+CNU_BUDGET_CASE verdict=0 peak_kb=556 cpu=0.000 a tiny CNU that makes the parser touch a gigabyte
+CNU_BUDGET_PASS checks=22 amplified=7 address_limit=2048MB      # exit 0
+```
+
+Every amplified header is now refused at **baseline cost** — 556 kB and 0.000 s,
+down from 1,060,408 kB and 1.406 s. The control assertion (an honest unit still
+loads inside the same limits) is what stops the budget from passing by rejecting
+everything.
+
+### Regression commands — FRESH
+
+```
+make contract_unit                  exit 0
+make base                           exit 0
+make knowledge_capsule              exit 0
+make coverage_abstain               exit 0
+make port_raw_unit_seam             exit 0
+make vision_capsule_asset           exit 0
+make knowledge_accumulation_bench   exit 0
+make knowledge_composition_bench    exit 0
+make capsule_scope_lineage          exit 0
+```
+
+Every gate that loads real sealed units still loads them, so the budgets do not
+reject honest topologies.
+
+### Pre-existing failure, NOT caused by this slice — carried forward as FAILED
+
+```
+make certify                        exit 2
+  combine      vs combine_contract      : DENIED (240/256)
+  CERTIFY FAIL.
+```
+
+Verified by running `make certify` in the read-only pristine `HEAD` extraction:
+**it fails identically there** (`exit 2`, `DENIED (240/256)`). This is a
+demo-training convergence failure in `certify_demo`, unrelated to the parser
+budgets, and `certify` is a prerequisite of `make verify` — so `verify` was
+already red at the base commit. Recorded as a pre-existing FAILED gate rather
+than fixed or hidden inside this patch.
+
+### Sanitizers — FRESH
+
+```
+make cnu_budget_san      # ASan + UBSan, halt_on_error=1, CNU_BUDGET_NO_RLIMIT=1
+CNU_BUDGET_PASS checks=22 amplified=7 address_limit=2048MB      # exit 0
+```
+
+`RLIMIT_AS` is disabled under the sanitizer because ASan reserves an enormous
+shadow mapping that the limit would refuse; the RSS and CPU assertions still
+apply, and they are the ones that detect the defect.

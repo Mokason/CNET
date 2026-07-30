@@ -30,6 +30,15 @@
 /* sanity caps: refuse hostile headers before any allocation */
 #define UNIT_MAX_DIM       (1u << 20)
 #define UNIT_MAX_EXEMPLARS (1u << 24)
+/* Absolute ceiling on the cells a header may imply: 64M doubles, ~512 MB, far
+   above any unit CNET builds and far below "the machine dies". */
+#define UNIT_MAX_CELLS     ((size_t)1u << 26)
+/* And a relative one: a unit may not claim an allocation more than this many
+   times the size of the artifact describing it. A real unit's payload already
+   contains its input-hidden and hidden-output matrices, so the honest ratio is
+   near 1; the slack only covers growth headroom (max_hidden_count > hidden). */
+#define UNIT_ALLOC_SLACK   ((size_t)64)
+#define CELL_MAX           ((size_t)-1)
 
 /* ---- FNV-1a (same scheme as the contract seal) ---- */
 
@@ -346,6 +355,52 @@ int unit_load_mem(BinaryTransformNetwork *btn, Contract *c,
     if (ic == 0 || oc == 0 || hc == 0 || mhc < hc ||
         ic > UNIT_MAX_DIM || oc > UNIT_MAX_DIM || mhc > UNIT_MAX_DIM) {
         goto fail;
+    }
+    /* ---- topology budget, BEFORE btn_init ------------------------------
+       Each dimension was individually bounded by UNIT_MAX_DIM (2^20), but
+       their PRODUCTS were not, and btn_init ran before anything proved the
+       sealed payload actually carried the arrays those products imply. A
+       correctly resealed 200-byte CNU declaring ic=oc=mhc=2^20 therefore asked
+       for terabytes and initialised them before the bounded reads below could
+       discover the payload was empty. Two bounds close it:
+
+         READ budget    the doubles the parser is about to read must fit in the
+                        bytes that actually remain, so hc is pinned by the file;
+         ALLOC budget   what mhc implies must be neither absurd in absolute
+                        terms nor wildly larger than the artifact describing it,
+                        which is exactly what "header-amplified" means.
+
+       Both are computed with checked multiplication against SIZE_MAX. */
+    {
+        size_t remaining = r.len - r.off;
+        size_t read_cells, alloc_cells;
+        size_t icz = (size_t)ic, ocz = (size_t)oc, hcz = (size_t)hc,
+               mhcz = (size_t)mhc;
+
+        if (icz > CELL_MAX / hcz) goto fail;
+        read_cells = icz * hcz;
+        if (hcz > CELL_MAX - read_cells || ocz > CELL_MAX / hcz) goto fail;
+        if (read_cells > CELL_MAX - hcz * ocz) goto fail;
+        read_cells += hcz * ocz;
+        if (read_cells > CELL_MAX - ocz - hcz) goto fail;
+        read_cells += ocz + hcz;            /* output_bias + hidden_bias */
+        if (read_cells > CELL_MAX / sizeof(double)) goto fail;
+        /* Ports have already been consumed; the weights come next. This is a
+           lower bound (exemplars follow), which is all a pre-allocation guard
+           needs to be. */
+        if (read_cells * sizeof(double) > remaining) goto fail;
+
+        if (icz > CELL_MAX / mhcz) goto fail;
+        alloc_cells = icz * mhcz;
+        if (ocz > CELL_MAX / mhcz) goto fail;
+        if (alloc_cells > CELL_MAX - ocz * mhcz) goto fail;
+        alloc_cells += ocz * mhcz;
+        if (alloc_cells > CELL_MAX - mhcz) goto fail;
+        alloc_cells += mhcz;
+        if (alloc_cells > UNIT_MAX_CELLS) goto fail;
+        if (alloc_cells > CELL_MAX / sizeof(double)) goto fail;
+        if (len > CELL_MAX / UNIT_ALLOC_SLACK) goto fail;
+        if (alloc_cells * sizeof(double) > len * UNIT_ALLOC_SLACK) goto fail;
     }
 
     {
