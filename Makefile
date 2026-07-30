@@ -2819,7 +2819,7 @@ vision_detection_eval_test: tools/vision_detection/vd_eval.c tools/vision_detect
 # enumerates these and rejects omissions.
 .PHONY: knowledge_composition_bench knowledge_accumulation_bench knowledge_capsule
 .PHONY: coverage_abstain own_learning_health port_raw_unit_seam
-.PHONY: coverage_sidecar_seal coverage_sidecar_seal_san
+.PHONY: coverage_sidecar_seal coverage_sidecar_seal_san capsule_scope_lineage
 .PHONY: vision_coverage_test vision_capsule_asset vision_detection_bench_v2
 .PHONY: vision_detection_bench_v2_evidence vision_detection_prep_v2
 
@@ -2982,6 +2982,22 @@ coverage_abstain: $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PIL
 	@./$(BIN_DIR)/test_coverage_abstain > logs/coverage_abstain.log 2>&1
 	@grep -q "COVERAGE_ABSTAIN_PASS" logs/coverage_abstain.log
 	@grep "COVERAGE_ABSTAIN_PASS" logs/coverage_abstain.log
+
+# Scope, lineage and least disclosure: a sampled specialist must ship with its
+# boundary, a successful import must leave the destination carrying the
+# provenance the report claims, and a one-unit capsule must not disclose the
+# source's whole oracle registry.
+capsule_scope_lineage: $(CAPSULE_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(EXT_TEACHER_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) tests/test_capsule_scope_lineage.c include/cnet_capsule.h
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/test_capsule_scope_lineage \
+		$(CAPSULE_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(EXT_TEACHER_SRC) \
+		$(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) \
+		$(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) \
+		$(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) \
+		tests/test_capsule_scope_lineage.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -pthread
+	@./$(BIN_DIR)/test_capsule_scope_lineage > logs/capsule_scope_lineage.log 2>&1; \
+		status=$$?; cat logs/capsule_scope_lineage.log; test $$status -eq 0
+	@grep -q "CAPSULE_SCOPE_LINEAGE_PASS" logs/capsule_scope_lineage.log
 
 # The durable half of abstention: the sidecar itself must be sealed. Every
 # corruption mutation must reject the WHOLE file and leave no partial state,

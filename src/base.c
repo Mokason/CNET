@@ -473,9 +473,23 @@ int cnb_export_subset(const CnetBase *src, CnetBase *dst,
     size_t i;
     if (!src || !dst || !keep) return -1;
     cnb_init(dst);
-    /* Oracle descriptors first (provenance targets). */
+    /* Oracle descriptors first (provenance targets), but ONLY those a kept unit
+       actually references. Copying the whole registry meant a one-unit subset —
+       the shape a portable capsule ships — disclosed the names, kinds, ports and
+       identities of every other oracle in the source base. Least disclosure is
+       part of what makes a subset a subset. */
     for (i = 0; i < src->oracle_count; ++i) {
         const CnbOracleDesc *o = &src->oracles[i];
+        size_t u;
+        int referenced = 0;
+        for (u = 0; u < src->unit_count; ++u) {
+            if (!keep(src->units[u].name, ctx)) continue;
+            if (strcmp(src->units[u].provenance, o->name) == 0) {
+                referenced = 1;
+                break;
+            }
+        }
+        if (!referenced) continue;
         if (o->behavior_digest || o->identity.abi_version) {
             if (cnb_add_oracle_desc_v2(dst, o->name, o->kind, o->input_port,
                                        o->goal_port, &o->identity) != 0)

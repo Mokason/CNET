@@ -462,3 +462,108 @@ COVERAGE_SIDECAR_SEAL_PASS checks=98 mutations=20 partial_state=none   # exit 0
 A transactional loader that leaked staged rows or read freed memory on the
 reject path would not really have rolled anything back, so the rollback paths
 are exercised under sanitizers rather than trusted.
+
+---
+
+## B5 — Capsule certification scope, lineage, and least disclosure (with C8)
+
+### Defect
+
+Three invariants the capsule claimed but did not enforce, plus one parity bug:
+
+1. **Scope.** Coverage was optional and `coverage 0 0 0` was written whenever a
+   caller passed no `HybridAi`. The header said `cov == NULL` was correct only
+   for a whole-domain unit; nothing proved whole-domain. A unit certified on a
+   *sample* could be exported, imported, re-certified against that same sample,
+   and then answer anywhere.
+2. **Lineage.** Import verified the payload's provenance against the manifest
+   and then dropped it — `cnb_add_unit` zero-initialises the new unit ref —
+   while the success report went on repeating the manifest's provenance.
+3. **Least disclosure.** `cnb_export_subset` copied **every** oracle descriptor
+   before filtering units, so a one-unit capsule shipped the whole source
+   registry's names, kinds, ports and identities.
+4. **Parity (C8).** Export accepted `asset != NULL` with `asset_len == 0`;
+   import rejects zero-byte assets. Export could report success for an artifact
+   its own importer refuses.
+
+### RED — FRESH
+
+The same test file compiles against a build that predates the `scope` report
+field (it probes `CNET_CAPSULE_REPORT_HAS_SCOPE`), so it can be run directly
+against pristine `HEAD` sources extracted read-only into a scratch tree:
+
+```
+cd <scratch>/red-head
+gcc ... src/cnet_capsule.c src/base.c ... tests/test_capsule_scope_lineage.c -o bin/red_capsule_scope
+./bin/red_capsule_scope
+```
+
+Observed (exit **1**):
+
+```
+FAIL: the destination unit carries the verified provenance
+FAIL: the payload does not disclose an unreferenced descriptor
+FAIL: the referenced oracle descriptor travels with the unit
+FAIL: a sampled unit refuses to export without coverage
+FAIL: the refusal names the missing boundary
+FAIL: a refused export publishes no manifest
+FAIL: a zero-length asset refuses to export
+FAIL: the refusal names the parity failure
+CAPSULE_SCOPE_LINEAGE_FAIL checks=22 failures=8
+```
+
+### Fix
+
+* **Scope is derived, not declared.** `cap_scope_exhaustive()` proves the sealed
+  contract's exemplar inputs are exactly the input port's domain: the domain
+  must be finite and enumerable (one-hot `width^count`, binary `2^(width*count)`,
+  both capped at 2^20; `PORT_RAW`/`EVIDENCE`/`CONCEPT` are never enumerable), and
+  every exemplar must be a legal member, all distinct, and as many as the domain
+  has points. Export refuses `sampled_scope_requires_coverage`; the manifest
+  carries a `scope` line inside the checksummed region.
+* **Import re-derives the scope from the payload** rather than believing the
+  manifest: `exhaustive_scope_claim_unproven`, `sampled_scope_without_coverage`,
+  `unknown_certification_scope`, `scope_disagrees_with_payload`.
+* **Lineage is restored atomically.** The referenced oracle descriptor travels
+  in the payload subset; import ensures it exists in the destination, adds the
+  unit, then calls `cnb_set_unit_provenance`. If the unit admit fails, the
+  coverage record is forgotten *and* the appended descriptor is rolled back by
+  truncating `oracle_count` (`CnbOracleDesc` owns no heap, so this is exact).
+* **`cnb_export_subset` copies only descriptors a kept unit references.**
+* **Export refuses a zero-length asset** (`zero_length_asset_would_not_import`).
+
+### GREEN — FRESH
+
+```
+make capsule_scope_lineage
+CAPSULE_SCOPE_LINEAGE_PASS checks=33 scope=machine_verified lineage=restored disclosure=referenced_only   # exit 0
+```
+
+33 checks including the refusal negatives *and* destination non-mutation after
+each one (unit count, oracle count and coverage count all unchanged), a refused
+export publishing no manifest, and positive controls so the gate is not
+vacuously strict.
+
+The tamper fixtures deliberately **recompute** `manifest_fnv` after editing.
+FNV here is unkeyed and the header says so — it detects accident, not
+authorship. Proving that the *semantic* checks refuse a well-formed lie is the
+only thing that could have caught these defects.
+
+### Regression commands — FRESH
+
+```
+make knowledge_capsule              exit 0
+make knowledge_accumulation_bench   exit 0
+make knowledge_composition_bench    exit 0
+make coverage_abstain               exit 0
+make vision_capsule_asset           exit 0
+make port_raw_unit_seam             exit 0
+```
+
+### What this does NOT establish
+
+`exhaustive` is only provable for finite enumerable discrete ports. For
+`PORT_RAW` and any continuous domain the answer is always "sampled", so those
+units simply cannot travel without coverage — which is the correct fail-closed
+outcome, not a solution to continuous certification. The re-analysis verdict
+that portable continuous specialists remain **BLOCKED** is unchanged.

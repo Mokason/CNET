@@ -85,6 +85,8 @@ extern "C" {
 #define CNET_CAPSULE_MAX_ASSET (16UL * 1024UL * 1024UL)
 #define CNET_CAPSULE_REASON_MAX 160
 
+#define CNET_CAPSULE_REPORT_HAS_SCOPE 1
+
 typedef struct {
     char unit[96];
     unsigned long long behavior_digest;
@@ -93,6 +95,12 @@ typedef struct {
     size_t payload_bytes;
     unsigned cnb_version;
     char provenance[128]; /* "" when the source base recorded none */
+    /* Machine-verified certification scope: "exhaustive" only when the sealed
+       contract's exemplars were proven to be exactly the input port's finite
+       domain; "sampled" otherwise, and a sampled unit must carry coverage.
+       Tests probe CNET_CAPSULE_REPORT_HAS_SCOPE so one source file can be
+       compiled against a build that predates this field (the RED run). */
+    char scope[16];
     unsigned schema;          /* 1 = no asset, 2 = asset-bearing */
     unsigned asset_schema;    /* 0 when no asset */
     size_t asset_bytes;       /* 0 when no asset */
@@ -100,10 +108,17 @@ typedef struct {
     char reject_reason[CNET_CAPSULE_REASON_MAX]; /* "" on success */
 } CnetCapsuleReport;
 
-/* Write dir/{unit.cnb,manifest.cknow}. cov may be NULL, in which case the
- * capsule carries coverage_rows=0 — correct only for a unit certified over its
- * whole domain. A capsule that DOES carry coverage refuses to import with a
- * NULL registry rather than quietly shipping an ungated unit. */
+/* Write dir/{unit.cnb,manifest.cknow}.
+ *
+ * cov may be NULL ONLY for a unit whose certification scope is provably
+ * exhaustive — the exporter derives that from the sealed contract (the input
+ * port's domain is finite and enumerable, and the exemplars are exactly that
+ * domain, distinct and legal) and refuses `sampled_scope_requires_coverage`
+ * otherwise. It is no longer the caller's word: passing NULL for a sampled unit
+ * used to emit `coverage 0 0 0` and ship a specialist with no boundary.
+ *
+ * A capsule that DOES carry coverage refuses to import with a NULL registry
+ * rather than quietly shipping an ungated unit. */
 CNET_API int cnet_capsule_export(const CnetBase *src, const HybridAi *cov,
                                  const char *unit, const char *dir,
                                  CnetCapsuleReport *rep);

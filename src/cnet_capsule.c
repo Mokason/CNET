@@ -127,6 +127,104 @@ static const HybridCoverage *cap_cov_for(const HybridAi *cov,
     return NULL;
 }
 
+/* ---- certification scope -------------------------------------------------
+ *
+ * The capsule invariant is "a certified unit and its abstention boundary travel
+ * together". Coverage was optional and `coverage 0 0 0` was written whenever a
+ * caller passed no HybridAi, so a unit certified on a SAMPLE of its domain could
+ * be exported, imported, re-certified against that same sample, and then answer
+ * anywhere. The header said `cov == NULL` was correct only for a whole-domain
+ * unit; nothing ever proved whole-domain.
+ *
+ * "Exhaustive" is now a machine-checkable claim rather than a caller's word: the
+ * input port's domain must be finite and small enough to enumerate, and the
+ * contract's exemplar inputs must be exactly that domain -- every one a legal
+ * member of the family, all distinct, and as many as the domain has points.
+ * Anything else is `sampled` and MUST carry coverage.
+ */
+#define CAP_DOMAIN_CAP (1u << 20)
+
+#define CAP_SCOPE_EXHAUSTIVE "exhaustive"
+#define CAP_SCOPE_SAMPLED    "sampled"
+
+/* 1 and *out set when the port's domain is finite and enumerable. */
+static int cap_domain_size(Port p, size_t *out) {
+    size_t n = 1, i, total;
+    if (p.field_width == 0 || p.field_count == 0) return 0;
+    switch (p.family) {
+        case PORT_ONEHOT:
+            /* field_count independent one-hot fields of field_width each. */
+            for (i = 0; i < p.field_count; i++) {
+                if (n > CAP_DOMAIN_CAP / p.field_width) return 0;
+                n *= p.field_width;
+            }
+            *out = n;
+            return 1;
+        case PORT_BINARY_MSB:
+        case PORT_BINARY_LSB:
+            if (p.field_width > (size_t)-1 / p.field_count) return 0;
+            total = p.field_width * p.field_count;
+            if (total >= 20) return 0; /* 2^20 is already the cap */
+            *out = (size_t)1u << total;
+            return 1;
+        default:
+            /* PORT_RAW is unbounded; EVIDENCE/CONCEPT have no enumerable
+               membership. Neither can support an exhaustiveness proof. */
+            return 0;
+    }
+}
+
+/* Is this row a legal point of the port's domain? */
+static int cap_row_member(Port p, const double *row) {
+    size_t f, j;
+    switch (p.family) {
+        case PORT_ONEHOT:
+            for (f = 0; f < p.field_count; f++) {
+                size_t hot = 0;
+                for (j = 0; j < p.field_width; j++) {
+                    double v = row[f * p.field_width + j];
+                    if (v == 1.0) hot++;
+                    else if (v != 0.0) return 0;
+                }
+                if (hot != 1) return 0;
+            }
+            return 1;
+        case PORT_BINARY_MSB:
+        case PORT_BINARY_LSB:
+            for (j = 0; j < p.field_width * p.field_count; j++)
+                if (row[j] != 0.0 && row[j] != 1.0) return 0;
+            return 1;
+        default:
+            return 0;
+    }
+}
+
+/* Prove the contract's exemplars exhaust the input port's domain. */
+static int cap_scope_exhaustive(const Contract *c, size_t *domain_out) {
+    size_t domain, width, i, j;
+    Port in_port;
+    if (!c || !c->inputs || c->input_port_count != 1) return 0;
+    in_port = c->input_ports[0];
+    if (!cap_domain_size(in_port, &domain)) return 0;
+    if (c->exemplar_count != domain) return 0;
+    if (in_port.field_width > (size_t)-1 / in_port.field_count) return 0;
+    width = in_port.field_width * in_port.field_count;
+    if (width == 0) return 0;
+    for (i = 0; i < c->exemplar_count; i++) {
+        const double *row = c->inputs + i * width;
+        if (!cap_row_member(in_port, row)) return 0;
+        /* Distinctness: exemplar_count == |domain| proves nothing if the same
+           point appears twice. O(n^2) over a domain capped at 2^20 points, and
+           only at export/import time. */
+        for (j = 0; j < i; j++)
+            if (memcmp(row, c->inputs + j * width,
+                       width * sizeof(double)) == 0)
+                return 0;
+    }
+    if (domain_out) *domain_out = domain;
+    return 1;
+}
+
 /* Provenance already recorded on the unit ref, "" when the base has none. */
 static const char *cap_provenance_of(const CnetBase *b, const char *unit) {
     size_t i;
@@ -147,7 +245,7 @@ int cnet_capsule_export_asset(const CnetBase *src, const HybridAi *cov,
     unsigned char *bytes_buf = NULL;
     unsigned long long fnv = 0, digest = 0;
     size_t bytes = 0, exemplars = 0;
-    const char *why = "", *prov;
+    const char *why = "", *prov, *scope;
     char *man = NULL;
     size_t mcap = 0, mlen = 0;
     FILE *fp;
@@ -155,6 +253,13 @@ int cnet_capsule_export_asset(const CnetBase *src, const HybridAi *cov,
 
     if (rep) memset(rep, 0, sizeof *rep);
     if (!src || !unit || !unit[0] || !dir || !dir[0]) return -1;
+    /* Schema parity: import refuses a zero-byte asset, so publishing one would
+       report success for an artifact its own importer rejects. One validator,
+       both directions. */
+    if (asset && asset_len == 0) {
+        cap_fail(rep, "zero_length_asset_would_not_import");
+        return -1;
+    }
     if (!cnb_has_unit(src, unit)) { cap_fail(rep, "unit_not_in_base"); return -2; }
     if (cap_path(unit_path, sizeof unit_path, dir, CAP_UNIT_FILE) != 0 ||
         cap_path(man_path, sizeof man_path, dir, CAP_MANIFEST) != 0) {
@@ -176,6 +281,19 @@ int cnet_capsule_export_asset(const CnetBase *src, const HybridAi *cov,
     prov = cap_provenance_of(src, unit);
 
     cnb_init(&sub);
+
+    /* Scope is decided here, from the sealed contract, and is not a caller
+       claim. A unit whose exemplars do not exhaust its domain must ship with
+       the gate that says where it stops answering. Checked after cnb_init so
+       the shared cleanup path has a valid subset to free. */
+    hc = cap_cov_for(cov, unit);
+    scope = cap_scope_exhaustive(&c, NULL) ? CAP_SCOPE_EXHAUSTIVE
+                                           : CAP_SCOPE_SAMPLED;
+    if (strcmp(scope, CAP_SCOPE_SAMPLED) == 0 && (!hc || hc->n_rows == 0)) {
+        cap_fail(rep, "sampled_scope_requires_coverage");
+        rc = -2;
+        goto done;
+    }
     if (cnb_export_subset(src, &sub, keep_named, (void *)unit) != 0) {
         cap_fail(rep, "subset_failed");
         goto done;
@@ -194,7 +312,6 @@ int cnet_capsule_export_asset(const CnetBase *src, const HybridAi *cov,
     /* Build the manifest in memory so the trailing checksum can cover every
        preceding byte — ports, provenance, and every coverage value included.
        Hashing only unit.cnb left all of that mutable without detection. */
-    hc = cap_cov_for(cov, unit);
     mcap = 4096 + (hc ? hc->n_rows * (hc->in_dim + hc->out_dim) * 26 + 256 : 0);
     man = (char *)malloc(mcap);
     if (!man) { cap_fail(rep, "oom"); goto done; }
@@ -227,6 +344,7 @@ int cnet_capsule_export_asset(const CnetBase *src, const HybridAi *cov,
         CAP_EMIT("goal %d %zu %zu %s\n", (int)po.family, po.field_width,
                  po.field_count, gtag);
     }
+    CAP_EMIT("scope %s\n", scope);
     if (hc) {
         size_t r, j;
         CAP_EMIT("coverage %zu %zu %zu\n", hc->n_rows, hc->in_dim, hc->out_dim);
@@ -354,6 +472,9 @@ int cnet_capsule_import_asset(CnetBase *dst, HybridAi *cov, const char *dir,
     char unit[96] = {0}, itag[PORT_TAG_MAX + 4], gtag[PORT_TAG_MAX + 4];
     char prov[CNB_NAME_MAX] = {0};
     char prov_raw[256] = {0}; /* scratch: %255s matches THIS size, not prov */
+    char scope[16] = {0};
+    const char *prov_wanted = "";
+    size_t oracles_before = 0;
     unsigned char *pay = NULL, *manbuf = NULL, *abuf = NULL;
     size_t paylen = 0, manlen = 0, alen = 0;
     unsigned a_schema_seen = 0;
@@ -421,8 +542,22 @@ int cnet_capsule_import_asset(CnetBase *dst, HybridAi *cov, const char *dir,
         fscanf(fp, " provenance %255s", prov_raw) != 1 ||
         fscanf(fp, " in %d %zu %zu %35s", &ifam, &iw, &ic, itag) != 4 ||
         fscanf(fp, " goal %d %zu %zu %35s", &gfam, &gw, &gc, gtag) != 4 ||
+        fscanf(fp, " scope %15s", scope) != 1 ||
         fscanf(fp, " coverage %zu %zu %zu", &cov_rows, &cov_in, &cov_out) != 3) {
         cap_fail(rep, "manifest_parse_failed");
+        fclose(fp);
+        goto done;
+    }
+    /* An unscoped capsule is exactly the artifact this field exists to refuse:
+       there is no default that is safe to assume. */
+    if (strcmp(scope, CAP_SCOPE_EXHAUSTIVE) != 0 &&
+        strcmp(scope, CAP_SCOPE_SAMPLED) != 0) {
+        cap_fail(rep, "unknown_certification_scope");
+        fclose(fp);
+        goto done;
+    }
+    if (strcmp(scope, CAP_SCOPE_SAMPLED) == 0 && cov_rows == 0) {
+        cap_fail(rep, "sampled_scope_without_coverage");
         fclose(fp);
         goto done;
     }
@@ -612,6 +747,21 @@ int cnet_capsule_import_asset(CnetBase *dst, HybridAi *cov, const char *dir,
         cap_fail(rep, "exemplar_count_mismatch");
         goto done;
     }
+    /* Re-derive the scope from the SEALED contract rather than believing the
+       manifest. A capsule that claims exhaustive certification must be able to
+       prove it here, on the bytes that actually arrived. */
+    if (strcmp(scope, CAP_SCOPE_EXHAUSTIVE) == 0 &&
+        !cap_scope_exhaustive(&c, NULL)) {
+        cap_fail(rep, "exhaustive_scope_claim_unproven");
+        goto done;
+    }
+    if (strcmp(scope, CAP_SCOPE_SAMPLED) == 0 && cap_scope_exhaustive(&c, NULL)) {
+        /* Understating scope is not dangerous, but it means the manifest and
+           the payload disagree about what this unit is, and the coverage rows
+           were bound to a claim that does not hold. Refuse rather than guess. */
+        cap_fail(rep, "scope_disagrees_with_payload");
+        goto done;
+    }
     {
         const char *pp = cap_provenance_of(&sub, unit);
         const char *want = (prov[0] && strcmp(prov, "~")) ? prov : "";
@@ -693,9 +843,64 @@ int cnet_capsule_import_asset(CnetBase *dst, HybridAi *cov, const char *dir,
         }
         cov_stored = 1;
     }
+    /* ---- lineage ---------------------------------------------------------
+       Import VERIFIED the payload's provenance against the manifest and then
+       threw it away: cnb_add_unit zero-initialises the new unit ref, while the
+       success report went on repeating the manifest's provenance. Callers were
+       handed a report claiming lineage the destination did not carry.
+
+       The descriptor the provenance names travels in the payload subset, so it
+       can be restored too. Both mutations are undone if the unit admit fails:
+       oracle descriptors are appended, so truncating the count is an exact
+       rollback (CnbOracleDesc owns no heap). */
+    prov_wanted = (prov[0] && strcmp(prov, "~")) ? prov : "";
+    oracles_before = dst->oracle_count;
+    if (prov_wanted[0]) {
+        size_t d;
+        const CnbOracleDesc *from = NULL;
+        for (d = 0; d < sub.oracle_count; d++)
+            if (strcmp(sub.oracles[d].name, prov_wanted) == 0) {
+                from = &sub.oracles[d];
+                break;
+            }
+        if (!from) {
+            if (cov_stored) (void)hybrid_coverage_forget_unit(cov, unit);
+            cap_fail(rep, "provenance_descriptor_absent_from_payload");
+            goto done;
+        }
+        for (d = 0; d < dst->oracle_count; d++)
+            if (strcmp(dst->oracles[d].name, prov_wanted) == 0) break;
+        if (d == dst->oracle_count) {
+            int added = from->behavior_digest || from->identity.abi_version
+                            ? cnb_add_oracle_desc_v2(dst, from->name,
+                                                     from->kind,
+                                                     from->input_port,
+                                                     from->goal_port,
+                                                     &from->identity)
+                            : cnb_add_oracle_desc(dst, from->name, from->kind,
+                                                  from->input_port,
+                                                  from->goal_port);
+            if (added != 0) {
+                if (cov_stored) (void)hybrid_coverage_forget_unit(cov, unit);
+                cap_fail(rep, "provenance_descriptor_restore_failed");
+                goto done;
+            }
+        }
+    }
     if (cnb_add_unit(dst, &btn, &c, NULL) != 0) {
         if (cov_stored) (void)hybrid_coverage_forget_unit(cov, unit);
+        dst->oracle_count = oracles_before;
         cap_fail(rep, "target_admit_refused");
+        goto done;
+    }
+    if (prov_wanted[0] &&
+        cnb_set_unit_provenance(dst, unit, prov_wanted) != 0) {
+        /* cnb_add_unit has no removal counterpart, so this must not be
+           reachable: the descriptor was ensured above and the unit was just
+           added. Report it rather than return a success whose lineage is a
+           fiction. */
+        if (cov_stored) (void)hybrid_coverage_forget_unit(cov, unit);
+        cap_fail(rep, "provenance_restore_failed");
         goto done;
     }
     if (rep) {
@@ -705,8 +910,8 @@ int cnet_capsule_import_asset(CnetBase *dst, HybridAi *cov, const char *dir,
         rep->coverage_rows = cov_rows;
         rep->payload_bytes = paylen;
         rep->cnb_version = ver;
-        snprintf(rep->provenance, sizeof rep->provenance, "%s",
-                 (prov[0] && strcmp(prov, "~")) ? prov : "");
+        snprintf(rep->provenance, sizeof rep->provenance, "%s", prov_wanted);
+        snprintf(rep->scope, sizeof rep->scope, "%s", scope);
         rep->schema = (unsigned)schema;
         rep->asset_schema = a_schema_seen;
         rep->asset_bytes = a_bytes_seen;
