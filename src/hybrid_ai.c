@@ -156,6 +156,51 @@ static HybridCoverage *coverage_find(HybridAi *h, uint64_t ik, uint64_t gk,
     return NULL;
 }
 
+/* Coverage identity is OWNER plus exact interface, not the interface alone.
+ *
+ * Keyed by port pair, a second specialist behind the same typed interface
+ * silently freed the incumbent's rows and took its slot -- so "32 accumulated
+ * units" only worked because the accumulation benchmark minted a unique tag per
+ * unit, turning a type into a namespace. Two units that genuinely share an
+ * interface must be able to coexist, each with its own certified rows.
+ *
+ * Everything that decides membership therefore asks with an owner. The one
+ * place that cannot -- the shape-only serving lookup, which sees a request's
+ * ports and not which unit will answer -- fails CLOSED when more than one owner
+ * matches, because "which unit's rows apply" is unanswerable there. */
+static HybridCoverage *coverage_find_owned(HybridAi *h, const char *unit,
+                                           uint64_t ik, uint64_t gk,
+                                           Port in_port, Port out_port) {
+    size_t i;
+    if (!unit || !unit[0]) return NULL;
+    for (i = 0; i < h->coverage_count; i++) {
+        HybridCoverage *c = &h->coverage[i];
+        if (!c->active || c->in_key != ik || c->goal_key != gk) continue;
+        if (strcmp(c->unit, unit) != 0) continue;
+        if (!port_match_keys(c->input_port, in_port, c->in_key, ik) ||
+            !port_match_keys(c->goal_port, out_port, c->goal_key, gk))
+            continue;
+        return c;
+    }
+    return NULL;
+}
+
+static size_t coverage_owner_count(const HybridAi *h, Port in_port,
+                                   Port out_port) {
+    uint64_t ik = port_key(in_port), gk = port_key(out_port);
+    size_t i, n = 0;
+    for (i = 0; i < h->coverage_count; i++) {
+        const HybridCoverage *c = &h->coverage[i];
+        if (!c->active || !c->rows) continue;
+        if (c->in_key != ik || c->goal_key != gk) continue;
+        if (!port_match_keys(c->input_port, in_port, c->in_key, ik) ||
+            !port_match_keys(c->goal_port, out_port, c->goal_key, gk))
+            continue;
+        n++;
+    }
+    return n;
+}
+
 int hybrid_coverage_record(HybridAi *h, Port in_port, Port out_port,
                            const char *unit, const double *inputs,
                            const double *targets, size_t n_rows, size_t in_dim,
@@ -179,7 +224,9 @@ int hybrid_coverage_record(HybridAi *h, Port in_port, Port out_port,
         }
         memcpy(tgts, targets, n_rows * out_dim * sizeof(double));
     }
-    c = coverage_find(h, ik, gk, in_port, out_port);
+    /* Owner + interface: a DIFFERENT unit on the same shape appends its own
+       record instead of evicting the incumbent's. */
+    c = coverage_find_owned(h, unit, ik, gk, in_port, out_port);
     if (!c) {
         if (h->coverage_count >= HYBRID_COVERAGE_MAX) {
             free(rows);
@@ -236,6 +283,10 @@ int hybrid_coverage_admits(const HybridAi *h, Port in_port, Port out_port,
     size_t i;
     if (!h || !in) return 1;
     if (!coverage_family_gated(in_port)) return 1;
+    /* This lookup sees the request's ports and not which unit will answer. With
+       one owner that is enough; with several it is not, and guessing would hand
+       one specialist another's certified domain. Refuse. */
+    if (coverage_owner_count(h, in_port, out_port) > 1) return 0;
     c = coverage_find((HybridAi *)h, port_key(in_port), port_key(out_port),
                       in_port, out_port);
     if (!c || !c->rows || c->in_dim != in_len) return 1; /* default-allow */
@@ -330,20 +381,32 @@ const char *hybrid_coverage_owner(const HybridAi *h, Port in_port,
    record. Callers must not hold a HybridCoverage* (or a name returned by
    hybrid_coverage_owner) across this call. */
 int hybrid_coverage_forget_unit(HybridAi *h, const char *unit) {
-    size_t i;
+    size_t i = 0, gone = 0;
     if (!h || !unit || !unit[0]) return 0;
-    for (i = 0; i < h->coverage_count; i++) {
+    /* A unit may now own several records (one per interface it serves), so
+       forgetting it must forget all of them -- returning after the first left
+       the rest behind and made "independently forgettable" false. */
+    while (i < h->coverage_count) {
         HybridCoverage *c = &h->coverage[i];
-        if (!c->active || strcmp(c->unit, unit) != 0) continue;
+        if (!c->active || strcmp(c->unit, unit) != 0) {
+            i++;
+            continue;
+        }
         free(c->rows);
         free(c->targets);
         if (i + 1 < h->coverage_count)
             *c = h->coverage[h->coverage_count - 1];
         memset(&h->coverage[h->coverage_count - 1], 0, sizeof h->coverage[0]);
         h->coverage_count--;
-        return 1;
+        gone++;
     }
-    return 0;
+    return gone > 0 ? 1 : 0;
+}
+
+size_t hybrid_coverage_owner_count(const HybridAi *h, Port in_port,
+                                   Port out_port) {
+    if (!h) return 0;
+    return coverage_owner_count(h, in_port, out_port);
 }
 
 size_t hybrid_coverage_count(const HybridAi *h) {
@@ -386,11 +449,24 @@ int hybrid_coverage_admits_unit(const HybridAi *h, const char *unit,
 }
 
 size_t hybrid_coverage_rows(const HybridAi *h, Port in_port, Port out_port) {
-    const HybridCoverage *c;
+    uint64_t ik, gk;
+    size_t i, n = 0;
     if (!h) return 0;
-    c = coverage_find((HybridAi *)h, port_key(in_port), port_key(out_port),
-                      in_port, out_port);
-    return c ? c->n_rows : 0;
+    ik = port_key(in_port);
+    gk = port_key(out_port);
+    /* Sum across owners: with several specialists behind one interface the
+       question "how many certified rows exist for this shape" is the total, not
+       whichever record happens to be first. */
+    for (i = 0; i < h->coverage_count; i++) {
+        const HybridCoverage *c = &h->coverage[i];
+        if (!c->active || !c->rows) continue;
+        if (c->in_key != ik || c->goal_key != gk) continue;
+        if (!port_match_keys(c->input_port, in_port, c->in_key, ik) ||
+            !port_match_keys(c->goal_port, out_port, c->goal_key, gk))
+            continue;
+        n += c->n_rows;
+    }
+    return n;
 }
 
 /* Port tags are identifiers at every call site; whitespace would break the
@@ -429,7 +505,10 @@ int hybrid_coverage_save(const HybridAi *h, const char *path) {
     snprintf(tmp, sizeof tmp, "%s.tmp", path);
     fp = fopen(tmp, "w");
     if (!fp) return -2;
-    fprintf(fp, "CNET_COVERAGE v1\n");
+    /* v2 == v1 records, plus the rule that coverage identity is OWNER + exact
+       interface, so several units may legitimately share a port shape. v1 files
+       still load, and keep their stricter one-owner-per-shape refusal. */
+    fprintf(fp, "CNET_COVERAGE v2\n");
     for (i = 0; i < h->coverage_count; i++) {
         const HybridCoverage *c = &h->coverage[i];
         char itag[PORT_TAG_MAX + 4], gtag[PORT_TAG_MAX + 4];
@@ -509,7 +588,9 @@ static int coverage_family_valid(int family) {
 static void coverage_install(HybridAi *h, const StagedCoverage *st) {
     HybridCoverage *c;
     uint64_t ik = port_key(st->in_port), gk = port_key(st->out_port);
-    c = coverage_find(h, ik, gk, st->in_port, st->out_port);
+    /* Owner-keyed, like hybrid_coverage_record: a second owner on the same
+       interface appends rather than evicting the first. */
+    c = coverage_find_owned(h, st->unit, ik, gk, st->in_port, st->out_port);
     if (!c) {
         c = &h->coverage[h->coverage_count++];
         memset(c, 0, sizeof *c);
@@ -573,7 +654,7 @@ int hybrid_coverage_load(HybridAi *h, const char *path) {
     }
     rewind(fp);
     if (fscanf(fp, "%15s v%d", tok, &ver) != 2 ||
-        strcmp(tok, "CNET_COVERAGE") != 0 || ver != 1) {
+        strcmp(tok, "CNET_COVERAGE") != 0 || (ver != 1 && ver != 2)) {
         fclose(fp);
         return coverage_reject(path, "unsupported magic or version");
     }
@@ -767,29 +848,32 @@ int hybrid_coverage_load(HybridAi *h, const char *path) {
         for (j = i + 1; j < staged_count; j++) {
             if (port_identical(staged[i].in_port, staged[j].in_port) &&
                 port_identical(staged[i].out_port, staged[j].out_port)) {
-                int same_unit = strcmp(staged[i].unit, staged[j].unit) == 0;
-                staged_free(staged, staged_count);
-                return coverage_reject(path, same_unit
-                                                 ? "the same record twice"
-                                                 : "two units claiming one port shape");
+                if (strcmp(staged[i].unit, staged[j].unit) == 0) {
+                    staged_free(staged, staged_count);
+                    return coverage_reject(path, "the same record twice");
+                }
+                /* Two OWNERS on one interface is the thing v2 exists to allow.
+                   A v1 file predates that rule, so its stricter refusal is
+                   preserved rather than reinterpreted. */
+                if (ver < 2) {
+                    staged_free(staged, staged_count);
+                    return coverage_reject(path,
+                        "v1 sidecar declares two units on one port shape; "
+                        "re-save as v2 to allow multiple owners");
+                }
             }
         }
     }
 
     /* And against what is already loaded: a shape already owned by a different
        unit must not be taken over by a file. */
+    /* A staged record replaces only a record THIS unit already owns on THIS
+       interface; anything else is a new slot. Nothing displaces another
+       owner any more, because owners coexist. */
     for (i = 0; i < staged_count; i++) {
-        const char *owner = hybrid_coverage_owner(h, staged[i].in_port,
-                                                  staged[i].out_port);
-        if (!owner) {
+        if (!hybrid_coverage_binds_unit(h, staged[i].unit, staged[i].in_port,
+                                        staged[i].out_port, staged[i].in_dim))
             fresh_shapes++;
-            continue;
-        }
-        if (strcmp(owner, staged[i].unit) != 0) {
-            staged_free(staged, staged_count);
-            return coverage_reject(path,
-                                   "record would displace another unit's gate");
-        }
     }
     if (h->coverage_count + fresh_shapes > HYBRID_COVERAGE_MAX) {
         staged_free(staged, staged_count);

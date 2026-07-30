@@ -200,6 +200,19 @@ int route_execute_ex(
     size_t out_cap,
     ExecFault *fault
 ) {
+    return route_execute_guarded(plan, input, in_len, output, out_cap, fault,
+                                 NULL);
+}
+
+int route_execute_guarded(
+    const RoutePlan *plan,
+    const double *input,
+    size_t in_len,
+    double *output,
+    size_t out_cap,
+    ExecFault *fault,
+    const DagNodeGuard *guard
+) {
     double *buf_a;
     double *buf_b;
     double *current;
@@ -262,6 +275,24 @@ int route_execute_ex(
             free(buf_a);
             free(buf_b);
             return -1;
+        }
+        /* Per-hop guard, checked on the CANONICAL input this primitive is about
+           to consume -- which for every hop after the first is an INTERMEDIATE
+           value no caller ever saw. Checking only the original request left
+           those hops unguarded. A refusal aborts before the primitive runs, so
+           nothing downstream executes and no reliability evidence is recorded
+           for a hop that never happened. */
+        if (guard != NULL && guard->allow != NULL &&
+            guard->allow(plan->names[s], p, next, p->input_count,
+                         guard->ctx) != 0) {
+            if (fault != NULL) {
+                fault->primitive = p;
+                fault->name = plan->names[s];
+                fault->step_index = s;
+            }
+            free(buf_a);
+            free(buf_b);
+            return ROUTE_EXEC_REFUSED_GUARD;
         }
         raw = btn_forward(p, next);
         /* Live adapter: add any attached low-rank delta to the raw output before

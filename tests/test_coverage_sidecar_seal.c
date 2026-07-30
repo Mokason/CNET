@@ -487,6 +487,120 @@ static void truncation_cases(void) {
     check(index >= 4, "truncation: several cut points were exercised");
 }
 
+/* ---- owner identity ------------------------------------------------------
+   Coverage was keyed by PORT SHAPE alone, so a second specialist behind the
+   same typed interface silently freed the incumbent's rows and took its slot.
+   "32 accumulated units" only worked because the accumulation benchmark minted
+   a unique tag per unit, turning a type into a namespace. Identity is now
+   owner + exact interface. */
+static void same_interface_owners(void) {
+    HybridAi h, reloaded;
+    char path[512];
+    Port pin = make_port(PORT_ONEHOT, SYM, 1, "covseal_input");
+    Port pout = make_port(PORT_ONEHOT, SYM, 1, "covseal_result");
+    double rows_a[SYM][SYM], rows_b[SYM][SYM], probe[SYM];
+    const char *unit_a = HYBRID_MINED_UNIT_PREFIX "ownerfirst";
+    const char *unit_b = HYBRID_MINED_UNIT_PREFIX "ownersecond";
+    size_t i;
+
+    /* Disjoint certified domains on one interface: A owns rows 0..1, B owns
+       rows 2..3. Neither may answer for the other's rows. */
+    for (i = 0; i < SYM; i++) {
+        one_hot(rows_a[i], (int)(i % 2));
+        one_hot(rows_b[i], (int)(2 + i % 2));
+    }
+
+    hybrid_ai_init(&h);
+    check(hybrid_coverage_record(&h, pin, pout, unit_a, (const double *)rows_a,
+                                 NULL, 2, SYM, 0) == 0,
+          "owner A records its rows");
+    check(hybrid_coverage_record(&h, pin, pout, unit_b, (const double *)rows_b,
+                                 NULL, 2, SYM, 0) == 0,
+          "owner B records its rows on the SAME interface");
+    check(hybrid_coverage_count(&h) == 2,
+          "both owners coexist on one interface");
+    check(hybrid_coverage_owner_count(&h, pin, pout) == 2,
+          "the interface reports two owners");
+    check(hybrid_coverage_has_unit(&h, unit_a), "owner A survived owner B");
+    check(hybrid_coverage_has_unit(&h, unit_b), "owner B is present");
+
+    hybrid_coverage_arm_fail_closed(&h, 1);
+    one_hot(probe, 0);
+    check(hybrid_coverage_admits_unit(&h, unit_a, probe, SYM) == 1,
+          "owner A admits its own row");
+    check(hybrid_coverage_admits_unit(&h, unit_b, probe, SYM) == 0,
+          "owner B refuses owner A's row");
+    one_hot(probe, 2);
+    check(hybrid_coverage_admits_unit(&h, unit_b, probe, SYM) == 1,
+          "owner B admits its own row");
+    check(hybrid_coverage_admits_unit(&h, unit_a, probe, SYM) == 0,
+          "owner A refuses owner B's row");
+
+    /* The shape-only lookup cannot say whose rows apply, so it must refuse. */
+    one_hot(probe, 0);
+    check(hybrid_coverage_admits(&h, pin, pout, probe, SYM) == 0,
+          "the shape-only lookup fails closed while two owners share a shape");
+    check(hybrid_coverage_rows(&h, pin, pout) == 4,
+          "rows() reports the total across owners");
+
+    /* Save/load round trip: both owners must come back. */
+    scratch_path("owners.coverage", path, sizeof path);
+    check(hybrid_coverage_save(&h, path) == 0, "a two-owner sidecar saves");
+    hybrid_ai_init(&reloaded);
+    check(hybrid_coverage_load(&reloaded, path) == 0,
+          "a two-owner sidecar loads");
+    check(hybrid_coverage_count(&reloaded) == 2,
+          "both owners survive the round trip");
+    check(hybrid_coverage_owner_count(&reloaded, pin, pout) == 2,
+          "the reloaded interface still reports two owners");
+    hybrid_coverage_arm_fail_closed(&reloaded, 1);
+    one_hot(probe, 2);
+    check(hybrid_coverage_admits_unit(&reloaded, unit_b, probe, SYM) == 1,
+          "owner B's domain survives the round trip");
+    check(hybrid_coverage_admits_unit(&reloaded, unit_a, probe, SYM) == 0,
+          "owner A still refuses owner B's row after reload");
+    hybrid_ai_free(&reloaded);
+
+    /* Independently forgettable. */
+    check(hybrid_coverage_forget_unit(&h, unit_a) == 1, "owner A is forgotten");
+    check(hybrid_coverage_count(&h) == 1, "forgetting A leaves exactly B");
+    check(hybrid_coverage_has_unit(&h, unit_b), "B is the one left");
+    check(hybrid_coverage_owner_count(&h, pin, pout) == 1,
+          "one owner remains on the interface");
+    one_hot(probe, 2);
+    check(hybrid_coverage_admits(&h, pin, pout, probe, SYM) == 1,
+          "the shape-only lookup decides again once ambiguity is gone");
+    hybrid_ai_free(&h);
+
+    /* A v1 sidecar predates multi-owner, so its stricter refusal is preserved
+       rather than reinterpreted. */
+    {
+        FILE *fp;
+        HybridAi old;
+        char v1[512];
+        scratch_path("legacy_v1.coverage", v1, sizeof v1);
+        fp = fopen(v1, "w");
+        if (!fp) {
+            check(0, "legacy v1 fixture could not be written");
+            return;
+        }
+        fputs("CNET_COVERAGE v1\n", fp);
+        for (i = 0; i < 2; i++) {
+            fprintf(fp, "U 1 %d %d %d 1 %d %d 1 covseal_input covseal_result %s\n",
+                    SYM, (int)PORT_ONEHOT, SYM, (int)PORT_ONEHOT, SYM,
+                    i == 0 ? unit_a : unit_b);
+            fprintf(fp, "R 1 0 0 0\n");
+        }
+        fclose(fp);
+        hybrid_ai_init(&old);
+        check(hybrid_coverage_load(&old, v1) < 0,
+              "a v1 sidecar with two owners on one shape is still refused");
+        check(hybrid_coverage_count(&old) == 0,
+              "the refused v1 sidecar installs nothing");
+        hybrid_ai_free(&old);
+    }
+}
+
 int main(void) {
     SidecarSpec spec;
 
@@ -497,6 +611,7 @@ int main(void) {
     }
 
     control_roundtrip();
+    same_interface_owners();
     wrong_shape_must_not_admit();
     truncation_cases();
 
@@ -566,7 +681,7 @@ int main(void) {
                    "a two-line file declaring a gigabyte of coverage rows");
 
     spec_defaults(&spec);
-    spec.header = "CNET_COVERAGE v2";
+    spec.header = "CNET_COVERAGE v3";   /* v1 and v2 are supported; v3 is not */
     reject_case("bad_version.coverage", &spec, "an unsupported version");
 
     spec_defaults(&spec);
@@ -666,7 +781,7 @@ int main(void) {
                failures);
         return 1;
     }
-    printf("COVERAGE_SIDECAR_SEAL_PASS checks=%d mutations=20 amplified=5 "
+    printf("COVERAGE_SIDECAR_SEAL_PASS checks=%d mutations=20 amplified=5 owners=multi "
            "partial_state=none\n", checks);
     return 0;
 }

@@ -302,12 +302,19 @@ CNET_API int hybrid_coverage_binds_unit(const HybridAi *h, const char *unit,
                                         Port in_port, Port out_port,
                                         size_t in_dim);
 
-/* Which unit owns the coverage record for this port shape, or NULL. Coverage
- * is keyed by PORTS, so an importer must ask this before recording: writing a
- * record for an occupied shape frees the incumbent's rows and silently leaves
- * that older unit default-allow. */
+/* Which unit owns the coverage record for this port shape, or NULL when none.
+ * Coverage identity is OWNER plus exact interface, so several units may share a
+ * shape; this returns the first and is only meaningful when
+ * hybrid_coverage_owner_count() is 1. */
 CNET_API const char *hybrid_coverage_owner(const HybridAi *h, Port in_port,
                                            Port out_port);
+
+/* How many distinct active records bind this exact interface. 0 = unguarded
+ * shape, 1 = a single owner (the shape-only serving lookup can decide), >1 =
+ * several specialists behind one typed interface, where a shape-only lookup
+ * cannot say whose rows apply and must fail closed. */
+CNET_API size_t hybrid_coverage_owner_count(const HybridAi *h, Port in_port,
+                                            Port out_port);
 
 /* Drop the record for a unit that no longer exists. Returns 1 if one went. */
 CNET_API int hybrid_coverage_forget_unit(HybridAi *h, const char *unit);

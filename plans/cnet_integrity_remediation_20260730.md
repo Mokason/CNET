@@ -1485,3 +1485,131 @@ The two things I could have done instead are both forbidden and both wrong:
 
 `make certify` therefore remains **FAILED** in this phase's matrix, with the
 same fresh, deterministic `DENIED (240/256)` it had at `3edac49`.
+
+---
+
+## R11 — Coverage identity is owner + interface, not interface alone
+
+### Defect
+
+`HybridCoverage` was keyed by port pair. A second specialist behind the same
+typed interface therefore freed the incumbent's rows and took its slot, and
+`forget_unit` could not put them back. "32 accumulated units" only worked
+because `knowledge_accumulation_bench` mints a unique tag per unit — turning a
+type into a namespace, which is the opposite of a reusable interface.
+
+### RED — FRESH
+
+```
+make coverage_sidecar_seal        # exit 2
+FAIL: both owners survive the round trip
+FAIL: the reloaded interface still reports two owners
+```
+
+(The in-memory half failed first and was fixed with `coverage_find_owned`; the
+round-trip half then exposed that `coverage_install` was still shape-keyed.)
+
+### Fix
+
+* `coverage_find_owned()` keys by **unit + exact interface**;
+  `hybrid_coverage_record` and the transactional loader's `coverage_install`
+  both use it, so a different owner appends instead of evicting.
+* `hybrid_coverage_owner_count()` is new. The one lookup that *cannot* name an
+  owner — `hybrid_coverage_admits`, which sees a request's ports and not which
+  unit will answer — **fails closed** when more than one owner matches, because
+  guessing would hand one specialist another's certified domain.
+* `hybrid_coverage_forget_unit` removes **all** of a unit's records; returning
+  after the first made "independently forgettable" false.
+* `hybrid_coverage_rows` sums across owners.
+* Sidecar **v2**: same records, plus the rule that owners may share a shape. v1
+  files still load and **keep their stricter one-owner-per-shape refusal** —
+  migration is explicit, not a reinterpretation of old files.
+* Capsule import no longer refuses a different owner on an occupied shape; the
+  displacement that refusal existed to prevent is now impossible.
+
+### GREEN — FRESH
+
+```
+make coverage_sidecar_seal
+COVERAGE_SIDECAR_SEAL_PASS checks=140 mutations=20 amplified=5 owners=multi partial_state=none  # exit 0
+make knowledge_capsule
+KNOWLEDGE_CAPSULE_PASS checks=94 coverage_rows=5        # exit 0 (was 88 checks)
+make coverage_abstain
+COVERAGE_ABSTAIN_PASS checks=55 heldout_correct=4/4 was=0/4   # exit 0
+```
+
+### Two expectations changed, and why neither is a weakened negative
+
+1. `knowledge_capsule`'s **"conflict: import REFUSED rather than displacing"**
+   now asserts the import **succeeds**. The guarantee that case has always
+   protected — *the incumbent's gate is not lost* — is unchanged and still
+   asserted byte-for-byte; what changed is that keeping it no longer costs a
+   refusal. Four **new** assertions were added around it: two owners coexist,
+   the incumbent still admits its own row, the newcomer holds the capsule's own
+   rows and not the incumbent's, and the shape-only lookup fails closed while
+   ambiguous. The case is strictly stronger than before.
+2. `knowledge_capsule`'s **"slots: rejected imports consume no registry slots"**
+   occupied the shape with a *foreign* owner to force rejection. A foreign owner
+   no longer causes one, so the case would have stopped testing what it names.
+   It now occupies with the **capsule's own unit**, which the duplicate-import
+   preflight still rejects — same property, still exercised.
+3. `coverage_abstain`'s header assertion moves from `v1` to `v2`, checked
+   exactly rather than by prefix, so a silent format change is still caught.
+
+## R12 — The per-hop guard belongs to ordinary serving
+
+### Defect
+
+`knowledge_composition_bench` proves the DAG API *can* enforce coverage at every
+hop — because the benchmark injects a guard. `personal_ai_serve` checked the
+**original request** against each mined unit by name and then called
+`route_execute`, which takes no guard at all. For a chain that is the wrong
+question twice over: hop 2 does not receive the request, it receives hop 1's
+output, and the request's ports are not hop 2's ports.
+
+### RED — FRESH
+
+The same test against `HEAD`'s `src/personal_ai.c`:
+
+```
+<scratch>/red_hop_guard         # exit 1
+FAIL: an uncovered INTERMEDIATE must not be served as Tier-A certified
+FAIL: the refusal is recorded as a coverage abstention
+FAIL: no certified authority is claimed for the refused chain
+FAIL: the refused chain abstains rather than serving a partial result
+HOPGUARD_REFUSAL source=0 trust=0 coverage_abstains=0 rc=0
+PERSONAL_AI_HOP_GUARD_FAIL checks=15 failures=4
+```
+
+`source=0` is `PERSONAL_AI_LOCAL` and `trust=0` is `HYBRID_TRUST_CERTIFIED`: the
+product path served an answer built from a hop operating outside its certified
+domain, and called it certified.
+
+### Fix
+
+* `route_execute_guarded()` in `src/router/route.c` takes the **same**
+  `DagNodeGuard` the DAG path uses, so the two paths cannot drift into different
+  policies. It consults the guard with the **canonical input each primitive is
+  about to consume** — an intermediate for every hop after the first — and a
+  refusal returns `ROUTE_EXEC_REFUSED_GUARD` before that primitive runs, so
+  nothing downstream executes and no reliability evidence is recorded for a hop
+  that never happened. `route_execute_ex` is now a NULL-guard call to it, so the
+  legacy path is byte-for-byte unchanged.
+* `personal_ai_serve` installs a guard that checks **owner + the executing
+  primitive's exact typed interface + the actual value** via
+  `hybrid_coverage_admits_exact` — the same predicate the benchmark injects.
+  Missing or unsupported metadata (no unit, no BTN, not exactly one input and
+  one output port) fails closed. A refusal is an **abstention**, handled exactly
+  like the existing plan-level refusal, never a partial chain.
+
+### GREEN — FRESH
+
+```
+make personal_ai_hop_guard
+HOPGUARD_REFUSAL source=2 trust=2 coverage_abstains=1 rc=-1
+PERSONAL_AI_HOP_GUARD_PASS checks=15 hops_guarded=every refusals=root+intermediate  # exit 0
+```
+
+`source=2` is `PERSONAL_AI_ABSTAIN`. The controls matter as much: a fully
+covered chain is still served Tier-A certified, and still is *after* a refusal,
+so the guard is not simply refusing everything.

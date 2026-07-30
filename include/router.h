@@ -443,6 +443,32 @@ typedef struct {
     void *ctx;
 } DagNodeGuard;
 
+/* Refused by the per-hop guard, distinct from -1 (plan/shape/domain error) so a
+   caller can tell "the guard said no" from "the plan could not run". Matches
+   DAG_EXEC_REFUSED_GUARD, because it is the same policy on the linear path. */
+#define ROUTE_EXEC_REFUSED_GUARD (-2)
+
+/* Like route_execute_ex, plus a per-hop guard consulted with the CANONICAL
+   input each primitive is about to consume. For every hop after the first that
+   input is an INTERMEDIATE value no caller ever saw, which is exactly what
+   checking only the original request could not cover. `guard` may be NULL
+   (identical to route_execute_ex). A refusal aborts the run before that
+   primitive executes and returns ROUTE_EXEC_REFUSED_GUARD; nothing downstream
+   runs and no reliability evidence is recorded for the refused hop.
+
+   The guard type is DagNodeGuard so the linear and DAG paths share one policy
+   surface -- a caller cannot accidentally enforce different rules on the two. */
+int route_execute_guarded(
+    const RoutePlan *plan,
+    const double *input,
+    size_t in_len,
+    double *output,
+    size_t out_cap,
+    ExecFault *fault,
+    const DagNodeGuard *guard
+);
+
+
 /* dag_execute: distinct from -1 (plan/shape/domain error) so a caller can tell
    "the guard said no" from "the plan could not run". */
 #define DAG_EXEC_REFUSED_GUARD (-2)

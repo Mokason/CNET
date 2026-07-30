@@ -827,17 +827,10 @@ int cnet_capsule_import_asset(CnetBase *dst, HybridAi *cov, const char *dir,
        forgetting it on failure is the only ordering where a failed import
        cannot leave an ungated certified unit behind. */
     if (cov_rows) {
-        /* Coverage records are keyed by PORTS, not unit names. Writing one for
-           an occupied shape frees the incumbent's rows and leaves that older
-           unit default-allow, and forget_unit cannot put it back. Refuse the
-           conflict instead of displacing it. */
-        const char *owner = hybrid_coverage_owner(cov, pin, pout);
-        if (owner && strcmp(owner, unit) != 0) {
-            char w[CNET_CAPSULE_REASON_MAX];
-            snprintf(w, sizeof w, "coverage_port_conflict_owned_by=%.90s", owner);
-            cap_fail(rep, w);
-            goto done;
-        }
+        /* Coverage identity is owner + exact interface, so an incoming unit no
+           longer displaces an incumbent that happens to share a port shape --
+           they coexist, each gated by its own rows. Importing the SAME unit
+           twice is still refused, by the duplicate preflight above. */
         if (hybrid_coverage_record(cov, pin, pout, unit, cin, cout, cov_rows,
                                    cov_in, cov_out) != 0) {
             cap_fail(rep, "coverage_restore_failed");

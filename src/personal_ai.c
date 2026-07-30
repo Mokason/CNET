@@ -172,6 +172,56 @@ static int plan_coverage_open(const PersonalAi *ai, const RoutePlan *plan,
     return 1;
 }
 
+/* ---- production per-hop guard --------------------------------------------
+ * The plan-level check above tests the ORIGINAL REQUEST against each mined unit
+ * in the plan. For a chain that is the wrong question twice over: hop 2 does not
+ * receive the request, it receives hop 1's OUTPUT, and the request's ports are
+ * not hop 2's ports. So a composed answer could be built from a hop operating
+ * outside its certified domain, and the composition benchmark only avoided that
+ * by injecting its own guard -- which ordinary serving never did.
+ *
+ * This is the same predicate the benchmark injects, owned by the executor
+ * instead: owner + the EXECUTING primitive's exact typed interface + the actual
+ * value that primitive is about to consume. Missing or unsupported metadata
+ * fails closed rather than being waved through. */
+typedef struct {
+    const HybridAi *cov;
+    const char *refused_unit;
+    size_t refused_step;
+    int refusals;
+} PersonalHopGuard;
+
+static int personal_hop_allow(const char *unit,
+                              const BinaryTransformNetwork *btn,
+                              const double *input, size_t in_len, void *ctx) {
+    PersonalHopGuard *g = (PersonalHopGuard *)ctx;
+    if (!g) return 0;
+    if (!unit || !unit[0] || !btn || !input || in_len == 0) {
+        g->refusals++;
+        g->refused_unit = unit;
+        return -1;
+    }
+    /* One input port and one output port is the only shape whose exact
+       membership this guard can decide. Branching nodes are UNSUPPORTED and
+       refused while the gate is on, not silently admitted. */
+    if (btn->input_port_count != 1 || btn->output_port_count != 1) {
+        g->refusals++;
+        g->refused_unit = unit;
+        return -1;
+    }
+    /* Hand-admitted, full-domain units carry no record by design; only mined
+       units must be covered. This mirrors hybrid_coverage_admits_unit's rule so
+       the guard cannot be stricter than the tier it protects. */
+    if (!hybrid_unit_is_mined(unit)) return 0;
+    if (!hybrid_coverage_admits_exact(g->cov, unit, btn->input_ports[0],
+                                      btn->output_ports[0], input, in_len)) {
+        g->refusals++;
+        g->refused_unit = unit;
+        return -1;
+    }
+    return 0;
+}
+
 /* Dense name table for PersonalAiSource (enum values are 0..5). */
 static const char *const k_source_names[] = {
     "local",    /* PERSONAL_AI_LOCAL */
@@ -525,16 +575,35 @@ int personal_ai_serve(PersonalAi *ai, Port input_port, Port goal_port,
             rep->coverage_abstains = 1;
             cnet_acct_add_abstain();
         } else {
-            if (route_execute(&plan, input, in_len, output, out_cap) != 0) {
+            PersonalHopGuard hop;
+            DagNodeGuard hop_guard;
+            int exec_rc;
+            memset(&hop, 0, sizeof hop);
+            hop.cov = &ai->hybrid;
+            hop_guard.allow = coverage_gate_disabled() ? NULL
+                                                       : personal_hop_allow;
+            hop_guard.ctx = &hop;
+            exec_rc = route_execute_guarded(&plan, input, in_len, output,
+                                            out_cap, NULL, &hop_guard);
+            if (exec_rc == ROUTE_EXEC_REFUSED_GUARD) {
+                /* A hop was about to run outside its certified domain. That is
+                   an abstention, not an error: fall through to B/C exactly as
+                   the plan-level refusal does, and never serve a partial chain. */
+                ai->hybrid.coverage_abstains++;
+                ai->totals.coverage_abstains++;
+                rep->coverage_abstains = 1;
+                cnet_acct_add_abstain();
+            } else if (exec_rc != 0) {
                 rep->source = PERSONAL_AI_ERROR;
                 ai->totals.abstains++;
                 cnet_acct_add_error();
                 return -1;
+            } else {
+                serve_record_hit(ai, rep, PERSONAL_AI_LOCAL,
+                                 HYBRID_TRUST_CERTIFIED, HYBRID_TIER_A);
+                cnet_acct_add_tier_a((uint64_t)plan.length);
+                return 0;
             }
-            serve_record_hit(ai, rep, PERSONAL_AI_LOCAL, HYBRID_TRUST_CERTIFIED,
-                             HYBRID_TIER_A);
-            cnet_acct_add_tier_a((uint64_t)plan.length);
-            return 0;
         }
     }
 

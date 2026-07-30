@@ -2821,6 +2821,7 @@ vision_detection_eval_test: tools/vision_detection/vd_eval.c tools/vision_detect
 .PHONY: knowledge_composition_bench knowledge_accumulation_bench knowledge_capsule
 .PHONY: coverage_abstain own_learning_health port_raw_unit_seam
 .PHONY: coverage_sidecar_seal coverage_sidecar_seal_san capsule_scope_lineage
+.PHONY: personal_ai_hop_guard
 .PHONY: vision_coverage_test vision_capsule_asset vision_detection_bench_v2
 .PHONY: vision_detection_bench_v2_evidence vision_detection_prep_v2
 
@@ -3042,6 +3043,20 @@ coverage_abstain: $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PIL
 	@./$(BIN_DIR)/test_coverage_abstain > logs/coverage_abstain.log 2>&1
 	@grep -q "COVERAGE_ABSTAIN_PASS" logs/coverage_abstain.log
 	@grep "COVERAGE_ABSTAIN_PASS" logs/coverage_abstain.log
+
+# The per-hop guard where it matters: ORDINARY serving, not a benchmark that
+# injects its own callback. hop1 covered, hop2 handed an uncovered intermediate.
+personal_ai_hop_guard: $(CAPSULE_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(EXT_TEACHER_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) tests/test_personal_ai_hop_guard.c include/personal_ai.h include/router.h
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/test_personal_ai_hop_guard \
+		$(CAPSULE_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(EXT_TEACHER_SRC) \
+		$(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) \
+		$(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) \
+		$(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) \
+		tests/test_personal_ai_hop_guard.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -pthread
+	@python3 scripts/gate_evidence.py personal_ai_hop_guard \
+		logs/personal_ai_hop_guard.log PERSONAL_AI_HOP_GUARD_PASS -- \
+		./$(BIN_DIR)/test_personal_ai_hop_guard
 
 # Scope, lineage and least disclosure: a sampled specialist must ship with its
 # boundary, a successful import must leave the destination carrying the

@@ -527,9 +527,39 @@ int main(void) {
         }
         memset(&rep, 0, sizeof rep);
         rc = cnet_capsule_import(&b, &occupied, dir, &rep);
-        check(rc != 0, "conflict: import REFUSED rather than displacing");
-        printf("      %s\n", rep.reject_reason);
-        check(!cnb_has_unit(&b, unit), "conflict: no unit admitted");
+        /* Coverage identity is now OWNER + exact interface, so an incoming unit
+           no longer displaces an incumbent that shares a port shape: they
+           coexist, each gated by its own rows. The guarantee this case has
+           always protected -- the incumbent's gate is not lost -- is unchanged
+           and asserted below; what changed is that keeping it no longer costs a
+           refusal. The per-owner assertions after it are new and stricter. */
+        check(rc == 0, "conflict: a second owner on one shape is admitted");
+        if (rc != 0) printf("      %s\n", rep.reject_reason);
+        check(cnb_has_unit(&b, unit), "conflict: the second owner's unit lands");
+        check(hybrid_coverage_owner_count(&occupied, pin, pout) == 2,
+              "conflict: the interface now has two owners");
+        {
+            double probe[SYM];
+            const HybridCoverage *newcomer = NULL;
+            size_t z;
+            oh(probe, 1);   /* the incumbent's certified row */
+            hybrid_coverage_arm_fail_closed(&occupied, 1);
+            check(hybrid_coverage_admits_unit(&occupied, "incumbent_unit",
+                                              probe, SYM) == 1,
+                  "conflict: the incumbent still admits its own row");
+            for (z = 0; z < occupied.coverage_count; z++)
+                if (occupied.coverage[z].active &&
+                    strcmp(occupied.coverage[z].unit, unit) == 0)
+                    newcomer = &occupied.coverage[z];
+            check(newcomer != NULL,
+                  "conflict: the newcomer has its OWN record, not the incumbent's");
+            check(newcomer && newcomer->n_rows == rep.coverage_rows,
+                  "conflict: the newcomer's record holds the capsule's own rows");
+            check(newcomer && newcomer->n_rows != kn,
+                  "conflict: the two owners' domains are distinct");
+            check(hybrid_coverage_admits(&occupied, pin, pout, probe, SYM) == 0,
+                  "conflict: the shape-only lookup fails closed while ambiguous");
+        }
         after_rec = NULL;
         {
             size_t z;
@@ -659,11 +689,14 @@ int main(void) {
         HybridAi h;
         size_t before, after, i5;
         hybrid_ai_init(&h);
-        /* occupy the shape with a foreign owner so every import is rejected */
+        /* Occupy the shape with the CAPSULE'S OWN unit, so every import is
+           rejected by the duplicate-import preflight. A foreign owner no longer
+           causes a rejection -- owners coexist -- so this case would otherwise
+           stop testing what it names. */
         {
             double row[SYM], tgt[SYM];
             oh(row, 0); oh(tgt, 3);
-            (void)hybrid_coverage_record(&h, pin, pout, "foreign_owner", row,
+            (void)hybrid_coverage_record(&h, pin, pout, unit, row,
                                          tgt, 1, SYM, SYM);
         }
         before = hybrid_coverage_count(&h);

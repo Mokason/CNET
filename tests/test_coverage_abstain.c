@@ -234,9 +234,12 @@ int main(void) {
         check(fp != NULL, "S7: coverage persisted beside the base");
         if (fp) {
             char hdr[32] = {0};
+            /* v2 == v1 records plus owner-keyed identity (several units may
+               share one interface). The version is asserted exactly, not by
+               prefix, so a silent format change is still caught. */
             check(fgets(hdr, sizeof hdr, fp) != NULL &&
-                      strncmp(hdr, "CNET_COVERAGE v1", 16) == 0,
-                  "S7: sidecar carries a versioned header");
+                      strncmp(hdr, "CNET_COVERAGE v2", 16) == 0,
+                  "S7: sidecar carries the current versioned header");
             fclose(fp);
         }
     }
