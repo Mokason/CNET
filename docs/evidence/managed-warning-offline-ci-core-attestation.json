@@ -1,0 +1,423 @@
+{
+  "schema": "cnet.evidence.managed_warning_offline_ci_core.attestation",
+  "schema_version": 1,
+  "status_vocabulary": {
+    "values": [
+      "PASSED",
+      "FAILED",
+      "WITHHELD",
+      "BLOCKED"
+    ],
+    "rule": "Every state and every claim carries one of these. Absence of a status is not a pass. Prose in this document explains statuses; it never substitutes for one."
+  },
+  "subject": "The managed warning gate restores what it builds, offline and isolated from the user's NuGet configuration, and ci_core passes from a brand-new checkout under a hostile NuGet user config.",
+  "repository": "CNET",
+  "branch": "feature/cnet-integrity-remediation",
+  "attestation_scope": "One set of verification runs on one host. This is not a scientific claim, and it changes nothing marked FAILED, WITHHELD or BLOCKED in plans/cnet_integrity_remediation_20260730.md.",
+  "provenance": {
+    "note": "The commit that adds this attestation changes EVIDENCE PACKAGING ONLY. It adds this JSON and the retained pre-fix raw artifacts and nothing else; it alters no source, Makefile, test, script, plan or scientific label, and therefore cannot alter the behaviour of either tested tree. The trees attested below were tested before this commit existed.",
+    "generated_from": "Every digest, size and count in this document was computed by reading the referenced file during generation. No value was copied from an earlier report.",
+    "evidence_roots": [
+      "/tmp/cnet-integrity-phase6-evidence",
+      "/tmp/cnet-integrity-phase6-evidence-head",
+      "/home/marble/AI/CNET-worktrees/integrity-remediation/docs/evidence/raw"
+    ],
+    "attestation_commit_parent": "ed53319ec0711dc1085a0680186baf3eb763dca0"
+  },
+  "verification_commands": [
+    "sha256sum docs/evidence/raw/prefix-red-restore.log",
+    "sha256sum docs/evidence/raw/prefix-red-strace.txt.gz",
+    "gunzip -c docs/evidence/raw/prefix-red-strace.txt.gz | sha256sum",
+    "gunzip -c docs/evidence/raw/prefix-red-strace.txt.gz | grep -cE 'connect\\([0-9]+, \\{sa_family=AF_INET6?,'",
+    "grep -cE 'NU1900|NU1905' docs/evidence/raw/prefix-red-restore.log",
+    "python3 -m json.tool docs/evidence/managed-warning-offline-ci-core-attestation.json",
+    "git diff --name-status <parent>..HEAD"
+  ],
+  "states": [
+    {
+      "id": "pre_fix_red",
+      "status": "FAILED",
+      "offline_isolation_claim": "WITHHELD",
+      "status_meaning": "This state is retained BECAUSE it failed. FAILED is the expected and required outcome here; a PASSED result at this commit would mean the later evidence proves nothing.",
+      "commit": "cb240b53ff2ac74fb3feb0718816e16e969f4a96",
+      "commit_short": "cb240b5",
+      "what_ran": "dotnet restore dotnet/Cce.Tests/Cce.Tests.csproj --source <empty dir> --nologo -v:minimal, i.e. the phase-5 restore command verbatim, under strace -f -e trace=network with a hostile NuGet user config in HOME and the real package cache reachable via NUGET_PACKAGES",
+      "hostile_nuget_config": {
+        "path": "/tmp/claude-1000/-home-marble-AI-CNET-worktrees-integrity-remediation/932e2911-1772-4940-9bca-b0f5398976f6/scratchpad/hostile_home/.nuget/NuGet/NuGet.Config",
+        "size_bytes": 339,
+        "sha256": "1f932e0eef220b1b505081437ab98c69d46ed57818ea29001b8a20398e321735",
+        "declares_package_feed": "http://127.0.0.1:28080/v3/index.json",
+        "declares_audit_source": "http://127.0.0.1:28081/v3/index.json"
+      },
+      "retained_evidence": {
+        "restore_log": {
+          "path": "docs/evidence/raw/prefix-red-restore.log",
+          "size_bytes": 2027,
+          "sha256": "c7b6a3f1755e17a5c5c3b4a2d0d8a79cd1059c97c1273ba34ce5bc23e0517392"
+        },
+        "strace_compressed": {
+          "path": "docs/evidence/raw/prefix-red-strace.txt.gz",
+          "size_bytes": 12694,
+          "sha256": "0864c18bf1e95c070a1456bf724917007a22e85e5f83a2fad5d22eaba76750c2",
+          "compression": "gzip -n -9 (no name, no timestamp; byte-reproducible)"
+        },
+        "strace_raw_when_decompressed": {
+          "size_bytes": 199346,
+          "sha256": "2970f44282d37bf252f7422a36ae6659b461296d71b8eb1dca241b08834cddc2",
+          "sha256_independently_measured_by_hermes": "2970f44282d37bf252f7422a36ae6659b461296d71b8eb1dca241b08834cddc2",
+          "agrees_with_independent_measurement": true
+        },
+        "restore_log_sha256_independently_measured_by_hermes": "c7b6a3f1755e17a5c5c3b4a2d0d8a79cd1059c97c1273ba34ce5bc23e0517392",
+        "restore_log_agrees_with_independent_measurement": true
+      },
+      "network": {
+        "measured_now_from_retained_trace": {
+          "connect_af_inet_or_inet6": 6,
+          "send_to_af_inet_or_inet6": 0,
+          "socket_af_inet_or_inet6_opened": 12,
+          "connect_af_unix_local_ipc_ignored": 98,
+          "inet_peer_ports": [
+            28081
+          ],
+          "inet_peer_addresses": [
+            "::ffff:127.0.0.1"
+          ]
+        },
+        "endpoint_contacted": {
+          "address": "::ffff:127.0.0.1",
+          "port": 28081,
+          "role": "auditSources entry of the hostile user config"
+        },
+        "hostile_package_feed_port_28080_contacted": false,
+        "finding": "--source overrides packageSources and does not touch auditSources: every connect goes to the audit endpoint and none to the feed",
+        "verdict": "FAILED"
+      },
+      "restore_log_markers": {
+        "NU1900": 2,
+        "NU1905": 2,
+        "audit_source_url_occurrences": 2,
+        "failed_to_restore_lines": 1
+      }
+    },
+    {
+      "id": "tested_code_commit",
+      "status": "PASSED",
+      "commit": "8055e9f66a13d4915660d6c9840b5f1f32f79be1",
+      "tree": "d0eb099ac5a4eddff68c5454a21888c53144e0a8",
+      "head_in_worktree_at_run_time": "8055e9f66a13d4915660d6c9840b5f1f32f79be1",
+      "commit_matches_expected": true,
+      "tree_matches_expected": true,
+      "preconditions": {
+        "worktree": "brand-new disposable detached git worktree",
+        "worktree_dirty_files": 0,
+        "dotnet_obj_or_bin_directories_before": 0,
+        "nuget_user_config": "HOSTILE",
+        "hostile_nuget_config": {
+          "path": "/tmp/cnet-integrity-phase6-evidence/hostile_home/.nuget/NuGet/NuGet.Config",
+          "size_bytes": 339,
+          "sha256": "1f932e0eef220b1b505081437ab98c69d46ed57818ea29001b8a20398e321735",
+          "sha256_recorded_at_run_time": "1f932e0eef220b1b505081437ab98c69d46ed57818ea29001b8a20398e321735",
+          "sha256_recomputed_now_agrees": true,
+          "declares_package_feed": "http://127.0.0.1:28080/v3/index.json",
+          "declares_audit_source": "http://127.0.0.1:28081/v3/index.json"
+        },
+        "package_cache_reachable": true,
+        "package_cache_entries": 98
+      },
+      "targets": [
+        {
+          "target": "make managed_warning_prereq",
+          "exit_code": 0,
+          "status": "PASSED",
+          "log": {
+            "path": "/tmp/cnet-integrity-phase6-evidence/managed_warning_prereq.log",
+            "size_bytes": 1081,
+            "sha256": "a72abd9a649146e8b92ca75cfe61db5806211fbfa16cfb5d5530f9469fe70614"
+          },
+          "sha256_recorded_at_run_time": "a72abd9a649146e8b92ca75cfe61db5806211fbfa16cfb5d5530f9469fe70614",
+          "sha256_recomputed_now_agrees": true
+        },
+        {
+          "target": "make managed_warning_gate",
+          "exit_code": 0,
+          "status": "PASSED",
+          "log": {
+            "path": "/tmp/cnet-integrity-phase6-evidence/managed_warning_gate.log",
+            "size_bytes": 60,
+            "sha256": "a5e6b10c2070c9ccba1e88444bd128480756d186cc423261b6edbffac7281345"
+          },
+          "sha256_recorded_at_run_time": "a5e6b10c2070c9ccba1e88444bd128480756d186cc423261b6edbffac7281345",
+          "sha256_recomputed_now_agrees": true
+        },
+        {
+          "target": "make managed_warning_offline_proof",
+          "exit_code": 0,
+          "status": "PASSED",
+          "log": {
+            "path": "/tmp/cnet-integrity-phase6-evidence/managed_warning_offline_proof.log",
+            "size_bytes": 990,
+            "sha256": "b986b859626e1f8b068be5e68a1e7281f70329bc221c2f547322266423ee4c71"
+          },
+          "sha256_recorded_at_run_time": "b986b859626e1f8b068be5e68a1e7281f70329bc221c2f547322266423ee4c71",
+          "sha256_recomputed_now_agrees": true
+        },
+        {
+          "target": "make release_warning_gate",
+          "exit_code": 0,
+          "status": "PASSED",
+          "log": {
+            "path": "/tmp/cnet-integrity-phase6-evidence/release_warning_gate.log",
+            "size_bytes": 1222,
+            "sha256": "ed33a6d5bb363faccc06b85dbac308ca3ba31fae6780444f4b36e1e56074c0d8"
+          },
+          "sha256_recorded_at_run_time": "ed33a6d5bb363faccc06b85dbac308ca3ba31fae6780444f4b36e1e56074c0d8",
+          "sha256_recomputed_now_agrees": true
+        },
+        {
+          "target": "make ci_core",
+          "exit_code": 0,
+          "status": "PASSED",
+          "log": {
+            "path": "/tmp/cnet-integrity-phase6-evidence/ci_core.log",
+            "size_bytes": 64227,
+            "sha256": "ec550cde2cb8b6032a727a3ca3684f3aa937a99ef541017a151e5d856d2787b5"
+          },
+          "sha256_recorded_at_run_time": "ec550cde2cb8b6032a727a3ca3684f3aa937a99ef541017a151e5d856d2787b5",
+          "sha256_recomputed_now_agrees": true
+        }
+      ],
+      "counts": {
+        "source": "/tmp/cnet-integrity-phase6-evidence/managed_warning_offline_proof.log",
+        "note": "restore and build counts are read from the retained offline-proof log, which recorded them during the run. The per-run gate logs they were also computed from lived in the disposable worktree and were removed with it, so they are not offered as a source here.",
+        "projects_restored": 7,
+        "projects_built": 7,
+        "nu1900_nu1905_audit_errors": 0,
+        "gate_exit_code": 0,
+        "summary_recorded_restores": 7,
+        "summary_recorded_builds": 7,
+        "summary_recorded_audit_errors": 0
+      },
+      "network": {
+        "method": "strace -f -qq -e trace=network over the real gate",
+        "trace": {
+          "path": "/tmp/cnet-integrity-phase6-evidence/offline_strace.txt",
+          "size_bytes": 3822170,
+          "sha256": "27b4746930af0e90cdafd4b5f74bb993305cb02b9248ca22895ff1494b649875"
+        },
+        "measured_now_from_trace": {
+          "connect_af_inet_or_inet6": 0,
+          "send_to_af_inet_or_inet6": 0,
+          "socket_af_inet_or_inet6_opened": 24,
+          "connect_af_unix_local_ipc_ignored": 493,
+          "inet_peer_ports": [],
+          "inet_peer_addresses": []
+        },
+        "recorded_by_gate_at_run_time": {
+          "inet_connect": 0,
+          "inet_send": 0,
+          "inet_sockets_opened": 24,
+          "inet_fd_further_network_syscalls": 0,
+          "unix_connect_ignored": 493
+        },
+        "af_unix_treated_as_network": false,
+        "opened_inet_sockets_explanation": "bare socket(AF_INET*, SOCK_DGRAM|SOCK_CLOEXEC) capability probes; the gate walks every descriptor those calls returned and requires zero further network syscalls on any of them, which is the inet_fd_further_network_syscalls value above",
+        "verdict": "PASSED"
+      },
+      "markers": {
+        "CNET_CI_CORE_PASS": 1,
+        "MANAGED_WARNING_GATE_PASS": 1,
+        "RELEASE_WARNING_GATE_PASS": 1,
+        "MANAGED_WARNING_OFFLINE_PROOF_PASS": 1,
+        "MANAGED_WARNING_PREREQ_PASS": 1,
+        "MANAGED_WARNING_PREREQ_RED_CONFIRMED": 2
+      },
+      "summary_source": {
+        "path": "/tmp/cnet-integrity-phase6-evidence/summary.txt",
+        "size_bytes": 2071,
+        "sha256": "32b37f85eeed206d89fcb9a866d2a3076a90029d266384935ad4650e232efd61"
+      }
+    },
+    {
+      "id": "verified_evidence_head",
+      "status": "PASSED",
+      "commit": "ed53319ec0711dc1085a0680186baf3eb763dca0",
+      "tree": "238537d3dc8e97d96df9186c6469d483730574ef",
+      "head_in_worktree_at_run_time": "ed53319ec0711dc1085a0680186baf3eb763dca0",
+      "commit_matches_expected": true,
+      "tree_matches_expected": true,
+      "preconditions": {
+        "worktree": "brand-new disposable detached git worktree",
+        "worktree_dirty_files": 0,
+        "dotnet_obj_or_bin_directories_before": 0,
+        "nuget_user_config": "HOSTILE",
+        "hostile_nuget_config": {
+          "path": "/tmp/cnet-integrity-phase6-evidence-head/hostile_home/.nuget/NuGet/NuGet.Config",
+          "size_bytes": 339,
+          "sha256": "1f932e0eef220b1b505081437ab98c69d46ed57818ea29001b8a20398e321735",
+          "sha256_recorded_at_run_time": "1f932e0eef220b1b505081437ab98c69d46ed57818ea29001b8a20398e321735",
+          "sha256_recomputed_now_agrees": true,
+          "declares_package_feed": "http://127.0.0.1:28080/v3/index.json",
+          "declares_audit_source": "http://127.0.0.1:28081/v3/index.json"
+        },
+        "package_cache_reachable": true,
+        "package_cache_entries": 98
+      },
+      "targets": [
+        {
+          "target": "make managed_warning_prereq",
+          "exit_code": 0,
+          "status": "PASSED",
+          "log": {
+            "path": "/tmp/cnet-integrity-phase6-evidence-head/managed_warning_prereq.log",
+            "size_bytes": 1081,
+            "sha256": "3ea9dd29a358602038d3d45d8572f662b9ec3976a809723df64f61f4371f27ac"
+          },
+          "sha256_recorded_at_run_time": "3ea9dd29a358602038d3d45d8572f662b9ec3976a809723df64f61f4371f27ac",
+          "sha256_recomputed_now_agrees": true
+        },
+        {
+          "target": "make managed_warning_gate",
+          "exit_code": 0,
+          "status": "PASSED",
+          "log": {
+            "path": "/tmp/cnet-integrity-phase6-evidence-head/managed_warning_gate.log",
+            "size_bytes": 60,
+            "sha256": "a5e6b10c2070c9ccba1e88444bd128480756d186cc423261b6edbffac7281345"
+          },
+          "sha256_recorded_at_run_time": "a5e6b10c2070c9ccba1e88444bd128480756d186cc423261b6edbffac7281345",
+          "sha256_recomputed_now_agrees": true
+        },
+        {
+          "target": "make managed_warning_offline_proof",
+          "exit_code": 0,
+          "status": "PASSED",
+          "log": {
+            "path": "/tmp/cnet-integrity-phase6-evidence-head/managed_warning_offline_proof.log",
+            "size_bytes": 990,
+            "sha256": "367e9e8e30984724a9dfd12c2117c0377d822fe5cf4c63a8b6dd4a40c3a29218"
+          },
+          "sha256_recorded_at_run_time": "367e9e8e30984724a9dfd12c2117c0377d822fe5cf4c63a8b6dd4a40c3a29218",
+          "sha256_recomputed_now_agrees": true
+        },
+        {
+          "target": "make release_warning_gate",
+          "exit_code": 0,
+          "status": "PASSED",
+          "log": {
+            "path": "/tmp/cnet-integrity-phase6-evidence-head/release_warning_gate.log",
+            "size_bytes": 1222,
+            "sha256": "c83c10887022e3aea1b753ee73d2ffea316e5d9b7cc10aaa49932e94eb4692bc"
+          },
+          "sha256_recorded_at_run_time": "c83c10887022e3aea1b753ee73d2ffea316e5d9b7cc10aaa49932e94eb4692bc",
+          "sha256_recomputed_now_agrees": true
+        },
+        {
+          "target": "make ci_core",
+          "exit_code": 0,
+          "status": "PASSED",
+          "log": {
+            "path": "/tmp/cnet-integrity-phase6-evidence-head/ci_core.log",
+            "size_bytes": 64227,
+            "sha256": "f558da26157595e92f90c6043c1cab68077640865744c65717ee5b886a066b13"
+          },
+          "sha256_recorded_at_run_time": "f558da26157595e92f90c6043c1cab68077640865744c65717ee5b886a066b13",
+          "sha256_recomputed_now_agrees": true
+        }
+      ],
+      "counts": {
+        "source": "/tmp/cnet-integrity-phase6-evidence-head/managed_warning_offline_proof.log",
+        "note": "restore and build counts are read from the retained offline-proof log, which recorded them during the run. The per-run gate logs they were also computed from lived in the disposable worktree and were removed with it, so they are not offered as a source here.",
+        "projects_restored": 7,
+        "projects_built": 7,
+        "nu1900_nu1905_audit_errors": 0,
+        "gate_exit_code": 0,
+        "summary_recorded_restores": 7,
+        "summary_recorded_builds": 7,
+        "summary_recorded_audit_errors": 0
+      },
+      "network": {
+        "method": "strace -f -qq -e trace=network over the real gate",
+        "trace": {
+          "path": "/tmp/cnet-integrity-phase6-evidence-head/offline_strace.txt",
+          "size_bytes": 3806238,
+          "sha256": "5021fb0acee9170f3e8a24e4b63da13fbadc6b8cc86bb26996f578c31b0e038a"
+        },
+        "measured_now_from_trace": {
+          "connect_af_inet_or_inet6": 0,
+          "send_to_af_inet_or_inet6": 0,
+          "socket_af_inet_or_inet6_opened": 24,
+          "connect_af_unix_local_ipc_ignored": 499,
+          "inet_peer_ports": [],
+          "inet_peer_addresses": []
+        },
+        "recorded_by_gate_at_run_time": {
+          "inet_connect": 0,
+          "inet_send": 0,
+          "inet_sockets_opened": 24,
+          "inet_fd_further_network_syscalls": 0,
+          "unix_connect_ignored": 499
+        },
+        "af_unix_treated_as_network": false,
+        "opened_inet_sockets_explanation": "bare socket(AF_INET*, SOCK_DGRAM|SOCK_CLOEXEC) capability probes; the gate walks every descriptor those calls returned and requires zero further network syscalls on any of them, which is the inet_fd_further_network_syscalls value above",
+        "verdict": "PASSED"
+      },
+      "markers": {
+        "CNET_CI_CORE_PASS": 1,
+        "MANAGED_WARNING_GATE_PASS": 1,
+        "RELEASE_WARNING_GATE_PASS": 1,
+        "MANAGED_WARNING_OFFLINE_PROOF_PASS": 1,
+        "MANAGED_WARNING_PREREQ_PASS": 1,
+        "MANAGED_WARNING_PREREQ_RED_CONFIRMED": 2
+      },
+      "summary_source": {
+        "path": "/tmp/cnet-integrity-phase6-evidence-head/summary.txt",
+        "size_bytes": 2106,
+        "sha256": "38319d55276f9836c2762600efc39dfc457db875e3b04f0cddceaffebaaf7c0f"
+      }
+    }
+  ],
+  "cross_state_observations": {
+    "managed_warning_gate_log_sha256_identical_across_green_runs": true,
+    "note": "The two GREEN runs are the same code tree plus an evidence-only commit. The managed warning gate's log hashes identically across them; the other logs differ only in run ids, paths and timings."
+  },
+  "unchanged_by_this_attestation": [
+    {
+      "item": "make own_learning_health",
+      "status": "BLOCKED",
+      "reason": "no_deployed_base on this host; exit 2 by design"
+    },
+    {
+      "item": "make vision_detection_bench_v2",
+      "status": "BLOCKED",
+      "reason": "no data/ in this worktree"
+    },
+    {
+      "item": "continuous coverage against its unchanged floors",
+      "status": "FAILED",
+      "reason": "natural OOD refusal 0.0906 vs >= 0.30 and >= 3x in-domain; synthetic 0.0245 vs >= 0.99; not re-run"
+    },
+    {
+      "item": "portable continuous specialist",
+      "status": "BLOCKED",
+      "reason": "CNU1 rejects continuous exemplars"
+    },
+    {
+      "item": "useful autonomous knowledge accumulation",
+      "status": "WITHHELD",
+      "reason": "no held-out generalisation is measured"
+    },
+    {
+      "item": "evidence separated from runtime state",
+      "status": "WITHHELD",
+      "reason": "partial; remaining recipes still write unbound logs to stable ignored paths"
+    }
+  ],
+  "overall": {
+    "status": "PASSED",
+    "requires": [
+      "states[pre_fix_red].status == FAILED",
+      "states[tested_code_commit].status == PASSED",
+      "states[verified_evidence_head].status == PASSED"
+    ]
+  }
+}
