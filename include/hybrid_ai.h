@@ -345,10 +345,28 @@ struct CnetBase;
  *
  * Ports come from stu, so the matching coverage record is found automatically.
  * Returns 0 on success, 1 when there is no coverage record to seal from,
- * negative on error. Does not save the base — the caller checkpoints. */
+ * negative on error. Does not save the base — the caller checkpoints.
+ *
+ * Returns HYBRID_SEAL_AMBIGUOUS_OWNER when the interface has more than one
+ * owner: the port pair alone does not name a record, and picking one would
+ * certify this unit against rows that may belong to another specialist. That
+ * is distinct from 1 ("no record to seal from"), which is ordinary. */
+#define HYBRID_SEAL_AMBIGUOUS_OWNER (-4)
 CNET_API int hybrid_seal_mined_unit(HybridAi *h, struct CnetBase *base,
                                     BinaryTransformNetwork *stu,
                                     int *reused_out);
+
+/* The same seal, told WHICH owner's rows to certify against.
+ *
+ * Coverage identity is owner plus exact interface, so a port pair alone does
+ * not name a record. When two specialists share an interface the shape-only
+ * form above cannot say whose rows apply — it resolves the owner and refuses
+ * when there is not exactly one. Callers that already know the name should say
+ * so and use this. Returns 0 on success, 1 when that owner has no coverage
+ * record to seal from, negative on error. */
+CNET_API int hybrid_seal_mined_unit_owned(HybridAi *h, struct CnetBase *base,
+                                          BinaryTransformNetwork *stu,
+                                          const char *unit, int *reused_out);
 
 /* Hermetic residual: maps one-hot input → rotated one-hot (open-ended stand-in). */
 CNET_API int hybrid_hermetic_residual(const double *in, double *out, void *ctx);

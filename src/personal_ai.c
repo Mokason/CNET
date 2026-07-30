@@ -802,7 +802,12 @@ int personal_ai_structure_mine(PersonalAi *ai,
         int seal = hybrid_seal_mined_unit(&ai->hybrid, &ai->lane.base,
                                           student_out ? *student_out : NULL,
                                           NULL);
-        if (seal < 0)
+        if (seal == HYBRID_SEAL_AMBIGUOUS_OWNER)
+            fprintf(stderr,
+                    "personal_ai: mined unit not sealed — this interface has "
+                    "several coverage owners, so a shape-only seal cannot say "
+                    "whose rows certify it; it will not survive restart\n");
+        else if (seal < 0)
             fprintf(stderr, "personal_ai: mined unit not sealed (rc=%d) — it "
                             "will not survive restart\n", seal);
         coverage_persist(ai);

@@ -2141,3 +2141,78 @@ The real bench still passes, at 9 -> 12 checks. What changed:
   bounded at 3s instead of 900s. The default is unchanged at 900.
 
 ASan/UBSan/leak detection is untouched and still asserted.
+
+## F4 — owner-keyed coexistence was missing from sealing (MEDIUM)
+
+Phase 2 made coverage identity OWNER plus exact interface and moved
+`hybrid_coverage_record` onto `coverage_find_owned`. Two functions were left on
+the shape-only `coverage_find`:
+
+* `hybrid_seal_mined_unit` took whichever record for the interface came first
+  and certified the unit against ITS rows and ITS contract name;
+* `hybrid_coverage_owner` returned the first of several owners with no signal
+  that the answer was a coin flip.
+
+### RED
+
+The new API was first implemented with the OLD shape-only lookup, so the RED is
+behavioural rather than a link error — it shows what the pre-fix code actually
+did with two owners on one interface:
+
+```
+$ make coverage_owner_seal
+FAIL: a shape-only owner lookup must FAIL CLOSED while two owners share the interface, not return whichever came first
+FAIL: the sealed unit carries B's name, not A's
+FAIL: sealing B must not admit a unit under A's name
+FAIL: the sealed unit for B can be read back
+FAIL: an owner with no coverage record has nothing to seal from
+FAIL: the shape-only seal must REFUSE while two owners share the interface rather than certifying against a coin flip
+COVERAGE_OWNER_SEAL_FAIL checks=17 failures=6
+##EXIT=2
+```
+
+Sealing B admitted a unit under **A's name**, certified on **A's four rows**,
+when B had been certified on two rows of a different mapping.
+
+### GREEN
+
+```
+$ make coverage_owner_seal
+OWNERSEAL_CONTRACT unit=hyb_struct_ownerb exemplars=2
+COVERAGE_OWNER_SEAL_PASS checks=17 owners=2 seal=owner_keyed shape_only=refuses_ambiguity
+##EXIT=0
+```
+
+The fixture is two units on ONE interface with different rows, different
+targets and different contract names. B is certified on 2 rows against a rotate
+mapping; A on 4 rows against identity — so a seal that grabbed the wrong record
+is visible in both the row count and the name.
+
+### What was implemented
+
+* `hybrid_seal_mined_unit_owned(h, base, stu, unit, reused_out)` — the seal,
+  told which owner's rows to certify against, using `coverage_find_owned`.
+* `hybrid_seal_mined_unit(...)` is kept as the shape-only form and **refuses
+  ambiguity**: 0 owners returns 1 ("nothing to seal from", ordinary), more than
+  one returns `HYBRID_SEAL_AMBIGUOUS_OWNER` (-4). Those are different failures
+  and no longer share a code — one is routine, the other means the caller was
+  about to certify a unit against rows that may belong to someone else.
+* `hybrid_coverage_owner` returns NULL unless `hybrid_coverage_owner_count`
+  is exactly 1.
+* Call sites audited. `soul_host.c` already had the mined unit's name in hand
+  and now passes it. `personal_ai.c` cannot name it there, so it keeps the
+  shape-only form — which now fails closed — and reports the ambiguous case
+  distinctly instead of as a generic negative.
+
+### Dependent gates, all re-run
+
+```
+make coverage_owner_seal            0
+make coverage_abstain               0
+make coverage_sidecar_seal          0
+make knowledge_capsule              0
+make personal_ai_hop_guard          0
+make knowledge_accumulation_bench   0
+make knowledge_composition_bench    0
+make capsule_scope_lineage          0
+```

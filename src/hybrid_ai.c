@@ -253,16 +253,22 @@ int hybrid_coverage_record(HybridAi *h, Port in_port, Port out_port,
     return 0;
 }
 
-int hybrid_seal_mined_unit(HybridAi *h, struct CnetBase *base,
-                           BinaryTransformNetwork *stu, int *reused_out) {
+int hybrid_seal_mined_unit_owned(HybridAi *h, struct CnetBase *base,
+                                 BinaryTransformNetwork *stu, const char *unit,
+                                 int *reused_out) {
     const HybridCoverage *c;
     Contract ct;
     int rc, reused = 0;
-    if (!h || !base || !stu) return -1;
+    if (!h || !base || !stu || !unit || !unit[0]) return -1;
     if (stu->input_port_count < 1 || stu->output_port_count < 1) return -1;
-    c = coverage_find(h, port_key(stu->input_ports[0]),
-                      port_key(stu->output_ports[0]), stu->input_ports[0],
-                      stu->output_ports[0]);
+    /* Owner-keyed, not shape-only. Keyed by the port pair alone this took
+       whichever record for the interface came first, so with two specialists
+       behind one typed interface, sealing B certified B against A's rows and
+       admitted it under A's contract NAME — a unit carrying someone else's
+       identity, certified on a domain it was never trained on. */
+    c = coverage_find_owned(h, unit, port_key(stu->input_ports[0]),
+                            port_key(stu->output_ports[0]), stu->input_ports[0],
+                            stu->output_ports[0]);
     /* No record, or a record restored from disk without labels: nothing to
        seal from. Never invent rows — that is the bug this function replaces. */
     if (!c || !c->rows || !c->targets || c->n_rows == 0) return 1;
@@ -275,6 +281,25 @@ int hybrid_seal_mined_unit(HybridAi *h, struct CnetBase *base,
     if (rc != 0) return -3;
     if (reused_out) *reused_out = reused;
     return 0;
+}
+
+int hybrid_seal_mined_unit(HybridAi *h, struct CnetBase *base,
+                           BinaryTransformNetwork *stu, int *reused_out) {
+    const char *owner;
+    size_t owners;
+    if (!h || !base || !stu) return -1;
+    if (stu->input_port_count < 1 || stu->output_port_count < 1) return -1;
+    owners = hybrid_coverage_owner_count(h, stu->input_ports[0],
+                                         stu->output_ports[0]);
+    /* Zero owners and several owners are different failures and must not share
+       a code: "nothing to seal from" is ordinary, while "this interface has two
+       specialists and you did not say which" means the caller is about to
+       certify a unit against rows that may belong to someone else. */
+    if (owners == 0) return 1;
+    if (owners > 1) return HYBRID_SEAL_AMBIGUOUS_OWNER;
+    owner = hybrid_coverage_owner(h, stu->input_ports[0], stu->output_ports[0]);
+    if (!owner) return 1;
+    return hybrid_seal_mined_unit_owned(h, base, stu, owner, reused_out);
 }
 
 int hybrid_coverage_admits(const HybridAi *h, Port in_port, Port out_port,
@@ -369,6 +394,11 @@ const char *hybrid_coverage_owner(const HybridAi *h, Port in_port,
                                   Port out_port) {
     const HybridCoverage *c;
     if (!h) return NULL;
+    /* Fail closed while the answer would be a guess. Coverage identity is
+       owner plus interface, so a shape with two owners has no single answer;
+       returning the first one silently picked a specialist for the caller.
+       Callers that know the owner should use the _owned form. */
+    if (hybrid_coverage_owner_count(h, in_port, out_port) != 1) return NULL;
     c = coverage_find((HybridAi *)h, port_key(in_port), port_key(out_port),
                       in_port, out_port);
     return (c && c->active && c->rows) ? c->unit : NULL;

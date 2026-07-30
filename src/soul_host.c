@@ -576,7 +576,11 @@ CNET_API int soul_structure_mine(SoulHost *h) {
              h->hybrid.structure_mines > 0 ? h->hybrid.structure_mines - 1
                                            : 0);
     {
-        int src = hybrid_seal_mined_unit(&h->hybrid, &h->base, stu, &reused);
+        /* Name the owner. `name` above is exactly the unit the mine recorded
+           coverage under, and a shape-only seal cannot say whose rows apply
+           once two specialists share an interface. */
+        int src = hybrid_seal_mined_unit_owned(&h->hybrid, &h->base, stu, name,
+                                               &reused);
         if (src != 0) {
             fprintf(stderr,
                     "soul_host: structure seal failed name=%s rc=%d\n",
