@@ -297,6 +297,23 @@ int hybrid_coverage_has_unit(const HybridAi *h, const char *unit) {
     return 0;
 }
 
+int hybrid_coverage_binds_unit(const HybridAi *h, const char *unit,
+                               Port in_port, Port out_port, size_t in_dim) {
+    size_t i;
+    if (!h || !unit || !unit[0] || in_dim == 0) return 0;
+    if (!coverage_family_gated(in_port)) return 0;
+    for (i = 0; i < h->coverage_count; i++) {
+        const HybridCoverage *c = &h->coverage[i];
+        if (!c->active || !c->rows || c->n_rows == 0) continue;
+        if (strcmp(c->unit, unit) != 0) continue;
+        if (!port_identical(c->input_port, in_port)) continue;
+        if (!port_identical(c->goal_port, out_port)) continue;
+        if (c->in_dim != in_dim) continue;
+        return 1;
+    }
+    return 0;
+}
+
 const char *hybrid_coverage_owner(const HybridAi *h, Port in_port,
                                   Port out_port) {
     const HybridCoverage *c;
@@ -340,23 +357,30 @@ size_t hybrid_coverage_count(const HybridAi *h) {
 int hybrid_coverage_admits_unit(const HybridAi *h, const char *unit,
                                 const double *in, size_t in_len) {
     size_t i, r;
+    int named = 0;
     if (!h || !unit || !unit[0] || !in) return 1;
     for (i = 0; i < h->coverage_count; i++) {
         const HybridCoverage *c = &h->coverage[i];
         if (!c->active || !c->rows) continue;
         if (strcmp(c->unit, unit) != 0) continue;
-        if (!coverage_family_gated(c->input_port)) return 1;
-        if (c->in_dim != in_len) return 1;
+        named = 1;
+        /* A record on an undecidable family, or one that binds a DIFFERENT
+           dimension, proves nothing about this input. It used to return 1 here
+           — "allow" — which is how a stale record that merely carried the right
+           unit name granted a licence it never held. Keep looking instead. */
+        if (!coverage_family_gated(c->input_port)) continue;
+        if (c->in_dim != in_len) continue;
         for (r = 0; r < c->n_rows; r++) {
             if (memcmp(c->rows + r * c->in_dim, in,
                        c->in_dim * sizeof(double)) == 0)
                 return 1;
         }
-        return 0;
     }
-    /* No record. A mined unit MUST have one, so when fail-closed is armed its
-       absence means the guard was lost (deleted or corrupt sidecar), not that
-       the unit is unrestricted — refuse rather than serve it blind. */
+    /* A record named this unit and none of them admitted this input. */
+    if (named) return 0;
+    /* No record at all. A mined unit MUST have one, so when fail-closed is
+       armed its absence means the guard was lost (deleted or corrupt sidecar),
+       not that the unit is unrestricted — refuse rather than serve it blind. */
     if (h->coverage_fail_closed && hybrid_unit_is_mined(unit)) return 0;
     return 1; /* hand-admitted / full-domain unit — default-allow */
 }
@@ -441,70 +465,277 @@ int hybrid_coverage_save(const HybridAi *h, const char *path) {
     return 0;
 }
 
+/* ---- transactional sidecar load -----------------------------------------
+ *
+ * The sidecar is a SEAL, not a hint. The previous loader broke out of its parse
+ * loop on any malformed or truncated record and returned 0 — success — with
+ * whatever it had already installed, ignored hybrid_coverage_record failures,
+ * never checked that in_dim agreed with the port shape, accepted any integer as
+ * a family, accepted non-finite rows, let a later record displace an earlier one
+ * on the same port shape, and turned an ownerless record into the invented unit
+ * name "restored". Any of those left a record that NAMED a mined unit while
+ * binding nothing, which is precisely what suppresses the startup fail-closed
+ * arm. So: the file either loads completely or changes nothing.
+ */
+
+#define COVERAGE_MAX_ROWS (1u << 20)
+#define COVERAGE_MAX_DIM  (1u << 20)
+
+typedef struct {
+    Port in_port;
+    Port out_port;
+    char unit[80];
+    double *rows;      /* owned until commit transfers it */
+    size_t n_rows;
+    size_t in_dim;
+} StagedCoverage;
+
+static int coverage_family_valid(int family) {
+    return family >= (int)PORT_RAW && family <= (int)PORT_CONCEPT;
+}
+
+/* Install a fully validated record, taking ownership of `rows`. Allocation-free
+   by construction, so the commit phase cannot fail half way through. */
+static void coverage_install(HybridAi *h, const StagedCoverage *st) {
+    HybridCoverage *c;
+    uint64_t ik = port_key(st->in_port), gk = port_key(st->out_port);
+    c = coverage_find(h, ik, gk, st->in_port, st->out_port);
+    if (!c) {
+        c = &h->coverage[h->coverage_count++];
+        memset(c, 0, sizeof *c);
+    } else {
+        free(c->rows);
+        free(c->targets);
+    }
+    c->input_port = st->in_port;
+    c->goal_port = st->out_port;
+    c->in_key = ik;
+    c->goal_key = gk;
+    snprintf(c->unit, sizeof c->unit, "%s", st->unit);
+    c->rows = st->rows;
+    c->targets = NULL;
+    c->n_rows = st->n_rows;
+    c->in_dim = st->in_dim;
+    c->out_dim = 0;
+    c->active = 1;
+}
+
+static void staged_free(StagedCoverage *staged, size_t n) {
+    size_t i;
+    if (!staged) return;
+    for (i = 0; i < n; i++) free(staged[i].rows);
+    free(staged);
+}
+
+static int coverage_reject(const char *path, const char *why) {
+    fprintf(stderr,
+            "hybrid: REFUSING coverage file %s — %s. The whole sidecar is "
+            "rejected and no records were installed; mined units stay "
+            "fail-closed until a re-mine restores the guard.\n",
+            path, why);
+    return -4;
+}
+
 int hybrid_coverage_load(HybridAi *h, const char *path) {
     FILE *fp;
     char tok[64];
-    int ver = 0;
+    int ver = 0, rc;
+    StagedCoverage *staged = NULL;
+    size_t staged_count = 0, staged_cap = 0, i, j, fresh_shapes = 0;
+
     if (!h || !path || !path[0]) return -1;
     fp = fopen(path, "r");
     if (!fp) return 0; /* nothing mined yet is not an error */
     if (fscanf(fp, "%15s v%d", tok, &ver) != 2 ||
         strcmp(tok, "CNET_COVERAGE") != 0 || ver != 1) {
         fclose(fp);
-        fprintf(stderr, "hybrid: unreadable coverage file %s — mined units "
-                        "will default-allow until the next mine\n", path);
-        return -4;
+        return coverage_reject(path, "unsupported magic or version");
     }
+
     for (;;) {
-        size_t n_rows, in_dim, iw, ic, gw, gc, r, j;
-        int ifam, gfam;
+        size_t n_rows, in_dim, iw, ic, gw, gc, r, k;
+        int ifam, gfam, got;
         char itag[PORT_TAG_MAX], gtag[PORT_TAG_MAX], unit[80];
-        Port pin, pout;
-        double *rows;
-        if (fscanf(fp, " %15s", tok) != 1) break; /* clean EOF */
-        if (strcmp(tok, "U") != 0) break;
+        StagedCoverage st;
+
+        got = fscanf(fp, " %15s", tok);
+        if (got == EOF) break;               /* clean end of file */
+        if (got != 1 || strcmp(tok, "U") != 0) {
+            fclose(fp);
+            staged_free(staged, staged_count);
+            return coverage_reject(path, "trailing bytes after the last record");
+        }
         if (fscanf(fp, " %zu %zu %d %zu %zu %d %zu %zu %31s %31s %79s",
                    &n_rows, &in_dim, &ifam, &iw, &ic, &gfam, &gw, &gc,
-                   itag, gtag, unit) != 11)
-            break;
-        if (n_rows == 0 || in_dim == 0 || in_dim > 1u << 20 ||
-            n_rows > 1u << 20 || n_rows > SIZE_MAX / in_dim)
-            break;
-        rows = (double *)calloc(n_rows * in_dim, sizeof(double));
-        if (!rows) break;
+                   itag, gtag, unit) != 11) {
+            fclose(fp);
+            staged_free(staged, staged_count);
+            return coverage_reject(path, "truncated or malformed record header");
+        }
+        if (n_rows == 0 || n_rows > COVERAGE_MAX_ROWS || in_dim == 0 ||
+            in_dim > COVERAGE_MAX_DIM || n_rows > SIZE_MAX / in_dim) {
+            fclose(fp);
+            staged_free(staged, staged_count);
+            return coverage_reject(path, "row count or dimension out of range");
+        }
+        if (!coverage_family_valid(ifam) || !coverage_family_valid(gfam)) {
+            fclose(fp);
+            staged_free(staged, staged_count);
+            return coverage_reject(path, "port family outside the known set");
+        }
+        if (iw == 0 || ic == 0 || gw == 0 || gc == 0 ||
+            iw > COVERAGE_MAX_DIM || ic > COVERAGE_MAX_DIM ||
+            gw > COVERAGE_MAX_DIM || gc > COVERAGE_MAX_DIM) {
+            fclose(fp);
+            staged_free(staged, staged_count);
+            return coverage_reject(path, "zero or oversized port dimensions");
+        }
+        /* The relation the old loader never checked: a record whose declared
+           width does not span its declared port cannot decide membership. */
+        if (iw > SIZE_MAX / ic || iw * ic != in_dim) {
+            fclose(fp);
+            staged_free(staged, staged_count);
+            return coverage_reject(path,
+                                   "in_dim disagrees with field_width * field_count");
+        }
+
+        memset(&st, 0, sizeof st);
+        st.in_port.family = (PortFamily)ifam;
+        st.in_port.field_width = iw;
+        st.in_port.field_count = ic;
+        coverage_tag_in(itag, st.in_port.tag, sizeof st.in_port.tag);
+        st.out_port.family = (PortFamily)gfam;
+        st.out_port.field_width = gw;
+        st.out_port.field_count = gc;
+        coverage_tag_in(gtag, st.out_port.tag, sizeof st.out_port.tag);
+
+        /* A record on a family whose membership cannot be decided gates
+           nothing; storing it would only mask the missing guard. */
+        if (!coverage_family_gated(st.in_port)) {
+            fclose(fp);
+            staged_free(staged, staged_count);
+            return coverage_reject(path,
+                                   "input family cannot decide exact membership");
+        }
+        /* "~" was silently rewritten to the invented unit name "restored". A
+           record that names no unit binds no unit. */
+        if (!unit[0] || strcmp(unit, "~") == 0) {
+            fclose(fp);
+            staged_free(staged, staged_count);
+            return coverage_reject(path, "record names no owning unit");
+        }
+        snprintf(st.unit, sizeof st.unit, "%s", unit);
+        st.n_rows = n_rows;
+        st.in_dim = in_dim;
+        st.rows = (double *)calloc(n_rows * in_dim, sizeof(double));
+        if (!st.rows) {
+            fclose(fp);
+            staged_free(staged, staged_count);
+            return coverage_reject(path, "out of memory staging rows");
+        }
         for (r = 0; r < n_rows; r++) {
             if (fscanf(fp, " %15s", tok) != 1 || strcmp(tok, "R") != 0) {
-                free(rows);
-                rows = NULL;
-                break;
+                free(st.rows);
+                fclose(fp);
+                staged_free(staged, staged_count);
+                return coverage_reject(path, "missing or malformed row marker");
             }
-            for (j = 0; j < in_dim; j++) {
-                if (fscanf(fp, " %lf", &rows[r * in_dim + j]) != 1) {
-                    free(rows);
-                    rows = NULL;
-                    break;
+            for (k = 0; k < in_dim; k++) {
+                double v;
+                if (fscanf(fp, " %lf", &v) != 1) {
+                    free(st.rows);
+                    fclose(fp);
+                    staged_free(staged, staged_count);
+                    return coverage_reject(path, "truncated or non-numeric row");
                 }
+                /* scanf happily parses "nan" and "inf"; exact membership over
+                   those is meaningless, so they are corruption here. */
+                if (!isfinite(v)) {
+                    free(st.rows);
+                    fclose(fp);
+                    staged_free(staged, staged_count);
+                    return coverage_reject(path, "non-finite row value");
+                }
+                st.rows[r * in_dim + k] = v;
             }
-            if (!rows) break;
         }
-        if (!rows) break;
-        memset(&pin, 0, sizeof pin);
-        memset(&pout, 0, sizeof pout);
-        pin.family = (PortFamily)ifam;
-        pin.field_width = iw;
-        pin.field_count = ic;
-        coverage_tag_in(itag, pin.tag, sizeof pin.tag);
-        pout.family = (PortFamily)gfam;
-        pout.field_width = gw;
-        pout.field_count = gc;
-        coverage_tag_in(gtag, pout.tag, sizeof pout.tag);
-        (void)hybrid_coverage_record(h, pin, pout,
-                                     strcmp(unit, "~") ? unit : "restored",
-                                     rows, NULL, n_rows, in_dim, 0);
-        free(rows);
+
+        if (staged_count == staged_cap) {
+            size_t want = staged_cap ? staged_cap * 2 : 8;
+            StagedCoverage *grown;
+            if (want > HYBRID_COVERAGE_MAX) want = HYBRID_COVERAGE_MAX;
+            if (want == staged_cap) {
+                free(st.rows);
+                fclose(fp);
+                staged_free(staged, staged_count);
+                return coverage_reject(path, "more records than the store holds");
+            }
+            grown = (StagedCoverage *)realloc(staged, want * sizeof *grown);
+            if (!grown) {
+                free(st.rows);
+                fclose(fp);
+                staged_free(staged, staged_count);
+                return coverage_reject(path, "out of memory staging records");
+            }
+            staged = grown;
+            staged_cap = want;
+        }
+        staged[staged_count++] = st;
     }
     fclose(fp);
-    return 0;
+
+    if (staged_count == 0) {
+        staged_free(staged, staged_count);
+        /* A well-formed but empty sidecar carries no guard. It is not
+           corruption, and callers already treat "no records" as unguarded. */
+        return 0;
+    }
+
+    /* Cross-record validation. Coverage is keyed by port shape, so two records
+       on one shape means the second silently frees the first's rows and leaves
+       that unit default-allow — a duplicate and a conflict are equally fatal. */
+    for (i = 0; i < staged_count; i++) {
+        for (j = i + 1; j < staged_count; j++) {
+            if (port_identical(staged[i].in_port, staged[j].in_port) &&
+                port_identical(staged[i].out_port, staged[j].out_port)) {
+                int same_unit = strcmp(staged[i].unit, staged[j].unit) == 0;
+                staged_free(staged, staged_count);
+                return coverage_reject(path, same_unit
+                                                 ? "the same record twice"
+                                                 : "two units claiming one port shape");
+            }
+        }
+    }
+
+    /* And against what is already loaded: a shape already owned by a different
+       unit must not be taken over by a file. */
+    for (i = 0; i < staged_count; i++) {
+        const char *owner = hybrid_coverage_owner(h, staged[i].in_port,
+                                                  staged[i].out_port);
+        if (!owner) {
+            fresh_shapes++;
+            continue;
+        }
+        if (strcmp(owner, staged[i].unit) != 0) {
+            staged_free(staged, staged_count);
+            return coverage_reject(path,
+                                   "record would displace another unit's gate");
+        }
+    }
+    if (h->coverage_count + fresh_shapes > HYBRID_COVERAGE_MAX) {
+        staged_free(staged, staged_count);
+        return coverage_reject(path, "coverage store has no room for the file");
+    }
+
+    /* Commit. Every row buffer is already allocated and every slot reserved, so
+       this phase does no work that can fail. */
+    for (i = 0; i < staged_count; i++) {
+        coverage_install(h, &staged[i]);
+        staged[i].rows = NULL; /* ownership transferred */
+    }
+    rc = 0;
+    staged_free(staged, staged_count);
+    return rc;
 }
 
 size_t hybrid_reservoir_rows(const HybridAi *h) {

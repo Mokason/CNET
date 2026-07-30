@@ -352,3 +352,113 @@ matrix, not as passing.
 `own_learning_health` is not a prerequisite of `verify` or `ci_core`, so the
 new non-zero exit does not cascade. Confirmed by re-running `make recipe_gate`
 (exit 0), which enumerates it as a headline gate.
+
+---
+
+## B4 — Coverage sidecar load must be transactional and sealed
+
+### Defect
+
+`hybrid_coverage_load` broke out of its parse loop on any malformed or
+truncated record and then returned **0 — success** — with whatever it had
+already installed. It also:
+
+* ignored `hybrid_coverage_record` failures;
+* never required `in_dim == field_width * field_count`;
+* accepted any integer as a port family, including families whose exact
+  membership cannot be decided;
+* accepted non-finite row values (`scanf` parses `nan` and `inf` happily);
+* let a later record silently displace an earlier one on the same port shape,
+  freeing the incumbent's rows and leaving that unit default-allow;
+* rewrote an ownerless record (`~`) into the invented unit name `restored`;
+* ignored trailing bytes after the last record.
+
+Startup then treated a mined unit as guarded if **any** active record merely
+carried its name (`hybrid_coverage_has_unit`), and `hybrid_coverage_admits_unit`
+returned *allow* when a naming record had an unsupported family or a mismatched
+dimension. Together: a corrupt or stale record that kept the unit name
+suppressed the fail-closed arm while binding no ports and no dimension.
+
+### RED — FRESH
+
+```
+make coverage_sidecar_seal      # exit 2 (make), test binary exit 1
+COVERAGE_SIDECAR_SEAL_FAIL checks=98 failures=67
+```
+
+67 failures across 20 corruption mutations. Representative:
+
+```
+FAIL: a record for another dimension must not admit a mined unit
+FAIL: an undecidable family must not admit a mined unit
+FAIL: truncation at byte 106 of 123 is rejected whole
+FAIL: in_dim disagreeing with the port shape: load must report failure
+FAIL: in_dim disagreeing with the port shape: mined unit refuses Tier A
+FAIL: an out-of-range input family: no partial state is installed
+FAIL: a NaN row value: load must report failure
+FAIL: two units claiming one port shape: load must report failure
+FAIL: trailing garbage: load must report failure
+FAIL: a record naming no unit: load must report failure
+```
+
+Each mutation asserts four things: the load reports failure, a fresh store ends
+with zero records, the mined unit refuses Tier A, and — the partial-state case
+the old loader got wrong — loading the corrupt file into an **already
+populated** store leaves the prior records intact.
+
+### Fix
+
+`src/hybrid_ai.c`:
+
+* The loader now **stages** every record (parse + validate + allocate) and only
+  commits once the entire file is known good. The commit phase is
+  allocation-free by construction, so it cannot fail half way. Any rejection
+  returns `-4` and leaves the store byte-identical.
+* Validation added: magic/version, row-count and dimension ranges with overflow
+  checks, `field_width * field_count == in_dim`, family within the enum,
+  input family must be one whose exact membership can be decided, non-zero and
+  bounded port dimensions, an owning unit name (`~` is refused, not renamed),
+  `isfinite` on every value, exact row markers, no trailing bytes, no duplicate
+  or conflicting port shape within the file, no shape already owned by a
+  different unit, and store capacity.
+* `hybrid_coverage_admits_unit` no longer returns *allow* for a naming record on
+  an undecidable family or a mismatched dimension. It keeps looking, and if a
+  record named the unit but none admitted the input, it refuses.
+* New `hybrid_coverage_binds_unit(h, unit, in_port, out_port, in_dim)` — the
+  exact relation, as opposed to "is this name mentioned".
+
+`src/personal_ai.c`: the startup self-check materializes each mined unit and
+requires a record binding that unit to **its** ports at **its** input
+dimension. A rejected sidecar also arms fail-closed on its own.
+
+### GREEN — FRESH
+
+```
+make coverage_sidecar_seal
+COVERAGE_SIDECAR_SEAL_PASS checks=98 mutations=20 partial_state=none   # exit 0
+```
+
+The control assertions matter as much as the negatives: a well-formed sidecar
+still round-trips, a certified row is still admitted, an uncertified row is
+still refused, and dropping only trailing whitespace still loads — so the gate
+cannot pass by being vacuously strict.
+
+### Regression commands — FRESH
+
+```
+make coverage_abstain               COVERAGE_ABSTAIN_PASS checks=55 heldout_correct=4/4 was=0/4   exit 0
+make knowledge_capsule              KNOWLEDGE_CAPSULE_PASS checks=88 coverage_rows=5             exit 0
+make knowledge_accumulation_bench   PASS units=32 ... ood_refused=96                             exit 0
+make knowledge_composition_bench    PASS members=3 hops_guarded=every refusals=root+intermediate exit 0
+```
+
+### Sanitizers — FRESH
+
+```
+make coverage_sidecar_seal_san      # ASan + UBSan, detect_leaks=1, halt_on_error=1
+COVERAGE_SIDECAR_SEAL_PASS checks=98 mutations=20 partial_state=none   # exit 0
+```
+
+A transactional loader that leaked staged rows or read freed memory on the
+reject path would not really have rolled anything back, so the rollback paths
+are exercised under sanitizers rather than trusted.

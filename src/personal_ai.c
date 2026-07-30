@@ -103,17 +103,38 @@ static size_t coverage_selfcheck(PersonalAi *ai, int load_failed) {
                 "in the base\n", stale);
     for (i = 0; i < ai->lane.base.unit_count; i++) {
         const char *nm = ai->lane.base.units[i].name;
+        BinaryTransformNetwork btn;
+        Contract ct;
+        int bound = 0;
         if (!hybrid_unit_is_mined(nm)) continue;
         mined++;
-        if (!hybrid_coverage_has_unit(&ai->hybrid, nm)) unguarded++;
+        /* Bind the EXACT relation, not the name. `hybrid_coverage_has_unit`
+           answers "is this name mentioned anywhere", so a stale or corrupt
+           record that merely carried the name suppressed this arm while
+           binding no ports and no dimension. Materializing the unit is the
+           only way to learn the ports it will actually serve on; this runs
+           once per mined unit at open. */
+        memset(&btn, 0, sizeof btn);
+        memset(&ct, 0, sizeof ct);
+        if (cnb_get_unit(&ai->lane.base, nm, &btn, &ct) == 0) {
+            if (btn.input_port_count >= 1 && btn.output_port_count >= 1)
+                bound = hybrid_coverage_binds_unit(&ai->hybrid, nm,
+                                                   btn.input_ports[0],
+                                                   btn.output_ports[0],
+                                                   btn.input_count);
+            contract_free(&ct);
+            btn_free(&btn);
+        }
+        if (!bound) unguarded++;
     }
-    if (unguarded > 0) {
+    if (unguarded > 0 || load_failed) {
         hybrid_coverage_arm_fail_closed(&ai->hybrid, 1);
         fprintf(stderr,
-                "personal_ai: ERROR coverage missing for %zu of %zu mined "
+                "personal_ai: ERROR coverage does not bind %zu of %zu mined "
                 "unit(s)%s — refusing to serve them until a re-mine restores "
                 "the guard (fail-closed)\n",
-                unguarded, mined, load_failed ? " (coverage file unreadable)" : "");
+                unguarded, mined,
+                load_failed ? " (coverage sidecar rejected)" : "");
     }
     return unguarded;
 }

@@ -293,6 +293,15 @@ CNET_API void hybrid_coverage_arm_fail_closed(HybridAi *h, int on);
 /* 1 if a coverage record exists for this unit name. */
 CNET_API int hybrid_coverage_has_unit(const HybridAi *h, const char *unit);
 
+/* Startup binding, stronger than has_unit: 1 only when a record binds THIS
+ * unit to THESE exact ports at this input dimension, on a family whose exact
+ * membership can be decided. has_unit answers "is this name mentioned", which
+ * is what let a stale or corrupt record suppress the fail-closed arm while
+ * binding nothing. Use this to decide whether a mined unit is guarded. */
+CNET_API int hybrid_coverage_binds_unit(const HybridAi *h, const char *unit,
+                                        Port in_port, Port out_port,
+                                        size_t in_dim);
+
 /* Which unit owns the coverage record for this port shape, or NULL. Coverage
  * is keyed by PORTS, so an importer must ask this before recording: writing a
  * record for an occupied shape frees the incumbent's rows and silently leaves
