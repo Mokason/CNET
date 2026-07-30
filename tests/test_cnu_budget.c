@@ -109,6 +109,13 @@ static unsigned char *make_unit(size_t *len_out) {
 /* The header layout, from unit_save_mem: magic[4] version[4] name_len[2]
    name[name_len] then input_count/output_count/hidden_count/max_hidden as
    little-endian u64. Locate the first u64 and rewrite the four dimensions. */
+static unsigned long long get_u64(const unsigned char *at) {
+    unsigned long long v = 0;
+    size_t i;
+    for (i = 0; i < 8; i++) v |= (unsigned long long)at[i] << (8 * i);
+    return v;
+}
+
 static void put_u64(unsigned char *at, unsigned long long v) {
     size_t i;
     for (i = 0; i < 8; i++) at[i] = (unsigned char)(v >> (8 * i));
@@ -163,6 +170,61 @@ static int amplify(unsigned char *buf, size_t len, unsigned long long ic,
     return 0;
 }
 
+/* Walk the header exactly as unit_load_mem does and return the offset of the
+   exemplar_count u64. Returns (size_t)-1 if the layout does not match, which
+   would mean the fixture is not the file this test thinks it is. */
+static size_t exemplar_count_offset(const unsigned char *buf, size_t len,
+                                    unsigned long long *count_out) {
+    size_t off = 4 + 4;
+    unsigned name_len, n_ports, i, tl;
+    unsigned long long ic, oc, hc, mhc, cells;
+
+    if (len < off + 2) return (size_t)-1;
+    name_len = (unsigned)buf[off] | ((unsigned)buf[off + 1] << 8);
+    off += 2 + name_len;
+    if (len < off + 32 + 8 + 1 + 8) return (size_t)-1;
+    ic = get_u64(buf + off);
+    oc = get_u64(buf + off + 8);
+    hc = get_u64(buf + off + 16);
+    mhc = get_u64(buf + off + 24);
+    (void)mhc;
+    off += 32 + 8 + 1 + 8;          /* dims, learning rate, ternary, threshold */
+
+    for (n_ports = 0; n_ports < 2; n_ports++) {
+        unsigned count;
+        if (off >= len) return (size_t)-1;
+        count = buf[off++];
+        for (i = 0; i < count; i++) {
+            if (off + 1 + 8 + 8 + 1 > len) return (size_t)-1;
+            off += 1 + 8 + 8;       /* family, field_width, field_count */
+            tl = buf[off++];
+            off += tl;
+        }
+    }
+    /* output_bias, hidden_bias, input x hidden, hidden x output */
+    cells = oc + hc + ic * hc + hc * oc;
+    if (cells > (unsigned long long)(len / sizeof(double))) return (size_t)-1;
+    off += (size_t)cells * sizeof(double);
+    if (off + 8 > len) return (size_t)-1;
+    if (count_out) *count_out = get_u64(buf + off);
+    return off;
+}
+
+/* Rewrite exemplar_count and reseal. The packed exemplar body is left exactly
+   as it was: that is the point -- the header claims far more rows than the
+   payload can possibly carry. */
+static int amplify_exemplars(unsigned char *buf, size_t len,
+                             unsigned long long n_ex) {
+    unsigned long long seal, was = 0;
+    size_t at = exemplar_count_offset(buf, len, &was);
+    if (at == (size_t)-1) return -1;
+    if (was != SYM) return -1;      /* the fixture is not what we assumed */
+    put_u64(buf + at, n_ex);
+    seal = cnu_fnv(buf, len - 8);
+    put_u64(buf + len - 8, seal);
+    return 0;
+}
+
 /* Load in a child under a hard RLIMIT_AS and RLIMIT_CPU, and report what it
    COST. The verdict alone is not enough: a parser that allocates gigabytes and
    only then discovers the payload is empty still "refuses", and that is exactly
@@ -172,16 +234,34 @@ static int amplify(unsigned char *buf, size_t len, unsigned long long ic,
      0  the parser refused
      1  the parser ACCEPTED the image
     -1  the child died (OOM kill, CPU limit, signal) */
+static long read_vm_peak_kb(void) {
+    FILE *fp = fopen("/proc/self/status", "r");
+    char line[256];
+    long kb = -1;
+    if (!fp) return -1;
+    while (fgets(line, sizeof line, fp)) {
+        if (strncmp(line, "VmPeak:", 7) == 0) {
+            kb = strtol(line + 7, NULL, 10);
+            break;
+        }
+    }
+    fclose(fp);
+    return kb;
+}
+
 static int load_in_child(const unsigned char *image, size_t len,
-                         long *peak_kb, double *cpu_seconds) {
+                         long *peak_kb, double *cpu_seconds, long *vm_peak_kb) {
     pid_t pid;
-    int status = 0;
+    int status = 0, fds[2];
     struct rusage usage;
     if (peak_kb) *peak_kb = 0;
     if (cpu_seconds) *cpu_seconds = 0.0;
+    if (vm_peak_kb) *vm_peak_kb = -1;
+    if (pipe(fds) != 0) return -1;
     pid = fork();
-    if (pid < 0) return -1;
+    if (pid < 0) { close(fds[0]); close(fds[1]); return -1; }
     if (pid == 0) {
+        close(fds[0]);
         struct rlimit as, cpu;
         BinaryTransformNetwork btn;
         Contract c;
@@ -200,9 +280,30 @@ static int load_in_child(const unsigned char *image, size_t len,
         if (rc == 0) {
             btn_free(&btn);
             contract_free(&c);
-            _exit(1);   /* accepted */
         }
-        _exit(0);       /* refused */
+        /* Report peak ADDRESS SPACE, not just resident pages: malloc of half a
+           gigabyte that is never written keeps RSS flat while still being the
+           amplification. Read before _exit so the mapping is still counted. */
+        {
+            char buf[64];
+            int n = snprintf(buf, sizeof buf, "%ld\n", read_vm_peak_kb());
+            if (n > 0) {
+                ssize_t ignored = write(fds[1], buf, (size_t)n);
+                (void)ignored;
+            }
+            close(fds[1]);
+        }
+        _exit(rc == 0 ? 1 : 0);
+    }
+    close(fds[1]);
+    {
+        char buf[64];
+        ssize_t got = read(fds[0], buf, sizeof buf - 1);
+        if (got > 0 && vm_peak_kb) {
+            buf[got] = '\0';
+            *vm_peak_kb = strtol(buf, NULL, 10);
+        }
+        close(fds[0]);
     }
     memset(&usage, 0, sizeof usage);
     if (wait4(pid, &status, 0, &usage) < 0) return -1;
@@ -218,9 +319,11 @@ static int load_in_child(const unsigned char *image, size_t len,
 
 /* Headroom over the honest control before a refusal counts as "cheap". */
 #define PEAK_SLACK_KB   (64L * 1024L)
+#define VM_SLACK_KB     (64L * 1024L)
 #define CPU_BUDGET_SECS 2.0
 
 static long baseline_peak_kb;
+static long baseline_vm_peak_kb;
 
 static void amplified_case(const unsigned char *good, size_t len,
                            unsigned long long ic, unsigned long long oc,
@@ -228,7 +331,7 @@ static void amplified_case(const unsigned char *good, size_t len,
                            const char *description) {
     unsigned char *image = (unsigned char *)malloc(len);
     char message[320];
-    long peak = 0;
+    long peak = 0, vm = -1;
     double cpu = 0.0;
     int verdict;
 
@@ -242,11 +345,11 @@ static void amplified_case(const unsigned char *good, size_t len,
         check(0, "fixture header could not be rewritten");
         return;
     }
-    verdict = load_in_child(image, len, &peak, &cpu);
+    verdict = load_in_child(image, len, &peak, &cpu, &vm);
     free(image);
 
-    printf("CNU_BUDGET_CASE verdict=%d peak_kb=%ld cpu=%.3f %s\n", verdict,
-           peak, cpu, description);
+    printf("CNU_BUDGET_CASE verdict=%d peak_kb=%ld vm_peak_kb=%ld cpu=%.3f %s\n",
+           verdict, peak, vm, cpu, description);
     snprintf(message, sizeof message, "%s is refused (verdict=%d)", description,
              verdict);
     check(verdict == 0, message);
@@ -254,6 +357,54 @@ static void amplified_case(const unsigned char *good, size_t len,
              "%s is refused BEFORE allocating (peak %ld kB vs control %ld kB)",
              description, peak, baseline_peak_kb);
     check(peak <= baseline_peak_kb + PEAK_SLACK_KB, message);
+    snprintf(message, sizeof message,
+             "%s reserves no extra address space (VmPeak %ld kB vs control %ld kB)",
+             description, vm, baseline_vm_peak_kb);
+    check(vm >= 0 && baseline_vm_peak_kb >= 0 &&
+              vm <= baseline_vm_peak_kb + VM_SLACK_KB,
+          message);
+    snprintf(message, sizeof message,
+             "%s is refused within the CPU budget (%.3fs)", description, cpu);
+    check(cpu < CPU_BUDGET_SECS, message);
+}
+
+static void amplified_exemplar_case(const unsigned char *good, size_t len,
+                                    unsigned long long n_ex,
+                                    const char *description) {
+    unsigned char *image = (unsigned char *)malloc(len);
+    char message[320];
+    long peak = 0, vm = -1;
+    double cpu = 0.0;
+    int verdict;
+
+    if (!image) {
+        check(0, "fixture allocation");
+        return;
+    }
+    memcpy(image, good, len);
+    if (amplify_exemplars(image, len, n_ex) != 0) {
+        free(image);
+        check(0, "exemplar fixture header could not be rewritten");
+        return;
+    }
+    verdict = load_in_child(image, len, &peak, &cpu, &vm);
+    free(image);
+
+    printf("CNU_BUDGET_CASE verdict=%d peak_kb=%ld vm_peak_kb=%ld cpu=%.3f %s\n",
+           verdict, peak, vm, cpu, description);
+    snprintf(message, sizeof message, "%s is refused (verdict=%d)", description,
+             verdict);
+    check(verdict == 0, message);
+    snprintf(message, sizeof message,
+             "%s is refused BEFORE allocating (peak %ld kB vs control %ld kB)",
+             description, peak, baseline_peak_kb);
+    check(peak <= baseline_peak_kb + PEAK_SLACK_KB, message);
+    snprintf(message, sizeof message,
+             "%s reserves no extra address space (VmPeak %ld kB vs control %ld kB)",
+             description, vm, baseline_vm_peak_kb);
+    check(vm >= 0 && baseline_vm_peak_kb >= 0 &&
+              vm <= baseline_vm_peak_kb + VM_SLACK_KB,
+          message);
     snprintf(message, sizeof message,
              "%s is refused within the CPU budget (%.3fs)", description, cpu);
     check(cpu < CPU_BUDGET_SECS, message);
@@ -276,10 +427,13 @@ int main(void) {
        the baseline every refusal below is measured against. */
     {
         double cpu = 0.0;
-        check(load_in_child(good, len, &baseline_peak_kb, &cpu) == 1,
+        check(load_in_child(good, len, &baseline_peak_kb, &cpu,
+                            &baseline_vm_peak_kb) == 1,
               "the honest unit still loads under the address limit");
-        printf("CNU_BUDGET_BASELINE peak_kb=%ld cpu=%.3f\n", baseline_peak_kb,
-               cpu);
+        printf("CNU_BUDGET_BASELINE peak_kb=%ld vm_peak_kb=%ld cpu=%.3f\n",
+               baseline_peak_kb, baseline_vm_peak_kb, cpu);
+        check(baseline_vm_peak_kb > 0,
+              "the child reports its peak address space");
     }
 
     /* The finding's fixture: every dimension at the old individual maximum. */
@@ -311,12 +465,33 @@ int main(void) {
     amplified_case(good, len, 512, SYM, 1u << 18, 1u << 18,
                    "a tiny CNU that makes the parser touch a gigabyte");
 
+    /* --- exemplar amplification -----------------------------------------
+       Exemplars are packed one BIT per value, so a declared row count implies a
+       payload length exactly. exemplar_count was bounded only by
+       UNIT_MAX_EXEMPLARS (2^24) and its product with the port totals was
+       checked only for overflow, not against the bytes that remain, so a tiny
+       file could ask for two 500 MB arrays before a single packed byte was
+       read. */
+    amplified_exemplar_case(good, len, 1u << 24,
+                            "a tiny CNU declaring 2^24 exemplars");
+    amplified_exemplar_case(good, len, (1u << 24) - 1,
+                            "a tiny CNU one under the exemplar ceiling");
+    amplified_exemplar_case(good, len, 1u << 20,
+                            "a tiny CNU declaring 2^20 exemplars");
+    amplified_exemplar_case(good, len, 4096,
+                            "a tiny CNU declaring 4096 exemplars it does not carry");
+    amplified_exemplar_case(good, len, SYM + 1,
+                            "a tiny CNU declaring one exemplar too many");
+    amplified_exemplar_case(good, len, (1ull << 24) + 1,
+                            "a tiny CNU past the exemplar ceiling");
+
     free(good);
     if (failures) {
         printf("CNU_BUDGET_FAIL checks=%d failures=%d\n", checks, failures);
         return 1;
     }
-    printf("CNU_BUDGET_PASS checks=%d amplified=7 address_limit=%luMB\n", checks,
+    printf("CNU_BUDGET_PASS checks=%d amplified=7 exemplar_amplified=6 "
+           "address_limit=%luMB\n", checks,
            (unsigned long)(ADDRESS_LIMIT_BYTES / (1024u * 1024u)));
     return 0;
 }

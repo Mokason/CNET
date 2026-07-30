@@ -480,6 +480,16 @@ int hybrid_coverage_save(const HybridAi *h, const char *path) {
 
 #define COVERAGE_MAX_ROWS (1u << 20)
 #define COVERAGE_MAX_DIM  (1u << 20)
+/* Each scalar limit above can be legal while their PRODUCT is not: 2^20 rows of
+   2^20 doubles is 8 TB, and a two-line file was measured reserving 1,072,868 kB
+   before anything compared the declaration against the bytes the file actually
+   holds. Same two bounds the CNU parser uses: an absolute ceiling, and a
+   file-relative one, because "amplified" means a large claim from a small file.
+   A row costs at least "R" + in_dim x (space + one digit) + newline, so
+   2 + 2*in_dim bytes is a safe lower bound on any real encoding. */
+#define COVERAGE_MAX_CELLS   ((size_t)1u << 24)   /* 16.7M doubles ~ 134 MB */
+#define COVERAGE_ALLOC_SLACK ((size_t)16)
+#define COVERAGE_CELL_MAX    ((size_t)-1)
 
 typedef struct {
     Port in_port;
@@ -542,10 +552,26 @@ int hybrid_coverage_load(HybridAi *h, const char *path) {
     int ver = 0, rc;
     StagedCoverage *staged = NULL;
     size_t staged_count = 0, staged_cap = 0, i, j, fresh_shapes = 0;
+    size_t file_size = 0;
 
     if (!h || !path || !path[0]) return -1;
     fp = fopen(path, "r");
     if (!fp) return 0; /* nothing mined yet is not an error */
+    /* The file's own length is the only honest upper bound on what it can
+       describe, so measure it before parsing anything. */
+    if (fseek(fp, 0, SEEK_END) != 0) {
+        fclose(fp);
+        return coverage_reject(path, "coverage file is not seekable");
+    }
+    {
+        long end = ftell(fp);
+        if (end < 0) {
+            fclose(fp);
+            return coverage_reject(path, "coverage file length is unknown");
+        }
+        file_size = (size_t)end;
+    }
+    rewind(fp);
     if (fscanf(fp, "%15s v%d", tok, &ver) != 2 ||
         strcmp(tok, "CNET_COVERAGE") != 0 || ver != 1) {
         fclose(fp);
@@ -577,6 +603,49 @@ int hybrid_coverage_load(HybridAi *h, const char *path) {
             fclose(fp);
             staged_free(staged, staged_count);
             return coverage_reject(path, "row count or dimension out of range");
+        }
+        /* Budget BEFORE the calloc below. */
+        {
+            long here = ftell(fp);
+            size_t remaining, min_row_bytes, need_bytes, cells;
+            if (here < 0 || (size_t)here > file_size) {
+                fclose(fp);
+                staged_free(staged, staged_count);
+                return coverage_reject(path, "cannot locate position in file");
+            }
+            remaining = file_size - (size_t)here;
+            if (in_dim > (COVERAGE_CELL_MAX - 2) / 2) {
+                fclose(fp);
+                staged_free(staged, staged_count);
+                return coverage_reject(path, "declared dimension out of range");
+            }
+            min_row_bytes = 2 + 2 * in_dim;
+            if (n_rows > COVERAGE_CELL_MAX / min_row_bytes) {
+                fclose(fp);
+                staged_free(staged, staged_count);
+                return coverage_reject(path, "declared rows overflow the byte budget");
+            }
+            need_bytes = n_rows * min_row_bytes;
+            if (need_bytes > remaining) {
+                fclose(fp);
+                staged_free(staged, staged_count);
+                return coverage_reject(path,
+                                       "declared rows cannot fit in the remaining bytes");
+            }
+            cells = n_rows * in_dim;   /* overflow already excluded above */
+            if (cells > COVERAGE_MAX_CELLS) {
+                fclose(fp);
+                staged_free(staged, staged_count);
+                return coverage_reject(path, "record exceeds the absolute cell ceiling");
+            }
+            if (cells > COVERAGE_CELL_MAX / sizeof(double) ||
+                file_size > COVERAGE_CELL_MAX / COVERAGE_ALLOC_SLACK ||
+                cells * sizeof(double) > file_size * COVERAGE_ALLOC_SLACK) {
+                fclose(fp);
+                staged_free(staged, staged_count);
+                return coverage_reject(path,
+                                       "record claims far more memory than the file could describe");
+            }
         }
         if (!coverage_family_valid(ifam) || !coverage_family_valid(gfam)) {
             fclose(fp);

@@ -453,11 +453,46 @@ int unit_load_mem(BinaryTransformNetwork *btn, Contract *c,
     local.exemplar_count = (size_t)n_ex;
     if (local.exemplar_count > (size_t)-1 / sizeof(double) / in_total) goto fail;
     if (local.exemplar_count > (size_t)-1 / sizeof(double) / out_total) goto fail;
+
+    if (in_total > CELL_MAX - out_total) goto fail;
+    row_bits = in_total + out_total;
+
+    /* ---- exemplar budget, BEFORE the two mallocs ------------------------
+       exemplar_count was bounded only by UNIT_MAX_EXEMPLARS (2^24) and its
+       products only for overflow, never against the bytes that remain. But
+       exemplars are packed one BIT per value with each row byte-aligned, so a
+       declared row count implies an exact payload length: a 764-byte unit
+       claiming 2^24 rows was measured reserving 1,052,420 kB of address space
+       before a single packed byte was read. Same two bounds as the topology
+       budget above: what will be READ must fit in what remains, and what will
+       be ALLOCATED must be neither absurd nor wildly larger than the artifact
+       describing it. */
+    {
+        size_t remaining = r.len - r.off;
+        size_t row_bytes = (row_bits + 7u) / 8u;
+        size_t need_bytes, cells, out_cells;
+
+        if (row_bytes == 0) goto fail;
+        if (local.exemplar_count > CELL_MAX / row_bytes) goto fail;
+        need_bytes = local.exemplar_count * row_bytes;
+        if (need_bytes > remaining) goto fail;
+
+        if (local.exemplar_count > CELL_MAX / in_total) goto fail;
+        cells = local.exemplar_count * in_total;
+        if (local.exemplar_count > CELL_MAX / out_total) goto fail;
+        out_cells = local.exemplar_count * out_total;
+        if (cells > CELL_MAX - out_cells) goto fail;
+        cells += out_cells;
+        if (cells > UNIT_MAX_CELLS) goto fail;
+        if (cells > CELL_MAX / sizeof(double)) goto fail;
+        if (len > CELL_MAX / UNIT_ALLOC_SLACK) goto fail;
+        if (cells * sizeof(double) > len * UNIT_ALLOC_SLACK) goto fail;
+    }
+
     local.inputs  = (double *)malloc(local.exemplar_count * in_total * sizeof(double));
     local.outputs = (double *)malloc(local.exemplar_count * out_total * sizeof(double));
     if (local.inputs == NULL || local.outputs == NULL) goto fail;
 
-    row_bits = in_total + out_total;
     for (i = 0; i < local.exemplar_count; ++i) {
         unsigned byte = 0;
         size_t bit = 8; /* force a fetch on the first bit */

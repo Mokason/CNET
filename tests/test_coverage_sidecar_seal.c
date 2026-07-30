@@ -21,6 +21,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/resource.h>
+#include <sys/time.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 #include "../include/hybrid_ai.h"
@@ -130,6 +133,123 @@ static int write_sidecar(const char *path, const SidecarSpec *s) {
     if (s->trailing) fputs(s->trailing, fp);
     fclose(fp);
     return 0;
+}
+
+
+/* ---- amplification -------------------------------------------------------
+   Every scalar limit can be legal while their PRODUCT is not: n_rows and
+   in_dim were each bounded at 2^20, so a two-line file could declare 2^40
+   doubles -- 8 TB -- and reach calloc before anything checked it against the
+   bytes the file actually contains. A verdict alone cannot see this, because a
+   calloc that fails still "refuses"; what has to be measured is the address
+   space the parser reserved on the way to refusing. */
+#define ADDRESS_LIMIT_BYTES ((rlim_t)2048u * 1024u * 1024u)
+#define CPU_LIMIT_SECONDS   20
+#define VM_SLACK_KB         (16L * 1024L)   /* 16 MB over the control */
+#define CPU_BUDGET_SECS     2.0
+
+static long baseline_vm_peak_kb = -1;
+
+static long read_vm_peak_kb(void) {
+    FILE *fp = fopen("/proc/self/status", "r");
+    char line[256];
+    long kb = -1;
+    if (!fp) return -1;
+    while (fgets(line, sizeof line, fp)) {
+        if (strncmp(line, "VmPeak:", 7) == 0) {
+            kb = strtol(line + 7, NULL, 10);
+            break;
+        }
+    }
+    fclose(fp);
+    return kb;
+}
+
+/* Load in a child under hard address-space and CPU limits and report the cost.
+   Returns 0 refused, 1 accepted, -1 the child died. */
+static int load_in_child(const char *path, long *vm_peak_kb,
+                         double *cpu_seconds) {
+    pid_t pid;
+    int status = 0, fds[2];
+    struct rusage usage;
+    if (vm_peak_kb) *vm_peak_kb = -1;
+    if (cpu_seconds) *cpu_seconds = 0.0;
+    if (pipe(fds) != 0) return -1;
+    pid = fork();
+    if (pid < 0) { close(fds[0]); close(fds[1]); return -1; }
+    if (pid == 0) {
+        struct rlimit as, cpu;
+        HybridAi h;
+        int rc;
+        close(fds[0]);
+        if (!getenv("COVSEAL_NO_RLIMIT")) {
+            as.rlim_cur = as.rlim_max = ADDRESS_LIMIT_BYTES;
+            (void)setrlimit(RLIMIT_AS, &as);
+            cpu.rlim_cur = cpu.rlim_max = CPU_LIMIT_SECONDS;
+            (void)setrlimit(RLIMIT_CPU, &cpu);
+        }
+        hybrid_ai_init(&h);
+        rc = hybrid_coverage_load(&h, path);
+        hybrid_ai_free(&h);
+        {
+            char buf[64];
+            int n = snprintf(buf, sizeof buf, "%ld\n", read_vm_peak_kb());
+            if (n > 0) {
+                ssize_t ignored = write(fds[1], buf, (size_t)n);
+                (void)ignored;
+            }
+            close(fds[1]);
+        }
+        _exit(rc == 0 ? 1 : 0);
+    }
+    close(fds[1]);
+    {
+        char buf[64];
+        ssize_t got = read(fds[0], buf, sizeof buf - 1);
+        if (got > 0 && vm_peak_kb) {
+            buf[got] = '\0';
+            *vm_peak_kb = strtol(buf, NULL, 10);
+        }
+        close(fds[0]);
+    }
+    memset(&usage, 0, sizeof usage);
+    if (wait4(pid, &status, 0, &usage) < 0) return -1;
+    if (cpu_seconds)
+        *cpu_seconds = (double)usage.ru_utime.tv_sec +
+                       (double)usage.ru_utime.tv_usec / 1e6 +
+                       (double)usage.ru_stime.tv_sec +
+                       (double)usage.ru_stime.tv_usec / 1e6;
+    if (!WIFEXITED(status)) return -1;
+    return WEXITSTATUS(status) == 1 ? 1 : 0;
+}
+
+static void amplified_case(const char *leaf, const SidecarSpec *spec,
+                           const char *description) {
+    char path[512], message[320];
+    long vm = -1;
+    double cpu = 0.0;
+    int verdict;
+
+    scratch_path(leaf, path, sizeof path);
+    if (write_sidecar(path, spec) != 0) {
+        check(0, "amplified fixture could not be written");
+        return;
+    }
+    verdict = load_in_child(path, &vm, &cpu);
+    printf("COVERAGE_AMPLIFIED verdict=%d vm_peak_kb=%ld cpu=%.3f %s\n",
+           verdict, vm, cpu, description);
+    snprintf(message, sizeof message, "%s is refused (verdict=%d)", description,
+             verdict);
+    check(verdict == 0, message);
+    snprintf(message, sizeof message,
+             "%s reserves no extra address space (VmPeak %ld kB vs control %ld kB)",
+             description, vm, baseline_vm_peak_kb);
+    check(vm >= 0 && baseline_vm_peak_kb >= 0 &&
+              vm <= baseline_vm_peak_kb + VM_SLACK_KB,
+          message);
+    snprintf(message, sizeof message, "%s is refused within the CPU budget (%.3fs)",
+             description, cpu);
+    check(cpu < CPU_BUDGET_SECS, message);
 }
 
 /* ---- the property --------------------------------------------------------
@@ -380,6 +500,71 @@ int main(void) {
     wrong_shape_must_not_admit();
     truncation_cases();
 
+    /* Baseline cost of loading the well-formed sidecar, in the same child
+       harness the amplified cases use. */
+    {
+        char path[512];
+        double cpu = 0.0;
+        scratch_path("valid.coverage", path, sizeof path);
+        check(load_in_child(path, &baseline_vm_peak_kb, &cpu) == 1,
+              "the control sidecar still loads inside the address limit");
+        printf("COVERAGE_AMPLIFIED_BASELINE vm_peak_kb=%ld cpu=%.3f\n",
+               baseline_vm_peak_kb, cpu);
+        check(baseline_vm_peak_kb > 0, "the child reports its peak address space");
+    }
+
+    /* Each scalar within its documented limit, the product far outside any. */
+    spec_defaults(&spec);
+    spec.declared_rows = 1u << 20;
+    spec.emitted_rows = 1;
+    spec.declared_in_dim = 1u << 20;
+    spec.emitted_values = SYM;
+    spec.in_width = 1u << 20;
+    spec.in_count = 1;
+    amplified_case("amp_max.coverage", &spec,
+                   "2^20 rows x 2^20 dimensions declared by a two-line file");
+
+    spec_defaults(&spec);
+    spec.declared_rows = 1u << 20;
+    spec.emitted_rows = 1;
+    spec.declared_in_dim = 1024;
+    spec.emitted_values = SYM;
+    spec.in_width = 1024;
+    spec.in_count = 1;
+    amplified_case("amp_rows.coverage", &spec,
+                   "2^20 rows of 1024 dimensions declared by a two-line file");
+
+    spec_defaults(&spec);
+    spec.declared_rows = 4096;
+    spec.emitted_rows = 1;
+    spec.declared_in_dim = 1u << 16;
+    spec.emitted_values = SYM;
+    spec.in_width = 1u << 16;
+    spec.in_count = 1;
+    amplified_case("amp_dim.coverage", &spec,
+                   "4096 rows of 2^16 dimensions declared by a two-line file");
+
+    spec_defaults(&spec);
+    spec.declared_rows = 1u << 20;
+    spec.emitted_rows = 1;
+    spec.declared_in_dim = 4;
+    spec.emitted_values = SYM;
+    amplified_case("amp_manyrows.coverage", &spec,
+                   "2^20 tiny rows declared by a two-line file");
+
+    /* The shape that actually costs: big enough to hurt, small enough that the
+       allocation SUCCEEDS under the address limit, so the parser reserved a
+       gigabyte on its way to discovering the file has two lines in it. */
+    spec_defaults(&spec);
+    spec.declared_rows = 1u << 20;
+    spec.emitted_rows = 1;
+    spec.declared_in_dim = 128;
+    spec.emitted_values = SYM;
+    spec.in_width = 128;
+    spec.in_count = 1;
+    amplified_case("amp_gigabyte.coverage", &spec,
+                   "a two-line file declaring a gigabyte of coverage rows");
+
     spec_defaults(&spec);
     spec.header = "CNET_COVERAGE v2";
     reject_case("bad_version.coverage", &spec, "an unsupported version");
@@ -481,7 +666,7 @@ int main(void) {
                failures);
         return 1;
     }
-    printf("COVERAGE_SIDECAR_SEAL_PASS checks=%d mutations=20 "
+    printf("COVERAGE_SIDECAR_SEAL_PASS checks=%d mutations=20 amplified=5 "
            "partial_state=none\n", checks);
     return 0;
 }
