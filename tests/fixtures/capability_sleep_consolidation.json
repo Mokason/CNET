@@ -2,6 +2,7 @@
   "capability_id": "sleep_consolidation",
   "cases": [
     {
+      "id": "dup-and-paraphrase-consolidation",
       "episodes": 5,
       "duplicate_episodes": 2,
       "expected_semantic_promotions": 2,

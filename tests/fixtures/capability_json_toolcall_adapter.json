@@ -2,6 +2,7 @@
   "capability_id": "json_toolcall_adapter",
   "cases": [
     {
+      "id": "adapter-on-routing-accuracy",
       "skill": "json_toolcall_v2",
       "description": "Tool-call routing accuracy with the certified LoRA adapter serving.",
       "metric": "acc_on",

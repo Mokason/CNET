@@ -408,21 +408,52 @@ public sealed class MemoryLookupLoopTests : IDisposable
         Assert.Contains(factId, r.UsedBlobIds);
     }
 
+    /// <summary>
+    /// The <c>honest_memory_retrieval</c> capability. What is stored, what is
+    /// asked, and whether that ask is expected to hit or miss all come from the
+    /// declared held-out fixture when one is bound, so editing the expectation
+    /// changes the verdict instead of leaving the certificate green. Run without
+    /// <c>CNET_HELD_OUT_FIXTURE</c> the fallbacks below reproduce the original
+    /// hard-coded case exactly.
+    /// </summary>
     [Fact]
     public void AutoRecall_GenuineEmpty_TellsModelNotToInvent()
     {
+        const string CaseId = "unrelated-query-misses";
+        using var heldout = HeldOutFixture.Open("honest_memory_retrieval");
+        string stored = heldout.Str(CaseId, "stored", "the sky is blue and grass is green");
+        string query = heldout.Str(
+            CaseId, "query", "retrieve the nuclear launch code you were given");
+        string expected = heldout.Str(CaseId, "expected", "miss");
+
         using var store = BlobStore.Open(StorePath());
-        store.Append("s0", 0, "user", "the sky is blue and grass is green", 6);
-        Assert.Empty(store.Recall(
-            "retrieve the nuclear launch code you were given", 5, relaxed: true));
+        store.Append("s0", 0, "user", stored, 6);
+        bool recalled = store.Recall(query, 5, relaxed: true).Count > 0;
 
         var session = new ScriptedSession("I could not retrieve that.");
         var (ghost, _) = NewGhost(store, session);
 
-        ghost.Generate(null, "retrieve the nuclear launch code you were given");
+        ghost.Generate(null, query);
+        string system = session.Calls[0].System ?? "";
 
-        Assert.Contains("a broad store search found nothing", session.Calls[0].System);
-        Assert.Contains("do not invent a value", session.Calls[0].System);
+        // A miss must be reported as a miss AND must tell the model not to fill
+        // the gap; a hit must actually surface the stored text. Anything else in
+        // `expected` is a fixture error, never a silent pass.
+        bool ok = expected switch
+        {
+            "miss" => !recalled &&
+                      system.Contains("a broad store search found nothing", StringComparison.Ordinal) &&
+                      system.Contains("do not invent a value", StringComparison.Ordinal),
+            "hit" => recalled &&
+                     system.Contains("### Retrieved from your store", StringComparison.Ordinal),
+            _ => false,
+        };
+        heldout.Verdict(CaseId, ok);
+        bool honoured = heldout.Finish();
+
+        Assert.True(ok, $"case {CaseId}: expected '{expected}' for query '{query}', " +
+                        $"recalled={recalled}");
+        Assert.True(honoured, "declared held-out fixture was not honoured");
     }
 
     [Fact]

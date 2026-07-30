@@ -4,11 +4,23 @@
   "title": "Episodic memory consolidation",
   "owner": "cognitive-runtime",
   "held_out_fixture": "tests/fixtures/capability_sleep_consolidation.json",
-  "evaluator": ["make", "sleep_consolidate"],
+  "evaluator": [
+    "make",
+    "sleep_consolidate"
+  ],
+  "evaluator_sources": [
+    "Makefile",
+    "include/cnet_heldout.h",
+    "src/cnet_heldout.c",
+    "src/cnet_sleep_consolidate.c",
+    "include/cnet_sleep_consolidate.h",
+    "tests/test_cnet_sleep_consolidate.c"
+  ],
+  "evaluator_binary": "bin/sleep_consolidate",
   "required_marker": "SLEEP_CONSOLIDATE_PASS",
   "evidence_artifact": "logs/capability_cert/sleep_consolidation.log",
   "failure_envelope": "Fails if duplicates survive, promotions lose provenance, or consolidation errors.",
-  "metric_regex": "metric=([0-9.]+)",
+  "metric_source": "heldout_receipt",
   "absolute_floor": 1.0,
   "baseline_metric": 1.0,
   "regression_budget": 0.0,

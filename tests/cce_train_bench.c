@@ -22,6 +22,15 @@
 #define CLASSIFICATION_MIN_LIFT     0.20  /* over the majority-class baseline */
 #define CLASSIFICATION_MIN_DISTINCT 4     /* all classes; fewer is degenerate */
 #define CLASSIFICATION_REQUIRE_ENV  "CCE_CLASSIFICATION_LANE_REQUIRE"
+/* Held-out capability binding. When CNET_HELD_OUT_FIXTURE names the
+   cce_classification fixture the floors above are REPLACED by the ones the
+   fixture declares, and the lane's shape (class count, held-out sample count,
+   differentiation mode, gradient clip, label rule) is asserted against it. The
+   constants stay as the standalone defaults so `make cce_train_bench` on its
+   own behaves exactly as before. */
+#define CLASSIFICATION_CAPABILITY_ID "cce_classification"
+#define CLASSIFICATION_HELDOUT_CASE  "argmax-pair-sum-4class"
+#include "../include/cnet_heldout.h"
 #include "../include/cce/cce_defs.h"
 #include "../include/cce/cce_forest.h"
 #include "../include/cce/cce_block_patch.h"
@@ -215,6 +224,14 @@ static double compute_accuracy(const cce_tensor* pred, const cce_tensor* target,
    single definition is the point, since the previous code inlined the rule
    twice and the copies were free to drift. */
 #define CLASSIFICATION_CLASSES 4
+
+/* What the classification lane ACTUALLY ran with. Recorded at the point of use
+   so the held-out assertions below compare against the executed configuration
+   rather than against a second copy of the same literals. */
+static int g_cls_eval_n;
+static float g_cls_grad_clip;
+static const char *g_cls_diff_mode = "";
+static const char *g_cls_label_rule = "argmax_pair_sum_first_eight_dimensions";
 static int classification_label(const float* x) {
     int best = 0;
     float best_sum = -1e30f;
@@ -259,10 +276,12 @@ static BenchStats run_classification_experiment(int steps, float lr, unsigned in
        this linear cascade, but naming it prevents a future default change from
        silently weakening the certified lane. */
     cce_learner_set_diff_mode(&learner, CCE_DIFF_EXACT);
+    g_cls_diff_mode = "EXACT";
     /* Keep clipping enabled as a real safety bound without crushing the
        ordinary classification gradients (clip=1 measured 0.477 accuracy;
        clip=20 measures 0.861 on the fixed held-out seed). */
     learner.grad_clip = 20.0f;
+    g_cls_grad_clip = learner.grad_clip;
 
     cce_tensor x, y;
     int xsh[1] = {8};
@@ -306,6 +325,7 @@ static BenchStats run_classification_experiment(int steps, float lr, unsigned in
        too few to resolve anything (its only possible values were 0, .25, .5,
        .75, 1). Score fresh draws instead, matching the regression lane. */
     const int eval_n = 1000;
+    g_cls_eval_n = eval_n;
     int correct = 0;
     int true_hist[CLASSIFICATION_CLASSES] = {0,0,0,0};
     int pred_hist[CLASSIFICATION_CLASSES] = {0,0,0,0};
@@ -432,6 +452,12 @@ static BenchStats run_spatial_patch_experiment(int steps, float lr, unsigned int
 /* g_use_gpu declared at top of file */
 
 int main(int argc, char** argv) {
+    CnetHeldOut heldout;
+    int heldout_rc = cnet_heldout_open(&heldout, CLASSIFICATION_CAPABILITY_ID);
+    if (heldout_rc < 0) {
+        fprintf(stderr, "FAIL: declared held-out fixture is unusable\n");
+        return 2;
+    }
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--gpu") == 0) g_use_gpu = 1;
     }
@@ -543,9 +569,71 @@ int main(int argc, char** argv) {
            cls.majority_baseline, cls.distinct_predicted, cls.num_classes);
 
     double lift = cls.accuracy - cls.majority_baseline;
-    int healthy = cls.accuracy >= CLASSIFICATION_MIN_ACCURACY &&
-                  lift >= CLASSIFICATION_MIN_LIFT &&
-                  cls.distinct_predicted >= CLASSIFICATION_MIN_DISTINCT;
+    /* Floors come from the declared held-out case when one is bound, so raising
+       a floor in the fixture must fail this run rather than leave it green. */
+    double min_accuracy = cnet_heldout_num(&heldout, CLASSIFICATION_HELDOUT_CASE,
+                                           "minimum_accuracy",
+                                           CLASSIFICATION_MIN_ACCURACY);
+    double min_lift = cnet_heldout_num(&heldout, CLASSIFICATION_HELDOUT_CASE,
+                                        "minimum_lift_over_majority",
+                                        CLASSIFICATION_MIN_LIFT);
+    double min_distinct = cnet_heldout_num(&heldout,
+                                            CLASSIFICATION_HELDOUT_CASE,
+                                            "minimum_distinct_classes",
+                                            CLASSIFICATION_MIN_DISTINCT);
+    int healthy = cls.accuracy >= min_accuracy &&
+                  lift >= min_lift &&
+                  cls.distinct_predicted >= (int)min_distinct;
+    int heldout_ok = healthy;
+    /* The lane's SHAPE is part of the declared case: a fixture that asks for a
+       different class count, held-out sample count, differentiation mode,
+       gradient clip or label rule is describing an experiment this binary did
+       not run, and must not be certified against it. */
+    {
+        double want_classes = cnet_heldout_num(&heldout,
+                                               CLASSIFICATION_HELDOUT_CASE,
+                                               "classes",
+                                               CLASSIFICATION_CLASSES);
+        double want_eval = cnet_heldout_num(&heldout,
+                                            CLASSIFICATION_HELDOUT_CASE,
+                                            "held_out_samples", g_cls_eval_n);
+        double want_clip = cnet_heldout_num(&heldout,
+                                            CLASSIFICATION_HELDOUT_CASE,
+                                            "gradient_clip", g_cls_grad_clip);
+        char want_mode[32], want_rule[96];
+        (void)cnet_heldout_str(&heldout, CLASSIFICATION_HELDOUT_CASE,
+                               "diff_mode", want_mode, sizeof want_mode,
+                               g_cls_diff_mode);
+        (void)cnet_heldout_str(&heldout, CLASSIFICATION_HELDOUT_CASE,
+                               "label_rule", want_rule, sizeof want_rule,
+                               g_cls_label_rule);
+        if ((int)want_classes != cls.num_classes) {
+            printf("HELDOUT_SHAPE_MISMATCH classes declared=%.0f ran=%d\n",
+                   want_classes, cls.num_classes);
+            heldout_ok = 0;
+        }
+        if ((int)want_eval != g_cls_eval_n) {
+            printf("HELDOUT_SHAPE_MISMATCH held_out_samples declared=%.0f "
+                   "ran=%d\n", want_eval, g_cls_eval_n);
+            heldout_ok = 0;
+        }
+        if (want_clip != (double)g_cls_grad_clip) {
+            printf("HELDOUT_SHAPE_MISMATCH gradient_clip declared=%.3f "
+                   "ran=%.3f\n", want_clip, (double)g_cls_grad_clip);
+            heldout_ok = 0;
+        }
+        if (strcmp(want_mode, g_cls_diff_mode) != 0) {
+            printf("HELDOUT_SHAPE_MISMATCH diff_mode declared=%s ran=%s\n",
+                   want_mode, g_cls_diff_mode);
+            heldout_ok = 0;
+        }
+        if (strcmp(want_rule, g_cls_label_rule) != 0) {
+            printf("HELDOUT_SHAPE_MISMATCH label_rule declared=%s ran=%s\n",
+                   want_rule, g_cls_label_rule);
+            heldout_ok = 0;
+        }
+    }
+    cnet_heldout_verdict(&heldout, CLASSIFICATION_HELDOUT_CASE, heldout_ok);
     /* Opt-in strictness: anyone claiming this lane works must prove it. */
     const char* require_env = getenv(CLASSIFICATION_REQUIRE_ENV);
     int required = require_env && *require_env && strcmp(require_env, "0") != 0;
@@ -561,20 +649,22 @@ int main(int argc, char** argv) {
            local-credit learner (it collapses toward a constant class), recorded
            as a contract rather than silently floored. The accuracy printed above
            is real and held-out -- it is simply not evidence of a classifier. */
-        const char* reason = cls.distinct_predicted < CLASSIFICATION_MIN_DISTINCT
+        const char* reason = cls.distinct_predicted < (int)min_distinct
                                  ? "constant_predictor"
-                                 : (lift < CLASSIFICATION_MIN_LIFT ? "no_lift_over_majority"
-                                                                   : "below_absolute_floor");
+                                 : (lift < min_lift ? "no_lift_over_majority"
+                                                    : "below_absolute_floor");
         printf("CLASSIFICATION_LANE_DECLARED_OPEN accuracy=%.3f baseline=%.3f"
                " lift=%.3f classes_used=%d/%d required_lift=%.2f reason=%s\n",
                cls.accuracy, cls.majority_baseline, lift, cls.distinct_predicted,
-               cls.num_classes, CLASSIFICATION_MIN_LIFT, reason);
+               cls.num_classes, min_lift, reason);
         printf("CLASSIFICATION_LANE_NOT_MEASURED do_not_cite_this_accuracy_as_quality\n");
         if (required) {
             printf("CLASSIFICATION_GATE_FAIL status=required_but_unhealthy reason=%s\n",
                    reason);
             printf("%s=1 asserts a working classification lane; it is not.\n",
                    CLASSIFICATION_REQUIRE_ENV);
+            (void)cnet_heldout_finish(&heldout);
+            cnet_heldout_close(&heldout);
             return 1;
         }
         printf("CLASSIFICATION_GATE_PASS status=declared_open contract=%s\n",
@@ -586,5 +676,11 @@ int main(int argc, char** argv) {
        different concepts get different cascades, persisted via archive).
        Swap target construction in cce_adapt or here for classification / nonlinear / patch tasks. */
 
+    if (cnet_heldout_finish(&heldout) != 0) {
+        fprintf(stderr, "FAIL: declared held-out fixture was not honoured\n");
+        cnet_heldout_close(&heldout);
+        return 1;
+    }
+    cnet_heldout_close(&heldout);
     return 0;
 }

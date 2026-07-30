@@ -1,7 +1,11 @@
 #include "cnet_semantic_cortex.h"
+#include "cnet_heldout.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+
+#define CAPABILITY_ID "hybrid_skill_serve"
 
 static int failures;
 
@@ -10,6 +14,18 @@ static void check(int condition, const char *message) {
         fprintf(stderr, "FAIL: %s\n", message);
         failures++;
     }
+}
+
+/* The authority word the fixture declares, mapped onto the trust level the
+   workspace actually records. "certified" must never be satisfiable here: the
+   point of the capability is that a semantic backend cannot self-certify. */
+static const char *authority_word(CnetWorkspaceTrust trust) {
+    switch (trust) {
+        case CNET_WORKSPACE_UNCERTIFIED: return "uncertified";
+        case CNET_WORKSPACE_PROVISIONAL: return "provisional";
+        case CNET_WORKSPACE_CERTIFIED:   return "certified";
+    }
+    return "unknown";
 }
 
 static int fake_topk(const double *input, double *output,
@@ -26,14 +42,31 @@ int main(void) {
     CnetSharedWorkspace workspace;
     CnetSemanticCortex cortex;
     CnetWorkspaceEntry entries[8];
+    CnetHeldOut heldout;
     size_t proposals = 0, width = 5;
     const int ids[] = {101, 102, 103, 104, 105};
+    char hermetic_query[CNET_WORKSPACE_TEXT_MAX];
+    char residual_query[CNET_WORKSPACE_TEXT_MAX];
+    char want_authority[32];
+    int heldout_rc = cnet_heldout_open(&heldout, CAPABILITY_ID);
+
+    if (heldout_rc < 0) {
+        fprintf(stderr, "FAIL: declared held-out fixture is unusable\n");
+        return 2;
+    }
+    /* Queries come from the fixture so the certified run is the declared run. */
+    (void)cnet_heldout_str(&heldout, "hermetic-uncertified", "query",
+                           hermetic_query, sizeof hermetic_query,
+                           "adaptive memory consolidation");
+    (void)cnet_heldout_str(&heldout, "residual-uncertified", "query",
+                           residual_query, sizeof residual_query,
+                           "held out query");
 
     check(cnet_workspace_init(&workspace, 8) == 0, "workspace initializes");
     check(cnet_semantic_cortex_init_hermetic(&cortex, NULL) == 0,
           "hermetic cortex initializes");
     check(cnet_semantic_cortex_propose(&cortex,
-          "adaptive memory consolidation", 3, 100, &workspace,
+          hermetic_query, 3, 100, &workspace,
           &proposals) == 0, "hermetic proposals succeed");
     check(proposals == 3, "hermetic proposal count is bounded");
     check(cnet_workspace_recent(&workspace, entries, 8) == 3,
@@ -43,12 +76,36 @@ int main(void) {
           "semantic cortex cannot certify proposals");
     check(strstr(entries[0].source_tag, "semantic_cortex") != NULL,
           "proposal source is explicit");
+    {
+        const char *saw = authority_word(entries[0].trust);
+        char backend[32];
+        int ok;
+        (void)cnet_heldout_str(&heldout, "hermetic-uncertified",
+                               "expected_authority", want_authority,
+                               sizeof want_authority, "uncertified");
+        (void)cnet_heldout_str(&heldout, "hermetic-uncertified", "backend",
+                               backend, sizeof backend, "hermetic");
+        if (strcmp(backend, "hermetic") != 0) {
+            fprintf(stderr, "FAIL: case hermetic-uncertified declares backend "
+                            "%s, this arm exercises hermetic\n", backend);
+            failures++;
+        }
+        ok = (strcmp(saw, want_authority) == 0) &&
+             (strcmp(backend, "hermetic") == 0);
+        if (!ok) {
+            fprintf(stderr, "FAIL: case hermetic-uncertified expected "
+                            "authority %s, workspace recorded %s\n",
+                    want_authority, saw);
+            failures++;
+        }
+        cnet_heldout_verdict(&heldout, "hermetic-uncertified", ok);
+    }
 
     cnet_workspace_clear(&workspace);
     check(cnet_semantic_cortex_init_residual_http(
           &cortex, fake_topk, &width, ids, width, NULL) == 0,
           "residual adapter initializes");
-    check(cnet_semantic_cortex_propose(&cortex, "held out query", 2,
+    check(cnet_semantic_cortex_propose(&cortex, residual_query, 2,
           200, &workspace, &proposals) == 0,
           "residual-compatible callback proposes");
     check(proposals == 2, "residual proposal count is correct");
@@ -59,12 +116,42 @@ int main(void) {
           "residual window id is preserved");
     check(entries[0].trust == CNET_WORKSPACE_UNCERTIFIED,
           "residual proposal remains uncertified");
+    {
+        const char *saw = authority_word(entries[0].trust);
+        char backend[32];
+        int ok;
+        (void)cnet_heldout_str(&heldout, "residual-uncertified",
+                               "expected_authority", want_authority,
+                               sizeof want_authority, "uncertified");
+        (void)cnet_heldout_str(&heldout, "residual-uncertified", "backend",
+                               backend, sizeof backend, "residual_compatible");
+        if (strcmp(backend, "residual_compatible") != 0) {
+            fprintf(stderr, "FAIL: case residual-uncertified declares backend "
+                            "%s, this arm exercises residual_compatible\n",
+                    backend);
+            failures++;
+        }
+        ok = (strcmp(saw, want_authority) == 0) &&
+             (strcmp(backend, "residual_compatible") == 0);
+        if (!ok) {
+            fprintf(stderr, "FAIL: case residual-uncertified expected "
+                            "authority %s, workspace recorded %s\n",
+                    want_authority, saw);
+            failures++;
+        }
+        cnet_heldout_verdict(&heldout, "residual-uncertified", ok);
+    }
 
     check(cnet_semantic_cortex_propose(&cortex, "", 2, 0,
           &workspace, &proposals) != 0, "empty query rejected");
     check(cnet_semantic_cortex_propose(&cortex, "query", 9, 0,
           &workspace, &proposals) != 0, "oversized top-k rejected");
 
+    if (cnet_heldout_finish(&heldout) != 0) {
+        fprintf(stderr, "FAIL: declared held-out fixture was not honoured\n");
+        failures++;
+    }
+    cnet_heldout_close(&heldout);
     if (failures) return 1;
     puts("SEMANTIC_CORTEX_PASS metric=1.000 authority=cnet");
     return 0;

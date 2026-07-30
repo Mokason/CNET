@@ -4,10 +4,21 @@
   "title": "Measured multi-class learning",
   "owner": "cognitive-runtime",
   "held_out_fixture": "tests/fixtures/capability_cce_classification.json",
-  "evaluator": ["make", "cce_train_bench"],
+  "evaluator": [
+    "make",
+    "cce_train_bench"
+  ],
+  "evaluator_sources": [
+    "Makefile",
+    "include/cnet_heldout.h",
+    "src/cnet_heldout.c",
+    "tests/cce_train_bench.c"
+  ],
+  "evaluator_binary": "bin/cce_train_bench",
   "required_marker": "CLASSIFICATION_GATE_PASS status=measured",
   "evidence_artifact": "logs/capability_cert/cce_classification.log",
   "failure_envelope": "Fails on constant prediction, weak lift over majority, missing classes, or declared-open status.",
+  "metric_source": "regex",
   "metric_regex": "CLASSIFICATION_LANE_HEALTHY accuracy=([0-9.]+)",
   "absolute_floor": 0.45,
   "baseline_metric": 0.829,

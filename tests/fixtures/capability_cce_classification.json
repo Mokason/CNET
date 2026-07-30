@@ -2,6 +2,7 @@
   "capability_id": "cce_classification",
   "cases": [
     {
+      "id": "argmax-pair-sum-4class",
       "label_rule": "argmax_pair_sum_first_eight_dimensions",
       "classes": 4,
       "held_out_samples": 1000,

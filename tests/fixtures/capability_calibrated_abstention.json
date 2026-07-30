@@ -2,18 +2,21 @@
   "capability_id": "calibrated_abstention",
   "cases": [
     {
+      "id": "low-margin-abstains",
       "margin": 0.2,
       "reliability": 0.95,
       "samples": 30,
       "expected": "abstain"
     },
     {
+      "id": "supported-answer",
       "margin": 0.3,
       "reliability": 0.95,
       "samples": 30,
       "expected": "answer_with_evidence"
     },
     {
+      "id": "evidence-free-claim",
       "evidence_refs": [],
       "expected": "claim_rejected"
     }

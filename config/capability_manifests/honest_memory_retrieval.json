@@ -14,9 +14,16 @@
     "--logger",
     "console;verbosity=normal"
   ],
+  "evaluator_sources": [
+    "dotnet/Cce.Llm.Tests/CNET.Cce.Llm.Tests.csproj",
+    "dotnet/Cce.Llm.Tests/HeldOutFixture.cs",
+    "dotnet/Cce.Llm.Tests/MemoryLookupLoopTests.cs"
+  ],
+  "evaluator_binary": "dotnet/Cce.Llm.Tests/bin/Debug/net10.0/CNET.Cce.Llm.Tests.dll",
   "required_marker": "AutoRecall_GenuineEmpty_TellsModelNotToInvent",
   "evidence_artifact": "logs/capability_cert/honest_memory_retrieval.log",
   "failure_envelope": "Fails if weak overlap turns an unrelated memory into an asserted recall.",
+  "metric_source": "heldout_receipt",
   "absolute_floor": 1.0,
   "baseline_metric": 1.0,
   "regression_budget": 0.0,

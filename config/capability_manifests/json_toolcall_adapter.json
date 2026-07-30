@@ -4,10 +4,21 @@
   "title": "Tool-call routing accuracy with a certified adapter",
   "owner": "own-learning",
   "held_out_fixture": "tests/fixtures/capability_json_toolcall_adapter.json",
-  "evaluator": ["make", "jtc_adapter_bench"],
+  "evaluator": [
+    "make",
+    "jtc_adapter_bench"
+  ],
+  "evaluator_sources": [
+    "Makefile",
+    "include/cnet_heldout.h",
+    "src/cnet_heldout.c",
+    "tests/jtc_adapter_bench.c"
+  ],
+  "evaluator_binary": "bin/jtc_adapter_bench",
   "required_marker": "JTC_ADAPTER_BENCH_PASS",
   "evidence_artifact": "logs/capability_cert/json_toolcall_adapter.log",
   "failure_envelope": "Fails if adapter-on routing accuracy drops below the floor, or below the previous baseline by more than the regression budget. Unlike the binary capabilities this metric is expected to MOVE: it is the one number that shows week-over-week learning rather than mere non-breakage.",
+  "metric_source": "regex",
   "metric_regex": "acc_on=([0-9.]+)",
   "absolute_floor": 0.55,
   "baseline_metric": 0.7375,

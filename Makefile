@@ -240,6 +240,9 @@ SHARED_WORKSPACE_SRC := src/cnet_shared_workspace.c
 SEMANTIC_CORTEX_SRC := src/cnet_semantic_cortex.c
 SLEEP_CONSOLIDATE_SRC := src/cnet_sleep_consolidate.c
 CALIBRATED_GOVERNANCE_SRC := src/cnet_calibrated_governance.c
+# Held-out capability fixture reader. Linked into every capability evaluator so
+# the declared fixture drives the assertions instead of decorating the report.
+HELDOUT_SRC := src/cnet_heldout.c
 RESIDUAL_GGUF_SRC := src/residual_gguf.c src/residual_http.c
 PILOT_SRC := src/cnet_pilot.c
 CURIOSITY_SRC := src/cnet_curiosity.c
@@ -1499,8 +1502,8 @@ cce_smoke_pure: $(CCE) $(CCE_CUDA_OBJ) tests/cce_smoke.c
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) tests/cce_smoke.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 	./$(BIN_DIR)/cce_smoke_pure
 
-cce_train_bench: $(CCE) $(CCE_CUDA_OBJ) tests/cce_train_bench.c
-	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) tests/cce_train_bench.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+cce_train_bench: $(CCE) $(CCE_CUDA_OBJ) $(HELDOUT_SRC) tests/cce_train_bench.c include/cnet_heldout.h
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) $(HELDOUT_SRC) tests/cce_train_bench.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 	@./$(BIN_DIR)/cce_train_bench > logs/cce_train_bench.log 2>&1; rc=$$?; \
 		cat logs/cce_train_bench.log; exit $$rc
 	@grep -q '^CLASSIFICATION_GATE_PASS ' logs/cce_train_bench.log
@@ -1814,13 +1817,13 @@ registry_lora_store_test: json_toolcall_alphabet $(MULTIMODAL_SRC) $(MODEL_RUNTI
 	./$(BIN_DIR)/registry_lora_store_test
 
 # JTC accuracy before/after adapter (+ writes CNET_PROMOTE_EVAL_DELTA)
-jtc_adapter_bench: json_toolcall_alphabet $(MULTIMODAL_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(REGISTRY_LORA) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) src/soul_host.c $(ROUTE_LOG_SRC) tests/jtc_adapter_bench.c
+jtc_adapter_bench: json_toolcall_alphabet $(MULTIMODAL_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(REGISTRY_LORA) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) src/soul_host.c $(ROUTE_LOG_SRC) $(HELDOUT_SRC) tests/jtc_adapter_bench.c include/cnet_heldout.h
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ \
 		$(MULTIMODAL_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) \
 		$(SRC) $(ROUTER) $(REGISTRY_LORA) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) \
 		$(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) \
-		src/soul_host.c $(ROUTE_LOG_SRC) tests/jtc_adapter_bench.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -pthread
+		src/soul_host.c $(ROUTE_LOG_SRC) $(HELDOUT_SRC) tests/jtc_adapter_bench.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -pthread
 	CNET_PROMOTE_EVAL_DELTA=logs/ghost_eval_delta.txt ./$(BIN_DIR)/jtc_adapter_bench
 
 # Production autoteach binaries. These ship in bin/ and are invoked by the
@@ -3974,6 +3977,7 @@ evidence_bundle: $(EVIDENCE_BUNDLE_SRC) $(BASE_SRC) $(ACQUIRE_SRC) $(SRC) $(ROUT
 
 .PHONY: shared_workspace semantic_cortex sleep_consolidate calibrated_governance
 .PHONY: capability_cert_runner_test capability_cert cognitive_runtime_smoke cognitive_runtime
+.PHONY: heldout_fixture_test capability_fixture_causality
 shared_workspace: $(SHARED_WORKSPACE_SRC) tests/test_cnet_shared_workspace.c include/cnet_shared_workspace.h
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) $(CFLAGS) -Werror -Iinclude -o $(BIN_DIR)/$@ \
@@ -3982,28 +3986,28 @@ shared_workspace: $(SHARED_WORKSPACE_SRC) tests/test_cnet_shared_workspace.c inc
 		cat logs/shared_workspace.log; test $$status -eq 0 && \
 		grep -q "SHARED_WORKSPACE_PASS" logs/shared_workspace.log
 
-semantic_cortex: $(SHARED_WORKSPACE_SRC) $(SEMANTIC_CORTEX_SRC) tests/test_cnet_semantic_cortex.c include/cnet_shared_workspace.h include/cnet_semantic_cortex.h
+semantic_cortex: $(SHARED_WORKSPACE_SRC) $(SEMANTIC_CORTEX_SRC) $(HELDOUT_SRC) tests/test_cnet_semantic_cortex.c include/cnet_shared_workspace.h include/cnet_semantic_cortex.h include/cnet_heldout.h
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) $(CFLAGS) -Werror -Iinclude -o $(BIN_DIR)/$@ \
-		$(SHARED_WORKSPACE_SRC) $(SEMANTIC_CORTEX_SRC) \
+		$(SHARED_WORKSPACE_SRC) $(SEMANTIC_CORTEX_SRC) $(HELDOUT_SRC) \
 		tests/test_cnet_semantic_cortex.c $(LDFLAGS)
 	@$(BIN_DIR)/$@ > logs/semantic_cortex.log 2>&1; status=$$?; \
 		cat logs/semantic_cortex.log; test $$status -eq 0 && \
 		grep -q "SEMANTIC_CORTEX_PASS" logs/semantic_cortex.log
 
-sleep_consolidate: $(SLEEP_CONSOLIDATE_SRC) $(TILEMEM_SRC) $(SYNONYMS_SRC) tests/test_cnet_sleep_consolidate.c include/cnet_sleep_consolidate.h include/corpus/tile_memory.h include/corpus/synonyms.h
+sleep_consolidate: $(SLEEP_CONSOLIDATE_SRC) $(TILEMEM_SRC) $(SYNONYMS_SRC) $(HELDOUT_SRC) tests/test_cnet_sleep_consolidate.c include/cnet_sleep_consolidate.h include/corpus/tile_memory.h include/corpus/synonyms.h include/cnet_heldout.h
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) $(CFLAGS) -Werror -Iinclude -o $(BIN_DIR)/$@ \
-		$(SLEEP_CONSOLIDATE_SRC) $(TILEMEM_SRC) $(SYNONYMS_SRC) \
+		$(SLEEP_CONSOLIDATE_SRC) $(TILEMEM_SRC) $(SYNONYMS_SRC) $(HELDOUT_SRC) \
 		tests/test_cnet_sleep_consolidate.c $(LDFLAGS)
 	@$(BIN_DIR)/$@ > logs/sleep_consolidate.log 2>&1; status=$$?; \
 		cat logs/sleep_consolidate.log; test $$status -eq 0 && \
 		grep -q "SLEEP_CONSOLIDATE_PASS" logs/sleep_consolidate.log
 
-calibrated_governance: $(CALIBRATED_GOVERNANCE_SRC) tests/test_cnet_calibrated_governance.c include/cnet_calibrated_governance.h
+calibrated_governance: $(CALIBRATED_GOVERNANCE_SRC) $(HELDOUT_SRC) tests/test_cnet_calibrated_governance.c include/cnet_calibrated_governance.h include/cnet_heldout.h
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) $(CFLAGS) -Werror -Iinclude -o $(BIN_DIR)/$@ \
-		$(CALIBRATED_GOVERNANCE_SRC) \
+		$(CALIBRATED_GOVERNANCE_SRC) $(HELDOUT_SRC) \
 		tests/test_cnet_calibrated_governance.c $(LDFLAGS)
 	@$(BIN_DIR)/$@ > logs/calibrated_governance.log 2>&1; status=$$?; \
 		cat logs/calibrated_governance.log; test $$status -eq 0 && \
@@ -4017,7 +4021,28 @@ capability_cert_runner_test: tests/run_capability_cert.py tests/test_capability_
 		grep -q "CAPABILITY_CERT_RUNNER_PASS" \
 			logs/capability_cert_runner.log
 
-capability_cert: capability_cert_runner_test
+# Unit gate for the fixture reader every evaluator now certifies through. If it
+# can be made to report a fixture it did not consume, every causality claim
+# downstream is decorative again, so its negatives are the point.
+heldout_fixture_test: $(HELDOUT_SRC) tests/test_cnet_heldout.c include/cnet_heldout.h
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -Werror -Iinclude -o $(BIN_DIR)/$@ \
+		$(HELDOUT_SRC) tests/test_cnet_heldout.c $(LDFLAGS)
+	@$(BIN_DIR)/$@ > logs/heldout_fixture_test.log 2>&1; status=$$?; \
+		cat logs/heldout_fixture_test.log; test $$status -eq 0 && \
+		grep -q "CNET_HELDOUT_TEST_PASS" logs/heldout_fixture_test.log
+
+# The decisive truthfulness experiment: mutate one declared expectation while
+# leaving every marker string byte-identical, and require the evaluator to fail.
+capability_fixture_causality: tests/test_capability_fixture_causality.py
+	@mkdir -p logs
+	@python3 tests/test_capability_fixture_causality.py \
+		> logs/capability_fixture_causality.log 2>&1; status=$$?; \
+		cat logs/capability_fixture_causality.log; test $$status -eq 0 && \
+		grep -q "CAPABILITY_FIXTURE_CAUSALITY_PASS" \
+			logs/capability_fixture_causality.log
+
+capability_cert: capability_cert_runner_test heldout_fixture_test capability_fixture_causality
 	@python3 tests/run_capability_cert.py
 
 cognitive_runtime_smoke: $(SHARED_WORKSPACE_SRC) $(SEMANTIC_CORTEX_SRC) $(CALIBRATED_GOVERNANCE_SRC) tests/test_cnet_cognitive_runtime.c include/cnet_shared_workspace.h include/cnet_semantic_cortex.h include/cnet_calibrated_governance.h

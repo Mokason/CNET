@@ -1,6 +1,7 @@
 /* jtc_adapter_bench — measure JTC accuracy before vs after LoRA adapter.
  * Writes ghost-eval compatible delta file when CNET_PROMOTE_EVAL_DELTA is set
  * (delta = (acc_on - acc_off) as fraction). */
+#include "../include/cnet_heldout.h"
 #include "../include/json_toolcall.h"
 #include "../include/nn.h"
 #include "../include/router.h"
@@ -8,6 +9,14 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+/* Graded capability: acc_on is expected to MOVE as the adapter is retrained, so
+   the fixture declares the floor rather than an exact value. Everything else in
+   the declared case — which metric is graded, whether certification must
+   precede serving, the adapter-off/on baselines — is asserted, so the numbers
+   in the fixture are what this run is judged against. */
+#define JTC_CAPABILITY_ID "json_toolcall_adapter"
+#define JTC_HELDOUT_CASE  "adapter-on-routing-accuracy"
 
 static uint32_t S = 0xADA07B01u;
 static uint32_t rnd(void) { S = S * 1664525u + 1013904223u; return S; }
@@ -43,6 +52,27 @@ int main(void) {
     int nvc = 200;
     double acc_off, acc_on, delta;
     const char *delta_path;
+    CnetHeldOut heldout;
+    int heldout_rc = cnet_heldout_open(&heldout, JTC_CAPABILITY_ID);
+    int certify_before_serve;
+    int heldout_ok = 1;
+
+    if (heldout_rc < 0) {
+        fprintf(stderr, "FAIL: declared held-out fixture is unusable\n");
+        return 2;
+    }
+    /* Read before the run so a fixture that demands serving WITHOUT prior
+       certification is refused rather than silently reinterpreted. */
+    certify_before_serve =
+        cnet_heldout_num(&heldout, JTC_HELDOUT_CASE, "certify_before_serve",
+                         1.0) != 0.0;
+    if (!certify_before_serve) {
+        printf("JTC_ADAPTER_BENCH_FAIL reason=fixture_waives_certify_before_serve\n");
+        cnet_heldout_verdict(&heldout, JTC_HELDOUT_CASE, 0);
+        (void)cnet_heldout_finish(&heldout);
+        cnet_heldout_close(&heldout);
+        return 1;
+    }
 
     registry_init(&reg);
     if (cnet_jtc_v0_mine_admit(&reg, 0x4A54435FB0ULL, &student, NULL) != 0 || !student) {
@@ -110,6 +140,49 @@ int main(void) {
     acc_on = (double)on_ok / (double)nte;
     delta = acc_on - acc_off;
 
+    /* --- declared held-out grading ---------------------------------------- */
+    {
+        char metric_name[32];
+        double floor = cnet_heldout_num(&heldout, JTC_HELDOUT_CASE,
+                                        "minimum_accuracy_with_adapter", 0.55);
+        double on_baseline = cnet_heldout_num(&heldout, JTC_HELDOUT_CASE,
+                                             "adapter_on_baseline", 0.7375);
+        double off_baseline = cnet_heldout_num(&heldout, JTC_HELDOUT_CASE,
+                                              "adapter_off_baseline", 0.2975);
+        (void)cnet_heldout_str(&heldout, JTC_HELDOUT_CASE, "metric",
+                               metric_name, sizeof metric_name, "acc_on");
+        if (strcmp(metric_name, "acc_on") != 0) {
+            printf("HELDOUT_SHAPE_MISMATCH metric declared=%s graded=acc_on\n",
+                   metric_name);
+            heldout_ok = 0;
+        }
+        if (acc_on < floor) {
+            printf("HELDOUT_FLOOR_MISS acc_on=%.4f floor=%.4f\n", acc_on, floor);
+            heldout_ok = 0;
+        }
+        /* The declared baselines describe the arms this bench measures; a
+           fixture whose off-baseline already exceeds its on-baseline is not
+           describing an adapter that helps. */
+        if (!(on_baseline > off_baseline)) {
+            printf("HELDOUT_SHAPE_MISMATCH baselines on=%.4f off=%.4f\n",
+                   on_baseline, off_baseline);
+            heldout_ok = 0;
+        }
+        printf("HELDOUT_GRADED metric=acc_on value=%.4f floor=%.4f "
+               "declared_on_baseline=%.4f declared_off_baseline=%.4f\n",
+               acc_on, floor, on_baseline, off_baseline);
+        cnet_heldout_verdict(&heldout, JTC_HELDOUT_CASE, heldout_ok);
+    }
+    if (!heldout_ok) {
+        printf("JTC_ADAPTER_BENCH_FAIL faults=%d acc_off=%.4f acc_on=%.4f "
+               "delta=%+.4f reason=held_out_case_not_met\n",
+               faults, acc_off, acc_on, delta);
+        (void)cnet_heldout_finish(&heldout);
+        cnet_heldout_close(&heldout);
+        free(HF); free(HT); free(base_tool); free(VF); free(VT);
+        return 1;
+    }
+
     printf("JTC_ADAPTER_BENCH_PASS faults=%d acc_off=%.4f acc_on=%.4f delta=%+.4f "
            "cert_fixes=%d cert_regress=%d\n",
            faults, acc_off, acc_on, delta, cr.fixes, cr.regressions);
@@ -127,6 +200,14 @@ int main(void) {
         }
     }
 
+    /* The receipt is emitted last so it can only follow a completed run. */
+    if (cnet_heldout_finish(&heldout) != 0) {
+        fprintf(stderr, "FAIL: declared held-out fixture was not honoured\n");
+        cnet_heldout_close(&heldout);
+        free(HF); free(HT); free(base_tool); free(VF); free(VT);
+        return 1;
+    }
+    cnet_heldout_close(&heldout);
     free(HF); free(HT); free(base_tool); free(VF); free(VT);
     return 0;
 }
