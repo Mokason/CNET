@@ -3,6 +3,7 @@
 #include "../../include/cce/cce_gguf.h"
 #include "../../include/cce/cce_clgemm.h"
 #include "../../include/cce/cce_hipgemm.h"
+#include "../../include/cce/cce_cudagemm.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -52,6 +53,7 @@ struct cce_infer_session {
     cce_gguf_qwen2*  gguf;
     cce_clgemm*      clgemm;       /* owned when device==GPU (OpenCL) */
     cce_hipgemm*     hipgemm;      /* owned when device==GPU (hipBLAS) */
+    cce_cudagemm*    cudagemm;     /* owned when device==GPU (cuBLAS, optional) */
     char             device_name[160];
     char             synthetic_path[256];
     int              owns_synthetic; /* remove path on close */
@@ -269,6 +271,11 @@ void cce_infer_close(cce_infer_session* s) {
             cce_hipgemm_close(s->hipgemm);
             s->hipgemm = NULL;
         }
+        if (s->cudagemm) {
+            cce_gguf_qwen2_set_cudagemm(s->gguf, NULL);
+            cce_cudagemm_close(s->cudagemm);
+            s->cudagemm = NULL;
+        }
         if (s->clgemm) {
             cce_gguf_qwen2_set_clgemm(s->gguf, NULL);
             cce_clgemm_close(s->clgemm);
@@ -349,18 +356,29 @@ static cce_result open_gguf(cce_infer_session* s, const cce_infer_opts* opts) {
     }
 
     if (opts->device == CCE_INFER_DEVICE_GPU) {
-        /* CNET_GPU_BACKEND=hip|opencl|auto.
-           auto: OpenCL first (best full-forward on dual R9700), hip optional
-           fallback for large FP GEMMs when OpenCL refuses a matrix. */
+        /* CNET_GPU_BACKEND=cuda|hip|opencl|auto (default auto).
+           auto (AMD-first): OpenCL + hipBLAS — dual R9700 production path.
+           CUDA is optional: CNET_GPU_BACKEND=cuda, or last-resort fallback
+           when OpenCL and hip both miss (e.g. NVIDIA-only Windows box).
+           Every open() returns NULL when its vendor runtime is absent. */
         const char *be = getenv("CNET_GPU_BACKEND");
-        int want_hip = 1, want_cl = 1;
-        char hip_name[128] = {0}, cl_name[128] = {0};
+        int want_hip = 0, want_cl = 0, want_cuda = 0, cuda_fallback = 0;
+        char hip_name[128] = {0}, cl_name[128] = {0}, cuda_name[128] = {0};
         if (be && be[0]) {
             if (strcmp(be, "hip") == 0) {
-                want_cl = 0;
+                want_hip = 1;
             } else if (strcmp(be, "opencl") == 0 || strcmp(be, "cl") == 0) {
-                want_hip = 0;
+                want_cl = 1;
+            } else if (strcmp(be, "cuda") == 0 || strcmp(be, "nvidia") == 0) {
+                want_cuda = 1;
+            } else if (strcmp(be, "all") == 0) {
+                want_hip = 1; want_cl = 1; want_cuda = 1;
+            } else {
+                /* unknown / auto: AMD-first + CUDA fallback */
+                want_cl = 1; want_hip = 1; cuda_fallback = 1;
             }
+        } else {
+            want_cl = 1; want_hip = 1; cuda_fallback = 1;
         }
         if (want_cl) {
             s->clgemm = cce_clgemm_open(NULL, cl_name, sizeof cl_name);
@@ -372,20 +390,36 @@ static cce_result open_gguf(cce_infer_session* s, const cce_infer_opts* opts) {
             if (s->hipgemm)
                 cce_gguf_qwen2_set_hipgemm(s->gguf, s->hipgemm);
         }
-        if (!s->hipgemm && !s->clgemm)
+        if (want_cuda || (cuda_fallback && !s->clgemm && !s->hipgemm)) {
+            s->cudagemm = cce_cudagemm_open(cuda_name, sizeof cuda_name);
+            if (s->cudagemm)
+                cce_gguf_qwen2_set_cudagemm(s->gguf, s->cudagemm);
+        }
+        if (!s->hipgemm && !s->clgemm && !s->cudagemm)
             return CCE_ERR_NOT_FOUND;
-        if (s->hipgemm && s->clgemm)
-            snprintf(s->device_name, sizeof s->device_name, "%.*s + %.*s",
-                     77,
-                     hip_name[0] ? hip_name : "hip",
-                     77,
-                     cl_name[0] ? cl_name : "opencl");
-        else if (s->hipgemm)
-            snprintf(s->device_name, sizeof s->device_name, "%s",
-                     hip_name[0] ? hip_name : "hipBLAS");
-        else
-            snprintf(s->device_name, sizeof s->device_name, "%s",
-                     cl_name[0] ? cl_name : "OpenCL");
+        {
+            char nm[160];
+            size_t off = 0;
+            int any = 0;
+            nm[0] = 0;
+            if (s->clgemm) {
+                off += (size_t)snprintf(nm + off, sizeof nm - off, "%s%s",
+                        any ? " + " : "", cl_name[0] ? cl_name : "OpenCL");
+                if (off >= sizeof nm) off = sizeof nm - 1;
+                any = 1;
+            }
+            if (s->hipgemm) {
+                off += (size_t)snprintf(nm + off, sizeof nm - off, "%s%s",
+                        any ? " + " : "", hip_name[0] ? hip_name : "hipBLAS");
+                if (off >= sizeof nm) off = sizeof nm - 1;
+                any = 1;
+            }
+            if (s->cudagemm) {
+                (void)snprintf(nm + off, sizeof nm - off, "%s%s",
+                        any ? " + " : "", cuda_name[0] ? cuda_name : "cuBLAS");
+            }
+            snprintf(s->device_name, sizeof s->device_name, "%s", nm);
+        }
     }
 
     s->vocab = s->gguf->vocab_size;

@@ -69,8 +69,10 @@ void cce_gguf_qwen35_ext_free(cce_gguf_qwen2 *m);
 /* ---- shims exported from cce_gguf.c (single source of truth for the
         linear seam, RMSNorm, tap/capture hooks, and metadata access) ---- */
 struct cce_hipgemm; /* pure-C hipBLAS peer of cce_clgemm */
+struct cce_cudagemm; /* pure-C cuBLAS peer (optional NVIDIA) */
 cce_result cce_gguf__apply_linear_rows(struct cce_clgemm *gpu,
                                        struct cce_hipgemm *hip,
+                                       struct cce_cudagemm *cuda,
                                        cce_cascade *cas,
                                        const cce_tensor *in, cce_tensor *out);
 /* Stream linear from device ln → slot (0=Q,1=K,2=V,3=AO,4=TMP). */
@@ -82,6 +84,7 @@ void cce_gguf__fire_layer_tap(int layer, const float *x, int n_tokens, int dim);
 void cce_gguf__fire_capture(const char *spec, const cce_tensor *in);
 struct cce_clgemm *cce_gguf__global_clgemm(void);
 struct cce_hipgemm *cce_gguf__global_hipgemm(void);
+struct cce_cudagemm *cce_gguf__global_cudagemm(void);
 double cce_gguf__get_scalar(const cce_gguf *g, const char *key_suffix,
                             double fallback);
 /* returns 1 + copies the string value when a key with this suffix exists */

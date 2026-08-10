@@ -7,20 +7,37 @@
 #include "../include/agent_memory.h"
 
 #include <ctype.h>
-#include <dlfcn.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
 
-#ifndef _WIN32
+#ifdef _WIN32
+#include <windows.h>
+#include <direct.h>
+#define CNET_MKDIR(p) _mkdir(p)
+typedef HMODULE cnet_dl;
+static cnet_dl cnet_dl_open(const char *n) { return LoadLibraryA(n); }
+static void *cnet_dl_sym(cnet_dl h, const char *n) {
+    return (void *)GetProcAddress(h, n);
+}
+static void cnet_dl_close(cnet_dl h) {
+    if (h) FreeLibrary(h);
+}
+#else
+#include <dlfcn.h>
 #include <sys/stat.h>
 #include <errno.h>
 #define CNET_MKDIR(p) mkdir((p), 0755)
-#else
-#include <direct.h>
-#define CNET_MKDIR(p) _mkdir(p)
+typedef void *cnet_dl;
+static cnet_dl cnet_dl_open(const char *n) {
+    return dlopen(n, RTLD_NOW | RTLD_GLOBAL);
+}
+static void *cnet_dl_sym(cnet_dl h, const char *n) { return dlsym(h, n); }
+static void cnet_dl_close(cnet_dl h) {
+    if (h) dlclose(h);
+}
 #endif
 
 /* Optional SoulHost via dlopen(cnet.so) — avoids linking the full CCE stack
@@ -33,7 +50,7 @@ typedef int (*fn_soul_unit_dims)(void *, const char *, int *, int *);
 typedef int (*fn_soul_unit_reliability_milli)(void *, const char *);
 typedef int (*fn_soul_run)(void *, const char *, const double *, double *, int);
 
-static void *g_cnet_so;
+static cnet_dl g_cnet_so;
 static fn_soul_open g_soul_open;
 static fn_soul_close g_soul_close;
 static fn_soul_unit_count g_soul_unit_count;
@@ -43,30 +60,47 @@ static fn_soul_unit_reliability_milli g_soul_unit_rel;
 static fn_soul_run g_soul_run;
 
 static int soul_api_load(void) {
-    const char *cands[8];
+    const char *cands[10];
     int i, n = 0;
     if (g_soul_open) return 0;
     cands[n++] = getenv("CNET_SO_PATH");
     cands[n++] = "./cnet.so";
     cands[n++] = "cnet.so";
+#ifdef _WIN32
+    cands[n++] = "./cnet.dll";
+    cands[n++] = "cnet.dll";
+    cands[n++] = "./cce.dll";
+    cands[n++] = "cce.dll";
+#else
     cands[n++] = "/home/marble/AI/CNET/cnet.so";
+#endif
     for (i = 0; i < n; i++) {
         if (!cands[i] || !cands[i][0]) continue;
-        g_cnet_so = dlopen(cands[i], RTLD_NOW | RTLD_GLOBAL);
+        g_cnet_so = cnet_dl_open(cands[i]);
         if (g_cnet_so) break;
     }
     if (!g_cnet_so) return -1;
-    g_soul_open = (fn_soul_open)dlsym(g_cnet_so, "soul_open");
-    g_soul_close = (fn_soul_close)dlsym(g_cnet_so, "soul_close");
-    g_soul_unit_count = (fn_soul_unit_count)dlsym(g_cnet_so, "soul_unit_count");
-    g_soul_unit_name = (fn_soul_unit_name)dlsym(g_cnet_so, "soul_unit_name");
-    g_soul_unit_dims = (fn_soul_unit_dims)dlsym(g_cnet_so, "soul_unit_dims");
-    g_soul_unit_rel =
-        (fn_soul_unit_reliability_milli)dlsym(g_cnet_so, "soul_unit_reliability_milli");
-    g_soul_run = (fn_soul_run)dlsym(g_cnet_so, "soul_run");
+    g_soul_open = (fn_soul_open)cnet_dl_sym(g_cnet_so, "soul_open");
+    g_soul_close = (fn_soul_close)cnet_dl_sym(g_cnet_so, "soul_close");
+    g_soul_unit_count = (fn_soul_unit_count)cnet_dl_sym(g_cnet_so, "soul_unit_count");
+    g_soul_unit_name = (fn_soul_unit_name)cnet_dl_sym(g_cnet_so, "soul_unit_name");
+    g_soul_unit_dims = (fn_soul_unit_dims)cnet_dl_sym(g_cnet_so, "soul_unit_dims");
+    g_soul_unit_rel = (fn_soul_unit_reliability_milli)cnet_dl_sym(
+        g_cnet_so, "soul_unit_reliability_milli");
+    g_soul_run = (fn_soul_run)cnet_dl_sym(g_cnet_so, "soul_run");
     if (!g_soul_open || !g_soul_close || !g_soul_unit_count || !g_soul_unit_name ||
-        !g_soul_unit_dims || !g_soul_run)
+        !g_soul_unit_dims || !g_soul_run) {
+        cnet_dl_close(g_cnet_so);
+        g_cnet_so = NULL;
+        g_soul_open = NULL;
+        g_soul_close = NULL;
+        g_soul_unit_count = NULL;
+        g_soul_unit_name = NULL;
+        g_soul_unit_dims = NULL;
+        g_soul_unit_rel = NULL;
+        g_soul_run = NULL;
         return -1;
+    }
     return 0;
 }
 

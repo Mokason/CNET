@@ -289,15 +289,87 @@ static void print_turn(const FdTurnResult *tr) {
     printf("inventory: %s\n", tr->reply.inventory_line);
 }
 
-static int cmd_ask(FdRouter *F, const char *q) {
+static void strip_untrusted_prefix(char *s) {
+    static const char *pfxs[] = {"[llm-untrusted] ", "[llm-live] ", "[lookup] ",
+                                 "[lookup-live] ", NULL};
+    int i;
+    if (!s) return;
+    for (i = 0; pfxs[i]; i++) {
+        size_t n = strlen(pfxs[i]);
+        if (strncmp(s, pfxs[i], n) == 0) {
+            memmove(s, s + n, strlen(s + n) + 1);
+            return;
+        }
+    }
+}
+
+static int cmd_ask(FdRouter *F, const char *q, int accept, const char *gold,
+                   const char *promote_pack) {
     FdTurnResult tr;
+    RoeAsi *R;
+    int rc = 0;
     if (!q || !q[0]) return 2;
-    if (fd_turn(F, q, &tr) != 0) {
-        fprintf(stderr, "front_door turn failed\n");
+    R = (RoeAsi *)calloc(1, sizeof *R);
+    if (!R) return 1;
+    if (fd_prepare(F, R, q, &tr) != 0) {
+        fprintf(stderr, "front_door prepare failed\n");
+        free(R);
         return 1;
     }
+    roe_turn(R, q, &tr.reply);
+    tr.is_miss = (tr.reply.source != ROE_SRC_LOCAL);
+    if (tr.is_miss) (void)fd_append_miss(F, q, &tr);
     print_turn(&tr);
-    return 0;
+
+    /* Shell accept → promote into domain pack (or --promote-pack).
+     * Target pack is loaded alone so save_catalog does not dump always-on. */
+    if (accept && tr.is_miss) {
+        RoeAsi *P = (RoeAsi *)calloc(1, sizeof *P);
+        RoeReply r2;
+        char path[FD_PATH];
+        char ans[ROE_ANSWER_MAX];
+        const char *pack = promote_pack && promote_pack[0] ? promote_pack : NULL;
+        const char *use_gold = gold;
+        int promoted;
+        if (!P) {
+            free(R);
+            return 1;
+        }
+        if (!pack && tr.route_pack[0]) pack = tr.route_pack;
+        if (!pack) pack = "pack_meta_gardener";
+        if (path_join2(path, sizeof path, F->root, pack) != 0) {
+            fprintf(stderr, "promote path failed\n");
+            free(P);
+            free(R);
+            return 1;
+        }
+        snprintf(ans, sizeof ans, "%s", tr.reply.answer);
+        strip_untrusted_prefix(ans);
+        if (!use_gold || !use_gold[0]) use_gold = ans[0] ? ans : NULL;
+        if (!use_gold) {
+            fprintf(stderr, "promote needs --gold or a teacher/lookup answer\n");
+            free(P);
+            free(R);
+            return 1;
+        }
+        roe_init(P);
+        roe_set_catalog_dir(P, path);
+        (void)roe_load_catalog(P);
+        roe_add_teach(P, q, "ad_hoc", use_gold);
+        roe_turn(P, q, &r2);
+        if (r2.source == ROE_SRC_LOCAL) {
+            printf("promote=skip already_LOCAL pack=%s\n", pack);
+            free(P);
+            free(R);
+            return 0;
+        }
+        promoted = roe_feedback_verify(P, q, use_gold, 1);
+        printf("promote=%s pack=%s skills=%zu\n", promoted ? "yes" : "no", pack,
+               P->n_skills);
+        free(P);
+    }
+    free(R);
+    return rc;
 }
 
 static int cmd_route(FdRouter *F, const char *q) {
@@ -464,6 +536,7 @@ static void usage(const char *a0) {
     fprintf(stderr,
             "usage:\n"
             "  %s ask \"query\" [--root DIR] [--no-always]\n"
+            "      [--accept] [--gold TEXT] [--promote-pack PACK]\n"
             "  %s route \"query\" [--root DIR]\n"
             "  %s bench [--root DIR]\n"
             "  %s selftest [--root DIR]\n",
@@ -474,7 +547,9 @@ int main(int argc, char **argv) {
     const char *cmd = NULL;
     const char *q = NULL;
     const char *root = FD_ROOT_DEFAULT;
-    int no_always = 0, i;
+    const char *gold = NULL;
+    const char *promote_pack = NULL;
+    int no_always = 0, accept = 0, i;
     FdRouter F;
 
     for (i = 1; i < argc; i++) {
@@ -484,6 +559,12 @@ int main(int argc, char **argv) {
             root = argv[++i];
         else if (!strcmp(argv[i], "--no-always"))
             no_always = 1;
+        else if (!strcmp(argv[i], "--accept"))
+            accept = 1;
+        else if (!strcmp(argv[i], "--gold") && i + 1 < argc)
+            gold = argv[++i];
+        else if (!strcmp(argv[i], "--promote-pack") && i + 1 < argc)
+            promote_pack = argv[++i];
         else if (cmd && argv[i][0] != '-' && !q &&
                  (!strcmp(cmd, "ask") || !strcmp(cmd, "route")))
             q = argv[i];
@@ -503,7 +584,8 @@ int main(int argc, char **argv) {
     }
     if (no_always) F.load_always = 0;
 
-    if (!strcmp(cmd, "ask")) return cmd_ask(&F, q);
+    if (!strcmp(cmd, "ask"))
+        return cmd_ask(&F, q, accept, gold, promote_pack);
     if (!strcmp(cmd, "route")) return cmd_route(&F, q);
     if (!strcmp(cmd, "bench")) {
         cmd_bench(&F);

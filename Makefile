@@ -225,8 +225,12 @@ CCE_TIERRT  := src/cce/cce_tier_runtime.c
 CCE_SIMILAR := src/cce/cce_similar.c
 CCE_CLGEMM  := src/cce/cce_clgemm.c
 CCE_HIPGEMM := src/cce/cce_hipgemm.c
+# Optional NVIDIA cuBLAS seam (dlopen libcudart/libcublas — no nvcc/toolkit to build).
+# Inert at runtime unless an NVIDIA driver is present and CNET_GPU_BACKEND=cuda
+# (or auto falls back after OpenCL/hip miss). Peer of CCE_HIPGEMM / CCE_CLGEMM.
+CCE_CUDAGEMM := src/cce/cce_cudagemm.c
 CCE_TRANSFORMER_QAT := src/cce/cce_transformer_qat.c
-CCE := $(CCE_TENSOR) $(CCE_BLOCK) $(CCE_CASCADE) $(CCE_ARCHIVE) $(CCE_FOREST) $(CCE_ROUTER) $(CCE_SPARSE_KV) $(CCE_DSA) $(CCE_KV_PAGE) $(CCE_MTK) $(CCE_MLA) $(CCE_DS_MAP) $(CCE_DS_RT) $(CCE_INFER) $(CCE_UNCERTAINTY) $(CCE_COMPRESSION) $(CCE_LEARN) $(CCE_LORA) $(CCE_LILY) $(CCE_PATCH) $(CCE_GPU) $(CCE_ABI) $(CCE_CUDA_OBJ) $(CCE_PERCEPTUAL) $(CCE_WORDLM) $(CCE_MODEL) $(CCE_MODEL_IO) $(CCE_DATASET) $(CCE_AUTOGRAD) $(CCE_SAFETENSORS) $(CCE_GGUF) $(CCE_AICIMO) $(CCE_QGKP) $(CCE_DETECT) $(CCE_SSM) $(CCE_HYBRID) $(CCE_QWEN35) $(CCE_GGUF_QWEN35) $(CCE_ST_LLAMA) $(CCE_SPECGRAPH) $(CCE_WSTORE) $(CCE_TIERRT) $(CCE_SIMILAR) $(CCE_CLGEMM) $(CCE_HIPGEMM) $(CCE_TRANSFORMER_QAT)
+CCE := $(CCE_TENSOR) $(CCE_BLOCK) $(CCE_CASCADE) $(CCE_ARCHIVE) $(CCE_FOREST) $(CCE_ROUTER) $(CCE_SPARSE_KV) $(CCE_DSA) $(CCE_KV_PAGE) $(CCE_MTK) $(CCE_MLA) $(CCE_DS_MAP) $(CCE_DS_RT) $(CCE_INFER) $(CCE_UNCERTAINTY) $(CCE_COMPRESSION) $(CCE_LEARN) $(CCE_LORA) $(CCE_LILY) $(CCE_PATCH) $(CCE_GPU) $(CCE_ABI) $(CCE_CUDA_OBJ) $(CCE_PERCEPTUAL) $(CCE_WORDLM) $(CCE_MODEL) $(CCE_MODEL_IO) $(CCE_DATASET) $(CCE_AUTOGRAD) $(CCE_SAFETENSORS) $(CCE_GGUF) $(CCE_AICIMO) $(CCE_QGKP) $(CCE_DETECT) $(CCE_SSM) $(CCE_HYBRID) $(CCE_QWEN35) $(CCE_GGUF_QWEN35) $(CCE_ST_LLAMA) $(CCE_SPECGRAPH) $(CCE_WSTORE) $(CCE_TIERRT) $(CCE_SIMILAR) $(CCE_CLGEMM) $(CCE_HIPGEMM) $(CCE_CUDAGEMM) $(CCE_TRANSFORMER_QAT)
 CNET_CCE_ADAPTER := src/cce/cce_contract_adapter.c
 SPECIALIST_ADAPTERS := src/specialist_adapters.c
 SPECIALIST_SRC := src/specialist.c src/specialist_health.c
@@ -336,7 +340,7 @@ SYNONYMS_TEST := tests/test_synonyms.c
 TILEINDEX_TEST := tests/test_tile_index.c
 CONSOLIDATE_TEST := tests/test_tile_consolidate.c
 
-.PHONY: hipgemm_res ci_rocm int8_matvec_bench artifact_isa_gate runtime_artifact_hygiene
+.PHONY: hipgemm_res cudagemm_res ci_rocm int8_matvec_bench artifact_isa_gate runtime_artifact_hygiene
 .PHONY: all run test verify verify-long recipe_gate demos compat unified unified_native unified_adapter unified_cce_adapter unified_oracle_adapter unified_specialist specialist_health gap_lane gap_lane_run_build dispatch_story claims claims_model model_evidence oracle_v2_test soul_host_test legacy_test compose route dag hetero split chunk certify property coverage conformal logicgate decimal circuit study capacity library margin fuzzy stochastic fastpath throughput residue expr attention attention_study lifecycle_bench lbench proposal_sidecar probe_overhead belowbeam_chars struct_pref dgate_bench compounding_bench cce_smoke counterfactual_router_test sparse_kv_test narrative_coherence_test phase4_uncertainty_test register_compression_improvements phase5_integration_test cce_train_bench cce_view forest_view wordlm wordlm_bitnet cce_dll cnet_dll cce_safetensors_test cce_gguf_test cce_model_test cce_autograd_test endgate jsonstory pdftest pdflearn compound tiermem_test graduate fontdecode tfidf synonyms tileindex consolidate clean aicimo_smoke aicimo_core_test cnet_harness_contract_test cnet_harness_plugin dotnet_harness_test cce_lora_test cce_lora_bench cce_lily_test cce_lily_serve cce_lily_collect cce_lily_teacher registry_lily_test registry_lily_compute registry_lora_test jtc_lora_live jtc_lora_faultq personal_ai_lora_tick gigatok_bench gigatok_encode_bench gigatok_cache_bench moe_train moe_xf gigatok_encode_bench
 
 all: nn_demo
@@ -3422,6 +3426,20 @@ roe_front_door: roe_daily_packs $(ROE_ASI_SRC) tools/roe_front_door.c
 	@./$(BIN_DIR)/roe_front_door ask "who are you" | tee -a logs/roe_front_door.log
 	@./$(BIN_DIR)/roe_front_door ask "format-truncation werror" | tee -a logs/roe_front_door.log
 
+# Highest-leverage non-LLM agent loop (hermetic, no libcurl):
+# always-on tool law → miss → accept/promote → warm LOCAL → residual KPIs.
+# Links roe core only; teach table stands in for external teacher.
+.PHONY: roe_agent_loop
+ROE_ASI_CORE := src/cnet_roe_asi.c src/cnet_asi_improve.c
+roe_agent_loop: $(ROE_ASI_CORE) include/cnet_roe_asi.h tools/roe_agent_loop.c
+	@mkdir -p $(BIN_DIR) logs artifacts
+	$(CC) $(ASI_IMPROVE_CFLAGS) -o $(BIN_DIR)/roe_agent_loop \
+		$(ROE_ASI_CORE) tools/roe_agent_loop.c -lm
+	@./$(BIN_DIR)/roe_agent_loop | tee logs/roe_agent_loop.log
+	@grep -q "ROE_AGENT_LOOP_PASS" logs/roe_agent_loop.log
+	@echo "---- agent loop KPIs ----"
+	@cat artifacts/roe_agent_loop/AGENT_LOOP.json 2>/dev/null || true
+
 # Ollama cloud teacher (deepseek-v4-flash:cloud) — no DEEPSEEK_API_KEY
 .PHONY: roe_teacher_cloud_smoke
 roe_teacher_cloud_smoke: $(ROE_ASI_SRC) tools/roe_teacher_cloud_smoke.c config/roe-teacher-ollama-cloud.env
@@ -4571,6 +4589,16 @@ hipgemm_res: $(CCE) $(CCE_CUDA_OBJ) tests/test_hipgemm.c include/cce/cce_hipgemm
 	@./$(BIN_DIR)/hipgemm_res > logs/hipgemm_res.log 2>&1; rc=$$?; \
 		cat logs/hipgemm_res.log; exit $$rc
 	@grep -q '^HIPGEMM_RES_PASS' logs/hipgemm_res.log
+
+# Optional NVIDIA peer of hipgemm_res. Links only cce_cudagemm (no full CCE /
+# curl/mmap) so Windows CUDA laptops can gate without the Linux-only deps.
+# Self-skips without a driver; CNET_REQUIRE_CUDA=1 fails the skip.
+cudagemm_res: src/cce/cce_cudagemm.c tests/test_cudagemm.c include/cce/cce_cudagemm.h
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ src/cce/cce_cudagemm.c tests/test_cudagemm.c -lm
+	@./$(BIN_DIR)/cudagemm_res > logs/cudagemm_res.log 2>&1; rc=$$?; \
+		cat logs/cudagemm_res.log; exit $$rc
+	@grep -q '^CUDAGEMM_RES_PASS' logs/cudagemm_res.log
 
 # The authoritative GPU gate for this project: portable CI plus a bounded, real
 # device slice. GitHub-hosted runners have no AMD GPU, so `make ci_rocm` on an

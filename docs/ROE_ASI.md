@@ -288,9 +288,31 @@ make roe_front_door
 ./bin/roe_front_door ask "who are you"
 ./bin/roe_front_door route "format-truncation"
 ./bin/roe_front_door bench
+# miss → shell accept → CERT into domain pack (never self-CERT)
+./bin/roe_front_door ask "novel query" --accept --gold "verified answer" \
+  --promote-pack pack_meta_gardener
 ```
 
 Loads always-on trio + at most one matched domain pack. MISSes append `artifacts/roe_daily_packs/miss_log.jsonl`.
+
+## Agent loop (highest leverage — LLM-feel without LLM core)
+
+Hermetic gate for the promote → warm-local residual budget:
+
+```bash
+make roe_agent_loop   # ROE_AGENT_LOOP_PASS
+# report → artifacts/roe_agent_loop/AGENT_LOOP.json
+```
+
+| Step | Behavior |
+|------|----------|
+| Always-on tool law | LOCAL (tools > guess) |
+| Cold corpus | teach stand-in → `--accept` promote into `pack_personal` |
+| Warm replay | LOCAL; **teacher_rate ≤ 10%**, **local_hit ≥ 90%** |
+| OOD | abstain / ask user |
+| No accept | stays untrusted — never self-CERT |
+
+This is the product loop to run on real daily queries (front door + accept + gold/live teacher).
 
 ## Ollama cloud teacher (`deepseek-v4-flash:cloud`)
 

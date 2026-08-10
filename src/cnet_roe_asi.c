@@ -5,6 +5,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#ifdef _WIN32
+#include <direct.h>
+#endif
 
 /* forward */
 int roe_save_catalog(const RoeAsi *R);
@@ -581,6 +584,14 @@ void roe_dump_stats(const RoeAsi *R, char *buf, size_t cap) {
              R->n_skills);
 }
 
+static int mkdir_one(const char *path) {
+#ifdef _WIN32
+    return _mkdir(path);
+#else
+    return mkdir(path, 0755);
+#endif
+}
+
 static int mkdir_p(const char *path) {
     char tmp[ROE_PATH_MAX];
     size_t len, i;
@@ -588,15 +599,15 @@ static int mkdir_p(const char *path) {
     snprintf(tmp, sizeof tmp, "%s", path);
     len = strlen(tmp);
     if (len == 0) return -1;
-    if (tmp[len - 1] == '/') tmp[len - 1] = 0;
+    if (tmp[len - 1] == '/' || tmp[len - 1] == '\\') tmp[len - 1] = 0;
     for (i = 1; tmp[i]; i++) {
-        if (tmp[i] == '/') {
+        if (tmp[i] == '/' || tmp[i] == '\\') {
             tmp[i] = 0;
-            mkdir(tmp, 0755);
+            (void)mkdir_one(tmp);
             tmp[i] = '/';
         }
     }
-    return mkdir(tmp, 0755);
+    return mkdir_one(tmp);
 }
 
 int roe_export_skill_pack(const RoeAsi *R, const char *skill_id, const char *out_dir) {

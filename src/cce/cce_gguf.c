@@ -1202,10 +1202,13 @@ static cce_result gguf_rms_norm_impl(const cce_tensor* in, const cce_tensor* wei
    hipBLAS (cce_hipgemm). NULL = CPU path, byte-for-byte as always. */
 #include "../../include/cce/cce_clgemm.h"
 #include "../../include/cce/cce_hipgemm.h"
+#include "../../include/cce/cce_cudagemm.h"
 static cce_clgemm *g_gguf_clgemm = NULL;
 static cce_hipgemm *g_gguf_hipgemm = NULL;
+static cce_cudagemm *g_gguf_cudagemm = NULL;
 void cce_gguf_set_clgemm(cce_clgemm *h) { g_gguf_clgemm = h; }
 void cce_gguf_set_hipgemm(cce_hipgemm *h) { g_gguf_hipgemm = h; }
+void cce_gguf_set_cudagemm(cce_cudagemm *h) { g_gguf_cudagemm = h; }
 void cce_gguf_qwen2_set_head_window(cce_gguf_qwen2 *m, const int *ids, int n) {
     if (!m) return;
     m->head_window = (n > 0) ? ids : NULL;
@@ -1216,6 +1219,9 @@ void cce_gguf_qwen2_set_clgemm(cce_gguf_qwen2 *m, cce_clgemm *h) {
 }
 void cce_gguf_qwen2_set_hipgemm(cce_gguf_qwen2 *m, cce_hipgemm *h) {
     if (m) m->hipgemm = h;
+}
+void cce_gguf_qwen2_set_cudagemm(cce_gguf_qwen2 *m, cce_cudagemm *h) {
+    if (m) m->cudagemm = h;
 }
 
 /* OPT-IN sparse per-specialist KV routing (Phase 2 execution slice). The
@@ -1387,7 +1393,7 @@ static int stream_linear_pair_cas(cce_clgemm *gpu, cce_cascade *a,
     return -1;
 }
 
-static cce_result apply_linear_rows(cce_clgemm *gpu, cce_hipgemm *hip,
+static cce_result apply_linear_rows(cce_clgemm *gpu, cce_hipgemm *hip, cce_cudagemm *cuda,
                                     cce_cascade* cas,
                                     const cce_tensor* in, cce_tensor* out) {
     if (!cas || !in || !out || in->ndim != 2 || out->ndim != 2) return CCE_ERR_INVALID_ARG;
@@ -1545,6 +1551,29 @@ static cce_result apply_linear_rows(cce_clgemm *gpu, cce_hipgemm *hip,
             const float *bias =
                 (blk->bias.numel == (size_t)dout) ? blk->bias.data : NULL;
             if (cce_hipgemm_matmul(hip, in->data, (size_t)T, (size_t)din,
+                                  blk->weights.data, bias, (size_t)dout,
+                                  out->data) == 0)
+                return CCE_OK;
+        }
+        /* cuBLAS (NVIDIA, optional): same shape gate / CPU fall-through. */
+        if (cuda && blk->type == CCE_BLOCK_LINEAR_HEAD && blk->w_q &&
+            blk->w_scale && !blk->w_trit && blk->weights.ndim == 2 &&
+            blk->weights.shape[0] == din && blk->weights.shape[1] == dout &&
+            !(getenv("CNET_GPU_INT8") && getenv("CNET_GPU_INT8")[0] == '0')) {
+            const float *bias =
+                (blk->bias.numel == (size_t)dout) ? blk->bias.data : NULL;
+            if (cce_cudagemm_matmul_q8(cuda, in->data, (size_t)T, (size_t)din,
+                                     (const signed char *)blk->w_q,
+                                     blk->w_scale, bias, (size_t)dout,
+                                     out->data) == 0)
+                return CCE_OK;
+        }
+        if (cuda && blk->type == CCE_BLOCK_LINEAR_HEAD && !blk->w_q &&
+            !blk->w_trit && blk->weights.ndim == 2 &&
+            blk->weights.shape[0] == din && blk->weights.shape[1] == dout) {
+            const float *bias =
+                (blk->bias.numel == (size_t)dout) ? blk->bias.data : NULL;
+            if (cce_cudagemm_matmul(cuda, in->data, (size_t)T, (size_t)din,
                                   blk->weights.data, bias, (size_t)dout,
                                   out->data) == 0)
                 return CCE_OK;
@@ -1825,7 +1854,7 @@ static cce_cascade* get_cascade_by_name(cce_forest* f, const char* name) {
 }
 
 /* Forward declaration for helper used in forward */
-static cce_result apply_linear_rows(cce_clgemm *gpu, cce_hipgemm *hip,
+static cce_result apply_linear_rows(cce_clgemm *gpu, cce_hipgemm *hip, cce_cudagemm *cuda,
                                     cce_cascade* cas, const cce_tensor* in,
                                     cce_tensor* out);
 
@@ -1917,6 +1946,7 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
     /* per-instance GPU handle wins; the process-global is the default */
     cce_clgemm *gpu = m->clgemm ? m->clgemm : g_gguf_clgemm;
     cce_hipgemm *hip = m->hipgemm ? m->hipgemm : g_gguf_hipgemm;
+    cce_cudagemm *cuda = m->cudagemm ? m->cudagemm : g_gguf_cudagemm;
 
     float eps = (m->rms_eps > 0.0f) ? m->rms_eps : 1e-6f;
 
@@ -2135,7 +2165,7 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
                     cce_tensor_alloc(&tout, (int[]){1, D}, 2);
                     if (tin.data && tout.data) {
                         memcpy(tin.data, ao, (size_t)o_in * 4);
-                        if (apply_linear_rows(gpu, hip, o_cas, &tin, &tout) ==
+                        if (apply_linear_rows(gpu, hip, cuda, o_cas, &tin, &tout) ==
                             CCE_OK) {
                             memcpy(o_h, tout.data, (size_t)D * 4);
                             ok = 1;
@@ -2205,7 +2235,7 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
                             cce_tensor_alloc(&tout, (int[]){1, D}, 2);
                             if (tin.data && tout.data) {
                                 memcpy(tin.data, mid_h, (size_t)mlp_h * 4);
-                                if (apply_linear_rows(gpu, hip, down_cas, &tin,
+                                if (apply_linear_rows(gpu, hip, cuda, down_cas, &tin,
                                                       &tout) == CCE_OK) {
                                     memcpy(down_h, tout.data, (size_t)D * 4);
                                     if (cce_clgemm_stream_add_x_host(
@@ -2268,13 +2298,13 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
             snprintf(cap, sizeof(cap), "qwen2.blk.%d.k_proj", l); gguf_fire_capture(cap, &ln1);
             if (!ge->v_tied) { snprintf(cap, sizeof(cap), "qwen2.blk.%d.v_proj", l); gguf_fire_capture(cap, &ln1); }
         }
-        if (apply_linear_rows(gpu, hip, q_cas, &ln1, &q) != CCE_OK ||
-            apply_linear_rows(gpu, hip, k_cas, &ln1, &k) != CCE_OK ||
+        if (apply_linear_rows(gpu, hip, cuda, q_cas, &ln1, &q) != CCE_OK ||
+            apply_linear_rows(gpu, hip, cuda, k_cas, &ln1, &k) != CCE_OK ||
             (ge->v_tied
                  ? (memcpy(v.data, k.data,
                            (size_t)n_tokens * ge->k_dim * sizeof(float)),
                     CCE_OK)
-                 : apply_linear_rows(gpu, hip, v_cas, &ln1, &v)) != CCE_OK) {
+                 : apply_linear_rows(gpu, hip, cuda, v_cas, &ln1, &v)) != CCE_OK) {
             /* REFUSAL BOUNDARY: a failed projection must never leave its
                output as uninitialized heap (the pre-geometry bug that mined
                garbage attention for months). */
@@ -2630,7 +2660,7 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
         if (l == 0) FWD_V4("kqv_out", attn_out.data);
         if (g_gguf_capture) { char cap[128];
             snprintf(cap, sizeof(cap), "qwen2.blk.%d.o_proj", l); gguf_fire_capture(cap, &attn_out); }
-        if (apply_linear_rows(gpu, hip, o_cas, &attn_out, &after_attn) != CCE_OK) {
+        if (apply_linear_rows(gpu, hip, cuda, o_cas, &attn_out, &after_attn) != CCE_OK) {
             fprintf(stderr, "cce_gguf: o_proj failed at layer %d — "
                             "refusing\n", l);
             free(scores); free(skv_idx); free(idx_scores);
@@ -2668,8 +2698,8 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
             snprintf(cap, sizeof(cap), "qwen2.blk.%d.gate_proj", l); gguf_fire_capture(cap, &ln2);
             snprintf(cap, sizeof(cap), "qwen2.blk.%d.up_proj", l);   gguf_fire_capture(cap, &ln2);
         }
-        if (apply_linear_rows(gpu, hip, gate_cas, &ln2, &gate) != CCE_OK ||
-            apply_linear_rows(gpu, hip, up_cas, &ln2, &upv) != CCE_OK) {
+        if (apply_linear_rows(gpu, hip, cuda, gate_cas, &ln2, &gate) != CCE_OK ||
+            apply_linear_rows(gpu, hip, cuda, up_cas, &ln2, &upv) != CCE_OK) {
             fprintf(stderr, "cce_gguf: gate/up failed at layer %d — refusing\n", l);
             free(scores); free(skv_idx); free(idx_scores);
             cce_tensor_free(&ln1); cce_tensor_free(&q); cce_tensor_free(&k);
@@ -2693,7 +2723,7 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
         cce_tensor_alloc(&down, lnsh, 2);
         if (g_gguf_capture) { char cap[128];
             snprintf(cap, sizeof(cap), "qwen2.blk.%d.down_proj", l); gguf_fire_capture(cap, &mid); }
-        if (apply_linear_rows(gpu, hip, down_cas, &mid, &down) != CCE_OK) {
+        if (apply_linear_rows(gpu, hip, cuda, down_cas, &mid, &down) != CCE_OK) {
             fprintf(stderr, "cce_gguf: down failed at layer %d — refusing\n", l);
             free(scores); free(skv_idx); free(idx_scores);
             cce_tensor_free(&ln1); cce_tensor_free(&q); cce_tensor_free(&k);
@@ -2803,7 +2833,7 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
     }
     if (!head_ok && head_cas) {
         if (g_gguf_capture) gguf_fire_capture("qwen2.lm_head", &fn_last);
-        if (apply_linear_rows(gpu, hip, head_cas, &fn_last, &logits_t) == CCE_OK) head_ok = true;
+        if (apply_linear_rows(gpu, hip, cuda, head_cas, &fn_last, &logits_t) == CCE_OK) head_ok = true;
     }
     if (!head_ok && m->output.data && m->output.ndim == 2) {
         int od0 = m->output.shape[0];
@@ -2855,9 +2885,10 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
         of truth for the linear seam, RMSNorm, tap/capture hooks, and
         suffix-keyed metadata stays in this file ---- */
 cce_result cce_gguf__apply_linear_rows(cce_clgemm *gpu, cce_hipgemm *hip,
+                                       cce_cudagemm *cuda,
                                        cce_cascade *cas,
                                        const cce_tensor *in, cce_tensor *out) {
-    return apply_linear_rows(gpu, hip, cas, in, out);
+    return apply_linear_rows(gpu, hip, cuda ? cuda : g_gguf_cudagemm, cas, in, out);
 }
 cce_result cce_gguf__rms_norm(const cce_tensor *in, const cce_tensor *w,
                               float eps, cce_tensor *out) {
@@ -2872,6 +2903,7 @@ void cce_gguf__fire_capture(const char *spec, const cce_tensor *in) {
 }
 struct cce_clgemm *cce_gguf__global_clgemm(void) { return g_gguf_clgemm; }
 struct cce_hipgemm *cce_gguf__global_hipgemm(void) { return g_gguf_hipgemm; }
+struct cce_cudagemm *cce_gguf__global_cudagemm(void) { return g_gguf_cudagemm; }
 double cce_gguf__get_scalar(const cce_gguf *g, const char *key_suffix,
                             double fallback) {
     return gguf_get_scalar(g, key_suffix, fallback);

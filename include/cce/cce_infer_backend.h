@@ -11,7 +11,10 @@
  *
  * Device:
  *   CPU  — default, hermetic gates and microbenches
- *   GPU  — GGUF via cce_clgemm (OpenCL linear seam); DS GPU not yet wired
+ *   GPU  — GGUF via optional linear seams (dlopen, vendor-absent = NULL):
+ *            OpenCL (cce_clgemm) + hipBLAS (cce_hipgemm) AMD-first auto,
+ *            cuBLAS (cce_cudagemm) when CNET_GPU_BACKEND=cuda or as
+ *            last-resort fallback. DS GPU not yet wired
  *          (returns CCE_ERR_UNSUPPORTED until a DS device path lands)
  *
  * Both kinds keep separate open/close so CPU then GPU integration and tests
@@ -57,7 +60,8 @@ void cce_infer_opts_default(cce_infer_opts* o, cce_infer_kind kind,
                             cce_infer_device device);
 
 /* Open one backend on the requested device. GPU+DS → CCE_ERR_UNSUPPORTED.
- * GPU+GGUF with no OpenCL → CCE_ERR_NOT_FOUND (caller may fall back to CPU). */
+ * GPU+GGUF with no usable GPU backend (OpenCL/hip/CUDA per CNET_GPU_BACKEND)
+ * → CCE_ERR_NOT_FOUND (caller may fall back to CPU). */
 cce_result cce_infer_open(cce_infer_session** out, const cce_infer_opts* opts);
 void       cce_infer_close(cce_infer_session* s);
 
