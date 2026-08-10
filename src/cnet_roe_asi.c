@@ -113,13 +113,38 @@ int roe_add_teach(RoeAsi *R, const char *pattern, const char *intent_key,
 static RoeSkill *find_local(RoeAsi *R, const char *query) {
     size_t i;
     RoeSkill *best = NULL;
+    size_t best_len = 0;
     for (i = 0; i < R->n_skills; i++) {
         RoeSkill *s = &R->skills[i];
+        size_t plen;
+        int s_soul, b_soul;
         if (!s->active || !s->certified) continue;
         if (!contains_ci(query, s->pattern)) continue;
-        if (!best || s->privilege < best->privilege ||
-            (s->privilege == best->privilege && strcmp(s->id, best->id) < 0))
+        plen = strlen(s->pattern);
+        if (!best) {
             best = s;
+            best_len = plen;
+            continue;
+        }
+        if (plen > best_len) {
+            best = s;
+            best_len = plen;
+            continue;
+        }
+        if (plen < best_len) continue;
+        if (s->privilege < best->privilege) {
+            best = s;
+            continue;
+        }
+        if (s->privilege > best->privilege) continue;
+        /* equal length + privilege: prefer soul_* persona over shell self_* */
+        s_soul = (strncmp(s->id, "soul_", 5) == 0);
+        b_soul = (strncmp(best->id, "soul_", 5) == 0);
+        if (s_soul && !b_soul) {
+            best = s;
+            continue;
+        }
+        if (s_soul == b_soul && strcmp(s->id, best->id) < 0) best = s;
     }
     return best;
 }

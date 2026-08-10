@@ -52,3 +52,16 @@ artifacts/roe_self_model/
 ## API
 
 See `include/cnet_roe_self.h`.
+
+## SOUL persona pack (`pack_soul_marble`)
+
+Isolated SOUL.md-style capsule (kind=persona). Delivery + oath only; **seal_path forbidden**.
+
+```bash
+make roe_soul_pack          # ROE_SOUL_PACK_PASS
+./bin/roe_front_door ask "who are you"     # Marble LOCAL
+./bin/roe_front_door ask "one line marble"
+```
+
+Always-on with self/goal/toolcall. Source: `config/voice_marble.md` + SOUL.md in pack.
+Swap souls later via another `pack_soul_*` (one active persona preferred).

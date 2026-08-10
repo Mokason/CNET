@@ -113,11 +113,12 @@ static int fd_init(FdRouter *F, const char *root) {
     if (path_join2(F->miss_log, sizeof F->miss_log, F->root, "miss_log.jsonl") != 0)
         return -1;
     F->load_always = 1;
-    /* default always-on */
-    snprintf(F->always_on[0], sizeof F->always_on[0], "%s", "pack_roe_self");
-    snprintf(F->always_on[1], sizeof F->always_on[1], "%s", "pack_goal_split");
-    snprintf(F->always_on[2], sizeof F->always_on[2], "%s", "pack_toolcall_hermes");
-    F->n_always = 3;
+    /* default always-on: persona first so identity beats shell boilerplate */
+    snprintf(F->always_on[0], sizeof F->always_on[0], "%s", "pack_soul_marble");
+    snprintf(F->always_on[1], sizeof F->always_on[1], "%s", "pack_roe_self");
+    snprintf(F->always_on[2], sizeof F->always_on[2], "%s", "pack_goal_split");
+    snprintf(F->always_on[3], sizeof F->always_on[3], "%s", "pack_toolcall_hermes");
+    F->n_always = 4;
 
     if (path_join2(path, sizeof path, F->root, "ROUTES.jsonl") != 0) return -1;
     f = fopen(path, "r");
@@ -319,7 +320,7 @@ static int count_all_skills(const char *root) {
         "pack_toolcall_hermes", "pack_roe_self",      "pack_coding_cnet_c",
         "pack_debug_l3",        "pack_goal_split",    "pack_doc_l3_ocr",
         "pack_git_pr",          "pack_ops_hermes_systemd", "pack_pm_director_oracle",
-        "pack_meta_gardener",
+        "pack_meta_gardener",   "pack_soul_marble",
     };
     size_t i;
     int total = 0;
@@ -427,7 +428,7 @@ static int cmd_selftest(FdRouter *F) {
     printf("=== ROE front door selftest ===\n");
     check(F->n_routes >= 20, "routes loaded");
     check(fd_match(F, "who are you today", &rt) >= 0, "match who are you");
-    check(strcmp(rt.pack, "pack_roe_self") == 0, "pack_roe_self");
+    check(strcmp(rt.pack, "pack_soul_marble") == 0, "pack_soul_marble");
     check(fd_match(F, "format-truncation werror path join", &rt) >= 0,
           "match coding");
     check(strcmp(rt.pack, "pack_coding_cnet_c") == 0, "pack_coding_cnet_c");
@@ -436,8 +437,9 @@ static int cmd_selftest(FdRouter *F) {
 
     check(fd_turn(F, "who are you", &tr) == 0, "turn identity");
     check(tr.reply.source == ROE_SRC_LOCAL, "LOCAL hit");
-    check(tr.n_packs >= 1 && tr.n_packs <= 4, "few packs loaded");
-    check(tr.n_skills_loaded < 40, "skills footprint bounded");
+    check(strstr(tr.reply.answer, "Marble") != NULL, "answers as Marble");
+    check(tr.n_packs >= 1 && tr.n_packs <= 5, "few packs loaded");
+    check(tr.n_skills_loaded < 50, "skills footprint bounded");
 
     check(fd_turn(F, "zz unknown mystic ooze 99", &tr) == 0, "turn OOD");
     check(tr.is_miss == 1, "OOD is miss");

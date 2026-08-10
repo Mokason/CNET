@@ -3432,6 +3432,19 @@ roe_teacher_cloud_smoke: $(ROE_ASI_SRC) tools/roe_teacher_cloud_smoke.c config/r
 	./$(BIN_DIR)/roe_teacher_cloud_smoke | tee logs/roe_teacher_cloud_smoke.log
 	@grep -q "ROE_TEACHER_CLOUD_SMOKE_PASS" logs/roe_teacher_cloud_smoke.log
 
+# SOUL persona pack (Marble) — isolated, seal_path forbidden
+.PHONY: roe_soul_pack
+roe_soul_pack: roe_daily_packs_seed $(ROE_ASI_SRC) tools/roe_soul_pack_gate.c
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(ASI_IMPROVE_CFLAGS) -o $(BIN_DIR)/roe_soul_pack_gate \
+		$(ROE_ASI_SRC) tools/roe_soul_pack_gate.c $(ROE_ASI_LIBS)
+	@./$(BIN_DIR)/roe_soul_pack_gate | tee logs/roe_soul_pack.log
+	@grep -q "ROE_SOUL_PACK_PASS" logs/roe_soul_pack.log
+	@echo "---- SOUL.md head ----"
+	@head -20 artifacts/roe_daily_packs/pack_soul_marble/SOUL.md 2>/dev/null || true
+	@test -f artifacts/roe_daily_packs/pack_soul_marble/voice.md
+	@grep -q "kind persona" artifacts/roe_daily_packs/pack_soul_marble/PACK.abi
+
 .PHONY: roe_asi_ocr_surpass
 roe_asi_ocr_surpass: $(ROE_ASI_SRC) src/cnet_roe_goal.c src/cnet_roe_ocr.c src/cnet_roe_tree.c \
 		include/cnet_roe_ocr.h tools/roe_asi_ocr_surpass.c tools/roe_unlimited_teacher.py

@@ -208,7 +208,7 @@ int main(void) {
     }
     closedir(d);
 
-    check(nres >= 10, "at least 10 separate packs loaded");
+    check(nres >= 11, "at least 11 separate packs loaded");
     if (nres > 0) {
         double mean = hit_sum / (double)nres;
         printf("  mean_hit_across_packs=%.1f%% n=%d\n", 100.0 * mean, nres);
