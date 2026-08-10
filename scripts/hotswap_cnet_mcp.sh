@@ -40,7 +40,7 @@ export CNET_HEALTH_TICK_SECONDS=60
 export CNET_ORACLE_INT8="\${CNET_ORACLE_INT8:-1}"
 # Bonsai 1-bit residual via llama-server (must be pre-exec).
 export CNET_RESIDUAL_HTTP="\${CNET_RESIDUAL_HTTP:-http://127.0.0.1:8080}"
-export CNET_RESIDUAL_WINDOW="\${CNET_RESIDUAL_WINDOW:-$REPO/english_window_256_bonsai.txt}"
+export CNET_RESIDUAL_WINDOW="\${CNET_RESIDUAL_WINDOW:-$REPO/english_window_256_bonsai_v2.txt}"
 export CNET_PERSONAL_STRUCTURE_MINE_ON_SERVE=1
 export CNET_PERSONAL_STRUCTURE_MIN_HITS=2
 export CNET_PERSONAL_ALLOW_RESIDUAL=1

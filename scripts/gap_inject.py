@@ -109,7 +109,7 @@ def main() -> int:
         "--window",
         default=os.environ.get("CNET_WINDOW_FILE")
         or os.environ.get("CNET_RESIDUAL_WINDOW")
-        or str(root / "english_window_256_bonsai.txt"),
+        or str(root / "english_window_256_bonsai_v2.txt"),
     )
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()

@@ -1,4 +1,5 @@
 #include "../include/hybrid_ai.h"
+#include "../include/cnet_sparse_serve.h"
 #include "../include/external_teacher.h"
 #include "../include/cnet_lfru.h"
 #include "../include/residual_gguf.h"
@@ -1292,8 +1293,29 @@ int hybrid_structure_mine(HybridAi *h, PrimitiveRegistry *reg, size_t min_hits,
     if (coverage_find(h, port_key(tr->input_port), port_key(tr->goal_port),
                       tr->input_port, tr->goal_port)) {
         tr->hits = 0; /* do not re-attempt on every serve */
+        h->structure_recalls++; /* same-shape reuse = recall-before-spawn */
         return 4;
     }
+
+    /* Recall-before-spawn (Brain board law): if ANY coverage already admits
+     * this exemplar input (wildcard out tag), do not mint a new unit. */
+    if (tr->in && tr->in_dim > 0) {
+        Port wild_out = tr->goal_port;
+        char recalled[CNET_SPARSE_NAME_MAX];
+        double sc = 0.0;
+        wild_out.tag[0] = '\0';
+        if (cnet_sparse_pick_covered_unit(h, tr->input_port, wild_out, tr->in,
+                                          tr->in_dim, recalled, sizeof recalled,
+                                          &sc) == 0) {
+            tr->hits = 0;
+            h->structure_recalls++;
+            if (getenv("CNET_MINE_DEBUG"))
+                fprintf(stderr, "[mine] RECALL unit=%s score=%.6g (no spawn)\n",
+                        recalled, sc);
+            return 5;
+        }
+    }
+
     /* Fail closed: a unit we cannot gate must never exist. Reserve the coverage
        slot BEFORE admitting, because once external_teacher_mine_admit has put
        the unit in the registry it will serve, and with no coverage record the
@@ -1457,27 +1479,64 @@ int hybrid_structure_mine(HybridAi *h, PrimitiveRegistry *reg, size_t min_hits,
             rc = external_teacher_mine_admit(
                 &teacher, reg, inputs, targets, n_rows, ih, mh, ep, 99u, stable,
                 student_out);
-            if (rc != 0) free(stable); /* nothing borrowed it */
+            if (rc != 0) {
+                free(stable); /* nothing borrowed it */
+                h->structure_promote_rejects++;
+            } else {
+                /* Promote-only-after-verify: specialist_admit is CERT-only.
+                 * Refuse to count a mine if the registry entry is not certified. */
+                size_t ei;
+                int certified = 0;
+                for (ei = 0; ei < reg->count; ei++) {
+                    if (reg->entries[ei].name &&
+                        strcmp(reg->entries[ei].name, stable) == 0) {
+                        certified = reg->entries[ei].certified ? 1 : 0;
+                        break;
+                    }
+                }
+                if (!certified) {
+                    fprintf(stderr,
+                            "hybrid: unit '%s' admitted path returned ok but "
+                            "registry not CERT — refusing promote\n",
+                            stable);
+                    h->structure_promote_rejects++;
+                    free(stable);
+                    external_teacher_unbind(&teacher);
+                    free(inputs);
+                    free(targets);
+                    if (*student_out) {
+                        btn_free(*student_out);
+                        free(*student_out);
+                        *student_out = NULL;
+                    }
+                    return -6;
+                }
+            }
         }
         external_teacher_unbind(&teacher);
-        if (rc == 0) {
-            /* The unit is certified over exactly these rows — remember them so
-               the serve path can refuse to claim certified authority outside
-               the domain the contract actually covers. */
-            if (hybrid_coverage_record(h, tr->input_port, tr->goal_port, name,
-                                       inputs, targets, n_rows, tr->in_dim,
-                                       tr->out_dim) != 0) {
-                /* Slot was reserved above, so this is allocation failure. The
-                   unit is already admitted and would serve ungated; say so
-                   loudly rather than let it look like a clean mine. */
-                fprintf(stderr, "hybrid: unit '%s' admitted but coverage NOT "
-                                "recorded — it will serve ungated\n", name);
-                rc = -5;
-            }
+        if (rc != 0) {
+            free(inputs);
+            free(targets);
+            return rc;
+        }
+        /* The unit is certified over exactly these rows — remember them so
+           the serve path can refuse to claim certified authority outside
+           the domain the contract actually covers. */
+        if (hybrid_coverage_record(h, tr->input_port, tr->goal_port, name, inputs,
+                                   targets, n_rows, tr->in_dim, tr->out_dim) != 0) {
+            /* Slot was reserved above, so this is allocation failure. The
+               unit is already admitted and would serve ungated; say so
+               loudly rather than let it look like a clean mine. */
+            fprintf(stderr,
+                    "hybrid: unit '%s' admitted but coverage NOT "
+                    "recorded — it will serve ungated\n",
+                    name);
+            free(inputs);
+            free(targets);
+            return -5;
         }
         free(inputs);
         free(targets);
-        if (rc != 0) return rc;
         tr->hits = 0;
         h->structure_mines++;
         /* Count admitted units, not attempts — a counter that ticks on failure

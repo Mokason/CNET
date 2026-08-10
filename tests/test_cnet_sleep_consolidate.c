@@ -93,6 +93,8 @@ int main(void) {
     CnetSleepReport report;
     CnetHeldOut heldout;
     int heldout_rc = cnet_heldout_open(&heldout, CAPABILITY_ID);
+    CnetSleepReport evidence_report;
+    CnetSleepState state;
     /* Near-paraphrase multi-term keys (share >=3 discriminative terms) so
        tilemem_consolidate can merge; exact-key duplicate proves pruning and
        recurrence graduation (count>=2). */
@@ -150,6 +152,33 @@ int main(void) {
     check(strstr(json, "\"merges\":") != NULL, "JSON reports merges");
     check(strstr(json, "\"graduated_units\":") != NULL,
           "JSON reports graduation");
+    evidence_report = report;
+
+    cnet_sleep_state_init(&state, 100);
+    check(cnet_sleep_try_consolidate(&state, 109, 10, 1, directory,
+          episodes, sizeof(episodes) / sizeof(episodes[0]), &config,
+          &report) == CNET_SLEEP_AWAKE,
+          "active material does not sleep");
+    check(report.episodes_seen == 0, "awake yield leaves an empty report");
+    check(cnet_sleep_try_consolidate(&state, 110, 10, 1, directory,
+          episodes, sizeof(episodes) / sizeof(episodes[0]), &config,
+          &report) == CNET_SLEEP_RAN,
+          "idle material sleeps once");
+    check(state.slept_through_revision == 1 && state.last_sleep_tick == 110,
+          "sleep records its material and time watermarks");
+    check(cnet_sleep_try_consolidate(&state, 120, 10, 1, directory,
+          episodes, sizeof(episodes) / sizeof(episodes[0]), &config,
+          &report) == CNET_SLEEP_CURRENT,
+          "already-slept material is idempotent");
+    cnet_sleep_note_activity(&state, 125);
+    check(cnet_sleep_try_consolidate(&state, 130, 10, 2, directory,
+          episodes, sizeof(episodes) / sizeof(episodes[0]), &config,
+          &report) == CNET_SLEEP_AWAKE,
+          "new activity resets the idle clock");
+    check(cnet_sleep_try_consolidate(&state, 135, 10, 2, directory,
+          episodes, sizeof(episodes) / sizeof(episodes[0]), &config,
+          &report) == CNET_SLEEP_RAN,
+          "new idle material permits a later sleep");
 
     heldout_consolidation_case(&heldout, &report,
                                sizeof(episodes) / sizeof(episodes[0]));
@@ -164,9 +193,9 @@ int main(void) {
     printf("SLEEP_EVIDENCE %s\n", json);
     printf("SLEEP_CONSOLIDATE_PASS metric=1.000 merges=%zu pruned=%zu "
            "graduated=%zu semantic=%zu procedural=%zu provenance=%016llx\n",
-           report.merges, report.redundant_pruned,
-           report.graduated_units,
-           report.semantic_promoted, report.procedural_promoted,
-           (unsigned long long)report.provenance_digest);
+           evidence_report.merges, evidence_report.redundant_pruned,
+           evidence_report.graduated_units,
+           evidence_report.semantic_promoted, evidence_report.procedural_promoted,
+           (unsigned long long)evidence_report.provenance_digest);
     return 0;
 }

@@ -150,3 +150,43 @@ int cnet_sleep_report_json(const CnetSleepReport *report,
     if (written < 0 || (size_t)written >= output_capacity) return -2;
     return written;
 }
+
+void cnet_sleep_state_init(CnetSleepState *state, uint64_t now_tick) {
+    if (!state) return;
+    memset(state, 0, sizeof(*state));
+    state->last_activity_tick = now_tick;
+}
+
+void cnet_sleep_note_activity(CnetSleepState *state, uint64_t now_tick) {
+    if (!state) return;
+    if (now_tick > state->last_activity_tick)
+        state->last_activity_tick = now_tick;
+}
+
+int cnet_sleep_try_consolidate(CnetSleepState *state,
+                               uint64_t now_tick,
+                               uint64_t minimum_idle_ticks,
+                               uint64_t material_revision,
+                               const char *store_directory,
+                               const CnetSleepEpisode *episodes,
+                               size_t episode_count,
+                               const CnetSleepConfig *config,
+                               CnetSleepReport *report) {
+    int rc;
+    if (!state || !report || minimum_idle_ticks == 0 ||
+        material_revision == 0 || now_tick < state->last_activity_tick) {
+        return -1;
+    }
+    memset(report, 0, sizeof(*report));
+    if (now_tick - state->last_activity_tick < minimum_idle_ticks)
+        return CNET_SLEEP_AWAKE;
+    if (material_revision <= state->slept_through_revision)
+        return CNET_SLEEP_CURRENT;
+
+    rc = cnet_sleep_consolidate(store_directory, episodes, episode_count,
+                                config, report);
+    if (rc != 0) return rc;
+    state->last_sleep_tick = now_tick;
+    state->slept_through_revision = material_revision;
+    return CNET_SLEEP_RAN;
+}
