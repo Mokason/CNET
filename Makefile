@@ -235,7 +235,8 @@ JSON_TOOLCALL_SRC := src/json_toolcall.c
 MULTIMODAL_SRC := $(EXT_TEACHER_SRC) $(MODALITY_VOICE_SRC) $(MODALITY_VISION_SRC) $(JSON_TOOLCALL_SRC)
 PERSONAL_AI_SRC := src/personal_ai.c $(OPENLAB_SRC)
 CAPSULE_SRC := src/cnet_capsule.c
-HYBRID_AI_SRC := src/hybrid_ai.c
+HYBRID_AI_SRC := src/hybrid_ai.c src/cnet_sparse_serve.c
+BRAIN_SIDECAR_SRC := src/cnet_brain_sidecar.c
 SHARED_WORKSPACE_SRC := src/cnet_shared_workspace.c
 SEMANTIC_CORTEX_SRC := src/cnet_semantic_cortex.c
 SLEEP_CONSOLIDATE_SRC := src/cnet_sleep_consolidate.c
@@ -2932,6 +2933,472 @@ knowledge_capsule: $(CAPSULE_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL
 	@grep -q "KNOWLEDGE_CAPSULE_PASS" logs/knowledge_capsule.log
 	@grep "KNOWLEDGE_CAPSULE_PASS" logs/knowledge_capsule.log
 
+# Brain bundle discrete mode geometry → real CNET capsules (CNU1 + coverage)
+brain_cnet_capsule: $(CAPSULE_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(EXT_TEACHER_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) tools/brain_to_cnet_capsule.c include/hybrid_ai.h include/personal_ai.h
+	@mkdir -p $(BIN_DIR) logs artifacts/brain_cnet_capsules
+	$(CC) $(CFLAGS) -Werror $(CUDA_CFLAGS) -o $(BIN_DIR)/brain_to_cnet_capsule \
+		$(CAPSULE_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(EXT_TEACHER_SRC) \
+		$(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) \
+		$(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) \
+		$(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) \
+		tools/brain_to_cnet_capsule.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -pthread
+	@./$(BIN_DIR)/brain_to_cnet_capsule --demo artifacts/brain_cnet_capsules > logs/brain_cnet_capsule.log 2>&1
+	@grep -q "BRAIN_CNET_CAPSULE_PASS" logs/brain_cnet_capsule.log
+	@grep "BRAIN_CNET_CAPSULE_PASS" logs/brain_cnet_capsule.log
+	@echo "capsules under artifacts/brain_cnet_capsules/"
+
+# Slice 2: center-rank among coverage-admitting CERT units (Brain board law)
+sparse_serve: $(HYBRID_AI_SRC) $(CAPSULE_SRC) $(PERSONAL_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(EXT_TEACHER_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) tests/test_sparse_serve.c include/cnet_sparse_serve.h
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -Werror $(CUDA_CFLAGS) -o $(BIN_DIR)/test_sparse_serve \
+		$(CAPSULE_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(EXT_TEACHER_SRC) \
+		$(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) \
+		$(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) \
+		$(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) \
+		tests/test_sparse_serve.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -pthread
+	@./$(BIN_DIR)/test_sparse_serve > logs/sparse_serve.log 2>&1
+	@grep -q "SPARSE_SERVE_PASS" logs/sparse_serve.log
+	@grep "SPARSE_SERVE_PASS" logs/sparse_serve.log
+
+# Slice 3: recall-before-spawn + CERT promote on structure mine
+sparse_mine: $(HYBRID_AI_SRC) $(CAPSULE_SRC) $(PERSONAL_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(EXT_TEACHER_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) tests/test_sparse_mine.c include/cnet_sparse_serve.h
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -Werror $(CUDA_CFLAGS) -o $(BIN_DIR)/test_sparse_mine \
+		$(CAPSULE_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(EXT_TEACHER_SRC) \
+		$(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) \
+		$(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) \
+		$(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) \
+		tests/test_sparse_mine.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -pthread
+	@./$(BIN_DIR)/test_sparse_mine > logs/sparse_mine.log 2>&1
+	@grep -q "SPARSE_MINE_PASS" logs/sparse_mine.log
+	@grep "SPARSE_MINE_PASS" logs/sparse_mine.log
+
+# Slice 4: same-domain residual ACCUM (Brain LINK_ACCUM)
+sparse_residual: $(HYBRID_AI_SRC) $(CAPSULE_SRC) $(PERSONAL_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(EXT_TEACHER_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) tests/test_sparse_residual.c include/cnet_sparse_serve.h
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -Werror $(CUDA_CFLAGS) -o $(BIN_DIR)/test_sparse_residual \
+		$(CAPSULE_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(EXT_TEACHER_SRC) \
+		$(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) \
+		$(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) \
+		$(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) \
+		tests/test_sparse_residual.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -pthread
+	@./$(BIN_DIR)/test_sparse_residual > logs/sparse_residual.log 2>&1
+	@grep -q "SPARSE_RESIDUAL_PASS" logs/sparse_residual.log
+	@grep "SPARSE_RESIDUAL_PASS" logs/sparse_residual.log
+
+# Slice 5: opt-in Brain continuous pieces.bin sidecar (no CNU1 floor change)
+brain_sidecar: $(BRAIN_SIDECAR_SRC) tests/test_brain_sidecar.c include/cnet_brain_sidecar.h
+	@mkdir -p $(BIN_DIR) logs artifacts
+	$(CC) $(CFLAGS) -Werror -o $(BIN_DIR)/test_brain_sidecar \
+		$(BRAIN_SIDECAR_SRC) tests/test_brain_sidecar.c $(LDFLAGS) -pthread
+	@./$(BIN_DIR)/test_brain_sidecar > logs/brain_sidecar.log 2>&1
+	@grep -q "BRAIN_SIDECAR_PASS" logs/brain_sidecar.log
+	@grep "BRAIN_SIDECAR_PASS" logs/brain_sidecar.log
+
+# Chess-fetch + FIFO text generation (not next-token parrot)
+GENERATE_FIFO_SRC := src/cnet_generate_fifo.c
+generate_fifo: $(GENERATE_FIFO_SRC) $(HYBRID_AI_SRC) $(CAPSULE_SRC) $(PERSONAL_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(EXT_TEACHER_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) tests/test_generate_fifo.c include/cnet_generate_fifo.h
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -Werror $(CUDA_CFLAGS) -o $(BIN_DIR)/test_generate_fifo \
+		$(GENERATE_FIFO_SRC) $(CAPSULE_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(EXT_TEACHER_SRC) \
+		$(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) \
+		$(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) \
+		$(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) \
+		tests/test_generate_fifo.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -pthread
+	@./$(BIN_DIR)/test_generate_fifo > logs/generate_fifo.log 2>&1
+	@grep -q "GENERATE_FIFO_PASS" logs/generate_fifo.log
+	@grep "GENERATE_FIFO_PASS" logs/generate_fifo.log
+	@echo "---- experiment metrics ----"
+	@grep -E 'placed_|sample_|results|chess:|resort:|speedup|forward_ratio|tail=' logs/generate_fifo.log || true
+
+# Long length + collapse probe (48 / 512 / 4096)
+generate_fifo_long: $(GENERATE_FIFO_SRC) $(HYBRID_AI_SRC) $(CAPSULE_SRC) $(PERSONAL_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(EXT_TEACHER_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) tests/test_generate_fifo_long.c include/cnet_generate_fifo.h
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -Werror $(CUDA_CFLAGS) -o $(BIN_DIR)/test_generate_fifo_long \
+		$(GENERATE_FIFO_SRC) $(CAPSULE_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(EXT_TEACHER_SRC) \
+		$(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) \
+		$(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) \
+		$(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) \
+		tests/test_generate_fifo_long.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -pthread
+	@./$(BIN_DIR)/test_generate_fifo_long > logs/generate_fifo_long.log 2>&1
+	@grep -q "GENERATE_FIFO_LONG_EXP_DONE" logs/generate_fifo_long.log
+	@grep -E 'steps=|len=|collapse_|wall=|unique_|speedup|DONE' logs/generate_fifo_long.log
+
+# Quality lever: position-board pieces vs char-Markov
+generate_fifo_quality: $(GENERATE_FIFO_SRC) $(HYBRID_AI_SRC) $(CAPSULE_SRC) $(PERSONAL_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(EXT_TEACHER_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) tests/test_generate_fifo_quality.c include/cnet_generate_fifo.h
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -Werror $(CUDA_CFLAGS) -o $(BIN_DIR)/test_generate_fifo_quality \
+		$(GENERATE_FIFO_SRC) $(CAPSULE_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(EXT_TEACHER_SRC) \
+		$(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) \
+		$(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) \
+		$(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) \
+		tests/test_generate_fifo_quality.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -pthread
+	@./$(BIN_DIR)/test_generate_fifo_quality > logs/generate_fifo_quality.log 2>&1
+	@grep -q "GENERATE_FIFO_QUALITY_PASS" logs/generate_fifo_quality.log
+	@grep "GENERATE_FIFO_QUALITY_PASS" logs/generate_fifo_quality.log
+	@echo "---- quality metrics ----"
+	@grep -E 'MARKOV|POSITION|match_teacher|len=|out=|expect=|long ask|PASS|FAIL' logs/generate_fifo_quality.log || true
+
+# Teacher → skill_pos_* CNU1 capsules → import → generate_fifo (+ bench)
+skill_capsule_generate: $(GENERATE_FIFO_SRC) $(CAPSULE_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(EXT_TEACHER_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) tests/test_skill_capsule_generate.c include/cnet_generate_fifo.h include/cnet_capsule.h
+	@mkdir -p $(BIN_DIR) logs artifacts
+	$(CC) $(CFLAGS) -Werror $(CUDA_CFLAGS) -o $(BIN_DIR)/test_skill_capsule_generate \
+		$(GENERATE_FIFO_SRC) $(CAPSULE_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(EXT_TEACHER_SRC) \
+		$(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) \
+		$(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) \
+		$(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) \
+		tests/test_skill_capsule_generate.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -pthread
+	@./$(BIN_DIR)/test_skill_capsule_generate > logs/skill_capsule_generate.log 2>&1
+	@grep -q "SKILL_CAPSULE_GENERATE_PASS" logs/skill_capsule_generate.log
+	@grep "SKILL_CAPSULE_GENERATE_PASS" logs/skill_capsule_generate.log
+	@echo "---- skill capsule bench ----"
+	@grep -E 'sealed_|exported=|imported=|mem_gen|cap_gen|BENCH|roundtrip|learn\+|quality|PASS|FAIL' logs/skill_capsule_generate.log || true
+
+# 3-lane memory runtime: STM / LTM / Forming (+ load bench)
+MEM_RUNTIME_SRC := src/cnet_mem_runtime.c src/cnet_asi_improve.c
+mem_runtime: $(MEM_RUNTIME_SRC) $(GENERATE_FIFO_SRC) $(CAPSULE_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(EXT_TEACHER_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) tests/test_mem_runtime.c include/cnet_mem_runtime.h include/cnet_asi_improve.h
+	@mkdir -p $(BIN_DIR) logs artifacts
+	$(CC) $(CFLAGS) -Werror $(CUDA_CFLAGS) -o $(BIN_DIR)/test_mem_runtime \
+		$(MEM_RUNTIME_SRC) $(CAPSULE_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(EXT_TEACHER_SRC) \
+		$(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) \
+		$(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) \
+		$(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) \
+		tests/test_mem_runtime.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -pthread -lm
+	@./$(BIN_DIR)/test_mem_runtime > logs/mem_runtime.log 2>&1
+	@grep -q "MEM_RUNTIME_PASS" logs/mem_runtime.log
+	@grep "MEM_RUNTIME_PASS" logs/mem_runtime.log
+	@echo "---- mem runtime bench ----"
+	@grep -E 'load bench|stm_hit|wall=|serve=|prebuilt|asi_block|ep_log|product wire|PASS|FAIL' logs/mem_runtime.log || true
+
+# ASI improve stack (literature slices A–E) — pure C, no floor changes
+ASI_IMPROVE_SRC := src/cnet_asi_improve.c
+ASI_IMPROVE_CFLAGS := -std=c11 -Wall -Wextra -Werror -O2 -D_POSIX_C_SOURCE=200809L -Iinclude
+
+.PHONY: asi_libos asi_defer asi_route asi_episode asi_firewall_eval asi_improve_all
+
+asi_libos: $(ASI_IMPROVE_SRC) include/cnet_asi_improve.h tests/test_asi_libos.c
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(ASI_IMPROVE_CFLAGS) -o $(BIN_DIR)/test_asi_libos $(ASI_IMPROVE_SRC) tests/test_asi_libos.c -lm
+	@./$(BIN_DIR)/test_asi_libos | tee logs/asi_libos.log
+	@grep -q "ASI_LIBOS_PASS" logs/asi_libos.log
+
+asi_defer: $(ASI_IMPROVE_SRC) include/cnet_asi_improve.h tests/test_asi_defer.c
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(ASI_IMPROVE_CFLAGS) -o $(BIN_DIR)/test_asi_defer $(ASI_IMPROVE_SRC) tests/test_asi_defer.c -lm
+	@./$(BIN_DIR)/test_asi_defer | tee logs/asi_defer.log
+	@grep -q "ASI_DEFER_PASS" logs/asi_defer.log
+
+asi_route: $(ASI_IMPROVE_SRC) include/cnet_asi_improve.h tests/test_asi_route.c
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(ASI_IMPROVE_CFLAGS) -o $(BIN_DIR)/test_asi_route $(ASI_IMPROVE_SRC) tests/test_asi_route.c -lm
+	@./$(BIN_DIR)/test_asi_route | tee logs/asi_route.log
+	@grep -q "ASI_ROUTE_PASS" logs/asi_route.log
+
+asi_episode: $(ASI_IMPROVE_SRC) include/cnet_asi_improve.h tests/test_asi_episode.c
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(ASI_IMPROVE_CFLAGS) -o $(BIN_DIR)/test_asi_episode $(ASI_IMPROVE_SRC) tests/test_asi_episode.c -lm
+	@./$(BIN_DIR)/test_asi_episode | tee logs/asi_episode.log
+	@grep -q "ASI_EPISODE_PASS" logs/asi_episode.log
+
+asi_firewall_eval: $(ASI_IMPROVE_SRC) include/cnet_asi_improve.h tests/test_asi_firewall_eval.c
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(ASI_IMPROVE_CFLAGS) -o $(BIN_DIR)/test_asi_firewall_eval $(ASI_IMPROVE_SRC) tests/test_asi_firewall_eval.c -lm
+	@./$(BIN_DIR)/test_asi_firewall_eval | tee logs/asi_firewall_eval.log
+	@grep -q "ASI_FIREWALL_EVAL_PASS" logs/asi_firewall_eval.log
+
+asi_improve_all: asi_libos asi_defer asi_route asi_episode asi_firewall_eval
+	@echo "ASI_IMPROVE_ALL_PASS"
+
+.PHONY: asi_av_bakeoff roe_asi roe_asi_train
+asi_av_bakeoff: $(ASI_IMPROVE_SRC) include/cnet_asi_improve.h tools/cnet_av_bakeoff.c
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(ASI_IMPROVE_CFLAGS) -o $(BIN_DIR)/cnet_av_bakeoff $(ASI_IMPROVE_SRC) tools/cnet_av_bakeoff.c -lm
+	@./$(BIN_DIR)/cnet_av_bakeoff --wins-a 800 --wins-b 200 --n 1000 --alpha 0.01 | tee logs/asi_av_bakeoff.log
+	@grep -q "ASI_AV_BAKEOFF_PROMOTE" logs/asi_av_bakeoff.log
+	@./$(BIN_DIR)/cnet_av_bakeoff --sim-p 0.7 --max 5000 --alpha 0.05 | tee -a logs/asi_av_bakeoff.log
+	@grep -q "ASI_AV_BAKEOFF_PASS" logs/asi_av_bakeoff.log
+	@echo "ASI_AV_BAKEOFF_GATE_PASS"
+
+# ROE-ASI concept assistant (local skills + lookup/LLM miss + promote)
+ROE_ASI_SRC := src/cnet_roe_asi.c src/cnet_roe_net.c src/cnet_asi_improve.c
+ROE_ASI_LIBS := -lm -lcurl
+roe_asi: $(ROE_ASI_SRC) include/cnet_roe_asi.h include/cnet_roe_net.h include/cnet_asi_improve.h tests/test_roe_asi.c
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(ASI_IMPROVE_CFLAGS) -o $(BIN_DIR)/test_roe_asi $(ROE_ASI_SRC) tests/test_roe_asi.c $(ROE_ASI_LIBS)
+	@./$(BIN_DIR)/test_roe_asi | tee logs/roe_asi.log
+	@grep -q "ROE_ASI_PASS" logs/roe_asi.log
+
+roe_asi_train: $(ROE_ASI_SRC) include/cnet_roe_asi.h include/cnet_asi_improve.h tools/roe_asi_train.c
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(ASI_IMPROVE_CFLAGS) -o $(BIN_DIR)/roe_asi_train $(ROE_ASI_SRC) tools/roe_asi_train.c $(ROE_ASI_LIBS)
+	@./$(BIN_DIR)/roe_asi_train | tee logs/roe_asi_train.log
+	@grep -q "ROE_ASI_TRAIN_PASS" logs/roe_asi_train.log
+	@echo "---- roe train economics ----"
+	@grep -E 'epoch|hit=|save=|demo|ROE_ASI' logs/roe_asi_train.log || true
+
+.PHONY: roe_asi_live roe_asi_cli
+roe_asi_live: $(ROE_ASI_SRC) include/cnet_roe_asi.h include/cnet_roe_net.h tests/test_roe_asi_live.c
+	@mkdir -p $(BIN_DIR) logs artifacts
+	$(CC) $(ASI_IMPROVE_CFLAGS) -o $(BIN_DIR)/test_roe_asi_live $(ROE_ASI_SRC) tests/test_roe_asi_live.c $(ROE_ASI_LIBS)
+	@./$(BIN_DIR)/test_roe_asi_live | tee logs/roe_asi_live.log
+	@grep -q "ROE_ASI_LIVE_PASS" logs/roe_asi_live.log
+
+roe_asi_cli: $(ROE_ASI_SRC) include/cnet_roe_asi.h include/cnet_roe_net.h tools/roe_asi_cli.c
+	@mkdir -p $(BIN_DIR) logs artifacts
+	$(CC) $(ASI_IMPROVE_CFLAGS) -o $(BIN_DIR)/roe_asi_cli $(ROE_ASI_SRC) tools/roe_asi_cli.c $(ROE_ASI_LIBS)
+	@./$(BIN_DIR)/roe_asi_cli train --catalog artifacts/roe_catalog | tee logs/roe_asi_cli.log
+	@grep -q "ROE_ASI_CLI_PASS" logs/roe_asi_cli.log
+	@echo "---- roe cli (offline train) ----"
+	@grep -E 'epoch|saved|hit=|ROE_ASI' logs/roe_asi_cli.log || true
+
+.PHONY: roe_asi_coding
+roe_asi_coding: $(ROE_ASI_SRC) include/cnet_roe_asi.h tools/roe_asi_coding_train.c
+	@mkdir -p $(BIN_DIR) logs artifacts
+	$(CC) $(ASI_IMPROVE_CFLAGS) -o $(BIN_DIR)/roe_asi_coding_train $(ROE_ASI_SRC) tools/roe_asi_coding_train.c $(ROE_ASI_LIBS)
+	@./$(BIN_DIR)/roe_asi_coding_train | tee logs/roe_asi_coding.log
+	@grep -q "ROE_ASI_CODING_PASS" logs/roe_asi_coding.log
+	@echo "---- coding catalog ----"
+	@ls artifacts/roe_coding_catalog/skills 2>/dev/null | head -20 || true
+	@grep -E 'epoch|hit=|skill|ROE_ASI' logs/roe_asi_coding.log || true
+
+.PHONY: roe_asi_debug_l3
+roe_asi_debug_l3: $(ROE_ASI_SRC) src/cnet_roe_debug.c include/cnet_roe_debug.h tools/roe_asi_debug_l3_train.c
+	@mkdir -p $(BIN_DIR) logs artifacts
+	$(CC) $(ASI_IMPROVE_CFLAGS) -o $(BIN_DIR)/roe_asi_debug_l3_train \
+		$(ROE_ASI_SRC) src/cnet_roe_debug.c tools/roe_asi_debug_l3_train.c $(ROE_ASI_LIBS)
+	@./$(BIN_DIR)/roe_asi_debug_l3_train | tee logs/roe_asi_debug_l3.log
+	@grep -q "ROE_ASI_DEBUG_L3_PASS" logs/roe_asi_debug_l3.log
+	@echo "---- debug L3 catalog ----"
+	@ls artifacts/roe_debug_catalog 2>/dev/null | head -20 || true
+	@wc -l artifacts/roe_debug_catalog/project_memory.jsonl 2>/dev/null || true
+	@grep -E 'L3|soak|PASS|FAIL|catalog' logs/roe_asi_debug_l3.log || true
+
+.PHONY: roe_asi_debug_cli
+roe_asi_debug_cli: $(ROE_ASI_SRC) src/cnet_roe_debug.c include/cnet_roe_debug.h tools/roe_asi_debug_cli.c
+	@mkdir -p $(BIN_DIR)
+	$(CC) $(ASI_IMPROVE_CFLAGS) -o $(BIN_DIR)/roe_asi_debug_cli \
+		$(ROE_ASI_SRC) src/cnet_roe_debug.c tools/roe_asi_debug_cli.c $(ROE_ASI_LIBS)
+
+.PHONY: roe_asi_goal roe_asi_goal_cli
+roe_asi_goal: $(ROE_ASI_SRC) src/cnet_roe_goal.c include/cnet_roe_goal.h tools/roe_asi_goal_train.c
+	@mkdir -p $(BIN_DIR) logs artifacts
+	$(CC) $(ASI_IMPROVE_CFLAGS) -o $(BIN_DIR)/roe_asi_goal_train \
+		$(ROE_ASI_SRC) src/cnet_roe_goal.c tools/roe_asi_goal_train.c $(ROE_ASI_LIBS)
+	@./$(BIN_DIR)/roe_asi_goal_train | tee logs/roe_asi_goal.log
+	@grep -q "ROE_ASI_GOAL_PASS" logs/roe_asi_goal.log
+	@echo "---- goal catalog tidy ----"
+	@find artifacts/roe_goal_catalog -maxdepth 4 -type d 2>/dev/null | head -40 || true
+	@grep -E 'goal:|HAVE|LEARN|summary|PASS' logs/roe_asi_goal.log | head -40 || true
+
+roe_asi_goal_cli: $(ROE_ASI_SRC) src/cnet_roe_goal.c include/cnet_roe_goal.h tools/roe_asi_goal_cli.c
+	@mkdir -p $(BIN_DIR)
+	$(CC) $(ASI_IMPROVE_CFLAGS) -o $(BIN_DIR)/roe_asi_goal_cli \
+		$(ROE_ASI_SRC) src/cnet_roe_goal.c tools/roe_asi_goal_cli.c $(ROE_ASI_LIBS)
+
+.PHONY: roe_asi_ocr
+roe_asi_ocr: $(ROE_ASI_SRC) src/cnet_roe_goal.c src/cnet_roe_ocr.c include/cnet_roe_ocr.h tools/roe_asi_ocr_train.c
+	@mkdir -p $(BIN_DIR) logs artifacts
+	$(CC) $(ASI_IMPROVE_CFLAGS) -o $(BIN_DIR)/roe_asi_ocr_train \
+		$(ROE_ASI_SRC) src/cnet_roe_goal.c src/cnet_roe_ocr.c tools/roe_asi_ocr_train.c $(ROE_ASI_LIBS)
+	@./$(BIN_DIR)/roe_asi_ocr_train | tee logs/roe_asi_ocr.log
+	@grep -q "ROE_ASI_OCR_PASS" logs/roe_asi_ocr.log
+	@echo "---- ocr catalog ----"
+	@find artifacts/roe_ocr_catalog -maxdepth 4 -type d 2>/dev/null | head -30 || true
+	@grep -E 'train|OCR|PASS|catalog' logs/roe_asi_ocr.log | head -30 || true
+
+.PHONY: roe_asi_ocr_tree
+roe_asi_ocr_tree: src/cnet_roe_tree.c include/cnet_roe_tree.h tools/roe_asi_ocr_skill_tree.c
+	@mkdir -p $(BIN_DIR) logs artifacts
+	$(CC) $(ASI_IMPROVE_CFLAGS) -o $(BIN_DIR)/roe_asi_ocr_skill_tree \
+		src/cnet_roe_tree.c tools/roe_asi_ocr_skill_tree.c -lm
+	@./$(BIN_DIR)/roe_asi_ocr_skill_tree | tee logs/roe_asi_ocr_tree.log
+	@grep -q "ROE_ASI_OCR_TREE_PASS" logs/roe_asi_ocr_tree.log
+	@echo "---- tree artifact ----"
+	@cat artifacts/roe_ocr_skill_tree/power.txt 2>/dev/null || true
+	@wc -l artifacts/roe_ocr_skill_tree/skill_tree.jsonl 2>/dev/null || true
+
+# ROE self-model: inventory + gate-bound tree + health + goal + pack (never self-CERT)
+.PHONY: roe_asi_self roe_asi_self_cli
+ROE_SELF_SRC := $(ROE_ASI_SRC) src/cnet_roe_goal.c src/cnet_roe_doc.c src/cnet_roe_table.c \
+	src/cnet_roe_tree.c src/cnet_roe_self.c src/agent_memory.c
+roe_asi_self: $(ROE_SELF_SRC) include/cnet_roe_self.h tests/test_roe_self.c
+	@mkdir -p $(BIN_DIR) logs artifacts
+	$(CC) $(ASI_IMPROVE_CFLAGS) -o $(BIN_DIR)/test_roe_self \
+		$(ROE_SELF_SRC) tests/test_roe_self.c $(ROE_ASI_LIBS)
+	@./$(BIN_DIR)/test_roe_self | tee logs/roe_asi_self.log
+	@grep -q "ROE_ASI_SELF_PASS" logs/roe_asi_self.log
+	@echo "---- self pack ----"
+	@head -40 artifacts/roe_self_model_test/pack/self_report.json 2>/dev/null || true
+	@test -f artifacts/roe_self_model_test/pack/SELF.abi
+
+roe_asi_self_cli: $(ROE_SELF_SRC) include/cnet_roe_self.h tools/roe_asi_self_cli.c
+	@mkdir -p $(BIN_DIR) logs artifacts
+	$(CC) $(ASI_IMPROVE_CFLAGS) -o $(BIN_DIR)/roe_asi_self_cli \
+		$(ROE_SELF_SRC) tools/roe_asi_self_cli.c $(ROE_ASI_LIBS)
+	@./$(BIN_DIR)/roe_asi_self_cli snapshot --catalog artifacts/roe_catalog \
+		--out artifacts/roe_self_model --repo . --goal "ocr document local packs" \
+		--thoughts | tee logs/roe_asi_self_cli.log
+	@grep -q "ROE_ASI_SELF_CLI_PASS" logs/roe_asi_self_cli.log
+	@./$(BIN_DIR)/roe_asi_self_cli validate --out artifacts/roe_self_model | tee -a logs/roe_asi_self_cli.log
+	@grep -q "ROE_ASI_SELF_CLI_PASS" logs/roe_asi_self_cli.log
+	@echo "---- self model summary ----"
+	@head -50 artifacts/roe_self_model/self_report.json 2>/dev/null || true
+
+# Separate daily packs (token reduction): seed + per-pack load gate
+.PHONY: roe_daily_packs roe_daily_packs_seed
+roe_daily_packs_seed:
+	@mkdir -p artifacts logs
+	python3 tools/roe_daily_packs_seed.py | tee logs/roe_daily_packs_seed.log
+	@grep -q "ROE_DAILY_PACKS_SEED_OK" logs/roe_daily_packs_seed.log
+
+roe_daily_packs: roe_daily_packs_seed $(ROE_ASI_SRC) tools/roe_daily_packs_gate.c
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(ASI_IMPROVE_CFLAGS) -o $(BIN_DIR)/roe_daily_packs_gate \
+		$(ROE_ASI_SRC) tools/roe_daily_packs_gate.c $(ROE_ASI_LIBS)
+	@./$(BIN_DIR)/roe_daily_packs_gate | tee logs/roe_daily_packs.log
+	@grep -q "ROE_DAILY_PACKS_PASS" logs/roe_daily_packs.log
+	@echo "---- daily packs bench ----"
+	@cat artifacts/roe_daily_packs/BENCH.json 2>/dev/null || true
+	@echo "---- index ----"
+	@python3 -c "import json;d=json.load(open('artifacts/roe_daily_packs/INDEX.json'));print('packs',len(d['packs']), 'always_on',d['recommended_always_on'])"
+
+# Front door: ROUTES → selective pack load → turn → miss_log
+.PHONY: roe_front_door
+roe_front_door: roe_daily_packs $(ROE_ASI_SRC) tools/roe_front_door.c
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(ASI_IMPROVE_CFLAGS) -o $(BIN_DIR)/roe_front_door \
+		$(ROE_ASI_SRC) tools/roe_front_door.c $(ROE_ASI_LIBS)
+	@./$(BIN_DIR)/roe_front_door selftest | tee logs/roe_front_door.log
+	@grep -q "ROE_FRONT_DOOR_PASS" logs/roe_front_door.log
+	@echo "---- front bench ----"
+	@cat artifacts/roe_daily_packs/FRONT_BENCH.json 2>/dev/null || true
+	@echo "---- sample ask ----"
+	@./$(BIN_DIR)/roe_front_door ask "who are you" | tee -a logs/roe_front_door.log
+	@./$(BIN_DIR)/roe_front_door ask "format-truncation werror" | tee -a logs/roe_front_door.log
+
+# Ollama cloud teacher (deepseek-v4-flash:cloud) — no DEEPSEEK_API_KEY
+.PHONY: roe_teacher_cloud_smoke
+roe_teacher_cloud_smoke: $(ROE_ASI_SRC) tools/roe_teacher_cloud_smoke.c config/roe-teacher-ollama-cloud.env
+	@mkdir -p $(BIN_DIR) logs
+	@set -a; . ./config/roe-teacher-ollama-cloud.env; set +a; \
+	$(CC) $(ASI_IMPROVE_CFLAGS) -o $(BIN_DIR)/roe_teacher_cloud_smoke \
+		$(ROE_ASI_SRC) tools/roe_teacher_cloud_smoke.c $(ROE_ASI_LIBS); \
+	./$(BIN_DIR)/roe_teacher_cloud_smoke | tee logs/roe_teacher_cloud_smoke.log
+	@grep -q "ROE_TEACHER_CLOUD_SMOKE_PASS" logs/roe_teacher_cloud_smoke.log
+
+.PHONY: roe_asi_ocr_surpass
+roe_asi_ocr_surpass: $(ROE_ASI_SRC) src/cnet_roe_goal.c src/cnet_roe_ocr.c src/cnet_roe_tree.c \
+		include/cnet_roe_ocr.h tools/roe_asi_ocr_surpass.c tools/roe_unlimited_teacher.py
+	@mkdir -p $(BIN_DIR) logs artifacts
+	$(CC) $(ASI_IMPROVE_CFLAGS) -o $(BIN_DIR)/roe_asi_ocr_surpass \
+		$(ROE_ASI_SRC) src/cnet_roe_goal.c src/cnet_roe_ocr.c src/cnet_roe_tree.c \
+		tools/roe_asi_ocr_surpass.c $(ROE_ASI_LIBS)
+	@./$(BIN_DIR)/roe_asi_ocr_surpass | tee logs/roe_asi_ocr_surpass.log
+	@grep -q "ROE_ASI_OCR_SURPASS_PASS" logs/roe_asi_ocr_surpass.log
+	@echo "---- surpass bench ----"
+	@cat artifacts/roe_ocr_surpass/bench_surpass.json 2>/dev/null || true
+	@find artifacts/roe_ocr_surpass/capsules -maxdepth 3 -type d 2>/dev/null | head -30 || true
+
+.PHONY: roe_omnidoc_sota
+roe_omnidoc_sota:
+	@mkdir -p logs artifacts/omnidoc_sota_run
+	@test -x .venv-unlimited-ocr/bin/python || (echo "need .venv-unlimited-ocr with ROCm torch"; exit 1)
+	@HIP_VISIBLE_DEVICES=0 ./.venv-unlimited-ocr/bin/python tools/roe_omnidoc_sota_run.py 2>&1 | tee logs/roe_omnidoc_sota.log
+	@grep -q "ROE_OMNIDOC_SOTA_PASS" logs/roe_omnidoc_sota.log
+	@echo "---- omnidoc report ----"
+	@cat artifacts/omnidoc_sota_run/omnidoc_sota_report.json 2>/dev/null || true
+
+# Local-first + tables also need table module
+roe_asi_ocr_local: $(ROE_ASI_SRC) src/cnet_roe_goal.c src/cnet_roe_doc.c src/cnet_roe_table.c include/cnet_roe_doc.h \
+		tools/roe_asi_ocr_local_train.c
+	@mkdir -p $(BIN_DIR) logs artifacts
+	$(CC) $(ASI_IMPROVE_CFLAGS) -o $(BIN_DIR)/roe_asi_ocr_local_train \
+		$(ROE_ASI_SRC) src/cnet_roe_goal.c src/cnet_roe_doc.c src/cnet_roe_table.c tools/roe_asi_ocr_local_train.c $(ROE_ASI_LIBS)
+	@./$(BIN_DIR)/roe_asi_ocr_local_train | tee logs/roe_asi_ocr_local.log
+	@grep -q "ROE_ASI_OCR_LOCAL_PASS" logs/roe_asi_ocr_local.log
+	@echo "---- local-first KPI ----"
+	@cat artifacts/roe_ocr_local/teacher_rate_kpi.json 2>/dev/null || true
+
+roe_asi_ocr_asset: $(ROE_ASI_SRC) src/cnet_roe_goal.c src/cnet_roe_doc.c src/cnet_roe_table.c include/cnet_roe_doc.h \
+		tools/roe_asi_ocr_asset_train.c
+	@mkdir -p $(BIN_DIR) logs artifacts
+	$(CC) $(ASI_IMPROVE_CFLAGS) -o $(BIN_DIR)/roe_asi_ocr_asset_train \
+		$(ROE_ASI_SRC) src/cnet_roe_goal.c src/cnet_roe_doc.c src/cnet_roe_table.c tools/roe_asi_ocr_asset_train.c $(ROE_ASI_LIBS)
+	@./$(BIN_DIR)/roe_asi_ocr_asset_train | tee logs/roe_asi_ocr_asset.log
+	@grep -q "ROE_ASI_OCR_ASSET_PASS" logs/roe_asi_ocr_asset.log
+	@echo "---- asset freeze ----"
+	@cat artifacts/roe_ocr_asset/dollar_per_page_freeze.json 2>/dev/null || true
+	@ls artifacts/roe_ocr_asset/pack_export 2>/dev/null || true
+
+.PHONY: roe_asi_ocr_tables
+roe_asi_ocr_tables: $(ROE_ASI_SRC) src/cnet_roe_goal.c src/cnet_roe_doc.c src/cnet_roe_table.c \
+		include/cnet_roe_table.h tools/roe_asi_ocr_tables_train.c tools/roe_table_extract.py
+	@mkdir -p $(BIN_DIR) logs artifacts
+	$(CC) $(ASI_IMPROVE_CFLAGS) -o $(BIN_DIR)/roe_asi_ocr_tables_train \
+		$(ROE_ASI_SRC) src/cnet_roe_goal.c src/cnet_roe_doc.c src/cnet_roe_table.c \
+		tools/roe_asi_ocr_tables_train.c $(ROE_ASI_LIBS)
+	@./$(BIN_DIR)/roe_asi_ocr_tables_train | tee logs/roe_asi_ocr_tables.log
+	@grep -q "ROE_ASI_OCR_TABLES_PASS" logs/roe_asi_ocr_tables.log
+	@echo "---- tables sample ----"
+	@head -20 artifacts/roe_ocr_tables/sales.csv 2>/dev/null || true
+
+.PHONY: roe_ocr_hard_beat
+roe_ocr_hard_beat:
+	@mkdir -p logs artifacts/roe_ocr_hard
+	@test -x .venv-unlimited-ocr/bin/python || (echo "need .venv-unlimited-ocr"; exit 1)
+	@HIP_VISIBLE_DEVICES=0 ./.venv-unlimited-ocr/bin/python tools/roe_ocr_hard_beat.py 2>&1 | tee logs/roe_ocr_hard_beat.log
+	@grep -q "ROE_OCR_HARD_BEAT_PASS" logs/roe_ocr_hard_beat.log
+	@echo "---- hard beat report ----"
+	@python3 -c "import json;d=json.load(open('artifacts/roe_ocr_hard/hard_beat_report.json'));print({k:d[k] for k in d if k!='rows'})"
+
+.PHONY: roe_omnidoc_full_infer roe_omnidoc_bench
+roe_omnidoc_full_infer:
+	@mkdir -p logs artifacts/omnidoc_full
+	@test -x .venv-unlimited-ocr/bin/python || (echo need .venv-unlimited-ocr; exit 1)
+	HIP_VISIBLE_DEVICES=0 ./.venv-unlimited-ocr/bin/python tools/roe_omnidoc_full_infer.py --stratified 40 --mode both --skip-existing 2>&1 | tee logs/roe_omnidoc_full_infer.log
+
+roe_omnidoc_bench:
+	@mkdir -p logs artifacts/omnidoc_full
+	./.venv-unlimited-ocr/bin/python tools/roe_omnidoc_bench_report.py 2>&1 | tee logs/roe_omnidoc_bench_report.log
+	./.venv-unlimited-ocr/bin/python tools/roe_omnidoc_quality_lift.py 2>&1 | tee logs/roe_omnidoc_quality_lift.log
+	@test -f artifacts/omnidoc_full/benchmark_report.json
+	@test -f artifacts/omnidoc_full/quality_lift_report.json
+	@echo "---- see artifacts/omnidoc_full/BENCHMARKS.md ----"
+
+.PHONY: roe_asi_ocr_bigfile
+roe_asi_ocr_bigfile: $(ROE_ASI_SRC) src/cnet_roe_goal.c src/cnet_roe_doc.c src/cnet_roe_table.c \
+		include/cnet_roe_doc.h include/cnet_roe_table.h tools/roe_asi_ocr_bigfile_train.c
+	@mkdir -p $(BIN_DIR) logs artifacts/roe_ocr_bigfile
+	$(CC) $(CFLAGS) -Iinclude -o $(BIN_DIR)/roe_asi_ocr_bigfile_train \
+		$(ROE_ASI_SRC) src/cnet_roe_goal.c src/cnet_roe_doc.c src/cnet_roe_table.c \
+		tools/roe_asi_ocr_bigfile_train.c $(LDFLAGS)
+	./$(BIN_DIR)/roe_asi_ocr_bigfile_train 2>&1 | tee logs/roe_asi_ocr_bigfile.log
+	@grep -q ROE_ASI_OCR_BIGFILE_PASS logs/roe_asi_ocr_bigfile.log
+	@# python page-chunk runner on same paper
+	python3 tools/roe_pdf_chunk_run.py \
+		"/home/marble/AI/stack/data/papers/machine-learning/1610.05492-federated-learning-strategies-for/1610.05492.pdf" \
+		--out artifacts/roe_ocr_bigfile/pdf_chunk --max-pages 40 \
+		2>&1 | tee -a logs/roe_asi_ocr_bigfile.log
+	@grep -q ROE_PDF_CHUNK_PASS logs/roe_asi_ocr_bigfile.log
+	@echo "---- bigfile bench ----"
+	@cat artifacts/roe_ocr_bigfile/bigfile_bench.json
+
+.PHONY: roe_omnidoc_sota_dual
+roe_omnidoc_sota_dual:
+	@mkdir -p logs artifacts/omnidoc_full
+	@test -x .venv-unlimited-ocr/bin/python || (echo need venv; exit 1)
+	PYTHONUNBUFFERED=1 ./.venv-unlimited-ocr/bin/python tools/roe_omnidoc_dual_gpu_infer.py --gpus 0,1 --skip-existing 2>&1 | tee logs/roe_omnidoc_dual_gpu_infer.log
+
+# Light CNET capsule runtime — import package + btn_forward (Brain cheap host)
+cnet_capsule_step: $(CAPSULE_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(EXT_TEACHER_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) tools/cnet_capsule_step.c
+	@mkdir -p $(BIN_DIR)
+	$(CC) $(CFLAGS) -Werror $(CUDA_CFLAGS) -o $(BIN_DIR)/cnet_capsule_step \
+		$(CAPSULE_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(EXT_TEACHER_SRC) \
+		$(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) \
+		$(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) \
+		$(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) \
+		tools/cnet_capsule_step.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -pthread
+
 coverage_abstain: $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(EXT_TEACHER_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) tests/test_coverage_abstain.c include/hybrid_ai.h include/personal_ai.h
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/test_coverage_abstain \
@@ -4510,3 +4977,7 @@ governor_persona: personality_test
 	@python3 scripts/governor_autonomous.py --test
 	@test -f logs/governor/personality_state.json
 	@echo GOVERNOR_PERSONA_PASS
+
+.PHONY: roe_omnidoc_freeze
+roe_omnidoc_freeze:
+	./.venv-unlimited-ocr/bin/python tools/roe_omnidoc_freeze_and_hf.py

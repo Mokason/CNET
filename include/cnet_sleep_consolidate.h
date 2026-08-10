@@ -47,6 +47,18 @@ typedef struct CnetSleepReport {
     uint64_t provenance_digest;
 } CnetSleepReport;
 
+typedef struct CnetSleepState {
+    uint64_t last_activity_tick;
+    uint64_t last_sleep_tick;
+    uint64_t slept_through_revision;
+} CnetSleepState;
+
+enum {
+    CNET_SLEEP_RAN = 0,
+    CNET_SLEEP_AWAKE = 1,
+    CNET_SLEEP_CURRENT = 2
+};
+
 CNET_API void cnet_sleep_config_defaults(CnetSleepConfig *config);
 CNET_API int cnet_sleep_consolidate(const char *store_directory,
                                     const CnetSleepEpisode *episodes,
@@ -56,6 +68,19 @@ CNET_API int cnet_sleep_consolidate(const char *store_directory,
 CNET_API int cnet_sleep_report_json(const CnetSleepReport *report,
                                     char *output,
                                     size_t output_capacity);
+CNET_API void cnet_sleep_state_init(CnetSleepState *state,
+                                    uint64_t now_tick);
+CNET_API void cnet_sleep_note_activity(CnetSleepState *state,
+                                       uint64_t now_tick);
+CNET_API int cnet_sleep_try_consolidate(CnetSleepState *state,
+                                        uint64_t now_tick,
+                                        uint64_t minimum_idle_ticks,
+                                        uint64_t material_revision,
+                                        const char *store_directory,
+                                        const CnetSleepEpisode *episodes,
+                                        size_t episode_count,
+                                        const CnetSleepConfig *config,
+                                        CnetSleepReport *report);
 
 #ifdef __cplusplus
 }

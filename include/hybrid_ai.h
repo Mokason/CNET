@@ -163,6 +163,8 @@ typedef struct {
     size_t soft_abstains;
     size_t distills;
     size_t structure_mines;
+    size_t structure_recalls; /* mine skipped: existing coverage admits input */
+    size_t structure_promote_rejects; /* mined but failed CERT promote */
     size_t adapter_applies;
     size_t prefer_warm_hits; /* served without residual (A/B) */
     size_t batch_label_rows; /* residual labels produced in batch mine */
@@ -226,7 +228,17 @@ CNET_API int hybrid_distill_plan(HybridAi *h, PrimitiveRegistry *reg,
 CNET_API int hybrid_trace_residual(HybridAi *h, Port in_port, Port out_port,
                                    const double *in, size_t in_dim,
                                    const double *out, size_t out_dim);
-/* If a signature has >= min_hits, mine+admit a certified unit. */
+/* If a signature has >= min_hits, mine+admit a certified unit.
+ * Return codes:
+ *   0  mined and promoted (CERT)
+ *   1  nothing eligible
+ *   2  coverage table full
+ *   3  ungatable port family
+ *   4  shape already has coverage (no re-mine)
+ *   5  RECALL: existing coverage admits exemplar (no spawn)
+ *  <0  hard error
+ * Brain board law: recall-before-spawn; promote only after verify (specialist_admit).
+ */
 CNET_API int hybrid_structure_mine(HybridAi *h, PrimitiveRegistry *reg,
                                    size_t min_hits,
                                    BinaryTransformNetwork **student_out);
