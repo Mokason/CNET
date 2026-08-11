@@ -392,6 +392,11 @@ typedef struct cce_gguf_qwen2 {
     struct cce_kv_pager *kv_pager;
     int kv_legal_max; /* model context_length (e.g. 1M); max_ctx may be hot */
 
+    /* Weight-cartridge epoch (MTK apply/revert). Neural KV is only valid for
+     * the current epoch; CERT/text memory is epoch-invariant. Bumped in
+     * cce_mtk_gguf_kv_flush. */
+    uint64_t weight_epoch;
+
     /* Optional per-instance GPU handles (override process-global).
        OpenCL (AMD dual-GPU production) + hipBLAS (large FP) + optional
        cuBLAS (NVIDIA, CNET_GPU_BACKEND=cuda). Concurrent instances need

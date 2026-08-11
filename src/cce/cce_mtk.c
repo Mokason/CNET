@@ -189,6 +189,8 @@ void cce_mtk_set_kv_flush(cce_mtk *m, cce_mtk_kv_flush_fn fn, void *ctx) {
 void cce_mtk_gguf_kv_flush(void *gguf_qwen2_ctx) {
     cce_gguf_qwen2 *model = (cce_gguf_qwen2 *)gguf_qwen2_ctx;
     if (!model) return;
+    /* Weight cartridge changed: neural KV is epoch-dependent. CERT/text is not. */
+    model->weight_epoch++;
     model->cur_pos = 0;
     if (model->k_cache && model->max_ctx > 0 && model->k_slot_floats > 0)
         memset(model->k_cache, 0,
@@ -197,7 +199,9 @@ void cce_mtk_gguf_kv_flush(void *gguf_qwen2_ctx) {
         memset(model->v_cache, 0,
                (size_t)model->max_ctx * model->v_slot_floats * sizeof(float));
     if (model->kv_pager) {
-        (void)cce_kv_pager_clear(model->kv_pager);
+        /* Prefer epoch bump (clear HOT + invalidate prior COLD stamps). */
+        if (cce_kv_pager_bump_weight_epoch(model->kv_pager) != 0)
+            (void)cce_kv_pager_clear(model->kv_pager);
     }
 }
 

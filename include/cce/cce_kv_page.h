@@ -123,6 +123,14 @@ int cce_kv_pager_verify_cold(const cce_kv_pager *p, int page_id,
 /* Force rehydrate of the cold page containing pos (0 ok). */
 int cce_kv_pager_rehydrate_pos(cce_kv_pager *p, int pos);
 
+/* Weight-cartridge epoch: neural KV pages are only valid while
+ * page.epoch == pager.weight_epoch. CERT/text is epoch-invariant. */
+uint64_t cce_kv_pager_weight_epoch(const cce_kv_pager *p);
+
+/* Bump epoch, clear HOT/WARM/rehyd cache, and refuse COLD rehydrate of
+ * any page stamped under a prior epoch. Call on MTK apply/revert. */
+int cce_kv_pager_bump_weight_epoch(cce_kv_pager *p);
+
 #ifdef __cplusplus
 }
 #endif
