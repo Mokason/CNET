@@ -477,14 +477,13 @@ def main() -> int:
         reason = None
         final = None
         if gold:
-            # if we have teacher ans, must match gold; else promote gold directly
+            # Gold is external verify — always wins over teacher text.
+            # (Teacher mismatch is logged but does not block gold promote.)
             if ans and not answers_match(ans, gold):
-                report["skipped"].append(
-                    {"query": q, "reason": "teacher_mismatch_gold", "cnt": cnt}
-                )
-                continue
+                reason = "gold_file_overrides_teacher"
+            else:
+                reason = "gold_file"
             final = gold
-            reason = "gold_file"
         elif ans and cnt >= args.stable_n:
             final = ans
             reason = f"multi_stable_{cnt}"

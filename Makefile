@@ -3497,6 +3497,18 @@ cnet_marble_24_7:
 	@test -f logs/marble_24_7/status.json
 	@python3 -c "import json;d=json.load(open('logs/marble_24_7/status.json')); assert d.get('hermes_required') is False; assert d.get('core_active_count',0)>=1; print('CNET_MARBLE_24_7_OK')"
 
+# Full autonomous cycle (probe + evolve) — no Hermes, no human Accept
+.PHONY: cnet_autonomous
+cnet_autonomous:
+	@chmod +x scripts/cnet_autonomous_cycle.py
+	@mkdir -p logs/marble_24_7 bin
+	@CNET_AUTO_TEACHER=$${CNET_AUTO_TEACHER:-1} \
+	 ROE_EVOLVE_REVIEWER=$${ROE_EVOLVE_REVIEWER:-1} \
+	 python3 scripts/cnet_autonomous_cycle.py | tee logs/marble_24_7/autonomous_last.log
+	@grep -q "CNET_AUTONOMOUS_PASS" logs/marble_24_7/autonomous_last.log
+	@test -f logs/marble_24_7/AUTONOMOUS_CYCLE.json
+	@python3 -c "import json;d=json.load(open('logs/marble_24_7/AUTONOMOUS_CYCLE.json')); assert d.get('ok') and d.get('hermes_required') is False; print('kpi',d.get('kpi')); print('CNET_AUTONOMOUS_OK')"
+
 .PHONY: roe_asi_ocr_surpass
 roe_asi_ocr_surpass: $(ROE_ASI_SRC) src/cnet_roe_goal.c src/cnet_roe_ocr.c src/cnet_roe_tree.c \
 		include/cnet_roe_ocr.h tools/roe_asi_ocr_surpass.c tools/roe_unlimited_teacher.py

@@ -1,0 +1,12 @@
+[Unit]
+Description=CNET autonomous cycle every 20 minutes (Hermes-free)
+
+[Timer]
+OnBootSec=3min
+OnUnitActiveSec=20min
+Persistent=true
+Unit=cnet-autonomous-cycle.service
+
+[Install]
+WantedBy=timers.target
+WantedBy=cnet-marble.target

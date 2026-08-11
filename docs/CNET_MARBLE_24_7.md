@@ -26,10 +26,27 @@ scripts/cnet_marble_24_7.sh doctor
 | `cnet-janitor.timer` | Library hygiene |
 | `cnet-personal-ai-ops.timer` | Ops heal tick |
 | `roe-evolve-tick.timer` | Miss→gold/reviewer→`pack_personal` |
+| `cnet-autonomous-cycle.timer` | Probe curriculum → teacher → evolve KPI |
 | `cnet-marble-health.timer` | Snapshot `logs/marble_24_7/status.json` |
 | `marble-heartbeat` / `marble-embeddings` | Optional Marble sidecars |
 
 **Not required:** `hermes-gateway`, `hermes-dashboard`, Hermes MCP.
+
+## Autonomy (no go / accept spam)
+
+```bash
+make cnet_autonomous
+# or timer (every 20m, part of cnet-marble.target):
+systemctl --user status cnet-autonomous-cycle.timer
+cat logs/marble_24_7/AUTONOMOUS_CYCLE.json
+```
+
+Cycle: curriculum probes → front_door → miss_log → teacher (optional) →
+evolve (gold / multi_stable + **reviewer**) → `pack_personal`.
+
+Edit probes/gold: `config/autonomous_curriculum.jsonl`
+
+Not AGI: never self-CERT; floors unchanged; Hermes optional.
 
 ## Isolation rules
 

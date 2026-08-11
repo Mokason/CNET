@@ -26,6 +26,8 @@ COPY_UNITS=(
   cnet-marble-health.timer
   roe-evolve-tick.service
   roe-evolve-tick.timer
+  cnet-autonomous-cycle.service
+  cnet-autonomous-cycle.timer
 )
 
 # Existing user units we enable into the target (already installed elsewhere)
@@ -36,6 +38,7 @@ ENABLE_TIMERS=(
   cnet-personal-ai-ops.timer
   roe-evolve-tick.timer
   cnet-marble-health.timer
+  cnet-autonomous-cycle.timer
 )
 ENABLE_SERVICES=(
   cnet-personal-ai-lane.service

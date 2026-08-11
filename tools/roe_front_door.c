@@ -10,6 +10,7 @@
  * make roe_front_door → ROE_FRONT_DOOR_PASS
  */
 #include <ctype.h>
+#include <curl/curl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -252,23 +253,58 @@ static int fd_append_miss(const FdRouter *F, const char *query, const FdTurnResu
     iso_now(ts, sizeof ts);
     f = fopen(F->miss_log, "a");
     if (!f) return -2;
-    fprintf(f,
-            "{\"ts\":\"%s\",\"pack_tried\":\"%s\",\"query\":\"%s\","
-            "\"route_pattern\":\"%s\",\"source\":\"%s\",\"tokens_est\":%llu,"
-            "\"skill\":\"%s\",\"n_packs_loaded\":%d,\"verified\":%s}\n",
-            ts, tr->route_pack[0] ? tr->route_pack : "",
-            qesc, tr->route_pattern, tr->reply.source_name,
-            (unsigned long long)tr->reply.tokens_est,
-            tr->reply.skill_id[0] ? tr->reply.skill_id : "", tr->n_packs,
-            tr->reply.verified ? "true" : "false");
+    /* escape answer */
+    {
+        char aesc[ROE_ANSWER_MAX];
+        size_t ai, aj = 0;
+        const char *ans = tr->reply.answer;
+        for (ai = 0; ans[ai] && aj + 2 < sizeof aesc; ai++) {
+            if (ans[ai] == '"' || ans[ai] == '\\') aesc[aj++] = '\\';
+            if (ans[ai] == '\n' || ans[ai] == '\r') {
+                aesc[aj++] = ' ';
+                continue;
+            }
+            aesc[aj++] = ans[ai];
+        }
+        aesc[aj] = 0;
+        fprintf(f,
+                "{\"ts\":\"%s\",\"pack_tried\":\"%s\",\"query\":\"%s\","
+                "\"route_pattern\":\"%s\",\"source\":\"%s\",\"tokens_est\":%llu,"
+                "\"skill\":\"%s\",\"n_packs_loaded\":%d,\"verified\":%s,"
+                "\"answer\":\"%s\"}\n",
+                ts, tr->route_pack[0] ? tr->route_pack : "",
+                qesc, tr->route_pattern, tr->reply.source_name,
+                (unsigned long long)tr->reply.tokens_est,
+                tr->reply.skill_id[0] ? tr->reply.skill_id : "", tr->n_packs,
+                tr->reply.verified ? "true" : "false", aesc);
+    }
     fclose(f);
     return 0;
 }
 
 static int fd_turn(FdRouter *F, const char *query, FdTurnResult *tr) {
     RoeAsi R;
+    RoeNet net;
+    static int curl_once;
     if (fd_prepare(F, &R, query, tr) != 0) return -1;
+    /* Optional live teacher from env (ROE_LIVE / ROE_LLM) — untrusted until promote */
+    if (!curl_once) {
+        curl_global_init(CURL_GLOBAL_DEFAULT);
+        curl_once = 1;
+    }
+    roe_net_from_env(&net);
+    if (getenv("ROE_FD_DEBUG")) {
+        fprintf(stderr, "fd_debug enable_llm=%d model=%s live=%s llm=%s\n",
+                net.enable_llm, net.llm_model,
+                getenv("ROE_LIVE") ? getenv("ROE_LIVE") : "-",
+                getenv("ROE_LLM") ? getenv("ROE_LLM") : "-");
+    }
+    if (net.enable_llm || net.enable_lookup) roe_set_net(&R, &net);
     roe_turn(&R, query, &tr->reply);
+    if (getenv("ROE_FD_DEBUG")) {
+        fprintf(stderr, "fd_debug src=%s ans=%.80s net_err=%s\n",
+                tr->reply.source_name, tr->reply.answer, net.last_err);
+    }
     tr->is_miss = (tr->reply.source != ROE_SRC_LOCAL);
     if (tr->is_miss) (void)fd_append_miss(F, query, tr);
     return 0;
@@ -309,6 +345,8 @@ static int cmd_ask(FdRouter *F, const char *q, int accept, const char *gold,
                    const char *promote_pack) {
     FdTurnResult tr;
     RoeAsi *R;
+    RoeNet net;
+    static int curl_once;
     int rc = 0;
     if (!q || !q[0]) return 2;
     R = (RoeAsi *)calloc(1, sizeof *R);
@@ -318,6 +356,12 @@ static int cmd_ask(FdRouter *F, const char *q, int accept, const char *gold,
         free(R);
         return 1;
     }
+    if (!curl_once) {
+        curl_global_init(CURL_GLOBAL_DEFAULT);
+        curl_once = 1;
+    }
+    roe_net_from_env(&net);
+    if (net.enable_llm || net.enable_lookup) roe_set_net(R, &net);
     roe_turn(R, q, &tr.reply);
     tr.is_miss = (tr.reply.source != ROE_SRC_LOCAL);
     if (tr.is_miss) (void)fd_append_miss(F, q, &tr);
