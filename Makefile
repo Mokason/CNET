@@ -3491,6 +3491,17 @@ cnet_minimal_deploy:
 	@bash scripts/deploy_cnet_minimal.sh | tee logs/cnet_minimal_deploy.log
 	@grep -q "CNET_MINIMAL_DEPLOY_PASS" logs/cnet_minimal_deploy.log
 
+.PHONY: roe_explore_tick
+roe_explore_tick: tools/roe_explore_tick.py tools/roe_explore_tick_gate.c
+	@mkdir -p $(BIN_DIR) logs artifacts/roe_daily_packs
+	$(CC) -std=c11 -Wall -O2 -o $(BIN_DIR)/roe_explore_tick_gate tools/roe_explore_tick_gate.c
+	@./$(BIN_DIR)/roe_explore_tick_gate | tee logs/roe_explore_tick_gate.log
+	@grep -q "ROE_EXPLORE_TICK_GATE_PASS" logs/roe_explore_tick_gate.log
+	@python3 tools/roe_explore_tick.py --force 2>&1 | tee logs/roe_explore_tick.log
+	@grep -q "ROE_EXPLORE_TICK_PASS" logs/roe_explore_tick.log
+	@test ! -f artifacts/roe_daily_packs/EXPLORE_TICK.json || grep -q '"auto_cert": false' artifacts/roe_daily_packs/EXPLORE_TICK.json
+	@echo "ROE_EXPLORE_TICK_OK"
+
 # CERT-first domain route table (static + optional TSV overlay)
 .PHONY: domain_route
 domain_route: include/cnet_domain_route.h src/cnet_domain_route.c tools/roe_domain_route.c
