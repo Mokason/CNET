@@ -3503,11 +3503,21 @@ roe_explore_tick: tools/roe_explore_tick.py tools/roe_explore_tick_gate.c
 	@echo "ROE_EXPLORE_TICK_OK"
 
 .PHONY: cnetd
-cnetd: $(ROE_ASI_SRC) tools/cnetd.c src/cnet_domain_route.c include/cnet_probe_shortcircuit.h include/cnet_domain_route.h
+cnetd: $(ROE_ASI_SRC) tools/cnetd.c src/cnet_domain_route.c src/cnet_utterance.c include/cnet_probe_shortcircuit.h include/cnet_domain_route.h include/cnet_utterance.h
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) $(ASI_IMPROVE_CFLAGS) -o $(BIN_DIR)/cnetd \
-		$(ROE_ASI_SRC) src/cnet_domain_route.c tools/cnetd.c $(ROE_ASI_LIBS)
+		$(ROE_ASI_SRC) src/cnet_domain_route.c src/cnet_utterance.c tools/cnetd.c $(ROE_ASI_LIBS)
 	@echo "cnetd built → $(BIN_DIR)/cnetd"
+
+.PHONY: cnet_utterance
+cnet_utterance: src/cnet_utterance.c include/cnet_utterance.h tools/cnet_utterance_main.c
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(ASI_IMPROVE_CFLAGS) -o $(BIN_DIR)/cnet_utterance \
+		src/cnet_utterance.c tools/cnet_utterance_main.c
+	@./$(BIN_DIR)/cnet_utterance --test | tee logs/cnet_utterance.log
+	@grep -q CNET_UTTERANCE_PASS logs/cnet_utterance.log
+	@./$(BIN_DIR)/cnet_utterance --when status --hit 0.857 --da 0.47 --ht 0.53 --ado 0.51 --miss 2 | tee -a logs/cnet_utterance.log
+	@echo "CNET_UTTERANCE_OK"
 
 .PHONY: cnetd-run
 cnetd-run: cnetd

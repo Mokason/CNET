@@ -40,6 +40,7 @@
 #include "../include/cnet_domain_route.h"
 #include "../include/cnet_probe_shortcircuit.h"
 #include "../include/cnet_roe_asi.h"
+#include "../include/cnet_utterance.h"
 
 #define CD_PATH 512
 #define CD_SOCK 108
@@ -248,15 +249,61 @@ typedef struct {
     char source[32];
     char skill[64];
     char answer[ROE_ANSWER_MAX];
+    char utterance[CNET_UTTER_TEXT];
     char domain[32];
     char probe_pat[96];
     int miss;
     int shortcircuit;
     int verified;
+    int may_voice;
     unsigned long long tokens;
 } CdReply;
 
 static void json_escape(const char *in, char *out, size_t cap);
+
+static void load_neuromod_into(CnetUtterState *U) {
+    FILE *f;
+    char buf[2048];
+    size_t n;
+    const char *paths[] = {
+        "logs/governor/neuromod_state.json",
+        "logs/marble_24_7/AUTONOMOUS_CYCLE.json",
+        NULL};
+    int i;
+    if (!U) return;
+    for (i = 0; paths[i]; i++) {
+        f = fopen(paths[i], "r");
+        if (!f) continue;
+        n = fread(buf, 1, sizeof buf - 1, f);
+        fclose(f);
+        if (!n) continue;
+        buf[n] = 0;
+        {
+            const char *p;
+            p = strstr(buf, "\"dopamine\"");
+            if (p) {
+                p = strchr(p, ':');
+                if (p) U->dopamine = strtod(p + 1, NULL);
+            }
+            p = strstr(buf, "\"serotonin\"");
+            if (p) {
+                p = strchr(p, ':');
+                if (p) U->serotonin = strtod(p + 1, NULL);
+            }
+            p = strstr(buf, "\"adenosine\"");
+            if (p) {
+                p = strchr(p, ':');
+                if (p) U->adenosine = strtod(p + 1, NULL);
+            }
+            p = strstr(buf, "\"local_hit\"");
+            if (p) {
+                p = strchr(p, ':');
+                if (p) U->local_hit = strtod(p + 1, NULL);
+            }
+        }
+        break;
+    }
+}
 
 static int cd_ask(CdState *S, const char *q, CdReply *out) {
     RoeAsi *R;
@@ -308,6 +355,45 @@ static int cd_ask(CdState *S, const char *q, CdReply *out) {
     out->verified = rep.verified ? 1 : 0;
     out->tokens = (unsigned long long)rep.tokens_est;
     out->miss = (rep.source != ROE_SRC_LOCAL) ? 1 : 0;
+
+    /* C-native utterance (CERT/state templates — not Teacher) */
+    {
+        static CnetUtterBank UB;
+        static int ub_ready;
+        CnetUtterState U;
+        const char *when = NULL;
+        const char *env;
+        if (!ub_ready) {
+            cnet_utter_bank_init_default(&UB);
+            (void)cnet_utter_bank_load_tsv(&UB, "config/utterance_phrases.tsv");
+            {
+                const char *min = getenv("CNET_MINIMAL_ROOT");
+                char p2[CD_PATH];
+                if (min && min[0]) {
+                    snprintf(p2, sizeof p2, "%s/config/utterance_phrases.tsv", min);
+                    (void)cnet_utter_bank_load_tsv(&UB, p2);
+                }
+            }
+            ub_ready = 1;
+        }
+        cnet_utter_state_init(&U);
+        env = getenv("CNET_NEVER_VOICE_LLM");
+        if (env && env[0] == '0') U.never_voice_llm = 0;
+        snprintf(U.source, sizeof U.source, "%s", out->source);
+        snprintf(U.skill, sizeof U.skill, "%s", out->skill);
+        snprintf(U.domain, sizeof U.domain, "%s", out->domain);
+        snprintf(U.pattern, sizeof U.pattern, "%.95s", q ? q : "");
+        snprintf(U.base_answer, sizeof U.base_answer, "%.767s", out->answer);
+        if (out->shortcircuit) when = "miss";
+        else if (out->miss) when = "miss";
+        else if (contains_ci(q, "who are you") || contains_ci(q, "speech")) when = "identity";
+        else if (contains_ci(q, "status") || contains_ci(q, "local hit")) when = "status";
+        load_neuromod_into(&U);
+        (void)cnet_utter_compose(&UB, &U, when, out->utterance, sizeof out->utterance);
+        out->may_voice = cnet_utter_may_voice(&U, out->source);
+        if (!out->utterance[0])
+            snprintf(out->utterance, sizeof out->utterance, "%s", out->answer);
+    }
 
     /* append miss with shortcircuit / open-chat learn tags */
     if (out->miss) {
@@ -388,14 +474,17 @@ static ssize_t full_write(int fd, const void *buf, size_t n) {
 }
 
 static void write_json_reply(int fd, const CdReply *r) {
-    char aesc[ROE_ANSWER_MAX * 2], buf[ROE_ANSWER_MAX * 2 + 512];
+    char aesc[ROE_ANSWER_MAX * 2], uesc[CNET_UTTER_TEXT * 2], buf[ROE_ANSWER_MAX * 2 + CNET_UTTER_TEXT * 2 + 768];
     json_escape(r->answer, aesc, sizeof aesc);
+    json_escape(r->utterance, uesc, sizeof uesc);
     snprintf(buf, sizeof buf,
              "{\"ok\":true,\"source\":\"%s\",\"skill\":\"%s\",\"answer\":\"%s\","
+             "\"utterance\":\"%s\",\"may_voice\":%s,"
              "\"miss\":%s,\"verified\":%s,\"tokens_est\":%llu,"
              "\"domain_route\":\"%s\",\"shortcircuit\":%s,\"probe_pat\":\"%s\","
-             "\"teacher\":%s}\n",
-             r->source, r->skill, aesc, r->miss ? "true" : "false",
+             "\"teacher\":%s,\"composer\":\"cnet_utterance\",\"never_voice_llm\":true}\n",
+             r->source, r->skill, aesc, uesc, r->may_voice ? "true" : "false",
+             r->miss ? "true" : "false",
              r->verified ? "true" : "false", r->tokens, r->domain,
              r->shortcircuit ? "true" : "false", r->probe_pat,
              r->shortcircuit ? "false" : "null");
@@ -403,12 +492,14 @@ static void write_json_reply(int fd, const CdReply *r) {
 }
 
 static void write_text_reply(int fd, const CdReply *r) {
-    char buf[ROE_ANSWER_MAX + 256];
+    char buf[ROE_ANSWER_MAX + CNET_UTTER_TEXT + 384];
     snprintf(buf, sizeof buf,
              "SOURCE %s\nSKILL %s\nDOMAIN %s\nMISS %d\nSHORTCIRCUIT %d\n"
+             "MAY_VOICE %d\nUTTERANCE %s\n"
              "ANSWER %s\nEND\n",
              r->source, r->skill[0] ? r->skill : "-", r->domain, r->miss,
-             r->shortcircuit, r->answer);
+             r->shortcircuit, r->may_voice,
+             r->utterance[0] ? r->utterance : "-", r->answer);
     (void)full_write(fd, buf, strlen(buf));
 }
 

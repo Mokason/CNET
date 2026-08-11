@@ -263,19 +263,23 @@ async function refreshExplore() {
 }
 
 let lastBotText = '';
+let lastMayVoice = false;
+let lastQuery = '';
 
-async function speakText(text) {
-  if (!text) return;
+async function speakText(text, q) {
   try {
+    const body = q ? {q} : {text};
     const r = await api('/api/speak', {
       method: 'POST', headers: hdrs(),
-      body: JSON.stringify({text})
+      body: JSON.stringify(body)
     });
     const d = await r.json();
     if (d.ok && d.url) {
       const a = new Audio(d.url + (token ? (d.url.includes('?')?'&':'?')+'token='+encodeURIComponent(token) : ''));
       a.play().catch(()=>{});
-      addMsg('(speech) ' + (d.path || d.url), 'bot', {source:'SPEECH'});
+      addMsg('(speech·C) ' + (d.text_preview || d.path || d.url), 'bot', {source:'SPEECH'});
+    } else if (d.error === 'never_voice_llm') {
+      addMsg('Voice refused: never_voice_llm (LOCAL C utterances only).', 'bot', {miss:true, source:'LAW'});
     } else {
       addMsg('Speak failed: ' + (d.error || JSON.stringify(d)), 'bot', {miss:true, source:'ERR'});
     }
@@ -284,7 +288,11 @@ async function speakText(text) {
   }
 }
 
-$('#speakLast').onclick = () => void speakText(lastBotText);
+$('#speakLast').onclick = () => {
+  if (lastMayVoice && lastQuery) void speakText('', lastQuery);
+  else if (lastMayVoice && lastBotText) void speakText(lastBotText, '');
+  else void speakText(lastBotText || '', lastQuery || '');
+};
 
 $('#form').onsubmit = async (e) => {
   e.preventDefault();
@@ -294,19 +302,27 @@ $('#form').onsubmit = async (e) => {
   addMsg(q, 'user');
   input.value = '';
   $('#send').disabled = true;
+  lastQuery = q;
   try {
     const r = await api('/api/ask', {method:'POST', headers: hdrs(), body: JSON.stringify({q})});
     const d = await r.json();
     if (d.error === 'promote_forbidden') {
       addMsg('Promote forbidden from web (never_self_cert).', 'bot', {miss:true, source:'LAW'});
+      lastMayVoice = false;
     } else if (d.ok === false) {
       addMsg(d.error || JSON.stringify(d), 'bot', {miss:true, source:'ERR'});
+      lastMayVoice = false;
     } else {
-      lastBotText = d.answer || '';
+      lastBotText = d.utterance || d.answer || '';
+      lastMayVoice = !!d.may_voice || d.source === 'LOCAL';
       addMsg(d.answer || '(empty)', 'bot', d);
+      if (d.utterance && d.utterance !== d.answer) {
+        addMsg('(utterance) ' + d.utterance, 'bot', {source:'UTTER', skill:d.skill});
+      }
     }
   } catch (err) {
     addMsg(String(err), 'bot', {miss:true, source:'ERR'});
+    lastMayVoice = false;
   }
   $('#send').disabled = false;
   refreshMiss();

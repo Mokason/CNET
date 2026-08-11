@@ -280,8 +280,8 @@ def python_bin() -> str:
     return "python3"
 
 
-def run_speech_say(text: str = "", q: str = "", play: bool = False) -> dict:
-    """Delivery-only TTS. Never CERT / never pack_personal."""
+def run_speech_say(text: str = "", q: str = "", play: bool = False, allow_voice_llm: bool = False) -> dict:
+    """Delivery-only TTS. Prefers C utterance; never_voice_llm by default."""
     import subprocess
 
     script = ROOT / "tools" / "cnet_speech_say.py"
@@ -296,8 +296,11 @@ def run_speech_say(text: str = "", q: str = "", play: bool = False) -> dict:
         return {"ok": False, "error": "empty_text"}
     if play:
         cmd.append("--play")
+    if allow_voice_llm:
+        cmd.append("--allow-voice-llm")
     env = os.environ.copy()
     env["CNET_SPEECH_DIR"] = str(speech_out_dir())
+    env.setdefault("CNET_NEVER_VOICE_LLM", "1")
     try:
         p = subprocess.run(cmd, capture_output=True, text=True, timeout=120, env=env, cwd=str(ROOT))
     except subprocess.TimeoutExpired:
@@ -474,14 +477,15 @@ class Handler(BaseHTTPRequestHandler):
             self._json(200, r)
             return
         if path == "/api/speak":
-            # Delivery only — refuse promote
             if body.get("promote") or body.get("accept"):
                 self._json(403, {"ok": False, "error": "promote_forbidden", "law": "never_self_cert"})
                 return
-            text = (body.get("text") or body.get("answer") or "").strip()
+            text = (body.get("text") or body.get("answer") or body.get("utterance") or "").strip()
             q = (body.get("q") or body.get("query") or "").strip()
             play = bool(body.get("play"))
-            r = run_speech_say(text=text, q=q, play=play)
+            allow = bool(body.get("allow_voice_llm"))
+            # Prefer re-ask via q so C utterance is used
+            r = run_speech_say(text=text, q=q, play=play, allow_voice_llm=allow)
             self._json(200 if r.get("ok") else 502, r)
             return
 
