@@ -123,13 +123,25 @@ void roe_cot_set_paths(RoeCotChain *C, const char *root, const char *gov) {
     if (gov && gov[0]) scopy(C->gov, sizeof C->gov, gov);
 }
 
+static int join_path(char *out, size_t cap, const char *a, const char *b) {
+    size_t na, nb;
+    if (!out || cap < 8 || !a || !b) return -1;
+    na = strlen(a);
+    nb = strlen(b);
+    if (na + 1 + nb + 1 > cap) return -1;
+    memcpy(out, a, na);
+    out[na] = '/';
+    memcpy(out + na + 1, b, nb);
+    out[na + 1 + nb] = 0;
+    return 0;
+}
+
 void roe_cot_load_body(RoeCotChain *C) {
-    char path[ROE_COT_PATH], buf[8192];
+    char path[ROE_COT_FILEPATH], buf[8192];
     if (!C) return;
-    snprintf(path, sizeof path, "%s/neuromod_state.json", C->gov);
-    if (read_file(path, buf, sizeof buf) > 0) {
+    if (join_path(path, sizeof path, C->gov, "neuromod_state.json") == 0 &&
+        read_file(path, buf, sizeof buf) > 0) {
         C->body.dopamine = json_num(buf, "dopamine", C->body.dopamine);
-        /* levels nested — try both */
         if (strstr(buf, "\"levels\"")) {
             const char *lv = strstr(buf, "\"levels\"");
             if (lv) {
@@ -142,25 +154,25 @@ void roe_cot_load_body(RoeCotChain *C) {
             C->body.adenosine = json_num(buf, "adenosine", C->body.adenosine);
         }
     }
-    snprintf(path, sizeof path, "%s/schedule_gate.json", C->gov);
-    if (read_file(path, buf, sizeof buf) > 0) {
+    if (join_path(path, sizeof path, C->gov, "schedule_gate.json") == 0 &&
+        read_file(path, buf, sizeof buf) > 0) {
         C->body.pause_grow = json_boolish(buf, "pause_grow_probes");
         C->body.control_mode = json_boolish(buf, "control_mode");
         C->body.impulse_mode = json_boolish(buf, "impulsivity_mode");
     }
-    snprintf(path, sizeof path, "%s/front_door_bias.json", C->gov);
-    if (read_file(path, buf, sizeof buf) > 0) {
+    if (join_path(path, sizeof path, C->gov, "front_door_bias.json") == 0 &&
+        read_file(path, buf, sizeof buf) > 0) {
         double exp = json_num(buf, "expires_ts", 0);
         if (exp > (double)time(NULL) && json_boolish(buf, "prefer_local"))
             C->body.da_prefer_local = 1;
     }
-    snprintf(path, sizeof path, "%s/autonomy_counters.json", C->gov);
-    if (read_file(path, buf, sizeof buf) > 0) {
+    if (join_path(path, sizeof path, C->gov, "autonomy_counters.json") == 0 &&
+        read_file(path, buf, sizeof buf) > 0) {
         C->body.promotes_day = (int)json_num(buf, "promotes_day", 0);
         C->body.teacher_hour = (int)json_num(buf, "teacher_hour", 0);
     }
-    snprintf(path, sizeof path, "%s/autonomy_state.json", C->gov);
-    if (read_file(path, buf, sizeof buf) > 0) {
+    if (join_path(path, sizeof path, C->gov, "autonomy_state.json") == 0 &&
+        read_file(path, buf, sizeof buf) > 0) {
         C->body.promotes_cap = (int)json_num(buf, "promotes_per_day", 30);
         if (C->body.promotes_cap <= 0) C->body.promotes_cap = 30;
         C->body.teacher_cap = (int)json_num(buf, "teacher_calls_per_hour", 24);
@@ -171,11 +183,11 @@ void roe_cot_load_body(RoeCotChain *C) {
 /* Longest substring route from ROUTES.jsonl */
 static int match_route(const RoeCotChain *C, const char *q, char *pack, size_t pc,
                        char *skill, size_t sc, char *pat, size_t ptc) {
-    char path[ROE_COT_PATH], line[1024], best_pat[256];
+    char path[ROE_COT_FILEPATH], line[1024], best_pat[256];
     FILE *f;
     int best_len = 0;
     pack[0] = skill[0] = pat[0] = best_pat[0] = 0;
-    snprintf(path, sizeof path, "%s/ROUTES.jsonl", C->root);
+    if (join_path(path, sizeof path, C->root, "ROUTES.jsonl") != 0) return 0;
     f = fopen(path, "r");
     if (!f) return 0;
     while (fgets(line, sizeof line, f)) {
@@ -550,7 +562,7 @@ void roe_cot_print_panel(const RoeCotChain *C) {
 }
 
 int roe_cot_persist(const RoeCotChain *C) {
-    char path[ROE_COT_PATH], panel[8192];
+    char path[ROE_COT_FILEPATH], panel[8192];
     char qesc[ROE_COT_TEXT], aesc[ROE_COT_ANS], lesc[ROE_COT_TEXT];
     FILE *f;
     int i;
@@ -568,11 +580,7 @@ int roe_cot_persist(const RoeCotChain *C) {
         s = C->final_answer;
         for (si = di = 0; s[si] && di + 1 < sizeof aesc; si++) {
             if (s[si] == '"' || s[si] == '\\' || s[si] == '\n') {
-                if (s[si] == '\n') {
-                    if (di + 2 < sizeof aesc) {
-                        aesc[di++] = ' ';
-                    }
-                }
+                if (s[si] == '\n' && di + 2 < sizeof aesc) aesc[di++] = ' ';
                 continue;
             }
             aesc[di++] = s[si];
@@ -585,15 +593,14 @@ int roe_cot_persist(const RoeCotChain *C) {
         }
         lesc[di] = 0;
     }
-    snprintf(path, sizeof path, "%s", C->gov);
-    mkdir(path, 0755);
-    snprintf(path, sizeof path, "%s/chain_last.txt", C->gov);
+    mkdir(C->gov, 0755);
+    if (join_path(path, sizeof path, C->gov, "chain_last.txt") != 0) return -1;
     if (roe_cot_format_panel(C, panel, sizeof panel) < 0) return -1;
     f = fopen(path, "w");
     if (!f) return -1;
     fputs(panel, f);
     fclose(f);
-    snprintf(path, sizeof path, "%s/chain_last.json", C->gov);
+    if (join_path(path, sizeof path, C->gov, "chain_last.json") != 0) return -1;
     f = fopen(path, "w");
     if (!f) return -1;
     fprintf(f,
@@ -620,12 +627,13 @@ int roe_cot_persist(const RoeCotChain *C) {
     }
     fprintf(f, "  ],\n  \"answer\": \"%s\"\n}\n", aesc);
     fclose(f);
-    snprintf(path, sizeof path, "%s/chain_think.jsonl", C->gov);
-    f = fopen(path, "a");
-    if (f) {
-        fprintf(f, "{\"ts\":%ld,\"hops\":%d,\"src\":\"%s\",\"line\":\"%s\"}\n",
-                (long)time(NULL), C->n_hops, C->final_source, lesc);
-        fclose(f);
+    if (join_path(path, sizeof path, C->gov, "chain_think.jsonl") == 0) {
+        f = fopen(path, "a");
+        if (f) {
+            fprintf(f, "{\"ts\":%ld,\"hops\":%d,\"src\":\"%s\",\"line\":\"%s\"}\n",
+                    (long)time(NULL), C->n_hops, C->final_source, lesc);
+            fclose(f);
+        }
     }
     return 0;
 }

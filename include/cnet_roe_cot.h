@@ -22,6 +22,7 @@ extern "C" {
 #define ROE_COT_PATH 1024
 #define ROE_COT_ID 64
 #define ROE_COT_CMD 2048
+#define ROE_COT_FILEPATH 1100
 
 typedef enum {
     ROE_COT_PARSE = 1,
