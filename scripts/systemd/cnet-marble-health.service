@@ -1,0 +1,12 @@
+[Unit]
+Description=CNET+Marble 24/7 health snapshot (Hermes-independent)
+After=default.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/AI/CNET
+ExecStart=/usr/bin/python3 %h/AI/CNET/scripts/cnet_marble_health_snap.py
+Nice=15
+
+[Install]
+WantedBy=cnet-marble.target

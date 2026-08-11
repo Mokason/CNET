@@ -1,0 +1,24 @@
+[Unit]
+Description=CNET + Marble 24/7 stack (Hermes-independent)
+Documentation=file:///home/marble/AI/CNET/docs/CNET_MARBLE_24_7.md
+#
+# This target MUST NOT depend on hermes-gateway / hermes-dashboard.
+# Hermes may attach as a client; CNET/Marble keep running if Hermes updates or dies.
+#
+# Enable:
+#   scripts/cnet_marble_24_7.sh install && scripts/cnet_marble_24_7.sh start
+#
+Wants=cnet-personal-ai-lane.service
+Wants=bonsai-server.service
+Wants=cnet-autoteach.timer
+Wants=cnet-governor.timer
+Wants=cnet-janitor.timer
+Wants=cnet-personal-ai-ops.timer
+Wants=roe-evolve-tick.timer
+Wants=cnet-marble-health.timer
+# Optional marble sidecars (ignored if missing)
+Wants=marble-heartbeat.service
+Wants=marble-embeddings.service
+
+[Install]
+WantedBy=default.target
