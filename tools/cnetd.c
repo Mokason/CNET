@@ -1,0 +1,541 @@
+/* cnetd — warm UNIX-socket daemon for CNET front door (CERT-first).
+ *
+ * Keeps routes/probe table/curl initialized; serves line or JSON asks over
+ * a user-local socket. Does NOT auto-CERT. Teacher only if env allows and
+ * probe short-circuit does not match.
+ *
+ * Socket (first that works):
+ *   $XDG_RUNTIME_DIR/cnet/cnet.sock
+ *   ~/.local/share/cnet-minimal/run/cnet.sock
+ *
+ * Protocol (one request/response per connection, or line mode):
+ *   ASK <query text>\n
+ *   → multi-line status + ANSWER <text>\nEND\n
+ *   PING\n → PONG\n
+ *   QUIT\n → close
+ *
+ *   JSON: {"op":"ask","q":"..."}\n
+ *   → {"ok":true,"source":"LOCAL","answer":"...","skill":"...","miss":false,...}\n
+ *
+ * Env:
+ *   CNET_MINIMAL_ROOT, CNET_PACKS_ROOT, CNET_SOCK
+ */
+#define _POSIX_C_SOURCE 200809L
+#include <ctype.h>
+#include <curl/curl.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <pwd.h>
+#include <signal.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/socket.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <sys/un.h>
+#include <time.h>
+#include <unistd.h>
+
+#include "../include/cnet_domain_route.h"
+#include "../include/cnet_probe_shortcircuit.h"
+#include "../include/cnet_roe_asi.h"
+
+#define CD_PATH 512
+#define CD_SOCK 108
+#define CD_MAX_ALWAYS 8
+#define CD_MAX_PACKS 8
+#define CD_PAT 256
+#define CD_ID 64
+#define CD_LINE 8192
+
+static volatile sig_atomic_t g_stop = 0;
+
+static void on_sig(int s) {
+    (void)s;
+    g_stop = 1;
+}
+
+typedef struct {
+    char pattern[CD_PAT];
+    char pack[CD_ID];
+} CdRoute;
+
+typedef struct {
+    char root[CD_PATH];
+    char miss_log[CD_PATH];
+    char always_on[CD_MAX_ALWAYS][CD_ID];
+    int n_always;
+    CdRoute routes[512];
+    int n_routes;
+    CnetProbeTable probes;
+    CnetDomainRouter domain;
+    int ready;
+} CdState;
+
+static int mkdir_p(const char *path) {
+    char tmp[CD_PATH];
+    size_t len, i;
+    if (!path || !path[0]) return -1;
+    snprintf(tmp, sizeof tmp, "%s", path);
+    len = strlen(tmp);
+    if (tmp[len - 1] == '/') tmp[len - 1] = 0;
+    for (i = 1; tmp[i]; i++) {
+        if (tmp[i] == '/') {
+            tmp[i] = 0;
+            if (mkdir(tmp, 0700) != 0 && errno != EEXIST) return -1;
+            tmp[i] = '/';
+        }
+    }
+    if (mkdir(tmp, 0700) != 0 && errno != EEXIST) return -1;
+    return 0;
+}
+
+static int path_join2(char *out, size_t cap, const char *a, const char *b) {
+    int n;
+    if (!out || !cap || !a || !b) return -1;
+    n = snprintf(out, cap, "%s/%s", a, b);
+    return (n < 0 || (size_t)n >= cap) ? -1 : 0;
+}
+
+static int contains_ci(const char *hay, const char *needle) {
+    char h[512], n[256];
+    size_t i;
+    if (!hay || !needle || !needle[0]) return 0;
+    for (i = 0; hay[i] && i + 1 < sizeof h; i++)
+        h[i] = (char)tolower((unsigned char)hay[i]);
+    h[i] = 0;
+    for (i = 0; needle[i] && i + 1 < sizeof n; i++)
+        n[i] = (char)tolower((unsigned char)needle[i]);
+    n[i] = 0;
+    return strstr(h, n) != NULL;
+}
+
+static int json_get_str(const char *line, const char *key, char *out, size_t cap) {
+    char pat[80];
+    const char *p;
+    size_t i = 0;
+    snprintf(pat, sizeof pat, "\"%s\":\"", key);
+    p = strstr(line, pat);
+    if (!p) return -1;
+    p += strlen(pat);
+    while (p[i] && p[i] != '"' && i + 1 < cap) {
+        out[i] = p[i];
+        i++;
+    }
+    out[i] = 0;
+    return out[0] ? 0 : -1;
+}
+
+static void resolve_paths(char *root_out, size_t rcap, char *sock_out, size_t scap) {
+    const char *env_root = getenv("CNET_PACKS_ROOT");
+    const char *min = getenv("CNET_MINIMAL_ROOT");
+    const char *sock = getenv("CNET_SOCK");
+    const char *xdg = getenv("XDG_RUNTIME_DIR");
+    const char *home = getenv("HOME");
+    char tmp[CD_PATH];
+
+    if (env_root && env_root[0])
+        snprintf(root_out, rcap, "%s", env_root);
+    else if (min && min[0])
+        snprintf(root_out, rcap, "%s/data/roe_daily_packs", min);
+    else {
+        if (!home) {
+            struct passwd *pw = getpwuid(getuid());
+            home = pw ? pw->pw_dir : ".";
+        }
+        snprintf(root_out, rcap, "%s/AI/CNET/artifacts/roe_daily_packs", home);
+    }
+
+    if (sock && sock[0]) {
+        snprintf(sock_out, scap, "%s", sock);
+        return;
+    }
+    if (xdg && xdg[0] && strlen(xdg) + 16 < scap) {
+        snprintf(tmp, sizeof tmp, "%s/cnet", xdg);
+        if (mkdir_p(tmp) == 0) {
+            snprintf(sock_out, scap, "%s/cnet.sock", tmp);
+            return;
+        }
+    }
+    if (!home) {
+        struct passwd *pw = getpwuid(getuid());
+        home = pw ? pw->pw_dir : ".";
+    }
+    snprintf(tmp, sizeof tmp, "%s/.local/share/cnet-minimal/run", home);
+    mkdir_p(tmp);
+    if (strlen(tmp) + 11 < scap)
+        snprintf(sock_out, scap, "%s/cnet.sock", tmp);
+    else
+        snprintf(sock_out, scap, "/tmp/cnet-%d.sock", (int)getuid());
+}
+
+static int cd_init(CdState *S, const char *root) {
+    char path[CD_PATH], line[1024];
+    FILE *f;
+    if (!S) return -1;
+    memset(S, 0, sizeof *S);
+    snprintf(S->root, sizeof S->root, "%s", root);
+    if (path_join2(S->miss_log, sizeof S->miss_log, S->root, "miss_log.jsonl") != 0)
+        return -1;
+    snprintf(S->always_on[0], sizeof S->always_on[0], "%s", "pack_soul_marble");
+    snprintf(S->always_on[1], sizeof S->always_on[1], "%s", "pack_roe_self");
+    snprintf(S->always_on[2], sizeof S->always_on[2], "%s", "pack_goal_split");
+    snprintf(S->always_on[3], sizeof S->always_on[3], "%s", "pack_toolcall_hermes");
+    snprintf(S->always_on[4], sizeof S->always_on[4], "%s", "pack_personal");
+    S->n_always = 5;
+
+    if (path_join2(path, sizeof path, S->root, "ROUTES.jsonl") != 0) return -1;
+    f = fopen(path, "r");
+    if (!f) return -2;
+    while (fgets(line, sizeof line, f) && S->n_routes < 512) {
+        CdRoute *r = &S->routes[S->n_routes];
+        memset(r, 0, sizeof *r);
+        if (json_get_str(line, "pattern", r->pattern, sizeof r->pattern) != 0) continue;
+        if (json_get_str(line, "pack", r->pack, sizeof r->pack) != 0) continue;
+        S->n_routes++;
+    }
+    fclose(f);
+
+    cnet_probe_table_init(&S->probes);
+    (void)cnet_probe_table_load(&S->probes, "config/probe_shortcircuit.txt");
+    {
+        const char *min = getenv("CNET_MINIMAL_ROOT");
+        char p2[CD_PATH];
+        if (min && min[0]) {
+            snprintf(p2, sizeof p2, "%s/config/probe_shortcircuit.txt", min);
+            (void)cnet_probe_table_load(&S->probes, p2);
+        }
+    }
+    cnet_domain_route_init(&S->domain);
+    (void)cnet_domain_route_load_file(&S->domain, "config/domain_routes.tsv");
+    {
+        const char *min = getenv("CNET_MINIMAL_ROOT");
+        char p2[CD_PATH];
+        if (min && min[0]) {
+            snprintf(p2, sizeof p2, "%s/config/domain_routes.tsv", min);
+            (void)cnet_domain_route_load_file(&S->domain, p2);
+        }
+    }
+    S->ready = 1;
+    return S->n_routes > 0 ? 0 : -3;
+}
+
+static int cd_match_route(const CdState *S, const char *q, CdRoute *out) {
+    int best = -1;
+    size_t best_len = 0;
+    int i;
+    for (i = 0; i < S->n_routes; i++) {
+        size_t L = strlen(S->routes[i].pattern);
+        if (L < 3) continue;
+        if (contains_ci(q, S->routes[i].pattern) && L > best_len) {
+            best_len = L;
+            best = i;
+        }
+    }
+    if (best >= 0 && out) *out = S->routes[best];
+    return best;
+}
+
+static int load_pack(RoeAsi *R, const char *root, const char *pack) {
+    char path[CD_PATH];
+    if (path_join2(path, sizeof path, root, pack) != 0) return -1;
+    roe_set_catalog_dir(R, path);
+    return roe_load_catalog(R);
+}
+
+typedef struct {
+    char source[32];
+    char skill[64];
+    char answer[ROE_ANSWER_MAX];
+    char domain[32];
+    char probe_pat[96];
+    int miss;
+    int shortcircuit;
+    int verified;
+    unsigned long long tokens;
+} CdReply;
+
+static int cd_ask(CdState *S, const char *q, CdReply *out) {
+    RoeAsi *R;
+    RoeNet net;
+    RoeReply rep;
+    CdRoute rt;
+    CnetDomainDecision dd;
+    char ppat[96];
+    const char *pm;
+    int i, matched;
+
+    if (!S || !q || !out || !S->ready) return -1;
+    memset(out, 0, sizeof *out);
+    memset(&rt, 0, sizeof rt);
+    ppat[0] = 0;
+    pm = cnet_probe_match(&S->probes, q, ppat, sizeof ppat);
+    cnet_domain_route_resolve(&S->domain, q, &dd);
+    snprintf(out->domain, sizeof out->domain, "%s", dd.kind_name ? dd.kind_name : "NONE");
+    if (pm) {
+        out->shortcircuit = 1;
+        snprintf(out->probe_pat, sizeof out->probe_pat, "%s", ppat[0] ? ppat : pm);
+    }
+
+    R = (RoeAsi *)calloc(1, sizeof *R);
+    if (!R) return -1;
+    roe_init(R);
+    for (i = 0; i < S->n_always; i++)
+        (void)load_pack(R, S->root, S->always_on[i]);
+    matched = cd_match_route(S, q, &rt);
+    if (matched >= 0 && rt.pack[0]) {
+        int known = 0;
+        for (i = 0; i < S->n_always; i++)
+            if (strcmp(S->always_on[i], rt.pack) == 0) known = 1;
+        if (!known) (void)load_pack(R, S->root, rt.pack);
+    }
+
+    roe_net_from_env(&net);
+    if (pm) {
+        net.enable_llm = 0;
+        net.enable_lookup = 0;
+    }
+    if (net.enable_llm || net.enable_lookup) roe_set_net(R, &net);
+    roe_turn(R, q, &rep);
+
+    snprintf(out->source, sizeof out->source, "%s",
+             rep.source_name[0] ? rep.source_name : "UNKNOWN");
+    snprintf(out->skill, sizeof out->skill, "%s", rep.skill_id);
+    snprintf(out->answer, sizeof out->answer, "%s", rep.answer);
+    out->verified = rep.verified ? 1 : 0;
+    out->tokens = (unsigned long long)rep.tokens_est;
+    out->miss = (rep.source != ROE_SRC_LOCAL) ? 1 : 0;
+
+    /* append miss with shortcircuit tag */
+    if (out->miss) {
+        FILE *f = fopen(S->miss_log, "a");
+        if (f) {
+            char ts[40];
+            time_t t = time(NULL);
+            struct tm tm;
+            gmtime_r(&t, &tm);
+            strftime(ts, sizeof ts, "%Y-%m-%dT%H:%M:%SZ", &tm);
+            if (out->shortcircuit)
+                fprintf(f,
+                        "{\"ts\":\"%s\",\"query\":\"%s\",\"source\":\"%s\","
+                        "\"answer\":\"%s\",\"shortcircuit\":true,\"probe_pat\":\"%s\","
+                        "\"teacher\":false,\"via\":\"cnetd\"}\n",
+                        ts, q, out->source, out->answer, out->probe_pat);
+            else
+                fprintf(f,
+                        "{\"ts\":\"%s\",\"query\":\"%s\",\"source\":\"%s\","
+                        "\"answer\":\"%s\",\"via\":\"cnetd\"}\n",
+                        ts, q, out->source, out->answer);
+            fclose(f);
+        }
+    }
+    free(R);
+    return 0;
+}
+
+static void json_escape(const char *in, char *out, size_t cap) {
+    size_t i, j = 0;
+    if (!out || !cap) return;
+    out[0] = 0;
+    if (!in) return;
+    for (i = 0; in[i] && j + 2 < cap; i++) {
+        if (in[i] == '"' || in[i] == '\\') out[j++] = '\\';
+        if (in[i] == '\n' || in[i] == '\r') {
+            out[j++] = ' ';
+            continue;
+        }
+        out[j++] = in[i];
+    }
+    out[j] = 0;
+}
+
+static ssize_t full_write(int fd, const void *buf, size_t n) {
+    const char *p = (const char *)buf;
+    size_t off = 0;
+    while (off < n) {
+        ssize_t k = write(fd, p + off, n - off);
+        if (k < 0) {
+            if (errno == EINTR) continue;
+            return -1;
+        }
+        if (k == 0) break;
+        off += (size_t)k;
+    }
+    return (ssize_t)off;
+}
+
+static void write_json_reply(int fd, const CdReply *r) {
+    char aesc[ROE_ANSWER_MAX * 2], buf[ROE_ANSWER_MAX * 2 + 512];
+    json_escape(r->answer, aesc, sizeof aesc);
+    snprintf(buf, sizeof buf,
+             "{\"ok\":true,\"source\":\"%s\",\"skill\":\"%s\",\"answer\":\"%s\","
+             "\"miss\":%s,\"verified\":%s,\"tokens_est\":%llu,"
+             "\"domain_route\":\"%s\",\"shortcircuit\":%s,\"probe_pat\":\"%s\","
+             "\"teacher\":%s}\n",
+             r->source, r->skill, aesc, r->miss ? "true" : "false",
+             r->verified ? "true" : "false", r->tokens, r->domain,
+             r->shortcircuit ? "true" : "false", r->probe_pat,
+             r->shortcircuit ? "false" : "null");
+    (void)full_write(fd, buf, strlen(buf));
+}
+
+static void write_text_reply(int fd, const CdReply *r) {
+    char buf[ROE_ANSWER_MAX + 256];
+    snprintf(buf, sizeof buf,
+             "SOURCE %s\nSKILL %s\nDOMAIN %s\nMISS %d\nSHORTCIRCUIT %d\n"
+             "ANSWER %s\nEND\n",
+             r->source, r->skill[0] ? r->skill : "-", r->domain, r->miss,
+             r->shortcircuit, r->answer);
+    (void)full_write(fd, buf, strlen(buf));
+}
+
+static void handle_client(int cfd, CdState *S) {
+    char line[CD_LINE];
+    size_t n = 0;
+    ssize_t k;
+    while (!g_stop) {
+        k = read(cfd, line + n, sizeof line - n - 1);
+        if (k <= 0) break;
+        n += (size_t)k;
+        line[n] = 0;
+        if (memchr(line, '\n', n)) break;
+        if (n >= sizeof line - 1) break;
+    }
+    /* trim */
+    while (n && (line[n - 1] == '\n' || line[n - 1] == '\r')) line[--n] = 0;
+
+    if (!line[0] || strcmp(line, "QUIT") == 0) return;
+    if (strcmp(line, "PING") == 0) {
+        (void)full_write(cfd, "PONG\n", 5);
+        return;
+    }
+    if (strcmp(line, "STATUS") == 0) {
+        char buf[256];
+        snprintf(buf, sizeof buf, "OK cnetd routes=%d probes=%d root=%s\n",
+                 S->n_routes, S->probes.n, S->root);
+        (void)full_write(cfd, buf, strlen(buf));
+        return;
+    }
+
+    {
+        CdReply rep;
+        const char *q = line;
+        int json = 0;
+        if (strncmp(line, "ASK ", 4) == 0) q = line + 4;
+        else if (line[0] == '{') {
+            /* {"op":"ask","q":"..."} rough extract */
+            char *p = strstr(line, "\"q\":\"");
+            json = 1;
+            if (p) {
+                static char qq[CD_LINE];
+                size_t i = 0;
+                p += 5;
+                while (*p && *p != '"' && i + 1 < sizeof qq) qq[i++] = *p++;
+                qq[i] = 0;
+                q = qq;
+            }
+        }
+        if (cd_ask(S, q, &rep) != 0) {
+            (void)full_write(cfd, "{\"ok\":false,\"error\":\"ask_failed\"}\n", 34);
+            return;
+        }
+        if (json)
+            write_json_reply(cfd, &rep);
+        else
+            write_text_reply(cfd, &rep);
+    }
+}
+
+static int serve(CdState *S, const char *sock_path) {
+    int sfd, cfd;
+    struct sockaddr_un addr;
+    char dir[CD_PATH];
+    char *slash;
+
+    if (strlen(sock_path) >= sizeof addr.sun_path) {
+        fprintf(stderr, "cnetd: socket path too long\n");
+        return 1;
+    }
+    snprintf(dir, sizeof dir, "%s", sock_path);
+    slash = strrchr(dir, '/');
+    if (slash) {
+        *slash = 0;
+        mkdir_p(dir);
+    }
+    unlink(sock_path);
+
+    sfd = socket(AF_UNIX, SOCK_STREAM, 0);
+    if (sfd < 0) {
+        perror("socket");
+        return 1;
+    }
+    memset(&addr, 0, sizeof addr);
+    addr.sun_family = AF_UNIX;
+    memcpy(addr.sun_path, sock_path, strlen(sock_path) + 1);
+    if (bind(sfd, (struct sockaddr *)&addr, sizeof addr) != 0) {
+        perror("bind");
+        close(sfd);
+        return 1;
+    }
+    chmod(sock_path, 0600);
+    if (listen(sfd, 16) != 0) {
+        perror("listen");
+        close(sfd);
+        return 1;
+    }
+    fprintf(stderr, "cnetd listening on %s root=%s routes=%d\n", sock_path, S->root,
+            S->n_routes);
+
+    while (!g_stop) {
+        cfd = accept(sfd, NULL, NULL);
+        if (cfd < 0) {
+            if (errno == EINTR) continue;
+            break;
+        }
+        handle_client(cfd, S);
+        close(cfd);
+    }
+    close(sfd);
+    unlink(sock_path);
+    return 0;
+}
+
+int main(int argc, char **argv) {
+    CdState S;
+    char root[CD_PATH], sock[CD_SOCK];
+    int i, foreground = 1;
+
+    for (i = 1; i < argc; i++) {
+        if (!strcmp(argv[i], "-d") || !strcmp(argv[i], "--daemon")) foreground = 0;
+        else if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help")) {
+            fprintf(stderr,
+                    "usage: cnetd [--daemon]\n"
+                    "  CNET_PACKS_ROOT / CNET_MINIMAL_ROOT / CNET_SOCK\n");
+            return 0;
+        }
+    }
+
+    signal(SIGINT, on_sig);
+    signal(SIGTERM, on_sig);
+    signal(SIGPIPE, SIG_IGN);
+
+    resolve_paths(root, sizeof root, sock, sizeof sock);
+    if (cd_init(&S, root) != 0) {
+        fprintf(stderr, "cnetd: failed to init packs root=%s\n", root);
+        return 1;
+    }
+    curl_global_init(CURL_GLOBAL_DEFAULT);
+
+    if (!foreground) {
+        pid_t p = fork();
+        if (p < 0) return 1;
+        if (p > 0) {
+            printf("cnetd pid=%d sock=%s\n", (int)p, sock);
+            return 0;
+        }
+        setsid();
+    }
+
+    return serve(&S, sock);
+}

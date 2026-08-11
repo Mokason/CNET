@@ -3502,6 +3502,27 @@ roe_explore_tick: tools/roe_explore_tick.py tools/roe_explore_tick_gate.c
 	@test ! -f artifacts/roe_daily_packs/EXPLORE_TICK.json || grep -q '"auto_cert": false' artifacts/roe_daily_packs/EXPLORE_TICK.json
 	@echo "ROE_EXPLORE_TICK_OK"
 
+.PHONY: cnetd
+cnetd: $(ROE_ASI_SRC) tools/cnetd.c src/cnet_domain_route.c include/cnet_probe_shortcircuit.h include/cnet_domain_route.h
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(ASI_IMPROVE_CFLAGS) -o $(BIN_DIR)/cnetd \
+		$(ROE_ASI_SRC) src/cnet_domain_route.c tools/cnetd.c $(ROE_ASI_LIBS)
+	@echo "cnetd built → $(BIN_DIR)/cnetd"
+
+.PHONY: cnetd-run
+cnetd-run: cnetd
+	@pkill -x cnetd 2>/dev/null || true
+	@sleep 0.2
+	@if [ -f $(HOME)/.local/share/cnet-minimal/cnet-minimal.env ]; then set -a; . $(HOME)/.local/share/cnet-minimal/cnet-minimal.env; set +a; fi
+	@$(BIN_DIR)/cnetd >logs/cnetd.log 2>&1 & echo $$! > logs/cnetd.pid
+	@sleep 0.4
+	@chmod +x scripts/cnet_sock_ask.sh
+	@scripts/cnet_sock_ask.sh "who are you" | tee logs/cnetd_ask.log
+	@grep -q "SOURCE LOCAL\|\"source\":\"LOCAL\"" logs/cnetd_ask.log
+	@scripts/cnet_sock_ask.sh "autonomous cycle probe novel fact beta-nine" | tee -a logs/cnetd_ask.log
+	@grep -q "SHORTCIRCUIT 1\|shortcircuit.:true" logs/cnetd_ask.log
+	@echo "CNETD_OK"
+
 # CERT-first domain route table (static + optional TSV overlay)
 .PHONY: domain_route
 domain_route: include/cnet_domain_route.h src/cnet_domain_route.c tools/roe_domain_route.c
