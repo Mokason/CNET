@@ -70,7 +70,7 @@ CNET_PACKS_ROOT=$CURRENT/data/roe_daily_packs
 CNET_FRONT_DOOR_BIN=$CURRENT/bin/roe_front_door
 CNET_BLOCKLIST=$CURRENT/config/promote_blocklist.txt
 CNET_MISS_LOG=$VAR/miss_log.jsonl
-PATH=$CURRENT/bin:\$PATH
+PATH=$CURRENT/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 EOF
 
 # User bin wrappers

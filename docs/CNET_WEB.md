@@ -1,17 +1,25 @@
 # cnet-web — Tailscale/localhost cockpit over cnetd
 
-## Run
+## Run (production — systemd user)
 
 ```bash
-# cnetd must be up
-systemctl --user start cnetd.service
-python3 tools/cnet_web.py
-# → http://100.x.x.x:8642/  or http://127.0.0.1:8642/
+systemctl --user enable --now cnetd.service
+systemctl --user enable --now cnet-web.service
+systemctl --user status cnet-web.service
+# scripts/cnet_web_run.sh resolves tailscale0 100.x (else 127.0.0.1)
+# → http://100.x.x.x:8642/
 ```
 
-Optional token: `CNET_WEB_TOKEN=secret` then `?token=secret` or `Authorization: Bearer secret`.
+Manual:
+```bash
+systemctl --user start cnetd.service
+scripts/cnet_web_run.sh   # or: python3 tools/cnet_web.py
+```
+
+Optional token: `CNET_WEB_TOKEN=secret` in env / drop-in, then `?token=secret` or `Authorization: Bearer secret`.
 
 Never binds `0.0.0.0` unless `CNET_WEB_ALLOW_PUBLIC=1`.
+Unit: `Requires=cnetd.service`, `WantedBy=cnet-marble.target`.
 
 ## API
 

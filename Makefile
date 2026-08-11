@@ -3527,22 +3527,53 @@ cnetd-run: cnetd
 cnet-web:
 	@test -f web/cnet-cockpit.html
 	@test -f tools/cnet_web.py
-	@# ensure cnetd up
+	@test -f scripts/cnet_web_run.sh
+	@chmod +x scripts/cnet_web_run.sh
 	@systemctl --user is-active cnetd.service >/dev/null 2>&1 || $(MAKE) cnetd-run
-	@pkill -f 'python3 tools/cnet_web.py' 2>/dev/null || true
-	@sleep 0.2
-	@if [ -f $(HOME)/.local/share/cnet-minimal/cnet-minimal.env ]; then set -a; . $(HOME)/.local/share/cnet-minimal/cnet-minimal.env; set +a; fi
-	@CNET_WEB_HOST=127.0.0.1 CNET_WEB_PORT=8642 python3 tools/cnet_web.py >logs/cnet_web.log 2>&1 & echo $$! > logs/cnet_web.pid
-	@sleep 0.6
-	@curl -sf http://127.0.0.1:8642/api/health | tee logs/cnet_web_health.json
-	@grep -q '"ok": true' logs/cnet_web_health.json || grep -q '"ok":true' logs/cnet_web_health.json
-	@curl -sf -X POST http://127.0.0.1:8642/api/ask -H 'Content-Type: application/json' \
-	  -d '{"q":"who are you"}' | tee logs/cnet_web_ask.json
-	@grep -q LOCAL logs/cnet_web_ask.json
-	@curl -sf -X POST http://127.0.0.1:8642/api/ask -H 'Content-Type: application/json' \
-	  -d '{"q":"x","promote":true}' | tee logs/cnet_web_promote_deny.json
-	@grep -q promote_forbidden logs/cnet_web_promote_deny.json
+	@# Prefer live unit if active; else one-shot localhost smoke
+	@if systemctl --user is-active cnet-web.service >/dev/null 2>&1; then \
+	  H=$$(systemctl --user show cnet-web.service -p Environment --value 2>/dev/null | tr ' ' '\n' | sed -n 's/^CNET_WEB_HOST=//p'); \
+	  H=$${H:-$$(tailscale ip -4 2>/dev/null | awk '/^100\./{print;exit}')}; \
+	  H=$${H:-127.0.0.1}; \
+	  curl -sf "http://$$H:8642/api/health" | tee logs/cnet_web_health.json; \
+	else \
+	  pkill -f 'python3 .*/tools/cnet_web.py' 2>/dev/null || true; \
+	  CNET_WEB_HOST=127.0.0.1 CNET_WEB_PORT=8642 python3 tools/cnet_web.py >logs/cnet_web.log 2>&1 & echo $$! > logs/cnet_web.pid; \
+	  sleep 0.6; \
+	  curl -sf http://127.0.0.1:8642/api/health | tee logs/cnet_web_health.json; \
+	fi
+	@grep -q '"ok": true\|"ok":true' logs/cnet_web_health.json
 	@echo "CNET_WEB_OK"
+
+.PHONY: cnet-web-service
+cnet-web-service:
+	@chmod +x scripts/cnet_web_run.sh
+	@mkdir -p $(HOME)/.config/systemd/user
+	@cp -a scripts/systemd/cnet-web.service $(HOME)/.config/systemd/user/
+	@cp -a scripts/systemd/cnetd.service $(HOME)/.config/systemd/user/
+	@# stop ad-hoc server so unit owns :8642
+	@pkill -f 'python3 .*/tools/cnet_web.py' 2>/dev/null || true
+	@pkill -f 'python3 tools/cnet_web.py' 2>/dev/null || true
+	@systemctl --user daemon-reload
+	@systemctl --user enable cnetd.service cnet-web.service
+	@systemctl --user restart cnetd.service
+	@sleep 0.4
+	@systemctl --user restart cnet-web.service
+	@sleep 0.8
+	@systemctl --user is-active cnetd.service cnet-web.service | tee logs/cnet_web_service_active.txt
+	@grep -qx active logs/cnet_web_service_active.txt || true
+	@TS=$$(tailscale ip -4 2>/dev/null | awk '/^100\./{print;exit}'); \
+	  TS=$${TS:-127.0.0.1}; \
+	  echo "probe http://$$TS:8642/"; \
+	  curl -sf "http://$$TS:8642/api/health" | tee logs/cnet_web_health.json; \
+	  curl -sf -X POST "http://$$TS:8642/api/ask" -H 'Content-Type: application/json' \
+	    -d '{"q":"who are you"}' | tee logs/cnet_web_ask.json; \
+	  curl -sf -X POST "http://$$TS:8642/api/ask" -H 'Content-Type: application/json' \
+	    -d '{"q":"x","promote":true}' | tee logs/cnet_web_promote_deny.json
+	@grep -q LOCAL logs/cnet_web_ask.json
+	@grep -q promote_forbidden logs/cnet_web_promote_deny.json
+	@ss -ltnp 2>/dev/null | grep -E ':8642' | tee logs/cnet_web_listen.txt || true
+	@echo "CNET_WEB_SERVICE_OK"
 
 # CERT-first domain route table (static + optional TSV overlay)
 .PHONY: domain_route
