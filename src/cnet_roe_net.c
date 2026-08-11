@@ -196,10 +196,9 @@ void roe_net_from_env(RoeNet *N) {
 
 int roe_net_llm(RoeNet *N, const char *prompt, char *answer, size_t answer_cap,
                 uint64_t *tokens_est) {
-    char body[4096];
     char sys_prompt[512];
     struct MemBuf mb;
-    int rc;
+    int rc = -1;
     size_t plen;
 
     if (tokens_est) *tokens_est = 0;
@@ -210,43 +209,55 @@ int roe_net_llm(RoeNet *N, const char *prompt, char *answer, size_t answer_cap,
         return -2;
     }
 
+    memset(&mb, 0, sizeof mb);
+
     snprintf(sys_prompt, sizeof sys_prompt,
-             "You are an external teacher for ROE-ASI / CNET. Answers are UNTRUSTED "
-             "drafts (never self-CERT). Be concise and helpful. 2-6 short sentences "
-             "unless the user asks for more. No markdown headers. Query: ");
+             "You are an external teacher for ROE-ASI / CNET. Your draft is UNTRUSTED "
+             "(never self-CERT). Teach clearly and completely: finish your thought, "
+             "cover the question, use short paragraphs if needed. No markdown headers. "
+             "Query: ");
     plen = strlen(sys_prompt) + strlen(prompt);
     /* escape quotes in prompt lightly */
     {
-        char pq[1500];
+        char pq[2500];
+        char body[12288];
         size_t i, j = 0;
         const char *think_json = N->think ? "true" : "false";
-        int open_chat = 0;
-        int npred = 120;
+        int teach = 1;
+        int npred = 512; /* full teach default — was 120 and cut answers off */
+        double temp = 0.35;
         const char *ep;
+        ep = getenv("CNET_TEACHER_ON_MISS");
+        if (ep && (ep[0] == '0' || ep[0] == 'n' || ep[0] == 'N')) teach = 0;
         ep = getenv("CNET_OPEN_CHAT");
-        if (ep && (ep[0] == '1' || ep[0] == 'y' || ep[0] == 'Y')) open_chat = 1;
+        if (ep && (ep[0] == '1' || ep[0] == 'y' || ep[0] == 'Y')) teach = 1;
         ep = getenv("ROE_OPEN_CHAT");
-        if (ep && (ep[0] == '1' || ep[0] == 'y' || ep[0] == 'Y')) open_chat = 1;
-        if (open_chat) npred = 280;
+        if (ep && (ep[0] == '1' || ep[0] == 'y' || ep[0] == 'Y')) teach = 1;
+        if (teach) npred = 1024;
         ep = getenv("ROE_LLM_NUM_PREDICT");
         if (ep && ep[0]) npred = (int)strtol(ep, NULL, 10);
-        if (npred < 32) npred = 32;
-        if (npred > 512) npred = 512;
+        if (npred < 64) npred = 64;
+        if (npred > 2048) npred = 2048;
+        ep = getenv("ROE_LLM_TEMPERATURE");
+        if (ep && ep[0]) temp = strtod(ep, NULL);
         for (i = 0; prompt[i] && j + 2 < sizeof pq; i++) {
             if (prompt[i] == '"' || prompt[i] == '\\') pq[j++] = '\\';
             pq[j++] = prompt[i];
         }
         pq[j] = 0;
         /* Ollama /api/generate — include think for cloud V4 models */
-        snprintf(body, sizeof body,
-                 "{\"model\":\"%s\",\"prompt\":\"%s%s\",\"stream\":false,"
-                 "\"think\":%s,"
-                 "\"options\":{\"num_predict\":%d,\"temperature\":%.2f}}",
-                 N->llm_model, sys_prompt, pq, think_json, npred,
-                 open_chat ? 0.4 : 0.2);
+        if ((size_t)snprintf(body, sizeof body,
+                             "{\"model\":\"%s\",\"prompt\":\"%s%s\",\"stream\":false,"
+                             "\"think\":%s,"
+                             "\"options\":{\"num_predict\":%d,\"temperature\":%.2f}}",
+                             N->llm_model, sys_prompt, pq, think_json, npred, temp) >=
+            sizeof body) {
+            snprintf(N->last_err, sizeof N->last_err, "llm body too large");
+            return -5;
+        }
+        rc = http_post_json(N->llm_url, body, N->timeout_ms, &mb);
     }
 
-    rc = http_post_json(N->llm_url, body, N->timeout_ms, &mb);
     if (rc != 0 || !mb.data) {
         snprintf(N->last_err, sizeof N->last_err, "llm http fail rc=%d", rc);
         N->n_llm_fail++;

@@ -19,7 +19,7 @@ extern "C" {
 
 #define ROE_NAME_MAX 64
 #define ROE_TEXT_MAX 256
-#define ROE_ANSWER_MAX 512
+#define ROE_ANSWER_MAX 4096
 #define ROE_MAX_SKILLS 128
 #define ROE_MAX_LOOKUP 64
 #define ROE_MAX_TEACH 64

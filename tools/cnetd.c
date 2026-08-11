@@ -341,16 +341,19 @@ static int cd_ask(CdState *S, const char *q, CdReply *out) {
     }
 
     roe_net_from_env(&net);
-    /* CNET self-answer default: no Teacher unless explicitly enabled */
+    /* Teach path: Teacher on organic miss (default ON). Probes never teacher.
+     * Self-answer fills only when teacher off or teacher fails. */
     {
-        const char *sa = getenv("CNET_SELF_ANSWER");
         const char *tm = getenv("CNET_TEACHER_ON_MISS");
-        int self_answer = 1; /* default ON — CNET writes its own lines */
-        if (sa && (sa[0] == '0' || sa[0] == 'n' || sa[0] == 'N' || sa[0] == 'f'))
-            self_answer = 0;
-        if (tm && (tm[0] == '1' || tm[0] == 'y' || tm[0] == 'Y'))
-            self_answer = 0; /* teacher allowed on miss */
-        if (self_answer) {
+        const char *sa = getenv("CNET_SELF_ANSWER");
+        int teacher_on_miss = 1; /* default: teach when CNET has no CERT */
+        (void)sa;
+        if (tm && (tm[0] == '0' || tm[0] == 'n' || tm[0] == 'N' || tm[0] == 'f'))
+            teacher_on_miss = 0;
+        if (teacher_on_miss) {
+            net.enable_llm = 1;
+            /* lookup optional — leave env default */
+        } else {
             net.enable_llm = 0;
             net.enable_lookup = 0;
         }
@@ -370,7 +373,7 @@ static int cd_ask(CdState *S, const char *q, CdReply *out) {
     out->tokens = (unsigned long long)rep.tokens_est;
     out->miss = (rep.source != ROE_SRC_LOCAL) ? 1 : 0;
 
-    /* C-native utterance / self-answer (CERT + templates — not Teacher) */
+    /* C-native utterance always; self-answer replaces only non-LLM misses */
     {
         static CnetUtterBank UB;
         static int ub_ready;
@@ -378,12 +381,13 @@ static int cd_ask(CdState *S, const char *q, CdReply *out) {
         const char *when = NULL;
         const char *env;
         int self_answer = 1;
+        int teacher_on_miss = 1;
         env = getenv("CNET_SELF_ANSWER");
         if (env && (env[0] == '0' || env[0] == 'n' || env[0] == 'N' || env[0] == 'f'))
             self_answer = 0;
         env = getenv("CNET_TEACHER_ON_MISS");
-        if (env && (env[0] == '1' || env[0] == 'y' || env[0] == 'Y'))
-            self_answer = 0;
+        if (env && (env[0] == '0' || env[0] == 'n' || env[0] == 'N' || env[0] == 'f'))
+            teacher_on_miss = 0;
 
         if (!ub_ready) {
             cnet_utter_bank_init_default(&UB);
@@ -425,33 +429,35 @@ static int cd_ask(CdState *S, const char *q, CdReply *out) {
         load_neuromod_into(&U);
         (void)cnet_utter_compose(&UB, &U, when, out->utterance, sizeof out->utterance);
         if (!out->utterance[0])
-            snprintf(out->utterance, sizeof out->utterance, "%s", out->answer);
+            snprintf(out->utterance, sizeof out->utterance, "%.767s", out->answer);
 
         /*
-         * Self-answer: replace residual Teacher/ASK_USER with CNET-composed line.
-         * CERT LOCAL answers stay as sealed skill text.
+         * Teach path: LLM answer stays as user-facing answer (untrusted draft).
+         * Self-answer only when no CERT and no Teacher draft (teacher off/fail/probe).
          */
-        if (out->miss && self_answer && !out->shortcircuit) {
-            snprintf(out->answer, sizeof out->answer, "%.511s", out->utterance);
+        if (out->miss && strcmp(out->source, "LLM") != 0 && self_answer) {
+            snprintf(out->answer, sizeof out->answer, "%.2047s", out->utterance);
             snprintf(out->source, sizeof out->source, "CNET");
-            snprintf(out->skill, sizeof out->skill, "utter_self");
+            snprintf(out->skill, sizeof out->skill, "%s",
+                     out->shortcircuit ? "utter_probe" : "utter_self");
             out->verified = 0;
             out->tokens = 0;
-            U.source[0] = 0;
             snprintf(U.source, sizeof U.source, "CNET");
-        } else if (out->miss && self_answer && out->shortcircuit) {
-            /* probe: CNET short message, still not teacher */
-            snprintf(out->answer, sizeof out->answer, "%.511s", out->utterance);
-            snprintf(out->source, sizeof out->source, "CNET");
-            snprintf(out->skill, sizeof out->skill, "utter_probe");
-            out->tokens = 0;
-            snprintf(U.source, sizeof U.source, "CNET");
+        } else if (out->miss && strcmp(out->source, "LLM") == 0) {
+            /* Teacher taught this turn — keep full draft; utterance stays C meta/miss line */
+            /* Optionally attach CNET coda for law reminder if utterance empty */
+            if (!out->utterance[0])
+                snprintf(out->utterance, sizeof out->utterance,
+                         "Teacher draft logged for later gold review. Law: never self-cert.");
         }
+        (void)teacher_on_miss;
 
         out->may_voice = cnet_utter_may_voice(&U, out->source);
-        /* CNET-composed lines are always voiceable under never_voice_llm */
         if (strcmp(out->source, "CNET") == 0 || strcmp(out->source, "LOCAL") == 0)
             out->may_voice = 1;
+        /* never voice raw teacher unless override */
+        if (strcmp(out->source, "LLM") == 0 && U.never_voice_llm)
+            out->may_voice = 0;
     }
 
     /* append miss with shortcircuit / open-chat learn tags */
