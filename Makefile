@@ -3523,6 +3523,27 @@ cnetd-run: cnetd
 	@grep -q "SHORTCIRCUIT 1\|shortcircuit.:true" logs/cnetd_ask.log
 	@echo "CNETD_OK"
 
+.PHONY: cnet-web
+cnet-web:
+	@test -f web/cnet-cockpit.html
+	@test -f tools/cnet_web.py
+	@# ensure cnetd up
+	@systemctl --user is-active cnetd.service >/dev/null 2>&1 || $(MAKE) cnetd-run
+	@pkill -f 'python3 tools/cnet_web.py' 2>/dev/null || true
+	@sleep 0.2
+	@if [ -f $(HOME)/.local/share/cnet-minimal/cnet-minimal.env ]; then set -a; . $(HOME)/.local/share/cnet-minimal/cnet-minimal.env; set +a; fi
+	@CNET_WEB_HOST=127.0.0.1 CNET_WEB_PORT=8642 python3 tools/cnet_web.py >logs/cnet_web.log 2>&1 & echo $$! > logs/cnet_web.pid
+	@sleep 0.6
+	@curl -sf http://127.0.0.1:8642/api/health | tee logs/cnet_web_health.json
+	@grep -q '"ok": true' logs/cnet_web_health.json || grep -q '"ok":true' logs/cnet_web_health.json
+	@curl -sf -X POST http://127.0.0.1:8642/api/ask -H 'Content-Type: application/json' \
+	  -d '{"q":"who are you"}' | tee logs/cnet_web_ask.json
+	@grep -q LOCAL logs/cnet_web_ask.json
+	@curl -sf -X POST http://127.0.0.1:8642/api/ask -H 'Content-Type: application/json' \
+	  -d '{"q":"x","promote":true}' | tee logs/cnet_web_promote_deny.json
+	@grep -q promote_forbidden logs/cnet_web_promote_deny.json
+	@echo "CNET_WEB_OK"
+
 # CERT-first domain route table (static + optional TSV overlay)
 .PHONY: domain_route
 domain_route: include/cnet_domain_route.h src/cnet_domain_route.c tools/roe_domain_route.c

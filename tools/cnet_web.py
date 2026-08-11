@@ -1,0 +1,417 @@
+#!/usr/bin/env python3
+"""cnet-web — thin Tailscale/localhost HTTP cockpit over cnetd UNIX socket.
+
+No npm. Stdlib only. Does not auto-CERT or write pack_personal.
+
+  python3 tools/cnet_web.py
+  CNET_WEB_HOST=100.x.x.x CNET_WEB_PORT=8642 python3 tools/cnet_web.py
+
+Env:
+  CNET_SOCK, CNET_MINIMAL_ROOT, CNET_PACKS_ROOT
+  CNET_WEB_HOST (default: tailscale0 IP or 127.0.0.1)
+  CNET_WEB_PORT (default: 8642)
+  CNET_WEB_TOKEN (optional bearer / ?token=)
+"""
+from __future__ import annotations
+
+import json
+import os
+import socket
+import subprocess
+import sys
+import threading
+import urllib.parse
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+STATIC = ROOT / "web" / "cnet-cockpit.html"
+PORT = int(os.environ.get("CNET_WEB_PORT", "8642"))
+TOKEN = os.environ.get("CNET_WEB_TOKEN", "").strip()
+
+
+def packs_root() -> Path:
+    p = os.environ.get("CNET_PACKS_ROOT", "").strip()
+    if p:
+        return Path(p)
+    m = os.environ.get("CNET_MINIMAL_ROOT", "").strip()
+    if m:
+        return Path(m) / "data" / "roe_daily_packs"
+    return ROOT / "artifacts" / "roe_daily_packs"
+
+
+def sock_path() -> str:
+    s = os.environ.get("CNET_SOCK", "").strip()
+    if s:
+        return s
+    xdg = os.environ.get("XDG_RUNTIME_DIR", "").strip()
+    if xdg:
+        p = Path(xdg) / "cnet" / "cnet.sock"
+        if p.exists() or True:
+            return str(p)
+    return str(Path.home() / ".local/share/cnet-minimal/run/cnet.sock")
+
+
+def tailscale_ip() -> str | None:
+    try:
+        out = subprocess.check_output(
+            ["tailscale", "ip", "-4"], text=True, timeout=3, stderr=subprocess.DEVNULL
+        ).strip()
+        for line in out.splitlines():
+            line = line.strip()
+            if line.startswith("100."):
+                return line
+    except Exception:
+        pass
+    # ip -4 addr show tailscale0
+    try:
+        out = subprocess.check_output(
+            ["ip", "-4", "-o", "addr", "show", "dev", "tailscale0"],
+            text=True,
+            timeout=3,
+            stderr=subprocess.DEVNULL,
+        )
+        for part in out.split():
+            if part.startswith("100.") and "/" in part:
+                return part.split("/")[0]
+    except Exception:
+        pass
+    return None
+
+
+def bind_host() -> str:
+    h = os.environ.get("CNET_WEB_HOST", "").strip()
+    if h:
+        return h
+    ts = tailscale_ip()
+    return ts if ts else "127.0.0.1"
+
+
+def cnetd_ask(q: str, as_json: bool = True) -> dict | str:
+    path = sock_path()
+    if not Path(path).exists():
+        return {"ok": False, "error": f"cnetd socket missing: {path}"}
+    s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    s.settimeout(120)
+    try:
+        s.connect(path)
+        if as_json:
+            payload = json.dumps({"op": "ask", "q": q}, ensure_ascii=False) + "\n"
+        else:
+            payload = "ASK " + q + "\n"
+        s.sendall(payload.encode())
+        data = b""
+        while True:
+            chunk = s.recv(65536)
+            if not chunk:
+                break
+            data += chunk
+            if as_json and data.endswith(b"\n"):
+                break
+            if not as_json and b"\nEND\n" in data:
+                break
+        text = data.decode(errors="replace")
+        if as_json:
+            try:
+                return json.loads(text.strip().splitlines()[0])
+            except json.JSONDecodeError:
+                return {"ok": False, "error": "bad_json", "raw": text[:500]}
+        return text
+    except OSError as e:
+        return {"ok": False, "error": str(e)}
+    finally:
+        try:
+            s.close()
+        except OSError:
+            pass
+
+
+def cnetd_status() -> dict:
+    path = sock_path()
+    if not Path(path).exists():
+        return {"ok": False, "error": "no_socket", "sock": path}
+    s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    try:
+        s.connect(path)
+        s.sendall(b"STATUS\n")
+        data = s.recv(4096).decode(errors="replace")
+        return {"ok": True, "status": data.strip(), "sock": path}
+    except OSError as e:
+        return {"ok": False, "error": str(e), "sock": path}
+    finally:
+        try:
+            s.close()
+        except OSError:
+            pass
+
+
+def tail_jsonl(path: Path, n: int = 40, organic_only: bool = False) -> list:
+    if not path.is_file():
+        return []
+    lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+    rows = []
+    for ln in lines[-(n * 3) :]:
+        ln = ln.strip()
+        if not ln:
+            continue
+        try:
+            r = json.loads(ln)
+        except json.JSONDecodeError:
+            continue
+        if organic_only and (
+            r.get("shortcircuit")
+            or "novel fact" in (r.get("query") or "").lower()
+            or "mystic" in (r.get("query") or "").lower()
+        ):
+            continue
+        rows.append(r)
+    return rows[-n:]
+
+
+def read_neuromod() -> dict:
+    p = ROOT / "logs" / "governor" / "neuromod_state.json"
+    if not p.is_file():
+        p = ROOT / "logs" / "governor" / "schedule_gate.json"
+    if not p.is_file():
+        return {}
+    try:
+        return json.loads(p.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return {}
+
+
+def read_autonomous_kpi() -> dict:
+    p = ROOT / "logs" / "marble_24_7" / "AUTONOMOUS_CYCLE.json"
+    if not p.is_file():
+        return {}
+    try:
+        d = json.loads(p.read_text(encoding="utf-8"))
+        return {"ts": d.get("ts"), "kpi": d.get("kpi"), "duration_s": d.get("duration_s")}
+    except json.JSONDecodeError:
+        return {}
+
+
+def explore_queue(n: int = 30) -> list:
+    p = packs_root() / "curriculum_explore.jsonl"
+    return tail_jsonl(p, n=n)
+
+
+def approve_explore(explore_id: str, query: str, answer: str) -> dict:
+    """Write gold file only — never pack_personal / never CERT seal."""
+    import hashlib
+    import re
+
+    pr = packs_root()
+    gold = pr / "gold"
+    gold.mkdir(parents=True, exist_ok=True)
+    nq = re.sub(r"\s+", " ", (query or "").strip().lower())[:200]
+    h = hashlib.sha1(nq.encode()).hexdigest()[:16]
+    path = gold / f"{h}.txt"
+    path.write_text((answer or "").replace("\n", " ").strip()[:800] + "\n", encoding="utf-8")
+    # mark review log
+    rev = pr / "explore_review.jsonl"
+    with rev.open("a", encoding="utf-8") as f:
+        f.write(
+            json.dumps(
+                {
+                    "action": "approve_gold",
+                    "explore_id": explore_id,
+                    "query": query,
+                    "gold_sha": h,
+                    "auto_cert": False,
+                    "writes_pack_personal": False,
+                },
+                ensure_ascii=False,
+            )
+            + "\n"
+        )
+    return {
+        "ok": True,
+        "gold_path": str(path),
+        "gold_sha": h,
+        "auto_cert": False,
+        "note": "gold_file only; evolve may promote later under charter",
+    }
+
+
+def reject_explore(explore_id: str, query: str) -> dict:
+    pr = packs_root()
+    rev = pr / "explore_review.jsonl"
+    with rev.open("a", encoding="utf-8") as f:
+        f.write(
+            json.dumps(
+                {
+                    "action": "reject",
+                    "explore_id": explore_id,
+                    "query": query,
+                    "auto_cert": False,
+                },
+                ensure_ascii=False,
+            )
+            + "\n"
+        )
+    return {"ok": True, "rejected": explore_id}
+
+
+class Handler(BaseHTTPRequestHandler):
+    server_version = "cnet-web/1.0"
+
+    def log_message(self, format, *args):  # noqa: A003 — BaseHTTPRequestHandler API
+        sys.stderr.write("%s - %s\n" % (self.address_string(), format % args))
+
+    def _auth_ok(self) -> bool:
+        if not TOKEN:
+            return True
+        auth = self.headers.get("Authorization", "")
+        if auth == f"Bearer {TOKEN}":
+            return True
+        qs = urllib.parse.urlparse(self.path).query
+        params = urllib.parse.parse_qs(qs)
+        if params.get("token", [""])[0] == TOKEN:
+            return True
+        return False
+
+    def _send(self, code: int, body: bytes, ctype: str = "application/json"):
+        self.send_response(code)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _json(self, code: int, obj: dict | list):
+        self._send(code, json.dumps(obj, ensure_ascii=False).encode(), "application/json; charset=utf-8")
+
+    def do_OPTIONS(self):
+        self.send_response(204)
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
+        self.end_headers()
+
+    def do_GET(self):
+        if not self._auth_ok():
+            self._json(401, {"ok": False, "error": "unauthorized"})
+            return
+        parsed = urllib.parse.urlparse(self.path)
+        path = parsed.path
+        qs = urllib.parse.parse_qs(parsed.query)
+
+        if path in ("/", "/index.html"):
+            html = STATIC.read_bytes() if STATIC.is_file() else b"<h1>cnet-web missing cockpit html</h1>"
+            self._send(200, html, "text/html; charset=utf-8")
+            return
+        if path == "/api/health":
+            self._json(200, {"ok": True, "service": "cnet-web", "never_self_cert": True})
+            return
+        if path == "/api/status":
+            nm = read_neuromod()
+            levels = nm.get("levels") or nm
+            self._json(
+                200,
+                {
+                    "ok": True,
+                    "cnetd": cnetd_status(),
+                    "neuromod": {
+                        "dopamine": levels.get("dopamine"),
+                        "serotonin": levels.get("serotonin"),
+                        "adenosine": levels.get("adenosine"),
+                    },
+                    "schedule": nm if "pause_grow_probes" in nm else {},
+                    "autonomous": read_autonomous_kpi(),
+                    "packs": str(packs_root()),
+                    "never_self_cert": True,
+                },
+            )
+            return
+        if path == "/api/miss_log":
+            n = int(qs.get("n", ["40"])[0] or 40)
+            organic = qs.get("organic", ["0"])[0] in ("1", "true", "yes")
+            miss = packs_root() / "miss_log.jsonl"
+            # prefer shared var log if present
+            var = Path.home() / ".local/share/cnet-minimal/var/miss_log.jsonl"
+            if var.is_file():
+                miss = var
+            self._json(200, {"ok": True, "rows": tail_jsonl(miss, n=n, organic_only=organic)})
+            return
+        if path == "/api/explore":
+            n = int(qs.get("n", ["30"])[0] or 30)
+            self._json(200, {"ok": True, "rows": explore_queue(n), "auto_cert": False})
+            return
+        self._json(404, {"ok": False, "error": "not_found"})
+
+    def do_POST(self):
+        if not self._auth_ok():
+            self._json(401, {"ok": False, "error": "unauthorized"})
+            return
+        parsed = urllib.parse.urlparse(self.path)
+        path = parsed.path
+        length = int(self.headers.get("Content-Length") or 0)
+        raw = self.rfile.read(length) if length else b"{}"
+        try:
+            body = json.loads(raw.decode() or "{}")
+        except json.JSONDecodeError:
+            self._json(400, {"ok": False, "error": "bad_json"})
+            return
+
+        if path == "/api/ask":
+            q = (body.get("q") or body.get("query") or "").strip()
+            if not q:
+                self._json(400, {"ok": False, "error": "empty_query"})
+                return
+            # hard law: web cannot request promote
+            if body.get("promote") or body.get("accept"):
+                self._json(
+                    403,
+                    {
+                        "ok": False,
+                        "error": "promote_forbidden",
+                        "law": "never_self_cert; use explore approve→gold only",
+                    },
+                )
+                return
+            rep = cnetd_ask(q, as_json=True)
+            if isinstance(rep, dict):
+                rep["never_self_cert"] = True
+                rep["web_promote"] = False
+            self._json(200 if isinstance(rep, dict) and rep.get("ok", True) else 502, rep if isinstance(rep, dict) else {"ok": False, "raw": rep})
+            return
+
+        if path == "/api/explore/approve":
+            # gold only
+            r = approve_explore(
+                body.get("explore_id") or "",
+                body.get("query") or "",
+                body.get("answer") or "",
+            )
+            self._json(200, r)
+            return
+        if path == "/api/explore/reject":
+            r = reject_explore(body.get("explore_id") or "", body.get("query") or "")
+            self._json(200, r)
+            return
+
+        self._json(404, {"ok": False, "error": "not_found"})
+
+
+def main() -> int:
+    host = bind_host()
+    # refuse 0.0.0.0 unless explicitly forced
+    if host in ("0.0.0.0", "::") and os.environ.get("CNET_WEB_ALLOW_PUBLIC") != "1":
+        print("refusing public bind; set CNET_WEB_HOST=100.x or 127.0.0.1", file=sys.stderr)
+        host = "127.0.0.1"
+    if not STATIC.is_file():
+        print(f"missing cockpit {STATIC}", file=sys.stderr)
+        return 1
+    httpd = ThreadingHTTPServer((host, PORT), Handler)
+    print(f"cnet-web http://{host}:{PORT}/  sock={sock_path()}  token={'set' if TOKEN else 'off'}")
+    print("never_self_cert=1  promote_via_web=forbidden")
+    try:
+        httpd.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
