@@ -88,6 +88,49 @@ VERIFIED_GOLD: dict[str, str] = {
         "Neural KV is epoch-tagged; text/CERT is epoch-invariant. MTK apply/revert "
         "bumps weight_epoch and flushes HOT — no cross-epoch K/V rehydrate."
     ),
+    # pack_english_basic — sealed day-0 English (Teacher drafts still need this path)
+    "a or an": (
+        "Use a before consonant sounds (a cat, a university /ju/). Use an before vowel "
+        "sounds (an apple, an hour). Sound matters, not only spelling."
+    ),
+    "past of go": (
+        "go → went → gone. Present: go/goes. Past simple: went. Perfect: have/has gone."
+    ),
+    "past tense of go": (
+        "go → went → gone. Present: go/goes. Past simple: went. Perfect: have/has gone."
+    ),
+    "present simple tense": (
+        "Present simple: base verb; he/she/it adds -s/-es (she works). Use for habits, "
+        "facts, schedules. Negative: do/does not + base."
+    ),
+    "verb to be present": (
+        "Present of be: I am, you/we/they are, he/she/it is. Negatives: am not, "
+        "are not (aren't), is not (isn't)."
+    ),
+    "english basic pack": (
+        "pack_english_basic: sealed basic English vocab and grammar for ROE. LOCAL CERT "
+        "only; Teacher drafts do not auto-CERT."
+    ),
+    "teach english to roe": (
+        "English reaches ROE via gold/CERT skills in pack_english_basic, not raw Teacher "
+        "chat. Teacher may draft; promote only gold or multi_stable+reviewer."
+    ),
+    "what is a noun": (
+        "A noun names a person, place, thing, or idea (teacher, city, book, freedom). "
+        "Count nouns can be plural; mass nouns usually are not (water, advice)."
+    ),
+    "subject verb agreement": (
+        "Singular subject → singular verb (He works). Plural → plural (They work). "
+        "Note: I/you take base without -s (I work, you work)."
+    ),
+    "days of the week": (
+        "Monday Tuesday Wednesday Thursday Friday Saturday Sunday. "
+        "Weekend = Saturday + Sunday."
+    ),
+    "english vocabulary and grammar": (
+        "pack_english_basic: sealed basic English vocab and grammar for ROE. LOCAL CERT "
+        "only; Teacher drafts do not auto-CERT."
+    ),
 }
 
 

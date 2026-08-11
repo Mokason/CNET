@@ -27,3 +27,10 @@ CERT	how does speech	pack_speech_io
 CERT	speak the answer	pack_speech_io
 CERT	tts speak	pack_speech_io
 CERT	voice output	pack_speech_io
+CERT	english basic	pack_english_basic
+CERT	a or an	pack_english_basic
+CERT	past of go	pack_english_basic
+CERT	present simple	pack_english_basic
+CERT	teach english to roe	pack_english_basic
+CERT	english vocabulary	pack_english_basic
+CERT	english grammar	pack_english_basic
