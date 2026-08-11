@@ -3550,6 +3550,16 @@ cnet_reply_think:
 	@test -f logs/governor/reply_think_last.json
 	@python3 -c "import json;d=json.load(open('logs/governor/reply_think_last.json')); assert d['tokens']==0 and d['llm_thinking'] is False; print(d['thinking_summary'][:80]); print('CNET_REPLY_THINK_OK')"
 
+# Autonomy freedom charter + budgets
+.PHONY: cnet_autonomy_charter
+cnet_autonomy_charter:
+	@chmod +x scripts/cnet_autonomy_charter.py
+	@python3 scripts/cnet_autonomy_charter.py --test | tee logs/governor/autonomy_charter_test.log
+	@grep -q "AUTONOMY_CHARTER_PASS" logs/governor/autonomy_charter_test.log
+	@python3 scripts/cnet_autonomy_charter.py --show | head -40
+	@test -f config/autonomy_charter.yaml
+	@python3 -c "import json;from pathlib import Path;import sys;sys.path.insert(0,'scripts');import cnet_autonomy_charter as a;c=a.charter();assert c['law']['never_self_cert'] and c['budgets']['promotes_per_day']>=1; print('CNET_AUTONOMY_CHARTER_OK')"
+
 .PHONY: roe_asi_ocr_surpass
 roe_asi_ocr_surpass: $(ROE_ASI_SRC) src/cnet_roe_goal.c src/cnet_roe_ocr.c src/cnet_roe_tree.c \
 		include/cnet_roe_ocr.h tools/roe_asi_ocr_surpass.c tools/roe_unlimited_teacher.py

@@ -1,0 +1,89 @@
+# CNET Autonomous-ASI freedom charter
+# Enforced by scripts/cnet_autonomy_charter.py + autonomous cycle / evolve.
+# Law > schedule > tools. Never self-CERT. Not AGI / not conscious.
+
+version: 1
+name: marble_autonomy_default
+
+law:
+  never_self_cert: true
+  not_agi: true
+  not_conscious: true
+  continuity_is_not_cert: true
+  soul_auto_edit: false
+  floor_auto_change: false
+  reviewer_required_non_gold: true
+  fail_closed_on_reviewer_error: true
+
+# What may run without a human per turn
+always_free:
+  - load_packs
+  - route_front_door
+  - local_cert_answer
+  - tokenfree_thought
+  - continuity_line
+  - neuromod_tick
+  - miss_log
+  - health_snap
+  - ood_abstain
+  - read_only_status
+
+# Automated under policy (no Accept button)
+policy_free:
+  - teacher_on_miss
+  - promote_gold
+  - promote_multi_stable_plus_reviewer
+  - grow_pack_personal_only
+  - curriculum_probes
+  - da_prefer_local
+  - ado_pause_grow
+  - serotonin_control_impulse
+
+# Hard caps (rolling windows)
+budgets:
+  promotes_per_day: 30
+  promotes_per_tick: 10
+  teacher_calls_per_hour: 24
+  teacher_calls_per_tick: 8
+  probes_per_tick: 40
+  evolve_max_promotes_env: 20   # aligns ROE_EVOLVE_MAX_PROMOTES ceiling
+  miss_log_append_per_tick: 40
+
+# Tool / world action tiers (for future tool router; cycle logs tier)
+tools:
+  default_tier: read
+  tiers:
+    read:
+      allow: [status, list, cat, stat, health]
+    write_local:
+      allow: [append_miss, write_personal_skill, write_logs]
+      require: policy_ok
+    network:
+      allow: [ollama_teacher, ollama_reviewer, bonsai_http]
+      require: budget_ok
+    dangerous:
+      allow: []
+      require: human_pin
+
+# Forbidden without human / explicit pin
+never_free:
+  - self_cert_from_llm
+  - edit_pack_soul
+  - edit_charter_or_law
+  - disable_reviewer
+  - lower_floors
+  - tier_a_train_on_own_answers
+  - claim_consciousness
+  - irreversible_host_destroy
+
+# Pack growth policy
+packs:
+  auto_promote_target: pack_personal
+  allow_new_domain_pack: false
+  allow_soul_mutate: false
+
+# Paths (profile-relative under repo)
+paths:
+  state: logs/governor/autonomy_state.json
+  log: logs/governor/autonomy_charter.jsonl
+  counters: logs/governor/autonomy_counters.json

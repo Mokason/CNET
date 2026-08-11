@@ -243,6 +243,27 @@ def main() -> int:
         "ok": False,
     }
 
+    # 0) autonomy charter — freedom + budgets
+    charter_state = {}
+    try:
+        import cnet_autonomy_charter as ac  # type: ignore
+
+        charter_state = ac.begin_tick()
+        report["autonomy"] = {
+            "charter": charter_state.get("charter"),
+            "law": charter_state.get("law"),
+            "counters": charter_state.get("counters"),
+            "budgets": charter_state.get("budgets"),
+        }
+        # apply env ceilings for evolve/teacher children
+        os.environ.update(
+            {k: v for k, v in (charter_state.get("env_hints") or {}).items() if v}
+        )
+        ac.apply_env_from_charter(os.environ)
+        report["steps"].append({"step": "autonomy_charter", "rc": 0})
+    except Exception as e:
+        report["steps"].append({"step": "autonomy_charter", "rc": 1, "err": str(e)[:120]})
+
     # 1) health
     rc, out = run([sys.executable, str(ROOT / "scripts" / "cnet_marble_health_snap.py")], 60)
     report["steps"].append({"step": "health", "rc": rc})
@@ -265,6 +286,16 @@ def main() -> int:
 
     seed_gold_for_stable_novel()
     curriculum = load_curriculum()
+    # charter probe budget
+    try:
+        import cnet_autonomy_charter as ac  # type: ignore
+
+        cap_p = int((ac.charter().get("budgets") or {}).get("probes_per_tick", 40))
+        if len(curriculum) > cap_p:
+            curriculum = curriculum[:cap_p]
+            report["steps"].append({"step": "charter_probe_cap", "kept": len(curriculum)})
+    except Exception:
+        pass
 
     # Neuromod schedule gate (ADO pause grow; 5HT control/impulse; DA handled in front_door)
     gate = {}
@@ -304,8 +335,19 @@ def main() -> int:
     # control mode: still allow teacher on miss unless pause_teacher
     if control and pause_teacher:
         live = False
+    # charter: teacher allowed?
+    try:
+        import cnet_autonomy_charter as ac  # type: ignore
+
+        tr = ac.check_action("teacher_on_miss")
+        if not tr.get("ok"):
+            live = False
+            report["steps"].append({"step": "charter_teacher_deny", "reason": tr.get("reason")})
+    except Exception:
+        pass
 
     local_n = miss_n = llm_n = 0
+    teacher_used = 0
     thoughts = []
     for item in curriculum:
         q = item["q"]
@@ -319,9 +361,28 @@ def main() -> int:
             th = None
         info = probe(q, live=False)
         if info["source"] != "LOCAL" and live:
-            info2 = probe(q, live=True)
-            if info2.get("answer") or info2["source"] == "LLM":
-                info = info2
+            # budget consume per teacher call
+            allow_t = True
+            try:
+                import cnet_autonomy_charter as ac  # type: ignore
+
+                tr = ac.check_action(
+                    "teacher",
+                    tick_teacher=teacher_used,
+                    consume=True,
+                )
+                allow_t = bool(tr.get("ok"))
+                if not allow_t:
+                    report.setdefault("charter_denies", []).append(
+                        {"action": "teacher", "reason": tr.get("reason"), "q": q[:40]}
+                    )
+            except Exception:
+                pass
+            if allow_t:
+                info2 = probe(q, live=True)
+                teacher_used += 1
+                if info2.get("answer") or info2["source"] == "LLM":
+                    info = info2
         if th and info.get("source"):
             try:
                 import cnet_thought_process as tp  # type: ignore
@@ -353,12 +414,13 @@ def main() -> int:
         )
     report["thoughts_n"] = len(thoughts)
     report["thought_sample"] = thoughts[:3]
+    report["kpi"]["teacher_calls_tick"] = teacher_used
 
     # Continuity workspace (bind body/mind/place/story — not consciousness)
     try:
         import cnet_continuity as cont  # type: ignore
 
-        sample_q = (thoughts[0]["q"] if thoughts else "status")
+        sample_q = thoughts[0]["q"] if thoughts else "status"
         cf = cont.snapshot(sample_q, run_thought=False, persist=True)
         report["continuity_line"] = cf.get("continuity_line")
         report["continuity"] = {
@@ -376,10 +438,20 @@ def main() -> int:
     report["kpi"]["llm_n"] = llm_n
     report["kpi"]["local_hit"] = round(local_n / n, 3)
 
-    # 3) evolve tick (reviewer on by default via env file)
+    # 3) evolve tick (reviewer on by default via env file + charter)
     env = fd_env(live=False)
     env["ROE_EVOLVE_REVIEWER"] = env.get("ROE_EVOLVE_REVIEWER", "1")
-    # prefer hermetic reviewer if live flaky and env set
+    try:
+        import cnet_autonomy_charter as ac  # type: ignore
+
+        env = ac.apply_env_from_charter(env)
+        # deny evolve promote burst if day cap already hit
+        pr = ac.check_action("promote")
+        if not pr.get("ok"):
+            report["steps"].append({"step": "evolve_skipped_charter", "reason": pr.get("reason")})
+            env["ROE_EVOLVE_MAX_PROMOTES"] = "0"
+    except Exception:
+        pass
     if os.environ.get("CNET_AUTO_HERMETIC_REVIEW", "0") in ("1", "true", "yes"):
         env["ROE_REVIEW_HERMETIC"] = "1"
     rc, out = run(
@@ -388,14 +460,22 @@ def main() -> int:
         env=env,
     )
     report["steps"].append({"step": "evolve_tick", "rc": rc})
-    # parse evolve report
+    # parse evolve report + consume promote budget
     er = ROOT / "artifacts" / "roe_daily_packs" / "EVOLVE_TICK.json"
     if er.is_file():
         try:
             ev = json.loads(er.read_text(encoding="utf-8"))
-            report["kpi"]["promoted"] = len(ev.get("promoted") or [])
+            n_prom = len(ev.get("promoted") or [])
+            report["kpi"]["promoted"] = n_prom
             report["kpi"]["evolve_skipped"] = len(ev.get("skipped") or [])
             report["kpi"]["reviewer_enabled"] = ev.get("reviewer_enabled")
+            try:
+                import cnet_autonomy_charter as ac  # type: ignore
+
+                for _ in range(n_prom):
+                    ac.check_action("promote", consume=True)
+            except Exception:
+                pass
         except json.JSONDecodeError:
             pass
 

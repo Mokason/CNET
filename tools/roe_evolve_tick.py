@@ -503,6 +503,16 @@ def main() -> int:
         if "soul" in nq and "who are you" in nq:
             report["skipped"].append({"query": q, "reason": "persona_guard"})
             continue
+        # autonomy charter: promote budget (personal only)
+        try:
+            sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+            import cnet_autonomy_charter as ac  # type: ignore
+
+            if not ac.check_action("promote", tick_promotes=n_prom).get("ok"):
+                report["skipped"].append({"query": q, "reason": "charter_promote_budget"})
+                continue
+        except Exception:
+            pass
 
         # Separate REVIEWER role (not teacher). gold_file skips reviewer.
         review_meta = None
