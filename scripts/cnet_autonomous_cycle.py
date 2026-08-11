@@ -36,8 +36,25 @@ sys.path.insert(0, str(ROOT / "scripts"))
 OUT_DIR = ROOT / "logs" / "marble_24_7"
 REPORT = OUT_DIR / "AUTONOMOUS_CYCLE.json"
 CURRIC = ROOT / "config" / "autonomous_curriculum.jsonl"
-MISS = ROOT / "artifacts" / "roe_daily_packs" / "miss_log.jsonl"
-BIN_FD = ROOT / "bin" / "roe_front_door"
+_MIN = os.environ.get("CNET_MINIMAL_ROOT", "").strip()
+_minp = Path(_MIN) if _MIN else None
+PACKS = Path(
+    os.environ.get("CNET_PACKS_ROOT")
+    or (
+        str(_minp / "data" / "roe_daily_packs")
+        if _minp and (_minp / "data" / "roe_daily_packs").is_dir()
+        else ROOT / "artifacts" / "roe_daily_packs"
+    )
+)
+MISS = PACKS / "miss_log.jsonl"
+BIN_FD = Path(
+    os.environ.get("CNET_FRONT_DOOR_BIN")
+    or (
+        str(_minp / "bin" / "roe_front_door")
+        if _minp and (_minp / "bin" / "roe_front_door").is_file()
+        else ROOT / "bin" / "roe_front_door"
+    )
+)
 
 
 def utc_now() -> str:
@@ -183,7 +200,10 @@ def fd_env(live: bool) -> dict:
 
 def probe(q: str, live: bool) -> dict:
     env = fd_env(live=live)
-    rc, out = run([str(BIN_FD), "ask", q], timeout=180 if live else 30, env=env)
+    cmd = [str(BIN_FD), "ask", q]
+    if PACKS.is_dir():
+        cmd.extend(["--root", str(PACKS)])
+    rc, out = run(cmd, timeout=180 if live else 30, env=env)
     info = parse_fd(out)
     info["rc"] = rc
     info["q"] = q
@@ -204,7 +224,7 @@ def probe(q: str, live: bool) -> dict:
 
 def seed_gold_for_stable_novel() -> None:
     """If we have a fixed curriculum grow item with gold, ensure gold file exists."""
-    gold_dir = ROOT / "artifacts" / "roe_daily_packs" / "gold"
+    gold_dir = PACKS / "gold"
     gold_dir.mkdir(parents=True, exist_ok=True)
     # optional curriculum gold lines: {"q":..., "gold":...}
     if not CURRIC.is_file():
@@ -461,7 +481,7 @@ def main() -> int:
     )
     report["steps"].append({"step": "evolve_tick", "rc": rc})
     # parse evolve report + consume promote budget
-    er = ROOT / "artifacts" / "roe_daily_packs" / "EVOLVE_TICK.json"
+    er = PACKS / "EVOLVE_TICK.json"
     if er.is_file():
         try:
             ev = json.loads(er.read_text(encoding="utf-8"))

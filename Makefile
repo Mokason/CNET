@@ -3484,6 +3484,13 @@ cnet_runtime_soak_gate: cnet_minimal_package
 	@bash scripts/cnet_runtime_soak_gate.sh | tee logs/cnet_runtime_soak_gate.log
 	@grep -q "CNET_RUNTIME_SOAK_GATE_PASS" logs/cnet_runtime_soak_gate.log
 
+.PHONY: cnet_minimal_deploy
+cnet_minimal_deploy:
+	@mkdir -p logs
+	@chmod +x scripts/deploy_cnet_minimal.sh scripts/package_cnet_minimal.sh scripts/cnet_runtime_smoke.sh
+	@bash scripts/deploy_cnet_minimal.sh | tee logs/cnet_minimal_deploy.log
+	@grep -q "CNET_MINIMAL_DEPLOY_PASS" logs/cnet_minimal_deploy.log
+
 # CERT-first domain route table (static + optional TSV overlay)
 .PHONY: domain_route
 domain_route: include/cnet_domain_route.h src/cnet_domain_route.c tools/roe_domain_route.c

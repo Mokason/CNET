@@ -40,14 +40,41 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-PACKS = ROOT / "artifacts" / "roe_daily_packs"
+# Deploy-aware: CNET_PACKS_ROOT / CNET_FRONT_DOOR_BIN / CNET_MINIMAL_ROOT
+_MIN = os.environ.get("CNET_MINIMAL_ROOT", "").strip()
+if _MIN:
+    _minp = Path(_MIN)
+else:
+    _minp = None
+PACKS = Path(
+    os.environ.get("CNET_PACKS_ROOT")
+    or (
+        str(_minp / "data" / "roe_daily_packs")
+        if _minp and (_minp / "data" / "roe_daily_packs").is_dir()
+        else ROOT / "artifacts" / "roe_daily_packs"
+    )
+)
 MISS = PACKS / "miss_log.jsonl"
 GOLD_DIR = PACKS / "gold"
 PERSONAL = PACKS / "pack_personal"
 REPORT = PACKS / "EVOLVE_TICK.json"
 STATE = PACKS / "evolve_state.json"
-BIN_FD = ROOT / "bin" / "roe_front_door"
-BLOCKLIST = ROOT / "config" / "promote_blocklist.txt"
+BIN_FD = Path(
+    os.environ.get("CNET_FRONT_DOOR_BIN")
+    or (
+        str(_minp / "bin" / "roe_front_door")
+        if _minp and (_minp / "bin" / "roe_front_door").is_file()
+        else ROOT / "bin" / "roe_front_door"
+    )
+)
+BLOCKLIST = Path(
+    os.environ.get("CNET_BLOCKLIST")
+    or (
+        str(_minp / "config" / "promote_blocklist.txt")
+        if _minp and (_minp / "config" / "promote_blocklist.txt").is_file()
+        else ROOT / "config" / "promote_blocklist.txt"
+    )
+)
 
 # reviewer helper
 sys.path.insert(0, str(ROOT / "tools"))
@@ -298,12 +325,20 @@ def pick_stable_answer(entries: list[dict]) -> tuple[str | None, int, str]:
     return best[0], best[1], "multi_stable"
 
 
+def fd_cmd(q: str) -> list[str]:
+    """front_door ask with optional package packs root."""
+    cmd = [str(BIN_FD), "ask", q]
+    if PACKS.is_dir():
+        cmd.extend(["--root", str(PACKS)])
+    return cmd
+
+
 def already_local(q: str) -> bool:
     if not BIN_FD.is_file():
         return False
     try:
         p = subprocess.run(
-            [str(BIN_FD), "ask", q],
+            fd_cmd(q),
             cwd=str(ROOT),
             capture_output=True,
             text=True,
@@ -339,7 +374,7 @@ def try_teacher_fill(q: str) -> str | None:
             env.setdefault(k.strip(), v.strip().strip('"'))
     try:
         p = subprocess.run(
-            [str(BIN_FD), "ask", q],
+            fd_cmd(q),
             cwd=str(ROOT),
             capture_output=True,
             text=True,
@@ -372,6 +407,8 @@ def promote_via_front_door(q: str, gold: str, dry: bool) -> bool:
         "--promote-pack",
         "pack_personal",
     ]
+    if PACKS.is_dir():
+        cmd.extend(["--root", str(PACKS)])
     try:
         p = subprocess.run(cmd, cwd=str(ROOT), capture_output=True, text=True, timeout=60)
         out = (p.stdout or "") + (p.stderr or "")
