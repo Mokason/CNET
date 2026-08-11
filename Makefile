@@ -405,6 +405,13 @@ sparse_kv_test: $(CCE_SPARSE_KV) $(SPARSE_KV_TEST) include/cce/cce_sparse_kv.h
 kv_stream_index: sparse_kv_test
 	@echo "KV_STREAM_INDEX_OK"
 
+.PHONY: kv_stream_bench
+kv_stream_bench: $(CCE_SPARSE_KV) include/cce/cce_sparse_kv.h tools/kv_stream_bench.c
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -o $(BIN_DIR)/kv_stream_bench $(CCE_SPARSE_KV) tools/kv_stream_bench.c $(LDFLAGS)
+	@./$(BIN_DIR)/kv_stream_bench | tee logs/kv_stream_bench.log
+	@grep -q "KV_STREAM_BENCH_PASS" logs/kv_stream_bench.log
+
 # Sparse KV EXECUTION gate: the ONE cce_sparse_kv selector wired into the
 # REAL cce_gguf_qwen2 KV-cache attention path (the oracle seam), on a
 # hermetic synthetic qwen2 GGUF the test writes itself. Pins OFF == ON@1.0
