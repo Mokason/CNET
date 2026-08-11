@@ -1,5 +1,6 @@
 #include "../../include/cce/cce_sparse_kv.h"
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -132,4 +133,145 @@ cce_result cce_specialist_select_kv_tokens(const float* attention_scores,
     *out_count = out;
     free(selected);
     return CCE_OK;
+}
+
+/* ---- streaming-aware budgeted index ------------------------------------ */
+
+static void kv_ix_update_bytes(cce_kv_stream_index* ix) {
+    size_t slot;
+    if (!ix) return;
+    slot = (size_t)(ix->k_slot_floats + ix->v_slot_floats) * sizeof(float);
+    if (slot == 0) {
+        /* abstract units: 1 per position */
+        ix->bytes_full_kv = (size_t)ix->cursor;
+        ix->bytes_index_kv = (size_t)ix->active_n;
+        return;
+    }
+    ix->bytes_full_kv = (size_t)ix->cursor * slot;
+    ix->bytes_index_kv = (size_t)ix->active_n * slot;
+}
+
+cce_result cce_kv_stream_index_init(cce_kv_stream_index* ix,
+                                    const cce_specialist_kv_budget* budget,
+                                    int legal_max) {
+    if (!ix) return CCE_ERR_INVALID_ARG;
+    memset(ix, 0, sizeof(*ix));
+    if (legal_max <= 0) legal_max = CCE_KV_STREAM_IDX_MAX;
+    if (legal_max > CCE_KV_STREAM_IDX_MAX) legal_max = CCE_KV_STREAM_IDX_MAX;
+    ix->legal_max = legal_max;
+    if (budget) {
+        ix->budget = *budget;
+    } else {
+        cce_specialist_kv_budget_default(&ix->budget, legal_max);
+    }
+    if (ix->budget.max_tokens <= 0)
+        ix->budget.max_tokens = clamp_int(legal_max / 5 + 1, 1, legal_max);
+    if (ix->budget.max_tokens > CCE_KV_STREAM_IDX_MAX)
+        ix->budget.max_tokens = CCE_KV_STREAM_IDX_MAX;
+    return CCE_OK;
+}
+
+void cce_kv_stream_index_set_slot_sizes(cce_kv_stream_index* ix,
+                                        int k_slot_floats, int v_slot_floats) {
+    if (!ix) return;
+    ix->k_slot_floats = k_slot_floats > 0 ? k_slot_floats : 0;
+    ix->v_slot_floats = v_slot_floats > 0 ? v_slot_floats : 0;
+    kv_ix_update_bytes(ix);
+}
+
+void cce_kv_stream_index_clear(cce_kv_stream_index* ix) {
+    if (!ix) return;
+    ix->cursor = 0;
+    ix->active_n = 0;
+    kv_ix_update_bytes(ix);
+}
+
+cce_result cce_kv_stream_index_rebuild(cce_kv_stream_index* ix,
+                                       const float* attention_scores,
+                                       int score_len) {
+    int n, tc, cap;
+    if (!ix) return CCE_ERR_INVALID_ARG;
+    tc = ix->cursor;
+    if (tc <= 0) {
+        ix->active_n = 0;
+        kv_ix_update_bytes(ix);
+        return CCE_OK;
+    }
+    if (tc > CCE_KV_STREAM_IDX_MAX) tc = CCE_KV_STREAM_IDX_MAX;
+    cap = ix->budget.max_tokens;
+    if (cap > CCE_KV_STREAM_IDX_MAX) cap = CCE_KV_STREAM_IDX_MAX;
+    if (cap > tc) cap = tc;
+    /* Reuse selector — scores optional; if shorter than tc, pass NULL for fill */
+    if (attention_scores && score_len < tc) attention_scores = NULL;
+    if (cce_specialist_select_kv_tokens(attention_scores, tc, &ix->budget,
+                                        ix->active, cap, &n) != CCE_OK)
+        return CCE_ERR_INVALID_ARG;
+    ix->active_n = n;
+    ix->n_rebuilds++;
+    if (attention_scores) ix->n_score_refresh++;
+    kv_ix_update_bytes(ix);
+    return CCE_OK;
+}
+
+cce_result cce_kv_stream_index_on_append(cce_kv_stream_index* ix, int pos,
+                                         const float* attention_scores,
+                                         int score_len) {
+    if (!ix) return CCE_ERR_INVALID_ARG;
+    if (pos < 0) return CCE_ERR_INVALID_ARG;
+    /* streaming: positions should be contiguous 0..cursor */
+    if (pos != ix->cursor) {
+        /* allow restart or catch-up: set cursor to pos+1 after rebuild */
+        if (pos + 1 > ix->legal_max) return CCE_ERR_INVALID_ARG;
+        ix->cursor = pos + 1;
+    } else {
+        if (ix->cursor >= ix->legal_max) return CCE_ERR_INVALID_ARG;
+        ix->cursor++;
+    }
+    ix->n_appends++;
+    return cce_kv_stream_index_rebuild(ix, attention_scores, score_len);
+}
+
+cce_result cce_kv_stream_index_active(const cce_kv_stream_index* ix,
+                                      int* out_indices, int out_cap,
+                                      int* out_count) {
+    int i, n;
+    if (!ix || !out_indices || !out_count || out_cap <= 0)
+        return CCE_ERR_INVALID_ARG;
+    n = ix->active_n < out_cap ? ix->active_n : out_cap;
+    for (i = 0; i < n; ++i) out_indices[i] = ix->active[i];
+    *out_count = n;
+    return CCE_OK;
+}
+
+int cce_kv_stream_index_contains(const cce_kv_stream_index* ix, int pos) {
+    int lo, hi;
+    if (!ix || pos < 0) return 0;
+    lo = 0;
+    hi = ix->active_n - 1;
+    while (lo <= hi) {
+        int mid = lo + (hi - lo) / 2;
+        if (ix->active[mid] == pos) return 1;
+        if (ix->active[mid] < pos)
+            lo = mid + 1;
+        else
+            hi = mid - 1;
+    }
+    return 0;
+}
+
+float cce_kv_stream_index_mem_ratio(const cce_kv_stream_index* ix) {
+    if (!ix || ix->bytes_full_kv == 0) return 1.0f;
+    return (float)ix->bytes_index_kv / (float)ix->bytes_full_kv;
+}
+
+int cce_kv_stream_index_format(const cce_kv_stream_index* ix, char* buf,
+                               size_t cap) {
+    if (!ix || !buf || !cap) return -1;
+    return snprintf(buf, cap,
+                    "kv_stream_idx cursor=%d active=%d/%d budget=%d "
+                    "mem_ratio=%.3f full_B=%zu idx_B=%zu appends=%llu rebuilds=%llu",
+                    ix->cursor, ix->active_n, ix->legal_max, ix->budget.max_tokens,
+                    cce_kv_stream_index_mem_ratio(ix), ix->bytes_full_kv,
+                    ix->bytes_index_kv, (unsigned long long)ix->n_appends,
+                    (unsigned long long)ix->n_rebuilds);
 }

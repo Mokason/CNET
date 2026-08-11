@@ -397,6 +397,13 @@ counterfactual_router_test: $(CCE_ROUTER) $(COUNTERFACTUAL_ROUTER_TEST) include/
 sparse_kv_test: $(CCE_SPARSE_KV) $(SPARSE_KV_TEST) include/cce/cce_sparse_kv.h
 	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $(CCE_SPARSE_KV) $(SPARSE_KV_TEST) $(LDFLAGS)
 	./$(BIN_DIR)/sparse_kv_test
+	@grep -q "CCE_KV_STREAM_INDEX_PASS" <<< "$$(./$(BIN_DIR)/sparse_kv_test 2>&1)" || \
+		./$(BIN_DIR)/sparse_kv_test | tee logs/sparse_kv_test.log | grep -q CCE_KV_STREAM_INDEX_PASS
+
+# Alias: streaming-aware budgeted KV index (same binary)
+.PHONY: kv_stream_index
+kv_stream_index: sparse_kv_test
+	@echo "KV_STREAM_INDEX_OK"
 
 # Sparse KV EXECUTION gate: the ONE cce_sparse_kv selector wired into the
 # REAL cce_gguf_qwen2 KV-cache attention path (the oracle seam), on a

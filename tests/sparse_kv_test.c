@@ -66,16 +66,66 @@ static void test_default_budget_is_sparse(void) {
           "default budget includes long-range stride");
 }
 
+static void test_stream_index_budget_and_mem(void) {
+    cce_kv_stream_index ix;
+    cce_specialist_kv_budget b = {0};
+    int out[64], n = 0, i, ok_stream = 1, sorted = 1;
+    float scores[128];
+    char line[256];
+    b.max_tokens = 16;
+    b.initial_tokens = 4;
+    b.recent_tokens = 8;
+    b.long_range_stride = 16;
+    b.heavy_hitter_fraction = 1.0f;
+
+    CHECK(cce_kv_stream_index_init(&ix, &b, 128) == CCE_OK, "stream index init");
+    cce_kv_stream_index_set_slot_sizes(&ix, 64, 64); /* toy slot */
+
+    for (i = 0; i < 128; ++i) scores[i] = (float)(i % 17) * 0.01f;
+    scores[40] = 9.0f; /* heavy */
+
+    for (i = 0; i < 100; ++i) {
+        if (cce_kv_stream_index_on_append(&ix, i, scores, i + 1) != CCE_OK)
+            ok_stream = 0;
+    }
+    CHECK(ok_stream, "100 streaming appends ok");
+    CHECK(ix.cursor == 100, "cursor tracks stream length");
+    CHECK(ix.active_n > 0 && ix.active_n <= 16, "active capped by budget");
+    CHECK(cce_kv_stream_index_contains(&ix, 0), "keeps sink token 0");
+    CHECK(cce_kv_stream_index_contains(&ix, 99), "keeps latest token");
+    CHECK(cce_kv_stream_index_active(&ix, out, 64, &n) == CCE_OK, "export active");
+    CHECK(n == ix.active_n, "export count matches");
+    for (i = 1; i < n; ++i)
+        if (out[i - 1] >= out[i]) sorted = 0;
+    CHECK(sorted, "active sorted unique");
+
+    {
+        float r = cce_kv_stream_index_mem_ratio(&ix);
+        CHECK(r > 0.0f && r <= 1.0f + 1e-6f, "mem ratio in (0,1]");
+        CHECK(r < 0.25f, "budgeted index << full KV at len=100 budget=16");
+        CHECK(ix.bytes_index_kv < ix.bytes_full_kv, "index bytes < full bytes");
+    }
+    CHECK(cce_kv_stream_index_format(&ix, line, sizeof line) > 0, "format line");
+    CHECK(line[0] != 0, "format non-empty");
+
+    cce_kv_stream_index_clear(&ix);
+    CHECK(ix.cursor == 0 && ix.active_n == 0, "clear resets stream");
+}
+
 int main(void) {
     printf("sparse KV selector tests:\n");
     test_full_budget_returns_all();
     test_sparse_policy_keeps_anchors_recent_and_heavy();
     test_default_budget_is_sparse();
+    printf("streaming KV index tests:\n");
+    test_stream_index_budget_and_mem();
 
     if (failures == 0) {
         printf("\nAll sparse KV selector tests passed.\n");
+        printf("CCE_KV_STREAM_INDEX_PASS\n");
         return 0;
     }
     printf("\n%d sparse KV selector test(s) FAILED.\n", failures);
+    printf("CCE_KV_STREAM_INDEX_FAIL\n");
     return 1;
 }
