@@ -1,0 +1,8 @@
+# Domain route overlay (optional). Loaded at startup into fixed slots.
+# Format: kind<TAB>pattern<TAB>pack_or_path
+# kind: CERT | MTK | BASE | ABSTAIN
+# CERT-first evaluation is enforced in code regardless of file order.
+#
+# CERT\tmy domain phrase\tpack_personal
+# MTK\tresidual specialty only\tskills/mtk/foo.tskill
+# BASE\topen residual chat\t-

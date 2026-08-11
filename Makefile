@@ -3446,10 +3446,10 @@ roe_daily_packs: roe_daily_packs_seed $(ROE_ASI_SRC) tools/roe_daily_packs_gate.
 
 # Front door: ROUTES → selective pack load → turn → miss_log
 .PHONY: roe_front_door
-roe_front_door: roe_daily_packs $(ROE_ASI_SRC) tools/roe_front_door.c
+roe_front_door: roe_daily_packs $(ROE_ASI_SRC) tools/roe_front_door.c src/cnet_domain_route.c include/cnet_domain_route.h
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) $(ASI_IMPROVE_CFLAGS) -o $(BIN_DIR)/roe_front_door \
-		$(ROE_ASI_SRC) tools/roe_front_door.c $(ROE_ASI_LIBS)
+		$(ROE_ASI_SRC) src/cnet_domain_route.c tools/roe_front_door.c $(ROE_ASI_LIBS)
 	@./$(BIN_DIR)/roe_front_door selftest | tee logs/roe_front_door.log
 	@grep -q "ROE_FRONT_DOOR_PASS" logs/roe_front_door.log
 	@echo "---- front bench ----"
@@ -3457,6 +3457,18 @@ roe_front_door: roe_daily_packs $(ROE_ASI_SRC) tools/roe_front_door.c
 	@echo "---- sample ask ----"
 	@./$(BIN_DIR)/roe_front_door ask "who are you" | tee -a logs/roe_front_door.log
 	@./$(BIN_DIR)/roe_front_door ask "format-truncation werror" | tee -a logs/roe_front_door.log
+
+# CERT-first domain route table (static + optional TSV overlay)
+.PHONY: domain_route
+domain_route: include/cnet_domain_route.h src/cnet_domain_route.c tools/roe_domain_route.c
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) -std=c11 -Wall -Wextra -O2 -D_POSIX_C_SOURCE=200809L -Iinclude \
+		-o $(BIN_DIR)/roe_domain_route src/cnet_domain_route.c tools/roe_domain_route.c
+	@./$(BIN_DIR)/roe_domain_route --test | tee logs/domain_route.log
+	@grep -q "DOMAIN_ROUTE_PASS" logs/domain_route.log
+	@./$(BIN_DIR)/roe_domain_route "who are you" | tee -a logs/domain_route.log
+	@./$(BIN_DIR)/roe_domain_route "completely unknown domain xyzzy" | tee -a logs/domain_route.log
+	@echo "DOMAIN_ROUTE_OK"
 
 # Chain-of-thought — pure C multi-hop (0-token skeleton; no Python)
 .PHONY: roe_chain_think

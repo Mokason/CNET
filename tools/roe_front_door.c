@@ -18,6 +18,7 @@
 #include <time.h>
 
 #include "../include/cnet_roe_asi.h"
+#include "../include/cnet_domain_route.h"
 
 #define FD_ROOT_DEFAULT "artifacts/roe_daily_packs"
 #define FD_MAX_ROUTES 256
@@ -413,8 +414,30 @@ static int cmd_ask(FdRouter *F, const char *q, int accept, const char *gold,
     RoeAsi *R;
     RoeNet net;
     static int curl_once;
+    static CnetDomainRouter DR;
+    static int dr_ready;
+    CnetDomainDecision dd;
     int rc = 0;
     if (!q || !q[0]) return 2;
+
+    /* CERT-first domain dispatch (no malloc on match) */
+    if (!dr_ready) {
+        cnet_domain_route_init(&DR);
+        (void)cnet_domain_route_load_file(&DR, "config/domain_routes.tsv");
+        dr_ready = 1;
+    }
+    cnet_domain_route_resolve(&DR, q, &dd);
+    printf("domain_route=%s reason=%s pack=%s mtk=%s conf=%d\n", dd.kind_name,
+           dd.reason ? dd.reason : "-",
+           dd.pack_or_skill[0] ? dd.pack_or_skill : "-",
+           dd.mtk_path[0] ? dd.mtk_path : "-", dd.conf_x1000);
+    /* Fail-closed residual: never auto-apply MTK from front door.
+     * CERT/ABSTAIN continue into LOCAL packs. BASE_GGUF is advisory only here. */
+    if (dd.kind == CNET_ROUTE_MTK) {
+        printf("domain_route_note=MTK_selected_but_front_door_stays_CERT_path_"
+               "(no_auto_weight_swap)\n");
+    }
+
     R = (RoeAsi *)calloc(1, sizeof *R);
     if (!R) return 1;
     if (fd_prepare(F, R, q, &tr) != 0) {
