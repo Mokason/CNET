@@ -253,6 +253,70 @@ def reject_explore(explore_id: str, query: str) -> dict:
     return {"ok": True, "rejected": explore_id}
 
 
+def speech_out_dir() -> Path:
+    d = os.environ.get("CNET_SPEECH_DIR", "").strip()
+    if d:
+        p = Path(d)
+    else:
+        p = ROOT / "artifacts" / "speech"
+    p.mkdir(parents=True, exist_ok=True)
+    return p
+
+
+def python_bin() -> str:
+    for c in (
+        os.environ.get("CNET_PYTHON", "").strip(),
+        str(Path.home() / ".hermes/hermes-agent/venv/bin/python3"),
+        "/usr/bin/python3",
+        "python3",
+    ):
+        if not c:
+            continue
+        p = Path(c) if c.startswith("/") else None
+        if p and p.is_file():
+            return c
+        if not c.startswith("/"):
+            return c
+    return "python3"
+
+
+def run_speech_say(text: str = "", q: str = "", play: bool = False) -> dict:
+    """Delivery-only TTS. Never CERT / never pack_personal."""
+    import subprocess
+
+    script = ROOT / "tools" / "cnet_speech_say.py"
+    if not script.is_file():
+        return {"ok": False, "error": "cnet_speech_say.py missing"}
+    cmd = [python_bin(), str(script)]
+    if q.strip():
+        cmd.extend(["--q", q.strip()])
+    elif text.strip():
+        cmd.extend(["--text", text.strip()])
+    else:
+        return {"ok": False, "error": "empty_text"}
+    if play:
+        cmd.append("--play")
+    env = os.environ.copy()
+    env["CNET_SPEECH_DIR"] = str(speech_out_dir())
+    try:
+        p = subprocess.run(cmd, capture_output=True, text=True, timeout=120, env=env, cwd=str(ROOT))
+    except subprocess.TimeoutExpired:
+        return {"ok": False, "error": "tts_timeout"}
+    out = (p.stdout or "").strip().splitlines()
+    last = out[-1] if out else ""
+    try:
+        rec = json.loads(last) if last.startswith("{") else {"ok": p.returncode == 0, "raw": last, "stderr": (p.stderr or "")[:300]}
+    except json.JSONDecodeError:
+        rec = {"ok": False, "error": "bad_tts_json", "stderr": (p.stderr or "")[:300], "raw": last[:200]}
+    rec["auto_cert"] = False
+    rec["never_self_cert"] = True
+    rec["web_promote"] = False
+    if rec.get("ok") and rec.get("path"):
+        name = Path(rec["path"]).name
+        rec["url"] = f"/api/speech/{name}"
+    return rec
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "cnet-web/1.0"
 
@@ -302,7 +366,26 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, html, "text/html; charset=utf-8")
             return
         if path == "/api/health":
-            self._json(200, {"ok": True, "service": "cnet-web", "never_self_cert": True})
+            self._json(
+                200,
+                {
+                    "ok": True,
+                    "service": "cnet-web",
+                    "never_self_cert": True,
+                    "speech_capsule": True,
+                },
+            )
+            return
+        if path.startswith("/api/speech/"):
+            name = path.split("/api/speech/", 1)[-1]
+            name = Path(name).name  # no path traversal
+            fp = speech_out_dir() / name
+            if not fp.is_file() or fp.suffix.lower() not in (".mp3", ".wav", ".ogg"):
+                self._json(404, {"ok": False, "error": "not_found"})
+                return
+            data = fp.read_bytes()
+            ctype = "audio/mpeg" if fp.suffix.lower() == ".mp3" else "application/octet-stream"
+            self._send(200, data, ctype)
             return
         if path == "/api/status":
             nm = read_neuromod()
@@ -389,6 +472,17 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/explore/reject":
             r = reject_explore(body.get("explore_id") or "", body.get("query") or "")
             self._json(200, r)
+            return
+        if path == "/api/speak":
+            # Delivery only — refuse promote
+            if body.get("promote") or body.get("accept"):
+                self._json(403, {"ok": False, "error": "promote_forbidden", "law": "never_self_cert"})
+                return
+            text = (body.get("text") or body.get("answer") or "").strip()
+            q = (body.get("q") or body.get("query") or "").strip()
+            play = bool(body.get("play"))
+            r = run_speech_say(text=text, q=q, play=play)
+            self._json(200 if r.get("ok") else 502, r)
             return
 
         self._json(404, {"ok": False, "error": "not_found"})

@@ -139,6 +139,7 @@
     <form class="composer" id="form">
       <input id="q" autocomplete="off" placeholder="Ask CNET (CERT-first over warm socket)…" />
       <button type="submit" id="send">Ask</button>
+      <button type="button" class="btn ghost" id="speakLast" title="TTS last reply">Speak</button>
     </form>
     <div class="law">Web cannot promote / CERT. Explore approve → gold_file only.</div>
   </section>
@@ -261,6 +262,30 @@ async function refreshExplore() {
   });
 }
 
+let lastBotText = '';
+
+async function speakText(text) {
+  if (!text) return;
+  try {
+    const r = await api('/api/speak', {
+      method: 'POST', headers: hdrs(),
+      body: JSON.stringify({text})
+    });
+    const d = await r.json();
+    if (d.ok && d.url) {
+      const a = new Audio(d.url + (token ? (d.url.includes('?')?'&':'?')+'token='+encodeURIComponent(token) : ''));
+      a.play().catch(()=>{});
+      addMsg('(speech) ' + (d.path || d.url), 'bot', {source:'SPEECH'});
+    } else {
+      addMsg('Speak failed: ' + (d.error || JSON.stringify(d)), 'bot', {miss:true, source:'ERR'});
+    }
+  } catch (e) {
+    addMsg(String(e), 'bot', {miss:true, source:'ERR'});
+  }
+}
+
+$('#speakLast').onclick = () => void speakText(lastBotText);
+
 $('#form').onsubmit = async (e) => {
   e.preventDefault();
   const input = $('#q');
@@ -277,6 +302,7 @@ $('#form').onsubmit = async (e) => {
     } else if (d.ok === false) {
       addMsg(d.error || JSON.stringify(d), 'bot', {miss:true, source:'ERR'});
     } else {
+      lastBotText = d.answer || '';
       addMsg(d.answer || '(empty)', 'bot', d);
     }
   } catch (err) {

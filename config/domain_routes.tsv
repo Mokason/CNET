@@ -22,3 +22,8 @@ CERT	who are you	pack_soul_marble
 CERT	self-cert	pack_roe_self
 CERT	use tools not guess	pack_toolcall_hermes
 CERT	git push	pack_toolcall_hermes
+CERT	speech capsule	pack_speech_io
+CERT	how does speech	pack_speech_io
+CERT	speak the answer	pack_speech_io
+CERT	tts speak	pack_speech_io
+CERT	voice output	pack_speech_io
