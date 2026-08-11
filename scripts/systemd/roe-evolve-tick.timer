@@ -1,0 +1,11 @@
+[Unit]
+Description=Run ROE evolve tick every 30 minutes (unattended gardener)
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=30min
+Persistent=true
+Unit=roe-evolve-tick.service
+
+[Install]
+WantedBy=timers.target

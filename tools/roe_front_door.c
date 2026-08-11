@@ -118,7 +118,9 @@ static int fd_init(FdRouter *F, const char *root) {
     snprintf(F->always_on[1], sizeof F->always_on[1], "%s", "pack_roe_self");
     snprintf(F->always_on[2], sizeof F->always_on[2], "%s", "pack_goal_split");
     snprintf(F->always_on[3], sizeof F->always_on[3], "%s", "pack_toolcall_hermes");
-    F->n_always = 4;
+    /* Garden growth — unattended promotes land here */
+    snprintf(F->always_on[4], sizeof F->always_on[4], "%s", "pack_personal");
+    F->n_always = 5;
 
     if (path_join2(path, sizeof path, F->root, "ROUTES.jsonl") != 0) return -1;
     f = fopen(path, "r");

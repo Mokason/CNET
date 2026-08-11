@@ -3463,6 +3463,20 @@ roe_soul_pack: roe_daily_packs_seed $(ROE_ASI_SRC) tools/roe_soul_pack_gate.c
 	@test -f artifacts/roe_daily_packs/pack_soul_marble/voice.md
 	@grep -q "kind persona" artifacts/roe_daily_packs/pack_soul_marble/PACK.abi
 
+# Unattended evolve: miss_log → gold/multi_stable → pack_personal (no human Accept)
+.PHONY: roe_evolve_tick
+roe_evolve_tick: tools/roe_evolve_tick.py tools/roe_evolve_tick_gate.c
+	@mkdir -p $(BIN_DIR) logs artifacts/roe_daily_packs
+	$(CC) $(ASI_IMPROVE_CFLAGS) -o $(BIN_DIR)/roe_evolve_tick_gate tools/roe_evolve_tick_gate.c
+	@./$(BIN_DIR)/roe_evolve_tick_gate | tee logs/roe_evolve_tick_gate.log
+	@grep -q "ROE_EVOLVE_TICK_PASS" logs/roe_evolve_tick_gate.log
+	@echo "---- EVOLVE_TICK.json ----"
+	@cat artifacts/roe_daily_packs/EVOLVE_TICK.json 2>/dev/null | head -40 || true
+	@echo "Install timer (optional):"
+	@echo "  mkdir -p ~/.config/systemd/user"
+	@echo "  cp scripts/systemd/roe-evolve-tick.* ~/.config/systemd/user/"
+	@echo "  systemctl --user daemon-reload && systemctl --user enable --now roe-evolve-tick.timer"
+
 .PHONY: roe_asi_ocr_surpass
 roe_asi_ocr_surpass: $(ROE_ASI_SRC) src/cnet_roe_goal.c src/cnet_roe_ocr.c src/cnet_roe_tree.c \
 		include/cnet_roe_ocr.h tools/roe_asi_ocr_surpass.c tools/roe_unlimited_teacher.py
