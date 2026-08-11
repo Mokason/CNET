@@ -3529,6 +3529,17 @@ cnet_thought:
 	@test -f logs/governor/thought_last.json
 	@python3 -c "import json;d=json.load(open('logs/governor/thought_last.json')); assert d['tokens']==0 and d['llm'] is False and d['law']['not_agi']; print(d['chain']); print('CNET_THOUGHT_OK')"
 
+# Continuity workspace (imitate continuity, not consciousness)
+.PHONY: cnet_continuity
+cnet_continuity:
+	@chmod +x scripts/cnet_continuity.py
+	@python3 scripts/cnet_continuity.py --test | tee logs/governor/continuity_test.log
+	@grep -q "CONTINUITY_PASS" logs/governor/continuity_test.log
+	@python3 scripts/cnet_continuity.py --query "who are you" --line-only
+	@test -f logs/governor/continuity_last.json
+	@test -f logs/governor/continuity_line.txt
+	@python3 -c "import json;d=json.load(open('logs/governor/continuity_last.json')); assert d['law']['not_conscious'] and d['law']['never_self_cert'] and d['tokens']==0; print(d['continuity_line']); print('CNET_CONTINUITY_OK')"
+
 .PHONY: roe_asi_ocr_surpass
 roe_asi_ocr_surpass: $(ROE_ASI_SRC) src/cnet_roe_goal.c src/cnet_roe_ocr.c src/cnet_roe_tree.c \
 		include/cnet_roe_ocr.h tools/roe_asi_ocr_surpass.c tools/roe_unlimited_teacher.py

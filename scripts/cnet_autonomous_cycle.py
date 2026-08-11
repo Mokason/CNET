@@ -354,6 +354,21 @@ def main() -> int:
     report["thoughts_n"] = len(thoughts)
     report["thought_sample"] = thoughts[:3]
 
+    # Continuity workspace (bind body/mind/place/story — not consciousness)
+    try:
+        import cnet_continuity as cont  # type: ignore
+
+        sample_q = (thoughts[0]["q"] if thoughts else "status")
+        cf = cont.snapshot(sample_q, run_thought=False, persist=True)
+        report["continuity_line"] = cf.get("continuity_line")
+        report["continuity"] = {
+            "sleep": cf.get("sleep"),
+            "intent": (cf.get("mind") or {}).get("intent"),
+            "not_conscious": (cf.get("law") or {}).get("not_conscious"),
+        }
+    except Exception:
+        pass
+
     n = max(1, len(curriculum))
     report["kpi"]["probe_n"] = n
     report["kpi"]["local_n"] = local_n

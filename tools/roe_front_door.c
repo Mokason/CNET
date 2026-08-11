@@ -368,25 +368,28 @@ static void print_turn(const FdTurnResult *tr) {
     printf("inventory: %s\n", tr->reply.inventory_line);
 }
 
-/* Token-free thought sidecar (Python); best-effort, never blocks answer. */
+/* Token-free thought + continuity sidecars (Python); best-effort. */
 static void fd_emit_thought(const char *q, const FdTurnResult *tr) {
-    char cmd[1200];
+    char cmd[1600];
     const char *py;
     if (!q || !tr) return;
     if (getenv("ROE_NO_THOUGHT") && getenv("ROE_NO_THOUGHT")[0] == '1') return;
     py = getenv("ROE_THOUGHT_PY");
     if (!py || !py[0]) py = "python3 scripts/cnet_thought_process.py";
-    /* escape is minimal: skip if quote in query */
     if (strchr(q, '\'') || strchr(q, '"')) return;
     snprintf(cmd, sizeof cmd,
              "%s --query '%s' --source '%s' --skill '%s' >/dev/null 2>&1; "
+             "python3 scripts/cnet_continuity.py --query '%s' --source '%s' --skill '%s' "
+             "--no-thought --line-only 2>/dev/null; "
              "if [ -f logs/governor/thought_last.json ]; then "
              "python3 -c \"import json;d=json.load(open('logs/governor/thought_last.json'));"
              "print('thought:',d.get('chain',''))\" 2>/dev/null; fi",
              py, q, tr->reply.source_name[0] ? tr->reply.source_name : "-",
+             tr->reply.skill_id[0] ? tr->reply.skill_id : "-", q,
+             tr->reply.source_name[0] ? tr->reply.source_name : "-",
              tr->reply.skill_id[0] ? tr->reply.skill_id : "-");
     if (system(cmd) != 0) {
-        /* thought is best-effort */
+        /* best-effort */
     }
 }
 
