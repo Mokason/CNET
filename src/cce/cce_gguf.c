@@ -1259,6 +1259,12 @@ cce_result cce_gguf_qwen2_set_sparse_kv(cce_gguf_qwen2 *m, float budget_fraction
     return CCE_OK;
 }
 
+void cce_gguf_qwen2_bind_stream_index(cce_gguf_qwen2 *m,
+                                      struct cce_kv_stream_index *ix) {
+    if (!m) return;
+    m->stream_ix = ix;
+}
+
 /* Observation-only sparse-KV selection tap (gate/probe tooling). Default
    NULL = zero cost; it is only consulted inside the sparse branch, so it can
    never fire — and never costs — while sparse KV is OFF. */
@@ -2501,8 +2507,16 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
                             qh[0],qh[1],qh[2],qh[3], k_self[0],k_self[1],k_self[2],k_self[3], k_first[0],k_first[1],k_first[2],k_first[3]);
                 }
                 if (!skv_idx) {
-                /* FULL KV: the historical path, byte-identical when the
-                   sparse knob is unset. */
+                /* FULL KV path. Optional stream_ix = pre-attention block mask
+                 * on HOT support (not mid-GEMM). Drop non-active positions
+                 * before softmax; always keep current token abs_t. */
+                if (m->stream_ix && m->stream_ix->active_n > 0) {
+                    for (int j = jmin; j <= abs_t; j++) {
+                        if (j == abs_t) continue;
+                        if (!cce_kv_stream_index_contains(m->stream_ix, j))
+                            scores[(size_t)(j - sb)] = -1e30f;
+                    }
+                }
                 float maxs = -1e30f;
                 for (int j = jmin; j <= abs_t; j++)
                     if (scores[(size_t)(j - sb)] > maxs)
@@ -2513,6 +2527,7 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
                         expf(scores[(size_t)(j - sb)] - maxs);
                     sum += scores[(size_t)(j - sb)];
                 }
+                if (sum < 1e-20f) sum = 1e-20f;
                 for (int j = jmin; j <= abs_t; j++)
                     scores[(size_t)(j - sb)] /= sum;
                 if (trace_this && l == 0 && h == 0 && t == n_tokens - 1) {

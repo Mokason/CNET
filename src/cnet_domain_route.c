@@ -60,12 +60,41 @@ static void tolower_copy(char *d, size_t cap, const char *s) {
     d[i < cap ? i : cap - 1] = 0;
 }
 
-static int contains_ci(const char *hay, const char *needle) {
+static int is_word_char(unsigned char c) {
+    return c == '_' || isalnum(c);
+}
+
+/* Policy C: word-boundary / token-ish match, no heap. */
+static int word_boundary_match_ci(const char *query, const char *pat) {
     char h[512], n[CNET_DR_PAT];
-    if (!hay || !needle || !needle[0]) return 0;
-    tolower_copy(h, sizeof h, hay);
-    tolower_copy(n, sizeof n, needle);
-    return strstr(h, n) != NULL;
+    size_t qlen, plen, i;
+    if (!query || !pat || !pat[0]) return 0;
+    tolower_copy(h, sizeof h, query);
+    tolower_copy(n, sizeof n, pat);
+    qlen = strlen(h);
+    plen = strlen(n);
+    if (plen == 0 || plen > qlen) return 0;
+    for (i = 0; i + plen <= qlen; i++) {
+        if (memcmp(h + i, n, plen) != 0) continue;
+        {
+            int left_ok = (i == 0) || !is_word_char((unsigned char)h[i - 1]);
+            int right_ok =
+                (i + plen == qlen) || !is_word_char((unsigned char)h[i + plen]);
+            if (left_ok && right_ok) return 1;
+        }
+    }
+    return 0;
+}
+
+static int rule_matches(const CnetDomainRule *r, const char *query) {
+    int plen;
+    if (!r || !query || !r->pattern[0]) return 0;
+    plen = (int)strlen(r->pattern);
+    {
+        int floor = r->min_pat_len > 0 ? r->min_pat_len : CNET_DR_DEFAULT_MIN_PAT;
+        if (plen < floor) return 0; /* Policy B */
+    }
+    return word_boundary_match_ci(query, r->pattern);
 }
 
 void cnet_domain_route_init(CnetDomainRouter *R) {
@@ -77,6 +106,8 @@ void cnet_domain_route_init(CnetDomainRouter *R) {
     for (i = 0; i < R->n_static; i++) {
         R->rules[i] = k_static_rules[i];
         R->rules[i].active = 1;
+        if (R->rules[i].min_pat_len <= 0)
+            R->rules[i].min_pat_len = CNET_DR_DEFAULT_MIN_PAT;
     }
     R->n_rules = R->n_static;
     scopy(R->source, sizeof R->source, "static");
@@ -147,6 +178,7 @@ int cnet_domain_route_load_file(CnetDomainRouter *R, const char *path) {
         memset(r, 0, sizeof *r);
         r->kind = kind;
         r->active = 1;
+        r->min_pat_len = CNET_DR_DEFAULT_MIN_PAT;
         scopy(r->pattern, sizeof r->pattern, pat);
         if (kind == CNET_ROUTE_MTK)
             scopy(r->mtk_path, sizeof r->mtk_path, rest);
@@ -220,9 +252,8 @@ void cnet_domain_route_resolve(const CnetDomainRouter *R, const char *query,
             int plen;
             if (!r->active || r->kind != want) continue;
             if (!r->pattern[0]) continue;
-            if (!contains_ci(query, r->pattern)) continue;
+            if (!rule_matches(r, query)) continue;
             plen = (int)strlen(r->pattern);
-            if (r->min_pat_len > 0 && plen < r->min_pat_len) continue;
             /* longest pattern wins within tier */
             if (plen > best_len) {
                 best_len = plen;
@@ -283,6 +314,16 @@ int cnet_domain_route_selftest(void) {
     cnet_domain_route_resolve(&R, "format-truncation and mtk residual adapter",
                               &d);
     T(d.kind == CNET_ROUTE_CERT, "CERT tier before MTK when both match");
+
+    /* Policy B+C: short embedded substring must not false-positive */
+    cnet_domain_route_resolve(
+        &R, "the word format is buried inside unformattedtext blob", &d);
+    T(d.kind != CNET_ROUTE_CERT ||
+          strstr(d.pattern, "format-truncation") == NULL,
+      "no CERT on bare 'format' inside longer token");
+    /* word-boundary: pattern as whole tokens still matches */
+    cnet_domain_route_resolve(&R, "please run format-truncation fix now", &d);
+    T(d.kind == CNET_ROUTE_CERT, "word-boundary CERT still hits full pattern");
 
     /* Dynamic overlay file */
     fd = mkstemp(tmp);

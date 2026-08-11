@@ -392,6 +392,12 @@ typedef struct cce_gguf_qwen2 {
     struct cce_kv_pager *kv_pager;
     int kv_legal_max; /* model context_length (e.g. 1M); max_ctx may be hot */
 
+    /* Optional streaming-aware KV index (not owned). When set, dense attention
+     * applies a pre-attention block mask: only stream_ix active positions
+     * (plus current token) participate in softmax/V — not mid-GEMM filtering.
+     * Bump/clear with weight_epoch via host on MTK flush. */
+    struct cce_kv_stream_index *stream_ix;
+
     /* Weight-cartridge epoch (MTK apply/revert). Neural KV is only valid for
      * the current epoch; CERT/text memory is epoch-invariant. Bumped in
      * cce_mtk_gguf_kv_flush. */
@@ -574,6 +580,11 @@ void cce_gguf_qwen2_set_head_window(cce_gguf_qwen2 *m, const int *ids, int n);
    CNET_SPARSE_KV=<fraction>, read by cce_gguf_load_qwen2 at load — a
    malformed value refuses the load. */
 cce_result cce_gguf_qwen2_set_sparse_kv(cce_gguf_qwen2 *m, float budget_fraction);
+
+/* Bind optional stream index for pre-attention HOT mask (not owned).
+ * NULL unbinds. Does not enable DSA; filters dense attend support. */
+void cce_gguf_qwen2_bind_stream_index(cce_gguf_qwen2 *m,
+                                      struct cce_kv_stream_index *ix);
 
 /* Observation-only tap for the sparse-KV selection (gate/probe tooling):
    fires per (layer, head, query step) AFTER selection, with the raw

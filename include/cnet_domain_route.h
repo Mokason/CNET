@@ -27,6 +27,7 @@ extern "C" {
 #define CNET_DR_PAT 96
 #define CNET_DR_ID 80
 #define CNET_DR_PATH 256
+#define CNET_DR_DEFAULT_MIN_PAT 4 /* Policy B floor */
 
 typedef enum {
     CNET_ROUTE_NONE = 0,

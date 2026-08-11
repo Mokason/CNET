@@ -1,6 +1,7 @@
 #include "../../include/cce/cce_mtk.h"
 #include "../../include/cce/cce_gguf.h"
 #include "../../include/cce/cce_kv_page.h"
+#include "../../include/cce/cce_sparse_kv.h"
 
 #include <ctype.h>
 #include <limits.h>
@@ -203,6 +204,8 @@ void cce_mtk_gguf_kv_flush(void *gguf_qwen2_ctx) {
         if (cce_kv_pager_bump_weight_epoch(model->kv_pager) != 0)
             (void)cce_kv_pager_clear(model->kv_pager);
     }
+    /* Stream index is epoch-dependent working set — clear on weight swap. */
+    if (model->stream_ix) cce_kv_stream_index_clear(model->stream_ix);
 }
 
 cce_result cce_mtk_revert(cce_mtk *m) {
