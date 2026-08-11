@@ -1,34 +1,24 @@
-# Open chat (Teacher residual)
+# Open chat (Teacher residual) — optional
 
-## Behavior
+Default product path is **CNET self-answer** (`CNET_SELF_ANSWER=1`):
+misses get C utterance templates, not Ollama.
 
-```text
-CERT hit     → LOCAL (0 tokens)
-Probe tags   → ASK_USER short-circuit (no Teacher)
-Organic miss → Teacher (Ollama) draft → miss_log learnable=true
-             → NEVER pack_personal / never auto_cert
-```
-
-## Enable
-
-Set on `cnetd.service` / `cnet-minimal.env`:
+Teacher is residual only when:
 
 ```bash
-CNET_OPEN_CHAT=1
-ROE_LLM=1
-ROE_LLM_MODEL=minimax-m3:cloud   # or local model
-ROE_LLM_THINK=0
-```
-
-```bash
+CNET_TEACHER_ON_MISS=1
+# or CNET_SELF_ANSWER=0 with ROE_LLM=1
 systemctl --user restart cnetd.service
 ```
 
-## Learn later
+## Self-answer (default)
 
-Miss rows with `learnable:true` + `open_chat:true` feed weekly
-`gold_curriculum_harvest` / reviewer — not automatic CERT.
+```text
+CERT hit  → source=LOCAL (sealed skill)
+Miss      → source=CNET  (utter_self template, may_voice=1)
+Probe     → source=CNET  (utter_probe, short-circuit)
+Teacher   → off unless CNET_TEACHER_ON_MISS=1
+```
 
-## Disable
+See also `docs/UTTERANCE.md`.
 
-`CNET_OPEN_CHAT=0` and `ROE_LLM=0`, restart cnetd.

@@ -29,11 +29,15 @@ cnet-speech-say --q "What is Tailscale?"   # refused: never_voice_llm
 
 Slots: `name`, `answer`, `skill`, `domain`, `local_hit`, `da`, `ht`, `ado`, `miss_n`, `chain`, `law`, …
 
-## Policy
+## Self-answer (default)
 
-| Env | Default | Effect |
-|-----|---------|--------|
-| `CNET_NEVER_VOICE_LLM` | `1` | Teacher drafts not spoken |
-| override | `--allow-voice-llm` / API flag | allow TTS of LLM text |
+`CNET_SELF_ANSWER=1` (default): on CERT miss, **answer text is the C utterance**
+(`source=CNET`, skill `utter_self`). Teacher is not called.
 
-Law: compose ≠ CERT. No pack_personal mint from utterance.
+```bash
+# restore Teacher residual on misses:
+CNET_TEACHER_ON_MISS=1   # in cnet-minimal.env
+systemctl --user restart cnetd
+```
+
+CNET self-answers are voiceable (`may_voice=1`). They still do **not** CERT.

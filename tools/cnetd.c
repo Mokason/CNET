@@ -341,6 +341,20 @@ static int cd_ask(CdState *S, const char *q, CdReply *out) {
     }
 
     roe_net_from_env(&net);
+    /* CNET self-answer default: no Teacher unless explicitly enabled */
+    {
+        const char *sa = getenv("CNET_SELF_ANSWER");
+        const char *tm = getenv("CNET_TEACHER_ON_MISS");
+        int self_answer = 1; /* default ON — CNET writes its own lines */
+        if (sa && (sa[0] == '0' || sa[0] == 'n' || sa[0] == 'N' || sa[0] == 'f'))
+            self_answer = 0;
+        if (tm && (tm[0] == '1' || tm[0] == 'y' || tm[0] == 'Y'))
+            self_answer = 0; /* teacher allowed on miss */
+        if (self_answer) {
+            net.enable_llm = 0;
+            net.enable_lookup = 0;
+        }
+    }
     if (pm) {
         net.enable_llm = 0;
         net.enable_lookup = 0;
@@ -356,13 +370,21 @@ static int cd_ask(CdState *S, const char *q, CdReply *out) {
     out->tokens = (unsigned long long)rep.tokens_est;
     out->miss = (rep.source != ROE_SRC_LOCAL) ? 1 : 0;
 
-    /* C-native utterance (CERT/state templates — not Teacher) */
+    /* C-native utterance / self-answer (CERT + templates — not Teacher) */
     {
         static CnetUtterBank UB;
         static int ub_ready;
         CnetUtterState U;
         const char *when = NULL;
         const char *env;
+        int self_answer = 1;
+        env = getenv("CNET_SELF_ANSWER");
+        if (env && (env[0] == '0' || env[0] == 'n' || env[0] == 'N' || env[0] == 'f'))
+            self_answer = 0;
+        env = getenv("CNET_TEACHER_ON_MISS");
+        if (env && (env[0] == '1' || env[0] == 'y' || env[0] == 'Y'))
+            self_answer = 0;
+
         if (!ub_ready) {
             cnet_utter_bank_init_default(&UB);
             (void)cnet_utter_bank_load_tsv(&UB, "config/utterance_phrases.tsv");
@@ -384,15 +406,52 @@ static int cd_ask(CdState *S, const char *q, CdReply *out) {
         snprintf(U.domain, sizeof U.domain, "%s", out->domain);
         snprintf(U.pattern, sizeof U.pattern, "%.95s", q ? q : "");
         snprintf(U.base_answer, sizeof U.base_answer, "%.767s", out->answer);
+
         if (out->shortcircuit) when = "miss";
-        else if (out->miss) when = "miss";
-        else if (contains_ci(q, "who are you") || contains_ci(q, "speech")) when = "identity";
-        else if (contains_ci(q, "status") || contains_ci(q, "local hit")) when = "status";
+        else if (!out->miss && (contains_ci(q, "who are you") || contains_ci(q, "speech")))
+            when = "identity";
+        else if (!out->miss && (contains_ci(q, "status") || contains_ci(q, "local hit")))
+            when = "status";
+        else if (contains_ci(q, "how do you answer") || contains_ci(q, "self answer") ||
+                 contains_ci(q, "without teacher") || contains_ci(q, "who writes"))
+            when = "meta";
+        else if (out->miss)
+            when = "miss";
+        else if (contains_ci(q, "who are you") || contains_ci(q, "speech"))
+            when = "identity";
+        else if (contains_ci(q, "status") || contains_ci(q, "local hit"))
+            when = "status";
+
         load_neuromod_into(&U);
         (void)cnet_utter_compose(&UB, &U, when, out->utterance, sizeof out->utterance);
-        out->may_voice = cnet_utter_may_voice(&U, out->source);
         if (!out->utterance[0])
             snprintf(out->utterance, sizeof out->utterance, "%s", out->answer);
+
+        /*
+         * Self-answer: replace residual Teacher/ASK_USER with CNET-composed line.
+         * CERT LOCAL answers stay as sealed skill text.
+         */
+        if (out->miss && self_answer && !out->shortcircuit) {
+            snprintf(out->answer, sizeof out->answer, "%.511s", out->utterance);
+            snprintf(out->source, sizeof out->source, "CNET");
+            snprintf(out->skill, sizeof out->skill, "utter_self");
+            out->verified = 0;
+            out->tokens = 0;
+            U.source[0] = 0;
+            snprintf(U.source, sizeof U.source, "CNET");
+        } else if (out->miss && self_answer && out->shortcircuit) {
+            /* probe: CNET short message, still not teacher */
+            snprintf(out->answer, sizeof out->answer, "%.511s", out->utterance);
+            snprintf(out->source, sizeof out->source, "CNET");
+            snprintf(out->skill, sizeof out->skill, "utter_probe");
+            out->tokens = 0;
+            snprintf(U.source, sizeof U.source, "CNET");
+        }
+
+        out->may_voice = cnet_utter_may_voice(&U, out->source);
+        /* CNET-composed lines are always voiceable under never_voice_llm */
+        if (strcmp(out->source, "CNET") == 0 || strcmp(out->source, "LOCAL") == 0)
+            out->may_voice = 1;
     }
 
     /* append miss with shortcircuit / open-chat learn tags */
@@ -413,21 +472,25 @@ static int cd_ask(CdState *S, const char *q, CdReply *out) {
         {
             char line[ROE_ANSWER_MAX * 2 + 768];
             int is_llm = (strcmp(out->source, "LLM") == 0);
+            int is_cnet = (strcmp(out->source, "CNET") == 0);
             if (out->shortcircuit)
                 snprintf(line, sizeof line,
                          "{\"ts\":\"%s\",\"query\":\"%s\",\"source\":\"%s\","
                          "\"answer\":\"%s\",\"shortcircuit\":true,\"probe_pat\":\"%s\","
-                         "\"teacher\":false,\"learnable\":false,\"via\":\"cnetd\","
-                         "\"tokens_est\":%llu}\n",
+                         "\"teacher\":false,\"learnable\":false,\"self_answer\":true,"
+                         "\"via\":\"cnetd\",\"tokens_est\":%llu}\n",
                          ts, qesc, out->source, aesc, out->probe_pat, out->tokens);
             else
                 snprintf(line, sizeof line,
                          "{\"ts\":\"%s\",\"query\":\"%s\",\"source\":\"%s\","
                          "\"answer\":\"%s\",\"shortcircuit\":false,"
-                         "\"teacher\":%s,\"learnable\":%s,\"open_chat\":true,"
-                         "\"auto_cert\":false,\"via\":\"cnetd\",\"tokens_est\":%llu}\n",
+                         "\"teacher\":%s,\"learnable\":%s,\"open_chat\":%s,"
+                         "\"self_answer\":%s,\"auto_cert\":false,\"via\":\"cnetd\","
+                         "\"tokens_est\":%llu}\n",
                          ts, qesc, out->source, aesc, is_llm ? "true" : "false",
-                         is_llm ? "true" : "false", out->tokens);
+                         (is_llm || is_cnet) ? "true" : "false",
+                         is_llm ? "true" : "false", is_cnet ? "true" : "false",
+                         out->tokens);
             if (f) {
                 fputs(line, f);
                 fclose(f);
@@ -482,12 +545,15 @@ static void write_json_reply(int fd, const CdReply *r) {
              "\"utterance\":\"%s\",\"may_voice\":%s,"
              "\"miss\":%s,\"verified\":%s,\"tokens_est\":%llu,"
              "\"domain_route\":\"%s\",\"shortcircuit\":%s,\"probe_pat\":\"%s\","
-             "\"teacher\":%s,\"composer\":\"cnet_utterance\",\"never_voice_llm\":true}\n",
+             "\"teacher\":%s,\"composer\":\"cnet_utterance\",\"never_voice_llm\":true,"
+             "\"self_answer\":%s}\n",
              r->source, r->skill, aesc, uesc, r->may_voice ? "true" : "false",
              r->miss ? "true" : "false",
              r->verified ? "true" : "false", r->tokens, r->domain,
              r->shortcircuit ? "true" : "false", r->probe_pat,
-             r->shortcircuit ? "false" : "null");
+             (strcmp(r->source, "LLM") == 0) ? "true" : "false",
+             (strcmp(r->source, "CNET") == 0 || strcmp(r->source, "LOCAL") == 0) ? "true"
+                                                                                : "false");
     (void)full_write(fd, buf, strlen(buf));
 }
 

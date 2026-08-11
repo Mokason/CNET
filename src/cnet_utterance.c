@@ -84,6 +84,20 @@ static void sync_common_kv(CnetUtterState *S) {
     snprintf(b, sizeof b, "%d", S->llm_n);
     kv_set(S, "llm_n", b);
     kv_set(S, "law", "never self-cert");
+    /* topic = short cleaned query for miss self-answers */
+    if (S->pattern[0]) {
+        char topic[CNET_UTTER_VAL];
+        size_t i, j = 0;
+        for (i = 0; S->pattern[i] && j + 1 < sizeof topic && j < 80; i++) {
+            char c = S->pattern[i];
+            if (c == '\n' || c == '\r') break;
+            topic[j++] = c;
+        }
+        topic[j] = 0;
+        while (j && topic[j - 1] == ' ') topic[--j] = 0;
+        kv_set(S, "topic", topic[0] ? topic : "that");
+    } else
+        kv_set(S, "topic", "that");
 }
 
 void cnet_utter_bank_init_default(CnetUtterBank *B) {
@@ -99,8 +113,16 @@ void cnet_utter_bank_init_default(CnetUtterBank *B) {
          "Running local skill {skill} on domain {domain}. Hit rate {local_hit}."},
         {"miss_soft", "miss",
          "No local CERT for that yet. I logged the miss. I will not invent a seal."},
+        {"miss_topic", "miss",
+         "You asked about {topic}. I have no sealed skill for that yet. "
+         "Logged to miss_log for later gold review. Law: {law}."},
         {"miss_probe", "miss",
          "That looks like a probe. Short-circuit abstain. No teacher burn."},
+        {"self_status", "self",
+         "{name} answering from CERT and state only. Local hit {local_hit}. "
+         "No teacher on this turn."},
+        {"self_generic", "self",
+         "{name}: {answer}"},
         {"chain_show", "chain",
          "Chain brief: {chain}. Result: {answer}"},
         {"generic_local", "generic",
@@ -110,6 +132,9 @@ void cnet_utter_bank_init_default(CnetUtterBank *B) {
         {"speech_ready", "speech",
          "Speech capsule ready. I compose lines in C from CERT and state. "
          "I do not voice teacher drafts by default."},
+        {"how_self", "meta",
+         "I answer from sealed CERT packs and C utterance templates. "
+         "Teacher is residual only when explicitly enabled. Law: {law}."},
     };
     int i;
     if (!B) return;
@@ -181,6 +206,15 @@ const CnetUtterPhrase *cnet_utter_pick(const CnetUtterBank *B, const CnetUtterSt
     int i, fallback = -1;
     if (!B || !B->ready || !S) return NULL;
     when = guess_when(S, when_hint);
+    /* Prefer miss_topic when we have a real query pattern */
+    if (when && strcmp(when, "miss") == 0 && S->pattern[0] &&
+        !contains_ci(S->pattern, "novel fact") && !contains_ci(S->pattern, "mystic")) {
+        for (i = 0; i < B->n_bank; i++) {
+            if (strcmp(B->bank[i].id, "miss_topic") == 0 ||
+                (strcmp(B->bank[i].when, "miss") == 0 && strstr(B->bank[i].tmpl, "{topic}")))
+                return &B->bank[i];
+        }
+    }
     for (i = 0; i < B->n_bank; i++) {
         if (strcmp(B->bank[i].when, when) == 0) return &B->bank[i];
         if (fallback < 0 && strcmp(B->bank[i].when, "generic") == 0) fallback = i;
@@ -216,6 +250,10 @@ int cnet_utter_compose(const CnetUtterBank *B, const CnetUtterState *S, const ch
         snprintf(out, cap, "%s", tmp.base_answer);
         return 0;
     }
+    /* Self-answer path: always template (do not echo Teacher) */
+    if (when_hint && strcmp(when_hint, "self") == 0) {
+        /* fall through to pick */
+    }
     ph = cnet_utter_pick(B, &tmp, when_hint);
     if (!ph) {
         snprintf(out, cap, "%s", tmp.base_answer[0] ? tmp.base_answer : "No utterance.");
@@ -246,8 +284,9 @@ int cnet_utter_may_voice(const CnetUtterState *S, const char *source) {
     if (S && !src) src = S->source;
     if (!src || !src[0]) return 0;
     if (strcmp(src, "LOCAL") == 0) return 1;
+    if (strcmp(src, "CNET") == 0) return 1; /* C self-answer */
+    if (strcmp(src, "SELF") == 0) return 1;
     if (S && !S->never_voice_llm) {
-        /* explicit override allows LLM / ASK_USER voice */
         return 1;
     }
     return 0;
