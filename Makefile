@@ -3458,6 +3458,32 @@ roe_front_door: roe_daily_packs $(ROE_ASI_SRC) tools/roe_front_door.c src/cnet_d
 	@./$(BIN_DIR)/roe_front_door ask "who are you" | tee -a logs/roe_front_door.log
 	@./$(BIN_DIR)/roe_front_door ask "format-truncation werror" | tee -a logs/roe_front_door.log
 
+.PHONY: cnet_minimal_package
+cnet_minimal_package:
+	@mkdir -p logs dist
+	@chmod +x scripts/package_cnet_minimal.sh scripts/cnet_runtime_smoke.sh scripts/cnet_runtime_soak_gate.sh
+	@bash scripts/package_cnet_minimal.sh | tee logs/cnet_minimal_package.log
+	@grep -q "PACKAGE_OK" logs/cnet_minimal_package.log
+	@# smoke inside package
+	@PKG=$$(cat dist/CNET-Minimal-latest.path); \
+	  CNET_MINIMAL_ROOT="$$PKG" bash "$$PKG/scripts/cnet_runtime_smoke.sh" | tee logs/cnet_runtime_smoke_pkg.log; \
+	  grep -q "CNET_RUNTIME_SMOKE_PASS" logs/cnet_runtime_smoke_pkg.log
+	@echo "CNET_MINIMAL_PACKAGE_OK"
+
+.PHONY: cnet_runtime_smoke
+cnet_runtime_smoke:
+	@mkdir -p logs
+	@chmod +x scripts/cnet_runtime_smoke.sh
+	@bash scripts/cnet_runtime_smoke.sh | tee logs/cnet_runtime_smoke.log
+	@grep -q "CNET_RUNTIME_SMOKE_PASS" logs/cnet_runtime_smoke.log
+
+.PHONY: cnet_runtime_soak_gate
+cnet_runtime_soak_gate: cnet_minimal_package
+	@mkdir -p logs
+	@chmod +x scripts/cnet_runtime_soak_gate.sh
+	@bash scripts/cnet_runtime_soak_gate.sh | tee logs/cnet_runtime_soak_gate.log
+	@grep -q "CNET_RUNTIME_SOAK_GATE_PASS" logs/cnet_runtime_soak_gate.log
+
 # CERT-first domain route table (static + optional TSV overlay)
 .PHONY: domain_route
 domain_route: include/cnet_domain_route.h src/cnet_domain_route.c tools/roe_domain_route.c
