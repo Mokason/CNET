@@ -34,8 +34,8 @@ int main(void) {
     failures = checks = 0;
     printf("=== ROE evolve tick (unattended) ===\n");
 
-    /* seed demo miss+gold then run tick */
-    rc = system("python3 tools/roe_evolve_tick.py --seed-demo 2>&1 | tee logs/roe_evolve_tick.log");
+    /* seed demo miss+gold then run tick (gold skips reviewer) */
+    rc = system("python3 tools/roe_evolve_tick.py --seed-demo --no-reviewer 2>&1 | tee logs/roe_evolve_tick.log");
     check(rc == 0, "evolve_tick exit 0");
     check(file_has("logs/roe_evolve_tick.log", "ROE_EVOLVE_TICK_PASS"),
           "ROE_EVOLVE_TICK_PASS marker");

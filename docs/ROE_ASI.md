@@ -368,3 +368,21 @@ Policy (`human_accept_required: false`):
 - Never single-shot LLM → CERT
 - Never auto-edit `pack_soul_*`
 
+## Reviewer role (separate from teacher)
+
+| Role | Job | Env |
+|------|-----|-----|
+| **Teacher** | Propose answers on MISS | `ROE_LLM_MODEL` / teacher env |
+| **Reviewer** | APPROVE/REJECT before promote | `ROE_REVIEW_MODEL` / reviewer env |
+| **Gold** | External verified truth | `gold/*.txt` (skips reviewer) |
+
+```bash
+make roe_reviewer_smoke
+set -a && . config/roe-reviewer-ollama-cloud.env && set +a
+ROE_EVOLVE_REVIEWER=1 python3 tools/roe_evolve_tick.py
+# offline role-split:
+ROE_REVIEW_HERMETIC=1 python3 tools/roe_reviewer.py --smoke --hermetic
+```
+
+Logs: `artifacts/roe_daily_packs/review_log.jsonl`
+

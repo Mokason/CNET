@@ -3477,6 +3477,17 @@ roe_evolve_tick: tools/roe_evolve_tick.py tools/roe_evolve_tick_gate.c
 	@echo "  cp scripts/systemd/roe-evolve-tick.* ~/.config/systemd/user/"
 	@echo "  systemctl --user daemon-reload && systemctl --user enable --now roe-evolve-tick.timer"
 
+# Separate REVIEWER role (Ollama cloud) — not teacher
+.PHONY: roe_reviewer_smoke
+roe_reviewer_smoke: tools/roe_reviewer.py config/roe-reviewer-ollama-cloud.env
+	@mkdir -p logs
+	@set -a; \
+	  [ -f config/roe-teacher-ollama-cloud.env ] && . ./config/roe-teacher-ollama-cloud.env; \
+	  . ./config/roe-reviewer-ollama-cloud.env; \
+	  set +a; \
+	  python3 tools/roe_reviewer.py --smoke | tee logs/roe_reviewer_smoke.log
+	@grep -q "ROE_REVIEWER_SMOKE_PASS" logs/roe_reviewer_smoke.log
+
 .PHONY: roe_asi_ocr_surpass
 roe_asi_ocr_surpass: $(ROE_ASI_SRC) src/cnet_roe_goal.c src/cnet_roe_ocr.c src/cnet_roe_tree.c \
 		include/cnet_roe_ocr.h tools/roe_asi_ocr_surpass.c tools/roe_unlimited_teacher.py

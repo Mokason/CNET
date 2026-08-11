@@ -6,7 +6,11 @@ Goal: learn / mint capsules WITHOUT the human pressing go/accept every turn.
 Auto-promote ONLY when a fail-closed policy says so:
   gold_file     — artifacts/roe_daily_packs/gold/<sha1>.txt matches teacher answer
   multi_stable  — same (query_norm, answer) seen >= N times in miss_log (default 3)
-  teach_table   — optional gold.jsonl rows
+  reviewer      — separate Ollama REVIEWER role APPROVE (not teacher)
+
+When ROE_EVOLVE_REVIEWER=1 (default if reviewer env present):
+  multi_stable / teacher proposals also need reviewer APPROVE.
+  gold_file can skip reviewer (gold is already external verify).
 
 Never promotes from a single novel LLM answer (that would be self-CERT).
 Persona packs (pack_soul_*) are never auto-written.
@@ -17,10 +21,10 @@ Usage:
   make roe_evolve_tick
 
 Env:
-  ROE_EVOLVE_STABLE_N=3          multi_stable threshold
-  ROE_EVOLVE_MAX_PROMOTES=20     cap per tick
-  ROE_EVOLVE_TEACHER=1           call front_door with live teacher for open misses
-  ROE_LIVE / ROE_LLM already used by front_door / roe_net
+  ROE_EVOLVE_STABLE_N=3
+  ROE_EVOLVE_MAX_PROMOTES=20
+  ROE_EVOLVE_TEACHER=1
+  ROE_EVOLVE_REVIEWER=1   # separate reviewer gate (tools/roe_reviewer.py)
 """
 from __future__ import annotations
 
@@ -31,7 +35,6 @@ import os
 import re
 import subprocess
 import sys
-import time
 from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
@@ -44,6 +47,13 @@ PERSONAL = PACKS / "pack_personal"
 REPORT = PACKS / "EVOLVE_TICK.json"
 STATE = PACKS / "evolve_state.json"
 BIN_FD = ROOT / "bin" / "roe_front_door"
+
+# reviewer helper
+sys.path.insert(0, str(ROOT / "tools"))
+try:
+    import roe_reviewer as roe_reviewer_mod  # type: ignore
+except ImportError:
+    roe_reviewer_mod = None  # type: ignore
 
 
 def utc_now() -> str:
@@ -353,7 +363,28 @@ def main() -> int:
         help="fill open misses via live teacher (still needs policy to promote)",
     )
     ap.add_argument("--seed-demo", action="store_true", help="write a demo miss+gold for gate")
+    ap.add_argument(
+        "--reviewer",
+        action="store_true",
+        default=None,
+        help="require separate reviewer APPROVE for non-gold promotes",
+    )
+    ap.add_argument("--no-reviewer", action="store_true", help="disable reviewer gate")
     args = ap.parse_args()
+
+    # reviewer default: on if env 1 or config file exists, unless --no-reviewer
+    if args.no_reviewer:
+        use_reviewer = False
+    elif args.reviewer:
+        use_reviewer = True
+    else:
+        env_r = os.environ.get("ROE_EVOLVE_REVIEWER", "").lower()
+        if env_r in ("0", "false", "no"):
+            use_reviewer = False
+        elif env_r in ("1", "true", "yes"):
+            use_reviewer = True
+        else:
+            use_reviewer = (ROOT / "config" / "roe-reviewer-ollama-cloud.env").is_file()
 
     PACKS.mkdir(parents=True, exist_ok=True)
     GOLD_DIR.mkdir(parents=True, exist_ok=True)
@@ -390,6 +421,10 @@ def main() -> int:
     rows = load_jsonl(MISS)
     clusters = cluster_misses(rows)
 
+    policy = ["gold_file", f"multi_stable>={args.stable_n}"]
+    if use_reviewer:
+        policy.append("reviewer_approve_non_gold")
+
     report = {
         "ts": utc_now(),
         "miss_rows": len(rows),
@@ -397,10 +432,12 @@ def main() -> int:
         "stable_n": args.stable_n,
         "promoted": [],
         "skipped": [],
+        "reviewer_enabled": use_reviewer,
         "dry_run": args.dry_run,
-        "policy": ["gold_file", f"multi_stable>={args.stable_n}"],
+        "policy": policy,
         "human_accept_required": False,
-        "note": "accept replaced by gold_file or multi_stable policy — not AGI",
+        "roles": {"teacher": "propose", "reviewer": "gate", "human": "optional_gold_batch"},
+        "note": "teacher≠reviewer; gold_file skips reviewer; multi_stable needs reviewer if enabled",
     }
 
     n_prom = 0
@@ -468,22 +505,58 @@ def main() -> int:
             report["skipped"].append({"query": q, "reason": "persona_guard"})
             continue
 
+        # Separate REVIEWER role (not teacher). gold_file skips reviewer.
+        review_meta = None
+        if use_reviewer and reason != "gold_file":
+            if roe_reviewer_mod is None:
+                report["skipped"].append({"query": q, "reason": "reviewer_module_missing"})
+                continue
+            review_meta = roe_reviewer_mod.review(q, final)
+            append_jsonl(
+                PACKS / "review_log.jsonl",
+                {
+                    "ts": utc_now(),
+                    "query": q,
+                    "verdict": review_meta.get("verdict"),
+                    "approved": review_meta.get("approved"),
+                    "reason": review_meta.get("reason"),
+                    "model": review_meta.get("model"),
+                    "role": "reviewer",
+                },
+            )
+            if not review_meta.get("approved"):
+                report["skipped"].append(
+                    {
+                        "query": q,
+                        "reason": "reviewer_reject",
+                        "verdict": review_meta.get("verdict"),
+                        "detail": (review_meta.get("reason") or "")[:120],
+                    }
+                )
+                continue
+            reason = f"{reason}+reviewer"
+
         pat = pattern_for(q)
         ok_fd = promote_via_front_door(q, final, args.dry_run)
         if not args.dry_run:
             write_skill(PERSONAL, sid, pat, final)
         n_prom += 1
         promoted_ids.add(sid)
-        report["promoted"].append(
-            {
-                "query": q,
-                "skill_id": sid,
-                "pattern": pat,
-                "reason": reason,
-                "front_door": ok_fd,
-                "answer_preview": final[:120],
+        row = {
+            "query": q,
+            "skill_id": sid,
+            "pattern": pat,
+            "reason": reason,
+            "front_door": ok_fd,
+            "answer_preview": final[:120],
+        }
+        if review_meta:
+            row["reviewer"] = {
+                "verdict": review_meta.get("verdict"),
+                "reason": (review_meta.get("reason") or "")[:120],
+                "model": review_meta.get("model"),
             }
-        )
+        report["promoted"].append(row)
         append_jsonl(
             PACKS / "evolve_promotes.jsonl",
             {
@@ -492,6 +565,7 @@ def main() -> int:
                 "skill_id": sid,
                 "reason": reason,
                 "dry_run": args.dry_run,
+                "reviewer": (review_meta or {}).get("verdict"),
             },
         )
 
@@ -505,15 +579,13 @@ def main() -> int:
     print(f"evolve_tick packs={PACKS}")
     print(f"  miss_rows={report['miss_rows']} clusters={report['clusters']}")
     print(f"  promoted={len(report['promoted'])} skipped={len(report['skipped'])}")
+    print(f"  reviewer_enabled={report.get('reviewer_enabled')}")
     for p in report["promoted"][:10]:
         print(f"  + {p['skill_id']} reason={p['reason']} q={p['query'][:50]}")
     print(f"  report → {REPORT}")
-    if report["promoted"] or args.seed_demo:
-        print("ROE_EVOLVE_TICK_PASS")
-        return 0
-    # empty tick is still success (nothing to do)
     print("ROE_EVOLVE_TICK_PASS")
-    print("  (idle — no eligible promotes; drop gold or repeat misses)")
+    if not report["promoted"] and not args.seed_demo:
+        print("  (idle — no eligible promotes; drop gold or repeat misses)")
     return 0
 
 
