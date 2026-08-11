@@ -489,6 +489,14 @@ def main() -> int:
         # representative query (original casing from last entry)
         q = entries[-1].get("query") or nq
         sid = skill_id_for(q)
+
+        # Blocklist first — probe/ABSTAIN never CERT (even if stale state id)
+        br0 = is_promote_blocked(q, None)
+        if br0:
+            report["skipped"].append({"query": q, "reason": br0})
+            promoted_ids.discard(sid)
+            continue
+
         if sid in promoted_ids or sid in load_catalog_ids(PERSONAL / "catalog.jsonl"):
             report["skipped"].append({"query": q, "reason": "already_promoted"})
             continue
