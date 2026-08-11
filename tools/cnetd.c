@@ -256,6 +256,8 @@ typedef struct {
     unsigned long long tokens;
 } CdReply;
 
+static void json_escape(const char *in, char *out, size_t cap);
+
 static int cd_ask(CdState *S, const char *q, CdReply *out) {
     RoeAsi *R;
     RoeNet net;
@@ -307,27 +309,47 @@ static int cd_ask(CdState *S, const char *q, CdReply *out) {
     out->tokens = (unsigned long long)rep.tokens_est;
     out->miss = (rep.source != ROE_SRC_LOCAL) ? 1 : 0;
 
-    /* append miss with shortcircuit tag */
+    /* append miss with shortcircuit / open-chat learn tags */
     if (out->miss) {
         FILE *f = fopen(S->miss_log, "a");
-        if (f) {
-            char ts[40];
-            time_t t = time(NULL);
-            struct tm tm;
-            gmtime_r(&t, &tm);
-            strftime(ts, sizeof ts, "%Y-%m-%dT%H:%M:%SZ", &tm);
+        const char *var_miss = getenv("CNET_MISS_LOG");
+        FILE *f2 = NULL;
+        char ts[40];
+        char qesc[1024], aesc[ROE_ANSWER_MAX * 2];
+        time_t t = time(NULL);
+        struct tm tm;
+        gmtime_r(&t, &tm);
+        strftime(ts, sizeof ts, "%Y-%m-%dT%H:%M:%SZ", &tm);
+        json_escape(q, qesc, sizeof qesc);
+        json_escape(out->answer, aesc, sizeof aesc);
+        if (var_miss && var_miss[0] && strcmp(var_miss, S->miss_log) != 0)
+            f2 = fopen(var_miss, "a");
+        {
+            char line[ROE_ANSWER_MAX * 2 + 768];
+            int is_llm = (strcmp(out->source, "LLM") == 0);
             if (out->shortcircuit)
-                fprintf(f,
-                        "{\"ts\":\"%s\",\"query\":\"%s\",\"source\":\"%s\","
-                        "\"answer\":\"%s\",\"shortcircuit\":true,\"probe_pat\":\"%s\","
-                        "\"teacher\":false,\"via\":\"cnetd\"}\n",
-                        ts, q, out->source, out->answer, out->probe_pat);
+                snprintf(line, sizeof line,
+                         "{\"ts\":\"%s\",\"query\":\"%s\",\"source\":\"%s\","
+                         "\"answer\":\"%s\",\"shortcircuit\":true,\"probe_pat\":\"%s\","
+                         "\"teacher\":false,\"learnable\":false,\"via\":\"cnetd\","
+                         "\"tokens_est\":%llu}\n",
+                         ts, qesc, out->source, aesc, out->probe_pat, out->tokens);
             else
-                fprintf(f,
-                        "{\"ts\":\"%s\",\"query\":\"%s\",\"source\":\"%s\","
-                        "\"answer\":\"%s\",\"via\":\"cnetd\"}\n",
-                        ts, q, out->source, out->answer);
-            fclose(f);
+                snprintf(line, sizeof line,
+                         "{\"ts\":\"%s\",\"query\":\"%s\",\"source\":\"%s\","
+                         "\"answer\":\"%s\",\"shortcircuit\":false,"
+                         "\"teacher\":%s,\"learnable\":%s,\"open_chat\":true,"
+                         "\"auto_cert\":false,\"via\":\"cnetd\",\"tokens_est\":%llu}\n",
+                         ts, qesc, out->source, aesc, is_llm ? "true" : "false",
+                         is_llm ? "true" : "false", out->tokens);
+            if (f) {
+                fputs(line, f);
+                fclose(f);
+            }
+            if (f2) {
+                fputs(line, f2);
+                fclose(f2);
+            }
         }
     }
     free(R);
@@ -424,16 +446,30 @@ static void handle_client(int cfd, CdState *S) {
         int json = 0;
         if (strncmp(line, "ASK ", 4) == 0) q = line + 4;
         else if (line[0] == '{') {
-            /* {"op":"ask","q":"..."} rough extract */
-            char *p = strstr(line, "\"q\":\"");
+            /* {"op":"ask","q":"..."} or pretty {"q": "..."} */
+            char *p = strstr(line, "\"q\"");
             json = 1;
             if (p) {
                 static char qq[CD_LINE];
                 size_t i = 0;
-                p += 5;
-                while (*p && *p != '"' && i + 1 < sizeof qq) qq[i++] = *p++;
-                qq[i] = 0;
-                q = qq;
+                p = strchr(p + 3, ':');
+                if (p) {
+                    p++;
+                    while (*p == ' ' || *p == '\t') p++;
+                    if (*p == '"') {
+                        p++;
+                        while (*p && *p != '"' && i + 1 < sizeof qq) {
+                            if (*p == '\\' && p[1]) {
+                                p++;
+                                qq[i++] = *p++;
+                            } else {
+                                qq[i++] = *p++;
+                            }
+                        }
+                        qq[i] = 0;
+                        q = qq;
+                    }
+                }
             }
         }
         if (cd_ask(S, q, &rep) != 0) {

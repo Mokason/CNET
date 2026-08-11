@@ -162,6 +162,15 @@ void roe_net_from_env(RoeNet *N) {
         N->enable_llm = 1;
         N->enable_lookup = 1;
     }
+    /* Open chat = residual teacher on organic misses (still never self-CERT) */
+    e = getenv("CNET_OPEN_CHAT");
+    if (e && (e[0] == '1' || e[0] == 'y' || e[0] == 'Y')) {
+        N->enable_llm = 1;
+        /* lookup optional; keep off by default for chat unless ROE_LOOKUP=1 */
+    }
+    e = getenv("ROE_OPEN_CHAT");
+    if (e && (e[0] == '1' || e[0] == 'y' || e[0] == 'Y'))
+        N->enable_llm = 1;
     e = getenv("ROE_LLM");
     if (e && e[0] == '1') N->enable_llm = 1;
     if (e && e[0] == '0') N->enable_llm = 0;
@@ -202,14 +211,27 @@ int roe_net_llm(RoeNet *N, const char *prompt, char *answer, size_t answer_cap,
     }
 
     snprintf(sys_prompt, sizeof sys_prompt,
-             "You are an external teacher for ROE-ASI. Answer in 1-2 short factual "
-             "sentences. No markdown. Query: ");
+             "You are an external teacher for ROE-ASI / CNET. Answers are UNTRUSTED "
+             "drafts (never self-CERT). Be concise and helpful. 2-6 short sentences "
+             "unless the user asks for more. No markdown headers. Query: ");
     plen = strlen(sys_prompt) + strlen(prompt);
     /* escape quotes in prompt lightly */
     {
         char pq[1500];
         size_t i, j = 0;
         const char *think_json = N->think ? "true" : "false";
+        int open_chat = 0;
+        int npred = 120;
+        const char *ep;
+        ep = getenv("CNET_OPEN_CHAT");
+        if (ep && (ep[0] == '1' || ep[0] == 'y' || ep[0] == 'Y')) open_chat = 1;
+        ep = getenv("ROE_OPEN_CHAT");
+        if (ep && (ep[0] == '1' || ep[0] == 'y' || ep[0] == 'Y')) open_chat = 1;
+        if (open_chat) npred = 280;
+        ep = getenv("ROE_LLM_NUM_PREDICT");
+        if (ep && ep[0]) npred = (int)strtol(ep, NULL, 10);
+        if (npred < 32) npred = 32;
+        if (npred > 512) npred = 512;
         for (i = 0; prompt[i] && j + 2 < sizeof pq; i++) {
             if (prompt[i] == '"' || prompt[i] == '\\') pq[j++] = '\\';
             pq[j++] = prompt[i];
@@ -219,8 +241,9 @@ int roe_net_llm(RoeNet *N, const char *prompt, char *answer, size_t answer_cap,
         snprintf(body, sizeof body,
                  "{\"model\":\"%s\",\"prompt\":\"%s%s\",\"stream\":false,"
                  "\"think\":%s,"
-                 "\"options\":{\"num_predict\":120,\"temperature\":0.2}}",
-                 N->llm_model, sys_prompt, pq, think_json);
+                 "\"options\":{\"num_predict\":%d,\"temperature\":%.2f}}",
+                 N->llm_model, sys_prompt, pq, think_json, npred,
+                 open_chat ? 0.4 : 0.2);
     }
 
     rc = http_post_json(N->llm_url, body, N->timeout_ms, &mb);

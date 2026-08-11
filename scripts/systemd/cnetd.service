@@ -8,6 +8,14 @@ WorkingDirectory=%h/AI/CNET
 EnvironmentFile=-%h/.local/share/cnet-minimal/cnet-minimal.env
 Environment=CNET_MINIMAL_ROOT=%h/.local/share/cnet-minimal/current
 Environment=CNET_PACKS_ROOT=%h/.local/share/cnet-minimal/current/data/roe_daily_packs
+Environment=PATH=/home/marble/.local/share/cnet-minimal/current/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+# Open chat: Teacher on residual misses; probes still short-circuit; never self-CERT
+Environment=CNET_OPEN_CHAT=1
+Environment=ROE_LLM=1
+Environment=ROE_LLM_THINK=0
+Environment=ROE_TIMEOUT_MS=90000
+# Prefer local/cloud Ollama model available on this host
+Environment=ROE_LLM_MODEL=minimax-m3:cloud
 ExecStart=%h/AI/CNET/bin/cnetd
 Restart=on-failure
 RestartSec=3

@@ -71,6 +71,11 @@ CNET_FRONT_DOOR_BIN=$CURRENT/bin/roe_front_door
 CNET_BLOCKLIST=$CURRENT/config/promote_blocklist.txt
 CNET_MISS_LOG=$VAR/miss_log.jsonl
 PATH=$CURRENT/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+CNET_OPEN_CHAT=1
+ROE_LLM=1
+ROE_LLM_THINK=0
+ROE_TIMEOUT_MS=90000
+ROE_LLM_MODEL=minimax-m3:cloud
 EOF
 
 # User bin wrappers
