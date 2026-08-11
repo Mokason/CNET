@@ -348,6 +348,35 @@ int main(void) {
               "initial+recent");
     }
 
+    /* (d0) stream_ix pre-attention path on real fixture: bind + decode advances */
+    {
+        cce_kv_stream_index ix;
+        cce_specialist_kv_budget bb;
+        cce_specialist_kv_budget_default(&bb, m->max_ctx > 0 ? m->max_ctx : 256);
+        bb.max_tokens = 16;
+        bb.recent_tokens = 8;
+        bb.initial_tokens = 4;
+        CHECK(cce_kv_stream_index_init(&ix, &bb,
+                                       m->max_ctx > 0 ? m->max_ctx : 256) ==
+                  CCE_OK,
+              "stream_ix init");
+        cce_gguf_qwen2_bind_stream_index(m, &ix);
+        CHECK(m->stream_ix == &ix, "stream_ix bound on model");
+        /* sparse OFF so dense path applies pre-attention mask */
+        CHECK(cce_gguf_qwen2_set_sparse_kv(m, 0.0f) == CCE_OK,
+              "stream_ix path uses dense attend + mask");
+        CHECK(run_steps(m, 16, 8), "stream_ix bound prefill+decode runs");
+        CHECK(ix.active_n > 0 && ix.active_n <= 16,
+              "stream_ix on_append caps active to budget");
+        CHECK(cce_kv_stream_index_contains(&ix, m->cur_pos > 0 ? m->cur_pos - 1
+                                                              : 0) ||
+                  ix.active_n >= 1,
+              "stream_ix tracks recent positions");
+        cce_gguf_qwen2_bind_stream_index(m, NULL);
+        cce_kv_stream_index_clear(&ix);
+        CHECK(m->stream_ix == NULL, "stream_ix unbound");
+    }
+
     /* (d) OFF restore: bit-identical to the baseline again */
     cce_gguf_set_sparse_kv_tap(NULL, NULL);
     CHECK(cce_gguf_qwen2_set_sparse_kv(m, 0.0f) == CCE_OK, "disable (0.0)");

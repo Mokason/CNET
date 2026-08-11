@@ -2888,8 +2888,18 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
     }
     }
 
-    if (!m->probe_batch)
+    if (!m->probe_batch) {
+        /* Stream index: advance HOT support set for each new absolute position. */
+        if (m->stream_ix) {
+            int p;
+            if (m->stream_ix->k_slot_floats <= 0 && m->k_slot_floats > 0)
+                cce_kv_stream_index_set_slot_sizes(m->stream_ix, m->k_slot_floats,
+                                                   m->v_slot_floats);
+            for (p = start_pos; p < start_pos + n_tokens; p++)
+                (void)cce_kv_stream_index_on_append(m->stream_ix, p, NULL, 0);
+        }
         m->cur_pos += n_tokens;
+    }
 
     cce_tensor_free(&x); cce_tensor_free(&fn); cce_tensor_free(&logits_t);
     return CCE_OK;
