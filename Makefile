@@ -3470,6 +3470,12 @@ domain_route: include/cnet_domain_route.h src/cnet_domain_route.c tools/roe_doma
 	@./$(BIN_DIR)/roe_domain_route "completely unknown domain xyzzy" | tee -a logs/domain_route.log
 	@echo "DOMAIN_ROUTE_OK"
 
+.PHONY: cert_coverage_harvest
+cert_coverage_harvest:
+	@mkdir -p logs bin
+	@bash scripts/cert_coverage_harvest.sh
+	@grep -q "CERT_COVERAGE_HARVEST_PASS" logs/cert_coverage_harvest.log
+
 .PHONY: stream_attend_bench
 stream_attend_bench: $(CCE_SPARSE_KV) include/cce/cce_sparse_kv.h tools/stream_attend_bench.c
 	@mkdir -p $(BIN_DIR) logs

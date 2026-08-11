@@ -1,8 +1,24 @@
-# Domain route overlay (optional). Loaded at startup into fixed slots.
-# Format: kind<TAB>pattern<TAB>pack_or_path
-# kind: CERT | MTK | BASE | ABSTAIN
-# CERT-first evaluation is enforced in code regardless of file order.
-#
-# CERT\tmy domain phrase\tpack_personal
-# MTK\tresidual specialty only\tskills/mtk/foo.tskill
-# BASE\topen residual chat\t-
+# Domain route overlay — double-entry with ROUTES / day-0 CERT seeds.
+# kind<TAB>pattern<TAB>pack_or_path
+# CERT-first enforced in code; conf is telemetry-only.
+# Do NOT add probe junk (zz99 / mystic ooze) — those stay ABSTAIN.
+
+CERT	never lowers floors	pack_coding_cnet_c
+CERT	brain floats	pack_coding_cnet_c
+CERT	stream index attend	pack_coding_cnet_c
+CERT	weight epoch	pack_coding_cnet_c
+CERT	roe front door	pack_ops_hermes_systemd
+CERT	front door selective load	pack_ops_hermes_systemd
+CERT	cnet-marble	pack_ops_hermes_systemd
+CERT	evolve tick	pack_meta_gardener
+CERT	pack personal evolve	pack_meta_gardener
+CERT	roe reviewer	pack_meta_gardener
+CERT	multi stable	pack_meta_gardener
+CERT	teacher rate	pack_meta_gardener
+CERT	CNET proposes	pack_pm_director_oracle
+CERT	Unity disposes	pack_pm_director_oracle
+CERT	format-truncation	pack_coding_cnet_c
+CERT	who are you	pack_soul_marble
+CERT	self-cert	pack_roe_self
+CERT	use tools not guess	pack_toolcall_hermes
+CERT	git push	pack_toolcall_hermes

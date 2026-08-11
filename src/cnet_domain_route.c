@@ -9,17 +9,31 @@
 
 /* ---- compiled-in defaults (static binary table) ------------------------ */
 static const CnetDomainRule k_static_rules[] = {
-    /* CERT — product path */
+    /* CERT — product path (day-0 seeds; live promote still gold/reviewer) */
     {"who are you", CNET_ROUTE_CERT, "pack_soul_marble", "", 0, 1},
     {"never self-cert", CNET_ROUTE_CERT, "pack_roe_self", "", 0, 1},
     {"self-cert", CNET_ROUTE_CERT, "pack_roe_self", "", 0, 1},
     {"format-truncation", CNET_ROUTE_CERT, "pack_coding_cnet_c", "", 0, 1},
+    {"never lowers floors", CNET_ROUTE_CERT, "pack_coding_cnet_c", "", 0, 1},
+    {"brain floats", CNET_ROUTE_CERT, "pack_coding_cnet_c", "", 0, 1},
+    {"stream index attend", CNET_ROUTE_CERT, "pack_coding_cnet_c", "", 0, 1},
+    {"weight epoch", CNET_ROUTE_CERT, "pack_coding_cnet_c", "", 0, 1},
     {"use tools not guess", CNET_ROUTE_CERT, "pack_toolcall_hermes", "", 0, 1},
     {"git push", CNET_ROUTE_CERT, "pack_toolcall_hermes", "", 0, 1},
     {"roe second brain", CNET_ROUTE_CERT, "pack_roe_self", "", 0, 1},
     {"outside coverage", CNET_ROUTE_CERT, "pack_roe_self", "", 0, 1},
     {"microsplit goal", CNET_ROUTE_CERT, "pack_goal_split", "", 0, 1},
     {"have miss", CNET_ROUTE_CERT, "pack_goal_split", "", 0, 1},
+    {"roe front door", CNET_ROUTE_CERT, "pack_ops_hermes_systemd", "", 0, 1},
+    {"front door selective load", CNET_ROUTE_CERT, "pack_ops_hermes_systemd", "", 0, 1},
+    {"cnet-marble", CNET_ROUTE_CERT, "pack_ops_hermes_systemd", "", 0, 1},
+    {"evolve tick", CNET_ROUTE_CERT, "pack_meta_gardener", "", 0, 1},
+    {"pack personal evolve", CNET_ROUTE_CERT, "pack_meta_gardener", "", 0, 1},
+    {"roe reviewer", CNET_ROUTE_CERT, "pack_meta_gardener", "", 0, 1},
+    {"multi stable", CNET_ROUTE_CERT, "pack_meta_gardener", "", 0, 1},
+    {"teacher rate", CNET_ROUTE_CERT, "pack_meta_gardener", "", 0, 1},
+    {"CNET proposes", CNET_ROUTE_CERT, "pack_pm_director_oracle", "", 0, 1},
+    {"Unity disposes", CNET_ROUTE_CERT, "pack_pm_director_oracle", "", 0, 1},
     /* MTK — residual specialty only when no CERT rule hit (examples) */
     {"bitnet ternary specialty", CNET_ROUTE_MTK, "", "skills/mtk/bitnet_demo.tskill", 0, 1},
     {"mtk residual adapter", CNET_ROUTE_MTK, "", "skills/mtk/residual_adapter.tskill", 0, 1},
