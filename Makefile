@@ -3426,6 +3426,20 @@ roe_front_door: roe_daily_packs $(ROE_ASI_SRC) tools/roe_front_door.c
 	@./$(BIN_DIR)/roe_front_door ask "who are you" | tee -a logs/roe_front_door.log
 	@./$(BIN_DIR)/roe_front_door ask "format-truncation werror" | tee -a logs/roe_front_door.log
 
+# Chain-of-thought — pure C multi-hop (0-token skeleton; no Python)
+.PHONY: roe_chain_think
+roe_chain_think: include/cnet_roe_cot.h src/cnet_roe_cot.c tools/roe_chain_think.c
+	@mkdir -p $(BIN_DIR) logs/governor
+	$(CC) -std=c11 -Wall -Wextra -O2 -D_POSIX_C_SOURCE=200809L -Iinclude \
+		-o $(BIN_DIR)/roe_chain_think src/cnet_roe_cot.c tools/roe_chain_think.c
+	@./$(BIN_DIR)/roe_chain_think --test | tee logs/roe_chain_think.log
+	@grep -q "ROE_CHAIN_THINK_PASS" logs/roe_chain_think.log
+	@test -x $(BIN_DIR)/roe_front_door || $(MAKE) roe_front_door
+	@./$(BIN_DIR)/roe_chain_think "who are you" | tee -a logs/roe_chain_think.log
+	@test -f logs/governor/chain_last.txt
+	@grep -q "chain-of-thought" logs/governor/chain_last.txt
+	@echo "ROE_CHAIN_THINK_OK"
+
 # Highest-leverage non-LLM agent loop (hermetic, no libcurl):
 # always-on tool law → miss → accept/promote → warm LOCAL → residual KPIs.
 # Links roe core only; teach table stands in for external teacher.
