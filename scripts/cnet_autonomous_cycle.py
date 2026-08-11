@@ -265,15 +265,52 @@ def main() -> int:
 
     seed_gold_for_stable_novel()
     curriculum = load_curriculum()
+
+    # Neuromod schedule gate (ADO pause grow; 5HT control/impulse; DA handled in front_door)
+    gate = {}
+    gp = ROOT / "logs" / "governor" / "schedule_gate.json"
+    if gp.is_file():
+        try:
+            gate = json.loads(gp.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            gate = {}
+    pause_grow = bool(gate.get("pause_grow_probes"))
+    pause_teacher = bool(gate.get("pause_teacher"))
+    impulse = bool(gate.get("impulsivity_mode"))
+    control = bool(gate.get("control_mode"))
+    allow_fast_teacher = bool(gate.get("allow_teacher_faster"))
+    report["schedule_gate"] = {
+        "pause_grow_probes": pause_grow,
+        "pause_teacher": pause_teacher,
+        "control_mode": control,
+        "impulsivity_mode": impulse,
+    }
+
+    if pause_grow:
+        # Adenosine high: only stable LOCAL tags (soul/law/toolcall) — no grow/MISS probes
+        curriculum = [
+            c
+            for c in curriculum
+            if c.get("tag") in ("soul", "law", "toolcall", "ocr", "coding")
+            and c.get("want") != "MISS"
+        ]
+        report["steps"].append({"step": "ado_pause_grow", "kept": len(curriculum)})
+
     live = os.environ.get("CNET_AUTO_TEACHER", "1") in ("1", "true", "yes")
-    # first pass offline LOCAL; second pass live only for misses if teacher on
+    if pause_teacher and not impulse:
+        live = False
+    if impulse and allow_fast_teacher:
+        live = True  # low 5HT impulsivity: allow teacher even when ADO mid
+    # control mode: still allow teacher on miss unless pause_teacher
+    if control and pause_teacher:
+        live = False
+
     local_n = miss_n = llm_n = 0
     for item in curriculum:
         q = item["q"]
         info = probe(q, live=False)
         if info["source"] != "LOCAL" and live:
             info2 = probe(q, live=True)
-            # prefer live detail if it got a teacher answer
             if info2.get("answer") or info2["source"] == "LLM":
                 info = info2
         if info["source"] == "LOCAL":

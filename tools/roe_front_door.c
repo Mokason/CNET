@@ -24,6 +24,7 @@
 #define FD_MAX_ALWAYS 8
 #define FD_MAX_PACKS_LOAD 8
 #define FD_PATH 1024
+#define FD_BIAS_PATH_DEFAULT "logs/governor/front_door_bias.json"
 #define FD_PAT 256
 #define FD_ID 64
 
@@ -282,29 +283,69 @@ static int fd_append_miss(const FdRouter *F, const char *query, const FdTurnResu
     return 0;
 }
 
+static int fd_prefer_local_active(double *out_weight) {
+    /* DA neuromod brief boost: logs/governor/front_door_bias.json */
+    const char *path;
+    FILE *f;
+    char buf[2048];
+    size_t n;
+    double expires = 0, weight = 1.0;
+    int prefer = 0, disable_teacher = 0;
+    time_t now = time(NULL);
+    path = getenv("ROE_FRONT_DOOR_BIAS");
+    if (!path || !path[0]) path = FD_BIAS_PATH_DEFAULT;
+    if (out_weight) *out_weight = 1.0;
+    f = fopen(path, "r");
+    if (!f) return 0;
+    n = fread(buf, 1, sizeof buf - 1, f);
+    fclose(f);
+    if (n == 0) return 0;
+    buf[n] = 0;
+    {
+        const char *p;
+        p = strstr(buf, "\"expires_ts\"");
+        if (p) {
+            p = strchr(p, ':');
+            if (p) expires = strtod(p + 1, NULL);
+        }
+        p = strstr(buf, "\"prefer_local_weight\"");
+        if (p) {
+            p = strchr(p, ':');
+            if (p) weight = strtod(p + 1, NULL);
+        }
+        if (strstr(buf, "\"prefer_local\": true") || strstr(buf, "\"prefer_local\":true"))
+            prefer = 1;
+        if (strstr(buf, "\"disable_live_teacher\": true") ||
+            strstr(buf, "\"disable_live_teacher\":true"))
+            disable_teacher = 1;
+    }
+    if (expires > 0 && (double)now > expires) return 0;
+    if (!prefer && !disable_teacher) return 0;
+    if (out_weight) *out_weight = weight > 1.0 ? weight : 1.5;
+    return disable_teacher || prefer ? 1 : 0;
+}
+
 static int fd_turn(FdRouter *F, const char *query, FdTurnResult *tr) {
     RoeAsi R;
     RoeNet net;
     static int curl_once;
+    double local_w = 1.0;
+    int prefer_local;
     if (fd_prepare(F, &R, query, tr) != 0) return -1;
-    /* Optional live teacher from env (ROE_LIVE / ROE_LLM) — untrusted until promote */
     if (!curl_once) {
         curl_global_init(CURL_GLOBAL_DEFAULT);
         curl_once = 1;
     }
     roe_net_from_env(&net);
-    if (getenv("ROE_FD_DEBUG")) {
-        fprintf(stderr, "fd_debug enable_llm=%d model=%s live=%s llm=%s\n",
-                net.enable_llm, net.llm_model,
-                getenv("ROE_LIVE") ? getenv("ROE_LIVE") : "-",
-                getenv("ROE_LLM") ? getenv("ROE_LLM") : "-");
+    prefer_local = fd_prefer_local_active(&local_w);
+    /* DA brief boost: prefer LOCAL weight by suppressing live teacher */
+    if (prefer_local) {
+        net.enable_llm = 0;
+        if (getenv("ROE_FD_DEBUG"))
+            fprintf(stderr, "fd_debug DA prefer_local weight=%.2f teacher_off\n", local_w);
     }
     if (net.enable_llm || net.enable_lookup) roe_set_net(&R, &net);
     roe_turn(&R, query, &tr->reply);
-    if (getenv("ROE_FD_DEBUG")) {
-        fprintf(stderr, "fd_debug src=%s ans=%.80s net_err=%s\n",
-                tr->reply.source_name, tr->reply.answer, net.last_err);
-    }
     tr->is_miss = (tr->reply.source != ROE_SRC_LOCAL);
     if (tr->is_miss) (void)fd_append_miss(F, query, tr);
     return 0;
@@ -361,6 +402,14 @@ static int cmd_ask(FdRouter *F, const char *q, int accept, const char *gold,
         curl_once = 1;
     }
     roe_net_from_env(&net);
+    {
+        double local_w = 1.0;
+        if (fd_prefer_local_active(&local_w)) {
+            net.enable_llm = 0;
+            if (getenv("ROE_FD_DEBUG"))
+                fprintf(stderr, "fd_debug cmd_ask DA prefer_local w=%.2f\n", local_w);
+        }
+    }
     if (net.enable_llm || net.enable_lookup) roe_set_net(R, &net);
     roe_turn(R, q, &tr.reply);
     tr.is_miss = (tr.reply.source != ROE_SRC_LOCAL);

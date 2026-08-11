@@ -5,9 +5,17 @@ Not AGI. Not consciousness. **Homeostatic control signals** that bias
 
 | Channel | Biology metaphor | System meaning |
 |---------|------------------|----------------|
-| **Dopamine (DA)** | reward prediction | Task done right → LOCAL hit / verified promote → reinforce, warmer voice |
-| **Serotonin (5HT)** | stability / satiety | When to **remember/pin** vs **sort the queue** |
-| **Adenosine (ADO)** | sleep pressure | When to **process, reorganize, consolidate** working memory / context |
+| **Dopamine (DA)** | reward prediction | Task done right → LOCAL/promote; **brief front-door prefer-LOCAL** (TTL ~10m, weight≈1.75, live teacher off) |
+| **Serotonin (5HT)** | control vs impulse | **High 5HT = high control** (sort queue, pin memory). **Low 5HT = high impulsivity** (faster teacher, boldness, no pin) |
+| **Adenosine (ADO)** | sleep pressure | Consolidate WM; **pause grow/MISS probes** one cycle |
+
+## Tight coupling files
+
+| File | Consumer |
+|------|----------|
+| `logs/governor/front_door_bias.json` | `roe_front_door` — DA prefer LOCAL |
+| `logs/governor/schedule_gate.json` | `cnet_autonomous_cycle` — ADO pause / 5HT modes |
+| `logs/governor/neuromod_soft_bias.json` | voice / governor flags |
 
 ## Law
 
