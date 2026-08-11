@@ -368,6 +368,28 @@ static void print_turn(const FdTurnResult *tr) {
     printf("inventory: %s\n", tr->reply.inventory_line);
 }
 
+/* Token-free thought sidecar (Python); best-effort, never blocks answer. */
+static void fd_emit_thought(const char *q, const FdTurnResult *tr) {
+    char cmd[1200];
+    const char *py;
+    if (!q || !tr) return;
+    if (getenv("ROE_NO_THOUGHT") && getenv("ROE_NO_THOUGHT")[0] == '1') return;
+    py = getenv("ROE_THOUGHT_PY");
+    if (!py || !py[0]) py = "python3 scripts/cnet_thought_process.py";
+    /* escape is minimal: skip if quote in query */
+    if (strchr(q, '\'') || strchr(q, '"')) return;
+    snprintf(cmd, sizeof cmd,
+             "%s --query '%s' --source '%s' --skill '%s' >/dev/null 2>&1; "
+             "if [ -f logs/governor/thought_last.json ]; then "
+             "python3 -c \"import json;d=json.load(open('logs/governor/thought_last.json'));"
+             "print('thought:',d.get('chain',''))\" 2>/dev/null; fi",
+             py, q, tr->reply.source_name[0] ? tr->reply.source_name : "-",
+             tr->reply.skill_id[0] ? tr->reply.skill_id : "-");
+    if (system(cmd) != 0) {
+        /* thought is best-effort */
+    }
+}
+
 static void strip_untrusted_prefix(char *s) {
     static const char *pfxs[] = {"[llm-untrusted] ", "[llm-live] ", "[lookup] ",
                                  "[lookup-live] ", NULL};
@@ -415,6 +437,7 @@ static int cmd_ask(FdRouter *F, const char *q, int accept, const char *gold,
     tr.is_miss = (tr.reply.source != ROE_SRC_LOCAL);
     if (tr.is_miss) (void)fd_append_miss(F, q, &tr);
     print_turn(&tr);
+    fd_emit_thought(q, &tr);
 
     /* Shell accept → promote into domain pack (or --promote-pack).
      * Target pack is loaded alone so save_catalog does not dump always-on. */

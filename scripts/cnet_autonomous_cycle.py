@@ -306,13 +306,34 @@ def main() -> int:
         live = False
 
     local_n = miss_n = llm_n = 0
+    thoughts = []
     for item in curriculum:
         q = item["q"]
+        # token-free thought BEFORE act
+        try:
+            import cnet_thought_process as tp  # type: ignore
+
+            th = tp.think(q, persist=True)
+            thoughts.append({"q": q[:60], "chain": th.get("chain"), "intent": th["steps"].get("INTEND")})
+        except Exception:
+            th = None
         info = probe(q, live=False)
         if info["source"] != "LOCAL" and live:
             info2 = probe(q, live=True)
             if info2.get("answer") or info2["source"] == "LLM":
                 info = info2
+        if th and info.get("source"):
+            try:
+                import cnet_thought_process as tp  # type: ignore
+
+                tp.think(
+                    q,
+                    source=info.get("source"),
+                    skill=info.get("skill"),
+                    persist=True,
+                )
+            except Exception:
+                pass
         if info["source"] == "LOCAL":
             local_n += 1
         elif info["source"] == "LLM":
@@ -327,8 +348,11 @@ def main() -> int:
                 "source": info["source"],
                 "skill": info.get("skill"),
                 "want": item.get("want"),
+                "thought_intent": (th or {}).get("steps", {}).get("INTEND") if th else None,
             }
         )
+    report["thoughts_n"] = len(thoughts)
+    report["thought_sample"] = thoughts[:3]
 
     n = max(1, len(curriculum))
     report["kpi"]["probe_n"] = n

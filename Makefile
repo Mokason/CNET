@@ -3519,6 +3519,16 @@ cnet_neuromod:
 	@test -f logs/governor/neuromod_state.json
 	@python3 -c "import json;d=json.load(open('logs/governor/neuromod_state.json')); assert set(d['levels'])=={'dopamine','serotonin','adenosine'}; assert d['law']['never_self_cert']; print(d['levels']); print('CNET_NEUROMOD_OK')"
 
+# Token-free thought process (no LLM)
+.PHONY: cnet_thought
+cnet_thought:
+	@chmod +x scripts/cnet_thought_process.py
+	@python3 scripts/cnet_thought_process.py --test | tee logs/governor/thought_test.log
+	@grep -q "THOUGHT_PROCESS_PASS" logs/governor/thought_test.log
+	@python3 scripts/cnet_thought_process.py --query "who are you"
+	@test -f logs/governor/thought_last.json
+	@python3 -c "import json;d=json.load(open('logs/governor/thought_last.json')); assert d['tokens']==0 and d['llm'] is False and d['law']['not_agi']; print(d['chain']); print('CNET_THOUGHT_OK')"
+
 .PHONY: roe_asi_ocr_surpass
 roe_asi_ocr_surpass: $(ROE_ASI_SRC) src/cnet_roe_goal.c src/cnet_roe_ocr.c src/cnet_roe_tree.c \
 		include/cnet_roe_ocr.h tools/roe_asi_ocr_surpass.c tools/roe_unlimited_teacher.py
