@@ -3540,6 +3540,16 @@ cnet_continuity:
 	@test -f logs/governor/continuity_line.txt
 	@python3 -c "import json;d=json.load(open('logs/governor/continuity_last.json')); assert d['law']['not_conscious'] and d['law']['never_self_cert'] and d['tokens']==0; print(d['continuity_line']); print('CNET_CONTINUITY_OK')"
 
+# Visible reply thinking (GPT-style panel, 0 tokens)
+.PHONY: cnet_reply_think
+cnet_reply_think:
+	@chmod +x scripts/cnet_reply_think.py scripts/roe_reply.sh
+	@python3 scripts/cnet_reply_think.py --test | tee logs/governor/reply_think_test.log
+	@grep -q "REPLY_THINK_PASS" logs/governor/reply_think_test.log
+	@python3 scripts/cnet_reply_think.py --query "who are you" --answer "I am Marble." --source LOCAL --skill soul_who --style panel | head -25
+	@test -f logs/governor/reply_think_last.json
+	@python3 -c "import json;d=json.load(open('logs/governor/reply_think_last.json')); assert d['tokens']==0 and d['llm_thinking'] is False; print(d['thinking_summary'][:80]); print('CNET_REPLY_THINK_OK')"
+
 .PHONY: roe_asi_ocr_surpass
 roe_asi_ocr_surpass: $(ROE_ASI_SRC) src/cnet_roe_goal.c src/cnet_roe_ocr.c src/cnet_roe_tree.c \
 		include/cnet_roe_ocr.h tools/roe_asi_ocr_surpass.c tools/roe_unlimited_teacher.py
