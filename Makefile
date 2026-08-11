@@ -412,6 +412,24 @@ kv_stream_bench: $(CCE_SPARSE_KV) include/cce/cce_sparse_kv.h tools/kv_stream_be
 	@./$(BIN_DIR)/kv_stream_bench | tee logs/kv_stream_bench.log
 	@grep -q "KV_STREAM_BENCH_PASS" logs/kv_stream_bench.log
 
+# STM/LTM bridge (HOT never blocks on COLD) — C
+CCE_STM_LTM := src/cce/cce_stm_ltm_bridge.c $(CCE_SPARSE_KV) src/cce/cce_kv_page.c
+.PHONY: stm_ltm_bridge
+stm_ltm_bridge: $(CCE_STM_LTM) include/cce/cce_stm_ltm_bridge.h tests/test_stm_ltm_bridge.c
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -D_POSIX_C_SOURCE=200809L -o $(BIN_DIR)/test_stm_ltm_bridge \
+		$(CCE_STM_LTM) tests/test_stm_ltm_bridge.c $(LDFLAGS)
+	@./$(BIN_DIR)/test_stm_ltm_bridge | tee logs/stm_ltm_bridge.log
+	@grep -q "STM_LTM_BRIDGE_PASS" logs/stm_ltm_bridge.log
+
+.PHONY: stm_ltm_bench
+stm_ltm_bench: $(CCE_STM_LTM) include/cce/cce_stm_ltm_bridge.h tools/stm_ltm_bench.c
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -D_POSIX_C_SOURCE=200809L -o $(BIN_DIR)/stm_ltm_bench \
+		$(CCE_STM_LTM) tools/stm_ltm_bench.c $(LDFLAGS)
+	@./$(BIN_DIR)/stm_ltm_bench | tee logs/stm_ltm_bench.log
+	@grep -q "STM_LTM_BENCH_PASS" logs/stm_ltm_bench.log
+
 # Sparse KV EXECUTION gate: the ONE cce_sparse_kv selector wired into the
 # REAL cce_gguf_qwen2 KV-cache attention path (the oracle seam), on a
 # hermetic synthetic qwen2 GGUF the test writes itself. Pins OFF == ON@1.0
