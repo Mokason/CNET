@@ -3509,6 +3509,16 @@ cnet_autonomous:
 	@test -f logs/marble_24_7/AUTONOMOUS_CYCLE.json
 	@python3 -c "import json;d=json.load(open('logs/marble_24_7/AUTONOMOUS_CYCLE.json')); assert d.get('ok') and d.get('hermes_required') is False; print('kpi',d.get('kpi')); print('CNET_AUTONOMOUS_OK')"
 
+# Neuromod personality organ (DA / 5HT / ADO)
+.PHONY: cnet_neuromod
+cnet_neuromod:
+	@chmod +x scripts/cnet_neuromod.py
+	@python3 scripts/cnet_neuromod.py --test | tee logs/governor/neuromod_test.log
+	@grep -q "NEUROMOD_PASS" logs/governor/neuromod_test.log
+	@python3 scripts/cnet_neuromod.py --tick
+	@test -f logs/governor/neuromod_state.json
+	@python3 -c "import json;d=json.load(open('logs/governor/neuromod_state.json')); assert set(d['levels'])=={'dopamine','serotonin','adenosine'}; assert d['law']['never_self_cert']; print(d['levels']); print('CNET_NEUROMOD_OK')"
+
 .PHONY: roe_asi_ocr_surpass
 roe_asi_ocr_surpass: $(ROE_ASI_SRC) src/cnet_roe_goal.c src/cnet_roe_ocr.c src/cnet_roe_tree.c \
 		include/cnet_roe_ocr.h tools/roe_asi_ocr_surpass.c tools/roe_unlimited_teacher.py

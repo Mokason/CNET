@@ -373,6 +373,38 @@ def tick(scoreboard: dict[str, Any] | None = None) -> dict[str, Any]:
     cons, drift = consistency_score(traits, st.get("baseline") or {})
     bias = compute_bias(prof, traits, cfg)
 
+    # Neuromod organ (DA/5HT/ADO) — soft schedule/consolidate only
+    neuromod = None
+    try:
+        import cnet_neuromod as nm  # type: ignore
+
+        neuromod = nm.tick(
+            scoreboard={
+                "local_hit": float(sb.get("local_hit") or 0),
+                "promoted": float(sb.get("promoted") or 0),
+                "miss_n": float(sb.get("miss_n") or 0),
+                "da_affect": float(affect.get("reward") or 0.5),
+                "vigilance": float(affect.get("vigilance") or 0.5),
+                "calm": float(affect.get("calm") or 0.5),
+                "frustration": float(affect.get("frustration") or 0.5),
+            },
+            dry_run=False,
+        )
+        # soft bias from neuromod flags
+        lv = (neuromod or {}).get("levels") or {}
+        if float(lv.get("dopamine") or 0) >= 0.62:
+            bias["outcome_review"] = bias.get("outcome_review", 0) - 0.3
+        if float(lv.get("serotonin") or 0) >= 0.60:
+            bias["procedure_curriculum"] = bias.get("procedure_curriculum", 0) - 0.25
+            bias["drain_open_gaps"] = bias.get("drain_open_gaps", 0) - 0.15
+        if float(lv.get("adenosine") or 0) >= 0.58:
+            bias["coverage_curiosity"] = bias.get("coverage_curiosity", 0) + 0.4  # avoid explore
+            bias["health_hold"] = bias.get("health_hold", 0) - 0.35  # prefer rest/hold
+        for k in list(bias.keys()):
+            bias[k] = _clamp(bias[k], -2.5, 2.5)
+    except Exception:
+        neuromod = None
+
     out = {
         "ts": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
         "profile": name,
@@ -381,13 +413,15 @@ def tick(scoreboard: dict[str, Any] | None = None) -> dict[str, Any]:
         "baseline": st.get("baseline"),
         "traits": traits,
         "affect": affect,
+        "neuromod": (neuromod or {}).get("levels"),
+        "neuromod_actions": (neuromod or {}).get("actions") or [],
         "consistency": round(cons, 4),
         "trait_drift": round(drift, 4),
         "charter_alignment": round(float(traits.get("loyalty_to_charter", 0.7)), 4),
         "cycles": int(st.get("cycles") or 0) + 1,
         "last_bias": bias,
         "voice": prof.get("voice") or {},
-        "engine": "personality_homeostatic_v1",
+        "engine": "personality_homeostatic_v1+neuromod",
         "clamps": {"min": lo, "max": hi},
     }
 

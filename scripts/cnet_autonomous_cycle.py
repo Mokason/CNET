@@ -323,6 +323,23 @@ def main() -> int:
         except json.JSONDecodeError:
             pass
 
+    # 3b) neuromod personality tick (DA / 5HT / ADO)
+    nm_path = ROOT / "scripts" / "cnet_neuromod.py"
+    if nm_path.is_file():
+        rc, out = run([sys.executable, str(nm_path), "--tick"], timeout=60)
+        report["steps"].append({"step": "neuromod", "rc": rc})
+        try:
+            nm = json.loads((ROOT / "logs" / "governor" / "neuromod_state.json").read_text())
+            report["neuromod"] = {
+                "levels": nm.get("levels"),
+                "actions": nm.get("actions"),
+            }
+            report["kpi"]["dopamine"] = (nm.get("levels") or {}).get("dopamine")
+            report["kpi"]["serotonin"] = (nm.get("levels") or {}).get("serotonin")
+            report["kpi"]["adenosine"] = (nm.get("levels") or {}).get("adenosine")
+        except (OSError, json.JSONDecodeError):
+            pass
+
     # 4) light autoteach optional (bounded, no hang forever)
     if os.environ.get("CNET_AUTO_AUTOTEACH", "0") in ("1", "true", "yes"):
         at = ROOT / "scripts" / "cnet_autoteach_tick.sh"
