@@ -1,0 +1,17 @@
+# Probe short-circuit signatures (one substring per line).
+# Matched queries skip Teacher/Ollama — immediate fail-closed miss path.
+# Also covered by promote_blocklist for pack_personal.
+
+novel fact
+mystic ooze
+zz99
+zzqq
+zz unknown
+brand new teacher only
+say pong only
+say hello teacher
+autonomous cycle probe
+deploy probe unique
+teacher only query
+quantum flute
+galactic overmind

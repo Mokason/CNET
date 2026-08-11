@@ -84,6 +84,7 @@ fi
 # Config (secret-free)
 cp -a config/domain_routes.tsv "$OUT/config/"
 cp -a config/promote_blocklist.txt "$OUT/config/"
+cp -a config/probe_shortcircuit.txt "$OUT/config/" 2>/dev/null || true
 cp -a config/autonomy_charter.yaml "$OUT/config/" 2>/dev/null || true
 # templates
 cat > "$OUT/config/teacher.env.example" <<'EOF'

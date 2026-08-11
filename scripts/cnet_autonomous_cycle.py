@@ -198,8 +198,50 @@ def fd_env(live: bool) -> dict:
     return env
 
 
+def is_probe_query(q: str) -> bool:
+    """Curriculum/soak probes — never call Teacher (short-circuit)."""
+    nq = (q or "").lower()
+    sigs = (
+        "novel fact",
+        "mystic ooze",
+        "zz99",
+        "zzqq",
+        "zz unknown",
+        "zz_ood",
+        "brand new teacher only",
+        "say pong only",
+        "say hello teacher",
+        "autonomous cycle probe",
+        "deploy probe unique",
+        "teacher only query",
+        "quantum flute",
+        "galactic overmind",
+        "orbital printer",
+        "alien haskell",
+        "banjo merge",
+        "soup kitchen narrative",
+    )
+    # optional config overlay
+    cfg = ROOT / "config" / "probe_shortcircuit.txt"
+    extra = []
+    if cfg.is_file():
+        for line in cfg.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if line and not line.startswith("#"):
+                extra.append(line.lower())
+    for s in list(sigs) + extra:
+        if s and s in nq:
+            return True
+    return False
+
+
 def probe(q: str, live: bool) -> dict:
     env = fd_env(live=live)
+    # Force fail-closed on probe signatures even if caller requested live teacher
+    sc = is_probe_query(q)
+    if sc:
+        live = False
+        env = fd_env(live=False)
     cmd = [str(BIN_FD), "ask", q]
     if PACKS.is_dir():
         cmd.extend(["--root", str(PACKS)])
@@ -207,6 +249,9 @@ def probe(q: str, live: bool) -> dict:
     info = parse_fd(out)
     info["rc"] = rc
     info["q"] = q
+    if sc:
+        info["shortcircuit"] = True
+        info["teacher"] = False
     # append miss_log if miss and has answer from teacher
     if info["source"] in ("LLM", "ASK_USER", "ABSTAIN") or info["miss"]:
         MISS.parent.mkdir(parents=True, exist_ok=True)
@@ -217,6 +262,10 @@ def probe(q: str, live: bool) -> dict:
             "source": info["source"],
             "via": "autonomous_cycle",
         }
+        if sc:
+            row["shortcircuit"] = True
+            row["teacher"] = False
+            row["probe_pat"] = "curriculum_probe"
         with MISS.open("a", encoding="utf-8") as f:
             f.write(json.dumps(row, ensure_ascii=False) + "\n")
     return info
@@ -380,7 +429,7 @@ def main() -> int:
         except Exception:
             th = None
         info = probe(q, live=False)
-        if info["source"] != "LOCAL" and live:
+        if info["source"] != "LOCAL" and live and not is_probe_query(q):
             # budget consume per teacher call
             allow_t = True
             try:
@@ -403,6 +452,8 @@ def main() -> int:
                 teacher_used += 1
                 if info2.get("answer") or info2["source"] == "LLM":
                     info = info2
+        elif info["source"] != "LOCAL" and is_probe_query(q):
+            report.setdefault("probe_shortcircuits", []).append(q[:50])
         if th and info.get("source"):
             try:
                 import cnet_thought_process as tp  # type: ignore
