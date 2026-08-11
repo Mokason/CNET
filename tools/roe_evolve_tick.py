@@ -47,6 +47,7 @@ PERSONAL = PACKS / "pack_personal"
 REPORT = PACKS / "EVOLVE_TICK.json"
 STATE = PACKS / "evolve_state.json"
 BIN_FD = ROOT / "bin" / "roe_front_door"
+BLOCKLIST = ROOT / "config" / "promote_blocklist.txt"
 
 # reviewer helper
 sys.path.insert(0, str(ROOT / "tools"))
@@ -205,6 +206,47 @@ def write_skill(pack_dir: Path, sid: str, pattern: str, answer: str, intent: str
 
 def gold_path(q: str) -> Path:
     return GOLD_DIR / f"{q_hash(q)}.txt"
+
+
+def load_blocklist(path: Path | None = None) -> list[tuple[str, str]]:
+    p = path or BLOCKLIST
+    rules: list[tuple[str, str]] = []
+    if not p.is_file():
+        return rules
+    for line in p.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "|" not in line:
+            continue
+        kind, val = line.split("|", 1)
+        rules.append((kind.strip().lower(), val.strip()))
+    return rules
+
+
+def is_promote_blocked(query: str, answer: str | None = None,
+                       rules: list[tuple[str, str]] | None = None) -> str | None:
+    """Return block reason or None. Blocks probe junk and ABSTAIN-as-answer."""
+    rules = rules if rules is not None else load_blocklist()
+    nq = norm_q(query)
+    ans = (answer or "").strip()
+    ans_l = ans.lower()
+    for kind, val in rules:
+        v = val.lower()
+        if kind == "substr" and v in nq:
+            return f"blocklist_substr:{val}"
+        if kind == "answer_prefix" and ans_l.startswith(v):
+            return f"blocklist_answer:{val}"
+        if kind == "regex":
+            try:
+                if re.search(val, nq, re.I):
+                    return f"blocklist_regex:{val}"
+            except re.error:
+                continue
+    # Hard law even if blocklist file missing
+    if ans_l.startswith("abstain") or ans_l.startswith("abstain:"):
+        return "blocklist_answer:abstain"
+    if "no local skill" in ans_l and "ask user" in ans_l:
+        return "blocklist_answer:no_local_skill_abstain"
+    return None
 
 
 def load_gold(q: str) -> str | None:
@@ -497,6 +539,12 @@ def main() -> int:
                     "has_gold": bool(gold),
                 }
             )
+            continue
+
+        # Promote path blocklist: probe junk + ABSTAIN answers never CERT
+        br = is_promote_blocked(q, final)
+        if br:
+            report["skipped"].append({"query": q, "reason": br})
             continue
 
         # never auto-write soul packs

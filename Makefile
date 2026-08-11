@@ -3476,6 +3476,15 @@ cert_coverage_harvest:
 	@bash scripts/cert_coverage_harvest.sh
 	@grep -q "CERT_COVERAGE_HARVEST_PASS" logs/cert_coverage_harvest.log
 
+.PHONY: gold_curriculum_harvest
+gold_curriculum_harvest:
+	@mkdir -p logs bin
+	@python3 tools/roe_gold_curriculum_harvest.py | tee logs/gold_curriculum_harvest.log
+	@grep -q "GOLD_CURRICULUM_HARVEST_PASS" logs/gold_curriculum_harvest.log
+	@# evolve dry-run must not promote blocked probes even if gold planted
+	@python3 -c "from tools.roe_evolve_tick import is_promote_blocked as b; \
+assert b('zz mystic ooze 99','x'); assert b('ok','ABSTAIN: no'); print('EVOLVE_BLOCKLIST_OK')"
+
 .PHONY: stream_attend_bench
 stream_attend_bench: $(CCE_SPARSE_KV) include/cce/cce_sparse_kv.h tools/stream_attend_bench.c
 	@mkdir -p $(BIN_DIR) logs
