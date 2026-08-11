@@ -1,0 +1,13 @@
+ROE_DAILY_PACK
+abi_version 1
+id pack_speech_io
+title Speech I/O capsule (TTS speak-out)
+cat speech
+kind domain
+never_self_cert 1
+second_brain 0
+seal_path forbidden
+n_skills 6
+load_policy separate
+modality speak
+note Teacher drafts may be spoken; speaking does not CERT.
