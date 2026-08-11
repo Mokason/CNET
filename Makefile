@@ -3470,6 +3470,13 @@ domain_route: include/cnet_domain_route.h src/cnet_domain_route.c tools/roe_doma
 	@./$(BIN_DIR)/roe_domain_route "completely unknown domain xyzzy" | tee -a logs/domain_route.log
 	@echo "DOMAIN_ROUTE_OK"
 
+.PHONY: stream_attend_bench
+stream_attend_bench: $(CCE_SPARSE_KV) include/cce/cce_sparse_kv.h tools/stream_attend_bench.c
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -o $(BIN_DIR)/stream_attend_bench $(CCE_SPARSE_KV) tools/stream_attend_bench.c $(LDFLAGS) -lm
+	@./$(BIN_DIR)/stream_attend_bench | tee logs/stream_attend_bench.log
+	@grep -q "STREAM_ATTEND_BENCH_PASS" logs/stream_attend_bench.log
+
 # Chain-of-thought — pure C multi-hop (0-token skeleton; no Python)
 .PHONY: roe_chain_think
 roe_chain_think: include/cnet_roe_cot.h src/cnet_roe_cot.c tools/roe_chain_think.c
