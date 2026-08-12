@@ -9,6 +9,7 @@
 #include <pthread.h>
 
 #include "../include/cce/cce_kv_page.h"
+#include "../include/cnet_platform.h"  /* cnet_mkdir */
 
 static int failures, checks;
 
@@ -66,7 +67,7 @@ int main(void) {
               "overflowing page geometry is refused before allocation");
     }
 
-    if (!mkdtemp(dir)) {
+    if (!cnet_mkdtemp(dir)) {
         perror("mkdtemp");
         return 1;
     }
@@ -199,7 +200,13 @@ int main(void) {
     /* sync must include a dequeued write that is still blocked in storage I/O,
      * not only jobs that remain in the queue. A FIFO makes that state
      * deterministic: the worker dequeues page 0, then blocks opening it until
-     * this test supplies a reader. */
+     * this test supplies a reader.
+     *
+     * Requires mkfifo. Windows named pipes live in a separate namespace that
+     * fopen() cannot reach by path, so there is no way to build the same
+     * blocking sink -- this case is SKIPPED there, and says so, rather than
+     * being silently dropped from the count. */
+#if CNET_HAVE_MKFIFO
     {
         cce_kv_pager_opts os;
         cce_kv_pager *ps = NULL;
@@ -209,7 +216,7 @@ int main(void) {
         sync_wait_ctx sw;
         int sync_started = 0;
 
-        if (mkdtemp(sdir)) {
+        if (cnet_mkdtemp(sdir)) {
             snprintf(page_path, sizeof page_path, "%s/page_000000.kvc", sdir);
             check(mkfifo(page_path, 0600) == 0, "sync: blocking cold sink created");
             cce_kv_pager_opts_default(&os, 4, 4, 256);
@@ -256,6 +263,10 @@ int main(void) {
             rmdir(sdir);
         }
     }
+#else
+    printf("  %-58s SKIP (no mkfifo on this platform)\n",
+           "sync: waits for dequeued in-flight write");
+#endif /* CNET_HAVE_MKFIFO */
 
     /* A synchronous archive failure must not recycle HOT state. */
     {
@@ -263,10 +274,10 @@ int main(void) {
         cce_kv_pager *pf = NULL;
         char fdir[] = "kv_sync_fail_XXXXXX";
         char blocked_path[400];
-        if (mkdtemp(fdir)) {
+        if (cnet_mkdtemp(fdir)) {
             snprintf(blocked_path, sizeof blocked_path,
                      "%s/page_000000.kvc", fdir);
-            check(mkdir(blocked_path, 0700) == 0,
+            check(cnet_mkdir(blocked_path, 0700) == 0,
                   "storage failure: blocked page path created");
             cce_kv_pager_opts_default(&of, 4, 4, 256);
             of.page_len = 16;
@@ -303,7 +314,7 @@ int main(void) {
         cce_kv_pager_opts o2;
         cce_kv_pager *p2 = NULL;
         char dir2[] = "kv_archive_f32_XXXXXX";
-        if (mkdtemp(dir2)) {
+        if (cnet_mkdtemp(dir2)) {
             cce_kv_pager_opts_default(&o2, 4, 4, 1000);
             o2.page_len = 16; /* min page_len is 16 */
             o2.n_hot = 2;
@@ -353,7 +364,7 @@ int main(void) {
         cce_kv_pager_opts ov;
         cce_kv_pager *pv = NULL;
         char vdir[] = "kv_audit_v_XXXXXX";
-        if (mkdtemp(vdir)) {
+        if (cnet_mkdtemp(vdir)) {
             cce_kv_pager_opts_default(&ov, 4, 4, 256);
             ov.page_len = 16;
             ov.n_hot = 2;
@@ -448,7 +459,7 @@ int main(void) {
         cce_kv_pager_opts oc;
         cce_kv_pager *pc = NULL;
         char cdir[] = "kv_audit_c_XXXXXX";
-        if (mkdtemp(cdir)) {
+        if (cnet_mkdtemp(cdir)) {
             cce_kv_pager_opts_default(&oc, 4, 4, 256);
             oc.page_len = 16;
             oc.n_hot = 2;

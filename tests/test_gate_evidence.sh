@@ -34,8 +34,31 @@ if [ ! -f "$WRAPPER" ]; then
     exit 1
 fi
 
+# Resolve a working Python instead of hardcoding `python3`.
+#
+# On Windows/MinGW `python3` is usually NOT the interpreter: it resolves to the
+# Microsoft Store "App execution alias" stub, which prints an install
+# advertisement to stdout and exits non-zero. Every python3 call in this file
+# then failed, and the gate reported 28/36 checks failing for a reason that had
+# nothing to do with evidence binding -- indistinguishable, from the exit code
+# alone, from the gate catching a real forgery. Probe for one that actually
+# runs, and say so plainly if none does.
+PY=""
+for _cand in python3 python py; do
+    if command -v "$_cand" >/dev/null 2>&1 &&
+       "$_cand" -c 'import sys; sys.exit(0 if sys.version_info[0] == 3 else 1)' >/dev/null 2>&1; then
+        PY="$_cand"
+        break
+    fi
+done
+if [ -z "$PY" ]; then
+    printf 'FAIL: no working Python 3 found (tried python3, python, py)\n'
+    printf '      this gate cannot run; not reporting a pass it did not earn.\n'
+    exit 1
+fi
+
 case "$WRAPPER" in
-    *.py) RUNNER=(python3 "$WRAPPER") ;;
+    *.py) RUNNER=("$PY" "$WRAPPER") ;;
     *)    RUNNER=(sh "$WRAPPER") ;;
 esac
 
@@ -102,13 +125,33 @@ exit 0
 SH
 chmod +x "$TMP"/*.sh
 
+# How to launch a producer script.
+#
+# gate_evidence.py spawns the producer with subprocess.run(argv, shell=False).
+# On POSIX the kernel honours the `#!/bin/sh` shebang, so the script path alone
+# is a valid argv[0]. Windows CreateProcess does NOT read shebangs and cannot
+# execute a .sh at all, chmod +x notwithstanding -- every producer here died
+# with exit 127, which is indistinguishable from the gate correctly catching a
+# broken producer. Prepend an explicit interpreter there.
+#
+# argv-length expectations are derived from this, never hardcoded: the whole
+# point of the checks below is that argv boundaries survive, so silently
+# changing the argv the test sends while leaving a literal `3` in the assertion
+# would make the check pass for the wrong reason.
+case "$(uname -s 2>/dev/null || echo unknown)" in
+    MINGW*|MSYS*|CYGWIN*) PRODUCER_PREFIX=(sh) ;;
+    *)                    PRODUCER_PREFIX=() ;;
+esac
+PREFIX_N=${#PRODUCER_PREFIX[@]}
+
 run() {
-    OUT=$( (cd "$ROOT" && "${RUNNER[@]}" synthetic_gate "$LOG" "$MARKER" -- "$@") 2>&1 )
+    OUT=$( (cd "$ROOT" && "${RUNNER[@]}" synthetic_gate "$LOG" "$MARKER" \
+            -- "${PRODUCER_PREFIX[@]}" "$@") 2>&1 )
     STATUS=$?
 }
 
 json_get() {  # $1 = python expression over the parsed binding
-    python3 -c "
+    "$PY" -c "
 import json,sys
 d=json.load(open(sys.argv[1]))
 print($1)
@@ -122,7 +165,7 @@ check "$([ "$STATUS" -eq 0 ] && echo 0 || echo 1)" \
 case "$OUT" in *GATE_PASS*) ;; *) check 1 "an honest run reports GATE_PASS" ;; esac
 check "$([ -f "$BINDING" ] && echo 0 || echo 1)" \
     "an honest run writes an evidence binding"
-python3 -c "import json,sys; json.load(open(sys.argv[1]))" "$BINDING" 2>/dev/null
+"$PY" -c "import json,sys; json.load(open(sys.argv[1]))" "$BINDING" 2>/dev/null
 check $? "the binding is valid JSON"
 check "$([ "$(json_get 'd["marker_present"]')" = "True" ] && echo 0 || echo 1)" \
     "the binding records that the marker was found"
@@ -156,7 +199,7 @@ run "$TMP/echo_args.sh" "a" "b"
 TWO=$(json_get 'json.dumps(d["command"])')
 check "$([ "$ONE" != "$TWO" ] && echo 0 || echo 1)" \
     "one argument 'a b' binds differently from two arguments 'a' 'b'"
-check "$([ "$(json_get 'len(d["command"])')" = "3" ] && echo 0 || echo 1)" \
+check "$([ "$(json_get 'len(d["command"])')" = "$((PREFIX_N + 3))" ] && echo 0 || echo 1)" \
     "the binding records argv as a list, not a joined string"
 
 # Quote, backslash and newline in one argument. The binding must stay valid
@@ -164,16 +207,23 @@ check "$([ "$(json_get 'len(d["command"])')" = "3" ] && echo 0 || echo 1)" \
 WEIRD='he said "hi" \ then
 a newline'
 run "$TMP/echo_args.sh" "$WEIRD"
-python3 -c "import json,sys; json.load(open(sys.argv[1]))" "$BINDING" 2>/dev/null
+"$PY" -c "import json,sys; json.load(open(sys.argv[1]))" "$BINDING" 2>/dev/null
 check $? "an argument with a quote, backslash and newline keeps the JSON valid"
-GOT=$(json_get 'd["command"][1]')
-check "$([ "$GOT" = "$WEIRD" ] && echo 0 || echo 1)" \
+# Compare the LAST argv element, not a fixed index: the producer prefix varies
+# by platform, and an index that silently pointed at the wrong element would
+# make this pass or fail for reasons unrelated to round-tripping. Both sides are
+# JSON-encoded before comparing so an embedded newline cannot be mangled by
+# command substitution stripping trailing whitespace.
+GOT=$(json_get 'json.dumps(d["command"][-1])')
+WANT=$("$PY" -c 'import json,sys; print(json.dumps(sys.argv[1]))' "$WEIRD")
+check "$([ -n "$GOT" ] && [ "$GOT" = "$WANT" ] && echo 0 || echo 1)" \
     "such an argument round-trips exactly"
 
 # --- 3. no raw secret env values -------------------------------------------
 SENTINEL="SENTINEL-8c31d0-DO-NOT-LEAK"
 OUT=$( (cd "$ROOT" && CNET_RESIDUAL_TOKEN="$SENTINEL" \
-        "${RUNNER[@]}" synthetic_gate "$LOG" "$MARKER" -- "$TMP/good.sh") 2>&1 )
+        "${RUNNER[@]}" synthetic_gate "$LOG" "$MARKER" \
+        -- "${PRODUCER_PREFIX[@]}" "$TMP/good.sh") 2>&1 )
 case "$OUT" in *"$SENTINEL"*) check 1 "a secret knob value must not reach stdout" ;;
                *) check 0 "" ;; esac
 grep -q "$SENTINEL" "$BINDING" 2>/dev/null
@@ -239,7 +289,7 @@ mkdir -p "$REPO"
 ) >/dev/null 2>&1
 
 state_of() {  # $1 = repo, prints the two content digests
-    python3 - "$1" <<'PY'
+    "$PY" - "$1" <<'PY'
 import hashlib, subprocess, sys
 from pathlib import Path
 root = Path(sys.argv[1])

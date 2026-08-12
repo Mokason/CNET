@@ -9,6 +9,8 @@
 #include <time.h>
 #include <unistd.h>
 
+#include "../include/cnet_platform.h"  /* cnet_mkdir */
+
 static void scopy(char *d, size_t cap, const char *s) {
     size_t i;
     if (!d || !cap) return;
@@ -593,7 +595,7 @@ int roe_cot_persist(const RoeCotChain *C) {
         }
         lesc[di] = 0;
     }
-    mkdir(C->gov, 0755);
+    cnet_mkdir(C->gov, 0755);
     if (join_path(path, sizeof path, C->gov, "chain_last.txt") != 0) return -1;
     if (roe_cot_format_panel(C, panel, sizeof panel) < 0) return -1;
     f = fopen(path, "w");
@@ -690,7 +692,7 @@ int roe_cot_selftest(void) {
 
     roe_cot_init(&C);
     C.run_act = 0;
-    mkdir("logs/governor", 0755);
+    cnet_mkdir("logs/governor", 0755);
     scopy(C.gov, sizeof C.gov, "logs/governor");
     roe_cot_run(&C, "who are you");
     T(roe_cot_persist(&C) == 0, "persist chain_last");

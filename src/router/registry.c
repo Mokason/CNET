@@ -8,6 +8,9 @@
 #include <string.h>
 #include <math.h>
 #include <sys/stat.h>
+#if defined(_WIN32) || defined(__WIN32__) || defined(__MINGW32__)
+#include <direct.h>  /* _mkdir -- MinGW's mkdir() takes one argument */
+#endif
 #include <errno.h>
 
 /* ========================================================================
@@ -826,7 +829,7 @@ int registry_persist_runtime_state(const PrimitiveRegistry *reg, const char *dir
     char *meta_path = NULL;
     FILE *mf;
     if (reg == NULL || dir == NULL) return -1;
-#if defined(_WIN32)
+#if defined(_WIN32) || defined(__WIN32__) || defined(__MINGW32__)
     _mkdir(dir);
 #else
     if (mkdir(dir, 0755) != 0 && errno != EEXIST) {

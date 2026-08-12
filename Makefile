@@ -12,6 +12,30 @@ SHELL := /bin/bash
 
 CC := gcc
 CXX := g++
+
+# Python interpreter, PROBED not assumed.
+#
+# 94 recipes hardcoded `python3`. On Windows that name is normally NOT an
+# interpreter: it resolves to the Microsoft Store "App execution alias" stub,
+# which prints an install advertisement and exits non-zero -- so every one of
+# those recipes failed with a message that looks nothing like "wrong python
+# name". Probe for one that actually runs a Python 3.
+#
+# Override explicitly with `make PYTHON=/path/to/python`.
+PYTHON ?= $(shell for p in python3 python py; do \
+	if command -v $$p >/dev/null 2>&1 && \
+	   $$p -c 'import sys; sys.exit(0 if sys.version_info[0] == 3 else 1)' >/dev/null 2>&1; \
+	then echo $$p; break; fi; done)
+ifeq ($(strip $(PYTHON)),)
+PYTHON := python3
+endif
+
+# Python on Windows defaults stdout to the ANSI codepage (cp1252 here), so any
+# script printing a non-Latin-1 character -- an arrow, a checkmark, a box-drawing
+# glyph -- dies with UnicodeEncodeError partway through, AFTER doing its work.
+# The tools legitimately print such characters, so force UTF-8 rather than
+# de-Unicode 77 scripts.
+export PYTHONIOENCODING := utf-8
 PORTABLE ?= 0
 OPTFLAGS ?= -O3
 PREFIX ?= /usr/local
@@ -60,7 +84,33 @@ ifeq ($(OS),Windows_NT)
 CFLAGS += -mno-avx
 endif
 LDFLAGS := -lm -lpthread
-CURL_LDFLAGS := -lcurl
+
+# libcurl is OPTIONAL. This used to be an unconditional `CURL_LDFLAGS :=
+# $(CURL_LDFLAGS)` with no probe, so on any box without libcurl (every stock MinGW
+# install) three TUs failed to compile on the missing <curl/curl.h> and every
+# link died with "cannot find $(CURL_LDFLAGS)" -- including cce_dll, which is verify's
+# third prerequisite. Probe for it instead, and let the source degrade to an
+# honest "HTTP support not compiled in" rather than not building at all.
+#
+# Force it off with `make CNET_NO_CURL=1` (useful to test the degraded path on
+# a box that does have curl).
+ifdef CNET_NO_CURL
+CNET_HAVE_CURL := 0
+else
+# One probe, header AND library, at parse time. Writes to a temp file rather
+# than /dev/null because MinGW's ld will not emit an executable there.
+CNET_HAVE_CURL := $(shell t=$$(mktemp -u 2>/dev/null || echo ./.curlprobe)$$$$.exe; \
+	printf '#include <curl/curl.h>\nint main(void){return curl_easy_init()?0:1;}\n' \
+	| $(CC) -xc - $(CURL_LDFLAGS) -o "$$t" >/dev/null 2>&1 && echo 1 || echo 0; \
+	rm -f "$$t")
+endif
+
+ifeq ($(CNET_HAVE_CURL),1)
+CURL_LDFLAGS := $(CURL_LDFLAGS)
+else
+CURL_LDFLAGS :=
+endif
+CFLAGS += -DCNET_HAVE_CURL=$(CNET_HAVE_CURL)
 # Pull curl into all residual/personal_ai-linked binaries (HTTP residual).
 LDFLAGS += $(CURL_LDFLAGS)
 MCP_LDFLAGS :=
@@ -452,7 +502,7 @@ phase123_benchmark_build: counterfactual_router_test sparse_kv_test sparse_kv_ex
 		src/cce/cce_sparse_kv.c src/contract/narrative_coherence.c $(LDFLAGS)
 
 phase123_benchmark_test: phase123_benchmark_build $(PHASE123_BENCHMARK_TEST) $(PHASE123_BENCHMARK_TOOL)
-	python3 $(PHASE123_BENCHMARK_TEST)
+	$(PYTHON) $(PHASE123_BENCHMARK_TEST)
 
 phase4_uncertainty_test: $(CCE_UNCERTAINTY) $(CCE_COMPRESSION) $(PHASE4_UNCERTAINTY_TEST) include/cce/cce_uncertainty.h include/cce/cce_compression.h include/cce/cce_router.h
 	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $(CCE_UNCERTAINTY) $(CCE_COMPRESSION) $(PHASE4_UNCERTAINTY_TEST) $(LDFLAGS)
@@ -467,13 +517,13 @@ phase5_integration_test: register_compression_improvements $(PHASE5_INTEGRATION_
 
 .PHONY: phase5_bounded_activation_test real_model_control_plane_test
 phase5_bounded_activation_test: $(CNET_ACTIVATION_TOOL) $(CNET_ACTIVATION_TEST)
-	python3 $(CNET_ACTIVATION_TEST)
+	$(PYTHON) $(CNET_ACTIVATION_TEST)
 
 real_model_control_plane_test: phase5_bounded_activation_test
-	python3 tests/test_real_model_acceptance.py
-	python3 tests/test_hermes_wrapper.py
-	python3 tests/test_run_hermes_wrapper.py
-	python3 tests/test_ingest_cnet_suggestions.py
+	$(PYTHON) tests/test_real_model_acceptance.py
+	$(PYTHON) tests/test_hermes_wrapper.py
+	$(PYTHON) tests/test_run_hermes_wrapper.py
+	$(PYTHON) tests/test_ingest_cnet_suggestions.py
 	bash tests/test_qgkp_cli_runtime.sh
 
 test_dag: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(DAG_TEST) include/nn.h include/router.h include/plan_table.h include/contract/contract.h
@@ -958,7 +1008,7 @@ certify: nn_demo certify_demo
 .PHONY: legacy_persist_guard
 legacy_persist_guard: nn_demo tests/test_legacy_persist_guard.sh
 	@mkdir -p logs
-	@python3 scripts/gate_evidence.py legacy_persist_guard \
+	@$(PYTHON) scripts/gate_evidence.py legacy_persist_guard \
 		logs/legacy_persist_guard.log LEGACY_PERSIST_GUARD_PASS -- \
 		sh tests/test_legacy_persist_guard.sh
 
@@ -1118,15 +1168,73 @@ leakcheck: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE)
 # mutation (a producer that prints the PASS marker then exits 7) against each
 # real recipe shape, and pins WITHHELD to a non-success exit code.
 recipe_gate:
+	@sh tests/test_recipe_gates_selftest.sh
 	@sh tests/test_recipe_gates.sh
 	@bash tests/test_pipeline_status.sh
 	@sh tests/test_benchmark_verdict.sh
 	@bash tests/test_gate_evidence.sh
 
+# Every verify prerequisite is an ACTION, not a file. Without .PHONY, a file or
+# directory of the same name at the repo root makes Make declare the target up
+# to date and skip its recipe entirely -- the gate then reports success without
+# compiling, running, or refreshing any evidence. These 26 were unprotected.
+.PHONY: cnet_lm_bounds_test cce_detect cce_ssm cce_hybrid cce_qwen35 cce_st_llama
+.PHONY: cce_specgraph cce_wstore cce_tiers cce_similar merge_family hybrid_catalog
+.PHONY: transformer_qat contract_unit mutate acquire base flagship
+.PHONY: leakcheck cnet_fault_test cce_adapter_bank_test cce_dora_test cnet_serve_decode_test cnet_fault_loop_test
+.PHONY: registry_lora_store_test jtc_adapter_bench
+
+# README told readers to run ./test_tinystories, but no target built it --
+# a documented command that cannot work. The source is self-contained and
+# Windows-only (wininet), so gate it on the platform rather than pretend.
+.PHONY: test_tinystories
+test_tinystories: test_tinystories.c
+	@mkdir -p $(BIN_DIR)
+ifeq ($(OS),Windows_NT)
+	$(CC) $(CFLAGS) -Iinclude -o $(BIN_DIR)/test_tinystories test_tinystories.c $(CCE) $(LDFLAGS) $(MCP_LDFLAGS)
+	@echo "built $(BIN_DIR)/test_tinystories"
+else
+	@echo "test_tinystories is Windows-only (uses wininet); skipping on this platform"
+endif
+
+# One JSON escaper, proven against a real parser. Two of the three escapers
+# this replaces emitted documents that json.loads rejects (raw C0 bytes) or
+# that silently lost data (control characters dropped).
+.PHONY: json_escape
+json_escape: tests/test_json_escape.c include/cnet_json_escape.h tests/test_json_escape.py
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -Iinclude -o $(BIN_DIR)/test_json_escape tests/test_json_escape.c
+	@./$(BIN_DIR)/test_json_escape | tee logs/json_escape.log
+	@$(PYTHON) tests/test_json_escape.py ./$(BIN_DIR)/test_json_escape | tee -a logs/json_escape.log
+	@grep -q "^JSON_ESCAPE_PASS" logs/json_escape.log
+	@grep -q "^JSON_ESCAPE_PY_PASS" logs/json_escape.log
+
 # Test recipes propagate their exit codes directly. This positive-marker gate
 # runs after every prerequisite and rejects missing or stale-success logs.
-verify: recipe_gate claims_test cce_dll cce_safetensors_test cnet_lm_bounds_test cce_autograd_test cce_model_test cce_view forest_view cce_detect cce_ssm cce_hybrid cce_qwen35 cce_st_llama cce_specgraph cce_wstore cce_tiers cce_similar merge_family hybrid_catalog transformer_qat contract_secure contract_unit heal_mismatch mutate acquire base flagship demos leakcheck cnet_fault_test cce_adapter_bank_test cce_dora_test cnet_serve_decode_test cnet_fault_loop_test registry_lora_store_test jtc_adapter_bench metric_honesty moe_ckpt_test
-	@sh tests/verify_logs.sh
+#
+# RUN BINDING. `verify` stamps logs/.verify_sentinel and only then invokes the
+# real prerequisite chain, so tests/verify_logs.sh can require every log to be
+# strictly newer than the stamp. Until 2026-08-12 the gate only checked that a
+# marker existed SOMEWHERE in a file under logs/, and nothing in the chain ever
+# cleared logs/ -- so an interrupted or month-old run left a complete set of
+# green logs that this gate happily certified.
+#
+# The sentinel is stamped by a RECURSIVE make rather than by an ordinary
+# prerequisite because Make gives no ordering guarantee among prerequisites
+# under -j; a sentinel that raced the suites it is meant to predate would make
+# the freshness check meaningless exactly when the build is fastest.
+VERIFY_SENTINEL := logs/.verify_sentinel
+
+.PHONY: verify verify_impl
+verify:
+	@mkdir -p logs
+	@rm -f $(VERIFY_SENTINEL)
+	@touch $(VERIFY_SENTINEL)
+	@$(MAKE) --no-print-directory verify_impl
+	@VERIFY_SINCE=$(VERIFY_SENTINEL) sh tests/verify_logs.sh
+
+verify_impl: recipe_gate json_escape claims_test cce_dll cce_safetensors_test cnet_lm_bounds_test cce_autograd_test cce_model_test cce_view forest_view cce_detect cce_ssm cce_hybrid cce_qwen35 cce_st_llama cce_specgraph cce_wstore cce_tiers cce_similar merge_family hybrid_catalog transformer_qat contract_secure contract_unit heal_mismatch mutate acquire base flagship demos leakcheck cnet_fault_test cce_adapter_bank_test cce_dora_test cnet_serve_decode_test cnet_fault_loop_test registry_lora_store_test jtc_adapter_bench metric_honesty moe_ckpt_test
+	@:
 
 # Everything verify covers PLUS the GPU equivalence gate (needs model + GPU;
 # run this before any CNET_GPU=1 campaign).
@@ -1138,8 +1246,16 @@ test_full: test gpu_equiv_build
 # `long` mode also asserts the two verify-long-only supra QAT gates. The
 # `verify` prerequisite already ran and gated the core chain; this re-scan adds
 # the extras.
-verify-long: verify cce_train_bench supra_head_qat supra_head_qat_corpus transformer_qat_joint wordlm_bitnet wordlm_holdout compat
-	@sh tests/verify_logs.sh long
+# Same run-binding as `verify`: `verify` re-stamps the sentinel when it runs as
+# a prerequisite below, and every extra suite here writes its log afterwards, so
+# the whole CORE+LONG+COMPAT set is still required to postdate that one stamp.
+.PHONY: verify-long verify-long_impl
+verify-long:
+	@$(MAKE) --no-print-directory verify-long_impl
+	@VERIFY_SINCE=$(VERIFY_SENTINEL) sh tests/verify_logs.sh long
+
+verify-long_impl: verify cce_train_bench supra_head_qat supra_head_qat_corpus transformer_qat_joint wordlm_bitnet wordlm_holdout compat
+	@:
 
 
 # Fast PR gate: light PEFT/fault only (no full-runtime JTC campaigns)
@@ -1644,7 +1760,7 @@ campaign_provenance: campaign_provenance_unit \
 		qwythos_english_v1.cnb.manifest.json qwythos_english_v1.cnb.sha256 \
 		english_window_256_qwythos.txt goldens_qwythos.int8.txt \
 		tests/test_qwythos_campaign_record.py
-	@python3 tests/test_qwythos_campaign_record.py > logs/qwythos_provenance.log 2>&1
+	@$(PYTHON) tests/test_qwythos_campaign_record.py > logs/qwythos_provenance.log 2>&1
 	@grep -q "QWYTHOS_CAMPAIGN_RECORD_PASS" logs/qwythos_provenance.log
 	@if [ -f qwythos_english_v1.cnb ]; then \
 		sha256sum -c qwythos_english_v1.cnb.sha256 > logs/qwythos_base_digest.log; \
@@ -1936,7 +2052,7 @@ cnet_fault_dedupe_probe: src/cnet_fault.c tests/cnet_fault_dedupe_probe.c
 
 metric_honesty: cnet_fault_dedupe_probe gap_lane
 	@mkdir -p logs
-	@python3 tests/test_metric_honesty.py > logs/metric_honesty.log 2>&1 \
+	@$(PYTHON) tests/test_metric_honesty.py > logs/metric_honesty.log 2>&1 \
 		|| { tail -40 logs/metric_honesty.log; false; }
 	@grep -q "METRIC_HONESTY_PASS" logs/metric_honesty.log
 	@grep -E "^Ran [0-9]+ tests" logs/metric_honesty.log
@@ -2099,7 +2215,7 @@ transformer_qat_real: $(CCE) $(CCE_CUDA_OBJ) src/nn.c tests/transformer_qat_real
 # dimensions. See tests/transformer_qat_altmodel.c.
 transformer_qat_altmodel: $(CCE) $(CCE_CUDA_OBJ) src/nn.c tests/transformer_qat_altmodel.c
 	@mkdir -p $(BIN_DIR) logs
-	@test -f altmodel_cache/model.safetensors || python3 tools/gen_altmodel.py
+	@test -f altmodel_cache/model.safetensors || $(PYTHON) tools/gen_altmodel.py
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) src/nn.c tests/transformer_qat_altmodel.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 	./$(BIN_DIR)/transformer_qat_altmodel > logs/transformer_qat_altmodel.log 2>&1
 
@@ -2108,13 +2224,13 @@ transformer_qat_altmodel: $(CCE) $(CCE_CUDA_OBJ) src/nn.c tests/transformer_qat_
 # wte/wpe), 6 layers, 2 heads (from safetensors __metadata__), Conv1D [in,out]
 # block weights, TIED head (no lm_head, like real HF gpt2). Parity is asserted
 # both against the trainer AND against golden logits from an independent numpy
-# forward embedded in the fixture. Standalone (needs python3+numpy+safetensors),
+# forward embedded in the fixture. Standalone (needs $(PYTHON)+numpy+safetensors),
 # not in verify-long. See tests/transformer_qat_gpt2names.c.
 transformer_qat_gpt2names: $(CCE) $(CCE_CUDA_OBJ) src/nn.c tests/transformer_qat_gpt2names.c
 	@mkdir -p $(BIN_DIR) logs
-	@test -f altmodel_gpt2_cache/model.safetensors || python3 tools/gen_altmodel.py altmodel_gpt2_cache gpt2
-	@test -f altmodel_gpt2_nohead_cache/model.safetensors || python3 tools/gen_altmodel.py altmodel_gpt2_nohead_cache gpt2_nohead
-	@test -f altmodel_gpt2_gap_cache/model.safetensors || python3 tools/gen_altmodel.py altmodel_gpt2_gap_cache gpt2_gap
+	@test -f altmodel_gpt2_cache/model.safetensors || $(PYTHON) tools/gen_altmodel.py altmodel_gpt2_cache gpt2
+	@test -f altmodel_gpt2_nohead_cache/model.safetensors || $(PYTHON) tools/gen_altmodel.py altmodel_gpt2_nohead_cache gpt2_nohead
+	@test -f altmodel_gpt2_gap_cache/model.safetensors || $(PYTHON) tools/gen_altmodel.py altmodel_gpt2_gap_cache gpt2_gap
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) src/nn.c tests/transformer_qat_gpt2names.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 	./$(BIN_DIR)/transformer_qat_gpt2names > logs/transformer_qat_gpt2names.log 2>&1
 	@grep -q "TRANSFORMER_QAT_GPT2NAMES_PASS" logs/transformer_qat_gpt2names.log
@@ -2437,7 +2553,7 @@ gap_lane_run_build: $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADA
 .PHONY: gap_lane_service_config
 gap_lane_service_config: tests/test_gap_lane_service_config.py config/cnet-gap-lane.service Makefile
 	@mkdir -p logs
-	@python3 tests/test_gap_lane_service_config.py > logs/gap_lane_service_config.log 2>&1
+	@$(PYTHON) tests/test_gap_lane_service_config.py > logs/gap_lane_service_config.log 2>&1
 	@grep -q "GAP_LANE_SERVICE_CONFIG_PASS" logs/gap_lane_service_config.log
 
 # Build-only prepare: compile the daemon and run the config tracer.  This does
@@ -2544,13 +2660,13 @@ self_improve: $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(HARNESS_ORACLE_SRC) $(MO
 
 deploy_profile: tests/test_deploy_profile.py config/cnet-deploy.env config/cnet-gap-lane.service config/qwythos_v2_campaign.env scripts/apply_deploy_profile.sh
 	@mkdir -p logs
-	@python3 tests/test_deploy_profile.py > logs/deploy_profile.log 2>&1
+	@$(PYTHON) tests/test_deploy_profile.py > logs/deploy_profile.log 2>&1
 	@grep -q "DEPLOY_PROFILE_PASS" logs/deploy_profile.log
 	@grep "DEPLOY_PROFILE_PASS" logs/deploy_profile.log
 
 recipe_proposals: tools/propose_recipe_improvements.py
 	@mkdir -p logs suggestions
-	@python3 tools/propose_recipe_improvements.py \
+	@$(PYTHON) tools/propose_recipe_improvements.py \
 		--out suggestions/cnet_recipe_proposals.jsonl \
 		> logs/recipe_proposals.log 2>&1
 	@grep -q "RECIPE_PROPOSALS_PASS" logs/recipe_proposals.log
@@ -2847,7 +2963,7 @@ bin/vd_bench: tools/vision_detection/vd_bench.c tools/vision_detection/vd_eval.c
 		tools/vision_detection/vd_eval.c tools/vision_detection/vd_pack.c \
 		tools/vision_detection/vd_io.c tools/vision_detection/vd_sha256.c \
 		tools/vision_detection/vd_protocol.c tools/vision_detection/vd_coverage.c \
-		$(CAPSULE_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(EXT_TEACHER_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) -lm -lpthread -lcurl
+		$(CAPSULE_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(EXT_TEACHER_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) -lm -lpthread $(CURL_LDFLAGS)
 
 SRC_NN_MIN := src/nn.c src/contract/contract.c src/contract/unit.c src/property.c \
               src/scan.c src/contract/coverage.c src/router/registry.c \
@@ -2955,7 +3071,7 @@ bin/vd_runner: tools/vision_detection/vd_runner.cpp tools/vision_detection/vd_co
 	g++ -std=c++14 -O2 -Wall -Wextra -I tools/vision_detection -I include \
 		-o $(BIN_DIR)/vd_runner tools/vision_detection/vd_runner.cpp \
 		$(BIN_DIR)/objs_runner/*.o \
-		$(shell pkg-config --cflags --libs opencv4) -lm -lpthread -lcurl
+		$(shell pkg-config --cflags --libs opencv4) -lm -lpthread $(CURL_LDFLAGS)
 
 # Schema-2 asset parser, mutated field by field plus a deterministic byte fuzz.
 # Pure C and no OpenCV on purpose: a parser that can only be reached through a
@@ -2965,7 +3081,7 @@ vd_frontend_parse: tools/vision_detection/vd_frontend.c tools/vision_detection/v
 	$(CC) -std=c11 -Wall -Wextra -pedantic -Werror -O2 -D_DEFAULT_SOURCE \
 		-I tools/vision_detection -o $(BIN_DIR)/vd_frontend_parse \
 		tools/vision_detection/vd_frontend.c tests/test_vd_frontend_parse.c -lm
-	@python3 scripts/gate_evidence.py vd_frontend_parse \
+	@$(PYTHON) scripts/gate_evidence.py vd_frontend_parse \
 		logs/vision/frontend_parse.log VD_FRONTEND_PARSE_PASS -- \
 		timeout 600 ./$(BIN_DIR)/vd_frontend_parse
 
@@ -3012,7 +3128,7 @@ btn_train_plateau: src/nn.c tests/test_btn_train_plateau.c include/nn.h
 	$(CC) -std=c11 -Wall -Wextra -O2 -D_DEFAULT_SOURCE -I include \
 		-o $(BIN_DIR)/test_btn_train_plateau \
 		src/nn.c tests/test_btn_train_plateau.c -lm
-	@python3 scripts/gate_evidence.py btn_train_plateau \
+	@$(PYTHON) scripts/gate_evidence.py btn_train_plateau \
 		logs/btn_train_plateau.log BTN_TRAIN_PLATEAU_PASS -- \
 		timeout 900 ./$(BIN_DIR)/test_btn_train_plateau
 
@@ -3028,8 +3144,8 @@ cnu_budget: $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(PLAN_TA
 	$(CC) -std=c11 -Wall -Wextra -pedantic -Werror -O2 -D_DEFAULT_SOURCE \
 		-I include -o $(BIN_DIR)/test_cnu_budget \
 		$(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(PLAN_TABLE) \
-		$(ROUTER) $(SRC) $(LIBRARY) tests/test_cnu_budget.c -lm -lpthread -lcurl
-	@python3 scripts/gate_evidence.py cnu_budget logs/cnu_budget.log \
+		$(ROUTER) $(SRC) $(LIBRARY) tests/test_cnu_budget.c -lm -lpthread $(CURL_LDFLAGS)
+	@$(PYTHON) scripts/gate_evidence.py cnu_budget logs/cnu_budget.log \
 		CNU_BUDGET_PASS -- timeout 900 ./$(BIN_DIR)/test_cnu_budget
 
 cnu_budget_san: $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(PLAN_TABLE) $(ROUTER) $(SRC) $(LIBRARY) tests/test_cnu_budget.c include/contract/unit.h
@@ -3038,7 +3154,7 @@ cnu_budget_san: $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(PLA
 		-fno-omit-frame-pointer -D_DEFAULT_SOURCE -I include \
 		-o $(BIN_DIR)/cnu_budget_san \
 		$(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(PLAN_TABLE) \
-		$(ROUTER) $(SRC) $(LIBRARY) tests/test_cnu_budget.c -lm -lpthread -lcurl
+		$(ROUTER) $(SRC) $(LIBRARY) tests/test_cnu_budget.c -lm -lpthread $(CURL_LDFLAGS)
 	@# ASan reserves a large shadow map, so the child's RLIMIT_AS guard is not
 	@# meaningful here; allow_user_segv_handler keeps the forked children usable.
 	@ASAN_OPTIONS=detect_leaks=0:allow_user_segv_handler=1 \
@@ -3054,7 +3170,7 @@ cnu_budget_san: $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(PLA
 port_raw_unit_seam: $(CAPSULE_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(EXT_TEACHER_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) tests/test_port_raw_unit_seam.c
 	@mkdir -p $(BIN_DIR) logs/vision
 	$(CC) -std=c11 -Wall -Wextra -Werror -O2 -D_DEFAULT_SOURCE -I include \
-		-o $(BIN_DIR)/port_raw_unit_seam $^ -lm -lpthread -lcurl
+		-o $(BIN_DIR)/port_raw_unit_seam $^ -lm -lpthread $(CURL_LDFLAGS)
 	@ROCR_VISIBLE_DEVICES='' HIP_VISIBLE_DEVICES='' CUDA_VISIBLE_DEVICES='' \
 	  timeout 600 ./$(BIN_DIR)/port_raw_unit_seam 2>&1 | tee logs/vision/port_raw_seam.log
 	@grep -q PORT_RAW_UNIT_SEAM_PASS logs/vision/port_raw_seam.log
@@ -3084,7 +3200,7 @@ vision_coverage_asan:
 vision_capsule_asset: $(CAPSULE_SRC) $(CAPSULE_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(EXT_TEACHER_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) tests/test_vision_capsule_asset.c include/cnet_capsule.h
 	@mkdir -p $(BIN_DIR) logs/vision
 	$(CC) -std=c11 -Wall -Wextra -Werror -O2 -D_DEFAULT_SOURCE -I include \
-		-o $(BIN_DIR)/vision_capsule_asset $^ -lm -lpthread -lcurl
+		-o $(BIN_DIR)/vision_capsule_asset $^ -lm -lpthread $(CURL_LDFLAGS)
 	@ROCR_VISIBLE_DEVICES='' HIP_VISIBLE_DEVICES='' CUDA_VISIBLE_DEVICES='' \
 	  timeout 900 ./$(BIN_DIR)/vision_capsule_asset 2>&1 | tee logs/vision/capsule_asset.log
 	@grep -q VISION_CAPSULE_ASSET_PASS logs/vision/capsule_asset.log
@@ -3097,7 +3213,7 @@ vision_capsule_asset_san: $(CAPSULE_SRC) $(CAPSULE_SRC) $(PERSONAL_AI_SRC) $(HYB
 	@# slice; the sanitizer findings themselves are still fatal.
 	$(CC) -std=c11 -Wall -Wextra -g -O1 -fsanitize=address,undefined \
 		-fno-omit-frame-pointer -D_DEFAULT_SOURCE -I include \
-		-o $(BIN_DIR)/vision_capsule_asset_san $^ -lm -lpthread -lcurl
+		-o $(BIN_DIR)/vision_capsule_asset_san $^ -lm -lpthread $(CURL_LDFLAGS)
 	@ROCR_VISIBLE_DEVICES='' HIP_VISIBLE_DEVICES='' CUDA_VISIBLE_DEVICES='' \
 	  ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=halt_on_error=1 \
 	  timeout 1200 ./$(BIN_DIR)/vision_capsule_asset_san 2>&1 | tee logs/vision/capsule_asset_san.log
@@ -3303,7 +3419,7 @@ asi_av_bakeoff: $(ASI_IMPROVE_SRC) include/cnet_asi_improve.h tools/cnet_av_bake
 
 # ROE-ASI concept assistant (local skills + lookup/LLM miss + promote)
 ROE_ASI_SRC := src/cnet_roe_asi.c src/cnet_roe_net.c src/cnet_asi_improve.c
-ROE_ASI_LIBS := -lm -lcurl
+ROE_ASI_LIBS := -lm $(CURL_LDFLAGS)
 roe_asi: $(ROE_ASI_SRC) include/cnet_roe_asi.h include/cnet_roe_net.h include/cnet_asi_improve.h tests/test_roe_asi.c
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) $(ASI_IMPROVE_CFLAGS) -o $(BIN_DIR)/test_roe_asi $(ROE_ASI_SRC) tests/test_roe_asi.c $(ROE_ASI_LIBS)
@@ -3430,7 +3546,7 @@ roe_asi_self_cli: $(ROE_SELF_SRC) include/cnet_roe_self.h tools/roe_asi_self_cli
 .PHONY: roe_daily_packs roe_daily_packs_seed
 roe_daily_packs_seed:
 	@mkdir -p artifacts logs
-	python3 tools/roe_daily_packs_seed.py | tee logs/roe_daily_packs_seed.log
+	$(PYTHON) tools/roe_daily_packs_seed.py | tee logs/roe_daily_packs_seed.log
 	@grep -q "ROE_DAILY_PACKS_SEED_OK" logs/roe_daily_packs_seed.log
 
 roe_daily_packs: roe_daily_packs_seed $(ROE_ASI_SRC) tools/roe_daily_packs_gate.c
@@ -3442,7 +3558,7 @@ roe_daily_packs: roe_daily_packs_seed $(ROE_ASI_SRC) tools/roe_daily_packs_gate.
 	@echo "---- daily packs bench ----"
 	@cat artifacts/roe_daily_packs/BENCH.json 2>/dev/null || true
 	@echo "---- index ----"
-	@python3 -c "import json;d=json.load(open('artifacts/roe_daily_packs/INDEX.json'));print('packs',len(d['packs']), 'always_on',d['recommended_always_on'])"
+	@$(PYTHON) -c "import json;d=json.load(open('artifacts/roe_daily_packs/INDEX.json'));print('packs',len(d['packs']), 'always_on',d['recommended_always_on'])"
 
 # Front door: ROUTES → selective pack load → turn → miss_log
 .PHONY: roe_front_door
@@ -3504,7 +3620,7 @@ roe_explore_tick: tools/roe_explore_tick.py tools/roe_explore_tick_gate.c
 	$(CC) -std=c11 -Wall -O2 -o $(BIN_DIR)/roe_explore_tick_gate tools/roe_explore_tick_gate.c
 	@./$(BIN_DIR)/roe_explore_tick_gate | tee logs/roe_explore_tick_gate.log
 	@grep -q "ROE_EXPLORE_TICK_GATE_PASS" logs/roe_explore_tick_gate.log
-	@python3 tools/roe_explore_tick.py --force 2>&1 | tee logs/roe_explore_tick.log
+	@$(PYTHON) tools/roe_explore_tick.py --force 2>&1 | tee logs/roe_explore_tick.log
 	@grep -q "ROE_EXPLORE_TICK_PASS" logs/roe_explore_tick.log
 	@test ! -f artifacts/roe_daily_packs/EXPLORE_TICK.json || grep -q '"auto_cert": false' artifacts/roe_daily_packs/EXPLORE_TICK.json
 	@echo "ROE_EXPLORE_TICK_OK"
@@ -3609,8 +3725,8 @@ cnet-web:
 	  H=$${H:-127.0.0.1}; \
 	  curl -sf "http://$$H:8642/api/health" | tee logs/cnet_web_health.json; \
 	else \
-	  pkill -f 'python3 .*/tools/cnet_web.py' 2>/dev/null || true; \
-	  CNET_WEB_HOST=127.0.0.1 CNET_WEB_PORT=8642 python3 tools/cnet_web.py >logs/cnet_web.log 2>&1 & echo $$! > logs/cnet_web.pid; \
+	  pkill -f '$(PYTHON) .*/tools/cnet_web.py' 2>/dev/null || true; \
+	  CNET_WEB_HOST=127.0.0.1 CNET_WEB_PORT=8642 $(PYTHON) tools/cnet_web.py >logs/cnet_web.log 2>&1 & echo $$! > logs/cnet_web.pid; \
 	  sleep 0.6; \
 	  curl -sf http://127.0.0.1:8642/api/health | tee logs/cnet_web_health.json; \
 	fi
@@ -3624,8 +3740,8 @@ cnet-web-service:
 	@cp -a scripts/systemd/cnet-web.service $(HOME)/.config/systemd/user/
 	@cp -a scripts/systemd/cnetd.service $(HOME)/.config/systemd/user/
 	@# stop ad-hoc server so unit owns :8642
-	@pkill -f 'python3 .*/tools/cnet_web.py' 2>/dev/null || true
-	@pkill -f 'python3 tools/cnet_web.py' 2>/dev/null || true
+	@pkill -f '$(PYTHON) .*/tools/cnet_web.py' 2>/dev/null || true
+	@pkill -f '$(PYTHON) tools/cnet_web.py' 2>/dev/null || true
 	@systemctl --user daemon-reload
 	@systemctl --user enable cnetd.service cnet-web.service
 	@systemctl --user restart cnetd.service
@@ -3668,10 +3784,10 @@ cert_coverage_harvest:
 .PHONY: gold_curriculum_harvest
 gold_curriculum_harvest:
 	@mkdir -p logs bin
-	@python3 tools/roe_gold_curriculum_harvest.py | tee logs/gold_curriculum_harvest.log
+	@$(PYTHON) tools/roe_gold_curriculum_harvest.py | tee logs/gold_curriculum_harvest.log
 	@grep -q "GOLD_CURRICULUM_HARVEST_PASS" logs/gold_curriculum_harvest.log
 	@# evolve dry-run must not promote blocked probes even if gold planted
-	@python3 -c "from tools.roe_evolve_tick import is_promote_blocked as b; \
+	@$(PYTHON) -c "from tools.roe_evolve_tick import is_promote_blocked as b; \
 assert b('zz mystic ooze 99','x'); assert b('ok','ABSTAIN: no'); print('EVOLVE_BLOCKLIST_OK')"
 
 .PHONY: stream_attend_bench
@@ -3761,7 +3877,7 @@ roe_reviewer_smoke: tools/roe_reviewer.py config/roe-reviewer-ollama-cloud.env
 	  [ -f config/roe-teacher-ollama-cloud.env ] && . ./config/roe-teacher-ollama-cloud.env; \
 	  . ./config/roe-reviewer-ollama-cloud.env; \
 	  set +a; \
-	  python3 tools/roe_reviewer.py --smoke | tee logs/roe_reviewer_smoke.log
+	  $(PYTHON) tools/roe_reviewer.py --smoke | tee logs/roe_reviewer_smoke.log
 	@grep -q "ROE_REVIEWER_SMOKE_PASS" logs/roe_reviewer_smoke.log
 
 # optional: after ROE docs
@@ -3771,7 +3887,7 @@ cnet_marble_24_7:
 	@scripts/cnet_marble_24_7.sh status
 	@scripts/cnet_marble_24_7.sh doctor
 	@test -f logs/marble_24_7/status.json
-	@python3 -c "import json;d=json.load(open('logs/marble_24_7/status.json')); assert d.get('hermes_required') is False; assert d.get('core_active_count',0)>=1; print('CNET_MARBLE_24_7_OK')"
+	@$(PYTHON) -c "import json;d=json.load(open('logs/marble_24_7/status.json')); assert d.get('hermes_required') is False; assert d.get('core_active_count',0)>=1; print('CNET_MARBLE_24_7_OK')"
 
 # Full autonomous cycle (probe + evolve) — no Hermes, no human Accept
 .PHONY: cnet_autonomous
@@ -3780,61 +3896,61 @@ cnet_autonomous:
 	@mkdir -p logs/marble_24_7 bin
 	@CNET_AUTO_TEACHER=$${CNET_AUTO_TEACHER:-1} \
 	 ROE_EVOLVE_REVIEWER=$${ROE_EVOLVE_REVIEWER:-1} \
-	 python3 scripts/cnet_autonomous_cycle.py | tee logs/marble_24_7/autonomous_last.log
+	 $(PYTHON) scripts/cnet_autonomous_cycle.py | tee logs/marble_24_7/autonomous_last.log
 	@grep -q "CNET_AUTONOMOUS_PASS" logs/marble_24_7/autonomous_last.log
 	@test -f logs/marble_24_7/AUTONOMOUS_CYCLE.json
-	@python3 -c "import json;d=json.load(open('logs/marble_24_7/AUTONOMOUS_CYCLE.json')); assert d.get('ok') and d.get('hermes_required') is False; print('kpi',d.get('kpi')); print('CNET_AUTONOMOUS_OK')"
+	@$(PYTHON) -c "import json;d=json.load(open('logs/marble_24_7/AUTONOMOUS_CYCLE.json')); assert d.get('ok') and d.get('hermes_required') is False; print('kpi',d.get('kpi')); print('CNET_AUTONOMOUS_OK')"
 
 # Neuromod personality organ (DA / 5HT / ADO)
 .PHONY: cnet_neuromod
 cnet_neuromod:
 	@chmod +x scripts/cnet_neuromod.py
-	@python3 scripts/cnet_neuromod.py --test | tee logs/governor/neuromod_test.log
+	@$(PYTHON) scripts/cnet_neuromod.py --test | tee logs/governor/neuromod_test.log
 	@grep -q "NEUROMOD_PASS" logs/governor/neuromod_test.log
-	@python3 scripts/cnet_neuromod.py --tick
+	@$(PYTHON) scripts/cnet_neuromod.py --tick
 	@test -f logs/governor/neuromod_state.json
-	@python3 -c "import json;d=json.load(open('logs/governor/neuromod_state.json')); assert set(d['levels'])=={'dopamine','serotonin','adenosine'}; assert d['law']['never_self_cert']; print(d['levels']); print('CNET_NEUROMOD_OK')"
+	@$(PYTHON) -c "import json;d=json.load(open('logs/governor/neuromod_state.json')); assert set(d['levels'])=={'dopamine','serotonin','adenosine'}; assert d['law']['never_self_cert']; print(d['levels']); print('CNET_NEUROMOD_OK')"
 
 # Token-free thought process (no LLM)
 .PHONY: cnet_thought
 cnet_thought:
 	@chmod +x scripts/cnet_thought_process.py
-	@python3 scripts/cnet_thought_process.py --test | tee logs/governor/thought_test.log
+	@$(PYTHON) scripts/cnet_thought_process.py --test | tee logs/governor/thought_test.log
 	@grep -q "THOUGHT_PROCESS_PASS" logs/governor/thought_test.log
-	@python3 scripts/cnet_thought_process.py --query "who are you"
+	@$(PYTHON) scripts/cnet_thought_process.py --query "who are you"
 	@test -f logs/governor/thought_last.json
-	@python3 -c "import json;d=json.load(open('logs/governor/thought_last.json')); assert d['tokens']==0 and d['llm'] is False and d['law']['not_agi']; print(d['chain']); print('CNET_THOUGHT_OK')"
+	@$(PYTHON) -c "import json;d=json.load(open('logs/governor/thought_last.json')); assert d['tokens']==0 and d['llm'] is False and d['law']['not_agi']; print(d['chain']); print('CNET_THOUGHT_OK')"
 
 # Continuity workspace (imitate continuity, not consciousness)
 .PHONY: cnet_continuity
 cnet_continuity:
 	@chmod +x scripts/cnet_continuity.py
-	@python3 scripts/cnet_continuity.py --test | tee logs/governor/continuity_test.log
+	@$(PYTHON) scripts/cnet_continuity.py --test | tee logs/governor/continuity_test.log
 	@grep -q "CONTINUITY_PASS" logs/governor/continuity_test.log
-	@python3 scripts/cnet_continuity.py --query "who are you" --line-only
+	@$(PYTHON) scripts/cnet_continuity.py --query "who are you" --line-only
 	@test -f logs/governor/continuity_last.json
 	@test -f logs/governor/continuity_line.txt
-	@python3 -c "import json;d=json.load(open('logs/governor/continuity_last.json')); assert d['law']['not_conscious'] and d['law']['never_self_cert'] and d['tokens']==0; print(d['continuity_line']); print('CNET_CONTINUITY_OK')"
+	@$(PYTHON) -c "import json;d=json.load(open('logs/governor/continuity_last.json')); assert d['law']['not_conscious'] and d['law']['never_self_cert'] and d['tokens']==0; print(d['continuity_line']); print('CNET_CONTINUITY_OK')"
 
 # Visible reply thinking (GPT-style panel, 0 tokens)
 .PHONY: cnet_reply_think
 cnet_reply_think:
 	@chmod +x scripts/cnet_reply_think.py scripts/roe_reply.sh
-	@python3 scripts/cnet_reply_think.py --test | tee logs/governor/reply_think_test.log
+	@$(PYTHON) scripts/cnet_reply_think.py --test | tee logs/governor/reply_think_test.log
 	@grep -q "REPLY_THINK_PASS" logs/governor/reply_think_test.log
-	@python3 scripts/cnet_reply_think.py --query "who are you" --answer "I am Marble." --source LOCAL --skill soul_who --style panel | head -25
+	@$(PYTHON) scripts/cnet_reply_think.py --query "who are you" --answer "I am Marble." --source LOCAL --skill soul_who --style panel | head -25
 	@test -f logs/governor/reply_think_last.json
-	@python3 -c "import json;d=json.load(open('logs/governor/reply_think_last.json')); assert d['tokens']==0 and d['llm_thinking'] is False; print(d['thinking_summary'][:80]); print('CNET_REPLY_THINK_OK')"
+	@$(PYTHON) -c "import json;d=json.load(open('logs/governor/reply_think_last.json')); assert d['tokens']==0 and d['llm_thinking'] is False; print(d['thinking_summary'][:80]); print('CNET_REPLY_THINK_OK')"
 
 # Autonomy freedom charter + budgets
 .PHONY: cnet_autonomy_charter
 cnet_autonomy_charter:
 	@chmod +x scripts/cnet_autonomy_charter.py
-	@python3 scripts/cnet_autonomy_charter.py --test | tee logs/governor/autonomy_charter_test.log
+	@$(PYTHON) scripts/cnet_autonomy_charter.py --test | tee logs/governor/autonomy_charter_test.log
 	@grep -q "AUTONOMY_CHARTER_PASS" logs/governor/autonomy_charter_test.log
-	@python3 scripts/cnet_autonomy_charter.py --show | head -40
+	@$(PYTHON) scripts/cnet_autonomy_charter.py --show | head -40
 	@test -f config/autonomy_charter.yaml
-	@python3 -c "import json;from pathlib import Path;import sys;sys.path.insert(0,'scripts');import cnet_autonomy_charter as a;c=a.charter();assert c['law']['never_self_cert'] and c['budgets']['promotes_per_day']>=1; print('CNET_AUTONOMY_CHARTER_OK')"
+	@$(PYTHON) -c "import json;from pathlib import Path;import sys;sys.path.insert(0,'scripts');import cnet_autonomy_charter as a;c=a.charter();assert c['law']['never_self_cert'] and c['budgets']['promotes_per_day']>=1; print('CNET_AUTONOMY_CHARTER_OK')"
 
 .PHONY: roe_asi_ocr_surpass
 roe_asi_ocr_surpass: $(ROE_ASI_SRC) src/cnet_roe_goal.c src/cnet_roe_ocr.c src/cnet_roe_tree.c \
@@ -3899,7 +4015,7 @@ roe_ocr_hard_beat:
 	@HIP_VISIBLE_DEVICES=0 ./.venv-unlimited-ocr/bin/python tools/roe_ocr_hard_beat.py 2>&1 | tee logs/roe_ocr_hard_beat.log
 	@grep -q "ROE_OCR_HARD_BEAT_PASS" logs/roe_ocr_hard_beat.log
 	@echo "---- hard beat report ----"
-	@python3 -c "import json;d=json.load(open('artifacts/roe_ocr_hard/hard_beat_report.json'));print({k:d[k] for k in d if k!='rows'})"
+	@$(PYTHON) -c "import json;d=json.load(open('artifacts/roe_ocr_hard/hard_beat_report.json'));print({k:d[k] for k in d if k!='rows'})"
 
 .PHONY: roe_omnidoc_full_infer roe_omnidoc_bench
 roe_omnidoc_full_infer:
@@ -3925,7 +4041,7 @@ roe_asi_ocr_bigfile: $(ROE_ASI_SRC) src/cnet_roe_goal.c src/cnet_roe_doc.c src/c
 	./$(BIN_DIR)/roe_asi_ocr_bigfile_train 2>&1 | tee logs/roe_asi_ocr_bigfile.log
 	@grep -q ROE_ASI_OCR_BIGFILE_PASS logs/roe_asi_ocr_bigfile.log
 	@# python page-chunk runner on same paper
-	python3 tools/roe_pdf_chunk_run.py \
+	$(PYTHON) tools/roe_pdf_chunk_run.py \
 		"/home/marble/AI/stack/data/papers/machine-learning/1610.05492-federated-learning-strategies-for/1610.05492.pdf" \
 		--out artifacts/roe_ocr_bigfile/pdf_chunk --max-pages 40 \
 		2>&1 | tee -a logs/roe_asi_ocr_bigfile.log
@@ -3973,7 +4089,7 @@ coverage_owner_seal: $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(
 		$(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) \
 		$(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) \
 		tests/test_coverage_owner_seal.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -pthread
-	@python3 scripts/gate_evidence.py coverage_owner_seal \
+	@$(PYTHON) scripts/gate_evidence.py coverage_owner_seal \
 		logs/coverage_owner_seal.log COVERAGE_OWNER_SEAL_PASS -- \
 		./$(BIN_DIR)/test_coverage_owner_seal
 
@@ -3989,7 +4105,7 @@ personal_ai_hop_guard: $(CAPSULE_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESI
 		$(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) \
 		$(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) \
 		tests/test_personal_ai_hop_guard.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -pthread
-	@python3 scripts/gate_evidence.py personal_ai_hop_guard \
+	@$(PYTHON) scripts/gate_evidence.py personal_ai_hop_guard \
 		logs/personal_ai_hop_guard.log PERSONAL_AI_HOP_GUARD_PASS -- \
 		./$(BIN_DIR)/test_personal_ai_hop_guard
 
@@ -4005,7 +4121,7 @@ capsule_scope_lineage: $(CAPSULE_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESI
 		$(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) \
 		$(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) \
 		tests/test_capsule_scope_lineage.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -pthread
-	@python3 scripts/gate_evidence.py capsule_scope_lineage \
+	@$(PYTHON) scripts/gate_evidence.py capsule_scope_lineage \
 		logs/capsule_scope_lineage.log CAPSULE_SCOPE_LINEAGE_PASS -- \
 		./$(BIN_DIR)/test_capsule_scope_lineage
 
@@ -4020,7 +4136,7 @@ coverage_sidecar_seal: $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) 
 		$(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) \
 		$(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) \
 		tests/test_coverage_sidecar_seal.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -pthread
-	@python3 scripts/gate_evidence.py coverage_sidecar_seal \
+	@$(PYTHON) scripts/gate_evidence.py coverage_sidecar_seal \
 		logs/coverage_sidecar_seal.log COVERAGE_SIDECAR_SEAL_PASS -- \
 		./$(BIN_DIR)/test_coverage_sidecar_seal
 	@# The sanitized target is allowed to withhold the address-space assertion;
@@ -4104,8 +4220,9 @@ residual_substitution_bench_live: $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL
 		$(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) \
 		$(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) \
 		tests/residual_substitution_bench_live.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -pthread
-	@./$(BIN_DIR)/residual_substitution_bench_live > logs/residual_substitution_bench_live.log 2>&1 || true
-	@cat logs/residual_substitution_bench_live.log
+	@rc=0; ./$(BIN_DIR)/residual_substitution_bench_live > logs/residual_substitution_bench_live.log 2>&1 || rc=$$?; \
+		cat logs/residual_substitution_bench_live.log; \
+		[ $$rc -eq 0 ] || { echo "residual_substitution_bench_live exited $$rc"; exit $$rc; }
 	@grep -qE "SUBSTITUTION_BENCH_LIVE_(PASS|SKIP)" logs/residual_substitution_bench_live.log
 
 residual_substitution_bench: $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(EXT_TEACHER_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) tests/residual_substitution_bench.c include/hybrid_ai.h include/personal_ai.h
@@ -4116,8 +4233,9 @@ residual_substitution_bench: $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF
 		$(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) \
 		$(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) \
 		tests/residual_substitution_bench.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -pthread
-	@./$(BIN_DIR)/residual_substitution_bench > logs/residual_substitution_bench.log 2>&1 || true
-	@cat logs/residual_substitution_bench.log
+	@rc=0; ./$(BIN_DIR)/residual_substitution_bench > logs/residual_substitution_bench.log 2>&1 || rc=$$?; \
+		cat logs/residual_substitution_bench.log; \
+		[ $$rc -eq 0 ] || { echo "residual_substitution_bench exited $$rc"; exit $$rc; }
 	@grep -q "SUBSTITUTION_BENCH_PASS" logs/residual_substitution_bench.log
 
 residual_reservoir: $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(EXT_TEACHER_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) tests/test_residual_reservoir.c include/hybrid_ai.h include/personal_ai.h
@@ -4275,7 +4393,7 @@ soul_residual_serve: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CO
 .PHONY: personal_ai_auto
 personal_ai_auto: tests/test_personal_ai_auto.py scripts/personal_ai_auto.sh config/cnet-personal-ai-lane.service config/cnet-personal-ai.target config/personal-ai.env
 	@mkdir -p logs
-	@python3 tests/test_personal_ai_auto.py > logs/personal_ai_auto.log 2>&1
+	@$(PYTHON) tests/test_personal_ai_auto.py > logs/personal_ai_auto.log 2>&1
 	@grep -q "PERSONAL_AI_AUTO_PASS" logs/personal_ai_auto.log
 	@grep "PERSONAL_AI_AUTO_PASS" logs/personal_ai_auto.log
 
@@ -4335,12 +4453,12 @@ voice_real_teacher: $(MULTIMODAL_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER
 # Single source of truth → C include + .NET partial (check in generated files).
 .PHONY: json_toolcall_alphabet json_toolcall_alphabet_check
 json_toolcall_alphabet: config/json_toolcall_v2.json tools/gen_json_toolcall_alphabet.py
-	@python3 tools/gen_json_toolcall_alphabet.py
+	@$(PYTHON) tools/gen_json_toolcall_alphabet.py
 	@test -f include/json_toolcall_alphabet.inc
 	@test -f dotnet/Cce/JsonToolCall.Alphabet.g.cs
 
 json_toolcall_alphabet_check: config/json_toolcall_v2.json tools/gen_json_toolcall_alphabet.py include/json_toolcall_alphabet.inc dotnet/Cce/JsonToolCall.Alphabet.g.cs
-	@python3 tools/gen_json_toolcall_alphabet.py --check
+	@$(PYTHON) tools/gen_json_toolcall_alphabet.py --check
 
 # Closed-set JSON tool-call spine: keyword features → certified tool ONEHOT.
 .PHONY: json_toolcall
@@ -4371,7 +4489,7 @@ json_toolcall_seal_cli: $(MULTIMODAL_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADA
 
 multimodal_prepare: tests/test_multimodal_prepare.py tools/multimodal_campaign.sh plans/multimodal_external_teachers.md
 	@mkdir -p logs
-	@python3 tests/test_multimodal_prepare.py > logs/multimodal_prepare.log 2>&1
+	@$(PYTHON) tests/test_multimodal_prepare.py > logs/multimodal_prepare.log 2>&1
 	@grep -q "MULTIMODAL_PREPARE_PASS" logs/multimodal_prepare.log
 
 
@@ -4380,7 +4498,7 @@ multimodal_prepare: tests/test_multimodal_prepare.py tools/multimodal_campaign.s
 .PHONY: campaign_v2_fast
 campaign_v2_fast: flagship tests/test_campaign_v2_fast.py tools/campaign_v2_fast.sh tools/margin_sweep_analyze.py
 	@mkdir -p logs
-	@python3 tests/test_campaign_v2_fast.py > logs/campaign_v2_fast.log 2>&1
+	@$(PYTHON) tests/test_campaign_v2_fast.py > logs/campaign_v2_fast.log 2>&1
 	@grep -q "CAMPAIGN_V2_FAST_PASS" logs/campaign_v2_fast.log
 	@grep "CAMPAIGN_V2_FAST_PASS" logs/campaign_v2_fast.log
 
@@ -4700,7 +4818,7 @@ managed_warning_gate: json_toolcall_alphabet_check
 .PHONY: managed_warning_offline_proof
 managed_warning_offline_proof: tests/test_managed_warning_offline.sh Makefile
 	@mkdir -p logs
-	@python3 scripts/gate_evidence.py managed_warning_offline_proof \
+	@$(PYTHON) scripts/gate_evidence.py managed_warning_offline_proof \
 		logs/managed_warning_offline_proof.log \
 		MANAGED_WARNING_OFFLINE_PROOF_PASS -- \
 		sh tests/test_managed_warning_offline.sh
@@ -4708,7 +4826,7 @@ managed_warning_offline_proof: tests/test_managed_warning_offline.sh Makefile
 .PHONY: managed_warning_prereq
 managed_warning_prereq: tests/test_managed_warning_prereq.sh Makefile
 	@mkdir -p logs
-	@python3 scripts/gate_evidence.py managed_warning_prereq \
+	@$(PYTHON) scripts/gate_evidence.py managed_warning_prereq \
 		logs/managed_warning_prereq.log MANAGED_WARNING_PREREQ_PASS -- \
 		sh tests/test_managed_warning_prereq.sh
 	@# ... and both REDs it was written against stay re-runnable. Each replayed
@@ -4861,8 +4979,8 @@ specialist_authority: specialist_unit admission_bypass_audit admission_abi_audit
 .PHONY: ci_config_gate release_package dotnet_cce_tests ci_core ci ci_contract_gate evidence_special_index
 ci_config_gate: tests/test_ci_workflow.py Makefile
 	@mkdir -p logs
-	@python3 scripts/gate_evidence.py ci_config_gate logs/ci_config_gate.log \
-		CI_WORKFLOW_LOCAL_PASS -- python3 tests/test_ci_workflow.py
+	@$(PYTHON) scripts/gate_evidence.py ci_config_gate logs/ci_config_gate.log \
+		CI_WORKFLOW_LOCAL_PASS -- $(PYTHON) tests/test_ci_workflow.py
 
 release_package: json_toolcall_alphabet_check tests/test_release_package.sh VERSION include/cnet_version.h
 	@sh tests/test_release_package.sh > logs/release_package.log 2>&1
@@ -4905,8 +5023,8 @@ runtime_artifact_hygiene: tests/test_runtime_artifact_hygiene.sh
 # hosted workflow is WITHHELD rather than a pass.
 ci_contract_gate: config/ci_contract.json tests/test_ci_contract.py Makefile
 	@mkdir -p logs
-	@python3 scripts/gate_evidence.py ci_contract_gate logs/ci_contract.log \
-		CI_CONTRACT_PASS -- python3 tests/test_ci_contract.py
+	@$(PYTHON) scripts/gate_evidence.py ci_contract_gate logs/ci_contract.log \
+		CI_CONTRACT_PASS -- $(PYTHON) tests/test_ci_contract.py
 
 # The evidence runners bound the tree by walking `git status`, which does not
 # report assume-unchanged or skip-worktree paths -- 83 of them here, including
@@ -4915,12 +5033,12 @@ ci_contract_gate: config/ci_contract.json tests/test_ci_contract.py Makefile
 evidence_special_index: scripts/gate_evidence.py tests/run_capability_cert.py \
 		tests/test_evidence_special_index.py
 	@mkdir -p logs
-	@python3 scripts/gate_evidence.py evidence_special_index \
+	@$(PYTHON) scripts/gate_evidence.py evidence_special_index \
 		logs/evidence_special_index.log EVIDENCE_SPECIAL_INDEX_PASS -- \
-		python3 tests/test_evidence_special_index.py
+		$(PYTHON) tests/test_evidence_special_index.py
 	@# ... and the RED it was written against stays re-runnable: the same suite
 	@# against the runners as they were before the fix must FAIL.
-	@if CNET_EVIDENCE_LEGACY=$(EVIDENCE_LEGACY_REV) python3 \
+	@if CNET_EVIDENCE_LEGACY=$(EVIDENCE_LEGACY_REV) $(PYTHON) \
 		tests/test_evidence_special_index.py > logs/evidence_special_index_red.log 2>&1; \
 	then \
 		echo "EVIDENCE_SPECIAL_INDEX_RED_FAIL the pre-fix runners passed; the gate proves nothing"; \
@@ -5134,12 +5252,12 @@ priority_acceptance:
 .PHONY: license_metadata_test release_integrity_authority release_integrity
 license_metadata_test: tests/test_license_metadata.py LICENSE README.md docs/RELEASE_POLICY.md dotnet/Cce/Cce.csproj Makefile
 	@mkdir -p logs
-	@python3 tests/test_license_metadata.py > logs/license_metadata_test.log 2>&1
+	@$(PYTHON) tests/test_license_metadata.py > logs/license_metadata_test.log 2>&1
 	@grep -q "LICENSE_METADATA_PASS" logs/license_metadata_test.log
 
 release_integrity_authority: tests/test_release_integrity_authority.py tests/run_release_integrity.sh VERSION include/cnet_version.h docs/RELEASE_POLICY.md Makefile
 	@mkdir -p logs
-	@python3 tests/test_release_integrity_authority.py > logs/release_integrity_authority.log 2>&1
+	@$(PYTHON) tests/test_release_integrity_authority.py > logs/release_integrity_authority.log 2>&1
 	@grep -q "RELEASE_INTEGRITY_AUTHORITY_PASS" logs/release_integrity_authority.log
 
 release_integrity: tests/run_release_integrity.sh
@@ -5330,7 +5448,7 @@ calibrated_governance: $(CALIBRATED_GOVERNANCE_SRC) $(HELDOUT_SRC) tests/test_cn
 
 capability_cert_runner_test: tests/run_capability_cert.py tests/test_capability_cert_runner.py
 	@mkdir -p logs
-	@python3 tests/test_capability_cert_runner.py \
+	@$(PYTHON) tests/test_capability_cert_runner.py \
 		> logs/capability_cert_runner.log 2>&1; status=$$?; \
 		cat logs/capability_cert_runner.log; test $$status -eq 0 && \
 		grep -q "CAPABILITY_CERT_RUNNER_PASS" \
@@ -5343,7 +5461,7 @@ heldout_fixture_test: $(HELDOUT_SRC) tests/test_cnet_heldout.c include/cnet_held
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) $(CFLAGS) -Werror -Iinclude -o $(BIN_DIR)/$@ \
 		$(HELDOUT_SRC) tests/test_cnet_heldout.c $(LDFLAGS)
-	@python3 scripts/gate_evidence.py heldout_fixture_test \
+	@$(PYTHON) scripts/gate_evidence.py heldout_fixture_test \
 		logs/heldout_fixture_test.log CNET_HELDOUT_TEST_PASS -- \
 		$(BIN_DIR)/heldout_fixture_test
 
@@ -5357,23 +5475,23 @@ capability_evaluator_prereq: scripts/capability_evaluator_prereq.py \
 		tests/test_capability_evaluator_prereq.py \
 		$(wildcard config/capability_manifests/*.json)
 	@mkdir -p logs
-	@python3 scripts/gate_evidence.py capability_evaluator_prereq \
+	@$(PYTHON) scripts/gate_evidence.py capability_evaluator_prereq \
 		logs/capability_evaluator_prereq.log \
 		CAPABILITY_EVALUATOR_PREREQ_UNIT_PASS -- \
-		python3 tests/test_capability_evaluator_prereq.py
+		$(PYTHON) tests/test_capability_evaluator_prereq.py
 
 # The decisive truthfulness experiment: mutate one declared expectation while
 # leaving every marker string byte-identical, and require the evaluator to fail.
 capability_fixture_causality: tests/test_capability_fixture_causality.py \
 		scripts/capability_evaluator_prereq.py
 	@mkdir -p logs
-	@python3 scripts/gate_evidence.py capability_fixture_causality \
+	@$(PYTHON) scripts/gate_evidence.py capability_fixture_causality \
 		logs/capability_fixture_causality.log \
 		CAPABILITY_FIXTURE_CAUSALITY_PASS -- \
-		python3 tests/test_capability_fixture_causality.py
+		$(PYTHON) tests/test_capability_fixture_causality.py
 
 capability_cert: capability_cert_runner_test capability_evaluator_prereq heldout_fixture_test capability_fixture_causality
-	@python3 tests/run_capability_cert.py
+	@$(PYTHON) tests/run_capability_cert.py
 
 cognitive_runtime_smoke: $(SHARED_WORKSPACE_SRC) $(SEMANTIC_CORTEX_SRC) $(CALIBRATED_GOVERNANCE_SRC) tests/test_cnet_cognitive_runtime.c include/cnet_shared_workspace.h include/cnet_semantic_cortex.h include/cnet_calibrated_governance.h
 	@mkdir -p $(BIN_DIR) logs
@@ -5387,7 +5505,7 @@ cognitive_runtime_smoke: $(SHARED_WORKSPACE_SRC) $(SEMANTIC_CORTEX_SRC) $(CALIBR
 			logs/cognitive_runtime_smoke.log
 
 cognitive_runtime: shared_workspace semantic_cortex sleep_consolidate calibrated_governance cognitive_runtime_smoke capability_cert knowledge_capsule cce_train_bench
-	@n=$$(python3 -c "import json;d=json.load(open('logs/capability_cert.json'));print(d['certified'])"); \
+	@n=$$($(PYTHON) -c "import json;d=json.load(open('logs/capability_cert.json'));print(d['certified'])"); \
 		echo "COGNITIVE_RUNTIME_PASS capabilities=$$n classification=measured"
 
 # Live residual lane (Bonsai HTTP). Default soft-skip if server down unless
@@ -5534,7 +5652,7 @@ cnet_harness_gpu_benchmark: cnet_harness_plugin
 	$(DOTNET) build dotnet/CnetHarnessSmoke/CnetHarnessSmoke.csproj -c Release --nologo \
 		> logs/cnet_harness_gpu_smoke_build.log 2>&1
 	timeout --signal=TERM --kill-after=15s $(CNET_HARNESS_GPU_BENCHMARK_TIMEOUT)s \
-		python3 tests/cnet_harness_gpu_benchmark.py \
+		$(PYTHON) tests/cnet_harness_gpu_benchmark.py \
 		--model "$(CNET_HARNESS_MODEL)" \
 		--worktree "$(CURDIR)" \
 		--dotnet "$(DOTNET)" \
@@ -5811,20 +5929,20 @@ bonsai_residual_fault_seed_run: tools/bonsai_residual_fault_seed.c src/residual_
 governor: governor_v4
 
 governor_dry:
-	@python3 scripts/governor_autonomous.py --test
-	@python3 scripts/governor_autonomous.py --dry-run
+	@$(PYTHON) scripts/governor_autonomous.py --test
+	@$(PYTHON) scripts/governor_autonomous.py --dry-run
 
 
 .PHONY: governor_v2 governor_v3 governor_v4 governor_quality
 governor_v4:
-	@python3 scripts/governor_autonomous.py --test
-	@python3 scripts/governor_autonomous.py --dry-run
+	@$(PYTHON) scripts/governor_autonomous.py --test
+	@$(PYTHON) scripts/governor_autonomous.py --dry-run
 	@grep -q governor_autonomous_v4 logs/governor/last_decision.json
 	@echo GOVERNOR_V4_PASS
 
 governor_v3:
-	@python3 scripts/governor_autonomous.py --test
-	@python3 scripts/governor_autonomous.py --dry-run
+	@$(PYTHON) scripts/governor_autonomous.py --test
+	@$(PYTHON) scripts/governor_autonomous.py --dry-run
 	@test -f logs/governor/last_decision.json
 	@grep -q governor_autonomous_v4 logs/governor/last_decision.json
 	@echo GOVERNOR_V3_PASS
@@ -5833,36 +5951,36 @@ governor_v2: governor_v3
 
 governor_quality: governor_v3
 	@bash scripts/governor_hooks.sh pre
-	@python3 scripts/governor_autonomous.py
+	@$(PYTHON) scripts/governor_autonomous.py
 	@test -f logs/governor/miss_bus.json
 	@test -f logs/governor/meta_evolved.json
 	@test -f logs/governor/hermes_miss.json
-	@python3 -c "import json;d=json.load(open('logs/governor/last_decision.json')); assert 'v4' in d.get('engine',''); m=json.load(open('logs/governor/meta_evolved.json')); assert 'w_eval' in m; print('quality_goals', d['goals']); print('quality_actions', d.get('actions')); print('focus', d.get('scoreboard_focus')); print('meta', d.get('meta')); print('evolve', d.get('evolve_note'))"
+	@$(PYTHON) -c "import json;d=json.load(open('logs/governor/last_decision.json')); assert 'v4' in d.get('engine',''); m=json.load(open('logs/governor/meta_evolved.json')); assert 'w_eval' in m; print('quality_goals', d['goals']); print('quality_actions', d.get('actions')); print('focus', d.get('scoreboard_focus')); print('meta', d.get('meta')); print('evolve', d.get('evolve_note'))"
 	@echo GOVERNOR_QUALITY_PASS
 
 
 .PHONY: governor_sandbox governor_a_gate
 governor_sandbox:
 	@chmod +x scripts/dev-sandbox.sh
-	@scripts/dev-sandbox.sh --persistent --from-prod python3 scripts/governor_autonomous.py --test
+	@scripts/dev-sandbox.sh --persistent --from-prod $(PYTHON) scripts/governor_autonomous.py --test
 	@echo GOVERNOR_SANDBOX_PASS
 
 governor_a_gate: governor_v4
-	@python3 scripts/governor_hermes_structured.py
+	@$(PYTHON) scripts/governor_hermes_structured.py
 	@test -f logs/governor/hermes_structured.json
-	@python3 scripts/governor_autonomous.py
+	@$(PYTHON) scripts/governor_autonomous.py
 	@test -f logs/governor/meta_evolved.json
 	@test -f config/governor_goal_graph.json
-	@python3 -c "import json;d=json.load(open('logs/governor/last_decision.json')); assert 'v4' in d.get('engine',''); h=json.load(open('logs/governor/hermes_structured.json')); print('engine',d['engine']); print('goals',d['goals']); print('hermes', {k:h.get(k) for k in ['fails','oks','hermes_task_fail_rate','noisy']}); print('meta', d.get('meta')); print('top', d.get('scoreboard_focus',{}).get('top_project')); print('evolve', d.get('evolve_note'))"
-	@scripts/dev-sandbox.sh --persistent --from-prod python3 scripts/governor_autonomous.py --test
+	@$(PYTHON) -c "import json;d=json.load(open('logs/governor/last_decision.json')); assert 'v4' in d.get('engine',''); h=json.load(open('logs/governor/hermes_structured.json')); print('engine',d['engine']); print('goals',d['goals']); print('hermes', {k:h.get(k) for k in ['fails','oks','hermes_task_fail_rate','noisy']}); print('meta', d.get('meta')); print('top', d.get('scoreboard_focus',{}).get('top_project')); print('evolve', d.get('evolve_note'))"
+	@scripts/dev-sandbox.sh --persistent --from-prod $(PYTHON) scripts/governor_autonomous.py --test
 	@echo GOVERNOR_A_GATE_PASS
 
 .PHONY: personality_test governor_persona
 personality_test:
-	@python3 scripts/governor_personality.py --test
+	@$(PYTHON) scripts/governor_personality.py --test
 
 governor_persona: personality_test
-	@python3 scripts/governor_autonomous.py --test
+	@$(PYTHON) scripts/governor_autonomous.py --test
 	@test -f logs/governor/personality_state.json
 	@echo GOVERNOR_PERSONA_PASS
 

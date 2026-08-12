@@ -36,7 +36,11 @@ static int file_has(const char *path, const char *needle) {
 
 int main(void) {
     const char *root = "artifacts/roe_daily_packs/pack_soul_marble";
-    RoeAsi R;
+  /* HEAP, NOT STACK: this struct exceeds the 2 MB MinGW stack reserve
+   * (RoeAsi 3.01 MB, RoeDebug 4.15 MB, RoeOcr 6.15 MB since ROE_ANSWER_MAX
+   * went 512 -> 4096 in 85c433e and is embedded 640x). A stack instance
+   * dies inside ___chkstk_ms in the prologue, before any statement runs. */
+    RoeAsi *R = (RoeAsi *)calloc(1, sizeof *R);
     RoeReply out;
     int n;
 
@@ -61,38 +65,38 @@ int main(void) {
                     "soul_who"),
           "catalog has soul_who");
 
-    roe_init(&R);
-    roe_set_catalog_dir(&R, root);
-    n = roe_load_catalog(&R);
+    roe_init(R);
+    roe_set_catalog_dir(R, root);
+    n = roe_load_catalog(R);
     printf("  loaded skills=%d\n", n);
     check(n >= 10, ">=10 persona skills loaded");
 
-    check(roe_turn(&R, "who are you", &out) == ROE_OK, "turn who are you");
+    check(roe_turn(R, "who are you", &out) == ROE_OK, "turn who are you");
     check(out.source == ROE_SRC_LOCAL && out.verified == 1, "LOCAL verified");
     check(strstr(out.answer, "Marble") != NULL, "answers as Marble");
 
-    check(roe_turn(&R, "one line marble", &out) == ROE_OK, "one line");
+    check(roe_turn(R, "one line marble", &out) == ROE_OK, "one line");
     check(strstr(out.answer, "sit, see") != NULL || strstr(out.answer, "Marble") != NULL,
           "one-line soul");
 
-    check(roe_turn(&R, "claim cert without gate", &out) == ROE_OK, "taboo cert");
+    check(roe_turn(R, "claim cert without gate", &out) == ROE_OK, "taboo cert");
     check(out.source == ROE_SRC_LOCAL, "taboo is local CERT skill");
     check(strstr(out.answer, "Never claim") != NULL ||
               strstr(out.answer, "never") != NULL ||
               strstr(out.answer, "gate") != NULL,
           "refuses cert without gate");
 
-    check(roe_turn(&R, "is persona a second brain", &out) == ROE_OK, "second brain");
+    check(roe_turn(R, "is persona a second brain", &out) == ROE_OK, "second brain");
     check(strstr(out.answer, "second_brain") != NULL ||
               strstr(out.answer, "false") != NULL ||
               strstr(out.answer, "delivery") != NULL,
           "not second brain");
 
-    check(roe_turn(&R, "vigilance high mode please", &out) == ROE_OK, "vigilance");
+    check(roe_turn(R, "vigilance high mode please", &out) == ROE_OK, "vigilance");
     check(out.source == ROE_SRC_LOCAL, "vigilance local");
 
     /* OOD stays miss — no self-invented persona lore as CERT */
-    check(roe_turn(&R, "zz invent new catchphrase xyzzy", &out) == ROE_OK || 1,
+    check(roe_turn(R, "zz invent new catchphrase xyzzy", &out) == ROE_OK || 1,
           "ood turn");
     check(out.source != ROE_SRC_LOCAL || out.skill_id[0] == 0 ||
               strstr(out.skill_id, "soul_") == NULL,

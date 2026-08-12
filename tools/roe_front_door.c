@@ -10,7 +10,10 @@
  * make roe_front_door → ROE_FRONT_DOOR_PASS
  */
 #include <ctype.h>
+#include "../include/cnet_platform.h"  /* CNET_HAVE_CURL */
+#if CNET_HAVE_CURL
 #include <curl/curl.h>
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -347,7 +350,14 @@ static int fd_prefer_local_active(double *out_weight) {
 }
 
 static int fd_turn(FdRouter *F, const char *query, FdTurnResult *tr) {
-    RoeAsi R;
+    /* HEAP, NOT STACK. sizeof(RoeAsi) is 3.01 MB (ROE_ANSWER_MAX went 512 ->
+     * 4096 in 85c433e and is embedded 640 times), against a 2 MB
+     * SizeOfStackReserve on the MinGW binaries -- a stack instance dies in
+     * ___chkstk_ms during the prologue, before a single statement runs. Linux's
+     * 8 MB main-thread stack absorbs it today, which is why CI stayed green,
+     * but this function is per-turn and would be fatal there too on a worker
+     * thread or under a reduced RLIMIT_STACK. */
+    RoeAsi *R;
     RoeNet net;
     static int curl_once;
     static CnetProbeTable PT;
@@ -356,11 +366,19 @@ static int fd_turn(FdRouter *F, const char *query, FdTurnResult *tr) {
     int prefer_local;
     char probe_pat[CNET_PROBE_PAT];
     const char *pm = NULL;
-    if (fd_prepare(F, &R, query, tr) != 0) return -1;
+    int rc = 0;
+
+    R = (RoeAsi *)calloc(1, sizeof *R);
+    if (!R) return -1;
+    if (fd_prepare(F, R, query, tr) != 0) { free(R); return -1; }
+#if CNET_HAVE_CURL
     if (!curl_once) {
         curl_global_init(CURL_GLOBAL_DEFAULT);
         curl_once = 1;
     }
+#else
+    (void)curl_once;  /* no libcurl: the live-teacher HTTP path is compiled out */
+#endif
     if (!pt_ready) {
         cnet_probe_table_init(&PT);
         (void)cnet_probe_table_load(&PT, "config/probe_shortcircuit.txt");
@@ -390,11 +408,12 @@ static int fd_turn(FdRouter *F, const char *query, FdTurnResult *tr) {
         net.enable_lookup = 0;
         printf("probe_shortcircuit=1 pat=%s teacher=off\n", probe_pat[0] ? probe_pat : pm);
     }
-    if (net.enable_llm || net.enable_lookup) roe_set_net(&R, &net);
-    roe_turn(&R, query, &tr->reply);
+    if (net.enable_llm || net.enable_lookup) roe_set_net(R, &net);
+    roe_turn(R, query, &tr->reply);
     tr->is_miss = (tr->reply.source != ROE_SRC_LOCAL);
     if (tr->is_miss) (void)fd_append_miss(F, query, tr, pm ? probe_pat : NULL);
-    return 0;
+    free(R);
+    return rc;
 }
 
 static void print_turn(const FdTurnResult *tr) {
@@ -581,10 +600,14 @@ static int cmd_ask(FdRouter *F, const char *q, int accept, const char *gold,
         free(R);
         return 1;
     }
+#if CNET_HAVE_CURL
     if (!curl_once) {
         curl_global_init(CURL_GLOBAL_DEFAULT);
         curl_once = 1;
     }
+#else
+    (void)curl_once;  /* no libcurl: the live-teacher HTTP path is compiled out */
+#endif
     roe_net_from_env(&net);
     {
         double local_w = 1.0;
@@ -675,7 +698,7 @@ static int cmd_route(FdRouter *F, const char *q) {
 
 static int count_all_skills(const char *root) {
     /* sum skills if we loaded every pack_* (upper bound) */
-    RoeAsi R;
+    RoeAsi *R;  /* 3.01 MB -- heap, see fd_turn */
     char path[FD_PATH];
     const char *packs[] = {
         "pack_toolcall_hermes", "pack_roe_self",      "pack_coding_cnet_c",
@@ -685,12 +708,15 @@ static int count_all_skills(const char *root) {
     };
     size_t i;
     int total = 0;
+    R = (RoeAsi *)calloc(1, sizeof *R);
+    if (!R) return 0;
     for (i = 0; i < sizeof packs / sizeof packs[0]; i++) {
-        roe_init(&R);
+        roe_init(R);
         if (path_join2(path, sizeof path, root, packs[i]) != 0) continue;
-        roe_set_catalog_dir(&R, path);
-        total += roe_load_catalog(&R);
+        roe_set_catalog_dir(R, path);
+        total += roe_load_catalog(R);
     }
+    free(R);
     return total;
 }
 
@@ -722,12 +748,14 @@ static int cmd_bench(FdRouter *F) {
 
     for (i = 0; i < n; i++) {
         FdTurnResult tr;
-        RoeAsi R;
-        if (fd_prepare(F, &R, qs[i], &tr) != 0) {
+        RoeAsi *R = (RoeAsi *)calloc(1, sizeof *R);  /* 3.01 MB, see fd_turn */
+        if (!R) { check(0, "alloc"); continue; }
+        if (fd_prepare(F, R, qs[i], &tr) != 0) {
             check(0, "prepare");
+            free(R);
             continue;
         }
-        roe_turn(&R, qs[i], &tr.reply);
+        roe_turn(R, qs[i], &tr.reply);
         tr.is_miss = (tr.reply.source != ROE_SRC_LOCAL);
         if (tr.is_miss) {
             miss++;
@@ -742,6 +770,7 @@ static int cmd_bench(FdRouter *F) {
         check(tr.n_skills_loaded > 0, "loaded some skills");
         check(tr.n_skills_loaded < all_skills || all_skills == 0,
               "selective load < all packs");
+        free(R);
     }
 
     {

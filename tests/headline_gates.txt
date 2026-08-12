@@ -1,0 +1,69 @@
+# headline_gates.txt -- action targets that MUST be .PHONY.
+#
+# Read by BOTH tests/test_recipe_gates.sh (which enforces it) and
+# tests/test_recipe_gates_selftest.sh (which builds fixtures from it). It lives
+# in one file on purpose: when the enforcing gate and its own test each carried
+# a private copy of this list, the two could drift and the selftest would be
+# validating a shadow of the real gate rather than the gate itself.
+#
+# WHY .PHONY MATTERS HERE. Every name below is an action, not a file. If a file
+# or directory of the same name appears at the repo root, Make considers the
+# target up to date and skips the recipe -- the gate then "passes" without
+# compiling, running, or refreshing any evidence. 26 of verify's 39
+# prerequisites were missing from .PHONY (base, acquire, mutate, flagship,
+# leakcheck, transformer_qat, cce_tiers, cce_wstore, ...) until 2026-08-12.
+#
+# One target per line. Blank lines and #-comments are ignored.
+
+recipe_gate
+capability_cert
+capability_fixture_causality
+heldout_fixture_test
+knowledge_capsule
+knowledge_accumulation_bench
+knowledge_composition_bench
+coverage_abstain
+own_learning_health
+port_raw_unit_seam
+vision_coverage_test
+vision_capsule_asset
+vision_detection_bench_v2
+ci_core
+claims_test
+cce_dll
+cce_safetensors_test
+cnet_lm_bounds_test
+cce_autograd_test
+cce_model_test
+cce_view
+forest_view
+cce_detect
+cce_ssm
+cce_hybrid
+cce_qwen35
+cce_st_llama
+cce_specgraph
+cce_wstore
+cce_tiers
+cce_similar
+merge_family
+hybrid_catalog
+transformer_qat
+contract_secure
+contract_unit
+heal_mismatch
+mutate
+acquire
+base
+flagship
+demos
+leakcheck
+cnet_fault_test
+cce_adapter_bank_test
+cce_dora_test
+cnet_serve_decode_test
+cnet_fault_loop_test
+registry_lora_store_test
+jtc_adapter_bench
+metric_honesty
+moe_ckpt_test

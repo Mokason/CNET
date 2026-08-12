@@ -11,6 +11,8 @@
 #include <time.h>
 #include <unistd.h>
 
+#include "../../include/cnet_platform.h"  /* cnet_mkdir, cnet_fsync */
+
 #define CCE_KV_QMAX 16
 
 typedef struct {
@@ -104,11 +106,11 @@ static int mkdir_p(const char *dir) {
     for (i = 1; tmp[i]; ++i) {
         if (tmp[i] == '/') {
             tmp[i] = 0;
-            if (mkdir(tmp, 0755) != 0 && errno != EEXIST) return -1;
+            if (cnet_mkdir(tmp, 0755) != 0 && errno != EEXIST) return -1;
             tmp[i] = '/';
         }
     }
-    if (mkdir(tmp, 0755) != 0 && errno != EEXIST) return -1;
+    if (cnet_mkdir(tmp, 0755) != 0 && errno != EEXIST) return -1;
     return 0;
 }
 
@@ -236,7 +238,7 @@ static int write_cold_file(cce_kv_pager *p, cce_kv_flush_job *job) {
             ok = -1;
     }
     if (ok == 0 && fflush(f) != 0) ok = -1;
-    if (ok == 0 && fsync(fileno(f)) != 0) ok = -1;
+    if (ok == 0 && cnet_fsync(fileno(f)) != 0) ok = -1;
     if (fclose(f) != 0) ok = -1;
     if (ok != 0) (void)remove(path);
     return ok;
@@ -1009,6 +1011,20 @@ int cce_kv_pager_rehydrate_pos(cce_kv_pager *p, int pos) {
         return 0; /* already in rehyd cache */
     page_id = pos / p->page_len;
     lo = page_id * p->page_len;
+    /* Wait for flush if this page was just evicted.
+     *
+     * THIS MUST STAY ABOVE THE EPOCH GATE. Flushes are async by default
+     * (o->async = 1), and the `page_id=N ... weight_epoch=E` ledger line is
+     * written by record_cold_file() from inside kv_flush_thread once the job
+     * drains. A page that has been evicted but whose flush has not yet
+     * completed therefore has NO ledger line, so ledger_epoch_for_page()
+     * fails, and the `else if (p->weight_epoch > 0)` arm below discards it as
+     * a stale-epoch legacy file -- silently, and counted as the gate working.
+     * Syncing first makes the page's own stamp visible before we judge it, and
+     * also stops this thread from scanning the ledger while the flush thread is
+     * still appending to it. */
+    cce_kv_pager_sync(p);
+
     /* Epoch gate: COLD neural pages stamped under a prior weight_epoch are
      * mathematical garbage under the new tensors — refuse rehydrate. */
     if (ledger_epoch_for_page(p, page_id, &page_epoch) == 0) {
@@ -1021,7 +1037,6 @@ int cce_kv_pager_rehydrate_pos(cce_kv_pager *p, int pos) {
         p->cold_epoch_rejects++;
         return -1;
     }
-    cce_kv_pager_sync(p);
     if (load_cold_page(p, page_id, NULL, NULL) != 0) return -1;
     if (pos < p->rehyd_lo || pos >= p->rehyd_hi) return -1;
     (void)lo;

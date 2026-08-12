@@ -102,7 +102,11 @@ typedef struct {
 } PackResult;
 
 static int run_pack(const char *dir, PackResult *pr) {
-    RoeAsi R;
+  /* HEAP, NOT STACK: this struct exceeds the 2 MB MinGW stack reserve
+   * (RoeAsi 3.01 MB, RoeDebug 4.15 MB, RoeOcr 6.15 MB since ROE_ANSWER_MAX
+   * went 512 -> 4096 in 85c433e and is embedded 640x). A stack instance
+   * dies inside ___chkstk_ms in the prologue, before any statement runs. */
+    RoeAsi *R = (RoeAsi *)calloc(1, sizeof *R);
     RoeTrainReport tr;
     char **queries = NULL;
     int nq = 0, i;
@@ -117,9 +121,9 @@ static int run_pack(const char *dir, PackResult *pr) {
         snprintf(pr->id, sizeof pr->id, "%s", slash ? slash + 1 : dir);
     }
 
-    roe_init(&R);
-    roe_set_catalog_dir(&R, dir);
-    pr->n_skills = roe_load_catalog(&R);
+    roe_init(R);
+    roe_set_catalog_dir(R, dir);
+    pr->n_skills = roe_load_catalog(R);
     if (pr->n_skills <= 0) return -1;
 
     snprintf(qpath, sizeof qpath, "%s", dir);
@@ -136,15 +140,15 @@ static int run_pack(const char *dir, PackResult *pr) {
 
     /* 2 epochs: promote nothing new (all day-0 CERT); measure hit */
     for (i = 0; i < 2; i++) {
-        roe_reset_stats(&R);
-        roe_train_epoch(&R, batch, nb, &tr);
+        roe_reset_stats(R);
+        roe_train_epoch(R, batch, nb, &tr);
     }
     pr->hit = tr.local_hit_rate;
     pr->save = tr.token_save_ratio;
-    roe_dump_stats(&R, stats, sizeof stats);
+    roe_dump_stats(R, stats, sizeof stats);
 
     /* last query often OOD zz — expect non-LOCAL or abstain/ask */
-    roe_turn(&R, queries[nq - 1], &rep);
+    roe_turn(R, queries[nq - 1], &rep);
     pr->ood_abstain_ok =
         (rep.source != ROE_SRC_LOCAL) || (rep.verified == 0 && rep.skill_id[0] == 0);
 

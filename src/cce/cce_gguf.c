@@ -27,6 +27,8 @@ cce_gguf_layer_adapt_fn g_cce_gguf_layer_adapt_hook = 0;
 #define _fseeki64(f, off, whence) fseeko((f), (off_t)(off), (whence))
 #endif
 
+#include "../../include/cnet_platform.h"  /* CNET_HAVE_MMAP */
+
 /* Oracle memory mode (CNET_ORACLE_INT8=1): quantize each specialist to int8
    AT LOAD and drop its FP payload immediately. A 48-layer 12B FP32 forest
    (~50 GB) becomes ~12.5 GB — the difference between paging and running on a
@@ -497,6 +499,13 @@ cce_result cce_gguf_load(const char* path, cce_gguf** out) {
        and g->map becomes the direct DMA source for the resident-quantized
        VRAM forward. Fail-safe: any failure keeps the original FILE*. Parse
        above already ran on the real file, so only the load phase changes. */
+    /* The mapping is wrapped in a FILE* via fmemopen, so this fast path needs
+       mmap AND fmemopen; MinGW has neither. Guarding on the capability rather
+       than on the OS keeps the intent legible. Compiling it out lands on
+       exactly the same fallback as a failed mmap ("any failure keeps the
+       original FILE*"), so the loader stays byte-identical here -- this path
+       only changes HOW the bytes are read, never which bytes. */
+#if CNET_HAVE_MMAP
     if (getenv("CNET_GGUF_MMAP") && getenv("CNET_GGUF_MMAP")[0] == '1') {
         long fsz = ftell(g->f);
         if (fseek(g->f, 0, SEEK_END) == 0) {
@@ -522,6 +531,7 @@ cce_result cce_gguf_load(const char* path, cce_gguf** out) {
         }
         if (!g->map) fseek(g->f, fsz, SEEK_SET);   /* restore on fallback */
     }
+#endif /* CNET_HAVE_MMAP */
 
     *out = g;
     return CCE_OK;
@@ -551,7 +561,13 @@ cce_result cce_gguf_tensor_bytes(const cce_gguf* g, int idx,
 void cce_gguf_free(cce_gguf* g) {
     if (!g) return;
     if (g->f) fclose(g->f);
+#if CNET_HAVE_MMAP
     if (g->map) munmap(g->map, g->map_size);
+#else
+    /* g->map is only ever assigned inside the CNET_HAVE_MMAP block in
+       cce_gguf_load, so it is always NULL here when mmap is unavailable --
+       nothing to unmap and nothing leaked. */
+#endif
     if (g->tensors) free(g->tensors);
     for (int i = 0; i < g->n_kvs; i++) gguf_free_kv(&g->kvs[i]);
     if (g->kvs) free(g->kvs);

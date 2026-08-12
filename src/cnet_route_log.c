@@ -2,6 +2,7 @@
  * cnet_route_log.c — JSONL telemetry for real AICIMO route decisions.
  */
 #include "../include/cnet_route_log.h"
+#include "../include/cnet_json_escape.h"
 #include "../include/cnet_harness.h"
 
 #include <stdio.h>
@@ -42,40 +43,6 @@ const char *cnet_route_log_path_from_env(void) {
     return p;
 }
 
-/* Escape src into dst as a JSON string body (no surrounding quotes).
- * Returns 0 on success, -1 if truncated. */
-static int json_escape(const char *src, char *dst, size_t cap) {
-    size_t o = 0;
-    if (!dst || cap == 0) return -1;
-    if (!src) src = "";
-    for (const unsigned char *p = (const unsigned char *)src; *p; ++p) {
-        char esc[7];
-        size_t n = 0;
-        if (*p == '"' || *p == '\\') {
-            esc[0] = '\\'; esc[1] = (char)*p; n = 2;
-        } else if (*p == '\n') {
-            esc[0] = '\\'; esc[1] = 'n'; n = 2;
-        } else if (*p == '\r') {
-            esc[0] = '\\'; esc[1] = 'r'; n = 2;
-        } else if (*p == '\t') {
-            esc[0] = '\\'; esc[1] = 't'; n = 2;
-        } else if (*p < 0x20) {
-            /* \u00XX */
-            snprintf(esc, sizeof esc, "\\u%04x", (unsigned)*p);
-            n = 6;
-        } else {
-            esc[0] = (char)*p; n = 1;
-        }
-        if (o + n + 1 > cap) {
-            dst[0] = '\0';
-            return -1;
-        }
-        memcpy(dst + o, esc, n);
-        o += n;
-    }
-    dst[o] = '\0';
-    return 0;
-}
 
 int cnet_route_log_format_json(const CnetRouteLogEvent *ev, char *buf, size_t cap) {
     char mech[64], role[128], role_c[128], prof[32], outc[32], model[128];
@@ -83,23 +50,23 @@ int cnet_route_log_format_json(const CnetRouteLogEvent *ev, char *buf, size_t ca
     float entropy;
     if (!ev || !buf || cap < 32) return -1;
 
-    if (json_escape(ev->mechanism ? ev->mechanism : "", mech, sizeof mech) != 0)
+    if (cnet_json_escape(ev->mechanism ? ev->mechanism : "", mech, sizeof mech) != 0)
         return -1;
-    if (json_escape(ev->role ? ev->role : "", role, sizeof role) != 0)
+    if (cnet_json_escape(ev->role ? ev->role : "", role, sizeof role) != 0)
         return -1;
-    if (json_escape(ev->role_canonical ? ev->role_canonical : "",
+    if (cnet_json_escape(ev->role_canonical ? ev->role_canonical : "",
                     role_c, sizeof role_c) != 0)
         return -1;
-    if (json_escape(ev->expert_profile ? ev->expert_profile : "",
+    if (cnet_json_escape(ev->expert_profile ? ev->expert_profile : "",
                     prof, sizeof prof) != 0)
         return -1;
-    if (json_escape(ev->outcome ? ev->outcome : "", outc, sizeof outc) != 0)
+    if (cnet_json_escape(ev->outcome ? ev->outcome : "", outc, sizeof outc) != 0)
         return -1;
-    if (json_escape(ev->model_id ? ev->model_id : "", model, sizeof model) != 0)
+    if (cnet_json_escape(ev->model_id ? ev->model_id : "", model, sizeof model) != 0)
         return -1;
-    if (json_escape(ev->event ? ev->event : "route", event, sizeof event) != 0)
+    if (cnet_json_escape(ev->event ? ev->event : "route", event, sizeof event) != 0)
         return -1;
-    if (json_escape(ev->selected_unit ? ev->selected_unit : "",
+    if (cnet_json_escape(ev->selected_unit ? ev->selected_unit : "",
                     unit, sizeof unit) != 0)
         return -1;
 

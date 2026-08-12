@@ -10,7 +10,15 @@ Env:
   CNET_SOCK, CNET_MINIMAL_ROOT, CNET_PACKS_ROOT
   CNET_WEB_HOST (default: tailscale0 IP or 127.0.0.1)
   CNET_WEB_PORT (default: 8642)
-  CNET_WEB_TOKEN (optional bearer / ?token=)
+  CNET_WEB_TOKEN      REQUIRED. Sent as `Authorization: Bearer <token>`.
+                      The ?token= query form was removed (it leaks into logs,
+                      browser history and Referer headers). The server refuses
+                      to start without a token unless CNET_WEB_NO_AUTH=1.
+  CNET_WEB_NO_AUTH    set to 1 to serve with NO authentication, on purpose.
+  CNET_WEB_ALLOWED_HOSTS  comma-separated extra Host: values to accept.
+                      Requests whose Host is not the bind address (or a
+                      loopback spelling) are refused, to block DNS rebinding.
+  CNET_WEB_MAX_BODY   max request body in bytes (default 1 MiB).
 """
 from __future__ import annotations
 
@@ -21,6 +29,7 @@ import subprocess
 import sys
 import threading
 import urllib.parse
+import hmac
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -28,6 +37,12 @@ ROOT = Path(__file__).resolve().parents[1]
 STATIC = ROOT / "web" / "cnet-cockpit.html"
 PORT = int(os.environ.get("CNET_WEB_PORT", "8642"))
 TOKEN = os.environ.get("CNET_WEB_TOKEN", "").strip()
+# Cap the request body. BaseHTTPRequestHandler will happily read whatever
+# Content-Length claims, so an unauthenticated caller could previously make
+# the process allocate arbitrarily much before auth was even consulted.
+MAX_BODY = int(os.environ.get("CNET_WEB_MAX_BODY", str(1 << 20)))
+# Filled in by main() once the bind address is known.
+ALLOWED_HOSTS: set[str] = set()
 
 
 def packs_root() -> Path:
@@ -324,18 +339,50 @@ class Handler(BaseHTTPRequestHandler):
     server_version = "cnet-web/1.0"
 
     def log_message(self, format, *args):  # noqa: A003 — BaseHTTPRequestHandler API
-        sys.stderr.write("%s - %s\n" % (self.address_string(), format % args))
+        # Strip the query string before logging. The request line reaches this
+        # verbatim, so while ?token= was still accepted every authenticated
+        # request wrote the bearer token to stderr -- and from there into the
+        # systemd journal, which has a different (wider) audience than the
+        # token does.
+        msg = format % args
+        if "?" in msg:
+            head, _, tail = msg.partition("?")
+            rest = tail.split(" ", 1)
+            msg = head + "?<redacted>" + ((" " + rest[1]) if len(rest) > 1 else "")
+        sys.stderr.write("%s - %s\n" % (self.address_string(), msg))
+
+    def _host_ok(self) -> bool:
+        """Reject requests whose Host header is not the address we bound.
+
+        Without this the cockpit answers to any name that resolves here, which
+        is what makes DNS-rebinding work: a page on an attacker's origin points
+        a hostname at 100.x, the browser treats the response as same-origin
+        with the attacker, and every authenticated endpoint is reachable from
+        their JavaScript.
+        """
+        host = (self.headers.get("Host") or "").strip()
+        if not host:
+            return False
+        # Strip the port, handling bracketed IPv6.
+        if host.startswith("["):
+            name = host[1:host.index("]")] if "]" in host else host
+        else:
+            name = host.rsplit(":", 1)[0] if host.count(":") == 1 else host
+        return name.lower() in ALLOWED_HOSTS
 
     def _auth_ok(self) -> bool:
-        if not TOKEN:
-            return True
+        # TOKEN is mandatory (main() refuses to start without one), so there is
+        # deliberately no "no token configured -> allow" branch here any more.
         auth = self.headers.get("Authorization", "")
-        if auth == f"Bearer {TOKEN}":
+        expected = f"Bearer {TOKEN}"
+        # compare_digest, not ==: a plain comparison returns on the first
+        # differing byte, which leaks the token prefix to anyone who can time
+        # requests. Cheap to do right.
+        if len(auth) == len(expected) and hmac.compare_digest(auth, expected):
             return True
-        qs = urllib.parse.urlparse(self.path).query
-        params = urllib.parse.parse_qs(qs)
-        if params.get("token", [""])[0] == TOKEN:
-            return True
+        # The ?token= form is GONE. Authorization: Bearer already works, and a
+        # token in the query string lands in logs, browser history, and any
+        # Referer sent to a third party.
         return False
 
     def _send(self, code: int, body: bytes, ctype: str = "application/json"):
@@ -357,6 +404,9 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def do_GET(self):
+        if not self._host_ok():
+            self._json(421, {"ok": False, "error": "bad_host"})
+            return
         if not self._auth_ok():
             self._json(401, {"ok": False, "error": "unauthorized"})
             return
@@ -427,12 +477,23 @@ class Handler(BaseHTTPRequestHandler):
         self._json(404, {"ok": False, "error": "not_found"})
 
     def do_POST(self):
+        if not self._host_ok():
+            self._json(421, {"ok": False, "error": "bad_host"})
+            return
         if not self._auth_ok():
             self._json(401, {"ok": False, "error": "unauthorized"})
             return
         parsed = urllib.parse.urlparse(self.path)
         path = parsed.path
-        length = int(self.headers.get("Content-Length") or 0)
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            self._json(400, {"ok": False, "error": "bad_content_length"})
+            return
+        if length < 0 or length > MAX_BODY:
+            self._json(413, {"ok": False, "error": "payload_too_large",
+                             "max_bytes": MAX_BODY})
+            return
         raw = self.rfile.read(length) if length else b"{}"
         try:
             body = json.loads(raw.decode() or "{}")
@@ -493,16 +554,45 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main() -> int:
+    global ALLOWED_HOSTS
+
     host = bind_host()
     # refuse 0.0.0.0 unless explicitly forced
     if host in ("0.0.0.0", "::") and os.environ.get("CNET_WEB_ALLOW_PUBLIC") != "1":
         print("refusing public bind; set CNET_WEB_HOST=100.x or 127.0.0.1", file=sys.stderr)
         host = "127.0.0.1"
+
+    # FAIL CLOSED. CNET_WEB_TOKEN used to be optional, and when unset _auth_ok
+    # returned True for everything -- so the default posture of a cockpit bound
+    # on a Tailscale 100.x address was "no authentication at all", reachable by
+    # every device on the tailnet. It can read miss logs and drive /api/ask.
+    # Refusing to start is the only safe default; an operator who genuinely
+    # wants it open must say so out loud.
+    if not TOKEN:
+        if os.environ.get("CNET_WEB_NO_AUTH") == "1":
+            print("WARNING: CNET_WEB_NO_AUTH=1 — serving with NO authentication",
+                  file=sys.stderr)
+        else:
+            print("refusing to start: CNET_WEB_TOKEN is not set.\n"
+                  "  export CNET_WEB_TOKEN=\"$(python -c "
+                  "'import secrets;print(secrets.token_urlsafe(32))')\"\n"
+                  "  (or set CNET_WEB_NO_AUTH=1 to serve unauthenticated on purpose)",
+                  file=sys.stderr)
+            return 2
+
+    # Host header allowlist: exactly what we bound, plus the loopback spellings
+    # a local browser will send.
+    ALLOWED_HOSTS = {host.lower(), "localhost", "127.0.0.1", "::1", "[::1]"}
+    extra = os.environ.get("CNET_WEB_ALLOWED_HOSTS", "").strip()
+    if extra:
+        ALLOWED_HOSTS |= {h.strip().lower() for h in extra.split(",") if h.strip()}
+
     if not STATIC.is_file():
         print(f"missing cockpit {STATIC}", file=sys.stderr)
         return 1
     httpd = ThreadingHTTPServer((host, PORT), Handler)
-    print(f"cnet-web http://{host}:{PORT}/  sock={sock_path()}  token={'set' if TOKEN else 'off'}")
+    print(f"cnet-web http://{host}:{PORT}/  sock={sock_path()}  token={'set' if TOKEN else 'OFF'}")
+    print(f"allowed_hosts={sorted(ALLOWED_HOSTS)}  max_body={MAX_BODY}")
     print("never_self_cert=1  promote_via_web=forbidden")
     try:
         httpd.serve_forever()

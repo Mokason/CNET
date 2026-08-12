@@ -1,6 +1,9 @@
 #include "../include/cnet_roe_net.h"
 
+#include "../include/cnet_platform.h"  /* CNET_HAVE_CURL */
+#if CNET_HAVE_CURL
 #include <curl/curl.h>
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -10,6 +13,7 @@ struct MemBuf {
     size_t len;
 };
 
+#if CNET_HAVE_CURL
 static size_t write_cb(char *ptr, size_t size, size_t nmemb, void *userdata) {
     struct MemBuf *m = (struct MemBuf *)userdata;
     size_t n = size * nmemb;
@@ -74,6 +78,27 @@ static int http_post_json(const char *url, const char *body, long timeout_ms,
 }
 
 /* Extract JSON string value for key "response" or "AbstractText" (simple). */
+#else
+/* No libcurl: the live-teacher HTTP transport is absent. These return the
+ * same failure codes the real ones use for a dead endpoint, so callers'
+ * fallback paths are exercised identically rather than via a new branch. */
+static int http_get(const char *url, long timeout_ms, struct MemBuf *out) {
+    (void)url; (void)timeout_ms;
+    /* Zero the sink even on failure: callers declare `struct MemBuf mb;`
+       uninitialised and rely on the transport to define it, so a stub that
+       returned without touching it would hand back garbage to any caller whose
+       error handling is less careful than it looks. */
+    if (out) memset(out, 0, sizeof *out);
+    return -1;
+}
+static int http_post_json(const char *url, const char *body, long timeout_ms,
+                          struct MemBuf *out) {
+    (void)url; (void)body; (void)timeout_ms;
+    if (out) memset(out, 0, sizeof *out);
+    return -1;
+}
+#endif /* CNET_HAVE_CURL */
+
 static int json_string_field(const char *json, const char *key, char *out, size_t cap) {
     char pat[96];
     const char *p, *start, *end;

@@ -4,6 +4,7 @@
  *   roe_asi_debug_cli verify --project P --tb "..." --fix "..." --tests-pass
  */
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "../include/cnet_roe_debug.h"
@@ -20,7 +21,11 @@ static void usage(const char *a0) {
 }
 
 int main(int argc, char **argv) {
-    RoeDebug D;
+  /* HEAP, NOT STACK: this struct exceeds the 2 MB MinGW stack reserve
+   * (RoeAsi 3.01 MB, RoeDebug 4.15 MB, RoeOcr 6.15 MB since ROE_ANSWER_MAX
+   * went 512 -> 4096 in 85c433e and is embedded 640x). A stack instance
+   * dies inside ___chkstk_ms in the prologue, before any statement runs. */
+    RoeDebug *D = (RoeDebug *)calloc(1, sizeof *D);
     const char *cmd = NULL, *proj = NULL, *tb = NULL, *fix = NULL, *note = NULL;
     const char *cat = "artifacts/roe_debug_catalog";
     int tests_pass = 0, i;
@@ -44,10 +49,10 @@ int main(int argc, char **argv) {
         return 2;
     }
 
-    roe_dbg_init(&D);
-    roe_dbg_set_catalog(&D, cat);
-    roe_dbg_seed_curriculum(&D);
-    (void)roe_dbg_load(&D);
+    roe_dbg_init(D);
+    roe_dbg_set_catalog(D, cat);
+    roe_dbg_seed_curriculum(D);
+    (void)roe_dbg_load(D);
 
     if (!strcmp(cmd, "turn")) {
         RoeDbgReply r;
@@ -55,7 +60,7 @@ int main(int argc, char **argv) {
             usage(argv[0]);
             return 2;
         }
-        roe_dbg_turn(&D, proj, tb, &r);
+        roe_dbg_turn(D, proj, tb, &r);
         printf("level=%d sig=%s tokens=%llu skill=%s\n", r.level, r.sig,
                (unsigned long long)r.tokens_est, r.skill_id);
         printf("A: %s\n", r.answer);
@@ -69,17 +74,17 @@ int main(int argc, char **argv) {
             return 2;
         }
         if (!strcmp(cmd, "verify"))
-            pr = roe_dbg_verify(&D, proj, tb, fix, tests_pass, tests_pass ? 0 : 1);
+            pr = roe_dbg_verify(D, proj, tb, fix, tests_pass, tests_pass ? 0 : 1);
         else
-            pr = roe_dbg_learn(&D, proj, tb, fix, note);
+            pr = roe_dbg_learn(D, proj, tb, fix, note);
         printf("promoted=%d\n", pr);
-        (void)roe_dbg_save(&D);
+        (void)roe_dbg_save(D);
         printf("ROE_DBG_LEARN_PASS\n");
         return pr ? 0 : 1;
     }
     if (!strcmp(cmd, "stats")) {
-        roe_dbg_dump_stats(&D, stats, sizeof stats);
-        printf("%s\nmem=%zu projects=%zu\n", stats, D.n_mem, D.n_projects);
+        roe_dbg_dump_stats(D, stats, sizeof stats);
+        printf("%s\nmem=%zu projects=%zu\n", stats, D->n_mem, D->n_projects);
         printf("ROE_DBG_STATS_PASS\n");
         return 0;
     }

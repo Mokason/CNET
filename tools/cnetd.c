@@ -22,7 +22,10 @@
  */
 #define _POSIX_C_SOURCE 200809L
 #include <ctype.h>
+#include "../include/cnet_platform.h"
+#if CNET_HAVE_CURL
 #include <curl/curl.h>
+#endif
 #include <errno.h>
 #include <fcntl.h>
 #include <pwd.h>
@@ -38,6 +41,7 @@
 #include <unistd.h>
 
 #include "../include/cnet_dialog_ctx.h"
+#include "../include/cnet_json_escape.h"
 #include "../include/cnet_domain_route.h"
 #include "../include/cnet_probe_shortcircuit.h"
 #include "../include/cnet_query_alias.h"
@@ -289,7 +293,6 @@ typedef struct {
     unsigned long long tokens;
 } CdReply;
 
-static void json_escape(const char *in, char *out, size_t cap);
 
 static void load_neuromod_into(CnetUtterState *U) {
     FILE *f;
@@ -565,8 +568,8 @@ static int cd_ask(CdState *S, const char *q, CdReply *out) {
         struct tm tm;
         gmtime_r(&t, &tm);
         strftime(ts, sizeof ts, "%Y-%m-%dT%H:%M:%SZ", &tm);
-        json_escape(q, qesc, sizeof qesc);
-        json_escape(out->answer, aesc, sizeof aesc);
+        cnet_json_escape(q, qesc, sizeof qesc);
+        cnet_json_escape(out->answer, aesc, sizeof aesc);
         if (var_miss && var_miss[0] && strcmp(var_miss, S->miss_log) != 0)
             f2 = fopen(var_miss, "a");
         {
@@ -605,21 +608,6 @@ static int cd_ask(CdState *S, const char *q, CdReply *out) {
     return 0;
 }
 
-static void json_escape(const char *in, char *out, size_t cap) {
-    size_t i, j = 0;
-    if (!out || !cap) return;
-    out[0] = 0;
-    if (!in) return;
-    for (i = 0; in[i] && j + 2 < cap; i++) {
-        if (in[i] == '"' || in[i] == '\\') out[j++] = '\\';
-        if (in[i] == '\n' || in[i] == '\r') {
-            out[j++] = ' ';
-            continue;
-        }
-        out[j++] = in[i];
-    }
-    out[j] = 0;
-}
 
 static ssize_t full_write(int fd, const void *buf, size_t n) {
     const char *p = (const char *)buf;
@@ -637,9 +625,35 @@ static ssize_t full_write(int fd, const void *buf, size_t n) {
 }
 
 static void write_json_reply(int fd, const CdReply *r) {
-    char aesc[ROE_ANSWER_MAX * 2], uesc[CNET_UTTER_TEXT * 2], buf[ROE_ANSWER_MAX * 2 + CNET_UTTER_TEXT * 2 + 768];
-    json_escape(r->answer, aesc, sizeof aesc);
-    json_escape(r->utterance, uesc, sizeof uesc);
+    /* Worst case one input byte becomes six output bytes (backslash-u-00XX), so
+       every buffer is 6N+8 and cnet_json_escape can never hit its truncation
+       path here. Until 2026-08-12 only answer and utterance were escaped at
+       all -- the other ten %s fields carried model-, user- and file-derived
+       text straight into the document, so a single double quote in a skill name
+       or a raw C0 byte in a probe pattern produced a reply the daemon's own
+       client could not parse. */
+    char aesc[ROE_ANSWER_MAX * 6 + 8], uesc[CNET_UTTER_TEXT * 6 + 8];
+    char src_e[32 * 6 + 8], skill_e[64 * 6 + 8], dom_e[32 * 6 + 8];
+    char probe_e[96 * 6 + 8], prep_e[CNET_QA_OUT * 6 + 8];
+    char alias_e[CNET_QA_PAT * 6 + 8], dreason_e[48 * 6 + 8];
+    char dent_e[CNET_DC_ENT * 6 + 8], sunit_e[CNET_SLOT_UNIT * 6 + 8];
+    char sreason_e[48 * 6 + 8];
+    char buf[sizeof aesc + sizeof uesc + sizeof src_e + sizeof skill_e +
+             sizeof dom_e + sizeof probe_e + sizeof prep_e + sizeof alias_e +
+             sizeof dreason_e + sizeof dent_e + sizeof sunit_e +
+             sizeof sreason_e + 768];
+    (void)cnet_json_escape(r->answer, aesc, sizeof aesc);
+    (void)cnet_json_escape(r->utterance, uesc, sizeof uesc);
+    (void)cnet_json_escape(r->source, src_e, sizeof src_e);
+    (void)cnet_json_escape(r->skill, skill_e, sizeof skill_e);
+    (void)cnet_json_escape(r->domain, dom_e, sizeof dom_e);
+    (void)cnet_json_escape(r->probe_pat, probe_e, sizeof probe_e);
+    (void)cnet_json_escape(r->prepared, prep_e, sizeof prep_e);
+    (void)cnet_json_escape(r->alias_pat, alias_e, sizeof alias_e);
+    (void)cnet_json_escape(r->dialog_reason, dreason_e, sizeof dreason_e);
+    (void)cnet_json_escape(r->dialog_entity, dent_e, sizeof dent_e);
+    (void)cnet_json_escape(r->slot_unit, sunit_e, sizeof sunit_e);
+    (void)cnet_json_escape(r->slot_reason, sreason_e, sizeof sreason_e);
     snprintf(buf, sizeof buf,
              "{\"ok\":true,\"source\":\"%s\",\"skill\":\"%s\",\"answer\":\"%s\","
              "\"utterance\":\"%s\",\"may_voice\":%s,"
@@ -650,19 +664,19 @@ static void write_json_reply(int fd, const CdReply *r) {
              "\"slot_hit\":%s,\"slot_unit\":\"%s\",\"slot_reason\":\"%s\","
              "\"teacher\":%s,\"composer\":\"cnet_utterance\",\"never_voice_llm\":true,"
              "\"self_answer\":%s}\n",
-             r->source, r->skill, aesc, uesc, r->may_voice ? "true" : "false",
+             src_e, skill_e, aesc, uesc, r->may_voice ? "true" : "false",
              r->miss ? "true" : "false",
-             r->verified ? "true" : "false", r->tokens, r->domain,
-             r->shortcircuit ? "true" : "false", r->probe_pat,
-             r->prepared[0] ? r->prepared : "",
+             r->verified ? "true" : "false", r->tokens, dom_e,
+             r->shortcircuit ? "true" : "false", probe_e,
+             prep_e,
              r->alias_hit ? "true" : "false",
-             r->alias_pat[0] ? r->alias_pat : "",
+             alias_e,
              r->dialog_hit ? "true" : "false",
-             r->dialog_reason[0] ? r->dialog_reason : "",
-             r->dialog_entity[0] ? r->dialog_entity : "",
+             dreason_e,
+             dent_e,
              r->slot_hit ? "true" : "false",
-             r->slot_unit[0] ? r->slot_unit : "",
-             r->slot_reason[0] ? r->slot_reason : "",
+             sunit_e,
+             sreason_e,
              (strcmp(r->source, "LLM") == 0) ? "true" : "false",
              (strcmp(r->source, "CNET") == 0 || strcmp(r->source, "LOCAL") == 0) ? "true"
                                                                                 : "false");

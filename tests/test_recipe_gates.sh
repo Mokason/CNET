@@ -32,17 +32,29 @@ fi
 fail=0
 found=""
 
+# Hoisted out of the loop on purpose. This used to be `"$(printf '\t')"*)`
+# evaluated as a case pattern on every iteration, which forked a subshell per
+# line; combined with the per-line `sed` below that was two process spawns for
+# each of ~5900 Makefile lines. On Windows/MinGW, where fork+exec is orders of
+# magnitude costlier than on Linux, that made this gate take >90s of almost
+# pure sys time. It is the FIRST prerequisite of `verify`, so that cost was
+# paid on every single gate run. Pure parameter expansion is exact-equivalent
+# here and spawns nothing.
+TAB=$(printf '\t')
+
 # Read the Makefile line by line. We only inspect recipe lines (tab-indented).
 # Comments and variable assignments are skipped.
 while IFS= read -r rawline; do
     # Skip lines that don't start with a tab (non-recipe lines: vars, comments, targets).
     case "$rawline" in
-        "$(printf '\t')"*) ;;  # tab-prefixed: recipe line, continue
+        "$TAB"*) ;;  # tab-prefixed: recipe line, continue
         *) continue ;;
     esac
 
     # Strip leading @ prefix and leading whitespace for analysis.
-    line=$(printf '%s' "$rawline" | sed 's/^\t//; s/^@//')
+    # (was: printf | sed 's/^\t//; s/^@//' -- one subprocess per recipe line)
+    line=${rawline#"$TAB"}
+    line=${line#@}
 
     # Skip comment-only recipe lines.
     case "$line" in
@@ -83,10 +95,17 @@ while IFS= read -r rawline; do
             case "$line" in
                 *'grep '*'|| true'*) ;;  # deliberate grep, allowed
                 *'|| true'*)
-                    # Check if an executable is being swallowed
+                    # Check if an executable is being swallowed.
+                    #
+                    # ORDER IS LOAD-BEARING. The executable patterns must be
+                    # tested BEFORE the generic `$(` skip: POSIX `case` takes
+                    # the first matching arm, and `$(BIN_DIR)` itself contains
+                    # `$(`, so a leading `*'$('*)` arm silently swallowed every
+                    # `$(BIN_DIR)/x || true` line and made this whole branch
+                    # dead code. Keep the executable arm first.
                     case "$line" in
-                        *'$('*)  ;;  # shell function, skip
                         *'./'*|*'$(BIN_DIR)'*) has_swallow=1 ;;
+                        *'$('*)  ;;  # other make/shell function, skip
                     esac
                     ;;
             esac
@@ -165,11 +184,20 @@ pipelines=$(grep -c '| tee' "$MAKEFILE")
 # A same-named root file newer than its prerequisites makes Make declare an
 # action target up to date: the gate reports success without compiling,
 # running, or refreshing any evidence.
-HEADLINE_GATES='recipe_gate capability_cert capability_fixture_causality
-heldout_fixture_test knowledge_capsule knowledge_accumulation_bench
-knowledge_composition_bench coverage_abstain own_learning_health
-port_raw_unit_seam vision_coverage_test vision_capsule_asset
-vision_detection_bench_v2 ci_core'
+#
+# The list lives in tests/headline_gates.txt so that this gate and its own
+# selftest cannot drift apart -- two private copies would mean the selftest was
+# validating a shadow of this gate instead of this gate.
+GATES_FILE="$(dirname "$0")/headline_gates.txt"
+if [ ! -f "$GATES_FILE" ]; then
+    printf 'RECIPE_GATE: FAIL — %s is missing; cannot check .PHONY coverage.\n' "$GATES_FILE"
+    exit 1
+fi
+HEADLINE_GATES=$(sed 's/#.*//' "$GATES_FILE" | tr -s '[:space:]' ' ')
+if [ -z "$(printf '%s' "$HEADLINE_GATES" | tr -d '[:space:]')" ]; then
+    printf 'RECIPE_GATE: FAIL — %s is empty; a silently empty list would pass vacuously.\n' "$GATES_FILE"
+    exit 1
+fi
 
 phony_lines=$(grep '^\.PHONY:' "$MAKEFILE")
 missing_phony=""
