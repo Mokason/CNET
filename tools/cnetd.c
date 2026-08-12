@@ -37,9 +37,12 @@
 #include <time.h>
 #include <unistd.h>
 
+#include "../include/cnet_dialog_ctx.h"
 #include "../include/cnet_domain_route.h"
 #include "../include/cnet_probe_shortcircuit.h"
+#include "../include/cnet_query_alias.h"
 #include "../include/cnet_roe_asi.h"
+#include "../include/cnet_slot_extract.h"
 #include "../include/cnet_utterance.h"
 
 #define CD_PATH 512
@@ -71,6 +74,8 @@ typedef struct {
     int n_routes;
     CnetProbeTable probes;
     CnetDomainRouter domain;
+    CnetQueryAliasTable aliases;
+    CnetDialogCtx dialog; /* process-local warm session (single-user cnetd) */
     int ready;
 } CdState;
 
@@ -110,6 +115,17 @@ static int contains_ci(const char *hay, const char *needle) {
         n[i] = (char)tolower((unsigned char)needle[i]);
     n[i] = 0;
     return strstr(h, n) != NULL;
+}
+
+static void cd_scopy(char *d, size_t cap, const char *s) {
+    size_t i;
+    if (!d || !cap) return;
+    if (!s) {
+        d[0] = 0;
+        return;
+    }
+    for (i = 0; s[i] && i + 1 < cap; i++) d[i] = s[i];
+    d[i] = 0;
 }
 
 static int json_get_str(const char *line, const char *key, char *out, size_t cap) {
@@ -210,12 +226,17 @@ static int cd_init(CdState *S, const char *root) {
     }
     cnet_domain_route_init(&S->domain);
     (void)cnet_domain_route_load_file(&S->domain, "config/domain_routes.tsv");
+    cnet_query_alias_init(&S->aliases);
+    (void)cnet_query_alias_load_file(&S->aliases, "config/query_aliases.tsv");
+    cnet_dialog_ctx_init(&S->dialog);
     {
         const char *min = getenv("CNET_MINIMAL_ROOT");
         char p2[CD_PATH];
         if (min && min[0]) {
             snprintf(p2, sizeof p2, "%s/config/domain_routes.tsv", min);
             (void)cnet_domain_route_load_file(&S->domain, p2);
+            snprintf(p2, sizeof p2, "%s/config/query_aliases.tsv", min);
+            (void)cnet_query_alias_load_file(&S->aliases, p2);
         }
     }
     S->ready = 1;
@@ -252,6 +273,15 @@ typedef struct {
     char utterance[CNET_UTTER_TEXT];
     char domain[32];
     char probe_pat[96];
+    char prepared[CNET_QA_OUT];
+    char alias_pat[CNET_QA_PAT];
+    char dialog_reason[48];
+    char dialog_entity[CNET_DC_ENT];
+    char slot_unit[CNET_SLOT_UNIT];
+    char slot_reason[48];
+    int alias_hit;
+    int dialog_hit;
+    int slot_hit;
     int miss;
     int shortcircuit;
     int verified;
@@ -311,33 +341,90 @@ static int cd_ask(CdState *S, const char *q, CdReply *out) {
     RoeReply rep;
     CdRoute rt;
     CnetDomainDecision dd;
+    CnetQueryPrepareMeta ameta;
+    CnetDialogResolveMeta dmeta;
+    CnetSlotMeta smeta;
     char ppat[96];
+    char q_prep[CNET_QA_OUT];
+    char q_slot[CNET_SLOT_OUT];
+    char q_final[CNET_QA_OUT];
     const char *pm;
+    const char *q_use;
     int i, matched;
 
     if (!S || !q || !out || !S->ready) return -1;
     memset(out, 0, sizeof *out);
     memset(&rt, 0, sizeof rt);
+    memset(&ameta, 0, sizeof ameta);
+    memset(&dmeta, 0, sizeof dmeta);
+    memset(&smeta, 0, sizeof smeta);
     ppat[0] = 0;
+    q_prep[0] = 0;
+    q_slot[0] = 0;
+    q_final[0] = 0;
+
+    /* Probe SC always on ORIGINAL user text (never alias-smoothed). */
     pm = cnet_probe_match(&S->probes, q, ppat, sizeof ppat);
-    cnet_domain_route_resolve(&S->domain, q, &dd);
-    snprintf(out->domain, sizeof out->domain, "%s", dd.kind_name ? dd.kind_name : "NONE");
     if (pm) {
         out->shortcircuit = 1;
         snprintf(out->probe_pat, sizeof out->probe_pat, "%s", ppat[0] ? ppat : pm);
+        q_use = q; /* probes stay literal */
+        cd_scopy(out->prepared, sizeof out->prepared, q);
+    } else {
+        /* A: normalize + alias → sealed patterns */
+        cnet_query_prepare(&S->aliases, q, q_prep, sizeof q_prep, &ameta);
+        out->alias_hit = ameta.alias_hit ? 1 : 0;
+        if (ameta.matched_alias[0])
+            cd_scopy(out->alias_pat, sizeof out->alias_pat, ameta.matched_alias);
+
+        /* C: pack-local ops slot extract on prepared text */
+        if (cnet_slot_extract_ops(q_prep, q_slot, sizeof q_slot, &smeta) &&
+            smeta.applied) {
+            out->slot_hit = 1;
+            cd_scopy(out->slot_unit, sizeof out->slot_unit, smeta.unit);
+            cd_scopy(out->slot_reason, sizeof out->slot_reason, smeta.reason);
+            cd_scopy(q_final, sizeof q_final, q_slot);
+            q_use = q_final;
+        } else if (cnet_dialog_resolve(&S->dialog, q_prep, q_final, sizeof q_final,
+                                       &dmeta) &&
+                   dmeta.applied) {
+            /* B: anaphora when no explicit slot unit */
+            out->dialog_hit = 1;
+            cd_scopy(out->dialog_reason, sizeof out->dialog_reason, dmeta.reason);
+            cd_scopy(out->dialog_entity, sizeof out->dialog_entity,
+                     dmeta.entity_used);
+            q_use = q_final;
+        } else {
+            cd_scopy(q_final, sizeof q_final, q_prep);
+            q_use = q_final;
+        }
+        cd_scopy(out->prepared, sizeof out->prepared, q_use);
     }
+
+    cnet_domain_route_resolve(&S->domain, q_use, &dd);
+    snprintf(out->domain, sizeof out->domain, "%s", dd.kind_name ? dd.kind_name : "NONE");
 
     R = (RoeAsi *)calloc(1, sizeof *R);
     if (!R) return -1;
     roe_init(R);
     for (i = 0; i < S->n_always; i++)
         (void)load_pack(R, S->root, S->always_on[i]);
-    matched = cd_match_route(S, q, &rt);
+    matched = cd_match_route(S, q_use, &rt);
     if (matched >= 0 && rt.pack[0]) {
         int known = 0;
         for (i = 0; i < S->n_always; i++)
             if (strcmp(S->always_on[i], rt.pack) == 0) known = 1;
         if (!known) (void)load_pack(R, S->root, rt.pack);
+    }
+    /* Domain route CERT pack hint also loads when ROUTES miss */
+    if (dd.kind == CNET_ROUTE_CERT && dd.pack_or_skill[0]) {
+        int known = 0;
+        for (i = 0; i < S->n_always; i++)
+            if (strcmp(S->always_on[i], dd.pack_or_skill) == 0) known = 1;
+        if (!known && (!rt.pack[0] || strcmp(rt.pack, dd.pack_or_skill) != 0))
+            (void)load_pack(R, S->root, dd.pack_or_skill);
+        if (!rt.pack[0])
+            cd_scopy(rt.pack, sizeof rt.pack, dd.pack_or_skill);
     }
 
     roe_net_from_env(&net);
@@ -363,7 +450,7 @@ static int cd_ask(CdState *S, const char *q, CdReply *out) {
         net.enable_lookup = 0;
     }
     if (net.enable_llm || net.enable_lookup) roe_set_net(R, &net);
-    roe_turn(R, q, &rep);
+    roe_turn(R, q_use, &rep);
 
     snprintf(out->source, sizeof out->source, "%s",
              rep.source_name[0] ? rep.source_name : "UNKNOWN");
@@ -372,6 +459,13 @@ static int cd_ask(CdState *S, const char *q, CdReply *out) {
     out->verified = rep.verified ? 1 : 0;
     out->tokens = (unsigned long long)rep.tokens_est;
     out->miss = (rep.source != ROE_SRC_LOCAL) ? 1 : 0;
+
+    /* Warm dialog ctx AFTER turn — entities from prepared CERT-shaped query. */
+    if (!out->shortcircuit) {
+        const char *pack_hint = rt.pack[0] ? rt.pack : dd.pack_or_skill;
+        cnet_dialog_ctx_update(&S->dialog, q_use, out->skill, pack_hint,
+                               !out->miss);
+    }
 
     /* C-native utterance always; self-answer replaces only non-LLM misses */
     {
@@ -408,22 +502,22 @@ static int cd_ask(CdState *S, const char *q, CdReply *out) {
         snprintf(U.source, sizeof U.source, "%s", out->source);
         snprintf(U.skill, sizeof U.skill, "%s", out->skill);
         snprintf(U.domain, sizeof U.domain, "%s", out->domain);
-        snprintf(U.pattern, sizeof U.pattern, "%.95s", q ? q : "");
+        snprintf(U.pattern, sizeof U.pattern, "%.95s", q_use ? q_use : "");
         snprintf(U.base_answer, sizeof U.base_answer, "%.767s", out->answer);
 
         if (out->shortcircuit) when = "miss";
-        else if (!out->miss && (contains_ci(q, "who are you") || contains_ci(q, "speech")))
+        else if (!out->miss && (contains_ci(q_use, "who are you") || contains_ci(q_use, "speech")))
             when = "identity";
-        else if (!out->miss && (contains_ci(q, "status") || contains_ci(q, "local hit")))
+        else if (!out->miss && (contains_ci(q_use, "status") || contains_ci(q_use, "local hit")))
             when = "status";
-        else if (contains_ci(q, "how do you answer") || contains_ci(q, "self answer") ||
-                 contains_ci(q, "without teacher") || contains_ci(q, "who writes"))
+        else if (contains_ci(q_use, "how do you answer") || contains_ci(q_use, "self answer") ||
+                 contains_ci(q_use, "without teacher") || contains_ci(q_use, "who writes"))
             when = "meta";
         else if (out->miss)
             when = "miss";
-        else if (contains_ci(q, "who are you") || contains_ci(q, "speech"))
+        else if (contains_ci(q_use, "who are you") || contains_ci(q_use, "speech"))
             when = "identity";
-        else if (contains_ci(q, "status") || contains_ci(q, "local hit"))
+        else if (contains_ci(q_use, "status") || contains_ci(q_use, "local hit"))
             when = "status";
 
         load_neuromod_into(&U);
@@ -551,12 +645,24 @@ static void write_json_reply(int fd, const CdReply *r) {
              "\"utterance\":\"%s\",\"may_voice\":%s,"
              "\"miss\":%s,\"verified\":%s,\"tokens_est\":%llu,"
              "\"domain_route\":\"%s\",\"shortcircuit\":%s,\"probe_pat\":\"%s\","
+             "\"prepared\":\"%s\",\"alias_hit\":%s,\"alias\":\"%s\","
+             "\"dialog_hit\":%s,\"dialog_reason\":\"%s\",\"dialog_entity\":\"%s\","
+             "\"slot_hit\":%s,\"slot_unit\":\"%s\",\"slot_reason\":\"%s\","
              "\"teacher\":%s,\"composer\":\"cnet_utterance\",\"never_voice_llm\":true,"
              "\"self_answer\":%s}\n",
              r->source, r->skill, aesc, uesc, r->may_voice ? "true" : "false",
              r->miss ? "true" : "false",
              r->verified ? "true" : "false", r->tokens, r->domain,
              r->shortcircuit ? "true" : "false", r->probe_pat,
+             r->prepared[0] ? r->prepared : "",
+             r->alias_hit ? "true" : "false",
+             r->alias_pat[0] ? r->alias_pat : "",
+             r->dialog_hit ? "true" : "false",
+             r->dialog_reason[0] ? r->dialog_reason : "",
+             r->dialog_entity[0] ? r->dialog_entity : "",
+             r->slot_hit ? "true" : "false",
+             r->slot_unit[0] ? r->slot_unit : "",
+             r->slot_reason[0] ? r->slot_reason : "",
              (strcmp(r->source, "LLM") == 0) ? "true" : "false",
              (strcmp(r->source, "CNET") == 0 || strcmp(r->source, "LOCAL") == 0) ? "true"
                                                                                 : "false");
@@ -564,15 +670,23 @@ static void write_json_reply(int fd, const CdReply *r) {
 }
 
 static void write_text_reply(int fd, const CdReply *r) {
-    char buf[ROE_ANSWER_MAX + CNET_UTTER_TEXT + 384];
-    snprintf(buf, sizeof buf,
-             "SOURCE %s\nSKILL %s\nDOMAIN %s\nMISS %d\nSHORTCIRCUIT %d\n"
-             "MAY_VOICE %d\nUTTERANCE %s\n"
-             "ANSWER %s\nEND\n",
-             r->source, r->skill[0] ? r->skill : "-", r->domain, r->miss,
-             r->shortcircuit, r->may_voice,
-             r->utterance[0] ? r->utterance : "-", r->answer);
-    (void)full_write(fd, buf, strlen(buf));
+    char head[768];
+    char body[ROE_ANSWER_MAX + 64];
+    char utter[CNET_UTTER_TEXT + 64];
+    int n;
+    n = snprintf(head, sizeof head,
+                 "SOURCE %s\nSKILL %s\nDOMAIN %s\nMISS %d\nSHORTCIRCUIT %d\n"
+                 "ALIAS_HIT %d\nDIALOG_HIT %d\nSLOT_HIT %d\nPREPARED %.400s\n"
+                 "MAY_VOICE %d\n",
+                 r->source, r->skill[0] ? r->skill : "-", r->domain, r->miss,
+                 r->shortcircuit, r->alias_hit, r->dialog_hit, r->slot_hit,
+                 r->prepared[0] ? r->prepared : "-", r->may_voice);
+    if (n > 0) (void)full_write(fd, head, (size_t)n);
+    n = snprintf(utter, sizeof utter, "UTTERANCE %s\n",
+                 r->utterance[0] ? r->utterance : "-");
+    if (n > 0) (void)full_write(fd, utter, (size_t)n);
+    n = snprintf(body, sizeof body, "ANSWER %s\nEND\n", r->answer);
+    if (n > 0) (void)full_write(fd, body, (size_t)n);
 }
 
 static void handle_client(int cfd, CdState *S) {

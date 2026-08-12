@@ -3446,10 +3446,14 @@ roe_daily_packs: roe_daily_packs_seed $(ROE_ASI_SRC) tools/roe_daily_packs_gate.
 
 # Front door: ROUTES → selective pack load → turn → miss_log
 .PHONY: roe_front_door
-roe_front_door: roe_daily_packs $(ROE_ASI_SRC) tools/roe_front_door.c src/cnet_domain_route.c include/cnet_domain_route.h
+roe_front_door: roe_daily_packs $(ROE_ASI_SRC) tools/roe_front_door.c src/cnet_domain_route.c \
+		src/cnet_query_alias.c src/cnet_dialog_ctx.c src/cnet_slot_extract.c \
+		include/cnet_domain_route.h include/cnet_query_alias.h include/cnet_dialog_ctx.h \
+		include/cnet_slot_extract.h
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) $(ASI_IMPROVE_CFLAGS) -o $(BIN_DIR)/roe_front_door \
-		$(ROE_ASI_SRC) src/cnet_domain_route.c tools/roe_front_door.c $(ROE_ASI_LIBS)
+		$(ROE_ASI_SRC) src/cnet_domain_route.c src/cnet_query_alias.c src/cnet_dialog_ctx.c \
+		src/cnet_slot_extract.c tools/roe_front_door.c $(ROE_ASI_LIBS)
 	@./$(BIN_DIR)/roe_front_door selftest | tee logs/roe_front_door.log
 	@grep -q "ROE_FRONT_DOOR_PASS" logs/roe_front_door.log
 	@echo "---- front bench ----"
@@ -3457,6 +3461,9 @@ roe_front_door: roe_daily_packs $(ROE_ASI_SRC) tools/roe_front_door.c src/cnet_d
 	@echo "---- sample ask ----"
 	@./$(BIN_DIR)/roe_front_door ask "who are you" | tee -a logs/roe_front_door.log
 	@./$(BIN_DIR)/roe_front_door ask "format-truncation werror" | tee -a logs/roe_front_door.log
+	@./$(BIN_DIR)/roe_front_door ask "Introduce yourself" | tee logs/roe_front_door_alias.log
+	@grep -q "source=LOCAL" logs/roe_front_door_alias.log
+	@cat logs/roe_front_door_alias.log >> logs/roe_front_door.log
 
 .PHONY: cnet_minimal_package
 cnet_minimal_package:
@@ -3502,11 +3509,36 @@ roe_explore_tick: tools/roe_explore_tick.py tools/roe_explore_tick_gate.c
 	@test ! -f artifacts/roe_daily_packs/EXPLORE_TICK.json || grep -q '"auto_cert": false' artifacts/roe_daily_packs/EXPLORE_TICK.json
 	@echo "ROE_EXPLORE_TICK_OK"
 
+.PHONY: query_alias dialog_ctx query_dialog slot_extract
+query_alias dialog_ctx query_dialog slot_extract: include/cnet_query_alias.h src/cnet_query_alias.c \
+		include/cnet_dialog_ctx.h src/cnet_dialog_ctx.c \
+		include/cnet_slot_extract.h src/cnet_slot_extract.c \
+		tools/cnet_query_dialog_main.c
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) -std=c11 -Wall -Wextra -O2 -D_POSIX_C_SOURCE=200809L -Iinclude \
+		-o $(BIN_DIR)/cnet_query_dialog \
+		src/cnet_query_alias.c src/cnet_dialog_ctx.c src/cnet_slot_extract.c \
+		tools/cnet_query_dialog_main.c
+	@./$(BIN_DIR)/cnet_query_dialog --test | tee logs/query_dialog.log
+	@grep -q "QUERY_ALIAS_PASS" logs/query_dialog.log
+	@grep -q "DIALOG_CTX_PASS" logs/query_dialog.log
+	@grep -q "SLOT_EXTRACT_PASS" logs/query_dialog.log
+	@grep -q "QUERY_DIALOG_PASS" logs/query_dialog.log
+	@./$(BIN_DIR)/cnet_query_dialog "Introduce yourself" | tee -a logs/query_dialog.log
+	@./$(BIN_DIR)/cnet_query_dialog --dialog "show me its status" | tee -a logs/query_dialog.log
+	@./$(BIN_DIR)/cnet_query_dialog --slot "is cnet-web active" | tee -a logs/query_dialog.log
+	@echo "QUERY_DIALOG_OK"
+
 .PHONY: cnetd
-cnetd: $(ROE_ASI_SRC) tools/cnetd.c src/cnet_domain_route.c src/cnet_utterance.c include/cnet_probe_shortcircuit.h include/cnet_domain_route.h include/cnet_utterance.h
+cnetd: $(ROE_ASI_SRC) tools/cnetd.c src/cnet_domain_route.c src/cnet_utterance.c \
+		src/cnet_query_alias.c src/cnet_dialog_ctx.c src/cnet_slot_extract.c \
+		include/cnet_probe_shortcircuit.h include/cnet_domain_route.h include/cnet_utterance.h \
+		include/cnet_query_alias.h include/cnet_dialog_ctx.h include/cnet_slot_extract.h
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) $(ASI_IMPROVE_CFLAGS) -o $(BIN_DIR)/cnetd \
-		$(ROE_ASI_SRC) src/cnet_domain_route.c src/cnet_utterance.c tools/cnetd.c $(ROE_ASI_LIBS)
+		$(ROE_ASI_SRC) src/cnet_domain_route.c src/cnet_utterance.c \
+		src/cnet_query_alias.c src/cnet_dialog_ctx.c src/cnet_slot_extract.c \
+		tools/cnetd.c $(ROE_ASI_LIBS)
 	@echo "cnetd built → $(BIN_DIR)/cnetd"
 
 .PHONY: cnet_utterance
@@ -3520,7 +3552,7 @@ cnet_utterance: src/cnet_utterance.c include/cnet_utterance.h tools/cnet_utteran
 	@echo "CNET_UTTERANCE_OK"
 
 .PHONY: cnetd-run
-cnetd-run: cnetd
+cnetd-run: cnetd query_dialog
 	@pkill -x cnetd 2>/dev/null || true
 	@sleep 0.2
 	@if [ -f $(HOME)/.local/share/cnet-minimal/cnet-minimal.env ]; then set -a; . $(HOME)/.local/share/cnet-minimal/cnet-minimal.env; set +a; fi
@@ -3529,8 +3561,38 @@ cnetd-run: cnetd
 	@chmod +x scripts/cnet_sock_ask.sh
 	@scripts/cnet_sock_ask.sh "who are you" | tee logs/cnetd_ask.log
 	@grep -q "SOURCE LOCAL\|\"source\":\"LOCAL\"" logs/cnetd_ask.log
-	@scripts/cnet_sock_ask.sh "autonomous cycle probe novel fact beta-nine" | tee -a logs/cnetd_ask.log
-	@grep -q "SHORTCIRCUIT 1\|shortcircuit.:true" logs/cnetd_ask.log
+	@# Milestone A: conversational soul paraphrase → LOCAL
+	@scripts/cnet_sock_ask.sh "Introduce yourself" | tee logs/cnetd_ask_a1.log
+	@grep -q "SOURCE LOCAL\|\"source\":\"LOCAL\"" logs/cnetd_ask_a1.log
+	@cat logs/cnetd_ask_a1.log >> logs/cnetd_ask.log
+	@scripts/cnet_sock_ask.sh "who am i talking to" | tee logs/cnetd_ask_a2.log
+	@grep -q "SOURCE LOCAL\|\"source\":\"LOCAL\"" logs/cnetd_ask_a2.log
+	@cat logs/cnetd_ask_a2.log >> logs/cnetd_ask.log
+	@# Milestone B: entity bind then anaphora status
+	@scripts/cnet_sock_ask.sh "cnet-marble status" | tee logs/cnetd_ask_b1.log
+	@grep -q "SOURCE LOCAL\|\"source\":\"LOCAL\"" logs/cnetd_ask_b1.log
+	@cat logs/cnetd_ask_b1.log >> logs/cnetd_ask.log
+	@scripts/cnet_sock_ask.sh "show me its status" | tee logs/cnetd_ask_b2.log
+	@grep -q "SOURCE LOCAL\|\"source\":\"LOCAL\"" logs/cnetd_ask_b2.log
+	@grep -q "DIALOG_HIT 1\|\"dialog_hit\":true" logs/cnetd_ask_b2.log
+	@cat logs/cnetd_ask_b2.log >> logs/cnetd_ask.log
+	@# Milestone C: pack-local ops slots
+	@scripts/cnet_sock_ask.sh "is cnet-web active" | tee logs/cnetd_ask_c1.log
+	@grep -q "SOURCE LOCAL\|\"source\":\"LOCAL\"" logs/cnetd_ask_c1.log
+	@grep -q "SLOT_HIT 1\|\"slot_hit\":true" logs/cnetd_ask_c1.log
+	@cat logs/cnetd_ask_c1.log >> logs/cnetd_ask.log
+	@scripts/cnet_sock_ask.sh "restart cnetd" | tee logs/cnetd_ask_c2.log
+	@grep -q "SOURCE LOCAL\|\"source\":\"LOCAL\"" logs/cnetd_ask_c2.log
+	@grep -q "SLOT_HIT 1\|\"slot_hit\":true" logs/cnetd_ask_c2.log
+	@cat logs/cnetd_ask_c2.log >> logs/cnetd_ask.log
+	@scripts/cnet_sock_ask.sh "is cnet-marble running" | tee logs/cnetd_ask_c3.log
+	@grep -q "SOURCE LOCAL\|\"source\":\"LOCAL\"" logs/cnetd_ask_c3.log
+	@grep -q "ops_cnet_marble\|SLOT_HIT 1\|\"slot_hit\":true" logs/cnetd_ask_c3.log
+	@cat logs/cnetd_ask_c3.log >> logs/cnetd_ask.log
+	@# probes remain non-LOCAL / short-circuit
+	@scripts/cnet_sock_ask.sh "autonomous cycle probe novel fact beta-nine" | tee logs/cnetd_ask_probe.log
+	@grep -q "SHORTCIRCUIT 1\|shortcircuit.:true" logs/cnetd_ask_probe.log
+	@cat logs/cnetd_ask_probe.log >> logs/cnetd_ask.log
 	@echo "CNETD_OK"
 
 .PHONY: cnet-web

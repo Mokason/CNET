@@ -20,6 +20,9 @@
 #include "../include/cnet_roe_asi.h"
 #include "../include/cnet_domain_route.h"
 #include "../include/cnet_probe_shortcircuit.h"
+#include "../include/cnet_query_alias.h"
+#include "../include/cnet_dialog_ctx.h"
+#include "../include/cnet_slot_extract.h"
 
 #define FD_ROOT_DEFAULT "artifacts/roe_daily_packs"
 #define FD_MAX_ROUTES 256
@@ -460,9 +463,20 @@ static int cmd_ask(FdRouter *F, const char *q, int accept, const char *gold,
     static int dr_ready;
     static CnetProbeTable PT;
     static int pt_ready;
+    static CnetQueryAliasTable QA;
+    static int qa_ready;
+    static CnetDialogCtx DC;
+    static int dc_ready;
     CnetDomainDecision dd;
+    CnetQueryPrepareMeta ameta;
+    CnetDialogResolveMeta dmeta;
+    CnetSlotMeta smeta;
     char probe_pat[CNET_PROBE_PAT];
+    char q_prep[CNET_QA_OUT];
+    char q_slot[CNET_SLOT_OUT];
+    char q_final[CNET_QA_OUT];
     const char *pm = NULL;
+    const char *q_use;
     int rc = 0;
     if (!q || !q[0]) return 2;
 
@@ -493,10 +507,58 @@ static int cmd_ask(FdRouter *F, const char *q, int accept, const char *gold,
         }
         pt_ready = 1;
     }
+    if (!qa_ready) {
+        cnet_query_alias_init(&QA);
+        (void)cnet_query_alias_load_file(&QA, "config/query_aliases.tsv");
+        {
+            const char *home = getenv("CNET_MINIMAL_ROOT");
+            char path[512];
+            if (home && home[0]) {
+                snprintf(path, sizeof path, "%s/config/query_aliases.tsv", home);
+                (void)cnet_query_alias_load_file(&QA, path);
+            }
+        }
+        qa_ready = 1;
+    }
+    if (!dc_ready) {
+        cnet_dialog_ctx_init(&DC);
+        dc_ready = 1;
+    }
     probe_pat[0] = 0;
+    q_prep[0] = 0;
+    q_slot[0] = 0;
+    q_final[0] = 0;
+    memset(&ameta, 0, sizeof ameta);
+    memset(&dmeta, 0, sizeof dmeta);
+    memset(&smeta, 0, sizeof smeta);
     pm = cnet_probe_match(&PT, q, probe_pat, sizeof probe_pat);
 
-    cnet_domain_route_resolve(&DR, q, &dd);
+    if (pm) {
+        q_use = q;
+        printf("prepared=%s alias_hit=0 dialog_hit=0 slot_hit=0\n", q);
+    } else {
+        cnet_query_prepare(&QA, q, q_prep, sizeof q_prep, &ameta);
+        if (cnet_slot_extract_ops(q_prep, q_slot, sizeof q_slot, &smeta) &&
+            smeta.applied) {
+            q_use = q_slot;
+        } else if (cnet_dialog_resolve(&DC, q_prep, q_final, sizeof q_final, &dmeta) &&
+                   dmeta.applied) {
+            q_use = q_final;
+        } else {
+            snprintf(q_final, sizeof q_final, "%s", q_prep);
+            q_use = q_final;
+        }
+        printf("prepared=%s alias_hit=%d alias=%s dialog_hit=%d dialog_reason=%s "
+               "slot_hit=%d slot_unit=%s\n",
+               q_use, ameta.alias_hit,
+               ameta.matched_alias[0] ? ameta.matched_alias : "-",
+               dmeta.applied ? 1 : 0,
+               dmeta.reason[0] ? dmeta.reason : "-",
+               smeta.applied ? 1 : 0,
+               smeta.unit[0] ? smeta.unit : "-");
+    }
+
+    cnet_domain_route_resolve(&DR, q_use, &dd);
     printf("domain_route=%s reason=%s pack=%s mtk=%s conf=%d\n", dd.kind_name,
            dd.reason ? dd.reason : "-",
            dd.pack_or_skill[0] ? dd.pack_or_skill : "-",
@@ -514,7 +576,7 @@ static int cmd_ask(FdRouter *F, const char *q, int accept, const char *gold,
 
     R = (RoeAsi *)calloc(1, sizeof *R);
     if (!R) return 1;
-    if (fd_prepare(F, R, q, &tr) != 0) {
+    if (fd_prepare(F, R, q_use, &tr) != 0) {
         fprintf(stderr, "front_door prepare failed\n");
         free(R);
         return 1;
@@ -537,8 +599,13 @@ static int cmd_ask(FdRouter *F, const char *q, int accept, const char *gold,
         net.enable_lookup = 0;
     }
     if (net.enable_llm || net.enable_lookup) roe_set_net(R, &net);
-    roe_turn(R, q, &tr.reply);
+    roe_turn(R, q_use, &tr.reply);
     tr.is_miss = (tr.reply.source != ROE_SRC_LOCAL);
+    if (!pm) {
+        cnet_dialog_ctx_update(&DC, q_use, tr.reply.skill_id,
+                               tr.route_pack[0] ? tr.route_pack : dd.pack_or_skill,
+                               !tr.is_miss);
+    }
     if (tr.is_miss) (void)fd_append_miss(F, q, &tr, pm ? probe_pat : NULL);
     print_turn(&tr);
     fd_emit_thought(q, &tr);

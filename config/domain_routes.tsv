@@ -34,3 +34,10 @@ CERT	present simple	pack_english_basic
 CERT	teach english to roe	pack_english_basic
 CERT	english vocabulary	pack_english_basic
 CERT	english grammar	pack_english_basic
+# Conversational double-entry (Milestone A) — sealed patterns only; alias layer rewrites too.
+CERT	introduce yourself	pack_soul_marble
+CERT	tell me your name	pack_soul_marble
+CERT	who am i talking to	pack_soul_marble
+CERT	what is your name	pack_soul_marble
+CERT	cnet-marble status	pack_ops_hermes_systemd
+CERT	systemctl --user	pack_ops_hermes_systemd
