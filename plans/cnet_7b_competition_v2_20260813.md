@@ -1,10 +1,19 @@
 # CNET-ASI-5 v2 — frozen native C comparison
 
-Status: **PREREGISTERED; HELD-OUT EXECUTION NOT STARTED**
+Status: **WITHDRAWN BEFORE HELD-OUT EXECUTION**
 
-This version supersedes v1 only for future measurement. The immutable v1
-failure remains recorded in `benchmarks/cnet_asi5_v1/RESULTS.md`; no v1 result
-may be used as evidence for the modified system.
+V2 is not benchmark evidence and must never be executed or scored. A
+pre-execution adversarial audit found that several covered and OOD surface
+forms were exact or near-exact restatements of public development/training
+examples added after v1. The OOD range lane also repeated eight prompt/value
+combinations four times. Although the fixture was committed and the release
+was built, no CNET or baseline held-out POST request was issued; the canonical
+v2 results directory remained empty. A new independently constructed suite is
+required.
+
+The immutable v1 failure remains recorded in
+`benchmarks/cnet_asi5_v1/RESULTS.md`; neither v1 nor withdrawn v2 may be used as
+evidence for the modified system.
 
 ## Why v2 exists
 
