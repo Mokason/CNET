@@ -121,7 +121,8 @@ fi
 
 umask 077
 "$install" -d -m 0700 "$staging_root/bin" "$staging_root/evidence" \
-    "$staging_root/inputs/artifacts" "$staging_root/results"
+    "$staging_root/inputs" "$staging_root/inputs/artifacts" \
+    "$staging_root/results"
 cd "$snapshot_root"
 
 "$make" CC="$cc" \
@@ -242,6 +243,17 @@ compiler_sha=$("$sha256sum" "$compiler_path")
 compiler_sha=${compiler_sha%% *}
 compiler_version=$($cc -dumpfullversion -dumpversion)
 compiler_target=$($cc -dumpmachine)
+
+# GNU install applies -m only to the final directory operand.  Normalize and
+# verify every directory created below inputs before this private tree can be
+# atomically published as the canonical release.
+/usr/bin/find "$staging_root" -type d -exec /usr/bin/chmod 0700 {} +
+bad_directory=$(/usr/bin/find "$staging_root" -type d ! -perm 0700 \
+    -print -quit)
+if [ -n "$bad_directory" ]; then
+    echo "private release directory mode refused: $bad_directory" >&2
+    exit 1
+fi
 
 /usr/bin/sync -f "$staging_root"
 
