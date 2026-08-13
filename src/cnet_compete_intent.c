@@ -595,6 +595,95 @@ static int build_calibration_samples(IntentSample *samples, size_t *count,
     return 0;
 }
 
+static int corpus_row(FILE *file, size_t index, const char *split,
+                      const char *intent, const char *prompt) {
+    const unsigned char *cursor = (const unsigned char *)prompt;
+    if (file == NULL || split == NULL || intent == NULL || prompt == NULL ||
+        prompt[0] == '\0')
+        return -1;
+    for (; *cursor != '\0'; ++cursor)
+        if (*cursor < 0x20u || *cursor == 0x7fu) return -1;
+    return fprintf(file,
+                   "dev-%03zu\tdevelopment\t%s\tnone\t\t%s\t%s\n",
+                   index, intent, prompt, split) < 0 ? -1 : 0;
+}
+
+int cnet_compete_intent_export_development_corpus(const char *path,
+                                                  size_t *prompt_count) {
+    static const char *const names[5] = {
+        "increment_mod256", "minutes_to_seconds", "crc8_atm",
+        "access_policy_v1", "compose3_mod256"
+    };
+    FILE *file = NULL;
+    char prompt[256];
+    size_t count = 0, intent, body, prefix, item;
+    int failed = 0;
+    if (prompt_count != NULL) *prompt_count = 0;
+    if (path == NULL || path[0] == '\0') return -1;
+    file = fopen(path, "wb");
+    if (file == NULL) return -1;
+    if (fprintf(file, "#suite=CNET-ASI-5-development-corpus-v1\n") < 0 ||
+        fprintf(file,
+                "id\tsplit\tintent\tvalue_kind\texpected_value\tprompt\tprovenance\n") < 0)
+        failed = 1;
+    for (intent = 0; !failed && intent < 5; ++intent) {
+        for (body = 0; !failed && body < sizeof train_bodies[0] /
+                                           sizeof train_bodies[0][0]; ++body) {
+            for (prefix = 0; prefix < sizeof train_prefixes /
+                                      sizeof train_prefixes[0]; ++prefix) {
+                int written = snprintf(prompt, sizeof prompt, "%s %s",
+                                       train_prefixes[prefix],
+                                       train_bodies[intent][body]);
+                if (written < 0 || (size_t)written >= sizeof prompt ||
+                    corpus_row(file, count, "training", names[intent],
+                               prompt) != 0) {
+                    failed = 1;
+                    break;
+                }
+                ++count;
+            }
+        }
+        for (body = 0; !failed && body < sizeof train_anchors[0] /
+                                           sizeof train_anchors[0][0]; ++body) {
+            if (corpus_row(file, count, "training", names[intent],
+                           train_anchors[intent][body]) != 0)
+                failed = 1;
+            else
+                ++count;
+        }
+    }
+    for (item = 0; !failed &&
+         item < sizeof train_ood / sizeof train_ood[0]; ++item) {
+        if (corpus_row(file, count, "training", "none", train_ood[item]) != 0)
+            failed = 1;
+        else
+            ++count;
+    }
+    for (intent = 0; !failed && intent < 5; ++intent)
+        for (item = 0; !failed && item < 10; ++item) {
+            if (corpus_row(file, count, "calibration", names[intent],
+                           calibration_covered[intent][item]) != 0)
+                failed = 1;
+            else
+                ++count;
+        }
+    for (item = 0; !failed &&
+         item < sizeof calibration_ood / sizeof calibration_ood[0]; ++item) {
+        if (corpus_row(file, count, "calibration", "none",
+                       calibration_ood[item]) != 0)
+            failed = 1;
+        else
+            ++count;
+    }
+    if (fclose(file) != 0) failed = 1;
+    if (failed || count != 406u) {
+        (void)unlink(path);
+        return -1;
+    }
+    if (prompt_count != NULL) *prompt_count = count;
+    return 0;
+}
+
 static int target_token(CnetCompeteIntent intent) {
     return CNET_COMPETE_INTENT_LABEL_BASE + (int)intent;
 }

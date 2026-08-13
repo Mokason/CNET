@@ -101,6 +101,7 @@ int main(int argc, char **argv) {
     char artifact_metadata[] = "/tmp/cnet-intent-artifact-meta-XXXXXX";
     char metadata_artifact[] = "/tmp/cnet-intent-meta-model-XXXXXX";
     char corrupt_metadata[] = "/tmp/cnet-intent-meta-XXXXXX";
+    char development_corpus[] = "/tmp/cnet-intent-corpus-XXXXXX";
     int result = 1;
     size_t index;
 
@@ -113,6 +114,17 @@ int main(int argc, char **argv) {
     } while (0)
 
     REQUIRE(argc == 3, "artifact_arguments");
+    {
+        int corpus_descriptor = mkstemp(development_corpus);
+        size_t prompt_count = 0;
+        REQUIRE(corpus_descriptor >= 0, "corpus_path_setup");
+        REQUIRE(close(corpus_descriptor) == 0,
+                "corpus_path_close");
+        REQUIRE(cnet_compete_intent_export_development_corpus(
+                    development_corpus, &prompt_count) == 0 &&
+                    prompt_count == 406,
+                "development_corpus_export");
+    }
     memset(&report, 0, sizeof report);
     REQUIRE(cnet_compete_intent_load(argv[1], argv[2], &model, &report) == 0,
             "packed_load");
@@ -212,6 +224,7 @@ cleanup:
     (void)unlink(artifact_metadata);
     (void)unlink(metadata_artifact);
     (void)unlink(corrupt_metadata);
+    (void)unlink(development_corpus);
 #undef REQUIRE
     return result;
 }

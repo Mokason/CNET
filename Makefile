@@ -6098,6 +6098,78 @@ cnet_7b_compete_contract: cnet_7b_compete_fixture include/cnet_compete.h \
 	@./$(BIN_DIR)/test_cnet_compete_contract | tee logs/cnet_7b_compete_contract.log
 	@grep -q CNET_7B_COMPETE_CONTRACT_PASS logs/cnet_7b_compete_contract.log
 
+.PHONY: cnet_7b_independence_contract cnet_7b_candidate_freeze
+cnet_7b_independence_contract: include/cnet_compete_independence.h \
+		src/cnet_compete_independence.c \
+		tests/test_cnet_compete_independence.c
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -Werror -Iinclude \
+		-o $(BIN_DIR)/test_cnet_compete_independence \
+		src/cnet_compete_independence.c \
+		tests/test_cnet_compete_independence.c
+	@./$(BIN_DIR)/test_cnet_compete_independence | \
+		tee logs/cnet_7b_independence_contract.log
+	@grep -q CNET_7B_INDEPENDENCE_PASS \
+		logs/cnet_7b_independence_contract.log
+	$(CC) -O1 -g -std=c11 -Wall -Wextra -Wpedantic -Werror \
+		-D_DEFAULT_SOURCE -fsanitize=address,undefined \
+		-fno-omit-frame-pointer -Iinclude \
+		-o $(BIN_DIR)/test_cnet_compete_independence_san \
+		src/cnet_compete_independence.c \
+		tests/test_cnet_compete_independence.c \
+		-fsanitize=address,undefined
+	@ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 \
+		UBSAN_OPTIONS=halt_on_error=1 \
+		./$(BIN_DIR)/test_cnet_compete_independence_san | \
+		tee logs/cnet_7b_independence_contract_san.log
+	@grep -q CNET_7B_INDEPENDENCE_PASS \
+		logs/cnet_7b_independence_contract_san.log
+
+cnet_7b_candidate_freeze: cnet_7b_independence_contract \
+		include/cnet_compete_intent.h src/cnet_compete_intent.c \
+		src/cce/cce_wordlm.c tools/cnet_compete_export_corpus.c \
+		tools/cnet_compete_export_exclusions.c \
+		tools/cnet_compete_fixture_audit.c \
+		benchmarks/cnet_asi5_v1/heldout.tsv \
+		benchmarks/cnet_asi5_v2/heldout.tsv \
+		benchmarks/cnet_asi5_v3/excluded_prompts.tsv \
+		benchmarks/cnet_asi5_v3/candidate_artifacts.sha256 \
+		benchmarks/cnet_asi5_v3/candidate_behavior_paths.txt \
+		benchmarks/cnet_asi5_v3/FREEZE_PROTOCOL.md
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -Werror -Iinclude \
+		-o $(BIN_DIR)/cnet_compete_export_corpus \
+		src/cnet_compete_intent.c src/cce/cce_wordlm.c \
+		tools/cnet_compete_export_corpus.c $(LDFLAGS)
+	$(CC) $(CFLAGS) -Werror -Iinclude \
+		-o $(BIN_DIR)/cnet_compete_export_exclusions \
+		src/cnet_compete_independence.c \
+		tools/cnet_compete_export_exclusions.c
+	$(CC) $(CFLAGS) -Werror -Iinclude \
+		-o $(BIN_DIR)/cnet_compete_fixture_audit \
+		src/cnet_compete_independence.c \
+		tools/cnet_compete_fixture_audit.c
+	@tmp=$$(mktemp -d); trap 'rm -rf "$$tmp"' EXIT; \
+		./$(BIN_DIR)/cnet_compete_export_corpus "$$tmp/development.tsv"; \
+		./$(BIN_DIR)/cnet_compete_export_exclusions \
+			"$$tmp/excluded.tsv" "$$tmp/development.tsv"; \
+		cmp benchmarks/cnet_asi5_v3/excluded_prompts.tsv \
+			"$$tmp/excluded.tsv"; \
+		if ./$(BIN_DIR)/cnet_compete_fixture_audit \
+			benchmarks/cnet_asi5_v2/heldout.tsv \
+			benchmarks/cnet_asi5_v3/excluded_prompts.tsv \
+			>"$$tmp/v2-negative.log"; then \
+			echo CNET_7B_CANDIDATE_FREEZE_RED reason=v2_overlap_admitted; \
+			exit 1; \
+		fi; \
+		grep -q CNET_7B_INDEPENDENCE_FAIL "$$tmp/v2-negative.log"; \
+		sha256sum -c benchmarks/cnet_asi5_v3/candidate_artifacts.sha256; \
+		echo CNET_7B_CANDIDATE_FREEZE_PASS exclusions=1597 \
+			v2_withdrawal_reproduced=1 | \
+			tee logs/cnet_7b_candidate_freeze.log
+	@grep -q CNET_7B_CANDIDATE_FREEZE_PASS \
+		logs/cnet_7b_candidate_freeze.log
+
 .PHONY: cnet_7b_capsule_increment cnet_7b_capsules cnet_7b_capsules_san
 CNET_COMPETE_CAPSULE_CORE := src/cnet_capsule.c src/hybrid_ai.c src/base.c \
 	src/nn.c src/contract/contract.c src/contract/unit.c \

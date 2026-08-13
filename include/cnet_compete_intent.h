@@ -58,6 +58,11 @@ const char *cnet_compete_intent_name(CnetCompeteIntent intent);
 int cnet_compete_intent_tokenize(const char *prompt,
                                  int tokens[CNET_COMPETE_INTENT_CONTEXT]);
 
+/* Export every expanded training and calibration prompt without answers.
+   This is benchmark-contamination evidence, never a serving input. */
+int cnet_compete_intent_export_development_corpus(const char *path,
+                                                  size_t *prompt_count);
+
 /* Deterministic native-C training from the built-in external specification
    generator. It never consumes CNET answers or the frozen held-out fixture. */
 int cnet_compete_intent_train(const char *artifact_path,
