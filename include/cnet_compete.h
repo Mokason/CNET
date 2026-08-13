@@ -5,6 +5,14 @@
 
 #define CNET_COMPETE_SUITE_ID "CNET-ASI-5-v1"
 #define CNET_COMPETE_FIXTURE_PATH "benchmarks/cnet_asi5_v1/heldout.tsv"
+#define CNET_COMPETE_SYSTEM_PATH "benchmarks/cnet_asi5_v1/baseline_system.txt"
+#define CNET_COMPETE_GENERATOR_PATH "tools/cnet_compete_fixture.c"
+#define CNET_COMPETE_FIXTURE_SHA256 \
+    "c8dfd1fb435d02b644626ddd993cd4b3b43a1ebb8cd31fb66747741954ed8a33"
+#define CNET_COMPETE_SYSTEM_SHA256 \
+    "f3ef4c33535a007728e13dd9b1c89bcc124a94261d6814136a62735d34a8bf0a"
+#define CNET_COMPETE_GENERATOR_SHA256 \
+    "a1017e0c6fb3ea703df6665ca7c4c87d22c4e975f437b42262da64fe1cdd3969"
 #define CNET_COMPETE_TOTAL_ROWS 448u
 #define CNET_COMPETE_COVERED_ROWS 320u
 #define CNET_COMPETE_OOD_ROWS 128u

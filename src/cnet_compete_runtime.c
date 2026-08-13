@@ -10,6 +10,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 
 #define RUNTIME_PATH_MAX 1024
 #define RUNTIME_LEXEMES_MAX 96
@@ -421,7 +422,17 @@ int cnet_compete_runtime_load(const char *model_path,
         goto fail;
     runtime->composition.strict = 1;
     local.base_parameters = intent_report.parameters;
-    local.base_artifact_bytes = intent_report.artifact_bytes;
+    {
+        struct stat metadata_status;
+        if (lstat(metadata_path, &metadata_status) != 0 ||
+            !S_ISREG(metadata_status.st_mode) || metadata_status.st_size <= 0 ||
+            (unsigned long long)metadata_status.st_size > SIZE_MAX ||
+            intent_report.artifact_bytes >
+                SIZE_MAX - (size_t)metadata_status.st_size)
+            goto fail;
+        local.base_artifact_bytes = intent_report.artifact_bytes +
+                                    (size_t)metadata_status.st_size;
+    }
     local.intent_threshold = intent_report.threshold;
     if (report != NULL) *report = local;
     *runtime_out = runtime;

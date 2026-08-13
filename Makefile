@@ -21,11 +21,17 @@ CXX := g++
 # those recipes failed with a message that looks nothing like "wrong python
 # name". Probe for one that actually runs a Python 3.
 #
-# Override explicitly with `make PYTHON=/path/to/python`.
+# Override explicitly with `make PYTHON=/path/to/python`. The CNET-ASI-5
+# competition lane is native-only, including Make parse time, so its goals do
+# not perform the interpreter probe.
+ifneq ($(filter cnet_7b_%,$(MAKECMDGOALS)),)
+PYTHON ?= /bin/false
+else
 PYTHON ?= $(shell for p in python3 python py; do \
 	if command -v $$p >/dev/null 2>&1 && \
 	   $$p -c 'import sys; sys.exit(0 if sys.version_info[0] == 3 else 1)' >/dev/null 2>&1; \
 	then echo $$p; break; fi; done)
+endif
 ifeq ($(strip $(PYTHON)),)
 PYTHON := python3
 endif
@@ -6109,30 +6115,33 @@ cnet_7b_capsule_increment: include/cnet_compete_capsules.h \
 		tee logs/cnet_7b_capsule_increment.log
 	@grep -q CNET_7B_CAPSULE_INCREMENT_PASS logs/cnet_7b_capsule_increment.log
 
-cnet_7b_capsules: include/cnet_compete_capsules.h \
+cnet_7b_capsules: cnet_7b_artifact_manifest include/cnet_compete_capsules.h \
 		src/cnet_compete_capsules.c tests/test_cnet_compete_capsules.c \
 		$(CNET_COMPETE_CAPSULE_CORE) $(ROUTER) $(SPECIALIST_SRC)
 	@mkdir -p $(BIN_DIR) logs
-	$(CC) $(CFLAGS) -Werror -ffunction-sections -fdata-sections -Iinclude \
+	$(CC) $(CFLAGS) -Werror $(CNET_COMPETE_BUILD_DEFINE) \
+		-ffunction-sections -fdata-sections -Iinclude \
 		-o $(BIN_DIR)/test_cnet_compete_capsules \
 		src/cnet_compete_capsules.c $(CNET_COMPETE_CAPSULE_CORE) \
 		$(ROUTER) $(SPECIALIST_SRC) tests/test_cnet_compete_capsules.c \
+		src/cce/cce_campaign_provenance.c \
 		-Wl,--gc-sections $(LDFLAGS) $(MCP_LDFLAGS) -pthread
 	@./$(BIN_DIR)/test_cnet_compete_capsules | \
 		tee logs/cnet_7b_capsules.log
 	@grep -q CNET_7B_CAPSULES_PASS logs/cnet_7b_capsules.log
 
-cnet_7b_capsules_san: include/cnet_compete_capsules.h \
+cnet_7b_capsules_san: cnet_7b_artifact_manifest include/cnet_compete_capsules.h \
 		src/cnet_compete_capsules.c tests/test_cnet_compete_capsules.c \
 		$(CNET_COMPETE_CAPSULE_CORE) $(ROUTER) $(SPECIALIST_SRC)
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) -std=c11 -Wall -Wextra -pedantic -Werror -O1 -g \
-		-D_DEFAULT_SOURCE -DCNET_HAVE_CURL=0 \
+		-D_DEFAULT_SOURCE -DCNET_HAVE_CURL=0 $(CNET_COMPETE_BUILD_DEFINE) \
 		-fsanitize=address,undefined -fno-omit-frame-pointer \
 		-ffunction-sections -fdata-sections -Iinclude \
 		-o $(BIN_DIR)/test_cnet_compete_capsules_san \
 		src/cnet_compete_capsules.c $(CNET_COMPETE_CAPSULE_CORE) \
 		$(ROUTER) $(SPECIALIST_SRC) tests/test_cnet_compete_capsules.c \
+		src/cce/cce_campaign_provenance.c \
 		-Wl,--gc-sections -fsanitize=address,undefined -lm -lpthread
 	@ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 \
 		UBSAN_OPTIONS=halt_on_error=1 \
@@ -6241,3 +6250,372 @@ cnet_7b_runtime_san: cnet_7b_runtime
 		artifacts/cnet_asi5_v1/capsules | \
 		tee logs/cnet_7b_runtime_san.log
 	@grep -q CNET_7B_RUNTIME_PASS logs/cnet_7b_runtime_san.log
+
+.PHONY: cnet_7b_eval_contract
+cnet_7b_eval_contract: cnet_7b_artifact_manifest include/cnet_compete_eval.h \
+		include/cnet_compete_artifacts.h \
+		include/cnet_compete_client_identity.h \
+		src/cnet_compete_eval.c src/cnet_compete.c \
+		src/cnet_compete_client_identity.c \
+		src/cce/cce_campaign_provenance.c tests/test_cnet_compete_eval.c \
+		include/cnet_compete_score.h src/cnet_compete_score.c \
+		tests/test_cnet_compete_score.c \
+		tests/test_cnet_compete_client_identity.c
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -Werror -ffunction-sections -fdata-sections -Iinclude \
+		-o $(BIN_DIR)/test_cnet_compete_eval \
+		src/cnet_compete_eval.c src/cnet_compete.c \
+		src/cce/cce_campaign_provenance.c tests/test_cnet_compete_eval.c \
+		-Wl,--gc-sections $(LDFLAGS)
+	@./$(BIN_DIR)/test_cnet_compete_eval | tee logs/cnet_7b_eval_contract.log
+	@grep -q CNET_7B_EVAL_CONTRACT_PASS logs/cnet_7b_eval_contract.log
+	$(CC) $(CFLAGS) -Werror -ffunction-sections -fdata-sections -Iinclude \
+		-o $(BIN_DIR)/test_cnet_compete_score \
+		src/cnet_compete_score.c src/cnet_compete_eval.c src/cnet_compete.c \
+		src/cce/cce_campaign_provenance.c tests/test_cnet_compete_score.c \
+		-Wl,--gc-sections $(LDFLAGS)
+	@./$(BIN_DIR)/test_cnet_compete_score | tee logs/cnet_7b_score_contract.log
+	@grep -q CNET_7B_SCORE_PASS logs/cnet_7b_score_contract.log
+	$(CC) $(CFLAGS) -Werror -Iinclude \
+		-DCNET_COMPETE_CLIENT_TEST_ROLE=CNET_COMPETE_CLIENT_FIXTURE \
+		-o $(BIN_DIR)/test_cnet_compete_client_fixture \
+		src/cnet_compete_client_identity.c $(CNET_COMPETE_EVAL_CORE) \
+		tests/test_cnet_compete_client_identity.c \
+		-Wl,--no-as-needed -lm -Wl,--as-needed -lpthread
+	@umask 077; \
+		/usr/bin/install -d -m 0700 /home/marble/.local/state/cnet; \
+		test ! -L /home/marble/.local/state/cnet; \
+		/usr/bin/chmod 0700 /home/marble/.local/state/cnet; \
+		if test -e /home/marble/.local/state/cnet/.release.lock || \
+		   test -L /home/marble/.local/state/cnet/.release.lock; then \
+			test -f /home/marble/.local/state/cnet/.release.lock; \
+			test ! -L /home/marble/.local/state/cnet/.release.lock; \
+		else : > /home/marble/.local/state/cnet/.release.lock; fi; \
+		/usr/bin/chmod 0600 /home/marble/.local/state/cnet/.release.lock
+	@env -i PATH=/usr/bin:/bin LANG=C LC_ALL=C TZ=UTC \
+		./$(BIN_DIR)/test_cnet_compete_client_fixture | \
+		tee logs/cnet_7b_client_fixture.log
+	$(CC) $(CFLAGS) -Werror -Iinclude \
+		-DCNET_COMPETE_CLIENT_TEST_ROLE=CNET_COMPETE_CLIENT_BASELINE \
+		-o $(BIN_DIR)/test_cnet_compete_client_baseline \
+		src/cnet_compete_client_identity.c $(CNET_COMPETE_EVAL_CORE) \
+		tests/test_cnet_compete_client_identity.c \
+		-Wl,--no-as-needed -lcurl -Wl,--as-needed -lm -lpthread
+	@env -i PATH=/usr/bin:/bin LANG=C LC_ALL=C TZ=UTC \
+		./$(BIN_DIR)/test_cnet_compete_client_baseline | \
+		tee logs/cnet_7b_client_baseline.log
+	$(CC) $(CFLAGS) -Werror -Iinclude \
+		-DCNET_COMPETE_CLIENT_TEST_ROLE=CNET_COMPETE_CLIENT_SCORER \
+		-o $(BIN_DIR)/test_cnet_compete_client_scorer \
+		src/cnet_compete_client_identity.c $(CNET_COMPETE_EVAL_CORE) \
+		tests/test_cnet_compete_client_identity.c -lm -lpthread
+	@env -i PATH=/usr/bin:/bin LANG=C LC_ALL=C TZ=UTC \
+		./$(BIN_DIR)/test_cnet_compete_client_scorer | \
+		tee logs/cnet_7b_client_scorer.log
+	@grep -q '^CNET_7B_CLIENT_IDENTITY_PASS role=0$$' \
+		logs/cnet_7b_client_fixture.log
+	@grep -q '^CNET_7B_CLIENT_IDENTITY_PASS role=1$$' \
+		logs/cnet_7b_client_baseline.log
+	@grep -q '^CNET_7B_CLIENT_IDENTITY_PASS role=2$$' \
+		logs/cnet_7b_client_scorer.log
+
+.PHONY: cnet_7b_artifact_manifest cnet_7b_eval_build cnet_7b_eval_san
+CNET_COMPETE_BUILD_COMMIT := $(shell git rev-parse HEAD 2>/dev/null)
+CNET_COMPETE_BUILD_TREE := $(shell git rev-parse HEAD^{tree} 2>/dev/null)
+CNET_COMPETE_BUILD_DEFINE := \
+	-DCNET_COMPETE_BUILD_COMMIT=\"$(CNET_COMPETE_BUILD_COMMIT)\" \
+	-DCNET_COMPETE_BUILD_TREE=\"$(CNET_COMPETE_BUILD_TREE)\"
+CNET_COMPETE_EVAL_CORE := src/cnet_compete_eval.c src/cnet_compete.c \
+	src/cce/cce_campaign_provenance.c
+
+cnet_7b_artifact_manifest: cnet_7b_runtime \
+		tools/cnet_compete_manifest.c include/cnet_compete_artifacts.h \
+		src/cce/cce_campaign_provenance.c
+	$(CC) $(CFLAGS) -Werror -Iinclude \
+		-o $(BIN_DIR)/cnet_compete_manifest \
+		tools/cnet_compete_manifest.c src/cce/cce_campaign_provenance.c \
+		$(LDFLAGS)
+	@./$(BIN_DIR)/cnet_compete_manifest artifacts/cnet_asi5_v1 \
+		artifacts/cnet_asi5_v1/artifacts.sha256 | \
+		tee logs/cnet_7b_artifact_manifest.log
+	@grep -q CNET_7B_ARTIFACT_MANIFEST_PASS \
+		logs/cnet_7b_artifact_manifest.log
+
+cnet_7b_eval_build:
+	@/usr/bin/env -i PATH=/usr/bin:/bin LANG=C LC_ALL=C TZ=UTC \
+		/bin/bash -o pipefail -c ' \
+		set -euo pipefail; \
+		umask 077; \
+		workspace=$$1; release_root=$$2; \
+		parent=$${release_root%/*}; release_lock="$$parent/.release.lock"; \
+		/usr/bin/install -d -m 0700 /home/marble/.local/state \
+			/home/marble/.local/state/cnet "$$parent"; \
+		test -d "$$parent"; test ! -L "$$parent"; test -O "$$parent"; \
+		/usr/bin/chmod 0700 "$$parent"; \
+		if test -e "$$release_lock" || test -L "$$release_lock"; then \
+			test -f "$$release_lock"; test ! -L "$$release_lock"; \
+			test -O "$$release_lock"; \
+		else : >"$$release_lock"; fi; \
+		/usr/bin/chmod 0600 "$$release_lock"; exec 9>>"$$release_lock"; \
+		cd "$$workspace"; \
+		test "$$(/usr/bin/git rev-parse --show-toplevel)" = "$$workspace"; \
+		commit=$$(/usr/bin/git rev-parse --verify HEAD); \
+		tree=$$(/usr/bin/git rev-parse --verify HEAD^{tree}); \
+		test "$${#commit}" -eq 40; test "$${#tree}" -eq 40; \
+		/usr/bin/git cat-file -e "$$commit^{commit}"; \
+		/usr/bin/git diff --quiet --no-ext-diff --ignore-submodules --; \
+		/usr/bin/git diff --cached --quiet --no-ext-diff \
+			--ignore-submodules --; \
+		snapshot=$$(/usr/bin/mktemp -d /tmp/cnet-asi5-build-XXXXXX); \
+		case "$$snapshot" in /tmp/cnet-asi5-build-??????) ;; *) exit 1;; esac; \
+		trap '\''/usr/bin/rm -rf -- "$$snapshot"'\'' EXIT HUP INT TERM; \
+		source_root="$$snapshot/source"; \
+		staging=$$(/usr/bin/mktemp -d \
+			"$$parent/.cnet-asi5-stage-XXXXXX"); \
+		case "$$staging" in "$$parent"/.cnet-asi5-stage-??????) ;; \
+			*) exit 1;; esac; \
+		trap '\''/usr/bin/rm -rf -- "$$snapshot" "$$staging"'\'' \
+			EXIT HUP INT TERM; \
+		archive="$$snapshot/source.tar"; \
+		/usr/bin/mkdir -m 0700 "$$source_root"; \
+		/usr/bin/git archive --format=tar --output="$$archive" "$$commit"; \
+		/usr/bin/tar --extract --file="$$archive" \
+			--directory="$$source_root" --no-same-owner \
+			--no-same-permissions; \
+		/usr/bin/rm -- "$$archive"; \
+		test -x "$$source_root/tools/cnet_compete_snapshot_build.sh"; \
+		"$$source_root/tools/cnet_compete_snapshot_build.sh" \
+			"$$source_root" "$$workspace" "$$staging" "$$release_root" \
+			"$$commit" "$$tree" | \
+			/usr/bin/tee "$$workspace/logs/cnet_7b_eval_build.log"; \
+		test "$$(/usr/bin/grep -c '^\''CNET_7B_EVAL_BUILD_PASS '\'' \
+			"$$workspace/logs/cnet_7b_eval_build.log")" -eq 1; \
+		test "$$(/usr/bin/wc -l < \
+			"$$workspace/logs/cnet_7b_eval_build.log")" -eq 1; \
+		/usr/bin/install -m 0600 \
+			"$$workspace/logs/cnet_7b_eval_build.log" \
+			"$$staging/evidence/cnet_7b_eval_build.log"; \
+		test "$$(/usr/bin/git rev-parse --verify HEAD)" = "$$commit"; \
+		test "$$(/usr/bin/git rev-parse --verify HEAD^{tree})" = "$$tree"; \
+		/usr/bin/git diff --quiet --no-ext-diff --ignore-submodules --; \
+		/usr/bin/git diff --cached --quiet --no-ext-diff \
+			--ignore-submodules --; \
+		/usr/bin/sync -f "$$staging"; \
+		/usr/bin/flock --exclusive --nonblock 9; \
+		test "$$release_lock" -ef "/proc/$$$$/fd/9"; \
+		old="$$parent/.cnet-asi5-old"; \
+		if test -e "$$old" || test -L "$$old"; then \
+			test -d "$$old"; test ! -L "$$old"; test -O "$$old"; \
+			if test -e "$$release_root" || test -L "$$release_root"; then \
+				test -d "$$release_root"; test ! -L "$$release_root"; \
+				/usr/bin/rm -rf -- "$$old"; \
+			else \
+				/usr/bin/mv -- "$$old" "$$release_root"; \
+			fi; \
+			/usr/bin/sync -f "$$parent"; \
+		fi; \
+		if test -e "$$release_root/results/bonsai_8b_cpu_q1_0.results" || \
+		   test -L "$$release_root/results/bonsai_8b_cpu_q1_0.results" || \
+		   test -e "$$release_root/results/bonsai_8b_cpu_q1_0.results.anchor" || \
+		   test -L "$$release_root/results/bonsai_8b_cpu_q1_0.results.anchor" || \
+		   test -e "$$release_root/results/bonsai_8b_cpu_q1_0.results.lock" || \
+		   test -L "$$release_root/results/bonsai_8b_cpu_q1_0.results.lock" || \
+		   test -e "$$release_root/results/cnet_native_c.results" || \
+		   test -L "$$release_root/results/cnet_native_c.results" || \
+		   test -e "$$release_root/results/cnet_native_c.results.anchor" || \
+		   test -L "$$release_root/results/cnet_native_c.results.anchor" || \
+		   test -e "$$release_root/results/cnet_native_c.results.lock" || \
+		   test -L "$$release_root/results/cnet_native_c.results.lock"; then \
+			test -d "$$release_root"; test ! -L "$$release_root"; \
+			test -f "$$release_root/evidence/cnet_7b_eval_build.log"; \
+			read -r marker build_commit build_tree rest < \
+				"$$release_root/evidence/cnet_7b_eval_build.log"; \
+			test "$$marker" = CNET_7B_EVAL_BUILD_PASS; \
+			test "$$build_commit" = "commit=$$commit"; \
+			test "$$build_tree" = "tree=$$tree"; \
+			for path in bin/cnet_compete_run_fixture \
+				bin/cnet_compete_run_baseline bin/cnet_compete_score \
+				evidence/cnet_7b_capsules_san.log \
+				evidence/cnet_7b_runtime_san.log \
+				evidence/cnet_7b_eval_san.log \
+				evidence/cnet_7b_score_san.log \
+				inputs/heldout.tsv inputs/baseline_system.txt \
+				inputs/fixture_generator.c \
+				inputs/artifacts/intent.wlm \
+				inputs/artifacts/intent.meta \
+				inputs/artifacts/capsules/.complete \
+				inputs/artifacts/capsules/access_policy_v1/manifest.cknow \
+				inputs/artifacts/capsules/access_policy_v1/unit.cnb \
+				inputs/artifacts/capsules/add3_mod256/manifest.cknow \
+				inputs/artifacts/capsules/add3_mod256/unit.cnb \
+				inputs/artifacts/capsules/crc8_atm/manifest.cknow \
+				inputs/artifacts/capsules/crc8_atm/unit.cnb \
+				inputs/artifacts/capsules/double_mod256/manifest.cknow \
+				inputs/artifacts/capsules/double_mod256/unit.cnb \
+				inputs/artifacts/capsules/increment_mod256/manifest.cknow \
+				inputs/artifacts/capsules/increment_mod256/unit.cnb \
+				inputs/artifacts/capsules/minutes_to_seconds/manifest.cknow \
+				inputs/artifacts/capsules/minutes_to_seconds/unit.cnb \
+				inputs/artifacts/artifacts.sha256; do \
+				/usr/bin/cmp "$$staging/$$path" "$$release_root/$$path"; \
+			done; \
+		else \
+			test ! -e "$$old"; \
+			if test -e "$$release_root"; then \
+				test -d "$$release_root"; test ! -L "$$release_root"; \
+				/usr/bin/mv -- "$$release_root" "$$old"; \
+			fi; \
+			/usr/bin/mv -- "$$staging" "$$release_root"; \
+			/usr/bin/sync -f "$$parent"; \
+			if test -e "$$old"; then /usr/bin/rm -rf -- "$$old"; fi; \
+			/usr/bin/sync -f "$$parent"; \
+		fi; \
+		/usr/bin/flock --unlock 9 \
+		' _ "$(CURDIR)" "$(CNET_COMPETE_RELEASE_ROOT)"
+
+cnet_7b_eval_san: cnet_7b_eval_contract
+	$(CC) -std=c11 -Wall -Wextra -pedantic -Werror -O1 -g \
+		-D_DEFAULT_SOURCE -DCNET_HAVE_CURL=0 \
+		-fsanitize=address,undefined -fno-omit-frame-pointer -Iinclude \
+		-o $(BIN_DIR)/test_cnet_compete_eval_san \
+		$(CNET_COMPETE_EVAL_CORE) tests/test_cnet_compete_eval.c \
+		-fsanitize=address,undefined -lm -lpthread
+	@ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 \
+		UBSAN_OPTIONS=halt_on_error=1 \
+		./$(BIN_DIR)/test_cnet_compete_eval_san | \
+		tee logs/cnet_7b_eval_san.log
+	@grep -q CNET_7B_EVAL_CONTRACT_PASS logs/cnet_7b_eval_san.log
+	$(CC) -std=c11 -Wall -Wextra -pedantic -Werror -O1 -g \
+		-D_DEFAULT_SOURCE -DCNET_HAVE_CURL=0 \
+		-fsanitize=address,undefined -fno-omit-frame-pointer -Iinclude \
+		-o $(BIN_DIR)/test_cnet_compete_score_san \
+		src/cnet_compete_score.c $(CNET_COMPETE_EVAL_CORE) \
+		tests/test_cnet_compete_score.c \
+		-fsanitize=address,undefined -lm -lpthread
+	@ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 \
+		UBSAN_OPTIONS=halt_on_error=1 \
+		./$(BIN_DIR)/test_cnet_compete_score_san | \
+		tee logs/cnet_7b_score_san.log
+	@grep -q CNET_7B_SCORE_PASS logs/cnet_7b_score_san.log
+
+CNET_COMPETE_RELEASE_ROOT := /home/marble/.local/state/cnet/cnet_asi5_v1
+CNET_COMPETE_RELEASE_BIN := $(CNET_COMPETE_RELEASE_ROOT)/bin
+CNET_COMPETE_EVIDENCE_DIR := $(CNET_COMPETE_RELEASE_ROOT)/evidence
+CNET_COMPETE_RESULTS_DIR := $(CNET_COMPETE_RELEASE_ROOT)/results
+CNET_COMPETE_ARTIFACT_MODEL := $(CNET_COMPETE_RELEASE_ROOT)/inputs/artifacts/intent.wlm
+CNET_COMPETE_ARTIFACT_META := $(CNET_COMPETE_RELEASE_ROOT)/inputs/artifacts/intent.meta
+CNET_COMPETE_ARTIFACT_CAPSULE_ROOT := $(CNET_COMPETE_RELEASE_ROOT)/inputs/artifacts/capsules
+CNET_COMPETE_ARTIFACT_MANIFEST := $(CNET_COMPETE_RELEASE_ROOT)/inputs/artifacts/artifacts.sha256
+CNET_COMPETE_BASELINE_RESULTS := \
+	$(CNET_COMPETE_RESULTS_DIR)/bonsai_8b_cpu_q1_0.results
+CNET_COMPETE_CNET_RESULTS := \
+	$(CNET_COMPETE_RESULTS_DIR)/cnet_native_c.results
+
+.PHONY: cnet_7b_baseline_preflight cnet_7b_baseline_results \
+	cnet_7b_cnet_results cnet_7b_compete_results \
+	cnet_7b_compete_results_inner
+cnet_7b_baseline_preflight: cnet_7b_eval_build
+	@env -i PATH=/usr/bin:/bin LANG=C LC_ALL=C TZ=UTC \
+		$(CNET_COMPETE_RELEASE_BIN)/cnet_compete_run_baseline --preflight | \
+		tee logs/cnet_7b_baseline_preflight.log
+	@grep -q '^CNET_7B_BASELINE_PREFLIGHT_PASS ' \
+		logs/cnet_7b_baseline_preflight.log
+
+cnet_7b_baseline_results: cnet_7b_baseline_preflight
+	@env -i PATH=/usr/bin:/bin LANG=C LC_ALL=C TZ=UTC \
+		$(CNET_COMPETE_RELEASE_BIN)/cnet_compete_run_baseline \
+		$(CNET_COMPETE_BASELINE_RESULTS) | \
+		tee logs/cnet_7b_baseline_run.log
+	@test "$$(grep -c '^CNET_7B_BASELINE_RUN_PASS ' \
+		logs/cnet_7b_baseline_run.log)" -eq 1
+
+cnet_7b_cnet_results: cnet_7b_baseline_results
+	@env -i PATH=/usr/bin:/bin LANG=C LC_ALL=C TZ=UTC \
+		$(CNET_COMPETE_RELEASE_BIN)/cnet_compete_run_fixture \
+		$(CNET_COMPETE_ARTIFACT_MODEL) \
+		$(CNET_COMPETE_ARTIFACT_META) \
+		$(CNET_COMPETE_ARTIFACT_CAPSULE_ROOT) \
+		$(CNET_COMPETE_ARTIFACT_MANIFEST) \
+		$(CNET_COMPETE_CNET_RESULTS) | \
+		tee logs/cnet_7b_cnet_run.log
+	@test "$$(grep -c '^CNET_7B_CNET_RUN_PASS ' \
+		logs/cnet_7b_cnet_run.log)" -eq 1
+
+cnet_7b_compete_results_inner: cnet_7b_cnet_results
+	@set -e; \
+		tmp="$$(/usr/bin/mktemp logs/cnet_7b_compete_results.tmp.XXXXXX)"; \
+		clean="$${tmp}.clean"; \
+		trap '/usr/bin/rm -f "$$tmp" "$$clean"' EXIT; \
+		set +e; \
+		/usr/bin/env -i PATH=/usr/bin:/bin LANG=C LC_ALL=C TZ=UTC \
+			$(CNET_COMPETE_RELEASE_BIN)/cnet_compete_score \
+			$(CNET_COMPETE_ARTIFACT_MANIFEST) \
+			$(CNET_COMPETE_EVIDENCE_DIR)/cnet_7b_capsules_san.log \
+			$(CNET_COMPETE_EVIDENCE_DIR)/cnet_7b_eval_build.log \
+			$(CNET_COMPETE_BASELINE_RESULTS) \
+			$(CNET_COMPETE_CNET_RESULTS) >"$$tmp" 2>&1; \
+		status=$$?; \
+		set -e; \
+		terminals="$$(/usr/bin/grep -Ec '^CNET_7B_COMPETE_(PASS|FAIL)( |$$)' \
+			"$$tmp" || true)"; \
+		passes="$$(/usr/bin/grep -Ec '^CNET_7B_COMPETE_PASS( |$$)' \
+			"$$tmp" || true)"; \
+		fails="$$(/usr/bin/grep -Ec '^CNET_7B_COMPETE_FAIL( |$$)' \
+			"$$tmp" || true)"; \
+		valid=0; final_status=1; \
+		if test $$status -eq 0 && test "$$terminals" -eq 1 && \
+		   test "$$passes" -eq 1 && test "$$fails" -eq 0; then \
+			valid=1; final_status=0; \
+		elif test $$status -ne 0 && test "$$terminals" -eq 1 && \
+		     test "$$passes" -eq 0 && test "$$fails" -eq 1; then \
+			valid=1; final_status=$$status; \
+		fi; \
+		if test $$valid -eq 1; then \
+			/usr/bin/mv "$$tmp" logs/cnet_7b_compete_results.log; \
+		else \
+			/usr/bin/grep -Ev '^CNET_7B_COMPETE_(PASS|FAIL)( |$$)' \
+				"$$tmp" >"$$clean" || test $$? -eq 1; \
+			echo 'CNET_7B_COMPETE_FAIL suite=CNET-ASI-5-v1 ' \
+				'failed_gates=1 reason=scorer_contract ' \
+				'broader_claims=WITHHELD' >>"$$clean"; \
+			/usr/bin/mv "$$clean" logs/cnet_7b_compete_results.log; \
+		fi; \
+		/usr/bin/cat logs/cnet_7b_compete_results.log; \
+		exit $$final_status
+
+cnet_7b_compete_results:
+	@set +e; \
+		setup=0; \
+		/usr/bin/mkdir -p logs || setup=$$?; \
+		if test $$setup -eq 0; then \
+			/usr/bin/rm -f logs/cnet_7b_compete_results.log || setup=$$?; \
+		fi; \
+		if test $$setup -ne 0; then \
+			echo 'CNET_7B_COMPETE_FAIL suite=CNET-ASI-5-v1 ' \
+				'failed_gates=1 reason=workflow_setup ' \
+				'broader_claims=WITHHELD'; \
+			exit $$setup; \
+		fi; \
+		/usr/bin/env -i PATH=/usr/bin:/bin LANG=C LC_ALL=C TZ=UTC \
+			/usr/bin/make --no-print-directory \
+			cnet_7b_compete_results_inner; \
+		status=$$?; \
+		if test $$status -ne 0; then \
+			if ! test -f logs/cnet_7b_compete_results.log || \
+			   test "$$(/usr/bin/grep -Ec '^CNET_7B_COMPETE_(PASS|FAIL)( |$$)' \
+				logs/cnet_7b_compete_results.log)" -ne 1; then \
+				echo 'CNET_7B_COMPETE_FAIL suite=CNET-ASI-5-v1 ' \
+					'failed_gates=1 reason=workflow_stage ' \
+					'broader_claims=WITHHELD'; \
+			fi; \
+			exit $$status; \
+		elif ! test -f logs/cnet_7b_compete_results.log || \
+		     test "$$(/usr/bin/grep -Ec '^CNET_7B_COMPETE_PASS( |$$)' \
+			logs/cnet_7b_compete_results.log)" -ne 1 || \
+		     test "$$(/usr/bin/grep -Ec '^CNET_7B_COMPETE_FAIL( |$$)' \
+			logs/cnet_7b_compete_results.log)" -ne 0; then \
+			echo 'CNET_7B_COMPETE_FAIL suite=CNET-ASI-5-v1 ' \
+				'failed_gates=1 reason=workflow_verdict ' \
+				'broader_claims=WITHHELD'; \
+			exit 1; \
+		fi

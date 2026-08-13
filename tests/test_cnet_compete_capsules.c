@@ -1,5 +1,7 @@
 #include "cnet_capsule.h"
 #include "cnet_compete_capsules.h"
+#include "cnet_compete_artifacts.h"
+#include "cce/cce_campaign_provenance.h"
 #include "router.h"
 
 #include <stdio.h>
@@ -9,6 +11,13 @@
 #include <unistd.h>
 
 #define MAX_MANIFEST_BYTES (1024u * 1024u)
+
+#ifndef CNET_COMPETE_BUILD_COMMIT
+#define CNET_COMPETE_BUILD_COMMIT "unknown"
+#endif
+#ifndef CNET_COMPETE_BUILD_TREE
+#define CNET_COMPETE_BUILD_TREE "unknown"
+#endif
 
 typedef struct {
     HybridAi *coverage;
@@ -49,6 +58,48 @@ static int copy_file(const char *from, const char *to) {
     if (ferror(input)) { fclose(input); fclose(output); return -1; }
     fclose(input);
     return fclose(output);
+}
+
+static int files_equal(const char *left_path, const char *right_path) {
+    FILE *left = fopen(left_path, "rb"), *right = fopen(right_path, "rb");
+    unsigned char left_buffer[4096], right_buffer[4096];
+    int equal = 0;
+    if (left == NULL || right == NULL) goto done;
+    for (;;) {
+        size_t left_count = fread(left_buffer, 1, sizeof left_buffer, left);
+        size_t right_count = fread(right_buffer, 1, sizeof right_buffer, right);
+        if (left_count != right_count ||
+            memcmp(left_buffer, right_buffer, left_count) != 0)
+            goto done;
+        if (left_count < sizeof left_buffer) {
+            if (ferror(left) || ferror(right)) goto done;
+            equal = 1;
+            break;
+        }
+    }
+done:
+    if (left != NULL && fclose(left) != 0) equal = 0;
+    if (right != NULL && fclose(right) != 0) equal = 0;
+    return equal;
+}
+
+static int exported_capsule_matches_artifact(const char *temporary,
+                                             const char *unit) {
+    static const char *const files[] = {"unit.cnb", "manifest.cknow"};
+    char left[1024], right[1024];
+    size_t index;
+    for (index = 0; index < sizeof files / sizeof files[0]; ++index) {
+        int left_written = snprintf(left, sizeof left, "%s/%s", temporary,
+                                    files[index]);
+        int right_written = snprintf(right, sizeof right, "%s/capsules/%s/%s",
+                                     CNET_COMPETE_ARTIFACT_ROOT, unit,
+                                     files[index]);
+        if (left_written < 0 || (size_t)left_written >= sizeof left ||
+            right_written < 0 || (size_t)right_written >= sizeof right ||
+            !files_equal(left, right))
+            return 0;
+    }
+    return 1;
 }
 
 static int clone_capsule(const char *source, const char *destination) {
@@ -320,7 +371,47 @@ int main(void) {
         REQUIRE(strcmp(capsule.scope, "exhaustive") == 0 &&
                     capsule.coverage_rows == domain && capsule.payload_bytes > 0,
                 "export_evidence");
+        REQUIRE(exported_capsule_matches_artifact(
+                    dirs[unit],
+                    cnet_compete_unit_name((CnetCompeteUnit)unit)),
+                "audited_capsule_artifact_mismatch");
         payload_bytes += capsule.payload_bytes;
+        {
+            CnetBase isolated;
+            HybridAi isolated_coverage;
+            unsigned isolated_input;
+            cnb_init(&isolated);
+            hybrid_ai_init(&isolated_coverage);
+            memset(&capsule, 0, sizeof capsule);
+            REQUIRE(cnet_capsule_import(&isolated, &isolated_coverage,
+                                        dirs[unit], &capsule) == 0 &&
+                        isolated.unit_count == 1 &&
+                        hybrid_coverage_count(&isolated_coverage) == 1 &&
+                        strcmp(capsule.scope, "exhaustive") == 0 &&
+                        capsule.coverage_rows == domain,
+                    "isolated_fresh_import_failed");
+            for (isolated_input = 0; isolated_input < domain;
+                 ++isolated_input) {
+                unsigned output = ~0u;
+                REQUIRE(cnet_compete_capsule_eval(
+                            &isolated, &isolated_coverage,
+                            (CnetCompeteUnit)unit, isolated_input,
+                            &output) == 0 &&
+                            output == reference_value(
+                                (CnetCompeteUnit)unit, isolated_input),
+                        "isolated_replay_failed");
+            }
+            {
+                unsigned output = 0;
+                REQUIRE(cnet_compete_capsule_eval(
+                            &isolated, &isolated_coverage,
+                            (CnetCompeteUnit)unit, (unsigned)domain,
+                            &output) == 1,
+                        "isolated_out_of_domain_not_refused");
+            }
+            hybrid_ai_free(&isolated_coverage);
+            cnb_free(&isolated);
+        }
         memset(&capsule, 0, sizeof capsule);
         REQUIRE(cnet_capsule_import(&fresh, &fresh_coverage, dirs[unit],
                                     &capsule) == 0,
@@ -349,6 +440,45 @@ int main(void) {
     REQUIRE(source.unit_count == CNET_COMPETE_UNIT_COUNT &&
                 fresh.unit_count == CNET_COMPETE_UNIT_COUNT,
             "unit_count");
+    REQUIRE(hybrid_coverage_count(&fresh_coverage) ==
+                CNET_COMPETE_UNIT_COUNT,
+            "retained_coverage_count");
+    for (unit = 0; unit < CNET_COMPETE_UNIT_COUNT; ++unit) {
+        const char *name = cnet_compete_unit_name((CnetCompeteUnit)unit);
+        size_t domain = (size_t)1u << input_bits((CnetCompeteUnit)unit);
+        size_t record, matching_records = 0;
+        unsigned input;
+        for (record = 0; record < fresh_coverage.coverage_count; ++record) {
+            const HybridCoverage *coverage =
+                &fresh_coverage.coverage[record];
+            if (coverage->active && strcmp(coverage->unit, name) == 0) {
+                REQUIRE(coverage->n_rows == domain &&
+                            coverage->rows != NULL &&
+                            coverage->targets != NULL,
+                        "retained_coverage_metadata");
+                ++matching_records;
+            }
+        }
+        REQUIRE(matching_records == 1 &&
+                    hybrid_coverage_has_unit(&fresh_coverage, name),
+                "retained_coverage_identity");
+        for (input = 0; input < domain; ++input) {
+            unsigned output = ~0u;
+            REQUIRE(cnet_compete_capsule_eval(
+                        &fresh, &fresh_coverage, (CnetCompeteUnit)unit,
+                        input, &output) == 0 &&
+                        output == reference_value((CnetCompeteUnit)unit,
+                                                  input),
+                    "post_import_interference");
+        }
+        {
+            unsigned output = 0;
+            REQUIRE(cnet_compete_capsule_eval(
+                        &fresh, &fresh_coverage, (CnetCompeteUnit)unit,
+                        (unsigned)domain, &output) == 1,
+                    "post_import_ood_not_refused");
+        }
+    }
 
     REQUIRE(reserve_capsule_path(corrupt, sizeof corrupt,
                                  "cnet_asi5_corrupt") == 0 &&
@@ -428,10 +558,21 @@ int main(void) {
         registry_free(&registry);
     }
 
+    {
+        char artifact_sha[65];
+        REQUIRE(cce_sha256_file_hex(CNET_COMPETE_ARTIFACT_MANIFEST,
+                                    artifact_sha) == 0 &&
+                    strcmp(artifact_sha,
+                           CNET_COMPETE_ARTIFACT_MANIFEST_SHA256) == 0,
+                "artifact_manifest_identity");
+    }
     printf("CNET_7B_CAPSULES_PASS units=%d certified_rows=%zu "
            "compose_rows=256 guard_checks=768 payload_bytes=%zu "
-           "corruption_refused=1 incompatibility_refused=1\n",
-           CNET_COMPETE_UNIT_COUNT, certified_rows, payload_bytes);
+           "corruption_refused=1 incompatibility_refused=1 "
+           "artifact_sha256=%s commit=%s tree=%s\n",
+           CNET_COMPETE_UNIT_COUNT, certified_rows, payload_bytes,
+           CNET_COMPETE_ARTIFACT_MANIFEST_SHA256,
+           CNET_COMPETE_BUILD_COMMIT, CNET_COMPETE_BUILD_TREE);
     rc = 0;
 done:
     clean_capsule(incompatible);

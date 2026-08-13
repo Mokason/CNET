@@ -6,6 +6,9 @@
 /* Compute the lowercase SHA-256 digest of a file. hex_out needs 65 bytes. */
 int cce_sha256_file_hex(const char *path, char hex_out[65]);
 
+/* Compute the lowercase SHA-256 digest of an in-memory byte sequence. */
+int cce_sha256_bytes_hex(const void *bytes, size_t length, char hex_out[65]);
+
 /* Fail-closed validation for a model-backed campaign replay manifest.
  * Returns 0 only when source revision/dirty state and every required artifact
  * fingerprint match. The diagnostic buffer always explains a refusal. */

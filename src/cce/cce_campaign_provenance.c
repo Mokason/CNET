@@ -106,8 +106,29 @@ static void sha256_final(sha256_ctx *c, unsigned char out[32]) {
     }
 }
 
-int cce_sha256_file_hex(const char *path, char hex_out[65]) {
+static void digest_hex(const unsigned char digest[32], char hex_out[65]) {
     static const char hd[] = "0123456789abcdef";
+    size_t i;
+    for (i = 0; i < 32; ++i) {
+        hex_out[i * 2u] = hd[digest[i] >> 4];
+        hex_out[i * 2u + 1u] = hd[digest[i] & 15u];
+    }
+    hex_out[64] = '\0';
+}
+
+int cce_sha256_bytes_hex(const void *bytes, size_t length, char hex_out[65]) {
+    unsigned char digest[32];
+    sha256_ctx context;
+    if (hex_out == NULL || (bytes == NULL && length != 0)) return -1;
+    sha256_init(&context);
+    if (length != 0)
+        sha256_update(&context, (const unsigned char *)bytes, length);
+    sha256_final(&context, digest);
+    digest_hex(digest, hex_out);
+    return 0;
+}
+
+int cce_sha256_file_hex(const char *path, char hex_out[65]) {
     unsigned char buf[65536], digest[32];
     sha256_ctx c;
     FILE *f;
@@ -119,11 +140,7 @@ int cce_sha256_file_hex(const char *path, char hex_out[65]) {
     while ((n = fread(buf, 1, sizeof buf, f)) > 0) sha256_update(&c, buf, n);
     if (ferror(f) || fclose(f) != 0) return -1;
     sha256_final(&c, digest);
-    for (size_t i = 0; i < 32; ++i) {
-        hex_out[i*2] = hd[digest[i] >> 4];
-        hex_out[i*2+1] = hd[digest[i] & 15u];
-    }
-    hex_out[64] = '\0';
+    digest_hex(digest, hex_out);
     return 0;
 }
 

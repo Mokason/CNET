@@ -1,4 +1,5 @@
 #include "cnet_compete_runtime.h"
+#include "cnet_compete_artifacts.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -83,7 +84,8 @@ int main(int argc, char **argv) {
                 report.composition_members == 3,
             "capsule_report");
     REQUIRE(report.base_parameters == 91581 &&
-                report.base_artifact_bytes == 55248 &&
+                report.base_artifact_bytes ==
+                    CNET_COMPETE_BASE_ARTIFACT_BYTES &&
                 report.intent_threshold > 0.0 && report.intent_threshold <= 1.0,
             "base_report");
     for (index = 0; index < sizeof covered / sizeof covered[0]; ++index) {
