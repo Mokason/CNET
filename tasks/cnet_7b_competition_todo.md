@@ -6,9 +6,9 @@
 - [x] Produce P1 RED evidence for the missing fixture/scorer contract.
 - [x] Generate and commit the 448-row fixture, system prompt, and digests.
 - [x] Produce P1 GREEN evidence and deterministic regeneration proof.
-- [ ] Produce P2 RED evidence for certification/export/import/refusal gaps.
-- [ ] Build, certify, export, import, and replay six independent capsules.
-- [ ] Prove corrupt/incompatible capsule refusal and three-hop guarded composition.
+- [x] Produce P2 RED evidence for certification/export/import/refusal gaps.
+- [x] Build, certify, export, import, and replay six independent capsules.
+- [x] Prove corrupt/incompatible capsule refusal and three-hop guarded composition.
 - [ ] Produce P3 RED evidence for the absent compact intent artifact.
 - [ ] Train/calibrate/export/reload the native C WordLM without Tier-A data.
 - [ ] Record model dimensions, parameters, artifact bytes, and calibration matrix.
