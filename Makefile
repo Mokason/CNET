@@ -6180,3 +6180,64 @@ cnet_7b_intent_san: cnet_7b_intent
 		artifacts/cnet_asi5_v1/intent.meta | \
 		tee logs/cnet_7b_intent_san.log
 	@grep -q CNET_7B_INTENT_PASS logs/cnet_7b_intent_san.log
+
+.PHONY: cnet_7b_capsule_artifacts cnet_7b_runtime cnet_7b_runtime_san
+cnet_7b_capsule_artifacts: include/cnet_compete_capsules.h \
+		src/cnet_compete_capsules.c tools/cnet_compete_build_capsules.c \
+		$(CNET_COMPETE_CAPSULE_CORE)
+	@mkdir -p $(BIN_DIR) logs artifacts/cnet_asi5_v1
+	$(CC) $(CFLAGS) -Werror -ffunction-sections -fdata-sections -Iinclude \
+		-o $(BIN_DIR)/cnet_compete_build_capsules \
+		src/cnet_compete_capsules.c $(CNET_COMPETE_CAPSULE_CORE) \
+		tools/cnet_compete_build_capsules.c \
+		-Wl,--gc-sections $(LDFLAGS) $(MCP_LDFLAGS) -pthread
+	@./$(BIN_DIR)/cnet_compete_build_capsules \
+		artifacts/cnet_asi5_v1/capsules | \
+		tee logs/cnet_7b_capsule_artifacts.log
+	@grep -q CNET_7B_CAPSULE_ARTIFACTS_PASS \
+		logs/cnet_7b_capsule_artifacts.log
+
+cnet_7b_runtime: cnet_7b_intent cnet_7b_capsule_artifacts \
+		include/cnet_compete_runtime.h src/cnet_compete_runtime.c \
+		tests/test_cnet_compete_runtime.c tools/cnet_compete_run.c \
+		$(ROUTER) $(SPECIALIST_SRC)
+	$(CC) $(CFLAGS) -Werror -ffunction-sections -fdata-sections -Iinclude \
+		-o $(BIN_DIR)/test_cnet_compete_runtime \
+		src/cnet_compete_runtime.c src/cnet_compete_intent.c \
+		src/cnet_compete_capsules.c src/cce/cce_wordlm.c \
+		$(CNET_COMPETE_CAPSULE_CORE) $(ROUTER) $(SPECIALIST_SRC) \
+		tests/test_cnet_compete_runtime.c \
+		-Wl,--gc-sections $(LDFLAGS) $(MCP_LDFLAGS) -pthread
+	@./$(BIN_DIR)/test_cnet_compete_runtime \
+		artifacts/cnet_asi5_v1/intent.wlm \
+		artifacts/cnet_asi5_v1/intent.meta \
+		artifacts/cnet_asi5_v1/capsules | \
+		tee logs/cnet_7b_runtime.log
+	@grep -q CNET_7B_RUNTIME_PASS logs/cnet_7b_runtime.log
+	$(CC) $(CFLAGS) -Werror -ffunction-sections -fdata-sections -Iinclude \
+		-o $(BIN_DIR)/cnet_compete_run \
+		src/cnet_compete_runtime.c src/cnet_compete_intent.c \
+		src/cnet_compete_capsules.c src/cce/cce_wordlm.c \
+		$(CNET_COMPETE_CAPSULE_CORE) $(ROUTER) $(SPECIALIST_SRC) \
+		tools/cnet_compete_run.c \
+		-Wl,--gc-sections $(LDFLAGS) $(MCP_LDFLAGS) -pthread
+
+cnet_7b_runtime_san: cnet_7b_runtime
+	$(CC) -std=c11 -Wall -Wextra -pedantic -Werror -O1 -g \
+		-D_DEFAULT_SOURCE -DCNET_HAVE_CURL=0 \
+		-fsanitize=address,undefined -fno-omit-frame-pointer \
+		-ffunction-sections -fdata-sections -Iinclude \
+		-o $(BIN_DIR)/test_cnet_compete_runtime_san \
+		src/cnet_compete_runtime.c src/cnet_compete_intent.c \
+		src/cnet_compete_capsules.c src/cce/cce_wordlm.c \
+		$(CNET_COMPETE_CAPSULE_CORE) $(ROUTER) $(SPECIALIST_SRC) \
+		tests/test_cnet_compete_runtime.c \
+		-Wl,--gc-sections -fsanitize=address,undefined -lm -lpthread
+	@ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 \
+		UBSAN_OPTIONS=halt_on_error=1 \
+		./$(BIN_DIR)/test_cnet_compete_runtime_san \
+		artifacts/cnet_asi5_v1/intent.wlm \
+		artifacts/cnet_asi5_v1/intent.meta \
+		artifacts/cnet_asi5_v1/capsules | \
+		tee logs/cnet_7b_runtime_san.log
+	@grep -q CNET_7B_RUNTIME_PASS logs/cnet_7b_runtime_san.log
