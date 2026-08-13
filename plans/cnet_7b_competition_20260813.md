@@ -68,6 +68,14 @@ The fixture generator, final TSV, system prompt, and their SHA-256 digests are
 committed before the first baseline request. Changing any of them creates a new
 benchmark version and invalidates old comparison results.
 
+Frozen v1 identities:
+
+| Artifact | SHA-256 |
+|---|---|
+| held-out fixture | `c8dfd1fb435d02b644626ddd993cd4b3b43a1ebb8cd31fb66747741954ed8a33` |
+| baseline system message | `f3ef4c33535a007728e13dd9b1c89bcc124a94261d6814136a62735d34a8bf0a` |
+| native fixture generator | `a1017e0c6fb3ea703df6665ca7c4c87d22c4e975f437b42262da64fe1cdd3969` |
+
 ## Output and scoring
 
 Supported work must produce one JSON object and no prose:

@@ -6069,3 +6069,25 @@ roe_omnidoc_freeze:
 	@mkdir -p logs
 	@echo "ROE_OMNIDOC_FREEZE_WITHHELD reason=torch_harness_removed" | tee logs/roe_omnidoc_freeze.log
 	@false
+
+.PHONY: cnet_7b_compete_fixture cnet_7b_compete_contract
+cnet_7b_compete_fixture: include/cnet_compete.h tools/cnet_compete_fixture.c \
+		benchmarks/cnet_asi5_v1/heldout.tsv \
+		benchmarks/cnet_asi5_v1/baseline_system.txt \
+		benchmarks/cnet_asi5_v1/digests.sha256
+	@mkdir -p $(BIN_DIR)
+	$(CC) $(CFLAGS) -Iinclude -o $(BIN_DIR)/cnet_compete_fixture \
+		tools/cnet_compete_fixture.c
+	@tmp=$$(mktemp); trap 'rm -f "$$tmp"' EXIT; \
+		./$(BIN_DIR)/cnet_compete_fixture "$$tmp"; \
+		cmp benchmarks/cnet_asi5_v1/heldout.tsv "$$tmp"
+	@sha256sum -c benchmarks/cnet_asi5_v1/digests.sha256
+	@echo CNET_7B_COMPETE_FIXTURE_PASS rows=448
+
+cnet_7b_compete_contract: cnet_7b_compete_fixture include/cnet_compete.h \
+		src/cnet_compete.c tests/test_cnet_compete_contract.c
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -Iinclude -o $(BIN_DIR)/test_cnet_compete_contract \
+		src/cnet_compete.c tests/test_cnet_compete_contract.c $(LDFLAGS)
+	@./$(BIN_DIR)/test_cnet_compete_contract | tee logs/cnet_7b_compete_contract.log
+	@grep -q CNET_7B_COMPETE_CONTRACT_PASS logs/cnet_7b_compete_contract.log

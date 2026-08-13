@@ -3,9 +3,9 @@
 - [x] Pin an already-running stronger-than-7B local baseline and record digest.
 - [x] Fix suite scope, claim boundary, score definitions, and immutable floors.
 - [x] Commit preregistration before the first baseline prompt.
-- [ ] Produce P1 RED evidence for the missing fixture/scorer contract.
-- [ ] Generate and commit the 448-row fixture, system prompt, and digests.
-- [ ] Produce P1 GREEN evidence and deterministic regeneration proof.
+- [x] Produce P1 RED evidence for the missing fixture/scorer contract.
+- [x] Generate and commit the 448-row fixture, system prompt, and digests.
+- [x] Produce P1 GREEN evidence and deterministic regeneration proof.
 - [ ] Produce P2 RED evidence for certification/export/import/refusal gaps.
 - [ ] Build, certify, export, import, and replay six independent capsules.
 - [ ] Prove corrupt/incompatible capsule refusal and three-hop guarded composition.
