@@ -15,6 +15,7 @@ Makefile text eol=lf
 # normalization change can avoid hiding functional edits in whole-file churn.
 src/cce/cce_safetensors.c -text whitespace=cr-at-eol
 include/cce/cce_safetensors.h -text whitespace=cr-at-eol
+src/cce/cce_wordlm.c -text whitespace=cr-at-eol
 src/cnet_lm.c -text whitespace=cr-at-eol
 
 *.so binary

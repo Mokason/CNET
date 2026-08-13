@@ -154,6 +154,34 @@ int  cce_wordlm_ternary(const cce_wordlm* m) { return m ? m->ternary : 0; }
 void cce_wordlm_set_ternary_embed(cce_wordlm* m, int on) { if (m) m->ternary_embed = on ? 1 : 0; }
 int  cce_wordlm_ternary_embed(const cce_wordlm* m) { return m ? m->ternary_embed : 0; }
 
+void cce_wordlm_tie_context_slots(cce_wordlm* m) {
+    int hidden, coordinate, slot;
+    if (!m || m->ctx <= 1) return;
+    for (hidden = 0; hidden < m->hid; ++hidden) {
+        size_t row = (size_t)hidden * (size_t)m->ctx * (size_t)m->d;
+        for (coordinate = 0; coordinate < m->d; ++coordinate) {
+            double weight = 0.0, first_moment = 0.0, second_moment = 0.0;
+            for (slot = 0; slot < m->ctx; ++slot) {
+                size_t index = row + (size_t)slot * (size_t)m->d +
+                               (size_t)coordinate;
+                weight += m->W1.w[index];
+                first_moment += m->W1.m[index];
+                second_moment += m->W1.v[index];
+            }
+            weight /= (double)m->ctx;
+            first_moment /= (double)m->ctx;
+            second_moment /= (double)m->ctx;
+            for (slot = 0; slot < m->ctx; ++slot) {
+                size_t index = row + (size_t)slot * (size_t)m->d +
+                               (size_t)coordinate;
+                m->W1.w[index] = (float)weight;
+                m->W1.m[index] = (float)first_moment;
+                m->W1.v[index] = (float)second_moment;
+            }
+        }
+    }
+}
+
 /* Forward to the hidden layer: fills m->x and m->h from the context words. */
 static void forward_hidden(cce_wordlm* m, const int* ctx_words) {
     int d = m->d, ctxd = m->ctx * m->d, hid = m->hid;

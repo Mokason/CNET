@@ -63,6 +63,13 @@ int  cce_wordlm_ternary(const cce_wordlm* m);
 void cce_wordlm_set_ternary_embed(cce_wordlm* m, int on);
 int  cce_wordlm_ternary_embed(const cce_wordlm* m);
 
+/* Opt-in order-invariant context projection. For each hidden row and embedding
+   coordinate, average the W1 shadow weight and Adam moments across all context
+   slots, then copy that value back to every slot. Calling this after each step
+   makes the concatenated WordLM behave as an exact bag of token embeddings;
+   callers that never invoke it retain the original positional behavior. */
+void cce_wordlm_tie_context_slots(cce_wordlm* m);
+
 /* ---- Packed 1.6-bit ternary export / inference (5 trits/byte, base-3) ----
    Freezes the QAT FP shadow weights of W1/Wc/Ww into per-row absmean ternary
    {-1,0,+1} and packs 5 per byte. The packed model is inference-only and holds
