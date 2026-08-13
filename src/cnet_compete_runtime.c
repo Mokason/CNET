@@ -210,6 +210,12 @@ static int minute_noun(const Lexeme *tokens, size_t count, size_t index) {
            word_is(tokens, count, index, "min");
 }
 
+static int second_noun(const Lexeme *tokens, size_t count, size_t index) {
+    return word_is(tokens, count, index, "second") ||
+           word_is(tokens, count, index, "seconds") ||
+           word_is(tokens, count, index, "sec");
+}
+
 static int numeric_argument_score(const Lexeme *tokens, size_t count,
                                   size_t index, CnetCompeteIntent intent) {
     if (intent == CNET_INTENT_MINUTES) {
@@ -240,9 +246,10 @@ static int numeric_argument_score(const Lexeme *tokens, size_t count,
 static int number_is_constant(const Lexeme *tokens, size_t count,
                               size_t index) {
     static const char *const markers[] = {
-        "crc", "bit", "poly", "polynomial", "init", "xorout", "mod",
-        "modulo", "add", "plus", "multiply", "times", "double", "stage",
-        "hop", "version"
+        "crc", "bit", "uint", "poly", "polynomial", "init", "xorout",
+        "mod", "modulo", "add", "plus", "multiply", "times", "double",
+        "compose", "stage", "hop", "version", "wrap", "wraps",
+        "wrapping", "wraparound", "overflow", "boundary", "limit"
     };
     size_t marker;
     for (marker = 0; marker < sizeof markers / sizeof markers[0]; ++marker) {
@@ -274,6 +281,17 @@ static int parse_numeric_argument(const char *prompt,
         }
     }
     if (best_score == 0) {
+        if (intent == CNET_INTENT_MINUTES) {
+            for (index = 0; index < count; ++index) {
+                if (tokens[index].kind != LEXEME_NUMBER) continue;
+                if ((index > 0 && second_noun(tokens, count, index - 1)) ||
+                    second_noun(tokens, count, index + 1) ||
+                    (index > 1 &&
+                     second_noun(tokens, count, index - 2)) ||
+                    second_noun(tokens, count, index + 2))
+                    return -1;
+            }
+        }
         selected_count = 0;
         for (index = 0; index < count; ++index) {
             if (tokens[index].kind != LEXEME_NUMBER ||
@@ -289,6 +307,17 @@ static int parse_numeric_argument(const char *prompt,
     if (selected_count != 1 || tokens[selected].negative ||
         tokens[selected].malformed || tokens[selected].number > 255u)
         return -1;
+    for (index = 0; index < count; ++index) {
+        if (index == selected || tokens[index].kind != LEXEME_NUMBER ||
+            number_is_constant(tokens, count, index))
+            continue;
+        if (intent == CNET_INTENT_COMPOSE3 &&
+            strstr(prompt, "+1") != NULL && strstr(prompt, "*2") != NULL &&
+            strstr(prompt, "+3") != NULL &&
+            tokens[index].number >= 1u && tokens[index].number <= 3u)
+            continue;
+        return -1;
+    }
     *value_out = (unsigned)tokens[selected].number;
     return 0;
 }
@@ -354,6 +383,289 @@ static int parse_policy_argument(const char *prompt, unsigned *value_out) {
     }
     *value_out = encoded;
     return 0;
+}
+
+static int contains_ascii_casefold(const char *text, const char *needle) {
+    size_t needle_length, offset;
+    if (text == NULL || needle == NULL || needle[0] == '\0') return 0;
+    needle_length = strlen(needle);
+    for (; *text != '\0'; ++text) {
+        for (offset = 0; offset < needle_length; ++offset) {
+            unsigned char left = (unsigned char)text[offset];
+            unsigned char right = (unsigned char)needle[offset];
+            if (left == '\0' || left >= 128u || right >= 128u) break;
+            if (left >= 'A' && left <= 'Z')
+                left = (unsigned char)(left - 'A' + 'a');
+            if (right >= 'A' && right <= 'Z')
+                right = (unsigned char)(right - 'A' + 'a');
+            if (left != right) break;
+        }
+        if (offset == needle_length) return 1;
+    }
+    return 0;
+}
+
+static int has_word(const Lexeme *tokens, size_t count, const char *word) {
+    size_t index;
+    for (index = 0; index < count; ++index)
+        if (word_is(tokens, count, index, word)) return 1;
+    return 0;
+}
+
+static int has_any_word(const Lexeme *tokens, size_t count,
+                        const char *const *words, size_t word_count) {
+    size_t index;
+    for (index = 0; index < word_count; ++index)
+        if (has_word(tokens, count, words[index])) return 1;
+    return 0;
+}
+
+static int lexeme_is_value(const Lexeme *tokens, size_t count, size_t index,
+                           unsigned value, const char *word) {
+    return index < count &&
+           ((tokens[index].kind == LEXEME_NUMBER &&
+             !tokens[index].negative && !tokens[index].malformed &&
+             tokens[index].number == value) ||
+            word_is(tokens, count, index, word));
+}
+
+typedef struct {
+    size_t first;
+    size_t last;
+    size_t count;
+} OperationPositions;
+
+static void add_operation(OperationPositions *positions, size_t index) {
+    if (positions->count == 0) positions->first = index;
+    positions->last = index;
+    ++positions->count;
+}
+
+static int compose_operations_ordered(const char *prompt,
+                                      const Lexeme *tokens, size_t count) {
+    static const char *const compose_words[] = {
+        "compose", "composition", "chain", "pipeline", "stage", "hop",
+        "sequence"
+    };
+    OperationPositions increment = {0}, doubling = {0}, add_three = {0};
+    const char *symbol_increment, *symbol_double, *symbol_add_three;
+    int descriptor, byte = 0, three = 0;
+    size_t index;
+    for (index = 0; index < count; ++index) {
+        if (byte_noun(tokens, count, index) ||
+            word_is(tokens, count, index, "uint"))
+            byte = 1;
+        if (lexeme_is_value(tokens, count, index, 3u, "three")) three = 1;
+        if (word_is(tokens, count, index, "increment") ||
+            word_is(tokens, count, index, "successor"))
+            add_operation(&increment, index);
+        if (word_is(tokens, count, index, "double") ||
+            word_is(tokens, count, index, "doubling") ||
+            word_is(tokens, count, index, "twice"))
+            add_operation(&doubling, index);
+        if ((word_is(tokens, count, index, "add") ||
+             word_is(tokens, count, index, "plus")) &&
+            lexeme_is_value(tokens, count, index + 1u, 1u, "one"))
+            add_operation(&increment, index);
+        if ((word_is(tokens, count, index, "multiply") ||
+             word_is(tokens, count, index, "times")) &&
+            lexeme_is_value(tokens, count, index + 1u, 2u, "two"))
+            add_operation(&doubling, index);
+        if ((word_is(tokens, count, index, "add") ||
+             word_is(tokens, count, index, "plus") ||
+             word_is(tokens, count, index, "offset")) &&
+            lexeme_is_value(tokens, count, index + 1u, 3u, "three"))
+            add_operation(&add_three, index);
+    }
+    descriptor = has_any_word(tokens, count, compose_words,
+                              sizeof compose_words / sizeof compose_words[0]);
+    if (has_word(tokens, count, "offset") && descriptor &&
+        add_three.count == 0)
+        for (index = 0; index < count; ++index)
+            if (word_is(tokens, count, index, "offset")) {
+                add_operation(&add_three, index);
+                break;
+            }
+    if (increment.count + doubling.count + add_three.count != 0)
+        return increment.count == 1 && doubling.count == 1 &&
+               add_three.count == 1 && increment.last < doubling.first &&
+               doubling.last < add_three.first;
+    symbol_increment = strstr(prompt, "+1");
+    symbol_double = strstr(prompt, "*2");
+    symbol_add_three = strstr(prompt, "+3");
+    if (symbol_increment != NULL || symbol_double != NULL ||
+        symbol_add_three != NULL)
+        return symbol_increment != NULL && symbol_double != NULL &&
+               symbol_add_three != NULL && symbol_increment < symbol_double &&
+               symbol_double < symbol_add_three;
+    if (contains_ascii_casefold(prompt, "compose3_mod256")) return 1;
+    return descriptor && byte && three;
+}
+
+static int policy_version_supported(const Lexeme *tokens, size_t count) {
+    size_t index;
+    for (index = 0; index < count; ++index) {
+        if (tokens[index].kind == LEXEME_NUMBER &&
+            tokens[index].number > 1u)
+            return 0;
+        if (word_is(tokens, count, index, "version") ||
+            word_is(tokens, count, index, "v")) {
+            if (lexeme_is_value(tokens, count, index + 1u, 1u, "one"))
+                continue;
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static int parameter_value_after(const Lexeme *tokens, size_t count,
+                                 size_t index, unsigned *value_out,
+                                 int *negative_out) {
+    size_t look, limit = index + 3u < count ? index + 3u : count;
+    *negative_out = 0;
+    for (look = index + 1u; look < limit; ++look) {
+        if (tokens[look].kind == LEXEME_NUMBER) {
+            if (tokens[look].malformed) return -1;
+            *value_out = (unsigned)tokens[look].number;
+            *negative_out = tokens[look].negative;
+            return 1;
+        }
+        if (word_is(tokens, count, look, "zero")) *value_out = 0u;
+        else if (word_is(tokens, count, look, "one")) *value_out = 1u;
+        else if (word_is(tokens, count, look, "seven")) *value_out = 7u;
+        else if (word_is(tokens, count, look, "eight")) *value_out = 8u;
+        else if (word_is(tokens, count, look, "sixteen")) *value_out = 16u;
+        else continue;
+        return 1;
+    }
+    return 0;
+}
+
+static int crc_configuration_supported(const Lexeme *tokens, size_t count) {
+    size_t index;
+    for (index = 0; index < count; ++index) {
+        unsigned value = 0;
+        int found, negative = 0;
+        if (word_is(tokens, count, index, "crc")) {
+            found = parameter_value_after(tokens, count, index, &value,
+                                          &negative);
+            if (found < 0 || (found > 0 && value != 8u)) return 0;
+        }
+        if (word_is(tokens, count, index, "poly") ||
+            word_is(tokens, count, index, "polynomial")) {
+            found = parameter_value_after(tokens, count, index, &value,
+                                          &negative);
+            if (found < 0 || (found > 0 && (negative || value != 7u)))
+                return 0;
+        }
+        if (word_is(tokens, count, index, "init") ||
+            word_is(tokens, count, index, "xorout")) {
+            found = parameter_value_after(tokens, count, index, &value,
+                                          &negative);
+            if (found < 0 || (found > 0 && (negative || value != 0u)))
+                return 0;
+        }
+        if (word_is(tokens, count, index, "reflected") ||
+            word_is(tokens, count, index, "reflection") ||
+            word_is(tokens, count, index, "reflect")) {
+            if (index == 0 ||
+                (!word_is(tokens, count, index - 1u, "non") &&
+                 !word_is(tokens, count, index - 1u, "no")))
+                return 0;
+        }
+    }
+    return 1;
+}
+
+/* The learned base proposes one intent; this typed semantic envelope must
+   independently prove that the request denotes exactly that certified
+   contract. It never widens a capsule domain. */
+static int contract_semantics_match(const char *prompt,
+                                    CnetCompeteIntent intent) {
+    static const char *const forbidden_words[] = {
+        "delete", "remove", "restart", "send", "email", "purchase", "buy",
+        "upload", "open", "network", "shell", "write", "create", "post",
+        "transfer", "payment", "install", "firewall", "password",
+        "credential", "credentials", "secret", "cloud", "deploy",
+        "deployment", "calendar", "directory", "file"
+    };
+    static const char *const increment_words[] = {
+        "increment", "successor", "advance", "next", "following", "follows",
+        "after", "increase", "adding", "forward", "move", "ahead", "cycle",
+        "wrap"
+    };
+    static const char *const crc_words[] = {
+        "crc", "checksum", "atm", "polynomial", "redundancy"
+    };
+    static const char *const policy_words[] = {
+        "access", "policy", "permission", "authorize", "allowed", "allow",
+        "deny", "admin", "owner", "mfa", "suspended"
+    };
+    static const char *const compose_words[] = {
+        "compose", "composition", "chain", "pipeline", "stage", "hop",
+        "sequence", "double", "doubling", "twice", "multiply", "times"
+    };
+    Lexeme tokens[RUNTIME_LEXEMES_MAX];
+    size_t count = 0;
+    int increment, minutes, seconds, crc, policy, compose;
+    int named_increment, named_minutes, named_crc, named_policy, named_compose;
+    if (lexemes_scan(prompt, tokens, &count) != 0) return 0;
+    if (has_word(tokens, count, "both") || has_word(tokens, count, "also") ||
+        has_word(tokens, count, "respectively") ||
+        has_any_word(tokens, count, forbidden_words,
+                     sizeof forbidden_words / sizeof forbidden_words[0]))
+        return 0;
+    named_increment = contains_ascii_casefold(prompt, "increment_mod256");
+    named_minutes = contains_ascii_casefold(prompt, "minutes_to_seconds");
+    named_crc = contains_ascii_casefold(prompt, "crc8_atm");
+    named_policy = contains_ascii_casefold(prompt, "access_policy_v1");
+    named_compose = contains_ascii_casefold(prompt, "compose3_mod256");
+    increment = named_increment || has_any_word(
+        tokens, count, increment_words,
+        sizeof increment_words / sizeof increment_words[0]);
+    minutes = named_minutes || has_word(tokens, count, "minute") ||
+              has_word(tokens, count, "minutes") ||
+              has_word(tokens, count, "min");
+    seconds = named_minutes || has_word(tokens, count, "second") ||
+              has_word(tokens, count, "seconds") ||
+              has_word(tokens, count, "sec");
+    crc = named_crc || has_any_word(tokens, count, crc_words,
+                                    sizeof crc_words / sizeof crc_words[0]);
+    policy = named_policy || has_any_word(
+        tokens, count, policy_words,
+        sizeof policy_words / sizeof policy_words[0]);
+    compose = named_compose || has_any_word(
+        tokens, count, compose_words,
+        sizeof compose_words / sizeof compose_words[0]);
+    switch (intent) {
+        case CNET_INTENT_INCREMENT:
+            return increment && !crc && !minutes && !seconds && !policy &&
+                   !compose;
+        case CNET_INTENT_MINUTES:
+            return minutes && seconds && !increment && !crc && !policy &&
+                   !compose;
+        case CNET_INTENT_CRC8:
+            if (!crc || increment || minutes || seconds || policy || compose)
+                return 0;
+            return !has_word(tokens, count, "bytes") &&
+                   !has_word(tokens, count, "octets") &&
+                   !has_word(tokens, count, "array") &&
+                   !has_word(tokens, count, "file") &&
+                   !has_word(tokens, count, "sequence") &&
+                   !has_word(tokens, count, "two") &&
+                   crc_configuration_supported(tokens, count);
+        case CNET_INTENT_POLICY:
+            return policy && !increment && !minutes && !seconds && !crc &&
+                   !compose && policy_version_supported(tokens, count) &&
+                   !has_word(tokens, count, "guest") &&
+                   !has_word(tokens, count, "role") &&
+                   !has_word(tokens, count, "group");
+        case CNET_INTENT_COMPOSE3:
+            return !crc && !minutes && !seconds && !policy &&
+                   compose_operations_ordered(prompt, tokens, count);
+        default:
+            return 0;
+    }
 }
 
 int cnet_compete_runtime_load(const char *model_path,
@@ -468,6 +780,7 @@ int cnet_compete_runtime_execute(CnetCompeteRuntime *runtime,
     if (classified != 0 || intent < CNET_INTENT_INCREMENT ||
         intent >= CNET_INTENT_ABSTAIN || !isfinite(confidence))
         return -1;
+    if (!contract_semantics_match(prompt, intent)) return 0;
     if (intent == CNET_INTENT_POLICY) {
         if (parse_policy_argument(prompt, &input) != 0) return 0;
     } else if (parse_numeric_argument(prompt, intent, &input) != 0) {

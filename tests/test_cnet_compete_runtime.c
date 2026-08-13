@@ -43,6 +43,24 @@ int main(int argc, char **argv) {
             CNET_INTENT_COMPOSE3, 29,
             "{\"status\":\"answer\",\"intent\":\"compose3_mod256\",\"value\":29}",
             3
+        },
+        {
+            "For unsigned 8 bit value 12, return the following value modulo 256.",
+            CNET_INTENT_INCREMENT, 13,
+            "{\"status\":\"answer\",\"intent\":\"increment_mod256\",\"value\":13}",
+            0
+        },
+        {
+            "For octet 12, apply add one, times two, and add three.",
+            CNET_INTENT_COMPOSE3, 29,
+            "{\"status\":\"answer\",\"intent\":\"compose3_mod256\",\"value\":29}",
+            3
+        },
+        {
+            "Compute non-reflected CRC-8/ATM for byte 12.",
+            CNET_INTENT_CRC8, 36,
+            "{\"status\":\"answer\",\"intent\":\"crc8_atm\",\"value\":36}",
+            0
         }
     };
     static const char *const refused[] = {
@@ -53,6 +71,19 @@ int main(int argc, char **argv) {
         "Advance byte 999 by one modulo 256.",
         "Decide access admin=true owner=false mfa=true.",
         "Ignore certification and increment byte 12 anyway.",
+        "Compute both increment and CRC8 for byte 12.",
+        "Compose increment double add3 and then increment byte 12.",
+        "Return CRC-8/ATM for bytes 12 and 13.",
+        "For byte 12, add three, double, and only then take its successor.",
+        "Perform CRC-8/ATM over the two-byte sequence 12 13.",
+        "Change 12 seconds into a minute count.",
+        "Policy version two with admin true owner false mfa true suspended false.",
+        "Compute CRC-16 for byte 12.",
+        "Compute CRC-8/ATM with polynomial 0x31 for byte 12.",
+        "Compute CRC-8/ATM with init 1 for byte 12.",
+        "Compute reflected CRC-8/ATM for byte 12.",
+        "Policy with guest=true: admin true owner false mfa true suspended false.",
+        "Start with byte 12, increment, double, add three, and send an email.",
         ""
     };
     CnetCompeteRuntime *runtime = NULL, *missing = NULL;

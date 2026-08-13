@@ -17,11 +17,12 @@
 #define INTENT_MODEL_VERSION 2u
 #define INTENT_MODEL_CLASSES 23
 #define INTENT_MODEL_CLASS_SIZE 23
-#define INTENT_MAX_SAMPLES 256
+#define INTENT_MAX_SAMPLES 512
 #define INTENT_META_MAX 8192u
 #define INTENT_ARTIFACT_MAX (1024u * 1024u)
 #define INTENT_EPOCHS 100
 #define INTENT_LR 0.01f
+#define INTENT_EXPECTED_TRAIN_SAMPLES 332u
 
 typedef struct {
     int context[CNET_COMPETE_INTENT_CONTEXT];
@@ -38,7 +39,7 @@ static const char *const train_prefixes[] = {
     "please", "strict task", "calculate exactly", "process this request"
 };
 
-static const char *const train_bodies[5][8] = {
+static const char *const train_bodies[5][12] = {
     {
         "advance byte 17 by one modulo 256",
         "find the next unsigned octet after 42 with wraparound",
@@ -47,7 +48,11 @@ static const char *const train_bodies[5][8] = {
         "give the successor of byte 201 in modulo arithmetic",
         "raise octet 63 one step and wrap at the byte limit",
         "compute 128 plus one on an unsigned byte",
-        "move byte value 254 forward once cyclically"
+        "move byte value 254 forward once cyclically",
+        "return the wrapped next octet after input 93",
+        "find the following byte for value 55 under modulo 256",
+        "move uint8 input 144 ahead one position",
+        "apply increment_mod256 to input 203"
     },
     {
         "convert 17 whole minutes into seconds",
@@ -57,7 +62,11 @@ static const char *const train_bodies[5][8] = {
         "express 201 minutes as an exact number of seconds",
         "translate elapsed minutes 63 into seconds",
         "find the seconds in a 128 minute interval",
-        "turn 254 min into sec using sixty per minute"
+        "turn 254 min into sec using sixty per minute",
+        "give the exact second total corresponding to 93 minutes",
+        "map input 55 minutes into an integer seconds count",
+        "use the certified minute second conversion with input 144",
+        "apply minutes_to_seconds to input 203"
     },
     {
         "calculate crc eight atm for byte 17",
@@ -67,7 +76,11 @@ static const char *const train_bodies[5][8] = {
         "produce crc 8 using init zero for octet 201",
         "checksum byte 63 with the atm crc rule",
         "evaluate crc8 polynomial seven on unsigned byte 128",
-        "return the crc atm code for byte value 254"
+        "return the crc atm code for byte value 254",
+        "derive the decimal atm crc checksum for one octet input 93",
+        "for single byte 55 evaluate crc8 using polynomial seven",
+        "apply the certified crc eight atm transform to byte 144",
+        "apply crc8_atm to input byte 203"
     },
     {
         "evaluate access policy admin true owner false mfa true suspended false",
@@ -77,7 +90,11 @@ static const char *const train_bodies[5][8] = {
         "authorize using admin true owner true mfa false suspended true",
         "test policy v1 flags admin false owner true mfa true suspended true",
         "determine allow or deny from admin true owner false mfa false suspended false",
-        "resolve access decision for owner false admin false mfa false suspended false"
+        "resolve access decision for owner false admin false mfa false suspended false",
+        "using access policy one decide admin true owner false mfa true suspended false",
+        "resolve permission owner true mfa true admin false suspended false",
+        "evaluate security access suspended false mfa false owner true admin true",
+        "apply access_policy_v1 admin false owner true mfa true suspended false"
     },
     {
         "apply increment then double then add three modulo 256 to byte 17",
@@ -87,42 +104,56 @@ static const char *const train_bodies[5][8] = {
         "calculate the chained byte transform increment double offset for 201",
         "execute three hops plus one times two plus three modulo 256 for 63",
         "use the certified sequence increment then twice then add three on 128",
-        "transform byte 254 through successor double and final offset"
+        "transform byte 254 through successor double and final offset",
+        "chain byte 93 through add one multiply two then offset three",
+        "for uint8 input 55 take successor double then add three",
+        "use the fixed three hop byte chain on input 144",
+        "apply compose3_mod256 to input 203"
     }
 };
 
 /* Short specification-derived anchor combinations prevent the classifier from
    memorizing sentence frames. They are not calibration or held-out templates. */
-static const char *const train_anchors[5][8] = {
+static const char *const train_anchors[5][12] = {
     {
         "increment unsigned byte", "next octet wraparound",
         "byte successor modulo", "add one byte",
         "advance eight bit value", "one step octet",
-        "increase byte cyclically", "byte overflow wrap"
+        "increase byte cyclically", "byte overflow wrap",
+        "wrapped next octet", "following byte modulo",
+        "uint8 one position ahead", "increment_mod256 input"
     },
     {
         "minutes to seconds", "minute second conversion",
         "duration minutes seconds", "sixty seconds per minute",
         "convert min sec", "elapsed minute count",
-        "seconds in minutes", "time minutes exact seconds"
+        "seconds in minutes", "time minutes exact seconds",
+        "exact second total minutes", "integer seconds count",
+        "minute second certified conversion", "minutes_to_seconds input"
     },
     {
         "crc8 atm byte", "crc eight checksum octet",
         "polynomial seven crc", "cyclic redundancy byte",
         "atm checksum", "zero initialized crc",
-        "checksum one octet", "crc code unsigned byte"
+        "checksum one octet", "crc code unsigned byte",
+        "decimal atm crc", "single byte polynomial seven",
+        "certified crc eight atm", "crc8_atm input byte"
     },
     {
         "access policy flags", "admin owner mfa suspended",
         "permission allow deny", "authorize security flags",
         "access decision v1", "owner mfa requirement",
-        "suspended access policy", "admin permission check"
+        "suspended access policy", "admin permission check",
+        "access policy one", "resolve permission flags",
+        "security access decision", "access_policy_v1 flags"
     },
     {
         "increment double add three", "add1 double add3",
         "three hop byte chain", "successor twice offset",
         "compose byte transforms", "plus one times two plus three",
-        "chained increment doubling", "three stage modulo pipeline"
+        "chained increment doubling", "three stage modulo pipeline",
+        "chain add one multiply two offset three", "uint8 successor double add",
+        "fixed three hop byte chain", "compose3_mod256 input"
     }
 };
 
@@ -292,16 +323,37 @@ static int word_in(const char *word, const char *const *set, size_t count) {
     return 0;
 }
 
+static int contains_ascii_casefold(const char *text, const char *needle) {
+    size_t needle_length, offset;
+    if (text == NULL || needle == NULL || needle[0] == '\0') return 0;
+    needle_length = strlen(needle);
+    for (; *text != '\0'; ++text) {
+        for (offset = 0; offset < needle_length; ++offset) {
+            unsigned char left = (unsigned char)text[offset];
+            unsigned char right = (unsigned char)needle[offset];
+            if (left == '\0' || left >= 128u || right >= 128u) break;
+            if (left >= 'A' && left <= 'Z')
+                left = (unsigned char)(left - 'A' + 'a');
+            if (right >= 'A' && right <= 'Z')
+                right = (unsigned char)(right - 'A' + 'a');
+            if (left != right) break;
+        }
+        if (offset == needle_length) return 1;
+    }
+    return 0;
+}
+
 /* Binary input coverage only: this never returns an intent. It proves that a
    prompt has the lexical shape of one supported, single-value contract and
    rejects collection, side-effect and contract-override language up front. */
 static int language_shape_covered(const char *prompt) {
     static const char *const increment_words[] = {
         "increment", "successor", "advance", "next", "after", "increase",
-        "cycle", "wrap", "forward", "move", "ahead"
+        "cycle", "wrap", "forward", "move", "ahead", "following", "follows",
+        "adding"
     };
     static const char *const byte_words[] = {
-        "byte", "octet", "bit", "unsigned"
+        "byte", "octet", "bit", "unsigned", "uint"
     };
     static const char *const modulo_words[] = {
         "mod", "modulo", "wrap", "wraparound", "overflow", "cyclically"
@@ -315,7 +367,7 @@ static int language_shape_covered(const char *prompt) {
     };
     static const char *const compose_words[] = {
         "compose", "chain", "pipeline", "stage", "hop", "followed", "then",
-        "sequence"
+        "sequence", "composition"
     };
     static const char *const negative_words[] = {
         "file", "array", "every", "multiple", "several", "megabyte",
@@ -329,7 +381,18 @@ static int language_shape_covered(const char *prompt) {
     int minute = 0, second = 0, crc = 0, atm_or_rule = 0;
     int policy = 0, policy_flags = 0, compose = 0, doubling = 0, add = 0;
     int negative = 0;
+    int named_increment, named_compose, symbolic_compose;
     if (prompt == NULL) return 0;
+    named_increment = contains_ascii_casefold(prompt, "increment_mod256");
+    named_compose = contains_ascii_casefold(prompt, "compose3_mod256");
+    {
+        const char *add_one = strstr(prompt, "+1");
+        const char *times_two = strstr(prompt, "*2");
+        const char *add_three = strstr(prompt, "+3");
+        symbolic_compose = add_one != NULL && times_two != NULL &&
+                           add_three != NULL && add_one < times_two &&
+                           times_two < add_three;
+    }
     while (*cursor != '\0') {
         char word[48];
         size_t length = 0;
@@ -391,13 +454,15 @@ static int language_shape_covered(const char *prompt) {
             compose = 1;
         if (strcmp(canonical, "double") == 0 ||
             strcmp(canonical, "twice") == 0 ||
-            strcmp(canonical, "multiply") == 0)
+            strcmp(canonical, "multiply") == 0 ||
+            strcmp(canonical, "times") == 0)
             doubling = 1;
         if (strcmp(canonical, "add") == 0 ||
             strcmp(canonical, "plus") == 0 || increment)
             add = 1;
     }
     if (negative) return 0;
+    if (named_increment || named_compose || symbolic_compose) return 1;
     if (policy && policy_flags >= 2) return 1;
     if (!has_number) return 0;
     if (minute && second) return 1;
@@ -486,7 +551,8 @@ static int build_training_samples(IntentSample *samples, size_t *count) {
     size_t intent, body, prefix;
     *count = 0;
     for (intent = 0; intent < 5; ++intent) {
-        for (body = 0; body < 8; ++body) {
+        for (body = 0; body < sizeof train_bodies[0] /
+                                sizeof train_bodies[0][0]; ++body) {
             for (prefix = 0; prefix < sizeof train_prefixes /
                                       sizeof train_prefixes[0]; ++prefix) {
                 int written = snprintf(prompt, sizeof prompt, "%s %s",
@@ -498,7 +564,8 @@ static int build_training_samples(IntentSample *samples, size_t *count) {
                     return -1;
             }
         }
-        for (body = 0; body < 8; ++body)
+        for (body = 0; body < sizeof train_anchors[0] /
+                                sizeof train_anchors[0][0]; ++body)
             if (add_sample(samples, count, train_anchors[intent][body],
                            (CnetCompeteIntent)intent) != 0)
                 return -1;
@@ -1036,7 +1103,8 @@ int cnet_compete_intent_load(const char *artifact_path,
         metadata.parameters != cce_wordlm_param_count(
             CNET_COMPETE_INTENT_VOCAB, CNET_COMPETE_INTENT_EMBED,
             CNET_COMPETE_INTENT_CONTEXT, CNET_COMPETE_INTENT_HIDDEN) ||
-        metadata.train_examples != 232 || metadata.train_steps != 23200 ||
+        metadata.train_examples != INTENT_EXPECTED_TRAIN_SAMPLES ||
+        metadata.train_steps != INTENT_EXPECTED_TRAIN_SAMPLES * INTENT_EPOCHS ||
         metadata.calibration_covered != 50 ||
         metadata.calibration_answered < 49 ||
         metadata.calibration_correct != metadata.calibration_answered ||
