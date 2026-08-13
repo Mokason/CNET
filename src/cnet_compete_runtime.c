@@ -520,9 +520,17 @@ int cnet_compete_result_json(const CnetCompeteResult *result,
         if (intent == NULL || result->intent == CNET_INTENT_ABSTAIN ||
             !isfinite(result->confidence))
             return -1;
-        written = snprintf(output, capacity,
-                           "{\"status\":\"answer\",\"intent\":\"%s\","
-                           "\"value\":%u}", intent, result->value);
+        if (result->intent == CNET_INTENT_POLICY) {
+            if (result->value > 1u) return -1;
+            written = snprintf(output, capacity,
+                               "{\"status\":\"answer\",\"intent\":\"%s\","
+                               "\"value\":\"%s\"}", intent,
+                               result->value ? "allow" : "deny");
+        } else {
+            written = snprintf(output, capacity,
+                               "{\"status\":\"answer\",\"intent\":\"%s\","
+                               "\"value\":%u}", intent, result->value);
+        }
     }
     return written < 0 || (size_t)written >= capacity ? -1 : 0;
 }

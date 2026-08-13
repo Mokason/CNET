@@ -34,7 +34,7 @@ int main(int argc, char **argv) {
         {
             "Decide access: admin=false owner=true mfa=true suspended=false.",
             CNET_INTENT_POLICY, 1,
-            "{\"status\":\"answer\",\"intent\":\"access_policy_v1\",\"value\":1}",
+            "{\"status\":\"answer\",\"intent\":\"access_policy_v1\",\"value\":\"allow\"}",
             0
         },
         {
@@ -116,6 +116,15 @@ int main(int argc, char **argv) {
     memset(&result, 0, sizeof result);
     REQUIRE(cnet_compete_result_json(&result, tiny, sizeof tiny) != 0,
             "short_json_buffer_accepted");
+    result.answered = 1;
+    result.intent = CNET_INTENT_POLICY;
+    result.value = 0;
+    result.confidence = 1.0;
+    REQUIRE(cnet_compete_result_json(&result, json, sizeof json) == 0 &&
+                strcmp(json,
+                       "{\"status\":\"answer\",\"intent\":\"access_policy_v1\","
+                       "\"value\":\"deny\"}") == 0,
+            "policy_deny_json_wrong");
     REQUIRE(cnet_compete_runtime_execute(NULL, "byte 1", &result) != 0 &&
                 cnet_compete_runtime_execute(runtime, NULL, &result) != 0 &&
                 cnet_compete_runtime_execute(runtime, "byte 1", NULL) != 0,
