@@ -6383,8 +6383,8 @@ cnet_7b_eval_build:
 			--directory="$$source_root" --no-same-owner \
 			--no-same-permissions; \
 		/usr/bin/rm -- "$$archive"; \
-		test -x "$$source_root/tools/cnet_compete_snapshot_build.sh"; \
-		"$$source_root/tools/cnet_compete_snapshot_build.sh" \
+		test -f "$$source_root/tools/cnet_compete_snapshot_build.sh"; \
+		/bin/bash "$$source_root/tools/cnet_compete_snapshot_build.sh" \
 			"$$source_root" "$$workspace" "$$staging" "$$release_root" \
 			"$$commit" "$$tree" | \
 			/usr/bin/tee "$$workspace/logs/cnet_7b_eval_build.log"; \
