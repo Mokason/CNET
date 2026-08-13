@@ -45,12 +45,10 @@ if [[ "$URL" != https://* ]] || [[ "$URL" == *"@"* ]]; then
   exit 3
 fi
 
-host=$(python3 - <<PY
-from urllib.parse import urlparse
-print(urlparse("$URL").hostname or "")
-PY
-)
-# basic host check
+# hostname between :// and next / or : or end
+host="${URL#https://}"
+host="${host%%/*}"
+host="${host%%:*}"
 if [[ -z "$host" ]]; then
   echo "SAFE_WEB_FAIL host" >&2
   exit 3
@@ -60,8 +58,6 @@ ts=$(date +%Y%m%d_%H%M%S)
 slug=$(echo "$host" | tr -c 'A-Za-z0-9._-' '_' | cut -c1-40)
 out="$NOTES/${ts}_${slug}.txt"
 
-# fetch: curl only, follow max 3 redirects, size cap, timeout
-# --proto-redir =https keeps redirects on https
 code=$(curl -sS -L --max-redirs 3 --proto-redir =https \
   --max-time 25 --max-filesize 1500000 \
   -A "CNET-GovernorSafeWeb/1.0" \
@@ -73,37 +69,40 @@ if [[ "$code" != 200 && "$code" != 301 && "$code" != 302 ]]; then
   exit 4
 fi
 
-# strip tags lightly to text
-python3 - <<PY
-from pathlib import Path
-import re, html
-raw=Path("$out.raw").read_bytes()
-# refuse if looks like binary
-if b"\x00" in raw[:2000]:
-    raise SystemExit("binary")
-text=raw.decode("utf-8", errors="replace")
-text=re.sub(r"(?is)<script[^>]*>.*?</script>", " ", text)
-text=re.sub(r"(?is)<style[^>]*>.*?</style>", " ", text)
-text=re.sub(r"(?s)<[^>]+>", " ", text)
-text=html.unescape(text)
-text=re.sub(r"\s+", " ", text).strip()
-text=text[:12000]
-Path("$out").write_text(f"URL: $URL\nHTTP: $code\n\n{text}\n")
-Path("$out.raw").unlink(missing_ok=True)
-print("SAFE_WEB_OK", "$URL", "chars", len(text), "note", "$out")
-PY
+# refuse binary (NUL in first 2k); strip tags lightly to text
+if head -c 2000 "$out.raw" 2>/dev/null | grep -q $'\0'; then
+  rm -f "$out.raw"
+  echo "SAFE_WEB_FAIL binary" >&2
+  exit 4
+fi
 
-# index count
+text=$(
+  sed -E \
+    -e 's/<script[^>]*>.*<\/script>/ /gI' \
+    -e 's/<style[^>]*>.*<\/style>/ /gI' \
+    -e 's/<[^>]+>/ /g' \
+    "$out.raw" \
+  | tr '\n\r\t' '   ' \
+  | sed -E 's/  +/ /g; s/^ //; s/ $//' \
+  | head -c 12000
+)
+{
+  echo "URL: $URL"
+  echo "HTTP: $code"
+  echo
+  echo "$text"
+} >"$out"
+rm -f "$out.raw"
+chars=${#text}
+echo "SAFE_WEB_OK $URL chars $chars note $out"
+
 nnotes=$(ls -1 "$NOTES"/*.txt 2>/dev/null | wc -l | tr -d ' ')
 echo "$nnotes" > "$DIR/web_notes_count"
-python3 - <<PY
-import json, time
-from pathlib import Path
-p=Path("$DIR/web_last.json")
-p.write_text(json.dumps({
-  "ts": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
-  "url": "$URL",
-  "note": "$out",
-  "notes_count": int("$nnotes"),
-}, indent=2)+"\n")
-PY
+ts_iso=$(date +%Y-%m-%dT%H:%M:%S%z)
+jq -n \
+  --arg ts "$ts_iso" \
+  --arg url "$URL" \
+  --arg note "$out" \
+  --argjson notes_count "$nnotes" \
+  '{ts: $ts, url: $url, note: $note, notes_count: $notes_count}' \
+  >"$DIR/web_last.json"

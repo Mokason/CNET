@@ -98,7 +98,7 @@ current_units() {
   u=$(cnet_unit_count_fast "$BASE" 2>/dev/null || echo "")
   if [ -z "$u" ] || [ "$u" = "null" ]; then
     if [ -f "$REPORT" ]; then
-      u=$(python3 -c "import json; print(json.load(open('$REPORT')).get('units') or '')" 2>/dev/null || echo "")
+      u=$(jq -r '.units // empty' "$REPORT" 2>/dev/null || echo "")
     fi
   fi
   echo "${u:-0}"
@@ -188,35 +188,29 @@ consume_budget() {
 ollama_chat() {
   local model="$1" prompt="$2" out_file="$3"
   local payload resp
-  payload=$(python3 -c "
-import json,sys
-print(json.dumps({
-  'model': sys.argv[1],
-  'stream': False,
-  'options': {'temperature': 0.3, 'num_predict': 800},
-  'messages': [
-    {'role': 'system', 'content': 'You are a curriculum planner for a local certified AI library (CNET). Reply with ONLY valid JSON, no markdown.'},
-    {'role': 'user', 'content': sys.argv[2]},
-  ],
-}))
-" "$model" "$prompt")
+  payload=$(jq -nc \
+    --arg model "$model" \
+    --arg prompt "$prompt" \
+    '{
+      model: $model,
+      stream: false,
+      options: {temperature: 0.3, num_predict: 800},
+      messages: [
+        {role: "system", content: "You are a curriculum planner for a local certified AI library (CNET). Reply with ONLY valid JSON, no markdown."},
+        {role: "user", content: $prompt}
+      ]
+    }')
   if ! resp=$(curl -sS --max-time "$TIMEOUT_SEC" \
     -H 'Content-Type: application/json' \
     -d "$payload" \
     "$OLLAMA_HOST/api/chat" 2>"$OPS_DIR/curriculum_ollama.err"); then
     return 1
   fi
-  python3 -c "
-import json,sys
-raw=sys.stdin.read()
-try:
-  o=json.loads(raw)
-except Exception as e:
-  sys.stderr.write('bad ollama json: %s\n'%e)
-  sys.exit(1)
-msg=(o.get('message') or {}).get('content') or ''
-print(msg)
-" <<<"$resp" >"$out_file"
+  if ! jq -e . >/dev/null 2>&1 <<<"$resp"; then
+    echo "bad ollama json" >&2
+    return 1
+  fi
+  jq -r '.message.content // empty' <<<"$resp" >"$out_file"
   [ -s "$out_file" ]
 }
 
@@ -255,21 +249,33 @@ EOF
 
 extract_json() {
   local raw="$1" out="$2"
-  python3 - "$raw" "$out" <<'PY'
-import json, re, sys
-text = open(sys.argv[1], encoding="utf-8", errors="replace").read().strip()
-text = re.sub(r"^```(?:json)?\s*", "", text)
-text = re.sub(r"\s*```$", "", text)
-start = text.find("{")
-end = text.rfind("}")
-if start < 0 or end <= start:
-    raise SystemExit("no json object in model output")
-obj = json.loads(text[start : end + 1])
-if not isinstance(obj.get("items"), list):
-    raise SystemExit("items missing")
-open(sys.argv[2], "w", encoding="utf-8").write(json.dumps(obj, indent=2) + "\n")
-print("ok items", len(obj["items"]))
-PY
+  local cleaned
+  # strip markdown fences, then take first `{` through last `}`
+  cleaned=$(sed -E '1s/^```(json)?[[:space:]]*//; $s/[[:space:]]*```$//' "$raw")
+  cleaned=$(printf '%s' "$cleaned" | awk '
+    BEGIN { buf=""; start=0; depth=0 }
+    {
+      for (i = 1; i <= length($0); i++) {
+        c = substr($0, i, 1)
+        if (c == "{") {
+          if (!start) { start=1; buf="" }
+          depth++
+        }
+        if (start) buf = buf c
+        if (c == "}" && start) {
+          depth--
+          if (depth == 0) { print buf; exit }
+        }
+      }
+      if (start) buf = buf "\n"
+    }
+  ')
+  if ! jq -e '.items|type=="array"' <<<"$cleaned" >/dev/null 2>&1; then
+    echo "items missing" >&2
+    return 1
+  fi
+  jq . <<<"$cleaned" >"$out"
+  echo "ok items $(jq '.items|length' <<<"$cleaned")"
 }
 
 plan() {
@@ -295,68 +301,46 @@ plan() {
   else
     warn "ollama plan failed (see $OPS_DIR/curriculum_ollama.err)"
     # deterministic fallback curriculum so pipeline still testable offline-ish
-    python3 - <<PY
-import json
-from pathlib import Path
-p=Path("$LAST_PLAN")
-obj={
-  "reason": "ollama unavailable; hermetic fallback curriculum",
-  "backend": "fallback",
-  "items": [
-    {"kind":"grow_local","n":4,"why":"seed lane-teachable window gaps","priority":1},
-    {"kind":"lookup_skill","tool":"wiki_lookup","query":"Grace Hopper","why":"exercise lookup path","priority":2},
-    {"kind":"window_token","token_id":506,"why":"first window token seed","priority":1},
-  ],
-}
-p.write_text(json.dumps(obj,indent=2)+"\n")
-print("fallback plan written")
-PY
+    jq -n '{
+      reason: "ollama unavailable; hermetic fallback curriculum",
+      backend: "fallback",
+      items: [
+        {kind:"grow_local", n:4, why:"seed lane-teachable window gaps", priority:1},
+        {kind:"lookup_skill", tool:"wiki_lookup", query:"Grace Hopper", why:"exercise lookup path", priority:2},
+        {kind:"window_token", token_id:506, why:"first window token seed", priority:1}
+      ]
+    }' >"$LAST_PLAN"
+    echo "fallback plan written"
     used_model="fallback"
   fi
 
   if [ "$used_model" != "fallback" ]; then
     if ! extract_json "$raw_txt" "$LAST_PLAN"; then
       warn "parse failed; using hermetic fallback"
-      python3 - <<PY
-import json
-from pathlib import Path
-Path("$LAST_PLAN").write_text(json.dumps({
-  "reason": "parse fail; hermetic fallback",
-  "backend": "fallback",
-  "items": [
-    {"kind":"grow_local","n":3,"why":"seed teachable","priority":1},
-    {"kind":"lookup_skill","tool":"wiki_lookup","query":"Ada Lovelace","why":"lookup smoke","priority":2},
-  ],
-}, indent=2)+"\n")
-PY
+      jq -n '{
+        reason: "parse fail; hermetic fallback",
+        backend: "fallback",
+        items: [
+          {kind:"grow_local", n:3, why:"seed teachable", priority:1},
+          {kind:"lookup_skill", tool:"wiki_lookup", query:"Ada Lovelace", why:"lookup smoke", priority:2}
+        ]
+      }' >"$LAST_PLAN"
       used_model="fallback"
     fi
   fi
 
   # stamp metadata + append queue lines
-  python3 - <<PY
-import json, time
-from pathlib import Path
-from datetime import datetime, timezone
-plan=json.loads(Path("$LAST_PLAN").read_text())
-plan["ts"]=datetime.now().astimezone().isoformat(timespec="seconds")
-plan["model"]="$used_model"
-plan["base"]="$BASE"
-plan["units"]=$(current_units)
-Path("$LAST_PLAN").write_text(json.dumps(plan, indent=2)+"\n")
-q=Path("$QUEUE")
-with q.open("a", encoding="utf-8") as f:
-  for it in plan.get("items") or []:
-    if not isinstance(it, dict):
-      continue
-    row=dict(it)
-    row["ts"]=plan["ts"]
-    row["status"]="open"
-    row["source"]="curriculum"
-    row["model"]=plan["model"]
-    f.write(json.dumps(row, ensure_ascii=False)+"\n")
-print("queued", len(plan.get("items") or []), "→", q)
-PY
+  local plan_ts units_n
+  plan_ts=$(date -Iseconds)
+  units_n=$(current_units)
+  jq --arg ts "$plan_ts" --arg model "$used_model" --arg base "$BASE" --argjson units "$units_n" \
+    '.ts=$ts | .model=$model | .base=$base | .units=$units' "$LAST_PLAN" >"$LAST_PLAN.tmp"
+  mv "$LAST_PLAN.tmp" "$LAST_PLAN"
+  jq -c --arg ts "$plan_ts" --arg model "$used_model" '
+    .items[]? | select(type=="object") |
+    . + {ts:$ts, status:"open", source:"curriculum", model:$model}
+  ' "$LAST_PLAN" >>"$QUEUE"
+  echo "queued $(jq '.items|length' "$LAST_PLAN") → $QUEUE"
   consume_budget
   info "plan saved $LAST_PLAN model=$used_model"
   echo "PERSONAL_AI_CURRICULUM_PLAN_OK model=$used_model"
@@ -370,165 +354,157 @@ materialize() {
     info "sandbox inbox $target_inbox"
   fi
 
-  python3 - <<'PY' "$QUEUE" "$MAX_MAT" "$target_inbox" "$WINDOW" "$TODO" "$REPO" "$SANDBOX"
-import json, os, sys, subprocess
-from pathlib import Path
-from datetime import datetime
+  local queue_path="$QUEUE" max_n="$MAX_MAT" inbox="$target_inbox"
+  local window="$WINDOW" todo="$TODO" repo="$REPO" sandbox="$SANDBOX"
+  local kept_tmp actions_tmp open_tmp
+  kept_tmp=$(mktemp); actions_tmp=$(mktemp); open_tmp=$(mktemp)
+  : >"$kept_tmp"; : >"$actions_tmp"; : >"$open_tmp"
+  trap 'rm -f "$kept_tmp" "$actions_tmp" "$open_tmp"' RETURN
 
-queue_path, max_n, inbox, window, todo, repo, sandbox = sys.argv[1:8]
-max_n = int(max_n)
-sandbox = sandbox == "1"
-lines = Path(queue_path).read_text(encoding="utf-8").splitlines() if Path(queue_path).exists() else []
-open_rows = []
-kept = []
-for line in lines:
-    line=line.strip()
-    if not line:
+  if [[ -f "$queue_path" ]]; then
+    while IFS= read -r line || [[ -n "$line" ]]; do
+      [[ -z "$line" ]] && continue
+      if ! jq -e . >/dev/null 2>&1 <<<"$line"; then
+        echo "$line" >>"$kept_tmp"
         continue
-    try:
-        o=json.loads(line)
-    except Exception:
-        kept.append(line)
-        continue
-    if o.get("status") == "open":
-        open_rows.append(o)
-    else:
-        kept.append(json.dumps(o, ensure_ascii=False))
+      fi
+      if [[ "$(jq -r '.status // empty' <<<"$line")" == "open" ]]; then
+        echo "$line" >>"$open_tmp"
+      else
+        echo "$line" >>"$kept_tmp"
+      fi
+    done <"$queue_path"
+  fi
+  # priority sort (low number first)
+  if [[ -s "$open_tmp" ]]; then
+    jq -c -s 'sort_by(.priority // 99)[]' "$open_tmp" >"${open_tmp}.s"
+    mv "${open_tmp}.s" "$open_tmp"
+  fi
 
-open_rows.sort(key=lambda r: int(r.get("priority") or 99))
-done = 0
-actions = []
-win_ids = []
-if Path(window).exists():
-    win_ids = [int(x) for x in Path(window).read_text().split() if x.isdigit()]
-W = len(win_ids) if win_ids else 256
-K = 3
+  local -a win_ids=()
+  if [[ -f "$window" ]]; then
+    mapfile -t win_ids < <(tr ' ' '\n' <"$window" | grep -E '^[0-9]+$' || true)
+  fi
+  local W=${#win_ids[@]}
+  [[ "$W" -eq 0 ]] && W=256
+  local K=3 done=0
 
-def append_no_plan(tid: int):
-    Path(inbox).parent.mkdir(parents=True, exist_ok=True)
-    with open(inbox, "a", encoding="utf-8") as f:
-        f.write(f"NO_PLAN 1 {W} 1 w_cur 1 {W} {K} tk{tid}q{tid}\n")
+  append_no_plan() {
+    local tid=$1
+    mkdir -p "$(dirname "$inbox")"
+    echo "NO_PLAN 1 $W 1 w_cur 1 $W $K tk${tid}q${tid}" >>"$inbox"
+  }
 
-for row in open_rows:
-    if done >= max_n:
-        kept.append(json.dumps(row, ensure_ascii=False))
-        continue
-    kind = (row.get("kind") or "").strip()
-    ok = False
-    detail = ""
-    try:
-        if kind in ("grow_local", "window_token"):
-            n = int(row.get("n") or 1)
-            if kind == "window_token":
-                tid = int(row.get("token_id") or (win_ids[0] if win_ids else 506))
-                append_no_plan(tid)
-                ok = True
-                detail = f"NO_PLAN tk{tid}q{tid}"
-            else:
-                # use grow_local script for real inbox; sandbox: manual seeds
-                if sandbox:
-                    for tid in (win_ids or [506,529,532,531])[: max(1, min(n, 4))]:
-                        append_no_plan(int(tid))
-                    ok = True
-                    detail = f"sandbox seeds n={min(n,4)}"
-                else:
-                    r = subprocess.run(
-                        ["bash", f"{repo}/scripts/personal_ai_grow_local.sh", str(max(1, min(n, 8)))],
-                        capture_output=True, text=True, timeout=60)
-                    ok = r.returncode == 0
-                    detail = (r.stdout or r.stderr or "")[-200:]
-        elif kind == "lookup_skill":
-            tool = (row.get("tool") or "wiki_lookup").strip()
-            query = (row.get("query") or row.get("q") or "Alan Turing").strip()
-            # Prefer Hermes-style C learn cycle (memory → tools → skill).
-            learn_bin = Path(repo) / "bin" / "cnet_learn_cycle"
-            if learn_bin.is_file():
-                env = os.environ.copy()
-                env["CNET_SKILLS_DIR"] = str(Path(repo) / "logs" / "personal_ai_skills")
-                r = subprocess.run(
-                    [str(learn_bin), query],
-                    capture_output=True, text=True, timeout=120, env=env, cwd=repo)
-                ok = r.returncode == 0 and "CNET_LEARN_CYCLE_OK" in (r.stdout or "")
-                detail = (r.stdout or r.stderr or "")[:220]
-            else:
-                so = Path(repo) / "cnet.so"
-                if so.exists():
-                    code = f"""
-import ctypes
-lib=ctypes.CDLL({str(so)!r})
-buf=ctypes.create_string_buffer(2048)
-fc=ctypes.c_int(0)
-q={query!r}.encode()
-if {tool!r}=="web_search":
-  lib.port_contract_mcp_web_search.argtypes=[ctypes.c_char_p,ctypes.c_char_p,ctypes.c_size_t,ctypes.POINTER(ctypes.c_int)]
-  lib.port_contract_mcp_web_search.restype=ctypes.c_int
-  lib.port_contract_mcp_web_search(q,buf,len(buf),ctypes.byref(fc))
-else:
-  lib.port_contract_mcp_wiki_lookup.argtypes=[ctypes.c_char_p,ctypes.c_char_p,ctypes.c_size_t,ctypes.POINTER(ctypes.c_int)]
-  lib.port_contract_mcp_wiki_lookup.restype=ctypes.c_int
-  lib.port_contract_mcp_wiki_lookup(q,buf,len(buf),ctypes.byref(fc))
-print(buf.value[:180].decode('utf-8','replace'))
-"""
-                    r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=90)
-                    ok = r.returncode == 0 and bool((r.stdout or "").strip())
-                    detail = (r.stdout or r.stderr or "")[:200]
-                else:
-                    ok = False
-                    detail = "cnet_learn_cycle and cnet.so missing"
-        elif kind == "jtc_expand":
-            Path(todo).parent.mkdir(parents=True, exist_ok=True)
-            t = {
-                "ts": datetime.now().astimezone().isoformat(timespec="seconds"),
-                "id": f"jtc-{row.get('tool','tool')}",
-                "status": "open",
-                "priority": int(row.get("priority") or 3),
-                "text": f"jtc expand tool {row.get('tool')}: {row.get('why','')}",
-            }
-            with open(todo, "a", encoding="utf-8") as f:
-                f.write(json.dumps(t) + "\n")
-            ok = True
-            detail = "todo queued"
-        else:
-            detail = f"unknown kind {kind}"
-    except Exception as e:
-        detail = str(e)
-        ok = False
+  while IFS= read -r row || [[ -n "$row" ]]; do
+    [[ -z "$row" ]] && continue
+    if [[ "$done" -ge "$max_n" ]]; then
+      echo "$row" >>"$kept_tmp"
+      continue
+    fi
+    local kind ok=0 detail="" n tid tool query out rc
+    kind=$(jq -r '.kind // empty' <<<"$row" | tr -d '\r')
+    detail=""
+    case "$kind" in
+      window_token)
+        tid=$(jq -r --argjson d "${win_ids[0]:-506}" '.token_id // $d' <<<"$row")
+        append_no_plan "$tid"
+        ok=1
+        detail="NO_PLAN tk${tid}q${tid}"
+        ;;
+      grow_local)
+        n=$(jq -r '.n // 1' <<<"$row")
+        [[ "$n" -lt 1 ]] && n=1
+        [[ "$n" -gt 8 ]] && n=8
+        if [[ "$sandbox" == "1" ]]; then
+          local seeds=("${win_ids[@]:-}")
+          if [[ ${#seeds[@]} -eq 0 ]]; then seeds=(506 529 532 531); fi
+          local i=0 take=$n
+          [[ "$take" -gt 4 ]] && take=4
+          [[ "$take" -lt 1 ]] && take=1
+          for ((i=0; i<take && i<${#seeds[@]}; i++)); do
+            append_no_plan "${seeds[$i]}"
+          done
+          ok=1
+          detail="sandbox seeds n=$take"
+        else
+          out=$(timeout 60 bash "$repo/scripts/personal_ai_grow_local.sh" "$n" 2>&1) && ok=1 || ok=0
+          detail=$(printf '%s' "$out" | tail -c 200)
+        fi
+        ;;
+      lookup_skill)
+        tool=$(jq -r '.tool // "wiki_lookup"' <<<"$row")
+        query=$(jq -r '.query // .q // "Alan Turing"' <<<"$row")
+        if [[ -x "$repo/bin/cnet_learn_cycle" ]]; then
+          out=$(CNET_SKILLS_DIR="$repo/logs/personal_ai_skills" \
+            timeout 120 "$repo/bin/cnet_learn_cycle" "$query" 2>&1) && rc=0 || rc=$?
+          if [[ "$rc" -eq 0 ]] && grep -q CNET_LEARN_CYCLE_OK <<<"$out"; then
+            ok=1
+          fi
+          detail=$(printf '%s' "$out" | head -c 220)
+        else
+          ok=0
+          detail="cnet_learn_cycle missing"
+        fi
+        ;;
+      jtc_expand)
+        mkdir -p "$(dirname "$todo")"
+        jq -nc \
+          --arg ts "$(date -Iseconds)" \
+          --arg id "jtc-$(jq -r '.tool // "tool"' <<<"$row")" \
+          --argjson pri "$(jq -r '.priority // 3' <<<"$row")" \
+          --arg text "jtc expand tool $(jq -r '.tool // empty' <<<"$row"): $(jq -r '.why // empty' <<<"$row")" \
+          '{ts:$ts, id:$id, status:"open", priority:$pri, text:$text}' >>"$todo"
+        ok=1
+        detail="todo queued"
+        ;;
+      *)
+        detail="unknown kind $kind"
+        ok=0
+        ;;
+    esac
 
-    row["status"] = "done" if ok else "failed"
-    row["done_ts"] = datetime.now().astimezone().isoformat(timespec="seconds")
-    row["result"] = detail
-    kept.append(json.dumps(row, ensure_ascii=False))
-    actions.append({"kind": kind, "ok": ok, "detail": detail[:120]})
-    if ok:
-        done += 1
+    local status done_ts
+    done_ts=$(date -Iseconds)
+    if [[ "$ok" -eq 1 ]]; then status=done; else status=failed; fi
+    jq -c --arg st "$status" --arg ts "$done_ts" --arg res "$detail" \
+      '.status=$st | .done_ts=$ts | .result=$res' <<<"$row" >>"$kept_tmp"
+    jq -nc --arg kind "$kind" --argjson ok "$ok" --arg detail "${detail:0:120}" \
+      '{kind:$kind, ok:($ok==1), detail:$detail}' >>"$actions_tmp"
+    [[ "$ok" -eq 1 ]] && done=$((done + 1))
+  done <"$open_tmp"
 
-Path(queue_path).write_text("\n".join(kept) + ("\n" if kept else ""), encoding="utf-8")
-print(json.dumps({"materialized": done, "actions": actions}, indent=2))
-if done:
-    print(f"PERSONAL_AI_CURRICULUM_MATERIALIZE_OK n={done}")
-else:
-    print("PERSONAL_AI_CURRICULUM_MATERIALIZE_OK n=0")
-# Feed pattern runtime fluid edges for each successful materialize
-pat = Path(repo) / "bin" / "cnet_pattern"
-if pat.is_file():
-    import os
-    env = os.environ.copy()
-    env["CNET_PATTERN_STORE"] = str(Path(repo) / "logs" / "personal_ai_ops" / "pattern_runtime.jsonl")
-    proposed = 0
-    for a in actions:
-        if not a.get("ok"):
-            continue
-        kind = str(a.get("kind") or "curriculum")
-        # detail often holds query/result; use kind + short detail as text
-        text = str(a.get("detail") or kind)[:200]
-        r = subprocess.run(
-            [str(pat), "propose", kind, text],
-            capture_output=True, text=True, timeout=30, env=env, cwd=repo)
-        if r.returncode == 0 and "CNET_PATTERN_PROPOSE_OK" in (r.stdout or ""):
-            proposed += 1
-    if proposed:
-        print(f"PERSONAL_AI_CURRICULUM_PATTERN_PROPOSE_OK n={proposed}")
-PY
+  if [[ -s "$kept_tmp" ]]; then
+    cat "$kept_tmp" >"$queue_path"
+    echo >>"$queue_path"
+  else
+    : >"$queue_path"
+  fi
+
+  local actions_json
+  if [[ -s "$actions_tmp" ]]; then
+    actions_json=$(jq -s . "$actions_tmp")
+  else
+    actions_json='[]'
+  fi
+  jq -n --argjson materialized "$done" --argjson actions "$actions_json" \
+    '{materialized:$materialized, actions:$actions}'
+  echo "PERSONAL_AI_CURRICULUM_MATERIALIZE_OK n=$done"
+
+  if [[ -x "$repo/bin/cnet_pattern" ]]; then
+    local proposed=0
+    export CNET_PATTERN_STORE="${CNET_PATTERN_STORE:-$repo/logs/personal_ai_ops/pattern_runtime.jsonl}"
+    while IFS= read -r a; do
+      [[ "$(jq -r '.ok' <<<"$a")" == "true" ]] || continue
+      kind=$(jq -r '.kind // "curriculum"' <<<"$a")
+      detail=$(jq -r '.detail // empty' <<<"$a" | head -c 200)
+      if CNET_PATTERN_STORE="$CNET_PATTERN_STORE" \
+          "$repo/bin/cnet_pattern" propose "$kind" "$detail" 2>/dev/null \
+          | grep -q CNET_PATTERN_PROPOSE_OK; then
+        proposed=$((proposed + 1))
+      fi
+    done < <(jq -c '.[]' <<<"$actions_json")
+    [[ "$proposed" -gt 0 ]] && echo "PERSONAL_AI_CURRICULUM_PATTERN_PROPOSE_OK n=$proposed"
+  fi
 }
 
 status_cmd() {
@@ -580,24 +556,18 @@ test_e2e() {
   grep -q PERSONAL_AI_CURRICULUM_PLAN_OK <<<"$(cat "$LAST_PLAN" >/dev/null; echo PERSONAL_AI_CURRICULUM_PLAN_OK)" && plan_ok=1
   [ -s "$LAST_PLAN" ] && plan_ok=1
   [ "${inbox_n:-0}" -gt 0 ] || grep -q '"ok": true' <<<"$(tail -1 "$QUEUE" 2>/dev/null || true)" && mat_ok=1
-  # stronger checks
-  python3 - <<PY
-import json
-from pathlib import Path
-plan=json.loads(Path("$LAST_PLAN").read_text())
-assert "items" in plan and len(plan["items"])>=1, plan
-q=Path("$QUEUE").read_text().strip().splitlines()
-assert q, "empty queue"
-done=sum(1 for line in q if json.loads(line).get("status") in ("done","failed"))
-assert done>=1, q
-print("TEST_ASSERT_OK items", len(plan["items"]), "queue", len(q), "sandbox_inbox_lines", $inbox_n)
-# at least one materialize success preferred
-oks=sum(1 for line in q if json.loads(line).get("status")=="done")
-print("materialize_done", oks)
-if oks<1:
-  raise SystemExit("no successful materialize")
-print("PERSONAL_AI_CURRICULUM_TEST_PASS")
-PY
+  # stronger checks (jq)
+  jq -e '.items|type=="array" and length>=1' "$LAST_PLAN" >/dev/null
+  [[ -s "$QUEUE" ]] || { echo "empty queue" >&2; return 1; }
+  local qn done_n oks
+  qn=$(grep -c . "$QUEUE" || true)
+  done_n=$(jq -c -s 'map(select(.status=="done" or .status=="failed"))|length' "$QUEUE")
+  [[ "$done_n" -ge 1 ]] || { echo "no done/failed rows" >&2; return 1; }
+  oks=$(jq -c -s 'map(select(.status=="done"))|length' "$QUEUE")
+  echo "TEST_ASSERT_OK items $(jq '.items|length' "$LAST_PLAN") queue $qn sandbox_inbox_lines $inbox_n"
+  echo "materialize_done $oks"
+  [[ "$oks" -ge 1 ]] || { echo "no successful materialize" >&2; return 1; }
+  echo "PERSONAL_AI_CURRICULUM_TEST_PASS"
   QUEUE="$save_queue"
 }
 

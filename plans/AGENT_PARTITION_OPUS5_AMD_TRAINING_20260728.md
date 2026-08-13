@@ -88,7 +88,7 @@
 
 - new `training/rocm/` directory in CNET
 - new `scripts/run_rocm_lora_bench.sh`
-- new `tests/test_rocm_training_contract.py`
+- new `tests/test_rocm_training_contract.sh`
 - no modification of `/home/marble/ai-env`
 
 **Deliverables:**
@@ -124,7 +124,7 @@
 
 **Exclusive file scope:**
 
-- new `tools/dual_r9700_training.py` or `.sh`
+- new `tools/dual_r9700_training.sh`
 - `tools/campaign_v2_fast.sh`
 - `tools/mining_campaign.sh` only through an additive explicit GPU mode
 - new `config/cnet-training-window.env.example`
@@ -155,10 +155,10 @@
 
 **Exclusive file scope:**
 
-- new `training/rocm/probe_rccl.py`
+- new `training/rocm/probe_rccl.sh` (torch RCCL probe is WITHHELD / out of tree)
 - new `training/rocm/run_ddp_probe.sh`
-- new `training/rocm/benchmark_matrix.py`
-- new `tests/test_ddp_probe_contract.py`
+- new `training/rocm/benchmark_matrix.sh`
+- new `tests/test_ddp_probe_contract.sh`
 - `plans/amd_r9700_training_research_20260728.md` results appendix
 - README/ARCHITECTURE/CHANGELOG only after measured gates
 

@@ -29,11 +29,11 @@ Results:
 
 ## Local Registry Activation Completed
 
-- Added `tools/ingest_cnet_suggestions.py` and focused dedup/status tests.
+- Added `cnet-control ingest-suggestions` and focused dedup/status tests.
 - Imported five Phase 1–5 rows as `implemented` evidence.
 - Imported one priority-5 `proposed` repair task from the quarantined real-model candidate.
 - Verified a second identical pass inserted zero rows and skipped all six stable hashes.
-- Added `tools/activate_cnet_suggestions.py`, a one-row, atomic, resumable consumer.
+- Added `cnet-control activate-suggestions`, a one-row, atomic, resumable consumer.
 - Verified eight activation tests covering actionable filtering, dry-run purity, one-row bounds, crash recovery, SHA linkage, zero-regression policy, and terminal archival.
 - Consumed row 6 using the admitted Q4_K_S recovery evidence: `proposed -> in_progress -> verified`.
 - Verified the repeat invocation returned `idle` and zero actionable rows remain.

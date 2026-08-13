@@ -140,8 +140,10 @@ fi
 # Bounded teachable NO_PLAN lines for window tokens (HTTP teacher can close these)
 # Format matches gap_inbox_note_no_plan / curiosity: NO_PLAN family w ... goal
 if [[ -f "$CNET_WINDOW_FILE" ]] && [[ "$bonsai_ok" -eq 1 ]]; then
-  # Unseeded, coverage-filtered sampling — see scripts/gap_inject.py.
-  python3 "$REPO/scripts/gap_inject.py" >>"$RUNLOG" 2>&1 || true
+  # Unseeded, coverage-filtered sampling — see ./bin/gap_inject (C port).
+  if [[ -x "$REPO/bin/gap_inject" ]]; then
+    "$REPO/bin/gap_inject" >>"$RUNLOG" 2>&1 || true
+  fi
 fi
 
 # --- 4) PEFT / JTC cert tick (bounded) ---
@@ -174,26 +176,39 @@ if [[ -f "$BASE" ]]; then
   units_after=$(count_units)
 fi
 
-python3 - <<PY
-import json, os
-from pathlib import Path
-rep = {
-  "ts": os.environ.get("TS", "$TS"),
-  "bonsai_ok": $bonsai_ok,
-  "lane_ok": $lane_ok,
-  "cert_ok": $cert_ok,
-  "mine_ok": $mine_ok,
-  "procedure_seeds": int("$proc_n" or 0),
-  "fault_lines": int("$faults_n" or 0),
-  "lora_files": int("$lora_n" or 0),
-  "units_before": int("$units_before" or 0),
-  "units_after": int("$units_after" or 0),
-  "units_source": "cnb_audit",
-  "residual_http": os.environ.get("CNET_RESIDUAL_HTTP", ""),
-  "base": os.environ.get("CNET_BASE_PATH", ""),
-}
-Path("$LOG").write_text(json.dumps(rep, indent=2) + "\n")
-print("AUTOTEACH_TICK_OK", json.dumps(rep))
-PY
+proc_n=${proc_n:-0}
+faults_n=${faults_n:-0}
+lora_n=${lora_n:-0}
+units_before=${units_before:-0}
+units_after=${units_after:-0}
+jq -n \
+  --arg ts "$TS" \
+  --argjson bonsai_ok "$bonsai_ok" \
+  --argjson lane_ok "$lane_ok" \
+  --argjson cert_ok "$cert_ok" \
+  --argjson mine_ok "$mine_ok" \
+  --argjson procedure_seeds "$proc_n" \
+  --argjson fault_lines "$faults_n" \
+  --argjson lora_files "$lora_n" \
+  --argjson units_before "$units_before" \
+  --argjson units_after "$units_after" \
+  --arg residual_http "${CNET_RESIDUAL_HTTP:-}" \
+  --arg base "${CNET_BASE_PATH:-}" \
+  '{
+    ts: $ts,
+    bonsai_ok: $bonsai_ok,
+    lane_ok: $lane_ok,
+    cert_ok: $cert_ok,
+    mine_ok: $mine_ok,
+    procedure_seeds: $procedure_seeds,
+    fault_lines: $fault_lines,
+    lora_files: $lora_files,
+    units_before: $units_before,
+    units_after: $units_after,
+    units_source: "cnb_audit",
+    residual_http: $residual_http,
+    base: $base
+  }' >"$LOG"
+echo "AUTOTEACH_TICK_OK $(jq -c . "$LOG")"
 
 exit 0

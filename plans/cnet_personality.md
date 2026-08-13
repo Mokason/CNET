@@ -6,7 +6,7 @@ Artificial affect + durable persona on the scoreboard/governor spine.
 
 ## Files
 - `config/personality.yaml` — profiles + baselines + clamps
-- `scripts/governor_personality.py` — affect ← outcomes, traits, homeostasis
+- `tools/governor_personality.c` — affect ← outcomes, traits, homeostasis
 - `logs/governor/personality_state.json` — live state
 - `logs/governor/personality_history.jsonl` — audit
 
@@ -26,12 +26,12 @@ driven by backlog/eval/Hermes/plateau/busy/veto
 
 ## Gate
 ```bash
-python3 scripts/governor_personality.py --test
-python3 scripts/governor_autonomous.py --test
+./bin/governor_personality --test
+./bin/governor_autonomous --test
 ```
 
 ## Marble imprint + Zen commit gate
 - Active profile: `marble` (zen spine + light anime/VTuber delivery)
 - Voice: `config/voice_marble.md` (+ `~/.hermes/identity/voice_marble.md`, SOUL pointer)
-- Zen gate: `scripts/governor_zen_reflect.py` — sit/see before heavy commit; never delay infra fires
+- Zen gate: `tools/governor_zen_reflect.c` — sit/see before heavy commit; never delay infra fires
 - Decision log includes `persona` + `zen.principles`

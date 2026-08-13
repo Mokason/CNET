@@ -46,7 +46,7 @@ Each suggestion row contains:
 The external SQLite SuggestionRegistry is available locally and is populated on demand with:
 
 ```sh
-python3 tools/ingest_cnet_suggestions.py \
+dotnet run --project dotnet/CnetControlPlane -- ingest-suggestions \
   --suggestions suggestions/cnet_compression_suggestions.jsonl \
   --acceptance-report reports/qwythos_real_model_acceptance.json \
   --db /path/to/suggestion_registry.db
@@ -56,7 +56,7 @@ The ingester validates the existing schema and uses stable SHA-256 keys with `IN
 
 ## Perpetual Engine Handoff
 
-`tools/activate_cnet_suggestions.py` is the local bounded consumer. It:
+`dotnet run --project dotnet/CnetControlPlane -- activate-suggestions` is the local bounded consumer. It:
 
 - selects only `cnet-model-compression` rows from `cnet_real_model_acceptance`
   with status `proposed` or recoverable `in_progress` and

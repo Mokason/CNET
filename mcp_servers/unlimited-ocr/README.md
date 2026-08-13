@@ -1,18 +1,10 @@
-# Unlimited-OCR MCP
+# Unlimited-OCR MCP — WITHHELD
 
-Processes PDF books with Unlimited-OCR model:
-- OCR extraction via `convert_unlimited_ocr.py`
-- Chunking + vectorization
-- Local vector DB storage (JSONL + sqlite)
-- Lightweight Obsidian surface overview notes
+The Unlimited-OCR MCP stub and torch harnesses were removed from the product tree.
 
-## Tools
-- `process_pdf_book(pdf_path, book_title?)` → full pipeline + Obsidian note
-- `get_book_overview(book_id)` → retrieve stored info
+Portable OCR proof is C ROE:
 
-## Notes
-- Currently uses placeholder embeddings (extend with sentence-transformers when torch env is ready)
-- Obsidian notes are **surface level only** (high-level themes, not deep extraction)
-- Integrates with CNET conversion script as requested
+- `make roe_asi_ocr_local` / `roe_asi_ocr_tables` / `roe_asi_ocr_surpass`
+- `./bin/roe_table_extract`
 
-Created: 2026-07-06
+Do not treat this directory as a live MCP server.

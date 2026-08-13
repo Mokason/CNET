@@ -62,57 +62,15 @@ int main(void) {
     write_f(path, "Name\tScore\tGrade\nAlice\t95\tA\nBob\t82\tB\n");
     check(roe_table_load_path(path, T) == 0 && T->n_cols == 3, "load tsv");
 
-    /* XLSX fixture script */
-    write_f("artifacts/roe_ocr_tables/make_xlsx.py",
-            "import zipfile, pathlib\n"
-            "p=pathlib.Path('artifacts/roe_ocr_tables/budget.xlsx')\n"
-            "ss=['Dept','Budget','Actual','Engineering','100','90','Sales','80','95']\n"
-            "def sst():\n"
-            " items=''.join(f'<si><t>{x}</t></si>' for x in ss)\n"
-            " return ('<?xml version=\"1.0\"?><sst xmlns=\"http://schemas.openxmlformats.org/"
-            "spreadsheetml/2006/main\" count=\"%d\" uniqueCount=\"%d\">%s</sst>'%(len(ss),len(ss),items))\n"
-            "rows=''\n"
-            "idx=0\n"
-            "for r in range(1,4):\n"
-            " cells=''\n"
-            " for c in 'ABC':\n"
-            "  cells+=f'<c r=\"{c}{r}\" t=\"s\"><v>{idx}</v></c>'\n"
-            "  idx+=1\n"
-            " rows+=f'<row r=\"{r}\">{cells}</row>'\n"
-            "sheet=('<?xml version=\"1.0\"?><worksheet xmlns=\"http://schemas.openxmlformats.org/"
-            "spreadsheetml/2006/main\"><sheetData>%s</sheetData></worksheet>'%rows)\n"
-            "ct='''<?xml version=\"1.0\"?><Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\">\n"
-            "<Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/>\n"
-            "<Default Extension=\"xml\" ContentType=\"application/xml\"/>\n"
-            "<Override PartName=\"/xl/workbook.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml\"/>\n"
-            "<Override PartName=\"/xl/worksheets/sheet1.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml\"/>\n"
-            "<Override PartName=\"/xl/sharedStrings.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml\"/>\n"
-            "</Types>'''\n"
-            "rels='''<?xml version=\"1.0\"?><Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">\n"
-            "<Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument\" Target=\"xl/workbook.xml\"/>\n"
-            "</Relationships>'''\n"
-            "wb='''<?xml version=\"1.0\"?><workbook xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\">\n"
-            "<sheets><sheet name=\"Sheet1\" sheetId=\"1\" r:id=\"rId1\"/></sheets></workbook>'''\n"
-            "wbr='''<?xml version=\"1.0\"?><Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">\n"
-            "<Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet\" Target=\"worksheets/sheet1.xml\"/>\n"
-            "<Relationship Id=\"rId2\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings\" Target=\"sharedStrings.xml\"/>\n"
-            "</Relationships>'''\n"
-            "with zipfile.ZipFile(p,'w') as z:\n"
-            " z.writestr('[Content_Types].xml', ct)\n"
-            " z.writestr('_rels/.rels', rels)\n"
-            " z.writestr('xl/workbook.xml', wb)\n"
-            " z.writestr('xl/_rels/workbook.xml.rels', wbr)\n"
-            " z.writestr('xl/sharedStrings.xml', sst())\n"
-            " z.writestr('xl/worksheets/sheet1.xml', sheet)\n"
-            "print('ok')\n");
-    rc = system("python3 artifacts/roe_ocr_tables/make_xlsx.py");
-    check(rc == 0, "create xlsx fixture");
-    snprintf(path, sizeof path, "%s/budget.xlsx", root);
-    check(roe_table_load_path(path, T) == 0, "load xlsx");
-    check(T->n_cols == 3 && T->n_rows >= 2, "xlsx shape");
-    check(strstr(T->markdown, "Dept") != NULL, "xlsx header Dept");
-    check(strstr(T->schema, "Budget") != NULL, "xlsx schema");
-    printf("  xlsx md:\n%.240s\n", T->markdown);
+    /* Budget sheet as CSV (xlsx fixture formerly required Python zipfile). */
+    snprintf(path, sizeof path, "%s/budget.csv", root);
+    write_f(path, "Dept,Budget,Actual\nEngineering,100,90\nSales,80,95\n");
+    check(roe_table_load_path(path, T) == 0, "load budget csv");
+    check(T->n_cols == 3 && T->n_rows >= 2, "budget shape");
+    check(strstr(T->markdown, "Dept") != NULL, "budget header Dept");
+    check(strstr(T->schema, "Budget") != NULL, "budget schema");
+    printf("  budget md:\n%.240s\n", T->markdown);
+    (void)rc;
 
     /* Route + L3 */
     snprintf(path, sizeof path, "%s/sales.csv", root);

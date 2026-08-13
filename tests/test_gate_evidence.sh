@@ -5,8 +5,8 @@
 # WHY THIS EXISTS. The re-analysis could not classify the headline logs it found
 # as fresh or carried: stable paths under an ignored `logs/` tree, no run
 # identity, so "the marker is present" proved only that some process once wrote
-# it. scripts/gate_evidence.py is the fix, and the review then found four ways
-# the first (POSIX sh) version could still be fooled:
+# it. tools/gate_evidence.c (bin/gate_evidence) is the fix, and the review then
+# found four ways the first (POSIX sh) version could still be fooled:
 #
 #   * it hashed `git status` TEXT, so a tracked file whose bytes changed while
 #     its status line stayed " M path" produced an identical binding, and an
@@ -27,16 +27,20 @@
 set -u
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
-WRAPPER=${CNET_GATE_EVIDENCE:-$ROOT/scripts/gate_evidence.py}
+WRAPPER=${CNET_GATE_EVIDENCE:-$ROOT/bin/gate_evidence}
 
-if [ ! -f "$WRAPPER" ]; then
+if [ ! -f "$WRAPPER" ] && [ ! -f "${WRAPPER}.exe" ]; then
     printf 'FAIL: %s not found\n' "$WRAPPER"
     exit 1
 fi
+# MinGW writes bin/gate_evidence.exe; accept either path form.
+if [ ! -f "$WRAPPER" ] && [ -f "${WRAPPER}.exe" ]; then
+    WRAPPER="${WRAPPER}.exe"
+fi
 
 case "$WRAPPER" in
-    *.py) RUNNER=(python3 "$WRAPPER") ;;
-    *)    RUNNER=(sh "$WRAPPER") ;;
+    *.sh) RUNNER=(sh "$WRAPPER") ;;
+    *)    RUNNER=("$WRAPPER") ;;
 esac
 
 TMP=$(mktemp -d "${TMPDIR:-/tmp}/cnet-gateev-XXXXXX") || exit 1
@@ -107,12 +111,8 @@ run() {
     STATUS=$?
 }
 
-json_get() {  # $1 = python expression over the parsed binding
-    python3 -c "
-import json,sys
-d=json.load(open(sys.argv[1]))
-print($1)
-" "$BINDING" 2>/dev/null
+json_get() {  # $1 = jq expression over the parsed binding (as .)
+    jq -r "$1" "$BINDING" 2>/dev/null
 }
 
 # --- 1. honest producer -----------------------------------------------------
@@ -122,41 +122,41 @@ check "$([ "$STATUS" -eq 0 ] && echo 0 || echo 1)" \
 case "$OUT" in *GATE_PASS*) ;; *) check 1 "an honest run reports GATE_PASS" ;; esac
 check "$([ -f "$BINDING" ] && echo 0 || echo 1)" \
     "an honest run writes an evidence binding"
-python3 -c "import json,sys; json.load(open(sys.argv[1]))" "$BINDING" 2>/dev/null
+jq -e . "$BINDING" >/dev/null 2>&1
 check $? "the binding is valid JSON"
-check "$([ "$(json_get 'd["marker_present"]')" = "True" ] && echo 0 || echo 1)" \
+check "$([ "$(json_get '.marker_present')" = "true" ] && echo 0 || echo 1)" \
     "the binding records that the marker was found"
-check "$([ "$(json_get 'd["exit_status"]')" = "0" ] && echo 0 || echo 1)" \
+check "$([ "$(json_get '.exit_status')" = "0" ] && echo 0 || echo 1)" \
     "the binding records the producer's exit status"
-check "$([ "$(json_get 'len(d["run_id"])')" -ge 32 ] && echo 0 || echo 1)" \
+check "$([ "$(json_get '.run_id|length')" -ge 32 ] && echo 0 || echo 1)" \
     "the binding carries a run id"
-check "$([ "$(json_get 'len(d["evidence_sha256"])')" = "64" ] && echo 0 || echo 1)" \
+check "$([ "$(json_get '.evidence_sha256|length')" = "64" ] && echo 0 || echo 1)" \
     "the binding carries the digest of the log it wrote"
 # A COUNT of assume-unchanged paths, which this used to require, names a blind
 # spot without closing it: `git status` cannot see those paths, so a producer
 # could rewrite one and the digest would not move. Require the digest itself.
-check "$([ "$(json_get 'len(d["binding_pre"]["special_index_sha256"])')" = "64" ] && echo 0 || echo 1)" \
+check "$([ "$(json_get '.binding_pre.special_index_sha256|length')" = "64" ] && echo 0 || echo 1)" \
     "the binding carries a content digest of the special-index paths"
-check "$([ "$(json_get '"special_index_files" in d["binding_pre"] and "special_index_bytes" in d["binding_pre"]')" = "True" ] && echo 0 || echo 1)" \
+check "$([ "$(json_get '(.binding_pre|has("special_index_files") and has("special_index_bytes"))')" = "true" ] && echo 0 || echo 1)" \
     "the binding discloses how many special-index paths it covered, and their size"
-check "$([ "$(json_get 'd["binding_stable"]')" = "True" ] && echo 0 || echo 1)" \
+check "$([ "$(json_get '.binding_stable')" = "true" ] && echo 0 || echo 1)" \
     "an honest run reports a stable binding"
 
-FIRST_RUN=$(json_get 'd["run_id"]')
+FIRST_RUN=$(json_get '.run_id')
 run "$TMP/good.sh"
-SECOND_RUN=$(json_get 'd["run_id"]')
+SECOND_RUN=$(json_get '.run_id')
 check "$([ "$FIRST_RUN" != "$SECOND_RUN" ] && echo 0 || echo 1)" \
     "each run gets its own run id"
 
 # --- 2. argv fidelity -------------------------------------------------------
 # "$*" collapses these two into the same string; a JSON array does not.
 run "$TMP/echo_args.sh" "a b"
-ONE=$(json_get 'json.dumps(d["command"])')
+ONE=$(json_get '.command|tojson')
 run "$TMP/echo_args.sh" "a" "b"
-TWO=$(json_get 'json.dumps(d["command"])')
+TWO=$(json_get '.command|tojson')
 check "$([ "$ONE" != "$TWO" ] && echo 0 || echo 1)" \
     "one argument 'a b' binds differently from two arguments 'a' 'b'"
-check "$([ "$(json_get 'len(d["command"])')" = "3" ] && echo 0 || echo 1)" \
+check "$([ "$(json_get '.command|length')" = "3" ] && echo 0 || echo 1)" \
     "the binding records argv as a list, not a joined string"
 
 # Quote, backslash and newline in one argument. The binding must stay valid
@@ -164,9 +164,9 @@ check "$([ "$(json_get 'len(d["command"])')" = "3" ] && echo 0 || echo 1)" \
 WEIRD='he said "hi" \ then
 a newline'
 run "$TMP/echo_args.sh" "$WEIRD"
-python3 -c "import json,sys; json.load(open(sys.argv[1]))" "$BINDING" 2>/dev/null
+jq -e . "$BINDING" >/dev/null 2>&1
 check $? "an argument with a quote, backslash and newline keeps the JSON valid"
-GOT=$(json_get 'd["command"][1]')
+GOT=$(json_get '.command[1]')
 check "$([ "$GOT" = "$WEIRD" ] && echo 0 || echo 1)" \
     "such an argument round-trips exactly"
 
@@ -238,27 +238,38 @@ mkdir -p "$REPO"
     git commit -qm base
 ) >/dev/null 2>&1
 
-state_of() {  # $1 = repo, prints the two content digests
-    python3 - "$1" <<'PY'
-import hashlib, subprocess, sys
-from pathlib import Path
-root = Path(sys.argv[1])
-def git(*a):
-    r = subprocess.run(["git", *a], cwd=root, text=True,
-                       stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, check=False)
-    return r.stdout if r.returncode == 0 else ""
-def sha(p):
-    return hashlib.sha256(p.read_bytes()).hexdigest() if p.is_file() else "absent"
-t = hashlib.sha256()
-for line in git("status", "--porcelain=v1").splitlines():
-    if len(line) < 4: continue
-    e = line[3:].split(" -> ")[-1].strip().strip('"')
-    t.update(line[:3].encode()); t.update(e.encode()); t.update(sha(root / e).encode())
-u = hashlib.sha256()
-for e in sorted(x for x in git("ls-files", "--others", "--exclude-standard", "-z").split("\0") if x):
-    u.update(e.encode()); u.update(sha(root / e).encode())
-print(t.hexdigest(), u.hexdigest())
-PY
+state_of() {  # $1 = repo, prints the two content digests (jq/sha256sum — was python3)
+    local root=$1
+    sha_file() {
+        if [[ -f "$1" ]]; then
+            if command -v sha256sum >/dev/null 2>&1; then
+                sha256sum "$1" | awk '{print $1}'
+            else
+                openssl dgst -sha256 "$1" | awk '{print $NF}'
+            fi
+        else
+            echo absent
+        fi
+    }
+    local t_tmp u_tmp line e st
+    t_tmp=$(mktemp); u_tmp=$(mktemp); : >"$t_tmp"; : >"$u_tmp"
+    while IFS= read -r line; do
+        [[ ${#line} -lt 4 ]] && continue
+        st=${line:0:3}
+        e=${line:3}
+        e=${e##* -> }
+        e=${e#\"}; e=${e%\"}
+        e=${e##+([[:space:]])}
+        printf '%s%s%s' "$st" "$e" "$(sha_file "$root/$e")" >>"$t_tmp"
+    done < <(git -C "$root" status --porcelain=v1 2>/dev/null || true)
+    while IFS= read -r -d '' e; do
+        [[ -z "$e" ]] && continue
+        printf '%s%s' "$e" "$(sha_file "$root/$e")" >>"$u_tmp"
+    done < <(git -C "$root" ls-files --others --exclude-standard -z 2>/dev/null || true)
+    local th uh
+    th=$(sha_file "$t_tmp"); uh=$(sha_file "$u_tmp")
+    rm -f "$t_tmp" "$u_tmp"
+    echo "$th $uh"
 }
 
 printf 'dirty one\n' > "$REPO/tracked.txt"

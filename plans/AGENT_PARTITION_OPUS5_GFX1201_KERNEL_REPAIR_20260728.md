@@ -62,7 +62,7 @@ New files should remain under:
 - `training/rocm/probes/`
 - `training/rocm/reports/` for small machine-readable summaries only
 - `scripts/run_gfx1201_kernel_gate.sh`
-- `tests/test_gfx1201_kernel_gate.py`
+- `tests/test_gfx1201_kernel_gate.sh`
 - this plan's results appendix
 
 The existing original Task 3 files may consume the compatibility router after this gate. Do not widen Task 6 into unrelated CNET C core or Unity files.

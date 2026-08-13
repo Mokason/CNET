@@ -31,22 +31,20 @@ FAM_REJECT_LIMIT="${FAM_REJECT_LIMIT:-0}"
 [[ -x bin/cnet_quality_eval ]] || make -s quality_eval
 [[ -f "$MODEL" ]] || { echo "MODEL missing: $MODEL"; exit 1; }
 
-# LDTR v1: magic u32, ver u32, count u32
+# LDTR v1: magic u32, ver u32, count u32 ('LDTR' LE = 0x5254444C)
 pack_count() {
   if [[ ! -f "$PACK" ]]; then echo 0; return; fi
-  python3 - "$PACK" <<'PY'
-import struct, sys
-p = sys.argv[1]
-try:
-    with open(p, "rb") as f:
-        mag, ver, n = struct.unpack("<III", f.read(12))
-    if mag != 0x5254444C or ver != 1:  # 'LDTR' LE
-        print(0)
-    else:
-        print(int(n))
-except Exception:
-    print(0)
-PY
+  # od: little-endian unsigned ints; fail closed on short/bad packs
+  local hdr mag ver n
+  hdr=$(od -An -t u4 -N 12 "$PACK" 2>/dev/null | tr -s ' ' | sed 's/^ //')
+  # shellcheck disable=SC2086
+  set -- $hdr
+  mag=${1:-0}; ver=${2:-0}; n=${3:-0}
+  if [[ "$mag" -eq 1381258316 && "$ver" -eq 1 ]]; then
+    echo "$n"
+  else
+    echo 0
+  fi
 }
 
 # Quality: isolated log for THIS invocation only.

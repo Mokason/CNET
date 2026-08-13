@@ -178,9 +178,9 @@ int roe_table_load_path(const char *path, RoeTable *T) {
         char cmd[ROE_PATH_MAX + 128];
         FILE *f;
         size_t n;
-        /* prefer repo script */
+        /* C extractor (product Python purged) */
         snprintf(cmd, sizeof cmd,
-                 "python3 tools/roe_table_extract.py '%s' 2>/dev/null", path);
+                 "./bin/roe_table_extract '%s' 2>/dev/null", path);
         f = popen(cmd, "r");
         if (!f) return -1;
         n = fread(buf, 1, sizeof buf - 1, f);

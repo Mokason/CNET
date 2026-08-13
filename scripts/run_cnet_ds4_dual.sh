@@ -164,7 +164,7 @@ case "$ACTION" in
             echo "model not found: $MODEL" >&2
             exit 1
         fi
-        python3 "$SCRIPT_ROOT/scripts/cnet_chunk_hash.py" \
+        "$SCRIPT_ROOT/bin/cnet_chunk_hash" \
             "$MODEL" "$IDENTITY_FILE"
         ;;
 
@@ -174,8 +174,8 @@ case "$ACTION" in
             echo "DS4 API is not ready; start the supervised dual service first" >&2
             exit 1
         fi
-        python3 "$SCRIPT_ROOT/scripts/verify_ds4_endpoint.py" \
-            "http://$API_HOST:$API_PORT" "$READY_FILE" "$VERIFY_FILE"
+        (cd "$SCRIPT_ROOT" && dotnet run --project dotnet/CnetControlPlane -- verify-ds4 \
+            "http://$API_HOST:$API_PORT" "$READY_FILE" "$VERIFY_FILE")
         write_status
         ;;
 

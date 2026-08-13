@@ -9,7 +9,7 @@ for the single release authority. Gemma and the user service remain offline.
 
 **Architecture:** Preserve existing authorities. The systemd unit remains a local deployment descriptor and never starts a model as part of a build; a condition turns an absent executable into a clean skip, while a preparation target only builds and validates. CNB remains provenance authority; add a new scalar SoulHost accessor rather than changing the existing C ABI signature, then expose the value unchanged through the managed descriptor and MCP JSON.
 
-**Tech Stack:** C11, GNU Make, systemd unit syntax, Python unittest for portable static config validation, .NET P/Invoke/C#, xUnit/MCP integration tests.
+**Tech Stack:** C11, GNU Make, systemd unit syntax, bash static config gates, .NET P/Invoke/C#, xUnit/MCP integration tests.
 
 **Place:** The seam between the certified gap ledger and the local teacher daemon, and the seam between persisted Oracle identity and external observability.
 
@@ -29,7 +29,7 @@ for the single release authority. Gemma and the user service remain offline.
 
 **Files:**
 - Modify: `config/cnet-gap-lane.service`
-- Create: `tests/test_gap_lane_service_config.py`
+- Create: `tests/test_gap_lane_service_config.sh`
 - Modify: `Makefile`
 - Modify: `docs/ARCHITECTURE.md`
 
@@ -39,7 +39,7 @@ Assert the tracked unit contains `ConditionFileIsExecutable=` matching the exact
 
 **Step 2: Verify RED**
 
-Run: `python3 -m unittest tests/test_gap_lane_service_config.py -v`
+Run: `bash tests/test_gap_lane_service_config.sh`
 Expected: FAIL because the condition and targets do not exist.
 
 **Step 3: Minimal implementation**

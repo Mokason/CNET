@@ -129,7 +129,7 @@ Layout: `artifacts/roe_goal_catalog/capsules/<cat>/<sub>/...`
 ## OCR (vision capsule lane)
 
 Hermetic **5×7 glyph OCR** (render → template match), tidy under `vision/ocr|pipeline|pdf`.
-PDF text layer via `pdftotext` when available. Unlimited-OCR remains external teacher path.
+PDF text layer via `pdftotext` when available. Primary path is C: `roe_asi_ocr_*` / `make roe_asi_ocr`.
 
 ```bash
 make roe_asi_ocr   # ROE_ASI_OCR_PASS
@@ -143,47 +143,21 @@ Measured: curriculum **100% exact** on hermetic alphabet, phrases promoted, loca
 
 ```bash
 make roe_asi_ocr_surpass   # ROE_ASI_OCR_SURPASS_PASS
-# teacher skills: python3 tools/roe_unlimited_teacher.py skills
-# live hooks: ROE_UNLIMITED_URL=... or ROE_UNLIMITED_LOCAL=1 (needs torch)
+# C entrypoints: make roe_asi_ocr_* / ./bin/roe_asi_*
 ```
 
 Measured hybrid vs Unlimited-only on covered corpus:
 - **cost save ~95%**, warm local **40/40**, quality **match 1.0**
 - audit **CERT > opaque**
-- OmniDoc external SOTA: **WITHHELD** until live GPU VLM run
+- OmniDoc external SOTA / Unlimited teacher paths: **WITHHELD** (torch OmniDoc tooling removed; use C `roe_asi_ocr_*`)
 - Catalog: `artifacts/roe_ocr_surpass/capsules/vision/{unlimited,layout,table,...}`
 
-## OmniDoc live SOTA confirmation (Unlimited teacher on GPU)
+## OmniDoc live SOTA confirmation — WITHHELD
 
-Live Baidu Unlimited-OCR on AMD R9700 (ROCm), stratified OmniDocBench slice.
+Former live Baidu Unlimited-OCR / ROCm torch / `.venv-unlimited-ocr` paths are **WITHHELD / removed**.
+Do not invoke removed OmniDoc torch jobs; use C OCR gates (`make roe_asi_ocr`, `make roe_asi_ocr_local`, etc.).
 
-```bash
-# requires .venv-unlimited-ocr (ROCm torch + transformers 4.57)
-make roe_omnidoc_sota
-# report → artifacts/omnidoc_sota_run/omnidoc_sota_report.json
-```
-
-Measured (12-page slice, live VLM):
-- Unlimited text_acc ≈ 0.62 (vs GT reading-order; metric is rough SequenceMatcher)
-- ROE hybrid **quality match 1.0** (teacher CERT cache)
-- **cost beat** two-pass Unlimited-only (save 50%+ on cold+warm)
-- **composite system beat** (quality + cost + audit)
-- Full 1651 leaderboard OmniDoc table: still **WITHHELD_SLICE_ONLY** (not claimed as published SOTA number)
-
-### Quality improve (metric + dual OCR)
-
-```bash
-./.venv-unlimited-ocr/bin/python tools/roe_omnidoc_quality_improve.py --rescore
-# optional: --reocr  (gundam+base pick-best)
-```
-
-| Metric | Old naive | After improve |
-|---|---:|---:|
-| page_acc | 0.62 | **0.87** |
-| block_acc (OmniDoc-ish) | — | **0.88** |
-| text_block_acc | — | **0.88** |
-
-Dual-pass OCR ≈ same quality as single (teacher ceiling). Further gains need official OmniDoc end2end (TEDS/CDM) + formula/table paths.
+Full 1651 leaderboard OmniDoc table: **WITHHELD** (not claimed).
 
 ## OCR asset moat (highest leverage — not second brain)
 
@@ -224,13 +198,13 @@ Stronger `page_sig`: text head + newlines/pipes/len bucket + FNV hash.
 
 ```bash
 make roe_asi_ocr_tables   # ROE_ASI_OCR_TABLES_PASS
-python3 tools/roe_table_extract.py path/to/file.xlsx   # → TSV stdout
+./bin/roe_table_extract path/to/file.xlsx   # → TSV stdout (C port)
 ```
 
 | Format | How |
 |---|---|
 | CSV/TSV | Native C parse |
-| XLSX | `roe_table_extract.py` (stdlib zip+xml) |
+| XLSX | `./bin/roe_table_extract` |
 | XLS | LibreOffice → CSV when available |
 
 Output: markdown table + `SCHEMA: col:type,...` + L3 by header signature.  
@@ -239,7 +213,7 @@ Second open of same table = **L3 free**. Wired into `roe_doc_route`.
 ## Hard pages beat plain Unlimited
 
 ```bash
-make roe_ocr_hard_beat   # or: .venv-unlimited-ocr/bin/python tools/roe_ocr_hard_beat.py
+make roe_ocr_hard_beat   # WITHHELD: torch Unlimited hard-beat removed; use make roe_asi_ocr_*
 # → artifacts/roe_ocr_hard/hard_beat_report.json
 ```
 

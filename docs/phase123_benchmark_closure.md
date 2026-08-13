@@ -2,7 +2,7 @@
 
 ## Authority
 
-`make phase123_benchmark_test` builds and runs the three native contracts plus the claim-integrity unit tests. `tools/run_phase123_benchmarks.py` then runs bounded CPU-only measurements and writes `reports/phase123_benchmark_closure.json`.
+`make phase123_benchmark_test` builds and runs the three native contracts plus the claim-integrity unit tests. `tools/run_phase123_benchmarks.c` then runs bounded CPU-only measurements and writes `reports/phase123_benchmark_closure.json`.
 
 The authority distinguishes three evidence levels:
 

@@ -22,39 +22,34 @@ if [[ -x bin/jtc_adapter_bench ]]; then
       CNET_FAULT_LOG="$EVAL_FAULTS" \
       ./bin/jtc_adapter_bench >"$DIR/jtc_probe.log" 2>&1; then
     jtc_ok=1
-    # parse Δ from log
-    jtc_delta=$(python3 - <<'PY'
-import re
-from pathlib import Path
-t=Path("logs/governor/jtc_probe.log").read_text(errors="replace")
-# common patterns
-m=re.search(r"delta[=:\s]+([+-]?\d+\.?\d*)", t, re.I)
-if not m:
-    m=re.search(r"Δ\s*=\s*([+-]?\d+\.?\d*)", t)
-if not m:
-    m=re.search(r"acc_on[^\d]+(\d+\.\d+).*acc_off[^\d]+(\d+\.\d+)", t, re.S)
-    if m:
-        print(round(float(m.group(1))-float(m.group(2)), 4))
-    else:
-        print("null")
-else:
-    print(m.group(1))
-PY
-)
+    # parse Δ from log (awk/grep — was python3)
+    jtc_delta=$(
+      sed -nE 's/.*[Dd]elta[=:[:space:]]+([+-]?[0-9]+\.?[0-9]*).*/\1/p' "$DIR/jtc_probe.log" | head -1
+    )
+    if [[ -z "${jtc_delta:-}" ]]; then
+      jtc_delta=$(
+        sed -nE 's/.*Δ[[:space:]]*=[[:space:]]*([+-]?[0-9]+\.?[0-9]*).*/\1/p' "$DIR/jtc_probe.log" | head -1
+      )
+    fi
+    if [[ -z "${jtc_delta:-}" ]]; then
+      on=$(sed -nE 's/.*acc_on[^0-9]*([0-9]+\.[0-9]+).*/\1/p' "$DIR/jtc_probe.log" | head -1)
+      off=$(sed -nE 's/.*acc_off[^0-9]*([0-9]+\.[0-9]+).*/\1/p' "$DIR/jtc_probe.log" | head -1)
+      if [[ -n "$on" && -n "$off" ]]; then
+        jtc_delta=$(awk -v a="$on" -v b="$off" 'BEGIN{printf "%.4f", a-b}')
+      fi
+    fi
+    [[ -z "${jtc_delta:-}" ]] && jtc_delta="null"
   fi
 fi
 
-# procedure chunk presence
-proc_n=$(python3 - <<'PY'
-from pathlib import Path
-b=Path("soul_gemma4v2_final.cnb")
-if not b.exists():
-    print(0)
-else:
-    data=b.read_bytes()
-    print(data.count(b"chunk_")+data.count(b"procedure"))
-PY
-)
+# procedure chunk presence (byte markers in base)
+proc_n=0
+if [[ -f soul_gemma4v2_final.cnb ]]; then
+  # grep -a -o counts overlapping poorly; use tr|grep for marker hits
+  c1=$(grep -ao 'chunk_' soul_gemma4v2_final.cnb 2>/dev/null | wc -l | tr -d ' ')
+  c2=$(grep -ao 'procedure' soul_gemma4v2_final.cnb 2>/dev/null | wc -l | tr -d ' ')
+  proc_n=$(( ${c1:-0} + ${c2:-0} ))
+fi
 
 # Seal rejects SINCE THE LAST PROBE. Grepping the whole append-only muscle.log
 # returned a cumulative total (8 -> 9 -> 10 -> 11 ...) that was reported as a
@@ -92,59 +87,54 @@ if [[ -f "$DIR/jtc_probe.log" ]]; then
     acc_off=$(sed -n 's/.*acc_off=\([0-9.]*\).*/\1/p' <<<"$line")
   fi
 fi
+cert_fixes=${cert_fixes:-0}
+cert_regress=${cert_regress:-0}
+acc_on=${acc_on:-0}
+acc_off=${acc_off:-0}
 
-python3 - <<PY
-import json, time
-from pathlib import Path
-out=Path("$OUT")
-delta=$jtc_delta if "$jtc_delta" != "null" else None
-try:
-    delta=float("$jtc_delta") if "$jtc_delta"!="null" else None
-except Exception:
-    delta=None
-def _i(s, d=0):
-    try:
-        return int(str(s).strip() or d)
-    except Exception:
-        return d
+ts=$(date +%Y-%m-%dT%H:%M:%S%z)
+prev_delta="null"
+if [[ -f "$OUT" ]]; then
+  prev_delta=$(jq -r '.eval_jtc_delta // "null"' "$OUT" 2>/dev/null || echo null)
+fi
 
-def _f(s, d=0.0):
-    try:
-        return float(str(s).strip() or d)
-    except Exception:
-        return d
+if [[ "$jtc_delta" != "null" && "$prev_delta" != "null" && -n "$prev_delta" ]]; then
+  d_eval=$(awk -v a="$jtc_delta" -v b="$prev_delta" 'BEGIN { printf "%.4f", a-b }')
+  d_eval_json="$d_eval"
+else
+  d_eval_json="null"
+fi
 
-rep={
-  "ts": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
-  "jtc_probe_ok": int("$jtc_ok"),
-  "eval_jtc_delta": delta,
-  # Hermetic bench over a FIXED synthetic fault set: the delta is a constant by
-  # construction, so it measures adapter lift on that set, never progress.
-  "eval_source": "synthetic_fixed_set",
-  "acc_on": _f("$acc_on"),
-  "acc_off": _f("$acc_off"),
-  "cert_fixes": _i("$cert_fixes"),
-  "cert_regress": _i("$cert_regress"),
-  "procedure_markers": int("$proc_n"),
-  "seal_reject_new": _i("$reject"),
-  "seal_reject_total": _i("$reject_total"),
-}
-# load previous for d_eval
-prev_p=out
-prev_delta=None
-if prev_p.exists():
-    try:
-        prev=json.loads(prev_p.read_text())
-        prev_delta=prev.get("eval_jtc_delta")
-    except Exception:
-        pass
-if delta is not None and prev_delta is not None:
-    rep["d_eval_jtc"]=round(delta-float(prev_delta),4)
-else:
-    rep["d_eval_jtc"]=None
-out.write_text(json.dumps(rep, indent=2)+"\n")
-# also write promote delta file if we have a number
-if delta is not None:
-    Path("$DIR/ghost_eval_delta.txt").write_text(f"{delta}\\n")
-print("EVAL_PROBE_OK", json.dumps(rep))
-PY
+delta_json="$jtc_delta"
+
+jq -n \
+  --arg ts "$ts" \
+  --argjson jtc_probe_ok "$jtc_ok" \
+  --argjson eval_jtc_delta "$delta_json" \
+  --argjson acc_on "$acc_on" \
+  --argjson acc_off "$acc_off" \
+  --argjson cert_fixes "$cert_fixes" \
+  --argjson cert_regress "$cert_regress" \
+  --argjson procedure_markers "$proc_n" \
+  --argjson seal_reject_new "$reject" \
+  --argjson seal_reject_total "$reject_total" \
+  --argjson d_eval_jtc "$d_eval_json" \
+  '{
+    ts: $ts,
+    jtc_probe_ok: $jtc_probe_ok,
+    eval_jtc_delta: $eval_jtc_delta,
+    eval_source: "synthetic_fixed_set",
+    acc_on: $acc_on,
+    acc_off: $acc_off,
+    cert_fixes: $cert_fixes,
+    cert_regress: $cert_regress,
+    procedure_markers: $procedure_markers,
+    seal_reject_new: $seal_reject_new,
+    seal_reject_total: $seal_reject_total,
+    d_eval_jtc: $d_eval_jtc
+  }' >"$OUT"
+
+if [[ "$jtc_delta" != "null" ]]; then
+  printf '%s\n' "$jtc_delta" >"$DIR/ghost_eval_delta.txt"
+fi
+echo "EVAL_PROBE_OK $(jq -c . "$OUT")"

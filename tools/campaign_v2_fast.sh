@@ -61,7 +61,7 @@ prepare() {
         exit 2
     fi
     mkdir -p "$(dirname "$ALLOW")"
-    python3 "$CNET_DIR/tools/margin_sweep_analyze.py" "$SWEEP" \
+    "$CNET_DIR/bin/margin_sweep_analyze" "$SWEEP" \
         --eps "$EPS" --semantics "$SEM" \
         --export-minable "$ALLOW" \
         --export-unfit "${ALLOW%.ids}_unfit.ids" \

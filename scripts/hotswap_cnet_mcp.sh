@@ -62,40 +62,35 @@ exec "$DEPLOY/CnetMcpServer" "\$@"
 EOS
 chmod +x "$DEPLOY/launch.sh"
 # Static order gate: residual/PEFT env must appear before exec (never after).
-python3 - <<'PY'
-from pathlib import Path
-import os, sys
-p = Path(os.path.expanduser("~/.hermes/mcp_servers/cnet-mcp/launch.sh"))
-text = p.read_text()
-# strip comments
-lines = [ln for ln in text.splitlines() if not ln.strip().startswith("#")]
-body = "\n".join(lines)
-exec_i = body.find("\nexec ")
-if exec_i < 0:
-    exec_i = body.find("exec ")
-assert exec_i >= 0, "no exec in launch.sh"
-pre, post = body[:exec_i], body[exec_i:]
-for key in (
-    "CNET_RESIDUAL_HTTP",
-    "CNET_SOUL_RESIDUAL_HERMETIC",
-    "CNET_FAULT_LOG",
-    "CNET_LORA_STORE_DIR",
-    "CNET_ACCT_LOG",
-):
-    assert key in pre, f"{key} missing or after exec in launch.sh"
-    assert key not in post.split("exec", 1)[-1], f"{key} appears after exec"
-print("LAUNCH_SH_ENV_ORDER_OK")
-PY
+{
+  launch="$DEPLOY/launch.sh"
+  body=$(grep -v '^[[:space:]]*#' "$launch" || true)
+  exec_line=$(printf '%s\n' "$body" | grep -n '^exec \|^exec[[:space:]]' | head -1 | cut -d: -f1)
+  [[ -n "$exec_line" ]] || { echo "no exec in launch.sh" >&2; exit 1; }
+  pre=$(printf '%s\n' "$body" | sed -n "1,$((exec_line - 1))p")
+  post=$(printf '%s\n' "$body" | sed -n "${exec_line},\$p")
+  for key in CNET_RESIDUAL_HTTP CNET_SOUL_RESIDUAL_HERMETIC CNET_FAULT_LOG CNET_LORA_STORE_DIR CNET_ACCT_LOG; do
+    printf '%s\n' "$pre" | grep -q "$key" || { echo "$key missing or after exec in launch.sh" >&2; exit 1; }
+    # key must not appear after the exec token on the exec line / following lines
+    printf '%s\n' "$post" | sed '1s/^exec//' | grep -q "$key" && {
+      echo "$key appears after exec" >&2; exit 1
+    } || true
+  done
+  echo "LAUNCH_SH_ENV_ORDER_OK"
+}
 
 echo "== verify UnitName v2 in deployed CNET.Cce.dll"
-python3 - <<'PY'
-from pathlib import Path
-import os
-p = Path(os.path.expanduser("~/.hermes/mcp_servers/cnet-mcp/CNET.Cce.dll"))
-b = p.read_bytes()
-assert b.find("json_toolcall_v2".encode("utf-16le")) >= 0, "v2 missing"
-print("CNET.Cce.dll has json_toolcall_v2")
-PY
+{
+  dll="$DEPLOY/CNET.Cce.dll"
+  # utf-16le "json_toolcall_v2" → j\0s\0o\0n\0_...
+  if grep -aob $'j\0s\0o\0n\0_\0t\0o\0o\0l\0c\0a\0l\0l\0_\0v\0\62' "$dll" >/dev/null 2>&1 \
+     || grep -aF 'json_toolcall_v2' "$dll" >/dev/null 2>&1; then
+    echo "CNET.Cce.dll has json_toolcall_v2"
+  else
+    echo "v2 missing" >&2
+    exit 1
+  fi
+}
 
 echo "HOTSWAP_FILES_OK"
 echo "Next (outside this chat): recycle MCP children or the gateway so the new binary loads."

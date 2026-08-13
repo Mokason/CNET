@@ -14,19 +14,16 @@ source /dev/null
 pack_count() {
   local PACK=$1
   if [[ ! -f "$PACK" ]]; then echo 0; return; fi
-  python3 - "$PACK" <<'PY'
-import struct, sys
-p = sys.argv[1]
-try:
-    with open(p, "rb") as f:
-        mag, ver, n = struct.unpack("<III", f.read(12))
-    if mag != 0x5254444C or ver != 1:
-        print(0)
-    else:
-        print(int(n))
-except Exception:
-    print(0)
-PY
+  local hdr mag ver n
+  hdr=$(od -An -t u4 -N 12 "$PACK" 2>/dev/null | tr -s ' ' | sed 's/^ //')
+  # shellcheck disable=SC2086
+  set -- $hdr
+  mag=${1:-0}; ver=${2:-0}; n=${3:-0}
+  if [[ "$mag" -eq 1381258316 && "$ver" -eq 1 ]]; then
+    echo "$n"
+  else
+    echo 0
+  fi
 }
 
 MICRO=artifacts/qwythos_e2e_micro.ldtr

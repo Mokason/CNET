@@ -20,28 +20,19 @@ if [ -f "$BASE" ] && [ -x "$REPO/bin/serve_proof" ]; then
   "$REPO/bin/serve_proof" "$BASE" --max 2 2>/dev/null | \
     grep -E 'units_loaded=|SERVE_PROOF_|sample:' || true
 fi
-if command -v python3 >/dev/null 2>&1; then
-  python3 - <<PY
-import json
-from pathlib import Path
-p = Path("$OUT")
-d = json.loads(p.read_text())
-units = d.get("units") if d.get("units") is not None else d.get("units_journal")
-print(f"  units={units} inbox={d.get('inbox_lines')} "
-      f"ledger={d.get('ledger_lines')} learner={d.get('learner_active')} "
-      f"cnb_MiB={d.get('cnb_bytes',0)/1024/1024:.1f}")
-print(f"  json_toolcall={d.get('json_toolcall')} jtc_gaps={d.get('inbox_jtc_gaps')} "
-      f"serve_mcp={d.get('serve_mcp')}")
-if d.get("recycle_note"):
-    print(f"  note: {d.get('recycle_note')}")
-pl = d.get("placement") or {}
-if isinstance(pl, dict):
-    print(f"  dual_safe={pl.get('dual_safe')} mem_avail_GiB="
-          f"{(pl.get('mem_available') or 0)/1024**3:.1f} "
-          f"prefer_warm_only={pl.get('prefer_warm_only')}")
-print("  re-run later: scripts/personal_ai_observe.sh")
-print("PERSONAL_AI_OBSERVE_OK")
-PY
+if command -v jq >/dev/null 2>&1 && jq -e . "$OUT" >/dev/null 2>&1; then
+  jq -r '
+    (.units // .units_journal) as $u |
+    "  units=\($u) inbox=\(.inbox_lines) ledger=\(.ledger_lines) learner=\(.learner_active) cnb_MiB=\(((.cnb_bytes//0)/1048576*10|floor)/10)",
+    "  json_toolcall=\(.json_toolcall) jtc_gaps=\(.inbox_jtc_gaps) serve_mcp=\(.serve_mcp)",
+    (if .recycle_note then "  note: \(.recycle_note)" else empty end),
+    ((.placement // {}) as $pl |
+      if ($pl|type)=="object" then
+        "  dual_safe=\($pl.dual_safe) mem_avail_GiB=\(((($pl.mem_available//0)/1073741824)*10|floor)/10) prefer_warm_only=\($pl.prefer_warm_only)"
+      else empty end),
+    "  re-run later: scripts/personal_ai_observe.sh",
+    "PERSONAL_AI_OBSERVE_OK"
+  ' "$OUT"
 else
   cat "$OUT"
   echo "PERSONAL_AI_OBSERVE_OK"

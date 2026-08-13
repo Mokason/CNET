@@ -82,8 +82,8 @@ So nothing new becomes OPEN, and units stay 350.
 
 | File | Change |
 |---|---|
-| `scripts/governor_autonomous.py:433-458` | Count `status` 0/1/2 apart instead of scoring DEFERRED as OPEN. New `parked_gaps` bucket for terminal reasons. |
-| `scripts/governor_autonomous.py` (scoreboard) | Emit `parked_gaps` + `parked_pressure`; `backlog_pressure` is now **actionable** work only (open + revivable), not parked. |
+| `tools/governor_autonomous.c:433-458` | Count `status` 0/1/2 apart instead of scoring DEFERRED as OPEN. New `parked_gaps` bucket for terminal reasons. |
+| `tools/governor_autonomous.c` (scoreboard) | Emit `parked_gaps` + `parked_pressure`; `backlog_pressure` is now **actionable** work only (open + revivable), not parked. |
 | `tests/gap_lane_run.c` (tick loop) | Path-independent diagnostic: every 10 ticks, if there are retry candidates but none teachable by the live teacher, say so with the window/vocab that failed to match. |
 | `tests/gap_lane_run.c:462-489` | `bind_http_teachers` counts and reports shape vs record-owned rejects when it binds nothing. |
 
@@ -121,7 +121,7 @@ Reproduce:
 systemctl --user restart cnet-personal-ai-lane.service
 journalctl --user -u cnet-personal-ai-lane.service -n 20 --no-pager | grep retry_candidates
 systemctl --user start cnet-governor.service
-python3 -c "import json;print(json.load(open('logs/governor/scoreboard.json')))"
+jq . logs/governor/scoreboard.json
 ```
 
 ---
