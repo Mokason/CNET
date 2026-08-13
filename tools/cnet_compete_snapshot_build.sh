@@ -23,11 +23,11 @@ case "$workspace_root" in
     *) echo "workspace root must be absolute" >&2; exit 2 ;;
 esac
 case "$release_root" in
-    /home/marble/.local/state/cnet/cnet_asi5_v1) ;;
+    /home/marble/.local/state/cnet/cnet_asi5_v2) ;;
     *) echo "release root must be canonical" >&2; exit 2 ;;
 esac
 case "$staging_root" in
-    /home/marble/.local/state/cnet/.cnet-asi5-stage-??????) ;;
+    /home/marble/.local/state/cnet/.cnet-asi5-v2-stage-??????) ;;
     *) echo "staging root must be canonical private storage" >&2; exit 2 ;;
 esac
 case "$build_commit:$build_tree" in
@@ -131,10 +131,10 @@ cd "$snapshot_root"
     CNET_COMPETE_BUILD_TREE="$build_tree" \
     cnet_7b_artifact_manifest >&2
 
-artifact_sha=$("$sha256sum" artifacts/cnet_asi5_v1/artifacts.sha256)
+artifact_sha=$("$sha256sum" artifacts/cnet_asi5_v2/artifacts.sha256)
 artifact_sha=${artifact_sha%% *}
 if [ "$artifact_sha" != \
-     "88eec77f3d9acdbd9685813e272041df4e6b503e402152a646b9e826197b4b19" ]; then
+     "354d90ce726939b57e9c832784e03802759c6dc0f67c2bcb4dbeddcd5ccf0fdc" ]; then
     echo "immutable artifact manifest digest mismatch" >&2
     exit 1
 fi
@@ -164,11 +164,11 @@ fi
 "$install" -m 0600 logs/cnet_7b_score_san.log \
     "$staging_root/evidence/cnet_7b_score_san.log"
 
-"$install" -m 0600 benchmarks/cnet_asi5_v1/heldout.tsv \
+"$install" -m 0600 benchmarks/cnet_asi5_v2/heldout.tsv \
     "$staging_root/inputs/heldout.tsv"
-"$install" -m 0600 benchmarks/cnet_asi5_v1/baseline_system.txt \
+"$install" -m 0600 benchmarks/cnet_asi5_v2/baseline_system.txt \
     "$staging_root/inputs/baseline_system.txt"
-"$install" -m 0600 tools/cnet_compete_fixture.c \
+"$install" -m 0600 tools/cnet_compete_fixture_v2.c \
     "$staging_root/inputs/fixture_generator.c"
 for member in \
     intent.wlm \
@@ -189,7 +189,7 @@ for member in \
     artifacts.sha256
 do
     destination="$staging_root/inputs/artifacts/$member"
-    "$install" -D -m 0600 "artifacts/cnet_asi5_v1/$member" "$destination"
+    "$install" -D -m 0600 "artifacts/cnet_asi5_v2/$member" "$destination"
 done
 
 common_flags="-std=c11 -Wall -Wextra -pedantic -Werror -O3 -march=znver3 -D_DEFAULT_SOURCE"

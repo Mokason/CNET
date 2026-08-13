@@ -6077,17 +6077,17 @@ roe_omnidoc_freeze:
 	@false
 
 .PHONY: cnet_7b_compete_fixture cnet_7b_compete_contract
-cnet_7b_compete_fixture: include/cnet_compete.h tools/cnet_compete_fixture.c \
-		benchmarks/cnet_asi5_v1/heldout.tsv \
-		benchmarks/cnet_asi5_v1/baseline_system.txt \
-		benchmarks/cnet_asi5_v1/digests.sha256
+cnet_7b_compete_fixture: include/cnet_compete.h tools/cnet_compete_fixture_v2.c \
+		benchmarks/cnet_asi5_v2/heldout.tsv \
+		benchmarks/cnet_asi5_v2/baseline_system.txt \
+		benchmarks/cnet_asi5_v2/digests.sha256
 	@mkdir -p $(BIN_DIR)
 	$(CC) $(CFLAGS) -Iinclude -o $(BIN_DIR)/cnet_compete_fixture \
-		tools/cnet_compete_fixture.c
+		tools/cnet_compete_fixture_v2.c
 	@tmp=$$(mktemp); trap 'rm -f "$$tmp"' EXIT; \
 		./$(BIN_DIR)/cnet_compete_fixture "$$tmp"; \
-		cmp benchmarks/cnet_asi5_v1/heldout.tsv "$$tmp"
-	@sha256sum -c benchmarks/cnet_asi5_v1/digests.sha256
+		cmp benchmarks/cnet_asi5_v2/heldout.tsv "$$tmp"
+	@sha256sum -c benchmarks/cnet_asi5_v2/digests.sha256
 	@echo CNET_7B_COMPETE_FIXTURE_PASS rows=448
 
 cnet_7b_compete_contract: cnet_7b_compete_fixture include/cnet_compete.h \
@@ -6153,14 +6153,14 @@ cnet_7b_capsules_san: cnet_7b_artifact_manifest include/cnet_compete_capsules.h 
 cnet_7b_intent: include/cnet_compete_intent.h src/cnet_compete_intent.c \
 		src/cce/cce_wordlm.c tools/cnet_compete_train.c \
 		tests/test_cnet_compete_intent.c
-	@mkdir -p $(BIN_DIR) logs artifacts/cnet_asi5_v1
+	@mkdir -p $(BIN_DIR) logs artifacts/cnet_asi5_v2
 	$(CC) $(CFLAGS) -Werror -Iinclude \
 		-o $(BIN_DIR)/cnet_compete_train \
 		src/cnet_compete_intent.c src/cce/cce_wordlm.c \
 		tools/cnet_compete_train.c $(LDFLAGS)
 	@./$(BIN_DIR)/cnet_compete_train \
-		artifacts/cnet_asi5_v1/intent.wlm \
-		artifacts/cnet_asi5_v1/intent.meta | \
+		artifacts/cnet_asi5_v2/intent.wlm \
+		artifacts/cnet_asi5_v2/intent.meta | \
 		tee logs/cnet_7b_intent_train.log
 	@grep -q CNET_7B_INTENT_TRAIN_PASS logs/cnet_7b_intent_train.log
 	$(CC) $(CFLAGS) -Werror -Iinclude \
@@ -6168,8 +6168,8 @@ cnet_7b_intent: include/cnet_compete_intent.h src/cnet_compete_intent.c \
 		src/cnet_compete_intent.c src/cce/cce_wordlm.c \
 		tests/test_cnet_compete_intent.c $(LDFLAGS)
 	@./$(BIN_DIR)/test_cnet_compete_intent \
-		artifacts/cnet_asi5_v1/intent.wlm \
-		artifacts/cnet_asi5_v1/intent.meta | \
+		artifacts/cnet_asi5_v2/intent.wlm \
+		artifacts/cnet_asi5_v2/intent.meta | \
 		tee logs/cnet_7b_intent.log
 	@grep -q CNET_7B_INTENT_PASS logs/cnet_7b_intent.log
 
@@ -6185,8 +6185,8 @@ cnet_7b_intent_san: cnet_7b_intent
 	@ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 \
 		UBSAN_OPTIONS=halt_on_error=1 \
 		./$(BIN_DIR)/test_cnet_compete_intent_san \
-		artifacts/cnet_asi5_v1/intent.wlm \
-		artifacts/cnet_asi5_v1/intent.meta | \
+		artifacts/cnet_asi5_v2/intent.wlm \
+		artifacts/cnet_asi5_v2/intent.meta | \
 		tee logs/cnet_7b_intent_san.log
 	@grep -q CNET_7B_INTENT_PASS logs/cnet_7b_intent_san.log
 
@@ -6194,14 +6194,14 @@ cnet_7b_intent_san: cnet_7b_intent
 cnet_7b_capsule_artifacts: include/cnet_compete_capsules.h \
 		src/cnet_compete_capsules.c tools/cnet_compete_build_capsules.c \
 		$(CNET_COMPETE_CAPSULE_CORE)
-	@mkdir -p $(BIN_DIR) logs artifacts/cnet_asi5_v1
+	@mkdir -p $(BIN_DIR) logs artifacts/cnet_asi5_v2
 	$(CC) $(CFLAGS) -Werror -ffunction-sections -fdata-sections -Iinclude \
 		-o $(BIN_DIR)/cnet_compete_build_capsules \
 		src/cnet_compete_capsules.c $(CNET_COMPETE_CAPSULE_CORE) \
 		tools/cnet_compete_build_capsules.c \
 		-Wl,--gc-sections $(LDFLAGS) $(MCP_LDFLAGS) -pthread
 	@./$(BIN_DIR)/cnet_compete_build_capsules \
-		artifacts/cnet_asi5_v1/capsules | \
+		artifacts/cnet_asi5_v2/capsules | \
 		tee logs/cnet_7b_capsule_artifacts.log
 	@grep -q CNET_7B_CAPSULE_ARTIFACTS_PASS \
 		logs/cnet_7b_capsule_artifacts.log
@@ -6218,9 +6218,9 @@ cnet_7b_runtime: cnet_7b_intent cnet_7b_capsule_artifacts \
 		tests/test_cnet_compete_runtime.c \
 		-Wl,--gc-sections $(LDFLAGS) $(MCP_LDFLAGS) -pthread
 	@./$(BIN_DIR)/test_cnet_compete_runtime \
-		artifacts/cnet_asi5_v1/intent.wlm \
-		artifacts/cnet_asi5_v1/intent.meta \
-		artifacts/cnet_asi5_v1/capsules | \
+		artifacts/cnet_asi5_v2/intent.wlm \
+		artifacts/cnet_asi5_v2/intent.meta \
+		artifacts/cnet_asi5_v2/capsules | \
 		tee logs/cnet_7b_runtime.log
 	@grep -q CNET_7B_RUNTIME_PASS logs/cnet_7b_runtime.log
 	$(CC) $(CFLAGS) -Werror -ffunction-sections -fdata-sections -Iinclude \
@@ -6245,9 +6245,9 @@ cnet_7b_runtime_san: cnet_7b_runtime
 	@ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 \
 		UBSAN_OPTIONS=halt_on_error=1 \
 		./$(BIN_DIR)/test_cnet_compete_runtime_san \
-		artifacts/cnet_asi5_v1/intent.wlm \
-		artifacts/cnet_asi5_v1/intent.meta \
-		artifacts/cnet_asi5_v1/capsules | \
+		artifacts/cnet_asi5_v2/intent.wlm \
+		artifacts/cnet_asi5_v2/intent.meta \
+		artifacts/cnet_asi5_v2/capsules | \
 		tee logs/cnet_7b_runtime_san.log
 	@grep -q CNET_7B_RUNTIME_PASS logs/cnet_7b_runtime_san.log
 
@@ -6335,8 +6335,8 @@ cnet_7b_artifact_manifest: cnet_7b_runtime \
 		-o $(BIN_DIR)/cnet_compete_manifest \
 		tools/cnet_compete_manifest.c src/cce/cce_campaign_provenance.c \
 		$(LDFLAGS)
-	@./$(BIN_DIR)/cnet_compete_manifest artifacts/cnet_asi5_v1 \
-		artifacts/cnet_asi5_v1/artifacts.sha256 | \
+	@./$(BIN_DIR)/cnet_compete_manifest artifacts/cnet_asi5_v2 \
+		artifacts/cnet_asi5_v2/artifacts.sha256 | \
 		tee logs/cnet_7b_artifact_manifest.log
 	@grep -q CNET_7B_ARTIFACT_MANIFEST_PASS \
 		logs/cnet_7b_artifact_manifest.log
@@ -6366,13 +6366,13 @@ cnet_7b_eval_build:
 		/usr/bin/git diff --quiet --no-ext-diff --ignore-submodules --; \
 		/usr/bin/git diff --cached --quiet --no-ext-diff \
 			--ignore-submodules --; \
-		snapshot=$$(/usr/bin/mktemp -d /tmp/cnet-asi5-build-XXXXXX); \
-		case "$$snapshot" in /tmp/cnet-asi5-build-??????) ;; *) exit 1;; esac; \
+		snapshot=$$(/usr/bin/mktemp -d /tmp/cnet-asi5-v2-build-XXXXXX); \
+		case "$$snapshot" in /tmp/cnet-asi5-v2-build-??????) ;; *) exit 1;; esac; \
 		trap '\''/usr/bin/rm -rf -- "$$snapshot"'\'' EXIT HUP INT TERM; \
 		source_root="$$snapshot/source"; \
 		staging=$$(/usr/bin/mktemp -d \
-			"$$parent/.cnet-asi5-stage-XXXXXX"); \
-		case "$$staging" in "$$parent"/.cnet-asi5-stage-??????) ;; \
+			"$$parent/.cnet-asi5-v2-stage-XXXXXX"); \
+		case "$$staging" in "$$parent"/.cnet-asi5-v2-stage-??????) ;; \
 			*) exit 1;; esac; \
 		trap '\''/usr/bin/rm -rf -- "$$snapshot" "$$staging"'\'' \
 			EXIT HUP INT TERM; \
@@ -6403,7 +6403,7 @@ cnet_7b_eval_build:
 		/usr/bin/sync -f "$$staging"; \
 		/usr/bin/flock --exclusive --nonblock 9; \
 		test "$$release_lock" -ef "/proc/$$$$/fd/9"; \
-		old="$$parent/.cnet-asi5-old"; \
+		old="$$parent/.cnet-asi5-v2-old"; \
 		if test -e "$$old" || test -L "$$old"; then \
 			test -d "$$old"; test ! -L "$$old"; test -O "$$old"; \
 			if test -e "$$release_root" || test -L "$$release_root"; then \
@@ -6498,7 +6498,7 @@ cnet_7b_eval_san: cnet_7b_eval_contract
 		tee logs/cnet_7b_score_san.log
 	@grep -q CNET_7B_SCORE_PASS logs/cnet_7b_score_san.log
 
-CNET_COMPETE_RELEASE_ROOT := /home/marble/.local/state/cnet/cnet_asi5_v1
+CNET_COMPETE_RELEASE_ROOT := /home/marble/.local/state/cnet/cnet_asi5_v2
 CNET_COMPETE_RELEASE_BIN := $(CNET_COMPETE_RELEASE_ROOT)/bin
 CNET_COMPETE_EVIDENCE_DIR := $(CNET_COMPETE_RELEASE_ROOT)/evidence
 CNET_COMPETE_RESULTS_DIR := $(CNET_COMPETE_RELEASE_ROOT)/results
@@ -6575,7 +6575,7 @@ cnet_7b_compete_results_inner: cnet_7b_cnet_results
 		else \
 			/usr/bin/grep -Ev '^CNET_7B_COMPETE_(PASS|FAIL)( |$$)' \
 				"$$tmp" >"$$clean" || test $$? -eq 1; \
-			echo 'CNET_7B_COMPETE_FAIL suite=CNET-ASI-5-v1 ' \
+			echo 'CNET_7B_COMPETE_FAIL suite=CNET-ASI-5-v2 ' \
 				'failed_gates=1 reason=scorer_contract ' \
 				'broader_claims=WITHHELD' >>"$$clean"; \
 			/usr/bin/mv "$$clean" logs/cnet_7b_compete_results.log; \
@@ -6591,7 +6591,7 @@ cnet_7b_compete_results:
 			/usr/bin/rm -f logs/cnet_7b_compete_results.log || setup=$$?; \
 		fi; \
 		if test $$setup -ne 0; then \
-			echo 'CNET_7B_COMPETE_FAIL suite=CNET-ASI-5-v1 ' \
+			echo 'CNET_7B_COMPETE_FAIL suite=CNET-ASI-5-v2 ' \
 				'failed_gates=1 reason=workflow_setup ' \
 				'broader_claims=WITHHELD'; \
 			exit $$setup; \
@@ -6604,7 +6604,7 @@ cnet_7b_compete_results:
 			if ! test -f logs/cnet_7b_compete_results.log || \
 			   test "$$(/usr/bin/grep -Ec '^CNET_7B_COMPETE_(PASS|FAIL)( |$$)' \
 				logs/cnet_7b_compete_results.log)" -ne 1; then \
-				echo 'CNET_7B_COMPETE_FAIL suite=CNET-ASI-5-v1 ' \
+				echo 'CNET_7B_COMPETE_FAIL suite=CNET-ASI-5-v2 ' \
 					'failed_gates=1 reason=workflow_stage ' \
 					'broader_claims=WITHHELD'; \
 			fi; \
@@ -6614,7 +6614,7 @@ cnet_7b_compete_results:
 			logs/cnet_7b_compete_results.log)" -ne 1 || \
 		     test "$$(/usr/bin/grep -Ec '^CNET_7B_COMPETE_FAIL( |$$)' \
 			logs/cnet_7b_compete_results.log)" -ne 0; then \
-			echo 'CNET_7B_COMPETE_FAIL suite=CNET-ASI-5-v1 ' \
+			echo 'CNET_7B_COMPETE_FAIL suite=CNET-ASI-5-v2 ' \
 				'failed_gates=1 reason=workflow_verdict ' \
 				'broader_claims=WITHHELD'; \
 			exit 1; \

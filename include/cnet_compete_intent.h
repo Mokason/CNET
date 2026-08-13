@@ -11,7 +11,7 @@
 #define CNET_COMPETE_INTENT_HIDDEN 96
 #define CNET_COMPETE_INTENT_SEED 20260813u
 #define CNET_COMPETE_INTENT_PROVENANCE \
-    "external_verified_spec_generator_v1"
+    "external_verified_spec_generator_v2"
 
 typedef enum {
     CNET_INTENT_INCREMENT = 0,

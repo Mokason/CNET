@@ -39,7 +39,7 @@
 #define CNET_COMPETE_BASELINE_BOOT_ID \
     "3e044f04-284f-456f-92fb-97f0829571d3"
 #define CNET_COMPETE_STATE_ROOT \
-    "/home/marble/.local/state/cnet/cnet_asi5_v1"
+    "/home/marble/.local/state/cnet/cnet_asi5_v2"
 #define CNET_COMPETE_RESULTS_DIRECTORY CNET_COMPETE_STATE_ROOT "/results"
 #define CNET_COMPETE_RELEASE_BIN_DIRECTORY CNET_COMPETE_STATE_ROOT "/bin"
 #define CNET_COMPETE_EVIDENCE_DIRECTORY CNET_COMPETE_STATE_ROOT "/evidence"

@@ -645,7 +645,7 @@ static int configure_curl(CURL *curl, struct curl_slist *headers,
            curl_easy_setopt(curl, CURLOPT_FORBID_REUSE, 1L) == CURLE_OK &&
            curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L) == CURLE_OK &&
            curl_easy_setopt(curl, CURLOPT_USERAGENT,
-                            "CNET-ASI-5-v1-native-benchmark") == CURLE_OK
+                            "CNET-ASI-5-v2-native-benchmark") == CURLE_OK
                ? 0 : -1;
 }
 
