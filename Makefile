@@ -6139,3 +6139,44 @@ cnet_7b_capsules_san: include/cnet_compete_capsules.h \
 		./$(BIN_DIR)/test_cnet_compete_capsules_san | \
 		tee logs/cnet_7b_capsules_san.log
 	@grep -q CNET_7B_CAPSULES_PASS logs/cnet_7b_capsules_san.log
+
+.PHONY: cnet_7b_intent
+cnet_7b_intent: include/cnet_compete_intent.h src/cnet_compete_intent.c \
+		src/cce/cce_wordlm.c tools/cnet_compete_train.c \
+		tests/test_cnet_compete_intent.c
+	@mkdir -p $(BIN_DIR) logs artifacts/cnet_asi5_v1
+	$(CC) $(CFLAGS) -Werror -Iinclude \
+		-o $(BIN_DIR)/cnet_compete_train \
+		src/cnet_compete_intent.c src/cce/cce_wordlm.c \
+		tools/cnet_compete_train.c $(LDFLAGS)
+	@./$(BIN_DIR)/cnet_compete_train \
+		artifacts/cnet_asi5_v1/intent.wlm \
+		artifacts/cnet_asi5_v1/intent.meta | \
+		tee logs/cnet_7b_intent_train.log
+	@grep -q CNET_7B_INTENT_TRAIN_PASS logs/cnet_7b_intent_train.log
+	$(CC) $(CFLAGS) -Werror -Iinclude \
+		-o $(BIN_DIR)/test_cnet_compete_intent \
+		src/cnet_compete_intent.c src/cce/cce_wordlm.c \
+		tests/test_cnet_compete_intent.c $(LDFLAGS)
+	@./$(BIN_DIR)/test_cnet_compete_intent \
+		artifacts/cnet_asi5_v1/intent.wlm \
+		artifacts/cnet_asi5_v1/intent.meta | \
+		tee logs/cnet_7b_intent.log
+	@grep -q CNET_7B_INTENT_PASS logs/cnet_7b_intent.log
+
+.PHONY: cnet_7b_intent_san
+cnet_7b_intent_san: cnet_7b_intent
+	$(CC) -O1 -g -std=c11 -Wall -Wextra -Wpedantic -Werror \
+		-D_DEFAULT_SOURCE -fsanitize=address,undefined \
+		-fno-omit-frame-pointer -Iinclude \
+		-o $(BIN_DIR)/test_cnet_compete_intent_san \
+		src/cnet_compete_intent.c src/cce/cce_wordlm.c \
+		tests/test_cnet_compete_intent.c \
+		-fsanitize=address,undefined -lm
+	@ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 \
+		UBSAN_OPTIONS=halt_on_error=1 \
+		./$(BIN_DIR)/test_cnet_compete_intent_san \
+		artifacts/cnet_asi5_v1/intent.wlm \
+		artifacts/cnet_asi5_v1/intent.meta | \
+		tee logs/cnet_7b_intent_san.log
+	@grep -q CNET_7B_INTENT_PASS logs/cnet_7b_intent_san.log
