@@ -125,18 +125,22 @@ int cnet_compete_capsule_build(CnetBase *base, HybridAi *coverage,
     Contract contract;
     ExhaustiveReport exhaustive;
     CertifyReport robust;
+    CnbMark base_mark;
     double *inputs = NULL, *outputs = NULL;
     size_t domain;
     int rc = -1;
 
     if (report != NULL) memset(report, 0, sizeof *report);
     if (base == NULL || coverage == NULL || name == NULL) return -1;
+    if (cnb_has_unit(base, name) || hybrid_coverage_has_unit(coverage, name))
+        return -1;
     spec = &specs[unit];
     domain = (size_t)1u << spec->input_bits;
     memset(&btn, 0, sizeof btn);
     memset(&contract, 0, sizeof contract);
     memset(&exhaustive, 0, sizeof exhaustive);
     memset(&robust, 0, sizeof robust);
+    cnb_mark(base, &base_mark);
     if (synthesize_lookup(&btn, unit, &inputs, &outputs) != 0) goto done;
     if (contract_init_borrowed(&contract, name, &btn, inputs, outputs,
                                domain) != 0) goto done;
@@ -148,8 +152,10 @@ int cnet_compete_capsule_build(CnetBase *base, HybridAi *coverage,
     if (cnb_add_unit(base, &btn, &contract, NULL) != 0) goto done;
     if (hybrid_coverage_record(coverage, btn.input_ports[0], btn.output_ports[0],
                                name, inputs, outputs, domain,
-                               spec->input_bits, spec->output_bits) != 0)
+                               spec->input_bits, spec->output_bits) != 0) {
+        if (cnb_rollback(base, &base_mark) != 0) rc = -2;
         goto done;
+    }
     if (report != NULL) {
         report->domain_rows = domain;
         report->input_bits = spec->input_bits;

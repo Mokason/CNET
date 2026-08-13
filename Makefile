@@ -6092,7 +6092,7 @@ cnet_7b_compete_contract: cnet_7b_compete_fixture include/cnet_compete.h \
 	@./$(BIN_DIR)/test_cnet_compete_contract | tee logs/cnet_7b_compete_contract.log
 	@grep -q CNET_7B_COMPETE_CONTRACT_PASS logs/cnet_7b_compete_contract.log
 
-.PHONY: cnet_7b_capsule_increment
+.PHONY: cnet_7b_capsule_increment cnet_7b_capsules cnet_7b_capsules_san
 CNET_COMPETE_CAPSULE_CORE := src/cnet_capsule.c src/hybrid_ai.c src/base.c \
 	src/nn.c src/contract/contract.c src/contract/unit.c \
 	src/contract/coverage.c src/acquire.c src/runtime_identity.c src/plan_table.c
@@ -6108,3 +6108,34 @@ cnet_7b_capsule_increment: include/cnet_compete_capsules.h \
 	@./$(BIN_DIR)/test_cnet_compete_capsule_increment | \
 		tee logs/cnet_7b_capsule_increment.log
 	@grep -q CNET_7B_CAPSULE_INCREMENT_PASS logs/cnet_7b_capsule_increment.log
+
+cnet_7b_capsules: include/cnet_compete_capsules.h \
+		src/cnet_compete_capsules.c tests/test_cnet_compete_capsules.c \
+		$(CNET_COMPETE_CAPSULE_CORE) $(ROUTER) $(SPECIALIST_SRC)
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -Werror -ffunction-sections -fdata-sections -Iinclude \
+		-o $(BIN_DIR)/test_cnet_compete_capsules \
+		src/cnet_compete_capsules.c $(CNET_COMPETE_CAPSULE_CORE) \
+		$(ROUTER) $(SPECIALIST_SRC) tests/test_cnet_compete_capsules.c \
+		-Wl,--gc-sections $(LDFLAGS) $(MCP_LDFLAGS) -pthread
+	@./$(BIN_DIR)/test_cnet_compete_capsules | \
+		tee logs/cnet_7b_capsules.log
+	@grep -q CNET_7B_CAPSULES_PASS logs/cnet_7b_capsules.log
+
+cnet_7b_capsules_san: include/cnet_compete_capsules.h \
+		src/cnet_compete_capsules.c tests/test_cnet_compete_capsules.c \
+		$(CNET_COMPETE_CAPSULE_CORE) $(ROUTER) $(SPECIALIST_SRC)
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) -std=c11 -Wall -Wextra -pedantic -Werror -O1 -g \
+		-D_DEFAULT_SOURCE -DCNET_HAVE_CURL=0 \
+		-fsanitize=address,undefined -fno-omit-frame-pointer \
+		-ffunction-sections -fdata-sections -Iinclude \
+		-o $(BIN_DIR)/test_cnet_compete_capsules_san \
+		src/cnet_compete_capsules.c $(CNET_COMPETE_CAPSULE_CORE) \
+		$(ROUTER) $(SPECIALIST_SRC) tests/test_cnet_compete_capsules.c \
+		-Wl,--gc-sections -fsanitize=address,undefined -lm -lpthread
+	@ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 \
+		UBSAN_OPTIONS=halt_on_error=1 \
+		./$(BIN_DIR)/test_cnet_compete_capsules_san | \
+		tee logs/cnet_7b_capsules_san.log
+	@grep -q CNET_7B_CAPSULES_PASS logs/cnet_7b_capsules_san.log
