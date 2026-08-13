@@ -26,7 +26,7 @@ path, or live service was written by any test added here.
 
 ### Defect
 
-`tests/run_capability_cert.py` exported `CNET_HELD_OUT_FIXTURE`; repository-wide
+`cnet-control capability-cert` exported `CNET_HELD_OUT_FIXTURE`; repository-wide
 search found no evaluator that read it. Declared held-out cases were decorative
 metadata: the fixture SHA-256 in the report proved which file existed, never
 which cases ran, and a capability with no `metric_regex` scored `1.0` from
@@ -40,7 +40,7 @@ copied in so the mutation experiment could address stable case ids:
 
 ```
 cd <scratch>/red-head
-python3 tests/test_capability_fixture_causality.py \
+dotnet test dotnet/CnetControlPlane.Tests --filter FullyQualifiedName~FixtureCausalityCoreTests \
     calibrated_abstention hybrid_skill_serve sleep_consolidation
 ```
 
@@ -75,7 +75,7 @@ re-analysis: a semantically falsified fixture left the evaluator green.
 * Five C evaluators and one xUnit test now read their floors, shapes, queries
   and expectations **through** the fixture and record a per-case verdict.
 * Every fixture case carries a stable unique `id`.
-* `tests/run_capability_cert.py` refuses to certify without a receipt binding
+* `cnet-control capability-cert` refuses to certify without a receipt binding
   the exact fixture SHA-256, every declared case id, and `consumed == declared`;
   and binds each result to commit, working-tree digest, assume-unchanged count,
   evaluator argv, evaluator binary digest, declared source-set digest,
@@ -113,7 +113,7 @@ overstate how tightly the result is bound to the tree.
 
 ```
 make heldout_fixture_test        # CNET_HELDOUT_TEST_PASS checks=42, exit 0
-python3 tests/test_capability_cert_runner.py   # 21 tests OK, exit 0
+dotnet test dotnet/CnetControlPlane.Tests --filter FullyQualifiedName~CapabilityCertRunnerTests   # 21 tests OK, exit 0
 make semantic_cortex             # SEMANTIC_CORTEX_PASS, exit 0 (standalone mode)
 make sleep_consolidate           # SLEEP_CONSOLIDATE_PASS, exit 0 (standalone mode)
 make calibrated_governance       # CALIBRATED_GOVERNANCE_PASS, exit 0 (standalone mode)
@@ -832,7 +832,7 @@ mutable log as authority.
 4. fails on a non-zero producer status **or** a missing marker — status first,
    marker as corroboration, never the other way round.
 
-`tests/run_capability_cert.py` does the same for the certificate itself, and
+`cnet-control capability-cert` does the same for the certificate itself, and
 additionally binds the evaluator's declared source-set and binary digests.
 
 ### GREEN — FRESH
@@ -1079,7 +1079,7 @@ FAIL: a marker with a prefix in front of it is not the marker -- expected exit 1
 FAIL: a marker mentioned mid-line is not a verdict -- expected exit 1, got 0
 BENCHMARK_VERDICT_FAIL checks=21 failures=9
 
-CNET_CERT_RUNNER=<pre-fix> python3 tests/test_capability_cert_runner.py   # exit 1
+CNET_CERT_RUNNER=<pre-fix> dotnet test dotnet/CnetControlPlane.Tests --filter FullyQualifiedName~CapabilityCertRunnerTests   # exit 1
 FAIL: test_two_fixture_receipts_are_refused
 FAIL: test_two_metric_receipts_are_refused
 FAIL: test_duplicate_case_line_is_refused
@@ -1094,7 +1094,7 @@ FAIL: test_metric_regex_matching_never_is_refused
 * `scripts/benchmark_verdict.sh` counts **lines** matching
   `^PREFIX_<VERDICT>([[:space:]]|$)`. Exactly one terminal verdict line is
   required; more than one is `AMBIGUOUS` with its own exit code **5**.
-* `run_capability_cert.py` requires exactly one fixture receipt, exactly one
+* `cnet-control capability-cert` requires exactly one fixture receipt, exactly one
   metric receipt, exactly one line per declared case, no line for an undeclared
   case, and a `metric_regex` that matches exactly once.
 
@@ -1103,7 +1103,7 @@ FAIL: test_metric_regex_matching_never_is_refused
 ```
 sh tests/test_benchmark_verdict.sh
 BENCHMARK_VERDICT_PASS checks=30 pass=0 withheld=3 blocked=4 no_verdict=1   # exit 0
-python3 tests/test_capability_cert_runner.py
+dotnet test dotnet/CnetControlPlane.Tests --filter FullyQualifiedName~CapabilityCertRunnerTests
 CAPABILITY_CERT_RUNNER_PASS shell=disabled receipt=required checks=39       # exit 0
 ```
 
@@ -1121,7 +1121,7 @@ a valid receipt was accepted, which is exactly when it matters.
 ### RED — FRESH
 
 ```
-CNET_CERT_RUNNER=<pre-fix> python3 tests/test_capability_cert_runner.py   # exit 1
+CNET_CERT_RUNNER=<pre-fix> dotnet test dotnet/CnetControlPlane.Tests --filter FullyQualifiedName~CapabilityCertRunnerTests   # exit 1
 FAIL: test_secret_env_values_never_reach_the_report
 ERROR: test_binding_is_stable_when_nothing_moves
 ERROR: test_source_mutation_after_the_receipt_is_detected
@@ -1153,7 +1153,7 @@ The `ERROR`s are the honest shape of this RED: the pre-fix runner has no
 ### GREEN — FRESH
 
 ```
-python3 tests/test_capability_cert_runner.py     # 39 tests OK, exit 0
+dotnet test dotnet/CnetControlPlane.Tests --filter FullyQualifiedName~CapabilityCertRunnerTests     # 39 tests OK, exit 0
 make capability_cert                             # exit 0
 CAPABILITY_CERT_PASS certified=6/6 run_id=0dfc1e70-... commit=bb85301...
 ```
@@ -1190,8 +1190,8 @@ GATE_EVIDENCE_FAIL checks=32 failures=13
 
 ### Fix
 
-`scripts/gate_evidence.py` replaces it (the `.sh` is removed; the Makefile's six
-call sites now use `python3`). Content-addressed tracked **and** untracked
+`tools/gate_evidence.c` replaces it (the `.sh` is removed; Makefile call sites
+use `./bin/gate_evidence`). Content-addressed tracked **and** untracked
 digests, captured before and after and compared; argv serialized as a real JSON
 array via `json.dumps`; the marker matched anchored at line start and required
 to appear exactly once, with any other terminal verdict for the same prefix
@@ -1330,7 +1330,7 @@ reads sits in the fixture looking like a commitment.
 
 ### RED — FRESH
 
-`tests/test_capability_fixture_causality.py` now enumerates a mutation for every
+`dotnet/CnetControlPlane.Tests (FixtureCausalityCoreTests)` now enumerates a mutation for every
 declared field name and every declared case, and refuses to pass if any is
 uncovered. Running it first reported exactly which fields had no mutation:
 
@@ -1372,7 +1372,7 @@ FAIL: hybrid_skill_serve: mutating case[0].query -> 'totally different words ent
 ### GREEN — FRESH
 
 ```
-python3 tests/test_capability_fixture_causality.py json_toolcall_adapter
+dotnet test dotnet/CnetControlPlane.Tests --filter FullyQualifiedName~FixtureCausalityCoreTests json_toolcall_adapter
 CAPABILITY_FIXTURE_CAUSALITY_PASS capabilities=1 mutations_rejected=8 scope=selected   # exit 0
 ```
 
@@ -1722,7 +1722,7 @@ what lands in the index, not a clean-filtered LF copy.
 
 `make ci_core` ran two scientific gates (capsule and accumulation) and nothing
 recorded what CI was supposed to cover, so a gate could stop being enforced with
-no signal. `tests/test_ci_workflow.py` printed
+no signal. `tests/test_ci_workflow.sh` printed
 `CI_WORKFLOW_PASS status=gha_disabled` when there was **no hosted workflow at
 all** — a local structural check labelled as a workflow pass. Separately, the
 accumulation benchmark's failure paths read `names[k]` entries it had never
@@ -1738,7 +1738,7 @@ those paths, so both were invisible.
   specialist, continuous coverage floors, evidence separated from runtime state
   — so the things CI does **not** prove are written down next to the things it
   does.
-* `tests/test_ci_contract.py` enforces the contract against the Makefile: every
+* `tests/test_ci_contract.sh` enforces the contract against the Makefile: every
   `required` gate exists and is a prerequisite; every `blocked` gate is **not**
   a prerequisite (a gate that cannot run here cannot be part of a passing CI);
   `ci_core` declares no scientific gate the contract omits; and an absent hosted
@@ -1752,7 +1752,7 @@ those paths, so both were invisible.
   **blocked** with their reasons, and are deliberately *not* prerequisites.
   Making CI green by including a gate that cannot run here would be the same
   category of error this whole remediation is about.
-* `tests/test_ci_workflow.py` now prints
+* `tests/test_ci_workflow.sh` now prints
   `CI_WORKFLOW_LOCAL_PASS status=local_gates_ok hosted_workflow=WITHHELD`.
 * `tests/knowledge_accumulation_bench.c`: one cleanup path in `add_unit`,
   `name_out` written **only** on success, and the build loop tracks `built` so
@@ -1781,7 +1781,7 @@ make knowledge_accumulation_faults
 ACCUMULATION_FAULTS_PASS checks=9 forced_failures=3 sanitizers=asan+ubsan+leak  # exit 0
 make knowledge_accumulation_bench
 KNOWLEDGE_ACCUMULATION_BENCH_PASS units=32 ... ood_refused=96                   # exit 0
-python3 tests/test_ci_contract.py
+bash tests/test_ci_contract.sh
 CI_CONTRACT_PASS required=16 blocked=2 withheld_claims=4 hosted_workflow=withheld  # exit 0
 ```
 
@@ -1922,7 +1922,7 @@ path.
 ### RED (re-runnable: `CNET_EVIDENCE_LEGACY=<rev>` installs the pre-fix runners)
 
 ```
-$ CNET_EVIDENCE_LEGACY=HEAD python3 tests/test_evidence_special_index.py
+$ CNET_EVIDENCE_LEGACY=HEAD dotnet test dotnet/CnetControlPlane.Tests --filter FullyQualifiedName~SpecialIndexBindingTests
 GATE_EVIDENCE_MUTATED exit=0
 FAIL: gate_evidence must REFUSE a run that rewrote an assume-unchanged tracked file (exit was 0)
 FAIL: gate_evidence must name the drift it refused on
@@ -1948,7 +1948,7 @@ blind to the mutation — otherwise the RED would prove nothing.
 ### GREEN
 
 ```
-$ python3 tests/test_evidence_special_index.py
+$ dotnet test dotnet/CnetControlPlane.Tests --filter FullyQualifiedName~SpecialIndexBindingTests
 GATE_EVIDENCE_MUTATED exit=1
 GATE_EVIDENCE_PRISTINE exit=0
 CAPABILITY_CERT_MUTATED exit=1
@@ -1992,7 +1992,7 @@ because the count was the inferior disclosure, not because it was inconvenient.
 
 ## F5 — capability terminal marker was a substring test (MEDIUM)
 
-`run_capability_cert.py` asked `marker not in completed.stdout`. A raw substring
+`cnet-control capability-cert` asked `marker not in completed.stdout`. A raw substring
 test certifies on `CAP_X_PASSED`, on `NOT_CAP_X_PASS`, on a mid-sentence
 mention, and on a log printing `CAP_X_PASS` and `CAP_X_FAIL` one line apart; it
 also counts no duplicates, so two concatenated evaluator runs read as one.
@@ -2000,7 +2000,7 @@ also counts no duplicates, so two concatenated evaluator runs read as one.
 ### RED
 
 ```
-$ python3 tests/test_capability_cert_runner.py
+$ dotnet test dotnet/CnetControlPlane.Tests --filter FullyQualifiedName~CapabilityCertRunnerTests
 AttributeError: module 'capability_cert_runner' has no attribute 'terminal_marker_ok'
    (10 errors)
 ##EXIT=1
@@ -2009,17 +2009,17 @@ AttributeError: module 'capability_cert_runner' has no attribute 'terminal_marke
 with a standing witness for the defect itself, which survives as a regression
 test rather than only proving the API was absent:
 
-```python
-output = "NOT_CAP_X_PASSED_YET waiting for the real gate\n"
-self.assertIn("CAP_X_PASS", output)          # the predicate that used to certify
-found, _ = RUNNER.terminal_marker_ok(output, "CAP_X_PASS")
-self.assertFalse(found)                      # the current one refuses
+```csharp
+var output = "NOT_CAP_X_PASSED_YET waiting for the real gate\n";
+Assert.Contains("CAP_X_PASS", output);  // substring is not the marker
+var (found, _) = CapabilityCertRunner.TerminalMarkerOk(output, "CAP_X_PASS");
+Assert.False(found);                    // whole-line prefix required
 ```
 
 ### GREEN
 
 ```
-$ python3 tests/test_capability_cert_runner.py
+$ dotnet test dotnet/CnetControlPlane.Tests --filter FullyQualifiedName~CapabilityCertRunnerTests
 Ran 52 tests in 0.078s
 OK
 CAPABILITY_CERT_RUNNER_PASS shell=disabled receipt=required checks=52
@@ -2503,7 +2503,7 @@ $ echo "##EXIT=$?"; wc -c out.log
 ```
 
 **Zero bytes, exit 0, no test run.** That is the silent-success mode
-`tests/run_capability_cert.py` names in its own docstring — and nothing in the
+`cnet-control capability-cert` names in its own docstring — and nothing in the
 tree ever built the thing it then asked to run.
 
 Two things follow, and only one of them is a bug:
@@ -2531,7 +2531,7 @@ Test Run Successful.
 
 ### Fix
 
-`scripts/capability_evaluator_prereq.py` enforces two halves of one rule:
+`cnet-control capability-prereq` enforces two halves of one rule:
 
 * **DECLARATION** — an evaluator whose argv[0] is not a build command must
   declare `evaluator_prepare`: a non-shell, allowlisted argv that makes it
@@ -2547,8 +2547,8 @@ Test Run Successful.
   that leaves output older than the sources defining what the evaluator does, is
   refused by name. Nothing silently uses missing or stale output.
 
-Both `tests/test_capability_fixture_causality.py` and
-`tests/run_capability_cert.py` call it before running any evaluator;
+Both `dotnet/CnetControlPlane.Tests (FixtureCausalityCoreTests)` and
+`cnet-control capability-cert` call it before running any evaluator;
 `make capability_cert` gained `capability_evaluator_prereq` as a prerequisite.
 
 ### RED for the guard itself — each negative is causal
@@ -2557,7 +2557,7 @@ The four decisive checks were disabled one build at a time in a scratch copy and
 the unit lane re-run:
 
 ```
-$ python3 tests/test_capability_evaluator_prereq.py     # guards disabled
+$ dotnet test dotnet/CnetControlPlane.Tests --filter FullyQualifiedName~EvaluatorPrereqTests     # guards disabled
 FAIL: test_non_building_evaluator_without_prepare_is_refused
 FAIL: test_prepare_that_fails_is_refused
 FAIL: test_prepare_that_produces_nothing_is_refused
@@ -2566,7 +2566,7 @@ Ran 15 tests -- FAILED (failures=4)
 CAPABILITY_EVALUATOR_PREREQ_UNIT_FAIL checks=15 failures=4 errors=0
 ##EXIT=1
 
-$ python3 tests/test_capability_evaluator_prereq.py     # restored
+$ dotnet test dotnet/CnetControlPlane.Tests --filter FullyQualifiedName~EvaluatorPrereqTests     # restored
 Ran 15 tests -- OK
 CAPABILITY_EVALUATOR_PREREQ_UNIT_PASS checks=15 refusals=missing,stale,failed,undeclared
 ##EXIT=0
@@ -2574,8 +2574,8 @@ CAPABILITY_EVALUATOR_PREREQ_UNIT_PASS checks=15 refusals=missing,stale,failed,un
 
 ### One fixture had to be told about the new import
 
-`tests/test_evidence_special_index.py` builds a throwaway repo holding the real
-runners, and copied exactly two files. `run_capability_cert.py` now imports the
+`dotnet/CnetControlPlane.Tests (SpecialIndexBindingTests)` builds a throwaway repo holding the real
+runners, and copied exactly two files. `cnet-control capability-cert` now imports the
 prerequisite module, so every capability case in that gate became an ImportError
 that read as a refusal:
 
@@ -2597,7 +2597,7 @@ an ignored build artifact is not the untracked change that gate is looking for.
 The legacy RED is still RED:
 
 ```
-$ CNET_EVIDENCE_LEGACY=dc3b2a2 python3 tests/test_evidence_special_index.py
+$ CNET_EVIDENCE_LEGACY=dc3b2a2 dotnet test dotnet/CnetControlPlane.Tests --filter FullyQualifiedName~SpecialIndexBindingTests
 EVIDENCE_SPECIAL_INDEX_FAIL checks=15 failures=7
 ##EXIT=1
 ```
@@ -2882,12 +2882,12 @@ completion in the writer worktree at the phase-4 HEAD.
 
 | Command | Exit |
 |---|---|
-| `python3 tests/test_evidence_special_index.py` | 0 |
-| `python3 tests/test_capability_cert_runner.py` | 0 |
-| `python3 tests/test_capability_evaluator_prereq.py` | 0 |
-| `python3 tests/test_capability_fixture_causality.py` | 0 |
-| `python3 tests/test_ci_contract.py` | 0 |
-| `python3 tests/test_ci_workflow.py` | 0 |
+| `dotnet test dotnet/CnetControlPlane.Tests --filter FullyQualifiedName~SpecialIndexBindingTests` | 0 |
+| `dotnet test dotnet/CnetControlPlane.Tests --filter FullyQualifiedName~CapabilityCertRunnerTests` | 0 |
+| `dotnet test dotnet/CnetControlPlane.Tests --filter FullyQualifiedName~EvaluatorPrereqTests` | 0 |
+| `dotnet test dotnet/CnetControlPlane.Tests --filter FullyQualifiedName~FixtureCausalityCoreTests` | 0 |
+| `bash tests/test_ci_contract.sh` | 0 |
+| `bash tests/test_ci_workflow.sh` | 0 |
 | `bash tests/test_gate_evidence.sh` | 0 |
 | `bash tests/test_benchmark_verdict.sh` | 0 |
 | `bash tests/test_own_learning_health.sh` | 0 |
@@ -3136,7 +3136,7 @@ restored, and it ignored the project-list override because its list was
 hard-coded — so it built the seven real projects with a fake compiler and
 reported success.
 
-`make managed_warning_prereq` runs the GREEN lane under `gate_evidence.py`, then
+`make managed_warning_prereq` runs the GREEN lane under `./bin/gate_evidence`, then
 re-runs the legacy lane and requires it to fail **on the ordering property
 specifically**, not on something incidental:
 
@@ -3306,7 +3306,7 @@ configuration. Note what it did NOT do: it did not use the hostile feed. It
 failed closed and named it, which is the guard working — what was missing is
 that it should never have been able to see it.
 
-`scripts/capability_evaluator_prereq.py` now pins any `dotnet` prepare step to
+`cnet-control capability-prereq` now pins any `dotnet` prepare step to
 the same kind of isolated configuration, through MSBuild properties rather than
 `--configfile` because `dotnet build` takes restore settings that way and
 rejects the restore-only flag:

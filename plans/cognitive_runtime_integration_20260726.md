@@ -57,7 +57,7 @@ Gate: `make cce_train_bench` → healthy classification markers; `make ci` still
 New (suggested paths — adjust if better fits tree):
 - `include/cnet_capability_cert.h` + `src/cnet_capability_cert.c`
 - `config/capability_manifests/*.json` (start with 3–5 caps)
-- `tests/test_capability_cert.c` or Python runner + C helpers
+- `tests/test_capability_cert.c` + `cnet-control capability-cert`
 - `make capability_cert` → `CAPABILITY_CERT_PASS`
 
 Manifest fields (minimum):

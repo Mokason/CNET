@@ -264,7 +264,7 @@ if [ -f "$TODO" ] && [ -s "$TODO" ]; then
   tmp_todo=$(mktemp)
   while IFS= read -r line; do
     [ -z "$line" ] && continue
-    status=$(echo "$line" | python3 -c "import sys,json; print(json.loads(sys.stdin.read()).get('status',''))" 2>/dev/null || echo "")
+    status=$(echo "$line" | jq -r '.status // empty' 2>/dev/null || echo "")
     if [ "$status" != "open" ]; then
       echo "$line" >>"$tmp_todo"
       continue
@@ -273,8 +273,8 @@ if [ -f "$TODO" ] && [ -s "$TODO" ]; then
       echo "$line" >>"$tmp_todo"
       continue
     fi
-    text=$(echo "$line" | python3 -c "import sys,json; print(json.loads(sys.stdin.read()).get('text',''))" 2>/dev/null || echo "")
-    tid=$(echo "$line" | python3 -c "import sys,json; print(json.loads(sys.stdin.read()).get('id',''))" 2>/dev/null || echo "")
+    text=$(echo "$line" | jq -r '.text // empty' 2>/dev/null || echo "")
+    tid=$(echo "$line" | jq -r '.id // empty' 2>/dev/null || echo "")
     info "TODO open: $text"
     # Heuristic actions
     done_one=0
@@ -305,7 +305,7 @@ if [ -f "$TODO" ] && [ -s "$TODO" ]; then
         ;;
     esac
     if [ "$done_one" = "1" ]; then
-      echo "$line" | python3 -c "import sys,json; o=json.loads(sys.stdin.read()); o['status']='done'; o['done_ts']='$TS'; print(json.dumps(o))" >>"$tmp_todo"
+      echo "$line" | jq -c --arg ts "$TS" '.status="done" | .done_ts=$ts' >>"$tmp_todo"
       todos_done=$((todos_done + 1))
       fixed=1
     else
@@ -398,43 +398,35 @@ fi
 # --- report ---------------------------------------------------------------
 units=$(cnet_unit_count_fast "$BASE")
 units=${units:-null}
-actions_json=$(printf '%s\n' "${actions[@]+"${actions[@]}"}" | python3 -c 'import sys,json; print(json.dumps([l.strip() for l in sys.stdin if l.strip()]))' 2>/dev/null || echo '[]')
-issues_json=$(printf '%s\n' "${issues[@]+"${issues[@]}"}" | python3 -c 'import sys,json; print(json.dumps([l.strip() for l in sys.stdin if l.strip()]))' 2>/dev/null || echo '[]')
-
-python3 - <<PY
-import json
-from pathlib import Path
-try:
-    metrics = json.loads(Path("$METRICS_FILE").read_text())
-except Exception:
-    metrics = {}
-try:
-    actions = json.loads('''$actions_json''')
-except Exception:
-    actions = []
-try:
-    issues = json.loads('''$issues_json''')
-except Exception:
-    issues = []
-units_raw = "$units"
-units = None if units_raw in ("", "null") else int(units_raw)
-rep = {
-  "ts": "$TS",
-  "base": "$BASE",
-  "learner_active": $learner,
-  "serve_mcp": $serve,
-  "json_toolcall": int("$jtc" or 0),
-  "units": units,
-  "actions": actions,
-  "issues": issues,
-  "todos_done": $todos_done,
-  "hermes_asked": $hermes_asked,
-  "fixed": $fixed,
-  "metrics": metrics,
-}
-Path("$REPORT").write_text(json.dumps(rep, indent=2) + "\n")
-print(json.dumps(rep, indent=2))
-PY
+actions_json=$(printf '%s\n' "${actions[@]+"${actions[@]}"}" | jq -R -s 'split("\n")|map(select(length>0))' 2>/dev/null || echo '[]')
+issues_json=$(printf '%s\n' "${issues[@]+"${issues[@]}"}" | jq -R -s 'split("\n")|map(select(length>0))' 2>/dev/null || echo '[]')
+metrics_json='{}'
+if [[ -f "$METRICS_FILE" ]]; then
+  metrics_json=$(jq -c . "$METRICS_FILE" 2>/dev/null || echo '{}')
+fi
+jtc_n=${jtc:-0}
+units_json="null"
+if [[ -n "$units" && "$units" != "null" ]]; then
+  units_json="$units"
+fi
+jq -n \
+  --arg ts "$TS" \
+  --arg base "$BASE" \
+  --argjson learner_active "$learner" \
+  --argjson serve_mcp "$serve" \
+  --argjson json_toolcall "$jtc_n" \
+  --argjson units "$units_json" \
+  --argjson actions "$actions_json" \
+  --argjson issues "$issues_json" \
+  --argjson todos_done "$todos_done" \
+  --argjson hermes_asked "$hermes_asked" \
+  --argjson fixed "$fixed" \
+  --argjson metrics "$metrics_json" \
+  '{
+    ts: $ts, base: $base, learner_active: $learner_active, serve_mcp: $serve_mcp,
+    json_toolcall: $json_toolcall, units: $units, actions: $actions, issues: $issues,
+    todos_done: $todos_done, hermes_asked: $hermes_asked, fixed: $fixed, metrics: $metrics
+  }' | tee "$REPORT"
 
 echo "LAST_TICK_UNIX=$(date +%s)" >"$STATE"
 echo "LAST_TICK_TS=$TS" >>"$STATE"

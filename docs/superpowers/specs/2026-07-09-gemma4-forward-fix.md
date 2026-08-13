@@ -64,7 +64,7 @@ the reference applies it, the argmax gates pass either way.
   - `[2]` → argmax 532 (' and') — identical.
   - `[2,818,5279,529,7001,563]` ("The capital of France is") →
     9079 (' Paris'), 236761 ('.'), 106 (<end_of_turn>) — chain-identical.
-- `tests/gemma4_vs_ref.py`: 6-prompt × 16-step argmax-identity battery
+- `tests/gemma4_vs_ref.sh`: 6-prompt × 16-step argmax-identity battery
   (tokenizes via llama-server, compares chains; divergence-step reporting).
 
 ## Consequences (their weight acknowledged)

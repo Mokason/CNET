@@ -12,7 +12,8 @@ All benchmarks use **greedy decoding** (temp=0) to ensure deterministic, compara
 
 ### Methodology
 
-Comparisons are run via `scripts/bench_compare.py`, which ensures fairness:
+Comparisons are run via `CNET.Llm.Benchmarks` (BenchmarkDotNet) and the
+`cnet-llm-smoke bench-compare` shim:
 
 - **Same prompt & token count** — both engines receive identical inputs via env vars
 - **Warm pages** — llama.cpp runs with `--mlock` to lock model weights in RAM (eliminates mmap page faults during timing); CNET LLM uses BDN warmup iterations for the same effect
@@ -21,11 +22,11 @@ Comparisons are run via `scripts/bench_compare.py`, which ensures fairness:
 - **Thread parity** — both engines default to all available cores (`ThreadingConfig.Auto` / llama.cpp default)
 
 ```bash
-# Run comparison
-python scripts/bench_compare.py --model QuantFactory/SmolLM-135M-GGUF --prompt-size short
+# Run BDN benchmarks
+dotnet run --project benchmarks/CNET.Llm.Benchmarks -c Release
 
-# Available prompt sizes: short (~5 tok), medium (~256 tok), large (~1024 tok)
-python scripts/bench_compare.py --model bartowski/Llama-3.2-3B-Instruct-GGUF --quant Q8_0 --prompt-size large
+# Smoke shim (delegates to BDN with --exec)
+dotnet run --project src/CNET.Llm.Smoke -- bench-compare --exec
 ```
 
 ## Current Results (2026-03-06)

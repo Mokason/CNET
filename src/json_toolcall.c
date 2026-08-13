@@ -10,10 +10,10 @@
 #include <string.h>
 
 #if CNET_JTC_N_TOOL_GEN != CNET_JTC_N_TOOL
-#error "json_toolcall_alphabet.inc N_TOOL mismatch — re-run tools/gen_json_toolcall_alphabet.py"
+#error "json_toolcall_alphabet.inc N_TOOL mismatch — re-run bin/gen_json_toolcall_alphabet"
 #endif
 #if CNET_JTC_N_FEAT_GEN != CNET_JTC_N_FEAT
-#error "json_toolcall_alphabet.inc N_FEAT mismatch — re-run tools/gen_json_toolcall_alphabet.py"
+#error "json_toolcall_alphabet.inc N_FEAT mismatch — re-run bin/gen_json_toolcall_alphabet"
 #endif
 
 const char *const *cnet_jtc_tool_names(void) { return CNET_JTC_TOOLS_GEN; }

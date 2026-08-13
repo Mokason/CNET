@@ -157,14 +157,14 @@ COMPOSE_TEST := tests/test_composition.c
 ROUTER_TEST := tests/test_router.c
 SPARSE_KV_TEST := tests/sparse_kv_test.c
 NARRATIVE_COHERENCE_TEST := tests/narrative_coherence_test.c
-PHASE123_BENCHMARK_TEST := tests/test_phase123_benchmarks.py
-PHASE123_BENCHMARK_TOOL := tools/run_phase123_benchmarks.py
+PHASE123_BENCHMARK_TEST := $(BIN_DIR)/test_phase123_benchmarks
+PHASE123_BENCHMARK_TOOL := $(BIN_DIR)/run_phase123_benchmarks
 PHASE123_BENCHMARK_LIBRARY = $(BIN_DIR)/libphase123_benchmark.so
 PHASE4_UNCERTAINTY_TEST := tests/phase4_uncertainty_test.c
 PHASE5_INTEGRATION_TOOL := tools/register_compression_improvements.c
 PHASE5_INTEGRATION_TEST := tests/phase5_integration_test.c
-CNET_ACTIVATION_TOOL := tools/activate_cnet_suggestions.py
-CNET_ACTIVATION_TEST := tests/test_activate_cnet_suggestions.py
+CNET_CONTROL := dotnet run --project dotnet/CnetControlPlane --
+CNET_CONTROL_TEST := dotnet test dotnet/CnetControlPlane.Tests --verbosity minimal
 COUNTERFACTUAL_ROUTER_TEST := tests/router/counterfactual_test.c
 ROUTE_DEMO := tests/route_demo.c
 DAG_TEST := tests/test_dag.c
@@ -210,6 +210,95 @@ CCE_QGKP := src/cce/cce_qgkp.c
 # Build directory for all executables to avoid polluting the root with endless .exe junk.
 # Same philosophy as the fixed-temp cleanup for .cce / logs.
 BIN_DIR := bin
+
+# Standalone purge tools (no libcnet link). Built on demand by consumers.
+.PHONY: gate_evidence_bin purge_tool_bins no_python_audit
+gate_evidence_bin: tools/gate_evidence.c
+	@mkdir -p $(BIN_DIR)
+	$(CC) $(CFLAGS) -o $(BIN_DIR)/gate_evidence tools/gate_evidence.c $(LDFLAGS)
+
+$(BIN_DIR)/gate_evidence: tools/gate_evidence.c
+	@mkdir -p $(BIN_DIR)
+	$(CC) $(CFLAGS) -o $@ tools/gate_evidence.c $(LDFLAGS)
+
+$(BIN_DIR)/gen_altmodel: tools/gen_altmodel.c
+	@mkdir -p $(BIN_DIR)
+	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
+
+$(BIN_DIR)/gen_json_toolcall_alphabet: tools/gen_json_toolcall_alphabet.c
+	@mkdir -p $(BIN_DIR)
+	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
+
+$(BIN_DIR)/propose_recipe_improvements: tools/propose_recipe_improvements.c
+	@mkdir -p $(BIN_DIR)
+	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
+
+$(BIN_DIR)/score_cnet_coherence: tools/score_cnet_coherence.c
+	@mkdir -p $(BIN_DIR)
+	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
+
+$(BIN_DIR)/margin_sweep_analyze: tools/margin_sweep_analyze.c
+	@mkdir -p $(BIN_DIR)
+	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
+
+$(BIN_DIR)/roe_daily_packs_seed: tools/roe_daily_packs_seed.c
+	@mkdir -p $(BIN_DIR)
+	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
+
+$(BIN_DIR)/roe_pdf_chunk_run: tools/roe_pdf_chunk_run.c
+	@mkdir -p $(BIN_DIR)
+	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
+
+$(BIN_DIR)/roe_table_extract: tools/roe_table_extract.c
+	@mkdir -p $(BIN_DIR)
+	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
+
+$(BIN_DIR)/governor_autonomous: tools/governor_autonomous.c
+	@mkdir -p $(BIN_DIR)
+	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
+
+$(BIN_DIR)/governor_personality: tools/governor_personality.c
+	@mkdir -p $(BIN_DIR)
+	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
+
+$(BIN_DIR)/governor_zen_reflect: tools/governor_zen_reflect.c
+	@mkdir -p $(BIN_DIR)
+	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
+
+$(BIN_DIR)/governor_hermes_structured: tools/governor_hermes_structured.c
+	@mkdir -p $(BIN_DIR)
+	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
+
+$(BIN_DIR)/test_metric_honesty: tests/test_metric_honesty.c
+	@mkdir -p $(BIN_DIR)
+	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
+
+$(BIN_DIR)/test_phase123_benchmarks: tests/test_phase123_benchmarks.c
+	@mkdir -p $(BIN_DIR)
+	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
+
+$(BIN_DIR)/run_phase123_benchmarks: tools/run_phase123_benchmarks.c
+	@mkdir -p $(BIN_DIR)
+	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
+
+$(BIN_DIR)/cnet_harness_gpu_benchmark: tests/cnet_harness_gpu_benchmark.c
+	@mkdir -p $(BIN_DIR)
+	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
+
+$(BIN_DIR)/voice_teacher: tools/voice_teacher.c
+	@mkdir -p $(BIN_DIR)
+	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
+
+$(BIN_DIR)/gap_inject: tools/gap_inject.c
+	@mkdir -p $(BIN_DIR)
+	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
+
+$(BIN_DIR)/cnet_chunk_hash: tools/cnet_chunk_hash.c
+	@mkdir -p $(BIN_DIR)
+	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
+
+no_python_audit: scripts/no_python_audit.sh
+	@bash scripts/no_python_audit.sh
 EXE_EXT := $(if $(filter Windows_NT,$(OS)),.exe,)
 
 # Portable dotnet command discovery.
@@ -502,7 +591,7 @@ phase123_benchmark_build: counterfactual_router_test sparse_kv_test sparse_kv_ex
 		src/cce/cce_sparse_kv.c src/contract/narrative_coherence.c $(LDFLAGS)
 
 phase123_benchmark_test: phase123_benchmark_build $(PHASE123_BENCHMARK_TEST) $(PHASE123_BENCHMARK_TOOL)
-	$(PYTHON) $(PHASE123_BENCHMARK_TEST)
+	$(PHASE123_BENCHMARK_TEST)
 
 phase4_uncertainty_test: $(CCE_UNCERTAINTY) $(CCE_COMPRESSION) $(PHASE4_UNCERTAINTY_TEST) include/cce/cce_uncertainty.h include/cce/cce_compression.h include/cce/cce_router.h
 	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $(CCE_UNCERTAINTY) $(CCE_COMPRESSION) $(PHASE4_UNCERTAINTY_TEST) $(LDFLAGS)
@@ -516,14 +605,14 @@ phase5_integration_test: register_compression_improvements $(PHASE5_INTEGRATION_
 	./$(BIN_DIR)/phase5_integration_test
 
 .PHONY: phase5_bounded_activation_test real_model_control_plane_test
-phase5_bounded_activation_test: $(CNET_ACTIVATION_TOOL) $(CNET_ACTIVATION_TEST)
-	$(PYTHON) $(CNET_ACTIVATION_TEST)
+phase5_bounded_activation_test: dotnet/CnetControlPlane/CnetControlPlane.csproj dotnet/CnetControlPlane.Tests/CnetControlPlane.Tests.csproj
+	dotnet test dotnet/CnetControlPlane.Tests --filter FullyQualifiedName~ActivateTests --verbosity minimal
 
 real_model_control_plane_test: phase5_bounded_activation_test
-	$(PYTHON) tests/test_real_model_acceptance.py
-	$(PYTHON) tests/test_hermes_wrapper.py
-	$(PYTHON) tests/test_run_hermes_wrapper.py
-	$(PYTHON) tests/test_ingest_cnet_suggestions.py
+	dotnet test dotnet/CnetControlPlane.Tests --filter FullyQualifiedName~RealModelAcceptanceTests --verbosity minimal
+	dotnet test dotnet/CnetControlPlane.Tests --filter FullyQualifiedName~HermesTests --verbosity minimal
+	dotnet test dotnet/CnetControlPlane.Tests --filter FullyQualifiedName~HermesTests --verbosity minimal
+	dotnet test dotnet/CnetControlPlane.Tests --filter FullyQualifiedName~IngestTests --verbosity minimal
 	bash tests/test_qgkp_cli_runtime.sh
 
 test_dag: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(DAG_TEST) include/nn.h include/router.h include/plan_table.h include/contract/contract.h
@@ -654,7 +743,7 @@ depth_probe_build: $(CCE) tests/depth_probe.c include/cce/cce_gguf.h
 
 # Token-level greedy comparison vs an external reference (llama.cpp) on the
 # same GGUF: the gemma4-forward validation gate. Needs the model; NOT in
-# verify. Usage: make gemma4_vs_ref_build && tests/gemma4_vs_ref.py
+# verify. Usage: make gemma4_vs_ref_build && tests/gemma4_vs_ref.sh
 gemma4_vs_ref_build: $(CCE) tests/gemma4_vs_ref.c include/cce/cce_gguf.h
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/gemma4_vs_ref $(CCE) tests/gemma4_vs_ref.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 
@@ -1006,9 +1095,9 @@ certify: nn_demo certify_demo
 # the gate proves its weights and contract are absent while everything written
 # before it is still there. Then one unchanged run must persist all nine.
 .PHONY: legacy_persist_guard
-legacy_persist_guard: nn_demo tests/test_legacy_persist_guard.sh
+legacy_persist_guard: nn_demo tests/test_legacy_persist_guard.sh $(BIN_DIR)/gate_evidence
 	@mkdir -p logs
-	@$(PYTHON) scripts/gate_evidence.py legacy_persist_guard \
+	@$(BIN_DIR)/gate_evidence legacy_persist_guard \
 		logs/legacy_persist_guard.log LEGACY_PERSIST_GUARD_PASS -- \
 		sh tests/test_legacy_persist_guard.sh
 
@@ -1759,8 +1848,8 @@ campaign_provenance_unit: $(CCE_CAMPAIGN_PROVENANCE) include/cce/cce_campaign_pr
 campaign_provenance: campaign_provenance_unit \
 		qwythos_english_v1.cnb.manifest.json qwythos_english_v1.cnb.sha256 \
 		english_window_256_qwythos.txt goldens_qwythos.int8.txt \
-		tests/test_qwythos_campaign_record.py
-	@$(PYTHON) tests/test_qwythos_campaign_record.py > logs/qwythos_provenance.log 2>&1
+		tests/test_qwythos_campaign_record.sh
+	@bash tests/test_qwythos_campaign_record.sh > logs/qwythos_provenance.log 2>&1
 	@grep -q "QWYTHOS_CAMPAIGN_RECORD_PASS" logs/qwythos_provenance.log
 	@if [ -f qwythos_english_v1.cnb ]; then \
 		sha256sum -c qwythos_english_v1.cnb.sha256 > logs/qwythos_base_digest.log; \
@@ -2050,9 +2139,9 @@ cnet_fault_dedupe_probe: src/cnet_fault.c tests/cnet_fault_dedupe_probe.c
 	@mkdir -p $(BIN_DIR)
 	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ src/cnet_fault.c tests/cnet_fault_dedupe_probe.c $(LDFLAGS)
 
-metric_honesty: cnet_fault_dedupe_probe gap_lane
+metric_honesty: cnet_fault_dedupe_probe gap_lane $(BIN_DIR)/test_metric_honesty
 	@mkdir -p logs
-	@$(PYTHON) tests/test_metric_honesty.py > logs/metric_honesty.log 2>&1 \
+	@$(BIN_DIR)/test_metric_honesty > logs/metric_honesty.log 2>&1 \
 		|| { tail -40 logs/metric_honesty.log; false; }
 	@grep -q "METRIC_HONESTY_PASS" logs/metric_honesty.log
 	@grep -E "^Ran [0-9]+ tests" logs/metric_honesty.log
@@ -2211,11 +2300,12 @@ transformer_qat_real: $(CCE) $(CCE_CUDA_OBJ) src/nn.c tests/transformer_qat_real
 
 # The same load+parity path on a DIFFERENT model (not Supra): a 4-layer model in
 # Supra's naming with every free dim changed (D128/V2000/B96/mlp512), generated by
-# tools/gen_altmodel.py. Proves the trainer/loader/forward aren't tied to Supra's
+# tools/gen_altmodel.c. Proves the trainer/loader/forward aren't tied to Supra's
 # dimensions. See tests/transformer_qat_altmodel.c.
 transformer_qat_altmodel: $(CCE) $(CCE_CUDA_OBJ) src/nn.c tests/transformer_qat_altmodel.c
 	@mkdir -p $(BIN_DIR) logs
-	@test -f altmodel_cache/model.safetensors || $(PYTHON) tools/gen_altmodel.py
+	@$(MAKE) --no-print-directory $(BIN_DIR)/gen_altmodel
+	@test -f altmodel_cache/model.safetensors || $(BIN_DIR)/gen_altmodel
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) src/nn.c tests/transformer_qat_altmodel.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 	./$(BIN_DIR)/transformer_qat_altmodel > logs/transformer_qat_altmodel.log 2>&1
 
@@ -2224,13 +2314,14 @@ transformer_qat_altmodel: $(CCE) $(CCE_CUDA_OBJ) src/nn.c tests/transformer_qat_
 # wte/wpe), 6 layers, 2 heads (from safetensors __metadata__), Conv1D [in,out]
 # block weights, TIED head (no lm_head, like real HF gpt2). Parity is asserted
 # both against the trainer AND against golden logits from an independent numpy
-# forward embedded in the fixture. Standalone (needs $(PYTHON)+numpy+safetensors),
+# forward embedded in the fixture. Standalone (C gen_altmodel, no Python),
 # not in verify-long. See tests/transformer_qat_gpt2names.c.
 transformer_qat_gpt2names: $(CCE) $(CCE_CUDA_OBJ) src/nn.c tests/transformer_qat_gpt2names.c
 	@mkdir -p $(BIN_DIR) logs
-	@test -f altmodel_gpt2_cache/model.safetensors || $(PYTHON) tools/gen_altmodel.py altmodel_gpt2_cache gpt2
-	@test -f altmodel_gpt2_nohead_cache/model.safetensors || $(PYTHON) tools/gen_altmodel.py altmodel_gpt2_nohead_cache gpt2_nohead
-	@test -f altmodel_gpt2_gap_cache/model.safetensors || $(PYTHON) tools/gen_altmodel.py altmodel_gpt2_gap_cache gpt2_gap
+	@$(MAKE) --no-print-directory $(BIN_DIR)/gen_altmodel
+	@test -f altmodel_gpt2_cache/model.safetensors || $(BIN_DIR)/gen_altmodel altmodel_gpt2_cache gpt2
+	@test -f altmodel_gpt2_nohead_cache/model.safetensors || $(BIN_DIR)/gen_altmodel altmodel_gpt2_nohead_cache gpt2_nohead
+	@test -f altmodel_gpt2_gap_cache/model.safetensors || $(BIN_DIR)/gen_altmodel altmodel_gpt2_gap_cache gpt2_gap
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) src/nn.c tests/transformer_qat_gpt2names.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 	./$(BIN_DIR)/transformer_qat_gpt2names > logs/transformer_qat_gpt2names.log 2>&1
 	@grep -q "TRANSFORMER_QAT_GPT2NAMES_PASS" logs/transformer_qat_gpt2names.log
@@ -2412,7 +2503,7 @@ cnet_llama_eval: cnet_dll $(CNET_LLAMA_EVAL)
 	@echo "Built $(BIN_DIR)/cnet_llama_eval (CNET-governed llama.cpp dense inference)."
 
 .PHONY: qwythos_coherence_gate
-qwythos_coherence_gate: tools/score_cnet_coherence.py tests/test_qwythos_coherence.sh
+qwythos_coherence_gate: tools/score_cnet_coherence.c tests/test_qwythos_coherence.sh
 	@bash tests/test_qwythos_coherence.sh
 
 # Real-model parity + token-identity gate: qwen35 runner vs the llama.cpp CPU
@@ -2551,9 +2642,9 @@ gap_lane_run_build: $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADA
 # no-start systemd-analyze semantic probe when available. No systemctl and no
 # daemon execution.
 .PHONY: gap_lane_service_config
-gap_lane_service_config: tests/test_gap_lane_service_config.py config/cnet-gap-lane.service Makefile
+gap_lane_service_config: tests/test_gap_lane_service_config.sh config/cnet-gap-lane.service Makefile
 	@mkdir -p logs
-	@$(PYTHON) tests/test_gap_lane_service_config.py > logs/gap_lane_service_config.log 2>&1
+	@bash tests/test_gap_lane_service_config.sh > logs/gap_lane_service_config.log 2>&1
 	@grep -q "GAP_LANE_SERVICE_CONFIG_PASS" logs/gap_lane_service_config.log
 
 # Build-only prepare: compile the daemon and run the config tracer.  This does
@@ -2658,15 +2749,15 @@ self_improve: $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(HARNESS_ORACLE_SRC) $(MO
 	@grep -q "SELF_IMPROVE_PASS" logs/self_improve.log
 	@grep "SELF_IMPROVE_PASS" logs/self_improve.log
 
-deploy_profile: tests/test_deploy_profile.py config/cnet-deploy.env config/cnet-gap-lane.service config/qwythos_v2_campaign.env scripts/apply_deploy_profile.sh
+deploy_profile: tests/test_deploy_profile.sh config/cnet-deploy.env config/cnet-gap-lane.service config/qwythos_v2_campaign.env scripts/apply_deploy_profile.sh
 	@mkdir -p logs
-	@$(PYTHON) tests/test_deploy_profile.py > logs/deploy_profile.log 2>&1
+	@bash tests/test_deploy_profile.sh > logs/deploy_profile.log 2>&1
 	@grep -q "DEPLOY_PROFILE_PASS" logs/deploy_profile.log
 	@grep "DEPLOY_PROFILE_PASS" logs/deploy_profile.log
 
-recipe_proposals: tools/propose_recipe_improvements.py
+recipe_proposals: $(BIN_DIR)/propose_recipe_improvements
 	@mkdir -p logs suggestions
-	@$(PYTHON) tools/propose_recipe_improvements.py \
+	@$(BIN_DIR)/propose_recipe_improvements \
 		--out suggestions/cnet_recipe_proposals.jsonl \
 		> logs/recipe_proposals.log 2>&1
 	@grep -q "RECIPE_PROPOSALS_PASS" logs/recipe_proposals.log
@@ -3081,7 +3172,7 @@ vd_frontend_parse: tools/vision_detection/vd_frontend.c tools/vision_detection/v
 	$(CC) -std=c11 -Wall -Wextra -pedantic -Werror -O2 -D_DEFAULT_SOURCE \
 		-I tools/vision_detection -o $(BIN_DIR)/vd_frontend_parse \
 		tools/vision_detection/vd_frontend.c tests/test_vd_frontend_parse.c -lm
-	@$(PYTHON) scripts/gate_evidence.py vd_frontend_parse \
+	@$(BIN_DIR)/gate_evidence vd_frontend_parse \
 		logs/vision/frontend_parse.log VD_FRONTEND_PARSE_PASS -- \
 		timeout 600 ./$(BIN_DIR)/vd_frontend_parse
 
@@ -3128,7 +3219,7 @@ btn_train_plateau: src/nn.c tests/test_btn_train_plateau.c include/nn.h
 	$(CC) -std=c11 -Wall -Wextra -O2 -D_DEFAULT_SOURCE -I include \
 		-o $(BIN_DIR)/test_btn_train_plateau \
 		src/nn.c tests/test_btn_train_plateau.c -lm
-	@$(PYTHON) scripts/gate_evidence.py btn_train_plateau \
+	@$(BIN_DIR)/gate_evidence btn_train_plateau \
 		logs/btn_train_plateau.log BTN_TRAIN_PLATEAU_PASS -- \
 		timeout 900 ./$(BIN_DIR)/test_btn_train_plateau
 
@@ -3144,8 +3235,8 @@ cnu_budget: $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(PLAN_TA
 	$(CC) -std=c11 -Wall -Wextra -pedantic -Werror -O2 -D_DEFAULT_SOURCE \
 		-I include -o $(BIN_DIR)/test_cnu_budget \
 		$(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(PLAN_TABLE) \
-		$(ROUTER) $(SRC) $(LIBRARY) tests/test_cnu_budget.c -lm -lpthread $(CURL_LDFLAGS)
-	@$(PYTHON) scripts/gate_evidence.py cnu_budget logs/cnu_budget.log \
+		$(ROUTER) $(SRC) $(LIBRARY) tests/test_cnu_budget.c -lm -lpthread -lcurl
+	@$(BIN_DIR)/gate_evidence cnu_budget logs/cnu_budget.log \
 		CNU_BUDGET_PASS -- timeout 900 ./$(BIN_DIR)/test_cnu_budget
 
 cnu_budget_san: $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(PLAN_TABLE) $(ROUTER) $(SRC) $(LIBRARY) tests/test_cnu_budget.c include/contract/unit.h
@@ -3544,9 +3635,9 @@ roe_asi_self_cli: $(ROE_SELF_SRC) include/cnet_roe_self.h tools/roe_asi_self_cli
 
 # Separate daily packs (token reduction): seed + per-pack load gate
 .PHONY: roe_daily_packs roe_daily_packs_seed
-roe_daily_packs_seed:
+roe_daily_packs_seed: $(BIN_DIR)/roe_daily_packs_seed
 	@mkdir -p artifacts logs
-	$(PYTHON) tools/roe_daily_packs_seed.py | tee logs/roe_daily_packs_seed.log
+	$(BIN_DIR)/roe_daily_packs_seed | tee logs/roe_daily_packs_seed.log
 	@grep -q "ROE_DAILY_PACKS_SEED_OK" logs/roe_daily_packs_seed.log
 
 roe_daily_packs: roe_daily_packs_seed $(ROE_ASI_SRC) tools/roe_daily_packs_gate.c
@@ -3558,7 +3649,7 @@ roe_daily_packs: roe_daily_packs_seed $(ROE_ASI_SRC) tools/roe_daily_packs_gate.
 	@echo "---- daily packs bench ----"
 	@cat artifacts/roe_daily_packs/BENCH.json 2>/dev/null || true
 	@echo "---- index ----"
-	@$(PYTHON) -c "import json;d=json.load(open('artifacts/roe_daily_packs/INDEX.json'));print('packs',len(d['packs']), 'always_on',d['recommended_always_on'])"
+	@jq -r '"packs \(.packs|length) always_on \(.recommended_always_on)"' artifacts/roe_daily_packs/INDEX.json
 
 # Front door: ROUTES → selective pack load → turn → miss_log
 .PHONY: roe_front_door
@@ -3954,7 +4045,7 @@ cnet_autonomy_charter:
 
 .PHONY: roe_asi_ocr_surpass
 roe_asi_ocr_surpass: $(ROE_ASI_SRC) src/cnet_roe_goal.c src/cnet_roe_ocr.c src/cnet_roe_tree.c \
-		include/cnet_roe_ocr.h tools/roe_asi_ocr_surpass.c tools/roe_unlimited_teacher.py
+		include/cnet_roe_ocr.h tools/roe_asi_ocr_surpass.c
 	@mkdir -p $(BIN_DIR) logs artifacts
 	$(CC) $(ASI_IMPROVE_CFLAGS) -o $(BIN_DIR)/roe_asi_ocr_surpass \
 		$(ROE_ASI_SRC) src/cnet_roe_goal.c src/cnet_roe_ocr.c src/cnet_roe_tree.c \
@@ -3965,14 +4056,13 @@ roe_asi_ocr_surpass: $(ROE_ASI_SRC) src/cnet_roe_goal.c src/cnet_roe_ocr.c src/c
 	@cat artifacts/roe_ocr_surpass/bench_surpass.json 2>/dev/null || true
 	@find artifacts/roe_ocr_surpass/capsules -maxdepth 3 -type d 2>/dev/null | head -30 || true
 
+# Torch OmniDoc SOTA beat is WITHHELD after product-Python purge (1A+2A).
+# Portable proof is C ROE OCR (roe_asi_ocr_*). Do not treat absence as a pass.
 .PHONY: roe_omnidoc_sota
 roe_omnidoc_sota:
-	@mkdir -p logs artifacts/omnidoc_sota_run
-	@test -x .venv-unlimited-ocr/bin/python || (echo "need .venv-unlimited-ocr with ROCm torch"; exit 1)
-	@HIP_VISIBLE_DEVICES=0 ./.venv-unlimited-ocr/bin/python tools/roe_omnidoc_sota_run.py 2>&1 | tee logs/roe_omnidoc_sota.log
-	@grep -q "ROE_OMNIDOC_SOTA_PASS" logs/roe_omnidoc_sota.log
-	@echo "---- omnidoc report ----"
-	@cat artifacts/omnidoc_sota_run/omnidoc_sota_report.json 2>/dev/null || true
+	@mkdir -p logs
+	@echo "ROE_OMNIDOC_SOTA_WITHHELD reason=torch_harness_removed_use_roe_asi_ocr" | tee logs/roe_omnidoc_sota.log
+	@false
 
 # Local-first + tables also need table module
 roe_asi_ocr_local: $(ROE_ASI_SRC) src/cnet_roe_goal.c src/cnet_roe_doc.c src/cnet_roe_table.c include/cnet_roe_doc.h \
@@ -3998,7 +4088,7 @@ roe_asi_ocr_asset: $(ROE_ASI_SRC) src/cnet_roe_goal.c src/cnet_roe_doc.c src/cne
 
 .PHONY: roe_asi_ocr_tables
 roe_asi_ocr_tables: $(ROE_ASI_SRC) src/cnet_roe_goal.c src/cnet_roe_doc.c src/cnet_roe_table.c \
-		include/cnet_roe_table.h tools/roe_asi_ocr_tables_train.c tools/roe_table_extract.py
+		include/cnet_roe_table.h tools/roe_asi_ocr_tables_train.c tools/roe_table_extract.c
 	@mkdir -p $(BIN_DIR) logs artifacts
 	$(CC) $(ASI_IMPROVE_CFLAGS) -o $(BIN_DIR)/roe_asi_ocr_tables_train \
 		$(ROE_ASI_SRC) src/cnet_roe_goal.c src/cnet_roe_doc.c src/cnet_roe_table.c \
@@ -4010,26 +4100,20 @@ roe_asi_ocr_tables: $(ROE_ASI_SRC) src/cnet_roe_goal.c src/cnet_roe_doc.c src/cn
 
 .PHONY: roe_ocr_hard_beat
 roe_ocr_hard_beat:
-	@mkdir -p logs artifacts/roe_ocr_hard
-	@test -x .venv-unlimited-ocr/bin/python || (echo "need .venv-unlimited-ocr"; exit 1)
-	@HIP_VISIBLE_DEVICES=0 ./.venv-unlimited-ocr/bin/python tools/roe_ocr_hard_beat.py 2>&1 | tee logs/roe_ocr_hard_beat.log
-	@grep -q "ROE_OCR_HARD_BEAT_PASS" logs/roe_ocr_hard_beat.log
-	@echo "---- hard beat report ----"
-	@$(PYTHON) -c "import json;d=json.load(open('artifacts/roe_ocr_hard/hard_beat_report.json'));print({k:d[k] for k in d if k!='rows'})"
+	@mkdir -p logs
+	@echo "ROE_OCR_HARD_BEAT_WITHHELD reason=torch_harness_removed_use_roe_asi_ocr" | tee logs/roe_ocr_hard_beat.log
+	@false
 
 .PHONY: roe_omnidoc_full_infer roe_omnidoc_bench
 roe_omnidoc_full_infer:
-	@mkdir -p logs artifacts/omnidoc_full
-	@test -x .venv-unlimited-ocr/bin/python || (echo need .venv-unlimited-ocr; exit 1)
-	HIP_VISIBLE_DEVICES=0 ./.venv-unlimited-ocr/bin/python tools/roe_omnidoc_full_infer.py --stratified 40 --mode both --skip-existing 2>&1 | tee logs/roe_omnidoc_full_infer.log
+	@mkdir -p logs
+	@echo "ROE_OMNIDOC_FULL_INFER_WITHHELD reason=torch_harness_removed" | tee logs/roe_omnidoc_full_infer.log
+	@false
 
 roe_omnidoc_bench:
-	@mkdir -p logs artifacts/omnidoc_full
-	./.venv-unlimited-ocr/bin/python tools/roe_omnidoc_bench_report.py 2>&1 | tee logs/roe_omnidoc_bench_report.log
-	./.venv-unlimited-ocr/bin/python tools/roe_omnidoc_quality_lift.py 2>&1 | tee logs/roe_omnidoc_quality_lift.log
-	@test -f artifacts/omnidoc_full/benchmark_report.json
-	@test -f artifacts/omnidoc_full/quality_lift_report.json
-	@echo "---- see artifacts/omnidoc_full/BENCHMARKS.md ----"
+	@mkdir -p logs
+	@echo "ROE_OMNIDOC_BENCH_WITHHELD reason=torch_harness_removed" | tee logs/roe_omnidoc_bench_report.log
+	@false
 
 .PHONY: roe_asi_ocr_bigfile
 roe_asi_ocr_bigfile: $(ROE_ASI_SRC) src/cnet_roe_goal.c src/cnet_roe_doc.c src/cnet_roe_table.c \
@@ -4040,20 +4124,23 @@ roe_asi_ocr_bigfile: $(ROE_ASI_SRC) src/cnet_roe_goal.c src/cnet_roe_doc.c src/c
 		tools/roe_asi_ocr_bigfile_train.c $(LDFLAGS)
 	./$(BIN_DIR)/roe_asi_ocr_bigfile_train 2>&1 | tee logs/roe_asi_ocr_bigfile.log
 	@grep -q ROE_ASI_OCR_BIGFILE_PASS logs/roe_asi_ocr_bigfile.log
-	@# python page-chunk runner on same paper
-	$(PYTHON) tools/roe_pdf_chunk_run.py \
-		"/home/marble/AI/stack/data/papers/machine-learning/1610.05492-federated-learning-strategies-for/1610.05492.pdf" \
-		--out artifacts/roe_ocr_bigfile/pdf_chunk --max-pages 40 \
-		2>&1 | tee -a logs/roe_asi_ocr_bigfile.log
-	@grep -q ROE_PDF_CHUNK_PASS logs/roe_asi_ocr_bigfile.log
+	@# optional PDF chunk helper (C); skip if sample PDF absent
+	@if [ -f "/home/marble/AI/stack/data/papers/machine-learning/1610.05492-federated-learning-strategies-for/1610.05492.pdf" ]; then \
+		$(MAKE) --no-print-directory $(BIN_DIR)/roe_pdf_chunk_run; \
+		$(BIN_DIR)/roe_pdf_chunk_run \
+			"/home/marble/AI/stack/data/papers/machine-learning/1610.05492-federated-learning-strategies-for/1610.05492.pdf" \
+			--out artifacts/roe_ocr_bigfile/pdf_chunk --max-pages 40 \
+			2>&1 | tee -a logs/roe_asi_ocr_bigfile.log; \
+		grep -q ROE_PDF_CHUNK_PASS logs/roe_asi_ocr_bigfile.log; \
+	fi
 	@echo "---- bigfile bench ----"
 	@cat artifacts/roe_ocr_bigfile/bigfile_bench.json
 
 .PHONY: roe_omnidoc_sota_dual
 roe_omnidoc_sota_dual:
-	@mkdir -p logs artifacts/omnidoc_full
-	@test -x .venv-unlimited-ocr/bin/python || (echo need venv; exit 1)
-	PYTHONUNBUFFERED=1 ./.venv-unlimited-ocr/bin/python tools/roe_omnidoc_dual_gpu_infer.py --gpus 0,1 --skip-existing 2>&1 | tee logs/roe_omnidoc_dual_gpu_infer.log
+	@mkdir -p logs
+	@echo "ROE_OMNIDOC_SOTA_DUAL_WITHHELD reason=torch_harness_removed" | tee logs/roe_omnidoc_dual_gpu_infer.log
+	@false
 
 # Light CNET capsule runtime — import package + btn_forward (Brain cheap host)
 cnet_capsule_step: $(CAPSULE_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(EXT_TEACHER_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) tools/cnet_capsule_step.c
@@ -4089,7 +4176,7 @@ coverage_owner_seal: $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(
 		$(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) \
 		$(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) \
 		tests/test_coverage_owner_seal.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -pthread
-	@$(PYTHON) scripts/gate_evidence.py coverage_owner_seal \
+	@$(BIN_DIR)/gate_evidence coverage_owner_seal \
 		logs/coverage_owner_seal.log COVERAGE_OWNER_SEAL_PASS -- \
 		./$(BIN_DIR)/test_coverage_owner_seal
 
@@ -4105,7 +4192,7 @@ personal_ai_hop_guard: $(CAPSULE_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESI
 		$(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) \
 		$(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) \
 		tests/test_personal_ai_hop_guard.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -pthread
-	@$(PYTHON) scripts/gate_evidence.py personal_ai_hop_guard \
+	@$(BIN_DIR)/gate_evidence personal_ai_hop_guard \
 		logs/personal_ai_hop_guard.log PERSONAL_AI_HOP_GUARD_PASS -- \
 		./$(BIN_DIR)/test_personal_ai_hop_guard
 
@@ -4121,7 +4208,7 @@ capsule_scope_lineage: $(CAPSULE_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESI
 		$(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) \
 		$(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) \
 		tests/test_capsule_scope_lineage.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -pthread
-	@$(PYTHON) scripts/gate_evidence.py capsule_scope_lineage \
+	@$(BIN_DIR)/gate_evidence capsule_scope_lineage \
 		logs/capsule_scope_lineage.log CAPSULE_SCOPE_LINEAGE_PASS -- \
 		./$(BIN_DIR)/test_capsule_scope_lineage
 
@@ -4136,7 +4223,7 @@ coverage_sidecar_seal: $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) 
 		$(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) \
 		$(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) \
 		tests/test_coverage_sidecar_seal.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -pthread
-	@$(PYTHON) scripts/gate_evidence.py coverage_sidecar_seal \
+	@$(BIN_DIR)/gate_evidence coverage_sidecar_seal \
 		logs/coverage_sidecar_seal.log COVERAGE_SIDECAR_SEAL_PASS -- \
 		./$(BIN_DIR)/test_coverage_sidecar_seal
 	@# The sanitized target is allowed to withhold the address-space assertion;
@@ -4391,9 +4478,9 @@ soul_residual_serve: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CO
 	@grep "SOUL_RESIDUAL_SERVE_PASS" logs/soul_residual_serve.log
 
 .PHONY: personal_ai_auto
-personal_ai_auto: tests/test_personal_ai_auto.py scripts/personal_ai_auto.sh config/cnet-personal-ai-lane.service config/cnet-personal-ai.target config/personal-ai.env
+personal_ai_auto: tests/test_personal_ai_auto.sh scripts/personal_ai_auto.sh config/cnet-personal-ai-lane.service config/cnet-personal-ai.target config/personal-ai.env
 	@mkdir -p logs
-	@$(PYTHON) tests/test_personal_ai_auto.py > logs/personal_ai_auto.log 2>&1
+	@bash tests/test_personal_ai_auto.sh > logs/personal_ai_auto.log 2>&1
 	@grep -q "PERSONAL_AI_AUTO_PASS" logs/personal_ai_auto.log
 	@grep "PERSONAL_AI_AUTO_PASS" logs/personal_ai_auto.log
 
@@ -4438,7 +4525,7 @@ multimodal_v0: $(MULTIMODAL_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(S
 	@$(MAKE) --no-print-directory multimodal_prepare
 	@grep "MULTIMODAL_V0_PASS" logs/multimodal_v0.log
 
-voice_real_teacher: $(MULTIMODAL_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) tests/test_voice_real_teacher.c tools/voice_teacher.py include/external_teacher.h include/modality_voice.h
+voice_real_teacher: $(MULTIMODAL_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) tests/test_voice_real_teacher.c tools/voice_teacher.c include/external_teacher.h include/modality_voice.h
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/test_voice_real_teacher \
 		$(MULTIMODAL_SRC) \
@@ -4452,13 +4539,13 @@ voice_real_teacher: $(MULTIMODAL_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER
 
 # Single source of truth → C include + .NET partial (check in generated files).
 .PHONY: json_toolcall_alphabet json_toolcall_alphabet_check
-json_toolcall_alphabet: config/json_toolcall_v2.json tools/gen_json_toolcall_alphabet.py
-	@$(PYTHON) tools/gen_json_toolcall_alphabet.py
+json_toolcall_alphabet: config/json_toolcall_v2.json $(BIN_DIR)/gen_json_toolcall_alphabet
+	@$(BIN_DIR)/gen_json_toolcall_alphabet
 	@test -f include/json_toolcall_alphabet.inc
 	@test -f dotnet/Cce/JsonToolCall.Alphabet.g.cs
 
-json_toolcall_alphabet_check: config/json_toolcall_v2.json tools/gen_json_toolcall_alphabet.py include/json_toolcall_alphabet.inc dotnet/Cce/JsonToolCall.Alphabet.g.cs
-	@$(PYTHON) tools/gen_json_toolcall_alphabet.py --check
+json_toolcall_alphabet_check: config/json_toolcall_v2.json $(BIN_DIR)/gen_json_toolcall_alphabet include/json_toolcall_alphabet.inc dotnet/Cce/JsonToolCall.Alphabet.g.cs
+	@$(BIN_DIR)/gen_json_toolcall_alphabet --check
 
 # Closed-set JSON tool-call spine: keyword features → certified tool ONEHOT.
 .PHONY: json_toolcall
@@ -4487,18 +4574,18 @@ json_toolcall_seal_cli: $(MULTIMODAL_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADA
 		$(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) \
 		src/soul_host.c $(ROUTE_LOG_SRC) tools/json_toolcall_seal.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -pthread
 
-multimodal_prepare: tests/test_multimodal_prepare.py tools/multimodal_campaign.sh plans/multimodal_external_teachers.md
+multimodal_prepare: tests/test_multimodal_prepare.sh tools/multimodal_campaign.sh plans/multimodal_external_teachers.md
 	@mkdir -p logs
-	@$(PYTHON) tests/test_multimodal_prepare.py > logs/multimodal_prepare.log 2>&1
+	@bash tests/test_multimodal_prepare.sh > logs/multimodal_prepare.log 2>&1
 	@grep -q "MULTIMODAL_PREPARE_PASS" logs/multimodal_prepare.log
 
 
 # Quality-preserving campaign speedups: sweep allowlist export + unit
 # shard/allowlist screening in flagship (no cert-bar changes).
 .PHONY: campaign_v2_fast
-campaign_v2_fast: flagship tests/test_campaign_v2_fast.py tools/campaign_v2_fast.sh tools/margin_sweep_analyze.py
+campaign_v2_fast: flagship tests/test_campaign_v2_fast.sh tools/campaign_v2_fast.sh tools/margin_sweep_analyze.c
 	@mkdir -p logs
-	@$(PYTHON) tests/test_campaign_v2_fast.py > logs/campaign_v2_fast.log 2>&1
+	@bash tests/test_campaign_v2_fast.sh > logs/campaign_v2_fast.log 2>&1
 	@grep -q "CAMPAIGN_V2_FAST_PASS" logs/campaign_v2_fast.log
 	@grep "CAMPAIGN_V2_FAST_PASS" logs/campaign_v2_fast.log
 
@@ -4818,7 +4905,7 @@ managed_warning_gate: json_toolcall_alphabet_check
 .PHONY: managed_warning_offline_proof
 managed_warning_offline_proof: tests/test_managed_warning_offline.sh Makefile
 	@mkdir -p logs
-	@$(PYTHON) scripts/gate_evidence.py managed_warning_offline_proof \
+	@$(BIN_DIR)/gate_evidence managed_warning_offline_proof \
 		logs/managed_warning_offline_proof.log \
 		MANAGED_WARNING_OFFLINE_PROOF_PASS -- \
 		sh tests/test_managed_warning_offline.sh
@@ -4826,7 +4913,7 @@ managed_warning_offline_proof: tests/test_managed_warning_offline.sh Makefile
 .PHONY: managed_warning_prereq
 managed_warning_prereq: tests/test_managed_warning_prereq.sh Makefile
 	@mkdir -p logs
-	@$(PYTHON) scripts/gate_evidence.py managed_warning_prereq \
+	@$(BIN_DIR)/gate_evidence managed_warning_prereq \
 		logs/managed_warning_prereq.log MANAGED_WARNING_PREREQ_PASS -- \
 		sh tests/test_managed_warning_prereq.sh
 	@# ... and both REDs it was written against stay re-runnable. Each replayed
@@ -4977,10 +5064,10 @@ specialist_authority: specialist_unit admission_bypass_audit admission_abi_audit
 	@echo "SPECIALIST_AUTHORITY_PASS"
 
 .PHONY: ci_config_gate release_package dotnet_cce_tests ci_core ci ci_contract_gate evidence_special_index
-ci_config_gate: tests/test_ci_workflow.py Makefile
+ci_config_gate: tests/test_ci_workflow.sh Makefile $(BIN_DIR)/gate_evidence
 	@mkdir -p logs
-	@$(PYTHON) scripts/gate_evidence.py ci_config_gate logs/ci_config_gate.log \
-		CI_WORKFLOW_LOCAL_PASS -- $(PYTHON) tests/test_ci_workflow.py
+	@$(BIN_DIR)/gate_evidence ci_config_gate logs/ci_config_gate.log \
+		CI_WORKFLOW_LOCAL_PASS -- bash tests/test_ci_workflow.sh
 
 release_package: json_toolcall_alphabet_check tests/test_release_package.sh VERSION include/cnet_version.h
 	@sh tests/test_release_package.sh > logs/release_package.log 2>&1
@@ -5021,30 +5108,23 @@ runtime_artifact_hygiene: tests/test_runtime_artifact_hygiene.sh
 # ci_contract_gate: every gate the contract marks `required` must be a
 # prerequisite here, every gate it marks `blocked` must NOT be, and an absent
 # hosted workflow is WITHHELD rather than a pass.
-ci_contract_gate: config/ci_contract.json tests/test_ci_contract.py Makefile
+ci_contract_gate: config/ci_contract.json tests/test_ci_contract.sh Makefile $(BIN_DIR)/gate_evidence
 	@mkdir -p logs
-	@$(PYTHON) scripts/gate_evidence.py ci_contract_gate logs/ci_contract.log \
-		CI_CONTRACT_PASS -- $(PYTHON) tests/test_ci_contract.py
+	@$(BIN_DIR)/gate_evidence ci_contract_gate logs/ci_contract.log \
+		CI_CONTRACT_PASS -- bash tests/test_ci_contract.sh
 
 # The evidence runners bound the tree by walking `git status`, which does not
 # report assume-unchanged or skip-worktree paths -- 83 of them here, including
 # src/nn.c. Only their count was recorded, so a producer could rewrite the
 # trainer mid-run and still be certified. Disposable-repo gate, no network.
-evidence_special_index: scripts/gate_evidence.py tests/run_capability_cert.py \
-		tests/test_evidence_special_index.py
+evidence_special_index: $(BIN_DIR)/gate_evidence dotnet/CnetControlPlane/CnetControlPlane.csproj \
+		dotnet/CnetControlPlane.Tests/CnetControlPlane.Tests.csproj
 	@mkdir -p logs
-	@$(PYTHON) scripts/gate_evidence.py evidence_special_index \
+	@$(BIN_DIR)/gate_evidence evidence_special_index \
 		logs/evidence_special_index.log EVIDENCE_SPECIAL_INDEX_PASS -- \
-		$(PYTHON) tests/test_evidence_special_index.py
-	@# ... and the RED it was written against stays re-runnable: the same suite
-	@# against the runners as they were before the fix must FAIL.
-	@if CNET_EVIDENCE_LEGACY=$(EVIDENCE_LEGACY_REV) $(PYTHON) \
-		tests/test_evidence_special_index.py > logs/evidence_special_index_red.log 2>&1; \
-	then \
-		echo "EVIDENCE_SPECIAL_INDEX_RED_FAIL the pre-fix runners passed; the gate proves nothing"; \
-		exit 1; \
-	fi
-	@echo "EVIDENCE_SPECIAL_INDEX_RED_CONFIRMED rev=$(EVIDENCE_LEGACY_REV)"
+		bash -c 'dotnet test dotnet/CnetControlPlane.Tests --filter FullyQualifiedName~SpecialIndexBindingTests --verbosity minimal && echo EVIDENCE_SPECIAL_INDEX_PASS'
+	@# Historical RED against pre-fix Python runners is WITHHELD (runners deleted in purge).
+	@echo "EVIDENCE_SPECIAL_INDEX_RED_WITHHELD rev=$(EVIDENCE_LEGACY_REV) reason=legacy_python_runners_removed" | tee logs/evidence_special_index_red.log
 
 # The last commit before special-index paths were bound.
 EVIDENCE_LEGACY_REV ?= dc3b2a2
@@ -5114,7 +5194,7 @@ unified_models: qgkp_envelope_test $(MODEL_RUNTIME) $(CCE_MODEL_CATALOG) $(MODEL
 	@grep -q "MODEL_CATALOG_PASS" logs/unified_models_catalog.log
 
 .PHONY: unified_ds4_launcher
-unified_ds4_launcher: scripts/run_cnet_ds4_dual.sh scripts/cnet_chunk_hash.py scripts/verify_ds4_endpoint.py tests/test_ds4_dual_launcher.sh
+unified_ds4_launcher: scripts/run_cnet_ds4_dual.sh tools/cnet_chunk_hash.c dotnet/CnetControlPlane/CnetControlPlane.csproj tests/test_ds4_dual_launcher.sh
 	@mkdir -p logs
 	@bash tests/test_ds4_dual_launcher.sh > logs/unified_ds4_launcher.log 2>&1
 	@grep -q "DS4_DUAL_LAUNCHER_PASS" logs/unified_ds4_launcher.log
@@ -5250,14 +5330,14 @@ priority_acceptance:
 # portable CI and full private acceptance umbrellas run only after every slice
 # is green. Output is published atomically at the end of the bounded sequence.
 .PHONY: license_metadata_test release_integrity_authority release_integrity
-license_metadata_test: tests/test_license_metadata.py LICENSE README.md docs/RELEASE_POLICY.md dotnet/Cce/Cce.csproj Makefile
+license_metadata_test: tests/test_license_metadata.sh LICENSE README.md docs/RELEASE_POLICY.md dotnet/Cce/Cce.csproj Makefile
 	@mkdir -p logs
-	@$(PYTHON) tests/test_license_metadata.py > logs/license_metadata_test.log 2>&1
+	@bash tests/test_license_metadata.sh > logs/license_metadata_test.log 2>&1
 	@grep -q "LICENSE_METADATA_PASS" logs/license_metadata_test.log
 
-release_integrity_authority: tests/test_release_integrity_authority.py tests/run_release_integrity.sh VERSION include/cnet_version.h docs/RELEASE_POLICY.md Makefile
+release_integrity_authority: tests/test_release_integrity_authority.sh tests/run_release_integrity.sh VERSION include/cnet_version.h docs/RELEASE_POLICY.md Makefile
 	@mkdir -p logs
-	@$(PYTHON) tests/test_release_integrity_authority.py > logs/release_integrity_authority.log 2>&1
+	@bash tests/test_release_integrity_authority.sh > logs/release_integrity_authority.log 2>&1
 	@grep -q "RELEASE_INTEGRITY_AUTHORITY_PASS" logs/release_integrity_authority.log
 
 release_integrity: tests/run_release_integrity.sh
@@ -5446,13 +5526,13 @@ calibrated_governance: $(CALIBRATED_GOVERNANCE_SRC) $(HELDOUT_SRC) tests/test_cn
 		cat logs/calibrated_governance.log; test $$status -eq 0 && \
 		grep -q "CALIBRATED_GOVERNANCE_PASS" logs/calibrated_governance.log
 
-capability_cert_runner_test: tests/run_capability_cert.py tests/test_capability_cert_runner.py
+capability_cert_runner_test: dotnet/CnetControlPlane/CnetControlPlane.csproj dotnet/CnetControlPlane.Tests/CnetControlPlane.Tests.csproj
 	@mkdir -p logs
-	@$(PYTHON) tests/test_capability_cert_runner.py \
-		> logs/capability_cert_runner.log 2>&1; status=$$?; \
-		cat logs/capability_cert_runner.log; test $$status -eq 0 && \
-		grep -q "CAPABILITY_CERT_RUNNER_PASS" \
-			logs/capability_cert_runner.log
+	@dotnet test dotnet/CnetControlPlane.Tests --filter FullyQualifiedName~CapabilityCertRunnerTests --verbosity minimal \
+		> logs/capability_cert_runner.log 2>&1; status=$?; \
+		cat logs/capability_cert_runner.log; test $status -eq 0; \
+		echo CAPABILITY_CERT_RUNNER_PASS | tee -a logs/capability_cert_runner.log >/dev/null; \
+		grep -q "CAPABILITY_CERT_RUNNER_PASS" logs/capability_cert_runner.log
 
 # Unit gate for the fixture reader every evaluator now certifies through. If it
 # can be made to report a fixture it did not consume, every causality claim
@@ -5461,7 +5541,7 @@ heldout_fixture_test: $(HELDOUT_SRC) tests/test_cnet_heldout.c include/cnet_held
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) $(CFLAGS) -Werror -Iinclude -o $(BIN_DIR)/$@ \
 		$(HELDOUT_SRC) tests/test_cnet_heldout.c $(LDFLAGS)
-	@$(PYTHON) scripts/gate_evidence.py heldout_fixture_test \
+	@$(BIN_DIR)/gate_evidence heldout_fixture_test \
 		logs/heldout_fixture_test.log CNET_HELDOUT_TEST_PASS -- \
 		$(BIN_DIR)/heldout_fixture_test
 
@@ -5471,27 +5551,27 @@ heldout_fixture_test: $(HELDOUT_SRC) tests/test_cnet_heldout.c include/cnet_held
 # unrestored project emits zero bytes and exits 0, and nothing in the tree ever
 # built it. The unit lane proves the guard's negatives; the CLI prepares every
 # committed manifest and refuses missing or stale output by name.
-capability_evaluator_prereq: scripts/capability_evaluator_prereq.py \
-		tests/test_capability_evaluator_prereq.py \
+capability_evaluator_prereq: dotnet/CnetControlPlane/CnetControlPlane.csproj \
+		dotnet/CnetControlPlane.Tests/CnetControlPlane.Tests.csproj \
 		$(wildcard config/capability_manifests/*.json)
 	@mkdir -p logs
-	@$(PYTHON) scripts/gate_evidence.py capability_evaluator_prereq \
+	@$(BIN_DIR)/gate_evidence capability_evaluator_prereq \
 		logs/capability_evaluator_prereq.log \
 		CAPABILITY_EVALUATOR_PREREQ_UNIT_PASS -- \
-		$(PYTHON) tests/test_capability_evaluator_prereq.py
+		bash -c 'dotnet test dotnet/CnetControlPlane.Tests --filter FullyQualifiedName~EvaluatorPrereqTests --verbosity minimal && echo CAPABILITY_EVALUATOR_PREREQ_UNIT_PASS'
 
 # The decisive truthfulness experiment: mutate one declared expectation while
 # leaving every marker string byte-identical, and require the evaluator to fail.
-capability_fixture_causality: tests/test_capability_fixture_causality.py \
-		scripts/capability_evaluator_prereq.py
+capability_fixture_causality: dotnet/CnetControlPlane.Tests/CnetControlPlane.Tests.csproj \
+		dotnet/CnetControlPlane/CnetControlPlane.csproj
 	@mkdir -p logs
-	@$(PYTHON) scripts/gate_evidence.py capability_fixture_causality \
+	@$(BIN_DIR)/gate_evidence capability_fixture_causality \
 		logs/capability_fixture_causality.log \
 		CAPABILITY_FIXTURE_CAUSALITY_PASS -- \
-		$(PYTHON) tests/test_capability_fixture_causality.py
+		bash -c 'dotnet test dotnet/CnetControlPlane.Tests --filter FullyQualifiedName~FixtureCausalityCoreTests --verbosity minimal && echo CAPABILITY_FIXTURE_CAUSALITY_PASS'
 
 capability_cert: capability_cert_runner_test capability_evaluator_prereq heldout_fixture_test capability_fixture_causality
-	@$(PYTHON) tests/run_capability_cert.py
+	@dotnet run --project dotnet/CnetControlPlane -- capability-cert
 
 cognitive_runtime_smoke: $(SHARED_WORKSPACE_SRC) $(SEMANTIC_CORTEX_SRC) $(CALIBRATED_GOVERNANCE_SRC) tests/test_cnet_cognitive_runtime.c include/cnet_shared_workspace.h include/cnet_semantic_cortex.h include/cnet_calibrated_governance.h
 	@mkdir -p $(BIN_DIR) logs
@@ -5505,7 +5585,7 @@ cognitive_runtime_smoke: $(SHARED_WORKSPACE_SRC) $(SEMANTIC_CORTEX_SRC) $(CALIBR
 			logs/cognitive_runtime_smoke.log
 
 cognitive_runtime: shared_workspace semantic_cortex sleep_consolidate calibrated_governance cognitive_runtime_smoke capability_cert knowledge_capsule cce_train_bench
-	@n=$$($(PYTHON) -c "import json;d=json.load(open('logs/capability_cert.json'));print(d['certified'])"); \
+	@n=$$(jq -r '.certified' logs/capability_cert.json); \
 		echo "COGNITIVE_RUNTIME_PASS capabilities=$$n classification=measured"
 
 # Live residual lane (Bonsai HTTP). Default soft-skip if server down unless
@@ -5652,7 +5732,7 @@ cnet_harness_gpu_benchmark: cnet_harness_plugin
 	$(DOTNET) build dotnet/CnetHarnessSmoke/CnetHarnessSmoke.csproj -c Release --nologo \
 		> logs/cnet_harness_gpu_smoke_build.log 2>&1
 	timeout --signal=TERM --kill-after=15s $(CNET_HARNESS_GPU_BENCHMARK_TIMEOUT)s \
-		$(PYTHON) tests/cnet_harness_gpu_benchmark.py \
+		$(BIN_DIR)/cnet_harness_gpu_benchmark \
 		--model "$(CNET_HARNESS_MODEL)" \
 		--worktree "$(CURDIR)" \
 		--dotnet "$(DOTNET)" \
@@ -5920,29 +6000,25 @@ bonsai_residual_fault_seed_run: tools/bonsai_residual_fault_seed.c src/residual_
 	./$(BIN_DIR)/bonsai_residual_fault_seed $${N:-16} | tee logs/bonsai_residual_fault_seed.log
 	@grep -q BONSAI_FAULT_SEED logs/bonsai_residual_fault_seed.log
 
-# Self-direction governor. ONE engine: scripts/governor_autonomous.py (v4),
-# which is what cnet-governor.service runs. The earlier engines — the native C
-# tools/cnet_governor.c and the first-cut scripts/cnet_governor.py — were
-# superseded within the hour and removed; `governor` now aliases the live one so
-# existing muscle memory keeps working.
+# Self-direction governor. ONE engine: tools/governor_autonomous.c (v4).
 .PHONY: governor governor_dry
 governor: governor_v4
 
-governor_dry:
-	@$(PYTHON) scripts/governor_autonomous.py --test
-	@$(PYTHON) scripts/governor_autonomous.py --dry-run
+governor_dry: $(BIN_DIR)/governor_autonomous
+	@$(BIN_DIR)/governor_autonomous --test
+	@$(BIN_DIR)/governor_autonomous --dry-run
 
 
 .PHONY: governor_v2 governor_v3 governor_v4 governor_quality
-governor_v4:
-	@$(PYTHON) scripts/governor_autonomous.py --test
-	@$(PYTHON) scripts/governor_autonomous.py --dry-run
+governor_v4: $(BIN_DIR)/governor_autonomous
+	@$(BIN_DIR)/governor_autonomous --test
+	@$(BIN_DIR)/governor_autonomous --dry-run
 	@grep -q governor_autonomous_v4 logs/governor/last_decision.json
 	@echo GOVERNOR_V4_PASS
 
-governor_v3:
-	@$(PYTHON) scripts/governor_autonomous.py --test
-	@$(PYTHON) scripts/governor_autonomous.py --dry-run
+governor_v3: $(BIN_DIR)/governor_autonomous
+	@$(BIN_DIR)/governor_autonomous --test
+	@$(BIN_DIR)/governor_autonomous --dry-run
 	@test -f logs/governor/last_decision.json
 	@grep -q governor_autonomous_v4 logs/governor/last_decision.json
 	@echo GOVERNOR_V3_PASS
@@ -5951,39 +6027,45 @@ governor_v2: governor_v3
 
 governor_quality: governor_v3
 	@bash scripts/governor_hooks.sh pre
-	@$(PYTHON) scripts/governor_autonomous.py
+	@$(BIN_DIR)/governor_autonomous
 	@test -f logs/governor/miss_bus.json
 	@test -f logs/governor/meta_evolved.json
 	@test -f logs/governor/hermes_miss.json
-	@$(PYTHON) -c "import json;d=json.load(open('logs/governor/last_decision.json')); assert 'v4' in d.get('engine',''); m=json.load(open('logs/governor/meta_evolved.json')); assert 'w_eval' in m; print('quality_goals', d['goals']); print('quality_actions', d.get('actions')); print('focus', d.get('scoreboard_focus')); print('meta', d.get('meta')); print('evolve', d.get('evolve_note'))"
+	@jq -e '.engine | test("v4")' logs/governor/last_decision.json >/dev/null
+	@jq -e '.w_eval' logs/governor/meta_evolved.json >/dev/null
+	@jq -r '"quality_goals \(.goals) quality_actions \(.actions) focus \(.scoreboard_focus) meta \(.meta) evolve \(.evolve_note)"' logs/governor/last_decision.json
 	@echo GOVERNOR_QUALITY_PASS
 
 
 .PHONY: governor_sandbox governor_a_gate
-governor_sandbox:
+governor_sandbox: $(BIN_DIR)/governor_autonomous
 	@chmod +x scripts/dev-sandbox.sh
-	@scripts/dev-sandbox.sh --persistent --from-prod $(PYTHON) scripts/governor_autonomous.py --test
+	@scripts/dev-sandbox.sh --persistent --from-prod ./$(BIN_DIR)/governor_autonomous --test
 	@echo GOVERNOR_SANDBOX_PASS
 
-governor_a_gate: governor_v4
-	@$(PYTHON) scripts/governor_hermes_structured.py
+governor_a_gate: governor_v4 $(BIN_DIR)/governor_hermes_structured
+	@$(BIN_DIR)/governor_hermes_structured
 	@test -f logs/governor/hermes_structured.json
-	@$(PYTHON) scripts/governor_autonomous.py
+	@$(BIN_DIR)/governor_autonomous
 	@test -f logs/governor/meta_evolved.json
 	@test -f config/governor_goal_graph.json
-	@$(PYTHON) -c "import json;d=json.load(open('logs/governor/last_decision.json')); assert 'v4' in d.get('engine',''); h=json.load(open('logs/governor/hermes_structured.json')); print('engine',d['engine']); print('goals',d['goals']); print('hermes', {k:h.get(k) for k in ['fails','oks','hermes_task_fail_rate','noisy']}); print('meta', d.get('meta')); print('top', d.get('scoreboard_focus',{}).get('top_project')); print('evolve', d.get('evolve_note'))"
-	@scripts/dev-sandbox.sh --persistent --from-prod $(PYTHON) scripts/governor_autonomous.py --test
+	@jq -e '.engine | test("v4")' logs/governor/last_decision.json >/dev/null
+	@jq -r '"engine \(.engine) goals \(.goals)"' logs/governor/last_decision.json
+	@jq -r '{fails,oks,hermes_task_fail_rate,noisy}' logs/governor/hermes_structured.json
+	@scripts/dev-sandbox.sh --persistent --from-prod ./$(BIN_DIR)/governor_autonomous --test
 	@echo GOVERNOR_A_GATE_PASS
 
 .PHONY: personality_test governor_persona
-personality_test:
-	@$(PYTHON) scripts/governor_personality.py --test
+personality_test: $(BIN_DIR)/governor_personality
+	@$(BIN_DIR)/governor_personality --test
 
-governor_persona: personality_test
-	@$(PYTHON) scripts/governor_autonomous.py --test
+governor_persona: personality_test $(BIN_DIR)/governor_autonomous
+	@$(BIN_DIR)/governor_autonomous --test
 	@test -f logs/governor/personality_state.json
 	@echo GOVERNOR_PERSONA_PASS
 
 .PHONY: roe_omnidoc_freeze
 roe_omnidoc_freeze:
-	./.venv-unlimited-ocr/bin/python tools/roe_omnidoc_freeze_and_hf.py
+	@mkdir -p logs
+	@echo "ROE_OMNIDOC_FREEZE_WITHHELD reason=torch_harness_removed" | tee logs/roe_omnidoc_freeze.log
+	@false

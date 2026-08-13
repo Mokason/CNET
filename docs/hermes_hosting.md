@@ -2,7 +2,7 @@
 
 ## Status
 
-Phase 4 supplies compression metadata, but a file path is not a Hermes model identifier and Hermes does not load `.cnetpack` directly. Deployment is therefore admission-gated: `tools/render_hermes_wrapper.py` selects only an admitted candidate or the reference fallback from a real-model acceptance report, and `tools/run_hermes_wrapper.py` starts that GGUF through CPU-only `llama-server` before routing an isolated Hermes custom-provider session to it.
+Phase 4 supplies compression metadata, but a file path is not a Hermes model identifier and Hermes does not load `.cnetpack` directly. Deployment is therefore admission-gated: `cnet-control render-hermes-wrapper` selects only an admitted candidate or the reference fallback from a real-model acceptance report, and `cnet-control run-hermes-wrapper` starts that GGUF through CPU-only `llama-server` before routing an isolated Hermes custom-provider session to it.
 
 ## MCP Tool
 
@@ -53,12 +53,12 @@ Use these before or during compression-aware recovery passes so quantization and
 
 ## Deployment Steps
 
-1. Run `tools/run_real_model_acceptance.py` against a reference and candidate.
+1. Run `dotnet run --project dotnet/CnetControlPlane -- real-model-acceptance` against a reference and candidate.
 2. Require campaign `overall_pass=true`; a rejected candidate remains quarantined.
 3. Render the selected wrapper:
 
 ```sh
-python3 tools/render_hermes_wrapper.py \
+dotnet run --project dotnet/CnetControlPlane -- render-hermes-wrapper \
   --report reports/qwythos_real_model_acceptance.json \
   --server /path/to/cpu/llama-server \
   --output hermes_wrappers/model.selected.hermes.json
@@ -67,7 +67,7 @@ python3 tools/render_hermes_wrapper.py \
 4. Launch and probe the real Hermes path:
 
 ```sh
-python3 tools/run_hermes_wrapper.py \
+dotnet run --project dotnet/CnetControlPlane -- run-hermes-wrapper \
   --manifest hermes_wrappers/model.selected.hermes.json
 ```
 

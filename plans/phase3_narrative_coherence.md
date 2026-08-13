@@ -24,7 +24,7 @@
 - creative-task routing preference in `src/cce/cce_router.c`
 - native regression target `make narrative_coherence_test`
 - C# scoring and testimony metadata integration
-- bounded real-model authority in `tools/run_phase123_benchmarks.py`
+- bounded real-model authority in `tools/run_phase123_benchmarks.c`
 
 ## Gate Repair
 

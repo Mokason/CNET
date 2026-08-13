@@ -81,7 +81,11 @@ CUDA warm-up is still required with Native AOT. The cuBLAS first-call overhead (
 
 ## Benchmark Results
 
-Measured with `scripts/test_models_aot.py` on Windows 11, AMD Ryzen, RTX GPU. Single run per binary, greedy decode (temperature=0), 2 generated tokens. The wall-clock time includes process startup, model loading (mmap), and inference.
+Measured with the AOT model smoke path
+(`dotnet run --project src/CNET.Llm.Smoke -- models-aot`)
+on Windows 11, AMD Ryzen, RTX GPU. Single run per binary, greedy decode
+(temperature=0), 2 generated tokens. The wall-clock time includes process
+startup, model loading (mmap), and inference.
 
 ### CPU Inference
 
@@ -137,17 +141,11 @@ In production with longer generation runs (hundreds of tokens), the JIT steady-s
 ### Reproducing
 
 ```bash
-# CPU comparison
-python scripts/test_models_aot.py --device cpu --save aot-cpu.json
+# AOT smoke (defers to Integration / published AOT binary checks)
+dotnet run --project src/CNET.Llm.Smoke -- models-aot
 
-# GPU comparison
-python scripts/test_models_aot.py --device gpu --save aot-gpu.json
-
-# Both devices, small models only
-python scripts/test_models_aot.py --device both --size "<3B"
-
-# Redisplay saved results
-python scripts/test_models_aot.py --show aot-cpu.json
+# Full integration suite
+dotnet test tests/CNET.Llm.Tests.Integration -v q
 ```
 
 ## What Works

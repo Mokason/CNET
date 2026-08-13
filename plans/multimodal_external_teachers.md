@@ -17,7 +17,7 @@ from CNB. Self-improve stays short cycles after a domain spine exists.
 |---|---|---|
 | Bridge | `external_teacher` bind + identity + table/callback/**subprocess** modes | `make multimodal_v0` |
 | Voice v0 | Closed-set speech commands from hermetic teacher → certified unit | same |
-| Voice real teacher | Subprocess ABI + `tools/voice_teacher.py` (hermetic gate; Whisper optional) | `make voice_real_teacher` |
+| Voice real teacher | Subprocess ABI + `bin/voice_teacher` (hermetic; Whisper WITHHELD) | `make voice_real_teacher` |
 | Vision v0 | Fixed-label image classifier + optional EVIDENCE | same |
 | Campaign helper | `tools/multimodal_campaign.sh` prepare/env | same |
 | Self-improve | modality tags `voice_*` / `vision_*` for gap-lane contexts | config |
@@ -26,7 +26,7 @@ from CNB. Self-improve stays short cycles after a domain spine exists.
 
 - No lowering of certify / Wilson bars.
 - Teacher artifact_digest must be nonzero (identity never guessed).
-- Hermetic gates use fake teachers; real Whisper/CLIP bind the same ABI later.
+- Hermetic gates use fake teachers. Whisper-Python ASR is WITHHELD; bind a C subprocess or callback later.
 
 ## Result
 
@@ -47,21 +47,17 @@ make multimodal_v0  →  MULTIMODAL_V0_PASS (39 checks)
 ```
 make voice_real_teacher → VOICE_REAL_TEACHER_PASS
   external_teacher_bind_subprocess (IN/OUT line protocol)
-  tools/voice_teacher.py --mode hermetic | whisper
+  ./bin/voice_teacher --mode hermetic
   cnet_voice_bind_subprocess / bind_from_env / mine_admit_teacher
 ```
 
 1. **Subprocess (preferred for foreign stacks):**
    ```bash
-   # hermetic ABI proof
-   export CNET_VOICE_TEACHER_CMD="python3 tools/voice_teacher.py --mode hermetic"
-   # real ASR (faster-whisper when installed)
-   export CNET_VOICE_TEACHER_CMD="python3 tools/voice_teacher.py --mode whisper --model tiny"
+   export CNET_VOICE_TEACHER_CMD="./bin/voice_teacher --mode hermetic"
    # or: tools/multimodal_campaign.sh env-voice
    ```
-   Then `cnet_voice_bind_from_env` / `cnet_voice_mine_admit_teacher`.
+   Then `cnet_voice_bind_from_env` / `cnet_voice_mine_admit_teacher`. Whisper-Python ASR is WITHHELD.
 2. **Callback:** implement `CnetOracleFn` that maps `speech_feat` → `speech_cmd` one-hot; bind with nonzero `artifact_digest`.
-3. Offline wav labeling: `voice_teacher.py --mode whisper --label-wav clip.wav`.
-4. Serve the sealed student without the heavy teacher.
+3. Serve the sealed student without the heavy teacher.
 
 Self-improve: after the spine exists, only misses re-teach (short cycles).

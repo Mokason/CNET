@@ -209,34 +209,46 @@ expect_fail "artifact_root_vs_manifest" "manifest declares a false artifact root
 # manifest member digests to match its own tampered pack. Only the committed
 # artifact root catches it.
 build_cache
-python3 - "$W/cache" <<'PYEOF'
-import hashlib, os, sys
 # Manufacture a fully SELF-CONSISTENT cache: substitute feature bytes in a pack,
 # then repair the member digest AND recompute the manifest's own artifact root so
 # nothing inside the cache disagrees with anything else. Only the root committed
-# in the protocol can catch this.
-MEM = ["train.pack","val.pack","test.pack","pca.bin","ids_train.txt","ids_val.txt",
-       "ids_test.txt","content_train.txt","content_val.txt","content_test.txt"]
-d = sys.argv[1]
-p = os.path.join(d, "test.pack")
-b = bytearray(open(p, "rb").read())
-b[-4:] = b"\x01\x02\x03\x04"
-open(p, "wb").write(b)
-digest = {n: hashlib.sha256(open(os.path.join(d, n), "rb").read()).hexdigest() for n in MEM}
-buf = b"VDCACHEROOT1\nschema 1\nmembers 10\n"
-for n in MEM:
-    buf += ("%s %d %s\n" % (n, os.path.getsize(os.path.join(d, n)), digest[n])).encode()
-root = hashlib.sha256(buf).hexdigest()
-out = []
-for line in open(os.path.join(d, "manifest.txt")).read().split("\n"):
-    if line.startswith("sha256_test_pack "):
-        out.append("sha256_test_pack " + digest["test.pack"])
-    elif line.startswith("artifact_root "):
-        out.append("artifact_root " + root)
-    else:
-        out.append(line)
-open(os.path.join(d, "manifest.txt"), "w").write("\n".join(out))
-PYEOF
+# in the protocol can catch this. (sha256sum/openssl — was python3)
+{
+  d="$W/cache"
+  # flip last 4 bytes of test.pack
+  sz=$(wc -c <"$d/test.pack" | tr -d ' ')
+  head -c $((sz - 4)) "$d/test.pack" >"$d/test.pack.tmp"
+  printf '\x01\x02\x03\x04' >>"$d/test.pack.tmp"
+  mv "$d/test.pack.tmp" "$d/test.pack"
+  sha_of() {
+    if command -v sha256sum >/dev/null 2>&1; then
+      sha256sum "$1" | awk '{print $1}'
+    else
+      openssl dgst -sha256 "$1" | awk '{print $NF}'
+    fi
+  }
+  MEM=(train.pack val.pack test.pack pca.bin ids_train.txt ids_val.txt \
+       ids_test.txt content_train.txt content_val.txt content_test.txt)
+  root_buf=$'VDCACHEROOT1\nschema 1\nmembers 10\n'
+  declare -A digest=()
+  for n in "${MEM[@]}"; do
+    digest[$n]=$(sha_of "$d/$n")
+    fsz=$(wc -c <"$d/$n" | tr -d ' ')
+    root_buf+="${n} ${fsz} ${digest[$n]}"$'\n'
+  done
+  tmp=$(mktemp)
+  printf '%s' "$root_buf" >"$tmp"
+  root=$(sha_of "$tmp")
+  rm -f "$tmp"
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    case "$line" in
+      sha256_test_pack\ *) echo "sha256_test_pack ${digest[test.pack]}" ;;
+      artifact_root\ *) echo "artifact_root $root" ;;
+      *) echo "$line" ;;
+    esac
+  done <"$d/manifest.txt" >"$d/manifest.txt.new"
+  mv "$d/manifest.txt.new" "$d/manifest.txt"
+}
 expect_fail "artifact_root_vs_protocol" "self-consistent manufactured cache" \
   $BENCH --protocol synthetic-test --cache "$W/cache" --prev-test "$W/prev.pack" --json "$JSON"
 

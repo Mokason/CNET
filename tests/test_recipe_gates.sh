@@ -5,7 +5,7 @@
 #
 # Legitimate patterns that are ALLOWED:
 #   - Metadata fallback:  `git rev-parse ... || echo unknown`
-#   - Optional artifact:   `test -f X || python3 ...`   (generates if absent)
+#   - Optional artifact:   `test -f X || ./bin/gen_...` (generates if absent)
 #   - Deliberate grep:     `grep ... || true`
 #   - Symbol check:        `nm ... || exit 1`
 #   - Model evidence collector: `CNET_REQUIRE_REAL_MODEL=1 ... || :` is
@@ -70,10 +70,10 @@ while IFS= read -r rawline; do
 
     # ALLOW: git rev-parse ... || echo unknown  (metadata fallback)
     # ALLOW: $(shell ... || echo ...)  (make variable assignment)
-    # ALLOW: test -f X || python3/gen/...  (optional artifact generation)
+    # ALLOW: test -f X || ./bin/gen/...  (optional artifact generation)
     # ALLOW: grep ... || true  (deliberate grep)
     # ALLOW: nm ... || exit 1  (symbol check, already exits)
-    # ALLOW: $@ || python3  (optional artifact generation)
+    # ALLOW: $@ || ./bin/gen  (optional artifact generation)
 
     case "$line" in
         *'git rev-parse'*'||'*) continue ;;   # metadata fallback

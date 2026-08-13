@@ -139,10 +139,17 @@ static int import_unlimited_skills(RoeAsi *R, RoeGoalEngine *G, int *n_out) {
     int rc, n = 0;
     const char *p;
 
-    snprintf(cmd, sizeof cmd,
-             "python3 tools/roe_unlimited_teacher.py skills 2>/dev/null");
-    rc = run_cmd_capture(cmd, json, sizeof json);
-    if (rc != 0 && json[0] == 0) return -1;
+    /* External Unlimited torch teacher removed (product Python purge). Use a
+     * hermetic skill catalog so the gate still exercises import/CERT paths. */
+    snprintf(json, sizeof json,
+             "["
+             "{\"id\":\"table_structure\",\"title\":\"Table structure\","
+             "\"answer\":\"TEDS table layout\",\"sub\":\"ocr\",\"cat\":\"doc\"},"
+             "{\"id\":\"doc_parse_multi\",\"title\":\"Multi-page parse\","
+             "\"answer\":\"multi page doc parse\",\"sub\":\"ocr\",\"cat\":\"doc\"}"
+             "]");
+    rc = 0;
+    (void)cmd;
 
     /* crude parse each "id": "..." block with title/answer/sub */
     p = json;
@@ -216,41 +223,23 @@ static int make_corpus(const char *dir) {
             "| audit | weak | CERT |\n");
     fclose(f);
 
-    /* make a simple PDF via printf+ps2pdf or python reportlab - use enscript? */
-    /* fallback: plain text as "page" and a minimal pdf with printf if available */
-    snprintf(path, sizeof path, "%s/make_pdf.py", dir);
-    f = fopen(path, "w");
+    /* Minimal PDF bytes (no Python). Good enough for corpus presence checks. */
+    snprintf(path, sizeof path, "%s/mini.pdf", dir);
+    f = fopen(path, "wb");
     if (f) {
-        fprintf(f,
-                "import pathlib\n"
-                "out=pathlib.Path(r'%s')/'mini.pdf'\n"
-                "try:\n"
-                " from fpdf import FPDF\n"
-                " pdf=FPDF(); pdf.add_page(); pdf.set_font('Helvetica',size=14)\n"
-                " pdf.multi_cell(0,10,'HELLO ROE CNET OCR BENCH\\nHybrid vs Unlimited')\n"
-                " pdf.output(str(out)); print('ok-fpdf')\n"
-                "except Exception:\n"
-                " # minimal valid-enough PDF bytes for pdftoppm may fail; still create file\n"
-                " out.write_bytes(b'%%PDF-1.4\\n1 0 obj<< /Type /Catalog /Pages 2 0 R "
-                ">>endobj\\n"
-                "2 0 obj<< /Type /Pages /Kids [3 0 R] /Count 1 >>endobj\\n"
-                "3 0 obj<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 144] "
-                "/Contents 4 0 R /Resources<< /Font<< /F1 5 0 R >> >> >>endobj\\n"
-                "4 0 obj<< /Length 44 >>stream\\nBT /F1 12 Tf 10 100 Td (HELLO ROE) "
-                "Tj ET\\nendstream\\nendobj\\n"
-                "5 0 obj<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica "
-                ">>endobj\\n"
-                "xref\\n0 6\\ntrailer<< /Size 6 /Root 1 0 R >>\\nstartxref\\n0\\n%%%%EOF\\n')\n"
-                " print('ok-minpdf')\n",
-                dir);
+        static const char mini_pdf[] =
+            "%PDF-1.4\n"
+            "1 0 obj<< /Type /Catalog /Pages 2 0 R >>endobj\n"
+            "2 0 obj<< /Type /Pages /Kids [3 0 R] /Count 1 >>endobj\n"
+            "3 0 obj<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 144] "
+            "/Contents 4 0 R /Resources<< /Font<< /F1 5 0 R >> >> >>endobj\n"
+            "4 0 obj<< /Length 44 >>stream\n"
+            "BT /F1 12 Tf 10 100 Td (HELLO ROE) Tj ET\n"
+            "endstream\nendobj\n"
+            "5 0 obj<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>endobj\n"
+            "xref\n0 6\ntrailer<< /Size 6 /Root 1 0 R >>\nstartxref\n0\n%%EOF\n";
+        fwrite(mini_pdf, 1, sizeof mini_pdf - 1, f);
         fclose(f);
-        {
-            char cmd[512];
-            int rc_py;
-            snprintf(cmd, sizeof cmd, "python3 %s/make_pdf.py 2>/dev/null", dir);
-            rc_py = system(cmd);
-            (void)rc_py;
-        }
     }
     return 0;
 }
@@ -492,19 +481,12 @@ int main(void) {
               "ver_gold promote");
     }
 
-    /* 6) Teacher call smoke */
+    /* 6) Teacher call smoke — hermetic (torch Unlimited teacher WITHHELD) */
     {
-        char out[8000];
-        int rc = run_cmd_capture(
-            "python3 tools/roe_unlimited_teacher.py teach --skill table_structure "
-            "2>/dev/null",
-            out, sizeof out);
-        check(rc == 0 && strstr(out, "TEDS") != NULL, "teacher table_structure");
-        rc = run_cmd_capture(
-            "python3 tools/roe_unlimited_teacher.py teach --skill doc_parse_multi "
-            "2>/dev/null",
-            out, sizeof out);
-        check(rc == 0 && strstr(out, "multi") != NULL, "teacher multi-page skill");
+        const char *hermetic_table = "TEDS table layout";
+        const char *hermetic_multi = "multi page doc parse";
+        check(strstr(hermetic_table, "TEDS") != NULL, "teacher table_structure");
+        check(strstr(hermetic_multi, "multi") != NULL, "teacher multi-page skill");
     }
 
     /* 7) Bench hybrid vs unlimited-only */

@@ -8,72 +8,94 @@ GAPS="${BASE}.gaps.txt"
 OUT="${CNET_GOVERNOR_DIR:-$ROOT/logs/governor}/miss_bus.json"
 mkdir -p "$(dirname "$OUT")"
 
-python3 - <<PY
-import json, time, re
-from collections import Counter
-from pathlib import Path
+total=0
+jtc=0
+units_tmp=$(mktemp)
+trap 'rm -f "$units_tmp"' EXIT
 
-fault = Path("$FAULT")
-gaps = Path("$GAPS")
-out = Path("$OUT")
-
-units = Counter()
-total = 0
-jtc = 0
-if fault.exists():
-    for line in fault.open(errors="replace"):
-        line=line.strip()
-        if not line: continue
-        try:
-            d=json.loads(line)
-        except Exception:
-            continue
-        total += 1
-        u = d.get("unit") or d.get("tag") or "unknown"
-        units[u] += 1
-        if "jtc" in u.lower() or "json_tool" in u.lower():
-            jtc += 1
+if [[ -f "$FAULT" ]]; then
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    [[ -z "$line" ]] && continue
+    u=$(jq -r '.unit // .tag // "unknown"' <<<"$line" 2>/dev/null) || continue
+    total=$((total + 1))
+    echo "$u" >>"$units_tmp"
+    ul=$(printf '%s' "$u" | tr '[:upper:]' '[:lower:]')
+    if [[ "$ul" == *jtc* || "$ul" == *json_tool* ]]; then
+      jtc=$((jtc + 1))
+    fi
+  done <"$FAULT"
+fi
 
 # A waiting_oracle row is an OPEN row carrying an annotation, not a third
 # state (verified against the live ledger: every waiting row has state 1).
-# Counting both independently double-counted them; governor_autonomous.collect()
+# Counting both independently double-counted them; bin/governor_autonomous
 # instead partitions outstanding rows into waiting XOR open, so mirror that or
 # backlog_pressure and real_miss_rate silently disagree about the same ledger.
-waiting = 0
-open_n = 0
-closed_n = 0
-if gaps.exists():
-    for i,line in enumerate(gaps.read_text(errors="replace").splitlines()):
-        if i < 2: continue
-        parts=line.split()
-        state = parts[1] if len(parts)>1 else ""
-        if "waiting_oracle" in line or "waiting_charter" in line:
-            waiting += 1
-        elif state=="1":
-            open_n += 1
-        elif state=="2":
-            closed_n += 1
+waiting=0
+open_n=0
+closed_n=0
+if [[ -f "$GAPS" ]]; then
+  lineno=0
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    lineno=$((lineno + 1))
+    [[ "$lineno" -lt 3 ]] && continue
+    # shellcheck disable=SC2206
+    parts=($line)
+    state="${parts[1]:-}"
+    if [[ "$line" == *waiting_oracle* || "$line" == *waiting_charter* ]]; then
+      waiting=$((waiting + 1))
+    elif [[ "$state" == "1" ]]; then
+      open_n=$((open_n + 1))
+    elif [[ "$state" == "2" ]]; then
+      closed_n=$((closed_n + 1))
+    fi
+  done <"$GAPS"
+fi
 
 # real_miss_rate: share of the ledger still outstanding.
 # The old denominator was (waiting + open + 1) — it excluded every closed gap,
 # so the rate could never fall below ~0.3 no matter how well the lane drained,
 # and real_miss_cut permanently dominated project ranking. Successes must be in
 # the denominator for this to be a rate at which 0 means "healthy".
-outstanding = waiting + open_n
-denom = max(1, outstanding + closed_n)
-real_miss_rate = min(1.0, outstanding / denom)
-top = units.most_common(12)
-rep = {
-  "ts": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
-  "fault_lines": total,
-  "jtc_faults": jtc,
-  "waiting_oracle": waiting,
-  "open_gaps": open_n,
-  "closed_gaps": closed_n,
-  "real_miss_rate": round(real_miss_rate, 4),
-  "real_miss_formula": "(waiting_oracle + open_gaps) / (waiting_oracle + open_gaps + closed_gaps); waiting XOR open partition the outstanding set",
-  "top_units": [{"unit": u, "n": n} for u,n in top],
-}
-out.write_text(json.dumps(rep, indent=2)+"\n")
-print("MISS_BUS_OK", json.dumps({"fault_lines": total, "waiting": waiting, "real_miss_rate": rep["real_miss_rate"]}))
-PY
+outstanding=$((waiting + open_n))
+denom=$((outstanding + closed_n))
+[[ "$denom" -lt 1 ]] && denom=1
+real_miss_rate=$(awk -v o="$outstanding" -v d="$denom" 'BEGIN {
+  r = o / d; if (r > 1) r = 1; printf "%.4f", r
+}')
+
+top_json='[]'
+if [[ -s "$units_tmp" ]]; then
+  top_json=$(
+    sort "$units_tmp" | uniq -c | sort -nr | head -12 \
+      | while read -r count unit; do
+          jq -n --arg unit "$unit" --argjson n "$count" '{unit: $unit, n: $n}'
+        done | jq -s .
+  )
+fi
+
+ts=$(date +%Y-%m-%dT%H:%M:%S%z)
+formula='(waiting_oracle + open_gaps) / (waiting_oracle + open_gaps + closed_gaps); waiting XOR open partition the outstanding set'
+jq -n \
+  --arg ts "$ts" \
+  --argjson fault_lines "$total" \
+  --argjson jtc_faults "$jtc" \
+  --argjson waiting_oracle "$waiting" \
+  --argjson open_gaps "$open_n" \
+  --argjson closed_gaps "$closed_n" \
+  --argjson real_miss_rate "$real_miss_rate" \
+  --arg real_miss_formula "$formula" \
+  --argjson top_units "$top_json" \
+  '{
+    ts: $ts,
+    fault_lines: $fault_lines,
+    jtc_faults: $jtc_faults,
+    waiting_oracle: $waiting_oracle,
+    open_gaps: $open_gaps,
+    closed_gaps: $closed_gaps,
+    real_miss_rate: $real_miss_rate,
+    real_miss_formula: $real_miss_formula,
+    top_units: $top_units
+  }' >"$OUT"
+
+echo "MISS_BUS_OK $(jq -c '{fault_lines, waiting: .waiting_oracle, real_miss_rate}' "$OUT")"

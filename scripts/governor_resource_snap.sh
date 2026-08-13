@@ -19,35 +19,41 @@ if command -v rocm-smi >/dev/null 2>&1; then
 fi
 [[ -z "$gpu0" ]] && gpu0=0
 
-# day/night: hour
 hour=$(date +%H)
 night=0
 if [[ "$hour" -ge 23 || "$hour" -lt 7 ]]; then night=1; fi
 
-# busy if load high or mem low
 busy=0
-python3 - <<PY
-import json, time
-from pathlib import Path
-load=float("$load")
-mem_kb=int("$mem_avail_kb")
-gpu=int("$gpu0" or 0)
-busy = 1 if (load >= 12.0 or mem_kb < 2_000_000 or gpu >= 85) else 0
-night=int("$night")
-# heavy teach preferred at night or when not busy
-allow_heavy = 1 if (night==1 or busy==0) else 0
-rep={
-  "ts": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
-  "load1": load,
-  "mem_avail_kb": mem_kb,
-  "gpu0_use": gpu,
-  "hermes": "$hermes",
-  "bonsai": "$bonsai",
-  "lane": "$lane",
-  "night": night,
-  "busy": busy,
-  "allow_heavy": allow_heavy,
-}
-Path("$OUT").write_text(json.dumps(rep, indent=2)+"\n")
-print("RESOURCE_SNAP_OK", json.dumps(rep))
-PY
+awk -v load="$load" -v mem_kb="$mem_avail_kb" -v gpu="$gpu0" 'BEGIN {
+  if (load+0 >= 12.0 || mem_kb+0 < 2000000 || gpu+0 >= 85) exit 0
+  exit 1
+}' && busy=1
+
+allow_heavy=0
+if [[ "$night" -eq 1 || "$busy" -eq 0 ]]; then allow_heavy=1; fi
+
+ts=$(date +%Y-%m-%dT%H:%M:%S%z)
+jq -n \
+  --arg ts "$ts" \
+  --argjson load1 "$load" \
+  --argjson mem_avail_kb "$mem_avail_kb" \
+  --argjson gpu0_use "$gpu0" \
+  --arg hermes "$hermes" \
+  --arg bonsai "$bonsai" \
+  --arg lane "$lane" \
+  --argjson night "$night" \
+  --argjson busy "$busy" \
+  --argjson allow_heavy "$allow_heavy" \
+  '{
+    ts: $ts,
+    load1: $load1,
+    mem_avail_kb: $mem_avail_kb,
+    gpu0_use: $gpu0_use,
+    hermes: $hermes,
+    bonsai: $bonsai,
+    lane: $lane,
+    night: $night,
+    busy: $busy,
+    allow_heavy: $allow_heavy
+  }' >"$OUT"
+echo "RESOURCE_SNAP_OK $(cat "$OUT" | jq -c .)"

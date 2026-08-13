@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
-# CNET governor / Python development sandbox (Hermes-style isolation).
+# CNET governor development sandbox (Hermes-style isolation).
 #
-# Isolated CNET_ROOT worktree overlay + venv + governor state so experiments
+# Isolated CNET_ROOT worktree overlay + governor state so experiments
 # never clobber production logs/governor or the live CNB.
 #
 # Usage:
 #   scripts/dev-sandbox.sh                         # print env and shell
 #   scripts/dev-sandbox.sh --persistent            # keep under .cnet-sandbox/
 #   scripts/dev-sandbox.sh --from-prod             # seed charter/config from prod
-#   scripts/dev-sandbox.sh python scripts/governor_autonomous.py --test
+#   scripts/dev-sandbox.sh ./bin/governor_autonomous --test
 #   scripts/dev-sandbox.sh make governor_quality
 #   scripts/dev-sandbox.sh --delete                # wipe persistent sandbox
 #
@@ -48,7 +48,7 @@ if $DELETE; then
   exit 0
 fi
 
-mkdir -p "$SB"/{logs/governor,config,scripts,bin,venv,tmp,web_notes}
+mkdir -p "$SB"/{logs/governor,config,scripts,bin,tmp,web_notes}
 export CNET_SANDBOX=1
 export CNET_SANDBOX_ROOT="$SB"
 export CNET_ROOT="$ROOT"   # code from real tree
@@ -59,8 +59,7 @@ export CNET_FAULT_LOG="$SB/logs/cnet_faults.jsonl"
 export CNET_LORA_STORE_DIR="$SB/logs/lora_store"
 export CNET_RESIDUAL_HTTP="${CNET_RESIDUAL_HTTP:-http://127.0.0.1:8080}"
 export CNET_RESIDUAL_WINDOW="${CNET_RESIDUAL_WINDOW:-$ROOT/english_window_256_bonsai.txt}"
-export PYTHONPATH="$ROOT${PYTHONPATH:+:$PYTHONPATH}"
-export PATH="$SB/venv/bin:$ROOT/bin:$PATH"
+export PATH="$ROOT/bin:$PATH"
 export TMPDIR="$SB/tmp"
 export CNET_DEV_SANDBOX_NAME="$NAME"
 
@@ -79,21 +78,13 @@ export CNET_GOVERNOR_PROJECTS="$SB/config/governor_projects.json"
 export CNET_GOVERNOR_URLS="$SB/config/governor_verified_urls.txt"
 export CNET_GOVERNOR_GOAL_GRAPH="$SB/config/governor_goal_graph.json"
 
-# venv (isolated deps for governor experiments)
-if [ ! -x "$SB/venv/bin/python" ]; then
-  python3 -m venv "$SB/venv"
-  "$SB/venv/bin/pip" -q install --upgrade pip
-  # minimal; governor is stdlib-first
-  "$SB/venv/bin/pip" -q install pyyaml 2>/dev/null || true
-fi
-
 # empty fault log if missing
 : > "$CNET_FAULT_LOG"
 mkdir -p "$CNET_LORA_STORE_DIR"
 
 echo "CNET sandbox ready: $SB"
 echo "  CNET_GOVERNOR_DIR=$CNET_GOVERNOR_DIR"
-echo "  python=$SB/venv/bin/python"
+echo "  bin=$ROOT/bin (C/C# tools; no python venv)"
 echo "  persistent=$PERSISTENT name=$NAME"
 
 if [ "$#" -eq 0 ]; then

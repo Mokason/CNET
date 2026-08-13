@@ -52,125 +52,166 @@ out=$(MOE_CKPT="$LIVE" MOE_CKPT_OUT="$LIVE.cand" MOE_STEPS="$STEPS" \
 }
 echo "[$(date -Iseconds)] $out" >>"$LOG"
 
-CNET_MOE_DIR="$DIR" python3 - "$out" <<'PY'
-import json, os, subprocess, sys, time, hashlib, math
-from pathlib import Path
+# Post-process MOE_TICK JSON line (jq + bash; was python3)
+line=$(printf '%s\n' "$out" | grep '^MOE_TICK ' | tail -1 || true)
+if [[ -z "$line" ]]; then
+  echo "moe_tick: no MOE_TICK line" >&2
+  exit 1
+fi
+t_json=${line#MOE_TICK }
+CAND="${LIVE}.cand"
+factor="${MOE_DIVERGE_FACTOR:-1.25}"
 
-raw = sys.argv[1]
-line = [l for l in raw.splitlines() if l.startswith("MOE_TICK ")]
-if not line:
-    print("moe_tick: no MOE_TICK line", file=sys.stderr); raise SystemExit(1)
-t = json.loads(line[-1].split(" ", 1)[1])
+st='{}'
+if [[ -f "$STATE" ]]; then
+  st=$(jq -c . "$STATE" 2>/dev/null || echo '{}')
+fi
 
-# Passed explicitly by the caller: inside `python3 - <<PY` __file__ is "<stdin>",
-# so a Path(__file__)-based default resolves outside the repo.
-DIR   = Path(os.environ["CNET_MOE_DIR"])
-LIVE  = DIR / "live.ckpt"
-BEST  = DIR / "best.ckpt"
-STATE = DIR / "state.json"
-EVID  = DIR / "evidence.jsonl"
-CAND  = Path(str(LIVE) + ".cand")
-factor = float(os.environ.get("MOE_DIVERGE_FACTOR", "1.25"))
+ce=$(jq -r '.heldout_ce' <<<"$t_json")
+h1=$(jq -r '.h1' <<<"$t_json")
+h2=$(jq -r '.h2' <<<"$t_json")
+eval_n=$(jq -r '.eval_n' <<<"$t_json")
+step_to=$(jq -r '.step_to' <<<"$t_json")
+train_ce=$(jq -r '.train_ce' <<<"$t_json")
+uniform=$(jq -r '.uniform' <<<"$t_json")
+device=$(jq -r '.device' <<<"$t_json")
+secs=$(jq -r '.secs' <<<"$t_json")
 
-st = {}
-if STATE.exists():
-    try: st = json.loads(STATE.read_text())
-    except Exception: st = {}
+prev_n=$(jq -r '.eval_n // empty' <<<"$st")
+basis_changed=0
+if [[ -n "$prev_n" && "$prev_n" != "$eval_n" ]]; then
+  basis_changed=1
+fi
 
-ce   = float(t["heldout_ce"])
-h1   = float(t["h1"])
-h2   = float(t["h2"])
-eval_n = int(t["eval_n"])
+best=""
+if [[ "$basis_changed" -eq 0 ]]; then
+  best=$(jq -r '.best_ce // empty' <<<"$st")
+fi
+if [[ "$basis_changed" -eq 1 ]]; then
+  st=$(jq -c --arg m "eval_n ${prev_n} -> ${eval_n}; previous best_ce discarded" \
+    '.basis_reset=$m | del(.best_ce)' <<<"$st")
+  best=""
+fi
 
-# The floors are sample means of the analytic per-sequence oracle, so a
-# different eval_n is a DIFFERENT held-out set with different floors: CE is not
-# comparable across it. Reset the ratchet rather than ratchet against a number
-# that measured something else.
-prev_n = st.get("eval_n")
-basis_changed = prev_n is not None and int(prev_n) != eval_n
-best = None if basis_changed else st.get("best_ce")
-best = float(best) if best is not None else None
-if basis_changed:
-    st["basis_reset"] = f"eval_n {prev_n} -> {eval_n}; previous best_ce discarded"
+action="advanced"
+if ! jq -e '.heldout_ce | numbers | isfinite' <<<"$t_json" >/dev/null 2>&1; then
+  action="diverged_rollback"
+elif [[ -n "$best" ]] && awk -v c="$ce" -v b="$best" -v f="$factor" \
+    'BEGIN{ exit (c > b*f) ? 0 : 1 }'; then
+  action="diverged_rollback"
+fi
 
-def sha(p: Path) -> str:
-    h = hashlib.sha256()
-    with p.open("rb") as f:
-        for b in iter(lambda: f.read(1 << 20), b""):
-            h.update(b)
-    return h.hexdigest()
+sha256_file() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$1" | awk '{print $1}'
+  else
+    openssl dgst -sha256 "$1" | awk '{print $NF}'
+  fi
+}
 
-action = "advanced"
-if not math.isfinite(ce):
-    action = "diverged_rollback"
-elif best is not None and ce > best * factor:
-    action = "diverged_rollback"
+if [[ "$action" == "diverged_rollback" ]]; then
+  rm -f "$CAND"
+  if [[ -f "$BEST" ]]; then
+    cp -f "$BEST" "$LIVE"
+  fi
+else
+  mv -f "$CAND" "$LIVE"
+  if [[ -z "$best" ]] || awk -v c="$ce" -v b="$best" 'BEGIN{ exit (c < b) ? 0 : 1 }'; then
+    cp -f "$LIVE" "$BEST"
+    action="promoted"
+  fi
+fi
 
-if action == "diverged_rollback":
-    # Live weights blew up: restart training from the last certified artefact
-    # rather than carrying a broken model into the next tick.
-    CAND.unlink(missing_ok=True)
-    if BEST.exists():
-        LIVE.write_bytes(BEST.read_bytes())
-else:
-    CAND.replace(LIVE)          # training always advances
-    if best is None or ce < best:
-        BEST.write_bytes(LIVE.read_bytes())
-        action = "promoted"
+promoted=0
+[[ "$action" == "promoted" ]] && promoted=1
+below_h1=0
+awk -v c="$ce" -v h="$h1" 'BEGIN{ exit (c < h) ? 0 : 1 }' && below_h1=1
+certified=0
+[[ "$promoted" -eq 1 && "$below_h1" -eq 1 ]] && certified=1
 
-promoted = action == "promoted"
-certified = bool(promoted and ce < h1)
+ts=$(date +%Y-%m-%dT%H:%M:%S%z)
+gap=$(awk -v c="$ce" -v h="$h2" 'BEGIN{ print c-h }')
 
-st.update({
-    "ts": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
-    "step": t["step_to"],
-    "heldout_ce": ce,
-    "train_ce": t["train_ce"],
-    "h1": h1, "h2": h2, "uniform": t["uniform"],
-    "gap_to_floor": ce - h2,
-    "below_h1": bool(ce < h1),
-    "action": action,
-    "device": t["device"],
-    "eval_n": t["eval_n"],
-    "secs": t["secs"],
-    # Describes THIS tick, exactly like every field beside it. Writing it only
-    # on promotion left a stale True sitting next to a held-out CE above H1
-    # once a later tick merely advanced -- and the governor reads this field as
-    # a live signal (governor_autonomous.py: moe_certified). The durable
-    # per-promotion record is the evidence log's certified_below_h1.
-    "certified": certified,
-})
-if promoted:
-    st["best_ce"] = ce
-    st["best_step"] = t["step_to"]
-    st["best_sha256"] = sha(BEST)
-st.setdefault("best_ce", ce if promoted else (best if best is not None else ce))
-STATE.write_text(json.dumps(st, indent=2) + "\n")
+st=$(jq -c \
+  --arg ts "$ts" \
+  --argjson step "$step_to" \
+  --argjson heldout_ce "$ce" \
+  --argjson train_ce "$train_ce" \
+  --argjson h1 "$h1" \
+  --argjson h2 "$h2" \
+  --argjson uniform "$uniform" \
+  --argjson gap_to_floor "$gap" \
+  --argjson below_h1 "$below_h1" \
+  --arg action "$action" \
+  --arg device "$device" \
+  --argjson eval_n "$eval_n" \
+  --argjson secs "$secs" \
+  --argjson certified "$certified" \
+  '.ts=$ts | .step=$step | .heldout_ce=$heldout_ce | .train_ce=$train_ce
+   | .h1=$h1 | .h2=$h2 | .uniform=$uniform | .gap_to_floor=$gap_to_floor
+   | .below_h1=($below_h1==1) | .action=$action | .device=$device
+   | .eval_n=$eval_n | .secs=$secs | .certified=($certified==1)' <<<"$st")
 
-# Evidence record. Same discipline as the CNB units — what was measured, on what,
-# with an artefact hash — but the claim is a held-out CE, not a replay-exact row.
-if promoted:
-    with EVID.open("a") as f:
-        f.write(json.dumps({
-            "version": 1,
-            "kind": "moe_xf_checkpoint",
-            "ts": st["ts"],
-            "step": t["step_to"],
-            "heldout_ce": ce,
-            "h1": h1, "h2": h2,
-            "gap_to_floor": ce - h2,
-            "certified_below_h1": certified,
-            "eval_n": t["eval_n"],
-            "eval_seed": "0xE7A15EED",
-            "source": "markov2_order2_fresh_stream",
-            "artifact_sha256": st["best_sha256"],
-            "device": t["device"],
-        }) + "\n")
+# Describes THIS tick. Writing certified only on promotion left a stale True
+# next to a held-out CE above H1 once a later tick merely advanced — and
+# bin/governor_autonomous reads this field as a live signal (moe_certified).
 
-print("MOE_TICK_OK", json.dumps({
-    "action": action, "step": t["step_to"], "heldout_ce": round(ce, 6),
-    "best_ce": round(float(st["best_ce"]), 6), "h1": round(h1, 6), "h2": round(h2, 6),
-    "gap_to_floor": round(ce - h2, 6), "below_h1": st["below_h1"],
-    "certified": certified,
-}))
-PY
+if [[ "$promoted" -eq 1 ]]; then
+  best_sha=$(sha256_file "$BEST")
+  st=$(jq -c \
+    --argjson ce "$ce" \
+    --argjson step "$step_to" \
+    --arg sha "$best_sha" \
+    '.best_ce=$ce | .best_step=$step | .best_sha256=$sha' <<<"$st")
+else
+  if ! jq -e '.best_ce != null' <<<"$st" >/dev/null 2>&1; then
+    if [[ -n "$best" ]]; then
+      st=$(jq -c --argjson ce "$best" '.best_ce=$ce' <<<"$st")
+    else
+      st=$(jq -c --argjson ce "$ce" '.best_ce=$ce' <<<"$st")
+    fi
+  fi
+fi
+
+jq . <<<"$st" >"$STATE"
+
+if [[ "$promoted" -eq 1 ]]; then
+  jq -nc \
+    --arg ts "$ts" \
+    --argjson step "$step_to" \
+    --argjson heldout_ce "$ce" \
+    --argjson h1 "$h1" \
+    --argjson h2 "$h2" \
+    --argjson gap_to_floor "$gap" \
+    --argjson certified "$certified" \
+    --argjson eval_n "$eval_n" \
+    --arg sha "$(jq -r '.best_sha256' <<<"$st")" \
+    --arg device "$device" \
+    '{
+      version: 1, kind: "moe_xf_checkpoint", ts: $ts, step: $step,
+      heldout_ce: $heldout_ce, h1: $h1, h2: $h2, gap_to_floor: $gap_to_floor,
+      certified_below_h1: ($certified==1), eval_n: $eval_n,
+      eval_seed: "0xE7A15EED", source: "markov2_order2_fresh_stream",
+      artifact_sha256: $sha, device: $device
+    }' >>"$EVID"
+fi
+
+best_ce=$(jq -r '.best_ce' <<<"$st")
+echo "MOE_TICK_OK $(jq -nc \
+  --arg action "$action" \
+  --argjson step "$step_to" \
+  --argjson heldout_ce "$ce" \
+  --argjson best_ce "$best_ce" \
+  --argjson h1 "$h1" \
+  --argjson h2 "$h2" \
+  --argjson gap_to_floor "$gap" \
+  --argjson below_h1 "$below_h1" \
+  --argjson certified "$certified" \
+  '{
+    action: $action, step: $step,
+    heldout_ce: ($heldout_ce*1e6|round/1e6),
+    best_ce: ($best_ce*1e6|round/1e6),
+    h1: ($h1*1e6|round/1e6), h2: ($h2*1e6|round/1e6),
+    gap_to_floor: ($gap_to_floor*1e6|round/1e6),
+    below_h1: ($below_h1==1), certified: ($certified==1)
+  }')"
