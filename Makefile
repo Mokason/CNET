@@ -6091,3 +6091,20 @@ cnet_7b_compete_contract: cnet_7b_compete_fixture include/cnet_compete.h \
 		src/cnet_compete.c tests/test_cnet_compete_contract.c $(LDFLAGS)
 	@./$(BIN_DIR)/test_cnet_compete_contract | tee logs/cnet_7b_compete_contract.log
 	@grep -q CNET_7B_COMPETE_CONTRACT_PASS logs/cnet_7b_compete_contract.log
+
+.PHONY: cnet_7b_capsule_increment
+CNET_COMPETE_CAPSULE_CORE := src/cnet_capsule.c src/hybrid_ai.c src/base.c \
+	src/nn.c src/contract/contract.c src/contract/unit.c \
+	src/contract/coverage.c src/acquire.c src/runtime_identity.c src/plan_table.c
+cnet_7b_capsule_increment: include/cnet_compete_capsules.h \
+		src/cnet_compete_capsules.c tests/test_cnet_compete_capsule_increment.c \
+		$(CNET_COMPETE_CAPSULE_CORE)
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -Werror -ffunction-sections -fdata-sections -Iinclude \
+		-o $(BIN_DIR)/test_cnet_compete_capsule_increment \
+		src/cnet_compete_capsules.c $(CNET_COMPETE_CAPSULE_CORE) \
+		tests/test_cnet_compete_capsule_increment.c \
+		-Wl,--gc-sections $(LDFLAGS) $(MCP_LDFLAGS) -pthread
+	@./$(BIN_DIR)/test_cnet_compete_capsule_increment | \
+		tee logs/cnet_7b_capsule_increment.log
+	@grep -q CNET_7B_CAPSULE_INCREMENT_PASS logs/cnet_7b_capsule_increment.log
