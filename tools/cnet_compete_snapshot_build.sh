@@ -23,11 +23,11 @@ case "$workspace_root" in
     *) echo "workspace root must be absolute" >&2; exit 2 ;;
 esac
 case "$release_root" in
-    /home/marble/.local/state/cnet/cnet_asi5_v2) ;;
+    /home/marble/.local/state/cnet/cnet_asi5_v3) ;;
     *) echo "release root must be canonical" >&2; exit 2 ;;
 esac
 case "$staging_root" in
-    /home/marble/.local/state/cnet/.cnet-asi5-v2-stage-??????) ;;
+    /home/marble/.local/state/cnet/.cnet-asi5-v3-stage-??????) ;;
     *) echo "staging root must be canonical private storage" >&2; exit 2 ;;
 esac
 case "$build_commit:$build_tree" in
@@ -129,12 +129,18 @@ cd "$snapshot_root"
     PYTHON=/bin/false \
     CNET_COMPETE_BUILD_COMMIT="$build_commit" \
     CNET_COMPETE_BUILD_TREE="$build_tree" \
+    cnet_7b_v3_fixture_audit >&2
+
+"$make" CC="$cc" \
+    PYTHON=/bin/false \
+    CNET_COMPETE_BUILD_COMMIT="$build_commit" \
+    CNET_COMPETE_BUILD_TREE="$build_tree" \
     cnet_7b_artifact_manifest >&2
 
-artifact_sha=$("$sha256sum" artifacts/cnet_asi5_v2/artifacts.sha256)
+artifact_sha=$("$sha256sum" artifacts/cnet_asi5_v3/artifacts.sha256)
 artifact_sha=${artifact_sha%% *}
 if [ "$artifact_sha" != \
-     "354d90ce726939b57e9c832784e03802759c6dc0f67c2bcb4dbeddcd5ccf0fdc" ]; then
+     "a2df92efd81f2d0780894d14da992f6974db7591bd8c5cb7139ad782533c79b3" ]; then
     echo "immutable artifact manifest digest mismatch" >&2
     exit 1
 fi
@@ -164,11 +170,11 @@ fi
 "$install" -m 0600 logs/cnet_7b_score_san.log \
     "$staging_root/evidence/cnet_7b_score_san.log"
 
-"$install" -m 0600 benchmarks/cnet_asi5_v2/heldout.tsv \
+"$install" -m 0600 benchmarks/cnet_asi5_v3/heldout.tsv \
     "$staging_root/inputs/heldout.tsv"
-"$install" -m 0600 benchmarks/cnet_asi5_v2/baseline_system.txt \
+"$install" -m 0600 benchmarks/cnet_asi5_v3/baseline_system.txt \
     "$staging_root/inputs/baseline_system.txt"
-"$install" -m 0600 tools/cnet_compete_fixture_v2.c \
+"$install" -m 0600 tools/cnet_compete_fixture_v3.c \
     "$staging_root/inputs/fixture_generator.c"
 for member in \
     intent.wlm \
@@ -189,7 +195,7 @@ for member in \
     artifacts.sha256
 do
     destination="$staging_root/inputs/artifacts/$member"
-    "$install" -D -m 0600 "artifacts/cnet_asi5_v2/$member" "$destination"
+    "$install" -D -m 0600 "artifacts/cnet_asi5_v3/$member" "$destination"
 done
 
 common_flags="-std=c11 -Wall -Wextra -pedantic -Werror -O3 -march=znver3 -D_DEFAULT_SOURCE"
