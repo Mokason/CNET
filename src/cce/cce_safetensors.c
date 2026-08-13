@@ -1201,6 +1201,7 @@ static cce_cascade* get_cascade_by_name(cce_forest* f, const char* name) {
 
 /* ==================== HF / URL support implementation ==================== */
 
+#if CNET_HAVE_CURL
 static const char* st_get_hf_token(void) {
     const char* t = getenv("HF_TOKEN");
     if (!t || !*t) t = getenv("HUGGING_FACE_HUB_TOKEN");
@@ -1236,6 +1237,7 @@ static int st_make_temp_path(char* buf, size_t cap, const char* prefix) {
     return 0;
 #endif
 }
+#endif /* CNET_HAVE_CURL -- token and temp path feed only the download path */
 
 #define CCE_ST_MAX_DOWNLOAD_BYTES (UINT64_C(8) * 1024 * 1024 * 1024)
 #define CCE_ST_MAX_REDIRECTS 5L
@@ -1285,6 +1287,7 @@ static size_t st_download_write(void* data, size_t size, size_t count, void* use
    operator entry cannot re-enable them. */
 #define CCE_ST_ENV_ALLOWLIST "CCE_ST_URL_ALLOWLIST"
 
+#if CNET_HAVE_CURL || defined(CCE_SAFETENSORS_TESTING)
 static const char* const st_default_allowlist[] = {
     "huggingface.co",
     "hf.co",
@@ -1447,6 +1450,7 @@ static int st_prereq_public_ip(void* clientp, char* conn_primary_ip,
 int cce_safetensors_test_host_policy(const char* host) { return st_host_allowed(host); }
 int cce_safetensors_test_ip_public(const char* ip) { return st_ip_literal_is_public(ip); }
 #endif
+#endif /* CNET_HAVE_CURL || CCE_SAFETENSORS_TESTING */
 
 /* Pure URL-syntax validation: shape, scheme and credential checks only.
    `is_hf_host` scopes the bearer token; `host_allowed` reports the egress name
