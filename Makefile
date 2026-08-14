@@ -6569,8 +6569,9 @@ cnet_7b_intent_san: cnet_7b_intent
 
 .PHONY: cnet_7b_capsule_artifacts cnet_7b_runtime cnet_7b_runtime_san
 .PHONY: cnet_7b_v5_diagnostic cnet_7b_v5_diagnostic_san
-.PHONY: cnet_7b_v5_semantic_corpus cnet_7b_v5_semantics_red
-.PHONY: cnet_7b_v5_intent_red
+.PHONY: cnet_7b_v5_semantic_corpus cnet_7b_v5_semantics
+.PHONY: cnet_7b_v5_semantics_san
+.PHONY: cnet_7b_v5_intent
 cnet_7b_capsule_artifacts: include/cnet_compete_capsules.h \
 		src/cnet_compete_capsules.c tools/cnet_compete_build_capsules.c \
 		$(CNET_COMPETE_CAPSULE_CORE)
@@ -6701,7 +6702,7 @@ cnet_7b_v5_semantic_corpus: include/cnet_compete_v5_semantics.h \
 	@grep -qx 'CNET_7B_INDEPENDENCE_PASS candidates=320 exclusions=2807 duplicates=0 canonical=0 near=0' \
 		logs/cnet_7b_v5_semantic_audit.log
 
-cnet_7b_v5_semantics_red: cnet_7b_v5_diagnostic \
+cnet_7b_v5_semantics: cnet_7b_v5_intent cnet_7b_capsule_artifacts \
 		cnet_7b_v5_semantic_corpus
 	$(CC) $(CFLAGS) -Werror -ffunction-sections -fdata-sections -Iinclude \
 		-o $(BIN_DIR)/test_cnet_compete_v5_semantics \
@@ -6711,18 +6712,37 @@ cnet_7b_v5_semantics_red: cnet_7b_v5_diagnostic \
 		$(CNET_COMPETE_CAPSULE_CORE) $(ROUTER) $(SPECIALIST_SRC) \
 		tests/test_cnet_compete_v5_semantics.c \
 		-Wl,--gc-sections $(LDFLAGS) $(MCP_LDFLAGS) -pthread
-	@set +e; \
-		./$(BIN_DIR)/test_cnet_compete_v5_semantics \
-			artifacts/cnet_asi5_v4/intent.wlm \
-			artifacts/cnet_asi5_v4/intent.meta \
+	@./$(BIN_DIR)/test_cnet_compete_v5_semantics \
+			artifacts/cnet_asi5_v5/intent.wlm \
+			artifacts/cnet_asi5_v5/intent.meta \
 			artifacts/cnet_asi5_v4/capsules | \
-			tee logs/cnet_7b_v5_semantics_red.log; \
-		status=$${PIPESTATUS[0]}; \
-		test $$status -ne 0; \
-		grep -Eq '^CNET_7B_V5_SEMANTIC_COVERAGE_RED ' \
-			logs/cnet_7b_v5_semantics_red.log
+			tee logs/cnet_7b_v5_semantics.log
+	@grep -qx 'CNET_7B_V5_SEMANTIC_STRESS_PASS covered=180 ood=181 unsafe=0 guarded_compositions=36 structure_duplicates=0' \
+		logs/cnet_7b_v5_semantics.log
 
-cnet_7b_v5_intent_red: include/cnet_compete_intent.h \
+cnet_7b_v5_semantics_san: cnet_7b_v5_semantics
+	$(CC) -std=c11 -Wall -Wextra -pedantic -Werror -O1 -g \
+		-D_DEFAULT_SOURCE -DCNET_HAVE_CURL=0 \
+		-fsanitize=address,undefined -fno-omit-frame-pointer \
+		-ffunction-sections -fdata-sections -Iinclude \
+		-o $(BIN_DIR)/test_cnet_compete_v5_semantics_san \
+		src/cnet_compete_v5_semantics.c \
+		src/cnet_compete_runtime.c src/cnet_compete_intent.c \
+		src/cnet_compete_capsules.c src/cce/cce_wordlm.c \
+		$(CNET_COMPETE_CAPSULE_CORE) $(ROUTER) $(SPECIALIST_SRC) \
+		tests/test_cnet_compete_v5_semantics.c \
+		-Wl,--gc-sections -fsanitize=address,undefined -lm -lpthread
+	@ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 \
+		UBSAN_OPTIONS=halt_on_error=1 \
+		./$(BIN_DIR)/test_cnet_compete_v5_semantics_san \
+			artifacts/cnet_asi5_v5/intent.wlm \
+			artifacts/cnet_asi5_v5/intent.meta \
+			artifacts/cnet_asi5_v4/capsules | \
+			tee logs/cnet_7b_v5_semantics_san.log
+	@grep -qx 'CNET_7B_V5_SEMANTIC_STRESS_PASS covered=180 ood=181 unsafe=0 guarded_compositions=36 structure_duplicates=0' \
+		logs/cnet_7b_v5_semantics_san.log
+
+cnet_7b_v5_intent: include/cnet_compete_intent.h \
 		src/cnet_compete_intent.c src/cce/cce_wordlm.c \
 		tests/test_cnet_compete_intent_v5.c \
 		benchmarks/cnet_asi5_v4/semantic_development.tsv \
@@ -6732,17 +6752,13 @@ cnet_7b_v5_intent_red: include/cnet_compete_intent.h \
 		-o $(BIN_DIR)/test_cnet_compete_intent_v5 \
 		src/cnet_compete_intent.c src/cce/cce_wordlm.c \
 		tests/test_cnet_compete_intent_v5.c $(LDFLAGS)
-	@set +e; \
-		./$(BIN_DIR)/test_cnet_compete_intent_v5 \
+	@./$(BIN_DIR)/test_cnet_compete_intent_v5 \
 			artifacts/cnet_asi5_v5/intent.wlm \
 			artifacts/cnet_asi5_v5/intent.meta \
 			benchmarks/cnet_asi5_v4/semantic_development.tsv \
 			benchmarks/cnet_asi5_v5/semantic_development.tsv | \
-			tee logs/cnet_7b_v5_intent_red.log; \
-		status=$${PIPESTATUS[0]}; \
-		test $$status -ne 0; \
-		grep -qx 'CNET_7B_INTENT_V5_RED reason=train' \
-			logs/cnet_7b_v5_intent_red.log
+			tee logs/cnet_7b_v5_intent.log
+	@grep -q '^CNET_7B_INTENT_V5_PASS ' logs/cnet_7b_v5_intent.log
 
 .PHONY: cnet_7b_eval_contract
 cnet_7b_eval_contract: cnet_7b_artifact_manifest include/cnet_compete_eval.h \

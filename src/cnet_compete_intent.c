@@ -2,6 +2,7 @@
 
 #include "cce/cce_wordlm.h"
 
+#include <ctype.h>
 #include <errno.h>
 #include <math.h>
 #include <stdarg.h>
@@ -23,6 +24,7 @@
 #define INTENT_NOVELTY_EPOCHS 1000u
 #define INTENT_NOVELTY_LR 0.025
 #define INTENT_NOVELTY_L2 0.0
+#define INTENT_REGISTERED_NOVELTY_WEIGHT 4.0
 #define INTENT_MAX_SAMPLES 2048
 #define INTENT_META_MAX 8192u
 #define INTENT_ARTIFACT_MAX (1024u * 1024u)
@@ -38,11 +40,19 @@
 #define INTENT_EXPECTED_TRAIN_SAMPLES \
     (INTENT_EXPECTED_BASE_TRAIN_SAMPLES + \
      INTENT_EXPECTED_SEMANTIC_TRAIN_SAMPLES)
+#define INTENT_V5_EXPECTED_SEMANTIC_ROWS 320u
+#define INTENT_V5_EXPECTED_SEMANTIC_TRAIN_SAMPLES 320u
+#define INTENT_V5_EXPECTED_SOURCE_SAMPLES \
+    (INTENT_EXPECTED_SOURCE_SAMPLES + INTENT_V5_EXPECTED_SEMANTIC_ROWS)
+#define INTENT_V5_EXPECTED_TRAIN_SAMPLES \
+    (INTENT_EXPECTED_TRAIN_SAMPLES + \
+     INTENT_V5_EXPECTED_SEMANTIC_TRAIN_SAMPLES)
 
 typedef struct {
-    int context[CNET_COMPETE_INTENT_CONTEXT];
-    int novelty_context[CNET_COMPETE_INTENT_CONTEXT];
+    int context[CNET_COMPETE_INTENT_V5_CONTEXT];
+    int novelty_context[CNET_COMPETE_INTENT_V5_CONTEXT];
     CnetCompeteIntent target;
+    int registered_identifier;
 } IntentSample;
 
 typedef struct {
@@ -55,10 +65,35 @@ typedef struct {
     CnetCompeteIntent target;
 } IntentPrompt;
 
+typedef struct {
+    const char *suite;
+    const char *id_prefix;
+    const char *provenance;
+    size_t rows;
+    size_t train_samples;
+} SemanticCorpusProfile;
+
+static const SemanticCorpusProfile semantic_v4_profile = {
+    "#suite=CNET-ASI-5-semantic-development-v1",
+    "semantic-",
+    "semantic_boundary_development_v1",
+    INTENT_EXPECTED_SEMANTIC_ROWS,
+    INTENT_EXPECTED_SEMANTIC_TRAIN_SAMPLES
+};
+
+static const SemanticCorpusProfile semantic_v5_profile = {
+    "#suite=CNET-ASI-5-semantic-development-v5",
+    "v5-semantic-",
+    "semantic_boundary_development_v5",
+    INTENT_V5_EXPECTED_SEMANTIC_ROWS,
+    INTENT_V5_EXPECTED_SEMANTIC_TRAIN_SAMPLES
+};
+
 struct CnetCompeteIntentModel {
     cce_wordlm_packed *packed;
     NoveltyHead novelty;
     double threshold;
+    size_t context_length;
 };
 
 static const char *const train_prefixes[] = {
@@ -353,33 +388,123 @@ static int compare_ints(const void *left, const void *right) {
     return (a > b) - (a < b);
 }
 
+static const char *v5_registered_identifier(const unsigned char *cursor,
+                                            size_t *length_out) {
+    static const char *const identifiers[] = {
+        "increment_mod256", "minutes_to_seconds", "crc8_atm",
+        "access_policy_v1", "compose3_mod256"
+    };
+    size_t identifier;
+    if (cursor == NULL || length_out == NULL) return NULL;
+    *length_out = 0u;
+    for (identifier = 0u;
+         identifier < sizeof identifiers / sizeof identifiers[0];
+         ++identifier) {
+        const char *candidate = identifiers[identifier];
+        size_t length = strlen(candidate), index;
+        for (index = 0u; index < length; ++index) {
+            unsigned char character = cursor[index];
+            if (character >= 'A' && character <= 'Z')
+                character = (unsigned char)(character - 'A' + 'a');
+            if (character != (unsigned char)candidate[index]) break;
+        }
+        if (index != length || isalnum(cursor[length]) ||
+            cursor[length] == '_')
+            continue;
+        *length_out = length;
+        return candidate;
+    }
+    return NULL;
+}
+
+static int find_v5_registered_identifier(const char *prompt,
+                                         const char **identifier_out) {
+    const unsigned char *begin = (const unsigned char *)prompt;
+    const unsigned char *cursor = begin;
+    const char *found = NULL;
+    if (prompt == NULL || identifier_out == NULL) return -1;
+    *identifier_out = NULL;
+    while (*cursor != '\0') {
+        size_t length = 0u;
+        const char *identifier;
+        if (!isalpha(*cursor) ||
+            (cursor > begin &&
+             (isalnum(cursor[-1]) || cursor[-1] == '_'))) {
+            ++cursor;
+            continue;
+        }
+        identifier = v5_registered_identifier(cursor, &length);
+        if (identifier == NULL) {
+            ++cursor;
+            continue;
+        }
+        if (found != NULL) return -1;
+        found = identifier;
+        cursor += length;
+    }
+    *identifier_out = found;
+    return 0;
+}
+
+static int v5_registered_wrapper_word(const char *word) {
+    static const char *const wrappers[] = {
+        "apply", "byte", "datum", "for", "input", "map", "octet",
+        "on", "operand", "registered", "the", "to", "unsigned",
+        "value", "with"
+    };
+    size_t index;
+    if (word == NULL) return 0;
+    for (index = 0u; index < sizeof wrappers / sizeof wrappers[0]; ++index)
+        if (strcmp(word, wrappers[index]) == 0) return 1;
+    return 0;
+}
+
 static int add_bucket(int *values, size_t *count, const char *token,
-                      unsigned modulus) {
+                      unsigned modulus, size_t capacity) {
     unsigned bucket = bucket_for(token, modulus);
     size_t i;
     for (i = 0; i < *count; ++i)
         if (values[i] == (int)bucket) return 0;
-    if (*count >= CNET_COMPETE_INTENT_CONTEXT) return 1;
+    if (*count >= capacity) return 1;
     values[(*count)++] = (int)bucket;
     return 0;
 }
 
 static int tokenize_with_modulus(
     const char *prompt, unsigned modulus,
-    int tokens[CNET_COMPETE_INTENT_CONTEXT]) {
-    int values[CNET_COMPETE_INTENT_CONTEXT];
+    int *tokens, size_t capacity, int strip_registered_wrappers) {
+    int values[CNET_COMPETE_INTENT_V5_CONTEXT];
     size_t count = 0, index = 0;
     const unsigned char *cursor = (const unsigned char *)prompt;
-    if (prompt == NULL || tokens == NULL || modulus == 0u) return 1;
-    for (index = 0; index < CNET_COMPETE_INTENT_CONTEXT; ++index)
+    const char *registered_identifier = NULL;
+    if (prompt == NULL || tokens == NULL || modulus == 0u || capacity == 0u ||
+        capacity > CNET_COMPETE_INTENT_V5_CONTEXT)
+        return 1;
+    if (capacity == CNET_COMPETE_INTENT_V5_CONTEXT &&
+        find_v5_registered_identifier(prompt, &registered_identifier) != 0)
+        return 1;
+    for (index = 0; index < capacity; ++index)
         tokens[index] = -1;
     while (*cursor != '\0') {
         char word[48];
         size_t length = 0;
         if (*cursor >= 128u) return 1;
+        if (capacity == CNET_COMPETE_INTENT_V5_CONTEXT && isalpha(*cursor)) {
+            size_t identifier_length = 0u;
+            const char *identifier =
+                v5_registered_identifier(cursor, &identifier_length);
+            if (identifier != NULL) {
+                if (add_bucket(values, &count, identifier, modulus,
+                               capacity) != 0)
+                    return 1;
+                cursor += identifier_length;
+                continue;
+            }
+        }
         if (*cursor >= '0' && *cursor <= '9') {
             while (*cursor >= '0' && *cursor <= '9') ++cursor;
-            if (add_bucket(values, &count, "<num>", modulus) != 0) return 1;
+            if (add_bucket(values, &count, "<num>", modulus, capacity) != 0)
+                return 1;
             continue;
         }
         if ((*cursor >= 'A' && *cursor <= 'Z') ||
@@ -393,7 +518,11 @@ static int tokenize_with_modulus(
                 word[length++] = (char)character;
             }
             word[length] = '\0';
-            if (add_bucket(values, &count, canonical_word(word), modulus) != 0)
+            if (strip_registered_wrappers && registered_identifier != NULL &&
+                v5_registered_wrapper_word(canonical_word(word)))
+                continue;
+            if (add_bucket(values, &count, canonical_word(word), modulus,
+                           capacity) != 0)
                 return 1;
             continue;
         }
@@ -408,7 +537,7 @@ static int tokenize_with_modulus(
 int cnet_compete_intent_tokenize(const char *prompt,
                                  int tokens[CNET_COMPETE_INTENT_CONTEXT]) {
     return tokenize_with_modulus(prompt, CNET_COMPETE_INTENT_BUCKETS,
-                                 tokens);
+                                 tokens, CNET_COMPETE_INTENT_CONTEXT, 0);
 }
 
 const char *cnet_compete_intent_name(CnetCompeteIntent intent) {
@@ -420,18 +549,35 @@ const char *cnet_compete_intent_name(CnetCompeteIntent intent) {
 }
 
 static int add_sample(IntentSample *samples, size_t *count, const char *prompt,
-                      CnetCompeteIntent target) {
-    if (*count >= INTENT_MAX_SAMPLES ||
-        cnet_compete_intent_tokenize(prompt, samples[*count].context) != 0 ||
+                      CnetCompeteIntent target, size_t context_length) {
+    const char *registered_identifier = NULL;
+    size_t index;
+    if (*count >= INTENT_MAX_SAMPLES) return -1;
+    for (index = 0; index < CNET_COMPETE_INTENT_V5_CONTEXT; ++index) {
+        samples[*count].context[index] = -1;
+        samples[*count].novelty_context[index] = -1;
+    }
+    samples[*count].registered_identifier = 0;
+    if (context_length == CNET_COMPETE_INTENT_V5_CONTEXT) {
+        if (find_v5_registered_identifier(prompt, &registered_identifier) != 0)
+            return -1;
+        samples[*count].registered_identifier =
+            registered_identifier != NULL;
+    }
+    if (
+        tokenize_with_modulus(prompt, CNET_COMPETE_INTENT_BUCKETS,
+                              samples[*count].context, context_length, 0) != 0 ||
         tokenize_with_modulus(prompt, INTENT_NOVELTY_BUCKETS,
-                              samples[*count].novelty_context) != 0)
+                              samples[*count].novelty_context,
+                              context_length, 1) != 0)
         return -1;
     samples[*count].target = target;
     ++*count;
     return 0;
 }
 
-static int build_training_samples(IntentSample *samples, size_t *count) {
+static int build_training_samples(IntentSample *samples, size_t *count,
+                                  size_t context_length) {
     char prompt[256];
     size_t intent, body, prefix, repeat;
     *count = 0;
@@ -445,20 +591,21 @@ static int build_training_samples(IntentSample *samples, size_t *count) {
                                        train_bodies[intent][body]);
                 if (written < 0 || (size_t)written >= sizeof prompt ||
                     add_sample(samples, count, prompt,
-                               (CnetCompeteIntent)intent) != 0)
+                               (CnetCompeteIntent)intent,
+                               context_length) != 0)
                     return -1;
             }
         }
         for (body = 0; body < sizeof train_anchors[0] /
                                 sizeof train_anchors[0][0]; ++body)
             if (add_sample(samples, count, train_anchors[intent][body],
-                           (CnetCompeteIntent)intent) != 0)
+                           (CnetCompeteIntent)intent, context_length) != 0)
                 return -1;
     }
     for (body = 0; body < sizeof train_ood / sizeof train_ood[0]; ++body)
         for (repeat = 0; repeat < INTENT_ABSTAIN_REPEATS; ++repeat)
             if (add_sample(samples, count, train_ood[body],
-                           CNET_INTENT_ABSTAIN) != 0)
+                           CNET_INTENT_ABSTAIN, context_length) != 0)
                 return -1;
     return 0;
 }
@@ -495,18 +642,24 @@ static int semantic_target(const char *name, CnetCompeteIntent *target) {
 }
 
 static int append_semantic_training(const char *path, IntentSample *samples,
-                                    size_t *count) {
+                                    size_t *count,
+                                    const SemanticCorpusProfile *profile,
+                                    size_t context_length) {
     static const char header[] =
         "id\tsplit\tintent\tvalue_kind\texpected_value\tprompt\tprovenance";
     struct stat status;
     FILE *file = NULL;
     char line[4096];
-    size_t line_number = 0, semantic_count = 0;
+    size_t line_number = 0, semantic_count = 0, initial_count;
     int rc = -1;
-    if (path == NULL || samples == NULL || count == NULL ||
+    if (path == NULL || samples == NULL || count == NULL || profile == NULL ||
+        profile->suite == NULL || profile->id_prefix == NULL ||
+        profile->provenance == NULL || profile->rows == 0u ||
+        profile->train_samples == 0u ||
         lstat(path, &status) != 0 || !S_ISREG(status.st_mode) ||
         status.st_size <= 0 || (unsigned long long)status.st_size > 1024u * 1024u)
         return -1;
+    initial_count = *count;
     file = fopen(path, "rb");
     if (file == NULL) return -1;
     while (fgets(line, sizeof line, file) != NULL) {
@@ -520,8 +673,7 @@ static int append_semantic_training(const char *path, IntentSample *samples,
         line[--length] = '\0';
         if (length > 0 && line[length - 1u] == '\r') line[--length] = '\0';
         if (line_number == 1u) {
-            if (strcmp(line, "#suite=CNET-ASI-5-semantic-development-v1") != 0)
-                goto done;
+            if (strcmp(line, profile->suite) != 0) goto done;
             continue;
         }
         if (line_number == 2u) {
@@ -530,13 +682,13 @@ static int append_semantic_training(const char *path, IntentSample *samples,
         }
         if (split_semantic_fields(line, fields) != 0) goto done;
         written = snprintf(expected_id, sizeof expected_id,
-                           "semantic-%04zu", semantic_count);
+                           "%s%04zu", profile->id_prefix, semantic_count);
         if (written < 0 || (size_t)written >= sizeof expected_id ||
             strcmp(fields[0], expected_id) != 0 ||
             strcmp(fields[1], "development") != 0 ||
             strcmp(fields[3], "none") != 0 || fields[4][0] != '\0' ||
             fields[5][0] == '\0' ||
-            strcmp(fields[6], "semantic_boundary_development_v1") != 0 ||
+            strcmp(fields[6], profile->provenance) != 0 ||
             semantic_target(fields[2], &target) != 0)
             goto done;
         {
@@ -544,13 +696,15 @@ static int append_semantic_training(const char *path, IntentSample *samples,
                                          ? INTENT_ABSTAIN_REPEATS
                                          : 1u;
             for (repeat = 0; repeat < repeats; ++repeat)
-                if (add_sample(samples, count, fields[5], target) != 0)
+                if (add_sample(samples, count, fields[5], target,
+                               context_length) != 0)
                     goto done;
         }
         ++semantic_count;
     }
     if (ferror(file) || line_number < 3u ||
-        semantic_count != INTENT_EXPECTED_SEMANTIC_ROWS)
+        semantic_count != profile->rows ||
+        *count != initial_count + profile->train_samples)
         goto done;
     rc = 0;
 done:
@@ -559,19 +713,20 @@ done:
 }
 
 static int build_calibration_samples(IntentSample *samples, size_t *count,
-                                     size_t *covered_count) {
+                                     size_t *covered_count,
+                                     size_t context_length) {
     size_t intent, item;
     *count = 0;
     for (intent = 0; intent < 5; ++intent)
         for (item = 0; item < 10; ++item)
             if (add_sample(samples, count, calibration_covered[intent][item],
-                           (CnetCompeteIntent)intent) != 0)
+                           (CnetCompeteIntent)intent, context_length) != 0)
                 return -1;
     *covered_count = *count;
     for (item = 0; item < sizeof calibration_ood /
                                sizeof calibration_ood[0]; ++item)
         if (add_sample(samples, count, calibration_ood[item],
-                       CNET_INTENT_ABSTAIN) != 0)
+                       CNET_INTENT_ABSTAIN, context_length) != 0)
             return -1;
     return 0;
 }
@@ -693,14 +848,14 @@ static double stable_sigmoid(double value) {
 
 static double novelty_score(const NoveltyHead *head,
                             CnetCompeteIntent route,
-                            const int *context) {
+                            const int *context, size_t context_length) {
     double value;
     size_t index;
     if (head == NULL || context == NULL || route < CNET_INTENT_INCREMENT ||
         route >= CNET_INTENT_ABSTAIN)
         return 0.0;
     value = head->biases[route];
-    for (index = 0; index < CNET_COMPETE_INTENT_CONTEXT; ++index) {
+    for (index = 0; index < context_length; ++index) {
         int bucket = context[index];
         if (bucket < 0) break;
         if ((unsigned)bucket >= INTENT_NOVELTY_BUCKETS) return 0.0;
@@ -710,7 +865,7 @@ static double novelty_score(const NoveltyHead *head,
 }
 
 static int train_novelty_head(const IntentSample *samples, size_t sample_count,
-                              NoveltyHead *head) {
+                              NoveltyHead *head, size_t context_length) {
     CnetCompeteIntent route;
     if (samples == NULL || head == NULL || sample_count == 0) return -1;
     memset(head, 0, sizeof *head);
@@ -760,10 +915,13 @@ static int train_novelty_head(const IntentSample *samples, size_t sample_count,
                 balance = (double)unique_count /
                           (2.0 * (double)(accepted ? positive : negative));
                 error = (novelty_score(head, (CnetCompeteIntent)route,
-                                       sample->novelty_context) -
+                                       sample->novelty_context,
+                                       context_length) -
                          (double)accepted) * balance;
+                if (sample->registered_identifier)
+                    error *= INTENT_REGISTERED_NOVELTY_WEIGHT;
                 bias_gradient += error;
-                for (position = 0; position < CNET_COMPETE_INTENT_CONTEXT;
+                for (position = 0; position < context_length;
                      ++position) {
                     int bucket = sample->novelty_context[position];
                     if (bucket < 0) break;
@@ -850,6 +1008,7 @@ done:
 static int score_float(cce_wordlm *model, const int *context,
                        const NoveltyHead *novelty,
                        const int *novelty_context,
+                       size_t context_length,
                        CnetCompeteIntent *best_out, double *confidence_out,
                        double nll[CNET_INTENT_COUNT]) {
     double best_nll = INFINITY;
@@ -865,7 +1024,7 @@ static int score_float(cce_wordlm *model, const int *context,
     }
     *best_out = (CnetCompeteIntent)best;
     *confidence_out = novelty_score(novelty, (CnetCompeteIntent)best,
-                                    novelty_context);
+                                    novelty_context, context_length);
     if (!isfinite(*confidence_out)) return -1;
     return 0;
 }
@@ -873,6 +1032,7 @@ static int score_float(cce_wordlm *model, const int *context,
 static int score_packed(cce_wordlm_packed *model, const int *context,
                         const NoveltyHead *novelty,
                         const int *novelty_context,
+                        size_t context_length,
                         CnetCompeteIntent *best_out, double *confidence_out,
                         double nll[CNET_INTENT_COUNT]) {
     double best_nll = INFINITY;
@@ -888,7 +1048,7 @@ static int score_packed(cce_wordlm_packed *model, const int *context,
     }
     *best_out = (CnetCompeteIntent)best;
     *confidence_out = novelty_score(novelty, (CnetCompeteIntent)best,
-                                    novelty_context);
+                                    novelty_context, context_length);
     if (!isfinite(*confidence_out)) return -1;
     return 0;
 }
@@ -901,7 +1061,8 @@ static int compare_doubles_desc(const void *left, const void *right) {
 static int calibrate(cce_wordlm *floating, cce_wordlm_packed *packed,
                      const NoveltyHead *novelty,
                      const IntentSample *samples, size_t sample_count,
-                     size_t covered_count, CnetCompeteIntentReport *report) {
+                     size_t covered_count, size_t context_length,
+                     CnetCompeteIntentReport *report) {
     double confidence[INTENT_MAX_SAMPLES];
     CnetCompeteIntent prediction[INTENT_MAX_SAMPLES];
     double correct_confidence[INTENT_MAX_SAMPLES];
@@ -918,9 +1079,11 @@ static int calibrate(cce_wordlm *floating, cce_wordlm_packed *packed,
         int intent;
         if (score_float(floating, samples[index].context, novelty,
                         samples[index].novelty_context,
+                        context_length,
                         &float_prediction, &float_confidence, float_nll) != 0 ||
             score_packed(packed, samples[index].context, novelty,
                          samples[index].novelty_context,
+                         context_length,
                          &prediction[index], &confidence[index],
                          packed_nll) != 0)
             return -1;
@@ -1235,7 +1398,7 @@ done:
     return rc;
 }
 
-static int verify_model_header(const char *path) {
+static int verify_model_header(const char *path, int expected_context) {
     FILE *file = fopen(path, "rb");
     uint32_t magic = 0, version = 0;
     int header[6], embed_packed = 0;
@@ -1248,7 +1411,7 @@ static int verify_model_header(const char *path) {
          magic == INTENT_MODEL_MAGIC && version == INTENT_MODEL_VERSION &&
          header[0] == CNET_COMPETE_INTENT_VOCAB &&
          header[1] == CNET_COMPETE_INTENT_EMBED &&
-         header[2] == CNET_COMPETE_INTENT_CONTEXT &&
+         header[2] == expected_context &&
          header[3] == CNET_COMPETE_INTENT_HIDDEN &&
          header[4] == INTENT_MODEL_CLASSES &&
          header[5] == INTENT_MODEL_CLASS_SIZE && embed_packed == 0;
@@ -1256,10 +1419,15 @@ static int verify_model_header(const char *path) {
     return ok ? 0 : -1;
 }
 
-int cnet_compete_intent_train(const char *artifact_path,
-                              const char *metadata_path,
-                              const char *semantic_corpus_path,
-                              CnetCompeteIntentReport *report) {
+static int train_profile(const char *artifact_path,
+                         const char *metadata_path,
+                         const char *v4_semantic_corpus_path,
+                         const char *v5_semantic_corpus_path,
+                         size_t expected_source_samples,
+                         size_t expected_train_samples,
+                         size_t context_length,
+                         const char *provenance,
+                         CnetCompeteIntentReport *report) {
     IntentSample training[INTENT_MAX_SAMPLES], calibration[INTENT_MAX_SAMPLES];
     size_t training_count = 0, calibration_count = 0, covered_count = 0;
     int order[INTENT_MAX_SAMPLES];
@@ -1273,21 +1441,30 @@ int cnet_compete_intent_train(const char *artifact_path,
     size_t index;
 
     if (artifact_path == NULL || metadata_path == NULL ||
-        semantic_corpus_path == NULL)
+        v4_semantic_corpus_path == NULL || provenance == NULL ||
+        (context_length != CNET_COMPETE_INTENT_CONTEXT &&
+         context_length != CNET_COMPETE_INTENT_V5_CONTEXT))
         return -1;
     temporary[0] = '\0';
     memset(&local, 0, sizeof local);
-    if (build_training_samples(training, &training_count) != 0 ||
+    if (build_training_samples(training, &training_count,
+                               context_length) != 0 ||
         training_count != INTENT_EXPECTED_BASE_TRAIN_SAMPLES ||
-        append_semantic_training(semantic_corpus_path, training,
-                                 &training_count) != 0 ||
-        training_count != INTENT_EXPECTED_TRAIN_SAMPLES ||
+        append_semantic_training(v4_semantic_corpus_path, training,
+                                 &training_count, &semantic_v4_profile,
+                                 context_length) != 0 ||
+        (v5_semantic_corpus_path != NULL &&
+         append_semantic_training(v5_semantic_corpus_path, training,
+                                  &training_count,
+                                  &semantic_v5_profile,
+                                  context_length) != 0) ||
+        training_count != expected_train_samples ||
         build_calibration_samples(calibration, &calibration_count,
-                                  &covered_count) != 0)
+                                  &covered_count, context_length) != 0)
         goto done;
     model = cce_wordlm_create(CNET_COMPETE_INTENT_VOCAB,
                               CNET_COMPETE_INTENT_EMBED,
-                              CNET_COMPETE_INTENT_CONTEXT,
+                              (int)context_length,
                               CNET_COMPETE_INTENT_HIDDEN,
                               CNET_COMPETE_INTENT_SEED);
     if (model == NULL) goto done;
@@ -1308,12 +1485,12 @@ int cnet_compete_intent_train(const char *artifact_path,
         }
         for (index = 0; index < training_count; ++index) {
             const IntentSample *sample = &training[order[index]];
-            int augmented[CNET_COMPETE_INTENT_CONTEXT];
+            int augmented[CNET_COMPETE_INTENT_V5_CONTEXT];
             size_t position;
             memcpy(augmented, sample->context, sizeof augmented);
             /* Position augmentation makes the concatenated-context WordLM
                learn a stable bag signal instead of memorizing sentence slots. */
-            for (position = CNET_COMPETE_INTENT_CONTEXT; position > 1;
+            for (position = context_length; position > 1;
                  --position) {
                 size_t swap;
                 int value;
@@ -1334,10 +1511,11 @@ int cnet_compete_intent_train(const char *artifact_path,
     written = snprintf(temporary, sizeof temporary, "%s.tmp.%ld", artifact_path,
                        (long)getpid());
     if (written < 0 || (size_t)written >= sizeof temporary ||
-        train_novelty_head(training, training_count, &novelty) != 0 ||
+        train_novelty_head(training, training_count, &novelty,
+                           context_length) != 0 ||
         cce_wordlm_export_trits(model, temporary) != 0 ||
         append_novelty_head(temporary, &novelty) != 0 ||
-        verify_model_header(temporary) != 0)
+        verify_model_header(temporary, (int)context_length) != 0)
         goto done;
     packed = cce_wordlm_packed_load(temporary);
     if (packed == NULL || cce_wordlm_packed_vocab(packed) !=
@@ -1345,22 +1523,21 @@ int cnet_compete_intent_train(const char *artifact_path,
         goto done;
     local.seed = CNET_COMPETE_INTENT_SEED;
     local.vocabulary = CNET_COMPETE_INTENT_VOCAB;
-    local.context = CNET_COMPETE_INTENT_CONTEXT;
+    local.context = (int)context_length;
     local.embedding = CNET_COMPETE_INTENT_EMBED;
     local.hidden = CNET_COMPETE_INTENT_HIDDEN;
     local.parameters = cce_wordlm_param_count(CNET_COMPETE_INTENT_VOCAB,
                                                CNET_COMPETE_INTENT_EMBED,
-                                               CNET_COMPETE_INTENT_CONTEXT,
+                                               (int)context_length,
                                                CNET_COMPETE_INTENT_HIDDEN) +
                        (INTENT_NOVELTY_BUCKETS + 1u) *
                            CNET_INTENT_ABSTAIN;
-    local.source_examples = INTENT_EXPECTED_SOURCE_SAMPLES;
+    local.source_examples = expected_source_samples;
     local.train_examples = training_count;
     local.train_steps = training_count * INTENT_EPOCHS;
-    snprintf(local.provenance, sizeof local.provenance, "%s",
-             CNET_COMPETE_INTENT_PROVENANCE);
+    snprintf(local.provenance, sizeof local.provenance, "%s", provenance);
     if (calibrate(model, packed, &novelty, calibration, calibration_count,
-                  covered_count, &local) != 0 ||
+                  covered_count, context_length, &local) != 0 ||
         file_identity(temporary, &local.artifact_bytes,
                       &local.artifact_fnv) != 0 ||
         rename(temporary, artifact_path) != 0 ||
@@ -1375,17 +1552,48 @@ done:
     return rc;
 }
 
+int cnet_compete_intent_train(const char *artifact_path,
+                              const char *metadata_path,
+                              const char *semantic_corpus_path,
+                              CnetCompeteIntentReport *report) {
+    return train_profile(artifact_path, metadata_path, semantic_corpus_path,
+                         NULL, INTENT_EXPECTED_SOURCE_SAMPLES,
+                         INTENT_EXPECTED_TRAIN_SAMPLES,
+                         CNET_COMPETE_INTENT_CONTEXT,
+                         CNET_COMPETE_INTENT_PROVENANCE, report);
+}
+
 int cnet_compete_intent_train_v5(const char *artifact_path,
                                  const char *metadata_path,
                                  const char *v4_semantic_corpus_path,
                                  const char *v5_semantic_corpus_path,
                                  CnetCompeteIntentReport *report) {
-    (void)artifact_path;
-    (void)metadata_path;
-    (void)v4_semantic_corpus_path;
-    (void)v5_semantic_corpus_path;
-    (void)report;
-    return -1;
+    return train_profile(artifact_path, metadata_path,
+                         v4_semantic_corpus_path, v5_semantic_corpus_path,
+                         INTENT_V5_EXPECTED_SOURCE_SAMPLES,
+                         INTENT_V5_EXPECTED_TRAIN_SAMPLES,
+                         CNET_COMPETE_INTENT_V5_CONTEXT,
+                         CNET_COMPETE_INTENT_V5_PROVENANCE, report);
+}
+
+static int metadata_profile_valid(const CnetCompeteIntentReport *metadata) {
+    int v4, v5;
+    if (metadata == NULL) return 0;
+    v4 = metadata->context == CNET_COMPETE_INTENT_CONTEXT &&
+         metadata->source_examples == INTENT_EXPECTED_SOURCE_SAMPLES &&
+         metadata->train_examples == INTENT_EXPECTED_TRAIN_SAMPLES &&
+         metadata->train_steps == INTENT_EXPECTED_TRAIN_SAMPLES *
+                                      INTENT_EPOCHS &&
+         strcmp(metadata->provenance,
+                CNET_COMPETE_INTENT_PROVENANCE) == 0;
+    v5 = metadata->context == CNET_COMPETE_INTENT_V5_CONTEXT &&
+         metadata->source_examples == INTENT_V5_EXPECTED_SOURCE_SAMPLES &&
+         metadata->train_examples == INTENT_V5_EXPECTED_TRAIN_SAMPLES &&
+         metadata->train_steps == INTENT_V5_EXPECTED_TRAIN_SAMPLES *
+                                      INTENT_EPOCHS &&
+         strcmp(metadata->provenance,
+                CNET_COMPETE_INTENT_V5_PROVENANCE) == 0;
+    return v4 || v5;
 }
 
 int cnet_compete_intent_load(const char *artifact_path,
@@ -1403,18 +1611,15 @@ int cnet_compete_intent_load(const char *artifact_path,
     memset(&metadata, 0, sizeof metadata);
     if (read_metadata(metadata_path, &metadata) != 0 ||
         metadata.vocabulary != CNET_COMPETE_INTENT_VOCAB ||
-        metadata.context != CNET_COMPETE_INTENT_CONTEXT ||
         metadata.embedding != CNET_COMPETE_INTENT_EMBED ||
         metadata.hidden != CNET_COMPETE_INTENT_HIDDEN ||
         metadata.seed != CNET_COMPETE_INTENT_SEED ||
         metadata.parameters != cce_wordlm_param_count(
             CNET_COMPETE_INTENT_VOCAB, CNET_COMPETE_INTENT_EMBED,
-            CNET_COMPETE_INTENT_CONTEXT, CNET_COMPETE_INTENT_HIDDEN) +
+            metadata.context, CNET_COMPETE_INTENT_HIDDEN) +
                                    (INTENT_NOVELTY_BUCKETS + 1u) *
                                        CNET_INTENT_ABSTAIN ||
-        metadata.source_examples != INTENT_EXPECTED_SOURCE_SAMPLES ||
-        metadata.train_examples != INTENT_EXPECTED_TRAIN_SAMPLES ||
-        metadata.train_steps != INTENT_EXPECTED_TRAIN_SAMPLES * INTENT_EPOCHS ||
+        !metadata_profile_valid(&metadata) ||
         metadata.calibration_covered != 50 ||
         metadata.calibration_answered < 49 ||
         metadata.calibration_correct != metadata.calibration_answered ||
@@ -1427,11 +1632,10 @@ int cnet_compete_intent_load(const char *artifact_path,
         metadata.calibration_ood_abstained != metadata.calibration_ood ||
         metadata.packed_parity_mismatches != 0 ||
         metadata.packed_max_nll_delta >= 1e-3 ||
-        strcmp(metadata.provenance, CNET_COMPETE_INTENT_PROVENANCE) != 0 ||
         file_identity(artifact_path, &bytes, &fnv) != 0 ||
         bytes != metadata.artifact_bytes || fnv != metadata.artifact_fnv ||
         read_novelty_head(artifact_path, &novelty) != 0 ||
-        verify_model_header(artifact_path) != 0)
+        verify_model_header(artifact_path, metadata.context) != 0)
         return -1;
     model = (CnetCompeteIntentModel *)calloc(1, sizeof *model);
     if (model == NULL) return -1;
@@ -1443,6 +1647,7 @@ int cnet_compete_intent_load(const char *artifact_path,
     }
     model->novelty = novelty;
     model->threshold = metadata.threshold;
+    model->context_length = (size_t)metadata.context;
     if (report != NULL) *report = metadata;
     *model_out = model;
     return 0;
@@ -1458,18 +1663,20 @@ int cnet_compete_intent_classify(CnetCompeteIntentModel *model,
                                  const char *prompt,
                                  CnetCompeteIntent *intent,
                                  double *confidence) {
-    int context[CNET_COMPETE_INTENT_CONTEXT];
-    int novelty_context[CNET_COMPETE_INTENT_CONTEXT];
+    int context[CNET_COMPETE_INTENT_V5_CONTEXT];
+    int novelty_context[CNET_COMPETE_INTENT_V5_CONTEXT];
     double nll[CNET_INTENT_COUNT], local_confidence = 0.0;
     CnetCompeteIntent prediction = CNET_INTENT_ABSTAIN;
     if (intent == NULL || model == NULL || model->packed == NULL) return -1;
     *intent = CNET_INTENT_ABSTAIN;
     if (confidence != NULL) *confidence = 0.0;
-    if (cnet_compete_intent_tokenize(prompt, context) != 0 ||
+    if (tokenize_with_modulus(prompt, CNET_COMPETE_INTENT_BUCKETS,
+                              context, model->context_length, 0) != 0 ||
         tokenize_with_modulus(prompt, INTENT_NOVELTY_BUCKETS,
-                              novelty_context) != 0 ||
+                              novelty_context, model->context_length, 1) != 0 ||
         score_packed(model->packed, context, &model->novelty,
-                     novelty_context, &prediction, &local_confidence,
+                     novelty_context, model->context_length,
+                     &prediction, &local_confidence,
                      nll) != 0)
         return 1;
     if (confidence != NULL) *confidence = local_confidence;

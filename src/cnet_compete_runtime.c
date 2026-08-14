@@ -22,6 +22,8 @@ typedef struct {
     LexemeKind kind;
     char word[RUNTIME_WORD_MAX];
     unsigned long long number;
+    size_t source_begin;
+    size_t source_end;
     int negative;
     int hexadecimal;
     int malformed;
@@ -149,12 +151,14 @@ static int lexemes_scan(const char *text, Lexeme output[RUNTIME_LEXEMES_MAX],
             token = &output[count++];
             memset(token, 0, sizeof *token);
             token->kind = LEXEME_WORD;
+            token->source_begin = (size_t)(cursor - begin);
             while (isalpha(*cursor) || *cursor == '\'') {
                 unsigned char character = *cursor++;
                 if (length + 1u >= sizeof token->word) return -1;
                 token->word[length++] = (char)tolower(character);
             }
             token->word[length] = '\0';
+            token->source_end = (size_t)(cursor - begin);
             continue;
         }
         if (isdigit(*cursor)) {
@@ -166,6 +170,7 @@ static int lexemes_scan(const char *text, Lexeme output[RUNTIME_LEXEMES_MAX],
             token = &output[count++];
             memset(token, 0, sizeof *token);
             token->kind = LEXEME_NUMBER;
+            token->source_begin = (size_t)(cursor - begin);
             while (sign > begin && isspace(sign[-1])) --sign;
             if (sign > begin && sign[-1] == '-') {
                 const unsigned char *dash = sign - 1u;
@@ -190,6 +195,7 @@ static int lexemes_scan(const char *text, Lexeme output[RUNTIME_LEXEMES_MAX],
                 ++cursor;
             }
             token->number = value;
+            token->source_end = (size_t)(cursor - begin);
             token->malformed = overflow ||
                 (base == 10 &&
                  ((number_begin > begin && number_begin[-1] == '.') ||
@@ -732,7 +738,7 @@ static int contract_vocabulary_supported(const Lexeme *tokens, size_t count,
         "performs", "pipeline", "plus", "produce", "produces", "raise",
         "raises", "registered", "result", "route", "scale", "second",
         "sequence", "stage", "starting", "successor", "take", "that",
-        "the", "then", "third", "this", "three", "through", "times",
+        "the", "then", "these", "third", "this", "three", "through", "times",
         "to", "transform", "twice", "two", "uint", "unity", "unsigned",
         "use", "value", "with"
     };
@@ -1026,7 +1032,7 @@ static int compose_tail_word(const Lexeme *tokens, size_t count,
         "under", "byte", "bytes", "octet", "octets", "input", "value",
         "datum", "operand", "uint", "bit", "register", "arithmetic",
         "wrap", "wrapping", "wraparound", "overflow", "cyclic", "exactly",
-        "last", "offset", "consumes"
+        "last", "offset", "consumes", "of"
     };
     size_t word;
     for (word = 0; word < sizeof tail / sizeof tail[0]; ++word)
@@ -1112,6 +1118,19 @@ static int named_compose_request_supported(const Lexeme *tokens,
     };
     size_t index = 0;
 
+    if (word_is(tokens, count, 0u, "map") &&
+        word_is(tokens, count, 1u, "input") &&
+        word_is(tokens, count, 2u, "value") && count == 9u &&
+        tokens[3].kind == LEXEME_NUMBER && !tokens[3].negative &&
+        !tokens[3].malformed && !tokens[3].hexadecimal &&
+        tokens[3].number <= 255u && word_is(tokens, count, 4u, "with") &&
+        word_is(tokens, count, 5u, "compose") &&
+        tokens[6].kind == LEXEME_NUMBER && !tokens[6].negative &&
+        !tokens[6].malformed && tokens[6].number == 3u &&
+        word_is(tokens, count, 7u, "mod") &&
+        tokens[8].kind == LEXEME_NUMBER && !tokens[8].negative &&
+        !tokens[8].malformed && tokens[8].number == 256u)
+        return 1;
     /* The registered-name surface is intentionally a small formal grammar:
        "apply compose3_mod256 [to] [the] [input] [byte] N" followed only by
        an optional response request.  Natural-language operation descriptions
@@ -1173,6 +1192,19 @@ static int compose_hyphen_supported(const unsigned char *prompt,
     return 0;
 }
 
+static int compose_descriptor_linked(const char *prompt,
+                                     const Lexeme *left,
+                                     const Lexeme *right) {
+    size_t index;
+    if (prompt == NULL || left == NULL || right == NULL ||
+        left->source_end > right->source_begin)
+        return 0;
+    for (index = left->source_end; index < right->source_begin; ++index)
+        if (!isspace((unsigned char)prompt[index]) && prompt[index] != '-')
+            return 0;
+    return 1;
+}
+
 static int compose_operations_ordered(const char *prompt,
                                       const Lexeme *tokens, size_t count) {
     static const char *const unsupported_operations[] = {
@@ -1217,6 +1249,8 @@ static int compose_operations_ordered(const char *prompt,
             continue;
         descriptor = index > 0 ? index - 1u : count;
         if (descriptor < count &&
+            compose_descriptor_linked(prompt, &tokens[descriptor],
+                                      &tokens[index]) &&
             ((tokens[descriptor].kind == LEXEME_NUMBER &&
               tokens[descriptor].number != 3u) ||
              (tokens[descriptor].kind == LEXEME_WORD &&
@@ -1901,7 +1935,7 @@ static int raw_hyphen_supported(const unsigned char *prompt,
     static const char *const compounds[] = {
         "add-one", "byte-increment", "cyclic-redundancy", "eight-bit",
         "minute-to-second", "modulo-byte", "non-reflected", "one-byte",
-        "policy-one", "polynomial-seven", "three-stage", "unsigned-octet",
+        "policy-one", "plus-three", "polynomial-seven", "three-stage", "unsigned-octet",
         "zero-initialized", "crc-8", "crc-8/atm"
     };
     size_t index;

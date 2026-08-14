@@ -1,6 +1,7 @@
 #include "cnet_compete_intent.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 
@@ -15,7 +16,9 @@
 int main(int argc, char **argv) {
     CnetCompeteIntentModel *model = NULL;
     CnetCompeteIntentReport trained, loaded;
+    char rejected_directory[] = "/tmp/cnet-intent-v5-reject-XXXXXX";
     char rejected_model[128] = {0}, rejected_meta[128] = {0};
+    int rejected_directory_created = 0;
     int rc = 1;
 
     REQUIRE(argc == 5, "artifact_arguments");
@@ -42,14 +45,13 @@ int main(int argc, char **argv) {
     cnet_compete_intent_free(model);
     model = NULL;
 
-    REQUIRE(snprintf(rejected_model, sizeof rejected_model,
-                     "/tmp/cnet-intent-v5-reject-%ld.wlm", (long)getpid()) > 0 &&
-                snprintf(rejected_meta, sizeof rejected_meta,
-                         "/tmp/cnet-intent-v5-reject-%ld.meta",
-                         (long)getpid()) > 0,
+    REQUIRE(mkdtemp(rejected_directory) != NULL, "rejection_directory");
+    rejected_directory_created = 1;
+    REQUIRE(snprintf(rejected_model, sizeof rejected_model, "%s/model",
+                     rejected_directory) > 0 &&
+                snprintf(rejected_meta, sizeof rejected_meta, "%s/meta",
+                         rejected_directory) > 0,
             "rejection_paths");
-    (void)unlink(rejected_model);
-    (void)unlink(rejected_meta);
     REQUIRE(cnet_compete_intent_train_v5(rejected_model, rejected_meta,
                                          argv[3], argv[3], NULL) != 0 &&
                 access(rejected_model, F_OK) != 0 &&
@@ -57,13 +59,20 @@ int main(int argc, char **argv) {
             "v5_corpus_identity");
 
     printf("CNET_7B_INTENT_V5_PASS params=%ld source_examples=%zu "
-           "replay_examples=%zu steps=%zu provenance=%s\n",
+           "replay_examples=%zu steps=%zu threshold=%.9f "
+           "calibration=%zu/%zu ood=%zu/%zu bytes=%zu fnv=%llu "
+           "provenance=%s\n",
            loaded.parameters, loaded.source_examples, loaded.train_examples,
-           loaded.train_steps, loaded.provenance);
+           loaded.train_steps, loaded.threshold, loaded.calibration_correct,
+           loaded.calibration_covered, loaded.calibration_ood_abstained,
+           loaded.calibration_ood, loaded.artifact_bytes,
+           loaded.artifact_fnv, loaded.provenance);
     rc = 0;
 cleanup:
     cnet_compete_intent_free(model);
     if (rejected_model[0] != '\0') (void)unlink(rejected_model);
     if (rejected_meta[0] != '\0') (void)unlink(rejected_meta);
+    if (rejected_directory_created)
+        (void)rmdir(rejected_directory);
     return rc;
 }
