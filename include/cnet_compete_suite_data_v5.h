@@ -2,7 +2,7 @@
 #define CNET_COMPETE_SUITE_DATA_V5_H
 
 #define CNET_COMPETE_SUITE_ID "CNET-ASI-5-v5"
-#define CNET_COMPETE_CANDIDATE_FREEZE_COMMIT "fb966a183d814e32f30850869d0d07d1fac132c4"
+#define CNET_COMPETE_CANDIDATE_FREEZE_COMMIT "da452e8694bbb7e5cb768f016f43644a8a99cb80"
 #define CNET_COMPETE_FIXTURE_PATH "benchmarks/cnet_asi5_v5/heldout.tsv"
 #define CNET_COMPETE_SYSTEM_PATH "benchmarks/cnet_asi5_v5/baseline_system.txt"
 #define CNET_COMPETE_GENERATOR_PATH "tools/cnet_compete_fixture_v5.c"
