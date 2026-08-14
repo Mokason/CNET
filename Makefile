@@ -3900,7 +3900,7 @@ cnet_chat1_independence: include/cnet_chat1.h tools/cnet_chat1_independence.c
 cnet_chat1_compete: cnet_chat1_independence include/cnet_chat_fluency.h \
 		src/cnet_chat_fluency.c tools/cnet_chat1_compete.c
 	@mkdir -p $(BIN_DIR) logs $(CNET_CHAT1_STATE_ROOT)
-	$(CC) $(CFLAGS) -Werror -DCNET_HAVE_CURL=1 \
+	$(CC) $(CFLAGS) -Werror \
 		-DCNET_COMPETE_SUITE_DATA_HEADER=\"cnet_compete_suite_data_v5.h\" \
 		-ffunction-sections -fdata-sections -Iinclude \
 		-o $(BIN_DIR)/cnet_chat1_compete \

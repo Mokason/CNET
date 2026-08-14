@@ -136,11 +136,14 @@ static int load_fixture(const char *path, Chat1Row *rows, size_t *count) {
         }
         row = &rows[n];
         memset(row, 0, sizeof *row);
-        snprintf(row->id, sizeof row->id, "%s", fields[0]);
-        snprintf(row->prompt, sizeof row->prompt, "%s", fields[5]);
+        strncpy(row->id, fields[0], sizeof row->id - 1u);
+        row->id[sizeof row->id - 1u] = '\0';
+        strncpy(row->prompt, fields[5], sizeof row->prompt - 1u);
+        row->prompt[sizeof row->prompt - 1u] = '\0';
         row->covered = strcmp(fields[1], "covered") == 0;
         if (row->covered) {
-            snprintf(row->intent, sizeof row->intent, "%s", fields[2]);
+            strncpy(row->intent, fields[2], sizeof row->intent - 1u);
+            row->intent[sizeof row->intent - 1u] = '\0';
             row->expected = (unsigned)strtoul(fields[4], NULL, 10);
             row->guards =
                 strcmp(row->intent, "compose3_mod256") == 0 ? 3u : 0u;
