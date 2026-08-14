@@ -661,14 +661,19 @@ static int word_in_list(const Lexeme *tokens, size_t count, size_t index,
 static int contract_scaffolding_word(const Lexeme *tokens, size_t count,
                                      size_t index) {
     static const char *const words[] = {
-        "a", "an", "and", "apply", "as", "at", "by", "calculate",
-        "compute", "datum", "derive", "determine", "equivalent",
-        "evaluate", "exact", "exactly", "find", "for", "from", "given",
-        "immediate", "in", "input",
-        "into", "it", "its", "map", "of", "on", "operand", "output",
-        "process", "registered", "result", "return", "single", "source",
-        "stored", "target", "that", "the", "this", "through", "to",
-        "total", "under", "using", "value", "what", "whole", "with"
+        "a", "an", "and", "answer", "apply", "are", "as", "ask", "at",
+        "be", "been", "being", "by", "calculate", "can", "compute",
+        "consider", "could", "datum", "derive", "determine", "do", "does",
+        "equal", "equals", "equivalent", "evaluate", "exact", "exactly",
+        "find", "for", "from", "give", "given", "how", "if", "immediate",
+        "in", "input", "into", "is", "it", "its", "just", "kindly", "let",
+        "many", "map", "may", "might", "need", "needed", "now", "of", "on",
+        "operand", "output", "please", "process", "provide", "registered",
+        "report", "request", "required", "result", "return", "should",
+        "show", "simply", "single", "source", "state", "stored", "suppose",
+        "target", "tell", "that", "the", "this", "through", "to", "total",
+        "under", "using", "value", "want", "what", "when", "whether",
+        "whole", "with", "would"
     };
     return word_in_list(tokens, count, index, words,
                         sizeof words / sizeof words[0]);
@@ -690,7 +695,9 @@ static int contract_vocabulary_supported(const Lexeme *tokens, size_t count,
         "register", "registered", "result", "return", "single", "six",
         "step", "stored", "successor", "take", "the", "through", "two",
         "uint", "under", "unity", "unsigned", "value", "with", "wrap",
-        "wraparound", "wrapped", "follows", "next", "representable"
+        "wraparound", "wrapped", "follows", "next", "representable",
+        "plus", "succeeding", "incremented", "incrementing", "uint8",
+        "after", "integer", "number", "numeric", "cyclic"
     };
     static const char *const minutes[] = {
         "a", "apply", "by", "contain", "contains", "convert", "count",
@@ -702,7 +709,7 @@ static int contract_vocabulary_supported(const Lexeme *tokens, size_t count,
         "multiply", "per", "quantity", "registered", "report",
         "same", "scale", "sec", "second", "seconds", "sixty", "source",
         "span", "target", "that", "the", "time", "to", "translate", "units",
-        "using", "whole"
+        "using", "whole", "equals", "equal", "please", "are", "is"
     };
     static const char *const crc[] = {
         "and", "apply", "as", "at", "atm", "bit", "both", "byte",
@@ -713,7 +720,7 @@ static int contract_vocabulary_supported(const Lexeme *tokens, size_t count,
         "on", "one", "polynomial", "process", "produce", "redundancy",
         "refin", "reflected", "refout", "register", "return", "rule",
         "seven", "single", "the", "to", "under", "unsigned", "use", "using", "v",
-        "width", "with", "x", "xor", "xorout", "zero"
+        "width", "with", "x", "xor", "xorout", "zero", "please", "atm"
     };
     static const char *const policy[] = {
         "access", "admin", "adjudicate", "allow", "apply",
@@ -723,7 +730,8 @@ static int contract_vocabulary_supported(const Lexeme *tokens, size_t count,
         "next", "one", "or", "outcome", "owner", "permission", "policy",
         "reads", "receives", "resolve", "return", "rule", "security",
         "state", "suspended", "switches", "the", "then", "these", "to",
-        "true", "tuple", "under", "uses", "v", "where"
+        "true", "tuple", "under", "uses", "v", "where", "granted",
+        "permitted", "whether", "please", "yes", "no"
     };
     static const char *const compose[] = {
         "a", "add", "addition", "advance", "advances", "an", "and",
@@ -740,7 +748,7 @@ static int contract_vocabulary_supported(const Lexeme *tokens, size_t count,
         "sequence", "stage", "starting", "successor", "take", "that",
         "the", "then", "these", "third", "this", "three", "through", "times",
         "to", "transform", "twice", "two", "uint", "unity", "unsigned",
-        "use", "value", "with"
+        "use", "value", "with", "please", "followed", "uint8", "then"
     };
     const char *const *allowed = NULL;
     size_t allowed_count = 0, index;
@@ -947,7 +955,10 @@ static int response_objects_supported(const Lexeme *tokens, size_t count) {
         limit = index + 8u < count ? index + 8u : count;
         for (look = index + 1u; look < limit; ++look) {
             if (word_is(tokens, count, look, "and") ||
-                word_is(tokens, count, look, "then"))
+                word_is(tokens, count, look, "then") ||
+                word_is(tokens, count, look, "when") ||
+                word_is(tokens, count, look, "where") ||
+                word_is(tokens, count, look, "if"))
                 break;
             if (word_is(tokens, count, look, "is") ||
                 word_is(tokens, count, look, "as") ||
@@ -1032,7 +1043,7 @@ static int compose_tail_word(const Lexeme *tokens, size_t count,
         "under", "byte", "bytes", "octet", "octets", "input", "value",
         "datum", "operand", "uint", "bit", "register", "arithmetic",
         "wrap", "wrapping", "wraparound", "overflow", "cyclic", "exactly",
-        "last", "offset", "consumes", "of"
+        "last", "offset", "consumes", "of", "unsigned"
     };
     size_t word;
     for (word = 0; word < sizeof tail / sizeof tail[0]; ++word)
@@ -1650,7 +1661,8 @@ static int number_word_context_supported(const Lexeme *tokens, size_t count,
                    number_adjacent_word(tokens, count, index, "forward") ||
                    number_adjacent_word(tokens, count, index, "raise") ||
                    number_adjacent_word(tokens, count, index, "increase") ||
-                   number_adjacent_word(tokens, count, index, "step");
+                   number_adjacent_word(tokens, count, index, "step") ||
+                   number_adjacent_word(tokens, count, index, "plus");
         if (intent == CNET_INTENT_CRC8)
             return number_adjacent_word(tokens, count, index, "init") ||
                    number_adjacent_word(tokens, count, index, "initial") ||
@@ -1809,7 +1821,7 @@ static int has_policy_action(const char *prompt, const Lexeme *tokens,
     static const char *const actions[] = {
         "access", "adjudicate", "policy", "permission", "authorize",
         "authorization", "security", "entry", "decision", "allowed",
-        "allow", "deny"
+        "allow", "deny", "granted", "permitted", "decide"
     };
     return contains_ascii_casefold(prompt, "access_policy_v1") ||
            has_any_word(tokens, count, actions,
@@ -1863,7 +1875,7 @@ static int policy_data_words_supported(const Lexeme *tokens, size_t count) {
         "decision", "permission", "access", "entry", "allow", "allowed",
         "deny", "authorization", "security", "its", "result", "policy",
         "rule", "version", "revision", "v", "then", "next", "finally",
-        "reads"
+        "reads", "granted", "permitted", "please", "whether", "is", "are"
     };
     size_t first_flag = count, zone_start = count, index;
     for (index = 0; index < count; ++index)

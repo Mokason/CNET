@@ -6997,6 +6997,22 @@ cnet_7b_v5_diagnostic_san: cnet_7b_v5_diagnostic
 	@grep -qx 'CNET_7B_V5_DIAGNOSTIC_PASS stages=4 serving_path_identity=1 answer_values_exposed=0' \
 		logs/cnet_7b_v5_diagnostic_san.log
 
+.PHONY: cnet_7b_v6_coherence
+cnet_7b_v6_coherence: cnet_7b_v5_runtime
+	$(CC) $(CFLAGS) -Werror -ffunction-sections -fdata-sections -Iinclude \
+		-o $(BIN_DIR)/test_cnet_compete_v6_coherence \
+		src/cnet_compete_runtime.c src/cnet_compete_intent.c \
+		src/cnet_compete_capsules.c src/cce/cce_wordlm.c \
+		$(CNET_COMPETE_CAPSULE_CORE) $(ROUTER) $(SPECIALIST_SRC) \
+		tests/test_cnet_compete_v6_coherence.c \
+		-Wl,--gc-sections $(LDFLAGS) $(MCP_LDFLAGS) -pthread
+	@./$(BIN_DIR)/test_cnet_compete_v6_coherence \
+		artifacts/cnet_asi5_v5/intent.wlm \
+		artifacts/cnet_asi5_v5/intent.meta \
+		artifacts/cnet_asi5_v5/capsules | \
+		tee logs/cnet_7b_v6_coherence.log
+	@grep -q '^CNET_7B_V6_COHERENCE_PASS ' logs/cnet_7b_v6_coherence.log
+
 cnet_7b_v5_semantic_corpus: include/cnet_compete_v5_semantics.h \
 		include/cnet_compete_independence.h \
 		src/cnet_compete_v5_semantics.c \
@@ -7369,7 +7385,7 @@ cnet_7b_eval_san: cnet_7b_eval_contract
 		tee logs/cnet_7b_score_san.log
 	@grep -q CNET_7B_SCORE_PASS logs/cnet_7b_score_san.log
 
-CNET_COMPETE_RELEASE_ROOT := /home/marble/.local/state/cnet/cnet_asi5_v5
+CNET_COMPETE_RELEASE_ROOT := /home/marble/.local/state/cnet/cnet_asi5_v6
 CNET_COMPETE_RELEASE_BIN := $(CNET_COMPETE_RELEASE_ROOT)/bin
 CNET_COMPETE_EVIDENCE_DIR := $(CNET_COMPETE_RELEASE_ROOT)/evidence
 CNET_COMPETE_RESULTS_DIR := $(CNET_COMPETE_RELEASE_ROOT)/results

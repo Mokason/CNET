@@ -1,6 +1,6 @@
 # CNET-ASI-5 v5 candidate-freeze protocol
 
-Status: **S6 RECOVERY FREEZE; F5 FIXTURE BYTES UNCHANGED**
+Status: **S7 ADMISSION RECOVERY; F5 FIXTURE BYTES UNCHANGED**
 
 This document froze the v5 candidate at `S5` before any v5 held-out prompt
 wording was authored. `F5` later recorded that `S5` commit and the seven
@@ -20,13 +20,29 @@ not regenerate the 448-row fixture, and does not lower a floor. It only:
    with a new labeled AMD/ROCm GPU pin (`bonsai_8b_rocm_q1_0`, `-ngl 99`,
    `:8081`, unused R9700 via `ROCR_VISIBLE_DEVICES=1`). No CUDA path.
 
-After `S6`, `F6` may change only:
+After `S6`, `F6` recorded that recovery freeze. The authorized S6/F6 run
+emitted `CNET_7B_COMPETE_FAIL` with four score gates:
+`overall_not_below_baseline`, `covered_not_below_baseline`,
+`covered_answer_coverage_0_95`, and `composition_per_hop_coverage`.
+Lane aggregates only: increment 0/64, minutes 32/64, crc 16/64, policy
+0/64, compose 32/64, OOD 128/128. No row outputs were read.
 
-- `include/cnet_compete_suite_data_v5.h` (records the `S6` commit)
+`S7` keeps the same fixture bytes and the same AMD/ROCm baseline pin. It
+widens closed request-English admission so independently authored
+coherent paraphrases of the public contracts are answered, while paired
+OOD mutations still abstain. Development stress and diagnostic gates
+remain green. The v6 release root is
+`/home/marble/.local/state/cnet/cnet_asi5_v6` so the authenticated v5
+FAIL journals stay untouched.
+
+After `S7`, `F7` may change only:
+
+- `include/cnet_compete_suite_data_v5.h` (records the `S7` commit and v6
+  state root)
 - `benchmarks/cnet_asi5_v5/digests.sha256`
 
 The held-out TSV, cases, oracle, generator, and system prompt stay
-byte-identical to `F5`. The release builder checks `S6..HEAD` against
+byte-identical to `F5`. The release builder checks `S7..HEAD` against
 those two files.
 
 The original `S5` rules below still describe the frozen candidate. They

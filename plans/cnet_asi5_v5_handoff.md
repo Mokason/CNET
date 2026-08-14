@@ -1,6 +1,6 @@
 # CNET-ASI-5 v5 handoff
 
-Updated: 2026-08-14 (S6 recovery: sealed-tree hygiene + AMD/ROCm GPU pin)
+Updated: 2026-08-14 (S7 admission: coherent request English; same fixture)
 
 ## Goal and completion rule
 
@@ -35,18 +35,18 @@ on the answer-free stress matrix. Held-out coverage can be measured only after
   `artifacts/cnet_asi5_v5/semantic_development.tsv` into the sealed tree.
   `artifact_tree_exact` refused the extra file. Floors were not scored.
   No v4/v5 row outputs were read.
-- `S6` recovery (this tree): export the development TSV to
-  `artifacts/cnet_asi5_v5_dev/`; pin a new labeled AMD/ROCm baseline
-  `bonsai_8b_rocm_q1_0` on `127.0.0.1:8081`, PID `626910`, `-ngl 99`,
-  unused R9700 (`ROCR_VISIBLE_DEVICES=1`, `HIP_VISIBLE_DEVICES=0`,
-  `CUDA_VISIBLE_DEVICES=`). Same HIP `llama-server` binary. No CUDA.
-- Leave the CPU teacher `bonsai-server.service` on `:8080` (`-ngl 0`)
-  for residual/gap-lane. Compete does not use it.
-- `F6` after the `S6` commit must only retarget
-  `include/cnet_compete_suite_data_v5.h` at the `S6` hash and refresh
-  `benchmarks/cnet_asi5_v5/digests.sha256`. Do not regenerate the fixture.
+- `S6`/`F6` official run: `CNET_7B_COMPETE_FAIL` four score gates.
+  Bonsai ROCm 214/448 covered 87/320; CNET 208/448 covered 80/320
+  (increment 0, policy 0). Journals stay in `cnet_asi5_v5`. No rows read.
+- `S7` (this tree): widen closed request-English so independently
+  authored coherent paraphrases of the public contracts answer, OOD
+  still abstains. `CNET_7B_V6_COHERENCE_PASS covered=14 ood=5`.
+  Existing diagnostic and v5 runtime matrix stay green. Release root
+  moves to `cnet_asi5_v6`. Same ROCm pin PID `626910` on `:8081`.
+- `F7` after `S7` only retargets the suite header at the `S7` hash and
+  the v6 state root, then refreshes `digests.sha256`. Same F5 fixture.
 - Then one authorized `make -j1 cnet_7b_compete_results`. Never start a
-  second result path.
+  second result path. Floors unchanged. Broader claims `WITHHELD`.
 
 ## Verified v5 development result
 

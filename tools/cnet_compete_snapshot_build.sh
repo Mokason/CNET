@@ -23,7 +23,7 @@ case "$workspace_root" in
     *) echo "workspace root must be absolute" >&2; exit 2 ;;
 esac
 case "$release_root" in
-    /home/marble/.local/state/cnet/cnet_asi5_v5) ;;
+    /home/marble/.local/state/cnet/cnet_asi5_v6) ;;
     *) echo "release root must be canonical" >&2; exit 2 ;;
 esac
 case "$staging_root" in
