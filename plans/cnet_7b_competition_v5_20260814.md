@@ -17,6 +17,25 @@ prompt/output pairs, per-row diagnostics, and fixture wording are forbidden.
 V5 development prompts contain intent labels and externally verified contract
 metadata only; CNET Tier-A answers remain excluded.
 
+Protocol deviation recorded 2026-08-14: while locating composition symbols, a
+read-only source search was accidentally scoped across the v4 benchmark
+directory and printed several v4 fixture prompt lines. No row outputs or
+per-row scores were read. Those lines are prohibited as v5 development input;
+the v5 candidate corpus is independently generated from the public contracts,
+and the actual v5 fixture still starts only after S5. This means the stronger
+claim that no v4 wording was ever displayed is withdrawn rather than hidden.
+
+## Development checkpoint
+
+- V5.1 diagnostic gate: PASS, with one serving path and no answer exposure.
+- V5.2 native semantic matrix: 160 covered forms (32 per intent), 160 paired
+  OOD mutations, all 16 policy states, and no stored answer values.
+- Prior-source audit: 320 candidates against 2,807 exclusions, with zero exact,
+  canonical, or thresholded near overlaps.
+- RED at commit `a5b9d32`: 61/180 combined covered development cases answered,
+  zero unsafe answers across 181 combined OOD cases, zero structural
+  duplicates. This is diagnostic evidence only, not a benchmark result.
+
 ## Causal diagnosis
 
 V4 answered 128 covered rows and all 128 were correct. It safely abstained on
