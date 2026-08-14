@@ -62,6 +62,7 @@ int main(int argc, char **argv) {
     CnetUtterState S;
     char out[CNET_UTTER_TEXT];
     const char *when = NULL;
+    int native = 0;
     int i;
 
     for (i = 1; i < argc; i++) {
@@ -105,11 +106,25 @@ int main(int argc, char **argv) {
             cnet_utter_chain_brief(argv[++i], S.chain_brief, sizeof S.chain_brief);
         } else if (!strcmp(argv[i], "--allow-voice-llm"))
             S.never_voice_llm = 0;
+        else if (!strcmp(argv[i], "--native"))
+            native = 1;
+        else if (!strcmp(argv[i], "--contract") && i + 1 < argc)
+            cnet_utter_state_set(&S, "contract", argv[++i]);
+        else if (!strcmp(argv[i], "--input") && i + 1 < argc)
+            cnet_utter_state_set(&S, "input", argv[++i]);
+        else if (!strcmp(argv[i], "--output") && i + 1 < argc)
+            cnet_utter_state_set(&S, "output", argv[++i]);
         else if (!strcmp(argv[i], "--domain") && i + 1 < argc)
             snprintf(S.domain, sizeof S.domain, "%s", argv[++i]);
     }
     if (!S.source[0]) snprintf(S.source, sizeof S.source, "LOCAL");
-    if (cnet_utter_compose(&B, &S, when, out, sizeof out) != 0) return 1;
+    if (native) {
+        if (cnet_utter_compose_native(&S, when ? when : "identity", out,
+                                      sizeof out) != 0)
+            return 1;
+    } else if (cnet_utter_compose(&B, &S, when, out, sizeof out) != 0) {
+        return 1;
+    }
     printf("%s\n", out);
     printf("may_voice=%d never_voice_llm=%d source=%s\n",
            cnet_utter_may_voice(&S, S.source), S.never_voice_llm, S.source);

@@ -3795,6 +3795,16 @@ cnet_chat1_certified: include/cnet_compete_runtime.h src/cnet_compete_runtime.c 
 		tee logs/cnet_chat1_certified.log
 	@grep -q '^CNET_CHAT1_CERTIFIED_PASS ' logs/cnet_chat1_certified.log
 
+.PHONY: cnet_chat1_fluency
+cnet_chat1_fluency: include/cnet_utterance.h src/cnet_utterance.c \
+		tests/test_cnet_chat1_fluency.c
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) -std=c11 -Wall -Wextra -O2 -Werror -D_POSIX_C_SOURCE=200809L \
+		-Iinclude -o $(BIN_DIR)/test_cnet_chat1_fluency \
+		src/cnet_utterance.c tests/test_cnet_chat1_fluency.c
+	@./$(BIN_DIR)/test_cnet_chat1_fluency | tee logs/cnet_chat1_fluency.log
+	@grep -q '^CNET_CHAT1_FLUENCY_PASS ' logs/cnet_chat1_fluency.log
+
 .PHONY: cnetd-run
 cnetd-run: cnetd query_dialog
 	@pkill -x cnetd 2>/dev/null || true

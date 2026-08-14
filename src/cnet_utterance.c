@@ -281,6 +281,139 @@ int cnet_utter_compose(const CnetUtterBank *B, const CnetUtterState *S, const ch
     return 0;
 }
 
+static int append_text(char *out, size_t cap, size_t *used, const char *text) {
+    size_t n;
+    if (out == NULL || used == NULL || cap == 0) return -1;
+    if (text == NULL) text = "";
+    n = strlen(text);
+    if (*used + n >= cap) return -1;
+    memcpy(out + *used, text, n);
+    *used += n;
+    out[*used] = '\0';
+    return 0;
+}
+
+static const char *slot_or(const CnetUtterState *S, const char *key,
+                           const char *fallback) {
+    const char *value = lookup_val(S, key, strlen(key));
+    if (value != NULL && value[0] != '\0') return value;
+    return fallback;
+}
+
+int cnet_utter_compose_native(const CnetUtterState *S, const char *when_hint,
+                              char *out, size_t cap) {
+    CnetUtterState tmp;
+    const char *when;
+    const char *name, *law, *role, *topic, *contract, *input, *output;
+    size_t used = 0;
+    if (out == NULL || cap == 0 || S == NULL) return -1;
+    out[0] = '\0';
+    tmp = *S;
+    sync_common_kv(&tmp);
+    when = guess_when(&tmp, when_hint);
+    if (when_hint != NULL && when_hint[0] != '\0') when = when_hint;
+    name = slot_or(&tmp, "name", "Marble");
+    law = slot_or(&tmp, "law", "never self-cert");
+    role = slot_or(&tmp, "role", "certified local agent");
+    topic = slot_or(&tmp, "topic", "that");
+    contract = slot_or(&tmp, "contract", "");
+    input = slot_or(&tmp, "input", "");
+    output = slot_or(&tmp, "output", tmp.base_answer);
+    if (strcmp(when, "identity") == 0) {
+        if (append_text(out, cap, &used, name) != 0 ||
+            append_text(out, cap, &used, " is the ") != 0 ||
+            append_text(out, cap, &used, role) != 0 ||
+            append_text(out, cap, &used,
+                        " on this host. The standing law is ") != 0 ||
+            append_text(out, cap, &used, law) != 0 ||
+            append_text(out, cap, &used, ".") != 0)
+            return -1;
+        return 0;
+    }
+    if (strcmp(when, "status") == 0) {
+        if (append_text(out, cap, &used, name) != 0 ||
+            append_text(out, cap, &used, " reports local hit ") != 0 ||
+            append_text(out, cap, &used, slot_or(&tmp, "local_hit", "unknown")) !=
+                0 ||
+            append_text(out, cap, &used, " and ") != 0 ||
+            append_text(out, cap, &used, slot_or(&tmp, "miss_n", "0")) != 0 ||
+            append_text(out, cap, &used, " open misses.") != 0)
+            return -1;
+        return 0;
+    }
+    if (strcmp(when, "miss") == 0) {
+        if (append_text(out, cap, &used, name) != 0 ||
+            append_text(out, cap, &used, " has no sealed skill for ") != 0 ||
+            append_text(out, cap, &used, topic) != 0 ||
+            append_text(out, cap, &used,
+                        ". The miss is logged. The standing law is ") != 0 ||
+            append_text(out, cap, &used, law) != 0 ||
+            append_text(out, cap, &used, ".") != 0)
+            return -1;
+        return 0;
+    }
+    if (strcmp(when, "refuse") == 0) {
+        if (append_text(out, cap, &used, name) != 0 ||
+            append_text(out, cap, &used,
+                        " refuses to invent a seal or voice a teacher draft. "
+                        "The standing law is ") != 0 ||
+            append_text(out, cap, &used, law) != 0 ||
+            append_text(out, cap, &used, ".") != 0)
+            return -1;
+        return 0;
+    }
+    if (strcmp(when, "increment") == 0 || strcmp(when, "crc") == 0 ||
+        strcmp(when, "minutes") == 0 || strcmp(when, "policy") == 0 ||
+        strcmp(when, "compose") == 0 ||
+        (contract[0] != '\0' && output[0] != '\0')) {
+        if (contract[0] == '\0') contract = when;
+        if (append_text(out, cap, &used, name) != 0 ||
+            append_text(out, cap, &used, " computes ") != 0 ||
+            append_text(out, cap, &used, contract) != 0)
+            return -1;
+        if (input[0] != '\0') {
+            if (append_text(out, cap, &used, " on ") != 0 ||
+                append_text(out, cap, &used, input) != 0)
+                return -1;
+        }
+        if (output[0] != '\0') {
+            if (append_text(out, cap, &used, " as ") != 0 ||
+                append_text(out, cap, &used, output) != 0)
+                return -1;
+        }
+        if (append_text(out, cap, &used, ".") != 0) return -1;
+        return 0;
+    }
+    if (append_text(out, cap, &used, name) != 0 ||
+        append_text(out, cap, &used, " has no spoken contract for this turn.") !=
+            0)
+        return -1;
+    return 0;
+}
+
+int cnet_utter_fluency_check(const CnetUtterBank *B, const CnetUtterState *S,
+                             const char *when_hint, const char *spoken) {
+    char filled[CNET_UTTER_TEXT];
+    size_t n;
+    if (spoken == NULL || spoken[0] == '\0' || S == NULL) return 0;
+    n = strlen(spoken);
+    if (!isupper((unsigned char)spoken[0])) return 0;
+    if (spoken[n - 1u] != '.' && spoken[n - 1u] != '?' &&
+        spoken[n - 1u] != '!')
+        return 0;
+    if (strstr(spoken, "  ") != NULL || strchr(spoken, '{') != NULL)
+        return 0;
+    if (strstr(spoken, "Continuous self on this host") != NULL ||
+        strstr(spoken, "continuous Hermes self") != NULL ||
+        strstr(spoken, "Speech capsule ready") != NULL)
+        return 0;
+    if (B != NULL &&
+        cnet_utter_compose(B, S, when_hint, filled, sizeof filled) == 0 &&
+        strcmp(filled, spoken) == 0)
+        return 0;
+    return 1;
+}
+
 int cnet_utter_may_voice(const CnetUtterState *S, const char *source) {
     const char *src = source;
     if (S && !src) src = S->source;

@@ -72,6 +72,16 @@ const CnetUtterPhrase *cnet_utter_pick(const CnetUtterBank *B, const CnetUtterSt
 int cnet_utter_compose(const CnetUtterBank *B, const CnetUtterState *S, const char *when_hint,
                        char *out, size_t cap);
 
+/* Assemble a sentence from live slots and small function-word glue.
+   This is not a phrase-bank blob and not residual GGUF text. */
+int cnet_utter_compose_native(const CnetUtterState *S, const char *when_hint,
+                              char *out, size_t cap);
+
+/* 1 if spoken is well-formed, carries live slots, and is not a filled
+   default-bank template. */
+int cnet_utter_fluency_check(const CnetUtterBank *B, const CnetUtterState *S,
+                             const char *when_hint, const char *spoken);
+
 /* Voice gate: 1 = allowed to TTS this source under policy */
 int cnet_utter_may_voice(const CnetUtterState *S, const char *source);
 
