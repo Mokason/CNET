@@ -1,5 +1,14 @@
 # CNET 7B-class competition implementation plan
 
+Current execution plan: `plans/cnet_7b_competition_v5_20260814.md`.
+
+V4 completed a frozen 448+448-row run and failed two immutable coverage gates;
+its authenticated aggregate result is recorded in
+`plans/cnet_7b_competition_v4_results_20260814.md`. The historical P0-P6 plan
+below is retained as the original dependency contract. V5 repeats the
+candidate-freeze -> independent-fixture -> one-shot-result sequence and may use
+only aggregate v4 metrics.
+
 Objective: produce a reusable native C artifact and frozen evidence showing
 whether CNET-ASI-5 v1 matches or beats the pinned Bonsai 8B baseline without
 weakening any certification or abstention gate.
