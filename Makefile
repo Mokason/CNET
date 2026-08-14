@@ -3920,6 +3920,30 @@ cnet_chat1_compete: cnet_chat1_independence include/cnet_chat_fluency.h \
 		$(CNET_CHAT1_STATE_ROOT)/cnet_chat1_compete.log
 	@grep -q '^CNET_CHAT_COMPETE_PASS ' logs/cnet_chat1_compete.log
 
+.PHONY: cnet_lookup_capsule
+cnet_lookup_capsule: include/cnet_lookup.h src/cnet_lookup.c \
+		src/cce/cce_campaign_provenance.c \
+		tests/test_cnet_lookup_capsule.c
+	@mkdir -p $(BIN_DIR) logs
+	@pkg-config --exists libcurl
+	$(CC) $(CFLAGS) -Werror -Iinclude $$(pkg-config --cflags libcurl) \
+		-o $(BIN_DIR)/test_cnet_lookup_capsule \
+		src/cnet_lookup.c src/cce/cce_campaign_provenance.c \
+		tests/test_cnet_lookup_capsule.c $(LDFLAGS) \
+		$$(pkg-config --libs libcurl)
+	@./$(BIN_DIR)/test_cnet_lookup_capsule | tee logs/cnet_lookup_capsule.log
+	@grep -q '^CNET_LOOKUP_CAPSULE_PASS ' logs/cnet_lookup_capsule.log
+
+.PHONY: cnet_lookup
+cnet_lookup: include/cnet_lookup.h src/cnet_lookup.c \
+		src/cce/cce_campaign_provenance.c tools/cnet_lookup.c
+	@mkdir -p $(BIN_DIR)
+	@pkg-config --exists libcurl
+	$(CC) $(CFLAGS) -Werror -Iinclude $$(pkg-config --cflags libcurl) \
+		-o $(BIN_DIR)/cnet_lookup \
+		src/cnet_lookup.c src/cce/cce_campaign_provenance.c \
+		tools/cnet_lookup.c $(LDFLAGS) $$(pkg-config --libs libcurl)
+
 .PHONY: cnetd-run
 cnetd-run: cnetd query_dialog
 	@pkill -x cnetd 2>/dev/null || true
