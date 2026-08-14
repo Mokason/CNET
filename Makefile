@@ -3805,6 +3805,37 @@ cnet_chat1_fluency: include/cnet_utterance.h src/cnet_utterance.c \
 	@./$(BIN_DIR)/test_cnet_chat1_fluency | tee logs/cnet_chat1_fluency.log
 	@grep -q '^CNET_CHAT1_FLUENCY_PASS ' logs/cnet_chat1_fluency.log
 
+.PHONY: cnet_chat_fluency_v1 cnet_chat1_contract_convo
+cnet_chat_fluency_v1: include/cnet_chat_fluency.h src/cnet_chat_fluency.c \
+		tests/test_cnet_chat_fluency_v1.c
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) -std=c11 -Wall -Wextra -O2 -Werror -D_POSIX_C_SOURCE=200809L \
+		-Iinclude -o $(BIN_DIR)/test_cnet_chat_fluency_v1 \
+		src/cnet_chat_fluency.c tests/test_cnet_chat_fluency_v1.c
+	@./$(BIN_DIR)/test_cnet_chat_fluency_v1 | tee logs/cnet_chat_fluency_v1.log
+	@grep -q '^CNET_CHAT_FLUENCY_V1_PASS ' logs/cnet_chat_fluency_v1.log
+
+cnet_chat1_contract_convo: include/cnet_chat_fluency.h src/cnet_chat_fluency.c \
+		include/cnet_utterance.h src/cnet_utterance.c \
+		include/cnet_compete_runtime.h src/cnet_compete_runtime.c \
+		tests/test_cnet_chat1_contract_convo.c $(ROUTER) $(SPECIALIST_SRC)
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -Werror -ffunction-sections -fdata-sections -Iinclude \
+		-o $(BIN_DIR)/test_cnet_chat1_contract_convo \
+		src/cnet_compete_runtime.c src/cnet_compete_intent.c \
+		src/cnet_compete_capsules.c src/cce/cce_wordlm.c \
+		src/cnet_utterance.c src/cnet_chat_fluency.c \
+		$(CNET_COMPETE_CAPSULE_CORE) $(ROUTER) $(SPECIALIST_SRC) \
+		tests/test_cnet_chat1_contract_convo.c \
+		-Wl,--gc-sections $(LDFLAGS) $(MCP_LDFLAGS) -pthread
+	@./$(BIN_DIR)/test_cnet_chat1_contract_convo \
+		artifacts/cnet_asi5_v5/intent.wlm \
+		artifacts/cnet_asi5_v5/intent.meta \
+		artifacts/cnet_asi5_v5/capsules | \
+		tee logs/cnet_chat1_contract_convo.log
+	@grep -q '^CNET_CHAT1_CONTRACT_CONVO_PASS ' \
+		logs/cnet_chat1_contract_convo.log
+
 .PHONY: cnetd-run
 cnetd-run: cnetd query_dialog
 	@pkill -x cnetd 2>/dev/null || true

@@ -88,7 +88,8 @@ must be published. Not human Elo. Not LLM-as-judge. Not a vanity 1.000.
 Until that floor is actually met, the fluency line is **WITHHELD**, even
 if CONTRACT already PASSes.
 
-Proposed rubric axes (to be locked in C before any fixture):
+Locked rubric: `cnet_chat_fluency_v1` in `include/cnet_chat_fluency.h`.
+Axes:
 
 - well-formed reply (complete sentence, no empty/garbage)
 - stay-on-contract (does not invent facts about a certified hop)
@@ -147,11 +148,13 @@ Do not write a fixture until the candidate is frozen.
    `CNET_CHAT1_CERTIFIED_PASS covered=8 ood=5`). Two-gate still
    unique-matches. Email / signed / CRC-16 / override wraps abstain.
    ASI-5 held-out aggregates unchanged (304 covered, OOD 0).
-4. **CHAT-1.3** — done for native own-text: `cnet_utter_compose_native`
-   assembles sentences from live slots plus function-word glue.
-   `make cnet_chat1_fluency` → `CNET_CHAT1_FLUENCY_PASS own_text=1
-   bank_blob=0 residual=0`. Beating 8B on the dialogue rubric remains
-   **WITHHELD**.
+4. **CHAT-1.3** — done for native own-text and the named rubric:
+   `cnet_chat_fluency_v1` scores well-formed, stay-on-contract, no
+   contradiction, bounded helpfulness, and no side-effect.
+   `make cnet_chat_fluency_v1` and `make cnet_chat1_contract_convo`
+   walk a six-turn CONTRACT thread (five certified hops + one refuse)
+   through two-gate execution, native speech, and the rubric.
+   Beating 8B on this rubric remains **WITHHELD**.
 5. **S-freeze / F-freeze / one GPU compete** — same ROCm pin, one
    result path. A FAIL starts a new freeze. Archive journals. Never
    start a second result path on the same freeze.
