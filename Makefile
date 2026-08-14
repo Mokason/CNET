@@ -6133,8 +6133,8 @@ CNET_COMPETE_V4_SUITE_DEFINE := \
 	-DCNET_COMPETE_SUITE_DATA_HEADER=\"cnet_compete_suite_data_v4.h\"
 CNET_COMPETE_SUITE_DEFINE ?=
 
-.PHONY: cnet_7b_v5_suite_data_contract_red
-cnet_7b_v5_suite_data_contract_red: \
+.PHONY: cnet_7b_v5_suite_data_contract
+cnet_7b_v5_suite_data_contract: \
 		include/cnet_compete_suite_data_audit.h \
 		src/cnet_compete_suite_data_audit.c \
 		tests/test_cnet_compete_suite_data_v5_audit.c
@@ -6143,13 +6143,23 @@ cnet_7b_v5_suite_data_contract_red: \
 		-o $(BIN_DIR)/test_cnet_compete_suite_data_v5_audit \
 		src/cnet_compete_suite_data_audit.c \
 		tests/test_cnet_compete_suite_data_v5_audit.c $(LDFLAGS)
-	@set +e; \
-		./$(BIN_DIR)/test_cnet_compete_suite_data_v5_audit | \
-			tee logs/cnet_7b_v5_suite_data_contract_red.log; \
-		status=$${PIPESTATUS[0]}; \
-		test $$status -ne 0; \
-		grep -qx 'CNET_7B_V5_SUITE_DATA_AUDIT_RED reason=valid_header_refused' \
-			logs/cnet_7b_v5_suite_data_contract_red.log
+	@./$(BIN_DIR)/test_cnet_compete_suite_data_v5_audit | \
+		tee logs/cnet_7b_v5_suite_data_contract.log
+	@grep -qx 'CNET_7B_V5_SUITE_DATA_AUDIT_PASS invalid_refused=6' \
+		logs/cnet_7b_v5_suite_data_contract.log
+	$(CC) -O1 -g -std=c11 -Wall -Wextra -Wpedantic -Werror \
+		-D_DEFAULT_SOURCE -fsanitize=address,undefined \
+		-fno-omit-frame-pointer -Iinclude \
+		-o $(BIN_DIR)/test_cnet_compete_suite_data_v5_audit_san \
+		src/cnet_compete_suite_data_audit.c \
+		tests/test_cnet_compete_suite_data_v5_audit.c \
+		-fsanitize=address,undefined
+	@ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 \
+		UBSAN_OPTIONS=halt_on_error=1 \
+		./$(BIN_DIR)/test_cnet_compete_suite_data_v5_audit_san | \
+		tee logs/cnet_7b_v5_suite_data_contract_san.log
+	@grep -qx 'CNET_7B_V5_SUITE_DATA_AUDIT_PASS invalid_refused=6' \
+		logs/cnet_7b_v5_suite_data_contract_san.log
 
 .PHONY: cnet_7b_v4_suite_data_contract cnet_7b_v4_suite_data_audit \
 	cnet_7b_v4_suite_define_smoke cnet_7b_v4_fixture_audit

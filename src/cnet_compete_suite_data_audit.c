@@ -14,6 +14,39 @@ typedef struct {
     size_t offset;
 } SuiteDataCursor;
 
+typedef struct {
+    const char *guard_ifndef;
+    const char *guard_define;
+    const char *suite;
+    const char *fixture;
+    const char *system;
+    const char *generator;
+    const char *provenance;
+    const char *state_root;
+} SuiteDataSpec;
+
+static const SuiteDataSpec suite_v4 = {
+    "#ifndef CNET_COMPETE_SUITE_DATA_V4_H",
+    "#define CNET_COMPETE_SUITE_DATA_V4_H",
+    "#define CNET_COMPETE_SUITE_ID \"CNET-ASI-5-v4\"",
+    "#define CNET_COMPETE_FIXTURE_PATH \"benchmarks/cnet_asi5_v4/heldout.tsv\"",
+    "#define CNET_COMPETE_SYSTEM_PATH \"benchmarks/cnet_asi5_v4/baseline_system.txt\"",
+    "#define CNET_COMPETE_GENERATOR_PATH \"tools/cnet_compete_fixture_v4.c\"",
+    "#define CNET_COMPETE_FIXTURE_PROVENANCE \"verified_spec_v4\"",
+    "#define CNET_COMPETE_STATE_ROOT \"/home/marble/.local/state/cnet/cnet_asi5_v4\""
+};
+
+static const SuiteDataSpec suite_v5 = {
+    "#ifndef CNET_COMPETE_SUITE_DATA_V5_H",
+    "#define CNET_COMPETE_SUITE_DATA_V5_H",
+    "#define CNET_COMPETE_SUITE_ID \"CNET-ASI-5-v5\"",
+    "#define CNET_COMPETE_FIXTURE_PATH \"benchmarks/cnet_asi5_v5/heldout.tsv\"",
+    "#define CNET_COMPETE_SYSTEM_PATH \"benchmarks/cnet_asi5_v5/baseline_system.txt\"",
+    "#define CNET_COMPETE_GENERATOR_PATH \"tools/cnet_compete_fixture_v5.c\"",
+    "#define CNET_COMPETE_FIXTURE_PROVENANCE \"verified_spec_v5\"",
+    "#define CNET_COMPETE_STATE_ROOT \"/home/marble/.local/state/cnet/cnet_asi5_v5\""
+};
+
 static int next_line(SuiteDataCursor *cursor, const char **line,
                      size_t *length) {
     size_t start, end;
@@ -66,39 +99,31 @@ static int lowercase_hex_line(SuiteDataCursor *cursor, const char *prefix,
     return 0;
 }
 
-int cnet_compete_suite_data_v4_validate_buffer(
+static int validate_buffer(
     const char *data, size_t length,
-    char freeze_commit[CNET_COMPETE_FREEZE_COMMIT_HEX + 1u]) {
+    char freeze_commit[CNET_COMPETE_FREEZE_COMMIT_HEX + 1u],
+    const SuiteDataSpec *spec) {
     SuiteDataCursor cursor;
     char digest[65];
-    if (data == NULL || freeze_commit == NULL || length == 0 ||
+    if (data == NULL || freeze_commit == NULL || spec == NULL || length == 0 ||
         length > SUITE_DATA_MAX_BYTES)
         return -1;
     freeze_commit[0] = '\0';
     cursor.data = data;
     cursor.length = length;
     cursor.offset = 0;
-    if (expect_line(&cursor, "#ifndef CNET_COMPETE_SUITE_DATA_V4_H") != 0 ||
-        expect_line(&cursor, "#define CNET_COMPETE_SUITE_DATA_V4_H") != 0 ||
+    if (expect_line(&cursor, spec->guard_ifndef) != 0 ||
+        expect_line(&cursor, spec->guard_define) != 0 ||
         expect_line(&cursor, "") != 0 ||
-        expect_line(&cursor,
-                    "#define CNET_COMPETE_SUITE_ID \"CNET-ASI-5-v4\"") != 0 ||
+        expect_line(&cursor, spec->suite) != 0 ||
         lowercase_hex_line(
             &cursor,
             "#define CNET_COMPETE_CANDIDATE_FREEZE_COMMIT \"",
             CNET_COMPETE_FREEZE_COMMIT_HEX, freeze_commit) != 0 ||
-        expect_line(
-            &cursor,
-            "#define CNET_COMPETE_FIXTURE_PATH \"benchmarks/cnet_asi5_v4/heldout.tsv\"") != 0 ||
-        expect_line(
-            &cursor,
-            "#define CNET_COMPETE_SYSTEM_PATH \"benchmarks/cnet_asi5_v4/baseline_system.txt\"") != 0 ||
-        expect_line(
-            &cursor,
-            "#define CNET_COMPETE_GENERATOR_PATH \"tools/cnet_compete_fixture_v4.c\"") != 0 ||
-        expect_line(
-            &cursor,
-            "#define CNET_COMPETE_FIXTURE_PROVENANCE \"verified_spec_v4\"") != 0 ||
+        expect_line(&cursor, spec->fixture) != 0 ||
+        expect_line(&cursor, spec->system) != 0 ||
+        expect_line(&cursor, spec->generator) != 0 ||
+        expect_line(&cursor, spec->provenance) != 0 ||
         lowercase_hex_line(&cursor,
                            "#define CNET_COMPETE_FIXTURE_SHA256 \"", 64u,
                            digest) != 0 ||
@@ -111,23 +136,39 @@ int cnet_compete_suite_data_v4_validate_buffer(
         expect_line(&cursor, "#define CNET_COMPETE_TOTAL_ROWS 448u") != 0 ||
         expect_line(&cursor, "#define CNET_COMPETE_COVERED_ROWS 320u") != 0 ||
         expect_line(&cursor, "#define CNET_COMPETE_OOD_ROWS 128u") != 0 ||
-        expect_line(
-            &cursor,
-            "#define CNET_COMPETE_STATE_ROOT \"/home/marble/.local/state/cnet/cnet_asi5_v4\"") != 0 ||
+        expect_line(&cursor, spec->state_root) != 0 ||
         expect_line(&cursor, "") != 0 || expect_line(&cursor, "#endif") != 0 ||
         cursor.offset != cursor.length)
         return -1;
     return 0;
 }
 
-int cnet_compete_suite_data_v4_validate_file(
-    const char *path,
+int cnet_compete_suite_data_v4_validate_buffer(
+    const char *data, size_t length,
     char freeze_commit[CNET_COMPETE_FREEZE_COMMIT_HEX + 1u]) {
+    return validate_buffer(data, length, freeze_commit, &suite_v4);
+}
+
+int cnet_compete_suite_data_v5_validate_buffer(
+    const char *data, size_t length,
+    char freeze_commit[CNET_COMPETE_FREEZE_COMMIT_HEX + 1u]) {
+    return validate_buffer(data, length, freeze_commit, &suite_v5);
+}
+
+typedef int (*SuiteBufferValidator)(
+    const char *, size_t,
+    char [CNET_COMPETE_FREEZE_COMMIT_HEX + 1u]);
+
+static int validate_file(
+    const char *path,
+    char freeze_commit[CNET_COMPETE_FREEZE_COMMIT_HEX + 1u],
+    SuiteBufferValidator validator) {
     struct stat before, opened;
     char buffer[SUITE_DATA_MAX_BYTES];
     size_t offset = 0;
     int descriptor, rc = -1;
-    if (path == NULL || freeze_commit == NULL || lstat(path, &before) != 0 ||
+    if (path == NULL || freeze_commit == NULL || validator == NULL ||
+        lstat(path, &before) != 0 ||
         !S_ISREG(before.st_mode) || before.st_nlink != 1 || before.st_size <= 0 ||
         (uintmax_t)before.st_size > sizeof buffer)
         return -1;
@@ -145,8 +186,7 @@ int cnet_compete_suite_data_v4_validate_file(
         if (count <= 0) goto done;
         offset += (size_t)count;
     }
-    if (cnet_compete_suite_data_v4_validate_buffer(
-            buffer, offset, freeze_commit) != 0)
+    if (validator(buffer, offset, freeze_commit) != 0)
         goto done;
     rc = 0;
 done:
@@ -154,19 +194,16 @@ done:
     return rc;
 }
 
-int cnet_compete_suite_data_v5_validate_buffer(
-    const char *data, size_t length,
+int cnet_compete_suite_data_v4_validate_file(
+    const char *path,
     char freeze_commit[CNET_COMPETE_FREEZE_COMMIT_HEX + 1u]) {
-    (void)data;
-    (void)length;
-    if (freeze_commit != NULL) freeze_commit[0] = '\0';
-    return -1;
+    return validate_file(path, freeze_commit,
+                         cnet_compete_suite_data_v4_validate_buffer);
 }
 
 int cnet_compete_suite_data_v5_validate_file(
     const char *path,
     char freeze_commit[CNET_COMPETE_FREEZE_COMMIT_HEX + 1u]) {
-    (void)path;
-    if (freeze_commit != NULL) freeze_commit[0] = '\0';
-    return -1;
+    return validate_file(path, freeze_commit,
+                         cnet_compete_suite_data_v5_validate_buffer);
 }
