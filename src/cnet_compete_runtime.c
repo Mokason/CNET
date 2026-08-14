@@ -711,11 +711,12 @@ static int contract_vocabulary_supported(const Lexeme *tokens, size_t count,
     };
     static const char *const policy[] = {
         "access", "admin", "adjudicate", "allow", "apply",
-        "authorization", "decide", "decision", "deny", "determine",
-        "entry", "evaluate", "false", "flags", "for", "four", "from",
-        "given", "is", "its", "mfa", "one", "or", "outcome", "owner",
-        "permission", "policy", "receives", "resolve", "return", "rule",
-        "security", "state", "suspended", "switches", "the", "to",
+        "authorization", "boolean", "certified", "decide", "decision",
+        "deny", "determine", "entry", "evaluate", "false", "finally",
+        "flags", "for", "four", "from", "given", "is", "its", "mfa",
+        "next", "one", "or", "outcome", "owner", "permission", "policy",
+        "reads", "receives", "resolve", "return", "rule", "security",
+        "state", "suspended", "switches", "the", "then", "these", "to",
         "true", "tuple", "under", "uses", "v", "where"
     };
     static const char *const compose[] = {
@@ -945,7 +946,10 @@ static int response_objects_supported(const Lexeme *tokens, size_t count) {
             if (word_is(tokens, count, look, "for") ||
                 word_is(tokens, count, look, "of") ||
                 word_is(tokens, count, look, "from") ||
-                word_is(tokens, count, look, "on"))
+                word_is(tokens, count, look, "on") ||
+                word_is(tokens, count, look, "under") ||
+                word_is(tokens, count, look, "using") ||
+                word_is(tokens, count, look, "with"))
                 safe_reference = 1;
             if (word_is(tokens, count, look, "stored") ||
                 word_is(tokens, count, look, "holding"))
@@ -1803,7 +1807,8 @@ static int policy_data_words_supported(const Lexeme *tokens, size_t count) {
         "evaluate", "evaluation", "resolve", "apply", "under", "outcome",
         "decision", "permission", "access", "entry", "allow", "allowed",
         "deny", "authorization", "security", "its", "result", "policy",
-        "rule", "version", "revision", "v"
+        "rule", "version", "revision", "v", "then", "next", "finally",
+        "reads"
     };
     size_t first_flag = count, zone_start = count, index;
     for (index = 0; index < count; ++index)
@@ -1952,7 +1957,7 @@ static int contract_semantics_match(const char *prompt,
         "notify", "save", "store", "not", "minus"
     };
     static const char *const increment_words[] = {
-        "increment", "successor", "advance", "next", "following", "follows",
+        "increment", "successor", "advance", "following", "follows",
         "after", "increase", "raise", "adding", "forward", "move", "ahead",
         "cycle", "wrap"
     };
@@ -1998,6 +2003,12 @@ static int contract_semantics_match(const char *prompt,
         if ((word_is(tokens, count, index, "add") ||
              word_is(tokens, count, index, "plus")) &&
             operation_value_follows(tokens, count, index, 1u, "one"))
+            increment = 1;
+    for (index = 0; !increment && index < count; ++index)
+        if (word_is(tokens, count, index, "next") &&
+            (word_is(tokens, count, index + 1u, "representable") ||
+             byte_noun(tokens, count, index + 1u) ||
+             byte_noun(tokens, count, index + 2u)))
             increment = 1;
     minutes = named_minutes || has_word(tokens, count, "minute") ||
               has_word(tokens, count, "minutes") ||
