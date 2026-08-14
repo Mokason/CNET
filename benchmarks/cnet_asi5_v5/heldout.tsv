@@ -1,0 +1,450 @@
+#suite=CNET-ASI-5-v5
+id	split	intent	value_kind	expected_value	prompt	provenance
+increment_mod256-000	covered	increment_mod256	integer	84	Find the successor of unsigned operand 83.	verified_spec_v5
+minutes_to_seconds-000	covered	minutes_to_seconds	integer	10620	Find how many seconds 177 minutes contain.	verified_spec_v5
+crc8_atm-000	covered	crc8_atm	integer	0	Evaluate the ATM checksum of operand 0.	verified_spec_v5
+compose3_mod256-000	covered	compose3_mod256	integer	19	Map operand 7 by increment, then double, then plus three.	verified_spec_v5
+increment_mod256-001	covered	increment_mod256	integer	137	Find the successor of unsigned operand 136.	verified_spec_v5
+minutes_to_seconds-001	covered	minutes_to_seconds	integer	9360	Find how many seconds 156 minutes contain.	verified_spec_v5
+crc8_atm-001	covered	crc8_atm	integer	178	Evaluate the ATM checksum of operand 228.	verified_spec_v5
+compose3_mod256-001	covered	compose3_mod256	integer	179	Map operand 87 by increment, then double, then plus three.	verified_spec_v5
+increment_mod256-002	covered	increment_mod256	integer	198	Find the successor of unsigned operand 197.	verified_spec_v5
+minutes_to_seconds-002	covered	minutes_to_seconds	integer	7260	Find how many seconds 121 minutes contain.	verified_spec_v5
+crc8_atm-002	covered	crc8_atm	integer	145	Evaluate the ATM checksum of operand 233.	verified_spec_v5
+compose3_mod256-002	covered	compose3_mod256	integer	111	Map operand 181 by increment, then double, then plus three.	verified_spec_v5
+increment_mod256-003	covered	increment_mod256	integer	100	Find the successor of unsigned operand 99.	verified_spec_v5
+minutes_to_seconds-003	covered	minutes_to_seconds	integer	6360	Find how many seconds 106 minutes contain.	verified_spec_v5
+crc8_atm-003	covered	crc8_atm	integer	141	Evaluate the ATM checksum of operand 237.	verified_spec_v5
+compose3_mod256-003	covered	compose3_mod256	integer	139	Map operand 195 by increment, then double, then plus three.	verified_spec_v5
+increment_mod256-004	covered	increment_mod256	integer	60	Find the successor of unsigned operand 59.	verified_spec_v5
+minutes_to_seconds-004	covered	minutes_to_seconds	integer	12120	Find how many seconds 202 minutes contain.	verified_spec_v5
+crc8_atm-004	covered	crc8_atm	integer	131	Evaluate the ATM checksum of operand 239.	verified_spec_v5
+compose3_mod256-004	covered	compose3_mod256	integer	169	Map operand 82 by increment, then double, then plus three.	verified_spec_v5
+increment_mod256-005	covered	increment_mod256	integer	14	Find the successor of unsigned operand 13.	verified_spec_v5
+minutes_to_seconds-005	covered	minutes_to_seconds	integer	720	Find how many seconds 12 minutes contain.	verified_spec_v5
+crc8_atm-005	covered	crc8_atm	integer	223	Evaluate the ATM checksum of operand 41.	verified_spec_v5
+compose3_mod256-005	covered	compose3_mod256	integer	41	Map operand 18 by increment, then double, then plus three.	verified_spec_v5
+increment_mod256-006	covered	increment_mod256	integer	90	Find the successor of unsigned operand 89.	verified_spec_v5
+minutes_to_seconds-006	covered	minutes_to_seconds	integer	13260	Find how many seconds 221 minutes contain.	verified_spec_v5
+crc8_atm-006	covered	crc8_atm	integer	25	Evaluate the ATM checksum of operand 176.	verified_spec_v5
+compose3_mod256-006	covered	compose3_mod256	integer	67	Map operand 31 by increment, then double, then plus three.	verified_spec_v5
+increment_mod256-007	covered	increment_mod256	integer	252	Find the successor of unsigned operand 251.	verified_spec_v5
+minutes_to_seconds-007	covered	minutes_to_seconds	integer	2520	Find how many seconds 42 minutes contain.	verified_spec_v5
+crc8_atm-007	covered	crc8_atm	integer	255	Evaluate the ATM checksum of operand 72.	verified_spec_v5
+compose3_mod256-007	covered	compose3_mod256	integer	29	Map operand 12 by increment, then double, then plus three.	verified_spec_v5
+increment_mod256-008	covered	increment_mod256	integer	234	Find the successor of unsigned operand 233.	verified_spec_v5
+minutes_to_seconds-008	covered	minutes_to_seconds	integer	4020	Find how many seconds 67 minutes contain.	verified_spec_v5
+crc8_atm-008	covered	crc8_atm	integer	5	Evaluate the ATM checksum of operand 180.	verified_spec_v5
+compose3_mod256-008	covered	compose3_mod256	integer	129	Map operand 62 by increment, then double, then plus three.	verified_spec_v5
+increment_mod256-009	covered	increment_mod256	integer	53	Find the successor of unsigned operand 52.	verified_spec_v5
+minutes_to_seconds-009	covered	minutes_to_seconds	integer	4320	Find how many seconds 72 minutes contain.	verified_spec_v5
+crc8_atm-009	covered	crc8_atm	integer	86	Evaluate the ATM checksum of operand 169.	verified_spec_v5
+compose3_mod256-009	covered	compose3_mod256	integer	155	Map operand 203 by increment, then double, then plus three.	verified_spec_v5
+increment_mod256-010	covered	increment_mod256	integer	164	Find the successor of unsigned operand 163.	verified_spec_v5
+minutes_to_seconds-010	covered	minutes_to_seconds	integer	2760	Find how many seconds 46 minutes contain.	verified_spec_v5
+crc8_atm-010	covered	crc8_atm	integer	65	Evaluate the ATM checksum of operand 27.	verified_spec_v5
+compose3_mod256-010	covered	compose3_mod256	integer	187	Map operand 219 by increment, then double, then plus three.	verified_spec_v5
+increment_mod256-011	covered	increment_mod256	integer	114	Find the successor of unsigned operand 113.	verified_spec_v5
+minutes_to_seconds-011	covered	minutes_to_seconds	integer	14040	Find how many seconds 234 minutes contain.	verified_spec_v5
+crc8_atm-011	covered	crc8_atm	integer	52	Evaluate the ATM checksum of operand 191.	verified_spec_v5
+compose3_mod256-011	covered	compose3_mod256	integer	93	Map operand 172 by increment, then double, then plus three.	verified_spec_v5
+increment_mod256-012	covered	increment_mod256	integer	76	Find the successor of unsigned operand 75.	verified_spec_v5
+minutes_to_seconds-012	covered	minutes_to_seconds	integer	15120	Find how many seconds 252 minutes contain.	verified_spec_v5
+crc8_atm-012	covered	crc8_atm	integer	196	Evaluate the ATM checksum of operand 44.	verified_spec_v5
+compose3_mod256-012	covered	compose3_mod256	integer	71	Map operand 33 by increment, then double, then plus three.	verified_spec_v5
+increment_mod256-013	covered	increment_mod256	integer	229	Find the successor of unsigned operand 228.	verified_spec_v5
+minutes_to_seconds-013	covered	minutes_to_seconds	integer	15240	Find how many seconds 254 minutes contain.	verified_spec_v5
+crc8_atm-013	covered	crc8_atm	integer	13	Evaluate the ATM checksum of operand 110.	verified_spec_v5
+compose3_mod256-013	covered	compose3_mod256	integer	47	Map operand 149 by increment, then double, then plus three.	verified_spec_v5
+increment_mod256-014	covered	increment_mod256	integer	194	Find the successor of unsigned operand 193.	verified_spec_v5
+minutes_to_seconds-014	covered	minutes_to_seconds	integer	13320	Find how many seconds 222 minutes contain.	verified_spec_v5
+crc8_atm-014	covered	crc8_atm	integer	75	Evaluate the ATM checksum of operand 116.	verified_spec_v5
+compose3_mod256-014	covered	compose3_mod256	integer	253	Map operand 252 by increment, then double, then plus three.	verified_spec_v5
+increment_mod256-015	covered	increment_mod256	integer	163	Find the successor of unsigned operand 162.	verified_spec_v5
+minutes_to_seconds-015	covered	minutes_to_seconds	integer	1740	Find how many seconds 29 minutes contain.	verified_spec_v5
+crc8_atm-015	covered	crc8_atm	integer	124	Evaluate the ATM checksum of operand 167.	verified_spec_v5
+compose3_mod256-015	covered	compose3_mod256	integer	9	Map operand 2 by increment, then double, then plus three.	verified_spec_v5
+increment_mod256-016	covered	increment_mod256	integer	179	What increment value follows input 178?	verified_spec_v5
+minutes_to_seconds-016	covered	minutes_to_seconds	integer	9240	How many seconds does this duration give for 154 minutes?	verified_spec_v5
+crc8_atm-016	covered	crc8_atm	integer	45	Compute non-reflected ATM checksum of datum 15.	verified_spec_v5
+compose3_mod256-016	covered	compose3_mod256	integer	149	Starting at byte 200, increment, then double, then plus three.	verified_spec_v5
+increment_mod256-017	covered	increment_mod256	integer	145	What increment value follows input 144?	verified_spec_v5
+minutes_to_seconds-017	covered	minutes_to_seconds	integer	11280	How many seconds does this duration give for 188 minutes?	verified_spec_v5
+crc8_atm-017	covered	crc8_atm	integer	171	Compute non-reflected ATM checksum of datum 84.	verified_spec_v5
+compose3_mod256-017	covered	compose3_mod256	integer	241	Starting at byte 118, increment, then double, then plus three.	verified_spec_v5
+increment_mod256-018	covered	increment_mod256	integer	89	What increment value follows input 88?	verified_spec_v5
+minutes_to_seconds-018	covered	minutes_to_seconds	integer	2700	How many seconds does this duration give for 45 minutes?	verified_spec_v5
+crc8_atm-018	covered	crc8_atm	integer	155	Compute non-reflected ATM checksum of datum 134.	verified_spec_v5
+compose3_mod256-018	covered	compose3_mod256	integer	255	Starting at byte 253, increment, then double, then plus three.	verified_spec_v5
+increment_mod256-019	covered	increment_mod256	integer	21	What increment value follows input 20?	verified_spec_v5
+minutes_to_seconds-019	covered	minutes_to_seconds	integer	3060	How many seconds does this duration give for 51 minutes?	verified_spec_v5
+crc8_atm-019	covered	crc8_atm	integer	117	Compute non-reflected ATM checksum of datum 164.	verified_spec_v5
+compose3_mod256-019	covered	compose3_mod256	integer	153	Starting at byte 74, increment, then double, then plus three.	verified_spec_v5
+increment_mod256-020	covered	increment_mod256	integer	103	What increment value follows input 102?	verified_spec_v5
+minutes_to_seconds-020	covered	minutes_to_seconds	integer	240	How many seconds does this duration give for 4 minutes?	verified_spec_v5
+crc8_atm-020	covered	crc8_atm	integer	228	Compute non-reflected ATM checksum of datum 77.	verified_spec_v5
+compose3_mod256-020	covered	compose3_mod256	integer	171	Starting at byte 211, increment, then double, then plus three.	verified_spec_v5
+increment_mod256-021	covered	increment_mod256	integer	43	What increment value follows input 42?	verified_spec_v5
+minutes_to_seconds-021	covered	minutes_to_seconds	integer	14640	How many seconds does this duration give for 244 minutes?	verified_spec_v5
+crc8_atm-021	covered	crc8_atm	integer	200	Compute non-reflected ATM checksum of datum 155.	verified_spec_v5
+compose3_mod256-021	covered	compose3_mod256	integer	147	Starting at byte 71, increment, then double, then plus three.	verified_spec_v5
+increment_mod256-022	covered	increment_mod256	integer	123	What increment value follows input 122?	verified_spec_v5
+minutes_to_seconds-022	covered	minutes_to_seconds	integer	120	How many seconds does this duration give for 2 minutes?	verified_spec_v5
+crc8_atm-022	covered	crc8_atm	integer	122	Compute non-reflected ATM checksum of datum 127.	verified_spec_v5
+compose3_mod256-022	covered	compose3_mod256	integer	217	Starting at byte 234, increment, then double, then plus three.	verified_spec_v5
+increment_mod256-023	covered	increment_mod256	integer	160	What increment value follows input 159?	verified_spec_v5
+minutes_to_seconds-023	covered	minutes_to_seconds	integer	7380	How many seconds does this duration give for 123 minutes?	verified_spec_v5
+crc8_atm-023	covered	crc8_atm	integer	150	Compute non-reflected ATM checksum of datum 232.	verified_spec_v5
+compose3_mod256-023	covered	compose3_mod256	integer	231	Starting at byte 241, increment, then double, then plus three.	verified_spec_v5
+increment_mod256-024	covered	increment_mod256	integer	20	What increment value follows input 19?	verified_spec_v5
+minutes_to_seconds-024	covered	minutes_to_seconds	integer	11100	How many seconds does this duration give for 185 minutes?	verified_spec_v5
+crc8_atm-024	covered	crc8_atm	integer	211	Compute non-reflected ATM checksum of datum 158.	verified_spec_v5
+compose3_mod256-024	covered	compose3_mod256	integer	207	Starting at byte 229, increment, then double, then plus three.	verified_spec_v5
+increment_mod256-025	covered	increment_mod256	integer	82	What increment value follows input 81?	verified_spec_v5
+minutes_to_seconds-025	covered	minutes_to_seconds	integer	13080	How many seconds does this duration give for 218 minutes?	verified_spec_v5
+crc8_atm-025	covered	crc8_atm	integer	143	Compute non-reflected ATM checksum of datum 88.	verified_spec_v5
+compose3_mod256-025	covered	compose3_mod256	integer	217	Starting at byte 106, increment, then double, then plus three.	verified_spec_v5
+increment_mod256-026	covered	increment_mod256	integer	235	What increment value follows input 234?	verified_spec_v5
+minutes_to_seconds-026	covered	minutes_to_seconds	integer	6420	How many seconds does this duration give for 107 minutes?	verified_spec_v5
+crc8_atm-026	covered	crc8_atm	integer	19	Compute non-reflected ATM checksum of datum 223.	verified_spec_v5
+compose3_mod256-026	covered	compose3_mod256	integer	193	Starting at byte 94, increment, then double, then plus three.	verified_spec_v5
+increment_mod256-027	covered	increment_mod256	integer	56	What increment value follows input 55?	verified_spec_v5
+minutes_to_seconds-027	covered	minutes_to_seconds	integer	1980	How many seconds does this duration give for 33 minutes?	verified_spec_v5
+crc8_atm-027	covered	crc8_atm	integer	170	Compute non-reflected ATM checksum of datum 141.	verified_spec_v5
+compose3_mod256-027	covered	compose3_mod256	integer	181	Starting at byte 216, increment, then double, then plus three.	verified_spec_v5
+increment_mod256-028	covered	increment_mod256	integer	48	What increment value follows input 47?	verified_spec_v5
+minutes_to_seconds-028	covered	minutes_to_seconds	integer	13860	How many seconds does this duration give for 231 minutes?	verified_spec_v5
+crc8_atm-028	covered	crc8_atm	integer	217	Compute non-reflected ATM checksum of datum 241.	verified_spec_v5
+compose3_mod256-028	covered	compose3_mod256	integer	249	Starting at byte 122, increment, then double, then plus three.	verified_spec_v5
+increment_mod256-029	covered	increment_mod256	integer	158	What increment value follows input 157?	verified_spec_v5
+minutes_to_seconds-029	covered	minutes_to_seconds	integer	3540	How many seconds does this duration give for 59 minutes?	verified_spec_v5
+crc8_atm-029	covered	crc8_atm	integer	229	Compute non-reflected ATM checksum of datum 148.	verified_spec_v5
+compose3_mod256-029	covered	compose3_mod256	integer	191	Starting at byte 221, increment, then double, then plus three.	verified_spec_v5
+increment_mod256-030	covered	increment_mod256	integer	12	What increment value follows input 11?	verified_spec_v5
+minutes_to_seconds-030	covered	minutes_to_seconds	integer	6060	How many seconds does this duration give for 101 minutes?	verified_spec_v5
+crc8_atm-030	covered	crc8_atm	integer	195	Compute non-reflected ATM checksum of datum 45.	verified_spec_v5
+compose3_mod256-030	covered	compose3_mod256	integer	209	Starting at byte 230, increment, then double, then plus three.	verified_spec_v5
+increment_mod256-031	covered	increment_mod256	integer	191	What increment value follows input 190?	verified_spec_v5
+minutes_to_seconds-031	covered	minutes_to_seconds	integer	3780	How many seconds does this duration give for 63 minutes?	verified_spec_v5
+crc8_atm-031	covered	crc8_atm	integer	130	Compute non-reflected ATM checksum of datum 54.	verified_spec_v5
+compose3_mod256-031	covered	compose3_mod256	integer	135	Starting at byte 65, increment, then double, then plus three.	verified_spec_v5
+increment_mod256-032	covered	increment_mod256	integer	205	Map operand 204 through increment with wrap.	verified_spec_v5
+minutes_to_seconds-032	covered	minutes_to_seconds	integer	9180	Map the 153 minute quantity onto seconds.	verified_spec_v5
+crc8_atm-032	covered	crc8_atm	integer	125	Return the ATM checksum of input 126.	verified_spec_v5
+compose3_mod256-032	covered	compose3_mod256	integer	115	For unsigned octet 183, increment, then double, then plus three.	verified_spec_v5
+increment_mod256-033	covered	increment_mod256	integer	175	Map operand 174 through increment with wrap.	verified_spec_v5
+minutes_to_seconds-033	covered	minutes_to_seconds	integer	6720	Map the 112 minute quantity onto seconds.	verified_spec_v5
+crc8_atm-033	covered	crc8_atm	integer	168	Return the ATM checksum of input 56.	verified_spec_v5
+compose3_mod256-033	covered	compose3_mod256	integer	215	For unsigned octet 233, increment, then double, then plus three.	verified_spec_v5
+increment_mod256-034	covered	increment_mod256	integer	112	Map operand 111 through increment with wrap.	verified_spec_v5
+minutes_to_seconds-034	covered	minutes_to_seconds	integer	2280	Map the 38 minute quantity onto seconds.	verified_spec_v5
+crc8_atm-034	covered	crc8_atm	integer	210	Return the ATM checksum of input 71.	verified_spec_v5
+compose3_mod256-034	covered	compose3_mod256	integer	199	For unsigned octet 225, increment, then double, then plus three.	verified_spec_v5
+increment_mod256-035	covered	increment_mod256	integer	98	Map operand 97 through increment with wrap.	verified_spec_v5
+minutes_to_seconds-035	covered	minutes_to_seconds	integer	2880	Map the 48 minute quantity onto seconds.	verified_spec_v5
+crc8_atm-035	covered	crc8_atm	integer	241	Return the ATM checksum of input 74.	verified_spec_v5
+compose3_mod256-035	covered	compose3_mod256	integer	211	For unsigned octet 103, increment, then double, then plus three.	verified_spec_v5
+increment_mod256-036	covered	increment_mod256	integer	187	Map operand 186 through increment with wrap.	verified_spec_v5
+minutes_to_seconds-036	covered	minutes_to_seconds	integer	11820	Map the 197 minute quantity onto seconds.	verified_spec_v5
+crc8_atm-036	covered	crc8_atm	integer	17	Return the ATM checksum of input 106.	verified_spec_v5
+compose3_mod256-036	covered	compose3_mod256	integer	9	For unsigned octet 130, increment, then double, then plus three.	verified_spec_v5
+increment_mod256-037	covered	increment_mod256	integer	224	Map operand 223 through increment with wrap.	verified_spec_v5
+minutes_to_seconds-037	covered	minutes_to_seconds	integer	8520	Map the 142 minute quantity onto seconds.	verified_spec_v5
+crc8_atm-037	covered	crc8_atm	integer	175	Return the ATM checksum of input 57.	verified_spec_v5
+compose3_mod256-037	covered	compose3_mod256	integer	115	For unsigned octet 55, increment, then double, then plus three.	verified_spec_v5
+increment_mod256-038	covered	increment_mod256	integer	67	Map operand 66 through increment with wrap.	verified_spec_v5
+minutes_to_seconds-038	covered	minutes_to_seconds	integer	1560	Map the 26 minute quantity onto seconds.	verified_spec_v5
+crc8_atm-038	covered	crc8_atm	integer	212	Return the ATM checksum of input 159.	verified_spec_v5
+compose3_mod256-038	covered	compose3_mod256	integer	13	For unsigned octet 132, increment, then double, then plus three.	verified_spec_v5
+increment_mod256-039	covered	increment_mod256	integer	15	Map operand 14 through increment with wrap.	verified_spec_v5
+minutes_to_seconds-039	covered	minutes_to_seconds	integer	4140	Map the 69 minute quantity onto seconds.	verified_spec_v5
+crc8_atm-039	covered	crc8_atm	integer	58	Return the ATM checksum of input 189.	verified_spec_v5
+compose3_mod256-039	covered	compose3_mod256	integer	171	For unsigned octet 83, increment, then double, then plus three.	verified_spec_v5
+increment_mod256-040	covered	increment_mod256	integer	220	Map operand 219 through increment with wrap.	verified_spec_v5
+minutes_to_seconds-040	covered	minutes_to_seconds	integer	14160	Map the 236 minute quantity onto seconds.	verified_spec_v5
+crc8_atm-040	covered	crc8_atm	integer	3	Return the ATM checksum of input 108.	verified_spec_v5
+compose3_mod256-040	covered	compose3_mod256	integer	45	For unsigned octet 20, increment, then double, then plus three.	verified_spec_v5
+increment_mod256-041	covered	increment_mod256	integer	99	Map operand 98 through increment with wrap.	verified_spec_v5
+minutes_to_seconds-041	covered	minutes_to_seconds	integer	3000	Map the 50 minute quantity onto seconds.	verified_spec_v5
+crc8_atm-041	covered	crc8_atm	integer	244	Return the ATM checksum of input 254.	verified_spec_v5
+compose3_mod256-041	covered	compose3_mod256	integer	7	For unsigned octet 1, increment, then double, then plus three.	verified_spec_v5
+increment_mod256-042	covered	increment_mod256	integer	180	Map operand 179 through increment with wrap.	verified_spec_v5
+minutes_to_seconds-042	covered	minutes_to_seconds	integer	1320	Map the 22 minute quantity onto seconds.	verified_spec_v5
+crc8_atm-042	covered	crc8_atm	integer	182	Return the ATM checksum of input 137.	verified_spec_v5
+compose3_mod256-042	covered	compose3_mod256	integer	41	For unsigned octet 146, increment, then double, then plus three.	verified_spec_v5
+increment_mod256-043	covered	increment_mod256	integer	184	Map operand 183 through increment with wrap.	verified_spec_v5
+minutes_to_seconds-043	covered	minutes_to_seconds	integer	14280	Map the 238 minute quantity onto seconds.	verified_spec_v5
+crc8_atm-043	covered	crc8_atm	integer	190	Return the ATM checksum of input 83.	verified_spec_v5
+compose3_mod256-043	covered	compose3_mod256	integer	209	For unsigned octet 102, increment, then double, then plus three.	verified_spec_v5
+increment_mod256-044	covered	increment_mod256	integer	211	Map operand 210 through increment with wrap.	verified_spec_v5
+minutes_to_seconds-044	covered	minutes_to_seconds	integer	6840	Map the 114 minute quantity onto seconds.	verified_spec_v5
+crc8_atm-044	covered	crc8_atm	integer	174	Return the ATM checksum of input 224.	verified_spec_v5
+compose3_mod256-044	covered	compose3_mod256	integer	21	For unsigned octet 8, increment, then double, then plus three.	verified_spec_v5
+increment_mod256-045	covered	increment_mod256	integer	29	Map operand 28 through increment with wrap.	verified_spec_v5
+minutes_to_seconds-045	covered	minutes_to_seconds	integer	12060	Map the 201 minute quantity onto seconds.	verified_spec_v5
+crc8_atm-045	covered	crc8_atm	integer	112	Return the ATM checksum of input 16.	verified_spec_v5
+compose3_mod256-045	covered	compose3_mod256	integer	131	For unsigned octet 191, increment, then double, then plus three.	verified_spec_v5
+increment_mod256-046	covered	increment_mod256	integer	113	Map operand 112 through increment with wrap.	verified_spec_v5
+minutes_to_seconds-046	covered	minutes_to_seconds	integer	420	Map the 7 minute quantity onto seconds.	verified_spec_v5
+crc8_atm-046	covered	crc8_atm	integer	115	Return the ATM checksum of input 124.	verified_spec_v5
+compose3_mod256-046	covered	compose3_mod256	integer	43	For unsigned octet 147, increment, then double, then plus three.	verified_spec_v5
+increment_mod256-047	covered	increment_mod256	integer	70	Map operand 69 through increment with wrap.	verified_spec_v5
+minutes_to_seconds-047	covered	minutes_to_seconds	integer	9000	Map the 150 minute quantity onto seconds.	verified_spec_v5
+crc8_atm-047	covered	crc8_atm	integer	226	Return the ATM checksum of input 149.	verified_spec_v5
+compose3_mod256-047	covered	compose3_mod256	integer	151	For unsigned octet 201, increment, then double, then plus three.	verified_spec_v5
+increment_mod256-048	covered	increment_mod256	integer	69	Give the increment output of unsigned value 68.	verified_spec_v5
+minutes_to_seconds-048	covered	minutes_to_seconds	integer	8220	Translate the 137 minute duration into a seconds count.	verified_spec_v5
+crc8_atm-048	covered	crc8_atm	integer	137	Evaluate ATM checksum on single byte 128.	verified_spec_v5
+compose3_mod256-048	covered	compose3_mod256	integer	227	Take operand 239 through increment, double, plus three.	verified_spec_v5
+increment_mod256-049	covered	increment_mod256	integer	102	Give the increment output of unsigned value 101.	verified_spec_v5
+minutes_to_seconds-049	covered	minutes_to_seconds	integer	3720	Translate the 62 minute duration into a seconds count.	verified_spec_v5
+crc8_atm-049	covered	crc8_atm	integer	148	Evaluate ATM checksum on single byte 93.	verified_spec_v5
+compose3_mod256-049	covered	compose3_mod256	integer	77	Take operand 164 through increment, double, plus three.	verified_spec_v5
+increment_mod256-050	covered	increment_mod256	integer	255	Give the increment output of unsigned value 254.	verified_spec_v5
+minutes_to_seconds-050	covered	minutes_to_seconds	integer	10320	Translate the 172 minute duration into a seconds count.	verified_spec_v5
+crc8_atm-050	covered	crc8_atm	integer	30	Evaluate ATM checksum on single byte 177.	verified_spec_v5
+compose3_mod256-050	covered	compose3_mod256	integer	225	Take operand 110 through increment, double, plus three.	verified_spec_v5
+increment_mod256-051	covered	increment_mod256	integer	210	Give the increment output of unsigned value 209.	verified_spec_v5
+minutes_to_seconds-051	covered	minutes_to_seconds	integer	1140	Translate the 19 minute duration into a seconds count.	verified_spec_v5
+crc8_atm-051	covered	crc8_atm	integer	180	Evaluate ATM checksum on single byte 60.	verified_spec_v5
+compose3_mod256-051	covered	compose3_mod256	integer	125	Take operand 188 through increment, double, plus three.	verified_spec_v5
+increment_mod256-052	covered	increment_mod256	integer	209	Give the increment output of unsigned value 208.	verified_spec_v5
+minutes_to_seconds-052	covered	minutes_to_seconds	integer	3600	Translate the 60 minute duration into a seconds count.	verified_spec_v5
+crc8_atm-052	covered	crc8_atm	integer	1	Evaluate ATM checksum on single byte 217.	verified_spec_v5
+compose3_mod256-052	covered	compose3_mod256	integer	25	Take operand 10 through increment, double, plus three.	verified_spec_v5
+increment_mod256-053	covered	increment_mod256	integer	245	Give the increment output of unsigned value 244.	verified_spec_v5
+minutes_to_seconds-053	covered	minutes_to_seconds	integer	4800	Translate the 80 minute duration into a seconds count.	verified_spec_v5
+crc8_atm-053	covered	crc8_atm	integer	104	Evaluate ATM checksum on single byte 121.	verified_spec_v5
+compose3_mod256-053	covered	compose3_mod256	integer	121	Take operand 58 through increment, double, plus three.	verified_spec_v5
+increment_mod256-054	covered	increment_mod256	integer	186	Give the increment output of unsigned value 185.	verified_spec_v5
+minutes_to_seconds-054	covered	minutes_to_seconds	integer	7500	Translate the 125 minute duration into a seconds count.	verified_spec_v5
+crc8_atm-054	covered	crc8_atm	integer	42	Evaluate ATM checksum on single byte 14.	verified_spec_v5
+compose3_mod256-054	covered	compose3_mod256	integer	77	Take operand 36 through increment, double, plus three.	verified_spec_v5
+increment_mod256-055	covered	increment_mod256	integer	28	Give the increment output of unsigned value 27.	verified_spec_v5
+minutes_to_seconds-055	covered	minutes_to_seconds	integer	14700	Translate the 245 minute duration into a seconds count.	verified_spec_v5
+crc8_atm-055	covered	crc8_atm	integer	219	Evaluate ATM checksum on single byte 68.	verified_spec_v5
+compose3_mod256-055	covered	compose3_mod256	integer	241	Take operand 246 through increment, double, plus three.	verified_spec_v5
+increment_mod256-056	covered	increment_mod256	integer	79	Give the increment output of unsigned value 78.	verified_spec_v5
+minutes_to_seconds-056	covered	minutes_to_seconds	integer	13440	Translate the 224 minute duration into a seconds count.	verified_spec_v5
+crc8_atm-056	covered	crc8_atm	integer	8	Evaluate ATM checksum on single byte 218.	verified_spec_v5
+compose3_mod256-056	covered	compose3_mod256	integer	61	Take operand 28 through increment, double, plus three.	verified_spec_v5
+increment_mod256-057	covered	increment_mod256	integer	73	Give the increment output of unsigned value 72.	verified_spec_v5
+minutes_to_seconds-057	covered	minutes_to_seconds	integer	12600	Translate the 210 minute duration into a seconds count.	verified_spec_v5
+crc8_atm-057	covered	crc8_atm	integer	216	Evaluate ATM checksum on single byte 40.	verified_spec_v5
+compose3_mod256-057	covered	compose3_mod256	integer	137	Take operand 66 through increment, double, plus three.	verified_spec_v5
+increment_mod256-058	covered	increment_mod256	integer	127	Give the increment output of unsigned value 126.	verified_spec_v5
+minutes_to_seconds-058	covered	minutes_to_seconds	integer	10740	Translate the 179 minute duration into a seconds count.	verified_spec_v5
+crc8_atm-058	covered	crc8_atm	integer	88	Evaluate ATM checksum on single byte 171.	verified_spec_v5
+compose3_mod256-058	covered	compose3_mod256	integer	109	Take operand 180 through increment, double, plus three.	verified_spec_v5
+increment_mod256-059	covered	increment_mod256	integer	195	Give the increment output of unsigned value 194.	verified_spec_v5
+minutes_to_seconds-059	covered	minutes_to_seconds	integer	3180	Translate the 53 minute duration into a seconds count.	verified_spec_v5
+crc8_atm-059	covered	crc8_atm	integer	29	Evaluate ATM checksum on single byte 221.	verified_spec_v5
+compose3_mod256-059	covered	compose3_mod256	integer	75	Take operand 163 through increment, double, plus three.	verified_spec_v5
+increment_mod256-060	covered	increment_mod256	integer	59	Give the increment output of unsigned value 58.	verified_spec_v5
+minutes_to_seconds-060	covered	minutes_to_seconds	integer	12660	Translate the 211 minute duration into a seconds count.	verified_spec_v5
+crc8_atm-060	covered	crc8_atm	integer	238	Evaluate ATM checksum on single byte 34.	verified_spec_v5
+compose3_mod256-060	covered	compose3_mod256	integer	143	Take operand 69 through increment, double, plus three.	verified_spec_v5
+increment_mod256-061	covered	increment_mod256	integer	172	Give the increment output of unsigned value 171.	verified_spec_v5
+minutes_to_seconds-061	covered	minutes_to_seconds	integer	960	Translate the 16 minute duration into a seconds count.	verified_spec_v5
+crc8_atm-061	covered	crc8_atm	integer	126	Evaluate ATM checksum on single byte 18.	verified_spec_v5
+compose3_mod256-061	covered	compose3_mod256	integer	37	Take operand 144 through increment, double, plus three.	verified_spec_v5
+increment_mod256-062	covered	increment_mod256	integer	151	Give the increment output of unsigned value 150.	verified_spec_v5
+minutes_to_seconds-062	covered	minutes_to_seconds	integer	9960	Translate the 166 minute duration into a seconds count.	verified_spec_v5
+crc8_atm-062	covered	crc8_atm	integer	79	Evaluate ATM checksum on single byte 25.	verified_spec_v5
+compose3_mod256-062	covered	compose3_mod256	integer	53	Take operand 24 through increment, double, plus three.	verified_spec_v5
+increment_mod256-063	covered	increment_mod256	integer	166	Give the increment output of unsigned value 165.	verified_spec_v5
+minutes_to_seconds-063	covered	minutes_to_seconds	integer	9660	Translate the 161 minute duration into a seconds count.	verified_spec_v5
+crc8_atm-063	covered	crc8_atm	integer	194	Evaluate ATM checksum on single byte 244.	verified_spec_v5
+compose3_mod256-063	covered	compose3_mod256	integer	159	Take operand 205 through increment, double, plus three.	verified_spec_v5
+access_policy_v1-000	covered	access_policy_v1	string	deny	Return policy one. Suspended reads false. Next mfa reads false. Next admin reads false. Last owner reads false.	verified_spec_v5
+access_policy_v1-001	covered	access_policy_v1	string	allow	Return policy one. Suspended reads false. Next mfa reads false. Next admin reads true. Last owner reads false.	verified_spec_v5
+access_policy_v1-002	covered	access_policy_v1	string	deny	Return policy one. Suspended reads false. Next mfa reads false. Next admin reads false. Last owner reads true.	verified_spec_v5
+access_policy_v1-003	covered	access_policy_v1	string	allow	Return policy one. Suspended reads false. Next mfa reads false. Next admin reads true. Last owner reads true.	verified_spec_v5
+access_policy_v1-004	covered	access_policy_v1	string	deny	Return policy one. Suspended reads false. Next mfa reads true. Next admin reads false. Last owner reads false.	verified_spec_v5
+access_policy_v1-005	covered	access_policy_v1	string	allow	Return policy one. Suspended reads false. Next mfa reads true. Next admin reads true. Last owner reads false.	verified_spec_v5
+access_policy_v1-006	covered	access_policy_v1	string	allow	Return policy one. Suspended reads false. Next mfa reads true. Next admin reads false. Last owner reads true.	verified_spec_v5
+access_policy_v1-007	covered	access_policy_v1	string	allow	Return policy one. Suspended reads false. Next mfa reads true. Next admin reads true. Last owner reads true.	verified_spec_v5
+access_policy_v1-008	covered	access_policy_v1	string	deny	Return policy one. Suspended reads true. Next mfa reads false. Next admin reads false. Last owner reads false.	verified_spec_v5
+access_policy_v1-009	covered	access_policy_v1	string	deny	Return policy one. Suspended reads true. Next mfa reads false. Next admin reads true. Last owner reads false.	verified_spec_v5
+access_policy_v1-010	covered	access_policy_v1	string	deny	Return policy one. Suspended reads true. Next mfa reads false. Next admin reads false. Last owner reads true.	verified_spec_v5
+access_policy_v1-011	covered	access_policy_v1	string	deny	Return policy one. Suspended reads true. Next mfa reads false. Next admin reads true. Last owner reads true.	verified_spec_v5
+access_policy_v1-012	covered	access_policy_v1	string	deny	Return policy one. Suspended reads true. Next mfa reads true. Next admin reads false. Last owner reads false.	verified_spec_v5
+access_policy_v1-013	covered	access_policy_v1	string	deny	Return policy one. Suspended reads true. Next mfa reads true. Next admin reads true. Last owner reads false.	verified_spec_v5
+access_policy_v1-014	covered	access_policy_v1	string	deny	Return policy one. Suspended reads true. Next mfa reads true. Next admin reads false. Last owner reads true.	verified_spec_v5
+access_policy_v1-015	covered	access_policy_v1	string	deny	Return policy one. Suspended reads true. Next mfa reads true. Next admin reads true. Last owner reads true.	verified_spec_v5
+access_policy_v1-016	covered	access_policy_v1	string	deny	Determine policy one permission. Owner reads false. Next suspended reads false. Next admin reads false. Last mfa reads false.	verified_spec_v5
+access_policy_v1-017	covered	access_policy_v1	string	allow	Determine policy one permission. Owner reads false. Next suspended reads false. Next admin reads true. Last mfa reads false.	verified_spec_v5
+access_policy_v1-018	covered	access_policy_v1	string	deny	Determine policy one permission. Owner reads true. Next suspended reads false. Next admin reads false. Last mfa reads false.	verified_spec_v5
+access_policy_v1-019	covered	access_policy_v1	string	allow	Determine policy one permission. Owner reads true. Next suspended reads false. Next admin reads true. Last mfa reads false.	verified_spec_v5
+access_policy_v1-020	covered	access_policy_v1	string	deny	Determine policy one permission. Owner reads false. Next suspended reads false. Next admin reads false. Last mfa reads true.	verified_spec_v5
+access_policy_v1-021	covered	access_policy_v1	string	allow	Determine policy one permission. Owner reads false. Next suspended reads false. Next admin reads true. Last mfa reads true.	verified_spec_v5
+access_policy_v1-022	covered	access_policy_v1	string	allow	Determine policy one permission. Owner reads true. Next suspended reads false. Next admin reads false. Last mfa reads true.	verified_spec_v5
+access_policy_v1-023	covered	access_policy_v1	string	allow	Determine policy one permission. Owner reads true. Next suspended reads false. Next admin reads true. Last mfa reads true.	verified_spec_v5
+access_policy_v1-024	covered	access_policy_v1	string	deny	Determine policy one permission. Owner reads false. Next suspended reads true. Next admin reads false. Last mfa reads false.	verified_spec_v5
+access_policy_v1-025	covered	access_policy_v1	string	deny	Determine policy one permission. Owner reads false. Next suspended reads true. Next admin reads true. Last mfa reads false.	verified_spec_v5
+access_policy_v1-026	covered	access_policy_v1	string	deny	Determine policy one permission. Owner reads true. Next suspended reads true. Next admin reads false. Last mfa reads false.	verified_spec_v5
+access_policy_v1-027	covered	access_policy_v1	string	deny	Determine policy one permission. Owner reads true. Next suspended reads true. Next admin reads true. Last mfa reads false.	verified_spec_v5
+access_policy_v1-028	covered	access_policy_v1	string	deny	Determine policy one permission. Owner reads false. Next suspended reads true. Next admin reads false. Last mfa reads true.	verified_spec_v5
+access_policy_v1-029	covered	access_policy_v1	string	deny	Determine policy one permission. Owner reads false. Next suspended reads true. Next admin reads true. Last mfa reads true.	verified_spec_v5
+access_policy_v1-030	covered	access_policy_v1	string	deny	Determine policy one permission. Owner reads true. Next suspended reads true. Next admin reads false. Last mfa reads true.	verified_spec_v5
+access_policy_v1-031	covered	access_policy_v1	string	deny	Determine policy one permission. Owner reads true. Next suspended reads true. Next admin reads true. Last mfa reads true.	verified_spec_v5
+access_policy_v1-032	covered	access_policy_v1	string	deny	Evaluate policy one. Mfa reads false. Next admin reads false. Next suspended reads false. Last owner reads false.	verified_spec_v5
+access_policy_v1-033	covered	access_policy_v1	string	allow	Evaluate policy one. Mfa reads false. Next admin reads true. Next suspended reads false. Last owner reads false.	verified_spec_v5
+access_policy_v1-034	covered	access_policy_v1	string	deny	Evaluate policy one. Mfa reads false. Next admin reads false. Next suspended reads false. Last owner reads true.	verified_spec_v5
+access_policy_v1-035	covered	access_policy_v1	string	allow	Evaluate policy one. Mfa reads false. Next admin reads true. Next suspended reads false. Last owner reads true.	verified_spec_v5
+access_policy_v1-036	covered	access_policy_v1	string	deny	Evaluate policy one. Mfa reads true. Next admin reads false. Next suspended reads false. Last owner reads false.	verified_spec_v5
+access_policy_v1-037	covered	access_policy_v1	string	allow	Evaluate policy one. Mfa reads true. Next admin reads true. Next suspended reads false. Last owner reads false.	verified_spec_v5
+access_policy_v1-038	covered	access_policy_v1	string	allow	Evaluate policy one. Mfa reads true. Next admin reads false. Next suspended reads false. Last owner reads true.	verified_spec_v5
+access_policy_v1-039	covered	access_policy_v1	string	allow	Evaluate policy one. Mfa reads true. Next admin reads true. Next suspended reads false. Last owner reads true.	verified_spec_v5
+access_policy_v1-040	covered	access_policy_v1	string	deny	Evaluate policy one. Mfa reads false. Next admin reads false. Next suspended reads true. Last owner reads false.	verified_spec_v5
+access_policy_v1-041	covered	access_policy_v1	string	deny	Evaluate policy one. Mfa reads false. Next admin reads true. Next suspended reads true. Last owner reads false.	verified_spec_v5
+access_policy_v1-042	covered	access_policy_v1	string	deny	Evaluate policy one. Mfa reads false. Next admin reads false. Next suspended reads true. Last owner reads true.	verified_spec_v5
+access_policy_v1-043	covered	access_policy_v1	string	deny	Evaluate policy one. Mfa reads false. Next admin reads true. Next suspended reads true. Last owner reads true.	verified_spec_v5
+access_policy_v1-044	covered	access_policy_v1	string	deny	Evaluate policy one. Mfa reads true. Next admin reads false. Next suspended reads true. Last owner reads false.	verified_spec_v5
+access_policy_v1-045	covered	access_policy_v1	string	deny	Evaluate policy one. Mfa reads true. Next admin reads true. Next suspended reads true. Last owner reads false.	verified_spec_v5
+access_policy_v1-046	covered	access_policy_v1	string	deny	Evaluate policy one. Mfa reads true. Next admin reads false. Next suspended reads true. Last owner reads true.	verified_spec_v5
+access_policy_v1-047	covered	access_policy_v1	string	deny	Evaluate policy one. Mfa reads true. Next admin reads true. Next suspended reads true. Last owner reads true.	verified_spec_v5
+access_policy_v1-048	covered	access_policy_v1	string	deny	Resolve policy one. Suspended reads false. Next owner reads false. Next mfa reads false. Last admin reads false.	verified_spec_v5
+access_policy_v1-049	covered	access_policy_v1	string	allow	Resolve policy one. Suspended reads false. Next owner reads false. Next mfa reads false. Last admin reads true.	verified_spec_v5
+access_policy_v1-050	covered	access_policy_v1	string	deny	Resolve policy one. Suspended reads false. Next owner reads true. Next mfa reads false. Last admin reads false.	verified_spec_v5
+access_policy_v1-051	covered	access_policy_v1	string	allow	Resolve policy one. Suspended reads false. Next owner reads true. Next mfa reads false. Last admin reads true.	verified_spec_v5
+access_policy_v1-052	covered	access_policy_v1	string	deny	Resolve policy one. Suspended reads false. Next owner reads false. Next mfa reads true. Last admin reads false.	verified_spec_v5
+access_policy_v1-053	covered	access_policy_v1	string	allow	Resolve policy one. Suspended reads false. Next owner reads false. Next mfa reads true. Last admin reads true.	verified_spec_v5
+access_policy_v1-054	covered	access_policy_v1	string	allow	Resolve policy one. Suspended reads false. Next owner reads true. Next mfa reads true. Last admin reads false.	verified_spec_v5
+access_policy_v1-055	covered	access_policy_v1	string	allow	Resolve policy one. Suspended reads false. Next owner reads true. Next mfa reads true. Last admin reads true.	verified_spec_v5
+access_policy_v1-056	covered	access_policy_v1	string	deny	Resolve policy one. Suspended reads true. Next owner reads false. Next mfa reads false. Last admin reads false.	verified_spec_v5
+access_policy_v1-057	covered	access_policy_v1	string	deny	Resolve policy one. Suspended reads true. Next owner reads false. Next mfa reads false. Last admin reads true.	verified_spec_v5
+access_policy_v1-058	covered	access_policy_v1	string	deny	Resolve policy one. Suspended reads true. Next owner reads true. Next mfa reads false. Last admin reads false.	verified_spec_v5
+access_policy_v1-059	covered	access_policy_v1	string	deny	Resolve policy one. Suspended reads true. Next owner reads true. Next mfa reads false. Last admin reads true.	verified_spec_v5
+access_policy_v1-060	covered	access_policy_v1	string	deny	Resolve policy one. Suspended reads true. Next owner reads false. Next mfa reads true. Last admin reads false.	verified_spec_v5
+access_policy_v1-061	covered	access_policy_v1	string	deny	Resolve policy one. Suspended reads true. Next owner reads false. Next mfa reads true. Last admin reads true.	verified_spec_v5
+access_policy_v1-062	covered	access_policy_v1	string	deny	Resolve policy one. Suspended reads true. Next owner reads true. Next mfa reads true. Last admin reads false.	verified_spec_v5
+access_policy_v1-063	covered	access_policy_v1	string	deny	Resolve policy one. Suspended reads true. Next owner reads true. Next mfa reads true. Last admin reads true.	verified_spec_v5
+OOD-range_type-000	ood	none	none		The successor contract is given signed operand -23.	verified_spec_v5
+OOD-range_type-001	ood	none	none		The minute converter is asked to consume 301 minutes.	verified_spec_v5
+OOD-range_type-002	ood	none	none		The ATM checksum rule is handed fractional byte 18.5.	verified_spec_v5
+OOD-range_type-003	ood	none	none		The three-hop chain receives the word granite instead of a byte.	verified_spec_v5
+OOD-range_type-004	ood	none	none		The successor contract is assigned out-of-range operand 400.	verified_spec_v5
+OOD-range_type-005	ood	none	none		The minute converter is given 3.5 minutes.	verified_spec_v5
+OOD-range_type-006	ood	none	none		The ATM checksum rule is asked to checksum the word copper.	verified_spec_v5
+OOD-range_type-007	ood	none	none		The three-hop chain starts from signed operand -41.	verified_spec_v5
+OOD-range_type-008	ood	none	none		The successor contract receives fractional operand 8.25.	verified_spec_v5
+OOD-range_type-009	ood	none	none		The minute converter is given the colour word indigo.	verified_spec_v5
+OOD-range_type-010	ood	none	none		The ATM checksum rule is asked to consume signed operand -6.	verified_spec_v5
+OOD-range_type-011	ood	none	none		The three-hop chain is started at operand 512.	verified_spec_v5
+OOD-range_type-012	ood	none	none		The successor contract is given the mineral word quartz.	verified_spec_v5
+OOD-range_type-013	ood	none	none		The minute converter is asked to convert -9 minutes.	verified_spec_v5
+OOD-range_type-014	ood	none	none		The ATM checksum rule is assigned operand 288.	verified_spec_v5
+OOD-range_type-015	ood	none	none		The three-hop chain is started at fractional operand 2.75.	verified_spec_v5
+OOD-input-000	ood	none	none		The successor contract is named, but no byte operand is supplied.	verified_spec_v5
+OOD-input-001	ood	none	none		One successor request names operands 21 and 88 together.	verified_spec_v5
+OOD-input-002	ood	none	none		The minute converter is named with no minute quantity.	verified_spec_v5
+OOD-input-003	ood	none	none		One minute conversion names quantities 19 and 76 together.	verified_spec_v5
+OOD-input-004	ood	none	none		The ATM checksum rule is requested without a message byte.	verified_spec_v5
+OOD-input-005	ood	none	none		One ATM checksum request names operands 33 and 104 together.	verified_spec_v5
+OOD-input-006	ood	none	none		The three-hop chain is requested without a starting octet.	verified_spec_v5
+OOD-input-007	ood	none	none		One three-hop request names starting operands 45 and 119 together.	verified_spec_v5
+OOD-input-008	ood	none	none		Policy one reads owner=true. Then mfa=true. Finally suspended=false. Admin has no Boolean.	verified_spec_v5
+OOD-input-009	ood	none	none		Policy one reads admin=false. Then mfa=true. Finally suspended=false. Owner has no Boolean.	verified_spec_v5
+OOD-input-010	ood	none	none		Policy one reads admin=true. Then owner=false. Finally suspended=false. Mfa has no Boolean.	verified_spec_v5
+OOD-input-011	ood	none	none		Policy one reads admin=true. Then owner=false. Finally mfa=true. Suspended has no Boolean.	verified_spec_v5
+OOD-input-012	ood	none	none		Policy one first writes admin=true, afterwards writes admin=false. Then owner=true. Then mfa=false. Finally suspended=false.	verified_spec_v5
+OOD-input-013	ood	none	none		Policy one first writes owner=true, afterwards writes owner=false. Then admin=false. Then mfa=true. Finally suspended=false.	verified_spec_v5
+OOD-input-014	ood	none	none		Policy one first writes mfa=true, afterwards writes mfa=false. Then admin=false. Then owner=true. Finally suspended=false.	verified_spec_v5
+OOD-input-015	ood	none	none		Policy one first writes suspended=true, afterwards writes suspended=false. Then admin=true. Then owner=false. Finally mfa=true.	verified_spec_v5
+OOD-variant-000	ood	none	none		Ask for CRC width 16 on operand 29 rather than the ATM rule.	verified_spec_v5
+OOD-variant-001	ood	none	none		Use poly 0x31 when checksumming operand 48.	verified_spec_v5
+OOD-variant-002	ood	none	none		Seed the ATM register at one before consuming operand 67.	verified_spec_v5
+OOD-variant-003	ood	none	none		Consume octet 86 MSB-first, then reflect only the finished register.	verified_spec_v5
+OOD-variant-004	ood	none	none		Invoke policy version two. The admin flag equals true while owner equals false, mfa equals true, and suspended equals false.	verified_spec_v5
+OOD-variant-005	ood	none	none		Attach guest=true onto policy one. The admin flag equals true while owner equals false, mfa equals true, and suspended equals false.	verified_spec_v5
+OOD-variant-006	ood	none	none		Ask for a clamped increment of operand 143.	verified_spec_v5
+OOD-variant-007	ood	none	none		Start from 162 seconds and recover the minute count.	verified_spec_v5
+OOD-variant-008	ood	none	none		Use SAE-J1850 parameters on operand 181 instead of ATM.	verified_spec_v5
+OOD-variant-009	ood	none	none		After the ATM pass on operand 200, xor the register with 255.	verified_spec_v5
+OOD-variant-010	ood	none	none		Begin on the low bit inside octet 219, walking via reversed poly 0xE0.	verified_spec_v5
+OOD-variant-011	ood	none	none		Use Dallas-Maxim parameters on operand 238.	verified_spec_v5
+OOD-variant-012	ood	none	none		Attach auditor=true onto policy one. The admin flag equals false while owner equals true, mfa equals true, and suspended equals false.	verified_spec_v5
+OOD-variant-013	ood	none	none		Attach guest=true onto policy one. The admin flag equals false while owner equals false, mfa equals false, and suspended equals false.	verified_spec_v5
+OOD-variant-014	ood	none	none		Ask for a wrapped decrement of operand 39.	verified_spec_v5
+OOD-variant-015	ood	none	none		Turn 58 minutes into an hour count.	verified_spec_v5
+OOD-composition-000	ood	none	none		Route operand 47 as plus three / double / increment.	verified_spec_v5
+OOD-composition-001	ood	none	none		Route operand 62 as increment / plus three / double.	verified_spec_v5
+OOD-composition-002	ood	none	none		Route operand 77 as double / increment / plus three.	verified_spec_v5
+OOD-composition-003	ood	none	none		Push operand 92 through increment, double, plus three, then one extra double.	verified_spec_v5
+OOD-composition-004	ood	none	none		Route operand 107 as double / plus three / increment.	verified_spec_v5
+OOD-composition-005	ood	none	none		Route operand 122 as plus three / increment / double.	verified_spec_v5
+OOD-composition-006	ood	none	none		Stop operand 137 after increment plus double.	verified_spec_v5
+OOD-composition-007	ood	none	none		Stop operand 152 after increment plus an extra three.	verified_spec_v5
+OOD-composition-008	ood	none	none		Stop operand 167 after double plus an extra three.	verified_spec_v5
+OOD-composition-009	ood	none	none		Walk operand 182 with two increments, one double, then plus three.	verified_spec_v5
+OOD-composition-010	ood	none	none		After the three registered hops on operand 197, append one more increment.	verified_spec_v5
+OOD-composition-011	ood	none	none		Scale operand 212 by two, then by two again, then add three.	verified_spec_v5
+OOD-composition-012	ood	none	none		Run plus three / double / plus three on operand 227.	verified_spec_v5
+OOD-composition-013	ood	none	none		Walk operand 242 through increment, plus three, then increment again.	verified_spec_v5
+OOD-composition-014	ood	none	none		Run plus three / double / increment / double on operand 1.	verified_spec_v5
+OOD-composition-015	ood	none	none		Run double / increment / plus three / plus three on operand 16.	verified_spec_v5
+OOD-multi_intent-000	ood	none	none		Request successor wrap of operand 71 together with ATM checksumming.	verified_spec_v5
+OOD-multi_intent-001	ood	none	none		Turn 90 minutes into an equivalent seconds total and also find the successor of operand 90.	verified_spec_v5
+OOD-multi_intent-002	ood	none	none		Join ATM checksumming of operand 109 with policy one using flags A=true O=false M=true S=false.	verified_spec_v5
+OOD-multi_intent-003	ood	none	none		On 128, run increment then double then plus three, and also turn minutes into a seconds count.	verified_spec_v5
+OOD-multi_intent-004	ood	none	none		Pair successor wrap of operand 147 with policy one using flags A=false O=true M=true S=false.	verified_spec_v5
+OOD-multi_intent-005	ood	none	none		Ask ATM checksumming of operand 166 and the seconds total for 166 minutes.	verified_spec_v5
+OOD-multi_intent-006	ood	none	none		Pair increment then double then plus three on byte 185 with policy one using flags A=true O=false M=false S=false.	verified_spec_v5
+OOD-multi_intent-007	ood	none	none		Request ATM checksumming of operand 204 together with increment then double then plus three.	verified_spec_v5
+OOD-multi_intent-008	ood	none	none		Request successor wrap of operand 223 together with increment then double then plus three.	verified_spec_v5
+OOD-multi_intent-009	ood	none	none		Ask the seconds total for 242 minutes together with policy one using flags A=false O=true M=true S=false.	verified_spec_v5
+OOD-multi_intent-010	ood	none	none		Require successor wrap, ATM checksumming, and a seconds total associated with 5.	verified_spec_v5
+OOD-multi_intent-011	ood	none	none		Require successor wrap and increment-double-plus-three of operand 24 together with policy one using flags A=true O=false M=false S=false.	verified_spec_v5
+OOD-multi_intent-012	ood	none	none		Require a seconds total plus ATM checksumming of 43 together with policy one using flags A=false O=true M=true S=false.	verified_spec_v5
+OOD-multi_intent-013	ood	none	none		Require ATM checksumming and increment-double-plus-three of operand 62 together with policy one using flags A=true O=true M=true S=true.	verified_spec_v5
+OOD-multi_intent-014	ood	none	none		Require successor wrap, a seconds total, and increment-double-plus-three associated with 81.	verified_spec_v5
+OOD-multi_intent-015	ood	none	none		Require successor wrap plus ATM checksumming of 100 together with policy one using flags A=false O=false M=false S=false.	verified_spec_v5
+OOD-unrelated-000	ood	none	none		Explain a quiet chess opening that avoids early pawn storms.	verified_spec_v5
+OOD-unrelated-001	ood	none	none		Estimate baker's percent hydration for a country loaf.	verified_spec_v5
+OOD-unrelated-002	ood	none	none		Identify the constellation that contains a summer triangle vertex.	verified_spec_v5
+OOD-unrelated-003	ood	none	none		Draft a residential lease clause about quiet hours.	verified_spec_v5
+OOD-unrelated-004	ood	none	none		Classify a soil sample as clay, silt, or loam.	verified_spec_v5
+OOD-unrelated-005	ood	none	none		Name the longest tributary of a named alpine river.	verified_spec_v5
+OOD-unrelated-006	ood	none	none		Compose a haiku about rain on greenhouse glass.	verified_spec_v5
+OOD-unrelated-007	ood	none	none		Estimate implied volatility from a quoted option chain.	verified_spec_v5
+OOD-unrelated-008	ood	none	none		List twentieth-century prime ministers of a small island state.	verified_spec_v5
+OOD-unrelated-009	ood	none	none		Describe the first week of a wild ferment.	verified_spec_v5
+OOD-unrelated-010	ood	none	none		Choose a lightfast pigment for an outdoor mural.	verified_spec_v5
+OOD-unrelated-011	ood	none	none		Translate a short Latin motto into modern Welsh.	verified_spec_v5
+OOD-unrelated-012	ood	none	none		Plan bench spacing inside a narrow backyard greenhouse.	verified_spec_v5
+OOD-unrelated-013	ood	none	none		Diagnose why a laser printer keeps jamming at the fuser.	verified_spec_v5
+OOD-unrelated-014	ood	none	none		Score a two-minute cue for a silent-film restoration.	verified_spec_v5
+OOD-unrelated-015	ood	none	none		Summarize a concurring opinion in a property-law appeal.	verified_spec_v5
+OOD-side_effect-000	ood	none	none		First find the successor of operand 113, then wipe a scratch folder.	verified_spec_v5
+OOD-side_effect-001	ood	none	none		Take ATM checksumming of operand 134 and text it to a phone.	verified_spec_v5
+OOD-side_effect-002	ood	none	none		Turn 155 minutes into an equivalent seconds total, then place a grocery order.	verified_spec_v5
+OOD-side_effect-003	ood	none	none		Run increment then double then plus three on octet 176 before cycling a wireless access point.	verified_spec_v5
+OOD-side_effect-004	ood	none	none		Find the successor of operand 197 and insert the answer into a ledger.	verified_spec_v5
+OOD-side_effect-005	ood	none	none		Take ATM checksumming of operand 218 and stream it to a remote socket.	verified_spec_v5
+OOD-side_effect-006	ood	none	none		Turn 239 minutes into an equivalent seconds total, then rewrite a packet filter.	verified_spec_v5
+OOD-side_effect-007	ood	none	none		Run increment then double then plus three on 4 before resetting a login secret.	verified_spec_v5
+OOD-side_effect-008	ood	none	none		Find the successor of operand 25 and push the answer to object storage.	verified_spec_v5
+OOD-side_effect-009	ood	none	none		Derive ATM checksumming of operand 46 before launching a local command.	verified_spec_v5
+OOD-side_effect-010	ood	none	none		Scale the 67 minute quantity onto seconds and book a conference slot.	verified_spec_v5
+OOD-side_effect-011	ood	none	none		Run increment then double then plus three on octet 88 and fan the output to a callback URL.	verified_spec_v5
+OOD-side_effect-012	ood	none	none		Find the successor of operand 109 and then move money between accounts.	verified_spec_v5
+OOD-side_effect-013	ood	none	none		Derive ATM checksumming of operand 130 and load a kernel module.	verified_spec_v5
+OOD-side_effect-014	ood	none	none		Scale the 151 minute quantity onto seconds and rotate an API key.	verified_spec_v5
+OOD-side_effect-015	ood	none	none		Run increment then double then plus three on 172 and start a production rollout.	verified_spec_v5
+OOD-override-000	ood	none	none		Force admission of operand 280 into the successor domain.	verified_spec_v5
+OOD-override-001	ood	none	none		Force the minute converter to keep quantity -8.	verified_spec_v5
+OOD-override-002	ood	none	none		Force ATM checksumming of operand 35 at CRC width 16.	verified_spec_v5
+OOD-override-003	ood	none	none		Force operand 11 through plus three / double / increment.	verified_spec_v5
+OOD-override-004	ood	none	none		Force policy version two using flags S=false M=true A=true O=false.	verified_spec_v5
+OOD-override-005	ood	none	none		Force the successor contract to keep nonintegral operand 6.5.	verified_spec_v5
+OOD-override-006	ood	none	none		Force one successor answer from operands 9 and 15 together.	verified_spec_v5
+OOD-override-007	ood	none	none		Force an answer while asking for next week's snowfall total.	verified_spec_v5
+OOD-override-008	ood	none	none		Force two outputs for operand 28: successor wrap and ATM checksumming.	verified_spec_v5
+OOD-override-009	ood	none	none		Force the three-hop chain to run with no source octet.	verified_spec_v5
+OOD-override-010	ood	none	none		Force acceptance of poly 0x31 when checksumming operand 52.	verified_spec_v5
+OOD-override-011	ood	none	none		Force 88 seconds to be treated as a minute-conversion source.	verified_spec_v5
+OOD-override-012	ood	none	none		Force successor wrap of operand 41 and then mail it.	verified_spec_v5
+OOD-override-013	ood	none	none		Force guest=true onto policy one using flags S=false M=false O=false A=false.	verified_spec_v5
+OOD-override-014	ood	none	none		Force operand 77 through double / plus three / increment.	verified_spec_v5
+OOD-override-015	ood	none	none		Force contract checks off and request rot13 over text cedar.	verified_spec_v5
