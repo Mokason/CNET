@@ -3764,6 +3764,19 @@ cnet_utterance: src/cnet_utterance.c include/cnet_utterance.h tools/cnet_utteran
 	@./$(BIN_DIR)/cnet_utterance --when status --hit 0.857 --da 0.47 --ht 0.53 --ado 0.51 --miss 2 | tee -a logs/cnet_utterance.log
 	@echo "CNET_UTTERANCE_OK"
 
+.PHONY: cnet_chat1_coherence
+cnet_chat1_coherence: include/cnet_query_alias.h src/cnet_query_alias.c \
+		include/cnet_dialog_ctx.h src/cnet_dialog_ctx.c \
+		include/cnet_utterance.h src/cnet_utterance.c \
+		tests/test_cnet_chat1_coherence.c
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) -std=c11 -Wall -Wextra -O2 -Werror -D_POSIX_C_SOURCE=200809L \
+		-Iinclude -o $(BIN_DIR)/test_cnet_chat1_coherence \
+		src/cnet_query_alias.c src/cnet_dialog_ctx.c src/cnet_utterance.c \
+		tests/test_cnet_chat1_coherence.c
+	@./$(BIN_DIR)/test_cnet_chat1_coherence | tee logs/cnet_chat1_coherence.log
+	@grep -q '^CNET_CHAT1_COHERENCE_PASS ' logs/cnet_chat1_coherence.log
+
 .PHONY: cnetd-run
 cnetd-run: cnetd query_dialog
 	@pkill -x cnetd 2>/dev/null || true

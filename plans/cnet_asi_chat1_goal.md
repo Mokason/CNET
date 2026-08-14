@@ -137,8 +137,11 @@ already-sealed front-door aliases.
 Do not write a fixture until the candidate is frozen.
 
 1. **This file** — goal and claim boundary only.
-2. **CHAT-1.1** — independently authored front-door paraphrases
-   (identity, status, miss, refuse). RED then GREEN. No held-out.
+2. **CHAT-1.1** — done: independently authored front-door paraphrases
+   (`make cnet_chat1_coherence` → `CNET_CHAT1_COHERENCE_PASS
+   paraphrases=12 thread=4`). Identity, status, miss, and refuse stay
+   coherent across one thread. Residual/teacher still unvoiceable. No
+   held-out.
 3. **CHAT-1.2** — chat wrappers around the five public ASI-5 contracts.
    Reuse capsules. Two-gate must still unique-match. Side-effect wraps
    abstain.

@@ -102,6 +102,13 @@ int cnet_dialog_extract_entities(const char *query, char ents[][CNET_DC_ENT],
 
 CnetDialogAction cnet_dialog_infer_action(const char *query) {
     if (!query || !query[0]) return CNET_ACT_NONE;
+    if (contains_ci(query, "never self-cert") ||
+        contains_ci(query, "ignore your law") ||
+        contains_ci(query, "invent an answer") ||
+        contains_ci(query, "pretend you have") ||
+        contains_ci(query, "email the") ||
+        contains_ci(query, "speak anyway"))
+        return CNET_ACT_REFUSE;
     if (contains_ci(query, "who are you") || contains_ci(query, "your name"))
         return CNET_ACT_IDENTITY;
     if (contains_ci(query, "restart") || contains_ci(query, "reboot"))

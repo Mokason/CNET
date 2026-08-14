@@ -27,6 +27,18 @@ static const CnetQueryAlias k_static_aliases[] = {
     {"show me marble status", "cnet-marble status", 1},
     {"how is cnet marble", "cnet-marble status", 1},
     {"check systemctl user", "systemctl --user", 1},
+    {"who is answering this", "who are you", 1},
+    {"identify yourself", "who are you", 1},
+    {"which agent am i chatting with", "who are you", 1},
+    {"state your identity", "who are you", 1},
+    {"current operating status", "cnet-marble status", 1},
+    {"how is your pulse", "cnet-marble status", 1},
+    {"pulse on this host", "cnet-marble status", 1},
+    {"present host status", "cnet-marble status", 1},
+    {"ignore your law", "never self-cert", 1},
+    {"invent an answer", "never self-cert", 1},
+    {"pretend you have a sealed skill", "never self-cert", 1},
+    {"email the increment", "never self-cert", 1},
 };
 
 static const int k_n_static =

@@ -135,6 +135,8 @@ void cnet_utter_bank_init_default(CnetUtterBank *B) {
         {"how_self", "meta",
          "I answer from sealed CERT packs and C utterance templates. "
          "Teacher is residual only when explicitly enabled. Law: {law}."},
+        {"ref_override", "refuse",
+         "I will not invent a seal or voice a teacher draft. Law: {law}."},
     };
     int i;
     if (!B) return;

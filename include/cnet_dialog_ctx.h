@@ -31,7 +31,8 @@ typedef enum {
     CNET_ACT_STATUS = 2,
     CNET_ACT_RESTART = 3,
     CNET_ACT_SHOW = 4,
-    CNET_ACT_OTHER = 5
+    CNET_ACT_OTHER = 5,
+    CNET_ACT_REFUSE = 6
 } CnetDialogAction;
 
 typedef struct {
