@@ -41,10 +41,11 @@ on the answer-free stress matrix. Held-out coverage can be measured only after
 - `S7` (this tree): widen closed request-English so independently
   authored coherent paraphrases of the public contracts answer, OOD
   still abstains. `CNET_7B_V6_COHERENCE_PASS covered=14 ood=5`.
-  Existing diagnostic and v5 runtime matrix stay green. Release root
-  moves to `cnet_asi5_v6`. Same ROCm pin PID `626910` on `:8081`.
+  Existing diagnostic and v5 runtime matrix stay green. Same ROCm pin
+  PID `626910` on `:8081`. Archive the S6/F6 FAIL journals beside the
+  canonical v5 state root before the next authorized run.
 - `F7` after `S7` only retargets the suite header at the `S7` hash and
-  the v6 state root, then refreshes `digests.sha256`. Same F5 fixture.
+  refreshes `digests.sha256`. Same F5 fixture.
 - Then one authorized `make -j1 cnet_7b_compete_results`. Never start a
   second result path. Floors unchanged. Broader claims `WITHHELD`.
 

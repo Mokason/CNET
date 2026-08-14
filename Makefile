@@ -7385,7 +7385,7 @@ cnet_7b_eval_san: cnet_7b_eval_contract
 		tee logs/cnet_7b_score_san.log
 	@grep -q CNET_7B_SCORE_PASS logs/cnet_7b_score_san.log
 
-CNET_COMPETE_RELEASE_ROOT := /home/marble/.local/state/cnet/cnet_asi5_v6
+CNET_COMPETE_RELEASE_ROOT := /home/marble/.local/state/cnet/cnet_asi5_v5
 CNET_COMPETE_RELEASE_BIN := $(CNET_COMPETE_RELEASE_ROOT)/bin
 CNET_COMPETE_EVIDENCE_DIR := $(CNET_COMPETE_RELEASE_ROOT)/evidence
 CNET_COMPETE_RESULTS_DIR := $(CNET_COMPETE_RELEASE_ROOT)/results

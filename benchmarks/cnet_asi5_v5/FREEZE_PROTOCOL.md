@@ -31,14 +31,12 @@ Lane aggregates only: increment 0/64, minutes 32/64, crc 16/64, policy
 widens closed request-English admission so independently authored
 coherent paraphrases of the public contracts are answered, while paired
 OOD mutations still abstain. Development stress and diagnostic gates
-remain green. The v6 release root is
-`/home/marble/.local/state/cnet/cnet_asi5_v6` so the authenticated v5
-FAIL journals stay untouched.
+remain green. Authenticated S6/F6 FAIL journals are archived beside the
+canonical v5 state root, not rewritten.
 
 After `S7`, `F7` may change only:
 
-- `include/cnet_compete_suite_data_v5.h` (records the `S7` commit and v6
-  state root)
+- `include/cnet_compete_suite_data_v5.h` (records the `S7` commit)
 - `benchmarks/cnet_asi5_v5/digests.sha256`
 
 The held-out TSV, cases, oracle, generator, and system prompt stay
