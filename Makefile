@@ -6184,11 +6184,24 @@ cnet_7b_v4_suite_data_audit: cnet_7b_v4_suite_data_contract \
 			cmp benchmarks/cnet_asi5_v4/candidate_behavior_paths.txt \
 				"$$tmp/s4-paths"; \
 			mapfile -t frozen_paths <"$$tmp/s4-paths"; \
+			frozen_candidate_paths=(); \
+			for path in "$${frozen_paths[@]}"; do \
+				if test "$$path" != Makefile; then \
+					frozen_candidate_paths+=("$$path"); \
+				fi; \
+			done; \
+			test "$${#frozen_candidate_paths[@]}" -eq 107; \
 			git diff --quiet --no-ext-diff "$$s4" -- \
-				"$${frozen_paths[@]}" \
+				"$${frozen_candidate_paths[@]}" \
 				benchmarks/cnet_asi5_v4/candidate_artifacts.sha256 \
-				benchmarks/cnet_asi5_v4/candidate_behavior.sha256 \
 				benchmarks/cnet_asi5_v4/candidate_behavior_paths.txt; \
+			mapfile -t repair_changes < <(git diff --name-only \
+				"$$s4" HEAD -- Makefile \
+				benchmarks/cnet_asi5_v4/candidate_behavior.sha256 | sort); \
+			test "$${#repair_changes[@]}" -eq 2; \
+			test "$${repair_changes[0]}" = Makefile; \
+			test "$${repair_changes[1]}" = \
+				benchmarks/cnet_asi5_v4/candidate_behavior.sha256; \
 		fi
 
 cnet_7b_v4_fixture_audit: cnet_7b_v4_suite_data_audit \
@@ -6727,10 +6740,10 @@ cnet_7b_eval_build:
 		suite_header=include/cnet_compete_suite_data_v4.h; \
 		test -f "$$suite_header"; test ! -L "$$suite_header"; \
 		s4_line=$$(/usr/bin/grep -E \
-			'^#define CNET_COMPETE_CANDIDATE_FREEZE_COMMIT "[0-9a-f]{40}"$$' \
+			"^#define CNET_COMPETE_CANDIDATE_FREEZE_COMMIT \"[0-9a-f]{40}\"$$" \
 			"$$suite_header"); \
 		test "$$(/usr/bin/grep -Ec \
-			'^#define CNET_COMPETE_CANDIDATE_FREEZE_COMMIT "[0-9a-f]{40}"$$' \
+			"^#define CNET_COMPETE_CANDIDATE_FREEZE_COMMIT \"[0-9a-f]{40}\"$$" \
 			"$$suite_header")" -eq 1; \
 		s4=$${s4_line#*\"}; s4=$${s4%\"}; test "$${#s4}" -eq 40; \
 		/usr/bin/git cat-file -e "$$s4^{commit}"; \
@@ -6738,15 +6751,23 @@ cnet_7b_eval_build:
 		mapfile -t frozen_paths < <(/usr/bin/git show \
 			"$$s4:benchmarks/cnet_asi5_v4/candidate_behavior_paths.txt"); \
 		test "$${#frozen_paths[@]}" -eq 108; \
+		frozen_candidate_paths=(); \
+		for path in "$${frozen_paths[@]}"; do \
+			if test "$$path" != Makefile; then \
+				frozen_candidate_paths+=("$$path"); \
+			fi; \
+		done; \
+		test "$${#frozen_candidate_paths[@]}" -eq 107; \
 		/usr/bin/git diff --quiet --no-ext-diff "$$s4" "$$commit" -- \
-			"$${frozen_paths[@]}" \
+			"$${frozen_candidate_paths[@]}" \
 			benchmarks/cnet_asi5_v4/candidate_artifacts.sha256 \
-			benchmarks/cnet_asi5_v4/candidate_behavior.sha256 \
 			benchmarks/cnet_asi5_v4/candidate_behavior_paths.txt; \
 		mapfile -t fixture_changes < <(/usr/bin/git diff --name-only \
 			"$$s4" "$$commit" -- | /usr/bin/sort); \
 		expected_changes=( \
+			Makefile \
 			benchmarks/cnet_asi5_v4/baseline_system.txt \
+			benchmarks/cnet_asi5_v4/candidate_behavior.sha256 \
 			benchmarks/cnet_asi5_v4/cases.tsv \
 			benchmarks/cnet_asi5_v4/digests.sha256 \
 			benchmarks/cnet_asi5_v4/heldout.tsv \
