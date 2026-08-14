@@ -720,16 +720,21 @@ static int contract_vocabulary_supported(const Lexeme *tokens, size_t count,
         "true", "tuple", "under", "uses", "v", "where"
     };
     static const char *const compose[] = {
-        "a", "add", "and", "apply", "as", "at", "begins", "by", "byte",
-        "chain", "compose", "composition", "double", "doubling", "finally",
-        "first", "for", "from", "in", "increase", "increment", "input",
-        "it", "its", "large", "last", "make", "map", "mod", "modulo",
-        "multiply", "next", "octet", "offset", "on", "one", "order",
-        "pass", "performs", "pipeline", "plus", "raise", "registered",
-        "result", "scale", "second", "stage", "starting", "successor",
-        "take", "that", "the", "then", "this", "three", "through",
-        "times", "to", "transform", "twice", "two", "unity", "unsigned",
-        "use", "with"
+        "a", "add", "addition", "advance", "advances", "an", "and",
+        "applies", "apply", "as", "at", "b", "begins", "begin", "by",
+        "byte", "c", "chain", "comes", "compose", "composition",
+        "consecutive", "consumes", "compute", "computes", "datum",
+        "double", "doubles", "doubling", "finally", "first", "for",
+        "from", "hop", "hops", "in", "increase", "increment", "input",
+        "intermediate", "into", "it", "its", "large", "last", "make",
+        "map", "mod", "modulo", "multiplication", "multiply", "next",
+        "octet", "offset", "on", "one", "order", "ordered", "pass",
+        "performs", "pipeline", "plus", "produce", "produces", "raise",
+        "raises", "registered", "result", "route", "scale", "second",
+        "sequence", "stage", "starting", "successor", "take", "that",
+        "the", "then", "third", "this", "three", "through", "times",
+        "to", "transform", "twice", "two", "uint", "unity", "unsigned",
+        "use", "value", "with"
     };
     const char *const *allowed = NULL;
     size_t allowed_count = 0, index;
@@ -1002,7 +1007,10 @@ static int compose_glue_word(const Lexeme *tokens, size_t count,
     static const char *const glue[] = {
         "then", "next", "finally", "last", "first", "second", "third",
         "and", "followed", "by", "it", "its", "that", "the", "result",
-        "output", "make", "as", "large", "one", "unity", "two", "three"
+        "output", "make", "as", "large", "one", "unity", "two", "three",
+        "a", "an", "applies", "b", "c", "comes", "consumes", "datum",
+        "hop", "intermediate", "into", "produces", "route", "stage",
+        "value"
     };
     size_t word;
     for (word = 0; word < sizeof glue / sizeof glue[0]; ++word)
@@ -1018,7 +1026,7 @@ static int compose_tail_word(const Lexeme *tokens, size_t count,
         "under", "byte", "bytes", "octet", "octets", "input", "value",
         "datum", "operand", "uint", "bit", "register", "arithmetic",
         "wrap", "wrapping", "wraparound", "overflow", "cyclic", "exactly",
-        "last"
+        "last", "offset", "consumes"
     };
     size_t word;
     for (word = 0; word < sizeof tail / sizeof tail[0]; ++word)
@@ -1079,8 +1087,9 @@ static int symbolic_compose_operations_exact(const char *prompt) {
 static int compose_operation_word(const Lexeme *tokens, size_t count,
                                   size_t index) {
     static const char *const operations[] = {
-        "add", "increase", "increment", "raise", "successor", "double",
-        "doubling", "twice", "multiply", "times", "scale", "offset",
+        "add", "addition", "advance", "advances", "increase", "increment",
+        "raise", "raises", "successor", "double", "doubles", "doubling",
+        "twice", "multiplication", "multiply", "times", "scale", "offset",
         "transform", "map", "take", "make", "performs"
     };
     return word_in_list(tokens, count, index, operations,
@@ -1144,7 +1153,7 @@ static int compose_hyphen_supported(const unsigned char *prompt,
                                     const unsigned char *hyphen) {
     static const char *const compounds[] = {
         "three-stage", "one-byte", "eight-bit", "unsigned-byte",
-        "unsigned-octet"
+        "unsigned-octet", "plus-three"
     };
     const unsigned char *begin = hyphen, *end = hyphen + 1u;
     char compound[RUNTIME_WORD_MAX * 2u];
@@ -1218,6 +1227,9 @@ static int compose_operations_ordered(const char *prompt,
     for (index = 0; index < count; ++index) {
         if (word_is(tokens, count, index, "increment") ||
             word_is(tokens, count, index, "successor") ||
+            ((word_is(tokens, count, index, "advance") ||
+              word_is(tokens, count, index, "advances")) &&
+             operation_value_follows(tokens, count, index, 1u, "one")) ||
             ((word_is(tokens, count, index, "add") ||
               word_is(tokens, count, index, "plus") ||
               word_is(tokens, count, index, "raise") ||
@@ -1225,17 +1237,21 @@ static int compose_operations_ordered(const char *prompt,
              operation_value_follows(tokens, count, index, 1u, "one")))
             add_operation(&increment, index);
         if (word_is(tokens, count, index, "double") ||
+            word_is(tokens, count, index, "doubles") ||
             word_is(tokens, count, index, "doubling") ||
             word_is(tokens, count, index, "twice") ||
             ((word_is(tokens, count, index, "multiply") ||
+              word_is(tokens, count, index, "multiplication") ||
               word_is(tokens, count, index, "times") ||
               word_is(tokens, count, index, "scale")) &&
              operation_value_follows(tokens, count, index, 2u, "two")))
             add_operation(&doubling, index);
         if ((word_is(tokens, count, index, "add") ||
+             word_is(tokens, count, index, "addition") ||
              word_is(tokens, count, index, "plus") ||
              word_is(tokens, count, index, "offset") ||
              word_is(tokens, count, index, "raise") ||
+             word_is(tokens, count, index, "raises") ||
              word_is(tokens, count, index, "increase")) &&
             operation_value_follows(tokens, count, index, 3u, "three"))
             add_operation(&add_three, index);
@@ -1579,10 +1595,10 @@ static int number_word_context_supported(const Lexeme *tokens, size_t count,
                                          size_t index,
                                          CnetCompeteIntent intent) {
     static const char *const multiply_operations[] = {
-        "multiply", "scale", "times"
+        "multiplication", "multiply", "scale", "times"
     };
     static const char *const add_three_operations[] = {
-        "add", "offset", "raise", "increase"
+        "add", "addition", "offset", "raise", "raises", "increase"
     };
     if (!number_word(tokens, count, index)) return 1;
     if ((intent == CNET_INTENT_INCREMENT ||
@@ -1595,6 +1611,7 @@ static int number_word_context_supported(const Lexeme *tokens, size_t count,
         if (intent == CNET_INTENT_INCREMENT || intent == CNET_INTENT_COMPOSE3)
             return number_adjacent_word(tokens, count, index, "add") ||
                    number_adjacent_word(tokens, count, index, "advance") ||
+                   number_adjacent_word(tokens, count, index, "advances") ||
                    number_adjacent_word(tokens, count, index, "by") ||
                    number_adjacent_word(tokens, count, index, "forward") ||
                    number_adjacent_word(tokens, count, index, "raise") ||
@@ -1614,6 +1631,8 @@ static int number_word_context_supported(const Lexeme *tokens, size_t count,
     if (word_is(tokens, count, index, "two"))
         return intent == CNET_INTENT_COMPOSE3 &&
                (number_adjacent_word(tokens, count, index, "multiply") ||
+                number_adjacent_word(tokens, count, index,
+                                     "multiplication") ||
                 number_adjacent_word(tokens, count, index, "scale") ||
                 number_adjacent_word(tokens, count, index, "times") ||
                 number_linked_to_operation(
@@ -1623,9 +1642,11 @@ static int number_word_context_supported(const Lexeme *tokens, size_t count,
     if (word_is(tokens, count, index, "three"))
         return intent == CNET_INTENT_COMPOSE3 &&
                (number_adjacent_word(tokens, count, index, "add") ||
+                number_adjacent_word(tokens, count, index, "addition") ||
                 number_adjacent_word(tokens, count, index, "plus") ||
                 number_adjacent_word(tokens, count, index, "offset") ||
                 number_adjacent_word(tokens, count, index, "raise") ||
+                number_adjacent_word(tokens, count, index, "raises") ||
                 number_adjacent_word(tokens, count, index, "increase") ||
                 number_adjacent_word(tokens, count, index, "stage") ||
                 number_adjacent_word(tokens, count, index, "hop") ||
