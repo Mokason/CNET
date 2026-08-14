@@ -3910,7 +3910,7 @@ cnet_chat1_compete: cnet_chat1_independence include/cnet_chat_fluency.h \
 		src/cnet_compete_eval.c src/cnet_compete.c \
 		src/cce/cce_campaign_provenance.c \
 		$(CNET_COMPETE_CAPSULE_CORE) $(ROUTER) $(SPECIALIST_SRC) \
-		-Wl,--gc-sections $(LDFLAGS) $(MCP_LDFLAGS) -pthread
+		-Wl,--gc-sections $(LDFLAGS) $(MCP_LDFLAGS) -pthread -lcurl
 	@./$(BIN_DIR)/cnet_chat1_compete \
 		artifacts/cnet_asi5_v5/intent.wlm \
 		artifacts/cnet_asi5_v5/intent.meta \
