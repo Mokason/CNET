@@ -3,15 +3,15 @@
 
 #include <stddef.h>
 
-#define CNET_COMPETE_INTENT_BUCKETS 509
-#define CNET_COMPETE_INTENT_LABEL_BASE 512
-#define CNET_COMPETE_INTENT_VOCAB 518
+#define CNET_COMPETE_INTENT_BUCKETS 1021
+#define CNET_COMPETE_INTENT_LABEL_BASE 1024
+#define CNET_COMPETE_INTENT_VOCAB 1030
 #define CNET_COMPETE_INTENT_CONTEXT 20
-#define CNET_COMPETE_INTENT_EMBED 16
-#define CNET_COMPETE_INTENT_HIDDEN 96
+#define CNET_COMPETE_INTENT_EMBED 32
+#define CNET_COMPETE_INTENT_HIDDEN 128
 #define CNET_COMPETE_INTENT_SEED 20260813u
 #define CNET_COMPETE_INTENT_PROVENANCE \
-    "external_verified_spec_generator_v2"
+    "external_verified_spec_dual_head_v4"
 
 typedef enum {
     CNET_INTENT_INCREMENT = 0,
@@ -32,6 +32,7 @@ typedef struct {
     int embedding;
     int hidden;
     long parameters;
+    size_t source_examples;
     size_t train_examples;
     size_t train_steps;
     double final_mean_loss;
@@ -64,9 +65,11 @@ int cnet_compete_intent_export_development_corpus(const char *path,
                                                   size_t *prompt_count);
 
 /* Deterministic native-C training from the built-in external specification
-   generator. It never consumes CNET answers or the frozen held-out fixture. */
+   generator plus an answer-free, manifest-frozen semantic intent corpus. It
+   never consumes CNET answers or a held-out fixture. */
 int cnet_compete_intent_train(const char *artifact_path,
                               const char *metadata_path,
+                              const char *semantic_corpus_path,
                               CnetCompeteIntentReport *report);
 
 /* Load only the fixed, manifest-bound CNET-ASI-5 base artifact. Header,

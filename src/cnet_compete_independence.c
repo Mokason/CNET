@@ -304,6 +304,27 @@ static int load_fixture_prompts(
                       line_number);
             goto done;
         }
+        if (!candidate) {
+            AuditDocument *added = &set->documents[set->count - 1u];
+            int written = snprintf(added->origin, sizeof added->origin,
+                                   "%s:%s", fields[6], fields[0]);
+            const unsigned char *origin =
+                (const unsigned char *)added->origin;
+            if (fields[6][0] == '\0' || written < 0 ||
+                (size_t)written >= sizeof added->origin) {
+                set_error(error, error_capacity,
+                          "invalid fixture provenance %s:%zu", path,
+                          line_number);
+                goto done;
+            }
+            for (; *origin != '\0'; ++origin)
+                if (*origin < 0x20u || *origin >= 0x7fu) {
+                    set_error(error, error_capacity,
+                              "unsafe fixture provenance %s:%zu", path,
+                              line_number);
+                    goto done;
+                }
+        }
     }
     if (ferror(file)) {
         set_error(error, error_capacity, "fixture read failed %s", path);
@@ -698,9 +719,21 @@ int cnet_compete_independence_export_exclusions(
             prompt[used++] = (char)character;
         }
         prompt[used] = '\0';
+        {
+            const unsigned char *origin = (const unsigned char *)
+                exclusions.documents[document].origin;
+            for (; *origin != '\0'; ++origin)
+                if (*origin < 0x20u || *origin >= 0x7fu) {
+                    set_error(error, error_capacity,
+                              "unsafe exclusion origin");
+                    result = CNET_INDEPENDENCE_ERR_FORMAT;
+                    goto done;
+                }
+        }
         if (fprintf(output,
-                    "excluded-%04zu\tdevelopment\tnone\tnone\t\t%s\tfrozen_corpus_v1\n",
-                    document, prompt) < 0) {
+                    "excluded-%04zu\tdevelopment\tnone\tnone\t\t%s\t%s\n",
+                    document, prompt,
+                    exclusions.documents[document].origin) < 0) {
             result = CNET_INDEPENDENCE_ERR_IO;
             goto done;
         }

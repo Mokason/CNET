@@ -158,6 +158,18 @@ status=$?
 check "$([ "$status" -eq 0 ] && echo 0 || echo 1)" \
     "control: without pipefail the same fixture must false-green (exit $status)"
 
+# The active release workflow is v4.  Its synthetic failure paths execute when
+# the scorer cannot emit a verdict, so a stale literal there would mislabel the
+# only terminal evidence even though the compiled suite identity is correct.
+WORKFLOW=$(sed -n '/^cnet_7b_compete_results_inner:/,$p' "$MAKEFILE")
+printf '%s\n' "$WORKFLOW" | grep -q 'suite=CNET-ASI-5-v3'
+check "$([ $? -ne 0 ] && echo 0 || echo 1)" \
+    "active result workflow must not emit the retired v3 suite identity"
+v4_terminals=$(printf '%s\n' "$WORKFLOW" | \
+    grep -c 'CNET_7B_COMPETE_FAIL suite=CNET-ASI-5-v4' || true)
+check "$([ "$v4_terminals" -eq 4 ] && echo 0 || echo 1)" \
+    "all four synthetic result verdicts must identify v4 (saw $v4_terminals)"
+
 if [ "$failures" -gt 0 ]; then
     printf 'PIPELINE_STATUS_FAIL checks=%d failures=%d\n' "$checks" "$failures"
     exit 1

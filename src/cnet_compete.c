@@ -83,7 +83,8 @@ static int prompt_valid(const char *prompt) {
 static int row_valid(char **f, CnetCompeteLane *lane) {
     long value;
     if (!identifier_valid(f[0]) || strlen(f[0]) >= FIXTURE_ID_CAP ||
-        !prompt_valid(f[5]) || strcmp(f[6], "verified_spec_v3") != 0)
+        !prompt_valid(f[5]) ||
+        strcmp(f[6], CNET_COMPETE_FIXTURE_PROVENANCE) != 0)
         return 0;
     if (strcmp(f[1], "ood") == 0) {
         if (strcmp(f[2], "none") != 0 || strcmp(f[3], "none") != 0 ||

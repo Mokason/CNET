@@ -130,7 +130,7 @@ int main(int argc, char **argv) {
             "packed_load");
     REQUIRE(report.parameters > 0 && report.parameters < 300000,
             "parameter_ceiling");
-    REQUIRE(report.artifact_bytes > 0 && report.artifact_bytes < 100000,
+    REQUIRE(report.artifact_bytes > 0 && report.artifact_bytes < 290000,
             "artifact_ceiling");
     REQUIRE(report.calibration_answered * 100 >=
                 report.calibration_covered * 98 &&

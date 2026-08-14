@@ -72,6 +72,18 @@ int main(void) {
                     error, sizeof error) == CNET_INDEPENDENCE_OK &&
                     prompt_count == 3,
                 "exclusion_export");
+        {
+            char exported[4096];
+            FILE *file = fopen(exclusions, "rb");
+            size_t length;
+            REQUIRE(file != NULL, "exclusion_provenance_open");
+            length = fread(exported, 1, sizeof exported - 1u, file);
+            exported[length] = '\0';
+            REQUIRE(!ferror(file) && fclose(file) == 0 &&
+                        strstr(exported, "\tdev:old\n") != NULL &&
+                        strstr(exported, "frozen_corpus_v1") == NULL,
+                    "exclusion_provenance_lost");
+        }
     }
 
     snprintf(text, sizeof text,
