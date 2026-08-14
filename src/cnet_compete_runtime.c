@@ -659,7 +659,7 @@ static int contract_scaffolding_word(const Lexeme *tokens, size_t count,
         "compute", "datum", "derive", "determine", "equivalent",
         "evaluate", "exact", "exactly", "find", "for", "from", "given",
         "immediate", "in", "input",
-        "into", "its", "map", "of", "on", "operand", "output",
+        "into", "it", "its", "map", "of", "on", "operand", "output",
         "process", "registered", "result", "return", "single", "source",
         "stored", "target", "that", "the", "this", "through", "to",
         "total", "under", "using", "value", "what", "whole", "with"
@@ -690,11 +690,12 @@ static int contract_vocabulary_supported(const Lexeme *tokens, size_t count,
         "a", "apply", "by", "contain", "contains", "convert", "count",
         "does", "duration", "during", "elapsed", "exact", "express",
         "from", "give", "how", "in", "input", "integer", "into", "is",
-        "interval", "its", "many", "map", "mapping", "measure",
+        "factor", "fixed", "interval", "its", "many", "map", "mapping",
+        "measure",
         "measuring", "min", "minute", "minutes", "obtain", "of", "onto",
-        "per", "registered", "report",
+        "multiply", "per", "quantity", "registered", "report",
         "same", "scale", "sec", "second", "seconds", "sixty", "source",
-        "span", "target", "that", "the", "to", "translate", "units",
+        "span", "target", "that", "the", "time", "to", "translate", "units",
         "using", "whole"
     };
     static const char *const crc[] = {
@@ -1957,8 +1958,7 @@ static int contract_semantics_match(const char *prompt,
     };
     static const char *const compose_words[] = {
         "compose", "composition", "chain", "pipeline", "stage", "hop",
-        "sequence", "double", "doubling", "twice", "multiply", "times",
-        "transform"
+        "sequence"
     };
     Lexeme tokens[RUNTIME_LEXEMES_MAX];
     size_t count = 0, index;
