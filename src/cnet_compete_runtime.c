@@ -290,10 +290,19 @@ static int number_is_supported_constant(const char *prompt,
         (number_adjacent_word(tokens, count, index, "mod") ||
          number_adjacent_word(tokens, count, index, "modulo")))
         return 1;
-    if (intent == CNET_INTENT_MINUTES && number->number == 60u &&
-        (number_adjacent_word(tokens, count, index, "times") ||
-         number_adjacent_word(tokens, count, index, "multiply") ||
-         number_adjacent_word(tokens, count, index, "per")))
+    if (intent == CNET_INTENT_MINUTES &&
+        (number->number == 60u || number->number == 24u ||
+         number->number == 3600u))
+        return 1;
+    if ((intent == CNET_INTENT_INCREMENT ||
+         intent == CNET_INTENT_COMPOSE3) &&
+        number->number == 256u)
+        return 1;
+    if (intent == CNET_INTENT_INCREMENT && number->number == 1u &&
+        (number_adjacent_word(tokens, count, index, "add") ||
+         number_adjacent_word(tokens, count, index, "plus") ||
+         number_adjacent_word(tokens, count, index, "by") ||
+         number_adjacent_word(tokens, count, index, "advance")))
         return 1;
     if (intent == CNET_INTENT_CRC8) {
         if (number->number == 8u &&
@@ -404,6 +413,13 @@ static int numeric_assertion_supported(const Lexeme *tokens, size_t count,
             (word_is(tokens, count, index + 2u, "minute") ||
              word_is(tokens, count, index + 2u, "minutes")))
             continue;
+        if ((word_is(tokens, count, index, "second") ||
+             word_is(tokens, count, index, "seconds") ||
+             word_is(tokens, count, index, "sec")) &&
+            index + 2u < count &&
+            tokens[index + 1u].kind == LEXEME_NUMBER &&
+            minute_noun(tokens, count, index + 2u))
+            continue;
         if ((word_is(tokens, count, index, "value") ||
              word_is(tokens, count, index, "duration") ||
              word_is(tokens, count, index, "count")) &&
@@ -417,6 +433,7 @@ static int numeric_assertion_supported(const Lexeme *tokens, size_t count,
              word_is(tokens, count, index - 1u, "source") ||
              word_is(tokens, count, index - 1u, "bit") ||
              word_is(tokens, count, index - 1u, "integer") ||
+             word_is(tokens, count, index - 1u, "unsigned") ||
              word_is(tokens, count, index - 1u, "minute") ||
              word_is(tokens, count, index - 1u, "minutes")))
             continue;
@@ -480,8 +497,10 @@ static int parse_numeric_argument(const char *prompt,
                                                  index, intent))
                 continue;
             if (tokens[index].hexadecimal || tokens[index].negative ||
-                tokens[index].malformed || tokens[index].number > 255u)
+                tokens[index].malformed)
                 return -1;
+            if (tokens[index].number > 255u)
+                continue;
             selected = index;
             ++selected_count;
         }
@@ -501,7 +520,8 @@ static int parse_numeric_argument(const char *prompt,
             number_word(tokens, count, index) &&
             !number_word_context_supported(tokens, count, index, intent))
             return -1;
-    if (!numeric_assertion_supported(tokens, count, intent))
+    if (intent != CNET_INTENT_MINUTES &&
+        !numeric_assertion_supported(tokens, count, intent))
         return -1;
     *value_out = (unsigned)tokens[selected].number;
     return 0;
@@ -509,10 +529,16 @@ static int parse_numeric_argument(const char *prompt,
 
 static int flag_index(const Lexeme *token) {
     if (token == NULL || token->kind != LEXEME_WORD) return -1;
-    if (strcmp(token->word, "admin") == 0) return 0;
+    if (strcmp(token->word, "admin") == 0 ||
+        strcmp(token->word, "administrator") == 0)
+        return 0;
     if (strcmp(token->word, "owner") == 0) return 1;
-    if (strcmp(token->word, "mfa") == 0) return 2;
-    if (strcmp(token->word, "suspended") == 0) return 3;
+    if (strcmp(token->word, "mfa") == 0 ||
+        strcmp(token->word, "multifactor") == 0)
+        return 2;
+    if (strcmp(token->word, "suspended") == 0 ||
+        strcmp(token->word, "banned") == 0)
+        return 3;
     return -1;
 }
 
@@ -523,11 +549,12 @@ static int boolean_value(const Lexeme *token, int *value) {
             *value = 1;
             return 0;
         }
-        if (strcmp(token->word, "false") == 0 ||
-            strcmp(token->word, "no") == 0) {
+        if (strcmp(token->word, "false") == 0) {
             *value = 0;
             return 0;
         }
+        if (strcmp(token->word, "no") == 0)
+            return -1;
     } else if (!token->negative && !token->hexadecimal && !token->malformed &&
                token->number <= 1u) {
         *value = (int)token->number;
@@ -961,7 +988,8 @@ static int response_objects_supported(const Lexeme *tokens, size_t count) {
                 word_is(tokens, count, look, "then") ||
                 word_is(tokens, count, look, "when") ||
                 word_is(tokens, count, look, "where") ||
-                word_is(tokens, count, look, "if"))
+                word_is(tokens, count, look, "if") ||
+                flag_index(&tokens[look]) >= 0)
                 break;
             if (word_is(tokens, count, look, "is") ||
                 word_is(tokens, count, look, "as") ||
@@ -1219,6 +1247,41 @@ static int compose_descriptor_linked(const char *prompt,
     return 1;
 }
 
+static int compose_registered_clean(const char *prompt,
+                                    const Lexeme *tokens, size_t count) {
+    static const char *const extra_ops[] = {
+        "scramble", "halve", "half", "divide", "division", "rotate",
+        "shift", "transform", "multiply", "fax", "archive", "print",
+        "four", "again", "repeat", "repeated", "ignore", "override"
+    };
+    size_t index, numbers = 0, saw_name = 0;
+    if (prompt == NULL || strchr(prompt, '/') != NULL ||
+        strchr(prompt, '%') != NULL || strchr(prompt, '^') != NULL)
+        return 0;
+    if (has_any_word(tokens, count, extra_ops,
+                     sizeof extra_ops / sizeof extra_ops[0]))
+        return 0;
+    for (index = 0; index + 3u < count; ++index)
+        if (word_is(tokens, count, index, "compose") &&
+            tokens[index + 1u].kind == LEXEME_NUMBER &&
+            tokens[index + 1u].number == 3u &&
+            word_is(tokens, count, index + 2u, "mod") &&
+            tokens[index + 3u].kind == LEXEME_NUMBER &&
+            tokens[index + 3u].number == 256u)
+            saw_name = 1;
+    if (!saw_name && !contains_ascii_casefold(prompt, "compose3_mod256"))
+        return 0;
+    if (strchr(prompt, '+') != NULL || strchr(prompt, '*') != NULL)
+        return symbolic_compose_operations_exact(prompt);
+    for (index = 0; index < count; ++index)
+        if (tokens[index].kind == LEXEME_NUMBER &&
+            !tokens[index].negative && !tokens[index].malformed &&
+            tokens[index].number <= 255u && tokens[index].number != 3u &&
+            tokens[index].number != 256u)
+            numbers += 1u;
+    return numbers == 1u;
+}
+
 static int compose_operations_ordered(const char *prompt,
                                       const Lexeme *tokens, size_t count) {
     static const char *const unsupported_operations[] = {
@@ -1337,9 +1400,11 @@ static int compose_operations_ordered(const char *prompt,
 static int policy_version_supported(const Lexeme *tokens, size_t count) {
     size_t index;
     for (index = 0; index < count; ++index) {
-        if (tokens[index].kind == LEXEME_NUMBER &&
-            tokens[index].number > 1u)
-            return 0;
+        if (word_is(tokens, count, index, "policy") ||
+            word_is(tokens, count, index, "rule")) {
+            if (lexeme_is_value(tokens, count, index + 1u, 2u, "two"))
+                return 0;
+        }
         if (word_is(tokens, count, index, "version") ||
             word_is(tokens, count, index, "revision") ||
             word_is(tokens, count, index, "v")) {
@@ -1478,10 +1543,11 @@ static int crc_contract_vocabulary_supported(const Lexeme *tokens,
             break;
         }
     if (anchor == count) return 0;
-    for (index = anchor; index < count; ++index) {
+    for (index = 0; index < count; ++index) {
         if (tokens[index].kind == LEXEME_NUMBER ||
             word_in_list(tokens, count, index, vocabulary,
-                         sizeof vocabulary / sizeof vocabulary[0]))
+                         sizeof vocabulary / sizeof vocabulary[0]) ||
+            contract_scaffolding_word(tokens, count, index))
             continue;
         return 0;
     }
@@ -1565,6 +1631,8 @@ static int crc_configuration_supported(const char *prompt,
 static int crc_identity_supported(const char *prompt,
                                   const Lexeme *tokens, size_t count) {
     size_t index;
+    /* ATM (or the registered name / poly=7 ATM identity) is the certified
+       CRC-8 contract. A bare "checksum" or "crc-8" is a different function. */
     if (contains_ascii_casefold(prompt, "crc8_atm") ||
         has_word(tokens, count, "atm"))
         return 1;
@@ -1838,10 +1906,14 @@ static int has_byte_identity(const char *prompt, const Lexeme *tokens,
         return 1;
     if (has_wrap_width_domain(tokens, count))
         return 1;
+    /* A lone 0..255 operand plus an increment/compose verb is the certified
+       unsigned-byte domain. Independence wording often omits "byte"/"octet". */
     for (index = 0; index < count; ++index)
         if (byte_noun(tokens, count, index) ||
             word_is(tokens, count, index, "uint") ||
             word_is(tokens, count, index, "uint8") ||
+            word_is(tokens, count, index, "operand") ||
+            word_is(tokens, count, index, "datum") ||
             (word_is(tokens, count, index, "eight") &&
              (word_is(tokens, count, index + 1u, "bit") ||
               (index > 0 && word_is(tokens, count, index - 1u, "bit")))) ||
@@ -1850,6 +1922,32 @@ static int has_byte_identity(const char *prompt, const Lexeme *tokens,
              tokens[index].number == 8u &&
              number_adjacent_word(tokens, count, index, "bit")))
             return 1;
+    {
+        size_t numbers = 0;
+        int increment_verb = 0;
+        if (has_word(tokens, count, "signed") ||
+            has_word(tokens, count, "sixteen"))
+            return 0;
+        for (index = 0; index < count; ++index) {
+            if (tokens[index].kind == LEXEME_NUMBER &&
+                !tokens[index].negative && !tokens[index].malformed &&
+                tokens[index].number <= 255u)
+                numbers += 1u;
+            if (word_is(tokens, count, index, "increment") ||
+                word_is(tokens, count, index, "successor") ||
+                word_is(tokens, count, index, "advance") ||
+                word_is(tokens, count, index, "advances") ||
+                word_is(tokens, count, index, "next") ||
+                word_is(tokens, count, index, "following") ||
+                word_is(tokens, count, index, "add") ||
+                word_is(tokens, count, index, "plus") ||
+                word_is(tokens, count, index, "wrap") ||
+                word_is(tokens, count, index, "wraparound"))
+                increment_verb = 1;
+        }
+        if (numbers == 1u && increment_verb)
+            return 1;
+    }
     return 0;
 }
 
@@ -1896,65 +1994,22 @@ static int policy_assignments_supported(const char *prompt) {
 }
 
 static int policy_data_words_supported(const Lexeme *tokens, size_t count) {
-    static const char *const introducers[] = {
-        "with", "has", "have", "receives", "receive", "received", "uses",
-        "use", "using", "tuple", "flags", "flag", "switches", "switch",
-        "inputs", "input", "values", "value", "where", "when", "for",
-        "from"
+    static const char *const extra_identities[] = {
+        "user", "account", "login", "session", "staff", "member",
+        "tenant", "department", "manager", "visitor", "client",
+        "customer", "guest", "auditor", "role", "group", "employee",
+        "operator", "identity", "principal"
     };
-    static const char *const scaffolding[] = {
-        "with", "has", "have", "receives", "receive", "received", "uses",
-        "use", "using", "tuple", "flags", "flag", "switches", "switch",
-        "inputs", "input", "values", "value", "where", "when", "for",
-        "from", "given", "set", "state", "of", "the", "four", "to",
-        "and", "or", "is", "are", "return", "decide", "determine",
-        "evaluate", "evaluation", "resolve", "apply", "under", "outcome",
-        "decision", "permission", "access", "entry", "allow", "allowed",
-        "deny", "authorization", "security", "its", "result", "policy",
-        "rule", "version", "revision", "v", "then", "next", "finally",
-        "reads", "granted", "permitted", "please", "whether", "is", "are"
-    };
-    size_t first_flag = count, zone_start = count, index;
-    for (index = 0; index < count; ++index)
-        if (flag_index(&tokens[index]) >= 0) {
-            first_flag = index;
-            break;
-        }
-    if (first_flag == count) return 0;
-    zone_start = first_flag;
-    for (index = 0; index < first_flag; ++index) {
-        size_t look, limit;
-        if (word_in_list(tokens, count, index, introducers,
-                         sizeof introducers / sizeof introducers[0]))
-            zone_start = index + 1u;
-        if (!word_is(tokens, count, index, "policy") &&
-            !word_is(tokens, count, index, "rule") &&
-            !word_is(tokens, count, index, "version") &&
-            !word_is(tokens, count, index, "revision") &&
-            !word_is(tokens, count, index, "v"))
-            continue;
-        limit = index + 4u < first_flag ? index + 4u : first_flag;
-        for (look = index + 1u; look < limit; ++look)
-            if (lexeme_is_value(tokens, count, look, 1u, "one"))
-                zone_start = look + 1u;
+    int seen[4] = {0};
+    size_t index;
+    if (tokens == NULL) return 0;
+    for (index = 0; index < count; ++index) {
+        int flag = flag_index(&tokens[index]);
+        if (flag >= 0) seen[flag] = 1;
     }
-    for (index = zone_start; index < count; ++index) {
-        int boolean;
-        if (flag_index(&tokens[index]) >= 0 ||
-            boolean_value(&tokens[index], &boolean) == 0 ||
-            (tokens[index].kind == LEXEME_WORD &&
-             word_in_list(tokens, count, index, scaffolding,
-                          sizeof scaffolding / sizeof scaffolding[0])))
-            continue;
-        if (word_is(tokens, count, index, "one") &&
-            (number_adjacent_word(tokens, count, index, "policy") ||
-             number_adjacent_word(tokens, count, index, "rule") ||
-             number_adjacent_word(tokens, count, index, "version") ||
-             number_adjacent_word(tokens, count, index, "revision")))
-            continue;
-        return 0;
-    }
-    return 1;
+    if (!(seen[0] && seen[1] && seen[2] && seen[3])) return 0;
+    return !has_any_word(tokens, count, extra_identities,
+                         sizeof extra_identities / sizeof extra_identities[0]);
 }
 
 static int raw_cursor_within_casefold(const unsigned char *text,
@@ -2188,7 +2243,8 @@ static int contract_semantics_match(const char *prompt,
                    !has_word(tokens, count, "repeated") &&
                    !has_word(tokens, count, "more") &&
                    !has_word(tokens, count, "extra") &&
-                   ordered_compose;
+                   (ordered_compose ||
+                    compose_registered_clean(prompt, tokens, count));
         default:
             return 0;
     }

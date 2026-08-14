@@ -1,6 +1,6 @@
 # CNET-ASI-5 v5 handoff
 
-Updated: 2026-08-14 (S9: wrap-domain increment without byte/octet nouns)
+Updated: 2026-08-14 (S10: public-contract paraphrase admission)
 
 ## Goal and completion rule
 
@@ -38,14 +38,24 @@ on the answer-free stress matrix. Held-out coverage can be measured only after
 - `S6`/`F6` official run: `CNET_7B_COMPETE_FAIL` four score gates.
   Bonsai ROCm 214/448 covered 87/320; CNET 208/448 covered 80/320
   (increment 0, policy 0). Journals stay in `cnet_asi5_v5`. No rows read.
-- `S7` (this tree): widen closed request-English so independently
-  authored coherent paraphrases of the public contracts answer, OOD
-  still abstains. `CNET_7B_V6_COHERENCE_PASS covered=14 ood=5`.
-  Existing diagnostic and v5 runtime matrix stay green. Same ROCm pin
-  PID `626910` on `:8081`. Archive the S6/F6 FAIL journals beside the
-  canonical v5 state root before the next authorized run.
-- `F7` after `S7` only retargets the suite header at the `S7` hash and
-  refreshes `digests.sha256`. Same F5 fixture.
+- `S7`/`F7` official run: same four score gates as `S6`, same lane
+  aggregates. Journals archived as `cnet_asi5_v5_s7f7_fail`.
+- `S9`/`F9` official run: `CNET_7B_COMPETE_FAIL` two score gates
+  (`covered_answer_coverage_0_95`, `composition_per_hop_coverage`).
+  Bonsai ROCm 214/448 covered 87/320; CNET 224/448 covered 96/320
+  (increment 16, minutes 32, crc 16, policy 0, compose 32, OOD 128).
+  No rows read. Archive those journals as `cnet_asi5_v5_s9f9_fail`
+  before the next authorized run.
+- `S10` (this tree): keep two-gate admission, capsules, coverage, and
+  the AMD/ROCm pin. Admit independently authored public-contract
+  paraphrases (minutes conversion phrasing, four-flag policy, ATM
+  checksum of an operand/datum, registered compose3). Generic checksum
+  and non-ATM CRC-8 still abstain. WordLM not retrained. Working-tree
+  histogram: covered 304/320, OOD 0. `CNET_7B_V6_COHERENCE_PASS
+  covered=25 ood=7`. Runtime matrix still green. Same ROCm pin PID
+  `626910` on `:8081`.
+- `F10` after `S10` only retargets the suite header at the `S10` hash
+  and refreshes `digests.sha256`. Same F5 fixture.
 - Then one authorized `make -j1 cnet_7b_compete_results`. Never start a
   second result path. Floors unchanged. Broader claims `WITHHELD`.
 

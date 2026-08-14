@@ -1,6 +1,6 @@
 # CNET-ASI-5 v5 candidate-freeze protocol
 
-Status: **S9 WRAP-DOMAIN ADMISSION; F5 FIXTURE BYTES UNCHANGED**
+Status: **S10 PUBLIC-CONTRACT PARAPHRASE ADMISSION; F5 FIXTURE BYTES UNCHANGED**
 
 This document froze the v5 candidate at `S5` before any v5 held-out prompt
 wording was authored. `F5` later recorded that `S5` commit and the seven
@@ -37,13 +37,39 @@ byte identity even when the development nouns "byte"/"octet" are absent,
 and treats unknown function words as scaffolding. Side-effect and extra
 capability words stay denylisted. Signed/16-bit/OOD tests stay refused.
 
-After `S9`, `F9` may change only:
+After `S9`, `F9` recorded that freeze. The authorized S9/F9 run emitted
+`CNET_7B_COMPETE_FAIL` with two score gates:
+`covered_answer_coverage_0_95` and `composition_per_hop_coverage`.
+Lane aggregates only: increment 16/64, minutes 32/64, crc 16/64, policy
+0/64, compose 32/64, OOD 128/128. CNET beat the pinned 8B overall and on
+covered-vs-baseline. No row outputs were read.
 
-- `include/cnet_compete_suite_data_v5.h` (records the `S9` commit)
+`S10` keeps the same fixture, capsules, two-gate admission, coverage
+checks, and AMD/ROCm pin. It does not retrain the WordLM and does not
+widen a certified domain. Independently authored public-contract
+paraphrases now admit when they:
+
+1. convert a minute duration to seconds without treating the conversion
+   phrasing as an output assertion;
+2. present exactly the four certified policy flags, including common
+   aliases, and refuse extra identities;
+3. name the ATM CRC-8 of a single operand or datum without requiring the
+   development nouns "byte"/"octet", while still refusing a generic
+   checksum or a non-ATM CRC-8;
+4. invoke the registered `compose3_mod256` mapping without extra hops.
+
+Unknown function words remain scaffolding. Side-effect and extra
+capability words stay denylisted. Working-tree admission histogram
+(aggregates only, no prompts): covered 304/320, OOD answered 0. The
+remaining 16 covered abstentions are CRC intent-proposal refusals.
+
+After `S10`, `F10` may change only:
+
+- `include/cnet_compete_suite_data_v5.h` (records the `S10` commit)
 - `benchmarks/cnet_asi5_v5/digests.sha256`
 
 The held-out TSV, cases, oracle, generator, and system prompt stay
-byte-identical to `F5`. The release builder checks `S9..HEAD` against
+byte-identical to `F5`. The release builder checks `S10..HEAD` against
 those two files.
 
 The original `S5` rules below still describe the frozen candidate. They

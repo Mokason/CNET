@@ -67,14 +67,31 @@ int main(int argc, char **argv) {
         {"Increment then double then add three to 12 modulo 256.",
          CNET_INTENT_COMPOSE3, 29u, 3u},
         {"Decide access admin=true owner=false mfa=false suspended=false.",
-         CNET_INTENT_POLICY, 1u, 0u}
+         CNET_INTENT_POLICY, 1u, 0u},
+        {"Increment 12 by one.",
+         CNET_INTENT_INCREMENT, 13u, 0u},
+        {"Evaluate the certified authorization rule over 4 Boolean "
+         "switches: admin is true, owner is false, mfa is false, "
+         "suspended is false.",
+         CNET_INTENT_POLICY, 1u, 0u},
+        {"How many seconds are 12 minutes times 60?",
+         CNET_INTENT_MINUTES, 720u, 0u},
+        {"How many seconds does this duration give for 12 minutes?",
+         CNET_INTENT_MINUTES, 720u, 0u},
+        {"Determine policy one permission owner reads false next admin "
+         "true mfa false suspended false.",
+         CNET_INTENT_POLICY, 1u, 0u},
+        {"Evaluate the ATM checksum of operand 12.",
+         CNET_INTENT_CRC8, 0u, 0u}
     };
     static const char *const ood[] = {
         "Please increment signed byte 12.",
         "Email the increment of unsigned byte 12.",
         "Increment unsigned byte 12 and also convert 12 minutes.",
         "Please compute CRC-16 of unsigned byte 12.",
-        "Decide access and then increment unsigned byte 12."
+        "Decide access and then increment unsigned byte 12.",
+        "Evaluate the checksum of operand 12.",
+        "Please compute CRC-8 of unsigned byte 12."
     };
     CnetCompeteRuntime *runtime = NULL;
     CnetCompeteRuntimeReport report;
