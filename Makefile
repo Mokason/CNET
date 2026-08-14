@@ -6569,7 +6569,7 @@ cnet_7b_intent_san: cnet_7b_intent
 
 .PHONY: cnet_7b_capsule_artifacts cnet_7b_runtime cnet_7b_runtime_san
 .PHONY: cnet_7b_v5_diagnostic cnet_7b_v5_diagnostic_san
-.PHONY: cnet_7b_v5_semantics_red
+.PHONY: cnet_7b_v5_semantic_corpus cnet_7b_v5_semantics_red
 cnet_7b_capsule_artifacts: include/cnet_compete_capsules.h \
 		src/cnet_compete_capsules.c tools/cnet_compete_build_capsules.c \
 		$(CNET_COMPETE_CAPSULE_CORE)
@@ -6669,9 +6669,42 @@ cnet_7b_v5_diagnostic_san: cnet_7b_v5_diagnostic
 	@grep -qx 'CNET_7B_V5_DIAGNOSTIC_PASS stages=4 serving_path_identity=1 answer_values_exposed=0' \
 		logs/cnet_7b_v5_diagnostic_san.log
 
-cnet_7b_v5_semantics_red: cnet_7b_v5_diagnostic
+cnet_7b_v5_semantic_corpus: include/cnet_compete_v5_semantics.h \
+		include/cnet_compete_independence.h \
+		src/cnet_compete_v5_semantics.c \
+		src/cnet_compete_independence.c \
+		tools/cnet_compete_v5_semantic_export.c \
+		tools/cnet_compete_fixture_audit.c \
+		benchmarks/cnet_asi5_v4/excluded_prompts.tsv \
+		benchmarks/cnet_asi5_v5/semantic_development.tsv
+	@mkdir -p $(BIN_DIR) logs artifacts/cnet_asi5_v5
+	$(CC) $(CFLAGS) -Werror -Iinclude \
+		-o $(BIN_DIR)/cnet_compete_v5_semantic_export \
+		src/cnet_compete_v5_semantics.c \
+		tools/cnet_compete_v5_semantic_export.c $(LDFLAGS)
+	@./$(BIN_DIR)/cnet_compete_v5_semantic_export \
+		artifacts/cnet_asi5_v5/semantic_development.tsv | \
+		tee logs/cnet_7b_v5_semantic_export.log
+	@cmp benchmarks/cnet_asi5_v5/semantic_development.tsv \
+		artifacts/cnet_asi5_v5/semantic_development.tsv
+	@grep -qx 'CNET_7B_V5_SEMANTIC_EXPORT_PASS covered=160 ood=160 answer_values=0' \
+		logs/cnet_7b_v5_semantic_export.log
+	$(CC) $(CFLAGS) -Werror -Iinclude \
+		-o $(BIN_DIR)/cnet_compete_v5_semantic_audit \
+		src/cnet_compete_independence.c \
+		tools/cnet_compete_fixture_audit.c $(LDFLAGS)
+	@./$(BIN_DIR)/cnet_compete_v5_semantic_audit \
+		benchmarks/cnet_asi5_v5/semantic_development.tsv \
+		benchmarks/cnet_asi5_v4/excluded_prompts.tsv | \
+		tee logs/cnet_7b_v5_semantic_audit.log
+	@grep -qx 'CNET_7B_INDEPENDENCE_PASS candidates=320 exclusions=2807 duplicates=0 canonical=0 near=0' \
+		logs/cnet_7b_v5_semantic_audit.log
+
+cnet_7b_v5_semantics_red: cnet_7b_v5_diagnostic \
+		cnet_7b_v5_semantic_corpus
 	$(CC) $(CFLAGS) -Werror -ffunction-sections -fdata-sections -Iinclude \
 		-o $(BIN_DIR)/test_cnet_compete_v5_semantics \
+		src/cnet_compete_v5_semantics.c \
 		src/cnet_compete_runtime.c src/cnet_compete_intent.c \
 		src/cnet_compete_capsules.c src/cce/cce_wordlm.c \
 		$(CNET_COMPETE_CAPSULE_CORE) $(ROUTER) $(SPECIALIST_SRC) \
