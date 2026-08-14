@@ -25,6 +25,23 @@ typedef struct {
     size_t composition_guard_checks;
 } CnetCompeteResult;
 
+typedef enum {
+    CNET_COMPETE_REFUSAL_NONE = 0,
+    CNET_COMPETE_REFUSAL_INTENT_PROPOSAL,
+    CNET_COMPETE_REFUSAL_SEMANTIC_FRAME,
+    CNET_COMPETE_REFUSAL_INTENT_DISAGREEMENT,
+    CNET_COMPETE_REFUSAL_ARGUMENT,
+    CNET_COMPETE_REFUSAL_COVERAGE,
+    CNET_COMPETE_REFUSAL_EXECUTION
+} CnetCompeteRefusal;
+
+typedef struct {
+    CnetCompeteIntent proposed_intent;
+    CnetCompeteIntent semantic_intent;
+    double confidence;
+    CnetCompeteRefusal refusal;
+} CnetCompeteDiagnostic;
+
 /* Load the fixed intent base and six independently serialized capsules. Every
    capsule is integrity checked, imported into a fresh base, and re-certified;
    the three-hop composition plan is built only from certified registry units. */
@@ -41,6 +58,13 @@ void cnet_compete_runtime_free(CnetCompeteRuntime *runtime);
 int cnet_compete_runtime_execute(CnetCompeteRuntime *runtime,
                                  const char *prompt,
                                  CnetCompeteResult *result);
+
+/* Execute the identical serving path while recording answer-free development
+   evidence about the admission stage. JSON output and scored behavior remain
+   defined solely by CnetCompeteResult. */
+int cnet_compete_runtime_execute_diagnostic(
+    CnetCompeteRuntime *runtime, const char *prompt,
+    CnetCompeteResult *result, CnetCompeteDiagnostic *diagnostic);
 
 /* Serialize exactly the preregistered JSON contract, with no trailing newline.
    The caller may append a record delimiter when streaming multiple requests. */

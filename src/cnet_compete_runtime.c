@@ -2192,6 +2192,20 @@ int cnet_compete_runtime_execute(CnetCompeteRuntime *runtime,
     return 0;
 }
 
+int cnet_compete_runtime_execute_diagnostic(
+    CnetCompeteRuntime *runtime, const char *prompt,
+    CnetCompeteResult *result, CnetCompeteDiagnostic *diagnostic) {
+    (void)runtime;
+    (void)prompt;
+    (void)result;
+    if (diagnostic != NULL) {
+        memset(diagnostic, 0, sizeof *diagnostic);
+        diagnostic->proposed_intent = CNET_INTENT_ABSTAIN;
+        diagnostic->semantic_intent = CNET_INTENT_ABSTAIN;
+    }
+    return -1;
+}
+
 int cnet_compete_result_json(const CnetCompeteResult *result,
                              char *output, size_t capacity) {
     int written;
