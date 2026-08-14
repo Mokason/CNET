@@ -723,10 +723,11 @@ static int contract_vocabulary_supported(const Lexeme *tokens, size_t count,
         "first", "for", "from", "in", "increase", "increment", "input",
         "it", "its", "large", "last", "make", "map", "mod", "modulo",
         "multiply", "next", "octet", "offset", "on", "one", "order",
-        "performs", "plus", "raise", "registered", "result", "scale",
-        "second", "stage", "starting", "successor", "take", "that", "the",
-        "then", "this", "three", "through", "times", "to", "transform",
-        "twice", "two", "unity", "unsigned", "with"
+        "pass", "performs", "pipeline", "plus", "raise", "registered",
+        "result", "scale", "second", "stage", "starting", "successor",
+        "take", "that", "the", "then", "this", "three", "through",
+        "times", "to", "transform", "twice", "two", "unity", "unsigned",
+        "use", "with"
     };
     const char *const *allowed = NULL;
     size_t allowed_count = 0, index;
@@ -1003,7 +1004,8 @@ static int compose_tail_word(const Lexeme *tokens, size_t count,
         "two", "hundred", "fifty", "six", "to", "on", "for", "with",
         "under", "byte", "bytes", "octet", "octets", "input", "value",
         "datum", "operand", "uint", "bit", "register", "arithmetic",
-        "wrap", "wrapping", "wraparound", "overflow", "cyclic", "exactly"
+        "wrap", "wrapping", "wraparound", "overflow", "cyclic", "exactly",
+        "last"
     };
     size_t word;
     for (word = 0; word < sizeof tail / sizeof tail[0]; ++word)
