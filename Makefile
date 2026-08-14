@@ -3877,6 +3877,49 @@ cnet_chat1_dual_probe: tools/cnet_chat1_dual_probe.c include/cnet_chat_fluency.h
 		tee logs/cnet_chat1_dual_probe.log
 	@grep -q '^CNET_CHAT1_DUAL_PROBE_DONE ' logs/cnet_chat1_dual_probe.log
 
+CNET_CHAT1_STATE_ROOT ?= /home/marble/.local/state/cnet/cnet_asi_chat1
+.PHONY: cnet_chat1_fixture cnet_chat1_independence cnet_chat1_compete
+cnet_chat1_fixture: include/cnet_chat1.h tools/cnet_chat1_fixture.c
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) -std=c11 -Wall -Wextra -O2 -Werror -Iinclude \
+		-o $(BIN_DIR)/cnet_chat1_fixture tools/cnet_chat1_fixture.c
+
+cnet_chat1_independence: include/cnet_chat1.h tools/cnet_chat1_independence.c
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) -std=c11 -Wall -Wextra -O2 -Werror -Iinclude \
+		-o $(BIN_DIR)/cnet_chat1_independence \
+		tools/cnet_chat1_independence.c
+	@test -f benchmarks/cnet_asi_chat1/heldout.tsv
+	@./$(BIN_DIR)/cnet_chat1_independence \
+		benchmarks/cnet_asi_chat1/heldout.tsv \
+		benchmarks/cnet_asi5_v5/heldout.tsv | \
+		tee logs/cnet_chat1_independence.log
+	@grep -q '^CNET_CHAT1_INDEPENDENCE_PASS ' \
+		logs/cnet_chat1_independence.log
+
+cnet_chat1_compete: cnet_chat1_independence include/cnet_chat_fluency.h \
+		src/cnet_chat_fluency.c tools/cnet_chat1_compete.c
+	@mkdir -p $(BIN_DIR) logs $(CNET_CHAT1_STATE_ROOT)
+	$(CC) $(CFLAGS) -Werror -DCNET_HAVE_CURL=1 \
+		-DCNET_COMPETE_SUITE_DATA_HEADER=\"cnet_compete_suite_data_v5.h\" \
+		-ffunction-sections -fdata-sections -Iinclude \
+		-o $(BIN_DIR)/cnet_chat1_compete \
+		tools/cnet_chat1_compete.c src/cnet_compete_runtime.c \
+		src/cnet_compete_intent.c src/cnet_compete_capsules.c \
+		src/cce/cce_wordlm.c src/cnet_utterance.c src/cnet_chat_fluency.c \
+		src/cnet_compete_eval.c src/cnet_compete.c \
+		src/cce/cce_campaign_provenance.c \
+		$(CNET_COMPETE_CAPSULE_CORE) $(ROUTER) $(SPECIALIST_SRC) \
+		-Wl,--gc-sections $(LDFLAGS) $(MCP_LDFLAGS) -pthread
+	@./$(BIN_DIR)/cnet_chat1_compete \
+		artifacts/cnet_asi5_v5/intent.wlm \
+		artifacts/cnet_asi5_v5/intent.meta \
+		artifacts/cnet_asi5_v5/capsules | \
+		tee logs/cnet_chat1_compete.log
+	@cp logs/cnet_chat1_compete.log \
+		$(CNET_CHAT1_STATE_ROOT)/cnet_chat1_compete.log
+	@grep -q '^CNET_CHAT_COMPETE_PASS ' logs/cnet_chat1_compete.log
+
 .PHONY: cnetd-run
 cnetd-run: cnetd query_dialog
 	@pkill -x cnetd 2>/dev/null || true
