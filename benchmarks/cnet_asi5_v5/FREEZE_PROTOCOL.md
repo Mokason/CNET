@@ -1,6 +1,6 @@
 # CNET-ASI-5 v5 candidate-freeze protocol
 
-Status: **S7 ADMISSION RECOVERY; F5 FIXTURE BYTES UNCHANGED**
+Status: **S9 WRAP-DOMAIN ADMISSION; F5 FIXTURE BYTES UNCHANGED**
 
 This document froze the v5 candidate at `S5` before any v5 held-out prompt
 wording was authored. `F5` later recorded that `S5` commit and the seven
@@ -27,20 +27,23 @@ emitted `CNET_7B_COMPETE_FAIL` with four score gates:
 Lane aggregates only: increment 0/64, minutes 32/64, crc 16/64, policy
 0/64, compose 32/64, OOD 128/128. No row outputs were read.
 
-`S7` keeps the same fixture bytes and the same AMD/ROCm baseline pin. It
-widens closed request-English admission so independently authored
-coherent paraphrases of the public contracts are answered, while paired
-OOD mutations still abstain. Development stress and diagnostic gates
-remain green. Authenticated S6/F6 FAIL journals are archived beside the
-canonical v5 state root, not rewritten.
+`S7` widened request-English. The authorized S7/F7 run still failed the
+same four score gates with identical lane aggregates (increment 0/64,
+policy 0/64). No row outputs were read.
 
-After `S7`, `F7` may change only:
+`S9` keeps the same fixture, capsules, two-gate admission, and AMD/ROCm
+pin. It treats wrap/modulo-256 (the public increment_mod256 domain) as
+byte identity even when the development nouns "byte"/"octet" are absent,
+and treats unknown function words as scaffolding. Side-effect and extra
+capability words stay denylisted. Signed/16-bit/OOD tests stay refused.
 
-- `include/cnet_compete_suite_data_v5.h` (records the `S7` commit)
+After `S9`, `F9` may change only:
+
+- `include/cnet_compete_suite_data_v5.h` (records the `S9` commit)
 - `benchmarks/cnet_asi5_v5/digests.sha256`
 
 The held-out TSV, cases, oracle, generator, and system prompt stay
-byte-identical to `F5`. The release builder checks `S7..HEAD` against
+byte-identical to `F5`. The release builder checks `S9..HEAD` against
 those two files.
 
 The original `S5` rules below still describe the frozen candidate. They

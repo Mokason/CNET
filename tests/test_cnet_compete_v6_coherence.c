@@ -57,7 +57,17 @@ int main(int argc, char **argv) {
         {"Increment, then double, then add three to unsigned byte 12.",
          CNET_INTENT_COMPOSE3, 29u, 3u},
         {"Apply successor then doubling then plus three to octet 12.",
-         CNET_INTENT_COMPOSE3, 29u, 3u}
+         CNET_INTENT_COMPOSE3, 29u, 3u},
+        {"Increment 12 by one modulo 256.",
+         CNET_INTENT_INCREMENT, 13u, 0u},
+        {"Increment 12 with wraparound.",
+         CNET_INTENT_INCREMENT, 13u, 0u},
+        {"Add one to 12 modulo 256.",
+         CNET_INTENT_INCREMENT, 13u, 0u},
+        {"Increment then double then add three to 12 modulo 256.",
+         CNET_INTENT_COMPOSE3, 29u, 3u},
+        {"Decide access admin=true owner=false mfa=false suspended=false.",
+         CNET_INTENT_POLICY, 1u, 0u}
     };
     static const char *const ood[] = {
         "Please increment signed byte 12.",

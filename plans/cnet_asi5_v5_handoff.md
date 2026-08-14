@@ -1,6 +1,6 @@
 # CNET-ASI-5 v5 handoff
 
-Updated: 2026-08-14 (S7 admission: coherent request English; same fixture)
+Updated: 2026-08-14 (S9: wrap-domain increment without byte/octet nouns)
 
 ## Goal and completion rule
 

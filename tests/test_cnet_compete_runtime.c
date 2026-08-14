@@ -235,6 +235,12 @@ int main(int argc, char **argv) {
             0
         },
         {
+            "Increment 12 by one modulo 256.",
+            CNET_INTENT_INCREMENT, 13,
+            "{\"status\":\"answer\",\"intent\":\"increment_mod256\",\"value\":13}",
+            0
+        },
+        {
             "For octet 12, apply add one, times two, and add three.",
             CNET_INTENT_COMPOSE3, 29,
             "{\"status\":\"answer\",\"intent\":\"compose3_mod256\",\"value\":29}",
@@ -439,7 +445,6 @@ int main(int argc, char **argv) {
         {"For byte 12, increment, double, add three, then halve once.", CNET_INTENT_COMPOSE3},
         {"For byte 12, increment, double, add three, then rotate once.", CNET_INTENT_COMPOSE3},
         {"For byte 12, increment, double, add three in a four-hop chain.", CNET_INTENT_COMPOSE3},
-        {"Increment 12 by one modulo 256.", CNET_INTENT_INCREMENT},
         {"admin=true owner=false mfa=true suspended=false.", CNET_INTENT_POLICY},
         {"Access policy 1 department=finance admin=false owner=true mfa=true suspended=false.", CNET_INTENT_POLICY},
         {"For byte 12, increment, scramble, double, then add three.", CNET_INTENT_COMPOSE3},

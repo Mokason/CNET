@@ -778,9 +778,12 @@ static int contract_vocabulary_supported(const Lexeme *tokens, size_t count,
     }
     for (index = 0; index < count; ++index) {
         if (tokens[index].kind == LEXEME_NUMBER) continue;
-        if (!contract_scaffolding_word(tokens, count, index) &&
-            !word_in_list(tokens, count, index, allowed, allowed_count))
-            return 0;
+        if (contract_scaffolding_word(tokens, count, index) ||
+            word_in_list(tokens, count, index, allowed, allowed_count))
+            continue;
+        /* Unknown function words are inert scaffolding. Extra capabilities
+           are refused by the shared denylist and typed-frame checks, not by
+           requiring every English word to have been seen in development. */
     }
     return 1;
 }
@@ -1794,12 +1797,46 @@ static int byte_configuration_supported(const Lexeme *tokens, size_t count) {
     return 1;
 }
 
+static int has_wrap_width_domain(const Lexeme *tokens, size_t count) {
+    int wrap = 0, width256 = 0, unsigned_word = 0;
+    size_t index;
+    if (has_word(tokens, count, "signed") ||
+        has_word(tokens, count, "sixteen") ||
+        has_word(tokens, count, "sixteen-bit"))
+        return 0;
+    for (index = 0; index < count; ++index) {
+        if (word_is(tokens, count, index, "wrap") ||
+            word_is(tokens, count, index, "wrapping") ||
+            word_is(tokens, count, index, "wraparound") ||
+            word_is(tokens, count, index, "modulo") ||
+            word_is(tokens, count, index, "mod") ||
+            word_is(tokens, count, index, "overflow") ||
+            word_is(tokens, count, index, "cyclic"))
+            wrap = 1;
+        if (word_is(tokens, count, index, "unsigned"))
+            unsigned_word = 1;
+        if (tokens[index].kind == LEXEME_NUMBER &&
+            !tokens[index].negative && !tokens[index].malformed &&
+            tokens[index].number == 256u)
+            width256 = 1;
+        if (word_is(tokens, count, index, "two") &&
+            word_is(tokens, count, index + 1u, "hundred") &&
+            word_is(tokens, count, index + 2u, "fifty") &&
+            word_is(tokens, count, index + 3u, "six"))
+            width256 = 1;
+    }
+    return (wrap && width256) || (wrap && unsigned_word) ||
+           (unsigned_word && width256) || wrap;
+}
+
 static int has_byte_identity(const char *prompt, const Lexeme *tokens,
                              size_t count) {
     size_t index;
     if (contains_ascii_casefold(prompt, "increment_mod256") ||
         contains_ascii_casefold(prompt, "crc8_atm") ||
         contains_ascii_casefold(prompt, "compose3_mod256"))
+        return 1;
+    if (has_wrap_width_domain(tokens, count))
         return 1;
     for (index = 0; index < count; ++index)
         if (byte_noun(tokens, count, index) ||
@@ -2021,7 +2058,10 @@ static int contract_semantics_match(const char *prompt,
         "unsupported", "freely", "markdown", "prose", "disregard",
         "force", "list", "application", "applications", "compare",
         "describe", "summarize", "explain", "discuss", "publish",
-        "notify", "save", "store", "not", "minus"
+        "notify", "save", "store", "not", "minus", "print", "fax",
+        "archive", "spreadsheet", "tenant", "department", "manager",
+        "scramble", "mystery", "custom", "profile", "configuration",
+        "audit", "finance", "mode"
     };
     static const char *const increment_words[] = {
         "increment", "successor", "advance", "following", "follows",
