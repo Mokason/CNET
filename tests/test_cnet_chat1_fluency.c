@@ -72,6 +72,9 @@ int main(void) {
             REQUIRE(strstr(spoken, "12") != NULL && strstr(spoken, "13") != NULL,
                     "contract_slots");
             REQUIRE(strstr(spoken, "increment") != NULL, "contract_name");
+            REQUIRE(strstr(spoken, "successor") != NULL ||
+                        strstr(spoken, "computes") != NULL,
+                    "increment_predicate");
         }
         if (strcmp(turns[index], "refuse") == 0 ||
             strcmp(turns[index], "identity") == 0)

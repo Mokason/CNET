@@ -3836,6 +3836,47 @@ cnet_chat1_contract_convo: include/cnet_chat_fluency.h src/cnet_chat_fluency.c \
 	@grep -q '^CNET_CHAT1_CONTRACT_CONVO_PASS ' \
 		logs/cnet_chat1_contract_convo.log
 
+.PHONY: cnet_chat1_dynamic cnet_chat1_dual_probe
+cnet_chat1_dynamic: include/cnet_chat_fluency.h src/cnet_chat_fluency.c \
+		include/cnet_utterance.h src/cnet_utterance.c \
+		tests/test_cnet_chat1_dynamic.c $(ROUTER) $(SPECIALIST_SRC)
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -Werror -ffunction-sections -fdata-sections -Iinclude \
+		-o $(BIN_DIR)/test_cnet_chat1_dynamic \
+		src/cnet_compete_runtime.c src/cnet_compete_intent.c \
+		src/cnet_compete_capsules.c src/cce/cce_wordlm.c \
+		src/cnet_utterance.c src/cnet_chat_fluency.c \
+		$(CNET_COMPETE_CAPSULE_CORE) $(ROUTER) $(SPECIALIST_SRC) \
+		tests/test_cnet_chat1_dynamic.c \
+		-Wl,--gc-sections $(LDFLAGS) $(MCP_LDFLAGS) -pthread
+	@./$(BIN_DIR)/test_cnet_chat1_dynamic \
+		artifacts/cnet_asi5_v5/intent.wlm \
+		artifacts/cnet_asi5_v5/intent.meta \
+		artifacts/cnet_asi5_v5/capsules | \
+		tee logs/cnet_chat1_dynamic.log
+	@grep -q '^CNET_CHAT1_DYNAMIC_PASS ' logs/cnet_chat1_dynamic.log
+
+cnet_chat1_dual_probe: tools/cnet_chat1_dual_probe.c include/cnet_chat_fluency.h \
+		src/cnet_chat_fluency.c
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -Werror -DCNET_HAVE_CURL=1 \
+		-DCNET_COMPETE_SUITE_DATA_HEADER=\"cnet_compete_suite_data_v5.h\" \
+		-ffunction-sections -fdata-sections -Iinclude \
+		-o $(BIN_DIR)/cnet_chat1_dual_probe \
+		tools/cnet_chat1_dual_probe.c src/cnet_compete_runtime.c \
+		src/cnet_compete_intent.c src/cnet_compete_capsules.c \
+		src/cce/cce_wordlm.c src/cnet_utterance.c src/cnet_chat_fluency.c \
+		src/cnet_compete_eval.c src/cnet_compete.c \
+		src/cce/cce_campaign_provenance.c \
+		$(CNET_COMPETE_CAPSULE_CORE) $(ROUTER) $(SPECIALIST_SRC) \
+		-Wl,--gc-sections $(LDFLAGS) $(MCP_LDFLAGS) -pthread
+	@./$(BIN_DIR)/cnet_chat1_dual_probe \
+		artifacts/cnet_asi5_v5/intent.wlm \
+		artifacts/cnet_asi5_v5/intent.meta \
+		artifacts/cnet_asi5_v5/capsules | \
+		tee logs/cnet_chat1_dual_probe.log
+	@grep -q '^CNET_CHAT1_DUAL_PROBE_DONE ' logs/cnet_chat1_dual_probe.log
+
 .PHONY: cnetd-run
 cnetd-run: cnetd query_dialog
 	@pkill -x cnetd 2>/dev/null || true

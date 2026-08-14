@@ -362,11 +362,65 @@ int cnet_utter_compose_native(const CnetUtterState *S, const char *when_hint,
             return -1;
         return 0;
     }
-    if (strcmp(when, "increment") == 0 || strcmp(when, "crc") == 0 ||
-        strcmp(when, "minutes") == 0 || strcmp(when, "policy") == 0 ||
-        strcmp(when, "compose") == 0 ||
-        (contract[0] != '\0' && output[0] != '\0')) {
-        if (contract[0] == '\0') contract = when;
+    if (strcmp(when, "increment") == 0 ||
+        strcmp(contract, "increment_mod256") == 0) {
+        if (append_text(out, cap, &used, name) != 0 ||
+            append_text(out, cap, &used, " reports increment_mod256: the unsigned successor of ") !=
+                0 ||
+            append_text(out, cap, &used, input[0] ? input : "the input") != 0 ||
+            append_text(out, cap, &used, " is ") != 0 ||
+            append_text(out, cap, &used, output[0] ? output : "?") != 0 ||
+            append_text(out, cap, &used, ".") != 0)
+            return -1;
+        return 0;
+    }
+    if (strcmp(when, "minutes") == 0 ||
+        strcmp(contract, "minutes_to_seconds") == 0) {
+        if (append_text(out, cap, &used, name) != 0 ||
+            append_text(out, cap, &used, " converts ") != 0 ||
+            append_text(out, cap, &used, input[0] ? input : "those") != 0 ||
+            append_text(out, cap, &used, " minutes into ") != 0 ||
+            append_text(out, cap, &used, output[0] ? output : "?") != 0 ||
+            append_text(out, cap, &used, " seconds under minutes_to_seconds.") !=
+                0)
+            return -1;
+        return 0;
+    }
+    if (strcmp(when, "crc") == 0 || strcmp(contract, "crc8_atm") == 0) {
+        if (append_text(out, cap, &used, name) != 0 ||
+            append_text(out, cap, &used, " reports crc8_atm: the ATM checksum of ") != 0 ||
+            append_text(out, cap, &used, input[0] ? input : "the operand") !=
+                0 ||
+            append_text(out, cap, &used, " is ") != 0 ||
+            append_text(out, cap, &used, output[0] ? output : "?") != 0 ||
+            append_text(out, cap, &used, ".") != 0)
+            return -1;
+        return 0;
+    }
+    if (strcmp(when, "policy") == 0 ||
+        strcmp(contract, "access_policy_v1") == 0) {
+        if (append_text(out, cap, &used, name) != 0 ||
+            append_text(out, cap, &used, " decides access_policy_v1 on ") != 0 ||
+            append_text(out, cap, &used, input[0] ? input : "the four flags") !=
+                0 ||
+            append_text(out, cap, &used, " as ") != 0 ||
+            append_text(out, cap, &used, output[0] ? output : "?") != 0 ||
+            append_text(out, cap, &used, ".") != 0)
+            return -1;
+        return 0;
+    }
+    if (strcmp(when, "compose") == 0 ||
+        strcmp(contract, "compose3_mod256") == 0) {
+        if (append_text(out, cap, &used, name) != 0 ||
+            append_text(out, cap, &used, " maps ") != 0 ||
+            append_text(out, cap, &used, input[0] ? input : "the byte") != 0 ||
+            append_text(out, cap, &used, " through compose3_mod256 to ") != 0 ||
+            append_text(out, cap, &used, output[0] ? output : "?") != 0 ||
+            append_text(out, cap, &used, ".") != 0)
+            return -1;
+        return 0;
+    }
+    if (contract[0] != '\0' && output[0] != '\0') {
         if (append_text(out, cap, &used, name) != 0 ||
             append_text(out, cap, &used, " computes ") != 0 ||
             append_text(out, cap, &used, contract) != 0)
@@ -376,12 +430,10 @@ int cnet_utter_compose_native(const CnetUtterState *S, const char *when_hint,
                 append_text(out, cap, &used, input) != 0)
                 return -1;
         }
-        if (output[0] != '\0') {
-            if (append_text(out, cap, &used, " as ") != 0 ||
-                append_text(out, cap, &used, output) != 0)
-                return -1;
-        }
-        if (append_text(out, cap, &used, ".") != 0) return -1;
+        if (append_text(out, cap, &used, " as ") != 0 ||
+            append_text(out, cap, &used, output) != 0 ||
+            append_text(out, cap, &used, ".") != 0)
+            return -1;
         return 0;
     }
     if (append_text(out, cap, &used, name) != 0 ||

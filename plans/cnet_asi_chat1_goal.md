@@ -148,13 +148,14 @@ Do not write a fixture until the candidate is frozen.
    `CNET_CHAT1_CERTIFIED_PASS covered=8 ood=5`). Two-gate still
    unique-matches. Email / signed / CRC-16 / override wraps abstain.
    ASI-5 held-out aggregates unchanged (304 covered, OOD 0).
-4. **CHAT-1.3** — done for native own-text and the named rubric:
-   `cnet_chat_fluency_v1` scores well-formed, stay-on-contract, no
-   contradiction, bounded helpfulness, and no side-effect.
-   `make cnet_chat_fluency_v1` and `make cnet_chat1_contract_convo`
-   walk a six-turn CONTRACT thread (five certified hops + one refuse)
-   through two-gate execution, native speech, and the rubric.
-   Beating 8B on this rubric remains **WITHHELD**.
+4. **CHAT-1.3** — native speech + named rubric + unique questions:
+   `cnet_chat_fluency_v1`; `make cnet_chat1_dynamic` answers 26 unique
+   chat wraps (varying operands). Unofficial dual probe
+   `make cnet_chat1_dual_probe` on the pinned ROCm 8B reported
+   CNET exact 7/7 rubric-full 7/7 mean 1.000 vs Bonsai exact 4/7
+   rubric-full 0/7 mean 0.600. That is **not** an official
+   `CNET_CHAT_COMPETE_PASS`. Official fluency-vs-8B remains
+   **WITHHELD** until a frozen fixture compete.
 5. **S-freeze / F-freeze / one GPU compete** — same ROCm pin, one
    result path. A FAIL starts a new freeze. Archive journals. Never
    start a second result path on the same freeze.
