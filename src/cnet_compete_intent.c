@@ -1375,6 +1375,19 @@ done:
     return rc;
 }
 
+int cnet_compete_intent_train_v5(const char *artifact_path,
+                                 const char *metadata_path,
+                                 const char *v4_semantic_corpus_path,
+                                 const char *v5_semantic_corpus_path,
+                                 CnetCompeteIntentReport *report) {
+    (void)artifact_path;
+    (void)metadata_path;
+    (void)v4_semantic_corpus_path;
+    (void)v5_semantic_corpus_path;
+    (void)report;
+    return -1;
+}
+
 int cnet_compete_intent_load(const char *artifact_path,
                              const char *metadata_path,
                              CnetCompeteIntentModel **model_out,

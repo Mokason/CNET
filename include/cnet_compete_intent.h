@@ -12,6 +12,11 @@
 #define CNET_COMPETE_INTENT_SEED 20260813u
 #define CNET_COMPETE_INTENT_PROVENANCE \
     "external_verified_spec_dual_head_v4"
+#define CNET_COMPETE_INTENT_V5_PROVENANCE \
+    "external_verified_spec_dual_head_v5"
+#define CNET_COMPETE_INTENT_V5_SOURCE_EXAMPLES 1176u
+#define CNET_COMPETE_INTENT_V5_TRAIN_EXAMPLES 1428u
+#define CNET_COMPETE_INTENT_V5_TRAIN_STEPS 214200u
 
 typedef enum {
     CNET_INTENT_INCREMENT = 0,
@@ -71,6 +76,15 @@ int cnet_compete_intent_train(const char *artifact_path,
                               const char *metadata_path,
                               const char *semantic_corpus_path,
                               CnetCompeteIntentReport *report);
+
+/* Train the v5 profile by extending the frozen v4 semantic grounding with
+   the answer-free v5 boundary corpus. The original v4 entry point remains
+   byte-reproducible and does not consume this additional corpus. */
+int cnet_compete_intent_train_v5(const char *artifact_path,
+                                 const char *metadata_path,
+                                 const char *v4_semantic_corpus_path,
+                                 const char *v5_semantic_corpus_path,
+                                 CnetCompeteIntentReport *report);
 
 /* Load only the fixed, manifest-bound CNET-ASI-5 base artifact. Header,
    dimensions, size and checksum are verified before the packed loader sees it. */

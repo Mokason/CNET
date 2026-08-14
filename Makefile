@@ -6570,6 +6570,7 @@ cnet_7b_intent_san: cnet_7b_intent
 .PHONY: cnet_7b_capsule_artifacts cnet_7b_runtime cnet_7b_runtime_san
 .PHONY: cnet_7b_v5_diagnostic cnet_7b_v5_diagnostic_san
 .PHONY: cnet_7b_v5_semantic_corpus cnet_7b_v5_semantics_red
+.PHONY: cnet_7b_v5_intent_red
 cnet_7b_capsule_artifacts: include/cnet_compete_capsules.h \
 		src/cnet_compete_capsules.c tools/cnet_compete_build_capsules.c \
 		$(CNET_COMPETE_CAPSULE_CORE)
@@ -6720,6 +6721,28 @@ cnet_7b_v5_semantics_red: cnet_7b_v5_diagnostic \
 		test $$status -ne 0; \
 		grep -Eq '^CNET_7B_V5_SEMANTIC_COVERAGE_RED ' \
 			logs/cnet_7b_v5_semantics_red.log
+
+cnet_7b_v5_intent_red: include/cnet_compete_intent.h \
+		src/cnet_compete_intent.c src/cce/cce_wordlm.c \
+		tests/test_cnet_compete_intent_v5.c \
+		benchmarks/cnet_asi5_v4/semantic_development.tsv \
+		benchmarks/cnet_asi5_v5/semantic_development.tsv
+	@mkdir -p $(BIN_DIR) logs artifacts/cnet_asi5_v5
+	$(CC) $(CFLAGS) -Werror -Iinclude \
+		-o $(BIN_DIR)/test_cnet_compete_intent_v5 \
+		src/cnet_compete_intent.c src/cce/cce_wordlm.c \
+		tests/test_cnet_compete_intent_v5.c $(LDFLAGS)
+	@set +e; \
+		./$(BIN_DIR)/test_cnet_compete_intent_v5 \
+			artifacts/cnet_asi5_v5/intent.wlm \
+			artifacts/cnet_asi5_v5/intent.meta \
+			benchmarks/cnet_asi5_v4/semantic_development.tsv \
+			benchmarks/cnet_asi5_v5/semantic_development.tsv | \
+			tee logs/cnet_7b_v5_intent_red.log; \
+		status=$${PIPESTATUS[0]}; \
+		test $$status -ne 0; \
+		grep -qx 'CNET_7B_INTENT_V5_RED reason=train' \
+			logs/cnet_7b_v5_intent_red.log
 
 .PHONY: cnet_7b_eval_contract
 cnet_7b_eval_contract: cnet_7b_artifact_manifest include/cnet_compete_eval.h \
