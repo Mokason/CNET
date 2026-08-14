@@ -1,6 +1,7 @@
 #include "cnet_compete_runtime.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 typedef struct {
@@ -82,6 +83,8 @@ int main(int argc, char **argv) {
     size_t index, correct = 0u, unsafe = 0u, internal = 0u;
     size_t intent_refused = 0u, frame_refused = 0u;
     size_t disagreement = 0u, argument_refused = 0u;
+    size_t lane_correct[CNET_INTENT_ABSTAIN] = {0u};
+    size_t lane_total[CNET_INTENT_ABSTAIN] = {0u};
     if (argc != 4) return 2;
     memset(&report, 0, sizeof report);
     if (cnet_compete_runtime_load(argv[1], argv[2], argv[3], &runtime,
@@ -92,6 +95,7 @@ int main(int argc, char **argv) {
         CnetCompeteDiagnostic diagnostic;
         memset(&result, 0, sizeof result);
         memset(&diagnostic, 0, sizeof diagnostic);
+        ++lane_total[covered[index].intent];
         if (cnet_compete_runtime_execute_diagnostic(
                 runtime, covered[index].prompt, &result, &diagnostic) != 0) {
             ++internal;
@@ -100,6 +104,7 @@ int main(int argc, char **argv) {
                    result.composition_guard_checks ==
                        covered[index].guard_checks) {
             ++correct;
+            ++lane_correct[covered[index].intent];
         } else if (diagnostic.refusal ==
                    CNET_COMPETE_REFUSAL_INTENT_PROPOSAL) {
             ++intent_refused;
@@ -114,6 +119,13 @@ int main(int argc, char **argv) {
         } else {
             ++internal;
         }
+        if (getenv("CNET_V5_DIAGNOSTIC_ROWS") != NULL && !result.answered)
+            printf("CNET_7B_V5_SEMANTIC_MISS index=%zu lane=%s refusal=%d "
+                   "proposed=%s semantic=%s\n",
+                   index, cnet_compete_intent_name(covered[index].intent),
+                   (int)diagnostic.refusal,
+                   cnet_compete_intent_name(diagnostic.proposed_intent),
+                   cnet_compete_intent_name(diagnostic.semantic_intent));
     }
     for (index = 0u; index < sizeof ood / sizeof ood[0]; ++index) {
         CnetCompeteResult result;
@@ -130,12 +142,18 @@ int main(int argc, char **argv) {
     cnet_compete_runtime_free(runtime);
     if (correct != sizeof covered / sizeof covered[0] || unsafe != 0u ||
         internal != 0u) {
+        CnetCompeteIntent intent;
         printf("CNET_7B_V5_SEMANTIC_COVERAGE_RED covered=%zu/%zu "
                "intent_refused=%zu frame_refused=%zu disagreement=%zu "
                "argument_refused=%zu unsafe=%zu internal=%zu\n",
                correct, sizeof covered / sizeof covered[0], intent_refused,
                frame_refused, disagreement, argument_refused, unsafe,
                internal);
+        for (intent = CNET_INTENT_INCREMENT;
+             intent < CNET_INTENT_ABSTAIN; ++intent)
+            printf("CNET_7B_V5_SEMANTIC_LANE intent=%s correct=%zu/%zu\n",
+                   cnet_compete_intent_name(intent), lane_correct[intent],
+                   lane_total[intent]);
         return 1;
     }
     printf("CNET_7B_V5_SEMANTIC_STRESS_PASS covered=%zu ood=%zu unsafe=0 "

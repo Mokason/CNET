@@ -400,6 +400,13 @@ static int numeric_assertion_supported(const Lexeme *tokens, size_t count) {
              word_is(tokens, count, index - 1u, "minute") ||
              word_is(tokens, count, index - 1u, "minutes")))
             continue;
+        if (word_is(tokens, count, index, "value") && index > 1u &&
+            tokens[index - 1u].kind == LEXEME_NUMBER &&
+            !tokens[index - 1u].negative &&
+            !tokens[index - 1u].malformed &&
+            tokens[index - 1u].number == 8u &&
+            word_is(tokens, count, index - 2u, "uint"))
+            continue;
         asserted = index + 1u;
         while (asserted < count &&
                word_in_list(tokens, count, asserted, assertion_links,
@@ -631,6 +638,21 @@ static int word_in_list(const Lexeme *tokens, size_t count, size_t index,
     return 0;
 }
 
+static int contract_scaffolding_word(const Lexeme *tokens, size_t count,
+                                     size_t index) {
+    static const char *const words[] = {
+        "a", "an", "and", "apply", "as", "at", "by", "calculate",
+        "compute", "datum", "derive", "determine", "evaluate", "exact",
+        "exactly", "find", "for", "from", "immediate", "in", "input",
+        "into", "its", "map", "of", "on", "operand", "output",
+        "process", "registered", "result", "return", "single", "source",
+        "stored", "target", "that", "the", "this", "through", "to",
+        "total", "under", "value", "what", "whole", "with"
+    };
+    return word_in_list(tokens, count, index, words,
+                        sizeof words / sizeof words[0]);
+}
+
 /* Certified requests use a closed positive vocabulary.  The learned router is
    deliberately not treated as permission to accept an otherwise unknown verb
    or noun: an unrecognized word can denote an external side effect even when
@@ -640,14 +662,14 @@ static int contract_vocabulary_supported(const Lexeme *tokens, size_t count,
     static const char *const increment[] = {
         "a", "add", "advance", "after", "ahead", "and", "arithmetic",
         "at", "bit", "by", "byte", "contract", "cycle", "cyclic",
-        "datum", "exactly", "fifty", "find", "following", "for",
+        "datum", "eight", "exactly", "fifty", "find", "following", "for",
         "forward", "holding", "hundred", "immediate", "in", "increment",
         "input", "it", "map", "mod", "modulo", "move", "octet", "of",
         "one", "operand", "output", "overflow", "position", "raise",
         "register", "registered", "result", "return", "single", "six",
         "step", "stored", "successor", "take", "the", "through", "two",
         "uint", "under", "unity", "unsigned", "value", "with", "wrap",
-        "wraparound", "wrapped"
+        "wraparound", "wrapped", "follows", "next", "representable"
     };
     static const char *const minutes[] = {
         "a", "apply", "by", "contain", "contains", "convert", "count",
@@ -716,7 +738,8 @@ static int contract_vocabulary_supported(const Lexeme *tokens, size_t count,
     }
     for (index = 0; index < count; ++index) {
         if (tokens[index].kind == LEXEME_NUMBER) continue;
-        if (!word_in_list(tokens, count, index, allowed, allowed_count))
+        if (!contract_scaffolding_word(tokens, count, index) &&
+            !word_in_list(tokens, count, index, allowed, allowed_count))
             return 0;
     }
     return 1;
@@ -1594,7 +1617,8 @@ static int number_word_context_supported(const Lexeme *tokens, size_t count,
                (number_adjacent_word(tokens, count, index, "crc") ||
                 number_adjacent_word(tokens, count, index, "width") ||
                 (word_is(tokens, count, index + 1u, "bit") &&
-                 ((index > 0u &&
+                 (intent == CNET_INTENT_INCREMENT ||
+                  (index > 0u &&
                    (word_is(tokens, count, index - 1u, "unsigned") ||
                     word_is(tokens, count, index - 1u, "atm") ||
                     word_is(tokens, count, index - 1u, "crc"))) ||
