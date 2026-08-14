@@ -23,11 +23,11 @@ case "$workspace_root" in
     *) echo "workspace root must be absolute" >&2; exit 2 ;;
 esac
 case "$release_root" in
-    /home/marble/.local/state/cnet/cnet_asi5_v4) ;;
+    /home/marble/.local/state/cnet/cnet_asi5_v5) ;;
     *) echo "release root must be canonical" >&2; exit 2 ;;
 esac
 case "$staging_root" in
-    /home/marble/.local/state/cnet/.cnet-asi5-v4-stage-??????) ;;
+    /home/marble/.local/state/cnet/.cnet-asi5-v5-stage-??????) ;;
     *) echo "staging root must be canonical private storage" >&2; exit 2 ;;
 esac
 case "$build_commit:$build_tree" in
@@ -127,27 +127,27 @@ cd "$snapshot_root"
 
 "$make" CC="$cc" \
     PYTHON=/bin/false \
-    CNET_COMPETE_SUITE_DEFINE='-DCNET_COMPETE_SUITE_DATA_HEADER=\"cnet_compete_suite_data_v4.h\"' \
-    cnet_7b_v4_suite_define_smoke >&2
+    CNET_COMPETE_SUITE_DEFINE='-DCNET_COMPETE_SUITE_DATA_HEADER=\"cnet_compete_suite_data_v5.h\"' \
+    cnet_7b_v5_suite_define_smoke >&2
 
 "$make" CC="$cc" \
     PYTHON=/bin/false \
     CNET_COMPETE_BUILD_COMMIT="$build_commit" \
     CNET_COMPETE_BUILD_TREE="$build_tree" \
-    CNET_COMPETE_SUITE_DEFINE='-DCNET_COMPETE_SUITE_DATA_HEADER=\"cnet_compete_suite_data_v4.h\"' \
-    cnet_7b_v4_fixture_audit >&2
+    CNET_COMPETE_SUITE_DEFINE='-DCNET_COMPETE_SUITE_DATA_HEADER=\"cnet_compete_suite_data_v5.h\"' \
+    cnet_7b_v5_fixture_audit >&2
 
 "$make" CC="$cc" \
     PYTHON=/bin/false \
     CNET_COMPETE_BUILD_COMMIT="$build_commit" \
     CNET_COMPETE_BUILD_TREE="$build_tree" \
-    CNET_COMPETE_SUITE_DEFINE='-DCNET_COMPETE_SUITE_DATA_HEADER=\"cnet_compete_suite_data_v4.h\"' \
+    CNET_COMPETE_SUITE_DEFINE='-DCNET_COMPETE_SUITE_DATA_HEADER=\"cnet_compete_suite_data_v5.h\"' \
     cnet_7b_artifact_manifest >&2
 
-artifact_sha=$("$sha256sum" artifacts/cnet_asi5_v4/artifacts.sha256)
+artifact_sha=$("$sha256sum" artifacts/cnet_asi5_v5/artifacts.sha256)
 artifact_sha=${artifact_sha%% *}
 if [ "$artifact_sha" != \
-     "df0f7131aaa75627d5c542b375a39615ab16b93388878490037ad76b79a2d661" ]; then
+     "81fe446218431d7520a7a2d4309e069600ae11be0d3d73e92e04dea78cb7c009" ]; then
     echo "immutable artifact manifest digest mismatch" >&2
     exit 1
 fi
@@ -156,7 +156,7 @@ fi
     PYTHON=/bin/false \
     CNET_COMPETE_BUILD_COMMIT="$build_commit" \
     CNET_COMPETE_BUILD_TREE="$build_tree" \
-    CNET_COMPETE_SUITE_DEFINE='-DCNET_COMPETE_SUITE_DATA_HEADER=\"cnet_compete_suite_data_v4.h\"' \
+    CNET_COMPETE_SUITE_DEFINE='-DCNET_COMPETE_SUITE_DATA_HEADER=\"cnet_compete_suite_data_v5.h\"' \
     cnet_7b_capsules_san >&2
 "$install" -m 0600 logs/cnet_7b_capsules_san.log \
     "$staging_root/evidence/cnet_7b_capsules_san.log"
@@ -164,27 +164,27 @@ fi
     PYTHON=/bin/false \
     CNET_COMPETE_BUILD_COMMIT="$build_commit" \
     CNET_COMPETE_BUILD_TREE="$build_tree" \
-    CNET_COMPETE_SUITE_DEFINE='-DCNET_COMPETE_SUITE_DATA_HEADER=\"cnet_compete_suite_data_v4.h\"' \
-    cnet_7b_runtime_san >&2
+    CNET_COMPETE_SUITE_DEFINE='-DCNET_COMPETE_SUITE_DATA_HEADER=\"cnet_compete_suite_data_v5.h\"' \
+    cnet_7b_v5_runtime_san >&2
 "$make" CC="$cc" \
     PYTHON=/bin/false \
     CNET_COMPETE_BUILD_COMMIT="$build_commit" \
     CNET_COMPETE_BUILD_TREE="$build_tree" \
-    CNET_COMPETE_SUITE_DEFINE='-DCNET_COMPETE_SUITE_DATA_HEADER=\"cnet_compete_suite_data_v4.h\"' \
+    CNET_COMPETE_SUITE_DEFINE='-DCNET_COMPETE_SUITE_DATA_HEADER=\"cnet_compete_suite_data_v5.h\"' \
     cnet_7b_eval_san >&2
 
-"$install" -m 0600 logs/cnet_7b_runtime_san.log \
+"$install" -m 0600 logs/cnet_7b_v5_runtime_san.log \
     "$staging_root/evidence/cnet_7b_runtime_san.log"
 "$install" -m 0600 logs/cnet_7b_eval_san.log \
     "$staging_root/evidence/cnet_7b_eval_san.log"
 "$install" -m 0600 logs/cnet_7b_score_san.log \
     "$staging_root/evidence/cnet_7b_score_san.log"
 
-"$install" -m 0600 benchmarks/cnet_asi5_v4/heldout.tsv \
+"$install" -m 0600 benchmarks/cnet_asi5_v5/heldout.tsv \
     "$staging_root/inputs/heldout.tsv"
-"$install" -m 0600 benchmarks/cnet_asi5_v4/baseline_system.txt \
+"$install" -m 0600 benchmarks/cnet_asi5_v5/baseline_system.txt \
     "$staging_root/inputs/baseline_system.txt"
-"$install" -m 0600 tools/cnet_compete_fixture_v4.c \
+"$install" -m 0600 tools/cnet_compete_fixture_v5.c \
     "$staging_root/inputs/fixture_generator.c"
 for member in \
     intent.wlm \
@@ -205,12 +205,12 @@ for member in \
     artifacts.sha256
 do
     destination="$staging_root/inputs/artifacts/$member"
-    "$install" -D -m 0600 "artifacts/cnet_asi5_v4/$member" "$destination"
+    "$install" -D -m 0600 "artifacts/cnet_asi5_v5/$member" "$destination"
 done
 
 common_flags="-std=c11 -Wall -Wextra -pedantic -Werror -O3 -march=znver3 -D_DEFAULT_SOURCE"
 identity_flags="-DCNET_COMPETE_BUILD_COMMIT=\"$build_commit\" -DCNET_COMPETE_BUILD_TREE=\"$build_tree\""
-release_flags="-DCNET_COMPETE_SUITE_DATA_HEADER=\"cnet_compete_suite_data_v4.h\" -DCNET_COMPETE_RELEASE_ARTIFACT_ROOT=\"$release_root/inputs/artifacts\" -DCNET_COMPETE_FROZEN_FIXTURE_PATH=\"$release_root/inputs/heldout.tsv\" -DCNET_COMPETE_FROZEN_SYSTEM_PATH=\"$release_root/inputs/baseline_system.txt\" -DCNET_COMPETE_FROZEN_GENERATOR_PATH=\"$release_root/inputs/fixture_generator.c\" -DCNET_COMPETE_FROZEN_ARTIFACT_ROOT=\"$release_root/inputs/artifacts\""
+release_flags="-DCNET_COMPETE_SUITE_DATA_HEADER=\"cnet_compete_suite_data_v5.h\" -DCNET_COMPETE_RELEASE_ARTIFACT_ROOT=\"$release_root/inputs/artifacts\" -DCNET_COMPETE_FROZEN_FIXTURE_PATH=\"$release_root/inputs/heldout.tsv\" -DCNET_COMPETE_FROZEN_SYSTEM_PATH=\"$release_root/inputs/baseline_system.txt\" -DCNET_COMPETE_FROZEN_GENERATOR_PATH=\"$release_root/inputs/fixture_generator.c\" -DCNET_COMPETE_FROZEN_ARTIFACT_ROOT=\"$release_root/inputs/artifacts\""
 eval_core="src/cnet_compete_eval.c src/cnet_compete.c src/cce/cce_campaign_provenance.c"
 capsule_core="src/cnet_capsule.c src/hybrid_ai.c src/base.c src/nn.c src/contract/contract.c src/contract/unit.c src/contract/coverage.c src/acquire.c src/runtime_identity.c src/plan_table.c"
 router="src/router/dag_full.c src/router/registry.c src/router/route.c"

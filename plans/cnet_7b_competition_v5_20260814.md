@@ -1,6 +1,6 @@
 # CNET-ASI-5 v5 semantic-admission recovery plan
 
-Status: **DEVELOPMENT ONLY — NO V5 CANDIDATE OR FIXTURE FREEZE**
+Status: **CANDIDATE FREEZE READY — NO V5 FIXTURE EXISTS**
 
 ## Objective and evidence boundary
 

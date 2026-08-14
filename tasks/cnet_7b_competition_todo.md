@@ -5,11 +5,11 @@
 - [x] Preserve and authenticate the complete v4 terminal FAIL evidence.
 - [x] Identify semantic admission as the smallest aggregate-supported failure boundary.
 - [x] Add refusal-stage diagnostics with a focused RED marker first.
-- [ ] Generate an independent answer-free semantic stress corpus and paired OOD counterfactuals.
-- [ ] Improve only measured learned-intent refusal paths and keep both 1% ceilings.
-- [ ] Generalize five typed frames incrementally while retaining zero unsafe answers.
-- [ ] Pass deterministic rebuild, capsule, composition, semantic, and sanitizer checkpoints.
-- [ ] Freeze the v5 candidate as `S5` before any v5 fixture wording exists.
+- [x] Generate an independent answer-free semantic stress corpus and paired OOD counterfactuals.
+- [x] Improve only measured learned-intent refusal paths and keep both 1% ceilings.
+- [x] Generalize five typed frames incrementally while retaining zero unsafe answers.
+- [x] Pass deterministic rebuild, capsule, composition, semantic, and sanitizer checkpoints.
+- [x] Freeze the v5 candidate as `S5` before any v5 fixture wording exists.
 - [ ] Author and audit a new independent 448-row fixture, then freeze it as `F5`.
 - [ ] Run each backend once and complete only on `CNET_7B_COMPETE_PASS`.
 
