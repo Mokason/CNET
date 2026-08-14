@@ -371,7 +371,7 @@ static int server_environment_matches(void) {
 static int server_mapped_runtime_matches(void) {
     char path[64], line[4096];
     unsigned long long seen = 0;
-    int saw_kfd = 0, saw_render = 0;
+    int saw_kfd = 0, saw_render = 0, saw_offload_render = 0;
     FILE *file;
     size_t index;
     if (RUNTIME_FILE_COUNT >= 64u ||
@@ -416,6 +416,12 @@ static int server_mapped_runtime_matches(void) {
             saw_render = 1;
             continue;
         }
+        if (strcmp(mapped, "/dev/dri/renderD129") == 0) {
+            if (device_major != 0 || device_minor != 6 || inode != 1139u)
+                goto fail;
+            saw_offload_render = 1;
+            continue;
+        }
         for (index = 0; index < RUNTIME_FILE_COUNT; ++index) {
             if (strcmp(mapped, runtime_files[index].path) == 0) {
                 const RuntimeGuard *guard = &runtime_guards[index];
@@ -432,7 +438,7 @@ static int server_mapped_runtime_matches(void) {
     }
     if (ferror(file) || fclose(file) != 0) return 0;
     return seen == ((UINT64_C(1) << RUNTIME_FILE_COUNT) - 1u) &&
-           saw_kfd && saw_render;
+           saw_kfd && saw_render && saw_offload_render;
 fail:
     (void)fclose(file);
     return 0;
@@ -459,7 +465,7 @@ static int listener_inode(unsigned long long *inode_out) {
         int number = 0, local = 0, remote = 0, listening = 0;
         unsigned long long inode = 0;
         while (field != NULL) {
-            if (number == 1) local = strcmp(field, "0100007F:1F90") == 0;
+            if (number == 1) local = strcmp(field, "0100007F:1F91") == 0;
             else if (number == 2) remote = strcmp(field, "00000000:0000") == 0;
             else if (number == 3) listening = strcmp(field, "0A") == 0;
             else if (number == 9) {
@@ -741,7 +747,7 @@ int main(int argc, char **argv) {
     }
     snprintf(model_sha, sizeof model_sha, "%s", model_guard.sha256);
     model_bytes = model_guard.bytes;
-    snprintf(header.backend, sizeof header.backend, "bonsai_8b_cpu_q1_0");
+    snprintf(header.backend, sizeof header.backend, "bonsai_8b_rocm_q1_0");
     if (snprintf(
             header.identity, sizeof header.identity,
             "model=%s;commit=%s;tree=%s;system=%s;server=%s;config=%s;"

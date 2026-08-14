@@ -243,7 +243,7 @@ int main(int argc, char **argv) {
            cnet_header.composition_members, cnet.composition_guard_checks,
            cnet_header.residual_calls);
 
-    gate(strcmp(baseline_header.backend, "bonsai_8b_cpu_q1_0") == 0 &&
+    gate(strcmp(baseline_header.backend, "bonsai_8b_rocm_q1_0") == 0 &&
              strcmp(baseline_header.identity, expected_baseline_identity) == 0 &&
              baseline_header.parameters == CNET_COMPETE_BASELINE_PARAMETERS &&
              baseline_header.model_bytes == CNET_COMPETE_BASELINE_BYTES &&

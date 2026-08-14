@@ -1,6 +1,6 @@
 # CNET-ASI-5 v5 handoff
 
-Updated: 2026-08-14 (S5 freeze gate green; commit next, then F5)
+Updated: 2026-08-14 (S6 recovery: sealed-tree hygiene + AMD/ROCm GPU pin)
 
 ## Goal and completion rule
 
@@ -26,16 +26,27 @@ on the answer-free stress matrix. Held-out coverage can be measured only after
 ## Current state
 
 - Branch: `feature/cnet-7b-competition`.
-- Last commit: `0b11a41 feat: validate frozen v5 suite data`.
-- V5 development candidate is implemented, reproduced, and freeze-gated.
-- `make -j1 cnet_7b_artifact_manifest` reproduced the exact hashes below.
-- `make -j1 cnet_7b_v5_candidate_freeze` emitted
-  `CNET_7B_V5_CANDIDATE_FREEZE_PASS base_params=321757 artifacts=15
-  artifact_bytes=534601 capsules=6 certified_rows=1296
-  semantic_development=320 exclusions=3718 fixture_authored=0
-  broader_claims=WITHHELD`.
-- No v5 held-out fixture has been authored or executed.
-- No v5 candidate or baseline benchmark has been run.
+- `S5` `0abf82bc73e05067bb15268b20a60b7c64968ba7`, `F5`
+  `3e7c9211a9568066ac2ea685736853dc6ad0f35e`.
+- Official `make -j1 cnet_7b_compete_results` after `F5` emitted
+  `CNET_7B_COMPETE_FAIL suite=CNET-ASI-5-v5 failed_gates=1
+  reason=workflow_stage broader_claims=WITHHELD`.
+- Root cause: `cnet_7b_v5_semantic_corpus` wrote
+  `artifacts/cnet_asi5_v5/semantic_development.tsv` into the sealed tree.
+  `artifact_tree_exact` refused the extra file. Floors were not scored.
+  No v4/v5 row outputs were read.
+- `S6` recovery (this tree): export the development TSV to
+  `artifacts/cnet_asi5_v5_dev/`; pin a new labeled AMD/ROCm baseline
+  `bonsai_8b_rocm_q1_0` on `127.0.0.1:8081`, PID `626910`, `-ngl 99`,
+  unused R9700 (`ROCR_VISIBLE_DEVICES=1`, `HIP_VISIBLE_DEVICES=0`,
+  `CUDA_VISIBLE_DEVICES=`). Same HIP `llama-server` binary. No CUDA.
+- Leave the CPU teacher `bonsai-server.service` on `:8080` (`-ngl 0`)
+  for residual/gap-lane. Compete does not use it.
+- `F6` after the `S6` commit must only retarget
+  `include/cnet_compete_suite_data_v5.h` at the `S6` hash and refresh
+  `benchmarks/cnet_asi5_v5/digests.sha256`. Do not regenerate the fixture.
+- Then one authorized `make -j1 cnet_7b_compete_results`. Never start a
+  second result path.
 
 ## Verified v5 development result
 

@@ -1,13 +1,37 @@
 # CNET-ASI-5 v5 candidate-freeze protocol
 
-Status: **CANDIDATE FREEZE; NO V5 FIXTURE EXISTS**
+Status: **S6 RECOVERY FREEZE; F5 FIXTURE BYTES UNCHANGED**
 
-This document freezes the v5 candidate and independence rules before any v5
-held-out prompt wording is authored. The commit containing this document is
-candidate-freeze commit `S5`. A later fixture-freeze commit `F5` must record
-`S5` and prove that every frozen candidate path, artifact member, development
-prompt, parser, scorer, score floor, release builder, and evaluation workflow
-is unchanged.
+This document froze the v5 candidate at `S5` before any v5 held-out prompt
+wording was authored. `F5` later recorded that `S5` commit and the seven
+suite-data files. The first authorized v5 run then emitted
+`CNET_7B_COMPETE_FAIL` with `reason=workflow_stage`: the sealed artifact
+tree was polluted by development TSVs, so `artifact_tree_exact` refused
+the snapshot. No score floors were read. No v4 or v5 row outputs were
+inspected.
+
+`S6` is a recovery freeze of the same candidate. It does not retrain, does
+not regenerate the 448-row fixture, and does not lower a floor. It only:
+
+1. writes the v5 semantic-development export outside `artifacts/cnet_asi5_v5/`
+   so the sealed tree stays exactly `intent.wlm`, `intent.meta`,
+   `artifacts.sha256`, and `capsules/`;
+2. replaces the CPU Bonsai pin (`bonsai_8b_cpu_q1_0`, `-ngl 0`, `:8080`)
+   with a new labeled AMD/ROCm GPU pin (`bonsai_8b_rocm_q1_0`, `-ngl 99`,
+   `:8081`, unused R9700 via `ROCR_VISIBLE_DEVICES=1`). No CUDA path.
+
+After `S6`, `F6` may change only:
+
+- `include/cnet_compete_suite_data_v5.h` (records the `S6` commit)
+- `benchmarks/cnet_asi5_v5/digests.sha256`
+
+The held-out TSV, cases, oracle, generator, and system prompt stay
+byte-identical to `F5`. The release builder checks `S6..HEAD` against
+those two files.
+
+The original `S5` rules below still describe the frozen candidate. They
+are not a license to inspect v4/v5 journals or to train on CNET Tier-A
+answers.
 
 ## Why a new candidate is allowed
 

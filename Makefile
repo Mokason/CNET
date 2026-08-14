@@ -7005,16 +7005,16 @@ cnet_7b_v5_semantic_corpus: include/cnet_compete_v5_semantics.h \
 		tools/cnet_compete_fixture_audit.c \
 		benchmarks/cnet_asi5_v4/excluded_prompts.tsv \
 		benchmarks/cnet_asi5_v5/semantic_development.tsv
-	@mkdir -p $(BIN_DIR) logs artifacts/cnet_asi5_v5
+	@mkdir -p $(BIN_DIR) logs artifacts/cnet_asi5_v5_dev
 	$(CC) $(CFLAGS) -Werror -Iinclude \
 		-o $(BIN_DIR)/cnet_compete_v5_semantic_export \
 		src/cnet_compete_v5_semantics.c \
 		tools/cnet_compete_v5_semantic_export.c $(LDFLAGS)
 	@./$(BIN_DIR)/cnet_compete_v5_semantic_export \
-		artifacts/cnet_asi5_v5/semantic_development.tsv | \
+		artifacts/cnet_asi5_v5_dev/semantic_development.tsv | \
 		tee logs/cnet_7b_v5_semantic_export.log
 	@cmp benchmarks/cnet_asi5_v5/semantic_development.tsv \
-		artifacts/cnet_asi5_v5/semantic_development.tsv
+		artifacts/cnet_asi5_v5_dev/semantic_development.tsv
 	@grep -qx 'CNET_7B_V5_SEMANTIC_EXPORT_PASS covered=160 ood=160 answer_values=0' \
 		logs/cnet_7b_v5_semantic_export.log
 	$(CC) $(CFLAGS) -Werror -Iinclude \
@@ -7225,13 +7225,8 @@ cnet_7b_eval_build:
 		mapfile -t fixture_changes < <(/usr/bin/git diff --name-only \
 			"$$s5" "$$commit" -- | /usr/bin/sort); \
 		expected_changes=( \
-			benchmarks/cnet_asi5_v5/baseline_system.txt \
-			benchmarks/cnet_asi5_v5/cases.tsv \
 			benchmarks/cnet_asi5_v5/digests.sha256 \
-			benchmarks/cnet_asi5_v5/heldout.tsv \
-			include/cnet_compete_suite_data_v5.h \
-			tools/cnet_compete_fixture_oracle_v5.c \
-			tools/cnet_compete_fixture_v5.c ); \
+			include/cnet_compete_suite_data_v5.h ); \
 		test "$${#fixture_changes[@]}" -eq "$${#expected_changes[@]}"; \
 		for index in "$${!expected_changes[@]}"; do \
 			test "$${fixture_changes[$$index]}" = \
@@ -7288,12 +7283,12 @@ cnet_7b_eval_build:
 			fi; \
 			/usr/bin/sync -f "$$parent"; \
 		fi; \
-		if test -e "$$release_root/results/bonsai_8b_cpu_q1_0.results" || \
-		   test -L "$$release_root/results/bonsai_8b_cpu_q1_0.results" || \
-		   test -e "$$release_root/results/bonsai_8b_cpu_q1_0.results.anchor" || \
-		   test -L "$$release_root/results/bonsai_8b_cpu_q1_0.results.anchor" || \
-		   test -e "$$release_root/results/bonsai_8b_cpu_q1_0.results.lock" || \
-		   test -L "$$release_root/results/bonsai_8b_cpu_q1_0.results.lock" || \
+		if test -e "$$release_root/results/bonsai_8b_rocm_q1_0.results" || \
+		   test -L "$$release_root/results/bonsai_8b_rocm_q1_0.results" || \
+		   test -e "$$release_root/results/bonsai_8b_rocm_q1_0.results.anchor" || \
+		   test -L "$$release_root/results/bonsai_8b_rocm_q1_0.results.anchor" || \
+		   test -e "$$release_root/results/bonsai_8b_rocm_q1_0.results.lock" || \
+		   test -L "$$release_root/results/bonsai_8b_rocm_q1_0.results.lock" || \
 		   test -e "$$release_root/results/cnet_native_c.results" || \
 		   test -L "$$release_root/results/cnet_native_c.results" || \
 		   test -e "$$release_root/results/cnet_native_c.results.anchor" || \
@@ -7383,7 +7378,7 @@ CNET_COMPETE_ARTIFACT_META := $(CNET_COMPETE_RELEASE_ROOT)/inputs/artifacts/inte
 CNET_COMPETE_ARTIFACT_CAPSULE_ROOT := $(CNET_COMPETE_RELEASE_ROOT)/inputs/artifacts/capsules
 CNET_COMPETE_ARTIFACT_MANIFEST := $(CNET_COMPETE_RELEASE_ROOT)/inputs/artifacts/artifacts.sha256
 CNET_COMPETE_BASELINE_RESULTS := \
-	$(CNET_COMPETE_RESULTS_DIR)/bonsai_8b_cpu_q1_0.results
+	$(CNET_COMPETE_RESULTS_DIR)/bonsai_8b_rocm_q1_0.results
 CNET_COMPETE_CNET_RESULTS := \
 	$(CNET_COMPETE_RESULTS_DIR)/cnet_native_c.results
 
