@@ -1,13 +1,14 @@
 # CNET-ASI-5 v5 handoff
 
-Updated: 2026-08-14 (S11: refuse policy output assertion; reuse pinned WordLM)
+Updated: 2026-08-14 (S11/F11 authenticated CNET_7B_COMPETE_PASS)
 
 ## Goal and completion rule
 
 Produce one tangible, authenticated native C/C++ benchmark comparing CNET ASI
-with the pinned Bonsai 8B baseline. The goal is complete only when the frozen
-one-command gate emits exactly one terminal `CNET_7B_COMPETE_PASS` and reports
-the benchmark metrics. Keep broader claims `WITHHELD` until then.
+with the pinned Bonsai 8B baseline. The goal is complete: the frozen
+one-command gate emitted exactly one terminal `CNET_7B_COMPETE_PASS`.
+Metrics live in `plans/cnet_7b_competition_v5_results_20260814.md`.
+Broader claims stay `WITHHELD`.
 
 Non-negotiables: no Python in the lane; AMD/ROCm only; never lower
 certification floors; never train on CNET Tier-A answers; do not inspect
@@ -48,16 +49,17 @@ on the answer-free stress matrix. Held-out coverage can be measured only after
   before the next authorized run.
 - `S10`/`F10` official run: `CNET_7B_COMPETE_FAIL reason=workflow_stage`.
   Development semantic gate `unsafe=1` on "permission one". No journals.
-- `S11` (this tree): refuse numeric/Boolean tokens after
-  permission/decision/outcome unless they name policy v1. Reuse pinned
-  WordLM when artifact hashes already match. Histogram still covered
-  304/320, OOD 0. `CNET_7B_V5_SEMANTIC_STRESS_PASS covered=180 ood=181
-  unsafe=0`. `CNET_7B_V6_COHERENCE_PASS covered=25 ood=8`. Same ROCm pin
-  PID `626910` on `:8081`.
-- `F11` after `S11` only retargets the suite header at the `S11` hash
-  and refreshes `digests.sha256`. Same F5 fixture.
-- Then one authorized `make -j1 cnet_7b_compete_results`. Never start a
-  second result path. Floors unchanged. Broader claims `WITHHELD`.
+- `S11`/`F11` official run emitted authenticated
+  `CNET_7B_COMPETE_PASS suite=CNET-ASI-5-v5 cnet_exact=432/448
+  baseline_exact=214/448 claim=bounded_suite_only
+  broader_claims=WITHHELD`.
+- CNET: covered 304/320, OOD 128/128, selective 304/304, unsafe 0,
+  violations 0, composition guards 192. CRC lane 48/64 (16 proposal
+  abstentions). Bonsai ROCm: 214/448 covered 87/320, 1 unsafe OOD.
+- Write-up: `plans/cnet_7b_competition_v5_results_20260814.md`.
+- Authenticated PASS commit is `F11`
+  `3165f882ce59f40c7d97d091e7933eb539c0a6f6`. Same ROCm pin PID
+  `626910` on `:8081`. Floors unchanged. Broader claims `WITHHELD`.
 
 ## Verified v5 development result
 
