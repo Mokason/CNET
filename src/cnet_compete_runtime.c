@@ -657,12 +657,12 @@ static int contract_scaffolding_word(const Lexeme *tokens, size_t count,
     static const char *const words[] = {
         "a", "an", "and", "apply", "as", "at", "by", "calculate",
         "compute", "datum", "derive", "determine", "equivalent",
-        "evaluate", "exact", "exactly", "find", "for", "from",
+        "evaluate", "exact", "exactly", "find", "for", "from", "given",
         "immediate", "in", "input",
         "into", "its", "map", "of", "on", "operand", "output",
         "process", "registered", "result", "return", "single", "source",
         "stored", "target", "that", "the", "this", "through", "to",
-        "total", "under", "value", "what", "whole", "with"
+        "total", "under", "using", "value", "what", "whole", "with"
     };
     return word_in_list(tokens, count, index, words,
                         sizeof words / sizeof words[0]);
@@ -887,6 +887,7 @@ static int response_objects_supported(const Lexeme *tokens, size_t count) {
                  word_is(tokens, count, object - 1u, "unsigned") ||
                  word_is(tokens, count, object - 1u, "one") ||
                  word_is(tokens, count, object - 1u, "eight") ||
+                 word_is(tokens, count, object - 1u, "representable") ||
                  word_in_list(tokens, count, object + 1u, output_objects,
                               sizeof output_objects /
                                   sizeof output_objects[0])))
