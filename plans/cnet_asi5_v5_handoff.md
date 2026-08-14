@@ -1,6 +1,6 @@
 # CNET-ASI-5 v5 handoff
 
-Updated: 2026-08-14 (S10: public-contract paraphrase admission)
+Updated: 2026-08-14 (S11: refuse policy output assertion; reuse pinned WordLM)
 
 ## Goal and completion rule
 
@@ -46,15 +46,15 @@ on the answer-free stress matrix. Held-out coverage can be measured only after
   (increment 16, minutes 32, crc 16, policy 0, compose 32, OOD 128).
   No rows read. Archive those journals as `cnet_asi5_v5_s9f9_fail`
   before the next authorized run.
-- `S10` (this tree): keep two-gate admission, capsules, coverage, and
-  the AMD/ROCm pin. Admit independently authored public-contract
-  paraphrases (minutes conversion phrasing, four-flag policy, ATM
-  checksum of an operand/datum, registered compose3). Generic checksum
-  and non-ATM CRC-8 still abstain. WordLM not retrained. Working-tree
-  histogram: covered 304/320, OOD 0. `CNET_7B_V6_COHERENCE_PASS
-  covered=25 ood=7`. Runtime matrix still green. Same ROCm pin PID
-  `626910` on `:8081`.
-- `F10` after `S10` only retargets the suite header at the `S10` hash
+- `S10`/`F10` official run: `CNET_7B_COMPETE_FAIL reason=workflow_stage`.
+  Development semantic gate `unsafe=1` on "permission one". No journals.
+- `S11` (this tree): refuse numeric/Boolean tokens after
+  permission/decision/outcome unless they name policy v1. Reuse pinned
+  WordLM when artifact hashes already match. Histogram still covered
+  304/320, OOD 0. `CNET_7B_V5_SEMANTIC_STRESS_PASS covered=180 ood=181
+  unsafe=0`. `CNET_7B_V6_COHERENCE_PASS covered=25 ood=8`. Same ROCm pin
+  PID `626910` on `:8081`.
+- `F11` after `S11` only retargets the suite header at the `S11` hash
   and refreshes `digests.sha256`. Same F5 fixture.
 - Then one authorized `make -j1 cnet_7b_compete_results`. Never start a
   second result path. Floors unchanged. Broader claims `WITHHELD`.

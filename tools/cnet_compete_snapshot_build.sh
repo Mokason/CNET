@@ -124,6 +124,21 @@ umask 077
     "$staging_root/inputs" "$staging_root/inputs/artifacts" \
     "$staging_root/results"
 cd "$snapshot_root"
+# Reuse workspace copies of the already-pinned 321k WordLM and capsules
+# when they match candidate_artifacts.sha256. That avoids a multi-minute
+# CPU reproduction of an unchanged frozen artifact. Mismatch falls back
+# to the existing trainer.
+if [ -f "$workspace_root/artifacts/cnet_asi5_v5/intent.wlm" ] &&
+   [ -f "$workspace_root/artifacts/cnet_asi5_v5/intent.meta" ]; then
+    "$install" -d -m 0755 artifacts/cnet_asi5_v5
+    /usr/bin/cp -a "$workspace_root/artifacts/cnet_asi5_v5/." \
+        artifacts/cnet_asi5_v5/
+    if ! "$sha256sum" -c --strict \
+            benchmarks/cnet_asi5_v5/candidate_artifacts.sha256 \
+            >/dev/null; then
+        /usr/bin/rm -rf artifacts/cnet_asi5_v5
+    fi
+fi
 
 "$make" CC="$cc" \
     PYTHON=/bin/false \

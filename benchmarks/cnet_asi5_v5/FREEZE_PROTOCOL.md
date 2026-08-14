@@ -1,6 +1,6 @@
 # CNET-ASI-5 v5 candidate-freeze protocol
 
-Status: **S10 PUBLIC-CONTRACT PARAPHRASE ADMISSION; F5 FIXTURE BYTES UNCHANGED**
+Status: **S11 POLICY OUTCOME ASSERTION CLOSED; F5 FIXTURE BYTES UNCHANGED**
 
 This document froze the v5 candidate at `S5` before any v5 held-out prompt
 wording was authored. `F5` later recorded that `S5` commit and the seven
@@ -63,13 +63,26 @@ capability words stay denylisted. Working-tree admission histogram
 (aggregates only, no prompts): covered 304/320, OOD answered 0. The
 remaining 16 covered abstentions are CRC intent-proposal refusals.
 
-After `S10`, `F10` may change only:
+After `S10`, `F10` recorded that freeze. The authorized S10/F10 run
+emitted `CNET_7B_COMPETE_FAIL` with `reason=workflow_stage`: the
+development semantic gate reported `unsafe=1` on the independently
+authored OOD "permission one" output assertion. No score journals were
+written. No row outputs were read.
 
-- `include/cnet_compete_suite_data_v5.h` (records the `S10` commit)
+`S11` keeps the same fixture, capsules, two-gate admission, coverage
+checks, and AMD/ROCm pin. It refuses a numeric or Boolean token after
+permission/decision/outcome unless that token names the certified
+policy version. The pinned WordLM is reused when its files already
+match `candidate_artifacts.sha256`; it is not retrained. Working-tree
+histogram (aggregates only): covered 304/320, OOD answered 0.
+
+After `S11`, `F11` may change only:
+
+- `include/cnet_compete_suite_data_v5.h` (records the `S11` commit)
 - `benchmarks/cnet_asi5_v5/digests.sha256`
 
 The held-out TSV, cases, oracle, generator, and system prompt stay
-byte-identical to `F5`. The release builder checks `S10..HEAD` against
+byte-identical to `F5`. The release builder checks `S11..HEAD` against
 those two files.
 
 The original `S5` rules below still describe the frozen candidate. They

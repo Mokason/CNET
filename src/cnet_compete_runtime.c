@@ -1418,17 +1418,51 @@ static int policy_version_supported(const Lexeme *tokens, size_t count) {
 
 static int policy_outcome_request_supported(const Lexeme *tokens,
                                             size_t count) {
+    static const char *const output_nouns[] = {
+        "permission", "decision", "outcome", "result"
+    };
+    static const char *const glue[] = {
+        "under", "from", "for", "of", "the", "its", "that", "to"
+    };
+    static const char *const version_hosts[] = {
+        "policy", "rule", "version", "revision", "v"
+    };
     size_t index, allow_count = 0, deny_count = 0;
     for (index = 0; index < count; ++index) {
         if (word_is(tokens, count, index, "allow")) ++allow_count;
         if (word_is(tokens, count, index, "deny")) ++deny_count;
     }
-    if (allow_count == 0 && deny_count == 0) return 1;
     /* "allow or deny" is an open request for the computed decision.  A lone
        requested outcome is an output assertion, not part of the four-Boolean
        certified input, so it must not be silently ignored. */
-    return allow_count == 1u && deny_count == 1u &&
-           has_word(tokens, count, "or");
+    if ((allow_count != 0 || deny_count != 0) &&
+        !(allow_count == 1u && deny_count == 1u &&
+          has_word(tokens, count, "or")))
+        return 0;
+    /* "permission one" asserts the numeric outcome. "permission under
+       policy one" names the certified rule. */
+    for (index = 0; index < count; ++index) {
+        size_t look;
+        if (!word_in_list(tokens, count, index, output_nouns,
+                          sizeof output_nouns / sizeof output_nouns[0]))
+            continue;
+        look = index + 1u;
+        while (look < count &&
+               word_in_list(tokens, count, look, glue,
+                            sizeof glue / sizeof glue[0]))
+            ++look;
+        if (look >= count) continue;
+        if (word_in_list(tokens, count, look, version_hosts,
+                         sizeof version_hosts / sizeof version_hosts[0]))
+            continue;
+        if (lexeme_is_value(tokens, count, look, 1u, "one") ||
+            lexeme_is_value(tokens, count, look, 0u, "zero") ||
+            word_is(tokens, count, look, "true") ||
+            word_is(tokens, count, look, "false") ||
+            word_is(tokens, count, look, "yes"))
+            return 0;
+    }
+    return 1;
 }
 
 static int parameter_value_after(const Lexeme *tokens, size_t count,

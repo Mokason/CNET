@@ -1568,6 +1568,24 @@ int cnet_compete_intent_train_v5(const char *artifact_path,
                                  const char *v4_semantic_corpus_path,
                                  const char *v5_semantic_corpus_path,
                                  CnetCompeteIntentReport *report) {
+    CnetCompeteIntentModel *existing = NULL;
+    CnetCompeteIntentReport loaded;
+    /* The v5 WordLM is a frozen 321k-parameter CPU artifact. If the pinned
+       files already load, do not spend minutes reproducing them. */
+    memset(&loaded, 0, sizeof loaded);
+    if (artifact_path != NULL && metadata_path != NULL &&
+        access(artifact_path, R_OK) == 0 &&
+        access(metadata_path, R_OK) == 0 &&
+        cnet_compete_intent_load(artifact_path, metadata_path, &existing,
+                                 &loaded) == 0 &&
+        loaded.source_examples == INTENT_V5_EXPECTED_SOURCE_SAMPLES &&
+        loaded.train_examples == INTENT_V5_EXPECTED_TRAIN_SAMPLES &&
+        strcmp(loaded.provenance, CNET_COMPETE_INTENT_V5_PROVENANCE) == 0) {
+        if (report != NULL) *report = loaded;
+        cnet_compete_intent_free(existing);
+        return 0;
+    }
+    cnet_compete_intent_free(existing);
     return train_profile(artifact_path, metadata_path,
                          v4_semantic_corpus_path, v5_semantic_corpus_path,
                          INTENT_V5_EXPECTED_SOURCE_SAMPLES,

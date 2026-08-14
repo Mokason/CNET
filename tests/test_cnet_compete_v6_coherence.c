@@ -91,7 +91,9 @@ int main(int argc, char **argv) {
         "Please compute CRC-16 of unsigned byte 12.",
         "Decide access and then increment unsigned byte 12.",
         "Evaluate the checksum of operand 12.",
-        "Please compute CRC-8 of unsigned byte 12."
+        "Please compute CRC-8 of unsigned byte 12.",
+        "Given owner=true suspended=false admin=false mfa=true, determine "
+        "permission one."
     };
     CnetCompeteRuntime *runtime = NULL;
     CnetCompeteRuntimeReport report;
