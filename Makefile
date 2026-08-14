@@ -6134,7 +6134,7 @@ CNET_COMPETE_V4_SUITE_DEFINE := \
 CNET_COMPETE_SUITE_DEFINE ?=
 
 .PHONY: cnet_7b_v4_suite_data_contract cnet_7b_v4_suite_data_audit \
-	cnet_7b_v4_fixture_audit
+	cnet_7b_v4_suite_define_smoke cnet_7b_v4_fixture_audit
 cnet_7b_v4_suite_data_contract: include/cnet_compete_suite_data_audit.h \
 		src/cnet_compete_suite_data_audit.c \
 		tests/test_cnet_compete_suite_data_audit.c
@@ -6186,23 +6186,33 @@ cnet_7b_v4_suite_data_audit: cnet_7b_v4_suite_data_contract \
 			mapfile -t frozen_paths <"$$tmp/s4-paths"; \
 			frozen_candidate_paths=(); \
 			for path in "$${frozen_paths[@]}"; do \
-				if test "$$path" != Makefile; then \
+				if test "$$path" != Makefile && \
+				   test "$$path" != tools/cnet_compete_snapshot_build.sh; then \
 					frozen_candidate_paths+=("$$path"); \
 				fi; \
 			done; \
-			test "$${#frozen_candidate_paths[@]}" -eq 107; \
+			test "$${#frozen_candidate_paths[@]}" -eq 106; \
 			git diff --quiet --no-ext-diff "$$s4" -- \
 				"$${frozen_candidate_paths[@]}" \
 				benchmarks/cnet_asi5_v4/candidate_artifacts.sha256 \
 				benchmarks/cnet_asi5_v4/candidate_behavior_paths.txt; \
 			mapfile -t repair_changes < <(git diff --name-only \
 				"$$s4" HEAD -- Makefile \
+				tools/cnet_compete_snapshot_build.sh \
 				benchmarks/cnet_asi5_v4/candidate_behavior.sha256 | sort); \
-			test "$${#repair_changes[@]}" -eq 2; \
+			test "$${#repair_changes[@]}" -eq 3; \
 			test "$${repair_changes[0]}" = Makefile; \
 			test "$${repair_changes[1]}" = \
 				benchmarks/cnet_asi5_v4/candidate_behavior.sha256; \
+			test "$${repair_changes[2]}" = \
+				tools/cnet_compete_snapshot_build.sh; \
 		fi
+
+cnet_7b_v4_suite_define_smoke: include/cnet_compete.h \
+		include/cnet_compete_suite_data_v4.h src/cnet_compete.c
+	$(CC) $(CFLAGS) -Werror $(CNET_COMPETE_SUITE_DEFINE) -Iinclude \
+		-fsyntax-only src/cnet_compete.c
+	@echo CNET_7B_V4_SUITE_DEFINE_PASS
 
 cnet_7b_v4_fixture_audit: cnet_7b_v4_suite_data_audit \
 		include/cnet_compete_suite_data_v4.h \
@@ -6753,11 +6763,12 @@ cnet_7b_eval_build:
 		test "$${#frozen_paths[@]}" -eq 108; \
 		frozen_candidate_paths=(); \
 		for path in "$${frozen_paths[@]}"; do \
-			if test "$$path" != Makefile; then \
+			if test "$$path" != Makefile && \
+			   test "$$path" != tools/cnet_compete_snapshot_build.sh; then \
 				frozen_candidate_paths+=("$$path"); \
 			fi; \
 		done; \
-		test "$${#frozen_candidate_paths[@]}" -eq 107; \
+		test "$${#frozen_candidate_paths[@]}" -eq 106; \
 		/usr/bin/git diff --quiet --no-ext-diff "$$s4" "$$commit" -- \
 			"$${frozen_candidate_paths[@]}" \
 			benchmarks/cnet_asi5_v4/candidate_artifacts.sha256 \
@@ -6773,7 +6784,8 @@ cnet_7b_eval_build:
 			benchmarks/cnet_asi5_v4/heldout.tsv \
 			include/cnet_compete_suite_data_v4.h \
 			tools/cnet_compete_fixture_oracle_v4.c \
-			tools/cnet_compete_fixture_v4.c ); \
+			tools/cnet_compete_fixture_v4.c \
+			tools/cnet_compete_snapshot_build.sh ); \
 		test "$${#fixture_changes[@]}" -eq "$${#expected_changes[@]}"; \
 		for index in "$${!expected_changes[@]}"; do \
 			test "$${fixture_changes[$$index]}" = \

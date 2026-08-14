@@ -127,16 +127,21 @@ cd "$snapshot_root"
 
 "$make" CC="$cc" \
     PYTHON=/bin/false \
+    CNET_COMPETE_SUITE_DEFINE='-DCNET_COMPETE_SUITE_DATA_HEADER=\"cnet_compete_suite_data_v4.h\"' \
+    cnet_7b_v4_suite_define_smoke >&2
+
+"$make" CC="$cc" \
+    PYTHON=/bin/false \
     CNET_COMPETE_BUILD_COMMIT="$build_commit" \
     CNET_COMPETE_BUILD_TREE="$build_tree" \
-    CNET_COMPETE_SUITE_DEFINE='-DCNET_COMPETE_SUITE_DATA_HEADER="cnet_compete_suite_data_v4.h"' \
+    CNET_COMPETE_SUITE_DEFINE='-DCNET_COMPETE_SUITE_DATA_HEADER=\"cnet_compete_suite_data_v4.h\"' \
     cnet_7b_v4_fixture_audit >&2
 
 "$make" CC="$cc" \
     PYTHON=/bin/false \
     CNET_COMPETE_BUILD_COMMIT="$build_commit" \
     CNET_COMPETE_BUILD_TREE="$build_tree" \
-    CNET_COMPETE_SUITE_DEFINE='-DCNET_COMPETE_SUITE_DATA_HEADER="cnet_compete_suite_data_v4.h"' \
+    CNET_COMPETE_SUITE_DEFINE='-DCNET_COMPETE_SUITE_DATA_HEADER=\"cnet_compete_suite_data_v4.h\"' \
     cnet_7b_artifact_manifest >&2
 
 artifact_sha=$("$sha256sum" artifacts/cnet_asi5_v4/artifacts.sha256)
@@ -151,7 +156,7 @@ fi
     PYTHON=/bin/false \
     CNET_COMPETE_BUILD_COMMIT="$build_commit" \
     CNET_COMPETE_BUILD_TREE="$build_tree" \
-    CNET_COMPETE_SUITE_DEFINE='-DCNET_COMPETE_SUITE_DATA_HEADER="cnet_compete_suite_data_v4.h"' \
+    CNET_COMPETE_SUITE_DEFINE='-DCNET_COMPETE_SUITE_DATA_HEADER=\"cnet_compete_suite_data_v4.h\"' \
     cnet_7b_capsules_san >&2
 "$install" -m 0600 logs/cnet_7b_capsules_san.log \
     "$staging_root/evidence/cnet_7b_capsules_san.log"
@@ -159,13 +164,13 @@ fi
     PYTHON=/bin/false \
     CNET_COMPETE_BUILD_COMMIT="$build_commit" \
     CNET_COMPETE_BUILD_TREE="$build_tree" \
-    CNET_COMPETE_SUITE_DEFINE='-DCNET_COMPETE_SUITE_DATA_HEADER="cnet_compete_suite_data_v4.h"' \
+    CNET_COMPETE_SUITE_DEFINE='-DCNET_COMPETE_SUITE_DATA_HEADER=\"cnet_compete_suite_data_v4.h\"' \
     cnet_7b_runtime_san >&2
 "$make" CC="$cc" \
     PYTHON=/bin/false \
     CNET_COMPETE_BUILD_COMMIT="$build_commit" \
     CNET_COMPETE_BUILD_TREE="$build_tree" \
-    CNET_COMPETE_SUITE_DEFINE='-DCNET_COMPETE_SUITE_DATA_HEADER="cnet_compete_suite_data_v4.h"' \
+    CNET_COMPETE_SUITE_DEFINE='-DCNET_COMPETE_SUITE_DATA_HEADER=\"cnet_compete_suite_data_v4.h\"' \
     cnet_7b_eval_san >&2
 
 "$install" -m 0600 logs/cnet_7b_runtime_san.log \
