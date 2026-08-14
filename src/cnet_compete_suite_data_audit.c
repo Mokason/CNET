@@ -153,3 +153,20 @@ done:
     if (close(descriptor) != 0) rc = -1;
     return rc;
 }
+
+int cnet_compete_suite_data_v5_validate_buffer(
+    const char *data, size_t length,
+    char freeze_commit[CNET_COMPETE_FREEZE_COMMIT_HEX + 1u]) {
+    (void)data;
+    (void)length;
+    if (freeze_commit != NULL) freeze_commit[0] = '\0';
+    return -1;
+}
+
+int cnet_compete_suite_data_v5_validate_file(
+    const char *path,
+    char freeze_commit[CNET_COMPETE_FREEZE_COMMIT_HEX + 1u]) {
+    (void)path;
+    if (freeze_commit != NULL) freeze_commit[0] = '\0';
+    return -1;
+}

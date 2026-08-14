@@ -6133,6 +6133,24 @@ CNET_COMPETE_V4_SUITE_DEFINE := \
 	-DCNET_COMPETE_SUITE_DATA_HEADER=\"cnet_compete_suite_data_v4.h\"
 CNET_COMPETE_SUITE_DEFINE ?=
 
+.PHONY: cnet_7b_v5_suite_data_contract_red
+cnet_7b_v5_suite_data_contract_red: \
+		include/cnet_compete_suite_data_audit.h \
+		src/cnet_compete_suite_data_audit.c \
+		tests/test_cnet_compete_suite_data_v5_audit.c
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -Werror -Iinclude \
+		-o $(BIN_DIR)/test_cnet_compete_suite_data_v5_audit \
+		src/cnet_compete_suite_data_audit.c \
+		tests/test_cnet_compete_suite_data_v5_audit.c $(LDFLAGS)
+	@set +e; \
+		./$(BIN_DIR)/test_cnet_compete_suite_data_v5_audit | \
+			tee logs/cnet_7b_v5_suite_data_contract_red.log; \
+		status=$${PIPESTATUS[0]}; \
+		test $$status -ne 0; \
+		grep -qx 'CNET_7B_V5_SUITE_DATA_AUDIT_RED reason=valid_header_refused' \
+			logs/cnet_7b_v5_suite_data_contract_red.log
+
 .PHONY: cnet_7b_v4_suite_data_contract cnet_7b_v4_suite_data_audit \
 	cnet_7b_v4_suite_define_smoke cnet_7b_v4_fixture_audit
 cnet_7b_v4_suite_data_contract: include/cnet_compete_suite_data_audit.h \
