@@ -709,12 +709,13 @@ static int contract_vocabulary_supported(const Lexeme *tokens, size_t count,
         "width", "with", "x", "xor", "xorout", "zero"
     };
     static const char *const policy[] = {
-        "access", "admin", "allow", "apply", "authorization", "decide",
-        "decision", "deny", "determine", "entry", "evaluate", "false",
-        "flags", "for", "four", "from", "given", "its", "mfa", "one",
-        "or", "outcome", "owner", "permission", "policy", "receives",
-        "resolve", "return", "rule", "security", "state", "suspended",
-        "switches", "the", "to", "true", "tuple", "under", "uses", "v"
+        "access", "admin", "adjudicate", "allow", "apply",
+        "authorization", "decide", "decision", "deny", "determine",
+        "entry", "evaluate", "false", "flags", "for", "four", "from",
+        "given", "is", "its", "mfa", "one", "or", "outcome", "owner",
+        "permission", "policy", "receives", "resolve", "return", "rule",
+        "security", "state", "suspended", "switches", "the", "to",
+        "true", "tuple", "under", "uses", "v", "where"
     };
     static const char *const compose[] = {
         "a", "add", "and", "apply", "as", "at", "begins", "by", "byte",
@@ -1736,8 +1737,9 @@ static int has_byte_identity(const char *prompt, const Lexeme *tokens,
 static int has_policy_action(const char *prompt, const Lexeme *tokens,
                              size_t count) {
     static const char *const actions[] = {
-        "access", "policy", "permission", "authorize", "authorization",
-        "security", "entry", "decision", "allowed", "allow", "deny"
+        "access", "adjudicate", "policy", "permission", "authorize",
+        "authorization", "security", "entry", "decision", "allowed",
+        "allow", "deny"
     };
     return contains_ascii_casefold(prompt, "access_policy_v1") ||
            has_any_word(tokens, count, actions,
@@ -1789,7 +1791,8 @@ static int policy_data_words_supported(const Lexeme *tokens, size_t count) {
         "and", "or", "is", "are", "return", "decide", "determine",
         "evaluate", "evaluation", "resolve", "apply", "under", "outcome",
         "decision", "permission", "access", "entry", "allow", "allowed",
-        "deny", "authorization", "security", "its", "result"
+        "deny", "authorization", "security", "its", "result", "policy",
+        "rule", "version", "revision", "v"
     };
     size_t first_flag = count, zone_start = count, index;
     for (index = 0; index < count; ++index)
@@ -1822,6 +1825,12 @@ static int policy_data_words_supported(const Lexeme *tokens, size_t count) {
             (tokens[index].kind == LEXEME_WORD &&
              word_in_list(tokens, count, index, scaffolding,
                           sizeof scaffolding / sizeof scaffolding[0])))
+            continue;
+        if (word_is(tokens, count, index, "one") &&
+            (number_adjacent_word(tokens, count, index, "policy") ||
+             number_adjacent_word(tokens, count, index, "rule") ||
+             number_adjacent_word(tokens, count, index, "version") ||
+             number_adjacent_word(tokens, count, index, "revision")))
             continue;
         return 0;
     }

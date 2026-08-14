@@ -69,6 +69,7 @@ static const char *const ood[] = {
     "Return the ATM check code for byte 12 and save it to a file.",
     "Adjudicate access with guest true, admin false, owner true, mfa true, suspended false.",
     "Given owner=true, suspended=false, admin=false, determine permission.",
+    "Given owner=true suspended=false admin=false mfa=true, determine permission one.",
     "Resolve policy version two for admin false owner true mfa true suspended false.",
     "Apply policy one and increment byte 12 in the same response.",
     "Pass byte 12 through add one, multiply by two, then add four.",
