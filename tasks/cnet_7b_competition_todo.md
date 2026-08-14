@@ -4,7 +4,7 @@
 
 - [x] Preserve and authenticate the complete v4 terminal FAIL evidence.
 - [x] Identify semantic admission as the smallest aggregate-supported failure boundary.
-- [ ] Add refusal-stage diagnostics with a focused RED marker first.
+- [x] Add refusal-stage diagnostics with a focused RED marker first.
 - [ ] Generate an independent answer-free semantic stress corpus and paired OOD counterfactuals.
 - [ ] Improve only measured learned-intent refusal paths and keep both 1% ceilings.
 - [ ] Generalize five typed frames incrementally while retaining zero unsafe answers.

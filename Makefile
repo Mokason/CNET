@@ -6568,7 +6568,7 @@ cnet_7b_intent_san: cnet_7b_intent
 	@grep -q CNET_7B_INTENT_PASS logs/cnet_7b_intent_san.log
 
 .PHONY: cnet_7b_capsule_artifacts cnet_7b_runtime cnet_7b_runtime_san
-.PHONY: cnet_7b_v5_diagnostic_red
+.PHONY: cnet_7b_v5_diagnostic cnet_7b_v5_diagnostic_san
 cnet_7b_capsule_artifacts: include/cnet_compete_capsules.h \
 		src/cnet_compete_capsules.c tools/cnet_compete_build_capsules.c \
 		$(CNET_COMPETE_CAPSULE_CORE)
@@ -6631,7 +6631,7 @@ cnet_7b_runtime_san: cnet_7b_runtime
 		tee logs/cnet_7b_runtime_san.log
 	@grep -q CNET_7B_RUNTIME_PASS logs/cnet_7b_runtime_san.log
 
-cnet_7b_v5_diagnostic_red: cnet_7b_runtime
+cnet_7b_v5_diagnostic: cnet_7b_runtime
 	$(CC) $(CFLAGS) -Werror -ffunction-sections -fdata-sections -Iinclude \
 		-o $(BIN_DIR)/test_cnet_compete_diagnostic \
 		src/cnet_compete_runtime.c src/cnet_compete_intent.c \
@@ -6639,16 +6639,34 @@ cnet_7b_v5_diagnostic_red: cnet_7b_runtime
 		$(CNET_COMPETE_CAPSULE_CORE) $(ROUTER) $(SPECIALIST_SRC) \
 		tests/test_cnet_compete_diagnostic.c \
 		-Wl,--gc-sections $(LDFLAGS) $(MCP_LDFLAGS) -pthread
-	@set +e; \
-		./$(BIN_DIR)/test_cnet_compete_diagnostic \
+	@./$(BIN_DIR)/test_cnet_compete_diagnostic \
 			artifacts/cnet_asi5_v4/intent.wlm \
 			artifacts/cnet_asi5_v4/intent.meta \
 			artifacts/cnet_asi5_v4/capsules | \
-			tee logs/cnet_7b_v5_diagnostic_red.log; \
-		status=$${PIPESTATUS[0]}; \
-		test $$status -ne 0; \
-		grep -qx 'CNET_7B_V5_DIAGNOSTIC_RED reason=api_unimplemented' \
-			logs/cnet_7b_v5_diagnostic_red.log
+			tee logs/cnet_7b_v5_diagnostic.log
+	@grep -qx 'CNET_7B_V5_DIAGNOSTIC_PASS stages=4 serving_path_identity=1 answer_values_exposed=0' \
+		logs/cnet_7b_v5_diagnostic.log
+
+cnet_7b_v5_diagnostic_san: cnet_7b_v5_diagnostic
+	$(CC) -std=c11 -Wall -Wextra -pedantic -Werror -O1 -g \
+		-D_DEFAULT_SOURCE -DCNET_HAVE_CURL=0 \
+		-fsanitize=address,undefined -fno-omit-frame-pointer \
+		-ffunction-sections -fdata-sections -Iinclude \
+		-o $(BIN_DIR)/test_cnet_compete_diagnostic_san \
+		src/cnet_compete_runtime.c src/cnet_compete_intent.c \
+		src/cnet_compete_capsules.c src/cce/cce_wordlm.c \
+		$(CNET_COMPETE_CAPSULE_CORE) $(ROUTER) $(SPECIALIST_SRC) \
+		tests/test_cnet_compete_diagnostic.c \
+		-Wl,--gc-sections -fsanitize=address,undefined -lm -lpthread
+	@ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 \
+		UBSAN_OPTIONS=halt_on_error=1 \
+		./$(BIN_DIR)/test_cnet_compete_diagnostic_san \
+			artifacts/cnet_asi5_v4/intent.wlm \
+			artifacts/cnet_asi5_v4/intent.meta \
+			artifacts/cnet_asi5_v4/capsules | \
+			tee logs/cnet_7b_v5_diagnostic_san.log
+	@grep -qx 'CNET_7B_V5_DIAGNOSTIC_PASS stages=4 serving_path_identity=1 answer_values_exposed=0' \
+		logs/cnet_7b_v5_diagnostic_san.log
 
 .PHONY: cnet_7b_eval_contract
 cnet_7b_eval_contract: cnet_7b_artifact_manifest include/cnet_compete_eval.h \

@@ -30,6 +30,7 @@ typedef struct {
 typedef struct {
     const HybridAi *coverage;
     size_t checks;
+    CnetCompeteRefusal refusal;
 } CompositionGuard;
 
 struct CnetCompeteRuntime {
@@ -112,17 +113,22 @@ static int composition_guard(const char *unit,
         "increment_mod256", "double_mod256", "add3_mod256"
     };
     CompositionGuard *guard = (CompositionGuard *)context;
-    if (guard == NULL || guard->coverage == NULL || unit == NULL ||
-        network == NULL || input == NULL ||
-        network->input_port_count != 1 || network->output_port_count != 1 ||
+    if (guard == NULL) return -1;
+    if (guard->coverage == NULL || unit == NULL || network == NULL ||
+        input == NULL || network->input_port_count != 1 ||
+        network->output_port_count != 1 ||
         guard->checks >= sizeof expected / sizeof expected[0] ||
-        strcmp(unit, expected[guard->checks]) != 0)
+        strcmp(unit, expected[guard->checks]) != 0) {
+        guard->refusal = CNET_COMPETE_REFUSAL_EXECUTION;
         return -1;
+    }
     if (!hybrid_coverage_admits_exact(guard->coverage, unit,
                                       network->input_ports[0],
                                       network->output_ports[0], input,
-                                      input_length))
+                                      input_length)) {
+        guard->refusal = CNET_COMPETE_REFUSAL_COVERAGE;
         return -1;
+    }
     ++guard->checks;
     return 0;
 }
@@ -2124,9 +2130,17 @@ void cnet_compete_runtime_free(CnetCompeteRuntime *runtime) {
     free(runtime);
 }
 
-int cnet_compete_runtime_execute(CnetCompeteRuntime *runtime,
-                                 const char *prompt,
-                                 CnetCompeteResult *result) {
+static void diagnostic_reset(CnetCompeteDiagnostic *diagnostic) {
+    if (diagnostic == NULL) return;
+    memset(diagnostic, 0, sizeof *diagnostic);
+    diagnostic->proposed_intent = CNET_INTENT_ABSTAIN;
+    diagnostic->semantic_intent = CNET_INTENT_ABSTAIN;
+}
+
+static int runtime_execute_internal(CnetCompeteRuntime *runtime,
+                                    const char *prompt,
+                                    CnetCompeteResult *result,
+                                    CnetCompeteDiagnostic *diagnostic) {
     CnetCompeteIntent intent = CNET_INTENT_ABSTAIN;
     CnetCompeteIntent semantic_intent = CNET_INTENT_ABSTAIN;
     double confidence = 0.0;
@@ -2135,15 +2149,49 @@ int cnet_compete_runtime_execute(CnetCompeteRuntime *runtime,
     if (runtime == NULL || prompt == NULL || result == NULL) return -1;
     memset(result, 0, sizeof *result);
     result->intent = CNET_INTENT_ABSTAIN;
+    diagnostic_reset(diagnostic);
     classified = cnet_compete_intent_classify(runtime->intent, prompt, &intent,
                                                &confidence);
-    if (classified < 0 || !isfinite(confidence))
+    if (diagnostic != NULL) {
+        diagnostic->proposed_intent = intent;
+        diagnostic->confidence = confidence;
+    }
+    if (classified < 0 || !isfinite(confidence)) {
+        if (diagnostic != NULL)
+            diagnostic->refusal = CNET_COMPETE_REFUSAL_EXECUTION;
         return -1;
-    if (resolve_contract_semantics(prompt, &semantic_intent) != 0) return 0;
-    if (classified != 0 || intent != semantic_intent) return 0;
+    }
+    if (classified != 0) {
+        if (diagnostic != NULL)
+            diagnostic->refusal = CNET_COMPETE_REFUSAL_INTENT_PROPOSAL;
+        return 0;
+    }
+    classified = resolve_contract_semantics(prompt, &semantic_intent);
+    if (diagnostic != NULL) diagnostic->semantic_intent = semantic_intent;
+    if (classified < 0) {
+        if (diagnostic != NULL)
+            diagnostic->refusal = CNET_COMPETE_REFUSAL_EXECUTION;
+        return -1;
+    }
+    if (classified != 0) {
+        if (diagnostic != NULL)
+            diagnostic->refusal = CNET_COMPETE_REFUSAL_SEMANTIC_FRAME;
+        return 0;
+    }
+    if (intent != semantic_intent) {
+        if (diagnostic != NULL)
+            diagnostic->refusal = CNET_COMPETE_REFUSAL_INTENT_DISAGREEMENT;
+        return 0;
+    }
     if (intent == CNET_INTENT_POLICY) {
-        if (parse_policy_argument(prompt, &input) != 0) return 0;
+        if (parse_policy_argument(prompt, &input) != 0) {
+            if (diagnostic != NULL)
+                diagnostic->refusal = CNET_COMPETE_REFUSAL_ARGUMENT;
+            return 0;
+        }
     } else if (parse_numeric_argument(prompt, intent, &input) != 0) {
+        if (diagnostic != NULL)
+            diagnostic->refusal = CNET_COMPETE_REFUSAL_ARGUMENT;
         return 0;
     }
     if (intent == CNET_INTENT_COMPOSE3) {
@@ -2160,7 +2208,18 @@ int cnet_compete_runtime_execute(CnetCompeteRuntime *runtime,
                                 result_bits, sizeof result_bits /
                                              sizeof result_bits[0]);
         runtime->composition.guard.ctx = NULL;
-        if (execution != 0 || guard.checks != 3) return -1;
+        if (execution != 0) {
+            if (diagnostic != NULL)
+                diagnostic->refusal = guard.refusal != CNET_COMPETE_REFUSAL_NONE
+                                          ? guard.refusal
+                                          : CNET_COMPETE_REFUSAL_EXECUTION;
+            return -1;
+        }
+        if (guard.checks != 3) {
+            if (diagnostic != NULL)
+                diagnostic->refusal = CNET_COMPETE_REFUSAL_COVERAGE;
+            return -1;
+        }
         output = decode_msb(result_bits);
         result->composition_guard_checks = guard.checks;
     } else {
@@ -2181,9 +2240,16 @@ int cnet_compete_runtime_execute(CnetCompeteRuntime *runtime,
             default:
                 return -1;
         }
-        if (cnet_compete_capsule_eval(&runtime->base, &runtime->coverage,
-                                      unit, input, &output) != 0)
+        classified = cnet_compete_capsule_eval(&runtime->base,
+                                               &runtime->coverage, unit,
+                                               input, &output);
+        if (classified != 0) {
+            if (diagnostic != NULL)
+                diagnostic->refusal = classified > 0
+                                          ? CNET_COMPETE_REFUSAL_COVERAGE
+                                          : CNET_COMPETE_REFUSAL_EXECUTION;
             return -1;
+        }
     }
     result->answered = 1;
     result->intent = intent;
@@ -2192,18 +2258,17 @@ int cnet_compete_runtime_execute(CnetCompeteRuntime *runtime,
     return 0;
 }
 
+int cnet_compete_runtime_execute(CnetCompeteRuntime *runtime,
+                                 const char *prompt,
+                                 CnetCompeteResult *result) {
+    return runtime_execute_internal(runtime, prompt, result, NULL);
+}
+
 int cnet_compete_runtime_execute_diagnostic(
     CnetCompeteRuntime *runtime, const char *prompt,
     CnetCompeteResult *result, CnetCompeteDiagnostic *diagnostic) {
-    (void)runtime;
-    (void)prompt;
-    (void)result;
-    if (diagnostic != NULL) {
-        memset(diagnostic, 0, sizeof *diagnostic);
-        diagnostic->proposed_intent = CNET_INTENT_ABSTAIN;
-        diagnostic->semantic_intent = CNET_INTENT_ABSTAIN;
-    }
-    return -1;
+    if (diagnostic == NULL) return -1;
+    return runtime_execute_internal(runtime, prompt, result, diagnostic);
 }
 
 int cnet_compete_result_json(const CnetCompeteResult *result,
