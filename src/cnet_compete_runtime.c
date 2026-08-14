@@ -337,7 +337,8 @@ static int number_word_context_supported(const Lexeme *tokens, size_t count,
                                          size_t index,
                                          CnetCompeteIntent intent);
 
-static int numeric_assertion_supported(const Lexeme *tokens, size_t count) {
+static int numeric_assertion_supported(const Lexeme *tokens, size_t count,
+                                       CnetCompeteIntent intent) {
     static const char *const response_words[] = {
         "return", "give", "report", "state", "provide", "output",
         "produce", "answer", "tell"
@@ -370,8 +371,21 @@ static int numeric_assertion_supported(const Lexeme *tokens, size_t count) {
             ++value;
         if (value < count &&
             (tokens[value].kind == LEXEME_NUMBER ||
-             number_word(tokens, count, value)))
+             number_word(tokens, count, value))) {
+            size_t object, limit = value + 6u < count ? value + 6u : count;
+            int typed_crc_output = intent == CNET_INTENT_CRC8 &&
+                word_is(tokens, count, value, "one") &&
+                byte_noun(tokens, count, value + 1u);
+            for (object = value + 2u; typed_crc_output && object < limit;
+                 ++object)
+                if (word_is(tokens, count, object, "atm") ||
+                    word_is(tokens, count, object, "check") ||
+                    word_is(tokens, count, object, "checksum") ||
+                    word_is(tokens, count, object, "code"))
+                    break;
+            if (typed_crc_output && object < limit) continue;
             return 0;
+        }
     }
     for (index = 0; index < count; ++index) {
         size_t asserted;
@@ -481,7 +495,7 @@ static int parse_numeric_argument(const char *prompt,
             number_word(tokens, count, index) &&
             !number_word_context_supported(tokens, count, index, intent))
             return -1;
-    if (!numeric_assertion_supported(tokens, count))
+    if (!numeric_assertion_supported(tokens, count, intent))
         return -1;
     *value_out = (unsigned)tokens[selected].number;
     return 0;
@@ -685,12 +699,13 @@ static int contract_vocabulary_supported(const Lexeme *tokens, size_t count,
     };
     static const char *const crc[] = {
         "and", "apply", "as", "at", "atm", "bit", "both", "byte",
-        "calculate", "check", "checksum", "compute", "crc", "cyclic",
+        "calculate", "check", "checksum", "code", "compute", "crc",
+        "cyclic",
         "datum", "derive", "eight", "ends", "false", "final", "for",
-        "initial", "initialized", "input", "its", "non", "octet", "of",
+        "init", "initial", "initialized", "input", "its", "non", "octet", "of",
         "on", "one", "polynomial", "process", "produce", "redundancy",
         "refin", "reflected", "refout", "register", "return", "rule",
-        "seven", "single", "the", "to", "under", "use", "using", "v",
+        "seven", "single", "the", "to", "under", "unsigned", "use", "using", "v",
         "width", "with", "x", "xor", "xorout", "zero"
     };
     static const char *const policy[] = {
