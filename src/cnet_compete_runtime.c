@@ -907,6 +907,13 @@ static int response_objects_supported(const Lexeme *tokens, size_t count) {
         if (!word_in_list(tokens, count, index, output_objects,
                           sizeof output_objects / sizeof output_objects[0]))
             continue;
+        if (word_is(tokens, count, index, "value") && index > 0u &&
+            (word_is(tokens, count, index - 1u, "input") ||
+             word_is(tokens, count, index - 1u, "byte") ||
+             word_is(tokens, count, index - 1u, "octet") ||
+             word_is(tokens, count, index - 1u, "operand") ||
+             word_is(tokens, count, index - 1u, "source")))
+            continue;
         active = word_in_list(tokens, count, index, strong_output_objects,
                               sizeof strong_output_objects /
                                   sizeof strong_output_objects[0]);
@@ -1361,7 +1368,7 @@ static int crc_with_clauses_supported(const Lexeme *tokens, size_t count) {
         "width", "poly", "polynomial", "init", "initial", "register",
         "xor", "xorout", "final", "zero", "no", "non", "the", "atm",
         "crc", "refin", "refout", "reflected", "input", "byte", "octet",
-        "single", "one"
+        "single", "one", "source"
     };
     size_t index;
     for (index = 0; index < count; ++index) {
