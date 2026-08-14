@@ -142,9 +142,11 @@ Do not write a fixture until the candidate is frozen.
    paraphrases=12 thread=4`). Identity, status, miss, and refuse stay
    coherent across one thread. Residual/teacher still unvoiceable. No
    held-out.
-3. **CHAT-1.2** — chat wrappers around the five public ASI-5 contracts.
-   Reuse capsules. Two-gate must still unique-match. Side-effect wraps
-   abstain.
+3. **CHAT-1.2** — done: independently authored chat wrappers around
+   the five public contracts (`make cnet_chat1_certified` →
+   `CNET_CHAT1_CERTIFIED_PASS covered=8 ood=5`). Two-gate still
+   unique-matches. Email / signed / CRC-16 / override wraps abstain.
+   ASI-5 held-out aggregates unchanged (304 covered, OOD 0).
 4. **CHAT-1.3** — grow `cnet_utterance` from external spec or user
    correction only. Land the frozen C fluency rubric. Report CNET vs
    8B; do not require fluency-beat yet.

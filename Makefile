@@ -3777,6 +3777,24 @@ cnet_chat1_coherence: include/cnet_query_alias.h src/cnet_query_alias.c \
 	@./$(BIN_DIR)/test_cnet_chat1_coherence | tee logs/cnet_chat1_coherence.log
 	@grep -q '^CNET_CHAT1_COHERENCE_PASS ' logs/cnet_chat1_coherence.log
 
+.PHONY: cnet_chat1_certified
+cnet_chat1_certified: include/cnet_compete_runtime.h src/cnet_compete_runtime.c \
+		tests/test_cnet_chat1_certified.c $(ROUTER) $(SPECIALIST_SRC)
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -Werror -ffunction-sections -fdata-sections -Iinclude \
+		-o $(BIN_DIR)/test_cnet_chat1_certified \
+		src/cnet_compete_runtime.c src/cnet_compete_intent.c \
+		src/cnet_compete_capsules.c src/cce/cce_wordlm.c \
+		$(CNET_COMPETE_CAPSULE_CORE) $(ROUTER) $(SPECIALIST_SRC) \
+		tests/test_cnet_chat1_certified.c \
+		-Wl,--gc-sections $(LDFLAGS) $(MCP_LDFLAGS) -pthread
+	@./$(BIN_DIR)/test_cnet_chat1_certified \
+		artifacts/cnet_asi5_v5/intent.wlm \
+		artifacts/cnet_asi5_v5/intent.meta \
+		artifacts/cnet_asi5_v5/capsules | \
+		tee logs/cnet_chat1_certified.log
+	@grep -q '^CNET_CHAT1_CERTIFIED_PASS ' logs/cnet_chat1_certified.log
+
 .PHONY: cnetd-run
 cnetd-run: cnetd query_dialog
 	@pkill -x cnetd 2>/dev/null || true

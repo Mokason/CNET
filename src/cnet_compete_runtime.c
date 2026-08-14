@@ -700,7 +700,9 @@ static int contract_scaffolding_word(const Lexeme *tokens, size_t count,
         "show", "simply", "single", "source", "state", "stored", "suppose",
         "target", "tell", "that", "the", "this", "through", "to", "total",
         "under", "using", "value", "want", "what", "when", "whether",
-        "whole", "with", "would"
+        "whole", "with", "would", "hey", "hello", "hi", "thanks", "thank",
+        "me", "we", "while", "chatting", "conversation", "help", "out",
+        "quick", "question", "also", "now", "you", "your", "here"
     };
     return word_in_list(tokens, count, index, words,
                         sizeof words / sizeof words[0]);
@@ -822,14 +824,16 @@ static int continuation_clauses_supported(const Lexeme *tokens, size_t count,
     };
     static const char *const response_words[] = {
         "return", "give", "report", "state", "provide", "output",
-        "produce", "answer", "tell", "what"
+        "produce", "answer", "tell", "what", "evaluate", "compute",
+        "derive"
     };
     static const char *const increment_words[] = {
         "wrap", "wrapping", "wraparound"
     };
     static const char *const crc_words[] = {
         "final", "xor", "xorout", "initial", "init", "polynomial",
-        "poly", "width", "non", "no", "reflected", "refin", "refout"
+        "poly", "width", "non", "no", "reflected", "refin", "refout",
+        "atm", "checksum", "crc", "check", "code"
     };
     static const char *const policy_words[] = {
         "admin", "owner", "mfa", "suspended", "allow", "deny",
@@ -845,7 +849,13 @@ static int continuation_clauses_supported(const Lexeme *tokens, size_t count,
         while (next < count &&
                (word_is(tokens, count, next, "the") ||
                 word_is(tokens, count, next, "its") ||
-                word_is(tokens, count, next, "that")))
+                word_is(tokens, count, next, "that") ||
+                word_is(tokens, count, next, "now") ||
+                word_is(tokens, count, next, "please") ||
+                word_is(tokens, count, next, "can") ||
+                word_is(tokens, count, next, "you") ||
+                word_is(tokens, count, next, "just") ||
+                word_is(tokens, count, next, "also")))
             ++next;
         if (next >= count || tokens[next].kind != LEXEME_WORD) return 0;
         if (word_in_list(tokens, count, next, response_words,
