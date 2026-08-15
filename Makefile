@@ -7098,33 +7098,28 @@ cnet_7b_v5_capsule_artifacts: include/cnet_compete_capsules.h \
 # global. v5 is that suite, and cnet_7b_v5_runtime is the pinned gate. Reviving
 # a v4 runtime gate means making the base constants per-suite first.
 #
-# The build below survives the retirement because it is not a gate. It was kept
-# for cnet_7b_v4_candidate_integrity, which has since been retired too, so it
-# now has no in-Makefile consumer and is here as the only builder of two
-# developer binaries: cnet_compete_run, and test_cnet_compete_runtime, whose
-# --export-development mode regenerates a semantic development corpus. That mode
-# returns from main before any artifact is loaded, so it never reaches the
-# base_report assertion that killed the v4 runtime gate.
-.PHONY: cnet_7b_runtime_tools
-cnet_7b_runtime_tools: include/cnet_compete_runtime.h \
-		src/cnet_compete_runtime.c \
-		tests/test_cnet_compete_runtime.c tools/cnet_compete_run.c \
-		$(ROUTER) $(SPECIALIST_SRC)
-	@mkdir -p $(BIN_DIR) logs
-	$(CC) $(CFLAGS) -Werror -ffunction-sections -fdata-sections -Iinclude \
-		-o $(BIN_DIR)/test_cnet_compete_runtime \
-		src/cnet_compete_runtime.c src/cnet_compete_intent.c \
-		src/cnet_compete_capsules.c src/cce/cce_wordlm.c \
-		$(CNET_COMPETE_CAPSULE_CORE) $(ROUTER) $(SPECIALIST_SRC) \
-		tests/test_cnet_compete_runtime.c \
-		-Wl,--gc-sections $(LDFLAGS) $(MCP_LDFLAGS) -pthread
-	$(CC) $(CFLAGS) -Werror -ffunction-sections -fdata-sections -Iinclude \
-		-o $(BIN_DIR)/cnet_compete_run \
-		src/cnet_compete_runtime.c src/cnet_compete_intent.c \
-		src/cnet_compete_capsules.c src/cce/cce_wordlm.c \
-		$(CNET_COMPETE_CAPSULE_CORE) $(ROUTER) $(SPECIALIST_SRC) \
-		tools/cnet_compete_run.c \
-		-Wl,--gc-sections $(LDFLAGS) $(MCP_LDFLAGS) -pthread
+# cnet_7b_runtime_tools, which built bin/test_cnet_compete_runtime and
+# bin/cnet_compete_run out of the same sources, is retired as well. It was kept
+# only for cnet_7b_v4_candidate_integrity and outlived it by one commit.
+#
+# Their sources stay put and must not be deleted: tests/test_cnet_compete_runtime.c
+# and tools/cnet_compete_run.c are both entries in the frozen v4 and v5
+# candidate_behavior manifests and in the behavior path closure. The test source
+# is still compiled by cnet_7b_v5_runtime below. Only tools/cnet_compete_run.c
+# now has no target that builds it.
+#
+# To rebuild either binary ad hoc, compile it the way cnet_7b_v5_runtime does,
+# swapping in the wanted entry point:
+#
+#   $(CC) $(CFLAGS) -Iinclude -o bin/cnet_compete_run \
+#       src/cnet_compete_runtime.c src/cnet_compete_intent.c \
+#       src/cnet_compete_capsules.c src/cce/cce_wordlm.c \
+#       $(CNET_COMPETE_CAPSULE_CORE) $(ROUTER) $(SPECIALIST_SRC) \
+#       tools/cnet_compete_run.c $(LDFLAGS) $(MCP_LDFLAGS) -pthread
+#
+# test_cnet_compete_runtime --export-development regenerates a semantic
+# development corpus; that mode returns from main before loading any artifact,
+# so it never reaches the base_report assertion that killed the v4 runtime gate.
 
 # The v5 suite is frozen, so the whole PASS line is pinned with grep -qx and
 # not just base_params. refused, semantic_adversarial and typed_regressions are
