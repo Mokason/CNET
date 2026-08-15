@@ -303,7 +303,7 @@ static int prerq_guard(void *clientp, char *conn_primary_ip, char *conn_local_ip
     (void)conn_primary_port;
     (void)conn_local_port;
     if (conn_primary_ip == NULL || conn_primary_ip[0] == '\0')
-        return CURL_PREREQFUNC_OK;
+        return CURL_PREREQFUNC_ABORT;
     if (!cnet_lookup_host_allowed(conn_primary_ip)) {
         if (xfer != NULL) xfer->blocked_ip = 1;
         return CURL_PREREQFUNC_ABORT;
@@ -337,7 +337,16 @@ static size_t on_header(char *buf, size_t size, size_t nitems, void *userdata) {
     memcpy(loc, p, i);
     loc[i] = '\0';
     if (loc[0] == '\0') return n;
-    /* Relative Location stays on the already-checked host. */
+    /* Protocol-relative Location: //host/... is absolute. True relative stays. */
+    if (loc[0] == '/' && loc[1] == '/') {
+        char absu[520];
+        snprintf(absu, sizeof absu, "https:%s", loc);
+        if (!cnet_lookup_url_allowed(absu, 0)) {
+            xfer->blocked_redirect = 1;
+            return 0;
+        }
+        return n;
+    }
     if (strstr(loc, "://") == NULL) return n;
     if (!cnet_lookup_url_allowed(loc, 0)) {
         xfer->blocked_redirect = 1;
