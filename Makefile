@@ -6739,7 +6739,7 @@ cnet_7b_candidate_freeze: cnet_7b_independence_contract \
 		logs/cnet_7b_candidate_freeze.log
 
 .PHONY: cnet_7b_v4_candidate_integrity cnet_7b_v4_candidate_freeze
-cnet_7b_v4_candidate_integrity: cnet_7b_runtime_san cnet_7b_capsules_san \
+cnet_7b_v4_candidate_integrity: cnet_7b_runtime_tools cnet_7b_capsules_san \
 		cnet_7b_independence_contract cnet_7b_v4_suite_data_contract \
 		benchmarks/cnet_asi5_v4/FREEZE_PROTOCOL.md \
 		benchmarks/cnet_asi5_v4/candidate_artifacts.sha256 \
@@ -7111,7 +7111,7 @@ cnet_7b_intent_san: cnet_7b_intent
 		tee logs/cnet_7b_intent_san.log
 	@grep -q CNET_7B_INTENT_PASS logs/cnet_7b_intent_san.log
 
-.PHONY: cnet_7b_capsule_artifacts cnet_7b_runtime cnet_7b_runtime_san
+.PHONY: cnet_7b_capsule_artifacts
 .PHONY: cnet_7b_v5_capsule_artifacts cnet_7b_v5_runtime
 .PHONY: cnet_7b_v5_runtime_san
 .PHONY: cnet_7b_v5_diagnostic cnet_7b_v5_diagnostic_san
@@ -7150,10 +7150,31 @@ cnet_7b_v5_capsule_artifacts: include/cnet_compete_capsules.h \
 	@grep -qx 'CNET_7B_CAPSULE_ARTIFACTS_PASS units=6 certified_rows=1296 payload_bytes=192352' \
 		logs/cnet_7b_v5_capsule_artifacts.log
 
-cnet_7b_runtime: cnet_7b_intent cnet_7b_capsule_artifacts \
-		include/cnet_compete_runtime.h src/cnet_compete_runtime.c \
+# RETIRED: cnet_7b_runtime and cnet_7b_runtime_san, which ran
+# tests/test_cnet_compete_runtime.c against the v4 artifacts.
+#
+# That test asserts report.base_parameters == CNET_COMPETE_BASE_PARAMETERS, but
+# those constants are global in include/cnet_compete_artifacts.h and are rebased
+# onto the newest suite at every freeze (91581 v3 -> 272605 v4 -> 321757 v5 in
+# 0abf82b). The v4 artifacts carry 272605/267318, so from 0abf82b onward the v4
+# gate could only report CNET_7B_RUNTIME_RED reason=base_report. It stayed red
+# and unnoticed because the assertion was a bare substring grep for a marker
+# that simply stopped being printed.
+#
+# Only the newest suite's runtime gate can pass while those constants are
+# global. v5 is that suite, and cnet_7b_v5_runtime is the pinned gate. Reviving
+# a v4 runtime gate means making the base constants per-suite first.
+#
+# The build below survives the retirement because it is not a gate: it produces
+# the binaries other recipes still call. cnet_7b_v4_candidate_integrity runs
+# test_cnet_compete_runtime --export-development, which returns from main before
+# any artifact is loaded and so never reaches the base_report assertion.
+.PHONY: cnet_7b_runtime_tools
+cnet_7b_runtime_tools: include/cnet_compete_runtime.h \
+		src/cnet_compete_runtime.c \
 		tests/test_cnet_compete_runtime.c tools/cnet_compete_run.c \
 		$(ROUTER) $(SPECIALIST_SRC)
+	@mkdir -p $(BIN_DIR) logs
 	$(CC) $(CFLAGS) -Werror -ffunction-sections -fdata-sections -Iinclude \
 		-o $(BIN_DIR)/test_cnet_compete_runtime \
 		src/cnet_compete_runtime.c src/cnet_compete_intent.c \
@@ -7161,12 +7182,6 @@ cnet_7b_runtime: cnet_7b_intent cnet_7b_capsule_artifacts \
 		$(CNET_COMPETE_CAPSULE_CORE) $(ROUTER) $(SPECIALIST_SRC) \
 		tests/test_cnet_compete_runtime.c \
 		-Wl,--gc-sections $(LDFLAGS) $(MCP_LDFLAGS) -pthread
-	@./$(BIN_DIR)/test_cnet_compete_runtime \
-		artifacts/cnet_asi5_v4/intent.wlm \
-		artifacts/cnet_asi5_v4/intent.meta \
-		artifacts/cnet_asi5_v4/capsules | \
-		tee logs/cnet_7b_runtime.log
-	@grep -q CNET_7B_RUNTIME_PASS logs/cnet_7b_runtime.log
 	$(CC) $(CFLAGS) -Werror -ffunction-sections -fdata-sections -Iinclude \
 		-o $(BIN_DIR)/cnet_compete_run \
 		src/cnet_compete_runtime.c src/cnet_compete_intent.c \
@@ -7174,27 +7189,6 @@ cnet_7b_runtime: cnet_7b_intent cnet_7b_capsule_artifacts \
 		$(CNET_COMPETE_CAPSULE_CORE) $(ROUTER) $(SPECIALIST_SRC) \
 		tools/cnet_compete_run.c \
 		-Wl,--gc-sections $(LDFLAGS) $(MCP_LDFLAGS) -pthread
-
-cnet_7b_runtime_san: cnet_7b_runtime
-	$(CC) -std=c11 -Wall -Wextra -pedantic -Werror -O1 -g \
-		-D_DEFAULT_SOURCE -DCNET_HAVE_CURL=0 \
-		$(CNET_COMPETE_SUITE_DEFINE) \
-		-fsanitize=address,undefined -fno-omit-frame-pointer \
-		-ffunction-sections -fdata-sections -Iinclude \
-		-o $(BIN_DIR)/test_cnet_compete_runtime_san \
-		src/cnet_compete_runtime.c src/cnet_compete_intent.c \
-		src/cnet_compete_capsules.c src/cce/cce_wordlm.c \
-		$(CNET_COMPETE_CAPSULE_CORE) $(ROUTER) $(SPECIALIST_SRC) \
-		tests/test_cnet_compete_runtime.c \
-		-Wl,--gc-sections -fsanitize=address,undefined -lm -lpthread
-	@ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 \
-		UBSAN_OPTIONS=halt_on_error=1 \
-		./$(BIN_DIR)/test_cnet_compete_runtime_san \
-		artifacts/cnet_asi5_v4/intent.wlm \
-		artifacts/cnet_asi5_v4/intent.meta \
-		artifacts/cnet_asi5_v4/capsules | \
-		tee logs/cnet_7b_runtime_san.log
-	@grep -q CNET_7B_RUNTIME_PASS logs/cnet_7b_runtime_san.log
 
 # The v5 suite is frozen, so the whole PASS line is pinned with grep -qx and
 # not just base_params. refused, semantic_adversarial and typed_regressions are
@@ -7275,7 +7269,11 @@ cnet_7b_v5_stage_hist: include/cnet_compete_runtime.h \
 		logs/cnet_7b_v5_stage_hist_freeze.log
 	@test ! -s logs/cnet_7b_v5_stage_hist_freeze.log
 
-cnet_7b_v5_diagnostic: cnet_7b_runtime
+# Despite the v5 name this diagnostic reads the v4 artifacts, so it depends on
+# the v4 artifact builders directly. It previously reached them through
+# cnet_7b_runtime, which is retired above; depending on cnet_7b_v5_runtime
+# instead would build the wrong suite's artifacts.
+cnet_7b_v5_diagnostic: cnet_7b_intent cnet_7b_capsule_artifacts
 	$(CC) $(CFLAGS) -Werror -ffunction-sections -fdata-sections -Iinclude \
 		-o $(BIN_DIR)/test_cnet_compete_diagnostic \
 		src/cnet_compete_runtime.c src/cnet_compete_intent.c \
