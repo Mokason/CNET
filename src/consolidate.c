@@ -72,15 +72,55 @@ static int consolidate_core(
                          members, n_members, cfg.max_samples, &table) != 0) {
         goto done;
     }
-    rep.samples = table.kept;
-    rep.teacher_aborts = table.aborts;
-    if (table.kept == 0) {
-        goto done;
-    }
 
     arena_init(&arena);
     clean = arena_alloc(&arena, out_total * sizeof *clean);
     if (clean == NULL) {
+        goto done;
+    }
+
+    /* Teacher execute may return in-domain but non-canonical bits
+       (BINARY accepts |x-0.5| > 0.25). Verification compares the
+       student's canonical bits to the stored label, so a soft 0.9
+       label can never match a snapped 1. Store canonical members. */
+    {
+        size_t kept = 0;
+        size_t s;
+
+        for (s = 0; s < table.kept; ++s) {
+            double *row = table.targets + s * out_total;
+            size_t off = 0;
+            size_t op;
+            int ok = 1;
+
+            for (op = 0; ok && op < n_out; ++op) {
+                size_t tot = plan_port_total(out_ports[op]);
+                if (port_canonicalize(out_ports[op], row + off, clean) != 0) {
+                    ok = 0;
+                    break;
+                }
+                memcpy(row + off, clean, tot * sizeof *row);
+                off += tot;
+            }
+            if (!ok) {
+                table.aborts++;
+                continue;
+            }
+            if (kept != s) {
+                memmove(table.inputs + kept * table.in_total,
+                        table.inputs + s * table.in_total,
+                        table.in_total * sizeof *table.inputs);
+                memmove(table.targets + kept * out_total, row,
+                        out_total * sizeof *table.targets);
+            }
+            kept++;
+        }
+        table.kept = kept;
+    }
+
+    rep.samples = table.kept;
+    rep.teacher_aborts = table.aborts;
+    if (table.kept == 0) {
         goto done;
     }
 
@@ -112,10 +152,13 @@ static int consolidate_core(
     }
 
     /* Deep distillation now supports CCE path too (via adapt after student init) */
-    rep.final_loss = btn_train_dynamic(&student, table.inputs, table.targets,
-                                       table.kept, cfg.max_epochs,
-                                       cfg.growth_window, cfg.target_loss,
-                                       cfg.min_improvement);
+    /* Enumerated domain is a spec, not a sample. The public trainer
+       holds out 1/5 once N>=64; those rows then fail verify. */
+    rep.final_loss = btn_train_dynamic_spec(&student, table.inputs,
+                                            table.targets, table.kept,
+                                            cfg.max_epochs, cfg.growth_window,
+                                            cfg.target_loss,
+                                            cfg.min_improvement);
 
     /* Verification: the student alone must reproduce the teacher, and its
        RAW output must be in-domain on EVERY segment -- the same bar the

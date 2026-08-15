@@ -322,6 +322,21 @@ double btn_train_dynamic(
     double min_improvement
 );
 
+/* Like btn_train_dynamic, but trains every enumerated row. Use when the
+   table is a complete finite spec (consolidation, contract emission),
+   not a sample from a larger population. Holding out 20% of a 200-row
+   domain made the decimal-ladder chunk miss those rows at verify. */
+double btn_train_dynamic_spec(
+    BinaryTransformNetwork *btn,
+    const double *inputs,
+    const double *targets,
+    size_t sample_count,
+    size_t max_epochs,
+    size_t growth_window,
+    double target_loss,
+    double min_improvement
+);
+
 /* Set the training momentum coefficient (default 0 = plain SGD). Valid range
    [0, 1); values outside are clamped. Takes effect on the next
    btn_train_dynamic. Returns 0, or -1 for a NULL/adapter btn. */
