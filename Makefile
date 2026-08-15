@@ -3972,6 +3972,23 @@ cnet_lookup_capsule: include/cnet_lookup.h src/cnet_lookup.c \
 	@./$(BIN_DIR)/test_cnet_lookup_capsule | tee logs/cnet_lookup_capsule.log
 	@grep -q '^CNET_LOOKUP_CAPSULE_PASS ' logs/cnet_lookup_capsule.log
 
+.PHONY: cnet_chat_lookup
+cnet_chat_lookup: include/cnet_chat_lookup.h src/cnet_chat_lookup.c \
+		include/cnet_lookup.h src/cnet_lookup.c \
+		include/cnet_utterance.h src/cnet_utterance.c \
+		src/cce/cce_campaign_provenance.c \
+		tests/test_cnet_chat_lookup.c
+	@mkdir -p $(BIN_DIR) logs
+	@pkg-config --exists libcurl
+	$(CC) $(CFLAGS) -Werror -Iinclude $$(pkg-config --cflags libcurl) \
+		-o $(BIN_DIR)/test_cnet_chat_lookup \
+		src/cnet_chat_lookup.c src/cnet_lookup.c src/cnet_utterance.c \
+		src/cce/cce_campaign_provenance.c \
+		tests/test_cnet_chat_lookup.c $(LDFLAGS) \
+		$$(pkg-config --libs libcurl)
+	@./$(BIN_DIR)/test_cnet_chat_lookup | tee logs/cnet_chat_lookup.log
+	@grep -q '^CNET_CHAT_LOOKUP_PASS ' logs/cnet_chat_lookup.log
+
 .PHONY: cnet_lookup
 cnet_lookup: include/cnet_lookup.h src/cnet_lookup.c \
 		src/cce/cce_campaign_provenance.c tools/cnet_lookup.c
