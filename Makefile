@@ -767,18 +767,23 @@ cnet_c_speak: include/cnet_c_speak.h src/cnet_c_speak.c src/cce/cce_wordlm.c \
 	@grep -q '^CNET_C_SPEAK_PASS$$' logs/cnet_c_speak.log
 	@grep -q '^checks=58 ' logs/cnet_c_speak.log
 
-.PHONY: cnet_weight_convert
-cnet_weight_convert: include/cnet_weight_convert.h src/cnet_weight_convert.c \
-		tests/test_cnet_weight_convert.c
+.PHONY: cnet_weight_convert cnet_weight_gguf
+cnet_weight_convert cnet_weight_gguf: include/cnet_weight_convert.h \
+		src/cnet_weight_convert.c tests/test_cnet_weight_convert.c $(CCE_GGUF)
 	@mkdir -p $(BIN_DIR) logs
-	$(CC) $(CFLAGS) -Werror -Iinclude -o $(BIN_DIR)/test_cnet_weight_convert \
+	@! grep -F 'parse_lut' src/cnet_weight_convert.c
+	@! grep -E 'python3|#include <Python|import sys' src/cnet_weight_convert.c tests/test_cnet_weight_convert.c
+	$(CC) $(CFLAGS) -Werror -ffunction-sections -fdata-sections -Iinclude \
+		-o $(BIN_DIR)/test_cnet_weight_convert \
 		src/cnet_weight_convert.c $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) \
 		$(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) \
-		$(BASE_SRC) $(CCE_CAMPAIGN_PROVENANCE) \
-		tests/test_cnet_weight_convert.c $(LDFLAGS)
+		$(BASE_SRC) $(CCE_CAMPAIGN_PROVENANCE) $(CCE_GGUF) \
+		tests/test_cnet_weight_convert.c -Wl,--gc-sections $(LDFLAGS)
 	@./$(BIN_DIR)/test_cnet_weight_convert | tee logs/cnet_weight_convert.log
 	@grep -q '^CNET_WEIGHT_CONVERT_PASS$$' logs/cnet_weight_convert.log
-	@grep -q '^checks=31$$' logs/cnet_weight_convert.log
+	@grep -q '^checks=44$$' logs/cnet_weight_convert.log
+	@grep -q '^python=0$$' logs/cnet_weight_convert.log
+
 
 # Unit files: weights + contract as ONE sealed binary artifact (.cnu) —
 # binary f64 weights + bit-packed canonical exemplars + FNV seal; round-trip
