@@ -94,9 +94,11 @@ CnetLookupBind cnet_chat_lookup_infer_bind(const char *turn) {
     return CNET_LOOKUP_BIND_INTEGER;
 }
 
-int cnet_chat_lookup_turn(const char *turn, CnetChatLookupTurn *out) {
+int cnet_chat_lookup_turn_flags(const char *turn, unsigned flags,
+                                CnetChatLookupTurn *out) {
     if (out == NULL) return -1;
     memset(out, 0, sizeof *out);
+    /* residual_calls stays 0: this path never calls utter residual. */
     out->bind = cnet_chat_lookup_infer_bind(turn);
     out->offered = cnet_chat_lookup_offer_url(turn, out->url, sizeof out->url);
     if (!out->offered) {
@@ -104,7 +106,8 @@ int cnet_chat_lookup_turn(const char *turn, CnetChatLookupTurn *out) {
         return 1;
     }
     {
-        int rc = cnet_lookup_execute(out->url, out->bind, &out->report);
+        int rc = cnet_lookup_execute_flags(out->url, out->bind, flags,
+                                           &out->report);
         copy_text(out->refusal, sizeof out->refusal, out->report.refusal);
         if (rc != 0) return rc == 1 ? 1 : rc;
         if (!out->report.bound) {
@@ -121,4 +124,12 @@ int cnet_chat_lookup_turn(const char *turn, CnetChatLookupTurn *out) {
         out->answered = 1;
         return 0;
     }
+}
+
+int cnet_chat_lookup_turn(const char *turn, CnetChatLookupTurn *out) {
+    return cnet_chat_lookup_turn_flags(turn, 0, out);
+}
+
+int cnet_chat_lookup_cnetd_hop(const char *turn, CnetChatLookupTurn *out) {
+    return cnet_chat_lookup_turn(turn, out);
 }

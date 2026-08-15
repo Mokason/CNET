@@ -47,6 +47,7 @@
 #include "../include/cnet_query_alias.h"
 #include "../include/cnet_roe_asi.h"
 #include "../include/cnet_slot_extract.h"
+#include "../include/cnet_chat_lookup.h"
 #include "../include/cnet_utterance.h"
 
 #define CD_PATH 512
@@ -358,6 +359,25 @@ static int cd_ask(CdState *S, const char *q, CdReply *out) {
     if (!S || !q || !out || !S->ready) return -1;
     memset(out, 0, sizeof *out);
     memset(&rt, 0, sizeof rt);
+
+    /* Typed fetch hop BEFORE residual / teacher-on-miss / ROE net.enable_lookup.
+       Same function the unit test calls. Fluency/compete are not on this line. */
+    {
+        CnetChatLookupTurn hop;
+        if (cnet_chat_lookup_cnetd_hop(q, &hop) == 0 && hop.answered &&
+            hop.spoken[0] && hop.residual_calls == 0) {
+            snprintf(out->answer, sizeof out->answer, "%s", hop.spoken);
+            snprintf(out->utterance, sizeof out->utterance, "%s", hop.spoken);
+            snprintf(out->source, sizeof out->source, "CNET");
+            snprintf(out->skill, sizeof out->skill, "%s", CNET_LOOKUP_CONTRACT);
+            cd_scopy(out->prepared, sizeof out->prepared, q);
+            out->verified = 1;
+            out->miss = 0;
+            out->may_voice = 1;
+            out->tokens = 0;
+            return 0;
+        }
+    }
     memset(&ameta, 0, sizeof ameta);
     memset(&dmeta, 0, sizeof dmeta);
     memset(&smeta, 0, sizeof smeta);
