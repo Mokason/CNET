@@ -460,8 +460,99 @@ int cnet_dc_route_well_typed(const RoutePlan *plan, Port source) {
         if (btn == NULL || btn->input_port_count == 0 ||
             btn->output_port_count == 0)
             return 1;
+        /* A linear route feeds exactly one input. Extra slots are unsatisfied,
+           so accepting them would make fail-close a lie. */
+        if (btn->input_port_count != 1) return 1;
         if (!cnet_dc_ports_unify(cur, btn->input_ports[0])) return 1;
         cur = btn->output_ports[0];
     }
     return cnet_dc_ports_unify(cur, plan->goal) ? 0 : 1;
+}
+
+static int node_out_port(const DagNode *n, int sel, const DagSource *sources,
+                         size_t n_sources, Port *out) {
+    if (n == NULL || out == NULL) return 1;
+    if (n->kind == DAG_SOURCE) {
+        if (n->source_index < 0 || (size_t)n->source_index >= n_sources)
+            return 1;
+        *out = sources[n->source_index].type;
+        return 0;
+    }
+    if (n->kind != DAG_PRIMITIVE || n->btn == NULL) return 1;
+    if (sel < 0 || (size_t)sel >= n->btn->output_port_count) return 1;
+    *out = n->btn->output_ports[sel];
+    return 0;
+}
+
+static int edge_sel(const DagNode *parent, size_t k) {
+    int p;
+    if (parent == NULL || k >= parent->child_count ||
+        parent->children[k] == NULL)
+        return -1;
+    p = parent->child_ports[k];
+    return p != 0 ? p : parent->children[k]->output_index;
+}
+
+static int check_dag_node(const DagNode *n, const DagSource *sources,
+                          size_t n_sources, int depth) {
+    size_t k;
+    if (n == NULL) return 1;
+    if (depth > DAG_MAX_DEPTH + 2) return 1;
+    if (n->kind == DAG_SOURCE) {
+        return (n->source_index >= 0 && (size_t)n->source_index < n_sources)
+                   ? 0
+                   : 1;
+    }
+    if (n->kind != DAG_PRIMITIVE || n->btn == NULL) return 1;
+    if (n->child_count != n->btn->input_port_count) return 1;
+    for (k = 0; k < n->child_count; ++k) {
+        const DagNode *ch = n->children[k];
+        int sel;
+        Port produced;
+        if (ch == NULL) return 1;
+        if (check_dag_node(ch, sources, n_sources, depth + 1) != 0) return 1;
+        sel = edge_sel(n, k);
+        if (sel < 0) return 1;
+        if (node_out_port(ch, sel, sources, n_sources, &produced) != 0)
+            return 1;
+        if (!cnet_dc_ports_unify(produced, n->btn->input_ports[k])) return 1;
+    }
+    return 0;
+}
+
+int cnet_dc_dag_well_typed(const DagPlan *plan, const DagSource *sources,
+                           size_t n_sources, Port goal) {
+    Port produced;
+    int sel;
+    if (plan == NULL || plan->root == NULL || sources == NULL ||
+        n_sources == 0)
+        return 1;
+    if (check_dag_node(plan->root, sources, n_sources, 0) != 0) return 1;
+    sel = plan->root->output_index;
+    if (node_out_port(plan->root, sel, sources, n_sources, &produced) != 0)
+        return 1;
+    return cnet_dc_ports_unify(produced, goal) ? 0 : 1;
+}
+
+int cnet_dc_circuit_well_typed(const CircuitPlan *plan,
+                               const DagSource *sources, size_t n_sources,
+                               const Port *goals, size_t n_goals) {
+    size_t g;
+    if (plan == NULL || sources == NULL || goals == NULL || n_sources == 0 ||
+        n_goals == 0)
+        return 1;
+    if (plan->root_count != n_goals) return 1;
+    for (g = 0; g < n_goals; ++g) {
+        Port produced;
+        int sel;
+        if (plan->roots[g] == NULL) return 1;
+        if (check_dag_node(plan->roots[g], sources, n_sources, 0) != 0)
+            return 1;
+        sel = plan->root_ports[g];
+        if (node_out_port(plan->roots[g], sel, sources, n_sources, &produced) !=
+            0)
+            return 1;
+        if (!cnet_dc_ports_unify(produced, goals[g])) return 1;
+    }
+    return 0;
 }

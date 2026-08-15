@@ -103,6 +103,15 @@ static int finalize_chunk(PrimitiveRegistry *reg, BinaryTransformNetwork *studen
                                          teacher_mac, student_mac, beneficial);
         }
     }
+    if (ti->count >= 1) {
+        size_t k, n = ti->count;
+        if (n > LIBRARY_TRACE_LEN) n = LIBRARY_TRACE_LEN;
+        report->traces[idx].length = n;
+        for (k = 0; k < n; ++k)
+            snprintf(report->traces[idx].steps[k],
+                     sizeof report->traces[idx].steps[k], "%s", ti->names[k]);
+        report->trace_count = idx + 1;
+    }
     report->chunk_count++;
     return 1;
 }
@@ -256,6 +265,10 @@ static int evolve_dag(PrimitiveRegistry *reg, const LibraryTask *task,
     }
     if (dag_plan(reg, sources, task->n_sources, task->goal, &plan) != 0) return 0;
     if (count_dag_primitives(&plan) < 2) { dag_free(&plan); return 0; }
+    if (cnet_dc_dag_well_typed(&plan, sources, task->n_sources, task->goal) != 0) {
+        dag_free(&plan);
+        return 0;
+    }
     if (!dag_evidence_clear(&plan, gs)) { report->deferred++; dag_free(&plan); return 0; }
 
     student = calloc(1, sizeof *student);
@@ -327,6 +340,11 @@ static int evolve_circuit(PrimitiveRegistry *reg, const LibraryTask *task,
     if (dag_plan_circuit(reg, sources, task->n_sources,
                          task->goals, task->n_goals, &plan) != 0) return 0;
     if (count_circuit_primitives(&plan) < 2) { circuit_free(&plan); return 0; }
+    if (cnet_dc_circuit_well_typed(&plan, sources, task->n_sources,
+                                  task->goals, task->n_goals) != 0) {
+        circuit_free(&plan);
+        return 0;
+    }
     if (!circuit_evidence_clear(&plan, gs)) {
         report->deferred++; circuit_free(&plan); return 0;
     }
@@ -385,6 +403,9 @@ static int evolve_run(PrimitiveRegistry *reg, const LibraryTask *tasks, size_t n
             added += (size_t)try_consolidate(reg, &tasks[t], laws, n_laws, &cfg_local, report, gs);
         if (added == 0) break;
     }
+    if (report->trace_count >= 2)
+        (void)library_sleep_compress(reg, report->traces, report->trace_count,
+                                     laws, n_laws, &cfg_local, report);
     return 0;
 }
 int library_evolve(PrimitiveRegistry *reg,
@@ -404,6 +425,132 @@ int library_evolve_gated(PrimitiveRegistry *reg,
                          LibraryReport *report) {
     GateState gs; gs.cfg = gate;
     return evolve_run(reg, tasks, n_tasks, laws, n_laws, cfg, &gs, max_iterations, report);
+}
+
+
+static int trace_has_subseq(const LibraryTrace *tr, char steps[][CONTRACT_NAME_MAX],
+                            size_t n) {
+    size_t i, j;
+    if (tr == NULL || steps == NULL || n == 0 || n > tr->length) return 0;
+    for (i = 0; i + n <= tr->length; ++i) {
+        int ok = 1;
+        for (j = 0; j < n; ++j) {
+            if (strcmp(tr->steps[i + j], steps[j]) != 0) {
+                ok = 0;
+                break;
+            }
+        }
+        if (ok) return 1;
+    }
+    return 0;
+}
+
+static const BinaryTransformNetwork *reg_lookup(const PrimitiveRegistry *reg,
+                                                const char *name) {
+    size_t i;
+    if (reg == NULL || name == NULL) return NULL;
+    for (i = 0; i < reg->count; ++i) {
+        if (reg->entries[i].name != NULL &&
+            strcmp(reg->entries[i].name, name) == 0)
+            return reg->entries[i].btn;
+    }
+    return NULL;
+}
+
+int library_sleep_compress(PrimitiveRegistry *reg,
+                           const LibraryTrace *traces, size_t n_traces,
+                           const Property *laws, size_t n_laws,
+                           const ConsolidateConfig *cfg,
+                           LibraryReport *report) {
+    size_t t, len, off, best_len = 0, best_t = 0, best_off = 0;
+    char brick[LIBRARY_TRACE_LEN][CONTRACT_NAME_MAX];
+    int found = 0;
+    RoutePlan plan;
+    BinaryTransformNetwork *student;
+    Contract c;
+    TeacherInfo ti;
+    ConsolidateConfig cfg_local;
+    size_t i;
+    int accepted;
+
+    if (report != NULL && report->sleep_compressed) return 0;
+    if (reg == NULL || traces == NULL || n_traces < 2 || report == NULL)
+        return 0;
+    if (cfg != NULL) cfg_local = *cfg;
+    else consolidate_config_defaults(&cfg_local);
+
+    /* Longest contiguous subsequence in >=2 traces, proper in at least one. */
+    for (t = 0; t < n_traces; ++t) {
+        if (traces[t].length < 2) continue;
+        for (len = traces[t].length; len >= 2; --len) {
+            if (len < best_len) break;
+            for (off = 0; off + len <= traces[t].length; ++off) {
+                size_t hits = 0, u, k;
+                int proper = 0;
+                for (k = 0; k < len; ++k)
+                    snprintf(brick[k], sizeof brick[k], "%s",
+                             traces[t].steps[off + k]);
+                for (u = 0; u < n_traces; ++u) {
+                    if (!trace_has_subseq(&traces[u], brick, len)) continue;
+                    hits++;
+                    if (len < traces[u].length) proper = 1;
+                }
+                if (hits >= 2 && proper && len > best_len) {
+                    best_len = len;
+                    best_t = t;
+                    best_off = off;
+                    found = 1;
+                }
+            }
+        }
+    }
+    if (!found) return 0;
+    for (i = 0; i < best_len; ++i)
+        snprintf(brick[i], sizeof brick[i], "%s",
+                 traces[best_t].steps[best_off + i]);
+    /* CSE itself is sleep. Distill below is optional and still fail-closed. */
+    snprintf(report->sleep_brick, sizeof report->sleep_brick, "%s",
+             "shared_subplan");
+    report->sleep_compressed = 1;
+
+    memset(&plan, 0, sizeof plan);
+    if (best_len > ROUTE_MAX_STEPS) return 0;
+    for (i = 0; i < best_len; ++i) {
+        const BinaryTransformNetwork *btn = reg_lookup(reg, brick[i]);
+        if (btn == NULL || btn->input_port_count != 1 ||
+            btn->output_port_count == 0)
+            return 0; /* not a unary reconstructable route */
+        plan.steps[i] = btn;
+        plan.names[i] = brick[i];
+    }
+    plan.length = best_len;
+    plan.goal = plan.steps[best_len - 1]->output_ports[0];
+    if (cnet_dc_route_well_typed(&plan, plan.steps[0]->input_ports[0]) != 0)
+        return 0;
+
+    student = calloc(1, sizeof *student);
+    if (student == NULL) return 0;
+    if (consolidate_route(&plan, &cfg_local, student, NULL) != 0) {
+        free(student);
+        return 0;
+    }
+    memset(&c, 0, sizeof c);
+    if (contract_from_route(&plan, "sleep_brick", cfg_local.max_samples, &c) !=
+        0) {
+        btn_free(student);
+        free(student);
+        return 0;
+    }
+    route_teacher_info(&plan, &ti);
+    accepted = finalize_chunk(reg, student, "sleep_brick", &c, laws, n_laws,
+                              cfg_local.max_samples, &ti, report);
+    contract_free(&c);
+    if (!accepted) {
+        btn_free(student);
+        free(student);
+        return 0;
+    }
+    return 0;
 }
 
 void library_report_free(LibraryReport *report) {

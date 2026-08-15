@@ -83,8 +83,18 @@ int cnet_dc_from_contract(CnetDcArena *arena, const Contract *contract);
 /* Same meaning as port_compatible, via DC types + RAW/tag wildcard rules. */
 int cnet_dc_ports_unify(Port producer, Port consumer);
 
-/* Fail-closed type check of a Core route plan. 0 well-typed, 1 not. */
+/* Fail-closed type check of a Core route plan. Linear routes are unary:
+   a step with extra unsatisfied inputs is ill-typed. 0 well-typed, 1 not. */
 int cnet_dc_route_well_typed(const RoutePlan *plan, Port source);
+
+/* Fail-closed type check of every DAG edge (all input slots, not port 0). */
+int cnet_dc_dag_well_typed(const DagPlan *plan, const DagSource *sources,
+                           size_t n_sources, Port goal);
+
+/* Fail-closed type check of every circuit root and its used ports. */
+int cnet_dc_circuit_well_typed(const CircuitPlan *plan,
+                               const DagSource *sources, size_t n_sources,
+                               const Port *goals, size_t n_goals);
 
 #ifdef __cplusplus
 }

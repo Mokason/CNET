@@ -90,7 +90,8 @@ static int mint_tier2(PrimitiveRegistry *reg, LibraryReport *report, int *minted
     consolidate_config_defaults(&cfg);
     /* Same student recipe as tests/test_distillation_gate.c branch C:
        auto-width (~21) saturates on this 200-row mod-10 circuit (166/200).
-       64 hidden is the shipped width that clears the 0.95 verify floor. */
+       64 hidden is the shipped width that clears spec-reproduction
+       >= 0.95 on the full finite domain (train=verify). Not a holdout. */
     cfg.initial_hidden = 64;
     cfg.min_verify_rate = 0.95;
     cfg.max_epochs = 320000;

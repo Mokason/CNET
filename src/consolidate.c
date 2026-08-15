@@ -152,8 +152,9 @@ static int consolidate_core(
     }
 
     /* Deep distillation now supports CCE path too (via adapt after student init) */
-    /* Enumerated domain is a spec, not a sample. The public trainer
-       holds out 1/5 once N>=64; those rows then fail verify. */
+    /* Enumerated domain is a complete finite spec (train=verify).
+       btn_train_dynamic_spec trains every row. The public trainer's
+       1/5 holdout is for sampled populations, not this spec. */
     rep.final_loss = btn_train_dynamic_spec(&student, table.inputs,
                                             table.targets, table.kept,
                                             cfg.max_epochs, cfg.growth_window,

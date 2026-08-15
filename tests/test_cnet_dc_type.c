@@ -155,6 +155,85 @@ static void test_route_types(void) {
     REQUIRE(cnet_dc_route_well_typed(&plan, source) == 1, "bad_goal");
 }
 
+static void test_route_refuses_multi_in(void) {
+    RoutePlan plan;
+    BinaryTransformNetwork step;
+    Port source = PT(PORT_BINARY_MSB, 1, 1, "bit");
+    Port extra = PT(PORT_BINARY_MSB, 1, 1, "bit");
+    Port goal = PT(PORT_BINARY_MSB, 2, 1, "pair");
+    memset(&step, 0, sizeof step);
+    step.input_port_count = 2;
+    step.output_port_count = 1;
+    step.input_ports[0] = source;
+    step.input_ports[1] = extra;
+    step.output_ports[0] = goal;
+    memset(&plan, 0, sizeof plan);
+    plan.steps[0] = &step;
+    plan.length = 1;
+    plan.goal = goal;
+    REQUIRE(cnet_dc_route_well_typed(&plan, source) == 1, "multi_in_route");
+}
+
+static void test_dag_circuit_types(void) {
+    BinaryTransformNetwork comb;
+    DagNode src0, src1, prim;
+    DagSource sources[2];
+    DagPlan dplan;
+    CircuitPlan cplan;
+    Port bit = PT(PORT_BINARY_MSB, 1, 1, "bit");
+    Port pair = PT(PORT_BINARY_MSB, 2, 1, "pair");
+    Port oh = PT(PORT_ONEHOT, 2, 1, "bsym");
+    memset(&comb, 0, sizeof comb);
+    comb.input_port_count = 2;
+    comb.output_port_count = 1;
+    comb.input_ports[0] = bit;
+    comb.input_ports[1] = bit;
+    comb.output_ports[0] = pair;
+
+    memset(&src0, 0, sizeof src0);
+    memset(&src1, 0, sizeof src1);
+    memset(&prim, 0, sizeof prim);
+    src0.kind = DAG_SOURCE;
+    src0.source_index = 0;
+    src1.kind = DAG_SOURCE;
+    src1.source_index = 1;
+    prim.kind = DAG_PRIMITIVE;
+    prim.btn = &comb;
+    prim.child_count = 2;
+    prim.children[0] = &src0;
+    prim.children[1] = &src1;
+    prim.output_index = 0;
+    sources[0].type = bit;
+    sources[0].values = NULL;
+    sources[1].type = bit;
+    sources[1].values = NULL;
+    memset(&dplan, 0, sizeof dplan);
+    dplan.root = &prim;
+    REQUIRE(cnet_dc_dag_well_typed(&dplan, sources, 2, pair) == 0, "dag_ok");
+
+    sources[0].type = oh;
+    REQUIRE(cnet_dc_dag_well_typed(&dplan, sources, 2, pair) == 1,
+            "illtyped_dag");
+    sources[0].type = bit;
+    dplan.root->output_index = 0;
+    REQUIRE(cnet_dc_dag_well_typed(&dplan, sources, 2, oh) == 1,
+            "illtyped_dag_goal");
+
+    memset(&cplan, 0, sizeof cplan);
+    cplan.roots[0] = &prim;
+    cplan.root_ports[0] = 0;
+    cplan.root_count = 1;
+    {
+        Port goals[1];
+        goals[0] = pair;
+        REQUIRE(cnet_dc_circuit_well_typed(&cplan, sources, 2, goals, 1) == 0,
+                "circuit_ok");
+        goals[0] = oh;
+        REQUIRE(cnet_dc_circuit_well_typed(&cplan, sources, 2, goals, 1) == 1,
+                "illtyped_circuit");
+    }
+}
+
 int main(void) {
     test_unify_ground();
     test_instantiate_unify();
@@ -163,8 +242,11 @@ int main(void) {
     test_ports_agree();
     test_contract_arrow();
     test_route_types();
+    test_route_refuses_multi_in();
+    test_dag_circuit_types();
     if (failures != 0) return 1;
     printf("CNET_DC_TYPE_PASS unify=1 instantiate=1 occurs=1 apply=1 "
-           "ports=1 contract=1 route=1 broader_claims=WITHHELD\n");
+           "ports=1 contract=1 route=1 dag=1 circuit=1 illtyped_refused=1 "
+           "broader_claims=WITHHELD\n");
     return 0;
 }

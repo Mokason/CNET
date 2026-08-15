@@ -324,8 +324,10 @@ double btn_train_dynamic(
 
 /* Like btn_train_dynamic, but trains every enumerated row. Use when the
    table is a complete finite spec (consolidation, contract emission),
-   not a sample from a larger population. Holding out 20% of a 200-row
-   domain made the decimal-ladder chunk miss those rows at verify. */
+   not a sample from a larger population. Verify is spec-reproduction
+   on that same full finite domain (train=verify). The 0.95 bar is not
+   a held-out split; holding out 1/5 of 200 rows made the decimal-ladder
+   chunk miss those rows at verify, so the split was removed. */
 double btn_train_dynamic_spec(
     BinaryTransformNetwork *btn,
     const double *inputs,
