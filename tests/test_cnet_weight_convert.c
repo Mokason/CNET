@@ -1,21 +1,50 @@
-/* Weight conversion door gate.
+/* Weight conversion door gate — GGUF labeler slice.
  * make cnet_weight_convert → CNET_WEIGHT_CONVERT_PASS
  *
- * Attest fixture → lease → plan_table_build → native student → ≥0.95
- * → unbind. Unattested cannot teach. Tensor remap is refused.
- * Fixture is not Bonsai conversion. No auto-CERT.
+ * Reader is cce_gguf_load (not parse_lut). Labeler is a silent named-tensor
+ * read. residual_gguf_oracle is a mouth and is not called. Attest → lease
+ * → plan_table_build → native student → ≥0.95 → unbind. Unattested cannot
+ * teach. Tensor remap is refused. Fixture is not Bonsai. No auto-CERT.
+ * No Python.
  */
 #include <stdio.h>
 #include <string.h>
 
 #include "../include/cnet_weight_convert.h"
+#include "../include/cce/cce_gguf.h"
 
 static int failures, checks;
+static size_t residual_oracle_calls;
+static size_t residual_batch_calls;
 
 static void check(int ok, const char *name) {
     checks++;
     printf("  %-62s %s\n", name, ok ? "PASS" : "FAIL");
     if (!ok) failures++;
+}
+
+/* Mouth stubs: if convert ever speaks next-tokens, these fire.
+   residual_gguf.c is not linked. */
+int residual_gguf_oracle(const double *in, double *out, void *ctx) {
+    (void)in;
+    (void)out;
+    (void)ctx;
+    residual_oracle_calls++;
+    return -1;
+}
+
+int residual_gguf_label_batch(void *r, const int *slot_order, int n_slots,
+                              double *inputs, double *targets, int in_dim,
+                              int out_dim) {
+    (void)r;
+    (void)slot_order;
+    (void)n_slots;
+    (void)inputs;
+    (void)targets;
+    (void)in_dim;
+    (void)out_dim;
+    residual_batch_calls++;
+    return -1;
 }
 
 static int aborting_teacher(void *ctx, const double *in, size_t in_total,
@@ -49,11 +78,12 @@ int main(void) {
     PlanTable table;
     Port pin, pout;
     FILE *jf;
-    size_t teacher_at_unbind;
+    cce_gguf *probe = NULL;
+    size_t reads_at_unbind;
     unsigned x;
     int serve_ok;
 
-    printf("== weight conversion door (u8_inc16, 16 combos, fixture) ==\n");
+    printf("== weight conversion door (u8_inc16, cce_gguf labeler, fixture) ==\n");
     memset(&file, 0, sizeof file);
     memset(&wo, 0, sizeof wo);
     memset(&reg, 0, sizeof reg);
@@ -70,11 +100,28 @@ int main(void) {
 
     check(cnet_weight_write_u8_inc16_fixture(path) == 0,
           "write tiny synthetic GGUF fixture");
+
+    check(cce_gguf_load(path, &probe) == CCE_OK && probe != NULL,
+          "file loads with cce_gguf_load (not parse_lut)");
+    check(cce_gguf_find_tensor(probe, CNET_WEIGHT_LUT_TENSOR) == 0,
+          "cce_gguf_find_tensor locates u8_inc16.lut");
+    {
+        float lut[16];
+        int idx = cce_gguf_find_tensor(probe, CNET_WEIGHT_LUT_TENSOR);
+        check(idx >= 0 && cce_gguf_load_f32(probe, idx, lut, 16) == CCE_OK &&
+                  lut[0] == 1.0f && lut[15] == 0.0f,
+              "cce_gguf_load_f32 reads the increment LUT");
+    }
+    cce_gguf_free(probe);
+    probe = NULL;
+
     check(cnet_weight_mmap(&file, path) == 0 && file.lut &&
-              file.lut_n == CNET_WEIGHT_U8_INC16_COMBOS,
-          "mmap fixture GGUF (LUT view, no FP16 workspace)");
+              file.lut_n == CNET_WEIGHT_U8_INC16_COMBOS && file.gguf,
+          "open fixture through cce_gguf (LUT, no FP16 workspace)");
+    check(file.reader_cce_gguf == 1, "reader is cce_gguf_load");
+    check(file.lut_via_load_f32 == 1, "LUT filled by cce_gguf_load_f32");
     check(file.fixture == 1, "fixture flag set (not a real host GGUF)");
-    check(file.map_len < 4096, "fixture stays tiny (not a multi-GB materialize)");
+    check(file.file_len < 4096, "fixture stays tiny (not a multi-GB materialize)");
 
     check(cnet_weight_attest(path, &id) == 0 &&
               cnet_oracle_identity_is_attested(&id) == 1,
@@ -96,6 +143,11 @@ int main(void) {
     weak.contract_digest = 2;
     check(cnet_oracle_identity_is_attested(&weak) == 0,
           "zero SHA / zero toolchain is unattested");
+    {
+        cce_gguf *bad = (cce_gguf *)(void *)1;
+        check(cce_gguf_load(junk, &bad) != CCE_OK,
+              "unattested junk is not a GGUF (cce_gguf_load refuses)");
+    }
 
     acquire_oracle_policy_defaults(&pol);
     pol.require_attested_to_teach = 1;
@@ -106,13 +158,12 @@ int main(void) {
                                      dummy_v2, NULL, &weak, NULL) != 0,
           "unattested identity cannot register under policy");
 
-    /* v2 register still needs a fn; the policy gate fires first on identity. */
     {
         OracleRegistry r2;
         memset(&r2, 0, sizeof r2);
         acquire_oracle_policy_set(&r2, &pol);
         check(acquire_oracle_register_v2_family(&r2, "weak_oracle",
-                                                "weight_fixture", pin, pout,
+                                                "weight_gguf", pin, pout,
                                                 dummy_v2, NULL, &weak, NULL) != 0,
               "unattested file cannot teach (register refused)");
     }
@@ -165,11 +216,22 @@ int main(void) {
           "teacher unbound after table passes");
     check(rep.certified == 0, "fail-closed: door does not auto-CERT");
     check(rep.fixture == 1, "report records fixture (not Bonsai)");
+    check(rep.reader_cce_gguf == 1, "report records cce_gguf reader");
     check(strcmp(rep.domain, CNET_WEIGHT_DOMAIN_U8_INC16) == 0 &&
               rep.combos == 16,
           "first domain is u8_inc16 with 16 combos");
+    check(wo.teacher_calls == 0 && rep.residual_speak == 0,
+          "labeler never increments teacher_calls / residual speak");
+    check(wo.residual_speak == 0 && residual_oracle_calls == 0 &&
+              residual_batch_calls == 0,
+          "residual_gguf_oracle / label_batch were not called");
+    check(wo.file.gguf_reads >= CNET_WEIGHT_U8_INC16_COMBOS,
+          "labeler read the named tensor on the full domain");
 
-    teacher_at_unbind = wo.teacher_calls;
+    reads_at_unbind = wo.file.gguf_reads;
+    cnet_weight_unmap(&file);
+    check(file.gguf == NULL, "GGUF handle released after unbind");
+
     serve_ok = 1;
     for (x = 0; x < 16; ++x) {
         double in[4], out[4], clean[4];
@@ -187,9 +249,11 @@ int main(void) {
             if (y != ((x + 1u) & 15u)) serve_ok = 0;
         }
     }
-    check(serve_ok, "serve student only over the full domain");
-    check(wo.teacher_calls == teacher_at_unbind,
-          "serve does not call the teacher after unbind");
+    check(serve_ok, "serve student only after GGUF is gone");
+    check(wo.file.gguf_reads == reads_at_unbind,
+          "serve does not touch the GGUF after unbind");
+    check(wo.teacher_calls == 0 && wo.residual_speak == 0,
+          "serve does not increment teacher_calls / residual speak");
     check(cnet_weight_labeler(&wo, NULL, 0, NULL, 0) == -1,
           "unbound labeler refuses (teacher cannot speak)");
 
@@ -201,10 +265,15 @@ int main(void) {
               "scorecard: attested, lease released");
     }
 
+    check(residual_oracle_calls == 0 && residual_batch_calls == 0,
+          "residual mouth counters still zero at exit");
+
     btn_free(&student);
-    cnet_weight_unmap(&file);
     remove(path);
     remove(junk);
+
+    printf("python=0\n");
+    printf("host_gguf=0 fixture_through_cce_gguf=1\n");
 
     if (failures) {
         printf("CNET_WEIGHT_CONVERT_FAIL failures=%d checks=%d\n",
