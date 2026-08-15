@@ -50,6 +50,7 @@
 #include "../include/cnet_chat_lookup.h"
 #include "../include/cnet_utterance.h"
 #include "../include/cnet_c_speak.h"
+#include "../include/cnet_skill_lane.h"
 
 #define CD_PATH 512
 #define CD_SOCK 108
@@ -361,28 +362,43 @@ static int cd_ask(CdState *S, const char *q, CdReply *out) {
     memset(out, 0, sizeof *out);
     memset(&rt, 0, sizeof rt);
 
-    /* Typed fetch hop BEFORE residual / teacher-on-miss / ROE net.enable_lookup.
-       Same function the unit test calls. Fluency/compete are not on this line. */
+    /* AICIMO harness lane: exact capsule/lookup never escalates.
+       OOD abstains. Teacher-on-miss is not reached on this path. */
     {
         CnetChatLookupTurn hop;
-        if (cnet_chat_lookup_cnetd_hop(q, &hop) == 0 && hop.answered &&
-            hop.spoken[0] && hop.residual_calls == 0) {
-            CnetCSpeakResult wrap;
-            const char *spoken = hop.spoken;
-            /* C drafts glue around the A-bound lookup slot. Residual stays 0. */
-            if (cnet_c_speak_after_lookup(&hop, &wrap) == 0 && wrap.wrapped &&
-                wrap.spoken[0] && wrap.residual_calls == 0 &&
-                strstr(wrap.spoken, hop.report.value) != NULL)
-                spoken = wrap.spoken;
+        CnetSkillLaneResult lane;
+        const CnetChatLookupTurn *hop_arg = NULL;
+        memset(&hop, 0, sizeof hop);
+        if (cnet_chat_lookup_cnetd_hop(q, &hop) == 0)
+            hop_arg = &hop;
+        else if (hop.residual_calls != 0)
+            hop_arg = &hop;
+        if (cnet_skill_lane_cd_ask(q, hop_arg, &lane) == 0) {
+            const char *spoken = lane.spoken[0] ? lane.spoken
+                                                : (lane.value[0] ? lane.value
+                                                                 : lane.refusal);
             snprintf(out->answer, sizeof out->answer, "%s", spoken);
             snprintf(out->utterance, sizeof out->utterance, "%s", spoken);
-            snprintf(out->source, sizeof out->source, "CNET");
-            snprintf(out->skill, sizeof out->skill, "%s", CNET_LOOKUP_CONTRACT);
+            snprintf(out->source, sizeof out->source, "%s",
+                     lane.bound ? "LOCAL" : "CNET");
+            snprintf(out->skill, sizeof out->skill, "%s",
+                     lane.skill[0] ? lane.skill : "skill_lane_abstain");
             cd_scopy(out->prepared, sizeof out->prepared, q);
-            out->verified = 1;
-            out->miss = 0;
-            out->may_voice = 1;
+            out->verified = lane.claimed_cert ? 1 : 0;
+            out->miss = lane.bound ? 0 : 1;
+            out->may_voice = lane.bound ? 1 : 0;
             out->tokens = 0;
+            if (out->miss && S->miss_log[0]) {
+                FILE *mf = fopen(S->miss_log, "a");
+                if (mf) {
+                    fprintf(mf,
+                            "{\"via\":\"cnet_skill_lane\",\"skill\":\"%s\","
+                            "\"refusal\":\"%s\",\"teacher\":false,"
+                            "\"claimed_cert\":0,\"residual_calls\":0}\n",
+                            out->skill, lane.refusal);
+                    fclose(mf);
+                }
+            }
             return 0;
         }
     }

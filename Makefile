@@ -767,6 +767,22 @@ cnet_c_speak: include/cnet_c_speak.h src/cnet_c_speak.c src/cce/cce_wordlm.c \
 	@grep -q '^CNET_C_SPEAK_PASS$$' logs/cnet_c_speak.log
 	@grep -q '^checks=58 ' logs/cnet_c_speak.log
 
+.PHONY: cnet_harness
+cnet_harness: include/cnet_skill_lane.h src/cnet_skill_lane.c \
+		include/cnet_c_speak.h src/cnet_c_speak.c src/cce/cce_wordlm.c \
+		include/cnet_utterance.h src/cnet_utterance.c \
+		tests/test_cnet_skill_lane.c
+	@mkdir -p $(BIN_DIR) logs
+	@! grep -E 'python3|#include <Python|import sys' src/cnet_skill_lane.c tests/test_cnet_skill_lane.c
+	@! grep -E 'residual_gguf_oracle|roe_set_net|enable_llm' src/cnet_skill_lane.c
+	$(CC) $(CFLAGS) -Werror -Iinclude -o $(BIN_DIR)/test_cnet_skill_lane \
+		src/cnet_skill_lane.c src/cnet_c_speak.c src/cce/cce_wordlm.c \
+		src/cnet_utterance.c tests/test_cnet_skill_lane.c $(LDFLAGS)
+	@./$(BIN_DIR)/test_cnet_skill_lane | tee logs/cnet_harness.log
+	@grep -q '^CNET_HARNESS_PASS$$' logs/cnet_harness.log
+	@grep -q '^checks=94 ' logs/cnet_harness.log
+	@grep -q 'python=0' logs/cnet_harness.log
+
 .PHONY: cnet_weight_convert cnet_weight_gguf
 cnet_weight_convert cnet_weight_gguf: include/cnet_weight_convert.h \
 		src/cnet_weight_convert.c tests/test_cnet_weight_convert.c $(CCE_GGUF)
@@ -3878,17 +3894,18 @@ query_alias dialog_ctx query_dialog slot_extract: include/cnet_query_alias.h src
 cnetd: $(ROE_ASI_SRC) tools/cnetd.c src/cnet_domain_route.c src/cnet_utterance.c \
 		src/cnet_query_alias.c src/cnet_dialog_ctx.c src/cnet_slot_extract.c \
 		src/cnet_chat_lookup.c src/cnet_lookup.c src/cce/cce_campaign_provenance.c \
-		src/cnet_c_speak.c src/cce/cce_wordlm.c \
+		src/cnet_c_speak.c src/cce/cce_wordlm.c src/cnet_skill_lane.c \
 		include/cnet_probe_shortcircuit.h include/cnet_domain_route.h include/cnet_utterance.h \
 		include/cnet_query_alias.h include/cnet_dialog_ctx.h include/cnet_slot_extract.h \
-		include/cnet_chat_lookup.h include/cnet_lookup.h include/cnet_c_speak.h
+		include/cnet_chat_lookup.h include/cnet_lookup.h include/cnet_c_speak.h \
+		include/cnet_skill_lane.h
 	@mkdir -p $(BIN_DIR) logs
 	@pkg-config --exists libcurl
 	$(CC) $(ASI_IMPROVE_CFLAGS) -DCNET_HAVE_CURL=1 $$(pkg-config --cflags libcurl) -o $(BIN_DIR)/cnetd \
 		$(ROE_ASI_SRC) src/cnet_domain_route.c src/cnet_utterance.c \
 		src/cnet_query_alias.c src/cnet_dialog_ctx.c src/cnet_slot_extract.c \
 		src/cnet_chat_lookup.c src/cnet_lookup.c src/cce/cce_campaign_provenance.c \
-		src/cnet_c_speak.c src/cce/cce_wordlm.c \
+		src/cnet_c_speak.c src/cce/cce_wordlm.c src/cnet_skill_lane.c \
 		tools/cnetd.c $(ROE_ASI_LIBS) $$(pkg-config --libs libcurl)
 	@echo "cnetd built → $(BIN_DIR)/cnetd"
 
