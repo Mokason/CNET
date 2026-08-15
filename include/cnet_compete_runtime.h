@@ -71,4 +71,12 @@ int cnet_compete_runtime_execute_diagnostic(
 int cnet_compete_result_json(const CnetCompeteResult *result,
                              char *output, size_t capacity);
 
+/* Fail-closed CRC recoverer. Proposes crc8_atm only when the closed typed
+   frame uniquely binds ATM CRC-8 and exactly one in-range octet. It does
+   not consult WordLM, does not lower the WordLM threshold, and does not
+   read held-out fixtures. */
+int cnet_compete_crc_recover_propose(const char *prompt,
+                                     CnetCompeteIntent *intent,
+                                     unsigned *octet);
+
 #endif
