@@ -506,17 +506,17 @@ freeze: nn_demo
 	@echo "Generated include/generated.h from committed txt files."
 	@echo "You can now #include it and use btn_init_committed(btn, \"hex_value\"); etc."
 
-test_nn: $(SRC) $(TEST) include/nn.h
-	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $(SRC) $(TEST) $(LDFLAGS)
+test_nn: $(SRC) $(TEST) include/nn.h $(STANDALONE_MAIN)
+	$(CC) $(CFLAGS) -DCNET_TEST_ENTRY=run_$@ -o $(BIN_DIR)/$@ $(SRC) $(TEST) $(STANDALONE_MAIN) $(LDFLAGS)
 
 # Includes src/nn.c directly to reach the static encoder, so it is NOT
 # compiled together with $(SRC) (that would duplicate symbols).
-test_encode_oob: $(SRC) $(OOB_TEST) include/nn.h
-	$(CC) $(CFLAGS) -Wno-unused-function -o $(BIN_DIR)/$@ $(OOB_TEST) $(LDFLAGS)
+test_encode_oob: $(SRC) $(OOB_TEST) include/nn.h $(STANDALONE_MAIN)
+	$(CC) $(CFLAGS) -DCNET_TEST_ENTRY=run_$@ -Wno-unused-function -o $(BIN_DIR)/$@ $(OOB_TEST) $(STANDALONE_MAIN) $(LDFLAGS)
 
 # Composes two independently-frozen primitives loaded from disk.
-test_composition: $(SRC) $(COMPOSE_TEST) include/nn.h
-	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $(SRC) $(COMPOSE_TEST) $(LDFLAGS)
+test_composition: $(SRC) $(COMPOSE_TEST) include/nn.h $(STANDALONE_MAIN)
+	$(CC) $(CFLAGS) -DCNET_TEST_ENTRY=run_$@ -o $(BIN_DIR)/$@ $(SRC) $(COMPOSE_TEST) $(STANDALONE_MAIN) $(LDFLAGS)
 
 # The per-suite sources expose run_test_<suite>() and no main; tests/test_all.c
 # owns main for the unified build. tests/standalone_main.c supplies one here,
@@ -630,8 +630,8 @@ real_model_control_plane_test: phase5_bounded_activation_test
 	dotnet test dotnet/CnetControlPlane.Tests --filter FullyQualifiedName~IngestTests --verbosity minimal
 	bash tests/test_qgkp_cli_runtime.sh
 
-test_dag: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(DAG_TEST) include/nn.h include/router.h include/plan_table.h include/contract/contract.h
-	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(DAG_TEST) $(LDFLAGS)
+test_dag: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(DAG_TEST) include/nn.h include/router.h include/plan_table.h include/contract/contract.h $(STANDALONE_MAIN)
+	$(CC) $(CFLAGS) -DCNET_TEST_ENTRY=run_$@ -o $(BIN_DIR)/$@ $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(DAG_TEST) $(STANDALONE_MAIN) $(LDFLAGS)
 
 # Contract-graph topology audit (Betti-0/1, "what to mint next", dedup).
 # Pure observability over the registry; zero authority. See src/topology.c.
@@ -656,8 +656,8 @@ test_topology_json: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(TOPOLOGY) tests
 	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(TOPOLOGY) tests/test_topology_json.c $(LDFLAGS)
 	./$(BIN_DIR)/test_topology_json
 
-test_consolidate: $(SRC) $(ROUTER) $(CONSOLIDATE) $(PLAN_TABLE) $(CONTRACT) $(CHUNK_TEST) include/nn.h include/router.h include/consolidate.h include/plan_table.h include/contract/contract.h
-	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $(SRC) $(ROUTER) $(CONSOLIDATE) $(PLAN_TABLE) $(CONTRACT) $(CHUNK_TEST) $(LDFLAGS)
+test_consolidate: $(SRC) $(ROUTER) $(CONSOLIDATE) $(PLAN_TABLE) $(CONTRACT) $(CHUNK_TEST) include/nn.h include/router.h include/consolidate.h include/plan_table.h include/contract/contract.h $(STANDALONE_MAIN)
+	$(CC) $(CFLAGS) -DCNET_TEST_ENTRY=run_$@ -o $(BIN_DIR)/$@ $(SRC) $(ROUTER) $(CONSOLIDATE) $(PLAN_TABLE) $(CONTRACT) $(CHUNK_TEST) $(STANDALONE_MAIN) $(LDFLAGS)
 
 # library_evolve: re-plan a task list, distill proven plans into certified
 # chunks, dedup by contract, law-guard with rollback. Self-contained TDD.
@@ -917,8 +917,8 @@ contract_optimized: contract_opt_test contract_opt_sanitize contract_secure cont
 		logs/contract_secure.log logs/contract_unit.log
 	@echo CONTRACT_OPTIMIZATION_GATE_PASS
 
-test_certify: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONSOLIDATE) $(CONTRACT) $(CERTIFY_TEST) include/nn.h include/router.h include/plan_table.h include/consolidate.h include/contract/contract.h
-	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONSOLIDATE) $(CONTRACT) $(CERTIFY_TEST) $(LDFLAGS)
+test_certify: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONSOLIDATE) $(CONTRACT) $(CERTIFY_TEST) include/nn.h include/router.h include/plan_table.h include/consolidate.h include/contract/contract.h $(STANDALONE_MAIN)
+	$(CC) $(CFLAGS) -DCNET_TEST_ENTRY=run_$@ -o $(BIN_DIR)/$@ $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONSOLIDATE) $(CONTRACT) $(CERTIFY_TEST) $(STANDALONE_MAIN) $(LDFLAGS)
 
 # Auto-discovers and runs a chain over real frozen primitives.
 route_demo: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(TOPOLOGY) $(ROUTE_DEMO) include/nn.h include/router.h include/plan_table.h include/contract/contract.h include/topology.h
@@ -940,29 +940,29 @@ split_demo: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(SPLIT_DEMO) include/nn.
 chunk_demo: $(SRC) $(ROUTER) $(CONSOLIDATE) $(PLAN_TABLE) $(CONTRACT) $(CHUNK_DEMO) include/nn.h include/router.h include/consolidate.h include/plan_table.h include/contract/contract.h
 	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $(SRC) $(ROUTER) $(CONSOLIDATE) $(PLAN_TABLE) $(CONTRACT) $(CHUNK_DEMO) $(LDFLAGS)
 
-test_property: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(PROPERTY_TEST) include/nn.h include/router.h include/plan_table.h include/contract/contract.h include/property.h
-	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(PROPERTY_TEST) $(LDFLAGS)
+test_property: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(PROPERTY_TEST) include/nn.h include/router.h include/plan_table.h include/contract/contract.h include/property.h $(STANDALONE_MAIN)
+	$(CC) $(CFLAGS) -DCNET_TEST_ENTRY=run_$@ -o $(BIN_DIR)/$@ $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(PROPERTY_TEST) $(STANDALONE_MAIN) $(LDFLAGS)
 
 # Hermetic tag-safety checks plus exhaustive sweeps over the committed
 # frozen decimal weights (regenerate those with make decimal).
-test_decimal: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(DECIMAL_TEST) include/nn.h include/router.h include/plan_table.h include/contract/contract.h include/property.h
-	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(DECIMAL_TEST) $(LDFLAGS)
+test_decimal: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(DECIMAL_TEST) include/nn.h include/router.h include/plan_table.h include/contract/contract.h include/property.h $(STANDALONE_MAIN)
+	$(CC) $(CFLAGS) -DCNET_TEST_ENTRY=run_$@ -o $(BIN_DIR)/$@ $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(DECIMAL_TEST) $(STANDALONE_MAIN) $(LDFLAGS)
 
 # Shared nodes, multi-root circuits, reachability pruning, circuit chunks.
-test_circuit: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONSOLIDATE) $(CONTRACT) $(CIRCUIT_TEST) include/nn.h include/router.h include/plan_table.h include/consolidate.h include/contract/contract.h
-	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONSOLIDATE) $(CONTRACT) $(CIRCUIT_TEST) $(LDFLAGS)
+test_circuit: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONSOLIDATE) $(CONTRACT) $(CIRCUIT_TEST) include/nn.h include/router.h include/plan_table.h include/consolidate.h include/contract/contract.h $(STANDALONE_MAIN)
+	$(CC) $(CFLAGS) -DCNET_TEST_ENTRY=run_$@ -o $(BIN_DIR)/$@ $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONSOLIDATE) $(CONTRACT) $(CIRCUIT_TEST) $(STANDALONE_MAIN) $(LDFLAGS)
 
 # The fast lane: an independent route executor (packed weights, reused scratch,
 # batched matmul, per-handoff snap) checked against route_execute. Loads the
 # committed frozen hex_value/increment weights.
-test_fastpath: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(FASTPATH) $(FASTPATH_TEST) include/nn.h include/router.h include/fastpath.h include/plan_table.h include/contract/contract.h
-	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(FASTPATH) $(FASTPATH_TEST) $(LDFLAGS)
+test_fastpath: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(FASTPATH) $(FASTPATH_TEST) include/nn.h include/router.h include/fastpath.h include/plan_table.h include/contract/contract.h $(STANDALONE_MAIN)
+	$(CC) $(CFLAGS) -DCNET_TEST_ENTRY=run_$@ -o $(BIN_DIR)/$@ $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(FASTPATH) $(FASTPATH_TEST) $(STANDALONE_MAIN) $(LDFLAGS)
 
 # The mod-k residue domain: delta certifies exactly + a short scan matches
 # ground truth (the correctness gate). residue_common.h holds shared statics.
 # (Full residue_study was planned but never implemented; only the test gate exists.)
-test_residue: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(SCAN) $(RESIDUE_TEST) include/nn.h include/router.h include/contract/contract.h include/plan_table.h include/scan.h tests/residue_common.h
-	$(CC) $(CFLAGS) -Wno-unused-function -o $(BIN_DIR)/$@ $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(SCAN) $(RESIDUE_TEST) $(LDFLAGS)
+test_residue: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(SCAN) $(RESIDUE_TEST) include/nn.h include/router.h include/contract/contract.h include/plan_table.h include/scan.h tests/residue_common.h $(STANDALONE_MAIN)
+	$(CC) $(CFLAGS) -DCNET_TEST_ENTRY=run_$@ -Wno-unused-function -o $(BIN_DIR)/$@ $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(SCAN) $(RESIDUE_TEST) $(STANDALONE_MAIN) $(LDFLAGS)
 
 # v5.0 Proposal Sidecar (SHADOW_ONLY): a scripted proposer + strict-validation
 # harness over the residue fixture, proving the imagination lane has zero
@@ -1113,8 +1113,8 @@ compounding_bench: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONS
 # Recursive expression evaluator: bounded 3-slot stack step (expr_step) certifies
 # (best-effort under budget); hand-built chains evaluate RPN-style token programs matching GT.
 # expr_common.h holds the statics (patterned on residue). Integrated into `make test`.
-test_expr: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(SCAN) $(EXPR_TEST) include/nn.h include/router.h include/contract/contract.h include/plan_table.h include/scan.h tests/expr_common.h
-	$(CC) $(CFLAGS) -Wno-unused-function -o $(BIN_DIR)/$@ $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(SCAN) $(EXPR_TEST) $(LDFLAGS)
+test_expr: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(SCAN) $(EXPR_TEST) include/nn.h include/router.h include/contract/contract.h include/plan_table.h include/scan.h tests/expr_common.h $(STANDALONE_MAIN)
+	$(CC) $(CFLAGS) -DCNET_TEST_ENTRY=run_$@ -Wno-unused-function -o $(BIN_DIR)/$@ $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(SCAN) $(EXPR_TEST) $(STANDALONE_MAIN) $(LDFLAGS)
 
 # Checks equational laws over real primitives; catches a broken retrain.
 property_demo: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(PROPERTY_DEMO) include/nn.h include/router.h include/plan_table.h include/contract/contract.h include/property.h
@@ -1484,8 +1484,14 @@ verify-nightly: verify cnet_fault_loop_test registry_lora_store_test jtc_adapter
 
 test: verify
 
-# (Legacy individual targets removed to enforce single-exe policy for tests.
-# If you need to debug one suite in isolation, compile it manually or restore the rule temporarily.)
+# (This once said the individual targets had been removed to enforce a single-exe
+# policy, and that debugging one suite meant compiling it by hand. They were
+# never actually removed: fourteen of them survived and every one failed to link
+# once main moved into tests/test_all.c. They now build and run again, each
+# linking tests/standalone_main.c with -DCNET_TEST_ENTRY=run_$@, so debugging a
+# single suite is make test_<suite> once more. test_all remains the suite of
+# record; the individual targets are a debugging convenience over the same code
+# and add no second source of truth.)
 
 # Regenerates the frozen weight files via the demo, then composes
 # hex_value -> increment with no training in between.
