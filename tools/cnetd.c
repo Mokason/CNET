@@ -51,6 +51,7 @@
 #include "../include/cnet_utterance.h"
 #include "../include/cnet_c_speak.h"
 #include "../include/cnet_skill_lane.h"
+#include "../include/cnet_capsule_loop.h"
 
 #define CD_PATH 512
 #define CD_SOCK 108
@@ -362,44 +363,77 @@ static int cd_ask(CdState *S, const char *q, CdReply *out) {
     memset(out, 0, sizeof *out);
     memset(&rt, 0, sizeof rt);
 
-    /* AICIMO harness lane: exact capsule/lookup never escalates.
-       OOD abstains. Teacher-on-miss is not reached on this path. */
+    /* Capsule loop (two named skills) or skill lane (one).
+       Exact never escalates. OOD abstains. Teacher-on-miss is not reached. */
     {
         CnetChatLookupTurn hop;
-        CnetSkillLaneResult lane;
         const CnetChatLookupTurn *hop_arg = NULL;
         memset(&hop, 0, sizeof hop);
         if (cnet_chat_lookup_cnetd_hop(q, &hop) == 0)
             hop_arg = &hop;
         else if (hop.residual_calls != 0)
             hop_arg = &hop;
-        if (cnet_skill_lane_cd_ask(q, hop_arg, &lane) == 0) {
-            const char *spoken = lane.spoken[0] ? lane.spoken
-                                                : (lane.value[0] ? lane.value
-                                                                 : lane.refusal);
-            snprintf(out->answer, sizeof out->answer, "%s", spoken);
-            snprintf(out->utterance, sizeof out->utterance, "%s", spoken);
-            snprintf(out->source, sizeof out->source, "%s",
-                     lane.bound ? "LOCAL" : "CNET");
-            snprintf(out->skill, sizeof out->skill, "%s",
-                     lane.skill[0] ? lane.skill : "skill_lane_abstain");
-            cd_scopy(out->prepared, sizeof out->prepared, q);
-            out->verified = lane.claimed_cert ? 1 : 0;
-            out->miss = lane.bound ? 0 : 1;
-            out->may_voice = lane.bound ? 1 : 0;
-            out->tokens = 0;
-            if (out->miss && S->miss_log[0]) {
-                FILE *mf = fopen(S->miss_log, "a");
-                if (mf) {
-                    fprintf(mf,
-                            "{\"via\":\"cnet_skill_lane\",\"skill\":\"%s\","
-                            "\"refusal\":\"%s\",\"teacher\":false,"
-                            "\"claimed_cert\":0,\"residual_calls\":0}\n",
-                            out->skill, lane.refusal);
-                    fclose(mf);
+        if (cnet_capsule_loop_count_subjects(q) >= 2) {
+            CnetCapsuleLoopResult loop;
+            if (cnet_capsule_loop_cd_ask(q, hop_arg, &loop) == 0) {
+                const char *spoken = loop.spoken[0] ? loop.spoken
+                                                    : (loop.value[0] ? loop.value
+                                                                     : loop.refusal);
+                snprintf(out->answer, sizeof out->answer, "%s", spoken);
+                snprintf(out->utterance, sizeof out->utterance, "%s", spoken);
+                snprintf(out->source, sizeof out->source, "%s",
+                         loop.bound ? "LOCAL" : "CNET");
+                snprintf(out->skill, sizeof out->skill, "%s",
+                         loop.skill[0] ? loop.skill : "capsule_loop_abstain");
+                cd_scopy(out->prepared, sizeof out->prepared, q);
+                out->verified = loop.claimed_cert ? 1 : 0;
+                out->miss = loop.bound ? 0 : 1;
+                out->may_voice = loop.bound ? 1 : 0;
+                out->tokens = 0;
+                if (out->miss && S->miss_log[0]) {
+                    FILE *mf = fopen(S->miss_log, "a");
+                    if (mf) {
+                        fprintf(mf,
+                                "{\"via\":\"cnet_capsule_loop\",\"skill\":\"%s\","
+                                "\"refusal\":\"%s\",\"teacher\":false,"
+                                "\"claimed_cert\":0,\"residual_calls\":0}\n",
+                                out->skill, loop.refusal);
+                        fclose(mf);
+                    }
                 }
+                return 0;
             }
-            return 0;
+        }
+        {
+            CnetSkillLaneResult lane;
+            if (cnet_skill_lane_cd_ask(q, hop_arg, &lane) == 0) {
+                const char *spoken = lane.spoken[0] ? lane.spoken
+                                                    : (lane.value[0] ? lane.value
+                                                                     : lane.refusal);
+                snprintf(out->answer, sizeof out->answer, "%s", spoken);
+                snprintf(out->utterance, sizeof out->utterance, "%s", spoken);
+                snprintf(out->source, sizeof out->source, "%s",
+                         lane.bound ? "LOCAL" : "CNET");
+                snprintf(out->skill, sizeof out->skill, "%s",
+                         lane.skill[0] ? lane.skill : "skill_lane_abstain");
+                cd_scopy(out->prepared, sizeof out->prepared, q);
+                out->verified = lane.claimed_cert ? 1 : 0;
+                out->miss = lane.bound ? 0 : 1;
+                out->may_voice = lane.bound ? 1 : 0;
+                out->tokens = 0;
+                if (out->miss && S->miss_log[0]) {
+                    FILE *mf = fopen(S->miss_log, "a");
+                    if (mf) {
+                        fprintf(mf,
+                                "{\"via\":\"cnet_skill_lane\",\"skill\":\"%s\","
+                                "\"refusal\":\"%s\",\"teacher\":false,"
+                                "\"claimed_cert\":0,\"residual_calls\":0}\n",
+                                out->skill, lane.refusal);
+                        fclose(mf);
+                    }
+                }
+                return 0;
+            }
         }
     }
     memset(&ameta, 0, sizeof ameta);
