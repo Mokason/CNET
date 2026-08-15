@@ -7196,6 +7196,12 @@ cnet_7b_runtime_san: cnet_7b_runtime
 		tee logs/cnet_7b_runtime_san.log
 	@grep -q CNET_7B_RUNTIME_PASS logs/cnet_7b_runtime_san.log
 
+# The v5 suite is frozen, so the whole PASS line is pinned with grep -qx and
+# not just base_params. refused, semantic_adversarial and typed_regressions are
+# compile-time array sizes in tests/test_cnet_compete_runtime.c: deleting a
+# refusal or adversarial case shrinks coverage without failing any assertion
+# inside the test. That already happened once — 80ce9e8 moved
+# semantic_adversarial 97 -> 96 and the old substring grep stayed green.
 cnet_7b_v5_runtime: cnet_7b_v5_intent cnet_7b_v5_capsule_artifacts \
 		include/cnet_compete_runtime.h include/cnet_compete_artifacts.h \
 		src/cnet_compete_runtime.c tests/test_cnet_compete_runtime.c \
@@ -7212,7 +7218,7 @@ cnet_7b_v5_runtime: cnet_7b_v5_intent cnet_7b_v5_capsule_artifacts \
 		artifacts/cnet_asi5_v5/intent.meta \
 		artifacts/cnet_asi5_v5/capsules | \
 		tee logs/cnet_7b_v5_runtime.log
-	@grep -q '^CNET_7B_RUNTIME_PASS .*base_params=321757 ' \
+	@grep -qx 'CNET_7B_RUNTIME_PASS units=6 certified_rows=1296 compose_members=3 compose_guard_checks=3 base_params=321757 base_bytes=277687 capsule_payload_bytes=192352 refused=21 semantic_matrix=384 semantic_adversarial=96 typed_regressions=49' \
 		logs/cnet_7b_v5_runtime.log
 
 cnet_7b_v5_runtime_san: cnet_7b_v5_runtime
@@ -7233,7 +7239,7 @@ cnet_7b_v5_runtime_san: cnet_7b_v5_runtime
 			artifacts/cnet_asi5_v5/intent.meta \
 			artifacts/cnet_asi5_v5/capsules | \
 			tee logs/cnet_7b_v5_runtime_san.log
-	@grep -q '^CNET_7B_RUNTIME_PASS .*base_params=321757 ' \
+	@grep -qx 'CNET_7B_RUNTIME_PASS units=6 certified_rows=1296 compose_members=3 compose_guard_checks=3 base_params=321757 base_bytes=277687 capsule_payload_bytes=192352 refused=21 semantic_matrix=384 semantic_adversarial=96 typed_regressions=49' \
 		logs/cnet_7b_v5_runtime_san.log
 
 # Read-only admission-stage histogram over the frozen v5 heldout fixture.
