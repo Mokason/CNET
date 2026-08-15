@@ -103,6 +103,22 @@ int library_evolve(PrimitiveRegistry *reg,
    registry that borrowed them is no longer in use. */
 void library_report_free(LibraryReport *report);
 
+/* Evolve door: used by library_evolve / finalize_chunk.
+   Exact-same digest still skips. An already-known contract with
+   n_comps==0 still skips (no composition proof). Same-name incumbent
+   goes through cnet_swap_admit with the persisted incumbent table as
+   old_cov (incoming is new_cov only). Cross-name never REPLACE.
+   Default evolve does not bind compositions, so it cannot REPLACE.
+   No same-name incumbent: specialist_admit as before. Returns 0 if
+   the brick was registered / replaced / added-alongside, -1 if
+   skipped/refused. */
+int library_admit_candidate(PrimitiveRegistry *reg,
+                            BinaryTransformNetwork *btn,
+                            const char *name,
+                            const Contract *c);
+
+
+
 /* Sleep beside evolve: extract a shared name-sequence brick from >=2 traces
    that is a proper subsequence of at least one. If the brick is a unary
    well-typed route of length >= 2, distill it through the usual certify

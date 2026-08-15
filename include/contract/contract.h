@@ -159,6 +159,12 @@ int registry_add_certified(PrimitiveRegistry *reg,
                            BinaryTransformNetwork *btn,
                            const char *name, const Contract *c);
 
+/* Deep-copy the contract's exemplar table onto the entry as the persisted
+   incumbent certification table (old_cov for the swap law). Replaces any
+   prior copy. Returns 0, or -1 on bad args / OOM. */
+int registry_store_cert_coverage(RegistryEntry *e, const Contract *c);
+void registry_clear_cert_coverage(RegistryEntry *e);
+
 /* Evidence-gated hot-swap: promote shadow `shadow_name` to replace the active
    it shadows, iff it (1) has accrued >= min_evidence outcomes, (2) has
    reliability >= the active's, and (3) certifies `contract`. On promotion the
