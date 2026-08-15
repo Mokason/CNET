@@ -7235,6 +7235,44 @@ cnet_7b_v5_diagnostic_san: cnet_7b_v5_diagnostic
 	@grep -qx 'CNET_7B_V5_DIAGNOSTIC_PASS stages=4 serving_path_identity=1 answer_values_exposed=0' \
 		logs/cnet_7b_v5_diagnostic_san.log
 
+.PHONY: cnet_7b_crc_recover cnet_7b_crc_recover_san
+cnet_7b_crc_recover:
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -Werror -ffunction-sections -fdata-sections -Iinclude \
+		-o $(BIN_DIR)/test_cnet_compete_crc_recover \
+		src/cnet_compete_runtime.c src/cnet_compete_intent.c \
+		src/cnet_compete_capsules.c src/cnet_compete_crc_dev.c \
+		src/cnet_compete_independence.c src/cce/cce_wordlm.c \
+		$(CNET_COMPETE_CAPSULE_CORE) $(ROUTER) $(SPECIALIST_SRC) \
+		tests/test_cnet_compete_crc_recover.c \
+		-Wl,--gc-sections $(LDFLAGS) $(MCP_LDFLAGS) -pthread
+	@./$(BIN_DIR)/test_cnet_compete_crc_recover \
+			benchmarks/cnet_asi5_v5/excluded_prompts.tsv | \
+			tee logs/cnet_7b_crc_recover.log
+	@grep -q '^CNET_7B_CRC_RECOVER_PASS ' logs/cnet_7b_crc_recover.log
+	@git diff --name-only origin/master -- benchmarks/cnet_asi5_v5 > \
+		logs/cnet_7b_crc_recover_freeze.log
+	@test ! -s logs/cnet_7b_crc_recover_freeze.log
+
+cnet_7b_crc_recover_san: cnet_7b_crc_recover
+	$(CC) -std=c11 -Wall -Wextra -pedantic -Werror -O1 -g \
+		-D_DEFAULT_SOURCE -DCNET_HAVE_CURL=0 \
+		-fsanitize=address,undefined -fno-omit-frame-pointer \
+		-ffunction-sections -fdata-sections -Iinclude \
+		-o $(BIN_DIR)/test_cnet_compete_crc_recover_san \
+		src/cnet_compete_runtime.c src/cnet_compete_intent.c \
+		src/cnet_compete_capsules.c src/cnet_compete_crc_dev.c \
+		src/cnet_compete_independence.c src/cce/cce_wordlm.c \
+		$(CNET_COMPETE_CAPSULE_CORE) $(ROUTER) $(SPECIALIST_SRC) \
+		tests/test_cnet_compete_crc_recover.c \
+		-Wl,--gc-sections -fsanitize=address,undefined -lm -lpthread
+	@ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 \
+		UBSAN_OPTIONS=halt_on_error=1 \
+		./$(BIN_DIR)/test_cnet_compete_crc_recover_san \
+			benchmarks/cnet_asi5_v5/excluded_prompts.tsv | \
+			tee logs/cnet_7b_crc_recover_san.log
+	@grep -q '^CNET_7B_CRC_RECOVER_PASS ' logs/cnet_7b_crc_recover_san.log
+
 .PHONY: cnet_7b_v6_coherence
 cnet_7b_v6_coherence: cnet_7b_v5_runtime
 	$(CC) $(CFLAGS) -Werror -ffunction-sections -fdata-sections -Iinclude \

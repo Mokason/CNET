@@ -2312,6 +2312,26 @@ static int resolve_contract_semantics(const char *prompt,
     return 0;
 }
 
+int cnet_compete_crc_recover_propose(const char *prompt,
+                                     CnetCompeteIntent *intent,
+                                     unsigned *octet) {
+    CnetCompeteIntent semantic = CNET_INTENT_ABSTAIN;
+    unsigned bound = 0;
+    int classified;
+    if (intent != NULL) *intent = CNET_INTENT_ABSTAIN;
+    if (octet != NULL) *octet = 0;
+    if (prompt == NULL || intent == NULL) return -1;
+    classified = resolve_contract_semantics(prompt, &semantic);
+    if (classified < 0) return -1;
+    if (classified != 0 || semantic != CNET_INTENT_CRC8) return 1;
+    if (parse_numeric_argument(prompt, CNET_INTENT_CRC8, &bound) != 0 ||
+        bound > 255u)
+        return 1;
+    *intent = CNET_INTENT_CRC8;
+    if (octet != NULL) *octet = bound;
+    return 0;
+}
+
 int cnet_compete_runtime_load(const char *model_path,
                               const char *metadata_path,
                               const char *capsule_root,
@@ -2440,9 +2460,23 @@ static int runtime_execute_internal(CnetCompeteRuntime *runtime,
         return -1;
     }
     if (classified != 0) {
+        CnetCompeteIntent recovered = CNET_INTENT_ABSTAIN;
+        unsigned octet = 0;
+        int recovered_rc = cnet_compete_crc_recover_propose(prompt, &recovered,
+                                                            &octet);
+        if (recovered_rc < 0) {
+            if (diagnostic != NULL)
+                diagnostic->refusal = CNET_COMPETE_REFUSAL_EXECUTION;
+            return -1;
+        }
+        if (recovered_rc != 0 || recovered != CNET_INTENT_CRC8) {
+            if (diagnostic != NULL)
+                diagnostic->refusal = CNET_COMPETE_REFUSAL_INTENT_PROPOSAL;
+            return 0;
+        }
+        intent = CNET_INTENT_CRC8;
         if (diagnostic != NULL)
-            diagnostic->refusal = CNET_COMPETE_REFUSAL_INTENT_PROPOSAL;
-        return 0;
+            diagnostic->proposed_intent = CNET_INTENT_CRC8;
     }
     classified = resolve_contract_semantics(prompt, &semantic_intent);
     if (diagnostic != NULL) diagnostic->semantic_intent = semantic_intent;
