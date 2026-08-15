@@ -1,17 +1,16 @@
 /* Weight conversion door — weights nominate, table certifies, teacher leaves.
-   Native C. Residual / teacher never speaks. Fixture GGUF is not Bonsai. */
+   Reader is cce_gguf. Residual / teacher never speaks. Fixture is not Bonsai. */
 #include "../include/cnet_weight_convert.h"
 #include "../include/cce/cce_campaign_provenance.h"
+#include "../include/cce/cce_gguf.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
-#if !defined(_WIN32)
-#include <fcntl.h>
-#include <sys/mman.h>
 #include <sys/stat.h>
-#include <unistd.h>
+
+#if defined(CNET_RESIDUAL_GGUF_H) || defined(RESIDUAL_GGUF_H)
+#error "residual_gguf is a mouth; the conversion labeler must not include it"
 #endif
 
 #define U8_INC16_W 4u
@@ -173,199 +172,71 @@ int cnet_weight_attest(const char *path, CnetOracleIdentity *id) {
     return 0;
 }
 
-static int need(const unsigned char **p, const unsigned char *end, size_t n) {
-    if (!p || !*p || !end || (size_t)(end - *p) < n) return -1;
-    *p += n;
+static int lut_sane(const float *lut) {
+    size_t i;
+    if (!lut) return -1;
+    for (i = 0; i < U8_INC16_N; ++i) {
+        if (lut[i] < 0.0f || lut[i] > 15.0f) return -1;
+    }
     return 0;
 }
 
-static int rd_u32(const unsigned char **p, const unsigned char *end,
-                  uint32_t *o) {
-    if (need(p, end, 4) != 0) return -1;
-    memcpy(o, *p - 4, 4);
-    return 0;
-}
-
-static int rd_u64(const unsigned char **p, const unsigned char *end,
-                  uint64_t *o) {
-    if (need(p, end, 8) != 0) return -1;
-    memcpy(o, *p - 8, 8);
-    return 0;
-}
-
-static int skip_value(const unsigned char **p, const unsigned char *end,
-                      uint32_t type) {
-    uint64_t n = 0, i;
-    uint32_t at = 0;
-    switch (type) {
-    case 0:
-    case 1:
-    case 7:
-        return need(p, end, 1);
-    case 2:
-    case 3:
-        return need(p, end, 2);
-    case 4:
-    case 5:
-    case 6:
-        return need(p, end, 4);
-    case 10:
-    case 11:
-    case 12:
-        return need(p, end, 8);
-    case 8:
-        if (rd_u64(p, end, &n) != 0) return -1;
-        if (n > (uint64_t)(end - *p)) return -1;
-        return need(p, end, (size_t)n);
-    case 9:
-        if (rd_u32(p, end, &at) != 0) return -1;
-        if (rd_u64(p, end, &n) != 0) return -1;
-        if (n > 4096) return -1;
-        for (i = 0; i < n; ++i)
-            if (skip_value(p, end, at) != 0) return -1;
-        return 0;
-    default:
-        return -1;
-    }
-}
-
-static int parse_lut(const unsigned char *base, size_t len,
-                     const float **lut_out) {
-    const unsigned char *p = base;
-    const unsigned char *end = base + len;
-    uint32_t ver = 0, nd = 0, gtype = 0;
-    uint64_t nt = 0, nk = 0, i, dim0 = 0, off = 0, nlen = 0;
-    uint32_t align = GGUF_ALIGN;
-    size_t data0;
-    if (len < 24 || memcmp(p, "GGUF", 4) != 0) return -1;
-    p += 4;
-    if (rd_u32(&p, end, &ver) != 0 || ver < 2 || ver > 3) return -1;
-    if (rd_u64(&p, end, &nt) != 0 || rd_u64(&p, end, &nk) != 0) return -1;
-    if (nt == 0 || nt > 64 || nk > 256) return -1;
-    for (i = 0; i < nk; ++i) {
-        uint32_t t = 0;
-        char key[96];
-        if (rd_u64(&p, end, &nlen) != 0 || nlen > 80) return -1;
-        if ((size_t)(end - p) < (size_t)nlen) return -1;
-        memset(key, 0, sizeof key);
-        memcpy(key, p, (size_t)nlen);
-        p += (size_t)nlen;
-        if (rd_u32(&p, end, &t) != 0) return -1;
-        if (strcmp(key, "general.alignment") == 0 && t == 4) {
-            if (rd_u32(&p, end, &align) != 0 || align == 0) return -1;
-        } else if (skip_value(&p, end, t) != 0) {
-            return -1;
-        }
-    }
-    for (i = 0; i < nt; ++i) {
-        char name[96];
-        if (rd_u64(&p, end, &nlen) != 0 || nlen > 80) return -1;
-        if ((size_t)(end - p) < (size_t)nlen) return -1;
-        memset(name, 0, sizeof name);
-        memcpy(name, p, (size_t)nlen);
-        p += (size_t)nlen;
-        if (rd_u32(&p, end, &nd) != 0 || nd != 1) {
-            /* skip remaining tensors that are not our 1-D LUT */
-            uint32_t d;
-            uint64_t dummy;
-            if (nd == 0 || nd > 8) return -1;
-            for (d = 0; d < nd; ++d)
-                if (rd_u64(&p, end, &dummy) != 0) return -1;
-            if (rd_u32(&p, end, &gtype) != 0) return -1;
-            if (rd_u64(&p, end, &dummy) != 0) return -1;
-            continue;
-        }
-        if (rd_u64(&p, end, &dim0) != 0) return -1;
-        if (rd_u32(&p, end, &gtype) != 0) return -1;
-        if (rd_u64(&p, end, &off) != 0) return -1;
-        if (strcmp(name, CNET_WEIGHT_LUT_TENSOR) != 0) continue;
-        if (gtype != GGML_F32 || dim0 != U8_INC16_N) return -1;
-        data0 = (size_t)(p - base);
-        data0 = (data0 + (size_t)align - 1u) & ~((size_t)align - 1u);
-        if (data0 + (size_t)off + U8_INC16_N * sizeof(float) > len) return -1;
-        *lut_out = (const float *)(base + data0 + (size_t)off);
-        return 0;
-    }
-    return -1;
-}
-
+/* Open the file with the real GGUF stack. private fixture parser is gone. */
 int cnet_weight_mmap(CnetWeightFile *f, const char *path) {
-    const float *lut = NULL;
-#if defined(_WIN32)
-    FILE *fp;
-    long n;
-    void *buf;
-#else
-    int fd;
+    cce_gguf *g = NULL;
+    cce_gguf_tensor_meta meta;
+    const void *raw = NULL;
+    size_t raw_n = 0;
     struct stat st;
-    void *map;
-#endif
+    int idx;
+    const char *arch;
     if (!f || !path || !path[0]) return -1;
     memset(f, 0, sizeof *f);
     snprintf(f->path, sizeof f->path, "%s", path);
-    f->fd = -1;
+    if (stat(path, &st) != 0 || st.st_size <= 0) return -1;
+    f->file_len = (size_t)st.st_size;
     if (cce_sha256_file_hex(path, f->sha256_hex) != 0) return -1;
     if (hex_to_sha(f->sha256_hex, f->sha256) != 0) return -1;
-#if defined(_WIN32)
-    fp = fopen(path, "rb");
-    if (!fp) return -1;
-    if (fseek(fp, 0, SEEK_END) != 0 || (n = ftell(fp)) <= 0 ||
-        n > 1024L * 1024L || fseek(fp, 0, SEEK_SET) != 0) {
-        fclose(fp);
+    if (cce_gguf_load(path, &g) != CCE_OK || !g) return -1;
+    idx = cce_gguf_find_tensor(g, CNET_WEIGHT_LUT_TENSOR);
+    if (idx < 0) {
+        cce_gguf_free(g);
         return -1;
     }
-    buf = malloc((size_t)n);
-    if (!buf) {
-        fclose(fp);
+    memset(&meta, 0, sizeof meta);
+    if (cce_gguf_get_tensor_meta(g, idx, &meta) != CCE_OK ||
+        meta.ndim != 1 || meta.shape[0] != (int)U8_INC16_N) {
+        cce_gguf_free(g);
         return -1;
     }
-    if (fread(buf, 1, (size_t)n, fp) != (size_t)n) {
-        free(buf);
-        fclose(fp);
+    if (cce_gguf_tensor_bytes(g, idx, &raw, &raw_n) == CCE_OK && raw &&
+        meta.ggml_type == GGML_F32 && raw_n >= U8_INC16_N * sizeof(float)) {
+        memcpy(f->lut_store, raw, U8_INC16_N * sizeof(float));
+        f->lut_via_tensor_bytes = 1;
+    }
+    if (cce_gguf_load_f32(g, idx, f->lut_store, U8_INC16_N) != CCE_OK) {
+        cce_gguf_free(g);
         return -1;
     }
-    fclose(fp);
-    f->map = buf;
-    f->map_len = (size_t)n;
-#else
-    fd = open(path, O_RDONLY);
-    if (fd < 0) return -1;
-    if (fstat(fd, &st) != 0 || st.st_size <= 0 ||
-        (size_t)st.st_size > (size_t)1024 * 1024) {
-        close(fd);
+    f->lut_via_load_f32 = 1;
+    if (lut_sane(f->lut_store) != 0) {
+        cce_gguf_free(g);
         return -1;
     }
-    map = mmap(NULL, (size_t)st.st_size, PROT_READ, MAP_SHARED, fd, 0);
-    if (map == MAP_FAILED) {
-        close(fd);
-        return -1;
-    }
-    f->fd = fd;
-    f->map = map;
-    f->map_len = (size_t)st.st_size;
-#endif
-    if (parse_lut((const unsigned char *)f->map, f->map_len, &lut) != 0) {
-        cnet_weight_unmap(f);
-        return -1;
-    }
-    f->lut = lut;
+    arch = cce_gguf_get_arch(g);
+    f->gguf = g;
+    f->lut = f->lut_store;
     f->lut_n = U8_INC16_N;
-    f->fixture = 1;
+    f->reader_cce_gguf = 1;
+    f->fixture = (arch && strcmp(arch, "cnet_fixture") == 0) ? 1 : 0;
     f->attested = 0;
     return 0;
 }
 
 void cnet_weight_unmap(CnetWeightFile *f) {
     if (!f) return;
-#if defined(_WIN32)
-    free(f->map);
-#else
-    if (f->map && f->map_len)
-        munmap(f->map, f->map_len);
-    if (f->fd >= 0) close(f->fd);
-#endif
+    if (f->gguf) cce_gguf_free(f->gguf);
     memset(f, 0, sizeof *f);
-    f->fd = -1;
 }
 
 static int oracle_v2(const double *in, size_t in_count, double *out,
@@ -401,7 +272,8 @@ int cnet_weight_bind(CnetWeightOracle *wo, OracleRegistry *o,
     CnetOracleIdentity id;
     Port pin, pout;
     const char *nm;
-    if (!wo || !o || !f || !f->lut) return -1;
+    if (!wo || !o || !f || !f->gguf || !f->reader_cce_gguf || !f->lut)
+        return -1;
     nm = (name && name[0]) ? name : CNET_WEIGHT_ORACLE_NAME;
     if (cnet_weight_attest(f->path, &id) != 0) return -1;
     if (!cnet_oracle_identity_is_attested(&id)) return -1;
@@ -412,7 +284,9 @@ int cnet_weight_bind(CnetWeightOracle *wo, OracleRegistry *o,
     wo->oracles = o;
     snprintf(wo->oracle_name, sizeof wo->oracle_name, "%s", nm);
     wo->abort_on = -1;
-    if (acquire_oracle_register_v2_family(o, nm, "weight_fixture", pin, pout,
+    wo->teacher_calls = 0;
+    wo->residual_speak = 0;
+    if (acquire_oracle_register_v2_family(o, nm, "weight_gguf", pin, pout,
                                           oracle_v2, always_valid, &id,
                                           wo) != 0)
         return -1;
@@ -430,6 +304,10 @@ int cnet_weight_unbind(CnetWeightOracle *wo) {
         return -1;
     wo->lease = 0;
     wo->bound = 0;
+    /* Drop the borrowed GGUF view so serve/labeler cannot touch it.
+       The caller's CnetWeightFile still owns the handle. */
+    wo->file.gguf = NULL;
+    wo->file.lut = NULL;
     return 0;
 }
 
@@ -438,12 +316,14 @@ int cnet_weight_labeler(void *ctx, const double *in, size_t in_total,
     CnetWeightOracle *wo = (CnetWeightOracle *)ctx;
     unsigned x = 0;
     unsigned y;
+    float lab_buf[U8_INC16_N];
     float lab;
     const OracleEntry *e;
     size_t i;
+    int idx;
     if (!wo || !in || !out) return -1;
     if (!wo->bound || wo->lease == 0) return -1;
-    if (!wo->file.lut || wo->file.lut_n != U8_INC16_N) return -1;
+    if (!wo->file.gguf || !wo->file.reader_cce_gguf) return -1;
     if (in_total != U8_INC16_W || out_total != U8_INC16_W) return -1;
     if (!wo->file.attested) return -1;
     e = NULL;
@@ -456,12 +336,18 @@ int cnet_weight_labeler(void *ctx, const double *in, size_t in_total,
     if (!e || !acquire_oracle_is_teachable(wo->oracles, e)) return -1;
     if (decode_bin4(in, &x) != 0 || x >= U8_INC16_N) return -1;
     if (wo->abort_on >= 0 && (int)x == wo->abort_on) return -1;
-    lab = wo->file.lut[x];
+    /* Silent typed read of the named LUT. Not residual next-token. */
+    idx = cce_gguf_find_tensor(wo->file.gguf, CNET_WEIGHT_LUT_TENSOR);
+    if (idx < 0) return -1;
+    if (cce_gguf_load_f32(wo->file.gguf, idx, lab_buf, U8_INC16_N) != CCE_OK)
+        return -1;
+    wo->file.gguf_reads++;
+    lab = lab_buf[x];
     if (lab < 0.0f || lab > 15.0f) return -1;
     y = (unsigned)(lab + 0.5f);
     if (y > 15u) return -1;
     encode_bin4(y, out);
-    wo->teacher_calls++;
+    /* teacher_calls / residual_speak stay 0: this is not a mouth. */
     return 0;
 }
 
@@ -481,10 +367,12 @@ int cnet_weight_convert(CnetWeightOracle *wo,
     snprintf(rep->domain, sizeof rep->domain, "%s", CNET_WEIGHT_DOMAIN_U8_INC16);
     rep->combos = CNET_WEIGHT_U8_INC16_COMBOS;
     rep->fixture = wo->file.fixture;
+    rep->reader_cce_gguf = wo->file.reader_cce_gguf;
     rep->certified = 0;
     pin = cnet_weight_u8_inc16_in_port();
     pout = cnet_weight_u8_inc16_out_port();
     if (!wo->bound || wo->lease == 0) return -1;
+    if (!wo->file.gguf || !wo->file.reader_cce_gguf) return -1;
     if (plan_table_build(&pin, 1, U8_INC16_W, cnet_weight_labeler, wo, NULL, 0,
                          CNET_WEIGHT_U8_INC16_COMBOS, &table) != 0)
         return -1;
@@ -534,6 +422,8 @@ int cnet_weight_convert(CnetWeightOracle *wo,
     } else {
         btn_free(&st);
     }
+    rep->residual_speak = wo->residual_speak;
+    rep->gguf_reads = wo->file.gguf_reads;
     plan_table_free(&table);
     return rc;
 }
@@ -544,6 +434,7 @@ int cnet_weight_serve(const CnetWeightOracle *wo,
     const double *raw;
     if (!wo || !student || !in || !out) return -1;
     if (wo->bound || wo->lease != 0) return -1;
+    /* Student only. No GGUF, no labeler, no residual mouth. */
     raw = btn_forward(student, in);
     if (!raw) return -1;
     memcpy(out, raw, U8_INC16_W * sizeof(double));
