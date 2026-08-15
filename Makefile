@@ -7227,6 +7227,39 @@ cnet_7b_v5_runtime_san: cnet_7b_v5_runtime
 	@grep -q '^CNET_7B_RUNTIME_PASS .*base_params=321757 ' \
 		logs/cnet_7b_v5_runtime_san.log
 
+# Read-only admission-stage histogram over the frozen v5 heldout fixture.
+# Reports where each lane's rows stop; prints no prompt and no answer value.
+# Deliberately does not depend on the artifact-building targets: it reads the
+# frozen v5 artifacts in place so an analysis run cannot churn them.
+.PHONY: cnet_7b_v5_stage_hist
+cnet_7b_v5_stage_hist: include/cnet_compete_runtime.h \
+		include/cnet_compete_eval.h src/cnet_compete_runtime.c \
+		tools/cnet_compete_stage_hist.c \
+		benchmarks/cnet_asi5_v5/heldout.tsv \
+		$(ROUTER) $(SPECIALIST_SRC)
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -Werror \
+		-DCNET_COMPETE_SUITE_DATA_HEADER=\"cnet_compete_suite_data_v5.h\" \
+		-ffunction-sections -fdata-sections -Iinclude \
+		-o $(BIN_DIR)/cnet_compete_stage_hist \
+		tools/cnet_compete_stage_hist.c src/cnet_compete_runtime.c \
+		src/cnet_compete_intent.c src/cnet_compete_capsules.c \
+		src/cce/cce_wordlm.c \
+		src/cnet_compete_eval.c src/cnet_compete.c \
+		src/cce/cce_campaign_provenance.c \
+		$(CNET_COMPETE_CAPSULE_CORE) $(ROUTER) $(SPECIALIST_SRC) \
+		-Wl,--gc-sections $(LDFLAGS) $(MCP_LDFLAGS) -pthread
+	@./$(BIN_DIR)/cnet_compete_stage_hist \
+		artifacts/cnet_asi5_v5/intent.wlm \
+		artifacts/cnet_asi5_v5/intent.meta \
+		artifacts/cnet_asi5_v5/capsules \
+		benchmarks/cnet_asi5_v5/heldout.tsv | \
+		tee logs/cnet_7b_v5_stage_hist.log
+	@grep -qx 'CNET_7B_STAGE_HIST rows=448' logs/cnet_7b_v5_stage_hist.log
+	@git diff --name-only -- benchmarks/cnet_asi5_v5 artifacts/cnet_asi5_v5 > \
+		logs/cnet_7b_v5_stage_hist_freeze.log
+	@test ! -s logs/cnet_7b_v5_stage_hist_freeze.log
+
 cnet_7b_v5_diagnostic: cnet_7b_runtime
 	$(CC) $(CFLAGS) -Werror -ffunction-sections -fdata-sections -Iinclude \
 		-o $(BIN_DIR)/test_cnet_compete_diagnostic \
