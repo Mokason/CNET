@@ -697,6 +697,20 @@ cnet_dc_invent_bench: include/cnet_dc_invent.h include/cnet_dc_type.h \
 	@./$(BIN_DIR)/cnet_dc_invent_bench | tee logs/cnet_dc_invent_bench.log
 	@grep -q '^CNET_DC_INVENT_BENCH_PASS ' logs/cnet_dc_invent_bench.log
 
+.PHONY: cnet_swap
+cnet_swap: include/cnet_swap.h src/cnet_swap.c tests/test_cnet_swap.c \
+		include/contract/contract.h include/nn.h include/router.h
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -Werror -Iinclude -o $(BIN_DIR)/test_cnet_swap \
+		src/cnet_swap.c src/nn.c \
+		src/contract/contract.c src/contract/unit.c \
+		src/router/dag_full.c src/router/registry.c src/router/route.c \
+		src/plan_table.c src/consolidate.c \
+		tests/test_cnet_swap.c $(LDFLAGS)
+	@./$(BIN_DIR)/test_cnet_swap | tee logs/cnet_swap.log
+	@grep -q '^CNET_SWAP_PASS$$' logs/cnet_swap.log
+	@grep -q '^checks=51 ' logs/cnet_swap.log
+
 # Unit files: weights + contract as ONE sealed binary artifact (.cnu) —
 # binary f64 weights + bit-packed canonical exemplars + FNV seal; round-trip
 # gated by digest identity, tamper refused, smaller than the text pair.
