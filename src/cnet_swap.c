@@ -1,5 +1,8 @@
-/* Swap law: replace only when the new brick dominates old coverage and
-   every CERT composition that used the old brick still passes hop guards.
+/* Unit-tested swap law. Callers today: tests only. Not wired into
+   registry_add_certified, library_evolve, LIBRARY, or cnet.so.
+   Replace only when the new brick dominates old coverage and every CERT
+   composition that used the old brick still passes hop guards.
+   n_comps==0 is not a composition proof (ADD-ALONGSIDE, never REPLACE).
    Otherwise add-alongside. Compression and soft routers are not signals.
    Teacher/residual adapters never admit. */
 #include "../include/cnet_swap.h"
@@ -142,7 +145,7 @@ int cnet_swap_compositions_hold(const BinaryTransformNetwork *old_btn,
     int ok = 1;
 
     if (new_btn == NULL) return -1;
-    if (n_comps == 0) return 1;
+    if (n_comps == 0) return 0; /* not a composition proof */
     if (comps == NULL) return -1;
 
     for (c = 0; c < n_comps && ok; ++c) {
@@ -198,10 +201,21 @@ static int decide_inner(const BinaryTransformNetwork *old_btn,
         report_set(report, CNET_SWAP_REFUSE, "bad_args", 0, 0);
         return -1;
     }
+    if (btn_is_adapter(new_btn)) {
+        report_set(report, CNET_SWAP_REFUSE, "teacher_residual_never_admits",
+                   0, 0);
+        return -1;
+    }
     dom = cnet_swap_dominates(new_btn, old_cov, new_cov);
     if (dom < 0) {
         report_set(report, CNET_SWAP_REFUSE, "bad_args", 0, 0);
         return -1;
+    }
+    if (n_comps == 0) {
+        report_set(report, CNET_SWAP_ADD_ALONGSIDE,
+                   dom ? "no_compositions_to_prove" : "does_not_dominate",
+                   dom ? 1 : 0, 0);
+        return 0;
     }
     hold = cnet_swap_compositions_hold(old_btn, old_name, new_btn,
                                        comps, n_comps, guard);

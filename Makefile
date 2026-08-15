@@ -709,6 +709,7 @@ cnet_swap: include/cnet_swap.h src/cnet_swap.c tests/test_cnet_swap.c \
 		tests/test_cnet_swap.c $(LDFLAGS)
 	@./$(BIN_DIR)/test_cnet_swap | tee logs/cnet_swap.log
 	@grep -q '^CNET_SWAP_PASS$$' logs/cnet_swap.log
+	@grep -q '^checks=51 ' logs/cnet_swap.log
 
 # Unit files: weights + contract as ONE sealed binary artifact (.cnu) —
 # binary f64 weights + bit-packed canonical exemplars + FNV seal; round-trip

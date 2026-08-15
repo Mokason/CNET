@@ -1,8 +1,14 @@
-/* Swap law for certified capsules / chunks.
+/* Unit-tested swap law for certified capsules / chunks.
+ *
+ * Callers today: tests only. This is not wired into registry_add_certified,
+ * library_evolve, LIBRARY, or cnet.so. Production still better-or-reject
+ * / exact-dedup. Honest line: UNIT PASS — SWAP LAW ONLY.
  *
  * A new brick may REPLACE an old one only if it dominates on the old
  * coverage AND every existing CERT composition that used the old brick
- * still passes hop guards after substitution. Otherwise ADD-ALONGSIDE
+ * still passes hop guards after substitution. n_comps==0 is not a
+ * composition proof: dominate then still ADD-ALONGSIDE
+ * (no_compositions_to_prove), never REPLACE. Otherwise ADD-ALONGSIDE
  * (Progressive Nets / MoCL freeze): keep the old brick. Do not delete it.
  *
  * An explicit replace that would break a CERT composition is REFUSED.
@@ -79,7 +85,8 @@ int cnet_swap_dominates(const BinaryTransformNetwork *new_btn,
 
 /* Substitute new_btn for old_btn (pointer or old_name) in each composition
    and run route_execute_guarded. 1 if every row returns 0. 0 if any hop
-   guard refuses or the plan fails. n_comps==0 holds vacuously. */
+   guard refuses or the plan fails. n_comps==0 is not a composition proof
+   (returns 0). */
 int cnet_swap_compositions_hold(const BinaryTransformNetwork *old_btn,
                                 const char *old_name,
                                 const BinaryTransformNetwork *new_btn,
@@ -93,7 +100,10 @@ int cnet_swap_compositions_hold(const BinaryTransformNetwork *old_btn,
 int cnet_swap_hop_allow(const char *unit, const BinaryTransformNetwork *btn,
                         const double *input, size_t in_len, void *ctx);
 
-/* Fill report. Adapter / teacher-residual new_btn => REFUSE.
+/* Fill report. Unit-tested law; callers today: tests only.
+   Adapter / teacher-residual new_btn => REFUSE.
+   n_comps==0 is not a composition proof: ADD_ALONGSIDE
+   (no_compositions_to_prove), never REPLACE.
    dominate && compositions_hold => REPLACE, else ADD_ALONGSIDE.
    Returns 0, or -1 on bad args (report REFUSE). */
 int cnet_swap_decide(const BinaryTransformNetwork *old_btn,

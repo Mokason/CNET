@@ -1,8 +1,13 @@
-/* test_cnet_swap — swap law for certified capsules/chunks.
+/* test_cnet_swap — unit-tested swap law. Callers today: this file only.
+ *
+ * UNIT PASS — SWAP LAW ONLY.
+ * Not wired into registry_add_certified / library_evolve / LIBRARY / cnet.so.
  *
  * replace when dominate + compositions hold
  * add-alongside when they do not
+ * n_comps==0 is not a composition proof (never REPLACE)
  * refuse an explicit swap that would break a CERT composition
+ * dominate && compositions_hold==0 is a real path
  * old coverage must be a subset of new (or new matches all old rows)
  *
  * Compression is not a swap signal. Soft routers are not used.
@@ -39,44 +44,41 @@ static Port bit_port(const char *tag) {
     return p;
 }
 
-/* Deterministic 1-bit maps: identity or invert. */
-typedef struct {
-    int invert;
-    double out;
-} BitMap;
-
-static int bit_forward(void *ctx, const double *in, size_t in_n,
-                       double *out, size_t out_n) {
-    BitMap *m = (BitMap *)ctx;
-    if (m == NULL || in == NULL || out == NULL || in_n != 1 || out_n != 1)
-        return -1;
-    m->out = m->invert ? (in[0] >= 0.5 ? 0.0 : 1.0) : (in[0] >= 0.5 ? 1.0 : 0.0);
-    out[0] = m->out;
-    return 0;
-}
-
-static int make_bit(BinaryTransformNetwork *b, BitMap *map, int invert,
-                    unsigned long long digest) {
+/* Native 1-in/1-out bit: identity, invert, or constant-0. */
+static int train_map(BinaryTransformNetwork *b, const double *tgt,
+                     unsigned seed) {
+    double in[2] = {0.0, 1.0};
     Port p = bit_port("bit");
-    memset(b, 0, sizeof *b);
-    map->invert = invert;
-    map->out = 0.0;
-    return btn_init_adapter(b, 1, 1, &p, 1, &p, 1,
-                            bit_forward, NULL, map, digest, 1);
+    unsigned attempt;
+    for (attempt = 0; attempt < 8; ++attempt) {
+        double loss = 0.0;
+        memset(b, 0, sizeof *b);
+        if (btn_init(b, 1, 1, 2, 16, 0.8, seed + attempt * 97u) != 0)
+            return -1;
+        if (btn_set_ports(b, p, p) != 0) {
+            btn_free(b);
+            return -1;
+        }
+        (void)btn_set_momentum(b, 0.9);
+        if (btn_train_dynamic_checked(b, in, tgt, 2, 80000, 400,
+                                      0.0005, 0.01, &loss) == BTN_TRAIN_OK &&
+            loss <= 0.02)
+            return 0;
+        btn_free(b);
+    }
+    return -1;
 }
 
 static int train_bit(BinaryTransformNetwork *b, int invert, unsigned seed) {
-    double in[2] = {0.0, 1.0};
     double tgt[2];
-    Port p = bit_port("bit");
     tgt[0] = invert ? 1.0 : 0.0;
     tgt[1] = invert ? 0.0 : 1.0;
-    memset(b, 0, sizeof *b);
-    if (btn_init(b, 1, 1, 2, 16, 0.8, seed) != 0) return -1;
-    if (btn_set_ports(b, p, p) != 0) return -1;
-    if (btn_train_dynamic(b, in, tgt, 2, 80000, 400, 0.0005, 0.01) > 0.02)
-        return -1;
-    return 0;
+    return train_map(b, tgt, seed);
+}
+
+static int train_const0(BinaryTransformNetwork *b, unsigned seed) {
+    double tgt[2] = {0.0, 0.0};
+    return train_map(b, tgt, seed);
 }
 
 static void test_coverage_subset(void) {
@@ -119,15 +121,14 @@ static void test_coverage_subset(void) {
 
 static void test_dominate_replay(void) {
     BinaryTransformNetwork id, inv;
-    BitMap id_map, inv_map;
     double in[2] = {0.0, 1.0};
     double id_tg[2] = {0.0, 1.0};
     CnetSwapCoverage oldc, newc;
 
     printf("dominate (subset or match old rows):\n");
-    check(make_bit(&id, &id_map, 0, 0xA11DULL) == 0 &&
-          make_bit(&inv, &inv_map, 1, 0xB0E7ULL) == 0,
-          "adapter bricks init");
+    check(train_bit(&id, 0, 11u) == 0 &&
+          train_bit(&inv, 1, 17u) == 0,
+          "native identity / invert train");
     oldc.inputs = in; oldc.targets = id_tg;
     oldc.n_rows = 2; oldc.in_dim = 1; oldc.out_dim = 1;
     newc = oldc;
@@ -139,7 +140,6 @@ static void test_dominate_replay(void) {
           "identity dominates (subset and replay)");
     check(cnet_swap_dominates(&inv, &oldc, &newc) == 0,
           "invert does not dominate");
-    /* table-only: new table is a proper superset */
     {
         double wide_in[3] = {0.0, 1.0, 0.0};
         double wide_tg[3] = {0.0, 1.0, 0.0};
@@ -167,10 +167,9 @@ static void fill_id_plan(RoutePlan *plan, BinaryTransformNetwork *a,
 
 static void test_decide_replace_and_alongside(void) {
     BinaryTransformNetwork oldb, new_id, new_inv, hop2;
-    BitMap old_map, id_map, inv_map, hop_map;
     double cov_in[2] = {0.0, 1.0};
     double cov_tg[2] = {0.0, 1.0};
-    double hop2_rows[1] = {0.0}; /* hop2 certified only on 0 */
+    double hop2_rows[1] = {0.0};
     double comp_in[1] = {0.0};
     CnetSwapCoverage oldc, newc, hop2cov;
     CnetSwapComposition comp;
@@ -178,11 +177,11 @@ static void test_decide_replace_and_alongside(void) {
     CnetSwapReport rep;
 
     printf("decide replace vs add-alongside:\n");
-    check(make_bit(&oldb, &old_map, 0, 0x01D1ULL) == 0 &&
-          make_bit(&new_id, &id_map, 0, 0x01D2ULL) == 0 &&
-          make_bit(&new_inv, &inv_map, 1, 0x01E7ULL) == 0 &&
-          make_bit(&hop2, &hop_map, 0, 0xC0B2ULL) == 0,
-          "composition bricks init");
+    check(train_bit(&oldb, 0, 11u) == 0 &&
+          train_bit(&new_id, 0, 13u) == 0 &&
+          train_bit(&new_inv, 1, 17u) == 0 &&
+          train_bit(&hop2, 0, 19u) == 0,
+          "native composition bricks train");
 
     oldc.inputs = cov_in; oldc.targets = cov_tg;
     oldc.n_rows = 2; oldc.in_dim = 1; oldc.out_dim = 1;
@@ -214,7 +213,6 @@ static void test_decide_replace_and_alongside(void) {
           rep.dominated == 0,
           "no dominate => ADD-ALONGSIDE (old brick kept)");
 
-    /* invert maps 0 -> 1; hop2 coverage is only {0} so the guard refuses */
     memset(&rep, 0, sizeof rep);
     check(cnet_swap_compositions_hold(&oldb, "old_bit", &new_inv,
                                       &comp, 1, &guard) == 0,
@@ -226,9 +224,41 @@ static void test_decide_replace_and_alongside(void) {
     btn_free(&hop2);
 }
 
+static void test_no_compositions_is_not_a_proof(void) {
+    BinaryTransformNetwork oldb, new_id;
+    double cov_in[2] = {0.0, 1.0};
+    double cov_tg[2] = {0.0, 1.0};
+    CnetSwapCoverage oldc, newc;
+    CnetSwapReport rep;
+
+    printf("n_comps==0 is not a composition proof:\n");
+    check(train_bit(&oldb, 0, 11u) == 0 &&
+          train_bit(&new_id, 0, 13u) == 0,
+          "native identities train");
+    oldc.inputs = cov_in; oldc.targets = cov_tg;
+    oldc.n_rows = 2; oldc.in_dim = 1; oldc.out_dim = 1;
+    newc = oldc;
+
+    check(cnet_swap_compositions_hold(&oldb, "old_bit", &new_id,
+                                      NULL, 0, NULL) == 0,
+          "n_comps==0 is not a composition proof");
+
+    memset(&rep, 0, sizeof rep);
+    check(cnet_swap_decide(&oldb, "old_bit", &new_id, &oldc, &newc,
+                           NULL, 0, NULL, &rep) == 0 &&
+          rep.verdict == CNET_SWAP_ADD_ALONGSIDE &&
+          rep.dominated == 1 &&
+          rep.compositions_hold == 0 &&
+          rep.reason != NULL &&
+          strstr(rep.reason, "no_compositions_to_prove") != NULL,
+          "dominate + n_comps==0 => ADD-ALONGSIDE, never REPLACE");
+
+    btn_free(&oldb);
+    btn_free(&new_id);
+}
+
 static void test_refuse_swap_breaks_composition(void) {
     BinaryTransformNetwork oldb, new_inv, hop2;
-    BitMap old_map, inv_map, hop_map;
     double cov_in[2] = {0.0, 1.0};
     double cov_tg[2] = {0.0, 1.0};
     double hop2_rows[1] = {0.0};
@@ -241,10 +271,10 @@ static void test_refuse_swap_breaks_composition(void) {
     Contract c;
 
     printf("refuse swap that would break a CERT composition:\n");
-    check(make_bit(&oldb, &old_map, 0, 0x0A11ULL) == 0 &&
-          make_bit(&new_inv, &inv_map, 1, 0x0A17ULL) == 0 &&
-          make_bit(&hop2, &hop_map, 0, 0x0A12ULL) == 0,
-          "refuse-swap bricks init");
+    check(train_bit(&oldb, 0, 11u) == 0 &&
+          train_bit(&new_inv, 1, 17u) == 0 &&
+          train_bit(&hop2, 0, 19u) == 0,
+          "native refuse-swap bricks train");
 
     oldc.inputs = cov_in; oldc.targets = cov_tg;
     oldc.n_rows = 2; oldc.in_dim = 1; oldc.out_dim = 1;
@@ -265,7 +295,6 @@ static void test_refuse_swap_breaks_composition(void) {
     check(contract_init_borrowed(&c, "bit_id", &new_inv, cov_in, cov_tg, 2) != 0 ||
           btn_certify(&new_inv, &c, NULL) != 0,
           "invert does not certify the old identity contract");
-    /* invert still needs a contract it CAN certify, for the replace door */
     {
         double inv_tg[2] = {1.0, 0.0};
         Contract inv_c;
@@ -290,13 +319,94 @@ static void test_refuse_swap_breaks_composition(void) {
     btn_free(&hop2);
 }
 
+/* dominated==1 && compositions_hold==0: new covers old table, but a CERT
+   plan that used old plus hop2 fails after substitution. */
+static void test_dominate_but_composition_breaks(void) {
+    BinaryTransformNetwork oldb, new_zero, hop2;
+    double old_in[1] = {0.0};
+    double old_tg[1] = {0.0};
+    double new_in[2] = {0.0, 1.0};
+    double new_tg[2] = {0.0, 0.0};
+    double hop2_rows[1] = {1.0};
+    double comp_in[1] = {1.0};
+    CnetSwapCoverage oldc, newc, hop2cov;
+    CnetSwapComposition comp;
+    DagNodeGuard guard;
+    CnetSwapReport rep;
+    PrimitiveRegistry reg;
+    Contract zero_c;
+
+    printf("dominate but CERT composition breaks:\n");
+    check(train_bit(&oldb, 0, 11u) == 0 &&
+          train_const0(&new_zero, 23u) == 0 &&
+          train_bit(&hop2, 0, 19u) == 0,
+          "native identity / const-0 / hop2 train");
+
+    oldc.inputs = old_in; oldc.targets = old_tg;
+    oldc.n_rows = 1; oldc.in_dim = 1; oldc.out_dim = 1;
+    newc.inputs = new_in; newc.targets = new_tg;
+    newc.n_rows = 2; newc.in_dim = 1; newc.out_dim = 1;
+    hop2cov.inputs = hop2_rows; hop2cov.targets = hop2_rows;
+    hop2cov.n_rows = 1; hop2cov.in_dim = 1; hop2cov.out_dim = 1;
+
+    memset(&comp, 0, sizeof comp);
+    fill_id_plan(&comp.plan, &oldb, &hop2);
+    comp.inputs = comp_in;
+    comp.n_rows = 1;
+    comp.in_dim = 1;
+    memset(&guard, 0, sizeof guard);
+    guard.allow = cnet_swap_hop_allow;
+    guard.ctx = &hop2cov;
+
+    check(cnet_swap_dominates(&new_zero, &oldc, &newc) == 1,
+          "const-0 dominates the old {0}-> {0} table");
+    check(cnet_swap_compositions_hold(&oldb, "old_bit", &new_zero,
+                                      &comp, 1, &guard) == 0,
+          "swap maps 1 -> 0; hop2 coverage {1} refuses");
+
+    memset(&rep, 0, sizeof rep);
+    check(cnet_swap_decide(&oldb, "old_bit", &new_zero, &oldc, &newc,
+                           &comp, 1, &guard, &rep) == 0 &&
+          rep.verdict == CNET_SWAP_ADD_ALONGSIDE &&
+          rep.dominated == 1 &&
+          rep.compositions_hold == 0 &&
+          rep.reason != NULL &&
+          strstr(rep.reason, "compositions_would_break") != NULL,
+          "dominate && compositions_hold==0 => ADD-ALONGSIDE");
+
+    check(contract_init_borrowed(&zero_c, "bit_zero", &new_zero,
+                                 new_in, new_tg, 2) == 0 &&
+          btn_certify(&new_zero, &zero_c, NULL) == 0,
+          "const-0 certifies its own contract");
+    registry_init(&reg);
+    check(registry_add(&reg, &oldb, "old_bit") == 0, "old brick registered");
+    memset(&rep, 0, sizeof rep);
+    check(cnet_swap_replace(&reg, "old_bit", &new_zero, &zero_c,
+                            &oldc, &newc, &comp, 1, &guard, &rep) == -1 &&
+          rep.verdict == CNET_SWAP_REFUSE &&
+          rep.dominated == 1 &&
+          rep.compositions_hold == 0 &&
+          reg.count == 1 && reg.entries[0].btn == &oldb,
+          "explicit replace refused; old brick not deleted");
+
+    registry_free(&reg);
+    contract_free(&zero_c);
+    btn_free(&oldb);
+    btn_free(&new_zero);
+    btn_free(&hop2);
+}
+
 static void test_admit_replace_and_alongside(void) {
-    BinaryTransformNetwork old_id, new_id, new_not;
+    BinaryTransformNetwork old_id, new_id, new_not, hop2;
     double in[2] = {0.0, 1.0};
     double id_tg[2] = {0.0, 1.0};
     double not_tg[2] = {1.0, 0.0};
+    double hop2_rows[1] = {0.0};
+    double comp_in[1] = {0.0};
     Contract id_c, not_c;
-    CnetSwapCoverage oldc, newc;
+    CnetSwapCoverage oldc, newc, hop2cov;
+    CnetSwapComposition comp;
+    DagNodeGuard guard;
     CnetSwapReport rep;
     PrimitiveRegistry reg;
     size_t i;
@@ -304,8 +414,9 @@ static void test_admit_replace_and_alongside(void) {
     printf("admit replace / add-alongside (native BTN):\n");
     check(train_bit(&old_id, 0, 11u) == 0 &&
           train_bit(&new_id, 0, 13u) == 0 &&
-          train_bit(&new_not, 1, 17u) == 0,
-          "native identity / invert train");
+          train_bit(&new_not, 1, 17u) == 0 &&
+          train_bit(&hop2, 0, 19u) == 0,
+          "native identity / invert / hop2 train");
     check(contract_init_borrowed(&id_c, "bit_id", &old_id, in, id_tg, 2) == 0 &&
           btn_certify(&old_id, &id_c, NULL) == 0 &&
           btn_certify(&new_id, &id_c, NULL) == 0,
@@ -317,12 +428,21 @@ static void test_admit_replace_and_alongside(void) {
     oldc.inputs = in; oldc.targets = id_tg;
     oldc.n_rows = 2; oldc.in_dim = 1; oldc.out_dim = 1;
     newc = oldc;
+    hop2cov.inputs = hop2_rows; hop2cov.targets = hop2_rows;
+    hop2cov.n_rows = 1; hop2cov.in_dim = 1; hop2cov.out_dim = 1;
+    memset(&comp, 0, sizeof comp);
+    fill_id_plan(&comp.plan, &old_id, &hop2);
+    comp.inputs = comp_in;
+    comp.n_rows = 1;
+    comp.in_dim = 1;
+    memset(&guard, 0, sizeof guard);
+    guard.allow = cnet_swap_hop_allow;
+    guard.ctx = &hop2cov;
 
     registry_init(&reg);
     check(registry_add_certified(&reg, &old_id, "old_bit", &id_c) == 0,
           "old certified identity admitted");
 
-    /* compression fields are ignored — set them the "wrong" way */
     reg.entries[0].teacher_mac = 1;
     reg.entries[0].student_mac = 1000;
     reg.entries[0].compute_beneficial = 0;
@@ -330,16 +450,38 @@ static void test_admit_replace_and_alongside(void) {
     memset(&rep, 0, sizeof rep);
     check(cnet_swap_admit(&reg, "old_bit", &new_id, "old_bit_v2", &id_c,
                           &oldc, &newc, NULL, 0, NULL, &rep) == 0 &&
+          rep.verdict == CNET_SWAP_ADD_ALONGSIDE &&
+          rep.dominated == 1 &&
+          rep.compositions_hold == 0 &&
+          reg.count == 2 &&
+          reg.entries[0].btn == &old_id,
+          "dominate + n_comps==0 => ADD-ALONGSIDE (no composition proof)");
+    check(reg.entries[1].btn == &new_id &&
+          reg.entries[1].name != NULL &&
+          strcmp(reg.entries[1].name, "old_bit_v2") == 0,
+          "empty-comps new brick registered alongside");
+
+    /* reset registry for a real REPLACE (dominate + holding composition) */
+    registry_free(&reg);
+    registry_init(&reg);
+    check(registry_add_certified(&reg, &old_id, "old_bit", &id_c) == 0,
+          "old certified identity re-admitted");
+    reg.entries[0].teacher_mac = 1;
+    reg.entries[0].student_mac = 1000;
+    reg.entries[0].compute_beneficial = 0;
+
+    memset(&rep, 0, sizeof rep);
+    check(cnet_swap_admit(&reg, "old_bit", &new_id, "old_bit_v2", &id_c,
+                          &oldc, &newc, &comp, 1, &guard, &rep) == 0 &&
           rep.verdict == CNET_SWAP_REPLACE &&
           reg.count == 1 && reg.entries[0].btn == &new_id &&
           reg.entries[0].certified == 1,
-          "dominate + no compositions => REPLACE (compression ignored)");
+          "dominate + compositions hold => REPLACE (compression ignored)");
 
-    /* restore old as the incumbent for the alongside case */
     reg.entries[0].btn = &old_id;
     memset(&rep, 0, sizeof rep);
     check(cnet_swap_admit(&reg, "old_bit", &new_not, "old_bit_v2", &not_c,
-                          &oldc, &newc, NULL, 0, NULL, &rep) == 0 &&
+                          &oldc, &newc, &comp, 1, &guard, &rep) == 0 &&
           rep.verdict == CNET_SWAP_ADD_ALONGSIDE &&
           reg.count == 2,
           "no dominate => ADD-ALONGSIDE");
@@ -358,6 +500,7 @@ static void test_admit_replace_and_alongside(void) {
     btn_free(&old_id);
     btn_free(&new_id);
     btn_free(&new_not);
+    btn_free(&hop2);
 }
 
 static int residual_forward(void *ctx, const double *in, size_t in_n,
@@ -370,7 +513,6 @@ static int residual_forward(void *ctx, const double *in, size_t in_n,
 
 static void test_teacher_residual_never_admits(void) {
     BinaryTransformNetwork oldb, residual;
-    BitMap old_map;
     double in[2] = {0.0, 1.0};
     double tg[2] = {0.0, 1.0};
     Port p = bit_port("bit");
@@ -380,15 +522,26 @@ static void test_teacher_residual_never_admits(void) {
     PrimitiveRegistry reg;
 
     printf("teacher/residual never admits:\n");
-    check(make_bit(&oldb, &old_map, 0, 0x0D01ULL) == 0, "old brick init");
+    check(train_bit(&oldb, 0, 11u) == 0, "native old brick train");
     memset(&residual, 0, sizeof residual);
     check(btn_init_adapter(&residual, 1, 1, &p, 1, &p, 1,
                            residual_forward, NULL, NULL, 0x7E51ULL, 1) == 0,
           "residual adapter init");
+    check(btn_is_adapter(&residual) == 1 && btn_is_adapter(&oldb) == 0,
+          "new brick is adapter; old brick is native");
     check(contract_init_borrowed(&c, "bit_id", &residual, in, tg, 2) == 0,
           "residual contract");
     cov.inputs = in; cov.targets = tg;
     cov.n_rows = 2; cov.in_dim = 1; cov.out_dim = 1;
+
+    memset(&rep, 0, sizeof rep);
+    check(cnet_swap_decide(&oldb, "old_bit", &residual, &cov, &cov,
+                           NULL, 0, NULL, &rep) == -1 &&
+          rep.verdict == CNET_SWAP_REFUSE &&
+          rep.reason != NULL &&
+          strstr(rep.reason, "teacher_residual") != NULL,
+          "decide REFUSE on adapter/teacher-residual new brick");
+
     registry_init(&reg);
     check(registry_add(&reg, &oldb, "old_bit") == 0, "old registered");
     memset(&rep, 0, sizeof rep);
@@ -408,7 +561,9 @@ int main(void) {
     test_coverage_subset();
     test_dominate_replay();
     test_decide_replace_and_alongside();
+    test_no_compositions_is_not_a_proof();
     test_refuse_swap_breaks_composition();
+    test_dominate_but_composition_breaks();
     test_admit_replace_and_alongside();
     test_teacher_residual_never_admits();
     printf("checks=%d failures=%d\n", checks, failures);

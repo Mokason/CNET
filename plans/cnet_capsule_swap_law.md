@@ -2,13 +2,20 @@
 
 Status: **UNIT PASS — SWAP LAW ONLY**
 
+This is the unit-tested law. Callers today: `tests/test_cnet_swap.c` only.
+`cnet_swap_admit` is not called from `registry_add_certified`,
+`library_evolve`, LIBRARY, or `cnet.so`. Production still
+better-or-reject / exact-dedup. The library does not obey this law yet.
+
 Native C. Residual is not the mouth. Compression is not an admit or
 swap signal. Soft learned routers are not used. Not an ASI-5 or CHAT-1
 unit. Floors unchanged. Broader / general-mind claims **WITHHELD**.
 
 A new certified capsule or chunk may **replace** an old one only if it
 **dominates on the old coverage** and every existing CERT composition
-that used the old brick still passes hop guards. Otherwise
+that used the old brick still passes hop guards. `n_comps==0` is **not**
+a composition proof: even if the new brick dominates, the verdict is
+**add-alongside** (`no_compositions_to_prove`), never replace. Otherwise
 **add-alongside** (Progressive Nets / MoCL freeze). The old brick is
 not deleted.
 
@@ -28,7 +35,8 @@ Teacher / residual adapters never admit through this door.
 ## Decision
 
 ```text
-adapter / teacher-residual  -> REFUSE (never admits)
+adapter / teacher-residual     -> REFUSE (never admits)
+n_comps==0                     -> ADD-ALONGSIDE (no composition proof; never REPLACE)
 dominate AND compositions hold -> REPLACE
 otherwise                      -> ADD-ALONGSIDE
 explicit replace when law fails -> REFUSE (old stays)
@@ -41,17 +49,11 @@ old coverage cannot dominate.
 
 Compression / MAC / `compute_beneficial` are not read.
 
-## Leftover PR
-
-PR #1 (`claude/stash-pull-master-9ee988`, MinGW restore) is leftover:
-it is hundreds of commits behind current `origin/master` (`18fce8b`)
-and is superseded by later master work. It will be closed after this
-lands. This PR does not close it.
-
 ## Gate
 
 ```text
 make cnet_swap
 ```
 
-No 8B compete. No GitHub Actions. No fake PASS.
+Must print `CNET_SWAP_PASS` and the gated `checks=N` count. No 8B
+compete. No GitHub Actions. No fake PASS.
