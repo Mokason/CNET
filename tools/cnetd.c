@@ -49,6 +49,7 @@
 #include "../include/cnet_slot_extract.h"
 #include "../include/cnet_chat_lookup.h"
 #include "../include/cnet_utterance.h"
+#include "../include/cnet_c_speak.h"
 
 #define CD_PATH 512
 #define CD_SOCK 108
@@ -366,8 +367,15 @@ static int cd_ask(CdState *S, const char *q, CdReply *out) {
         CnetChatLookupTurn hop;
         if (cnet_chat_lookup_cnetd_hop(q, &hop) == 0 && hop.answered &&
             hop.spoken[0] && hop.residual_calls == 0) {
-            snprintf(out->answer, sizeof out->answer, "%s", hop.spoken);
-            snprintf(out->utterance, sizeof out->utterance, "%s", hop.spoken);
+            CnetCSpeakResult wrap;
+            const char *spoken = hop.spoken;
+            /* C drafts glue around the A-bound lookup slot. Residual stays 0. */
+            if (cnet_c_speak_after_lookup(&hop, &wrap) == 0 && wrap.wrapped &&
+                wrap.spoken[0] && wrap.residual_calls == 0 &&
+                strstr(wrap.spoken, hop.report.value) != NULL)
+                spoken = wrap.spoken;
+            snprintf(out->answer, sizeof out->answer, "%s", spoken);
+            snprintf(out->utterance, sizeof out->utterance, "%s", spoken);
             snprintf(out->source, sizeof out->source, "CNET");
             snprintf(out->skill, sizeof out->skill, "%s", CNET_LOOKUP_CONTRACT);
             cd_scopy(out->prepared, sizeof out->prepared, q);
@@ -568,6 +576,18 @@ static int cd_ask(CdState *S, const char *q, CdReply *out) {
                          "Teacher draft logged for later gold review. Law: never self-cert.");
         }
         (void)teacher_on_miss;
+
+        /* Draft mouth: wrap a bound CERT scalar. Teacher is never the mouth. */
+        if (!out->miss && out->verified && strcmp(out->source, "LLM") != 0 &&
+            cnet_c_speak_slot_like(out->answer)) {
+            CnetCSpeakResult cap;
+            if (cnet_c_speak_after_capsule(out->answer, out->skill, &cap) == 0 &&
+                cap.wrapped && cap.residual_calls == 0 &&
+                strstr(cap.spoken, out->answer) != NULL) {
+                snprintf(out->utterance, sizeof out->utterance, "%s", cap.spoken);
+                snprintf(out->answer, sizeof out->answer, "%s", cap.spoken);
+            }
+        }
 
         out->may_voice = cnet_utter_may_voice(&U, out->source);
         if (strcmp(out->source, "CNET") == 0 || strcmp(out->source, "LOCAL") == 0)
