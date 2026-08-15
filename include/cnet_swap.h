@@ -1,8 +1,9 @@
 /* Unit-tested swap law for certified capsules / chunks.
  *
- * Callers today: tests only. This is not wired into registry_add_certified,
- * library_evolve, LIBRARY, or cnet.so. Production still better-or-reject
- * / exact-dedup. Honest line: UNIT PASS — SWAP LAW ONLY.
+ * Live doors (this slice): registry_add_certified (same-name incumbent)
+ * and library_evolve / library_admit_candidate call cnet_swap_admit.
+ * src/cnet_swap.c is in LIBRARY, so cnet.so contains the law.
+ * Until origin/master merges this branch, do not claim master obeys it.
  *
  * A new brick may REPLACE an old one only if it dominates on the old
  * coverage AND every existing CERT composition that used the old brick
@@ -18,8 +19,10 @@
  * Teacher / residual (adapter BTNs) never admit.
  *
  * contract_better_if remains a same-contract margin/reliability compare.
- * registry_add_certified remains same-name better-or-reject.
- * library_evolve still dedups identical contracts (not a swap).
+ * Same-name registry_add_certified no longer better-or-reject: it asks
+ * this law. library_evolve still skips an exact-same digest / already-
+ * known contract when n_comps==0; a dominate+hold candidate is admitted
+ * through this law instead of silent exact-dedup.
  */
 #ifndef CNET_SWAP_H
 #define CNET_SWAP_H
@@ -100,7 +103,7 @@ int cnet_swap_compositions_hold(const BinaryTransformNetwork *old_btn,
 int cnet_swap_hop_allow(const char *unit, const BinaryTransformNetwork *btn,
                         const double *input, size_t in_len, void *ctx);
 
-/* Fill report. Unit-tested law; callers today: tests only.
+/* Fill report. Live doors call admit, which calls this.
    Adapter / teacher-residual new_btn => REFUSE.
    n_comps==0 is not a composition proof: ADD_ALONGSIDE
    (no_compositions_to_prove), never REPLACE.
@@ -142,6 +145,33 @@ int cnet_swap_replace(PrimitiveRegistry *reg,
                       const CnetSwapComposition *comps, size_t n_comps,
                       const DagNodeGuard *guard,
                       CnetSwapReport *report);
+
+
+/* ---- live-door helpers (do not fork the law) -----------------------------
+   Bind borrowed CERT compositions for the next registry_add_certified /
+   library_admit_candidate call. NULL/0 = n_comps==0 (no proof).
+   Single-threaded, like the rest of the BTN stack. */
+void cnet_swap_bind_compositions(const CnetSwapComposition *comps, size_t n_comps,
+                                 const DagNodeGuard *guard);
+void cnet_swap_unbind_compositions(void);
+void cnet_swap_bound_compositions(const CnetSwapComposition **comps, size_t *n_comps,
+                                  const DagNodeGuard **guard);
+
+/* Incoming contract as a coverage table (exemplars + port totals). */
+int cnet_swap_cov_from_contract(CnetSwapCoverage *cov, const Contract *c);
+
+/* Heap-owned unique alongside name (old_name_v2, _v3, ...). Borrowed by
+   the registry; do not free. NULL if none available. */
+const char *cnet_swap_alongside_name(const PrimitiveRegistry *reg,
+                                     const char *old_name);
+
+/* Same-name hook used by registry_add_certified. Weak-linked from
+   contract.c so contract-only tests still link; LIBRARY / cnet.so
+   provide the strong symbol. */
+int cnet_swap_registry_hook(PrimitiveRegistry *reg,
+                            BinaryTransformNetwork *new_btn,
+                            const char *name,
+                            const Contract *new_c);
 
 #ifdef __cplusplus
 }

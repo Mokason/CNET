@@ -103,6 +103,20 @@ int library_evolve(PrimitiveRegistry *reg,
    registry that borrowed them is no longer in use. */
 void library_report_free(LibraryReport *report);
 
+/* Evolve door: used by library_evolve / finalize_chunk.
+   Exact-same digest still skips. An already-known contract with
+   n_comps==0 still skips (no composition proof). Otherwise a
+   same-name or coverage-family incumbent goes through cnet_swap_admit
+   (same name first, else first certified brick that certifies on c).
+   No incumbent: specialist_admit as before. Returns 0 if the brick
+   was registered / replaced / added-alongside, -1 if skipped/refused. */
+int library_admit_candidate(PrimitiveRegistry *reg,
+                            BinaryTransformNetwork *btn,
+                            const char *name,
+                            const Contract *c);
+
+
+
 /* Sleep beside evolve: extract a shared name-sequence brick from >=2 traces
    that is a proper subsequence of at least one. If the brick is a unary
    well-typed route of length >= 2, distill it through the usual certify

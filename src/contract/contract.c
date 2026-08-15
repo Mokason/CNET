@@ -973,6 +973,13 @@ int contract_swap_if_better(const Contract *c, BinaryTransformNetwork **active,
 
 /* ---- registry_add_certified ---------------------------------------------- */
 
+#if defined(__GNUC__)
+int cnet_swap_registry_hook(PrimitiveRegistry *reg,
+                            BinaryTransformNetwork *new_btn,
+                            const char *name,
+                            const Contract *new_c) __attribute__((weak));
+#endif
+
 CNET_INTERNAL int registry_add_certified(PrimitiveRegistry *reg,
                            BinaryTransformNetwork *btn,
                            const char *name, const Contract *c) {
@@ -987,16 +994,26 @@ CNET_INTERNAL int registry_add_certified(PrimitiveRegistry *reg,
     for (i = 0; i < reg->count; ++i) {
         if (reg->entries[i].name != NULL &&
             strcmp(reg->entries[i].name, name) == 0) {
-            int better = contract_better_if(c, reg->entries[i].btn, btn);
+            /* Same-name slot: swap law, not contract_better_if.
+               When LIBRARY / cnet.so is linked, cnet_swap_registry_hook
+               is the strong symbol and calls cnet_swap_admit.
+               Contract-only tests without the hook keep better-or-reject. */
+#if defined(__GNUC__)
+            if (cnet_swap_registry_hook != NULL)
+                return cnet_swap_registry_hook(reg, btn, name, c);
+#endif
+            {
+                int better = contract_better_if(c, reg->entries[i].btn, btn);
 
-            if (better == 1) {
-                reg->entries[i].btn = btn;
-                reg->entries[i].certified = 1;
-                reg->entries[i].cert_btn_digest = contract_btn_digest(btn);
-                reg->entries[i].state = PRIM_FROZEN;
-                return 0;
+                if (better == 1) {
+                    reg->entries[i].btn = btn;
+                    reg->entries[i].certified = 1;
+                    reg->entries[i].cert_btn_digest = contract_btn_digest(btn);
+                    reg->entries[i].state = PRIM_FROZEN;
+                    return 0;
+                }
+                return -1;
             }
-            return -1;
         }
     }
     if (registry_add(reg, btn, name) != 0) {

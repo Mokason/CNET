@@ -1,38 +1,39 @@
 # Capsule / chunk swap law
 
-Status: **UNIT PASS — SWAP LAW ONLY**
+Status: **LIBRARY SWAP LAW — wired into registry_add_certified + library_evolve**
+(honest on this branch / PR. Do not claim `origin/master` obeys it until
+Ruufus says DONE.)
 
-This is the unit-tested law. Callers today: `tests/test_cnet_swap.c` only.
-`cnet_swap_admit` is not called from `registry_add_certified`,
-`library_evolve`, LIBRARY, or `cnet.so`. Production still
-better-or-reject / exact-dedup. The library does not obey this law yet.
+This slice is the **library wiring**. The unit-tested law in
+`include/cnet_swap.h` + `src/cnet_swap.c` is unchanged. Live doors now
+call `cnet_swap_admit`:
 
-Native C. Residual is not the mouth. Compression is not an admit or
-swap signal. Soft learned routers are not used. Not an ASI-5 or CHAT-1
-unit. Floors unchanged. Broader / general-mind claims **WITHHELD**.
-
-A new certified capsule or chunk may **replace** an old one only if it
-**dominates on the old coverage** and every existing CERT composition
-that used the old brick still passes hop guards. `n_comps==0` is **not**
-a composition proof: even if the new brick dominates, the verdict is
-**add-alongside** (`no_compositions_to_prove`), never replace. Otherwise
-**add-alongside** (Progressive Nets / MoCL freeze). The old brick is
-not deleted.
-
-An explicit replace that would break a CERT composition is **refused**.
-
-Teacher / residual adapters never admit through this door.
-
-## What was already there (not the swap law)
-
-| Existing | What it does | Why it is not this law |
+| Door | What it used to do | What it does now |
 |---|---|---|
-| `contract_better_if` / `contract_swap_if_better` | same-contract margin, reliability tie-break | not coverage subset, no hop guards |
-| `registry_add_certified` | same name: replace if better, else **reject** | reject is not add-alongside |
-| `library_evolve` `contract_already_known` | skip an identical already-certified contract | dedup, not swap |
-| HybridCoverage + `route_execute_guarded` | per-hop coverage membership | the guard surface this law reuses |
+| `registry_add_certified` | same-name `contract_better_if` replace-or-reject | same-name incumbent → `cnet_swap_registry_hook` → `cnet_swap_admit` |
+| `library_evolve` / `finalize_chunk` | `contract_already_known` exact-dedup, then `specialist_admit` | `library_admit_candidate`: exact-same digest still skips; already-known contract + `n_comps==0` still skips; otherwise `cnet_swap_admit` |
+| LIBRARY / `cnet.so` | `src/cnet_swap.c` not linked | `src/cnet_swap.c` is in `LIBRARY`, so `cnet_dll` / `cnet.so` contains the law |
 
-## Decision
+Teacher / residual adapters still **REFUSE** (`btn_is_adapter`). Residual
+never admits. `n_comps==0` still cannot **REPLACE**.
+
+Still no F11 / 448 / CHAT-1 claim. No GitHub Actions. No 8B. No soft
+router. WordLM untouched.
+
+## Incumbent choice
+
+- `registry_add_certified`: the same-name slot only. First add (no
+  incumbent) still appends. CCE/oracle adapter first-add is unchanged.
+- `library_admit_candidate` / `library_evolve`: **same name first**, else
+  the first **certified** brick that `btn_certify`s on the incoming
+  contract (coverage family).
+
+Same-name / family coverage uses the incoming contract table as both
+`old_cov` and `new_cov` (the slot's current certification table). CERT
+compositions are borrowed via `cnet_swap_bind_compositions` (NULL/0 =
+no composition proof).
+
+## Decision (unchanged law)
 
 ```text
 adapter / teacher-residual     -> REFUSE (never admits)
@@ -53,7 +54,9 @@ Compression / MAC / `compute_beneficial` are not read.
 
 ```text
 make cnet_swap
+make library_swap
 ```
 
-Must print `CNET_SWAP_PASS` and the gated `checks=N` count. No 8B
-compete. No GitHub Actions. No fake PASS.
+`make cnet_swap` must print `CNET_SWAP_PASS` and `checks=51`.
+`make library_swap` must print `CNET_LIBRARY_SWAP_PASS` and the gated
+`checks=26` count. No 8B compete. No GitHub Actions. No fake PASS.

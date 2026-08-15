@@ -438,7 +438,7 @@ CIRCUIT_TEST := tests/test_circuit.c
 CIRCUIT_DEMO := tests/circuit_demo.c
 CAPACITY_STUDY := tests/capacity_study.c
 CAPACITY_DEMO := tests/capacity_demo.c
-LIBRARY := src/library.c src/cnet_dc_type.c
+LIBRARY := src/library.c src/cnet_dc_type.c src/cnet_swap.c
 LIBRARY_TEST := tests/test_library.c
 MARGIN_STUDY := tests/margin_study.c
 FUZZY_STUDY := tests/fuzzy_study.c
@@ -710,6 +710,21 @@ cnet_swap: include/cnet_swap.h src/cnet_swap.c tests/test_cnet_swap.c \
 	@./$(BIN_DIR)/test_cnet_swap | tee logs/cnet_swap.log
 	@grep -q '^CNET_SWAP_PASS$$' logs/cnet_swap.log
 	@grep -q '^checks=51 ' logs/cnet_swap.log
+
+.PHONY: library_swap
+library_swap: include/cnet_swap.h src/cnet_swap.c tests/test_library_swap.c \
+		include/library.h src/library.c include/contract/contract.h
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -Werror -Iinclude -o $(BIN_DIR)/test_library_swap \
+		src/cnet_swap.c src/nn.c \
+		src/contract/contract.c src/contract/unit.c \
+		src/router/dag_full.c src/router/registry.c src/router/route.c \
+		src/plan_table.c src/consolidate.c src/library.c src/cnet_dc_type.c \
+		src/property.c \
+		tests/test_library_swap.c $(LDFLAGS)
+	@./$(BIN_DIR)/test_library_swap | tee logs/library_swap.log
+	@grep -q '^CNET_LIBRARY_SWAP_PASS$$' logs/library_swap.log
+	@grep -q '^checks=26 ' logs/library_swap.log
 
 # Unit files: weights + contract as ONE sealed binary artifact (.cnu) —
 # binary f64 weights + bit-packed canonical exemplars + FNV seal; round-trip

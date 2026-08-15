@@ -1,5 +1,6 @@
 #include "../include/library.h"
 #include "../include/cnet_dc_type.h"
+#include "../include/cnet_swap.h"
 #include "../include/scan.h"
 #include "../include/specialist.h"
 
@@ -7,19 +8,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
-
-/* Have we already invented this exact behavior? Keyed on the contract: an
-   existing entry whose ports match AND that replays every exemplar exactly. */
-static int contract_already_known(PrimitiveRegistry *reg, const Contract *c) {
-    size_t i;
-    for (i = 0; i < reg->count; ++i) {
-        if (reg->entries[i].btn != NULL &&
-            btn_certify(reg->entries[i].btn, c, NULL) == 0) {
-            return 1;
-        }
-    }
-    return 0;
-}
 
 /* Does any supplied law have a real violation against the current registry?
    property_check returns 0 iff the law holds. A nonzero return with
@@ -59,6 +47,86 @@ static int admit_native_btn(PrimitiveRegistry *reg, BinaryTransformNetwork *btn,
     return specialist_admit(reg, &s, c);
 }
 
+
+/* Same name first; else first certified brick that replays c
+   (coverage family). Documented in plans/cnet_capsule_swap_law.md. */
+static size_t find_swap_family(const PrimitiveRegistry *reg, const char *name,
+                               const Contract *c) {
+    size_t i;
+    if (reg == NULL) return (size_t)-1;
+    if (name != NULL) {
+        for (i = 0; i < reg->count; ++i) {
+            if (reg->entries[i].name != NULL &&
+                strcmp(reg->entries[i].name, name) == 0)
+                return i;
+        }
+    }
+    if (c == NULL) return (size_t)-1;
+    for (i = 0; i < reg->count; ++i) {
+        if (reg->entries[i].certified && reg->entries[i].btn != NULL &&
+            btn_certify(reg->entries[i].btn, c, NULL) == 0)
+            return i;
+    }
+    return (size_t)-1;
+}
+
+static void stamp_btn_kind(PrimitiveRegistry *reg, const char *name) {
+    size_t i;
+    if (reg == NULL || name == NULL) return;
+    for (i = 0; i < reg->count; ++i) {
+        if (reg->entries[i].name != NULL &&
+            strcmp(reg->entries[i].name, name) == 0) {
+            reg->entries[i].kind = SPECIALIST_KIND_BTN;
+            return;
+        }
+    }
+}
+
+int library_admit_candidate(PrimitiveRegistry *reg, BinaryTransformNetwork *btn,
+                            const char *name, const Contract *c) {
+    size_t fam;
+    const CnetSwapComposition *comps = NULL;
+    size_t n_comps = 0;
+    const DagNodeGuard *guard = NULL;
+    CnetSwapReport rep;
+    CnetSwapCoverage oldc, newc;
+    const char *old_name;
+    const char *alongside;
+    BinaryTransformNetwork *old_btn;
+
+    if (reg == NULL || btn == NULL || name == NULL || c == NULL) return -1;
+    if (btn_is_adapter(btn)) return -1;
+
+    cnet_swap_bound_compositions(&comps, &n_comps, &guard);
+    fam = find_swap_family(reg, name, c);
+    if (fam != (size_t)-1) {
+        old_btn = reg->entries[fam].btn;
+        old_name = reg->entries[fam].name;
+        if (old_btn != NULL &&
+            contract_btn_digest(old_btn) == contract_btn_digest(btn))
+            return -1; /* exact-same brick */
+        if (n_comps == 0 && old_btn != NULL &&
+            btn_certify(old_btn, c, NULL) == 0)
+            return -1; /* already-known contract, no composition proof */
+        if (cnet_swap_cov_from_contract(&newc, c) != 0) return -1;
+        oldc = newc;
+        if (old_name != NULL && strcmp(old_name, name) == 0)
+            alongside = cnet_swap_alongside_name(reg, name);
+        else
+            alongside = name;
+        if (alongside == NULL || old_name == NULL) return -1;
+        memset(&rep, 0, sizeof rep);
+        if (cnet_swap_admit(reg, old_name, btn, alongside, c,
+                            &oldc, &newc, comps, n_comps, guard, &rep) != 0)
+            return -1;
+        stamp_btn_kind(reg, (rep.verdict == CNET_SWAP_REPLACE)
+                            ? old_name : alongside);
+        return 0;
+    }
+    return admit_native_btn(reg, btn, name, c);
+}
+
+
 static int finalize_chunk(PrimitiveRegistry *reg, BinaryTransformNetwork *student,
                           const char *name, const Contract *c,
                           const Property *laws, size_t n_laws, size_t max_samples,
@@ -66,10 +134,10 @@ static int finalize_chunk(PrimitiveRegistry *reg, BinaryTransformNetwork *studen
     size_t before, idx, teacher_mac = ti->mac;
 
     if (report->chunk_count >= LIBRARY_MAX_CHUNKS) return 0;
-    if (contract_already_known(reg, c)) return 0;          /* step 5: dedup */
-
+    /* step 5-6: exact-same / already-known still skip when n_comps==0;
+       a dominate+hold candidate goes through the swap law. */
     before = reg->count;
-    if (admit_native_btn(reg, student, name, c) != 0) return 0;  /* step 6 */
+    if (library_admit_candidate(reg, student, name, c) != 0) return 0;
 
     if (law_violated(laws, n_laws, reg, max_samples)) {    /* step 7: guard */
         /* rollback only if we actually appended; unique names mean

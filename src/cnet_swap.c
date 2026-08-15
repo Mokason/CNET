@@ -1,5 +1,6 @@
-/* Unit-tested swap law. Callers today: tests only. Not wired into
-   registry_add_certified, library_evolve, LIBRARY, or cnet.so.
+/* Unit-tested swap law. Live doors: registry_add_certified (same-name)
+   and library_evolve / library_admit_candidate call cnet_swap_admit.
+   src/cnet_swap.c is in LIBRARY so cnet.so contains the law.
    Replace only when the new brick dominates old coverage and every CERT
    composition that used the old brick still passes hop guards.
    n_comps==0 is not a composition proof (ADD-ALONGSIDE, never REPLACE).
@@ -7,6 +8,7 @@
    Teacher/residual adapters never admit. */
 #include "../include/cnet_swap.h"
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -408,4 +410,88 @@ int cnet_swap_replace(PrimitiveRegistry *reg,
         return -1;
     }
     return 0;
+}
+
+/* ---- live-door bind / hook ------------------------------------------------ */
+
+static const CnetSwapComposition *g_door_comps;
+static size_t g_door_n_comps;
+static const DagNodeGuard *g_door_guard;
+
+void cnet_swap_bind_compositions(const CnetSwapComposition *comps, size_t n_comps,
+                                 const DagNodeGuard *guard) {
+    g_door_comps = comps;
+    g_door_n_comps = n_comps;
+    g_door_guard = guard;
+}
+
+void cnet_swap_unbind_compositions(void) {
+    g_door_comps = NULL;
+    g_door_n_comps = 0;
+    g_door_guard = NULL;
+}
+
+void cnet_swap_bound_compositions(const CnetSwapComposition **comps, size_t *n_comps,
+                                  const DagNodeGuard **guard) {
+    if (comps != NULL) *comps = g_door_comps;
+    if (n_comps != NULL) *n_comps = g_door_n_comps;
+    if (guard != NULL) *guard = g_door_guard;
+}
+
+int cnet_swap_cov_from_contract(CnetSwapCoverage *cov, const Contract *c) {
+    size_t i, in_dim = 0, out_dim = 0;
+    if (cov == NULL || c == NULL || c->inputs == NULL || c->exemplar_count == 0)
+        return -1;
+    for (i = 0; i < c->input_port_count; ++i)
+        in_dim += c->input_ports[i].field_width * c->input_ports[i].field_count;
+    for (i = 0; i < c->output_port_count; ++i)
+        out_dim += c->output_ports[i].field_width * c->output_ports[i].field_count;
+    if (in_dim == 0) return -1;
+    cov->inputs = c->inputs;
+    cov->targets = c->outputs;
+    cov->n_rows = c->exemplar_count;
+    cov->in_dim = in_dim;
+    cov->out_dim = out_dim;
+    return 0;
+}
+
+const char *cnet_swap_alongside_name(const PrimitiveRegistry *reg,
+                                     const char *old_name) {
+    unsigned n;
+    if (old_name == NULL || old_name[0] == '\0') return NULL;
+    for (n = 2; n < 100; ++n) {
+        char *buf = (char *)malloc(CONTRACT_NAME_MAX);
+        if (buf == NULL) return NULL;
+        if (snprintf(buf, CONTRACT_NAME_MAX, "%s_v%u", old_name, n) < 0) {
+            free(buf);
+            return NULL;
+        }
+        if (find_named(reg, buf) == (size_t)-1)
+            return buf;
+        free(buf);
+    }
+    return NULL;
+}
+
+int cnet_swap_registry_hook(PrimitiveRegistry *reg,
+                            BinaryTransformNetwork *new_btn,
+                            const char *name,
+                            const Contract *new_c) {
+    CnetSwapCoverage cov;
+    CnetSwapReport rep;
+    const CnetSwapComposition *comps = NULL;
+    size_t n_comps = 0;
+    const DagNodeGuard *guard = NULL;
+    const char *alongside;
+
+    if (reg == NULL || new_btn == NULL || name == NULL || new_c == NULL)
+        return -1;
+    if (btn_is_adapter(new_btn)) return -1;
+    if (cnet_swap_cov_from_contract(&cov, new_c) != 0) return -1;
+    cnet_swap_bound_compositions(&comps, &n_comps, &guard);
+    alongside = cnet_swap_alongside_name(reg, name);
+    if (alongside == NULL) return -1;
+    memset(&rep, 0, sizeof rep);
+    return cnet_swap_admit(reg, name, new_btn, alongside, new_c,
+                           &cov, &cov, comps, n_comps, guard, &rep);
 }
