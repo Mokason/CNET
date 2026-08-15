@@ -285,6 +285,8 @@ static int apply_replace(PrimitiveRegistry *reg, const char *old_name,
     if (btn_certify(new_btn, new_c, NULL) != 0) return -1;
     idx = find_named(reg, old_name);
     if (idx == (size_t)-1) return -1;
+    if (registry_store_cert_coverage(&reg->entries[idx], new_c) != 0)
+        return -1;
     stamp_certified(&reg->entries[idx], new_btn);
     return 0;
 }
@@ -438,6 +440,19 @@ void cnet_swap_bound_compositions(const CnetSwapComposition **comps, size_t *n_c
     if (guard != NULL) *guard = g_door_guard;
 }
 
+int cnet_swap_old_cov_from_entry(CnetSwapCoverage *cov, const RegistryEntry *e) {
+    if (cov == NULL || e == NULL || e->cert_cov == NULL) return -1;
+    if (e->cert_cov->inputs == NULL || e->cert_cov->n_rows == 0 ||
+        e->cert_cov->in_dim == 0)
+        return -1;
+    cov->inputs = e->cert_cov->inputs;
+    cov->targets = e->cert_cov->targets;
+    cov->n_rows = e->cert_cov->n_rows;
+    cov->in_dim = e->cert_cov->in_dim;
+    cov->out_dim = e->cert_cov->out_dim;
+    return 0;
+}
+
 int cnet_swap_cov_from_contract(CnetSwapCoverage *cov, const Contract *c) {
     size_t i, in_dim = 0, out_dim = 0;
     if (cov == NULL || c == NULL || c->inputs == NULL || c->exemplar_count == 0)
@@ -477,21 +492,29 @@ int cnet_swap_registry_hook(PrimitiveRegistry *reg,
                             BinaryTransformNetwork *new_btn,
                             const char *name,
                             const Contract *new_c) {
-    CnetSwapCoverage cov;
+    CnetSwapCoverage old_cov, new_cov;
     CnetSwapReport rep;
     const CnetSwapComposition *comps = NULL;
     size_t n_comps = 0;
     const DagNodeGuard *guard = NULL;
     const char *alongside;
+    size_t idx;
 
     if (reg == NULL || new_btn == NULL || name == NULL || new_c == NULL)
         return -1;
     if (btn_is_adapter(new_btn)) return -1;
-    if (cnet_swap_cov_from_contract(&cov, new_c) != 0) return -1;
+    if (cnet_swap_cov_from_contract(&new_cov, new_c) != 0) return -1;
+    idx = find_named(reg, name);
+    if (idx == (size_t)-1) return -1;
+    /* old_cov is the persisted incumbent table, never the incoming table.
+       Same table both sides is a dominate lie. No persisted table =>
+       empty old_cov => cannot REPLACE (ADD-ALONGSIDE / no_old_coverage). */
+    if (cnet_swap_old_cov_from_entry(&old_cov, &reg->entries[idx]) != 0)
+        memset(&old_cov, 0, sizeof old_cov);
     cnet_swap_bound_compositions(&comps, &n_comps, &guard);
     alongside = cnet_swap_alongside_name(reg, name);
     if (alongside == NULL) return -1;
     memset(&rep, 0, sizeof rep);
     return cnet_swap_admit(reg, name, new_btn, alongside, new_c,
-                           &cov, &cov, comps, n_comps, guard, &rep);
+                           &old_cov, &new_cov, comps, n_comps, guard, &rep);
 }

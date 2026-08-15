@@ -4,7 +4,10 @@
  * (library_evolve door) call cnet_swap_admit. src/cnet_swap.c is in
  * LIBRARY / cnet.so. Does not rewrite the law.
  *
- * No F11 / 448 / CHAT-1. No soft router. Residual never admits.
+ * old_cov is the persisted incumbent certification table. Incoming is
+ * new_cov only. Same table both sides is a dominate lie.
+ *
+ * No F11 / 448 / CHAT-1. No soft router. Residual never as a replacement.
  */
 #include "../include/cnet_swap.h"
 #include "../include/library.h"
@@ -94,6 +97,17 @@ static int residual_forward(void *ctx, const double *in, size_t in_n,
     return 0;
 }
 
+static int entry_named(const PrimitiveRegistry *reg, const char *name,
+                       const BinaryTransformNetwork *btn) {
+    size_t i;
+    for (i = 0; i < reg->count; ++i) {
+        if (reg->entries[i].name != NULL &&
+            strcmp(reg->entries[i].name, name) == 0)
+            return reg->entries[i].btn == btn;
+    }
+    return 0;
+}
+
 static void test_registry_refuses_adapter(void) {
     BinaryTransformNetwork oldb, residual;
     double in[2] = {0.0, 1.0};
@@ -130,13 +144,18 @@ static void test_registry_refuses_adapter(void) {
     btn_free(&residual);
 }
 
-static void test_registry_replace_and_alongside(void) {
-    BinaryTransformNetwork old_id, new_id, hop2;
+static void test_registry_live_paths(void) {
+    BinaryTransformNetwork old_id, new_id, hop2, new_zero;
     double in[2] = {0.0, 1.0};
     double id_tg[2] = {0.0, 1.0};
+    double zero_tg[2] = {0.0, 0.0};
+    double sub_in[1] = {0.0};
+    double sub_tg[1] = {0.0};
     double hop2_rows[1] = {0.0};
+    double hop2_break[1] = {1.0};
     double comp_in[1] = {0.0};
-    Contract id_c;
+    double comp_break[1] = {1.0};
+    Contract id_c, sub_c, zero_c, narrow_c;
     CnetSwapCoverage hop2cov;
     CnetSwapComposition comp;
     DagNodeGuard guard;
@@ -144,15 +163,26 @@ static void test_registry_replace_and_alongside(void) {
     size_t i;
     int found_new;
 
-    printf("registry_add_certified REPLACE / ADD_ALONGSIDE:\n");
+    printf("registry_add_certified live paths (persisted old_cov):\n");
     check(train_bit(&old_id, 0, 11u) == 0 &&
           train_bit(&new_id, 0, 13u) == 0 &&
-          train_bit(&hop2, 0, 19u) == 0,
-          "native identity / hop2 train");
+          train_bit(&hop2, 0, 19u) == 0 &&
+          train_const0(&new_zero, 23u) == 0,
+          "native identity / hop2 / const-0 train");
     check(contract_init_borrowed(&id_c, "bit_id", &old_id, in, id_tg, 2) == 0 &&
           btn_certify(&old_id, &id_c, NULL) == 0 &&
           btn_certify(&new_id, &id_c, NULL) == 0,
-          "both identities certify");
+          "both identities certify the full table");
+    check(contract_init_borrowed(&sub_c, "bit_id_sub", &new_id, sub_in, sub_tg, 1) == 0 &&
+          btn_certify(&new_id, &sub_c, NULL) == 0,
+          "new identity certifies a proper subset table");
+    check(contract_init_borrowed(&zero_c, "bit_zero", &new_zero, in, zero_tg, 2) == 0 &&
+          btn_certify(&new_zero, &zero_c, NULL) == 0,
+          "const-0 certifies");
+    check(contract_init_borrowed(&narrow_c, "bit_id_narrow", &old_id,
+                                sub_in, sub_tg, 1) == 0 &&
+          btn_certify(&old_id, &narrow_c, NULL) == 0,
+          "old identity certifies the narrow {0} table");
 
     hop2cov.inputs = hop2_rows; hop2cov.targets = hop2_rows;
     hop2cov.n_rows = 1; hop2cov.in_dim = 1; hop2cov.out_dim = 1;
@@ -165,10 +195,13 @@ static void test_registry_replace_and_alongside(void) {
     guard.allow = cnet_swap_hop_allow;
     guard.ctx = &hop2cov;
 
-    /* n_comps==0: ADD_ALONGSIDE, old stays */
+    /* persist + n_comps==0: ADD_ALONGSIDE, old stays */
     registry_init(&reg);
-    check(registry_add_certified(&reg, &old_id, "old_bit", &id_c) == 0,
-          "old certified identity admitted");
+    check(registry_add_certified(&reg, &old_id, "old_bit", &id_c) == 0 &&
+          reg.count == 1 &&
+          reg.entries[0].cert_cov != NULL &&
+          reg.entries[0].cert_cov->n_rows == 2,
+          "old admitted; incumbent persisted its original 2-row table");
     cnet_swap_unbind_compositions();
     check(registry_add_certified(&reg, &new_id, "old_bit", &id_c) == 0 &&
           reg.count == 2 &&
@@ -178,9 +211,9 @@ static void test_registry_replace_and_alongside(void) {
     for (i = 0; i < reg.count; ++i)
         if (reg.entries[i].btn == &new_id) found_new = 1;
     check(found_new, "new brick persisted under alongside name");
-
-    /* dominate + hold => REPLACE */
     registry_free(&reg);
+
+    /* native dominate+hold REPLACE: new table covers the ORIGINAL rows */
     registry_init(&reg);
     check(registry_add_certified(&reg, &old_id, "old_bit", &id_c) == 0,
           "old certified identity re-admitted");
@@ -188,71 +221,81 @@ static void test_registry_replace_and_alongside(void) {
     check(registry_add_certified(&reg, &new_id, "old_bit", &id_c) == 0 &&
           reg.count == 1 &&
           reg.entries[0].btn == &new_id &&
-          reg.entries[0].certified == 1,
-          "dominate + compositions hold => REPLACE via live door");
+          reg.entries[0].certified == 1 &&
+          reg.entries[0].cert_cov != NULL &&
+          reg.entries[0].cert_cov->n_rows == 2,
+          "dominate+hold REPLACE; new table covers incumbent original rows");
     cnet_swap_unbind_compositions();
-
     registry_free(&reg);
-    contract_free(&id_c);
-    btn_free(&old_id);
-    btn_free(&new_id);
-    btn_free(&hop2);
-}
 
-static void test_registry_no_replace_when_comps_break(void) {
-    BinaryTransformNetwork oldb, new_zero, hop2;
-    double in[2] = {0.0, 1.0};
-    double id_tg[2] = {0.0, 1.0};
-    double zero_tg[2] = {0.0, 0.0};
-    double hop2_rows[1] = {1.0};
-    double comp_in[1] = {1.0};
-    Contract id_c, zero_c;
-    CnetSwapCoverage hop2cov;
-    CnetSwapComposition comp;
-    DagNodeGuard guard;
-    PrimitiveRegistry reg;
-
-    printf("registry_add_certified no REPLACE when compositions break:\n");
-    check(train_bit(&oldb, 0, 11u) == 0 &&
-          train_const0(&new_zero, 23u) == 0 &&
-          train_bit(&hop2, 0, 19u) == 0,
-          "native identity / const-0 / hop2 train");
-    check(contract_init_borrowed(&id_c, "bit_id", &oldb, in, id_tg, 2) == 0 &&
-          btn_certify(&oldb, &id_c, NULL) == 0,
-          "identity certifies");
-    check(contract_init_borrowed(&zero_c, "bit_zero", &new_zero, in, zero_tg, 2) == 0 &&
-          btn_certify(&new_zero, &zero_c, NULL) == 0,
-          "const-0 certifies");
-
-    hop2cov.inputs = hop2_rows; hop2cov.targets = hop2_rows;
-    hop2cov.n_rows = 1; hop2cov.in_dim = 1; hop2cov.out_dim = 1;
-    memset(&comp, 0, sizeof comp);
-    fill_id_plan(&comp.plan, &oldb, &hop2);
-    comp.inputs = comp_in;
-    comp.n_rows = 1;
-    comp.in_dim = 1;
-    memset(&guard, 0, sizeof guard);
-    guard.allow = cnet_swap_hop_allow;
-    guard.ctx = &hop2cov;
-
+    /* anti-tautology: incoming is a proper subset of the original table */
     registry_init(&reg);
-    check(registry_add_certified(&reg, &oldb, "old_bit", &id_c) == 0,
-          "old identity admitted");
+    check(registry_add_certified(&reg, &old_id, "old_bit", &id_c) == 0,
+          "old full-table identity admitted for anti-tautology");
+    cnet_swap_bind_compositions(&comp, 1, &guard);
+    check(registry_add_certified(&reg, &new_id, "old_bit", &sub_c) == 0 &&
+          reg.count == 2 &&
+          reg.entries[0].btn == &old_id,
+          "incoming subset != original table => dominate false, no REPLACE");
+    found_new = 0;
+    for (i = 0; i < reg.count; ++i)
+        if (reg.entries[i].btn == &new_id) found_new = 1;
+    check(found_new, "subset incoming added alongside, not as a replacement");
+    cnet_swap_unbind_compositions();
+    registry_free(&reg);
+
+    /* const-0 against the full identity table is NOT dominate */
+    registry_init(&reg);
+    check(registry_add_certified(&reg, &old_id, "old_bit", &id_c) == 0,
+          "old identity admitted for const-0");
     cnet_swap_bind_compositions(&comp, 1, &guard);
     check(registry_add_certified(&reg, &new_zero, "old_bit", &zero_c) == 0 &&
           reg.count == 2 &&
-          reg.entries[0].btn == &oldb,
-          "dominate && compositions_hold==0 => no REPLACE; old stays");
+          reg.entries[0].btn == &old_id,
+          "const-0 does not dominate the incumbent identity table; no REPLACE");
     check(reg.entries[0].btn != &new_zero,
           "const-0 did not replace the old brick");
     cnet_swap_unbind_compositions();
-
     registry_free(&reg);
+
+    /* no persisted old_cov => cannot REPLACE even with compositions bound */
+    registry_init(&reg);
+    check(registry_add(&reg, &old_id, "old_bit") == 0 &&
+          reg.entries[0].cert_cov == NULL,
+          "uncertified add has no persisted coverage");
+    cnet_swap_bind_compositions(&comp, 1, &guard);
+    check(registry_add_certified(&reg, &new_id, "old_bit", &id_c) == 0 &&
+          reg.count == 2 &&
+          reg.entries[0].btn == &old_id,
+          "no_old_coverage => ADD-ALONGSIDE, never REPLACE");
+    cnet_swap_unbind_compositions();
+    registry_free(&reg);
+
+    /* honest dominate && compositions_hold==0: const-0 covers narrow {0} */
+    hop2cov.inputs = hop2_break; hop2cov.targets = hop2_break;
+    hop2cov.n_rows = 1; hop2cov.in_dim = 1; hop2cov.out_dim = 1;
+    comp.inputs = comp_break;
+    registry_init(&reg);
+    check(registry_add_certified(&reg, &old_id, "old_bit", &narrow_c) == 0 &&
+          reg.entries[0].cert_cov != NULL &&
+          reg.entries[0].cert_cov->n_rows == 1,
+          "old admitted on narrow {0} table");
+    cnet_swap_bind_compositions(&comp, 1, &guard);
+    check(registry_add_certified(&reg, &new_zero, "old_bit", &zero_c) == 0 &&
+          reg.count == 2 &&
+          reg.entries[0].btn == &old_id,
+          "dominate && compositions_hold==0 => no REPLACE; old stays");
+    cnet_swap_unbind_compositions();
+    registry_free(&reg);
+
     contract_free(&id_c);
+    contract_free(&sub_c);
     contract_free(&zero_c);
-    btn_free(&oldb);
-    btn_free(&new_zero);
+    contract_free(&narrow_c);
+    btn_free(&old_id);
+    btn_free(&new_id);
     btn_free(&hop2);
+    btn_free(&new_zero);
 }
 
 static void test_library_door(void) {
@@ -305,12 +348,25 @@ static void test_library_door(void) {
           reg.entries[0].btn == &old_id,
           "already-known contract + n_comps==0 still dedups");
 
-    /* dominate+hold is NOT silently skipped */
+    /* cross-name first-certify must never REPLACE the wrong name */
     cnet_swap_bind_compositions(&comp, 1, &guard);
     check(library_admit_candidate(&reg, &new_id, "chunk_bit", &id_c) == 0 &&
+          reg.count == 2 &&
+          entry_named(&reg, "old_bit", &old_id) &&
+          entry_named(&reg, "chunk_bit", &new_id),
+          "cross-name first-certify ADD-ALONGSIDE, never REPLACE old_bit");
+    cnet_swap_unbind_compositions();
+    registry_free(&reg);
+
+    /* same-name dominate+hold REPLACE (new table covers original rows) */
+    registry_init(&reg);
+    check(registry_add_certified(&reg, &old_id, "old_bit", &id_c) == 0,
+          "old brick re-admitted for same-name evolve REPLACE");
+    cnet_swap_bind_compositions(&comp, 1, &guard);
+    check(library_admit_candidate(&reg, &new_id, "old_bit", &id_c) == 0 &&
           reg.count == 1 &&
           reg.entries[0].btn == &new_id,
-          "dominate+hold goes through the law (REPLACE, not silent dedup)");
+          "same-name dominate+hold goes through the law (REPLACE)");
     cnet_swap_unbind_compositions();
 
     registry_free(&reg);
@@ -322,8 +378,7 @@ static void test_library_door(void) {
 
 int main(void) {
     test_registry_refuses_adapter();
-    test_registry_replace_and_alongside();
-    test_registry_no_replace_when_comps_break();
+    test_registry_live_paths();
     test_library_door();
     printf("checks=%d failures=%d\n", checks, failures);
     if (failures == 0) {

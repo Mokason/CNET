@@ -971,6 +971,62 @@ int contract_swap_if_better(const Contract *c, BinaryTransformNetwork **active,
     return better;
 }
 
+/* ---- persisted incumbent certification table ----------------------------- */
+
+void registry_clear_cert_coverage(RegistryEntry *e) {
+    if (e == NULL || e->cert_cov == NULL) return;
+    free(e->cert_cov->inputs);
+    free(e->cert_cov->targets);
+    free(e->cert_cov);
+    e->cert_cov = NULL;
+}
+
+int registry_store_cert_coverage(RegistryEntry *e, const Contract *c) {
+    RegistryCertCoverage *cov;
+    double *inputs = NULL, *targets = NULL;
+    size_t in_dim, out_dim, n_rows, nbytes_in, nbytes_out;
+
+    if (e == NULL || c == NULL || c->inputs == NULL || c->exemplar_count == 0)
+        return -1;
+    in_dim = ports_total(c->input_ports, c->input_port_count);
+    out_dim = ports_total(c->output_ports, c->output_port_count);
+    if (in_dim == 0 || in_dim == (size_t)-1 || out_dim == (size_t)-1)
+        return -1;
+    n_rows = c->exemplar_count;
+    if (n_rows > (size_t)-1 / in_dim) return -1;
+    nbytes_in = n_rows * in_dim * sizeof(double);
+    inputs = (double *)malloc(nbytes_in);
+    if (inputs == NULL) return -1;
+    memcpy(inputs, c->inputs, nbytes_in);
+    if (c->outputs != NULL && out_dim > 0) {
+        if (n_rows > (size_t)-1 / out_dim) {
+            free(inputs);
+            return -1;
+        }
+        nbytes_out = n_rows * out_dim * sizeof(double);
+        targets = (double *)malloc(nbytes_out);
+        if (targets == NULL) {
+            free(inputs);
+            return -1;
+        }
+        memcpy(targets, c->outputs, nbytes_out);
+    }
+    cov = (RegistryCertCoverage *)calloc(1, sizeof *cov);
+    if (cov == NULL) {
+        free(inputs);
+        free(targets);
+        return -1;
+    }
+    cov->inputs = inputs;
+    cov->targets = targets;
+    cov->n_rows = n_rows;
+    cov->in_dim = in_dim;
+    cov->out_dim = out_dim;
+    registry_clear_cert_coverage(e);
+    e->cert_cov = cov;
+    return 0;
+}
+
 /* ---- registry_add_certified ---------------------------------------------- */
 
 #if defined(__GNUC__)
@@ -1006,6 +1062,8 @@ CNET_INTERNAL int registry_add_certified(PrimitiveRegistry *reg,
                 int better = contract_better_if(c, reg->entries[i].btn, btn);
 
                 if (better == 1) {
+                    if (registry_store_cert_coverage(&reg->entries[i], c) != 0)
+                        return -1;
                     reg->entries[i].btn = btn;
                     reg->entries[i].certified = 1;
                     reg->entries[i].cert_btn_digest = contract_btn_digest(btn);
@@ -1017,6 +1075,10 @@ CNET_INTERNAL int registry_add_certified(PrimitiveRegistry *reg,
         }
     }
     if (registry_add(reg, btn, name) != 0) {
+        return -1;
+    }
+    if (registry_store_cert_coverage(&reg->entries[reg->count - 1], c) != 0) {
+        registry_remove_last(reg);
         return -1;
     }
     reg->entries[reg->count - 1].certified = 1;
@@ -1093,6 +1155,7 @@ size_t registry_audit_certified(PrimitiveRegistry *reg) {
             reg->entries[i].cert_btn_digest) {
             reg->entries[i].certified = 0;
             reg->entries[i].cert_btn_digest = 0;
+            registry_clear_cert_coverage(&reg->entries[i]);
             reg->entries[i].state = PRIM_RESET;
             ++demoted;
         }

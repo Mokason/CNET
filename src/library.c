@@ -48,26 +48,33 @@ static int admit_native_btn(PrimitiveRegistry *reg, BinaryTransformNetwork *btn,
 }
 
 
-/* Same name first; else first certified brick that replays c
-   (coverage family). Documented in plans/cnet_capsule_swap_law.md. */
+/* REPLACE is same-name only (same slot). Cross-name first-certify on the
+   incoming contract is not a family proof and must never REPLACE the
+   wrong name. Documented in plans/cnet_capsule_swap_law.md. */
 static size_t find_swap_family(const PrimitiveRegistry *reg, const char *name,
                                const Contract *c) {
     size_t i;
-    if (reg == NULL) return (size_t)-1;
-    if (name != NULL) {
-        for (i = 0; i < reg->count; ++i) {
-            if (reg->entries[i].name != NULL &&
-                strcmp(reg->entries[i].name, name) == 0)
-                return i;
-        }
-    }
-    if (c == NULL) return (size_t)-1;
+    (void)c;
+    if (reg == NULL || name == NULL) return (size_t)-1;
     for (i = 0; i < reg->count; ++i) {
-        if (reg->entries[i].certified && reg->entries[i].btn != NULL &&
-            btn_certify(reg->entries[i].btn, c, NULL) == 0)
+        if (reg->entries[i].name != NULL &&
+            strcmp(reg->entries[i].name, name) == 0)
             return i;
     }
     return (size_t)-1;
+}
+
+/* Fixed-point skip only: a certified brick already replays c.
+   Not a REPLACE target. */
+static int already_known_contract(const PrimitiveRegistry *reg, const Contract *c) {
+    size_t i;
+    if (reg == NULL || c == NULL) return 0;
+    for (i = 0; i < reg->count; ++i) {
+        if (reg->entries[i].certified && reg->entries[i].btn != NULL &&
+            btn_certify(reg->entries[i].btn, c, NULL) == 0)
+            return 1;
+    }
+    return 0;
 }
 
 static void stamp_btn_kind(PrimitiveRegistry *reg, const char *name) {
@@ -109,11 +116,11 @@ int library_admit_candidate(PrimitiveRegistry *reg, BinaryTransformNetwork *btn,
             btn_certify(old_btn, c, NULL) == 0)
             return -1; /* already-known contract, no composition proof */
         if (cnet_swap_cov_from_contract(&newc, c) != 0) return -1;
-        oldc = newc;
-        if (old_name != NULL && strcmp(old_name, name) == 0)
-            alongside = cnet_swap_alongside_name(reg, name);
-        else
-            alongside = name;
+        /* old_cov is the persisted incumbent table, never the incoming
+           table. Missing table => empty old_cov => no REPLACE. */
+        if (cnet_swap_old_cov_from_entry(&oldc, &reg->entries[fam]) != 0)
+            memset(&oldc, 0, sizeof oldc);
+        alongside = cnet_swap_alongside_name(reg, name);
         if (alongside == NULL || old_name == NULL) return -1;
         memset(&rep, 0, sizeof rep);
         if (cnet_swap_admit(reg, old_name, btn, alongside, c,
@@ -123,6 +130,10 @@ int library_admit_candidate(PrimitiveRegistry *reg, BinaryTransformNetwork *btn,
                             ? old_name : alongside);
         return 0;
     }
+    /* Cross-name: never REPLACE another slot. n_comps==0 + already-known
+       still skips (evolve fixed point). Otherwise ADD under the new name. */
+    if (n_comps == 0 && already_known_contract(reg, c))
+        return -1;
     return admit_native_btn(reg, btn, name, c);
 }
 

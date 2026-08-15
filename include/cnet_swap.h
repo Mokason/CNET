@@ -157,8 +157,13 @@ void cnet_swap_unbind_compositions(void);
 void cnet_swap_bound_compositions(const CnetSwapComposition **comps, size_t *n_comps,
                                   const DagNodeGuard **guard);
 
-/* Incoming contract as a coverage table (exemplars + port totals). */
+/* Incoming contract as a coverage table (exemplars + port totals).
+   This is new_cov only. Do not pass it as old_cov. */
 int cnet_swap_cov_from_contract(CnetSwapCoverage *cov, const Contract *c);
+
+/* Borrow the entry's persisted incumbent certification table as old_cov.
+   Returns 0, or -1 if the entry has no persisted coverage. */
+int cnet_swap_old_cov_from_entry(CnetSwapCoverage *cov, const RegistryEntry *e);
 
 /* Heap-owned unique alongside name (old_name_v2, _v3, ...). Borrowed by
    the registry; do not free. NULL if none available. */
