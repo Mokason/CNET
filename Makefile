@@ -747,6 +747,19 @@ cnet_c_speak: include/cnet_c_speak.h src/cnet_c_speak.c src/cce/cce_wordlm.c \
 	@grep -q '^CNET_C_SPEAK_PASS$$' logs/cnet_c_speak.log
 	@grep -q '^checks=58 ' logs/cnet_c_speak.log
 
+.PHONY: cnet_weight_convert
+cnet_weight_convert: include/cnet_weight_convert.h src/cnet_weight_convert.c \
+		tests/test_cnet_weight_convert.c
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -Werror -Iinclude -o $(BIN_DIR)/test_cnet_weight_convert \
+		src/cnet_weight_convert.c $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) \
+		$(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) \
+		$(BASE_SRC) $(CCE_CAMPAIGN_PROVENANCE) \
+		tests/test_cnet_weight_convert.c $(LDFLAGS)
+	@./$(BIN_DIR)/test_cnet_weight_convert | tee logs/cnet_weight_convert.log
+	@grep -q '^CNET_WEIGHT_CONVERT_PASS$$' logs/cnet_weight_convert.log
+	@grep -q '^checks=31$$' logs/cnet_weight_convert.log
+
 # Unit files: weights + contract as ONE sealed binary artifact (.cnu) —
 # binary f64 weights + bit-packed canonical exemplars + FNV seal; round-trip
 # gated by digest identity, tamper refused, smaller than the text pair.
