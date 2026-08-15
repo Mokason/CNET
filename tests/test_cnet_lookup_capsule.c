@@ -37,7 +37,8 @@ int main(void) {
     snprintf(url, sizeof url, "file://%s", path);
 
     memset(&report, 0, sizeof report);
-    REQUIRE(cnet_lookup_execute(url, CNET_LOOKUP_BIND_INTEGER, &report) == 0,
+    REQUIRE(cnet_lookup_execute_flags(url, CNET_LOOKUP_BIND_INTEGER,
+                                      CNET_LOOKUP_F_ALLOW_FILE, &report) == 0,
             "bind_integer");
     REQUIRE(report.bound == 1, "bound");
     REQUIRE(strcmp(report.value, "13") == 0, "value");
@@ -79,7 +80,8 @@ int main(void) {
     close(fd);
     snprintf(url, sizeof url, "file://%s", empty);
     memset(&report, 0, sizeof report);
-    REQUIRE(cnet_lookup_execute(url, CNET_LOOKUP_BIND_INTEGER, &report) == 1,
+    REQUIRE(cnet_lookup_execute_flags(url, CNET_LOOKUP_BIND_INTEGER,
+                                      CNET_LOOKUP_F_ALLOW_FILE, &report) == 1,
             "empty_abstain");
     REQUIRE(report.bound == 0, "empty_unbound");
 
@@ -89,10 +91,12 @@ int main(void) {
     close(fd);
     snprintf(url, sizeof url, "file://%s", words);
     memset(&report, 0, sizeof report);
-    REQUIRE(cnet_lookup_execute(url, CNET_LOOKUP_BIND_INTEGER, &report) == 1,
+    REQUIRE(cnet_lookup_execute_flags(url, CNET_LOOKUP_BIND_INTEGER,
+                                      CNET_LOOKUP_F_ALLOW_FILE, &report) == 1,
             "no_integer");
     memset(&report, 0, sizeof report);
-    REQUIRE(cnet_lookup_execute(url, CNET_LOOKUP_BIND_TOKEN, &report) == 0 &&
+    REQUIRE(cnet_lookup_execute_flags(url, CNET_LOOKUP_BIND_TOKEN,
+                                      CNET_LOOKUP_F_ALLOW_FILE, &report) == 0 &&
                 strcmp(report.value, "hello") == 0,
             "token");
 
@@ -102,7 +106,8 @@ int main(void) {
     close(fd);
     snprintf(url, sizeof url, "file://%s", lined);
     memset(&report, 0, sizeof report);
-    REQUIRE(cnet_lookup_execute(url, CNET_LOOKUP_BIND_LINE, &report) == 0 &&
+    REQUIRE(cnet_lookup_execute_flags(url, CNET_LOOKUP_BIND_LINE,
+                                      CNET_LOOKUP_F_ALLOW_FILE, &report) == 0 &&
                 strcmp(report.value, "first line") == 0,
             "line");
 
@@ -114,13 +119,62 @@ int main(void) {
     close(fd);
     snprintf(url, sizeof url, "file://%s", years);
     memset(&report, 0, sizeof report);
-    REQUIRE(cnet_lookup_execute(url, CNET_LOOKUP_BIND_INTEGER, &report) == 0 &&
+    REQUIRE(cnet_lookup_execute_flags(url, CNET_LOOKUP_BIND_INTEGER,
+                                      CNET_LOOKUP_F_ALLOW_FILE, &report) == 0 &&
                 strcmp(report.value, "8") == 0,
             "year_first_int");
     memset(&report, 0, sizeof report);
-    REQUIRE(cnet_lookup_execute(url, CNET_LOOKUP_BIND_YEAR, &report) == 0 &&
+    REQUIRE(cnet_lookup_execute_flags(url, CNET_LOOKUP_BIND_YEAR,
+                                      CNET_LOOKUP_F_ALLOW_FILE, &report) == 0 &&
                 strcmp(report.value, "2002") == 0,
             "year");
+
+
+    /* Production path: file:// closed. Loopback / link-local / metadata denied.
+       Redirects cannot follow file:// (REDIR_PROTOCOLS=http,https). */
+    snprintf(url, sizeof url, "file://%s", path);
+    memset(&report, 0, sizeof report);
+    REQUIRE(cnet_lookup_execute(url, CNET_LOOKUP_BIND_INTEGER, &report) == 1,
+            "prod_no_file");
+    REQUIRE(strcmp(report.refusal, "scheme") == 0, "prod_file_scheme");
+    REQUIRE(cnet_lookup_url_allowed(url, 0) == 0, "prod_file_url");
+    REQUIRE(cnet_lookup_url_allowed(url, CNET_LOOKUP_F_ALLOW_FILE) == 1,
+            "test_file_url");
+
+    REQUIRE(cnet_lookup_host_allowed("127.0.0.1") == 0, "deny_127");
+    REQUIRE(cnet_lookup_host_allowed("127.0.0.5") == 0, "deny_127_5");
+    REQUIRE(cnet_lookup_host_allowed("localhost") == 0, "deny_localhost");
+    REQUIRE(cnet_lookup_host_allowed("::1") == 0, "deny_v6_loop");
+    REQUIRE(cnet_lookup_host_allowed("169.254.1.1") == 0, "deny_link_local");
+    REQUIRE(cnet_lookup_host_allowed("169.254.169.254") == 0, "deny_metadata_ip");
+    REQUIRE(cnet_lookup_host_allowed("metadata.google.internal") == 0,
+            "deny_metadata_name");
+    REQUIRE(cnet_lookup_host_allowed("METADATA.GOOGLE.INTERNAL") == 0,
+            "deny_metadata_case");
+    REQUIRE(cnet_lookup_host_allowed("fe80::1") == 0, "deny_fe80");
+    REQUIRE(cnet_lookup_host_allowed("example.com") == 1, "allow_example");
+    REQUIRE(cnet_lookup_url_allowed("http://127.0.0.1/x", 0) == 0,
+            "url_loopback");
+    REQUIRE(cnet_lookup_url_allowed("http://[::1]/", 0) == 0, "url_loopback6");
+    REQUIRE(cnet_lookup_url_allowed("http://169.254.169.254/", 0) == 0,
+            "url_metadata");
+    REQUIRE(cnet_lookup_url_allowed("file:///etc/passwd", 0) == 0,
+            "redir_no_file");
+    REQUIRE(cnet_lookup_url_allowed("ftp://example.com/x", 0) == 0, "url_ftp");
+    REQUIRE(cnet_lookup_url_allowed("data:text/plain,13", 0) == 0, "url_data");
+    REQUIRE(cnet_lookup_url_allowed("https://example.com/a", 0) == 1,
+            "url_https");
+
+    memset(&report, 0, sizeof report);
+    REQUIRE(cnet_lookup_execute("http://127.0.0.1/x", CNET_LOOKUP_BIND_INTEGER,
+                                &report) == 1,
+            "exec_loopback");
+    REQUIRE(strcmp(report.refusal, "host") == 0, "exec_loopback_reason");
+    memset(&report, 0, sizeof report);
+    REQUIRE(cnet_lookup_execute("http://metadata.google.internal/",
+                                CNET_LOOKUP_BIND_INTEGER, &report) == 1,
+            "exec_metadata");
+    REQUIRE(strcmp(report.refusal, "host") == 0, "exec_metadata_reason");
 
     printf("CNET_LOOKUP_CAPSULE_PASS contract=%s bound=1 abstain=1 "
            "residual=0 broader_claims=WITHHELD\n",

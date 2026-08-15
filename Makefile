@@ -3783,13 +3783,17 @@ query_alias dialog_ctx query_dialog slot_extract: include/cnet_query_alias.h src
 .PHONY: cnetd
 cnetd: $(ROE_ASI_SRC) tools/cnetd.c src/cnet_domain_route.c src/cnet_utterance.c \
 		src/cnet_query_alias.c src/cnet_dialog_ctx.c src/cnet_slot_extract.c \
+		src/cnet_chat_lookup.c src/cnet_lookup.c src/cce/cce_campaign_provenance.c \
 		include/cnet_probe_shortcircuit.h include/cnet_domain_route.h include/cnet_utterance.h \
-		include/cnet_query_alias.h include/cnet_dialog_ctx.h include/cnet_slot_extract.h
+		include/cnet_query_alias.h include/cnet_dialog_ctx.h include/cnet_slot_extract.h \
+		include/cnet_chat_lookup.h include/cnet_lookup.h
 	@mkdir -p $(BIN_DIR) logs
-	$(CC) $(ASI_IMPROVE_CFLAGS) -o $(BIN_DIR)/cnetd \
+	@pkg-config --exists libcurl
+	$(CC) $(ASI_IMPROVE_CFLAGS) -DCNET_HAVE_CURL=1 $$(pkg-config --cflags libcurl) -o $(BIN_DIR)/cnetd \
 		$(ROE_ASI_SRC) src/cnet_domain_route.c src/cnet_utterance.c \
 		src/cnet_query_alias.c src/cnet_dialog_ctx.c src/cnet_slot_extract.c \
-		tools/cnetd.c $(ROE_ASI_LIBS)
+		src/cnet_chat_lookup.c src/cnet_lookup.c src/cce/cce_campaign_provenance.c \
+		tools/cnetd.c $(ROE_ASI_LIBS) $$(pkg-config --libs libcurl)
 	@echo "cnetd built → $(BIN_DIR)/cnetd"
 
 .PHONY: cnet_utterance
@@ -3971,6 +3975,22 @@ cnet_lookup_capsule: include/cnet_lookup.h src/cnet_lookup.c \
 		$$(pkg-config --libs libcurl)
 	@./$(BIN_DIR)/test_cnet_lookup_capsule | tee logs/cnet_lookup_capsule.log
 	@grep -q '^CNET_LOOKUP_CAPSULE_PASS ' logs/cnet_lookup_capsule.log
+
+.PHONY: cnet_chat_lookup
+cnet_chat_lookup: include/cnet_chat_lookup.h src/cnet_chat_lookup.c \
+		include/cnet_lookup.h src/cnet_lookup.c \
+		src/cce/cce_campaign_provenance.c \
+		tests/test_cnet_chat_lookup.c
+	@mkdir -p $(BIN_DIR) logs
+	@pkg-config --exists libcurl
+	$(CC) $(CFLAGS) -Werror -Iinclude $$(pkg-config --cflags libcurl) \
+		-o $(BIN_DIR)/test_cnet_chat_lookup \
+		src/cnet_chat_lookup.c src/cnet_lookup.c \
+		src/cce/cce_campaign_provenance.c \
+		tests/test_cnet_chat_lookup.c $(LDFLAGS) \
+		$$(pkg-config --libs libcurl)
+	@./$(BIN_DIR)/test_cnet_chat_lookup | tee logs/cnet_chat_lookup.log
+	@grep -q '^CNET_CHAT_LOOKUP_PASS ' logs/cnet_chat_lookup.log
 
 .PHONY: cnet_lookup
 cnet_lookup: include/cnet_lookup.h src/cnet_lookup.c \
