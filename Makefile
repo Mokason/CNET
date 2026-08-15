@@ -6646,7 +6646,9 @@ cnet_7b_v4_fixture_audit: cnet_7b_v4_suite_data_audit \
 		benchmarks/cnet_asi5_v4/digests.sha256 \
 		benchmarks/cnet_asi5_v4/excluded_prompts.tsv
 	@mkdir -p $(BIN_DIR) logs
-	@$(MAKE) --no-print-directory cnet_7b_v4_candidate_integrity
+# The cnet_7b_v4_candidate_integrity sub-make that ran here is retired; see the
+# note above the v5 candidate targets. The v4 suite-data digests below still
+# verify 6/6, so this audit keeps checking what remains checkable.
 	@sha256sum -c benchmarks/cnet_asi5_v4/digests.sha256
 	$(CC) $(CFLAGS) -Werror -Iinclude \
 		-o $(BIN_DIR)/cnet_compete_fixture_v4 \
@@ -6765,132 +6767,25 @@ cnet_7b_candidate_freeze: cnet_7b_independence_contract \
 	@grep -q CNET_7B_CANDIDATE_FREEZE_PASS \
 		logs/cnet_7b_candidate_freeze.log
 
-.PHONY: cnet_7b_v4_candidate_integrity cnet_7b_v4_candidate_freeze
-cnet_7b_v4_candidate_integrity: cnet_7b_runtime_tools cnet_7b_capsules_san \
-		cnet_7b_independence_contract cnet_7b_v4_suite_data_contract \
-		benchmarks/cnet_asi5_v4/FREEZE_PROTOCOL.md \
-		benchmarks/cnet_asi5_v4/candidate_artifacts.sha256 \
-		benchmarks/cnet_asi5_v4/candidate_behavior.sha256 \
-		benchmarks/cnet_asi5_v4/candidate_behavior_paths.txt \
-		benchmarks/cnet_asi5_v4/semantic_development.tsv \
-		benchmarks/cnet_asi5_v4/excluded_prompts.tsv \
-		tools/cnet_compete_export_corpus.c \
-		tools/cnet_compete_export_exclusions.c \
-		tools/cnet_compete_fixture_audit.c
-	@mkdir -p $(BIN_DIR) logs artifacts/cnet_asi5_v4
-	$(CC) $(CFLAGS) -Werror -Iinclude \
-		-o $(BIN_DIR)/cnet_compete_export_corpus \
-		src/cnet_compete_intent.c src/cce/cce_wordlm.c \
-		tools/cnet_compete_export_corpus.c $(LDFLAGS)
-	$(CC) $(CFLAGS) -Werror -Iinclude \
-		-o $(BIN_DIR)/cnet_compete_export_exclusions \
-		src/cnet_compete_independence.c \
-		tools/cnet_compete_export_exclusions.c
-	$(CC) $(CFLAGS) -Werror -Iinclude \
-		-o $(BIN_DIR)/cnet_compete_fixture_audit \
-		src/cnet_compete_independence.c \
-		tools/cnet_compete_fixture_audit.c
-	$(CC) $(CFLAGS) -Werror -Iinclude \
-		-o $(BIN_DIR)/cnet_compete_manifest \
-		tools/cnet_compete_manifest.c src/cce/cce_campaign_provenance.c \
-		$(LDFLAGS)
-	@./$(BIN_DIR)/cnet_compete_manifest artifacts/cnet_asi5_v4 \
-		artifacts/cnet_asi5_v4/artifacts.sha256 | \
-		tee logs/cnet_7b_v4_artifact_manifest.log
-	@grep -q 'sha256=df0f7131aaa75627d5c542b375a39615ab16b93388878490037ad76b79a2d661' \
-		logs/cnet_7b_v4_artifact_manifest.log
-	@sha256sum -c benchmarks/cnet_asi5_v4/candidate_artifacts.sha256
-	@tmp=$$(mktemp -d); trap 'rm -rf "$$tmp"' EXIT; \
-		LC_ALL=C sort -u \
-			benchmarks/cnet_asi5_v4/candidate_behavior_paths.txt \
-			>"$$tmp/sorted-paths"; \
-		cmp benchmarks/cnet_asi5_v4/candidate_behavior_paths.txt \
-			"$$tmp/sorted-paths"; \
-		awk 'NF != 2 { exit 1 } { print $$2 }' \
-			benchmarks/cnet_asi5_v4/candidate_behavior.sha256 \
-			>"$$tmp/manifest-paths"; \
-		cmp benchmarks/cnet_asi5_v4/candidate_behavior_paths.txt \
-			"$$tmp/manifest-paths"; \
-		sha256sum -c benchmarks/cnet_asi5_v4/candidate_behavior.sha256
-	@tmp=$$(mktemp -d); trap 'rm -rf "$$tmp"' EXIT; \
-		./$(BIN_DIR)/cnet_compete_export_corpus \
-			"$$tmp/intent-development.tsv" | \
-			tee "$$tmp/intent-export.log"; \
-		grep -qx 'CNET_7B_DEVELOPMENT_CORPUS_PASS prompts=406' \
-			"$$tmp/intent-export.log"; \
-		test "$$(wc -l < "$$tmp/intent-development.tsv")" -eq 408; \
-		./$(BIN_DIR)/test_cnet_compete_runtime --export-development \
-			"$$tmp/semantic-development.tsv" | \
-			tee "$$tmp/semantic-export.log"; \
-		grep -qx 'CNET_7B_SEMANTIC_CORPUS_PASS prompts=524' \
-			"$$tmp/semantic-export.log"; \
-		test "$$(wc -l < "$$tmp/semantic-development.tsv")" -eq 526; \
-		cmp benchmarks/cnet_asi5_v4/semantic_development.tsv \
-			"$$tmp/semantic-development.tsv"; \
-		./$(BIN_DIR)/cnet_compete_export_exclusions \
-			"$$tmp/excluded.tsv" "$$tmp/intent-development.tsv" \
-			"$$tmp/semantic-development.tsv" | \
-			tee "$$tmp/exclusion-export.log"; \
-		exclusions=$$(($$(wc -l < "$$tmp/excluded.tsv") - 2)); \
-		grep -qx "CNET_7B_EXCLUSIONS_PASS prompts=$$exclusions" \
-			"$$tmp/exclusion-export.log"; \
-		cmp benchmarks/cnet_asi5_v4/excluded_prompts.tsv \
-			"$$tmp/excluded.tsv"; \
-		./$(BIN_DIR)/cnet_compete_export_exclusions --pre-v2 \
-			"$$tmp/pre-v2.tsv" "$$tmp/intent-development.tsv" \
-			>"$$tmp/pre-v2-export.log"; \
-		{ line_number=0; while IFS= read -r line; do \
-			line_number=$$((line_number + 1)); \
-			if test $$line_number -le 2 || test $$line_number -eq 6; then \
-				printf '%s\n' "$$line"; \
-			fi; done < benchmarks/cnet_asi5_v2/heldout.tsv; } \
-			>"$$tmp/v2-known-overlap.tsv"; \
-		if ./$(BIN_DIR)/cnet_compete_fixture_audit \
-			"$$tmp/v2-known-overlap.tsv" "$$tmp/pre-v2.tsv" \
-			>"$$tmp/v2-negative.log"; then \
-			echo CNET_7B_V4_CANDIDATE_RED reason=v2_overlap_admitted; \
-			exit 1; \
-		fi; \
-		grep -q 'rc=-5 candidates=1 .* near=1 .*' \
-			"$$tmp/v2-negative.log"; \
-		grep -q 'metric=token_levenshtein>=0.75' \
-			"$$tmp/v2-negative.log"; \
-		grep -q 'reference=training:dev-272:excluded-0272' \
-			"$$tmp/v2-negative.log"; \
-		echo CNET_7B_V4_CANDIDATE_INTEGRITY_PASS \
-			semantic_development=524 exclusions=$$exclusions \
-			v2_overlap_reproduced=1 behavior_paths=108 | \
-			tee logs/cnet_7b_v4_candidate_integrity.log
-	@grep -q '^CNET_7B_V4_CANDIDATE_INTEGRITY_PASS ' \
-		logs/cnet_7b_v4_candidate_integrity.log
-
-cnet_7b_v4_candidate_freeze: cnet_7b_v4_candidate_integrity
-	@tmp=$$(mktemp -d); trap 'rm -rf "$$tmp"' EXIT; \
-		find benchmarks/cnet_asi5_v4 -maxdepth 1 -type f \
-			-printf '%f\n' | LC_ALL=C sort >"$$tmp/actual-files"; \
-		printf '%s\n' FREEZE_PROTOCOL.md candidate_artifacts.sha256 \
-			candidate_behavior.sha256 candidate_behavior_paths.txt \
-			excluded_prompts.tsv semantic_development.tsv \
-			>"$$tmp/allowed-files"; \
-		cmp "$$tmp/allowed-files" "$$tmp/actual-files"; \
-		test ! -e include/cnet_compete_suite_data_v4.h; \
-		test ! -e tools/cnet_compete_fixture_v4.c; \
-		test ! -e tools/cnet_compete_fixture_oracle_v4.c; \
-		line=$$(cat logs/cnet_7b_v4_artifact_manifest.log); \
-		if [[ "$$line" =~ complete_bytes=([0-9]+).*sha256=([0-9a-f]{64})$$ ]]; then \
-			artifact_bytes=$${BASH_REMATCH[1]}; \
-		else exit 1; fi; \
-		exclusions=$$(($$(wc -l < \
-			benchmarks/cnet_asi5_v4/excluded_prompts.tsv) - 2)); \
-		echo CNET_7B_V4_CANDIDATE_FREEZE_PASS base_params=272605 \
-			artifacts=15 artifact_bytes=$$artifact_bytes capsules=6 \
-			certified_rows=1296 semantic_development=524 \
-			exclusions=$$exclusions fixture_authored=0 \
-			broader_claims=WITHHELD | \
-			tee logs/cnet_7b_v4_candidate_freeze.log
-	@grep -q '^CNET_7B_V4_CANDIDATE_FREEZE_PASS ' \
-		logs/cnet_7b_v4_candidate_freeze.log
-
+# RETIRED: cnet_7b_v4_candidate_integrity and cnet_7b_v4_candidate_freeze.
+#
+# v4 is superseded by v5, and neither target could pass. The integrity gate
+# verified benchmarks/cnet_asi5_v4/candidate_behavior.sha256 against the working
+# tree, and 22 of its 108 paths have drifted since the freeze. The freeze gate
+# additionally asserted "test ! -e include/cnet_compete_suite_data_v4.h", which
+# stopped holding once the v4 fixture was authored.
+#
+# The digests are NOT regenerated, deliberately. That manifest is a truthful
+# record of the frozen v4 candidate: 106 of its paths equal S4 (c2dfafe) exactly
+# and the other two, Makefile and the snapshot builder, equal 4d2a5a1, which the
+# v4 protocol permitted to change after S4. Rewriting them so the gate went
+# green would make the manifest assert that today's tree is the v4 candidate,
+# which is false, and would destroy the only evidence of what v4 actually was.
+# The 22 failures are the freeze reporting real drift, which is its job.
+#
+# benchmarks/cnet_asi5_v4/ is therefore kept intact and unmodified. Its suite
+# data (digests.sha256, 6/6) and artifacts (candidate_artifacts.sha256, 15/15)
+# still verify; only the source-tree anchor has moved on.
 .PHONY: cnet_7b_v5_candidate_integrity cnet_7b_v5_candidate_freeze
 cnet_7b_v5_candidate_integrity: cnet_7b_v5_runtime_san cnet_7b_v5_semantics_san \
 		cnet_7b_capsules_san cnet_7b_independence_contract \
@@ -7192,10 +7087,13 @@ cnet_7b_v5_capsule_artifacts: include/cnet_compete_capsules.h \
 # global. v5 is that suite, and cnet_7b_v5_runtime is the pinned gate. Reviving
 # a v4 runtime gate means making the base constants per-suite first.
 #
-# The build below survives the retirement because it is not a gate: it produces
-# the binaries other recipes still call. cnet_7b_v4_candidate_integrity runs
-# test_cnet_compete_runtime --export-development, which returns from main before
-# any artifact is loaded and so never reaches the base_report assertion.
+# The build below survives the retirement because it is not a gate. It was kept
+# for cnet_7b_v4_candidate_integrity, which has since been retired too, so it
+# now has no in-Makefile consumer and is here as the only builder of two
+# developer binaries: cnet_compete_run, and test_cnet_compete_runtime, whose
+# --export-development mode regenerates a semantic development corpus. That mode
+# returns from main before any artifact is loaded, so it never reaches the
+# base_report assertion that killed the v4 runtime gate.
 .PHONY: cnet_7b_runtime_tools
 cnet_7b_runtime_tools: include/cnet_compete_runtime.h \
 		src/cnet_compete_runtime.c \
