@@ -735,6 +735,18 @@ cnet_paragraph: include/cnet_paragraph.h src/cnet_paragraph.c \
 	@./$(BIN_DIR)/test_cnet_paragraph | tee logs/cnet_paragraph.log
 	@grep -q '^CNET_PARAGRAPH_PASS ' logs/cnet_paragraph.log
 
+.PHONY: cnet_c_speak
+cnet_c_speak: include/cnet_c_speak.h src/cnet_c_speak.c src/cce/cce_wordlm.c \
+		include/cnet_utterance.h src/cnet_utterance.c \
+		tests/test_cnet_c_speak.c
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -Werror -Iinclude -o $(BIN_DIR)/test_cnet_c_speak \
+		src/cnet_c_speak.c src/cce/cce_wordlm.c src/cnet_utterance.c \
+		tests/test_cnet_c_speak.c $(LDFLAGS)
+	@./$(BIN_DIR)/test_cnet_c_speak | tee logs/cnet_c_speak.log
+	@grep -q '^CNET_C_SPEAK_PASS$$' logs/cnet_c_speak.log
+	@grep -q '^checks=58 ' logs/cnet_c_speak.log
+
 # Unit files: weights + contract as ONE sealed binary artifact (.cnu) —
 # binary f64 weights + bit-packed canonical exemplars + FNV seal; round-trip
 # gated by digest identity, tamper refused, smaller than the text pair.
@@ -3822,15 +3834,17 @@ query_alias dialog_ctx query_dialog slot_extract: include/cnet_query_alias.h src
 cnetd: $(ROE_ASI_SRC) tools/cnetd.c src/cnet_domain_route.c src/cnet_utterance.c \
 		src/cnet_query_alias.c src/cnet_dialog_ctx.c src/cnet_slot_extract.c \
 		src/cnet_chat_lookup.c src/cnet_lookup.c src/cce/cce_campaign_provenance.c \
+		src/cnet_c_speak.c src/cce/cce_wordlm.c \
 		include/cnet_probe_shortcircuit.h include/cnet_domain_route.h include/cnet_utterance.h \
 		include/cnet_query_alias.h include/cnet_dialog_ctx.h include/cnet_slot_extract.h \
-		include/cnet_chat_lookup.h include/cnet_lookup.h
+		include/cnet_chat_lookup.h include/cnet_lookup.h include/cnet_c_speak.h
 	@mkdir -p $(BIN_DIR) logs
 	@pkg-config --exists libcurl
 	$(CC) $(ASI_IMPROVE_CFLAGS) -DCNET_HAVE_CURL=1 $$(pkg-config --cflags libcurl) -o $(BIN_DIR)/cnetd \
 		$(ROE_ASI_SRC) src/cnet_domain_route.c src/cnet_utterance.c \
 		src/cnet_query_alias.c src/cnet_dialog_ctx.c src/cnet_slot_extract.c \
 		src/cnet_chat_lookup.c src/cnet_lookup.c src/cce/cce_campaign_provenance.c \
+		src/cnet_c_speak.c src/cce/cce_wordlm.c \
 		tools/cnetd.c $(ROE_ASI_LIBS) $$(pkg-config --libs libcurl)
 	@echo "cnetd built → $(BIN_DIR)/cnetd"
 
