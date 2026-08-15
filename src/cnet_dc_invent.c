@@ -479,7 +479,7 @@ int cnet_dc_sleep_compress(CnetDcGrammar *g, const CnetDcTerm *solved,
     return 0;
 }
 
-static int banned_mine_path(const char *path) {
+int cnet_dc_banned_mine_path(const char *path) {
     char buf[512];
     size_t i;
     if (path == NULL) return 1;
@@ -528,7 +528,7 @@ int cnet_dc_mine_io_jsonl(const char *path, CnetDcExample *ex, int cap,
     if (n_ex == NULL) return -1;
     *n_ex = 0;
     if (path == NULL || ex == NULL || cap <= 0) return -1;
-    if (banned_mine_path(path)) return -1;
+    if (cnet_dc_banned_mine_path(path)) return -1;
     f = fopen(path, "r");
     if (f == NULL) return 0; /* missing file: skip, do not invent tasks */
     while (fgets(line, sizeof line, f) != NULL && *n_ex < cap) {
