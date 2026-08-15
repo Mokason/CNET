@@ -697,6 +697,17 @@ cnet_dc_invent_bench: include/cnet_dc_invent.h include/cnet_dc_type.h \
 	@./$(BIN_DIR)/cnet_dc_invent_bench | tee logs/cnet_dc_invent_bench.log
 	@grep -q '^CNET_DC_INVENT_BENCH_PASS ' logs/cnet_dc_invent_bench.log
 
+.PHONY: cnet_dc_egraph
+cnet_dc_egraph: include/cnet_dc_invent.h include/cnet_dc_type.h \
+		src/cnet_dc_invent.c src/cnet_dc_egraph.c src/cnet_dc_type.c \
+		tests/test_cnet_dc_egraph.c
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -Werror -Iinclude -o $(BIN_DIR)/test_cnet_dc_egraph \
+		src/cnet_dc_invent.c src/cnet_dc_egraph.c src/cnet_dc_type.c \
+		tests/test_cnet_dc_egraph.c $(LDFLAGS)
+	@./$(BIN_DIR)/test_cnet_dc_egraph | tee logs/cnet_dc_egraph.log
+	@grep -q '^CNET_DC_EGRAPH_PASS ' logs/cnet_dc_egraph.log
+
 .PHONY: cnet_swap
 cnet_swap: include/cnet_swap.h src/cnet_swap.c tests/test_cnet_swap.c \
 		include/contract/contract.h include/nn.h include/router.h
