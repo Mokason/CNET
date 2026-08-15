@@ -438,7 +438,7 @@ CIRCUIT_TEST := tests/test_circuit.c
 CIRCUIT_DEMO := tests/circuit_demo.c
 CAPACITY_STUDY := tests/capacity_study.c
 CAPACITY_DEMO := tests/capacity_demo.c
-LIBRARY := src/library.c
+LIBRARY := src/library.c src/cnet_dc_type.c
 LIBRARY_TEST := tests/test_library.c
 MARGIN_STUDY := tests/margin_study.c
 FUZZY_STUDY := tests/fuzzy_study.c
@@ -658,6 +658,44 @@ test_library: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONSOLIDATE) $(CONTRACT) $(PROPER
 # Builds and runs the library_evolve test directly.
 library: test_library
 	./$(BIN_DIR)/test_library
+
+.PHONY: cnet_dc_type cnet_dc_type_bench
+cnet_dc_type: include/cnet_dc_type.h src/cnet_dc_type.c src/nn.c \
+		tests/test_cnet_dc_type.c
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -Werror -Iinclude -o $(BIN_DIR)/test_cnet_dc_type \
+		src/cnet_dc_type.c src/nn.c tests/test_cnet_dc_type.c $(LDFLAGS)
+	@./$(BIN_DIR)/test_cnet_dc_type | tee logs/cnet_dc_type.log
+	@grep -q '^CNET_DC_TYPE_PASS ' logs/cnet_dc_type.log
+
+cnet_dc_type_bench: include/cnet_dc_type.h src/cnet_dc_type.c \
+		tests/benchmark_cnet_dc_type.c
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -Werror -Iinclude -o $(BIN_DIR)/cnet_dc_type_bench \
+		src/cnet_dc_type.c tests/benchmark_cnet_dc_type.c $(LDFLAGS)
+	@./$(BIN_DIR)/cnet_dc_type_bench | tee logs/cnet_dc_type_bench.log
+	@grep -q '^CNET_DC_TYPE_BENCH_PASS ' logs/cnet_dc_type_bench.log
+
+.PHONY: cnet_dc_invent cnet_dc_invent_bench
+cnet_dc_invent: include/cnet_dc_invent.h include/cnet_dc_type.h \
+		src/cnet_dc_invent.c src/cnet_dc_type.c \
+		tests/test_cnet_dc_invent.c
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -Werror -Iinclude -o $(BIN_DIR)/test_cnet_dc_invent \
+		src/cnet_dc_invent.c src/cnet_dc_type.c \
+		tests/test_cnet_dc_invent.c $(LDFLAGS)
+	@./$(BIN_DIR)/test_cnet_dc_invent | tee logs/cnet_dc_invent.log
+	@grep -q '^CNET_DC_INVENT_PASS ' logs/cnet_dc_invent.log
+
+cnet_dc_invent_bench: include/cnet_dc_invent.h include/cnet_dc_type.h \
+		src/cnet_dc_invent.c src/cnet_dc_type.c \
+		tests/benchmark_cnet_dc_invent.c
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -Werror -Iinclude -o $(BIN_DIR)/cnet_dc_invent_bench \
+		src/cnet_dc_invent.c src/cnet_dc_type.c \
+		tests/benchmark_cnet_dc_invent.c $(LDFLAGS)
+	@./$(BIN_DIR)/cnet_dc_invent_bench | tee logs/cnet_dc_invent_bench.log
+	@grep -q '^CNET_DC_INVENT_BENCH_PASS ' logs/cnet_dc_invent_bench.log
 
 # Unit files: weights + contract as ONE sealed binary artifact (.cnu) —
 # binary f64 weights + bit-packed canonical exemplars + FNV seal; round-trip

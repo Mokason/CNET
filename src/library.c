@@ -1,4 +1,5 @@
 #include "../include/library.h"
+#include "../include/cnet_dc_type.h"
 #include "../include/scan.h"
 #include "../include/specialist.h"
 
@@ -194,6 +195,9 @@ static int evolve_route(PrimitiveRegistry *reg, const LibraryTask *task,
 
     if (route_plan(reg, task->sources[0], task->goal, &plan) != 0) return 0;
     if (plan.length < 2) return 0;                         /* worth-it guard */
+    /* DreamCoder Core type gate: refuse an ill-typed chain. Existing
+       planners already match ports, so this is fail-closed, not a floor drop. */
+    if (cnet_dc_route_well_typed(&plan, task->sources[0]) != 0) return 0;
     if (!route_evidence_clear(&plan, gs)) { report->deferred++; return 0; }
 
     student = calloc(1, sizeof *student);
