@@ -157,6 +157,9 @@ TOPOLOGY := src/topology.c
 HYPERBOLIC := src/hyperbolic.c
 APP := src/legacy/main.c
 TEST := tests/test_nn.c
+# main() for the per-suite targets; tests/test_all.c owns main for the unified
+# build, so the suite sources carry none. Select the suite with -DCNET_TEST_ENTRY.
+STANDALONE_MAIN := tests/standalone_main.c
 OOB_TEST := tests/test_encode_oob.c
 CONTRACT_TEST := tests/test_contract.c
 COMPOSE_TEST := tests/test_composition.c
@@ -515,14 +518,20 @@ test_encode_oob: $(SRC) $(OOB_TEST) include/nn.h
 test_composition: $(SRC) $(COMPOSE_TEST) include/nn.h
 	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $(SRC) $(COMPOSE_TEST) $(LDFLAGS)
 
-test_contract: $(SRC) $(CONTRACT_TEST) include/nn.h
-	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $(SRC) $(CONTRACT_TEST) $(LDFLAGS)
+# The per-suite sources expose run_test_<suite>() and no main; tests/test_all.c
+# owns main for the unified build. tests/standalone_main.c supplies one here,
+# selected with -DCNET_TEST_ENTRY. Without it these targets fail to link.
+test_contract: $(SRC) $(CONTRACT_TEST) $(STANDALONE_MAIN) include/nn.h
+	$(CC) $(CFLAGS) -DCNET_TEST_ENTRY=run_test_contract -o $(BIN_DIR)/$@ \
+		$(SRC) $(CONTRACT_TEST) $(STANDALONE_MAIN) $(LDFLAGS)
 
 # router.c depends on contract.c (registry_save synthesizes + persists
 # contracts), which in turn needs plan_table.c -- so every target that links
 # router.c links those two as well.
-test_router: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(SCAN) $(ROUTER_TEST) include/nn.h include/router.h include/plan_table.h include/contract/contract.h include/scan.h
-	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(SCAN) $(ROUTER_TEST) $(LDFLAGS)
+test_router: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(SCAN) $(ROUTER_TEST) $(STANDALONE_MAIN) include/nn.h include/router.h include/plan_table.h include/contract/contract.h include/scan.h
+	$(CC) $(CFLAGS) -DCNET_TEST_ENTRY=run_test_router -o $(BIN_DIR)/$@ \
+		$(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(SCAN) $(ROUTER_TEST) \
+		$(STANDALONE_MAIN) $(LDFLAGS)
 
 # Open-addressing name → index map on PrimitiveRegistry (registry_find).
 .PHONY: registry_hash
