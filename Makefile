@@ -726,6 +726,15 @@ library_swap: include/cnet_swap.h src/cnet_swap.c tests/test_library_swap.c \
 	@grep -q '^CNET_LIBRARY_SWAP_PASS$$' logs/library_swap.log
 	@grep -q '^checks=35 ' logs/library_swap.log
 
+.PHONY: cnet_paragraph
+cnet_paragraph: include/cnet_paragraph.h src/cnet_paragraph.c \
+		tests/test_cnet_paragraph.c
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -Werror -Iinclude -o $(BIN_DIR)/test_cnet_paragraph \
+		src/cnet_paragraph.c tests/test_cnet_paragraph.c $(LDFLAGS)
+	@./$(BIN_DIR)/test_cnet_paragraph | tee logs/cnet_paragraph.log
+	@grep -q '^CNET_PARAGRAPH_PASS ' logs/cnet_paragraph.log
+
 # Unit files: weights + contract as ONE sealed binary artifact (.cnu) —
 # binary f64 weights + bit-packed canonical exemplars + FNV seal; round-trip
 # gated by digest identity, tamper refused, smaller than the text pair.
