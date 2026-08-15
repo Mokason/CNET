@@ -7083,43 +7083,76 @@ cnet_7b_v5_capsule_artifacts: include/cnet_compete_capsules.h \
 	@grep -qx 'CNET_7B_CAPSULE_ARTIFACTS_PASS units=6 certified_rows=1296 payload_bytes=192352' \
 		logs/cnet_7b_v5_capsule_artifacts.log
 
-# RETIRED: cnet_7b_runtime and cnet_7b_runtime_san, which ran
+# REVIVED: cnet_7b_runtime and cnet_7b_runtime_san, which run
 # tests/test_cnet_compete_runtime.c against the v4 artifacts.
 #
-# That test asserts report.base_parameters == CNET_COMPETE_BASE_PARAMETERS, but
-# those constants are global in include/cnet_compete_artifacts.h and are rebased
-# onto the newest suite at every freeze (91581 v3 -> 272605 v4 -> 321757 v5 in
-# 0abf82b). The v4 artifacts carry 272605/267318, so from 0abf82b onward the v4
-# gate could only report CNET_7B_RUNTIME_RED reason=base_report. It stayed red
-# and unnoticed because the assertion was a bare substring grep for a marker
-# that simply stopped being printed.
+# These were retired in 91492c7 and are restored here. The test asserts
+# report.base_parameters == CNET_COMPETE_BASE_PARAMETERS, and while those
+# constants were unconditional in include/cnet_compete_artifacts.h every freeze
+# rebased them onto the newest suite (91581 v3 -> 272605 v4 -> 321757 v5 in
+# 0abf82b). Only the newest suite's runtime gate could pass, so from 0abf82b
+# onward the v4 gate could report nothing but
+# CNET_7B_RUNTIME_RED reason=base_report. It stayed red unnoticed because the
+# assertion was a bare substring grep for a marker that had stopped being
+# printed at all.
 #
-# Only the newest suite's runtime gate can pass while those constants are
-# global. v5 is that suite, and cnet_7b_v5_runtime is the pinned gate. Reviving
-# a v4 runtime gate means making the base constants per-suite first.
+# The constants are now #ifndef-guarded, so each suite supplies its own. The
+# header still defaults to v5, which leaves every existing consumer untouched;
+# v4 overrides via CNET_V4_BASE_DEFINE below. Nothing else about the test is
+# suite-specific: refused, semantic_matrix, semantic_adversarial and
+# typed_regressions are shared and come out identical on both suites.
 #
-# cnet_7b_runtime_tools, which built bin/test_cnet_compete_runtime and
-# bin/cnet_compete_run out of the same sources, is retired as well. It was kept
-# only for cnet_7b_v4_candidate_integrity and outlived it by one commit.
+# Note 267831, not 267318. base_artifact_bytes counts intent.wlm plus
+# intent.meta (267318 + 513); intent.wlm alone leaves the gate red.
 #
-# Their sources stay put and must not be deleted: tests/test_cnet_compete_runtime.c
-# and tools/cnet_compete_run.c are both entries in the frozen v4 and v5
-# candidate_behavior manifests and in the behavior path closure. The test source
-# is still compiled by cnet_7b_v5_runtime below. Only tools/cnet_compete_run.c
-# now has no target that builds it.
-#
-# To rebuild either binary ad hoc, compile it the way cnet_7b_v5_runtime does,
-# swapping in the wanted entry point:
-#
-#   $(CC) $(CFLAGS) -Iinclude -o bin/cnet_compete_run \
-#       src/cnet_compete_runtime.c src/cnet_compete_intent.c \
-#       src/cnet_compete_capsules.c src/cce/cce_wordlm.c \
-#       $(CNET_COMPETE_CAPSULE_CORE) $(ROUTER) $(SPECIALIST_SRC) \
-#       tools/cnet_compete_run.c $(LDFLAGS) $(MCP_LDFLAGS) -pthread
-#
-# test_cnet_compete_runtime --export-development regenerates a semantic
-# development corpus; that mode returns from main before loading any artifact,
-# so it never reaches the base_report assertion that killed the v4 runtime gate.
+# Both PASS lines are pinned whole with grep -qx, for the reason given above the
+# v5 pair below.
+CNET_V4_BASE_DEFINE = -DCNET_COMPETE_BASE_PARAMETERS=272605u \
+	-DCNET_COMPETE_BASE_ARTIFACT_BYTES=267831u
+
+.PHONY: cnet_7b_runtime cnet_7b_runtime_san
+cnet_7b_runtime: cnet_7b_intent cnet_7b_capsule_artifacts \
+		include/cnet_compete_runtime.h include/cnet_compete_artifacts.h \
+		src/cnet_compete_runtime.c tests/test_cnet_compete_runtime.c \
+		$(ROUTER) $(SPECIALIST_SRC)
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -Werror $(CNET_V4_BASE_DEFINE) \
+		-ffunction-sections -fdata-sections -Iinclude \
+		-o $(BIN_DIR)/test_cnet_compete_runtime \
+		src/cnet_compete_runtime.c src/cnet_compete_intent.c \
+		src/cnet_compete_capsules.c src/cce/cce_wordlm.c \
+		$(CNET_COMPETE_CAPSULE_CORE) $(ROUTER) $(SPECIALIST_SRC) \
+		tests/test_cnet_compete_runtime.c \
+		-Wl,--gc-sections $(LDFLAGS) $(MCP_LDFLAGS) -pthread
+	@./$(BIN_DIR)/test_cnet_compete_runtime \
+		artifacts/cnet_asi5_v4/intent.wlm \
+		artifacts/cnet_asi5_v4/intent.meta \
+		artifacts/cnet_asi5_v4/capsules | \
+		tee logs/cnet_7b_runtime.log
+	@grep -qx 'CNET_7B_RUNTIME_PASS units=6 certified_rows=1296 compose_members=3 compose_guard_checks=3 base_params=272605 base_bytes=267831 capsule_payload_bytes=192352 refused=21 semantic_matrix=384 semantic_adversarial=96 typed_regressions=49' \
+		logs/cnet_7b_runtime.log
+
+cnet_7b_runtime_san: cnet_7b_runtime
+	$(CC) -std=c11 -Wall -Wextra -pedantic -Werror -O1 -g \
+		-D_DEFAULT_SOURCE -DCNET_HAVE_CURL=0 \
+		$(CNET_COMPETE_SUITE_DEFINE) $(CNET_V4_BASE_DEFINE) \
+		-fsanitize=address,undefined -fno-omit-frame-pointer \
+		-ffunction-sections -fdata-sections -Iinclude \
+		-o $(BIN_DIR)/test_cnet_compete_runtime_san \
+		src/cnet_compete_runtime.c src/cnet_compete_intent.c \
+		src/cnet_compete_capsules.c src/cce/cce_wordlm.c \
+		$(CNET_COMPETE_CAPSULE_CORE) $(ROUTER) $(SPECIALIST_SRC) \
+		tests/test_cnet_compete_runtime.c \
+		-Wl,--gc-sections -fsanitize=address,undefined -lm -lpthread
+	@ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 \
+		UBSAN_OPTIONS=halt_on_error=1 \
+		./$(BIN_DIR)/test_cnet_compete_runtime_san \
+			artifacts/cnet_asi5_v4/intent.wlm \
+			artifacts/cnet_asi5_v4/intent.meta \
+			artifacts/cnet_asi5_v4/capsules | \
+			tee logs/cnet_7b_runtime_san.log
+	@grep -qx 'CNET_7B_RUNTIME_PASS units=6 certified_rows=1296 compose_members=3 compose_guard_checks=3 base_params=272605 base_bytes=267831 capsule_payload_bytes=192352 refused=21 semantic_matrix=384 semantic_adversarial=96 typed_regressions=49' \
+		logs/cnet_7b_runtime_san.log
 
 # The v5 suite is frozen, so the whole PASS line is pinned with grep -qx and
 # not just base_params. refused, semantic_adversarial and typed_regressions are

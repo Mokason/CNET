@@ -8,8 +8,19 @@
 #define CNET_COMPETE_ARTIFACT_FILE_COUNT 15u
 #define CNET_COMPETE_CAPSULE_PAYLOAD_BYTES 192352u
 #define CNET_COMPETE_CAPSULE_ARTIFACT_BYTES 255109u
+/* Base-artifact identity of the suite being built. The defaults below are v5's.
+   They are overridable so that more than one suite's runtime gate can be built
+   from this one tree: while these were unconditional, every freeze rebased them
+   onto the newest suite (91581 v3 -> 272605 v4 -> 321757 v5) and each older
+   suite's runtime gate became permanently unpassable. Override with -D, as
+   CNET_V4_BASE_DEFINE in the Makefile does. BASE_ARTIFACT_BYTES is intent.wlm
+   plus intent.meta, not intent.wlm alone. */
+#ifndef CNET_COMPETE_BASE_PARAMETERS
 #define CNET_COMPETE_BASE_PARAMETERS 321757u
+#endif
+#ifndef CNET_COMPETE_BASE_ARTIFACT_BYTES
 #define CNET_COMPETE_BASE_ARTIFACT_BYTES 277687u
+#endif
 #define CNET_COMPETE_ARTIFACT_MANIFEST_SHA256 \
     "81fe446218431d7520a7a2d4309e069600ae11be0d3d73e92e04dea78cb7c009"
 #define CNET_COMPETE_ARTIFACT_MODEL \
