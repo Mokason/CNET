@@ -994,7 +994,7 @@ cnet_grow_teacher: include/cnet_grow_lobe.h src/cnet_grow_lobe.c \
 
 
 # --- CORE four product paths (deep benches) ---
-CORE_PATH_COMMON = src/cnet_core_paths.c src/cnet_core_bus.c src/cnet_core_serve.c src/cnet_weight_convert.c \
+CORE_PATH_COMMON = src/cnet_core_paths.c src/cnet_core_bus.c src/cnet_core_serve.c src/cnet_live_miss.c src/cnet_weight_convert.c \
 	src/cnet_hemisphere.c src/cnet_brain_mirror.c src/cnet_rlm.c \
 	src/cnet_capsule_loop.c src/cnet_skill_lane.c src/cnet_ood_skill.c \
 	src/cnet_held_model.c src/cnet_c_speak.c src/cce/cce_wordlm.c \
@@ -1098,6 +1098,16 @@ cnet_core_evolve: tools/cnet_core_evolve.c include/cnet_core_paths.h src/cnet_co
 		-o $(BIN_DIR)/cnet_core_evolve tools/cnet_core_evolve.c src/cnet_agi_scenario.c src/cnet_agi_scenario2.c src/cnet_agi_scenario3.c $(CORE_PATH_COMMON) \
 		-Wl,--gc-sections $(LDFLAGS)
 	@echo "cnet_core_evolve → $(BIN_DIR)/cnet_core_evolve"
+
+
+.PHONY: cnet_live_miss_loop
+cnet_live_miss_loop: include/cnet_live_miss.h src/cnet_live_miss.c \
+		tests/test_cnet_live_miss_loop.c $(CORE_PATH_COMMON) cnet_core_evolve bin/cnetd
+	@mkdir -p $(BIN_DIR) logs result
+	$(CC) $(CFLAGS) -Werror -Iinclude -o $(BIN_DIR)/test_cnet_live_miss_loop \
+		tests/test_cnet_live_miss_loop.c src/cnet_live_miss.c src/cnet_core_serve.c $(LDFLAGS)
+	@CNET_GGUF_MMAP=1 bash scripts/cnet_live_miss_loop_smoke.sh | tee logs/cnet_live_miss_loop.log result/bench_live_miss_loop.txt
+	@grep -q '^CNET_LIVE_MISS_LOOP_PASS' logs/cnet_live_miss_loop.log
 
 .PHONY: cnet_core_switch_wire
 cnet_core_switch_wire: cnet_core_evolve bin/cnetd include/cnet_core_serve.h src/cnet_core_serve.c tests/test_cnet_core_switch_wire.c
@@ -4324,7 +4334,7 @@ cnetd: $(ROE_ASI_SRC) tools/cnetd.c src/cnet_domain_route.c src/cnet_utterance.c
 		src/cnet_chat_lookup.c src/cnet_lookup.c src/cce/cce_campaign_provenance.c \
 		src/cnet_c_speak.c src/cce/cce_wordlm.c src/cnet_skill_lane.c src/cnet_capsule_loop.c \
 		src/cnet_paragraph.c src/cnet_ood_skill.c src/cnet_held_model.c \
-		src/cnet_hemisphere.c src/cnet_brain_mirror.c src/cnet_rlm.c src/cnet_core_serve.c \
+		src/cnet_hemisphere.c src/cnet_brain_mirror.c src/cnet_rlm.c src/cnet_core_serve.c src/cnet_live_miss.c \
 		tools/cnetd.c $(ROE_ASI_LIBS) $$(pkg-config --libs libcurl) -ldl
 	@echo "cnetd built → $(BIN_DIR)/cnetd"
 

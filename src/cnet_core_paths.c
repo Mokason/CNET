@@ -1,5 +1,6 @@
 /* Four deep CORE product paths + benches. */
 #include "cnet_core_paths.h"
+#include "cnet_live_miss.h"
 
 #include "cnet_dc_invent.h"
 #include "cnet_weight_convert.h"
@@ -308,8 +309,9 @@ int cnet_path3_miss_to_admit(CnetCoreBus *bus, const char *miss_path,
     t1 = now_ms();
     b->ms_propose = t1 - t0;
 
-    /* Full admit path only when miss-log carries a complete nibble table. */
-    if (load_lut_from_misslog(miss_path, lut, &n_pairs) != 0) {
+    /* Full admit: prefer domain-filtered typed misses; fallback legacy loader. */
+    n_pairs = cnet_live_miss_domain_pairs(miss_path, domain_tag, lut);
+    if (n_pairs != 16 && load_lut_from_misslog(miss_path, lut, &n_pairs) != 0) {
         /* Propose-only success path */
         b->ms_total = now_ms() - t0;
         return b->propose_rc == 0 || b->propose_rc == 1 ? 0 : -3;

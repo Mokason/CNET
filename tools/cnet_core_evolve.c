@@ -16,6 +16,7 @@
 #include "cnet_agi_scenario.h"
 #include "cnet_agi_scenario2.h"
 #include "cnet_agi_scenario3.h"
+#include "cnet_live_miss.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -69,6 +70,40 @@ int main(int argc, char **argv) {
                    "(no full table yet is OK)\n",
                    pb.propose_rc, pb.table_ok, pb.admit_ok);
         }
+    }
+
+
+    /* Live structured miss: admit every domain that reached 16/16 pairs */
+    if (miss && miss[0] && access(miss, R_OK) == 0) {
+        char doms[16][CNET_LIVE_DOM_NAME];
+        int nd = cnet_live_miss_complete_domains(miss, doms, 16);
+        int di;
+        for (di = 0; di < nd; ++di) {
+            CnetPath3Bench pb;
+            char gguf[768], bname[80];
+            float lut[16];
+            if (cnet_live_miss_domain_pairs(miss, doms[di], lut) != 16) continue;
+            /* skip if .lut already exists */
+            {
+                char lutp[768];
+                snprintf(lutp, sizeof lutp, "%s/%s.lut", dir, doms[di]);
+                if (access(lutp, R_OK) == 0) continue;
+            }
+            snprintf(gguf, sizeof gguf, "%s/live_%s.gguf", dir, doms[di]);
+            snprintf(bname, sizeof bname, "live_%s", doms[di]);
+            if (bus.state != CNET_CORE_BUS_IDLE) {
+                if (bus.wo.bound) (void)cnet_core_bus_unbind(&bus);
+                bus.state = CNET_CORE_BUS_IDLE;
+            }
+            memset(&pb, 0, sizeof pb);
+            if (cnet_path3_miss_to_admit(&bus, miss, gguf, bname, doms[di], &pb) == 0 &&
+                pb.served_ok) {
+                printf("evolve: live domain %s admitted pairs=16 ms=%.3f\n",
+                       doms[di], pb.ms_total);
+                did = 1;
+            }
+        }
+        printf("evolve: complete_domains scanned=%d\n", nd);
     }
 
     /* Factory seed if bank empty or forced */

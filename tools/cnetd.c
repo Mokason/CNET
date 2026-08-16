@@ -56,6 +56,7 @@
 #include "../include/cnet_brain_mirror.h"
 #include "../include/cnet_rlm.h"
 #include "../include/cnet_core_serve.h"
+#include "../include/cnet_live_miss.h"
 #include <sys/wait.h>
 
 #define CD_PATH 512
@@ -358,38 +359,66 @@ static void core_serve_try_reload(void) {
         (void)cnet_serve_global_load_env();
 }
 
-/* Flip self-evolve switch: fork worker; parent reloads .lut bank later. */
-static void core_evolve_tick(CdState *S) {
+/* Evolve worker. sync=1 waits for completion then reloads .lut bank. */
+static int core_evolve_run(CdState *S, int sync) {
     const char *en = getenv("CNET_CORE_AUTO_EVOLVE");
-    const char *every_s = getenv("CNET_CORE_EVOLVE_EVERY");
     const char *bin = getenv("CNET_CORE_EVOLVE_BIN");
     const char *dir = getenv("CNET_CORE_BUS_BRICKS_DIR");
-    unsigned every = 4;
     pid_t pid;
-    if (!en || en[0] != '1') return;
-    if (!dir || !dir[0]) return;
-    if (every_s && every_s[0]) every = (unsigned)atoi(every_s);
-    if (every == 0) every = 1;
-    g_waist_misses++;
-    if (g_waist_misses % every != 0) return;
+    if (!dir || !dir[0]) return -1;
+    /* goals/teach always allowed; periodic needs AUTO_EVOLVE */
+    if (!sync && (!en || en[0] != '1')) return -1;
     if (S && S->miss_log[0])
         setenv("CNET_MISS_LOG", S->miss_log, 1);
     setenv("CNET_CORE_BUS_BRICKS_DIR", dir, 1);
     if (!getenv("CNET_CORE_EVOLVE_FACTORY"))
-        setenv("CNET_CORE_EVOLVE_FACTORY", "1", 0);
+        setenv("CNET_CORE_EVOLVE_FACTORY", "0", 0);
     pid = fork();
     if (pid == 0) {
         const char *path = bin && bin[0] ? bin : "bin/cnet_core_evolve";
         execl(path, path, "--once", (char *)NULL);
-        /* try alongside argv0 dir is hard; fallback PATH */
         execlp("cnet_core_evolve", "cnet_core_evolve", "--once", (char *)NULL);
         _exit(127);
     }
-    /* non-blocking: do not wait hard; opportunistic waitpid WNOHANG later */
     if (pid > 0) {
         int st = 0;
-        (void)waitpid(pid, &st, WNOHANG);
+        if (sync)
+            (void)waitpid(pid, &st, 0);
+        else
+            (void)waitpid(pid, &st, WNOHANG);
+        core_serve_try_reload();
+        return 0;
     }
+    return -1;
+}
+
+static void core_evolve_tick(CdState *S) {
+    const char *en = getenv("CNET_CORE_AUTO_EVOLVE");
+    const char *every_s = getenv("CNET_CORE_EVOLVE_EVERY");
+    unsigned every = 4;
+    if (!en || en[0] != '1') return;
+    if (every_s && every_s[0]) every = (unsigned)atoi(every_s);
+    if (every == 0) every = 1;
+    g_waist_misses++;
+    if (g_waist_misses % every != 0) return;
+    (void)core_evolve_run(S, 0);
+}
+
+static int core_try_serve(const char *q, CdReply *out) {
+    CnetServeBank *sb = cnet_serve_global();
+    CnetServeResult sr;
+    if (!sb || !out) return -1;
+    if (cnet_serve_result(sb, q, &sr) != 0 || !sr.proved) return -1;
+    snprintf(out->answer, sizeof out->answer, "%.2047s", sr.spoken);
+    snprintf(out->utterance, sizeof out->utterance, "%.767s", sr.spoken);
+    snprintf(out->source, sizeof out->source, "LOCAL");
+    snprintf(out->skill, sizeof out->skill, "%.63s",
+             sr.brick[0] ? sr.brick : "core_brick");
+    out->verified = 1;
+    out->miss = 0;
+    out->may_voice = 1;
+    out->tokens = 0;
+    return 0;
 }
 
 static int cd_ask(CdState *S, const char *q, CdReply *out) {
@@ -483,16 +512,37 @@ static int cd_ask(CdState *S, const char *q, CdReply *out) {
                     fclose(gf);
                 }
                 setenv("CNET_AGI3", "1", 0);
-                core_evolve_tick(S);
+                setenv("CNET_CORE_AUTO_EVOLVE", "1", 0);
+                (void)core_evolve_run(S, 1); /* sync so result can land */
                 core_serve_try_reload();
-                snprintf(out->answer, sizeof out->answer, "goal_queued_cert_only");
+                /* If goal looks like prove TAG at N, try CERT serve now */
+                {
+                    char tag[64];
+                    unsigned n = 0;
+                    const char *bp = body;
+                    char turn[96];
+                    if (sscanf(bp, "prove %63s at %u", tag, &n) == 2 ||
+                        sscanf(bp, "prove %63s %u", tag, &n) == 2) {
+                        snprintf(turn, sizeof turn, "%s %u", tag, n & 15u);
+                        cd_scopy(out->prepared, sizeof out->prepared, q);
+                        if (core_try_serve(turn, out) == 0) {
+                            snprintf(out->skill, sizeof out->skill, "goal_cert");
+                            return 0;
+                        }
+                    }
+                }
+                cd_scopy(out->prepared, sizeof out->prepared, q);
+                if (core_try_serve(q, out) == 0) {
+                    snprintf(out->skill, sizeof out->skill, "goal_cert");
+                    return 0;
+                }
+                snprintf(out->answer, sizeof out->answer, "goal_processed_abstain");
                 snprintf(out->utterance, sizeof out->utterance,
-                         "Goal queued for CERT-only plan synthesis.");
+                         "Goal processed; no CERT brick matched yet.");
                 snprintf(out->source, sizeof out->source, "CNET");
                 snprintf(out->skill, sizeof out->skill, "goal_queue");
-                cd_scopy(out->prepared, sizeof out->prepared, q);
                 out->verified = 0;
-                out->miss = 0;
+                out->miss = 1;
                 out->may_voice = 0;
                 out->tokens = 0;
                 return 0;
@@ -616,32 +666,60 @@ static int cd_ask(CdState *S, const char *q, CdReply *out) {
             }
             return 0;
         }
-        /* LIVE WAIST: outside CERT/table → ABSTAIN. No ROE/LLM leftover mouth. */
-        if (S->miss_log[0]) {
-            FILE *mf = fopen(S->miss_log, "a");
-            if (mf) {
-                fprintf(mf,
-                        "{\"via\":\"live_waist\",\"skill\":\"outside_table_abstain\","
-                        "\"refusal\":\"%s\",\"via_rlm\":true,\"claimed_cert\":0,"
-                        "\"intent\":\"%s\",\"open_chat\":false,\"roe_answer\":false}\n",
-                        rr.final.refusal[0] ? rr.final.refusal : "outside_table_abstain",
-                        cnet_core_intent_name(rr.intent));
-                fclose(mf);
+        /* LIVE WAIST: typed miss capture + evolve + retry CERT once. */
+        {
+            char tag[64];
+            unsigned in_n = 0, out_n = 0;
+            int taught = 0;
+            int pairs = 0;
+            float _lut[16];
+            tag[0] = 0;
+            if (cnet_live_parse_teach(q, tag, sizeof tag, &in_n, &out_n) == 0) {
+                if (S->miss_log[0])
+                    (void)cnet_live_miss_append(S->miss_log, tag, in_n, 1, out_n);
+                taught = 1;
+            } else if (cnet_live_parse_tag_n(q, tag, sizeof tag, &in_n) == 0) {
+                if (S->miss_log[0])
+                    (void)cnet_live_miss_append(S->miss_log, tag, in_n, 0, 0);
+            } else if (S->miss_log[0]) {
+                FILE *mf = fopen(S->miss_log, "a");
+                if (mf) {
+                    fprintf(mf,
+                            "{\"via\":\"live_waist\",\"skill\":\"outside_table_abstain\","
+                            "\"refusal\":\"outside_table_abstain\",\"claimed_cert\":0,"
+                            "\"open_chat\":false}\n");
+                    fclose(mf);
+                }
             }
+            if (tag[0] && S->miss_log[0])
+                pairs = cnet_live_miss_domain_pairs(S->miss_log, tag, _lut);
+            if (taught || pairs >= 16) {
+                setenv("CNET_CORE_AUTO_EVOLVE", "1", 0);
+                (void)core_evolve_run(S, 1);
+            } else {
+                core_evolve_tick(S);
+            }
+            core_serve_try_reload();
+            cd_scopy(out->prepared, sizeof out->prepared, q);
+            if (core_try_serve(q, out) == 0)
+                return 0;
+            if (taught && tag[0]) {
+                char turn[96];
+                snprintf(turn, sizeof turn, "%s %u", tag, in_n);
+                if (core_try_serve(turn, out) == 0)
+                    return 0;
+            }
+            snprintf(out->answer, sizeof out->answer, "outside_table_abstain");
+            snprintf(out->utterance, sizeof out->utterance, "outside_table_abstain");
+            snprintf(out->source, sizeof out->source, "CNET");
+            snprintf(out->skill, sizeof out->skill,
+                     taught ? "typed_teach_pending" : "outside_table_abstain");
+            out->verified = 0;
+            out->miss = 1;
+            out->may_voice = 0;
+            out->tokens = 0;
+            return 0;
         }
-        snprintf(out->answer, sizeof out->answer, "outside_table_abstain");
-        snprintf(out->utterance, sizeof out->utterance, "outside_table_abstain");
-        snprintf(out->source, sizeof out->source, "CNET");
-        snprintf(out->skill, sizeof out->skill, "outside_table_abstain");
-        cd_scopy(out->prepared, sizeof out->prepared, q);
-        out->verified = 0;
-        out->miss = 1;
-        out->may_voice = 0;
-        out->tokens = 0;
-        /* Self-evolve switch: CORE may flip via forked evolve worker. */
-        core_evolve_tick(S);
-        core_serve_try_reload();
-        return 0;
     }
     memset(&ameta, 0, sizeof ameta);
     memset(&dmeta, 0, sizeof dmeta);
