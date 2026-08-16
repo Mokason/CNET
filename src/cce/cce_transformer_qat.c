@@ -407,13 +407,20 @@ cce_transformer_qat* cce_transformer_qat_create(const cce_transformer_qat_config
     if (!t->qkv_w || !t->qkv_b || !t->proj_w || !t->proj_b || !t->up_w || !t->up_b ||
         !t->down_w || !t->down_b || !t->ln1_w || !t->ln1_b || !t->ln2_w || !t->ln2_b) ok = 0;
     for (int l = 0; ok && l < L; ++l) {
-        PA(t->qkv_w[l], D, QW, "qkv_w");   PA(t->qkv_b[l], 1, QW, "qkv_b");
-        PA(t->proj_w[l], D, D, "proj_w");  PA(t->proj_b[l], 1, D, "proj_b");
-        PA(t->up_w[l], D, M, "up_w");      PA(t->up_b[l], 1, M, "up_b");
-        if (cfg->mlp_kind == QAT_MLP_SWIGLU) {
-            PA(t->gate_w[l], D, M, "gate_w"); PA(t->gate_b[l], 1, M, "gate_b");
+        PA(t->qkv_w[l], D, QW, "qkv_w");
+        PA(t->proj_w[l], D, D, "proj_w");
+        PA(t->up_w[l], D, M, "up_w");
+        if (cfg->mlp_kind == QAT_MLP_SWIGLU) PA(t->gate_w[l], D, M, "gate_w");
+        PA(t->down_w[l], M, D, "down_w");
+        /* Modern checkpoints carry no linear bias. lin_fwd/lin_bwd already
+           treat a NULL bias as absent, so the call sites need no change. */
+        if (!cfg->no_bias) {
+            PA(t->qkv_b[l], 1, QW, "qkv_b");
+            PA(t->proj_b[l], 1, D, "proj_b");
+            PA(t->up_b[l], 1, M, "up_b");
+            if (cfg->mlp_kind == QAT_MLP_SWIGLU) PA(t->gate_b[l], 1, M, "gate_b");
+            PA(t->down_b[l], 1, D, "down_b");
         }
-        PA(t->down_w[l], M, D, "down_w");  PA(t->down_b[l], 1, D, "down_b");
         PA(t->ln1_w[l], 1, D, "ln1_w");
         PA(t->ln2_w[l], 1, D, "ln2_w");
         if (cfg->norm_kind == QAT_NORM_LN) {   /* RMSNorm has no bias */

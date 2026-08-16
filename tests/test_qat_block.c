@@ -315,6 +315,61 @@ int main(void) {
         cce_transformer_qat_free(a); cce_transformer_qat_free(b);
     }
 
+    printf("[12] no-bias gradcheck\n");
+    {
+        cce_transformer_qat_config c;
+        cce_transformer_qat* t;
+        cfg_legacy(&c);
+        c.no_bias = 1;
+        t = cce_transformer_qat_create(&c);
+        CHECK(t != NULL, "no-bias trainer creates");
+        if (t) {
+            /* drops qkv_b, proj_b, up_b, down_b per layer */
+            int expect = 2 + 8 * c.n_layer + 4;
+            printf("  info no-bias groups=%d expected=%d\n",
+                   cce_transformer_qat_group_count(t), expect);
+            CHECK(cce_transformer_qat_group_count(t) == expect,
+                  "no_bias drops exactly the linear biases");
+            {
+                double rel = cce_transformer_qat_gradcheck(t, seq, T_, tgt, 6);
+                printf("  info no-bias gradcheck rel err = %.3e\n", rel);
+                CHECK(rel < 5e-3, "no-bias backward matches central differences");
+            }
+            cce_transformer_qat_free(t);
+        }
+    }
+
+    printf("[13] the full modern (Llama-shaped) endpoint\n");
+    {
+        cce_transformer_qat_config c;
+        cce_transformer_qat* t;
+        cfg_legacy(&c);
+        c.n_head = 4; c.n_embd = 8;
+        c.norm_kind = QAT_NORM_RMS;
+        c.pos_kind  = QAT_POS_ROPE;   c.rope_theta = 10000.0f;
+        c.mlp_kind  = QAT_MLP_SWIGLU;
+        c.n_kv_head = 2;
+        c.no_bias   = 1;
+        t = cce_transformer_qat_create(&c);
+        CHECK(t != NULL, "full modern trainer creates");
+        if (t) {
+            double rel = cce_transformer_qat_gradcheck(t, seq, T_, tgt, 6);
+            printf("  info MODERN groups=%d gradcheck rel err = %.3e\n",
+                   cce_transformer_qat_group_count(t), rel);
+            CHECK(rel < 5e-3, "modern-endpoint backward matches central differences");
+            {
+                double l0 = cce_transformer_qat_step(t, seq, T_, NULL, tgt, 1e-2f);
+                double l1 = l0;
+                int it;
+                for (it = 0; it < 60; ++it)
+                    l1 = cce_transformer_qat_step(t, seq, T_, NULL, tgt, 1e-2f);
+                printf("  info modern loss %.4f -> %.4f\n", l0, l1);
+                CHECK(l1 < l0, "modern block actually trains (loss falls)");
+            }
+            cce_transformer_qat_free(t);
+        }
+    }
+
     printf("checks=%d fails=%d\n", checks, fails);
     if (fails) return 1;
     printf("ALL QAT BLOCK TESTS PASSED\n");
