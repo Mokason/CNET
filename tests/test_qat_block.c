@@ -39,6 +39,9 @@ static void cfg_legacy(cce_transformer_qat_config* c) {
 
 int main(void) {
     int seq[T_], tgt;
+    /* Unbuffered: a crash inside a gate must not swallow the output that
+       says which gate crashed. */
+    setvbuf(stdout, NULL, _IONBF, 0);
     printf("=== QAT modern block gate ===\n");
     make_seq(seq, &tgt);
 
@@ -133,6 +136,30 @@ int main(void) {
         }
         free(la); free(lb);
         cce_transformer_qat_free(a); cce_transformer_qat_free(b);
+    }
+
+    printf("[5] RMSNorm gradcheck\n");
+    {
+        cce_transformer_qat_config c;
+        cce_transformer_qat* t;
+        cfg_legacy(&c);
+        c.norm_kind = QAT_NORM_RMS;
+        t = cce_transformer_qat_create(&c);
+        CHECK(t != NULL, "RMSNorm trainer creates");
+        if (t) {
+            /* RMSNorm has no bias: ln1_b + ln2_b per layer, and lnf_b, go away */
+            int expect = 2 + 10 * c.n_layer + 3;
+            printf("  info RMS groups=%d expected=%d\n",
+                   cce_transformer_qat_group_count(t), expect);
+            CHECK(cce_transformer_qat_group_count(t) == expect,
+                  "RMSNorm drops exactly the norm-bias groups");
+            {
+                double rel = cce_transformer_qat_gradcheck(t, seq, T_, tgt, 6);
+                printf("  info RMSNorm gradcheck rel err = %.3e\n", rel);
+                CHECK(rel < 5e-3, "RMSNorm backward matches central differences");
+            }
+            cce_transformer_qat_free(t);
+        }
     }
 
     printf("checks=%d fails=%d\n", checks, fails);

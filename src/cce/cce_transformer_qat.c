@@ -215,6 +215,70 @@ static void ln_bwd(const float* x, const float* w, const float* dy,
     }
 }
 
+/* ---- RMSNorm: no mean subtraction, no bias -----------------------------
+   y_i = x_i · r · w_i with r = 1/sqrt(mean(x²) + eps).
+   Since ∂r/∂x_i = −r³·x_i/D, with g_i = dy_i·w_i:
+       dx_i = r·(g_i − (r²·x_i/D)·Σ_j g_j·x_j)
+   mean_out is written as 0: RMSNorm has no mean, but the cache slot exists
+   and leaving it uninitialised would be read by nothing yet still be a trap. */
+static void rms_fwd(const float* x, const float* w, int T, int D, float eps,
+                    float* y, float* mean_out, float* rstd_out) {
+    for (int r = 0; r < T; ++r) {
+        const float* xr = x + (size_t)r*D;
+        float* yr = y + (size_t)r*D;
+        double ms = 0.0;
+        for (int i = 0; i < D; ++i) ms += (double)xr[i] * xr[i];
+        ms /= D;
+        {
+            float rs = (float)(1.0 / sqrt(ms + (double)eps));
+            for (int i = 0; i < D; ++i) yr[i] = xr[i] * rs * w[i];
+            if (mean_out) mean_out[r] = 0.0f;
+            rstd_out[r] = rs;
+        }
+    }
+}
+
+static void rms_bwd(const float* x, const float* w, const float* dy,
+                    const float* rstd, int T, int D,
+                    float* dx, float* dw) {
+    for (int r = 0; r < T; ++r) {
+        const float* xr = x + (size_t)r*D;
+        const float* dyr = dy + (size_t)r*D;
+        float* dxr = dx + (size_t)r*D;
+        float rs = rstd[r];
+        double gx = 0.0;
+        for (int i = 0; i < D; ++i) {
+            double g = (double)dyr[i] * w[i];
+            gx += g * xr[i];
+            if (dw) dw[i] += dyr[i] * xr[i] * rs;
+        }
+        for (int i = 0; i < D; ++i) {
+            double g = (double)dyr[i] * w[i];
+            dxr[i] = (float)(rs * (g - ((double)rs * rs * xr[i] / (double)D) * gx));
+        }
+    }
+}
+
+/* Norm dispatch. LayerNorm keeps its hardcoded 1e-5 so the legacy
+   bit-identity anchor cannot move; t->eps applies to RMSNorm only. */
+static void norm_fwd(const cce_transformer_qat* t, const float* x, const float* w,
+                     const float* b, int T, int D,
+                     float* y, float* mean_out, float* rstd_out) {
+    if (t->cfg.norm_kind == QAT_NORM_RMS)
+        rms_fwd(x, w, T, D, t->eps, y, mean_out, rstd_out);
+    else
+        ln_fwd(x, w, b, T, D, y, mean_out, rstd_out);
+}
+
+static void norm_bwd(const cce_transformer_qat* t, const float* x, const float* w,
+                     const float* dy, const float* mean, const float* rstd,
+                     int T, int D, float* dx, float* dw, float* db) {
+    if (t->cfg.norm_kind == QAT_NORM_RMS)
+        rms_bwd(x, w, dy, rstd, T, D, dx, dw);
+    else
+        ln_bwd(x, w, dy, mean, rstd, T, D, dx, dw, db);
+}
+
 /* ---- tanh-GELU (matches cce_tensor_gelu constants) ---- */
 static float gelu_f(float x) {
     float x3 = x*x*x;
@@ -282,10 +346,15 @@ cce_transformer_qat* cce_transformer_qat_create(const cce_transformer_qat_config
         PA(t->proj_w[l], D, D, "proj_w");  PA(t->proj_b[l], 1, D, "proj_b");
         PA(t->up_w[l], D, M, "up_w");      PA(t->up_b[l], 1, M, "up_b");
         PA(t->down_w[l], M, D, "down_w");  PA(t->down_b[l], 1, D, "down_b");
-        PA(t->ln1_w[l], 1, D, "ln1_w");    PA(t->ln1_b[l], 1, D, "ln1_b");
-        PA(t->ln2_w[l], 1, D, "ln2_w");    PA(t->ln2_b[l], 1, D, "ln2_b");
+        PA(t->ln1_w[l], 1, D, "ln1_w");
+        PA(t->ln2_w[l], 1, D, "ln2_w");
+        if (cfg->norm_kind == QAT_NORM_LN) {   /* RMSNorm has no bias */
+            PA(t->ln1_b[l], 1, D, "ln1_b");
+            PA(t->ln2_b[l], 1, D, "ln2_b");
+        }
     }
-    PA(t->lnf_w, 1, D, "lnf_w");   PA(t->lnf_b, 1, D, "lnf_b");
+    PA(t->lnf_w, 1, D, "lnf_w");
+    if (cfg->norm_kind == QAT_NORM_LN) PA(t->lnf_b, 1, D, "lnf_b");
     PA(t->head_w, D, V, "head_w"); PA(t->head_b, 1, V, "head_b");
 #undef PA
 #undef PA_FROZEN
@@ -425,7 +494,7 @@ static cce_result tr_forward(cce_transformer_qat* t, const int* tokens, int T) {
         float* mpost= t->mpost+ (size_t)l*c->block_size*M;
         memcpy(xin, x, (size_t)T*D*sizeof(float));
 
-        ln_fwd(xin, t->ln1_w[l].w, t->ln1_b[l].w, T, D, ln1o,
+        norm_fwd(t, xin, t->ln1_w[l].w, t->ln1_b[l].w, T, D, ln1o,
                t->ln1_mean + (size_t)l*c->block_size, t->ln1_rstd + (size_t)l*c->block_size);
         lin_fwd(ln1o, mat_eff(t, &t->qkv_w[l], c->qat_qkv), t->qkv_b[l].w, qkv, T, D, 3*D);
 
@@ -468,7 +537,7 @@ static cce_result tr_forward(cce_transformer_qat* t, const int* tokens, int T) {
         for (size_t i = 0; i < (size_t)T*D; ++i) xatt[i] += xin[i];
 
         /* LN2 + MLP + residual */
-        ln_fwd(xatt, t->ln2_w[l].w, t->ln2_b[l].w, T, D, ln2o,
+        norm_fwd(t, xatt, t->ln2_w[l].w, t->ln2_b[l].w, T, D, ln2o,
                t->ln2_mean + (size_t)l*c->block_size, t->ln2_rstd + (size_t)l*c->block_size);
         lin_fwd(ln2o, mat_eff(t, &t->up_w[l], c->qat_mlp), t->up_b[l].w, mpre, T, D, M);
         for (size_t i = 0; i < (size_t)T*M; ++i) mpost[i] = gelu_f(mpre[i]);
@@ -480,7 +549,7 @@ static cce_result tr_forward(cce_transformer_qat* t, const int* tokens, int T) {
     {
         const float* xl = x + (size_t)(T-1)*D;
         float mu_f, rs_f;
-        ln_fwd(xl, t->lnf_w.w, t->lnf_b.w, 1, D, t->hfin, &mu_f, &rs_f);
+        norm_fwd(t, xl, t->lnf_w.w, t->lnf_b.w, 1, D, t->hfin, &mu_f, &rs_f);
         t->lnf_mean = mu_f; t->lnf_rstd = rs_f;
         lin_fwd(t->hfin, mat_eff(t, &t->head_w, c->qat_head), t->head_b.w,
                 t->logits, 1, D, V);
@@ -504,28 +573,16 @@ cce_result cce_transformer_qat_logits(cce_transformer_qat* t, const int* tokens,
 /* ================= backward ================= */
 
 /* zero all grads */
+/* Registry-driven, like the gradcheck: a group that is not allocated under
+   the active config (e.g. norm biases under RMSNorm) is simply not in the
+   registry, so this cannot dereference it. The previous hardcoded list
+   memset ln1_b[l].g unconditionally and segfaulted the moment a config
+   stopped allocating it. */
 static void tr_zero_grads(cce_transformer_qat* t) {
-    int L = t->cfg.n_layer, D = t->cfg.n_embd, M = t->cfg.mlp_hidden,
-        V = t->cfg.vocab;
-    memset(t->tok_emb.g, 0, (size_t)V*D*sizeof(float));
-    for (int l = 0; l < L; ++l) {
-        memset(t->qkv_w[l].g, 0, (size_t)D*3*D*sizeof(float));
-        memset(t->qkv_b[l].g, 0, (size_t)3*D*sizeof(float));
-        memset(t->proj_w[l].g, 0, (size_t)D*D*sizeof(float));
-        memset(t->proj_b[l].g, 0, (size_t)D*sizeof(float));
-        memset(t->up_w[l].g, 0, (size_t)D*M*sizeof(float));
-        memset(t->up_b[l].g, 0, (size_t)M*sizeof(float));
-        memset(t->down_w[l].g, 0, (size_t)M*D*sizeof(float));
-        memset(t->down_b[l].g, 0, (size_t)D*sizeof(float));
-        memset(t->ln1_w[l].g, 0, (size_t)D*sizeof(float));
-        memset(t->ln1_b[l].g, 0, (size_t)D*sizeof(float));
-        memset(t->ln2_w[l].g, 0, (size_t)D*sizeof(float));
-        memset(t->ln2_b[l].g, 0, (size_t)D*sizeof(float));
+    for (int i = 0; i < t->n_groups; ++i) {
+        P* p = t->groups[i];
+        if (p->g) memset(p->g, 0, (size_t)p->in * p->out * sizeof(float));
     }
-    memset(t->lnf_w.g, 0, (size_t)D*sizeof(float));
-    memset(t->lnf_b.g, 0, (size_t)D*sizeof(float));
-    memset(t->head_w.g, 0, (size_t)D*V*sizeof(float));
-    memset(t->head_b.g, 0, (size_t)V*sizeof(float));
 }
 
 /* full backward from dlogits[V] at the last position. Consumes the caches of
@@ -547,7 +604,7 @@ static void tr_backward(cce_transformer_qat* t, const int* tokens, const float* 
                 t->head_w.g, t->head_b.g, dh, 1, D, V);
         /* final LN backward on the last row */
         float dxl[4096];
-        ln_bwd(xfinal + (size_t)(T-1)*D, t->lnf_w.w, dh,
+        norm_bwd(t, xfinal + (size_t)(T-1)*D, t->lnf_w.w, dh,
                &t->lnf_mean, &t->lnf_rstd, 1, D, dxl, t->lnf_w.g, t->lnf_b.g);
         for (int i = 0; i < D; ++i) t->dx[(size_t)(T-1)*D + i] = dxl[i];
     }
@@ -572,7 +629,7 @@ static void tr_backward(cce_transformer_qat* t, const int* tokens, const float* 
         lin_bwd(ln2o, mat_eff(t, &t->up_w[l], c->qat_mlp), t->dmid,
                 t->up_w[l].g, t->up_b[l].g, t->dtmp, T, D, M);
         /* dxatt = dx (residual) + LN2-bwd(dtmp) */
-        ln_bwd(xatt, t->ln2_w[l].w, t->dtmp,
+        norm_bwd(t, xatt, t->ln2_w[l].w, t->dtmp,
                t->ln2_mean + (size_t)l*c->block_size, t->ln2_rstd + (size_t)l*c->block_size,
                T, D, t->dcat /* reuse as dxatt-partial */, t->ln2_w[l].g, t->ln2_b[l].g);
         for (size_t i = 0; i < (size_t)T*D; ++i) t->dx[i] += t->dcat[i];
@@ -624,7 +681,7 @@ static void tr_backward(cce_transformer_qat* t, const int* tokens, const float* 
         lin_bwd(ln1o, mat_eff(t, &t->qkv_w[l], c->qat_qkv), t->dqkv,
                 t->qkv_w[l].g, t->qkv_b[l].g, t->dtmp, T, D, 3*D);
         /* dxin = dx (residual) + LN1-bwd(dtmp) */
-        ln_bwd(xin, t->ln1_w[l].w, t->dtmp,
+        norm_bwd(t, xin, t->ln1_w[l].w, t->dtmp,
                t->ln1_mean + (size_t)l*c->block_size, t->ln1_rstd + (size_t)l*c->block_size,
                T, D, t->dcat, t->ln1_w[l].g, t->ln1_b[l].g);
         for (size_t i = 0; i < (size_t)T*D; ++i) t->dx[i] += t->dcat[i];
@@ -690,17 +747,10 @@ double cce_transformer_qat_step(cce_transformer_qat* t, const int* tokens, int T
 
     /* Adam on every trainable group (pos_emb frozen by design) */
     int step = ++t->adam_t;
-    adam_p(&t->tok_emb, lr, step);
-    for (int l = 0; l < t->cfg.n_layer; ++l) {
-        adam_p(&t->qkv_w[l], lr, step);  adam_p(&t->qkv_b[l], lr, step);
-        adam_p(&t->proj_w[l], lr, step); adam_p(&t->proj_b[l], lr, step);
-        adam_p(&t->up_w[l], lr, step);   adam_p(&t->up_b[l], lr, step);
-        adam_p(&t->down_w[l], lr, step); adam_p(&t->down_b[l], lr, step);
-        adam_p(&t->ln1_w[l], lr, step);  adam_p(&t->ln1_b[l], lr, step);
-        adam_p(&t->ln2_w[l], lr, step);  adam_p(&t->ln2_b[l], lr, step);
-    }
-    adam_p(&t->lnf_w, lr, step); adam_p(&t->lnf_b, lr, step);
-    adam_p(&t->head_w, lr, step); adam_p(&t->head_b, lr, step);
+    /* Registry-driven: trainable groups only, so pos_emb stays frozen and
+       groups absent under the active config are never touched. */
+    for (int gi = 0; gi < t->n_groups; ++gi)
+        if (t->group_trainable[gi]) adam_p(t->groups[gi], lr, step);
     return loss;
 }
 
