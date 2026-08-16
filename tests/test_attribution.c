@@ -455,6 +455,66 @@ int main(void) {
         free(sink);
     }
 
+    printf("[13] conformal calibration of proposer confidence\n");
+    {
+        AttribCalib cal;
+        AttribCalibReport rep;
+        int i;
+        attrib_calib_init(&cal);
+
+        check(attrib_calib_report(&cal, 0.1, 16, &rep) == -1,
+              "empty calibration set is uncalibratable");
+        check(rep.calibratable == 0, "report flags uncalibratable");
+
+        /* 40 well-calibrated valid answers (high confidence) ... */
+        for (i = 0; i < 40; ++i) attrib_calib_add(&cal, 0.90 + 0.001 * i, 1);
+        /* ... and 10 invalid answers the proposer was overconfident about */
+        for (i = 0; i < 10; ++i) attrib_calib_add(&cal, 0.60 + 0.001 * i, 0);
+
+        check(attrib_calib_report(&cal, 0.1, 16, &rep) == 0,
+              "calibratable once n_valid >= min_n");
+        check(rep.calibratable == 1, "report flags calibratable");
+        check(rep.n_valid == 40 && rep.n_invalid == 10,
+              "valid and invalid counts tracked separately");
+        check(rep.q >= 0.0 && rep.q <= 1.0, "threshold in range");
+        printf("  info: q=%.4f -> abstain below confidence %.4f; "
+               "catches %lu/%lu invalid answers\n",
+               rep.q, 1.0 - rep.q, (unsigned long)rep.caught_invalid,
+               (unsigned long)rep.n_invalid);
+        check(rep.caught_invalid == 10,
+              "threshold catches all clearly-overconfident invalid answers");
+
+        printf("[14] min_n is honoured, not silently relaxed\n");
+        {
+            AttribCalib small;
+            AttribCalibReport srep;
+            attrib_calib_init(&small);
+            for (i = 0; i < 5; ++i) attrib_calib_add(&small, 0.9, 1);
+            check(attrib_calib_report(&small, 0.1, 16, &srep) == -1,
+                  "5 points under min_n 16 is uncalibratable");
+            check(srep.calibratable == 0, "flag stays 0");
+            check(srep.n_valid == 5, "count still reported when uncalibratable");
+        }
+
+        printf("[15] calibration buffer is bounded, bad input refused\n");
+        {
+            AttribCalib big;
+            size_t k;
+            attrib_calib_init(&big);
+            for (k = 0; k < ATTRIB_MAX_CALIB + 50; ++k)
+                attrib_calib_add(&big, 0.9, 1);
+            check(big.n_valid == ATTRIB_MAX_CALIB, "valid buffer saturates");
+            check(big.dropped == 50, "overflow counted");
+            attrib_calib_init(&big);
+            check(attrib_calib_add(&big, 1.5, 1) == -1,
+                  "confidence above 1 refused as an ABI violation");
+            check(attrib_calib_add(&big, -0.1, 1) == -1,
+                  "negative confidence refused");
+            check(big.n_valid == 0 && big.dropped == 2,
+                  "refused points never enter the calibration set");
+        }
+    }
+
     free(L);
     printf("checks run: %d\n", checks_run);
     printf("ALL ATTRIBUTION TESTS PASSED\n");

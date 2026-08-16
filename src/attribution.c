@@ -6,6 +6,7 @@
 
 #include "../include/attribution.h"
 #include "../include/acquire.h"   /* ACQUIRE_NAME_MAX, for the size assert only */
+#include "../include/contract/conformal.h"
 
 /* ATTRIB_NAME_MAX and ACQUIRE_NAME_MAX are declared in separate headers to
    avoid a cycle; they MUST stay equal. Fails the build if they diverge. */
@@ -261,5 +262,63 @@ int attrib_ledger_load(AttribLedger *L, const char *path) {
     fclose(f);
     *L = *fresh;          /* swap only now: parse fully succeeded */
     free(fresh);
+    return 0;
+}
+
+/* ---- split-conformal calibration of proposer confidence ----------------
+   The oracle is the ground-truth source, so it cannot be calibrated against
+   itself. Calibration points are those with an INDEPENDENT verdict: a
+   port_validate failure (always available, free) or a registered
+   CnetOracleValidateFn result. Score = 1 - confidence over VALID points; the
+   quantile at alpha is the threshold below which the proposer should abstain.
+   INVALID points do not set the threshold — they measure it, by counting how
+   many the threshold would have caught. That count is the direct measurement
+   of whether the ABSTAIN valve still works, which is what a future ternary
+   (quantization-degraded) proposer would silently break. */
+
+void attrib_calib_init(AttribCalib *c) {
+    if (!c) return;
+    memset(c, 0, sizeof *c);
+}
+
+int attrib_calib_add(AttribCalib *c, double confidence, int truth_valid) {
+    if (!c) return -1;
+    /* A non-finite or out-of-range confidence is a proposer ABI violation,
+       not a calibration point. The !(x >= a) form also rejects NaN. */
+    if (!(confidence >= 0.0) || !(confidence <= 1.0)) { c->dropped++; return -1; }
+    if (truth_valid) {
+        if (c->n_valid >= ATTRIB_MAX_CALIB) { c->dropped++; return -1; }
+        c->valid_scores[c->n_valid++] = 1.0 - confidence;
+    } else {
+        if (c->n_invalid >= ATTRIB_MAX_CALIB) { c->dropped++; return -1; }
+        c->invalid_conf[c->n_invalid++] = confidence;
+    }
+    return 0;
+}
+
+int attrib_calib_report(const AttribCalib *c, double alpha, size_t min_n,
+                        AttribCalibReport *out) {
+    size_t i;
+    double *scratch;
+    if (!c || !out) return -1;
+    memset(out, 0, sizeof *out);
+    out->alpha = alpha;
+    out->n_valid = c->n_valid;
+    out->n_invalid = c->n_invalid;
+    /* Short evidence => uncalibratable. Never fabricate a threshold. */
+    if (c->n_valid < min_n || c->n_valid == 0) return -1;
+    /* conformal_quantile does not modify its input, but it takes a non-const
+       pointer; copy rather than casting the const away. */
+    scratch = (double *)malloc(c->n_valid * sizeof *scratch);
+    if (!scratch) return -1;
+    memcpy(scratch, c->valid_scores, c->n_valid * sizeof *scratch);
+    out->q = conformal_quantile(scratch, c->n_valid, alpha);
+    free(scratch);
+    if (out->q < 0.0) return -1;   /* bad alpha; still not calibratable */
+    /* An invalid answer is caught when its nonconformity exceeds the
+       threshold, i.e. 1 - confidence > q. */
+    for (i = 0; i < c->n_invalid; ++i)
+        if ((1.0 - c->invalid_conf[i]) > out->q) out->caught_invalid++;
+    out->calibratable = 1;
     return 0;
 }
