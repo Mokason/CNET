@@ -147,10 +147,19 @@ int cnet_rlm_ask(const char *turn, const CnetRlmPolicy *policy,
             set_final(out, &hr);
             return 0;
         }
+        /* OPEN_CHAT leftover answers are killed — creative may only emit tables
+           via cnet_core_bus, never answer a turn here. */
         if (hr.bound && hr.plane == CNET_CORE_PLANE_OPEN_CHAT) {
-            /* Creativity plane draft — RLM accepts as final (never CERT). */
+            hr.bound = 0;
+            hr.plane = CNET_CORE_PLANE_NONE;
+            hr.open_chat = 0;
+            hr.claimed_cert = 0;
+            hr.may_voice = 0;
+            copy_text(hr.refusal, sizeof hr.refusal, "open_chat_answer_killed");
+            copy_text(hr.spoken, sizeof hr.spoken, "open_chat_answer_killed");
+            out->steps[out->n_steps - 1].step = hr;
             set_final(out, &hr);
-            return 0;
+            return 1;
         }
 
         /* Abstain: no further magic recursion into LLM for pure logic */

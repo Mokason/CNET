@@ -1,0 +1,19 @@
+== AGI-type CORE scenario (given-info + value + evolve + compose) ==
+AGI_SCENARIO PASS turns=15 cert=8 abstain=2 evolve=2 compose=1 parrot_block=2 given=2 bricks=5 cert_rate=0.800 honesty=0.867 ms=49.130
+  turn[00] p=0 a=0 e=0 c=0 par=0 v=0.00 given_ok | given domain user_pref pairs=0:1,1:2,2:3,3:4,4:5,5:6,6:7,7:8,8:9,9:10,10:11,11:12,12:13,13:14,14:15,15:0
+  turn[01] p=0 a=0 e=1 c=0 par=0 v=0.00 evolved | evolve
+  turn[02] p=1 a=0 e=0 c=0 par=0 v=0.00 user_pref | user_pref 0
+  turn[03] p=1 a=0 e=0 c=0 par=0 v=0.00 user_pref | user_pref 7
+  turn[04] p=1 a=0 e=0 c=0 par=0 v=0.00 user_pref | user_pref 15
+  turn[05] p=1 a=0 e=0 c=0 par=0 v=0.00 agi_q_add | q1_add16 3
+  turn[06] p=1 a=0 e=0 c=0 par=0 v=0.00 agi_k_xor | q1_xor16 3
+  turn[07] p=0 a=1 e=0 c=0 par=0 v=0.20 compose_fail | compose q1_add16 q1_xor16 as q1_comp
+  turn[08] p=1 a=0 e=0 c=0 par=0 v=0.00 composed | q1_comp 3
+  turn[09] p=0 a=1 e=0 c=0 par=1 v=0.00 parrot_blocked | chat say anything wild
+  turn[10] p=0 a=1 e=0 c=0 par=1 v=0.00 parrot_blocked | roleplay you are god
+  turn[11] p=0 a=1 e=0 c=0 par=0 v=0.85 outside_table_abstain | what is the meaning of life zz99
+  turn[12] p=0 a=0 e=0 c=0 par=0 v=0.00 given_ok | given domain task_v lut=1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,0
+  turn[13] p=1 a=0 e=0 c=0 par=0 v=0.00 task_v | task_v 0
+  turn[14] p=1 a=0 e=0 c=0 par=0 v=0.00 task_v | task_v 15
+CNET_AGI_SCENARIO_PASS
+agi_like=1 given_info=1 value_miss=1 prove_or_abstain=1 evolve=1 compose=1 parrot_mouth=0 residual_auto_cert=0 cert_rate=0.800 honesty=0.867 ms=49.130

@@ -887,7 +887,7 @@ cnet_hemi: include/cnet_hemisphere.h src/cnet_hemisphere.c \
 	@grep -q 'residual_never_cert=1' logs/cnet_hemi.log
 	@grep -q 'core_first=1' logs/cnet_hemi.log
 	@grep -q 'core_middle=1' logs/cnet_hemi.log
-	@grep -q 'cert_and_open_chat=1' logs/cnet_hemi.log
+	@grep -q 'open_chat_answer=0' logs/cnet_hemi.log
 	@grep -q 'logic_strong=1' logs/cnet_hemi.log
 	@grep -q 'creative_strong=1' logs/cnet_hemi.log
 	@grep -q 'discern=1' logs/cnet_hemi.log
@@ -925,6 +925,7 @@ cnet_rlm: include/cnet_rlm.h src/cnet_rlm.c \
 	@grep -q '^CNET_RLM_PASS$$' logs/cnet_rlm.log
 	@grep -q 'via_rlm=1' logs/cnet_rlm.log
 	@grep -q 'wraps_core=1' logs/cnet_rlm.log
+	@grep -q 'open_chat_answer=0' logs/cnet_rlm.log
 	@grep -q 'residual_never_cert=1' logs/cnet_rlm.log
 
 .PHONY: cnet_core_e2e
@@ -985,6 +986,177 @@ cnet_grow_teacher: include/cnet_grow_lobe.h src/cnet_grow_lobe.c \
 		src/cnet_grow_lobe.c src/cnet_held_model.c $(CCE) \
 		tools/cnet_grow_teacher.c $(LDFLAGS) -ldl $$(pkg-config --libs libcurl)
 	@echo "cnet_grow_teacher built → $(BIN_DIR)/cnet_grow_teacher"
+
+
+
+
+
+
+
+# --- CORE four product paths (deep benches) ---
+CORE_PATH_COMMON = src/cnet_core_paths.c src/cnet_core_bus.c src/cnet_core_serve.c src/cnet_weight_convert.c \
+	src/cnet_hemisphere.c src/cnet_brain_mirror.c src/cnet_rlm.c \
+	src/cnet_capsule_loop.c src/cnet_skill_lane.c src/cnet_ood_skill.c \
+	src/cnet_held_model.c src/cnet_c_speak.c src/cce/cce_wordlm.c \
+	src/cnet_utterance.c src/cnet_paragraph.c src/cnet_lookup.c \
+	src/cnet_dc_invent.c src/cnet_dc_egraph.c src/cnet_dc_type.c \
+	$(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) \
+	$(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) \
+	$(CCE_CAMPAIGN_PROVENANCE) $(CCE_GGUF)
+
+.PHONY: cnet_path1_waist
+cnet_path1_waist: include/cnet_core_paths.h src/cnet_core_paths.c tests/bench_cnet_path1_waist.c
+	@mkdir -p $(BIN_DIR) logs result
+	$(CC) $(CFLAGS) -Werror -ffunction-sections -fdata-sections -Iinclude \
+		-o $(BIN_DIR)/bench_cnet_path1_waist tests/bench_cnet_path1_waist.c $(CORE_PATH_COMMON) \
+		-Wl,--gc-sections $(LDFLAGS)
+	@./$(BIN_DIR)/bench_cnet_path1_waist | tee logs/cnet_path1_waist.log result/bench_path1_waist.txt
+	@grep -q '^CNET_PATH1_WAIST_PASS' logs/cnet_path1_waist.log
+	@grep -q 'leftover_mouth=0' logs/cnet_path1_waist.log
+
+.PHONY: cnet_path2_factory
+cnet_path2_factory: include/cnet_core_paths.h src/cnet_core_paths.c tests/bench_cnet_path2_factory.c
+	@mkdir -p $(BIN_DIR) logs result
+	$(CC) $(CFLAGS) -Werror -ffunction-sections -fdata-sections -Iinclude \
+		-o $(BIN_DIR)/bench_cnet_path2_factory tests/bench_cnet_path2_factory.c $(CORE_PATH_COMMON) \
+		-Wl,--gc-sections $(LDFLAGS)
+	@CNET_GGUF_MMAP=1 ./$(BIN_DIR)/bench_cnet_path2_factory | tee logs/cnet_path2_factory.log result/bench_path2_factory.txt
+	@grep -q '^CNET_PATH2_FACTORY_PASS' logs/cnet_path2_factory.log
+	@grep -q 'brick_factory=1' logs/cnet_path2_factory.log
+
+.PHONY: cnet_path3_missadmit
+cnet_path3_missadmit: include/cnet_core_paths.h src/cnet_core_paths.c tests/bench_cnet_path3_missadmit.c
+	@mkdir -p $(BIN_DIR) logs result
+	$(CC) $(CFLAGS) -Werror -ffunction-sections -fdata-sections -Iinclude \
+		-o $(BIN_DIR)/bench_cnet_path3_missadmit tests/bench_cnet_path3_missadmit.c $(CORE_PATH_COMMON) \
+		-Wl,--gc-sections $(LDFLAGS)
+	@CNET_GGUF_MMAP=1 ./$(BIN_DIR)/bench_cnet_path3_missadmit | tee logs/cnet_path3_missadmit.log result/bench_path3_missadmit.txt
+	@grep -q '^CNET_PATH3_MISSADMIT_PASS' logs/cnet_path3_missadmit.log
+	@grep -q 'propose_neq_admit=1' logs/cnet_path3_missadmit.log
+
+.PHONY: cnet_path4_compose
+cnet_path4_compose: include/cnet_core_paths.h src/cnet_core_paths.c tests/bench_cnet_path4_compose.c
+	@mkdir -p $(BIN_DIR) logs result
+	$(CC) $(CFLAGS) -Werror -ffunction-sections -fdata-sections -Iinclude \
+		-o $(BIN_DIR)/bench_cnet_path4_compose tests/bench_cnet_path4_compose.c $(CORE_PATH_COMMON) \
+		-Wl,--gc-sections $(LDFLAGS)
+	@CNET_GGUF_MMAP=1 ./$(BIN_DIR)/bench_cnet_path4_compose | tee logs/cnet_path4_compose.log result/bench_path4_compose.txt
+	@grep -q '^CNET_PATH4_COMPOSE_PASS' logs/cnet_path4_compose.log
+	@grep -q 'compose=1' logs/cnet_path4_compose.log
+
+
+
+
+
+.PHONY: cnet_agi_scenario3
+cnet_agi_scenario3: include/cnet_agi_scenario3.h src/cnet_agi_scenario3.c \
+		include/cnet_agi_scenario2.h src/cnet_agi_scenario2.c \
+		include/cnet_agi_scenario.h src/cnet_agi_scenario.c \
+		tests/bench_cnet_agi_scenario3.c $(CORE_PATH_COMMON)
+	@mkdir -p $(BIN_DIR) logs result
+	$(CC) $(CFLAGS) -Werror -ffunction-sections -fdata-sections -Iinclude \
+		-o $(BIN_DIR)/bench_cnet_agi_scenario3 tests/bench_cnet_agi_scenario3.c \
+		src/cnet_agi_scenario3.c src/cnet_agi_scenario2.c src/cnet_agi_scenario.c \
+		$(CORE_PATH_COMMON) -Wl,--gc-sections $(LDFLAGS)
+	@CNET_GGUF_MMAP=1 ./$(BIN_DIR)/bench_cnet_agi_scenario3 | tee logs/cnet_agi_scenario3.log result/bench_agi_scenario3.txt
+	@grep -q '^CNET_AGI_SCENARIO3_PASS' logs/cnet_agi_scenario3.log
+	@grep -q 'layer3=1' logs/cnet_agi_scenario3.log
+	@grep -q 'parrot_mouth=0' logs/cnet_agi_scenario3.log
+
+.PHONY: cnet_agi_scenario2
+cnet_agi_scenario2: include/cnet_agi_scenario2.h src/cnet_agi_scenario2.c \
+		include/cnet_agi_scenario.h src/cnet_agi_scenario.c \
+		tests/bench_cnet_agi_scenario2.c $(CORE_PATH_COMMON)
+	@mkdir -p $(BIN_DIR) logs result
+	$(CC) $(CFLAGS) -Werror -ffunction-sections -fdata-sections -Iinclude \
+		-o $(BIN_DIR)/bench_cnet_agi_scenario2 tests/bench_cnet_agi_scenario2.c \
+		src/cnet_agi_scenario2.c src/cnet_agi_scenario.c $(CORE_PATH_COMMON) \
+		-Wl,--gc-sections $(LDFLAGS)
+	@CNET_GGUF_MMAP=1 ./$(BIN_DIR)/bench_cnet_agi_scenario2 | tee logs/cnet_agi_scenario2.log result/bench_agi_scenario2.txt
+	@grep -q '^CNET_AGI_SCENARIO2_PASS' logs/cnet_agi_scenario2.log
+	@grep -q 'layer2=1' logs/cnet_agi_scenario2.log
+	@grep -q 'parrot_mouth=0' logs/cnet_agi_scenario2.log
+
+.PHONY: cnet_agi_scenario
+cnet_agi_scenario: include/cnet_agi_scenario.h src/cnet_agi_scenario.c \
+		tests/bench_cnet_agi_scenario.c include/cnet_core_serve.h src/cnet_core_serve.c \
+		$(CORE_PATH_COMMON)
+	@mkdir -p $(BIN_DIR) logs result
+	$(CC) $(CFLAGS) -Werror -ffunction-sections -fdata-sections -Iinclude \
+		-o $(BIN_DIR)/bench_cnet_agi_scenario tests/bench_cnet_agi_scenario.c \
+		src/cnet_agi_scenario.c $(CORE_PATH_COMMON) \
+		-Wl,--gc-sections $(LDFLAGS)
+	@CNET_GGUF_MMAP=1 ./$(BIN_DIR)/bench_cnet_agi_scenario | tee logs/cnet_agi_scenario.log result/bench_agi_scenario.txt
+	@grep -q '^CNET_AGI_SCENARIO_PASS' logs/cnet_agi_scenario.log
+	@grep -q 'parrot_mouth=0' logs/cnet_agi_scenario.log
+	@grep -q 'agi_like=1' logs/cnet_agi_scenario.log
+
+.PHONY: cnet_core_evolve
+cnet_core_evolve: tools/cnet_core_evolve.c include/cnet_core_paths.h src/cnet_core_paths.c include/cnet_core_serve.h src/cnet_core_serve.c $(CORE_PATH_COMMON)
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -Werror -ffunction-sections -fdata-sections -Iinclude \
+		-o $(BIN_DIR)/cnet_core_evolve tools/cnet_core_evolve.c src/cnet_agi_scenario.c src/cnet_agi_scenario2.c src/cnet_agi_scenario3.c $(CORE_PATH_COMMON) \
+		-Wl,--gc-sections $(LDFLAGS)
+	@echo "cnet_core_evolve → $(BIN_DIR)/cnet_core_evolve"
+
+.PHONY: cnet_core_switch_wire
+cnet_core_switch_wire: cnet_core_evolve bin/cnetd include/cnet_core_serve.h src/cnet_core_serve.c tests/test_cnet_core_switch_wire.c
+	@mkdir -p $(BIN_DIR) logs result /tmp/cnet_switch_bricks
+	$(CC) $(CFLAGS) -Werror -Iinclude -o $(BIN_DIR)/test_cnet_core_switch_wire \
+		tests/test_cnet_core_switch_wire.c src/cnet_core_serve.c $(LDFLAGS)
+	@rm -rf /tmp/cnet_switch_bricks && mkdir -p /tmp/cnet_switch_bricks
+	@CNET_GGUF_MMAP=1 CNET_CORE_BUS_BRICKS_DIR=/tmp/cnet_switch_bricks \
+		CNET_CORE_EVOLVE_FACTORY=1 CNET_BONSAI_GGUF=/home/marble/AI/Models/Bonsai-8B-gguf/Bonsai-8B.gguf \
+		./$(BIN_DIR)/cnet_core_evolve --once | tee logs/cnet_core_evolve.log
+	@grep -q 'CNET_CORE_EVOLVE_OK' logs/cnet_core_evolve.log
+	@CNET_CORE_BUS_BRICKS_DIR=/tmp/cnet_switch_bricks ./$(BIN_DIR)/test_cnet_core_switch_wire \
+		| tee logs/cnet_core_switch_wire.log result/bench_core_switch_wire.txt
+	@grep -q '^CNET_CORE_SWITCH_WIRE_PASS' logs/cnet_core_switch_wire.log
+	@grep -q 'switch=1' logs/cnet_core_switch_wire.log
+
+.PHONY: cnet_core_paths
+cnet_core_paths: cnet_path1_waist cnet_path2_factory cnet_path3_missadmit cnet_path4_compose cnet_core_bus cnet_core_switch_wire cnet_agi_scenario cnet_agi_scenario2 cnet_agi_scenario3
+	@echo "CNET_CORE_PATHS_PASS path1=1 path2=1 path3=1 path4=1 bus=1 switch=1 agi_scenario=1 agi_scenario2=1" | tee logs/cnet_core_paths.log result/bench_core_paths.txt
+
+.PHONY: cnet_core_bus
+cnet_core_bus: include/cnet_core_bus.h src/cnet_core_bus.c \
+		include/cnet_weight_convert.h src/cnet_weight_convert.c \
+		include/cnet_hemisphere.h src/cnet_hemisphere.c \
+		include/cnet_brain_mirror.h src/cnet_brain_mirror.c \
+		include/cnet_rlm.h src/cnet_rlm.c \
+		include/cnet_capsule_loop.h src/cnet_capsule_loop.c \
+		include/cnet_skill_lane.h src/cnet_skill_lane.c \
+		include/cnet_ood_skill.h src/cnet_ood_skill.c \
+		include/cnet_held_model.h src/cnet_held_model.c \
+		include/cnet_c_speak.h src/cnet_c_speak.c src/cce/cce_wordlm.c \
+		include/cnet_utterance.h src/cnet_utterance.c \
+		include/cnet_paragraph.h src/cnet_paragraph.c \
+		include/cnet_lookup.h src/cnet_lookup.c \
+		include/cnet_dc_invent.h src/cnet_dc_invent.c src/cnet_dc_egraph.c src/cnet_dc_type.c \
+		tests/test_cnet_core_bus.c $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) \
+		$(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) \
+		$(CCE_CAMPAIGN_PROVENANCE) $(CCE_GGUF)
+	@mkdir -p $(BIN_DIR) logs
+	@! grep -E 'python3|#include <Python|import sys' src/cnet_core_bus.c tests/test_cnet_core_bus.c
+	@! grep -E 'residual_gguf_oracle|enable_llm' src/cnet_core_bus.c
+	$(CC) $(CFLAGS) -Werror -ffunction-sections -fdata-sections -Iinclude \
+		-o $(BIN_DIR)/test_cnet_core_bus \
+		src/cnet_core_bus.c src/cnet_weight_convert.c \
+		src/cnet_hemisphere.c src/cnet_brain_mirror.c src/cnet_rlm.c \
+		src/cnet_capsule_loop.c src/cnet_skill_lane.c src/cnet_ood_skill.c \
+		src/cnet_held_model.c src/cnet_c_speak.c src/cce/cce_wordlm.c \
+		src/cnet_utterance.c src/cnet_paragraph.c src/cnet_lookup.c \
+		src/cnet_dc_invent.c src/cnet_dc_egraph.c src/cnet_dc_type.c \
+		$(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) \
+		$(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) \
+		$(CCE_CAMPAIGN_PROVENANCE) $(CCE_GGUF) \
+		tests/test_cnet_core_bus.c -Wl,--gc-sections $(LDFLAGS)
+	@CNET_GGUF_MMAP=1 ./$(BIN_DIR)/test_cnet_core_bus | tee logs/cnet_core_bus.log
+	@grep -q '^CNET_CORE_BUS_PASS' logs/cnet_core_bus.log
+	@grep -q 'open_chat_answer=0' logs/cnet_core_bus.log
+	@grep -q 'residual_auto_cert=0' logs/cnet_core_bus.log
+	@grep -q 'bonsai_q1_brick=1' logs/cnet_core_bus.log
+	@grep -q 'brick2=1' logs/cnet_core_bus.log
 
 .PHONY: cnet_weight_convert cnet_weight_gguf
 cnet_weight_convert cnet_weight_gguf: include/cnet_weight_convert.h \
@@ -4137,7 +4309,8 @@ cnetd: $(ROE_ASI_SRC) tools/cnetd.c src/cnet_domain_route.c src/cnet_utterance.c
 		src/cnet_chat_lookup.c src/cnet_lookup.c src/cce/cce_campaign_provenance.c \
 		src/cnet_c_speak.c src/cce/cce_wordlm.c src/cnet_skill_lane.c src/cnet_capsule_loop.c \
 		src/cnet_paragraph.c src/cnet_ood_skill.c src/cnet_held_model.c \
-		src/cnet_hemisphere.c src/cnet_brain_mirror.c src/cnet_rlm.c \
+		src/cnet_hemisphere.c src/cnet_brain_mirror.c src/cnet_rlm.c src/cnet_core_serve.c \
+		include/cnet_core_serve.h \
 		include/cnet_probe_shortcircuit.h include/cnet_domain_route.h include/cnet_utterance.h \
 		include/cnet_query_alias.h include/cnet_dialog_ctx.h include/cnet_slot_extract.h \
 		include/cnet_chat_lookup.h include/cnet_lookup.h include/cnet_c_speak.h include/cnet_capsule_loop.h \
@@ -4145,13 +4318,13 @@ cnetd: $(ROE_ASI_SRC) tools/cnetd.c src/cnet_domain_route.c src/cnet_utterance.c
 		include/cnet_hemisphere.h include/cnet_brain_mirror.h include/cnet_rlm.h
 	@mkdir -p $(BIN_DIR) logs
 	@pkg-config --exists libcurl
-	$(CC) $(ASI_IMPROVE_CFLAGS) -DCNET_HAVE_CURL=1 $$(pkg-config --cflags libcurl) -o $(BIN_DIR)/cnetd \
+	$(CC) $(ASI_IMPROVE_CFLAGS) -D_DEFAULT_SOURCE -DCNET_HAVE_CURL=1 $$(pkg-config --cflags libcurl) -o $(BIN_DIR)/cnetd \
 		$(ROE_ASI_SRC) src/cnet_domain_route.c src/cnet_utterance.c \
 		src/cnet_query_alias.c src/cnet_dialog_ctx.c src/cnet_slot_extract.c \
 		src/cnet_chat_lookup.c src/cnet_lookup.c src/cce/cce_campaign_provenance.c \
 		src/cnet_c_speak.c src/cce/cce_wordlm.c src/cnet_skill_lane.c src/cnet_capsule_loop.c \
 		src/cnet_paragraph.c src/cnet_ood_skill.c src/cnet_held_model.c \
-		src/cnet_hemisphere.c src/cnet_brain_mirror.c src/cnet_rlm.c \
+		src/cnet_hemisphere.c src/cnet_brain_mirror.c src/cnet_rlm.c src/cnet_core_serve.c \
 		tools/cnetd.c $(ROE_ASI_LIBS) $$(pkg-config --libs libcurl) -ldl
 	@echo "cnetd built → $(BIN_DIR)/cnetd"
 

@@ -55,6 +55,8 @@
 #include "../include/cnet_hemisphere.h"
 #include "../include/cnet_brain_mirror.h"
 #include "../include/cnet_rlm.h"
+#include "../include/cnet_core_serve.h"
+#include <sys/wait.h>
 
 #define CD_PATH 512
 #define CD_SOCK 108
@@ -345,6 +347,51 @@ static void load_neuromod_into(CnetUtterState *U) {
     }
 }
 
+
+static unsigned g_waist_misses;
+
+static void core_serve_try_reload(void) {
+    CnetServeBank *b = cnet_serve_global();
+    if (b && b->dir[0])
+        (void)cnet_serve_bank_reload(b);
+    else
+        (void)cnet_serve_global_load_env();
+}
+
+/* Flip self-evolve switch: fork worker; parent reloads .lut bank later. */
+static void core_evolve_tick(CdState *S) {
+    const char *en = getenv("CNET_CORE_AUTO_EVOLVE");
+    const char *every_s = getenv("CNET_CORE_EVOLVE_EVERY");
+    const char *bin = getenv("CNET_CORE_EVOLVE_BIN");
+    const char *dir = getenv("CNET_CORE_BUS_BRICKS_DIR");
+    unsigned every = 4;
+    pid_t pid;
+    if (!en || en[0] != '1') return;
+    if (!dir || !dir[0]) return;
+    if (every_s && every_s[0]) every = (unsigned)atoi(every_s);
+    if (every == 0) every = 1;
+    g_waist_misses++;
+    if (g_waist_misses % every != 0) return;
+    if (S && S->miss_log[0])
+        setenv("CNET_MISS_LOG", S->miss_log, 1);
+    setenv("CNET_CORE_BUS_BRICKS_DIR", dir, 1);
+    if (!getenv("CNET_CORE_EVOLVE_FACTORY"))
+        setenv("CNET_CORE_EVOLVE_FACTORY", "1", 0);
+    pid = fork();
+    if (pid == 0) {
+        const char *path = bin && bin[0] ? bin : "bin/cnet_core_evolve";
+        execl(path, path, "--once", (char *)NULL);
+        /* try alongside argv0 dir is hard; fallback PATH */
+        execlp("cnet_core_evolve", "cnet_core_evolve", "--once", (char *)NULL);
+        _exit(127);
+    }
+    /* non-blocking: do not wait hard; opportunistic waitpid WNOHANG later */
+    if (pid > 0) {
+        int st = 0;
+        (void)waitpid(pid, &st, WNOHANG);
+    }
+}
+
 static int cd_ask(CdState *S, const char *q, CdReply *out) {
     RoeAsi *R;
     RoeNet net;
@@ -366,9 +413,112 @@ static int cd_ask(CdState *S, const char *q, CdReply *out) {
     memset(out, 0, sizeof *out);
     memset(&rt, 0, sizeof rt);
 
-    /* RLM outer host wraps CORE + CERT/OPEN_CHAT planes.
-       Multi-skill capsule and single-skill core_ask run inside RLM budget.
-       True miss (unbound) continues below to ROE/teacher. */
+    /* CORE switch: light CERT .lut bricks first (loaded/evolved on disk). */
+    core_serve_try_reload();
+    /* Layer3 live: specialist / committee / goal queue (CERT-only). */
+    {
+        const char *qq = q;
+        while (*qq == ' ' || *qq == '\t') qq++;
+        if (strncmp(qq, "specialist ", 11) == 0 || strncmp(qq, "committee ", 10) == 0) {
+            int committee = (strncmp(qq, "committee ", 10) == 0);
+            char tag[64];
+            unsigned n = 0;
+            const char *p = qq + (committee ? 10 : 11);
+            CnetServeBank *sb = cnet_serve_global();
+            CnetServeResult sr, sr2;
+            int i, alt_ok = 0;
+            tag[0] = 0;
+            if (sscanf(p, "%63s %u", tag, &n) == 2 && sb) {
+                char turn[96];
+                snprintf(turn, sizeof turn, "%s %u", tag, n & 15u);
+                if (cnet_serve_result(sb, turn, &sr) == 0 && sr.proved) {
+                    if (committee) {
+                        for (i = 0; i < sb->n; ++i) {
+                            if (!sb->bricks[i].live) continue;
+                            if (strcmp(sb->bricks[i].tag, tag) == 0) continue;
+                            snprintf(turn, sizeof turn, "%s %u", sb->bricks[i].tag, n & 15u);
+                            if (cnet_serve_result(sb, turn, &sr2) == 0 && sr2.proved) {
+                                alt_ok = 1;
+                                break;
+                            }
+                        }
+                        if (!alt_ok) {
+                            snprintf(out->answer, sizeof out->answer, "committee_incomplete");
+                            snprintf(out->utterance, sizeof out->utterance, "committee_incomplete");
+                            snprintf(out->source, sizeof out->source, "CNET");
+                            snprintf(out->skill, sizeof out->skill, "committee");
+                            out->verified = 0;
+                            out->miss = 1;
+                            out->may_voice = 0;
+                            cd_scopy(out->prepared, sizeof out->prepared, q);
+                            return 0;
+                        }
+                    }
+                    snprintf(out->answer, sizeof out->answer, "%.2047s", sr.spoken);
+                    snprintf(out->utterance, sizeof out->utterance, "%.767s", sr.spoken);
+                    snprintf(out->source, sizeof out->source, "LOCAL");
+                    snprintf(out->skill, sizeof out->skill, "%.63s",
+                             committee ? "committee" : "specialist");
+                    cd_scopy(out->prepared, sizeof out->prepared, q);
+                    out->verified = 1;
+                    out->miss = 0;
+                    out->may_voice = 1;
+                    out->tokens = 0;
+                    return 0;
+                }
+            }
+        }
+        if (strncmp(qq, "goal:", 5) == 0 || strncmp(qq, "goal ", 5) == 0) {
+            const char *dir = getenv("CNET_CORE_BUS_BRICKS_DIR");
+            const char *body = qq;
+            FILE *gf;
+            while (*body && *body != ' ' && *body != ':') body++;
+            while (*body == ' ' || *body == ':') body++;
+            if (dir && dir[0] && body[0]) {
+                char gpath[768];
+                snprintf(gpath, sizeof gpath, "%s/pending_goals.txt", dir);
+                gf = fopen(gpath, "a");
+                if (gf) {
+                    fprintf(gf, "%s\n", body);
+                    fclose(gf);
+                }
+                setenv("CNET_AGI3", "1", 0);
+                core_evolve_tick(S);
+                core_serve_try_reload();
+                snprintf(out->answer, sizeof out->answer, "goal_queued_cert_only");
+                snprintf(out->utterance, sizeof out->utterance,
+                         "Goal queued for CERT-only plan synthesis.");
+                snprintf(out->source, sizeof out->source, "CNET");
+                snprintf(out->skill, sizeof out->skill, "goal_queue");
+                cd_scopy(out->prepared, sizeof out->prepared, q);
+                out->verified = 0;
+                out->miss = 0;
+                out->may_voice = 0;
+                out->tokens = 0;
+                return 0;
+            }
+        }
+    }
+    {
+        CnetServeBank *sb = cnet_serve_global();
+        CnetServeResult sr;
+        if (sb && cnet_serve_result(sb, q, &sr) == 0 && sr.proved) {
+            snprintf(out->answer, sizeof out->answer, "%.2047s", sr.spoken);
+            snprintf(out->utterance, sizeof out->utterance, "%.767s", sr.spoken);
+            snprintf(out->source, sizeof out->source, "LOCAL");
+            snprintf(out->skill, sizeof out->skill, "%.63s",
+                     sr.brick[0] ? sr.brick : "core_brick");
+            cd_scopy(out->prepared, sizeof out->prepared, q);
+            out->verified = 1;
+            out->miss = 0;
+            out->may_voice = 1;
+            out->tokens = 0;
+            return 0;
+        }
+    }
+
+    /* RLM outer host wraps CORE CERT planes only (OPEN_CHAT answers killed).
+       True miss → live waist abstain + optional evolve tick. */
     {
         CnetRlmPolicy rpol;
         CnetRlmResult rr;
@@ -421,14 +571,26 @@ static int cd_ask(CdState *S, const char *q, CdReply *out) {
         memset(&rr, 0, sizeof rr);
         if (cnet_rlm_ask(q, &rpol, &rr) == 0 && rr.final.bound) {
             const CnetHemiResult *hr = &rr.final;
-            const char *spoken =
+            const char *spoken;
+            /* OPEN_CHAT answers are product-illegal. Cut the path. */
+            if (hr->plane == CNET_CORE_PLANE_OPEN_CHAT || hr->open_chat) {
+                snprintf(out->answer, sizeof out->answer, "open_chat_answer_killed");
+                snprintf(out->utterance, sizeof out->utterance, "open_chat_answer_killed");
+                snprintf(out->source, sizeof out->source, "CNET");
+                snprintf(out->skill, sizeof out->skill, "open_chat_killed");
+                cd_scopy(out->prepared, sizeof out->prepared, q);
+                out->verified = 0;
+                out->miss = 1;
+                out->may_voice = 0;
+                out->tokens = 0;
+                return 0;
+            }
+            spoken =
                 hr->spoken[0] ? hr->spoken : (hr->value[0] ? hr->value : hr->refusal);
             snprintf(out->answer, sizeof out->answer, "%.2047s", spoken);
             snprintf(out->utterance, sizeof out->utterance, "%.767s", spoken);
             if (hr->plane == CNET_CORE_PLANE_CERT || hr->hemi == CNET_HEMI_CORE)
                 snprintf(out->source, sizeof out->source, "LOCAL");
-            else if (hr->plane == CNET_CORE_PLANE_OPEN_CHAT || hr->open_chat)
-                snprintf(out->source, sizeof out->source, "OPEN_CHAT");
             else
                 snprintf(out->source, sizeof out->source, "RLM");
             snprintf(out->skill, sizeof out->skill, "%s",
@@ -454,19 +616,32 @@ static int cd_ask(CdState *S, const char *q, CdReply *out) {
             }
             return 0;
         }
-        /* RLM abstain / unbound → fall through to ROE/teacher */
+        /* LIVE WAIST: outside CERT/table → ABSTAIN. No ROE/LLM leftover mouth. */
         if (S->miss_log[0]) {
             FILE *mf = fopen(S->miss_log, "a");
             if (mf) {
                 fprintf(mf,
-                        "{\"via\":\"cnet_rlm\",\"skill\":\"rlm_miss\","
+                        "{\"via\":\"live_waist\",\"skill\":\"outside_table_abstain\","
                         "\"refusal\":\"%s\",\"via_rlm\":true,\"claimed_cert\":0,"
-                        "\"intent\":\"%s\"}\n",
-                        rr.final.refusal[0] ? rr.final.refusal : "rlm_miss",
+                        "\"intent\":\"%s\",\"open_chat\":false,\"roe_answer\":false}\n",
+                        rr.final.refusal[0] ? rr.final.refusal : "outside_table_abstain",
                         cnet_core_intent_name(rr.intent));
                 fclose(mf);
             }
         }
+        snprintf(out->answer, sizeof out->answer, "outside_table_abstain");
+        snprintf(out->utterance, sizeof out->utterance, "outside_table_abstain");
+        snprintf(out->source, sizeof out->source, "CNET");
+        snprintf(out->skill, sizeof out->skill, "outside_table_abstain");
+        cd_scopy(out->prepared, sizeof out->prepared, q);
+        out->verified = 0;
+        out->miss = 1;
+        out->may_voice = 0;
+        out->tokens = 0;
+        /* Self-evolve switch: CORE may flip via forked evolve worker. */
+        core_evolve_tick(S);
+        core_serve_try_reload();
+        return 0;
     }
     memset(&ameta, 0, sizeof ameta);
     memset(&dmeta, 0, sizeof dmeta);
@@ -546,7 +721,7 @@ static int cd_ask(CdState *S, const char *q, CdReply *out) {
     {
         const char *tm = getenv("CNET_TEACHER_ON_MISS");
         const char *sa = getenv("CNET_SELF_ANSWER");
-        int teacher_on_miss = 1; /* default: teach when CNET has no CERT */
+        int teacher_on_miss = 0; /* leftover LLM answers killed — tables only */
         (void)sa;
         if (tm && (tm[0] == '0' || tm[0] == 'n' || tm[0] == 'N' || tm[0] == 'f'))
             teacher_on_miss = 0;
@@ -588,7 +763,7 @@ static int cd_ask(CdState *S, const char *q, CdReply *out) {
         const char *when = NULL;
         const char *env;
         int self_answer = 1;
-        int teacher_on_miss = 1;
+        int teacher_on_miss = 0; /* killed leftover ROE mouth */
         env = getenv("CNET_SELF_ANSWER");
         if (env && (env[0] == '0' || env[0] == 'n' || env[0] == 'N' || env[0] == 'f'))
             self_answer = 0;
@@ -974,6 +1149,8 @@ int main(int argc, char **argv) {
         fprintf(stderr, "cnetd: failed to init packs root=%s\n", root);
         return 1;
     }
+    if (cnet_serve_global_load_env() == 0)
+        fprintf(stderr, "cnetd: core serve bricks loaded\n");
     curl_global_init(CURL_GLOBAL_DEFAULT);
 
     if (!foreground) {

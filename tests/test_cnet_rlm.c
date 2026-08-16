@@ -48,7 +48,7 @@ int main(void) {
 
     cnet_rlm_policy_default(&pol);
     pol.core.allow_wiki = 0;
-    pol.core.open_chat_enabled = 1;
+    pol.core.open_chat_enabled = 1; /* test-only */
     pol.core.residual_enabled = 1;
     pol.core.logic_open_chat_fallback = 0;
 
@@ -73,15 +73,13 @@ int main(void) {
                r.final.bound == 1,
            "rlm_capsule_note");
 
-    /* CREATIVE open chat through RLM (still via CORE) */
+    /* CREATIVE cannot answer via OPEN_CHAT; tables only via core_bus */
     cnet_held_model_set_hook(hook_creative);
-    expect(cnet_rlm_ask("write a short poem about zz99", &pol, &r) == 0,
-           "rlm_creative_rc");
-    expect(r.final.plane == CNET_CORE_PLANE_OPEN_CHAT, "rlm_creative_plane");
-    expect(r.final.open_chat == 1, "rlm_creative_open");
+    expect(cnet_rlm_ask("write a short poem about zz99", &pol, &r) == 1,
+           "rlm_creative_killed");
     expect(r.final.claimed_cert == 0, "rlm_creative_no_cert");
-    expect(r.final.via_core == 1, "rlm_creative_via_core");
-    expect(strcmp(r.summary, "rlm-open-chat-draft") == 0, "rlm_creative_text");
+    expect(r.final.open_chat == 0, "rlm_creative_no_open");
+    expect(strstr(r.summary, "rlm-open-chat-draft") == NULL, "rlm_no_draft_text");
 
     /* LOGIC miss does not fill with creative */
     expect(cnet_rlm_ask("compute crc8 of unknown blob zz99", &pol, &r) == 1,
@@ -97,7 +95,7 @@ int main(void) {
     cnet_brain_mirror_set_dir(NULL);
 
     printf("CNET_RLM_PASS\n");
-    printf("checks=%d fail=%d via_rlm=1 wraps_core=1 cert_and_open_chat=1 "
+    printf("checks=%d fail=%d via_rlm=1 wraps_core=1 open_chat_answer=0 "
            "residual_never_cert=1 recursive_bounded=1 python=0 "
            "broader_claims=WITHHELD\n",
            g_checks, g_fail);
