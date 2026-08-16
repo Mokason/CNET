@@ -3115,11 +3115,12 @@ cce_result cce_gguf_load_qwen2(cce_gguf_qwen2** out, const char* path) {
     m->feed_forward_length = cce_gguf_get_feed_forward_length(g);
     m->rope_freq_base = cce_gguf_get_rope_freq_base(g); /* 0 -> forward default 10000 */
     m->rms_eps = cce_gguf_get_rms_eps(g);               /* 0 -> forward default 1e-6 */
-    m->max_ctx = (m->ctx_len > 0) ? m->ctx_len : 2048;
+    /* Paged legal ceiling is 1M. Dense RAM still caps at 8192. */
+    m->ctx_len = cce_ctx_legal_max(m->ctx_len);
+    m->max_ctx = (m->ctx_len > 0) ? m->ctx_len : CNET_CTX_LEGAL_MAX;
     /* Dense f32 slab is still O(max_ctx). Default cap 8192 unless paged KV
-       is requested (CNET_KV_PAGE=1): then legal max follows model (e.g. 1M)
-       but RAM must use cce_kv_pager (see plans/kv_async_page.md) — for now
-       we still allocate a finite hot window to avoid OOM on open. */
+       is requested (CNET_KV_PAGE=1): then legal max is 1M and RAM stays
+       the HOT ring (plans/kv_async_page.md). */
     {
         const char *page = getenv("CNET_KV_PAGE");
         if (!(page && page[0] == '1')) {

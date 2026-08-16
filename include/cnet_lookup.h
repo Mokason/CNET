@@ -12,7 +12,7 @@ extern "C" {
    Not an ASI-5 compete unit. Not an MTK cartridge. */
 
 #define CNET_LOOKUP_CONTRACT "web_lookup_v1"
-#define CNET_LOOKUP_BODY_MAX (256u * 1024u)
+#define CNET_LOOKUP_BODY_MAX (512u * 1024u)
 
 /* Test-only: allow file:// fixtures. Production / cnetd must pass 0. */
 #define CNET_LOOKUP_F_ALLOW_FILE 1u
@@ -21,14 +21,15 @@ typedef enum {
     CNET_LOOKUP_BIND_INTEGER = 0,
     CNET_LOOKUP_BIND_TOKEN = 1,
     CNET_LOOKUP_BIND_LINE = 2,
-    CNET_LOOKUP_BIND_YEAR = 3
+    CNET_LOOKUP_BIND_YEAR = 3,
+    CNET_LOOKUP_BIND_EXTRACT = 4
 } CnetLookupBind;
 
 typedef struct {
     char url[512];
     char host[128];
     char sha256[65];
-    char value[160];
+    char value[512];
     char snippet[256];
     char refusal[80];
     long http_status;

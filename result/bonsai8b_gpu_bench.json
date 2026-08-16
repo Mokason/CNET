@@ -1,0 +1,60 @@
+{
+  "model": "Bonsai-8B.gguf",
+  "note": "PrismML Bonsai-8B (1-bit class ~7-8B); no separate 7B Bonsai on disk",
+  "endpoint": "http://127.0.0.1:8081/v1/chat/completions",
+  "gpu": "ROCm llama-server -ngl 99 port 8081 (ROCR_VISIBLE_DEVICES=1)",
+  "quality_smoke": {
+    "pong": "ok",
+    "two_plus_two": "4"
+  },
+  "sweep": [
+    {
+      "max_concurrency": 1,
+      "n_prompts": 24,
+      "max_tokens": 64,
+      "ok": 24,
+      "fail": 0,
+      "wall_s": 15.874212219961919,
+      "req_per_s": 1.5118860493637507,
+      "out_tok_total": 712,
+      "out_tps_mean": 49.902402734318294,
+      "out_tps_med": 49.87403556965904,
+      "tpot_ms_mean": 20.039642444520112,
+      "tpot_ms_med": 20.05051339285714,
+      "latency_s_med": 0.6775557840010151,
+      "sample": "A residual teacher is a teacher who has a 0% chance of being hired due to poor p"
+    },
+    {
+      "max_concurrency": 2,
+      "n_prompts": 20,
+      "max_tokens": 64,
+      "ok": 20,
+      "fail": 0,
+      "wall_s": 6.553741812007502,
+      "req_per_s": 3.0516917775669476,
+      "out_tok_total": 585,
+      "out_tps_mean": 49.00290509913803,
+      "out_tps_med": 49.24312147308828,
+      "tpot_ms_mean": 20.418799941323012,
+      "tpot_ms_med": 20.30745775462963,
+      "latency_s_med": 0.649855048453901,
+      "sample": "A residual teacher is a teacher who has a 0% chance of being hired due to poor p"
+    },
+    {
+      "max_concurrency": 4,
+      "n_prompts": 20,
+      "max_tokens": 64,
+      "ok": 20,
+      "fail": 0,
+      "wall_s": 6.479179046000354,
+      "req_per_s": 3.0868108224831587,
+      "out_tok_total": 585,
+      "out_tps_mean": 48.489143093523616,
+      "out_tps_med": 48.87380574217694,
+      "tpot_ms_mean": 20.63473645004052,
+      "tpot_ms_med": 20.460868371212122,
+      "latency_s_med": 1.2939846100052819,
+      "sample": "A residual teacher is a teacher who has a 0% chance of being hired due to poor p"
+    }
+  ]
+}

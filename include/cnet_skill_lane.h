@@ -4,8 +4,8 @@
 /* AICIMO HARNESS LANE — EXACT NEVER ESCALATES
    Ported law, not AICIMO runtime.
    Model-as-router + deterministic-skills-as-content.
-   Exact bind never escalates. OOD abstains. Teacher never speaks.
-   Propose != authority: this lane names a capsule; admit/cert is unchanged. */
+   Exact hops bind first. Leftover may use a held model, else return 1.
+   Propose != authority. */
 
 #include "cnet_chat_lookup.h"
 
@@ -22,7 +22,8 @@ extern "C" {
 typedef enum {
     CNET_SKILL_LANE_NONE = 0,
     CNET_SKILL_LANE_EXACT = 1,
-    CNET_SKILL_LANE_ABSTAIN = 2
+    CNET_SKILL_LANE_ABSTAIN = 2,
+    CNET_SKILL_LANE_HELD = 3
 } CnetSkillLaneKind;
 
 typedef struct {
@@ -32,8 +33,8 @@ typedef struct {
     char refusal[80];
     int bound;                 /* 1 = exact A bind */
     int claimed_cert;          /* 1 only if bound */
-    unsigned residual_calls;   /* must stay 0 */
-    unsigned teacher_calls;    /* must stay 0 — this lane never calls teacher */
+    unsigned residual_calls;
+    unsigned teacher_calls;
     CnetSkillLaneKind kind;
 } CnetSkillLaneResult;
 
@@ -53,11 +54,9 @@ int cnet_skill_lane_bind_fixture(const char *skill, const char *value,
 int cnet_skill_lane_bind_lookup(const CnetChatLookupTurn *hop,
                                 CnetSkillLaneResult *out);
 
-/* Route + bind, or abstain. Optional C-wrap. Never calls teacher/residual. */
 int cnet_skill_lane_turn(const char *turn, CnetSkillLaneResult *out);
 
-/* Same function tools/cnetd.c:cd_ask calls.
-   hop may be NULL. 0 = handled (exact or abstain). Teacher is not reached. */
+/* 0 = handled (exact or held). 1 = still unanswered. */
 int cnet_skill_lane_cd_ask(const char *turn, const CnetChatLookupTurn *hop,
                            CnetSkillLaneResult *out);
 

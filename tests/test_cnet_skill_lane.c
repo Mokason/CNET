@@ -2,7 +2,7 @@
  *
  * Ported law, not AICIMO runtime.
  * Exact capsule/lookup bind never calls residual/teacher.
- * OOD abstains. claimed_cert=0 on miss. No Python.
+ * Certified hops bind. Leftover returns 1. claimed_cert=0 on miss. No Python.
  */
 #include "../include/cnet_skill_lane.h"
 #include "../include/cnet_lookup.h"
@@ -58,8 +58,12 @@ int main(void) {
     check(strcmp(skill, CNET_LOOKUP_CONTRACT) == 0, "route_lookup_name");
 
     check(cnet_skill_lane_route("Tell me how to bake bread.", skill,
-                                sizeof skill) == 1,
-          "route_ood_bake");
+                                sizeof skill) == 0,
+          "route_recipe_bake");
+    check(strcmp(skill, "recipe_inform_v1") == 0, "route_recipe_name");
+
+    check(cnet_skill_lane_route("fix the repo", skill, sizeof skill) == 1,
+          "route_ood_fix");
     check(skill[0] == '\0', "route_ood_empty");
 
     check(cnet_skill_lane_turn("apply increment_mod256 to 41", &r) == 0,
@@ -128,26 +132,48 @@ int main(void) {
     check(r.claimed_cert == 0, "lookup_null_no_cert");
 
     check(cnet_skill_lane_turn("Tell me how to bake bread.", &r) == 0,
-          "ood_bake_rc");
-    check(r.kind == CNET_SKILL_LANE_ABSTAIN, "ood_bake_abstain");
-    check(r.bound == 0, "ood_bake_unbound");
-    check(r.claimed_cert == 0, "ood_bake_no_cert");
-    check(r.residual_calls == 0, "ood_bake_residual_zero");
-    check(r.teacher_calls == 0, "ood_bake_teacher_zero");
-    check(strcmp(r.refusal, "ood_no_skill") == 0, "ood_bake_reason");
-    check(strstr(r.spoken, teacher) == NULL, "ood_bake_not_teacher");
+          "recipe_bake_rc");
+    check(r.kind == CNET_SKILL_LANE_EXACT, "recipe_bake_exact");
+    check(r.bound == 1, "recipe_bake_bound");
+    check(strcmp(r.value, "bread") == 0, "recipe_bake_value");
+    check(strstr(r.spoken, "flour") != NULL, "recipe_bake_spoken");
+    check(r.claimed_cert == 1, "recipe_bake_cert");
+    check(r.residual_calls == 0, "recipe_bake_residual_zero");
+    check(r.teacher_calls == 0, "recipe_bake_teacher_zero");
+    check(strstr(r.spoken, teacher) == NULL, "recipe_bake_not_teacher");
 
-    check(cnet_skill_lane_cd_ask("bake bread", NULL, &r) == 0, "cd_ask_ood_rc");
-    check(r.kind == CNET_SKILL_LANE_ABSTAIN, "cd_ask_ood_abstain");
-    check(r.claimed_cert == 0, "cd_ask_ood_no_cert");
-    check(r.residual_calls == 0, "cd_ask_ood_residual");
-    check(r.teacher_calls == 0, "cd_ask_ood_teacher");
+    check(cnet_skill_lane_cd_ask("bake bread", NULL, &r) == 0, "cd_ask_recipe_rc");
+    check(r.kind == CNET_SKILL_LANE_EXACT, "cd_ask_recipe_exact");
+    check(r.claimed_cert == 1, "cd_ask_recipe_cert");
+    check(r.residual_calls == 0, "cd_ask_recipe_residual");
+    check(r.teacher_calls == 0, "cd_ask_recipe_teacher");
 
-    check(cnet_skill_lane_turn("what is 41 plus 1", &r) == 0, "no_subject_rc");
-    check(r.kind == CNET_SKILL_LANE_ABSTAIN, "no_subject_abstain");
-    check(strcmp(r.refusal, "ood_no_skill") == 0, "no_subject_ood");
-    check(r.claimed_cert == 0, "no_subject_no_cert");
-    check(r.teacher_calls == 0, "no_subject_no_teacher");
+    check(cnet_skill_lane_turn("what is 41 plus 1", &r) == 0, "add_plus_rc");
+    check(r.kind == CNET_SKILL_LANE_EXACT, "add_plus_exact");
+    check(strcmp(r.value, "42") == 0, "add_plus_42");
+    check(r.claimed_cert == 1, "add_plus_cert");
+    check(r.teacher_calls == 0, "add_plus_no_teacher");
+
+    check(cnet_skill_lane_turn("what year was spacex created", &r) == 0,
+          "year_rc");
+    check(r.kind == CNET_SKILL_LANE_EXACT, "year_exact");
+    check(strcmp(r.value, "2002") == 0, "year_2002");
+    check(strstr(r.spoken, "2002") != NULL, "year_spoken");
+    check(r.residual_calls == 0, "year_residual");
+    check(r.teacher_calls == 0, "year_teacher");
+
+    check(cnet_skill_lane_turn("fix the repo", &r) == 1, "leftover_fix_rc");
+    check(r.kind == CNET_SKILL_LANE_ABSTAIN, "leftover_fix_abstain");
+    check(r.claimed_cert == 0, "leftover_fix_no_cert");
+    check(r.teacher_calls == 0, "leftover_fix_no_teacher");
+
+    check(cnet_skill_lane_turn(
+              "looking for moderate italian in the centre please", &r) == 0,
+          "rest_rc");
+    check(r.kind == CNET_SKILL_LANE_EXACT, "rest_exact");
+    check(strcmp(r.value, "Cotto") == 0, "rest_cotto");
+    check(strstr(r.spoken, "Cotto") != NULL, "rest_para");
+    check(r.teacher_calls == 0, "rest_teacher");
 
     check(cnet_skill_lane_turn("apply increment_mod256", &r) == 0,
           "inc_no_operand_rc");

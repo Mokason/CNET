@@ -22,6 +22,13 @@
 extern "C" {
 #endif
 
+/* CNET legal context ceiling. Dense KV still caps RAM at 8192.
+   Paged mode may open this many positions; HOT RAM stays O(page_len*n_hot). */
+#define CNET_CTX_LEGAL_MAX 1048576
+
+/* model_ctx from GGUF, or 0. Honors CNET_CTX_LEGAL. Never above 1M. */
+int cce_ctx_legal_max(int model_ctx);
+
 typedef enum {
     CCE_KV_TIER_HOT = 0,
     CCE_KV_TIER_WARM = 1,

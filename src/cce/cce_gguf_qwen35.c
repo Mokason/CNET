@@ -220,7 +220,7 @@ cce_result cce_gguf_load_qwen35(cce_gguf_qwen2 **out, const char *path) {
     m->eos_token_id = cce_gguf_get_eos_token_id(g);
     strncpy(m->tokenizer_model, cce_gguf_get_tokenizer_model(g),
             sizeof(m->tokenizer_model) - 1);
-    m->ctx_len = cce_gguf_get_context_length(g);
+    m->ctx_len = cce_ctx_legal_max(cce_gguf_get_context_length(g));
     m->feed_forward_length = cce_gguf_get_feed_forward_length(g);
     m->rope_freq_base = cce_gguf_get_rope_freq_base(g);
     m->rms_eps = cce_gguf_get_rms_eps(g);

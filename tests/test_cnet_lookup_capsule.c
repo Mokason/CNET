@@ -129,6 +129,26 @@ int main(void) {
                 strcmp(report.value, "2002") == 0,
             "year");
 
+    /* Decoy template year first; cue in the body still wins. Not a fact table. */
+    {
+        char decoy[] = "/tmp/cnet-lookup-decoy-XXXXXX";
+        int dfd = mkstemp(decoy);
+        const char *body =
+            "Use mdy dates from 2026. founded = {{Start date and age|1976|04|01}}\n";
+        REQUIRE(dfd >= 0 &&
+                    write(dfd, body, (size_t)strlen(body)) == (ssize_t)strlen(body),
+                "decoy_write");
+        close(dfd);
+        snprintf(url, sizeof url, "file://%s", decoy);
+        memset(&report, 0, sizeof report);
+        REQUIRE(cnet_lookup_execute_flags(url, CNET_LOOKUP_BIND_YEAR,
+                                          CNET_LOOKUP_F_ALLOW_FILE, &report) ==
+                    0 &&
+                    strcmp(report.value, "1976") == 0,
+                "year_cue_not_first");
+        unlink(decoy);
+    }
+
 
     /* Production path: file:// closed. Loopback / link-local / metadata denied.
        Redirects cannot follow file:// (REDIR_PROTOCOLS=http,https). */

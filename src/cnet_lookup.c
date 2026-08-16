@@ -232,28 +232,110 @@ static int bind_token(const char *body, char *value, size_t cap) {
     return 0;
 }
 
+static int read_year4(const char *p, unsigned *year_out) {
+    unsigned year;
+    if (p == NULL || p[0] == '\0' || p[1] == '\0' || p[2] == '\0' ||
+        p[3] == '\0')
+        return 0;
+    if (!isdigit((unsigned char)p[0]) || !isdigit((unsigned char)p[1]) ||
+        !isdigit((unsigned char)p[2]) || !isdigit((unsigned char)p[3]))
+        return 0;
+    if (isdigit((unsigned char)p[4])) return 0;
+    year = (unsigned)(p[0] - '0') * 1000u + (unsigned)(p[1] - '0') * 100u +
+           (unsigned)(p[2] - '0') * 10u + (unsigned)(p[3] - '0');
+    if (year < 1000u || year > 2099u) return 0;
+    if (year_out != NULL) *year_out = year;
+    return 1;
+}
+
+static int first_year_in(const char *text, size_t cap, unsigned *year_out) {
+    size_t i;
+    if (text == NULL) return 0;
+    for (i = 0; i < cap && text[i] != '\0'; ++i) {
+        if (i > 0 && isdigit((unsigned char)text[i - 1u])) continue;
+        if (read_year4(text + i, year_out)) return 1;
+    }
+    return 0;
+}
+
+static const char *ci_find(const char *hay, const char *needle) {
+    size_t n, i;
+    if (hay == NULL || needle == NULL || needle[0] == '\0') return NULL;
+    n = strlen(needle);
+    for (; *hay != '\0'; ++hay) {
+        int match = 1;
+        for (i = 0; i < n; ++i) {
+            if (hay[i] == '\0' ||
+                tolower((unsigned char)hay[i]) !=
+                    tolower((unsigned char)needle[i])) {
+                match = 0;
+                break;
+            }
+        }
+        if (match) return hay;
+    }
+    return NULL;
+}
+
+/* Cue, then a nearby year from the body. Not a company table. */
 static int bind_year(const char *body, char *value, size_t cap) {
-    const char *cursor;
+    static const char *const cues[] = {
+        "start date and age|",
+        "start date|",
+        "founded =",
+        "founded=",
+        "inception",
+        "incorporated",
+        "established",
+        "founded",
+        "created",
+        NULL
+    };
+    size_t c;
     unsigned year;
     if (body == NULL) return 0;
-    for (cursor = body; *cursor != '\0'; ++cursor) {
-        if (cursor[1] == '\0' || cursor[2] == '\0' || cursor[3] == '\0') break;
-        if (!isdigit((unsigned char)cursor[0]) ||
-            !isdigit((unsigned char)cursor[1]) ||
-            !isdigit((unsigned char)cursor[2]) ||
-            !isdigit((unsigned char)cursor[3]))
-            continue;
-        if (cursor > body && isdigit((unsigned char)cursor[-1])) continue;
-        if (isdigit((unsigned char)cursor[4])) continue;
-        year = (unsigned)(cursor[0] - '0') * 1000u +
-               (unsigned)(cursor[1] - '0') * 100u +
-               (unsigned)(cursor[2] - '0') * 10u +
-               (unsigned)(cursor[3] - '0');
-        if (year < 1000u || year > 2099u) continue;
+    for (c = 0; cues[c] != NULL; ++c) {
+        const char *at = body;
+        size_t n = strlen(cues[c]);
+        while ((at = ci_find(at, cues[c])) != NULL) {
+            if (first_year_in(at + n, 96u, &year)) {
+                snprintf(value, cap, "%u", year);
+                return 1;
+            }
+            at += n;
+        }
+    }
+    if (first_year_in(body, (size_t)-1 / 2u, &year)) {
         snprintf(value, cap, "%u", year);
         return 1;
     }
     return 0;
+}
+
+static int bind_extract(const char *body, char *value, size_t cap) {
+    const char *key = "\"extract\":\"";
+    const char *at, *src;
+    size_t o = 0;
+    if (body == NULL || value == NULL || cap == 0) return 0;
+    value[0] = '\0';
+    if (strstr(body, "\"type\":\"disambiguation\"") != NULL) return 0;
+    at = strstr(body, key);
+    if (at == NULL) return 0;
+    src = at + 11;
+    while (*src != '\0' && *src != '"' && o + 1u < cap) {
+        if (*src == '\\' && src[1] != '\0') {
+            ++src;
+            if (*src == 'n' || *src == 'r' || *src == 't')
+                value[o++] = ' ';
+            else
+                value[o++] = *src;
+            ++src;
+            continue;
+        }
+        value[o++] = *src++;
+    }
+    value[o] = '\0';
+    return o > 0u;
 }
 
 static int bind_line(const char *body, char *value, size_t cap) {
@@ -433,6 +515,8 @@ int cnet_lookup_execute_flags(const char *url, CnetLookupBind bind,
         bound = bind_line(xfer.data, report->value, sizeof report->value);
     else if (bind == CNET_LOOKUP_BIND_YEAR)
         bound = bind_year(xfer.data, report->value, sizeof report->value);
+    else if (bind == CNET_LOOKUP_BIND_EXTRACT)
+        bound = bind_extract(xfer.data, report->value, sizeof report->value);
     free(xfer.data);
     if (!bound) return abstain(report, "unbindable");
     report->bound = 1;

@@ -771,34 +771,200 @@ cnet_c_speak: include/cnet_c_speak.h src/cnet_c_speak.c src/cce/cce_wordlm.c \
 cnet_harness: include/cnet_skill_lane.h src/cnet_skill_lane.c \
 		include/cnet_c_speak.h src/cnet_c_speak.c src/cce/cce_wordlm.c \
 		include/cnet_utterance.h src/cnet_utterance.c \
+		include/cnet_paragraph.h src/cnet_paragraph.c \
+		include/cnet_ood_skill.h src/cnet_ood_skill.c \
+		include/cnet_held_model.h src/cnet_held_model.c \
 		tests/test_cnet_skill_lane.c
 	@mkdir -p $(BIN_DIR) logs
 	@! grep -E 'python3|#include <Python|import sys' src/cnet_skill_lane.c tests/test_cnet_skill_lane.c
-	@! grep -E 'residual_gguf_oracle|roe_set_net|enable_llm' src/cnet_skill_lane.c
+	@! grep -E 'residual_gguf_oracle|roe_set_net|enable_llm' src/cnet_skill_lane.c src/cnet_ood_skill.c
 	$(CC) $(CFLAGS) -Werror -Iinclude -o $(BIN_DIR)/test_cnet_skill_lane \
 		src/cnet_skill_lane.c src/cnet_c_speak.c src/cce/cce_wordlm.c \
-		src/cnet_utterance.c tests/test_cnet_skill_lane.c $(LDFLAGS)
+		src/cnet_utterance.c src/cnet_paragraph.c src/cnet_ood_skill.c \
+		src/cnet_held_model.c \
+		tests/test_cnet_skill_lane.c $(LDFLAGS) -ldl
 	@./$(BIN_DIR)/test_cnet_skill_lane | tee logs/cnet_harness.log
 	@grep -q '^CNET_HARNESS_PASS$$' logs/cnet_harness.log
-	@grep -q '^checks=94 ' logs/cnet_harness.log
+	@grep -q '^checks=112 ' logs/cnet_harness.log
 	@grep -q 'python=0' logs/cnet_harness.log
 
 .PHONY: cnet_capsule_loop
 cnet_capsule_loop: include/cnet_capsule_loop.h src/cnet_capsule_loop.c \
+		include/cnet_hemisphere.h src/cnet_hemisphere.c \
+		include/cnet_brain_mirror.h src/cnet_brain_mirror.c \
 		include/cnet_skill_lane.h src/cnet_skill_lane.c \
 		include/cnet_c_speak.h src/cnet_c_speak.c src/cce/cce_wordlm.c \
 		include/cnet_utterance.h src/cnet_utterance.c \
+		include/cnet_paragraph.h src/cnet_paragraph.c \
+		include/cnet_ood_skill.h src/cnet_ood_skill.c \
+		include/cnet_held_model.h src/cnet_held_model.c \
+		include/cnet_lookup.h src/cnet_lookup.c \
+		src/cce/cce_campaign_provenance.c \
 		tests/test_cnet_capsule_loop.c
 	@mkdir -p $(BIN_DIR) logs
 	@! grep -E 'python3|#include <Python|import sys' src/cnet_capsule_loop.c tests/test_cnet_capsule_loop.c
 	@! grep -E 'residual_gguf_oracle|roe_set_net|enable_llm' src/cnet_capsule_loop.c
-	$(CC) $(CFLAGS) -Werror -Iinclude -o $(BIN_DIR)/test_cnet_capsule_loop \
-		src/cnet_capsule_loop.c src/cnet_skill_lane.c src/cnet_c_speak.c src/cce/cce_wordlm.c \
-		src/cnet_utterance.c tests/test_cnet_capsule_loop.c $(LDFLAGS)
+	@pkg-config --exists libcurl
+	$(CC) $(filter-out -DCNET_HAVE_CURL=0,$(CFLAGS)) -Werror -Iinclude \
+		-DCNET_HAVE_CURL=1 $$(pkg-config --cflags libcurl) \
+		-o $(BIN_DIR)/test_cnet_capsule_loop \
+		src/cnet_capsule_loop.c src/cnet_hemisphere.c src/cnet_brain_mirror.c \
+		src/cnet_skill_lane.c src/cnet_c_speak.c src/cce/cce_wordlm.c \
+		src/cnet_utterance.c src/cnet_paragraph.c src/cnet_ood_skill.c \
+		src/cnet_held_model.c src/cnet_lookup.c src/cce/cce_campaign_provenance.c \
+		tests/test_cnet_capsule_loop.c $(LDFLAGS) -ldl $$(pkg-config --libs libcurl)
 	@./$(BIN_DIR)/test_cnet_capsule_loop | tee logs/cnet_capsule_loop.log
 	@grep -q '^CNET_CAPSULE_LOOP_PASS$$' logs/cnet_capsule_loop.log
 	@grep -q '^checks=125 ' logs/cnet_capsule_loop.log
 	@grep -q 'python=0' logs/cnet_capsule_loop.log
+
+.PHONY: cnet_ood
+cnet_ood: include/cnet_ood_skill.h src/cnet_ood_skill.c \
+		include/cnet_held_model.h src/cnet_held_model.c \
+		include/cnet_lookup.h src/cnet_lookup.c \
+		src/cce/cce_campaign_provenance.c \
+		tests/test_cnet_ood_skill.c
+	@mkdir -p $(BIN_DIR) logs
+	@! grep -E 'python3|#include <Python|import sys' src/cnet_ood_skill.c tests/test_cnet_ood_skill.c
+	@! grep -E 'residual_gguf_oracle|roe_set_net|enable_llm' src/cnet_ood_skill.c
+	@pkg-config --exists libcurl
+	$(CC) $(filter-out -DCNET_HAVE_CURL=0,$(CFLAGS)) -Werror -Iinclude \
+		-DCNET_HAVE_CURL=1 $$(pkg-config --cflags libcurl) \
+		-o $(BIN_DIR)/test_cnet_ood_skill \
+		src/cnet_ood_skill.c src/cnet_held_model.c src/cnet_lookup.c \
+		src/cce/cce_campaign_provenance.c \
+		tests/test_cnet_ood_skill.c $(LDFLAGS) -ldl $$(pkg-config --libs libcurl)
+	@./$(BIN_DIR)/test_cnet_ood_skill | tee logs/cnet_ood.log
+	@grep -q '^CNET_OOD_PASS$$' logs/cnet_ood.log
+	@grep -q 'hardcoded_facts=0' logs/cnet_ood.log
+	@grep -q 'python=0' logs/cnet_ood.log
+
+
+.PHONY: cnet_hemi
+cnet_hemi: include/cnet_hemisphere.h src/cnet_hemisphere.c \
+		include/cnet_brain_mirror.h src/cnet_brain_mirror.c \
+		include/cnet_skill_lane.h src/cnet_skill_lane.c \
+		include/cnet_c_speak.h src/cnet_c_speak.c src/cce/cce_wordlm.c \
+		include/cnet_utterance.h src/cnet_utterance.c \
+		include/cnet_paragraph.h src/cnet_paragraph.c \
+		include/cnet_ood_skill.h src/cnet_ood_skill.c \
+		include/cnet_held_model.h src/cnet_held_model.c \
+		include/cnet_lookup.h src/cnet_lookup.c \
+		src/cce/cce_campaign_provenance.c \
+		tests/test_cnet_hemisphere.c
+	@mkdir -p $(BIN_DIR) logs
+	@! grep -E 'python3|#include <Python|import sys' src/cnet_hemisphere.c src/cnet_brain_mirror.c tests/test_cnet_hemisphere.c
+	@! grep -E 'residual_gguf_oracle|roe_set_net|enable_llm' src/cnet_hemisphere.c
+	$(CC) $(filter-out -DCNET_HAVE_CURL=0,$(CFLAGS)) -Werror -Iinclude \
+		-DCNET_HAVE_CURL=1 $$(pkg-config --cflags libcurl) \
+		-o $(BIN_DIR)/test_cnet_hemisphere \
+		src/cnet_hemisphere.c src/cnet_brain_mirror.c src/cnet_skill_lane.c src/cnet_c_speak.c src/cce/cce_wordlm.c \
+		src/cnet_utterance.c src/cnet_paragraph.c src/cnet_ood_skill.c \
+		src/cnet_held_model.c src/cnet_lookup.c src/cce/cce_campaign_provenance.c \
+		tests/test_cnet_hemisphere.c $(LDFLAGS) -ldl $$(pkg-config --libs libcurl)
+	@./$(BIN_DIR)/test_cnet_hemisphere | tee logs/cnet_hemi.log
+	@grep -q '^CNET_HEMI_PASS$$' logs/cnet_hemi.log
+	@grep -q 'residual_never_cert=1' logs/cnet_hemi.log
+	@grep -q 'core_first=1' logs/cnet_hemi.log
+	@grep -q 'core_middle=1' logs/cnet_hemi.log
+	@grep -q 'cert_and_open_chat=1' logs/cnet_hemi.log
+	@grep -q 'logic_strong=1' logs/cnet_hemi.log
+	@grep -q 'creative_strong=1' logs/cnet_hemi.log
+	@grep -q 'discern=1' logs/cnet_hemi.log
+	@grep -q 'python=0' logs/cnet_hemi.log
+
+
+
+.PHONY: cnet_rlm
+cnet_rlm: include/cnet_rlm.h src/cnet_rlm.c \
+		include/cnet_hemisphere.h src/cnet_hemisphere.c \
+		include/cnet_brain_mirror.h src/cnet_brain_mirror.c \
+		include/cnet_capsule_loop.h src/cnet_capsule_loop.c \
+		include/cnet_skill_lane.h src/cnet_skill_lane.c \
+		include/cnet_c_speak.h src/cnet_c_speak.c src/cce/cce_wordlm.c \
+		include/cnet_utterance.h src/cnet_utterance.c \
+		include/cnet_paragraph.h src/cnet_paragraph.c \
+		include/cnet_ood_skill.h src/cnet_ood_skill.c \
+		include/cnet_held_model.h src/cnet_held_model.c \
+		include/cnet_lookup.h src/cnet_lookup.c \
+		src/cce/cce_campaign_provenance.c \
+		tests/test_cnet_rlm.c
+	@mkdir -p $(BIN_DIR) logs
+	@! grep -E 'python3|#include <Python|import sys' src/cnet_rlm.c tests/test_cnet_rlm.c
+	@! grep -E 'residual_gguf_oracle|roe_set_net|enable_llm' src/cnet_rlm.c
+	@pkg-config --exists libcurl
+	$(CC) $(filter-out -DCNET_HAVE_CURL=0,$(CFLAGS)) -Werror -Iinclude \
+		-DCNET_HAVE_CURL=1 $$(pkg-config --cflags libcurl) \
+		-o $(BIN_DIR)/test_cnet_rlm \
+		src/cnet_rlm.c src/cnet_hemisphere.c src/cnet_brain_mirror.c src/cnet_capsule_loop.c \
+		src/cnet_skill_lane.c src/cnet_c_speak.c src/cce/cce_wordlm.c \
+		src/cnet_utterance.c src/cnet_paragraph.c src/cnet_ood_skill.c \
+		src/cnet_held_model.c src/cnet_lookup.c src/cce/cce_campaign_provenance.c \
+		tests/test_cnet_rlm.c $(LDFLAGS) -ldl $$(pkg-config --libs libcurl)
+	@./$(BIN_DIR)/test_cnet_rlm | tee logs/cnet_rlm.log
+	@grep -q '^CNET_RLM_PASS$$' logs/cnet_rlm.log
+	@grep -q 'via_rlm=1' logs/cnet_rlm.log
+	@grep -q 'wraps_core=1' logs/cnet_rlm.log
+	@grep -q 'residual_never_cert=1' logs/cnet_rlm.log
+
+.PHONY: cnet_core_e2e
+cnet_core_e2e: bin/cnetd scripts/cnet_core_e2e_smoke.sh config/cnet-bonsai-held.env
+	@mkdir -p logs
+	@bash scripts/cnet_core_e2e_smoke.sh
+	@grep -q '^CNET_CORE_E2E_PASS' logs/cnet_core_e2e.log
+
+.PHONY: cnet_brain_mirror
+cnet_brain_mirror: include/cnet_brain_mirror.h src/cnet_brain_mirror.c \
+		include/cnet_hemisphere.h src/cnet_hemisphere.c \
+		include/cnet_skill_lane.h src/cnet_skill_lane.c \
+		include/cnet_c_speak.h src/cnet_c_speak.c src/cce/cce_wordlm.c \
+		include/cnet_utterance.h src/cnet_utterance.c \
+		include/cnet_paragraph.h src/cnet_paragraph.c \
+		include/cnet_ood_skill.h src/cnet_ood_skill.c \
+		include/cnet_held_model.h src/cnet_held_model.c \
+		include/cnet_lookup.h src/cnet_lookup.c \
+		src/cce/cce_campaign_provenance.c \
+		tests/test_cnet_brain_mirror.c
+	@mkdir -p $(BIN_DIR) logs
+	@! grep -E 'python3|#include <Python|import sys' src/cnet_brain_mirror.c tests/test_cnet_brain_mirror.c
+	$(CC) $(filter-out -DCNET_HAVE_CURL=0,$(CFLAGS)) -Werror -Iinclude \
+		-DCNET_HAVE_CURL=1 $$(pkg-config --cflags libcurl) \
+		-o $(BIN_DIR)/test_cnet_brain_mirror \
+		src/cnet_brain_mirror.c src/cnet_hemisphere.c src/cnet_skill_lane.c src/cnet_c_speak.c src/cce/cce_wordlm.c \
+		src/cnet_utterance.c src/cnet_paragraph.c src/cnet_ood_skill.c \
+		src/cnet_held_model.c src/cnet_lookup.c src/cce/cce_campaign_provenance.c \
+		tests/test_cnet_brain_mirror.c $(LDFLAGS) -ldl $$(pkg-config --libs libcurl)
+	@./$(BIN_DIR)/test_cnet_brain_mirror | tee logs/cnet_brain_mirror.log
+	@grep -q '^CNET_BRAIN_MIRROR_PASS$$' logs/cnet_brain_mirror.log
+	@grep -q 'residual_never_mirrors=1' logs/cnet_brain_mirror.log
+
+.PHONY: cnet_grow
+cnet_grow: include/cnet_grow_lobe.h src/cnet_grow_lobe.c \
+		include/cnet_held_model.h src/cnet_held_model.c \
+		include/cce/cce_transformer_qat.h \
+		tests/test_cnet_grow_lobe.c $(CCE)
+	@mkdir -p $(BIN_DIR) logs
+	@! grep -E 'python3|#include <Python|import sys' src/cnet_grow_lobe.c tests/test_cnet_grow_lobe.c
+	$(CC) $(CFLAGS) -Werror -Iinclude -o $(BIN_DIR)/test_cnet_grow_lobe \
+		src/cnet_grow_lobe.c src/cnet_held_model.c $(CCE) \
+		tests/test_cnet_grow_lobe.c $(LDFLAGS) -ldl
+	@./$(BIN_DIR)/test_cnet_grow_lobe | tee logs/cnet_grow.log
+	@grep -q '^CNET_GROW_PASS$$' logs/cnet_grow.log
+	@grep -q 'anti_collapse=1' logs/cnet_grow.log
+	@grep -q 'may_speak=1' logs/cnet_grow.log
+	@grep -q 'english=1' logs/cnet_grow.log
+
+.PHONY: cnet_grow_teacher
+cnet_grow_teacher: include/cnet_grow_lobe.h src/cnet_grow_lobe.c \
+		include/cnet_held_model.h src/cnet_held_model.c \
+		tools/cnet_grow_teacher.c $(CCE)
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(filter-out -DCNET_HAVE_CURL=0,$(CFLAGS)) -Werror -Iinclude \
+		-DCNET_HAVE_CURL=1 $$(pkg-config --cflags libcurl) \
+		-o $(BIN_DIR)/cnet_grow_teacher \
+		src/cnet_grow_lobe.c src/cnet_held_model.c $(CCE) \
+		tools/cnet_grow_teacher.c $(LDFLAGS) -ldl $$(pkg-config --libs libcurl)
+	@echo "cnet_grow_teacher built → $(BIN_DIR)/cnet_grow_teacher"
 
 .PHONY: cnet_weight_convert cnet_weight_gguf
 cnet_weight_convert cnet_weight_gguf: include/cnet_weight_convert.h \
@@ -3912,10 +4078,13 @@ cnetd: $(ROE_ASI_SRC) tools/cnetd.c src/cnet_domain_route.c src/cnet_utterance.c
 		src/cnet_query_alias.c src/cnet_dialog_ctx.c src/cnet_slot_extract.c \
 		src/cnet_chat_lookup.c src/cnet_lookup.c src/cce/cce_campaign_provenance.c \
 		src/cnet_c_speak.c src/cce/cce_wordlm.c src/cnet_skill_lane.c src/cnet_capsule_loop.c \
+		src/cnet_paragraph.c src/cnet_ood_skill.c src/cnet_held_model.c \
+		src/cnet_hemisphere.c src/cnet_brain_mirror.c src/cnet_rlm.c \
 		include/cnet_probe_shortcircuit.h include/cnet_domain_route.h include/cnet_utterance.h \
 		include/cnet_query_alias.h include/cnet_dialog_ctx.h include/cnet_slot_extract.h \
 		include/cnet_chat_lookup.h include/cnet_lookup.h include/cnet_c_speak.h include/cnet_capsule_loop.h \
-		include/cnet_skill_lane.h
+		include/cnet_skill_lane.h include/cnet_paragraph.h \
+		include/cnet_hemisphere.h include/cnet_brain_mirror.h include/cnet_rlm.h
 	@mkdir -p $(BIN_DIR) logs
 	@pkg-config --exists libcurl
 	$(CC) $(ASI_IMPROVE_CFLAGS) -DCNET_HAVE_CURL=1 $$(pkg-config --cflags libcurl) -o $(BIN_DIR)/cnetd \
@@ -3923,7 +4092,9 @@ cnetd: $(ROE_ASI_SRC) tools/cnetd.c src/cnet_domain_route.c src/cnet_utterance.c
 		src/cnet_query_alias.c src/cnet_dialog_ctx.c src/cnet_slot_extract.c \
 		src/cnet_chat_lookup.c src/cnet_lookup.c src/cce/cce_campaign_provenance.c \
 		src/cnet_c_speak.c src/cce/cce_wordlm.c src/cnet_skill_lane.c src/cnet_capsule_loop.c \
-		tools/cnetd.c $(ROE_ASI_LIBS) $$(pkg-config --libs libcurl)
+		src/cnet_paragraph.c src/cnet_ood_skill.c src/cnet_held_model.c \
+		src/cnet_hemisphere.c src/cnet_brain_mirror.c src/cnet_rlm.c \
+		tools/cnetd.c $(ROE_ASI_LIBS) $$(pkg-config --libs libcurl) -ldl
 	@echo "cnetd built → $(BIN_DIR)/cnetd"
 
 .PHONY: cnet_utterance
@@ -7875,3 +8046,17 @@ cnet_7b_compete_results:
 				'broader_claims=WITHHELD'; \
 			exit 1; \
 		fi
+
+cnet_gguf_peek: tools/cnet_gguf_peek.c $(CCE)
+	@mkdir -p $(BIN_DIR) logs result
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/cnet_gguf_peek tools/cnet_gguf_peek.c $(CCE) $(CCE_CUDA_OBJ) src/nn.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+	@./$(BIN_DIR)/cnet_gguf_peek /home/marble/AI/Models/Bonsai-8B-gguf/Bonsai-8B.gguf attn_q | tee logs/cnet_gguf_peek.log
+	@grep -q 'CCE_GGUF_PEEK_OK' logs/cnet_gguf_peek.log
+
+.PHONY: cnet_gguf_peek
+cnet_gguf_peek: tools/cnet_gguf_peek.c $(CCE)
+	@mkdir -p $(BIN_DIR) logs result
+	$(CC) $(CFLAGS) -Iinclude $(CUDA_CFLAGS) -o $(BIN_DIR)/cnet_gguf_peek tools/cnet_gguf_peek.c $(CCE) $(CCE_CUDA_OBJ) src/nn.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+	@CNET_GGUF_MMAP=1 ./$(BIN_DIR)/cnet_gguf_peek /home/marble/AI/Models/Bonsai-8B-gguf/Bonsai-8B.gguf attn_q | tee logs/cnet_gguf_peek.log
+	@grep -q 'CCE_GGUF_PEEK' logs/cnet_gguf_peek.log
+

@@ -52,6 +52,9 @@
 #include "../include/cnet_c_speak.h"
 #include "../include/cnet_skill_lane.h"
 #include "../include/cnet_capsule_loop.h"
+#include "../include/cnet_hemisphere.h"
+#include "../include/cnet_brain_mirror.h"
+#include "../include/cnet_rlm.h"
 
 #define CD_PATH 512
 #define CD_SOCK 108
@@ -363,9 +366,12 @@ static int cd_ask(CdState *S, const char *q, CdReply *out) {
     memset(out, 0, sizeof *out);
     memset(&rt, 0, sizeof rt);
 
-    /* Capsule loop (two named skills) or skill lane (one).
-       Exact never escalates. OOD abstains. Teacher-on-miss is not reached. */
+    /* RLM outer host wraps CORE + CERT/OPEN_CHAT planes.
+       Multi-skill capsule and single-skill core_ask run inside RLM budget.
+       True miss (unbound) continues below to ROE/teacher. */
     {
+        CnetRlmPolicy rpol;
+        CnetRlmResult rr;
         CnetChatLookupTurn hop;
         const CnetChatLookupTurn *hop_arg = NULL;
         memset(&hop, 0, sizeof hop);
@@ -373,66 +379,92 @@ static int cd_ask(CdState *S, const char *q, CdReply *out) {
             hop_arg = &hop;
         else if (hop.residual_calls != 0)
             hop_arg = &hop;
-        if (cnet_capsule_loop_count_subjects(q) >= 2) {
-            CnetCapsuleLoopResult loop;
-            if (cnet_capsule_loop_cd_ask(q, hop_arg, &loop) == 0) {
-                const char *spoken = loop.spoken[0] ? loop.spoken
-                                                    : (loop.value[0] ? loop.value
-                                                                     : loop.refusal);
-                snprintf(out->answer, sizeof out->answer, "%s", spoken);
-                snprintf(out->utterance, sizeof out->utterance, "%s", spoken);
-                snprintf(out->source, sizeof out->source, "%s",
-                         loop.bound ? "LOCAL" : "CNET");
+
+        /* Residual hop refuse — never treat LLM hop as mouth */
+        if (hop_arg != NULL && hop_arg->residual_calls != 0) {
+            snprintf(out->answer, sizeof out->answer, "residual_mouth");
+            snprintf(out->utterance, sizeof out->utterance, "residual_mouth");
+            snprintf(out->source, sizeof out->source, "CNET");
+            snprintf(out->skill, sizeof out->skill, "lookup_refuse");
+            cd_scopy(out->prepared, sizeof out->prepared, q);
+            out->verified = 0;
+            out->miss = 1;
+            out->may_voice = 0;
+            out->tokens = 0;
+            return 0;
+        }
+        /* Bound lookup hop: CERT LOCAL via CORE classify */
+        if (hop_arg != NULL && hop_arg->answered && hop_arg->report.bound &&
+            hop_arg->report.value[0] != '\0') {
+            CnetSkillLaneResult lane;
+            CnetHemiResult hr;
+            memset(&lane, 0, sizeof lane);
+            if (cnet_skill_lane_bind_lookup(hop_arg, &lane) == 0 && lane.bound) {
+                cnet_hemi_classify_lane(&lane, 1, &hr);
+                (void)cnet_brain_mirror_core(&hr);
+                snprintf(out->answer, sizeof out->answer, "%.2047s",
+                         hr.spoken[0] ? hr.spoken : hr.value);
+                snprintf(out->utterance, sizeof out->utterance, "%.767s", out->answer);
+                snprintf(out->source, sizeof out->source, "LOCAL");
                 snprintf(out->skill, sizeof out->skill, "%s",
-                         loop.skill[0] ? loop.skill : "capsule_loop_abstain");
+                         hr.skill[0] ? hr.skill : "lookup");
                 cd_scopy(out->prepared, sizeof out->prepared, q);
-                out->verified = loop.claimed_cert ? 1 : 0;
-                out->miss = loop.bound ? 0 : 1;
-                out->may_voice = loop.bound ? 1 : 0;
+                out->verified = hr.claimed_cert ? 1 : 0;
+                out->miss = 0;
+                out->may_voice = hr.may_voice ? 1 : 0;
                 out->tokens = 0;
-                if (out->miss && S->miss_log[0]) {
-                    FILE *mf = fopen(S->miss_log, "a");
-                    if (mf) {
-                        fprintf(mf,
-                                "{\"via\":\"cnet_capsule_loop\",\"skill\":\"%s\","
-                                "\"refusal\":\"%s\",\"teacher\":false,"
-                                "\"claimed_cert\":0,\"residual_calls\":0}\n",
-                                out->skill, loop.refusal);
-                        fclose(mf);
-                    }
-                }
                 return 0;
             }
         }
-        {
-            CnetSkillLaneResult lane;
-            if (cnet_skill_lane_cd_ask(q, hop_arg, &lane) == 0) {
-                const char *spoken = lane.spoken[0] ? lane.spoken
-                                                    : (lane.value[0] ? lane.value
-                                                                     : lane.refusal);
-                snprintf(out->answer, sizeof out->answer, "%s", spoken);
-                snprintf(out->utterance, sizeof out->utterance, "%s", spoken);
-                snprintf(out->source, sizeof out->source, "%s",
-                         lane.bound ? "LOCAL" : "CNET");
-                snprintf(out->skill, sizeof out->skill, "%s",
-                         lane.skill[0] ? lane.skill : "skill_lane_abstain");
-                cd_scopy(out->prepared, sizeof out->prepared, q);
-                out->verified = lane.claimed_cert ? 1 : 0;
-                out->miss = lane.bound ? 0 : 1;
-                out->may_voice = lane.bound ? 1 : 0;
-                out->tokens = 0;
-                if (out->miss && S->miss_log[0]) {
-                    FILE *mf = fopen(S->miss_log, "a");
-                    if (mf) {
-                        fprintf(mf,
-                                "{\"via\":\"cnet_skill_lane\",\"skill\":\"%s\","
-                                "\"refusal\":\"%s\",\"teacher\":false,"
-                                "\"claimed_cert\":0,\"residual_calls\":0}\n",
-                                out->skill, lane.refusal);
-                        fclose(mf);
-                    }
+
+        cnet_rlm_policy_default(&rpol);
+        memset(&rr, 0, sizeof rr);
+        if (cnet_rlm_ask(q, &rpol, &rr) == 0 && rr.final.bound) {
+            const CnetHemiResult *hr = &rr.final;
+            const char *spoken =
+                hr->spoken[0] ? hr->spoken : (hr->value[0] ? hr->value : hr->refusal);
+            snprintf(out->answer, sizeof out->answer, "%.2047s", spoken);
+            snprintf(out->utterance, sizeof out->utterance, "%.767s", spoken);
+            if (hr->plane == CNET_CORE_PLANE_CERT || hr->hemi == CNET_HEMI_CORE)
+                snprintf(out->source, sizeof out->source, "LOCAL");
+            else if (hr->plane == CNET_CORE_PLANE_OPEN_CHAT || hr->open_chat)
+                snprintf(out->source, sizeof out->source, "OPEN_CHAT");
+            else
+                snprintf(out->source, sizeof out->source, "RLM");
+            snprintf(out->skill, sizeof out->skill, "%s",
+                     hr->skill[0] ? hr->skill : "rlm");
+            cd_scopy(out->prepared, sizeof out->prepared, q);
+            out->verified = hr->claimed_cert ? 1 : 0;
+            out->miss = 0;
+            out->may_voice = hr->may_voice ? 1 : 0;
+            out->tokens = 0;
+            if (S->miss_log[0] &&
+                (hr->plane == CNET_CORE_PLANE_OPEN_CHAT || hr->open_chat)) {
+                FILE *mf = fopen(S->miss_log, "a");
+                if (mf) {
+                    fprintf(mf,
+                            "{\"via\":\"cnet_rlm\",\"skill\":\"%s\","
+                            "\"plane\":\"OPEN_CHAT\",\"via_rlm\":true,"
+                            "\"via_core\":true,\"claimed_cert\":0,"
+                            "\"intent\":\"%s\",\"may_voice\":%s}\n",
+                            out->skill, cnet_core_intent_name(rr.intent),
+                            out->may_voice ? "true" : "false");
+                    fclose(mf);
                 }
-                return 0;
+            }
+            return 0;
+        }
+        /* RLM abstain / unbound → fall through to ROE/teacher */
+        if (S->miss_log[0]) {
+            FILE *mf = fopen(S->miss_log, "a");
+            if (mf) {
+                fprintf(mf,
+                        "{\"via\":\"cnet_rlm\",\"skill\":\"rlm_miss\","
+                        "\"refusal\":\"%s\",\"via_rlm\":true,\"claimed_cert\":0,"
+                        "\"intent\":\"%s\"}\n",
+                        rr.final.refusal[0] ? rr.final.refusal : "rlm_miss",
+                        cnet_core_intent_name(rr.intent));
+                fclose(mf);
             }
         }
     }
@@ -815,7 +847,7 @@ static void handle_client(int cfd, CdState *S) {
     }
     if (strcmp(line, "STATUS") == 0) {
         char buf[256];
-        snprintf(buf, sizeof buf, "OK cnetd routes=%d probes=%d root=%s\n",
+        snprintf(buf, sizeof buf, "OK cnetd routes=%d probes=%d root=%.180s\n",
                  S->n_routes, S->probes.n, S->root);
         (void)full_write(cfd, buf, strlen(buf));
         return;

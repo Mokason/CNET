@@ -55,11 +55,11 @@ int main(void)
     check(cnet_capsule_loop_count_subjects(
               "increment 41 then crc8 then lookup") == 3,
           "count_three_skills");
-    check(cnet_capsule_loop_count_subjects("bake bread") == 0, "count_ood_zero");
+    check(cnet_capsule_loop_count_subjects("bake bread") == 1, "count_recipe_one");
     check(cnet_capsule_loop_count_subjects("fix the repo") == 0,
           "count_fix_repo_zero");
-    check(cnet_capsule_loop_count_subjects("what is 41 plus 1") == 0,
-          "count_plus_zero");
+    check(cnet_capsule_loop_count_subjects("what is 41 plus 1") == 1,
+          "count_plus_one");
 
     check(cnet_capsule_loop_run("increment 41", NULL, &r) == 0, "inc_rc");
     check(r.kind == CNET_CAPSULE_CALL_EXACT, "inc_exact");
@@ -83,15 +83,15 @@ int main(void)
     check(strstr(r.spoken, "7") != NULL, "crc_spoken_has_A");
 
     check(cnet_capsule_loop_run("Tell me how to bake bread.", NULL, &r) == 0,
-          "ood_bake_rc");
-    check(r.kind == CNET_CAPSULE_CALL_ABSTAIN, "ood_bake_abstain");
-    check(r.bound == 0, "ood_bake_unbound");
-    check(r.claimed_cert == 0, "ood_bake_no_cert");
-    check(r.residual_calls == 0, "ood_bake_residual_zero");
-    check(r.teacher_calls == 0, "ood_bake_teacher_zero");
-    check(strcmp(r.refusal, "ood_no_skill") == 0, "ood_bake_reason");
-    check(r.n_exact == 0, "ood_bake_no_exact");
-    check(strstr(r.spoken, teacher) == NULL, "ood_bake_not_teacher");
+          "recipe_bake_rc");
+    check(r.kind == CNET_CAPSULE_CALL_EXACT, "recipe_bake_exact");
+    check(r.bound == 1, "recipe_bake_bound");
+    check(strcmp(r.value, "bread") == 0, "recipe_bake_value");
+    check(r.claimed_cert == 1, "recipe_bake_cert");
+    check(r.residual_calls == 0, "recipe_bake_residual_zero");
+    check(r.teacher_calls == 0, "recipe_bake_teacher_zero");
+    check(r.n_exact == 1, "recipe_bake_one_exact");
+    check(strstr(r.spoken, teacher) == NULL, "recipe_bake_not_teacher");
 
     check(cnet_capsule_loop_run("fix the repo", NULL, &r) == 0, "ood_fix_rc");
     check(r.kind == CNET_CAPSULE_CALL_ABSTAIN, "ood_fix_abstain");
@@ -102,11 +102,11 @@ int main(void)
     check(r.n_exact == 0, "ood_fix_no_exact");
 
     check(cnet_capsule_loop_run("what is 41 plus 1", NULL, &r) == 0,
-          "no_subject_rc");
-    check(r.kind == CNET_CAPSULE_CALL_ABSTAIN, "no_subject_abstain");
-    check(strcmp(r.refusal, "ood_no_skill") == 0, "no_subject_ood");
-    check(r.claimed_cert == 0, "no_subject_no_cert");
-    check(r.teacher_calls == 0, "no_subject_no_teacher");
+          "add_plus_rc");
+    check(r.kind == CNET_CAPSULE_CALL_EXACT, "add_plus_exact");
+    check(strcmp(r.value, "42") == 0, "add_plus_42");
+    check(r.claimed_cert == 1, "add_plus_cert");
+    check(r.teacher_calls == 0, "add_plus_no_teacher");
 
     fill_hop(&hop, "13", 1);
     check(cnet_capsule_loop_run("lookup https://example.com/n", &hop, &r) == 0,
@@ -216,10 +216,11 @@ int main(void)
     check(r.residual_calls == 0, "cd_ask_hop_residual");
     check(r.teacher_calls == 0, "cd_ask_hop_teacher");
 
-    check(cnet_capsule_loop_cd_ask("bake bread", NULL, &r) == 0, "cd_ask_ood_rc");
-    check(r.kind == CNET_CAPSULE_CALL_ABSTAIN, "cd_ask_ood_abstain");
-    check(r.claimed_cert == 0, "cd_ask_ood_no_cert");
-    check(r.teacher_calls == 0, "cd_ask_ood_teacher");
+    check(cnet_capsule_loop_cd_ask("bake bread", NULL, &r) == 0,
+          "cd_ask_recipe_rc");
+    check(r.kind == CNET_CAPSULE_CALL_EXACT, "cd_ask_recipe_exact");
+    check(r.claimed_cert == 1, "cd_ask_recipe_cert");
+    check(r.teacher_calls == 0, "cd_ask_recipe_teacher");
 
     check(cnet_capsule_loop_run(NULL, NULL, &r) == 0, "null_turn_rc");
     check(r.kind == CNET_CAPSULE_CALL_ABSTAIN, "null_turn_abstain");

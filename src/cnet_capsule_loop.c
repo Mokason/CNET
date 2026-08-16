@@ -1,6 +1,7 @@
 #include "cnet_capsule_loop.h"
 
 #include "cnet_c_speak.h"
+#include "cnet_hemisphere.h"
 #include "cnet_lookup.h"
 
 #include <ctype.h>
@@ -9,7 +10,8 @@
 
 /* Bounded call log beside cnet_skill_lane. Reuses the hard table and
    bind path. Does not fork a second exact-lane law. Does not grow WordLM.
-   Residual / teacher symbols are not invoked on this lane. */
+   Residual / teacher symbols are not invoked on this lane.
+   Leftover binds go through cnet_hemi_ask_core (CORE only). */
 
 static void copy_text(char *dst, size_t cap, const char *src)
 {
@@ -110,6 +112,16 @@ static void consume_skill(char *text, const char *canonical)
         blank_word_ci(text, "crc8");
     else if (strcmp(canonical, CNET_LOOKUP_CONTRACT) == 0)
         blank_word_ci(text, "lookup");
+    else if (strcmp(canonical, "year_inform_v1") == 0)
+        blank_word_ci(text, "spacex");
+    else if (strcmp(canonical, "restaurant_inform_v1") == 0)
+        blank_word_ci(text, "restaurant");
+    else if (strcmp(canonical, "recipe_inform_v1") == 0) {
+        blank_word_ci(text, "bake");
+        blank_word_ci(text, "bread");
+        blank_word_ci(text, "recipe");
+    } else if (strcmp(canonical, "add_u32_v1") == 0)
+        blank_word_ci(text, "plus");
 }
 
 int cnet_capsule_loop_count_subjects(const char *turn)
@@ -172,6 +184,30 @@ static void append_refuse(CnetCapsuleLoopResult *out, const char *name,
     copy_text(dummy.skill, sizeof dummy.skill, name ? name : "");
     copy_text(dummy.refusal, sizeof dummy.refusal, why);
     append_from_lane(out, name, &dummy, perm, kind);
+}
+
+/* CORE hemisphere bind only — residual never enters the capsule loop. */
+static int core_bind(const char *turn, CnetSkillLaneResult *lane)
+{
+    CnetHemiPolicy pol;
+    CnetHemiResult hr;
+
+    if (lane == NULL) return 1;
+    memset(lane, 0, sizeof *lane);
+    cnet_hemi_policy_default(&pol);
+    pol.residual_enabled = 0; /* law: loop is CORE-only */
+    if (cnet_hemi_ask_core(turn, &pol, &hr) != 0 || !hr.bound ||
+        hr.hemi != CNET_HEMI_CORE)
+        return 1;
+    copy_text(lane->skill, sizeof lane->skill, hr.skill);
+    copy_text(lane->value, sizeof lane->value, hr.value);
+    copy_text(lane->spoken, sizeof lane->spoken, hr.spoken);
+    lane->bound = 1;
+    lane->claimed_cert = hr.claimed_cert ? 1 : 0;
+    lane->kind = CNET_SKILL_LANE_EXACT;
+    lane->residual_calls = 0;
+    lane->teacher_calls = 0;
+    return 0;
 }
 
 static void speak_last(CnetCapsuleLoopResult *out)
@@ -305,10 +341,20 @@ int cnet_capsule_loop_run(const char *turn, const CnetChatLookupTurn *hop,
         skill[0] = '\0';
         if (cnet_skill_lane_route(route_src, skill, sizeof skill) != 0 ||
             skill[0] == '\0') {
-            if (step == 0)
+            if (step == 0) {
+                CnetSkillLaneResult miss;
+                memset(&miss, 0, sizeof miss);
+                if (core_bind(remaining, &miss) == 0) {
+                    append_from_lane(out, miss.skill[0] ? miss.skill : "",
+                                     &miss, CNET_CAPSULE_PERM_ALLOW,
+                                     CNET_CAPSULE_CALL_EXACT);
+                    speak_last(out);
+                    return 0;
+                }
                 append_refuse(out, "", "ood_no_skill",
                               CNET_CAPSULE_PERM_ABSTAIN,
                               CNET_CAPSULE_CALL_ABSTAIN);
+            }
             break;
         }
 
@@ -324,9 +370,18 @@ int cnet_capsule_loop_run(const char *turn, const CnetChatLookupTurn *hop,
             break;
         }
 
-        /* Existing increment / crc8 / lookup bind. No second exact-lane law. */
+        /* CORE hemisphere bind (skills + math). Residual never enters this loop. */
         memset(&lane, 0, sizeof lane);
-        (void)cnet_skill_lane_cd_ask(remaining, NULL, &lane);
+        if (core_bind(remaining, &lane) != 0) {
+            /* Named skill without CORE bind — also try skill-lane exact only
+               for table skills that hemi already covers via ask_core. */
+            (void)cnet_skill_lane_cd_ask(remaining, NULL, &lane);
+            if (lane.kind == CNET_SKILL_LANE_HELD ||
+                (lane.skill[0] && strcmp(lane.skill, "held_model_v1") == 0)) {
+                memset(&lane, 0, sizeof lane);
+                lane.kind = CNET_SKILL_LANE_ABSTAIN;
+            }
+        }
 
         if (lane.kind == CNET_SKILL_LANE_EXACT)
             kind = CNET_CAPSULE_CALL_EXACT;

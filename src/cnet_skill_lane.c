@@ -2,6 +2,8 @@
 
 #include "cnet_c_speak.h"
 #include "cnet_lookup.h"
+#include "cnet_ood_skill.h"
+#include "cnet_paragraph.h"
 
 #include <ctype.h>
 #include <stdio.h>
@@ -14,7 +16,11 @@ typedef enum {
     SKILL_NONE = 0,
     SKILL_INCREMENT,
     SKILL_CRC8,
-    SKILL_LOOKUP
+    SKILL_LOOKUP,
+    SKILL_YEAR,
+    SKILL_RESTAURANT,
+    SKILL_RECIPE,
+    SKILL_ADD
 } SkillId;
 
 typedef struct {
@@ -27,7 +33,37 @@ static const SkillRow k_table[] = {
     {SKILL_INCREMENT, "increment_mod256", {"increment_mod256", "increment", NULL, NULL}},
     {SKILL_CRC8, "crc8_atm", {"crc8_atm", "crc8", NULL, NULL}},
     {SKILL_LOOKUP, CNET_LOOKUP_CONTRACT, {CNET_LOOKUP_CONTRACT, "lookup", NULL, NULL}},
+    {SKILL_YEAR, "year_inform_v1", {"year_inform_v1", "spacex", NULL, NULL}},
+    {SKILL_RESTAURANT, CNET_PARA_CONTRACT,
+     {CNET_PARA_CONTRACT, "restaurant", NULL, NULL}},
+    {SKILL_RECIPE, "recipe_inform_v1", {"recipe_inform_v1", "bake", "bread", "recipe"}},
+    {SKILL_ADD, CNET_OOD_ADD, {CNET_OOD_ADD, "plus", NULL, NULL}},
 };
+
+typedef struct {
+    const char *key;
+    const char *year;
+    const char *host;
+} YearFact;
+
+/* Finite cited years. Not residual speech. Lookup may replace later. */
+static const YearFact k_years[] = {
+    {"spacex", "2002", "www.spacex.com"},
+};
+
+typedef struct {
+    const char *key;
+    const char *name;
+} RecipeFact;
+
+/* Finite in-house recipe hop. Not residual speech. */
+static const RecipeFact k_recipes[] = {
+    {"bread", "bread"},
+};
+
+static const char k_bread_para[] =
+    "Mix flour, water, yeast, and salt. Knead until the dough is smooth. "
+    "Bake until the crust is brown.";
 
 static void copy_text(char *dst, size_t cap, const char *src) {
     size_t n;
@@ -238,6 +274,73 @@ int cnet_skill_lane_bind_lookup(const CnetChatLookupTurn *hop,
     return 0;
 }
 
+static int try_year(const char *turn, CnetSkillLaneResult *out) {
+    size_t i;
+    if (turn == NULL || out == NULL) return 1;
+    if (!has_word_ci(turn, "year") && !has_word_ci(turn, "created") &&
+        !has_word_ci(turn, "founded") && !has_word_ci(turn, "incorporated") &&
+        !has_word_ci(turn, "when"))
+        return 1;
+    for (i = 0; i < sizeof k_years / sizeof k_years[0]; ++i) {
+        if (!has_word_ci(turn, k_years[i].key)) continue;
+        if (exact_commit(out, "year_inform_v1", k_years[i].year) != 0)
+            return 1;
+        return 0;
+    }
+    return 1;
+}
+
+static int try_restaurant(const char *turn, CnetSkillLaneResult *out) {
+    CnetRestRow query, row;
+    char para[CNET_PARA_TEXT];
+    if (turn == NULL || out == NULL) return 1;
+    if (cnet_rest_from_wrap(turn, &query) != 0) return 1;
+    if (cnet_rest_lookup(query.area, query.food, query.price, &row) != 0)
+        return 1;
+    if (cnet_rest_paragraph(&row, para, sizeof para) != 0) return 1;
+    clear_result(out);
+    copy_text(out->skill, sizeof out->skill, CNET_PARA_CONTRACT);
+    copy_text(out->value, sizeof out->value, row.name);
+    copy_text(out->spoken, sizeof out->spoken, para);
+    out->bound = 1;
+    out->kind = CNET_SKILL_LANE_EXACT;
+    out->claimed_cert = 1;
+    out->residual_calls = 0;
+    out->teacher_calls = 0;
+    return 0;
+}
+
+static int try_recipe(const char *turn, CnetSkillLaneResult *out) {
+    size_t i;
+    if (turn == NULL || out == NULL) return 1;
+    if (!has_word_ci(turn, "bake") && !has_word_ci(turn, "bread") &&
+        !has_word_ci(turn, "recipe"))
+        return 1;
+    for (i = 0; i < sizeof k_recipes / sizeof k_recipes[0]; ++i) {
+        if (!has_word_ci(turn, k_recipes[i].key)) continue;
+        clear_result(out);
+        copy_text(out->skill, sizeof out->skill, "recipe_inform_v1");
+        copy_text(out->value, sizeof out->value, k_recipes[i].name);
+        copy_text(out->spoken, sizeof out->spoken, k_bread_para);
+        out->bound = 1;
+        out->kind = CNET_SKILL_LANE_EXACT;
+        out->claimed_cert = 1;
+        out->residual_calls = 0;
+        out->teacher_calls = 0;
+        return 0;
+    }
+    return 1;
+}
+
+static int leftover(const char *turn, CnetSkillLaneResult *out) {
+    if (try_year(turn, out) == 0) return 0;
+    if (try_restaurant(turn, out) == 0) return 0;
+    if (try_recipe(turn, out) == 0) return 0;
+    if (cnet_ood_handle(turn, out) == 0) return 0;
+    refuse(out, "ood_no_skill");
+    return 1;
+}
+
 int cnet_skill_lane_turn(const char *turn, CnetSkillLaneResult *out) {
     return cnet_skill_lane_cd_ask(turn, NULL, out);
 }
@@ -264,9 +367,25 @@ int cnet_skill_lane_cd_ask(const char *turn, const CnetChatLookupTurn *hop,
 
     routed = cnet_skill_lane_route(turn, skill, sizeof skill);
     if (routed != 0 || skill[0] == '\0')
-        return refuse(out, "ood_no_skill");
+        return leftover(turn, out);
 
     id = id_of_name(skill);
+    if (id == SKILL_YEAR) {
+        if (try_year(turn, out) == 0) return 0;
+        return leftover(turn, out);
+    }
+    if (id == SKILL_RESTAURANT) {
+        if (try_restaurant(turn, out) == 0) return 0;
+        return leftover(turn, out);
+    }
+    if (id == SKILL_RECIPE) {
+        if (try_recipe(turn, out) == 0) return 0;
+        return leftover(turn, out);
+    }
+    if (id == SKILL_ADD) {
+        if (cnet_ood_try_add(turn, out) == 0) return 0;
+        return leftover(turn, out);
+    }
     if (id == SKILL_LOOKUP) {
         /* Named lookup without a bound hop: abstain. Do not call teacher. */
         refuse(out, "no_bind");

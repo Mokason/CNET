@@ -84,6 +84,21 @@ int main(void) {
     if (!p) return 1;
     check(cce_kv_pager_hot_capacity(p) == 32, "hot capacity 32");
     check(cce_kv_pager_legal_max(p) == 100000, "legal max 100k not dense alloc");
+    {
+        cce_kv_pager_opts million;
+        cce_kv_pager *pm = NULL;
+        cce_kv_pager_opts_default(&million, 8, 8, CNET_CTX_LEGAL_MAX);
+        million.page_len = 16;
+        million.n_hot = 2;
+        million.archive_dir = dir;
+        million.async = 0;
+        check(cce_kv_pager_open(&pm, &million) == CCE_OK && pm,
+              "pager open 1M legal");
+        check(pm && cce_kv_pager_legal_max(pm) == CNET_CTX_LEGAL_MAX,
+              "legal max 1M not dense alloc");
+        check(pm && cce_kv_pager_hot_capacity(pm) == 32, "1M hot still 32");
+        if (pm) cce_kv_pager_close(pm);
+    }
 
     /* Fill first 32 positions (no slide yet). */
     {

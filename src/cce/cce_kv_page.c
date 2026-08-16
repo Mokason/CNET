@@ -114,6 +114,24 @@ static int mkdir_p(const char *dir) {
     return 0;
 }
 
+int cce_ctx_legal_max(int model_ctx) {
+    const char *page = getenv("CNET_KV_PAGE");
+    const char *e = getenv("CNET_CTX_LEGAL");
+    int legal;
+    /* Paged: CNET opens 1M positions. Dense: model ctx (ops still cap 8192). */
+    if (page && page[0] == '1')
+        legal = CNET_CTX_LEGAL_MAX;
+    else
+        legal = model_ctx > 0 ? model_ctx : 8192;
+    if (e && e[0]) {
+        int v = atoi(e);
+        if (v >= 8 && v <= CNET_CTX_LEGAL_MAX) legal = v;
+    }
+    if (legal > CNET_CTX_LEGAL_MAX) legal = CNET_CTX_LEGAL_MAX;
+    if (legal < 8) legal = 8;
+    return legal;
+}
+
 void cce_kv_pager_opts_default(cce_kv_pager_opts *o, int k_slot, int v_slot,
                                int legal_max) {
     const char *e;
@@ -123,7 +141,8 @@ void cce_kv_pager_opts_default(cce_kv_pager_opts *o, int k_slot, int v_slot,
     o->n_hot = 4;
     o->k_slot = k_slot;
     o->v_slot = v_slot;
-    o->legal_max = legal_max > 0 ? legal_max : 8192;
+    o->legal_max = legal_max > 0 ? legal_max : CNET_CTX_LEGAL_MAX;
+    if (o->legal_max > CNET_CTX_LEGAL_MAX) o->legal_max = CNET_CTX_LEGAL_MAX;
     o->archive_dir = NULL;
     o->async = 1;
     o->quant_cold = 1; /* default int8 COLD */
@@ -342,7 +361,8 @@ cce_result cce_kv_pager_open(cce_kv_pager **out, const cce_kv_pager_opts *opts) 
     p->n_hot = o.n_hot;
     p->k_slot = o.k_slot;
     p->v_slot = o.v_slot;
-    p->legal_max = o.legal_max > 0 ? o.legal_max : 8192;
+    p->legal_max = o.legal_max > 0 ? o.legal_max : CNET_CTX_LEGAL_MAX;
+    if (p->legal_max > CNET_CTX_LEGAL_MAX) p->legal_max = CNET_CTX_LEGAL_MAX;
     p->async = o.async;
     p->quant_cold = o.quant_cold;
     p->rehydrate = o.rehydrate;

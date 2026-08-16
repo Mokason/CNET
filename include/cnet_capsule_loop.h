@@ -7,8 +7,8 @@
    WITHHELD.
 
    Hard-switch route (cnet_skill_lane_route) -> monotonic allow/abstain/deny
-   -> existing increment / crc8 / lookup bind -> speak last A.
-   residual_calls == 0 && teacher_calls == 0. Teacher never speaks. */
+   -> CORE hemisphere bind (cnet_hemi_ask_core) -> speak last A.
+   residual_calls == 0 && teacher_calls == 0. Residual LLM never enters this loop. */
 
 #include "cnet_chat_lookup.h"
 #include "cnet_skill_lane.h"
