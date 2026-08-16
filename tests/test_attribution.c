@@ -26,6 +26,13 @@ static Port make_port(PortFamily fam, size_t w, size_t c, const char *tag) {
     return p;
 }
 
+/* Local mirror of the exact-signature rule, so the round-trip test asserts
+   the port survived rather than trusting the lookup that found it. */
+static int port_sig_eq_test(Port a, Port b) {
+    return a.family == b.family && a.field_width == b.field_width &&
+           a.field_count == b.field_count && strcmp(a.tag, b.tag) == 0;
+}
+
 static struct AttributionEvent ev_of(const char *proposer, Port goal,
                                      const char *reason, int admitted) {
     struct AttributionEvent e;
@@ -199,6 +206,136 @@ int main(void) {
         check(fabs(r->admitted_margin_min - 0.10) < 1e-12,
               "worst margin retained, not averaged");
         check(r->admitted_proof == 2, "PROVEN admissions counted");
+    }
+
+    printf("[9] sidecar round-trip\n");
+    attrib_ledger_init(L);
+    {
+        AttribLedger *M = (AttribLedger *)malloc(sizeof *M);
+        struct AttributionEvent a = ev_of("gemma", g, "", 1);
+        struct AttributionEvent b = ev_of("gemma", g, "certify_failed", 0);
+        struct AttributionEvent c = ev_of("gemma", g, "oracle_unfit", 0);
+        if (!M) { printf("FAIL: alloc\n"); return 1; }
+        a.domain_cardinality = 16;
+        a.min_margin = 0.25;
+        a.cert_verdict = (int)CERT_PROVEN;
+        b.recipe_fp = 99u;
+        attrib_record(L, &a);
+        attrib_record(L, &b);
+        attrib_record(L, &c);
+
+        check(attrib_ledger_save(L, "logs/attrib_rt.stats") == 0, "save ok");
+        attrib_ledger_init(M);
+        check(attrib_ledger_load(M, "logs/attrib_rt.stats") == 0, "load ok");
+        check(M->count == L->count, "key count round-trips");
+        {
+            const AttribRecord *r = attrib_find(M, "gemma", g);
+            check(r != NULL, "key found after load");
+            check(r->admitted == 1 && r->system_fault == 1 &&
+                  r->proposer_fault == 1, "counters round-trip");
+            check(r->admitted_card_sum == 16, "cardinality round-trips");
+            check(fabs(r->admitted_margin_min - 0.25) < 1e-9,
+                  "margin round-trips");
+            check(r->admitted_proof == 1, "PROVEN count round-trips");
+            check(r->recipe_fp_count == 1 && r->recipe_fps[0] == 99u,
+                  "recipe fingerprints round-trip");
+            check(port_sig_eq_test(r->goal, g), "goal signature round-trips");
+            check(fabs(attrib_proposer_trust(r) -
+                       attrib_proposer_trust(attrib_find(L, "gemma", g))) < 1e-12,
+                  "posterior identical after round-trip");
+        }
+
+        printf("[10] malformed load leaves state untouched\n");
+        {
+            FILE *bad = fopen("logs/attrib_bad.stats", "w");
+            size_t before;
+            if (!bad) { printf("FAIL: fopen\n"); return 1; }
+            fprintf(bad, "CNET_ATTRIB 1\n3\ngarbage not a record\n");
+            fclose(bad);
+            before = M->count;
+            check(attrib_ledger_load(M, "logs/attrib_bad.stats") == -1,
+                  "malformed file refused");
+            check(M->count == before, "ledger untouched after refusal");
+        }
+        {
+            FILE *bad = fopen("logs/attrib_magic.stats", "w");
+            if (!bad) { printf("FAIL: fopen\n"); return 1; }
+            fprintf(bad, "CNET_GAPS 1\n0 0\n");
+            fclose(bad);
+            check(attrib_ledger_load(M, "logs/attrib_magic.stats") == -1,
+                  "wrong magic refused");
+        }
+        check(attrib_ledger_load(M, "logs/does_not_exist.stats") == -1,
+              "missing file refused");
+        check(M->count > 0, "ledger still untouched after missing file");
+        free(M);
+    }
+
+    printf("[11] sidecar fuzz: byte flips + truncations\n");
+    /* Mirrors the sweep registered in tests/test_mutate.c, run here as well
+       because the mutate target links the whole CCE layer and is not
+       buildable on every box. An unsealed stats file need not refuse every
+       mutation — but a REFUSAL must leave the ledger untouched, which is the
+       stronger property: a parser that half-applied a corrupt file would
+       still pass a crash-only sweep. */
+    {
+        AttribLedger *F = (AttribLedger *)malloc(sizeof *F);
+        unsigned char *bytes = NULL;
+        size_t len = 0, off, accepted = 0, tried = 0;
+        FILE *f;
+        if (!F) { printf("FAIL: alloc\n"); return 1; }
+
+        f = fopen("logs/attrib_rt.stats", "rb");
+        check(f != NULL, "fuzz seed sidecar readable");
+        fseek(f, 0, SEEK_END);
+        len = (size_t)ftell(f);
+        fseek(f, 0, SEEK_SET);
+        bytes = (unsigned char *)malloc(len ? len : 1);
+        check(bytes != NULL && fread(bytes, 1, len, f) == len, "seed slurped");
+        fclose(f);
+
+        for (off = 0; off < len; ++off) {
+            unsigned char save = bytes[off];
+            bytes[off] = (unsigned char)(save ^ 0xFF);
+            f = fopen("logs/attrib_fuzz.stats", "wb");
+            if (!f) { printf("FAIL: fuzz write\n"); return 1; }
+            fwrite(bytes, 1, len, f);
+            fclose(f);
+            bytes[off] = save;
+
+            ++tried;
+            attrib_ledger_init(F);
+            F->dropped_events = 0xA5A5u;   /* sentinel */
+            if (attrib_ledger_load(F, "logs/attrib_fuzz.stats") == 0) {
+                ++accepted;
+            } else if (F->count != 0 || F->dropped_events != 0xA5A5u) {
+                printf("FAIL: refused load mutated the ledger at byte %lu\n",
+                       (unsigned long)off);
+                return 1;
+            }
+        }
+        check(tried == len, "every byte position flipped");
+        printf("  info: %lu/%lu flips accepted, rest refused with state "
+               "untouched, 0 crashes\n",
+               (unsigned long)accepted, (unsigned long)tried);
+
+        for (off = 0; off <= len; ++off) {
+            f = fopen("logs/attrib_fuzz.stats", "wb");
+            if (!f) { printf("FAIL: fuzz write\n"); return 1; }
+            fwrite(bytes, 1, off, f);
+            fclose(f);
+            attrib_ledger_init(F);
+            F->dropped_events = 0xA5A5u;
+            if (attrib_ledger_load(F, "logs/attrib_fuzz.stats") != 0 &&
+                (F->count != 0 || F->dropped_events != 0xA5A5u)) {
+                printf("FAIL: refused truncation mutated the ledger at %lu\n",
+                       (unsigned long)off);
+                return 1;
+            }
+        }
+        check(1, "every truncation length refused cleanly or loaded validly");
+        free(bytes);
+        free(F);
     }
 
     free(L);

@@ -150,3 +150,116 @@ double attrib_signature_yield(const AttribRecord *r) {
 void attrib_sink(const struct AttributionEvent *ev, void *ctx) {
     (void)attrib_record((AttribLedger *)ctx, ev);
 }
+
+/* ---- sidecar persistence ------------------------------------------------
+   Empty strings are written as "-" so the field count stays fixed — the same
+   convention acquire_ledger_save uses. */
+
+static const char *sod(const char *s) { return s[0] ? s : "-"; }
+
+static void dts(char *dst, size_t cap, const char *src) {
+    if (strcmp(src, "-") == 0) { dst[0] = '\0'; return; }
+    snprintf(dst, cap, "%s", src);
+}
+
+int attrib_ledger_save(const AttribLedger *L, const char *path) {
+    FILE *f;
+    size_t i, j;
+    if (!L || !path) return -1;
+    f = fopen(path, "w");
+    if (!f) return -1;
+    fprintf(f, "CNET_ATTRIB 1\n%lu %lu\n",
+            (unsigned long)L->count, (unsigned long)L->dropped_events);
+    for (i = 0; i < L->count; ++i) {
+        const AttribRecord *r = &L->keys[i];
+        fprintf(f, "%s %d %lu %lu %s %lu %lu %lu %lu %lu %lu %.17g %lu %lu %lu",
+                sod(r->proposer),
+                (int)r->goal.family,
+                (unsigned long)r->goal.field_width,
+                (unsigned long)r->goal.field_count,
+                sod(r->goal.tag),
+                (unsigned long)r->admitted,
+                (unsigned long)r->proposer_fault,
+                (unsigned long)r->system_fault,
+                (unsigned long)r->blameless,
+                (unsigned long)r->unclassified,
+                (unsigned long)r->admitted_card_sum,
+                r->admitted_margin_min,
+                (unsigned long)r->admitted_proof,
+                (unsigned long)r->admitted_sampled,
+                (unsigned long)r->recipe_fp_count);
+        for (j = 0; j < r->recipe_fp_count; ++j)
+            fprintf(f, " %llu", (unsigned long long)r->recipe_fps[j]);
+        fprintf(f, "\n");
+    }
+    fclose(f);
+    return 0;
+}
+
+int attrib_ledger_load(AttribLedger *L, const char *path) {
+    FILE *f;
+    unsigned long count, dropped, i, j;
+    int ver;
+    AttribLedger *fresh;   /* parse into a temp; swap only on full success */
+    if (!L || !path) return -1;
+    f = fopen(path, "r");
+    if (!f) return -1;
+    {
+        char magic[16];
+        if (fscanf(f, "%15s %d\n", magic, &ver) != 2 ||
+            strcmp(magic, "CNET_ATTRIB") != 0 || ver != 1) {
+            fclose(f); return -1;
+        }
+    }
+    if (fscanf(f, "%lu %lu\n", &count, &dropped) != 2 ||
+        count > ATTRIB_MAX_KEYS) { fclose(f); return -1; }
+    fresh = (AttribLedger *)malloc(sizeof *fresh);
+    if (!fresh) { fclose(f); return -1; }
+    attrib_ledger_init(fresh);
+    for (i = 0; i < count; ++i) {
+        AttribRecord *r = &fresh->keys[i];
+        char name[ATTRIB_NAME_MAX], tag[PORT_TAG_MAX];
+        char decoded[PORT_TAG_MAX];
+        unsigned long w, c, adm, pf, sf, bl, un, cs, ap, as, nfp;
+        int fam;
+        memset(r, 0, sizeof *r);
+        if (fscanf(f, "%63s %d %lu %lu %31s %lu %lu %lu %lu %lu %lu %lf %lu %lu %lu",
+                   name, &fam, &w, &c, tag, &adm, &pf, &sf, &bl, &un, &cs,
+                   &r->admitted_margin_min, &ap, &as, &nfp) != 15 ||
+            nfp > ATTRIB_MAX_RECIPE_FPS) {
+            free(fresh); fclose(f); return -1;
+        }
+        dts(r->proposer, ATTRIB_NAME_MAX, name);
+        r->goal.family = (PortFamily)fam;
+        r->goal.field_width = (size_t)w;
+        r->goal.field_count = (size_t)c;
+        /* port_set_tag validates the atom, so a corrupt tag is refused rather
+           than copied in blind. */
+        dts(decoded, PORT_TAG_MAX, tag);
+        if (decoded[0] && port_set_tag(&r->goal, decoded) != 0) {
+            free(fresh); fclose(f); return -1;
+        }
+        r->admitted = (size_t)adm;
+        r->proposer_fault = (size_t)pf;
+        r->system_fault = (size_t)sf;
+        r->blameless = (size_t)bl;
+        r->unclassified = (size_t)un;
+        r->admitted_card_sum = (size_t)cs;
+        r->admitted_proof = (size_t)ap;
+        r->admitted_sampled = (size_t)as;
+        r->recipe_fp_count = (size_t)nfp;
+        for (j = 0; j < nfp; ++j) {
+            unsigned long long fp;
+            if (fscanf(f, " %llu", &fp) != 1) {
+                free(fresh); fclose(f); return -1;
+            }
+            r->recipe_fps[j] = (uint64_t)fp;
+        }
+    }
+    fresh->count = (size_t)count;
+    fresh->dropped_events = (size_t)dropped;
+    fclose(f);
+    *L = *fresh;          /* swap only now: parse fully succeeded */
+    free(fresh);
+    return 0;
+}
