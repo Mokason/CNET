@@ -329,7 +329,9 @@ CCE_HIPGEMM := src/cce/cce_hipgemm.c
 # Inert at runtime unless an NVIDIA driver is present and CNET_GPU_BACKEND=cuda
 # (or auto falls back after OpenCL/hip miss). Peer of CCE_HIPGEMM / CCE_CLGEMM.
 CCE_CUDAGEMM := src/cce/cce_cudagemm.c
-CCE_TRANSFORMER_QAT := src/cce/cce_transformer_qat.c
+QAT_CORE_SRC := src/cce/cce_transformer_qat.c
+QAT_LOAD_SRC := src/cce/cce_transformer_qat_load.c
+CCE_TRANSFORMER_QAT := $(QAT_CORE_SRC) $(QAT_LOAD_SRC)
 CCE := $(CCE_TENSOR) $(CCE_BLOCK) $(CCE_CASCADE) $(CCE_ARCHIVE) $(CCE_FOREST) $(CCE_ROUTER) $(CCE_SPARSE_KV) $(CCE_DSA) $(CCE_KV_PAGE) $(CCE_MTK) $(CCE_MLA) $(CCE_DS_MAP) $(CCE_DS_RT) $(CCE_INFER) $(CCE_UNCERTAINTY) $(CCE_COMPRESSION) $(CCE_LEARN) $(CCE_LORA) $(CCE_LILY) $(CCE_PATCH) $(CCE_GPU) $(CCE_ABI) $(CCE_CUDA_OBJ) $(CCE_PERCEPTUAL) $(CCE_WORDLM) $(CCE_MODEL) $(CCE_MODEL_IO) $(CCE_DATASET) $(CCE_AUTOGRAD) $(CCE_SAFETENSORS) $(CCE_GGUF) $(CCE_AICIMO) $(CCE_QGKP) $(CCE_DETECT) $(CCE_SSM) $(CCE_HYBRID) $(CCE_QWEN35) $(CCE_GGUF_QWEN35) $(CCE_ST_LLAMA) $(CCE_SPECGRAPH) $(CCE_WSTORE) $(CCE_TIERRT) $(CCE_SIMILAR) $(CCE_CLGEMM) $(CCE_HIPGEMM) $(CCE_CUDAGEMM) $(CCE_TRANSFORMER_QAT)
 CNET_CCE_ADAPTER := src/cce/cce_contract_adapter.c
 SPECIALIST_ADAPTERS := src/specialist_adapters.c
@@ -1207,7 +1209,7 @@ recipe_gate:
 
 # Test recipes propagate their exit codes directly. This positive-marker gate
 # runs after every prerequisite and rejects missing or stale-success logs.
-verify: recipe_gate claims_test cce_dll cce_safetensors_test cnet_lm_bounds_test cce_autograd_test cce_model_test cce_view forest_view cce_detect cce_ssm cce_hybrid cce_qwen35 cce_st_llama cce_specgraph cce_wstore cce_tiers cce_similar merge_family hybrid_catalog transformer_qat contract_secure contract_unit heal_mismatch mutate acquire attribution base flagship demos leakcheck cnet_fault_test cce_adapter_bank_test cce_dora_test cnet_serve_decode_test cnet_fault_loop_test registry_lora_store_test jtc_adapter_bench metric_honesty moe_ckpt_test
+verify: recipe_gate claims_test cce_dll cce_safetensors_test cnet_lm_bounds_test cce_autograd_test cce_model_test cce_view forest_view cce_detect cce_ssm cce_hybrid cce_qwen35 cce_st_llama cce_specgraph cce_wstore cce_tiers cce_similar merge_family hybrid_catalog transformer_qat contract_secure contract_unit heal_mismatch mutate acquire attribution qat_block base flagship demos leakcheck cnet_fault_test cce_adapter_bank_test cce_dora_test cnet_serve_decode_test cnet_fault_loop_test registry_lora_store_test jtc_adapter_bench metric_honesty moe_ckpt_test
 	@sh tests/verify_logs.sh
 
 # Everything verify covers PLUS the GPU equivalence gate (needs model + GPU;
@@ -2324,6 +2326,13 @@ hybrid_catalog: $(CCE) $(CCE_CUDA_OBJ) tests/hybrid_catalog_test.c tests/tiny_mo
 transformer_qat: $(CCE) $(CCE_CUDA_OBJ) tests/test_transformer_qat.c include/cce/cce_transformer_qat.h
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) tests/test_transformer_qat.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 	./$(BIN_DIR)/transformer_qat > logs/transformer_qat.log 2>&1
+
+# Hermetic QAT block gate: links the trainer CORE ONLY — no $(CCE), so no
+# curl/mmap/fsync/POSIX-mkdir dependency. Builds on every box, which is what
+# makes the gradcheck gates in this arc actually runnable.
+qat_block: $(QAT_CORE_SRC) tests/test_qat_block.c include/cce/cce_transformer_qat.h include/cce/cce_transformer_qat_internal.h
+	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $(QAT_CORE_SRC) tests/test_qat_block.c -lm
+	./$(BIN_DIR)/qat_block > logs/qat_block.log 2>&1
 
 # Trit-kernel micro-benchmark: FP vs int8 vs packed 1.6-bit forward on a
 # Supra-head-shaped block + the packed word-LM predict loop. Carries its own

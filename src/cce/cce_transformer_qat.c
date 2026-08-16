@@ -25,13 +25,11 @@
 #include <math.h>
 #include <stdio.h>
 
-/* ---- a parameter matrix bundled with grad + Adam moments ---- */
-typedef struct {
-    float *w, *g, *m, *v;   /* shadow, grad, adam m, adam v */
-    int in, out;            /* [in][out] row-major; bias has in == 1 */
-} P;
+/* Parameter layout + trainer struct live in the internal header so the
+   loader TU can see them without the core depending on $(CCE). */
+#include "../../include/cce/cce_transformer_qat_internal.h"
 
-static int p_alloc(P* p, int in, int out) {
+int p_alloc(P* p, int in, int out) {
     size_t n = (size_t)in * out;
     p->w = (float*)calloc(n, sizeof(float));
     p->g = (float*)calloc(n, sizeof(float));
@@ -40,44 +38,7 @@ static int p_alloc(P* p, int in, int out) {
     p->in = in; p->out = out;
     return p->w && p->g && p->m && p->v;
 }
-static void p_free(P* p) { free(p->w); free(p->g); free(p->m); free(p->v); }
-
-struct cce_transformer_qat {
-    cce_transformer_qat_config cfg;
-    int hd;                   /* head_dim = D / n_head */
-    /* params */
-    P tok_emb;                /* [vocab][D]  (QAT-able) */
-    P pos_emb;                /* [block][D]  FROZEN FP  */
-    P *qkv_w, *qkv_b;         /* per layer [D][3D], [1][3D] */
-    P *proj_w, *proj_b;       /* per layer [D][D],  [1][D]  */
-    P *up_w, *up_b;           /* per layer [D][M],  [1][M]  */
-    P *down_w, *down_b;       /* per layer [M][D],  [1][D]  */
-    P *ln1_w, *ln1_b, *ln2_w, *ln2_b;  /* per layer [1][D] */
-    P lnf_w, lnf_b;           /* [1][D] */
-    P head_w, head_b;         /* [D][vocab], [1][vocab] (QAT-able) */
-    /* adam step counter */
-    int adam_t;
-    /* per-step activation cache (sized for block_size) */
-    int T;                    /* live sequence length of the cache */
-    float *x0;                /* [T][D] embedding output */
-    float *xin;               /* [L][T][D] block input */
-    float *ln1o, *ln2o;       /* [L][T][D] */
-    float *ln1_mean, *ln1_rstd, *ln2_mean, *ln2_rstd;   /* [L][T] */
-    float *qkv;               /* [L][T][3D] */
-    float *probs;             /* [L][H][T][T] softmax rows */
-    float *cat;               /* [L][T][D] concat of head outputs */
-    float *xattn;             /* [L][T][D] x after attention residual */
-    float *mpre;              /* [L][T][M] pre-GELU */
-    float *mpost;             /* [L][T][M] post-GELU */
-    float *hfin;              /* [D] final LN output (last position) */
-    float lnf_mean, lnf_rstd;
-    float *logits;            /* [vocab] */
-    /* ternary scratch: effective weights for one matrix at a time */
-    float *eff;               /* max(in*out) over QAT-able matrices */
-    /* backward scratch */
-    float *dx, *dtmp, *dmid, *dqkv, *dcat;
-    unsigned long long rng;
-};
+void p_free(P* p) { free(p->w); free(p->g); free(p->m); free(p->v); }
 
 /* ---- rng ---- */
 static float tr_rnd(cce_transformer_qat* t) {
@@ -336,107 +297,6 @@ void cce_transformer_qat_free(cce_transformer_qat* t) {
 }
 
 /* ================= real-weight loader ================= */
-
-/* Copy `in*out` FP values from src into the shadow of a trainer P, asserting the
-   element count matches (STE moments/grad left at their fresh-zero state). */
-static cce_result copy_into_P(P* p, const float* src, int in, int out) {
-    if (!p || !src) return CCE_ERR_INVALID_ARG;
-    if (p->in != in || p->out != out) return CCE_ERR_INVALID_ARG;
-    memcpy(p->w, src, (size_t)in * out * sizeof(float));
-    return CCE_OK;
-}
-
-/* The pure-linear projection for a named branch lives in the LAST block of its
-   cascade (single-block LINEAR_HEAD cascades in the decomposed model), weights
-   stored [in][out] row-major — same orientation as the trainer's P. */
-static const cce_block* supra_last_block(cce_forest* f, const char* name) {
-    cce_cascade* c = cce_forest_get_resident(f, name);
-    if (!c || c->num_blocks < 1) return NULL;
-    return &c->blocks[c->num_blocks - 1];
-}
-
-cce_result cce_transformer_qat_load_decomposed(cce_transformer_qat* t, void* decomposed_model) {
-    if (!t || !decomposed_model) return CCE_ERR_INVALID_ARG;
-    cce_supra_decomposed* m = (cce_supra_decomposed*)decomposed_model;
-    const cce_transformer_qat_config* c = &t->cfg;
-    int L = c->n_layer, D = c->n_embd, M = c->mlp_hidden, V = c->vocab, B = c->block_size;
-
-    /* dims must line up exactly (direct memcpy, no reshape) */
-    if (m->n_layer != L || m->n_embd != D || m->n_head != c->n_head ||
-        m->vocab_size != V || m->block_size != B) return CCE_ERR_INVALID_ARG;
-    if (!m->forest) return CCE_ERR_INVALID_ARG;
-
-    /* mlp_hidden must match the real up-projection out width */
-    {
-        const cce_block* up0 = supra_last_block(m->forest, "gpt.block0.mlp_up");
-        if (!up0 || up0->weights.ndim != 2 || up0->weights.shape[1] != M)
-            return CCE_ERR_INVALID_ARG;
-    }
-
-    /* --- embeddings (tok_emb QAT-able, pos_emb frozen FP) --- */
-    if (!m->tok_emb.data || m->tok_emb.numel != (size_t)V * D) return CCE_ERR_INVALID_ARG;
-    if (!m->pos_emb.data || m->pos_emb.numel != (size_t)B * D) return CCE_ERR_INVALID_ARG;
-    if (copy_into_P(&t->tok_emb, m->tok_emb.data, V, D) != CCE_OK) return CCE_ERR_INVALID_ARG;
-    if (copy_into_P(&t->pos_emb, m->pos_emb.data, B, D) != CCE_OK) return CCE_ERR_INVALID_ARG;
-
-    /* --- per-layer LayerNorm params + linear projections --- */
-    for (int l = 0; l < L; ++l) {
-        char name[128];
-        /* LN1 / LN2 (weights + biases), each [D] -> P[1][D] */
-        if (m->ln1_w[l].numel != (size_t)D || m->ln1_b[l].numel != (size_t)D ||
-            m->ln2_w[l].numel != (size_t)D || m->ln2_b[l].numel != (size_t)D)
-            return CCE_ERR_INVALID_ARG;
-        if (copy_into_P(&t->ln1_w[l], m->ln1_w[l].data, 1, D) != CCE_OK) return CCE_ERR_INVALID_ARG;
-        if (copy_into_P(&t->ln1_b[l], m->ln1_b[l].data, 1, D) != CCE_OK) return CCE_ERR_INVALID_ARG;
-        if (copy_into_P(&t->ln2_w[l], m->ln2_w[l].data, 1, D) != CCE_OK) return CCE_ERR_INVALID_ARG;
-        if (copy_into_P(&t->ln2_b[l], m->ln2_b[l].data, 1, D) != CCE_OK) return CCE_ERR_INVALID_ARG;
-
-        /* fused QKV [D][3D] + bias [3D] */
-        snprintf(name, sizeof(name), "gpt.block%d.qkv", l);
-        const cce_block* b = supra_last_block(m->forest, name);
-        if (!b || b->weights.ndim != 2 || !b->bias.data) return CCE_ERR_INVALID_ARG;
-        if (copy_into_P(&t->qkv_w[l], b->weights.data, b->weights.shape[0], b->weights.shape[1]) != CCE_OK ||
-            copy_into_P(&t->qkv_b[l], b->bias.data, 1, b->weights.shape[1]) != CCE_OK) return CCE_ERR_INVALID_ARG;
-
-        /* attn output projection [D][D] + bias [D] */
-        snprintf(name, sizeof(name), "gpt.block%d.attn_proj", l);
-        b = supra_last_block(m->forest, name);
-        if (!b || b->weights.ndim != 2 || !b->bias.data) return CCE_ERR_INVALID_ARG;
-        if (copy_into_P(&t->proj_w[l], b->weights.data, b->weights.shape[0], b->weights.shape[1]) != CCE_OK ||
-            copy_into_P(&t->proj_b[l], b->bias.data, 1, b->weights.shape[1]) != CCE_OK) return CCE_ERR_INVALID_ARG;
-
-        /* MLP up [D][M] + bias [M] */
-        snprintf(name, sizeof(name), "gpt.block%d.mlp_up", l);
-        b = supra_last_block(m->forest, name);
-        if (!b || b->weights.ndim != 2 || !b->bias.data) return CCE_ERR_INVALID_ARG;
-        if (copy_into_P(&t->up_w[l], b->weights.data, b->weights.shape[0], b->weights.shape[1]) != CCE_OK ||
-            copy_into_P(&t->up_b[l], b->bias.data, 1, b->weights.shape[1]) != CCE_OK) return CCE_ERR_INVALID_ARG;
-
-        /* MLP down [M][D] + bias [D] */
-        snprintf(name, sizeof(name), "gpt.block%d.mlp_down", l);
-        b = supra_last_block(m->forest, name);
-        if (!b || b->weights.ndim != 2 || !b->bias.data) return CCE_ERR_INVALID_ARG;
-        if (copy_into_P(&t->down_w[l], b->weights.data, b->weights.shape[0], b->weights.shape[1]) != CCE_OK ||
-            copy_into_P(&t->down_b[l], b->bias.data, 1, b->weights.shape[1]) != CCE_OK) return CCE_ERR_INVALID_ARG;
-    }
-
-    /* --- final LayerNorm --- */
-    if (m->ln_f_w.numel != (size_t)D || m->ln_f_b.numel != (size_t)D) return CCE_ERR_INVALID_ARG;
-    if (copy_into_P(&t->lnf_w, m->ln_f_w.data, 1, D) != CCE_OK) return CCE_ERR_INVALID_ARG;
-    if (copy_into_P(&t->lnf_b, m->ln_f_b.data, 1, D) != CCE_OK) return CCE_ERR_INVALID_ARG;
-
-    /* --- logits head [D][V] + bias [V] (borrowed via the public FP accessor) --- */
-    {
-        const float* hw = NULL; const float* hb = NULL; int hin = 0, hout = 0;
-        if (cce_supra_head_fp(m, &hw, &hb, &hin, &hout) != CCE_OK) return CCE_ERR_INVALID_ARG;
-        if (hin != D || hout != V || !hw) return CCE_ERR_INVALID_ARG;
-        if (copy_into_P(&t->head_w, hw, D, V) != CCE_OK) return CCE_ERR_INVALID_ARG;
-        if (hb) { if (copy_into_P(&t->head_b, hb, 1, V) != CCE_OK) return CCE_ERR_INVALID_ARG; }
-        else    { memset(t->head_b.w, 0, (size_t)V * sizeof(float)); }
-    }
-
-    return CCE_OK;
-}
 
 void cce_transformer_qat_set_qat(cce_transformer_qat* t, int qkv, int proj, int mlp,
                              int head, int emb) {
