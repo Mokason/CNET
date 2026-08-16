@@ -994,7 +994,7 @@ cnet_grow_teacher: include/cnet_grow_lobe.h src/cnet_grow_lobe.c \
 
 
 # --- CORE four product paths (deep benches) ---
-CORE_PATH_COMMON = src/cnet_core_paths.c src/cnet_core_bus.c src/cnet_core_serve.c src/cnet_live_miss.c src/cnet_weight_convert.c \
+CORE_PATH_COMMON = src/cnet_core_paths.c src/cnet_core_bus.c src/cnet_core_serve.c src/cnet_live_miss.c src/cnet_evolve_dir.c src/cnet_weight_convert.c \
 	src/cnet_hemisphere.c src/cnet_brain_mirror.c src/cnet_rlm.c \
 	src/cnet_capsule_loop.c src/cnet_skill_lane.c src/cnet_ood_skill.c \
 	src/cnet_held_model.c src/cnet_c_speak.c src/cce/cce_wordlm.c \

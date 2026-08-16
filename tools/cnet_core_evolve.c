@@ -1,21 +1,20 @@
-/* Unattended CORE evolve tick.
- * Reads live miss_log + optional factory seeds; writes .lut bricks.
- * Never residual auto-CERT. Propose ≠ admit (admit only after TABLE≥0.95).
+/* Unattended CORE evolve tick — steered by evolve_direction.conf
  *
- * Usage:
- *   cnet_core_evolve [--once]
+ * Usage: cnet_core_evolve [--once]
  * Env:
- *   CNET_CORE_BUS_BRICKS_DIR   brick output dir (required)
- *   CNET_BONSAI_GGUF           host weights (optional factory)
- *   CNET_MISS_LOG              live miss jsonl (optional path3)
- *   CNET_CORE_EVOLVE_FACTORY=1 run default 2-brick factory if bank empty
+ *   CNET_CORE_BUS_BRICKS_DIR   required
+ *   CNET_BONSAI_GGUF           host weights
+ *   CNET_MISS_LOG              live miss jsonl
+ *   CNET_EVOLVE_DIRECTION      optional path to direction conf
+ *   CNET_CORE_EVOLVE_FACTORY=1 force factory even if conf says otherwise
  */
-#include "cnet_core_bus.h"
-#include "cnet_core_paths.h"
-#include "cnet_core_serve.h"
 #include "cnet_agi_scenario.h"
 #include "cnet_agi_scenario2.h"
 #include "cnet_agi_scenario3.h"
+#include "cnet_core_bus.h"
+#include "cnet_core_paths.h"
+#include "cnet_core_serve.h"
+#include "cnet_evolve_dir.h"
 #include "cnet_live_miss.h"
 
 #include <stdio.h>
@@ -30,13 +29,20 @@ static int count_luts(const char *dir) {
     return b.n;
 }
 
+static int lut_exists(const char *dir, const char *tag) {
+    char p[768];
+    snprintf(p, sizeof p, "%s/%s.lut", dir, tag);
+    return access(p, R_OK) == 0;
+}
+
 int main(int argc, char **argv) {
     const char *dir = getenv("CNET_CORE_BUS_BRICKS_DIR");
     const char *bonsai = getenv("CNET_BONSAI_GGUF");
     const char *miss = getenv("CNET_MISS_LOG");
-    const char *fac = getenv("CNET_CORE_EVOLVE_FACTORY");
+    const char *fac_env = getenv("CNET_CORE_EVOLVE_FACTORY");
+    CnetEvolveDirection dirn;
     CnetCoreBus bus;
-    int n0, n1;
+    int n0, n1, new_count = 0;
     int did = 0;
     (void)argc;
     (void)argv;
@@ -49,32 +55,17 @@ int main(int argc, char **argv) {
     if (!bonsai || !bonsai[0])
         bonsai = "/home/marble/AI/Models/Bonsai-8B-gguf/Bonsai-8B.gguf";
 
+    (void)cnet_evolve_dir_load(&dirn, dir);
+    printf("evolve: direction from %s (live=%d factory=%d goals=%d max_new=%d)\n",
+           dirn.loaded_from, dirn.allow_live_miss, dirn.allow_factory,
+           dirn.allow_goals, dirn.max_new_per_tick);
+
     n0 = count_luts(dir);
     cnet_core_bus_init(&bus);
     setenv("CNET_CORE_BUS_BRICKS_DIR", dir, 1);
 
-    /* Path3: miss-log with complete nibble table → admit brick */
-    if (miss && miss[0] && access(miss, R_OK) == 0) {
-        CnetPath3Bench pb;
-        char gguf[768];
-        snprintf(gguf, sizeof gguf, "%s/evolve_miss_domain.gguf", dir);
-        memset(&pb, 0, sizeof pb);
-        if (cnet_path3_miss_to_admit(&bus, miss, gguf, "evolve_miss_brick",
-                                     "evolve_nibble", &pb) == 0 &&
-            pb.served_ok) {
-            printf("evolve: miss→admit ok serve=%d admit_delta=%d ms=%.3f\n",
-                   pb.served_ok, pb.admit_calls_delta, pb.ms_total);
-            did = 1;
-        } else {
-            printf("evolve: miss path propose_rc=%d table=%d admit=%d "
-                   "(no full table yet is OK)\n",
-                   pb.propose_rc, pb.table_ok, pb.admit_ok);
-        }
-    }
-
-
-    /* Live structured miss: admit every domain that reached 16/16 pairs */
-    if (miss && miss[0] && access(miss, R_OK) == 0) {
+    /* 1) Live miss domains (steered by prefer/deny) */
+    if (dirn.allow_live_miss && miss && miss[0] && access(miss, R_OK) == 0) {
         char doms[16][CNET_LIVE_DOM_NAME];
         int nd = cnet_live_miss_complete_domains(miss, doms, 16);
         int di;
@@ -82,13 +73,13 @@ int main(int argc, char **argv) {
             CnetPath3Bench pb;
             char gguf[768], bname[80];
             float lut[16];
-            if (cnet_live_miss_domain_pairs(miss, doms[di], lut) != 16) continue;
-            /* skip if .lut already exists */
-            {
-                char lutp[768];
-                snprintf(lutp, sizeof lutp, "%s/%s.lut", dir, doms[di]);
-                if (access(lutp, R_OK) == 0) continue;
+            if (!cnet_evolve_dir_domain_ok(&dirn, doms[di])) {
+                printf("evolve: skip domain %s (direction filter)\n", doms[di]);
+                continue;
             }
+            if (lut_exists(dir, doms[di])) continue;
+            if (new_count >= dirn.max_new_per_tick) break;
+            if (cnet_live_miss_domain_pairs(miss, doms[di], lut) != 16) continue;
             snprintf(gguf, sizeof gguf, "%s/live_%s.gguf", dir, doms[di]);
             snprintf(bname, sizeof bname, "live_%s", doms[di]);
             if (bus.state != CNET_CORE_BUS_IDLE) {
@@ -96,36 +87,59 @@ int main(int argc, char **argv) {
                 bus.state = CNET_CORE_BUS_IDLE;
             }
             memset(&pb, 0, sizeof pb);
-            if (cnet_path3_miss_to_admit(&bus, miss, gguf, bname, doms[di], &pb) == 0 &&
+            if (cnet_path3_miss_to_admit(&bus, miss, gguf, bname, doms[di],
+                                         &pb) == 0 &&
                 pb.served_ok) {
-                printf("evolve: live domain %s admitted pairs=16 ms=%.3f\n",
-                       doms[di], pb.ms_total);
+                printf("evolve: live domain %s admitted ms=%.3f\n", doms[di],
+                       pb.ms_total);
+                did = 1;
+                new_count++;
+            }
+        }
+        printf("evolve: complete_domains scanned=%d new=%d\n", nd, new_count);
+    }
+
+    /* 2) Factory curriculum from direction */
+    {
+        int want_fac = dirn.allow_factory &&
+                       ((fac_env && fac_env[0] == '1') ||
+                        (dirn.factory_if_empty && n0 == 0) ||
+                        (fac_env && fac_env[0] == '1'));
+        /* also build missing curriculum tags if allow_factory */
+        if (dirn.allow_factory && dirn.n_factory > 0) {
+            CnetPath2Spec todo[CNET_EVDIR_MAX_FACTORY];
+            int nt = 0, i;
+            for (i = 0; i < dirn.n_factory; ++i) {
+                if (lut_exists(dir, dirn.factory[i].tag)) continue;
+                if (nt >= dirn.max_new_per_tick - new_count) break;
+                todo[nt++] = dirn.factory[i];
+            }
+            if (nt > 0 && access(bonsai, R_OK) == 0) {
+                CnetPath2Bench fb;
+                if (cnet_path2_factory_run(&bus, bonsai, dir, todo, nt, &fb) ==
+                    0) {
+                    printf("evolve: factory curriculum built=%d ms=%.3f\n",
+                           fb.n_built, fb.ms_total);
+                    did = 1;
+                    new_count += fb.n_built;
+                } else if (want_fac) {
+                    printf("evolve: factory curriculum partial built=%d\n",
+                           fb.n_built);
+                }
+            }
+        } else if (want_fac && access(bonsai, R_OK) == 0 && n0 == 0) {
+            CnetPath2Bench fb;
+            if (cnet_path2_factory_run(&bus, bonsai, dir, dirn.factory,
+                                       dirn.n_factory > 2 ? 2 : dirn.n_factory,
+                                       &fb) == 0) {
+                printf("evolve: factory seed built=%d ms=%.3f\n", fb.n_built,
+                       fb.ms_total);
                 did = 1;
             }
         }
-        printf("evolve: complete_domains scanned=%d\n", nd);
     }
 
-    /* Factory seed if bank empty or forced */
-    if ((fac && fac[0] == '1') || n0 == 0) {
-        CnetPath2Bench fb;
-        CnetPath2Spec specs[2];
-        specs[0] =
-            (CnetPath2Spec){"blk.0.attn_q.weight", "q1_add16", "brick_q_add", 0};
-        specs[1] =
-            (CnetPath2Spec){"blk.0.attn_k.weight", "q1_xor16", "brick_k_xor", 1};
-        if (access(bonsai, R_OK) == 0) {
-            if (cnet_path2_factory_run(&bus, bonsai, dir, specs, 2, &fb) == 0) {
-                printf("evolve: factory built=%d served=%d ms=%.3f\n", fb.n_built,
-                       fb.n_served_ok, fb.ms_total);
-                did = 1;
-            } else {
-                printf("evolve: factory rc fail built=%d\n", fb.n_built);
-            }
-        }
-    }
-
-    /* Ensure .lut files exist for every parked brick */
+    /* flush bus bricks to .lut */
     {
         int i;
         for (i = 0; i < bus.n_bricks; ++i) {
@@ -136,42 +150,21 @@ int main(int argc, char **argv) {
         }
     }
 
-    /* AGI-scenario evolve tick: given/miss valuation path */
-    {
-        CnetAgiScenario agi;
-        const char *missp = getenv("CNET_MISS_LOG");
-        cnet_agi_scenario_init(&agi, dir, missp && missp[0] ? missp : "agi_evolve_miss.jsonl",
-                               bonsai);
-        /* reload bus bricks into agi bus via serve luts only */
-        (void)cnet_serve_bank_load_dir(&agi.serve, dir);
-        if (cnet_agi_scenario_evolve_tick(&agi) == 0) {
-            printf("evolve: agi_scenario_tick did work\n");
-            did = 1;
-        }
-        cnet_agi_scenario_free(&agi);
-    }
-    if (getenv("CNET_AGI2") && getenv("CNET_AGI2")[0] == '1') {
-        CnetAgiScenario2 s2;
-        char ws[768];
-        snprintf(ws, sizeof ws, "%s/agi2_workspace.txt", dir);
-        cnet_agi2_init(&s2, dir, getenv("CNET_MISS_LOG") ? getenv("CNET_MISS_LOG")
-                                                         : "agi2_evolve_miss.jsonl",
-                       bonsai, ws);
-        (void)cnet_agi2_restore(&s2);
-        (void)cnet_serve_bank_load_dir(&s2.base.serve, dir);
-        (void)cnet_agi_scenario_evolve_tick(&s2.base);
-        (void)cnet_agi2_persist(&s2);
-        printf("evolve: agi2 workspace persist\n");
-        cnet_agi2_free(&s2);
-        did = 1;
-    }
-
-
-    /* Layer 3: open goals queued by cnetd → CERT-only plan synth + run */
-    {
+    /* 3) Direction seed goals + pending_goals.txt */
+    if (dirn.allow_goals) {
         char gpath[768];
         FILE *gf;
+        int gi;
+        /* prepend curriculum goals once per tick if not present as luts only */
         snprintf(gpath, sizeof gpath, "%s/pending_goals.txt", dir);
+        if (dirn.n_goals > 0) {
+            gf = fopen(gpath, "a");
+            if (gf) {
+                for (gi = 0; gi < dirn.n_goals; ++gi)
+                    fprintf(gf, "%s\n", dirn.goals[gi]);
+                fclose(gf);
+            }
+        }
         gf = fopen(gpath, "r");
         if (gf) {
             CnetAgiScenario3 s3;
@@ -180,7 +173,7 @@ int main(int argc, char **argv) {
             snprintf(ws, sizeof ws, "%s/agi3_workspace.txt", dir);
             cnet_agi3_init(&s3, dir, miss && miss[0] ? miss : "agi3_evolve_miss.jsonl",
                            bonsai, ws);
-            (void)cnet_agi3_boot(&s3, n0 == 0 ? 1 : 0);
+            (void)cnet_agi3_boot(&s3, 0);
             while (fgets(line, sizeof line, gf)) {
                 char *nl = strchr(line, '\n');
                 int pi;
@@ -202,20 +195,19 @@ int main(int argc, char **argv) {
                 }
             }
             fclose(gf);
-            /* rewrite queue empty after processing */
             gf = fopen(gpath, "w");
             if (gf) {
                 fprintf(gf, "# processed\n");
                 fclose(gf);
             }
-            (void)cnet_agi3_specialists_sync(&s3);
             {
                 int i;
                 for (i = 0; i < s3.L2.base.bus.n_bricks; ++i) {
                     if (!s3.L2.base.bus.bricks[i].live) continue;
-                    (void)cnet_serve_save_lut(dir, s3.L2.base.bus.bricks[i].domain_tag,
-                                              s3.L2.base.bus.bricks[i].name,
-                                              s3.L2.base.bus.bricks[i].lut_table);
+                    (void)cnet_serve_save_lut(
+                        dir, s3.L2.base.bus.bricks[i].domain_tag,
+                        s3.L2.base.bus.bricks[i].name,
+                        s3.L2.base.bus.bricks[i].lut_table);
                 }
             }
             printf("evolve: agi3 goals total=%d ok=%d reject=%d specialists=%d\n",
@@ -224,10 +216,42 @@ int main(int argc, char **argv) {
         }
     }
 
+    /* 4) AGI ticks */
+    if (dirn.allow_agi_tick) {
+        CnetAgiScenario agi;
+        const char *missp = getenv("CNET_MISS_LOG");
+        cnet_agi_scenario_init(&agi, dir,
+                               missp && missp[0] ? missp : "agi_evolve_miss.jsonl",
+                               bonsai);
+        (void)cnet_serve_bank_load_dir(&agi.serve, dir);
+        if (cnet_agi_scenario_evolve_tick(&agi) == 0) {
+            printf("evolve: agi_scenario_tick did work\n");
+            did = 1;
+        }
+        cnet_agi_scenario_free(&agi);
+    }
+    if (getenv("CNET_AGI2") && getenv("CNET_AGI2")[0] == '1') {
+        CnetAgiScenario2 s2;
+        char ws[768];
+        snprintf(ws, sizeof ws, "%s/agi2_workspace.txt", dir);
+        cnet_agi2_init(&s2, dir,
+                       getenv("CNET_MISS_LOG") ? getenv("CNET_MISS_LOG")
+                                              : "agi2_evolve_miss.jsonl",
+                       bonsai, ws);
+        (void)cnet_agi2_restore(&s2);
+        (void)cnet_serve_bank_load_dir(&s2.base.serve, dir);
+        (void)cnet_agi_scenario_evolve_tick(&s2.base);
+        (void)cnet_agi2_persist(&s2);
+        printf("evolve: agi2 workspace persist\n");
+        cnet_agi2_free(&s2);
+        did = 1;
+    }
+
     cnet_core_bus_free(&bus);
     n1 = count_luts(dir);
-    printf("CNET_CORE_EVOLVE_OK luts_before=%d luts_after=%d did=%d\n", n0, n1,
-           did);
-    printf("switch=1 self_evolve_tick=1 agi3_goals=1 residual_auto_cert=0\n");
+    printf("CNET_CORE_EVOLVE_OK luts_before=%d luts_after=%d did=%d "
+           "direction=%s\n",
+           n0, n1, did, dirn.loaded_from);
+    printf("switch=1 self_evolve_tick=1 direction=1 residual_auto_cert=0\n");
     return 0;
 }
