@@ -497,6 +497,7 @@ cce_result cce_gguf_load(const char* path, cce_gguf** out) {
        and g->map becomes the direct DMA source for the resident-quantized
        VRAM forward. Fail-safe: any failure keeps the original FILE*. Parse
        above already ran on the real file, so only the load phase changes. */
+#ifndef _WIN32
     if (getenv("CNET_GGUF_MMAP") && getenv("CNET_GGUF_MMAP")[0] == '1') {
         long fsz = ftell(g->f);
         if (fseek(g->f, 0, SEEK_END) == 0) {
@@ -522,6 +523,12 @@ cce_result cce_gguf_load(const char* path, cce_gguf** out) {
         }
         if (!g->map) fseek(g->f, fsz, SEEK_SET);   /* restore on fallback */
     }
+#else
+    /* No mmap/fmemopen/madvise on Windows. CNET_GGUF_MMAP is an opt-in
+       fast path, never a correctness requirement — the ordinary FILE* load
+       below is the fallback the POSIX path already uses when mapping fails,
+       so Windows simply always takes it. */
+#endif
 
     *out = g;
     return CCE_OK;
@@ -551,7 +558,9 @@ cce_result cce_gguf_tensor_bytes(const cce_gguf* g, int idx,
 void cce_gguf_free(cce_gguf* g) {
     if (!g) return;
     if (g->f) fclose(g->f);
+#ifndef _WIN32
     if (g->map) munmap(g->map, g->map_size);
+#endif
     if (g->tensors) free(g->tensors);
     for (int i = 0; i < g->n_kvs; i++) gguf_free_kv(&g->kvs[i]);
     if (g->kvs) free(g->kvs);
