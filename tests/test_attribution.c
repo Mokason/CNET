@@ -515,6 +515,28 @@ int main(void) {
         }
     }
 
+    printf("[16] append-only event log\n");
+    {
+        struct AttributionEvent e = ev_of("gemma", g, "certify_failed", 0);
+        FILE *f;
+        int lines = 0, ch, prev = 0;
+        remove("logs/attrib_events.log");
+        e.recipe_fp = 7u;
+        check(attrib_log_append("logs/attrib_events.log", &e) == 0,
+              "first append ok");
+        check(attrib_log_append("logs/attrib_events.log", &e) == 0,
+              "second append ok");
+        f = fopen("logs/attrib_events.log", "r");
+        check(f != NULL, "log file exists");
+        while ((ch = fgetc(f)) != EOF) { if (ch == '\n') lines++; prev = ch; }
+        fclose(f);
+        check(prev == '\n', "log ends on a newline");
+        check(lines == 3, "header written once, plus two appended events");
+        check(attrib_log_append(NULL, &e) == -1, "NULL path refused");
+        check(attrib_log_append("logs/attrib_events.log", NULL) == -1,
+              "NULL event refused");
+    }
+
     free(L);
     printf("checks run: %d\n", checks_run);
     printf("ALL ATTRIBUTION TESTS PASSED\n");

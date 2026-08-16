@@ -322,3 +322,49 @@ int attrib_calib_report(const AttribCalib *c, double alpha, size_t min_n,
     out->calibratable = 1;
     return 0;
 }
+
+/* ---- append-only raw event log ------------------------------------------
+   Never loaded on the hot path. It exists because the blame taxonomy above is
+   the part most likely to be wrong on the first attempt: with raw events
+   retained, posteriors can be recomputed under revised rules — including
+   re-keying to include input_port — without re-running a mining campaign to
+   regather evidence. */
+int attrib_log_append(const char *path, const struct AttributionEvent *ev) {
+    FILE *f;
+    int need_header = 0;
+    if (!path || !ev) return -1;
+    /* ftell() on a stream opened in append mode is implementation-defined
+       before the first write — Windows reports 0 for a non-empty file, which
+       would re-emit the header on every call. Probe the size separately. */
+    {
+        FILE *probe = fopen(path, "rb");
+        if (!probe) {
+            need_header = 1;
+        } else {
+            if (fseek(probe, 0, SEEK_END) != 0 || ftell(probe) <= 0)
+                need_header = 1;
+            fclose(probe);
+        }
+    }
+    f = fopen(path, "a");
+    if (!f) return -1;
+    if (need_header) fprintf(f, "CNET_ATTRIB_LOG 1\n");
+    fprintf(f, "%s %d %lu %lu %s %d %lu %lu %s %s %d %llu %lu %.17g %d\n",
+            sod(ev->proposer ? ev->proposer : ""),
+            (int)ev->input_port.family,
+            (unsigned long)ev->input_port.field_width,
+            (unsigned long)ev->input_port.field_count,
+            sod(ev->input_port.tag),
+            (int)ev->goal_port.family,
+            (unsigned long)ev->goal_port.field_width,
+            (unsigned long)ev->goal_port.field_count,
+            sod(ev->goal_port.tag),
+            sod(ev->reason ? ev->reason : ""),
+            ev->admitted,
+            (unsigned long long)ev->recipe_fp,
+            (unsigned long)ev->domain_cardinality,
+            ev->min_margin,
+            ev->cert_verdict);
+    fclose(f);
+    return 0;
+}

@@ -633,6 +633,10 @@ attribution: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDAT
 	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(CONFORMAL) $(ACQUIRE_SRC) $(BASE_SRC) $(ATTRIB_SRC) $(ATTRIB_TEST) $(LDFLAGS)
 	./$(BIN_DIR)/attribution > logs/attribution.log 2>&1
 
+# Inspector for a CNET_ATTRIB sidecar (report-only, changes nothing).
+attrib_report: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(CONFORMAL) $(ATTRIB_SRC) tools/attrib_report.c include/attribution.h
+	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(CONFORMAL) $(ATTRIB_SRC) tools/attrib_report.c $(LDFLAGS)
+
 # Unified base (CNB version 2 semantics under stable CNB1 magic): one sealed
 # container (units + tags + stats + oracle descriptors) replacing per-unit file
 # sprawl; tag governance with refusal.
