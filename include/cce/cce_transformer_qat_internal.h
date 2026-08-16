@@ -22,6 +22,8 @@ typedef struct {
 struct cce_transformer_qat {
     cce_transformer_qat_config cfg;
     int hd;                   /* head_dim = D / n_head */
+    int   kvh;                /* effective KV heads: cfg.n_kv_head ? : n_head */
+    float eps;                /* effective norm epsilon: cfg.norm_eps ? : 1e-5f */
     /* params */
     P tok_emb;                /* [vocab][D]  (QAT-able) */
     P pos_emb;                /* [block][D]  FROZEN FP  */

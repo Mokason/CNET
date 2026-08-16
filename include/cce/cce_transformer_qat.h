@@ -32,6 +32,19 @@ extern "C" {
 
 typedef struct cce_transformer_qat cce_transformer_qat;
 
+/* ---- modern-block selectors ------------------------------------------
+ * Every legacy value is 0, so a memset-zeroed config reproduces exactly the
+ * GPT-2-shaped model this trainer has always built. That is the
+ * compatibility contract; tests/test_qat_block.c section 4 enforces it with
+ * a bit-identity anchor. */
+typedef enum { QAT_NORM_LN = 0, QAT_NORM_RMS = 1 } qat_norm_kind;
+typedef enum { QAT_POS_LEARNED = 0, QAT_POS_ROPE = 1 } qat_pos_kind;
+typedef enum { QAT_MLP_GELU = 0, QAT_MLP_SWIGLU = 1 } qat_mlp_kind;
+/* Which dimension pairs rotate together. half-split pairs (i, i+hd/2) and is
+ * the HF Llama/Qwen convention; interleaved pairs (0,1),(2,3),... They are
+ * NOT interchangeable — a wrong choice trains fine and matches no reference. */
+typedef enum { QAT_ROPE_HALF = 0, QAT_ROPE_INTERLEAVED = 1 } qat_rope_pairing;
+
 typedef struct {
     int n_layer;      /* transformer blocks */
     int n_embd;       /* hidden size D */
@@ -42,6 +55,16 @@ typedef struct {
     unsigned seed;    /* deterministic init */
     /* QAT knobs: 1 = ternary forward + STE for that group, 0 = plain FP */
     int qat_qkv, qat_proj, qat_mlp, qat_head, qat_emb;
+    /* --- modern-block selectors; all-zero = legacy GPT-2 shape --- */
+    int norm_kind;      /* qat_norm_kind */
+    int pos_kind;       /* qat_pos_kind */
+    int mlp_kind;       /* qat_mlp_kind */
+    int rope_pairing;   /* qat_rope_pairing */
+    int n_kv_head;      /* 0 => n_head (MHA); else must divide n_head */
+    int no_bias;        /* 1 => no qkv/proj/up/down bias. Named negatively so
+                           zero-init keeps the legacy meaning (biases present). */
+    float rope_theta;   /* required > 0 when pos_kind == QAT_POS_ROPE */
+    float norm_eps;     /* 0 => 1e-5 default */
 } cce_transformer_qat_config;
 
 /* Create with random (seeded) weights — enough for the hermetic gate. */

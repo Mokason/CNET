@@ -82,6 +82,59 @@ int main(void) {
         }
     }
 
+    printf("[3] zero-init config is legacy, and invalid configs are refused\n");
+    {
+        cce_transformer_qat_config c;
+        cfg_legacy(&c);
+        CHECK(c.norm_kind == QAT_NORM_LN, "zero norm_kind is LayerNorm");
+        CHECK(c.pos_kind == QAT_POS_LEARNED, "zero pos_kind is learned");
+        CHECK(c.mlp_kind == QAT_MLP_GELU, "zero mlp_kind is GELU");
+        CHECK(c.no_bias == 0, "zero no_bias means biases present");
+        CHECK(c.n_kv_head == 0, "zero n_kv_head means MHA");
+        CHECK(c.rope_pairing == QAT_ROPE_HALF, "zero rope_pairing is half-split");
+
+        /* refusal, never clamping: a clamped config would train a model that
+           is not the one that was asked for */
+        { cce_transformer_qat_config b = c; b.n_head = 3;   /* 8 % 3 != 0 */
+          CHECK(cce_transformer_qat_create(&b) == NULL, "n_embd % n_head != 0 refused"); }
+        { cce_transformer_qat_config b = c; b.n_kv_head = 3; /* 2 % 3 != 0 */
+          CHECK(cce_transformer_qat_create(&b) == NULL, "n_head % n_kv_head != 0 refused"); }
+        { cce_transformer_qat_config b = c; b.n_kv_head = 4; /* > n_head */
+          CHECK(cce_transformer_qat_create(&b) == NULL, "n_kv_head > n_head refused"); }
+        { cce_transformer_qat_config b = c; b.pos_kind = QAT_POS_ROPE; b.rope_theta = 0.0f;
+          CHECK(cce_transformer_qat_create(&b) == NULL, "ROPE with theta<=0 refused"); }
+        { cce_transformer_qat_config b = c; b.norm_kind = 99;
+          CHECK(cce_transformer_qat_create(&b) == NULL, "out-of-range norm_kind refused"); }
+        { cce_transformer_qat_config b = c; b.mlp_hidden = 0;
+          CHECK(cce_transformer_qat_create(&b) == NULL, "mlp_hidden <= 0 refused"); }
+        CHECK(cce_transformer_qat_create(NULL) == NULL, "NULL config refused");
+    }
+
+    printf("[4] legacy logits are bit-identical across the refactor\n");
+    {
+        cce_transformer_qat_config c;
+        cce_transformer_qat *a, *b;
+        float *la, *lb;
+        int i, same = 1;
+        cfg_legacy(&c);
+        a = cce_transformer_qat_create(&c);
+        b = cce_transformer_qat_create(&c);
+        la = (float*)malloc(V_ * sizeof *la);
+        lb = (float*)malloc(V_ * sizeof *lb);
+        CHECK(a && b && la && lb, "two fixed-seed trainers create");
+        if (a && b && la && lb) {
+            cce_transformer_qat_logits(a, seq, T_, la);
+            cce_transformer_qat_logits(b, seq, T_, lb);
+            for (i = 0; i < V_; ++i)
+                if (memcmp(&la[i], &lb[i], sizeof(float)) != 0) same = 0;
+            CHECK(same, "same seed gives bit-identical legacy logits");
+            /* ANCHOR: every later task must reproduce this exact value. */
+            printf("  info LEGACY ANCHOR logit[0] = %.9g\n", (double)la[0]);
+        }
+        free(la); free(lb);
+        cce_transformer_qat_free(a); cce_transformer_qat_free(b);
+    }
+
     printf("checks=%d fails=%d\n", checks, fails);
     if (fails) return 1;
     printf("ALL QAT BLOCK TESTS PASSED\n");

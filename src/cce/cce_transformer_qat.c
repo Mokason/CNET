@@ -238,10 +238,26 @@ cce_transformer_qat* cce_transformer_qat_create(const cce_transformer_qat_config
     if (cfg->block_size < 1 || cfg->block_size > 1024) return NULL;
     if (cfg->n_embd < 1 || cfg->n_embd > 4096) return NULL;
     if (cfg->n_layer < 1 || cfg->mlp_hidden < 1 || cfg->vocab < 2) return NULL;
+    /* Modern-block selectors: REFUSE, never clamp. A silently-clamped config
+       trains a model that is not the one that was asked for, and the weights
+       would then be labelled as something they are not. */
+    if (cfg->norm_kind < QAT_NORM_LN || cfg->norm_kind > QAT_NORM_RMS) return NULL;
+    if (cfg->pos_kind  < QAT_POS_LEARNED || cfg->pos_kind > QAT_POS_ROPE) return NULL;
+    if (cfg->mlp_kind  < QAT_MLP_GELU || cfg->mlp_kind > QAT_MLP_SWIGLU) return NULL;
+    if (cfg->rope_pairing < QAT_ROPE_HALF ||
+        cfg->rope_pairing > QAT_ROPE_INTERLEAVED) return NULL;
+    if (cfg->n_kv_head < 0 || cfg->n_kv_head > cfg->n_head) return NULL;
+    if (cfg->n_kv_head != 0 && cfg->n_head % cfg->n_kv_head != 0) return NULL;
+    if (cfg->pos_kind == QAT_POS_ROPE && !(cfg->rope_theta > 0.0f)) return NULL;
+    if (cfg->norm_eps < 0.0f) return NULL;
     cce_transformer_qat* t = (cce_transformer_qat*)calloc(1, sizeof(*t));
     if (!t) return NULL;
     t->cfg = *cfg;
     t->hd = cfg->n_embd / cfg->n_head;
+    /* Derived, NOT written back into t->cfg: the config stays a faithful
+       record of what was asked for, including the "0 means default" zeros. */
+    t->kvh = cfg->n_kv_head ? cfg->n_kv_head : cfg->n_head;
+    t->eps = cfg->norm_eps > 0.0f ? cfg->norm_eps : 1e-5f;
     t->rng = cfg->seed ? cfg->seed : 0x9E3779B97F4A7C15ULL;
 
     int L = cfg->n_layer, D = cfg->n_embd, M = cfg->mlp_hidden,
