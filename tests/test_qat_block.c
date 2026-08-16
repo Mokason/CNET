@@ -57,6 +57,31 @@ int main(void) {
         }
     }
 
+    printf("[2] every allocated parameter group is gradcheck-reachable\n");
+    {
+        cce_transformer_qat_config c;
+        cce_transformer_qat* t;
+        cfg_legacy(&c);
+        t = cce_transformer_qat_create(&c);
+        CHECK(t != NULL, "trainer creates");
+        if (t) {
+            int ng = cce_transformer_qat_group_count(t);
+            int np = cce_transformer_qat_param_count(t);
+            /* legacy: tok_emb + pos_emb + 12/layer + lnf_w/b + head_w/b */
+            int expect = 2 + 12 * c.n_layer + 4;
+            printf("  info groups=%d params=%d expected_groups=%d\n",
+                   ng, np, expect);
+            CHECK(ng == expect, "group count matches the legacy allocation exactly");
+            CHECK(np > 0, "parameter count is non-zero");
+            /* pos_emb is frozen FP by design: registered so the audit stays
+               total, but skipped by gradcheck since backward writes no
+               gradient for it. Exactly one such group in the legacy shape. */
+            CHECK(cce_transformer_qat_trainable_count(t) == ng - 1,
+                  "exactly one registered group is frozen (pos_emb)");
+            cce_transformer_qat_free(t);
+        }
+    }
+
     printf("checks=%d fails=%d\n", checks, fails);
     if (fails) return 1;
     printf("ALL QAT BLOCK TESTS PASSED\n");

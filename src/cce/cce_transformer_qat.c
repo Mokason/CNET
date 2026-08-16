@@ -40,6 +40,58 @@ int p_alloc(P* p, int in, int out) {
 }
 void p_free(P* p) { free(p->w); free(p->g); free(p->m); free(p->v); }
 
+/* ---- gradcheck group registry ----------------------------------------
+   Registration is a side effect of allocation (the PA macro in create), so a
+   parameter group cannot be added without becoming gradcheckable. */
+void qat_group_reset(cce_transformer_qat* t) {
+    if (!t) return;
+    free(t->groups); free((void*)t->group_names); free(t->group_trainable);
+    t->groups = NULL; t->group_names = NULL; t->group_trainable = NULL;
+    t->n_groups = 0; t->cap_groups = 0;
+}
+
+int qat_group_add(cce_transformer_qat* t, P* p, const char* name, int trainable) {
+    if (!t || !p) return 0;
+    if (t->n_groups >= t->cap_groups) {
+        int nc = t->cap_groups ? t->cap_groups * 2 : 32;
+        P** ng = (P**)realloc(t->groups, (size_t)nc * sizeof *ng);
+        const char** nn; int* nt;
+        if (!ng) return 0;
+        t->groups = ng;
+        nn = (const char**)realloc((void*)t->group_names, (size_t)nc * sizeof *nn);
+        if (!nn) return 0;
+        t->group_names = nn;
+        nt = (int*)realloc(t->group_trainable, (size_t)nc * sizeof *nt);
+        if (!nt) return 0;
+        t->group_trainable = nt;
+        t->cap_groups = nc;
+    }
+    t->groups[t->n_groups] = p;
+    t->group_names[t->n_groups] = name;
+    t->group_trainable[t->n_groups] = trainable;
+    t->n_groups++;
+    return 1;
+}
+
+int cce_transformer_qat_trainable_count(const cce_transformer_qat* t) {
+    int n = 0, i;
+    if (!t) return 0;
+    for (i = 0; i < t->n_groups; ++i) if (t->group_trainable[i]) ++n;
+    return n;
+}
+
+int cce_transformer_qat_group_count(const cce_transformer_qat* t) {
+    return t ? t->n_groups : 0;
+}
+
+int cce_transformer_qat_param_count(const cce_transformer_qat* t) {
+    int n = 0, i;
+    if (!t) return 0;
+    for (i = 0; i < t->n_groups; ++i)
+        n += t->groups[i]->in * t->groups[i]->out;
+    return n;
+}
+
 /* ---- rng ---- */
 static float tr_rnd(cce_transformer_qat* t) {
     t->rng = t->rng * 6364136223846793005ULL + 1442695040888963407ULL;
@@ -195,8 +247,12 @@ cce_transformer_qat* cce_transformer_qat_create(const cce_transformer_qat_config
     int L = cfg->n_layer, D = cfg->n_embd, M = cfg->mlp_hidden,
         V = cfg->vocab, B = cfg->block_size;
     int ok = 1;
-    ok &= p_alloc(&t->tok_emb, V, D);
-    ok &= p_alloc(&t->pos_emb, B, D);
+    /* Allocate AND register in one call: the registry is what the gradcheck
+       walks, so an unregistered group would be silently ungradchecked. */
+#define PA(fld, in_, out_, nm) (ok &= (p_alloc(&(fld), (in_), (out_)) &&                                        qat_group_add(t, &(fld), (nm), 1)))
+#define PA_FROZEN(fld, in_, out_, nm) (ok &= (p_alloc(&(fld), (in_), (out_)) &&                                               qat_group_add(t, &(fld), (nm), 0)))
+    PA(t->tok_emb, V, D, "tok_emb");
+    PA_FROZEN(t->pos_emb, B, D, "pos_emb");   /* frozen FP by design */
     t->qkv_w  = (P*)calloc(L, sizeof(P)); t->qkv_b  = (P*)calloc(L, sizeof(P));
     t->proj_w = (P*)calloc(L, sizeof(P)); t->proj_b = (P*)calloc(L, sizeof(P));
     t->up_w   = (P*)calloc(L, sizeof(P)); t->up_b   = (P*)calloc(L, sizeof(P));
@@ -206,15 +262,17 @@ cce_transformer_qat* cce_transformer_qat_create(const cce_transformer_qat_config
     if (!t->qkv_w || !t->qkv_b || !t->proj_w || !t->proj_b || !t->up_w || !t->up_b ||
         !t->down_w || !t->down_b || !t->ln1_w || !t->ln1_b || !t->ln2_w || !t->ln2_b) ok = 0;
     for (int l = 0; ok && l < L; ++l) {
-        ok &= p_alloc(&t->qkv_w[l], D, 3*D);  ok &= p_alloc(&t->qkv_b[l], 1, 3*D);
-        ok &= p_alloc(&t->proj_w[l], D, D);   ok &= p_alloc(&t->proj_b[l], 1, D);
-        ok &= p_alloc(&t->up_w[l], D, M);     ok &= p_alloc(&t->up_b[l], 1, M);
-        ok &= p_alloc(&t->down_w[l], M, D);   ok &= p_alloc(&t->down_b[l], 1, D);
-        ok &= p_alloc(&t->ln1_w[l], 1, D);    ok &= p_alloc(&t->ln1_b[l], 1, D);
-        ok &= p_alloc(&t->ln2_w[l], 1, D);    ok &= p_alloc(&t->ln2_b[l], 1, D);
+        PA(t->qkv_w[l], D, 3*D, "qkv_w");  PA(t->qkv_b[l], 1, 3*D, "qkv_b");
+        PA(t->proj_w[l], D, D, "proj_w");  PA(t->proj_b[l], 1, D, "proj_b");
+        PA(t->up_w[l], D, M, "up_w");      PA(t->up_b[l], 1, M, "up_b");
+        PA(t->down_w[l], M, D, "down_w");  PA(t->down_b[l], 1, D, "down_b");
+        PA(t->ln1_w[l], 1, D, "ln1_w");    PA(t->ln1_b[l], 1, D, "ln1_b");
+        PA(t->ln2_w[l], 1, D, "ln2_w");    PA(t->ln2_b[l], 1, D, "ln2_b");
     }
-    ok &= p_alloc(&t->lnf_w, 1, D); ok &= p_alloc(&t->lnf_b, 1, D);
-    ok &= p_alloc(&t->head_w, D, V); ok &= p_alloc(&t->head_b, 1, V);
+    PA(t->lnf_w, 1, D, "lnf_w");   PA(t->lnf_b, 1, D, "lnf_b");
+    PA(t->head_w, D, V, "head_w"); PA(t->head_b, 1, V, "head_b");
+#undef PA
+#undef PA_FROZEN
 
     /* caches */
     size_t TD = (size_t)B * D, TM = (size_t)B * M;
@@ -269,6 +327,7 @@ cce_transformer_qat* cce_transformer_qat_create(const cce_transformer_qat_config
 void cce_transformer_qat_free(cce_transformer_qat* t) {
     if (!t) return;
     int L = t->cfg.n_layer;
+    qat_group_reset(t);
     p_free(&t->tok_emb); p_free(&t->pos_emb);
     for (int l = 0; l < L; ++l) {
         if (t->qkv_w)  p_free(&t->qkv_w[l]);
@@ -659,20 +718,18 @@ double cce_transformer_qat_gradcheck(cce_transformer_qat* t, const int* tokens, 
     free(dl);
 
     /* numeric vs analytic over samples from EVERY group */
-    P* groups[128];
+    /* Walk the REGISTRY, not a hand-built list. The old array was
+       P* groups[128] with 'if (ng + 12 > 124) break;': any group not appended
+       here was silently ungradchecked (pos_emb never was), and a 13th
+       per-layer matrix would have truncated the tail without a word.
+       Frozen-by-design groups are skipped — backward deliberately writes no
+       gradient for them, so perturbing them would fail against a zero
+       analytic contribution. */
+    P* gbuf[512];
     int ng = 0;
-    groups[ng++] = &t->tok_emb;
-    for (int l = 0; l < t->cfg.n_layer; ++l) {
-        if (ng + 12 > 124) break;  /* keep room for the 4 tail groups */
-        groups[ng++] = &t->qkv_w[l];  groups[ng++] = &t->qkv_b[l];
-        groups[ng++] = &t->proj_w[l]; groups[ng++] = &t->proj_b[l];
-        groups[ng++] = &t->up_w[l];   groups[ng++] = &t->up_b[l];
-        groups[ng++] = &t->down_w[l]; groups[ng++] = &t->down_b[l];
-        groups[ng++] = &t->ln1_w[l];  groups[ng++] = &t->ln1_b[l];
-        groups[ng++] = &t->ln2_w[l];  groups[ng++] = &t->ln2_b[l];
-    }
-    groups[ng++] = &t->lnf_w; groups[ng++] = &t->lnf_b;
-    groups[ng++] = &t->head_w; groups[ng++] = &t->head_b;
+    for (int gi = 0; gi < t->n_groups && ng < 512; ++gi)
+        if (t->group_trainable[gi]) gbuf[ng++] = t->groups[gi];
+    P** groups = gbuf;
 
     (void)n_samples;
     double max_rel = 0.0;

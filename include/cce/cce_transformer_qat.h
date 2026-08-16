@@ -83,6 +83,15 @@ double cce_transformer_qat_gradcheck(cce_transformer_qat* t, const int* tokens, 
 /* Flip the QAT knobs live. Ternarization happens on the fly from the FP
  * shadows, so "post-hoc baseline" == train FP, then set_qat(1,...) and eval
  * WITHOUT further training; "QAT" == set_qat(1,...) and keep training. */
+/* Introspection for the registration audit: how many parameter groups the
+ * gradcheck will visit, and how many scalar parameters they hold. A group
+ * that is allocated but unregistered is silently ungradchecked, so the gate
+ * asserts this count against the expected allocation. */
+int cce_transformer_qat_group_count(const cce_transformer_qat* t);
+int cce_transformer_qat_param_count(const cce_transformer_qat* t);
+/* Groups the gradcheck actually visits (excludes frozen-by-design groups). */
+int cce_transformer_qat_trainable_count(const cce_transformer_qat* t);
+
 void cce_transformer_qat_set_qat(cce_transformer_qat* t, int qkv, int proj, int mlp,
                              int head, int emb);
 

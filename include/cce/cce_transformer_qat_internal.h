@@ -54,10 +54,28 @@ struct cce_transformer_qat {
     /* backward scratch */
     float *dx, *dtmp, *dmid, *dqkv, *dcat;
     unsigned long long rng;
+    /* Gradcheck group registry. Registration is a SIDE EFFECT of allocation
+       (the PA macro in create allocates and registers in one call), so a new
+       parameter group cannot be added without becoming gradcheckable. The
+       previous hand-built P* groups[128] array silently dropped unregistered
+       groups, and its 'ng + 12 > 124' guard would quietly truncate the moment
+       a 13th per-layer matrix was added. */
+    P**  groups;
+    const char** group_names;
+    int* group_trainable;   /* 0 = frozen by design (pos_emb): registered so
+                               the audit stays total, but skipped by gradcheck
+                               since backward deliberately writes no gradient
+                               for it and Adam deliberately skips it. */
+    int  n_groups, cap_groups;
 };
 
 /* Shared by the core and the loader TU (was static before the split). */
 int  p_alloc(P* p, int in, int out);
 void p_free(P* p);
+
+
+/* Gradcheck group registry (see the struct comment). */
+void qat_group_reset(cce_transformer_qat* t);
+int  qat_group_add(cce_transformer_qat* t, P* p, const char* name, int trainable);
 
 #endif /* CCE_TRANSFORMER_QAT_INTERNAL_H */
