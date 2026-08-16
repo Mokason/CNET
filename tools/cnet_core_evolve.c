@@ -16,6 +16,8 @@
 #include "cnet_core_serve.h"
 #include "cnet_evolve_dir.h"
 #include "cnet_live_miss.h"
+#include "cnet_obsidian_learn.h"
+#include "cnet_grok_guide.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -63,6 +65,27 @@ int main(int argc, char **argv) {
     n0 = count_luts(dir);
     cnet_core_bus_init(&bus);
     setenv("CNET_CORE_BUS_BRICKS_DIR", dir, 1);
+
+    if (dirn.allow_obsidian) {
+        CnetObsidianLearnReport orep;
+        char missbuf[768];
+        const char *mp = (miss && miss[0]) ? miss : NULL;
+        const char *vault = dirn.obsidian_vault[0] ? dirn.obsidian_vault : NULL;
+        if (!mp) {
+            snprintf(missbuf, sizeof missbuf, "%s/obsidian_miss.jsonl", dir);
+            mp = missbuf;
+            miss = mp;
+        }
+        memset(&orep, 0, sizeof orep);
+        if (cnet_obsidian_learn(vault, mp, dir, dirn.obsidian_max_files, &orep) == 0) {
+            printf("evolve: obsidian vault=%s scanned=%d hit=%d teaches=%d domains=%d goals=%d\n",
+                   orep.vault, orep.files_scanned, orep.files_hit, orep.teaches,
+                   orep.domains_complete_emitted, orep.goals_queued);
+            if (orep.teaches > 0 || orep.goals_queued > 0) did = 1;
+        } else {
+            printf("evolve: obsidian skip (no vault or error)\n");
+        }
+    }
 
     /* 1) Live miss domains (steered by prefer/deny) */
     if (dirn.allow_live_miss && miss && miss[0] && access(miss, R_OK) == 0) {
@@ -245,6 +268,22 @@ int main(int argc, char **argv) {
         printf("evolve: agi2 workspace persist\n");
         cnet_agi2_free(&s2);
         did = 1;
+    }
+
+    /* Optional Grok guide (non-CERT), 30min/q default, few questions */
+    {
+        CnetGrokGuideReport gr;
+        int mq = 3, sec = 1800;
+        const char *ms = getenv("CNET_GROK_GUIDE_MAX_Q");
+        const char *ss = getenv("CNET_GROK_GUIDE_SECONDS");
+        if (ms && ms[0]) mq = atoi(ms);
+        if (ss && ss[0]) sec = atoi(ss);
+        if (sec > 1800) sec = 1800;
+        if (cnet_grok_guide_run(dir, mq, sec, &gr) == 0 && gr.enabled) {
+            printf("evolve: grok_guide asked=%d answered=%d err=%d timeout=%d log=%s\n",
+                   gr.asked, gr.answered, gr.errors, gr.timed_out, gr.log_path);
+            if (gr.answered > 0) did = 1;
+        }
     }
 
     cnet_core_bus_free(&bus);

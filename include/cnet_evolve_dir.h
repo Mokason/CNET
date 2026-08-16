@@ -22,6 +22,8 @@ typedef struct {
     int allow_goals;
     int allow_agi_tick;
     int factory_if_empty;
+    int allow_obsidian;
+    int obsidian_max_files;
     int max_new_per_tick;
     CnetPath2Spec factory[CNET_EVDIR_MAX_FACTORY];
     int n_factory;
@@ -32,6 +34,7 @@ typedef struct {
     char deny[CNET_EVDIR_MAX_DOM][CNET_EVDIR_NAME];
     int n_deny;
     char loaded_from[512];
+    char obsidian_vault[512];
 } CnetEvolveDirection;
 
 void cnet_evolve_dir_defaults(CnetEvolveDirection *D);

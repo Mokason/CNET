@@ -50,6 +50,9 @@ void cnet_evolve_dir_defaults(CnetEvolveDirection *D) {
     D->allow_goals = 1;
     D->allow_agi_tick = 1;
     D->factory_if_empty = 1;
+    D->allow_obsidian = 1;
+    D->obsidian_max_files = 200;
+    D->obsidian_vault[0] = 0;
     D->max_new_per_tick = 3;
     D->factory[0] =
         (CnetPath2Spec){"blk.0.attn_q.weight", "q1_add16", "brick_q_add", 0};
@@ -90,6 +93,12 @@ static int load_file(CnetEvolveDirection *D, const char *path) {
             D->allow_agi_tick = atoi(eq + 1) ? 1 : 0;
         else if (strcmp(line, "factory_if_empty") == 0)
             D->factory_if_empty = atoi(eq + 1) ? 1 : 0;
+        else if (strcmp(line, "allow_obsidian") == 0)
+            D->allow_obsidian = atoi(eq + 1) ? 1 : 0;
+        else if (strcmp(line, "obsidian_max_files") == 0)
+            D->obsidian_max_files = atoi(eq + 1);
+        else if (strcmp(line, "obsidian_vault") == 0)
+            copy_text(D->obsidian_vault, sizeof D->obsidian_vault, eq + 1);
         else if (strcmp(line, "max_new_per_tick") == 0) {
             D->max_new_per_tick = atoi(eq + 1);
             if (D->max_new_per_tick < 0) D->max_new_per_tick = 0;
