@@ -379,9 +379,14 @@ cce_transformer_qat* cce_transformer_qat_create(const cce_transformer_qat_config
     /* Derived, NOT written back into t->cfg: the config stays a faithful
        record of what was asked for, including the "0 means default" zeros. */
     t->kvh = cfg->n_kv_head ? cfg->n_kv_head : cfg->n_head;
+    /* Fused QKV stays ONE matrix; only its output width varies. Under MHA
+       (kvh == n_head) this is exactly 3*D with byte-identical Q/K/V offsets,
+       so GQA cannot disturb the legacy path by construction. */
+    t->qkvw = cfg->n_embd + 2 * t->kvh * t->hd;
     t->eps = cfg->norm_eps > 0.0f ? cfg->norm_eps : 1e-5f;
     t->rng = cfg->seed ? cfg->seed : 0x9E3779B97F4A7C15ULL;
 
+    int QW = t->qkvw;
     int L = cfg->n_layer, D = cfg->n_embd, M = cfg->mlp_hidden,
         V = cfg->vocab, B = cfg->block_size;
     int ok = 1;
@@ -402,7 +407,7 @@ cce_transformer_qat* cce_transformer_qat_create(const cce_transformer_qat_config
     if (!t->qkv_w || !t->qkv_b || !t->proj_w || !t->proj_b || !t->up_w || !t->up_b ||
         !t->down_w || !t->down_b || !t->ln1_w || !t->ln1_b || !t->ln2_w || !t->ln2_b) ok = 0;
     for (int l = 0; ok && l < L; ++l) {
-        PA(t->qkv_w[l], D, 3*D, "qkv_w");  PA(t->qkv_b[l], 1, 3*D, "qkv_b");
+        PA(t->qkv_w[l], D, QW, "qkv_w");   PA(t->qkv_b[l], 1, QW, "qkv_b");
         PA(t->proj_w[l], D, D, "proj_w");  PA(t->proj_b[l], 1, D, "proj_b");
         PA(t->up_w[l], D, M, "up_w");      PA(t->up_b[l], 1, M, "up_b");
         if (cfg->mlp_kind == QAT_MLP_SWIGLU) {
@@ -432,7 +437,7 @@ cce_transformer_qat* cce_transformer_qat_create(const cce_transformer_qat_config
     t->ln1_rstd = (float*)calloc((size_t)L*B, sizeof(float));
     t->ln2_mean = (float*)calloc((size_t)L*B, sizeof(float));
     t->ln2_rstd = (float*)calloc((size_t)L*B, sizeof(float));
-    t->qkv   = (float*)calloc((size_t)L*B*3*D, sizeof(float));
+    t->qkv   = (float*)calloc((size_t)L*B*QW, sizeof(float));
     t->probs = (float*)calloc((size_t)L*cfg->n_head*B*B, sizeof(float));
     t->cat   = (float*)calloc((size_t)L*TD, sizeof(float));
     t->xattn = (float*)calloc((size_t)L*TD, sizeof(float));
@@ -447,14 +452,14 @@ cce_transformer_qat* cce_transformer_qat_create(const cce_transformer_qat_config
     t->hfin  = (float*)calloc(D, sizeof(float));
     t->logits= (float*)calloc(V, sizeof(float));
     size_t effmax = (size_t)D * V;                    /* head is the biggest */
-    if ((size_t)D*3*D > effmax) effmax = (size_t)D*3*D;
+    if ((size_t)D*QW > effmax) effmax = (size_t)D*QW;
     if ((size_t)D*M   > effmax) effmax = (size_t)D*M;
     if ((size_t)V*D   > effmax) effmax = (size_t)V*D; /* tok_emb */
     t->eff  = (float*)calloc(effmax, sizeof(float));
     t->dx   = (float*)calloc(TD, sizeof(float));
-    t->dtmp = (float*)calloc(TD > (size_t)B*3*D ? TD : (size_t)B*3*D, sizeof(float));
+    t->dtmp = (float*)calloc(TD > (size_t)B*QW ? TD : (size_t)B*QW, sizeof(float));
     t->dmid = (float*)calloc(TM, sizeof(float));
-    t->dqkv = (float*)calloc((size_t)B*3*D, sizeof(float));
+    t->dqkv = (float*)calloc((size_t)B*QW, sizeof(float));
     t->dcat = (float*)calloc(TD, sizeof(float));
     ok &= (t->x0 && t->xin && t->ln1o && t->ln2o && t->ln1_mean && t->ln1_rstd &&
            t->ln2_mean && t->ln2_rstd && t->qkv && t->probs && t->cat && t->xattn &&
@@ -468,7 +473,7 @@ cce_transformer_qat* cce_transformer_qat_create(const cce_transformer_qat_config
     if (t->pos_emb.w)
         for (size_t i = 0; i < (size_t)B*D; ++i) t->pos_emb.w[i] = sc * tr_rnd(t);
     for (int l = 0; l < L; ++l) {
-        for (size_t i = 0; i < (size_t)D*3*D; ++i) t->qkv_w[l].w[i] = sc * tr_rnd(t);
+        for (size_t i = 0; i < (size_t)D*QW; ++i) t->qkv_w[l].w[i] = sc * tr_rnd(t);
         for (size_t i = 0; i < (size_t)D*D; ++i)   t->proj_w[l].w[i] = sc * tr_rnd(t);
         for (size_t i = 0; i < (size_t)D*M; ++i)   t->up_w[l].w[i] = sc * tr_rnd(t);
         if (t->gate_w[l].w)
@@ -531,6 +536,7 @@ static cce_result tr_forward(cce_transformer_qat* t, const int* tokens, int T) {
     const cce_transformer_qat_config* c = &t->cfg;
     int L = c->n_layer, D = c->n_embd, H = c->n_head, hd = t->hd,
         M = c->mlp_hidden, V = c->vocab;
+    int QW = t->qkvw, KVH = t->kvh, GS = H / t->kvh;   /* GS query heads share one KV head */
     if (T < 1 || T > c->block_size) return CCE_ERR_INVALID_ARG;
     t->T = T;
 
@@ -565,7 +571,7 @@ static cce_result tr_forward(cce_transformer_qat* t, const int* tokens, int T) {
     for (int l = 0; l < L; ++l) {
         float* xin  = t->xin  + (size_t)l*c->block_size*D;
         float* ln1o = t->ln1o + (size_t)l*c->block_size*D;
-        float* qkv  = t->qkv  + (size_t)l*c->block_size*3*D;
+        float* qkv  = t->qkv  + (size_t)l*c->block_size*QW;
         float* cat  = t->cat  + (size_t)l*c->block_size*D;
         float* xatt = t->xattn+ (size_t)l*c->block_size*D;
         float* ln2o = t->ln2o + (size_t)l*c->block_size*D;
@@ -575,18 +581,19 @@ static cce_result tr_forward(cce_transformer_qat* t, const int* tokens, int T) {
 
         norm_fwd(t, xin, t->ln1_w[l].w, t->ln1_b[l].w, T, D, ln1o,
                t->ln1_mean + (size_t)l*c->block_size, t->ln1_rstd + (size_t)l*c->block_size);
-        lin_fwd(ln1o, mat_eff(t, &t->qkv_w[l], c->qat_qkv), t->qkv_b[l].w, qkv, T, D, 3*D);
+        lin_fwd(ln1o, mat_eff(t, &t->qkv_w[l], c->qat_qkv), t->qkv_b[l].w, qkv, T, D, QW);
 
         /* RoPE rotates Q and K in place (never V), so the attention loop
            below is untouched by the position scheme. */
         if (c->pos_kind == QAT_POS_ROPE) {
-            for (int r = 0; r < T; ++r)
-                for (int h = 0; h < H; ++h) {
-                    rope_apply(qkv + (size_t)r*3*D + h*hd, hd, r,
+            for (int r = 0; r < T; ++r) {
+                for (int h = 0; h < H; ++h)      /* Q: one per query head */
+                    rope_apply(qkv + (size_t)r*QW + h*hd, hd, r,
                                c->rope_theta, c->rope_pairing);
-                    rope_apply(qkv + (size_t)r*3*D + D + h*hd, hd, r,
+                for (int kv = 0; kv < KVH; ++kv) /* K: one per KV head only */
+                    rope_apply(qkv + (size_t)r*QW + D + kv*hd, hd, r,
                                c->rope_theta, c->rope_pairing);
-                }
+            }
         }
 
         /* attention per head */
@@ -594,12 +601,12 @@ static cce_result tr_forward(cce_transformer_qat* t, const int* tokens, int T) {
         for (int h = 0; h < H; ++h) {
             float* Pm = t->probs + (((size_t)l*H + h)*c->block_size)*c->block_size;
             for (int i = 0; i < T; ++i) {
-                const float* qi = qkv + (size_t)i*3*D + h*hd;
+                const float* qi = qkv + (size_t)i*QW + h*hd;
                 /* scores row (causal) with stable softmax */
                 double maxv = -1e30;
                 float srow[1024];  /* block_size cap for the gate models */
                 for (int j = 0; j <= i; ++j) {
-                    const float* kj = qkv + (size_t)j*3*D + D + h*hd;
+                    const float* kj = qkv + (size_t)j*QW + D + (h/GS)*hd;
                     double s = 0.0;
                     for (int d = 0; d < hd; ++d) s += (double)qi[d] * kj[d];
                     s *= scale;
@@ -617,7 +624,8 @@ static cce_result tr_forward(cce_transformer_qat* t, const int* tokens, int T) {
                 for (int d = 0; d < hd; ++d) {
                     double s = 0.0;
                     for (int j = 0; j <= i; ++j)
-                        s += (double)prow[j] * qkv[(size_t)j*3*D + 2*D + h*hd + d];
+                        s += (double)prow[j] *
+                             qkv[(size_t)j*QW + D + KVH*hd + (h/GS)*hd + d];
                     orow[d] = (float)s;
                 }
             }
@@ -691,6 +699,7 @@ static void tr_backward(cce_transformer_qat* t, const int* tokens, const float* 
     const cce_transformer_qat_config* c = &t->cfg;
     int L = c->n_layer, D = c->n_embd, H = c->n_head, hd = t->hd,
         M = c->mlp_hidden, V = c->vocab, T = t->T;
+    int QW = t->qkvw, KVH = t->kvh, GS = H / t->kvh;   /* GS query heads share one KV head */
 
     /* dx currently holds the FINAL x [T][D] (stashed by forward). Move it out. */
     float* xfinal = t->dcat;               /* borrow: dcat is per-layer scratch */
@@ -713,7 +722,7 @@ static void tr_backward(cce_transformer_qat* t, const int* tokens, const float* 
     for (int l = L - 1; l >= 0; --l) {
         float* xin  = t->xin  + (size_t)l*c->block_size*D;
         float* ln1o = t->ln1o + (size_t)l*c->block_size*D;
-        float* qkv  = t->qkv  + (size_t)l*c->block_size*3*D;
+        float* qkv  = t->qkv  + (size_t)l*c->block_size*QW;
         float* cat  = t->cat  + (size_t)l*c->block_size*D;
         float* xatt = t->xattn+ (size_t)l*c->block_size*D;
         float* ln2o = t->ln2o + (size_t)l*c->block_size*D;
@@ -759,7 +768,7 @@ static void tr_backward(cce_transformer_qat* t, const int* tokens, const float* 
                 t->proj_w[l].g, t->proj_b[l].g, t->dcat, T, D, D);
 
         /* attention backward per head: dcat -> dqkv */
-        memset(t->dqkv, 0, (size_t)T*3*D*sizeof(float));
+        memset(t->dqkv, 0, (size_t)T*QW*sizeof(float));
         float scale = 1.0f / sqrtf((float)hd);
         for (int h = 0; h < H; ++h) {
             const float* Pm = t->probs + (((size_t)l*H + h)*c->block_size)*c->block_size;
@@ -769,8 +778,9 @@ static void tr_backward(cce_transformer_qat* t, const int* tokens, const float* 
                 /* dP[j] = doi · v_j ; dV_j += P[j]·doi */
                 float dprow[1024];
                 for (int j = 0; j <= i; ++j) {
-                    const float* vj = qkv + (size_t)j*3*D + 2*D + h*hd;
-                    float* dvj = t->dqkv + (size_t)j*3*D + 2*D + h*hd;
+                    const float* vj = qkv + (size_t)j*QW + D + KVH*hd + (h/GS)*hd;
+                    /* += below: every query head sharing this KV head accumulates */
+                    float* dvj = t->dqkv + (size_t)j*QW + D + KVH*hd + (h/GS)*hd;
                     double s = 0.0;
                     for (int d = 0; d < hd; ++d) {
                         s += (double)doi[d] * vj[d];
@@ -782,12 +792,12 @@ static void tr_backward(cce_transformer_qat* t, const int* tokens, const float* 
                 double dot = 0.0;
                 for (int j = 0; j <= i; ++j) dot += (double)dprow[j] * prow[j];
                 /* dq_i += Σ_j dS_ij·scale·k_j ; dk_j += dS_ij·scale·q_i */
-                const float* qi = qkv + (size_t)i*3*D + h*hd;
-                float* dqi = t->dqkv + (size_t)i*3*D + h*hd;
+                const float* qi = qkv + (size_t)i*QW + h*hd;
+                float* dqi = t->dqkv + (size_t)i*QW + h*hd;
                 for (int j = 0; j <= i; ++j) {
                     float ds = prow[j] * (dprow[j] - (float)dot) * scale;
-                    const float* kj = qkv + (size_t)j*3*D + D + h*hd;
-                    float* dkj = t->dqkv + (size_t)j*3*D + D + h*hd;
+                    const float* kj = qkv + (size_t)j*QW + D + (h/GS)*hd;
+                    float* dkj = t->dqkv + (size_t)j*QW + D + (h/GS)*hd;
                     for (int d = 0; d < hd; ++d) {
                         dqi[d] += ds * kj[d];
                         dkj[d] += ds * qi[d];
@@ -800,18 +810,19 @@ static void tr_backward(cce_transformer_qat* t, const int* tokens, const float* 
            attention backward has filled dQ/dK, before the qkv linear
            backward. dV is never rotated, matching forward. */
         if (c->pos_kind == QAT_POS_ROPE) {
-            for (int r = 0; r < T; ++r)
-                for (int h = 0; h < H; ++h) {
-                    rope_bwd(t->dqkv + (size_t)r*3*D + h*hd, hd, r,
+            for (int r = 0; r < T; ++r) {
+                for (int h = 0; h < H; ++h)
+                    rope_bwd(t->dqkv + (size_t)r*QW + h*hd, hd, r,
                              c->rope_theta, c->rope_pairing);
-                    rope_bwd(t->dqkv + (size_t)r*3*D + D + h*hd, hd, r,
+                for (int kv = 0; kv < KVH; ++kv)
+                    rope_bwd(t->dqkv + (size_t)r*QW + D + kv*hd, hd, r,
                              c->rope_theta, c->rope_pairing);
-                }
+            }
         }
 
         /* d(ln1o) via qkv ; d(qkv_w) += ln1oᵀ·dqkv */
         lin_bwd(ln1o, mat_eff(t, &t->qkv_w[l], c->qat_qkv), t->dqkv,
-                t->qkv_w[l].g, t->qkv_b[l].g, t->dtmp, T, D, 3*D);
+                t->qkv_w[l].g, t->qkv_b[l].g, t->dtmp, T, D, QW);
         /* dxin = dx (residual) + LN1-bwd(dtmp) */
         norm_bwd(t, xin, t->ln1_w[l].w, t->dtmp,
                t->ln1_mean + (size_t)l*c->block_size, t->ln1_rstd + (size_t)l*c->block_size,
@@ -896,6 +907,32 @@ static double gc_loss(cce_transformer_qat* t, const int* tokens, int T, int targ
     double sum = 0.0;
     for (int i = 0; i < V; ++i) sum += exp((double)t->logits[i] - maxv);
     return -((double)t->logits[target] - maxv - log(sum));
+}
+
+double cce_transformer_qat_kgrad_norm(cce_transformer_qat* t, const int* tokens,
+                                      int T, int target) {
+    int V, i;
+    float* dl;
+    double sum = 0.0, maxv, ssum = 0.0;
+    if (!t) return -1.0;
+    if (tr_forward(t, tokens, T) != CCE_OK) return -1.0;
+    V = t->cfg.vocab;
+    dl = (float*)malloc((size_t)V * sizeof *dl);
+    if (!dl) return -1.0;
+    maxv = t->logits[0];
+    for (i = 1; i < V; ++i) if (t->logits[i] > maxv) maxv = t->logits[i];
+    for (i = 0; i < V; ++i) { dl[i] = (float)exp((double)t->logits[i] - maxv); ssum += dl[i]; }
+    for (i = 0; i < V; ++i) dl[i] = (float)(dl[i] / ssum);
+    dl[target] -= 1.0f;
+    tr_zero_grads(t);
+    tr_backward(t, tokens, dl);
+    free(dl);
+    {
+        const P* p = &t->qkv_w[0];
+        size_t n = (size_t)p->in * p->out, k;
+        for (k = 0; k < n; ++k) sum += (double)p->g[k] * p->g[k];
+    }
+    return sqrt(sum);
 }
 
 double cce_transformer_qat_gradcheck(cce_transformer_qat* t, const int* tokens, int T,

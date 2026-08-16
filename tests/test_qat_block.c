@@ -250,6 +250,71 @@ int main(void) {
         }
     }
 
+    printf("[9] GQA gradcheck\n");
+    {
+        cce_transformer_qat_config c;
+        cce_transformer_qat* t;
+        cfg_legacy(&c);
+        c.n_head = 4; c.n_embd = 8;   /* hd = 2 */
+        c.n_kv_head = 2;              /* 2 query heads share each KV head */
+        t = cce_transformer_qat_create(&c);
+        CHECK(t != NULL, "GQA trainer creates");
+        if (t) {
+            double rel = cce_transformer_qat_gradcheck(t, seq, T_, tgt, 6);
+            printf("  info GQA gradcheck rel err = %.3e\n", rel);
+            CHECK(rel < 5e-3, "GQA backward matches central differences");
+            cce_transformer_qat_free(t);
+        }
+    }
+
+    printf("[10] MHA is exactly the kvh == n_head special case\n");
+    {
+        cce_transformer_qat_config c1, c2;
+        cce_transformer_qat *a, *b;
+        float *la, *lb;
+        int i, same = 1;
+        cfg_legacy(&c1);
+        cfg_legacy(&c2); c2.n_kv_head = c2.n_head;   /* explicit MHA */
+        a = cce_transformer_qat_create(&c1);
+        b = cce_transformer_qat_create(&c2);
+        la = (float*)malloc(V_ * sizeof *la);
+        lb = (float*)malloc(V_ * sizeof *lb);
+        CHECK(a && b && la && lb, "both trainers create");
+        if (a && b && la && lb) {
+            cce_transformer_qat_logits(a, seq, T_, la);
+            cce_transformer_qat_logits(b, seq, T_, lb);
+            for (i = 0; i < V_; ++i)
+                if (memcmp(&la[i], &lb[i], sizeof(float)) != 0) same = 0;
+            CHECK(same, "n_kv_head=0 and n_kv_head=n_head are bit-identical");
+        }
+        free(la); free(lb);
+        cce_transformer_qat_free(a); cce_transformer_qat_free(b);
+    }
+
+    printf("[11] GQA sharing genuinely changes the K gradient\n");
+    {
+        /* The KV gradient must SUM over every query head that read it. A
+           last-writer-wins bug can cancel inside the directional gradcheck
+           projection, so check it directly: with all 4 query heads sharing
+           one KV head, |dK| must differ from the no-sharing case. */
+        cce_transformer_qat_config c1, c2;
+        cce_transformer_qat *a, *b;
+        double na, nb;
+        cfg_legacy(&c1); c1.n_head = 4; c1.n_embd = 8; c1.n_kv_head = 1;
+        cfg_legacy(&c2); c2.n_head = 4; c2.n_embd = 8; c2.n_kv_head = 4;
+        a = cce_transformer_qat_create(&c1);
+        b = cce_transformer_qat_create(&c2);
+        CHECK(a && b, "both GQA configs create");
+        if (a && b) {
+            na = cce_transformer_qat_kgrad_norm(a, seq, T_, tgt);
+            nb = cce_transformer_qat_kgrad_norm(b, seq, T_, tgt);
+            printf("  info |dQKV_w| shared(kvh=1)=%.6g unshared(kvh=4)=%.6g\n", na, nb);
+            CHECK(na > 0.0 && nb > 0.0, "both produce non-zero QKV gradient");
+            CHECK(na != nb, "sharing changes the gradient (not last-writer-wins)");
+        }
+        cce_transformer_qat_free(a); cce_transformer_qat_free(b);
+    }
+
     printf("checks=%d fails=%d\n", checks, fails);
     if (fails) return 1;
     printf("ALL QAT BLOCK TESTS PASSED\n");

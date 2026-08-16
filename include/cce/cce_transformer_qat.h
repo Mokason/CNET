@@ -122,6 +122,13 @@ int cce_transformer_qat_trainable_count(const cce_transformer_qat* t);
 void cce_transformer_qat_rope_test(float* v, int hd, int pos, float theta,
                                    int pairing);
 
+/* Test hook: L2 norm of layer-0 fused-QKV weight gradient after one backward.
+ * Exposed so GQA's KV accumulation can be checked directly — a
+ * last-writer-wins bug there can cancel inside the directional gradcheck
+ * projection and pass a green gate. */
+double cce_transformer_qat_kgrad_norm(cce_transformer_qat* t, const int* tokens,
+                                      int T, int target);
+
 void cce_transformer_qat_set_qat(cce_transformer_qat* t, int qkv, int proj, int mlp,
                              int head, int emb);
 
