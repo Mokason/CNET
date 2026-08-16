@@ -53,6 +53,14 @@ int cce_mojo_dispatch_trit(const float* input, const uint8_t* w_trit,
 unsigned long cce_mojo_fallback_count(void);
 
 #ifdef CNET_HAVE_MOJO
+/* Initialise the Mojo runtime. REQUIRED before any runtime-dependent Mojo
+ * API (parallelize, GPU dispatch) when Mojo is built as a shared library and
+ * called from a non-Mojo host — no Mojo main() runs in that case. Idempotent,
+ * so the dispatch layer calls it once and never has to reason about order.
+ * The stage-1 kernel is a plain loop and may not strictly need it, but every
+ * kernel that follows will. */
+void cnet_mojo_init(void);
+
 /* Implemented in mojo/trit_matmul.mojo via the C-ABI export.
  * Returns 0 on success, non-zero to decline or on error. */
 int cnet_mojo_trit_matmul(const float* input, const uint8_t* w_trit,

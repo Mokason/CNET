@@ -75,6 +75,20 @@ CURL_LDFLAGS :=
 endif
 # Pull curl into all residual/personal_ai-linked binaries (HTTP residual).
 LDFLAGS += $(CURL_LDFLAGS)
+
+# Mojo is OPTIONAL and never load-bearing. Probe for the toolchain exactly as
+# CURL_PROBE does above; absent, the dispatch layer compiles with its Mojo
+# branch preprocessed out and nothing else changes. Mojo has no native Windows
+# support (WSL2 only), so the Windows test box always takes the absent path.
+MOJO_PROBE := $(shell command -v mojo >/dev/null 2>&1 && echo yes || echo no)
+ifeq ($(MOJO_PROBE),yes)
+MOJO_LIB := $(BIN_DIR)/libcnet_mojo.so
+MOJO_LDFLAGS := -L$(BIN_DIR) -lcnet_mojo -Wl,-rpath,$(CURDIR)/$(BIN_DIR)
+CFLAGS += -DCNET_HAVE_MOJO
+else
+MOJO_LIB :=
+MOJO_LDFLAGS :=
+endif
 MCP_LDFLAGS :=
 ifeq ($(OS),Windows_NT)
 MCP_LDFLAGS := -lwininet
@@ -2340,9 +2354,21 @@ qat_block: $(QAT_CORE_SRC) tests/test_qat_block.c include/cce/cce_transformer_qa
 # Mojo kernel bridge gate. Links the extracted C kernel and dispatch layer
 # ONLY -- no $(CCE) -- so it builds on every box including the Windows one,
 # which cannot run Mojo (no native Windows support).
-mojo_bridge: $(MOJO_KERNEL_SRC) tests/test_mojo_bridge.c include/cce/cce_mojo_kernel.h include/cce/cce_trit_lut.h
-	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $(MOJO_KERNEL_SRC) tests/test_mojo_bridge.c -lm
+mojo_bridge: $(MOJO_KERNEL_SRC) $(MOJO_LIB) tests/test_mojo_bridge.c include/cce/cce_mojo_kernel.h include/cce/cce_trit_lut.h
+	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $(MOJO_KERNEL_SRC) tests/test_mojo_bridge.c $(MOJO_LDFLAGS) -lm
 	./$(BIN_DIR)/mojo_bridge > logs/mojo_bridge.log 2>&1
+
+# Built ONLY when the toolchain is present. --emit shared-lib is the verified
+# 1.0 flag; a C host must also call runtime.initialize_runtime(), which the
+# dispatch layer does once via cnet_mojo_init.
+$(BIN_DIR)/libcnet_mojo.so: mojo/trit_matmul.mojo
+	mojo build --emit shared-lib -o $@ $<
+
+# C vs Mojo timing. Reports C-only where the toolchain is absent, so the
+# harness is verified before it ever sees a Mojo kernel.
+mojo_bench: $(MOJO_KERNEL_SRC) $(MOJO_LIB) tests/mojo_bench.c include/cce/cce_mojo_kernel.h
+	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $(MOJO_KERNEL_SRC) tests/mojo_bench.c $(MOJO_LDFLAGS) -lm
+	./$(BIN_DIR)/mojo_bench
 
 # Trit-kernel micro-benchmark: FP vs int8 vs packed 1.6-bit forward on a
 # Supra-head-shaped block + the packed word-LM predict loop. Carries its own

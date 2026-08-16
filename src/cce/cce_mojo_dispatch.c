@@ -42,6 +42,13 @@ int cce_mojo_dispatch_trit(const float* input, const uint8_t* w_trit,
                            int w_trit_bpr, int apply_sigmoid) {
     if (!cce_mojo_available()) return -1;
 #ifdef CNET_HAVE_MOJO
+    {
+        /* The Mojo runtime must be initialised before runtime-dependent APIs
+           when called from a non-Mojo host: no Mojo main() runs here. The call
+           is idempotent, but gate it anyway so the cost is paid once. */
+        static int inited = 0;
+        if (!inited) { cnet_mojo_init(); inited = 1; }
+    }
     if (cnet_mojo_trit_matmul(input, w_trit, w_scale, bias, output,
                               in_dim, out_dim, w_trit_bpr,
                               apply_sigmoid) == 0)
