@@ -26,6 +26,10 @@
 /* unified base (include/base.h); forward-declared to avoid a header cycle */
 struct CnetBase;
 
+/* attribution sink event (include/attribution.h); forward-declared for the
+   same reason — attribution.h must NOT include acquire.h */
+struct AttributionEvent;
+
 /* A label source: an in-process reference implementation. in has the input
    port's total values (canonical); the oracle writes the output port's total
    values into out.
@@ -299,6 +303,15 @@ typedef struct {
        instead of rescanning the ledger. */
     void (*on_close)(size_t gap_index, void *ctx);
     void *on_close_ctx;
+    /* Optional attribution sink (NULL = off, the default). Called exactly
+       once per terminated acquisition attempt, AFTER the attempt has fully
+       settled and the recipe fingerprint has been stamped. REPORT-ONLY:
+       acquire never reads anything back from this, so attaching a sink is a
+       provable no-op — see the identical-drain gate in
+       tests/test_attribution.c section 12. Use attrib_sink with an
+       AttribLedger* as ctx. */
+    void (*on_attempt)(const struct AttributionEvent *ev, void *ctx);
+    void *on_attempt_ctx;
     /* Budgeted self-improve: stop the drain after this many successful
        CLOSES in one acquire_drain call. 0 = unlimited (legacy default).
        Examined/deferred gaps still count toward examined; only closed
@@ -316,6 +329,11 @@ typedef struct {
     CertVerdict last_verdict;                 /* verdict of the last closed gap */
     double last_bound;       /* Wilson floor when SAMPLED; 1.0 when PROVEN */
     double last_min_margin;  /* worst certified output margin (see port_margin) */
+    size_t last_domain_card; /* certified domain cardinality of the last closed
+                                gap (0 when the domain is unbounded). Feeds the
+                                attribution layer's anti-triviality column, so
+                                a perfect admission rate over tiny or constant
+                                domains does not read as excellence. */
     char last_unit_name[ACQUIRE_NAME_MAX];    /* unit minted by the last close */
     char last_defer_reason[ACQUIRE_REASON_MAX];
     size_t recipe_reopened;  /* recipe-stale deferrals reopened this drain */

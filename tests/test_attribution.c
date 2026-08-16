@@ -7,6 +7,8 @@
 #include <string.h>
 
 #include "../include/attribution.h"
+#include "../include/acquire.h"
+#include "../include/router.h"
 
 static int checks_run = 0;
 
@@ -45,6 +47,59 @@ static struct AttributionEvent ev_of(const char *proposer, Port goal,
     e.cert_verdict = -1;
     e.min_margin = 1.0;
     return e;
+}
+
+/* ---- acquisition fixture (mirrors tests/test_acquire.c) ---------------- */
+
+static void nibble_bits(unsigned v, double *out) {
+    out[0] = (v >> 3) & 1u; out[1] = (v >> 2) & 1u;
+    out[2] = (v >> 1) & 1u; out[3] = v & 1u;
+}
+
+static unsigned bits_nibble(const double *in) {
+    return (unsigned)(((in[0] > 0.5) << 3) | ((in[1] > 0.5) << 2) |
+                      ((in[2] > 0.5) << 1) | (in[3] > 0.5));
+}
+
+static int oracle_increment(const double *in, double *out, void *ctx) {
+    (void)ctx;
+    nibble_bits((bits_nibble(in) + 1u) & 0xFu, out);
+    return 0;
+}
+
+/* Runs one complete acquisition against the 4-bit increment fixture.
+   hook/ctx are installed on the config; pass NULL/NULL for the control run.
+   Everything is rebuilt from scratch each call so the two runs are
+   independent. Deliberately does NOT require the gap to close: the no-op
+   guarantee is about the two runs being IDENTICAL, not about them
+   succeeding, so this gate holds on any box regardless of whether the
+   student certifies. */
+static void run_fixture_drain(void (*hook)(const struct AttributionEvent *, void *),
+                              void *ctx, AcquireReport *report) {
+    PrimitiveRegistry reg;
+    AcquireLedger led;
+    OracleRegistry orc;
+    AcquireConfig cfg;
+    Port nib, nibn;
+
+    registry_init(&reg);
+    acquire_ledger_init(&led);
+    memset(&orc, 0, sizeof orc);
+    acquire_config_defaults(&cfg);
+    cfg.unit_dir = NULL;          /* no sealing: keeps the gate hermetic */
+    cfg.on_attempt = hook;
+    cfg.on_attempt_ctx = ctx;
+
+    nib  = make_port(PORT_BINARY_MSB, 4, 1, "nibble");
+    nibn = make_port(PORT_BINARY_MSB, 4, 1, "nibble_next");
+
+    acquire_oracle_register(&orc, "increment_ref", nib, nibn,
+                            oracle_increment, NULL);
+    acquire_note_no_plan(&led, nib, nibn);
+    acquire_drain(&reg, &led, &orc, &cfg, report);
+
+    acquire_ledger_free(&led);
+    registry_free(&reg);
 }
 
 int main(void) {
@@ -336,6 +391,68 @@ int main(void) {
         check(1, "every truncation length refused cleanly or loaded validly");
         free(bytes);
         free(F);
+    }
+
+    printf("[12] attaching the sink is a no-op on acquisition\n");
+    {
+        /* Run the SAME acquisition twice: once with no sink, once with the
+           sink attached. Every acquire-visible outcome must be identical.
+           This IS the report-only guarantee — without it, "report-only" is a
+           claim rather than a property. */
+        AcquireReport r_off, r_on;
+        AttribLedger *sink = (AttribLedger *)malloc(sizeof *sink);
+        if (!sink) { printf("FAIL: alloc\n"); return 1; }
+        attrib_ledger_init(sink);
+
+        memset(&r_off, 0, sizeof r_off);
+        memset(&r_on, 0, sizeof r_on);
+        run_fixture_drain(NULL, NULL, &r_off);
+        run_fixture_drain(attrib_sink, sink, &r_on);
+
+        check(r_off.examined == r_on.examined, "examined identical");
+        check(r_off.closed == r_on.closed, "closed identical");
+        check(r_off.deferred == r_on.deferred, "deferred identical");
+        check(r_off.skipped_no_oracle == r_on.skipped_no_oracle,
+              "skipped_no_oracle identical");
+        check(r_off.last_verdict == r_on.last_verdict, "verdict identical");
+        check(fabs(r_off.last_bound - r_on.last_bound) < 1e-15,
+              "accuracy bound identical");
+        check(fabs(r_off.last_min_margin - r_on.last_min_margin) < 1e-15,
+              "min margin identical");
+        check(strcmp(r_off.last_unit_name, r_on.last_unit_name) == 0,
+              "minted unit name identical");
+        check(strcmp(r_off.last_defer_reason, r_on.last_defer_reason) == 0,
+              "defer reason identical");
+        check(r_off.total_oracle_calls == r_on.total_oracle_calls,
+              "oracle call count identical");
+        check(r_off.total_oracle_rejects == r_on.total_oracle_rejects,
+              "oracle reject count identical");
+        check(r_off.total_oracle_abstains == r_on.total_oracle_abstains,
+              "oracle abstain count identical");
+        check(r_off.defer_certify_failed == r_on.defer_certify_failed,
+              "defer histogram identical");
+
+        check(sink->count == 1, "the sink observed exactly one attempt");
+        check(sink->dropped_events == 0, "nothing dropped");
+        {
+            const AttribRecord *r = &sink->keys[0];
+            printf("  info: observed proposer='%s' admitted=%lu "
+                   "proposer_fault=%lu system_fault=%lu trust=%.3f yield=%.3f\n",
+                   r->proposer, (unsigned long)r->admitted,
+                   (unsigned long)r->proposer_fault,
+                   (unsigned long)r->system_fault,
+                   attrib_proposer_trust(r), attrib_signature_yield(r));
+            check(strcmp(r->proposer, "increment_ref") == 0,
+                  "event carries the matched proposer name");
+            check(strcmp(r->goal.tag, "nibble_next") == 0,
+                  "event carries the goal signature");
+            check(r->admitted + r->proposer_fault + r->system_fault +
+                  r->blameless + r->unclassified == 1,
+                  "exactly one verdict recorded for the attempt");
+            check(r->unclassified == 0,
+                  "the real drain produced no unclassified atom");
+        }
+        free(sink);
     }
 
     free(L);
