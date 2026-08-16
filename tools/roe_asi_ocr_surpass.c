@@ -374,9 +374,17 @@ static void seed_progress_tree(RoeTree *T) {
 }
 
 int main(void) {
-    RoeAsi R;
+  /* HEAP, NOT STACK: this struct exceeds the 2 MB MinGW stack reserve
+   * (RoeAsi 3.01 MB, RoeDebug 4.15 MB, RoeOcr 6.15 MB since ROE_ANSWER_MAX
+   * went 512 -> 4096 in 85c433e and is embedded 640x). A stack instance
+   * dies inside ___chkstk_ms in the prologue, before any statement runs. */
+    RoeAsi *R = (RoeAsi *)calloc(1, sizeof *R);
     RoeGoalEngine G;
-    RoeOcr O;
+  /* HEAP, NOT STACK: this struct exceeds the 2 MB MinGW stack reserve
+   * (RoeAsi 3.01 MB, RoeDebug 4.15 MB, RoeOcr 6.15 MB since ROE_ANSWER_MAX
+   * went 512 -> 4096 in 85c433e and is embedded 640x). A stack instance
+   * dies inside ___chkstk_ms in the prologue, before any statement runs. */
+    RoeOcr *O = (RoeOcr *)calloc(1, sizeof *O);
     RoeTree T;
     SurpassBench B;
     RoeTreeSnapshot S;
@@ -391,22 +399,22 @@ int main(void) {
     printf("=== ROE OCR surpass: Unlimited teacher → capsules → bench ===\n");
 
     mkdir_p(cat);
-    roe_init(&R);
+    roe_init(R);
     roe_goal_init(&G);
-    roe_ocr_init(&O);
-    roe_set_catalog_dir(&R, cat);
+    roe_ocr_init(O);
+    roe_set_catalog_dir(R, cat);
     roe_goal_set_catalog(&G, cat);
-    roe_ocr_set_catalog(&O, cat);
-    roe_ocr_seed(&O);
-    /* merge ocr seed skills into R */
-    R = O.roe;
-    roe_set_catalog_dir(&R, cat);
+    roe_ocr_set_catalog(O, cat);
+    roe_ocr_seed(O);
+    /* merge ocr seed skills into R (struct copy: R is now heap-allocated) */
+    *R = O->roe;
+    roe_set_catalog_dir(R, cat);
 
     /* 1) Import ALL Unlimited skill-surface leaves */
-    check(import_unlimited_skills(&R, &G, &n_skills) == 0, "import Unlimited skills");
+    check(import_unlimited_skills(R, &G, &n_skills) == 0, "import Unlimited skills");
     printf("  imported_unlimited_skills=%d\n", n_skills);
     check(n_skills >= 15, ">=15 Unlimited skills learned");
-    G.roe = R;
+    G.roe = *R;
 
     /* 2) Critical path: hermetic OCR still works */
     {
@@ -456,9 +464,9 @@ int main(void) {
         check(table_n >= 2, "perc_table rows");
         printf("  layout_blocks=%d table_rows=%d\n", layout_n, table_n);
         /* promote layout/table procedure skills */
-        roe_add_skill(&R, "cp_layout_blocks", "layout", "layout blocks", layout_out, 1,
+        roe_add_skill(R, "cp_layout_blocks", "layout", "layout blocks", layout_out, 1,
                       1);
-        roe_add_skill(&R, "cp_table_struct", "table", "table structure", table_out, 1, 1);
+        roe_add_skill(R, "cp_table_struct", "table", "table structure", table_out, 1, 1);
         roe_goal_map_pattern(&G, "vision", "layout", "layout blocks", "cp_layout_blocks");
         roe_goal_map_pattern(&G, "vision", "table", "table structure", "cp_table_struct");
     }
@@ -466,10 +474,10 @@ int main(void) {
     /* 5) Gold verify path */
     {
         RoeReply rr;
-        roe_add_teach(&R, "gold verify ocr", "gold_verify",
+        roe_add_teach(R, "gold verify ocr", "gold_verify",
                       "Compare teacher text to gold/consensus before CERT");
-        (void)roe_turn(&R, "gold verify ocr", &rr);
-        check(roe_feedback_verify(&R, "gold verify ocr", NULL, 1) == 1,
+        (void)roe_turn(R, "gold verify ocr", &rr);
+        check(roe_feedback_verify(R, "gold verify ocr", NULL, 1) == 1,
               "ver_gold promote");
     }
 
@@ -482,7 +490,7 @@ int main(void) {
     }
 
     /* 7) Bench hybrid vs unlimited-only */
-    run_bench(&R, corpus, &B);
+    run_bench(R, corpus, &B);
     printf("\n## BENCH hybrid vs Unlimited-only (covered corpus)\n");
     printf("  quality  unl=%.3f  roe=%.3f\n", B.quality_unl, B.quality_roe);
     printf("  cost     unl=%.0f   roe=%.0f   save=%.1f%%\n", B.cost_unl, B.cost_roe,
@@ -498,9 +506,9 @@ int main(void) {
     check(B.warm_local_hits >= (int)(0.9 * B.warm_turns), "warm local >=90%");
 
     /* 8) Save capsules tidy */
-    G.roe = R;
+    G.roe = *R;
     check(roe_goal_save(&G) >= 1, "save tidy capsules");
-    check(roe_save_catalog(&R) >= 10, "save skill catalog");
+    check(roe_save_catalog(R) >= 10, "save skill catalog");
 
     /* 9) Update skill tree ranks */
     seed_progress_tree(&T);
@@ -549,7 +557,7 @@ int main(void) {
 
     snprintf(stats, sizeof stats,
              "skills=%zu unlimited_imported=%d save=%.3f q_roe=%.3f q_unl=%.3f",
-             R.n_skills, n_skills, B.save, B.quality_roe, B.quality_unl);
+             R->n_skills, n_skills, B.save, B.quality_roe, B.quality_unl);
     printf("  %s\n", stats);
     printf("  catalog → %s\n", cat);
 

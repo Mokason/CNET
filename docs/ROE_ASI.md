@@ -313,3 +313,50 @@ make roe_teacher_cloud_smoke   # ROE_TEACHER_CLOUD_SMOKE_PASS
 | `ROE_LIVE` | `1` |
 
 Law unchanged: LLM output is **untrusted** until shell verify / user_accept.
+
+## Unattended evolve (no constant Accept)
+
+You should **not** have to press go/accept every turn.
+
+```text
+miss_log ──tick──► gold_file OR same-answer ×N ──► pack_personal CERT
+                      (human Accept optional)
+```
+
+```bash
+make roe_evolve_tick
+python3 tools/roe_evolve_tick.py          # one gardener tick
+# drop gold: echo "answer" > artifacts/roe_daily_packs/gold/<sha>.txt
+# or let multi_stable>=3 identical teacher answers promote
+
+# timer (30m):
+mkdir -p ~/.config/systemd/user
+cp scripts/systemd/roe-evolve-tick.* ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now roe-evolve-tick.timer
+```
+
+Policy (`human_accept_required: false`):
+- **gold_file** — verified answer on disk
+- **multi_stable≥3** — same teacher answer repeated (stand-in votes)
+- Never single-shot LLM → CERT
+- Never auto-edit `pack_soul_*`
+
+## Reviewer role (separate from teacher)
+
+| Role | Job | Env |
+|------|-----|-----|
+| **Teacher** | Propose answers on MISS | `ROE_LLM_MODEL` / teacher env |
+| **Reviewer** | APPROVE/REJECT before promote | `ROE_REVIEW_MODEL` / reviewer env |
+| **Gold** | External verified truth | `gold/*.txt` (skips reviewer) |
+
+```bash
+make roe_reviewer_smoke
+set -a && . config/roe-reviewer-ollama-cloud.env && set +a
+ROE_EVOLVE_REVIEWER=1 python3 tools/roe_evolve_tick.py
+# offline role-split:
+ROE_REVIEW_HERMETIC=1 python3 tools/roe_reviewer.py --smoke --hermetic
+```
+
+Logs: `artifacts/roe_daily_packs/review_log.jsonl`
+

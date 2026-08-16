@@ -1,0 +1,33 @@
+# Conversational aliases → sealed CERT skill patterns (Milestone A).
+# alias_phrase<TAB>canonical_pattern
+# Deterministic rewrite only — never auto-CERT. Double-entry with static C table.
+# Do NOT alias probe junk (zz / mystic / novel fact).
+
+who am i talking to	who are you
+who am i speaking with	who are you
+who is this	who are you
+who is talking	who are you
+introduce yourself	who are you
+tell me your name	who are you
+what is your name	who are you
+what are you called	who are you
+say who you are	who are you
+present yourself	who are you
+what are you	who are you
+are you marble	who are you
+are you roe	who are you
+
+never certify yourself	never self-cert
+do not self certify	never self-cert
+dont self cert	never self-cert
+
+how is the front door	roe front door
+explain the front door	roe front door
+what is selective load	front door selective load
+
+show me marble status	cnet-marble status
+marble twenty four seven status	cnet-marble status
+how is cnet marble	cnet-marble status
+
+check systemctl user	systemctl --user
+user systemd status	systemctl --user

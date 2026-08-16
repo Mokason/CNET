@@ -1,0 +1,18 @@
+#ifndef CNET_COMPETE_SUITE_DATA_V4_H
+#define CNET_COMPETE_SUITE_DATA_V4_H
+
+#define CNET_COMPETE_SUITE_ID "CNET-ASI-5-v4"
+#define CNET_COMPETE_CANDIDATE_FREEZE_COMMIT "c2dfafe068ad0589d4af8a6f6cbca8d1462829d4"
+#define CNET_COMPETE_FIXTURE_PATH "benchmarks/cnet_asi5_v4/heldout.tsv"
+#define CNET_COMPETE_SYSTEM_PATH "benchmarks/cnet_asi5_v4/baseline_system.txt"
+#define CNET_COMPETE_GENERATOR_PATH "tools/cnet_compete_fixture_v4.c"
+#define CNET_COMPETE_FIXTURE_PROVENANCE "verified_spec_v4"
+#define CNET_COMPETE_FIXTURE_SHA256 "84dfb64c21f9a82119a266129dbc4eee3ac739446ca458a3dd0f5fd08e9d8135"
+#define CNET_COMPETE_SYSTEM_SHA256 "ef041b1eeb66cc33aa8516420ab77cc09c02d06e5efd81e53194fed48bc2ba4b"
+#define CNET_COMPETE_GENERATOR_SHA256 "f33917ecbba16c579c1a110db014b3b362f24d843bb619c065de0e85e1bc94d3"
+#define CNET_COMPETE_TOTAL_ROWS 448u
+#define CNET_COMPETE_COVERED_ROWS 320u
+#define CNET_COMPETE_OOD_ROWS 128u
+#define CNET_COMPETE_STATE_ROOT "/home/marble/.local/state/cnet/cnet_asi5_v4"
+
+#endif

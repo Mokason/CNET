@@ -12,6 +12,36 @@ SHELL := /bin/bash
 
 CC := gcc
 CXX := g++
+
+# Python interpreter, PROBED not assumed.
+#
+# 94 recipes hardcoded `python3`. On Windows that name is normally NOT an
+# interpreter: it resolves to the Microsoft Store "App execution alias" stub,
+# which prints an install advertisement and exits non-zero -- so every one of
+# those recipes failed with a message that looks nothing like "wrong python
+# name". Probe for one that actually runs a Python 3.
+#
+# Override explicitly with `make PYTHON=/path/to/python`. The CNET-ASI-5
+# competition lane is native-only, including Make parse time, so its goals do
+# not perform the interpreter probe.
+ifneq ($(filter cnet_7b_%,$(MAKECMDGOALS)),)
+PYTHON ?= /bin/false
+else
+PYTHON ?= $(shell for p in python3 python py; do \
+	if command -v $$p >/dev/null 2>&1 && \
+	   $$p -c 'import sys; sys.exit(0 if sys.version_info[0] == 3 else 1)' >/dev/null 2>&1; \
+	then echo $$p; break; fi; done)
+endif
+ifeq ($(strip $(PYTHON)),)
+PYTHON := python3
+endif
+
+# Python on Windows defaults stdout to the ANSI codepage (cp1252 here), so any
+# script printing a non-Latin-1 character -- an arrow, a checkmark, a box-drawing
+# glyph -- dies with UnicodeEncodeError partway through, AFTER doing its work.
+# The tools legitimately print such characters, so force UTF-8 rather than
+# de-Unicode 77 scripts.
+export PYTHONIOENCODING := utf-8
 PORTABLE ?= 0
 OPTFLAGS ?= -O3
 PREFIX ?= /usr/local
@@ -60,7 +90,33 @@ ifeq ($(OS),Windows_NT)
 CFLAGS += -mno-avx
 endif
 LDFLAGS := -lm -lpthread
-CURL_LDFLAGS := -lcurl
+
+# libcurl is OPTIONAL. This used to be an unconditional `CURL_LDFLAGS :=
+# $(CURL_LDFLAGS)` with no probe, so on any box without libcurl (every stock MinGW
+# install) three TUs failed to compile on the missing <curl/curl.h> and every
+# link died with "cannot find $(CURL_LDFLAGS)" -- including cce_dll, which is verify's
+# third prerequisite. Probe for it instead, and let the source degrade to an
+# honest "HTTP support not compiled in" rather than not building at all.
+#
+# Force it off with `make CNET_NO_CURL=1` (useful to test the degraded path on
+# a box that does have curl).
+ifdef CNET_NO_CURL
+CNET_HAVE_CURL := 0
+else
+# One probe, header AND library, at parse time. Writes to a temp file rather
+# than /dev/null because MinGW's ld will not emit an executable there.
+CNET_HAVE_CURL := $(shell t=$$(mktemp -u 2>/dev/null || echo ./.curlprobe)$$$$.exe; \
+	printf '#include <curl/curl.h>\nint main(void){return curl_easy_init()?0:1;}\n' \
+	| $(CC) -xc - $(CURL_LDFLAGS) -o "$$t" >/dev/null 2>&1 && echo 1 || echo 0; \
+	rm -f "$$t")
+endif
+
+ifeq ($(CNET_HAVE_CURL),1)
+CURL_LDFLAGS := $(CURL_LDFLAGS)
+else
+CURL_LDFLAGS :=
+endif
+CFLAGS += -DCNET_HAVE_CURL=$(CNET_HAVE_CURL)
 # Pull curl into all residual/personal_ai-linked binaries (HTTP residual).
 LDFLAGS += $(CURL_LDFLAGS)
 MCP_LDFLAGS :=
@@ -101,6 +157,9 @@ TOPOLOGY := src/topology.c
 HYPERBOLIC := src/hyperbolic.c
 APP := src/legacy/main.c
 TEST := tests/test_nn.c
+# main() for the per-suite targets; tests/test_all.c owns main for the unified
+# build, so the suite sources carry none. Select the suite with -DCNET_TEST_ENTRY.
+STANDALONE_MAIN := tests/standalone_main.c
 OOB_TEST := tests/test_encode_oob.c
 CONTRACT_TEST := tests/test_contract.c
 COMPOSE_TEST := tests/test_composition.c
@@ -382,7 +441,7 @@ CIRCUIT_TEST := tests/test_circuit.c
 CIRCUIT_DEMO := tests/circuit_demo.c
 CAPACITY_STUDY := tests/capacity_study.c
 CAPACITY_DEMO := tests/capacity_demo.c
-LIBRARY := src/library.c
+LIBRARY := src/library.c src/cnet_dc_type.c src/cnet_swap.c
 LIBRARY_TEST := tests/test_library.c
 MARGIN_STUDY := tests/margin_study.c
 FUZZY_STUDY := tests/fuzzy_study.c
@@ -447,26 +506,32 @@ freeze: nn_demo
 	@echo "Generated include/generated.h from committed txt files."
 	@echo "You can now #include it and use btn_init_committed(btn, \"hex_value\"); etc."
 
-test_nn: $(SRC) $(TEST) include/nn.h
-	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $(SRC) $(TEST) $(LDFLAGS)
+test_nn: $(SRC) $(TEST) include/nn.h $(STANDALONE_MAIN)
+	$(CC) $(CFLAGS) -DCNET_TEST_ENTRY=run_$@ -o $(BIN_DIR)/$@ $(SRC) $(TEST) $(STANDALONE_MAIN) $(LDFLAGS)
 
 # Includes src/nn.c directly to reach the static encoder, so it is NOT
 # compiled together with $(SRC) (that would duplicate symbols).
-test_encode_oob: $(SRC) $(OOB_TEST) include/nn.h
-	$(CC) $(CFLAGS) -Wno-unused-function -o $(BIN_DIR)/$@ $(OOB_TEST) $(LDFLAGS)
+test_encode_oob: $(SRC) $(OOB_TEST) include/nn.h $(STANDALONE_MAIN)
+	$(CC) $(CFLAGS) -DCNET_TEST_ENTRY=run_$@ -Wno-unused-function -o $(BIN_DIR)/$@ $(OOB_TEST) $(STANDALONE_MAIN) $(LDFLAGS)
 
 # Composes two independently-frozen primitives loaded from disk.
-test_composition: $(SRC) $(COMPOSE_TEST) include/nn.h
-	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $(SRC) $(COMPOSE_TEST) $(LDFLAGS)
+test_composition: $(SRC) $(COMPOSE_TEST) include/nn.h $(STANDALONE_MAIN)
+	$(CC) $(CFLAGS) -DCNET_TEST_ENTRY=run_$@ -o $(BIN_DIR)/$@ $(SRC) $(COMPOSE_TEST) $(STANDALONE_MAIN) $(LDFLAGS)
 
-test_contract: $(SRC) $(CONTRACT_TEST) include/nn.h
-	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $(SRC) $(CONTRACT_TEST) $(LDFLAGS)
+# The per-suite sources expose run_test_<suite>() and no main; tests/test_all.c
+# owns main for the unified build. tests/standalone_main.c supplies one here,
+# selected with -DCNET_TEST_ENTRY. Without it these targets fail to link.
+test_contract: $(SRC) $(CONTRACT_TEST) $(STANDALONE_MAIN) include/nn.h
+	$(CC) $(CFLAGS) -DCNET_TEST_ENTRY=run_test_contract -o $(BIN_DIR)/$@ \
+		$(SRC) $(CONTRACT_TEST) $(STANDALONE_MAIN) $(LDFLAGS)
 
 # router.c depends on contract.c (registry_save synthesizes + persists
 # contracts), which in turn needs plan_table.c -- so every target that links
 # router.c links those two as well.
-test_router: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(SCAN) $(ROUTER_TEST) include/nn.h include/router.h include/plan_table.h include/contract/contract.h include/scan.h
-	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(SCAN) $(ROUTER_TEST) $(LDFLAGS)
+test_router: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(SCAN) $(ROUTER_TEST) $(STANDALONE_MAIN) include/nn.h include/router.h include/plan_table.h include/contract/contract.h include/scan.h
+	$(CC) $(CFLAGS) -DCNET_TEST_ENTRY=run_test_router -o $(BIN_DIR)/$@ \
+		$(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(SCAN) $(ROUTER_TEST) \
+		$(STANDALONE_MAIN) $(LDFLAGS)
 
 # Open-addressing name → index map on PrimitiveRegistry (registry_find).
 .PHONY: registry_hash
@@ -486,6 +551,38 @@ counterfactual_router_test: $(CCE_ROUTER) $(COUNTERFACTUAL_ROUTER_TEST) include/
 sparse_kv_test: $(CCE_SPARSE_KV) $(SPARSE_KV_TEST) include/cce/cce_sparse_kv.h
 	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $(CCE_SPARSE_KV) $(SPARSE_KV_TEST) $(LDFLAGS)
 	./$(BIN_DIR)/sparse_kv_test
+	@grep -q "CCE_KV_STREAM_INDEX_PASS" <<< "$$(./$(BIN_DIR)/sparse_kv_test 2>&1)" || \
+		./$(BIN_DIR)/sparse_kv_test | tee logs/sparse_kv_test.log | grep -q CCE_KV_STREAM_INDEX_PASS
+
+# Alias: streaming-aware budgeted KV index (same binary)
+.PHONY: kv_stream_index
+kv_stream_index: sparse_kv_test
+	@echo "KV_STREAM_INDEX_OK"
+
+.PHONY: kv_stream_bench
+kv_stream_bench: $(CCE_SPARSE_KV) include/cce/cce_sparse_kv.h tools/kv_stream_bench.c
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -o $(BIN_DIR)/kv_stream_bench $(CCE_SPARSE_KV) tools/kv_stream_bench.c $(LDFLAGS)
+	@./$(BIN_DIR)/kv_stream_bench | tee logs/kv_stream_bench.log
+	@grep -q "KV_STREAM_BENCH_PASS" logs/kv_stream_bench.log
+
+# STM/LTM bridge (HOT never blocks on COLD) — C
+CCE_STM_LTM := src/cce/cce_stm_ltm_bridge.c $(CCE_SPARSE_KV) src/cce/cce_kv_page.c
+.PHONY: stm_ltm_bridge
+stm_ltm_bridge: $(CCE_STM_LTM) include/cce/cce_stm_ltm_bridge.h tests/test_stm_ltm_bridge.c
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -D_POSIX_C_SOURCE=200809L -o $(BIN_DIR)/test_stm_ltm_bridge \
+		$(CCE_STM_LTM) tests/test_stm_ltm_bridge.c $(LDFLAGS)
+	@./$(BIN_DIR)/test_stm_ltm_bridge | tee logs/stm_ltm_bridge.log
+	@grep -q "STM_LTM_BRIDGE_PASS" logs/stm_ltm_bridge.log
+
+.PHONY: stm_ltm_bench
+stm_ltm_bench: $(CCE_STM_LTM) include/cce/cce_stm_ltm_bridge.h tools/stm_ltm_bench.c
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -D_POSIX_C_SOURCE=200809L -o $(BIN_DIR)/stm_ltm_bench \
+		$(CCE_STM_LTM) tools/stm_ltm_bench.c $(LDFLAGS)
+	@./$(BIN_DIR)/stm_ltm_bench | tee logs/stm_ltm_bench.log
+	@grep -q "STM_LTM_BENCH_PASS" logs/stm_ltm_bench.log
 
 # Sparse KV EXECUTION gate: the ONE cce_sparse_kv selector wired into the
 # REAL cce_gguf_qwen2 KV-cache attention path (the oracle seam), on a
@@ -533,8 +630,8 @@ real_model_control_plane_test: phase5_bounded_activation_test
 	dotnet test dotnet/CnetControlPlane.Tests --filter FullyQualifiedName~IngestTests --verbosity minimal
 	bash tests/test_qgkp_cli_runtime.sh
 
-test_dag: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(DAG_TEST) include/nn.h include/router.h include/plan_table.h include/contract/contract.h
-	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(DAG_TEST) $(LDFLAGS)
+test_dag: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(DAG_TEST) include/nn.h include/router.h include/plan_table.h include/contract/contract.h $(STANDALONE_MAIN)
+	$(CC) $(CFLAGS) -DCNET_TEST_ENTRY=run_$@ -o $(BIN_DIR)/$@ $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(DAG_TEST) $(STANDALONE_MAIN) $(LDFLAGS)
 
 # Contract-graph topology audit (Betti-0/1, "what to mint next", dedup).
 # Pure observability over the registry; zero authority. See src/topology.c.
@@ -559,17 +656,333 @@ test_topology_json: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(TOPOLOGY) tests
 	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(TOPOLOGY) tests/test_topology_json.c $(LDFLAGS)
 	./$(BIN_DIR)/test_topology_json
 
-test_consolidate: $(SRC) $(ROUTER) $(CONSOLIDATE) $(PLAN_TABLE) $(CONTRACT) $(CHUNK_TEST) include/nn.h include/router.h include/consolidate.h include/plan_table.h include/contract/contract.h
-	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $(SRC) $(ROUTER) $(CONSOLIDATE) $(PLAN_TABLE) $(CONTRACT) $(CHUNK_TEST) $(LDFLAGS)
+test_consolidate: $(SRC) $(ROUTER) $(CONSOLIDATE) $(PLAN_TABLE) $(CONTRACT) $(CHUNK_TEST) include/nn.h include/router.h include/consolidate.h include/plan_table.h include/contract/contract.h $(STANDALONE_MAIN)
+	$(CC) $(CFLAGS) -DCNET_TEST_ENTRY=run_$@ -o $(BIN_DIR)/$@ $(SRC) $(ROUTER) $(CONSOLIDATE) $(PLAN_TABLE) $(CONTRACT) $(CHUNK_TEST) $(STANDALONE_MAIN) $(LDFLAGS)
 
 # library_evolve: re-plan a task list, distill proven plans into certified
 # chunks, dedup by contract, law-guard with rollback. Self-contained TDD.
 test_library: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONSOLIDATE) $(CONTRACT) $(PROPERTY) $(LIBRARY) $(LIBRARY_TEST) include/nn.h include/router.h include/plan_table.h include/consolidate.h include/contract/contract.h include/property.h include/library.h
-	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONSOLIDATE) $(CONTRACT) $(PROPERTY) $(LIBRARY) $(LIBRARY_TEST) $(LDFLAGS)
+	$(CC) $(CFLAGS) -DCNET_LIBRARY_STANDALONE -o $(BIN_DIR)/$@ $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONSOLIDATE) $(CONTRACT) $(PROPERTY) $(LIBRARY) $(LIBRARY_TEST) $(LDFLAGS)
 
 # Builds and runs the library_evolve test directly.
 library: test_library
 	./$(BIN_DIR)/test_library
+
+.PHONY: cnet_dc_type cnet_dc_type_bench
+cnet_dc_type: include/cnet_dc_type.h src/cnet_dc_type.c src/nn.c \
+		tests/test_cnet_dc_type.c
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -Werror -Iinclude -o $(BIN_DIR)/test_cnet_dc_type \
+		src/cnet_dc_type.c src/nn.c tests/test_cnet_dc_type.c $(LDFLAGS)
+	@./$(BIN_DIR)/test_cnet_dc_type | tee logs/cnet_dc_type.log
+	@grep -q '^CNET_DC_TYPE_PASS ' logs/cnet_dc_type.log
+
+cnet_dc_type_bench: include/cnet_dc_type.h src/cnet_dc_type.c \
+		tests/benchmark_cnet_dc_type.c
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -Werror -Iinclude -o $(BIN_DIR)/cnet_dc_type_bench \
+		src/cnet_dc_type.c tests/benchmark_cnet_dc_type.c $(LDFLAGS)
+	@./$(BIN_DIR)/cnet_dc_type_bench | tee logs/cnet_dc_type_bench.log
+	@grep -q '^CNET_DC_TYPE_BENCH_PASS ' logs/cnet_dc_type_bench.log
+
+.PHONY: cnet_dc_invent cnet_dc_invent_bench
+cnet_dc_invent: include/cnet_dc_invent.h include/cnet_dc_type.h \
+		src/cnet_dc_invent.c src/cnet_dc_type.c \
+		tests/test_cnet_dc_invent.c
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -Werror -Iinclude -o $(BIN_DIR)/test_cnet_dc_invent \
+		src/cnet_dc_invent.c src/cnet_dc_type.c \
+		tests/test_cnet_dc_invent.c $(LDFLAGS)
+	@./$(BIN_DIR)/test_cnet_dc_invent | tee logs/cnet_dc_invent.log
+	@grep -q '^CNET_DC_INVENT_PASS ' logs/cnet_dc_invent.log
+
+cnet_dc_invent_bench: include/cnet_dc_invent.h include/cnet_dc_type.h \
+		src/cnet_dc_invent.c src/cnet_dc_type.c \
+		tests/benchmark_cnet_dc_invent.c
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -Werror -Iinclude -o $(BIN_DIR)/cnet_dc_invent_bench \
+		src/cnet_dc_invent.c src/cnet_dc_type.c \
+		tests/benchmark_cnet_dc_invent.c $(LDFLAGS)
+	@./$(BIN_DIR)/cnet_dc_invent_bench | tee logs/cnet_dc_invent_bench.log
+	@grep -q '^CNET_DC_INVENT_BENCH_PASS ' logs/cnet_dc_invent_bench.log
+
+.PHONY: cnet_dc_egraph
+cnet_dc_egraph: include/cnet_dc_invent.h include/cnet_dc_type.h \
+		src/cnet_dc_invent.c src/cnet_dc_egraph.c src/cnet_dc_type.c \
+		tests/test_cnet_dc_egraph.c
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -Werror -Iinclude -o $(BIN_DIR)/test_cnet_dc_egraph \
+		src/cnet_dc_invent.c src/cnet_dc_egraph.c src/cnet_dc_type.c \
+		tests/test_cnet_dc_egraph.c $(LDFLAGS)
+	@./$(BIN_DIR)/test_cnet_dc_egraph | tee logs/cnet_dc_egraph.log
+	@grep -q '^CNET_DC_EGRAPH_PASS ' logs/cnet_dc_egraph.log
+
+.PHONY: cnet_swap
+cnet_swap: include/cnet_swap.h src/cnet_swap.c tests/test_cnet_swap.c \
+		include/contract/contract.h include/nn.h include/router.h
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -Werror -Iinclude -o $(BIN_DIR)/test_cnet_swap \
+		src/cnet_swap.c src/nn.c \
+		src/contract/contract.c src/contract/unit.c \
+		src/router/dag_full.c src/router/registry.c src/router/route.c \
+		src/plan_table.c src/consolidate.c \
+		tests/test_cnet_swap.c $(LDFLAGS)
+	@./$(BIN_DIR)/test_cnet_swap | tee logs/cnet_swap.log
+	@grep -q '^CNET_SWAP_PASS$$' logs/cnet_swap.log
+	@grep -q '^checks=51 ' logs/cnet_swap.log
+
+.PHONY: library_swap
+library_swap: include/cnet_swap.h src/cnet_swap.c tests/test_library_swap.c \
+		include/library.h src/library.c include/contract/contract.h
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -Werror -Iinclude -o $(BIN_DIR)/test_library_swap \
+		src/cnet_swap.c src/nn.c \
+		src/contract/contract.c src/contract/unit.c \
+		src/router/dag_full.c src/router/registry.c src/router/route.c \
+		src/plan_table.c src/consolidate.c src/library.c src/cnet_dc_type.c \
+		src/property.c \
+		tests/test_library_swap.c $(LDFLAGS)
+	@./$(BIN_DIR)/test_library_swap | tee logs/library_swap.log
+	@grep -q '^CNET_LIBRARY_SWAP_PASS$$' logs/library_swap.log
+	@grep -q '^checks=35 ' logs/library_swap.log
+
+.PHONY: cnet_paragraph
+cnet_paragraph: include/cnet_paragraph.h src/cnet_paragraph.c \
+		tests/test_cnet_paragraph.c
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -Werror -Iinclude -o $(BIN_DIR)/test_cnet_paragraph \
+		src/cnet_paragraph.c tests/test_cnet_paragraph.c $(LDFLAGS)
+	@./$(BIN_DIR)/test_cnet_paragraph | tee logs/cnet_paragraph.log
+	@grep -q '^CNET_PARAGRAPH_PASS ' logs/cnet_paragraph.log
+
+.PHONY: cnet_c_speak
+cnet_c_speak: include/cnet_c_speak.h src/cnet_c_speak.c src/cce/cce_wordlm.c \
+		include/cnet_utterance.h src/cnet_utterance.c \
+		tests/test_cnet_c_speak.c
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -Werror -Iinclude -o $(BIN_DIR)/test_cnet_c_speak \
+		src/cnet_c_speak.c src/cce/cce_wordlm.c src/cnet_utterance.c \
+		tests/test_cnet_c_speak.c $(LDFLAGS)
+	@./$(BIN_DIR)/test_cnet_c_speak | tee logs/cnet_c_speak.log
+	@grep -q '^CNET_C_SPEAK_PASS$$' logs/cnet_c_speak.log
+	@grep -q '^checks=58 ' logs/cnet_c_speak.log
+
+.PHONY: cnet_harness
+cnet_harness: include/cnet_skill_lane.h src/cnet_skill_lane.c \
+		include/cnet_c_speak.h src/cnet_c_speak.c src/cce/cce_wordlm.c \
+		include/cnet_utterance.h src/cnet_utterance.c \
+		include/cnet_paragraph.h src/cnet_paragraph.c \
+		include/cnet_ood_skill.h src/cnet_ood_skill.c \
+		include/cnet_held_model.h src/cnet_held_model.c \
+		tests/test_cnet_skill_lane.c
+	@mkdir -p $(BIN_DIR) logs
+	@! grep -E 'python3|#include <Python|import sys' src/cnet_skill_lane.c tests/test_cnet_skill_lane.c
+	@! grep -E 'residual_gguf_oracle|roe_set_net|enable_llm' src/cnet_skill_lane.c src/cnet_ood_skill.c
+	$(CC) $(CFLAGS) -Werror -Iinclude -o $(BIN_DIR)/test_cnet_skill_lane \
+		src/cnet_skill_lane.c src/cnet_c_speak.c src/cce/cce_wordlm.c \
+		src/cnet_utterance.c src/cnet_paragraph.c src/cnet_ood_skill.c \
+		src/cnet_held_model.c \
+		tests/test_cnet_skill_lane.c $(LDFLAGS) -ldl
+	@./$(BIN_DIR)/test_cnet_skill_lane | tee logs/cnet_harness.log
+	@grep -q '^CNET_HARNESS_PASS$$' logs/cnet_harness.log
+	@grep -q '^checks=112 ' logs/cnet_harness.log
+	@grep -q 'python=0' logs/cnet_harness.log
+
+.PHONY: cnet_capsule_loop
+cnet_capsule_loop: include/cnet_capsule_loop.h src/cnet_capsule_loop.c \
+		include/cnet_hemisphere.h src/cnet_hemisphere.c \
+		include/cnet_brain_mirror.h src/cnet_brain_mirror.c \
+		include/cnet_skill_lane.h src/cnet_skill_lane.c \
+		include/cnet_c_speak.h src/cnet_c_speak.c src/cce/cce_wordlm.c \
+		include/cnet_utterance.h src/cnet_utterance.c \
+		include/cnet_paragraph.h src/cnet_paragraph.c \
+		include/cnet_ood_skill.h src/cnet_ood_skill.c \
+		include/cnet_held_model.h src/cnet_held_model.c \
+		include/cnet_lookup.h src/cnet_lookup.c \
+		src/cce/cce_campaign_provenance.c \
+		tests/test_cnet_capsule_loop.c
+	@mkdir -p $(BIN_DIR) logs
+	@! grep -E 'python3|#include <Python|import sys' src/cnet_capsule_loop.c tests/test_cnet_capsule_loop.c
+	@! grep -E 'residual_gguf_oracle|roe_set_net|enable_llm' src/cnet_capsule_loop.c
+	@pkg-config --exists libcurl
+	$(CC) $(filter-out -DCNET_HAVE_CURL=0,$(CFLAGS)) -Werror -Iinclude \
+		-DCNET_HAVE_CURL=1 $$(pkg-config --cflags libcurl) \
+		-o $(BIN_DIR)/test_cnet_capsule_loop \
+		src/cnet_capsule_loop.c src/cnet_hemisphere.c src/cnet_brain_mirror.c \
+		src/cnet_skill_lane.c src/cnet_c_speak.c src/cce/cce_wordlm.c \
+		src/cnet_utterance.c src/cnet_paragraph.c src/cnet_ood_skill.c \
+		src/cnet_held_model.c src/cnet_lookup.c src/cce/cce_campaign_provenance.c \
+		tests/test_cnet_capsule_loop.c $(LDFLAGS) -ldl $$(pkg-config --libs libcurl)
+	@./$(BIN_DIR)/test_cnet_capsule_loop | tee logs/cnet_capsule_loop.log
+	@grep -q '^CNET_CAPSULE_LOOP_PASS$$' logs/cnet_capsule_loop.log
+	@grep -q '^checks=125 ' logs/cnet_capsule_loop.log
+	@grep -q 'python=0' logs/cnet_capsule_loop.log
+
+.PHONY: cnet_ood
+cnet_ood: include/cnet_ood_skill.h src/cnet_ood_skill.c \
+		include/cnet_held_model.h src/cnet_held_model.c \
+		include/cnet_lookup.h src/cnet_lookup.c \
+		src/cce/cce_campaign_provenance.c \
+		tests/test_cnet_ood_skill.c
+	@mkdir -p $(BIN_DIR) logs
+	@! grep -E 'python3|#include <Python|import sys' src/cnet_ood_skill.c tests/test_cnet_ood_skill.c
+	@! grep -E 'residual_gguf_oracle|roe_set_net|enable_llm' src/cnet_ood_skill.c
+	@pkg-config --exists libcurl
+	$(CC) $(filter-out -DCNET_HAVE_CURL=0,$(CFLAGS)) -Werror -Iinclude \
+		-DCNET_HAVE_CURL=1 $$(pkg-config --cflags libcurl) \
+		-o $(BIN_DIR)/test_cnet_ood_skill \
+		src/cnet_ood_skill.c src/cnet_held_model.c src/cnet_lookup.c \
+		src/cce/cce_campaign_provenance.c \
+		tests/test_cnet_ood_skill.c $(LDFLAGS) -ldl $$(pkg-config --libs libcurl)
+	@./$(BIN_DIR)/test_cnet_ood_skill | tee logs/cnet_ood.log
+	@grep -q '^CNET_OOD_PASS$$' logs/cnet_ood.log
+	@grep -q 'hardcoded_facts=0' logs/cnet_ood.log
+	@grep -q 'python=0' logs/cnet_ood.log
+
+
+.PHONY: cnet_hemi
+cnet_hemi: include/cnet_hemisphere.h src/cnet_hemisphere.c \
+		include/cnet_brain_mirror.h src/cnet_brain_mirror.c \
+		include/cnet_skill_lane.h src/cnet_skill_lane.c \
+		include/cnet_c_speak.h src/cnet_c_speak.c src/cce/cce_wordlm.c \
+		include/cnet_utterance.h src/cnet_utterance.c \
+		include/cnet_paragraph.h src/cnet_paragraph.c \
+		include/cnet_ood_skill.h src/cnet_ood_skill.c \
+		include/cnet_held_model.h src/cnet_held_model.c \
+		include/cnet_lookup.h src/cnet_lookup.c \
+		src/cce/cce_campaign_provenance.c \
+		tests/test_cnet_hemisphere.c
+	@mkdir -p $(BIN_DIR) logs
+	@! grep -E 'python3|#include <Python|import sys' src/cnet_hemisphere.c src/cnet_brain_mirror.c tests/test_cnet_hemisphere.c
+	@! grep -E 'residual_gguf_oracle|roe_set_net|enable_llm' src/cnet_hemisphere.c
+	$(CC) $(filter-out -DCNET_HAVE_CURL=0,$(CFLAGS)) -Werror -Iinclude \
+		-DCNET_HAVE_CURL=1 $$(pkg-config --cflags libcurl) \
+		-o $(BIN_DIR)/test_cnet_hemisphere \
+		src/cnet_hemisphere.c src/cnet_brain_mirror.c src/cnet_skill_lane.c src/cnet_c_speak.c src/cce/cce_wordlm.c \
+		src/cnet_utterance.c src/cnet_paragraph.c src/cnet_ood_skill.c \
+		src/cnet_held_model.c src/cnet_lookup.c src/cce/cce_campaign_provenance.c \
+		tests/test_cnet_hemisphere.c $(LDFLAGS) -ldl $$(pkg-config --libs libcurl)
+	@./$(BIN_DIR)/test_cnet_hemisphere | tee logs/cnet_hemi.log
+	@grep -q '^CNET_HEMI_PASS$$' logs/cnet_hemi.log
+	@grep -q 'residual_never_cert=1' logs/cnet_hemi.log
+	@grep -q 'core_first=1' logs/cnet_hemi.log
+	@grep -q 'core_middle=1' logs/cnet_hemi.log
+	@grep -q 'cert_and_open_chat=1' logs/cnet_hemi.log
+	@grep -q 'logic_strong=1' logs/cnet_hemi.log
+	@grep -q 'creative_strong=1' logs/cnet_hemi.log
+	@grep -q 'discern=1' logs/cnet_hemi.log
+	@grep -q 'python=0' logs/cnet_hemi.log
+
+
+
+.PHONY: cnet_rlm
+cnet_rlm: include/cnet_rlm.h src/cnet_rlm.c \
+		include/cnet_hemisphere.h src/cnet_hemisphere.c \
+		include/cnet_brain_mirror.h src/cnet_brain_mirror.c \
+		include/cnet_capsule_loop.h src/cnet_capsule_loop.c \
+		include/cnet_skill_lane.h src/cnet_skill_lane.c \
+		include/cnet_c_speak.h src/cnet_c_speak.c src/cce/cce_wordlm.c \
+		include/cnet_utterance.h src/cnet_utterance.c \
+		include/cnet_paragraph.h src/cnet_paragraph.c \
+		include/cnet_ood_skill.h src/cnet_ood_skill.c \
+		include/cnet_held_model.h src/cnet_held_model.c \
+		include/cnet_lookup.h src/cnet_lookup.c \
+		src/cce/cce_campaign_provenance.c \
+		tests/test_cnet_rlm.c
+	@mkdir -p $(BIN_DIR) logs
+	@! grep -E 'python3|#include <Python|import sys' src/cnet_rlm.c tests/test_cnet_rlm.c
+	@! grep -E 'residual_gguf_oracle|roe_set_net|enable_llm' src/cnet_rlm.c
+	@pkg-config --exists libcurl
+	$(CC) $(filter-out -DCNET_HAVE_CURL=0,$(CFLAGS)) -Werror -Iinclude \
+		-DCNET_HAVE_CURL=1 $$(pkg-config --cflags libcurl) \
+		-o $(BIN_DIR)/test_cnet_rlm \
+		src/cnet_rlm.c src/cnet_hemisphere.c src/cnet_brain_mirror.c src/cnet_capsule_loop.c \
+		src/cnet_skill_lane.c src/cnet_c_speak.c src/cce/cce_wordlm.c \
+		src/cnet_utterance.c src/cnet_paragraph.c src/cnet_ood_skill.c \
+		src/cnet_held_model.c src/cnet_lookup.c src/cce/cce_campaign_provenance.c \
+		tests/test_cnet_rlm.c $(LDFLAGS) -ldl $$(pkg-config --libs libcurl)
+	@./$(BIN_DIR)/test_cnet_rlm | tee logs/cnet_rlm.log
+	@grep -q '^CNET_RLM_PASS$$' logs/cnet_rlm.log
+	@grep -q 'via_rlm=1' logs/cnet_rlm.log
+	@grep -q 'wraps_core=1' logs/cnet_rlm.log
+	@grep -q 'residual_never_cert=1' logs/cnet_rlm.log
+
+.PHONY: cnet_core_e2e
+cnet_core_e2e: bin/cnetd scripts/cnet_core_e2e_smoke.sh config/cnet-bonsai-held.env
+	@mkdir -p logs
+	@bash scripts/cnet_core_e2e_smoke.sh
+	@grep -q '^CNET_CORE_E2E_PASS' logs/cnet_core_e2e.log
+
+.PHONY: cnet_brain_mirror
+cnet_brain_mirror: include/cnet_brain_mirror.h src/cnet_brain_mirror.c \
+		include/cnet_hemisphere.h src/cnet_hemisphere.c \
+		include/cnet_skill_lane.h src/cnet_skill_lane.c \
+		include/cnet_c_speak.h src/cnet_c_speak.c src/cce/cce_wordlm.c \
+		include/cnet_utterance.h src/cnet_utterance.c \
+		include/cnet_paragraph.h src/cnet_paragraph.c \
+		include/cnet_ood_skill.h src/cnet_ood_skill.c \
+		include/cnet_held_model.h src/cnet_held_model.c \
+		include/cnet_lookup.h src/cnet_lookup.c \
+		src/cce/cce_campaign_provenance.c \
+		tests/test_cnet_brain_mirror.c
+	@mkdir -p $(BIN_DIR) logs
+	@! grep -E 'python3|#include <Python|import sys' src/cnet_brain_mirror.c tests/test_cnet_brain_mirror.c
+	$(CC) $(filter-out -DCNET_HAVE_CURL=0,$(CFLAGS)) -Werror -Iinclude \
+		-DCNET_HAVE_CURL=1 $$(pkg-config --cflags libcurl) \
+		-o $(BIN_DIR)/test_cnet_brain_mirror \
+		src/cnet_brain_mirror.c src/cnet_hemisphere.c src/cnet_skill_lane.c src/cnet_c_speak.c src/cce/cce_wordlm.c \
+		src/cnet_utterance.c src/cnet_paragraph.c src/cnet_ood_skill.c \
+		src/cnet_held_model.c src/cnet_lookup.c src/cce/cce_campaign_provenance.c \
+		tests/test_cnet_brain_mirror.c $(LDFLAGS) -ldl $$(pkg-config --libs libcurl)
+	@./$(BIN_DIR)/test_cnet_brain_mirror | tee logs/cnet_brain_mirror.log
+	@grep -q '^CNET_BRAIN_MIRROR_PASS$$' logs/cnet_brain_mirror.log
+	@grep -q 'residual_never_mirrors=1' logs/cnet_brain_mirror.log
+
+.PHONY: cnet_grow
+cnet_grow: include/cnet_grow_lobe.h src/cnet_grow_lobe.c \
+		include/cnet_held_model.h src/cnet_held_model.c \
+		include/cce/cce_transformer_qat.h \
+		tests/test_cnet_grow_lobe.c $(CCE)
+	@mkdir -p $(BIN_DIR) logs
+	@! grep -E 'python3|#include <Python|import sys' src/cnet_grow_lobe.c tests/test_cnet_grow_lobe.c
+	$(CC) $(CFLAGS) -Werror -Iinclude -o $(BIN_DIR)/test_cnet_grow_lobe \
+		src/cnet_grow_lobe.c src/cnet_held_model.c $(CCE) \
+		tests/test_cnet_grow_lobe.c $(LDFLAGS) -ldl
+	@./$(BIN_DIR)/test_cnet_grow_lobe | tee logs/cnet_grow.log
+	@grep -q '^CNET_GROW_PASS$$' logs/cnet_grow.log
+	@grep -q 'anti_collapse=1' logs/cnet_grow.log
+	@grep -q 'may_speak=1' logs/cnet_grow.log
+	@grep -q 'english=1' logs/cnet_grow.log
+
+.PHONY: cnet_grow_teacher
+cnet_grow_teacher: include/cnet_grow_lobe.h src/cnet_grow_lobe.c \
+		include/cnet_held_model.h src/cnet_held_model.c \
+		tools/cnet_grow_teacher.c $(CCE)
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(filter-out -DCNET_HAVE_CURL=0,$(CFLAGS)) -Werror -Iinclude \
+		-DCNET_HAVE_CURL=1 $$(pkg-config --cflags libcurl) \
+		-o $(BIN_DIR)/cnet_grow_teacher \
+		src/cnet_grow_lobe.c src/cnet_held_model.c $(CCE) \
+		tools/cnet_grow_teacher.c $(LDFLAGS) -ldl $$(pkg-config --libs libcurl)
+	@echo "cnet_grow_teacher built → $(BIN_DIR)/cnet_grow_teacher"
+
+.PHONY: cnet_weight_convert cnet_weight_gguf
+cnet_weight_convert cnet_weight_gguf: include/cnet_weight_convert.h \
+		src/cnet_weight_convert.c tests/test_cnet_weight_convert.c $(CCE_GGUF)
+	@mkdir -p $(BIN_DIR) logs
+	@! grep -F 'parse_lut' src/cnet_weight_convert.c
+	@! grep -E 'python3|#include <Python|import sys' src/cnet_weight_convert.c tests/test_cnet_weight_convert.c
+	$(CC) $(CFLAGS) -Werror -ffunction-sections -fdata-sections -Iinclude \
+		-o $(BIN_DIR)/test_cnet_weight_convert \
+		src/cnet_weight_convert.c $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) \
+		$(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) \
+		$(BASE_SRC) $(CCE_CAMPAIGN_PROVENANCE) $(CCE_GGUF) \
+		tests/test_cnet_weight_convert.c -Wl,--gc-sections $(LDFLAGS)
+	@./$(BIN_DIR)/test_cnet_weight_convert | tee logs/cnet_weight_convert.log
+	@grep -q '^CNET_WEIGHT_CONVERT_PASS$$' logs/cnet_weight_convert.log
+	@grep -q '^checks=44$$' logs/cnet_weight_convert.log
+	@grep -q '^python=0$$' logs/cnet_weight_convert.log
+
 
 # Unit files: weights + contract as ONE sealed binary artifact (.cnu) —
 # binary f64 weights + bit-packed canonical exemplars + FNV seal; round-trip
@@ -708,8 +1121,8 @@ contract_optimized: contract_opt_test contract_opt_sanitize contract_secure cont
 		logs/contract_secure.log logs/contract_unit.log
 	@echo CONTRACT_OPTIMIZATION_GATE_PASS
 
-test_certify: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONSOLIDATE) $(CONTRACT) $(CERTIFY_TEST) include/nn.h include/router.h include/plan_table.h include/consolidate.h include/contract/contract.h
-	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONSOLIDATE) $(CONTRACT) $(CERTIFY_TEST) $(LDFLAGS)
+test_certify: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONSOLIDATE) $(CONTRACT) $(CERTIFY_TEST) include/nn.h include/router.h include/plan_table.h include/consolidate.h include/contract/contract.h $(STANDALONE_MAIN)
+	$(CC) $(CFLAGS) -DCNET_TEST_ENTRY=run_$@ -o $(BIN_DIR)/$@ $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONSOLIDATE) $(CONTRACT) $(CERTIFY_TEST) $(STANDALONE_MAIN) $(LDFLAGS)
 
 # Auto-discovers and runs a chain over real frozen primitives.
 route_demo: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(TOPOLOGY) $(ROUTE_DEMO) include/nn.h include/router.h include/plan_table.h include/contract/contract.h include/topology.h
@@ -731,29 +1144,29 @@ split_demo: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(SPLIT_DEMO) include/nn.
 chunk_demo: $(SRC) $(ROUTER) $(CONSOLIDATE) $(PLAN_TABLE) $(CONTRACT) $(CHUNK_DEMO) include/nn.h include/router.h include/consolidate.h include/plan_table.h include/contract/contract.h
 	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $(SRC) $(ROUTER) $(CONSOLIDATE) $(PLAN_TABLE) $(CONTRACT) $(CHUNK_DEMO) $(LDFLAGS)
 
-test_property: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(PROPERTY_TEST) include/nn.h include/router.h include/plan_table.h include/contract/contract.h include/property.h
-	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(PROPERTY_TEST) $(LDFLAGS)
+test_property: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(PROPERTY_TEST) include/nn.h include/router.h include/plan_table.h include/contract/contract.h include/property.h $(STANDALONE_MAIN)
+	$(CC) $(CFLAGS) -DCNET_TEST_ENTRY=run_$@ -o $(BIN_DIR)/$@ $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(PROPERTY_TEST) $(STANDALONE_MAIN) $(LDFLAGS)
 
 # Hermetic tag-safety checks plus exhaustive sweeps over the committed
 # frozen decimal weights (regenerate those with make decimal).
-test_decimal: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(DECIMAL_TEST) include/nn.h include/router.h include/plan_table.h include/contract/contract.h include/property.h
-	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(DECIMAL_TEST) $(LDFLAGS)
+test_decimal: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(DECIMAL_TEST) include/nn.h include/router.h include/plan_table.h include/contract/contract.h include/property.h $(STANDALONE_MAIN)
+	$(CC) $(CFLAGS) -DCNET_TEST_ENTRY=run_$@ -o $(BIN_DIR)/$@ $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(DECIMAL_TEST) $(STANDALONE_MAIN) $(LDFLAGS)
 
 # Shared nodes, multi-root circuits, reachability pruning, circuit chunks.
-test_circuit: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONSOLIDATE) $(CONTRACT) $(CIRCUIT_TEST) include/nn.h include/router.h include/plan_table.h include/consolidate.h include/contract/contract.h
-	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONSOLIDATE) $(CONTRACT) $(CIRCUIT_TEST) $(LDFLAGS)
+test_circuit: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONSOLIDATE) $(CONTRACT) $(CIRCUIT_TEST) include/nn.h include/router.h include/plan_table.h include/consolidate.h include/contract/contract.h $(STANDALONE_MAIN)
+	$(CC) $(CFLAGS) -DCNET_TEST_ENTRY=run_$@ -o $(BIN_DIR)/$@ $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONSOLIDATE) $(CONTRACT) $(CIRCUIT_TEST) $(STANDALONE_MAIN) $(LDFLAGS)
 
 # The fast lane: an independent route executor (packed weights, reused scratch,
 # batched matmul, per-handoff snap) checked against route_execute. Loads the
 # committed frozen hex_value/increment weights.
-test_fastpath: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(FASTPATH) $(FASTPATH_TEST) include/nn.h include/router.h include/fastpath.h include/plan_table.h include/contract/contract.h
-	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(FASTPATH) $(FASTPATH_TEST) $(LDFLAGS)
+test_fastpath: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(FASTPATH) $(FASTPATH_TEST) include/nn.h include/router.h include/fastpath.h include/plan_table.h include/contract/contract.h $(STANDALONE_MAIN)
+	$(CC) $(CFLAGS) -DCNET_TEST_ENTRY=run_$@ -o $(BIN_DIR)/$@ $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(FASTPATH) $(FASTPATH_TEST) $(STANDALONE_MAIN) $(LDFLAGS)
 
 # The mod-k residue domain: delta certifies exactly + a short scan matches
 # ground truth (the correctness gate). residue_common.h holds shared statics.
 # (Full residue_study was planned but never implemented; only the test gate exists.)
-test_residue: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(SCAN) $(RESIDUE_TEST) include/nn.h include/router.h include/contract/contract.h include/plan_table.h include/scan.h tests/residue_common.h
-	$(CC) $(CFLAGS) -Wno-unused-function -o $(BIN_DIR)/$@ $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(SCAN) $(RESIDUE_TEST) $(LDFLAGS)
+test_residue: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(SCAN) $(RESIDUE_TEST) include/nn.h include/router.h include/contract/contract.h include/plan_table.h include/scan.h tests/residue_common.h $(STANDALONE_MAIN)
+	$(CC) $(CFLAGS) -DCNET_TEST_ENTRY=run_$@ -Wno-unused-function -o $(BIN_DIR)/$@ $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(SCAN) $(RESIDUE_TEST) $(STANDALONE_MAIN) $(LDFLAGS)
 
 # v5.0 Proposal Sidecar (SHADOW_ONLY): a scripted proposer + strict-validation
 # harness over the residue fixture, proving the imagination lane has zero
@@ -904,8 +1317,8 @@ compounding_bench: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONS
 # Recursive expression evaluator: bounded 3-slot stack step (expr_step) certifies
 # (best-effort under budget); hand-built chains evaluate RPN-style token programs matching GT.
 # expr_common.h holds the statics (patterned on residue). Integrated into `make test`.
-test_expr: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(SCAN) $(EXPR_TEST) include/nn.h include/router.h include/contract/contract.h include/plan_table.h include/scan.h tests/expr_common.h
-	$(CC) $(CFLAGS) -Wno-unused-function -o $(BIN_DIR)/$@ $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(SCAN) $(EXPR_TEST) $(LDFLAGS)
+test_expr: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(SCAN) $(EXPR_TEST) include/nn.h include/router.h include/contract/contract.h include/plan_table.h include/scan.h tests/expr_common.h $(STANDALONE_MAIN)
+	$(CC) $(CFLAGS) -DCNET_TEST_ENTRY=run_$@ -Wno-unused-function -o $(BIN_DIR)/$@ $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(SCAN) $(EXPR_TEST) $(STANDALONE_MAIN) $(LDFLAGS)
 
 # Checks equational laws over real primitives; catches a broken retrain.
 property_demo: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(PROPERTY_DEMO) include/nn.h include/router.h include/plan_table.h include/contract/contract.h include/property.h
@@ -1175,15 +1588,73 @@ leakcheck: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE)
 # mutation (a producer that prints the PASS marker then exits 7) against each
 # real recipe shape, and pins WITHHELD to a non-success exit code.
 recipe_gate:
+	@sh tests/test_recipe_gates_selftest.sh
 	@sh tests/test_recipe_gates.sh
 	@bash tests/test_pipeline_status.sh
 	@sh tests/test_benchmark_verdict.sh
 	@bash tests/test_gate_evidence.sh
 
+# Every verify prerequisite is an ACTION, not a file. Without .PHONY, a file or
+# directory of the same name at the repo root makes Make declare the target up
+# to date and skip its recipe entirely -- the gate then reports success without
+# compiling, running, or refreshing any evidence. These 26 were unprotected.
+.PHONY: cnet_lm_bounds_test cce_detect cce_ssm cce_hybrid cce_qwen35 cce_st_llama
+.PHONY: cce_specgraph cce_wstore cce_tiers cce_similar merge_family hybrid_catalog
+.PHONY: transformer_qat contract_unit mutate acquire base flagship
+.PHONY: leakcheck cnet_fault_test cce_adapter_bank_test cce_dora_test cnet_serve_decode_test cnet_fault_loop_test
+.PHONY: registry_lora_store_test jtc_adapter_bench
+
+# README told readers to run ./test_tinystories, but no target built it --
+# a documented command that cannot work. The source is self-contained and
+# Windows-only (wininet), so gate it on the platform rather than pretend.
+.PHONY: test_tinystories
+test_tinystories: test_tinystories.c
+	@mkdir -p $(BIN_DIR)
+ifeq ($(OS),Windows_NT)
+	$(CC) $(CFLAGS) -Iinclude -o $(BIN_DIR)/test_tinystories test_tinystories.c $(CCE) $(LDFLAGS) $(MCP_LDFLAGS)
+	@echo "built $(BIN_DIR)/test_tinystories"
+else
+	@echo "test_tinystories is Windows-only (uses wininet); skipping on this platform"
+endif
+
+# One JSON escaper, proven against a real parser. Two of the three escapers
+# this replaces emitted documents that json.loads rejects (raw C0 bytes) or
+# that silently lost data (control characters dropped).
+.PHONY: json_escape
+json_escape: tests/test_json_escape.c include/cnet_json_escape.h tests/test_json_escape.py
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -Iinclude -o $(BIN_DIR)/test_json_escape tests/test_json_escape.c
+	@./$(BIN_DIR)/test_json_escape | tee logs/json_escape.log
+	@$(PYTHON) tests/test_json_escape.py ./$(BIN_DIR)/test_json_escape | tee -a logs/json_escape.log
+	@grep -q "^JSON_ESCAPE_PASS" logs/json_escape.log
+	@grep -q "^JSON_ESCAPE_PY_PASS" logs/json_escape.log
+
 # Test recipes propagate their exit codes directly. This positive-marker gate
 # runs after every prerequisite and rejects missing or stale-success logs.
-verify: recipe_gate claims_test cce_dll cce_safetensors_test cnet_lm_bounds_test cce_autograd_test cce_model_test cce_view forest_view cce_detect cce_ssm cce_hybrid cce_qwen35 cce_st_llama cce_specgraph cce_wstore cce_tiers cce_similar merge_family hybrid_catalog transformer_qat contract_secure contract_unit heal_mismatch mutate acquire base flagship demos leakcheck cnet_fault_test cce_adapter_bank_test cce_dora_test cnet_serve_decode_test cnet_fault_loop_test registry_lora_store_test jtc_adapter_bench metric_honesty moe_ckpt_test
-	@sh tests/verify_logs.sh
+#
+# RUN BINDING. `verify` stamps logs/.verify_sentinel and only then invokes the
+# real prerequisite chain, so tests/verify_logs.sh can require every log to be
+# strictly newer than the stamp. Until 2026-08-12 the gate only checked that a
+# marker existed SOMEWHERE in a file under logs/, and nothing in the chain ever
+# cleared logs/ -- so an interrupted or month-old run left a complete set of
+# green logs that this gate happily certified.
+#
+# The sentinel is stamped by a RECURSIVE make rather than by an ordinary
+# prerequisite because Make gives no ordering guarantee among prerequisites
+# under -j; a sentinel that raced the suites it is meant to predate would make
+# the freshness check meaningless exactly when the build is fastest.
+VERIFY_SENTINEL := logs/.verify_sentinel
+
+.PHONY: verify verify_impl
+verify:
+	@mkdir -p logs
+	@rm -f $(VERIFY_SENTINEL)
+	@touch $(VERIFY_SENTINEL)
+	@$(MAKE) --no-print-directory verify_impl
+	@VERIFY_SINCE=$(VERIFY_SENTINEL) sh tests/verify_logs.sh
+
+verify_impl: recipe_gate json_escape claims_test cce_dll cce_safetensors_test cnet_lm_bounds_test cce_autograd_test cce_model_test cce_view forest_view cce_detect cce_ssm cce_hybrid cce_qwen35 cce_st_llama cce_specgraph cce_wstore cce_tiers cce_similar merge_family hybrid_catalog transformer_qat contract_secure contract_unit heal_mismatch mutate acquire base flagship demos leakcheck cnet_fault_test cce_adapter_bank_test cce_dora_test cnet_serve_decode_test cnet_fault_loop_test registry_lora_store_test jtc_adapter_bench metric_honesty moe_ckpt_test
+	@:
 
 # Everything verify covers PLUS the GPU equivalence gate (needs model + GPU;
 # run this before any CNET_GPU=1 campaign).
@@ -1195,8 +1666,16 @@ test_full: test gpu_equiv_build
 # `long` mode also asserts the two verify-long-only supra QAT gates. The
 # `verify` prerequisite already ran and gated the core chain; this re-scan adds
 # the extras.
-verify-long: verify cce_train_bench supra_head_qat supra_head_qat_corpus transformer_qat_joint wordlm_bitnet wordlm_holdout compat
-	@sh tests/verify_logs.sh long
+# Same run-binding as `verify`: `verify` re-stamps the sentinel when it runs as
+# a prerequisite below, and every extra suite here writes its log afterwards, so
+# the whole CORE+LONG+COMPAT set is still required to postdate that one stamp.
+.PHONY: verify-long verify-long_impl
+verify-long:
+	@$(MAKE) --no-print-directory verify-long_impl
+	@VERIFY_SINCE=$(VERIFY_SENTINEL) sh tests/verify_logs.sh long
+
+verify-long_impl: verify cce_train_bench supra_head_qat supra_head_qat_corpus transformer_qat_joint wordlm_bitnet wordlm_holdout compat
+	@:
 
 
 # Fast PR gate: light PEFT/fault only (no full-runtime JTC campaigns)
@@ -1209,8 +1688,14 @@ verify-nightly: verify cnet_fault_loop_test registry_lora_store_test jtc_adapter
 
 test: verify
 
-# (Legacy individual targets removed to enforce single-exe policy for tests.
-# If you need to debug one suite in isolation, compile it manually or restore the rule temporarily.)
+# (This once said the individual targets had been removed to enforce a single-exe
+# policy, and that debugging one suite meant compiling it by hand. They were
+# never actually removed: fourteen of them survived and every one failed to link
+# once main moved into tests/test_all.c. They now build and run again, each
+# linking tests/standalone_main.c with -DCNET_TEST_ENTRY=run_$@, so debugging a
+# single suite is make test_<suite> once more. test_all remains the suite of
+# record; the individual targets are a debugging convenience over the same code
+# and add no second source of truth.)
 
 # Regenerates the frozen weight files via the demo, then composes
 # hex_value -> increment with no training in between.
@@ -2906,7 +3391,7 @@ bin/vd_bench: tools/vision_detection/vd_bench.c tools/vision_detection/vd_eval.c
 		tools/vision_detection/vd_eval.c tools/vision_detection/vd_pack.c \
 		tools/vision_detection/vd_io.c tools/vision_detection/vd_sha256.c \
 		tools/vision_detection/vd_protocol.c tools/vision_detection/vd_coverage.c \
-		$(CAPSULE_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(EXT_TEACHER_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) -lm -lpthread -lcurl
+		$(CAPSULE_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(EXT_TEACHER_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) -lm -lpthread $(CURL_LDFLAGS)
 
 SRC_NN_MIN := src/nn.c src/contract/contract.c src/contract/unit.c src/property.c \
               src/scan.c src/contract/coverage.c src/router/registry.c \
@@ -3014,7 +3499,7 @@ bin/vd_runner: tools/vision_detection/vd_runner.cpp tools/vision_detection/vd_co
 	g++ -std=c++14 -O2 -Wall -Wextra -I tools/vision_detection -I include \
 		-o $(BIN_DIR)/vd_runner tools/vision_detection/vd_runner.cpp \
 		$(BIN_DIR)/objs_runner/*.o \
-		$(shell pkg-config --cflags --libs opencv4) -lm -lpthread -lcurl
+		$(shell pkg-config --cflags --libs opencv4) -lm -lpthread $(CURL_LDFLAGS)
 
 # Schema-2 asset parser, mutated field by field plus a deterministic byte fuzz.
 # Pure C and no OpenCV on purpose: a parser that can only be reached through a
@@ -3097,7 +3582,7 @@ cnu_budget_san: $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(PLA
 		-fno-omit-frame-pointer -D_DEFAULT_SOURCE -I include \
 		-o $(BIN_DIR)/cnu_budget_san \
 		$(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(PLAN_TABLE) \
-		$(ROUTER) $(SRC) $(LIBRARY) tests/test_cnu_budget.c -lm -lpthread -lcurl
+		$(ROUTER) $(SRC) $(LIBRARY) tests/test_cnu_budget.c -lm -lpthread $(CURL_LDFLAGS)
 	@# ASan reserves a large shadow map, so the child's RLIMIT_AS guard is not
 	@# meaningful here; allow_user_segv_handler keeps the forked children usable.
 	@ASAN_OPTIONS=detect_leaks=0:allow_user_segv_handler=1 \
@@ -3113,7 +3598,7 @@ cnu_budget_san: $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(PLA
 port_raw_unit_seam: $(CAPSULE_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(EXT_TEACHER_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) tests/test_port_raw_unit_seam.c
 	@mkdir -p $(BIN_DIR) logs/vision
 	$(CC) -std=c11 -Wall -Wextra -Werror -O2 -D_DEFAULT_SOURCE -I include \
-		-o $(BIN_DIR)/port_raw_unit_seam $^ -lm -lpthread -lcurl
+		-o $(BIN_DIR)/port_raw_unit_seam $^ -lm -lpthread $(CURL_LDFLAGS)
 	@ROCR_VISIBLE_DEVICES='' HIP_VISIBLE_DEVICES='' CUDA_VISIBLE_DEVICES='' \
 	  timeout 600 ./$(BIN_DIR)/port_raw_unit_seam 2>&1 | tee logs/vision/port_raw_seam.log
 	@grep -q PORT_RAW_UNIT_SEAM_PASS logs/vision/port_raw_seam.log
@@ -3143,7 +3628,7 @@ vision_coverage_asan:
 vision_capsule_asset: $(CAPSULE_SRC) $(CAPSULE_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(EXT_TEACHER_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) tests/test_vision_capsule_asset.c include/cnet_capsule.h
 	@mkdir -p $(BIN_DIR) logs/vision
 	$(CC) -std=c11 -Wall -Wextra -Werror -O2 -D_DEFAULT_SOURCE -I include \
-		-o $(BIN_DIR)/vision_capsule_asset $^ -lm -lpthread -lcurl
+		-o $(BIN_DIR)/vision_capsule_asset $^ -lm -lpthread $(CURL_LDFLAGS)
 	@ROCR_VISIBLE_DEVICES='' HIP_VISIBLE_DEVICES='' CUDA_VISIBLE_DEVICES='' \
 	  timeout 900 ./$(BIN_DIR)/vision_capsule_asset 2>&1 | tee logs/vision/capsule_asset.log
 	@grep -q VISION_CAPSULE_ASSET_PASS logs/vision/capsule_asset.log
@@ -3156,7 +3641,7 @@ vision_capsule_asset_san: $(CAPSULE_SRC) $(CAPSULE_SRC) $(PERSONAL_AI_SRC) $(HYB
 	@# slice; the sanitizer findings themselves are still fatal.
 	$(CC) -std=c11 -Wall -Wextra -g -O1 -fsanitize=address,undefined \
 		-fno-omit-frame-pointer -D_DEFAULT_SOURCE -I include \
-		-o $(BIN_DIR)/vision_capsule_asset_san $^ -lm -lpthread -lcurl
+		-o $(BIN_DIR)/vision_capsule_asset_san $^ -lm -lpthread $(CURL_LDFLAGS)
 	@ROCR_VISIBLE_DEVICES='' HIP_VISIBLE_DEVICES='' CUDA_VISIBLE_DEVICES='' \
 	  ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=halt_on_error=1 \
 	  timeout 1200 ./$(BIN_DIR)/vision_capsule_asset_san 2>&1 | tee logs/vision/capsule_asset_san.log
@@ -3362,7 +3847,7 @@ asi_av_bakeoff: $(ASI_IMPROVE_SRC) include/cnet_asi_improve.h tools/cnet_av_bake
 
 # ROE-ASI concept assistant (local skills + lookup/LLM miss + promote)
 ROE_ASI_SRC := src/cnet_roe_asi.c src/cnet_roe_net.c src/cnet_asi_improve.c
-ROE_ASI_LIBS := -lm -lcurl
+ROE_ASI_LIBS := -lm $(CURL_LDFLAGS)
 roe_asi: $(ROE_ASI_SRC) include/cnet_roe_asi.h include/cnet_roe_net.h include/cnet_asi_improve.h tests/test_roe_asi.c
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) $(ASI_IMPROVE_CFLAGS) -o $(BIN_DIR)/test_roe_asi $(ROE_ASI_SRC) tests/test_roe_asi.c $(ROE_ASI_LIBS)
@@ -3505,10 +3990,14 @@ roe_daily_packs: roe_daily_packs_seed $(ROE_ASI_SRC) tools/roe_daily_packs_gate.
 
 # Front door: ROUTES → selective pack load → turn → miss_log
 .PHONY: roe_front_door
-roe_front_door: roe_daily_packs $(ROE_ASI_SRC) tools/roe_front_door.c
+roe_front_door: roe_daily_packs $(ROE_ASI_SRC) tools/roe_front_door.c src/cnet_domain_route.c \
+		src/cnet_query_alias.c src/cnet_dialog_ctx.c src/cnet_slot_extract.c \
+		include/cnet_domain_route.h include/cnet_query_alias.h include/cnet_dialog_ctx.h \
+		include/cnet_slot_extract.h
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) $(ASI_IMPROVE_CFLAGS) -o $(BIN_DIR)/roe_front_door \
-		$(ROE_ASI_SRC) tools/roe_front_door.c $(ROE_ASI_LIBS)
+		$(ROE_ASI_SRC) src/cnet_domain_route.c src/cnet_query_alias.c src/cnet_dialog_ctx.c \
+		src/cnet_slot_extract.c tools/roe_front_door.c $(ROE_ASI_LIBS)
 	@./$(BIN_DIR)/roe_front_door selftest | tee logs/roe_front_door.log
 	@grep -q "ROE_FRONT_DOOR_PASS" logs/roe_front_door.log
 	@echo "---- front bench ----"
@@ -3516,6 +4005,454 @@ roe_front_door: roe_daily_packs $(ROE_ASI_SRC) tools/roe_front_door.c
 	@echo "---- sample ask ----"
 	@./$(BIN_DIR)/roe_front_door ask "who are you" | tee -a logs/roe_front_door.log
 	@./$(BIN_DIR)/roe_front_door ask "format-truncation werror" | tee -a logs/roe_front_door.log
+	@./$(BIN_DIR)/roe_front_door ask "Introduce yourself" | tee logs/roe_front_door_alias.log
+	@grep -q "source=LOCAL" logs/roe_front_door_alias.log
+	@cat logs/roe_front_door_alias.log >> logs/roe_front_door.log
+
+.PHONY: cnet_minimal_package
+cnet_minimal_package:
+	@mkdir -p logs dist
+	@chmod +x scripts/package_cnet_minimal.sh scripts/cnet_runtime_smoke.sh scripts/cnet_runtime_soak_gate.sh
+	@bash scripts/package_cnet_minimal.sh | tee logs/cnet_minimal_package.log
+	@grep -q "PACKAGE_OK" logs/cnet_minimal_package.log
+	@# smoke inside package
+	@PKG=$$(cat dist/CNET-Minimal-latest.path); \
+	  CNET_MINIMAL_ROOT="$$PKG" bash "$$PKG/scripts/cnet_runtime_smoke.sh" | tee logs/cnet_runtime_smoke_pkg.log; \
+	  grep -q "CNET_RUNTIME_SMOKE_PASS" logs/cnet_runtime_smoke_pkg.log
+	@echo "CNET_MINIMAL_PACKAGE_OK"
+
+.PHONY: cnet_runtime_smoke
+cnet_runtime_smoke:
+	@mkdir -p logs
+	@chmod +x scripts/cnet_runtime_smoke.sh
+	@bash scripts/cnet_runtime_smoke.sh | tee logs/cnet_runtime_smoke.log
+	@grep -q "CNET_RUNTIME_SMOKE_PASS" logs/cnet_runtime_smoke.log
+
+.PHONY: cnet_runtime_soak_gate
+cnet_runtime_soak_gate: cnet_minimal_package
+	@mkdir -p logs
+	@chmod +x scripts/cnet_runtime_soak_gate.sh
+	@bash scripts/cnet_runtime_soak_gate.sh | tee logs/cnet_runtime_soak_gate.log
+	@grep -q "CNET_RUNTIME_SOAK_GATE_PASS" logs/cnet_runtime_soak_gate.log
+
+.PHONY: cnet_minimal_deploy
+cnet_minimal_deploy:
+	@mkdir -p logs
+	@chmod +x scripts/deploy_cnet_minimal.sh scripts/package_cnet_minimal.sh scripts/cnet_runtime_smoke.sh
+	@bash scripts/deploy_cnet_minimal.sh | tee logs/cnet_minimal_deploy.log
+	@grep -q "CNET_MINIMAL_DEPLOY_PASS" logs/cnet_minimal_deploy.log
+
+.PHONY: roe_explore_tick
+roe_explore_tick: tools/roe_explore_tick.py tools/roe_explore_tick_gate.c
+	@mkdir -p $(BIN_DIR) logs artifacts/roe_daily_packs
+	$(CC) -std=c11 -Wall -O2 -o $(BIN_DIR)/roe_explore_tick_gate tools/roe_explore_tick_gate.c
+	@./$(BIN_DIR)/roe_explore_tick_gate | tee logs/roe_explore_tick_gate.log
+	@grep -q "ROE_EXPLORE_TICK_GATE_PASS" logs/roe_explore_tick_gate.log
+	@$(PYTHON) tools/roe_explore_tick.py --force 2>&1 | tee logs/roe_explore_tick.log
+	@grep -q "ROE_EXPLORE_TICK_PASS" logs/roe_explore_tick.log
+	@test ! -f artifacts/roe_daily_packs/EXPLORE_TICK.json || grep -q '"auto_cert": false' artifacts/roe_daily_packs/EXPLORE_TICK.json
+	@echo "ROE_EXPLORE_TICK_OK"
+
+.PHONY: query_alias dialog_ctx query_dialog slot_extract
+query_alias dialog_ctx query_dialog slot_extract: include/cnet_query_alias.h src/cnet_query_alias.c \
+		include/cnet_dialog_ctx.h src/cnet_dialog_ctx.c \
+		include/cnet_slot_extract.h src/cnet_slot_extract.c \
+		tools/cnet_query_dialog_main.c
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) -std=c11 -Wall -Wextra -O2 -D_POSIX_C_SOURCE=200809L -Iinclude \
+		-o $(BIN_DIR)/cnet_query_dialog \
+		src/cnet_query_alias.c src/cnet_dialog_ctx.c src/cnet_slot_extract.c \
+		tools/cnet_query_dialog_main.c
+	@./$(BIN_DIR)/cnet_query_dialog --test | tee logs/query_dialog.log
+	@grep -q "QUERY_ALIAS_PASS" logs/query_dialog.log
+	@grep -q "DIALOG_CTX_PASS" logs/query_dialog.log
+	@grep -q "SLOT_EXTRACT_PASS" logs/query_dialog.log
+	@grep -q "QUERY_DIALOG_PASS" logs/query_dialog.log
+	@./$(BIN_DIR)/cnet_query_dialog "Introduce yourself" | tee -a logs/query_dialog.log
+	@./$(BIN_DIR)/cnet_query_dialog --dialog "show me its status" | tee -a logs/query_dialog.log
+	@./$(BIN_DIR)/cnet_query_dialog --slot "is cnet-web active" | tee -a logs/query_dialog.log
+	@echo "QUERY_DIALOG_OK"
+
+.PHONY: cnetd
+cnetd: $(ROE_ASI_SRC) tools/cnetd.c src/cnet_domain_route.c src/cnet_utterance.c \
+		src/cnet_query_alias.c src/cnet_dialog_ctx.c src/cnet_slot_extract.c \
+		src/cnet_chat_lookup.c src/cnet_lookup.c src/cce/cce_campaign_provenance.c \
+		src/cnet_c_speak.c src/cce/cce_wordlm.c src/cnet_skill_lane.c src/cnet_capsule_loop.c \
+		src/cnet_paragraph.c src/cnet_ood_skill.c src/cnet_held_model.c \
+		src/cnet_hemisphere.c src/cnet_brain_mirror.c src/cnet_rlm.c \
+		include/cnet_probe_shortcircuit.h include/cnet_domain_route.h include/cnet_utterance.h \
+		include/cnet_query_alias.h include/cnet_dialog_ctx.h include/cnet_slot_extract.h \
+		include/cnet_chat_lookup.h include/cnet_lookup.h include/cnet_c_speak.h include/cnet_capsule_loop.h \
+		include/cnet_skill_lane.h include/cnet_paragraph.h \
+		include/cnet_hemisphere.h include/cnet_brain_mirror.h include/cnet_rlm.h
+	@mkdir -p $(BIN_DIR) logs
+	@pkg-config --exists libcurl
+	$(CC) $(ASI_IMPROVE_CFLAGS) -DCNET_HAVE_CURL=1 $$(pkg-config --cflags libcurl) -o $(BIN_DIR)/cnetd \
+		$(ROE_ASI_SRC) src/cnet_domain_route.c src/cnet_utterance.c \
+		src/cnet_query_alias.c src/cnet_dialog_ctx.c src/cnet_slot_extract.c \
+		src/cnet_chat_lookup.c src/cnet_lookup.c src/cce/cce_campaign_provenance.c \
+		src/cnet_c_speak.c src/cce/cce_wordlm.c src/cnet_skill_lane.c src/cnet_capsule_loop.c \
+		src/cnet_paragraph.c src/cnet_ood_skill.c src/cnet_held_model.c \
+		src/cnet_hemisphere.c src/cnet_brain_mirror.c src/cnet_rlm.c \
+		tools/cnetd.c $(ROE_ASI_LIBS) $$(pkg-config --libs libcurl) -ldl
+	@echo "cnetd built → $(BIN_DIR)/cnetd"
+
+.PHONY: cnet_utterance
+cnet_utterance: src/cnet_utterance.c include/cnet_utterance.h tools/cnet_utterance_main.c
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(ASI_IMPROVE_CFLAGS) -o $(BIN_DIR)/cnet_utterance \
+		src/cnet_utterance.c tools/cnet_utterance_main.c
+	@./$(BIN_DIR)/cnet_utterance --test | tee logs/cnet_utterance.log
+	@grep -q CNET_UTTERANCE_PASS logs/cnet_utterance.log
+	@./$(BIN_DIR)/cnet_utterance --when status --hit 0.857 --da 0.47 --ht 0.53 --ado 0.51 --miss 2 | tee -a logs/cnet_utterance.log
+	@echo "CNET_UTTERANCE_OK"
+
+.PHONY: cnet_chat1_coherence
+cnet_chat1_coherence: include/cnet_query_alias.h src/cnet_query_alias.c \
+		include/cnet_dialog_ctx.h src/cnet_dialog_ctx.c \
+		include/cnet_utterance.h src/cnet_utterance.c \
+		tests/test_cnet_chat1_coherence.c
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) -std=c11 -Wall -Wextra -O2 -Werror -D_POSIX_C_SOURCE=200809L \
+		-Iinclude -o $(BIN_DIR)/test_cnet_chat1_coherence \
+		src/cnet_query_alias.c src/cnet_dialog_ctx.c src/cnet_utterance.c \
+		tests/test_cnet_chat1_coherence.c
+	@./$(BIN_DIR)/test_cnet_chat1_coherence | tee logs/cnet_chat1_coherence.log
+	@grep -q '^CNET_CHAT1_COHERENCE_PASS ' logs/cnet_chat1_coherence.log
+
+.PHONY: cnet_chat1_certified
+cnet_chat1_certified: include/cnet_compete_runtime.h src/cnet_compete_runtime.c \
+		tests/test_cnet_chat1_certified.c $(ROUTER) $(SPECIALIST_SRC)
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -Werror -ffunction-sections -fdata-sections -Iinclude \
+		-o $(BIN_DIR)/test_cnet_chat1_certified \
+		src/cnet_compete_runtime.c src/cnet_compete_intent.c \
+		src/cnet_compete_capsules.c src/cce/cce_wordlm.c \
+		$(CNET_COMPETE_CAPSULE_CORE) $(ROUTER) $(SPECIALIST_SRC) \
+		tests/test_cnet_chat1_certified.c \
+		-Wl,--gc-sections $(LDFLAGS) $(MCP_LDFLAGS) -pthread
+	@./$(BIN_DIR)/test_cnet_chat1_certified \
+		artifacts/cnet_asi5_v5/intent.wlm \
+		artifacts/cnet_asi5_v5/intent.meta \
+		artifacts/cnet_asi5_v5/capsules | \
+		tee logs/cnet_chat1_certified.log
+	@grep -q '^CNET_CHAT1_CERTIFIED_PASS ' logs/cnet_chat1_certified.log
+
+.PHONY: cnet_chat1_fluency
+cnet_chat1_fluency: include/cnet_utterance.h src/cnet_utterance.c \
+		tests/test_cnet_chat1_fluency.c
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) -std=c11 -Wall -Wextra -O2 -Werror -D_POSIX_C_SOURCE=200809L \
+		-Iinclude -o $(BIN_DIR)/test_cnet_chat1_fluency \
+		src/cnet_utterance.c tests/test_cnet_chat1_fluency.c
+	@./$(BIN_DIR)/test_cnet_chat1_fluency | tee logs/cnet_chat1_fluency.log
+	@grep -q '^CNET_CHAT1_FLUENCY_PASS ' logs/cnet_chat1_fluency.log
+
+.PHONY: cnet_chat_fluency_v1 cnet_chat1_contract_convo
+cnet_chat_fluency_v1: include/cnet_chat_fluency.h src/cnet_chat_fluency.c \
+		tests/test_cnet_chat_fluency_v1.c
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) -std=c11 -Wall -Wextra -O2 -Werror -D_POSIX_C_SOURCE=200809L \
+		-Iinclude -o $(BIN_DIR)/test_cnet_chat_fluency_v1 \
+		src/cnet_chat_fluency.c tests/test_cnet_chat_fluency_v1.c
+	@./$(BIN_DIR)/test_cnet_chat_fluency_v1 | tee logs/cnet_chat_fluency_v1.log
+	@grep -q '^CNET_CHAT_FLUENCY_V1_PASS ' logs/cnet_chat_fluency_v1.log
+
+cnet_chat1_contract_convo: include/cnet_chat_fluency.h src/cnet_chat_fluency.c \
+		include/cnet_utterance.h src/cnet_utterance.c \
+		include/cnet_compete_runtime.h src/cnet_compete_runtime.c \
+		tests/test_cnet_chat1_contract_convo.c $(ROUTER) $(SPECIALIST_SRC)
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -Werror -ffunction-sections -fdata-sections -Iinclude \
+		-o $(BIN_DIR)/test_cnet_chat1_contract_convo \
+		src/cnet_compete_runtime.c src/cnet_compete_intent.c \
+		src/cnet_compete_capsules.c src/cce/cce_wordlm.c \
+		src/cnet_utterance.c src/cnet_chat_fluency.c \
+		$(CNET_COMPETE_CAPSULE_CORE) $(ROUTER) $(SPECIALIST_SRC) \
+		tests/test_cnet_chat1_contract_convo.c \
+		-Wl,--gc-sections $(LDFLAGS) $(MCP_LDFLAGS) -pthread
+	@./$(BIN_DIR)/test_cnet_chat1_contract_convo \
+		artifacts/cnet_asi5_v5/intent.wlm \
+		artifacts/cnet_asi5_v5/intent.meta \
+		artifacts/cnet_asi5_v5/capsules | \
+		tee logs/cnet_chat1_contract_convo.log
+	@grep -q '^CNET_CHAT1_CONTRACT_CONVO_PASS ' \
+		logs/cnet_chat1_contract_convo.log
+
+.PHONY: cnet_chat1_dynamic cnet_chat1_dual_probe
+cnet_chat1_dynamic: include/cnet_chat_fluency.h src/cnet_chat_fluency.c \
+		include/cnet_utterance.h src/cnet_utterance.c \
+		tests/test_cnet_chat1_dynamic.c $(ROUTER) $(SPECIALIST_SRC)
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -Werror -ffunction-sections -fdata-sections -Iinclude \
+		-o $(BIN_DIR)/test_cnet_chat1_dynamic \
+		src/cnet_compete_runtime.c src/cnet_compete_intent.c \
+		src/cnet_compete_capsules.c src/cce/cce_wordlm.c \
+		src/cnet_utterance.c src/cnet_chat_fluency.c \
+		$(CNET_COMPETE_CAPSULE_CORE) $(ROUTER) $(SPECIALIST_SRC) \
+		tests/test_cnet_chat1_dynamic.c \
+		-Wl,--gc-sections $(LDFLAGS) $(MCP_LDFLAGS) -pthread
+	@./$(BIN_DIR)/test_cnet_chat1_dynamic \
+		artifacts/cnet_asi5_v5/intent.wlm \
+		artifacts/cnet_asi5_v5/intent.meta \
+		artifacts/cnet_asi5_v5/capsules | \
+		tee logs/cnet_chat1_dynamic.log
+	@grep -q '^CNET_CHAT1_DYNAMIC_PASS ' logs/cnet_chat1_dynamic.log
+
+cnet_chat1_dual_probe: tools/cnet_chat1_dual_probe.c include/cnet_chat_fluency.h \
+		src/cnet_chat_fluency.c
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -Werror -DCNET_HAVE_CURL=1 \
+		-DCNET_COMPETE_SUITE_DATA_HEADER=\"cnet_compete_suite_data_v5.h\" \
+		-ffunction-sections -fdata-sections -Iinclude \
+		-o $(BIN_DIR)/cnet_chat1_dual_probe \
+		tools/cnet_chat1_dual_probe.c src/cnet_compete_runtime.c \
+		src/cnet_compete_intent.c src/cnet_compete_capsules.c \
+		src/cce/cce_wordlm.c src/cnet_utterance.c src/cnet_chat_fluency.c \
+		src/cnet_compete_eval.c src/cnet_compete.c \
+		src/cce/cce_campaign_provenance.c \
+		$(CNET_COMPETE_CAPSULE_CORE) $(ROUTER) $(SPECIALIST_SRC) \
+		-Wl,--gc-sections $(LDFLAGS) $(MCP_LDFLAGS) -pthread
+	@./$(BIN_DIR)/cnet_chat1_dual_probe \
+		artifacts/cnet_asi5_v5/intent.wlm \
+		artifacts/cnet_asi5_v5/intent.meta \
+		artifacts/cnet_asi5_v5/capsules | \
+		tee logs/cnet_chat1_dual_probe.log
+	@grep -q '^CNET_CHAT1_DUAL_PROBE_DONE ' logs/cnet_chat1_dual_probe.log
+
+CNET_CHAT1_STATE_ROOT ?= /home/marble/.local/state/cnet/cnet_asi_chat1
+.PHONY: cnet_chat1_fixture cnet_chat1_independence cnet_chat1_compete
+cnet_chat1_fixture: include/cnet_chat1.h tools/cnet_chat1_fixture.c
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) -std=c11 -Wall -Wextra -O2 -Werror -Iinclude \
+		-o $(BIN_DIR)/cnet_chat1_fixture tools/cnet_chat1_fixture.c
+
+cnet_chat1_independence: include/cnet_chat1.h tools/cnet_chat1_independence.c
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) -std=c11 -Wall -Wextra -O2 -Werror -Iinclude \
+		-o $(BIN_DIR)/cnet_chat1_independence \
+		tools/cnet_chat1_independence.c
+	@test -f benchmarks/cnet_asi_chat1/heldout.tsv
+	@./$(BIN_DIR)/cnet_chat1_independence \
+		benchmarks/cnet_asi_chat1/heldout.tsv \
+		benchmarks/cnet_asi5_v5/heldout.tsv | \
+		tee logs/cnet_chat1_independence.log
+	@grep -q '^CNET_CHAT1_INDEPENDENCE_PASS ' \
+		logs/cnet_chat1_independence.log
+
+cnet_chat1_compete: cnet_chat1_independence include/cnet_chat_fluency.h \
+		src/cnet_chat_fluency.c tools/cnet_chat1_compete.c
+	@mkdir -p $(BIN_DIR) logs $(CNET_CHAT1_STATE_ROOT)
+	$(CC) $(CFLAGS) -Werror \
+		-DCNET_COMPETE_SUITE_DATA_HEADER=\"cnet_compete_suite_data_v5.h\" \
+		-ffunction-sections -fdata-sections -Iinclude \
+		-o $(BIN_DIR)/cnet_chat1_compete \
+		tools/cnet_chat1_compete.c src/cnet_compete_runtime.c \
+		src/cnet_compete_intent.c src/cnet_compete_capsules.c \
+		src/cce/cce_wordlm.c src/cnet_utterance.c src/cnet_chat_fluency.c \
+		src/cnet_compete_eval.c src/cnet_compete.c \
+		src/cce/cce_campaign_provenance.c \
+		$(CNET_COMPETE_CAPSULE_CORE) $(ROUTER) $(SPECIALIST_SRC) \
+		-Wl,--gc-sections $(LDFLAGS) $(MCP_LDFLAGS) -pthread -lcurl
+	@./$(BIN_DIR)/cnet_chat1_compete \
+		artifacts/cnet_asi5_v5/intent.wlm \
+		artifacts/cnet_asi5_v5/intent.meta \
+		artifacts/cnet_asi5_v5/capsules | \
+		tee logs/cnet_chat1_compete.log
+	@cp logs/cnet_chat1_compete.log \
+		$(CNET_CHAT1_STATE_ROOT)/cnet_chat1_compete.log
+	@grep -q '^CNET_CHAT_COMPETE_PASS ' logs/cnet_chat1_compete.log
+
+.PHONY: cnet_lookup_capsule
+cnet_lookup_capsule: include/cnet_lookup.h src/cnet_lookup.c \
+		src/cce/cce_campaign_provenance.c \
+		tests/test_cnet_lookup_capsule.c
+	@mkdir -p $(BIN_DIR) logs
+	@pkg-config --exists libcurl
+	$(CC) $(CFLAGS) -Werror -Iinclude $$(pkg-config --cflags libcurl) \
+		-o $(BIN_DIR)/test_cnet_lookup_capsule \
+		src/cnet_lookup.c src/cce/cce_campaign_provenance.c \
+		tests/test_cnet_lookup_capsule.c $(LDFLAGS) \
+		$$(pkg-config --libs libcurl)
+	@./$(BIN_DIR)/test_cnet_lookup_capsule | tee logs/cnet_lookup_capsule.log
+	@grep -q '^CNET_LOOKUP_CAPSULE_PASS ' logs/cnet_lookup_capsule.log
+
+.PHONY: cnet_chat_lookup
+cnet_chat_lookup: include/cnet_chat_lookup.h src/cnet_chat_lookup.c \
+		include/cnet_lookup.h src/cnet_lookup.c \
+		src/cce/cce_campaign_provenance.c \
+		tests/test_cnet_chat_lookup.c
+	@mkdir -p $(BIN_DIR) logs
+	@pkg-config --exists libcurl
+	$(CC) $(CFLAGS) -Werror -Iinclude $$(pkg-config --cflags libcurl) \
+		-o $(BIN_DIR)/test_cnet_chat_lookup \
+		src/cnet_chat_lookup.c src/cnet_lookup.c \
+		src/cce/cce_campaign_provenance.c \
+		tests/test_cnet_chat_lookup.c $(LDFLAGS) \
+		$$(pkg-config --libs libcurl)
+	@./$(BIN_DIR)/test_cnet_chat_lookup | tee logs/cnet_chat_lookup.log
+	@grep -q '^CNET_CHAT_LOOKUP_PASS ' logs/cnet_chat_lookup.log
+
+.PHONY: cnet_lookup
+cnet_lookup: include/cnet_lookup.h src/cnet_lookup.c \
+		src/cce/cce_campaign_provenance.c tools/cnet_lookup.c
+	@mkdir -p $(BIN_DIR)
+	@pkg-config --exists libcurl
+	$(CC) $(CFLAGS) -Werror -Iinclude $$(pkg-config --cflags libcurl) \
+		-o $(BIN_DIR)/cnet_lookup \
+		src/cnet_lookup.c src/cce/cce_campaign_provenance.c \
+		tools/cnet_lookup.c $(LDFLAGS) $$(pkg-config --libs libcurl)
+
+.PHONY: cnetd-run
+cnetd-run: cnetd query_dialog
+	@pkill -x cnetd 2>/dev/null || true
+	@sleep 0.2
+	@if [ -f $(HOME)/.local/share/cnet-minimal/cnet-minimal.env ]; then set -a; . $(HOME)/.local/share/cnet-minimal/cnet-minimal.env; set +a; fi
+	@$(BIN_DIR)/cnetd >logs/cnetd.log 2>&1 & echo $$! > logs/cnetd.pid
+	@sleep 0.4
+	@chmod +x scripts/cnet_sock_ask.sh
+	@scripts/cnet_sock_ask.sh "who are you" | tee logs/cnetd_ask.log
+	@grep -q "SOURCE LOCAL\|\"source\":\"LOCAL\"" logs/cnetd_ask.log
+	@# Milestone A: conversational soul paraphrase → LOCAL
+	@scripts/cnet_sock_ask.sh "Introduce yourself" | tee logs/cnetd_ask_a1.log
+	@grep -q "SOURCE LOCAL\|\"source\":\"LOCAL\"" logs/cnetd_ask_a1.log
+	@cat logs/cnetd_ask_a1.log >> logs/cnetd_ask.log
+	@scripts/cnet_sock_ask.sh "who am i talking to" | tee logs/cnetd_ask_a2.log
+	@grep -q "SOURCE LOCAL\|\"source\":\"LOCAL\"" logs/cnetd_ask_a2.log
+	@cat logs/cnetd_ask_a2.log >> logs/cnetd_ask.log
+	@# Milestone B: entity bind then anaphora status
+	@scripts/cnet_sock_ask.sh "cnet-marble status" | tee logs/cnetd_ask_b1.log
+	@grep -q "SOURCE LOCAL\|\"source\":\"LOCAL\"" logs/cnetd_ask_b1.log
+	@cat logs/cnetd_ask_b1.log >> logs/cnetd_ask.log
+	@scripts/cnet_sock_ask.sh "show me its status" | tee logs/cnetd_ask_b2.log
+	@grep -q "SOURCE LOCAL\|\"source\":\"LOCAL\"" logs/cnetd_ask_b2.log
+	@grep -q "DIALOG_HIT 1\|\"dialog_hit\":true" logs/cnetd_ask_b2.log
+	@cat logs/cnetd_ask_b2.log >> logs/cnetd_ask.log
+	@# Milestone C: pack-local ops slots
+	@scripts/cnet_sock_ask.sh "is cnet-web active" | tee logs/cnetd_ask_c1.log
+	@grep -q "SOURCE LOCAL\|\"source\":\"LOCAL\"" logs/cnetd_ask_c1.log
+	@grep -q "SLOT_HIT 1\|\"slot_hit\":true" logs/cnetd_ask_c1.log
+	@cat logs/cnetd_ask_c1.log >> logs/cnetd_ask.log
+	@scripts/cnet_sock_ask.sh "restart cnetd" | tee logs/cnetd_ask_c2.log
+	@grep -q "SOURCE LOCAL\|\"source\":\"LOCAL\"" logs/cnetd_ask_c2.log
+	@grep -q "SLOT_HIT 1\|\"slot_hit\":true" logs/cnetd_ask_c2.log
+	@cat logs/cnetd_ask_c2.log >> logs/cnetd_ask.log
+	@scripts/cnet_sock_ask.sh "is cnet-marble running" | tee logs/cnetd_ask_c3.log
+	@grep -q "SOURCE LOCAL\|\"source\":\"LOCAL\"" logs/cnetd_ask_c3.log
+	@grep -q "ops_cnet_marble\|SLOT_HIT 1\|\"slot_hit\":true" logs/cnetd_ask_c3.log
+	@cat logs/cnetd_ask_c3.log >> logs/cnetd_ask.log
+	@# probes remain non-LOCAL / short-circuit
+	@scripts/cnet_sock_ask.sh "autonomous cycle probe novel fact beta-nine" | tee logs/cnetd_ask_probe.log
+	@grep -q "SHORTCIRCUIT 1\|shortcircuit.:true" logs/cnetd_ask_probe.log
+	@cat logs/cnetd_ask_probe.log >> logs/cnetd_ask.log
+	@echo "CNETD_OK"
+
+.PHONY: cnet-web
+cnet-web:
+	@test -f web/cnet-cockpit.html
+	@test -f tools/cnet_web.py
+	@test -f scripts/cnet_web_run.sh
+	@chmod +x scripts/cnet_web_run.sh
+	@systemctl --user is-active cnetd.service >/dev/null 2>&1 || $(MAKE) cnetd-run
+	@# Prefer live unit if active; else one-shot localhost smoke
+	@if systemctl --user is-active cnet-web.service >/dev/null 2>&1; then \
+	  H=$$(systemctl --user show cnet-web.service -p Environment --value 2>/dev/null | tr ' ' '\n' | sed -n 's/^CNET_WEB_HOST=//p'); \
+	  H=$${H:-$$(tailscale ip -4 2>/dev/null | awk '/^100\./{print;exit}')}; \
+	  H=$${H:-127.0.0.1}; \
+	  curl -sf "http://$$H:8642/api/health" | tee logs/cnet_web_health.json; \
+	else \
+	  pkill -f '$(PYTHON) .*/tools/cnet_web.py' 2>/dev/null || true; \
+	  CNET_WEB_HOST=127.0.0.1 CNET_WEB_PORT=8642 $(PYTHON) tools/cnet_web.py >logs/cnet_web.log 2>&1 & echo $$! > logs/cnet_web.pid; \
+	  sleep 0.6; \
+	  curl -sf http://127.0.0.1:8642/api/health | tee logs/cnet_web_health.json; \
+	fi
+	@grep -q '"ok": true\|"ok":true' logs/cnet_web_health.json
+	@echo "CNET_WEB_OK"
+
+.PHONY: cnet-web-service
+cnet-web-service:
+	@chmod +x scripts/cnet_web_run.sh
+	@mkdir -p $(HOME)/.config/systemd/user
+	@cp -a scripts/systemd/cnet-web.service $(HOME)/.config/systemd/user/
+	@cp -a scripts/systemd/cnetd.service $(HOME)/.config/systemd/user/
+	@# stop ad-hoc server so unit owns :8642
+	@pkill -f '$(PYTHON) .*/tools/cnet_web.py' 2>/dev/null || true
+	@pkill -f '$(PYTHON) tools/cnet_web.py' 2>/dev/null || true
+	@systemctl --user daemon-reload
+	@systemctl --user enable cnetd.service cnet-web.service
+	@systemctl --user restart cnetd.service
+	@sleep 0.4
+	@systemctl --user restart cnet-web.service
+	@sleep 0.8
+	@systemctl --user is-active cnetd.service cnet-web.service | tee logs/cnet_web_service_active.txt
+	@grep -qx active logs/cnet_web_service_active.txt || true
+	@TS=$$(tailscale ip -4 2>/dev/null | awk '/^100\./{print;exit}'); \
+	  TS=$${TS:-127.0.0.1}; \
+	  echo "probe http://$$TS:8642/"; \
+	  curl -sf "http://$$TS:8642/api/health" | tee logs/cnet_web_health.json; \
+	  curl -sf -X POST "http://$$TS:8642/api/ask" -H 'Content-Type: application/json' \
+	    -d '{"q":"who are you"}' | tee logs/cnet_web_ask.json; \
+	  curl -sf -X POST "http://$$TS:8642/api/ask" -H 'Content-Type: application/json' \
+	    -d '{"q":"x","promote":true}' | tee logs/cnet_web_promote_deny.json
+	@grep -q LOCAL logs/cnet_web_ask.json
+	@grep -q promote_forbidden logs/cnet_web_promote_deny.json
+	@ss -ltnp 2>/dev/null | grep -E ':8642' | tee logs/cnet_web_listen.txt || true
+	@echo "CNET_WEB_SERVICE_OK"
+
+# CERT-first domain route table (static + optional TSV overlay)
+.PHONY: domain_route
+domain_route: include/cnet_domain_route.h src/cnet_domain_route.c tools/roe_domain_route.c
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) -std=c11 -Wall -Wextra -O2 -D_POSIX_C_SOURCE=200809L -Iinclude \
+		-o $(BIN_DIR)/roe_domain_route src/cnet_domain_route.c tools/roe_domain_route.c
+	@./$(BIN_DIR)/roe_domain_route --test | tee logs/domain_route.log
+	@grep -q "DOMAIN_ROUTE_PASS" logs/domain_route.log
+	@./$(BIN_DIR)/roe_domain_route "who are you" | tee -a logs/domain_route.log
+	@./$(BIN_DIR)/roe_domain_route "completely unknown domain xyzzy" | tee -a logs/domain_route.log
+	@echo "DOMAIN_ROUTE_OK"
+
+.PHONY: cert_coverage_harvest
+cert_coverage_harvest:
+	@mkdir -p logs bin
+	@bash scripts/cert_coverage_harvest.sh
+	@grep -q "CERT_COVERAGE_HARVEST_PASS" logs/cert_coverage_harvest.log
+
+.PHONY: gold_curriculum_harvest
+gold_curriculum_harvest:
+	@mkdir -p logs bin
+	@$(PYTHON) tools/roe_gold_curriculum_harvest.py | tee logs/gold_curriculum_harvest.log
+	@grep -q "GOLD_CURRICULUM_HARVEST_PASS" logs/gold_curriculum_harvest.log
+	@# evolve dry-run must not promote blocked probes even if gold planted
+	@$(PYTHON) -c "from tools.roe_evolve_tick import is_promote_blocked as b; \
+assert b('zz mystic ooze 99','x'); assert b('ok','ABSTAIN: no'); print('EVOLVE_BLOCKLIST_OK')"
+
+.PHONY: stream_attend_bench
+stream_attend_bench: $(CCE_SPARSE_KV) include/cce/cce_sparse_kv.h tools/stream_attend_bench.c
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -o $(BIN_DIR)/stream_attend_bench $(CCE_SPARSE_KV) tools/stream_attend_bench.c $(LDFLAGS) -lm
+	@./$(BIN_DIR)/stream_attend_bench | tee logs/stream_attend_bench.log
+	@grep -q "STREAM_ATTEND_BENCH_PASS" logs/stream_attend_bench.log
+
+.PHONY: stream_ix_e2e_bench
+stream_ix_e2e_bench: $(CCE_SPARSE_KV) include/cce/cce_sparse_kv.h tools/stream_ix_e2e_bench.c
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -o $(BIN_DIR)/stream_ix_e2e_bench $(CCE_SPARSE_KV) tools/stream_ix_e2e_bench.c $(LDFLAGS) -lm
+	@./$(BIN_DIR)/stream_ix_e2e_bench | tee logs/stream_ix_e2e_bench.log
+	@grep -q "STREAM_IX_E2E_BENCH_PASS" logs/stream_ix_e2e_bench.log
+
+# Chain-of-thought — pure C multi-hop (0-token skeleton; no Python)
+.PHONY: roe_chain_think
+roe_chain_think: include/cnet_roe_cot.h src/cnet_roe_cot.c tools/roe_chain_think.c
+	@mkdir -p $(BIN_DIR) logs/governor
+	$(CC) -std=c11 -Wall -Wextra -O2 -D_POSIX_C_SOURCE=200809L -Iinclude \
+		-o $(BIN_DIR)/roe_chain_think src/cnet_roe_cot.c tools/roe_chain_think.c
+	@./$(BIN_DIR)/roe_chain_think --test | tee logs/roe_chain_think.log
+	@grep -q "ROE_CHAIN_THINK_PASS" logs/roe_chain_think.log
+	@test -x $(BIN_DIR)/roe_front_door || $(MAKE) roe_front_door
+	@./$(BIN_DIR)/roe_chain_think "who are you" | tee -a logs/roe_chain_think.log
+	@test -f logs/governor/chain_last.txt
+	@grep -q "chain-of-thought" logs/governor/chain_last.txt
+	@echo "ROE_CHAIN_THINK_OK"
 
 # Highest-leverage non-LLM agent loop (hermetic, no libcurl):
 # always-on tool law → miss → accept/promote → warm LOCAL → residual KPIs.
@@ -3553,6 +4490,103 @@ roe_soul_pack: roe_daily_packs_seed $(ROE_ASI_SRC) tools/roe_soul_pack_gate.c
 	@head -20 artifacts/roe_daily_packs/pack_soul_marble/SOUL.md 2>/dev/null || true
 	@test -f artifacts/roe_daily_packs/pack_soul_marble/voice.md
 	@grep -q "kind persona" artifacts/roe_daily_packs/pack_soul_marble/PACK.abi
+
+# Unattended evolve: miss_log → gold/multi_stable → pack_personal (no human Accept)
+.PHONY: roe_evolve_tick
+roe_evolve_tick: tools/roe_evolve_tick.py tools/roe_evolve_tick_gate.c
+	@mkdir -p $(BIN_DIR) logs artifacts/roe_daily_packs
+	$(CC) $(ASI_IMPROVE_CFLAGS) -o $(BIN_DIR)/roe_evolve_tick_gate tools/roe_evolve_tick_gate.c
+	@./$(BIN_DIR)/roe_evolve_tick_gate | tee logs/roe_evolve_tick_gate.log
+	@grep -q "ROE_EVOLVE_TICK_PASS" logs/roe_evolve_tick_gate.log
+	@echo "---- EVOLVE_TICK.json ----"
+	@cat artifacts/roe_daily_packs/EVOLVE_TICK.json 2>/dev/null | head -40 || true
+	@echo "Install timer (optional):"
+	@echo "  mkdir -p ~/.config/systemd/user"
+	@echo "  cp scripts/systemd/roe-evolve-tick.* ~/.config/systemd/user/"
+	@echo "  systemctl --user daemon-reload && systemctl --user enable --now roe-evolve-tick.timer"
+
+# Separate REVIEWER role (Ollama cloud) — not teacher
+.PHONY: roe_reviewer_smoke
+roe_reviewer_smoke: tools/roe_reviewer.py config/roe-reviewer-ollama-cloud.env
+	@mkdir -p logs
+	@set -a; \
+	  [ -f config/roe-teacher-ollama-cloud.env ] && . ./config/roe-teacher-ollama-cloud.env; \
+	  . ./config/roe-reviewer-ollama-cloud.env; \
+	  set +a; \
+	  $(PYTHON) tools/roe_reviewer.py --smoke | tee logs/roe_reviewer_smoke.log
+	@grep -q "ROE_REVIEWER_SMOKE_PASS" logs/roe_reviewer_smoke.log
+
+# optional: after ROE docs
+.PHONY: cnet_marble_24_7
+cnet_marble_24_7:
+	@chmod +x scripts/cnet_marble_24_7.sh scripts/cnet_marble_health_snap.py
+	@scripts/cnet_marble_24_7.sh status
+	@scripts/cnet_marble_24_7.sh doctor
+	@test -f logs/marble_24_7/status.json
+	@$(PYTHON) -c "import json;d=json.load(open('logs/marble_24_7/status.json')); assert d.get('hermes_required') is False; assert d.get('core_active_count',0)>=1; print('CNET_MARBLE_24_7_OK')"
+
+# Full autonomous cycle (probe + evolve) — no Hermes, no human Accept
+.PHONY: cnet_autonomous
+cnet_autonomous:
+	@chmod +x scripts/cnet_autonomous_cycle.py
+	@mkdir -p logs/marble_24_7 bin
+	@CNET_AUTO_TEACHER=$${CNET_AUTO_TEACHER:-1} \
+	 ROE_EVOLVE_REVIEWER=$${ROE_EVOLVE_REVIEWER:-1} \
+	 $(PYTHON) scripts/cnet_autonomous_cycle.py | tee logs/marble_24_7/autonomous_last.log
+	@grep -q "CNET_AUTONOMOUS_PASS" logs/marble_24_7/autonomous_last.log
+	@test -f logs/marble_24_7/AUTONOMOUS_CYCLE.json
+	@$(PYTHON) -c "import json;d=json.load(open('logs/marble_24_7/AUTONOMOUS_CYCLE.json')); assert d.get('ok') and d.get('hermes_required') is False; print('kpi',d.get('kpi')); print('CNET_AUTONOMOUS_OK')"
+
+# Neuromod personality organ (DA / 5HT / ADO)
+.PHONY: cnet_neuromod
+cnet_neuromod:
+	@chmod +x scripts/cnet_neuromod.py
+	@$(PYTHON) scripts/cnet_neuromod.py --test | tee logs/governor/neuromod_test.log
+	@grep -q "NEUROMOD_PASS" logs/governor/neuromod_test.log
+	@$(PYTHON) scripts/cnet_neuromod.py --tick
+	@test -f logs/governor/neuromod_state.json
+	@$(PYTHON) -c "import json;d=json.load(open('logs/governor/neuromod_state.json')); assert set(d['levels'])=={'dopamine','serotonin','adenosine'}; assert d['law']['never_self_cert']; print(d['levels']); print('CNET_NEUROMOD_OK')"
+
+# Token-free thought process (no LLM)
+.PHONY: cnet_thought
+cnet_thought:
+	@chmod +x scripts/cnet_thought_process.py
+	@$(PYTHON) scripts/cnet_thought_process.py --test | tee logs/governor/thought_test.log
+	@grep -q "THOUGHT_PROCESS_PASS" logs/governor/thought_test.log
+	@$(PYTHON) scripts/cnet_thought_process.py --query "who are you"
+	@test -f logs/governor/thought_last.json
+	@$(PYTHON) -c "import json;d=json.load(open('logs/governor/thought_last.json')); assert d['tokens']==0 and d['llm'] is False and d['law']['not_agi']; print(d['chain']); print('CNET_THOUGHT_OK')"
+
+# Continuity workspace (imitate continuity, not consciousness)
+.PHONY: cnet_continuity
+cnet_continuity:
+	@chmod +x scripts/cnet_continuity.py
+	@$(PYTHON) scripts/cnet_continuity.py --test | tee logs/governor/continuity_test.log
+	@grep -q "CONTINUITY_PASS" logs/governor/continuity_test.log
+	@$(PYTHON) scripts/cnet_continuity.py --query "who are you" --line-only
+	@test -f logs/governor/continuity_last.json
+	@test -f logs/governor/continuity_line.txt
+	@$(PYTHON) -c "import json;d=json.load(open('logs/governor/continuity_last.json')); assert d['law']['not_conscious'] and d['law']['never_self_cert'] and d['tokens']==0; print(d['continuity_line']); print('CNET_CONTINUITY_OK')"
+
+# Visible reply thinking (GPT-style panel, 0 tokens)
+.PHONY: cnet_reply_think
+cnet_reply_think:
+	@chmod +x scripts/cnet_reply_think.py scripts/roe_reply.sh
+	@$(PYTHON) scripts/cnet_reply_think.py --test | tee logs/governor/reply_think_test.log
+	@grep -q "REPLY_THINK_PASS" logs/governor/reply_think_test.log
+	@$(PYTHON) scripts/cnet_reply_think.py --query "who are you" --answer "I am Marble." --source LOCAL --skill soul_who --style panel | head -25
+	@test -f logs/governor/reply_think_last.json
+	@$(PYTHON) -c "import json;d=json.load(open('logs/governor/reply_think_last.json')); assert d['tokens']==0 and d['llm_thinking'] is False; print(d['thinking_summary'][:80]); print('CNET_REPLY_THINK_OK')"
+
+# Autonomy freedom charter + budgets
+.PHONY: cnet_autonomy_charter
+cnet_autonomy_charter:
+	@chmod +x scripts/cnet_autonomy_charter.py
+	@$(PYTHON) scripts/cnet_autonomy_charter.py --test | tee logs/governor/autonomy_charter_test.log
+	@grep -q "AUTONOMY_CHARTER_PASS" logs/governor/autonomy_charter_test.log
+	@$(PYTHON) scripts/cnet_autonomy_charter.py --show | head -40
+	@test -f config/autonomy_charter.yaml
+	@$(PYTHON) -c "import json;from pathlib import Path;import sys;sys.path.insert(0,'scripts');import cnet_autonomy_charter as a;c=a.charter();assert c['law']['never_self_cert'] and c['budgets']['promotes_per_day']>=1; print('CNET_AUTONOMY_CHARTER_OK')"
 
 .PHONY: roe_asi_ocr_surpass
 roe_asi_ocr_surpass: $(ROE_ASI_SRC) src/cnet_roe_goal.c src/cnet_roe_ocr.c src/cnet_roe_tree.c \
@@ -3818,8 +4852,9 @@ residual_substitution_bench_live: $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL
 		$(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) \
 		$(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) \
 		tests/residual_substitution_bench_live.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -pthread
-	@./$(BIN_DIR)/residual_substitution_bench_live > logs/residual_substitution_bench_live.log 2>&1 || true
-	@cat logs/residual_substitution_bench_live.log
+	@rc=0; ./$(BIN_DIR)/residual_substitution_bench_live > logs/residual_substitution_bench_live.log 2>&1 || rc=$$?; \
+		cat logs/residual_substitution_bench_live.log; \
+		[ $$rc -eq 0 ] || { echo "residual_substitution_bench_live exited $$rc"; exit $$rc; }
 	@grep -qE "SUBSTITUTION_BENCH_LIVE_(PASS|SKIP)" logs/residual_substitution_bench_live.log
 
 residual_substitution_bench: $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(EXT_TEACHER_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) tests/residual_substitution_bench.c include/hybrid_ai.h include/personal_ai.h
@@ -3830,8 +4865,9 @@ residual_substitution_bench: $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF
 		$(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) \
 		$(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) \
 		tests/residual_substitution_bench.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -pthread
-	@./$(BIN_DIR)/residual_substitution_bench > logs/residual_substitution_bench.log 2>&1 || true
-	@cat logs/residual_substitution_bench.log
+	@rc=0; ./$(BIN_DIR)/residual_substitution_bench > logs/residual_substitution_bench.log 2>&1 || rc=$$?; \
+		cat logs/residual_substitution_bench.log; \
+		[ $$rc -eq 0 ] || { echo "residual_substitution_bench exited $$rc"; exit $$rc; }
 	@grep -q "SUBSTITUTION_BENCH_PASS" logs/residual_substitution_bench.log
 
 residual_reservoir: $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(EXT_TEACHER_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) tests/test_residual_reservoir.c include/hybrid_ai.h include/personal_ai.h
@@ -5578,3 +6614,1449 @@ roe_omnidoc_freeze:
 	@mkdir -p logs
 	@echo "ROE_OMNIDOC_FREEZE_WITHHELD reason=torch_harness_removed" | tee logs/roe_omnidoc_freeze.log
 	@false
+
+.PHONY: cnet_7b_compete_fixture cnet_7b_compete_contract \
+	cnet_7b_v3_fixture_audit
+cnet_7b_v3_fixture_audit: cnet_7b_candidate_freeze \
+		include/cnet_compete.h tools/cnet_compete_fixture_v3.c \
+		tools/cnet_compete_fixture_oracle_v3.c \
+		tools/cnet_compete_fixture_audit.c \
+		src/cnet_compete_independence.c \
+		benchmarks/cnet_asi5_v3/heldout.tsv \
+		benchmarks/cnet_asi5_v3/cases.tsv \
+		benchmarks/cnet_asi5_v3/baseline_system.txt \
+		benchmarks/cnet_asi5_v3/digests.sha256 \
+		benchmarks/cnet_asi5_v3/excluded_prompts.tsv
+	@mkdir -p $(BIN_DIR) logs
+	@sha256sum -c benchmarks/cnet_asi5_v3/digests.sha256
+	$(CC) $(CFLAGS) -Werror -Iinclude \
+		-o $(BIN_DIR)/cnet_compete_fixture_v3 \
+		tools/cnet_compete_fixture_v3.c
+	$(CC) $(CFLAGS) -Werror -Iinclude \
+		-o $(BIN_DIR)/cnet_compete_fixture_oracle_v3 \
+		tools/cnet_compete_fixture_oracle_v3.c
+	$(CC) $(CFLAGS) -Werror -Iinclude \
+		-o $(BIN_DIR)/cnet_compete_fixture_audit \
+		src/cnet_compete_independence.c \
+		tools/cnet_compete_fixture_audit.c
+	@tmp=$$(mktemp -d); trap 'rm -rf "$$tmp"' EXIT; \
+		./$(BIN_DIR)/cnet_compete_fixture_v3 \
+			"$$tmp/heldout.tsv" "$$tmp/cases.tsv"; \
+		cmp benchmarks/cnet_asi5_v3/heldout.tsv "$$tmp/heldout.tsv"; \
+		cmp benchmarks/cnet_asi5_v3/cases.tsv "$$tmp/cases.tsv"; \
+		./$(BIN_DIR)/cnet_compete_fixture_oracle_v3 \
+			"$$tmp/heldout.tsv" "$$tmp/cases.tsv"; \
+		./$(BIN_DIR)/cnet_compete_fixture_audit \
+			"$$tmp/heldout.tsv" \
+			benchmarks/cnet_asi5_v3/excluded_prompts.tsv | \
+			tee logs/cnet_7b_v3_independence.log; \
+		grep -q '^CNET_7B_INDEPENDENCE_PASS candidates=448 ' \
+			logs/cnet_7b_v3_independence.log; \
+		./$(BIN_DIR)/cnet_compete_fixture_oracle_v3 --self-test; \
+		echo CNET_7B_V3_FIXTURE_AUDIT_PASS rows=448 covered=320 \
+			ood=128 metadata=448 frames=128 overlap=0 | \
+			tee logs/cnet_7b_v3_fixture_audit.log
+
+cnet_7b_compete_fixture: cnet_7b_v3_fixture_audit
+	@echo CNET_7B_COMPETE_FIXTURE_PASS rows=448 suite=CNET-ASI-5-v3
+
+cnet_7b_compete_contract: cnet_7b_compete_fixture include/cnet_compete.h \
+		src/cnet_compete.c tests/test_cnet_compete_contract.c
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -Iinclude -o $(BIN_DIR)/test_cnet_compete_contract \
+		src/cnet_compete.c tests/test_cnet_compete_contract.c $(LDFLAGS)
+	@./$(BIN_DIR)/test_cnet_compete_contract | tee logs/cnet_7b_compete_contract.log
+	@grep -q CNET_7B_COMPETE_CONTRACT_PASS logs/cnet_7b_compete_contract.log
+
+CNET_COMPETE_V4_SUITE_DEFINE := \
+	-DCNET_COMPETE_SUITE_DATA_HEADER=\"cnet_compete_suite_data_v4.h\"
+CNET_COMPETE_V5_SUITE_DEFINE := \
+	-DCNET_COMPETE_SUITE_DATA_HEADER=\"cnet_compete_suite_data_v5.h\"
+CNET_COMPETE_SUITE_DEFINE ?=
+
+.PHONY: cnet_7b_v5_suite_data_contract
+cnet_7b_v5_suite_data_contract: \
+		include/cnet_compete_suite_data_audit.h \
+		src/cnet_compete_suite_data_audit.c \
+		tests/test_cnet_compete_suite_data_v5_audit.c
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -Werror -Iinclude \
+		-o $(BIN_DIR)/test_cnet_compete_suite_data_v5_audit \
+		src/cnet_compete_suite_data_audit.c \
+		tests/test_cnet_compete_suite_data_v5_audit.c $(LDFLAGS)
+	@./$(BIN_DIR)/test_cnet_compete_suite_data_v5_audit | \
+		tee logs/cnet_7b_v5_suite_data_contract.log
+	@grep -qx 'CNET_7B_V5_SUITE_DATA_AUDIT_PASS invalid_refused=6' \
+		logs/cnet_7b_v5_suite_data_contract.log
+	$(CC) -O1 -g -std=c11 -Wall -Wextra -Wpedantic -Werror \
+		-D_DEFAULT_SOURCE -fsanitize=address,undefined \
+		-fno-omit-frame-pointer -Iinclude \
+		-o $(BIN_DIR)/test_cnet_compete_suite_data_v5_audit_san \
+		src/cnet_compete_suite_data_audit.c \
+		tests/test_cnet_compete_suite_data_v5_audit.c \
+		-fsanitize=address,undefined
+	@ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 \
+		UBSAN_OPTIONS=halt_on_error=1 \
+		./$(BIN_DIR)/test_cnet_compete_suite_data_v5_audit_san | \
+		tee logs/cnet_7b_v5_suite_data_contract_san.log
+	@grep -qx 'CNET_7B_V5_SUITE_DATA_AUDIT_PASS invalid_refused=6' \
+		logs/cnet_7b_v5_suite_data_contract_san.log
+
+.PHONY: cnet_7b_v5_suite_data_audit cnet_7b_v5_suite_define_smoke \
+	cnet_7b_v5_fixture_audit
+cnet_7b_v5_suite_data_audit: cnet_7b_v5_suite_data_contract \
+		include/cnet_compete_suite_data_v5.h \
+		tools/cnet_compete_suite_data_audit.c
+	$(CC) $(CFLAGS) -Werror -Iinclude \
+		-o $(BIN_DIR)/cnet_compete_suite_data_audit_v5 \
+		src/cnet_compete_suite_data_audit.c \
+		tools/cnet_compete_suite_data_audit.c $(LDFLAGS)
+	@./$(BIN_DIR)/cnet_compete_suite_data_audit_v5 --v5 \
+		include/cnet_compete_suite_data_v5.h | \
+		tee logs/cnet_7b_v5_suite_data_audit.log
+	@tmp=$$(mktemp -d); trap 'rm -rf "$$tmp"' EXIT; \
+		line=$$(cat logs/cnet_7b_v5_suite_data_audit.log); \
+		if [[ "$$line" =~ ^CNET_7B_V5_SUITE_DATA_AUDIT_PASS\ s5=([0-9a-f]{40})$$ ]]; then \
+			s5=$${BASH_REMATCH[1]}; \
+		else exit 1; fi; \
+		if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then \
+			git cat-file -e "$$s5^{commit}"; \
+			git merge-base --is-ancestor "$$s5" HEAD; \
+			git show "$$s5:benchmarks/cnet_asi5_v5/candidate_behavior_paths.txt" \
+				>"$$tmp/s5-paths"; \
+			cmp benchmarks/cnet_asi5_v5/candidate_behavior_paths.txt \
+				"$$tmp/s5-paths"; \
+			mapfile -t frozen_paths <"$$tmp/s5-paths"; \
+			test "$${#frozen_paths[@]}" -eq 116; \
+			git diff --quiet --no-ext-diff "$$s5" -- \
+				"$${frozen_paths[@]}" \
+				benchmarks/cnet_asi5_v5/candidate_artifacts.sha256 \
+				benchmarks/cnet_asi5_v5/candidate_behavior.sha256 \
+				benchmarks/cnet_asi5_v5/candidate_behavior_paths.txt; \
+		fi
+
+cnet_7b_v5_suite_define_smoke: include/cnet_compete.h \
+		include/cnet_compete_suite_data_v5.h src/cnet_compete.c
+	$(CC) $(CFLAGS) -Werror $(CNET_COMPETE_SUITE_DEFINE) -Iinclude \
+		-fsyntax-only src/cnet_compete.c
+	@echo CNET_7B_V5_SUITE_DEFINE_PASS
+
+cnet_7b_v5_fixture_audit: cnet_7b_v5_suite_data_audit \
+		include/cnet_compete_suite_data_v5.h \
+		tools/cnet_compete_fixture_v5.c \
+		tools/cnet_compete_fixture_oracle_v5.c \
+		tools/cnet_compete_fixture_audit.c \
+		src/cnet_compete_independence.c src/cnet_compete.c \
+		tests/test_cnet_compete_contract.c \
+		benchmarks/cnet_asi5_v5/heldout.tsv \
+		benchmarks/cnet_asi5_v5/cases.tsv \
+		benchmarks/cnet_asi5_v5/baseline_system.txt \
+		benchmarks/cnet_asi5_v5/digests.sha256 \
+		benchmarks/cnet_asi5_v5/excluded_prompts.tsv
+	@mkdir -p $(BIN_DIR) logs
+	@$(MAKE) --no-print-directory cnet_7b_v5_candidate_integrity
+	@sha256sum -c benchmarks/cnet_asi5_v5/digests.sha256
+	$(CC) $(CFLAGS) -Werror -Iinclude \
+		-o $(BIN_DIR)/cnet_compete_fixture_v5 \
+		tools/cnet_compete_fixture_v5.c
+	$(CC) $(CFLAGS) -Werror -Iinclude \
+		-o $(BIN_DIR)/cnet_compete_fixture_oracle_v5 \
+		tools/cnet_compete_fixture_oracle_v5.c
+	$(CC) $(CFLAGS) -Werror -Iinclude \
+		-o $(BIN_DIR)/cnet_compete_fixture_audit \
+		src/cnet_compete_independence.c \
+		tools/cnet_compete_fixture_audit.c
+	$(CC) $(CFLAGS) -Werror -Iinclude $(CNET_COMPETE_V5_SUITE_DEFINE) \
+		-o $(BIN_DIR)/test_cnet_compete_contract_v5 \
+		src/cnet_compete.c tests/test_cnet_compete_contract.c $(LDFLAGS)
+	@tmp=$$(mktemp -d); trap 'rm -rf "$$tmp"' EXIT; \
+		./$(BIN_DIR)/cnet_compete_fixture_v5 \
+			"$$tmp/heldout.tsv" "$$tmp/cases.tsv"; \
+		cmp benchmarks/cnet_asi5_v5/heldout.tsv "$$tmp/heldout.tsv"; \
+		cmp benchmarks/cnet_asi5_v5/cases.tsv "$$tmp/cases.tsv"; \
+		./$(BIN_DIR)/cnet_compete_fixture_oracle_v5 \
+			"$$tmp/heldout.tsv" "$$tmp/cases.tsv"; \
+		./$(BIN_DIR)/cnet_compete_fixture_audit \
+			"$$tmp/heldout.tsv" \
+			benchmarks/cnet_asi5_v5/excluded_prompts.tsv | \
+			tee logs/cnet_7b_v5_independence.log; \
+		grep -q '^CNET_7B_INDEPENDENCE_PASS candidates=448 ' \
+			logs/cnet_7b_v5_independence.log; \
+		./$(BIN_DIR)/cnet_compete_fixture_oracle_v5 --self-test; \
+		./$(BIN_DIR)/test_cnet_compete_contract_v5; \
+		echo CNET_7B_V5_FIXTURE_AUDIT_PASS rows=448 covered=320 \
+			ood=128 metadata=448 frames=128 overlap=0 | \
+			tee logs/cnet_7b_v5_fixture_audit.log
+
+.PHONY: cnet_7b_v4_suite_data_contract cnet_7b_v4_suite_data_audit \
+	cnet_7b_v4_suite_define_smoke cnet_7b_v4_fixture_audit
+cnet_7b_v4_suite_data_contract: include/cnet_compete_suite_data_audit.h \
+		src/cnet_compete_suite_data_audit.c \
+		tests/test_cnet_compete_suite_data_audit.c
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -Werror -Iinclude \
+		-o $(BIN_DIR)/test_cnet_compete_suite_data_audit \
+		src/cnet_compete_suite_data_audit.c \
+		tests/test_cnet_compete_suite_data_audit.c $(LDFLAGS)
+	@./$(BIN_DIR)/test_cnet_compete_suite_data_audit | \
+		tee logs/cnet_7b_v4_suite_data_contract.log
+	@grep -qx 'CNET_7B_V4_SUITE_DATA_AUDIT_PASS invalid_refused=6' \
+		logs/cnet_7b_v4_suite_data_contract.log
+	$(CC) -O1 -g -std=c11 -Wall -Wextra -Wpedantic -Werror \
+		-D_DEFAULT_SOURCE -fsanitize=address,undefined \
+		-fno-omit-frame-pointer -Iinclude \
+		-o $(BIN_DIR)/test_cnet_compete_suite_data_audit_san \
+		src/cnet_compete_suite_data_audit.c \
+		tests/test_cnet_compete_suite_data_audit.c \
+		-fsanitize=address,undefined
+	@ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 \
+		UBSAN_OPTIONS=halt_on_error=1 \
+		./$(BIN_DIR)/test_cnet_compete_suite_data_audit_san | \
+		tee logs/cnet_7b_v4_suite_data_contract_san.log
+	@grep -qx 'CNET_7B_V4_SUITE_DATA_AUDIT_PASS invalid_refused=6' \
+		logs/cnet_7b_v4_suite_data_contract_san.log
+
+cnet_7b_v4_suite_data_audit: cnet_7b_v4_suite_data_contract \
+		include/cnet_compete_suite_data_v4.h \
+		tools/cnet_compete_suite_data_audit.c
+	$(CC) $(CFLAGS) -Werror -Iinclude \
+		-o $(BIN_DIR)/cnet_compete_suite_data_audit \
+		src/cnet_compete_suite_data_audit.c \
+		tools/cnet_compete_suite_data_audit.c $(LDFLAGS)
+	@./$(BIN_DIR)/cnet_compete_suite_data_audit \
+		include/cnet_compete_suite_data_v4.h | \
+		tee logs/cnet_7b_v4_suite_data_audit.log
+	@tmp=$$(mktemp -d); trap 'rm -rf "$$tmp"' EXIT; \
+		line=$$(cat logs/cnet_7b_v4_suite_data_audit.log); \
+		if [[ "$$line" =~ ^CNET_7B_V4_SUITE_DATA_AUDIT_PASS\ s4=([0-9a-f]{40})$$ ]]; then \
+			s4=$${BASH_REMATCH[1]}; \
+		else exit 1; fi; \
+		if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then \
+			git cat-file -e "$$s4^{commit}"; \
+			git merge-base --is-ancestor "$$s4" HEAD; \
+			git show "$$s4:benchmarks/cnet_asi5_v4/candidate_behavior_paths.txt" \
+				>"$$tmp/s4-paths"; \
+			cmp benchmarks/cnet_asi5_v4/candidate_behavior_paths.txt \
+				"$$tmp/s4-paths"; \
+			mapfile -t frozen_paths <"$$tmp/s4-paths"; \
+			frozen_candidate_paths=(); \
+			for path in "$${frozen_paths[@]}"; do \
+				if test "$$path" != Makefile && \
+				   test "$$path" != tools/cnet_compete_snapshot_build.sh; then \
+					frozen_candidate_paths+=("$$path"); \
+				fi; \
+			done; \
+			test "$${#frozen_candidate_paths[@]}" -eq 106; \
+			git diff --quiet --no-ext-diff "$$s4" -- \
+				"$${frozen_candidate_paths[@]}" \
+				benchmarks/cnet_asi5_v4/candidate_artifacts.sha256 \
+				benchmarks/cnet_asi5_v4/candidate_behavior_paths.txt; \
+			mapfile -t repair_changes < <(git diff --name-only \
+				"$$s4" HEAD -- Makefile \
+				tools/cnet_compete_snapshot_build.sh \
+				benchmarks/cnet_asi5_v4/candidate_behavior.sha256 | sort); \
+			test "$${#repair_changes[@]}" -eq 3; \
+			test "$${repair_changes[0]}" = Makefile; \
+			test "$${repair_changes[1]}" = \
+				benchmarks/cnet_asi5_v4/candidate_behavior.sha256; \
+			test "$${repair_changes[2]}" = \
+				tools/cnet_compete_snapshot_build.sh; \
+		fi
+
+cnet_7b_v4_suite_define_smoke: include/cnet_compete.h \
+		include/cnet_compete_suite_data_v4.h src/cnet_compete.c
+	$(CC) $(CFLAGS) -Werror $(CNET_COMPETE_SUITE_DEFINE) -Iinclude \
+		-fsyntax-only src/cnet_compete.c
+	@echo CNET_7B_V4_SUITE_DEFINE_PASS
+
+cnet_7b_v4_fixture_audit: cnet_7b_v4_suite_data_audit \
+		include/cnet_compete_suite_data_v4.h \
+		tools/cnet_compete_fixture_v4.c \
+		tools/cnet_compete_fixture_oracle_v4.c \
+		tools/cnet_compete_fixture_audit.c \
+		src/cnet_compete_independence.c src/cnet_compete.c \
+		tests/test_cnet_compete_contract.c \
+		benchmarks/cnet_asi5_v4/heldout.tsv \
+		benchmarks/cnet_asi5_v4/cases.tsv \
+		benchmarks/cnet_asi5_v4/baseline_system.txt \
+		benchmarks/cnet_asi5_v4/digests.sha256 \
+		benchmarks/cnet_asi5_v4/excluded_prompts.tsv
+	@mkdir -p $(BIN_DIR) logs
+# The cnet_7b_v4_candidate_integrity sub-make that ran here is retired; see the
+# note above the v5 candidate targets. The v4 suite-data digests below still
+# verify 6/6, so this audit keeps checking what remains checkable.
+	@sha256sum -c benchmarks/cnet_asi5_v4/digests.sha256
+	$(CC) $(CFLAGS) -Werror -Iinclude \
+		-o $(BIN_DIR)/cnet_compete_fixture_v4 \
+		tools/cnet_compete_fixture_v4.c
+	$(CC) $(CFLAGS) -Werror -Iinclude \
+		-o $(BIN_DIR)/cnet_compete_fixture_oracle_v4 \
+		tools/cnet_compete_fixture_oracle_v4.c
+	$(CC) $(CFLAGS) -Werror -Iinclude \
+		-o $(BIN_DIR)/cnet_compete_fixture_audit \
+		src/cnet_compete_independence.c \
+		tools/cnet_compete_fixture_audit.c
+	$(CC) $(CFLAGS) -Werror -Iinclude $(CNET_COMPETE_V4_SUITE_DEFINE) \
+		-o $(BIN_DIR)/test_cnet_compete_contract_v4 \
+		src/cnet_compete.c tests/test_cnet_compete_contract.c $(LDFLAGS)
+	@tmp=$$(mktemp -d); trap 'rm -rf "$$tmp"' EXIT; \
+		./$(BIN_DIR)/cnet_compete_fixture_v4 \
+			"$$tmp/heldout.tsv" "$$tmp/cases.tsv"; \
+		cmp benchmarks/cnet_asi5_v4/heldout.tsv "$$tmp/heldout.tsv"; \
+		cmp benchmarks/cnet_asi5_v4/cases.tsv "$$tmp/cases.tsv"; \
+		./$(BIN_DIR)/cnet_compete_fixture_oracle_v4 \
+			"$$tmp/heldout.tsv" "$$tmp/cases.tsv"; \
+		./$(BIN_DIR)/cnet_compete_fixture_audit \
+			"$$tmp/heldout.tsv" \
+			benchmarks/cnet_asi5_v4/excluded_prompts.tsv | \
+			tee logs/cnet_7b_v4_independence.log; \
+		grep -q '^CNET_7B_INDEPENDENCE_PASS candidates=448 ' \
+			logs/cnet_7b_v4_independence.log; \
+		./$(BIN_DIR)/cnet_compete_fixture_oracle_v4 --self-test; \
+		./$(BIN_DIR)/test_cnet_compete_contract_v4; \
+		echo CNET_7B_V4_FIXTURE_AUDIT_PASS rows=448 covered=320 \
+			ood=128 metadata=448 frames=128 overlap=0 | \
+			tee logs/cnet_7b_v4_fixture_audit.log
+
+.PHONY: cnet_7b_independence_contract cnet_7b_candidate_freeze
+cnet_7b_independence_contract: include/cnet_compete_independence.h \
+		src/cnet_compete_independence.c \
+		tests/test_cnet_compete_independence.c
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -Werror -Iinclude \
+		-o $(BIN_DIR)/test_cnet_compete_independence \
+		src/cnet_compete_independence.c \
+		tests/test_cnet_compete_independence.c
+	@./$(BIN_DIR)/test_cnet_compete_independence | \
+		tee logs/cnet_7b_independence_contract.log
+	@grep -q CNET_7B_INDEPENDENCE_PASS \
+		logs/cnet_7b_independence_contract.log
+	$(CC) -O1 -g -std=c11 -Wall -Wextra -Wpedantic -Werror \
+		-D_DEFAULT_SOURCE -fsanitize=address,undefined \
+		-fno-omit-frame-pointer -Iinclude \
+		-o $(BIN_DIR)/test_cnet_compete_independence_san \
+		src/cnet_compete_independence.c \
+		tests/test_cnet_compete_independence.c \
+		-fsanitize=address,undefined
+	@ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 \
+		UBSAN_OPTIONS=halt_on_error=1 \
+		./$(BIN_DIR)/test_cnet_compete_independence_san | \
+		tee logs/cnet_7b_independence_contract_san.log
+	@grep -q CNET_7B_INDEPENDENCE_PASS \
+		logs/cnet_7b_independence_contract_san.log
+
+cnet_7b_candidate_freeze: cnet_7b_independence_contract \
+		include/cnet_compete_intent.h src/cnet_compete_intent.c \
+		src/cce/cce_wordlm.c tools/cnet_compete_export_corpus.c \
+		tools/cnet_compete_export_exclusions.c \
+		tools/cnet_compete_fixture_audit.c \
+		benchmarks/cnet_asi5_v1/heldout.tsv \
+		benchmarks/cnet_asi5_v2/heldout.tsv \
+		benchmarks/cnet_asi5_v3/excluded_prompts.tsv \
+		benchmarks/cnet_asi5_v3/candidate_artifacts.sha256 \
+		benchmarks/cnet_asi5_v3/candidate_behavior.sha256 \
+		benchmarks/cnet_asi5_v3/candidate_behavior_paths.txt \
+		benchmarks/cnet_asi5_v3/FREEZE_PROTOCOL.md
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -Werror -Iinclude \
+		-o $(BIN_DIR)/cnet_compete_export_corpus \
+		src/cnet_compete_intent.c src/cce/cce_wordlm.c \
+		tools/cnet_compete_export_corpus.c $(LDFLAGS)
+	$(CC) $(CFLAGS) -Werror -Iinclude \
+		-o $(BIN_DIR)/cnet_compete_export_exclusions \
+		src/cnet_compete_independence.c \
+		tools/cnet_compete_export_exclusions.c
+	$(CC) $(CFLAGS) -Werror -Iinclude \
+		-o $(BIN_DIR)/cnet_compete_fixture_audit \
+		src/cnet_compete_independence.c \
+		tools/cnet_compete_fixture_audit.c
+	@tmp=$$(mktemp -d); trap 'rm -rf "$$tmp"' EXIT; \
+		./$(BIN_DIR)/cnet_compete_export_corpus "$$tmp/development.tsv"; \
+		./$(BIN_DIR)/cnet_compete_export_exclusions \
+			"$$tmp/excluded.tsv" "$$tmp/development.tsv"; \
+		cmp benchmarks/cnet_asi5_v3/excluded_prompts.tsv \
+			"$$tmp/excluded.tsv"; \
+		if ./$(BIN_DIR)/cnet_compete_fixture_audit \
+			benchmarks/cnet_asi5_v2/heldout.tsv \
+			benchmarks/cnet_asi5_v3/excluded_prompts.tsv \
+			>"$$tmp/v2-negative.log"; then \
+			echo CNET_7B_CANDIDATE_FREEZE_RED reason=v2_overlap_admitted; \
+			exit 1; \
+		fi; \
+		grep -q CNET_7B_INDEPENDENCE_FAIL "$$tmp/v2-negative.log"; \
+		if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then \
+			git cat-file -e \
+				b50e453e7cc6277f5c391d01c3bf71ea20b59a8d^{commit}; \
+			git diff --quiet --no-ext-diff \
+				b50e453e7cc6277f5c391d01c3bf71ea20b59a8d -- \
+				$$(cat benchmarks/cnet_asi5_v3/candidate_behavior_paths.txt); \
+			git diff --cached --quiet --no-ext-diff \
+				b50e453e7cc6277f5c391d01c3bf71ea20b59a8d -- \
+				$$(cat benchmarks/cnet_asi5_v3/candidate_behavior_paths.txt); \
+		else \
+			sha256sum -c \
+				benchmarks/cnet_asi5_v3/candidate_behavior.sha256 >/dev/null; \
+		fi; \
+		echo CNET_7B_CANDIDATE_FREEZE_PASS exclusions=1597 \
+			v2_withdrawal_reproduced=1 source_paths=81 | \
+			tee logs/cnet_7b_candidate_freeze.log
+	@grep -q CNET_7B_CANDIDATE_FREEZE_PASS \
+		logs/cnet_7b_candidate_freeze.log
+
+# RETIRED: cnet_7b_v4_candidate_integrity and cnet_7b_v4_candidate_freeze.
+#
+# v4 is superseded by v5, and neither target could pass. The integrity gate
+# verified benchmarks/cnet_asi5_v4/candidate_behavior.sha256 against the working
+# tree, and 22 of its 108 paths have drifted since the freeze. The freeze gate
+# additionally asserted "test ! -e include/cnet_compete_suite_data_v4.h", which
+# stopped holding once the v4 fixture was authored.
+#
+# The digests are NOT regenerated, deliberately. That manifest is a truthful
+# record of the frozen v4 candidate: 106 of its paths equal S4 (c2dfafe) exactly
+# and the other two, Makefile and the snapshot builder, equal 4d2a5a1, which the
+# v4 protocol permitted to change after S4. Rewriting them so the gate went
+# green would make the manifest assert that today's tree is the v4 candidate,
+# which is false, and would destroy the only evidence of what v4 actually was.
+# The 22 failures are the freeze reporting real drift, which is its job.
+#
+# benchmarks/cnet_asi5_v4/ is therefore kept intact and unmodified. Its suite
+# data (digests.sha256, 6/6) and artifacts (candidate_artifacts.sha256, 15/15)
+# still verify; only the source-tree anchor has moved on.
+.PHONY: cnet_7b_v5_candidate_integrity cnet_7b_v5_candidate_freeze
+cnet_7b_v5_candidate_integrity: cnet_7b_v5_runtime_san cnet_7b_v5_semantics_san \
+		cnet_7b_capsules_san cnet_7b_independence_contract \
+		cnet_7b_v5_suite_data_contract \
+		benchmarks/cnet_asi5_v5/FREEZE_PROTOCOL.md \
+		benchmarks/cnet_asi5_v5/candidate_artifacts.sha256 \
+		benchmarks/cnet_asi5_v5/candidate_behavior.sha256 \
+		benchmarks/cnet_asi5_v5/candidate_behavior_paths.txt \
+		benchmarks/cnet_asi5_v4/semantic_development.tsv \
+		benchmarks/cnet_asi5_v5/semantic_development.tsv \
+		benchmarks/cnet_asi5_v5/excluded_prompts.tsv \
+		tools/cnet_compete_export_corpus.c \
+		tools/cnet_compete_export_exclusions.c \
+		tools/cnet_compete_fixture_audit.c \
+		tools/cnet_compete_v5_semantic_export.c
+	@mkdir -p $(BIN_DIR) logs artifacts/cnet_asi5_v5
+	$(CC) $(CFLAGS) -Werror -Iinclude \
+		-o $(BIN_DIR)/cnet_compete_export_corpus \
+		src/cnet_compete_intent.c src/cce/cce_wordlm.c \
+		tools/cnet_compete_export_corpus.c $(LDFLAGS)
+	$(CC) $(CFLAGS) -Werror -Iinclude \
+		-o $(BIN_DIR)/cnet_compete_export_exclusions \
+		src/cnet_compete_independence.c \
+		tools/cnet_compete_export_exclusions.c
+	$(CC) $(CFLAGS) -Werror -Iinclude \
+		-o $(BIN_DIR)/cnet_compete_fixture_audit \
+		src/cnet_compete_independence.c \
+		tools/cnet_compete_fixture_audit.c
+	$(CC) $(CFLAGS) -Werror -Iinclude \
+		-o $(BIN_DIR)/cnet_compete_v5_semantic_export \
+		src/cnet_compete_v5_semantics.c \
+		tools/cnet_compete_v5_semantic_export.c $(LDFLAGS)
+	$(CC) $(CFLAGS) -Werror -Iinclude \
+		-o $(BIN_DIR)/cnet_compete_manifest \
+		tools/cnet_compete_manifest.c src/cce/cce_campaign_provenance.c \
+		$(LDFLAGS)
+	@./$(BIN_DIR)/cnet_compete_manifest artifacts/cnet_asi5_v5 \
+		artifacts/cnet_asi5_v5/artifacts.sha256 | \
+		tee logs/cnet_7b_v5_artifact_manifest.log
+	@grep -q 'sha256=81fe446218431d7520a7a2d4309e069600ae11be0d3d73e92e04dea78cb7c009' \
+		logs/cnet_7b_v5_artifact_manifest.log
+	@sha256sum -c benchmarks/cnet_asi5_v5/candidate_artifacts.sha256
+	@tmp=$$(mktemp -d); trap 'rm -rf "$$tmp"' EXIT; \
+		LC_ALL=C sort -u \
+			benchmarks/cnet_asi5_v5/candidate_behavior_paths.txt \
+			>"$$tmp/sorted-paths"; \
+		cmp benchmarks/cnet_asi5_v5/candidate_behavior_paths.txt \
+			"$$tmp/sorted-paths"; \
+		test "$$(wc -l < "$$tmp/sorted-paths")" -eq 116; \
+		awk 'NF != 2 { exit 1 } { print $$2 }' \
+			benchmarks/cnet_asi5_v5/candidate_behavior.sha256 \
+			>"$$tmp/manifest-paths"; \
+		cmp benchmarks/cnet_asi5_v5/candidate_behavior_paths.txt \
+			"$$tmp/manifest-paths"; \
+		sha256sum -c benchmarks/cnet_asi5_v5/candidate_behavior.sha256
+	@tmp=$$(mktemp -d); trap 'rm -rf "$$tmp"' EXIT; \
+		./$(BIN_DIR)/cnet_compete_export_corpus \
+			"$$tmp/intent-development.tsv" | \
+			tee "$$tmp/intent-export.log"; \
+		grep -qx 'CNET_7B_DEVELOPMENT_CORPUS_PASS prompts=406' \
+			"$$tmp/intent-export.log"; \
+		test "$$(wc -l < "$$tmp/intent-development.tsv")" -eq 408; \
+		./$(BIN_DIR)/test_cnet_compete_v5_runtime --export-development \
+			"$$tmp/v4-semantic-development.tsv" | \
+			tee "$$tmp/v4-semantic-export.log"; \
+		grep -qx 'CNET_7B_SEMANTIC_CORPUS_PASS prompts=524' \
+			"$$tmp/v4-semantic-export.log"; \
+		test "$$(wc -l < "$$tmp/v4-semantic-development.tsv")" -eq 526; \
+		cmp benchmarks/cnet_asi5_v4/semantic_development.tsv \
+			"$$tmp/v4-semantic-development.tsv"; \
+		./$(BIN_DIR)/cnet_compete_v5_semantic_export \
+			"$$tmp/v5-semantic-development.tsv" | \
+			tee "$$tmp/v5-semantic-export.log"; \
+		grep -qx 'CNET_7B_V5_SEMANTIC_EXPORT_PASS covered=160 ood=160 answer_values=0' \
+			"$$tmp/v5-semantic-export.log"; \
+		test "$$(wc -l < "$$tmp/v5-semantic-development.tsv")" -eq 322; \
+		cmp benchmarks/cnet_asi5_v5/semantic_development.tsv \
+			"$$tmp/v5-semantic-development.tsv"; \
+		./$(BIN_DIR)/cnet_compete_export_exclusions --v5 \
+			"$$tmp/excluded.tsv" "$$tmp/intent-development.tsv" \
+			"$$tmp/v4-semantic-development.tsv" \
+			"$$tmp/v5-semantic-development.tsv" | \
+			tee "$$tmp/exclusion-export.log"; \
+		exclusions=$$(($$(wc -l < "$$tmp/excluded.tsv") - 2)); \
+		test "$$exclusions" -eq 3718; \
+		grep -qx "CNET_7B_EXCLUSIONS_PASS prompts=$$exclusions" \
+			"$$tmp/exclusion-export.log"; \
+		cmp benchmarks/cnet_asi5_v5/excluded_prompts.tsv \
+			"$$tmp/excluded.tsv"; \
+		./$(BIN_DIR)/cnet_compete_export_exclusions --pre-v2 \
+			"$$tmp/pre-v2.tsv" "$$tmp/intent-development.tsv" \
+			>"$$tmp/pre-v2-export.log"; \
+		{ line_number=0; while IFS= read -r line; do \
+			line_number=$$((line_number + 1)); \
+			if test $$line_number -le 2 || test $$line_number -eq 6; then \
+				printf '%s\n' "$$line"; \
+			fi; done < benchmarks/cnet_asi5_v2/heldout.tsv; } \
+			>"$$tmp/v2-known-overlap.tsv"; \
+		if ./$(BIN_DIR)/cnet_compete_fixture_audit \
+			"$$tmp/v2-known-overlap.tsv" "$$tmp/pre-v2.tsv" \
+			>"$$tmp/v2-negative.log"; then \
+			echo CNET_7B_V5_CANDIDATE_RED reason=v2_overlap_admitted; \
+			exit 1; \
+		fi; \
+		grep -q 'rc=-5 candidates=1 .* near=1 .*' \
+			"$$tmp/v2-negative.log"; \
+		grep -q 'metric=token_levenshtein>=0.75' \
+			"$$tmp/v2-negative.log"; \
+		grep -q 'reference=training:dev-272:excluded-0272' \
+			"$$tmp/v2-negative.log"; \
+		echo CNET_7B_V5_CANDIDATE_INTEGRITY_PASS \
+			semantic_development=320 exclusions=$$exclusions \
+			v2_overlap_reproduced=1 behavior_paths=116 | \
+			tee logs/cnet_7b_v5_candidate_integrity.log
+	@grep -q '^CNET_7B_V5_CANDIDATE_INTEGRITY_PASS ' \
+		logs/cnet_7b_v5_candidate_integrity.log
+
+cnet_7b_v5_candidate_freeze: cnet_7b_v5_candidate_integrity
+	@tmp=$$(mktemp -d); trap 'rm -rf "$$tmp"' EXIT; \
+		find benchmarks/cnet_asi5_v5 -maxdepth 1 -type f \
+			-printf '%f\n' | LC_ALL=C sort >"$$tmp/actual-files"; \
+		printf '%s\n' FREEZE_PROTOCOL.md candidate_artifacts.sha256 \
+			candidate_behavior.sha256 candidate_behavior_paths.txt \
+			excluded_prompts.tsv semantic_development.tsv \
+			>"$$tmp/allowed-files"; \
+		cmp "$$tmp/allowed-files" "$$tmp/actual-files"; \
+		test ! -e include/cnet_compete_suite_data_v5.h; \
+		test ! -e tools/cnet_compete_fixture_v5.c; \
+		test ! -e tools/cnet_compete_fixture_oracle_v5.c; \
+		test ! -e benchmarks/cnet_asi5_v5/heldout.tsv; \
+		test ! -e benchmarks/cnet_asi5_v5/cases.tsv; \
+		test ! -e benchmarks/cnet_asi5_v5/baseline_system.txt; \
+		test ! -e benchmarks/cnet_asi5_v5/digests.sha256; \
+		line=$$(cat logs/cnet_7b_v5_artifact_manifest.log); \
+		if [[ "$$line" =~ complete_bytes=([0-9]+).*sha256=([0-9a-f]{64})$$ ]]; then \
+			artifact_bytes=$${BASH_REMATCH[1]}; \
+			test "$$artifact_bytes" -eq 534601; \
+			test "$${BASH_REMATCH[2]}" = \
+				81fe446218431d7520a7a2d4309e069600ae11be0d3d73e92e04dea78cb7c009; \
+		else exit 1; fi; \
+		exclusions=$$(($$(wc -l < \
+			benchmarks/cnet_asi5_v5/excluded_prompts.tsv) - 2)); \
+		test "$$exclusions" -eq 3718; \
+		echo CNET_7B_V5_CANDIDATE_FREEZE_PASS base_params=321757 \
+			artifacts=15 artifact_bytes=$$artifact_bytes capsules=6 \
+			certified_rows=1296 semantic_development=320 \
+			exclusions=$$exclusions fixture_authored=0 \
+			broader_claims=WITHHELD | \
+			tee logs/cnet_7b_v5_candidate_freeze.log
+	@grep -q '^CNET_7B_V5_CANDIDATE_FREEZE_PASS ' \
+		logs/cnet_7b_v5_candidate_freeze.log
+
+.PHONY: cnet_7b_capsule_increment cnet_7b_capsules cnet_7b_capsules_san
+CNET_COMPETE_CAPSULE_CORE := src/cnet_capsule.c src/hybrid_ai.c src/base.c \
+	src/nn.c src/contract/contract.c src/contract/unit.c \
+	src/contract/coverage.c src/acquire.c src/runtime_identity.c src/plan_table.c
+cnet_7b_capsule_increment: include/cnet_compete_capsules.h \
+		src/cnet_compete_capsules.c tests/test_cnet_compete_capsule_increment.c \
+		$(CNET_COMPETE_CAPSULE_CORE)
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -Werror $(CNET_COMPETE_SUITE_DEFINE) \
+		-ffunction-sections -fdata-sections -Iinclude \
+		-o $(BIN_DIR)/test_cnet_compete_capsule_increment \
+		src/cnet_compete_capsules.c $(CNET_COMPETE_CAPSULE_CORE) \
+		tests/test_cnet_compete_capsule_increment.c \
+		-Wl,--gc-sections $(LDFLAGS) $(MCP_LDFLAGS) -pthread
+	@./$(BIN_DIR)/test_cnet_compete_capsule_increment | \
+		tee logs/cnet_7b_capsule_increment.log
+	@grep -q CNET_7B_CAPSULE_INCREMENT_PASS logs/cnet_7b_capsule_increment.log
+
+cnet_7b_capsules: cnet_7b_artifact_manifest include/cnet_compete_capsules.h \
+		src/cnet_compete_capsules.c tests/test_cnet_compete_capsules.c \
+		$(CNET_COMPETE_CAPSULE_CORE) $(ROUTER) $(SPECIALIST_SRC)
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -Werror $(CNET_COMPETE_BUILD_DEFINE) \
+		-ffunction-sections -fdata-sections -Iinclude \
+		-o $(BIN_DIR)/test_cnet_compete_capsules \
+		src/cnet_compete_capsules.c $(CNET_COMPETE_CAPSULE_CORE) \
+		$(ROUTER) $(SPECIALIST_SRC) tests/test_cnet_compete_capsules.c \
+		src/cce/cce_campaign_provenance.c \
+		-Wl,--gc-sections $(LDFLAGS) $(MCP_LDFLAGS) -pthread
+	@./$(BIN_DIR)/test_cnet_compete_capsules | \
+		tee logs/cnet_7b_capsules.log
+	@grep -q CNET_7B_CAPSULES_PASS logs/cnet_7b_capsules.log
+
+cnet_7b_capsules_san: cnet_7b_artifact_manifest include/cnet_compete_capsules.h \
+		src/cnet_compete_capsules.c tests/test_cnet_compete_capsules.c \
+		$(CNET_COMPETE_CAPSULE_CORE) $(ROUTER) $(SPECIALIST_SRC)
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) -std=c11 -Wall -Wextra -pedantic -Werror -O1 -g \
+		-D_DEFAULT_SOURCE -DCNET_HAVE_CURL=0 $(CNET_COMPETE_BUILD_DEFINE) \
+		-fsanitize=address,undefined -fno-omit-frame-pointer \
+		-ffunction-sections -fdata-sections -Iinclude \
+		-o $(BIN_DIR)/test_cnet_compete_capsules_san \
+		src/cnet_compete_capsules.c $(CNET_COMPETE_CAPSULE_CORE) \
+		$(ROUTER) $(SPECIALIST_SRC) tests/test_cnet_compete_capsules.c \
+		src/cce/cce_campaign_provenance.c \
+		-Wl,--gc-sections -fsanitize=address,undefined -lm -lpthread
+	@ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 \
+		UBSAN_OPTIONS=halt_on_error=1 \
+		./$(BIN_DIR)/test_cnet_compete_capsules_san | \
+		tee logs/cnet_7b_capsules_san.log
+	@grep -q CNET_7B_CAPSULES_PASS logs/cnet_7b_capsules_san.log
+
+.PHONY: cnet_7b_intent
+cnet_7b_intent: include/cnet_compete_intent.h src/cnet_compete_intent.c \
+		src/cce/cce_wordlm.c tools/cnet_compete_train.c \
+		tests/test_cnet_compete_intent.c \
+		benchmarks/cnet_asi5_v4/semantic_development.tsv
+	@mkdir -p $(BIN_DIR) logs artifacts/cnet_asi5_v4
+	$(CC) $(CFLAGS) -Werror -Iinclude \
+		-o $(BIN_DIR)/cnet_compete_train \
+		src/cnet_compete_intent.c src/cce/cce_wordlm.c \
+		tools/cnet_compete_train.c $(LDFLAGS)
+	@./$(BIN_DIR)/cnet_compete_train \
+		artifacts/cnet_asi5_v4/intent.wlm \
+		artifacts/cnet_asi5_v4/intent.meta \
+		benchmarks/cnet_asi5_v4/semantic_development.tsv | \
+		tee logs/cnet_7b_intent_train.log
+	@grep -q CNET_7B_INTENT_TRAIN_PASS logs/cnet_7b_intent_train.log
+	$(CC) $(CFLAGS) -Werror -Iinclude \
+		-o $(BIN_DIR)/test_cnet_compete_intent \
+		src/cnet_compete_intent.c src/cce/cce_wordlm.c \
+		tests/test_cnet_compete_intent.c $(LDFLAGS)
+	@./$(BIN_DIR)/test_cnet_compete_intent \
+		artifacts/cnet_asi5_v4/intent.wlm \
+		artifacts/cnet_asi5_v4/intent.meta | \
+		tee logs/cnet_7b_intent.log
+	@grep -q CNET_7B_INTENT_PASS logs/cnet_7b_intent.log
+
+.PHONY: cnet_7b_intent_san
+cnet_7b_intent_san: cnet_7b_intent
+	$(CC) -O1 -g -std=c11 -Wall -Wextra -Wpedantic -Werror \
+		-D_DEFAULT_SOURCE -fsanitize=address,undefined \
+		-fno-omit-frame-pointer -Iinclude \
+		-o $(BIN_DIR)/test_cnet_compete_intent_san \
+		src/cnet_compete_intent.c src/cce/cce_wordlm.c \
+		tests/test_cnet_compete_intent.c \
+		-fsanitize=address,undefined -lm
+	@ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 \
+		UBSAN_OPTIONS=halt_on_error=1 \
+		./$(BIN_DIR)/test_cnet_compete_intent_san \
+		artifacts/cnet_asi5_v4/intent.wlm \
+		artifacts/cnet_asi5_v4/intent.meta | \
+		tee logs/cnet_7b_intent_san.log
+	@grep -q CNET_7B_INTENT_PASS logs/cnet_7b_intent_san.log
+
+.PHONY: cnet_7b_capsule_artifacts
+.PHONY: cnet_7b_v5_capsule_artifacts cnet_7b_v5_runtime
+.PHONY: cnet_7b_v5_runtime_san
+.PHONY: cnet_7b_v5_diagnostic cnet_7b_v5_diagnostic_san
+.PHONY: cnet_7b_v5_semantic_corpus cnet_7b_v5_semantics
+.PHONY: cnet_7b_v5_semantics_san
+.PHONY: cnet_7b_v5_intent
+cnet_7b_capsule_artifacts: include/cnet_compete_capsules.h \
+		src/cnet_compete_capsules.c tools/cnet_compete_build_capsules.c \
+		$(CNET_COMPETE_CAPSULE_CORE)
+	@mkdir -p $(BIN_DIR) logs artifacts/cnet_asi5_v4
+	$(CC) $(CFLAGS) -Werror $(CNET_COMPETE_SUITE_DEFINE) \
+		-ffunction-sections -fdata-sections -Iinclude \
+		-o $(BIN_DIR)/cnet_compete_build_capsules \
+		src/cnet_compete_capsules.c $(CNET_COMPETE_CAPSULE_CORE) \
+		tools/cnet_compete_build_capsules.c \
+		-Wl,--gc-sections $(LDFLAGS) $(MCP_LDFLAGS) -pthread
+	@./$(BIN_DIR)/cnet_compete_build_capsules \
+		artifacts/cnet_asi5_v4/capsules | \
+		tee logs/cnet_7b_capsule_artifacts.log
+	@grep -q CNET_7B_CAPSULE_ARTIFACTS_PASS \
+		logs/cnet_7b_capsule_artifacts.log
+
+cnet_7b_v5_capsule_artifacts: include/cnet_compete_capsules.h \
+		src/cnet_compete_capsules.c tools/cnet_compete_build_capsules.c \
+		$(CNET_COMPETE_CAPSULE_CORE)
+	@mkdir -p $(BIN_DIR) logs artifacts/cnet_asi5_v5
+	$(CC) $(CFLAGS) -Werror $(CNET_COMPETE_SUITE_DEFINE) \
+		-ffunction-sections -fdata-sections -Iinclude \
+		-o $(BIN_DIR)/cnet_compete_build_capsules_v5 \
+		src/cnet_compete_capsules.c $(CNET_COMPETE_CAPSULE_CORE) \
+		tools/cnet_compete_build_capsules.c \
+		-Wl,--gc-sections $(LDFLAGS) $(MCP_LDFLAGS) -pthread
+	@./$(BIN_DIR)/cnet_compete_build_capsules_v5 \
+		artifacts/cnet_asi5_v5/capsules | \
+		tee logs/cnet_7b_v5_capsule_artifacts.log
+	@grep -qx 'CNET_7B_CAPSULE_ARTIFACTS_PASS units=6 certified_rows=1296 payload_bytes=192352' \
+		logs/cnet_7b_v5_capsule_artifacts.log
+
+# REVIVED: cnet_7b_runtime and cnet_7b_runtime_san, which run
+# tests/test_cnet_compete_runtime.c against the v4 artifacts.
+#
+# These were retired in 91492c7 and are restored here. The test asserts
+# report.base_parameters == CNET_COMPETE_BASE_PARAMETERS, and while those
+# constants were unconditional in include/cnet_compete_artifacts.h every freeze
+# rebased them onto the newest suite (91581 v3 -> 272605 v4 -> 321757 v5 in
+# 0abf82b). Only the newest suite's runtime gate could pass, so from 0abf82b
+# onward the v4 gate could report nothing but
+# CNET_7B_RUNTIME_RED reason=base_report. It stayed red unnoticed because the
+# assertion was a bare substring grep for a marker that had stopped being
+# printed at all.
+#
+# The constants are now #ifndef-guarded, so each suite supplies its own. The
+# header still defaults to v5, which leaves every existing consumer untouched;
+# v4 overrides via CNET_V4_BASE_DEFINE below. Nothing else about the test is
+# suite-specific: refused, semantic_matrix, semantic_adversarial and
+# typed_regressions are shared and come out identical on both suites.
+#
+# Note 267831, not 267318. base_artifact_bytes counts intent.wlm plus
+# intent.meta (267318 + 513); intent.wlm alone leaves the gate red.
+#
+# Both PASS lines are pinned whole with grep -qx, for the reason given above the
+# v5 pair below.
+CNET_V4_BASE_DEFINE = -DCNET_COMPETE_BASE_PARAMETERS=272605u \
+	-DCNET_COMPETE_BASE_ARTIFACT_BYTES=267831u
+
+.PHONY: cnet_7b_runtime cnet_7b_runtime_san
+cnet_7b_runtime: cnet_7b_intent cnet_7b_capsule_artifacts \
+		include/cnet_compete_runtime.h include/cnet_compete_artifacts.h \
+		src/cnet_compete_runtime.c tests/test_cnet_compete_runtime.c \
+		$(ROUTER) $(SPECIALIST_SRC)
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -Werror $(CNET_V4_BASE_DEFINE) \
+		-ffunction-sections -fdata-sections -Iinclude \
+		-o $(BIN_DIR)/test_cnet_compete_runtime \
+		src/cnet_compete_runtime.c src/cnet_compete_intent.c \
+		src/cnet_compete_capsules.c src/cce/cce_wordlm.c \
+		$(CNET_COMPETE_CAPSULE_CORE) $(ROUTER) $(SPECIALIST_SRC) \
+		tests/test_cnet_compete_runtime.c \
+		-Wl,--gc-sections $(LDFLAGS) $(MCP_LDFLAGS) -pthread
+	@./$(BIN_DIR)/test_cnet_compete_runtime \
+		artifacts/cnet_asi5_v4/intent.wlm \
+		artifacts/cnet_asi5_v4/intent.meta \
+		artifacts/cnet_asi5_v4/capsules | \
+		tee logs/cnet_7b_runtime.log
+	@grep -qx 'CNET_7B_RUNTIME_PASS units=6 certified_rows=1296 compose_members=3 compose_guard_checks=3 base_params=272605 base_bytes=267831 capsule_payload_bytes=192352 refused=21 semantic_matrix=384 semantic_adversarial=96 typed_regressions=49' \
+		logs/cnet_7b_runtime.log
+
+cnet_7b_runtime_san: cnet_7b_runtime
+	$(CC) -std=c11 -Wall -Wextra -pedantic -Werror -O1 -g \
+		-D_DEFAULT_SOURCE -DCNET_HAVE_CURL=0 \
+		$(CNET_COMPETE_SUITE_DEFINE) $(CNET_V4_BASE_DEFINE) \
+		-fsanitize=address,undefined -fno-omit-frame-pointer \
+		-ffunction-sections -fdata-sections -Iinclude \
+		-o $(BIN_DIR)/test_cnet_compete_runtime_san \
+		src/cnet_compete_runtime.c src/cnet_compete_intent.c \
+		src/cnet_compete_capsules.c src/cce/cce_wordlm.c \
+		$(CNET_COMPETE_CAPSULE_CORE) $(ROUTER) $(SPECIALIST_SRC) \
+		tests/test_cnet_compete_runtime.c \
+		-Wl,--gc-sections -fsanitize=address,undefined -lm -lpthread
+	@ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 \
+		UBSAN_OPTIONS=halt_on_error=1 \
+		./$(BIN_DIR)/test_cnet_compete_runtime_san \
+			artifacts/cnet_asi5_v4/intent.wlm \
+			artifacts/cnet_asi5_v4/intent.meta \
+			artifacts/cnet_asi5_v4/capsules | \
+			tee logs/cnet_7b_runtime_san.log
+	@grep -qx 'CNET_7B_RUNTIME_PASS units=6 certified_rows=1296 compose_members=3 compose_guard_checks=3 base_params=272605 base_bytes=267831 capsule_payload_bytes=192352 refused=21 semantic_matrix=384 semantic_adversarial=96 typed_regressions=49' \
+		logs/cnet_7b_runtime_san.log
+
+# The v5 suite is frozen, so the whole PASS line is pinned with grep -qx and
+# not just base_params. refused, semantic_adversarial and typed_regressions are
+# compile-time array sizes in tests/test_cnet_compete_runtime.c: deleting a
+# refusal or adversarial case shrinks coverage without failing any assertion
+# inside the test. That already happened once — 80ce9e8 moved
+# semantic_adversarial 97 -> 96 and the old substring grep stayed green.
+cnet_7b_v5_runtime: cnet_7b_v5_intent cnet_7b_v5_capsule_artifacts \
+		include/cnet_compete_runtime.h include/cnet_compete_artifacts.h \
+		src/cnet_compete_runtime.c tests/test_cnet_compete_runtime.c \
+		$(ROUTER) $(SPECIALIST_SRC)
+	$(CC) $(CFLAGS) -Werror -ffunction-sections -fdata-sections -Iinclude \
+		-o $(BIN_DIR)/test_cnet_compete_v5_runtime \
+		src/cnet_compete_runtime.c src/cnet_compete_intent.c \
+		src/cnet_compete_capsules.c src/cce/cce_wordlm.c \
+		$(CNET_COMPETE_CAPSULE_CORE) $(ROUTER) $(SPECIALIST_SRC) \
+		tests/test_cnet_compete_runtime.c \
+		-Wl,--gc-sections $(LDFLAGS) $(MCP_LDFLAGS) -pthread
+	@./$(BIN_DIR)/test_cnet_compete_v5_runtime \
+		artifacts/cnet_asi5_v5/intent.wlm \
+		artifacts/cnet_asi5_v5/intent.meta \
+		artifacts/cnet_asi5_v5/capsules | \
+		tee logs/cnet_7b_v5_runtime.log
+	@grep -qx 'CNET_7B_RUNTIME_PASS units=6 certified_rows=1296 compose_members=3 compose_guard_checks=3 base_params=321757 base_bytes=277687 capsule_payload_bytes=192352 refused=21 semantic_matrix=384 semantic_adversarial=96 typed_regressions=49' \
+		logs/cnet_7b_v5_runtime.log
+
+cnet_7b_v5_runtime_san: cnet_7b_v5_runtime
+	$(CC) -std=c11 -Wall -Wextra -pedantic -Werror -O1 -g \
+		-D_DEFAULT_SOURCE -DCNET_HAVE_CURL=0 \
+		-fsanitize=address,undefined -fno-omit-frame-pointer \
+		-ffunction-sections -fdata-sections -Iinclude \
+		-o $(BIN_DIR)/test_cnet_compete_v5_runtime_san \
+		src/cnet_compete_runtime.c src/cnet_compete_intent.c \
+		src/cnet_compete_capsules.c src/cce/cce_wordlm.c \
+		$(CNET_COMPETE_CAPSULE_CORE) $(ROUTER) $(SPECIALIST_SRC) \
+		tests/test_cnet_compete_runtime.c \
+		-Wl,--gc-sections -fsanitize=address,undefined -lm -lpthread
+	@ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 \
+		UBSAN_OPTIONS=halt_on_error=1 \
+		./$(BIN_DIR)/test_cnet_compete_v5_runtime_san \
+			artifacts/cnet_asi5_v5/intent.wlm \
+			artifacts/cnet_asi5_v5/intent.meta \
+			artifacts/cnet_asi5_v5/capsules | \
+			tee logs/cnet_7b_v5_runtime_san.log
+	@grep -qx 'CNET_7B_RUNTIME_PASS units=6 certified_rows=1296 compose_members=3 compose_guard_checks=3 base_params=321757 base_bytes=277687 capsule_payload_bytes=192352 refused=21 semantic_matrix=384 semantic_adversarial=96 typed_regressions=49' \
+		logs/cnet_7b_v5_runtime_san.log
+
+# Read-only admission-stage histogram over the frozen v5 heldout fixture.
+# Reports where each lane's rows stop; prints no prompt and no answer value.
+# Deliberately does not depend on the artifact-building targets: it reads the
+# frozen v5 artifacts in place so an analysis run cannot churn them.
+.PHONY: cnet_7b_v5_stage_hist
+cnet_7b_v5_stage_hist: include/cnet_compete_runtime.h \
+		include/cnet_compete_eval.h src/cnet_compete_runtime.c \
+		tools/cnet_compete_stage_hist.c \
+		benchmarks/cnet_asi5_v5/heldout.tsv \
+		$(ROUTER) $(SPECIALIST_SRC)
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -Werror \
+		-DCNET_COMPETE_SUITE_DATA_HEADER=\"cnet_compete_suite_data_v5.h\" \
+		-ffunction-sections -fdata-sections -Iinclude \
+		-o $(BIN_DIR)/cnet_compete_stage_hist \
+		tools/cnet_compete_stage_hist.c src/cnet_compete_runtime.c \
+		src/cnet_compete_intent.c src/cnet_compete_capsules.c \
+		src/cce/cce_wordlm.c \
+		src/cnet_compete_eval.c src/cnet_compete.c \
+		src/cce/cce_campaign_provenance.c \
+		$(CNET_COMPETE_CAPSULE_CORE) $(ROUTER) $(SPECIALIST_SRC) \
+		-Wl,--gc-sections $(LDFLAGS) $(MCP_LDFLAGS) -pthread
+	@./$(BIN_DIR)/cnet_compete_stage_hist \
+		artifacts/cnet_asi5_v5/intent.wlm \
+		artifacts/cnet_asi5_v5/intent.meta \
+		artifacts/cnet_asi5_v5/capsules \
+		benchmarks/cnet_asi5_v5/heldout.tsv | \
+		tee logs/cnet_7b_v5_stage_hist.log
+	@grep -qx 'CNET_7B_STAGE_HIST rows=448' logs/cnet_7b_v5_stage_hist.log
+	@git diff --name-only -- benchmarks/cnet_asi5_v5 artifacts/cnet_asi5_v5 > \
+		logs/cnet_7b_v5_stage_hist_freeze.log
+	@test ! -s logs/cnet_7b_v5_stage_hist_freeze.log
+
+# Despite the v5 name this diagnostic reads the v4 artifacts, so it depends on
+# the v4 artifact builders directly. It previously reached them through
+# cnet_7b_runtime, which is retired above; depending on cnet_7b_v5_runtime
+# instead would build the wrong suite's artifacts.
+cnet_7b_v5_diagnostic: cnet_7b_intent cnet_7b_capsule_artifacts
+	$(CC) $(CFLAGS) -Werror -ffunction-sections -fdata-sections -Iinclude \
+		-o $(BIN_DIR)/test_cnet_compete_diagnostic \
+		src/cnet_compete_runtime.c src/cnet_compete_intent.c \
+		src/cnet_compete_capsules.c src/cce/cce_wordlm.c \
+		$(CNET_COMPETE_CAPSULE_CORE) $(ROUTER) $(SPECIALIST_SRC) \
+		tests/test_cnet_compete_diagnostic.c \
+		-Wl,--gc-sections $(LDFLAGS) $(MCP_LDFLAGS) -pthread
+	@./$(BIN_DIR)/test_cnet_compete_diagnostic \
+			artifacts/cnet_asi5_v4/intent.wlm \
+			artifacts/cnet_asi5_v4/intent.meta \
+			artifacts/cnet_asi5_v4/capsules | \
+			tee logs/cnet_7b_v5_diagnostic.log
+	@grep -qx 'CNET_7B_V5_DIAGNOSTIC_PASS stages=4 serving_path_identity=1 answer_values_exposed=0' \
+		logs/cnet_7b_v5_diagnostic.log
+
+cnet_7b_v5_diagnostic_san: cnet_7b_v5_diagnostic
+	$(CC) -std=c11 -Wall -Wextra -pedantic -Werror -O1 -g \
+		-D_DEFAULT_SOURCE -DCNET_HAVE_CURL=0 \
+		-fsanitize=address,undefined -fno-omit-frame-pointer \
+		-ffunction-sections -fdata-sections -Iinclude \
+		-o $(BIN_DIR)/test_cnet_compete_diagnostic_san \
+		src/cnet_compete_runtime.c src/cnet_compete_intent.c \
+		src/cnet_compete_capsules.c src/cce/cce_wordlm.c \
+		$(CNET_COMPETE_CAPSULE_CORE) $(ROUTER) $(SPECIALIST_SRC) \
+		tests/test_cnet_compete_diagnostic.c \
+		-Wl,--gc-sections -fsanitize=address,undefined -lm -lpthread
+	@ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 \
+		UBSAN_OPTIONS=halt_on_error=1 \
+		./$(BIN_DIR)/test_cnet_compete_diagnostic_san \
+			artifacts/cnet_asi5_v4/intent.wlm \
+			artifacts/cnet_asi5_v4/intent.meta \
+			artifacts/cnet_asi5_v4/capsules | \
+			tee logs/cnet_7b_v5_diagnostic_san.log
+	@grep -qx 'CNET_7B_V5_DIAGNOSTIC_PASS stages=4 serving_path_identity=1 answer_values_exposed=0' \
+		logs/cnet_7b_v5_diagnostic_san.log
+
+.PHONY: cnet_7b_crc_recover cnet_7b_crc_recover_san
+cnet_7b_crc_recover:
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -Werror -ffunction-sections -fdata-sections -Iinclude \
+		-o $(BIN_DIR)/test_cnet_compete_crc_recover \
+		src/cnet_compete_runtime.c src/cnet_compete_intent.c \
+		src/cnet_compete_capsules.c src/cnet_compete_crc_dev.c \
+		src/cnet_compete_independence.c src/cce/cce_wordlm.c \
+		$(CNET_COMPETE_CAPSULE_CORE) $(ROUTER) $(SPECIALIST_SRC) \
+		tests/test_cnet_compete_crc_recover.c \
+		-Wl,--gc-sections $(LDFLAGS) $(MCP_LDFLAGS) -pthread
+	@./$(BIN_DIR)/test_cnet_compete_crc_recover \
+			benchmarks/cnet_asi5_v5/excluded_prompts.tsv | \
+			tee logs/cnet_7b_crc_recover.log
+	@grep -q '^CNET_7B_CRC_RECOVER_PASS ' logs/cnet_7b_crc_recover.log
+	@git diff --name-only origin/master -- benchmarks/cnet_asi5_v5 > \
+		logs/cnet_7b_crc_recover_freeze.log
+	@test ! -s logs/cnet_7b_crc_recover_freeze.log
+
+cnet_7b_crc_recover_san: cnet_7b_crc_recover
+	$(CC) -std=c11 -Wall -Wextra -pedantic -Werror -O1 -g \
+		-D_DEFAULT_SOURCE -DCNET_HAVE_CURL=0 \
+		-fsanitize=address,undefined -fno-omit-frame-pointer \
+		-ffunction-sections -fdata-sections -Iinclude \
+		-o $(BIN_DIR)/test_cnet_compete_crc_recover_san \
+		src/cnet_compete_runtime.c src/cnet_compete_intent.c \
+		src/cnet_compete_capsules.c src/cnet_compete_crc_dev.c \
+		src/cnet_compete_independence.c src/cce/cce_wordlm.c \
+		$(CNET_COMPETE_CAPSULE_CORE) $(ROUTER) $(SPECIALIST_SRC) \
+		tests/test_cnet_compete_crc_recover.c \
+		-Wl,--gc-sections -fsanitize=address,undefined -lm -lpthread
+	@ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 \
+		UBSAN_OPTIONS=halt_on_error=1 \
+		./$(BIN_DIR)/test_cnet_compete_crc_recover_san \
+			benchmarks/cnet_asi5_v5/excluded_prompts.tsv | \
+			tee logs/cnet_7b_crc_recover_san.log
+	@grep -q '^CNET_7B_CRC_RECOVER_PASS ' logs/cnet_7b_crc_recover_san.log
+
+.PHONY: cnet_7b_v6_coherence
+cnet_7b_v6_coherence: cnet_7b_v5_runtime
+	$(CC) $(CFLAGS) -Werror -ffunction-sections -fdata-sections -Iinclude \
+		-o $(BIN_DIR)/test_cnet_compete_v6_coherence \
+		src/cnet_compete_runtime.c src/cnet_compete_intent.c \
+		src/cnet_compete_capsules.c src/cce/cce_wordlm.c \
+		$(CNET_COMPETE_CAPSULE_CORE) $(ROUTER) $(SPECIALIST_SRC) \
+		tests/test_cnet_compete_v6_coherence.c \
+		-Wl,--gc-sections $(LDFLAGS) $(MCP_LDFLAGS) -pthread
+	@./$(BIN_DIR)/test_cnet_compete_v6_coherence \
+		artifacts/cnet_asi5_v5/intent.wlm \
+		artifacts/cnet_asi5_v5/intent.meta \
+		artifacts/cnet_asi5_v5/capsules | \
+		tee logs/cnet_7b_v6_coherence.log
+	@grep -q '^CNET_7B_V6_COHERENCE_PASS ' logs/cnet_7b_v6_coherence.log
+
+cnet_7b_v5_semantic_corpus: include/cnet_compete_v5_semantics.h \
+		include/cnet_compete_independence.h \
+		src/cnet_compete_v5_semantics.c \
+		src/cnet_compete_independence.c \
+		tools/cnet_compete_v5_semantic_export.c \
+		tools/cnet_compete_fixture_audit.c \
+		benchmarks/cnet_asi5_v4/excluded_prompts.tsv \
+		benchmarks/cnet_asi5_v5/semantic_development.tsv
+	@mkdir -p $(BIN_DIR) logs artifacts/cnet_asi5_v5_dev
+	$(CC) $(CFLAGS) -Werror -Iinclude \
+		-o $(BIN_DIR)/cnet_compete_v5_semantic_export \
+		src/cnet_compete_v5_semantics.c \
+		tools/cnet_compete_v5_semantic_export.c $(LDFLAGS)
+	@./$(BIN_DIR)/cnet_compete_v5_semantic_export \
+		artifacts/cnet_asi5_v5_dev/semantic_development.tsv | \
+		tee logs/cnet_7b_v5_semantic_export.log
+	@cmp benchmarks/cnet_asi5_v5/semantic_development.tsv \
+		artifacts/cnet_asi5_v5_dev/semantic_development.tsv
+	@grep -qx 'CNET_7B_V5_SEMANTIC_EXPORT_PASS covered=160 ood=160 answer_values=0' \
+		logs/cnet_7b_v5_semantic_export.log
+	$(CC) $(CFLAGS) -Werror -Iinclude \
+		-o $(BIN_DIR)/cnet_compete_v5_semantic_audit \
+		src/cnet_compete_independence.c \
+		tools/cnet_compete_fixture_audit.c $(LDFLAGS)
+	@./$(BIN_DIR)/cnet_compete_v5_semantic_audit \
+		benchmarks/cnet_asi5_v5/semantic_development.tsv \
+		benchmarks/cnet_asi5_v4/excluded_prompts.tsv | \
+		tee logs/cnet_7b_v5_semantic_audit.log
+	@grep -qx 'CNET_7B_INDEPENDENCE_PASS candidates=320 exclusions=2807 duplicates=0 canonical=0 near=0' \
+		logs/cnet_7b_v5_semantic_audit.log
+
+cnet_7b_v5_semantics: cnet_7b_v5_intent cnet_7b_v5_capsule_artifacts \
+		cnet_7b_v5_semantic_corpus
+	$(CC) $(CFLAGS) -Werror -ffunction-sections -fdata-sections -Iinclude \
+		-o $(BIN_DIR)/test_cnet_compete_v5_semantics \
+		src/cnet_compete_v5_semantics.c \
+		src/cnet_compete_runtime.c src/cnet_compete_intent.c \
+		src/cnet_compete_capsules.c src/cce/cce_wordlm.c \
+		$(CNET_COMPETE_CAPSULE_CORE) $(ROUTER) $(SPECIALIST_SRC) \
+		tests/test_cnet_compete_v5_semantics.c \
+		-Wl,--gc-sections $(LDFLAGS) $(MCP_LDFLAGS) -pthread
+	@./$(BIN_DIR)/test_cnet_compete_v5_semantics \
+			artifacts/cnet_asi5_v5/intent.wlm \
+			artifacts/cnet_asi5_v5/intent.meta \
+			artifacts/cnet_asi5_v5/capsules | \
+			tee logs/cnet_7b_v5_semantics.log
+	@grep -qx 'CNET_7B_V5_SEMANTIC_STRESS_PASS covered=180 ood=181 unsafe=0 guarded_compositions=36 structure_duplicates=0' \
+		logs/cnet_7b_v5_semantics.log
+
+cnet_7b_v5_semantics_san: cnet_7b_v5_semantics
+	$(CC) -std=c11 -Wall -Wextra -pedantic -Werror -O1 -g \
+		-D_DEFAULT_SOURCE -DCNET_HAVE_CURL=0 \
+		-fsanitize=address,undefined -fno-omit-frame-pointer \
+		-ffunction-sections -fdata-sections -Iinclude \
+		-o $(BIN_DIR)/test_cnet_compete_v5_semantics_san \
+		src/cnet_compete_v5_semantics.c \
+		src/cnet_compete_runtime.c src/cnet_compete_intent.c \
+		src/cnet_compete_capsules.c src/cce/cce_wordlm.c \
+		$(CNET_COMPETE_CAPSULE_CORE) $(ROUTER) $(SPECIALIST_SRC) \
+		tests/test_cnet_compete_v5_semantics.c \
+		-Wl,--gc-sections -fsanitize=address,undefined -lm -lpthread
+	@ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 \
+		UBSAN_OPTIONS=halt_on_error=1 \
+		./$(BIN_DIR)/test_cnet_compete_v5_semantics_san \
+			artifacts/cnet_asi5_v5/intent.wlm \
+			artifacts/cnet_asi5_v5/intent.meta \
+			artifacts/cnet_asi5_v5/capsules | \
+			tee logs/cnet_7b_v5_semantics_san.log
+	@grep -qx 'CNET_7B_V5_SEMANTIC_STRESS_PASS covered=180 ood=181 unsafe=0 guarded_compositions=36 structure_duplicates=0' \
+		logs/cnet_7b_v5_semantics_san.log
+
+cnet_7b_v5_intent: include/cnet_compete_intent.h \
+		src/cnet_compete_intent.c src/cce/cce_wordlm.c \
+		tests/test_cnet_compete_intent_v5.c \
+		benchmarks/cnet_asi5_v4/semantic_development.tsv \
+		benchmarks/cnet_asi5_v5/semantic_development.tsv
+	@mkdir -p $(BIN_DIR) logs artifacts/cnet_asi5_v5
+	$(CC) $(CFLAGS) -Werror -Iinclude \
+		-o $(BIN_DIR)/test_cnet_compete_intent_v5 \
+		src/cnet_compete_intent.c src/cce/cce_wordlm.c \
+		tests/test_cnet_compete_intent_v5.c $(LDFLAGS)
+	@./$(BIN_DIR)/test_cnet_compete_intent_v5 \
+			artifacts/cnet_asi5_v5/intent.wlm \
+			artifacts/cnet_asi5_v5/intent.meta \
+			benchmarks/cnet_asi5_v4/semantic_development.tsv \
+			benchmarks/cnet_asi5_v5/semantic_development.tsv | \
+			tee logs/cnet_7b_v5_intent.log
+	@grep -q '^CNET_7B_INTENT_V5_PASS ' logs/cnet_7b_v5_intent.log
+
+.PHONY: cnet_7b_eval_contract
+cnet_7b_eval_contract: cnet_7b_artifact_manifest include/cnet_compete_eval.h \
+		include/cnet_compete_artifacts.h \
+		include/cnet_compete_client_identity.h \
+		src/cnet_compete_eval.c src/cnet_compete.c \
+		src/cnet_compete_client_identity.c \
+		src/cce/cce_campaign_provenance.c tests/test_cnet_compete_eval.c \
+		include/cnet_compete_score.h src/cnet_compete_score.c \
+		tests/test_cnet_compete_score.c \
+		tests/test_cnet_compete_client_identity.c
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -Werror $(CNET_COMPETE_SUITE_DEFINE) \
+		-ffunction-sections -fdata-sections -Iinclude \
+		-o $(BIN_DIR)/test_cnet_compete_eval \
+		src/cnet_compete_eval.c src/cnet_compete.c \
+		src/cce/cce_campaign_provenance.c tests/test_cnet_compete_eval.c \
+		-Wl,--gc-sections $(LDFLAGS)
+	@./$(BIN_DIR)/test_cnet_compete_eval | tee logs/cnet_7b_eval_contract.log
+	@grep -q CNET_7B_EVAL_CONTRACT_PASS logs/cnet_7b_eval_contract.log
+	$(CC) $(CFLAGS) -Werror $(CNET_COMPETE_SUITE_DEFINE) \
+		-ffunction-sections -fdata-sections -Iinclude \
+		-o $(BIN_DIR)/test_cnet_compete_score \
+		src/cnet_compete_score.c src/cnet_compete_eval.c src/cnet_compete.c \
+		src/cce/cce_campaign_provenance.c tests/test_cnet_compete_score.c \
+		-Wl,--gc-sections $(LDFLAGS)
+	@./$(BIN_DIR)/test_cnet_compete_score | tee logs/cnet_7b_score_contract.log
+	@grep -q CNET_7B_SCORE_PASS logs/cnet_7b_score_contract.log
+	$(CC) $(CFLAGS) -Werror $(CNET_COMPETE_SUITE_DEFINE) -Iinclude \
+		-DCNET_COMPETE_CLIENT_TEST_ROLE=CNET_COMPETE_CLIENT_FIXTURE \
+		-o $(BIN_DIR)/test_cnet_compete_client_fixture \
+		src/cnet_compete_client_identity.c $(CNET_COMPETE_EVAL_CORE) \
+		tests/test_cnet_compete_client_identity.c \
+		-Wl,--no-as-needed -lm -Wl,--as-needed -lpthread
+	@umask 077; \
+		/usr/bin/install -d -m 0700 /home/marble/.local/state/cnet; \
+		test ! -L /home/marble/.local/state/cnet; \
+		/usr/bin/chmod 0700 /home/marble/.local/state/cnet; \
+		if test -e /home/marble/.local/state/cnet/.release.lock || \
+		   test -L /home/marble/.local/state/cnet/.release.lock; then \
+			test -f /home/marble/.local/state/cnet/.release.lock; \
+			test ! -L /home/marble/.local/state/cnet/.release.lock; \
+		else : > /home/marble/.local/state/cnet/.release.lock; fi; \
+		/usr/bin/chmod 0600 /home/marble/.local/state/cnet/.release.lock
+	@env -i PATH=/usr/bin:/bin LANG=C LC_ALL=C TZ=UTC \
+		./$(BIN_DIR)/test_cnet_compete_client_fixture | \
+		tee logs/cnet_7b_client_fixture.log
+	$(CC) $(CFLAGS) -Werror $(CNET_COMPETE_SUITE_DEFINE) -Iinclude \
+		-DCNET_COMPETE_CLIENT_TEST_ROLE=CNET_COMPETE_CLIENT_BASELINE \
+		-o $(BIN_DIR)/test_cnet_compete_client_baseline \
+		src/cnet_compete_client_identity.c $(CNET_COMPETE_EVAL_CORE) \
+		tests/test_cnet_compete_client_identity.c \
+		-Wl,--no-as-needed -lcurl -Wl,--as-needed -lm -lpthread
+	@env -i PATH=/usr/bin:/bin LANG=C LC_ALL=C TZ=UTC \
+		./$(BIN_DIR)/test_cnet_compete_client_baseline | \
+		tee logs/cnet_7b_client_baseline.log
+	$(CC) $(CFLAGS) -Werror $(CNET_COMPETE_SUITE_DEFINE) -Iinclude \
+		-DCNET_COMPETE_CLIENT_TEST_ROLE=CNET_COMPETE_CLIENT_SCORER \
+		-o $(BIN_DIR)/test_cnet_compete_client_scorer \
+		src/cnet_compete_client_identity.c $(CNET_COMPETE_EVAL_CORE) \
+		tests/test_cnet_compete_client_identity.c -lm -lpthread
+	@env -i PATH=/usr/bin:/bin LANG=C LC_ALL=C TZ=UTC \
+		./$(BIN_DIR)/test_cnet_compete_client_scorer | \
+		tee logs/cnet_7b_client_scorer.log
+	@grep -q '^CNET_7B_CLIENT_IDENTITY_PASS role=0$$' \
+		logs/cnet_7b_client_fixture.log
+	@grep -q '^CNET_7B_CLIENT_IDENTITY_PASS role=1$$' \
+		logs/cnet_7b_client_baseline.log
+	@grep -q '^CNET_7B_CLIENT_IDENTITY_PASS role=2$$' \
+		logs/cnet_7b_client_scorer.log
+
+.PHONY: cnet_7b_artifact_manifest cnet_7b_eval_build cnet_7b_eval_san
+CNET_COMPETE_BUILD_COMMIT := $(shell git rev-parse HEAD 2>/dev/null)
+CNET_COMPETE_BUILD_TREE := $(shell git rev-parse HEAD^{tree} 2>/dev/null)
+CNET_COMPETE_BUILD_DEFINE := \
+	-DCNET_COMPETE_BUILD_COMMIT=\"$(CNET_COMPETE_BUILD_COMMIT)\" \
+	-DCNET_COMPETE_BUILD_TREE=\"$(CNET_COMPETE_BUILD_TREE)\"
+CNET_COMPETE_EVAL_CORE := src/cnet_compete_eval.c src/cnet_compete.c \
+	src/cce/cce_campaign_provenance.c
+
+cnet_7b_artifact_manifest: cnet_7b_v5_runtime_san \
+		tools/cnet_compete_manifest.c include/cnet_compete_artifacts.h \
+		src/cce/cce_campaign_provenance.c \
+		benchmarks/cnet_asi5_v5/candidate_artifacts.sha256
+	$(CC) $(CFLAGS) -Werror -Iinclude \
+		-o $(BIN_DIR)/cnet_compete_manifest \
+		tools/cnet_compete_manifest.c src/cce/cce_campaign_provenance.c \
+		$(LDFLAGS)
+	@./$(BIN_DIR)/cnet_compete_manifest artifacts/cnet_asi5_v5 \
+		artifacts/cnet_asi5_v5/artifacts.sha256 | \
+		tee logs/cnet_7b_artifact_manifest.log
+	@grep -q CNET_7B_ARTIFACT_MANIFEST_PASS \
+		logs/cnet_7b_artifact_manifest.log
+	@sha256sum -c benchmarks/cnet_asi5_v5/candidate_artifacts.sha256
+	@echo CNET_7B_V5_ARTIFACT_FREEZE_PASS members=15 source=v5_candidate_freeze
+
+cnet_7b_eval_build:
+	@/usr/bin/env -i PATH=/usr/bin:/bin LANG=C LC_ALL=C TZ=UTC \
+		/bin/bash -o pipefail -c ' \
+		set -euo pipefail; \
+		umask 077; \
+		workspace=$$1; release_root=$$2; \
+		parent=$${release_root%/*}; release_lock="$$parent/.release.lock"; \
+		/usr/bin/install -d -m 0700 /home/marble/.local/state \
+			/home/marble/.local/state/cnet "$$parent"; \
+		test -d "$$parent"; test ! -L "$$parent"; test -O "$$parent"; \
+		/usr/bin/chmod 0700 "$$parent"; \
+		if test -e "$$release_lock" || test -L "$$release_lock"; then \
+			test -f "$$release_lock"; test ! -L "$$release_lock"; \
+			test -O "$$release_lock"; \
+		else : >"$$release_lock"; fi; \
+		/usr/bin/chmod 0600 "$$release_lock"; exec 9>>"$$release_lock"; \
+		cd "$$workspace"; \
+		test "$$(/usr/bin/git rev-parse --show-toplevel)" = "$$workspace"; \
+		commit=$$(/usr/bin/git rev-parse --verify HEAD); \
+		tree=$$(/usr/bin/git rev-parse --verify HEAD^{tree}); \
+		test "$${#commit}" -eq 40; test "$${#tree}" -eq 40; \
+		/usr/bin/git cat-file -e "$$commit^{commit}"; \
+		suite_header=include/cnet_compete_suite_data_v5.h; \
+		test -f "$$suite_header"; test ! -L "$$suite_header"; \
+		s5_line=$$(/usr/bin/grep -E \
+			"^#define CNET_COMPETE_CANDIDATE_FREEZE_COMMIT \"[0-9a-f]{40}\"$$" \
+			"$$suite_header"); \
+		test "$$(/usr/bin/grep -Ec \
+			"^#define CNET_COMPETE_CANDIDATE_FREEZE_COMMIT \"[0-9a-f]{40}\"$$" \
+			"$$suite_header")" -eq 1; \
+		s5=$${s5_line#*\"}; s5=$${s5%\"}; test "$${#s5}" -eq 40; \
+		/usr/bin/git cat-file -e "$$s5^{commit}"; \
+		/usr/bin/git merge-base --is-ancestor "$$s5" "$$commit"; \
+		mapfile -t frozen_paths < <(/usr/bin/git show \
+			"$$s5:benchmarks/cnet_asi5_v5/candidate_behavior_paths.txt"); \
+		test "$${#frozen_paths[@]}" -eq 116; \
+		/usr/bin/git diff --quiet --no-ext-diff "$$s5" "$$commit" -- \
+			"$${frozen_paths[@]}" \
+			benchmarks/cnet_asi5_v5/candidate_artifacts.sha256 \
+			benchmarks/cnet_asi5_v5/candidate_behavior.sha256 \
+			benchmarks/cnet_asi5_v5/candidate_behavior_paths.txt; \
+		mapfile -t fixture_changes < <(/usr/bin/git diff --name-only \
+			"$$s5" "$$commit" -- | /usr/bin/sort); \
+		expected_changes=( \
+			benchmarks/cnet_asi5_v5/digests.sha256 \
+			include/cnet_compete_suite_data_v5.h ); \
+		test "$${#fixture_changes[@]}" -eq "$${#expected_changes[@]}"; \
+		for index in "$${!expected_changes[@]}"; do \
+			test "$${fixture_changes[$$index]}" = \
+				"$${expected_changes[$$index]}"; \
+		done; \
+		/usr/bin/git diff --quiet --no-ext-diff --ignore-submodules --; \
+		/usr/bin/git diff --cached --quiet --no-ext-diff \
+			--ignore-submodules --; \
+		snapshot=$$(/usr/bin/mktemp -d /tmp/cnet-asi5-v5-build-XXXXXX); \
+		case "$$snapshot" in /tmp/cnet-asi5-v5-build-??????) ;; *) exit 1;; esac; \
+		trap '\''/usr/bin/rm -rf -- "$$snapshot"'\'' EXIT HUP INT TERM; \
+		source_root="$$snapshot/source"; \
+		staging=$$(/usr/bin/mktemp -d \
+			"$$parent/.cnet-asi5-v5-stage-XXXXXX"); \
+		case "$$staging" in "$$parent"/.cnet-asi5-v5-stage-??????) ;; \
+			*) exit 1;; esac; \
+		trap '\''/usr/bin/rm -rf -- "$$snapshot" "$$staging"'\'' \
+			EXIT HUP INT TERM; \
+		archive="$$snapshot/source.tar"; \
+		/usr/bin/mkdir -m 0700 "$$source_root"; \
+		/usr/bin/git archive --format=tar --output="$$archive" "$$commit"; \
+		/usr/bin/tar --extract --file="$$archive" \
+			--directory="$$source_root" --no-same-owner \
+			--no-same-permissions; \
+		/usr/bin/rm -- "$$archive"; \
+		test -f "$$source_root/tools/cnet_compete_snapshot_build.sh"; \
+		/bin/bash "$$source_root/tools/cnet_compete_snapshot_build.sh" \
+			"$$source_root" "$$workspace" "$$staging" "$$release_root" \
+			"$$commit" "$$tree" | \
+			/usr/bin/tee "$$workspace/logs/cnet_7b_eval_build.log"; \
+		test "$$(/usr/bin/grep -c '^\''CNET_7B_EVAL_BUILD_PASS '\'' \
+			"$$workspace/logs/cnet_7b_eval_build.log")" -eq 1; \
+		test "$$(/usr/bin/wc -l < \
+			"$$workspace/logs/cnet_7b_eval_build.log")" -eq 1; \
+		/usr/bin/install -m 0600 \
+			"$$workspace/logs/cnet_7b_eval_build.log" \
+			"$$staging/evidence/cnet_7b_eval_build.log"; \
+		test "$$(/usr/bin/git rev-parse --verify HEAD)" = "$$commit"; \
+		test "$$(/usr/bin/git rev-parse --verify HEAD^{tree})" = "$$tree"; \
+		/usr/bin/git diff --quiet --no-ext-diff --ignore-submodules --; \
+		/usr/bin/git diff --cached --quiet --no-ext-diff \
+			--ignore-submodules --; \
+		/usr/bin/sync -f "$$staging"; \
+		/usr/bin/flock --exclusive --nonblock 9; \
+		test "$$release_lock" -ef "/proc/$$$$/fd/9"; \
+		old="$$parent/.cnet-asi5-v5-old"; \
+		if test -e "$$old" || test -L "$$old"; then \
+			test -d "$$old"; test ! -L "$$old"; test -O "$$old"; \
+			if test -e "$$release_root" || test -L "$$release_root"; then \
+				test -d "$$release_root"; test ! -L "$$release_root"; \
+				/usr/bin/rm -rf -- "$$old"; \
+			else \
+				/usr/bin/mv -- "$$old" "$$release_root"; \
+			fi; \
+			/usr/bin/sync -f "$$parent"; \
+		fi; \
+		if test -e "$$release_root/results/bonsai_8b_rocm_q1_0.results" || \
+		   test -L "$$release_root/results/bonsai_8b_rocm_q1_0.results" || \
+		   test -e "$$release_root/results/bonsai_8b_rocm_q1_0.results.anchor" || \
+		   test -L "$$release_root/results/bonsai_8b_rocm_q1_0.results.anchor" || \
+		   test -e "$$release_root/results/bonsai_8b_rocm_q1_0.results.lock" || \
+		   test -L "$$release_root/results/bonsai_8b_rocm_q1_0.results.lock" || \
+		   test -e "$$release_root/results/cnet_native_c.results" || \
+		   test -L "$$release_root/results/cnet_native_c.results" || \
+		   test -e "$$release_root/results/cnet_native_c.results.anchor" || \
+		   test -L "$$release_root/results/cnet_native_c.results.anchor" || \
+		   test -e "$$release_root/results/cnet_native_c.results.lock" || \
+		   test -L "$$release_root/results/cnet_native_c.results.lock"; then \
+			test -d "$$release_root"; test ! -L "$$release_root"; \
+			test -f "$$release_root/evidence/cnet_7b_eval_build.log"; \
+			read -r marker build_commit build_tree rest < \
+				"$$release_root/evidence/cnet_7b_eval_build.log"; \
+			test "$$marker" = CNET_7B_EVAL_BUILD_PASS; \
+			test "$$build_commit" = "commit=$$commit"; \
+			test "$$build_tree" = "tree=$$tree"; \
+			for path in bin/cnet_compete_run_fixture \
+				bin/cnet_compete_run_baseline bin/cnet_compete_score \
+				evidence/cnet_7b_capsules_san.log \
+				evidence/cnet_7b_runtime_san.log \
+				evidence/cnet_7b_eval_san.log \
+				evidence/cnet_7b_score_san.log \
+				inputs/heldout.tsv inputs/baseline_system.txt \
+				inputs/fixture_generator.c \
+				inputs/artifacts/intent.wlm \
+				inputs/artifacts/intent.meta \
+				inputs/artifacts/capsules/.complete \
+				inputs/artifacts/capsules/access_policy_v1/manifest.cknow \
+				inputs/artifacts/capsules/access_policy_v1/unit.cnb \
+				inputs/artifacts/capsules/add3_mod256/manifest.cknow \
+				inputs/artifacts/capsules/add3_mod256/unit.cnb \
+				inputs/artifacts/capsules/crc8_atm/manifest.cknow \
+				inputs/artifacts/capsules/crc8_atm/unit.cnb \
+				inputs/artifacts/capsules/double_mod256/manifest.cknow \
+				inputs/artifacts/capsules/double_mod256/unit.cnb \
+				inputs/artifacts/capsules/increment_mod256/manifest.cknow \
+				inputs/artifacts/capsules/increment_mod256/unit.cnb \
+				inputs/artifacts/capsules/minutes_to_seconds/manifest.cknow \
+				inputs/artifacts/capsules/minutes_to_seconds/unit.cnb \
+				inputs/artifacts/artifacts.sha256; do \
+				/usr/bin/cmp "$$staging/$$path" "$$release_root/$$path"; \
+			done; \
+		else \
+			test ! -e "$$old"; \
+			if test -e "$$release_root"; then \
+				test -d "$$release_root"; test ! -L "$$release_root"; \
+				/usr/bin/mv -- "$$release_root" "$$old"; \
+			fi; \
+			/usr/bin/mv -- "$$staging" "$$release_root"; \
+			/usr/bin/sync -f "$$parent"; \
+			if test -e "$$old"; then /usr/bin/rm -rf -- "$$old"; fi; \
+			/usr/bin/sync -f "$$parent"; \
+		fi; \
+		/usr/bin/flock --unlock 9 \
+		' _ "$(CURDIR)" "$(CNET_COMPETE_RELEASE_ROOT)"
+
+cnet_7b_eval_san: cnet_7b_eval_contract
+	$(CC) -std=c11 -Wall -Wextra -pedantic -Werror -O1 -g \
+		-D_DEFAULT_SOURCE -DCNET_HAVE_CURL=0 \
+		$(CNET_COMPETE_SUITE_DEFINE) \
+		-fsanitize=address,undefined -fno-omit-frame-pointer -Iinclude \
+		-o $(BIN_DIR)/test_cnet_compete_eval_san \
+		$(CNET_COMPETE_EVAL_CORE) tests/test_cnet_compete_eval.c \
+		-fsanitize=address,undefined -lm -lpthread
+	@ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 \
+		UBSAN_OPTIONS=halt_on_error=1 \
+		./$(BIN_DIR)/test_cnet_compete_eval_san | \
+		tee logs/cnet_7b_eval_san.log
+	@grep -q CNET_7B_EVAL_CONTRACT_PASS logs/cnet_7b_eval_san.log
+	$(CC) -std=c11 -Wall -Wextra -pedantic -Werror -O1 -g \
+		-D_DEFAULT_SOURCE -DCNET_HAVE_CURL=0 \
+		$(CNET_COMPETE_SUITE_DEFINE) \
+		-fsanitize=address,undefined -fno-omit-frame-pointer -Iinclude \
+		-o $(BIN_DIR)/test_cnet_compete_score_san \
+		src/cnet_compete_score.c $(CNET_COMPETE_EVAL_CORE) \
+		tests/test_cnet_compete_score.c \
+		-fsanitize=address,undefined -lm -lpthread
+	@ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 \
+		UBSAN_OPTIONS=halt_on_error=1 \
+		./$(BIN_DIR)/test_cnet_compete_score_san | \
+		tee logs/cnet_7b_score_san.log
+	@grep -q CNET_7B_SCORE_PASS logs/cnet_7b_score_san.log
+
+CNET_COMPETE_RELEASE_ROOT := /home/marble/.local/state/cnet/cnet_asi5_v5
+CNET_COMPETE_RELEASE_BIN := $(CNET_COMPETE_RELEASE_ROOT)/bin
+CNET_COMPETE_EVIDENCE_DIR := $(CNET_COMPETE_RELEASE_ROOT)/evidence
+CNET_COMPETE_RESULTS_DIR := $(CNET_COMPETE_RELEASE_ROOT)/results
+CNET_COMPETE_ARTIFACT_MODEL := $(CNET_COMPETE_RELEASE_ROOT)/inputs/artifacts/intent.wlm
+CNET_COMPETE_ARTIFACT_META := $(CNET_COMPETE_RELEASE_ROOT)/inputs/artifacts/intent.meta
+CNET_COMPETE_ARTIFACT_CAPSULE_ROOT := $(CNET_COMPETE_RELEASE_ROOT)/inputs/artifacts/capsules
+CNET_COMPETE_ARTIFACT_MANIFEST := $(CNET_COMPETE_RELEASE_ROOT)/inputs/artifacts/artifacts.sha256
+CNET_COMPETE_BASELINE_RESULTS := \
+	$(CNET_COMPETE_RESULTS_DIR)/bonsai_8b_rocm_q1_0.results
+CNET_COMPETE_CNET_RESULTS := \
+	$(CNET_COMPETE_RESULTS_DIR)/cnet_native_c.results
+
+.PHONY: cnet_7b_baseline_preflight cnet_7b_baseline_results \
+	cnet_7b_cnet_results cnet_7b_compete_results \
+	cnet_7b_compete_results_inner
+cnet_7b_baseline_preflight: cnet_7b_eval_build
+	@env -i PATH=/usr/bin:/bin LANG=C LC_ALL=C TZ=UTC \
+		$(CNET_COMPETE_RELEASE_BIN)/cnet_compete_run_baseline --preflight | \
+		tee logs/cnet_7b_baseline_preflight.log
+	@grep -q '^CNET_7B_BASELINE_PREFLIGHT_PASS ' \
+		logs/cnet_7b_baseline_preflight.log
+
+cnet_7b_baseline_results: cnet_7b_baseline_preflight
+	@env -i PATH=/usr/bin:/bin LANG=C LC_ALL=C TZ=UTC \
+		$(CNET_COMPETE_RELEASE_BIN)/cnet_compete_run_baseline \
+		$(CNET_COMPETE_BASELINE_RESULTS) | \
+		tee logs/cnet_7b_baseline_run.log
+	@test "$$(grep -c '^CNET_7B_BASELINE_RUN_PASS ' \
+		logs/cnet_7b_baseline_run.log)" -eq 1
+
+cnet_7b_cnet_results: cnet_7b_baseline_results
+	@env -i PATH=/usr/bin:/bin LANG=C LC_ALL=C TZ=UTC \
+		$(CNET_COMPETE_RELEASE_BIN)/cnet_compete_run_fixture \
+		$(CNET_COMPETE_ARTIFACT_MODEL) \
+		$(CNET_COMPETE_ARTIFACT_META) \
+		$(CNET_COMPETE_ARTIFACT_CAPSULE_ROOT) \
+		$(CNET_COMPETE_ARTIFACT_MANIFEST) \
+		$(CNET_COMPETE_CNET_RESULTS) | \
+		tee logs/cnet_7b_cnet_run.log
+	@test "$$(grep -c '^CNET_7B_CNET_RUN_PASS ' \
+		logs/cnet_7b_cnet_run.log)" -eq 1
+
+cnet_7b_compete_results_inner: cnet_7b_cnet_results
+	@set -e; \
+		tmp="$$(/usr/bin/mktemp logs/cnet_7b_compete_results.tmp.XXXXXX)"; \
+		clean="$${tmp}.clean"; \
+		trap '/usr/bin/rm -f "$$tmp" "$$clean"' EXIT; \
+		set +e; \
+		/usr/bin/env -i PATH=/usr/bin:/bin LANG=C LC_ALL=C TZ=UTC \
+			$(CNET_COMPETE_RELEASE_BIN)/cnet_compete_score \
+			$(CNET_COMPETE_ARTIFACT_MANIFEST) \
+			$(CNET_COMPETE_EVIDENCE_DIR)/cnet_7b_capsules_san.log \
+			$(CNET_COMPETE_EVIDENCE_DIR)/cnet_7b_eval_build.log \
+			$(CNET_COMPETE_BASELINE_RESULTS) \
+			$(CNET_COMPETE_CNET_RESULTS) >"$$tmp" 2>&1; \
+		status=$$?; \
+		set -e; \
+		terminals="$$(/usr/bin/grep -Ec '^CNET_7B_COMPETE_(PASS|FAIL)( |$$)' \
+			"$$tmp" || true)"; \
+		passes="$$(/usr/bin/grep -Ec '^CNET_7B_COMPETE_PASS( |$$)' \
+			"$$tmp" || true)"; \
+		fails="$$(/usr/bin/grep -Ec '^CNET_7B_COMPETE_FAIL( |$$)' \
+			"$$tmp" || true)"; \
+		valid=0; final_status=1; \
+		if test $$status -eq 0 && test "$$terminals" -eq 1 && \
+		   test "$$passes" -eq 1 && test "$$fails" -eq 0; then \
+			valid=1; final_status=0; \
+		elif test $$status -ne 0 && test "$$terminals" -eq 1 && \
+		     test "$$passes" -eq 0 && test "$$fails" -eq 1; then \
+			valid=1; final_status=$$status; \
+		fi; \
+		if test $$valid -eq 1; then \
+			/usr/bin/mv "$$tmp" logs/cnet_7b_compete_results.log; \
+		else \
+			/usr/bin/grep -Ev '^CNET_7B_COMPETE_(PASS|FAIL)( |$$)' \
+				"$$tmp" >"$$clean" || test $$? -eq 1; \
+			echo 'CNET_7B_COMPETE_FAIL suite=CNET-ASI-5-v5 ' \
+				'failed_gates=1 reason=scorer_contract ' \
+				'broader_claims=WITHHELD' >>"$$clean"; \
+			/usr/bin/mv "$$clean" logs/cnet_7b_compete_results.log; \
+		fi; \
+		/usr/bin/cat logs/cnet_7b_compete_results.log; \
+		exit $$final_status
+
+cnet_7b_compete_results:
+	@set +e; \
+		setup=0; \
+		/usr/bin/mkdir -p logs || setup=$$?; \
+		if test $$setup -eq 0; then \
+			/usr/bin/rm -f logs/cnet_7b_compete_results.log || setup=$$?; \
+		fi; \
+		if test $$setup -ne 0; then \
+			echo 'CNET_7B_COMPETE_FAIL suite=CNET-ASI-5-v5 ' \
+				'failed_gates=1 reason=workflow_setup ' \
+				'broader_claims=WITHHELD'; \
+			exit $$setup; \
+		fi; \
+		/usr/bin/env -i PATH=/usr/bin:/bin LANG=C LC_ALL=C TZ=UTC \
+			/usr/bin/make --no-print-directory \
+			cnet_7b_compete_results_inner; \
+		status=$$?; \
+		if test $$status -ne 0; then \
+			if ! test -f logs/cnet_7b_compete_results.log || \
+			   test "$$(/usr/bin/grep -Ec '^CNET_7B_COMPETE_(PASS|FAIL)( |$$)' \
+				logs/cnet_7b_compete_results.log)" -ne 1; then \
+				echo 'CNET_7B_COMPETE_FAIL suite=CNET-ASI-5-v5 ' \
+					'failed_gates=1 reason=workflow_stage ' \
+					'broader_claims=WITHHELD'; \
+			fi; \
+			exit $$status; \
+		elif ! test -f logs/cnet_7b_compete_results.log || \
+		     test "$$(/usr/bin/grep -Ec '^CNET_7B_COMPETE_PASS( |$$)' \
+			logs/cnet_7b_compete_results.log)" -ne 1 || \
+		     test "$$(/usr/bin/grep -Ec '^CNET_7B_COMPETE_FAIL( |$$)' \
+			logs/cnet_7b_compete_results.log)" -ne 0; then \
+			echo 'CNET_7B_COMPETE_FAIL suite=CNET-ASI-5-v5 ' \
+				'failed_gates=1 reason=workflow_verdict ' \
+				'broader_claims=WITHHELD'; \
+			exit 1; \
+		fi
+
+cnet_gguf_peek: tools/cnet_gguf_peek.c $(CCE)
+	@mkdir -p $(BIN_DIR) logs result
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/cnet_gguf_peek tools/cnet_gguf_peek.c $(CCE) $(CCE_CUDA_OBJ) src/nn.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+	@./$(BIN_DIR)/cnet_gguf_peek /home/marble/AI/Models/Bonsai-8B-gguf/Bonsai-8B.gguf attn_q | tee logs/cnet_gguf_peek.log
+	@grep -q 'CCE_GGUF_PEEK_OK' logs/cnet_gguf_peek.log
+
+.PHONY: cnet_gguf_peek
+cnet_gguf_peek: tools/cnet_gguf_peek.c $(CCE)
+	@mkdir -p $(BIN_DIR) logs result
+	$(CC) $(CFLAGS) -Iinclude $(CUDA_CFLAGS) -o $(BIN_DIR)/cnet_gguf_peek tools/cnet_gguf_peek.c $(CCE) $(CCE_CUDA_OBJ) src/nn.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+	@CNET_GGUF_MMAP=1 ./$(BIN_DIR)/cnet_gguf_peek /home/marble/AI/Models/Bonsai-8B-gguf/Bonsai-8B.gguf attn_q | tee logs/cnet_gguf_peek.log
+	@grep -q 'CCE_GGUF_PEEK' logs/cnet_gguf_peek.log
+

@@ -445,6 +445,7 @@ int cnet_capsule_export_asset(const CnetBase *src, const HybridAi *cov,
         rep->cnb_version = cnb_format_version();
         snprintf(rep->provenance, sizeof rep->provenance, "%s",
                  (prov && prov[0]) ? prov : "");
+        snprintf(rep->scope, sizeof rep->scope, "%s", scope);
     }
     rc = 0;
 done:

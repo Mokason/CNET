@@ -14,6 +14,20 @@ Artificial affect + durable persona on the scoreboard/governor spine.
 reward, frustration, calm, vigilance, integrity, correction  
 driven by backlog/eval/Hermes/plateau/busy/veto
 
+## Neuromod (DA / 5HT / ADO) — explicit biology metaphor
+See `docs/NEUROMOD_PERSONALITY.md` and `scripts/cnet_neuromod.py`.
+
+| Channel | When |
+|---------|------|
+| dopamine | task done right (LOCAL / promote) |
+| serotonin | remember/pin vs sort queue |
+| adenosine | consolidate WM / reorganize context |
+
+```bash
+make cnet_neuromod
+python3 scripts/cnet_neuromod.py --tick
+```
+
 ## Safety
 - clamp `[0.15, 0.85]`
 - max trait Δ / cycle

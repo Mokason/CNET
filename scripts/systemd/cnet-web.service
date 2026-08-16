@@ -1,0 +1,23 @@
+[Unit]
+Description=CNET web cockpit (Tailscale/localhost → cnetd socket)
+Documentation=file:///home/marble/AI/CNET/docs/CNET_WEB.md
+After=cnetd.service network-online.target
+Requires=cnetd.service
+Wants=cnetd.service
+
+[Service]
+Type=simple
+WorkingDirectory=%h/AI/CNET
+EnvironmentFile=-%h/.local/share/cnet-minimal/cnet-minimal.env
+Environment=CNET_MINIMAL_ROOT=%h/.local/share/cnet-minimal/current
+Environment=CNET_PACKS_ROOT=%h/.local/share/cnet-minimal/current/data/roe_daily_packs
+Environment=CNET_WEB_PORT=8642
+Environment=CNET_PYTHON=%h/.hermes/hermes-agent/venv/bin/python3
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ExecStart=/usr/bin/bash %h/AI/CNET/scripts/cnet_web_run.sh
+Restart=on-failure
+RestartSec=3
+Nice=8
+
+[Install]
+WantedBy=cnet-marble.target

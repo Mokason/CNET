@@ -259,13 +259,48 @@ static void test_registry_remove_last(void) {
     btn_free(&b);
 }
 
+static void test_sleep_cse_traces(void) {
+    LibraryTrace traces[2];
+    LibraryReport rep;
+    PrimitiveRegistry reg;
+    printf("sleep CSE across traces:\n");
+    memset(traces, 0, sizeof traces);
+    memset(&rep, 0, sizeof rep);
+    registry_init(&reg);
+    traces[0].length = 2;
+    snprintf(traces[0].steps[0], sizeof traces[0].steps[0], "%s", "dec");
+    snprintf(traces[0].steps[1], sizeof traces[0].steps[1], "%s", "inc");
+    traces[1].length = 3;
+    snprintf(traces[1].steps[0], sizeof traces[1].steps[0], "%s", "dec");
+    snprintf(traces[1].steps[1], sizeof traces[1].steps[1], "%s", "inc");
+    snprintf(traces[1].steps[2], sizeof traces[1].steps[2], "%s", "extra");
+    CHECK(library_sleep_compress(&reg, traces, 2, NULL, 0, NULL, &rep) == 0,
+          "sleep runs");
+    CHECK(rep.sleep_compressed == 1, "shared brick extracted");
+    {
+        LibraryReport one;
+        memset(&one, 0, sizeof one);
+        CHECK(library_sleep_compress(&reg, traces, 1, NULL, 0, NULL, &one) == 0,
+              "one trace call");
+        CHECK(one.sleep_compressed == 0, "one trace is not sleep");
+        library_report_free(&one);
+    }
+    registry_free(&reg);
+    library_report_free(&rep);
+}
+
 int run_test_library(void) {
     test_registry_remove_last();
     test_route_invention();
     test_dag_invention();
     test_law_guard_rollback();
+    test_sleep_cse_traces();
     if (failures == 0) printf("\nALL LIBRARY TESTS PASS\n");
     else printf("\n%d CHECK(S) FAILED\n", failures);
     return failures == 0 ? 0 : 1;
 }
 
+
+#ifdef CNET_LIBRARY_STANDALONE
+int main(void) { return run_test_library(); }
+#endif

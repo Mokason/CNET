@@ -1,6 +1,9 @@
 #include "../include/cnet_roe_net.h"
 
+#include "../include/cnet_platform.h"  /* CNET_HAVE_CURL */
+#if CNET_HAVE_CURL
 #include <curl/curl.h>
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -10,6 +13,7 @@ struct MemBuf {
     size_t len;
 };
 
+#if CNET_HAVE_CURL
 static size_t write_cb(char *ptr, size_t size, size_t nmemb, void *userdata) {
     struct MemBuf *m = (struct MemBuf *)userdata;
     size_t n = size * nmemb;
@@ -74,6 +78,27 @@ static int http_post_json(const char *url, const char *body, long timeout_ms,
 }
 
 /* Extract JSON string value for key "response" or "AbstractText" (simple). */
+#else
+/* No libcurl: the live-teacher HTTP transport is absent. These return the
+ * same failure codes the real ones use for a dead endpoint, so callers'
+ * fallback paths are exercised identically rather than via a new branch. */
+static int http_get(const char *url, long timeout_ms, struct MemBuf *out) {
+    (void)url; (void)timeout_ms;
+    /* Zero the sink even on failure: callers declare `struct MemBuf mb;`
+       uninitialised and rely on the transport to define it, so a stub that
+       returned without touching it would hand back garbage to any caller whose
+       error handling is less careful than it looks. */
+    if (out) memset(out, 0, sizeof *out);
+    return -1;
+}
+static int http_post_json(const char *url, const char *body, long timeout_ms,
+                          struct MemBuf *out) {
+    (void)url; (void)body; (void)timeout_ms;
+    if (out) memset(out, 0, sizeof *out);
+    return -1;
+}
+#endif /* CNET_HAVE_CURL */
+
 static int json_string_field(const char *json, const char *key, char *out, size_t cap) {
     char pat[96];
     const char *p, *start, *end;
@@ -162,6 +187,15 @@ void roe_net_from_env(RoeNet *N) {
         N->enable_llm = 1;
         N->enable_lookup = 1;
     }
+    /* Open chat = residual teacher on organic misses (still never self-CERT) */
+    e = getenv("CNET_OPEN_CHAT");
+    if (e && (e[0] == '1' || e[0] == 'y' || e[0] == 'Y')) {
+        N->enable_llm = 1;
+        /* lookup optional; keep off by default for chat unless ROE_LOOKUP=1 */
+    }
+    e = getenv("ROE_OPEN_CHAT");
+    if (e && (e[0] == '1' || e[0] == 'y' || e[0] == 'Y'))
+        N->enable_llm = 1;
     e = getenv("ROE_LLM");
     if (e && e[0] == '1') N->enable_llm = 1;
     if (e && e[0] == '0') N->enable_llm = 0;
@@ -187,10 +221,9 @@ void roe_net_from_env(RoeNet *N) {
 
 int roe_net_llm(RoeNet *N, const char *prompt, char *answer, size_t answer_cap,
                 uint64_t *tokens_est) {
-    char body[4096];
     char sys_prompt[512];
     struct MemBuf mb;
-    int rc;
+    int rc = -1;
     size_t plen;
 
     if (tokens_est) *tokens_est = 0;
@@ -201,29 +234,55 @@ int roe_net_llm(RoeNet *N, const char *prompt, char *answer, size_t answer_cap,
         return -2;
     }
 
+    memset(&mb, 0, sizeof mb);
+
     snprintf(sys_prompt, sizeof sys_prompt,
-             "You are an external teacher for ROE-ASI. Answer in 1-2 short factual "
-             "sentences. No markdown. Query: ");
+             "You are an external teacher for ROE-ASI / CNET. Your draft is UNTRUSTED "
+             "(never self-CERT). Teach clearly and completely: finish your thought, "
+             "cover the question, use short paragraphs if needed. No markdown headers. "
+             "Query: ");
     plen = strlen(sys_prompt) + strlen(prompt);
     /* escape quotes in prompt lightly */
     {
-        char pq[1500];
+        char pq[2500];
+        char body[12288];
         size_t i, j = 0;
         const char *think_json = N->think ? "true" : "false";
+        int teach = 1;
+        int npred = 512; /* full teach default — was 120 and cut answers off */
+        double temp = 0.35;
+        const char *ep;
+        ep = getenv("CNET_TEACHER_ON_MISS");
+        if (ep && (ep[0] == '0' || ep[0] == 'n' || ep[0] == 'N')) teach = 0;
+        ep = getenv("CNET_OPEN_CHAT");
+        if (ep && (ep[0] == '1' || ep[0] == 'y' || ep[0] == 'Y')) teach = 1;
+        ep = getenv("ROE_OPEN_CHAT");
+        if (ep && (ep[0] == '1' || ep[0] == 'y' || ep[0] == 'Y')) teach = 1;
+        if (teach) npred = 1024;
+        ep = getenv("ROE_LLM_NUM_PREDICT");
+        if (ep && ep[0]) npred = (int)strtol(ep, NULL, 10);
+        if (npred < 64) npred = 64;
+        if (npred > 2048) npred = 2048;
+        ep = getenv("ROE_LLM_TEMPERATURE");
+        if (ep && ep[0]) temp = strtod(ep, NULL);
         for (i = 0; prompt[i] && j + 2 < sizeof pq; i++) {
             if (prompt[i] == '"' || prompt[i] == '\\') pq[j++] = '\\';
             pq[j++] = prompt[i];
         }
         pq[j] = 0;
         /* Ollama /api/generate — include think for cloud V4 models */
-        snprintf(body, sizeof body,
-                 "{\"model\":\"%s\",\"prompt\":\"%s%s\",\"stream\":false,"
-                 "\"think\":%s,"
-                 "\"options\":{\"num_predict\":120,\"temperature\":0.2}}",
-                 N->llm_model, sys_prompt, pq, think_json);
+        if ((size_t)snprintf(body, sizeof body,
+                             "{\"model\":\"%s\",\"prompt\":\"%s%s\",\"stream\":false,"
+                             "\"think\":%s,"
+                             "\"options\":{\"num_predict\":%d,\"temperature\":%.2f}}",
+                             N->llm_model, sys_prompt, pq, think_json, npred, temp) >=
+            sizeof body) {
+            snprintf(N->last_err, sizeof N->last_err, "llm body too large");
+            return -5;
+        }
+        rc = http_post_json(N->llm_url, body, N->timeout_ms, &mb);
     }
 
-    rc = http_post_json(N->llm_url, body, N->timeout_ms, &mb);
     if (rc != 0 || !mb.data) {
         snprintf(N->last_err, sizeof N->last_err, "llm http fail rc=%d", rc);
         N->n_llm_fail++;

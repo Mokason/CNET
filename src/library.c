@@ -1,4 +1,6 @@
 #include "../include/library.h"
+#include "../include/cnet_dc_type.h"
+#include "../include/cnet_swap.h"
 #include "../include/scan.h"
 #include "../include/specialist.h"
 
@@ -6,19 +8,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
-
-/* Have we already invented this exact behavior? Keyed on the contract: an
-   existing entry whose ports match AND that replays every exemplar exactly. */
-static int contract_already_known(PrimitiveRegistry *reg, const Contract *c) {
-    size_t i;
-    for (i = 0; i < reg->count; ++i) {
-        if (reg->entries[i].btn != NULL &&
-            btn_certify(reg->entries[i].btn, c, NULL) == 0) {
-            return 1;
-        }
-    }
-    return 0;
-}
 
 /* Does any supplied law have a real violation against the current registry?
    property_check returns 0 iff the law holds. A nonzero return with
@@ -58,6 +47,97 @@ static int admit_native_btn(PrimitiveRegistry *reg, BinaryTransformNetwork *btn,
     return specialist_admit(reg, &s, c);
 }
 
+
+/* REPLACE is same-name only (same slot). Cross-name first-certify on the
+   incoming contract is not a family proof and must never REPLACE the
+   wrong name. Documented in plans/cnet_capsule_swap_law.md. */
+static size_t find_swap_family(const PrimitiveRegistry *reg, const char *name,
+                               const Contract *c) {
+    size_t i;
+    (void)c;
+    if (reg == NULL || name == NULL) return (size_t)-1;
+    for (i = 0; i < reg->count; ++i) {
+        if (reg->entries[i].name != NULL &&
+            strcmp(reg->entries[i].name, name) == 0)
+            return i;
+    }
+    return (size_t)-1;
+}
+
+/* Fixed-point skip only: a certified brick already replays c.
+   Not a REPLACE target. */
+static int already_known_contract(const PrimitiveRegistry *reg, const Contract *c) {
+    size_t i;
+    if (reg == NULL || c == NULL) return 0;
+    for (i = 0; i < reg->count; ++i) {
+        if (reg->entries[i].certified && reg->entries[i].btn != NULL &&
+            btn_certify(reg->entries[i].btn, c, NULL) == 0)
+            return 1;
+    }
+    return 0;
+}
+
+static void stamp_btn_kind(PrimitiveRegistry *reg, const char *name) {
+    size_t i;
+    if (reg == NULL || name == NULL) return;
+    for (i = 0; i < reg->count; ++i) {
+        if (reg->entries[i].name != NULL &&
+            strcmp(reg->entries[i].name, name) == 0) {
+            reg->entries[i].kind = SPECIALIST_KIND_BTN;
+            return;
+        }
+    }
+}
+
+int library_admit_candidate(PrimitiveRegistry *reg, BinaryTransformNetwork *btn,
+                            const char *name, const Contract *c) {
+    size_t fam;
+    const CnetSwapComposition *comps = NULL;
+    size_t n_comps = 0;
+    const DagNodeGuard *guard = NULL;
+    CnetSwapReport rep;
+    CnetSwapCoverage oldc, newc;
+    const char *old_name;
+    const char *alongside;
+    BinaryTransformNetwork *old_btn;
+
+    if (reg == NULL || btn == NULL || name == NULL || c == NULL) return -1;
+    if (btn_is_adapter(btn)) return -1;
+
+    cnet_swap_bound_compositions(&comps, &n_comps, &guard);
+    fam = find_swap_family(reg, name, c);
+    if (fam != (size_t)-1) {
+        old_btn = reg->entries[fam].btn;
+        old_name = reg->entries[fam].name;
+        if (old_btn != NULL &&
+            contract_btn_digest(old_btn) == contract_btn_digest(btn))
+            return -1; /* exact-same brick */
+        if (n_comps == 0 && old_btn != NULL &&
+            btn_certify(old_btn, c, NULL) == 0)
+            return -1; /* already-known contract, no composition proof */
+        if (cnet_swap_cov_from_contract(&newc, c) != 0) return -1;
+        /* old_cov is the persisted incumbent table, never the incoming
+           table. Missing table => empty old_cov => no REPLACE. */
+        if (cnet_swap_old_cov_from_entry(&oldc, &reg->entries[fam]) != 0)
+            memset(&oldc, 0, sizeof oldc);
+        alongside = cnet_swap_alongside_name(reg, name);
+        if (alongside == NULL || old_name == NULL) return -1;
+        memset(&rep, 0, sizeof rep);
+        if (cnet_swap_admit(reg, old_name, btn, alongside, c,
+                            &oldc, &newc, comps, n_comps, guard, &rep) != 0)
+            return -1;
+        stamp_btn_kind(reg, (rep.verdict == CNET_SWAP_REPLACE)
+                            ? old_name : alongside);
+        return 0;
+    }
+    /* Cross-name: never REPLACE another slot. n_comps==0 + already-known
+       still skips (evolve fixed point). Otherwise ADD under the new name. */
+    if (n_comps == 0 && already_known_contract(reg, c))
+        return -1;
+    return admit_native_btn(reg, btn, name, c);
+}
+
+
 static int finalize_chunk(PrimitiveRegistry *reg, BinaryTransformNetwork *student,
                           const char *name, const Contract *c,
                           const Property *laws, size_t n_laws, size_t max_samples,
@@ -65,10 +145,10 @@ static int finalize_chunk(PrimitiveRegistry *reg, BinaryTransformNetwork *studen
     size_t before, idx, teacher_mac = ti->mac;
 
     if (report->chunk_count >= LIBRARY_MAX_CHUNKS) return 0;
-    if (contract_already_known(reg, c)) return 0;          /* step 5: dedup */
-
+    /* step 5-6: exact-same / already-known still skip when n_comps==0;
+       a dominate+hold candidate goes through the swap law. */
     before = reg->count;
-    if (admit_native_btn(reg, student, name, c) != 0) return 0;  /* step 6 */
+    if (library_admit_candidate(reg, student, name, c) != 0) return 0;
 
     if (law_violated(laws, n_laws, reg, max_samples)) {    /* step 7: guard */
         /* rollback only if we actually appended; unique names mean
@@ -101,6 +181,15 @@ static int finalize_chunk(PrimitiveRegistry *reg, BinaryTransformNetwork *studen
             (void)registry_set_expansion(reg, name, n ? ptrs : NULL, n,
                                          teacher_mac, student_mac, beneficial);
         }
+    }
+    if (ti->count >= 1) {
+        size_t k, n = ti->count;
+        if (n > LIBRARY_TRACE_LEN) n = LIBRARY_TRACE_LEN;
+        report->traces[idx].length = n;
+        for (k = 0; k < n; ++k)
+            snprintf(report->traces[idx].steps[k],
+                     sizeof report->traces[idx].steps[k], "%s", ti->names[k]);
+        report->trace_count = idx + 1;
     }
     report->chunk_count++;
     return 1;
@@ -194,6 +283,9 @@ static int evolve_route(PrimitiveRegistry *reg, const LibraryTask *task,
 
     if (route_plan(reg, task->sources[0], task->goal, &plan) != 0) return 0;
     if (plan.length < 2) return 0;                         /* worth-it guard */
+    /* DreamCoder Core type gate: refuse an ill-typed chain. Existing
+       planners already match ports, so this is fail-closed, not a floor drop. */
+    if (cnet_dc_route_well_typed(&plan, task->sources[0]) != 0) return 0;
     if (!route_evidence_clear(&plan, gs)) { report->deferred++; return 0; }
 
     student = calloc(1, sizeof *student);
@@ -252,6 +344,10 @@ static int evolve_dag(PrimitiveRegistry *reg, const LibraryTask *task,
     }
     if (dag_plan(reg, sources, task->n_sources, task->goal, &plan) != 0) return 0;
     if (count_dag_primitives(&plan) < 2) { dag_free(&plan); return 0; }
+    if (cnet_dc_dag_well_typed(&plan, sources, task->n_sources, task->goal) != 0) {
+        dag_free(&plan);
+        return 0;
+    }
     if (!dag_evidence_clear(&plan, gs)) { report->deferred++; dag_free(&plan); return 0; }
 
     student = calloc(1, sizeof *student);
@@ -323,6 +419,11 @@ static int evolve_circuit(PrimitiveRegistry *reg, const LibraryTask *task,
     if (dag_plan_circuit(reg, sources, task->n_sources,
                          task->goals, task->n_goals, &plan) != 0) return 0;
     if (count_circuit_primitives(&plan) < 2) { circuit_free(&plan); return 0; }
+    if (cnet_dc_circuit_well_typed(&plan, sources, task->n_sources,
+                                  task->goals, task->n_goals) != 0) {
+        circuit_free(&plan);
+        return 0;
+    }
     if (!circuit_evidence_clear(&plan, gs)) {
         report->deferred++; circuit_free(&plan); return 0;
     }
@@ -381,6 +482,9 @@ static int evolve_run(PrimitiveRegistry *reg, const LibraryTask *tasks, size_t n
             added += (size_t)try_consolidate(reg, &tasks[t], laws, n_laws, &cfg_local, report, gs);
         if (added == 0) break;
     }
+    if (report->trace_count >= 2)
+        (void)library_sleep_compress(reg, report->traces, report->trace_count,
+                                     laws, n_laws, &cfg_local, report);
     return 0;
 }
 int library_evolve(PrimitiveRegistry *reg,
@@ -400,6 +504,132 @@ int library_evolve_gated(PrimitiveRegistry *reg,
                          LibraryReport *report) {
     GateState gs; gs.cfg = gate;
     return evolve_run(reg, tasks, n_tasks, laws, n_laws, cfg, &gs, max_iterations, report);
+}
+
+
+static int trace_has_subseq(const LibraryTrace *tr, char steps[][CONTRACT_NAME_MAX],
+                            size_t n) {
+    size_t i, j;
+    if (tr == NULL || steps == NULL || n == 0 || n > tr->length) return 0;
+    for (i = 0; i + n <= tr->length; ++i) {
+        int ok = 1;
+        for (j = 0; j < n; ++j) {
+            if (strcmp(tr->steps[i + j], steps[j]) != 0) {
+                ok = 0;
+                break;
+            }
+        }
+        if (ok) return 1;
+    }
+    return 0;
+}
+
+static const BinaryTransformNetwork *reg_lookup(const PrimitiveRegistry *reg,
+                                                const char *name) {
+    size_t i;
+    if (reg == NULL || name == NULL) return NULL;
+    for (i = 0; i < reg->count; ++i) {
+        if (reg->entries[i].name != NULL &&
+            strcmp(reg->entries[i].name, name) == 0)
+            return reg->entries[i].btn;
+    }
+    return NULL;
+}
+
+int library_sleep_compress(PrimitiveRegistry *reg,
+                           const LibraryTrace *traces, size_t n_traces,
+                           const Property *laws, size_t n_laws,
+                           const ConsolidateConfig *cfg,
+                           LibraryReport *report) {
+    size_t t, len, off, best_len = 0, best_t = 0, best_off = 0;
+    char brick[LIBRARY_TRACE_LEN][CONTRACT_NAME_MAX];
+    int found = 0;
+    RoutePlan plan;
+    BinaryTransformNetwork *student;
+    Contract c;
+    TeacherInfo ti;
+    ConsolidateConfig cfg_local;
+    size_t i;
+    int accepted;
+
+    if (report != NULL && report->sleep_compressed) return 0;
+    if (reg == NULL || traces == NULL || n_traces < 2 || report == NULL)
+        return 0;
+    if (cfg != NULL) cfg_local = *cfg;
+    else consolidate_config_defaults(&cfg_local);
+
+    /* Longest contiguous subsequence in >=2 traces, proper in at least one. */
+    for (t = 0; t < n_traces; ++t) {
+        if (traces[t].length < 2) continue;
+        for (len = traces[t].length; len >= 2; --len) {
+            if (len < best_len) break;
+            for (off = 0; off + len <= traces[t].length; ++off) {
+                size_t hits = 0, u, k;
+                int proper = 0;
+                for (k = 0; k < len; ++k)
+                    snprintf(brick[k], sizeof brick[k], "%s",
+                             traces[t].steps[off + k]);
+                for (u = 0; u < n_traces; ++u) {
+                    if (!trace_has_subseq(&traces[u], brick, len)) continue;
+                    hits++;
+                    if (len < traces[u].length) proper = 1;
+                }
+                if (hits >= 2 && proper && len > best_len) {
+                    best_len = len;
+                    best_t = t;
+                    best_off = off;
+                    found = 1;
+                }
+            }
+        }
+    }
+    if (!found) return 0;
+    for (i = 0; i < best_len; ++i)
+        snprintf(brick[i], sizeof brick[i], "%s",
+                 traces[best_t].steps[best_off + i]);
+    /* CSE itself is sleep. Distill below is optional and still fail-closed. */
+    snprintf(report->sleep_brick, sizeof report->sleep_brick, "%s",
+             "shared_subplan");
+    report->sleep_compressed = 1;
+
+    memset(&plan, 0, sizeof plan);
+    if (best_len > ROUTE_MAX_STEPS) return 0;
+    for (i = 0; i < best_len; ++i) {
+        const BinaryTransformNetwork *btn = reg_lookup(reg, brick[i]);
+        if (btn == NULL || btn->input_port_count != 1 ||
+            btn->output_port_count == 0)
+            return 0; /* not a unary reconstructable route */
+        plan.steps[i] = btn;
+        plan.names[i] = brick[i];
+    }
+    plan.length = best_len;
+    plan.goal = plan.steps[best_len - 1]->output_ports[0];
+    if (cnet_dc_route_well_typed(&plan, plan.steps[0]->input_ports[0]) != 0)
+        return 0;
+
+    student = calloc(1, sizeof *student);
+    if (student == NULL) return 0;
+    if (consolidate_route(&plan, &cfg_local, student, NULL) != 0) {
+        free(student);
+        return 0;
+    }
+    memset(&c, 0, sizeof c);
+    if (contract_from_route(&plan, "sleep_brick", cfg_local.max_samples, &c) !=
+        0) {
+        btn_free(student);
+        free(student);
+        return 0;
+    }
+    route_teacher_info(&plan, &ti);
+    accepted = finalize_chunk(reg, student, "sleep_brick", &c, laws, n_laws,
+                              cfg_local.max_samples, &ti, report);
+    contract_free(&c);
+    if (!accepted) {
+        btn_free(student);
+        free(student);
+        return 0;
+    }
+    return 0;
 }
 
 void library_report_free(LibraryReport *report) {

@@ -27,6 +27,8 @@ cce_gguf_layer_adapt_fn g_cce_gguf_layer_adapt_hook = 0;
 #define _fseeki64(f, off, whence) fseeko((f), (off_t)(off), (whence))
 #endif
 
+#include "../../include/cnet_platform.h"  /* CNET_HAVE_MMAP */
+
 /* Oracle memory mode (CNET_ORACLE_INT8=1): quantize each specialist to int8
    AT LOAD and drop its FP payload immediately. A 48-layer 12B FP32 forest
    (~50 GB) becomes ~12.5 GB — the difference between paging and running on a
@@ -497,6 +499,13 @@ cce_result cce_gguf_load(const char* path, cce_gguf** out) {
        and g->map becomes the direct DMA source for the resident-quantized
        VRAM forward. Fail-safe: any failure keeps the original FILE*. Parse
        above already ran on the real file, so only the load phase changes. */
+    /* The mapping is wrapped in a FILE* via fmemopen, so this fast path needs
+       mmap AND fmemopen; MinGW has neither. Guarding on the capability rather
+       than on the OS keeps the intent legible. Compiling it out lands on
+       exactly the same fallback as a failed mmap ("any failure keeps the
+       original FILE*"), so the loader stays byte-identical here -- this path
+       only changes HOW the bytes are read, never which bytes. */
+#if CNET_HAVE_MMAP
     if (getenv("CNET_GGUF_MMAP") && getenv("CNET_GGUF_MMAP")[0] == '1') {
         long fsz = ftell(g->f);
         if (fseek(g->f, 0, SEEK_END) == 0) {
@@ -522,6 +531,7 @@ cce_result cce_gguf_load(const char* path, cce_gguf** out) {
         }
         if (!g->map) fseek(g->f, fsz, SEEK_SET);   /* restore on fallback */
     }
+#endif /* CNET_HAVE_MMAP */
 
     *out = g;
     return CCE_OK;
@@ -551,7 +561,13 @@ cce_result cce_gguf_tensor_bytes(const cce_gguf* g, int idx,
 void cce_gguf_free(cce_gguf* g) {
     if (!g) return;
     if (g->f) fclose(g->f);
+#if CNET_HAVE_MMAP
     if (g->map) munmap(g->map, g->map_size);
+#else
+    /* g->map is only ever assigned inside the CNET_HAVE_MMAP block in
+       cce_gguf_load, so it is always NULL here when mmap is unavailable --
+       nothing to unmap and nothing leaked. */
+#endif
     if (g->tensors) free(g->tensors);
     for (int i = 0; i < g->n_kvs; i++) gguf_free_kv(&g->kvs[i]);
     if (g->kvs) free(g->kvs);
@@ -1257,6 +1273,12 @@ cce_result cce_gguf_qwen2_set_sparse_kv(cce_gguf_qwen2 *m, float budget_fraction
         m->dsa_keep_anchors = 1;
     }
     return CCE_OK;
+}
+
+void cce_gguf_qwen2_bind_stream_index(cce_gguf_qwen2 *m,
+                                      struct cce_kv_stream_index *ix) {
+    if (!m) return;
+    m->stream_ix = ix;
 }
 
 /* Observation-only sparse-KV selection tap (gate/probe tooling). Default
@@ -2501,8 +2523,16 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
                             qh[0],qh[1],qh[2],qh[3], k_self[0],k_self[1],k_self[2],k_self[3], k_first[0],k_first[1],k_first[2],k_first[3]);
                 }
                 if (!skv_idx) {
-                /* FULL KV: the historical path, byte-identical when the
-                   sparse knob is unset. */
+                /* FULL KV path. Optional stream_ix = pre-attention block mask
+                 * on HOT support (not mid-GEMM). Drop non-active positions
+                 * before softmax; always keep current token abs_t. */
+                if (m->stream_ix && m->stream_ix->active_n > 0) {
+                    for (int j = jmin; j <= abs_t; j++) {
+                        if (j == abs_t) continue;
+                        if (!cce_kv_stream_index_contains(m->stream_ix, j))
+                            scores[(size_t)(j - sb)] = -1e30f;
+                    }
+                }
                 float maxs = -1e30f;
                 for (int j = jmin; j <= abs_t; j++)
                     if (scores[(size_t)(j - sb)] > maxs)
@@ -2513,6 +2543,7 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
                         expf(scores[(size_t)(j - sb)] - maxs);
                     sum += scores[(size_t)(j - sb)];
                 }
+                if (sum < 1e-20f) sum = 1e-20f;
                 for (int j = jmin; j <= abs_t; j++)
                     scores[(size_t)(j - sb)] /= sum;
                 if (trace_this && l == 0 && h == 0 && t == n_tokens - 1) {
@@ -2873,8 +2904,18 @@ cce_result cce_gguf_qwen2_forward(cce_gguf_qwen2* m, const int* tokens, int n_to
     }
     }
 
-    if (!m->probe_batch)
+    if (!m->probe_batch) {
+        /* Stream index: advance HOT support set for each new absolute position. */
+        if (m->stream_ix) {
+            int p;
+            if (m->stream_ix->k_slot_floats <= 0 && m->k_slot_floats > 0)
+                cce_kv_stream_index_set_slot_sizes(m->stream_ix, m->k_slot_floats,
+                                                   m->v_slot_floats);
+            for (p = start_pos; p < start_pos + n_tokens; p++)
+                (void)cce_kv_stream_index_on_append(m->stream_ix, p, NULL, 0);
+        }
         m->cur_pos += n_tokens;
+    }
 
     cce_tensor_free(&x); cce_tensor_free(&fn); cce_tensor_free(&logits_t);
     return CCE_OK;
@@ -3074,11 +3115,12 @@ cce_result cce_gguf_load_qwen2(cce_gguf_qwen2** out, const char* path) {
     m->feed_forward_length = cce_gguf_get_feed_forward_length(g);
     m->rope_freq_base = cce_gguf_get_rope_freq_base(g); /* 0 -> forward default 10000 */
     m->rms_eps = cce_gguf_get_rms_eps(g);               /* 0 -> forward default 1e-6 */
-    m->max_ctx = (m->ctx_len > 0) ? m->ctx_len : 2048;
+    /* Paged legal ceiling is 1M. Dense RAM still caps at 8192. */
+    m->ctx_len = cce_ctx_legal_max(m->ctx_len);
+    m->max_ctx = (m->ctx_len > 0) ? m->ctx_len : CNET_CTX_LEGAL_MAX;
     /* Dense f32 slab is still O(max_ctx). Default cap 8192 unless paged KV
-       is requested (CNET_KV_PAGE=1): then legal max follows model (e.g. 1M)
-       but RAM must use cce_kv_pager (see plans/kv_async_page.md) — for now
-       we still allocate a finite hot window to avoid OOM on open. */
+       is requested (CNET_KV_PAGE=1): then legal max is 1M and RAM stays
+       the HOT ring (plans/kv_async_page.md). */
     {
         const char *page = getenv("CNET_KV_PAGE");
         if (!(page && page[0] == '1')) {

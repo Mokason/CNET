@@ -1,0 +1,43 @@
+# Domain route overlay — double-entry with ROUTES / day-0 CERT seeds.
+# kind<TAB>pattern<TAB>pack_or_path
+# CERT-first enforced in code; conf is telemetry-only.
+# Do NOT add probe junk (zz99 / mystic ooze) — those stay ABSTAIN.
+
+CERT	never lowers floors	pack_coding_cnet_c
+CERT	brain floats	pack_coding_cnet_c
+CERT	stream index attend	pack_coding_cnet_c
+CERT	weight epoch	pack_coding_cnet_c
+CERT	roe front door	pack_ops_hermes_systemd
+CERT	front door selective load	pack_ops_hermes_systemd
+CERT	cnet-marble	pack_ops_hermes_systemd
+CERT	evolve tick	pack_meta_gardener
+CERT	pack personal evolve	pack_meta_gardener
+CERT	roe reviewer	pack_meta_gardener
+CERT	multi stable	pack_meta_gardener
+CERT	teacher rate	pack_meta_gardener
+CERT	CNET proposes	pack_pm_director_oracle
+CERT	Unity disposes	pack_pm_director_oracle
+CERT	format-truncation	pack_coding_cnet_c
+CERT	who are you	pack_soul_marble
+CERT	self-cert	pack_roe_self
+CERT	use tools not guess	pack_toolcall_hermes
+CERT	git push	pack_toolcall_hermes
+CERT	speech capsule	pack_speech_io
+CERT	how does speech	pack_speech_io
+CERT	speak the answer	pack_speech_io
+CERT	tts speak	pack_speech_io
+CERT	voice output	pack_speech_io
+CERT	english basic	pack_english_basic
+CERT	a or an	pack_english_basic
+CERT	past of go	pack_english_basic
+CERT	present simple	pack_english_basic
+CERT	teach english to roe	pack_english_basic
+CERT	english vocabulary	pack_english_basic
+CERT	english grammar	pack_english_basic
+# Conversational double-entry (Milestone A) — sealed patterns only; alias layer rewrites too.
+CERT	introduce yourself	pack_soul_marble
+CERT	tell me your name	pack_soul_marble
+CERT	who am i talking to	pack_soul_marble
+CERT	what is your name	pack_soul_marble
+CERT	cnet-marble status	pack_ops_hermes_systemd
+CERT	systemctl --user	pack_ops_hermes_systemd

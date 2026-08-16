@@ -8,6 +8,7 @@
 #include <string.h>
 
 #include "../include/cnet_roe_asi.h"
+#include "../include/cnet_platform.h"  /* cnet_setenv / cnet_mkdir */
 #include "../include/cnet_roe_net.h"
 
 static int failures, checks;
@@ -19,7 +20,11 @@ static void check(int ok, const char *m) {
 
 int main(void) {
     RoeNet net;
-    RoeAsi R;
+  /* HEAP, NOT STACK: this struct exceeds the 2 MB MinGW stack reserve
+   * (RoeAsi 3.01 MB, RoeDebug 4.15 MB, RoeOcr 6.15 MB since ROE_ANSWER_MAX
+   * went 512 -> 4096 in 85c433e and is embedded 640x). A stack instance
+   * dies inside ___chkstk_ms in the prologue, before any statement runs. */
+    RoeAsi *R = (RoeAsi *)calloc(1, sizeof *R);
     RoeReply out;
     char ans[ROE_ANSWER_MAX];
     uint64_t tok = 0;
@@ -30,14 +35,14 @@ int main(void) {
 
     /* Prefer env file values if already exported; else set defaults here. */
     if (!getenv("ROE_LLM_MODEL") || !strstr(getenv("ROE_LLM_MODEL"), "deepseek"))
-        setenv("ROE_LLM_MODEL", "deepseek-v4-flash:cloud", 1);
+        cnet_setenv("ROE_LLM_MODEL", "deepseek-v4-flash:cloud", 1);
     if (!getenv("ROE_LLM_URL"))
-        setenv("ROE_LLM_URL", "http://127.0.0.1:11434/api/generate", 1);
-    if (!getenv("ROE_LLM_THINK")) setenv("ROE_LLM_THINK", "0", 1);
-    if (!getenv("ROE_TIMEOUT_MS")) setenv("ROE_TIMEOUT_MS", "120000", 1);
-    setenv("ROE_LIVE", "1", 1);
-    setenv("ROE_LLM", "1", 1);
-    setenv("ROE_LOOKUP", "0", 1);
+        cnet_setenv("ROE_LLM_URL", "http://127.0.0.1:11434/api/generate", 1);
+    if (!getenv("ROE_LLM_THINK")) cnet_setenv("ROE_LLM_THINK", "0", 1);
+    if (!getenv("ROE_TIMEOUT_MS")) cnet_setenv("ROE_TIMEOUT_MS", "120000", 1);
+    cnet_setenv("ROE_LIVE", "1", 1);
+    cnet_setenv("ROE_LLM", "1", 1);
+    cnet_setenv("ROE_LOOKUP", "0", 1);
 
     roe_net_from_env(&net);
     printf("model=%s url=%s think=%d timeout_ms=%ld\n", net.llm_model, net.llm_url,
@@ -59,12 +64,12 @@ int main(void) {
           "usable teacher text");
 
     /* Full ROE turn with live net — miss path should hit LLM */
-    roe_init(&R);
-    roe_set_net(&R, &net);
-    roe_set_catalog_dir(&R, "artifacts/roe_catalog");
-    (void)roe_load_catalog(&R);
+    roe_init(R);
+    roe_set_net(R, &net);
+    roe_set_catalog_dir(R, "artifacts/roe_catalog");
+    (void)roe_load_catalog(R);
     /* force a novel query unlikely in catalog */
-    rc = roe_turn(&R, "define conformal abstention in one short sentence zzcloudteach",
+    rc = roe_turn(R, "define conformal abstention in one short sentence zzcloudteach",
                   &out);
     printf("  turn src=%s ver=%d ans=%.120s\n", out.source_name, out.verified,
            out.answer);

@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>CNET Cockpit</title>
+<style>
+  :root {
+    --bg: #0b0f14;
+    --panel: #121821;
+    --border: #1e2a38;
+    --text: #d7e0ea;
+    --muted: #7f8b99;
+    --accent: #e6b84d;
+    --ok: #3ecf8e;
+    --warn: #f0a030;
+    --bad: #e85d5d;
+    --cert: #5b9fd4;
+    --mono: "JetBrains Mono", "Fira Code", ui-monospace, monospace;
+    --sans: "IBM Plex Sans", system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: var(--sans); min-height: 100vh;
+  }
+  header {
+    display: flex; flex-wrap: wrap; gap: .75rem 1.25rem; align-items: center;
+    padding: .75rem 1rem; border-bottom: 1px solid var(--border);
+    background: linear-gradient(180deg, #141b24, var(--bg));
+  }
+  header h1 {
+    margin: 0; font-size: 1rem; letter-spacing: .08em; color: var(--accent);
+    font-family: var(--mono); font-weight: 600;
+  }
+  .pill {
+    font-family: var(--mono); font-size: .72rem; padding: .2rem .55rem;
+    border: 1px solid var(--border); border-radius: 999px; color: var(--muted);
+  }
+  .pill.ok { color: var(--ok); border-color: #1f4d38; }
+  .pill.bad { color: var(--bad); border-color: #5a2222; }
+  .gauges { display: flex; gap: .6rem; flex-wrap: wrap; margin-left: auto; }
+  .g { font-family: var(--mono); font-size: .7rem; color: var(--muted); }
+  .g b { color: var(--text); font-weight: 500; }
+  main {
+    display: grid; grid-template-columns: 1.3fr 1fr; gap: 0;
+    height: calc(100vh - 54px);
+  }
+  @media (max-width: 900px) {
+    main { grid-template-columns: 1fr; height: auto; }
+  }
+  section {
+    border-right: 1px solid var(--border); display: flex; flex-direction: column;
+    min-height: 0;
+  }
+  section:last-child { border-right: 0; }
+  .sec-h {
+    padding: .55rem .9rem; font-family: var(--mono); font-size: .72rem;
+    letter-spacing: .06em; color: var(--muted); border-bottom: 1px solid var(--border);
+    text-transform: uppercase;
+  }
+  #chat {
+    flex: 1; overflow: auto; padding: .9rem; display: flex; flex-direction: column; gap: .7rem;
+  }
+  .msg { max-width: 95%; }
+  .msg.user { align-self: flex-end; }
+  .msg .bubble {
+    padding: .65rem .8rem; border-radius: 10px; background: var(--panel);
+    border: 1px solid var(--border); white-space: pre-wrap; word-break: break-word;
+    font-size: .92rem; line-height: 1.4;
+  }
+  .msg.user .bubble { background: #1a2430; border-color: #2a3a4d; }
+  .badge {
+    display: inline-block; font-family: var(--mono); font-size: .65rem;
+    padding: .12rem .4rem; border-radius: 4px; margin-bottom: .3rem;
+  }
+  .badge.cert { background: #153048; color: var(--cert); }
+  .badge.sc { background: #3a2810; color: var(--warn); }
+  .badge.miss { background: #3a1515; color: var(--bad); }
+  .badge.teach { background: #2a2040; color: #b9a0ff; }
+  .composer {
+    display: flex; gap: .5rem; padding: .7rem; border-top: 1px solid var(--border);
+    background: #0e131a;
+  }
+  .composer input {
+    flex: 1; background: var(--panel); border: 1px solid var(--border); color: var(--text);
+    border-radius: 8px; padding: .65rem .8rem; font-size: .95rem; outline: none;
+  }
+  .composer input:focus { border-color: #3d5470; }
+  .composer button, .btn {
+    background: var(--accent); color: #1a1200; border: 0; border-radius: 8px;
+    padding: .55rem .9rem; font-weight: 650; cursor: pointer; font-size: .85rem;
+  }
+  .composer button:disabled { opacity: .5; cursor: wait; }
+  .btn.ghost {
+    background: transparent; color: var(--muted); border: 1px solid var(--border);
+  }
+  .btn.ok { background: #2a8f5f; color: #fff; }
+  .btn.bad { background: #8f2a2a; color: #fff; }
+  .side { overflow: auto; }
+  .tabs { display: flex; gap: 0; border-bottom: 1px solid var(--border); }
+  .tabs button {
+    flex: 1; background: transparent; border: 0; color: var(--muted);
+    padding: .55rem; font-family: var(--mono); font-size: .7rem; cursor: pointer;
+    border-bottom: 2px solid transparent;
+  }
+  .tabs button.on { color: var(--accent); border-bottom-color: var(--accent); }
+  .list { padding: .6rem; display: flex; flex-direction: column; gap: .5rem; }
+  .card {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+    padding: .55rem .7rem; font-size: .8rem;
+  }
+  .card .q { color: var(--text); margin-bottom: .25rem; }
+  .card .meta { font-family: var(--mono); font-size: .65rem; color: var(--muted); }
+  .card .actions { display: flex; gap: .35rem; margin-top: .45rem; }
+  .law {
+    font-family: var(--mono); font-size: .65rem; color: var(--muted);
+    padding: .4rem .9rem; border-top: 1px solid var(--border);
+  }
+  .err { color: var(--bad); font-size: .85rem; }
+</style>
+</head>
+<body>
+<header>
+  <h1>CNET COCKPIT</h1>
+  <span id="pill-cnetd" class="pill">cnetd …</span>
+  <span id="pill-hit" class="pill">local_hit —</span>
+  <span class="pill">never_self_cert=1</span>
+  <div class="gauges">
+    <span class="g">DA <b id="g-da">—</b></span>
+    <span class="g">5HT <b id="g-5ht">—</b></span>
+    <span class="g">ADO <b id="g-ado">—</b></span>
+  </div>
+</header>
+<main>
+  <section>
+    <div class="sec-h">Live query → cnetd socket</div>
+    <div id="chat"></div>
+    <form class="composer" id="form">
+      <input id="q" autocomplete="off" placeholder="Ask CNET (CERT-first over warm socket)…" />
+      <button type="submit" id="send">Ask</button>
+      <button type="button" class="btn ghost" id="speakLast" title="TTS last reply">Speak</button>
+    </form>
+    <div class="law">Web cannot promote / CERT. Explore approve → gold_file only.</div>
+  </section>
+  <section class="side">
+    <div class="tabs">
+      <button type="button" class="on" data-tab="miss">Miss log</button>
+      <button type="button" data-tab="explore">Explore queue</button>
+    </div>
+    <div id="panel-miss" class="list"></div>
+    <div id="panel-explore" class="list" hidden></div>
+  </section>
+</main>
+<script>
+const $ = (s) => document.querySelector(s);
+const chat = $("#chat");
+const token = new URLSearchParams(location.search).get("token") || "";
+const hdrs = () => {
+  const h = {"Content-Type": "application/json"};
+  if (token) h["Authorization"] = "Bearer " + token;
+  return h;
+};
+const api = (path, opt={}) => fetch(path + (token && !path.includes("token=") ? (path.includes("?")?"&":"?")+"token="+encodeURIComponent(token) : ""), opt);
+
+function badgeFor(r) {
+  if (r.shortcircuit) return ['sc', 'SHORTCIRCUIT'];
+  if (r.source === 'LOCAL' || (!r.miss && r.source)) return ['cert', '0-TOKEN CERT'];
+  if (String(r.source||'').includes('LLM')) return ['teach', 'TEACHER DRAFT'];
+  if (r.miss) return ['miss', 'MISS / ABSTAIN'];
+  return ['cert', r.source || 'OK'];
+}
+
+function addMsg(text, who, meta) {
+  const el = document.createElement('div');
+  el.className = 'msg ' + who;
+  let b = '';
+  if (meta) {
+    const [cls, lab] = badgeFor(meta);
+    b = `<div class="badge ${cls}">${lab}</div>`;
+    if (meta.skill) b += ` <span class="meta" style="font-family:var(--mono);font-size:.65rem;color:var(--muted)">${meta.skill}</span>`;
+  }
+  el.innerHTML = `${b}<div class="bubble"></div>`;
+  el.querySelector('.bubble').textContent = text;
+  chat.appendChild(el);
+  chat.scrollTop = chat.scrollHeight;
+}
+
+async function refreshStatus() {
+  try {
+    const r = await api('/api/status');
+    const d = await r.json();
+    const cd = d.cnetd || {};
+    const pill = $('#pill-cnetd');
+    if (cd.ok) { pill.textContent = 'cnetd OK'; pill.className = 'pill ok'; }
+    else { pill.textContent = 'cnetd DOWN'; pill.className = 'pill bad'; }
+    const k = (d.autonomous && d.autonomous.kpi) || {};
+    if (k.local_hit != null) {
+      const h = Number(k.local_hit);
+      const ph = $('#pill-hit');
+      ph.textContent = 'local_hit ' + h.toFixed(3);
+      ph.className = 'pill ' + (h >= 0.8 ? 'ok' : 'bad');
+    }
+    const n = d.neuromod || {};
+    const fmt = (x) => x == null ? '—' : Number(x).toFixed(2);
+    $('#g-da').textContent = fmt(n.dopamine);
+    $('#g-5ht').textContent = fmt(n.serotonin);
+    $('#g-ado').textContent = fmt(n.adenosine);
+  } catch (e) {
+    $('#pill-cnetd').textContent = 'status err';
+    $('#pill-cnetd').className = 'pill bad';
+  }
+}
+
+async function refreshMiss() {
+  const r = await api('/api/miss_log?n=35');
+  const d = await r.json();
+  const box = $('#panel-miss');
+  box.innerHTML = '';
+  (d.rows || []).slice().reverse().forEach(row => {
+    const c = document.createElement('div');
+    c.className = 'card';
+    const sc = row.shortcircuit ? ' · SC' : '';
+    c.innerHTML = `<div class="q"></div><div class="meta"></div>`;
+    c.querySelector('.q').textContent = row.query || '';
+    c.querySelector('.meta').textContent = `${row.ts || ''} · ${row.source || ''}${sc} · tok ${row.tokens_est ?? '—'}`;
+    box.appendChild(c);
+  });
+}
+
+async function refreshExplore() {
+  const r = await api('/api/explore?n=25');
+  const d = await r.json();
+  const box = $('#panel-explore');
+  box.innerHTML = '';
+  (d.rows || []).slice().reverse().forEach(row => {
+    const c = document.createElement('div');
+    c.className = 'card';
+    c.innerHTML = `<div class="q"></div><div class="meta"></div><div class="actions">
+      <button type="button" class="btn ok">Approve→gold</button>
+      <button type="button" class="btn bad">Reject</button>
+    </div>`;
+    c.querySelector('.q').textContent = row.query || '';
+    c.querySelector('.meta').textContent = `${row.explore_id || ''} · auto_cert=false · ${(row.answer || '').slice(0,120)}`;
+    c.querySelector('.ok').onclick = async () => {
+      const res = await api('/api/explore/approve', {
+        method: 'POST', headers: hdrs(),
+        body: JSON.stringify({explore_id: row.explore_id, query: row.query, answer: row.answer})
+      });
+      const j = await res.json();
+      alert(j.ok ? ('Gold written: ' + j.gold_sha) : (j.error || 'fail'));
+      refreshExplore();
+    };
+    c.querySelector('.bad').onclick = async () => {
+      await api('/api/explore/reject', {
+        method: 'POST', headers: hdrs(),
+        body: JSON.stringify({explore_id: row.explore_id, query: row.query})
+      });
+      refreshExplore();
+    };
+    box.appendChild(c);
+  });
+}
+
+let lastBotText = '';
+let lastMayVoice = false;
+let lastQuery = '';
+
+async function speakText(text, q) {
+  try {
+    const body = q ? {q} : {text};
+    const r = await api('/api/speak', {
+      method: 'POST', headers: hdrs(),
+      body: JSON.stringify(body)
+    });
+    const d = await r.json();
+    if (d.ok && d.url) {
+      const a = new Audio(d.url + (token ? (d.url.includes('?')?'&':'?')+'token='+encodeURIComponent(token) : ''));
+      a.play().catch(()=>{});
+      addMsg('(speech·C) ' + (d.text_preview || d.path || d.url), 'bot', {source:'SPEECH'});
+    } else if (d.error === 'never_voice_llm') {
+      addMsg('Voice refused: never_voice_llm (LOCAL C utterances only).', 'bot', {miss:true, source:'LAW'});
+    } else {
+      addMsg('Speak failed: ' + (d.error || JSON.stringify(d)), 'bot', {miss:true, source:'ERR'});
+    }
+  } catch (e) {
+    addMsg(String(e), 'bot', {miss:true, source:'ERR'});
+  }
+}
+
+$('#speakLast').onclick = () => {
+  if (lastMayVoice && lastQuery) void speakText('', lastQuery);
+  else if (lastMayVoice && lastBotText) void speakText(lastBotText, '');
+  else void speakText(lastBotText || '', lastQuery || '');
+};
+
+$('#form').onsubmit = async (e) => {
+  e.preventDefault();
+  const input = $('#q');
+  const q = input.value.trim();
+  if (!q) return;
+  addMsg(q, 'user');
+  input.value = '';
+  $('#send').disabled = true;
+  lastQuery = q;
+  try {
+    const r = await api('/api/ask', {method:'POST', headers: hdrs(), body: JSON.stringify({q})});
+    const d = await r.json();
+    if (d.error === 'promote_forbidden') {
+      addMsg('Promote forbidden from web (never_self_cert).', 'bot', {miss:true, source:'LAW'});
+      lastMayVoice = false;
+    } else if (d.ok === false) {
+      addMsg(d.error || JSON.stringify(d), 'bot', {miss:true, source:'ERR'});
+      lastMayVoice = false;
+    } else {
+      lastBotText = d.utterance || d.answer || '';
+      lastMayVoice = !!d.may_voice || d.source === 'LOCAL';
+      addMsg(d.answer || '(empty)', 'bot', d);
+      if (d.utterance && d.utterance !== d.answer) {
+        addMsg('(utterance) ' + d.utterance, 'bot', {source:'UTTER', skill:d.skill});
+      }
+    }
+  } catch (err) {
+    addMsg(String(err), 'bot', {miss:true, source:'ERR'});
+    lastMayVoice = false;
+  }
+  $('#send').disabled = false;
+  refreshMiss();
+  refreshStatus();
+};
+
+document.querySelectorAll('.tabs button').forEach(btn => {
+  btn.onclick = () => {
+    document.querySelectorAll('.tabs button').forEach(b => b.classList.remove('on'));
+    btn.classList.add('on');
+    const t = btn.dataset.tab;
+    $('#panel-miss').hidden = t !== 'miss';
+    $('#panel-explore').hidden = t !== 'explore';
+    if (t === 'explore') refreshExplore();
+    else refreshMiss();
+  };
+});
+
+refreshStatus();
+refreshMiss();
+setInterval(refreshStatus, 8000);
+setInterval(() => {
+  if (!$('#panel-miss').hidden) refreshMiss();
+  if (!$('#panel-explore').hidden) refreshExplore();
+}, 12000);
+</script>
+</body>
+</html>

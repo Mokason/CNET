@@ -14,6 +14,19 @@ homeostasis: 0.08
 bias_strength: 1.15
 frozen: 0
 
+# Neuromod metaphor (DA / 5HT / ADO) — schedule & consolidate only; never seal
+neuromod:
+  enabled: 1
+  homeostasis: 0.08
+  thresholds:
+    dopamine: 0.62      # task-done-right → reinforce LOCAL / warm voice
+    serotonin: 0.60     # remember vs sort queue
+    adenosine: 0.58     # process / reorganize / consolidate WM
+  baseline:
+    dopamine: 0.50
+    serotonin: 0.55
+    adenosine: 0.35
+
 # Zen commit gate
 zen:
   enabled: 1

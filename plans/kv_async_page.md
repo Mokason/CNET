@@ -6,6 +6,12 @@ Qwythos declares **1M** context. CNET used to `calloc(max_ctx × slots)` and
 hard-cap at **8192** so short probes would not OOM. That fights Forest
 residency: we already load weights only when needed (HOT/WARM/COLD).
 
+**CNET ceiling is `CNET_CTX_LEGAL_MAX` (1 048 576).** With `CNET_KV_PAGE=1`
+the pager opens 1M legal positions. HOT RAM stays `page_len × n_hot`.
+Dense mode still caps the f32 slab at 8192. `CNET_CTX_LEGAL` can set
+8…1048576. Past a GGUF's own `context_length`, quality is the model's
+problem — positions are still legal.
+
 Context must follow the same rule:
 
 | Tier | Meaning |
@@ -59,12 +65,14 @@ make kv_page   # KV_PAGE_PASS
 
 ```bash
 CNET_KV_PAGE=1
+CNET_CTX_LEGAL=1048576   # default when paged; 8..1048576
 CNET_KV_PAGE_LEN=256
 CNET_KV_HOT_PAGES=4
 CNET_KV_ARCHIVE=./kv_archive
 CNET_KV_ASYNC=1
 CNET_KV_QUANT=1
 CNET_KV_REHYDRATE=1   # optional long-range
+CNET_HELD_N_CTX=1048576  # in-process holder; llama-server is separate
 ```
 
 ## Non-goals

@@ -2,6 +2,7 @@
  * make roe_asi_train → ROE_ASI_TRAIN_PASS
  */
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "../include/cnet_roe_asi.h"
@@ -29,7 +30,11 @@ static void seed(RoeAsi *R) {
 }
 
 int main(void) {
-    RoeAsi R;
+  /* HEAP, NOT STACK: this struct exceeds the 2 MB MinGW stack reserve
+   * (RoeAsi 3.01 MB, RoeDebug 4.15 MB, RoeOcr 6.15 MB since ROE_ANSWER_MAX
+   * went 512 -> 4096 in 85c433e and is embedded 640x). A stack instance
+   * dies inside ___chkstk_ms in the prologue, before any statement runs. */
+    RoeAsi *R = (RoeAsi *)calloc(1, sizeof *R);
     RoeTrainReport tr;
     char stats[640];
     int e, total_prom = 0;
@@ -68,20 +73,20 @@ int main(void) {
     int n = (int)(sizeof batch / sizeof batch[0]);
 
     printf("=== ROE-ASI train ===\n");
-    seed(&R);
+    seed(R);
 
     for (e = 1; e <= 3; e++) {
-        roe_reset_stats(&R);
-        roe_train_epoch(&R, batch, n, &tr);
+        roe_reset_stats(R);
+        roe_train_epoch(R, batch, n, &tr);
         total_prom += tr.promotes;
         printf("epoch %d: hit=%.1f%% save=%.1f%% promotes=%d tok=%llu/%llu skills=%zu\n",
                e, 100.0 * tr.local_hit_rate, 100.0 * tr.token_save_ratio, tr.promotes,
                (unsigned long long)tr.tokens_used,
-               (unsigned long long)tr.tokens_baseline, R.n_skills);
+               (unsigned long long)tr.tokens_baseline, R->n_skills);
     }
 
-    roe_dump_stats(&R, stats, sizeof stats);
-    printf("final_skills=%zu total_promotes_logged=%d\n", R.n_skills, total_prom);
+    roe_dump_stats(R, stats, sizeof stats);
+    printf("final_skills=%zu total_promotes_logged=%d\n", R->n_skills, total_prom);
     printf("stats: %s\n", stats);
 
     /* Demo turns after train */
@@ -92,12 +97,12 @@ int main(void) {
         printf("-- demo --\n");
         for (i = 0; i < 4; i++) {
             RoeReply rep;
-            roe_turn(&R, demo[i], &rep);
+            roe_turn(R, demo[i], &rep);
             printf("  Q: %s\n  A[%d]: %s\n", demo[i], rep.source, rep.answer);
         }
     }
 
-    if (R.n_skills < 4) {
+    if (R->n_skills < 4) {
         printf("ROE_ASI_TRAIN_FAIL skills\n");
         return 1;
     }

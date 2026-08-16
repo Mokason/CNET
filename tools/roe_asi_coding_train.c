@@ -1,5 +1,6 @@
 /* Seed + train ROE-ASI on basic coding. make roe_asi_coding → ROE_ASI_CODING_PASS */
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "../include/cnet_roe_asi.h"
@@ -52,7 +53,11 @@ static void seed_coding(RoeAsi *R) {
 }
 
 int main(void) {
-    RoeAsi R;
+  /* HEAP, NOT STACK: this struct exceeds the 2 MB MinGW stack reserve
+   * (RoeAsi 3.01 MB, RoeDebug 4.15 MB, RoeOcr 6.15 MB since ROE_ANSWER_MAX
+   * went 512 -> 4096 in 85c433e and is embedded 640x). A stack instance
+   * dies inside ___chkstk_ms in the prologue, before any statement runs. */
+    RoeAsi *R = (RoeAsi *)calloc(1, sizeof *R);
     RoeTrainReport tr;
     RoeReply rep;
     char stats[700];
@@ -108,61 +113,61 @@ int main(void) {
 
     failures = checks = 0;
     printf("=== ROE-ASI basic coding curriculum ===\n");
-    roe_init(&R);
-    roe_set_catalog_dir(&R, cat);
-    seed_coding(&R);
-    skills0 = R.n_skills;
+    roe_init(R);
+    roe_set_catalog_dir(R, cat);
+    seed_coding(R);
+    skills0 = R->n_skills;
     check(skills0 >= 3, "seeded local coding skills");
 
     for (e = 1; e <= 3; e++) {
-        roe_reset_stats(&R);
-        roe_train_epoch(&R, batch, n, &tr);
+        roe_reset_stats(R);
+        roe_train_epoch(R, batch, n, &tr);
         printf("epoch %d: hit=%.1f%% save=%.1f%% prom=%d tok=%llu/%llu skills=%zu\n",
                e, 100.0 * tr.local_hit_rate, 100.0 * tr.token_save_ratio, tr.promotes,
                (unsigned long long)tr.tokens_used,
-               (unsigned long long)tr.tokens_baseline, R.n_skills);
+               (unsigned long long)tr.tokens_baseline, R->n_skills);
     }
 
-    check(R.n_skills > skills0, "learned new coding skills");
+    check(R->n_skills > skills0, "learned new coding skills");
     check(tr.local_hit_rate >= 0.55, "coding hit rate >= 55%");
     check(tr.token_save_ratio >= 0.50, "coding token save >= 50%");
-    check(roe_save_catalog(&R) >= 3, "saved coding catalog");
+    check(roe_save_catalog(R) >= 3, "saved coding catalog");
 
     /* Spot checks — must be LOCAL after train */
-    check(roe_turn(&R, "python for loop example", &rep) == ROE_OK &&
+    check(roe_turn(R, "python for loop example", &rep) == ROE_OK &&
               rep.source == ROE_SRC_LOCAL,
           "for loop local");
-    check(roe_turn(&R, "function def syntax", &rep) == ROE_OK &&
+    check(roe_turn(R, "function def syntax", &rep) == ROE_OK &&
               rep.source == ROE_SRC_LOCAL,
           "function def local");
-    check(roe_turn(&R, "list append method", &rep) == ROE_OK &&
+    check(roe_turn(R, "list append method", &rep) == ROE_OK &&
               rep.source == ROE_SRC_LOCAL,
           "list append local");
-    check(roe_turn(&R, "try except error handling", &rep) == ROE_OK &&
+    check(roe_turn(R, "try except error handling", &rep) == ROE_OK &&
               rep.source == ROE_SRC_LOCAL,
           "try/except local");
-    check(roe_turn(&R, "python hello world example", &rep) == ROE_OK &&
+    check(roe_turn(R, "python hello world example", &rep) == ROE_OK &&
               rep.source == ROE_SRC_LOCAL && rep.tokens_est == 0,
           "hello world free tokens");
 
     /* OOD still abstain */
-    check(roe_turn(&R, "quantum kernel assembly teleport", &rep) == ROE_ABSTAIN,
+    check(roe_turn(R, "quantum kernel assembly teleport", &rep) == ROE_ABSTAIN,
           "ood coding abstain");
 
     /* Fresh load from disk */
     {
-        RoeAsi R2;
+        RoeAsi *R2 = (RoeAsi *)calloc(1, sizeof *R2);
         RoeReply r2;
-        roe_init(&R2);
-        roe_set_catalog_dir(&R2, cat);
-        check(roe_load_catalog(&R2) >= 5, "reload coding catalog");
-        check(roe_turn(&R2, "function def syntax", &r2) == ROE_OK &&
+        roe_init(R2);
+        roe_set_catalog_dir(R2, cat);
+        check(roe_load_catalog(R2) >= 5, "reload coding catalog");
+        check(roe_turn(R2, "function def syntax", &r2) == ROE_OK &&
                   r2.source == ROE_SRC_LOCAL,
               "persisted function def serves");
-        printf("  reloaded skills=%zu\n", R2.n_skills);
+        printf("  reloaded skills=%zu\n", R2->n_skills);
     }
 
-    roe_dump_stats(&R, stats, sizeof stats);
+    roe_dump_stats(R, stats, sizeof stats);
     printf("\n  %s\n", stats);
     printf("  catalog → %s\n", cat);
 
@@ -171,9 +176,9 @@ int main(void) {
         size_t i;
         int shown = 0;
         printf("  sample skills:\n");
-        for (i = 0; i < R.n_skills && shown < 8; i++) {
-            if (!R.skills[i].certified) continue;
-            printf("    - %s :: %s\n", R.skills[i].id, R.skills[i].pattern);
+        for (i = 0; i < R->n_skills && shown < 8; i++) {
+            if (!R->skills[i].certified) continue;
+            printf("    - %s :: %s\n", R->skills[i].id, R->skills[i].pattern);
             shown++;
         }
     }

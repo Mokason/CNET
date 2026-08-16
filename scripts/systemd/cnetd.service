@@ -1,0 +1,27 @@
+[Unit]
+Description=CNET warm front-door daemon (UNIX socket)
+After=default.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/AI/CNET
+EnvironmentFile=-%h/.local/share/cnet-minimal/cnet-minimal.env
+Environment=CNET_MINIMAL_ROOT=%h/.local/share/cnet-minimal/current
+Environment=CNET_PACKS_ROOT=%h/.local/share/cnet-minimal/current/data/roe_daily_packs
+Environment=PATH=/home/marble/.local/share/cnet-minimal/current/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+Environment=CNET_TEACHER_ON_MISS=1
+Environment=CNET_SELF_ANSWER=1
+Environment=CNET_NEVER_VOICE_LLM=1
+Environment=CNET_OPEN_CHAT=1
+Environment=ROE_LLM=1
+Environment=ROE_LLM_THINK=0
+Environment=ROE_LLM_NUM_PREDICT=1024
+Environment=ROE_TIMEOUT_MS=180000
+Environment=ROE_LLM_MODEL=minimax-m3:cloud
+ExecStart=%h/AI/CNET/bin/cnetd
+Restart=on-failure
+RestartSec=3
+Nice=5
+
+[Install]
+WantedBy=cnet-marble.target

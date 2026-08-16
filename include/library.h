@@ -17,6 +17,13 @@
 
 #define LIBRARY_MAX_SOURCES BTN_MAX_INPUT_PORTS  /* 8 */
 #define LIBRARY_MAX_CHUNKS  64                    /* cap on chunks per call */
+#define LIBRARY_TRACE_LEN   EXPAND_MAX_PRIMS
+
+/* Teacher name-sequence of one solved plan. Sleep CSE reads these. */
+typedef struct {
+    char steps[LIBRARY_TRACE_LEN][CONTRACT_NAME_MAX];
+    size_t length;
+} LibraryTrace;
 
 typedef struct {
     const char *name;        /* the invented chunk's name (atom [A-Za-z0-9_], <=63) */
@@ -46,6 +53,12 @@ typedef struct {
     size_t student_mac_estimate[LIBRARY_MAX_CHUNKS];
     double compression_ratio[LIBRARY_MAX_CHUNKS];
     int    compute_beneficial[LIBRARY_MAX_CHUNKS];
+    /* Solved teacher traces (same index as names[] when a mint recorded one).
+       Sleep compresses a shared sub-sequence; compression is not an admit. */
+    LibraryTrace traces[LIBRARY_MAX_CHUNKS];
+    size_t trace_count;
+    char sleep_brick[CONTRACT_NAME_MAX];
+    int sleep_compressed; /* 1 if sleep extracted a shared brick */
 } LibraryReport;
 
 /* Opt-in distillation gate. enabled = 0 -> byte-identical legacy library_evolve.
@@ -89,6 +102,32 @@ int library_evolve(PrimitiveRegistry *reg,
 /* Free the invented chunk BTNs the report owns. Safe to call once, after the
    registry that borrowed them is no longer in use. */
 void library_report_free(LibraryReport *report);
+
+/* Evolve door: used by library_evolve / finalize_chunk.
+   Exact-same digest still skips. An already-known contract with
+   n_comps==0 still skips (no composition proof). Same-name incumbent
+   goes through cnet_swap_admit with the persisted incumbent table as
+   old_cov (incoming is new_cov only). Cross-name never REPLACE.
+   Default evolve does not bind compositions, so it cannot REPLACE.
+   No same-name incumbent: specialist_admit as before. Returns 0 if
+   the brick was registered / replaced / added-alongside, -1 if
+   skipped/refused. */
+int library_admit_candidate(PrimitiveRegistry *reg,
+                            BinaryTransformNetwork *btn,
+                            const char *name,
+                            const Contract *c);
+
+
+
+/* Sleep beside evolve: extract a shared name-sequence brick from >=2 traces
+   that is a proper subsequence of at least one. If the brick is a unary
+   well-typed route of length >= 2, distill it through the usual certify
+   path. Compression itself never admits. Returns 0. */
+int library_sleep_compress(PrimitiveRegistry *reg,
+                           const LibraryTrace *traces, size_t n_traces,
+                           const Property *laws, size_t n_laws,
+                           const ConsolidateConfig *cfg,
+                           LibraryReport *report);
 
 #endif
 

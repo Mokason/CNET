@@ -12,7 +12,10 @@
 #include <math.h>
 #include <time.h>
 #include <limits.h>
+#include "../../include/cnet_platform.h"  /* CNET_HAVE_CURL */
+#if CNET_HAVE_CURL
 #include <curl/curl.h>
+#endif
 #ifdef _WIN32
 #include <direct.h>
 #include <windows.h>
@@ -1198,6 +1201,7 @@ static cce_cascade* get_cascade_by_name(cce_forest* f, const char* name) {
 
 /* ==================== HF / URL support implementation ==================== */
 
+#if CNET_HAVE_CURL
 static const char* st_get_hf_token(void) {
     const char* t = getenv("HF_TOKEN");
     if (!t || !*t) t = getenv("HUGGING_FACE_HUB_TOKEN");
@@ -1233,6 +1237,7 @@ static int st_make_temp_path(char* buf, size_t cap, const char* prefix) {
     return 0;
 #endif
 }
+#endif /* CNET_HAVE_CURL -- token and temp path feed only the download path */
 
 #define CCE_ST_MAX_DOWNLOAD_BYTES (UINT64_C(8) * 1024 * 1024 * 1024)
 #define CCE_ST_MAX_REDIRECTS 5L
@@ -1246,6 +1251,7 @@ typedef struct {
     int too_large;
 } st_download_sink;
 
+#if CNET_HAVE_CURL
 static size_t st_download_write(void* data, size_t size, size_t count, void* user) {
     st_download_sink* sink = (st_download_sink*)user;
     if (!sink || !sink->file || (size != 0 && count > SIZE_MAX / size))
@@ -1263,6 +1269,8 @@ static size_t st_download_write(void* data, size_t size, size_t count, void* use
     return chunk;
 }
 
+#endif /* CNET_HAVE_CURL -- st_download_write */
+
 /* ---- Outbound host policy (SSRF containment) -------------------------------
    cce_safetensors_load_url() dials a URL the caller may not fully control, so
    egress is default-deny. Two independent layers, because either alone leaks:
@@ -1279,6 +1287,7 @@ static size_t st_download_write(void* data, size_t size, size_t count, void* use
    operator entry cannot re-enable them. */
 #define CCE_ST_ENV_ALLOWLIST "CCE_ST_URL_ALLOWLIST"
 
+#if CNET_HAVE_CURL || defined(CCE_SAFETENSORS_TESTING)
 static const char* const st_default_allowlist[] = {
     "huggingface.co",
     "hf.co",
@@ -1286,13 +1295,34 @@ static const char* const st_default_allowlist[] = {
 
 /* Case-insensitive "host is `pattern` or a subdomain of `pattern`". Matching on
    a label boundary is what stops huggingface.co.evil.invalid from passing. */
+/* ASCII-only case-insensitive compare, replacing curl_strequal.
+ *
+ * Deliberately used on BOTH the curl and no-curl builds. Keeping curl_strequal
+ * for one and a local comparator for the other would mean two implementations
+ * that could disagree about when two hostnames are "the same" -- which is
+ * exactly how an egress-allowlist bypass gets introduced.
+ *
+ * Folding is restricted to A-Z rather than calling tolower() because tolower()
+ * is locale-dependent: under a Turkish locale 'I' folds to a dotless 'i', so
+ * whether a host matched the allowlist would depend on the operator's LANG. */
+static int st_ascii_ieq(const char* a, const char* b) {
+    for (;; ++a, ++b) {
+        unsigned char x = (unsigned char)*a;
+        unsigned char y = (unsigned char)*b;
+        if (x >= 'A' && x <= 'Z') x = (unsigned char)(x - 'A' + 'a');
+        if (y >= 'A' && y <= 'Z') y = (unsigned char)(y - 'A' + 'a');
+        if (x != y) return 0;
+        if (x == 0) return 1;
+    }
+}
+
 static int st_host_matches(const char* host, const char* pattern) {
     size_t hl, pl;
     if (!host || !pattern || !*pattern) return 0;
     hl = strlen(host);
     pl = strlen(pattern);
-    if (hl == pl) return curl_strequal(host, pattern);
-    return hl > pl && host[hl - pl - 1] == '.' && curl_strequal(host + hl - pl, pattern);
+    if (hl == pl) return st_ascii_ieq(host, pattern);
+    return hl > pl && host[hl - pl - 1] == '.' && st_ascii_ieq(host + hl - pl, pattern);
 }
 
 /* Strict dotted-quad parse. Hand-rolled to avoid pulling inet_pton (and the
@@ -1401,6 +1431,7 @@ static int st_host_allowed(const char* host) {
 }
 
 /* Address policy: runs once per connection, including each redirect hop. */
+#if CNET_HAVE_CURL
 static int st_prereq_public_ip(void* clientp, char* conn_primary_ip,
                                char* conn_local_ip, int conn_primary_port,
                                int conn_local_port) {
@@ -1409,16 +1440,23 @@ static int st_prereq_public_ip(void* clientp, char* conn_primary_ip,
         return CURL_PREREQFUNC_ABORT;
     return CURL_PREREQFUNC_OK;
 }
+#endif /* CNET_HAVE_CURL -- layer 2 needs libcurl's post-DNS prereq hook.
+        * Layer 1 (st_host_allowed) and the IP-literal policy above are pure
+        * logic and stay compiled in unconditionally, so
+        * cce_safetensors_test_host_policy / _test_ip_public still gate the
+        * SSRF name policy on a curl-less build. */
 
 #ifdef CCE_SAFETENSORS_TESTING
 int cce_safetensors_test_host_policy(const char* host) { return st_host_allowed(host); }
 int cce_safetensors_test_ip_public(const char* ip) { return st_ip_literal_is_public(ip); }
 #endif
+#endif /* CNET_HAVE_CURL || CCE_SAFETENSORS_TESTING */
 
 /* Pure URL-syntax validation: shape, scheme and credential checks only.
    `is_hf_host` scopes the bearer token; `host_allowed` reports the egress name
    policy. Policy is reported, never enforced here, so callers that only need to
    classify a URL stay separable from the ones that dial it. */
+#if CNET_HAVE_CURL
 static int st_parse_https_url(const char* url, int* is_hf_host, int* host_allowed) {
     CURLU* parsed = NULL;
     char* scheme = NULL;
@@ -1545,8 +1583,23 @@ static int st_download_to_file(const char* url, const char* dest) {
     if (is_hf_host) token = st_get_hf_token();
     return st_download_curl(url, dest, token);
 }
+#endif /* CNET_HAVE_CURL -- st_parse_https_url .. st_download_to_file.
+        * URL parsing deliberately uses libcurl's own CURLU parser rather than a
+        * hand-rolled one: this is the code that decides whether a host is on the
+        * egress allowlist, and reimplementing URL syntax for the no-curl build
+        * would mean two parsers that must agree about what a host IS -- exactly
+        * the kind of divergence that produces an SSRF bypass. With no curl there
+        * is nothing to dial, so the whole layer is absent instead. */
 
 #ifdef CCE_SAFETENSORS_TESTING
+#if !CNET_HAVE_CURL
+/* Built without libcurl: there is no download path to cap and no CURLU parser
+ * to scope a token against. Return 0 (not 1) so a curl-less build can never be
+ * mistaken for one that PASSED these checks -- callers must treat 0 as
+ * "unproven here", which is what tests/cce_safetensors_test.c does. */
+int cce_safetensors_test_download_cap(void) { return 0; }
+int cce_safetensors_test_token_scope(void) { return 0; }
+#else
 int cce_safetensors_test_download_cap(void) {
     unsigned char data[5] = {0};
     FILE* file = tmpfile();
@@ -1572,6 +1625,7 @@ int cce_safetensors_test_token_scope(void) {
            st_parse_https_url("https://example.invalid/model", &is_hf_host, NULL) &&
            !is_hf_host;
 }
+#endif /* !CNET_HAVE_CURL */
 #endif
 
 /* Build HF URL into caller buffer. */
@@ -1585,6 +1639,17 @@ int cce_hf_build_resolve_url(char* buf, size_t cap,
                     repo, rev, filename);
 }
 
+#if !CNET_HAVE_CURL
+/* No libcurl: fail closed and say so. Loading a LOCAL safetensors file
+ * (cce_safetensors_load) is unaffected -- only fetching a remote one is gone. */
+cce_result cce_safetensors_load_url(const char* url, cce_safetensors** st_out) {
+    if (!url || !st_out) return CCE_ERR_INVALID_ARG;
+    *st_out = NULL;
+    st_set_err(NULL, "built without libcurl: cannot fetch a SafeTensors URL; "
+                     "download the file and use cce_safetensors_load()");
+    return CCE_ERR_UNSUPPORTED;
+}
+#else
 cce_result cce_safetensors_load_url(const char* url, cce_safetensors** st_out) {
     if (!url || !st_out) return CCE_ERR_INVALID_ARG;
     *st_out = NULL;
@@ -1622,6 +1687,7 @@ cce_result cce_safetensors_load_url(const char* url, cce_safetensors** st_out) {
     }
     return rc;
 }
+#endif /* !CNET_HAVE_CURL */
 
 cce_result cce_safetensors_load_hf(cce_safetensors** st_out,
                                    const char* repo,
@@ -1758,7 +1824,13 @@ static cce_result supra_open_repo_st(const char* cache_dir, const char* filename
     char url[1024];
     if (cce_hf_build_resolve_url(url, sizeof(url), SUPRA_REPO, filename, revision) < 0)
         return CCE_ERR_INVALID_ARG;
+#if CNET_HAVE_CURL
     if (st_download_to_file(url, path) != 0) { remove(path); return CCE_ERR_IO; }
+#else
+    st_set_err(NULL, "built without libcurl: cannot download the Supra weights; "
+                     "fetch them manually into the cache directory");
+    return CCE_ERR_UNSUPPORTED;
+#endif
 
     cce_result rc = cce_safetensors_load(path, out_st);
     if (rc != CCE_OK) remove(path); /* never keep a bad download in the cache */
@@ -1775,7 +1847,13 @@ static cce_result cce_supra_fetch_file(const char* cache_dir, const char* filena
     char url[1024];
     if (cce_hf_build_resolve_url(url, sizeof(url), SUPRA_REPO, filename, revision) < 0)
         return CCE_ERR_INVALID_ARG;
+#if CNET_HAVE_CURL
     if (st_download_to_file(url, out_path) != 0) { remove(out_path); return CCE_ERR_IO; }
+#else
+    st_set_err(NULL, "built without libcurl: cannot download the Supra weights; "
+                     "fetch them manually into the cache directory");
+    return CCE_ERR_UNSUPPORTED;
+#endif
     return CCE_OK;
 }
 

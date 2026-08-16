@@ -1,0 +1,2 @@
+pack_speech_io — speak-out modality for CNET answers.
+TTS via tools/cnet_speech_say.py (edge-tts). Does not seal knowledge.

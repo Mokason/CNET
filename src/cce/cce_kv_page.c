@@ -11,6 +11,8 @@
 #include <time.h>
 #include <unistd.h>
 
+#include "../../include/cnet_platform.h"  /* cnet_mkdir, cnet_fsync */
+
 #define CCE_KV_QMAX 16
 
 typedef struct {
@@ -73,6 +75,11 @@ struct cce_kv_pager {
 
     /* Telemetry for the ring_rw read leases below. */
     int reader_count;
+
+    /* Neural KV validity epoch (MTK / weight cartridge). */
+    uint64_t weight_epoch;
+    uint64_t epoch_bumps;
+    int cold_epoch_rejects;
 };
 
 static uint64_t fnv1a_buf(const void *data, size_t n) {
@@ -86,6 +93,8 @@ static uint64_t fnv1a_buf(const void *data, size_t n) {
     return h;
 }
 
+static int ledger_epoch_for_page(cce_kv_pager *p, int page_id, uint64_t *out_ep);
+
 static int mkdir_p(const char *dir) {
     char tmp[320];
     size_t len, i;
@@ -97,12 +106,30 @@ static int mkdir_p(const char *dir) {
     for (i = 1; tmp[i]; ++i) {
         if (tmp[i] == '/') {
             tmp[i] = 0;
-            if (mkdir(tmp, 0755) != 0 && errno != EEXIST) return -1;
+            if (cnet_mkdir(tmp, 0755) != 0 && errno != EEXIST) return -1;
             tmp[i] = '/';
         }
     }
-    if (mkdir(tmp, 0755) != 0 && errno != EEXIST) return -1;
+    if (cnet_mkdir(tmp, 0755) != 0 && errno != EEXIST) return -1;
     return 0;
+}
+
+int cce_ctx_legal_max(int model_ctx) {
+    const char *page = getenv("CNET_KV_PAGE");
+    const char *e = getenv("CNET_CTX_LEGAL");
+    int legal;
+    /* Paged: CNET opens 1M positions. Dense: model ctx (ops still cap 8192). */
+    if (page && page[0] == '1')
+        legal = CNET_CTX_LEGAL_MAX;
+    else
+        legal = model_ctx > 0 ? model_ctx : 8192;
+    if (e && e[0]) {
+        int v = atoi(e);
+        if (v >= 8 && v <= CNET_CTX_LEGAL_MAX) legal = v;
+    }
+    if (legal > CNET_CTX_LEGAL_MAX) legal = CNET_CTX_LEGAL_MAX;
+    if (legal < 8) legal = 8;
+    return legal;
 }
 
 void cce_kv_pager_opts_default(cce_kv_pager_opts *o, int k_slot, int v_slot,
@@ -114,7 +141,8 @@ void cce_kv_pager_opts_default(cce_kv_pager_opts *o, int k_slot, int v_slot,
     o->n_hot = 4;
     o->k_slot = k_slot;
     o->v_slot = v_slot;
-    o->legal_max = legal_max > 0 ? legal_max : 8192;
+    o->legal_max = legal_max > 0 ? legal_max : CNET_CTX_LEGAL_MAX;
+    if (o->legal_max > CNET_CTX_LEGAL_MAX) o->legal_max = CNET_CTX_LEGAL_MAX;
     o->archive_dir = NULL;
     o->async = 1;
     o->quant_cold = 1; /* default int8 COLD */
@@ -229,7 +257,7 @@ static int write_cold_file(cce_kv_pager *p, cce_kv_flush_job *job) {
             ok = -1;
     }
     if (ok == 0 && fflush(f) != 0) ok = -1;
-    if (ok == 0 && fsync(fileno(f)) != 0) ok = -1;
+    if (ok == 0 && cnet_fsync(fileno(f)) != 0) ok = -1;
     if (fclose(f) != 0) ok = -1;
     if (ok != 0) (void)remove(path);
     return ok;
@@ -239,10 +267,10 @@ static int record_cold_file(cce_kv_pager *p, const cce_kv_flush_job *job) {
     if (!p->ledger ||
         fprintf(p->ledger,
                 "page_id=%d pos_lo=%d pos_hi=%d digest=0x%016llx "
-                "file=page_%06d.kvc tier=COLD quant=%d\n",
+                "file=page_%06d.kvc tier=COLD quant=%d weight_epoch=%llu\n",
                 job->page_id, job->pos_lo, job->pos_hi,
-                (unsigned long long)job->digest, job->page_id,
-                job->quant) < 0 ||
+                (unsigned long long)job->digest, job->page_id, job->quant,
+                (unsigned long long)p->weight_epoch) < 0 ||
         fflush(p->ledger) != 0)
         return -1;
     return 0;
@@ -333,13 +361,17 @@ cce_result cce_kv_pager_open(cce_kv_pager **out, const cce_kv_pager_opts *opts) 
     p->n_hot = o.n_hot;
     p->k_slot = o.k_slot;
     p->v_slot = o.v_slot;
-    p->legal_max = o.legal_max > 0 ? o.legal_max : 8192;
+    p->legal_max = o.legal_max > 0 ? o.legal_max : CNET_CTX_LEGAL_MAX;
+    if (p->legal_max > CNET_CTX_LEGAL_MAX) p->legal_max = CNET_CTX_LEGAL_MAX;
     p->async = o.async;
     p->quant_cold = o.quant_cold;
     p->rehydrate = o.rehydrate;
     p->rehyd_lo = p->rehyd_hi = -1;
     p->rehyd_page_id = -1;
     p->capacity = p->page_len * p->n_hot;
+    p->weight_epoch = 0;
+    p->epoch_bumps = 0;
+    p->cold_epoch_rejects = 0;
     snprintf(p->archive_dir, sizeof p->archive_dir, "%s",
              o.archive_dir && o.archive_dir[0] ? o.archive_dir : "kv_archive");
     if (mkdir_p(p->archive_dir) != 0) {
@@ -987,6 +1019,7 @@ static int load_cold_page(cce_kv_pager *p, int page_id, int *out_lo,
 
 int cce_kv_pager_rehydrate_pos(cce_kv_pager *p, int pos) {
     int page_id, lo;
+    uint64_t page_epoch = 0;
     if (!p || !p->rehydrate || pos < 0) return -1;
     if (ring_index(p, pos) >= 0) return 0; /* already hot */
     /* Only positions evicted from the current generation can be COLD. After
@@ -996,17 +1029,89 @@ int cce_kv_pager_rehydrate_pos(cce_kv_pager *p, int pos) {
     if (pos >= p->window_start) return -1;
     if (p->rehyd_lo >= 0 && pos >= p->rehyd_lo && pos < p->rehyd_hi)
         return 0; /* already in rehyd cache */
-    /* Cold page ids are assigned in order: page covering [i*page_len, ...)
-     * has id = i for the first n_hot pages... actually first n_hot ids are
-     * 0..n_hot-1 for initial ring, then next_page_id grows. Map pos→page_id
-     * via floor(pos/page_len) only if we started at 0 with sequential ids. */
     page_id = pos / p->page_len;
     lo = page_id * p->page_len;
-    /* Wait for flush if this page was just evicted */
+    /* Wait for flush if this page was just evicted.
+     *
+     * THIS MUST STAY ABOVE THE EPOCH GATE. Flushes are async by default
+     * (o->async = 1), and the `page_id=N ... weight_epoch=E` ledger line is
+     * written by record_cold_file() from inside kv_flush_thread once the job
+     * drains. A page that has been evicted but whose flush has not yet
+     * completed therefore has NO ledger line, so ledger_epoch_for_page()
+     * fails, and the `else if (p->weight_epoch > 0)` arm below discards it as
+     * a stale-epoch legacy file -- silently, and counted as the gate working.
+     * Syncing first makes the page's own stamp visible before we judge it, and
+     * also stops this thread from scanning the ledger while the flush thread is
+     * still appending to it. */
     cce_kv_pager_sync(p);
+
+    /* Epoch gate: COLD neural pages stamped under a prior weight_epoch are
+     * mathematical garbage under the new tensors — refuse rehydrate. */
+    if (ledger_epoch_for_page(p, page_id, &page_epoch) == 0) {
+        if (page_epoch != p->weight_epoch) {
+            p->cold_epoch_rejects++;
+            return -1;
+        }
+    } else if (p->weight_epoch > 0) {
+        /* No ledger stamp (legacy file) after an epoch bump → refuse. */
+        p->cold_epoch_rejects++;
+        return -1;
+    }
     if (load_cold_page(p, page_id, NULL, NULL) != 0) return -1;
     if (pos < p->rehyd_lo || pos >= p->rehyd_hi) return -1;
     (void)lo;
+    return 0;
+}
+
+uint64_t cce_kv_pager_weight_epoch(const cce_kv_pager *p) {
+    return p ? p->weight_epoch : 0;
+}
+
+int cce_kv_pager_bump_weight_epoch(cce_kv_pager *p) {
+    if (!p) return -1;
+    /* Clear HOT/WARM/rehyd so no W0 activations remain resident. */
+    if (cce_kv_pager_clear(p) != 0) return -1;
+    p->weight_epoch++;
+    p->epoch_bumps++;
+    if (p->ledger) {
+        fprintf(p->ledger,
+                "# weight_epoch_bump epoch=%llu bumps=%llu (neural COLD "
+                "stamped below this is invalid)\n",
+                (unsigned long long)p->weight_epoch,
+                (unsigned long long)p->epoch_bumps);
+        fflush(p->ledger);
+    }
+    return 0;
+}
+
+/* Scan ledger for last weight_epoch stamp of page_id. Returns 0 if found. */
+static int ledger_epoch_for_page(cce_kv_pager *p, int page_id, uint64_t *out_ep) {
+    FILE *f;
+    char line[512];
+    int found = 0;
+    uint64_t ep = 0;
+    if (!p || !out_ep || page_id < 0) return -1;
+    f = fopen(p->ledger_path, "r");
+    if (!f) return -1;
+    while (fgets(line, sizeof line, f)) {
+        int pid = -1;
+        unsigned long long e = 0;
+        if (sscanf(line, "page_id=%d", &pid) != 1 || pid != page_id) continue;
+        {
+            const char *we = strstr(line, "weight_epoch=");
+            if (we && sscanf(we, "weight_epoch=%llu", &e) == 1) {
+                ep = (uint64_t)e;
+                found = 1;
+            } else {
+                /* Legacy line without epoch → treat as epoch 0 */
+                ep = 0;
+                found = 1;
+            }
+        }
+    }
+    fclose(f);
+    if (!found) return -1;
+    *out_ep = ep;
     return 0;
 }
 

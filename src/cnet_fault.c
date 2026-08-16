@@ -1,4 +1,5 @@
 #include "../include/cnet_fault.h"
+#include "../include/cnet_json_escape.h"
 
 #include <errno.h>
 #include <stdio.h>
@@ -9,23 +10,6 @@
 #define CNET_FAULT_MAX_DIM 512
 #define CNET_FAULT_LINE_MAX (256 * 1024)
 
-static void json_escape(const char *in, char *out, size_t cap) {
-    size_t j = 0;
-    if (!in) in = "";
-    for (; *in && j + 2 < cap; in++) {
-        unsigned char c = (unsigned char)*in;
-        if (c == '"' || c == '\\') {
-            if (j + 3 >= cap) break;
-            out[j++] = '\\';
-            out[j++] = (char)c;
-        } else if (c < 0x20) {
-            continue;
-        } else {
-            out[j++] = (char)c;
-        }
-    }
-    out[j] = 0;
-}
 
 const char *cnet_fault_source_name(CnetFaultSource s) {
     switch (s) {
@@ -74,17 +58,24 @@ void cnet_fault_close(CnetFaultLog *log) {
 
 static int write_meta_fields(FILE *fp, const CnetFaultRecord *rec, long long ts) {
     char u[128], sk[128], se[96], lk[48], no[200];
-    json_escape(rec->unit, u, sizeof u);
-    json_escape(rec->skill, sk, sizeof sk);
-    json_escape(rec->session, se, sizeof se);
-    json_escape(rec->label_kind, lk, sizeof lk);
-    json_escape(rec->note, no, sizeof no);
+    /* The previous local escaper returned void, DROPPED every control
+       character, and truncated silently -- so a note containing a stray 0x01
+       was recorded as if it had never held one. Count losses instead and put
+       the count in the record: a field that would not fit comes out empty, and
+       `esc_truncated` says so, so the learning loop can tell a genuinely empty
+       note from one that was thrown away. */
+    int esc_trunc = 0;
+    esc_trunc += (cnet_json_escape(rec->unit, u, sizeof u) != 0);
+    esc_trunc += (cnet_json_escape(rec->skill, sk, sizeof sk) != 0);
+    esc_trunc += (cnet_json_escape(rec->session, se, sizeof se) != 0);
+    esc_trunc += (cnet_json_escape(rec->label_kind, lk, sizeof lk) != 0);
+    esc_trunc += (cnet_json_escape(rec->note, no, sizeof no) != 0);
     return fprintf(fp,
                    "{\"ts\":%lld,\"source\":\"%s\",\"unit\":\"%s\",\"skill\":\"%s\","
                    "\"session\":\"%s\",\"in_dim\":%d,\"out_dim\":%d,"
-                   "\"label_kind\":\"%s\",\"note\":\"%s\"",
+                   "\"label_kind\":\"%s\",\"note\":\"%s\",\"esc_truncated\":%d",
                    ts, cnet_fault_source_name(rec->source), u, sk, se,
-                   rec->in_dim, rec->out_dim, lk[0] ? lk : "argmax", no);
+                   rec->in_dim, rec->out_dim, lk[0] ? lk : "argmax", no, esc_trunc);
 }
 
 static int write_vec(FILE *fp, const char *key, const double *v, int n) {

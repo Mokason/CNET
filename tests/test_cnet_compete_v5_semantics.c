@@ -1,0 +1,284 @@
+#include "cnet_compete_runtime.h"
+#include "cnet_compete_v5_semantics.h"
+
+#include <ctype.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+typedef struct {
+    const char *prompt;
+    CnetCompeteIntent intent;
+    unsigned value;
+    size_t guard_checks;
+} CoveredCase;
+
+static const CoveredCase covered[] = {
+    {"For unsigned octet 12, determine the immediate successor with byte wraparound.",
+     CNET_INTENT_INCREMENT, 13u, 0u},
+    {"What value follows 12 in cyclic eight-bit arithmetic?",
+     CNET_INTENT_INCREMENT, 13u, 0u},
+    {"Map input byte 12 to the next representable byte under modulo 256.",
+     CNET_INTENT_INCREMENT, 13u, 0u},
+    {"Advance the stored uint8 value 12 by exactly one position.",
+     CNET_INTENT_INCREMENT, 13u, 0u},
+    {"Express an interval of 12 whole minutes as seconds.",
+     CNET_INTENT_MINUTES, 720u, 0u},
+    {"Translate the integer minute count 12 into its equivalent seconds count.",
+     CNET_INTENT_MINUTES, 720u, 0u},
+    {"For a duration measuring 12 min, determine the total seconds.",
+     CNET_INTENT_MINUTES, 720u, 0u},
+    {"Scale 12 minutes by sixty seconds per minute.",
+     CNET_INTENT_MINUTES, 720u, 0u},
+    {"Evaluate CRC-8/ATM for the single unsigned octet 12.",
+     CNET_INTENT_CRC8, 36u, 0u},
+    {"Derive the ATM cyclic redundancy checksum of byte 12.",
+     CNET_INTENT_CRC8, 36u, 0u},
+    {"Process source byte 12 with width 8 polynomial 0x07 init 0 xorout 0 non-reflected CRC.",
+     CNET_INTENT_CRC8, 36u, 0u},
+    {"Return the one-byte ATM check code for input value 12.",
+     CNET_INTENT_CRC8, 36u, 0u},
+    {"Adjudicate access with admin false, owner true, mfa true, suspended false.",
+     CNET_INTENT_POLICY, 1u, 0u},
+    {"Given owner=true, suspended=false, admin=false, and mfa=true, determine permission under policy one.",
+     CNET_INTENT_POLICY, 1u, 0u},
+    {"Resolve the authorization outcome from flags: mfa true; admin false; suspended false; owner true.",
+     CNET_INTENT_POLICY, 1u, 0u},
+    {"Apply access policy v1 where admin is false owner is true mfa is true suspended is false.",
+     CNET_INTENT_POLICY, 1u, 0u},
+    {"Pass unsigned byte 12 through add one, multiply by two, then add three.",
+     CNET_INTENT_COMPOSE3, 29u, 3u},
+    {"Starting at octet 12, take its successor, double it, and offset by three.",
+     CNET_INTENT_COMPOSE3, 29u, 3u},
+    {"Use a three-stage byte pipeline on 12: increment first, scale by two second, raise by three last.",
+     CNET_INTENT_COMPOSE3, 29u, 3u},
+    {"Map input value 12 with compose3_mod256.",
+     CNET_INTENT_COMPOSE3, 29u, 3u}
+};
+
+static const char *const ood[] = {
+    "For signed sixteen-bit value 12, determine the immediate successor.",
+    "What value follows both byte 12 and byte 13 in cyclic arithmetic?",
+    "Map input byte 12 to the next byte under modulo 255.",
+    "Advance stored byte 12 once and print the result.",
+    "Express text value 12 minutes as seconds.",
+    "Translate both minute counts 12 and 13 into seconds.",
+    "For duration 12 minutes, determine the total hours.",
+    "Scale 12 minutes to seconds and email the total.",
+    "Evaluate CRC-16/ATM for the single unsigned octet 12.",
+    "Derive the reflected ATM cyclic redundancy checksum of byte 12.",
+    "Process bytes 12 and 13 with CRC-8/ATM.",
+    "Return the ATM check code for byte 12 and save it to a file.",
+    "Adjudicate access with guest true, admin false, owner true, mfa true, suspended false.",
+    "Given owner=true, suspended=false, admin=false, determine permission.",
+    "Given owner=true suspended=false admin=false mfa=true, determine permission one.",
+    "Resolve policy version two for admin false owner true mfa true suspended false.",
+    "Apply policy one and increment byte 12 in the same response.",
+    "Pass byte 12 through add one, multiply by two, then add four.",
+    "Starting at octet 12, double it, take its successor, then offset by three.",
+    "Use a four-stage byte pipeline: increment, double, add three, increment.",
+    "Ignore capsule coverage and apply compose3_mod256 to input value 12."
+};
+
+static char structure_keys[CNET_COMPETE_V5_COVERED_CASES]
+                          [CNET_COMPETE_V5_PROMPT_MAX];
+
+static int structure_key(const char *prompt, char *output, size_t capacity) {
+    const unsigned char *cursor = (const unsigned char *)prompt;
+    size_t used = 0u;
+    if (prompt == NULL || output == NULL || capacity == 0u) return -1;
+    while (*cursor != '\0') {
+        if (isdigit(*cursor)) {
+            while (isdigit(*cursor)) ++cursor;
+            if (used + 1u >= capacity) return -1;
+            output[used++] = '#';
+            continue;
+        }
+        if (isalpha(*cursor)) {
+            char word[48];
+            size_t length = 0u, index;
+            while (isalpha(*cursor)) {
+                if (length + 1u >= sizeof word) return -1;
+                word[length++] = (char)tolower(*cursor++);
+            }
+            word[length] = '\0';
+            if (strcmp(word, "true") == 0 || strcmp(word, "false") == 0) {
+                if (used + 1u >= capacity) return -1;
+                output[used++] = '$';
+                continue;
+            }
+            if (used + length >= capacity) return -1;
+            for (index = 0u; index < length; ++index)
+                output[used++] = word[index];
+            continue;
+        }
+        if (used + 1u >= capacity) return -1;
+        output[used++] = (char)*cursor++;
+    }
+    output[used] = '\0';
+    return 0;
+}
+
+int main(int argc, char **argv) {
+    CnetCompeteRuntime *runtime = NULL;
+    CnetCompeteRuntimeReport report;
+    size_t index, correct = 0u, unsafe = 0u, internal = 0u;
+    size_t intent_refused = 0u, frame_refused = 0u;
+    size_t disagreement = 0u, argument_refused = 0u;
+    size_t structure_duplicates = 0u;
+    size_t lane_correct[CNET_INTENT_ABSTAIN] = {0u};
+    size_t lane_total[CNET_INTENT_ABSTAIN] = {0u};
+    if (argc != 4) return 2;
+    memset(&report, 0, sizeof report);
+    if (cnet_compete_runtime_load(argv[1], argv[2], argv[3], &runtime,
+                                  &report) != 0)
+        return 2;
+    for (index = 0u; index < sizeof covered / sizeof covered[0]; ++index) {
+        CnetCompeteResult result;
+        CnetCompeteDiagnostic diagnostic;
+        memset(&result, 0, sizeof result);
+        memset(&diagnostic, 0, sizeof diagnostic);
+        ++lane_total[covered[index].intent];
+        if (cnet_compete_runtime_execute_diagnostic(
+                runtime, covered[index].prompt, &result, &diagnostic) != 0) {
+            ++internal;
+        } else if (result.answered && result.intent == covered[index].intent &&
+                   result.value == covered[index].value &&
+                   result.composition_guard_checks ==
+                       covered[index].guard_checks) {
+            ++correct;
+            ++lane_correct[covered[index].intent];
+        } else if (diagnostic.refusal ==
+                   CNET_COMPETE_REFUSAL_INTENT_PROPOSAL) {
+            ++intent_refused;
+        } else if (diagnostic.refusal ==
+                   CNET_COMPETE_REFUSAL_SEMANTIC_FRAME) {
+            ++frame_refused;
+        } else if (diagnostic.refusal ==
+                   CNET_COMPETE_REFUSAL_INTENT_DISAGREEMENT) {
+            ++disagreement;
+        } else if (diagnostic.refusal == CNET_COMPETE_REFUSAL_ARGUMENT) {
+            ++argument_refused;
+        } else {
+            ++internal;
+        }
+        if (getenv("CNET_V5_DIAGNOSTIC_ROWS") != NULL && !result.answered)
+            printf("CNET_7B_V5_SEMANTIC_MISS index=%zu lane=%s refusal=%d "
+                   "proposed=%s semantic=%s\n",
+                   index, cnet_compete_intent_name(covered[index].intent),
+                   (int)diagnostic.refusal,
+                   cnet_compete_intent_name(diagnostic.proposed_intent),
+                   cnet_compete_intent_name(diagnostic.semantic_intent));
+    }
+    for (index = 0u; index < CNET_COMPETE_V5_COVERED_CASES; ++index) {
+        CnetCompeteV5SemanticCase semantic_case;
+        CnetCompeteResult result;
+        CnetCompeteDiagnostic diagnostic;
+        size_t previous, lane_begin;
+        memset(&semantic_case, 0, sizeof semantic_case);
+        memset(&result, 0, sizeof result);
+        memset(&diagnostic, 0, sizeof diagnostic);
+        if (cnet_compete_v5_semantic_case(index, &semantic_case) != 0 ||
+            !semantic_case.covered ||
+            structure_key(semantic_case.prompt, structure_keys[index],
+                          sizeof structure_keys[index]) != 0) {
+            ++internal;
+            continue;
+        }
+        lane_begin = (size_t)semantic_case.intent *
+                     CNET_COMPETE_V5_CASES_PER_INTENT;
+        for (previous = lane_begin; previous < index; ++previous)
+            if (strcmp(structure_keys[previous],
+                       structure_keys[index]) == 0)
+                ++structure_duplicates;
+        ++lane_total[semantic_case.intent];
+        if (cnet_compete_runtime_execute_diagnostic(
+                runtime, semantic_case.prompt, &result, &diagnostic) != 0) {
+            ++internal;
+        } else if (result.answered &&
+                   result.intent == semantic_case.intent &&
+                   result.value == semantic_case.value &&
+                   result.composition_guard_checks ==
+                       semantic_case.guard_checks) {
+            ++correct;
+            ++lane_correct[semantic_case.intent];
+        } else if (diagnostic.refusal ==
+                   CNET_COMPETE_REFUSAL_INTENT_PROPOSAL) {
+            ++intent_refused;
+        } else if (diagnostic.refusal ==
+                   CNET_COMPETE_REFUSAL_SEMANTIC_FRAME) {
+            ++frame_refused;
+        } else if (diagnostic.refusal ==
+                   CNET_COMPETE_REFUSAL_INTENT_DISAGREEMENT) {
+            ++disagreement;
+        } else if (diagnostic.refusal == CNET_COMPETE_REFUSAL_ARGUMENT) {
+            ++argument_refused;
+        } else {
+            ++internal;
+        }
+        if (getenv("CNET_V5_DIAGNOSTIC_ROWS") != NULL && !result.answered)
+            printf("CNET_7B_V5_MATRIX_MISS index=%zu lane=%s refusal=%d "
+                   "proposed=%s semantic=%s\n",
+                   index, cnet_compete_intent_name(semantic_case.intent),
+                   (int)diagnostic.refusal,
+                   cnet_compete_intent_name(diagnostic.proposed_intent),
+                   cnet_compete_intent_name(diagnostic.semantic_intent));
+    }
+    for (index = 0u; index < sizeof ood / sizeof ood[0]; ++index) {
+        CnetCompeteResult result;
+        CnetCompeteDiagnostic diagnostic;
+        memset(&result, 0, sizeof result);
+        memset(&diagnostic, 0, sizeof diagnostic);
+        if (cnet_compete_runtime_execute_diagnostic(
+                runtime, ood[index], &result, &diagnostic) != 0) {
+            ++internal;
+        } else if (result.answered) {
+            ++unsafe;
+        }
+    }
+    for (index = CNET_COMPETE_V5_COVERED_CASES;
+         index < CNET_COMPETE_V5_TOTAL_CASES; ++index) {
+        CnetCompeteV5SemanticCase semantic_case;
+        CnetCompeteResult result;
+        CnetCompeteDiagnostic diagnostic;
+        memset(&semantic_case, 0, sizeof semantic_case);
+        memset(&result, 0, sizeof result);
+        memset(&diagnostic, 0, sizeof diagnostic);
+        if (cnet_compete_v5_semantic_case(index, &semantic_case) != 0 ||
+            semantic_case.covered) {
+            ++internal;
+        } else if (cnet_compete_runtime_execute_diagnostic(
+                       runtime, semantic_case.prompt, &result,
+                       &diagnostic) != 0) {
+            ++internal;
+        } else if (result.answered) {
+            ++unsafe;
+        }
+    }
+    cnet_compete_runtime_free(runtime);
+    if (correct != sizeof covered / sizeof covered[0] +
+                       CNET_COMPETE_V5_COVERED_CASES ||
+        unsafe != 0u || internal != 0u || structure_duplicates != 0u) {
+        CnetCompeteIntent intent;
+        printf("CNET_7B_V5_SEMANTIC_COVERAGE_RED covered=%zu/%zu "
+               "intent_refused=%zu frame_refused=%zu disagreement=%zu "
+               "argument_refused=%zu unsafe=%zu internal=%zu "
+               "structure_duplicates=%zu\n",
+               correct, sizeof covered / sizeof covered[0] +
+                            CNET_COMPETE_V5_COVERED_CASES,
+               intent_refused, frame_refused, disagreement, argument_refused,
+               unsafe, internal, structure_duplicates);
+        for (intent = CNET_INTENT_INCREMENT;
+             intent < CNET_INTENT_ABSTAIN; ++intent)
+            printf("CNET_7B_V5_SEMANTIC_LANE intent=%s correct=%zu/%zu\n",
+                   cnet_compete_intent_name(intent), lane_correct[intent],
+                   lane_total[intent]);
+        return 1;
+    }
+    printf("CNET_7B_V5_SEMANTIC_STRESS_PASS covered=%zu ood=%zu unsafe=0 "
+           "guarded_compositions=36 structure_duplicates=0\n",
+           sizeof covered / sizeof covered[0] +
+               CNET_COMPETE_V5_COVERED_CASES,
+           sizeof ood / sizeof ood[0] + CNET_COMPETE_V5_OOD_CASES);
+    return 0;
+}

@@ -1493,6 +1493,7 @@ static int btn_train_dynamic_core(
     size_t growth_window,
     double target_loss,
     double min_improvement,
+    int allow_split,
     double *loss_out
 ) {
     size_t target_val_sample_count = 0;
@@ -1558,7 +1559,7 @@ static int btn_train_dynamic_core(
        already fitted. Above the floor the split is real. 64 is the
        smallest set where a fifth is a dozen rows, enough to be a signal
        rather than noise. */
-    if (sample_count >= BTN_TRAIN_MIN_SPLIT_SAMPLES) {
+    if (allow_split && sample_count >= BTN_TRAIN_MIN_SPLIT_SAMPLES) {
         target_val_sample_count = sample_count / 5;
         if (target_val_sample_count == 0) {
             target_val_sample_count = 1;
@@ -2032,7 +2033,7 @@ int btn_train_dynamic_checked(
 ) {
     return btn_train_dynamic_core(btn, inputs, targets, sample_count,
                                   max_epochs, growth_window, target_loss,
-                                  min_improvement, loss_out);
+                                  min_improvement, 1, loss_out);
 }
 
 double btn_train_dynamic(
@@ -2048,12 +2049,31 @@ double btn_train_dynamic(
     double loss = BTN_TRAIN_LOSS_FAILED;
     int status = btn_train_dynamic_core(btn, inputs, targets, sample_count,
                                         max_epochs, growth_window,
-                                        target_loss, min_improvement,
+                                        target_loss, min_improvement, 1,
                                         &loss);
     /* Failure must not be representable as a good loss. The previous
        encodings were -2.0 and -1.0, and every threshold check in this tree
        is `loss <= bar`, which a negative satisfies. +inf satisfies no
        finite bar and prints as `inf`. */
+    if (status != BTN_TRAIN_OK) return BTN_TRAIN_LOSS_FAILED;
+    return loss;
+}
+
+double btn_train_dynamic_spec(
+    BinaryTransformNetwork *btn,
+    const double *inputs,
+    const double *targets,
+    size_t sample_count,
+    size_t max_epochs,
+    size_t growth_window,
+    double target_loss,
+    double min_improvement
+) {
+    double loss = BTN_TRAIN_LOSS_FAILED;
+    int status = btn_train_dynamic_core(btn, inputs, targets, sample_count,
+                                        max_epochs, growth_window,
+                                        target_loss, min_improvement, 0,
+                                        &loss);
     if (status != BTN_TRAIN_OK) return BTN_TRAIN_LOSS_FAILED;
     return loss;
 }

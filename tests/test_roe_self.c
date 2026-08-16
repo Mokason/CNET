@@ -7,6 +7,7 @@
 #include <sys/stat.h>
 
 #include "../include/cnet_roe_self.h"
+#include "../include/cnet_platform.h"  /* cnet_setenv / cnet_mkdir */
 
 static int failures, checks;
 static void check(int ok, const char *m) {
@@ -16,7 +17,11 @@ static void check(int ok, const char *m) {
 }
 
 int main(void) {
-    RoeAsi R;
+  /* HEAP, NOT STACK: this struct exceeds the 2 MB MinGW stack reserve
+   * (RoeAsi 3.01 MB, RoeDebug 4.15 MB, RoeOcr 6.15 MB since ROE_ANSWER_MAX
+   * went 512 -> 4096 in 85c433e and is embedded 640x). A stack instance
+   * dies inside ___chkstk_ms in the prologue, before any statement runs. */
+    RoeAsi *R = (RoeAsi *)calloc(1, sizeof *R);
     RoeGoalEngine *G = NULL;
     RoeDocAsset *D = NULL;
     RoeSelfModel M;
@@ -30,23 +35,23 @@ int main(void) {
     failures = checks = 0;
     printf("=== ROE self-model (close all loops) ===\n");
 
-    mkdir("artifacts", 0755);
-    mkdir(cat, 0755);
+    cnet_mkdir("artifacts", 0755);
+    cnet_mkdir(cat, 0755);
 
-    roe_init(&R);
-    roe_set_catalog_dir(&R, cat);
-    roe_add_skill(&R, "identity", "identity", "who are you",
+    roe_init(R);
+    roe_set_catalog_dir(R, cat);
+    roe_add_skill(R, "identity", "identity", "who are you",
                   "I am ROE-ASI: CERT local first, abstain outside coverage.", 0,
                   1);
-    roe_add_skill(&R, "law", "shell_law", "self-cert",
+    roe_add_skill(R, "law", "shell_law", "self-cert",
                   "Never self-CERT. Verify then promote.", 0, 1);
-    roe_add_skill(&R, "uncert_stub", "tmp", "zz_uncert_only", "draft", 0, 0);
-    roe_add_lookup(&R, "fail-closed", "Abstain outside certified coverage.");
-    roe_add_teach(&R, "roe self model", "self_def",
+    roe_add_skill(R, "uncert_stub", "tmp", "zz_uncert_only", "draft", 0, 0);
+    roe_add_lookup(R, "fail-closed", "Abstain outside certified coverage.");
+    roe_add_teach(R, "roe self model", "self_def",
                   "Instrumented inventory of skills coverage health tree goals.");
 
     /* 1) per-turn inventory */
-    check(roe_turn(&R, "who are you", &out) == ROE_OK, "turn local identity");
+    check(roe_turn(R, "who are you", &out) == ROE_OK, "turn local identity");
     check(out.source == ROE_SRC_LOCAL, "source LOCAL");
     check(strcmp(out.source_name, "LOCAL") == 0, "source_name filled");
     check(out.inventory_line[0] != 0, "inventory_line filled");
@@ -54,16 +59,16 @@ int main(void) {
           "inventory encodes never_self_cert");
     check(strstr(out.inventory_line, "skill=identity") != NULL, "skill_id in inventory");
 
-    check(roe_turn(&R, "what is fail-closed", &out) == ROE_OK, "turn lookup");
+    check(roe_turn(R, "what is fail-closed", &out) == ROE_OK, "turn lookup");
     check(out.source == ROE_SRC_LOOKUP && strcmp(out.source_name, "LOOKUP") == 0,
           "lookup inventory");
     check(out.verified == 0, "lookup untrusted");
 
-    check(roe_turn(&R, "explain roe self model please", &out) == ROE_OK,
+    check(roe_turn(R, "explain roe self model please", &out) == ROE_OK,
           "turn teach llm path");
     check(out.source == ROE_SRC_LLM && out.verified == 0, "llm untrusted");
 
-    check(roe_turn(&R, "totally unknown zzqqxx never", &out) == ROE_OK ||
+    check(roe_turn(R, "totally unknown zzqqxx never", &out) == ROE_OK ||
               out.source == ROE_SRC_ABSTAIN || out.source == ROE_SRC_ASK_USER,
           "OOD path returns");
     /* force abstain inventory shape */
@@ -71,7 +76,7 @@ int main(void) {
         RoeReply a;
         memset(&a, 0, sizeof a);
         a.source = ROE_SRC_ABSTAIN;
-        roe_reply_fill_inventory(&R, &a);
+        roe_reply_fill_inventory(R, &a);
         check(strcmp(a.source_name, "ABSTAIN") == 0, "abstain name");
     }
 
@@ -79,7 +84,7 @@ int main(void) {
     {
         RoeSkillHealth H[16];
         size_t n = 0, ready = 0;
-        check(roe_self_health_scan(&R, H, 16, &n, &ready) == 0, "health scan");
+        check(roe_self_health_scan(R, H, 16, &n, &ready) == 0, "health scan");
         check(n >= 2, "health rows for active skills");
         check(ready >= 1, "at least one production_ready cert skill");
         {
@@ -99,7 +104,7 @@ int main(void) {
 
     /* 3) self model + tree evidence + export */
     roe_self_init(&M);
-    roe_self_bind_roe(&M, &R);
+    roe_self_bind_roe(&M, R);
     roe_self_set_out_dir(&M, cat);
     roe_self_set_repo_root(&M, ".");
     roe_self_set_record_thoughts(&M, 1);
@@ -137,7 +142,7 @@ int main(void) {
         roe_goal_init(G);
         roe_goal_set_catalog(G, cat);
         roe_goal_seed_default(G);
-        G->roe = R;
+        G->roe = *R;
         roe_self_bind_goal(&M, G);
         rc = roe_self_goal_probe(&M, "who are you and shell law on self-cert",
                                 &rep);
@@ -149,7 +154,7 @@ int main(void) {
     }
 
     /* 6) pack export + validate */
-    mkdir(pack, 0755);
+    cnet_mkdir(pack, 0755);
     check(roe_self_export_pack(&M, &rep, pack) == 0, "export pack");
     check(roe_self_pack_validate(pack) == 1, "pack validate");
     {
@@ -170,7 +175,7 @@ int main(void) {
     check(strstr(dump, "never_self_cert") != NULL, "dump mentions law");
 
     /* save catalog of cert skills */
-    check(roe_save_catalog(&R) >= 2, "save skill catalog");
+    check(roe_save_catalog(R) >= 2, "save skill catalog");
 
     free(G);
     free(D);

@@ -271,7 +271,7 @@ scripts/run_cnet_ds4_dual.sh identity   # resumable 1 GiB chunk-tree identity
 scripts/run_cnet_ds4_dual.sh start      # stages the API on :8082
 # cce_train_bench now exercises deeper cascades (4 blocks), real harness (nonlinear/spatial/accuracy), persist, micro-split, etc.
 
-./test_tinystories         # real narrative data (TinyStories) — CCE with context windows, guided coherent generation + raw logits sampling (A/B demo)
+make test_tinystories && ./bin/test_tinystories   # Windows-only (wininet); real narrative data (TinyStories) — CCE with context windows, guided coherent generation + raw logits sampling (A/B demo)
 ```
 
 ### Portable build and native package

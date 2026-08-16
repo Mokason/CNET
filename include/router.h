@@ -87,6 +87,17 @@ typedef struct {
     size_t primitive_count;
 } ExpansionRecipe;
 
+/* In-process owned copy of the exemplar table that certified a brick.
+   Live swap doors read this as old_cov. NULL on the entry = no persisted
+   coverage (cannot REPLACE). Deep-copied rows; never a caller pointer. */
+typedef struct {
+    double *inputs;   /* owned; n_rows * in_dim */
+    double *targets;  /* owned; n_rows * out_dim */
+    size_t n_rows;
+    size_t in_dim;
+    size_t out_dim;
+} RegistryCertCoverage;
+
 typedef struct {
     BinaryTransformNetwork *btn;  /* borrowed; the registry does not own it */
     const char *name;
@@ -98,6 +109,7 @@ typedef struct {
     int certified;  /* set only by registry_add_certified */
     uint64_t cert_btn_digest; /* contract_btn_digest at certification time;
                                  registry_audit_certified demotes on mismatch */
+    RegistryCertCoverage *cert_cov; /* owned deep-copied cert table; NULL if none */
     PrimitiveState state;  /* lifecycle state; FUZZY on add, FROZEN on certify */
     RetrainQueue *queue;  /* owned; NULL until the first fault is recorded */
     const char *shadow_of;  /* non-NULL -> a shadow candidate of this active name (borrowed) */

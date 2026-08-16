@@ -88,11 +88,60 @@ static int mint_tier2(PrimitiveRegistry *reg, LibraryReport *report, int *minted
     task.sources[0] = sym; task.sources[1] = sym; task.sources[2] = cin; task.n_sources = 3;
     task.goals[0] = sum; task.goals[1] = cout; task.n_goals = 2;
     consolidate_config_defaults(&cfg);
-    cfg.min_verify_rate = 0.95;   /* training override for the nonlinear mod-10 chunk */
+    /* Same student recipe as tests/test_distillation_gate.c branch C:
+       auto-width (~21) saturates on this 200-row mod-10 circuit (166/200).
+       64 hidden is the shipped width that clears spec-reproduction
+       >= 0.95 on the full finite domain (train=verify). Not a holdout. */
+    cfg.initial_hidden = 64;
+    cfg.min_verify_rate = 0.95;
     cfg.max_epochs = 320000;
+    cfg.target_loss = 0.0005;
     library_gate_config_defaults(&gate);
     gate.enabled = 1;
+    printf("  pre-mint evidence: dec_value rel=%.3f ev=%lu  dec_full_add rel=%.3f ev=%lu\n",
+           btn_reliability(reg->entries[0].btn),
+           (unsigned long)reg->entries[0].btn->output_successes +
+               (unsigned long)reg->entries[0].btn->output_failures,
+           btn_reliability(reg->entries[1].btn),
+           (unsigned long)reg->entries[1].btn->output_successes +
+               (unsigned long)reg->entries[1].btn->output_failures);
+    {
+        DagSource src[3];
+        CircuitPlan plan;
+        int i;
+        memset(&plan, 0, sizeof plan);
+        for (i = 0; i < 3; ++i) {
+            src[i].type = task.sources[i];
+            src[i].values = NULL;
+        }
+        if (dag_plan_circuit(reg, src, 3, task.goals, 2, &plan) != 0) {
+            printf("  pre-mint plan: FAIL\n");
+        } else {
+            size_t nprim = 0, k;
+            for (k = 0; k < plan.owned_count; ++k) {
+                const DagNode *n = plan.owned[k];
+                if (n && n->kind == DAG_PRIMITIVE) {
+                    unsigned long ev = 0;
+                    nprim++;
+                    if (n->btn)
+                        ev = (unsigned long)n->btn->output_successes +
+                             (unsigned long)n->btn->output_failures;
+                    printf("    prim %s rel=%.3f ev=%lu in=%zu out=%zu\n",
+                           n->name ? n->name : "?",
+                           n->btn ? btn_reliability(n->btn) : -1.0, ev,
+                           n->btn ? n->btn->input_port_count : 0,
+                           n->btn ? n->btn->output_port_count : 0);
+                }
+            }
+            printf("  pre-mint plan: ok owned=%zu prims=%zu roots=%zu\n",
+                   plan.owned_count, nprim, plan.root_count);
+            circuit_free(&plan);
+        }
+    }
     if (library_evolve_gated(reg, &task, 1, NULL, 0, &cfg, &gate, 3, report) != 0) return -1;
+    printf("  evolve: chunks=%zu deferred=%zu rolled_back=%zu iters=%zu\n",
+           report->chunk_count, report->deferred, report->rolled_back,
+           report->iterations_run);
     *minted = (report->chunk_count >= 1);
     return 0;
 }

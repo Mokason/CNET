@@ -1,0 +1,7 @@
+# id	when	template
+# Optional overlay for cnet_utterance / cnetd
+status_full	status	{name} status. Local hit {local_hit}. DA {da}, 5HT {ht}, ADO {ado}. Misses {miss_n}. Law: {law}.
+identity_short	identity	{name}. {answer}
+miss_learn	miss	No local pack yet. Logged for later gold review. I will not self-cert.
+chain_voice	chain	Thinking path: {chain}. Spoken result: {answer}
+speech_law	speech	I form sentences from CERT and live state in C. Teacher drafts stay text-only unless you override.

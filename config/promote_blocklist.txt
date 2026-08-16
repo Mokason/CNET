@@ -1,0 +1,29 @@
+# Promote path blocklist — evolve_tick refuses these at the source.
+# Lines: kind|value
+#   substr|...  — query or pattern contains (case-insensitive)
+#   answer_prefix|... — answer starts with (case-insensitive)
+#   regex|... — full regex on normalized query
+# Comments and blank lines ignored.
+
+# Probe / OOD junk
+substr|mystic ooze
+substr|zz99
+substr|zzqq
+substr|zz_ood
+substr|brand new teacher only
+substr|say pong only
+substr|say hello teacher
+substr|autonomous cycle probe novel
+substr|quantum flute
+substr|galactic overmind
+substr|orbital printer
+substr|alien haskell
+substr|banjo merge
+substr|soup kitchen narrative
+
+# Refusal / ignorance must never become CERT
+answer_prefix|abstain:
+answer_prefix|abstain
+answer_prefix|i don't know
+answer_prefix|i do not know
+answer_prefix|no local skill

@@ -1,0 +1,23 @@
+[Unit]
+Description=CNET autonomous cycle (probe→evolve→KPI, Hermes-free)
+After=default.target
+Wants=bonsai-server.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/AI/CNET
+Environment=CNET_AUTO_TEACHER=1
+Environment=CNET_AUTO_HERMETIC_REVIEW=0
+Environment=CNET_AUTO_AUTOTEACH=0
+Environment=CNET_AUTO_GOVERNOR=0
+Environment=ROE_EVOLVE_REVIEWER=1
+EnvironmentFile=-%h/AI/CNET/config/roe-teacher-ollama-cloud.env
+EnvironmentFile=-%h/AI/CNET/config/roe-reviewer-ollama-cloud.env
+EnvironmentFile=-%h/AI/CNET/config/personal-ai.env
+ExecStart=/usr/bin/python3 %h/AI/CNET/scripts/cnet_autonomous_cycle.py
+Nice=10
+TimeoutStartSec=900
+MemoryMax=4G
+
+[Install]
+WantedBy=cnet-marble.target

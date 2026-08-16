@@ -1,0 +1,7 @@
+# Extra curriculum for autonomous cycle (one JSON object per line).
+# Optional gold enables unattended promote without multi_stable wait.
+# {"q":"query text","want":"LOCAL|MISS|any","tag":"name","gold":"optional verified answer"}
+
+{"q":"marble one line identity","want":"LOCAL","tag":"soul"}
+{"q":"CNET never lowers floors for Brain floats","want":"any","tag":"law","gold":"CNET floors never lowered for Brain floats; Brain is cheap host for same capsules."}
+{"q":"autonomous cycle probe novel fact beta-nine","want":"MISS","tag":"grow","gold":"Beta-nine is a curriculum probe fact for unattended gold promote only."}

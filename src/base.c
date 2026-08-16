@@ -13,6 +13,11 @@
 #include <unistd.h>
 #endif
 
+/* Brings in <fcntl.h> on BOTH platforms (the block above included it only in
+   the #else, so O_WRONLY/O_CREAT/O_EXCL were undeclared on MinGW) plus the
+   CNET_O_NOFOLLOW / CNET_O_CLOEXEC portability spellings. */
+#include "../include/cnet_platform.h"
+
 #define CNB_MAGIC "CNB1"
 #define CNB_VERSION 5u
 #define CNB_MIN_VERSION 1u
@@ -700,7 +705,13 @@ int cnb_save(const CnetBase *b, const char *path) {
     {
         int tfd;
         (void)remove(tmp);
-        tfd = open(tmp, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC,
+        /* O_CREAT|O_EXCL is what actually carries the security property here:
+           it fails if the path exists AT ALL, so a symlink planted between the
+           remove() above and this open() causes an error return rather than a
+           followed write. CNET_O_NOFOLLOW is defence in depth and expands to 0
+           on MinGW, which has no open() equivalent -- see cnet_platform.h. */
+        tfd = open(tmp,
+                   O_WRONLY | O_CREAT | O_EXCL | CNET_O_NOFOLLOW | CNET_O_CLOEXEC,
                    0600);
         if (tfd < 0) goto done;
         f = fdopen(tfd, "wb");

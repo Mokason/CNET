@@ -1,0 +1,12 @@
+[Unit]
+Description=Timer — ROE explore_tick (every 6h, idle organ)
+Requires=roe-explore-tick.service
+
+[Timer]
+OnBootSec=45min
+OnUnitActiveSec=6h
+Persistent=true
+Unit=roe-explore-tick.service
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,15 @@
+[Unit]
+Description=CNET ROE explore_tick (offline structured creativity → curriculum only)
+After=default.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/AI/CNET
+EnvironmentFile=-%h/.local/share/cnet-minimal/cnet-minimal.env
+Environment=ROE_EXPLORE_TEACHER=0
+Environment=ROE_EXPLORE_MAX_TRIALS=6
+ExecStart=/usr/bin/python3 %h/AI/CNET/tools/roe_explore_tick.py
+Nice=15
+
+[Install]
+WantedBy=default.target

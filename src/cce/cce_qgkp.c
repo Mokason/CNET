@@ -10,6 +10,8 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include "../../include/cnet_platform.h"  /* cnet_fsync */
+
 typedef struct qgkp_v3_disk_header {
     uint32_t magic;
     uint32_t version;
@@ -123,7 +125,7 @@ static cce_result append_range(FILE *src, uint64_t src_offset, FILE *dst,
             return CCE_ERR_IO;
         bytes -= n;
     }
-    if (fflush(dst) != 0 || fsync(fileno(dst)) != 0) return CCE_ERR_IO;
+    if (fflush(dst) != 0 || cnet_fsync(fileno(dst)) != 0) return CCE_ERR_IO;
     return CCE_OK;
 }
 

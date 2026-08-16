@@ -10,6 +10,10 @@
  * make roe_front_door → ROE_FRONT_DOOR_PASS
  */
 #include <ctype.h>
+#include "../include/cnet_platform.h"  /* CNET_HAVE_CURL */
+#if CNET_HAVE_CURL
+#include <curl/curl.h>
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -17,12 +21,18 @@
 #include <time.h>
 
 #include "../include/cnet_roe_asi.h"
+#include "../include/cnet_domain_route.h"
+#include "../include/cnet_probe_shortcircuit.h"
+#include "../include/cnet_query_alias.h"
+#include "../include/cnet_dialog_ctx.h"
+#include "../include/cnet_slot_extract.h"
 
 #define FD_ROOT_DEFAULT "artifacts/roe_daily_packs"
 #define FD_MAX_ROUTES 256
 #define FD_MAX_ALWAYS 8
 #define FD_MAX_PACKS_LOAD 8
 #define FD_PATH 1024
+#define FD_BIAS_PATH_DEFAULT "logs/governor/front_door_bias.json"
 #define FD_PAT 256
 #define FD_ID 64
 
@@ -118,7 +128,9 @@ static int fd_init(FdRouter *F, const char *root) {
     snprintf(F->always_on[1], sizeof F->always_on[1], "%s", "pack_roe_self");
     snprintf(F->always_on[2], sizeof F->always_on[2], "%s", "pack_goal_split");
     snprintf(F->always_on[3], sizeof F->always_on[3], "%s", "pack_toolcall_hermes");
-    F->n_always = 4;
+    /* Garden growth — unattended promotes land here */
+    snprintf(F->always_on[4], sizeof F->always_on[4], "%s", "pack_personal");
+    F->n_always = 5;
 
     if (path_join2(path, sizeof path, F->root, "ROUTES.jsonl") != 0) return -1;
     f = fopen(path, "r");
@@ -235,7 +247,8 @@ static void iso_now(char *out, size_t cap) {
         snprintf(out, cap, "unknown");
 }
 
-static int fd_append_miss(const FdRouter *F, const char *query, const FdTurnResult *tr) {
+static int fd_append_miss(const FdRouter *F, const char *query, const FdTurnResult *tr,
+                          const char *shortcircuit_pat) {
     FILE *f;
     char ts[40];
     char qesc[ROE_TEXT_MAX];
@@ -250,26 +263,157 @@ static int fd_append_miss(const FdRouter *F, const char *query, const FdTurnResu
     iso_now(ts, sizeof ts);
     f = fopen(F->miss_log, "a");
     if (!f) return -2;
-    fprintf(f,
-            "{\"ts\":\"%s\",\"pack_tried\":\"%s\",\"query\":\"%s\","
-            "\"route_pattern\":\"%s\",\"source\":\"%s\",\"tokens_est\":%llu,"
-            "\"skill\":\"%s\",\"n_packs_loaded\":%d,\"verified\":%s}\n",
-            ts, tr->route_pack[0] ? tr->route_pack : "",
-            qesc, tr->route_pattern, tr->reply.source_name,
-            (unsigned long long)tr->reply.tokens_est,
-            tr->reply.skill_id[0] ? tr->reply.skill_id : "", tr->n_packs,
-            tr->reply.verified ? "true" : "false");
+    /* escape answer */
+    {
+        char aesc[ROE_ANSWER_MAX];
+        size_t ai, aj = 0;
+        const char *ans = tr->reply.answer;
+        for (ai = 0; ans[ai] && aj + 2 < sizeof aesc; ai++) {
+            if (ans[ai] == '"' || ans[ai] == '\\') aesc[aj++] = '\\';
+            if (ans[ai] == '\n' || ans[ai] == '\r') {
+                aesc[aj++] = ' ';
+                continue;
+            }
+            aesc[aj++] = ans[ai];
+        }
+        aesc[aj] = 0;
+        if (shortcircuit_pat && shortcircuit_pat[0]) {
+            fprintf(f,
+                    "{\"ts\":\"%s\",\"pack_tried\":\"%s\",\"query\":\"%s\","
+                    "\"route_pattern\":\"%s\",\"source\":\"%s\",\"tokens_est\":%llu,"
+                    "\"skill\":\"%s\",\"n_packs_loaded\":%d,\"verified\":%s,"
+                    "\"answer\":\"%s\",\"shortcircuit\":true,\"probe_pat\":\"%s\","
+                    "\"teacher\":false}\n",
+                    ts, tr->route_pack[0] ? tr->route_pack : "", qesc,
+                    tr->route_pattern, tr->reply.source_name,
+                    (unsigned long long)tr->reply.tokens_est,
+                    tr->reply.skill_id[0] ? tr->reply.skill_id : "", tr->n_packs,
+                    tr->reply.verified ? "true" : "false", aesc,
+                    shortcircuit_pat);
+        } else {
+            fprintf(f,
+                    "{\"ts\":\"%s\",\"pack_tried\":\"%s\",\"query\":\"%s\","
+                    "\"route_pattern\":\"%s\",\"source\":\"%s\",\"tokens_est\":%llu,"
+                    "\"skill\":\"%s\",\"n_packs_loaded\":%d,\"verified\":%s,"
+                    "\"answer\":\"%s\"}\n",
+                    ts, tr->route_pack[0] ? tr->route_pack : "", qesc,
+                    tr->route_pattern, tr->reply.source_name,
+                    (unsigned long long)tr->reply.tokens_est,
+                    tr->reply.skill_id[0] ? tr->reply.skill_id : "", tr->n_packs,
+                    tr->reply.verified ? "true" : "false", aesc);
+        }
+    }
     fclose(f);
     return 0;
 }
 
+static int fd_prefer_local_active(double *out_weight) {
+    /* DA neuromod brief boost: logs/governor/front_door_bias.json */
+    const char *path;
+    FILE *f;
+    char buf[2048];
+    size_t n;
+    double expires = 0, weight = 1.0;
+    int prefer = 0, disable_teacher = 0;
+    time_t now = time(NULL);
+    path = getenv("ROE_FRONT_DOOR_BIAS");
+    if (!path || !path[0]) path = FD_BIAS_PATH_DEFAULT;
+    if (out_weight) *out_weight = 1.0;
+    f = fopen(path, "r");
+    if (!f) return 0;
+    n = fread(buf, 1, sizeof buf - 1, f);
+    fclose(f);
+    if (n == 0) return 0;
+    buf[n] = 0;
+    {
+        const char *p;
+        p = strstr(buf, "\"expires_ts\"");
+        if (p) {
+            p = strchr(p, ':');
+            if (p) expires = strtod(p + 1, NULL);
+        }
+        p = strstr(buf, "\"prefer_local_weight\"");
+        if (p) {
+            p = strchr(p, ':');
+            if (p) weight = strtod(p + 1, NULL);
+        }
+        if (strstr(buf, "\"prefer_local\": true") || strstr(buf, "\"prefer_local\":true"))
+            prefer = 1;
+        if (strstr(buf, "\"disable_live_teacher\": true") ||
+            strstr(buf, "\"disable_live_teacher\":true"))
+            disable_teacher = 1;
+    }
+    if (expires > 0 && (double)now > expires) return 0;
+    if (!prefer && !disable_teacher) return 0;
+    if (out_weight) *out_weight = weight > 1.0 ? weight : 1.5;
+    return disable_teacher || prefer ? 1 : 0;
+}
+
 static int fd_turn(FdRouter *F, const char *query, FdTurnResult *tr) {
-    RoeAsi R;
-    if (fd_prepare(F, &R, query, tr) != 0) return -1;
-    roe_turn(&R, query, &tr->reply);
+    /* HEAP, NOT STACK. sizeof(RoeAsi) is 3.01 MB (ROE_ANSWER_MAX went 512 ->
+     * 4096 in 85c433e and is embedded 640 times), against a 2 MB
+     * SizeOfStackReserve on the MinGW binaries -- a stack instance dies in
+     * ___chkstk_ms during the prologue, before a single statement runs. Linux's
+     * 8 MB main-thread stack absorbs it today, which is why CI stayed green,
+     * but this function is per-turn and would be fatal there too on a worker
+     * thread or under a reduced RLIMIT_STACK. */
+    RoeAsi *R;
+    RoeNet net;
+    static int curl_once;
+    static CnetProbeTable PT;
+    static int pt_ready;
+    double local_w = 1.0;
+    int prefer_local;
+    char probe_pat[CNET_PROBE_PAT];
+    const char *pm = NULL;
+    int rc = 0;
+
+    R = (RoeAsi *)calloc(1, sizeof *R);
+    if (!R) return -1;
+    if (fd_prepare(F, R, query, tr) != 0) { free(R); return -1; }
+#if CNET_HAVE_CURL
+    if (!curl_once) {
+        curl_global_init(CURL_GLOBAL_DEFAULT);
+        curl_once = 1;
+    }
+#else
+    (void)curl_once;  /* no libcurl: the live-teacher HTTP path is compiled out */
+#endif
+    if (!pt_ready) {
+        cnet_probe_table_init(&PT);
+        (void)cnet_probe_table_load(&PT, "config/probe_shortcircuit.txt");
+        {
+            const char *home = getenv("CNET_MINIMAL_ROOT");
+            char path[512];
+            if (home && home[0]) {
+                snprintf(path, sizeof path, "%s/config/probe_shortcircuit.txt", home);
+                (void)cnet_probe_table_load(&PT, path);
+            }
+        }
+        pt_ready = 1;
+    }
+    probe_pat[0] = 0;
+    pm = cnet_probe_match(&PT, query, probe_pat, sizeof probe_pat);
+    roe_net_from_env(&net);
+    prefer_local = fd_prefer_local_active(&local_w);
+    /* DA brief boost: prefer LOCAL weight by suppressing live teacher */
+    if (prefer_local) {
+        net.enable_llm = 0;
+        if (getenv("ROE_FD_DEBUG"))
+            fprintf(stderr, "fd_debug DA prefer_local weight=%.2f teacher_off\n", local_w);
+    }
+    /* Probe short-circuit: never burn Teacher on curriculum noise */
+    if (pm) {
+        net.enable_llm = 0;
+        net.enable_lookup = 0;
+        printf("probe_shortcircuit=1 pat=%s teacher=off\n", probe_pat[0] ? probe_pat : pm);
+    }
+    if (net.enable_llm || net.enable_lookup) roe_set_net(R, &net);
+    roe_turn(R, query, &tr->reply);
     tr->is_miss = (tr->reply.source != ROE_SRC_LOCAL);
-    if (tr->is_miss) (void)fd_append_miss(F, query, tr);
-    return 0;
+    if (tr->is_miss) (void)fd_append_miss(F, query, tr, pm ? probe_pat : NULL);
+    free(R);
+    return rc;
 }
 
 static void print_turn(const FdTurnResult *tr) {
@@ -287,6 +431,31 @@ static void print_turn(const FdTurnResult *tr) {
            tr->is_miss, (unsigned long long)tr->reply.tokens_est);
     printf("A: %s\n", tr->reply.answer);
     printf("inventory: %s\n", tr->reply.inventory_line);
+}
+
+/* Token-free thought + continuity sidecars (Python); best-effort. */
+static void fd_emit_thought(const char *q, const FdTurnResult *tr) {
+    char cmd[1600];
+    const char *py;
+    if (!q || !tr) return;
+    if (getenv("ROE_NO_THOUGHT") && getenv("ROE_NO_THOUGHT")[0] == '1') return;
+    py = getenv("ROE_THOUGHT_PY");
+    if (!py || !py[0]) py = "python3 scripts/cnet_thought_process.py";
+    if (strchr(q, '\'') || strchr(q, '"')) return;
+    snprintf(cmd, sizeof cmd,
+             "%s --query '%s' --source '%s' --skill '%s' >/dev/null 2>&1; "
+             "python3 scripts/cnet_continuity.py --query '%s' --source '%s' --skill '%s' "
+             "--no-thought --line-only 2>/dev/null; "
+             "if [ -f logs/governor/thought_last.json ]; then "
+             "python3 -c \"import json;d=json.load(open('logs/governor/thought_last.json'));"
+             "print('thought:',d.get('chain',''))\" 2>/dev/null; fi",
+             py, q, tr->reply.source_name[0] ? tr->reply.source_name : "-",
+             tr->reply.skill_id[0] ? tr->reply.skill_id : "-", q,
+             tr->reply.source_name[0] ? tr->reply.source_name : "-",
+             tr->reply.skill_id[0] ? tr->reply.skill_id : "-");
+    if (system(cmd) != 0) {
+        /* best-effort */
+    }
 }
 
 static void strip_untrusted_prefix(char *s) {
@@ -307,19 +476,162 @@ static int cmd_ask(FdRouter *F, const char *q, int accept, const char *gold,
                    const char *promote_pack) {
     FdTurnResult tr;
     RoeAsi *R;
+    RoeNet net;
+    static int curl_once;
+    static CnetDomainRouter DR;
+    static int dr_ready;
+    static CnetProbeTable PT;
+    static int pt_ready;
+    static CnetQueryAliasTable QA;
+    static int qa_ready;
+    static CnetDialogCtx DC;
+    static int dc_ready;
+    CnetDomainDecision dd;
+    CnetQueryPrepareMeta ameta;
+    CnetDialogResolveMeta dmeta;
+    CnetSlotMeta smeta;
+    char probe_pat[CNET_PROBE_PAT];
+    char q_prep[CNET_QA_OUT];
+    char q_slot[CNET_SLOT_OUT];
+    char q_final[CNET_QA_OUT];
+    const char *pm = NULL;
+    const char *q_use;
     int rc = 0;
     if (!q || !q[0]) return 2;
+
+    /* CERT-first domain dispatch (no malloc on match) */
+    if (!dr_ready) {
+        cnet_domain_route_init(&DR);
+        (void)cnet_domain_route_load_file(&DR, "config/domain_routes.tsv");
+        {
+            const char *home = getenv("CNET_MINIMAL_ROOT");
+            char path[512];
+            if (home && home[0]) {
+                snprintf(path, sizeof path, "%s/config/domain_routes.tsv", home);
+                (void)cnet_domain_route_load_file(&DR, path);
+            }
+        }
+        dr_ready = 1;
+    }
+    if (!pt_ready) {
+        cnet_probe_table_init(&PT);
+        (void)cnet_probe_table_load(&PT, "config/probe_shortcircuit.txt");
+        {
+            const char *home = getenv("CNET_MINIMAL_ROOT");
+            char path[512];
+            if (home && home[0]) {
+                snprintf(path, sizeof path, "%s/config/probe_shortcircuit.txt", home);
+                (void)cnet_probe_table_load(&PT, path);
+            }
+        }
+        pt_ready = 1;
+    }
+    if (!qa_ready) {
+        cnet_query_alias_init(&QA);
+        (void)cnet_query_alias_load_file(&QA, "config/query_aliases.tsv");
+        {
+            const char *home = getenv("CNET_MINIMAL_ROOT");
+            char path[512];
+            if (home && home[0]) {
+                snprintf(path, sizeof path, "%s/config/query_aliases.tsv", home);
+                (void)cnet_query_alias_load_file(&QA, path);
+            }
+        }
+        qa_ready = 1;
+    }
+    if (!dc_ready) {
+        cnet_dialog_ctx_init(&DC);
+        dc_ready = 1;
+    }
+    probe_pat[0] = 0;
+    q_prep[0] = 0;
+    q_slot[0] = 0;
+    q_final[0] = 0;
+    memset(&ameta, 0, sizeof ameta);
+    memset(&dmeta, 0, sizeof dmeta);
+    memset(&smeta, 0, sizeof smeta);
+    pm = cnet_probe_match(&PT, q, probe_pat, sizeof probe_pat);
+
+    if (pm) {
+        q_use = q;
+        printf("prepared=%s alias_hit=0 dialog_hit=0 slot_hit=0\n", q);
+    } else {
+        cnet_query_prepare(&QA, q, q_prep, sizeof q_prep, &ameta);
+        if (cnet_slot_extract_ops(q_prep, q_slot, sizeof q_slot, &smeta) &&
+            smeta.applied) {
+            q_use = q_slot;
+        } else if (cnet_dialog_resolve(&DC, q_prep, q_final, sizeof q_final, &dmeta) &&
+                   dmeta.applied) {
+            q_use = q_final;
+        } else {
+            snprintf(q_final, sizeof q_final, "%s", q_prep);
+            q_use = q_final;
+        }
+        printf("prepared=%s alias_hit=%d alias=%s dialog_hit=%d dialog_reason=%s "
+               "slot_hit=%d slot_unit=%s\n",
+               q_use, ameta.alias_hit,
+               ameta.matched_alias[0] ? ameta.matched_alias : "-",
+               dmeta.applied ? 1 : 0,
+               dmeta.reason[0] ? dmeta.reason : "-",
+               smeta.applied ? 1 : 0,
+               smeta.unit[0] ? smeta.unit : "-");
+    }
+
+    cnet_domain_route_resolve(&DR, q_use, &dd);
+    printf("domain_route=%s reason=%s pack=%s mtk=%s conf=%d\n", dd.kind_name,
+           dd.reason ? dd.reason : "-",
+           dd.pack_or_skill[0] ? dd.pack_or_skill : "-",
+           dd.mtk_path[0] ? dd.mtk_path : "-", dd.conf_x1000);
+    /* Fail-closed residual: never auto-apply MTK from front door.
+     * CERT/ABSTAIN continue into LOCAL packs. BASE_GGUF is advisory only here. */
+    if (dd.kind == CNET_ROUTE_MTK) {
+        printf("domain_route_note=MTK_selected_but_front_door_stays_CERT_path_"
+               "(no_auto_weight_swap)\n");
+    }
+    if (pm) {
+        printf("probe_shortcircuit=1 pat=%s teacher=off\n",
+               probe_pat[0] ? probe_pat : pm);
+    }
+
     R = (RoeAsi *)calloc(1, sizeof *R);
     if (!R) return 1;
-    if (fd_prepare(F, R, q, &tr) != 0) {
+    if (fd_prepare(F, R, q_use, &tr) != 0) {
         fprintf(stderr, "front_door prepare failed\n");
         free(R);
         return 1;
     }
-    roe_turn(R, q, &tr.reply);
+#if CNET_HAVE_CURL
+    if (!curl_once) {
+        curl_global_init(CURL_GLOBAL_DEFAULT);
+        curl_once = 1;
+    }
+#else
+    (void)curl_once;  /* no libcurl: the live-teacher HTTP path is compiled out */
+#endif
+    roe_net_from_env(&net);
+    {
+        double local_w = 1.0;
+        if (fd_prefer_local_active(&local_w)) {
+            net.enable_llm = 0;
+            if (getenv("ROE_FD_DEBUG"))
+                fprintf(stderr, "fd_debug cmd_ask DA prefer_local w=%.2f\n", local_w);
+        }
+    }
+    if (pm) {
+        net.enable_llm = 0;
+        net.enable_lookup = 0;
+    }
+    if (net.enable_llm || net.enable_lookup) roe_set_net(R, &net);
+    roe_turn(R, q_use, &tr.reply);
     tr.is_miss = (tr.reply.source != ROE_SRC_LOCAL);
-    if (tr.is_miss) (void)fd_append_miss(F, q, &tr);
+    if (!pm) {
+        cnet_dialog_ctx_update(&DC, q_use, tr.reply.skill_id,
+                               tr.route_pack[0] ? tr.route_pack : dd.pack_or_skill,
+                               !tr.is_miss);
+    }
+    if (tr.is_miss) (void)fd_append_miss(F, q, &tr, pm ? probe_pat : NULL);
     print_turn(&tr);
+    fd_emit_thought(q, &tr);
 
     /* Shell accept → promote into domain pack (or --promote-pack).
      * Target pack is loaded alone so save_catalog does not dump always-on. */
@@ -386,7 +698,7 @@ static int cmd_route(FdRouter *F, const char *q) {
 
 static int count_all_skills(const char *root) {
     /* sum skills if we loaded every pack_* (upper bound) */
-    RoeAsi R;
+    RoeAsi *R;  /* 3.01 MB -- heap, see fd_turn */
     char path[FD_PATH];
     const char *packs[] = {
         "pack_toolcall_hermes", "pack_roe_self",      "pack_coding_cnet_c",
@@ -396,12 +708,15 @@ static int count_all_skills(const char *root) {
     };
     size_t i;
     int total = 0;
+    R = (RoeAsi *)calloc(1, sizeof *R);
+    if (!R) return 0;
     for (i = 0; i < sizeof packs / sizeof packs[0]; i++) {
-        roe_init(&R);
+        roe_init(R);
         if (path_join2(path, sizeof path, root, packs[i]) != 0) continue;
-        roe_set_catalog_dir(&R, path);
-        total += roe_load_catalog(&R);
+        roe_set_catalog_dir(R, path);
+        total += roe_load_catalog(R);
     }
+    free(R);
     return total;
 }
 
@@ -433,16 +748,18 @@ static int cmd_bench(FdRouter *F) {
 
     for (i = 0; i < n; i++) {
         FdTurnResult tr;
-        RoeAsi R;
-        if (fd_prepare(F, &R, qs[i], &tr) != 0) {
+        RoeAsi *R = (RoeAsi *)calloc(1, sizeof *R);  /* 3.01 MB, see fd_turn */
+        if (!R) { check(0, "alloc"); continue; }
+        if (fd_prepare(F, R, qs[i], &tr) != 0) {
             check(0, "prepare");
+            free(R);
             continue;
         }
-        roe_turn(&R, qs[i], &tr.reply);
+        roe_turn(R, qs[i], &tr.reply);
         tr.is_miss = (tr.reply.source != ROE_SRC_LOCAL);
         if (tr.is_miss) {
             miss++;
-            (void)fd_append_miss(F, qs[i], &tr);
+            (void)fd_append_miss(F, qs[i], &tr, NULL);
         } else
             local++;
         skills_sum += tr.n_skills_loaded;
@@ -453,6 +770,7 @@ static int cmd_bench(FdRouter *F) {
         check(tr.n_skills_loaded > 0, "loaded some skills");
         check(tr.n_skills_loaded < all_skills || all_skills == 0,
               "selective load < all packs");
+        free(R);
     }
 
     {

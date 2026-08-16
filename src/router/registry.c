@@ -8,6 +8,9 @@
 #include <string.h>
 #include <math.h>
 #include <sys/stat.h>
+#if defined(_WIN32) || defined(__WIN32__) || defined(__MINGW32__)
+#include <direct.h>  /* _mkdir -- MinGW's mkdir() takes one argument */
+#endif
 #include <errno.h>
 
 /* ========================================================================
@@ -502,6 +505,7 @@ int registry_add(PrimitiveRegistry *reg, BinaryTransformNetwork *btn, const char
     reg->entries[idx].kind = SPECIALIST_KIND_BTN;  /* native default; specialist_admit stamps the true kind */
     reg->entries[idx].certified = 0;
     reg->entries[idx].cert_btn_digest = 0;
+    reg->entries[idx].cert_cov = NULL;
     reg->entries[idx].state = PRIM_FUZZY;
     reg->entries[idx].queue = NULL;
     reg->entries[idx].shadow_of = NULL;
@@ -556,6 +560,7 @@ void registry_free(PrimitiveRegistry *reg) {
             reg->entries[i].queue = NULL;
             free(reg->entries[i].recipe);
             reg->entries[i].recipe = NULL;
+            registry_clear_cert_coverage(&reg->entries[i]);
         }
     }
     free(reg->entries);
@@ -573,6 +578,7 @@ int registry_remove_last(PrimitiveRegistry *reg) {
     reg->entries[reg->count - 1].queue = NULL;
     free(reg->entries[reg->count - 1].recipe);
     reg->entries[reg->count - 1].recipe = NULL;
+    registry_clear_cert_coverage(&reg->entries[reg->count - 1]);
     reg->count--;
     /* Indices after removed slot don't shift (only last); rebuild keeps map honest. */
     if (reg->name_hash)
@@ -826,7 +832,7 @@ int registry_persist_runtime_state(const PrimitiveRegistry *reg, const char *dir
     char *meta_path = NULL;
     FILE *mf;
     if (reg == NULL || dir == NULL) return -1;
-#if defined(_WIN32)
+#if defined(_WIN32) || defined(__WIN32__) || defined(__MINGW32__)
     _mkdir(dir);
 #else
     if (mkdir(dir, 0755) != 0 && errno != EEXIST) {

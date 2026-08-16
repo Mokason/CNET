@@ -15,7 +15,20 @@ Makefile text eol=lf
 # normalization change can avoid hiding functional edits in whole-file churn.
 src/cce/cce_safetensors.c -text whitespace=cr-at-eol
 include/cce/cce_safetensors.h -text whitespace=cr-at-eol
+src/cce/cce_wordlm.c -text whitespace=cr-at-eol
 src/cnet_lm.c -text whitespace=cr-at-eol
+
+# These are CRLF in history too, and the frozen candidate_behavior.sha256
+# manifests for v3, v4 and v5 record the digest of their CRLF form. They all
+# verify OK today. Normalizing them to LF would not change a byte of code but
+# would change what a fresh checkout produces, failing those entries in three
+# frozen suites at once. Renormalizing them means rebasing those digests, which
+# is a freeze decision and not a whitespace one.
+include/cce/cce_trit_lut.h -text whitespace=cr-at-eol
+include/consolidate.h -text whitespace=cr-at-eol
+include/contract/coverage.h -text whitespace=cr-at-eol
+include/plan_table.h -text whitespace=cr-at-eol
+src/plan_table.c -text whitespace=cr-at-eol
 
 *.so binary
 *.dll binary

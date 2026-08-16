@@ -5,10 +5,39 @@
 # positive-marker scan restores an honest nonzero exit for missing/crashed
 # suites without false-positive greps on descriptive uses of "fail".
 
+# FRESHNESS. Presence of a marker only ever proved that SOME process once wrote
+# it. Nothing in the verify chain clears logs/ (the single `rm -rf logs` in the
+# Makefile is inside `clean`), so a partial run, an interrupted run, or a run
+# from last month left a full set of green logs behind and this gate reported
+# "all suites reported success" over them -- while Makefile:1163 advertised that
+# it "rejects missing or stale-success logs", which it did not.
+#
+# `make verify` now stamps a sentinel BEFORE its prerequisites run and passes it
+# here as VERIFY_SINCE. Every log must be strictly newer than that stamp, so a
+# carried-over log fails as loudly as a missing one.
+#
+# VERIFY_SINCE is intentionally OPTIONAL: this script is also run by hand. When
+# it is unset the freshness column reads "unbound" rather than "ok", so a run
+# without run-binding can never be mistaken for one with it.
 set -u
 LOGS=${LOGS:-logs}
+SINCE=${VERIFY_SINCE:-}
 fail=0
 ok=0
+stale=0
+
+if [ -n "$SINCE" ] && [ ! -f "$SINCE" ]; then
+    printf 'VERIFY LOG GATE: FAIL - sentinel %s does not exist; cannot prove freshness.\n' "$SINCE"
+    exit 1
+fi
+
+# `find -newer` is the portable way to compare mtimes; MinGW's `test` has no
+# -nt for files across filesystems and `stat` formats differ between GNU and
+# BSD. Returns 0 when $1 is strictly newer than the sentinel.
+newer_than_sentinel() {
+    [ -z "$SINCE" ] && return 0
+    [ -n "$(find "$1" -newer "$SINCE" 2>/dev/null)" ]
+}
 
 # Each row is "<logfile>|||<fixed success substring>".
 CORE='
@@ -72,20 +101,37 @@ while IFS= read -r row; do
     if [ ! -f "$path" ]; then
         printf '  FAIL  %-26s  (log missing)\n' "$file"
         fail=$((fail + 1))
-    elif grep -qF -- "$marker" "$path"; then
-        printf '  ok    %-26s\n' "$file"
-        ok=$((ok + 1))
-    else
+    elif ! grep -qF -- "$marker" "$path"; then
         printf '  FAIL  %-26s  (success marker not found: "%s")\n' "$file" "$marker"
         fail=$((fail + 1))
+    elif ! newer_than_sentinel "$path"; then
+        printf '  STALE %-26s  (marker present but log predates this run)\n' "$file"
+        stale=$((stale + 1))
+        fail=$((fail + 1))
+    else
+        printf '  ok    %-26s%s\n' "$file" \
+            "$([ -n "$SINCE" ] || printf '  [freshness unbound]')"
+        ok=$((ok + 1))
     fi
 done <<EOF
 $SPEC
 EOF
 
 if [ "$fail" -ne 0 ]; then
-    printf '\nVERIFY LOG GATE: %d suite(s) FAILED, %d ok -- see the logs above.\n' "$fail" "$ok"
+    printf '\nVERIFY LOG GATE: %d suite(s) FAILED (%d stale), %d ok -- see the logs above.\n' \
+        "$fail" "$stale" "$ok"
+    if [ "$stale" -ne 0 ]; then
+        printf 'A STALE suite printed its success marker in an EARLIER run and was not\n'
+        printf 're-run now. Treat it as unverified, not as passing.\n'
+    fi
     exit 1
 fi
-printf '\nVERIFY LOG GATE: all %d suites reported success.\n' "$ok"
+if [ -n "$SINCE" ]; then
+    printf '\nVERIFY LOG GATE: all %d suites reported success in THIS run (bound to %s).\n' \
+        "$ok" "$SINCE"
+else
+    printf '\nVERIFY LOG GATE: all %d suites reported success, FRESHNESS UNBOUND\n' "$ok"
+    printf '(no VERIFY_SINCE sentinel: these markers may have been written by an\n'
+    printf 'earlier run. `make verify` binds them; a bare invocation does not.)\n'
+fi
 exit 0

@@ -504,6 +504,10 @@ int main(void) {
                 cce_mtk_gguf_kv_flush(&model);
                 check(model.cur_pos == 0,
                       "audit: kv_flush resets cur_pos under pager");
+                check(model.weight_epoch == 1,
+                      "audit: kv_flush bumps model weight_epoch");
+                check(cce_kv_pager_weight_epoch(pg) == 1,
+                      "audit: kv_flush bumps pager weight_epoch");
                 for (h = 0; h < 32; ++h) {
                     float *kr = cce_kv_pager_k_row(pg, h);
                     float *vr = cce_kv_pager_v_row(pg, h);
@@ -513,6 +517,10 @@ int main(void) {
                         if (vr[d] != 0.f) cleared = 0;
                 }
                 check(cleared, "audit: kv_flush clears HOT ring under pager");
+                /* Second flush advances epoch again */
+                cce_mtk_gguf_kv_flush(&model);
+                check(model.weight_epoch == 2 && cce_kv_pager_weight_epoch(pg) == 2,
+                      "audit: second flush epoch=2");
                 cce_kv_pager_close(pg);
             }
             {

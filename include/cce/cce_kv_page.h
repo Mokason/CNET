@@ -22,6 +22,13 @@
 extern "C" {
 #endif
 
+/* CNET legal context ceiling. Dense KV still caps RAM at 8192.
+   Paged mode may open this many positions; HOT RAM stays O(page_len*n_hot). */
+#define CNET_CTX_LEGAL_MAX 1048576
+
+/* model_ctx from GGUF, or 0. Honors CNET_CTX_LEGAL. Never above 1M. */
+int cce_ctx_legal_max(int model_ctx);
+
 typedef enum {
     CCE_KV_TIER_HOT = 0,
     CCE_KV_TIER_WARM = 1,
@@ -122,6 +129,14 @@ int cce_kv_pager_verify_cold(const cce_kv_pager *p, int page_id,
 
 /* Force rehydrate of the cold page containing pos (0 ok). */
 int cce_kv_pager_rehydrate_pos(cce_kv_pager *p, int pos);
+
+/* Weight-cartridge epoch: neural KV pages are only valid while
+ * page.epoch == pager.weight_epoch. CERT/text is epoch-invariant. */
+uint64_t cce_kv_pager_weight_epoch(const cce_kv_pager *p);
+
+/* Bump epoch, clear HOT/WARM/rehyd cache, and refuse COLD rehydrate of
+ * any page stamped under a prior epoch. Call on MTK apply/revert. */
+int cce_kv_pager_bump_weight_epoch(cce_kv_pager *p);
 
 #ifdef __cplusplus
 }
