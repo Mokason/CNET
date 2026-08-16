@@ -37,6 +37,38 @@ static void cfg_legacy(cce_transformer_qat_config* c) {
     c->seed = 42;
 }
 
+/* Parameter total derived INDEPENDENTLY from the config arithmetic, with no
+   reference to the registry. Comparing it against
+   cce_transformer_qat_param_count is what makes the registry provably total:
+   a group that create() allocates but never registers makes the registry's
+   count come up short, and this catches it. Four hand-written parameter
+   walks have already been removed from this file (gradcheck, tr_zero_grads,
+   the Adam update, free); this gate is what stops a fifth appearing. */
+static int expect_params(const cce_transformer_qat_config* c) {
+    int D = c->n_embd, V = c->vocab, B = c->block_size;
+    int M = c->mlp_hidden, L = c->n_layer, H = c->n_head;
+    int hd = D / H;
+    int kvh = c->n_kv_head ? c->n_kv_head : H;
+    int QW = D + 2 * kvh * hd;
+    int n = 0, l;
+    n += V * D;                                        /* tok_emb */
+    if (c->pos_kind == QAT_POS_LEARNED) n += B * D;    /* pos_emb */
+    for (l = 0; l < L; ++l) {
+        n += D * QW + D * D + D * M + M * D;           /* qkv proj up down */
+        if (c->mlp_kind == QAT_MLP_SWIGLU) n += D * M; /* gate_w */
+        if (!c->no_bias) {
+            n += QW + D + M + D;                       /* the linear biases */
+            if (c->mlp_kind == QAT_MLP_SWIGLU) n += M; /* gate_b */
+        }
+        n += D + D;                                    /* ln1_w ln2_w */
+        if (c->norm_kind == QAT_NORM_LN) n += D + D;   /* ln1_b ln2_b */
+    }
+    n += D;                                            /* lnf_w */
+    if (c->norm_kind == QAT_NORM_LN) n += D;           /* lnf_b */
+    n += D * V + V;                                    /* head_w head_b */
+    return n;
+}
+
 int main(void) {
     int seq[T_], tgt;
     /* Unbuffered: a crash inside a gate must not swallow the output that
@@ -365,6 +397,66 @@ int main(void) {
                     l1 = cce_transformer_qat_step(t, seq, T_, NULL, tgt, 1e-2f);
                 printf("  info modern loss %.4f -> %.4f\n", l0, l1);
                 CHECK(l1 < l0, "modern block actually trains (loss falls)");
+            }
+            cce_transformer_qat_free(t);
+        }
+    }
+
+    printf("[14] registry is TOTAL across every config\n");
+    {
+        /* The completeness gate for the group registry. If create() ever
+           allocates a parameter it forgets to register, the registry's
+           param_count comes up short against the independent arithmetic and
+           this fails — which is exactly the bug class that made the old
+           hand-written lists dangerous. */
+        cce_transformer_qat_config cfgs[8];
+        const char* names[8];
+        int n = 0, i;
+
+        cfg_legacy(&cfgs[n]); names[n++] = "legacy";
+        cfg_legacy(&cfgs[n]); cfgs[n].norm_kind = QAT_NORM_RMS;
+                              names[n++] = "rmsnorm";
+        cfg_legacy(&cfgs[n]); cfgs[n].pos_kind = QAT_POS_ROPE;
+                              cfgs[n].rope_theta = 10000.0f;
+                              names[n++] = "rope";
+        cfg_legacy(&cfgs[n]); cfgs[n].mlp_kind = QAT_MLP_SWIGLU;
+                              names[n++] = "swiglu";
+        cfg_legacy(&cfgs[n]); cfgs[n].no_bias = 1;
+                              names[n++] = "nobias";
+        cfg_legacy(&cfgs[n]); cfgs[n].n_head = 4; cfgs[n].n_embd = 8;
+                              cfgs[n].n_kv_head = 2;
+                              names[n++] = "gqa";
+        cfg_legacy(&cfgs[n]); cfgs[n].n_head = 4; cfgs[n].n_embd = 8;
+                              cfgs[n].n_kv_head = 1;
+                              cfgs[n].norm_kind = QAT_NORM_RMS;
+                              cfgs[n].pos_kind = QAT_POS_ROPE;
+                              cfgs[n].rope_theta = 10000.0f;
+                              cfgs[n].mlp_kind = QAT_MLP_SWIGLU;
+                              cfgs[n].no_bias = 1;
+                              names[n++] = "modern";
+        cfg_legacy(&cfgs[n]); cfgs[n].n_layer = 3; cfgs[n].n_head = 4;
+                              cfgs[n].n_embd = 8; cfgs[n].n_kv_head = 4;
+                              cfgs[n].norm_kind = QAT_NORM_RMS;
+                              cfgs[n].mlp_kind = QAT_MLP_SWIGLU;
+                              names[n++] = "mixed-3layer";
+
+        for (i = 0; i < n; ++i) {
+            cce_transformer_qat* t = cce_transformer_qat_create(&cfgs[i]);
+            char msg[128];
+            if (!t) {
+                snprintf(msg, sizeof msg, "%s config creates", names[i]);
+                CHECK(0, msg);
+                continue;
+            }
+            {
+                int got = cce_transformer_qat_param_count(t);
+                int want = expect_params(&cfgs[i]);
+                snprintf(msg, sizeof msg,
+                         "%s: registry holds every parameter (%d)", names[i], got);
+                if (got != want)
+                    printf("  MISMATCH %s: registry=%d independent=%d (diff %d)\n",
+                           names[i], got, want, want - got);
+                CHECK(got == want, msg);
             }
             cce_transformer_qat_free(t);
         }

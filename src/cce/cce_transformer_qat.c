@@ -495,30 +495,18 @@ cce_transformer_qat* cce_transformer_qat_create(const cce_transformer_qat_config
 
 void cce_transformer_qat_free(cce_transformer_qat* t) {
     if (!t) return;
-    int L = t->cfg.n_layer;
+    /* Free every parameter through the REGISTRY — the fourth and last
+       hand-written parameter walk in this file, now gone. The previous list
+       happened to be safe (freeing a zeroed P frees NULLs), but an
+       allocated-but-unlisted group would have leaked silently. Order
+       matters: p_free the groups BEFORE qat_group_reset drops the registry
+       that names them. */
+    for (int gi = 0; gi < t->n_groups; ++gi) p_free(t->groups[gi]);
     qat_group_reset(t);
-    p_free(&t->tok_emb); p_free(&t->pos_emb);
-    for (int l = 0; l < L; ++l) {
-        if (t->qkv_w)  p_free(&t->qkv_w[l]);
-        if (t->qkv_b)  p_free(&t->qkv_b[l]);
-        if (t->proj_w) p_free(&t->proj_w[l]);
-        if (t->proj_b) p_free(&t->proj_b[l]);
-        if (t->up_w)   p_free(&t->up_w[l]);
-        if (t->up_b)   p_free(&t->up_b[l]);
-        if (t->down_w) p_free(&t->down_w[l]);
-        if (t->down_b) p_free(&t->down_b[l]);
-        if (t->ln1_w)  p_free(&t->ln1_w[l]);
-        if (t->ln1_b)  p_free(&t->ln1_b[l]);
-        if (t->ln2_w)  p_free(&t->ln2_w[l]);
-        if (t->ln2_b)  p_free(&t->ln2_b[l]);
-        if (t->gate_w) p_free(&t->gate_w[l]);
-        if (t->gate_b) p_free(&t->gate_b[l]);
-    }
     free(t->qkv_w); free(t->qkv_b); free(t->proj_w); free(t->proj_b);
     free(t->up_w); free(t->up_b); free(t->down_w); free(t->down_b);
     free(t->ln1_w); free(t->ln1_b); free(t->ln2_w); free(t->ln2_b);
     free(t->gate_w); free(t->gate_b);
-    p_free(&t->lnf_w); p_free(&t->lnf_b); p_free(&t->head_w); p_free(&t->head_b);
     free(t->x0); free(t->xin); free(t->ln1o); free(t->ln2o);
     free(t->ln1_mean); free(t->ln1_rstd); free(t->ln2_mean); free(t->ln2_rstd);
     free(t->qkv); free(t->probs); free(t->cat); free(t->xattn);
