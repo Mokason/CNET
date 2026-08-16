@@ -32,6 +32,7 @@ contract_unit.log|||All unit-file tests passed.
 heal_mismatch.log|||HEAL_MISMATCH_PASS
 mutate.log|||All mutation-sweep gates passed.
 acquire.log|||ALL ACQUIRE TESTS PASSED
+attribution.log|||ALL ATTRIBUTION TESTS PASSED
 base.log|||ALL BASE TESTS PASSED
 flagship.log|||ALL FLAGSHIP TESTS PASSED
 decimal_demo.log|||All decimal acts passed.

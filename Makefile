@@ -60,7 +60,18 @@ ifeq ($(OS),Windows_NT)
 CFLAGS += -mno-avx
 endif
 LDFLAGS := -lm -lpthread
+# libcurl is optional: only the HTTP-residual binaries actually call it, but
+# it used to be appended unconditionally, so a box without libcurl could not
+# link ANY target — including hermetic ones like `acquire`. Probe once; when
+# absent, targets that genuinely need curl fail with a specific undefined
+# reference instead of taking the whole build down.
+CURL_PROBE := $(shell echo 'int main(void){return 0;}' | \
+                $(CC) -xc - -lcurl -o /dev/null 2>/dev/null && echo yes || echo no)
+ifeq ($(CURL_PROBE),yes)
 CURL_LDFLAGS := -lcurl
+else
+CURL_LDFLAGS :=
+endif
 # Pull curl into all residual/personal_ai-linked binaries (HTTP residual).
 LDFLAGS += $(CURL_LDFLAGS)
 MCP_LDFLAGS :=
@@ -418,6 +429,8 @@ GRADUATE_SRC := src/corpus/graduate.c
 GRADUATE_TEST := tests/test_graduate.c
 ACQUIRE_SRC := src/acquire.c src/runtime_identity.c
 ACQUIRE_TEST := tests/test_acquire.c
+ATTRIB_SRC := src/attribution.c
+ATTRIB_TEST := tests/test_attribution.c
 BASE_SRC := src/base.c
 BASE_TEST := tests/test_base.c
 FLAGSHIP_SRC := src/flagship.c
@@ -611,6 +624,14 @@ mutate: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(
 acquire: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(ACQUIRE_TEST) include/nn.h include/router.h include/contract/contract.h include/contract/coverage.h include/contract/unit.h include/acquire.h include/base.h
 	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(ACQUIRE_TEST) $(LDFLAGS)
 	./$(BIN_DIR)/acquire > logs/acquire.log 2>&1
+
+# Core attribution layer: per-(proposer, goal signature) evidence separating
+# proposer fault from system fault, keyed off the stage an attempt died at.
+# REPORT-ONLY — includes the byte-identical drain gate proving that attaching
+# the sink changes nothing acquire can observe.
+attribution: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(CONFORMAL) $(ACQUIRE_SRC) $(BASE_SRC) $(ATTRIB_SRC) $(ATTRIB_TEST) include/nn.h include/acquire.h include/attribution.h include/contract/conformal.h
+	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(CONFORMAL) $(ACQUIRE_SRC) $(BASE_SRC) $(ATTRIB_SRC) $(ATTRIB_TEST) $(LDFLAGS)
+	./$(BIN_DIR)/attribution > logs/attribution.log 2>&1
 
 # Unified base (CNB version 2 semantics under stable CNB1 magic): one sealed
 # container (units + tags + stats + oracle descriptors) replacing per-unit file
@@ -1182,7 +1203,7 @@ recipe_gate:
 
 # Test recipes propagate their exit codes directly. This positive-marker gate
 # runs after every prerequisite and rejects missing or stale-success logs.
-verify: recipe_gate claims_test cce_dll cce_safetensors_test cnet_lm_bounds_test cce_autograd_test cce_model_test cce_view forest_view cce_detect cce_ssm cce_hybrid cce_qwen35 cce_st_llama cce_specgraph cce_wstore cce_tiers cce_similar merge_family hybrid_catalog transformer_qat contract_secure contract_unit heal_mismatch mutate acquire base flagship demos leakcheck cnet_fault_test cce_adapter_bank_test cce_dora_test cnet_serve_decode_test cnet_fault_loop_test registry_lora_store_test jtc_adapter_bench metric_honesty moe_ckpt_test
+verify: recipe_gate claims_test cce_dll cce_safetensors_test cnet_lm_bounds_test cce_autograd_test cce_model_test cce_view forest_view cce_detect cce_ssm cce_hybrid cce_qwen35 cce_st_llama cce_specgraph cce_wstore cce_tiers cce_similar merge_family hybrid_catalog transformer_qat contract_secure contract_unit heal_mismatch mutate acquire attribution base flagship demos leakcheck cnet_fault_test cce_adapter_bank_test cce_dora_test cnet_serve_decode_test cnet_fault_loop_test registry_lora_store_test jtc_adapter_bench metric_honesty moe_ckpt_test
 	@sh tests/verify_logs.sh
 
 # Everything verify covers PLUS the GPU equivalence gate (needs model + GPU;

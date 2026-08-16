@@ -84,8 +84,19 @@ Every attempt terminates in exactly one verdict:
 |---|---|
 | `ADMITTED` | reached CLOSED — sealed and registered |
 | `BLAMELESS` | `waiting_oracle` — no proposer matched the signature |
-| `PROPOSER_FAULT` | evidence gate (validity below `evidence_threshold`, or usable exemplars below `min_evidence`), pilot `class_imbalance`, `tag_collision`, `oracle_unfit` |
-| `SYSTEM_FAULT` | holdout or certify failure *after* clearing the evidence gate |
+| `PROPOSER_FAULT` | evidence gate (validity below `evidence_threshold`, or usable exemplars below `min_evidence`), pilot `class_imbalance`, `insufficient_exemplars`, `oracle_unfit` |
+| `SYSTEM_FAULT` | holdout or certify failure *after* clearing the evidence gate; also `seal_failed`, `register_refused`, `replan_failed`, `tag_collision` |
+
+`tag_collision` is classified as `SYSTEM_FAULT` in v1 because the creative
+hemisphere does not mint tags (§9) — the tags come from the gap's ports, so
+charging the proposer for a tag it did not choose would corrupt the trust
+number. It moves to `PROPOSER_FAULT` if tag minting is ever delegated.
+
+The implementation enumerates all 14 atoms actually produced by
+`src/acquire.c`; the five blameless ones are `waiting_oracle`,
+`incumbent_healthy`, `unknown_subject`, `multi_port_unsupported` and
+`unbounded_domain`. An atom not in the table is counted as `UNCLASSIFIED`
+and surfaced loudly rather than folded into a fault bucket.
 
 `BLAMELESS` is excluded from every denominator. Charging a proposer for a gap
 it was never offered would make the trust number meaningless.

@@ -7,10 +7,28 @@
 
 #ifdef _WIN32
 #include <io.h>
+#include <fcntl.h>
 #include <windows.h>
+/* Windows has no O_NOFOLLOW or O_CLOEXEC. Dropping O_NOFOLLOW does not weaken
+   the anti-symlink property of cnb_save: that rests on O_CREAT|O_EXCL, which
+   fails when the path already exists — including when it is a symlink or a
+   reparse point. _O_NOINHERIT is the O_CLOEXEC analogue. */
+#ifndef O_NOFOLLOW
+#define O_NOFOLLOW 0
+#endif
+#ifndef O_CLOEXEC
+#define O_CLOEXEC _O_NOINHERIT
+#endif
 #else
 #include <fcntl.h>
 #include <unistd.h>
+#endif
+
+/* Sealed containers are byte-exact. Without O_BINARY the Windows CRT
+   translates \n to \r\n on write and the seal digest no longer matches.
+   POSIX has no such mode, where this is a no-op. */
+#ifndef O_BINARY
+#define O_BINARY 0
 #endif
 
 #define CNB_MAGIC "CNB1"
@@ -700,7 +718,9 @@ int cnb_save(const CnetBase *b, const char *path) {
     {
         int tfd;
         (void)remove(tmp);
-        tfd = open(tmp, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC,
+        tfd = open(tmp,
+                   O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC |
+                       O_BINARY,
                    0600);
         if (tfd < 0) goto done;
         f = fdopen(tfd, "wb");
