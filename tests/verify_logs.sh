@@ -34,6 +34,7 @@ mutate.log|||All mutation-sweep gates passed.
 acquire.log|||ALL ACQUIRE TESTS PASSED
 attribution.log|||ALL ATTRIBUTION TESTS PASSED
 qat_block.log|||ALL QAT BLOCK TESTS PASSED
+mojo_bridge.log|||ALL MOJO BRIDGE TESTS PASSED
 base.log|||ALL BASE TESTS PASSED
 flagship.log|||ALL FLAGSHIP TESTS PASSED
 decimal_demo.log|||All decimal acts passed.

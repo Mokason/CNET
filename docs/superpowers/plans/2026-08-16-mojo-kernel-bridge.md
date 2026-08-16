@@ -256,8 +256,8 @@ Check the sigmoid: read the `sigmoid` helper `cce_block.c` uses and reproduce it
 Run: `make mojo_bridge && cat logs/mojo_bridge.log`
 Expected: `ALL MOJO BRIDGE TESTS PASSED`, with an `ANCHOR ... digest=...` line.
 
-**Write the printed digest into this plan, right here, replacing this
-sentence.** Every later task must reproduce it.
+**ANCHOR (recorded 2026-08-16): `c88ffc1c1ef0f50a`** for `in=64 out=96`,
+sigmoid on. Every later task must reproduce it.
 
 - [ ] **Step 6: Point cce_block_forward at the extracted kernel**
 
