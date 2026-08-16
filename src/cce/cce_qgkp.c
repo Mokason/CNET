@@ -9,6 +9,10 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#ifdef _WIN32
+#include <io.h>       /* _commit: the fsync analogue on Windows */
+#define fsync(fd) _commit(fd)
+#endif
 
 #include "../../include/cnet_platform.h"  /* cnet_fsync */
 

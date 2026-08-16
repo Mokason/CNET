@@ -12,6 +12,9 @@
 #include <direct.h>  /* _mkdir -- MinGW's mkdir() takes one argument */
 #endif
 #include <errno.h>
+#if defined(_WIN32)
+#include <direct.h>   /* _mkdir (single-argument form) */
+#endif
 
 /* ========================================================================
  * Registry core + persistence + lifecycle + entry utilities

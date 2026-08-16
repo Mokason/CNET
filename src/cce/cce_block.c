@@ -1,6 +1,7 @@
 #include "../../include/cce/cce_block.h"
 #include "../../include/cce/cce_gpu.h"
 #include "../../include/cce/cce_trit_lut.h"
+#include "../../include/cce/cce_mojo_kernel.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -135,30 +136,18 @@ cce_result cce_block_forward(const cce_block* blk, const cce_tensor* input, cce_
        output o still accumulates a*code over i ascending -> bit-identical to
        the int8 ternary path. Tiles are 510 wide (a multiple of 5) so every
        tile starts byte-aligned in the packed rows. */
-    if (blk->w_trit && blk->w_scale) {
-#ifdef _OPENMP
-        #pragma omp parallel for schedule(static) default(none) \
-                shared(output, blk, input, in_dim, out_dim, is_head, cce_trit_lut) \
-                if((size_t)in_dim * (size_t)out_dim >= (size_t)1 << 21)
-#endif
-        for (int ob = 0; ob < out_dim; ob += 510) {
-            int oe = (ob + 510 < out_dim) ? ob + 510 : out_dim;
-            int w = oe - ob;
-            int nb = (w + 4) / 5;             /* packed bytes covering the tile */
-            int8_t codes[510 + 8];            /* +8: the last decode store overlaps */
-            float* out = &output->data[ob];
-            for (int o = 0; o < w; ++o) out[o] = 0.0f;
-            for (int i = 0; i < in_dim; ++i) {
-                const float a = input->data[i];
-                const uint8_t* p = &blk->w_trit[(size_t)i * blk->w_trit_bpr + (size_t)(ob / 5)];
-                for (int b = 0; b < nb; ++b)
-                    memcpy(&codes[b * 5], cce_trit_lut[p[b]], 8);
-                for (int o = 0; o < w; ++o) out[o] += a * (float)codes[o];
-            }
-            for (int o = 0; o < w; ++o) {
-                float v = blk->bias.data[ob + o] + blk->w_scale[ob + o] * out[o];
-                out[o] = is_head ? v : sigmoid(v);
-            }
+if (blk->w_trit && blk->w_scale) {
+        /* Ternary path lives in cce_trit_kernel.c so the Mojo bridge's
+           equivalence harness can call it directly. Dispatch declines unless
+           a Mojo kernel is both compiled in and enabled, so by default this
+           is exactly the C kernel that was inline here. */
+        int trit_sig = is_head ? 0 : 1;
+        if (cce_mojo_dispatch_trit(input->data, blk->w_trit, blk->w_scale,
+                                   blk->bias.data, output->data, in_dim,
+                                   out_dim, blk->w_trit_bpr, trit_sig) != 0) {
+            cce_trit_matmul_c(input->data, blk->w_trit, blk->w_scale,
+                              blk->bias.data, output->data, in_dim, out_dim,
+                              blk->w_trit_bpr, trit_sig);
         }
         return CCE_OK;
     }

@@ -1,4 +1,5 @@
 #include "../include/acquire.h"
+#include "../include/attribution.h"
 #include "../include/base.h"
 #include "../include/contract/unit.h"
 #include "../include/specialist.h"
@@ -1435,6 +1436,7 @@ train_student:
         rep->last_bound = bound;
         rep->last_min_margin = ex.domain_swept > 0 ? ex.min_margin_domain
                                                    : ex.certify.min_margin;
+        rep->last_domain_card = ex.coverage.domain_cardinality;
         snprintf(rep->last_unit_name, ACQUIRE_NAME_MAX, "%s", name);
     }
     if (o) o->seals_produced++;
@@ -1620,10 +1622,35 @@ static int attempt_rebuild(PrimitiveRegistry *reg, AcquireLedger *l,
         rep->last_bound = bound;
         rep->last_min_margin = ex.domain_swept > 0 ? ex.min_margin_domain
                                                    : ex.certify.min_margin;
+        rep->last_domain_card = ex.coverage.domain_cardinality;
         snprintf(rep->last_unit_name, ACQUIRE_NAME_MAX, "%s", name);
     }
     if (o) o->seals_produced++;
     return 0;
+}
+
+/* Emit one attribution event for a settled gap. REPORT-ONLY: nothing here
+   feeds back into the drain, and a NULL hook makes it a no-op — which is what
+   makes the identical-drain gate in tests/test_attribution.c meaningful.
+   Called AFTER the recipe fingerprint is stamped, so the event carries the
+   fingerprint the deferral was actually recorded under. */
+static void emit_attempt(const AcquireConfig *cfg, const GapRecord *g,
+                         const AcquireReport *rep) {
+    struct AttributionEvent ev;
+    if (!cfg || !cfg->on_attempt || !g) return;
+    memset(&ev, 0, sizeof ev);
+    ev.proposer = g->oracle;
+    ev.input_port = g->input_port;
+    ev.goal_port = g->goal_port;
+    ev.reason = g->defer_reason;
+    ev.admitted = (g->status == GAP_CLOSED) ? 1 : 0;
+    ev.recipe_fp = g->recipe_fp;
+    ev.min_margin = rep ? rep->last_min_margin : 1.0;
+    ev.domain_cardinality = (rep && g->status == GAP_CLOSED)
+                                ? rep->last_domain_card : 0;
+    ev.cert_verdict = (rep && g->status == GAP_CLOSED)
+                          ? (int)rep->last_verdict : -1;
+    cfg->on_attempt(&ev, cfg->on_attempt_ctx);
 }
 
 int acquire_drain(PrimitiveRegistry *reg, AcquireLedger *l,
@@ -1679,6 +1706,7 @@ int acquire_drain(PrimitiveRegistry *reg, AcquireLedger *l,
             /* stamp the recipe a fresh deferral happened under, so it will not
                reopen again until the recipe changes */
             if (g->status == GAP_DEFERRED) g->recipe_fp = fp;
+            emit_attempt(cfg, g, report);
         }
     }
     /* Aggregate oracle economics after the drain (best-effort). */
@@ -1717,10 +1745,12 @@ int acquire_now(PrimitiveRegistry *reg, AcquireLedger *l,
             if (report) report->skipped_no_oracle++;
             gap_defer(&l->gaps[idx], report, ACQUIRE_DEFER_WAITING_ORACLE);
             l->gaps[idx].recipe_fp = fp;
+            emit_attempt(cfg, &l->gaps[idx], report);
             return -1;
         }
         rc = attempt_no_plan(reg, l, o, &l->gaps[idx], cfg, report);
         if (l->gaps[idx].status == GAP_DEFERRED) l->gaps[idx].recipe_fp = fp;
+        emit_attempt(cfg, &l->gaps[idx], report);
         return rc;
     }
 }

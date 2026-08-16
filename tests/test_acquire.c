@@ -309,6 +309,9 @@ int main(void) {
                    "verdict=%d, unit=%s\n",
                    1000.0 * (double)(t1 - t0) / (double)CLOCKS_PER_SEC,
                    (int)rep.last_verdict, rep.last_unit_name);
+            printf("  [diag] examined=%lu closed=%lu deferred=%lu reason=%s\n",
+                   (unsigned long)rep.examined, (unsigned long)rep.closed,
+                   (unsigned long)rep.deferred, rep.last_defer_reason);
         }
         check(rep.examined == 1 && rep.closed == 1 && rep.deferred == 0,
               "drain closed the gap");

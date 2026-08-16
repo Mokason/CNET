@@ -119,6 +119,20 @@ endif
 CFLAGS += -DCNET_HAVE_CURL=$(CNET_HAVE_CURL)
 # Pull curl into all residual/personal_ai-linked binaries (HTTP residual).
 LDFLAGS += $(CURL_LDFLAGS)
+
+# Mojo is OPTIONAL and never load-bearing. Probe for the toolchain exactly as
+# CURL_PROBE does above; absent, the dispatch layer compiles with its Mojo
+# branch preprocessed out and nothing else changes. Mojo has no native Windows
+# support (WSL2 only), so the Windows test box always takes the absent path.
+MOJO_PROBE := $(shell command -v mojo >/dev/null 2>&1 && echo yes || echo no)
+ifeq ($(MOJO_PROBE),yes)
+MOJO_LIB := $(BIN_DIR)/libcnet_mojo.so
+MOJO_LDFLAGS := -L$(BIN_DIR) -lcnet_mojo -Wl,-rpath,$(CURDIR)/$(BIN_DIR)
+CFLAGS += -DCNET_HAVE_MOJO
+else
+MOJO_LIB :=
+MOJO_LDFLAGS :=
+endif
 MCP_LDFLAGS :=
 ifeq ($(OS),Windows_NT)
 MCP_LDFLAGS := -lwininet
@@ -377,8 +391,12 @@ CCE_HIPGEMM := src/cce/cce_hipgemm.c
 # Inert at runtime unless an NVIDIA driver is present and CNET_GPU_BACKEND=cuda
 # (or auto falls back after OpenCL/hip miss). Peer of CCE_HIPGEMM / CCE_CLGEMM.
 CCE_CUDAGEMM := src/cce/cce_cudagemm.c
-CCE_TRANSFORMER_QAT := src/cce/cce_transformer_qat.c
-CCE := $(CCE_TENSOR) $(CCE_BLOCK) $(CCE_CASCADE) $(CCE_ARCHIVE) $(CCE_FOREST) $(CCE_ROUTER) $(CCE_SPARSE_KV) $(CCE_DSA) $(CCE_KV_PAGE) $(CCE_MTK) $(CCE_MLA) $(CCE_DS_MAP) $(CCE_DS_RT) $(CCE_INFER) $(CCE_UNCERTAINTY) $(CCE_COMPRESSION) $(CCE_LEARN) $(CCE_LORA) $(CCE_LILY) $(CCE_PATCH) $(CCE_GPU) $(CCE_ABI) $(CCE_CUDA_OBJ) $(CCE_PERCEPTUAL) $(CCE_WORDLM) $(CCE_MODEL) $(CCE_MODEL_IO) $(CCE_DATASET) $(CCE_AUTOGRAD) $(CCE_SAFETENSORS) $(CCE_GGUF) $(CCE_AICIMO) $(CCE_QGKP) $(CCE_DETECT) $(CCE_SSM) $(CCE_HYBRID) $(CCE_QWEN35) $(CCE_GGUF_QWEN35) $(CCE_ST_LLAMA) $(CCE_SPECGRAPH) $(CCE_WSTORE) $(CCE_TIERRT) $(CCE_SIMILAR) $(CCE_CLGEMM) $(CCE_HIPGEMM) $(CCE_CUDAGEMM) $(CCE_TRANSFORMER_QAT)
+MOJO_KERNEL_SRC := src/cce/cce_trit_kernel.c src/cce/cce_mojo_dispatch.c
+QAT_CORE_SRC := src/cce/cce_transformer_qat.c
+QAT_LOAD_SRC := src/cce/cce_transformer_qat_load.c
+CCE_TRANSFORMER_QAT := $(QAT_CORE_SRC) $(QAT_LOAD_SRC)
+CCE_MOJO := $(MOJO_KERNEL_SRC)
+CCE := $(CCE_TENSOR) $(CCE_BLOCK) $(CCE_CASCADE) $(CCE_ARCHIVE) $(CCE_FOREST) $(CCE_ROUTER) $(CCE_SPARSE_KV) $(CCE_DSA) $(CCE_KV_PAGE) $(CCE_MTK) $(CCE_MLA) $(CCE_DS_MAP) $(CCE_DS_RT) $(CCE_INFER) $(CCE_UNCERTAINTY) $(CCE_COMPRESSION) $(CCE_LEARN) $(CCE_LORA) $(CCE_LILY) $(CCE_PATCH) $(CCE_GPU) $(CCE_ABI) $(CCE_CUDA_OBJ) $(CCE_PERCEPTUAL) $(CCE_WORDLM) $(CCE_MODEL) $(CCE_MODEL_IO) $(CCE_DATASET) $(CCE_AUTOGRAD) $(CCE_SAFETENSORS) $(CCE_GGUF) $(CCE_AICIMO) $(CCE_QGKP) $(CCE_DETECT) $(CCE_SSM) $(CCE_HYBRID) $(CCE_QWEN35) $(CCE_GGUF_QWEN35) $(CCE_ST_LLAMA) $(CCE_SPECGRAPH) $(CCE_WSTORE) $(CCE_TIERRT) $(CCE_SIMILAR) $(CCE_CLGEMM) $(CCE_HIPGEMM) $(CCE_CUDAGEMM) $(CCE_TRANSFORMER_QAT) $(CCE_MOJO)
 CNET_CCE_ADAPTER := src/cce/cce_contract_adapter.c
 SPECIALIST_ADAPTERS := src/specialist_adapters.c
 SPECIALIST_SRC := src/specialist.c src/specialist_health.c
@@ -477,6 +495,8 @@ GRADUATE_SRC := src/corpus/graduate.c
 GRADUATE_TEST := tests/test_graduate.c
 ACQUIRE_SRC := src/acquire.c src/runtime_identity.c
 ACQUIRE_TEST := tests/test_acquire.c
+ATTRIB_SRC := src/attribution.c
+ATTRIB_TEST := tests/test_attribution.c
 BASE_SRC := src/base.c
 BASE_TEST := tests/test_base.c
 FLAGSHIP_SRC := src/flagship.c
@@ -1014,8 +1034,8 @@ heal_mismatch_san: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONSOLIDATE) $(CONTRACT) tes
 # Loader robustness: systematic single-byte flip + truncation sweeps over
 # every artifact loader. Sealed formats (.cnu/.cnb) must refuse EVERY
 # mutation; unsealed probes (gguf/safetensors/.cce) must never crash.
-mutate: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(CCE) tests/test_mutate.c include/contract/unit.h include/base.h include/cce/cce_archive.h include/cce/cce_detect.h
-	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(CCE) tests/test_mutate.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+mutate: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(ATTRIB_SRC) $(CONFORMAL) $(CCE) tests/test_mutate.c include/contract/unit.h include/base.h include/attribution.h include/cce/cce_archive.h include/cce/cce_detect.h
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(ATTRIB_SRC) $(CONFORMAL) $(CCE) tests/test_mutate.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 	./$(BIN_DIR)/mutate > logs/mutate.log 2>&1
 
 # Gap-triggered acquisition loop: gap ledger sidecar + oracle mining ->
@@ -1024,6 +1044,18 @@ mutate: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(
 acquire: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(ACQUIRE_TEST) include/nn.h include/router.h include/contract/contract.h include/contract/coverage.h include/contract/unit.h include/acquire.h include/base.h
 	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(ACQUIRE_TEST) $(LDFLAGS)
 	./$(BIN_DIR)/acquire > logs/acquire.log 2>&1
+
+# Core attribution layer: per-(proposer, goal signature) evidence separating
+# proposer fault from system fault, keyed off the stage an attempt died at.
+# REPORT-ONLY — includes the byte-identical drain gate proving that attaching
+# the sink changes nothing acquire can observe.
+attribution: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(CONFORMAL) $(ACQUIRE_SRC) $(BASE_SRC) $(ATTRIB_SRC) $(ATTRIB_TEST) include/nn.h include/acquire.h include/attribution.h include/contract/conformal.h
+	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(CONFORMAL) $(ACQUIRE_SRC) $(BASE_SRC) $(ATTRIB_SRC) $(ATTRIB_TEST) $(LDFLAGS)
+	./$(BIN_DIR)/attribution > logs/attribution.log 2>&1
+
+# Inspector for a CNET_ATTRIB sidecar (report-only, changes nothing).
+attrib_report: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(CONFORMAL) $(ATTRIB_SRC) tools/attrib_report.c include/attribution.h
+	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(CONFORMAL) $(ATTRIB_SRC) tools/attrib_report.c $(LDFLAGS)
 
 # Unified base (CNB version 2 semantics under stable CNB1 magic): one sealed
 # container (units + tags + stats + oracle descriptors) replacing per-unit file
@@ -2784,6 +2816,32 @@ hybrid_catalog: $(CCE) $(CCE_CUDA_OBJ) tests/hybrid_catalog_test.c tests/tiny_mo
 transformer_qat: $(CCE) $(CCE_CUDA_OBJ) tests/test_transformer_qat.c include/cce/cce_transformer_qat.h
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) tests/test_transformer_qat.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 	./$(BIN_DIR)/transformer_qat > logs/transformer_qat.log 2>&1
+
+# Hermetic QAT block gate: links the trainer CORE ONLY — no $(CCE), so no
+# curl/mmap/fsync/POSIX-mkdir dependency. Builds on every box, which is what
+# makes the gradcheck gates in this arc actually runnable.
+qat_block: $(QAT_CORE_SRC) tests/test_qat_block.c include/cce/cce_transformer_qat.h include/cce/cce_transformer_qat_internal.h
+	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $(QAT_CORE_SRC) tests/test_qat_block.c -lm
+	./$(BIN_DIR)/qat_block > logs/qat_block.log 2>&1
+
+# Mojo kernel bridge gate. Links the extracted C kernel and dispatch layer
+# ONLY -- no $(CCE) -- so it builds on every box including the Windows one,
+# which cannot run Mojo (no native Windows support).
+mojo_bridge: $(MOJO_KERNEL_SRC) $(MOJO_LIB) tests/test_mojo_bridge.c include/cce/cce_mojo_kernel.h include/cce/cce_trit_lut.h
+	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $(MOJO_KERNEL_SRC) tests/test_mojo_bridge.c $(MOJO_LDFLAGS) -lm
+	./$(BIN_DIR)/mojo_bridge > logs/mojo_bridge.log 2>&1
+
+# Built ONLY when the toolchain is present. --emit shared-lib is the verified
+# 1.0 flag; a C host must also call runtime.initialize_runtime(), which the
+# dispatch layer does once via cnet_mojo_init.
+$(BIN_DIR)/libcnet_mojo.so: mojo/trit_matmul.mojo
+	mojo build --emit shared-lib -o $@ $<
+
+# C vs Mojo timing. Reports C-only where the toolchain is absent, so the
+# harness is verified before it ever sees a Mojo kernel.
+mojo_bench: $(MOJO_KERNEL_SRC) $(MOJO_LIB) tests/mojo_bench.c include/cce/cce_mojo_kernel.h
+	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $(MOJO_KERNEL_SRC) tests/mojo_bench.c $(MOJO_LDFLAGS) -lm
+	./$(BIN_DIR)/mojo_bench
 
 # Trit-kernel micro-benchmark: FP vs int8 vs packed 1.6-bit forward on a
 # Supra-head-shaped block + the packed word-LM predict loop. Carries its own
@@ -8046,12 +8104,6 @@ cnet_7b_compete_results:
 				'broader_claims=WITHHELD'; \
 			exit 1; \
 		fi
-
-cnet_gguf_peek: tools/cnet_gguf_peek.c $(CCE)
-	@mkdir -p $(BIN_DIR) logs result
-	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/cnet_gguf_peek tools/cnet_gguf_peek.c $(CCE) $(CCE_CUDA_OBJ) src/nn.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
-	@./$(BIN_DIR)/cnet_gguf_peek /home/marble/AI/Models/Bonsai-8B-gguf/Bonsai-8B.gguf attn_q | tee logs/cnet_gguf_peek.log
-	@grep -q 'CCE_GGUF_PEEK_OK' logs/cnet_gguf_peek.log
 
 .PHONY: cnet_gguf_peek
 cnet_gguf_peek: tools/cnet_gguf_peek.c $(CCE)
