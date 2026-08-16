@@ -224,6 +224,32 @@ int main(void) {
         }
     }
 
+    printf("[8] SwiGLU gradcheck\n");
+    {
+        cce_transformer_qat_config c;
+        cce_transformer_qat* t;
+        cfg_legacy(&c);
+        c.mlp_kind = QAT_MLP_SWIGLU;
+        t = cce_transformer_qat_create(&c);
+        CHECK(t != NULL, "SwiGLU trainer creates");
+        if (t) {
+            /* +gate_w and +gate_b per layer: the 13th and 14th per-layer
+               groups, exactly what the old groups[128] guard would have
+               silently dropped. */
+            int expect = 2 + 14 * c.n_layer + 4;
+            printf("  info SwiGLU groups=%d expected=%d\n",
+                   cce_transformer_qat_group_count(t), expect);
+            CHECK(cce_transformer_qat_group_count(t) == expect,
+                  "SwiGLU adds the gate groups");
+            {
+                double rel = cce_transformer_qat_gradcheck(t, seq, T_, tgt, 6);
+                printf("  info SwiGLU gradcheck rel err = %.3e\n", rel);
+                CHECK(rel < 5e-3, "SwiGLU backward matches central differences");
+            }
+            cce_transformer_qat_free(t);
+        }
+    }
+
     printf("checks=%d fails=%d\n", checks, fails);
     if (fails) return 1;
     printf("ALL QAT BLOCK TESTS PASSED\n");

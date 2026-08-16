@@ -327,6 +327,16 @@ static void norm_bwd(const cce_transformer_qat* t, const float* x, const float* 
         ln_bwd(x, w, dy, mean, rstd, T, D, dx, dw, db);
 }
 
+/* ---- SiLU / swish, for SwiGLU ---- */
+static float silu_f(float x) {
+    double sg = 1.0 / (1.0 + exp(-(double)x));
+    return (float)((double)x * sg);
+}
+static float silu_df(float x) {
+    double sg = 1.0 / (1.0 + exp(-(double)x));
+    return (float)(sg * (1.0 + (double)x * (1.0 - sg)));
+}
+
 /* ---- tanh-GELU (matches cce_tensor_gelu constants) ---- */
 static float gelu_f(float x) {
     float x3 = x*x*x;
@@ -388,12 +398,16 @@ cce_transformer_qat* cce_transformer_qat_create(const cce_transformer_qat_config
     t->down_w = (P*)calloc(L, sizeof(P)); t->down_b = (P*)calloc(L, sizeof(P));
     t->ln1_w  = (P*)calloc(L, sizeof(P)); t->ln1_b  = (P*)calloc(L, sizeof(P));
     t->ln2_w  = (P*)calloc(L, sizeof(P)); t->ln2_b  = (P*)calloc(L, sizeof(P));
+    t->gate_w = (P*)calloc(L, sizeof(P)); t->gate_b = (P*)calloc(L, sizeof(P));
     if (!t->qkv_w || !t->qkv_b || !t->proj_w || !t->proj_b || !t->up_w || !t->up_b ||
         !t->down_w || !t->down_b || !t->ln1_w || !t->ln1_b || !t->ln2_w || !t->ln2_b) ok = 0;
     for (int l = 0; ok && l < L; ++l) {
         PA(t->qkv_w[l], D, 3*D, "qkv_w");  PA(t->qkv_b[l], 1, 3*D, "qkv_b");
         PA(t->proj_w[l], D, D, "proj_w");  PA(t->proj_b[l], 1, D, "proj_b");
         PA(t->up_w[l], D, M, "up_w");      PA(t->up_b[l], 1, M, "up_b");
+        if (cfg->mlp_kind == QAT_MLP_SWIGLU) {
+            PA(t->gate_w[l], D, M, "gate_w"); PA(t->gate_b[l], 1, M, "gate_b");
+        }
         PA(t->down_w[l], M, D, "down_w");  PA(t->down_b[l], 1, D, "down_b");
         PA(t->ln1_w[l], 1, D, "ln1_w");
         PA(t->ln2_w[l], 1, D, "ln2_w");
@@ -422,6 +436,12 @@ cce_transformer_qat* cce_transformer_qat_create(const cce_transformer_qat_config
     t->probs = (float*)calloc((size_t)L*cfg->n_head*B*B, sizeof(float));
     t->cat   = (float*)calloc((size_t)L*TD, sizeof(float));
     t->xattn = (float*)calloc((size_t)L*TD, sizeof(float));
+    if (cfg->mlp_kind == QAT_MLP_SWIGLU) {
+        t->mgate = (float*)calloc((size_t)L*TM, sizeof(float));
+        t->dgate = (float*)calloc((size_t)TM, sizeof(float));
+        t->dxg   = (float*)calloc((size_t)cfg->block_size*D, sizeof(float));
+        ok &= (t->mgate && t->dgate && t->dxg) ? 1 : 0;
+    }
     t->mpre  = (float*)calloc((size_t)L*TM, sizeof(float));
     t->mpost = (float*)calloc((size_t)L*TM, sizeof(float));
     t->hfin  = (float*)calloc(D, sizeof(float));
@@ -451,6 +471,8 @@ cce_transformer_qat* cce_transformer_qat_create(const cce_transformer_qat_config
         for (size_t i = 0; i < (size_t)D*3*D; ++i) t->qkv_w[l].w[i] = sc * tr_rnd(t);
         for (size_t i = 0; i < (size_t)D*D; ++i)   t->proj_w[l].w[i] = sc * tr_rnd(t);
         for (size_t i = 0; i < (size_t)D*M; ++i)   t->up_w[l].w[i] = sc * tr_rnd(t);
+        if (t->gate_w[l].w)
+            for (size_t i = 0; i < (size_t)D*M; ++i) t->gate_w[l].w[i] = sc * tr_rnd(t);
         for (size_t i = 0; i < (size_t)M*D; ++i)   t->down_w[l].w[i] = sc * tr_rnd(t);
         for (int i = 0; i < D; ++i) { t->ln1_w[l].w[i] = 1.0f; t->ln2_w[l].w[i] = 1.0f; }
     }
@@ -477,14 +499,18 @@ void cce_transformer_qat_free(cce_transformer_qat* t) {
         if (t->ln1_b)  p_free(&t->ln1_b[l]);
         if (t->ln2_w)  p_free(&t->ln2_w[l]);
         if (t->ln2_b)  p_free(&t->ln2_b[l]);
+        if (t->gate_w) p_free(&t->gate_w[l]);
+        if (t->gate_b) p_free(&t->gate_b[l]);
     }
     free(t->qkv_w); free(t->qkv_b); free(t->proj_w); free(t->proj_b);
     free(t->up_w); free(t->up_b); free(t->down_w); free(t->down_b);
     free(t->ln1_w); free(t->ln1_b); free(t->ln2_w); free(t->ln2_b);
+    free(t->gate_w); free(t->gate_b);
     p_free(&t->lnf_w); p_free(&t->lnf_b); p_free(&t->head_w); p_free(&t->head_b);
     free(t->x0); free(t->xin); free(t->ln1o); free(t->ln2o);
     free(t->ln1_mean); free(t->ln1_rstd); free(t->ln2_mean); free(t->ln2_rstd);
     free(t->qkv); free(t->probs); free(t->cat); free(t->xattn);
+    free(t->mgate); free(t->dgate); free(t->dxg);
     free(t->mpre); free(t->mpost); free(t->hfin); free(t->logits);
     free(t->eff); free(t->dx); free(t->dtmp); free(t->dmid); free(t->dqkv); free(t->dcat);
     free(t);
@@ -605,7 +631,16 @@ static cce_result tr_forward(cce_transformer_qat* t, const int* tokens, int T) {
         norm_fwd(t, xatt, t->ln2_w[l].w, t->ln2_b[l].w, T, D, ln2o,
                t->ln2_mean + (size_t)l*c->block_size, t->ln2_rstd + (size_t)l*c->block_size);
         lin_fwd(ln2o, mat_eff(t, &t->up_w[l], c->qat_mlp), t->up_b[l].w, mpre, T, D, M);
-        for (size_t i = 0; i < (size_t)T*M; ++i) mpost[i] = gelu_f(mpre[i]);
+        if (c->mlp_kind == QAT_MLP_SWIGLU) {
+            /* h = SiLU(gate) * up */
+            float* mgate = t->mgate + (size_t)l*c->block_size*M;
+            lin_fwd(ln2o, mat_eff(t, &t->gate_w[l], c->qat_mlp), t->gate_b[l].w,
+                    mgate, T, D, M);
+            for (size_t i = 0; i < (size_t)T*M; ++i)
+                mpost[i] = silu_f(mgate[i]) * mpre[i];
+        } else {
+            for (size_t i = 0; i < (size_t)T*M; ++i) mpost[i] = gelu_f(mpre[i]);
+        }
         lin_fwd(mpost, mat_eff(t, &t->down_w[l], c->qat_mlp), t->down_b[l].w, x, T, M, D);
         for (size_t i = 0; i < (size_t)T*D; ++i) x[i] += xatt[i];
     }
@@ -689,10 +724,29 @@ static void tr_backward(cce_transformer_qat* t, const int* tokens, const float* 
         /* d(mpost) = dx·down_wᵀ ; d(down) += mpostᵀ·dx */
         lin_bwd(mpost, mat_eff(t, &t->down_w[l], c->qat_mlp), t->dx,
                 t->down_w[l].g, t->down_b[l].g, t->dmid, T, M, D);
+        if (c->mlp_kind == QAT_MLP_SWIGLU) {
+            /* product rule across the two branches:
+                 d(up)   = dmid * SiLU(gate)
+                 d(gate) = dmid * up * SiLU'(gate)               */
+            const float* mgate = t->mgate + (size_t)l*c->block_size*M;
+            for (size_t i = 0; i < (size_t)T*M; ++i) {
+                float dh = t->dmid[i];
+                t->dgate[i] = dh * mpre[i] * silu_df(mgate[i]);
+                t->dmid[i]  = dh * silu_f(mgate[i]);
+            }
+            lin_bwd(ln2o, mat_eff(t, &t->up_w[l], c->qat_mlp), t->dmid,
+                    t->up_w[l].g, t->up_b[l].g, t->dtmp, T, D, M);
+            lin_bwd(ln2o, mat_eff(t, &t->gate_w[l], c->qat_mlp), t->dgate,
+                    t->gate_w[l].g, t->gate_b[l].g, t->dxg, T, D, M);
+            /* lin_bwd ASSIGNS into its dx output, so the branches are summed
+               here rather than accumulating in place. */
+            for (size_t i = 0; i < (size_t)T*D; ++i) t->dtmp[i] += t->dxg[i];
+        } else {
         for (size_t i = 0; i < (size_t)T*M; ++i) t->dmid[i] *= gelu_df(mpre[i]);
         /* d(ln2o) via up ; d(up) += ln2oᵀ·dmid */
         lin_bwd(ln2o, mat_eff(t, &t->up_w[l], c->qat_mlp), t->dmid,
                 t->up_w[l].g, t->up_b[l].g, t->dtmp, T, D, M);
+        }
         /* dxatt = dx (residual) + LN2-bwd(dtmp) */
         norm_bwd(t, xatt, t->ln2_w[l].w, t->dtmp,
                t->ln2_mean + (size_t)l*c->block_size, t->ln2_rstd + (size_t)l*c->block_size,

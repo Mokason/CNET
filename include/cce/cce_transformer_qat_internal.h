@@ -32,6 +32,7 @@ struct cce_transformer_qat {
     P *up_w, *up_b;           /* per layer [D][M],  [1][M]  */
     P *down_w, *down_b;       /* per layer [M][D],  [1][D]  */
     P *ln1_w, *ln1_b, *ln2_w, *ln2_b;  /* per layer [1][D] */
+    P *gate_w, *gate_b;       /* per layer [D][M], [1][M]; SwiGLU only */
     P lnf_w, lnf_b;           /* [1][D] */
     P head_w, head_b;         /* [D][vocab], [1][vocab] (QAT-able) */
     /* adam step counter */
@@ -46,6 +47,7 @@ struct cce_transformer_qat {
     float *probs;             /* [L][H][T][T] softmax rows */
     float *cat;               /* [L][T][D] concat of head outputs */
     float *xattn;             /* [L][T][D] x after attention residual */
+    float *mgate;             /* [L][T][M] SwiGLU gate pre-activation */
     float *mpre;              /* [L][T][M] pre-GELU */
     float *mpost;             /* [L][T][M] post-GELU */
     float *hfin;              /* [D] final LN output (last position) */
@@ -55,6 +57,9 @@ struct cce_transformer_qat {
     float *eff;               /* max(in*out) over QAT-able matrices */
     /* backward scratch */
     float *dx, *dtmp, *dmid, *dqkv, *dcat;
+    float *dgate, *dxg;       /* SwiGLU: gate-branch grads (lin_bwd ASSIGNS
+                                 into dx, so the two branches need separate
+                                 buffers that are then summed) */
     unsigned long long rng;
     /* Gradcheck group registry. Registration is a SIDE EFFECT of allocation
        (the PA macro in create allocates and registers in one call), so a new
