@@ -215,6 +215,54 @@ static void ln_bwd(const float* x, const float* w, const float* dy,
     }
 }
 
+/* ---- RoPE: rotary position embedding, NO parameters --------------------
+   For pair index j at position p: freq = theta^(-2j/hd), ang = p*freq.
+   half-split pairs (j, j+hd/2) -- the HF Llama/Qwen convention;
+   interleaved pairs (2j, 2j+1). They are NOT interchangeable: a wrong
+   pairing trains perfectly well and matches no reference implementation,
+   which gradcheck cannot detect (any consistent rotation differentiates
+   correctly). tests/test_qat_block.c section 7 pins it algebraically. */
+static void rope_pair(int hd, int pairing, int j, int* a, int* b) {
+    if (pairing == QAT_ROPE_INTERLEAVED) { *a = 2*j; *b = 2*j + 1; }
+    else { *a = j; *b = j + hd/2; }
+}
+
+static void rope_angles(int hd, int pos, float theta, int j,
+                        float* cs, float* sn) {
+    double freq = pow((double)theta, -2.0 * (double)j / (double)hd);
+    double ang = (double)pos * freq;
+    *cs = (float)cos(ang);
+    *sn = (float)sin(ang);
+}
+
+static void rope_apply(float* v, int hd, int pos, float theta, int pairing) {
+    for (int j = 0; j < hd/2; ++j) {
+        int a, b; float cs, sn, va, vb;
+        rope_pair(hd, pairing, j, &a, &b);
+        rope_angles(hd, pos, theta, j, &cs, &sn);
+        va = v[a]; vb = v[b];
+        v[a] = va*cs - vb*sn;
+        v[b] = va*sn + vb*cs;
+    }
+}
+
+/* The exact adjoint of rope_apply: rotation by -ang. */
+static void rope_bwd(float* dv, int hd, int pos, float theta, int pairing) {
+    for (int j = 0; j < hd/2; ++j) {
+        int a, b; float cs, sn, da, db;
+        rope_pair(hd, pairing, j, &a, &b);
+        rope_angles(hd, pos, theta, j, &cs, &sn);
+        da = dv[a]; db = dv[b];
+        dv[a] =  da*cs + db*sn;
+        dv[b] = -da*sn + db*cs;
+    }
+}
+
+void cce_transformer_qat_rope_test(float* v, int hd, int pos, float theta,
+                                   int pairing) {
+    if (v && hd > 1) rope_apply(v, hd, pos, theta, pairing);
+}
+
 /* ---- RMSNorm: no mean subtraction, no bias -----------------------------
    y_i = x_i · r · w_i with r = 1/sqrt(mean(x²) + eps).
    Since ∂r/∂x_i = −r³·x_i/D, with g_i = dy_i·w_i:
@@ -332,7 +380,8 @@ cce_transformer_qat* cce_transformer_qat_create(const cce_transformer_qat_config
 #define PA(fld, in_, out_, nm) (ok &= (p_alloc(&(fld), (in_), (out_)) &&                                        qat_group_add(t, &(fld), (nm), 1)))
 #define PA_FROZEN(fld, in_, out_, nm) (ok &= (p_alloc(&(fld), (in_), (out_)) &&                                               qat_group_add(t, &(fld), (nm), 0)))
     PA(t->tok_emb, V, D, "tok_emb");
-    PA_FROZEN(t->pos_emb, B, D, "pos_emb");   /* frozen FP by design */
+    if (cfg->pos_kind == QAT_POS_LEARNED)     /* RoPE needs no learned table */
+        PA_FROZEN(t->pos_emb, B, D, "pos_emb");   /* frozen FP by design */
     t->qkv_w  = (P*)calloc(L, sizeof(P)); t->qkv_b  = (P*)calloc(L, sizeof(P));
     t->proj_w = (P*)calloc(L, sizeof(P)); t->proj_b = (P*)calloc(L, sizeof(P));
     t->up_w   = (P*)calloc(L, sizeof(P)); t->up_b   = (P*)calloc(L, sizeof(P));
@@ -396,7 +445,8 @@ cce_transformer_qat* cce_transformer_qat_create(const cce_transformer_qat_config
     /* init: small uniform for matrices, ones/zeros for norms */
     float sc = 0.08f;
     for (size_t i = 0; i < (size_t)V*D; ++i) t->tok_emb.w[i] = sc * tr_rnd(t);
-    for (size_t i = 0; i < (size_t)B*D; ++i) t->pos_emb.w[i] = sc * tr_rnd(t);
+    if (t->pos_emb.w)
+        for (size_t i = 0; i < (size_t)B*D; ++i) t->pos_emb.w[i] = sc * tr_rnd(t);
     for (int l = 0; l < L; ++l) {
         for (size_t i = 0; i < (size_t)D*3*D; ++i) t->qkv_w[l].w[i] = sc * tr_rnd(t);
         for (size_t i = 0; i < (size_t)D*D; ++i)   t->proj_w[l].w[i] = sc * tr_rnd(t);
@@ -472,11 +522,14 @@ static cce_result tr_forward(cce_transformer_qat* t, const int* tokens, int T) {
             for (int i = 0; i < D; ++i) {
                 int code = 0;
                 if (g > 0.0f) { float rr = roundf(row[i]/g); if (rr>1)rr=1; if (rr<-1)rr=-1; code=(int)rr; }
-                xr[i] = g * (float)code + t->pos_emb.w[(size_t)r*D + i];
+                xr[i] = g * (float)code +
+                        (t->pos_emb.w ? t->pos_emb.w[(size_t)r*D + i] : 0.0f);
             }
         } else {
             const float* row = t->tok_emb.w + (size_t)tok*D;
-            for (int i = 0; i < D; ++i) xr[i] = row[i] + t->pos_emb.w[(size_t)r*D + i];
+            for (int i = 0; i < D; ++i)
+                xr[i] = row[i] +
+                        (t->pos_emb.w ? t->pos_emb.w[(size_t)r*D + i] : 0.0f);
         }
     }
 
@@ -497,6 +550,18 @@ static cce_result tr_forward(cce_transformer_qat* t, const int* tokens, int T) {
         norm_fwd(t, xin, t->ln1_w[l].w, t->ln1_b[l].w, T, D, ln1o,
                t->ln1_mean + (size_t)l*c->block_size, t->ln1_rstd + (size_t)l*c->block_size);
         lin_fwd(ln1o, mat_eff(t, &t->qkv_w[l], c->qat_qkv), t->qkv_b[l].w, qkv, T, D, 3*D);
+
+        /* RoPE rotates Q and K in place (never V), so the attention loop
+           below is untouched by the position scheme. */
+        if (c->pos_kind == QAT_POS_ROPE) {
+            for (int r = 0; r < T; ++r)
+                for (int h = 0; h < H; ++h) {
+                    rope_apply(qkv + (size_t)r*3*D + h*hd, hd, r,
+                               c->rope_theta, c->rope_pairing);
+                    rope_apply(qkv + (size_t)r*3*D + D + h*hd, hd, r,
+                               c->rope_theta, c->rope_pairing);
+                }
+        }
 
         /* attention per head */
         float scale = 1.0f / sqrtf((float)hd);
@@ -675,6 +740,19 @@ static void tr_backward(cce_transformer_qat* t, const int* tokens, const float* 
                     }
                 }
             }
+        }
+
+        /* Adjoint of the forward rotation, applied at the mirror point: after
+           attention backward has filled dQ/dK, before the qkv linear
+           backward. dV is never rotated, matching forward. */
+        if (c->pos_kind == QAT_POS_ROPE) {
+            for (int r = 0; r < T; ++r)
+                for (int h = 0; h < H; ++h) {
+                    rope_bwd(t->dqkv + (size_t)r*3*D + h*hd, hd, r,
+                             c->rope_theta, c->rope_pairing);
+                    rope_bwd(t->dqkv + (size_t)r*3*D + D + h*hd, hd, r,
+                             c->rope_theta, c->rope_pairing);
+                }
         }
 
         /* d(ln1o) via qkv ; d(qkv_w) += ln1oᵀ·dqkv */

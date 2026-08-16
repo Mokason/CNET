@@ -115,6 +115,13 @@ int cce_transformer_qat_param_count(const cce_transformer_qat* t);
 /* Groups the gradcheck actually visits (excludes frozen-by-design groups). */
 int cce_transformer_qat_trainable_count(const cce_transformer_qat* t);
 
+/* Test hook: rotate one head-dim vector in place at position pos. Exposed so
+ * the RoPE pairing convention can be gated algebraically — gradcheck cannot
+ * catch a wrong pairing, because any consistent rotation differentiates
+ * correctly. */
+void cce_transformer_qat_rope_test(float* v, int hd, int pos, float theta,
+                                   int pairing);
+
 void cce_transformer_qat_set_qat(cce_transformer_qat* t, int qkv, int proj, int mlp,
                              int head, int emb);
 

@@ -162,6 +162,68 @@ int main(void) {
         }
     }
 
+    printf("[6] RoPE gradcheck\n");
+    {
+        cce_transformer_qat_config c;
+        cce_transformer_qat* t;
+        cfg_legacy(&c);
+        c.pos_kind = QAT_POS_ROPE;
+        c.rope_theta = 10000.0f;
+        t = cce_transformer_qat_create(&c);
+        CHECK(t != NULL, "RoPE trainer creates");
+        if (t) {
+            int expect = 1 + 12 * c.n_layer + 4;   /* pos_emb gone */
+            printf("  info RoPE groups=%d expected=%d\n",
+                   cce_transformer_qat_group_count(t), expect);
+            CHECK(cce_transformer_qat_group_count(t) == expect,
+                  "RoPE drops the learned pos_emb group");
+            {
+                double rel = cce_transformer_qat_gradcheck(t, seq, T_, tgt, 6);
+                printf("  info RoPE gradcheck rel err = %.3e\n", rel);
+                CHECK(rel < 5e-3, "RoPE backward matches central differences");
+            }
+            cce_transformer_qat_free(t);
+        }
+    }
+
+    printf("[7] RoPE algebraic properties\n");
+    {
+        /* Gradcheck cannot catch a wrong PAIRING: any consistent rotation
+           differentiates correctly. These two properties are what actually
+           pin the convention. */
+        int hd = 8, j;
+        float q[8], k[8], qa[8], ka[8], qb[8], kb[8];
+        double n0 = 0, n1 = 0, d_far = 0, d_near = 0;
+        for (j = 0; j < hd; ++j) { q[j] = 0.1f * (j + 1); k[j] = 0.2f - 0.03f * j; }
+        memcpy(qa, q, sizeof q); memcpy(ka, k, sizeof k);
+        memcpy(qb, q, sizeof q); memcpy(kb, k, sizeof k);
+        cce_transformer_qat_rope_test(qa, hd, 3, 10000.0f, QAT_ROPE_HALF);
+        cce_transformer_qat_rope_test(ka, hd, 1, 10000.0f, QAT_ROPE_HALF);
+        cce_transformer_qat_rope_test(qb, hd, 5, 10000.0f, QAT_ROPE_HALF);
+        cce_transformer_qat_rope_test(kb, hd, 3, 10000.0f, QAT_ROPE_HALF);
+        for (j = 0; j < hd; ++j) {
+            n0 += (double)q[j] * q[j];
+            n1 += (double)qa[j] * qa[j];
+            d_far  += (double)qa[j] * ka[j];
+            d_near += (double)qb[j] * kb[j];
+        }
+        printf("  info |q|^2 %.9g -> %.9g ; <q3,k1>=%.9g <q5,k3>=%.9g\n",
+               n0, n1, d_far, d_near);
+        CHECK(fabs(n0 - n1) < 1e-5, "rotation preserves vector norm");
+        CHECK(fabs(d_far - d_near) < 1e-5,
+              "dot product depends only on relative offset (3-1 == 5-3)");
+        /* and the two pairings must genuinely differ, else the knob is a lie */
+        {
+            float qi[8];
+            int diff = 0;
+            memcpy(qi, q, sizeof q);
+            cce_transformer_qat_rope_test(qi, hd, 3, 10000.0f, QAT_ROPE_INTERLEAVED);
+            for (j = 0; j < hd; ++j)
+                if (memcmp(&qi[j], &qa[j], sizeof(float)) != 0) diff = 1;
+            CHECK(diff, "half-split and interleaved are genuinely different");
+        }
+    }
+
     printf("checks=%d fails=%d\n", checks, fails);
     if (fails) return 1;
     printf("ALL QAT BLOCK TESTS PASSED\n");
