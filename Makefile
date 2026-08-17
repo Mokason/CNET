@@ -966,6 +966,20 @@ cnetd_sigterm: bin/cnetd tests/test_cnetd_sigterm.sh tools/cnetd.c
 	@bash tests/test_cnetd_sigterm.sh
 	@grep -q '^CNETD_SIGTERM_PASS' logs/cnetd_sigterm.log
 
+# A direction file must be able to express "no factory curriculum". An empty
+# factory list was indistinguishable from an absent one, so both collapsed to
+# the two hardcoded defaults and silently resurrected the very tags an operator
+# was removing from the live serve dir.
+.PHONY: evolve_dir_factory
+evolve_dir_factory: include/cnet_evolve_dir.h src/cnet_evolve_dir.c tests/test_evolve_dir_factory.c
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -Werror -Iinclude -o $(BIN_DIR)/test_evolve_dir_factory \
+		tests/test_evolve_dir_factory.c src/cnet_evolve_dir.c $(LDFLAGS)
+	@./$(BIN_DIR)/test_evolve_dir_factory | tee logs/evolve_dir_factory.log
+	@grep -q '^EVOLVE_DIR_FACTORY_PASS' logs/evolve_dir_factory.log
+	@grep -q 'empty_means_none=1' logs/evolve_dir_factory.log
+	@grep -q 'absent_means_default=1' logs/evolve_dir_factory.log
+
 # A CERT brick must never answer a turn it was not addressed by. An empty tag
 # used to skip the tag guard entirely, so brick[0] answered every symbolic
 # arithmetic query with claimed_cert=1 -- live, "2+2" returned a certified 3.

@@ -65,6 +65,11 @@ void cnet_evolve_dir_defaults(CnetEvolveDirection *D) {
 static int load_file(CnetEvolveDirection *D, const char *path) {
     FILE *f;
     char line[512];
+    /* Did the file mention `factory` AT ALL? An empty list and an absent one
+       used to be the same state (n_factory == 0), so the tail below collapsed
+       both to the hardcoded defaults and no config could mean "build nothing".
+       Tracking the key separately splits them. */
+    int saw_factory_key = 0;
     if (!D || !path || !path[0]) return -1;
     f = fopen(path, "r");
     if (!f) return -1;
@@ -107,8 +112,13 @@ static int load_file(CnetEvolveDirection *D, const char *path) {
             split_csv(eq + 1, D->prefer, &D->n_prefer, CNET_EVDIR_MAX_DOM);
         else if (strcmp(line, "deny_domains") == 0)
             split_csv(eq + 1, D->deny, &D->n_deny, CNET_EVDIR_MAX_DOM);
-        else if (strcmp(line, "factory") == 0 &&
-                 D->n_factory < CNET_EVDIR_MAX_FACTORY) {
+        else if (strcmp(line, "factory") == 0) {
+            /* Mark the key seen even when the value parses to nothing: that is
+               exactly how a file says "no factory curriculum" -- `factory=` or
+               `factory=none`. Both fail the sscanf below and add no entry,
+               which is the intent, not an error. */
+            saw_factory_key = 1;
+            if (D->n_factory < CNET_EVDIR_MAX_FACTORY) {
             /* tag,mode,tensor */
             char tag[64], tensor[128];
             int mode = 0;
@@ -134,12 +144,19 @@ static int load_file(CnetEvolveDirection *D, const char *path) {
                     D->n_factory++;
                 }
             }
+            }
         } else if (strcmp(line, "goal") == 0 && D->n_goals < CNET_EVDIR_MAX_GOALS) {
             copy_text(D->goals[D->n_goals++], sizeof D->goals[0], eq + 1);
         }
     }
     fclose(f);
-    if (D->n_factory == 0) {
+    /* Restore the built-in curriculum ONLY when the file never mentioned the
+       key. If it did and the list came out empty, that is a deliberate "build
+       nothing" and must be honoured -- previously it was silently overwritten
+       with the two defaults, so `factory=` and commented-out lines both
+       resurrected exactly the tags an operator was trying to remove.
+       Gate: tests/test_evolve_dir_factory.c */
+    if (!saw_factory_key && D->n_factory == 0) {
         /* restore default factory entries if file omitted them */
         D->factory[0] =
             (CnetPath2Spec){"blk.0.attn_q.weight", "q1_add16", "brick_q_add", 0};
