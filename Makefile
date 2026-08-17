@@ -966,6 +966,22 @@ cnetd_sigterm: bin/cnetd tests/test_cnetd_sigterm.sh tools/cnetd.c
 	@bash tests/test_cnetd_sigterm.sh
 	@grep -q '^CNETD_SIGTERM_PASS' logs/cnetd_sigterm.log
 
+# Refusing a chat/roleplay plan is the parrot block succeeding, not a precision
+# loss. synth_precision folded refusals into its denominator, so the score fell
+# as refusal improved and two extra correct refusals failed the gate.
+.PHONY: agi3_synth_precision
+agi3_synth_precision: include/cnet_agi_scenario3.h src/cnet_agi_scenario3.c \
+		src/cnet_agi_scenario2.c src/cnet_agi_scenario.c \
+		tests/test_agi3_synth_precision.c $(CORE_PATH_COMMON)
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -Werror -ffunction-sections -fdata-sections -Iinclude \
+		-o $(BIN_DIR)/test_agi3_synth_precision tests/test_agi3_synth_precision.c \
+		src/cnet_agi_scenario3.c src/cnet_agi_scenario2.c src/cnet_agi_scenario.c \
+		$(CORE_PATH_COMMON) -Wl,--gc-sections $(LDFLAGS)
+	@CNET_GGUF_MMAP=1 ./$(BIN_DIR)/test_agi3_synth_precision | tee logs/agi3_synth_precision.log
+	@grep -q '^AGI3_SYNTH_PRECISION_PASS' logs/agi3_synth_precision.log
+	@grep -q 'refusal_not_penalised=1' logs/agi3_synth_precision.log
+
 # A direction file must be able to express "no factory curriculum". An empty
 # factory list was indistinguishable from an absent one, so both collapsed to
 # the two hardcoded defaults and silently resurrected the very tags an operator
@@ -1133,7 +1149,7 @@ cnet_agi_scenario3: include/cnet_agi_scenario3.h src/cnet_agi_scenario3.c \
 		residual_auto_cert==0 parrot_mouth==0 \
 		plan_synth==1 cert_only_plans==1 specialists==1 committee==1 \
 		cert_rate'>=0.889' honesty'>=0.909' \
-		synth_prec'>=0.600' committee_rate'>=1.000'
+		synth_prec'>=1.000' committee_rate'>=1.000'
 
 .PHONY: cnet_agi_scenario2
 cnet_agi_scenario2: include/cnet_agi_scenario2.h src/cnet_agi_scenario2.c \

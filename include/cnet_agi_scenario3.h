@@ -72,7 +72,11 @@ typedef struct {
     int parrot_blocks;
     int bricks_end;
     double cert_rate;
-    double synth_precision; /* synth_ok / (synth_ok+synth_reject) */
+    /* executed-ok / synthesized. Refusals are NOT in the denominator: refusing
+       a chat/roleplay plan is the parrot block succeeding, and counting it as
+       imprecision made the score fall as refusal got better. Refusals are
+       counted separately by synth_reject, still required by the pass rule. */
+    double synth_precision;
     double committee_rate;
     double honesty;
     double ms_total;

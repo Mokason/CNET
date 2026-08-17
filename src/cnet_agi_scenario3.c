@@ -395,10 +395,25 @@ int cnet_agi3_run_episode(CnetAgiScenario3 *S, CnetAgiScenario3Bench *B) {
     B->bricks_end = S->L2.base.serve.n;
     ans = B->cert_answers + B->abstains;
     B->cert_rate = ans > 0 ? (double)B->cert_answers / (double)ans : 0.0;
-    B->synth_precision =
-        (B->synth_ok + B->synth_reject) > 0
-            ? (double)B->synth_ok / (double)(B->synth_ok + B->synth_reject)
-            : 0.0;
+    /* Precision of what was actually synthesized: of the plans we committed to,
+       how many executed. Refusals are deliberately NOT in the denominator.
+       This used to read synth_ok / (synth_ok + synth_reject), but synth_reject
+       counts plans refused *because they were chat/roleplay* -- the parrot
+       block doing its job -- so the metric fell as the system got better at
+       refusing, and the gate floor punished correct behaviour: two extra
+       correct refusals took it from 0.600 to 0.429 and failed the gate while
+       every synthesized plan still ran. Refusal is a success; it is counted by
+       synth_reject, which the pass condition below still requires.
+       Gate: tests/test_agi3_synth_precision.c */
+    {
+        int pi, n_syn = 0, n_syn_ok = 0;
+        for (pi = 0; pi < S->n_plans; ++pi) {
+            if (!S->plans[pi].synthesized) continue;
+            n_syn++;
+            if (S->plans[pi].ok) n_syn_ok++;
+        }
+        B->synth_precision = n_syn > 0 ? (double)n_syn_ok / (double)n_syn : 0.0;
+    }
     B->committee_rate =
         (S->committee_ok + S->committee_fail) > 0
             ? (double)S->committee_ok /

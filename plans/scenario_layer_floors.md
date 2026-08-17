@@ -56,9 +56,17 @@ behaving as measured. They are regression detectors.
 - `goal_rate=0.500` and `gather_rate=0.500` are **half**. They are floored at
   what they measure so they cannot silently rot — flooring a weak number is not
   endorsing it.
-- `synth_prec=0.600` likewise: 2 of 5 candidate plans are rejected by design in
-  the script, so this is a property of the fixture, not a measured precision on
-  any real distribution.
+- `synth_prec` was **redefined on 2026-08-18** and its floor moved 0.600 → 1.000.
+  This is not a floor being raised on the same measurement; it is a different
+  measurement. The old formula was `synth_ok / (synth_ok + synth_reject)`, and
+  `synth_reject` counts plans refused *because they were chat/roleplay* — the
+  parrot block working. Folding refusals into the denominator meant the score
+  fell as refusal improved: two extra correctly-refused plans took it from
+  0.600 to 0.429 and failed the gate while every synthesized plan still ran.
+  It now reads `executed_ok / synthesized` — the precision of what the layer
+  committed to — which is 1.000 on this fixture. Refusals are still required
+  separately (`synth_reject >= 1`), so removing the perverse incentive did not
+  remove the metric's teeth. Gate: `make agi3_synth_precision`.
 - `chain_rate=1.000` and `committee_rate=1.000` are **1.000 over 1 and 2 trials
   respectively** — sample sizes far too small to support a reliability claim.
   Per AGENTS.md #3, a `1.000` must name what was tested: it is tested here on
