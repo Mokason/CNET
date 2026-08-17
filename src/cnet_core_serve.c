@@ -162,7 +162,16 @@ int cnet_serve_result(CnetServeBank *b, const char *turn, CnetServeResult *out) 
     for (i = 0; i < b->n; ++i) {
         CnetServeBrick *br = &b->bricks[i];
         if (!br->live) continue;
-        if (tag[0] && strcmp(tag, br->tag) != 0) continue;
+        /* An unaddressed turn must NOT fall through to whichever brick loaded
+           first. This guard used to read `tag[0] && strcmp(...)`, so an empty
+           tag skipped the comparison entirely and brick[0] answered with
+           claimed_cert = 1. parse_turn leaves the tag empty for any turn not
+           starting with a letter or '_', i.e. every symbolic arithmetic query:
+           live, "2+2" came back as a certified 3 from the user_pref fixture.
+           Bricks are always addressed by tag ("user_pref 7"); no turn means
+           "whichever brick you happen to have". Require the tag.
+           Gate: tests/test_core_serve_untagged.c */
+        if (!tag[0] || strcmp(tag, br->tag) != 0) continue;
         y = (unsigned)(br->lut[x] + 0.5f) & 15u;
         out->proved = 1;
         out->claimed_cert = 1;

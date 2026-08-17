@@ -100,6 +100,16 @@ LDFLAGS := -lm -lpthread
 #
 # Force it off with `make CNET_NO_CURL=1` (useful to test the degraded path on
 # a box that does have curl).
+# Default BEFORE the probe below uses it. Without this the probe expanded
+# $(CURL_LDFLAGS) while it was still empty -- CURL_LDFLAGS is not assigned until
+# after the probe -- so the test program linked without -lcurl, failed, and set
+# CNET_HAVE_CURL := 0 on boxes that do have libcurl. The visible cost was that
+# `make coverage_abstain` could not link at all (undefined curl_easy_* from
+# residual_http.c), i.e. one of the gates AGENTS.md names as worth knowing was
+# silently unbuildable. `?=` keeps it overridable from the environment or
+# command line, and CNET_NO_CURL=1 still forces the degraded path.
+CURL_LDFLAGS ?= -lcurl
+
 ifdef CNET_NO_CURL
 CNET_HAVE_CURL := 0
 else
@@ -955,6 +965,18 @@ cnetd_sigterm: bin/cnetd tests/test_cnetd_sigterm.sh tools/cnetd.c
 	@mkdir -p logs
 	@bash tests/test_cnetd_sigterm.sh
 	@grep -q '^CNETD_SIGTERM_PASS' logs/cnetd_sigterm.log
+
+# A CERT brick must never answer a turn it was not addressed by. An empty tag
+# used to skip the tag guard entirely, so brick[0] answered every symbolic
+# arithmetic query with claimed_cert=1 -- live, "2+2" returned a certified 3.
+.PHONY: core_serve_untagged
+core_serve_untagged: include/cnet_core_serve.h src/cnet_core_serve.c tests/test_core_serve_untagged.c
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -Werror -Iinclude -o $(BIN_DIR)/test_core_serve_untagged \
+		tests/test_core_serve_untagged.c src/cnet_core_serve.c $(LDFLAGS)
+	@./$(BIN_DIR)/test_core_serve_untagged | tee logs/core_serve_untagged.log
+	@grep -q '^CORE_SERVE_UNTAGGED_PASS' logs/core_serve_untagged.log
+	@grep -q 'unaddressed_claims_cert=0' logs/core_serve_untagged.log
 
 # Mojo must stay optional. Installing a Mojo toolchain once broke 101 recipes
 # because -DCNET_HAVE_MOJO went into global CFLAGS while $(CCE) carries
