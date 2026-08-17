@@ -72,6 +72,47 @@ unattainable on the Linux box, the gate drops to a stated epsilon AND the
 measured divergence and its cause are written into this spec. The bar is not
 loosened silently.
 
+#### 2.2.1 MEASURED 2026-08-17 — byte-equality is NOT attained
+
+The empirical question in (2) now has an answer. First real Linux build,
+Mojo 1.0.0 (ed45d567), GCC `-O3 -march=native`, 10 shapes x 2 sigmoid modes:
+
+| Metric | Value |
+|---|---|
+| shapes run through the Mojo kernel | 20 / 20 (0 declined) |
+| shapes byte-identical to C | 8 / 20 |
+| shapes divergent | **12 / 20** |
+| elements compared | 926 |
+| **max ULP distance** | **26** |
+| **max relative error** | **1.97e-06** |
+
+**Cause: the Mojo side contracts, not the C side.** Two controls establish
+this, and they rule out the spec's own first guess that GCC's
+`-ffp-contract=fast` default was the culprit:
+
+1. Rebuilding the C kernel with `-ffp-contract=off` changed **nothing** — the
+   C digests were bit-for-bit identical to the `fast` build and all 12 shapes
+   still diverged. The C side was not fusing.
+2. Splitting the Mojo expressions so each product lands in its own named
+   `var` before the add (`var prod = a * Float32(code)` /
+   `var scaled = w_scale[o] * output[o]`) also changed **nothing** — the Mojo
+   digests were identical to the unsplit build. Mojo's optimiser contracts
+   below the source level, so this is not reachable by rewriting the kernel.
+
+The divergence is therefore a toolchain-level FP-contraction difference, not
+an accumulation-order bug: 26 ULP over a reduction is consistent with fused
+multiply-adds accumulating a different rounding path, and requirement (1) of
+§2.2 — per-output accumulation, `i` ascending — is still met by construction.
+
+**What this does NOT change.** The Mojo path stays **off by default**
+(`CNET_MOJO` unset ⇒ `cce_mojo_dispatch_trit` declines ⇒ the C kernel runs and
+output is bit-identical to the pre-bridge build). No production path consumes
+these numbers today, and no existing floor was lowered to accommodate them —
+the byte-equality bar for the **C** path is untouched and still enforced.
+What is now recorded is that **enabling `CNET_MOJO=1` is not a
+behaviour-preserving switch**, and it must not be presented as one until a
+stated epsilon is agreed for it.
+
 ## 3. Architecture
 
 ```

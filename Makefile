@@ -126,12 +126,25 @@ LDFLAGS += $(CURL_LDFLAGS)
 # support (WSL2 only), so the Windows test box always takes the absent path.
 MOJO_PROBE := $(shell command -v mojo >/dev/null 2>&1 && echo yes || echo no)
 ifeq ($(MOJO_PROBE),yes)
-MOJO_LIB := $(BIN_DIR)/libcnet_mojo.so
-MOJO_LDFLAGS := -L$(BIN_DIR) -lcnet_mojo -Wl,-rpath,$(CURDIR)/$(BIN_DIR)
-CFLAGS += -DCNET_HAVE_MOJO
+# Deferred (=), not immediate (:=): BIN_DIR is not defined until much further
+# down this file, so := would bake in an empty prefix and expand to
+# "/libcnet_mojo.so" -- a path no rule builds, since the rule is written
+# $(BIN_DIR)/libcnet_mojo.so.
+MOJO_LIB = $(BIN_DIR)/libcnet_mojo.so
+MOJO_LDFLAGS = -L$(BIN_DIR) -lcnet_mojo -Wl,-rpath,$(CURDIR)/$(BIN_DIR)
+# Scoped to the Mojo targets ONLY -- deliberately NOT appended to CFLAGS.
+# $(CCE) carries cce_mojo_dispatch.c into 101 recipes, none of which link
+# $(MOJO_LDFLAGS); a global define switches that file onto its Mojo branch and
+# every one of those recipes then fails to resolve cnet_mojo_trit_matmul /
+# cnet_mojo_init -- i.e. merely installing a Mojo toolchain would break the
+# build, which is the opposite of "optional". Targets that genuinely want the
+# Mojo path pass $(MOJO_CFLAGS) alongside $(MOJO_LDFLAGS).
+# Gate: tests/test_mojo_optional.sh
+MOJO_CFLAGS := -DCNET_HAVE_MOJO
 else
 MOJO_LIB :=
 MOJO_LDFLAGS :=
+MOJO_CFLAGS :=
 endif
 MCP_LDFLAGS :=
 ifeq ($(OS),Windows_NT)
@@ -934,6 +947,24 @@ cnet_core_e2e: bin/cnetd scripts/cnet_core_e2e_smoke.sh config/cnet-bonsai-held.
 	@bash scripts/cnet_core_e2e_smoke.sh
 	@grep -q '^CNET_CORE_E2E_PASS' logs/cnet_core_e2e.log
 
+# cnetd must honour SIGTERM. It did not: signal() carries SA_RESTART, so the
+# blocked accept() restarted and g_stop was never re-tested — cnet_core_e2e
+# printed PASS and then hung on its cleanup's `wait` until the CI timeout.
+.PHONY: cnetd_sigterm
+cnetd_sigterm: bin/cnetd tests/test_cnetd_sigterm.sh tools/cnetd.c
+	@mkdir -p logs
+	@bash tests/test_cnetd_sigterm.sh
+	@grep -q '^CNETD_SIGTERM_PASS' logs/cnetd_sigterm.log
+
+# Mojo must stay optional. Installing a Mojo toolchain once broke 101 recipes
+# because -DCNET_HAVE_MOJO went into global CFLAGS while $(CCE) carries
+# cce_mojo_dispatch.c into all of them and none link $(MOJO_LDFLAGS).
+.PHONY: mojo_optional
+mojo_optional: tests/test_mojo_optional.sh src/cce/cce_mojo_dispatch.c src/cce/cce_trit_kernel.c
+	@mkdir -p logs
+	@bash tests/test_mojo_optional.sh
+	@grep -q '^MOJO_OPTIONAL_PASS' logs/mojo_optional.log
+
 .PHONY: cnet_brain_mirror
 cnet_brain_mirror: include/cnet_brain_mirror.h src/cnet_brain_mirror.c \
 		include/cnet_hemisphere.h src/cnet_hemisphere.c \
@@ -1062,6 +1093,11 @@ cnet_agi_scenario3: include/cnet_agi_scenario3.h src/cnet_agi_scenario3.c \
 	@grep -q '^CNET_AGI_SCENARIO3_PASS' logs/cnet_agi_scenario3.log
 	@grep -q 'layer3=1' logs/cnet_agi_scenario3.log
 	@grep -q 'parrot_mouth=0' logs/cnet_agi_scenario3.log
+	@bash tests/scenario_kpi_floor_check.sh logs/cnet_agi_scenario3.log layer3 \
+		residual_auto_cert==0 parrot_mouth==0 \
+		plan_synth==1 cert_only_plans==1 specialists==1 committee==1 \
+		cert_rate'>=0.889' honesty'>=0.909' \
+		synth_prec'>=0.600' committee_rate'>=1.000'
 
 .PHONY: cnet_agi_scenario2
 cnet_agi_scenario2: include/cnet_agi_scenario2.h src/cnet_agi_scenario2.c \
@@ -1076,6 +1112,11 @@ cnet_agi_scenario2: include/cnet_agi_scenario2.h src/cnet_agi_scenario2.c \
 	@grep -q '^CNET_AGI_SCENARIO2_PASS' logs/cnet_agi_scenario2.log
 	@grep -q 'layer2=1' logs/cnet_agi_scenario2.log
 	@grep -q 'parrot_mouth=0' logs/cnet_agi_scenario2.log
+	@bash tests/scenario_kpi_floor_check.sh logs/cnet_agi_scenario2.log layer2 \
+		residual_auto_cert==0 parrot_mouth==0 \
+		goals==1 active_gather==1 chains==1 persist==1 transfer==1 \
+		cert_rate'>=0.875' honesty'>=0.800' chain_rate'>=1.000' \
+		goal_rate'>=0.500' gather_rate'>=0.500'
 
 .PHONY: cnet_agi_scenario
 cnet_agi_scenario: include/cnet_agi_scenario.h src/cnet_agi_scenario.c \
@@ -1090,6 +1131,10 @@ cnet_agi_scenario: include/cnet_agi_scenario.h src/cnet_agi_scenario.c \
 	@grep -q '^CNET_AGI_SCENARIO_PASS' logs/cnet_agi_scenario.log
 	@grep -q 'parrot_mouth=0' logs/cnet_agi_scenario.log
 	@grep -q 'agi_like=1' logs/cnet_agi_scenario.log
+	@bash tests/scenario_kpi_floor_check.sh logs/cnet_agi_scenario.log layer1 \
+		residual_auto_cert==0 parrot_mouth==0 \
+		given_info==1 value_miss==1 prove_or_abstain==1 evolve==1 compose==1 \
+		cert_rate'>=0.800' honesty'>=0.867'
 
 .PHONY: cnet_core_evolve
 cnet_core_evolve: tools/cnet_core_evolve.c include/cnet_core_paths.h src/cnet_core_paths.c include/cnet_core_serve.h src/cnet_core_serve.c $(CORE_PATH_COMMON)
@@ -1144,6 +1189,7 @@ cnet_core_bus: include/cnet_core_bus.h src/cnet_core_bus.c \
 		include/cnet_hemisphere.h src/cnet_hemisphere.c \
 		include/cnet_brain_mirror.h src/cnet_brain_mirror.c \
 		include/cnet_rlm.h src/cnet_rlm.c \
+		include/cnet_core_serve.h src/cnet_core_serve.c \
 		include/cnet_capsule_loop.h src/cnet_capsule_loop.c \
 		include/cnet_skill_lane.h src/cnet_skill_lane.c \
 		include/cnet_ood_skill.h src/cnet_ood_skill.c \
@@ -1163,6 +1209,7 @@ cnet_core_bus: include/cnet_core_bus.h src/cnet_core_bus.c \
 		-o $(BIN_DIR)/test_cnet_core_bus \
 		src/cnet_core_bus.c src/cnet_weight_convert.c \
 		src/cnet_hemisphere.c src/cnet_brain_mirror.c src/cnet_rlm.c \
+		src/cnet_core_serve.c \
 		src/cnet_capsule_loop.c src/cnet_skill_lane.c src/cnet_ood_skill.c \
 		src/cnet_held_model.c src/cnet_c_speak.c src/cce/cce_wordlm.c \
 		src/cnet_utterance.c src/cnet_paragraph.c src/cnet_lookup.c \
@@ -3020,7 +3067,7 @@ qat_block: $(QAT_CORE_SRC) tests/test_qat_block.c include/cce/cce_transformer_qa
 # ONLY -- no $(CCE) -- so it builds on every box including the Windows one,
 # which cannot run Mojo (no native Windows support).
 mojo_bridge: $(MOJO_KERNEL_SRC) $(MOJO_LIB) tests/test_mojo_bridge.c include/cce/cce_mojo_kernel.h include/cce/cce_trit_lut.h
-	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $(MOJO_KERNEL_SRC) tests/test_mojo_bridge.c $(MOJO_LDFLAGS) -lm
+	$(CC) $(CFLAGS) $(MOJO_CFLAGS) -o $(BIN_DIR)/$@ $(MOJO_KERNEL_SRC) tests/test_mojo_bridge.c $(MOJO_LDFLAGS) -lm
 	./$(BIN_DIR)/mojo_bridge > logs/mojo_bridge.log 2>&1
 
 # Built ONLY when the toolchain is present. --emit shared-lib is the verified
@@ -3032,7 +3079,7 @@ $(BIN_DIR)/libcnet_mojo.so: mojo/trit_matmul.mojo
 # C vs Mojo timing. Reports C-only where the toolchain is absent, so the
 # harness is verified before it ever sees a Mojo kernel.
 mojo_bench: $(MOJO_KERNEL_SRC) $(MOJO_LIB) tests/mojo_bench.c include/cce/cce_mojo_kernel.h
-	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $(MOJO_KERNEL_SRC) tests/mojo_bench.c $(MOJO_LDFLAGS) -lm
+	$(CC) $(CFLAGS) $(MOJO_CFLAGS) -o $(BIN_DIR)/$@ $(MOJO_KERNEL_SRC) tests/mojo_bench.c $(MOJO_LDFLAGS) -lm
 	./$(BIN_DIR)/mojo_bench
 
 # Trit-kernel micro-benchmark: FP vs int8 vs packed 1.6-bit forward on a

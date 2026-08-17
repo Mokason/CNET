@@ -44,7 +44,18 @@ rm -f "$SOCK"
 "$BIN" >>"$LOG" 2>&1 &
 PID=$!
 cleanup() {
+  # Bounded teardown: cnetd honours SIGTERM (tests/test_cnetd_sigterm.sh), but
+  # never let this gate hang on `wait` if that ever regresses again — escalate
+  # to SIGKILL rather than blocking for the whole CI timeout.
   kill "$PID" 2>/dev/null || true
+  for _ in $(seq 1 50); do
+    kill -0 "$PID" 2>/dev/null || break
+    sleep 0.1
+  done
+  if kill -0 "$PID" 2>/dev/null; then
+    echo "WARN: cnetd $PID ignored SIGTERM after 5s — escalating to SIGKILL" | tee -a "$LOG"
+    kill -9 "$PID" 2>/dev/null || true
+  fi
   wait "$PID" 2>/dev/null || true
   rm -f "$SOCK"
 }

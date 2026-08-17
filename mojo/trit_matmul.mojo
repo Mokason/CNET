@@ -5,30 +5,28 @@
 # include/cce/cce_mojo_kernel.h. Mojo never generates that header.
 #
 # ---------------------------------------------------------------------------
-# UNVERIFIED SYNTAX — READ BEFORE BUILDING
+# SYNTAX VERIFIED — first compiled 2026-08-17 against Mojo 1.0.0 (ed45d567).
 #
-# This file has NEVER been compiled. Mojo reached 1.0 on 2026-08-12, four days
-# before it was written, and it was authored on a Windows box that cannot run
-# Mojo at all (no native Windows support; WSL2 was declined). The following
-# are inferences from the 1.0 docs, not verified facts, and the FIRST build on
-# the Linux box should expect to correct them:
+# This file previously carried an UNVERIFIED SYNTAX banner: it was authored on
+# 2026-08-16 on a Windows box that cannot run Mojo, and had never been built.
+# That first Linux build has now happened and corrected every open question the
+# banner listed:
 #
-#   1. The placement of the `abi("C")` function effect. The 1.0 docs describe
-#      `abi("C")` for FFI *callbacks* ("You must mark it with abi(\"C\")") but
-#      do not show the export direction. If the form below is wrong, the fix
-#      is a syntax change only — the kernel body is independent of it.
-#   2. Whether `@export` alone already gives C linkage, making `abi("C")`
-#      redundant here.
-#   3. The import path for `exp`. Adjust to whatever 1.0 actually provides.
+#   1. `abi("C")` placement — it is a function effect and goes AFTER the
+#      argument list and BEFORE the return arrow:
+#          @export("name")
+#          def name(args) abi("C") -> Ret:
+#      Verified by `nm -D`: the symbol lands as a plain `T name`.
+#   2. `@export` alone is NOT sufficient. Without the effect the compiler
+#      errors: "@export requires an explicit 'abi()' effect on the function".
+#   3. Import paths — the stdlib now requires the `std.` prefix:
+#      `from std.math import exp`, `from std.runtime import initialize_runtime`.
+#      `UnsafePointer` is in the prelude and must NOT be imported.
+#   4. `fn` was removed in 1.0 and is a hard parse error; every function here
+#      is a `def`.
 #
-# What IS verified (docs.modular.com / mojolang.org, 2026-08-16):
-#   - C interop is via the ffi module, the @export decorator, and the abi("C")
-#     function effect.
-#   - @export("name") sets a custom linkage name.
-#   - `mojo build --emit shared-lib` produces the shared library.
-#   - runtime.initialize_runtime() initialises the Mojo runtime when Mojo code
-#     built as a shared library is called from a non-Mojo host such as C. It is
-#     idempotent and required before runtime-dependent APIs like parallelize().
+# The kernel body was unaffected by all of the above — only the signatures and
+# imports changed, exactly as the original banner predicted.
 # ---------------------------------------------------------------------------
 #
 # BIT-IDENTITY REQUIREMENT (spec section 2.2). The C reference accumulates
@@ -44,13 +42,14 @@
 #
 # Spec: docs/superpowers/specs/2026-08-16-mojo-kernel-bridge-design.md
 
-from math import exp
-from memory import UnsafePointer
-from runtime import initialize_runtime
+from std.math import exp
+from std.runtime import initialize_runtime
+
+# UnsafePointer is a prelude type in 1.0 — importing it is an error.
 
 
 @export("cnet_mojo_init")
-fn cnet_mojo_init() -> None:
+def cnet_mojo_init() abi("C") -> None:
     # Idempotent. The C dispatch layer calls this once before the first kernel
     # invocation, because no Mojo main() runs in a C-hosted shared library.
     initialize_runtime()
@@ -61,7 +60,7 @@ fn cnet_mojo_init() -> None:
 # contain — the C table is defined over the full range and the mutate fuzz gate
 # depends on that behaviour being unchanged.
 @always_inline
-fn trit_code(b: UInt8, k: Int) -> Int:
+def trit_code(b: UInt8, k: Int) -> Int:
     var v = Int(b)
     var d = 1
     for _ in range(k):
@@ -70,17 +69,20 @@ fn trit_code(b: UInt8, k: Int) -> Int:
 
 
 @export("cnet_mojo_trit_matmul")
-fn cnet_mojo_trit_matmul(
-    input: UnsafePointer[Float32],
-    w_trit: UnsafePointer[UInt8],
-    w_scale: UnsafePointer[Float32],
-    bias: UnsafePointer[Float32],
-    output: UnsafePointer[Float32],
+def cnet_mojo_trit_matmul(
+    # Raw pointers cross the C ABI, so their origins cannot be tracked by the
+    # compiler — they are stated explicitly. Inputs are read-only; only
+    # `output` is written.
+    input: UnsafePointer[Float32, ImmUntrackedOrigin],
+    w_trit: UnsafePointer[UInt8, ImmUntrackedOrigin],
+    w_scale: UnsafePointer[Float32, ImmUntrackedOrigin],
+    bias: UnsafePointer[Float32, ImmUntrackedOrigin],
+    output: UnsafePointer[Float32, MutUntrackedOrigin],
     in_dim: Int32,
     out_dim: Int32,
     w_trit_bpr: Int32,
     apply_sigmoid: Int32,
-) -> Int32:
+) abi("C") -> Int32:
     var n_in = Int(in_dim)
     var n_out = Int(out_dim)
     var bpr = Int(w_trit_bpr)

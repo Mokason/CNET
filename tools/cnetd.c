@@ -74,6 +74,23 @@ static void on_sig(int s) {
     g_stop = 1;
 }
 
+/* Install a stop handler that does NOT restart interrupted syscalls.
+ *
+ * signal() carries SA_RESTART on glibc, which silently restarts the blocked
+ * accept() in the serve loop: g_stop gets set, the loop condition is never
+ * re-tested, and the daemon sleeps in accept() until some client happens to
+ * connect. Callers doing "kill $PID; wait $PID" then block for their whole
+ * timeout. sigaction() with an empty flags field gives us EINTR instead, which
+ * the serve loop already handles correctly. */
+static int install_stop_handler(int sig) {
+    struct sigaction sa;
+    memset(&sa, 0, sizeof sa);
+    sa.sa_handler = on_sig;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = 0; /* deliberately no SA_RESTART */
+    return sigaction(sig, &sa, NULL);
+}
+
 typedef struct {
     char pattern[CD_PAT];
     char pack[CD_ID];
@@ -1251,8 +1268,8 @@ int main(int argc, char **argv) {
         }
     }
 
-    signal(SIGINT, on_sig);
-    signal(SIGTERM, on_sig);
+    install_stop_handler(SIGINT);
+    install_stop_handler(SIGTERM);
     signal(SIGPIPE, SIG_IGN);
 
     resolve_paths(root, sizeof root, sock, sizeof sock);
