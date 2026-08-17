@@ -1,5 +1,5 @@
 == AGI scenario layer 2 (goals/gather/chain/persist) ==
-AGI2 PASS turns=7 cert=7 abstain=1 goals_done=1 gather_ask=2 gather_fill=1 chains_ok=1 persist=6 restore=1 transfer=2 parrot=2 bricks=4 cert_rate=0.875 goal_rate=0.500 gather_rate=0.500 chain_rate=1.000 honesty=0.800 ms=48.641
+AGI2 PASS turns=7 cert=7 abstain=1 goals_done=1 gather_ask=2 gather_fill=1 chains_ok=1 persist=6 restore=1 transfer=2 parrot=2 bricks=4 cert_rate=0.875 goal_rate=0.500 gather_rate=0.500 chain_rate=1.000 honesty=0.800 ms=50.813
 goals_started=2 n_gaps=2
 CNET_AGI_SCENARIO2_PASS
-layer2=1 goals=1 active_gather=1 chains=1 persist=1 transfer=1 parrot_mouth=0 residual_auto_cert=0 goal_rate=0.500 chain_rate=1.000 ms=48.641
+layer2=1 goals=1 active_gather=1 chains=1 persist=1 transfer=1 parrot_mouth=0 residual_auto_cert=0 goal_rate=0.500 chain_rate=1.000 ms=50.813
