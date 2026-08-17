@@ -1,0 +1,7 @@
+ROE_SKILL 1
+id ops_front_door_selective
+intent status
+pattern front door selective load
+answer Selective load cuts teacher tokens: always-on soul/self/goal/toolcall/personal + one domain pack from ROUTES — not monobrain soup.
+privilege 0
+certified 1

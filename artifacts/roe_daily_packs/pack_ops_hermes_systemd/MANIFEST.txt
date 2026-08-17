@@ -1,0 +1,6 @@
+ROE daily pack: pack_ops_hermes_systemd
+title: Hermes + systemd-user ops
+kind: domain
+never_self_cert: 1
+second_brain: 0
+skills: 4

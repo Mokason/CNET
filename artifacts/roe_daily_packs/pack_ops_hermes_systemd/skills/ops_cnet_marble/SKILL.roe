@@ -1,0 +1,7 @@
+ROE_SKILL 1
+id ops_cnet_marble
+intent systemd
+pattern cnet-marble status
+answer 24/7 Autonomous-ASI: systemctl --user status cnet-marble.target; evolve + autonomous-cycle timers; scripts/cnet_marble_24_7.sh status|doctor.
+privilege 0
+certified 1

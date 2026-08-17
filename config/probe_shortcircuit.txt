@@ -15,3 +15,8 @@ deploy probe unique
 teacher only query
 quantum flute
 galactic overmind
+alpha-seven
+beta-nine
+novel fact alpha
+novel fact beta
+totally unknown zz

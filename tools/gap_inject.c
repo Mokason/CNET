@@ -95,23 +95,32 @@ static int load_covered(const char *gaps_path, unsigned char *set, int max_id) {
     f = fopen(gaps_path, "r");
     if (!f) return 0;
     while (fgets(line, sizeof line, f)) {
-        char *p, *parts[8];
-        int np = 0, tid;
+        /* Parse status without mutating `line` before tk extract — older code
+           null-terminated fields in-place, so extract_tk_same only saw "0". */
+        const char *p = line;
+        char status[8];
+        int si = 0, field = 0, tid;
         lineno++;
         if (lineno < 3) continue;
-        p = line;
-        while (np < 8 && *p) {
+        status[0] = 0;
+        while (*p && *p != '\n') {
             while (*p == ' ' || *p == '\t') p++;
             if (!*p || *p == '\n') break;
-            parts[np++] = p;
-            while (*p && *p != ' ' && *p != '\t' && *p != '\n') p++;
-            if (*p) *p++ = 0;
-        }
-        if (np > 1 && strcmp(parts[1], "2") == 0 && extract_tk_same(line, &tid)) {
-            if (tid >= 0 && tid <= max_id && !set[tid]) {
-                set[tid] = 1;
-                n++;
+            if (field == 1) {
+                si = 0;
+                while (*p && *p != ' ' && *p != '\t' && *p != '\n' && si < 7)
+                    status[si++] = *p++;
+                status[si] = 0;
+            } else {
+                while (*p && *p != ' ' && *p != '\t' && *p != '\n') p++;
             }
+            field++;
+            if (field > 1) break;
+        }
+        if (status[0] != '2' || status[1] != '\0') continue;
+        if (extract_tk_same(line, &tid) && tid >= 0 && tid <= max_id && !set[tid]) {
+            set[tid] = 1;
+            n++;
         }
     }
     fclose(f);

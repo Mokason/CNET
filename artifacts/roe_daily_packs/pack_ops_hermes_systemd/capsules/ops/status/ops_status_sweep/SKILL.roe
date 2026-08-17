@@ -1,0 +1,7 @@
+ROE_SKILL 1
+id ops_status_sweep
+intent status
+pattern what is running
+answer Status sweep: systemctl --user, process list, cronjob list, git heads, artifact mtimes.
+privilege 0
+certified 1

@@ -1,0 +1,7 @@
+ROE_SKILL 1
+id ops_tailscale_sentence
+intent network
+pattern What is Tailscale in one sentence
+answer Tailscale is a WireGuard-based mesh VPN that joins your devices into one private network with automatic NAT traversal.
+privilege 0
+certified 1

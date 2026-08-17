@@ -41,3 +41,14 @@ CERT	who am i talking to	pack_soul_marble
 CERT	what is your name	pack_soul_marble
 CERT	cnet-marble status	pack_ops_hermes_systemd
 CERT	systemctl --user	pack_ops_hermes_systemd
+CERT	What is Tailscale	pack_ops_hermes_systemd
+CERT	WireGuard	pack_ops_hermes_systemd
+CERT	UNIX domain socket	pack_ops_hermes_systemd
+CERT	UNIX sockets	pack_ops_hermes_systemd
+CERT	what can you train CNET	pack_ops_hermes_systemd
+CERT	how do you answer without teacher	pack_ops_hermes_systemd
+CERT	teach ROE-ASI a dictionary	pack_english_basic
+CERT	days of past week	pack_english_basic
+CERT	what is a noun	pack_english_basic
+CERT	what is a verb	pack_english_basic
+CERT	using C not JAVA	pack_english_basic

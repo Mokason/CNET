@@ -1,0 +1,6 @@
+where is hermes config.yaml
+systemctl --user how
+what is running status sweep
+do not start jobs instruction
+status sweep
+orbital printer driver

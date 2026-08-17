@@ -1,0 +1,49 @@
+{"pattern":"use tools not guess","pack":"pack_toolcall_hermes","cat":"toolcall","sub":"core","skill":"tc_prefer_tools"}
+{"pattern":"cat grep sed","pack":"pack_toolcall_hermes","cat":"toolcall","sub":"core","skill":"tc_no_cat_grep"}
+{"pattern":"parallel tool","pack":"pack_toolcall_hermes","cat":"toolcall","sub":"batch","skill":"tc_batch_reads"}
+{"pattern":"secrets env","pack":"pack_toolcall_hermes","cat":"toolcall","sub":"refuse","skill":"tc_refuse_secrets"}
+{"pattern":"unknown tool","pack":"pack_toolcall_hermes","cat":"toolcall","sub":"refuse","skill":"tc_fail_closed"}
+{"pattern":"self-cert","pack":"pack_roe_self","cat":"self","sub":"law","skill":"self_never_cert"}
+{"pattern":"roe second brain","pack":"pack_roe_self","cat":"self","sub":"law","skill":"self_second_brain"}
+{"pattern":"self model","pack":"pack_roe_self","cat":"self","sub":"inventory","skill":"self_inventory"}
+{"pattern":"who is roe-asi","pack":"pack_roe_self","cat":"self","sub":"inventory","skill":"self_identity"}
+{"pattern":"outside coverage","pack":"pack_roe_self","cat":"self","sub":"route","skill":"self_abstain"}
+{"pattern":"format-truncation","pack":"pack_coding_cnet_c","cat":"coding","sub":"c","skill":"cc_werror_snprintf"}
+{"pattern":"catalog.jsonl","pack":"pack_coding_cnet_c","cat":"coding","sub":"roe","skill":"cc_single_line_skill"}
+{"pattern":"silent CERT","pack":"pack_coding_cnet_c","cat":"coding","sub":"roe","skill":"cc_never_self_cert"}
+{"pattern":"lower floor","pack":"pack_coding_cnet_c","cat":"coding","sub":"c","skill":"cc_floors"}
+{"pattern":"make roe_asi","pack":"pack_coding_cnet_c","cat":"coding","sub":"make","skill":"cc_make_asi"}
+{"pattern":"debug checklist","pack":"pack_debug_l3","cat":"debug","sub":"process","skill":"dbg_checklist"}
+{"pattern":"segmentation fault","pack":"pack_debug_l3","cat":"debug","sub":"recipes","skill":"dbg_segv"}
+{"pattern":"make gate failed","pack":"pack_debug_l3","cat":"debug","sub":"process","skill":"dbg_gate"}
+{"pattern":"works on my machine","pack":"pack_debug_l3","cat":"debug","sub":"process","skill":"dbg_no_guess"}
+{"pattern":"microsplit","pack":"pack_goal_split","cat":"goal","sub":"plan","skill":"goal_split"}
+{"pattern":"HAVE MISS","pack":"pack_goal_split","cat":"goal","sub":"route","skill":"goal_have_miss"}
+{"pattern":"capsules cat sub","pack":"pack_goal_split","cat":"goal","sub":"tidy","skill":"goal_tidy"}
+{"pattern":"start every task","pack":"pack_goal_split","cat":"goal","sub":"route","skill":"goal_front_door"}
+{"pattern":"local first","pack":"pack_doc_l3_ocr","cat":"ocr","sub":"router","skill":"ocr_router"}
+{"pattern":"doc l3","pack":"pack_doc_l3_ocr","cat":"ocr","sub":"l3","skill":"ocr_l3"}
+{"pattern":"ROE_OCR_PACK","pack":"pack_doc_l3_ocr","cat":"ocr","sub":"pack","skill":"ocr_pack"}
+{"pattern":"teacher_rate","pack":"pack_doc_l3_ocr","cat":"ocr","sub":"kpi","skill":"ocr_kpi"}
+{"pattern":"before commit","pack":"pack_git_pr","cat":"git","sub":"commit","skill":"git_status_first"}
+{"pattern":"force push","pack":"pack_git_pr","cat":"git","sub":"commit","skill":"git_no_force_main"}
+{"pattern":"pull request body","pack":"pack_git_pr","cat":"git","sub":"pr","skill":"pr_body"}
+{"pattern":"ci failed","pack":"pack_git_pr","cat":"git","sub":"ci","skill":"pr_ci"}
+{"pattern":"config.yaml","pack":"pack_ops_hermes_systemd","cat":"ops","sub":"hermes","skill":"ops_hermes_config"}
+{"pattern":"systemctl --user","pack":"pack_ops_hermes_systemd","cat":"ops","sub":"systemd","skill":"ops_user_systemd"}
+{"pattern":"what is running","pack":"pack_ops_hermes_systemd","cat":"ops","sub":"status","skill":"ops_status_sweep"}
+{"pattern":"do not start","pack":"pack_ops_hermes_systemd","cat":"ops","sub":"systemd","skill":"ops_no_new_jobs"}
+{"pattern":"CNET proposes","pack":"pack_pm_director_oracle","cat":"pm","sub":"law","skill":"pm_propose_commit"}
+{"pattern":"director abstain","pack":"pack_pm_director_oracle","cat":"pm","sub":"law","skill":"pm_abstain"}
+{"pattern":"WITHHELD promote","pack":"pack_pm_director_oracle","cat":"pm","sub":"director","skill":"pm_withheld"}
+{"pattern":"after commit","pack":"pack_pm_director_oracle","cat":"pm","sub":"bridges","skill":"pm_effects_after"}
+{"pattern":"gardener","pack":"pack_meta_gardener","cat":"meta","sub":"garden","skill":"meta_garden"}
+{"pattern":"Tier-A train","pack":"pack_meta_gardener","cat":"meta","sub":"garden","skill":"meta_no_tier_a"}
+{"pattern":"how many certs","pack":"pack_meta_gardener","cat":"meta","sub":"measure","skill":"meta_three_numbers"}
+{"pattern":"compose","pack":"pack_meta_gardener","cat":"meta","sub":"garden","skill":"meta_compose"}
+{"pattern":"who are you","pack":"pack_soul_marble","cat":"soul","sub":"identity","skill":"soul_who"}
+{"pattern":"zen base","pack":"pack_soul_marble","cat":"soul","sub":"zen","skill":"soul_zen"}
+{"pattern":"how should you talk","pack":"pack_soul_marble","cat":"soul","sub":"register","skill":"soul_register"}
+{"pattern":"taboo hype","pack":"pack_soul_marble","cat":"soul","sub":"taboo","skill":"soul_taboo"}
+{"pattern":"charter oath","pack":"pack_soul_marble","cat":"soul","sub":"oath","skill":"soul_oath"}
+{"pattern":"second brain","pack":"pack_soul_marble","cat":"soul","sub":"oath","skill":"soul_not_second_brain"}

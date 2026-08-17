@@ -29,7 +29,7 @@
 
 #define FD_ROOT_DEFAULT "artifacts/roe_daily_packs"
 #define FD_MAX_ROUTES 256
-#define FD_MAX_ALWAYS 8
+#define FD_MAX_ALWAYS 12
 #define FD_MAX_PACKS_LOAD 8
 #define FD_PATH 1024
 #define FD_BIAS_PATH_DEFAULT "logs/governor/front_door_bias.json"

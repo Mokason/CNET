@@ -417,6 +417,7 @@ def main() -> int:
 
     local_n = miss_n = llm_n = 0
     teacher_used = 0
+    correct_n = 0
     thoughts = []
     for item in curriculum:
         q = item["q"]
@@ -466,13 +467,27 @@ def main() -> int:
                 )
             except Exception:
                 pass
-        if info["source"] == "LOCAL":
+        want = (item.get("want") or "LOCAL").upper()
+        src = (info.get("source") or "").upper()
+        # Outcome correctness (not raw LOCAL rate):
+        #   want LOCAL → must be LOCAL
+        #   want MISS  → must be non-LOCAL (ASK_USER/CNET/shortcircuit); sealing is FAIL
+        #   want ANY   → any source is OK (coverage telemetry)
+        if want == "MISS":
+            ok = src not in ("LOCAL",)
+        elif want == "ANY":
+            ok = bool(src)
+        else:  # LOCAL default
+            ok = src == "LOCAL"
+        if src == "LOCAL":
             local_n += 1
-        elif info["source"] == "LLM":
+        elif src == "LLM":
             llm_n += 1
             miss_n += 1
         else:
             miss_n += 1
+        if ok:
+            correct_n += 1
         report["probes"].append(
             {
                 "q": q[:80],
@@ -480,6 +495,7 @@ def main() -> int:
                 "source": info["source"],
                 "skill": info.get("skill"),
                 "want": item.get("want"),
+                "ok": ok,
                 "thought_intent": (th or {}).get("steps", {}).get("INTEND") if th else None,
             }
         )
@@ -507,7 +523,10 @@ def main() -> int:
     report["kpi"]["local_n"] = local_n
     report["kpi"]["miss_n"] = miss_n
     report["kpi"]["llm_n"] = llm_n
+    # local_hit stays LOCAL share (coverage). correct_hit = curriculum outcome accuracy.
     report["kpi"]["local_hit"] = round(local_n / n, 3)
+    report["kpi"]["correct_n"] = correct_n
+    report["kpi"]["correct_hit"] = round(correct_n / n, 3)
 
     # 3) evolve tick (reviewer on by default via env file + charter)
     env = fd_env(live=False)
@@ -603,7 +622,7 @@ def main() -> int:
             + "\n"
         )
 
-    print(f"autonomous_cycle local_hit={report['kpi'].get('local_hit')} "
+    print(f"autonomous_cycle local_hit={report['kpi'].get('local_hit')} correct_hit={report['kpi'].get('correct_hit')} "
           f"promoted={report['kpi'].get('promoted', 0)} "
           f"miss={miss_n} dur={report['duration_s']}s")
     print(f"report → {REPORT}")

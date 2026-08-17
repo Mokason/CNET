@@ -1,0 +1,7 @@
+ROE_SKILL 1
+id ops_tailscale_explain
+intent network
+pattern Explain what Tailscale is
+answer Tailscale wraps WireGuard into a zero-config mesh: each node gets a stable 100.x address, peers via DERP when direct UDP fails, and auth is identity/ACL based. Practical uses: SSH to home lab, reach internal dashboards, and link CI or agents without public ports.
+privilege 0
+certified 1

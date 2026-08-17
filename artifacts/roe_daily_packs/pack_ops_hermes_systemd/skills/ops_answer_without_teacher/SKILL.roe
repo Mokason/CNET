@@ -1,0 +1,7 @@
+ROE_SKILL 1
+id ops_answer_without_teacher
+intent meta
+pattern how do you answer without teacher
+answer LOCAL CERT packs and CORE brick RESULT answer with zero teacher tokens. On organic miss, Teacher may draft if enabled; probes short-circuit with no teacher. Outside table → abstain, never self-CERT.
+privilege 0
+certified 1

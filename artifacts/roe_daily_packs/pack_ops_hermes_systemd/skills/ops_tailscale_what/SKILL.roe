@@ -1,0 +1,7 @@
+ROE_SKILL 1
+id ops_tailscale_what
+intent network
+pattern What is Tailscale
+answer Tailscale is a mesh VPN built on WireGuard that connects devices across NATs using identity-based access, a coordination server for key exchange, and private 100.x addresses without opening inbound firewall holes.
+privilege 0
+certified 1

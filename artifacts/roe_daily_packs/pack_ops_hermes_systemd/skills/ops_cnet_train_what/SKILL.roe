@@ -1,0 +1,7 @@
+ROE_SKILL 1
+id ops_cnet_train_what
+intent meta
+pattern what can you train CNET
+answer CNET grows sealed CERT packs and CORE .lut bricks from given tables and reviewed gold—not freeform chat as auto-CERT. Teacher may draft on miss; promote only gold or multi_stable+reviewer. Residual never auto-CERT.
+privilege 0
+certified 1

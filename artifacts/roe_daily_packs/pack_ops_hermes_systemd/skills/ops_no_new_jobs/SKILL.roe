@@ -1,0 +1,7 @@
+ROE_SKILL 1
+id ops_no_new_jobs
+intent systemd
+pattern do not start jobs
+answer When user says stop/done-only: do not start new GPU/infer jobs.
+privilege 1
+certified 1

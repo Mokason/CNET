@@ -61,7 +61,7 @@
 
 #define CD_PATH 512
 #define CD_SOCK 108
-#define CD_MAX_ALWAYS 8
+#define CD_MAX_ALWAYS 12
 #define CD_MAX_PACKS 8
 #define CD_PAT 256
 #define CD_ID 64
@@ -214,7 +214,9 @@ static int cd_init(CdState *S, const char *root) {
     snprintf(S->always_on[2], sizeof S->always_on[2], "%s", "pack_goal_split");
     snprintf(S->always_on[3], sizeof S->always_on[3], "%s", "pack_toolcall_hermes");
     snprintf(S->always_on[4], sizeof S->always_on[4], "%s", "pack_personal");
-    S->n_always = 5;
+    snprintf(S->always_on[5], sizeof S->always_on[5], "%s", "pack_ops_hermes_systemd");
+    snprintf(S->always_on[6], sizeof S->always_on[6], "%s", "pack_english_basic");
+    S->n_always = 7;
 
     if (path_join2(path, sizeof path, S->root, "ROUTES.jsonl") != 0) return -1;
     f = fopen(path, "r");
@@ -593,27 +595,41 @@ static int cd_ask(CdState *S, const char *q, CdReply *out) {
             out->tokens = 0;
             return 0;
         }
-        /* Bound lookup hop: CERT LOCAL via CORE classify */
+        /* Bound lookup hop: only arithmetic OOD may short-circuit as LOCAL.
+           Wiki/held/other residual must not seal before pack ROE. */
         if (hop_arg != NULL && hop_arg->answered && hop_arg->report.bound &&
             hop_arg->report.value[0] != '\0') {
             CnetSkillLaneResult lane;
             CnetHemiResult hr;
+            int arith = 0;
             memset(&lane, 0, sizeof lane);
             if (cnet_skill_lane_bind_lookup(hop_arg, &lane) == 0 && lane.bound) {
                 cnet_hemi_classify_lane(&lane, 1, &hr);
                 (void)cnet_brain_mirror_core(&hr);
-                snprintf(out->answer, sizeof out->answer, "%.2047s",
-                         hr.spoken[0] ? hr.spoken : hr.value);
-                snprintf(out->utterance, sizeof out->utterance, "%.767s", out->answer);
-                snprintf(out->source, sizeof out->source, "LOCAL");
-                snprintf(out->skill, sizeof out->skill, "%s",
-                         hr.skill[0] ? hr.skill : "lookup");
-                cd_scopy(out->prepared, sizeof out->prepared, q);
-                out->verified = hr.claimed_cert ? 1 : 0;
-                out->miss = 0;
-                out->may_voice = hr.may_voice ? 1 : 0;
-                out->tokens = 0;
-                return 0;
+                if (hr.skill[0] &&
+                    (strcmp(hr.skill, "add_u32_v1") == 0 ||
+                     strcmp(hr.skill, "sub_u32_v1") == 0 ||
+                     strcmp(hr.skill, "mul_u32_v1") == 0 ||
+                     strncmp(hr.skill, "add_", 4) == 0 ||
+                     strncmp(hr.skill, "sub_", 4) == 0 ||
+                     strncmp(hr.skill, "mul_", 4) == 0))
+                    arith = 1;
+                if (arith) {
+                    snprintf(out->answer, sizeof out->answer, "%.2047s",
+                             hr.spoken[0] ? hr.spoken : hr.value);
+                    snprintf(out->utterance, sizeof out->utterance, "%.767s",
+                             out->answer);
+                    snprintf(out->source, sizeof out->source, "LOCAL");
+                    snprintf(out->skill, sizeof out->skill, "%s",
+                             hr.skill[0] ? hr.skill : "lookup");
+                    cd_scopy(out->prepared, sizeof out->prepared, q);
+                    out->verified = hr.claimed_cert ? 1 : 0;
+                    out->miss = 0;
+                    out->may_voice = hr.may_voice ? 1 : 0;
+                    out->tokens = 0;
+                    return 0;
+                }
+                /* non-arith bound hop: fall through to packs */
             }
         }
 
@@ -622,6 +638,7 @@ static int cd_ask(CdState *S, const char *q, CdReply *out) {
         if (cnet_rlm_ask(q, &rpol, &rr) == 0 && rr.final.bound) {
             const CnetHemiResult *hr = &rr.final;
             const char *spoken;
+            int arith = 0;
             /* OPEN_CHAT answers are product-illegal. Cut the path. */
             if (hr->plane == CNET_CORE_PLANE_OPEN_CHAT || hr->open_chat) {
                 snprintf(out->answer, sizeof out->answer, "open_chat_answer_killed");
@@ -635,6 +652,21 @@ static int cd_ask(CdState *S, const char *q, CdReply *out) {
                 out->tokens = 0;
                 return 0;
             }
+            /* Wiki/residual claiming CERT must not beat pack ROE. Arithmetic OK. */
+            if (hr->skill[0] &&
+                (strcmp(hr->skill, "add_u32_v1") == 0 ||
+                 strcmp(hr->skill, "sub_u32_v1") == 0 ||
+                 strcmp(hr->skill, "mul_u32_v1") == 0 ||
+                 strncmp(hr->skill, "add_", 4) == 0 ||
+                 strncmp(hr->skill, "sub_", 4) == 0 ||
+                 strncmp(hr->skill, "mul_", 4) == 0))
+                arith = 1;
+            if (!arith &&
+                (strstr(hr->skill, "wiki") || strstr(hr->skill, "held") ||
+                 hr->skill[0] == '\0')) {
+                /* fall through to pack path */
+            } else if (arith || hr->plane == CNET_CORE_PLANE_CERT ||
+                       hr->hemi == CNET_HEMI_CORE) {
             spoken =
                 hr->spoken[0] ? hr->spoken : (hr->value[0] ? hr->value : hr->refusal);
             snprintf(out->answer, sizeof out->answer, "%.2047s", spoken);
@@ -665,6 +697,8 @@ static int cd_ask(CdState *S, const char *q, CdReply *out) {
                 }
             }
             return 0;
+            }
+            /* else fall through */
         }
         /* LIVE WAIST: typed CORE miss capture + evolve + retry CERT once.
            Freeform queries fall through to pack ROE (alias/dialog/slot/CERT).
