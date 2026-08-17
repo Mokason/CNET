@@ -666,7 +666,10 @@ static int cd_ask(CdState *S, const char *q, CdReply *out) {
             }
             return 0;
         }
-        /* LIVE WAIST: typed miss capture + evolve + retry CERT once. */
+        /* LIVE WAIST: typed CORE miss capture + evolve + retry CERT once.
+           Freeform queries fall through to pack ROE (alias/dialog/slot/CERT).
+           Do not hard-return outside_table_abstain before packs — that killed
+           Autonomous-ASI LOCAL (soul/ops/english) on monorepo cnetd overnight. */
         {
             char tag[64];
             unsigned in_n = 0, out_n = 0;
@@ -681,44 +684,40 @@ static int cd_ask(CdState *S, const char *q, CdReply *out) {
             } else if (cnet_live_parse_tag_n(q, tag, sizeof tag, &in_n) == 0) {
                 if (S->miss_log[0])
                     (void)cnet_live_miss_append(S->miss_log, tag, in_n, 0, 0);
-            } else if (S->miss_log[0]) {
-                FILE *mf = fopen(S->miss_log, "a");
-                if (mf) {
-                    fprintf(mf,
-                            "{\"via\":\"live_waist\",\"skill\":\"outside_table_abstain\","
-                            "\"refusal\":\"outside_table_abstain\",\"claimed_cert\":0,"
-                            "\"open_chat\":false}\n");
-                    fclose(mf);
+            }
+            /* Only run CORE evolve/serve path for typed brick traffic. */
+            if (taught || tag[0]) {
+                if (tag[0] && S->miss_log[0])
+                    pairs = cnet_live_miss_domain_pairs(S->miss_log, tag, _lut);
+                if (taught || pairs >= 16) {
+                    setenv("CNET_CORE_AUTO_EVOLVE", "1", 0);
+                    (void)core_evolve_run(S, 1);
+                } else {
+                    core_evolve_tick(S);
                 }
-            }
-            if (tag[0] && S->miss_log[0])
-                pairs = cnet_live_miss_domain_pairs(S->miss_log, tag, _lut);
-            if (taught || pairs >= 16) {
-                setenv("CNET_CORE_AUTO_EVOLVE", "1", 0);
-                (void)core_evolve_run(S, 1);
-            } else {
-                core_evolve_tick(S);
-            }
-            core_serve_try_reload();
-            cd_scopy(out->prepared, sizeof out->prepared, q);
-            if (core_try_serve(q, out) == 0)
-                return 0;
-            if (taught && tag[0]) {
-                char turn[96];
-                snprintf(turn, sizeof turn, "%s %u", tag, in_n);
-                if (core_try_serve(turn, out) == 0)
+                core_serve_try_reload();
+                cd_scopy(out->prepared, sizeof out->prepared, q);
+                if (core_try_serve(q, out) == 0)
                     return 0;
+                if (taught && tag[0]) {
+                    char turn[96];
+                    snprintf(turn, sizeof turn, "%s %u", tag, in_n);
+                    if (core_try_serve(turn, out) == 0)
+                        return 0;
+                }
+                /* Typed CORE miss: abstain (no pack soft-seal). */
+                snprintf(out->answer, sizeof out->answer, "outside_table_abstain");
+                snprintf(out->utterance, sizeof out->utterance, "outside_table_abstain");
+                snprintf(out->source, sizeof out->source, "CNET");
+                snprintf(out->skill, sizeof out->skill,
+                         taught ? "typed_teach_pending" : "outside_table_abstain");
+                out->verified = 0;
+                out->miss = 1;
+                out->may_voice = 0;
+                out->tokens = 0;
+                return 0;
             }
-            snprintf(out->answer, sizeof out->answer, "outside_table_abstain");
-            snprintf(out->utterance, sizeof out->utterance, "outside_table_abstain");
-            snprintf(out->source, sizeof out->source, "CNET");
-            snprintf(out->skill, sizeof out->skill,
-                     taught ? "typed_teach_pending" : "outside_table_abstain");
-            out->verified = 0;
-            out->miss = 1;
-            out->may_voice = 0;
-            out->tokens = 0;
-            return 0;
+            /* freeform → pack path below */
         }
     }
     memset(&ameta, 0, sizeof ameta);
