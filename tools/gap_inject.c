@@ -174,7 +174,7 @@ int main(int argc, char **argv) {
     int remaining = 0;
 
     snprintf(default_base, sizeof default_base, "%s/soul_gemma4v2_final.cnb", root);
-    snprintf(default_window, sizeof default_window, "%s/english_window_256_bonsai_v2.txt", root);
+    snprintf(default_window, sizeof default_window, "%s/english_window_256_bonsai_v3.txt", root);
     base_path = env_str("CNET_BASE_PATH", default_base);
     window_path = getenv("CNET_WINDOW_FILE");
     if (!window_path || !window_path[0])

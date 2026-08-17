@@ -37,7 +37,9 @@ OUT_DIR = ROOT / "logs" / "marble_24_7"
 REPORT = OUT_DIR / "AUTONOMOUS_CYCLE.json"
 CURRIC = ROOT / "config" / "autonomous_curriculum.jsonl"
 _MIN = os.environ.get("CNET_MINIMAL_ROOT", "").strip()
-_minp = Path(_MIN) if _MIN else None
+# Prefer live deploy tree when env unset (Hermes-free 24/7 path).
+_default_min = Path.home() / ".local" / "share" / "cnet-minimal" / "current"
+_minp = Path(_MIN) if _MIN else (_default_min if _default_min.is_dir() else None)
 PACKS = Path(
     os.environ.get("CNET_PACKS_ROOT")
     or (

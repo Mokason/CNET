@@ -1,0 +1,5 @@
+ROE_MANIFEST 1
+skill soul_vigilance_mode
+format roe_text_capsule
+never_self_cert 1
+second_brain 0
