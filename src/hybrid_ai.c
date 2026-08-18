@@ -1474,9 +1474,21 @@ int hybrid_structure_mine(HybridAi *h, PrimitiveRegistry *reg, size_t min_hits,
                     tr->input_port.field_width);
         snprintf(name, sizeof name, "hyb_struct_%zu", h->structure_mines);
         {
-            size_t ih = tr->in_dim > 16 ? 64 : 8;
-            size_t mh = tr->in_dim > 16 ? 256 : 64;
-            size_t ep = tr->in_dim > 16 ? 40000 : 12000;
+            /* Capacity must track how HARD the fit is, not how wide the input
+               happens to be. Keying off in_dim alone punishes compact encodings:
+               a positional-binary input has a small in_dim precisely because it
+               is efficient, so at 16x16->16 it scored in_dim=8 and got the
+               smallest network (8 hidden, 12k epochs) to fit 192 rows into a
+               16-way output. external_teacher_mine_admit then refused to certify
+               the under-fitted student and hybrid_structure_mine propagated its
+               rc=1 -- which looked from outside like "the miner never engaged",
+               though the trace was healthy at hits=384. Row count and output
+               cardinality are the real difficulty signals. */
+            size_t need = n_rows > tr->out_dim ? n_rows : tr->out_dim;
+            int big = (tr->in_dim > 16 || need > 32);
+            size_t ih = big ? 64 : 8;
+            size_t mh = big ? 256 : 64;
+            size_t ep = big ? 40000 : 12000;
             /* registry_add stores the name POINTER, not a copy
                (src/router/registry.c). Passing this function's stack buffer
                left every mined entry with a dangling name: undefined behaviour
