@@ -1254,6 +1254,7 @@ int hybrid_structure_mine(HybridAi *h, PrimitiveRegistry *reg, size_t min_hits,
     double *inputs = NULL, *targets = NULL;
     /* Certified-generalization scratch (opt-in; see the proof block below). */
     double *gen_all_in = NULL, *gen_all_tg = NULL;
+    double *gen_all_in_sel = NULL, *gen_all_tg_sel = NULL;
     size_t gen_hold[HYBRID_GEN_HOLD_MAX], gen_hold_n = 0, gen_train_rows = 0;
     int gen_proved = 0;
     const char *gen_env = getenv("CNET_COVERAGE_GENERALIZE");
@@ -1539,39 +1540,52 @@ int hybrid_structure_mine(HybridAi *h, PrimitiveRegistry *reg, size_t min_hits,
                         w++;
                     }
                     gen_train_rows = w;
+                    /* Contiguous copies of just the withheld rows: mine_admit
+                       takes a row block, not an index list. */
+                    gen_all_in_sel = (double *)malloc(gen_hold_n * tr->in_dim *
+                                                      sizeof(double));
+                    gen_all_tg_sel = (double *)malloc(gen_hold_n * tr->out_dim *
+                                                      sizeof(double));
+                    if (gen_all_in_sel && gen_all_tg_sel) {
+                        size_t q;
+                        for (q = 0; q < gen_hold_n; q++) {
+                            memcpy(gen_all_in_sel + q * tr->in_dim,
+                                   gen_all_in + gen_hold[q] * tr->in_dim,
+                                   tr->in_dim * sizeof(double));
+                            memcpy(gen_all_tg_sel + q * tr->out_dim,
+                                   gen_all_tg + gen_hold[q] * tr->out_dim,
+                                   tr->out_dim * sizeof(double));
+                        }
+                    } else {
+                        free(gen_all_in_sel); free(gen_all_tg_sel);
+                        gen_all_in_sel = NULL; gen_all_tg_sel = NULL;
+                        gen_hold_n = 0;
+                    }
                 } else {
                     free(gen_all_in); free(gen_all_tg);
                     gen_all_in = NULL; gen_all_tg = NULL; gen_hold_n = 0;
                 }
             }
-            rc = external_teacher_mine_admit(
+            /* Hand the withheld rows to seed selection instead of proving
+               afterwards. Post-hoc, the first CERTIFYING seed was accepted and
+               then tested -- which selects for memorisation, since fitting the
+               training rows exactly is exactly what a memoriser does. Passing
+               them in lets mine_admit keep looking for a seed that reproduces
+               them too, and report which kind it settled for. */
+            rc = external_teacher_mine_admit_ex(
                 &teacher, reg, inputs, targets, gen_train_rows, ih, mh, ep, 99u,
-                stable, student_out);
-            if (rc == 0 && gen_hold_n > 0 && gen_all_in && student_out &&
-                *student_out) {
-                /* The proof. Every withheld row must come back right; one miss and
-                   the unit stays membership-gated. */
-                size_t r, j, ok = 0;
-                for (r = 0; r < gen_hold_n; r++) {
-                    const double *o =
-                        btn_forward(*student_out, gen_all_in + gen_hold[r] * tr->in_dim);
-                    size_t am = 0, wm = 0;
-                    if (!o) break;
-                    for (j = 1; j < tr->out_dim; j++) {
-                        if (o[j] > o[am]) am = j;
-                        if (gen_all_tg[gen_hold[r] * tr->out_dim + j] >
-                            gen_all_tg[gen_hold[r] * tr->out_dim + wm]) wm = j;
-                    }
-                    if (am == wm) ok++;
-                }
-                gen_proved = (ok == gen_hold_n) ? 1 : 0;
-                if (getenv("CNET_MINE_DEBUG"))
-                    fprintf(stderr,
-                            "hybrid: generalization proof %zu/%zu withheld rows -> %s\n",
-                            ok, gen_hold_n, gen_proved ? "DOMAIN" : "membership");
-            }
+                stable, student_out,
+                gen_hold_n > 0 ? gen_all_in_sel : NULL,
+                gen_hold_n > 0 ? gen_all_tg_sel : NULL,
+                gen_hold_n, &gen_proved);
+            if (getenv("CNET_MINE_DEBUG") && gen_hold_n > 0)
+                fprintf(stderr,
+                        "hybrid: seed selection over %zu withheld rows -> %s\n",
+                        gen_hold_n, gen_proved ? "DOMAIN" : "membership");
             free(gen_all_in); free(gen_all_tg);
+            free(gen_all_in_sel); free(gen_all_tg_sel);
             gen_all_in = NULL; gen_all_tg = NULL;
+            gen_all_in_sel = NULL; gen_all_tg_sel = NULL;
             if (rc != 0) {
                 free(stable); /* nothing borrowed it */
                 h->structure_promote_rejects++;

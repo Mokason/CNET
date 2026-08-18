@@ -414,12 +414,32 @@ int external_teacher_admit_oracle(
     return 0;
 }
 
+/* Exact argmax reproduction over a row set. Used both for "did it fit the spec"
+   and for "did it predict rows it never trained on". */
+static int btn_reproduces(BinaryTransformNetwork *btn, const double *in,
+                          const double *tg, size_t n_rows, size_t in_dim,
+                          size_t out_dim) {
+    size_t r, j;
+    if (!btn || !in || !tg || n_rows == 0) return 0;
+    for (r = 0; r < n_rows; r++) {
+        const double *o = btn_forward(btn, in + r * in_dim);
+        size_t am = 0, wm = 0;
+        if (!o) return 0;
+        for (j = 1; j < out_dim; j++) {
+            if (o[j] > o[am]) am = j;
+            if (tg[r * out_dim + j] > tg[r * out_dim + wm]) wm = j;
+        }
+        if (am != wm) return 0;
+    }
+    return 1;
+}
+
 /* How many initialisations to try before refusing. Fitting a finite spec exactly
    is seed-dependent; this is a retry budget, not an accuracy threshold, so there
    is nothing to re-tune when domains change size. */
 #define CNET_MINE_SEED_ATTEMPTS 6
 
-int external_teacher_mine_admit(
+int external_teacher_mine_admit_ex(
     ExternalTeacher *t,
     PrimitiveRegistry *reg,
     const double *probe_inputs,
@@ -430,11 +450,17 @@ int external_teacher_mine_admit(
     size_t max_epochs,
     unsigned int seed,
     const char *unit_name,
-    BinaryTransformNetwork **student_out)
+    BinaryTransformNetwork **student_out,
+    const double *hold_in,   /* n_hold * in_dim -- rows withheld from training */
+    const double *hold_tg,   /* n_hold * out_dim */
+    size_t n_hold,
+    int *generalized_out)
 {
     size_t in_dim, out_dim, i;
     double *labeled = NULL;
     BinaryTransformNetwork *student = NULL;
+    BinaryTransformNetwork *best = NULL;
+    int best_generalized = 0;
     size_t attempt;
     Contract c;
     Specialist s;
@@ -500,13 +526,60 @@ int external_teacher_mine_admit(
                                  1e-8);
     (void)btn_train(student, probe_inputs, canonical_targets, n_rows, 4000);
 
+    /* Select, do not admit yet. Admitting registers the unit, so a seed we are
+       about to reject must never reach specialist_admit -- otherwise choosing a
+       better seed would leave the earlier one in the registry. */
+    /* Certification test must be the CONTRACT's, not a stricter one of our own.
+       Gating on exact argmax over every training row rejected seeds that
+       contract_init_borrowed would have accepted (its bar is 0.95, not 1.0),
+       which silently changed which units certify. Build the contract here and
+       reuse it below if this seed is the one we keep. */
     memset(&c, 0, sizeof c);
     if (contract_init_borrowed(&c, unit_name, student, probe_inputs,
                                canonical_targets, n_rows) != 0) {
         btn_free(student);
         free(student);
         student = NULL;
-        continue; /* this initialisation did not reproduce the spec */
+        continue; /* does not meet the contract at all */
+    }
+    contract_free(&c);
+    /* It certifies. Does it also predict rows it never trained on? Preferring
+       such a seed is the whole point: fitting the training rows exactly can be
+       memorisation, and taking the FIRST certifying seed selects for that
+       blindly. With no withheld rows supplied there is nothing to prefer, so
+       the first certifying seed stands. */
+    if (n_hold > 0 && hold_in && hold_tg &&
+        btn_reproduces(student, hold_in, hold_tg, n_hold, in_dim, out_dim)) {
+        if (best) { btn_free(best); free(best); }
+        best = student;
+        best_generalized = 1;
+        student = NULL;
+        break; /* generalising seed found -- stop looking */
+    }
+    if (!best) {
+        best = student; /* certifies but does not generalise: keep as fallback */
+    } else {
+        btn_free(student);
+        free(student);
+    }
+    student = NULL;
+    }
+
+    if (!best) {
+        free(labeled);
+        if (generalized_out) *generalized_out = 0;
+        return 1;
+    }
+    student = best;
+
+    memset(&c, 0, sizeof c);
+    if (contract_init_borrowed(&c, unit_name, student, probe_inputs,
+                               canonical_targets, n_rows) != 0) {
+        btn_free(student);
+        free(student);
+        free(labeled);
+        if (generalized_out) *generalized_out = 0;
+        return 1;
     }
     memset(&s, 0, sizeof s);
     if (specialist_wrap_btn(&s, student, unit_name) != 0 ||
@@ -514,16 +587,24 @@ int external_teacher_mine_admit(
         contract_free(&c);
         btn_free(student);
         free(student);
-        student = NULL;
-        continue;
+        free(labeled);
+        if (generalized_out) *generalized_out = 0;
+        return 1;
     }
     contract_free(&c);
     free(labeled);
     *student_out = student;
+    if (generalized_out) *generalized_out = best_generalized;
     return 0;
-    }
-    /* Every attempt failed to reproduce the spec. Refusing is correct: an
-       unfittable table must not be certified. */
-    free(labeled);
-    return 1;
+}
+
+/* Back-compat wrapper: no withheld rows, so no generalisation preference. */
+int external_teacher_mine_admit(
+    ExternalTeacher *t, PrimitiveRegistry *reg, const double *probe_inputs,
+    const double *canonical_targets, size_t n_rows, size_t init_hidden,
+    size_t max_hidden, size_t max_epochs, unsigned int seed,
+    const char *unit_name, BinaryTransformNetwork **student_out) {
+    return external_teacher_mine_admit_ex(
+        t, reg, probe_inputs, canonical_targets, n_rows, init_hidden, max_hidden,
+        max_epochs, seed, unit_name, student_out, NULL, NULL, 0, NULL);
 }
