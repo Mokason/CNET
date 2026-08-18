@@ -414,6 +414,11 @@ int external_teacher_admit_oracle(
     return 0;
 }
 
+/* How many initialisations to try before refusing. Fitting a finite spec exactly
+   is seed-dependent; this is a retry budget, not an accuracy threshold, so there
+   is nothing to re-tune when domains change size. */
+#define CNET_MINE_SEED_ATTEMPTS 6
+
 int external_teacher_mine_admit(
     ExternalTeacher *t,
     PrimitiveRegistry *reg,
@@ -430,6 +435,7 @@ int external_teacher_mine_admit(
     size_t in_dim, out_dim, i;
     double *labeled = NULL;
     BinaryTransformNetwork *student = NULL;
+    size_t attempt;
     Contract c;
     Specialist s;
 
@@ -451,13 +457,23 @@ int external_teacher_mine_admit(
         }
     }
 
+    /* Retry across initialisations until the finite spec is actually reproduced.
+       Fitting it exactly is seed-dependent: at 16x16 -> 16 the same addmod table
+       reached 95.8%, 97.9%, 100% and 94.8% under seeds 42/99/7/1234, so a single
+       fixed seed turns "certifiable" into a coin flip. The contract demands exact
+       reproduction, so the honest loop is to keep trying while attempts remain.
+       This is self-limiting rather than a tuned threshold: a spec that CAN be fit
+       gets fitted, and one that cannot -- a structureless table -- fails every
+       attempt and is still refused, which is what keeps the control safe. */
+    for (attempt = 0; attempt < CNET_MINE_SEED_ATTEMPTS; attempt++) {
+    unsigned int try_seed = (seed ? seed : 42u) + (unsigned int)attempt * 7919u;
     student = (BinaryTransformNetwork *)calloc(1, sizeof *student);
     if (!student) {
         free(labeled);
         return -3;
     }
     if (btn_init(student, in_dim, out_dim, init_hidden ? init_hidden : 16,
-                 max_hidden ? max_hidden : 64, 0.5, seed ? seed : 42) != 0) {
+                 max_hidden ? max_hidden : 64, 0.5, try_seed) != 0) {
         free(student);
         free(labeled);
         return -4;
@@ -489,8 +505,8 @@ int external_teacher_mine_admit(
                                canonical_targets, n_rows) != 0) {
         btn_free(student);
         free(student);
-        free(labeled);
-        return 1;
+        student = NULL;
+        continue; /* this initialisation did not reproduce the spec */
     }
     memset(&s, 0, sizeof s);
     if (specialist_wrap_btn(&s, student, unit_name) != 0 ||
@@ -498,11 +514,16 @@ int external_teacher_mine_admit(
         contract_free(&c);
         btn_free(student);
         free(student);
-        free(labeled);
-        return 1;
+        student = NULL;
+        continue;
     }
     contract_free(&c);
     free(labeled);
     *student_out = student;
     return 0;
+    }
+    /* Every attempt failed to reproduce the spec. Refusing is correct: an
+       unfittable table must not be certified. */
+    free(labeled);
+    return 1;
 }
