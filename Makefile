@@ -5047,6 +5047,21 @@ cnet_capsule_step: $(CAPSULE_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL
 		$(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) \
 		tools/cnet_capsule_step.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -pthread
 
+# Window-mint tooling. These existed as sources with no build rule, so minting a
+# gap-lane window meant compiling them by hand -- fine interactively, useless to
+# an unattended caretaker. Both need _DEFAULT_SOURCE for POSIX decls under
+# -std=c11 (mkdir/S_IFMT).
+.PHONY: window_tools
+window_tools: $(BIN_DIR)/gen_window_candidates $(BIN_DIR)/xlate_window
+
+$(BIN_DIR)/gen_window_candidates: tools/gen_window_candidates.c
+	@mkdir -p $(BIN_DIR)
+	$(CC) -std=c11 -O2 -D_DEFAULT_SOURCE -Iinclude -o $@ $<
+
+$(BIN_DIR)/xlate_window: tools/xlate_window.c
+	@mkdir -p $(BIN_DIR)
+	$(CC) -std=c11 -O2 -D_DEFAULT_SOURCE -Iinclude -o $@ $<
+
 # Meet a space it has not seen, learn it, and never confabulate in one.
 # Several unseen domain families plus a structureless control that has nothing
 # to learn. Bar set by the operator: STRICT abstention -- zero confident-wrong
