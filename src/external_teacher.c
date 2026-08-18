@@ -459,11 +459,12 @@ int external_teacher_mine_admit_ex(
     size_t in_dim, out_dim, i;
     double *labeled = NULL;
     BinaryTransformNetwork *student = NULL;
-    BinaryTransformNetwork *best = NULL;
+
     int best_generalized = 0;
-    size_t attempt;
+    size_t attempt, pass;
     Contract c;
     Specialist s;
+
 
     if (!t || !t->bound || !reg || !probe_inputs || !canonical_targets ||
         n_rows == 0 || !unit_name || !unit_name[0] || !student_out)
@@ -483,119 +484,67 @@ int external_teacher_mine_admit_ex(
         }
     }
 
-    /* Retry across initialisations until the finite spec is actually reproduced.
-       Fitting it exactly is seed-dependent: at 16x16 -> 16 the same addmod table
-       reached 95.8%, 97.9%, 100% and 94.8% under seeds 42/99/7/1234, so a single
-       fixed seed turns "certifiable" into a coin flip. The contract demands exact
-       reproduction, so the honest loop is to keep trying while attempts remain.
-       This is self-limiting rather than a tuned threshold: a spec that CAN be fit
-       gets fitted, and one that cannot -- a structureless table -- fails every
-       attempt and is still refused, which is what keeps the control safe. */
+    /* Two passes over initialisations.
+       Pass 0 wants a seed that certifies AND predicts the withheld rows; pass 1
+       settles for one that merely certifies. Both attempt the REAL admit, because
+       the loop's acceptance test has to be the same test that decides: an earlier
+       version gated on contract_init_borrowed (bar 0.95), settled on a candidate
+       registry_add_certified then rejected (-1), and never explored further --
+       which is why affine produced no unit at 256 cells. A failed
+       specialist_admit registers nothing, so continuing to the next seed is safe;
+       only a successful one stops the search. */
+    for (pass = 0; pass < 2; pass++) {
+    if (pass == 0 && (n_hold == 0 || !hold_in || !hold_tg)) continue;
     for (attempt = 0; attempt < CNET_MINE_SEED_ATTEMPTS; attempt++) {
     unsigned int try_seed = (seed ? seed : 42u) + (unsigned int)attempt * 7919u;
     student = (BinaryTransformNetwork *)calloc(1, sizeof *student);
-    if (!student) {
-        free(labeled);
-        return -3;
-    }
+    if (!student) { free(labeled); return -3; }
     if (btn_init(student, in_dim, out_dim, init_hidden ? init_hidden : 16,
                  max_hidden ? max_hidden : 64, 0.5, try_seed) != 0) {
-        free(student);
-        free(labeled);
-        return -4;
+        free(student); free(labeled); return -4;
     }
     if (btn_set_ports(student, t->input_port, t->output_port) != 0) {
-        btn_free(student);
-        free(student);
-        free(labeled);
-        return -4;
+        btn_free(student); free(student); free(labeled); return -4;
     }
-    /* _spec, not the splitting variant. A mined unit's contract is verified by
-       reproducing the FULL finite row set it was certified on -- train IS verify
-       -- but btn_train_dynamic holds out sample_count/5 for validation once
-       n_rows >= BTN_TRAIN_MIN_SPLIT_SAMPLES (64). Those withheld rows are then
-       never fitted, so contract verification cannot pass and specialist_admit
-       refuses: at 16x16 -> 16 (192 rows) the student topped out near 154/192,
-       which read from outside as "the substrate cannot fit 256-cell domains".
-       It could; it was being asked to reproduce rows it was never shown.
-       btn_train_dynamic_spec exists for exactly this case -- its own comment
-       records the same bug being fixed for the decimal-ladder chunk, where
-       holding out 1/5 of 200 rows made verify miss them. */
+    /* _spec, not the splitting variant: a mined unit's contract is verified by
+       reproducing the FULL finite row set it is certified over -- train IS
+       verify -- but btn_train_dynamic withholds sample_count/5 once
+       n_rows >= BTN_TRAIN_MIN_SPLIT_SAMPLES, so those rows could never be
+       reproduced and admission always refused. */
     (void)btn_train_dynamic_spec(student, probe_inputs, labeled, n_rows,
                                  max_epochs ? max_epochs : 12000, 200, 1e-6,
                                  1e-8);
     (void)btn_train(student, probe_inputs, canonical_targets, n_rows, 4000);
 
-    /* Select, do not admit yet. Admitting registers the unit, so a seed we are
-       about to reject must never reach specialist_admit -- otherwise choosing a
-       better seed would leave the earlier one in the registry. */
-    /* Certification test must be the CONTRACT's, not a stricter one of our own.
-       Gating on exact argmax over every training row rejected seeds that
-       contract_init_borrowed would have accepted (its bar is 0.95, not 1.0),
-       which silently changed which units certify. Build the contract here and
-       reuse it below if this seed is the one we keep. */
+    if (pass == 0 &&
+        !btn_reproduces(student, hold_in, hold_tg, n_hold, in_dim, out_dim)) {
+        btn_free(student); free(student); student = NULL;
+        continue; /* does not generalise; pass 1 may still take it */
+    }
     memset(&c, 0, sizeof c);
     if (contract_init_borrowed(&c, unit_name, student, probe_inputs,
                                canonical_targets, n_rows) != 0) {
-        btn_free(student);
-        free(student);
-        student = NULL;
-        continue; /* does not meet the contract at all */
-    }
-    contract_free(&c);
-    /* It certifies. Does it also predict rows it never trained on? Preferring
-       such a seed is the whole point: fitting the training rows exactly can be
-       memorisation, and taking the FIRST certifying seed selects for that
-       blindly. With no withheld rows supplied there is nothing to prefer, so
-       the first certifying seed stands. */
-    if (n_hold > 0 && hold_in && hold_tg &&
-        btn_reproduces(student, hold_in, hold_tg, n_hold, in_dim, out_dim)) {
-        if (best) { btn_free(best); free(best); }
-        best = student;
-        best_generalized = 1;
-        student = NULL;
-        break; /* generalising seed found -- stop looking */
-    }
-    if (!best) {
-        best = student; /* certifies but does not generalise: keep as fallback */
-    } else {
-        btn_free(student);
-        free(student);
-    }
-    student = NULL;
-    }
-
-    if (!best) {
-        free(labeled);
-        if (generalized_out) *generalized_out = 0;
-        return 1;
-    }
-    student = best;
-
-    memset(&c, 0, sizeof c);
-    if (contract_init_borrowed(&c, unit_name, student, probe_inputs,
-                               canonical_targets, n_rows) != 0) {
-        btn_free(student);
-        free(student);
-        free(labeled);
-        if (generalized_out) *generalized_out = 0;
-        return 1;
+        btn_free(student); free(student); student = NULL;
+        continue;
     }
     memset(&s, 0, sizeof s);
     if (specialist_wrap_btn(&s, student, unit_name) != 0 ||
         specialist_admit(reg, &s, &c) != 0) {
         contract_free(&c);
-        btn_free(student);
-        free(student);
-        free(labeled);
-        if (generalized_out) *generalized_out = 0;
-        return 1;
+        btn_free(student); free(student); student = NULL;
+        continue; /* nothing was registered; try the next initialisation */
     }
+    best_generalized = (pass == 0);
     contract_free(&c);
     free(labeled);
     *student_out = student;
     if (generalized_out) *generalized_out = best_generalized;
     return 0;
+    }
+    }
+    free(labeled);
+    if (generalized_out) *generalized_out = 0;
+    return 1;
 }
 
 /* Back-compat wrapper: no withheld rows, so no generalisation preference. */
