@@ -112,3 +112,7 @@ agi2_miss.jsonl
 agi3_miss.jsonl
 agi2_workspace.txt
 agi3_workspace.txt
+
+# adapt_new_domain gate scratch bases (one per domain family, per phase)
+tmp_adapt_*
+tmp_adaptfull_*

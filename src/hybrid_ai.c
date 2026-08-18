@@ -616,8 +616,11 @@ typedef struct {
     size_t in_dim;
 } StagedCoverage;
 
-/* Withheld-row budget for the generalization proof. */
-#define HYBRID_GEN_HOLD_MAX 64
+/* Withheld-row budget for the generalization proof. Every 4th row is withheld,
+   so this must exceed n_rows/4 or the proof silently tests fewer rows than it
+   withheld -- which would weaken the bar without saying so. 256 covers a
+   1024-row reservoir (CNET_RESIDUAL_RESERVOIR_K caps at 1024). */
+#define HYBRID_GEN_HOLD_MAX 256
 
 static int coverage_family_valid(int family) {
     return family >= (int)PORT_RAW && family <= (int)PORT_CONCEPT;
