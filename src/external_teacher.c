@@ -468,8 +468,20 @@ int external_teacher_mine_admit(
         free(labeled);
         return -4;
     }
-    (void)btn_train_dynamic(student, probe_inputs, labeled, n_rows,
-                            max_epochs ? max_epochs : 12000, 200, 1e-6, 1e-8);
+    /* _spec, not the splitting variant. A mined unit's contract is verified by
+       reproducing the FULL finite row set it was certified on -- train IS verify
+       -- but btn_train_dynamic holds out sample_count/5 for validation once
+       n_rows >= BTN_TRAIN_MIN_SPLIT_SAMPLES (64). Those withheld rows are then
+       never fitted, so contract verification cannot pass and specialist_admit
+       refuses: at 16x16 -> 16 (192 rows) the student topped out near 154/192,
+       which read from outside as "the substrate cannot fit 256-cell domains".
+       It could; it was being asked to reproduce rows it was never shown.
+       btn_train_dynamic_spec exists for exactly this case -- its own comment
+       records the same bug being fixed for the decimal-ladder chunk, where
+       holding out 1/5 of 200 rows made verify miss them. */
+    (void)btn_train_dynamic_spec(student, probe_inputs, labeled, n_rows,
+                                 max_epochs ? max_epochs : 12000, 200, 1e-6,
+                                 1e-8);
     (void)btn_train(student, probe_inputs, canonical_targets, n_rows, 4000);
 
     memset(&c, 0, sizeof c);
