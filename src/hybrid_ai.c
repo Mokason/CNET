@@ -316,6 +316,12 @@ int hybrid_coverage_admits(const HybridAi *h, Port in_port, Port out_port,
     c = coverage_find((HybridAi *)h, port_key(in_port), port_key(out_port),
                       in_port, out_port);
     if (!c || !c->rows || c->in_dim != in_len) return 1; /* default-allow */
+    /* A unit that EARNED generalization -- trained on a subset, then predicted
+       every withheld row correctly -- covers its whole port domain, not just the
+       rows it saw. Membership stays the default; this flag is only ever set by
+       hybrid_structure_mine after that proof, so a structureless map (which
+       cannot predict withheld rows) never reaches here. */
+    if (c->generalizes) return 1;
     for (i = 0; i < c->n_rows; i++) {
         if (memcmp(c->rows + i * c->in_dim, in,
                    c->in_dim * sizeof(double)) == 0)
@@ -609,6 +615,9 @@ typedef struct {
     size_t n_rows;
     size_t in_dim;
 } StagedCoverage;
+
+/* Withheld-row budget for the generalization proof. */
+#define HYBRID_GEN_HOLD_MAX 64
 
 static int coverage_family_valid(int family) {
     return family >= (int)PORT_RAW && family <= (int)PORT_CONCEPT;
@@ -1240,6 +1249,12 @@ int hybrid_structure_mine(HybridAi *h, PrimitiveRegistry *reg, size_t min_hits,
     ExternalTeacher teacher;
     CnetOracleIdentity id;
     double *inputs = NULL, *targets = NULL;
+    /* Certified-generalization scratch (opt-in; see the proof block below). */
+    double *gen_all_in = NULL, *gen_all_tg = NULL;
+    size_t gen_hold[HYBRID_GEN_HOLD_MAX], gen_hold_n = 0, gen_train_rows = 0;
+    int gen_proved = 0;
+    const char *gen_env = getenv("CNET_COVERAGE_GENERALIZE");
+    int gen_want = (gen_env && gen_env[0] == '1' && gen_env[1] == '\0');
     char name[64];
     int rc;
     size_t n_rows = 1;
@@ -1476,9 +1491,72 @@ int hybrid_structure_mine(HybridAi *h, PrimitiveRegistry *reg, size_t min_hits,
                 return -3;
             }
             memcpy(stable, name, nlen);
+            /* Certified generalization (opt-in: CNET_COVERAGE_GENERALIZE=1).
+               Withhold every 4th row from TRAINING, then require the student to
+               predict every withheld row. Passing proves the rule holds beyond
+               the rows it saw, so the unit may claim its whole port domain.
+               Failing keeps the historical membership gate. Coverage is recorded
+               over the TRAINING rows only -- never the withheld ones -- so a unit
+               that fails the proof still cannot answer from its weights on rows it
+               never trained on: that is the S3/E2 confident-wrong hole this whole
+               mechanism exists to close. */
+            gen_train_rows = n_rows;
+            if (gen_want && n_rows >= 8) {
+                gen_all_in = (double *)malloc(n_rows * tr->in_dim * sizeof(double));
+                gen_all_tg = (double *)malloc(n_rows * tr->out_dim * sizeof(double));
+                if (gen_all_in && gen_all_tg) {
+                    size_t r, w = 0;
+                    memcpy(gen_all_in, inputs, n_rows * tr->in_dim * sizeof(double));
+                    memcpy(gen_all_tg, targets, n_rows * tr->out_dim * sizeof(double));
+                    gen_hold_n = 0;
+                    for (r = 0; r < n_rows; r++) {
+                        if ((r & 3u) == 3u) {
+                            if (gen_hold_n < HYBRID_GEN_HOLD_MAX)
+                                gen_hold[gen_hold_n++] = r;
+                            continue;
+                        }
+                        if (w != r) {
+                            memcpy(inputs + w * tr->in_dim, gen_all_in + r * tr->in_dim,
+                                   tr->in_dim * sizeof(double));
+                            memcpy(targets + w * tr->out_dim, gen_all_tg + r * tr->out_dim,
+                                   tr->out_dim * sizeof(double));
+                        }
+                        w++;
+                    }
+                    gen_train_rows = w;
+                } else {
+                    free(gen_all_in); free(gen_all_tg);
+                    gen_all_in = NULL; gen_all_tg = NULL; gen_hold_n = 0;
+                }
+            }
             rc = external_teacher_mine_admit(
-                &teacher, reg, inputs, targets, n_rows, ih, mh, ep, 99u, stable,
-                student_out);
+                &teacher, reg, inputs, targets, gen_train_rows, ih, mh, ep, 99u,
+                stable, student_out);
+            if (rc == 0 && gen_hold_n > 0 && gen_all_in && student_out &&
+                *student_out) {
+                /* The proof. Every withheld row must come back right; one miss and
+                   the unit stays membership-gated. */
+                size_t r, j, ok = 0;
+                for (r = 0; r < gen_hold_n; r++) {
+                    const double *o =
+                        btn_forward(*student_out, gen_all_in + gen_hold[r] * tr->in_dim);
+                    size_t am = 0, wm = 0;
+                    if (!o) break;
+                    for (j = 1; j < tr->out_dim; j++) {
+                        if (o[j] > o[am]) am = j;
+                        if (gen_all_tg[gen_hold[r] * tr->out_dim + j] >
+                            gen_all_tg[gen_hold[r] * tr->out_dim + wm]) wm = j;
+                    }
+                    if (am == wm) ok++;
+                }
+                gen_proved = (ok == gen_hold_n) ? 1 : 0;
+                if (getenv("CNET_MINE_DEBUG"))
+                    fprintf(stderr,
+                            "hybrid: generalization proof %zu/%zu withheld rows -> %s\n",
+                            ok, gen_hold_n, gen_proved ? "DOMAIN" : "membership");
+            }
+            free(gen_all_in); free(gen_all_tg);
+            gen_all_in = NULL; gen_all_tg = NULL;
             if (rc != 0) {
                 free(stable); /* nothing borrowed it */
                 h->structure_promote_rejects++;
@@ -1522,8 +1600,14 @@ int hybrid_structure_mine(HybridAi *h, PrimitiveRegistry *reg, size_t min_hits,
         /* The unit is certified over exactly these rows — remember them so
            the serve path can refuse to claim certified authority outside
            the domain the contract actually covers. */
+        /* gen_train_rows, not n_rows: coverage names the rows the unit actually
+           trained on. When the generalization proof failed, the withheld rows are
+           deliberately left OUTSIDE coverage so the unit cannot answer them from
+           weights it never fitted to them. */
+        if (gen_train_rows == 0) gen_train_rows = n_rows;
         if (hybrid_coverage_record(h, tr->input_port, tr->goal_port, name, inputs,
-                                   targets, n_rows, tr->in_dim, tr->out_dim) != 0) {
+                                   targets, gen_train_rows, tr->in_dim,
+                                   tr->out_dim) != 0) {
             /* Slot was reserved above, so this is allocation failure. The
                unit is already admitted and would serve ungated; say so
                loudly rather than let it look like a clean mine. */
@@ -1534,6 +1618,15 @@ int hybrid_structure_mine(HybridAi *h, PrimitiveRegistry *reg, size_t min_hits,
             free(inputs);
             free(targets);
             return -5;
+        }
+        /* Stamp the earned flag. Only reachable when the proof passed on EVERY
+           withheld row, so a structureless map -- which cannot predict them --
+           never gets it and stays membership-gated. */
+        if (gen_proved) {
+            HybridCoverage *cv = coverage_find(h, port_key(tr->input_port),
+                                               port_key(tr->goal_port),
+                                               tr->input_port, tr->goal_port);
+            if (cv) { cv->generalizes = 1; cv->held_out = gen_hold_n; }
         }
         free(inputs);
         free(targets);

@@ -144,6 +144,16 @@ typedef struct {
     size_t in_dim;
     size_t out_dim;
     int active;
+    /* Certified generalization. 0 = coverage is membership (the default and the
+       historical behaviour): the unit answers only rows it was trained on.
+       1 = the unit was trained on a SUBSET and then predicted the withheld rows
+       perfectly, so its rule was shown to hold beyond the rows it saw and it may
+       claim the whole port domain.
+       This is earned per unit, never assumed: a map with no structure cannot
+       predict withheld rows and stays membership-gated. Opt-in via
+       CNET_COVERAGE_GENERALIZE=1. Gate: tests/test_adapt_new_domain.c */
+    int generalizes;
+    size_t held_out;  /* rows withheld from training to earn the flag */
 } HybridCoverage;
 
 typedef struct {

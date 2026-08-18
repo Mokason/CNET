@@ -1,7 +1,7 @@
-PATH2_FACTORY PASS built=4/4 served=4 skip_gate=0 ms_total=94.258
-  brick[0] tag=q1_add16 ms=23.834
-  brick[1] tag=q1_xor16 ms=23.444
-  brick[2] tag=q1_add16v ms=23.530
-  brick[3] tag=q1_xor16g ms=23.450
+PATH2_FACTORY PASS built=4/4 served=4 skip_gate=0 ms_total=97.094
+  brick[0] tag=q1_add16 ms=24.556
+  brick[1] tag=q1_xor16 ms=23.553
+  brick[2] tag=q1_add16v ms=23.458
+  brick[3] tag=q1_xor16g ms=25.527
 CNET_PATH2_FACTORY_PASS
-brick_factory=1 n_plus_one_after_serve=1 teacher_gone=1 bricks=4 ms=94.258
+brick_factory=1 n_plus_one_after_serve=1 teacher_gone=1 bricks=4 ms=97.094

@@ -1,5 +1,5 @@
 == AGI scenario layer 3 (plan synthesis + specialists) ==
-AGI3 PASS turns=9 cert=8 abstain=1 synth_ok=3 synth_rej=2 goals_done=3 routes=3 committee_ok=2 chains=2 parrot=1 bricks=4 cert_rate=0.889 synth_prec=1.000 committee_rate=1.000 honesty=0.909 ms=48.501
+AGI3 PASS turns=9 cert=8 abstain=1 synth_ok=3 synth_rej=2 goals_done=3 routes=3 committee_ok=2 chains=2 parrot=1 bricks=4 cert_rate=0.889 synth_prec=1.000 committee_rate=1.000 honesty=0.909 ms=49.221
 specialists=4 plans=5
   sp[0] tag=user_pref rel=1.00 consults=1
   sp[1] tag=q1_xor16 rel=1.00 consults=0
@@ -11,4 +11,4 @@ specialists=4 plans=5
   plan[3] syn=0 rej=1 ok=0 | chat freely about feelings
   plan[4] syn=1 rej=0 ok=1 | prove user_pref at 7
 CNET_AGI_SCENARIO3_PASS
-layer3=1 plan_synth=1 cert_only_plans=1 specialists=1 committee=1 parrot_mouth=0 residual_auto_cert=0 synth_prec=1.000 ms=48.501
+layer3=1 plan_synth=1 cert_only_plans=1 specialists=1 committee=1 parrot_mouth=0 residual_auto_cert=0 synth_prec=1.000 ms=49.221
