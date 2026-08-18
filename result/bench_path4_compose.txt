@@ -1,3 +1,3 @@
-PATH4_COMPOSE PASS split=1 compose=1 child_a=1 child_b=1 composed=1 n1_block=1 ms_split=0.079 ms_compose=0.028 ms_total=24.084
+PATH4_COMPOSE PASS split=1 compose=1 child_a=1 child_b=1 composed=1 n1_block=1 ms_split=0.074 ms_compose=0.026 ms_total=24.269
 CNET_PATH4_COMPOSE_PASS
-split=1 compose=1 n_plus_one_gate=1 ms=24.084
+split=1 compose=1 n_plus_one_gate=1 ms=24.269

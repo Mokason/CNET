@@ -5062,6 +5062,23 @@ $(BIN_DIR)/xlate_window: tools/xlate_window.c
 	@mkdir -p $(BIN_DIR)
 	$(CC) -std=c11 -O2 -D_DEFAULT_SOURCE -Iinclude -o $@ $<
 
+# The encoding decides whether a unit learns the rule or memorises rows. One-hot
+# generalises nothing; positional binary earns domain coverage on structured
+# families. The structureless control must never generalise under ANY encoding --
+# a better encoding must not become a licence to invent.
+.PHONY: encoding_generalizes
+encoding_generalizes: $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(EXT_TEACHER_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) tests/test_encoding_generalizes.c include/hybrid_ai.h include/personal_ai.h
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/test_encoding_generalizes \
+		$(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(EXT_TEACHER_SRC) \
+		$(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) \
+		$(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) \
+		$(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) \
+		tests/test_encoding_generalizes.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -pthread
+	@./$(BIN_DIR)/test_encoding_generalizes | tee logs/encoding_generalizes.log
+	@grep -q '^ENCODING_GENERALIZES_PASS' logs/encoding_generalizes.log
+	@grep -q 'control_learned=0' logs/encoding_generalizes.log
+
 # Meet a space it has not seen, learn it, and never confabulate in one.
 # Several unseen domain families plus a structureless control that has nothing
 # to learn. Bar set by the operator: STRICT abstention -- zero confident-wrong
