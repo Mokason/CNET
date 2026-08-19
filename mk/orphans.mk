@@ -26,42 +26,42 @@ CCE_AICIMO_EXTRA := src/cce/cce_aicimo_bridge.c src/cce/cce_aicimo_role_slice.c
 # --- the gate the docs already cite -------------------------------------------
 # 360 GEMM calls against an exact CPU reference, single / dual / column-split,
 # FP_CONTRACT OFF. Runs on CPU when no OpenCL device is present.
-clgemm_unit: $(CCE) tests/clgemm_unit.c
+clgemm_unit: $(LIBCCE) tests/clgemm_unit.c
 	@mkdir -p $(BIN_DIR) logs
-	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) tests/clgemm_unit.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ tests/clgemm_unit.c $(LIBCCE) $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 	./$(BIN_DIR)/clgemm_unit > logs/clgemm_unit.log 2>&1
 
 # --- CCE storage layers named in the architecture table -----------------------
-cce_archive: $(CCE) tests/cce_archive_test.c
+cce_archive: $(LIBCCE) tests/cce_archive_test.c
 	@mkdir -p $(BIN_DIR) logs
-	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) tests/cce_archive_test.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ tests/cce_archive_test.c $(LIBCCE) $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 	./$(BIN_DIR)/cce_archive > logs/cce_archive.log 2>&1
 
-cce_forest: $(CCE) tests/cce_forest_test.c
+cce_forest: $(LIBCCE) tests/cce_forest_test.c
 	@mkdir -p $(BIN_DIR) logs
-	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) tests/cce_forest_test.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ tests/cce_forest_test.c $(LIBCCE) $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 	./$(BIN_DIR)/cce_forest > logs/cce_forest.log 2>&1
 
-cce_minimal: $(CCE) tests/cce_minimal.c
+cce_minimal: $(LIBCCE) tests/cce_minimal.c
 	@mkdir -p $(BIN_DIR) logs
-	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) tests/cce_minimal.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ tests/cce_minimal.c $(LIBCCE) $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 	./$(BIN_DIR)/cce_minimal > logs/cce_minimal.log 2>&1
 
-forest_ls: $(CCE) tests/forest_ls.c
+forest_ls: $(LIBCCE) tests/forest_ls.c
 	@mkdir -p $(BIN_DIR) logs
-	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) tests/forest_ls.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ tests/forest_ls.c $(LIBCCE) $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 
-qwythos_load: $(CCE) tests/qwythos_load.c
+qwythos_load: $(LIBCCE) tests/qwythos_load.c
 	@mkdir -p $(BIN_DIR) logs
-	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) tests/qwythos_load.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ tests/qwythos_load.c $(LIBCCE) $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 
-gguf_partial_convert: $(CCE) tests/gguf_partial_convert.c
+gguf_partial_convert: $(LIBCCE) tests/gguf_partial_convert.c
 	@mkdir -p $(BIN_DIR) logs
-	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) tests/gguf_partial_convert.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ tests/gguf_partial_convert.c $(LIBCCE) $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 
-int8_to_trit: $(CCE) tests/int8_to_trit.c
+int8_to_trit: $(LIBCCE) tests/int8_to_trit.c
 	@mkdir -p $(BIN_DIR) logs
-	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) tests/int8_to_trit.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ tests/int8_to_trit.c $(LIBCCE) $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 
 # --- mmap/fread byte-identity (hop-1 invariant) -------------------------------
 # Built as C++ on purpose: the minimal GGUF parser inside it uses reference
@@ -86,10 +86,10 @@ cnet_evolve_dir_test: include/cnet_evolve_dir.h src/selfimprove/cnet_evolve_dir.
 		tests/test_cnet_evolve_dir.c src/selfimprove/cnet_evolve_dir.c $(LDFLAGS)
 	./$(BIN_DIR)/test_cnet_evolve_dir > logs/cnet_evolve_dir_test.log 2>&1
 
-time_teacher_learn: $(GENERATE_FIFO_SRC) $(HYBRID_AI_SRC) $(CAPSULE_SRC) $(PERSONAL_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(EXT_TEACHER_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) tests/time_teacher_learn.c
+time_teacher_learn: $(GENERATE_FIFO_SRC) $(HYBRID_AI_SRC) $(CAPSULE_SRC) $(PERSONAL_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(EXT_TEACHER_SRC) $(MODEL_RUNTIME) $(LIBCCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) tests/time_teacher_learn.c
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ \
-		$(GENERATE_FIFO_SRC) $(HYBRID_AI_SRC) $(CAPSULE_SRC) $(PERSONAL_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(EXT_TEACHER_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) \
+		$(GENERATE_FIFO_SRC) $(HYBRID_AI_SRC) $(CAPSULE_SRC) $(PERSONAL_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(EXT_TEACHER_SRC) $(MODEL_RUNTIME) $(LIBCCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) \
 		tests/time_teacher_learn.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 
 # --- aicimo scenario suite ----------------------------------------------------
@@ -100,10 +100,10 @@ AICIMO_ORPHANS := aicimo_128k_rpg_test aicimo_8192_rpg_test aicimo_bridge_rpg_te
 	aicimo_rpg_dilemma_test aicimo_rpg_test aicimo_sandbox_quest_test \
 	aicimo_uncertainty_rpg_test
 
-$(AICIMO_ORPHANS): %: tests/%.c $(CCE) $(CCE_AICIMO_EXTRA)
+$(AICIMO_ORPHANS): %: tests/%.c $(LIBCCE) $(CCE_AICIMO_EXTRA)
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -Iinclude -o $(BIN_DIR)/$@ \
-		$(CCE) $(CCE_AICIMO_EXTRA) tests/$@.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+		$(LIBCCE) $(CCE_AICIMO_EXTRA) tests/$@.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 
 .PHONY: aicimo_orphans
 aicimo_orphans: $(AICIMO_ORPHANS)
@@ -136,7 +136,7 @@ cnet_compete_run: include/cnet_compete_runtime.h src/compete/cnet_compete_runtim
 		$(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -pthread
 
 # Both need the full serving stack, exactly as struct_mine_persist does.
-STRUCT_MINE_LINK := $(MULTIMODAL_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) \
+STRUCT_MINE_LINK := $(MULTIMODAL_SRC) $(MODEL_RUNTIME) $(LIBCCE) $(CNET_CCE_ADAPTER) \
 	$(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(REGISTRY_LORA) \
 	$(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) \
 	$(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) \

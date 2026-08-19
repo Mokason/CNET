@@ -437,6 +437,11 @@ QAT_LOAD_SRC := src/cce/cce_transformer_qat_load.c
 CCE_TRANSFORMER_QAT := $(QAT_CORE_SRC) $(QAT_LOAD_SRC)
 CCE_MOJO := $(MOJO_KERNEL_SRC)
 CCE := $(CCE_TENSOR) $(CCE_BLOCK) $(CCE_CASCADE) $(CCE_ARCHIVE) $(CCE_FOREST) $(CCE_ROUTER) $(CCE_SPARSE_KV) $(CCE_DSA) $(CCE_KV_PAGE) $(CCE_MTK) $(CCE_MLA) $(CCE_DS_MAP) $(CCE_DS_RT) $(CCE_INFER) $(CCE_UNCERTAINTY) $(CCE_COMPRESSION) $(CCE_LEARN) $(CCE_LORA) $(CCE_LILY) $(CCE_PATCH) $(CCE_GPU) $(CCE_ABI) $(CCE_CUDA_OBJ) $(CCE_PERCEPTUAL) $(CCE_WORDLM) $(CCE_MODEL) $(CCE_MODEL_IO) $(CCE_DATASET) $(CCE_AUTOGRAD) $(CCE_SAFETENSORS) $(CCE_GGUF) $(CCE_AICIMO) $(CCE_QGKP) $(CCE_DETECT) $(CCE_SSM) $(CCE_HYBRID) $(CCE_QWEN35) $(CCE_GGUF_QWEN35) $(CCE_ST_LLAMA) $(CCE_SPECGRAPH) $(CCE_WSTORE) $(CCE_TIERRT) $(CCE_SIMILAR) $(CCE_CLGEMM) $(CCE_HIPGEMM) $(CCE_CUDAGEMM) $(CCE_TRANSFORMER_QAT) $(CCE_MOJO)
+# Single link product for CCE (built by mk/cce_lib.mk). Recipes must not
+# recompile $(CCE) sources per test — link $(LIBCCE) instead.
+LIBCCE := $(BIN_DIR)/libcce.a
+AR ?= ar
+
 CNET_CCE_ADAPTER := src/cce/cce_contract_adapter.c
 SPECIALIST_ADAPTERS := src/specialist_adapters.c
 SPECIALIST_SRC := src/specialist.c src/specialist_health.c
@@ -650,9 +655,9 @@ stm_ltm_bench: $(CCE_STM_LTM) include/cce/cce_stm_ltm_bridge.h tools/stm_ltm_ben
 # bit-identity, budget-0.25 planted-needle retention + budget ceiling +
 # decode argmax agreement, malformed-budget refusal (API and CNET_SPARSE_KV
 # env knob), and OFF-restore bit-identity. Terminal marker: SPARSE_KV_EXEC_PASS.
-sparse_kv_exec: $(CCE) $(CCE_CUDA_OBJ) tests/sparse_kv_exec_test.c tests/tiny_model_fixture.h include/cce/cce_sparse_kv.h include/cce/cce_gguf.h
+sparse_kv_exec: $(LIBCCE) tests/sparse_kv_exec_test.c tests/tiny_model_fixture.h include/cce/cce_sparse_kv.h include/cce/cce_gguf.h
 	@mkdir -p logs
-	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) tests/sparse_kv_exec_test.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ tests/sparse_kv_exec_test.c $(LIBCCE) $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 	./$(BIN_DIR)/sparse_kv_exec > logs/sparse_kv_exec.log 2>&1
 	@grep "SPARSE_KV_EXEC_PASS" logs/sparse_kv_exec.log
 
@@ -1399,8 +1404,8 @@ heal_mismatch_san: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONSOLIDATE) $(CONTRACT) tes
 # Loader robustness: systematic single-byte flip + truncation sweeps over
 # every artifact loader. Sealed formats (.cnu/.cnb) must refuse EVERY
 # mutation; unsealed probes (gguf/safetensors/.cce) must never crash.
-mutate: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(ATTRIB_SRC) $(CONFORMAL) $(CCE) tests/test_mutate.c include/contract/unit.h include/base.h include/attribution.h include/cce/cce_archive.h include/cce/cce_detect.h
-	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(ATTRIB_SRC) $(CONFORMAL) $(CCE) tests/test_mutate.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+mutate: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(ATTRIB_SRC) $(CONFORMAL) $(LIBCCE) tests/test_mutate.c include/contract/unit.h include/base.h include/attribution.h include/cce/cce_archive.h include/cce/cce_detect.h
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(ATTRIB_SRC) $(CONFORMAL) tests/test_mutate.c $(LIBCCE) $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 	./$(BIN_DIR)/mutate > logs/mutate.log 2>&1
 
 # Gap-triggered acquisition loop: gap ledger sidecar + oracle mining ->
@@ -1439,7 +1444,7 @@ flagship: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) 
 	@CNET_TOPK_SET=1 ./$(BIN_DIR)/flagship > logs/flagship.topkset.log 2>&1
 	@CNET_ACQ_ADAPTIVE=1 CNET_ACQ_WARMSTART=1 CNET_TOPK_SET=1 ./$(BIN_DIR)/flagship > logs/flagship.allon.log 2>&1
 	@cc -O2 -w -o $(BIN_DIR)/test_dequant_xcheck tests/test_dequant_xcheck.c -lm && ./$(BIN_DIR)/test_dequant_xcheck
-	@$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/test_f16_identity $(CCE) tests/test_f16_identity.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) && ./$(BIN_DIR)/test_f16_identity
+	@$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/test_f16_identity tests/test_f16_identity.c $(LIBCCE) $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) && ./$(BIN_DIR)/test_f16_identity
 
 # Base inspector: counts + certify-on-load + tag audit + digest fidelity
 # compare between two bases. Usage: ./bin/cnb_audit <base.cnb> [other.cnb]
@@ -1459,25 +1464,25 @@ flagship_run_build: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CON
 # GPU equivalence gate: CPU vs OpenCL forward must be DECISION-identical
 # (argmax + top-3) before --gpu mining is allowed. Needs model + GPU; NOT in
 # verify. Usage: make gpu_equiv_build && ./bin/gpu_equiv <model> [V] [N]
-gpu_equiv_build: $(CCE) tests/gpu_equiv.c include/cce/cce_clgemm.h include/cce/cce_gguf.h
-	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/gpu_equiv $(CCE) tests/gpu_equiv.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+gpu_equiv_build: $(LIBCCE) tests/gpu_equiv.c include/cce/cce_clgemm.h include/cce/cce_gguf.h
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/gpu_equiv tests/gpu_equiv.c $(LIBCCE) $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 
 # Decision-saturation depth probe: at which layer do the window decisions the
 # oracle consumes stop changing? Measurement gate for any capped-depth oracle
 # (CNET_ORACLE_LAYER_CAP). Needs the model; NOT in verify.
 # Usage: make depth_probe_build && ./bin/depth_probe <model> [V] [N]
-depth_probe_build: $(CCE) tests/depth_probe.c include/cce/cce_gguf.h
-	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/depth_probe $(CCE) tests/depth_probe.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+depth_probe_build: $(LIBCCE) tests/depth_probe.c include/cce/cce_gguf.h
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/depth_probe tests/depth_probe.c $(LIBCCE) $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 
 # Token-level greedy comparison vs an external reference (llama.cpp) on the
 # same GGUF: the gemma4-forward validation gate. Needs the model; NOT in
 # verify. Usage: make gemma4_vs_ref_build && tests/gemma4_vs_ref.sh
-gemma4_vs_ref_build: $(CCE) tests/gemma4_vs_ref.c include/cce/cce_gguf.h
-	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/gemma4_vs_ref $(CCE) tests/gemma4_vs_ref.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+gemma4_vs_ref_build: $(LIBCCE) tests/gemma4_vs_ref.c include/cce/cce_gguf.h
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/gemma4_vs_ref tests/gemma4_vs_ref.c $(LIBCCE) $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 
 # Exhaustive fp16 decode identity over the LIVE decoder (all 65536 patterns).
-f16_identity: $(CCE) tests/test_f16_identity.c include/cce/cce_gguf.h
-	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/test_f16_identity $(CCE) tests/test_f16_identity.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+f16_identity: $(LIBCCE) tests/test_f16_identity.c include/cce/cce_gguf.h
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/test_f16_identity tests/test_f16_identity.c $(LIBCCE) $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 	./$(BIN_DIR)/test_f16_identity
 
 # Contract security + efficiency: content digests, certification cache,
@@ -1634,8 +1639,8 @@ struct_pref: structural_pref_study
 # LEGACY/EXPERIMENTAL: glyph_habitat links src/cnet_lm.c â€” a second
 # training/generation/head-routing path that is quarantined from the core
 # CCE aggregate. It is reachable ONLY through this explicit legacy target.
-glyph_habitat: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(CCE) tests/glyph_habitat.c src/contract/text_add.c src/contract/text_add_compound.c src/contract/text_add_abstain.c src/contract/perceptual_query.c src/contract/narrative_diffusion.c src/contract/narrative_branching.c src/contract/interactive_agent.c src/contract/mcp_utils.c src/contract/mcp_memory.c src/contract/mcp_wiki.c src/contract/mcp_web_search.c src/contract/mcp_file_read.c src/contract/mcp_calculator.c src/contract/mcp_summarizer.c src/contract/mcp_file_write.c src/memory/agent_memory.c src/contract/book_concept.c include/nn.h include/router.h include/plan_table.h include/contract/contract.h include/contract/text_add.h include/contract/text_add_compound.h include/contract/text_add_abstain.h include/contract/perceptual_query.h include/contract/narrative_diffusion.h include/contract/narrative_branching.h include/contract/interactive_agent.h include/contract/mcp_wiki.h include/contract/mcp_web_search.h include/contract/mcp_file_read.h include/contract/mcp_calculator.h include/contract/mcp_summarizer.h include/contract/mcp_file_write.h include/agent_memory.h include/contract/book_concept.h
-	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(CCE) tests/glyph_habitat.c src/contract/text_add.c src/contract/text_add_compound.c src/contract/text_add_abstain.c src/contract/perceptual_query.c src/contract/narrative_diffusion.c src/contract/narrative_branching.c src/contract/interactive_agent.c src/contract/mcp_utils.c src/contract/mcp_memory.c src/contract/mcp_wiki.c src/contract/mcp_web_search.c src/contract/mcp_file_read.c src/contract/mcp_calculator.c src/contract/mcp_summarizer.c src/contract/mcp_file_write.c src/memory/agent_memory.c src/contract/book_concept.c src/cnet_lm.c src/contract/anti_repeat.c $(LDFLAGS) $(MCP_LDFLAGS)
+glyph_habitat: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(LIBCCE) tests/glyph_habitat.c src/contract/text_add.c src/contract/text_add_compound.c src/contract/text_add_abstain.c src/contract/perceptual_query.c src/contract/narrative_diffusion.c src/contract/narrative_branching.c src/contract/interactive_agent.c src/contract/mcp_utils.c src/contract/mcp_memory.c src/contract/mcp_wiki.c src/contract/mcp_web_search.c src/contract/mcp_file_read.c src/contract/mcp_calculator.c src/contract/mcp_summarizer.c src/contract/mcp_file_write.c src/memory/agent_memory.c src/contract/book_concept.c include/nn.h include/router.h include/plan_table.h include/contract/contract.h include/contract/text_add.h include/contract/text_add_compound.h include/contract/text_add_abstain.h include/contract/perceptual_query.h include/contract/narrative_diffusion.h include/contract/narrative_branching.h include/contract/interactive_agent.h include/contract/mcp_wiki.h include/contract/mcp_web_search.h include/contract/mcp_file_read.h include/contract/mcp_calculator.h include/contract/mcp_summarizer.h include/contract/mcp_file_write.h include/agent_memory.h include/contract/book_concept.h
+	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) tests/glyph_habitat.c src/contract/text_add.c src/contract/text_add_compound.c src/contract/text_add_abstain.c src/contract/perceptual_query.c src/contract/narrative_diffusion.c src/contract/narrative_branching.c src/contract/interactive_agent.c src/contract/mcp_utils.c src/contract/mcp_memory.c src/contract/mcp_wiki.c src/contract/mcp_web_search.c src/contract/mcp_file_read.c src/contract/mcp_calculator.c src/contract/mcp_summarizer.c src/contract/mcp_file_write.c src/memory/agent_memory.c src/contract/book_concept.c src/cnet_lm.c src/contract/anti_repeat.c $(LIBCCE) $(LDFLAGS) $(MCP_LDFLAGS)
 # Note: for full contract-based decimal response in glyph_habitat (dec_full_add composition),
 # run `make decimal` (or decimal_demo) first to generate dec_value_weights.txt + dec_full_add_weights.txt.
 
@@ -1953,12 +1958,14 @@ test_all: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) 
 legacy_test: test_all
 	./$(BIN_DIR)/test_all
 
-# Live domain demos (decimal + circuit): these exercise the CURRENT planner
-# and stay in the core verification chain.
-.PHONY: demos compat
-demos: decimal_demo circuit_demo
+# Live contract surfaces (decimal + circuit): full-domain freeze + planner.
+# Not "demos" — they are the certified-path proof for finite specs.
+.PHONY: live_contracts demos compat
+live_contracts: decimal_demo circuit_demo
 	./$(BIN_DIR)/decimal_demo > logs/decimal_demo.log 2>&1
 	./$(BIN_DIR)/circuit_demo > logs/circuit_demo.log 2>&1
+# Back-compat alias (recipes/docs may still say demos).
+demos: live_contracts
 
 # The COMPAT tier (legacy quarantine): the restored historical test_all
 # aggregate is back-compat coverage, not core verification â€” it runs here
@@ -2082,6 +2089,8 @@ chunk: nn_demo chunk_demo
 	./$(BIN_DIR)/chunk_demo
 
 clean:
+	rm -rf build/cce
+	rm -f $(BIN_DIR)/libcce.a $(BIN_DIR)/libcce.so
 	# Remove all known generated binaries (core + demos + studies).
 	# Only remove files/dirs that are NOT git-tracked â€” this preserves
 	# committed fixtures and shared libraries (cce.dll, cnet.so, etc.)
@@ -2142,8 +2151,8 @@ src/cce/cce_cuda.o: src/cce/cce_cuda.cu include/cce/cce_gpu.h
 endif
 
 # Minimal CCE smoke test (Contract Cascade Engine foundation)
-cce_smoke: $(CCE) $(CCE_CUDA_OBJ) tests/cce_smoke.c
-	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) tests/cce_smoke.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+cce_smoke: $(LIBCCE) tests/cce_smoke.c
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ tests/cce_smoke.c $(LIBCCE) $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 	@echo "cce_smoke built. Run manually: ./cce_smoke"
 
 # gigatoken confirmation: SWAR GPT-2 pretokenizer (regex-replacement lever) ported
@@ -2193,7 +2202,7 @@ mla: $(CCE_ROUTER) $(CCE_MLA) $(CCE_DSA) $(CCE_SPARSE_KV) tests/test_mla.c inclu
 	@grep "MLA_PASS" logs/mla.log
 # CNET-native DeepSeek map + real forest bind (isolated from DS/llama.cpp).
 .PHONY: deepseek_map
-deepseek_map: $(CCE) tests/test_deepseek_map.c include/cce/cce_deepseek_map.h
+deepseek_map: $(LIBCCE) tests/test_deepseek_map.c include/cce/cce_deepseek_map.h
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) $(CFLAGS) -o $(BIN_DIR)/test_deepseek_map $(CCE) \
 		tests/test_deepseek_map.c $(LDFLAGS) -lm
@@ -2204,7 +2213,7 @@ deepseek_map: $(CCE) tests/test_deepseek_map.c include/cce/cce_deepseek_map.h
 
 # Full isolated stack: mapâ†’forestâ†’MLA+MoE+DSA+cold experts + microbench.
 .PHONY: ds_stack
-ds_stack: $(CCE) tests/test_ds_runtime.c include/cce/cce_ds_runtime.h
+ds_stack: $(LIBCCE) tests/test_ds_runtime.c include/cce/cce_ds_runtime.h
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) $(CFLAGS) -o $(BIN_DIR)/test_ds_runtime $(CCE) \
 		tests/test_ds_runtime.c $(LDFLAGS) -lm
@@ -2227,9 +2236,9 @@ sparse_stack: ssmax dsa mla deepseek_map ds_stack
 
 # Forest MTP speculative + EP place tags
 .PHONY: mtp_spec
-mtp_spec: $(CCE) tests/test_mtp_spec.c include/cce/cce_ds_runtime.h
+mtp_spec: $(LIBCCE) tests/test_mtp_spec.c include/cce/cce_ds_runtime.h
 	@mkdir -p $(BIN_DIR) logs
-	$(CC) $(CFLAGS) -o $(BIN_DIR)/test_mtp_spec $(CCE) tests/test_mtp_spec.c $(LDFLAGS) -lm
+	$(CC) $(CFLAGS) -o $(BIN_DIR)/test_mtp_spec tests/test_mtp_spec.c $(LIBCCE) $(LDFLAGS) -lm
 	@./$(BIN_DIR)/test_mtp_spec 2>&1 | tee logs/mtp_spec.log
 	@grep -q "MTP_SPEC_PASS" logs/mtp_spec.log
 	@grep -q "failures=0" logs/mtp_spec.log
@@ -2252,9 +2261,9 @@ kv_page: $(CCE_KV_PAGE) tests/test_kv_page.c include/cce/cce_kv_page.h
 
 # Micro-Trensor Kernel: hot-swap CMSK skills on Forest weights (LEGO knowledge).
 .PHONY: mtk
-mtk: $(CCE) tests/test_mtk.c include/cce/cce_mtk.h
+mtk: $(LIBCCE) tests/test_mtk.c include/cce/cce_mtk.h
 	@mkdir -p $(BIN_DIR) logs
-	$(CC) $(CFLAGS) -o $(BIN_DIR)/test_mtk $(CCE) tests/test_mtk.c $(LDFLAGS) -lm
+	$(CC) $(CFLAGS) -o $(BIN_DIR)/test_mtk tests/test_mtk.c $(LIBCCE) $(LDFLAGS) -lm
 	@CNET_FOREST_NO_PERSIST=1 ./$(BIN_DIR)/test_mtk 2>&1 | tee logs/mtk.log
 	@grep -q "MTK_PASS" logs/mtk.log
 	@grep -q "failures=0" logs/mtk.log
@@ -2346,11 +2355,11 @@ cnet_ds_bench: $(CCE) tools/cnet_ds_bench.c
 # GGUF residual/token stack: synthetic tiny weights â†’ load â†’ multi-token gen
 # + residual layer tap + sparse_kv + microbench + dual-backend open.
 .PHONY: gguf_stack
-gguf_stack: $(CCE) tests/test_gguf_runtime.c tests/tiny_model_fixture.h \
+gguf_stack: $(LIBCCE) tests/test_gguf_runtime.c tests/tiny_model_fixture.h \
 		include/cce/cce_infer_backend.h
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/test_gguf_runtime \
-		$(CCE) tests/test_gguf_runtime.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -lm
+		$(LIBCCE) tests/test_gguf_runtime.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -lm
 	@./$(BIN_DIR)/test_gguf_runtime > logs/gguf_stack.log 2>&1
 	@grep -q "GGUF_STACK_PASS" logs/gguf_stack.log
 	@grep -q "failures=0" logs/gguf_stack.log
@@ -2366,10 +2375,10 @@ cnet_gguf_bench: $(CCE) tools/cnet_gguf_bench.c include/cce/cce_infer_backend.h
 
 # Dual CPU: DS residual host + GGUF token path side-by-side (GPU hooks reserved).
 .PHONY: dual_cpu_bench
-dual_cpu_bench: $(CCE) tests/test_dual_cpu_bench.c include/cce/cce_infer_backend.h
+dual_cpu_bench: $(LIBCCE) tests/test_dual_cpu_bench.c include/cce/cce_infer_backend.h
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/test_dual_cpu_bench \
-		$(CCE) tests/test_dual_cpu_bench.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -lm
+		$(LIBCCE) tests/test_dual_cpu_bench.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -lm
 	@./$(BIN_DIR)/test_dual_cpu_bench > logs/dual_cpu_bench.log 2>&1
 	@grep -q "DUAL_CPU_BENCH_PASS" logs/dual_cpu_bench.log
 	@grep -q "failures=0" logs/dual_cpu_bench.log
@@ -2383,11 +2392,11 @@ dual_stack: sparse_stack gguf_stack dual_cpu_bench
 # GGUF GPU: OpenCL primary (AMD pure-C). Soft-skip if no discrete GPU.
 # Decision gate: 100% argmax vs CPU on synthetic fixture.
 .PHONY: gguf_gpu
-gguf_gpu: $(CCE) tests/test_gguf_gpu.c tests/tiny_model_fixture.h \
+gguf_gpu: $(LIBCCE) tests/test_gguf_gpu.c tests/tiny_model_fixture.h \
 		include/cce/cce_infer_backend.h include/cce/cce_clgemm.h
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/test_gguf_gpu \
-		$(CCE) tests/test_gguf_gpu.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -lm -ldl
+		$(LIBCCE) tests/test_gguf_gpu.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -lm -ldl
 	@./$(BIN_DIR)/test_gguf_gpu > logs/gguf_gpu.log 2>&1
 	@if grep -q "GGUF_GPU_SKIP" logs/gguf_gpu.log; then \
 		grep "GGUF_GPU_SKIP" logs/gguf_gpu.log; \
@@ -2399,10 +2408,10 @@ gguf_gpu: $(CCE) tests/test_gguf_gpu.c tests/tiny_model_fixture.h \
 
 # Dual GPU bench: DS CPU + GGUF CPU/OpenCL; DS GPU reserved.
 .PHONY: dual_gpu_bench
-dual_gpu_bench: $(CCE) tests/test_dual_gpu_bench.c include/cce/cce_infer_backend.h
+dual_gpu_bench: $(LIBCCE) tests/test_dual_gpu_bench.c include/cce/cce_infer_backend.h
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/test_dual_gpu_bench \
-		$(CCE) tests/test_dual_gpu_bench.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -lm -ldl
+		$(LIBCCE) tests/test_dual_gpu_bench.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -lm -ldl
 	@./$(BIN_DIR)/test_dual_gpu_bench > logs/dual_gpu_bench.log 2>&1
 	@if grep -q "DUAL_GPU_BENCH_SKIP" logs/dual_gpu_bench.log; then \
 		grep "DUAL_GPU_BENCH_SKIP\|DS \|GGUF " logs/dual_gpu_bench.log; \
@@ -2458,39 +2467,39 @@ gguf_gpu_steady: $(CCE) tools/cnet_gguf_gpu_bench.c
 	@grep "tok_s\|speedup\|GGUF_GPU_BENCH" logs/gguf_gpu_steady.log
 
 # Pure CCE build without legacy nn.c (for testing the new engine)
-cce_smoke_pure: $(CCE) $(CCE_CUDA_OBJ) tests/cce_smoke.c
-	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) tests/cce_smoke.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+cce_smoke_pure: $(LIBCCE) tests/cce_smoke.c
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ tests/cce_smoke.c $(LIBCCE) $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 	./$(BIN_DIR)/cce_smoke_pure
 
-cce_train_bench: $(CCE) $(CCE_CUDA_OBJ) $(HELDOUT_SRC) tests/cce_train_bench.c include/cnet_heldout.h
+cce_train_bench: $(LIBCCE) $(HELDOUT_SRC) tests/cce_train_bench.c include/cnet_heldout.h
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) $(HELDOUT_SRC) tests/cce_train_bench.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 	@./$(BIN_DIR)/cce_train_bench > logs/cce_train_bench.log 2>&1; rc=$$?; \
 		cat logs/cce_train_bench.log; exit $$rc
 	@grep -q '^CLASSIFICATION_GATE_PASS ' logs/cce_train_bench.log
 
-cce_json_bench: $(CCE) $(CCE_CUDA_OBJ) tests/cce_json_bench.c
-	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) tests/cce_json_bench.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+cce_json_bench: $(LIBCCE) tests/cce_json_bench.c
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ tests/cce_json_bench.c $(LIBCCE) $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 	./$(BIN_DIR)/cce_json_bench
 
 # Zero-copy WARM load: cce_cascade_view_from_archive views weights in the mmap
 # (owns_memory=0) instead of reload+copy. Verifies bit-identical forward + clean free.
-cce_view: $(CCE) $(CCE_CUDA_OBJ) tests/cce_view_test.c
-	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) tests/cce_view_test.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+cce_view: $(LIBCCE) tests/cce_view_test.c
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ tests/cce_view_test.c $(LIBCCE) $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 	./$(BIN_DIR)/cce_view > logs/cce_view.log 2>&1
 
 # Universal pre-run model structure detection: magic-sniff the container
 # (gguf/safetensors/cce/packed), fingerprint the architecture from the tensors
 # actually present, report hparams WITHOUT loading weights, dispatch to the
 # matching loader via cce_anymodel_open. Unsupported structures refuse honestly.
-cce_detect: $(CCE) $(CCE_CUDA_OBJ) tests/cce_detect_test.c
-	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) tests/cce_detect_test.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+cce_detect: $(LIBCCE) tests/cce_detect_test.c
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ tests/cce_detect_test.c $(LIBCCE) $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 	./$(BIN_DIR)/cce_detect > logs/cce_detect.log 2>&1
 
 # Mamba-1 SSM runner: forest-decomposed linear specialists + recurrent scan
 # glue; verified against an independent double-precision reference and
 # safetensors<->gguf mapping equivalence (bit-identical logits).
-cce_ssm: $(CCE) $(CCE_CUDA_OBJ) tests/cce_ssm_test.c
-	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) tests/cce_ssm_test.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+cce_ssm: $(LIBCCE) tests/cce_ssm_test.c
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ tests/cce_ssm_test.c $(LIBCCE) $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 	./$(BIN_DIR)/cce_ssm > logs/cce_ssm.log 2>&1
 
 # Native hybrid attention+SSM runner: a single MIXED forward threads one
@@ -2498,8 +2507,8 @@ cce_ssm: $(CCE) $(CCE_CUDA_OBJ) tests/cce_ssm_test.c
 # mamba-1 SSM layers (jamba/zamba class), reusing the same forest-decomposed
 # linear specialists as the pure runners. Gated against an independent
 # double-precision reference; mutation proves both sublayers are in the path.
-cce_hybrid: $(CCE) $(CCE_CUDA_OBJ) tests/cce_hybrid_test.c
-	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) tests/cce_hybrid_test.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+cce_hybrid: $(LIBCCE) tests/cce_hybrid_test.c
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ tests/cce_hybrid_test.c $(LIBCCE) $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 	./$(BIN_DIR)/cce_hybrid > logs/cce_hybrid.log 2>&1
 
 # Native Qwen3.5 execution core (attention + Gated-DeltaNet hybrid): the
@@ -2507,16 +2516,16 @@ cce_hybrid: $(CCE) $(CCE_CUDA_OBJ) tests/cce_hybrid_test.c
 # Gated-DeltaNet step, and the Qwen3.5 gated causal attention. Gated against an
 # independent double-precision reference recurrence/attention; the generic
 # cce_hybrid mamba-1 runner deliberately does NOT cover this convention.
-cce_qwen35: $(CCE) $(CCE_CUDA_OBJ) tests/cce_qwen35_test.c
-	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) tests/cce_qwen35_test.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+cce_qwen35: $(LIBCCE) tests/cce_qwen35_test.c
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ tests/cce_qwen35_test.c $(LIBCCE) $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 	./$(BIN_DIR)/cce_qwen35 > logs/cce_qwen35.log 2>&1
 
 # Hermetic end-to-end test of the qwen35 hybrid RUNNER (cce_gguf_qwen35.c):
 # writes a tiny qwen35-arch GGUF fixture, gates the forward against an
 # independent double-precision reference, and pins the oracle-harness state
 # contract (rewind checkpoint, probe batches, int8 head skip, MTP skip).
-cce_qwen35_e2e: $(CCE) $(CCE_CUDA_OBJ) tests/cce_qwen35_e2e_test.c
-	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) tests/cce_qwen35_e2e_test.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+cce_qwen35_e2e: $(LIBCCE) tests/cce_qwen35_e2e_test.c
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ tests/cce_qwen35_e2e_test.c $(LIBCCE) $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 	./$(BIN_DIR)/cce_qwen35_e2e > logs/cce_qwen35_e2e.log 2>&1
 
 # Hermetic state-machine regression for the real flagship oracle's prefix
@@ -2554,46 +2563,46 @@ execution_tiers_doc_gate: docs/EXECUTION_TIERS.md tests/test_execution_tiers_doc
 
 # HF-llama safetensors loader: same decomposed transformer as the GGUF path,
 # gated by bit-identical logits between the two container formats.
-cce_st_llama: $(CCE) $(CCE_CUDA_OBJ) tests/cce_st_llama_test.c
-	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) tests/cce_st_llama_test.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+cce_st_llama: $(LIBCCE) tests/cce_st_llama_test.c
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ tests/cce_st_llama_test.c $(LIBCCE) $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 	./$(BIN_DIR)/cce_st_llama > logs/cce_st_llama.log 2>&1
 
 # Specialist knowledge graph: content digests + behavioral fingerprints +
 # DATA_FLOWS wiring for any decomposed model (the codebase-memory move on
 # weights). Gates: cross-container digest identity, one-matrix locality.
-cce_specgraph: $(CCE) $(CCE_CUDA_OBJ) tests/cce_specgraph_test.c tests/tiny_model_fixture.h
-	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) tests/cce_specgraph_test.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+cce_specgraph: $(LIBCCE) tests/cce_specgraph_test.c tests/tiny_model_fixture.h
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ tests/cce_specgraph_test.c $(LIBCCE) $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 	./$(BIN_DIR)/cce_specgraph > logs/cce_specgraph.log 2>&1
 
 # Content-addressed weight store: specialists stored once by digest, models
 # as manifests. Gates: 100% reuse on re-ingest + cross-container, fine-tune
 # costs one payload, restore is bit-identical, reuse claims byte-verified.
-cce_wstore: $(CCE) $(CCE_CUDA_OBJ) tests/cce_wstore_test.c tests/tiny_model_fixture.h
-	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) tests/cce_wstore_test.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+cce_wstore: $(LIBCCE) tests/cce_wstore_test.c tests/tiny_model_fixture.h
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ tests/cce_wstore_test.c $(LIBCCE) $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 	./$(BIN_DIR)/cce_wstore > logs/cce_wstore.log 2>&1
 
 # Tiered runtime: run a store-backed transformer in bounded RAM (HOT cap +
 # LRU eviction + on-demand rehydration). Gate: capped streaming logits are
 # bit-identical to all-resident; residency never exceeds the cap.
-cce_tiers: $(CCE) $(CCE_CUDA_OBJ) tests/cce_tiers_test.c tests/tiny_model_fixture.h
-	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) tests/cce_tiers_test.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+cce_tiers: $(LIBCCE) tests/cce_tiers_test.c tests/tiny_model_fixture.h
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ tests/cce_tiers_test.c $(LIBCCE) $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 	./$(BIN_DIR)/cce_tiers > logs/cce_tiers.log 2>&1
 
 # Dense expert-streaming arc (Arc A1): a QUANTIZED (int8 weight-only PTQ) dense
 # model streams from the weight store under a bounded resident cap. Gates the
 # quantized streaming and reports whether the store preserves int8 end-to-end
 # (finding: it re-materializes FP at serialize_cascade) + the size/RAM numbers.
-dense_stream_q: $(CCE) $(CCE_CUDA_OBJ) tests/dense_stream_q.c tests/tiny_model_fixture.h
-	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) tests/dense_stream_q.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+dense_stream_q: $(LIBCCE) tests/dense_stream_q.c tests/tiny_model_fixture.h
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ tests/dense_stream_q.c $(LIBCCE) $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 	./$(BIN_DIR)/dense_stream_q > logs/dense_stream_q.console.log 2>&1
 
 # The dense expert-streaming pipeline on a REAL dense model (default Qwen2.5-0.5B):
 # load -> int8-quantize -> ingest -> restore -> tier-stream under a bounded cap,
 # verifying real forward + near-lossless int8 + bit-identical quantized streaming +
 # bounded RAM + real on-disk compression. Standalone (needs a checkpoint via argv[1]).
-dense_stream_real: $(CCE) $(CCE_CUDA_OBJ) tests/dense_stream_real.c
+dense_stream_real: $(LIBCCE) tests/dense_stream_real.c
 	@mkdir -p $(BIN_DIR) logs
-	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) tests/dense_stream_real.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ tests/dense_stream_real.c $(LIBCCE) $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 	./$(BIN_DIR)/dense_stream_real > logs/dense_stream_real.console.log 2>&1
 
 # Dense expert-streaming arc (Arc A2): DATA-AWARE quantization at ingest. Each
@@ -2601,9 +2610,9 @@ dense_stream_real: $(CCE) $(CCE_CUDA_OBJ) tests/dense_stream_real.c
 # REAL input activations (captured via an opt-in forward hook). Proves the
 # quantized model still streams BIT-IDENTICALLY under a bounded cap AND that
 # data-aware beats naive at int4 (held-out logit relerr) â€” int8 near-lossless.
-dense_stream_a2: $(CCE) $(CCE_CUDA_OBJ) tests/dense_stream_a2.c tests/tiny_model_fixture.h
+dense_stream_a2: $(LIBCCE) tests/dense_stream_a2.c tests/tiny_model_fixture.h
 	@mkdir -p logs
-	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) tests/dense_stream_a2.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ tests/dense_stream_a2.c $(LIBCCE) $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 	./$(BIN_DIR)/dense_stream_a2 > logs/dense_stream_a2.console.log 2>&1
 
 # MoE expert-streaming arc (B1): MoE checkpoints parse into streamable
@@ -2613,9 +2622,9 @@ dense_stream_a2: $(CCE) $(CCE_CUDA_OBJ) tests/dense_stream_a2.c tests/tiny_model
 # Real (auto-skips if absent): gemma-4-26B-A4B â€” 128-expert fused-bank layout
 # parses, Q8_0/Q6_K expert slices bit-exact vs whole-bank dequant, real expert
 # streams through the store; per-expert economics reported.
-moe_loader: $(CCE) $(CCE_CUDA_OBJ) tests/moe_loader.c tests/tiny_model_fixture.h
+moe_loader: $(LIBCCE) tests/moe_loader.c tests/tiny_model_fixture.h
 	@mkdir -p logs
-	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) tests/moe_loader.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ tests/moe_loader.c $(LIBCCE) $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 	./$(BIN_DIR)/moe_loader > logs/moe_loader.console.log 2>&1
 
 # MoE expert-streaming arc (B2): routed, demand-loaded MoE FFN forward.
@@ -2626,9 +2635,9 @@ moe_loader: $(CCE) $(CCE_CUDA_OBJ) tests/moe_loader.c tests/tiny_model_fixture.h
 # Parity: replays llama.cpp's dumped attn_out through CNET's forward â€”
 # identical top-8 selection, logits/weights/output within tolerance
 # (dumps regenerate via bin/moe_parity_dump, see tools/moe_parity_dump.cpp).
-moe_forward: $(CCE) $(CCE_CUDA_OBJ) tests/moe_forward.c tests/tiny_model_fixture.h
+moe_forward: $(LIBCCE) tests/moe_forward.c tests/tiny_model_fixture.h
 	@mkdir -p logs
-	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) tests/moe_forward.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ tests/moe_forward.c $(LIBCCE) $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 	./$(BIN_DIR)/moe_forward > logs/moe_forward.console.log 2>&1
 
 # MoE expert-streaming arc (B3): the streaming throughput layer. Experts
@@ -2638,9 +2647,9 @@ moe_forward: $(CCE) $(CCE_CUDA_OBJ) tests/moe_forward.c tests/tiny_model_fixture
 # fetches); pin_hot keeps the most-ROUTED experts resident; forward_batch
 # loads each unique expert once per batch, bit-identical to per-token.
 # Real ladder measured: gguf reload vs int8 store vs +lookahead vs pinning.
-moe_stream: $(CCE) $(CCE_CUDA_OBJ) tests/moe_stream.c tests/tiny_model_fixture.h
+moe_stream: $(LIBCCE) tests/moe_stream.c tests/tiny_model_fixture.h
 	@mkdir -p logs
-	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) tests/moe_stream.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ tests/moe_stream.c $(LIBCCE) $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 	./$(BIN_DIR)/moe_stream > logs/moe_stream.console.log 2>&1
 
 # MoE expert-streaming arc (B4): per-expert data-aware quantization on
@@ -2650,9 +2659,9 @@ moe_stream: $(CCE) $(CCE_CUDA_OBJ) tests/moe_stream.c tests/tiny_model_fixture.h
 # samples). Gates: data-aware int4 beats naive int4 on calibration traffic
 # (hermetic, strict) and on held-out real routed tokens (gemma-4-26B);
 # payloads ~6x smaller than FP; quantized experts re-stream bit-identical.
-moe_expert_quant: $(CCE) $(CCE_CUDA_OBJ) tests/moe_expert_quant.c tests/tiny_model_fixture.h
+moe_expert_quant: $(LIBCCE) tests/moe_expert_quant.c tests/tiny_model_fixture.h
 	@mkdir -p logs
-	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) tests/moe_expert_quant.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ tests/moe_expert_quant.c $(LIBCCE) $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 	./$(BIN_DIR)/moe_expert_quant > logs/moe_expert_quant.console.log 2>&1
 
 # MoE end-to-end (Arc B capstone): full-stack gemma4 single-token parity.
@@ -2661,9 +2670,9 @@ moe_expert_quant: $(CCE) $(CCE_CUDA_OBJ) tests/moe_expert_quant.c tests/tiny_mod
 # disk; gates vs llama.cpp dumps: every layer's output, identical next-token
 # argmax + top-8, full-vocab logits within quant tolerance.
 # Dumps regenerate via: bin/moe_parity_dump <gguf> logs/moe_e2e "ids:2"
-moe_e2e_build: $(CCE) $(CCE_CUDA_OBJ) tests/moe_e2e.c
+moe_e2e_build: $(LIBCCE) tests/moe_e2e.c
 	@mkdir -p logs
-	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/moe_e2e $(CCE) $(CCE_CUDA_OBJ) tests/moe_e2e.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/moe_e2e tests/moe_e2e.c $(LIBCCE) $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 
 moe_e2e: moe_e2e_build
 	./$(BIN_DIR)/moe_e2e > logs/moe_e2e.console.log 2>&1
@@ -2674,9 +2683,9 @@ moe_e2e: moe_e2e_build
 # greedy-generates â€” gated TOKEN-FOR-TOKEN against llama.cpp's continuation,
 # with the per-layer ladder matching at every prompt position.
 # Reference: bin/moe_parity_dump <gguf> logs/moe_gen "ids:..." <n_gen>
-moe_gen: $(CCE) $(CCE_CUDA_OBJ) tests/moe_gen.c
+moe_gen: $(LIBCCE) tests/moe_gen.c
 	@mkdir -p logs
-	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) tests/moe_gen.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ tests/moe_gen.c $(LIBCCE) $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 	./$(BIN_DIR)/moe_gen > logs/moe_gen.console.log 2>&1
 
 # Dense expert-streaming arc (A3): async readahead + learned hot-pinning.
@@ -2686,9 +2695,9 @@ moe_gen: $(CCE) $(CCE_CUDA_OBJ) tests/moe_gen.c
 # the most-fetched specialists resident. Gates: deterministic fetch mechanics
 # (1 sync fetch after a cold start, 0 with wrap-around, rehydrations drop by
 # the pin count) and BIT-IDENTICAL logits vs a synchronous twin every pass.
-dense_stream_a3: $(CCE) $(CCE_CUDA_OBJ) tests/dense_stream_a3.c tests/tiny_model_fixture.h
+dense_stream_a3: $(LIBCCE) tests/dense_stream_a3.c tests/tiny_model_fixture.h
 	@mkdir -p logs
-	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) tests/dense_stream_a3.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ tests/dense_stream_a3.c $(LIBCCE) $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 	./$(BIN_DIR)/dense_stream_a3 > logs/dense_stream_a3.console.log 2>&1
 
 # Dense expert-streaming arc (packed storage): the weight store's quantized-
@@ -2697,66 +2706,66 @@ dense_stream_a3: $(CCE) $(CCE_CUDA_OBJ) tests/dense_stream_a3.c tests/tiny_model
 # variants of one cascade land under DISTINCT digests with EXACT payload sizes
 # and restore representation-bit-exact; packed models stream BIT-IDENTICALLY
 # to their all-resident twins under a bounded resident cap.
-dense_stream_trit: $(CCE) $(CCE_CUDA_OBJ) tests/dense_stream_trit.c tests/tiny_model_fixture.h
+dense_stream_trit: $(LIBCCE) tests/dense_stream_trit.c tests/tiny_model_fixture.h
 	@mkdir -p logs
-	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) tests/dense_stream_trit.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ tests/dense_stream_trit.c $(LIBCCE) $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 	./$(BIN_DIR)/dense_stream_trit > logs/dense_stream_trit.console.log 2>&1
 
 # SIMILAR_TO + evidence-gated merge: epsilon-equivalent specialists merge via
 # manifest remap ONLY after an adversarial probe battery; unverified refuses.
-cce_similar: $(CCE) $(CCE_CUDA_OBJ) tests/cce_similar_test.c tests/tiny_model_fixture.h
-	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) tests/cce_similar_test.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+cce_similar: $(LIBCCE) tests/cce_similar_test.c tests/tiny_model_fixture.h
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ tests/cce_similar_test.c $(LIBCCE) $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 	./$(BIN_DIR)/cce_similar > logs/cce_similar.log 2>&1
 
 # CLI probe: make detect FILE=Models/foo.gguf  (or run bin/detect_cli directly)
-detect_cli: $(CCE) $(CCE_CUDA_OBJ) tests/detect_cli.c
-	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) tests/detect_cli.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+detect_cli: $(LIBCCE) tests/detect_cli.c
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ tests/detect_cli.c $(LIBCCE) $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 
 detect: detect_cli
 	./$(BIN_DIR)/detect_cli $(FILE)
 
 # Forest tier wiring: zero-copy WARM views + copy-on-write to HOT + seal guard,
 # live in cce_forest_forward / promote_to_hot.
-forest_view: $(CCE) $(CCE_CUDA_OBJ) tests/cce_forest_view_test.c
-	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) tests/cce_forest_view_test.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+forest_view: $(LIBCCE) tests/cce_forest_view_test.c
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ tests/cce_forest_view_test.c $(LIBCCE) $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 	./$(BIN_DIR)/forest_view > logs/forest_view.log 2>&1
 
-cce_model_test: $(CCE) $(CCE_CUDA_OBJ) tests/test_cce_model_save.c
-	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) tests/test_cce_model_save.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+cce_model_test: $(LIBCCE) tests/test_cce_model_save.c
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ tests/test_cce_model_save.c $(LIBCCE) $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 	./$(BIN_DIR)/cce_model_test > logs/cce_model_test.log 2>&1
 
-cce_autograd_test: $(CCE) $(CCE_CUDA_OBJ) tests/test_cce_autograd.c
-	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) tests/test_cce_autograd.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+cce_autograd_test: $(LIBCCE) tests/test_cce_autograd.c
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ tests/test_cce_autograd.c $(LIBCCE) $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 	./$(BIN_DIR)/cce_autograd_test > logs/cce_autograd_test.log 2>&1
 
 # cce_lora: rank-r low-rank adapter prototype (M1 apply/merge, M2 train, M3 store).
-cce_lora_test: $(CCE) $(CCE_CUDA_OBJ) tests/cce_lora_test.c
-	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) tests/cce_lora_test.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+cce_lora_test: $(LIBCCE) tests/cce_lora_test.c
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ tests/cce_lora_test.c $(LIBCCE) $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 	./$(BIN_DIR)/cce_lora_test
 
 # cce_lora_bench: M5 â€” dense output-SGD vs rank-r adapters on the same residuals.
-cce_lora_bench: $(CCE) $(CCE_CUDA_OBJ) tests/bench_cce_lora.c
-	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) tests/bench_cce_lora.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+cce_lora_bench: $(LIBCCE) tests/bench_cce_lora.c
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ tests/bench_cce_lora.c $(LIBCCE) $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 	./$(BIN_DIR)/cce_lora_bench
 
 # cce_lily: interconnected multi-layer low-rank adapter (Lily) + interconnection bench.
-cce_lily_test: $(CCE) $(CCE_CUDA_OBJ) tests/cce_lily_test.c
-	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) tests/cce_lily_test.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+cce_lily_test: $(LIBCCE) tests/cce_lily_test.c
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ tests/cce_lily_test.c $(LIBCCE) $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 	./$(BIN_DIR)/cce_lily_test
 
 # cce_lily_serve: interior-layer serve hook verified against the real DS residual forward.
-cce_lily_serve: $(CCE) $(CCE_CUDA_OBJ) tests/cce_lily_serve_test.c
-	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) tests/cce_lily_serve_test.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+cce_lily_serve: $(LIBCCE) tests/cce_lily_serve_test.c
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ tests/cce_lily_serve_test.c $(LIBCCE) $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 	./$(BIN_DIR)/cce_lily_serve
 
 # cce_lily_collect: training-data collection loop through the deep forward + residual distillation.
-cce_lily_collect: $(CCE) $(CCE_CUDA_OBJ) tests/cce_lily_collect_test.c
-	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) tests/cce_lily_collect_test.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+cce_lily_collect: $(LIBCCE) tests/cce_lily_collect_test.c
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ tests/cce_lily_collect_test.c $(LIBCCE) $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 	./$(BIN_DIR)/cce_lily_collect
 
 # cce_lily_teacher: real teacher residual stream (self-distillation, cheap student -> full teacher).
-cce_lily_teacher: $(CCE) $(CCE_CUDA_OBJ) tests/cce_lily_teacher_test.c
-	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) tests/cce_lily_teacher_test.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+cce_lily_teacher: $(LIBCCE) tests/cce_lily_teacher_test.c
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ tests/cce_lily_teacher_test.c $(LIBCCE) $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 	./$(BIN_DIR)/cce_lily_teacher
 
 # registry_lily: cce_lily deep-base adapter hosted by registry_lora's certify gate (serve-loop teach).
@@ -2854,29 +2863,29 @@ cce_adapter_bank_test: src/cce/cce_adapter_bank.c tests/cce_adapter_bank_test.c
 	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ src/cce/cce_adapter_bank.c tests/cce_adapter_bank_test.c $(LDFLAGS)
 	./$(BIN_DIR)/cce_adapter_bank_test
 
-cce_dora_test: $(CCE) $(CCE_CUDA_OBJ) src/cce/cce_dora.c tests/cce_dora_test.c
+cce_dora_test: $(LIBCCE) src/cce/cce_dora.c tests/cce_dora_test.c
 	@mkdir -p $(BIN_DIR)
-	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) src/cce/cce_dora.c tests/cce_dora_test.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ src/cce/cce_dora.c tests/cce_dora_test.c $(LIBCCE) $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 	./$(BIN_DIR)/cce_dora_test
 
 cnet_serve_decode_test: src/serve/cnet_serve_decode.c tests/cnet_serve_decode_test.c
 	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ src/serve/cnet_serve_decode.c tests/cnet_serve_decode_test.c $(LDFLAGS)
 	./$(BIN_DIR)/cnet_serve_decode_test
 
-registry_lily_test: $(CCE) $(CCE_CUDA_OBJ) $(REGISTRY_LILY) tests/registry_lily_test.c
+registry_lily_test: $(LIBCCE) $(REGISTRY_LILY) tests/registry_lily_test.c
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) $(REGISTRY_LILY) tests/registry_lily_test.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 	./$(BIN_DIR)/registry_lily_test
 
 # compute-quality teacher (dense attn / all experts vs cheap sparse student),
 # hosted under the SAME certify gate â€” a multi-token compute gap distilled.
-registry_lily_compute: $(CCE) $(CCE_CUDA_OBJ) $(REGISTRY_LILY) tests/registry_lily_compute_test.c
+registry_lily_compute: $(LIBCCE) $(REGISTRY_LILY) tests/registry_lily_compute_test.c
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) $(REGISTRY_LILY) tests/registry_lily_compute_test.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 	./$(BIN_DIR)/registry_lily_compute
 
 # registry_lora: adapter wired into a real registry unit's retrain queue (opt-in).
 REGISTRY_LORA := src/router/registry_lora.c src/router/registry_lora_store.c src/cce/cce_adapter_bank.c
-registry_lora_test: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(SCAN) $(REGISTRY_LORA) $(FAULT_SRC) $(CCE) $(CCE_CUDA_OBJ) tests/test_registry_lora.c
-	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(SCAN) $(REGISTRY_LORA) $(FAULT_SRC) $(CCE) $(CCE_CUDA_OBJ) tests/test_registry_lora.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+registry_lora_test: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(SCAN) $(REGISTRY_LORA) $(FAULT_SRC) $(LIBCCE) tests/test_registry_lora.c
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(SCAN) $(REGISTRY_LORA) $(FAULT_SRC) tests/test_registry_lora.c $(LIBCCE) $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 	./$(BIN_DIR)/registry_lora_test
 
 # jtc_lora_live: registry_teach_lora on the real certified json_toolcall_v2 unit.
@@ -2923,25 +2932,28 @@ AVX_CFLAGS := $(filter-out -mno-avx,$(CFLAGS))
 # they are AVX-safe too; OMP activates the row-parallel packed-trit kernels.
 cce_safetensors_test supra_console supra_chat_mock supra_context_probe supra_longform supra_head_qat supra_head_qat_corpus transformer_qat_joint transformer_qat_real transformer_qat_altmodel transformer_qat_gpt2names proj_qat_recon proj_qat_gemma proj_qat_stack proj_qat_gpu gptq_solver proj_qat_gemma_e2e proj_qat_bitwidth dense_stream_real moe_loader moe_forward moe_stream moe_expert_quant moe_e2e moe_gen wordlm wordlm_bitnet wordlm_holdout trit_bench: CFLAGS := $(AVX_CFLAGS) $(OMPFLAGS)
 
-cce_safetensors_test: $(CCE) $(CCE_CUDA_OBJ) src/nn.c tests/test_cce_safetensors.c
-	$(CC) $(CFLAGS) -DCCE_SAFETENSORS_TESTING $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) src/nn.c tests/test_cce_safetensors.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+cce_safetensors_test: $(LIBCCE) src/nn.c src/cce/cce_safetensors.c tests/test_cce_safetensors.c
+	@mkdir -p $(BIN_DIR) $(CCE_OBJDIR)
+	$(CC) $(CFLAGS) -DCCE_SAFETENSORS_TESTING $(CUDA_CFLAGS) -fPIC -c -o $(CCE_OBJDIR)/cce_safetensors_testing.o src/cce/cce_safetensors.c
+	$(CC) $(CFLAGS) -DCCE_SAFETENSORS_TESTING $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ src/nn.c tests/test_cce_safetensors.c \
+		$(CCE_OBJDIR)/cce_safetensors_testing.o \
+		$(filter-out $(CCE_OBJDIR)/cce_safetensors.o,$(CCE_C_OBJS)) $(CCE_PREBUILT_OBJS) \
+		$(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 	./$(BIN_DIR)/cce_safetensors_test > logs/cce_safetensors_test.log 2>&1
 
-cnet_lm_bounds_test: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(CCE) src/cnet_lm.c src/contract/anti_repeat.c tests/test_cnet_lm_bounds.c
-	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(CCE) \
-		src/cnet_lm.c src/contract/anti_repeat.c tests/test_cnet_lm_bounds.c \
-		$(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+cnet_lm_bounds_test: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(LIBCCE) src/cnet_lm.c src/contract/anti_repeat.c tests/test_cnet_lm_bounds.c
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) src/cnet_lm.c src/contract/anti_repeat.c tests/test_cnet_lm_bounds.c $(LIBCCE) $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 	@./$(BIN_DIR)/cnet_lm_bounds_test > logs/cnet_lm_bounds_test.log 2>&1
 	@grep -q '^CNET_LM_BOUNDS_PASS$$' logs/cnet_lm_bounds_test.log
 
 # Dedicated GGUF loader + Qwen2 forest + full K dequant + packed 1.6-bit roundtrip test
 # Mirrors the Supra flow end-to-end (load -> specialists -> pack_trits -> export -> load_packed -> forward/generate)
-cce_gguf_test: $(CCE) $(CCE_CUDA_OBJ) src/nn.c tests/test_cce_gguf.c
+cce_gguf_test: $(LIBCCE) src/nn.c tests/test_cce_gguf.c
 	@mkdir -p $(BIN_DIR)
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) src/nn.c tests/test_cce_gguf.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 	./$(BIN_DIR)/$@ > logs/gguf_test_run.log 2>&1
 
-supra_console: $(CCE) $(CCE_CUDA_OBJ) src/nn.c tests/supra_console.c
+supra_console: $(LIBCCE) src/nn.c tests/supra_console.c
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) src/nn.c tests/supra_console.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 	@echo "Built supra_console. Weights are downloaded once into ./supra_cache and reused."
 	@echo "Try: ./supra_console --mode text --prompt \"Once upon a time\" --max_new 40"
@@ -2949,7 +2961,7 @@ supra_console: $(CCE) $(CCE_CUDA_OBJ) src/nn.c tests/supra_console.c
 # Context-length probe: fills the whole positional window once and reports the
 # hard ceiling (block_size) vs the coherence-collapse point (looping). See
 # tests/supra_context_probe.c.
-supra_context_probe: $(CCE) $(CCE_CUDA_OBJ) src/nn.c tests/supra_context_probe.c
+supra_context_probe: $(LIBCCE) src/nn.c tests/supra_context_probe.c
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) src/nn.c tests/supra_context_probe.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 	./$(BIN_DIR)/supra_context_probe > logs/supra_context_probe.log 2>&1
 
@@ -2957,33 +2969,33 @@ supra_context_probe: $(CCE) $(CCE_CUDA_OBJ) src/nn.c tests/supra_context_probe.c
 # before the ~120 coherence decay, and steers with a caller-supplied beat list so
 # the piece actually finishes. Runs Approach B (skeleton) vs Approach A (pure
 # sliding-window baseline) for contrast. See tests/supra_longform.c.
-supra_longform: $(CCE) $(CCE_CUDA_OBJ) src/nn.c tests/supra_longform.c
+supra_longform: $(LIBCCE) src/nn.c tests/supra_longform.c
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) src/nn.c tests/supra_longform.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 	./$(BIN_DIR)/supra_longform > logs/supra_longform.log 2>&1
 
 # Head-only QAT smoke (Supra quality phase, milestone 1): freeze the transformer,
 # cache final hidden vectors, train a ternary BitLinear head (FP shadow + STE),
 # and check QAT beats post-hoc ternary on the real Supra head. See tests/supra_head_qat.c.
-supra_head_qat: $(CCE) $(CCE_CUDA_OBJ) src/nn.c tests/supra_head_qat.c
+supra_head_qat: $(LIBCCE) src/nn.c tests/supra_head_qat.c
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) src/nn.c tests/supra_head_qat.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 	./$(BIN_DIR)/supra_head_qat > logs/supra_head_qat.log 2>&1
 
 # Head QAT on a REAL corpus (pdf_corpus.txt): genuine held-out FP-recovery test.
-supra_head_qat_corpus: $(CCE) $(CCE_CUDA_OBJ) src/nn.c tests/supra_head_qat_corpus.c
+supra_head_qat_corpus: $(LIBCCE) src/nn.c tests/supra_head_qat_corpus.c
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) src/nn.c tests/supra_head_qat_corpus.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 	./$(BIN_DIR)/supra_head_qat_corpus > logs/supra_head_qat_corpus.log 2>&1
 
 # Joint ternary QAT vs head-only vs post-hoc: does training the WHOLE stack
 # ternary recover held-out next-byte accuracy where a frozen-transformer head
 # can't? Byte-level from-scratch on pdf_corpus.txt. See tests/transformer_qat_joint.c.
-transformer_qat_joint: $(CCE) $(CCE_CUDA_OBJ) src/nn.c tests/transformer_qat_joint.c include/cce/cce_transformer_qat.h
+transformer_qat_joint: $(LIBCCE) src/nn.c tests/transformer_qat_joint.c include/cce/cce_transformer_qat.h
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) src/nn.c tests/transformer_qat_joint.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 	./$(BIN_DIR)/transformer_qat_joint > logs/transformer_qat_joint.log 2>&1
 
 # Real-weight joint QAT: load pretrained Supra into the cce_transformer_qat trainer,
 # prove forward-parity vs cce_supra_gpt_forward, then joint-QAT the transformer
 # blocks (head+emb FP) with a held-out generalization test. See tests/transformer_qat_real.c.
-transformer_qat_real: $(CCE) $(CCE_CUDA_OBJ) src/nn.c tests/transformer_qat_real.c
+transformer_qat_real: $(LIBCCE) src/nn.c tests/transformer_qat_real.c
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) src/nn.c tests/transformer_qat_real.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 	./$(BIN_DIR)/transformer_qat_real > logs/transformer_qat_real.log 2>&1
@@ -2992,7 +3004,7 @@ transformer_qat_real: $(CCE) $(CCE_CUDA_OBJ) src/nn.c tests/transformer_qat_real
 # Supra's naming with every free dim changed (D128/V2000/B96/mlp512), generated by
 # tools/gen_altmodel.c. Proves the trainer/loader/forward aren't tied to Supra's
 # dimensions. See tests/transformer_qat_altmodel.c.
-transformer_qat_altmodel: $(CCE) $(CCE_CUDA_OBJ) src/nn.c tests/transformer_qat_altmodel.c
+transformer_qat_altmodel: $(LIBCCE) src/nn.c tests/transformer_qat_altmodel.c
 	@mkdir -p $(BIN_DIR) logs
 	@$(MAKE) --no-print-directory $(BIN_DIR)/gen_altmodel
 	@test -f altmodel_cache/model.safetensors || $(BIN_DIR)/gen_altmodel
@@ -3006,7 +3018,7 @@ transformer_qat_altmodel: $(CCE) $(CCE_CUDA_OBJ) src/nn.c tests/transformer_qat_
 # both against the trainer AND against golden logits from an independent numpy
 # forward embedded in the fixture. Standalone (C gen_altmodel, no Python),
 # not in verify-long. See tests/transformer_qat_gpt2names.c.
-transformer_qat_gpt2names: $(CCE) $(CCE_CUDA_OBJ) src/nn.c tests/transformer_qat_gpt2names.c
+transformer_qat_gpt2names: $(LIBCCE) src/nn.c tests/transformer_qat_gpt2names.c
 	@mkdir -p $(BIN_DIR) logs
 	@$(MAKE) --no-print-directory $(BIN_DIR)/gen_altmodel
 	@test -f altmodel_gpt2_cache/model.safetensors || $(BIN_DIR)/gen_altmodel altmodel_gpt2_cache gpt2
@@ -3028,9 +3040,9 @@ proj_qat_recon: tests/proj_qat_recon.c
 # Milestone 2: the same per-projection reconstruction on REAL weights + REAL
 # activations from a real gemma4 GGUF (layer-0 attn_q, input = RMSNorm(embedÂ·âˆšD),
 # no forward needed). Needs Models/gemma-4-12B-it-MTP-Q8_0.gguf. See tests/proj_qat_gemma.c.
-proj_qat_gemma: $(CCE) $(CCE_CUDA_OBJ) tests/proj_qat_gemma.c
+proj_qat_gemma: $(LIBCCE) tests/proj_qat_gemma.c
 	@mkdir -p $(BIN_DIR) logs
-	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) tests/proj_qat_gemma.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ tests/proj_qat_gemma.c $(LIBCCE) $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 	./$(BIN_DIR)/proj_qat_gemma > logs/proj_qat_gemma.log 2>&1
 
 # Milestone 4 core: END-TO-END reconstruction across many projections / many
@@ -3045,9 +3057,9 @@ proj_qat_stack: tests/proj_qat_stack.c
 # GEMM jobs across the two R9700s (cce_clgemm, one handle pinned per device via
 # open_device â€” the oracle-pool pattern). Verifies GPU==CPU + measures the ~2x
 # throughput. Needs OpenCL + a discrete GPU; reports+passes with none. See tests/proj_qat_gpu.c.
-proj_qat_gpu: $(CCE) tests/proj_qat_gpu.c include/cce/cce_clgemm.h
+proj_qat_gpu: $(LIBCCE) tests/proj_qat_gpu.c include/cce/cce_clgemm.h
 	@mkdir -p $(BIN_DIR) logs
-	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) tests/proj_qat_gpu.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ tests/proj_qat_gpu.c $(LIBCCE) $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 	./$(BIN_DIR)/proj_qat_gpu > logs/proj_qat_gpu.log 2>&1
 
 # Milestone 4-full Part 1: the EFFICIENT GPTQ-Cholesky OBQ solver â€” a fast drop-in
@@ -3065,9 +3077,9 @@ gptq_solver: tests/gptq_solver.c
 # the quantized model's HELD-OUT output stays close to FP, far better than naive.
 # Standalone; needs Models/gemma-4-12B-it-MTP-Q8_0.gguf. NOT in verify-long.
 # See tests/proj_qat_gemma_e2e.c.
-proj_qat_gemma_e2e_build: $(CCE) $(CCE_CUDA_OBJ) tests/proj_qat_gemma_e2e.c
+proj_qat_gemma_e2e_build: $(LIBCCE) tests/proj_qat_gemma_e2e.c
 	@mkdir -p $(BIN_DIR) logs
-	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -fopenmp -o $(BIN_DIR)/proj_qat_gemma_e2e $(CCE) $(CCE_CUDA_OBJ) tests/proj_qat_gemma_e2e.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -fopenmp
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -fopenmp -o $(BIN_DIR)/proj_qat_gemma_e2e tests/proj_qat_gemma_e2e.c $(LIBCCE) $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) -fopenmp
 
 proj_qat_gemma_e2e: proj_qat_gemma_e2e_build
 	./$(BIN_DIR)/proj_qat_gemma_e2e > logs/proj_qat_gemma_e2e.log 2>&1
@@ -3075,15 +3087,15 @@ proj_qat_gemma_e2e: proj_qat_gemma_e2e_build
 # Component-dependent bit-width POLICY sweep (Colibri's insight): which projection
 # gets which precision. Sweeps (gate/up/down) bit-widths over real gemma FFN weights,
 # reports quality-vs-compression, finds the sweet spot. See tests/proj_qat_bitwidth.c.
-proj_qat_bitwidth: $(CCE) tests/proj_qat_bitwidth.c include/cce/cce_gguf.h
+proj_qat_bitwidth: $(LIBCCE) tests/proj_qat_bitwidth.c include/cce/cce_gguf.h
 	@mkdir -p $(BIN_DIR) logs
-	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) tests/proj_qat_bitwidth.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ tests/proj_qat_bitwidth.c $(LIBCCE) $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 	./$(BIN_DIR)/proj_qat_bitwidth > logs/proj_qat_bitwidth.log 2>&1
 
 # Lightweight mock chat test: exercises the real BPE tokenizer (encode) without
 # requiring the full model forward. Needs supra_cache/tokenizer.json (run
 # supra_console or cce_safetensors_test once to populate it).
-supra_chat_mock: $(CCE) $(CCE_CUDA_OBJ) src/nn.c tests/test_supra_chat_mock.c
+supra_chat_mock: $(LIBCCE) src/nn.c tests/test_supra_chat_mock.c
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) src/nn.c tests/test_supra_chat_mock.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 	./$(BIN_DIR)/supra_chat_mock > logs/supra_chat_mock.log 2>&1
 
@@ -3118,15 +3130,15 @@ wordlm_holdout: $(CCE_WORDLM) tests/wordlm_holdout.c include/cce/cce_wordlm.h
 # in ONE content-addressed store â€” storage accounting vs naive, per-manifest
 # bit-identity under a HOT cap, epsilon-merge accept + material refuse inside
 # the pipeline. Hermetic (tiny fixture).
-merge_family: $(CCE) $(CCE_CUDA_OBJ) tests/merge_family_test.c tests/tiny_model_fixture.h
-	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) tests/merge_family_test.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+merge_family: $(LIBCCE) tests/merge_family_test.c tests/tiny_model_fixture.h
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ tests/merge_family_test.c $(LIBCCE) $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 	./$(BIN_DIR)/merge_family > logs/merge_family.log 2>&1
 
 # Hybrid catalog (model-merge scope M1): transformer + SSM in ONE store with
 # a query-level task catalog; ssm restore round-trip (closes the stated
 # limit); HONESTY gate measures cross-arch dedup (= 0). Hermetic.
-hybrid_catalog: $(CCE) $(CCE_CUDA_OBJ) tests/hybrid_catalog_test.c tests/tiny_model_fixture.h
-	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) tests/hybrid_catalog_test.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+hybrid_catalog: $(LIBCCE) tests/hybrid_catalog_test.c tests/tiny_model_fixture.h
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ tests/hybrid_catalog_test.c $(LIBCCE) $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 	./$(BIN_DIR)/hybrid_catalog > logs/hybrid_catalog.log 2>&1
 
 # Supra QAT trainer gate: hermetic transformer-backward gradcheck (central
@@ -3134,8 +3146,8 @@ hybrid_catalog: $(CCE) $(CCE_CUDA_OBJ) tests/hybrid_catalog_test.c tests/tiny_mo
 # post-hoc on a tiny synthetic model. No model files. The joint-QAT quality
 # phase (docs/superpowers/specs/2026-06-28-supra-qat-scope.md steps 7-10)
 # stands on this backward.
-transformer_qat: $(CCE) $(CCE_CUDA_OBJ) tests/test_transformer_qat.c include/cce/cce_transformer_qat.h
-	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) tests/test_transformer_qat.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+transformer_qat: $(LIBCCE) tests/test_transformer_qat.c include/cce/cce_transformer_qat.h
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ tests/test_transformer_qat.c $(LIBCCE) $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 	./$(BIN_DIR)/transformer_qat > logs/transformer_qat.log 2>&1
 
 # Hermetic QAT block gate: links the trainer CORE ONLY â€” no $(CCE), so no
@@ -3168,19 +3180,14 @@ mojo_bench: $(MOJO_KERNEL_SRC) $(MOJO_LIB) tests/mojo_bench.c include/cce/cce_mo
 # Supra-head-shaped block + the packed word-LM predict loop. Carries its own
 # parity gate (trit MUST stay bit-identical to int8 ternary). Budgeted;
 # NOT part of make test.
-trit_bench: $(CCE) $(CCE_CUDA_OBJ) tests/trit_bench.c include/cce/cce_trit_lut.h
-	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) tests/trit_bench.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+trit_bench: $(LIBCCE) tests/trit_bench.c include/cce/cce_trit_lut.h
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ tests/trit_bench.c $(LIBCCE) $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 	./$(BIN_DIR)/trit_bench
 
-# DLL target for .NET / P/Invoke / C# interop (and other hosts).
-# Builds cce.dll (Windows) or cce.so (else). Defines CCE_BUILD_DLL so headers
-# emit __declspec(dllexport) / visibility for the C ABI (model, dataset, handle).
-# Usage: make cce_dll   (then copy cce.dll next to your .exe or into PATH)
-# -fPIC: required for ELF shared objects (Linux); harmless on MinGW.
-cce_dll: CFLAGS := $(CFLAGS) -fPIC
-cce_dll: $(CCE) $(CCE_CUDA_OBJ)
-	$(CC) -shared -DCCE_BUILD_DLL $(CFLAGS) -o cce.dll $(CCE) $(CCE_CUDA_OBJ) $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
-	@echo "Built cce.dll (for .NET P/Invoke). Add to your C# project and use DllImport."
+# cce_dll: shared CCE product — recipe body in mk/cce_lib.mk (same objects as
+# libcce). Declared here so recipe_gate's root-Makefile scan sees the target.
+.PHONY: cce_dll
+cce_dll:
 
 # Unified CNET shared library: CCE runtime + certified base/registry/planner +
 # soul_host + MCP tools. `cce_dll` remains a native compatibility artifact;
@@ -3225,8 +3232,8 @@ qwythos_coherence_gate: tools/score_cnet_coherence.c tests/test_qwythos_coherenc
 # Real-model parity + token-identity gate: qwen35 runner vs the llama.cpp CPU
 # reference dumps (generate those first via qwen35_parity_dump; see the test
 # header). FP inference-only load: ~46 GB resident, no archive scratch.
-qwythos_e2e_build: $(CCE) $(CCE_CUDA_OBJ) tests/qwythos_e2e.c
-	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/qwythos_e2e $(CCE) $(CCE_CUDA_OBJ) tests/qwythos_e2e.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+qwythos_e2e_build: $(LIBCCE) tests/qwythos_e2e.c
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/qwythos_e2e tests/qwythos_e2e.c $(LIBCCE) $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 .PHONY: qwythos_e2e
 qwythos_e2e: qwythos_e2e_build
 	CNET_INFER_FP=1 CNET_FOREST_NO_PERSIST=1 CNET_MAX_CTX=64 \
@@ -5983,7 +5990,7 @@ dist: VERSION include/cnet_version.h
 .PHONY: agent_memory_integrity registry_restart_unit persistence_integrity specialist_authority admission_abi_audit
 
 .PHONY: gguf_integrity
-gguf_integrity: $(CCE) tests/test_cce_gguf_q5_integrity.c
+gguf_integrity: $(LIBCCE) tests/test_cce_gguf_q5_integrity.c
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) -std=c11 -Wall -Wextra -Werror -pedantic -O2 -D_DEFAULT_SOURCE -Iinclude \
 		-o $(BIN_DIR)/test_cce_gguf_q5_integrity \
@@ -6118,7 +6125,7 @@ ci: ci_core release_package test dotnet_cce_tests cce_train_bench int8_matvec_be
 # over that reference -- both host-independent, so no wall-clock floor is baked
 # in. Catches an ISA/flag regression on the oracle head that cce_train_bench
 # cannot see. Override the ratio with CNET_INT8_MIN_SPEEDUP.
-int8_matvec_bench: $(CCE) $(CCE_CUDA_OBJ) tests/int8_matvec_bench.c
+int8_matvec_bench: $(LIBCCE) tests/int8_matvec_bench.c
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) \
 		tests/int8_matvec_bench.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
@@ -6131,7 +6138,7 @@ int8_matvec_bench: $(CCE) $(CCE_CUDA_OBJ) tests/int8_matvec_bench.c
 # builds on every host and self-skips where there is no device. That makes it
 # safe to keep in the portable lane, but a skip must never be mistaken for a
 # device result -- see CNET_REQUIRE_ROCM in tests/test_hipgemm.c.
-hipgemm_res: $(CCE) $(CCE_CUDA_OBJ) tests/test_hipgemm.c include/cce/cce_hipgemm.h
+hipgemm_res: $(LIBCCE) tests/test_hipgemm.c include/cce/cce_hipgemm.h
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) \
 		tests/test_hipgemm.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
@@ -6399,37 +6406,37 @@ claims_model: model_evidence
 
 # Unit-structure probe: how hard is the function each TOPK unit must memorize?
 # The near-miss-vs-fundamental discriminator. Needs the model; NOT in verify.
-unit_structure_build: $(CCE) tests/unit_structure.c include/cce/cce_gguf.h
-	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/unit_structure $(CCE) tests/unit_structure.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+unit_structure_build: $(LIBCCE) tests/unit_structure.c include/cce/cce_gguf.h
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/unit_structure tests/unit_structure.c $(LIBCCE) $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 
 # Ask the soul questions: run certified base units vs the live model.
-soul_query_build: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(CCE) tests/soul_query.c include/base.h include/cce/cce_detect.h
-	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/soul_query $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(CCE) tests/soul_query.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+soul_query_build: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBCCE) tests/soul_query.c include/base.h include/cce/cce_detect.h
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/soul_query $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) tests/soul_query.c $(LIBCCE) $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 
 # Run the model on explicit token ids (enabler for real-context extraction).
-tok_forward_build: $(CCE) tests/tok_forward.c include/cce/cce_detect.h
-	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/tok_forward $(CCE) tests/tok_forward.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+tok_forward_build: $(LIBCCE) tests/tok_forward.c include/cce/cce_detect.h
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/tok_forward tests/tok_forward.c $(LIBCCE) $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 
-gguf_dump_build: $(CCE) tests/gguf_dump.c
-	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/gguf_dump $(CCE) tests/gguf_dump.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+gguf_dump_build: $(LIBCCE) tests/gguf_dump.c
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/gguf_dump tests/gguf_dump.c $(LIBCCE) $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 
-gemma_ref_build: $(CCE) tests/gemma_ref.c
-	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/gemma_ref $(CCE) tests/gemma_ref.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+gemma_ref_build: $(LIBCCE) tests/gemma_ref.c
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/gemma_ref tests/gemma_ref.c $(LIBCCE) $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 
 
 # AICIMO smoke test (pure C). cce_aicimo.c is now in the core CCE aggregate.
-aicimo_smoke: $(CCE) tests/aicimo_smoke.c include/cce/cce_aicimo.h
+aicimo_smoke: $(LIBCCE) tests/aicimo_smoke.c include/cce/cce_aicimo.h
 	@mkdir -p $(BIN_DIR) logs
-	$(CC) $(CFLAGS) -o $(BIN_DIR)/aicimo_smoke $(CCE) tests/aicimo_smoke.c $(LDFLAGS)
+	$(CC) $(CFLAGS) -o $(BIN_DIR)/aicimo_smoke tests/aicimo_smoke.c $(LIBCCE) $(LDFLAGS)
 	./$(BIN_DIR)/aicimo_smoke
 
 # AICIMO core routing test â€” hermetic focused test proving:
 #   identity/residual preservation, deterministic role routing selection,
 #   uncertainty from actual route state, invalid argument rejection.
 .PHONY: aicimo_core_test
-aicimo_core_test: $(CCE) tests/test_aicimo_core.c include/cce/cce_aicimo.h
+aicimo_core_test: $(LIBCCE) tests/test_aicimo_core.c include/cce/cce_aicimo.h
 	@mkdir -p $(BIN_DIR) logs
-	$(CC) $(CFLAGS) -o $(BIN_DIR)/aicimo_core_test $(CCE) tests/test_aicimo_core.c $(LDFLAGS)
+	$(CC) $(CFLAGS) -o $(BIN_DIR)/aicimo_core_test tests/test_aicimo_core.c $(LIBCCE) $(LDFLAGS)
 	./$(BIN_DIR)/aicimo_core_test > logs/aicimo_core_test.log 2>&1
 	@grep -q "AICIMO_CORE_TEST_PASS" logs/aicimo_core_test.log
 
@@ -6869,9 +6876,9 @@ cnet_harness_memory_acceptance: cnet_harness_plugin cnet_harness_async_context_a
 # cnet_lm is NOT in the core aggregate, and the generic GPU API is honestly
 # CUDA-or-CPU (not OpenCL). See tests/test_alt_paths_gate.c.
 .PHONY: alt_paths_gate
-alt_paths_gate: $(CCE) tests/test_alt_paths_gate.c include/cce/cce_gpu.h include/cce/cce_gguf.h include/cce/cce_clgemm.h include/cce/cce_aicimo.h
+alt_paths_gate: $(LIBCCE) tests/test_alt_paths_gate.c include/cce/cce_gpu.h include/cce/cce_gguf.h include/cce/cce_clgemm.h include/cce/cce_aicimo.h
 	@mkdir -p $(BIN_DIR) logs
-	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/test_alt_paths_gate $(CCE) tests/test_alt_paths_gate.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/test_alt_paths_gate tests/test_alt_paths_gate.c $(LIBCCE) $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 	./$(BIN_DIR)/test_alt_paths_gate > logs/alt_paths_gate.log 2>&1
 	@grep -q "ALT_PATHS_GATE_PASS" logs/alt_paths_gate.log
 
@@ -8510,4 +8517,5 @@ cnet_gguf_peek: tools/cnet_gguf_peek.c $(CCE)
 # ---------------------------------------------------------------------------
 include mk/orphans.mk
 include mk/integrity.mk
+include mk/cce_lib.mk
 include mk/verify_tiers.mk

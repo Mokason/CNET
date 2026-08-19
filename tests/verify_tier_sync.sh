@@ -57,7 +57,7 @@ log_to_target() {
         curl_guard.log|platform_sweep.log|residual_http_nocurl.log)
             printf '%s\n' build_integrity ;;
         decimal_demo.log|circuit_demo.log)
-            printf '%s\n' demos ;;
+            printf '%s\n' live_contracts ;;
         *.log)
             printf '%s\n' "${1%.log}" ;;
         *)

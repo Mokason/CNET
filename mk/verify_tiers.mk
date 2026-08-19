@@ -19,7 +19,7 @@
 # Four jobs:
 #   1. build integrity
 #   2. core math/runtime (clgemm + archive/forest + model I/O + detect + leak)
-#   3. contract law (secure/unit/heal/mutate/acquire/attribution/base/demos)
+#   3. contract law (secure/unit/heal/mutate/acquire/attribution/base/live_contracts)
 #   4. ship-ish surface (flagship) + light PEFT smoke
 VERIFY_T1_DEPS := \
 	build_integrity \
@@ -46,7 +46,7 @@ VERIFY_T1_DEPS := \
 	attribution \
 	base \
 	flagship \
-	demos \
+	live_contracts \
 	leakcheck \
 	cnet_fault_test \
 	cce_adapter_bank_test \

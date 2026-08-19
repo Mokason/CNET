@@ -26,6 +26,7 @@ Current fragments:
 | `mk/integrity.mk` | the build-integrity gates: `curl_guard`, `orphan_tests`, `orphan_tools`, `platform_sweep`, `residual_http_nocurl`, `layering_guard`, `makefile_budget`, `verify_tier_sync` |
 | `mk/orphans.mk` | targets for the tests and tools that previously had none |
 | `mk/verify_tiers.mk` | T0 `verify-fast` / T1 `verify` / T2 `verify-t2` / nightly membership — single table |
+| `mk/cce_lib.mk` | `bin/libcce.a` + `libcce.so` / `cce.dll` — CCE linked once, tests link the library |
 
 ## Verify tiers (do not re-list deps in the root Makefile)
 
