@@ -93,6 +93,8 @@ qat_block.log|||ALL QAT BLOCK TESTS PASSED
 mojo_bridge.log|||ALL MOJO BRIDGE TESTS PASSED
 metric_honesty.log|||METRIC_HONESTY_PASS
 moe_ckpt_test.log|||MOE_CKPT_PASS
+distrust_loop.log|||DISTRUST_LOOP_PASS
+distrust_loop.log|||AUTONOMY_TICK_PASS
 '
 
 # The compat tier (legacy quarantine): back-compat coverage that must stay

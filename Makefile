@@ -6525,6 +6525,27 @@ seal_trust: src/cnet_seal_trust.c tests/test_cnet_seal_trust.c include/cnet_seal
 		cat logs/seal_trust.log; test $$status -eq 0 && \
 		grep -q "SEAL_TRUST_PASS" logs/seal_trust.log
 
+# Distrust loop + unattended autonomy tick (miss→goal→admit→seal).
+# Not on T1 — structural policy soak (T2 / make autonomy_tick).
+.PHONY: distrust_loop autonomy_tick
+distrust_loop: src/cnet_distrust.c src/cnet_seal_trust.c src/cnet_live_miss.c \
+		tests/test_cnet_distrust_loop.c include/cnet_distrust.h include/cnet_seal_trust.h \
+		include/cnet_live_miss.h
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -Werror -Iinclude -o $(BIN_DIR)/distrust_loop \
+		src/cnet_distrust.c src/cnet_seal_trust.c src/cnet_live_miss.c \
+		tests/test_cnet_distrust_loop.c $(LDFLAGS)
+	@$(BIN_DIR)/distrust_loop > logs/distrust_loop.log 2>&1; status=$$?; \
+		cat logs/distrust_loop.log; test $$status -eq 0 && \
+		grep -q "DISTRUST_LOOP_PASS" logs/distrust_loop.log
+
+# Same binary emits AUTONOMY_TICK_PASS; separate name for ops clarity.
+autonomy_tick: distrust_loop
+	@grep -q "AUTONOMY_TICK_PASS" logs/distrust_loop.log
+	@echo AUTONOMY_TICK_PASS
+
+
+
 capability_cert_runner_test: dotnet/CnetControlPlane/CnetControlPlane.csproj dotnet/CnetControlPlane.Tests/CnetControlPlane.Tests.csproj
 	@mkdir -p logs
 	@dotnet test dotnet/CnetControlPlane.Tests --filter FullyQualifiedName~CapabilityCertRunnerTests --verbosity minimal \

@@ -54,7 +54,7 @@ VERIFY_T1_DEPS := \
 	cnet_serve_decode_test
 
 # ---- T2: soak (not default) -------------------------------------------------
-# Specialty CCE (each is a full ~50-file CCE re-link) + heavy PEFT campaigns.
+# Specialty CCE + heavy PEFT + distrust/autonomy soak.
 VERIFY_T2_DEPS := \
 	cce_ssm \
 	cce_hybrid \
@@ -73,7 +73,9 @@ VERIFY_T2_DEPS := \
 	registry_lora_store_test \
 	jtc_adapter_bench \
 	metric_honesty \
-	moe_ckpt_test
+	moe_ckpt_test \
+	distrust_loop \
+	autonomy_tick
 
 VERIFY_SENTINEL := logs/.verify_sentinel
 VERIFY_T2_SENTINEL := logs/.verify_t2_sentinel
