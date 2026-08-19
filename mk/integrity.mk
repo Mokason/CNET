@@ -31,7 +31,9 @@ platform_sweep:
 	@mkdir -p logs
 	@rm -f logs/platform_sweep.log
 	@bad=0; for f in $$(find src -name '*.c'); do \
-		$(CC) -fsyntax-only $(CFLAGS) -Iinclude -Iinclude/cce -Isrc/cce $$f \
+		extra=; \
+		case $$f in src/runtime_identity.c) extra=-D_GNU_SOURCE;; esac; \
+		$(CC) -fsyntax-only $$extra $(CFLAGS) -Iinclude -Iinclude/cce -Isrc/cce $$f \
 			2>> logs/platform_sweep.log || { echo "PLATFORM_SWEEP_FAIL $$f" >> logs/platform_sweep.log; bad=1; }; \
 	done; \
 	if [ $$bad -ne 0 ]; then grep '^PLATFORM_SWEEP_FAIL' logs/platform_sweep.log; exit 1; fi; \

@@ -291,6 +291,11 @@ int main(void) {
         fc.duty_fraction = 1.0;
         fc.acq.mine_budget = 32;       /* < V^2 = 256 -> SAMPLED path */
         fc.acq.sample_count = 64;      /* Wilson(64 all-pass) ~ .9433 */
+        /* Pilot rows + main sample leave a pair table the student cannot make
+           exact under the gate's budget (measured: 74/76 exact → CERT_REFUSED).
+           This section tests SAMPLED mechanics, not pilot class-imbalance; the
+           const-pair pilot gate below covers that path separately. */
+        fc.acq.pilot_count = 0;
         fc.acq.min_accuracy_bound = 0.90; /* gate tests mechanics, not the
                                              production bar (which needs n>=73) */
         fc.acq.holdout_fraction = 0.0; /* gate determinism: train == contract */

@@ -160,10 +160,9 @@ MCP_LDFLAGS :=
 ifeq ($(OS),Windows_NT)
 MCP_LDFLAGS := -lwininet
 else
-# Linux/glibc: strict -std=c11 hides POSIX/BSD declarations (popen, fseeko,
-# usleep, ...). _DEFAULT_SOURCE restores glibc's default feature set without
-# changing the C standard; MinGW never sees this branch.
-CFLAGS += -D_DEFAULT_SOURCE
+# Linux/glibc: -std=c11 hides POSIX (popen/fseeko/usleep). _DEFAULT_SOURCE
+# restores them; _GNU_SOURCE before -include platform.h (dl_phdr_info).
+CFLAGS += -D_DEFAULT_SOURCE -D_GNU_SOURCE
 CNET_SONAME_LDFLAGS := -Wl,-soname,libcnet.so.$(CNET_ABI_VERSION)
 endif
 
@@ -2055,7 +2054,7 @@ verify:
 	@$(MAKE) --no-print-directory verify_impl
 	@VERIFY_SINCE=$(VERIFY_SENTINEL) sh tests/verify_logs.sh
 
-verify_impl: build_integrity clgemm_unit cce_archive cce_forest mmap_read_identity recipe_gate json_escape claims_test cce_dll cce_safetensors_test cnet_lm_bounds_test cce_autograd_test cce_model_test cce_view forest_view cce_detect cce_ssm cce_hybrid cce_qwen35 cce_st_llama cce_specgraph cce_wstore cce_tiers cce_similar merge_family hybrid_catalog transformer_qat contract_secure contract_unit heal_mismatch mutate acquire base flagship demos leakcheck cnet_fault_test cce_adapter_bank_test cce_dora_test cnet_serve_decode_test cnet_fault_loop_test registry_lora_store_test jtc_adapter_bench metric_honesty moe_ckpt_test
+verify_impl: build_integrity clgemm_unit cce_archive cce_forest mmap_read_identity recipe_gate json_escape claims_test cce_dll cce_safetensors_test cnet_lm_bounds_test cce_autograd_test cce_model_test cce_view forest_view cce_detect cce_ssm cce_hybrid cce_qwen35 cce_st_llama cce_specgraph cce_wstore cce_tiers cce_similar merge_family hybrid_catalog transformer_qat qat_block mojo_bridge contract_secure contract_unit heal_mismatch mutate acquire attribution base flagship demos leakcheck cnet_fault_test cce_adapter_bank_test cce_dora_test cnet_serve_decode_test cnet_fault_loop_test registry_lora_store_test jtc_adapter_bench metric_honesty moe_ckpt_test
 	@:
 
 # Everything verify covers PLUS the GPU equivalence gate (needs model + GPU;

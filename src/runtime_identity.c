@@ -14,10 +14,15 @@
    GPU lane teaches (not in this slice).
 
    Own translation unit because dl_iterate_phdr needs _GNU_SOURCE, which
-   must not leak into acquire.c's feature-macro environment. */
+   must not leak into acquire.c's feature-macro environment.
 
-#if defined(__GLIBC__) || defined(__gnu_linux__)
+   __GLIBC__ is only set AFTER features.h; use the compiler's __linux__ so
+   _GNU_SOURCE is on before any system header (platform_sweep -fsyntax-only). */
+
+#if defined(__linux__)
+#ifndef _GNU_SOURCE
 #define _GNU_SOURCE
+#endif
 #endif
 
 #include "../include/acquire.h"
@@ -77,7 +82,8 @@ static void rt_find_build_id(const struct dl_phdr_info *info, RtObj *o) {
             if (n->n_type == NT_GNU_BUILD_ID && n->n_namesz == 4 &&
                 memcmp(name, "GNU", 4) == 0 && n->n_descsz > 0) {
                 o->build_id_len = n->n_descsz < RT_BUILD_ID_MAX
-                                      ? n->n_descsz : RT_BUILD_ID_MAX;
+                                      ? n->n_descsz
+                                      : RT_BUILD_ID_MAX;
                 memcpy(o->build_id, desc, o->build_id_len);
                 return;
             }
@@ -112,7 +118,7 @@ static int rt_cmp(const void *a, const void *b) {
 }
 
 uint64_t cnet_runtime_libs_digest(void) {
-    static RtScan s;   /* ~50 KB — off the stack; computed per call */
+    static RtScan s; /* ~50 KB — off the stack; computed per call */
     uint64_t h = UINT64_C(1469598103934665603);
     size_t i;
     unsigned char sep_pair = 0xff, sep_field = 0xfe;

@@ -361,7 +361,13 @@ int main(void) {
        lesson generalizes: a too-narrow early hidden layer saturates on a
        low-rank approximation that growth cannot repair (init 9 + eager
        growth capped out at 194/200; init 16 with patient growth masters
-       the domain without growing at all). */
+       the domain without growing at all).
+
+       Train with btn_train_dynamic_spec: the 200 rows ARE the complete
+       finite domain freeze_gate certifies against. btn_train_dynamic
+       holds out sample_count/5 when N>=64, so ~40 adder cells never see
+       a gradient and the gate fails (~189/200 with seed 31). Same class
+       of defect b9a7d53 fixed for consolidation. */
     if (btn_init(&dec_fa, 9, 5, 16, 128, 0.8, 31u) != 0) {
         fprintf(stderr, "FAIL: could not initialize dec_full_add.\n");
         goto cleanup;
@@ -379,8 +385,8 @@ int main(void) {
             goto cleanup;
         }
     }
-    loss = btn_train_dynamic(&dec_fa, &fa_inputs[0][0], &fa_targets[0][0],
-                             200, 300000, 1000, 0.0008, 0.01);
+    loss = btn_train_dynamic_spec(&dec_fa, &fa_inputs[0][0], &fa_targets[0][0],
+                                  200, 300000, 1000, 0.0008, 0.01);
     printf("dec_full_add: hidden %lu, final loss %.6f\n",
            (unsigned long)dec_fa.hidden_count, loss);
     if (freeze_gate(&dec_fa, &fa_inputs[0][0], &fa_targets[0][0],
@@ -449,8 +455,9 @@ int main(void) {
             goto cleanup;
         }
     }
-    loss = btn_train_dynamic(&dec_swap, &sw_inputs[0][0], &sw_targets[0][0],
-                             200, 150000, 1000, 0.0008, 0.03);
+    /* Full 200-row permutation domain — train every row (see dec_full_add). */
+    loss = btn_train_dynamic_spec(&dec_swap, &sw_inputs[0][0], &sw_targets[0][0],
+                                  200, 150000, 1000, 0.0008, 0.03);
     printf("dec_swap_ab: hidden %lu, final loss %.6f\n",
            (unsigned long)dec_swap.hidden_count, loss);
     if (freeze_gate(&dec_swap, &sw_inputs[0][0], &sw_targets[0][0],
