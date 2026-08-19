@@ -1,0 +1,7 @@
+ROE_SKILL 1
+id ops_wireguard_uses
+intent network
+pattern Name three uses for WireGuard
+answer Three WireGuard uses: (1) site-to-site or mesh private networks, (2) secure remote access to home/lab services, (3) encrypted point-to-point tunnels for apps and agents without exposing services to the public internet.
+privilege 0
+certified 1

@@ -1,0 +1,39 @@
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -o bin/sevenseg_floor_study src/nn.c tests/sevenseg_floor_study.c -lm -lpthread -lcurl
+tests/sevenseg_floor_study.c: In function ‘render_noisy_7seg’:
+tests/sevenseg_floor_study.c:53:9: warning: this ‘if’ clause does not guard... [-Wmisleading-indentation]
+   53 |         if (v < 0.0) v = 0.0; if (v > 1.0) v = 1.0;
+      |         ^~
+tests/sevenseg_floor_study.c:53:31: note: ...this statement, but the latter is misleadingly indented as if it were guarded by the ‘if’
+   53 |         if (v < 0.0) v = 0.0; if (v > 1.0) v = 1.0;
+      |                               ^~
+./bin/sevenseg_floor_study
+=== 7-segment confident-wrong: aliasing (input floor) vs overconfidence (catchable)? ===
+
+font min-Hamming-to-other-digit (1 => one segment apart => alias-prone):
+  0:1 1:1 2:2 3:1 4:2 5:1 6:1 7:1 8:1 9:1 
+
+training 5 independent 7-seg leaves...
+
+floor=0.15, 600 samples/digit. Leaf 0 is the 'deployed' leaf (matches habitat).
+
+noise | leaf0_acc_err | tmpl_floor_err | leaf0_cov | ens_agree_wrong | disagree_gate: resid_err  cov
+0.15  |    0.1455     |    0.0000     |   0.936   |      0.999      |        0.1075   0.896
+0.30  |    0.1378     |    0.0000     |   0.902   |      0.999      |        0.1136   0.876
+0.45  |    0.1806     |    0.0835     |   0.771   |      0.971      |        0.1482   0.720
+0.60  |    0.3279     |    0.2740     |   0.707   |      0.971      |        0.2898   0.645
+       top leaf0 accepted-wrong confusions (true->pred): 7->1 (n=240, hamming=1)  2->8 (n=155, hamming=2)  2->3 (n=111, hamming=2)  
+0.75  |    0.4746     |    0.4248     |   0.685   |      0.978      |        0.4440   0.608
+       top leaf0 accepted-wrong confusions (true->pred): 7->1 (n=191, hamming=1)  2->8 (n=125, hamming=2)  2->3 (n=112, hamming=2)  
+
+Reading the table:
+ - leaf0_acc_err tracking tmpl_floor_err  => ALIASING (input below floor; uncatchable).
+ - leaf0_acc_err >> tmpl_floor_err        => OVERCONFIDENCE (net wrong on separable input).
+ - high ens_agree_wrong                   => leaves collapse identically => aliasing, gate can't help.
+ - disagree_gate resid_err << leaf0_acc_err => confident-wrong WAS catchable by ensemble.
+
+--- provenance ---
+host=marble-system
+utc=20260819T071254Z
+git=e657fcd235b9b7f8bd186e190f9e3567b995bcb8
+cmd=make sevenseg
+bin=bin/sevenseg_floor_study

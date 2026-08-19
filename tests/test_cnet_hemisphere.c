@@ -137,25 +137,22 @@ int main(void) {
     /* --- Full ask: CERT wins before open chat --- */
     cnet_held_model_set_hook(hook_pong);
     pol.residual_enabled = 1;
-    pol.open_chat_enabled = 1;
+    pol.open_chat_enabled = 1; /* test-only re-enable */
     expect(cnet_core_ask("what is 7 plus 1", &pol, &r) == 0, "ask_core_before_res");
     expect(r.hemi == CNET_HEMI_CORE, "ask_prefers_core");
     expect(r.plane == CNET_CORE_PLANE_CERT, "ask_prefers_cert_plane");
     expect(r.source == CNET_HEMI_SRC_OOD_MATH, "ask_prefers_math");
     expect(strstr(r.spoken, "hemi-residual-pong") == NULL, "ask_not_residual_text");
 
-    /* --- Full ask: open chat on leftover (still via CORE) --- */
-    expect(cnet_core_ask("say a novel leftover phrase about zz99", &pol, &r) == 0,
-           "ask_residual_rc");
-    expect(r.hemi == CNET_HEMI_RESIDUAL, "ask_residual_hemi");
-    expect(r.plane == CNET_CORE_PLANE_OPEN_CHAT, "ask_open_plane");
-    expect(r.via_core == 1, "ask_open_via_core");
-    expect(r.open_chat == 1, "ask_open_flag");
-    expect(r.source == CNET_HEMI_SRC_HELD_LLM, "ask_residual_src");
+    /* --- leftover OPEN_CHAT answers are killed --- */
+    expect(cnet_core_ask("say a novel leftover phrase about zz99", &pol, &r) == 1,
+           "ask_residual_killed");
     expect(r.claimed_cert == 0, "ask_residual_no_cert");
-    expect(r.may_voice == 0, "ask_residual_no_voice");
-    expect(strcmp(r.spoken, "hemi-residual-pong") == 0, "ask_residual_text");
-    expect(r.residual_calls >= 1u, "ask_residual_calls");
+    expect(r.open_chat == 0, "ask_open_flag_off");
+    expect(strstr(r.spoken, "hemi-residual-pong") == NULL, "ask_no_open_text");
+    expect(strstr(r.refusal, "open_chat_answer_killed") != NULL ||
+               strstr(r.refusal, "logic_miss") != NULL || r.bound == 0,
+           "ask_killed_reason");
 
     /* --- residual_disabled blocks held even if hook present --- */
         pol.residual_enabled = 0;
@@ -188,19 +185,18 @@ int main(void) {
         expect(r.open_chat == 0, "logic_miss_no_open");
         expect(strstr(r.refusal, "logic_miss") != NULL, "logic_miss_reason");
 
-        /* --- creative leftover uses open chat via CORE --- */
-        expect(cnet_core_ask("write a short poem about zz99", &pol, &r) == 0,
-               "creative_open_rc");
+        /* --- creative leftover cannot answer; table path is core_bus --- */
+        expect(cnet_core_ask("write a short poem about zz99", &pol, &r) == 1,
+               "creative_no_answer");
         expect(r.intent == CNET_CORE_INTENT_CREATIVE, "creative_intent");
-        expect(r.plane == CNET_CORE_PLANE_OPEN_CHAT, "creative_plane");
-        expect(r.via_core == 1, "creative_via_core");
         expect(r.claimed_cert == 0, "creative_no_cert");
-        expect(strcmp(r.spoken, "hemi-residual-pong") == 0, "creative_draft");
+        expect(r.open_chat == 0, "creative_no_open_flag");
+        expect(strstr(r.spoken, "hemi-residual-pong") == NULL, "creative_no_draft");
 
     reset_held();
     printf("CNET_HEMI_PASS\n");
     printf("checks=%d fail=%d residual_never_cert=1 never_voice_llm=1 "
-           "core_first=1 core_middle=1 cert_and_open_chat=1 "
+           "core_first=1 core_middle=1 open_chat_answer=0 "
            "logic_strong=1 creative_strong=1 discern=1 python=0 "
            "broader_claims=WITHHELD\n",
            g_checks, g_fail);

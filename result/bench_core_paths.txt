@@ -1,0 +1,1 @@
+CNET_CORE_PATHS_PASS path1=1 path2=1 path3=1 path4=1 bus=1 switch=1 agi_scenario=1 agi_scenario2=1

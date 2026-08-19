@@ -1,0 +1,5 @@
+ROE_MANIFEST 1
+skill ops_no_new_jobs
+format roe_text_capsule
+never_self_cert 1
+second_brain 0

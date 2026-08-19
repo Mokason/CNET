@@ -97,3 +97,22 @@ bin/vd_runner
 data/vision_specialist
 data/ood
 bin/port_raw_unit_seam
+
+# Scenario / CORE-path gate artifacts. Regenerated on every `make` of the
+# path, bus and scenario-layer targets; they are outputs, not sources, and
+# they were burying real changes in `git status`.
+agi_scenario_bricks/
+agi2_bricks/
+agi3_bricks/
+core_bus_bricks/
+path2_bricks/
+path4_bricks/
+agi_scenario_miss.jsonl
+agi2_miss.jsonl
+agi3_miss.jsonl
+agi2_workspace.txt
+agi3_workspace.txt
+
+# adapt_new_domain gate scratch bases (one per domain family, per phase)
+tmp_adapt_*
+tmp_adaptfull_*

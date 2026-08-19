@@ -1,0 +1,4 @@
+# CNET_LUT_V1
+tag=q1_xor16
+name=agi_k_xor
+lut=0,0,3,3,5,4,7,6,8,8,11,11,13,12,14,15

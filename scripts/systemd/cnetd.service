@@ -1,6 +1,7 @@
 [Unit]
 Description=CNET warm front-door daemon (UNIX socket)
 After=default.target
+Documentation=file:///home/marble/AI/CNET/docs/CNETD.md
 
 [Service]
 Type=simple
@@ -18,10 +19,27 @@ Environment=ROE_LLM_THINK=0
 Environment=ROE_LLM_NUM_PREDICT=1024
 Environment=ROE_TIMEOUT_MS=180000
 Environment=ROE_LLM_MODEL=minimax-m3:cloud
+# CORE live bank + overnight Bonsai factory (absolute paths — systemd does not expand $HOME in Environment=)
+Environment=CNET_CORE_BUS_BRICKS_DIR=%h/.local/share/cnet-bricks
+Environment=CNET_CORE_AUTO_EVOLVE=1
+Environment=CNET_CORE_EVOLVE_EVERY=4
+Environment=CNET_CORE_EVOLVE_BIN=%h/AI/CNET/bin/cnet_core_evolve
+Environment=CNET_CORE_EVOLVE_FACTORY=1
+Environment=CNET_GGUF_MMAP=1
+Environment=CNET_BONSAI_GGUF=%h/AI/Models/Bonsai-8B-gguf/Bonsai-8B.gguf
+Environment=CNET_HELD_MODEL_ENDPOINT=http://127.0.0.1:8081/v1/chat/completions
+Environment=CNET_HELD_MODEL_NAME=held
+Environment=CNET_RESIDUAL_HTTP=http://127.0.0.1:8081
+Environment=CNET_GROK_GUIDE=0
 ExecStart=%h/AI/CNET/bin/cnetd
 Restart=on-failure
 RestartSec=3
 Nice=5
+# cnetd can hang on stop after live-waist work — don't block the manager forever
+TimeoutStopSec=15
+KillMode=mixed
+KillSignal=SIGTERM
+FinalKillSignal=SIGKILL
 
 [Install]
 WantedBy=cnet-marble.target

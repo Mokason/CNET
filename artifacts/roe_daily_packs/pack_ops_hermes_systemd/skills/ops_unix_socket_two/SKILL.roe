@@ -1,0 +1,7 @@
+ROE_SKILL 1
+id ops_unix_socket_two
+intent network
+pattern Explain what a UNIX domain socket is in two sentences
+answer A UNIX domain socket is a same-host IPC channel addressed by a filesystem path (or abstract name), not an IP port. CNET uses one so local clients reach cnetd privately without TCP.
+privilege 0
+certified 1

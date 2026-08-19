@@ -1,6 +1,6 @@
 # RLM — Recursive Loop Module (outer host)
 
-Status: **SLICE — WRAPS CORE + BOTH PLANES — NOT AGI — BOUNDED**
+Status: **GATED — WRAPS CORE + BOTH PLANES — STEP BUDGET IS LOAD-BEARING — NOT AGI**
 
 ## Picture
 
@@ -48,10 +48,17 @@ cnet_rlm_ask("write a haiku…", &p, &r);
 /* r.final.plane=OPEN_CHAT r.final.claimed_cert=0 */
 ```
 
+Multi-hop CERT turns bill one step per named hop (capsule calls unrolled;
+live serve-bank `TAG n then TAG` hosted here). Leftover hops when the
+budget is exhausted return `rlm_budget` with `claimed_cert=0`. RLM never
+evolves; it may append a `via=cnet_rlm` miss row. Decision:
+`plans/cnet_rlm_autonomy.md`.
+
 ## Gate
 
 ```text
 make cnet_rlm
 CNET_RLM_PASS
 via_rlm=1 wraps_core=1 residual_never_cert=1 recursive_bounded=1
+recursive_used=1 budget_trips=1 leftover_no_prefix_cert=1
 ```

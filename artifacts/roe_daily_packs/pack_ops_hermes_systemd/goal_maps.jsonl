@@ -1,0 +1,4 @@
+{"cat":"ops","sub":"hermes","pattern":"config.yaml","skill":"ops_hermes_config"}
+{"cat":"ops","sub":"systemd","pattern":"systemctl --user","skill":"ops_user_systemd"}
+{"cat":"ops","sub":"status","pattern":"what is running","skill":"ops_status_sweep"}
+{"cat":"ops","sub":"systemd","pattern":"do not start","skill":"ops_no_new_jobs"}

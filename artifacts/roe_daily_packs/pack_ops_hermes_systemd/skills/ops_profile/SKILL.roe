@@ -1,0 +1,7 @@
+ROE_SKILL 1
+id ops_profile
+intent hermes
+pattern hermes profile
+answer Profiles are isolated HERMES_HOME islands; use get_hermes_home(); no live inheritance from default.
+privilege 1
+certified 1

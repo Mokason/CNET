@@ -1,0 +1,7 @@
+ROE_SKILL 1
+id ops_logs
+intent hermes
+pattern hermes logs
+answer Logs under get_hermes_home()/logs: agent.log errors.log gateway.log; hermes logs --follow.
+privilege 0
+certified 1

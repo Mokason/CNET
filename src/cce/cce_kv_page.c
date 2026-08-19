@@ -10,6 +10,15 @@
 #include <sys/stat.h>
 #include <time.h>
 #include <unistd.h>
+#ifdef _WIN32
+#include <direct.h>   /* _mkdir (1-arg) */
+#include <io.h>       /* _commit, the fsync analogue */
+/* Windows has no POSIX 2-arg mkdir and no fsync. _mkdir ignores the mode
+   (NTFS permissions are not POSIX modes); _commit flushes the OS buffer for
+   a file descriptor, which is what fsync is being used for here. */
+#define mkdir(path, mode) _mkdir(path)
+#define fsync(fd)         _commit(fd)
+#endif
 
 #include "../../include/cnet_platform.h"  /* cnet_mkdir, cnet_fsync */
 

@@ -44,7 +44,18 @@ rm -f "$SOCK"
 "$BIN" >>"$LOG" 2>&1 &
 PID=$!
 cleanup() {
+  # Bounded teardown: cnetd honours SIGTERM (tests/test_cnetd_sigterm.sh), but
+  # never let this gate hang on `wait` if that ever regresses again — escalate
+  # to SIGKILL rather than blocking for the whole CI timeout.
   kill "$PID" 2>/dev/null || true
+  for _ in $(seq 1 50); do
+    kill -0 "$PID" 2>/dev/null || break
+    sleep 0.1
+  done
+  if kill -0 "$PID" 2>/dev/null; then
+    echo "WARN: cnetd $PID ignored SIGTERM after 5s — escalating to SIGKILL" | tee -a "$LOG"
+    kill -9 "$PID" 2>/dev/null || true
+  fi
   wait "$PID" 2>/dev/null || true
   rm -f "$SOCK"
 }
@@ -122,10 +133,11 @@ ans2=$(python3 -c 'import json,sys; d=json.loads(sys.argv[1]); print(d.get("answ
 ver2=$(python3 -c 'import json,sys; d=json.loads(sys.argv[1]); print(int(bool(d.get("verified"))))' "$r2" 2>/dev/null || echo 1)
 miss2=$(python3 -c 'import json,sys; d=json.loads(sys.argv[1]); print(int(bool(d.get("miss"))))' "$r2" 2>/dev/null || echo 1)
 sk2=$(python3 -c 'import json,sys; d=json.loads(sys.argv[1]); print(d.get("skill",""))' "$r2" 2>/dev/null || echo "")
-check creative_source_open "$([[ $src2 == OPEN_CHAT || $src2 == RESIDUAL ]] && echo 1 || echo 0)" "source=$src2"
-check creative_has_text "$([[ -n $ans2 && ${#ans2} -gt 3 ]] && echo 1 || echo 0)" "len=${#ans2}"
+# OPEN_CHAT leftover answers are killed — creative must not be OPEN_CHAT
+check creative_not_open "$([[ $src2 != OPEN_CHAT && $src2 != RESIDUAL ]] && echo 1 || echo 0)" "source=$src2"
 check creative_not_cert "$([[ $ver2 == 0 ]] && echo 1 || echo 0)" "verified=$ver2"
-check creative_not_miss "$([[ $miss2 == 0 ]] && echo 1 || echo 0)" "miss=$miss2 skill=$sk2"
+check creative_is_miss_or_local "$([[ $miss2 == 1 || $src2 == LOCAL || $src2 == CNET ]] && echo 1 || echo 0)" "miss=$miss2 source=$src2"
+check creative_no_held_skill "$([[ $sk2 != held_model_v1 ]] && echo 1 || echo 0)" "skill=$sk2"
 
 # C) LOGIC miss → abstain (no creative fill)
 r3=$(ask "compute crc8 of unknown blob zz99nofill")

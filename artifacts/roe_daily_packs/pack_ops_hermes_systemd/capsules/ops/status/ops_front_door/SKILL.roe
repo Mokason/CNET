@@ -1,0 +1,7 @@
+ROE_SKILL 1
+id ops_front_door
+intent status
+pattern roe front door
+answer roe_front_door: ROUTES→selective pack load (always-on + matched domain)→LOCAL CERT first; miss_log on residual; make roe_front_door.
+privilege 0
+certified 1

@@ -1,0 +1,7 @@
+ROE_SKILL 1
+id ops_unix_socket_explain
+intent network
+pattern Explain UNIX sockets
+answer UNIX sockets are local-only IPC. Unlike TCP localhost, they use a path, support credential passing, and avoid the network stack. CNET warm front door uses a UNIX socket so CLI/web talk to cnetd without opening a LAN port.
+privilege 0
+certified 1

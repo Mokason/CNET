@@ -1,0 +1,7 @@
+ROE_SKILL 1
+id ops_unix_socket
+intent network
+pattern UNIX domain socket
+answer A UNIX domain socket is an IPC endpoint on one host (filesystem path or abstract name). Processes on the same machine exchange bytes without TCP/IP. Example: cnetd listens on $XDG_RUNTIME_DIR/cnet/cnet.sock for local clients.
+privilege 0
+certified 1

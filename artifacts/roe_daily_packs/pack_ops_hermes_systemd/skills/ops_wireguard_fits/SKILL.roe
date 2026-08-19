@@ -1,0 +1,7 @@
+ROE_SKILL 1
+id ops_wireguard_fits
+intent network
+pattern how WireGuard fits
+answer WireGuard is the data-plane crypto tunnel. Tailscale uses WireGuard for packets and adds coordination, NAT traversal, identity, and ACLs so you do not hand-manage peer keys and endpoints.
+privilege 0
+certified 1

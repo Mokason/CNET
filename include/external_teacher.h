@@ -123,6 +123,31 @@ CNET_API int external_teacher_admit_oracle(
    student BTN, build a contract from canonical targets, admit through
    specialist_admit. On success *student_out is heap-allocated and owned by
    the caller (registry borrows it). Returns 0, 1 if refused, <0 on error. */
+/* Seed selection that also PREFERS generalisation. Supply the rows withheld
+   from training and mine_admit will keep looking for an initialisation that
+   reproduces them too, falling back to the first that merely certifies. Fitting
+   a finite spec exactly is seed-dependent, and a seed that fits the training
+   rows can be memorising -- taking the first certifying one selects for that
+   blindly. *generalized_out reports which kind was accepted, so the caller can
+   grant domain coverage without re-running the proof.
+   Pass hold_in/hold_tg NULL and n_hold 0 for the historical behaviour. */
+CNET_API int external_teacher_mine_admit_ex(
+    ExternalTeacher *t,
+    PrimitiveRegistry *reg,
+    const double *probe_inputs,
+    const double *canonical_targets,
+    size_t n_rows,
+    size_t init_hidden,
+    size_t max_hidden,
+    size_t max_epochs,
+    unsigned int seed,
+    const char *unit_name,
+    BinaryTransformNetwork **student_out,
+    const double *hold_in,
+    const double *hold_tg,
+    size_t n_hold,
+    int *generalized_out);
+
 CNET_API int external_teacher_mine_admit(
     ExternalTeacher *t,
     PrimitiveRegistry *reg,

@@ -168,26 +168,23 @@ void cnet_hemi_policy_default(CnetHemiPolicy *p) {
     if (p == NULL) return;
     memset(p, 0, sizeof *p);
     p->never_voice_llm = 1;
-    p->residual_enabled = 1;
-    p->open_chat_enabled = 1;
+    p->residual_enabled = 0; /* leftover OPEN_CHAT answers killed */
+    p->open_chat_enabled = 0;
     p->allow_wiki = 1;
     p->open_chat_may_voice = 0;
-    p->logic_open_chat_fallback = 0; /* logic miss ≠ creative fill */
+    p->logic_open_chat_fallback = 0;
+    /* Env can re-enable only for explicit experiments — product default is OFF */
     e = getenv("CNET_NEVER_VOICE_LLM");
     if (e && e[0] == '0') p->never_voice_llm = 0;
-    e = getenv("CNET_HEMI_RESIDUAL");
-    if (e && e[0] == '0') {
-        p->residual_enabled = 0;
-        p->open_chat_enabled = 0;
-    }
     e = getenv("CNET_CORE_OPEN_CHAT");
-    if (e && e[0] == '0') {
-        p->open_chat_enabled = 0;
-        p->residual_enabled = 0;
-    }
     if (e && (e[0] == '1' || e[0] == 'y' || e[0] == 'Y')) {
         p->open_chat_enabled = 1;
         p->residual_enabled = 1;
+    }
+    e = getenv("CNET_HEMI_RESIDUAL");
+    if (e && e[0] == '1') {
+        p->residual_enabled = 1;
+        p->open_chat_enabled = 1;
     }
     e = getenv("CNET_HEMI_WIKI");
     if (e && e[0] == '0') p->allow_wiki = 0;
@@ -401,28 +398,6 @@ int cnet_hemi_ask_core(const char *turn, const CnetHemiPolicy *policy,
     return 1;
 }
 
-static int try_open_chat(const char *turn, const CnetHemiPolicy *pol,
-                         CnetCoreIntent intent, CnetHemiResult *out) {
-    CnetSkillLaneResult lane;
-    memset(&lane, 0, sizeof lane);
-    if (cnet_ood_try_held(turn, &lane) != 0 || !lane.bound) return 1;
-    lane.kind = CNET_SKILL_LANE_HELD;
-    lane.claimed_cert = 0;
-    cnet_hemi_classify_lane(&lane, pol->never_voice_llm, out);
-    out->via_core = 1;
-    out->intent = intent;
-    out->hemi = CNET_HEMI_RESIDUAL;
-    out->plane = CNET_CORE_PLANE_OPEN_CHAT;
-    out->open_chat = 1;
-    out->source = CNET_HEMI_SRC_HELD_LLM;
-    out->claimed_cert = 0;
-    if (pol->open_chat_may_voice)
-        out->may_voice = 1;
-    else
-        out->may_voice = pol->never_voice_llm ? 0 : 1;
-    out->residual_calls = out->residual_calls ? out->residual_calls : 1u;
-    return 0;
-}
 
 int cnet_hemi_ask(const char *turn, const CnetHemiPolicy *policy,
                   CnetHemiResult *out) {
@@ -451,33 +426,10 @@ int cnet_hemi_ask(const char *turn, const CnetHemiPolicy *policy,
     if (rc < 0) return rc;
     out->intent = intent;
 
-    if (!open_ok) {
-        out->via_core = 1;
-        out->hemi = CNET_HEMI_NONE;
-        out->plane = CNET_CORE_PLANE_NONE;
-        out->source = CNET_HEMI_SRC_ABSTAIN;
-        out->open_chat = 0;
-        copy_text(out->refusal, sizeof out->refusal, "open_chat_disabled");
-        return 1;
-    }
-
-    /* what-is-what routing after CERT miss */
-    if (intent == CNET_CORE_INTENT_LOGIC && !pol.logic_open_chat_fallback) {
-        out->via_core = 1;
-        out->hemi = CNET_HEMI_NONE;
-        out->plane = CNET_CORE_PLANE_NONE;
-        out->source = CNET_HEMI_SRC_ABSTAIN;
-        out->open_chat = 0;
-        out->bound = 0;
-        out->claimed_cert = 0;
-        out->may_voice = 0;
-        copy_text(out->refusal, sizeof out->refusal, "logic_miss_no_creative_fill");
-        return 1;
-    }
-
-    /* CREATIVE / MIXED / UNKNOWN (or LOGIC with fallback): open chat ok */
-    if (try_open_chat(turn, &pol, intent, out) == 0) return 0;
-
+    /* OPEN_CHAT leftover answers are killed. Creative emits tables via
+       cnet_core_bus only — never answers a turn here. */
+    (void)open_ok;
+    (void)pol;
     out->via_core = 1;
     out->intent = intent;
     out->hemi = CNET_HEMI_NONE;
@@ -487,9 +439,13 @@ int cnet_hemi_ask(const char *turn, const CnetHemiPolicy *policy,
     out->claimed_cert = 0;
     out->may_voice = 0;
     out->open_chat = 0;
-    copy_text(out->refusal, sizeof out->refusal, "core_both_planes_miss");
+    if (intent == CNET_CORE_INTENT_LOGIC)
+        copy_text(out->refusal, sizeof out->refusal, "logic_miss_no_creative_fill");
+    else
+        copy_text(out->refusal, sizeof out->refusal, "open_chat_answer_killed");
     return 1;
 }
+
 
 int cnet_core_ask(const char *turn, const CnetHemiPolicy *policy,
                   CnetHemiResult *out) {

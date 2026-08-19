@@ -6,6 +6,7 @@
 #include "../include/cnet_curiosity.h"
 #include "../include/cnet_moe.h"
 #include "../include/cnet_acct.h"
+#include "../include/cnet_seal_trust.h"
 
 #include <limits.h>
 #include <stdio.h>
@@ -146,6 +147,49 @@ static size_t coverage_selfcheck(PersonalAi *ai, int load_failed) {
 static int coverage_gate_disabled(void) {
     const char *e = getenv("CNET_COVERAGE_ABSTAIN");
     return e && e[0] == '0' && e[1] == '\0';
+}
+
+/* Domain key for seal-trust: prefer goal tag, else first plan unit, else untagged. */
+static void seal_trust_domain_key(char *out, size_t cap, Port goal_port,
+                                  const RoutePlan *plan) {
+    if (!out || !cap) return;
+    out[0] = 0;
+    if (goal_port.tag[0]) {
+        snprintf(out, cap, "%s", goal_port.tag);
+        return;
+    }
+    if (plan && plan->length > 0 && plan->names[0] && plan->names[0][0]) {
+        snprintf(out, cap, "%s", plan->names[0]);
+        return;
+    }
+    snprintf(out, cap, "%s", "untagged");
+}
+
+/*
+ * May claim Tier-A certified authority under domain seal-trust calibration.
+ * Uses Wilson LCB on historical seal outcomes (same family as acquire certify).
+ * CNET_SEAL_TRUST=0 disables (coverage gate still applies).
+ * Returns 1 allow, 0 refuse; *explore_out=1 if allowed as exploration.
+ */
+static int seal_trust_tier_a_open(const char *domain, int *explore_out) {
+    CnetSealTrust *st;
+    CnetSealTrustDecision d;
+    if (explore_out) *explore_out = 0;
+    st = cnet_seal_trust_global();
+    if (!st || !st->cfg.enabled) return 1;
+    d = cnet_seal_trust_decide(st, domain);
+    if (d == CNET_SEAL_TRUST_ALLOW) return 1;
+    if (d == CNET_SEAL_TRUST_EXPLORE) {
+        if (explore_out) *explore_out = 1;
+        return 1;
+    }
+    return 0; /* REFUSE or ERROR */
+}
+
+static void seal_trust_note_tier_a(const char *domain, int is_explore) {
+    CnetSealTrust *st = cnet_seal_trust_global();
+    if (!st || !st->cfg.enabled) return;
+    (void)cnet_seal_trust_note_seal(st, domain, is_explore);
 }
 
 static int coverage_gate_open(const PersonalAi *ai, Port input_port,
@@ -552,10 +596,32 @@ int personal_ai_serve(PersonalAi *ai, Port input_port, Port goal_port,
             mh.hit = 0;
         }
         if (mr == 0 && mh.hit) {
-            serve_record_hit(ai, rep, PERSONAL_AI_LOCAL, HYBRID_TRUST_CERTIFIED,
-                             HYBRID_TIER_A);
-            cnet_acct_add_hard((uint64_t)mh.steps);
-            return 0;
+            char st_dom[CNET_SEAL_TRUST_DOMAIN_MAX];
+            int st_explore = 0;
+            const char *raw =
+                mh.unit[0] ? mh.unit
+                           : (goal_port.tag[0] ? goal_port.tag : "untagged");
+            snprintf(st_dom, sizeof st_dom, "%.63s", raw);
+            if (!seal_trust_tier_a_open(st_dom, &st_explore)) {
+                ai->totals.seal_trust_abstains++;
+                rep->seal_trust_abstains = 1;
+                cnet_acct_add_abstain();
+                mh.hit = 0;
+            } else {
+                seal_trust_note_tier_a(st_dom, st_explore);
+                if (st_explore) {
+                    ai->totals.seal_trust_explores++;
+                    rep->seal_trust_explores = 1;
+                    rep->seal_trust_kind = 2; /* explore */
+                } else if (cnet_seal_trust_global() &&
+                           cnet_seal_trust_global()->cfg.enabled) {
+                    rep->seal_trust_kind = 1; /* trust */
+                }
+                serve_record_hit(ai, rep, PERSONAL_AI_LOCAL, HYBRID_TRUST_CERTIFIED,
+                                 HYBRID_TIER_A);
+                cnet_acct_add_hard((uint64_t)mh.steps);
+                return 0;
+            }
         }
     }
 
@@ -599,10 +665,29 @@ int personal_ai_serve(PersonalAi *ai, Port input_port, Port goal_port,
                 cnet_acct_add_error();
                 return -1;
             } else {
-                serve_record_hit(ai, rep, PERSONAL_AI_LOCAL,
-                                 HYBRID_TRUST_CERTIFIED, HYBRID_TIER_A);
-                cnet_acct_add_tier_a((uint64_t)plan.length);
-                return 0;
+                char st_dom[CNET_SEAL_TRUST_DOMAIN_MAX];
+                int st_explore = 0;
+                seal_trust_domain_key(st_dom, sizeof st_dom, goal_port, &plan);
+                if (!seal_trust_tier_a_open(st_dom, &st_explore)) {
+                    ai->totals.seal_trust_abstains++;
+                    rep->seal_trust_abstains = 1;
+                    cnet_acct_add_abstain();
+                    /* fall through to B/C — no Tier-A claim */
+                } else {
+                    seal_trust_note_tier_a(st_dom, st_explore);
+                    if (st_explore) {
+                        ai->totals.seal_trust_explores++;
+                        rep->seal_trust_explores = 1;
+                        rep->seal_trust_kind = 2; /* explore */
+                    } else if (cnet_seal_trust_global() &&
+                               cnet_seal_trust_global()->cfg.enabled) {
+                        rep->seal_trust_kind = 1; /* trust */
+                    }
+                    serve_record_hit(ai, rep, PERSONAL_AI_LOCAL,
+                                     HYBRID_TRUST_CERTIFIED, HYBRID_TIER_A);
+                    cnet_acct_add_tier_a((uint64_t)plan.length);
+                    return 0;
+                }
             }
         }
     }
@@ -869,11 +954,13 @@ int personal_ai_kpi_json(const PersonalAi *ai, char *out, size_t out_capacity) {
         "\"soft_hits\":%zu,\"residual_hits\":%zu,\"teacher_helps\":%zu,"
         "\"abstains\":%zu,\"teaches\":%zu,\"residual_captures\":%zu,"
         "\"coverage_abstains\":%zu,"
+        "\"seal_trust_abstains\":%zu,\"seal_trust_explores\":%zu,"
         "\"residual_rate\":%.6f,\"substitution_rate\":%.6f,"
         "\"abstain_rate\":%.6f}",
         served, t->local_hits, t->soft_hits, t->residual_hits,
         t->teacher_helps, t->abstains, t->teaches, t->residual_captures,
-        t->coverage_abstains, residual_rate, substitution_rate, abstain_rate);
+        t->coverage_abstains, t->seal_trust_abstains, t->seal_trust_explores,
+        residual_rate, substitution_rate, abstain_rate);
     if (written < 0 || (size_t)written >= out_capacity) return -2;
     return written;
 }

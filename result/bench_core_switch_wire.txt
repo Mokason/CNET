@@ -1,0 +1,9 @@
+== CORE self-evolve switch wire ==
+  BRICKS_DIR set                                           PASS
+  global load env after evolve                             PASS
+  bank has bricks                                          PASS
+  serve q1_add16 full domain no LLM                        PASS
+  serve q1_xor16 or single-brick ok                        PASS
+  outside table abstain                                    PASS
+CNET_CORE_SWITCH_WIRE_PASS checks=6 fails=0
+switch=1 core_access=1 evolve_writes_lut=1 serve_no_llm=1 human_mid_loop=0

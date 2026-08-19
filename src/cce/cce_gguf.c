@@ -825,6 +825,27 @@ static cce_result gguf_dequant_seq(const cce_gguf* g, uint32_t ggml_type,
                 pql += 64; pqh += 32; psc += 8;
             }
         }
+    } else if (ggml_type == 41 /* Q1_0 */) {
+        /* Q1_0: 128 weights/block, f16 d + 16 bytes bitpack. w = bit ? +d : -d */
+        const size_t QK1_0 = 128;
+        size_t nblocks = (elems + QK1_0 - 1) / QK1_0;
+        for (size_t b = 0; b < nblocks; b++) {
+            uint16_t d16;
+            uint8_t qs[16];
+            float d;
+            size_t this_b;
+            size_t i;
+            if (fread(&d16, 2, 1, g->f) != 1) return CCE_ERR_IO;
+            if (fread(qs, 1, 16, g->f) != 16) return CCE_ERR_IO;
+            d = gguf_f16_to_f32(d16);
+            this_b = ((b + 1) * QK1_0 > elems) ? (elems - b * QK1_0) : QK1_0;
+            for (i = 0; i < this_b; i++) {
+                int byte_index = (int)(i / 8);
+                int bit_offset = (int)(i % 8);
+                uint8_t bit = (qs[byte_index] >> bit_offset) & 1u;
+                buf[b * QK1_0 + i] = bit ? d : -d;
+            }
+        }
     } else {
         GTRACE("load_f32 %s: UNSUPPORTED ggml_type=%d", tname, (int)ggml_type);
         (void)tname;

@@ -12,8 +12,11 @@
 #include <math.h>
 #include <time.h>
 #include <limits.h>
-#include "../../include/cnet_platform.h"  /* CNET_HAVE_CURL */
-#if CNET_HAVE_CURL
+/* libcurl backs ONLY the HTTPS model download path. It is optional: local
+   checkpoint files load without it, which is what the QAT loading arc needs.
+   CNET_HAVE_CURL is defined by the Makefile's CURL_PROBE when the library is
+   actually present. */
+#ifdef CNET_HAVE_CURL
 #include <curl/curl.h>
 #endif
 #ifdef _WIN32
@@ -1244,6 +1247,8 @@ static int st_make_temp_path(char* buf, size_t cap, const char* prefix) {
 #define CCE_ST_CONNECT_TIMEOUT_MS 10000L
 #define CCE_ST_DOWNLOAD_TIMEOUT_MS 600000L
 
+#ifdef CNET_HAVE_CURL
+
 typedef struct {
     FILE* file;
     uint64_t bytes;
@@ -1629,15 +1634,6 @@ int cce_safetensors_test_token_scope(void) {
 #endif
 
 /* Build HF URL into caller buffer. */
-int cce_hf_build_resolve_url(char* buf, size_t cap,
-                             const char* repo, const char* filename, const char* revision) {
-    if (!buf || cap < 32 || !repo || !filename) return -1;
-    const char* rev = (revision && *revision) ? revision : "main";
-    /* sanitize lightly: no spaces etc, but we trust caller for now */
-    return snprintf(buf, cap,
-                    "https://huggingface.co/%s/resolve/%s/%s",
-                    repo, rev, filename);
-}
 
 #if !CNET_HAVE_CURL
 /* No libcurl: fail closed and say so. Loading a LOCAL safetensors file
@@ -1688,6 +1684,40 @@ cce_result cce_safetensors_load_url(const char* url, cce_safetensors** st_out) {
     return rc;
 }
 #endif /* !CNET_HAVE_CURL */
+
+#else /* !CNET_HAVE_CURL */
+
+/* The HF-cache helpers below call this on a cache MISS only; a cache hit
+   never reaches it. Failing here therefore keeps locally-cached checkpoints
+   fully usable and refuses exactly the downloads that cannot happen. */
+static int st_download_to_file(const char* url, const char* dest) {
+    (void)url; (void)dest;
+    return -1;
+}
+
+/* Built without libcurl: refuse the network path explicitly rather than
+   silently failing later. Loading a checkpoint already on disk via
+   cce_safetensors_load is unaffected. */
+cce_result cce_safetensors_load_url(const char* url, cce_safetensors** st_out) {
+    (void)url;
+    if (st_out) *st_out = NULL;
+    st_set_err(NULL, "built without libcurl: HTTPS model download unavailable");
+    return CCE_ERR_UNSUPPORTED;
+}
+
+#endif /* CNET_HAVE_CURL */
+
+/* Pure string builder — no libcurl involved, so it lives OUTSIDE the guard:
+   callers use it to name a cache path whether or not downloads are possible. */
+int cce_hf_build_resolve_url(char* buf, size_t cap,
+                             const char* repo, const char* filename, const char* revision) {
+    if (!buf || cap < 32 || !repo || !filename) return -1;
+    const char* rev = (revision && *revision) ? revision : "main";
+    /* sanitize lightly: no spaces etc, but we trust caller for now */
+    return snprintf(buf, cap,
+                    "https://huggingface.co/%s/resolve/%s/%s",
+                    repo, rev, filename);
+}
 
 cce_result cce_safetensors_load_hf(cce_safetensors** st_out,
                                    const char* repo,

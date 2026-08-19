@@ -414,7 +414,32 @@ int external_teacher_admit_oracle(
     return 0;
 }
 
-int external_teacher_mine_admit(
+/* Exact argmax reproduction over a row set. Used both for "did it fit the spec"
+   and for "did it predict rows it never trained on". */
+static int btn_reproduces(BinaryTransformNetwork *btn, const double *in,
+                          const double *tg, size_t n_rows, size_t in_dim,
+                          size_t out_dim) {
+    size_t r, j;
+    if (!btn || !in || !tg || n_rows == 0) return 0;
+    for (r = 0; r < n_rows; r++) {
+        const double *o = btn_forward(btn, in + r * in_dim);
+        size_t am = 0, wm = 0;
+        if (!o) return 0;
+        for (j = 1; j < out_dim; j++) {
+            if (o[j] > o[am]) am = j;
+            if (tg[r * out_dim + j] > tg[r * out_dim + wm]) wm = j;
+        }
+        if (am != wm) return 0;
+    }
+    return 1;
+}
+
+/* How many initialisations to try before refusing. Fitting a finite spec exactly
+   is seed-dependent; this is a retry budget, not an accuracy threshold, so there
+   is nothing to re-tune when domains change size. */
+#define CNET_MINE_SEED_ATTEMPTS 6
+
+int external_teacher_mine_admit_ex(
     ExternalTeacher *t,
     PrimitiveRegistry *reg,
     const double *probe_inputs,
@@ -425,13 +450,21 @@ int external_teacher_mine_admit(
     size_t max_epochs,
     unsigned int seed,
     const char *unit_name,
-    BinaryTransformNetwork **student_out)
+    BinaryTransformNetwork **student_out,
+    const double *hold_in,   /* n_hold * in_dim -- rows withheld from training */
+    const double *hold_tg,   /* n_hold * out_dim */
+    size_t n_hold,
+    int *generalized_out)
 {
     size_t in_dim, out_dim, i;
     double *labeled = NULL;
     BinaryTransformNetwork *student = NULL;
+
+    int best_generalized = 0;
+    size_t attempt, pass;
     Contract c;
     Specialist s;
+
 
     if (!t || !t->bound || !reg || !probe_inputs || !canonical_targets ||
         n_rows == 0 || !unit_name || !unit_name[0] || !student_out)
@@ -451,46 +484,76 @@ int external_teacher_mine_admit(
         }
     }
 
+    /* Two passes over initialisations.
+       Pass 0 wants a seed that certifies AND predicts the withheld rows; pass 1
+       settles for one that merely certifies. Both attempt the REAL admit, because
+       the loop's acceptance test has to be the same test that decides: an earlier
+       version gated on contract_init_borrowed (bar 0.95), settled on a candidate
+       registry_add_certified then rejected (-1), and never explored further --
+       which is why affine produced no unit at 256 cells. A failed
+       specialist_admit registers nothing, so continuing to the next seed is safe;
+       only a successful one stops the search. */
+    for (pass = 0; pass < 2; pass++) {
+    if (pass == 0 && (n_hold == 0 || !hold_in || !hold_tg)) continue;
+    for (attempt = 0; attempt < CNET_MINE_SEED_ATTEMPTS; attempt++) {
+    unsigned int try_seed = (seed ? seed : 42u) + (unsigned int)attempt * 7919u;
     student = (BinaryTransformNetwork *)calloc(1, sizeof *student);
-    if (!student) {
-        free(labeled);
-        return -3;
-    }
+    if (!student) { free(labeled); return -3; }
     if (btn_init(student, in_dim, out_dim, init_hidden ? init_hidden : 16,
-                 max_hidden ? max_hidden : 64, 0.5, seed ? seed : 42) != 0) {
-        free(student);
-        free(labeled);
-        return -4;
+                 max_hidden ? max_hidden : 64, 0.5, try_seed) != 0) {
+        free(student); free(labeled); return -4;
     }
     if (btn_set_ports(student, t->input_port, t->output_port) != 0) {
-        btn_free(student);
-        free(student);
-        free(labeled);
-        return -4;
+        btn_free(student); free(student); free(labeled); return -4;
     }
-    (void)btn_train_dynamic(student, probe_inputs, labeled, n_rows,
-                            max_epochs ? max_epochs : 12000, 200, 1e-6, 1e-8);
+    /* _spec, not the splitting variant: a mined unit's contract is verified by
+       reproducing the FULL finite row set it is certified over -- train IS
+       verify -- but btn_train_dynamic withholds sample_count/5 once
+       n_rows >= BTN_TRAIN_MIN_SPLIT_SAMPLES, so those rows could never be
+       reproduced and admission always refused. */
+    (void)btn_train_dynamic_spec(student, probe_inputs, labeled, n_rows,
+                                 max_epochs ? max_epochs : 12000, 200, 1e-6,
+                                 1e-8);
     (void)btn_train(student, probe_inputs, canonical_targets, n_rows, 4000);
 
+    if (pass == 0 &&
+        !btn_reproduces(student, hold_in, hold_tg, n_hold, in_dim, out_dim)) {
+        btn_free(student); free(student); student = NULL;
+        continue; /* does not generalise; pass 1 may still take it */
+    }
     memset(&c, 0, sizeof c);
     if (contract_init_borrowed(&c, unit_name, student, probe_inputs,
                                canonical_targets, n_rows) != 0) {
-        btn_free(student);
-        free(student);
-        free(labeled);
-        return 1;
+        btn_free(student); free(student); student = NULL;
+        continue;
     }
     memset(&s, 0, sizeof s);
     if (specialist_wrap_btn(&s, student, unit_name) != 0 ||
         specialist_admit(reg, &s, &c) != 0) {
         contract_free(&c);
-        btn_free(student);
-        free(student);
-        free(labeled);
-        return 1;
+        btn_free(student); free(student); student = NULL;
+        continue; /* nothing was registered; try the next initialisation */
     }
+    best_generalized = (pass == 0);
     contract_free(&c);
     free(labeled);
     *student_out = student;
+    if (generalized_out) *generalized_out = best_generalized;
     return 0;
+    }
+    }
+    free(labeled);
+    if (generalized_out) *generalized_out = 0;
+    return 1;
+}
+
+/* Back-compat wrapper: no withheld rows, so no generalisation preference. */
+int external_teacher_mine_admit(
+    ExternalTeacher *t, PrimitiveRegistry *reg, const double *probe_inputs,
+    const double *canonical_targets, size_t n_rows, size_t init_hidden,
+    size_t max_hidden, size_t max_epochs, unsigned int seed,
+    const char *unit_name, BinaryTransformNetwork **student_out) {
+    return external_teacher_mine_admit_ex(
+        t, reg, probe_inputs, canonical_targets, n_rows, init_hidden, max_hidden,
+        max_epochs, seed, unit_name, student_out, NULL, NULL, 0, NULL);
 }

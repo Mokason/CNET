@@ -466,7 +466,7 @@ static size_t bind_http_teachers(GapLane *L) {
            silently pinned the lane at drained=0 for hundreds of ticks because
            the retry in acquire_drain only revives a parked gap when a matching
            oracle exists. Count the rejects so the log says which. */
-        size_t cand_seen = 0, rej_shape = 0, rej_owned = 0;
+        size_t cand_seen = 0, rej_shape = 0, rej_owned = 0, rewritten = 0;
         for (g = 0; g < L->ledger.count && n_cand < 512; g++) {
             const GapRecord *gap = &L->ledger.gaps[g];
             Port in, goal;
@@ -477,16 +477,35 @@ static size_t bind_http_teachers(GapLane *L) {
                 rej_owned++;
                 continue;
             }
+            /* Self-oracle path: same rewrite model teachers use so freeform /
+               curiosity tags become ONEHOT[W] shapes the HTTP teacher can bind.
+               Without this, no_oracle stalls while teacher is "up". */
+            if (cnet_auto_learn_enabled()) {
+                GapRecord *gw = &L->ledger.gaps[g];
+                Port tin = in, tgoal = goal;
+                if (cnet_auto_learn_make_teachable(
+                        &tin, &tgoal,
+                        tgoal.tag[0] ? tgoal.tag : tin.tag) > 0) {
+                    gw->input_port = tin;
+                    gw->goal_port = tgoal;
+                    in = tin;
+                    goal = tgoal;
+                    rewritten++;
+                }
+            }
             if (!http_shape_ok(in, goal, W)) {
                 rej_shape++;
                 continue;
             }
             order[n_cand++] = g;
         }
+        /* Log every tick when demand exists but nothing bound — silent
+           bound=0 was the stall signature. */
         if (n_cand == 0 && cand_seen > 0)
             printf("gap_lane_run: http_teacher no-match W=%d candidates=%zu "
-                   "rejected_shape=%zu rejected_record_owned=%zu\n",
-                   W, cand_seen, rej_shape, rej_owned);
+                   "rejected_shape=%zu rejected_record_owned=%zu "
+                   "auto_learn_rewritten=%zu\n",
+                   W, cand_seen, rej_shape, rej_owned, rewritten);
     }
     for (ci = 1; ci < n_cand; ci++) {
         size_t key = order[ci], j = ci;
@@ -1057,8 +1076,12 @@ int main(int argc, char **argv) {
                                     (int)token_base, eps);
             } else if (g_http_teacher) {
                 size_t hb = bind_http_teachers(&lane);
-                if (tick_no == 1 || (tick_no % 10) == 0)
-                    printf("gap_lane_run: http_teacher bound=%zu\n", hb);
+                /* Always surface bind pressure when work is waiting — the
+                   old every-10-ticks log hid multi-minute no_oracle stalls. */
+                if (hb > 0 || teacher_demand > 0 || (tick_no % 10) == 0)
+                    printf("gap_lane_run: http_teacher bound=%zu "
+                           "demand=%zu open=%zu\n",
+                           hb, teacher_demand, open_gaps);
             } else {
                 memset(&lane.oracles, 0, sizeof lane.oracles);
             }

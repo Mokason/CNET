@@ -1,0 +1,7 @@
+ROE_SKILL 1
+id ops_user_systemd
+intent systemd
+pattern systemctl --user
+answer User services: systemctl --user status|stop|start UNIT; linger if needed.
+privilege 0
+certified 1

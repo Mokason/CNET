@@ -7,16 +7,30 @@
 
 #ifdef _WIN32
 #include <io.h>
+#include <fcntl.h>
 #include <windows.h>
+/* Windows has no O_NOFOLLOW or O_CLOEXEC. Dropping O_NOFOLLOW does not weaken
+   the anti-symlink property of cnb_save: that rests on O_CREAT|O_EXCL, which
+   fails when the path already exists — including when it is a symlink or a
+   reparse point. _O_NOINHERIT is the O_CLOEXEC analogue. */
+#ifndef O_NOFOLLOW
+#define O_NOFOLLOW 0
+#endif
+#ifndef O_CLOEXEC
+#define O_CLOEXEC _O_NOINHERIT
+#endif
 #else
 #include <fcntl.h>
 #include <unistd.h>
 #endif
 
-/* Brings in <fcntl.h> on BOTH platforms (the block above included it only in
-   the #else, so O_WRONLY/O_CREAT/O_EXCL were undeclared on MinGW) plus the
-   CNET_O_NOFOLLOW / CNET_O_CLOEXEC portability spellings. */
+/* Brings in <fcntl.h> on BOTH platforms plus CNET_O_* spellings. */
 #include "../include/cnet_platform.h"
+/* Sealed containers are byte-exact. Without O_BINARY the Windows CRT
+   translates \n to \r\n on write and the seal digest no longer matches. */
+#ifndef O_BINARY
+#define O_BINARY 0
+#endif
 
 #define CNB_MAGIC "CNB1"
 #define CNB_VERSION 5u
@@ -705,13 +719,11 @@ int cnb_save(const CnetBase *b, const char *path) {
     {
         int tfd;
         (void)remove(tmp);
-        /* O_CREAT|O_EXCL is what actually carries the security property here:
-           it fails if the path exists AT ALL, so a symlink planted between the
-           remove() above and this open() causes an error return rather than a
-           followed write. CNET_O_NOFOLLOW is defence in depth and expands to 0
-           on MinGW, which has no open() equivalent -- see cnet_platform.h. */
+        /* O_CREAT|O_EXCL is the security property; CNET_O_NOFOLLOW is
+           defence in depth (0 on MinGW). O_BINARY keeps seals byte-exact. */
         tfd = open(tmp,
-                   O_WRONLY | O_CREAT | O_EXCL | CNET_O_NOFOLLOW | CNET_O_CLOEXEC,
+                   O_WRONLY | O_CREAT | O_EXCL | CNET_O_NOFOLLOW | CNET_O_CLOEXEC |
+                       O_BINARY,
                    0600);
         if (tfd < 0) goto done;
         f = fdopen(tfd, "wb");

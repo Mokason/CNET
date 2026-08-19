@@ -21,6 +21,7 @@
 #include "../include/base.h"
 #include "../include/cce/cce_archive.h"
 #include "../include/cce/cce_detect.h"
+#include "../include/attribution.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -311,6 +312,50 @@ static void sweep_detect(const char *label, const unsigned char *bytes,
     remove(mut);
 }
 
+/* CNET_ATTRIB sidecar: an unsealed stats file, so it is not required to
+   refuse every mutation — but a REFUSAL must leave the ledger untouched
+   (CNET_STATS rule), and nothing may crash or read out of bounds. The
+   untouched check is the stronger half: a parser that half-applies a corrupt
+   file would pass a crash-only sweep. */
+static void sweep_attrib(const char *label, const unsigned char *bytes,
+                         size_t len, const char *mut) {
+    size_t off, stride = sweep_stride(len);
+    size_t tried = 0, loaded_ok = 0, lad[16], nl, i;
+    AttribLedger *L = (AttribLedger *)malloc(sizeof *L);
+    if (L == NULL) { ++failures; return; }
+
+    for (off = 0; off < len; off += stride) {
+        if (write_flipped(mut, bytes, len, off) != 0) { ++failures; break; }
+        ++tried;
+        attrib_ledger_init(L);
+        L->dropped_events = 0xA5A5u;            /* sentinel */
+        if (attrib_ledger_load(L, mut) == 0) {
+            ++loaded_ok;
+        } else if (L->count != 0 || L->dropped_events != 0xA5A5u) {
+            CHECK(0, "refused attrib load left the ledger modified");
+            break;
+        }
+    }
+    printf("  info %s flip sweep: %zu/%zu loads accepted, rest refused "
+           "cleanly with state untouched, 0 crashes (stride %zu)\n",
+           label, loaded_ok, tried, stride);
+
+    nl = trunc_ladder(len, lad, 16);
+    for (i = 0; i < nl; ++i) {
+        if (spit(mut, bytes, lad[i]) != 0) { ++failures; break; }
+        attrib_ledger_init(L);
+        L->dropped_events = 0xA5A5u;
+        if (attrib_ledger_load(L, mut) != 0 &&
+            (L->count != 0 || L->dropped_events != 0xA5A5u)) {
+            CHECK(0, "refused truncated attrib load left the ledger modified");
+            break;
+        }
+    }
+    CHECK(1, label); /* reached = no crash across flips + truncations */
+    free(L);
+    remove(mut);
+}
+
 static void sweep_archive(void) {
     const char *src = "mutate_arch.cce";
     const char *mut = "mutate_arch_m.cce";
@@ -455,6 +500,44 @@ int main(void) {
             free(bytes);
         }
         remove("mutate_fix.safetensors");
+
+        /* CNET_ATTRIB sidecar: a NEW parser surface (attribution ledger). */
+        {
+            AttribLedger *fix = (AttribLedger *)malloc(sizeof *fix);
+            struct AttributionEvent ev;
+            CHECK(fix != NULL, "attrib fixture allocates");
+            if (fix != NULL) {
+                attrib_ledger_init(fix);
+                memset(&ev, 0, sizeof ev);
+                ev.proposer = "mut_oracle";
+                ev.goal_port.family = PORT_BINARY_MSB;
+                ev.goal_port.field_width = 4;
+                ev.goal_port.field_count = 1;
+                (void)port_set_tag(&ev.goal_port, "nibble_next");
+                ev.input_port = ev.goal_port;
+                ev.reason = "certify_failed";
+                ev.recipe_fp = 4242u;
+                ev.cert_verdict = -1;
+                ev.min_margin = 0.5;
+                (void)attrib_record(fix, &ev);
+                ev.reason = "";
+                ev.admitted = 1;
+                ev.cert_verdict = (int)CERT_PROVEN;
+                ev.domain_cardinality = 16;
+                (void)attrib_record(fix, &ev);
+                CHECK(attrib_ledger_save(fix, "mutate_fix.attrib") == 0,
+                      "pristine attrib sidecar writes");
+                free(fix);
+            }
+            bytes = slurp("mutate_fix.attrib", &len);
+            CHECK(bytes != NULL && len > 0, "attrib fixture readable");
+            if (bytes != NULL) {
+                sweep_attrib("attrib sidecar: no crash, refusals leave state "
+                             "untouched", bytes, len, "mutate_fix_m.attrib");
+                free(bytes);
+            }
+            remove("mutate_fix.attrib");
+        }
 
         /* sharded-checkpoint index (model.safetensors.index.json): the json
            parser + shard resolution is a NEW loader surface, so it gets the

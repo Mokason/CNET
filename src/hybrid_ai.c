@@ -316,6 +316,12 @@ int hybrid_coverage_admits(const HybridAi *h, Port in_port, Port out_port,
     c = coverage_find((HybridAi *)h, port_key(in_port), port_key(out_port),
                       in_port, out_port);
     if (!c || !c->rows || c->in_dim != in_len) return 1; /* default-allow */
+    /* A unit that EARNED generalization -- trained on a subset, then predicted
+       every withheld row correctly -- covers its whole port domain, not just the
+       rows it saw. Membership stays the default; this flag is only ever set by
+       hybrid_structure_mine after that proof, so a structureless map (which
+       cannot predict withheld rows) never reaches here. */
+    if (c->generalizes) return 1;
     for (i = 0; i < c->n_rows; i++) {
         if (memcmp(c->rows + i * c->in_dim, in,
                    c->in_dim * sizeof(double)) == 0)
@@ -609,6 +615,12 @@ typedef struct {
     size_t n_rows;
     size_t in_dim;
 } StagedCoverage;
+
+/* Withheld-row budget for the generalization proof. Every 4th row is withheld,
+   so this must exceed n_rows/4 or the proof silently tests fewer rows than it
+   withheld -- which would weaken the bar without saying so. 256 covers a
+   1024-row reservoir (CNET_RESIDUAL_RESERVOIR_K caps at 1024). */
+#define HYBRID_GEN_HOLD_MAX 256
 
 static int coverage_family_valid(int family) {
     return family >= (int)PORT_RAW && family <= (int)PORT_CONCEPT;
@@ -1240,6 +1252,13 @@ int hybrid_structure_mine(HybridAi *h, PrimitiveRegistry *reg, size_t min_hits,
     ExternalTeacher teacher;
     CnetOracleIdentity id;
     double *inputs = NULL, *targets = NULL;
+    /* Certified-generalization scratch (opt-in; see the proof block below). */
+    double *gen_all_in = NULL, *gen_all_tg = NULL;
+    double *gen_all_in_sel = NULL, *gen_all_tg_sel = NULL;
+    size_t gen_hold[HYBRID_GEN_HOLD_MAX], gen_hold_n = 0, gen_train_rows = 0;
+    int gen_proved = 0;
+    const char *gen_env = getenv("CNET_COVERAGE_GENERALIZE");
+    int gen_want = (gen_env && gen_env[0] == '1' && gen_env[1] == '\0');
     char name[64];
     int rc;
     size_t n_rows = 1;
@@ -1456,9 +1475,21 @@ int hybrid_structure_mine(HybridAi *h, PrimitiveRegistry *reg, size_t min_hits,
                     tr->input_port.field_width);
         snprintf(name, sizeof name, "hyb_struct_%zu", h->structure_mines);
         {
-            size_t ih = tr->in_dim > 16 ? 64 : 8;
-            size_t mh = tr->in_dim > 16 ? 256 : 64;
-            size_t ep = tr->in_dim > 16 ? 40000 : 12000;
+            /* Capacity must track how HARD the fit is, not how wide the input
+               happens to be. Keying off in_dim alone punishes compact encodings:
+               a positional-binary input has a small in_dim precisely because it
+               is efficient, so at 16x16->16 it scored in_dim=8 and got the
+               smallest network (8 hidden, 12k epochs) to fit 192 rows into a
+               16-way output. external_teacher_mine_admit then refused to certify
+               the under-fitted student and hybrid_structure_mine propagated its
+               rc=1 -- which looked from outside like "the miner never engaged",
+               though the trace was healthy at hits=384. Row count and output
+               cardinality are the real difficulty signals. */
+            size_t need = n_rows > tr->out_dim ? n_rows : tr->out_dim;
+            int big = (tr->in_dim > 16 || need > 32);
+            size_t ih = big ? 64 : 8;
+            size_t mh = big ? 256 : 64;
+            size_t ep = big ? 40000 : 12000;
             /* registry_add stores the name POINTER, not a copy
                (src/router/registry.c). Passing this function's stack buffer
                left every mined entry with a dangling name: undefined behaviour
@@ -1476,9 +1507,85 @@ int hybrid_structure_mine(HybridAi *h, PrimitiveRegistry *reg, size_t min_hits,
                 return -3;
             }
             memcpy(stable, name, nlen);
-            rc = external_teacher_mine_admit(
-                &teacher, reg, inputs, targets, n_rows, ih, mh, ep, 99u, stable,
-                student_out);
+            /* Certified generalization (opt-in: CNET_COVERAGE_GENERALIZE=1).
+               Withhold every 4th row from TRAINING, then require the student to
+               predict every withheld row. Passing proves the rule holds beyond
+               the rows it saw, so the unit may claim its whole port domain.
+               Failing keeps the historical membership gate. Coverage is recorded
+               over the TRAINING rows only -- never the withheld ones -- so a unit
+               that fails the proof still cannot answer from its weights on rows it
+               never trained on: that is the S3/E2 confident-wrong hole this whole
+               mechanism exists to close. */
+            gen_train_rows = n_rows;
+            if (gen_want && n_rows >= 8) {
+                gen_all_in = (double *)malloc(n_rows * tr->in_dim * sizeof(double));
+                gen_all_tg = (double *)malloc(n_rows * tr->out_dim * sizeof(double));
+                if (gen_all_in && gen_all_tg) {
+                    size_t r, w = 0;
+                    memcpy(gen_all_in, inputs, n_rows * tr->in_dim * sizeof(double));
+                    memcpy(gen_all_tg, targets, n_rows * tr->out_dim * sizeof(double));
+                    gen_hold_n = 0;
+                    for (r = 0; r < n_rows; r++) {
+                        if ((r & 3u) == 3u) {
+                            if (gen_hold_n < HYBRID_GEN_HOLD_MAX)
+                                gen_hold[gen_hold_n++] = r;
+                            continue;
+                        }
+                        if (w != r) {
+                            memcpy(inputs + w * tr->in_dim, gen_all_in + r * tr->in_dim,
+                                   tr->in_dim * sizeof(double));
+                            memcpy(targets + w * tr->out_dim, gen_all_tg + r * tr->out_dim,
+                                   tr->out_dim * sizeof(double));
+                        }
+                        w++;
+                    }
+                    gen_train_rows = w;
+                    /* Contiguous copies of just the withheld rows: mine_admit
+                       takes a row block, not an index list. */
+                    gen_all_in_sel = (double *)malloc(gen_hold_n * tr->in_dim *
+                                                      sizeof(double));
+                    gen_all_tg_sel = (double *)malloc(gen_hold_n * tr->out_dim *
+                                                      sizeof(double));
+                    if (gen_all_in_sel && gen_all_tg_sel) {
+                        size_t q;
+                        for (q = 0; q < gen_hold_n; q++) {
+                            memcpy(gen_all_in_sel + q * tr->in_dim,
+                                   gen_all_in + gen_hold[q] * tr->in_dim,
+                                   tr->in_dim * sizeof(double));
+                            memcpy(gen_all_tg_sel + q * tr->out_dim,
+                                   gen_all_tg + gen_hold[q] * tr->out_dim,
+                                   tr->out_dim * sizeof(double));
+                        }
+                    } else {
+                        free(gen_all_in_sel); free(gen_all_tg_sel);
+                        gen_all_in_sel = NULL; gen_all_tg_sel = NULL;
+                        gen_hold_n = 0;
+                    }
+                } else {
+                    free(gen_all_in); free(gen_all_tg);
+                    gen_all_in = NULL; gen_all_tg = NULL; gen_hold_n = 0;
+                }
+            }
+            /* Hand the withheld rows to seed selection instead of proving
+               afterwards. Post-hoc, the first CERTIFYING seed was accepted and
+               then tested -- which selects for memorisation, since fitting the
+               training rows exactly is exactly what a memoriser does. Passing
+               them in lets mine_admit keep looking for a seed that reproduces
+               them too, and report which kind it settled for. */
+            rc = external_teacher_mine_admit_ex(
+                &teacher, reg, inputs, targets, gen_train_rows, ih, mh, ep, 99u,
+                stable, student_out,
+                gen_hold_n > 0 ? gen_all_in_sel : NULL,
+                gen_hold_n > 0 ? gen_all_tg_sel : NULL,
+                gen_hold_n, &gen_proved);
+            if (getenv("CNET_MINE_DEBUG") && gen_hold_n > 0)
+                fprintf(stderr,
+                        "hybrid: seed selection over %zu withheld rows -> %s\n",
+                        gen_hold_n, gen_proved ? "DOMAIN" : "membership");
+            free(gen_all_in); free(gen_all_tg);
+            free(gen_all_in_sel); free(gen_all_tg_sel);
+            gen_all_in = NULL; gen_all_tg = NULL;
+            gen_all_in_sel = NULL; gen_all_tg_sel = NULL;
             if (rc != 0) {
                 free(stable); /* nothing borrowed it */
                 h->structure_promote_rejects++;
@@ -1522,8 +1629,14 @@ int hybrid_structure_mine(HybridAi *h, PrimitiveRegistry *reg, size_t min_hits,
         /* The unit is certified over exactly these rows — remember them so
            the serve path can refuse to claim certified authority outside
            the domain the contract actually covers. */
+        /* gen_train_rows, not n_rows: coverage names the rows the unit actually
+           trained on. When the generalization proof failed, the withheld rows are
+           deliberately left OUTSIDE coverage so the unit cannot answer them from
+           weights it never fitted to them. */
+        if (gen_train_rows == 0) gen_train_rows = n_rows;
         if (hybrid_coverage_record(h, tr->input_port, tr->goal_port, name, inputs,
-                                   targets, n_rows, tr->in_dim, tr->out_dim) != 0) {
+                                   targets, gen_train_rows, tr->in_dim,
+                                   tr->out_dim) != 0) {
             /* Slot was reserved above, so this is allocation failure. The
                unit is already admitted and would serve ungated; say so
                loudly rather than let it look like a clean mine. */
@@ -1534,6 +1647,15 @@ int hybrid_structure_mine(HybridAi *h, PrimitiveRegistry *reg, size_t min_hits,
             free(inputs);
             free(targets);
             return -5;
+        }
+        /* Stamp the earned flag. Only reachable when the proof passed on EVERY
+           withheld row, so a structureless map -- which cannot predict them --
+           never gets it and stays membership-gated. */
+        if (gen_proved) {
+            HybridCoverage *cv = coverage_find(h, port_key(tr->input_port),
+                                               port_key(tr->goal_port),
+                                               tr->input_port, tr->goal_port);
+            if (cv) { cv->generalizes = 1; cv->held_out = gen_hold_n; }
         }
         free(inputs);
         free(targets);
