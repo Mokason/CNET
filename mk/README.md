@@ -32,12 +32,13 @@ Current fragments:
 | Tier | Command | Role |
 |---|---|---|
 | T0 | `make verify-fast` | edit loop |
-| T1 | `make verify` (`make test`) | before push — default truth |
-| T2 | `make verify-t2` | PEFT/fault soak (nightly pulls this) |
-| long | `make verify-long` | supra QAT + compat |
+| T1 | `make verify` (`make test`) | before push — integrity + core + contract (~30 deps) |
+| T2 | `make verify-t2` | specialty CCE re-links + PEFT soak |
+| long | `make verify-long` | T1+T2 + supra QAT + compat |
 | nightly | `make verify-nightly` | T1+T2+openlab/grade |
 
 New pins default to **T2** unless they caught a silent main-path lie.
+Specialty CCE tests each re-link ~50 translation units — keep them off T1.
 
 ## The rest of the split is staged, not done
 

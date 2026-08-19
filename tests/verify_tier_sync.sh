@@ -102,16 +102,16 @@ n2=0; for _ in $T2; do n2=$((n2 + 1)); done
 ncore=0; for _ in $CORE_LOGS; do ncore=$((ncore + 1)); done
 
 # Floors/ceilings — membership size bands, not exact snapshots.
-if [ "$n1" -lt 30 ] || [ "$n1" -gt 55 ]; then
-    echo "VERIFY_TIER_SYNC_FAIL T1 count $n1 outside [30,55]"
+if [ "$n1" -lt 20 ] || [ "$n1" -gt 40 ]; then
+    echo "VERIFY_TIER_SYNC_FAIL T1 count $n1 outside [20,40]"
     fail=$((fail + 1))
 fi
-if [ "$n2" -lt 3 ] || [ "$n2" -gt 12 ]; then
-    echo "VERIFY_TIER_SYNC_FAIL T2 count $n2 outside [3,12]"
+if [ "$n2" -lt 10 ] || [ "$n2" -gt 30 ]; then
+    echo "VERIFY_TIER_SYNC_FAIL T2 count $n2 outside [10,30]"
     fail=$((fail + 1))
 fi
-if [ "$ncore" -lt 30 ] || [ "$ncore" -gt 45 ]; then
-    echo "VERIFY_TIER_SYNC_FAIL CORE log count $ncore outside [30,45]"
+if [ "$ncore" -lt 20 ] || [ "$ncore" -gt 35 ]; then
+    echo "VERIFY_TIER_SYNC_FAIL CORE log count $ncore outside [20,35]"
     fail=$((fail + 1))
 fi
 

@@ -40,6 +40,7 @@ newer_than_sentinel() {
 }
 
 # Each row is "<logfile>|||<fixed success substring>".
+# CORE = T1 only. Specialty CCE + PEFT live in T2 (see mk/verify_tiers.mk).
 CORE='
 cce_safetensors_test.log|||ALL SAFETENSORS TESTS PASSED
 cce_autograd_test.log|||failed -> OK
@@ -57,23 +58,12 @@ residual_http_nocurl.log|||RESIDUAL_HTTP_NOCURL_PASS
 cce_view.log|||failed -> OK
 forest_view.log|||failed -> OK
 cce_detect.log|||failed -> OK
-cce_ssm.log|||failed -> OK
-cce_st_llama.log|||failed -> OK
-cce_specgraph.log|||failed -> OK
-cce_wstore.log|||failed -> OK
-cce_tiers.log|||failed -> OK
-cce_similar.log|||failed -> OK
-merge_family.log|||failed -> OK
-hybrid_catalog.log|||failed -> OK
-transformer_qat.log|||failed -> OK
 contract_secure.log|||All contract security tests passed.
 contract_unit.log|||All unit-file tests passed.
 heal_mismatch.log|||HEAL_MISMATCH_PASS
 mutate.log|||All mutation-sweep gates passed.
 acquire.log|||ALL ACQUIRE TESTS PASSED
 attribution.log|||ALL ATTRIBUTION TESTS PASSED
-qat_block.log|||ALL QAT BLOCK TESTS PASSED
-mojo_bridge.log|||ALL MOJO BRIDGE TESTS PASSED
 base.log|||ALL BASE TESTS PASSED
 flagship.log|||ALL FLAGSHIP TESTS PASSED
 decimal_demo.log|||All decimal acts passed.
@@ -88,8 +78,19 @@ transformer_qat_joint.log|||, 0 failed
 wordlm_holdout.log|||, 0 failed
 '
 
-# T2 soak (verify-t2 / nightly). Not scored on default `make verify`.
+# T2 soak (verify-t2 / nightly / verify-long). Not scored on default verify.
 T2='
+cce_ssm.log|||failed -> OK
+cce_st_llama.log|||failed -> OK
+cce_specgraph.log|||failed -> OK
+cce_wstore.log|||failed -> OK
+cce_tiers.log|||failed -> OK
+cce_similar.log|||failed -> OK
+merge_family.log|||failed -> OK
+hybrid_catalog.log|||failed -> OK
+transformer_qat.log|||failed -> OK
+qat_block.log|||ALL QAT BLOCK TESTS PASSED
+mojo_bridge.log|||ALL MOJO BRIDGE TESTS PASSED
 metric_honesty.log|||METRIC_HONESTY_PASS
 moe_ckpt_test.log|||MOE_CKPT_PASS
 '
@@ -104,7 +105,8 @@ circuit_demo.log|||All circuit demo parts passed.
 
 SPEC="$CORE"
 if [ "${1:-}" = "long" ]; then
-    SPEC="$CORE$LONG$COMPAT"
+    # long = T1 CORE + T2 specialty + LONG supra + COMPAT
+    SPEC="$CORE$T2$LONG$COMPAT"
 elif [ "${1:-}" = "t2" ]; then
     SPEC="$T2"
 elif [ "${1:-}" = "compat" ]; then
