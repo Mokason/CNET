@@ -1,0 +1,24 @@
+=== 7-segment confident-wrong: aliasing (input floor) vs overconfidence (catchable)? ===
+run_seed=2 (train leaf k uses 777+k+1000*run_seed; test srand=20260618+run_seed)
+
+font min-Hamming-to-other-digit (1 => one segment apart => alias-prone):
+  0:1 1:1 2:2 3:1 4:2 5:1 6:1 7:1 8:1 9:1 
+
+training 5 independent 7-seg leaves...
+
+floor=0.15, 600 samples/digit. Leaf 0 is the 'deployed' leaf (matches habitat).
+
+noise | leaf0_acc_err | tmpl_floor_err | leaf0_cov | ens_agree_wrong | disagree_gate: resid_err  cov
+0.15  |    0.1202     |    0.0000     |   0.909   |      1.000      |        0.1119   0.901
+0.30  |    0.1086     |    0.0000     |   0.872   |      0.986      |        0.0961   0.857
+0.45  |    0.1667     |    0.0823     |   0.737   |      0.954      |        0.1409   0.698
+0.60  |    0.3078     |    0.2788     |   0.684   |      0.954      |        0.2720   0.629
+       top leaf0 accepted-wrong confusions (true->pred): 2->8 (n=210, hamming=2)  7->1 (n=163, hamming=1)  2->3 (n=104, hamming=2)  
+0.75  |    0.4524     |    0.4138     |   0.674   |      0.964      |        0.4245   0.602
+       top leaf0 accepted-wrong confusions (true->pred): 2->8 (n=158, hamming=2)  7->1 (n=144, hamming=1)  2->3 (n=112, hamming=2)  
+
+Reading the table:
+ - leaf0_acc_err tracking tmpl_floor_err  => ALIASING (input below floor; uncatchable).
+ - leaf0_acc_err >> tmpl_floor_err        => OVERCONFIDENCE (net wrong on separable input).
+ - high ens_agree_wrong                   => leaves collapse identically => aliasing, gate can't help.
+ - disagree_gate resid_err << leaf0_acc_err => confident-wrong WAS catchable by ensemble.

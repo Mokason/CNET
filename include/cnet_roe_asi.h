@@ -20,7 +20,10 @@ extern "C" {
 #define ROE_NAME_MAX 64
 #define ROE_TEXT_MAX 256
 #define ROE_ANSWER_MAX 4096
-#define ROE_MAX_SKILLS 128
+/* cnetd always-on packs can exceed 128 (soul+ops+english+personal ≈ 140+).
+ * Cap used to silently drop trailing english catalog rows → LOCAL miss on
+ * sealed skills that front_door still hit (fewer always-on). Keep headroom. */
+#define ROE_MAX_SKILLS 256
 #define ROE_MAX_LOOKUP 64
 #define ROE_MAX_TEACH 64
 #define ROE_MAX_LOG 256

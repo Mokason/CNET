@@ -134,7 +134,7 @@
 {"pattern":"comparative superlative","pack":"pack_english_basic","cat":"english","sub":"grammar"}
 {"pattern":"hello goodbye please thanks","pack":"pack_english_basic","cat":"english","sub":"vocab"}
 {"pattern":"english numbers 1 to 10","pack":"pack_english_basic","cat":"english","sub":"vocab"}
-{"pattern":"days of the week","pack":"pack_english_basic","cat":"english","sub":"vocab"}
+{"pattern":"days of the week","pack":"pack_english_basic","cat":"english","sub":"vocab","skill":"en_days_of_week"}
 {"pattern":"basic english colors","pack":"pack_english_basic","cat":"english","sub":"vocab"}
 {"pattern":"family vocabulary","pack":"pack_english_basic","cat":"english","sub":"vocab"}
 {"pattern":"telling time english","pack":"pack_english_basic","cat":"english","sub":"vocab"}

@@ -107,6 +107,7 @@ typedef struct {
     CnetDomainRouter domain;
     CnetQueryAliasTable aliases;
     CnetDialogCtx dialog; /* process-local warm session (single-user cnetd) */
+    CnetRlmSession rlm_sess; /* multi-turn CERT hop memory (never residual CERT) */
     int ready;
 } CdState;
 
@@ -262,6 +263,7 @@ static int cd_init(CdState *S, const char *root) {
     cnet_query_alias_init(&S->aliases);
     (void)cnet_query_alias_load_file(&S->aliases, "config/query_aliases.tsv");
     cnet_dialog_ctx_init(&S->dialog);
+    cnet_rlm_session_init(&S->rlm_sess);
     {
         const char *min = getenv("CNET_MINIMAL_ROOT");
         char p2[CD_PATH];
@@ -571,7 +573,10 @@ static int cd_ask(CdState *S, const char *q, CdReply *out) {
     {
         CnetServeBank *sb = cnet_serve_global();
         CnetServeResult sr;
-        if (sb && cnet_serve_result(sb, q, &sr) == 0 && sr.proved) {
+        /* Multi-hop chains belong to RLM. Prefix-CERT of the first brick
+           would drop the rest of the turn. */
+        if (sb && !cnet_rlm_is_chain_turn(q) &&
+            cnet_serve_result(sb, q, &sr) == 0 && sr.proved) {
             snprintf(out->answer, sizeof out->answer, "%.2047s", sr.spoken);
             snprintf(out->utterance, sizeof out->utterance, "%.767s", sr.spoken);
             snprintf(out->source, sizeof out->source, "LOCAL");
@@ -652,7 +657,9 @@ static int cd_ask(CdState *S, const char *q, CdReply *out) {
 
         cnet_rlm_policy_default(&rpol);
         memset(&rr, 0, sizeof rr);
-        if (cnet_rlm_ask(q, &rpol, &rr) == 0 && rr.final.bound) {
+        {
+            int rlm_rc = cnet_rlm_ask_session(q, &rpol, &S->rlm_sess, &rr);
+            if (rlm_rc == 0 && rr.final.bound) {
             const CnetHemiResult *hr = &rr.final;
             const char *spoken;
             int arith = 0;
@@ -716,6 +723,162 @@ static int cd_ask(CdState *S, const char *q, CdReply *out) {
             return 0;
             }
             /* else fall through */
+            } else if (rlm_rc >= 0 && cnet_rlm_is_chain_turn(q) && rr.n_steps > 0) {
+                /* Multi-hop was hosted by RLM. Do not pack-soft-seal.
+                   Self-improve: harvest typed miss → sync evolve → one retry
+                   so known curriculum gaps can mint and succeed this turn. */
+                const CnetHemiResult *hr = &rr.final;
+                const char *why =
+                    hr->refusal[0] ? hr->refusal
+                                   : (rr.summary[0] ? rr.summary : "rlm_budget");
+                const char *bdir = getenv("CNET_CORE_BUS_BRICKS_DIR");
+                int harvested = 0;
+                int retried = 0;
+
+                if (S->miss_log[0])
+                    harvested = cnet_live_miss_harvest_turn(S->miss_log, q);
+                /* Queue goals for failed hop skills with numeric inputs. */
+                if (bdir && bdir[0]) {
+                    unsigned i;
+                    for (i = 0; i < (unsigned)rr.n_steps && i < 4u; i++) {
+                        const CnetHemiResult *st = &rr.steps[i].step;
+                        if (st->claimed_cert) continue;
+                        if (st->skill[0])
+                            (void)cnet_live_miss_queue_goal(bdir, st->skill, 0);
+                    }
+                    (void)cnet_live_miss_harvest_turn(
+                        S->miss_log[0] ? S->miss_log : "/dev/null", q);
+                    /* parse first hop n for goal */
+                    {
+                        char ttag[64];
+                        unsigned tin = 0;
+                        const char *p = q;
+                        /* best-effort: harvest already wrote rows; also goal */
+                        while (*p) {
+                            size_t ti = 0;
+                            unsigned v = 0;
+                            int saw = 0;
+                            while (*p == ' ' || *p == '|' || *p == '\t') p++;
+                            if (!(isalpha((unsigned char)*p) || *p == '_'))
+                                break;
+                            while (*p && *p != ' ' && *p != ':' && *p != '|' &&
+                                   ti + 1 < sizeof ttag)
+                                ttag[ti++] = *p++;
+                            ttag[ti] = 0;
+                            if (*p == ':') p++;
+                            while (*p == ' ') p++;
+                            if (isdigit((unsigned char)*p)) {
+                                while (isdigit((unsigned char)*p)) {
+                                    saw = 1;
+                                    v = v * 10u + (unsigned)(*p - '0');
+                                    if (v > 15) {
+                                        saw = 0;
+                                        break;
+                                    }
+                                    p++;
+                                }
+                            }
+                            if (ttag[0] && saw)
+                                (void)cnet_live_miss_queue_goal(bdir, ttag, v);
+                            while (*p && *p != 't' && *p != 'T' && *p != '|')
+                                p++;
+                            if ((p[0] == 't' || p[0] == 'T') &&
+                                (p[1] == 'h' || p[1] == 'H'))
+                                p += 4;
+                            else if (*p == '|')
+                                p++;
+                            else
+                                break;
+                        }
+                        (void)tin;
+                    }
+                }
+
+                /* Sync evolve so missing factory curriculum can land now.
+                   Force factory only for this child evolve — do not permanently
+                   pollute the daemon env. */
+                setenv("CNET_CORE_AUTO_EVOLVE", "1", 0);
+                {
+                    const char *prev_fac = getenv("CNET_CORE_EVOLVE_FACTORY");
+                    char prev_buf[8];
+                    int had_prev = 0;
+                    if (prev_fac && prev_fac[0]) {
+                        snprintf(prev_buf, sizeof prev_buf, "%.7s", prev_fac);
+                        had_prev = 1;
+                    }
+                    setenv("CNET_CORE_EVOLVE_FACTORY", "1", 1);
+                    (void)core_evolve_run(S, 1);
+                    if (had_prev)
+                        setenv("CNET_CORE_EVOLVE_FACTORY", prev_buf, 1);
+                    else
+                        unsetenv("CNET_CORE_EVOLVE_FACTORY");
+                }
+                core_serve_try_reload();
+
+                /* One retry through RLM after evolve/reload. */
+                {
+                    CnetRlmResult rr2;
+                    memset(&rr2, 0, sizeof rr2);
+                    if (cnet_rlm_ask_session(q, &rpol, &S->rlm_sess, &rr2) == 0 &&
+                        rr2.final.bound &&
+                        rr2.final.plane == CNET_CORE_PLANE_CERT &&
+                        rr2.final.claimed_cert) {
+                        const CnetHemiResult *h2 = &rr2.final;
+                        const char *sp =
+                            h2->spoken[0] ? h2->spoken
+                                          : (h2->value[0] ? h2->value : why);
+                        snprintf(out->answer, sizeof out->answer, "%.2047s", sp);
+                        snprintf(out->utterance, sizeof out->utterance, "%.767s",
+                                 sp);
+                        snprintf(out->source, sizeof out->source, "LOCAL");
+                        snprintf(out->skill, sizeof out->skill, "%.63s",
+                                 h2->skill[0] ? h2->skill : "rlm_retry");
+                        cd_scopy(out->prepared, sizeof out->prepared, q);
+                        out->verified = 1;
+                        out->miss = 0;
+                        out->may_voice = h2->may_voice ? 1 : 0;
+                        out->tokens = 0;
+                        retried = 1;
+                        if (S->miss_log[0]) {
+                            FILE *mf = fopen(S->miss_log, "a");
+                            if (mf) {
+                                fprintf(mf,
+                                        "{\"via\":\"cnetd\",\"reason\":"
+                                        "\"self_improve_retry_ok\","
+                                        "\"harvested\":%d,\"claimed_cert\":1,"
+                                        "\"auto_cert\":false}\n",
+                                        harvested);
+                                fclose(mf);
+                            }
+                        }
+                        return 0;
+                    }
+                }
+
+                snprintf(out->answer, sizeof out->answer, "%.2047s", why);
+                snprintf(out->utterance, sizeof out->utterance, "%.767s", why);
+                snprintf(out->source, sizeof out->source, "CNET");
+                snprintf(out->skill, sizeof out->skill, "%.63s",
+                         hr->skill[0] ? hr->skill : "rlm_chain_abstain");
+                cd_scopy(out->prepared, sizeof out->prepared, q);
+                out->verified = 0;
+                out->miss = 1;
+                out->may_voice = 0;
+                out->tokens = 0;
+                if (S->miss_log[0]) {
+                    FILE *mf = fopen(S->miss_log, "a");
+                    if (mf) {
+                        fprintf(mf,
+                                "{\"via\":\"cnetd\",\"reason\":"
+                                "\"self_improve_pending\",\"harvested\":%d,"
+                                "\"retried\":%d,\"claimed_cert\":0,"
+                                "\"auto_cert\":false,\"learnable\":true}\n",
+                                harvested, retried);
+                        fclose(mf);
+                    }
+                }
+                return 0;
+            }
         }
         /* LIVE WAIST: typed CORE miss capture + evolve + retry CERT once.
            Freeform queries fall through to pack ROE (alias/dialog/slot/CERT).

@@ -122,14 +122,23 @@ int main(int argc, char **argv) {
         printf("evolve: complete_domains scanned=%d new=%d\n", nd, new_count);
     }
 
-    /* 2) Factory curriculum from direction */
+    /* 2) Factory curriculum from direction.
+     * CNET_CORE_EVOLVE_FACTORY=1 forces factory even when conf has
+     * allow_factory=0 (ops / empty-bank recovery).
+     * CNET_CORE_AUTO_EVOLVE=1 also mints *missing* curriculum tags so the
+     * live self-improve path does not hard-stop on known factory domains.
+     * Conf still owns the curriculum list; residual never auto-CERTs. */
     {
-        int want_fac = dirn.allow_factory &&
-                       ((fac_env && fac_env[0] == '1') ||
-                        (dirn.factory_if_empty && n0 == 0) ||
-                        (fac_env && fac_env[0] == '1'));
-        /* also build missing curriculum tags if allow_factory */
-        if (dirn.allow_factory && dirn.n_factory > 0) {
+        const char *auto_ev = getenv("CNET_CORE_AUTO_EVOLVE");
+        int force_fac = (fac_env && fac_env[0] == '1');
+        int auto_mint = (auto_ev && auto_ev[0] == '1');
+        int allow_fac = force_fac || dirn.allow_factory || auto_mint;
+        int want_fac =
+            force_fac ||
+            (dirn.allow_factory && dirn.factory_if_empty && n0 == 0) ||
+            (auto_mint && dirn.n_factory > 0);
+        /* also build missing curriculum tags if factory allowed/forced/auto */
+        if (allow_fac && dirn.n_factory > 0) {
             CnetPath2Spec todo[CNET_EVDIR_MAX_FACTORY];
             int nt = 0, i;
             for (i = 0; i < dirn.n_factory; ++i) {
@@ -141,8 +150,10 @@ int main(int argc, char **argv) {
                 CnetPath2Bench fb;
                 if (cnet_path2_factory_run(&bus, bonsai, dir, todo, nt, &fb) ==
                     0) {
-                    printf("evolve: factory curriculum built=%d ms=%.3f\n",
-                           fb.n_built, fb.ms_total);
+                    printf("evolve: factory curriculum built=%d ms=%.3f%s%s\n",
+                           fb.n_built, fb.ms_total,
+                           force_fac ? " force=1" : "",
+                           auto_mint && !force_fac ? " auto_improve=1" : "");
                     did = 1;
                     new_count += fb.n_built;
                 } else if (want_fac) {

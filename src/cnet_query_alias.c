@@ -9,6 +9,12 @@
 
 /* ---- static always-on aliases (soul + high-traffic) -------------------- */
 static const CnetQueryAlias k_static_aliases[] = {
+    /* Short greets: TSV aliases require len>=4; static + word-boundary is OK. */
+    {"hi", "who are you", 1},
+    {"hey", "who are you", 1},
+    {"hello", "who are you", 1},
+    {"yo", "who are you", 1},
+    {"sup", "who are you", 1},
     {"who am i talking to", "who are you", 1},
     {"who am i speaking with", "who are you", 1},
     {"who is this", "who are you", 1},
@@ -22,6 +28,11 @@ static const CnetQueryAlias k_static_aliases[] = {
     {"what are you", "who are you", 1},
     {"are you marble", "who are you", 1},
     {"are you roe", "who are you", 1},
+    {"how exactly are you interactiong with roe-asi", "how do you answer without teacher", 1},
+    {"how exactly are you interacting with roe-asi", "how do you answer without teacher", 1},
+    {"how are you interacting with roe", "how do you answer without teacher", 1},
+    {"days of past week", "days of the week", 1},
+    {"days of the past week", "days of the week", 1},
     {"never certify yourself", "never self-cert", 1},
     {"do not self certify", "never self-cert", 1},
     {"show me marble status", "cnet-marble status", 1},
@@ -253,7 +264,10 @@ int cnet_query_alias_apply(const CnetQueryAliasTable *T, const char *in,
         size_t plen;
         if (!a->active || !a->alias[0] || !a->canonical[0]) continue;
         plen = strlen(a->alias);
-        if ((int)plen < 4) continue;
+        /* Policy: TSV tiny aliases are rejected at load. Static greets (hi/hey)
+           are intentionally short — allow them only as whole-query matches so
+           "this" never becomes "who are you". */
+        if ((int)plen < 4 && plen != hlen) continue;
         if (plen > hlen) continue;
         for (pos = 0; pos + plen <= hlen; pos++) {
             if (memcmp(hay + pos, a->alias, plen) != 0) continue;

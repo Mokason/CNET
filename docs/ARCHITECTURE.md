@@ -759,13 +759,27 @@ fail-safe**:
   the gate *accepts as confident* are wrong (max accepted error ≈0.55). On 7-seg
   it isn't abstaining — it's passing confident-wrong through at near coin-flip
   rates. Every dominant confusion is a Hamming-1 font pair (8→6, 9→5, 6→5).
-- **That confident-wrong is largely uncatchable** (`make sevenseg`). The
-  discriminator settles the fork: the trained net's accepted-error sits *at or
-  below* the model-free nearest-template floor (no overconfidence headroom), and
-  5 independently trained leaves agree on the *same wrong digit* ~85–95% of the
-  time. An ensemble-disagreement gate removes only ~12–19% of it. It is the
-  information-loss wall at the leaf input — 7 features alias digit pairs under
-  noise — not a model defect a gate can fix.
+- **That confident-wrong is largely uncatchable** (`make sevenseg` →
+  `./bin/sevenseg_floor_study [run_seed]`; multi-seed pack
+  `result/sevenseg_multiseed_20260819T071710Z/` with `SUMMARY.txt`, git
+  `e657fcd`, **n=5** outer seeds 0–4; single-run sibling
+  `result/sevenseg_floor_study_20260819T071254Z.log`). The load-bearing column is
+  **`ens_agree_wrong`**: across seeds and the noise grid it stays
+  **0.946–1.000** (means **0.966–0.999** by noise level) — five independent
+  leaves agree on the *same wrong digit* essentially always. Older ~85–95%
+  prose understated this. The trained net's accepted-error sits at or near
+  the model-free template floor (aliasing wall). The unanimous-argmax
+  disagreement gate is **secondary and not a stable ceiling**: mean relative
+  cut by noise is **~10.5 / 12.1 / 15.4 / 11.1 / 6.1%** (seed min–max wide,
+  e.g. noise 0.15 cut **0–26%**). Shape is **non-monotone with a mid-band
+  peak** — low noise: little residual error and max leaf agreement so nothing
+  for disagreement to flag; high noise: leaves fail together so the gate has
+  no signal; the old ~12–19% figure sat in the gate's best region and looked
+  "typical." Separately: **gate yield is seed-unstable at low noise** (0.15
+  cut spans the full observed range across seeds) — not a quantity you can
+  put a tight bound on from init. It is the information-loss wall at the leaf
+  input — 7 features alias digit pairs under noise — not a model defect a
+  gate can fix.
 - The other three leaves are well-behaved (4×4 block is the cleanest, max ≈0.12);
   the mix-pair matrix localizes the damage to 7seg-involving pairs rather than
   hiding it in an aggregate.

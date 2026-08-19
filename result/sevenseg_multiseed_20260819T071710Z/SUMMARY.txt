@@ -1,0 +1,15 @@
+sevenseg multi-seed n=5 dir=sevenseg_multiseed_20260819T071710Z
+noise | ens_agree mean [min,max] | cut% mean [min,max] | leaf_err mean | gate_err mean
+0.15 | 0.999 [0.997,1.000] | 10.5 [0.0,26.1] | 0.1195 | 0.1054
+0.30 | 0.991 [0.981,0.999] | 12.1 [0.8,17.9] | 0.1210 | 0.1057
+0.45 | 0.969 [0.954,0.993] | 15.4 [9.0,20.8] | 0.1721 | 0.1455
+0.60 | 0.966 [0.954,0.988] | 11.1 [8.8,13.2] | 0.3148 | 0.2798
+0.75 | 0.968 [0.946,0.988] | 6.1 [3.3,9.0] | 0.4541 | 0.4261
+mean_cut_sequence=[10.5, 12.1, 15.4, 11.1, 6.1]
+strict_mono_nonincreasing=False endpoints_fall=True
+ens_agree_all_min=0.946
+ens_agree_all_max=1.000
+git=e657fcd235b9b7f8bd186e190f9e3567b995bcb8
+utc=20260819T071710Z
+cmd=for s in 0..4; ./bin/sevenseg_floor_study $s
+host=marble-system

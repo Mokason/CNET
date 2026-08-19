@@ -100,8 +100,18 @@ static void train_leaf(BinaryTransformNetwork *net, unsigned seed) {
     btn_train_dynamic(net, &in[0][0], &targ[0][0], N, 300, 12, 0.01, 0.0008);
 }
 
-int main(void) {
+int main(int argc, char **argv) {
+    unsigned run_seed = 0;
+    if (argc > 1 && argv[1] && argv[1][0])
+        run_seed = (unsigned)strtoul(argv[1], NULL, 10);
+    else {
+        const char *e = getenv("SEVENSEG_RUN_SEED");
+        if (e && e[0]) run_seed = (unsigned)strtoul(e, NULL, 10);
+    }
+
     printf("=== 7-segment confident-wrong: aliasing (input floor) vs overconfidence (catchable)? ===\n");
+    printf("run_seed=%u (train leaf k uses 777+k+1000*run_seed; test srand=20260618+run_seed)\n",
+           run_seed);
 
     /* structural alias prediction: min Hamming distance to any other digit */
     printf("\nfont min-Hamming-to-other-digit (1 => one segment apart => alias-prone):\n  ");
@@ -117,7 +127,8 @@ int main(void) {
 
     printf("\ntraining %d independent 7-seg leaves...\n", KLEAVES);
     static BinaryTransformNetwork leaf[KLEAVES];
-    for (int k = 0; k < KLEAVES; k++) train_leaf(&leaf[k], 777u + (unsigned)k);
+    for (int k = 0; k < KLEAVES; k++)
+        train_leaf(&leaf[k], 777u + (unsigned)k + 1000u * run_seed);
 
     const double floor = 0.15;            /* the habitat's recommended margin floor */
     const double noises[] = { 0.15, 0.30, 0.45, 0.60, 0.75 };
@@ -127,7 +138,7 @@ int main(void) {
     printf("\nfloor=%.2f, %d samples/digit. Leaf 0 is the 'deployed' leaf (matches habitat).\n", floor, M);
     printf("\nnoise | leaf0_acc_err | tmpl_floor_err | leaf0_cov | ens_agree_wrong | disagree_gate: resid_err  cov\n");
 
-    srand(20260618u);  /* fixed test stream, independent of training */
+    srand(20260618u + run_seed);  /* test stream independent of training; varies by run_seed */
     for (int ni = 0; ni < n_noise; ni++) {
         double noise = noises[ni];
         long acc = 0, acc_wrong = 0;             /* leaf0 accepted / accepted-wrong */

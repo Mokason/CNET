@@ -438,7 +438,7 @@ MODALITY_VOICE_SRC := src/modality_voice.c
 MODALITY_VISION_SRC := src/modality_vision.c
 JSON_TOOLCALL_SRC := src/json_toolcall.c
 MULTIMODAL_SRC := $(EXT_TEACHER_SRC) $(MODALITY_VOICE_SRC) $(MODALITY_VISION_SRC) $(JSON_TOOLCALL_SRC)
-PERSONAL_AI_SRC := src/personal_ai.c $(OPENLAB_SRC)
+PERSONAL_AI_SRC := src/personal_ai.c $(OPENLAB_SRC) src/cnet_seal_trust.c
 CAPSULE_SRC := src/cnet_capsule.c
 HYBRID_AI_SRC := src/hybrid_ai.c src/cnet_sparse_serve.c
 BRAIN_SIDECAR_SRC := src/cnet_brain_sidecar.c
@@ -930,11 +930,17 @@ cnet_rlm: include/cnet_rlm.h src/cnet_rlm.c \
 		include/cnet_ood_skill.h src/cnet_ood_skill.c \
 		include/cnet_held_model.h src/cnet_held_model.c \
 		include/cnet_lookup.h src/cnet_lookup.c \
+		include/cnet_core_serve.h src/cnet_core_serve.c \
+		include/cnet_ember.h src/cnet_ember.c \
+		include/cnet_ember_ckpt.h src/cnet_ember_ckpt.c \
+		include/cnet_ember_session.h src/cnet_ember_session.c \
+		include/cnet_ember_steer.h src/cnet_ember_steer.c \
 		src/cce/cce_campaign_provenance.c \
 		tests/test_cnet_rlm.c
 	@mkdir -p $(BIN_DIR) logs
 	@! grep -E 'python3|#include <Python|import sys' src/cnet_rlm.c tests/test_cnet_rlm.c
 	@! grep -E 'residual_gguf_oracle|roe_set_net|enable_llm' src/cnet_rlm.c
+	@! grep -E 'cnet_core_evolve|cnet_agi_scenario' src/cnet_rlm.c
 	@pkg-config --exists libcurl
 	$(CC) $(filter-out -DCNET_HAVE_CURL=0,$(CFLAGS)) -Werror -Iinclude \
 		-DCNET_HAVE_CURL=1 $$(pkg-config --cflags libcurl) \
@@ -942,7 +948,10 @@ cnet_rlm: include/cnet_rlm.h src/cnet_rlm.c \
 		src/cnet_rlm.c src/cnet_hemisphere.c src/cnet_brain_mirror.c src/cnet_capsule_loop.c \
 		src/cnet_skill_lane.c src/cnet_c_speak.c src/cce/cce_wordlm.c \
 		src/cnet_utterance.c src/cnet_paragraph.c src/cnet_ood_skill.c \
-		src/cnet_held_model.c src/cnet_lookup.c src/cce/cce_campaign_provenance.c \
+		src/cnet_held_model.c src/cnet_lookup.c src/cnet_core_serve.c \
+		src/cnet_ember.c src/cnet_ember_ckpt.c src/cnet_ember_session.c src/cnet_ember_steer.c \
+		src/cnet_live_miss.c \
+		src/cce/cce_campaign_provenance.c \
 		tests/test_cnet_rlm.c $(LDFLAGS) -ldl $$(pkg-config --libs libcurl)
 	@./$(BIN_DIR)/test_cnet_rlm | tee logs/cnet_rlm.log
 	@grep -q '^CNET_RLM_PASS$$' logs/cnet_rlm.log
@@ -950,6 +959,53 @@ cnet_rlm: include/cnet_rlm.h src/cnet_rlm.c \
 	@grep -q 'wraps_core=1' logs/cnet_rlm.log
 	@grep -q 'open_chat_answer=0' logs/cnet_rlm.log
 	@grep -q 'residual_never_cert=1' logs/cnet_rlm.log
+	@grep -q 'recursive_used=1' logs/cnet_rlm.log
+	@grep -q 'budget_trips=1' logs/cnet_rlm.log
+	@grep -q 'leftover_no_prefix_cert=1' logs/cnet_rlm.log
+	@grep -q 'session_again=1' logs/cnet_rlm.log
+	@grep -q 'brick_first_miss=1' logs/cnet_rlm.log
+
+.PHONY: cnet_ember
+cnet_ember: include/cnet_ember.h src/cnet_ember.c \
+		include/cnet_ember_ckpt.h src/cnet_ember_ckpt.c \
+		include/cnet_ember_session.h src/cnet_ember_session.c \
+		include/cnet_ember_steer.h src/cnet_ember_steer.c \
+		include/cnet_rlm.h src/cnet_rlm.c \
+		include/cnet_hemisphere.h src/cnet_hemisphere.c \
+		include/cnet_brain_mirror.h src/cnet_brain_mirror.c \
+		include/cnet_capsule_loop.h src/cnet_capsule_loop.c \
+		include/cnet_skill_lane.h src/cnet_skill_lane.c \
+		include/cnet_c_speak.h src/cnet_c_speak.c src/cce/cce_wordlm.c \
+		include/cnet_utterance.h src/cnet_utterance.c \
+		include/cnet_paragraph.h src/cnet_paragraph.c \
+		include/cnet_ood_skill.h src/cnet_ood_skill.c \
+		include/cnet_held_model.h src/cnet_held_model.c \
+		include/cnet_lookup.h src/cnet_lookup.c \
+		include/cnet_core_serve.h src/cnet_core_serve.c \
+		src/cce/cce_campaign_provenance.c \
+		tests/test_cnet_ember.c
+	@mkdir -p $(BIN_DIR) logs
+	@! grep -E 'python3|#include <Python' src/cnet_ember*.c tests/test_cnet_ember.c
+	@! grep -E 'claimed_cert\s*=\s*1' src/cnet_ember.c src/cnet_ember_session.c
+	@pkg-config --exists libcurl
+	$(CC) $(filter-out -DCNET_HAVE_CURL=0,$(CFLAGS)) -Werror -Iinclude \
+		-DCNET_HAVE_CURL=1 $$(pkg-config --cflags libcurl) \
+		-o $(BIN_DIR)/test_cnet_ember \
+		src/cnet_ember.c src/cnet_ember_ckpt.c src/cnet_ember_session.c src/cnet_ember_steer.c \
+		src/cnet_rlm.c src/cnet_hemisphere.c src/cnet_brain_mirror.c src/cnet_capsule_loop.c \
+		src/cnet_skill_lane.c src/cnet_c_speak.c src/cce/cce_wordlm.c \
+		src/cnet_utterance.c src/cnet_paragraph.c src/cnet_ood_skill.c \
+		src/cnet_held_model.c src/cnet_lookup.c src/cnet_core_serve.c \
+		src/cnet_live_miss.c \
+		src/cce/cce_campaign_provenance.c \
+		tests/test_cnet_ember.c $(LDFLAGS) -ldl $$(pkg-config --libs libcurl)
+	@./$(BIN_DIR)/test_cnet_ember | tee logs/cnet_ember.log
+	@grep -q '^CNET_EMBER_PASS$$' logs/cnet_ember.log
+	@grep -q 'residual_never_cert=1' logs/cnet_ember.log
+	@grep -q 'session_sync=1' logs/cnet_ember.log
+	@grep -q 'compact=1' logs/cnet_ember.log
+	@grep -q 'steer=1' logs/cnet_ember.log
+	@grep -q 'rlm_session=1' logs/cnet_ember.log
 
 .PHONY: cnet_core_e2e
 cnet_core_e2e: bin/cnetd scripts/cnet_core_e2e_smoke.sh config/cnet-bonsai-held.env
@@ -1079,6 +1135,7 @@ cnet_grow_teacher: include/cnet_grow_lobe.h src/cnet_grow_lobe.c \
 # --- CORE four product paths (deep benches) ---
 CORE_PATH_COMMON = src/cnet_core_paths.c src/cnet_core_bus.c src/cnet_core_serve.c src/cnet_live_miss.c src/cnet_evolve_dir.c src/cnet_obsidian_learn.c src/cnet_grok_guide.c src/cnet_weight_convert.c \
 	src/cnet_hemisphere.c src/cnet_brain_mirror.c src/cnet_rlm.c \
+	src/cnet_ember.c src/cnet_ember_ckpt.c src/cnet_ember_session.c src/cnet_ember_steer.c \
 	src/cnet_capsule_loop.c src/cnet_skill_lane.c src/cnet_ood_skill.c \
 	src/cnet_held_model.c src/cnet_c_speak.c src/cce/cce_wordlm.c \
 	src/cnet_utterance.c src/cnet_paragraph.c src/cnet_lookup.c \
@@ -4429,12 +4486,14 @@ cnetd: $(ROE_ASI_SRC) tools/cnetd.c src/cnet_domain_route.c src/cnet_utterance.c
 		src/cnet_c_speak.c src/cce/cce_wordlm.c src/cnet_skill_lane.c src/cnet_capsule_loop.c \
 		src/cnet_paragraph.c src/cnet_ood_skill.c src/cnet_held_model.c \
 		src/cnet_hemisphere.c src/cnet_brain_mirror.c src/cnet_rlm.c src/cnet_core_serve.c \
+		src/cnet_ember.c src/cnet_ember_ckpt.c src/cnet_ember_session.c src/cnet_ember_steer.c \
 		include/cnet_core_serve.h \
 		include/cnet_probe_shortcircuit.h include/cnet_domain_route.h include/cnet_utterance.h \
 		include/cnet_query_alias.h include/cnet_dialog_ctx.h include/cnet_slot_extract.h \
 		include/cnet_chat_lookup.h include/cnet_lookup.h include/cnet_c_speak.h include/cnet_capsule_loop.h \
 		include/cnet_skill_lane.h include/cnet_paragraph.h \
-		include/cnet_hemisphere.h include/cnet_brain_mirror.h include/cnet_rlm.h
+		include/cnet_hemisphere.h include/cnet_brain_mirror.h include/cnet_rlm.h \
+		include/cnet_ember.h
 	@mkdir -p $(BIN_DIR) logs
 	@pkg-config --exists libcurl
 	$(CC) $(ASI_IMPROVE_CFLAGS) -D_DEFAULT_SOURCE -DCNET_HAVE_CURL=1 $$(pkg-config --cflags libcurl) -o $(BIN_DIR)/cnetd \
@@ -4444,6 +4503,7 @@ cnetd: $(ROE_ASI_SRC) tools/cnetd.c src/cnet_domain_route.c src/cnet_utterance.c
 		src/cnet_c_speak.c src/cce/cce_wordlm.c src/cnet_skill_lane.c src/cnet_capsule_loop.c \
 		src/cnet_paragraph.c src/cnet_ood_skill.c src/cnet_held_model.c \
 		src/cnet_hemisphere.c src/cnet_brain_mirror.c src/cnet_rlm.c src/cnet_core_serve.c src/cnet_live_miss.c \
+		src/cnet_ember.c src/cnet_ember_ckpt.c src/cnet_ember_session.c src/cnet_ember_steer.c \
 		tools/cnetd.c $(ROE_ASI_LIBS) $$(pkg-config --libs libcurl) -ldl
 	@echo "cnetd built → $(BIN_DIR)/cnetd"
 
@@ -6138,11 +6198,14 @@ unified_models: qgkp_envelope_test $(MODEL_RUNTIME) $(CCE_MODEL_CATALOG) $(MODEL
 	@./$(BIN_DIR)/test_model_catalog > logs/unified_models_catalog.log 2>&1
 	@grep -q "MODEL_CATALOG_PASS" logs/unified_models_catalog.log
 
-.PHONY: unified_ds4_launcher
-unified_ds4_launcher: scripts/run_cnet_ds4_dual.sh tools/cnet_chunk_hash.c dotnet/CnetControlPlane/CnetControlPlane.csproj tests/test_ds4_dual_launcher.sh
+.PHONY: unified_ds4_launcher ember_dual_launcher
+unified_ds4_launcher ember_dual_launcher: scripts/run_cnet_ember_dual.sh scripts/run_cnet_ds4_dual.sh tools/cnet_chunk_hash.c tests/test_ember_dual_launcher.sh tests/test_ds4_dual_launcher.sh
 	@mkdir -p logs
+	@bash tests/test_ember_dual_launcher.sh > logs/ember_dual_launcher.log 2>&1
+	@grep -q "EMBER_DUAL_LAUNCHER_PASS" logs/ember_dual_launcher.log
 	@bash tests/test_ds4_dual_launcher.sh > logs/unified_ds4_launcher.log 2>&1
 	@grep -q "DS4_DUAL_LAUNCHER_PASS" logs/unified_ds4_launcher.log
+	@grep -q "EMBER_DUAL_LAUNCHER_PASS" logs/ember_dual_launcher.log && echo "EMBER_DUAL_OK"
 
 .PHONY: unified_gpu
 unified_gpu: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(ASYNC_RUNTIME) $(CCE_CLGEMM) tests/test_async_gpu_lanes.c
@@ -6470,6 +6533,17 @@ calibrated_governance: $(CALIBRATED_GOVERNANCE_SRC) $(HELDOUT_SRC) tests/test_cn
 	@$(BIN_DIR)/$@ > logs/calibrated_governance.log 2>&1; status=$$?; \
 		cat logs/calibrated_governance.log; test $$status -eq 0 && \
 		grep -q "CALIBRATED_GOVERNANCE_PASS" logs/calibrated_governance.log
+
+# Domain seal-trust: Wilson LCB refuse-on-ignorance + exploration (middle path).
+.PHONY: seal_trust
+seal_trust: src/cnet_seal_trust.c tests/test_cnet_seal_trust.c include/cnet_seal_trust.h
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -Werror -Iinclude -o $(BIN_DIR)/$@ \
+		src/cnet_seal_trust.c \
+		tests/test_cnet_seal_trust.c $(LDFLAGS)
+	@$(BIN_DIR)/$@ > logs/seal_trust.log 2>&1; status=$$?; \
+		cat logs/seal_trust.log; test $$status -eq 0 && \
+		grep -q "SEAL_TRUST_PASS" logs/seal_trust.log
 
 capability_cert_runner_test: dotnet/CnetControlPlane/CnetControlPlane.csproj dotnet/CnetControlPlane.Tests/CnetControlPlane.Tests.csproj
 	@mkdir -p logs

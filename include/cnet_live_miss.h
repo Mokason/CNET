@@ -11,6 +11,8 @@
  *   "teach TAG 3 5" | "TAG 3 = 5" | "fill TAG slot=3 out=5"
  * Query miss (in only):
  *   "TAG 3"  when not yet served
+ * Chain harvest (self-improve, never auto-CERT from residual):
+ *   "TAG a then OTHER b" → typed_miss rows for each hop with known n
  *
  * Gate helper used by evolve + tests.
  */
@@ -43,6 +45,15 @@ int cnet_live_miss_domain_pairs(const char *miss_path, const char *domain,
 #define CNET_LIVE_DOM_NAME 32
 int cnet_live_miss_complete_domains(const char *miss_path,
                                     char domains[][CNET_LIVE_DOM_NAME], int max_dom);
+
+/* Harvest learnable structure from a freeform / chain turn into typed_miss
+ * rows so evolve can grow. Never auto-CERTs residual text.
+ * Returns number of rows appended (>=0), or <0 on IO error. */
+int cnet_live_miss_harvest_turn(const char *miss_path, const char *turn);
+
+/* Queue a pending prove goal for unattended evolve (pending_goals.txt). */
+int cnet_live_miss_queue_goal(const char *bricks_dir, const char *domain,
+                              unsigned in_n);
 
 #ifdef __cplusplus
 }

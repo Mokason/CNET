@@ -52,6 +52,11 @@ typedef struct {
     size_t teaches;
     size_t residual_captures; /* Tier-C pairs offered to the fault bus */
     size_t coverage_abstains; /* Tier-A declined: outside certified coverage */
+    size_t seal_trust_abstains; /* Tier-A declined: domain seal LCB refuse */
+    size_t seal_trust_explores; /* Tier-A allowed as exploration sample */
+    /* Per-request seal kind: 0 none, 1 trust (LCB cleared), 2 explore.
+     * Never collapse explore into trust in downstream CERT consumers. */
+    int seal_trust_kind;
 } PersonalAiReport;
 
 typedef struct {
