@@ -23,8 +23,21 @@ Current fragments:
 
 | Fragment | Holds |
 |---|---|
-| `mk/integrity.mk` | the build-integrity gates: `curl_guard`, `orphan_tests`, `orphan_tools`, `platform_sweep`, `residual_http_nocurl`, `layering_guard`, `makefile_budget` |
+| `mk/integrity.mk` | the build-integrity gates: `curl_guard`, `orphan_tests`, `orphan_tools`, `platform_sweep`, `residual_http_nocurl`, `layering_guard`, `makefile_budget`, `verify_tier_sync` |
 | `mk/orphans.mk` | targets for the tests and tools that previously had none |
+| `mk/verify_tiers.mk` | T0 `verify-fast` / T1 `verify` / T2 `verify-t2` / nightly membership — single table |
+
+## Verify tiers (do not re-list deps in the root Makefile)
+
+| Tier | Command | Role |
+|---|---|---|
+| T0 | `make verify-fast` | edit loop |
+| T1 | `make verify` (`make test`) | before push — default truth |
+| T2 | `make verify-t2` | PEFT/fault soak (nightly pulls this) |
+| long | `make verify-long` | supra QAT + compat |
+| nightly | `make verify-nightly` | T1+T2+openlab/grade |
+
+New pins default to **T2** unless they caught a silent main-path lie.
 
 ## The rest of the split is staged, not done
 

@@ -88,6 +88,12 @@ transformer_qat_joint.log|||, 0 failed
 wordlm_holdout.log|||, 0 failed
 '
 
+# T2 soak (verify-t2 / nightly). Not scored on default `make verify`.
+T2='
+metric_honesty.log|||METRIC_HONESTY_PASS
+moe_ckpt_test.log|||MOE_CKPT_PASS
+'
+
 # The compat tier (legacy quarantine): back-compat coverage that must stay
 # green but no longer blocks every `make test`. Run via `make compat`.
 COMPAT='
@@ -99,6 +105,8 @@ circuit_demo.log|||All circuit demo parts passed.
 SPEC="$CORE"
 if [ "${1:-}" = "long" ]; then
     SPEC="$CORE$LONG$COMPAT"
+elif [ "${1:-}" = "t2" ]; then
+    SPEC="$T2"
 elif [ "${1:-}" = "compat" ]; then
     SPEC="$COMPAT"
 fi

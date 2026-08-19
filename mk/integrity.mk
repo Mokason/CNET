@@ -48,9 +48,14 @@ residual_http_nocurl:
 		src/residual_http.c src/memory/cnet_lookup.c src/cce/cce_safetensors.c src/cnet_held_model.c src/roe/cnet_roe_net.c
 	@echo RESIDUAL_HTTP_NOCURL_PASS | tee logs/residual_http_nocurl.log
 
-# One name for all three build-integrity gates.
-.PHONY: build_integrity
-build_integrity: curl_guard orphan_tests orphan_tools platform_sweep residual_http_nocurl layering_guard makefile_budget
+# One name for build-integrity + tier membership honesty.
+.PHONY: build_integrity verify_tier_sync
+verify_tier_sync:
+	@mkdir -p logs
+	@sh tests/verify_tier_sync.sh 2>&1 | tee logs/verify_tier_sync.log
+	@grep -q '^VERIFY_TIER_SYNC_PASS' logs/verify_tier_sync.log
+
+build_integrity: curl_guard orphan_tests orphan_tools platform_sweep residual_http_nocurl layering_guard makefile_budget verify_tier_sync
 	@echo BUILD_INTEGRITY_PASS
 
 # The certified core must not grow new dependencies on the layers above it.

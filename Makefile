@@ -2030,64 +2030,16 @@ json_escape: tests/test_json_escape.c include/cnet_json_escape.h tests/test_json
 	@grep -q "^JSON_ESCAPE_PASS" logs/json_escape.log
 	@grep -q "^JSON_ESCAPE_PY_PASS" logs/json_escape.log
 
-# Test recipes propagate their exit codes directly. This positive-marker gate
-# runs after every prerequisite and rejects missing or stale-success logs.
+# Verify ladder (T0/T1/T2) lives in mk/verify_tiers.mk — included at EOF so
+# every prerequisite variable exists when the rules are read. Do not re-add a
+# parallel verify_impl list here; the tier file is the single membership table.
 #
-# RUN BINDING. `verify` stamps logs/.verify_sentinel and only then invokes the
-# real prerequisite chain, so tests/verify_logs.sh can require every log to be
-# strictly newer than the stamp. Until 2026-08-12 the gate only checked that a
-# marker existed SOMEWHERE in a file under logs/, and nothing in the chain ever
-# cleared logs/ -- so an interrupted or month-old run left a complete set of
-# green logs that this gate happily certified.
-#
-# The sentinel is stamped by a RECURSIVE make rather than by an ordinary
-# prerequisite because Make gives no ordering guarantee among prerequisites
-# under -j; a sentinel that raced the suites it is meant to predate would make
-# the freshness check meaningless exactly when the build is fastest.
-VERIFY_SENTINEL := logs/.verify_sentinel
-
-.PHONY: verify verify_impl
-verify:
-	@mkdir -p logs
-	@rm -f $(VERIFY_SENTINEL)
-	@touch $(VERIFY_SENTINEL)
-	@$(MAKE) --no-print-directory verify_impl
-	@VERIFY_SINCE=$(VERIFY_SENTINEL) sh tests/verify_logs.sh
-
-verify_impl: build_integrity clgemm_unit cce_archive cce_forest mmap_read_identity recipe_gate json_escape claims_test cce_dll cce_safetensors_test cnet_lm_bounds_test cce_autograd_test cce_model_test cce_view forest_view cce_detect cce_ssm cce_hybrid cce_qwen35 cce_st_llama cce_specgraph cce_wstore cce_tiers cce_similar merge_family hybrid_catalog transformer_qat qat_block mojo_bridge contract_secure contract_unit heal_mismatch mutate acquire attribution base flagship demos leakcheck cnet_fault_test cce_adapter_bank_test cce_dora_test cnet_serve_decode_test cnet_fault_loop_test registry_lora_store_test jtc_adapter_bench metric_honesty moe_ckpt_test
-	@:
-
 # Everything verify covers PLUS the GPU equivalence gate (needs model + GPU;
 # run this before any CNET_GPU=1 campaign).
 test_full: test gpu_equiv_build
 	./$(BIN_DIR)/gpu_equiv Models/gemma-4-12B-it-MTP-Q8_0.gguf 64 32
 	$(call dotnet_guard)
 	$(DOTNET) test dotnet/Cce.Tests/Cce.Tests.csproj -c Release --no-restore
-
-# `long` mode also asserts the two verify-long-only supra QAT gates. The
-# `verify` prerequisite already ran and gated the core chain; this re-scan adds
-# the extras.
-# Same run-binding as `verify`: `verify` re-stamps the sentinel when it runs as
-# a prerequisite below, and every extra suite here writes its log afterwards, so
-# the whole CORE+LONG+COMPAT set is still required to postdate that one stamp.
-.PHONY: verify-long verify-long_impl
-verify-long:
-	@$(MAKE) --no-print-directory verify-long_impl
-	@VERIFY_SINCE=$(VERIFY_SENTINEL) sh tests/verify_logs.sh long
-
-verify-long_impl: verify cce_train_bench supra_head_qat supra_head_qat_corpus transformer_qat_joint wordlm_bitnet wordlm_holdout compat
-	@:
-
-
-# Fast PR gate: light PEFT/fault only (no full-runtime JTC campaigns)
-verify-fast: recipe_gate claims_test cce_dll cnet_fault_test cce_adapter_bank_test cce_dora_test cnet_serve_decode_test
-	@echo VERIFY_FAST_PASS
-
-# Nightly: full verify + heavy PEFT/fault/openlab/grade campaigns + procedure chunks
-verify-nightly: verify cnet_fault_loop_test registry_lora_store_test jtc_adapter_bench cnet_openlab_import cnet_grade_up cnet_a_grade procedure_chunks metric_honesty_mutation
-	@echo VERIFY_NIGHTLY_PASS
-
-test: verify
 
 # (This once said the individual targets had been removed to enforce a single-exe
 # policy, and that debugging one suite meant compiling it by hand. They were
@@ -8558,3 +8510,4 @@ cnet_gguf_peek: tools/cnet_gguf_peek.c $(CCE)
 # ---------------------------------------------------------------------------
 include mk/orphans.mk
 include mk/integrity.mk
+include mk/verify_tiers.mk
