@@ -158,17 +158,42 @@ status=$?
 check "$([ "$status" -eq 0 ] && echo 0 || echo 1)" \
     "control: without pipefail the same fixture must false-green (exit $status)"
 
-# The active release workflow is v4.  Its synthetic failure paths execute when
-# the scorer cannot emit a verdict, so a stale literal there would mislabel the
-# only terminal evidence even though the compiled suite identity is correct.
+# The active release workflow's synthetic failure paths execute when the scorer
+# cannot emit a verdict, so a stale literal there would mislabel the only
+# terminal evidence even though the compiled suite identity is correct.
+#
+# This check used to hardcode "v4". The workflow advanced to v5 and the check
+# did not, so it asserted a suite identity that no longer appears anywhere in
+# the Makefile -- it had been failing since the move, unnoticed, because
+# `make verify` could not run at all (its third prerequisite, cce_dll, did not
+# build; see tests/curl_guard.sh). Deriving the generation instead of naming it
+# means the next bump cannot leave this behind again.
 WORKFLOW=$(sed -n '/^cnet_7b_compete_results_inner:/,$p' "$MAKEFILE")
-printf '%s\n' "$WORKFLOW" | grep -q 'suite=CNET-ASI-5-v3'
-check "$([ $? -ne 0 ] && echo 0 || echo 1)" \
-    "active result workflow must not emit the retired v3 suite identity"
-v4_terminals=$(printf '%s\n' "$WORKFLOW" | \
-    grep -c 'CNET_7B_COMPETE_FAIL suite=CNET-ASI-5-v4' || true)
-check "$([ "$v4_terminals" -eq 4 ] && echo 0 || echo 1)" \
-    "all four synthetic result verdicts must identify v4 (saw $v4_terminals)"
+
+# The generation the workflow actually emits.
+ACTIVE_SUITE=$(printf '%s\n' "$WORKFLOW" |
+    grep -oE 'suite=CNET-ASI-5-v[0-9]+' | sort -u | head -1)
+check "$([ -n "$ACTIVE_SUITE" ] && echo 0 || echo 1)" \
+    "result workflow must emit a CNET-ASI-5 suite identity (saw '${ACTIVE_SUITE:-none}')"
+
+# It must emit exactly ONE generation -- a mix means a partial bump.
+suite_variants=$(printf '%s\n' "$WORKFLOW" |
+    grep -oE 'suite=CNET-ASI-5-v[0-9]+' | sort -u | wc -l | tr -d ' ')
+check "$([ "$suite_variants" -le 1 ] && echo 0 || echo 1)" \
+    "result workflow must emit ONE suite generation, not a mix (saw $suite_variants)"
+
+# And it must be the newest generation that has a benchmark directory, so a
+# retired identity cannot survive here after the data has moved on.
+NEWEST_SUITE=v$(ls -d benchmarks/cnet_asi5_v* 2>/dev/null |
+    sed 's/.*_v//' | sort -n | tail -1)
+check "$([ "$ACTIVE_SUITE" = "suite=CNET-ASI-5-$NEWEST_SUITE" ] && echo 0 || echo 1)" \
+    "workflow suite identity must be the newest generation ($NEWEST_SUITE; workflow says ${ACTIVE_SUITE#suite=CNET-ASI-5-})"
+
+# All four synthetic verdicts must carry that identity.
+terminals=$(printf '%s\n' "$WORKFLOW" |
+    grep -c "CNET_7B_COMPETE_FAIL $ACTIVE_SUITE" || true)
+check "$([ "$terminals" -eq 4 ] && echo 0 || echo 1)" \
+    "all four synthetic result verdicts must identify ${ACTIVE_SUITE#suite=CNET-ASI-5-} (saw $terminals)"
 
 if [ "$failures" -gt 0 ]; then
     printf 'PIPELINE_STATUS_FAIL checks=%d failures=%d\n' "$checks" "$failures"

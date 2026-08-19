@@ -27,6 +27,9 @@
 #include <io.h>
 #include <process.h>
 #include <windows.h>
+/* WIN32_LEAN_AND_MEAN (set by include/cnet_platform.h) excludes winioctl.h,
+   which is where FSCTL_GET_REPARSE_POINT and REPARSE_DATA_BUFFER live. */
+#include <winioctl.h>
 #define strtok_r strtok_s
 #else
 #include <fcntl.h>
@@ -671,6 +674,28 @@ static int run_capture_win(char *const argv[], const char *cwd, DynBuf *out,
         CloseHandle(rd);
         CloseHandle(wr);
         return -1;
+    }
+
+    /* CreateProcess has no shebang handling: it cannot launch a .sh at all, so
+       every shell-script producer came back as "cannot run command" (127) and
+       22 of this gate's 36 checks failed on Windows. Route those through sh,
+       which is what the shebang would have done on POSIX. Only the launcher
+       changes; the script still runs with the same argv and cwd. */
+    {
+        size_t n = strlen(argv[0]);
+        if (n >= 3 && strcmp(argv[0] + n - 3, ".sh") == 0) {
+            size_t len = strlen(cmdline) + 4;
+            char *shelled = (char *)malloc(len);
+            if (!shelled) {
+                free(cmdline);
+                CloseHandle(rd);
+                CloseHandle(wr);
+                return -1;
+            }
+            snprintf(shelled, len, "sh %s", cmdline);
+            free(cmdline);
+            cmdline = shelled;
+        }
     }
 
     memset(&pi, 0, sizeof(pi));

@@ -116,3 +116,34 @@ agi3_workspace.txt
 # adapt_new_domain gate scratch bases (one per domain family, per phase)
 tmp_adapt_*
 tmp_adaptfull_*
+
+# --- run output that used to be tracked at the repo root (2026-08-19) ---
+# 99 files sat at the root, 59 of them run output, next to ~40 frozen weight and
+# contract fixtures that the test suite reads by hardcoded path. The two kinds
+# were indistinguishable at a glance. The fixtures stay tracked and are listed
+# in README.md ("Root fixtures"); everything below is output and is not.
+/build_joint.log
+/flagship_run.log
+/recert_self_control.log
+/soul_english_v1_run.log
+/soul_final_run.log
+/soul_real_run.log
+/xrecert_*.log
+/inspect_out.txt
+
+# Scratch directories written by the tile-memory, consolidation, synonym and
+# TF-IDF suites. Recreated on every run; never inputs.
+/cons_cap/
+/cons_ctl/
+/cons_prune/
+/syn_ctl/
+/syn_rev/
+/tix_exp/
+/tix_small/
+/tix_warm/
+/tile_store_cert/
+/tile_store_per/
+/tile_store_res/
+/tile_store_test/
+/tfidf_ctl/
+/tile_grad_ctl/

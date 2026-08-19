@@ -15,7 +15,7 @@ int main(void) {
     fprintf(f, "factory=other,1,blk.0.attn_k.weight\n");
     fprintf(f, "goal=prove mytag at 1\n");
     fclose(f);
-    setenv("CNET_EVOLVE_DIRECTION", "/tmp/evdir_test.conf", 1);
+    cnet_setenv("CNET_EVOLVE_DIRECTION", "/tmp/evdir_test.conf", 1);
     if (cnet_evolve_dir_load(&F, ".") != 0) fails++;
     if (F.n_factory != 2) { printf("nf=%d\n", F.n_factory); fails++; }
     if (F.max_new_per_tick != 2) fails++;

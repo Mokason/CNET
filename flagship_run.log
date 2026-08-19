@@ -1,4 +1,0 @@
-model: Models/gemma-4-12B-it-MTP-Q8_0.gguf  layers=4 hidden=1024 vocab=262144
-determinism spot check: OK
-run: V=256 max_units=256 temp<=80C duty=0.75 wall=0s base=flagship.cnb
-stop cleanly at any time:  echo stop > flagship.cnb.stop

@@ -226,8 +226,8 @@ done
 common_flags="-std=c11 -Wall -Wextra -pedantic -Werror -O3 -march=znver3 -D_DEFAULT_SOURCE"
 identity_flags="-DCNET_COMPETE_BUILD_COMMIT=\"$build_commit\" -DCNET_COMPETE_BUILD_TREE=\"$build_tree\""
 release_flags="-DCNET_COMPETE_SUITE_DATA_HEADER=\"cnet_compete_suite_data_v5.h\" -DCNET_COMPETE_RELEASE_ARTIFACT_ROOT=\"$release_root/inputs/artifacts\" -DCNET_COMPETE_FROZEN_FIXTURE_PATH=\"$release_root/inputs/heldout.tsv\" -DCNET_COMPETE_FROZEN_SYSTEM_PATH=\"$release_root/inputs/baseline_system.txt\" -DCNET_COMPETE_FROZEN_GENERATOR_PATH=\"$release_root/inputs/fixture_generator.c\" -DCNET_COMPETE_FROZEN_ARTIFACT_ROOT=\"$release_root/inputs/artifacts\""
-eval_core="src/cnet_compete_eval.c src/cnet_compete.c src/cce/cce_campaign_provenance.c"
-capsule_core="src/cnet_capsule.c src/hybrid_ai.c src/base.c src/nn.c src/contract/contract.c src/contract/unit.c src/contract/coverage.c src/acquire.c src/runtime_identity.c src/plan_table.c"
+eval_core="src/compete/cnet_compete_eval.c src/compete/cnet_compete.c src/cce/cce_campaign_provenance.c"
+capsule_core="src/memory/cnet_capsule.c src/hybrid_ai.c src/base.c src/nn.c src/contract/contract.c src/contract/unit.c src/contract/coverage.c src/acquire.c src/runtime_identity.c src/plan_table.c"
 router="src/router/dag_full.c src/router/registry.c src/router/route.c"
 specialist="src/specialist.c src/specialist_health.c"
 
@@ -236,9 +236,9 @@ specialist="src/specialist.c src/specialist_health.c"
 "$cc" $common_flags -DCNET_HAVE_CURL=0 $identity_flags $release_flags \
     -ffunction-sections -fdata-sections -Iinclude \
     -o "$staging_root/bin/cnet_compete_run_fixture" \
-    tools/cnet_compete_run_fixture.c src/cnet_compete_runtime.c \
-    src/cnet_compete_intent.c src/cnet_compete_capsules.c \
-    src/cce/cce_wordlm.c src/cnet_compete_client_identity.c \
+    tools/cnet_compete_run_fixture.c src/compete/cnet_compete_runtime.c \
+    src/compete/cnet_compete_intent.c src/compete/cnet_compete_capsules.c \
+    src/cce/cce_wordlm.c src/compete/cnet_compete_client_identity.c \
     $eval_core $capsule_core $router $specialist \
     -Wl,--gc-sections -lm -lpthread
 
@@ -247,14 +247,14 @@ curl_libs=$("$pkg_config" --libs libcurl)
 # shellcheck disable=SC2086
 "$cc" $common_flags -DCNET_HAVE_CURL=1 $identity_flags $release_flags \
     $curl_cflags -Iinclude -o "$staging_root/bin/cnet_compete_run_baseline" \
-    tools/cnet_compete_run_baseline.c src/cnet_compete_client_identity.c \
+    tools/cnet_compete_run_baseline.c src/compete/cnet_compete_client_identity.c \
     $eval_core $curl_libs -lm -lpthread
 
 # shellcheck disable=SC2086
 "$cc" $common_flags -DCNET_HAVE_CURL=0 $identity_flags $release_flags \
     -Iinclude -o "$staging_root/bin/cnet_compete_score" \
-    tools/cnet_compete_score.c src/cnet_compete_score.c \
-    src/cnet_compete_client_identity.c $eval_core \
+    tools/cnet_compete_score.c src/compete/cnet_compete_score.c \
+    src/compete/cnet_compete_client_identity.c $eval_core \
     -lm -lpthread
 
 cnet_runner_sha=$("$sha256sum" "$staging_root/bin/cnet_compete_run_fixture")

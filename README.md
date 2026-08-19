@@ -168,7 +168,7 @@ lanes stay explicitly out of scope unless their own gates are run. Start from
 | Autonomy loop (gap-triggered acquisition → unified CNB version 5 base under stable CNB1 magic, with v1–v4 read compatibility → flagship harness) | `make acquire`, `make base`, `make flagship` | passing, in `make test`; real gemma4-v2 12B campaign **253/256** certified (SAMPLED, Wilson ≥ 0.984), 93% live-model fidelity when queried (`soul_query`) — the earlier "256/256 at 100%" was a NaN-oracle artifact, retracted. Caveat (2026-07-15): each goldens-enabled run's FIRST unit (vocab[0]) was mined against golden-battery state (flagship lane-prefix-cache bug, fixed in `cbe130e`) — gemma bases' vocab[0] units are suspect. Update (2026-07-17): the recert attempt exposed that `goldens_gemma4v2.txt` itself was never provably recorded by a known binary (a hermetic 3-era logit checksum proves the classic forward UNCHANGED since July 14 — the file, not the oracle, is the stale artifact); fresh int8 goldens (`goldens_gemma4v2.int8.txt`) are recorded and independently reproduced 32/32, and a full differential drift audit of both gemma bases against them is the vocab[0] verdict's evidence — see the July 17 CHANGELOG rows and `*.recert.txt` |
 | Restored legacy aggregate (COMPAT tier) + allocation-balance leak gate | `make compat`, `make leakcheck` | legacy aggregate quarantined out of `make test` into its own tier (`CNET_COMPAT_PASS`; also in `verify-long`); leak gate stays in `make test` |
 | Loader robustness (byte-flip + truncation sweeps over every artifact loader) | `make mutate` | passing, in `make test`; sealed formats refuse every mutation, unsealed probes never crash |
-| GPU forward (self-contained OpenCL, **multi-GPU + int8**) | `make gpu_equiv_build`; `make` `clgemm_unit` | optional; dual-R9700 oracle pool + `q8` layers, 4.28× on 12B, **bit-identical proven** (`clgemm_unit`, 360 calls), NaN-hard-failed |
+| GPU forward (self-contained OpenCL, **multi-GPU + int8**) |  `make gpu_equiv_build`; `make clgemm_unit` | optional; dual-R9700 oracle pool + `q8` layers, 4.28× on 12B, **bit-identical proven** (`clgemm_unit`, 120 calls, now actually wired into `verify`; found+fixed an N%64 kernel bug on 2026-08-19), NaN-hard-failed |
 | Supra int8 PTQ | `make supra_console` (`--int8`) | near-lossless |
 | Packed 1.6-bit ternary | `make wordlm_bitnet` + export/reload tests | storage bit-exact (`ΔNLL=0` reload); *deployable quality still needs QAT at model scale* |
 | Representation walls / planner scaling | `make margin` / `fuzzy` / `stochastic`, `make planner_scale_study` | documented **limits**, not claims |
@@ -364,6 +364,29 @@ are deduplicated into tile memory, promoted with semantic or procedural labels,
 optionally merged/graduated when evidence supports it, and emitted with source
 provenance and pruning counts. No semantic-cortex candidate becomes an answer
 merely by entering the shared workspace.
+
+
+## Root fixtures
+
+About forty `*_weights.txt`, `*_contract.txt` and `*_property.txt` files sit at
+the repository root and are **tracked on purpose**. They are the frozen
+primitives the composition and regression gates run against: `make compose`
+regenerates them and the test is that the bytes come out identical, so they are
+inputs to the proof, not leftovers from a run.
+
+They live at the root rather than in `fixtures/` because the suites open them by
+hardcoded relative path (`hex_value_weights.txt`, `dec_full_add_contract.txt`,
+…). Moving them is a rename across ~60 call sites and is deliberately not done
+as a tidy-up.
+
+What is *not* tracked, as of 2026-08-19: campaign logs (`soul_*_run.log`,
+`xrecert_*.log`, `build_joint.log`, …) and the scratch directories the tile
+memory, consolidation, synonym and TF-IDF suites write (`tile_store_*/`,
+`tix_*/`, `cons_*/`, `syn_*/`, `tfidf_ctl/`). Those are output. Before this
+split, 99 files sat at the root and the two kinds were indistinguishable at a
+glance; see `.gitignore` for the exact list.
+
+`packs/` and `result/` stay tracked — code reads from both.
 
 ## License
 

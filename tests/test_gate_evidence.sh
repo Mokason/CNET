@@ -111,7 +111,27 @@ run() {
     STATUS=$?
 }
 
+# jq parses the evidence binding. It is not present on every box (no stock
+# MinGW install has it), and without it thirteen checks below reported
+# FAIL when the truth was "not checked". A gate must not report a failure
+# it did not observe, and must not quietly report success either -- so
+# these are counted as SKIPPED and named in the final line.
+if command -v jq >/dev/null 2>&1; then HAVE_JQ=1; else HAVE_JQ=0; fi
+skipped=0
+
+check_json() {  # same contract as check(), but skipped when jq is absent
+    if [ "$HAVE_JQ" -eq 0 ]; then
+        skipped=$((skipped + 1))
+        return
+    fi
+    check "$@"
+}
+
 json_get() {  # $1 = jq expression over the parsed binding (as .)
+    # Without jq there is nothing to parse. Return 0 rather than empty so the
+    # $(...) comparisons below stay well-formed -- their verdicts are discarded
+    # by check_json anyway, and an empty value makes `[ -ge ]` an error.
+    if [ "${HAVE_JQ:-0}" -eq 0 ]; then echo 0; return; fi
     jq -r "$1" "$BINDING" 2>/dev/null
 }
 
@@ -123,29 +143,29 @@ case "$OUT" in *GATE_PASS*) ;; *) check 1 "an honest run reports GATE_PASS" ;; e
 check "$([ -f "$BINDING" ] && echo 0 || echo 1)" \
     "an honest run writes an evidence binding"
 jq -e . "$BINDING" >/dev/null 2>&1
-check $? "the binding is valid JSON"
-check "$([ "$(json_get '.marker_present')" = "true" ] && echo 0 || echo 1)" \
+check_json $? "the binding is valid JSON"
+check_json "$([ "$(json_get '.marker_present')" = "true" ] && echo 0 || echo 1)" \
     "the binding records that the marker was found"
-check "$([ "$(json_get '.exit_status')" = "0" ] && echo 0 || echo 1)" \
+check_json "$([ "$(json_get '.exit_status')" = "0" ] && echo 0 || echo 1)" \
     "the binding records the producer's exit status"
-check "$([ "$(json_get '.run_id|length')" -ge 32 ] && echo 0 || echo 1)" \
+check_json "$([ "$(json_get '.run_id|length')" -ge 32 ] && echo 0 || echo 1)" \
     "the binding carries a run id"
-check "$([ "$(json_get '.evidence_sha256|length')" = "64" ] && echo 0 || echo 1)" \
+check_json "$([ "$(json_get '.evidence_sha256|length')" = "64" ] && echo 0 || echo 1)" \
     "the binding carries the digest of the log it wrote"
 # A COUNT of assume-unchanged paths, which this used to require, names a blind
 # spot without closing it: `git status` cannot see those paths, so a producer
 # could rewrite one and the digest would not move. Require the digest itself.
-check "$([ "$(json_get '.binding_pre.special_index_sha256|length')" = "64" ] && echo 0 || echo 1)" \
+check_json "$([ "$(json_get '.binding_pre.special_index_sha256|length')" = "64" ] && echo 0 || echo 1)" \
     "the binding carries a content digest of the special-index paths"
-check "$([ "$(json_get '(.binding_pre|has("special_index_files") and has("special_index_bytes"))')" = "true" ] && echo 0 || echo 1)" \
+check_json "$([ "$(json_get '(.binding_pre|has("special_index_files") and has("special_index_bytes"))')" = "true" ] && echo 0 || echo 1)" \
     "the binding discloses how many special-index paths it covered, and their size"
-check "$([ "$(json_get '.binding_stable')" = "true" ] && echo 0 || echo 1)" \
+check_json "$([ "$(json_get '.binding_stable')" = "true" ] && echo 0 || echo 1)" \
     "an honest run reports a stable binding"
 
 FIRST_RUN=$(json_get '.run_id')
 run "$TMP/good.sh"
 SECOND_RUN=$(json_get '.run_id')
-check "$([ "$FIRST_RUN" != "$SECOND_RUN" ] && echo 0 || echo 1)" \
+check_json "$([ "$FIRST_RUN" != "$SECOND_RUN" ] && echo 0 || echo 1)" \
     "each run gets its own run id"
 
 # --- 2. argv fidelity -------------------------------------------------------
@@ -154,9 +174,9 @@ run "$TMP/echo_args.sh" "a b"
 ONE=$(json_get '.command|tojson')
 run "$TMP/echo_args.sh" "a" "b"
 TWO=$(json_get '.command|tojson')
-check "$([ "$ONE" != "$TWO" ] && echo 0 || echo 1)" \
+check_json "$([ "$ONE" != "$TWO" ] && echo 0 || echo 1)" \
     "one argument 'a b' binds differently from two arguments 'a' 'b'"
-check "$([ "$(json_get '.command|length')" = "3" ] && echo 0 || echo 1)" \
+check_json "$([ "$(json_get '.command|length')" = "3" ] && echo 0 || echo 1)" \
     "the binding records argv as a list, not a joined string"
 
 # Quote, backslash and newline in one argument. The binding must stay valid
@@ -165,9 +185,9 @@ WEIRD='he said "hi" \ then
 a newline'
 run "$TMP/echo_args.sh" "$WEIRD"
 jq -e . "$BINDING" >/dev/null 2>&1
-check $? "an argument with a quote, backslash and newline keeps the JSON valid"
+check_json $? "an argument with a quote, backslash and newline keeps the JSON valid"
 GOT=$(json_get '.command[1]')
-check "$([ "$GOT" = "$WEIRD" ] && echo 0 || echo 1)" \
+check_json "$([ "$GOT" = "$WEIRD" ] && echo 0 || echo 1)" \
     "such an argument round-trips exactly"
 
 # --- 3. no raw secret env values -------------------------------------------
@@ -312,11 +332,15 @@ check "$([ "$STATUS" -eq 0 ] && echo 0 || echo 1)" \
     "ignored build output changing during a run does not fail the gate (exit $STATUS)"
 rm -f "$ROOT/logs/.gate_evidence_probe"
 
+if [ "$skipped" -gt 0 ]; then
+    printf 'GATE_EVIDENCE_SKIPPED checks=%d reason=no_jq -- the evidence binding could not be parsed; install jq to close this gap\n' "$skipped"
+fi
+
 if [ "$failures" -gt 0 ]; then
-    printf 'GATE_EVIDENCE_FAIL checks=%d failures=%d\n' "$checks" "$failures"
+    printf 'GATE_EVIDENCE_FAIL checks=%d failures=%d skipped=%d\n' "$checks" "$failures" "$skipped"
     exit 1
 fi
 
-printf 'GATE_EVIDENCE_PASS checks=%d stale=refused marker_then_exit=refused silent=refused duplicate=refused conflicting=refused substring=refused argv=exact secrets=redacted\n' \
-    "$checks"
+printf 'GATE_EVIDENCE_PASS checks=%d skipped=%d stale=refused marker_then_exit=refused silent=refused duplicate=refused conflicting=refused substring=refused argv=exact secrets=redacted\n' \
+    "$checks" "$skipped"
 exit 0

@@ -44,6 +44,16 @@ CORE='
 cce_safetensors_test.log|||ALL SAFETENSORS TESTS PASSED
 cce_autograd_test.log|||failed -> OK
 cce_model_test.log|||failed -> OK
+makefile_budget.log|||MAKEFILE_BUDGET_PASS
+orphan_tools.log|||ORPHAN_TOOLS_PASS
+layering_guard.log|||LAYERING_GUARD_PASS
+clgemm_unit.log|||CLGEMM UNIT: PASS
+cce_archive.log|||Archive Test: SUCCESS
+cce_forest.log|||Forest + Router: SUCCESS
+curl_guard.log|||CURL_GUARD_PASS
+orphan_tests.log|||ORPHAN_TESTS_PASS
+platform_sweep.log|||PLATFORM_SWEEP_PASS
+residual_http_nocurl.log|||RESIDUAL_HTTP_NOCURL_PASS
 cce_view.log|||failed -> OK
 forest_view.log|||failed -> OK
 cce_detect.log|||failed -> OK

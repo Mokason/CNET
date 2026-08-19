@@ -28,10 +28,10 @@ static int mkdirs_p(const char *path) {
     for (i = 1; i < len; ++i) {
         if (tmp[i] != '/') continue;
         tmp[i] = '\0';
-        if (mkdir(tmp, 0755) != 0 && errno != EEXIST) return -1;
+        if (cnet_mkdir(tmp, 0755) != 0 && errno != EEXIST) return -1;
         tmp[i] = '/';
     }
-    if (mkdir(tmp, 0755) != 0 && errno != EEXIST) return -1;
+    if (cnet_mkdir(tmp, 0755) != 0 && errno != EEXIST) return -1;
     return 0;
 }
 

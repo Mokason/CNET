@@ -91,7 +91,7 @@ static int grok_ask(const char *question, int seconds_limit, char *answer,
         char cmd[2048];
         int ht = seconds_limit > 120 ? 120 : seconds_limit;
         /* key via env avoids shell-metachar issues in Authorization header */
-        setenv("CNET_GROK_TMP_KEY", key, 1);
+        cnet_setenv("CNET_GROK_TMP_KEY", key, 1);
         snprintf(cmd, sizeof cmd,
                  "curl -sS --max-time %d "
                  "-H 'Content-Type: application/json' "
@@ -99,7 +99,7 @@ static int grok_ask(const char *question, int seconds_limit, char *answer,
                  "-d @%s https://api.x.ai/v1/chat/completions > %s 2>/dev/null",
                  ht, body_path, out_path);
         { int rc_sys = system(cmd); (void)rc_sys; }
-        unsetenv("CNET_GROK_TMP_KEY");
+        cnet_unsetenv("CNET_GROK_TMP_KEY");
     }
 
     if (now_s() - t0 >= (double)seconds_limit) {

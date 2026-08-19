@@ -72,7 +72,7 @@ int cce_ladder_nthreads(void) {
         const char *e = getenv("CNET_LADDER_THREADS");
         int n = (e && e[0]) ? atoi(e) : 0;
         if (n <= 0) {
-            long c = sysconf(_SC_NPROCESSORS_ONLN);
+            long c = (long)cnet_cpu_count();
             n = (c > 1) ? (int)c : 1;
             if (n > 24) n = 24;
         }

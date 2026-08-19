@@ -1,8 +1,29 @@
+/* FORWARD ONLY.
+ *
+ * This backend implements the inference GEMM and nothing else: no backward
+ * pass, no straight-through estimator, no gradient path. cce_clgemm.c (OpenCL)
+ * is the ONLY backend that carries those, so every training and QAT campaign
+ * runs there or not at all -- this file cannot stand in for it.
+ *
+ * The three *gemm.c files sit side by side and read as interchangeable. They
+ * are not, and the difference is load-bearing when scheduling a campaign
+ * against a machine. Checkable directly:
+ *     grep -coiE 'backward|_bwd|ste_|grad' src/cce/cce_*gemm.c
+ */
 /* Pure-C cuBLAS multi-GPU linear seam for CNET (dlopen CUDA).
  * Peer of cce_hipgemm.c — same structure, same matmul semantics, same env
  * knobs. No CUDA toolkit / headers / nvcc required to build: all CUDA and
  * cuBLAS entry points are resolved at runtime via dlopen. When the CUDA runtime
- * or driver is absent, open() returns NULL and the caller uses the CPU path. */
+ * or driver is absent, open() returns NULL and the caller uses the CPU path.
+ *
+ * FORWARD ONLY. This backend implements the inference GEMM and nothing else:
+ * there is no backward pass, no straight-through estimator, no gradient path.
+ * cce_clgemm.c (OpenCL) is the ONLY backend that carries those, so every
+ * training and QAT campaign runs there or not at all -- this file cannot serve
+ * as a fallback for one. The three *gemm.c files sit side by side and look
+ * interchangeable; they are not. Checkable with:
+ *     grep -coiE 'backward|_bwd|ste_|grad' src/cce/cce_*gemm.c
+ */
 #include "../../include/cce/cce_cudagemm.h"
 
 #include <stdio.h>

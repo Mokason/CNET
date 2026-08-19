@@ -18,11 +18,11 @@ static int ensure_dir(const char *path) {
     for (i = 1; i < len; i++) {
         if (tmp[i] == '/') {
             tmp[i] = '\0';
-            if (mkdir(tmp, 0755) != 0 && errno != EEXIST) return -1;
+            if (cnet_mkdir(tmp, 0755) != 0 && errno != EEXIST) return -1;
             tmp[i] = '/';
         }
     }
-    if (mkdir(tmp, 0755) != 0 && errno != EEXIST) return -1;
+    if (cnet_mkdir(tmp, 0755) != 0 && errno != EEXIST) return -1;
     return 0;
 }
 
@@ -221,7 +221,7 @@ int cnet_gov_pin_snapshot(const CnetGovernancePolicy *p, const char *base_path,
     FILE *cf;
     if (!p || !base_path || !base_path[0]) return -1;
     if (ensure_dir(p->pin_dir) != 0) return -2;
-    localtime_r(&now, &tm_now);
+    cnet_localtime_r(&now, &tm_now);
     strftime(stamp, sizeof stamp, "%Y%m%d_%H%M%S", &tm_now);
     base_name = strrchr(base_path, '/');
     base_name = base_name ? base_name + 1 : base_path;

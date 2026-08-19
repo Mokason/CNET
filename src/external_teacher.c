@@ -8,7 +8,9 @@
 #include <string.h>
 #include <unistd.h>
 #include <sys/types.h>
+#if CNET_HAVE_SYS_WAIT
 #include <sys/wait.h>
+#endif
 
 typedef struct {
     double *inputs;
@@ -188,6 +190,7 @@ int external_teacher_bind_table(
     return 0;
 }
 
+#if CNET_HAVE_FORK_EXEC
 static void subprocess_stop(ExtSubprocessCtx *s) {
     if (!s) return;
     if (s->to_child) {
@@ -251,6 +254,34 @@ static int subprocess_start(ExtSubprocessCtx *s) {
     s->started = 1;
     return 0;
 }
+#else /* !CNET_HAVE_FORK_EXEC */
+
+/* No fork/exec on this platform, so a subprocess teacher cannot be spawned.
+   Both entry points fail closed rather than being shimmed: a fake fork would
+   be worse than an honest absence, and subprocess_teacher_fn below already
+   propagates a failed start as -2. subprocess_stop still closes any streams it
+   is handed so the cleanup path stays total. */
+static void subprocess_stop(ExtSubprocessCtx *s) {
+    if (s == NULL) return;
+    if (s->to_child) {
+        fclose(s->to_child);
+        s->to_child = NULL;
+    }
+    if (s->from_child) {
+        fclose(s->from_child);
+        s->from_child = NULL;
+    }
+    s->pid = 0;
+    s->started = 0;
+}
+
+static int subprocess_start(ExtSubprocessCtx *s) {
+    if (s == NULL) return -1;
+    if (s->started) return 0;
+    return -3; /* same code the POSIX path returns for a failed fork */
+}
+
+#endif /* CNET_HAVE_FORK_EXEC */
 
 static int subprocess_teacher_fn(const double *in, double *out, void *ctx) {
     ExtSubprocessCtx *s = (ExtSubprocessCtx *)ctx;

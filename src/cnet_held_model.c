@@ -1,6 +1,7 @@
 #include "cnet_held_model.h"
 
-#include <dlfcn.h>
+/* dlopen/dlsym/dlclose come from include/cnet_platform.h, which maps them to
+   LoadLibrary/GetProcAddress/FreeLibrary on Windows. */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -194,7 +195,7 @@ typedef void (*HeldGenFreeFn)(CnetHarnessGeneration *);
 typedef int (*HeldCloseFn)(CnetHarnessSession *);
 
 static void *held_sym(void *lib, const char *name) {
-    return lib == NULL || name == NULL ? NULL : dlsym(lib, name);
+    return lib == NULL || name == NULL ? NULL : cnet_dlsym(lib, name);
 }
 
 static HeldOpenFn as_open(void *p) {
@@ -242,7 +243,7 @@ static int plugin_open(const char *path) {
     lib = getenv("CNET_HARNESS_LIBRARY");
     if (lib == NULL || lib[0] == '\0') lib = "bin/libcnet_harness.so";
     if (g_plugin == NULL) {
-        g_plugin = dlopen(lib, RTLD_NOW);
+        g_plugin = cnet_dlopen(lib);
         if (g_plugin == NULL) return 1;
     }
     open_fn = as_open(held_sym(g_plugin, "cnet_harness_open"));
@@ -316,7 +317,7 @@ void cnet_held_model_close(void) {
     }
     g_session = NULL;
     if (g_plugin != NULL) {
-        dlclose(g_plugin);
+        cnet_dlclose(g_plugin);
         g_plugin = NULL;
     }
 }

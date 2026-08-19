@@ -14,11 +14,11 @@ if [[ -z "$Q" ]]; then
 fi
 if [[ ! -x bin/roe_chain_think ]]; then
   gcc -std=c11 -Wall -Wextra -O2 -D_POSIX_C_SOURCE=200809L -Iinclude \
-    -o bin/roe_chain_think src/cnet_roe_cot.c tools/roe_chain_think.c
+    -o bin/roe_chain_think src/roe/cnet_roe_cot.c tools/roe_chain_think.c
 fi
 if [[ ! -x bin/roe_front_door ]]; then
   gcc -std=c11 -Wall -O2 -D_POSIX_C_SOURCE=200809L -Iinclude -o bin/roe_front_door \
-    src/cnet_roe_asi.c src/cnet_roe_net.c src/cnet_asi_improve.c tools/roe_front_door.c -lm -lcurl
+    src/roe/cnet_roe_asi.c src/roe/cnet_roe_net.c src/selfimprove/cnet_asi_improve.c tools/roe_front_door.c -lm -lcurl
 fi
 export ROE_NO_THOUGHT=1
 if [[ "$TEACHER" -eq 1 ]]; then

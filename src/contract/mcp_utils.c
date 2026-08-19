@@ -10,7 +10,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#if CNET_HAVE_SYS_WAIT
 #include <sys/wait.h>
+#endif
 #include <unistd.h>
 #ifndef _WIN32
 #include <sys/stat.h>
@@ -98,7 +100,7 @@ static int path_components_safe(const char *path) {
             }
 #else
             struct stat st;
-            if (lstat(probe, &st) != 0) {
+            if (cnet_lstat(probe, &st) != 0) {
                 if (!leaf || errno != ENOENT) {
                     probe[i] = saved;
                     return 0;
@@ -484,7 +486,7 @@ int mcp_atomic_write_text(const char *path, const char *content) {
             return -1;
         }
         if ((len > 0 && fwrite(content, 1, len, f) != len) ||
-            fflush(f) != 0 || fsync(fd) != 0)
+            fflush(f) != 0 || cnet_fsync(fd) != 0)
             ok = -1;
         if (fclose(f) != 0) ok = -1;
         if (ok == 0 && rename(tmp_path, path) != 0) ok = -1;
@@ -501,12 +503,10 @@ int mcp_atomic_write_text(const char *path, const char *content) {
                 } else {
                     *slash = '\0';
                 }
-#ifdef O_DIRECTORY
-                dirfd = open(parent, O_RDONLY | O_DIRECTORY);
-#else
-                dirfd = open(parent, O_RDONLY);
-#endif
-                if (dirfd < 0 || fsync(dirfd) != 0) ok = -1;
+                /* CNET_O_DIRECTORY is 0 where the platform has no such flag, so the
+                   shim guarantees the macro exists and no branch is needed. */
+                dirfd = open(parent, O_RDONLY | CNET_O_DIRECTORY);
+                if (dirfd < 0 || cnet_fsync(dirfd) != 0) ok = -1;
                 if (dirfd >= 0 && close(dirfd) != 0) ok = -1;
             }
         }

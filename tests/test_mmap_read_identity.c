@@ -24,7 +24,9 @@
 #include <stdlib.h>
 #include <fcntl.h>
 #include <unistd.h>
+#if CNET_HAVE_MMAP
 #include <sys/mman.h>
+#endif
 #include <sys/stat.h>
 
 #define QK_K 256
@@ -52,10 +54,15 @@ static int skipkv(const uint8_t*&p){uint32_t t=u32(p);
     case 9:{uint32_t et=u32(p);uint64_t n=u64(p);for(uint64_t i=0;i<n;i++){if(et==8){uint64_t sn=u64(p);p+=sn;}
         else{int z=(et==0||et==1||et==7)?1:(et==2||et==3)?2:(et==4||et==5||et==6)?4:8;p+=z;}}}break;
     default:return 0;}return 1;}
+#if CNET_HAVE_MMAP
 
 int main(int argc,char**argv){
     const char* path=argc>1?argv[1]:"/home/marble/AI/Models/gemma4-v2-Q4_K_M.gguf";
-    int fd=open(path,O_RDONLY); if(fd<0){perror("open");return 1;}
+    /* A model that is not on this box is a SKIP, not a failure. Saying so here,
+       rather than masking a nonzero exit with `|| true` in the recipe, is what
+       keeps recipe_gate satisfied and keeps a real crash visible. */
+    int fd=open(path,O_RDONLY);
+    if(fd<0){printf("HOP1 SKIP: no model at %s\n", path); return 0;}
     struct stat st; fstat(fd,&st);
     uint8_t* base=(uint8_t*)mmap(NULL,st.st_size,PROT_READ,MAP_SHARED,fd,0);
     if(base==MAP_FAILED){perror("mmap");return 1;}
@@ -93,3 +100,14 @@ int main(int argc,char**argv){
     printf("%s\n", ok?"HOP1 INVARIANT OK: mmap read == fread read, byte-identical dequant":"HOP1 FAIL");
     return ok?0:1;
 }
+#else /* !CNET_HAVE_MMAP */
+
+/* This invariant is about mmap vs fread returning the same bytes. Without
+   mmap there is no second path to compare, so the test reports a skip rather
+   than a pass -- a platform that cannot run a proof must not print one. */
+int main(void) {
+    printf("HOP1 SKIP: no mmap on this platform; nothing to compare\n");
+    return 0;
+}
+
+#endif /* CNET_HAVE_MMAP */

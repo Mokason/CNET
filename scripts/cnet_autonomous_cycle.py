@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""CNET autonomous cycle — do work without Hermes or human go/accept.
+"""CNET autonomous cycle â€” do work without Hermes or human go/accept.
 
 Not AGI. One tick:
   1) health snap
   2) probe curriculum queries through roe_front_door (LOCAL or MISS)
   3) optional teacher fill on MISS (Ollama cloud)
-  4) evolve_tick (gold | multi_stable + reviewer → pack_personal)
+  4) evolve_tick (gold | multi_stable + reviewer â†’ pack_personal)
   5) optional light autoteach if script present
   6) write AUTONOMOUS_CYCLE.json KPI
 
@@ -92,9 +92,9 @@ def ensure_front_door() -> bool:
             "-Iinclude",
             "-o",
             str(BIN_FD),
-            "src/cnet_roe_asi.c",
-            "src/cnet_roe_net.c",
-            "src/cnet_asi_improve.c",
+            "src/roe/cnet_roe_asi.c",
+            "src/roe/cnet_roe_net.c",
+            "src/selfimprove/cnet_asi_improve.c",
             "tools/roe_front_door.c",
             "-lm",
             "-lcurl",
@@ -117,7 +117,7 @@ def default_curriculum() -> list[dict]:
         {"q": "roe front door selective load", "want": "any", "tag": "roe"},
         {"q": "pack personal evolve tick", "want": "any", "tag": "evolve"},
         {"q": "teacher rate under ten percent warm", "want": "any", "tag": "kpi"},
-        # deliberate soft OOD — should miss/abstain, feed evolve
+        # deliberate soft OOD â€” should miss/abstain, feed evolve
         {"q": "autonomous cycle probe novel fact alpha-seven", "want": "MISS", "tag": "grow"},
     ]
 
@@ -201,7 +201,7 @@ def fd_env(live: bool) -> dict:
 
 
 def is_probe_query(q: str) -> bool:
-    """Curriculum/soak probes — never call Teacher (short-circuit)."""
+    """Curriculum/soak probes â€” never call Teacher (short-circuit)."""
     nq = (q or "").lower()
     sigs = (
         "novel fact",
@@ -314,7 +314,7 @@ def main() -> int:
         "ok": False,
     }
 
-    # 0) autonomy charter — freedom + budgets
+    # 0) autonomy charter â€” freedom + budgets
     charter_state = {}
     try:
         import cnet_autonomy_charter as ac  # type: ignore
@@ -389,7 +389,7 @@ def main() -> int:
     }
 
     if pause_grow:
-        # Adenosine high: only stable LOCAL tags (soul/law/toolcall) — no grow/MISS probes
+        # Adenosine high: only stable LOCAL tags (soul/law/toolcall) â€” no grow/MISS probes
         curriculum = [
             c
             for c in curriculum
@@ -472,9 +472,9 @@ def main() -> int:
         want = (item.get("want") or "LOCAL").upper()
         src = (info.get("source") or "").upper()
         # Outcome correctness (not raw LOCAL rate):
-        #   want LOCAL → must be LOCAL
-        #   want MISS  → must be non-LOCAL (ASK_USER/CNET/shortcircuit); sealing is FAIL
-        #   want ANY   → any source is OK (coverage telemetry)
+        #   want LOCAL â†’ must be LOCAL
+        #   want MISS  â†’ must be non-LOCAL (ASK_USER/CNET/shortcircuit); sealing is FAIL
+        #   want ANY   â†’ any source is OK (coverage telemetry)
         if want == "MISS":
             ok = src not in ("LOCAL",)
         elif want == "ANY":
@@ -505,7 +505,7 @@ def main() -> int:
     report["thought_sample"] = thoughts[:3]
     report["kpi"]["teacher_calls_tick"] = teacher_used
 
-    # Continuity workspace (bind body/mind/place/story — not consciousness)
+    # Continuity workspace (bind body/mind/place/story â€” not consciousness)
     try:
         import cnet_continuity as cont  # type: ignore
 
@@ -627,7 +627,7 @@ def main() -> int:
     print(f"autonomous_cycle local_hit={report['kpi'].get('local_hit')} correct_hit={report['kpi'].get('correct_hit')} "
           f"promoted={report['kpi'].get('promoted', 0)} "
           f"miss={miss_n} dur={report['duration_s']}s")
-    print(f"report → {REPORT}")
+    print(f"report â†’ {REPORT}")
     print("CNET_AUTONOMOUS_PASS")
     return 0
 

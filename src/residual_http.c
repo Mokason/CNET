@@ -4,10 +4,18 @@
 #include "../include/residual_http.h"
 #include "../include/gap_lane.h"
 
+/* libcurl backs the whole of this adapter: it exists only to talk HTTP.
+   Absent the library the module compiles to honest refusals rather than not
+   compiling at all -- the same policy cce_safetensors.c applies to its
+   HTTPS download path. Gate: make residual_http_nocurl. */
+#if CNET_HAVE_CURL
 #include <curl/curl.h>
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#if CNET_HAVE_CURL
 
 struct ResidualHttp {
     char base[512];
@@ -429,3 +437,96 @@ int personal_ai_auto_residual_http(PersonalAi *ai, ResidualHttp **owned) {
     return 0;
 }
 #endif
+
+#else /* !CNET_HAVE_CURL */
+
+/* Built without libcurl. Every entry point refuses explicitly and the handle
+   type stays opaque, so callers that probe for an HTTP residual get a clean
+   "unavailable" instead of a link error. personal_ai_auto_residual_http
+   returns 1 -- the same code it returns when CNET_RESIDUAL_HTTP is unset --
+   because "no HTTP residual is available here" is exactly what that means to
+   every caller of it. */
+
+struct ResidualHttp {
+    int unused;
+};
+
+int residual_http_open(ResidualHttp **out, const char *base_url,
+                       const char *window_path, int synthetic_n) {
+    (void)base_url;
+    (void)window_path;
+    (void)synthetic_n;
+    if (out) *out = NULL;
+    return -1;
+}
+
+void residual_http_close(ResidualHttp *r) { (void)r; }
+
+int residual_http_window_n(const ResidualHttp *r) {
+    (void)r;
+    return 0;
+}
+
+const int *residual_http_window_ids(const ResidualHttp *r) {
+    (void)r;
+    return NULL;
+}
+
+Port residual_http_input_port(const ResidualHttp *r) {
+    Port p;
+    (void)r;
+    memset(&p, 0, sizeof p);
+    return p;
+}
+
+Port residual_http_output_port(const ResidualHttp *r) {
+    Port p;
+    (void)r;
+    memset(&p, 0, sizeof p);
+    return p;
+}
+
+int residual_http_ping(const ResidualHttp *r) {
+    (void)r;
+    return -1;
+}
+
+int residual_http_oracle(const double *in, double *out, void *ctx) {
+    (void)in;
+    (void)out;
+    (void)ctx;
+    return -1;
+}
+
+int residual_http_window_logits(ResidualHttp *r, int hot_slot, float *wl) {
+    (void)r;
+    (void)hot_slot;
+    (void)wl;
+    return -1;
+}
+
+int residual_http_oracle_topk(const double *in, double *out, void *ctx, int k) {
+    (void)in;
+    (void)out;
+    (void)ctx;
+    (void)k;
+    return -1;
+}
+
+#ifndef CNET_RESIDUAL_HTTP_STANDALONE
+int personal_ai_bind_residual_http(PersonalAi *ai, ResidualHttp *r,
+                                   const char *name) {
+    (void)ai;
+    (void)r;
+    (void)name;
+    return -1;
+}
+
+int personal_ai_auto_residual_http(PersonalAi *ai, ResidualHttp **owned) {
+    if (owned) *owned = NULL;
+    if (!ai) return -1;
+    return 1;
+}
+#endif
+
+#endif /* CNET_HAVE_CURL */

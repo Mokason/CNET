@@ -24,7 +24,7 @@ int main(void) {
 
     if (!url) url = "http://127.0.0.1:8080";
     if (!base) base = "soul_gemma4v2_final.cnb";
-    setenv("CNET_STRUCTURE_EXPAND_N", "32", 0);
+    cnet_setenv("CNET_STRUCTURE_EXPAND_N", "32", 0);
 
     if (residual_http_open(&rh, url, win, 32) != 0 || !rh) {
         fprintf(stderr, "http open fail\n");

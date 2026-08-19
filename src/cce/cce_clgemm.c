@@ -131,7 +131,18 @@ static const char *k_src =
     "    float acc = 0.0f;\n"
     "    int valid = (n < N && t < T);\n"
     "    if (valid && has_bias) acc = B[n];\n"
-    "    __global const float* arow = A + (size_t)(valid ? t : 0) * (size_t)K;\n"
+    /* The As[] tile is per-WORK-GROUP and holds one row of A, so the row index
+       must depend only on t -- which is uniform across the group, since
+       local = {64,1} -- and never on `valid`, which also folds in (n < N).
+       In the last column group of an N that is not a multiple of 64, the lanes
+       with n >= N took the `: 0` branch and loaded ROW 0 into the shared tile
+       while their neighbours loaded row t. Every row except row 0 then read
+       row-0 activations for those columns: deterministic wrong results, not
+       float noise. Invisible for years because every production shape (1024,
+       8192, 32768) is a multiple of 64, and because the gate that would have
+       caught it had no Makefile rule. Gate: make clgemm_unit, shape
+       "odd 640x1000". */
+    "    __global const float* arow = A + (size_t)(t < T ? t : 0) * (size_t)K;\n"
     "    for (int k0 = 0; k0 < K; k0 += CCE_ATILE) {\n"
     "        int kk = k0 + lid;\n"
     "        if (lid < CCE_ATILE)\n"
@@ -160,7 +171,18 @@ static const char *k_src =
     "    __local float As[CCE_ATILE];\n"
     "    float acc = 0.0f;\n"
     "    int valid = (n < N && t < T);\n"
-    "    __global const float* arow = A + (size_t)(valid ? t : 0) * (size_t)K;\n"
+    /* The As[] tile is per-WORK-GROUP and holds one row of A, so the row index
+       must depend only on t -- which is uniform across the group, since
+       local = {64,1} -- and never on `valid`, which also folds in (n < N).
+       In the last column group of an N that is not a multiple of 64, the lanes
+       with n >= N took the `: 0` branch and loaded ROW 0 into the shared tile
+       while their neighbours loaded row t. Every row except row 0 then read
+       row-0 activations for those columns: deterministic wrong results, not
+       float noise. Invisible for years because every production shape (1024,
+       8192, 32768) is a multiple of 64, and because the gate that would have
+       caught it had no Makefile rule. Gate: make clgemm_unit, shape
+       "odd 640x1000". */
+    "    __global const float* arow = A + (size_t)(t < T ? t : 0) * (size_t)K;\n"
     "    for (int k0 = 0; k0 < K; k0 += CCE_ATILE) {\n"
     "        int kk = k0 + lid;\n"
     "        if (lid < CCE_ATILE)\n"

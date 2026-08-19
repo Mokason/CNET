@@ -167,6 +167,24 @@ CFLAGS += -D_DEFAULT_SOURCE
 CNET_SONAME_LDFLAGS := -Wl,-soname,libcnet.so.$(CNET_ABI_VERSION)
 endif
 
+# FORCE-INCLUDE THE PLATFORM SHIM.
+#
+# include/cnet_platform.h exists because POSIX calls kept being written with the
+# *include* guarded and the *call site* not, which is how `make verify` was dead
+# on Windows for 186 commits. Restoring the shim did not fix that by itself:
+# adoption was opt-in, so it reached 15 of 235 translation units while the other
+# 220 kept open-coding `#ifdef _WIN32` -- and 29 of them did not compile at all.
+#
+# Forcing it in makes the portable spelling the DEFAULT rather than something
+# each new file has to remember. A file needing a primitive the shim does not
+# have now fails at that one call -- a finite worklist -- instead of failing at
+# whichever build first happens to touch it.
+#
+# C only: the g++ recipes carry their own explicit flag lists and never expand
+# $(CFLAGS), so the C++ runners are unaffected.
+# Gate: make platform_sweep
+CFLAGS += -include include/cnet_platform.h
+
 # OpenMP support for multi-threaded studies inside a single exe (MinGW GCC).
 # Follows strict rules: default(none) on all pragmas, OMP_NUM_THREADS=1 for
 # isolating races, etc. Only study targets get -fopenmp.
@@ -348,7 +366,7 @@ no_python_audit: scripts/no_python_audit.sh
 EXE_EXT := $(if $(filter Windows_NT,$(OS)),.exe,)
 
 # Portable dotnet command discovery.
-# Tries: PATH (command -v) → DOTNET_ROOT → $HOME/dotnet.
+# Tries: PATH (command -v) â†’ DOTNET_ROOT â†’ $HOME/dotnet.
 # Override by setting DOTNET on the command line or exporting it.
 DOTNET ?= $(shell command -v dotnet 2>/dev/null || \
     { [ -n "$${DOTNET_ROOT:-}" ] && [ -x "$${DOTNET_ROOT}/dotnet" ] && echo "$${DOTNET_ROOT}/dotnet"; } || \
@@ -410,7 +428,7 @@ CCE_TIERRT  := src/cce/cce_tier_runtime.c
 CCE_SIMILAR := src/cce/cce_similar.c
 CCE_CLGEMM  := src/cce/cce_clgemm.c
 CCE_HIPGEMM := src/cce/cce_hipgemm.c
-# Optional NVIDIA cuBLAS seam (dlopen libcudart/libcublas — no nvcc/toolkit to build).
+# Optional NVIDIA cuBLAS seam (dlopen libcudart/libcublas â€” no nvcc/toolkit to build).
 # Inert at runtime unless an NVIDIA driver is present and CNET_GPU_BACKEND=cuda
 # (or auto falls back after OpenCL/hip miss). Peer of CCE_HIPGEMM / CCE_CLGEMM.
 CCE_CUDAGEMM := src/cce/cce_cudagemm.c
@@ -423,15 +441,15 @@ CCE := $(CCE_TENSOR) $(CCE_BLOCK) $(CCE_CASCADE) $(CCE_ARCHIVE) $(CCE_FOREST) $(
 CNET_CCE_ADAPTER := src/cce/cce_contract_adapter.c
 SPECIALIST_ADAPTERS := src/specialist_adapters.c
 SPECIALIST_SRC := src/specialist.c src/specialist_health.c
-FAULT_SRC := src/cnet_fault.c src/cnet_promote.c src/cnet_serve_decode.c
+FAULT_SRC := src/cnet_fault.c src/selfimprove/cnet_promote.c src/serve/cnet_serve_decode.c
 OPENLAB_SRC := src/cnet_moe.c src/cnet_acct.c
-GAP_LANE_SRC := src/gap_lane.c src/cnet_auto_learn.c src/cnet_charter.c src/cnet_record_teacher.c $(FAULT_SRC)
+GAP_LANE_SRC := src/gap_lane.c src/selfimprove/cnet_auto_learn.c src/cnet_charter.c src/cnet_record_teacher.c $(FAULT_SRC)
 GOV_SRC := src/cnet_governance.c
 ASYNC_RUNTIME := src/async_runtime.c
 MODEL_RUNTIME := src/model_runtime.c
 RESOURCE_GOV_SRC := src/resource_governor.c
 CF_ORDER_SRC := src/counterfactual_order.c
-SELF_IMPROVE_SRC := src/self_improve.c
+SELF_IMPROVE_SRC := src/selfimprove/self_improve.c
 HARNESS_ORACLE_SRC := src/harness_oracle.c
 EXT_TEACHER_SRC := src/external_teacher.c
 MODALITY_VOICE_SRC := src/modality_voice.c
@@ -439,19 +457,19 @@ MODALITY_VISION_SRC := src/modality_vision.c
 JSON_TOOLCALL_SRC := src/json_toolcall.c
 MULTIMODAL_SRC := $(EXT_TEACHER_SRC) $(MODALITY_VOICE_SRC) $(MODALITY_VISION_SRC) $(JSON_TOOLCALL_SRC)
 PERSONAL_AI_SRC := src/personal_ai.c $(OPENLAB_SRC) src/cnet_seal_trust.c
-CAPSULE_SRC := src/cnet_capsule.c
-HYBRID_AI_SRC := src/hybrid_ai.c src/cnet_sparse_serve.c
+CAPSULE_SRC := src/memory/cnet_capsule.c
+HYBRID_AI_SRC := src/hybrid_ai.c src/serve/cnet_sparse_serve.c
 BRAIN_SIDECAR_SRC := src/cnet_brain_sidecar.c
-SHARED_WORKSPACE_SRC := src/cnet_shared_workspace.c
-SEMANTIC_CORTEX_SRC := src/cnet_semantic_cortex.c
-SLEEP_CONSOLIDATE_SRC := src/cnet_sleep_consolidate.c
+SHARED_WORKSPACE_SRC := src/memory/cnet_shared_workspace.c
+SEMANTIC_CORTEX_SRC := src/memory/cnet_semantic_cortex.c
+SLEEP_CONSOLIDATE_SRC := src/memory/cnet_sleep_consolidate.c
 CALIBRATED_GOVERNANCE_SRC := src/cnet_calibrated_governance.c
 # Held-out capability fixture reader. Linked into every capability evaluator so
 # the declared fixture drives the assertions instead of decorating the report.
 HELDOUT_SRC := src/cnet_heldout.c
 RESIDUAL_GGUF_SRC := src/residual_gguf.c src/residual_http.c
 PILOT_SRC := src/cnet_pilot.c
-CURIOSITY_SRC := src/cnet_curiosity.c
+CURIOSITY_SRC := src/selfimprove/cnet_curiosity.c
 EG_SRC := src/cnet_eg.c
 AGENT_ROLE_SRC := src/cnet_agent_role.c
 ROUTE_LOG_SRC := src/cnet_route_log.c
@@ -576,7 +594,7 @@ test_router: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(SCAN) $(ROUTER_TEST) $
 		$(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(SCAN) $(ROUTER_TEST) \
 		$(STANDALONE_MAIN) $(LDFLAGS)
 
-# Open-addressing name → index map on PrimitiveRegistry (registry_find).
+# Open-addressing name â†’ index map on PrimitiveRegistry (registry_find).
 .PHONY: registry_hash
 registry_hash: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(SCAN) tests/test_registry_hash.c include/router.h
 	@mkdir -p $(BIN_DIR) logs
@@ -609,7 +627,7 @@ kv_stream_bench: $(CCE_SPARSE_KV) include/cce/cce_sparse_kv.h tools/kv_stream_be
 	@./$(BIN_DIR)/kv_stream_bench | tee logs/kv_stream_bench.log
 	@grep -q "KV_STREAM_BENCH_PASS" logs/kv_stream_bench.log
 
-# STM/LTM bridge (HOT never blocks on COLD) — C
+# STM/LTM bridge (HOT never blocks on COLD) â€” C
 CCE_STM_LTM := src/cce/cce_stm_ltm_bridge.c $(CCE_SPARSE_KV) src/cce/cce_kv_page.c
 .PHONY: stm_ltm_bridge
 stm_ltm_bridge: $(CCE_STM_LTM) include/cce/cce_stm_ltm_bridge.h tests/test_stm_ltm_bridge.c
@@ -682,7 +700,7 @@ test_topology: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(TOPOLOGY) tests/test
 	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(TOPOLOGY) tests/test_topology.c $(LDFLAGS)
 	./$(BIN_DIR)/test_topology
 
-# Hyperbolic (Poincaré-ball) embedding for generalizing routing priors across
+# Hyperbolic (PoincarÃ©-ball) embedding for generalizing routing priors across
 # SIMILAR tasks (advisory only). See src/hyperbolic.c.
 test_hyperbolic: $(SRC) $(HYPERBOLIC) tests/test_hyperbolic.c include/nn.h include/hyperbolic.h
 	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $(SRC) $(HYPERBOLIC) tests/test_hyperbolic.c $(LDFLAGS)
@@ -790,21 +808,21 @@ library_swap: include/cnet_swap.h src/cnet_swap.c tests/test_library_swap.c \
 	@grep -q '^checks=35 ' logs/library_swap.log
 
 .PHONY: cnet_paragraph
-cnet_paragraph: include/cnet_paragraph.h src/cnet_paragraph.c \
+cnet_paragraph: include/cnet_paragraph.h src/serve/cnet_paragraph.c \
 		tests/test_cnet_paragraph.c
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) $(CFLAGS) -Werror -Iinclude -o $(BIN_DIR)/test_cnet_paragraph \
-		src/cnet_paragraph.c tests/test_cnet_paragraph.c $(LDFLAGS)
+		src/serve/cnet_paragraph.c tests/test_cnet_paragraph.c $(LDFLAGS)
 	@./$(BIN_DIR)/test_cnet_paragraph | tee logs/cnet_paragraph.log
 	@grep -q '^CNET_PARAGRAPH_PASS ' logs/cnet_paragraph.log
 
 .PHONY: cnet_c_speak
-cnet_c_speak: include/cnet_c_speak.h src/cnet_c_speak.c src/cce/cce_wordlm.c \
-		include/cnet_utterance.h src/cnet_utterance.c \
+cnet_c_speak: include/cnet_c_speak.h src/serve/cnet_c_speak.c src/cce/cce_wordlm.c \
+		include/cnet_utterance.h src/serve/cnet_utterance.c \
 		tests/test_cnet_c_speak.c
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) $(CFLAGS) -Werror -Iinclude -o $(BIN_DIR)/test_cnet_c_speak \
-		src/cnet_c_speak.c src/cce/cce_wordlm.c src/cnet_utterance.c \
+		src/serve/cnet_c_speak.c src/cce/cce_wordlm.c src/serve/cnet_utterance.c \
 		tests/test_cnet_c_speak.c $(LDFLAGS)
 	@./$(BIN_DIR)/test_cnet_c_speak | tee logs/cnet_c_speak.log
 	@grep -q '^CNET_C_SPEAK_PASS$$' logs/cnet_c_speak.log
@@ -812,9 +830,9 @@ cnet_c_speak: include/cnet_c_speak.h src/cnet_c_speak.c src/cce/cce_wordlm.c \
 
 .PHONY: cnet_harness
 cnet_harness: include/cnet_skill_lane.h src/cnet_skill_lane.c \
-		include/cnet_c_speak.h src/cnet_c_speak.c src/cce/cce_wordlm.c \
-		include/cnet_utterance.h src/cnet_utterance.c \
-		include/cnet_paragraph.h src/cnet_paragraph.c \
+		include/cnet_c_speak.h src/serve/cnet_c_speak.c src/cce/cce_wordlm.c \
+		include/cnet_utterance.h src/serve/cnet_utterance.c \
+		include/cnet_paragraph.h src/serve/cnet_paragraph.c \
 		include/cnet_ood_skill.h src/cnet_ood_skill.c \
 		include/cnet_held_model.h src/cnet_held_model.c \
 		tests/test_cnet_skill_lane.c
@@ -822,8 +840,8 @@ cnet_harness: include/cnet_skill_lane.h src/cnet_skill_lane.c \
 	@! grep -E 'python3|#include <Python|import sys' src/cnet_skill_lane.c tests/test_cnet_skill_lane.c
 	@! grep -E 'residual_gguf_oracle|roe_set_net|enable_llm' src/cnet_skill_lane.c src/cnet_ood_skill.c
 	$(CC) $(CFLAGS) -Werror -Iinclude -o $(BIN_DIR)/test_cnet_skill_lane \
-		src/cnet_skill_lane.c src/cnet_c_speak.c src/cce/cce_wordlm.c \
-		src/cnet_utterance.c src/cnet_paragraph.c src/cnet_ood_skill.c \
+		src/cnet_skill_lane.c src/serve/cnet_c_speak.c src/cce/cce_wordlm.c \
+		src/serve/cnet_utterance.c src/serve/cnet_paragraph.c src/cnet_ood_skill.c \
 		src/cnet_held_model.c \
 		tests/test_cnet_skill_lane.c $(LDFLAGS) -ldl
 	@./$(BIN_DIR)/test_cnet_skill_lane | tee logs/cnet_harness.log
@@ -832,29 +850,29 @@ cnet_harness: include/cnet_skill_lane.h src/cnet_skill_lane.c \
 	@grep -q 'python=0' logs/cnet_harness.log
 
 .PHONY: cnet_capsule_loop
-cnet_capsule_loop: include/cnet_capsule_loop.h src/cnet_capsule_loop.c \
+cnet_capsule_loop: include/cnet_capsule_loop.h src/memory/cnet_capsule_loop.c \
 		include/cnet_hemisphere.h src/cnet_hemisphere.c \
 		include/cnet_brain_mirror.h src/cnet_brain_mirror.c \
 		include/cnet_skill_lane.h src/cnet_skill_lane.c \
-		include/cnet_c_speak.h src/cnet_c_speak.c src/cce/cce_wordlm.c \
-		include/cnet_utterance.h src/cnet_utterance.c \
-		include/cnet_paragraph.h src/cnet_paragraph.c \
+		include/cnet_c_speak.h src/serve/cnet_c_speak.c src/cce/cce_wordlm.c \
+		include/cnet_utterance.h src/serve/cnet_utterance.c \
+		include/cnet_paragraph.h src/serve/cnet_paragraph.c \
 		include/cnet_ood_skill.h src/cnet_ood_skill.c \
 		include/cnet_held_model.h src/cnet_held_model.c \
-		include/cnet_lookup.h src/cnet_lookup.c \
+		include/cnet_lookup.h src/memory/cnet_lookup.c \
 		src/cce/cce_campaign_provenance.c \
 		tests/test_cnet_capsule_loop.c
 	@mkdir -p $(BIN_DIR) logs
-	@! grep -E 'python3|#include <Python|import sys' src/cnet_capsule_loop.c tests/test_cnet_capsule_loop.c
-	@! grep -E 'residual_gguf_oracle|roe_set_net|enable_llm' src/cnet_capsule_loop.c
+	@! grep -E 'python3|#include <Python|import sys' src/memory/cnet_capsule_loop.c tests/test_cnet_capsule_loop.c
+	@! grep -E 'residual_gguf_oracle|roe_set_net|enable_llm' src/memory/cnet_capsule_loop.c
 	@pkg-config --exists libcurl
 	$(CC) $(filter-out -DCNET_HAVE_CURL=0,$(CFLAGS)) -Werror -Iinclude \
 		-DCNET_HAVE_CURL=1 $$(pkg-config --cflags libcurl) \
 		-o $(BIN_DIR)/test_cnet_capsule_loop \
-		src/cnet_capsule_loop.c src/cnet_hemisphere.c src/cnet_brain_mirror.c \
-		src/cnet_skill_lane.c src/cnet_c_speak.c src/cce/cce_wordlm.c \
-		src/cnet_utterance.c src/cnet_paragraph.c src/cnet_ood_skill.c \
-		src/cnet_held_model.c src/cnet_lookup.c src/cce/cce_campaign_provenance.c \
+		src/memory/cnet_capsule_loop.c src/cnet_hemisphere.c src/cnet_brain_mirror.c \
+		src/cnet_skill_lane.c src/serve/cnet_c_speak.c src/cce/cce_wordlm.c \
+		src/serve/cnet_utterance.c src/serve/cnet_paragraph.c src/cnet_ood_skill.c \
+		src/cnet_held_model.c src/memory/cnet_lookup.c src/cce/cce_campaign_provenance.c \
 		tests/test_cnet_capsule_loop.c $(LDFLAGS) -ldl $$(pkg-config --libs libcurl)
 	@./$(BIN_DIR)/test_cnet_capsule_loop | tee logs/cnet_capsule_loop.log
 	@grep -q '^CNET_CAPSULE_LOOP_PASS$$' logs/cnet_capsule_loop.log
@@ -864,7 +882,7 @@ cnet_capsule_loop: include/cnet_capsule_loop.h src/cnet_capsule_loop.c \
 .PHONY: cnet_ood
 cnet_ood: include/cnet_ood_skill.h src/cnet_ood_skill.c \
 		include/cnet_held_model.h src/cnet_held_model.c \
-		include/cnet_lookup.h src/cnet_lookup.c \
+		include/cnet_lookup.h src/memory/cnet_lookup.c \
 		src/cce/cce_campaign_provenance.c \
 		tests/test_cnet_ood_skill.c
 	@mkdir -p $(BIN_DIR) logs
@@ -874,7 +892,7 @@ cnet_ood: include/cnet_ood_skill.h src/cnet_ood_skill.c \
 	$(CC) $(filter-out -DCNET_HAVE_CURL=0,$(CFLAGS)) -Werror -Iinclude \
 		-DCNET_HAVE_CURL=1 $$(pkg-config --cflags libcurl) \
 		-o $(BIN_DIR)/test_cnet_ood_skill \
-		src/cnet_ood_skill.c src/cnet_held_model.c src/cnet_lookup.c \
+		src/cnet_ood_skill.c src/cnet_held_model.c src/memory/cnet_lookup.c \
 		src/cce/cce_campaign_provenance.c \
 		tests/test_cnet_ood_skill.c $(LDFLAGS) -ldl $$(pkg-config --libs libcurl)
 	@./$(BIN_DIR)/test_cnet_ood_skill | tee logs/cnet_ood.log
@@ -887,12 +905,12 @@ cnet_ood: include/cnet_ood_skill.h src/cnet_ood_skill.c \
 cnet_hemi: include/cnet_hemisphere.h src/cnet_hemisphere.c \
 		include/cnet_brain_mirror.h src/cnet_brain_mirror.c \
 		include/cnet_skill_lane.h src/cnet_skill_lane.c \
-		include/cnet_c_speak.h src/cnet_c_speak.c src/cce/cce_wordlm.c \
-		include/cnet_utterance.h src/cnet_utterance.c \
-		include/cnet_paragraph.h src/cnet_paragraph.c \
+		include/cnet_c_speak.h src/serve/cnet_c_speak.c src/cce/cce_wordlm.c \
+		include/cnet_utterance.h src/serve/cnet_utterance.c \
+		include/cnet_paragraph.h src/serve/cnet_paragraph.c \
 		include/cnet_ood_skill.h src/cnet_ood_skill.c \
 		include/cnet_held_model.h src/cnet_held_model.c \
-		include/cnet_lookup.h src/cnet_lookup.c \
+		include/cnet_lookup.h src/memory/cnet_lookup.c \
 		src/cce/cce_campaign_provenance.c \
 		tests/test_cnet_hemisphere.c
 	@mkdir -p $(BIN_DIR) logs
@@ -901,9 +919,9 @@ cnet_hemi: include/cnet_hemisphere.h src/cnet_hemisphere.c \
 	$(CC) $(filter-out -DCNET_HAVE_CURL=0,$(CFLAGS)) -Werror -Iinclude \
 		-DCNET_HAVE_CURL=1 $$(pkg-config --cflags libcurl) \
 		-o $(BIN_DIR)/test_cnet_hemisphere \
-		src/cnet_hemisphere.c src/cnet_brain_mirror.c src/cnet_skill_lane.c src/cnet_c_speak.c src/cce/cce_wordlm.c \
-		src/cnet_utterance.c src/cnet_paragraph.c src/cnet_ood_skill.c \
-		src/cnet_held_model.c src/cnet_lookup.c src/cce/cce_campaign_provenance.c \
+		src/cnet_hemisphere.c src/cnet_brain_mirror.c src/cnet_skill_lane.c src/serve/cnet_c_speak.c src/cce/cce_wordlm.c \
+		src/serve/cnet_utterance.c src/serve/cnet_paragraph.c src/cnet_ood_skill.c \
+		src/cnet_held_model.c src/memory/cnet_lookup.c src/cce/cce_campaign_provenance.c \
 		tests/test_cnet_hemisphere.c $(LDFLAGS) -ldl $$(pkg-config --libs libcurl)
 	@./$(BIN_DIR)/test_cnet_hemisphere | tee logs/cnet_hemi.log
 	@grep -q '^CNET_HEMI_PASS$$' logs/cnet_hemi.log
@@ -922,19 +940,19 @@ cnet_hemi: include/cnet_hemisphere.h src/cnet_hemisphere.c \
 cnet_rlm: include/cnet_rlm.h src/cnet_rlm.c \
 		include/cnet_hemisphere.h src/cnet_hemisphere.c \
 		include/cnet_brain_mirror.h src/cnet_brain_mirror.c \
-		include/cnet_capsule_loop.h src/cnet_capsule_loop.c \
+		include/cnet_capsule_loop.h src/memory/cnet_capsule_loop.c \
 		include/cnet_skill_lane.h src/cnet_skill_lane.c \
-		include/cnet_c_speak.h src/cnet_c_speak.c src/cce/cce_wordlm.c \
-		include/cnet_utterance.h src/cnet_utterance.c \
-		include/cnet_paragraph.h src/cnet_paragraph.c \
+		include/cnet_c_speak.h src/serve/cnet_c_speak.c src/cce/cce_wordlm.c \
+		include/cnet_utterance.h src/serve/cnet_utterance.c \
+		include/cnet_paragraph.h src/serve/cnet_paragraph.c \
 		include/cnet_ood_skill.h src/cnet_ood_skill.c \
 		include/cnet_held_model.h src/cnet_held_model.c \
-		include/cnet_lookup.h src/cnet_lookup.c \
-		include/cnet_core_serve.h src/cnet_core_serve.c \
-		include/cnet_ember.h src/cnet_ember.c \
-		include/cnet_ember_ckpt.h src/cnet_ember_ckpt.c \
-		include/cnet_ember_session.h src/cnet_ember_session.c \
-		include/cnet_ember_steer.h src/cnet_ember_steer.c \
+		include/cnet_lookup.h src/memory/cnet_lookup.c \
+		include/cnet_core_serve.h src/serve/cnet_core_serve.c \
+		include/cnet_ember.h src/memory/cnet_ember.c \
+		include/cnet_ember_ckpt.h src/memory/cnet_ember_ckpt.c \
+		include/cnet_ember_session.h src/memory/cnet_ember_session.c \
+		include/cnet_ember_steer.h src/memory/cnet_ember_steer.c \
 		src/cce/cce_campaign_provenance.c \
 		tests/test_cnet_rlm.c
 	@mkdir -p $(BIN_DIR) logs
@@ -945,11 +963,11 @@ cnet_rlm: include/cnet_rlm.h src/cnet_rlm.c \
 	$(CC) $(filter-out -DCNET_HAVE_CURL=0,$(CFLAGS)) -Werror -Iinclude \
 		-DCNET_HAVE_CURL=1 $$(pkg-config --cflags libcurl) \
 		-o $(BIN_DIR)/test_cnet_rlm \
-		src/cnet_rlm.c src/cnet_hemisphere.c src/cnet_brain_mirror.c src/cnet_capsule_loop.c \
-		src/cnet_skill_lane.c src/cnet_c_speak.c src/cce/cce_wordlm.c \
-		src/cnet_utterance.c src/cnet_paragraph.c src/cnet_ood_skill.c \
-		src/cnet_held_model.c src/cnet_lookup.c src/cnet_core_serve.c \
-		src/cnet_ember.c src/cnet_ember_ckpt.c src/cnet_ember_session.c src/cnet_ember_steer.c \
+		src/cnet_rlm.c src/cnet_hemisphere.c src/cnet_brain_mirror.c src/memory/cnet_capsule_loop.c \
+		src/cnet_skill_lane.c src/serve/cnet_c_speak.c src/cce/cce_wordlm.c \
+		src/serve/cnet_utterance.c src/serve/cnet_paragraph.c src/cnet_ood_skill.c \
+		src/cnet_held_model.c src/memory/cnet_lookup.c src/serve/cnet_core_serve.c \
+		src/memory/cnet_ember.c src/memory/cnet_ember_ckpt.c src/memory/cnet_ember_session.c src/memory/cnet_ember_steer.c \
 		src/cnet_live_miss.c \
 		src/cce/cce_campaign_provenance.c \
 		tests/test_cnet_rlm.c $(LDFLAGS) -ldl $$(pkg-config --libs libcurl)
@@ -966,36 +984,36 @@ cnet_rlm: include/cnet_rlm.h src/cnet_rlm.c \
 	@grep -q 'brick_first_miss=1' logs/cnet_rlm.log
 
 .PHONY: cnet_ember
-cnet_ember: include/cnet_ember.h src/cnet_ember.c \
-		include/cnet_ember_ckpt.h src/cnet_ember_ckpt.c \
-		include/cnet_ember_session.h src/cnet_ember_session.c \
-		include/cnet_ember_steer.h src/cnet_ember_steer.c \
+cnet_ember: include/cnet_ember.h src/memory/cnet_ember.c \
+		include/cnet_ember_ckpt.h src/memory/cnet_ember_ckpt.c \
+		include/cnet_ember_session.h src/memory/cnet_ember_session.c \
+		include/cnet_ember_steer.h src/memory/cnet_ember_steer.c \
 		include/cnet_rlm.h src/cnet_rlm.c \
 		include/cnet_hemisphere.h src/cnet_hemisphere.c \
 		include/cnet_brain_mirror.h src/cnet_brain_mirror.c \
-		include/cnet_capsule_loop.h src/cnet_capsule_loop.c \
+		include/cnet_capsule_loop.h src/memory/cnet_capsule_loop.c \
 		include/cnet_skill_lane.h src/cnet_skill_lane.c \
-		include/cnet_c_speak.h src/cnet_c_speak.c src/cce/cce_wordlm.c \
-		include/cnet_utterance.h src/cnet_utterance.c \
-		include/cnet_paragraph.h src/cnet_paragraph.c \
+		include/cnet_c_speak.h src/serve/cnet_c_speak.c src/cce/cce_wordlm.c \
+		include/cnet_utterance.h src/serve/cnet_utterance.c \
+		include/cnet_paragraph.h src/serve/cnet_paragraph.c \
 		include/cnet_ood_skill.h src/cnet_ood_skill.c \
 		include/cnet_held_model.h src/cnet_held_model.c \
-		include/cnet_lookup.h src/cnet_lookup.c \
-		include/cnet_core_serve.h src/cnet_core_serve.c \
+		include/cnet_lookup.h src/memory/cnet_lookup.c \
+		include/cnet_core_serve.h src/serve/cnet_core_serve.c \
 		src/cce/cce_campaign_provenance.c \
 		tests/test_cnet_ember.c
 	@mkdir -p $(BIN_DIR) logs
 	@! grep -E 'python3|#include <Python' src/cnet_ember*.c tests/test_cnet_ember.c
-	@! grep -E 'claimed_cert\s*=\s*1' src/cnet_ember.c src/cnet_ember_session.c
+	@! grep -E 'claimed_cert\s*=\s*1' src/memory/cnet_ember.c src/memory/cnet_ember_session.c
 	@pkg-config --exists libcurl
 	$(CC) $(filter-out -DCNET_HAVE_CURL=0,$(CFLAGS)) -Werror -Iinclude \
 		-DCNET_HAVE_CURL=1 $$(pkg-config --cflags libcurl) \
 		-o $(BIN_DIR)/test_cnet_ember \
-		src/cnet_ember.c src/cnet_ember_ckpt.c src/cnet_ember_session.c src/cnet_ember_steer.c \
-		src/cnet_rlm.c src/cnet_hemisphere.c src/cnet_brain_mirror.c src/cnet_capsule_loop.c \
-		src/cnet_skill_lane.c src/cnet_c_speak.c src/cce/cce_wordlm.c \
-		src/cnet_utterance.c src/cnet_paragraph.c src/cnet_ood_skill.c \
-		src/cnet_held_model.c src/cnet_lookup.c src/cnet_core_serve.c \
+		src/memory/cnet_ember.c src/memory/cnet_ember_ckpt.c src/memory/cnet_ember_session.c src/memory/cnet_ember_steer.c \
+		src/cnet_rlm.c src/cnet_hemisphere.c src/cnet_brain_mirror.c src/memory/cnet_capsule_loop.c \
+		src/cnet_skill_lane.c src/serve/cnet_c_speak.c src/cce/cce_wordlm.c \
+		src/serve/cnet_utterance.c src/serve/cnet_paragraph.c src/cnet_ood_skill.c \
+		src/cnet_held_model.c src/memory/cnet_lookup.c src/serve/cnet_core_serve.c \
 		src/cnet_live_miss.c \
 		src/cce/cce_campaign_provenance.c \
 		tests/test_cnet_ember.c $(LDFLAGS) -ldl $$(pkg-config --libs libcurl)
@@ -1014,7 +1032,7 @@ cnet_core_e2e: bin/cnetd scripts/cnet_core_e2e_smoke.sh config/cnet-bonsai-held.
 	@grep -q '^CNET_CORE_E2E_PASS' logs/cnet_core_e2e.log
 
 # cnetd must honour SIGTERM. It did not: signal() carries SA_RESTART, so the
-# blocked accept() restarted and g_stop was never re-tested — cnet_core_e2e
+# blocked accept() restarted and g_stop was never re-tested â€” cnet_core_e2e
 # printed PASS and then hung on its cleanup's `wait` until the CI timeout.
 .PHONY: cnetd_sigterm
 cnetd_sigterm: bin/cnetd tests/test_cnetd_sigterm.sh tools/cnetd.c
@@ -1026,13 +1044,13 @@ cnetd_sigterm: bin/cnetd tests/test_cnetd_sigterm.sh tools/cnetd.c
 # loss. synth_precision folded refusals into its denominator, so the score fell
 # as refusal improved and two extra correct refusals failed the gate.
 .PHONY: agi3_synth_precision
-agi3_synth_precision: include/cnet_agi_scenario3.h src/cnet_agi_scenario3.c \
-		src/cnet_agi_scenario2.c src/cnet_agi_scenario.c \
+agi3_synth_precision: include/cnet_agi_scenario3.h src/selfimprove/cnet_agi_scenario3.c \
+		src/selfimprove/cnet_agi_scenario2.c src/selfimprove/cnet_agi_scenario.c \
 		tests/test_agi3_synth_precision.c $(CORE_PATH_COMMON)
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) $(CFLAGS) -Werror -ffunction-sections -fdata-sections -Iinclude \
 		-o $(BIN_DIR)/test_agi3_synth_precision tests/test_agi3_synth_precision.c \
-		src/cnet_agi_scenario3.c src/cnet_agi_scenario2.c src/cnet_agi_scenario.c \
+		src/selfimprove/cnet_agi_scenario3.c src/selfimprove/cnet_agi_scenario2.c src/selfimprove/cnet_agi_scenario.c \
 		$(CORE_PATH_COMMON) -Wl,--gc-sections $(LDFLAGS)
 	@CNET_GGUF_MMAP=1 ./$(BIN_DIR)/test_agi3_synth_precision | tee logs/agi3_synth_precision.log
 	@grep -q '^AGI3_SYNTH_PRECISION_PASS' logs/agi3_synth_precision.log
@@ -1043,10 +1061,10 @@ agi3_synth_precision: include/cnet_agi_scenario3.h src/cnet_agi_scenario3.c \
 # the two hardcoded defaults and silently resurrected the very tags an operator
 # was removing from the live serve dir.
 .PHONY: evolve_dir_factory
-evolve_dir_factory: include/cnet_evolve_dir.h src/cnet_evolve_dir.c tests/test_evolve_dir_factory.c
+evolve_dir_factory: include/cnet_evolve_dir.h src/selfimprove/cnet_evolve_dir.c tests/test_evolve_dir_factory.c
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) $(CFLAGS) -Werror -Iinclude -o $(BIN_DIR)/test_evolve_dir_factory \
-		tests/test_evolve_dir_factory.c src/cnet_evolve_dir.c $(LDFLAGS)
+		tests/test_evolve_dir_factory.c src/selfimprove/cnet_evolve_dir.c $(LDFLAGS)
 	@./$(BIN_DIR)/test_evolve_dir_factory | tee logs/evolve_dir_factory.log
 	@grep -q '^EVOLVE_DIR_FACTORY_PASS' logs/evolve_dir_factory.log
 	@grep -q 'empty_means_none=1' logs/evolve_dir_factory.log
@@ -1056,10 +1074,10 @@ evolve_dir_factory: include/cnet_evolve_dir.h src/cnet_evolve_dir.c tests/test_e
 # used to skip the tag guard entirely, so brick[0] answered every symbolic
 # arithmetic query with claimed_cert=1 -- live, "2+2" returned a certified 3.
 .PHONY: core_serve_untagged
-core_serve_untagged: include/cnet_core_serve.h src/cnet_core_serve.c tests/test_core_serve_untagged.c
+core_serve_untagged: include/cnet_core_serve.h src/serve/cnet_core_serve.c tests/test_core_serve_untagged.c
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) $(CFLAGS) -Werror -Iinclude -o $(BIN_DIR)/test_core_serve_untagged \
-		tests/test_core_serve_untagged.c src/cnet_core_serve.c $(LDFLAGS)
+		tests/test_core_serve_untagged.c src/serve/cnet_core_serve.c $(LDFLAGS)
 	@./$(BIN_DIR)/test_core_serve_untagged | tee logs/core_serve_untagged.log
 	@grep -q '^CORE_SERVE_UNTAGGED_PASS' logs/core_serve_untagged.log
 	@grep -q 'unaddressed_claims_cert=0' logs/core_serve_untagged.log
@@ -1077,12 +1095,12 @@ mojo_optional: tests/test_mojo_optional.sh src/cce/cce_mojo_dispatch.c src/cce/c
 cnet_brain_mirror: include/cnet_brain_mirror.h src/cnet_brain_mirror.c \
 		include/cnet_hemisphere.h src/cnet_hemisphere.c \
 		include/cnet_skill_lane.h src/cnet_skill_lane.c \
-		include/cnet_c_speak.h src/cnet_c_speak.c src/cce/cce_wordlm.c \
-		include/cnet_utterance.h src/cnet_utterance.c \
-		include/cnet_paragraph.h src/cnet_paragraph.c \
+		include/cnet_c_speak.h src/serve/cnet_c_speak.c src/cce/cce_wordlm.c \
+		include/cnet_utterance.h src/serve/cnet_utterance.c \
+		include/cnet_paragraph.h src/serve/cnet_paragraph.c \
 		include/cnet_ood_skill.h src/cnet_ood_skill.c \
 		include/cnet_held_model.h src/cnet_held_model.c \
-		include/cnet_lookup.h src/cnet_lookup.c \
+		include/cnet_lookup.h src/memory/cnet_lookup.c \
 		src/cce/cce_campaign_provenance.c \
 		tests/test_cnet_brain_mirror.c
 	@mkdir -p $(BIN_DIR) logs
@@ -1090,23 +1108,23 @@ cnet_brain_mirror: include/cnet_brain_mirror.h src/cnet_brain_mirror.c \
 	$(CC) $(filter-out -DCNET_HAVE_CURL=0,$(CFLAGS)) -Werror -Iinclude \
 		-DCNET_HAVE_CURL=1 $$(pkg-config --cflags libcurl) \
 		-o $(BIN_DIR)/test_cnet_brain_mirror \
-		src/cnet_brain_mirror.c src/cnet_hemisphere.c src/cnet_skill_lane.c src/cnet_c_speak.c src/cce/cce_wordlm.c \
-		src/cnet_utterance.c src/cnet_paragraph.c src/cnet_ood_skill.c \
-		src/cnet_held_model.c src/cnet_lookup.c src/cce/cce_campaign_provenance.c \
+		src/cnet_brain_mirror.c src/cnet_hemisphere.c src/cnet_skill_lane.c src/serve/cnet_c_speak.c src/cce/cce_wordlm.c \
+		src/serve/cnet_utterance.c src/serve/cnet_paragraph.c src/cnet_ood_skill.c \
+		src/cnet_held_model.c src/memory/cnet_lookup.c src/cce/cce_campaign_provenance.c \
 		tests/test_cnet_brain_mirror.c $(LDFLAGS) -ldl $$(pkg-config --libs libcurl)
 	@./$(BIN_DIR)/test_cnet_brain_mirror | tee logs/cnet_brain_mirror.log
 	@grep -q '^CNET_BRAIN_MIRROR_PASS$$' logs/cnet_brain_mirror.log
 	@grep -q 'residual_never_mirrors=1' logs/cnet_brain_mirror.log
 
 .PHONY: cnet_grow
-cnet_grow: include/cnet_grow_lobe.h src/cnet_grow_lobe.c \
+cnet_grow: include/cnet_grow_lobe.h src/selfimprove/cnet_grow_lobe.c \
 		include/cnet_held_model.h src/cnet_held_model.c \
 		include/cce/cce_transformer_qat.h \
 		tests/test_cnet_grow_lobe.c $(CCE)
 	@mkdir -p $(BIN_DIR) logs
-	@! grep -E 'python3|#include <Python|import sys' src/cnet_grow_lobe.c tests/test_cnet_grow_lobe.c
+	@! grep -E 'python3|#include <Python|import sys' src/selfimprove/cnet_grow_lobe.c tests/test_cnet_grow_lobe.c
 	$(CC) $(CFLAGS) -Werror -Iinclude -o $(BIN_DIR)/test_cnet_grow_lobe \
-		src/cnet_grow_lobe.c src/cnet_held_model.c $(CCE) \
+		src/selfimprove/cnet_grow_lobe.c src/cnet_held_model.c $(CCE) \
 		tests/test_cnet_grow_lobe.c $(LDFLAGS) -ldl
 	@./$(BIN_DIR)/test_cnet_grow_lobe | tee logs/cnet_grow.log
 	@grep -q '^CNET_GROW_PASS$$' logs/cnet_grow.log
@@ -1115,16 +1133,16 @@ cnet_grow: include/cnet_grow_lobe.h src/cnet_grow_lobe.c \
 	@grep -q 'english=1' logs/cnet_grow.log
 
 .PHONY: cnet_grow_teacher
-cnet_grow_teacher: include/cnet_grow_lobe.h src/cnet_grow_lobe.c \
+cnet_grow_teacher: include/cnet_grow_lobe.h src/selfimprove/cnet_grow_lobe.c \
 		include/cnet_held_model.h src/cnet_held_model.c \
 		tools/cnet_grow_teacher.c $(CCE)
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) $(filter-out -DCNET_HAVE_CURL=0,$(CFLAGS)) -Werror -Iinclude \
 		-DCNET_HAVE_CURL=1 $$(pkg-config --cflags libcurl) \
 		-o $(BIN_DIR)/cnet_grow_teacher \
-		src/cnet_grow_lobe.c src/cnet_held_model.c $(CCE) \
+		src/selfimprove/cnet_grow_lobe.c src/cnet_held_model.c $(CCE) \
 		tools/cnet_grow_teacher.c $(LDFLAGS) -ldl $$(pkg-config --libs libcurl)
-	@echo "cnet_grow_teacher built → $(BIN_DIR)/cnet_grow_teacher"
+	@echo "cnet_grow_teacher built â†’ $(BIN_DIR)/cnet_grow_teacher"
 
 
 
@@ -1133,19 +1151,19 @@ cnet_grow_teacher: include/cnet_grow_lobe.h src/cnet_grow_lobe.c \
 
 
 # --- CORE four product paths (deep benches) ---
-CORE_PATH_COMMON = src/cnet_core_paths.c src/cnet_core_bus.c src/cnet_core_serve.c src/cnet_live_miss.c src/cnet_evolve_dir.c src/cnet_obsidian_learn.c src/cnet_grok_guide.c src/cnet_weight_convert.c \
+CORE_PATH_COMMON = src/serve/cnet_core_paths.c src/serve/cnet_core_bus.c src/serve/cnet_core_serve.c src/cnet_live_miss.c src/selfimprove/cnet_evolve_dir.c src/selfimprove/cnet_obsidian_learn.c src/cnet_grok_guide.c src/cnet_weight_convert.c \
 	src/cnet_hemisphere.c src/cnet_brain_mirror.c src/cnet_rlm.c \
-	src/cnet_ember.c src/cnet_ember_ckpt.c src/cnet_ember_session.c src/cnet_ember_steer.c \
-	src/cnet_capsule_loop.c src/cnet_skill_lane.c src/cnet_ood_skill.c \
-	src/cnet_held_model.c src/cnet_c_speak.c src/cce/cce_wordlm.c \
-	src/cnet_utterance.c src/cnet_paragraph.c src/cnet_lookup.c \
+	src/memory/cnet_ember.c src/memory/cnet_ember_ckpt.c src/memory/cnet_ember_session.c src/memory/cnet_ember_steer.c \
+	src/memory/cnet_capsule_loop.c src/cnet_skill_lane.c src/cnet_ood_skill.c \
+	src/cnet_held_model.c src/serve/cnet_c_speak.c src/cce/cce_wordlm.c \
+	src/serve/cnet_utterance.c src/serve/cnet_paragraph.c src/memory/cnet_lookup.c \
 	src/cnet_dc_invent.c src/cnet_dc_egraph.c src/cnet_dc_type.c \
 	$(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) \
 	$(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) \
 	$(CCE_CAMPAIGN_PROVENANCE) $(CCE_GGUF)
 
 .PHONY: cnet_path1_waist
-cnet_path1_waist: include/cnet_core_paths.h src/cnet_core_paths.c tests/bench_cnet_path1_waist.c
+cnet_path1_waist: include/cnet_core_paths.h src/serve/cnet_core_paths.c tests/bench_cnet_path1_waist.c
 	@mkdir -p $(BIN_DIR) logs result
 	$(CC) $(CFLAGS) -Werror -ffunction-sections -fdata-sections -Iinclude \
 		-o $(BIN_DIR)/bench_cnet_path1_waist tests/bench_cnet_path1_waist.c $(CORE_PATH_COMMON) \
@@ -1155,7 +1173,7 @@ cnet_path1_waist: include/cnet_core_paths.h src/cnet_core_paths.c tests/bench_cn
 	@grep -q 'leftover_mouth=0' logs/cnet_path1_waist.log
 
 .PHONY: cnet_path2_factory
-cnet_path2_factory: include/cnet_core_paths.h src/cnet_core_paths.c tests/bench_cnet_path2_factory.c
+cnet_path2_factory: include/cnet_core_paths.h src/serve/cnet_core_paths.c tests/bench_cnet_path2_factory.c
 	@mkdir -p $(BIN_DIR) logs result
 	$(CC) $(CFLAGS) -Werror -ffunction-sections -fdata-sections -Iinclude \
 		-o $(BIN_DIR)/bench_cnet_path2_factory tests/bench_cnet_path2_factory.c $(CORE_PATH_COMMON) \
@@ -1165,7 +1183,7 @@ cnet_path2_factory: include/cnet_core_paths.h src/cnet_core_paths.c tests/bench_
 	@grep -q 'brick_factory=1' logs/cnet_path2_factory.log
 
 .PHONY: cnet_path3_missadmit
-cnet_path3_missadmit: include/cnet_core_paths.h src/cnet_core_paths.c tests/bench_cnet_path3_missadmit.c
+cnet_path3_missadmit: include/cnet_core_paths.h src/serve/cnet_core_paths.c tests/bench_cnet_path3_missadmit.c
 	@mkdir -p $(BIN_DIR) logs result
 	$(CC) $(CFLAGS) -Werror -ffunction-sections -fdata-sections -Iinclude \
 		-o $(BIN_DIR)/bench_cnet_path3_missadmit tests/bench_cnet_path3_missadmit.c $(CORE_PATH_COMMON) \
@@ -1175,7 +1193,7 @@ cnet_path3_missadmit: include/cnet_core_paths.h src/cnet_core_paths.c tests/benc
 	@grep -q 'propose_neq_admit=1' logs/cnet_path3_missadmit.log
 
 .PHONY: cnet_path4_compose
-cnet_path4_compose: include/cnet_core_paths.h src/cnet_core_paths.c tests/bench_cnet_path4_compose.c
+cnet_path4_compose: include/cnet_core_paths.h src/serve/cnet_core_paths.c tests/bench_cnet_path4_compose.c
 	@mkdir -p $(BIN_DIR) logs result
 	$(CC) $(CFLAGS) -Werror -ffunction-sections -fdata-sections -Iinclude \
 		-o $(BIN_DIR)/bench_cnet_path4_compose tests/bench_cnet_path4_compose.c $(CORE_PATH_COMMON) \
@@ -1189,14 +1207,14 @@ cnet_path4_compose: include/cnet_core_paths.h src/cnet_core_paths.c tests/bench_
 
 
 .PHONY: cnet_agi_scenario3
-cnet_agi_scenario3: include/cnet_agi_scenario3.h src/cnet_agi_scenario3.c \
-		include/cnet_agi_scenario2.h src/cnet_agi_scenario2.c \
-		include/cnet_agi_scenario.h src/cnet_agi_scenario.c \
+cnet_agi_scenario3: include/cnet_agi_scenario3.h src/selfimprove/cnet_agi_scenario3.c \
+		include/cnet_agi_scenario2.h src/selfimprove/cnet_agi_scenario2.c \
+		include/cnet_agi_scenario.h src/selfimprove/cnet_agi_scenario.c \
 		tests/bench_cnet_agi_scenario3.c $(CORE_PATH_COMMON)
 	@mkdir -p $(BIN_DIR) logs result
 	$(CC) $(CFLAGS) -Werror -ffunction-sections -fdata-sections -Iinclude \
 		-o $(BIN_DIR)/bench_cnet_agi_scenario3 tests/bench_cnet_agi_scenario3.c \
-		src/cnet_agi_scenario3.c src/cnet_agi_scenario2.c src/cnet_agi_scenario.c \
+		src/selfimprove/cnet_agi_scenario3.c src/selfimprove/cnet_agi_scenario2.c src/selfimprove/cnet_agi_scenario.c \
 		$(CORE_PATH_COMMON) -Wl,--gc-sections $(LDFLAGS)
 	@CNET_GGUF_MMAP=1 ./$(BIN_DIR)/bench_cnet_agi_scenario3 | tee logs/cnet_agi_scenario3.log result/bench_agi_scenario3.txt
 	@grep -q '^CNET_AGI_SCENARIO3_PASS' logs/cnet_agi_scenario3.log
@@ -1209,13 +1227,13 @@ cnet_agi_scenario3: include/cnet_agi_scenario3.h src/cnet_agi_scenario3.c \
 		synth_prec'>=1.000' committee_rate'>=1.000'
 
 .PHONY: cnet_agi_scenario2
-cnet_agi_scenario2: include/cnet_agi_scenario2.h src/cnet_agi_scenario2.c \
-		include/cnet_agi_scenario.h src/cnet_agi_scenario.c \
+cnet_agi_scenario2: include/cnet_agi_scenario2.h src/selfimprove/cnet_agi_scenario2.c \
+		include/cnet_agi_scenario.h src/selfimprove/cnet_agi_scenario.c \
 		tests/bench_cnet_agi_scenario2.c $(CORE_PATH_COMMON)
 	@mkdir -p $(BIN_DIR) logs result
 	$(CC) $(CFLAGS) -Werror -ffunction-sections -fdata-sections -Iinclude \
 		-o $(BIN_DIR)/bench_cnet_agi_scenario2 tests/bench_cnet_agi_scenario2.c \
-		src/cnet_agi_scenario2.c src/cnet_agi_scenario.c $(CORE_PATH_COMMON) \
+		src/selfimprove/cnet_agi_scenario2.c src/selfimprove/cnet_agi_scenario.c $(CORE_PATH_COMMON) \
 		-Wl,--gc-sections $(LDFLAGS)
 	@CNET_GGUF_MMAP=1 ./$(BIN_DIR)/bench_cnet_agi_scenario2 | tee logs/cnet_agi_scenario2.log result/bench_agi_scenario2.txt
 	@grep -q '^CNET_AGI_SCENARIO2_PASS' logs/cnet_agi_scenario2.log
@@ -1228,13 +1246,13 @@ cnet_agi_scenario2: include/cnet_agi_scenario2.h src/cnet_agi_scenario2.c \
 		goal_rate'>=0.500' gather_rate'>=0.500'
 
 .PHONY: cnet_agi_scenario
-cnet_agi_scenario: include/cnet_agi_scenario.h src/cnet_agi_scenario.c \
-		tests/bench_cnet_agi_scenario.c include/cnet_core_serve.h src/cnet_core_serve.c \
+cnet_agi_scenario: include/cnet_agi_scenario.h src/selfimprove/cnet_agi_scenario.c \
+		tests/bench_cnet_agi_scenario.c include/cnet_core_serve.h src/serve/cnet_core_serve.c \
 		$(CORE_PATH_COMMON)
 	@mkdir -p $(BIN_DIR) logs result
 	$(CC) $(CFLAGS) -Werror -ffunction-sections -fdata-sections -Iinclude \
 		-o $(BIN_DIR)/bench_cnet_agi_scenario tests/bench_cnet_agi_scenario.c \
-		src/cnet_agi_scenario.c $(CORE_PATH_COMMON) \
+		src/selfimprove/cnet_agi_scenario.c $(CORE_PATH_COMMON) \
 		-Wl,--gc-sections $(LDFLAGS)
 	@CNET_GGUF_MMAP=1 ./$(BIN_DIR)/bench_cnet_agi_scenario | tee logs/cnet_agi_scenario.log result/bench_agi_scenario.txt
 	@grep -q '^CNET_AGI_SCENARIO_PASS' logs/cnet_agi_scenario.log
@@ -1246,21 +1264,21 @@ cnet_agi_scenario: include/cnet_agi_scenario.h src/cnet_agi_scenario.c \
 		cert_rate'>=0.800' honesty'>=0.867'
 
 .PHONY: cnet_core_evolve
-cnet_core_evolve: tools/cnet_core_evolve.c include/cnet_core_paths.h src/cnet_core_paths.c include/cnet_core_serve.h src/cnet_core_serve.c $(CORE_PATH_COMMON)
+cnet_core_evolve: tools/cnet_core_evolve.c include/cnet_core_paths.h src/serve/cnet_core_paths.c include/cnet_core_serve.h src/serve/cnet_core_serve.c $(CORE_PATH_COMMON)
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) $(CFLAGS) -Werror -ffunction-sections -fdata-sections -Iinclude \
-		-o $(BIN_DIR)/cnet_core_evolve tools/cnet_core_evolve.c src/cnet_agi_scenario.c src/cnet_agi_scenario2.c src/cnet_agi_scenario3.c $(CORE_PATH_COMMON) \
+		-o $(BIN_DIR)/cnet_core_evolve tools/cnet_core_evolve.c src/selfimprove/cnet_agi_scenario.c src/selfimprove/cnet_agi_scenario2.c src/selfimprove/cnet_agi_scenario3.c $(CORE_PATH_COMMON) \
 		-Wl,--gc-sections $(LDFLAGS)
-	@echo "cnet_core_evolve → $(BIN_DIR)/cnet_core_evolve"
+	@echo "cnet_core_evolve â†’ $(BIN_DIR)/cnet_core_evolve"
 
 
 
 .PHONY: cnet_obsidian_learn
-cnet_obsidian_learn: include/cnet_obsidian_learn.h src/cnet_obsidian_learn.c \
+cnet_obsidian_learn: include/cnet_obsidian_learn.h src/selfimprove/cnet_obsidian_learn.c \
 		tests/test_cnet_obsidian_learn.c src/cnet_live_miss.c
 	@mkdir -p $(BIN_DIR) logs result
 	$(CC) $(CFLAGS) -Werror -Iinclude -o $(BIN_DIR)/test_cnet_obsidian_learn \
-		tests/test_cnet_obsidian_learn.c src/cnet_obsidian_learn.c src/cnet_live_miss.c $(LDFLAGS)
+		tests/test_cnet_obsidian_learn.c src/selfimprove/cnet_obsidian_learn.c src/cnet_live_miss.c $(LDFLAGS)
 	@bash scripts/cnet_obsidian_learn_smoke.sh | tee logs/cnet_obsidian_learn.log result/bench_obsidian_learn.txt
 	@grep -q '^CNET_OBSIDIAN_LEARN_PASS' logs/cnet_obsidian_learn.log
 
@@ -1269,15 +1287,15 @@ cnet_live_miss_loop: include/cnet_live_miss.h src/cnet_live_miss.c \
 		tests/test_cnet_live_miss_loop.c $(CORE_PATH_COMMON) cnet_core_evolve bin/cnetd
 	@mkdir -p $(BIN_DIR) logs result
 	$(CC) $(CFLAGS) -Werror -Iinclude -o $(BIN_DIR)/test_cnet_live_miss_loop \
-		tests/test_cnet_live_miss_loop.c src/cnet_live_miss.c src/cnet_core_serve.c $(LDFLAGS)
+		tests/test_cnet_live_miss_loop.c src/cnet_live_miss.c src/serve/cnet_core_serve.c $(LDFLAGS)
 	@CNET_GGUF_MMAP=1 bash scripts/cnet_live_miss_loop_smoke.sh | tee logs/cnet_live_miss_loop.log result/bench_live_miss_loop.txt
 	@grep -q '^CNET_LIVE_MISS_LOOP_PASS' logs/cnet_live_miss_loop.log
 
 .PHONY: cnet_core_switch_wire
-cnet_core_switch_wire: cnet_core_evolve bin/cnetd include/cnet_core_serve.h src/cnet_core_serve.c tests/test_cnet_core_switch_wire.c
+cnet_core_switch_wire: cnet_core_evolve bin/cnetd include/cnet_core_serve.h src/serve/cnet_core_serve.c tests/test_cnet_core_switch_wire.c
 	@mkdir -p $(BIN_DIR) logs result /tmp/cnet_switch_bricks
 	$(CC) $(CFLAGS) -Werror -Iinclude -o $(BIN_DIR)/test_cnet_core_switch_wire \
-		tests/test_cnet_core_switch_wire.c src/cnet_core_serve.c $(LDFLAGS)
+		tests/test_cnet_core_switch_wire.c src/serve/cnet_core_serve.c $(LDFLAGS)
 	@rm -rf /tmp/cnet_switch_bricks && mkdir -p /tmp/cnet_switch_bricks
 	@CNET_GGUF_MMAP=1 CNET_CORE_BUS_BRICKS_DIR=/tmp/cnet_switch_bricks \
 		CNET_CORE_EVOLVE_FACTORY=1 CNET_BONSAI_GGUF=/home/marble/AI/Models/Bonsai-8B-gguf/Bonsai-8B.gguf \
@@ -1293,35 +1311,35 @@ cnet_core_paths: cnet_path1_waist cnet_path2_factory cnet_path3_missadmit cnet_p
 	@echo "CNET_CORE_PATHS_PASS path1=1 path2=1 path3=1 path4=1 bus=1 switch=1 agi_scenario=1 agi_scenario2=1" | tee logs/cnet_core_paths.log result/bench_core_paths.txt
 
 .PHONY: cnet_core_bus
-cnet_core_bus: include/cnet_core_bus.h src/cnet_core_bus.c \
+cnet_core_bus: include/cnet_core_bus.h src/serve/cnet_core_bus.c \
 		include/cnet_weight_convert.h src/cnet_weight_convert.c \
 		include/cnet_hemisphere.h src/cnet_hemisphere.c \
 		include/cnet_brain_mirror.h src/cnet_brain_mirror.c \
 		include/cnet_rlm.h src/cnet_rlm.c \
-		include/cnet_core_serve.h src/cnet_core_serve.c \
-		include/cnet_capsule_loop.h src/cnet_capsule_loop.c \
+		include/cnet_core_serve.h src/serve/cnet_core_serve.c \
+		include/cnet_capsule_loop.h src/memory/cnet_capsule_loop.c \
 		include/cnet_skill_lane.h src/cnet_skill_lane.c \
 		include/cnet_ood_skill.h src/cnet_ood_skill.c \
 		include/cnet_held_model.h src/cnet_held_model.c \
-		include/cnet_c_speak.h src/cnet_c_speak.c src/cce/cce_wordlm.c \
-		include/cnet_utterance.h src/cnet_utterance.c \
-		include/cnet_paragraph.h src/cnet_paragraph.c \
-		include/cnet_lookup.h src/cnet_lookup.c \
+		include/cnet_c_speak.h src/serve/cnet_c_speak.c src/cce/cce_wordlm.c \
+		include/cnet_utterance.h src/serve/cnet_utterance.c \
+		include/cnet_paragraph.h src/serve/cnet_paragraph.c \
+		include/cnet_lookup.h src/memory/cnet_lookup.c \
 		include/cnet_dc_invent.h src/cnet_dc_invent.c src/cnet_dc_egraph.c src/cnet_dc_type.c \
 		tests/test_cnet_core_bus.c $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) \
 		$(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) \
 		$(CCE_CAMPAIGN_PROVENANCE) $(CCE_GGUF)
 	@mkdir -p $(BIN_DIR) logs
-	@! grep -E 'python3|#include <Python|import sys' src/cnet_core_bus.c tests/test_cnet_core_bus.c
-	@! grep -E 'residual_gguf_oracle|enable_llm' src/cnet_core_bus.c
+	@! grep -E 'python3|#include <Python|import sys' src/serve/cnet_core_bus.c tests/test_cnet_core_bus.c
+	@! grep -E 'residual_gguf_oracle|enable_llm' src/serve/cnet_core_bus.c
 	$(CC) $(CFLAGS) -Werror -ffunction-sections -fdata-sections -Iinclude \
 		-o $(BIN_DIR)/test_cnet_core_bus \
-		src/cnet_core_bus.c src/cnet_weight_convert.c \
+		src/serve/cnet_core_bus.c src/cnet_weight_convert.c \
 		src/cnet_hemisphere.c src/cnet_brain_mirror.c src/cnet_rlm.c \
-		src/cnet_core_serve.c \
-		src/cnet_capsule_loop.c src/cnet_skill_lane.c src/cnet_ood_skill.c \
-		src/cnet_held_model.c src/cnet_c_speak.c src/cce/cce_wordlm.c \
-		src/cnet_utterance.c src/cnet_paragraph.c src/cnet_lookup.c \
+		src/serve/cnet_core_serve.c \
+		src/memory/cnet_capsule_loop.c src/cnet_skill_lane.c src/cnet_ood_skill.c \
+		src/cnet_held_model.c src/serve/cnet_c_speak.c src/cce/cce_wordlm.c \
+		src/serve/cnet_utterance.c src/serve/cnet_paragraph.c src/memory/cnet_lookup.c \
 		src/cnet_dc_invent.c src/cnet_dc_egraph.c src/cnet_dc_type.c \
 		$(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) \
 		$(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) \
@@ -1352,7 +1370,7 @@ cnet_weight_convert cnet_weight_gguf: include/cnet_weight_convert.h \
 	@grep -q '^python=0$$' logs/cnet_weight_convert.log
 
 
-# Unit files: weights + contract as ONE sealed binary artifact (.cnu) —
+# Unit files: weights + contract as ONE sealed binary artifact (.cnu) â€”
 # binary f64 weights + bit-packed canonical exemplars + FNV seal; round-trip
 # gated by digest identity, tamper refused, smaller than the text pair.
 contract_unit: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONSOLIDATE) $(CONTRACT) tests/test_unit.c include/nn.h include/router.h include/contract/contract.h include/contract/unit.h
@@ -1395,7 +1413,7 @@ acquire: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $
 
 # Core attribution layer: per-(proposer, goal signature) evidence separating
 # proposer fault from system fault, keyed off the stage an attempt died at.
-# REPORT-ONLY — includes the byte-identical drain gate proving that attaching
+# REPORT-ONLY â€” includes the byte-identical drain gate proving that attaching
 # the sink changes nothing acquire can observe.
 attribution: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(CONFORMAL) $(ACQUIRE_SRC) $(BASE_SRC) $(ATTRIB_SRC) $(ATTRIB_TEST) include/nn.h include/acquire.h include/attribution.h include/contract/conformal.h
 	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(CONFORMAL) $(ACQUIRE_SRC) $(BASE_SRC) $(ATTRIB_SRC) $(ATTRIB_TEST) $(LDFLAGS)
@@ -1433,7 +1451,7 @@ cnb_audit: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE)
 # Usage: make flagship_run_build && ./bin/flagship_run <model> [V] [max_units] [temp_C] [duty] [wall_s] [base.cnb]
 # OMP: the oracle forwards dominate mining time; cce_block's tiled matvec
 # pragmas parallelize across OUTPUT TILES (per-output sums keep their order),
-# so threading is bit-identity-safe — verified by digest-identical re-mines
+# so threading is bit-identity-safe â€” verified by digest-identical re-mines
 # against serial bases. Keeps -mno-avx (this exe links src/router).
 flagship_run_build: CFLAGS := $(CFLAGS) $(OMPFLAGS) -DCNET_BUILD_REV='"$(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)"' -DCNET_SOURCE_DIRTY=$(shell test -z "$$(git status --porcelain --untracked-files=normal 2>/dev/null)" && echo 0 || echo 1)
 flagship_run_build: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(CONFORMAL) $(ACQUIRE_SRC) $(BASE_SRC) $(FLAGSHIP_SRC) $(CCE) $(CCE_CUDA_OBJ) $(CCE_ORACLE_PREFIX_CACHE) $(CCE_CAMPAIGN_PROVENANCE) tests/flagship_run.c include/flagship.h include/cce/cce_oracle_prefix_cache.h include/cce/cce_campaign_provenance.h
@@ -1614,19 +1632,19 @@ struct_pref: structural_pref_study
 	./$(BIN_DIR)/structural_pref_study
 
 # v4.4 Fourth Domain Transfer (4x4 block + 4-domain mixed on frozen frontier surface)
-# LEGACY/EXPERIMENTAL: glyph_habitat links src/cnet_lm.c — a second
+# LEGACY/EXPERIMENTAL: glyph_habitat links src/cnet_lm.c â€” a second
 # training/generation/head-routing path that is quarantined from the core
 # CCE aggregate. It is reachable ONLY through this explicit legacy target.
-glyph_habitat: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(CCE) tests/glyph_habitat.c src/contract/text_add.c src/contract/text_add_compound.c src/contract/text_add_abstain.c src/contract/perceptual_query.c src/contract/narrative_diffusion.c src/contract/narrative_branching.c src/contract/interactive_agent.c src/contract/mcp_utils.c src/contract/mcp_memory.c src/contract/mcp_wiki.c src/contract/mcp_web_search.c src/contract/mcp_file_read.c src/contract/mcp_calculator.c src/contract/mcp_summarizer.c src/contract/mcp_file_write.c src/agent_memory.c src/contract/book_concept.c include/nn.h include/router.h include/plan_table.h include/contract/contract.h include/contract/text_add.h include/contract/text_add_compound.h include/contract/text_add_abstain.h include/contract/perceptual_query.h include/contract/narrative_diffusion.h include/contract/narrative_branching.h include/contract/interactive_agent.h include/contract/mcp_wiki.h include/contract/mcp_web_search.h include/contract/mcp_file_read.h include/contract/mcp_calculator.h include/contract/mcp_summarizer.h include/contract/mcp_file_write.h include/agent_memory.h include/contract/book_concept.h
-	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(CCE) tests/glyph_habitat.c src/contract/text_add.c src/contract/text_add_compound.c src/contract/text_add_abstain.c src/contract/perceptual_query.c src/contract/narrative_diffusion.c src/contract/narrative_branching.c src/contract/interactive_agent.c src/contract/mcp_utils.c src/contract/mcp_memory.c src/contract/mcp_wiki.c src/contract/mcp_web_search.c src/contract/mcp_file_read.c src/contract/mcp_calculator.c src/contract/mcp_summarizer.c src/contract/mcp_file_write.c src/agent_memory.c src/contract/book_concept.c src/cnet_lm.c src/contract/anti_repeat.c $(LDFLAGS) $(MCP_LDFLAGS)
+glyph_habitat: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(CCE) tests/glyph_habitat.c src/contract/text_add.c src/contract/text_add_compound.c src/contract/text_add_abstain.c src/contract/perceptual_query.c src/contract/narrative_diffusion.c src/contract/narrative_branching.c src/contract/interactive_agent.c src/contract/mcp_utils.c src/contract/mcp_memory.c src/contract/mcp_wiki.c src/contract/mcp_web_search.c src/contract/mcp_file_read.c src/contract/mcp_calculator.c src/contract/mcp_summarizer.c src/contract/mcp_file_write.c src/memory/agent_memory.c src/contract/book_concept.c include/nn.h include/router.h include/plan_table.h include/contract/contract.h include/contract/text_add.h include/contract/text_add_compound.h include/contract/text_add_abstain.h include/contract/perceptual_query.h include/contract/narrative_diffusion.h include/contract/narrative_branching.h include/contract/interactive_agent.h include/contract/mcp_wiki.h include/contract/mcp_web_search.h include/contract/mcp_file_read.h include/contract/mcp_calculator.h include/contract/mcp_summarizer.h include/contract/mcp_file_write.h include/agent_memory.h include/contract/book_concept.h
+	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(CCE) tests/glyph_habitat.c src/contract/text_add.c src/contract/text_add_compound.c src/contract/text_add_abstain.c src/contract/perceptual_query.c src/contract/narrative_diffusion.c src/contract/narrative_branching.c src/contract/interactive_agent.c src/contract/mcp_utils.c src/contract/mcp_memory.c src/contract/mcp_wiki.c src/contract/mcp_web_search.c src/contract/mcp_file_read.c src/contract/mcp_calculator.c src/contract/mcp_summarizer.c src/contract/mcp_file_write.c src/memory/agent_memory.c src/contract/book_concept.c src/cnet_lm.c src/contract/anti_repeat.c $(LDFLAGS) $(MCP_LDFLAGS)
 # Note: for full contract-based decimal response in glyph_habitat (dec_full_add composition),
 # run `make decimal` (or decimal_demo) first to generate dec_value_weights.txt + dec_full_add_weights.txt.
 
 # Build tool: dedicated build/ folder similar to tests/
 # Focuses on the "build" agent features (artifact construction, etc.)
-# LEGACY/EXPERIMENTAL: links src/cnet_lm.c — quarantined from core CCE.
-build_tool: $(CCE) build/build.c src/contract/mcp_utils.c src/contract/mcp_memory.c src/contract/mcp_file_write.c src/contract/mcp_web_search.c src/contract/mcp_file_read.c src/contract/mcp_wiki.c src/agent_memory.c src/contract/book_concept.c include/nn.h include/router.h include/plan_table.h include/contract/contract.h include/agent_memory.h include/contract/mcp_file_write.h include/contract/mcp_web_search.h include/contract/mcp_file_read.h include/contract/mcp_wiki.h include/contract/book_concept.h
-	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -Ibuild/include -o build_tool $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(CCE) build/build.c src/contract/mcp_utils.c src/contract/mcp_memory.c src/contract/mcp_file_write.c src/contract/mcp_web_search.c src/contract/mcp_file_read.c src/contract/mcp_wiki.c src/agent_memory.c src/contract/book_concept.c src/cnet_lm.c src/contract/anti_repeat.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
+# LEGACY/EXPERIMENTAL: links src/cnet_lm.c â€” quarantined from core CCE.
+build_tool: $(CCE) build/build.c src/contract/mcp_utils.c src/contract/mcp_memory.c src/contract/mcp_file_write.c src/contract/mcp_web_search.c src/contract/mcp_file_read.c src/contract/mcp_wiki.c src/memory/agent_memory.c src/contract/book_concept.c include/nn.h include/router.h include/plan_table.h include/contract/contract.h include/agent_memory.h include/contract/mcp_file_write.h include/contract/mcp_web_search.h include/contract/mcp_file_read.h include/contract/mcp_wiki.h include/contract/book_concept.h
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -Ibuild/include -o build_tool $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(CCE) build/build.c src/contract/mcp_utils.c src/contract/mcp_memory.c src/contract/mcp_file_write.c src/contract/mcp_web_search.c src/contract/mcp_file_read.c src/contract/mcp_wiki.c src/memory/agent_memory.c src/contract/book_concept.c src/cnet_lm.c src/contract/anti_repeat.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 
 build: build_tool
 	./build_tool --build default
@@ -1652,7 +1670,7 @@ residue_study: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(SCAN) $(RESIDUE_STUD
 residue: residue_study
 	./$(BIN_DIR)/residue_study
 
-# Attention Planner telemetry study (v0.5) — builds separately, not part of normal test.
+# Attention Planner telemetry study (v0.5) â€” builds separately, not part of normal test.
 # Writes logs/attention-planner-v0.5/ with CSV + summary. No side effects on evidence or files.
 ATTENTION_STUDY := tests/attention_study.c
 attention_study: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(SCAN) $(ATTENTION_STUDY) include/nn.h include/router.h include/contract/contract.h include/plan_table.h include/scan.h
@@ -1944,7 +1962,7 @@ demos: decimal_demo circuit_demo
 	./$(BIN_DIR)/circuit_demo > logs/circuit_demo.log 2>&1
 
 # The COMPAT tier (legacy quarantine): the restored historical test_all
-# aggregate is back-compat coverage, not core verification — it runs here
+# aggregate is back-compat coverage, not core verification â€” it runs here
 # (and in verify-long) instead of blocking every `make test`. The gate that
 # keeps the 2026-07-03 restoration from rotting again lives on, one tier out.
 compat: test_all demos
@@ -1967,7 +1985,11 @@ leakcheck: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE)
 # sound while ignoring every pipeline, so it now also executes the false-green
 # mutation (a producer that prints the PASS marker then exits 7) against each
 # real recipe shape, and pins WITHHELD to a non-success exit code.
-recipe_gate:
+# gate_evidence_bin is a REAL prerequisite: test_gate_evidence.sh below runs
+# $(BIN_DIR)/gate_evidence, and recipe_gate is verify's FIRST target -- so on a
+# clean tree nothing had built it yet and the gate failed on a missing binary
+# rather than on anything it was written to check.
+recipe_gate: gate_evidence_bin
 	@sh tests/test_recipe_gates_selftest.sh
 	@sh tests/test_recipe_gates.sh
 	@bash tests/test_pipeline_status.sh
@@ -2033,7 +2055,7 @@ verify:
 	@$(MAKE) --no-print-directory verify_impl
 	@VERIFY_SINCE=$(VERIFY_SENTINEL) sh tests/verify_logs.sh
 
-verify_impl: recipe_gate json_escape claims_test cce_dll cce_safetensors_test cnet_lm_bounds_test cce_autograd_test cce_model_test cce_view forest_view cce_detect cce_ssm cce_hybrid cce_qwen35 cce_st_llama cce_specgraph cce_wstore cce_tiers cce_similar merge_family hybrid_catalog transformer_qat contract_secure contract_unit heal_mismatch mutate acquire base flagship demos leakcheck cnet_fault_test cce_adapter_bank_test cce_dora_test cnet_serve_decode_test cnet_fault_loop_test registry_lora_store_test jtc_adapter_bench metric_honesty moe_ckpt_test
+verify_impl: build_integrity clgemm_unit cce_archive cce_forest mmap_read_identity recipe_gate json_escape claims_test cce_dll cce_safetensors_test cnet_lm_bounds_test cce_autograd_test cce_model_test cce_view forest_view cce_detect cce_ssm cce_hybrid cce_qwen35 cce_st_llama cce_specgraph cce_wstore cce_tiers cce_similar merge_family hybrid_catalog transformer_qat contract_secure contract_unit heal_mismatch mutate acquire base flagship demos leakcheck cnet_fault_test cce_adapter_bank_test cce_dora_test cnet_serve_decode_test cnet_fault_loop_test registry_lora_store_test jtc_adapter_bench metric_honesty moe_ckpt_test
 	@:
 
 # Everything verify covers PLUS the GPU equivalence gate (needs model + GPU;
@@ -2110,7 +2132,7 @@ chunk: nn_demo chunk_demo
 
 clean:
 	# Remove all known generated binaries (core + demos + studies).
-	# Only remove files/dirs that are NOT git-tracked — this preserves
+	# Only remove files/dirs that are NOT git-tracked â€” this preserves
 	# committed fixtures and shared libraries (cce.dll, cnet.so, etc.)
 	# while still cleaning genuinely generated build artifacts.
 	@# Root-level generated executables (none of these are tracked).
@@ -2189,7 +2211,7 @@ gigatok_encode_bench: src/cce/cce_gguf_tok.c tests/gigatok_encode_bench.c includ
 	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ src/cce/cce_gguf_tok.c tests/gigatok_encode_bench.c -lm
 	./$(BIN_DIR)/gigatok_encode_bench $(GGUF)
 
-# DSA-inspired Sparse Softmax (SSMax) — no dense tail mass under the curve.
+# DSA-inspired Sparse Softmax (SSMax) â€” no dense tail mass under the curve.
 .PHONY: ssmax
 ssmax: $(CCE_ROUTER) tests/test_ssmax.c include/cce/cce_router.h
 	@mkdir -p $(BIN_DIR) logs
@@ -2199,7 +2221,7 @@ ssmax: $(CCE_ROUTER) tests/test_ssmax.c include/cce/cce_router.h
 	@grep -q "failures=0" logs/ssmax.log
 	@grep "SSMAX_PASS" logs/ssmax.log
 
-# Full DeepSeek-style DSA attention kernel (index → top-k → sleep/floor → skip).
+# Full DeepSeek-style DSA attention kernel (index â†’ top-k â†’ sleep/floor â†’ skip).
 .PHONY: dsa
 dsa: $(CCE_ROUTER) $(CCE_SPARSE_KV) $(CCE_DSA) tests/test_dsa.c include/cce/cce_dsa.h
 	@mkdir -p $(BIN_DIR) logs
@@ -2229,7 +2251,7 @@ deepseek_map: $(CCE) tests/test_deepseek_map.c include/cce/cce_deepseek_map.h
 	@grep -q "failures=0" logs/deepseek_map.log
 	@grep "DEEPSEEK_MAP_PASS" logs/deepseek_map.log
 
-# Full isolated stack: map→forest→MLA+MoE+DSA+cold experts + microbench.
+# Full isolated stack: mapâ†’forestâ†’MLA+MoE+DSA+cold experts + microbench.
 .PHONY: ds_stack
 ds_stack: $(CCE) tests/test_ds_runtime.c include/cce/cce_ds_runtime.h
 	@mkdir -p $(BIN_DIR) logs
@@ -2240,7 +2262,7 @@ ds_stack: $(CCE) tests/test_ds_runtime.c include/cce/cce_ds_runtime.h
 	@grep -q "failures=0" logs/ds_stack.log
 	@grep "DS_STACK_PASS\|bench:" logs/ds_stack.log
 
-# GGUF → .cnetpack importer (CNET reader only).
+# GGUF â†’ .cnetpack importer (CNET reader only).
 .PHONY: cnet_ds_import
 cnet_ds_import: $(CCE) tools/cnet_ds_import.c
 	@mkdir -p $(BIN_DIR)
@@ -2307,7 +2329,7 @@ mtk_eval_real: mtk_eval
 	@grep -q "MTK_EVAL_PASS" logs/mtk_eval_real.log
 	@grep -q "real generate" logs/mtk_eval_real.log
 
-# GGUF tokenizer (chat template + BPE encode/decode) — hermetic + optional model.
+# GGUF tokenizer (chat template + BPE encode/decode) â€” hermetic + optional model.
 CCE_GGUF_TOK := src/cce/cce_gguf_tok.c
 .PHONY: gguf_tok
 gguf_tok: $(CCE_GGUF_TOK) tests/test_gguf_tok.c include/cce/cce_gguf_tok.h
@@ -2318,7 +2340,7 @@ gguf_tok: $(CCE_GGUF_TOK) tests/test_gguf_tok.c include/cce/cce_gguf_tok.h
 	@grep -q "GGUF_TOK_PASS" logs/gguf_tok.log
 	@grep -q "fails=0" logs/gguf_tok.log
 
-# Progressive specialist conversion ladder (STE QAT → certify → pack).
+# Progressive specialist conversion ladder (STE QAT â†’ certify â†’ pack).
 CCE_SPEC_LADDER := src/cce/cce_spec_ladder.c
 .PHONY: spec_ladder
 spec_ladder: $(CCE) $(CCE_SPEC_LADDER) tests/test_spec_ladder.c \
@@ -2335,7 +2357,7 @@ spec_ladder_tool: $(CCE) $(CCE_SPEC_LADDER) tools/cnet_spec_ladder.c
 	@mkdir -p $(BIN_DIR)
 	$(CC) $(CFLAGS) -o $(BIN_DIR)/cnet_spec_ladder $(CCE) $(CCE_SPEC_LADDER) \
 		tools/cnet_spec_ladder.c $(LDFLAGS) -lm
-	@echo "built bin/cnet_spec_ladder — run with MODEL path + family|schedule"
+	@echo "built bin/cnet_spec_ladder â€” run with MODEL path + family|schedule"
 
 .PHONY: ladder_bench
 ladder_bench: $(CCE) $(CCE_SPEC_LADDER) tools/cnet_ladder_bench.c \
@@ -2355,7 +2377,7 @@ quality_eval: $(CCE) $(CCE_MTK_HOST) $(CCE_SPEC_LADDER) $(RESOURCE_GOV_SRC) \
 	$(CC) $(CFLAGS) -o $(BIN_DIR)/cnet_quality_eval $(CCE) $(CCE_MTK_HOST) \
 		$(CCE_SPEC_LADDER) $(RESOURCE_GOV_SRC) $(CCE_GGUF_TOK) \
 		tools/cnet_quality_eval.c $(LDFLAGS) -lm
-	@echo "built bin/cnet_quality_eval — run with MODEL path"
+	@echo "built bin/cnet_quality_eval â€” run with MODEL path"
 
 .PHONY: campaign_bench
 campaign_bench: mtk mtk_eval kv_page mtp_bench sparse_stack gguf_stack gguf_tok quality_eval
@@ -2370,7 +2392,7 @@ cnet_ds_bench: $(CCE) tools/cnet_ds_bench.c
 	@./$(BIN_DIR)/cnet_ds_bench 128 | tee logs/ds_bench.log
 	@grep -q "DS_BENCH" logs/ds_bench.log
 
-# GGUF residual/token stack: synthetic tiny weights → load → multi-token gen
+# GGUF residual/token stack: synthetic tiny weights â†’ load â†’ multi-token gen
 # + residual layer tap + sparse_kv + microbench + dual-backend open.
 .PHONY: gguf_stack
 gguf_stack: $(CCE) tests/test_gguf_runtime.c tests/tiny_model_fixture.h \
@@ -2439,7 +2461,7 @@ dual_gpu_bench: $(CCE) tests/test_dual_gpu_bench.c include/cce/cce_infer_backend
 		grep "DUAL_GPU_BENCH_PASS\|DS \|GGUF " logs/dual_gpu_bench.log; \
 	fi
 
-# Raw GEMM: CPU vs OpenCL×1/×2 vs hipBLAS×1/×2 (no model load).
+# Raw GEMM: CPU vs OpenCLÃ—1/Ã—2 vs hipBLASÃ—1/Ã—2 (no model load).
 .PHONY: gpu_matmul_bench
 gpu_matmul_bench: $(CCE) tools/cnet_gpu_matmul_bench.c include/cce/cce_clgemm.h \
 		include/cce/cce_hipgemm.h
@@ -2627,7 +2649,7 @@ dense_stream_real: $(CCE) $(CCE_CUDA_OBJ) tests/dense_stream_real.c
 # streamed specialist is quantized with our GPTQ/OBQ solver calibrated on its
 # REAL input activations (captured via an opt-in forward hook). Proves the
 # quantized model still streams BIT-IDENTICALLY under a bounded cap AND that
-# data-aware beats naive at int4 (held-out logit relerr) — int8 near-lossless.
+# data-aware beats naive at int4 (held-out logit relerr) â€” int8 near-lossless.
 dense_stream_a2: $(CCE) $(CCE_CUDA_OBJ) tests/dense_stream_a2.c tests/tiny_model_fixture.h
 	@mkdir -p logs
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) tests/dense_stream_a2.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
@@ -2635,9 +2657,9 @@ dense_stream_a2: $(CCE) $(CCE_CUDA_OBJ) tests/dense_stream_a2.c tests/tiny_model
 
 # MoE expert-streaming arc (B1): MoE checkpoints parse into streamable
 # per-expert specialists. Hermetic: synthetic MoE gguf (split gate/up/down
-# banks + router) — every expert loads bit-exact vs the generator, round-trips
+# banks + router) â€” every expert loads bit-exact vs the generator, round-trips
 # the weight store (FP + int8), dedups by digest; dense ggufs are refused.
-# Real (auto-skips if absent): gemma-4-26B-A4B — 128-expert fused-bank layout
+# Real (auto-skips if absent): gemma-4-26B-A4B â€” 128-expert fused-bank layout
 # parses, Q8_0/Q6_K expert slices bit-exact vs whole-bank dequant, real expert
 # streams through the store; per-expert economics reported.
 moe_loader: $(CCE) $(CCE_CUDA_OBJ) tests/moe_loader.c tests/tiny_model_fixture.h
@@ -2650,7 +2672,7 @@ moe_loader: $(CCE) $(CCE_CUDA_OBJ) tests/moe_loader.c tests/tiny_model_fixture.h
 # router-on-attn_out, GEGLU, fused gate|up split, per-expert down scale).
 # Hermetic: forward == an independent reference (selection, weights, output);
 # only routed experts fetched. Real: 8-of-128 demand loading, bounded cap.
-# Parity: replays llama.cpp's dumped attn_out through CNET's forward —
+# Parity: replays llama.cpp's dumped attn_out through CNET's forward â€”
 # identical top-8 selection, logits/weights/output within tolerance
 # (dumps regenerate via bin/moe_parity_dump, see tools/moe_parity_dump.cpp).
 moe_forward: $(CCE) $(CCE_CUDA_OBJ) tests/moe_forward.c tests/tiny_model_fixture.h
@@ -2698,7 +2720,7 @@ moe_e2e: moe_e2e_build
 # MoE generation (Arc B finale): multi-token GENERATION parity. CNET decodes
 # a real prompt through the full gemma4 stack with REAL attention (NEOX rope,
 # QK norms, kv cache, unscaled causal scores) + streamed experts, then
-# greedy-generates — gated TOKEN-FOR-TOKEN against llama.cpp's continuation,
+# greedy-generates â€” gated TOKEN-FOR-TOKEN against llama.cpp's continuation,
 # with the per-layer ladder matching at every prompt position.
 # Reference: bin/moe_parity_dump <gguf> logs/moe_gen "ids:..." <n_gen>
 moe_gen: $(CCE) $(CCE_CUDA_OBJ) tests/moe_gen.c
@@ -2709,7 +2731,7 @@ moe_gen: $(CCE) $(CCE_CUDA_OBJ) tests/moe_gen.c
 # Dense expert-streaming arc (A3): async readahead + learned hot-pinning.
 # The tier runtime learns the fetch order of the first cold pass, then a
 # background worker prefetches the next `depth` payloads (wrapping around the
-# pass boundary — the decode regime) while the forward computes; pin_hot keeps
+# pass boundary â€” the decode regime) while the forward computes; pin_hot keeps
 # the most-fetched specialists resident. Gates: deterministic fetch mechanics
 # (1 sync fetch after a cold start, 0 with wrap-around, rehydrations drop by
 # the pin count) and BIT-IDENTICAL logits vs a synchronous twin every pass.
@@ -2719,7 +2741,7 @@ dense_stream_a3: $(CCE) $(CCE_CUDA_OBJ) tests/dense_stream_a3.c tests/tiny_model
 	./$(BIN_DIR)/dense_stream_a3 > logs/dense_stream_a3.console.log 2>&1
 
 # Dense expert-streaming arc (packed storage): the weight store's quantized-
-# payload path extended to PACKED formats — ternary at 1.6 bit/weight (5 trits/
+# payload path extended to PACKED formats â€” ternary at 1.6 bit/weight (5 trits/
 # byte base-3, ~20x) and int4 at 2 codes/byte (~8x). Gates: four precision
 # variants of one cascade land under DISTINCT digests with EXACT payload sizes
 # and restore representation-bit-exact; packed models stream BIT-IDENTICALLY
@@ -2761,7 +2783,7 @@ cce_lora_test: $(CCE) $(CCE_CUDA_OBJ) tests/cce_lora_test.c
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) tests/cce_lora_test.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 	./$(BIN_DIR)/cce_lora_test
 
-# cce_lora_bench: M5 — dense output-SGD vs rank-r adapters on the same residuals.
+# cce_lora_bench: M5 â€” dense output-SGD vs rank-r adapters on the same residuals.
 cce_lora_bench: $(CCE) $(CCE_CUDA_OBJ) tests/bench_cce_lora.c
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) tests/bench_cce_lora.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 	./$(BIN_DIR)/cce_lora_bench
@@ -2791,7 +2813,7 @@ REGISTRY_LILY := src/router/registry_lily.c
 
 # Unified fault bus + promote gate (Tier 0 replace/improve)
 
-# Cross-process fault bus → ingest → lora tick (JTC closed loop)
+# Cross-process fault bus â†’ ingest â†’ lora tick (JTC closed loop)
 
 # Persist certified adapters (save/load round-trip)
 registry_lora_store_test: json_toolcall_alphabet $(MULTIMODAL_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(REGISTRY_LORA) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) src/soul_host.c $(ROUTE_LOG_SRC) tests/registry_lora_store_test.c
@@ -2814,7 +2836,7 @@ jtc_adapter_bench: json_toolcall_alphabet $(MULTIMODAL_SRC) $(MODEL_RUNTIME) $(C
 	CNET_PROMOTE_EVAL_DELTA=logs/ghost_eval_delta.txt ./$(BIN_DIR)/jtc_adapter_bench
 
 # Production autoteach binaries. These ship in bin/ and are invoked by the
-# 24/7 loop (cnet_autoteach_tick.sh) and the governor, but had no recipe — they
+# 24/7 loop (cnet_autoteach_tick.sh) and the governor, but had no recipe â€” they
 # were built ad hoc, so a change to e.g. src/cnet_fault.c silently did not reach
 # them. Same link line as the benches above.
 .PHONY: autoteach_bins
@@ -2869,9 +2891,9 @@ metric_honesty_mutation: cnet_fault_dedupe_probe
 	@bash tests/metric_honesty_mutation.sh 2>&1 | tee logs/metric_honesty_mutation.log
 	@grep -q "MUTATION_GATE_PASS" logs/metric_honesty_mutation.log
 
-cnet_fault_test: src/cnet_fault.c src/cnet_promote.c tests/cnet_fault_test.c
+cnet_fault_test: src/cnet_fault.c src/selfimprove/cnet_promote.c tests/cnet_fault_test.c
 	@mkdir -p $(BIN_DIR)
-	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ src/cnet_fault.c src/cnet_promote.c tests/cnet_fault_test.c $(LDFLAGS)
+	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ src/cnet_fault.c src/selfimprove/cnet_promote.c tests/cnet_fault_test.c $(LDFLAGS)
 	./$(BIN_DIR)/cnet_fault_test
 
 cnet_promote_test: cnet_fault_test
@@ -2886,8 +2908,8 @@ cce_dora_test: $(CCE) $(CCE_CUDA_OBJ) src/cce/cce_dora.c tests/cce_dora_test.c
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) src/cce/cce_dora.c tests/cce_dora_test.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 	./$(BIN_DIR)/cce_dora_test
 
-cnet_serve_decode_test: src/cnet_serve_decode.c tests/cnet_serve_decode_test.c
-	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ src/cnet_serve_decode.c tests/cnet_serve_decode_test.c $(LDFLAGS)
+cnet_serve_decode_test: src/serve/cnet_serve_decode.c tests/cnet_serve_decode_test.c
+	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ src/serve/cnet_serve_decode.c tests/cnet_serve_decode_test.c $(LDFLAGS)
 	./$(BIN_DIR)/cnet_serve_decode_test
 
 registry_lily_test: $(CCE) $(CCE_CUDA_OBJ) $(REGISTRY_LILY) tests/registry_lily_test.c
@@ -2895,7 +2917,7 @@ registry_lily_test: $(CCE) $(CCE_CUDA_OBJ) $(REGISTRY_LILY) tests/registry_lily_
 	./$(BIN_DIR)/registry_lily_test
 
 # compute-quality teacher (dense attn / all experts vs cheap sparse student),
-# hosted under the SAME certify gate — a multi-token compute gap distilled.
+# hosted under the SAME certify gate â€” a multi-token compute gap distilled.
 registry_lily_compute: $(CCE) $(CCE_CUDA_OBJ) $(REGISTRY_LILY) tests/registry_lily_compute_test.c
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) $(REGISTRY_LILY) tests/registry_lily_compute_test.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 	./$(BIN_DIR)/registry_lily_compute
@@ -3027,7 +3049,7 @@ transformer_qat_altmodel: $(CCE) $(CCE_CUDA_OBJ) src/nn.c tests/transformer_qat_
 	./$(BIN_DIR)/transformer_qat_altmodel > logs/transformer_qat_altmodel.log 2>&1
 
 # The decomposer-generalization gate: load + forward parity on a model the old
-# hardwired decomposer could NOT load — GPT-2-STYLE tensor naming (h.{i}.attn.c_attn,
+# hardwired decomposer could NOT load â€” GPT-2-STYLE tensor naming (h.{i}.attn.c_attn,
 # wte/wpe), 6 layers, 2 heads (from safetensors __metadata__), Conv1D [in,out]
 # block weights, TIED head (no lm_head, like real HF gpt2). Parity is asserted
 # both against the trainer AND against golden logits from an independent numpy
@@ -3053,7 +3075,7 @@ proj_qat_recon: tests/proj_qat_recon.c
 	./$(BIN_DIR)/proj_qat_recon > logs/proj_qat_recon.log 2>&1
 
 # Milestone 2: the same per-projection reconstruction on REAL weights + REAL
-# activations from a real gemma4 GGUF (layer-0 attn_q, input = RMSNorm(embed·√D),
+# activations from a real gemma4 GGUF (layer-0 attn_q, input = RMSNorm(embedÂ·âˆšD),
 # no forward needed). Needs Models/gemma-4-12B-it-MTP-Q8_0.gguf. See tests/proj_qat_gemma.c.
 proj_qat_gemma: $(CCE) $(CCE_CUDA_OBJ) tests/proj_qat_gemma.c
 	@mkdir -p $(BIN_DIR) logs
@@ -3061,7 +3083,7 @@ proj_qat_gemma: $(CCE) $(CCE_CUDA_OBJ) tests/proj_qat_gemma.c
 	./$(BIN_DIR)/proj_qat_gemma > logs/proj_qat_gemma.log 2>&1
 
 # Milestone 4 core: END-TO-END reconstruction across many projections / many
-# layers (SwiGLU MLP stack) — does it compound into collapse, and does SEQUENTIAL
+# layers (SwiGLU MLP stack) â€” does it compound into collapse, and does SEQUENTIAL
 # calibration beat INDEPENDENT? Hermetic. See tests/proj_qat_stack.c.
 proj_qat_stack: tests/proj_qat_stack.c
 	@mkdir -p $(BIN_DIR) logs
@@ -3070,16 +3092,16 @@ proj_qat_stack: tests/proj_qat_stack.c
 
 # Milestone 3: dual-GPU async dispatch of the embarrassingly-parallel per-projection
 # GEMM jobs across the two R9700s (cce_clgemm, one handle pinned per device via
-# open_device — the oracle-pool pattern). Verifies GPU==CPU + measures the ~2x
+# open_device â€” the oracle-pool pattern). Verifies GPU==CPU + measures the ~2x
 # throughput. Needs OpenCL + a discrete GPU; reports+passes with none. See tests/proj_qat_gpu.c.
 proj_qat_gpu: $(CCE) tests/proj_qat_gpu.c include/cce/cce_clgemm.h
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) tests/proj_qat_gpu.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 	./$(BIN_DIR)/proj_qat_gpu > logs/proj_qat_gpu.log 2>&1
 
-# Milestone 4-full Part 1: the EFFICIENT GPTQ-Cholesky OBQ solver — a fast drop-in
+# Milestone 4-full Part 1: the EFFICIENT GPTQ-Cholesky OBQ solver â€” a fast drop-in
 # for proj_qat_recon's coordinate-descent reconstruct(). One Cholesky of the
-# activation Hessian H=Σ, then a single OBQ error-feedback pass over input columns.
+# activation Hessian H=Î£, then a single OBQ error-feedback pass over input columns.
 # Asserts held-out quality matches the coordinate-descent oracle and >=3x faster at
 # in=512,out=512. Hermetic. See tests/gptq_solver.c.
 gptq_solver: tests/gptq_solver.c
@@ -3142,7 +3164,7 @@ wordlm_holdout: $(CCE_WORDLM) tests/wordlm_holdout.c include/cce/cce_wordlm.h
 	./$(BIN_DIR)/wordlm_holdout > logs/wordlm_holdout.log 2>&1
 
 # Fine-tune-family merge pipeline (model-merge scope M0): base + N fine-tunes
-# in ONE content-addressed store — storage accounting vs naive, per-manifest
+# in ONE content-addressed store â€” storage accounting vs naive, per-manifest
 # bit-identity under a HOT cap, epsilon-merge accept + material refuse inside
 # the pipeline. Hermetic (tiny fixture).
 merge_family: $(CCE) $(CCE_CUDA_OBJ) tests/merge_family_test.c tests/tiny_model_fixture.h
@@ -3165,7 +3187,7 @@ transformer_qat: $(CCE) $(CCE_CUDA_OBJ) tests/test_transformer_qat.c include/cce
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -o $(BIN_DIR)/$@ $(CCE) $(CCE_CUDA_OBJ) tests/test_transformer_qat.c $(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS)
 	./$(BIN_DIR)/transformer_qat > logs/transformer_qat.log 2>&1
 
-# Hermetic QAT block gate: links the trainer CORE ONLY — no $(CCE), so no
+# Hermetic QAT block gate: links the trainer CORE ONLY â€” no $(CCE), so no
 # curl/mmap/fsync/POSIX-mkdir dependency. Builds on every box, which is what
 # makes the gradcheck gates in this arc actually runnable.
 qat_block: $(QAT_CORE_SRC) tests/test_qat_block.c include/cce/cce_transformer_qat.h include/cce/cce_transformer_qat_internal.h
@@ -3215,9 +3237,9 @@ cce_dll: $(CCE) $(CCE_CUDA_OBJ)
 # Defines both export macros.
 # Usage: make cnet_dll
 cnet_dll: CFLAGS := $(CFLAGS) -fPIC
-cnet_dll: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(BASE_SRC) $(SCAN) $(PROPERTY) $(CONSOLIDATE) $(ACQUIRE_SRC) $(COVERAGE) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(GAP_LANE_SRC) $(ASYNC_RUNTIME) $(MODEL_RUNTIME) $(CCE_MODEL_CATALOG) $(MODEL_PROBE) $(RESOURCE_GOV_SRC) $(CF_ORDER_SRC) $(SELF_IMPROVE_SRC) $(HARNESS_ORACLE_SRC) $(MULTIMODAL_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(AGENT_ROLE_SRC) $(ROUTE_LOG_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(LIBRARY) src/fastpath.c src/soul_host.c src/contract/mcp_calculator.c src/contract/mcp_math_eval.c src/contract/mcp_file_read.c src/contract/mcp_file_write.c src/contract/mcp_memory.c src/contract/mcp_utils.c src/contract/mcp_web_search.c src/contract/mcp_wiki.c src/contract/mcp_math_eval.c src/agent_memory.c
+cnet_dll: $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(BASE_SRC) $(SCAN) $(PROPERTY) $(CONSOLIDATE) $(ACQUIRE_SRC) $(COVERAGE) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(GAP_LANE_SRC) $(ASYNC_RUNTIME) $(MODEL_RUNTIME) $(CCE_MODEL_CATALOG) $(MODEL_PROBE) $(RESOURCE_GOV_SRC) $(CF_ORDER_SRC) $(SELF_IMPROVE_SRC) $(HARNESS_ORACLE_SRC) $(MULTIMODAL_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(AGENT_ROLE_SRC) $(ROUTE_LOG_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(LIBRARY) src/fastpath.c src/soul_host.c src/contract/mcp_calculator.c src/contract/mcp_math_eval.c src/contract/mcp_file_read.c src/contract/mcp_file_write.c src/contract/mcp_memory.c src/contract/mcp_utils.c src/contract/mcp_web_search.c src/contract/mcp_wiki.c src/contract/mcp_math_eval.c src/memory/agent_memory.c
 	$(CC) -shared -DCNET_BUILD_DLL -DCCE_BUILD_DLL $(CFLAGS) $(CUDA_CFLAGS) -o cnet.so \
-		$(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(BASE_SRC) $(SCAN) $(PROPERTY) $(CONSOLIDATE) $(ACQUIRE_SRC) $(COVERAGE) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(GAP_LANE_SRC) $(ASYNC_RUNTIME) $(MODEL_RUNTIME) $(CCE_MODEL_CATALOG) $(MODEL_PROBE) $(RESOURCE_GOV_SRC) $(CF_ORDER_SRC) $(SELF_IMPROVE_SRC) $(HARNESS_ORACLE_SRC) $(MULTIMODAL_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(AGENT_ROLE_SRC) $(ROUTE_LOG_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(LIBRARY) src/fastpath.c src/soul_host.c src/contract/mcp_calculator.c src/contract/mcp_math_eval.c src/contract/mcp_file_read.c src/contract/mcp_file_write.c src/contract/mcp_memory.c src/contract/mcp_utils.c src/contract/mcp_web_search.c src/contract/mcp_wiki.c src/agent_memory.c \
+		$(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(BASE_SRC) $(SCAN) $(PROPERTY) $(CONSOLIDATE) $(ACQUIRE_SRC) $(COVERAGE) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(GAP_LANE_SRC) $(ASYNC_RUNTIME) $(MODEL_RUNTIME) $(CCE_MODEL_CATALOG) $(MODEL_PROBE) $(RESOURCE_GOV_SRC) $(CF_ORDER_SRC) $(SELF_IMPROVE_SRC) $(HARNESS_ORACLE_SRC) $(MULTIMODAL_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(AGENT_ROLE_SRC) $(ROUTE_LOG_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(LIBRARY) src/fastpath.c src/soul_host.c src/contract/mcp_calculator.c src/contract/mcp_math_eval.c src/contract/mcp_file_read.c src/contract/mcp_file_write.c src/contract/mcp_memory.c src/contract/mcp_utils.c src/contract/mcp_web_search.c src/contract/mcp_wiki.c src/memory/agent_memory.c \
 		$(LDFLAGS) $(MCP_LDFLAGS) $(CUDA_LDFLAGS) $(CNET_SONAME_LDFLAGS) -pthread
 	@echo "Built unified cnet.so (CCE + certified runtime + soul_host + MCP ABI)."
 
@@ -3261,7 +3283,7 @@ qwythos_e2e: qwythos_e2e_build
 	@tail -5 logs/qwythos_e2e.console.log
 
 # qwen35 parity dump: llama.cpp reference tensor dumps for the Qwythos hybrid
-# forward. Links the CPU build DELIBERATELY — the pinned llama.cpp HEAD enables
+# forward. Links the CPU build DELIBERATELY â€” the pinned llama.cpp HEAD enables
 # -funsafe-math-optimizations in ggml-hip, so the ROCm build is not an IEEE-
 # faithful numeric oracle; build-cpu has no GPU backend compiled in at all.
 LLAMA_CPP_BUILD_CPU ?= $(LLAMA_CPP_ROOT)/build-cpu
@@ -3515,9 +3537,9 @@ unified_self_improve: resource_governor counterfactual_order self_improve deploy
 
 
 .PHONY: auto_learn
-auto_learn: src/cnet_auto_learn.c tests/test_auto_learn.c include/cnet_auto_learn.h
+auto_learn: src/selfimprove/cnet_auto_learn.c tests/test_auto_learn.c include/cnet_auto_learn.h
 	@mkdir -p $(BIN_DIR) logs
-	$(CC) $(CFLAGS) -o $(BIN_DIR)/test_auto_learn src/cnet_auto_learn.c tests/test_auto_learn.c $(LDFLAGS)
+	$(CC) $(CFLAGS) -o $(BIN_DIR)/test_auto_learn src/selfimprove/cnet_auto_learn.c tests/test_auto_learn.c $(LDFLAGS)
 	@./$(BIN_DIR)/test_auto_learn > logs/auto_learn.log 2>&1
 	@grep -q AUTO_LEARN_PASS logs/auto_learn.log
 	@grep AUTO_LEARN_PASS logs/auto_learn.log
@@ -3547,10 +3569,10 @@ curiosity: $(CURIOSITY_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERT
 	@grep -q "CURIOSITY_PASS" logs/curiosity.log
 	@grep "CURIOSITY_PASS" logs/curiosity.log
 
-# Hermes-style learn loop in pure C (memory → tools → skill → optional gap seed).
-LEARN_LOOP_SRC := src/cnet_learn_loop.c
+# Hermes-style learn loop in pure C (memory â†’ tools â†’ skill â†’ optional gap seed).
+LEARN_LOOP_SRC := src/selfimprove/cnet_learn_loop.c
 LEARN_LOOP_MCP := src/contract/mcp_utils.c src/contract/mcp_memory.c src/contract/mcp_wiki.c \
-	src/contract/mcp_web_search.c src/agent_memory.c
+	src/contract/mcp_web_search.c src/memory/agent_memory.c
 .PHONY: learn_loop learn_loop_cli
 MATH_EVAL_SRC := src/contract/mcp_math_eval.c
 MATH_SOLVE_SRC := src/cnet_math_solve.c
@@ -3848,7 +3870,7 @@ knowledge_accumulation_bench: $(CAPSULE_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC)
 	@grep "KNOWLEDGE_ACCUMULATION_BENCH_PASS" logs/knowledge_accumulation_bench.log
 
 # ASAN/UBSAN runtime check for the capsule parser. NOT -Werror: -O1 surfaces
-# pre-existing format-truncation warnings in unrelated TUs (src/cnet_auto_learn.c)
+# pre-existing format-truncation warnings in unrelated TUs (src/selfimprove/cnet_auto_learn.c)
 # that are out of scope here. -Werror IS enforced on the two focused targets at
 # the project's standard flags.
 .PHONY: knowledge_capsule_san
@@ -4043,7 +4065,7 @@ vision_capsule_asset_san: $(CAPSULE_SRC) $(CAPSULE_SRC) $(PERSONAL_AI_SRC) $(HYB
 	@mkdir -p $(BIN_DIR) logs/vision
 	@# -Werror is enforced by the -O2 vision_capsule_asset target over the SAME
 	@# sources. It is omitted here only because -O1 surfaces pre-existing
-	@# format-truncation warnings in src/cnet_auto_learn.c, which is outside this
+	@# format-truncation warnings in src/selfimprove/cnet_auto_learn.c, which is outside this
 	@# slice; the sanitizer findings themselves are still fatal.
 	$(CC) -std=c11 -Wall -Wextra -g -O1 -fsanitize=address,undefined \
 		-fno-omit-frame-pointer -D_DEFAULT_SOURCE -I include \
@@ -4065,7 +4087,7 @@ knowledge_capsule: $(CAPSULE_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL
 	@grep -q "KNOWLEDGE_CAPSULE_PASS" logs/knowledge_capsule.log
 	@grep "KNOWLEDGE_CAPSULE_PASS" logs/knowledge_capsule.log
 
-# Brain bundle discrete mode geometry → real CNET capsules (CNU1 + coverage)
+# Brain bundle discrete mode geometry â†’ real CNET capsules (CNU1 + coverage)
 brain_cnet_capsule: $(CAPSULE_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(EXT_TEACHER_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) tools/brain_to_cnet_capsule.c include/hybrid_ai.h include/personal_ai.h
 	@mkdir -p $(BIN_DIR) logs artifacts/brain_cnet_capsules
 	$(CC) $(CFLAGS) -Werror $(CUDA_CFLAGS) -o $(BIN_DIR)/brain_to_cnet_capsule \
@@ -4128,7 +4150,7 @@ brain_sidecar: $(BRAIN_SIDECAR_SRC) tests/test_brain_sidecar.c include/cnet_brai
 	@grep "BRAIN_SIDECAR_PASS" logs/brain_sidecar.log
 
 # Chess-fetch + FIFO text generation (not next-token parrot)
-GENERATE_FIFO_SRC := src/cnet_generate_fifo.c
+GENERATE_FIFO_SRC := src/serve/cnet_generate_fifo.c
 generate_fifo: $(GENERATE_FIFO_SRC) $(HYBRID_AI_SRC) $(CAPSULE_SRC) $(PERSONAL_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(EXT_TEACHER_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) tests/test_generate_fifo.c include/cnet_generate_fifo.h
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) $(CFLAGS) -Werror $(CUDA_CFLAGS) -o $(BIN_DIR)/test_generate_fifo \
@@ -4171,7 +4193,7 @@ generate_fifo_quality: $(GENERATE_FIFO_SRC) $(HYBRID_AI_SRC) $(CAPSULE_SRC) $(PE
 	@echo "---- quality metrics ----"
 	@grep -E 'MARKOV|POSITION|match_teacher|len=|out=|expect=|long ask|PASS|FAIL' logs/generate_fifo_quality.log || true
 
-# Teacher → skill_pos_* CNU1 capsules → import → generate_fifo (+ bench)
+# Teacher â†’ skill_pos_* CNU1 capsules â†’ import â†’ generate_fifo (+ bench)
 skill_capsule_generate: $(GENERATE_FIFO_SRC) $(CAPSULE_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(EXT_TEACHER_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) tests/test_skill_capsule_generate.c include/cnet_generate_fifo.h include/cnet_capsule.h
 	@mkdir -p $(BIN_DIR) logs artifacts
 	$(CC) $(CFLAGS) -Werror $(CUDA_CFLAGS) -o $(BIN_DIR)/test_skill_capsule_generate \
@@ -4187,7 +4209,7 @@ skill_capsule_generate: $(GENERATE_FIFO_SRC) $(CAPSULE_SRC) $(PERSONAL_AI_SRC) $
 	@grep -E 'sealed_|exported=|imported=|mem_gen|cap_gen|BENCH|roundtrip|learn\+|quality|PASS|FAIL' logs/skill_capsule_generate.log || true
 
 # 3-lane memory runtime: STM / LTM / Forming (+ load bench)
-MEM_RUNTIME_SRC := src/cnet_mem_runtime.c src/cnet_asi_improve.c
+MEM_RUNTIME_SRC := src/memory/cnet_mem_runtime.c src/selfimprove/cnet_asi_improve.c
 mem_runtime: $(MEM_RUNTIME_SRC) $(GENERATE_FIFO_SRC) $(CAPSULE_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(EXT_TEACHER_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) tests/test_mem_runtime.c include/cnet_mem_runtime.h include/cnet_asi_improve.h
 	@mkdir -p $(BIN_DIR) logs artifacts
 	$(CC) $(CFLAGS) -Werror $(CUDA_CFLAGS) -o $(BIN_DIR)/test_mem_runtime \
@@ -4202,8 +4224,8 @@ mem_runtime: $(MEM_RUNTIME_SRC) $(GENERATE_FIFO_SRC) $(CAPSULE_SRC) $(PERSONAL_A
 	@echo "---- mem runtime bench ----"
 	@grep -E 'load bench|stm_hit|wall=|serve=|prebuilt|asi_block|ep_log|product wire|PASS|FAIL' logs/mem_runtime.log || true
 
-# ASI improve stack (literature slices A–E) — pure C, no floor changes
-ASI_IMPROVE_SRC := src/cnet_asi_improve.c
+# ASI improve stack (literature slices Aâ€“E) â€” pure C, no floor changes
+ASI_IMPROVE_SRC := src/selfimprove/cnet_asi_improve.c
 ASI_IMPROVE_CFLAGS := -std=c11 -Wall -Wextra -Werror -O2 -D_POSIX_C_SOURCE=200809L -Iinclude
 
 .PHONY: asi_libos asi_defer asi_route asi_episode asi_firewall_eval asi_improve_all
@@ -4252,7 +4274,7 @@ asi_av_bakeoff: $(ASI_IMPROVE_SRC) include/cnet_asi_improve.h tools/cnet_av_bake
 	@echo "ASI_AV_BAKEOFF_GATE_PASS"
 
 # ROE-ASI concept assistant (local skills + lookup/LLM miss + promote)
-ROE_ASI_SRC := src/cnet_roe_asi.c src/cnet_roe_net.c src/cnet_asi_improve.c
+ROE_ASI_SRC := src/roe/cnet_roe_asi.c src/roe/cnet_roe_net.c src/selfimprove/cnet_asi_improve.c
 ROE_ASI_LIBS := -lm $(CURL_LDFLAGS)
 roe_asi: $(ROE_ASI_SRC) include/cnet_roe_asi.h include/cnet_roe_net.h include/cnet_asi_improve.h tests/test_roe_asi.c
 	@mkdir -p $(BIN_DIR) logs
@@ -4294,10 +4316,10 @@ roe_asi_coding: $(ROE_ASI_SRC) include/cnet_roe_asi.h tools/roe_asi_coding_train
 	@grep -E 'epoch|hit=|skill|ROE_ASI' logs/roe_asi_coding.log || true
 
 .PHONY: roe_asi_debug_l3
-roe_asi_debug_l3: $(ROE_ASI_SRC) src/cnet_roe_debug.c include/cnet_roe_debug.h tools/roe_asi_debug_l3_train.c
+roe_asi_debug_l3: $(ROE_ASI_SRC) src/roe/cnet_roe_debug.c include/cnet_roe_debug.h tools/roe_asi_debug_l3_train.c
 	@mkdir -p $(BIN_DIR) logs artifacts
 	$(CC) $(ASI_IMPROVE_CFLAGS) -o $(BIN_DIR)/roe_asi_debug_l3_train \
-		$(ROE_ASI_SRC) src/cnet_roe_debug.c tools/roe_asi_debug_l3_train.c $(ROE_ASI_LIBS)
+		$(ROE_ASI_SRC) src/roe/cnet_roe_debug.c tools/roe_asi_debug_l3_train.c $(ROE_ASI_LIBS)
 	@./$(BIN_DIR)/roe_asi_debug_l3_train | tee logs/roe_asi_debug_l3.log
 	@grep -q "ROE_ASI_DEBUG_L3_PASS" logs/roe_asi_debug_l3.log
 	@echo "---- debug L3 catalog ----"
@@ -4306,32 +4328,32 @@ roe_asi_debug_l3: $(ROE_ASI_SRC) src/cnet_roe_debug.c include/cnet_roe_debug.h t
 	@grep -E 'L3|soak|PASS|FAIL|catalog' logs/roe_asi_debug_l3.log || true
 
 .PHONY: roe_asi_debug_cli
-roe_asi_debug_cli: $(ROE_ASI_SRC) src/cnet_roe_debug.c include/cnet_roe_debug.h tools/roe_asi_debug_cli.c
+roe_asi_debug_cli: $(ROE_ASI_SRC) src/roe/cnet_roe_debug.c include/cnet_roe_debug.h tools/roe_asi_debug_cli.c
 	@mkdir -p $(BIN_DIR)
 	$(CC) $(ASI_IMPROVE_CFLAGS) -o $(BIN_DIR)/roe_asi_debug_cli \
-		$(ROE_ASI_SRC) src/cnet_roe_debug.c tools/roe_asi_debug_cli.c $(ROE_ASI_LIBS)
+		$(ROE_ASI_SRC) src/roe/cnet_roe_debug.c tools/roe_asi_debug_cli.c $(ROE_ASI_LIBS)
 
 .PHONY: roe_asi_goal roe_asi_goal_cli
-roe_asi_goal: $(ROE_ASI_SRC) src/cnet_roe_goal.c include/cnet_roe_goal.h tools/roe_asi_goal_train.c
+roe_asi_goal: $(ROE_ASI_SRC) src/roe/cnet_roe_goal.c include/cnet_roe_goal.h tools/roe_asi_goal_train.c
 	@mkdir -p $(BIN_DIR) logs artifacts
 	$(CC) $(ASI_IMPROVE_CFLAGS) -o $(BIN_DIR)/roe_asi_goal_train \
-		$(ROE_ASI_SRC) src/cnet_roe_goal.c tools/roe_asi_goal_train.c $(ROE_ASI_LIBS)
+		$(ROE_ASI_SRC) src/roe/cnet_roe_goal.c tools/roe_asi_goal_train.c $(ROE_ASI_LIBS)
 	@./$(BIN_DIR)/roe_asi_goal_train | tee logs/roe_asi_goal.log
 	@grep -q "ROE_ASI_GOAL_PASS" logs/roe_asi_goal.log
 	@echo "---- goal catalog tidy ----"
 	@find artifacts/roe_goal_catalog -maxdepth 4 -type d 2>/dev/null | head -40 || true
 	@grep -E 'goal:|HAVE|LEARN|summary|PASS' logs/roe_asi_goal.log | head -40 || true
 
-roe_asi_goal_cli: $(ROE_ASI_SRC) src/cnet_roe_goal.c include/cnet_roe_goal.h tools/roe_asi_goal_cli.c
+roe_asi_goal_cli: $(ROE_ASI_SRC) src/roe/cnet_roe_goal.c include/cnet_roe_goal.h tools/roe_asi_goal_cli.c
 	@mkdir -p $(BIN_DIR)
 	$(CC) $(ASI_IMPROVE_CFLAGS) -o $(BIN_DIR)/roe_asi_goal_cli \
-		$(ROE_ASI_SRC) src/cnet_roe_goal.c tools/roe_asi_goal_cli.c $(ROE_ASI_LIBS)
+		$(ROE_ASI_SRC) src/roe/cnet_roe_goal.c tools/roe_asi_goal_cli.c $(ROE_ASI_LIBS)
 
 .PHONY: roe_asi_ocr
-roe_asi_ocr: $(ROE_ASI_SRC) src/cnet_roe_goal.c src/cnet_roe_ocr.c include/cnet_roe_ocr.h tools/roe_asi_ocr_train.c
+roe_asi_ocr: $(ROE_ASI_SRC) src/roe/cnet_roe_goal.c src/roe/cnet_roe_ocr.c include/cnet_roe_ocr.h tools/roe_asi_ocr_train.c
 	@mkdir -p $(BIN_DIR) logs artifacts
 	$(CC) $(ASI_IMPROVE_CFLAGS) -o $(BIN_DIR)/roe_asi_ocr_train \
-		$(ROE_ASI_SRC) src/cnet_roe_goal.c src/cnet_roe_ocr.c tools/roe_asi_ocr_train.c $(ROE_ASI_LIBS)
+		$(ROE_ASI_SRC) src/roe/cnet_roe_goal.c src/roe/cnet_roe_ocr.c tools/roe_asi_ocr_train.c $(ROE_ASI_LIBS)
 	@./$(BIN_DIR)/roe_asi_ocr_train | tee logs/roe_asi_ocr.log
 	@grep -q "ROE_ASI_OCR_PASS" logs/roe_asi_ocr.log
 	@echo "---- ocr catalog ----"
@@ -4339,10 +4361,10 @@ roe_asi_ocr: $(ROE_ASI_SRC) src/cnet_roe_goal.c src/cnet_roe_ocr.c include/cnet_
 	@grep -E 'train|OCR|PASS|catalog' logs/roe_asi_ocr.log | head -30 || true
 
 .PHONY: roe_asi_ocr_tree
-roe_asi_ocr_tree: src/cnet_roe_tree.c include/cnet_roe_tree.h tools/roe_asi_ocr_skill_tree.c
+roe_asi_ocr_tree: src/roe/cnet_roe_tree.c include/cnet_roe_tree.h tools/roe_asi_ocr_skill_tree.c
 	@mkdir -p $(BIN_DIR) logs artifacts
 	$(CC) $(ASI_IMPROVE_CFLAGS) -o $(BIN_DIR)/roe_asi_ocr_skill_tree \
-		src/cnet_roe_tree.c tools/roe_asi_ocr_skill_tree.c -lm
+		src/roe/cnet_roe_tree.c tools/roe_asi_ocr_skill_tree.c -lm
 	@./$(BIN_DIR)/roe_asi_ocr_skill_tree | tee logs/roe_asi_ocr_tree.log
 	@grep -q "ROE_ASI_OCR_TREE_PASS" logs/roe_asi_ocr_tree.log
 	@echo "---- tree artifact ----"
@@ -4351,8 +4373,8 @@ roe_asi_ocr_tree: src/cnet_roe_tree.c include/cnet_roe_tree.h tools/roe_asi_ocr_
 
 # ROE self-model: inventory + gate-bound tree + health + goal + pack (never self-CERT)
 .PHONY: roe_asi_self roe_asi_self_cli
-ROE_SELF_SRC := $(ROE_ASI_SRC) src/cnet_roe_goal.c src/cnet_roe_doc.c src/cnet_roe_table.c \
-	src/cnet_roe_tree.c src/cnet_roe_self.c src/agent_memory.c
+ROE_SELF_SRC := $(ROE_ASI_SRC) src/roe/cnet_roe_goal.c src/roe/cnet_roe_doc.c src/roe/cnet_roe_table.c \
+	src/roe/cnet_roe_tree.c src/roe/cnet_roe_self.c src/memory/agent_memory.c
 roe_asi_self: $(ROE_SELF_SRC) include/cnet_roe_self.h tests/test_roe_self.c
 	@mkdir -p $(BIN_DIR) logs artifacts
 	$(CC) $(ASI_IMPROVE_CFLAGS) -o $(BIN_DIR)/test_roe_self \
@@ -4394,15 +4416,15 @@ roe_daily_packs: roe_daily_packs_seed $(ROE_ASI_SRC) tools/roe_daily_packs_gate.
 	@echo "---- index ----"
 	@jq -r '"packs \(.packs|length) always_on \(.recommended_always_on)"' artifacts/roe_daily_packs/INDEX.json
 
-# Front door: ROUTES → selective pack load → turn → miss_log
+# Front door: ROUTES â†’ selective pack load â†’ turn â†’ miss_log
 .PHONY: roe_front_door
 roe_front_door: roe_daily_packs $(ROE_ASI_SRC) tools/roe_front_door.c src/cnet_domain_route.c \
-		src/cnet_query_alias.c src/cnet_dialog_ctx.c src/cnet_slot_extract.c \
+		src/memory/cnet_query_alias.c src/memory/cnet_dialog_ctx.c src/cnet_slot_extract.c \
 		include/cnet_domain_route.h include/cnet_query_alias.h include/cnet_dialog_ctx.h \
 		include/cnet_slot_extract.h
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) $(ASI_IMPROVE_CFLAGS) -o $(BIN_DIR)/roe_front_door \
-		$(ROE_ASI_SRC) src/cnet_domain_route.c src/cnet_query_alias.c src/cnet_dialog_ctx.c \
+		$(ROE_ASI_SRC) src/cnet_domain_route.c src/memory/cnet_query_alias.c src/memory/cnet_dialog_ctx.c \
 		src/cnet_slot_extract.c tools/roe_front_door.c $(ROE_ASI_LIBS)
 	@./$(BIN_DIR)/roe_front_door selftest | tee logs/roe_front_door.log
 	@grep -q "ROE_FRONT_DOOR_PASS" logs/roe_front_door.log
@@ -4460,14 +4482,14 @@ roe_explore_tick: tools/roe_explore_tick.py tools/roe_explore_tick_gate.c
 	@echo "ROE_EXPLORE_TICK_OK"
 
 .PHONY: query_alias dialog_ctx query_dialog slot_extract
-query_alias dialog_ctx query_dialog slot_extract: include/cnet_query_alias.h src/cnet_query_alias.c \
-		include/cnet_dialog_ctx.h src/cnet_dialog_ctx.c \
+query_alias dialog_ctx query_dialog slot_extract: include/cnet_query_alias.h src/memory/cnet_query_alias.c \
+		include/cnet_dialog_ctx.h src/memory/cnet_dialog_ctx.c \
 		include/cnet_slot_extract.h src/cnet_slot_extract.c \
 		tools/cnet_query_dialog_main.c
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) -std=c11 -Wall -Wextra -O2 -D_POSIX_C_SOURCE=200809L -Iinclude \
 		-o $(BIN_DIR)/cnet_query_dialog \
-		src/cnet_query_alias.c src/cnet_dialog_ctx.c src/cnet_slot_extract.c \
+		src/memory/cnet_query_alias.c src/memory/cnet_dialog_ctx.c src/cnet_slot_extract.c \
 		tools/cnet_query_dialog_main.c
 	@./$(BIN_DIR)/cnet_query_dialog --test | tee logs/query_dialog.log
 	@grep -q "QUERY_ALIAS_PASS" logs/query_dialog.log
@@ -4480,13 +4502,13 @@ query_alias dialog_ctx query_dialog slot_extract: include/cnet_query_alias.h src
 	@echo "QUERY_DIALOG_OK"
 
 .PHONY: cnetd
-cnetd: $(ROE_ASI_SRC) tools/cnetd.c src/cnet_domain_route.c src/cnet_utterance.c \
-		src/cnet_query_alias.c src/cnet_dialog_ctx.c src/cnet_slot_extract.c \
-		src/cnet_chat_lookup.c src/cnet_lookup.c src/cce/cce_campaign_provenance.c \
-		src/cnet_c_speak.c src/cce/cce_wordlm.c src/cnet_skill_lane.c src/cnet_capsule_loop.c \
-		src/cnet_paragraph.c src/cnet_ood_skill.c src/cnet_held_model.c \
-		src/cnet_hemisphere.c src/cnet_brain_mirror.c src/cnet_rlm.c src/cnet_core_serve.c \
-		src/cnet_ember.c src/cnet_ember_ckpt.c src/cnet_ember_session.c src/cnet_ember_steer.c \
+cnetd: $(ROE_ASI_SRC) tools/cnetd.c src/cnet_domain_route.c src/serve/cnet_utterance.c \
+		src/memory/cnet_query_alias.c src/memory/cnet_dialog_ctx.c src/cnet_slot_extract.c \
+		src/memory/cnet_chat_lookup.c src/memory/cnet_lookup.c src/cce/cce_campaign_provenance.c \
+		src/serve/cnet_c_speak.c src/cce/cce_wordlm.c src/cnet_skill_lane.c src/memory/cnet_capsule_loop.c \
+		src/serve/cnet_paragraph.c src/cnet_ood_skill.c src/cnet_held_model.c \
+		src/cnet_hemisphere.c src/cnet_brain_mirror.c src/cnet_rlm.c src/serve/cnet_core_serve.c \
+		src/memory/cnet_ember.c src/memory/cnet_ember_ckpt.c src/memory/cnet_ember_session.c src/memory/cnet_ember_steer.c \
 		include/cnet_core_serve.h \
 		include/cnet_probe_shortcircuit.h include/cnet_domain_route.h include/cnet_utterance.h \
 		include/cnet_query_alias.h include/cnet_dialog_ctx.h include/cnet_slot_extract.h \
@@ -4497,47 +4519,47 @@ cnetd: $(ROE_ASI_SRC) tools/cnetd.c src/cnet_domain_route.c src/cnet_utterance.c
 	@mkdir -p $(BIN_DIR) logs
 	@pkg-config --exists libcurl
 	$(CC) $(ASI_IMPROVE_CFLAGS) -D_DEFAULT_SOURCE -DCNET_HAVE_CURL=1 $$(pkg-config --cflags libcurl) -o $(BIN_DIR)/cnetd \
-		$(ROE_ASI_SRC) src/cnet_domain_route.c src/cnet_utterance.c \
-		src/cnet_query_alias.c src/cnet_dialog_ctx.c src/cnet_slot_extract.c \
-		src/cnet_chat_lookup.c src/cnet_lookup.c src/cce/cce_campaign_provenance.c \
-		src/cnet_c_speak.c src/cce/cce_wordlm.c src/cnet_skill_lane.c src/cnet_capsule_loop.c \
-		src/cnet_paragraph.c src/cnet_ood_skill.c src/cnet_held_model.c \
-		src/cnet_hemisphere.c src/cnet_brain_mirror.c src/cnet_rlm.c src/cnet_core_serve.c src/cnet_live_miss.c \
-		src/cnet_ember.c src/cnet_ember_ckpt.c src/cnet_ember_session.c src/cnet_ember_steer.c \
+		$(ROE_ASI_SRC) src/cnet_domain_route.c src/serve/cnet_utterance.c \
+		src/memory/cnet_query_alias.c src/memory/cnet_dialog_ctx.c src/cnet_slot_extract.c \
+		src/memory/cnet_chat_lookup.c src/memory/cnet_lookup.c src/cce/cce_campaign_provenance.c \
+		src/serve/cnet_c_speak.c src/cce/cce_wordlm.c src/cnet_skill_lane.c src/memory/cnet_capsule_loop.c \
+		src/serve/cnet_paragraph.c src/cnet_ood_skill.c src/cnet_held_model.c \
+		src/cnet_hemisphere.c src/cnet_brain_mirror.c src/cnet_rlm.c src/serve/cnet_core_serve.c src/cnet_live_miss.c \
+		src/memory/cnet_ember.c src/memory/cnet_ember_ckpt.c src/memory/cnet_ember_session.c src/memory/cnet_ember_steer.c \
 		tools/cnetd.c $(ROE_ASI_LIBS) $$(pkg-config --libs libcurl) -ldl
-	@echo "cnetd built → $(BIN_DIR)/cnetd"
+	@echo "cnetd built â†’ $(BIN_DIR)/cnetd"
 
 .PHONY: cnet_utterance
-cnet_utterance: src/cnet_utterance.c include/cnet_utterance.h tools/cnet_utterance_main.c
+cnet_utterance: src/serve/cnet_utterance.c include/cnet_utterance.h tools/cnet_utterance_main.c
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) $(ASI_IMPROVE_CFLAGS) -o $(BIN_DIR)/cnet_utterance \
-		src/cnet_utterance.c tools/cnet_utterance_main.c
+		src/serve/cnet_utterance.c tools/cnet_utterance_main.c
 	@./$(BIN_DIR)/cnet_utterance --test | tee logs/cnet_utterance.log
 	@grep -q CNET_UTTERANCE_PASS logs/cnet_utterance.log
 	@./$(BIN_DIR)/cnet_utterance --when status --hit 0.857 --da 0.47 --ht 0.53 --ado 0.51 --miss 2 | tee -a logs/cnet_utterance.log
 	@echo "CNET_UTTERANCE_OK"
 
 .PHONY: cnet_chat1_coherence
-cnet_chat1_coherence: include/cnet_query_alias.h src/cnet_query_alias.c \
-		include/cnet_dialog_ctx.h src/cnet_dialog_ctx.c \
-		include/cnet_utterance.h src/cnet_utterance.c \
+cnet_chat1_coherence: include/cnet_query_alias.h src/memory/cnet_query_alias.c \
+		include/cnet_dialog_ctx.h src/memory/cnet_dialog_ctx.c \
+		include/cnet_utterance.h src/serve/cnet_utterance.c \
 		tests/test_cnet_chat1_coherence.c
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) -std=c11 -Wall -Wextra -O2 -Werror -D_POSIX_C_SOURCE=200809L \
 		-Iinclude -o $(BIN_DIR)/test_cnet_chat1_coherence \
-		src/cnet_query_alias.c src/cnet_dialog_ctx.c src/cnet_utterance.c \
+		src/memory/cnet_query_alias.c src/memory/cnet_dialog_ctx.c src/serve/cnet_utterance.c \
 		tests/test_cnet_chat1_coherence.c
 	@./$(BIN_DIR)/test_cnet_chat1_coherence | tee logs/cnet_chat1_coherence.log
 	@grep -q '^CNET_CHAT1_COHERENCE_PASS ' logs/cnet_chat1_coherence.log
 
 .PHONY: cnet_chat1_certified
-cnet_chat1_certified: include/cnet_compete_runtime.h src/cnet_compete_runtime.c \
+cnet_chat1_certified: include/cnet_compete_runtime.h src/compete/cnet_compete_runtime.c \
 		tests/test_cnet_chat1_certified.c $(ROUTER) $(SPECIALIST_SRC)
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) $(CFLAGS) -Werror -ffunction-sections -fdata-sections -Iinclude \
 		-o $(BIN_DIR)/test_cnet_chat1_certified \
-		src/cnet_compete_runtime.c src/cnet_compete_intent.c \
-		src/cnet_compete_capsules.c src/cce/cce_wordlm.c \
+		src/compete/cnet_compete_runtime.c src/compete/cnet_compete_intent.c \
+		src/compete/cnet_compete_capsules.c src/cce/cce_wordlm.c \
 		$(CNET_COMPETE_CAPSULE_CORE) $(ROUTER) $(SPECIALIST_SRC) \
 		tests/test_cnet_chat1_certified.c \
 		-Wl,--gc-sections $(LDFLAGS) $(MCP_LDFLAGS) -pthread
@@ -4549,35 +4571,35 @@ cnet_chat1_certified: include/cnet_compete_runtime.h src/cnet_compete_runtime.c 
 	@grep -q '^CNET_CHAT1_CERTIFIED_PASS ' logs/cnet_chat1_certified.log
 
 .PHONY: cnet_chat1_fluency
-cnet_chat1_fluency: include/cnet_utterance.h src/cnet_utterance.c \
+cnet_chat1_fluency: include/cnet_utterance.h src/serve/cnet_utterance.c \
 		tests/test_cnet_chat1_fluency.c
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) -std=c11 -Wall -Wextra -O2 -Werror -D_POSIX_C_SOURCE=200809L \
 		-Iinclude -o $(BIN_DIR)/test_cnet_chat1_fluency \
-		src/cnet_utterance.c tests/test_cnet_chat1_fluency.c
+		src/serve/cnet_utterance.c tests/test_cnet_chat1_fluency.c
 	@./$(BIN_DIR)/test_cnet_chat1_fluency | tee logs/cnet_chat1_fluency.log
 	@grep -q '^CNET_CHAT1_FLUENCY_PASS ' logs/cnet_chat1_fluency.log
 
 .PHONY: cnet_chat_fluency_v1 cnet_chat1_contract_convo
-cnet_chat_fluency_v1: include/cnet_chat_fluency.h src/cnet_chat_fluency.c \
+cnet_chat_fluency_v1: include/cnet_chat_fluency.h src/serve/cnet_chat_fluency.c \
 		tests/test_cnet_chat_fluency_v1.c
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) -std=c11 -Wall -Wextra -O2 -Werror -D_POSIX_C_SOURCE=200809L \
 		-Iinclude -o $(BIN_DIR)/test_cnet_chat_fluency_v1 \
-		src/cnet_chat_fluency.c tests/test_cnet_chat_fluency_v1.c
+		src/serve/cnet_chat_fluency.c tests/test_cnet_chat_fluency_v1.c
 	@./$(BIN_DIR)/test_cnet_chat_fluency_v1 | tee logs/cnet_chat_fluency_v1.log
 	@grep -q '^CNET_CHAT_FLUENCY_V1_PASS ' logs/cnet_chat_fluency_v1.log
 
-cnet_chat1_contract_convo: include/cnet_chat_fluency.h src/cnet_chat_fluency.c \
-		include/cnet_utterance.h src/cnet_utterance.c \
-		include/cnet_compete_runtime.h src/cnet_compete_runtime.c \
+cnet_chat1_contract_convo: include/cnet_chat_fluency.h src/serve/cnet_chat_fluency.c \
+		include/cnet_utterance.h src/serve/cnet_utterance.c \
+		include/cnet_compete_runtime.h src/compete/cnet_compete_runtime.c \
 		tests/test_cnet_chat1_contract_convo.c $(ROUTER) $(SPECIALIST_SRC)
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) $(CFLAGS) -Werror -ffunction-sections -fdata-sections -Iinclude \
 		-o $(BIN_DIR)/test_cnet_chat1_contract_convo \
-		src/cnet_compete_runtime.c src/cnet_compete_intent.c \
-		src/cnet_compete_capsules.c src/cce/cce_wordlm.c \
-		src/cnet_utterance.c src/cnet_chat_fluency.c \
+		src/compete/cnet_compete_runtime.c src/compete/cnet_compete_intent.c \
+		src/compete/cnet_compete_capsules.c src/cce/cce_wordlm.c \
+		src/serve/cnet_utterance.c src/serve/cnet_chat_fluency.c \
 		$(CNET_COMPETE_CAPSULE_CORE) $(ROUTER) $(SPECIALIST_SRC) \
 		tests/test_cnet_chat1_contract_convo.c \
 		-Wl,--gc-sections $(LDFLAGS) $(MCP_LDFLAGS) -pthread
@@ -4590,15 +4612,15 @@ cnet_chat1_contract_convo: include/cnet_chat_fluency.h src/cnet_chat_fluency.c \
 		logs/cnet_chat1_contract_convo.log
 
 .PHONY: cnet_chat1_dynamic cnet_chat1_dual_probe
-cnet_chat1_dynamic: include/cnet_chat_fluency.h src/cnet_chat_fluency.c \
-		include/cnet_utterance.h src/cnet_utterance.c \
+cnet_chat1_dynamic: include/cnet_chat_fluency.h src/serve/cnet_chat_fluency.c \
+		include/cnet_utterance.h src/serve/cnet_utterance.c \
 		tests/test_cnet_chat1_dynamic.c $(ROUTER) $(SPECIALIST_SRC)
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) $(CFLAGS) -Werror -ffunction-sections -fdata-sections -Iinclude \
 		-o $(BIN_DIR)/test_cnet_chat1_dynamic \
-		src/cnet_compete_runtime.c src/cnet_compete_intent.c \
-		src/cnet_compete_capsules.c src/cce/cce_wordlm.c \
-		src/cnet_utterance.c src/cnet_chat_fluency.c \
+		src/compete/cnet_compete_runtime.c src/compete/cnet_compete_intent.c \
+		src/compete/cnet_compete_capsules.c src/cce/cce_wordlm.c \
+		src/serve/cnet_utterance.c src/serve/cnet_chat_fluency.c \
 		$(CNET_COMPETE_CAPSULE_CORE) $(ROUTER) $(SPECIALIST_SRC) \
 		tests/test_cnet_chat1_dynamic.c \
 		-Wl,--gc-sections $(LDFLAGS) $(MCP_LDFLAGS) -pthread
@@ -4610,16 +4632,16 @@ cnet_chat1_dynamic: include/cnet_chat_fluency.h src/cnet_chat_fluency.c \
 	@grep -q '^CNET_CHAT1_DYNAMIC_PASS ' logs/cnet_chat1_dynamic.log
 
 cnet_chat1_dual_probe: tools/cnet_chat1_dual_probe.c include/cnet_chat_fluency.h \
-		src/cnet_chat_fluency.c
+		src/serve/cnet_chat_fluency.c
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) $(CFLAGS) -Werror -DCNET_HAVE_CURL=1 \
 		-DCNET_COMPETE_SUITE_DATA_HEADER=\"cnet_compete_suite_data_v5.h\" \
 		-ffunction-sections -fdata-sections -Iinclude \
 		-o $(BIN_DIR)/cnet_chat1_dual_probe \
-		tools/cnet_chat1_dual_probe.c src/cnet_compete_runtime.c \
-		src/cnet_compete_intent.c src/cnet_compete_capsules.c \
-		src/cce/cce_wordlm.c src/cnet_utterance.c src/cnet_chat_fluency.c \
-		src/cnet_compete_eval.c src/cnet_compete.c \
+		tools/cnet_chat1_dual_probe.c src/compete/cnet_compete_runtime.c \
+		src/compete/cnet_compete_intent.c src/compete/cnet_compete_capsules.c \
+		src/cce/cce_wordlm.c src/serve/cnet_utterance.c src/serve/cnet_chat_fluency.c \
+		src/compete/cnet_compete_eval.c src/compete/cnet_compete.c \
 		src/cce/cce_campaign_provenance.c \
 		$(CNET_COMPETE_CAPSULE_CORE) $(ROUTER) $(SPECIALIST_SRC) \
 		-Wl,--gc-sections $(LDFLAGS) $(MCP_LDFLAGS) -pthread
@@ -4651,16 +4673,16 @@ cnet_chat1_independence: include/cnet_chat1.h tools/cnet_chat1_independence.c
 		logs/cnet_chat1_independence.log
 
 cnet_chat1_compete: cnet_chat1_independence include/cnet_chat_fluency.h \
-		src/cnet_chat_fluency.c tools/cnet_chat1_compete.c
+		src/serve/cnet_chat_fluency.c tools/cnet_chat1_compete.c
 	@mkdir -p $(BIN_DIR) logs $(CNET_CHAT1_STATE_ROOT)
 	$(CC) $(CFLAGS) -Werror \
 		-DCNET_COMPETE_SUITE_DATA_HEADER=\"cnet_compete_suite_data_v5.h\" \
 		-ffunction-sections -fdata-sections -Iinclude \
 		-o $(BIN_DIR)/cnet_chat1_compete \
-		tools/cnet_chat1_compete.c src/cnet_compete_runtime.c \
-		src/cnet_compete_intent.c src/cnet_compete_capsules.c \
-		src/cce/cce_wordlm.c src/cnet_utterance.c src/cnet_chat_fluency.c \
-		src/cnet_compete_eval.c src/cnet_compete.c \
+		tools/cnet_chat1_compete.c src/compete/cnet_compete_runtime.c \
+		src/compete/cnet_compete_intent.c src/compete/cnet_compete_capsules.c \
+		src/cce/cce_wordlm.c src/serve/cnet_utterance.c src/serve/cnet_chat_fluency.c \
+		src/compete/cnet_compete_eval.c src/compete/cnet_compete.c \
 		src/cce/cce_campaign_provenance.c \
 		$(CNET_COMPETE_CAPSULE_CORE) $(ROUTER) $(SPECIALIST_SRC) \
 		-Wl,--gc-sections $(LDFLAGS) $(MCP_LDFLAGS) -pthread -lcurl
@@ -4674,29 +4696,29 @@ cnet_chat1_compete: cnet_chat1_independence include/cnet_chat_fluency.h \
 	@grep -q '^CNET_CHAT_COMPETE_PASS ' logs/cnet_chat1_compete.log
 
 .PHONY: cnet_lookup_capsule
-cnet_lookup_capsule: include/cnet_lookup.h src/cnet_lookup.c \
+cnet_lookup_capsule: include/cnet_lookup.h src/memory/cnet_lookup.c \
 		src/cce/cce_campaign_provenance.c \
 		tests/test_cnet_lookup_capsule.c
 	@mkdir -p $(BIN_DIR) logs
 	@pkg-config --exists libcurl
 	$(CC) $(CFLAGS) -Werror -Iinclude $$(pkg-config --cflags libcurl) \
 		-o $(BIN_DIR)/test_cnet_lookup_capsule \
-		src/cnet_lookup.c src/cce/cce_campaign_provenance.c \
+		src/memory/cnet_lookup.c src/cce/cce_campaign_provenance.c \
 		tests/test_cnet_lookup_capsule.c $(LDFLAGS) \
 		$$(pkg-config --libs libcurl)
 	@./$(BIN_DIR)/test_cnet_lookup_capsule | tee logs/cnet_lookup_capsule.log
 	@grep -q '^CNET_LOOKUP_CAPSULE_PASS ' logs/cnet_lookup_capsule.log
 
 .PHONY: cnet_chat_lookup
-cnet_chat_lookup: include/cnet_chat_lookup.h src/cnet_chat_lookup.c \
-		include/cnet_lookup.h src/cnet_lookup.c \
+cnet_chat_lookup: include/cnet_chat_lookup.h src/memory/cnet_chat_lookup.c \
+		include/cnet_lookup.h src/memory/cnet_lookup.c \
 		src/cce/cce_campaign_provenance.c \
 		tests/test_cnet_chat_lookup.c
 	@mkdir -p $(BIN_DIR) logs
 	@pkg-config --exists libcurl
 	$(CC) $(CFLAGS) -Werror -Iinclude $$(pkg-config --cflags libcurl) \
 		-o $(BIN_DIR)/test_cnet_chat_lookup \
-		src/cnet_chat_lookup.c src/cnet_lookup.c \
+		src/memory/cnet_chat_lookup.c src/memory/cnet_lookup.c \
 		src/cce/cce_campaign_provenance.c \
 		tests/test_cnet_chat_lookup.c $(LDFLAGS) \
 		$$(pkg-config --libs libcurl)
@@ -4704,13 +4726,13 @@ cnet_chat_lookup: include/cnet_chat_lookup.h src/cnet_chat_lookup.c \
 	@grep -q '^CNET_CHAT_LOOKUP_PASS ' logs/cnet_chat_lookup.log
 
 .PHONY: cnet_lookup
-cnet_lookup: include/cnet_lookup.h src/cnet_lookup.c \
+cnet_lookup: include/cnet_lookup.h src/memory/cnet_lookup.c \
 		src/cce/cce_campaign_provenance.c tools/cnet_lookup.c
 	@mkdir -p $(BIN_DIR)
 	@pkg-config --exists libcurl
 	$(CC) $(CFLAGS) -Werror -Iinclude $$(pkg-config --cflags libcurl) \
 		-o $(BIN_DIR)/cnet_lookup \
-		src/cnet_lookup.c src/cce/cce_campaign_provenance.c \
+		src/memory/cnet_lookup.c src/cce/cce_campaign_provenance.c \
 		tools/cnet_lookup.c $(LDFLAGS) $$(pkg-config --libs libcurl)
 
 .PHONY: cnetd-run
@@ -4723,7 +4745,7 @@ cnetd-run: cnetd query_dialog
 	@chmod +x scripts/cnet_sock_ask.sh
 	@scripts/cnet_sock_ask.sh "who are you" | tee logs/cnetd_ask.log
 	@grep -q "SOURCE LOCAL\|\"source\":\"LOCAL\"" logs/cnetd_ask.log
-	@# Milestone A: conversational soul paraphrase → LOCAL
+	@# Milestone A: conversational soul paraphrase â†’ LOCAL
 	@scripts/cnet_sock_ask.sh "Introduce yourself" | tee logs/cnetd_ask_a1.log
 	@grep -q "SOURCE LOCAL\|\"source\":\"LOCAL\"" logs/cnetd_ask_a1.log
 	@cat logs/cnetd_ask_a1.log >> logs/cnetd_ask.log
@@ -4850,12 +4872,12 @@ stream_ix_e2e_bench: $(CCE_SPARSE_KV) include/cce/cce_sparse_kv.h tools/stream_i
 	@./$(BIN_DIR)/stream_ix_e2e_bench | tee logs/stream_ix_e2e_bench.log
 	@grep -q "STREAM_IX_E2E_BENCH_PASS" logs/stream_ix_e2e_bench.log
 
-# Chain-of-thought — pure C multi-hop (0-token skeleton; no Python)
+# Chain-of-thought â€” pure C multi-hop (0-token skeleton; no Python)
 .PHONY: roe_chain_think
-roe_chain_think: include/cnet_roe_cot.h src/cnet_roe_cot.c tools/roe_chain_think.c
+roe_chain_think: include/cnet_roe_cot.h src/roe/cnet_roe_cot.c tools/roe_chain_think.c
 	@mkdir -p $(BIN_DIR) logs/governor
 	$(CC) -std=c11 -Wall -Wextra -O2 -D_POSIX_C_SOURCE=200809L -Iinclude \
-		-o $(BIN_DIR)/roe_chain_think src/cnet_roe_cot.c tools/roe_chain_think.c
+		-o $(BIN_DIR)/roe_chain_think src/roe/cnet_roe_cot.c tools/roe_chain_think.c
 	@./$(BIN_DIR)/roe_chain_think --test | tee logs/roe_chain_think.log
 	@grep -q "ROE_CHAIN_THINK_PASS" logs/roe_chain_think.log
 	@test -x $(BIN_DIR)/roe_front_door || $(MAKE) roe_front_door
@@ -4865,10 +4887,10 @@ roe_chain_think: include/cnet_roe_cot.h src/cnet_roe_cot.c tools/roe_chain_think
 	@echo "ROE_CHAIN_THINK_OK"
 
 # Highest-leverage non-LLM agent loop (hermetic, no libcurl):
-# always-on tool law → miss → accept/promote → warm LOCAL → residual KPIs.
+# always-on tool law â†’ miss â†’ accept/promote â†’ warm LOCAL â†’ residual KPIs.
 # Links roe core only; teach table stands in for external teacher.
 .PHONY: roe_agent_loop
-ROE_ASI_CORE := src/cnet_roe_asi.c src/cnet_asi_improve.c
+ROE_ASI_CORE := src/roe/cnet_roe_asi.c src/selfimprove/cnet_asi_improve.c
 roe_agent_loop: $(ROE_ASI_CORE) include/cnet_roe_asi.h tools/roe_agent_loop.c
 	@mkdir -p $(BIN_DIR) logs artifacts
 	$(CC) $(ASI_IMPROVE_CFLAGS) -o $(BIN_DIR)/roe_agent_loop \
@@ -4878,7 +4900,7 @@ roe_agent_loop: $(ROE_ASI_CORE) include/cnet_roe_asi.h tools/roe_agent_loop.c
 	@echo "---- agent loop KPIs ----"
 	@cat artifacts/roe_agent_loop/AGENT_LOOP.json 2>/dev/null || true
 
-# Ollama cloud teacher (deepseek-v4-flash:cloud) — no DEEPSEEK_API_KEY
+# Ollama cloud teacher (deepseek-v4-flash:cloud) â€” no DEEPSEEK_API_KEY
 .PHONY: roe_teacher_cloud_smoke
 roe_teacher_cloud_smoke: $(ROE_ASI_SRC) tools/roe_teacher_cloud_smoke.c config/roe-teacher-ollama-cloud.env
 	@mkdir -p $(BIN_DIR) logs
@@ -4888,7 +4910,7 @@ roe_teacher_cloud_smoke: $(ROE_ASI_SRC) tools/roe_teacher_cloud_smoke.c config/r
 	./$(BIN_DIR)/roe_teacher_cloud_smoke | tee logs/roe_teacher_cloud_smoke.log
 	@grep -q "ROE_TEACHER_CLOUD_SMOKE_PASS" logs/roe_teacher_cloud_smoke.log
 
-# SOUL persona pack (Marble) — isolated, seal_path forbidden
+# SOUL persona pack (Marble) â€” isolated, seal_path forbidden
 .PHONY: roe_soul_pack
 roe_soul_pack: roe_daily_packs_seed $(ROE_ASI_SRC) tools/roe_soul_pack_gate.c
 	@mkdir -p $(BIN_DIR) logs
@@ -4901,7 +4923,7 @@ roe_soul_pack: roe_daily_packs_seed $(ROE_ASI_SRC) tools/roe_soul_pack_gate.c
 	@test -f artifacts/roe_daily_packs/pack_soul_marble/voice.md
 	@grep -q "kind persona" artifacts/roe_daily_packs/pack_soul_marble/PACK.abi
 
-# Unattended evolve: miss_log → gold/multi_stable → pack_personal (no human Accept)
+# Unattended evolve: miss_log â†’ gold/multi_stable â†’ pack_personal (no human Accept)
 .PHONY: roe_evolve_tick
 roe_evolve_tick: tools/roe_evolve_tick.py tools/roe_evolve_tick_gate.c
 	@mkdir -p $(BIN_DIR) logs artifacts/roe_daily_packs
@@ -4915,7 +4937,7 @@ roe_evolve_tick: tools/roe_evolve_tick.py tools/roe_evolve_tick_gate.c
 	@echo "  cp scripts/systemd/roe-evolve-tick.* ~/.config/systemd/user/"
 	@echo "  systemctl --user daemon-reload && systemctl --user enable --now roe-evolve-tick.timer"
 
-# Separate REVIEWER role (Ollama cloud) — not teacher
+# Separate REVIEWER role (Ollama cloud) â€” not teacher
 .PHONY: roe_reviewer_smoke
 roe_reviewer_smoke: tools/roe_reviewer.py config/roe-reviewer-ollama-cloud.env
 	@mkdir -p logs
@@ -4935,7 +4957,7 @@ cnet_marble_24_7:
 	@test -f logs/marble_24_7/status.json
 	@$(PYTHON) -c "import json;d=json.load(open('logs/marble_24_7/status.json')); assert d.get('hermes_required') is False; assert d.get('core_active_count',0)>=1; print('CNET_MARBLE_24_7_OK')"
 
-# Full autonomous cycle (probe + evolve) — no Hermes, no human Accept
+# Full autonomous cycle (probe + evolve) â€” no Hermes, no human Accept
 .PHONY: cnet_autonomous
 cnet_autonomous:
 	@chmod +x scripts/cnet_autonomous_cycle.py
@@ -4999,11 +5021,11 @@ cnet_autonomy_charter:
 	@$(PYTHON) -c "import json;from pathlib import Path;import sys;sys.path.insert(0,'scripts');import cnet_autonomy_charter as a;c=a.charter();assert c['law']['never_self_cert'] and c['budgets']['promotes_per_day']>=1; print('CNET_AUTONOMY_CHARTER_OK')"
 
 .PHONY: roe_asi_ocr_surpass
-roe_asi_ocr_surpass: $(ROE_ASI_SRC) src/cnet_roe_goal.c src/cnet_roe_ocr.c src/cnet_roe_tree.c \
+roe_asi_ocr_surpass: $(ROE_ASI_SRC) src/roe/cnet_roe_goal.c src/roe/cnet_roe_ocr.c src/roe/cnet_roe_tree.c \
 		include/cnet_roe_ocr.h tools/roe_asi_ocr_surpass.c
 	@mkdir -p $(BIN_DIR) logs artifacts
 	$(CC) $(ASI_IMPROVE_CFLAGS) -o $(BIN_DIR)/roe_asi_ocr_surpass \
-		$(ROE_ASI_SRC) src/cnet_roe_goal.c src/cnet_roe_ocr.c src/cnet_roe_tree.c \
+		$(ROE_ASI_SRC) src/roe/cnet_roe_goal.c src/roe/cnet_roe_ocr.c src/roe/cnet_roe_tree.c \
 		tools/roe_asi_ocr_surpass.c $(ROE_ASI_LIBS)
 	@./$(BIN_DIR)/roe_asi_ocr_surpass | tee logs/roe_asi_ocr_surpass.log
 	@grep -q "ROE_ASI_OCR_SURPASS_PASS" logs/roe_asi_ocr_surpass.log
@@ -5020,21 +5042,21 @@ roe_omnidoc_sota:
 	@false
 
 # Local-first + tables also need table module
-roe_asi_ocr_local: $(ROE_ASI_SRC) src/cnet_roe_goal.c src/cnet_roe_doc.c src/cnet_roe_table.c include/cnet_roe_doc.h \
+roe_asi_ocr_local: $(ROE_ASI_SRC) src/roe/cnet_roe_goal.c src/roe/cnet_roe_doc.c src/roe/cnet_roe_table.c include/cnet_roe_doc.h \
 		tools/roe_asi_ocr_local_train.c
 	@mkdir -p $(BIN_DIR) logs artifacts
 	$(CC) $(ASI_IMPROVE_CFLAGS) -o $(BIN_DIR)/roe_asi_ocr_local_train \
-		$(ROE_ASI_SRC) src/cnet_roe_goal.c src/cnet_roe_doc.c src/cnet_roe_table.c tools/roe_asi_ocr_local_train.c $(ROE_ASI_LIBS)
+		$(ROE_ASI_SRC) src/roe/cnet_roe_goal.c src/roe/cnet_roe_doc.c src/roe/cnet_roe_table.c tools/roe_asi_ocr_local_train.c $(ROE_ASI_LIBS)
 	@./$(BIN_DIR)/roe_asi_ocr_local_train | tee logs/roe_asi_ocr_local.log
 	@grep -q "ROE_ASI_OCR_LOCAL_PASS" logs/roe_asi_ocr_local.log
 	@echo "---- local-first KPI ----"
 	@cat artifacts/roe_ocr_local/teacher_rate_kpi.json 2>/dev/null || true
 
-roe_asi_ocr_asset: $(ROE_ASI_SRC) src/cnet_roe_goal.c src/cnet_roe_doc.c src/cnet_roe_table.c include/cnet_roe_doc.h \
+roe_asi_ocr_asset: $(ROE_ASI_SRC) src/roe/cnet_roe_goal.c src/roe/cnet_roe_doc.c src/roe/cnet_roe_table.c include/cnet_roe_doc.h \
 		tools/roe_asi_ocr_asset_train.c
 	@mkdir -p $(BIN_DIR) logs artifacts
 	$(CC) $(ASI_IMPROVE_CFLAGS) -o $(BIN_DIR)/roe_asi_ocr_asset_train \
-		$(ROE_ASI_SRC) src/cnet_roe_goal.c src/cnet_roe_doc.c src/cnet_roe_table.c tools/roe_asi_ocr_asset_train.c $(ROE_ASI_LIBS)
+		$(ROE_ASI_SRC) src/roe/cnet_roe_goal.c src/roe/cnet_roe_doc.c src/roe/cnet_roe_table.c tools/roe_asi_ocr_asset_train.c $(ROE_ASI_LIBS)
 	@./$(BIN_DIR)/roe_asi_ocr_asset_train | tee logs/roe_asi_ocr_asset.log
 	@grep -q "ROE_ASI_OCR_ASSET_PASS" logs/roe_asi_ocr_asset.log
 	@echo "---- asset freeze ----"
@@ -5042,11 +5064,11 @@ roe_asi_ocr_asset: $(ROE_ASI_SRC) src/cnet_roe_goal.c src/cnet_roe_doc.c src/cne
 	@ls artifacts/roe_ocr_asset/pack_export 2>/dev/null || true
 
 .PHONY: roe_asi_ocr_tables
-roe_asi_ocr_tables: $(ROE_ASI_SRC) src/cnet_roe_goal.c src/cnet_roe_doc.c src/cnet_roe_table.c \
+roe_asi_ocr_tables: $(ROE_ASI_SRC) src/roe/cnet_roe_goal.c src/roe/cnet_roe_doc.c src/roe/cnet_roe_table.c \
 		include/cnet_roe_table.h tools/roe_asi_ocr_tables_train.c tools/roe_table_extract.c
 	@mkdir -p $(BIN_DIR) logs artifacts
 	$(CC) $(ASI_IMPROVE_CFLAGS) -o $(BIN_DIR)/roe_asi_ocr_tables_train \
-		$(ROE_ASI_SRC) src/cnet_roe_goal.c src/cnet_roe_doc.c src/cnet_roe_table.c \
+		$(ROE_ASI_SRC) src/roe/cnet_roe_goal.c src/roe/cnet_roe_doc.c src/roe/cnet_roe_table.c \
 		tools/roe_asi_ocr_tables_train.c $(ROE_ASI_LIBS)
 	@./$(BIN_DIR)/roe_asi_ocr_tables_train | tee logs/roe_asi_ocr_tables.log
 	@grep -q "ROE_ASI_OCR_TABLES_PASS" logs/roe_asi_ocr_tables.log
@@ -5071,11 +5093,11 @@ roe_omnidoc_bench:
 	@false
 
 .PHONY: roe_asi_ocr_bigfile
-roe_asi_ocr_bigfile: $(ROE_ASI_SRC) src/cnet_roe_goal.c src/cnet_roe_doc.c src/cnet_roe_table.c \
+roe_asi_ocr_bigfile: $(ROE_ASI_SRC) src/roe/cnet_roe_goal.c src/roe/cnet_roe_doc.c src/roe/cnet_roe_table.c \
 		include/cnet_roe_doc.h include/cnet_roe_table.h tools/roe_asi_ocr_bigfile_train.c
 	@mkdir -p $(BIN_DIR) logs artifacts/roe_ocr_bigfile
 	$(CC) $(CFLAGS) -Iinclude -o $(BIN_DIR)/roe_asi_ocr_bigfile_train \
-		$(ROE_ASI_SRC) src/cnet_roe_goal.c src/cnet_roe_doc.c src/cnet_roe_table.c \
+		$(ROE_ASI_SRC) src/roe/cnet_roe_goal.c src/roe/cnet_roe_doc.c src/roe/cnet_roe_table.c \
 		tools/roe_asi_ocr_bigfile_train.c $(LDFLAGS)
 	./$(BIN_DIR)/roe_asi_ocr_bigfile_train 2>&1 | tee logs/roe_asi_ocr_bigfile.log
 	@grep -q ROE_ASI_OCR_BIGFILE_PASS logs/roe_asi_ocr_bigfile.log
@@ -5097,7 +5119,7 @@ roe_omnidoc_sota_dual:
 	@echo "ROE_OMNIDOC_SOTA_DUAL_WITHHELD reason=torch_harness_removed" | tee logs/roe_omnidoc_dual_gpu_infer.log
 	@false
 
-# Light CNET capsule runtime — import package + btn_forward (Brain cheap host)
+# Light CNET capsule runtime â€” import package + btn_forward (Brain cheap host)
 cnet_capsule_step: $(CAPSULE_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(EXT_TEACHER_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) tools/cnet_capsule_step.c
 	@mkdir -p $(BIN_DIR)
 	$(CC) $(CFLAGS) -Werror $(CUDA_CFLAGS) -o $(BIN_DIR)/cnet_capsule_step \
@@ -5420,7 +5442,7 @@ residual_http_real: residual_http
 bonsai_residual_fault_seed: $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(GAP_LANE_SRC) $(SRC) tools/bonsai_residual_fault_seed.c
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) $(CFLAGS) -o $(BIN_DIR)/bonsai_residual_fault_seed \
-		$(RESIDUAL_GGUF_SRC) $(PILOT_SRC) src/cnet_fault.c src/cnet_promote.c src/cnet_acct.c $(GAP_LANE_SRC) \
+		$(RESIDUAL_GGUF_SRC) $(PILOT_SRC) src/cnet_fault.c src/selfimprove/cnet_promote.c src/cnet_acct.c $(GAP_LANE_SRC) \
 		$(SRC) tools/bonsai_residual_fault_seed.c $(LDFLAGS) -pthread
 	@echo "built bin/bonsai_residual_fault_seed"
 
@@ -5440,7 +5462,7 @@ residual_gguf_real: residual_gguf
 .PHONY: residual_structure_mine_real
 residual_structure_mine_real: residual_gguf_real
 
-# Colibrì integration P0–P5 (placement, LFRU, heat mine, batch labels, session KV, pilot).
+# ColibrÃ¬ integration P0â€“P5 (placement, LFRU, heat mine, batch labels, session KV, pilot).
 .PHONY: colibri_integrate cnet_plan_cli
 EXT_RESIDUAL_SRC := src/external_residual.c
 colibri_integrate: $(PLACEMENT_SRC) $(PILOT_SRC) $(EXT_RESIDUAL_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) $(EXT_TEACHER_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) tests/test_colibri_integrate.c include/cnet_placement.h include/cnet_lfru.h include/cnet_pilot.h include/external_residual.h
@@ -5489,7 +5511,7 @@ personal_ai_auto: tests/test_personal_ai_auto.sh scripts/personal_ai_auto.sh con
 	@grep -q "PERSONAL_AI_AUTO_PASS" logs/personal_ai_auto.log
 	@grep "PERSONAL_AI_AUTO_PASS" logs/personal_ai_auto.log
 
-# Post-seal serve proof: teach → seal → SoulHost reopen → certified Tier A.
+# Post-seal serve proof: teach â†’ seal â†’ SoulHost reopen â†’ certified Tier A.
 .PHONY: post_seal_serve serve_proof_cli serve_proof
 post_seal_serve: $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(GAP_LANE_SRC) $(EXT_TEACHER_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) src/soul_host.c $(ROUTE_LOG_SRC) $(EVIDENCE_BUNDLE_SRC) $(HEALTH_LAYERS_SRC) tests/test_post_seal_serve.c include/personal_ai.h include/soul_host.h
 	@mkdir -p $(BIN_DIR) logs
@@ -5542,7 +5564,7 @@ voice_real_teacher: $(MULTIMODAL_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER
 	@grep -q "VOICE_REAL_TEACHER_PASS" logs/voice_real_teacher.log
 	@grep "VOICE_REAL_TEACHER_PASS" logs/voice_real_teacher.log
 
-# Single source of truth → C include + .NET partial (check in generated files).
+# Single source of truth â†’ C include + .NET partial (check in generated files).
 .PHONY: json_toolcall_alphabet json_toolcall_alphabet_check
 json_toolcall_alphabet: config/json_toolcall_v2.json $(BIN_DIR)/gen_json_toolcall_alphabet
 	@$(BIN_DIR)/gen_json_toolcall_alphabet
@@ -5552,7 +5574,7 @@ json_toolcall_alphabet: config/json_toolcall_v2.json $(BIN_DIR)/gen_json_toolcal
 json_toolcall_alphabet_check: config/json_toolcall_v2.json $(BIN_DIR)/gen_json_toolcall_alphabet include/json_toolcall_alphabet.inc dotnet/Cce/JsonToolCall.Alphabet.g.cs
 	@$(BIN_DIR)/gen_json_toolcall_alphabet --check
 
-# Closed-set JSON tool-call spine: keyword features → certified tool ONEHOT.
+# Closed-set JSON tool-call spine: keyword features â†’ certified tool ONEHOT.
 .PHONY: json_toolcall
 json_toolcall: json_toolcall_alphabet $(MULTIMODAL_SRC) $(MODEL_RUNTIME) $(CCE) $(CNET_CCE_ADAPTER) $(SPECIALIST_ADAPTERS) $(SPECIALIST_SRC) $(SRC) $(ROUTER) $(PLAN_TABLE) $(CONTRACT) $(PROPERTY) $(CONSOLIDATE) $(SCAN) $(COVERAGE) $(ACQUIRE_SRC) $(BASE_SRC) $(LIBRARY) $(GAP_LANE_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(PILOT_SRC) $(CURIOSITY_SRC) $(RESOURCE_GOV_SRC) $(SELF_IMPROVE_SRC) $(EXT_TEACHER_SRC) src/soul_host.c $(ROUTE_LOG_SRC) tests/test_json_toolcall.c include/json_toolcall.h include/json_toolcall_alphabet.inc
 	@mkdir -p $(BIN_DIR) logs
@@ -6043,10 +6065,10 @@ model_runtime_integrity: src/model_runtime.c tests/test_model_runtime.c include/
 	@grep -q "MODEL_RUNTIME_PASS" logs/model_runtime_integrity_san.log
 	@echo "MODEL_RUNTIME_INTEGRITY_GATE_PASS"
 
-agent_memory_integrity: src/agent_memory.c tests/test_agent_memory.c include/agent_memory.h
+agent_memory_integrity: src/memory/agent_memory.c tests/test_agent_memory.c include/agent_memory.h
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) -std=c11 -Wall -Wextra -Werror -pedantic -O2 -D_DEFAULT_SOURCE -Iinclude \
-		-o $(BIN_DIR)/test_agent_memory src/agent_memory.c tests/test_agent_memory.c $(LDFLAGS)
+		-o $(BIN_DIR)/test_agent_memory src/memory/agent_memory.c tests/test_agent_memory.c $(LDFLAGS)
 	@./$(BIN_DIR)/test_agent_memory > logs/agent_memory_integrity.log 2>&1
 	@grep -q "PERSISTENCE_INTEGRITY_PASS" logs/agent_memory_integrity.log
 
@@ -6396,7 +6418,7 @@ claims: unified asi_framing
 .PHONY: asi_framing
 asi_framing:
 	@for f in README.md AGENTS.md docs/INDEX.md docs/ARCHITECTURE.md; do \
-		grep -q 'ASI — Artificial Specialized Intelligence' $$f || \
+		grep -q 'ASI â€” Artificial Specialized Intelligence' $$f || \
 			{ echo "ASI_FRAMING_FAIL missing canonical sentence in $$f"; exit 1; }; \
 		grep -q 'never' $$f && grep -q 'Artificial Superintelligence' $$f || \
 			{ echo "ASI_FRAMING_FAIL missing superintelligence disclaimer in $$f"; exit 1; }; \
@@ -6450,7 +6472,7 @@ aicimo_smoke: $(CCE) tests/aicimo_smoke.c include/cce/cce_aicimo.h
 	$(CC) $(CFLAGS) -o $(BIN_DIR)/aicimo_smoke $(CCE) tests/aicimo_smoke.c $(LDFLAGS)
 	./$(BIN_DIR)/aicimo_smoke
 
-# AICIMO core routing test — hermetic focused test proving:
+# AICIMO core routing test â€” hermetic focused test proving:
 #   identity/residual preservation, deterministic role routing selection,
 #   uncertainty from actual route state, invalid argument rejection.
 .PHONY: aicimo_core_test
@@ -6460,7 +6482,7 @@ aicimo_core_test: $(CCE) tests/test_aicimo_core.c include/cce/cce_aicimo.h
 	./$(BIN_DIR)/aicimo_core_test > logs/aicimo_core_test.log 2>&1
 	@grep -q "AICIMO_CORE_TEST_PASS" logs/aicimo_core_test.log
 
-# CNET harness contract test — hermetic ABI + AICIMO surface test for the
+# CNET harness contract test â€” hermetic ABI + AICIMO surface test for the
 # .NET-owned inference harness plugin. Links cnet_harness_core.c only; the
 # llama.cpp-backed backend TU is intentionally left out so this target does
 # not require llama.cpp. See docs/cnet_dotnet_inference_harness.md.
@@ -6766,7 +6788,7 @@ cnet_harness_contract_test: $(CCE) $(CCE_MODEL_CATALOG) $(MODEL_RUNTIME) $(MODEL
 	# Main contract test: links strong fake backend hooks so the route-only
 	# ABI surface can be exercised without llama.cpp.
 	# cnet_health_layers.c calls specialist_axes and btn_reliability, whose
-	# definers pull the specialist/contract/registry support set — the same
+	# definers pull the specialist/contract/registry support set â€” the same
 	# known-good closure gap_lane links. Still hermetic in the sense that
 	# matters: no llama.cpp, no GGUF.
 	$(CC) $(CFLAGS) -o $(BIN_DIR)/cnet_harness_contract_test \
@@ -7003,12 +7025,12 @@ moe_ckpt_test: src/cce/cce_moe_xf.c src/cce/cce_clgemm.c tests/moe_ckpt_test.c i
 moe_tick: moe_xf_tick
 	@bash scripts/cnet_moe_tick.sh
 
-# Bonsai residual → fault bus seed (standalone light link)
+# Bonsai residual â†’ fault bus seed (standalone light link)
 .PHONY: bonsai_residual_fault_seed_run
-bonsai_residual_fault_seed_run: tools/bonsai_residual_fault_seed.c src/residual_http.c src/cnet_fault.c src/cnet_promote.c src/cnet_acct.c
+bonsai_residual_fault_seed_run: tools/bonsai_residual_fault_seed.c src/residual_http.c src/cnet_fault.c src/selfimprove/cnet_promote.c src/cnet_acct.c
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) $(CFLAGS) -o $(BIN_DIR)/bonsai_residual_fault_seed \
-		src/residual_http.c src/cnet_fault.c src/cnet_promote.c src/cnet_acct.c \
+		src/residual_http.c src/cnet_fault.c src/selfimprove/cnet_promote.c src/cnet_acct.c \
 		src/gap_lane.c src/nn.c tools/bonsai_residual_fault_seed.c $(LDFLAGS) -pthread
 	@test -n "$$CNET_RESIDUAL_HTTP" || export CNET_RESIDUAL_HTTP=http://127.0.0.1:8080; \
 	test -n "$$CNET_FAULT_LOG" || export CNET_FAULT_LOG=$(CURDIR)/logs/cnet_faults.jsonl; \
@@ -7095,7 +7117,7 @@ cnet_7b_v3_fixture_audit: cnet_7b_candidate_freeze \
 		include/cnet_compete.h tools/cnet_compete_fixture_v3.c \
 		tools/cnet_compete_fixture_oracle_v3.c \
 		tools/cnet_compete_fixture_audit.c \
-		src/cnet_compete_independence.c \
+		src/compete/cnet_compete_independence.c \
 		benchmarks/cnet_asi5_v3/heldout.tsv \
 		benchmarks/cnet_asi5_v3/cases.tsv \
 		benchmarks/cnet_asi5_v3/baseline_system.txt \
@@ -7111,7 +7133,7 @@ cnet_7b_v3_fixture_audit: cnet_7b_candidate_freeze \
 		tools/cnet_compete_fixture_oracle_v3.c
 	$(CC) $(CFLAGS) -Werror -Iinclude \
 		-o $(BIN_DIR)/cnet_compete_fixture_audit \
-		src/cnet_compete_independence.c \
+		src/compete/cnet_compete_independence.c \
 		tools/cnet_compete_fixture_audit.c
 	@tmp=$$(mktemp -d); trap 'rm -rf "$$tmp"' EXIT; \
 		./$(BIN_DIR)/cnet_compete_fixture_v3 \
@@ -7135,10 +7157,10 @@ cnet_7b_compete_fixture: cnet_7b_v3_fixture_audit
 	@echo CNET_7B_COMPETE_FIXTURE_PASS rows=448 suite=CNET-ASI-5-v3
 
 cnet_7b_compete_contract: cnet_7b_compete_fixture include/cnet_compete.h \
-		src/cnet_compete.c tests/test_cnet_compete_contract.c
+		src/compete/cnet_compete.c tests/test_cnet_compete_contract.c
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) $(CFLAGS) -Iinclude -o $(BIN_DIR)/test_cnet_compete_contract \
-		src/cnet_compete.c tests/test_cnet_compete_contract.c $(LDFLAGS)
+		src/compete/cnet_compete.c tests/test_cnet_compete_contract.c $(LDFLAGS)
 	@./$(BIN_DIR)/test_cnet_compete_contract | tee logs/cnet_7b_compete_contract.log
 	@grep -q CNET_7B_COMPETE_CONTRACT_PASS logs/cnet_7b_compete_contract.log
 
@@ -7151,12 +7173,12 @@ CNET_COMPETE_SUITE_DEFINE ?=
 .PHONY: cnet_7b_v5_suite_data_contract
 cnet_7b_v5_suite_data_contract: \
 		include/cnet_compete_suite_data_audit.h \
-		src/cnet_compete_suite_data_audit.c \
+		src/compete/cnet_compete_suite_data_audit.c \
 		tests/test_cnet_compete_suite_data_v5_audit.c
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) $(CFLAGS) -Werror -Iinclude \
 		-o $(BIN_DIR)/test_cnet_compete_suite_data_v5_audit \
-		src/cnet_compete_suite_data_audit.c \
+		src/compete/cnet_compete_suite_data_audit.c \
 		tests/test_cnet_compete_suite_data_v5_audit.c $(LDFLAGS)
 	@./$(BIN_DIR)/test_cnet_compete_suite_data_v5_audit | \
 		tee logs/cnet_7b_v5_suite_data_contract.log
@@ -7166,7 +7188,7 @@ cnet_7b_v5_suite_data_contract: \
 		-D_DEFAULT_SOURCE -fsanitize=address,undefined \
 		-fno-omit-frame-pointer -Iinclude \
 		-o $(BIN_DIR)/test_cnet_compete_suite_data_v5_audit_san \
-		src/cnet_compete_suite_data_audit.c \
+		src/compete/cnet_compete_suite_data_audit.c \
 		tests/test_cnet_compete_suite_data_v5_audit.c \
 		-fsanitize=address,undefined
 	@ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 \
@@ -7183,7 +7205,7 @@ cnet_7b_v5_suite_data_audit: cnet_7b_v5_suite_data_contract \
 		tools/cnet_compete_suite_data_audit.c
 	$(CC) $(CFLAGS) -Werror -Iinclude \
 		-o $(BIN_DIR)/cnet_compete_suite_data_audit_v5 \
-		src/cnet_compete_suite_data_audit.c \
+		src/compete/cnet_compete_suite_data_audit.c \
 		tools/cnet_compete_suite_data_audit.c $(LDFLAGS)
 	@./$(BIN_DIR)/cnet_compete_suite_data_audit_v5 --v5 \
 		include/cnet_compete_suite_data_v5.h | \
@@ -7210,9 +7232,9 @@ cnet_7b_v5_suite_data_audit: cnet_7b_v5_suite_data_contract \
 		fi
 
 cnet_7b_v5_suite_define_smoke: include/cnet_compete.h \
-		include/cnet_compete_suite_data_v5.h src/cnet_compete.c
+		include/cnet_compete_suite_data_v5.h src/compete/cnet_compete.c
 	$(CC) $(CFLAGS) -Werror $(CNET_COMPETE_SUITE_DEFINE) -Iinclude \
-		-fsyntax-only src/cnet_compete.c
+		-fsyntax-only src/compete/cnet_compete.c
 	@echo CNET_7B_V5_SUITE_DEFINE_PASS
 
 cnet_7b_v5_fixture_audit: cnet_7b_v5_suite_data_audit \
@@ -7220,7 +7242,7 @@ cnet_7b_v5_fixture_audit: cnet_7b_v5_suite_data_audit \
 		tools/cnet_compete_fixture_v5.c \
 		tools/cnet_compete_fixture_oracle_v5.c \
 		tools/cnet_compete_fixture_audit.c \
-		src/cnet_compete_independence.c src/cnet_compete.c \
+		src/compete/cnet_compete_independence.c src/compete/cnet_compete.c \
 		tests/test_cnet_compete_contract.c \
 		benchmarks/cnet_asi5_v5/heldout.tsv \
 		benchmarks/cnet_asi5_v5/cases.tsv \
@@ -7238,11 +7260,11 @@ cnet_7b_v5_fixture_audit: cnet_7b_v5_suite_data_audit \
 		tools/cnet_compete_fixture_oracle_v5.c
 	$(CC) $(CFLAGS) -Werror -Iinclude \
 		-o $(BIN_DIR)/cnet_compete_fixture_audit \
-		src/cnet_compete_independence.c \
+		src/compete/cnet_compete_independence.c \
 		tools/cnet_compete_fixture_audit.c
 	$(CC) $(CFLAGS) -Werror -Iinclude $(CNET_COMPETE_V5_SUITE_DEFINE) \
 		-o $(BIN_DIR)/test_cnet_compete_contract_v5 \
-		src/cnet_compete.c tests/test_cnet_compete_contract.c $(LDFLAGS)
+		src/compete/cnet_compete.c tests/test_cnet_compete_contract.c $(LDFLAGS)
 	@tmp=$$(mktemp -d); trap 'rm -rf "$$tmp"' EXIT; \
 		./$(BIN_DIR)/cnet_compete_fixture_v5 \
 			"$$tmp/heldout.tsv" "$$tmp/cases.tsv"; \
@@ -7265,12 +7287,12 @@ cnet_7b_v5_fixture_audit: cnet_7b_v5_suite_data_audit \
 .PHONY: cnet_7b_v4_suite_data_contract cnet_7b_v4_suite_data_audit \
 	cnet_7b_v4_suite_define_smoke cnet_7b_v4_fixture_audit
 cnet_7b_v4_suite_data_contract: include/cnet_compete_suite_data_audit.h \
-		src/cnet_compete_suite_data_audit.c \
+		src/compete/cnet_compete_suite_data_audit.c \
 		tests/test_cnet_compete_suite_data_audit.c
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) $(CFLAGS) -Werror -Iinclude \
 		-o $(BIN_DIR)/test_cnet_compete_suite_data_audit \
-		src/cnet_compete_suite_data_audit.c \
+		src/compete/cnet_compete_suite_data_audit.c \
 		tests/test_cnet_compete_suite_data_audit.c $(LDFLAGS)
 	@./$(BIN_DIR)/test_cnet_compete_suite_data_audit | \
 		tee logs/cnet_7b_v4_suite_data_contract.log
@@ -7280,7 +7302,7 @@ cnet_7b_v4_suite_data_contract: include/cnet_compete_suite_data_audit.h \
 		-D_DEFAULT_SOURCE -fsanitize=address,undefined \
 		-fno-omit-frame-pointer -Iinclude \
 		-o $(BIN_DIR)/test_cnet_compete_suite_data_audit_san \
-		src/cnet_compete_suite_data_audit.c \
+		src/compete/cnet_compete_suite_data_audit.c \
 		tests/test_cnet_compete_suite_data_audit.c \
 		-fsanitize=address,undefined
 	@ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 \
@@ -7295,7 +7317,7 @@ cnet_7b_v4_suite_data_audit: cnet_7b_v4_suite_data_contract \
 		tools/cnet_compete_suite_data_audit.c
 	$(CC) $(CFLAGS) -Werror -Iinclude \
 		-o $(BIN_DIR)/cnet_compete_suite_data_audit \
-		src/cnet_compete_suite_data_audit.c \
+		src/compete/cnet_compete_suite_data_audit.c \
 		tools/cnet_compete_suite_data_audit.c $(LDFLAGS)
 	@./$(BIN_DIR)/cnet_compete_suite_data_audit \
 		include/cnet_compete_suite_data_v4.h | \
@@ -7338,9 +7360,9 @@ cnet_7b_v4_suite_data_audit: cnet_7b_v4_suite_data_contract \
 		fi
 
 cnet_7b_v4_suite_define_smoke: include/cnet_compete.h \
-		include/cnet_compete_suite_data_v4.h src/cnet_compete.c
+		include/cnet_compete_suite_data_v4.h src/compete/cnet_compete.c
 	$(CC) $(CFLAGS) -Werror $(CNET_COMPETE_SUITE_DEFINE) -Iinclude \
-		-fsyntax-only src/cnet_compete.c
+		-fsyntax-only src/compete/cnet_compete.c
 	@echo CNET_7B_V4_SUITE_DEFINE_PASS
 
 cnet_7b_v4_fixture_audit: cnet_7b_v4_suite_data_audit \
@@ -7348,7 +7370,7 @@ cnet_7b_v4_fixture_audit: cnet_7b_v4_suite_data_audit \
 		tools/cnet_compete_fixture_v4.c \
 		tools/cnet_compete_fixture_oracle_v4.c \
 		tools/cnet_compete_fixture_audit.c \
-		src/cnet_compete_independence.c src/cnet_compete.c \
+		src/compete/cnet_compete_independence.c src/compete/cnet_compete.c \
 		tests/test_cnet_compete_contract.c \
 		benchmarks/cnet_asi5_v4/heldout.tsv \
 		benchmarks/cnet_asi5_v4/cases.tsv \
@@ -7368,11 +7390,11 @@ cnet_7b_v4_fixture_audit: cnet_7b_v4_suite_data_audit \
 		tools/cnet_compete_fixture_oracle_v4.c
 	$(CC) $(CFLAGS) -Werror -Iinclude \
 		-o $(BIN_DIR)/cnet_compete_fixture_audit \
-		src/cnet_compete_independence.c \
+		src/compete/cnet_compete_independence.c \
 		tools/cnet_compete_fixture_audit.c
 	$(CC) $(CFLAGS) -Werror -Iinclude $(CNET_COMPETE_V4_SUITE_DEFINE) \
 		-o $(BIN_DIR)/test_cnet_compete_contract_v4 \
-		src/cnet_compete.c tests/test_cnet_compete_contract.c $(LDFLAGS)
+		src/compete/cnet_compete.c tests/test_cnet_compete_contract.c $(LDFLAGS)
 	@tmp=$$(mktemp -d); trap 'rm -rf "$$tmp"' EXIT; \
 		./$(BIN_DIR)/cnet_compete_fixture_v4 \
 			"$$tmp/heldout.tsv" "$$tmp/cases.tsv"; \
@@ -7394,12 +7416,12 @@ cnet_7b_v4_fixture_audit: cnet_7b_v4_suite_data_audit \
 
 .PHONY: cnet_7b_independence_contract cnet_7b_candidate_freeze
 cnet_7b_independence_contract: include/cnet_compete_independence.h \
-		src/cnet_compete_independence.c \
+		src/compete/cnet_compete_independence.c \
 		tests/test_cnet_compete_independence.c
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) $(CFLAGS) -Werror -Iinclude \
 		-o $(BIN_DIR)/test_cnet_compete_independence \
-		src/cnet_compete_independence.c \
+		src/compete/cnet_compete_independence.c \
 		tests/test_cnet_compete_independence.c
 	@./$(BIN_DIR)/test_cnet_compete_independence | \
 		tee logs/cnet_7b_independence_contract.log
@@ -7409,7 +7431,7 @@ cnet_7b_independence_contract: include/cnet_compete_independence.h \
 		-D_DEFAULT_SOURCE -fsanitize=address,undefined \
 		-fno-omit-frame-pointer -Iinclude \
 		-o $(BIN_DIR)/test_cnet_compete_independence_san \
-		src/cnet_compete_independence.c \
+		src/compete/cnet_compete_independence.c \
 		tests/test_cnet_compete_independence.c \
 		-fsanitize=address,undefined
 	@ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 \
@@ -7420,7 +7442,7 @@ cnet_7b_independence_contract: include/cnet_compete_independence.h \
 		logs/cnet_7b_independence_contract_san.log
 
 cnet_7b_candidate_freeze: cnet_7b_independence_contract \
-		include/cnet_compete_intent.h src/cnet_compete_intent.c \
+		include/cnet_compete_intent.h src/compete/cnet_compete_intent.c \
 		src/cce/cce_wordlm.c tools/cnet_compete_export_corpus.c \
 		tools/cnet_compete_export_exclusions.c \
 		tools/cnet_compete_fixture_audit.c \
@@ -7434,15 +7456,15 @@ cnet_7b_candidate_freeze: cnet_7b_independence_contract \
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) $(CFLAGS) -Werror -Iinclude \
 		-o $(BIN_DIR)/cnet_compete_export_corpus \
-		src/cnet_compete_intent.c src/cce/cce_wordlm.c \
+		src/compete/cnet_compete_intent.c src/cce/cce_wordlm.c \
 		tools/cnet_compete_export_corpus.c $(LDFLAGS)
 	$(CC) $(CFLAGS) -Werror -Iinclude \
 		-o $(BIN_DIR)/cnet_compete_export_exclusions \
-		src/cnet_compete_independence.c \
+		src/compete/cnet_compete_independence.c \
 		tools/cnet_compete_export_exclusions.c
 	$(CC) $(CFLAGS) -Werror -Iinclude \
 		-o $(BIN_DIR)/cnet_compete_fixture_audit \
-		src/cnet_compete_independence.c \
+		src/compete/cnet_compete_independence.c \
 		tools/cnet_compete_fixture_audit.c
 	@tmp=$$(mktemp -d); trap 'rm -rf "$$tmp"' EXIT; \
 		./$(BIN_DIR)/cnet_compete_export_corpus "$$tmp/development.tsv"; \
@@ -7514,19 +7536,19 @@ cnet_7b_v5_candidate_integrity: cnet_7b_v5_runtime_san cnet_7b_v5_semantics_san 
 	@mkdir -p $(BIN_DIR) logs artifacts/cnet_asi5_v5
 	$(CC) $(CFLAGS) -Werror -Iinclude \
 		-o $(BIN_DIR)/cnet_compete_export_corpus \
-		src/cnet_compete_intent.c src/cce/cce_wordlm.c \
+		src/compete/cnet_compete_intent.c src/cce/cce_wordlm.c \
 		tools/cnet_compete_export_corpus.c $(LDFLAGS)
 	$(CC) $(CFLAGS) -Werror -Iinclude \
 		-o $(BIN_DIR)/cnet_compete_export_exclusions \
-		src/cnet_compete_independence.c \
+		src/compete/cnet_compete_independence.c \
 		tools/cnet_compete_export_exclusions.c
 	$(CC) $(CFLAGS) -Werror -Iinclude \
 		-o $(BIN_DIR)/cnet_compete_fixture_audit \
-		src/cnet_compete_independence.c \
+		src/compete/cnet_compete_independence.c \
 		tools/cnet_compete_fixture_audit.c
 	$(CC) $(CFLAGS) -Werror -Iinclude \
 		-o $(BIN_DIR)/cnet_compete_v5_semantic_export \
-		src/cnet_compete_v5_semantics.c \
+		src/compete/cnet_compete_v5_semantics.c \
 		tools/cnet_compete_v5_semantic_export.c $(LDFLAGS)
 	$(CC) $(CFLAGS) -Werror -Iinclude \
 		-o $(BIN_DIR)/cnet_compete_manifest \
@@ -7649,17 +7671,17 @@ cnet_7b_v5_candidate_freeze: cnet_7b_v5_candidate_integrity
 		logs/cnet_7b_v5_candidate_freeze.log
 
 .PHONY: cnet_7b_capsule_increment cnet_7b_capsules cnet_7b_capsules_san
-CNET_COMPETE_CAPSULE_CORE := src/cnet_capsule.c src/hybrid_ai.c src/base.c \
+CNET_COMPETE_CAPSULE_CORE := src/memory/cnet_capsule.c src/hybrid_ai.c src/base.c \
 	src/nn.c src/contract/contract.c src/contract/unit.c \
 	src/contract/coverage.c src/acquire.c src/runtime_identity.c src/plan_table.c
 cnet_7b_capsule_increment: include/cnet_compete_capsules.h \
-		src/cnet_compete_capsules.c tests/test_cnet_compete_capsule_increment.c \
+		src/compete/cnet_compete_capsules.c tests/test_cnet_compete_capsule_increment.c \
 		$(CNET_COMPETE_CAPSULE_CORE)
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) $(CFLAGS) -Werror $(CNET_COMPETE_SUITE_DEFINE) \
 		-ffunction-sections -fdata-sections -Iinclude \
 		-o $(BIN_DIR)/test_cnet_compete_capsule_increment \
-		src/cnet_compete_capsules.c $(CNET_COMPETE_CAPSULE_CORE) \
+		src/compete/cnet_compete_capsules.c $(CNET_COMPETE_CAPSULE_CORE) \
 		tests/test_cnet_compete_capsule_increment.c \
 		-Wl,--gc-sections $(LDFLAGS) $(MCP_LDFLAGS) -pthread
 	@./$(BIN_DIR)/test_cnet_compete_capsule_increment | \
@@ -7667,13 +7689,13 @@ cnet_7b_capsule_increment: include/cnet_compete_capsules.h \
 	@grep -q CNET_7B_CAPSULE_INCREMENT_PASS logs/cnet_7b_capsule_increment.log
 
 cnet_7b_capsules: cnet_7b_artifact_manifest include/cnet_compete_capsules.h \
-		src/cnet_compete_capsules.c tests/test_cnet_compete_capsules.c \
+		src/compete/cnet_compete_capsules.c tests/test_cnet_compete_capsules.c \
 		$(CNET_COMPETE_CAPSULE_CORE) $(ROUTER) $(SPECIALIST_SRC)
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) $(CFLAGS) -Werror $(CNET_COMPETE_BUILD_DEFINE) \
 		-ffunction-sections -fdata-sections -Iinclude \
 		-o $(BIN_DIR)/test_cnet_compete_capsules \
-		src/cnet_compete_capsules.c $(CNET_COMPETE_CAPSULE_CORE) \
+		src/compete/cnet_compete_capsules.c $(CNET_COMPETE_CAPSULE_CORE) \
 		$(ROUTER) $(SPECIALIST_SRC) tests/test_cnet_compete_capsules.c \
 		src/cce/cce_campaign_provenance.c \
 		-Wl,--gc-sections $(LDFLAGS) $(MCP_LDFLAGS) -pthread
@@ -7682,7 +7704,7 @@ cnet_7b_capsules: cnet_7b_artifact_manifest include/cnet_compete_capsules.h \
 	@grep -q CNET_7B_CAPSULES_PASS logs/cnet_7b_capsules.log
 
 cnet_7b_capsules_san: cnet_7b_artifact_manifest include/cnet_compete_capsules.h \
-		src/cnet_compete_capsules.c tests/test_cnet_compete_capsules.c \
+		src/compete/cnet_compete_capsules.c tests/test_cnet_compete_capsules.c \
 		$(CNET_COMPETE_CAPSULE_CORE) $(ROUTER) $(SPECIALIST_SRC)
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) -std=c11 -Wall -Wextra -pedantic -Werror -O1 -g \
@@ -7690,7 +7712,7 @@ cnet_7b_capsules_san: cnet_7b_artifact_manifest include/cnet_compete_capsules.h 
 		-fsanitize=address,undefined -fno-omit-frame-pointer \
 		-ffunction-sections -fdata-sections -Iinclude \
 		-o $(BIN_DIR)/test_cnet_compete_capsules_san \
-		src/cnet_compete_capsules.c $(CNET_COMPETE_CAPSULE_CORE) \
+		src/compete/cnet_compete_capsules.c $(CNET_COMPETE_CAPSULE_CORE) \
 		$(ROUTER) $(SPECIALIST_SRC) tests/test_cnet_compete_capsules.c \
 		src/cce/cce_campaign_provenance.c \
 		-Wl,--gc-sections -fsanitize=address,undefined -lm -lpthread
@@ -7701,14 +7723,14 @@ cnet_7b_capsules_san: cnet_7b_artifact_manifest include/cnet_compete_capsules.h 
 	@grep -q CNET_7B_CAPSULES_PASS logs/cnet_7b_capsules_san.log
 
 .PHONY: cnet_7b_intent
-cnet_7b_intent: include/cnet_compete_intent.h src/cnet_compete_intent.c \
+cnet_7b_intent: include/cnet_compete_intent.h src/compete/cnet_compete_intent.c \
 		src/cce/cce_wordlm.c tools/cnet_compete_train.c \
 		tests/test_cnet_compete_intent.c \
 		benchmarks/cnet_asi5_v4/semantic_development.tsv
 	@mkdir -p $(BIN_DIR) logs artifacts/cnet_asi5_v4
 	$(CC) $(CFLAGS) -Werror -Iinclude \
 		-o $(BIN_DIR)/cnet_compete_train \
-		src/cnet_compete_intent.c src/cce/cce_wordlm.c \
+		src/compete/cnet_compete_intent.c src/cce/cce_wordlm.c \
 		tools/cnet_compete_train.c $(LDFLAGS)
 	@./$(BIN_DIR)/cnet_compete_train \
 		artifacts/cnet_asi5_v4/intent.wlm \
@@ -7718,7 +7740,7 @@ cnet_7b_intent: include/cnet_compete_intent.h src/cnet_compete_intent.c \
 	@grep -q CNET_7B_INTENT_TRAIN_PASS logs/cnet_7b_intent_train.log
 	$(CC) $(CFLAGS) -Werror -Iinclude \
 		-o $(BIN_DIR)/test_cnet_compete_intent \
-		src/cnet_compete_intent.c src/cce/cce_wordlm.c \
+		src/compete/cnet_compete_intent.c src/cce/cce_wordlm.c \
 		tests/test_cnet_compete_intent.c $(LDFLAGS)
 	@./$(BIN_DIR)/test_cnet_compete_intent \
 		artifacts/cnet_asi5_v4/intent.wlm \
@@ -7732,7 +7754,7 @@ cnet_7b_intent_san: cnet_7b_intent
 		-D_DEFAULT_SOURCE -fsanitize=address,undefined \
 		-fno-omit-frame-pointer -Iinclude \
 		-o $(BIN_DIR)/test_cnet_compete_intent_san \
-		src/cnet_compete_intent.c src/cce/cce_wordlm.c \
+		src/compete/cnet_compete_intent.c src/cce/cce_wordlm.c \
 		tests/test_cnet_compete_intent.c \
 		-fsanitize=address,undefined -lm
 	@ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 \
@@ -7751,13 +7773,13 @@ cnet_7b_intent_san: cnet_7b_intent
 .PHONY: cnet_7b_v5_semantics_san
 .PHONY: cnet_7b_v5_intent
 cnet_7b_capsule_artifacts: include/cnet_compete_capsules.h \
-		src/cnet_compete_capsules.c tools/cnet_compete_build_capsules.c \
+		src/compete/cnet_compete_capsules.c tools/cnet_compete_build_capsules.c \
 		$(CNET_COMPETE_CAPSULE_CORE)
 	@mkdir -p $(BIN_DIR) logs artifacts/cnet_asi5_v4
 	$(CC) $(CFLAGS) -Werror $(CNET_COMPETE_SUITE_DEFINE) \
 		-ffunction-sections -fdata-sections -Iinclude \
 		-o $(BIN_DIR)/cnet_compete_build_capsules \
-		src/cnet_compete_capsules.c $(CNET_COMPETE_CAPSULE_CORE) \
+		src/compete/cnet_compete_capsules.c $(CNET_COMPETE_CAPSULE_CORE) \
 		tools/cnet_compete_build_capsules.c \
 		-Wl,--gc-sections $(LDFLAGS) $(MCP_LDFLAGS) -pthread
 	@./$(BIN_DIR)/cnet_compete_build_capsules \
@@ -7767,13 +7789,13 @@ cnet_7b_capsule_artifacts: include/cnet_compete_capsules.h \
 		logs/cnet_7b_capsule_artifacts.log
 
 cnet_7b_v5_capsule_artifacts: include/cnet_compete_capsules.h \
-		src/cnet_compete_capsules.c tools/cnet_compete_build_capsules.c \
+		src/compete/cnet_compete_capsules.c tools/cnet_compete_build_capsules.c \
 		$(CNET_COMPETE_CAPSULE_CORE)
 	@mkdir -p $(BIN_DIR) logs artifacts/cnet_asi5_v5
 	$(CC) $(CFLAGS) -Werror $(CNET_COMPETE_SUITE_DEFINE) \
 		-ffunction-sections -fdata-sections -Iinclude \
 		-o $(BIN_DIR)/cnet_compete_build_capsules_v5 \
-		src/cnet_compete_capsules.c $(CNET_COMPETE_CAPSULE_CORE) \
+		src/compete/cnet_compete_capsules.c $(CNET_COMPETE_CAPSULE_CORE) \
 		tools/cnet_compete_build_capsules.c \
 		-Wl,--gc-sections $(LDFLAGS) $(MCP_LDFLAGS) -pthread
 	@./$(BIN_DIR)/cnet_compete_build_capsules_v5 \
@@ -7812,14 +7834,14 @@ CNET_V4_BASE_DEFINE = -DCNET_COMPETE_BASE_PARAMETERS=272605u \
 .PHONY: cnet_7b_runtime cnet_7b_runtime_san
 cnet_7b_runtime: cnet_7b_intent cnet_7b_capsule_artifacts \
 		include/cnet_compete_runtime.h include/cnet_compete_artifacts.h \
-		src/cnet_compete_runtime.c tests/test_cnet_compete_runtime.c \
+		src/compete/cnet_compete_runtime.c tests/test_cnet_compete_runtime.c \
 		$(ROUTER) $(SPECIALIST_SRC)
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) $(CFLAGS) -Werror $(CNET_V4_BASE_DEFINE) \
 		-ffunction-sections -fdata-sections -Iinclude \
 		-o $(BIN_DIR)/test_cnet_compete_runtime \
-		src/cnet_compete_runtime.c src/cnet_compete_intent.c \
-		src/cnet_compete_capsules.c src/cce/cce_wordlm.c \
+		src/compete/cnet_compete_runtime.c src/compete/cnet_compete_intent.c \
+		src/compete/cnet_compete_capsules.c src/cce/cce_wordlm.c \
 		$(CNET_COMPETE_CAPSULE_CORE) $(ROUTER) $(SPECIALIST_SRC) \
 		tests/test_cnet_compete_runtime.c \
 		-Wl,--gc-sections $(LDFLAGS) $(MCP_LDFLAGS) -pthread
@@ -7838,8 +7860,8 @@ cnet_7b_runtime_san: cnet_7b_runtime
 		-fsanitize=address,undefined -fno-omit-frame-pointer \
 		-ffunction-sections -fdata-sections -Iinclude \
 		-o $(BIN_DIR)/test_cnet_compete_runtime_san \
-		src/cnet_compete_runtime.c src/cnet_compete_intent.c \
-		src/cnet_compete_capsules.c src/cce/cce_wordlm.c \
+		src/compete/cnet_compete_runtime.c src/compete/cnet_compete_intent.c \
+		src/compete/cnet_compete_capsules.c src/cce/cce_wordlm.c \
 		$(CNET_COMPETE_CAPSULE_CORE) $(ROUTER) $(SPECIALIST_SRC) \
 		tests/test_cnet_compete_runtime.c \
 		-Wl,--gc-sections -fsanitize=address,undefined -lm -lpthread
@@ -7857,16 +7879,16 @@ cnet_7b_runtime_san: cnet_7b_runtime
 # not just base_params. refused, semantic_adversarial and typed_regressions are
 # compile-time array sizes in tests/test_cnet_compete_runtime.c: deleting a
 # refusal or adversarial case shrinks coverage without failing any assertion
-# inside the test. That already happened once — 80ce9e8 moved
+# inside the test. That already happened once â€” 80ce9e8 moved
 # semantic_adversarial 97 -> 96 and the old substring grep stayed green.
 cnet_7b_v5_runtime: cnet_7b_v5_intent cnet_7b_v5_capsule_artifacts \
 		include/cnet_compete_runtime.h include/cnet_compete_artifacts.h \
-		src/cnet_compete_runtime.c tests/test_cnet_compete_runtime.c \
+		src/compete/cnet_compete_runtime.c tests/test_cnet_compete_runtime.c \
 		$(ROUTER) $(SPECIALIST_SRC)
 	$(CC) $(CFLAGS) -Werror -ffunction-sections -fdata-sections -Iinclude \
 		-o $(BIN_DIR)/test_cnet_compete_v5_runtime \
-		src/cnet_compete_runtime.c src/cnet_compete_intent.c \
-		src/cnet_compete_capsules.c src/cce/cce_wordlm.c \
+		src/compete/cnet_compete_runtime.c src/compete/cnet_compete_intent.c \
+		src/compete/cnet_compete_capsules.c src/cce/cce_wordlm.c \
 		$(CNET_COMPETE_CAPSULE_CORE) $(ROUTER) $(SPECIALIST_SRC) \
 		tests/test_cnet_compete_runtime.c \
 		-Wl,--gc-sections $(LDFLAGS) $(MCP_LDFLAGS) -pthread
@@ -7884,8 +7906,8 @@ cnet_7b_v5_runtime_san: cnet_7b_v5_runtime
 		-fsanitize=address,undefined -fno-omit-frame-pointer \
 		-ffunction-sections -fdata-sections -Iinclude \
 		-o $(BIN_DIR)/test_cnet_compete_v5_runtime_san \
-		src/cnet_compete_runtime.c src/cnet_compete_intent.c \
-		src/cnet_compete_capsules.c src/cce/cce_wordlm.c \
+		src/compete/cnet_compete_runtime.c src/compete/cnet_compete_intent.c \
+		src/compete/cnet_compete_capsules.c src/cce/cce_wordlm.c \
 		$(CNET_COMPETE_CAPSULE_CORE) $(ROUTER) $(SPECIALIST_SRC) \
 		tests/test_cnet_compete_runtime.c \
 		-Wl,--gc-sections -fsanitize=address,undefined -lm -lpthread
@@ -7905,7 +7927,7 @@ cnet_7b_v5_runtime_san: cnet_7b_v5_runtime
 # frozen v5 artifacts in place so an analysis run cannot churn them.
 .PHONY: cnet_7b_v5_stage_hist
 cnet_7b_v5_stage_hist: include/cnet_compete_runtime.h \
-		include/cnet_compete_eval.h src/cnet_compete_runtime.c \
+		include/cnet_compete_eval.h src/compete/cnet_compete_runtime.c \
 		tools/cnet_compete_stage_hist.c \
 		benchmarks/cnet_asi5_v5/heldout.tsv \
 		$(ROUTER) $(SPECIALIST_SRC)
@@ -7914,10 +7936,10 @@ cnet_7b_v5_stage_hist: include/cnet_compete_runtime.h \
 		-DCNET_COMPETE_SUITE_DATA_HEADER=\"cnet_compete_suite_data_v5.h\" \
 		-ffunction-sections -fdata-sections -Iinclude \
 		-o $(BIN_DIR)/cnet_compete_stage_hist \
-		tools/cnet_compete_stage_hist.c src/cnet_compete_runtime.c \
-		src/cnet_compete_intent.c src/cnet_compete_capsules.c \
+		tools/cnet_compete_stage_hist.c src/compete/cnet_compete_runtime.c \
+		src/compete/cnet_compete_intent.c src/compete/cnet_compete_capsules.c \
 		src/cce/cce_wordlm.c \
-		src/cnet_compete_eval.c src/cnet_compete.c \
+		src/compete/cnet_compete_eval.c src/compete/cnet_compete.c \
 		src/cce/cce_campaign_provenance.c \
 		$(CNET_COMPETE_CAPSULE_CORE) $(ROUTER) $(SPECIALIST_SRC) \
 		-Wl,--gc-sections $(LDFLAGS) $(MCP_LDFLAGS) -pthread
@@ -7939,8 +7961,8 @@ cnet_7b_v5_stage_hist: include/cnet_compete_runtime.h \
 cnet_7b_v5_diagnostic: cnet_7b_intent cnet_7b_capsule_artifacts
 	$(CC) $(CFLAGS) -Werror -ffunction-sections -fdata-sections -Iinclude \
 		-o $(BIN_DIR)/test_cnet_compete_diagnostic \
-		src/cnet_compete_runtime.c src/cnet_compete_intent.c \
-		src/cnet_compete_capsules.c src/cce/cce_wordlm.c \
+		src/compete/cnet_compete_runtime.c src/compete/cnet_compete_intent.c \
+		src/compete/cnet_compete_capsules.c src/cce/cce_wordlm.c \
 		$(CNET_COMPETE_CAPSULE_CORE) $(ROUTER) $(SPECIALIST_SRC) \
 		tests/test_cnet_compete_diagnostic.c \
 		-Wl,--gc-sections $(LDFLAGS) $(MCP_LDFLAGS) -pthread
@@ -7958,8 +7980,8 @@ cnet_7b_v5_diagnostic_san: cnet_7b_v5_diagnostic
 		-fsanitize=address,undefined -fno-omit-frame-pointer \
 		-ffunction-sections -fdata-sections -Iinclude \
 		-o $(BIN_DIR)/test_cnet_compete_diagnostic_san \
-		src/cnet_compete_runtime.c src/cnet_compete_intent.c \
-		src/cnet_compete_capsules.c src/cce/cce_wordlm.c \
+		src/compete/cnet_compete_runtime.c src/compete/cnet_compete_intent.c \
+		src/compete/cnet_compete_capsules.c src/cce/cce_wordlm.c \
 		$(CNET_COMPETE_CAPSULE_CORE) $(ROUTER) $(SPECIALIST_SRC) \
 		tests/test_cnet_compete_diagnostic.c \
 		-Wl,--gc-sections -fsanitize=address,undefined -lm -lpthread
@@ -7978,9 +8000,9 @@ cnet_7b_crc_recover:
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) $(CFLAGS) -Werror -ffunction-sections -fdata-sections -Iinclude \
 		-o $(BIN_DIR)/test_cnet_compete_crc_recover \
-		src/cnet_compete_runtime.c src/cnet_compete_intent.c \
-		src/cnet_compete_capsules.c src/cnet_compete_crc_dev.c \
-		src/cnet_compete_independence.c src/cce/cce_wordlm.c \
+		src/compete/cnet_compete_runtime.c src/compete/cnet_compete_intent.c \
+		src/compete/cnet_compete_capsules.c src/compete/cnet_compete_crc_dev.c \
+		src/compete/cnet_compete_independence.c src/cce/cce_wordlm.c \
 		$(CNET_COMPETE_CAPSULE_CORE) $(ROUTER) $(SPECIALIST_SRC) \
 		tests/test_cnet_compete_crc_recover.c \
 		-Wl,--gc-sections $(LDFLAGS) $(MCP_LDFLAGS) -pthread
@@ -7998,9 +8020,9 @@ cnet_7b_crc_recover_san: cnet_7b_crc_recover
 		-fsanitize=address,undefined -fno-omit-frame-pointer \
 		-ffunction-sections -fdata-sections -Iinclude \
 		-o $(BIN_DIR)/test_cnet_compete_crc_recover_san \
-		src/cnet_compete_runtime.c src/cnet_compete_intent.c \
-		src/cnet_compete_capsules.c src/cnet_compete_crc_dev.c \
-		src/cnet_compete_independence.c src/cce/cce_wordlm.c \
+		src/compete/cnet_compete_runtime.c src/compete/cnet_compete_intent.c \
+		src/compete/cnet_compete_capsules.c src/compete/cnet_compete_crc_dev.c \
+		src/compete/cnet_compete_independence.c src/cce/cce_wordlm.c \
 		$(CNET_COMPETE_CAPSULE_CORE) $(ROUTER) $(SPECIALIST_SRC) \
 		tests/test_cnet_compete_crc_recover.c \
 		-Wl,--gc-sections -fsanitize=address,undefined -lm -lpthread
@@ -8015,8 +8037,8 @@ cnet_7b_crc_recover_san: cnet_7b_crc_recover
 cnet_7b_v6_coherence: cnet_7b_v5_runtime
 	$(CC) $(CFLAGS) -Werror -ffunction-sections -fdata-sections -Iinclude \
 		-o $(BIN_DIR)/test_cnet_compete_v6_coherence \
-		src/cnet_compete_runtime.c src/cnet_compete_intent.c \
-		src/cnet_compete_capsules.c src/cce/cce_wordlm.c \
+		src/compete/cnet_compete_runtime.c src/compete/cnet_compete_intent.c \
+		src/compete/cnet_compete_capsules.c src/cce/cce_wordlm.c \
 		$(CNET_COMPETE_CAPSULE_CORE) $(ROUTER) $(SPECIALIST_SRC) \
 		tests/test_cnet_compete_v6_coherence.c \
 		-Wl,--gc-sections $(LDFLAGS) $(MCP_LDFLAGS) -pthread
@@ -8029,8 +8051,8 @@ cnet_7b_v6_coherence: cnet_7b_v5_runtime
 
 cnet_7b_v5_semantic_corpus: include/cnet_compete_v5_semantics.h \
 		include/cnet_compete_independence.h \
-		src/cnet_compete_v5_semantics.c \
-		src/cnet_compete_independence.c \
+		src/compete/cnet_compete_v5_semantics.c \
+		src/compete/cnet_compete_independence.c \
 		tools/cnet_compete_v5_semantic_export.c \
 		tools/cnet_compete_fixture_audit.c \
 		benchmarks/cnet_asi5_v4/excluded_prompts.tsv \
@@ -8038,7 +8060,7 @@ cnet_7b_v5_semantic_corpus: include/cnet_compete_v5_semantics.h \
 	@mkdir -p $(BIN_DIR) logs artifacts/cnet_asi5_v5_dev
 	$(CC) $(CFLAGS) -Werror -Iinclude \
 		-o $(BIN_DIR)/cnet_compete_v5_semantic_export \
-		src/cnet_compete_v5_semantics.c \
+		src/compete/cnet_compete_v5_semantics.c \
 		tools/cnet_compete_v5_semantic_export.c $(LDFLAGS)
 	@./$(BIN_DIR)/cnet_compete_v5_semantic_export \
 		artifacts/cnet_asi5_v5_dev/semantic_development.tsv | \
@@ -8049,7 +8071,7 @@ cnet_7b_v5_semantic_corpus: include/cnet_compete_v5_semantics.h \
 		logs/cnet_7b_v5_semantic_export.log
 	$(CC) $(CFLAGS) -Werror -Iinclude \
 		-o $(BIN_DIR)/cnet_compete_v5_semantic_audit \
-		src/cnet_compete_independence.c \
+		src/compete/cnet_compete_independence.c \
 		tools/cnet_compete_fixture_audit.c $(LDFLAGS)
 	@./$(BIN_DIR)/cnet_compete_v5_semantic_audit \
 		benchmarks/cnet_asi5_v5/semantic_development.tsv \
@@ -8062,9 +8084,9 @@ cnet_7b_v5_semantics: cnet_7b_v5_intent cnet_7b_v5_capsule_artifacts \
 		cnet_7b_v5_semantic_corpus
 	$(CC) $(CFLAGS) -Werror -ffunction-sections -fdata-sections -Iinclude \
 		-o $(BIN_DIR)/test_cnet_compete_v5_semantics \
-		src/cnet_compete_v5_semantics.c \
-		src/cnet_compete_runtime.c src/cnet_compete_intent.c \
-		src/cnet_compete_capsules.c src/cce/cce_wordlm.c \
+		src/compete/cnet_compete_v5_semantics.c \
+		src/compete/cnet_compete_runtime.c src/compete/cnet_compete_intent.c \
+		src/compete/cnet_compete_capsules.c src/cce/cce_wordlm.c \
 		$(CNET_COMPETE_CAPSULE_CORE) $(ROUTER) $(SPECIALIST_SRC) \
 		tests/test_cnet_compete_v5_semantics.c \
 		-Wl,--gc-sections $(LDFLAGS) $(MCP_LDFLAGS) -pthread
@@ -8082,9 +8104,9 @@ cnet_7b_v5_semantics_san: cnet_7b_v5_semantics
 		-fsanitize=address,undefined -fno-omit-frame-pointer \
 		-ffunction-sections -fdata-sections -Iinclude \
 		-o $(BIN_DIR)/test_cnet_compete_v5_semantics_san \
-		src/cnet_compete_v5_semantics.c \
-		src/cnet_compete_runtime.c src/cnet_compete_intent.c \
-		src/cnet_compete_capsules.c src/cce/cce_wordlm.c \
+		src/compete/cnet_compete_v5_semantics.c \
+		src/compete/cnet_compete_runtime.c src/compete/cnet_compete_intent.c \
+		src/compete/cnet_compete_capsules.c src/cce/cce_wordlm.c \
 		$(CNET_COMPETE_CAPSULE_CORE) $(ROUTER) $(SPECIALIST_SRC) \
 		tests/test_cnet_compete_v5_semantics.c \
 		-Wl,--gc-sections -fsanitize=address,undefined -lm -lpthread
@@ -8099,14 +8121,14 @@ cnet_7b_v5_semantics_san: cnet_7b_v5_semantics
 		logs/cnet_7b_v5_semantics_san.log
 
 cnet_7b_v5_intent: include/cnet_compete_intent.h \
-		src/cnet_compete_intent.c src/cce/cce_wordlm.c \
+		src/compete/cnet_compete_intent.c src/cce/cce_wordlm.c \
 		tests/test_cnet_compete_intent_v5.c \
 		benchmarks/cnet_asi5_v4/semantic_development.tsv \
 		benchmarks/cnet_asi5_v5/semantic_development.tsv
 	@mkdir -p $(BIN_DIR) logs artifacts/cnet_asi5_v5
 	$(CC) $(CFLAGS) -Werror -Iinclude \
 		-o $(BIN_DIR)/test_cnet_compete_intent_v5 \
-		src/cnet_compete_intent.c src/cce/cce_wordlm.c \
+		src/compete/cnet_compete_intent.c src/cce/cce_wordlm.c \
 		tests/test_cnet_compete_intent_v5.c $(LDFLAGS)
 	@./$(BIN_DIR)/test_cnet_compete_intent_v5 \
 			artifacts/cnet_asi5_v5/intent.wlm \
@@ -8120,17 +8142,17 @@ cnet_7b_v5_intent: include/cnet_compete_intent.h \
 cnet_7b_eval_contract: cnet_7b_artifact_manifest include/cnet_compete_eval.h \
 		include/cnet_compete_artifacts.h \
 		include/cnet_compete_client_identity.h \
-		src/cnet_compete_eval.c src/cnet_compete.c \
-		src/cnet_compete_client_identity.c \
+		src/compete/cnet_compete_eval.c src/compete/cnet_compete.c \
+		src/compete/cnet_compete_client_identity.c \
 		src/cce/cce_campaign_provenance.c tests/test_cnet_compete_eval.c \
-		include/cnet_compete_score.h src/cnet_compete_score.c \
+		include/cnet_compete_score.h src/compete/cnet_compete_score.c \
 		tests/test_cnet_compete_score.c \
 		tests/test_cnet_compete_client_identity.c
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) $(CFLAGS) -Werror $(CNET_COMPETE_SUITE_DEFINE) \
 		-ffunction-sections -fdata-sections -Iinclude \
 		-o $(BIN_DIR)/test_cnet_compete_eval \
-		src/cnet_compete_eval.c src/cnet_compete.c \
+		src/compete/cnet_compete_eval.c src/compete/cnet_compete.c \
 		src/cce/cce_campaign_provenance.c tests/test_cnet_compete_eval.c \
 		-Wl,--gc-sections $(LDFLAGS)
 	@./$(BIN_DIR)/test_cnet_compete_eval | tee logs/cnet_7b_eval_contract.log
@@ -8138,7 +8160,7 @@ cnet_7b_eval_contract: cnet_7b_artifact_manifest include/cnet_compete_eval.h \
 	$(CC) $(CFLAGS) -Werror $(CNET_COMPETE_SUITE_DEFINE) \
 		-ffunction-sections -fdata-sections -Iinclude \
 		-o $(BIN_DIR)/test_cnet_compete_score \
-		src/cnet_compete_score.c src/cnet_compete_eval.c src/cnet_compete.c \
+		src/compete/cnet_compete_score.c src/compete/cnet_compete_eval.c src/compete/cnet_compete.c \
 		src/cce/cce_campaign_provenance.c tests/test_cnet_compete_score.c \
 		-Wl,--gc-sections $(LDFLAGS)
 	@./$(BIN_DIR)/test_cnet_compete_score | tee logs/cnet_7b_score_contract.log
@@ -8146,7 +8168,7 @@ cnet_7b_eval_contract: cnet_7b_artifact_manifest include/cnet_compete_eval.h \
 	$(CC) $(CFLAGS) -Werror $(CNET_COMPETE_SUITE_DEFINE) -Iinclude \
 		-DCNET_COMPETE_CLIENT_TEST_ROLE=CNET_COMPETE_CLIENT_FIXTURE \
 		-o $(BIN_DIR)/test_cnet_compete_client_fixture \
-		src/cnet_compete_client_identity.c $(CNET_COMPETE_EVAL_CORE) \
+		src/compete/cnet_compete_client_identity.c $(CNET_COMPETE_EVAL_CORE) \
 		tests/test_cnet_compete_client_identity.c \
 		-Wl,--no-as-needed -lm -Wl,--as-needed -lpthread
 	@umask 077; \
@@ -8165,7 +8187,7 @@ cnet_7b_eval_contract: cnet_7b_artifact_manifest include/cnet_compete_eval.h \
 	$(CC) $(CFLAGS) -Werror $(CNET_COMPETE_SUITE_DEFINE) -Iinclude \
 		-DCNET_COMPETE_CLIENT_TEST_ROLE=CNET_COMPETE_CLIENT_BASELINE \
 		-o $(BIN_DIR)/test_cnet_compete_client_baseline \
-		src/cnet_compete_client_identity.c $(CNET_COMPETE_EVAL_CORE) \
+		src/compete/cnet_compete_client_identity.c $(CNET_COMPETE_EVAL_CORE) \
 		tests/test_cnet_compete_client_identity.c \
 		-Wl,--no-as-needed -lcurl -Wl,--as-needed -lm -lpthread
 	@env -i PATH=/usr/bin:/bin LANG=C LC_ALL=C TZ=UTC \
@@ -8174,7 +8196,7 @@ cnet_7b_eval_contract: cnet_7b_artifact_manifest include/cnet_compete_eval.h \
 	$(CC) $(CFLAGS) -Werror $(CNET_COMPETE_SUITE_DEFINE) -Iinclude \
 		-DCNET_COMPETE_CLIENT_TEST_ROLE=CNET_COMPETE_CLIENT_SCORER \
 		-o $(BIN_DIR)/test_cnet_compete_client_scorer \
-		src/cnet_compete_client_identity.c $(CNET_COMPETE_EVAL_CORE) \
+		src/compete/cnet_compete_client_identity.c $(CNET_COMPETE_EVAL_CORE) \
 		tests/test_cnet_compete_client_identity.c -lm -lpthread
 	@env -i PATH=/usr/bin:/bin LANG=C LC_ALL=C TZ=UTC \
 		./$(BIN_DIR)/test_cnet_compete_client_scorer | \
@@ -8192,7 +8214,7 @@ CNET_COMPETE_BUILD_TREE := $(shell git rev-parse HEAD^{tree} 2>/dev/null)
 CNET_COMPETE_BUILD_DEFINE := \
 	-DCNET_COMPETE_BUILD_COMMIT=\"$(CNET_COMPETE_BUILD_COMMIT)\" \
 	-DCNET_COMPETE_BUILD_TREE=\"$(CNET_COMPETE_BUILD_TREE)\"
-CNET_COMPETE_EVAL_CORE := src/cnet_compete_eval.c src/cnet_compete.c \
+CNET_COMPETE_EVAL_CORE := src/compete/cnet_compete_eval.c src/compete/cnet_compete.c \
 	src/cce/cce_campaign_provenance.c
 
 cnet_7b_artifact_manifest: cnet_7b_v5_runtime_san \
@@ -8390,7 +8412,7 @@ cnet_7b_eval_san: cnet_7b_eval_contract
 		$(CNET_COMPETE_SUITE_DEFINE) \
 		-fsanitize=address,undefined -fno-omit-frame-pointer -Iinclude \
 		-o $(BIN_DIR)/test_cnet_compete_score_san \
-		src/cnet_compete_score.c $(CNET_COMPETE_EVAL_CORE) \
+		src/compete/cnet_compete_score.c $(CNET_COMPETE_EVAL_CORE) \
 		tests/test_cnet_compete_score.c \
 		-fsanitize=address,undefined -lm -lpthread
 	@ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 \
@@ -8528,3 +8550,12 @@ cnet_gguf_peek: tools/cnet_gguf_peek.c $(CCE)
 	@CNET_GGUF_MMAP=1 ./$(BIN_DIR)/cnet_gguf_peek /home/marble/AI/Models/Bonsai-8B-gguf/Bonsai-8B.gguf attn_q | tee logs/cnet_gguf_peek.log
 	@grep -q 'CCE_GGUF_PEEK' logs/cnet_gguf_peek.log
 
+
+
+# ---------------------------------------------------------------------------
+# Makefile fragments. Included LAST, deliberately: prerequisites are expanded
+# when a rule is read, so a fragment included here can rely on every variable
+# above it, while the reverse would not hold. See mk/README.md.
+# ---------------------------------------------------------------------------
+include mk/orphans.mk
+include mk/integrity.mk

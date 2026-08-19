@@ -112,11 +112,11 @@ cce_result cce_mtk_host_open(cce_mtk_host **out, const char *gguf_path,
         (void)cnet_gov_apply_compute_env(&h->gov);
     }
 
-    setenv("CNET_FOREST_NO_PERSIST", "1", 0);
+    cnet_setenv("CNET_FOREST_NO_PERSIST", "1", 0);
 
     /* GPU fast path: int8 specialists at load (unless FP forced). */
     if (want_gpu() && !getenv("CNET_INFER_FP") && !getenv("CNET_ORACLE_INT8"))
-        setenv("CNET_ORACLE_INT8", "1", 0);
+        cnet_setenv("CNET_ORACLE_INT8", "1", 0);
 
     rc = cce_gguf_load_model(&h->model, gguf_path);
     if (rc != CCE_OK || !h->model) {
@@ -124,8 +124,8 @@ cce_result cce_mtk_host_open(cce_mtk_host **out, const char *gguf_path,
     }
     /* Hybrid runners (qwen35) refuse CNET_SPARSE_KV — clear and retry once. */
     if ((rc != CCE_OK || !h->model) && getenv("CNET_SPARSE_KV")) {
-        unsetenv("CNET_SPARSE_KV");
-        unsetenv("CNET_DSA");
+        cnet_unsetenv("CNET_SPARSE_KV");
+        cnet_unsetenv("CNET_DSA");
         h->model = NULL;
         rc = cce_gguf_load_model(&h->model, gguf_path);
         if (rc != CCE_OK || !h->model)

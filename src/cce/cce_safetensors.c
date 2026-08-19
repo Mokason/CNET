@@ -16,7 +16,7 @@
    checkpoint files load without it, which is what the QAT loading arc needs.
    CNET_HAVE_CURL is defined by the Makefile's CURL_PROBE when the library is
    actually present. */
-#ifdef CNET_HAVE_CURL
+#if CNET_HAVE_CURL
 #include <curl/curl.h>
 #endif
 #ifdef _WIN32
@@ -1247,7 +1247,7 @@ static int st_make_temp_path(char* buf, size_t cap, const char* prefix) {
 #define CCE_ST_CONNECT_TIMEOUT_MS 10000L
 #define CCE_ST_DOWNLOAD_TIMEOUT_MS 600000L
 
-#ifdef CNET_HAVE_CURL
+#if CNET_HAVE_CURL
 
 typedef struct {
     FILE* file;

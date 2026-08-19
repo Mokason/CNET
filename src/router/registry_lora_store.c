@@ -19,7 +19,7 @@ static int ensure_dir(const char *dir) {
     struct stat st;
     if (!dir || !dir[0]) return -1;
     if (stat(dir, &st) == 0) return S_ISDIR(st.st_mode) ? 0 : -1;
-    return mkdir(dir, 0755);
+    return cnet_mkdir(dir, 0755);
 }
 
 const char *registry_lora_store_dir_env(void) {
