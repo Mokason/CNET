@@ -33,7 +33,7 @@ while [ "$#" -gt 0 ]; do
   esac
 done
 case "$SCOPE" in
-  all|unified|gpu|model) ;;
+  all|unified|gpu|model|autonomy) ;;
   *) echo "claims: unknown scope: $SCOPE" >&2; exit 2 ;;
 esac
 if [ -n "$SINCE" ] && [ ! -f "$SINCE" ]; then
@@ -73,6 +73,10 @@ managed_restore|logs/dotnet_restore.log|DOTNET_RESTORE_PASS|unified
 dotnet_host|logs/unified_host.log|CNET_HOST_UNIFIED_PASS|unified
 real_moe_e2e|logs/moe_e2e.log|REAL_MOE_E2E_PASS|model
 real_proj_qat_gemma_e2e|logs/proj_qat_gemma_e2e.log|REAL_PROJ_QAT_GEMMA_E2E_PASS|model
+distrust_loop|logs/distrust_loop.log|DISTRUST_LOOP_PASS|autonomy
+autonomy_tick|logs/distrust_loop.log|AUTONOMY_TICK_PASS|autonomy
+autonomy_spine|logs/autonomy_spine.log|AUTONOMY_SPINE_PASS|autonomy
+seal_trust|logs/seal_trust.log|SEAL_TRUST_PASS|autonomy
 '
 
 : > "$JSONL"

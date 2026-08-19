@@ -147,3 +147,10 @@ tmp_adaptfull_*
 /tile_store_test/
 /tfidf_ctl/
 /tile_grad_ctl/
+
+# runtime decimal/live_contracts weights (regenerable)
+dec_*_weights.txt
+# local agent/plan scratch
+flagship_pair_dbg.txt
+cnet_hf_contract_harvest.md
+build/cce/

@@ -685,6 +685,50 @@ def main() -> int:
     for p in report["promoted"][:10]:
         print(f"  + {p['skill_id']} reason={p['reason']} q={p['query'][:50]}")
     print(f"  report → {REPORT}")
+
+    # Autonomy spine bridge: structured miss/teach turns → seal-gated tick.
+    # Residual freeform never CERT. Best-effort; evolve tick still passes if CLI absent.
+    try:
+        import subprocess
+        auto_bin = ROOT / "bin" / "cnet_autonomy_tick_cli"
+        auto_dir = PACKS / "autonomy_tick"
+        auto_dir.mkdir(parents=True, exist_ok=True)
+        if auto_bin.is_file() and os.access(auto_bin, os.X_OK):
+            # drain a few teach-shaped or TAG n lines from miss log if present
+            turns = []
+            if MISS.is_file():
+                for row in load_jsonl(MISS)[-20:]:
+                    q = (row.get("query") or "").strip()
+                    a = (row.get("answer") or "").strip()
+                    if q.startswith("teach ") or (len(q.split()) == 2 and q.split()[1].isdigit()):
+                        turns.append(q)
+                    elif a.startswith("teach "):
+                        turns.append(a)
+            if not turns and args.seed_demo:
+                turns = ["teach evolve_demo 1 2"]
+            for turn in turns[:5]:
+                if args.dry_run:
+                    report.setdefault("autonomy_ticks", []).append({"turn": turn, "dry": True})
+                    continue
+                cp = subprocess.run(
+                    [str(auto_bin), str(auto_dir), turn],
+                    cwd=str(ROOT),
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                )
+                report.setdefault("autonomy_ticks", []).append(
+                    {
+                        "turn": turn,
+                        "rc": cp.returncode,
+                        "out": (cp.stdout or "")[-200:],
+                    }
+                )
+            if turns:
+                print(f"  autonomy_tick turns={len(turns)} workdir={auto_dir}")
+    except Exception as ex:
+        report.setdefault("autonomy_ticks", []).append({"error": str(ex)[:160]})
+
     print("ROE_EVOLVE_TICK_PASS")
     if not report["promoted"] and not args.seed_demo:
         print("  (idle — no eligible promotes; drop gold or repeat misses)")

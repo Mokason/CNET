@@ -75,7 +75,8 @@ VERIFY_T2_DEPS := \
 	metric_honesty \
 	moe_ckpt_test \
 	distrust_loop \
-	autonomy_tick
+	autonomy_tick \
+	autonomy_spine
 
 VERIFY_SENTINEL := logs/.verify_sentinel
 VERIFY_T2_SENTINEL := logs/.verify_t2_sentinel

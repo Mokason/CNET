@@ -7,6 +7,7 @@
 #include "../include/cnet_moe.h"
 #include "../include/cnet_acct.h"
 #include "../include/cnet_seal_trust.h"
+#include "../include/cnet_distrust.h"
 
 #include <limits.h>
 #include <stdio.h>
@@ -190,6 +191,41 @@ static void seal_trust_note_tier_a(const char *domain, int is_explore) {
     CnetSealTrust *st = cnet_seal_trust_global();
     if (!st || !st->cfg.enabled) return;
     (void)cnet_seal_trust_note_seal(st, domain, is_explore);
+}
+
+/*
+ * On Tier-A seal REFUSE: try optional certified reroute target, else mark
+ * residual (B/C) path. Never treats a cold target as "handled".
+ * Returns 1 if caller may claim Tier-A on *domain_io (rewritten to alt),
+ * 0 if fall through to residual / B/C only.
+ */
+static int distrust_on_tier_a_refuse(char *domain_io, size_t domain_cap,
+                                     int *explore_out) {
+    CnetSealTrust *st = cnet_seal_trust_global();
+    const char *alt;
+    const char *jpath;
+    CnetDistrustReroute rr;
+    if (explore_out) *explore_out = 0;
+    if (!st || !st->cfg.enabled || !domain_io) return 0;
+    jpath = st->journal_path[0] ? st->journal_path : NULL;
+    alt = getenv("CNET_DISTRUST_REROUTE_DOMAIN");
+    if (alt && alt[0] && strcmp(alt, domain_io) != 0) {
+        rr = cnet_distrust_reroute(st, domain_io, alt, 0, jpath);
+        if (rr == CNET_DISTRUST_REROUTE_ALLOW ||
+            rr == CNET_DISTRUST_REROUTE_EXPLORE) {
+            if (domain_cap) {
+                snprintf(domain_io, domain_cap, "%.*s", (int)(domain_cap - 1),
+                         alt);
+            }
+            if (rr == CNET_DISTRUST_REROUTE_EXPLORE && explore_out)
+                *explore_out = 1;
+            return 1;
+        }
+        /* BLOCKED or ERROR — do not claim handled via cold target */
+    }
+    /* Explicit Tier-C residual path (uncertified by law). */
+    (void)cnet_distrust_reroute(st, domain_io, "tier_c_residual", 1, jpath);
+    return 0;
 }
 
 static int coverage_gate_open(const PersonalAi *ai, Port input_port,
@@ -603,6 +639,23 @@ int personal_ai_serve(PersonalAi *ai, Port input_port, Port goal_port,
                            : (goal_port.tag[0] ? goal_port.tag : "untagged");
             snprintf(st_dom, sizeof st_dom, "%.63s", raw);
             if (!seal_trust_tier_a_open(st_dom, &st_explore)) {
+                /* Distrust: optional certified reroute, else residual fallthrough */
+                if (distrust_on_tier_a_refuse(st_dom, sizeof st_dom,
+                                              &st_explore)) {
+                    seal_trust_note_tier_a(st_dom, st_explore);
+                    if (st_explore) {
+                        ai->totals.seal_trust_explores++;
+                        rep->seal_trust_explores = 1;
+                        rep->seal_trust_kind = 2;
+                    } else if (cnet_seal_trust_global() &&
+                               cnet_seal_trust_global()->cfg.enabled) {
+                        rep->seal_trust_kind = 1;
+                    }
+                    serve_record_hit(ai, rep, PERSONAL_AI_LOCAL,
+                                     HYBRID_TRUST_CERTIFIED, HYBRID_TIER_A);
+                    cnet_acct_add_hard((uint64_t)mh.steps);
+                    return 0;
+                }
                 ai->totals.seal_trust_abstains++;
                 rep->seal_trust_abstains = 1;
                 cnet_acct_add_abstain();
@@ -669,10 +722,26 @@ int personal_ai_serve(PersonalAi *ai, Port input_port, Port goal_port,
                 int st_explore = 0;
                 seal_trust_domain_key(st_dom, sizeof st_dom, goal_port, &plan);
                 if (!seal_trust_tier_a_open(st_dom, &st_explore)) {
+                    if (distrust_on_tier_a_refuse(st_dom, sizeof st_dom,
+                                                  &st_explore)) {
+                        seal_trust_note_tier_a(st_dom, st_explore);
+                        if (st_explore) {
+                            ai->totals.seal_trust_explores++;
+                            rep->seal_trust_explores = 1;
+                            rep->seal_trust_kind = 2;
+                        } else if (cnet_seal_trust_global() &&
+                                   cnet_seal_trust_global()->cfg.enabled) {
+                            rep->seal_trust_kind = 1;
+                        }
+                        serve_record_hit(ai, rep, PERSONAL_AI_LOCAL,
+                                         HYBRID_TRUST_CERTIFIED, HYBRID_TIER_A);
+                        cnet_acct_add_tier_a((uint64_t)plan.length);
+                        return 0;
+                    }
                     ai->totals.seal_trust_abstains++;
                     rep->seal_trust_abstains = 1;
                     cnet_acct_add_abstain();
-                    /* fall through to B/C — no Tier-A claim */
+                    /* residual / B/C — no Tier-A claim */
                 } else {
                     seal_trust_note_tier_a(st_dom, st_explore);
                     if (st_explore) {

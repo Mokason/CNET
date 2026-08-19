@@ -31,17 +31,33 @@ managed_restore|logs/dotnet_restore.log|DOTNET_RESTORE_PASS|unified
 dotnet_host|logs/unified_host.log|CNET_HOST_UNIFIED_PASS|unified'
 CLAIMS="$CLAIMS
 real_moe_e2e|logs/moe_e2e.log|REAL_MOE_E2E_PASS|model
-real_proj_qat_gemma_e2e|logs/proj_qat_gemma_e2e.log|REAL_PROJ_QAT_GEMMA_E2E_PASS|model"
+real_proj_qat_gemma_e2e|logs/proj_qat_gemma_e2e.log|REAL_PROJ_QAT_GEMMA_E2E_PASS|model
+distrust_loop|logs/distrust_loop.log|DISTRUST_LOOP_PASS|autonomy
+autonomy_tick|logs/distrust_loop.log|AUTONOMY_TICK_PASS|autonomy
+autonomy_spine|logs/autonomy_spine.log|AUTONOMY_SPINE_PASS|autonomy
+seal_trust|logs/seal_trust.log|SEAL_TRUST_PASS|autonomy"
 
 seed_logs() {
   while IFS='|' read -r _id log marker _scope; do
+    [ -z "$_id" ] && continue
     mkdir -p "$TMP/$(dirname "$log")"
     case "$marker" in
       QGKP_ENVELOPE_PASS|MODEL_RUNTIME_PASS|MODEL_CATALOG_PASS)
-        printf '%s checks=10\n' "$marker" > "$TMP/$log"
+        printf '%s checks=10\n' "$marker" >> "$TMP/$log"
+        ;;
+      DISTRUST_LOOP_PASS|AUTONOMY_TICK_PASS)
+        # same gate log carries both markers
+        if [ ! -f "$TMP/$log" ] || ! grep -q "$marker" "$TMP/$log" 2>/dev/null; then
+          printf '%s\n' "$marker" >> "$TMP/$log"
+        fi
         ;;
       *)
-        printf '%s\n' "$marker" > "$TMP/$log"
+        # first writer wins unless empty
+        if [ ! -s "$TMP/$log" ]; then
+          printf '%s\n' "$marker" > "$TMP/$log"
+        elif ! grep -q "$marker" "$TMP/$log" 2>/dev/null; then
+          printf '%s\n' "$marker" >> "$TMP/$log"
+        fi
         ;;
     esac
   done <<< "$CLAIMS"
@@ -143,9 +159,15 @@ done <<< "$CLAIMS"
 ) || fail "unified scope incorrectly required the GPU-only lane"
 grep -Fq '"verdict":"OUT_OF_SCOPE"' "$TMP/logs/claims.jsonl" ||
   fail "out-of-scope claim was not explicit in JSONL"
-grep -Fq '**21/21 in-scope claims verified; 3 out of scope.**' \
-  "$TMP/docs/verified-today.generated.md" ||
+# Denominator: every unified-scope claim in scope; non-unified marked out of scope.
+# Do not hardcode N/N — claim table grows (autonomy, etc.).
+grep -E '\*\*[0-9]+/[0-9]+ in-scope claims verified; [0-9]+ out of scope\.\*\*' \
+  "$TMP/docs/verified-today.generated.md" >/dev/null ||
   fail "generated summary did not report scoped denominator"
+# unified in-scope count must equal number of unified rows in CLAIMS table
+u_expect=$(printf '%s\n' "$CLAIMS" | awk -F'|' '$4=="unified"{c++} END{print c+0}')
+u_got=$(grep -Eo '\*\*[0-9]+/[0-9]+ in-scope' "$TMP/docs/verified-today.generated.md" | head -1 | grep -Eo '[0-9]+/[0-9]+' | cut -d/ -f1)
+[ "$u_got" = "$u_expect" ] || fail "unified in-scope count $u_got != table $u_expect"
 grep -Fq '# Verified Today (generated)' \
   "$TMP/docs/verified-today.generated.md" ||
   fail "fresh run-scoped evidence was not labeled as current verification"

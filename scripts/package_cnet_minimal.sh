@@ -20,8 +20,8 @@ make -s stream_ix_e2e_bench 2>&1 | tail -5 || true
 if [[ -f tools/roe_evolve_tick_gate.c ]]; then
   make -s roe_evolve_tick 2>&1 | tail -8 || true
 fi
-# seed packs into artifacts (source of truth)
-python3 tools/roe_daily_packs_seed.py
+# seed packs into artifacts (source of truth) — C seeder, not missing .py
+make -s roe_daily_packs_seed 2>&1 | tail -8 || make roe_daily_packs_seed
 # personal queries for gate if present
 if [[ -d artifacts/roe_daily_packs/pack_personal/skills ]]; then
   python3 - <<'PY'
@@ -64,7 +64,8 @@ mkdir -p "$OUT/tools"
 cp -a tools/roe_evolve_tick.py "$OUT/tools/" 2>/dev/null || true
 cp -a tools/roe_reviewer.py "$OUT/tools/" 2>/dev/null || true
 cp -a tools/roe_gold_curriculum_harvest.py "$OUT/tools/" 2>/dev/null || true
-cp -a tools/roe_daily_packs_seed.py "$OUT/tools/" 2>/dev/null || true
+cp -a "$BIN_DIR/roe_daily_packs_seed" "$OUT/bin/" 2>/dev/null || true
+cp -a "$BIN_DIR/cnet_autonomy_tick_cli" "$OUT/bin/" 2>/dev/null || true
 
 # Data packs
 if [[ -d artifacts/roe_daily_packs ]]; then

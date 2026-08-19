@@ -1380,7 +1380,7 @@ current state.
 - **Build state:** `make test` runs the native verification chain: CCE runtime,
   universal-model suites, contract security + unit files, the acquisition loop
   (`acquire`), the unified base (`base`), the flagship harness (`flagship`),
-  the live decimal/circuit demos (`demos`), and an allocation-balance leak gate
+  the live decimal/circuit demos (`live_contracts`), and an allocation-balance leak gate
   (`leakcheck`, `--wrap`-based, CRT-baseline-aware — the no-ASan toolchain's
   behavioral substitute). `make unified` adds the model-file-free `cnet.so`,
   Oracle v2, async lanes, model residency/catalog, DS4 launcher checks, .NET
