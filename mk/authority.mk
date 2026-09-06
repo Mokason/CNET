@@ -187,6 +187,14 @@ capsule_frontdoor: cnetd capsule_core $(BIN_DIR)/cnet_capsulectl tests/test_caps
 $(BIN_DIR)/cnet_capsulectl: tools/cnet_capsulectl.c src/serve/cnet_capsule_snapshot.h $(BIN_DIR)/libcnet_capsule_core.so
 	$(CC) $(CFLAGS) -D_GNU_SOURCE -Werror -Isrc/serve -o $@ tools/cnet_capsulectl.c \
 		-L$(BIN_DIR) -lcnet_capsule_core -Wl,-rpath,'$$ORIGIN' $(LDFLAGS)
+
+$(BIN_DIR)/cnet_table_verify: tools/cnet_table_verify.c include/cnet_capsule_core.h include/cnet_capsule_table.h include/cnet_learning_sandbox.h src/serve/cnet_capsule_snapshot.h $(BIN_DIR)/libcnet_capsule_core.so
+	$(CC) $(CFLAGS) -D_GNU_SOURCE -Werror -Isrc/serve -o $@ tools/cnet_table_verify.c \
+		-L$(BIN_DIR) -lcnet_capsule_core -Wl,-rpath,'$$ORIGIN' $(LDFLAGS)
+
+$(BIN_DIR)/cnet_learning_snapshot: tools/cnet_learning_snapshot.c src/serve/cnet_capsule_snapshot.h $(BIN_DIR)/libcnet_capsule_core.so
+	$(CC) $(CFLAGS) -D_GNU_SOURCE -Werror -Isrc/serve -o $@ tools/cnet_learning_snapshot.c \
+		-L$(BIN_DIR) -lcnet_capsule_core -Wl,-rpath,'$$ORIGIN' $(LDFLAGS)
 capsule_control: $(BIN_DIR)/cnet_capsulectl
 	@mkdir -p logs
 	@python3 tests/test_capsulectl.py > logs/capsule_control.log 2>&1 || { cat logs/capsule_control.log; exit 1; }
@@ -202,7 +210,7 @@ $(BIN_DIR)/cnet_capsule_core: tools/cnet_capsule_core_main.c $(BIN_DIR)/libcnet_
 	$(CC) $(CFLAGS) -Werror -o $@ tools/cnet_capsule_core_main.c \
 		-L$(BIN_DIR) -lcnet_capsule_core -Wl,-rpath,'$$ORIGIN' $(LDFLAGS)
 
-CORE_CANDIDATE_SRC = src/serve/cnet_core_cell.c src/serve/cnet_core_selector.c src/serve/cnet_cell_capsule.c src/serve/cnet_core_candidate.c src/serve/cnet_core_host.c src/serve/cnet_capsule_snapshot.c src/serve/cnet_capsule_store.c src/serve/cnet_capsule_evidence.c src/cce/cce_campaign_provenance.c
+CORE_CANDIDATE_SRC = src/serve/cnet_core_cell.c src/serve/cnet_core_selector.c src/serve/cnet_cell_capsule.c src/serve/cnet_core_candidate.c src/serve/cnet_core_host.c src/serve/cnet_capsule_snapshot.c src/serve/cnet_capsule_store.c src/serve/cnet_capsule_evidence.c src/serve/cnet_capsule_table.c src/serve/cnet_learning_sandbox.c src/cce/cce_campaign_provenance.c
 $(BIN_DIR)/libcnet_capsule_core.so: mk/authority.mk $(LIBCCE) $(AUTHORITY_CORE_SRC) $(CAPSULE_SRC) $(CORE_CANDIDATE_SRC) src/memory/cnet_semantic_cortex.c src/memory/cnet_shared_workspace.c src/serve/cnet_capsule_core.c src/serve/cnet_capsule_demand.c $(wildcard include/*.h include/*/*.h)
 	$(CC) $(CFLAGS) -fPIC -shared -o $@ $(AUTHORITY_CORE_SRC) $(CAPSULE_SRC) \
 		src/serve/cnet_capsule_core.c src/serve/cnet_capsule_demand.c $(CORE_CANDIDATE_SRC) $(SEMANTIC_CORTEX_SRC) $(SHARED_WORKSPACE_SRC) $(LIBCCE) $(LDFLAGS) $(MCP_LDFLAGS) -pthread
@@ -288,6 +296,31 @@ capsule_product_sanitize:
 $(BIN_DIR)/cnet_source_capsule: tools/cnet_source_capsule.c $(BIN_DIR)/libcnet_capsule_core.so
 	$(CC) $(CFLAGS) -Werror -o $@ tools/cnet_source_capsule.c -L$(BIN_DIR) -lcnet_capsule_core \
 		-Wl,-rpath,'$$ORIGIN' $(LDFLAGS)
+
+$(BIN_DIR)/cnet_table_capsule: tools/cnet_table_capsule.c include/cnet_capsule_table.h include/cnet_learning_sandbox.h $(BIN_DIR)/libcnet_capsule_core.so
+	$(CC) $(CFLAGS) -Werror -o $@ tools/cnet_table_capsule.c -L$(BIN_DIR) -lcnet_capsule_core \
+		-Wl,-rpath,'$$ORIGIN' $(LDFLAGS)
+
+.PHONY: learning_native learning_managed learning_daemon
+$(BIN_DIR)/test_learning_sandbox: tests/test_learning_sandbox.c include/cnet_learning_sandbox.h $(BIN_DIR)/libcnet_capsule_core.so
+	$(CC) $(CFLAGS) -Werror -o $@ tests/test_learning_sandbox.c -L$(BIN_DIR) -lcnet_capsule_core \
+		-Wl,-rpath,'$$ORIGIN' $(LDFLAGS)
+$(BIN_DIR)/test_table_reader: tests/test_table_reader.c include/cnet_capsule_table.h $(BIN_DIR)/libcnet_capsule_core.so
+	$(CC) $(CFLAGS) -Werror -o $@ tests/test_table_reader.c -L$(BIN_DIR) -lcnet_capsule_core \
+		-Wl,-rpath,'$$ORIGIN' $(LDFLAGS)
+learning_native: $(BIN_DIR)/test_learning_sandbox $(BIN_DIR)/test_table_reader $(BIN_DIR)/cnet_table_capsule $(BIN_DIR)/cnet_table_verify $(BIN_DIR)/cnet_learning_snapshot
+	@mkdir -p logs
+	@$(BIN_DIR)/test_learning_sandbox > logs/learning_sandbox.log 2>&1 || { cat logs/learning_sandbox.log; exit 1; }
+	@cat logs/learning_sandbox.log
+	@$(BIN_DIR)/test_table_reader > logs/table_reader.log 2>&1 || { cat logs/table_reader.log; exit 1; }
+	@cat logs/table_reader.log
+	@python3 tests/test_table_capsule.py
+	@python3 tests/test_table_verify.py
+learning_managed:
+	dotnet test dotnet/CnetControlPlane.Tests/CnetControlPlane.Tests.csproj --no-restore \
+		--filter 'FullyQualifiedName~Learning|FullyQualifiedName~LocalTableReference|FullyQualifiedName~NativeControlProtocol'
+learning_daemon: cnetd $(BIN_DIR)/cnet_capsule_core learning_native $(BIN_DIR)/cnet_capsulectl
+	@python3 tests/test_table_daemon.py TableLearningDaemon.test_table_acquisition_refresh_rollback_and_restart
 
 .PHONY: source_evidence
 source_evidence: $(BIN_DIR)/cnet_source_capsule tests/test_source_evidence.c

@@ -39,7 +39,10 @@ int cnet_capsule_core_validate_growth(CnetCapsuleCore *before,
  * joins through the exact opt-in neural serving path, including coverage. */
 int cnet_capsule_core_validate_growth_cell(CnetCapsuleCore *before,CnetCapsuleCore *candidate,
     const CnetCoreCell *cell,uint64_t generation,size_t *label_obligations);
-/* Exact text grammar: capsule INPUT_TAG OUTPUT_TAG UNSIGNED_INTEGER.
+/* Exact text grammar: capsule INPUT_TAG OUTPUT_TAG UNSIGNED_INTEGER; or
+ * data DATASET UINT8_KEY for activated owner tables. The latter resolves only
+ * one active table matching the current full source SHA256 under the private
+ * CNET_CAPSULE_DATA_ROOT. Malformed/stale/unactivated/missing sources refuse.
  * Tags bind the complete imported port signature; ambiguity refuses.
  * One-field PORT_BINARY_MSB/LSB (<=16 bits) and ONEHOT (<=64 symbols) only.
  * All refusal paths zero reply.verified and never return a partial answer. */

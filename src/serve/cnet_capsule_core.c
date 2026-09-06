@@ -1,6 +1,7 @@
 #include "cnet_capsule_core.h"
 #include "cnet_capsule.h"
 #include "cnet_capsule_evidence.h"
+#include "cnet_capsule_table.h"
 #include "cnet_core_selector.h"
 #include "cce/cce_campaign_provenance.h"
 #include <ctype.h>
@@ -43,7 +44,7 @@ typedef struct {
     size_t depth, parent, edge;
 } CoreState;
 typedef struct { const HybridCoverage *record; HybridAi *bank; } CoreCoverageRef;
-typedef struct {char unit[64];CnetCapsuleEvidence *evidence;} CoreEvidenceRef;
+typedef struct {char unit[64];CnetCapsuleEvidence *evidence;CnetCapsuleTable *table;} CoreEvidenceRef;
 
 struct CnetCapsuleCore {
     CnetBase base;
@@ -70,6 +71,16 @@ static CnetCapsuleEvidence *find_evidence(const CnetCapsuleCore *c,const char *u
     while(low<high){size_t mid=low+(high-low)/2;
         if(strcmp(c->evidence[mid].unit,unit)<0)low=mid+1;else high=mid;}
     return low<c->evidence_count&&!strcmp(c->evidence[low].unit,unit)?c->evidence[low].evidence:NULL;
+}
+static CnetCapsuleTable *find_table(const CnetCapsuleCore *c,const char *unit) {
+    size_t low=0,high=c->evidence_count;
+    while(low<high){size_t mid=low+(high-low)/2;
+        if(strcmp(c->evidence[mid].unit,unit)<0)low=mid+1;else high=mid;}
+    return low<c->evidence_count&&!strcmp(c->evidence[low].unit,unit)?c->evidence[low].table:NULL;
+}
+static int evidence_identity(const CoreEvidenceRef *ref,char out[65]) {
+    if(ref->table){memcpy(out,ref->table->sha256,65);return 0;}
+    return cnet_capsule_evidence_identity(ref->evidence,out);
 }
 
 static int guard_order(const void *aa, const void *bb) {
@@ -205,19 +216,33 @@ static int import_capsule(CnetCapsuleCore *c, const char *path, char *error, siz
         BinaryTransformNetwork btn={0};Contract contract={0};const HybridCoverage *coverage=NULL;
         HybridAi *h=c->coverage[bank];
         for(size_t i=0;i<h->coverage_count;i++)if(!strcmp(h->coverage[i].unit,report.unit))coverage=&h->coverage[i];
-        CnetCapsuleEvidence *e=NULL;
-        if(!cnb_get_unit(&c->base,report.unit,&btn,&contract))
-            e=cnet_capsule_evidence_parse(asset,asset_length,asset_schema,&contract,coverage,error,cap);
+        CnetCapsuleEvidence *e=NULL;CnetCapsuleTable *table=NULL;
+        if(!cnb_get_unit(&c->base,report.unit,&btn,&contract)){
+            if(asset_schema==CNET_CAPSULE_TABLE_SCHEMA)
+                table=cnet_capsule_table_parse(asset,asset_length,&contract,coverage,error,cap);
+            else e=cnet_capsule_evidence_parse(asset,asset_length,asset_schema,&contract,coverage,error,cap);
+        }
         contract_free(&contract);btn_free(&btn);free(asset);asset=NULL;
-        if(!e)return -1;
-        for(size_t i=0;i<c->evidence_count;i++)if(cnet_capsule_evidence_compatible(c->evidence[i].evidence,e)){
-            cnet_capsule_evidence_close(e);
-            if(error&&cap)snprintf(error,cap,"conflicting_source_decoder");
-            return -1;
+        if(!e&&!table)return -1;
+        if(table){
+            char provenance[32];snprintf(provenance,sizeof provenance,"table_%s",table->authority);
+            if(strcmp(c->base.units[original_index].provenance,provenance)){
+                free(table);if(error&&cap)snprintf(error,cap,"table_provenance_mismatch");return -1;
+            }
+        }
+        for(size_t i=0;i<c->evidence_count;i++){
+            CoreEvidenceRef *old=c->evidence+i;
+            if((e&&old->evidence&&cnet_capsule_evidence_compatible(old->evidence,e))||
+               (table&&old->table&&cnet_capsule_table_compatible(old->table,table))){
+                cnet_capsule_evidence_close(e);free(table);
+                if(error&&cap)snprintf(error,cap,"conflicting_source_decoder");
+                return -1;
+            }
         }
         size_t at=c->evidence_count++;
         while(at&&strcmp(c->evidence[at-1].unit,report.unit)>0){c->evidence[at]=c->evidence[at-1];at--;}
-        snprintf(c->evidence[at].unit,sizeof c->evidence[at].unit,"%.63s",report.unit);c->evidence[at].evidence=e;
+        snprintf(c->evidence[at].unit,sizeof c->evidence[at].unit,"%.63s",report.unit);
+        c->evidence[at].evidence=e;c->evidence[at].table=table;
     }
     free(asset);
     return 0;
@@ -232,6 +257,10 @@ static int source_interfaces_bound(const CnetCapsuleCore *c) {
             if(!strcmp(e->btn->input_ports[j].tag,CNET_CAPSULE_EVIDENCE_INPUT)&&!find_evidence(c,e->name))return -1;
         for(size_t j=0;j<e->btn->output_port_count;j++)
             if(!strcmp(e->btn->output_ports[j].tag,CNET_CAPSULE_EVIDENCE_OUTPUT)&&!find_evidence(c,e->name))return -1;
+        for(size_t j=0;j<e->btn->input_port_count;j++)
+            if(!strncmp(e->btn->input_ports[j].tag,"data_",5)&&!find_table(c,e->name))return -1;
+        for(size_t j=0;j<e->btn->output_port_count;j++)
+            if(!strncmp(e->btn->output_ports[j].tag,"data_",5)&&!find_table(c,e->name))return -1;
     }
     return 0;
 }
@@ -264,9 +293,10 @@ int cnet_capsule_core_identities(const CnetCapsuleCore *c,
             if (cce_sha256_bytes_hex(g->rows,g->n_rows*g->in_dim*sizeof(double),hashes[2]) ||
                 cce_sha256_bytes_hex(g->targets,g->n_rows*g->out_dim*sizeof(double),hashes[3])) return -1;
         }
-        CnetCapsuleEvidence *e=find_evidence(c,u->name);
+        CnetCapsuleEvidence *e=find_evidence(c,u->name);CnetCapsuleTable *table=find_table(c,u->name);
+        if(table)memcpy(hashes[5],table->sha256,65);
         if((e&&cnet_capsule_evidence_identity(e,hashes[5])) || cce_sha256_bytes_hex(metadata,sizeof metadata,hashes[4]) ||
-            cce_sha256_bytes_hex(hashes,e?sizeof hashes:5*sizeof hashes[0],out[i].sha256)) return -1;
+            cce_sha256_bytes_hex(hashes,(e||table)?sizeof hashes:5*sizeof hashes[0],out[i].sha256)) return -1;
         snprintf(out[i].unit,sizeof out[i].unit,"%s",u->name);
     }
     if(c->base.unit_count) qsort(out,c->base.unit_count,sizeof *out,identity_order);
@@ -376,7 +406,9 @@ void cnet_capsule_core_close(CnetCapsuleCore *c) {
         free(c->coverage[bank]);
     }
     cnb_free(&c->base);
-    for(size_t i=0;i<c->evidence_count;i++)cnet_capsule_evidence_close(c->evidence[i].evidence);
+    for(size_t i=0;i<c->evidence_count;i++){
+        cnet_capsule_evidence_close(c->evidence[i].evidence);free(c->evidence[i].table);
+    }
     free(c);
 }
 
@@ -466,6 +498,10 @@ static int covered(const char *unit, const BinaryTransformNetwork *btn,
     if (!c->guards_ready) { g->blocked = unit; return -1; }
     CnetCapsuleEvidence *e=find_evidence(c,unit);
     if(g->live&&e&&cnet_capsule_evidence_fresh(e,getenv("CNET_CAPSULE_SOURCE_ROOT"),NULL,0)) {
+        g->blocked=unit;return -1;
+    }
+    CnetCapsuleTable *table=find_table(c,unit);
+    if(g->live&&table&&cnet_capsule_table_fresh(table,getenv("CNET_CAPSULE_DATA_ROOT"))){
         g->blocked=unit;return -1;
     }
     const CoreCoverageRef *ref = find_guard(c, unit);
@@ -621,16 +657,18 @@ done:
 static int hash_order(const void *a,const void *b){return strcmp(a,b);}
 static int evidence_growth(const CnetCapsuleCore *before,const CnetCapsuleCore *candidate) {
     if(!before->evidence_count)return 0;
-    if(!candidate->evidence_count||cnet_capsule_evidence_compatible(before->evidence[0].evidence,candidate->evidence[0].evidence))return -1;
+    /* Each interface's compatibility was checked during import. Every old
+     * full asset identity must survive, across all supported evidence kinds. */
+    if(!candidate->evidence_count)return -1;
     char (*hashes)[65]=calloc(candidate->evidence_count,sizeof *hashes);
     if(!hashes)return -1;
     int rc=-1;
     for(size_t i=0;i<candidate->evidence_count;i++)
-        if(cnet_capsule_evidence_identity(candidate->evidence[i].evidence,hashes[i]))goto done;
+        if(evidence_identity(candidate->evidence+i,hashes[i]))goto done;
     qsort(hashes,candidate->evidence_count,sizeof *hashes,hash_order);
     for(size_t i=0;i<before->evidence_count;i++) {
         char hash[65];
-        if(cnet_capsule_evidence_identity(before->evidence[i].evidence,hash)||
+        if(evidence_identity(before->evidence+i,hash)||
            !bsearch(hash,hashes,candidate->evidence_count,sizeof *hashes,hash_order))goto done;
     }
     rc=0;
@@ -710,6 +748,8 @@ static int finish_answer(CnetCapsuleCore *c,CnetCapsuleCoreReply *r,char *text,s
     for(char *unit=strtok_r(units,",",&save);unit;unit=strtok_r(NULL,",",&save)){
         terminal=find_evidence(c,unit);
         if(terminal&&cnet_capsule_evidence_fresh(terminal,getenv("CNET_CAPSULE_SOURCE_ROOT"),NULL,0))goto refused;
+        CnetCapsuleTable *table=find_table(c,unit);
+        if(table&&cnet_capsule_table_fresh(table,getenv("CNET_CAPSULE_DATA_ROOT")))goto refused;
     }
     if(text) {
         if(terminal){if(cnet_capsule_evidence_render(terminal,r->value,text,cap))goto refused;}
@@ -720,6 +760,31 @@ refused:
     if(text&&cap)text[0]=0;
     memset(r,0,sizeof *r);snprintf(r->reason,sizeof r->reason,"source_freshness_or_render_refused");return -1;
 }
+static int table_request(CnetCapsuleCore *c,const char *request,char typed[128]) {
+    char dataset[32],key[16],extra,canonical[80];unsigned value=0;
+    if(sscanf(request,"data %31s %15s %c",dataset,key,&extra)!=2||!cnet_capsule_table_dataset(dataset))return -1;
+    if(!key[0]||(key[0]=='0'&&key[1]))return -1;
+    for(const char *p=key;*p;p++){
+        if(*p<'0'||*p>'9'||value>25)return -1;
+        value=value*10+(unsigned)(*p-'0');
+    }
+    if(value>255)return -1;
+    snprintf(canonical,sizeof canonical,"data %s %u",dataset,value);
+    if(strcmp(canonical,request))return -1;
+    CnetCapsuleTable current;
+    if(cnet_capsule_table_read(getenv("CNET_CAPSULE_DATA_ROOT"),dataset,&current,NULL,0))return -1;
+    const CnetCapsuleTable *matched=NULL;
+    for(size_t i=0;i<c->evidence_count;i++){
+        const CnetCapsuleTable *table=c->evidence[i].table;
+        if(table&&!strcmp(table->dataset,dataset)&&!strcmp(table->sha256,current.sha256)){
+            if(matched)return -1;
+            matched=table;
+        }
+    }
+    if(!matched)return -1;
+    snprintf(typed,128,"capsule %s %s %u",matched->input.tag,matched->output.tag,value);
+    return 0;
+}
 static int ask_mode(CnetCapsuleCore *c,const char *request,const CnetCoreCell *cell,uint64_t generation,
                     CnetCapsuleCoreReply *r,char *text,size_t cap) {
     char verb[16], in_tag[32], out_tag[32], value[32], extra;
@@ -729,6 +794,13 @@ static int ask_mode(CnetCapsuleCore *c,const char *request,const CnetCoreCell *c
     if(text&&cap)text[0]=0;
     memset(r, 0, sizeof *r);
     snprintf(r->reason, sizeof r->reason, "invalid_typed_request");
+    char typed[128];
+    if(c&&request&&!strncmp(request,"data",4)&&(!request[4]||isspace((unsigned char)request[4]))){
+        if(table_request(c,request,typed)){
+            snprintf(r->reason,sizeof r->reason,"data_unknown_stale_or_invalid");return -1;
+        }
+        request=typed;
+    }
     if (!c || !request || sscanf(request, "%15s %31s %31s %31s %c", verb,
         in_tag, out_tag, value, &extra) != 4 || strcmp(verb, "capsule")) return -1;
     for (size_t i = 0; value[i]; i++) if (!isdigit((unsigned char)value[i])) return -1;
