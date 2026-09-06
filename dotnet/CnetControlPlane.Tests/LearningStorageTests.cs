@@ -10,6 +10,7 @@ using Xunit.Abstractions;
 namespace CnetControlPlane.Tests;
 
 [SupportedOSPlatform("linux")]
+[Collection(LearningResourceCollection.Name)]
 public sealed class LearningStorageTests : IDisposable
 {
     private const UnixFileMode PrivateDirectory = UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute;

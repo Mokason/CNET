@@ -9,6 +9,7 @@ using Xunit;
 namespace CnetControlPlane.Tests;
 
 [SupportedOSPlatform("linux")]
+[Collection(LearningResourceCollection.Name)]
 public sealed class LearningRuntimeTests : IDisposable
 {
     private static readonly string[] Names = ["cnet_table_capsule", "cnet_table_verify", "cnet_learning_snapshot", "cnet_capsulectl", "cnetd", "libcnet_capsule_core.so"];

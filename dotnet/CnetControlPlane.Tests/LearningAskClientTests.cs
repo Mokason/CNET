@@ -14,7 +14,15 @@ namespace CnetControlPlane.Tests;
 public sealed class LearningAskClientTests : IDisposable
 {
     private const UnixFileMode Private = UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute;
-    private readonly string root = Directory.CreateTempSubdirectory("cnet-learning-ask-").FullName;
+    // Native-only prerequisites resolve before any artifacts are created;
+    // socket-only tests still need no native repository or built executables.
+    private readonly Lazy<string> fixtureRoot = new(() =>
+    {
+        var path = Directory.CreateTempSubdirectory("cnet-learning-ask-").FullName;
+        File.SetUnixFileMode(path, Private);
+        return path;
+    });
+    private string root => fixtureRoot.Value;
     private string SocketPath => Path.Combine(root, "ask.sock");
     private static readonly LearningDataset Dataset = new("stock_levels", "verified_tool");
     private static string Frame(bool verified, string answer) => JsonSerializer.Serialize(new
@@ -22,9 +30,9 @@ public sealed class LearningAskClientTests : IDisposable
         ok = true, verified, miss = !verified, teacher = false,
         source = verified ? "LOCAL" : "CNET", skill = verified ? "capsule_core" : "capsule_refusal", answer
     }) + "\n";
-    public LearningAskClientTests() => File.SetUnixFileMode(root, Private);
     public void Dispose()
     {
+        if (!fixtureRoot.IsValueCreated) return;
         foreach (var directory in Directory.EnumerateDirectories(root, "*", SearchOption.AllDirectories))
             File.SetUnixFileMode(directory, Private);
         Directory.Delete(root, true);
@@ -88,16 +96,9 @@ public sealed class LearningAskClientTests : IDisposable
         Assert.False(server.ExtraConnection);
     }
 
-    private static string Repository()
+    private ProcessStartInfo Native(string repository, string name, params string[] arguments)
     {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "bin/cnetd"))) directory = directory.Parent;
-        Assert.NotNull(directory);
-        return directory!.FullName;
-    }
-    private ProcessStartInfo Native(string name, params string[] arguments)
-    {
-        var info = new ProcessStartInfo(Path.Combine(Repository(), "bin", name))
+        var info = new ProcessStartInfo(Path.Combine(repository, "bin", name))
         { WorkingDirectory = root, UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true };
         info.Environment.Clear();
         foreach (var argument in arguments) info.ArgumentList.Add(argument);
@@ -107,17 +108,18 @@ public sealed class LearningAskClientTests : IDisposable
     [Fact]
     public async Task ActualPrivateDaemonReportsZeroCoveredValueAndUncoveredAbstention()
     {
+        var repository = LearningTestRepository.RequireBuilt(["cnet_table_capsule", "cnetd", "libcnet_capsule_core.so"]);
         foreach (var name in new[] { "packs", "data", "registry" }) Directory.CreateDirectory(Path.Combine(root, name), Private);
         File.WriteAllText(Path.Combine(root, "packs/ROUTES.jsonl"), "{\"pattern\":\"fixture\",\"pack\":\"fixture\"}\n");
         var source = "CNET_LOCAL_TABLE_V1\ndataset stock_levels\nauthority verified_tool\ninput_bits 8\noutput_bits 16\nrows 2\n0\t0\n7\t42\n";
         var sourcePath = Path.Combine(root, "data/stock_levels.tsv");
         File.WriteAllText(sourcePath, source); File.SetUnixFileMode(sourcePath, UnixFileMode.UserRead | UnixFileMode.UserWrite);
-        using (var builder = Process.Start(Native("cnet_table_capsule", "build", Path.Combine(root, "data"), "stock_levels", Path.Combine(root, "registry/table")))!)
+        using (var builder = Process.Start(Native(repository, "cnet_table_capsule", "build", Path.Combine(root, "data"), "stock_levels", Path.Combine(root, "registry/table")))!)
         {
             await builder.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(30));
             Assert.Equal(0, builder.ExitCode);
         }
-        var info = Native("cnetd");
+        var info = Native(repository, "cnetd");
         foreach (var (name, value) in new Dictionary<string, string>
         {
             ["CNET_PACKS_ROOT"] = Path.Combine(root, "packs"), ["CNET_MINIMAL_ROOT"] = root,

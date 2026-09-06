@@ -12,7 +12,7 @@ namespace CnetControlPlane.Tests;
 [SupportedOSPlatform("linux")]
 public sealed class LearningControlClientTests : IDisposable
 {
-    private readonly string root = Directory.CreateTempSubdirectory("cnet-control-client-").FullName;
+    private readonly string root;
     private const UnixFileMode PrivateDirectory = UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute;
     private readonly LearningRuntime runtime;
     private string SocketPath => Path.Combine(root, "control.sock");
@@ -22,19 +22,18 @@ public sealed class LearningControlClientTests : IDisposable
 
     public LearningControlClientTests()
     {
+        var repo = LearningTestRepository.RequireBuilt(["cnet_capsulectl", "libcnet_capsule_core.so"]);
+        root = Directory.CreateTempSubdirectory("cnet-control-client-").FullName;
         File.SetUnixFileMode(root, PrivateDirectory);
         var installed = Path.Combine(root, "runtime");
         Directory.CreateDirectory(installed, PrivateDirectory);
-        var repo = new DirectoryInfo(AppContext.BaseDirectory);
-        while (repo is not null && !File.Exists(Path.Combine(repo.FullName, "bin/cnet_capsulectl"))) repo = repo.Parent;
-        Assert.NotNull(repo);
         var hashes = new Dictionary<string, string>();
         foreach (var name in new[] { "cnet_table_capsule", "cnet_table_verify", "cnet_learning_snapshot", "cnet_capsulectl", "cnetd", "libcnet_capsule_core.so" })
         {
             // The actual CLI loads the actual copied core library via $ORIGIN.
             // The other four fixed copies satisfy inventory and never execute.
             var source = name is "cnet_capsulectl" or "libcnet_capsule_core.so"
-                ? Path.Combine(repo!.FullName, "bin", name) : "/usr/bin/true";
+                ? Path.Combine(repo, "bin", name) : "/usr/bin/true";
             var target = Path.Combine(installed, name);
             File.Copy(source, target);
             File.SetUnixFileMode(target, name.EndsWith(".so", StringComparison.Ordinal)
