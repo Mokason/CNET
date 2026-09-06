@@ -4,7 +4,7 @@ namespace CnetControlPlane.Learning;
 
 internal sealed partial class LearningLedger
 {
-    private const int SchemaVersion = 1;
+    private const int SchemaVersion = 2;
 
     private void RequireSchemaVersion(SqliteTransaction? tx = null)
     {
@@ -55,6 +55,17 @@ internal sealed partial class LearningLedger
         Execute("""
             CREATE TABLE runtime_binding(id INTEGER PRIMARY KEY CHECK(id=1),
                 digest TEXT NOT NULL CHECK(length(digest)=64 AND digest NOT GLOB '*[^0-9a-f]*')) STRICT;
+            CREATE TABLE managed_binding(id INTEGER PRIMARY KEY CHECK(id=1),
+                digest TEXT NOT NULL CHECK(length(digest)=64 AND digest NOT GLOB '*[^0-9a-f]*')) STRICT;
+            CREATE TABLE learning_run(id INTEGER PRIMARY KEY CHECK(id=1), boot TEXT REFERENCES epochs(boot),
+                start_ns INTEGER, last_ns INTEGER, tick_count INTEGER NOT NULL CHECK(tick_count>=0),
+                state TEXT NOT NULL CHECK(state IN('not_started','running','failed','budget_complete')),
+                last_action TEXT NOT NULL CHECK(length(last_action) BETWEEN 1 AND 31),
+                CHECK((state='not_started' AND boot IS NULL AND start_ns IS NULL AND last_ns IS NULL
+                    AND tick_count=0 AND last_action='not_started') OR
+                    (state<>'not_started' AND boot IS NOT NULL AND start_ns IS NOT NULL AND last_ns IS NOT NULL
+                    AND start_ns>=0 AND last_ns>=start_ns))) STRICT;
+            INSERT INTO learning_run VALUES(1,NULL,NULL,NULL,0,'not_started','not_started');
             CREATE TABLE native_binding(id INTEGER PRIMARY KEY CHECK(id=1), frame TEXT NOT NULL) STRICT;
             CREATE TABLE candidates(job INTEGER PRIMARY KEY REFERENCES jobs(id), set_name TEXT NOT NULL,
                 digest TEXT NOT NULL CHECK(length(digest)=64 AND digest NOT GLOB '*[^0-9a-f]*'),

@@ -89,13 +89,13 @@ public sealed class LearningLedgerIntegrityTests : IDisposable
     {
         using (LearningLedger.Create(root, Policy(), clock)) { }
         Assert.Equal("delete", Sql("PRAGMA journal_mode"));
-        Assert.True(Equals(1L, Sql("PRAGMA user_version")),
+        Assert.True(Equals(2L, Sql("PRAGMA user_version")),
             "LEARNING_LEDGER_INTEGRITY_RED: the new schema has no explicit user_version identity");
     }
 
     [Theory]
     [InlineData(0)]
-    [InlineData(2)]
+    [InlineData(1)]
     [InlineData(int.MaxValue)]
     public void UnsupportedVersionRefusesWithoutMigrationResetOrTimeAdvance(int version)
     {
@@ -114,11 +114,11 @@ public sealed class LearningLedgerIntegrityTests : IDisposable
     public void LiveUnsupportedVersionRefusesBeforeBudgetOrEpochMutation()
     {
         using var ledger = LearningLedger.Create(root, Policy(), clock);
-        Sql("PRAGMA user_version=2");
+        Sql("PRAGMA user_version=1");
         clock.Advance(1);
         IntegrityRefusal(() => ledger.Reserve("calibration", H(2)), "learning_ledger_schema_version");
         Assert.Equal(0, ledger.JobCount);
-        Assert.Equal(2L, Sql("PRAGMA user_version"));
+        Assert.Equal(1L, Sql("PRAGMA user_version"));
         Assert.Equal(100_000_000_000L, Sql("SELECT last_ns FROM epochs"));
     }
 

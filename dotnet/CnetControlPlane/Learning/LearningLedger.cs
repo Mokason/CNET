@@ -92,7 +92,6 @@ internal sealed partial class LearningLedger : IDisposable
         files.AssertPathIdentity();
         using var tx = db.BeginTransaction(deferred: false);
         RequireSchemaVersion(tx);
-        var now = ValidNow();
         if (Scalar("SELECT boot FROM configuration WHERE id=1", tx) is not string previous
             || !Guid.TryParseExact(previous, "D", out _))
             throw new InvalidOperationException("learning_ledger_epoch_integrity");
@@ -102,16 +101,32 @@ internal sealed partial class LearningLedger : IDisposable
         // must not make an invalid future timestamp appear valid. This also
         // covers already-open connections before any budget-affecting action.
         RequirePromotionIntegrity(tx);
+        var run = ReadRun(tx);
+        LearningInstant now;
+        try { now = ValidNow(); }
+        catch (Exception error) when (error is OverflowException || error is InvalidOperationException
+            { Message: "learning_clock_invalid" or "learning_boot_clock_unavailable" })
+        {
+            CommitRunClockFailure(run, "run_clock_invalid", tx);
+            throw;
+        }
         if (previous != now.Boot)
         {
             if (Convert.ToInt64(Scalar("SELECT count(*) FROM epochs WHERE boot=$boot", tx, ("$boot", now.Boot))) != 0)
+            {
+                CommitRunClockFailure(run, "run_boot_changed", tx);
                 throw new InvalidOperationException("learning_boot_identity_reused");
+            }
             Execute("INSERT INTO epochs VALUES($boot,$now,$now)", tx,
                 ("$boot", now.Boot), ("$now", now.Nanoseconds));
             if (Execute("UPDATE configuration SET boot=$boot WHERE id=1", tx, ("$boot", now.Boot)) != 1)
                 throw new InvalidOperationException("learning_ledger_epoch_integrity");
         }
-        if (now.Nanoseconds < Epoch(now.Boot, tx).Last) throw new InvalidOperationException("learning_clock_rollback");
+        if (now.Nanoseconds < Epoch(now.Boot, tx).Last)
+        {
+            CommitRunClockFailure(run, "run_clock_rollback", tx);
+            throw new InvalidOperationException("learning_clock_rollback");
+        }
         if (Execute("UPDATE epochs SET last_ns=$now WHERE boot=$boot", tx,
             ("$boot", now.Boot), ("$now", now.Nanoseconds)) != 1)
             throw new InvalidOperationException("learning_ledger_epoch_integrity");
