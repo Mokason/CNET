@@ -1,0 +1,9 @@
+hipcc -O2 -Wall -Wextra -Werror --offload-arch=gfx1201 -DCONTROLLER_TESTING -I../../include -c cell_train.cpp -o /tmp/cnet-controller-build/cell_train_test.o
+hipcc -O2 -Wall -Wextra -Werror --offload-arch=gfx1201 -DCONTROLLER_TESTING -I../../include -x c test_cell.c ../../src/serve/cnet_core_cell.c -x none /tmp/cnet-controller-build/cell_train_test.o /tmp/cnet-controller-build/amdmath.o -lm -o /tmp/cnet-controller-build/test_cell
+/tmp/cnet-controller-build/test_cell
+CORE_CELL_GPU_PASS device=0 gradient_max_abs=1.32886747e-07 finite_fit_rows=8 snapshot_immutable=1 poisoned_refused=1
+CORE_CELL_GPU_PASS device=1 gradient_max_abs=1.32886747e-07 finite_fit_rows=8 snapshot_immutable=1 poisoned_refused=1
+/tmp/cnet-controller-build/test_selector
+CORE_SELECTOR_MECHANICS_PASS long_chain=63 relabel=1 incompatible_abstain=1 unavailable_abstain=1 malformed_refused=4
+hipcc -O2 -Wall -Wextra -Werror --offload-arch=gfx1201 -I../../include -c cell_train.cpp -o /tmp/cnet-controller-build/cell_train.o
+hipcc -O2 -Wall -Wextra -Werror --offload-arch=gfx1201 -I../../include -x c selector_experiment.c selector_fixture.c offline.c ../../src/serve/cnet_core_cell.c ../../src/serve/cnet_core_selector.c -x none /tmp/cnet-controller-build/cell_train.o /tmp/cnet-controller-build/amdmath.o -lm -o /tmp/cnet-controller-build/selector_experiment

@@ -1,0 +1,49 @@
+make -C ../.. capsule_core
+make[1]: Entering directory '/home/marble/AI/CNET-worktrees/offline-controller-20260906'
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce -Werror -o bin/cnet_capsule_core tools/cnet_capsule_core_main.c \
+	-Lbin -lcnet_capsule_core -Wl,-rpath,'$ORIGIN' -lm -lpthread -lcurl
+make[1]: Leaving directory '/home/marble/AI/CNET-worktrees/offline-controller-20260906'
+make /tmp/cnet-controller-build/test_cell /tmp/cnet-controller-build/test_selector /tmp/cnet-controller-build/test_candidate /tmp/cnet-controller-build/test_host /tmp/cnet-controller-build/test_cell_capsule /tmp/cnet-controller-build/test_worker_sandbox worker-build /tmp/cnet-controller-build/bench_cell_serving
+make[1]: Entering directory '/home/marble/AI/CNET-worktrees/offline-controller-20260906/experiments/offline_controller'
+make[1]: '/tmp/cnet-controller-build/test_cell' is up to date.
+make[1]: '/tmp/cnet-controller-build/test_selector' is up to date.
+make[1]: '/tmp/cnet-controller-build/test_candidate' is up to date.
+cc -std=c11 -O2 -g -Wall -Wextra -Werror -I../../include test_host.c selector_fixture.c -L../../bin -lcnet_capsule_core -Wl,-rpath,/home/marble/AI/CNET-worktrees/offline-controller-20260906/bin -lm -pthread -o /tmp/cnet-controller-build/test_host
+cc -std=c11 -O2 -g -Wall -Wextra -Werror -I../../include test_cell_capsule.c ../../src/serve/cnet_cell_capsule.c ../../src/serve/cnet_core_cell.c -L../../bin -lcnet_capsule_core -Wl,-rpath,/home/marble/AI/CNET-worktrees/offline-controller-20260906/bin -lm -o /tmp/cnet-controller-build/test_cell_capsule
+make[1]: '/tmp/cnet-controller-build/test_worker_sandbox' is up to date.
+make[1]: Nothing to be done for 'worker-build'.
+cc -std=c11 -O2 -g -Wall -Wextra -Werror -I../../include bench_cell_serving.c -L../../bin -lcnet_capsule_core -Wl,-rpath,/home/marble/AI/CNET-worktrees/offline-controller-20260906/bin -lm -o /tmp/cnet-controller-build/bench_cell_serving
+make[1]: Leaving directory '/home/marble/AI/CNET-worktrees/offline-controller-20260906/experiments/offline_controller'
+bash run_product_tests.sh /tmp/cnet-controller-build
+CORE_CELL_GPU_PASS device=0 gradient_max_abs=1.32886747e-07 finite_fit_rows=8 snapshot_immutable=1 poisoned_refused=1
+CORE_CELL_GPU_PASS device=1 gradient_max_abs=1.32886747e-07 finite_fit_rows=8 snapshot_immutable=1 poisoned_refused=1
+CORE_SELECTOR_MECHANICS_PASS long_chain=63 relabel=1 incompatible_abstain=1 unavailable_abstain=1 malformed_refused=4
+CORE_CANDIDATE_PASS canonical_roundtrip=1 every_byte_corruption_refused=1 path_symlink_fifo_permissions_truncation_trailing_nan_refused=1
+WORKER_SANDBOX_PASS network_denied=1 filesystem_mutation_denied=1 metadata_denied=1 readonly_allowed=1
+{"event":"worker_started","pid":210255,"device":0,"mode":1,"timeout_ms":30000}
+{"event":"worker_started","pid":210256,"device":1,"mode":1,"timeout_ms":30000}
+{"event":"worker_completed","pid":210255,"device":0,"valid":1,"exit":0,"signal":0,"bytes":192,"elapsed_ms":223}
+{"event":"worker_completed","pid":210256,"device":1,"valid":1,"exit":0,"signal":0,"bytes":192,"elapsed_ms":239}
+{"event":"worker_started","pid":210263,"device":1,"mode":2,"timeout_ms":30000}
+{"event":"worker_completed","pid":210263,"device":1,"valid":1,"exit":0,"signal":0,"bytes":192,"elapsed_ms":217}
+{"event":"worker_started","pid":210267,"device":0,"mode":1,"timeout_ms":30000}
+{"event":"worker_cancelled","pid":210267,"device":0,"elapsed_ms":0}
+{"event":"worker_started","pid":210268,"device":0,"mode":101,"timeout_ms":30000}
+{"event":"worker_completed","pid":210268,"device":0,"valid":0,"exit":9,"signal":0,"bytes":0,"elapsed_ms":221}
+{"event":"worker_started","pid":210272,"device":0,"mode":102,"timeout_ms":30000}
+{"event":"worker_completed","pid":210272,"device":0,"valid":0,"exit":0,"signal":0,"bytes":96,"elapsed_ms":215}
+{"event":"worker_started","pid":210276,"device":0,"mode":103,"timeout_ms":30}
+{"event":"worker_limit_refused","pid":210276,"oversize":0}
+{"event":"worker_cancelled","pid":210276,"device":0,"elapsed_ms":35}
+{"event":"worker_started","pid":210277,"device":0,"mode":2,"timeout_ms":30000}
+{"event":"worker_completed","pid":210277,"device":0,"valid":1,"exit":0,"signal":0,"bytes":192,"elapsed_ms":219}
+DUAL_GPU_WORKER_PASS devices=0,1 max_jobs=2 frozen_transfer=1 cancellation_death_partial_timeout_restart=1 eval_max_abs=0 output=/tmp/cnet-gpu-product-f1W11P/worker.native-weights
+GPU_CELL_CAPSULE_PASS method=direct_FP32_BTN_copy domain_rows=8 minimum_margin=0.489318189 prediction_max_abs=3.1082705e-08 payload_bytes=861 growth_obligations=8 ood_refused=1 weak_margin_refused=1
+CORE_HOST_PASS unchecked_bad_stale_evidence_refused=1 pinned_model_and_registry=1 explicit_activation_rollback=1 concurrent_pinned_request=1
+{"kind":"cell_serving_benchmark","neural":0,"repeat":0,"requests":9000,"verified_correct":8000,"ood_refused":1000,"p50_us":3.046,"p95_us":3.226,"p99_us":3.506,"registry_open_seconds":0.000157,"registry_capsules":1,"shared_machine":true}
+{"kind":"cell_serving_benchmark","neural":1,"repeat":0,"requests":9000,"verified_correct":8000,"ood_refused":1000,"p50_us":9.729,"p95_us":9.899,"p99_us":11.442,"registry_open_seconds":0.000157,"registry_capsules":1,"shared_machine":true}
+{"kind":"cell_serving_benchmark","neural":1,"repeat":1,"requests":9000,"verified_correct":8000,"ood_refused":1000,"p50_us":9.568,"p95_us":9.658,"p99_us":11.261,"registry_open_seconds":0.000157,"registry_capsules":1,"shared_machine":true}
+{"kind":"cell_serving_benchmark","neural":0,"repeat":1,"requests":9000,"verified_correct":8000,"ood_refused":1000,"p50_us":3.016,"p95_us":3.246,"p99_us":3.336,"registry_open_seconds":0.000157,"registry_capsules":1,"shared_machine":true}
+{"kind":"cell_serving_benchmark","neural":0,"repeat":2,"requests":9000,"verified_correct":8000,"ood_refused":1000,"p50_us":2.615,"p95_us":2.675,"p99_us":2.755,"registry_open_seconds":0.000157,"registry_capsules":1,"shared_machine":true}
+{"kind":"cell_serving_benchmark","neural":1,"repeat":2,"requests":9000,"verified_correct":8000,"ood_refused":1000,"p50_us":9.788,"p95_us":10.059,"p99_us":11.672,"registry_open_seconds":0.000157,"registry_capsules":1,"shared_machine":true}
+GPU_PRODUCT_TEST_PASS evidence=/tmp/cnet-gpu-product-f1W11P live_services_changed=0

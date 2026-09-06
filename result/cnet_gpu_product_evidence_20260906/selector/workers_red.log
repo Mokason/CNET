@@ -1,0 +1,17 @@
+/usr/bin/ld: /tmp/ccePmFAg.o: in function `finish':
+test_workers.c:(.text+0x37): undefined reference to `worker_poll'
+/usr/bin/ld: /tmp/ccePmFAg.o: in function `main':
+test_workers.c:(.text+0xf2): undefined reference to `worker_pool_open'
+/usr/bin/ld: test_workers.c:(.text+0x174): undefined reference to `worker_start'
+/usr/bin/ld: test_workers.c:(.text+0x1a3): undefined reference to `worker_start'
+/usr/bin/ld: test_workers.c:(.text+0x21a): undefined reference to `worker_start'
+/usr/bin/ld: test_workers.c:(.text+0x32f): undefined reference to `worker_start'
+/usr/bin/ld: test_workers.c:(.text+0x640): undefined reference to `worker_start'
+/usr/bin/ld: test_workers.c:(.text+0x666): undefined reference to `worker_cancel'
+/usr/bin/ld: test_workers.c:(.text+0x6b0): undefined reference to `worker_poll'
+/usr/bin/ld: test_workers.c:(.text+0x6fa): undefined reference to `worker_start_fault'
+/usr/bin/ld: test_workers.c:(.text+0x771): undefined reference to `worker_start_fault'
+/usr/bin/ld: test_workers.c:(.text+0x7e8): undefined reference to `worker_start_fault'
+/usr/bin/ld: test_workers.c:(.text+0x86a): undefined reference to `worker_start'
+/usr/bin/ld: test_workers.c:(.text+0x8d3): undefined reference to `worker_pool_close'
+collect2: error: ld returned 1 exit status

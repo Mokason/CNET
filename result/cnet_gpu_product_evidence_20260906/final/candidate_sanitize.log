@@ -1,0 +1,1 @@
+CORE_CANDIDATE_PASS canonical_roundtrip=1 every_byte_corruption_refused=1 path_symlink_fifo_permissions_truncation_trailing_nan_refused=1

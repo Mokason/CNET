@@ -1,0 +1,18 @@
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -o bin/cnet_own_learning_health \
+	src/personal_ai.c src/cnet_moe.c src/cnet_acct.c src/cnet_seal_trust.c src/cnet_distrust.c src/cnet_live_miss.c src/hybrid_ai.c src/serve/cnet_sparse_serve.c src/residual_gguf.c src/residual_http.c src/cnet_pilot.c src/selfimprove/cnet_curiosity.c src/resource_governor.c src/selfimprove/self_improve.c src/gap_lane.c src/selfimprove/cnet_auto_learn.c src/cnet_charter.c src/cnet_record_teacher.c src/cnet_fault.c src/selfimprove/cnet_promote.c src/serve/cnet_serve_decode.c src/cnet_evidence_bundle.c src/cnet_health_layers.c src/external_teacher.c \
+	src/model_runtime.c bin/libcce.a src/cce/cce_contract_adapter.c src/specialist_adapters.c src/specialist.c src/specialist_health.c \
+	src/nn.c src/router/dag_full.c src/router/registry.c src/router/route.c src/plan_table.c src/contract/contract.c src/contract/unit.c src/property.c src/consolidate.c \
+	src/scan.c src/contract/coverage.c src/acquire.c src/runtime_identity.c src/base.c src/library.c src/cnet_dc_type.c src/cnet_swap.c \
+	tools/cnet_own_learning_health.c -lm -lpthread -lcurl   -pthread
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -o bin/mk_test_base \
+	src/personal_ai.c src/cnet_moe.c src/cnet_acct.c src/cnet_seal_trust.c src/cnet_distrust.c src/cnet_live_miss.c src/hybrid_ai.c src/serve/cnet_sparse_serve.c src/residual_gguf.c src/residual_http.c src/cnet_pilot.c src/selfimprove/cnet_curiosity.c src/resource_governor.c src/selfimprove/self_improve.c src/gap_lane.c src/selfimprove/cnet_auto_learn.c src/cnet_charter.c src/cnet_record_teacher.c src/cnet_fault.c src/selfimprove/cnet_promote.c src/serve/cnet_serve_decode.c src/cnet_evidence_bundle.c src/cnet_health_layers.c src/external_teacher.c \
+	src/model_runtime.c bin/libcce.a src/cce/cce_contract_adapter.c src/specialist_adapters.c src/specialist.c src/specialist_health.c \
+	src/nn.c src/router/dag_full.c src/router/registry.c src/router/route.c src/plan_table.c src/contract/contract.c src/contract/unit.c src/property.c src/consolidate.c \
+	src/scan.c src/contract/coverage.c src/acquire.c src/runtime_identity.c src/base.c src/library.c src/cnet_dc_type.c src/cnet_swap.c \
+	tests/mk_test_base.c -lm -lpthread -lcurl   -pthread
+OWN_LEARNING_HEALTH_STRICT_PASS checks=48
+{"mode":"config_only","base":"","base_loaded":0,"mined_units":0,"coverage_records":0,"unguarded_mined":0,"unreadable_mined":0,"coverage_file":"missing","mine_on_serve":1,"mine_on_serve_raw":"1","coverage_abstain_raw":"","coverage_gate":"on","residual_configured":1,"residual_teacher":"none","dangerous":[],"status":"ok"}
+CONFIG_ONLY_PASS knobs=checked deployment=not_inspected
+DEPLOYED_LEARNING_INSPECT pid=185345 executable_generation=64512:70783681
+{"mode":"deployed","base":"/home/marble/AI/CNET/artifacts/deployments/certified-core-20260905/active.cnb","base_loaded":1,"mined_units":1,"coverage_records":1,"unguarded_mined":0,"unreadable_mined":0,"coverage_file":"ok","mine_on_serve":1,"mine_on_serve_raw":"1","coverage_abstain_raw":"1","coverage_gate":"on","residual_configured":1,"residual_teacher":"reachable","dangerous":[],"status":"ok"}
+OWN_LEARNING_HEALTH_PASS base_loaded=1 coverage=ok teacher=reachable

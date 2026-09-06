@@ -1,0 +1,4 @@
+hipcc -O2 -Wall -Wextra -Werror --offload-arch=gfx1201 -I../../include -x c worker_main.c worker_sandbox.c offline.c ../../src/serve/cnet_core_cell.c -x none /tmp/cnet-controller-build/cell_train.o /tmp/cnet-controller-build/amdmath.o -lm -o /tmp/cnet-controller-build/gpu_worker
+chmod go-w /tmp/cnet-controller-build/gpu_worker
+hipcc -O2 -Wall -Wextra -Werror --offload-arch=gfx1201 -DCONTROLLER_TESTING -I../../include -x c worker_main.c worker_sandbox.c offline.c ../../src/serve/cnet_core_cell.c -x none /tmp/cnet-controller-build/cell_train.o /tmp/cnet-controller-build/amdmath.o -lm -o /tmp/cnet-controller-build/gpu_worker_test
+chmod go-w /tmp/cnet-controller-build/gpu_worker_test

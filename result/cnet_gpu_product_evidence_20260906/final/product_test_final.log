@@ -1,0 +1,58 @@
+make -C ../.. capsule_core
+make[1]: Entering directory '/home/marble/AI/CNET-worktrees/offline-controller-20260906'
+make[1]: Leaving directory '/home/marble/AI/CNET-worktrees/offline-controller-20260906'
+make /tmp/cnet-controller-build/test_cell /tmp/cnet-controller-build/test_selector /tmp/cnet-controller-build/test_candidate /tmp/cnet-controller-build/test_host /tmp/cnet-controller-build/test_cell_capsule /tmp/cnet-controller-build/test_worker_sandbox worker-build /tmp/cnet-controller-build/bench_cell_serving
+make[1]: Entering directory '/home/marble/AI/CNET-worktrees/offline-controller-20260906/experiments/offline_controller'
+make[1]: '/tmp/cnet-controller-build/test_cell' is up to date.
+make[1]: '/tmp/cnet-controller-build/test_selector' is up to date.
+make[1]: '/tmp/cnet-controller-build/test_candidate' is up to date.
+make[1]: '/tmp/cnet-controller-build/test_host' is up to date.
+make[1]: '/tmp/cnet-controller-build/test_cell_capsule' is up to date.
+make[1]: '/tmp/cnet-controller-build/test_worker_sandbox' is up to date.
+cc -std=c11 -O2 -g -Wall -Wextra -Werror -I../../include -DCONTROLLER_TESTING test_workers.c worker.c ../../src/serve/cnet_core_cell.c -lm -o /tmp/cnet-controller-build/test_workers
+make[1]: '/tmp/cnet-controller-build/bench_cell_serving' is up to date.
+make[1]: Leaving directory '/home/marble/AI/CNET-worktrees/offline-controller-20260906/experiments/offline_controller'
+bash run_product_tests.sh /tmp/cnet-controller-build
+CORE_CELL_GPU_PASS device=0 gradient_max_abs=1.32886747e-07 finite_fit_rows=8 snapshot_immutable=1 poisoned_refused=1
+CORE_CELL_GPU_PASS device=1 gradient_max_abs=1.32886747e-07 finite_fit_rows=8 snapshot_immutable=1 poisoned_refused=1
+CORE_SELECTOR_MECHANICS_PASS long_chain=63 relabel=1 incompatible_abstain=1 unavailable_abstain=1 malformed_refused=4
+CORE_CANDIDATE_PASS canonical_roundtrip=1 every_byte_corruption_refused=1 path_symlink_fifo_permissions_truncation_trailing_nan_refused=1
+WORKER_SANDBOX_PASS network_denied=1 filesystem_mutation_denied=1 metadata_denied=1 readonly_allowed=1
+{"event":"worker_started","pid":237525,"device":0,"mode":1,"timeout_ms":30000}
+{"event":"worker_started","pid":237526,"device":1,"mode":1,"timeout_ms":30000}
+{"event":"worker_completed","pid":237525,"device":0,"valid":1,"exit":0,"signal":0,"bytes":192,"elapsed_ms":226}
+{"event":"worker_completed","pid":237526,"device":1,"valid":1,"exit":0,"signal":0,"bytes":192,"elapsed_ms":227}
+{"event":"worker_started","pid":237533,"device":1,"mode":2,"timeout_ms":30000}
+{"event":"worker_completed","pid":237533,"device":1,"valid":1,"exit":0,"signal":0,"bytes":192,"elapsed_ms":206}
+{"event":"worker_started","pid":237552,"device":0,"mode":1,"timeout_ms":30000}
+{"event":"worker_cancelled","pid":237552,"device":0,"elapsed_ms":0}
+{"event":"worker_started","pid":237553,"device":0,"mode":101,"timeout_ms":30000}
+{"event":"worker_completed","pid":237553,"device":0,"valid":0,"exit":9,"signal":0,"bytes":0,"elapsed_ms":209}
+{"event":"worker_started","pid":237557,"device":0,"mode":102,"timeout_ms":30000}
+{"event":"worker_completed","pid":237557,"device":0,"valid":0,"exit":0,"signal":0,"bytes":96,"elapsed_ms":205}
+{"event":"worker_started","pid":237603,"device":0,"mode":103,"timeout_ms":500}
+{"event":"worker_limit_refused","pid":237603,"oversize":0}
+{"event":"worker_cancelled","pid":237603,"device":0,"elapsed_ms":511}
+{"event":"worker_started","pid":237607,"device":0,"mode":2,"timeout_ms":30000}
+{"event":"worker_completed","pid":237607,"device":0,"valid":1,"exit":0,"signal":0,"bytes":192,"elapsed_ms":208}
+DUAL_GPU_WORKER_PASS devices=0,1 max_jobs=2 frozen_transfer=1 cancellation_restart=1 fault_injections=1 eval_max_abs=0 output=/tmp/cnet-gpu-product-ve7oTJ/worker.native-weights
+{"event":"worker_started","pid":237614,"device":0,"mode":1,"timeout_ms":30000}
+{"event":"worker_started","pid":237615,"device":1,"mode":1,"timeout_ms":30000}
+{"event":"worker_completed","pid":237614,"device":0,"valid":1,"exit":0,"signal":0,"bytes":192,"elapsed_ms":229}
+{"event":"worker_completed","pid":237615,"device":1,"valid":1,"exit":0,"signal":0,"bytes":192,"elapsed_ms":234}
+{"event":"worker_started","pid":237623,"device":1,"mode":2,"timeout_ms":30000}
+{"event":"worker_completed","pid":237623,"device":1,"valid":1,"exit":0,"signal":0,"bytes":192,"elapsed_ms":219}
+{"event":"worker_started","pid":237629,"device":0,"mode":1,"timeout_ms":30000}
+{"event":"worker_cancelled","pid":237629,"device":0,"elapsed_ms":0}
+{"event":"worker_started","pid":237630,"device":0,"mode":2,"timeout_ms":30000}
+{"event":"worker_completed","pid":237630,"device":0,"valid":1,"exit":0,"signal":0,"bytes":192,"elapsed_ms":206}
+DUAL_GPU_WORKER_PASS devices=0,1 max_jobs=2 frozen_transfer=1 cancellation_restart=1 fault_injections=0 eval_max_abs=0 output=/tmp/cnet-gpu-product-ve7oTJ/production-worker.native-weights
+GPU_CELL_CAPSULE_PASS method=direct_FP32_BTN_copy domain_rows=8 minimum_margin=0.489318189 prediction_max_abs=3.1082705e-08 payload_bytes=861 growth_obligations=8 ood_refused=1 weak_margin_refused=1
+CORE_HOST_PASS unchecked_bad_stale_evidence_refused=1 pinned_model_and_registry=1 explicit_activation_rollback=1 concurrent_pinned_request=1
+{"kind":"cell_serving_benchmark","neural":0,"repeat":0,"requests":9000,"verified_correct":8000,"ood_refused":1000,"p50_us":2.525,"p95_us":2.635,"p99_us":2.916,"registry_open_seconds":0.000170,"registry_capsules":1,"shared_machine":true}
+{"kind":"cell_serving_benchmark","neural":1,"repeat":0,"requests":9000,"verified_correct":8000,"ood_refused":1000,"p50_us":10.059,"p95_us":10.279,"p99_us":11.392,"registry_open_seconds":0.000170,"registry_capsules":1,"shared_machine":true}
+{"kind":"cell_serving_benchmark","neural":1,"repeat":1,"requests":9000,"verified_correct":8000,"ood_refused":1000,"p50_us":10.039,"p95_us":10.069,"p99_us":12.063,"registry_open_seconds":0.000170,"registry_capsules":1,"shared_machine":true}
+{"kind":"cell_serving_benchmark","neural":0,"repeat":1,"requests":9000,"verified_correct":8000,"ood_refused":1000,"p50_us":2.525,"p95_us":2.715,"p99_us":2.756,"registry_open_seconds":0.000170,"registry_capsules":1,"shared_machine":true}
+{"kind":"cell_serving_benchmark","neural":0,"repeat":2,"requests":9000,"verified_correct":8000,"ood_refused":1000,"p50_us":2.514,"p95_us":2.545,"p99_us":2.615,"registry_open_seconds":0.000170,"registry_capsules":1,"shared_machine":true}
+{"kind":"cell_serving_benchmark","neural":1,"repeat":2,"requests":9000,"verified_correct":8000,"ood_refused":1000,"p50_us":10.079,"p95_us":10.319,"p99_us":11.481,"registry_open_seconds":0.000170,"registry_capsules":1,"shared_machine":true}
+GPU_PRODUCT_TEST_PASS evidence=/tmp/cnet-gpu-product-ve7oTJ live_services_changed=0

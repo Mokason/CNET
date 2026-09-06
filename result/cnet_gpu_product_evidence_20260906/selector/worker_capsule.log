@@ -1,0 +1,1 @@
+GPU_CELL_CAPSULE_PASS method=direct_FP32_BTN_copy domain_rows=8 minimum_margin=0.489318189 prediction_max_abs=3.1082705e-08 payload_bytes=861 growth_obligations=8 ood_refused=1 weak_margin_refused=1

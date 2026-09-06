@@ -11,13 +11,13 @@ floors, independent labels and final per-hop verification remain mandatory.
 - [x] Batched/private-stream execution; measured CPU/host-GPU/resident comparison.
 - [x] Optimized CPU and supported ROCm matrix/precision experiments, keep only
       improvements that retain numeric and held-out task gates.
-- [ ] Variable-size structured selection with relabel, family, long-chain and
+- [x] Variable-size structured selection with relabel, family, long-chain and
       independent-label/on-policy ablations; deterministic control retained.
-- [ ] Versioned core candidates, corruption/incompatibility refusal, shadow
+- [x] Versioned core candidates, corruption/incompatibility refusal, shadow
       evaluation, request-pinned activation and rollback.
-- [ ] One genuinely GPU-fit finite task through existing BTN/capsule certification,
+- [x] One genuinely GPU-fit finite task through existing BTN/capsule certification,
       export/import, OOD refusal and growth replay; no finite compiler substitution.
-- [ ] Bounded two-device worker lifecycle, cancellation/failure/restart tests,
+- [x] Bounded two-device worker lifecycle, cancellation/failure/restart tests,
       explicit guarded promotion in an isolated registry.
 - [ ] Final source regressions, runtime benchmarks, sanitizers and adversarial
       vulnerability/dependency review; remaining live deployment authority explicit.
@@ -173,3 +173,71 @@ has been invoked. Full-source/security closure remains in the final product gate
 An interim fresh `make verify` passed all 28 logged suites after the stream API
 change (`source_regression_after_streams.log`); final regression must run again
 after the remaining product slices.
+
+## Slices 3–6 — bounded local pipeline
+
+Shared-cell protocol/results are recorded in `cnet_shared_selector_20260906.md`.
+The cell is41 FP32 scalars (164bytes); its direct BTN conversion has eight sigmoid
+hidden units. Six fitted models pass exhaustive eight-row Boolean OR certification
+with the unchanged .05 margin (observed minimum around .492), existing capsule
+export/import and growth replay. Payload is861bytes, excluding the manifest and
+runtime allocation. This finite certification domain is not held-out accuracy.
+An independently worker-trained zero-initialized cell also passes with .489 margin.
+There is no finite-domain compiler fallback in this path.
+
+The404-byte canonical core checkpoint binds schema/model/feature/dtype/shape,
+unapproved status,41 LE binary32 weights and two evidence SHA256 identifiers.
+Content SHA256 uses the existing CCE implementation; no crypto dependency or
+second capsule format. Owner-private dirFD/file checks, single-component names,
+no-follow/exclusive writes, exact reads, nonfinite/incompatible refusal and
+every-byte corruption tests pass. Recomputed hashes do not bypass version/shape/
+status/nonfinite checks. Integrity is not authenticity.
+
+The opt-in host owns at most four immutable model+registry generations and64
+leases, with one staged candidate. Explicit activation follows independently
+computed graph task/calibration gates, all shadow labels and old/new capsule
+history replay. Rollback invalidates pending approval; old requests retain their
+old model and capsule inventory. A global wrapper mutex serializes the legacy
+global certificate cache and BTN scratch; raw legacy APIs must not be used
+concurrently outside it. The owner stops new operations before destruction.
+
+Review caught a real promotion bypass: deterministic replay can cover two
+same-port capsules with disjoint input coverage, while a structural neural path
+chooses only one. The retained RED case proves the old admission passed despite
+loss of covered inputs. Promotion now replays every sealed-label join through
+the actual staged neural execution path as well as deterministic consistency.
+This case refuses even when a small supplied shadow set omits the lost rows.
+
+Worker pool: two jobs, one per discrete ordinal0/1, fixed tiny task, max2,000
+training epochs per job, 30CPU-seconds, owner timeout<=60seconds,1024FD limit and
+16MiB per-file size. Requested cell device state is385,192bytes; HIP/runtime/code
+allocations are additional. The measured child maximum RSS is~215MiB; neither
+driver RSS, total scratch quota nor hostile driver isolation is hard-guaranteed.
+Snapshots cross a sealed memfd and return in an exact192-byte private IPC record;
+EOF, clean child exit, finite fields and CPU/GPU prediction parity are mandatory.
+Neither worker has the parent activation interface or serving registry paths.
+
+Landlock ABI>=3 applies before HIP creates threads. Only GPU devices, `/dev/null`
+and a job-owned0700 scratch directory accept filesystem writes. Tracing isolated
+HIP startup found COMGR needs a temporary compilation directory; denying its mkdir
+caused a HIP null-refcount SIGSEGV. The fix supplies a private `TMPDIR`, not write
+permission to `/tmp` or serving storage. Job scratch is reclaimed only after
+reaping, via bounded descriptor-relative traversal without following symlinks;
+unexpected contents are retained loudly. Network and process/metadata restrictions
+use TSYNC seccomp after warm-up. Review reproduced then closed read-only-FD
+filesystem ioctl and queued-signal bypasses; only DRM/KFD ioctl namespaces remain.
+Trusted compiled HIP startup is part of the trust base; this is not a general
+hostile-native-code execution service. No shared GPU job is reserved or stopped.
+
+Lifecycle tests cover capacity, immutable transfer, explicit cancellation, child
+exit, truncated output, timeout and restart. End-to-end `make -C
+experiments/offline_controller product-test` additionally converts the worker
+snapshot into a capsule, imports it, checks guarded activation/pinning/rollback,
+and benchmarks actual verified requests. It leaves only private test artifacts
+under `/tmp`; no live service or registry is activated.
+
+Final security closure distinguishes new-code tests from the existing managed
+control-plane dependency advisory; see the final result report. An audit finding
+is not converted into a clean security claim. No external Claude/Grok CLI was
+invoked: exact-command offers remain unanswered; bounded independent reviewers
+and negative tests supplied the recorded findings.

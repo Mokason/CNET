@@ -1,0 +1,1 @@
+CORE_HOST_PASS unchecked_bad_stale_evidence_refused=1 pinned_model_and_registry=1 explicit_activation_rollback=1 concurrent_pinned_request=1

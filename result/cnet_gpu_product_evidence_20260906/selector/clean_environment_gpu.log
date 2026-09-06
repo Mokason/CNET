@@ -1,0 +1,2 @@
+CORE_CELL_GPU_PASS device=0 gradient_max_abs=1.32886747e-07 finite_fit_rows=8 snapshot_immutable=1 poisoned_refused=1
+CORE_CELL_GPU_PASS device=1 gradient_max_abs=1.32886747e-07 finite_fit_rows=8 snapshot_immutable=1 poisoned_refused=1

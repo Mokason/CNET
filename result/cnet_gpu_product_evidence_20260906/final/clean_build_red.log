@@ -1,0 +1,7 @@
+make: Entering directory '/home/marble/AI/CNET-worktrees/offline-controller-20260906/experiments/offline_controller'
+hipcc -O2 -Wall -Wextra -Werror --offload-arch=gfx1201 -I../../include -c cell_train.cpp -o /tmp/cnet-product-clean-build-IzSDE5/out/cell_train.o
+error: unable to open output file '/tmp/cnet-product-clean-build-IzSDE5/out/cell_train.o': 'No such file or directory'
+1 error generated when compiling for host.
+failed to execute:/opt/rocm-7.2.3/lib/llvm/bin/clang++  --offload-arch=gfx1201  -O2 -Wall -Wextra -Werror -I../../include -c -x hip cell_train.cpp -o "/tmp/cnet-product-clean-build-IzSDE5/out/cell_train.o"
+make: *** [Makefile:118: /tmp/cnet-product-clean-build-IzSDE5/out/cell_train.o] Error 1
+make: Leaving directory '/home/marble/AI/CNET-worktrees/offline-controller-20260906/experiments/offline_controller'

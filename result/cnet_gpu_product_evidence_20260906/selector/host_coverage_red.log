@@ -1,0 +1,1 @@
+test_host: test_host.c:54: main: Assertion `cnet_core_host_check(host,id,graphs,128,sparse,3,&report)!=0' failed.

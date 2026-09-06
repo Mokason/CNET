@@ -1,0 +1,1 @@
+{"kind":"selector_training","seed":2,"variant":"onpolicy","parameters":41,"training_nodes":8,"teacher":"independent_BFS","warmup_rows":8,"warmup_epochs":2000,"correction_rounds":4,"rows_per_round":2048,"epochs_per_round":512,"last_loss":0.000316888734,"seconds":0.731899,"offline_sealed":true}

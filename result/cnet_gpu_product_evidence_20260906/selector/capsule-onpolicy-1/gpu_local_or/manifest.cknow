@@ -1,0 +1,29 @@
+CNET_CAPSULE 1
+unit gpu_local_or
+behavior_digest 3006046194220661049
+cnb_version 5
+exemplars 8
+payload_fnv 16953997598619571895
+payload_bytes 861
+provenance verified_tool
+in 2 3 1 LOCAL_STATE
+goal 2 1 1 REACH_FLAG
+scope exhaustive
+coverage 8 3 1
+COVIN 0 0 0
+COVIN 0 0 1
+COVIN 0 1 0
+COVIN 0 1 1
+COVIN 1 0 0
+COVIN 1 0 1
+COVIN 1 1 0
+COVIN 1 1 1
+COVOUT 0
+COVOUT 1
+COVOUT 1
+COVOUT 1
+COVOUT 1
+COVOUT 1
+COVOUT 1
+COVOUT 1
+manifest_fnv 8170574836890002188

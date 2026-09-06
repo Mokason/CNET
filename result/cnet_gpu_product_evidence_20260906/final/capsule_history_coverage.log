@@ -1,0 +1,10 @@
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce -o bin/test_capsule_history_coverage tests/test_capsule_history_coverage.c -Lbin -lcnet_capsule_core -Wl,-rpath,'$ORIGIN' -lm -lpthread -lcurl
+  fixture builds                                                 PASS
+  materialize fixture                                            PASS
+  seal only five labels                                          PASS
+  narrow coverage exports                                        PASS
+  narrow guard remains valid                                     PASS
+  history uses only the one covered row, replayed in both inventories PASS
+  legacy wider guard exports                                     PASS
+  core refuses a guard row without a sealed label                PASS
+CAPSULE_HISTORY_COVERAGE_PASS failures=0

@@ -1,0 +1,44 @@
+/tmp/cnet-controller-build/test_fixture
+CONTROLLER_FIXTURE_PASS ties=1 incompatible=1 unreachable=1 invalid=1
+/tmp/cnet-controller-build/test_net
+CONTROLLER_NET_PASS mode=0 gradient_max_abs=2.386933e-05 initial=1.989512 final=0.001684 frozen=1
+CONTROLLER_NET_PASS mode=1 gradient_max_abs=4.452467e-05 initial=1.947891 final=0.001463 frozen=1
+CONTROLLER_NET_PASS mode=2 gradient_max_abs=3.322971e-05 initial=1.808361 final=0.001502 frozen=1
+/tmp/cnet-controller-build/test_local
+CONTROLLER_LOCAL_BOUNDARY_PASS malformed=7 inherited_socket_refused=1 unconnected_refused=1 network_denied=1
+/tmp/cnet-controller-build/test_gpu
+CONTROLLER_DEVICE index=0 name=AMD Radeon AI PRO R9700 (gfx1201)
+CONTROLLER_DEVICE index=1 name=AMD Radeon AI PRO R9700 (gfx1201)
+CONTROLLER_GPU_PARITY_PASS device=0 mode=0 max_abs=2.98023224e-08 network_denied=1
+CONTROLLER_GPU_PARITY_PASS device=0 mode=1 max_abs=4.47034836e-08 network_denied=1
+CONTROLLER_GPU_PARITY_PASS device=0 mode=2 max_abs=5.96046448e-08 network_denied=1
+CONTROLLER_GPU_PARITY_PASS device=1 mode=0 max_abs=2.98023224e-08 network_denied=1
+CONTROLLER_GPU_PARITY_PASS device=1 mode=1 max_abs=4.47034836e-08 network_denied=1
+CONTROLLER_GPU_PARITY_PASS device=1 mode=2 max_abs=5.96046448e-08 network_denied=1
+/tmp/cnet-controller-build/test_investigate
+CONTROLLER_ENCODING_PASS permutations=700 teacher_labels_equivalent=1 structural_partition_invariant=1 raw_split_counterexample=1 mask_preserves_abstention=1
+/tmp/cnet-controller-build/test_resident
+CONTROLLER_RESIDENT_PASS device=0 updates=128 weight_max_abs=1.1920929e-07 invalid_batch_refused=1 snapshot_immutable=1
+CONTROLLER_RESIDENT_POISON_PASS device=0 finite_overflow_refused=1 later_operations_refused=3
+CONTROLLER_RESIDENT_SHAPES_PASS device=0 depth_modes=8 batch_sizes=3 runtime_error_injection=1
+CONTROLLER_RESIDENT_BATCHES_PASS device=0 batches=8 oversize_refused=1
+CONTROLLER_RESIDENT_DRAIN_PASS device=0 pending_failure_drained=1
+CONTROLLER_RESIDENT_PASS device=1 updates=128 weight_max_abs=1.1920929e-07 invalid_batch_refused=1 snapshot_immutable=1
+CONTROLLER_RESIDENT_POISON_PASS device=1 finite_overflow_refused=1 later_operations_refused=3
+CONTROLLER_RESIDENT_SHAPES_PASS device=1 depth_modes=8 batch_sizes=3 runtime_error_injection=1
+CONTROLLER_RESIDENT_BATCHES_PASS device=1 batches=8 oversize_refused=1
+CONTROLLER_RESIDENT_DRAIN_PASS device=1 pending_failure_drained=1
+/tmp/cnet-controller-build/test_resident_rocblas
+CONTROLLER_RESIDENT_PASS device=0 updates=128 weight_max_abs=6.85453415e-07 invalid_batch_refused=1 snapshot_immutable=1
+CONTROLLER_RESIDENT_POISON_PASS device=0 finite_overflow_refused=1 later_operations_refused=3
+CONTROLLER_RESIDENT_SHAPES_PASS device=0 depth_modes=8 batch_sizes=3 runtime_error_injection=1
+CONTROLLER_RESIDENT_BATCHES_PASS device=0 batches=8 oversize_refused=1
+CONTROLLER_RESIDENT_DRAIN_PASS device=0 pending_failure_drained=1
+CONTROLLER_RESIDENT_PASS device=1 updates=128 weight_max_abs=6.85453415e-07 invalid_batch_refused=1 snapshot_immutable=1
+CONTROLLER_RESIDENT_POISON_PASS device=1 finite_overflow_refused=1 later_operations_refused=3
+CONTROLLER_RESIDENT_SHAPES_PASS device=1 depth_modes=8 batch_sizes=3 runtime_error_injection=1
+CONTROLLER_RESIDENT_BATCHES_PASS device=1 batches=8 oversize_refused=1
+CONTROLLER_RESIDENT_DRAIN_PASS device=1 pending_failure_drained=1
+/tmp/cnet-controller-build/test_stream
+CONTROLLER_STREAM_PASS device=0 experts=2 malformed_shapes_refused=4 invalid_lr_refused=2
+CONTROLLER_STREAM_PASS device=1 experts=2 malformed_shapes_refused=4 invalid_lr_refused=2

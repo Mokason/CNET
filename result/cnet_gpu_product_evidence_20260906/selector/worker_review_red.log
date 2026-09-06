@@ -1,0 +1,4 @@
+cc -std=c11 -O2 -g -Wall -Wextra -Werror -I../../include test_worker_sandbox.c worker_sandbox.c offline.c -o /tmp/cnet-controller-build/test_worker_sandbox
+/tmp/cnet-controller-build/test_worker_sandbox
+test_worker_sandbox: test_worker_sandbox.c:21: main: Assertion `ioctl(readonly,FS_IOC_SETFLAGS,&flags)<0&&errno==EPERM' failed.
+make: *** [Makefile:149: worker-sandbox-test] Segmentation fault

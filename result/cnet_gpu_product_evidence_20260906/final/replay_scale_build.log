@@ -1,0 +1,1 @@
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce -Werror -o bin/test_capsule_replay_scale tests/test_capsule_replay_scale.c -Lbin -lcnet_capsule_core -Wl,-rpath,'$ORIGIN' -lm -lpthread -lcurl

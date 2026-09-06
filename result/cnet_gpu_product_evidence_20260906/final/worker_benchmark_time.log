@@ -1,0 +1,40 @@
+{"event":"worker_started","pid":235527,"device":0,"mode":1,"timeout_ms":30000}
+{"event":"worker_started","pid":235528,"device":1,"mode":1,"timeout_ms":30000}
+{"event":"worker_completed","pid":235527,"device":0,"valid":1,"exit":0,"signal":0,"bytes":192,"elapsed_ms":229}
+{"event":"worker_completed","pid":235528,"device":1,"valid":1,"exit":0,"signal":0,"bytes":192,"elapsed_ms":229}
+{"event":"worker_started","pid":235538,"device":1,"mode":2,"timeout_ms":30000}
+{"event":"worker_completed","pid":235538,"device":1,"valid":1,"exit":0,"signal":0,"bytes":192,"elapsed_ms":229}
+{"event":"worker_started","pid":235545,"device":0,"mode":1,"timeout_ms":30000}
+{"event":"worker_cancelled","pid":235545,"device":0,"elapsed_ms":0}
+{"event":"worker_started","pid":235546,"device":0,"mode":101,"timeout_ms":30000}
+{"event":"worker_completed","pid":235546,"device":0,"valid":0,"exit":9,"signal":0,"bytes":0,"elapsed_ms":223}
+{"event":"worker_started","pid":235553,"device":0,"mode":102,"timeout_ms":30000}
+{"event":"worker_completed","pid":235553,"device":0,"valid":0,"exit":0,"signal":0,"bytes":96,"elapsed_ms":224}
+{"event":"worker_started","pid":235557,"device":0,"mode":103,"timeout_ms":30}
+{"event":"worker_limit_refused","pid":235557,"oversize":0}
+{"event":"worker_cancelled","pid":235557,"device":0,"elapsed_ms":36}
+{"event":"worker_started","pid":235558,"device":0,"mode":2,"timeout_ms":30000}
+{"event":"worker_completed","pid":235558,"device":0,"valid":1,"exit":0,"signal":0,"bytes":192,"elapsed_ms":211}
+	Command being timed: "/tmp/cnet-controller-build/test_workers /tmp/cnet-controller-build/gpu_worker_test result/cnet_gpu_product_evidence_20260906/final/worker.native-weights"
+	User time (seconds): 1.10
+	System time (seconds): 0.20
+	Percent of CPU this job got: 112%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:01.15
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 220228
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 6
+	Minor (reclaiming a frame) page faults: 86130
+	Voluntary context switches: 1270
+	Involuntary context switches: 154
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 3192
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0

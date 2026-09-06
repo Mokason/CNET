@@ -1,0 +1,39 @@
+hipcc -O3 --offload-arch=gfx1201 -Iinclude -o bin/test_cce_amdmath \
+	-x c tests/test_cce_amdmath.c -x none build/amdmath/cce_amdmath.o -lm
+HIP_VISIBLE_DEVICES=0 bin/test_cce_amdmath | tee logs/amdmath_test.log
+cce_amdmath 0.3.0 discrete=1
+ok   floor 8x8x8
+ok   floor 256x256x256
+open AMD Radeon AI PRO R9700 (gfx1201)
+ok   caps
+  gfx12=1 wave=32 cu=32 wmma_f16=1 pk=1
+ok   gemm_f32 128
+  max|Δ|=1.33514e-05
+ok   gemm_f32_wmma 128
+  max|Δ|=0.134602 (bf16 WMMA vs f32 CPU)
+ok   gemm_f16 128
+  max|Δ|=0.042099 (f16 in vs f32 CPU of pre-round)
+ok   pk_fma_f16
+  mismatches=0 / 1024
+ok   linear_f32 E4
+  max|Δ|=9.53674e-06
+ok   linear_f32_wmma E4
+  max|Δ|=0.102888
+ok   sgd_f32
+  sgd W[0] Δ=0
+ok   vram_info
+  vram free=28.21 GiB tot=31.86 GiB
+ok   pool_bind
+ok   pool_bind
+ok   pool_bind
+ok   touch0
+ok   touch1
+ok   0,1 HOT
+ok   touch2
+ok   LRU evicted 0 (tier=2) 2 HOT
+  hot_used=131072 cap=131072 evicts=1
+ok   pool_sgd HOT
+ok   pool_sgd HOT hit
+ok   tiny gemm FLOOR
+AMDMATH_PASS
+grep -q AMDMATH_PASS logs/amdmath_test.log

@@ -1,0 +1,47 @@
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce -fPIC -shared -o bin/libcnet_capsule_core.so src/personal_ai.c src/cnet_moe.c src/cnet_acct.c src/cnet_seal_trust.c src/cnet_distrust.c src/cnet_live_miss.c src/hybrid_ai.c src/serve/cnet_sparse_serve.c src/residual_gguf.c src/residual_http.c src/cnet_pilot.c src/selfimprove/cnet_curiosity.c src/resource_governor.c src/selfimprove/self_improve.c src/gap_lane.c src/selfimprove/cnet_auto_learn.c src/cnet_charter.c src/cnet_record_teacher.c src/cnet_fault.c src/selfimprove/cnet_promote.c src/serve/cnet_serve_decode.c src/cnet_evidence_bundle.c src/cnet_health_layers.c src/external_teacher.c src/model_runtime.c src/cce/cce_contract_adapter.c src/specialist_adapters.c src/specialist.c src/specialist_health.c src/nn.c src/router/dag_full.c src/router/registry.c src/router/route.c src/plan_table.c src/contract/contract.c src/contract/unit.c src/property.c src/consolidate.c src/scan.c src/contract/coverage.c src/acquire.c src/runtime_identity.c src/base.c src/library.c src/cnet_dc_type.c src/cnet_swap.c src/memory/cnet_capsule.c \
+	src/serve/cnet_capsule_core.c src/serve/cnet_capsule_demand.c src/serve/cnet_core_cell.c src/serve/cnet_core_selector.c src/serve/cnet_cell_capsule.c src/serve/cnet_core_candidate.c src/serve/cnet_core_host.c src/cce/cce_campaign_provenance.c src/memory/cnet_semantic_cortex.c src/memory/cnet_shared_workspace.c bin/libcce.a -lm -lpthread -lcurl  -pthread
+src/serve/cnet_capsule_demand.c:1: warning: "_GNU_SOURCE" redefined
+    1 | #define _GNU_SOURCE
+      | 
+<command-line>: note: this is the location of the previous definition
+src/serve/cnet_core_candidate.c:1: warning: "_GNU_SOURCE" redefined
+    1 | #define _GNU_SOURCE
+      | 
+<command-line>: note: this is the location of the previous definition
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce -o bin/test_capsule_core_growth \
+	tests/test_capsule_core_growth.c -Lbin -lcnet_capsule_core \
+	-Wl,-rpath,'$ORIGIN' -lm -lpthread -lcurl  -ldl -pthread
+  before teaching: actual serving core refuses unknown capability PASS
+  external modulo tool teaches native BTN                        PASS
+  certified unit publishes using existing capsule format         PASS
+  fresh runtime imports and replays certification                PASS
+  independent tool expected answer matches                       PASS
+  independent tool expected answer matches                       PASS
+  independent tool expected answer matches                       PASS
+  independent tool expected answer matches                       PASS
+  independent tool expected answer matches                       PASS
+  OOD remains refused                                            PASS
+  OOD remains refused                                            PASS
+  OOD remains refused                                            PASS
+  malformed or incompatible request refuses                      PASS
+  malformed or incompatible request refuses                      PASS
+  malformed or incompatible request refuses                      PASS
+  malformed or incompatible request refuses                      PASS
+  malformed or incompatible request refuses                      PASS
+  malformed or incompatible request refuses                      PASS
+  fresh runtime imports and replays certification                PASS
+  independent tool expected answer matches                       PASS
+  independent tool expected answer matches                       PASS
+  independent tool expected answer matches                       PASS
+  independent tool expected answer matches                       PASS
+  independent tool expected answer matches                       PASS
+  OOD remains refused                                            PASS
+  OOD remains refused                                            PASS
+  OOD remains refused                                            PASS
+  malformed or incompatible request refuses                      PASS
+  malformed or incompatible request refuses                      PASS
+  malformed or incompatible request refuses                      PASS
+  malformed or incompatible request refuses                      PASS
+  malformed or incompatible request refuses                      PASS
+  malformed or incompatible request refuses                      PASS
+CAPSULE_CORE_GROWTH_PASS checks=33 failures=0

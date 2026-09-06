@@ -1,0 +1,3 @@
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce -Werror -o bin/test_capsule_selected_audit tests/test_capsule_selected_audit.c -Lbin -lcnet_capsule_core -Wl,-rpath,'$ORIGIN' -lm -lpthread -lcurl
+CAPSULE_DEMOTED_REPLAY_CHECK
+CAPSULE_SELECTED_AUDIT_PASS refused=1 certified=0

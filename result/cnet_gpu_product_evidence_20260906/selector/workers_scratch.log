@@ -1,0 +1,18 @@
+{"event":"worker_started","pid":185480,"device":0,"mode":1,"timeout_ms":30000}
+{"event":"worker_started","pid":185481,"device":1,"mode":1,"timeout_ms":30000}
+{"event":"worker_completed","pid":185480,"device":0,"valid":1,"exit":0,"signal":0,"bytes":192,"elapsed_ms":229}
+{"event":"worker_completed","pid":185481,"device":1,"valid":1,"exit":0,"signal":0,"bytes":192,"elapsed_ms":229}
+{"event":"worker_started","pid":185505,"device":1,"mode":2,"timeout_ms":30000}
+{"event":"worker_completed","pid":185505,"device":1,"valid":1,"exit":0,"signal":0,"bytes":192,"elapsed_ms":211}
+{"event":"worker_started","pid":185509,"device":0,"mode":1,"timeout_ms":30000}
+{"event":"worker_cancelled","pid":185509,"device":0,"elapsed_ms":0}
+{"event":"worker_started","pid":185510,"device":0,"mode":101,"timeout_ms":30000}
+{"event":"worker_completed","pid":185510,"device":0,"valid":0,"exit":9,"signal":0,"bytes":0,"elapsed_ms":211}
+{"event":"worker_started","pid":185514,"device":0,"mode":102,"timeout_ms":30000}
+{"event":"worker_completed","pid":185514,"device":0,"valid":0,"exit":0,"signal":0,"bytes":96,"elapsed_ms":220}
+{"event":"worker_started","pid":185518,"device":0,"mode":103,"timeout_ms":30}
+{"event":"worker_limit_refused","pid":185518,"oversize":0}
+{"event":"worker_cancelled","pid":185518,"device":0,"elapsed_ms":37}
+{"event":"worker_started","pid":185522,"device":0,"mode":2,"timeout_ms":30000}
+{"event":"worker_completed","pid":185522,"device":0,"valid":1,"exit":0,"signal":0,"bytes":192,"elapsed_ms":206}
+DUAL_GPU_WORKER_PASS devices=0,1 max_jobs=2 frozen_transfer=1 cancellation_death_partial_timeout_restart=1 eval_max_abs=0 output=../../result/cnet_gpu_product_evidence_20260906/selector/worker-trained.native-weights

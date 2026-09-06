@@ -1,0 +1,1 @@
+DUAL_GPU_WORKER_PASS devices=0,1 max_jobs=2 frozen_transfer=1 cancellation_death_partial_timeout_restart=1 eval_max_abs=0 output=result/cnet_gpu_product_evidence_20260906/final/worker.native-weights

@@ -1,0 +1,1 @@
+{"kind":"selector_training","seed":3,"variant":"ideal","parameters":41,"training_nodes":8,"warmup_teacher":"explicit_Boolean_OR_specification","correction_teacher":"independent_BFS","warmup_rows":8,"warmup_epochs":2000,"correction_rounds":4,"rows_per_round":2048,"epochs_per_round":512,"last_loss":0.000349187496,"seconds":0.760443,"offline_sealed":true}

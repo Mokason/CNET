@@ -1,0 +1,105 @@
+{
+  "version": 1,
+  "parameters": "--vulnerable --include-transitive",
+  "sources": [
+    "https://api.nuget.org/v3/index.json"
+  ],
+  "projects": [
+    {
+      "path": "/home/marble/AI/CNET-worktrees/offline-controller-20260906/dotnet/Cce.Llm.Benchmarks/CNET.Cce.Llm.Benchmarks.csproj"
+    },
+    {
+      "path": "/home/marble/AI/CNET-worktrees/offline-controller-20260906/dotnet/Cce.Llm.Tests/CNET.Cce.Llm.Tests.csproj"
+    },
+    {
+      "path": "/home/marble/AI/CNET-worktrees/offline-controller-20260906/dotnet/Cce.Llm/CNET.Cce.Llm.csproj"
+    },
+    {
+      "path": "/home/marble/AI/CNET-worktrees/offline-controller-20260906/dotnet/GhostChat/GhostChat.csproj"
+    },
+    {
+      "path": "/home/marble/AI/CNET-worktrees/offline-controller-20260906/dotnet/GhostEval/GhostEval.csproj"
+    },
+    {
+      "path": "/home/marble/AI/CNET-worktrees/offline-controller-20260906/dotnet/GhostOrchestrator/GhostOrchestrator.csproj"
+    },
+    {
+      "path": "/home/marble/AI/CNET-worktrees/offline-controller-20260906/dotnet/Cce/Cce.csproj"
+    },
+    {
+      "path": "/home/marble/AI/CNET-worktrees/offline-controller-20260906/dotnet/CceHost/CceHost.csproj"
+    },
+    {
+      "path": "/home/marble/AI/CNET-worktrees/offline-controller-20260906/dotnet/CnetHarnessSmoke/CnetHarnessSmoke.csproj"
+    },
+    {
+      "path": "/home/marble/AI/CNET-worktrees/offline-controller-20260906/dotnet/CnetMcpServer/CnetMcpServer.csproj"
+    },
+    {
+      "path": "/home/marble/AI/CNET-worktrees/offline-controller-20260906/dotnet/Cce.Benchmarks/Cce.Benchmarks.csproj"
+    },
+    {
+      "path": "/home/marble/AI/CNET-worktrees/offline-controller-20260906/dotnet/Cce.Tests/Cce.Tests.csproj"
+    },
+    {
+      "path": "/home/marble/AI/CNET-worktrees/offline-controller-20260906/dotnet/CnetMcpServer.Tests/CnetMcpServer.Tests.csproj"
+    },
+    {
+      "path": "/home/marble/AI/CNET-worktrees/offline-controller-20260906/dotnet/Llm/src/CNET.Llm.Cli/CNET.Llm.Cli.csproj"
+    },
+    {
+      "path": "/home/marble/AI/CNET-worktrees/offline-controller-20260906/dotnet/Llm/src/CNET.Llm.Core/CNET.Llm.Core.csproj"
+    },
+    {
+      "path": "/home/marble/AI/CNET-worktrees/offline-controller-20260906/dotnet/Llm/src/CNET.Llm.Cpu/CNET.Llm.Cpu.csproj"
+    },
+    {
+      "path": "/home/marble/AI/CNET-worktrees/offline-controller-20260906/dotnet/Llm/src/CNET.Llm.Cuda/CNET.Llm.Cuda.csproj"
+    },
+    {
+      "path": "/home/marble/AI/CNET-worktrees/offline-controller-20260906/dotnet/Llm/src/CNET.Llm.Diagnostics/CNET.Llm.Diagnostics.csproj"
+    },
+    {
+      "path": "/home/marble/AI/CNET-worktrees/offline-controller-20260906/dotnet/Llm/src/CNET.Llm.Engine/CNET.Llm.Engine.csproj"
+    },
+    {
+      "path": "/home/marble/AI/CNET-worktrees/offline-controller-20260906/dotnet/Llm/src/CNET.Llm.HuggingFace/CNET.Llm.HuggingFace.csproj"
+    },
+    {
+      "path": "/home/marble/AI/CNET-worktrees/offline-controller-20260906/dotnet/Llm/src/CNET.Llm.Models/CNET.Llm.Models.csproj"
+    },
+    {
+      "path": "/home/marble/AI/CNET-worktrees/offline-controller-20260906/dotnet/Llm/src/CNET.Llm.Server/CNET.Llm.Server.csproj"
+    },
+    {
+      "path": "/home/marble/AI/CNET-worktrees/offline-controller-20260906/dotnet/Llm/src/CNET.Llm.Telemetry/CNET.Llm.Telemetry.csproj"
+    },
+    {
+      "path": "/home/marble/AI/CNET-worktrees/offline-controller-20260906/dotnet/Llm/src/CNET.Llm.Tokenizers/CNET.Llm.Tokenizers.csproj"
+    },
+    {
+      "path": "/home/marble/AI/CNET-worktrees/offline-controller-20260906/dotnet/Llm/samples/CNET.Llm.Sample.Console/CNET.Llm.Sample.Console.csproj"
+    },
+    {
+      "path": "/home/marble/AI/CNET-worktrees/offline-controller-20260906/dotnet/Llm/samples/CNET.Llm.Sample.Interpretability/CNET.Llm.Sample.Interpretability.csproj"
+    },
+    {
+      "path": "/home/marble/AI/CNET-worktrees/offline-controller-20260906/dotnet/Llm/samples/CNET.Llm.Sample.Logprobs/CNET.Llm.Sample.Logprobs.csproj"
+    },
+    {
+      "path": "/home/marble/AI/CNET-worktrees/offline-controller-20260906/dotnet/Llm/samples/CNET.Llm.Sample.Server/CNET.Llm.Sample.Server.csproj"
+    },
+    {
+      "path": "/home/marble/AI/CNET-worktrees/offline-controller-20260906/dotnet/Llm/samples/CNET.Llm.Sample.ToolCalling/CNET.Llm.Sample.ToolCalling.csproj"
+    },
+    {
+      "path": "/home/marble/AI/CNET-worktrees/offline-controller-20260906/dotnet/Llm/benchmarks/CNET.Llm.Benchmarks/CNET.Llm.Benchmarks.csproj"
+    },
+    {
+      "path": "/home/marble/AI/CNET-worktrees/offline-controller-20260906/dotnet/Llm/tests/CNET.Llm.Tests.Integration/CNET.Llm.Tests.Integration.csproj"
+    },
+    {
+      "path": "/home/marble/AI/CNET-worktrees/offline-controller-20260906/dotnet/Llm/tests/CNET.Llm.Tests.Unit/CNET.Llm.Tests.Unit.csproj"
+    }
+  ]
+}

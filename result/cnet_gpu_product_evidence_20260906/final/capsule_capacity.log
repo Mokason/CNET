@@ -1,0 +1,10 @@
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce -Werror -o bin/cnet_capsule_scale_probe tools/cnet_capsule_scale_probe.c -Lbin -lcnet_capsule_core -Wl,-rpath,'$ORIGIN' -lm -lpthread -lcurl
+CAPSULE_SCALE_ARTIFACTS /tmp/cnet-scale-bench-TG863s
+CAPSULE_SCALE_STAGE capsules=64
+CAPSULE_SCALE_STAGE capsules=66
+CAPSULE_REPLAY_SCALE_PASS remaining=1624526 obligations=6338
+ABSTAIN verified=0 reason=no_covered_certified_plan
+ABSTAIN verified=0 reason=no_covered_certified_plan
+ABSTAIN verified=0 reason=import_refused:target_already_has_unit_refusing_duplicate_import
+ABSTAIN verified=0 reason=import_refused:payload_integrity_mismatch
+CAPSULE_CAPACITY_PASS boundary=64_to_66 public_abi=unchanged

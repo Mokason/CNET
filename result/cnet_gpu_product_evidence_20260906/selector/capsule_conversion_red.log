@@ -1,0 +1,4 @@
+experiments/offline_controller/test_cell_capsule.c:2:10: fatal error: cnet_cell_capsule.h: No such file or directory
+    2 | #include "cnet_cell_capsule.h"
+      |          ^~~~~~~~~~~~~~~~~~~~~
+compilation terminated.

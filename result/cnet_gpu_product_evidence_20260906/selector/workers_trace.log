@@ -1,0 +1,4 @@
+{"event":"worker_started","pid":179351,"device":0,"mode":1,"timeout_ms":30000}
+{"event":"worker_started","pid":179352,"device":1,"mode":1,"timeout_ms":30000}
+{"event":"worker_completed","pid":179351,"device":0,"valid":0,"exit":-1,"signal":11,"bytes":0,"elapsed_ms":84}
+test_workers: test_workers.c:12: main: Assertion `finish(p,one,&a)==1&&finish(p,two,&b)==1' failed.

@@ -1,0 +1,4 @@
+experiments/offline_controller/test_candidate.c:2:10: fatal error: cnet_core_candidate.h: No such file or directory
+    2 | #include "cnet_core_candidate.h"
+      |          ^~~~~~~~~~~~~~~~~~~~~~~
+compilation terminated.

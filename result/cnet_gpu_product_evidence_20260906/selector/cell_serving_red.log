@@ -1,0 +1,8 @@
+cc -std=c11 -O2 -g -Wall -Wextra -Werror -I../../include test_cell_capsule.c ../../src/serve/cnet_cell_capsule.c ../../src/serve/cnet_core_cell.c -L../../bin -lcnet_capsule_core -Wl,-rpath,/home/marble/AI/CNET-worktrees/offline-controller-20260906/bin -lm -o /tmp/cnet-controller-build/test_cell_capsule
+In file included from test_cell_capsule.c:5:
+test_cell_capsule.c: In function ‘main’:
+test_cell_capsule.c:48:17: error: implicit declaration of function ‘cnet_capsule_core_ask_cell’; did you mean ‘cnet_capsule_core_ask’? [-Werror=implicit-function-declaration]
+   48 |         assert(!cnet_capsule_core_ask_cell(next,request,&cell,37,&reply)&&reply.verified&&reply.value==(b!=0));
+      |                 ^~~~~~~~~~~~~~~~~~~~~~~~~~
+cc1: all warnings being treated as errors
+make: *** [Makefile:134: /tmp/cnet-controller-build/test_cell_capsule] Error 1

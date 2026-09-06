@@ -1,0 +1,1 @@
+SELECTOR_FIXTURES_FROZEN stress=1 cases=1280 families=5 sizes=8,16,32,64 threshold=0.9 completion_floor=0.95 abstention_floor=0.95

@@ -1,0 +1,11 @@
+hipcc -O2 -Wall -Wextra -Werror --offload-arch=gfx1201 -DCONTROLLER_TESTING -I../../include -x c test_cell.c ../../src/serve/cnet_core_cell.c -x none /tmp/cnet-controller-build/cell_train_test.o /tmp/cnet-controller-build/amdmath.o -lm -o /tmp/cnet-controller-build/test_cell
+test_cell.c:50:37: error: call to undeclared function 'cell_gpu_predict'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+   50 |         float gpu_scores[8];assert(!cell_gpu_predict(g,x,8,gpu_scores));
+      |                                     ^
+test_cell.c:50:37: note: did you mean 'cell_gpu_fit'?
+./cell_train.h:13:5: note: 'cell_gpu_fit' declared here
+   13 | int cell_gpu_fit(CellGpu *gpu,const float *x,const float *y,int n,int epochs,float lr,float *loss);
+      |     ^
+1 error generated.
+failed to execute:/opt/rocm-7.2.3/lib/llvm/bin/clang++  --driver-mode=g++ --hip-link  -O2 -Wall -Wextra -Werror -DCONTROLLER_TESTING -I../../include -x c test_cell.c ../../src/serve/cnet_core_cell.c -x none /tmp/cnet-controller-build/cell_train_test.o /tmp/cnet-controller-build/amdmath.o -lm -o "/tmp/cnet-controller-build/test_cell"
+make: *** [Makefile:120: /tmp/cnet-controller-build/test_cell] Error 1

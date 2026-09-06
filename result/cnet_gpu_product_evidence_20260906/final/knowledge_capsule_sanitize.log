@@ -1,0 +1,107 @@
+gcc -std=c11 -Wall -Wextra -pedantic -O1 -g -D_DEFAULT_SOURCE \
+	-fsanitize=address,undefined -fno-omit-frame-pointer -o bin/test_knowledge_capsule_sanitize \
+	src/memory/cnet_capsule.c src/personal_ai.c src/cnet_moe.c src/cnet_acct.c src/cnet_seal_trust.c src/cnet_distrust.c src/cnet_live_miss.c src/hybrid_ai.c src/serve/cnet_sparse_serve.c src/residual_gguf.c src/residual_http.c src/cnet_pilot.c src/selfimprove/cnet_curiosity.c src/resource_governor.c src/selfimprove/self_improve.c src/gap_lane.c src/selfimprove/cnet_auto_learn.c src/cnet_charter.c src/cnet_record_teacher.c src/cnet_fault.c src/selfimprove/cnet_promote.c src/serve/cnet_serve_decode.c src/cnet_evidence_bundle.c src/cnet_health_layers.c src/external_teacher.c \
+	src/model_runtime.c bin/libcce.a src/cce/cce_contract_adapter.c src/specialist_adapters.c src/specialist.c src/specialist_health.c \
+	src/nn.c src/router/dag_full.c src/router/registry.c src/router/route.c src/plan_table.c src/contract/contract.c src/contract/unit.c src/property.c src/consolidate.c \
+	src/scan.c src/contract/coverage.c src/acquire.c src/runtime_identity.c src/base.c src/library.c src/cnet_dc_type.c src/cnet_swap.c \
+	tests/test_knowledge_capsule.c -lm -lpthread -lcurl   -pthread
+src/memory/cnet_capsule.c: In function ‘cap_slurp’:
+src/memory/cnet_capsule.c:55:36: error: ‘CNET_O_NOFOLLOW’ undeclared (first use in this function); did you mean ‘O_NOFOLLOW’?
+   55 |     int fd = open(path, O_RDONLY | CNET_O_NOFOLLOW | CNET_O_CLOEXEC);
+      |                                    ^~~~~~~~~~~~~~~
+      |                                    O_NOFOLLOW
+src/memory/cnet_capsule.c:55:36: note: each undeclared identifier is reported only once for each function it appears in
+src/memory/cnet_capsule.c:55:54: error: ‘CNET_O_CLOEXEC’ undeclared (first use in this function); did you mean ‘O_CLOEXEC’?
+   55 |     int fd = open(path, O_RDONLY | CNET_O_NOFOLLOW | CNET_O_CLOEXEC);
+      |                                                      ^~~~~~~~~~~~~~
+      |                                                      O_CLOEXEC
+src/memory/cnet_capsule.c: In function ‘cnet_capsule_export_asset’:
+src/memory/cnet_capsule.c:271:11: warning: implicit declaration of function ‘cnet_mkdir’ [-Wimplicit-function-declaration]
+  271 |     (void)cnet_mkdir(dir, 0777);
+      |           ^~~~~~~~~~
+src/memory/cnet_capsule.c:387:56: error: ‘CNET_O_NOFOLLOW’ undeclared (first use in this function); did you mean ‘O_NOFOLLOW’?
+  387 |         afd = open(atmp, O_WRONLY | O_CREAT | O_EXCL | CNET_O_NOFOLLOW | CNET_O_CLOEXEC, 0600);
+      |                                                        ^~~~~~~~~~~~~~~
+      |                                                        O_NOFOLLOW
+src/memory/cnet_capsule.c:387:74: error: ‘CNET_O_CLOEXEC’ undeclared (first use in this function); did you mean ‘O_CLOEXEC’?
+  387 |         afd = open(atmp, O_WRONLY | O_CREAT | O_EXCL | CNET_O_NOFOLLOW | CNET_O_CLOEXEC, 0600);
+      |                                                                          ^~~~~~~~~~~~~~
+      |                                                                          O_CLOEXEC
+src/memory/cnet_capsule.c:399:13: warning: implicit declaration of function ‘cnet_fsync’ [-Wimplicit-function-declaration]
+  399 |         if (cnet_fsync(afd) != 0 || close(afd) != 0 || rename(atmp, apath) != 0) {
+      |             ^~~~~~~~~~
+src/memory/cnet_capsule.c:411:19: warning: implicit declaration of function ‘cnet_mkstemp’ [-Wimplicit-function-declaration]
+  411 |         int tfd = cnet_mkstemp(tmp_path);
+      |                   ^~~~~~~~~~~~
+src/memory/cnet_capsule.c: In function ‘cnet_capsule_import_asset’:
+src/memory/cnet_capsule.c:541:10: warning: implicit declaration of function ‘cnet_fmemopen’; did you mean ‘cnet_gov_open’? [-Wimplicit-function-declaration]
+  541 |     fp = cnet_fmemopen(manbuf, manlen, "rb");
+      |          ^~~~~~~~~~~~~
+      |          cnet_gov_open
+src/memory/cnet_capsule.c:541:8: warning: assignment to ‘FILE *’ from ‘int’ makes pointer from integer without a cast [-Wint-conversion]
+  541 |     fp = cnet_fmemopen(manbuf, manlen, "rb");
+      |        ^
+src/cnet_distrust.c:1:10: fatal error: cnet_distrust.h: No such file or directory
+    1 | #include "cnet_distrust.h"
+      |          ^~~~~~~~~~~~~~~~~
+compilation terminated.
+src/cnet_live_miss.c:1:10: fatal error: cnet_live_miss.h: No such file or directory
+    1 | #include "cnet_live_miss.h"
+      |          ^~~~~~~~~~~~~~~~~~
+compilation terminated.
+src/hybrid_ai.c: In function ‘hybrid_coverage_save’:
+src/hybrid_ai.c:543:14: warning: implicit declaration of function ‘cnet_mkstemp’ [-Wimplicit-function-declaration]
+  543 |     int fd = cnet_mkstemp(tmp);
+      |              ^~~~~~~~~~~~
+src/hybrid_ai.c:546:16: warning: implicit declaration of function ‘close’; did you mean ‘pclose’? [-Wimplicit-function-declaration]
+  546 |     if (!fp) { close(fd); remove(tmp); return -2; }
+      |                ^~~~~
+      |                pclose
+src/hybrid_ai.c:570:42: warning: implicit declaration of function ‘cnet_fsync’ [-Wimplicit-function-declaration]
+  570 |     if (ferror(fp) || fflush(fp) != 0 || cnet_fsync(fileno(fp)) != 0) {
+      |                                          ^~~~~~~~~~
+src/selfimprove/cnet_auto_learn.c: In function ‘cnet_auto_learn_note_skill’:
+src/selfimprove/cnet_auto_learn.c:196:44: warning: ‘%s’ directive output may be truncated writing up to 47 bytes into a region of size 26 [-Wformat-truncation=]
+  196 |         snprintf(gtag, sizeof gtag, "skill_%s", slug);
+      |                                            ^~   ~~~~
+In file included from /usr/include/stdio.h:980,
+                 from src/selfimprove/../../include/cnet_fault.h:11,
+                 from src/selfimprove/cnet_auto_learn.c:2:
+In function ‘snprintf’,
+    inlined from ‘cnet_auto_learn_note_skill’ at src/selfimprove/cnet_auto_learn.c:196:9:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: note: ‘__builtin___snprintf_chk’ output between 7 and 54 bytes into a destination of size 32
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   55 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   56 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+src/selfimprove/cnet_auto_learn.c: In function ‘cnet_auto_learn_note_skill’:
+src/selfimprove/cnet_auto_learn.c:194:38: warning: ‘%s’ directive output may be truncated writing up to 47 bytes into a region of size 32 [-Wformat-truncation=]
+  194 |         snprintf(gtag, sizeof gtag, "%s", slug);
+      |                                      ^~   ~~~~
+In function ‘snprintf’,
+    inlined from ‘cnet_auto_learn_note_skill’ at src/selfimprove/cnet_auto_learn.c:194:9:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: note: ‘__builtin_snprintf’ output between 1 and 48 bytes into a destination of size 32
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   55 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   56 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+tests/test_knowledge_capsule.c: In function ‘main’:
+tests/test_knowledge_capsule.c:771:43: warning: ‘%s’ directive output may be truncated writing up to 511 bytes into a region of size between 344 and 599 [-Wformat-truncation=]
+  771 |             snprintf(abs, sizeof abs, "%s/%s", cwd, victim);
+      |                                           ^~        ~~~~~~
+In file included from /usr/include/stdio.h:980,
+                 from tests/test_knowledge_capsule.c:18:
+In function ‘snprintf’,
+    inlined from ‘main’ at tests/test_knowledge_capsule.c:771:13:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: note: ‘__builtin___snprintf_chk’ output between 2 and 768 bytes into a destination of size 600
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   55 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   56 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+make: *** [Makefile:3891: knowledge_capsule_sanitize] Error 1
