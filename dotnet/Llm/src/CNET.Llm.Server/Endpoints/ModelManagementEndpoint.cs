@@ -30,7 +30,7 @@ public static class ModelManagementEndpoint
         {
             var resolvedPath = ServerStartup.ResolveModelPath(request.Model, request.Quant);
             if (resolvedPath is null)
-                return Results.BadRequest(new ErrorResponse { Error = $"Model not found: {request.Model}" });
+                return Results.BadRequest(new ErrorResponse { Error = "Model not found" });
 
             try
             {
@@ -51,6 +51,11 @@ public static class ModelManagementEndpoint
                         ModelId = Path.GetFileNameWithoutExtension(resolvedPath),
                     };
                     var newState = await Task.Run(() => ServerStartup.LoadModel(resolvedPath, newOptions), ct);
+                    if (ct.IsCancellationRequested)
+                    {
+                        newState.Dispose();
+                        ct.ThrowIfCancellationRequested();
+                    }
 
                     // Transfer new state fields into the existing ServerState
                     state.Options = newOptions;
@@ -78,9 +83,10 @@ public static class ModelManagementEndpoint
                     Model = request.Model,
                 });
             }
-            catch (Exception ex)
+            catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+            catch (Exception)
             {
-                return Results.BadRequest(new ErrorResponse { Error = ex.Message });
+                return Results.BadRequest(new ErrorResponse { Error = "Model load failed" });
             }
         });
     }

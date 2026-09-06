@@ -49,7 +49,8 @@ public static class CompletionEndpoint
         var generator = state.Generator;
 
         // Validate prompt length against model context
-        int maxTokens = request.MaxTokens ?? state.SamplingDefaults.MaxTokens;
+        int maxTokens = Math.Min(request.MaxTokens ?? state.SamplingDefaults.MaxTokens,
+            httpContext.RequestServices.GetRequiredService<ServerSecurityOptions>().MaxOutputTokens);
         var promptError = RequestValidator.ValidatePromptLength(
             request.Prompt, state.Tokenizer!, state.Config!.MaxSequenceLength,
             maxTokens, out int effectiveMaxTokens, out _);
@@ -86,7 +87,9 @@ public static class CompletionEndpoint
         InferenceResponse? result = null;
         await state.ExecuteAsync(async () =>
         {
-            result = generator.Generate(prompt, options);
+            ct.ThrowIfCancellationRequested();
+            result = generator.Generate(prompt, options, _ => ct.ThrowIfCancellationRequested());
+            ct.ThrowIfCancellationRequested();
         }, ct);
 
         var logprobsDto = result!.Logprobs is { Length: > 0 }
@@ -122,7 +125,7 @@ public static class CompletionEndpoint
         string requestId, string modelId, CancellationToken ct)
     {
         httpContext.Response.ContentType = "text/event-stream";
-        httpContext.Response.Headers.CacheControl = "no-cache";
+        httpContext.Response.Headers.CacheControl = "no-store";
         httpContext.Response.Headers.Connection = "keep-alive";
 
         await state.ExecuteAsync(async () =>
