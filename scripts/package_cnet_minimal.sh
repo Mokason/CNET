@@ -1,153 +1,50 @@
 #!/usr/bin/env bash
-# Build CNET-Minimal distribution: bins + data packs + config + smoke.
-# Output: dist/CNET-Minimal-<version>/
+# Package prebuilt native tools with newly seeded, reviewed example packs.
 set -euo pipefail
+umask 077
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-cd "$ROOT"
-
-VERSION="${CNET_MINIMAL_VERSION:-$(git rev-parse --short HEAD 2>/dev/null || date +%Y%m%d)}"
-NAME="CNET-Minimal-${VERSION}"
-OUT="${CNET_MINIMAL_OUT:-$ROOT/dist/$NAME}"
-BIN_DIR="${BIN_DIR:-bin}"
-
-echo "=== package CNET-Minimal version=$VERSION → $OUT ==="
-
-# Build core bins (fail closed if critical missing)
-make -s domain_route roe_chain_think 2>/dev/null || true
-make roe_front_door 2>&1 | tail -15 || make roe_front_door
-make -s stream_ix_e2e_bench 2>&1 | tail -5 || true
-# evolve gate binary (optional)
-if [[ -f tools/roe_evolve_tick_gate.c ]]; then
-  make -s roe_evolve_tick 2>&1 | tail -8 || true
-fi
-# seed packs into artifacts (source of truth) — C seeder, not missing .py
-make -s roe_daily_packs_seed 2>&1 | tail -8 || make roe_daily_packs_seed
-# personal queries for gate if present
-if [[ -d artifacts/roe_daily_packs/pack_personal/skills ]]; then
-  python3 - <<'PY'
-from pathlib import Path
-root = Path("artifacts/roe_daily_packs/pack_personal")
-qs = []
-for sk in sorted((root/"skills").glob("*/SKILL.roe")):
-    for ln in sk.read_text().splitlines():
-        if ln.startswith("pattern "):
-            qs.append(ln[8:].strip())
-if qs:
-    qs.append("quantum personal junk zz_ood")
-    (root/"queries_train.txt").write_text("\n".join(qs)+"\n")
-PY
-fi
-
-rm -rf "$OUT"
-mkdir -p "$OUT"/{bin,data/roe_daily_packs,config,scripts,docs}
-
-# Binaries
-copy_bin() {
-  local b="$1"
-  if [[ -x $BIN_DIR/$b ]]; then
-    cp -a "$BIN_DIR/$b" "$OUT/bin/"
-    echo "  bin $b"
-  else
-    echo "  WARN missing bin $b" >&2
-  fi
-}
-copy_bin roe_front_door
-copy_bin roe_domain_route
-copy_bin roe_chain_think
-copy_bin roe_daily_packs_gate
-copy_bin roe_evolve_tick_gate
-copy_bin stream_ix_e2e_bench
-copy_bin stream_attend_bench
-
-# Helper scripts (Python evolve — runtime dep: python3)
-mkdir -p "$OUT/tools"
-cp -a tools/roe_evolve_tick.py "$OUT/tools/" 2>/dev/null || true
-cp -a tools/roe_reviewer.py "$OUT/tools/" 2>/dev/null || true
-cp -a tools/roe_gold_curriculum_harvest.py "$OUT/tools/" 2>/dev/null || true
-cp -a "$BIN_DIR/roe_daily_packs_seed" "$OUT/bin/" 2>/dev/null || true
-cp -a "$BIN_DIR/cnet_autonomy_tick_cli" "$OUT/bin/" 2>/dev/null || true
-
-# Data packs
-if [[ -d artifacts/roe_daily_packs ]]; then
-  if command -v rsync >/dev/null 2>&1; then
-    rsync -a \
-      --exclude 'quarantine_bad_auto' \
-      --exclude '*.log' \
-      artifacts/roe_daily_packs/ "$OUT/data/roe_daily_packs/"
-  else
-    cp -a artifacts/roe_daily_packs/. "$OUT/data/roe_daily_packs/"
-    rm -rf "$OUT/data/roe_daily_packs/quarantine_bad_auto" 2>/dev/null || true
-  fi
-  : > "$OUT/data/roe_daily_packs/miss_log.jsonl" || true
-  echo "  data packs seeded"
-fi
-
-# Config (secret-free)
-cp -a config/domain_routes.tsv "$OUT/config/"
-cp -a config/promote_blocklist.txt "$OUT/config/"
-cp -a config/probe_shortcircuit.txt "$OUT/config/" 2>/dev/null || true
-cp -a config/query_aliases.tsv "$OUT/config/" 2>/dev/null || true
-cp -a config/utterance_phrases.tsv "$OUT/config/" 2>/dev/null || true
-cp -a config/autonomy_charter.yaml "$OUT/config/" 2>/dev/null || true
-# templates
-cat > "$OUT/config/teacher.env.example" <<'EOF'
-# Copy to teacher.env and fill — never commit secrets.
-# ROE_TEACHER_BASE_URL=
-# ROE_TEACHER_MODEL=deepseek-v4-flash:cloud
-# ROE_LLM_THINK=0
-EOF
-cat > "$OUT/config/reviewer.env.example" <<'EOF'
-# Copy to reviewer.env — separate from teacher.
-# ROE_REVIEWER_BASE_URL=
-# ROE_REVIEWER_MODEL=
-# ROE_EVOLVE_REVIEWER=1
-EOF
-
-# Smoke + soak
-cp -a scripts/cnet_runtime_smoke.sh "$OUT/scripts/" 2>/dev/null || true
-cp -a scripts/cnet_runtime_soak_gate.sh "$OUT/scripts/" 2>/dev/null || true
-chmod +x "$OUT/scripts/"*.sh 2>/dev/null || true
-
-# Wrapper: run front door against package data root
-cat > "$OUT/bin/cnet-ask" <<'EOF'
-#!/usr/bin/env bash
-set -euo pipefail
-HERE="$(cd "$(dirname "$0")/.." && pwd)"
-export CNET_MINIMAL_ROOT="$HERE"
-Q="${1:-}"
-if [[ -z "$Q" ]]; then
-  echo "usage: cnet-ask \"query\"" >&2
-  exit 2
-fi
-exec "$HERE/bin/roe_front_door" ask "$Q" --root "$HERE/data/roe_daily_packs"
-EOF
-chmod +x "$OUT/bin/cnet-ask"
-
-# VERSION + README
-cat > "$OUT/VERSION" <<EOF
-name=CNET-Minimal
-version=$VERSION
-git=$(git rev-parse HEAD 2>/dev/null || echo unknown)
-built_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-never_self_cert=1
-EOF
-
-cp -a docs/DOMAIN_ROUTE.md "$OUT/docs/" 2>/dev/null || true
-cp -a docs/GOLD_CURRICULUM_HARVEST.md "$OUT/docs/" 2>/dev/null || true
-cp -a docs/STREAM_INDEX_ATTEND.md "$OUT/docs/" 2>/dev/null || true
-cp -a docs/WEIGHT_EPOCH.md "$OUT/docs/" 2>/dev/null || true
-
-# INSTALL written by companion file in repo — copy if present
-if [[ -f packaging/CNET-Minimal/INSTALL.md ]]; then
-  cp -a packaging/CNET-Minimal/INSTALL.md "$OUT/INSTALL.md"
-else
-  cp -a "$ROOT/packaging/CNET-Minimal/INSTALL.md" "$OUT/INSTALL.md" 2>/dev/null || true
-fi
-
-# tarball
-mkdir -p "$ROOT/dist"
-TAR="$ROOT/dist/${NAME}.tar.gz"
-tar -C "$(dirname "$OUT")" -czf "$TAR" "$(basename "$OUT")"
-echo "PACKAGE_OK path=$OUT tar=$TAR"
-echo "$OUT" > "$ROOT/dist/CNET-Minimal-latest.path"
-ls -lh "$TAR"
+source "$ROOT/packaging/CNET-Minimal/runtime_common.sh"
+VERSION="${CNET_MINIMAL_VERSION:-$(git -C "$ROOT" rev-parse --short HEAD)}"
+[[ $VERSION =~ ^[a-zA-Z0-9][a-zA-Z0-9._-]*$ ]] || cnet_fail 'unsafe_version'
+OUT=$(cnet_new_path "${CNET_MINIMAL_OUT:-$ROOT/dist/CNET-Minimal-$VERSION}" output)
+TAR=$(cnet_new_path "${CNET_MINIMAL_TAR:-$OUT.tar.gz}" archive)
+[[ $TAR != "$OUT" && $TAR != "$OUT/"* && $OUT != "$TAR/"* ]] || cnet_fail 'overlapping_outputs'
+BIN="$(realpath -m -- "${BIN_DIR:-$ROOT/bin}")"
+cnet_require_bins
+for name in domain_routes.tsv promote_blocklist.txt probe_shortcircuit.txt query_aliases.tsv utterance_phrases.tsv; do
+  [[ -f $ROOT/config/$name && ! -L $ROOT/config/$name ]] || cnet_fail "missing_config name=$name"
+done
+mkdir -p -- "$(dirname "$OUT")" "$(dirname "$TAR")"
+mkdir -- "$OUT"
+printf 'incomplete\n' >"$OUT/BUILD_STATUS"
+trap 'rc=$?; if [[ $rc -ne 0 ]]; then echo "PACKAGE_FAIL incomplete_path=$OUT" >&2; fi' EXIT
+mkdir "$OUT/bin" "$OUT/data" "$OUT/config" "$OUT/scripts"
+for name in roe_daily_packs_seed roe_front_door roe_domain_route roe_chain_think roe_evolve_tick roe_gold_put stream_ix_e2e_bench; do
+  cp -- "$BIN/$name" "$OUT/bin/$name"
+done
+for name in domain_routes.tsv promote_blocklist.txt probe_shortcircuit.txt query_aliases.tsv utterance_phrases.tsv; do
+  cp -- "$ROOT/config/$name" "$OUT/config/$name"
+done
+cp -- "$ROOT/packaging/CNET-Minimal/coverage_gold.tsv" "$OUT/config/coverage_gold.tsv"
+cp -- "$ROOT/packaging/CNET-Minimal/runtime_common.sh" "$OUT/scripts/cnet_runtime_common.sh"
+cp -- "$ROOT/packaging/CNET-Minimal/cnet-ask" "$OUT/bin/cnet-ask"
+cp -- "$ROOT/packaging/CNET-Minimal/INSTALL.md" "$OUT/INSTALL.md"
+cp -- "$ROOT/scripts/cnet_runtime_smoke.sh" "$ROOT/scripts/cnet_runtime_soak_gate.sh" "$OUT/scripts/"
+chmod +x "$OUT/bin/"* "$OUT/scripts/"*.sh
+# The seeder and gardener operate only under the exclusively created output.
+BIN_DIR="$OUT/bin" CNET_HARVEST_LOG="$OUT/harvest.log" \
+  bash "$ROOT/scripts/cert_coverage_harvest.sh" "$OUT/data/roe_daily_packs"
+CNET_MINIMAL_ROOT="$OUT" CNET_SMOKE_LOG="$OUT/smoke.log" bash "$OUT/scripts/cnet_runtime_smoke.sh"
+printf 'name=CNET-Minimal\nversion=%s\ngit=%s\nfixture_only=1\nlive_calls=0\nnever_self_cert=1\n' \
+  "$VERSION" "$(git -C "$ROOT" rev-parse HEAD)" >"$OUT/VERSION"
+printf 'complete\n' >"$OUT/BUILD_STATUS"
+(
+  cd "$OUT"
+  find . -type f ! -name MANIFEST.sha256 -print0 | LC_ALL=C sort -z | xargs -0 sha256sum >MANIFEST.sha256
+)
+# Exclusive redirection prevents overwriting an archive created after preflight.
+(
+  set -o noclobber
+  tar -C "$(dirname "$OUT")" -czf - "$(basename "$OUT")" >"$TAR"
+)
+echo "PACKAGE_OK path=$OUT tar=$TAR fixture_only=1"

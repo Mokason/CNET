@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# Offline example runtime, independent of the caller's cwd and live settings.
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+source "$ROOT/scripts/cnet_runtime_common.sh"
+[[ $# -eq 1 && -n $1 ]] || cnet_fail 'usage: cnet-ask "query"'
+BIN="$ROOT/bin"
+PACKS="$ROOT/data/roe_daily_packs"
+WORK="$ROOT"
+cnet_offline
+cd "$ROOT"
+exec "$BIN/roe_front_door" ask "$1" --root "$PACKS"
