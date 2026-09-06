@@ -63,10 +63,89 @@ These are bounded offline fixtures. They do not test live teachers/reviewers,
 new task acquisition, autonomous cycles, a production local-hit floor, prolonged
 resource stability, base-model portability or public-release readiness. Those
 claims remain WITHHELD. The package contains no teacher/reviewer credentials.
-Owner configuration, live knowledge transfer and service replacement require a
-separate reviewed deployment procedure.
+Owner configuration, live knowledge transfer and service replacement require
+separate target approval and fresh operator checks.
 
-The repository's legacy `scripts/deploy_cnet_minimal.sh` / `make
-cnet_minimal_deploy` is not that procedure: it still relies on a latest pointer,
-merges live data and restarts services. It is outside this example-package gate
-and must not be used to deploy this repaired packaging workflow.
+## Explicit private deployment handoff
+
+The repository's `scripts/deploy_cnet_minimal.sh` now accepts only an explicit
+archive, a separately trusted SHA-256 digest, and a **new** destination. It does
+not build an artifact, select a latest pointer, copy live/personal knowledge,
+merge configuration, switch symlinks, start services or change timers. The
+flagless `make cnet_minimal_deploy` entry point refuses; use the explicit CLI.
+`make cnet_minimal_deploy_gate` exercises private fixtures, not a live rollout.
+
+The deployment host additionally needs `/usr/bin/python3` (Python 3 stdlib,
+tested with 3.12.3), Linux `/proc`, and libc/kernel/filesystem support for
+`renameat2(RENAME_NOREPLACE)`. This dependency is only for the repository
+handoff validator; the extracted runtime remains native/Bash as above.
+
+Choose an owner-controlled artifact and obtain its expected archive hash from
+a trusted release/build channel independently of the artifact bytes. Neither
+the embedded manifest nor a hash calculated from an arbitrary download
+authenticates its author. A successful non-dry invocation runs packaged native
+executables and scripts with the invoking user's authority: this is not an
+untrusted-code sandbox. Do not run this helper as a privileged service account.
+
+Use absolute, symlink-free paths with ASCII letters, digits, `_`, `-` and `.`
+components of at most 96 bytes. The destination must not exist and its existing
+parent must be owned by the invoking user with no group/other permissions
+(normally `0700`). Ancestors must be root- or invoking-user-owned and must not
+be group/world writable except sticky directories such as `/tmp`. Root, home
+and workspace destinations are refused; no destination within this repository
+or any path with an ancestor `.git` marker is accepted. Place the archive in an
+owner-controlled directory satisfying the same ancestor restriction; it must
+be an owner-owned, regular, single-link file. Do not change checkout permissions
+to satisfy these rules: select a private handoff directory outside it.
+
+For example, after selecting real paths and an independently trusted 64-hex
+digest (the values below are placeholders):
+
+```sh
+bash scripts/deploy_cnet_minimal.sh \
+  --artifact /home/owner/cnet-handoff/CNET-Minimal-release.tar.gz \
+  --sha256 TRUSTED_64_HEX_ARCHIVE_DIGEST \
+  --destination /home/owner/cnet-deployments/release-20260906 \
+  --dry-run
+```
+
+`--dry-run` reads and validates the archive, manifest and destination boundary;
+it creates no files or directories and executes no packaged code. It does not
+prove host binary compatibility. Only after checking that result, repeat the
+same explicit command without `--dry-run`. Nothing is deployed by the examples
+in this document.
+
+The validator permits the current single-root native package layout only. It
+rejects missing/extra files, incomplete status, manifest mismatches, path
+traversal, duplicate names, links, special files, PAX/sparse extensions and
+trailing gzip/tar payloads. Supported GNU long-name records remain bounded.
+Limits are 32 MiB compressed, 128 MiB expanded, 32 MiB per file, 4096 members,
+20 path components and 2047 bytes per member name. Unsupported packages fail
+loudly; there is no skip-verification flag.
+
+A real invocation extracts through pinned directory descriptors into a fresh
+same-parent `0700` staging directory, verifies every byte, runs the offline
+native fixture smoke (60-second total, 256 KiB output cap), and rechecks all
+files and permissions. A 120-second deadline alarm guards validation/handoff
+after interpreter startup; cleanup and uninterruptible kernel I/O are not a
+hard wall-time guarantee. The successful smoke's separately allocated private
+`/tmp/cnet-runtime.*` diagnostics are
+retained and their path is printed. The helper then atomically publishes with
+no replacement and syncs the deployment and parent directories. Existing
+deployments remain untouched. The owner must not concurrently mutate the
+selected artifact, parent directory or staged deployment during this workflow.
+
+Exit `0` with `CNET_MINIMAL_DEPLOY_PASS` means the new private fixture deployment
+was published; `live_switch=0` always applies. A failure before publication
+removes only this invocation's new staging directory. Exit `3` with
+`CNET_MINIMAL_DEPLOY_COMMIT_UNCERTAIN` means publication occurred but the final
+durability check failed, hit its deadline, or was interrupted by SIGINT/SIGTERM:
+the complete new deployment is retained. Do not delete it or report rollback.
+Inspect it and storage health
+before deciding what to do; a retry at the same destination will refuse.
+
+Rollback here means the owner manually selects an earlier untouched deployment
+directory for a separately approved consumer. This helper never redirects a
+consumer and has no automatic rollback or destructive cleanup command. A live
+rollout, service account/configuration migration, operational health check and
+service-level rollback remain WITHHELD until an exact target is approved.
