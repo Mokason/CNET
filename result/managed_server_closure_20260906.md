@@ -225,3 +225,45 @@ forgotten-access status back to "Reply complete" and could restore old history.
 Access changes now increment a generation counter; stale success/error
 continuations cannot restore history/status. The full browser proof including
 that barrier passed in `/tmp/cnet-managed-ui-forget-green.log`.
+
+## Final sequential managed verification
+
+At `448592cb290982096b7b756e6823399acf7cc6b5`, the parent requested a final
+cross-managed run. Commands ran sequentially, with no production edits during
+verification. SDK: 10.0.203. Installed runtimes used: Microsoft.NETCore.App
+10.0.7 and 8.0.30; Microsoft.AspNetCore.App 10.0.7.
+
+| Suite | Passed | Failed | Skipped | Test-run duration | Log |
+| --- | ---: | ---: | ---: | --- | --- |
+| Full Cce.Llm, including scriptlets | 426 | 0 | 4 | 1m 29s | `/tmp/cnet-managed-final-cce-tests.log` |
+| Control-plane | 80 | 0 | 0 | 72ms | `/tmp/cnet-managed-final-control-tests.log` |
+| Server security/lifetime/UI HTTP | 48 | 0 | 0 | 724ms | `/tmp/cnet-managed-final-server-tests.log` |
+| Existing server unit subset | 18 | 0 | 0 | 28ms | `/tmp/cnet-managed-final-existing-server-tests.log` |
+
+The four skips are `NativeGhostMemoryTests` fixture-gated cases (local GGUF and
+native harness required), not passes. Their native integration coverage remains
+WITHHELD. Full Cce.Llm emitted one existing xUnit2013 analyzer warning in
+`GhostOrchestrationTests.cs:244`; no failure was hidden or threshold relaxed.
+
+Final real-browser receipt `/tmp/cnet-managed-final-browser.log` passed with
+`forgotten_session_retained=1` in addition to the protected chat/rendering/key/
+stop/viewport/keyboard checks. SHA-256:
+`b798d7b5addc939ec5b356b0d1e563f26349470485720b39e2f86a002d38915a`.
+The full Cce.Llm log SHA-256 is
+`d3bd2384ff696ae514b699b7d35ae0e1f4256974bf929777511203d1845c46c5`;
+the final server-security log SHA-256 is
+`b61ba726b6e1695b2bcd0c59bb639e9c3f543c1a638123c11302691a79be3170`.
+
+Five separate `dotnet list <project> package --vulnerable --include-transitive
+--format json` queries exited 0, reporting no vulnerable packages from the
+configured `https://api.nuget.org/v3/index.json` source:
+
+- Cce.Llm.Tests: `/tmp/cnet-managed-final-audit-cce.json`.
+- Standalone Cce.Scriptlet.Worker: `/tmp/cnet-managed-final-audit-worker.json`.
+- CnetControlPlane.Tests: `/tmp/cnet-managed-final-audit-control.json`.
+- ServerSecurity tests: `/tmp/cnet-managed-final-audit-server.json`.
+- UiHost fixture: `/tmp/cnet-managed-final-audit-ui.json`.
+
+These are NuGet project-graph audit results, not a certification of OS/runtime,
+browser or deployment security. No package version or shared build file was
+changed as part of this final verification.
