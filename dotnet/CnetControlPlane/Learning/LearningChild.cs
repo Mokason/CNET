@@ -40,6 +40,19 @@ internal static class LearningChild
             throw new LearningChildException("learning_child_clock_invalid");
         }
 
+        // Linux PDEATHSIG follows the thread that spawned the process, not
+        // merely the lifetime of this managed owner process. Keep that dedicated
+        // thread alive until the entire async kill/reap/pipe lifecycle finishes.
+        // Caller-owned arguments/environment and the initial clock were already
+        // validated and snapshotted synchronously above, before this handoff.
+        return await Task.Factory.StartNew(
+            () => RunPreparedAsync(startInfo, start, clock, seconds, pipeByteCap, cancellationToken).GetAwaiter().GetResult(),
+            CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default).ConfigureAwait(false);
+    }
+
+    private static async Task<LearningChildResult> RunPreparedAsync(ProcessStartInfo startInfo, LearningInstant start,
+        ILearningClock clock, int seconds, int pipeByteCap, CancellationToken cancellationToken)
+    {
         using var process = new Process { StartInfo = startInfo };
         using var pipeCancellation = new CancellationTokenSource();
         Task<ImmutableArray<byte>>? stdout = null;
