@@ -746,11 +746,6 @@ int cnb_load(CnetBase *b, const char *path) {
     unsigned char *buf = NULL;
     long fsize;
     FILE *f;
-    CnbR r;
-    CnetBase fresh;
-    unsigned version;
-    unsigned long long n, i;
-    int ok = -1;
 
     if (!b || !path) return -1;
     f = fopen(path, "rb");
@@ -764,13 +759,25 @@ int cnb_load(CnetBase *b, const char *path) {
         free(buf); fclose(f); return -1;
     }
     fclose(f);
+    int rc = cnb_load_mem(b, buf, (size_t)fsize);
+    free(buf);
+    return rc;
+}
+
+int cnb_load_mem(CnetBase *b, const unsigned char *buf, size_t fsize) {
+    CnbR r;
+    CnetBase fresh;
+    unsigned version;
+    unsigned long long n, i;
+    int ok = -1;
+    if (!b || !buf || fsize < 4 + 4 + 8) return -1;
 
     /* seal FIRST */
     {
         unsigned long long want, have;
         memcpy(&want, buf + fsize - 8, 8);
         have = cnb_fnv(buf, (size_t)fsize - 8);
-        if (have != want) { free(buf); return -1; }
+        if (have != want) return -1;
     }
 
     r.buf = buf;
@@ -958,14 +965,12 @@ int cnb_load(CnetBase *b, const char *path) {
         }
     }
 
-    free(buf);
     cnb_free(b);
     *b = fresh;
     return 0;
 
 fail:
     cnb_free(&fresh);
-    free(buf);
     return ok;
 }
 

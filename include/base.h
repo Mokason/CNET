@@ -108,6 +108,10 @@ int cnb_save(const CnetBase *b, const char *path);
  * Windows retains the existing write-through replacement semantics. */
 int cnb_sync_parent(const char *path);
 CNET_API int cnb_load(CnetBase *b, const char *path);
+/* Load the same sealed CNB format directly from borrowed bytes, with no file
+ * effects. Copies retained data and replaces b only after complete validation;
+ * on failure b is unchanged. Caller owns bytes throughout this call. */
+CNET_API int cnb_load_mem(CnetBase *b, const unsigned char *bytes, size_t length);
 
 /* Add a unit (serialized via unit_save_mem). Mints every non-empty port tag
    with owner = unit name — ALL tags are near-miss-checked first, so the add

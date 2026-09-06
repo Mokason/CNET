@@ -486,8 +486,6 @@ int cnet_capsule_import_asset(CnetBase *dst, HybridAi *cov, const char *dir,
     size_t want_bytes = 0, exemplars = 0, cov_rows = 0, cov_in = 0, cov_out = 0;
     double *cin = NULL, *cout = NULL;
     const char *why = "";
-    char tmpl[] = "/tmp/cnet_capsuleXXXXXX";
-    int tmpfd = -1, have_tmp = 0;
     unsigned ver = 0;
     int schema = 0, ifam = 0, gfam = 0, loaded = 0, rc = -1, cov_stored = 0;
     size_t iw = 0, ic = 0, gw = 0, gc = 0, r, j;
@@ -712,18 +710,9 @@ int cnet_capsule_import_asset(CnetBase *dst, HybridAi *cov, const char *dir,
         cap_fail(rep, "payload_integrity_mismatch");
         goto done;
     }
-    /* cnb_load needs a path, so load from a private copy of the verified bytes
-       rather than re-opening the caller's file, which could change underneath. */
-    tmpfd = mkstemp(tmpl);
-    if (tmpfd < 0) { cap_fail(rep, "temp_create_failed"); goto done; }
-    have_tmp = 1;
-    if (write(tmpfd, pay, paylen) != (ssize_t)paylen) {
-        cap_fail(rep, "temp_write_failed");
-        goto done;
-    }
-    close(tmpfd);
-    tmpfd = -1;
-    if (cnb_load(&sub, tmpl) != 0) { cap_fail(rep, "payload_unreadable"); goto done; }
+    /* Parse the exact verified bytes without reopening the caller's payload
+       or creating a temporary file outside a worker's private output root. */
+    if (cnb_load_mem(&sub, pay, paylen) != 0) { cap_fail(rep, "payload_unreadable"); goto done; }
     if (!cnb_has_unit(&sub, unit)) {
         cap_fail(rep, "unit_absent_from_payload");
         goto done;
@@ -950,8 +939,6 @@ int cnet_capsule_import_asset(CnetBase *dst, HybridAi *cov, const char *dir,
     }
     rc = 0;
 done:
-    if (tmpfd >= 0) close(tmpfd);
-    if (have_tmp) (void)remove(tmpl);
     if (loaded) { btn_free(&btn); contract_free(&c); }
     free(cin);
     free(cout);
