@@ -31,6 +31,28 @@ $(OUT)/local_baseline: local_baseline.c fixture.c offline.c fixture.h offline.h 
 	$(CC) $(CFLAGS) local_baseline.c fixture.c offline.c -o $@
 .PHONY: local-build
 local-build: $(OUT)/local_baseline
+.PHONY: investigate-build investigate-test
+$(OUT)/test_investigate: test_investigate.c investigate.c net.c fixture.c offline.c net.h fixture.h offline.h
+	mkdir -p $(OUT)
+	$(CC) $(CFLAGS) -DCONTROLLER_CPU_ONLY test_investigate.c net.c fixture.c offline.c -lm -o $@
+investigate-test: $(OUT)/test_investigate
+	$(OUT)/test_investigate
+$(OUT)/investigate: investigate.c net.c fixture.c offline.c net.h fixture.h offline.h $(OUT)/amdmath.o
+	$(HIPCC) -O2 -Wall -Wextra -Werror --offload-arch=gfx1201 -I$(ROOT)/include -x c investigate.c net.c fixture.c offline.c -x none $(OUT)/amdmath.o -lm -o $@
+investigate-build: $(OUT)/investigate
+.PHONY: investigate-benchmark
+$(OUT)/bench_train: bench_train.c net.c fixture.c net.h fixture.h $(OUT)/amdmath.o
+	$(HIPCC) -O2 -Wall -Wextra -Werror --offload-arch=gfx1201 -I$(ROOT)/include -x c bench_train.c net.c fixture.c -x none $(OUT)/amdmath.o -lm -o $@
+investigate-benchmark: $(OUT)/bench_train
+.PHONY: investigate-confirm
+$(OUT)/confirm: confirm.c investigate.c net.c fixture.c offline.c net.h fixture.h offline.h $(OUT)/amdmath.o
+	$(HIPCC) -O2 -Wall -Wextra -Werror --offload-arch=gfx1201 -I$(ROOT)/include -x c confirm.c net.c fixture.c offline.c -x none $(OUT)/amdmath.o -lm -lcrypto -o $@
+investigate-confirm: $(OUT)/confirm
+.PHONY: investigate-data-profile
+$(OUT)/profile_data: profile_data.c investigate.c net.c fixture.c offline.c net.h fixture.h offline.h
+	mkdir -p $(OUT)
+	$(CC) $(CFLAGS) -DCONTROLLER_CPU_ONLY profile_data.c net.c fixture.c offline.c -lm -o $@
+investigate-data-profile: $(OUT)/profile_data
 $(OUT)/test_local: test_local.c local_baseline.c offline.c fixture.c offline.h fixture.h $(ROOT)/include/cnet_json_internal.h
 	mkdir -p $(OUT)
 	$(CC) $(CFLAGS) test_local.c fixture.c offline.c -o $@
