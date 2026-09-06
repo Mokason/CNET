@@ -1,5 +1,6 @@
 #include "cnet_capsule_core.h"
 #include "cnet_capsule.h"
+#include "cnet_core_selector.h"
 #include <ctype.h>
 #include <dirent.h>
 #include <errno.h>
@@ -424,8 +425,9 @@ done:
 
 /* Compose SEALED LABELS through exact guarded joins. These expected outputs
  * never come from executing CNET, and are used only to check admission. */
+static int cell_search(CnetCapsuleCore *,Port,Port,const double *,const CnetCoreCell *,uint64_t,CnetCapsuleCoreReply *,CoreBudget *);
 static int replay_labels(CnetCapsuleCore *labels, CnetCapsuleCore *candidate,
-                         CoreBudget *budget, size_t *checked) {
+                         CoreBudget *budget, size_t *checked,const CnetCoreCell *cell,uint64_t generation) {
     CoreState *states = calloc(CORE_STATES, sizeof *states);
     if (!states) return -1;
     int rc = -1;
@@ -457,7 +459,9 @@ static int replay_labels(CnetCapsuleCore *labels, CnetCapsuleCore *candidate,
                         if (memcmp(s->value, table->inputs + r*table->in_dim, table->in_dim*sizeof(double))) continue;
                         const double *expected = table->targets + r*table->out_dim;
                         Port next = e->btn->output_ports[0]; CnetCapsuleCoreReply result = {0};
-                        if (search(candidate, input_port, next, input, &result, budget) ||
+                        int status=cell?cell_search(candidate,input_port,next,input,cell,generation,&result,budget):
+                            search(candidate,input_port,next,input,&result,budget);
+                        if (status ||
                             !result.verified || result.value != decode(next, expected)) goto done;
                         (*checked)++;
                         int seen = 0;
@@ -491,13 +495,61 @@ int cnet_capsule_core_validate_growth(CnetCapsuleCore *before, CnetCapsuleCore *
     budget.seconds = (double)admission_work(count) / 1000000.0;
     /* Checking the candidate's closure also rejects NEW contradictory paths,
      * even when the old shortest answer would otherwise remain unchanged. */
-    if (replay_labels(before, candidate, &budget, label_obligations) ||
-        replay_labels(candidate, candidate, &budget, label_obligations)) return -1;
+    if (replay_labels(before, candidate, &budget, label_obligations,NULL,0) ||
+        replay_labels(candidate, candidate, &budget, label_obligations,NULL,0)) return -1;
     return 0;
 }
+int cnet_capsule_core_validate_growth_cell(CnetCapsuleCore *before,CnetCapsuleCore *candidate,
+    const CnetCoreCell *cell,uint64_t generation,size_t *obligations){
+    if(!generation||cnet_core_cell_validate(cell)||cnet_capsule_core_validate_growth(before,candidate,obligations))return -1;
+    size_t count=before->registry.count>candidate->registry.count?before->registry.count:candidate->registry.count;
+    CoreBudget budget;budget_init(&budget,admission_work(count));budget.seconds=(double)admission_work(count)/1000000;
+    return replay_labels(before,candidate,&budget,obligations,cell,generation)||replay_labels(candidate,candidate,&budget,obligations,cell,generation)?-1:0;
+}
 
-int cnet_capsule_core_ask(CnetCapsuleCore *c, const char *request,
-                         CnetCapsuleCoreReply *r) {
+static unsigned type_id(Port *types,unsigned *count,Port p){
+    for(unsigned i=0;i<*count;i++)if(same_port(types[i],p))return i+1;
+    types[*count]=p;return ++*count;
+}
+static int cell_search(CnetCapsuleCore *c,Port pin,Port goal,const double *input,
+    const CnetCoreCell *cell,uint64_t generation,CnetCapsuleCoreReply *r,CoreBudget *budget){
+    snprintf(r->reason,sizeof r->reason,"cell_proposal_refused");
+    if(!generation||c->registry.count>62||cnet_core_cell_validate(cell))return -1;
+    CnetSelectorGraph g={0};g.feature_version=1;g.generation=generation;g.n=(unsigned)c->registry.count+2;g.goal=g.n-1;
+    Port types[128];unsigned count=0;
+    unsigned a=type_id(types,&count,pin),b=type_id(types,&count,goal);
+    g.node[0]=(CnetSelectorNode){1,1,a,a,1};g.node[g.goal]=(CnetSelectorNode){UINT64_MAX,1,b,b,1};
+    for(unsigned i=0;i<c->registry.count;i++){
+        RegistryEntry *e=&c->registry.entries[i];BinaryTransformNetwork *btn=e->btn;
+        if(!e->certified||btn->input_port_count!=1||btn->output_port_count!=1)return -1;
+        uint64_t version=contract_btn_digest(btn);if(!version)return -1;
+        g.node[i+1]=(CnetSelectorNode){i+2,version,type_id(types,&count,btn->input_ports[0]),type_id(types,&count,btn->output_ports[0]),1};
+    }
+    for(unsigned u=0;u<g.goal;u++)for(unsigned v=1;v<g.n;v++)
+        if(g.node[u].output_type==g.node[v].input_type&&!(u==0&&v==g.goal))g.edge[u]|=UINT64_C(1)<<v;
+    CnetSelectorProposal p;
+    if(cnet_core_selector_propose(cell,&g,64,&p)||!p.hops||p.hops>ROUTE_MAX_STEPS+1)return -1;
+    CoreGuard cg={c,NULL};DagNodeGuard guard={covered,&cg};double value[64]={0};memcpy(value,input,pin.field_width*sizeof(double));
+    Port current=pin;size_t used=0,hops=0;
+    for(unsigned h=0;h+1<p.hops;h++){
+        unsigned index=p.path[h];if(!index||index>=g.goal||charge(budget))goto refuse;
+        RegistryEntry *e=&c->registry.entries[index-1];BinaryTransformNetwork *btn=e->btn;
+        PrimitiveRegistry selected={0};selected.entries=e;selected.count=1;
+        if(registry_audit_certified(&selected)||!e->certified||e->state==PRIM_RESET||!same_port(current,btn->input_ports[0]))goto refuse;
+        Port next=btn->output_ports[0];if(!supported(next)||btn->hidden_count>256)goto refuse;
+        RoutePlan step={0};step.length=1;step.strict=1;step.goal=next;step.steps[0]=btn;step.names[0]=e->name;
+        double out[64];if(route_execute_guarded(&step,value,current.field_width,out,next.field_width,NULL,&guard))goto refuse;
+        int n=snprintf(r->units+used,sizeof r->units-used,"%s%s",hops?",":"",e->name);
+        if(n<0||(size_t)n>=sizeof r->units-used)goto refuse;
+        used+=(size_t)n;hops++;memcpy(value,out,next.field_width*sizeof(double));current=next;
+    }
+    if(!hops||p.path[p.hops-1]!=g.goal||!same_port(current,goal))goto refuse;
+    r->verified=1;r->value=decode(goal,value);r->hops=hops;r->reason[0]=0;return 0;
+refuse:
+    memset(r,0,sizeof *r);snprintf(r->reason,sizeof r->reason,"cell_execution_refused");return -1;
+}
+static int ask_mode(CnetCapsuleCore *c,const char *request,const CnetCoreCell *cell,uint64_t generation,
+                    CnetCapsuleCoreReply *r) {
     char verb[16], in_tag[32], out_tag[32], value[32], extra;
     Port pin = {0}, pout = {0};
     double in[64] = {0};
@@ -520,5 +572,11 @@ int cnet_capsule_core_ask(CnetCapsuleCore *c, const char *request,
         in[i] = pin.family == PORT_ONEHOT ? (x == i) : (double)((x >> bit) & 1UL);
     }
     CoreBudget budget; budget_init(&budget, 65536);
+    if(cell)return cell_search(c,pin,pout,in,cell,generation,r,&budget);
     return search(c, pin, pout, in, r, &budget);
+}
+int cnet_capsule_core_ask(CnetCapsuleCore *c,const char *request,CnetCapsuleCoreReply *r){return ask_mode(c,request,NULL,0,r);}
+int cnet_capsule_core_ask_cell(CnetCapsuleCore *c,const char *request,const CnetCoreCell *cell,uint64_t generation,CnetCapsuleCoreReply *r){
+    if(!cell){if(r)memset(r,0,sizeof *r);return -1;}
+    return ask_mode(c,request,cell,generation,r);
 }
