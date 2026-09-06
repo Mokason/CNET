@@ -2,6 +2,7 @@
 #define CNET_CORE_CANDIDATE_H
 #include "cnet_core_cell.h"
 #define CNET_CORE_CANDIDATE_BYTES 404
+enum { CNET_CORE_OBJECTIVE_GRAPH=1, CNET_CORE_OBJECTIVE_ALLOCATOR=2 };
 typedef struct {
     CnetCoreCell cell;
     char training_sha256[65],evaluation_sha256[65];
@@ -14,4 +15,11 @@ typedef struct {
  * Failure clears load output. No activation is performed by these functions. */
 int cnet_core_candidate_save_at(int dirfd,const char *name,const CnetCoreCandidate *candidate);
 int cnet_core_candidate_load_at(int dirfd,const char *name,CnetCoreCandidate *candidate);
+/* Same canonical checkpoint family, explicit objective identity. The original
+ * entry points accept GRAPH only; allocator bytes cannot enter graph serving.
+ * Both objectives currently use feature version 1 and the 3x8x1 FP32 shape. */
+int cnet_core_candidate_save_objective_at(int dirfd,const char *name,
+    const CnetCoreCandidate *candidate,unsigned objective);
+int cnet_core_candidate_load_objective_at(int dirfd,const char *name,
+    CnetCoreCandidate *candidate,unsigned objective);
 #endif
