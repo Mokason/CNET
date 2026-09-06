@@ -173,3 +173,28 @@ findings. Optional external review is offered before invocation; no credentials,
 private datasets or unrelated work may be sent. Missing skill reference files
 are handled with inline skill checklists and the project gates, not invented
 instructions.
+
+## Implementation evidence: authority primitives
+
+The managed private-file boundary retains directory descriptors, refuses links
+and non-private files, and publishes exclusively with file/directory fsync.
+SQLite is different: its VFS canonicalizes descriptor paths, so renaming or
+replacing a live ledger root explicitly refuses. Reopening a closed ledger at
+its new private path retains accounting. Metadata checks must not open/close
+the database inode: an actual regression demonstrated that doing so drops other
+connections' POSIX locks in this process. Validation uses descriptor-relative
+`statx` instead. This is an owner-trusted boundary, not malicious-owner isolation.
+
+The native-child runner clears the environment, uses literal argument vectors,
+bounds both raw output pipes, and enforces suspend-inclusive deadlines. Actual
+tests verify direct-child kill/reap on timeout, overflow and cancellation. An
+adversarial cancellation-before-launch regression is fixed. The runner requires
+attested fixed native executables that cannot fork; it is not an arbitrary
+program sandbox or a guarantee of cleanup for reparented descendants. Runtime
+attestation and supervisor integration remain unfinished.
+
+The separately implemented table reference checks all possible uint8 inputs,
+including abstention as distinct from a verified zero. The strict native-control
+codec preserves exact revisions, digests and request tokens; a successful
+status with uncertain durability is not approval. These tested primitives do
+not by themselves demonstrate an unattended learning loop.
