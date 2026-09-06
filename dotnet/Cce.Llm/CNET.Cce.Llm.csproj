@@ -34,8 +34,14 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- T2 scriptlet sandbox: compile untrusted transforms in-process against
-         a restricted reference set. No new runtime; Roslyn only. -->
+    <!-- Roslyn parses the host-side policy guard; compilation/execution is
+         confined to the separately packaged OS sandbox worker. -->
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.12.0" />
+  </ItemGroup>
+  <ItemGroup Condition="$([MSBuild]::IsOSPlatform('Linux'))">
+    <ProjectReference Include="../Cce.Scriptlet.Worker/CNET.Scriptlet.Worker.csproj" ReferenceOutputAssembly="false" />
+    <EmbeddedResource Include="../Cce.Scriptlet.Worker/bin/$(Configuration)/net10.0/scriptlet-worker.sha256" LogicalName="ScriptletWorker.sha256" />
+    <Content Include="../Cce.Scriptlet.Worker/bin/$(Configuration)/net10.0/CNET.Scriptlet.Worker.dll;../Cce.Scriptlet.Worker/bin/$(Configuration)/net10.0/CNET.Scriptlet.Worker.deps.json;../Cce.Scriptlet.Worker/bin/$(Configuration)/net10.0/CNET.Scriptlet.Worker.runtimeconfig.json;../Cce.Scriptlet.Worker/bin/$(Configuration)/net10.0/Microsoft.CodeAnalysis.dll;../Cce.Scriptlet.Worker/bin/$(Configuration)/net10.0/Microsoft.CodeAnalysis.CSharp.dll;../Cce.Scriptlet.Worker/bin/$(Configuration)/net10.0/cnet-scriptlet-launcher;../Cce.Scriptlet.Worker/bin/$(Configuration)/net10.0/libcnet-scriptlet-seal.so"
+             Link="ScriptletWorker/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

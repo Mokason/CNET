@@ -8,10 +8,10 @@ public sealed record Scriptlet(string Name, string Source, List<ToolExample> Exa
 
 /// <summary>
 /// Durable set of certified scriptlet tools. A scriptlet is admitted only when
-/// it (1) passes the syntax guard, (2) compiles against the restricted
-/// reference set, and (3) reproduces every contract example inside the
-/// timeout — generate-and-verify where the verifier is EXECUTION. Compiled
-/// delegates are cached; on load, every stored scriptlet is re-guarded,
+/// it (1) passes the syntax guard, (2) compiles inside the OS-isolated worker,
+/// and (3) reproduces every contract example inside the execution timeout.
+/// Source-bound invocation closures are cached, not host-loaded assemblies;
+/// on load, every stored scriptlet is re-guarded,
 /// re-compiled, and re-verified, so a scriptlet that no longer holds (a
 /// changed runtime) is dropped rather than trusted on faith.
 /// </summary>

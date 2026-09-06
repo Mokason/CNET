@@ -1,27 +1,18 @@
-using System.Reflection;
-using System.Runtime.Loader;
-using System.Text.Json;
+using System.Runtime.CompilerServices;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
-using Microsoft.CodeAnalysis.Emit;
 
 namespace CNET.Cce.Llm.Tools;
 
 /// <summary>
 /// Static gate over scriptlet source, run BEFORE compilation. The model
 /// supplies only a method body for <c>string Transform(string input)</c>; this
-/// rejects any construct that could reach outside pure computation — the first
-/// and most important line of defense, because it needs no code to run.
+/// rejects unsupported syntax before sending source to the isolated worker.
 /// </summary>
 /// <remarks>
-/// Honesty about the threat model: full in-process isolation of arbitrary .NET
-/// is not achievable, and this does not claim it. The generator here is a
-/// cooperative LLM on a single-user machine, not an adversary crafting
-/// exploits. Defense is layered — this denylist, a restricted reference set so
-/// dangerous APIs do not even resolve, an execution timeout, and behavioral
-/// certification against contract examples — which is proportionate to that
-/// threat model, not a substitute for OS-level sandboxing.
+/// This guard is a policy filter, not a security boundary. Source compilation
+/// and execution take place only in the Linux Landlock/seccomp worker.
 /// </remarks>
 public static class ScriptletGuard
 {
@@ -73,9 +64,11 @@ public static class ScriptletGuard
         return string.Join('\n', lines);
     }
 
-    /// <summary>Validates source. Returns null when safe, else the reason.</summary>
+    /// <summary>Returns null when source passes policy, else a refusal reason.</summary>
     public static string? Reject(string sourceRaw)
     {
+        if (string.IsNullOrWhiteSpace(sourceRaw)) return "empty source";
+        if (sourceRaw.Length > MaxSourceLength) return $"source over {MaxSourceLength} chars";
         string source = StripLeadingUsings(sourceRaw);
         if (string.IsNullOrWhiteSpace(source)) return "empty source";
         if (source.Length > MaxSourceLength) return $"source over {MaxSourceLength} chars";
@@ -129,124 +122,68 @@ public static class ScriptletGuard
         "  public static string Transform(string input) {\n" +
         body + "\n  }\n}\n";
 
-    /// <summary>Wraps a method body in the fixed, safe scaffold (for compilation).</summary>
-    internal static string WrapSource(string body) =>
-        "using System;\n" +
-        "using System.Linq;\n" +
-        "using System.Text;\n" +
-        "using System.Collections.Generic;\n" +
-        "using System.Text.RegularExpressions;\n" +
-        "public static class Scriptlet {\n" +
-        "  public static string Transform(string input) {\n" +
-        body + "\n" +
-        "  }\n" +
-        "}\n";
 }
 
 /// <summary>
-/// Compiles a guarded scriptlet against a RESTRICTED reference set — only the
-/// handful of BCL assemblies pure computation needs — so anything the guard
-/// missed (an IO or network type) fails to resolve at compile time. Returns a
-/// delegate; the compiled assembly is loaded into a collectible context.
+/// Validates and compiles source inside the isolated worker. Returned delegates
+/// retain source only and invoke a fresh isolated worker; they never load an
+/// untrusted assembly into the host process.
 /// </summary>
 public static class ScriptletCompiler
 {
-    private static readonly Lazy<MetadataReference[]> References = new(BuildReferences);
-
-    private static MetadataReference[] BuildReferences()
+    private sealed record BoundSource(string Body);
+    private static readonly ConditionalWeakTable<Func<string, string>, BoundSource> Bound = new();
+    internal static bool TryGetSource(Func<string, string> fn, out string source)
     {
-        // Curated whitelist by file name. Caveat, made explicit: many
-        // dangerous types (File, Environment, GC) live in the mega-assembly
-        // System.Private.CoreLib, which pure computation also needs — so the
-        // reference set alone cannot exclude them. It DOES exclude
-        // separate-assembly APIs (System.Net.Http, System.Diagnostics.Process,
-        // …). The SYNTAX GUARD is the primary defense against CoreLib-resident
-        // escape hatches; this reference set is the second layer for the rest.
-        string[] allowed =
-        [
-            "System.Private.CoreLib.dll", "System.Runtime.dll",
-            "System.Linq.dll", "System.Collections.dll",
-            "System.Text.RegularExpressions.dll", "System.Text.Encoding.dll",
-            "netstandard.dll", "System.Runtime.Numerics.dll",
-        ];
-        string tpa = (string)(AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES") ?? "");
-        var refs = new List<MetadataReference>();
-        foreach (string path in tpa.Split(Path.PathSeparator))
-        {
-            string file = Path.GetFileName(path);
-            if (allowed.Contains(file, StringComparer.OrdinalIgnoreCase) && File.Exists(path))
-                refs.Add(MetadataReference.CreateFromFile(path));
-        }
-        return refs.ToArray();
+        source = "";
+        if (fn is null || !Bound.TryGetValue(fn, out BoundSource? bound)) return false;
+        source = bound.Body; return true;
     }
 
     /// <summary>Compiles a scriptlet body. Returns the delegate, or the error.</summary>
     public static bool TryCompile(string bodyRaw, out Func<string, string>? fn, out string error)
     {
         fn = null;
-        error = "";
+        error = ScriptletGuard.Reject(bodyRaw) ?? "";
+        if (error.Length != 0) { error = "guard: " + error; return false; }
         string body = ScriptletGuard.StripLeadingUsings(bodyRaw);
-
-        SyntaxTree tree = CSharpSyntaxTree.ParseText(ScriptletGuard.WrapSource(body),
-            new CSharpParseOptions(LanguageVersion.Latest));
-        var compilation = CSharpCompilation.Create(
-            "scriptlet_" + Guid.NewGuid().ToString("N"),
-            [tree], References.Value,
-            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary,
-                optimizationLevel: OptimizationLevel.Release,
-                allowUnsafe: false));
-
-        using var ms = new MemoryStream();
-        EmitResult emit = compilation.Emit(ms);
-        if (!emit.Success)
+        if (!ScriptletProcess.Run(body, "", true, 200, 8192, out _, out error, out _)) return false;
+        fn = input =>
         {
-            error = string.Join("; ", emit.Diagnostics
-                .Where(d => d.Severity == DiagnosticSeverity.Error)
-                .Take(2).Select(d => d.GetMessage()));
-            return false;
-        }
-
-        ms.Position = 0;
-        var alc = new AssemblyLoadContext("scriptlet", isCollectible: true);
-        Assembly asm = alc.LoadFromStream(ms);
-        MethodInfo? method = asm.GetType("Scriptlet")?.GetMethod("Transform",
-            BindingFlags.Public | BindingFlags.Static);
-        if (method is null) { error = "Transform method not found"; return false; }
-
-        fn = (Func<string, string>)Delegate.CreateDelegate(typeof(Func<string, string>), method);
+            if (!ScriptletSandbox.TryRunSource(body, input, out string output))
+                throw new InvalidOperationException("scriptlet execution refused");
+            return output;
+        };
+        Bound.Add(fn, new BoundSource(body));
         return true;
     }
 }
 
-/// <summary>Runs a compiled scriptlet under a hard wall-clock budget.</summary>
+/// <summary>Runs source-bound scriptlets in an OS sandbox with bounded lifetime.</summary>
 public static class ScriptletSandbox
 {
     /// <summary>
-    /// Executes on a dedicated background thread with a timeout. On timeout
-    /// the thread is abandoned (background, so it never blocks shutdown) —
-    /// the honest cost of not having managed thread-abort; the guard rejects
-    /// the obvious infinite loops that would trigger it.
+    /// Compatibility entry point for delegates returned by ScriptletCompiler.
+    /// Arbitrary delegates are no longer supported and refuse without invocation.
+    /// Use TryRunSource for new callers. Compilation/startup has a separate
+    /// five-second deadline; timeoutMs bounds execution and worker teardown.
     /// </summary>
     public static bool TryRun(Func<string, string> fn, string input, out string output,
                               int timeoutMs = 200, int maxOutput = 8192)
     {
-        string? result = null;
-        Exception? failure = null;
-        var done = new ManualResetEventSlim(false);
+        output = "";
+        return ScriptletCompiler.TryGetSource(fn, out string source) &&
+            ScriptletProcess.Run(source, input, false, timeoutMs, maxOutput,
+                out output, out _, out _);
+    }
 
-        var thread = new Thread(() =>
-        {
-            try { result = fn(input); }
-            catch (Exception ex) { failure = ex; }
-            finally { done.Set(); }
-        })
-        { IsBackground = true, Name = "scriptlet-run" };
-        thread.Start();
-
-        if (!done.Wait(timeoutMs)) { output = ""; return false; }   // timed out
-        if (failure is not null || result is null) { output = ""; return false; }
-        if (result.Length > maxOutput) { output = ""; return false; }
-        output = result;
-        return true;
+    /// <summary>Guards source, then compiles and executes only inside the worker.</summary>
+    public static bool TryRunSource(string source, string input, out string output,
+        int timeoutMs = 200, int maxOutput = 8192)
+    {
+        output = "";
+        if (ScriptletGuard.Reject(source) is not null) return false;
+        return ScriptletProcess.Run(ScriptletGuard.StripLeadingUsings(source), input,
+            false, timeoutMs, maxOutput, out output, out _, out _);
     }
 }

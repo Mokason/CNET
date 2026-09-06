@@ -4,12 +4,10 @@ using Xunit;
 namespace CNET.Cce.Llm.Tests;
 
 /// <summary>
-/// T2 sandboxed scriptlets: the guard rejects escape hatches before compiling,
-/// the restricted reference set stops dangerous APIs resolving, the timeout
-/// bounds execution, and certification runs the compiled code against its
-/// contract. Together — verified capabilities from model-written code, without
-/// trusting the code.
+/// T2 scriptlets: policy guard plus out-of-process OS isolation. Contract
+/// examples and later invocations use the same isolated source execution.
 /// </summary>
+[Collection("Scriptlet isolation")]
 public sealed class ScriptletSandboxTests : IDisposable
 {
     private readonly string _dir;
@@ -63,12 +61,10 @@ public sealed class ScriptletSandboxTests : IDisposable
     }
 
     [Fact]
-    public void Compile_SeparateAssemblyApi_FailsToResolve_EvenIfGuardMissed()
+    public void Compile_DangerousApi_IsRefusedAtPublicBoundary()
     {
-        // System.Net.Http is a SEPARATE assembly, not referenced — so even the
-        // fully-qualified name will not compile. (CoreLib-resident types like
-        // System.IO.File would compile here; the guard is what stops those,
-        // which the guard tests cover.)
+        // The public compiler cannot bypass policy. The separate isolation
+        // suite deliberately bypasses that policy to test OS enforcement.
         bool ok = ScriptletCompiler.TryCompile(
             "return new System.Net.Http.HttpClient().ToString();", out _, out string err);
         Assert.False(ok);
@@ -94,7 +90,9 @@ public sealed class ScriptletSandboxTests : IDisposable
         bool ok = ScriptletSandbox.TryRun(fn!, "x", out _, timeoutMs: 150);
         sw.Stop();
         Assert.False(ok);
-        Assert.True(sw.ElapsedMilliseconds < 1500, $"took {sw.ElapsedMilliseconds}ms");
+        // Fresh isolated compilation has its own 5s budget. The isolation suite
+        // independently measures the 150ms execution deadline after READY.
+        Assert.True(sw.ElapsedMilliseconds < 6000, $"took {sw.ElapsedMilliseconds}ms");
     }
 
     // ─────────────── the registry (generate-and-verify) ───────────────
