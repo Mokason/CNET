@@ -1,0 +1,17 @@
+step=1 cpu_loss=2.3176825 host_gpu_loss=2.3176825 resident_loss=2.3176825 cpu_host_weight=7.4505806e-09 cpu_resident_weight=7.4505806e-09 host_resident_weight=7.4505806e-09
+step=2 cpu_loss=2.06439352 host_gpu_loss=2.06439352 resident_loss=2.06439352 cpu_host_weight=7.4505806e-09 cpu_resident_weight=7.4505806e-09 host_resident_weight=7.4505806e-09
+step=3 cpu_loss=1.9995898 host_gpu_loss=1.9995898 resident_loss=1.99958968 cpu_host_weight=1.11758709e-08 cpu_resident_weight=7.4505806e-09 host_resident_weight=7.4505806e-09
+step=10 cpu_loss=1.91622639 host_gpu_loss=1.91622639 resident_loss=1.91622639 cpu_host_weight=1.49011612e-08 cpu_resident_weight=1.49011612e-08 host_resident_weight=2.23517418e-08
+step=20 cpu_loss=1.78185868 host_gpu_loss=1.78185868 resident_loss=1.78185868 cpu_host_weight=2.23517418e-08 cpu_resident_weight=2.23517418e-08 host_resident_weight=2.23517418e-08
+step=30 cpu_loss=1.55711484 host_gpu_loss=1.55711472 resident_loss=1.55711484 cpu_host_weight=1.2293458e-07 cpu_resident_weight=2.98023224e-08 host_resident_weight=1.41561031e-07
+step=37 cpu_loss=1.3242892 host_gpu_loss=1.34310126 resident_loss=1.32453775 cpu_host_weight=0.00805149972 cpu_resident_weight=0.000855781138 host_resident_weight=0.00890728086
+step=40 cpu_loss=1.5607022 host_gpu_loss=1.69949937 resident_loss=3.56628656 cpu_host_weight=0.0430933163 cpu_resident_weight=0.054119736 host_resident_weight=0.0112680346
+step=50 cpu_loss=1.43681622 host_gpu_loss=1.56766856 resident_loss=1.42272997 cpu_host_weight=0.0347753018 cpu_resident_weight=0.037287429 host_resident_weight=0.0154104382
+step=60 cpu_loss=1.67433679 host_gpu_loss=1.10026598 resident_loss=1.38005912 cpu_host_weight=0.0330118388 cpu_resident_weight=0.0399899483 host_resident_weight=0.017280288
+step=70 cpu_loss=1.26819468 host_gpu_loss=1.16260564 resident_loss=1.07506168 cpu_host_weight=0.0366046131 cpu_resident_weight=0.0395221636 host_resident_weight=0.0292444527
+step=80 cpu_loss=0.736778021 host_gpu_loss=0.771389365 resident_loss=1.01342583 cpu_host_weight=0.0360262543 cpu_resident_weight=0.0443623886 host_resident_weight=0.0281479806
+step=90 cpu_loss=0.818281353 host_gpu_loss=1.02101946 resident_loss=1.31041229 cpu_host_weight=0.0339682251 cpu_resident_weight=0.045580674 host_resident_weight=0.0322156698
+step=100 cpu_loss=1.00109482 host_gpu_loss=0.778020382 resident_loss=0.758387089 cpu_host_weight=0.0407899246 cpu_resident_weight=0.0352741554 host_resident_weight=0.0393044874
+step=110 cpu_loss=0.357044905 host_gpu_loss=0.429199517 resident_loss=0.494518518 cpu_host_weight=0.0409207754 cpu_resident_weight=0.0459910221 host_resident_weight=0.0377091318
+step=120 cpu_loss=0.85896796 host_gpu_loss=0.624277532 resident_loss=0.341704905 cpu_host_weight=0.0474207401 cpu_resident_weight=0.0500825867 host_resident_weight=0.0441647097
+step=128 cpu_loss=0.291709781 host_gpu_loss=0.233048603 resident_loss=0.216722995 cpu_host_weight=0.0340707377 cpu_resident_weight=0.0563379452 host_resident_weight=0.0367826894

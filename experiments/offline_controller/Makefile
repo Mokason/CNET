@@ -53,6 +53,26 @@ $(OUT)/profile_data: profile_data.c investigate.c net.c fixture.c offline.c net.
 	mkdir -p $(OUT)
 	$(CC) $(CFLAGS) -DCONTROLLER_CPU_ONLY profile_data.c net.c fixture.c offline.c -lm -o $@
 investigate-data-profile: $(OUT)/profile_data
+.PHONY: resident-build resident-test
+$(OUT)/resident.o: resident.cpp resident.h net.h fixture.h
+	mkdir -p $(OUT)
+	$(HIPCC) -O2 -Wall -Wextra -Werror --offload-arch=gfx1201 -I$(ROOT)/include -c resident.cpp -o $@
+$(OUT)/resident_test.o: resident.cpp resident.h net.h fixture.h
+	mkdir -p $(OUT)
+	$(HIPCC) -O2 -Wall -Wextra -Werror --offload-arch=gfx1201 -DCONTROLLER_TESTING -I$(ROOT)/include -c resident.cpp -o $@
+$(OUT)/test_resident: test_resident.c resident.h net.c fixture.c $(OUT)/resident_test.o $(OUT)/amdmath.o
+	$(HIPCC) -O2 -Wall -Wextra -Werror --offload-arch=gfx1201 -DCONTROLLER_TESTING -I$(ROOT)/include -x c test_resident.c net.c fixture.c -x none $(OUT)/resident_test.o $(OUT)/amdmath.o -lm -o $@
+resident-build: $(OUT)/test_resident
+resident-test: $(OUT)/test_resident
+	$(OUT)/test_resident
+.PHONY: resident-benchmark
+$(OUT)/bench_resident: bench_resident.c resident.h net.c fixture.c $(OUT)/resident.o $(OUT)/amdmath.o
+	$(HIPCC) -O2 -Wall -Wextra -Werror --offload-arch=gfx1201 -I$(ROOT)/include -x c bench_resident.c net.c fixture.c -x none $(OUT)/resident.o $(OUT)/amdmath.o -lm -o $@
+$(OUT)/diagnose_resident: diagnose_resident.c resident.h net.c fixture.c $(OUT)/resident.o $(OUT)/amdmath.o
+	$(HIPCC) -O2 -Wall -Wextra -Werror --offload-arch=gfx1201 -I$(ROOT)/include -x c diagnose_resident.c net.c fixture.c -x none $(OUT)/resident.o $(OUT)/amdmath.o -lm -o $@
+$(OUT)/profile_resident: profile_resident.c resident.h net.c fixture.c $(OUT)/resident.o $(OUT)/amdmath.o
+	$(HIPCC) -O2 -Wall -Wextra -Werror --offload-arch=gfx1201 -I$(ROOT)/include -x c profile_resident.c net.c fixture.c -x none $(OUT)/resident.o $(OUT)/amdmath.o -lm -o $@
+resident-benchmark: $(OUT)/bench_resident $(OUT)/diagnose_resident $(OUT)/profile_resident
 $(OUT)/test_local: test_local.c local_baseline.c offline.c fixture.c offline.h fixture.h $(ROOT)/include/cnet_json_internal.h
 	mkdir -p $(OUT)
 	$(CC) $(CFLAGS) test_local.c fixture.c offline.c -o $@

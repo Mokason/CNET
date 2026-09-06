@@ -1,0 +1,6 @@
+CONTROLLER_RESIDENT_PASS device=0 updates=128 weight_max_abs=1.1920929e-07 invalid_batch_refused=1 snapshot_immutable=1
+CONTROLLER_RESIDENT_POISON_PASS device=0 finite_overflow_refused=1 later_operations_refused=3
+CONTROLLER_RESIDENT_SHAPES_PASS device=0 depth_modes=8 batch_sizes=3 runtime_error_injection=1
+CONTROLLER_RESIDENT_PASS device=1 updates=128 weight_max_abs=1.1920929e-07 invalid_batch_refused=1 snapshot_immutable=1
+CONTROLLER_RESIDENT_POISON_PASS device=1 finite_overflow_refused=1 later_operations_refused=3
+CONTROLLER_RESIDENT_SHAPES_PASS device=1 depth_modes=8 batch_sizes=3 runtime_error_injection=1

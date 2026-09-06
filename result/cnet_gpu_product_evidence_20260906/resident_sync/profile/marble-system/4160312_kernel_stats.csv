@@ -1,0 +1,13 @@
+"Name","Calls","TotalDurationNs","AverageNs","Percentage","MinNs","MaxNs","StdDev"
+"k_sgd_f32(float*, float const*, float const*, int, int, int, int, float)",48,2241243,46692.562500,43.53,18480,75202,28154.476371
+"k_linear_f32(float const*, float const*, float*, int, int, int, int)",216,1741950,8064.583333,33.83,1640,19480,5519.864935
+"softmax(Scratch*, float const*, float*, int, int*)",24,270763,11281.791667,5.26,11040,12000,204.514904
+"__amd_rocclr_copyBuffer",72,143007,1986.208333,2.78,1640,3040,289.294233
+"join_input(float const*, Scratch*, int, int)",96,132480,1380.000000,2.57,1160,2720,201.217348
+"transpose_weights(Net const*, Scratch*, int, int)",96,124083,1292.531250,2.41,1120,1640,118.401987
+"activation(float*, int, int*)",96,122683,1277.947917,2.38,1120,1960,145.005217
+"derivative(Scratch*, int, int, int*)",96,118081,1230.010417,2.29,1080,2000,151.898200
+"reduce_loss(float*, int, int*)",24,116964,4873.500000,2.27,4440,11960,1515.193057
+"check_weights(float const*, int, int*)",48,57282,1193.375000,1.11,960,2560,244.819310
+"__amd_rocclr_fillBufferAligned",24,51240,2135.000000,0.9952,1640,4880,641.391151
+"final_input(Scratch*, int, int)",24,28800,1200.000000,0.5594,1080,1480,106.811496
