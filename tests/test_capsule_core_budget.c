@@ -13,7 +13,7 @@ int main(void) {
     double input = 0;
     CnetCapsuleCoreReply reply = {0}; CoreBudget aggregate;
     budget_init(&aggregate, 2000000);
-    if (!search(&core, p, p, &input, &reply, &aggregate) ||
+    if (!search(&core, p, p, &input, &reply, &aggregate,0) ||
         strcmp(reply.reason, "search_budget_exhausted")) failures++;
     free(core.registry.entries);
     /* Charge lookup work on an admissible indexed fixture, not only an
@@ -29,7 +29,7 @@ int main(void) {
     }
     if (build_edge_index(&core)) return 2;
     budget_init(&aggregate, 0);
-    if (!search(&core, p, p, &input, &reply, &aggregate) ||
+    if (!search(&core, p, p, &input, &reply, &aggregate,0) ||
         strcmp(reply.reason, "search_budget_exhausted")) failures++;
     size_t begin = 0, end = 0, local = 1;
     budget_init(&aggregate, 2000000);

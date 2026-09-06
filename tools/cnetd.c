@@ -32,6 +32,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <pwd.h>
+#include <poll.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -72,6 +73,8 @@
 #include "../include/cnet_live_miss.h"
 #include "../include/cnet_md_memory.h"
 #include "../include/cnetd_protocol.h"
+#include "../include/cnet_capsule_control.h"
+#include "../include/cnet_capsule_evidence.h"
 #include <sys/wait.h>
 
 #define CD_PATH 512
@@ -145,6 +148,9 @@ typedef struct {
     char last_miss_q[256];   /* last organic miss; gold last uses this */
     char remind_path[CD_PATH];
     char gpt_sol_jobs[CD_PATH]; /* leftover enqueue for gpt-sol improver */
+    CnetCapsuleStore *capsule_store;
+    CnetCoreHost *capsule_host;
+    int capsule_configured;
     int ready;
 } CdState;
 
@@ -950,13 +956,19 @@ static int cd_ask(CdState *S, const char *q, CdReply *out) {
     /* Explicit typed intent belongs to the capsule authority, including a
        refusal. Residual prose must not answer over a failed capsule guard. */
     char capsule_intent[160];
-    int intent_status = getenv("CNET_CAPSULES_DIR") ?
+    int intent_status = S->capsule_configured ?
         cnet_semantic_capsule_intent(q, capsule_intent, sizeof capsule_intent) : 0;
+    int source_fact = !strncmp(q,"source-fact ",12) || !strcmp(q,"source-fact");
+    if(source_fact) {
+        const char *name = strlen(q)>12 ? q+12 : "";
+        intent_status = cnet_capsule_evidence_request(name,capsule_intent,sizeof capsule_intent) ? -2 : 1;
+    }
     if (intent_status < 0) {
         out->capsule_handled = 1;
         cd_scopy(out->source, sizeof out->source, "CNET");
-        cd_scopy(out->skill, sizeof out->skill, "capsule_clarify");
-        cd_scopy(out->answer, sizeof out->answer, "CLARIFY: specify one whole-number value, input tag and output tag: convert N INPUT_TAG to OUTPUT_TAG");
+        cd_scopy(out->skill, sizeof out->skill, source_fact ? "capsule_refusal" : "capsule_clarify");
+        cd_scopy(out->answer, sizeof out->answer, source_fact ? "ABSTAIN: unsupported_source_fact" :
+            "CLARIFY: specify one whole-number value, input tag and output tag: convert N INPUT_TAG to OUTPUT_TAG");
         cd_scopy(out->utterance, sizeof out->utterance, out->answer);
         out->miss = 1;
         return 0;
@@ -964,17 +976,16 @@ static int cd_ask(CdState *S, const char *q, CdReply *out) {
     if (!strncmp(q, "capsule ", 8) || intent_status == 1) {
         out->capsule_handled = 1;
         const char *typed = intent_status == 1 ? capsule_intent : q;
-        char error[160] = "capsule_directory_not_configured";
+        const char *error = S->capsule_configured ? "capsule_runtime_unavailable" : "capsule_directory_not_configured";
         CnetCapsuleCoreReply cr = {0};
-        const char *dir = getenv("CNET_CAPSULES_DIR");
-        CnetCapsuleCore *core = dir ? cnet_capsule_core_open(dir, error, sizeof error) : NULL;
-        int ok = core && cnet_capsule_core_ask(core, typed, &cr) == 0 && cr.verified;
+        CnetCoreLease *lease = S->capsule_store ? cnet_capsule_store_pin(S->capsule_store) :
+            S->capsule_host ? cnet_core_host_pin(S->capsule_host) : NULL;
+        int ok = lease && cnet_core_host_ask_text(lease, typed, &cr,out->answer,sizeof out->answer) == 0 && cr.verified;
         snprintf(out->source, sizeof out->source, "%s", ok ? "LOCAL" : "CNET");
         snprintf(out->skill, sizeof out->skill, "%s", ok ? "capsule_core" : "capsule_refusal");
-        if (ok) snprintf(out->answer, sizeof out->answer, "%u", cr.value);
-        else snprintf(out->answer, sizeof out->answer, "ABSTAIN: %s", core ? cr.reason : error);
+        if (!ok) snprintf(out->answer, sizeof out->answer, "ABSTAIN: %s", lease ? cr.reason : error);
         const char *demand = getenv("CNET_CAPSULE_DEMAND_DIR");
-        if (!ok && core && demand && (!strcmp(cr.reason, "unknown_or_ambiguous_interface") ||
+        if (!ok && lease && demand && (!strcmp(cr.reason, "unknown_or_ambiguous_interface") ||
             !strcmp(cr.reason, "no_covered_certified_plan"))) {
             int queued = cnet_capsule_demand_note(demand, typed);
             size_t used = strlen(out->answer);
@@ -984,7 +995,7 @@ static int cd_ask(CdState *S, const char *q, CdReply *out) {
         cd_scopy(out->utterance, sizeof out->utterance, out->answer);
         cd_scopy(out->prepared, sizeof out->prepared, typed);
         out->verified = ok; out->miss = !ok; out->may_voice = ok;
-        cnet_capsule_core_close(core);
+        cnet_core_host_unpin(lease);
         return 0;
     }
 
@@ -3805,10 +3816,20 @@ static int serve(CdState *S, const char *sock_path) {
         close(sfd);
         return 1;
     }
+    CnetCapsuleControl *control = NULL;
+    if (S->capsule_store) {
+        control = cnet_capsule_control_open(S->capsule_store, getenv("CNET_CAPSULE_CONTROL_SOCK"));
+        if (!control) { fprintf(stderr, "cnetd: capsule operator socket refused\n"); close(sfd); unlink(sock_path); return 1; }
+    }
     fprintf(stderr, "cnetd listening on %s root=%s routes=%d\n", sock_path, S->root,
             S->n_routes);
 
     while (!g_stop) {
+        struct pollfd ready[2] = {{sfd, POLLIN, 0}, {cnet_capsule_control_fd(control), POLLIN, 0}};
+        int n = poll(ready, 2, -1);
+        if (n < 0) { if (errno == EINTR) continue; break; }
+        if (ready[1].revents & POLLIN) cnet_capsule_control_accept(control);
+        if (!(ready[0].revents & POLLIN)) continue;
         cfd = accept(sfd, NULL, NULL);
         if (cfd < 0) {
             if (errno == EINTR) continue;
@@ -3817,6 +3838,7 @@ static int serve(CdState *S, const char *sock_path) {
         handle_client(cfd, S);
         close(cfd);
     }
+    cnet_capsule_control_close(control);
     close(sfd);
     unlink(sock_path);
     return 0;
@@ -3860,5 +3882,22 @@ int main(int argc, char **argv) {
         setsid();
     }
 
-    return serve(&S, sock);
+    /* Configured capsule authority is resident and terminal even when empty.
+     * A malformed durable owner configuration refuses startup, never degrades. */
+    const char *sets = getenv("CNET_CAPSULE_SETS_DIR"), *state = getenv("CNET_CAPSULE_STATE_DIR");
+    const char *control = getenv("CNET_CAPSULE_CONTROL_SOCK"), *legacy = getenv("CNET_CAPSULES_DIR");
+    if (sets || state || control) {
+        if (!sets || !state || !control || legacy || !(S.capsule_store = cnet_capsule_store_open(sets, state))) {
+            fprintf(stderr, "cnetd: capsule durable configuration/recovery refused\n"); return 1;
+        }
+        S.capsule_configured = 1;
+    } else if (legacy) {
+        S.capsule_host = cnet_core_host_open(legacy);
+        if (!S.capsule_host) { fprintf(stderr, "cnetd: resident capsule load refused\n"); return 1; }
+        S.capsule_configured = 1;
+    }
+    int rc = serve(&S, sock);
+    if (S.capsule_store && cnet_capsule_store_close(S.capsule_store)) rc = 1;
+    if (S.capsule_host && cnet_core_host_close(S.capsule_host)) rc = 1;
+    return rc;
 }

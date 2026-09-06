@@ -4461,10 +4461,12 @@ cnet_runtime_soak_gate: $(CNET_MINIMAL_BINS)
 
 .PHONY: cnet_minimal_deploy
 cnet_minimal_deploy:
-	@mkdir -p logs
-	@chmod +x scripts/deploy_cnet_minimal.sh scripts/package_cnet_minimal.sh scripts/cnet_runtime_smoke.sh
-	@bash scripts/deploy_cnet_minimal.sh | tee logs/cnet_minimal_deploy.log
-	@grep -q "CNET_MINIMAL_DEPLOY_PASS" logs/cnet_minimal_deploy.log
+	@echo 'Explicit deployment arguments required: bash scripts/deploy_cnet_minimal.sh --artifact ABS.tar.gz --destination NEW_ABS_DIR --sha256 TRUSTED_DIGEST [--dry-run]' >&2
+	@exit 2
+
+.PHONY: cnet_minimal_deploy_gate
+cnet_minimal_deploy_gate: $(CNET_MINIMAL_BINS)
+	@$(PYTHON) tests/test_minimal_deploy.py
 
 .PHONY: roe_explore_tick
 roe_explore_tick: tools/roe_explore_tick.py tools/roe_explore_tick_gate.c

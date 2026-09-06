@@ -170,12 +170,12 @@ static int edit_manifest(const char *dir, const char *prefix, const char *repl,
     return fclose(fp);
 }
 
-static int build_unit(CnetBase *base, HybridAi *cov, const char *name) {
+static int build_unit_ports(CnetBase *base, HybridAi *cov, const char *name,
+                            Port pin, Port pout) {
     BinaryTransformNetwork *btn;
     double in[SYM][SYM], tg[SYM][SYM];
     Contract c;
     Specialist s;
-    Port pin = P("cap_in"), pout = P("cap_out");
     int i;
 
     btn = (BinaryTransformNetwork *)calloc(1, sizeof *btn);
@@ -213,6 +213,10 @@ static int build_unit(CnetBase *base, HybridAi *cov, const char *name) {
     btn_free(btn);
     free(btn);
     return 0;
+}
+
+static int build_unit(CnetBase *base, HybridAi *cov, const char *name) {
+    return build_unit_ports(base,cov,name,P("cap_in"),P("cap_out"));
 }
 
 /* Import into a throwaway target and report only whether it was refused. */

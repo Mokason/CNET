@@ -178,10 +178,20 @@ AUTHORITY_CORE_SRC = $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC) $(RESIDUAL_GGUF_SRC) $(
 .PHONY: capsule_core_growth
 .PHONY: capsule_core
 .PHONY: capsule_frontdoor
-capsule_frontdoor: cnetd capsule_core tests/test_capsule_frontdoor.sh tests/test_capsule_socket_client.c
+capsule_frontdoor: cnetd capsule_core $(BIN_DIR)/cnet_capsulectl tests/test_capsule_frontdoor.sh tests/test_capsule_socket_client.c
 	$(CC) $(CFLAGS) -Werror -o $(BIN_DIR)/test_capsule_socket_client tests/test_capsule_socket_client.c
 	@bash tests/test_capsule_frontdoor.sh | tee logs/capsule_frontdoor.log
 	@grep -q '^CAPSULE_FRONTDOOR_PASS' logs/capsule_frontdoor.log
+
+.PHONY: capsule_control
+$(BIN_DIR)/cnet_capsulectl: tools/cnet_capsulectl.c src/serve/cnet_capsule_snapshot.h $(BIN_DIR)/libcnet_capsule_core.so
+	$(CC) $(CFLAGS) -D_GNU_SOURCE -Werror -Isrc/serve -o $@ tools/cnet_capsulectl.c \
+		-L$(BIN_DIR) -lcnet_capsule_core -Wl,-rpath,'$$ORIGIN' $(LDFLAGS)
+capsule_control: $(BIN_DIR)/cnet_capsulectl
+	@mkdir -p logs
+	@python3 tests/test_capsulectl.py > logs/capsule_control.log 2>&1 || { cat logs/capsule_control.log; exit 1; }
+	@cat logs/capsule_control.log
+authority: capsule_control
 
 $(BIN_DIR)/cnet_revalidate_coverage: tools/cnet_revalidate_coverage.c $(BIN_DIR)/libcnet_capsule_core.so
 	$(CC) $(CFLAGS) -Werror -o $@ tools/cnet_revalidate_coverage.c \
@@ -192,7 +202,7 @@ $(BIN_DIR)/cnet_capsule_core: tools/cnet_capsule_core_main.c $(BIN_DIR)/libcnet_
 	$(CC) $(CFLAGS) -Werror -o $@ tools/cnet_capsule_core_main.c \
 		-L$(BIN_DIR) -lcnet_capsule_core -Wl,-rpath,'$$ORIGIN' $(LDFLAGS)
 
-CORE_CANDIDATE_SRC = src/serve/cnet_core_cell.c src/serve/cnet_core_selector.c src/serve/cnet_cell_capsule.c src/serve/cnet_core_candidate.c src/serve/cnet_core_host.c src/cce/cce_campaign_provenance.c
+CORE_CANDIDATE_SRC = src/serve/cnet_core_cell.c src/serve/cnet_core_selector.c src/serve/cnet_cell_capsule.c src/serve/cnet_core_candidate.c src/serve/cnet_core_host.c src/serve/cnet_capsule_snapshot.c src/serve/cnet_capsule_store.c src/serve/cnet_capsule_evidence.c src/cce/cce_campaign_provenance.c
 $(BIN_DIR)/libcnet_capsule_core.so: mk/authority.mk $(LIBCCE) $(AUTHORITY_CORE_SRC) $(CAPSULE_SRC) $(CORE_CANDIDATE_SRC) src/memory/cnet_semantic_cortex.c src/memory/cnet_shared_workspace.c src/serve/cnet_capsule_core.c src/serve/cnet_capsule_demand.c $(wildcard include/*.h include/*/*.h)
 	$(CC) $(CFLAGS) -fPIC -shared -o $@ $(AUTHORITY_CORE_SRC) $(CAPSULE_SRC) \
 		src/serve/cnet_capsule_core.c src/serve/cnet_capsule_demand.c $(CORE_CANDIDATE_SRC) $(SEMANTIC_CORTEX_SRC) $(SHARED_WORKSPACE_SRC) $(LIBCCE) $(LDFLAGS) $(MCP_LDFLAGS) -pthread
@@ -205,6 +215,87 @@ capsule_core_growth: tests/test_capsule_core_growth.c
 		-Wl,-rpath,'$$ORIGIN' $(LDFLAGS) $(MCP_LDFLAGS) -ldl -pthread
 	@$(BIN_DIR)/test_capsule_core_growth | tee logs/capsule_core_growth.log
 	@grep -q '^CAPSULE_CORE_GROWTH_PASS' logs/capsule_core_growth.log
+
+.PHONY: capsule_resident_lifecycle
+capsule_resident_lifecycle: $(BIN_DIR)/libcnet_capsule_core.so tests/test_capsule_resident_lifecycle.c tests/test_knowledge_capsule.c
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -o $(BIN_DIR)/test_capsule_resident_lifecycle tests/test_capsule_resident_lifecycle.c \
+		-L$(BIN_DIR) -lcnet_capsule_core -Wl,-rpath,'$$ORIGIN' $(LDFLAGS) -ldl -pthread
+	@$(BIN_DIR)/test_capsule_resident_lifecycle > logs/capsule_resident_lifecycle.log
+	@grep '^CAPSULE_RESIDENT_PASS' logs/capsule_resident_lifecycle.log
+
+.PHONY: capsule_snapshot capsule_store capsule_store_faults capsule_store_recovery capsule_daemon_lifecycle source_reserved_interface capsule_product_closure
+capsule_snapshot: tests/test_capsule_snapshot.c
+capsule_snapshot capsule_store: capsule_%: $(BIN_DIR)/libcnet_capsule_core.so tests/test_capsule_%.c tests/test_knowledge_capsule.c
+	@mkdir -p logs
+	$(CC) $(CFLAGS) -o $(BIN_DIR)/test_$@ tests/test_$@.c \
+		-L$(BIN_DIR) -lcnet_capsule_core -Wl,-rpath,'$$ORIGIN' $(LDFLAGS) -ldl -pthread
+	@$(BIN_DIR)/test_$@ > logs/$@.log
+	@grep '^CAPSULE_.*_PASS' logs/$@.log
+
+capsule_store_faults: $(BIN_DIR)/libcnet_capsule_core.so tests/test_capsule_store_faults.c tests/test_knowledge_capsule.c
+	@mkdir -p logs
+	$(CC) $(CFLAGS) -DCNET_CAPSULE_STORE_TESTING -o $(BIN_DIR)/test_capsule_store_faults \
+		tests/test_capsule_store_faults.c src/serve/cnet_capsule_store.c \
+		-L$(BIN_DIR) -lcnet_capsule_core -Wl,-rpath,'$$ORIGIN' $(LDFLAGS) -ldl -pthread
+	@$(BIN_DIR)/test_capsule_store_faults > logs/capsule_store_faults.log
+	@grep '^CAPSULE_STORE_FAULTS_PASS' logs/capsule_store_faults.log
+
+source_reserved_interface: $(BIN_DIR)/libcnet_capsule_core.so tests/test_source_reserved_interface.c tests/test_knowledge_capsule.c
+	@mkdir -p logs
+	$(CC) $(CFLAGS) -o $(BIN_DIR)/test_source_reserved_interface tests/test_source_reserved_interface.c \
+		-L$(BIN_DIR) -lcnet_capsule_core -Wl,-rpath,'$$ORIGIN' $(LDFLAGS) -ldl -pthread
+	@$(BIN_DIR)/test_source_reserved_interface > logs/source_reserved_interface.log
+	@grep '^SOURCE_RESERVED_PASS' logs/source_reserved_interface.log
+
+capsule_daemon_lifecycle: cnetd capsule_core $(BIN_DIR)/cnet_source_capsule \
+		tests/source_freshness_mutation_shim.c tests/capsule_owner_stat_shim.c
+	@mkdir -p logs
+	@python3 tests/test_capsule_daemon_lifecycle.py > logs/capsule_daemon_lifecycle.log 2>&1 || { cat logs/capsule_daemon_lifecycle.log; exit 1; }
+	@cat logs/capsule_daemon_lifecycle.log
+
+capsule_store_recovery: cnetd capsule_core tests/test_capsule_store_recovery.py tests/test_capsule_daemon_lifecycle.py
+	@mkdir -p logs
+	@python3 tests/test_capsule_store_recovery.py > logs/capsule_store_recovery.log 2>&1 || { cat logs/capsule_store_recovery.log; exit 1; }
+	@cat logs/capsule_store_recovery.log
+
+capsule_product_closure: capsule_resident_lifecycle capsule_snapshot capsule_store capsule_store_faults capsule_store_recovery source_evidence source_reserved_interface capsule_daemon_lifecycle
+authority: capsule_product_closure
+
+# Instrument the complete linked C runtime in a fresh private directory. Do not
+# change shared CCE object flags or overwrite a developer's normal binaries.
+.PHONY: capsule_product_sanitize
+capsule_product_sanitize:
+	@set -eu; capsule_san=$$(mktemp -d /tmp/cnet-product-sanitize-XXXXXX); \
+	printf 'CAPSULE_SANITIZE_ARTIFACTS=%s\n' "$$capsule_san"; \
+	$(CC) $(filter-out -O% -march=%,$(CFLAGS)) -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer -fPIC -shared \
+		-o "$$capsule_san/libcnet_capsule_core.so" $(AUTHORITY_CORE_SRC) $(CAPSULE_SRC) \
+		src/serve/cnet_capsule_core.c src/serve/cnet_capsule_demand.c $(CORE_CANDIDATE_SRC) \
+		$(SEMANTIC_CORTEX_SRC) $(SHARED_WORKSPACE_SRC) $(CCE_C_SRCS) $(LDFLAGS) $(MCP_LDFLAGS) -pthread \
+		> "$$capsule_san/build.log" 2>&1 || { tail -n 60 "$$capsule_san/build.log"; exit 1; }; \
+	for capsule_test in capsule_resident_lifecycle capsule_snapshot capsule_store capsule_store_faults source_reserved_interface; do \
+		capsule_extra=''; if test "$$capsule_test" = capsule_store_faults; then capsule_extra='-DCNET_CAPSULE_STORE_TESTING src/serve/cnet_capsule_store.c'; fi; \
+		$(CC) $(filter-out -O% -march=%,$(CFLAGS)) -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer \
+			-o "$$capsule_san/test_$$capsule_test" "tests/test_$$capsule_test.c" $$capsule_extra \
+			-L"$$capsule_san" -lcnet_capsule_core -Wl,-rpath,"$$capsule_san" $(LDFLAGS) -ldl -pthread \
+			> "$$capsule_san/$$capsule_test-build.log" 2>&1 || { tail -n 60 "$$capsule_san/$$capsule_test-build.log"; exit 1; }; \
+		ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 UBSAN_OPTIONS=halt_on_error=1 \
+			CNET_TEST_CORE_LIBRARY="$$capsule_san/libcnet_capsule_core.so" "$$capsule_san/test_$$capsule_test" \
+			> "$$capsule_san/$$capsule_test.log" 2>&1 || { cat "$$capsule_san/$$capsule_test.log"; exit 1; }; \
+		grep '_PASS checks=' "$$capsule_san/$$capsule_test.log"; \
+	done; printf 'CAPSULE_PRODUCT_SANITIZE_PASS\n'
+
+$(BIN_DIR)/cnet_source_capsule: tools/cnet_source_capsule.c $(BIN_DIR)/libcnet_capsule_core.so
+	$(CC) $(CFLAGS) -Werror -o $@ tools/cnet_source_capsule.c -L$(BIN_DIR) -lcnet_capsule_core \
+		-Wl,-rpath,'$$ORIGIN' $(LDFLAGS)
+
+.PHONY: source_evidence
+source_evidence: $(BIN_DIR)/cnet_source_capsule tests/test_source_evidence.c
+	@mkdir -p logs
+	$(CC) $(CFLAGS) -Werror -o $(BIN_DIR)/test_source_evidence tests/test_source_evidence.c -ldl
+	@$(BIN_DIR)/test_source_evidence $(BIN_DIR)/libcnet_capsule_core.so > logs/source_evidence.log
+	@grep '^SOURCE_EVIDENCE_PASS' logs/source_evidence.log
+	@python3 tests/test_source_capsule.py
 
 .PHONY: personal_ai_reroute
 personal_ai_reroute: $(LIBCCE) tests/test_personal_ai_reroute.c $(AUTHORITY_CORE_SRC)

@@ -48,6 +48,7 @@ cnet_mcp_transport: tests/test_cnet_mcp_transport.c \
 .PHONY: cnetd
 cnetd: $(BIN_DIR)/cnetd
 $(BIN_DIR)/cnetd: $(BIN_DIR)/libcnet_capsule_core.so $(ROE_ASI_SRC) tools/cnetd.c src/cnet_domain_route.c \
+		src/serve/cnet_capsule_control.c include/cnet_capsule_control.h \
 		src/serve/cnet_utterance.c src/serve/cnetd_protocol.c \
 		src/memory/cnet_query_alias.c src/memory/cnet_dialog_ctx.c \
 		src/cnet_slot_extract.c src/cnet_typed_en.c src/cnet_ffi_convert.c \
@@ -76,10 +77,10 @@ $(BIN_DIR)/cnetd: $(BIN_DIR)/libcnet_capsule_core.so $(ROE_ASI_SRC) tools/cnetd.
 		src/cnet_live_miss.c include/cnet_json_internal.h mk/serve.mk
 	@mkdir -p $(BIN_DIR) logs
 	@pkg-config --exists libcurl
-	$(CC) $(ASI_IMPROVE_CFLAGS) -D_DEFAULT_SOURCE -DCNET_HAVE_CURL=1 \
+	$(CC) $(ASI_IMPROVE_CFLAGS) -D_DEFAULT_SOURCE -D_GNU_SOURCE -DCNET_HAVE_CURL=1 \
 		$$(pkg-config --cflags libcurl) -o $(BIN_DIR)/cnetd \
 		$(ROE_ASI_SRC) src/cnet_domain_route.c src/serve/cnet_utterance.c \
-		src/serve/cnetd_protocol.c src/memory/cnet_query_alias.c \
+		src/serve/cnetd_protocol.c src/serve/cnet_capsule_control.c src/memory/cnet_query_alias.c \
 		src/memory/cnet_dialog_ctx.c src/cnet_slot_extract.c \
 		src/cnet_typed_en.c src/cnet_ffi_convert.c src/cnet_cert_solver.c \
 		src/cnet_roe_gold.c \

@@ -18,7 +18,7 @@ int main(void) {
     /* A numerically small change may leave the answer intact, but invalidates
      * the sealed behavior identity nonetheless. Do not trust stale flags. */
     core->registry.entries[0].btn->output_bias[0] += 0.001;
-    int rc=search(core,P("cap_in"),P("cap_out"),input,&reply,&budget);
+    int rc=search(core,P("cap_in"),P("cap_out"),input,&reply,&budget,1);
     int failed=!rc || reply.verified || core->registry.entries[0].certified;
     size_t obligations=0;
     puts("CAPSULE_DEMOTED_REPLAY_CHECK"); fflush(stdout);

@@ -23,6 +23,24 @@ CnetCoreLease *cnet_core_host_pin(CnetCoreHost *host);
 void cnet_core_host_unpin(CnetCoreLease *lease);
 uint64_t cnet_core_host_generation(const CnetCoreLease *lease);
 int cnet_core_host_ask(CnetCoreLease *lease,const char *request,CnetCapsuleCoreReply *reply);
+int cnet_core_host_ask_text(CnetCoreLease *lease,const char *request,CnetCapsuleCoreReply *reply,
+                          char *text,size_t capacity);
+/* Deterministic resident working-set staging. preserve=1 is an upgrade and
+ * replays incumbent obligations; preserve=0 is an explicit set switch.
+ * Both enforce self-closure and reject changed identities seen by this host,
+ * including identities unloaded earlier. NULL registry explicitly stages an
+ * empty inventory. No files are mutated. activate remains an owner action. */
+int cnet_core_host_stage_registry(CnetCoreHost *host,const char *registry,
+    int preserve,uint64_t *id);
+/* Monotonic in-memory activation revision, distinct from pinned snapshot IDs;
+ * rollback also advances it. Durable owners must persist their own revision. */
+uint64_t cnet_core_host_revision(CnetCoreHost *host);
+/* Durable owner state: export committed or approved staged identity history.
+ * Restore is startup-only (revision 1, no leases/stage) and must include every
+ * active identity unchanged. This does not authenticate the supplied ledger. */
+int cnet_core_host_history(CnetCoreHost *host,uint64_t staged,CnetCapsuleIdentity *out,
+                          size_t capacity,size_t *count);
+int cnet_core_host_restore_history(CnetCoreHost *host,const CnetCapsuleIdentity *identities,size_t count);
 int cnet_core_host_stage(CnetCoreHost *host,int dirfd,const char *name,const char *registry,uint64_t *id);
 /* Canonical evidence digest binds every graph field and expected shadow label.
  * Labels/fixtures must come from the trusted owner/evaluator, never the trainer.

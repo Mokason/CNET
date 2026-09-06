@@ -1,14 +1,18 @@
 #include "cnet_capsule_core.h"
 #include "cnet_capsule.h"
+#include "cnet_capsule_evidence.h"
 #include "cnet_core_selector.h"
+#include "cce/cce_campaign_provenance.h"
 #include <ctype.h>
 #include <dirent.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <time.h>
+#include <unistd.h>
 
 #define CORE_STATES 1024u
 #define CORE_CAPSULES 4096u
@@ -39,6 +43,7 @@ typedef struct {
     size_t depth, parent, edge;
 } CoreState;
 typedef struct { const HybridCoverage *record; HybridAi *bank; } CoreCoverageRef;
+typedef struct {char unit[64];CnetCapsuleEvidence *evidence;} CoreEvidenceRef;
 
 struct CnetCapsuleCore {
     CnetBase base;
@@ -52,7 +57,20 @@ struct CnetCapsuleCore {
     CoreCoverageRef guards[CORE_CAPSULES];
     size_t guard_count;
     int guards_ready;
+    CoreEvidenceRef evidence[CORE_CAPSULES];
+    size_t evidence_count;
+    /* The original CNB carries each capsule's own provenance descriptor.
+     * A merged base can reuse a descriptor name with different source ports;
+     * that order-dependent registry metadata is not capsule identity. */
+    char payload_identity[CORE_CAPSULES][65];
 };
+
+static CnetCapsuleEvidence *find_evidence(const CnetCapsuleCore *c,const char *unit) {
+    size_t low=0,high=c->evidence_count;
+    while(low<high){size_t mid=low+(high-low)/2;
+        if(strcmp(c->evidence[mid].unit,unit)<0)low=mid+1;else high=mid;}
+    return low<c->evidence_count&&!strcmp(c->evidence[low].unit,unit)?c->evidence[low].evidence:NULL;
+}
 
 static int guard_order(const void *aa, const void *bb) {
     const CoreCoverageRef *a = aa, *b = bb;
@@ -129,6 +147,30 @@ static int edge_range(CnetCapsuleCore *c, Port port, size_t *begin, size_t *end,
     return 0;
 }
 
+static int original_payload_identity(const char *path,char hash[65]) {
+    int parent=open(path,O_RDONLY|O_DIRECTORY|O_NOFOLLOW|O_CLOEXEC);
+    if(parent<0)return -1;
+    int fd=openat(parent,"unit.cnb",O_RDONLY|O_NOFOLLOW|O_NONBLOCK|O_CLOEXEC);
+    close(parent);if(fd<0)return -1;
+    struct stat before,after;unsigned char *bytes=NULL;int rc=-1;
+    if(fstat(fd,&before)||!S_ISREG(before.st_mode)||before.st_nlink!=1||
+       before.st_size<1||(uint64_t)before.st_size>64u*1024u*1024u)goto done;
+    size_t length=(size_t)before.st_size,used=0;bytes=malloc(length);if(!bytes)goto done;
+    while(used<length){ssize_t n=read(fd,bytes+used,length-used);
+        if(n<0&&errno==EINTR)continue;
+        if(n<=0)goto done;
+        used+=(size_t)n;
+    }
+    unsigned char extra;
+    if(read(fd,&extra,1)!=0||fstat(fd,&after)||before.st_dev!=after.st_dev||
+       before.st_ino!=after.st_ino||before.st_size!=after.st_size||
+       before.st_uid!=after.st_uid||before.st_mode!=after.st_mode||before.st_nlink!=after.st_nlink||
+       before.st_mtim.tv_sec!=after.st_mtim.tv_sec||before.st_mtim.tv_nsec!=after.st_mtim.tv_nsec||
+       before.st_ctim.tv_sec!=after.st_ctim.tv_sec||before.st_ctim.tv_nsec!=after.st_ctim.tv_nsec)goto done;
+    rc=cce_sha256_bytes_hex(bytes,length,hash);
+done:free(bytes);if(close(fd))rc=-1;return rc;
+}
+
 static int import_capsule(CnetCapsuleCore *c, const char *path, char *error, size_t cap) {
     if (c->base.unit_count >= CORE_CAPSULES) {
         if (error && cap) snprintf(error, cap, "capsule_count_limit");
@@ -143,16 +185,104 @@ static int import_capsule(CnetCapsuleCore *c, const char *path, char *error, siz
         }
         hybrid_ai_init(c->coverage[bank]);
     }
-    CnetCapsuleReport report;
-    if (cnet_capsule_import(&c->base, c->coverage[bank], path, &report)) {
+    size_t original_index=c->base.unit_count;
+    CnetCapsuleReport report;void *asset=NULL;size_t asset_length=0;unsigned asset_schema=0;
+    if (cnet_capsule_import_asset(&c->base, c->coverage[bank], path,&asset,&asset_length,&asset_schema,&report)) {
+        free(asset);
         if (error && cap) snprintf(error, cap, "import_refused:%.120s", report.reject_reason);
         return -1;
+    }
+    /* Imports and this read use owner-stable source or private immutable
+     * snapshots. This is not a transaction against arbitrary source writers. */
+    if(original_index>=CORE_CAPSULES||c->base.unit_count!=original_index+1||
+       strcmp(report.unit,c->base.units[original_index].name)||
+       original_payload_identity(path,c->payload_identity[original_index])) {
+        free(asset);
+        if(error&&cap)snprintf(error,cap,"original_payload_identity_refused");
+        return -1;
+    }
+    if(report.schema==CNET_CAPSULE_SCHEMA_ASSET) {
+        BinaryTransformNetwork btn={0};Contract contract={0};const HybridCoverage *coverage=NULL;
+        HybridAi *h=c->coverage[bank];
+        for(size_t i=0;i<h->coverage_count;i++)if(!strcmp(h->coverage[i].unit,report.unit))coverage=&h->coverage[i];
+        CnetCapsuleEvidence *e=NULL;
+        if(!cnb_get_unit(&c->base,report.unit,&btn,&contract))
+            e=cnet_capsule_evidence_parse(asset,asset_length,asset_schema,&contract,coverage,error,cap);
+        contract_free(&contract);btn_free(&btn);free(asset);asset=NULL;
+        if(!e)return -1;
+        for(size_t i=0;i<c->evidence_count;i++)if(cnet_capsule_evidence_compatible(c->evidence[i].evidence,e)){
+            cnet_capsule_evidence_close(e);
+            if(error&&cap)snprintf(error,cap,"conflicting_source_decoder");
+            return -1;
+        }
+        size_t at=c->evidence_count++;
+        while(at&&strcmp(c->evidence[at-1].unit,report.unit)>0){c->evidence[at]=c->evidence[at-1];at--;}
+        snprintf(c->evidence[at].unit,sizeof c->evidence[at].unit,"%.63s",report.unit);c->evidence[at].evidence=e;
+    }
+    free(asset);
+    return 0;
+}
+
+static int source_interfaces_bound(const CnetCapsuleCore *c) {
+    for(size_t i=0;i<c->registry.count;i++){
+        const RegistryEntry *e=c->registry.entries+i;
+        /* Reserve the source entry point too: a schema-1 alternate path must
+         * not turn a stale source query into an apparently certified answer. */
+        for(size_t j=0;j<e->btn->input_port_count;j++)
+            if(!strcmp(e->btn->input_ports[j].tag,CNET_CAPSULE_EVIDENCE_INPUT)&&!find_evidence(c,e->name))return -1;
+        for(size_t j=0;j<e->btn->output_port_count;j++)
+            if(!strcmp(e->btn->output_ports[j].tag,CNET_CAPSULE_EVIDENCE_OUTPUT)&&!find_evidence(c,e->name))return -1;
     }
     return 0;
 }
 
 static int same_port(Port a, Port b);
 static int supported(Port p);
+
+static int identity_order(const void *a, const void *b) {
+    return strcmp(((const CnetCapsuleIdentity *)a)->unit,
+                  ((const CnetCapsuleIdentity *)b)->unit);
+}
+int cnet_capsule_core_identities(const CnetCapsuleCore *c,
+        CnetCapsuleIdentity *out, size_t capacity, size_t *count) {
+    if (count) *count=0;
+    if (!c || !count || c->base.unit_count>capacity || (!out && c->base.unit_count)) return -1;
+    for (size_t i=0;i<c->base.unit_count;i++) {
+        const CnbUnitRef *u=c->base.units+i;
+        if (u->blob_index>=c->base.blob_count) return -1;
+        const CnbBlob *blob=c->base.blobs+u->blob_index;
+        char hashes[6][65]={{0}}, metadata[192]={0};
+        if (cce_sha256_bytes_hex(blob->bytes,blob->len,hashes[0])) return -1;
+        if(!c->payload_identity[i][0])return -1;
+        memcpy(hashes[1],c->payload_identity[i],sizeof hashes[1]);
+        const CoreCoverageRef *guard=find_guard(c,u->name);
+        if (guard) {
+            const HybridCoverage *g=guard->record;
+            if (!g->rows || g->n_rows>4096 || g->in_dim>64 || g->out_dim>64 ||
+                (g->out_dim && !g->targets)) return -1;
+            snprintf(metadata,sizeof metadata,"%zu:%zu:%zu:%d:%zu",g->n_rows,g->in_dim,g->out_dim,g->generalizes,g->held_out);
+            if (cce_sha256_bytes_hex(g->rows,g->n_rows*g->in_dim*sizeof(double),hashes[2]) ||
+                cce_sha256_bytes_hex(g->targets,g->n_rows*g->out_dim*sizeof(double),hashes[3])) return -1;
+        }
+        CnetCapsuleEvidence *e=find_evidence(c,u->name);
+        if((e&&cnet_capsule_evidence_identity(e,hashes[5])) || cce_sha256_bytes_hex(metadata,sizeof metadata,hashes[4]) ||
+            cce_sha256_bytes_hex(hashes,e?sizeof hashes:5*sizeof hashes[0],out[i].sha256)) return -1;
+        snprintf(out[i].unit,sizeof out[i].unit,"%s",u->name);
+    }
+    if(c->base.unit_count) qsort(out,c->base.unit_count,sizeof *out,identity_order);
+    *count=c->base.unit_count;
+    return 0;
+}
+
+CnetCapsuleCore *cnet_capsule_core_empty(void) {
+    CnetCapsuleCore *c=calloc(1,sizeof *c);
+    if (!c) return NULL;
+    cnb_init(&c->base); registry_init_production(&c->registry);
+    if (build_guard_index(c) || build_edge_index(c)) {
+        cnet_capsule_core_close(c); return NULL;
+    }
+    return c;
+}
 static int coverage_labelled(const CnetCapsuleCore *c) {
     CoreBudget budget; budget_init(&budget, admission_work(c->registry.count));
     for (size_t i = 0; i < c->registry.count; i++) {
@@ -246,6 +376,7 @@ void cnet_capsule_core_close(CnetCapsuleCore *c) {
         free(c->coverage[bank]);
     }
     cnb_free(&c->base);
+    for(size_t i=0;i<c->evidence_count;i++)cnet_capsule_evidence_close(c->evidence[i].evidence);
     free(c);
 }
 
@@ -273,7 +404,7 @@ CnetCapsuleCore *cnet_capsule_core_open(const char *root, char *error, size_t ca
         c->registry.count != c->base.unit_count) {
         why = "certification_replay_failed"; goto fail;
     }
-    if (build_guard_index(c) || !coverage_labelled(c)) { why = "unlabelled_coverage_or_unsupported_kernel"; goto fail; }
+    if (build_guard_index(c) || !coverage_labelled(c) || source_interfaces_bound(c)) { why = "unlabelled_coverage_or_unsupported_kernel"; goto fail; }
     if (!contracts_consistent(&c->registry)) { why = "conflicting_contracts_or_comparison_budget"; goto fail; }
     if (build_edge_index(c)) { why = "edge_index_refused"; goto fail; }
     for (int i = 0; i < count; i++) free(names[i]);
@@ -301,7 +432,7 @@ CnetCapsuleCore *cnet_capsule_core_open_candidate(const char *root,
     size_t skipped = 0;
     if (cnb_load_registry(&c->base, &c->registry, &skipped) < 0 || skipped ||
         c->registry.count != c->base.unit_count || c->registry.count > CORE_CAPSULES ||
-        build_guard_index(c) || !coverage_labelled(c) || !contracts_consistent(&c->registry) || build_edge_index(c)) {
+        build_guard_index(c) || !coverage_labelled(c) || source_interfaces_bound(c) || !contracts_consistent(&c->registry) || build_edge_index(c)) {
         if (error && cap) snprintf(error, cap, "candidate_contract_conflict");
         cnet_capsule_core_close(c); return NULL;
     }
@@ -326,13 +457,17 @@ static int resolve_port(CnetCapsuleCore *c, const char *tag, int output, Port *p
     return -1;
 }
 
-typedef struct { CnetCapsuleCore *core; const char *blocked; } CoreGuard;
+typedef struct { CnetCapsuleCore *core; const char *blocked; int live; } CoreGuard;
 static int covered(const char *unit, const BinaryTransformNetwork *btn,
                    const double *in, size_t len, void *ctx) {
     CoreGuard *g = ctx;
     CnetCapsuleCore *c = g->core;
     if (btn->input_port_count != 1 || btn->output_port_count != 1) { g->blocked = unit; return -1; }
     if (!c->guards_ready) { g->blocked = unit; return -1; }
+    CnetCapsuleEvidence *e=find_evidence(c,unit);
+    if(g->live&&e&&cnet_capsule_evidence_fresh(e,getenv("CNET_CAPSULE_SOURCE_ROOT"),NULL,0)) {
+        g->blocked=unit;return -1;
+    }
     const CoreCoverageRef *ref = find_guard(c, unit);
     /* Canonical import proves exhaustive scope when there is no record. */
     if (!ref || hybrid_coverage_admits_exact(ref->bank, unit, btn->input_ports[0],
@@ -356,12 +491,12 @@ static unsigned decode(Port p, const double *v) {
 /* Values, not types alone, determine coverage. Execute each expansion through
  * the canonical strict executor; no guessed/model-free serving fast path. */
 static int search(CnetCapsuleCore *c, Port pin, Port goal, const double *input,
-                  CnetCapsuleCoreReply *r, CoreBudget *budget) {
+                  CnetCapsuleCoreReply *r, CoreBudget *budget,int live) {
     CoreState *states = calloc(CORE_STATES, sizeof *states);
     if (!states) return -1;
     states[0].port = pin; memcpy(states[0].value, input, pin.field_width * sizeof(double));
     size_t count = 1, work = 65536; int rc = -1;
-    CoreGuard cg = {c, NULL}; DagNodeGuard guard = {covered, &cg};
+    CoreGuard cg = {c, NULL, live}; DagNodeGuard guard = {covered, &cg};
     snprintf(r->reason, sizeof r->reason, "no_covered_certified_plan");
     for (size_t head = 0; head < count; head++) {
         CoreState *s = &states[head];
@@ -425,13 +560,13 @@ done:
 
 /* Compose SEALED LABELS through exact guarded joins. These expected outputs
  * never come from executing CNET, and are used only to check admission. */
-static int cell_search(CnetCapsuleCore *,Port,Port,const double *,const CnetCoreCell *,uint64_t,CnetCapsuleCoreReply *,CoreBudget *);
+static int cell_search(CnetCapsuleCore *,Port,Port,const double *,const CnetCoreCell *,uint64_t,CnetCapsuleCoreReply *,CoreBudget *,int);
 static int replay_labels(CnetCapsuleCore *labels, CnetCapsuleCore *candidate,
                          CoreBudget *budget, size_t *checked,const CnetCoreCell *cell,uint64_t generation) {
     CoreState *states = calloc(CORE_STATES, sizeof *states);
     if (!states) return -1;
     int rc = -1;
-    CoreGuard cg = {labels, NULL};
+    CoreGuard cg = {labels, NULL, 0};
     for (size_t source = 0; source < labels->registry.count; source++) {
         const RegistryEntry *origin = &labels->registry.entries[source];
         if (!origin->btn || !origin->certified || !origin->cert_cov) goto done;
@@ -459,8 +594,8 @@ static int replay_labels(CnetCapsuleCore *labels, CnetCapsuleCore *candidate,
                         if (memcmp(s->value, table->inputs + r*table->in_dim, table->in_dim*sizeof(double))) continue;
                         const double *expected = table->targets + r*table->out_dim;
                         Port next = e->btn->output_ports[0]; CnetCapsuleCoreReply result = {0};
-                        int status=cell?cell_search(candidate,input_port,next,input,cell,generation,&result,budget):
-                            search(candidate,input_port,next,input,&result,budget);
+                        int status=cell?cell_search(candidate,input_port,next,input,cell,generation,&result,budget,0):
+                            search(candidate,input_port,next,input,&result,budget,0);
                         if (status ||
                             !result.verified || result.value != decode(next, expected)) goto done;
                         (*checked)++;
@@ -483,10 +618,31 @@ done:
     free(states); return rc;
 }
 
+static int hash_order(const void *a,const void *b){return strcmp(a,b);}
+static int evidence_growth(const CnetCapsuleCore *before,const CnetCapsuleCore *candidate) {
+    if(!before->evidence_count)return 0;
+    if(!candidate->evidence_count||cnet_capsule_evidence_compatible(before->evidence[0].evidence,candidate->evidence[0].evidence))return -1;
+    char (*hashes)[65]=calloc(candidate->evidence_count,sizeof *hashes);
+    if(!hashes)return -1;
+    int rc=-1;
+    for(size_t i=0;i<candidate->evidence_count;i++)
+        if(cnet_capsule_evidence_identity(candidate->evidence[i].evidence,hashes[i]))goto done;
+    qsort(hashes,candidate->evidence_count,sizeof *hashes,hash_order);
+    for(size_t i=0;i<before->evidence_count;i++) {
+        char hash[65];
+        if(cnet_capsule_evidence_identity(before->evidence[i].evidence,hash)||
+           !bsearch(hash,hashes,candidate->evidence_count,sizeof *hashes,hash_order))goto done;
+    }
+    rc=0;
+done:free(hashes);return rc;
+}
 int cnet_capsule_core_validate_growth(CnetCapsuleCore *before, CnetCapsuleCore *candidate,
                                     size_t *label_obligations) {
     if (!before || !candidate || !label_obligations) return -1;
     *label_obligations = 0;
+    /* Static semantic obligations accompany numeric labels. Live freshness is
+     * a serving guard: stale facts must not disable unrelated resident units. */
+    if(evidence_growth(before,candidate))return -1;
     size_t count = before->registry.count > candidate->registry.count ? before->registry.count : candidate->registry.count;
     CoreBudget budget; budget_init(&budget, admission_work(count));
     /* Full-inventory replay now audits every selected kernel as well. Its
@@ -512,7 +668,7 @@ static unsigned type_id(Port *types,unsigned *count,Port p){
     types[*count]=p;return ++*count;
 }
 static int cell_search(CnetCapsuleCore *c,Port pin,Port goal,const double *input,
-    const CnetCoreCell *cell,uint64_t generation,CnetCapsuleCoreReply *r,CoreBudget *budget){
+    const CnetCoreCell *cell,uint64_t generation,CnetCapsuleCoreReply *r,CoreBudget *budget,int live){
     snprintf(r->reason,sizeof r->reason,"cell_proposal_refused");
     if(!generation||c->registry.count>62||cnet_core_cell_validate(cell))return -1;
     CnetSelectorGraph g={0};g.feature_version=1;g.generation=generation;g.n=(unsigned)c->registry.count+2;g.goal=g.n-1;
@@ -529,7 +685,7 @@ static int cell_search(CnetCapsuleCore *c,Port pin,Port goal,const double *input
         if(g.node[u].output_type==g.node[v].input_type&&!(u==0&&v==g.goal))g.edge[u]|=UINT64_C(1)<<v;
     CnetSelectorProposal p;
     if(cnet_core_selector_propose(cell,&g,64,&p)||!p.hops||p.hops>ROUTE_MAX_STEPS+1)return -1;
-    CoreGuard cg={c,NULL};DagNodeGuard guard={covered,&cg};double value[64]={0};memcpy(value,input,pin.field_width*sizeof(double));
+    CoreGuard cg={c,NULL,live};DagNodeGuard guard={covered,&cg};double value[64]={0};memcpy(value,input,pin.field_width*sizeof(double));
     Port current=pin;size_t used=0,hops=0;
     for(unsigned h=0;h+1<p.hops;h++){
         unsigned index=p.path[h];if(!index||index>=g.goal||charge(budget))goto refuse;
@@ -548,12 +704,29 @@ static int cell_search(CnetCapsuleCore *c,Port pin,Port goal,const double *input
 refuse:
     memset(r,0,sizeof *r);snprintf(r->reason,sizeof r->reason,"cell_execution_refused");return -1;
 }
+static int finish_answer(CnetCapsuleCore *c,CnetCapsuleCoreReply *r,char *text,size_t cap) {
+    char units[sizeof r->units];memcpy(units,r->units,sizeof units);
+    char *save=NULL;CnetCapsuleEvidence *terminal=NULL;
+    for(char *unit=strtok_r(units,",",&save);unit;unit=strtok_r(NULL,",",&save)){
+        terminal=find_evidence(c,unit);
+        if(terminal&&cnet_capsule_evidence_fresh(terminal,getenv("CNET_CAPSULE_SOURCE_ROOT"),NULL,0))goto refused;
+    }
+    if(text) {
+        if(terminal){if(cnet_capsule_evidence_render(terminal,r->value,text,cap))goto refused;}
+        else {int n=snprintf(text,cap,"%u",r->value);if(n<0||(size_t)n>=cap)goto refused;}
+    }
+    return 0;
+refused:
+    if(text&&cap)text[0]=0;
+    memset(r,0,sizeof *r);snprintf(r->reason,sizeof r->reason,"source_freshness_or_render_refused");return -1;
+}
 static int ask_mode(CnetCapsuleCore *c,const char *request,const CnetCoreCell *cell,uint64_t generation,
-                    CnetCapsuleCoreReply *r) {
+                    CnetCapsuleCoreReply *r,char *text,size_t cap) {
     char verb[16], in_tag[32], out_tag[32], value[32], extra;
     Port pin = {0}, pout = {0};
     double in[64] = {0};
     if (!r) return -1;
+    if(text&&cap)text[0]=0;
     memset(r, 0, sizeof *r);
     snprintf(r->reason, sizeof r->reason, "invalid_typed_request");
     if (!c || !request || sscanf(request, "%15s %31s %31s %31s %c", verb,
@@ -572,11 +745,21 @@ static int ask_mode(CnetCapsuleCore *c,const char *request,const CnetCoreCell *c
         in[i] = pin.family == PORT_ONEHOT ? (x == i) : (double)((x >> bit) & 1UL);
     }
     CoreBudget budget; budget_init(&budget, 65536);
-    if(cell)return cell_search(c,pin,pout,in,cell,generation,r,&budget);
-    return search(c, pin, pout, in, r, &budget);
+    int rc=cell?cell_search(c,pin,pout,in,cell,generation,r,&budget,1):search(c,pin,pout,in,r,&budget,1);
+    return rc?rc:finish_answer(c,r,text,cap);
 }
-int cnet_capsule_core_ask(CnetCapsuleCore *c,const char *request,CnetCapsuleCoreReply *r){return ask_mode(c,request,NULL,0,r);}
+int cnet_capsule_core_ask(CnetCapsuleCore *c,const char *request,CnetCapsuleCoreReply *r){return ask_mode(c,request,NULL,0,r,NULL,0);}
 int cnet_capsule_core_ask_cell(CnetCapsuleCore *c,const char *request,const CnetCoreCell *cell,uint64_t generation,CnetCapsuleCoreReply *r){
     if(!cell){if(r)memset(r,0,sizeof *r);return -1;}
-    return ask_mode(c,request,cell,generation,r);
+    return ask_mode(c,request,cell,generation,r,NULL,0);
+}
+int cnet_capsule_core_ask_text(CnetCapsuleCore *c,const char *request,CnetCapsuleCoreReply *r,char *text,size_t cap) {
+    if(!text||!cap){if(r)memset(r,0,sizeof *r);return -1;}
+    return ask_mode(c,request,NULL,0,r,text,cap);
+}
+int cnet_capsule_core_ask_cell_text(CnetCapsuleCore *c,const char *request,const CnetCoreCell *cell,uint64_t generation,
+                                 CnetCapsuleCoreReply *r,char *text,size_t cap) {
+    if(text&&cap)text[0]=0;
+    if(!cell||!text||!cap){if(r)memset(r,0,sizeof *r);return -1;}
+    return ask_mode(c,request,cell,generation,r,text,cap);
 }

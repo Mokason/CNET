@@ -8,6 +8,7 @@
  * constructing a fresh registry. Any corrupt/incompatible capsule refuses.
  * Existing CNB/manifest format only; local checksums are not authentication. */
 typedef struct CnetCapsuleCore CnetCapsuleCore;
+typedef struct { char unit[64]; char sha256[65]; } CnetCapsuleIdentity;
 typedef struct {
     int verified;
     unsigned value;
@@ -16,6 +17,13 @@ typedef struct {
     char reason[160];
 } CnetCapsuleCoreReply;
 CnetCapsuleCore *cnet_capsule_core_open(const char *root, char *error, size_t cap);
+/* Explicit unloaded inventory, distinct from a failed/missing directory. */
+CnetCapsuleCore *cnet_capsule_core_empty(void);
+/* Runtime identity binds the exact sealed unit, original CNB/provenance bytes,
+ * coverage and supported assets. Sorted by unit name. Not a signature or a portable
+ * package format. A changed same-name identity requires separate swap proof. */
+int cnet_capsule_core_identities(const CnetCapsuleCore *core,
+    CnetCapsuleIdentity *out, size_t capacity, size_t *count);
 /* Private candidate view for pre-publication evaluation. Does not write root.
  * Replays existing and proposed capsules together; conflicts refuse. */
 CnetCapsuleCore *cnet_capsule_core_open_candidate(const char *root,
@@ -37,6 +45,14 @@ int cnet_capsule_core_validate_growth_cell(CnetCapsuleCore *before,CnetCapsuleCo
  * All refusal paths zero reply.verified and never return a partial answer. */
 int cnet_capsule_core_ask(CnetCapsuleCore *core, const char *request,
                          CnetCapsuleCoreReply *reply);
+/* Executes the same certified request, then emits its exact bound decoder or
+ * a decimal value for numeric-only units. No arbitrary prose, no reply-struct
+ * ABI change. Source evidence is checked per used hop and again before output.
+ * Static sealed-label admission does not assert present-day source freshness. */
+int cnet_capsule_core_ask_text(CnetCapsuleCore *core,const char *request,
+    CnetCapsuleCoreReply *reply,char *text,size_t capacity);
+int cnet_capsule_core_ask_cell_text(CnetCapsuleCore *core,const char *request,
+    const CnetCoreCell *cell,uint64_t generation,CnetCapsuleCoreReply *reply,char *text,size_t capacity);
 /* Opt-in experimental selector. Builds its graph from this exact verified
  * inventory (<=62 capsules plus start/goal nodes); unsupported views refuse.
  * Every proposed hop uses the same strict audit/coverage/executor as ask().
