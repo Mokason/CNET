@@ -2,7 +2,22 @@
 
 Evidence, scope and dependencies: [plan.md](plan.md).
 
-Active execution contract: [product closure](../plans/cnet_product_closure_20260906.md).
+## Active unattended-learning sequence
+
+Contract: [unattended learning](../plans/cnet_autonomous_learning_20260906.md).
+
+- [ ] Strict owner policy and private filesystem boundary
+- [ ] Durable demand, budgets and mutation-intent reconciliation
+- [ ] Versioned local-table acquisition and confined CPU workers
+- [ ] Independent evaluation and automatic native capsule activation
+- [ ] Probation, monitoring, automatic rollback and operator stop controls
+- [ ] Distinct-objective AMD allocator training and immutable checkpoints
+- [ ] Useful core allocator improvement on independent confirmation episodes
+- [ ] Short integrated fault/resource campaign and source regression
+- [ ] Actual 72-hour unattended acceptance after frozen artifacts
+- [ ] Completed evidence and operator handoff
+
+Previous execution contract: [product closure](../plans/cnet_product_closure_20260906.md).
 All implementation items below are complete against their recorded bounded
 gates; live deployment remains a separate owner checkpoint.
 

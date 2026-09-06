@@ -4,6 +4,15 @@ This file is the current task queue, not a replay of old implementation steps.
 Decision history remains in [plans/](../plans/). Current documentation starts at
 [docs/INDEX.md](../docs/INDEX.md).
 
+## Active: unattended learning and measured core improvement
+
+The owner authorized all six proposed stages. The implementation contract is
+[policy-bounded unattended learning](../plans/cnet_autonomous_learning_20260906.md),
+starting at `f805be8` on `feature/autonomous-learning-20260906` in its own worktree.
+The 72-hour acceptance requires real elapsed observation after source freeze;
+starting it or simulating ticks does not complete it. All new behavior is opt-in
+and tested against private deployments, without replacing existing services.
+
 ## Completed product source checkpoint
 
 The owner authorized all remaining product and documentation-exposed code work.
