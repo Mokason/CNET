@@ -6209,7 +6209,7 @@ claims: unified asi_framing
 .PHONY: asi_framing
 asi_framing:
 	@for f in README.md AGENTS.md docs/INDEX.md docs/ARCHITECTURE.md; do \
-		grep -q 'ASI â€” Artificial Specialized Intelligence' $$f || \
+		grep -Fq 'ASI — Artificial Specialized Intelligence' $$f || \
 			{ echo "ASI_FRAMING_FAIL missing canonical sentence in $$f"; exit 1; }; \
 		grep -q 'never' $$f && grep -q 'Artificial Superintelligence' $$f || \
 			{ echo "ASI_FRAMING_FAIL missing superintelligence disclaimer in $$f"; exit 1; }; \
