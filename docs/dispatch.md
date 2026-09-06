@@ -1,52 +1,46 @@
-# One Dispatch Story
+# Selection and execution authority
 
-"Which specialist runs?" has exactly one answer in CNET, told in three
-layers. Each layer has a stated authority boundary; none may borrow
-another's. This document is the deliberate policy the July 2026
-unification analysis asked for (its item 5), and `make dispatch_story`
-is the gate that keeps the boundaries machine-checked.
+Three layers answer different questions. None may bypass the contract of the
+specialist that ultimately executes.
 
-| Layer | Mechanism | Granularity | Authority |
-|---|---|---|---|
-| 1 — Recall | `cce_router` (SSMax over branch centroid similarity + goodness) | INSIDE one Specialist: which branch of a CCE model's forest answers | None. Recall proposes an internal path; the Specialist's contract certifies the ROUTED composite, so an internal misroute is a certification failure, never a silent behavior change |
-| 2 — Synthesis | `route_plan` / `dag_plan` / `dag_plan_circuit` | ACROSS Specialists: which certified units compose into the plan | Sole composition authority. Candidates are certified-only under `require_certified`; ranking is learned Laplace reliability (cost as a strict tiebreak under `CNET_POWER_LOW`); lifecycle exclusions (RESET, shadows) apply at one chokepoint; expansion is beam-limited (documented in *Planner scaling*) |
-| 3 — Policy | application orchestrators: `perceptual_query`, `soul_request`, `gap_lane_execute`; **agent roles** (`auditor` / `researcher` / `coder` / `critic` / `memory-witness`) | ABOVE the planner: what to ask for, when to abstain, where a miss goes, **who is speaking** | None over validity. Policy decides the request, stance, and failure path (abstain, gap inbox); execution happens only through the planner/executors, which validate and canonicalize every handoff. Agent roles are `include/cnet_agent_role.h` — not `SpecialistRole` lifecycle. **Route telemetry** (`CNET_ROUTE_LOG` / `cnet_route_log`) is report-only on both harness and SoulHost — it never ranks or replaces certification |
+| Layer | Decision | Authority boundary |
+| --- | --- | --- |
+| Recall | Which branch inside a CCE specialist to use | The routed composite still owes the specialist's contract |
+| Certified planning | Which admitted specialists compose a typed task | Only eligible certified units; every handoff is checked |
+| Application policy | What to request, how to present refusal, where a miss goes | No authority to convert a proposal into a certified result |
 
-## Why the layering is deliberate
+The planner uses typed compatibility, lifecycle eligibility and evidence-based
+ranking. Similarity and reliability are selection inputs, not alternatives to
+certification. Demoted/reset candidates cannot win by having a higher score.
+Report-only telemetry and agent roles do not grant execution authority.
 
-Recall and synthesis are not competing dispatchers — they answer at
-different granularities. A CCE model's internal router is invisible to
-the planner on purpose: the Specialist type (see `include/specialist.h`)
-makes the whole routed model ONE planner node, and the heterogeneous-plan
-gate proves the planner composes it like any other unit. Pulling branch
-recall up into the planner would dissolve the specialist boundary the
-whole architecture is built on; pushing planning down into the router
-would put composition behind an uncertified similarity score.
+## Local capsule path
 
-The layer-3 orchestrators are policy, not dispatch. `perceptual_query`
-(the habitat's sub-contract chooser) predates concept ports (6A); its
-hand-coded scoring is the part the planner should subsume as concept
-ports mature — that remains the direction, and until then its boundary
-is the same as every layer-3 citizen's: it may choose what to request
-and how to present abstention, and it may not execute anything except
-through the strict machinery.
+`cnet_capsule_core_ask` searches typed-port/actual-value states in a verified
+inventory. A suffix uncovered for one value can still be usable for a different
+covered value. The strict executor checks the selected capsule at each hop;
+search exhaustion or uncovered intermediates abstain.
 
-## The invariants the gate pins (`make dispatch_story`)
+The opt-in `cnet_capsule_core_ask_cell` uses a learned graph proposal with the
+same final checks. Its graph cap is 62 capsules plus two endpoints. There is no
+silent fallback, and it does not reduce deterministic inventory capacity.
+Candidate activation must replay actual neural execution on all old/proposed
+sealed-label obligations, not merely prove the deterministic path still works.
 
-1. **Recall stays inside the contract.** A two-branch CCE model routes
-   per input (distinct centroids, distinct behaviors); the planner sees
-   one certified unit whose exemplar table captures the routed composite,
-   and strict execution replays it exactly. The router chose; the
-   contract answered for the choice.
-2. **Certification outranks everything.** An uncertified candidate is
-   invisible to the planner regardless of accrued evidence; demoting the
-   preferred unit (RESET) re-routes to the certified alternative;
-   restoring it restores the preference.
-3. **Among the certified, reliability ranks.** Flip the evidence and the
-   plan flips with it — the planner's ranking is learned, not configured.
+## Verify the boundary
 
-*Related reading:* `include/specialist.h` (the one type the layers
-dispatch over), *The Loop* and *Routing* in the README, [`INDEX.md`](INDEX.md)
-for umbrellas, and the CNET-D section for the no-authority discipline layer 3
-inherits. Layer-3 agent roles and route telemetry (2026-07-21): see
-`include/cnet_agent_role.h`, `include/cnet_route_log.h`.
+```sh
+make dispatch_story
+make capsule_value_search capsule_history_coverage
+make -C experiments/offline_controller product-test
+```
+
+The first gate tests recall within a contract, certification before ranking and
+reliability among eligible units. The last requires AMD ROCm and tests the
+experimental activation boundary; it is not required to use deterministic
+dispatch.
+
+Contracts: [specialist.h](../include/specialist.h),
+[cnet_capsule_core.h](../include/cnet_capsule_core.h),
+[cnet_core_host.h](../include/cnet_core_host.h).
+See [architecture](ARCHITECTURE.md) and [capsules](CAPSULE_CORE.md).

@@ -1,10 +1,13 @@
-# Unlimited-OCR MCP — WITHHELD
+# Retired Unlimited-OCR integration
 
-The Unlimited-OCR MCP stub and torch harnesses were removed from the product tree.
+This directory is a historical marker, not a running or installable MCP
+server. The previous stub and torch harnesses were removed.
 
-Portable OCR proof is C ROE:
+Native ROE checks remain under `make roe_asi_ocr_local`,
+`make roe_asi_ocr_tables` and related targets; table extraction uses
+`bin/roe_table_extract`. Those bounded mechanisms do not establish an
+external OCR leaderboard score.
 
-- `make roe_asi_ocr_local` / `roe_asi_ocr_tables` / `roe_asi_ocr_surpass`
-- `./bin/roe_table_extract`
-
-Do not treat this directory as a live MCP server.
+Do not reinstall removed dependencies or infer an active endpoint from this
+directory's name. External Unlimited/leaderboard claims remain WITHHELD until
+an explicitly scoped, frozen benchmark is implemented and executed.

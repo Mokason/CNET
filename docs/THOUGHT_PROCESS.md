@@ -1,41 +1,18 @@
-# Token-free thought process
+# Control-state trace
 
-Not LLM chain-of-thought. Not consciousness.  
-**Structured operational thinking at 0 tokens** — same class as LOCAL CERT.
+[scripts/cnet_thought_process.py](../scripts/cnet_thought_process.py) formats
+an operational sequence from query, route and governor state: observe,
+control signals, intent rule, route, proposed action, checks and consolidation.
 
-## Pipeline
+`make cnet_thought` tests the helper. Direct invocation persists diagnostics;
+use a private governor directory when experimenting.
+`ROE_NO_THOUGHT=1` suppresses trace chatter in consumers that honor it.
 
-```text
-OBSERVE → AFFECT (DA/5HT/ADO) → INTEND → ROUTE → ACT → VERIFY → CONSOLIDATE
-```
+The trace skeleton uses no language-model tokens. That describes its
+implementation cost, not the quality or certification of its contents.
+Route snapshots can be stale, intent is rule-derived, and a displayed action
+or verification checklist is not evidence the action or verifier executed.
 
-| Step | Source (no LLM) |
-|------|-----------------|
-| OBSERVE | query, route match, KPI |
-| AFFECT | neuromod_state + persona affect |
-| INTEND | rules (identity / prefer_local / consolidate / pack) |
-| ROUTE | ROUTES.jsonl longest pattern |
-| ACT | plan list (load pack, teacher gate, never_self_cert) |
-| VERIFY | law checklist |
-| CONSOLIDATE | REST / SORT / REMEMBER / HOLD from neuromod |
-
-## Commands
-
-```bash
-make cnet_thought
-python3 scripts/cnet_thought_process.py --query "who are you"
-cat logs/governor/thought_last.json
-# chain only:
-python3 scripts/cnet_thought_process.py --query "format-truncation" | head -1
-```
-
-## Integration
-
-- **Autonomous cycle** — thinks before each probe (persist log)
-- **Front door** — prints `thought: …` chain after ask (disable: `ROE_NO_THOUGHT=1`)
-
-## Law
-
-- `tokens: 0` · `llm: false`
-- never self-CERT · not AGI · not consciousness
-- thoughts are **logs of control**, not truth claims
+The native multi-hop trace is documented separately in
+[CHAIN_OF_THOUGHT.md](CHAIN_OF_THOUGHT.md). Neither trace grants a promotion
+right or supplies independent training labels.

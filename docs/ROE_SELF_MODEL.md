@@ -1,67 +1,24 @@
-# ROE self-model (instrumented inventory)
+# Instrumented inventory
 
-Closes the self-model loops without consciousness claims.
+The [self-model API](../include/cnet_roe_self.h) exposes an inventory snapshot,
+goal HAVE/MISS probes, skill health, optional document coverage and pack export.
+Its implementation is [cnet_roe_self.c](../src/roe/cnet_roe_self.c).
 
-## Law
-
-- **never self-CERT**
-- **second_brain: false**
-- Tree ranks rise only from **gate evidence files** or explicit doctrine roots
-- `beat_quality` stays **0** unless `artifacts/omnidoc_full/SOTA_CLAIM.txt` contains `OVERALL_GE_LEADERBOARD=1`
-
-## Loops closed
-
-| # | Loop | Mechanism |
-|---|------|-----------|
-| 1 | Per-turn inventory | `roe_turn` → `RoeReply.source_name` + `inventory_line` |
-| 2 | Gate-bound skill tree | `roe_self_apply_gate_evidence` probes `logs/*PASS*` + reports |
-| 3 | Coverage + pack | `roe_doc_coverage` + `roe_self_export_pack` → `SELF.abi` |
-| 4 | Skill health | 5-layer scan REGISTRY→UTILITY on `RoeSkill` |
-| 5 | Goal HAVE/MISS | `roe_self_goal_probe` (no auto_learn) |
-| 6 | Reflection thought | optional `agent_record_thought` via `--thoughts` |
-
-## Gates
-
-```bash
-make roe_asi_self        # ROE_ASI_SELF_PASS
-make roe_asi_self_cli    # snapshot + validate → artifacts/roe_self_model/
+```sh
+make roe_asi_self roe_asi_self_cli roe_soul_pack
 ```
 
-## CLI
+Snapshot/export operations write artifacts such as `SELF.abi`,
+`self_report.json`, a manifest and optional skill-tree/document data.
+Use a private output for manual experiments; inspect the CLI options before
+writing to an existing catalog.
 
-```bash
-./bin/roe_asi_self_cli snapshot --catalog artifacts/roe_catalog \
-  --out artifacts/roe_self_model --repo . \
-  --goal "ocr document local packs" --thoughts
+Gate-evidence files and explicit doctrine roots influence the tree.
+A discovered PASS marker is historical file content, not proof of a fresh
+run or authenticated achievement. Preserve its source and benchmark scope.
+The inventory cannot certify its own statements or supply independent labels.
 
-./bin/roe_asi_self_cli ask "who are you" --catalog artifacts/roe_catalog
-./bin/roe_asi_self_cli validate --out artifacts/roe_self_model
-```
-
-## Pack layout
-
-```
-artifacts/roe_self_model/
-  SELF.abi
-  self_report.json
-  MANIFEST.txt
-  skill_tree.jsonl   # when tree saved
-  doc_pack/          # if doc asset bound
-```
-
-## API
-
-See `include/cnet_roe_self.h`.
-
-## SOUL persona pack (`pack_soul_marble`)
-
-Isolated SOUL.md-style capsule (kind=persona). Delivery + oath only; **seal_path forbidden**.
-
-```bash
-make roe_soul_pack          # ROE_SOUL_PACK_PASS
-./bin/roe_front_door ask "who are you"     # Marble LOCAL
-./bin/roe_front_door ask "one line marble"
-```
-
-Always-on with self/goal/toolcall. Source: `config/voice_marble.md` + SOUL.md in pack.
-Swap souls later via another `pack_soul_*` (one active persona preferred).
+The Marble persona pack controls identity/delivery text and forbids a sealing
+path. [config/voice_marble.md](../config/voice_marble.md) is policy/persona
+input, not obsolete Markdown to rewrite during cleanup.
+See [utterances](UTTERANCE.md) and [peer interface](THIRD_WAY_MARBLE_PEER.md).

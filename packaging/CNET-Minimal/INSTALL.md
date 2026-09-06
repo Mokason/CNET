@@ -1,78 +1,41 @@
-# CNET-Minimal — Install & smoke
+# CNET-Minimal package operations
 
-Versioned Autonomous-ASI front door runtime (C + CERT packs).  
-**Never self-CERT.** Residual GGUF optional; teacher secrets not included.
+Build a private package from the repository with:
 
-## Layout
-
-```text
-CNET-Minimal-<ver>/
-  bin/           roe_front_door, roe_domain_route, roe_chain_think, cnet-ask, …
-  data/          roe_daily_packs/ (CERT seeds)
-  config/        domain_routes.tsv, promote_blocklist.txt, *.env.example
-  tools/         roe_evolve_tick.py (python3)
-  scripts/       cnet_runtime_smoke.sh, cnet_runtime_soak_gate.sh
-  INSTALL.md
-  VERSION
-```
-
-## Install
-
-From repo:
-
-```bash
+```sh
 make cnet_minimal_package
-# → dist/CNET-Minimal-<gitsha>/
-# → dist/CNET-Minimal-<gitsha>.tar.gz
 ```
 
-Or unpack a tarball:
+Inspect the generated `dist/` artifact and its manifest before using it.
+Package creation is not permission to install it, replace a live base, restart
+services or publish the archive.
+The packager removes/rebuilds its selected output directory. Never point
+`CNET_MINIMAL_OUT` at a live installation or a directory containing other data.
 
-```bash
-tar -xzf CNET-Minimal-*.tar.gz
-cd CNET-Minimal-*
-```
+## Test an extracted copy
 
-Requirements: Linux x86_64, `python3` (for evolve), optional curl for teacher.
+Extract the exact chosen archive into a new empty private directory.
+Do not use an ambiguous wildcard or unpack over an installed runtime.
+Inside that extracted package, set `CNET_MINIMAL_ROOT` to its absolute
+root and run the included `scripts/cnet_runtime_smoke.sh`.
 
-## Smoke
+The packager copies available front-door binaries, packs, configuration and
+helper scripts, but still has a legacy gap: it attempts to copy the removed
+Python `tools/roe_evolve_tick.py` and does not copy `bin/roe_evolve_tick`.
+An evolution gate binary is not the gardener. Do not claim a complete packaged
+evolution workflow from `PACKAGE_OK`; that packaging path needs a separate fix.
+Some helper paths still require Python or optional external services;
+do not describe every packaged workflow as dependency-free or offline.
 
-```bash
-export CNET_MINIMAL_ROOT=$PWD
-./scripts/cnet_runtime_smoke.sh
-# expect: CNET_RUNTIME_SMOKE_PASS
-```
+## Installation boundary
 
-## Front door
+Review effective socket, pack, queue and governor paths. Preserve live
+knowledge and operator configuration; coordinate writers before replacement.
+Teacher/reviewer credentials remain external to the package and version control.
+The packager copies runtime pack content; it is not a secret scrubber. Inspect
+personal/private material before moving even a locally generated archive.
 
-```bash
-./bin/cnet-ask "who are you"
-./bin/roe_front_door ask "format-truncation werror" --root "$PWD/data/roe_daily_packs"
-./bin/roe_domain_route "cnet never lowers floors for brain floats"
-```
-
-## Evolve (optional)
-
-```bash
-# from repo tree (uses artifacts/ symlink or run in-repo)
-python3 tools/roe_evolve_tick.py --dry-run
-# promote only gold_file | multi_stable+reviewer; blocklist drops probes/ABSTAIN
-```
-
-Copy `config/teacher.env.example` / `reviewer.env.example` and source them for live teacher/reviewer — never bake secrets into the package.
-
-## Soak gate (release)
-
-```bash
-make cnet_runtime_soak_gate
-# CNET_RUNTIME_SOAK_GATE_PASS
-```
-
-Assertions: no ABSTAIN-as-CERT in personal; blocklist skips probes; local_hit ≥ 0.80 when autonomous report present.
-
-## Law
-
-- CERT packs = fail-closed LOCAL answers  
-- `.tskill` / MTK = residual only  
-- Stream index = pre-attention HOT mask when residual GGUF bound  
-- Promote path: gold or multi_stable+reviewer only  
+A smoke pass only names its fixture. `make cnet_runtime_soak_gate` is a
+separate gate, not proof of all real traffic or public-release readiness.
+MTK cartridges remain residual tensor deltas; pack text and CNU1 capsules
+have distinct acceptance rules. No packaging operation grants certification.

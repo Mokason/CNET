@@ -1,91 +1,24 @@
-# Sampling Pipeline — CNET LLM
+# Sampling and stopping
 
-## Composable ISamplerStep Chain
+[SamplerPipeline](../src/CNET.Llm.Engine/Samplers/SamplerPipeline.cs) applies
+configured logit processors, then sampler steps, then token selection.
+Its automatic path includes repetition penalty and enabled temperature,
+top-k, top-p and min-p transforms. Nonpositive temperature selects greedy
+behavior on that automatic path.
 
-The sampler pipeline is a sequence of `ISamplerStep` operations applied to raw logits before final token selection. Steps are ordered and extensible.
+Explicit step lists are a separate constructor/options path.
+Preserve ordering, RNG/seed and transform settings when comparing output.
+Constraint masks and stopping are generation-level concerns too.
 
-```
-ISamplerStep:
-  Apply(Span<float> logits, SamplerContext ctx) → void
-```
+The current server converter does not implement the older guide's
+frequency/presence penalties, logit-bias or `n > 1` beam-search promise.
+It returns one choice. Built-in stop-token sequences are not established by
+the stop-string API.
 
-## Default Pipeline Order
+Stop strings are checked at token boundaries and can remove a whole final
+token, including text preceding the matched suffix.
+Max-token/context limits can leave structured output incomplete.
 
-### 1. Logit Bias (`LogitBiasStep`)
-Per-token additive bias from request `logit_bias` map: `logits[token_id] += bias`.
-OpenAI API compatible: `{token_id: float_value}`.
-
-### 2. Constraint Mask (`ConstraintMaskStep`)
-Apply `IDecodingConstraint.GetAllowedTokens()` mask if structured output active.
-Invalid tokens → `-∞`. See [CONSTRAINED_DECODING.md](CONSTRAINED_DECODING.md).
-
-### 3. Repetition Penalties (`RepetitionPenaltyStep`)
-Three configurable modes (can combine):
-
-- **Repetition penalty** (multiplicative): For tokens in history, `logit = logit > 0 ? logit/penalty : logit*penalty`. Common in open models.
-- **Frequency penalty** (additive, proportional): `logit -= freq_penalty × count(token)`. OpenAI API.
-- **Presence penalty** (additive, binary): `logit -= presence_penalty × (count > 0 ? 1 : 0)`. OpenAI API.
-
-Operates over a configurable lookback window of recent tokens.
-
-### 4. Temperature (`TemperatureStep`)
-`logits /= temperature`. T=0 → greedy (argmax). T=1 → unmodified. T>1 → more random.
-
-### 5. Top-K (`TopKStep`)
-Keep only K highest-probability tokens. Set rest to `-∞`.
-
-### 6. Top-P / Nucleus (`TopPStep`)
-Sort by probability descending. Keep smallest set where cumulative probability ≥ P.
-
-### 7. Min-P (`MinPStep`)
-Keep tokens with `probability ≥ min_p × max_probability`. More stable than top-p across distributions.
-
-### 8. Categorical Sample (`CategoricalSampleStep`)
-Convert logits to probabilities (softmax), sample. Argmax if temperature was 0.
-
-## Custom Logit Processors
-
-Users can inject arbitrary processing at any pipeline position:
-
-```
-ILogitProcessor:
-  Process(Span<float> logits, IReadOnlyList<int> previousTokens, ProcessorContext ctx) → void
-```
-
-Use cases: classifier-free guidance, contrastive decoding, custom penalty schemes.
-
-## Beam Search
-
-Alternative to sampling. Maintains N candidate beams:
-
-1. Each step: expand each beam by top-M tokens → N×M candidates.
-2. Score by cumulative log-probability with length normalization.
-3. Keep top N beams.
-4. Stop when all beams hit EOS or max length.
-5. Return top-K completed sequences by normalized score.
-
-**KV-cache**: Beams sharing prefix use copy-on-write (PagedAttention COW blocks).
-**Constraints**: Each beam clones its `IDecodingConstraint` state at branch points.
-**Configured via**: `n` parameter in API request (n > 1 triggers beam search).
-
-## Stop Conditions — IStopCondition
-
-Multiple conditions active simultaneously. First match wins.
-
-```
-IStopCondition:
-  ShouldStop(tokenId, generatedTokens, decodedText) → StopResult
-
-StopResult: Continue | Stop | StopInclude
-```
-
-### Built-in Conditions
-
-- **EOS token** — Always active. Model's end-of-sequence token.
-- **Max tokens** — Hard limit on generated tokens.
-- **Stop strings** — Text patterns that terminate generation (e.g., `"\n\nHuman:"`, `"END"`). Rolling buffer of decoded text, check suffix matches. Stop string excluded from output.
-  - **Known limitation (Wave 8 / [issue #121](https://github.com/kkokosa/dotLLM/issues/121))**: the detector fires at token boundaries and the entire last token is removed from the output, not just the matched suffix. For BPE tokenizers that merge preceding text into the same token as the stop sequence, valid content may be lost. Use **stop token sequences** (below) when exact boundary control matters.
-- **Stop token sequences** — Token ID sequences (avoids tokenization ambiguity).
-- **Custom predicate** — Arbitrary `IStopCondition` implementation.
-
-OpenAI API: `stop: ["str1", "str2"]` maps to stop string conditions.
+See [RequestConverter](../src/CNET.Llm.Server/RequestConverter.cs),
+[stop conditions](../src/CNET.Llm.Engine/Samplers/StopConditions/)
+and [speculation eligibility](SPECULATIVE.md).

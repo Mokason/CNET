@@ -1,97 +1,62 @@
-# CNET Execution Tiers
+# Execution tiers and backend boundaries
 
-This document describes the three execution tiers of the CNET CCE build:
-core Specialist/SoulHost, model-kernel acceleration, and quarantined bridge or
-legacy experiments. It exists to make the dual GPU backend roles honest and
-to prevent accidental re-coupling of experimental code into the core
-aggregate.
+Build membership is not a capability certificate. The CCE aggregate, model
+acceleration backends, capsule-serving library and experimental trainers have
+different responsibilities and dependencies.
 
-## Tier 1 — Core CCE Aggregate (`$(CCE)`)
+## Core aggregate
 
-The `$(CCE)` Makefile variable is the set of source files compiled into every
-CCE build, including `cce.dll` / `cnet.so` (the P/Invoke and MCP shared
-libraries). It includes:
+`$(CCE)` and [mk/cce_lib.mk](../mk/cce_lib.mk) define the shared CCE implementation
+and link products. The aggregate includes tensor/block/cascade/forest/archive,
+routing, training, model I/O and selected model kernels.
 
-- Tensor, block, cascade, archive, forest, router, sparse-kv, uncertainty,
-  compression, learn, patch — the core CCE engine.
-- `cce_gpu.c` — the **generic `cce_tensor` device API**. The default
-  `cce_gpu_init` creates a CPU-fallback context; CUDA is requested explicitly
-  through `cce_gpu_init_cuda`. It never owns the OpenCL backend.
-- `cce_clgemm.c` — the **OpenCL model-kernel backend**. This is a separate
-  acceleration path with its own tensor contract (`float*` row-major, not
-  `cce_tensor`). It dynamically loads `libOpenCL.so.1` / `OpenCL.dll` and
-  compiles/resident-caches CL kernels for matmul and int8-q8 matmul. It is
-  linked into `$(CCE)` as a core source but is a distinct backend from
-  `cce_gpu` — the two are **not unified** and have different tensor layouts.
-- Model I/O, dataset, autograd, safetensors, GGUF reader, QGKP, detect, SSM,
-  st_llama, specgraph, weight store, tier runtime, similar, transformer QAT.
-- `src/cce/cce_aicimo.c` — the canonical AICIMO adapter router is in the
-  **core CCE aggregate** and exports the `cce_aicimo_*` API. Historical
-  unprefixed names remain header-only compatibility wrappers, not global ABI.
+- `src/cce/cce_aicimo.c` is the canonical adapter router in the
+  **core CCE aggregate**. Unprefixed historical names are header compatibility
+  wrappers, not a second global ABI.
+- `src/cce/cce_aicimo_bridge.c`, preservation and role-slice files remain
+  experimental; they are not the canonical implementation.
+- `src/cnet_lm.c` is a legacy training/generation path,
+  **not in the core** aggregate. Explicit legacy/demo targets may still use it.
 
-### What is NOT in `$(CCE)`
+The local capsule library is assembled in [mk/authority.mk](../mk/authority.mk).
+It adds certified inventory/query/publication-facing APIs and the opt-in core
+candidate host without making the neural path the default.
 
-The following auxiliary or legacy sources are deliberately **excluded** from
-the core aggregate:
+## AMD acceleration
 
-- `src/cce/cce_aicimo_bridge.c`, `cce_aicimo_preservation.c`,
-  `cce_aicimo_role_slice.c` — experimental AICIMO bridge/role-slice files.
-- `src/cnet_lm.c` — legacy second training/generation/head-routing path; it is
-  **not in the core** aggregate.
+| Surface | Contract |
+| --- | --- |
+| Generic tensor device API | `cce_tensor` device abstraction; default CPU context |
+| OpenCL model kernels | Separate row-major/device-cache API via `cce_clgemm` |
+| HIP/rocBLAS resident trainer | Explicit device ownership, private streams and FP32 updates |
+| AMD math library | Bounded device-pointer matrix/update functions |
+| Managed bounded offload | Native model/session backend plus explicit resource policy |
 
-These are reachable only through explicit experimental/legacy targets.
+These are not interchangeable tensor layouts. `CceModel.UseDevice` does not
+implicitly expose OpenCL; reserved unsupported device values must refuse.
+Historical CUDA implementation files describe legacy vendor-specific surfaces;
+they are not the supported AMD product workflow. See [GPU training](GPU_TRAINING.md).
 
-## Tier 2 — Model-Kernel Acceleration
+The resident trainer proves GPU forward and updates for its fixed workload.
+It does not provide every model architecture with a training backend. The shared
+cell and the larger recurrent trainer have separate tests and measurements.
+Failed precision gates stay failed.
 
-Two GPU backends exist, each with a distinct role:
+## Verification tiers
 
-| Backend       | Source            | API entry point       | Tensor contract        | Status     |
-|--------------|-------------------|-----------------------|------------------------|------------|
-| Generic tensor device | `src/cce/cce_gpu.c` | `cce_gpu_init` / `cce_gpu_init_cuda` | `cce_tensor` (struct) | CPU context or explicit CUDA |
-| OpenCL kernel | `src/cce/cce_clgemm.c` | `cce_clgemm_open` | `float*` row-major | OpenCL |
+```sh
+make alt_paths_gate execution_tiers_doc_gate
+make aicimo_smoke cce_smoke
+make verify-fast
+make verify
+make verify-t2
+```
 
-**These are not unified.** `cce_gpu_init` always creates the CPU-fallback
-context; explicit CUDA uses `cce_gpu_init_cuda`. The OpenCL path is accessed
-through `cce_clgemm_open` / `cce_clgemm_matmul`, which has its own device
-management and tensor layout. The high-level `.NET` `CceModel.UseDevice`
-method does not expose OpenCL; `CceDevice.OpenCl` is reserved and rejected
-rather than silently mapped to the wrong backend.
+The alternate-path gate checks canonical AICIMO symbols, rejects legacy leakage
+and distinguishes generic device initialization from model-kernel APIs.
+[membership](../mk/verify_tiers.mk) defines the source verification tiers.
 
-## Tier 3 — Quarantined Legacy Experiments
-
-| Source                          | Target(s) using it          | Notes                        |
-|---------------------------------|-----------------------------|------------------------------|
-| `src/cnet_lm.c`                 | `glyph_habitat`, `build_tool`| Legacy/experimental targets only |
-| `src/cce/cce_aicimo_bridge.c`   | (not in Makefile)           | Placeholder/TODO; experimental bridge |
-| `src/cce/cce_aicimo_preservation.c` | (not in Makefile)       | Placeholder/TODO code        |
-| `src/cce/cce_aicimo_role_slice.c` | (not in Makefile)         | Placeholder/TODO code        |
-
-### Regression gate
-
-`make alt_paths_gate` compiles `tests/test_alt_paths_gate.c` with `$(CCE)` and
-requires the canonical `cce_aicimo_*` implementation in the core aggregate.
-Weak-symbol probes reject both old unprefixed AICIMO global symbols and
-`cnet_lm` leakage. It also verifies that `cce_gpu_init` creates only the
-generic CPU-fallback context; explicit CUDA and the separate OpenCL
-`cce_clgemm` API remain distinct.
-
-### Smoke builds
-
-- `make aicimo_smoke` — compiles `$(CCE)` and runs the canonical AICIMO smoke
-  test; no second AICIMO source list exists.
-- `make cce_smoke` — compiles `$(CCE)` and runs the CCE engine smoke test.
-
-## Tier U — Use-loop product surface (2026-07-21)
-
-Not a separate binary tier: these targets compose core Specialists/SoulHost
-with personal-AI, residual, oracle teaching, and evidence persistence.
-
-| Target | Marker | Notes |
-|---|---|---|
-| `cnet_deep_use_loop` | `CNET_DEEP_USE_LOOP_PASS` | Multi-priority hermetic (evidence reopen, distill, residual, planner rank, taxonomy) |
-| `cnet_use_loop_acceptance` | `CNET_USE_LOOP_ACCEPTANCE_PASS` | Product umbrella over deep + personal_ai surfaces |
-| `serve_feedback` | `SERVE_FEEDBACK_PASS` | Reliability + serve stats across reopen |
-| `oracle_teacher_runtime` | `ORACLE_TEACHER_RUNTIME_PASS` | Teacher A+B governance on Oracle v2 |
-| `health_layers` / `evidence_bundle` / `route_log` / `agent_role` | respective `*_PASS` | Measure/report layers; do not replace certification |
-
-See [`INDEX.md`](INDEX.md).
+Use-loop targets such as `cnet_use_loop_acceptance`, `serve_feedback` and
+`oracle_teacher_runtime` compose runtime components; they are not another
+execution backend. Private checkpoints, GPUs and external teachers require
+their own evidence. [Build guide](BUILD_AND_TEST.md), [architecture](ARCHITECTURE.md).

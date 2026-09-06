@@ -1,14 +1,16 @@
-# CORE brick seed (`.lut` only)
+# CORE brick seeds
 
-Live bank path: `$HOME/.local/share/cnet-bricks` (`CNET_CORE_BUS_BRICKS_DIR`).
+The `.lut` files here are finite factory table seeds, not GGUF weights
+or portable CNU1 capsules. Their historical scenario naming is not a broad
+capability claim.
 
-Install/sync:
-```bash
-scripts/cnet_core_bricks_wire.sh
-systemctl --user restart cnetd
-cnet-sock-ask "q1_add16 3"   # expect LOCAL core brick
-```
+`CNET_CORE_BUS_BRICKS_DIR` selects the runtime bank.
+[scripts/cnet_core_bricks_wire.sh](../../scripts/cnet_core_bricks_wire.sh)
+can install/synchronize seeds; it changes runtime state. Inspect its selected
+destination and preserve local additions before intentional use.
+Do not combine installation and a service restart into a routine smoke test.
 
-These LUTs are **CERT tables** from overnight AGI scenario factory (2026-08-17).
-Serve path is light RESULT (no residual auto-CERT). GGUF teacher weights stay
-out of this seed — factory rebuilds them under the live bricks dir when needed.
+Table lookup still needs its own identity/acceptance rules.
+Residual generation cannot certify a table or invent a covered result.
+See [dispatch](../../docs/dispatch.md), [daemon](../../docs/CNETD.md) and
+[operations](../../docs/CNET_MARBLE_24_7.md).

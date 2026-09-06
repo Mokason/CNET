@@ -1,38 +1,20 @@
-# Speech capsule (`pack_speech_io`)
+# Speech output
 
-Speak-out modality for CNET. **Delivery only — never CERT.**
+[pack_speech_io](../packs/pack_speech_io/) contains speech-related guidance.
+The executable TTS path is [cnet_speech_say.py](../tools/cnet_speech_say.py),
+which uses `edge_tts` to synthesize audio and optional local players.
+This path can send text to an external service; it is not offline speech
+synthesis or a new certified capability.
 
-## Pieces
+The CLI accepts explicit text or `--q` to query the selected daemon, and
+`--play` requests playback. Query mode checks the returned utterance and
+voice policy. Explicit user-supplied text is different from a verified answer.
 
-| Piece | Role |
-|--------|------|
-| `pack_speech_io` | CERT skills explaining speech law / how-to |
-| `tools/cnet_speech_say.py` | edge-tts → mp3 |
-| `POST /api/speak` | web TTS |
-| Cockpit **Speak** | plays last reply |
+The web `POST /api/speak` route requires the same authentication boundary as
+the [web client](CNET_WEB.md). Do not use old unauthenticated network examples
+or machine-specific Python paths. Keep credentials out of URLs and logs.
 
-## CLI
-
-```bash
-# prefer venv with edge-tts
-CNET_PYTHON=$HOME/.hermes/hermes-agent/venv/bin/python3 \
-  python3 tools/cnet_speech_say.py "Hello from Marble"
-
-# ask cnetd then speak
-$CNET_PYTHON tools/cnet_speech_say.py --q "who are you" --play
-```
-
-## Web
-
-```bash
-curl -X POST http://100.x.x.x:8642/api/speak \
-  -H 'Content-Type: application/json' \
-  -d '{"text":"Hello from the speech capsule"}'
-# → {ok, path, url: /api/speech/...mp3}
-```
-
-## Law
-
-- Speaking does **not** seal knowledge.
-- Teacher drafts may be voiced; still `auto_cert=false`.
-- No STT/listen capsule in v1 (speak-out only).
+Audio files go to the configured speech directory. Select an isolated output
+for tests and obtain authority before transmitting private text.
+Speaking a draft does not certify it. This TTS adapter is speak-out;
+other voice-input experiments have separate protocols and gates.

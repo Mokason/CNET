@@ -1,6 +1,4 @@
-# CNET Documentation Index
-
-## What CNET is building (read this first)
+# CNET documentation
 
 > **CNET builds ASI — Artificial Specialized Intelligence. In CNET, ASI never
 > means Artificial Superintelligence. CNET is not claiming AGI. Broad semantic
@@ -9,97 +7,58 @@
 > broaden coverage and composition over time, but unit count alone is not
 > intelligence and all broader claims remain benchmark-gated.**
 
-```
-base semantic grounding → typed intent → CNET isolated knowledge registry
-      → certified kernels → verifier / abstention → residual teacher (uncovered)
-```
+Guides describe source interfaces and limits, not the current state of a running
+host. For measured claims, follow dated evidence and check its bound source.
 
-Gate: `make knowledge_accumulation_bench`. Decision + evidence:
-`plans/cnet_portable_knowledge_benchmark_20260727.md`.
+## Start here
 
-**Current committed HEAD (2026-08-19, HEAD=2d298ca):** distrust rerouting in the
-serve path, `libcce` as the shared link product, tiered verification, and build /
-release integrity. **Current working-tree maintenance (2026-09-03):** fail-closed
-core-bus addressing, content-identified CNB reloads, bounded `cnetd` and MCP
-socket protocols, argv-based document tools, and build-graph cleanup. These are
-separate statements: working-tree changes are not attributed to committed HEAD.
+| Need | Guide |
+| --- | --- |
+| Understand CNET | [README](../README.md), [architecture](ARCHITECTURE.md) |
+| Build and choose tests | [Build and verification](BUILD_AND_TEST.md) |
+| Teach, compose and inspect capsules | [Capsule core](CAPSULE_CORE.md) |
+| Train on AMD GPUs or test activation | [GPU training](GPU_TRAINING.md) |
+| Understand selection authority | [Dispatch](dispatch.md), [execution tiers](EXECUTION_TIERS.md) |
+| Operate local services | [Daemon](CNETD.md), [24/7 services](CNET_MARBLE_24_7.md), [web](CNET_WEB.md) |
+| Review trust and release constraints | [Security](SECURITY.md), [release policy](RELEASE_POLICY.md) |
+| Find remaining work | [Current plan](../tasks/plan.md), [checklist](../tasks/todo.md) |
+| Recover retired documentation | [Maintenance and history](MAINTENANCE.md) |
 
-Start here. Every claim below must name a gate; if the gate is missing, the
-claim is stale.
+## Runtime references
 
-> **This index is intentionally selective.** Treat an absent entry as "not
-> indexed", not as "does not exist" — the previous header
-> sat at a 2026-07-21 focus for three weeks across 40 commits, which is exactly
-> the failure mode this file is supposed to prevent. Before trusting a
-> "current" claim here, check it against `git log`.
+- Learning: [teacher path](TEACH_PATH.md), [coverage harvest](CERT_COVERAGE_HARVEST.md),
+  [curriculum harvest](GOLD_CURRICULUM_HARVEST.md), [distillation](CNET_DISTILL.md),
+  [improvement integration](improvement_engine_integration.md).
+- Memory: [memory runtime](MEM_RUNTIME.md), [STM/LTM bridge](STM_LTM_BRIDGE.md),
+  [KV index](KV_STREAM_INDEX.md), [attention integration](STREAM_INDEX_ATTEND.md),
+  [weight epochs](WEIGHT_EPOCH.md), [continuity](CONTINUITY_WORKSPACE.md).
+- Text surfaces: [ROE](ROE_ASI.md), [domain routing](DOMAIN_ROUTE.md),
+  [aliases and context](QUERY_ALIAS_DIALOG_CTX.md), [utterances](UTTERANCE.md),
+  [residual chat](OPEN_CHAT.md), [English pack](PACK_ENGLISH_BASIC.md),
+  [speech pack](SPEECH_CAPSULE.md).
+- Control: [autonomy charter](AUTONOMY_CHARTER.md), [inventory self-model](ROE_SELF_MODEL.md),
+  [exploration](EXPLORE_TICK.md), [personality controls](NEUROMOD_PERSONALITY.md),
+  [peer boundary](THIRD_WAY_MARBLE_PEER.md), [execution trace](THOUGHT_PROCESS.md),
+  [trace format](CHAIN_OF_THOUGHT.md), [reply diagnostics](REPLY_THINK.md).
+- Specialists: [Brain import](BRAIN_CNET_CAPSULE.md), [LoRA](cce_lora.md),
+  [Lily](cce_lily.md), [MoE trainer](moe_train.md), [transformer-MoE](moe_xf.md),
+  [improvement experiments](ASI_IMPROVE.md), [FIFO generation](GENERATE_FIFO.md),
+  [tokenizer benchmark](gigatok_bench.md).
+- Managed inference: [native/.NET harness](cnet_dotnet_inference_harness.md),
+  [GPU offload](cnet_bounded_gpu_offload.md), [async context](cnet_async_context_pipeline.md),
+  [Hermes](hermes_hosting.md), [managed library](../dotnet/Llm/README.md).
 
-## One-page orientation
+## Evidence and history
 
-| Question | Answer | Gate / path |
-|---|---|---|
-| What is CNET? | Finite, typed, recoverable intermediates so neural parts compose like software | README *The Loop* |
-| What is the core type? | One `Specialist` admitted only through `specialist_admit` | `make specialist_unit` |
-| Who decides which unit runs? | Three layers: recall / synthesis / policy | [`dispatch.md`](dispatch.md) · `make dispatch_story` |
-| How does learning close? | Miss → gap → oracle teach → certify → seal → serve | `make gap_lane` · `make acquire` |
-| How does evidence stick? | Per-base `<base>.state/*.stats` + `soul_serve.stats` on close/open | `make serve_feedback` · `make cnet_deep_use_loop` |
-| How are teachers governed? | Oracle v2 + Tier A/B teacher runtime (attest/lease/scorecard/batch) | `make oracle_v2_test` · `make oracle_teacher_runtime` |
-| Replace/improve Tier0–2 | fault bus, promote, adapter bank, DoRA, serve decode | `make cnet_replace_improve` |
-| Open-lab MoE/acct import | hard expert + tier acct + doctor | `make cnet_openlab_import` |
-| What is the product loop? | Personal AI: local certified first; residual/teacher on miss; tick seals | `make personal_ai` · `make post_seal_serve` |
-| End-to-end use-loop umbrella | Deep multi-priority + product surfaces | `make cnet_use_loop_acceptance` |
+[Changelog](CHANGELOG.md) summarizes changes. [Results](../result/) retain dated
+observations and [benchmarks](../benchmarks/) preserve frozen protocols.
+[Plans](../plans/) include active contracts and historical decisions; they are
+not automatically today's task queue. [Phase 1–3 taxonomy](phase123_benchmark_closure.md)
+separates mechanism tests from external benchmark measurements.
 
-## Document altitude
+[Generated claims](verified-today.generated.md) must come from `make claims`.
+Missing prerequisites, WITHHELD outcomes and failed precision experiments are
+not passes. A descriptor or routing score never grants trust.
 
-| Doc | Job |
-|---|---|
-| [`../README.md`](../README.md) | Thesis, verified-today table, quick start |
-| [`ARCHITECTURE.md`](ARCHITECTURE.md) | Layer-by-layer mechanism (Specialist, CCE, planner, autonomy, edge) |
-| [`dispatch.md`](dispatch.md) | One dispatch story (recall / synthesis / policy) |
-| [`CHANGELOG.md`](CHANGELOG.md) | Dated optimization ledger + negative results |
-| [`EXECUTION_TIERS.md`](EXECUTION_TIERS.md) | Core vs acceleration vs quarantined paths |
-| [`RELEASE_POLICY.md`](RELEASE_POLICY.md) | Private release authority; no public push by default |
-| [`verified-today.generated.md`](verified-today.generated.md) | Machine claim ledger (`make claims`) — regenerate, do not hand-edit |
-| [`hermes_hosting.md`](hermes_hosting.md) | Hermes/MCP hosting notes |
-| [`phase123_benchmark_closure.md`](phase123_benchmark_closure.md) | Benchmark taxonomy (measured / contract / withheld) |
-| [`cnet-history.md`](cnet-history.md) | Long chronology |
-
-## July 2026 use-loop plans (current)
-
-| Plan | Gate |
-|---|---|
-| [`../plans/deep_eight_priorities.md`](../plans/deep_eight_priorities.md) | `make cnet_deep_use_loop` |
-| [`../plans/live_eight_priorities.md`](../plans/live_eight_priorities.md) | `make live_eight_campaign · make auto_learn · make janitor · make cnet_consolidate / cnet_janitor_build` |
-| [`../plans/six_priority_improvement.md`](../plans/six_priority_improvement.md) | `make cnet_use_loop_acceptance` |
-| [`../plans/oracle_teacher_runtime.md`](../plans/oracle_teacher_runtime.md) | `make oracle_teacher_runtime` |
-| [`../plans/personal_ai_local_first.md`](../plans/personal_ai_local_first.md) | `make personal_ai` |
-| [`../plans/hybrid_universal_architecture.md`](../plans/hybrid_universal_architecture.md) | `make hybrid_ai` |
-| [`../plans/unified_self_improve_resource.md`](../plans/unified_self_improve_resource.md) | `make unified_self_improve` |
-| [`../plans/delegation_master_report.md`](../plans/delegation_master_report.md) | Master execution report |
-
-## Primary make umbrellas
-
-```sh
-make test                      # native verification chain
-make unified                   # CPU-only vertical (native + cnet.so + .NET + MCP)
-make cnet_use_loop_acceptance  # use-loop product umbrella (includes deep loop)
-make cnet_deep_use_loop        # P1–P8 deep multi-priority hermetic
-make oracle_teacher_runtime    # Oracle A+B teacher governance
-make oracle_v2_test acquire    # oracle + acquisition regression
-make priority_acceptance       # release-priority bundle (when tree clean)
-make release_integrity         # single clean-tree release authority
-make claims                    # regenerate verified-today.generated.md
-```
-
-## Honesty rules (documentation law)
-
-1. **Gate or date.** A current claim names a make target or is explicitly historical.
-2. **Withheld ≠ pass.** FACTOR/TruthfulQA/LongBench stay withheld until a measured path runs.
-3. **Descriptor ≠ trust.** Oracle CNB descriptors are provenance until bind + certify + admit.
-4. **Synthetic ≠ quality.** Modeled speedups and tokenizer-only gates are labeled as such.
-5. **Regenerate claims.** Never hand-edit `verified-today.generated.md`.
-
-## Status snapshot (2026-07-21)
-
-- Use-loop + evidence persist: green under `CNET_USE_LOOP_ACCEPTANCE_PASS` / `CNET_DEEP_USE_LOOP_PASS`
-- Oracle teacher runtime A+B: green under `ORACLE_TEACHER_RUNTIME_PASS`
-- Live MCP library may still show flat reliability until real serve traffic hits SoulHost — hermetic gates prove the mechanism; production evidence requires live serves
+[The documentation inventory](DOCUMENTATION_INVENTORY.tsv) records every original
+Markdown/text path, its disposition, replacement and recovery hash.

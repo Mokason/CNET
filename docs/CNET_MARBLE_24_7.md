@@ -1,88 +1,63 @@
-# CNET + Marble 24/7 (outside Hermes)
+# Operating the CNET/Marble service stack
 
-Hermes is an **optional client**. CNET, ROE packs (including Marble SOUL),
-autoteach, governor, and evolve tick keep running when Hermes updates,
-restarts, or is stopped.
+CNET services and optional Hermes clients have separate lifecycles. This document
+describes repository tooling, not a claim that a particular service is currently
+running. Paths, ports and enabled timers are deployment-specific.
 
-## One command
+## Inspect before changing anything
 
-```bash
-cd ~/AI/CNET
-scripts/cnet_marble_24_7.sh install
-scripts/cnet_marble_24_7.sh start
+```sh
 scripts/cnet_marble_24_7.sh status
 scripts/cnet_marble_24_7.sh doctor
-```
-
-## What stays up (no Hermes)
-
-| Unit | Role |
-|------|------|
-| `cnet-marble.target` | Umbrella (Hermes-free) |
-| `cnet-personal-ai-lane.service` | Learn/seal from gap inbox |
-| `bonsai-server.service` | Local residual/teacher HTTP |
-| `cnet-autoteach.timer` | Curriculum + PEFT tick |
-| `cnet-governor.timer` | Autonomous governor |
-| `cnet-janitor.timer` | Library hygiene |
-| `cnet-personal-ai-ops.timer` | Ops heal tick |
-| `roe-evolve-tick.timer` | Miss→gold/reviewer→`pack_personal` |
-| `cnet-autonomous-cycle.timer` | Probe curriculum → teacher → evolve KPI |
-| `cnet-marble-health.timer` | Snapshot `logs/marble_24_7/status.json` |
-| `marble-heartbeat` / `marble-embeddings` | Optional Marble sidecars |
-
-**Not required:** `hermes-gateway`, `hermes-dashboard`, Hermes MCP.
-
-## Autonomy (no go / accept spam)
-
-```bash
-make cnet_autonomous
-# or timer (every 20m, part of cnet-marble.target):
-systemctl --user status cnet-autonomous-cycle.timer
-cat logs/marble_24_7/AUTONOMOUS_CYCLE.json
-```
-
-Cycle: curriculum probes → front_door → miss_log → teacher (optional) →
-evolve (gold / multi_stable + **reviewer**) → `pack_personal`.
-
-Edit probes/gold: `config/autonomous_curriculum.jsonl`
-
-Not AGI: never self-CERT; floors unchanged; Hermes optional.
-
-## Isolation rules
-
-1. **WorkingDirectory** = `~/AI/CNET` (repo), not Hermes home  
-2. **Env** from `config/personal-ai.env`, `roe-teacher-*.env`, `roe-reviewer-*.env`  
-3. **Linger=yes** so user systemd survives logout  
-4. Hermes upgrade must not `systemctl stop cnet-marble.target`  
-5. Teacher/reviewer via **Ollama** (`:11434`) or **Bonsai** (`:8080`) — not Hermes model router  
-
-## Health
-
-```bash
-scripts/cnet_marble_24_7.sh health
-cat logs/marble_24_7/status.json
-```
-
-Fields: `hermes_required: false`, core unit actives, ports, pack paths.
-
-## After reboot
-
-With linger enabled:
-
-```bash
-loginctl show-user $USER -p Linger   # Linger=yes
+bash scripts/check_deployed_learning.sh
 systemctl --user status cnet-marble.target
 ```
 
-## Hermes still useful as
+Read the effective unit definitions and drop-ins, selected base, capsule root,
+teacher endpoint and writer coordination. An exported variable in an interactive
+shell does not automatically alter the environment of an existing systemd unit.
 
-- Chat UI / tools front door  
-- Optional MCP that writes the same `*.inbox`  
+The helper's `health` operation records a snapshot under
+`logs/marble_24_7/`; log timestamps and executable generation matter.
+Do not infer health from the existence of an old status file.
 
-If Hermes is down, ROE evolve + autoteach + personal-ai lane **continue**.
+## Components
 
-## Stop only CNET stack (leave Hermes)
+The umbrella can coordinate `cnetd`, the personal-AI lane, a residual/teacher
+service, autoteach/governor/janitor timers, personal-AI maintenance, ROE evolution
+and health snapshots. Exact membership is in
+[scripts/systemd/cnet-marble.target](../scripts/systemd/cnet-marble.target)
+and the install helper. Optional clients/sidecars are not certification
+authorities.
 
-```bash
-scripts/cnet_marble_24_7.sh stop
-```
+Capsule curriculum and acquisition are opt-in and use owner-private paths.
+Their ticks can produce new knowledge artifacts; they are not read-only health
+checks. [Capsule operations](CAPSULE_CORE.md) specifies their bounds and refusal.
+
+## Intentional lifecycle changes
+
+`scripts/cnet_marble_24_7.sh install`, `start` and `stop` are operator
+actions. Inspect the script and effective configuration before using them.
+Do not use a documentation refresh, build or benchmark as authorization to
+install units, enable linger, replace a base or restart services.
+
+For a planned update: preserve the current base and sidecars, coordinate all
+same-base writers, stage and verify the candidate, change only the selected
+configuration, then validate service health and covered/refused socket queries.
+Keep a rollback selection and preserve newly acquired evidence.
+
+Do not restore quarantined units by disabling coverage. Atomic publication does
+not make arbitrary concurrent base writers safe. The new experimental in-memory
+core host is not the ordinary daemon's durable working-set deployment mechanism.
+
+## Policy and evidence
+
+The [autonomy charter](AUTONOMY_CHARTER.md) limits scheduled actions. Charter
+permission does not prove every declared capability is implemented, and local
+teacher availability does not mean a particular serving path uses it.
+
+September deployment observations remain in
+[acquisition evidence](../result/cnet_live_acquisition_20260906.md) and
+[sequence evidence](../result/cnet_remaining_sequence_20260906.md).
+Use them as dated records, not current process state.
+[Security](SECURITY.md) and [release policy](RELEASE_POLICY.md) remain separate gates.

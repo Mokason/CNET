@@ -1,43 +1,24 @@
-# CNET utterance — C-native sentence composition
+# Utterance composition
 
-CNET forms speakable lines **without Teacher**. TTS only voices those lines by default.
+[cnet_utterance.h](../include/cnet_utterance.h) and
+[cnet_utterance.c](../src/serve/cnet_utterance.c) compose speakable template
+text from answer, skill, query and control-state fields.
+[utterance_phrases.tsv](../config/utterance_phrases.tsv) is an optional overlay.
 
-## Flow
-
-```text
-ask → CERT/Teacher answer
-    → cnet_utterance compose (templates + neuromod/hit/skill state)
-    → utterance + may_voice
-    → TTS only if may_voice (LOCAL) unless CNET_NEVER_VOICE_LLM=0
-```
-
-## CLI
-
-```bash
+```sh
 make cnet_utterance
-./bin/cnet_utterance --test
-./bin/cnet_utterance --when status --hit 0.86 --da 0.5 --ht 0.5 --ado 0.4 --miss 2
-
-cnet-speech-say --q "who are you"          # speaks C utterance
-cnet-speech-say --q "What is Tailscale?"   # refused: never_voice_llm
+bin/cnet_utterance --test
 ```
 
-## Bank
+Composition does not call a teacher and does not certify new knowledge.
+The daemon's default self-answer path may produce `source=CNET` /
+`utter_self` presentation text on a miss. That is distinct from a covered,
+verified capsule result.
 
-- Built-in phrases in `src/cnet_utterance.c`
-- Overlay: `config/utterance_phrases.tsv` (`id`, `when`, `template` with `{slots}`)
+The current daemon hard-disables its legacy teacher-on-miss branch.
+`CNET_TEACHER_ON_MISS=1` does not restore it; the old restart recipe was
+incorrect. Other teacher integrations are separate.
 
-Slots: `name`, `answer`, `skill`, `domain`, `local_hit`, `da`, `ht`, `ado`, `miss_n`, `chain`, `law`, …
-
-## Self-answer (default)
-
-`CNET_SELF_ANSWER=1` (default): on CERT miss, **answer text is the C utterance**
-(`source=CNET`, skill `utter_self`). Teacher is not called.
-
-```bash
-# restore Teacher residual on misses:
-CNET_TEACHER_ON_MISS=1   # in cnet-minimal.env
-systemctl --user restart cnetd
-```
-
-CNET self-answers are voiceable (`may_voice=1`). They still do **not** CERT.
+Voice policy and `may_voice` decide what the speech client may speak;
+voiceability is not certification. See [speech output](SPEECH_CAPSULE.md),
+[daemon](CNETD.md) and [teacher paths](TEACH_PATH.md).

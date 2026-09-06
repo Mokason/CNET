@@ -1,41 +1,20 @@
-# pack_english_basic — sealed elementary English for ROE
+# Elementary English pack
 
-## Purpose
+The tracked [pack](../packs/pack_english_basic/) supplies curated vocabulary
+and grammar responses for the ROE front door. The runtime copy normally lives
+under `artifacts/roe_daily_packs/pack_english_basic`; routes also involve
+[domain_routes.tsv](../config/domain_routes.tsv).
 
-LOCAL CERT answers for basic vocabulary and grammar so ROE answers
-English itself. Teacher may still tutor on gaps; drafts never auto-CERT.
+This is finite pack coverage, not a general language-quality benchmark.
+Teacher drafts and missed queries do not become certified responses merely
+by being added to a curriculum.
 
-## Install
+Use `make roe_daily_packs` and `make domain_route` for the pack/routing gates.
+Installation is a separate operator action: inspect the deployed root, preserve
+local additions, validate the pack and coordinate its readers before replacing
+a runtime copy. Do not blindly copy an old tracked directory over live state.
 
-Pack lives at:
-
-- `artifacts/roe_daily_packs/pack_english_basic/` (runtime)
-- `packs/pack_english_basic/` (tracked)
-
-Routes in `ROUTES.jsonl` + `config/domain_routes.tsv`.
-
-```bash
-# after pull
-cp -a packs/pack_english_basic artifacts/roe_daily_packs/
-# or deploy package
-systemctl --user restart cnetd.service
-```
-
-## Try
-
-```bash
-cnet-sock-ask "a or an"
-cnet-sock-ask "past tense of go"
-cnet-sock-ask "what is a noun"
-cnet-sock-ask "days of the week"
-```
-
-Expect `SOURCE LOCAL` / pack_english_basic skills.
-
-## Growth
-
-1. Teacher draft on novel English miss → miss_log  
-2. Human/reviewer → `gold/<sha>.txt` matching sealed text  
-3. evolve gold_file promote → more LOCAL skills  
-
-Never: raw Teacher essay auto-mint into CERT.
+Example queries include `a or an`, `past tense of go` and
+`what is a noun`. Check returned source and skill identity on the selected
+private socket; a successful match covers that pack response only.
+See [gold review](GOLD_CURRICULUM_HARVEST.md) and [operations](CNET_MARBLE_24_7.md).

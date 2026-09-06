@@ -193,7 +193,7 @@ figures.
 ## DAG lane findings (the literal binary→bytes assembly)
 
 The deferred DAG/decode lane is now built (`fp_dag_compile`/`fp_dag_run`/`fp_dag_free`; plan
-`2026-06-15-throughput-dag-decode-lane.md`): batched execution of
+[2026-06-15-throughput-dag-decode-lane.md](../../MAINTENANCE.md#recover-an-original)): batched execution of
 `combine(hex_value, hex_value) → byte` — the literal two-digits-to-a-byte step — mirroring
 `dag_execute`/`eval_node` over N samples, reusing the route lane's pack + forward kernels and
 adding multi-slot input gather with output-port projection and per-node caching. The walk is
@@ -236,7 +236,7 @@ What the DAG adds to the route findings:
 ## Circuit lane findings (shared multi-root graph)
 
 The multi-root circuit lane is now built (`fp_circuit_compile`/`fp_circuit_run`/`fp_circuit_free`;
-plan `2026-06-15-throughput-circuit-lane.md`): several goals over ONE shared node graph, each node
+plan [2026-06-15-throughput-circuit-lane.md](../../MAINTENANCE.md#recover-an-original)): several goals over ONE shared node graph, each node
 evaluated once across all roots, mirroring `dag_execute_circuit`. It reuses the DAG graph machinery
 wholesale — `fp_dag_eval` (extracted from `fp_dag_run`), `fp_dag_walk`/`fp_dag_count` over a shared
 `seen[]` across roots — so the true-post-order fix that made shared nodes correct is *exactly* what

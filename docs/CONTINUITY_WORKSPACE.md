@@ -1,47 +1,19 @@
-# Continuity workspace
+# Continuity display
 
-**Imitates continuity of control and self-report. Does not instantiate consciousness.**
+[scripts/cnet_continuity.py](../scripts/cnet_continuity.py) summarizes control
+state, identity text, current query/route, inventory and consolidation hints.
+It is an operator-facing state display, not consciousness or proof of task
+competence.
 
-## What it binds (0 LLM tokens)
-
-| Block | Content |
-|-------|---------|
-| **body** | DA / 5HT / ADO + persona affect |
-| **mind** | token-free thought chain + intent |
-| **place** | query, pack, skill, source |
-| **story** | who (SOUL one-liner), HAVE / MISS inventory |
-| **sleep** | wake / drowsy / consolidate from ADO |
-
-## One line
-
-```text
-continuity: marble | DA0.52 5HT0.50 ADO0.54 | ctrl>imp | doing: identity_local @ pack_soul_marble/soul_who | have: … | miss: … | sleep: wake | law: never_self_cert · not_conscious · not_agi
-```
-
-## Commands
-
-```bash
+```sh
 make cnet_continuity
-python3 scripts/cnet_continuity.py --query "who are you"
-cat logs/governor/continuity_line.txt
 ```
 
-## Integration
+Direct script invocation writes governor diagnostics. Select a private test
+governor directory before exercising it outside the gate; do not overwrite a
+running service's state during a documentation check.
 
-- Front door ask → prints continuity line + thought chain  
-- Autonomous cycle → `continuity_line` in `AUTONOMOUS_CYCLE.json`  
-- Disable thought/continuity chatter: `ROE_NO_THOUGHT=1`
-
-## Law (hard)
-
-```json
-{
-  "not_conscious": true,
-  "not_agi": true,
-  "never_self_cert": true,
-  "continuity_is_not_cert": true
-}
-```
-
-Continuity is for **ops UX and control**.  
-It is **never** a promote/CERT input by itself.
+The display combines personality/neuromodulation values with recorded routes.
+Those values may be missing or stale. Continuity output is not a promotion
+input, and zero model tokens does not make it certified.
+See [control signals](NEUROMOD_PERSONALITY.md) and [trace semantics](THOUGHT_PROCESS.md).

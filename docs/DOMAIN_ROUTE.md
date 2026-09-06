@@ -1,36 +1,25 @@
-# Domain route table (CERT-first)
+# Domain routing
 
-## Representation
+The [domain-route API](../include/cnet_domain_route.h) selects a route category.
+It does not execute a model, install a cartridge or grant trust.
 
-**Both:**
+Selection checks CERT-pack rules, then MTK rules, then base-GGUF rules;
+otherwise it returns ABSTAIN. The longest eligible pattern wins within a tier.
+Matching uses word boundaries and minimum pattern length; the default minimum
+is four characters. `conf_x1000` is telemetry, not a certification score.
 
-1. **Static C table** compiled into the binary (`k_static_rules[]`)
-2. **Optional startup TSV** `config/domain_routes.tsv` loaded into **fixed slots** (`CNET_DR_MAX_RULES=256`)
+Compiled defaults are always available. The optional
+[TSV overlay](../config/domain_routes.tsv) uses fixed slots, with a maximum of
+256 rules in the public router. Loading can soft-fail while retaining defaults
+and truncates excess rules: inspect the load result, `loaded_file` and rule
+count rather than assuming a requested overlay was fully installed.
+Matching performs no dynamic allocation.
 
-**Match path:** no `malloc` / `realloc` — scan only, longest pattern **within tier**.
-
-## Match policy (B + C)
-
-| Policy | Rule |
-|--------|------|
-| **B min length** | `CNET_DR_DEFAULT_MIN_PAT` (4) or per-rule `min_pat_len` |
-| **C word boundary** | pattern must sit on non-alnum edges (no `format` inside `unformatted`) |
-| **conf_x1000** | telemetry only — does not gate fall-through |
-
-## Dispatch chain
-
-```text
-CERT pack → MTK .tskill → Base GGUF → Abstain
-```
-
-Fail-closed default: **ABSTAIN** (no MTK, no KV flush).
-
-Front door prints the decision but **never auto-applies MTK** (CERT path stays primary).
-
-## Commands
-
-```bash
+```sh
 make domain_route
-./bin/roe_domain_route "who are you"
-./bin/roe_domain_route "completely unknown domain xyzzy"
+bin/roe_domain_route 'who are you'
+bin/roe_domain_route 'completely unknown domain xyzzy'
 ```
+
+A route decision naming an MTK is not proof it was applied. MTK deltas and
+certified portable capsules remain distinct; see [dispatch](dispatch.md).

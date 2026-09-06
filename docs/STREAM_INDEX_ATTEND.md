@@ -1,41 +1,19 @@
-# Stream index in live GGUF attend
+# Stream-index attention integration
 
-## Structure choice
+The optional stream index constrains the dense Qwen2 attention support in
+[cce_gguf.c](../src/cce/cce_gguf.c). Bind it through
+`cce_gguf_qwen2_bind_stream_index` and update it as tokens are appended.
 
-**Pre-attention block mask on the HOT support set** — not layer-by-layer mid-GEMM filtering of QK products.
+The path writes K/V, scores the available positions, masks inactive positions
+to negative infinity while retaining the current position, then applies
+softmax/value gathering. Masking is not proof that all discarded dot products
+or allocations were avoided.
 
-```text
-write K/V for pos t
-     │
-     ▼
-stream_ix (optional) marks active subset under budget
-     │
-     ▼
-for each layer/head:
-  score all j in [jmin, t]   (or skip compute later)
-  if stream_ix bound:
-      scores[j] = -inf  for j not in active and j != t
-  softmax → V gather     ← only active mass survives
-```
+This binding differs from the separate opt-in `CNET_SPARSE_KV` selector.
+Do not infer a long-context accuracy gain from a smaller active-set counter.
+Run the relevant native attention/selector gates and an explicitly identified
+model-quality benchmark before making that claim.
 
-| Approach | Verdict |
-|----------|---------|
-| **Pre-attention mask (chosen)** | One policy for all layers; matches stream index + sparse_kv spirit; simple |
-| Mid-GEMM per-layer filter | Different support per layer; harder to reason; more branches in hot loop |
-
-DSA / `CNET_SPARSE_KV` remains a separate opt-in path (lightning index).  
-Stream index mask applies on the **dense** path when `stream_ix` is bound.
-
-## API
-
-```c
-cce_kv_stream_index ix;
-cce_kv_stream_index_init(&ix, &budget, legal_max);
-cce_gguf_qwen2_bind_stream_index(model, &ix);
-/* host: after each decode token, cce_kv_stream_index_on_append(&ix, pos, ...) */
-/* MTK flush clears stream_ix with weight_epoch */
-```
-
-## Epoch
-
-On `.tskill` apply/revert, `cce_mtk_gguf_kv_flush` clears `stream_ix` with HOT.
+The MTK KV-flush path clears the stream index with the host's neural state.
+See [index API](KV_STREAM_INDEX.md), [epoch law](WEIGHT_EPOCH.md) and
+[benchmark taxonomy](phase123_benchmark_closure.md).

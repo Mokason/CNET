@@ -1,141 +1,26 @@
-# Architecture — CNET LLM
+# Managed inference architecture
 
-## Component Relationships
+Implemented flow: local GGUF → model/configuration/tokenizer → TextGenerator →
+sampling/constraints → output. The CLI and optional server wrap these pieces;
+the CNET bridge adds a separate shared-session contract.
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│  CNET.Llm.Server (ASP.NET Minimal API)                            │
-│  ├── /v1/chat/completions, /v1/completions, /v1/embeddings      │
-│  ├── /v1/models, /v1/tokenize, /v1/detokenize                  │
-│  ├── Tool calling protocol handler                              │
-│  └── Rate limiting, API key auth, request priority              │
-├─────────────────────────────────────────────────────────────────┤
-│  CNET.Llm.Engine (Orchestration)                                  │
-│  ├── InferenceEngine          — Main entry point                │
-│  ├── IScheduler               — Continuous batch scheduling     │
-│  ├── PagedKvCacheManager      — Block allocation, prefix cache  │
-│  ├── SamplerPipeline          — Composable ISamplerStep chain   │
-│  ├── ConstraintEngine         — FSM/PDA for structured output   │
-│  ├── ISpeculativeDecoder      — Draft-verify-accept loop        │
-│  └── IAdapterManager          — LoRA runtime management         │
-├─────────────────────────────────────────────────────────────────┤
-│  CNET.Llm.Models                     CNET.Llm.Tokenizers            │
-│  ├── GGUF loader (mmap)            ├── BPE (tiktoken-style)     │
-│  ├── SafeTensors loader            ├── SentencePiece            │
-│  ├── LlamaModel                    ├── HuggingFace tokenizer    │
-│  ├── MistralModel                  └── Chat template engine     │
-│  ├── PhiModel, QwenModel                                        │
-│  └── DeepSeekModel (MLA)                                        │
-├─────────────────────────────────────────────────────────────────┤
-│  CNET.Llm.Diagnostics              CNET.Llm.Telemetry               │
-│  ├── Hook registry                ├── IInferenceMetrics          │
-│  ├── Activation capture           └── IRequestTracer             │
-│  ├── Logit lens                                                  │
-│  └── SAE integration                                             │
-├─────────────────────────────────────────────────────────────────┤
-│  CNET.Llm.Core (Interfaces & Abstractions)                        │
-│  ├── ITensor, TensorShape, DType                                │
-│  ├── IBackend, DevicePlacement                                  │
-│  ├── IAttentionStrategy                                         │
-│  ├── IPositionEncoding                                           │
-│  ├── ISamplerStep, ILogitProcessor, IStopCondition              │
-│  ├── IDecodingConstraint, TokenMask                             │
-│  ├── IInferenceHook, HookPoint                                  │
-│  └── ModelConfig, InferenceOptions                              │
-├─────────────────────────────────────────────────────────────────┤
-│  CNET.Llm.Cpu              │  CNET.Llm.Cuda                         │
-│  ├── CpuBackend          │  ├── CudaBackend                     │
-│  ├── SIMD kernels        │  ├── P/Invoke interop                │
-│  └── TensorPrimitives    │  └── Handle management               │
-├──────────────────────────┼──────────────────────────────────────┤
-│  P/Invoke boundary       │                                      │
-├──────────────────────────┼──────────────────────────────────────┤
-│  Native C/CUDA Library   │                                      │
-│  ├── cuBLAS GEMM         │  ├── Flash attention .cu             │
-│  ├── Quantized matmul    │  ├── Fused RoPE/RMSNorm/SiLU .cu    │
-│  ├── NCCL wrappers       │  └── GPU memory pool                 │
-└──────────────────────────┴──────────────────────────────────────┘
-```
+| Component | Source |
+| --- | --- |
+| Loading | [ModelLoader](../src/CNET.Llm.Models/ModelLoader.cs) |
+| Common model | [Architectures](../src/CNET.Llm.Models/Architectures/) |
+| Generation | [TextGenerator](../src/CNET.Llm.Engine/TextGenerator.cs) |
+| CPU kernels | [CpuBackend](../src/CNET.Llm.Cpu/CpuBackend.cs) |
+| Tokenization | [Tokenizers](../src/CNET.Llm.Tokenizers/) |
+| Caches | [KvCache](../src/CNET.Llm.Engine/KvCache/) and PromptCache |
+| Server routes | [EndpointExtensions](../src/CNET.Llm.Server/EndpointExtensions.cs) |
 
-## Data Flow: Model Loading
+The old diagram included unrealized features: a SafeTensors loader, continuous
+scheduler, complete adapter manager, embeddings endpoint and concrete
+diagnostic/telemetry systems. Interface names are not implementation evidence.
+The common model is TransformerModel, not the old diagram's separate
+InferenceEngine/DeepSeek classes.
 
-```
-GGUF file on disk
-  │
-  ├─ Header parsing ──→ magic, version, tensor count, metadata count
-  ├─ Metadata parsing ──→ ModelConfig (architecture, dims, vocab, RoPE params)
-  │                       ChatTemplate (Jinja2 string)
-  │                       Tokenizer vocabulary + merges + scores
-  │
-  └─ Tensor data section
-       │
-       MemoryMappedFile.CreateFromFile()
-       │
-       ├─ Tensor descriptors ──→ (name, shape, quantization type, offset)
-       │
-       └─ Memory-mapped region ──→ OS demand-pages from disk
-            │                       No managed heap allocation
-            │
-            ├─ CPU tensors: raw pointer via SafeMemoryMappedViewHandle
-            └─ GPU tensors: cudaMemcpy from mmap'd host → device memory
-```
-
-## Data Flow: Inference Request
-
-```
-HTTP POST /v1/chat/completions
-  │
-  ├─ Parse request (messages, tools, sampling params, constraints)
-  ├─ Apply chat template ──→ IChatTemplate.Apply(messages) ──→ prompt string
-  ├─ Tokenize ──→ ITokenizer.Encode(prompt) ──→ int[] token_ids
-  ├─ Prefix cache lookup ──→ match existing KV-cache blocks
-  ├─ Enqueue in scheduler with priority
-  │
-  └─ Scheduler admits request when KV-cache capacity available
-       │
-       ├─ PREFILL (compute-bound)
-       │    For each layer:
-       │      Norm → Q/K/V projection → RoPE → Attention → Residual
-       │      → Norm → FFN (+LoRA delta) → Residual
-       │      [Hooks fire at each stage if registered]
-       │    Store K, V in KV-cache blocks
-       │
-       ├─ DECODE LOOP (memory-bandwidth-bound)
-       │    Each iteration:
-       │      Forward pass for single token (using cached K, V)
-       │      → Sampler pipeline: logit_bias → constraint → penalties
-       │        → temperature → top_k → top_p → min_p → sample
-       │      → Check stop conditions
-       │      → Advance constraint FSM
-       │      → Yield token via SSE stream
-       │
-       └─ Response: tokens + usage + finish_reason
-```
-
-## Data Flow: Speculative Decoding
-
-```
-Draft model generates K candidates → Target model verifies in single forward pass
-→ Accept left-to-right via rejection sampling → Rollback rejected tokens
-  (KV-cache entries + constraint state rolled back)
-```
-
-See [SPECULATIVE.md](SPECULATIVE.md) for full design.
-
-## NuGet Package Graph
-
-```
-CnetLlm (pure .NET) ─── CNET.Llm.Server (ASP.NET)
-├── Core, Models, Tokenizers, Cpu, Engine, Diagnostics, Telemetry
-
-CNET.Llm.Backend.Cuda12 (native binaries) ── depends on CNET.Llm.Core
-CNET.Llm.Backend.ROCm (future) ── depends on CNET.Llm.Core
-```
-
-## Threading Model
-
-- **Server**: ASP.NET thread pool, fully async.
-- **Scheduler**: Single dedicated thread, communicates via `Channel<T>`.
-- **Inference**: Synchronous compute on scheduler thread. GPU ops async (kernel launch + stream sync).
-- **Hooks**: Synchronous on inference thread — must be fast.
-- **Streaming**: Tokens pushed via `Channel<T>` to `IAsyncEnumerable<string>`.
+The sample server serializes requests with a semaphore; it has no priority
+preemption or production authentication. See [SERVER.md](SERVER.md).
+The managed bridge is CPU-only, and the vendor CUDA assembly is not ROCm.
+Read [ROADMAP.md](ROADMAP.md) and focused references before extending this layer.

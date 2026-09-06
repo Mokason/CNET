@@ -1,31 +1,44 @@
-# Cognitive Runtime Integration Checklist
+# Current CNET checklist
 
-## Offline controller experiment
+Evidence, scope and dependencies: [plan.md](plan.md).
 
-- [x] Frozen synthetic graph fixtures and independent verifier tests
-- [x] Trainable single/recurrent/feedforward cores and gradient/parity tests
-- [x] Two-device evaluation, local-model subset, and evidence report
-- [x] Review and save isolated experiment; no live promotion
+## Completed, bounded experiment
 
-- [x] Shared workspace contract, implementation, and hermetic test
-- [x] Hermetic semantic cortex proposals and optional residual-HTTP adapter
-- [x] Sleep consolidation with semantic/procedural provenance
-- [x] Calibrated abstention and claim/evidence binding
-- [x] Held-out capability fixtures, manifests, and non-shell runner
-- [x] Classification capability manifest after healthy marker commit
-- [x] `cognitive_runtime` Make umbrella and focused log gates
-- [x] README, changelog, and source-plan checkbox updates
-- [x] Full verification and accidental-mode-change audit
-- [x] Coherent commits with recorded SHAs
+- [x] Resident FP32 training, both AMD devices and unchanged numerical gates
+- [x] Immutable snapshots and independently labelled graph controls
+- [x] Canonical core checkpoints and direct GPU-fit BTN/capsule conversion
+- [x] Shadow/history-gated in-memory activation, request pinning and rollback
+- [x] Isolated workers with cancellation, failure, timeout and restart tests
+- [x] Fresh 28-suite source regression and six existing capability gates
+- [x] Benchmarks, sanitizer checks and scoped vulnerability review
 
-## September 6 capsule lifecycle follow-up
+These checks do not declare the service deployed or the dependency audit clean.
+See [the dated evidence](../result/cnet_gpu_product_sequence_20260906.md).
 
-- [x] Default to retained accumulation; keep explicit switching separate from deletion
-- [x] Verify increased 4,096-capsule capacity and final-boundary publication
-- [ ] Resident snapshot lifecycle with RED/green failure-retention tests
-- [ ] Named operator control and same-PID daemon swap tests
-- [ ] Durable activation, restart and rollback failure tests
-- [ ] Local CNET source evidence using existing manifest-bound assets
-- [ ] Integrated acquisition/swap/regression proof and verified deployment
+## Documentation cleanup
 
-Contract and acceptance criteria: `plans/cnet_capsule_hot_swap_20260906.md`.
+- [x] Rewrite current guidance and remove superseded instructions recoverably
+- [x] Verify references, protected data and documentation contracts
+- [x] Record the exact retirement map and completed verification
+
+## Remaining product work
+
+- [ ] SQLite native-provider remediation and repeat control-plane security audit
+- [ ] Resident ordinary-daemon working sets and named operator control
+- [ ] Same-PID daemon swap tests and failure-retention proof
+- [ ] Durable activation/restart/rollback failure tests
+- [ ] Manifest-bound local source evidence and candidate self-closure
+- [ ] Integrated acquisition/swap regression proof
+- [ ] Separately authorized, verified live deployment
+
+## Additional code limits exposed by documentation review
+
+- [ ] Migrate the legacy coverage-harvest script off its removed Python seeder
+- [ ] Repair minimal packaging/smoke's removed-Python evolution assumptions
+- [ ] Require a verified anti-collapse check before using distillation proposals
+- [ ] Add isolated execution before accepting hostile managed scriptlets
+- [ ] Add authentication/resource controls before exposing the managed sample server
+
+These are code/deployment follow-ups, not changes made by documentation cleanup.
+
+Do not lower floors or reuse CNET Tier-A answers to close these boxes.

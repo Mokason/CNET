@@ -1,65 +1,64 @@
-# cnetd — warm UNIX socket front door
+# Local daemon and socket protocol
 
-## Socket
+`cnetd` is a serial UNIX-socket front door over one mutable warm session.
+Build it with `make cnetd`. Building does not start or restart a service.
 
-1. `$XDG_RUNTIME_DIR/cnet/cnet.sock` (preferred)
-2. `~/.local/share/cnet-minimal/run/cnet.sock` (fallback)
-3. `CNET_SOCK` override
-
-## Commands
-
-```bash
-make cnetd
-make cnetd-run                    # build + start + smoke
-scripts/cnet_sock_ask.sh "who are you"
-echo 'PING' | socat - UNIX-CONNECT:$XDG_RUNTIME_DIR/cnet/cnet.sock
-```
+Socket selection uses `CNET_SOCK` when set, otherwise the runtime-directory
+socket (`$XDG_RUNTIME_DIR/cnet/cnet.sock`) or the user's installed-runtime
+fallback. Clients and the daemon must agree on the effective path.
 
 ## Protocol
 
-```
-ASK <query>
-→ SOURCE … / ANSWER … / END
+A connection carries exactly one newline-terminated request:
 
-PEER <name> <query>
-→ same response, with request-local peer metadata
-
-{"op":"ask","q":"..."}
-→ JSON one line
-
-PING → PONG
-STATUS → OK cnetd …
+```text
+PING
+STATUS
+ASK a query
+PEER peer_name a query
+{"op":"ask","q":"a query"}
 ```
 
-Every connection carries exactly one newline-terminated request. The newline
-must arrive within the 8,191-byte receive boundary; an overlong request is
-refused, never processed as a truncated query. JSON is parsed as JSON rather
-than searched as text: `q` is a required, non-empty string, `op` may be omitted
-or equal `ask`, duplicate control fields and trailing data are refused, and
-valid unknown fields are ignored. `PEER` identity applies to that request only;
-the following ASK, JSON, or raw request is local again.
+PING returns PONG. Text queries return SOURCE/ANSWER/END framing; JSON queries
+return one JSON line. JSON requires a non-empty string `q`; `op` can be
+omitted or be `ask`. Duplicate control fields, trailing data and malformed
+JSON refuse. Valid unknown fields are ignored. PEER identity is request-local,
+not a permanent session identity.
 
-The daemon deliberately dispatches clients serially because `CdState` is one
-mutable warm session. A client cannot hold that session indefinitely: framing
-uses one monotonic deadline and returns `ERR request_timeout`,
-`ERR request_too_long`, or `ERR incomplete_request` on boundary failure.
+Query access is not read-only. Enabled chat commands include `teach TAG n m`
+and gold actions that write labeled evidence and trigger evolution. Socket
+access, or web bearer access that forwards to it, must therefore be restricted
+to trusted operators. Certification remains a separate acceptance boundary.
 
-## Env
+The newline must arrive within the 8191-byte receive boundary. Oversized,
+incomplete or timed-out frames are refused, never executed after truncation.
+The read deadline uses one monotonic budget:
+`CNETD_CLIENT_READ_TIMEOUT_MS`, default 5000, clamped to 50–60000.
+Outbound shared-MCP exchanges use `CNET_MCP_TIMEOUT_MS`, default 2000,
+clamped to the same range, across connect/write/reply.
 
-`CNET_MINIMAL_ROOT`, `CNET_PACKS_ROOT`, probe short-circuit, domain routes.
+## Capsules and residual behavior
 
-- `CNETD_CLIENT_READ_TIMEOUT_MS`: request framing deadline; default `5000`,
-  clamped to `50..60000`.
-- `CNET_MCP_TIMEOUT_MS`: total deadline for an outbound shared-MCP
-  connect/write/newline-reply exchange; default `2000`, clamped to
-  `50..60000`. Partial writes are completed within that same deadline.
+`CNET_CAPSULES_DIR` enables the typed capsule path described in
+[CAPSULE_CORE.md](CAPSULE_CORE.md). Explicit capsule refusal never becomes a
+verified residual/template answer. The ordinary daemon reloads that inventory
+per capsule request.
 
-## systemd
+The legacy ROE mouth in the current daemon hard-disables teacher-on-miss in
+source. Setting `CNET_TEACHER_ON_MISS=1` does not re-enable that branch.
+Other teacher/acquisition integrations are separate; see [TEACH_PATH.md](TEACH_PATH.md).
+Templates and presentation text must not be confused with new certified knowledge.
 
-```bash
-cp scripts/systemd/cnetd.service ~/.config/systemd/user/
-systemctl --user daemon-reload
-systemctl --user enable --now cnetd.service
+## Verification and operations
+
+```sh
+make cnetd_protocol_boundary cnet_mcp_transport capsule_frontdoor
 ```
 
-Law: never self-CERT; probes short-circuit with `SHORTCIRCUIT 1`.
+These checks use private sockets. For an intentionally selected running daemon,
+`scripts/cnet_sock_ask.sh` is the client helper. Check its `CNET_SOCK` first.
+
+Service installation/start/stop changes live state. Use
+[the operations guide](CNET_MARBLE_24_7.md), inspect effective configuration, and
+obtain operator authority for the intended change. Do not copy installation
+commands from historical deployment reports.

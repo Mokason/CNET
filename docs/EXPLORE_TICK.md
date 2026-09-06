@@ -1,34 +1,19 @@
-# Explore tick — offline structured creativity
+# Exploration drafts
 
-## Law
+[roe_explore_tick.py](../tools/roe_explore_tick.py) proposes curriculum drafts.
+It is a candidate generator, not a certification authority.
 
-```text
-idle (ADO headroom) → mutate CERT seeds → draft (synthetic|Teacher)
-  → sandbox verify → curriculum (auto_cert=false)
-  → gold | multi_stable+reviewer only later
-NEVER → pack_personal direct
-```
+The tick consults idle/control-state limits, mutates known seed patterns and
+checks bounded draft syntax/content. An optional teacher can supply drafts;
+`--force` bypasses an idle gate, not certification. Neither option should be
+enabled implicitly during operations.
 
-## Commands
+`make roe_explore_tick` exercises the local gate. Direct tool execution writes
+exploration/curriculum reports and may make teacher calls when requested.
+Use private paths and inspect the selected configuration first.
 
-```bash
-python3 tools/roe_explore_tick.py           # respect neuromod idle gate
-python3 tools/roe_explore_tick.py --force   # ignore ADO gate
-python3 tools/roe_explore_tick.py --teacher # optional Ollama drafts
-make roe_explore_tick
-```
-
-## Outputs
-
-| File | Role |
-|------|------|
-| `artifacts/.../curriculum_explore.jsonl` | explore-only queue |
-| `curriculum_harvest.jsonl` | merged hints (`auto_cert:false`) |
-| `EXPLORE_TICK.json` | last tick report |
-
-## Gate
-
-- High ADO / `defer_new_explore` / high loadavg → **defer** (still PASS)
-- Blocklist on query/draft
-- C: `gcc -fsyntax-only`; bash: `bash -n`
-- Prose drafts need operational keywords
+A deferred tick is a valid control outcome, not a learning success. Syntax
+checks do not prove program behavior, and operational keywords do not prove
+a prose answer true. Drafts remain `auto_cert=false`; do not use CNET's own
+Tier-A answers as new training labels. Follow
+[gold review](GOLD_CURRICULUM_HARVEST.md) for independent evidence.

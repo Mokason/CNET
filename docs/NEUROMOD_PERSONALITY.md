@@ -1,66 +1,19 @@
-# Neuromod personality (biological metaphor)
+# Personality control signals
 
-Not AGI. Not consciousness. **Homeostatic control signals** that bias
-*when* Autonomous-ASI reinforces, sorts, or consolidates.
+Dopamine, serotonin and adenosine are biological names for numerical scheduling
+and presentation signals. They are not evidence of feelings or awareness.
 
-| Channel | Biology metaphor | System meaning |
-|---------|------------------|----------------|
-| **Dopamine (DA)** | reward prediction | Task done right → LOCAL/promote; **brief front-door prefer-LOCAL** (TTL ~10m, weight≈1.75, live teacher off) |
-| **Serotonin (5HT)** | control vs impulse | **High 5HT = high control** (sort queue, pin memory). **Low 5HT = high impulsivity** (faster teacher, boldness, no pin) |
-| **Adenosine (ADO)** | sleep pressure | Consolidate WM; **pause grow/MISS probes** one cycle |
+[scripts/cnet_neuromod.py](../scripts/cnet_neuromod.py) derives bounded biases
+from recent outcomes and [personality configuration](../config/personality.yaml).
+Consumers may prefer local routes, sort queues, pin memory, consolidate or
+defer exploration. These hints cannot lower a contract floor or seal a unit.
 
-## Tight coupling files
+The governor writes `neuromod_state.json`, history and downstream bias/gate
+files. Readers can see stale or missing snapshots; inspect timestamps and
+effective configuration when diagnosing behavior.
 
-| File | Consumer |
-|------|----------|
-| `logs/governor/front_door_bias.json` | `roe_front_door` — DA prefer LOCAL |
-| `logs/governor/schedule_gate.json` | `cnet_autonomous_cycle` — ADO pause / 5HT modes |
-| `logs/governor/neuromod_soft_bias.json` | voice / governor flags |
-
-## Law
-
-- Biases **schedule + consolidate only**
-- **Never** seal / CERT / floor change
-- Clamped `[0.15, 0.85]` + homeostasis to baseline
-- Marble SOUL still owns identity prose; neuromod owns *timing*
-
-## Files
-
-| Path | Role |
-|------|------|
-| `scripts/cnet_neuromod.py` | Organ + gate |
-| `logs/governor/neuromod_state.json` | Live levels + actions |
-| `logs/governor/neuromod_history.jsonl` | Audit |
-| `config/personality.yaml` → `neuromod:` | Thresholds / baseline |
-| `scripts/governor_personality.py` | Calls neuromod each persona tick |
-| `scripts/cnet_autonomous_cycle.py` | Runs neuromod after evolve |
-
-## Actions (soft)
-
-| High | Actions |
-|------|---------|
-| DA | `prefer_local_skills`, `voice_warm`, `bias_outcome_review` |
-| 5HT | `sort_task_queue`, `prefer_pin_memory`, `bias_thoroughness` |
-| ADO | `run_sleep_consolidate`, `compress_context`, `defer_new_explore` |
-
-High ADO inhibits pure “celebration” and prefers consolidate.
-
-## Commands
-
-```bash
-make cnet_neuromod
-python3 scripts/cnet_neuromod.py --tick
-cat logs/governor/neuromod_state.json
-```
-
-## Coupling to Autonomous-ASI
-
-```text
-autonomous cycle → KPI (local_hit, promotes, misses)
-                 → neuromod update
-                 → DA reinforce / 5HT queue / ADO sleep request
-                 → next cycle schedule bias
-```
-
-Still **Artificial Specialized Intelligence** with a body-like clock —
-not a general mind.
+`make cnet_neuromod` runs the local checks. Direct `--tick` execution mutates
+governor state, so use a private directory for experiments.
+External teacher use remains controlled by its own integration;
+a timing bias does not re-enable the daemon's disabled teacher branch.
+See [autonomy policy](AUTONOMY_CHARTER.md) and [daemon behavior](CNETD.md).

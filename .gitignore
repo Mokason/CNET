@@ -154,3 +154,6 @@ dec_*_weights.txt
 flagship_pair_dbg.txt
 cnet_hf_contract_harvest.md
 build/cce/
+
+# Reproducible console/demo output; never a runtime input.
+/build/built_demo.txt

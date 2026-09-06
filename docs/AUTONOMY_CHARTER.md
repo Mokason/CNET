@@ -1,42 +1,33 @@
-# Autonomy charter — how much freedom
+# Scheduled-action policy
 
-Single file: `config/autonomy_charter.yaml`  
-Enforcer: `scripts/cnet_autonomy_charter.py`
+The charter is [config/autonomy_charter.yaml](../config/autonomy_charter.yaml).
+[scripts/cnet_autonomy_charter.py](../scripts/cnet_autonomy_charter.py) applies
+its counters and decisions at wired scheduler boundaries. The charter describes
+permission, not proof that every listed action is implemented or universally
+enforced by every entry point.
 
-## Tiers
+## Categories and budgets
 
-| Tier | Examples |
-|------|----------|
-| **always_free** | route, LOCAL answer, thought, neuromod, miss log |
-| **policy_free** | teacher on miss, gold/reviewer promote, personal pack grow |
-| **never_free** | self-CERT, soul edit, lower floors, claim consciousness |
+Read-only/status/routing actions are separate from budgeted teacher calls and
+personal-pack growth. Self-certification, lowering floors, changing policy or
+soul identity, and training on Tier-A answers are not unattended actions.
 
-## Budgets (defaults)
+The checked-in defaults permit 30 promotions/day, 10/tick, 24 teacher calls/hour,
+8/tick and 40 probes/tick. Inspect effective configuration and persisted counters
+before relying on available budget. Changing a ceiling is an operator policy
+change, not a remedy for a failed certification gate.
 
-| Cap | Default |
-|-----|--------:|
-| promotes / day | 30 |
-| promotes / tick | 10 |
-| teacher calls / hour | 24 |
-| teacher calls / tick | 8 |
-| probes / tick | 40 |
+## Inspection and checks
 
-## Commands
-
-```bash
+```sh
 make cnet_autonomy_charter
 python3 scripts/cnet_autonomy_charter.py --show
 python3 scripts/cnet_autonomy_charter.py --check promote
-python3 scripts/cnet_autonomy_charter.py --begin-tick
 ```
 
-Counters: `logs/governor/autonomy_counters.json`  
-State: `logs/governor/autonomy_state.json`
+`--begin-tick` changes accounting state and belongs to an intentional scheduler
+tick, not a read-only inspection. State/counter/log paths are specified by the
+charter. The cycle and evolution scripts must honor refusal; a configured budget
+does not authorize arbitrary host commands.
 
-## Enforcement
-
-- **Autonomous cycle** begins with charter tick; caps probes/teacher; consume promote budget after evolve  
-- **Evolve tick** skips promote when day/tick cap hit (`charter_promote_budget`)  
-- Env hints: `ROE_EVOLVE_REVIEWER=1`, `ROE_EVOLVE_MAX_PROMOTES` ≤ charter  
-
-Tune freedom by editing the YAML only — no code change required for dial-in.
+[Operations](CNET_MARBLE_24_7.md), [teaching](TEACH_PATH.md), [security](SECURITY.md).

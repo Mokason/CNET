@@ -1,12 +1,14 @@
-# Retired Python — reference spec only, NOT the product path
+# Retired Python behavior reference
 
-CNET product path is C. These files are kept as behavioural specs for the C
-reimplementations and must never be referenced from a systemd ExecStart, a
-Makefile target, or a gate.
+`roe_evolve_tick.py.spec` preserves the replaced Python gardener behavior.
+The active implementation is
+[tools/roe_evolve_tick.c](../../tools/roe_evolve_tick.c), built as
+`bin/roe_evolve_tick` by `make roe_evolve_tick`.
 
-| retired | replaced by | gate |
-|---|---|---|
-| `roe_evolve_tick.py.spec` | `tools/roe_evolve_tick.c` -> `bin/roe_evolve_tick` | `make roe_evolve_tick` |
+The native gate rejects restoration of `tools/roe_evolve_tick.py`.
+Do not wire the retired spec into systemd, Make targets or product scripts.
+This retirement applies to that gardener, not a blanket claim that all CNET
+Python tools have been removed.
 
-`tools/roe_evolve_tick_gate.c` asserts `tools/roe_evolve_tick.py` is absent, so
-restoring it into `tools/` fails the build.
+See [current teacher paths](../../docs/TEACH_PATH.md) and
+[historical recovery](../../docs/MAINTENANCE.md).
