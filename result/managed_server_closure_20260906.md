@@ -110,8 +110,9 @@ cooperative/in-process. Timeout does not provide hard CPU/memory isolation.
 Fixed-window role quotas are coarse and allow a boundary burst. All active HTTP
 work, including health, shares the one permit. Trusted administrators can still
 inspect/load owner-accessible local models. Model replacement still disposes
-the incumbent before loading; failure does not preserve it. That behavior is
-not confused with the native certified-capsule lifecycle.
+the incumbent before loading in the initial boundary commit; the independently
+reviewed lifecycle follow-up below supersedes that defect. Neither managed
+model loading nor its swap is the native certified-capsule lifecycle.
 
 The legacy UI's remote/inline assets and unchecked Markdown link interpolation
 were found during review. CSP was not relaxed. The parent authorized a separate
@@ -122,3 +123,42 @@ Skills influenced the work: security/API skills drove fail-closed boundaries and
 explicit roles; incremental implementation preserved actual REDs; code-review
 checks caught stream caching and the UI issue; documentation recorded the
 cooperative/proxy limits instead of claiming a completed external deployment.
+
+## Prepare-and-adopt model lifetime follow-up
+
+The parent review required retaining the incumbent on failed/canceled loading.
+Actual RED `/tmp/cnet-managed-server-swap-red.log` showed
+`MANAGED_SERVER_SWAP_RED failed_prepare_disposed_incumbent` and
+`MANAGED_SERVER_SWAP_RED double_dispose` (2 failures). A private 68-byte GGUF
+fixture containing one dummy float tensor but no architecture metadata also
+reproduced a retained mapping after loader failure:
+`/tmp/cnet-managed-server-loader-red.log`,
+`MANAGED_SERVER_SWAP_RED failed_load_mapping_leak` (1 failure). No real weights
+were used; the fixture was deleted after the test. Mapping evidence is a Linux
+`/proc/self/maps` assertion and is not run on other platforms.
+
+`ServerState.SwapModelAsync` now takes a typed prepare callback returning a fresh
+owned `ServerState`, retains the canonical gate for direct callers, validates
+before adoption, and transfers all model fields including `PagedFactory`.
+Failure/cancellation disposes only the candidate; successful transfer detaches
+its ownership. Disposal is gate-synchronized/idempotent and rejects new work.
+The only in-tree old callback consumer was the model-management endpoint; graph
+and repository search verified its migration. The source-breaking callback
+change and exclusive-ownership requirements are documented in `SERVER.md`.
+
+ServerStartup tracks acquired resources during loading and cleans them on
+failure. Retired-resource disposal attempts all resources once; failure logs a
+fixed warning, leaves the adopted candidate active, exposes administrator
+`retirement_cleanup_failed`, and refuses further swaps until restart. HTTP
+activation uses the distinct status
+`activated_with_retirement_error_restart_required`; subsequent model loads
+return 409. The latter response has its own regression RED in
+`/tmp/cnet-managed-server-retirement-red.log`.
+
+GREEN `/tmp/cnet-managed-server-swap-final.log`: 45 passed, zero failed/skipped.
+This adds real generator usability after failure, canceled candidate disposal,
+complete successful transfer/detachment, canonical gate ordering, invalid/self
+candidate refusal, degraded retirement/admin visibility, idempotent disposal,
+and the private mapping-release check. The initial 36-test API boundary evidence
+above remains its historical proof, not a claim that lifecycle was already
+repaired in that commit.

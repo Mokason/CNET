@@ -28,13 +28,15 @@ public static class ModelManagementEndpoint
 
         app.MapPost("/v1/models/load", async (ModelLoadRequest request, ServerState state, CancellationToken ct) =>
         {
+            if (state.RetirementCleanupFailed)
+                return Results.Conflict(new ErrorResponse { Error = "retirement_cleanup_failed_restart_required" });
             var resolvedPath = ServerStartup.ResolveModelPath(request.Model, request.Quant);
             if (resolvedPath is null)
                 return Results.BadRequest(new ErrorResponse { Error = "Model not found" });
 
             try
             {
-                await state.SwapModelAsync(async () =>
+                await state.SwapModelAsync(async token =>
                 {
                     var newOptions = state.Options with
                     {
@@ -50,36 +52,12 @@ public static class ModelManagementEndpoint
                         SpeculativeCandidates = request.SpeculativeK ?? state.Options.SpeculativeCandidates,
                         ModelId = Path.GetFileNameWithoutExtension(resolvedPath),
                     };
-                    var newState = await Task.Run(() => ServerStartup.LoadModel(resolvedPath, newOptions), ct);
-                    if (ct.IsCancellationRequested)
-                    {
-                        newState.Dispose();
-                        ct.ThrowIfCancellationRequested();
-                    }
-
-                    // Transfer new state fields into the existing ServerState
-                    state.Options = newOptions;
-                    state.Config = newState.Config;
-                    state.Model = newState.Model;
-                    state.Tokenizer = newState.Tokenizer;
-                    state.ChatTemplate = newState.ChatTemplate;
-                    state.Generator = newState.Generator;
-                    state.ToolCallParser = newState.ToolCallParser;
-                    state.KvCacheConfig = newState.KvCacheConfig;
-                    state.KvCacheFactory = newState.KvCacheFactory;
-                    state.PrefixCache = newState.PrefixCache;
-                    state.LoadedModelPath = resolvedPath;
-                    state.CurrentGguf = newState.CurrentGguf;
-                    state.DraftModel = newState.DraftModel;
-                    state.DraftModelPath = newState.DraftModelPath;
-                    state.DraftGguf = newState.DraftGguf;
-
-                    await Task.CompletedTask;
+                    return await Task.Run(() => ServerStartup.LoadModel(resolvedPath, newOptions), token);
                 }, ct);
 
                 return Results.Ok(new ModelLoadResponse
                 {
-                    Status = "loaded",
+                    Status = state.RetirementCleanupFailed ? "activated_with_retirement_error_restart_required" : "loaded",
                     Model = request.Model,
                 });
             }

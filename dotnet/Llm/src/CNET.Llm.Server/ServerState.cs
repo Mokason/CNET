@@ -18,6 +18,10 @@ namespace CNET.Llm.Server;
 public sealed class ServerState : IDisposable
 {
     private readonly SemaphoreSlim _requestGate = new(1, 1);
+    private int _disposed;
+
+    /// <summary>Activation succeeded but old-resource cleanup failed; further swaps require restart.</summary>
+    public bool RetirementCleanupFailed { get; private set; }
 
     /// <summary>Server startup options (updated on model swap).</summary>
     public required ServerOptions Options { get; set; }
@@ -77,53 +81,116 @@ public sealed class ServerState : IDisposable
 
     /// <summary>
     /// Executes a request with sequential access control.
-    /// Only one request is processed at a time (Step 35 adds batching).
+    /// Only one request is processed at a time. Do not dispose this state inside the callback.
     /// </summary>
     public async Task ExecuteAsync(Func<Task> work, CancellationToken ct)
     {
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
         await _requestGate.WaitAsync(ct);
-        try { await work(); }
+        try
+        {
+            ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+            await work();
+        }
         finally { _requestGate.Release(); }
     }
 
     /// <summary>
-    /// Loads or swaps a model under the request gate.
-    /// Blocks new requests during the swap, disposes the old model (if any), and runs the load action.
+    /// Prepares and adopts a fresh, exclusively owned candidate under the canonical request gate.
+    /// The callback must not mutate this state or share its owned resources. Returning a candidate
+    /// transfers ownership to this method; failure/cancellation preserves the incumbent.
+    /// Retired-resource cleanup failure leaves the candidate active and blocks further swaps.
     /// </summary>
-    public async Task SwapModelAsync(Func<Task> loadAction, CancellationToken ct)
+    public async Task SwapModelAsync(Func<CancellationToken, Task<ServerState>> prepare, CancellationToken ct)
     {
+        ArgumentNullException.ThrowIfNull(prepare);
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
         await _requestGate.WaitAsync(ct);
-        IsReady = false;
+        ServerState? candidate = null;
         try
         {
-            PrefixCache?.Dispose();
-            PrefixCache = null;
-            PagedFactory?.Dispose();
-            PagedFactory = null;
-            DraftModel?.Dispose();
-            DraftModel = null;
-            DraftGguf?.Dispose();
-            DraftGguf = null;
-            Model?.Dispose();
-            CurrentGguf?.Dispose();
-            CurrentGguf = null;
+            ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+            if (RetirementCleanupFailed)
+                throw new InvalidOperationException("A prior retirement failed; restart before another model swap.");
+            candidate = await prepare(ct);
+            if (ReferenceEquals(candidate, this))
+            {
+                candidate = null; // Never dispose the incumbent when the callback violates ownership.
+                throw new InvalidOperationException("Preparation must return a fresh candidate.");
+            }
+            ct.ThrowIfCancellationRequested();
+            ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+            if (candidate is null || Volatile.Read(ref candidate._disposed) != 0 || !candidate.IsReady ||
+                candidate.Model is null || candidate.Config is null || candidate.Tokenizer is null ||
+                candidate.Generator is null || candidate.ChatTemplate is null || candidate.RetirementCleanupFailed)
+                throw new InvalidOperationException("Preparation returned an incomplete candidate.");
 
-            await loadAction();
-            IsReady = true;
+            var retired = OwnedResources();
+            Options = candidate.Options;
+            Config = candidate.Config;
+            ToolCallParser = candidate.ToolCallParser;
+            KvCacheConfig = candidate.KvCacheConfig;
+            KvCacheFactory = candidate.KvCacheFactory;
+            PagedFactory = candidate.PagedFactory;
+            PrefixCache = candidate.PrefixCache;
+            Model = candidate.Model;
+            Tokenizer = candidate.Tokenizer;
+            ChatTemplate = candidate.ChatTemplate;
+            Generator = candidate.Generator;
+            LoadedModelPath = candidate.LoadedModelPath;
+            CurrentGguf = candidate.CurrentGguf;
+            DraftModel = candidate.DraftModel;
+            DraftModelPath = candidate.DraftModelPath;
+            DraftGguf = candidate.DraftGguf;
+            IsReady = true; // Publication boundary; cancellation after this point cannot roll back.
+            candidate.ClearModel();
+            RetirementCleanupFailed = !DisposeResources(retired);
         }
-        finally { _requestGate.Release(); }
+        finally
+        {
+            try { candidate?.Dispose(); }
+            finally { _requestGate.Release(); }
+        }
     }
 
     /// <inheritdoc/>
     public void Dispose()
     {
-        PrefixCache?.Dispose();
-        PagedFactory?.Dispose();
-        DraftModel?.Dispose();
-        DraftGguf?.Dispose();
-        Model?.Dispose();
-        CurrentGguf?.Dispose();
-        _requestGate.Dispose();
+        if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
+        _requestGate.Wait();
+        try
+        {
+            var resources = OwnedResources();
+            ClearModel();
+            RetirementCleanupFailed |= !DisposeResources(resources);
+        }
+        finally { _requestGate.Release(); }
+        // Do not dispose the semaphore while already-waiting direct callers still need to wake and refuse.
+    }
+
+    private IDisposable?[] OwnedResources() => [PrefixCache, PagedFactory, DraftModel, DraftGguf, Model, CurrentGguf];
+
+    private void ClearModel()
+    {
+        IsReady = false;
+        PrefixCache = null; PagedFactory = null; DraftModel = null; DraftGguf = null;
+        Model = null; CurrentGguf = null; Generator = null; Tokenizer = null; ChatTemplate = null;
+        Config = null; ToolCallParser = null; KvCacheFactory = null;
+        LoadedModelPath = ""; DraftModelPath = "";
+    }
+
+    private static bool DisposeResources(IDisposable?[] resources)
+    {
+        bool success = true;
+        var seen = new HashSet<IDisposable>(ReferenceEqualityComparer.Instance);
+        foreach (var resource in resources)
+        {
+            if (resource is null || !seen.Add(resource)) continue;
+            try { resource.Dispose(); }
+            catch (Exception) { success = false; }
+        }
+        if (!success) Console.Error.WriteLine("[cnet-llm] Model resource cleanup failed; owner restart required.");
+        return success;
     }
 }
 

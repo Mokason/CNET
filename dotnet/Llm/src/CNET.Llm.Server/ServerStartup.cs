@@ -65,8 +65,23 @@ public static class ServerStartup
     /// </summary>
     public static ServerState LoadModel(string resolvedPath, ServerOptions options)
     {
+        var candidate = CreateBareState(options);
+        try
+        {
+            PrepareModel(candidate, resolvedPath, options);
+            return candidate;
+        }
+        catch
+        {
+            candidate.Dispose();
+            throw;
+        }
+    }
+
+    private static void PrepareModel(ServerState candidate, string resolvedPath, ServerOptions options)
+    {
         Console.WriteLine("[cnet-llm] Loading configured model...");
-        var gguf = GgufFile.Open(resolvedPath);
+        var gguf = candidate.CurrentGguf = GgufFile.Open(resolvedPath);
         var config = GgufModelConfigExtractor.Extract(gguf.Metadata);
         var tokenizer = GgufBpeTokenizerFactory.Load(gguf.Metadata);
 
@@ -94,6 +109,7 @@ public static class ServerStartup
             Console.WriteLine($"[cnet-llm] Hybrid inference ({gpuLayers} GPU + {config.NumLayers - gpuLayers} CPU layers)");
             model = CNET.Llm.Cuda.HybridTransformerModel.LoadFromGguf(gguf, config, gpuLayers, gpuId, threading);
         }
+        candidate.Model = model;
 
         // Create chat template
         string bosToken = tokenizer.DecodeToken(tokenizer.BosTokenId);
@@ -132,7 +148,7 @@ public static class ServerStartup
         }
         else if (options.UsePaged && !kvConfig.IsQuantized)
         {
-            pagedFactory = new PagedKvCacheFactory(
+            pagedFactory = candidate.PagedFactory = new PagedKvCacheFactory(
                 config.NumLayers, config.NumKvHeads, config.HeadDim);
             kvFactory = (cfg, size) => pagedFactory.Create(size);
             Console.WriteLine("[cnet-llm] Using paged KV-cache (block-based allocation)");
@@ -151,7 +167,7 @@ public static class ServerStartup
                 kvConfig.KeyDType, kvConfig.ValueDType, kvConfig.MixedPrecisionWindowSize);
         }
 
-        PrefixCache? prefixCache = options.PromptCacheEnabled
+        PrefixCache? prefixCache = candidate.PrefixCache = options.PromptCacheEnabled
             ? new PrefixCache(options.PromptCacheSize)
             : null;
 
@@ -165,11 +181,10 @@ public static class ServerStartup
             if (draftPath is null)
                 throw new InvalidOperationException($"Speculative draft model not found: {options.SpeculativeModel}");
 
-            draftGguf = GgufFile.Open(draftPath);
+            draftGguf = candidate.DraftGguf = GgufFile.Open(draftPath);
             var draftConfig = GgufModelConfigExtractor.Extract(draftGguf.Metadata);
             if (!SpeculativeConstants.AreVocabsCompatible(config.VocabSize, draftConfig.VocabSize))
             {
-                draftGguf.Dispose();
                 throw new InvalidOperationException(
                     $"Draft model vocab size ({draftConfig.VocabSize}) differs from target ({config.VocabSize}) " +
                     $"by more than {SpeculativeConstants.MaxVocabSizeDifference} tokens. " +
@@ -179,7 +194,7 @@ public static class ServerStartup
                 Console.WriteLine($"[cnet-llm] Note: vocab sizes differ slightly ({draftConfig.VocabSize} vs {config.VocabSize}) — using shared range for speculative comparison.");
 
             var draftThreading = new ThreadingConfig(options.Threads, options.DecodeThreads);
-            draftModel = TransformerModel.LoadFromGguf(draftGguf, draftConfig, draftThreading);
+            draftModel = candidate.DraftModel = TransformerModel.LoadFromGguf(draftGguf, draftConfig, draftThreading);
             draftModelPath = draftPath;
             Console.WriteLine($"[cnet-llm] Speculative decoding: draft={Path.GetFileName(draftPath)}, K={options.SpeculativeCandidates}");
         }
@@ -191,26 +206,16 @@ public static class ServerStartup
         WarmupRunner.Run(generator, tokenizer, options.Warmup);
         prefixCache?.Clear(); // Discard warm-up KV-cache entries
 
-        return new ServerState
-        {
-            Options = options,
-            Config = config,
-            ToolCallParser = toolCallParser,
-            KvCacheConfig = kvConfig,
-            KvCacheFactory = kvFactory,
-            PagedFactory = pagedFactory,
-            PrefixCache = prefixCache,
-            IsReady = true,
-            Model = model,
-            Tokenizer = tokenizer,
-            ChatTemplate = chatTemplate,
-            Generator = generator,
-            LoadedModelPath = resolvedPath,
-            CurrentGguf = gguf,
-            DraftModel = draftModel,
-            DraftModelPath = draftModelPath,
-            DraftGguf = draftGguf,
-        };
+        candidate.Config = config;
+        candidate.ToolCallParser = toolCallParser;
+        candidate.KvCacheConfig = kvConfig;
+        candidate.KvCacheFactory = kvFactory;
+        candidate.Tokenizer = tokenizer;
+        candidate.ChatTemplate = chatTemplate;
+        candidate.Generator = generator;
+        candidate.LoadedModelPath = resolvedPath;
+        candidate.DraftModelPath = draftModelPath;
+        candidate.IsReady = true;
     }
 
     /// <summary>

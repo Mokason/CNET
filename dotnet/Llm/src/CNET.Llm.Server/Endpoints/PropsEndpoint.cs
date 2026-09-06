@@ -27,6 +27,7 @@ public static class PropsEndpoint
                 SamplingDefaults = ToDto(state.SamplingDefaults),
                 DraftModelPath = string.IsNullOrEmpty(state.DraftModelPath) ? null : state.DraftModelPath,
                 IsReady = state.IsReady,
+                RetirementCleanupFailed = state.RetirementCleanupFailed,
             };
         });
 

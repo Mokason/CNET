@@ -50,6 +50,9 @@ public sealed record PropsResponse
 
     [JsonPropertyName("is_ready")]
     public bool IsReady { get; init; }
+
+    [JsonPropertyName("retirement_cleanup_failed")]
+    public bool RetirementCleanupFailed { get; init; }
 }
 
 /// <summary>

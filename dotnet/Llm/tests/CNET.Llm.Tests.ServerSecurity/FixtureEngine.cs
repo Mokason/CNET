@@ -11,8 +11,11 @@ namespace CNET.Llm.Tests.ServerSecurity;
 internal sealed class FixtureEngine : IModel
 {
     private int _calls;
+    private int _disposeCalls;
     internal int Calls => Volatile.Read(ref _calls);
+    internal int DisposeCalls => Volatile.Read(ref _disposeCalls);
     internal Action<int>? OnForward { get; set; }
+    internal Action? OnDispose { get; set; }
     public long ComputeMemoryBytes => 0;
     public ModelConfig Config { get; } = new()
     {
@@ -36,6 +39,7 @@ internal sealed class FixtureEngine : IModel
 
     public unsafe ITensor Forward(ReadOnlySpan<int> tokenIds, ReadOnlySpan<int> positions, int deviceId, IKvCache? kvCache)
     {
+        ObjectDisposedException.ThrowIf(DisposeCalls > 0, this);
         int call = Interlocked.Increment(ref _calls);
         OnForward?.Invoke(call);
         var tensor = UnmanagedTensor.Allocate(new TensorShape(1, 4), DType.Float32);
@@ -45,7 +49,11 @@ internal sealed class FixtureEngine : IModel
         return tensor;
     }
 
-    public void Dispose() { }
+    public void Dispose()
+    {
+        Interlocked.Increment(ref _disposeCalls);
+        OnDispose?.Invoke();
+    }
 
     private sealed class FixtureTokenizer : ITokenizer
     {

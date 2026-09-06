@@ -107,9 +107,18 @@ Cancellation is cooperative. Generation checks cancellation at token boundaries;
 a running native kernel, prefill, tokenizer, template or model load cannot be
 forcibly interrupted. Admission remains held until that work actually exits,
 even after the client disconnects or the deadline expires. A canceled completed
-model load is disposed rather than published. Model replacement still disposes
-the incumbent before loading: failure does **not** retain the old model. This
-is not the native certified-capsule lifecycle or an OS-level resource sandbox.
+model load is disposed rather than published. Model preparation failure or
+cancellation retains the usable incumbent. Preparation and adoption share the
+canonical request gate; the complete candidate (including its paged cache
+factory) is adopted before old resources are retired. Partial loader failure
+also releases already acquired model/GGUF resources.
+
+If retirement fails after adoption, the new model remains active. The load
+response status is `activated_with_retirement_error_restart_required`, and
+administrator `/props` exposes `retirement_cleanup_failed: true`. Further model
+load requests return 409 until owner restart, bounding failed retirement to one
+swap. Cleanup emits a fixed warning without exception details. This is not the
+native certified-capsule lifecycle or an OS-level resource sandbox.
 
 ## Verification and integration
 
@@ -123,6 +132,16 @@ Custom hosts must use both `AddCnetLlm(state, security)` and
 `MapCnetLlmEndpoints()`. The latter installs the boundary for mapped routes;
 `ServerStartup.BuildApp` also enforces Kestrel transport limits. Custom host
 middleware/listeners are owner code and require their own deployment review.
+
+Direct callers migrate the old mutable-action swap callback to
+`SwapModelAsync(Func<CancellationToken, Task<ServerState>>, token)`: return a
+fresh, complete, exclusively owned state, without mutating the incumbent or
+sharing its owned resources. The method takes ownership of a returned candidate;
+the loader owns cleanup before return. Sampling defaults remain server-wide.
+Execute/swap callbacks must not call synchronous `Dispose` on their owning
+state. Disposal waits for the canonical gate, is idempotent and refuses new
+execute/swap calls. Direct access to public mutable fields outside that gate
+does not acquire a model lifetime lease.
 
 The API does not provide `/v1/embeddings` or full protocol equivalence. Parsed
 tool calls do not authorize execution; see [TOOL_CALLING.md](TOOL_CALLING.md).
