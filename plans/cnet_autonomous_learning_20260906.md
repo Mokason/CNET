@@ -1,6 +1,8 @@
 # Policy-bounded unattended specialist learning
 
-Status: active implementation. Baseline: `f805be899fc9aca589742366b8ae32d7c958cec7`.
+Status: deployment controls implemented and regression-verified; useful learned
+allocator gain and unattended acceptance WITHHELD.
+Baseline: `f805be899fc9aca589742366b8ae32d7c958cec7`.
 The owner requested all six stages: learning supervisor, independent evidence,
 independent evaluation, automatic activation, useful core improvement and a
 72-hour unattended acceptance run. This branch is private and opt-in. Main and
@@ -8,6 +10,19 @@ the previous product worktree remain unchanged. No existing service restart,
 live configuration replacement, remote push or external teacher call is implied.
 
 ## Outcome and non-negotiables
+
+Current requested slice (owner: "do 1. and 2."): finish managed installation
+pinning, operator commands and durable supervision; then evaluate a fresh
+allocator experiment against the unchanged benefit gate. Do not launch the
+72-hour acceptance run in this slice. Its result remains WITHHELD.
+
+Operator telemetry must answer which immutable installations/policy are bound,
+whether the original run is live/failed/complete, and which fixed action last
+completed. Use a bounded singleton heartbeat plus structured command/tick
+events; never log source rows, control tokens or full exception messages.
+Schema 2 adds managed binding and run accounting; schema 1 experimental ledgers
+are refused, never automatically reset or migrated. A run budget completing
+does not certify acceptance or useful learning.
 
 Close the actual loop: an uncovered request creates durable demand; a bounded
 job acquires independently authorized evidence; the existing capsule mechanism
@@ -190,8 +205,9 @@ bounds both raw output pipes, and enforces suspend-inclusive deadlines. Actual
 tests verify direct-child kill/reap on timeout, overflow and cancellation. An
 adversarial cancellation-before-launch regression is fixed. The runner requires
 attested fixed native executables that cannot fork; it is not an arbitrary
-program sandbox or a guarantee of cleanup for reparented descendants. Runtime
-attestation and supervisor integration remain unfinished.
+program sandbox or a guarantee of cleanup for reparented descendants. The fixed
+native installation is attested; the managed deployment closure now has a
+separate exact-byte identity and typed running-provider binding.
 
 The separately implemented table reference checks all possible uint8 inputs,
 including abstention as distinct from a verified zero. The strict native-control
@@ -219,7 +235,58 @@ separate connections share SQLite's transactional budgets.
 
 Private native integration passes acquisition, complete-domain observations,
 same-process refresh, stale refusal, retained incumbent answers and durable
-rollback/restart (`make learning_daemon`). The Python test is the coordinator,
-not an unattended supervisor. Runtime attestation, production orchestration,
-storage quota enforcement, useful allocator confirmation and the actual
-72-hour acceptance are still required.
+rollback/restart (`make learning_daemon`). That Python test is a coordinator,
+not an unattended supervisor. A separate managed integration now exercises the
+actual learning cycle, as described below; neither test qualifies elapsed time.
+
+## Implementation evidence: managed learning cycle
+
+The internal managed supervisor now consumes normalized native table misses,
+reserves durable jobs, runs the confined builder, copies the complete active
+inventory, freezes it using the existing canonical snapshot code, stages with
+preserve=1, compares all 256 native observations against the independent source,
+and records an exact native activation. Actual resident probes govern probation
+and revision-checked rollback. One owner lock and one serialized ledger lane
+exclude competing supervisor instances and overlapping calls.
+
+Its work directory contains the ledger, `data`, `jobs`, `sets`, `frozen`, and
+native `state`; private daemon IPC and installed code remain outside measured
+work storage. The fixed builder requires 50 MiB of free logical-byte headroom
+(three files each limited to 16 MiB, plus bookkeeping). Preparation reserves
+space for three complete-set copies. Metadata-only preflight/post-reap checks
+retain and count failed artifacts without disturbing SQLite locks. This is not
+a kernel disk quota or a guarantee against arbitrary compromised native code.
+Small policies may validly parse but refuse acquisition for insufficient space.
+
+Two reproduced recovery defects are fixed. A known failed resident probe is
+persisted before a subsequent control request can fail or be cancelled. An
+unsent activation whose evidence became stale is refused and discarded without
+publication, retaining its promotion charge. An already-published activation
+still requires exact native token replay before monitoring or rollback.
+
+The fresh ledger pins SQLite `user_version=2`. Unversioned experimental databases
+and unsupported versions refuse; there is no implicit migration or reset.
+Opening WAL state refuses without converting its journal. Missing, wrong-kind,
+or out-of-epoch promotion charges refuse before budget writes or epoch advance.
+This detects the tested logical corruption, not arbitrary malicious-owner edits.
+
+Native worker bytes and the exact manifest are pinned across ledger restarts.
+The managed supervisor/evaluator and packaged dependency closure, operator CLI,
+and durable run/heartbeat are implemented: the final combined regression passes
+628 cases with zero failures/skips. Review-driven fixes include thread-bound
+native-child lifetime, stop during cleanup and SQLite-serialized quota scans.
+Separate-process tests load the actual private entry assembly and packaged SQLite.
+Restart retains the original run budget; missed gaps and owner cancellation do
+not qualify as completion. See `docs/AUTONOMOUS_LEARNING.md` for the owner contract.
+The learned allocator remains inactive after its unchanged useful-gain gate
+failed. A fresh development sequence pilot now demonstrates useful deterministic
+multi-step planning: mean verified coverage .423828125 versus .1142578125 for
+rotating order. The bounded exact control proves all 16 development optima,
+leaving zero residual headroom for a learned improvement on this workload.
+The pilot is not integrated production planning, not a held-out gain pass, and
+does not justify another GPU fit. See
+`result/cnet_allocator_sequence_pilot_20260907.md` for conditional rejection
+phase ordering, native receipts and limits. Fresh residual-headroom evidence,
+a new confirmation split and actual 72-hour acceptance remain outstanding.
+Current deployment regression details and exclusions are recorded in
+`result/cnet_autonomous_learning_20260906.md`.

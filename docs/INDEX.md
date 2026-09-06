@@ -18,6 +18,7 @@ host. For measured claims, follow dated evidence and check its bound source.
 | Build and choose tests | [Build and verification](BUILD_AND_TEST.md) |
 | Teach, compose and inspect capsules | [Capsule core](CAPSULE_CORE.md) |
 | Acquire bounded source facts | [Source evidence](CNET_SOURCE_EVIDENCE.md) |
+| Operate private table learning | [Policy-bounded learning](AUTONOMOUS_LEARNING.md) |
 | Train on AMD GPUs or test activation | [GPU training](GPU_TRAINING.md) |
 | Understand selection authority | [Dispatch](dispatch.md), [execution tiers](EXECUTION_TIERS.md) |
 | Operate local services | [Daemon](CNETD.md), [24/7 services](CNET_MARBLE_24_7.md), [web](CNET_WEB.md) |
