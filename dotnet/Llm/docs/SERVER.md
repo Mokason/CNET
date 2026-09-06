@@ -48,6 +48,7 @@ never permit administration.
 
 | Surface | Required role |
 | --- | --- |
+| GET `/`, `/app.js`, `/app.css` when UI explicitly mapped | Public static bootstrap only |
 | POST chat/completions, completions, tokenize, detokenize | Inference |
 | GET health, ready, models, config | Inference |
 | POST config, cache/clear, models/load | Administrator |
@@ -78,7 +79,7 @@ content security policy.
 | `CNET_SERVER_MAX_OUTPUT_TOKENS` | 2,048 | 1–8,192 |
 | `CNET_SERVER_REQUESTS_PER_MINUTE` | 120 per role | 1–10,000 |
 | `CNET_SERVER_TIMEOUT_SECONDS` | 30 seconds | 1–300 via environment |
-| Concurrent admitted HTTP requests | 1 | Fixed; no waiting queue |
+| Concurrent stateful HTTP requests | 1 | Fixed; no waiting queue; constant UI assets exempt |
 | Connected sockets / header bytes / request line bytes | 32 / 8,192 / 4,096 | Fixed |
 | Query length / JSON depth | 2,048 characters / 16 | Fixed |
 
@@ -86,7 +87,9 @@ Three fixed rate counters cover anonymous, inference and administrator roles;
 there is no attacker-keyed dictionary. Fixed one-minute windows permit a burst
 at a window boundary. Requests denied for invalid transport/origin are not
 metered by these role counters; the owner proxy must cover network-level abuse.
-Health checks can receive 429 while another request is active. No FIFO fairness,
+Constant UI assets use the same bounded anonymous role counter, reject request
+bodies, retain deadlines, and can load without the model permit. No API endpoint
+inherits that exception. Health checks can receive 429 while another request is active. No FIFO fairness,
 continuous batching, priority admission or preemption is promised.
 
 Known-length and chunked bodies are capped before DTO binding. The deadline
@@ -145,5 +148,49 @@ does not acquire a model lifetime lease.
 
 The API does not provide `/v1/embeddings` or full protocol equivalence. Parsed
 tool calls do not authorize execution; see [TOOL_CALLING.md](TOOL_CALLING.md).
-The legacy embedded UI is not enabled by the sample default; its offline/auth
-upgrade is a separately verified follow-up.
+
+## Optional offline chat page
+
+Add `--ui` to the sample invocation, or explicitly pass `serveUi: true` to
+`BuildApp`, to serve the three bundled UI assets. No CDN, fonts, inline script,
+browser storage or runtime frontend dependency is required. In protected mode,
+configure the page's exact HTTPS origin in `CNET_SERVER_ALLOWED_ORIGINS` and use
+the owner-approved TLS proxy described above. Static bootstrap is anonymous;
+inference still requires its bearer credential.
+
+Enter an inference key in the password field and select **Use inference key**.
+The field is cleared immediately; the page keeps only an in-memory reference and
+sends it only in a same-origin Authorization header. Redirects are refused;
+cookies and credentialed fetches are disabled. **Forget key** clears access and
+conversation, and a reload forgets both. Do not ask a browser/password manager
+to save this key. The development-mode button merely requests anonymous access;
+the server must independently permit explicit loopback development.
+
+The page supports supervised text chat, stop, new conversation and accessible
+error/loading/empty states. Every reply is rendered with `textContent`; markup,
+links and tool-looking output remain plain text. It never executes tools or
+makes administrator requests. The former browser model/config/inspection and
+telemetry panels are replaced by this deliberately small chat surface; use the
+separately authorized API for administration. Full old-UI feature parity is not
+claimed.
+
+Client limits are 8,192 characters per prompt, 60,000 serialized request bytes,
+12 retained history messages/24,000 history characters, 24 visible messages,
+and 65,536 characters per reply or pending SSE frame buffer. Server limits may
+be stricter. A truncated/failed stream is visibly incomplete, never a successful
+reply. No messages or keys survive page reload through application storage.
+
+The browser fixture uses only a fake model and an ephemeral self-signed HTTPS
+loopback proxy, not a deployed service or production certificate. With an
+already installed compatible Playwright Core and Chromium:
+
+```sh
+dotnet build dotnet/Llm/tests/CNET.Llm.Tests.UiHost/CNET.Llm.Tests.UiHost.csproj -c Release
+CNET_TEST_PLAYWRIGHT_MODULE=/absolute/path/to/installed/playwright-core \
+  node dotnet/Llm/tests/CNET.Llm.Tests.UiHost/browser-security.cjs
+```
+
+The script does not download dependencies. It blocks all off-fixture browser
+requests, proves protected chat/key/plain-text rendering/stop behavior, checks
+keyboard focus and four viewport widths, and shuts down its private test host.
+This is not a full screen-reader or WCAG conformance certification.

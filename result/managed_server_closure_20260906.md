@@ -162,3 +162,66 @@ candidate refusal, degraded retirement/admin visibility, idempotent disposal,
 and the private mapping-release check. The initial 36-test API boundary evidence
 above remains its historical proof, not a claim that lifecycle was already
 repaired in that commit.
+
+## Offline browser follow-up
+
+The parent rejected permanent removal of the existing chat surface and approved
+an explicit opt-in, offline, supervised chat-only replacement. `--ui` and the
+existing `serveUi: true` enable three constant embedded assets. Metadata on those
+exact routes permits anonymous bootstrap but not API calls; static requests
+refuse bodies and retain transport/origin/rate/deadline controls while avoiding
+the model permit. API authentication/admin separation remains unchanged.
+
+The page uses local CSS/JS only, labeled native controls, an in-memory inference
+key, same-origin bearer headers, no cookie/redirect authentication, bounded
+history/transcript/stream parsing, and `textContent` for all model text. The old
+CDN/inline script/Markdown renderer and browser administrator/telemetry panels
+were replaced rather than weakening CSP. The administrator APIs remain usable;
+the smaller UI does not claim old-panel feature parity. Old assets remain
+recoverable in git history.
+
+Actual RED before UI behavior edits:
+
+- `/tmp/cnet-managed-ui-http-red.log`: 3 failures, including
+  `MANAGED_UI_RED bootstrap_requires_preexisting_header`.
+- `/tmp/cnet-managed-ui-browser-red.log`: actual Chromium against the private
+  HTTPS proxy returned 401, `MANAGED_UI_RED anonymous_static_bootstrap`.
+
+GREEN `/tmp/cnet-managed-ui-http-green.log`: 48 focused tests passed, none failed
+or skipped. Existing server tests remained 18/18
+(`/tmp/cnet-managed-ui-existing.log`). Sample and test-host builds had zero
+warnings/errors (`/tmp/cnet-managed-ui-sample-build.log`,
+`/tmp/cnet-managed-ui-host-final-build.log`). No package dependencies were added.
+
+The browser proof uses installed Playwright Core and cached Chromium, with a
+fake four-token model and an in-memory self-signed certificate on an ephemeral
+loopback test proxy. It does not configure a real proxy or relax production
+origin validation. Certificate verification is bypassed only for that isolated
+browser fixture; off-origin requests are actively blocked. The test host is
+stopped at the end. The fixture outputs HTML/event-handler and javascript-link
+payloads that the browser must display solely as text.
+
+`/tmp/cnet-managed-ui-browser-proof.log` records
+`MANAGED_UI_BROWSER_GREEN protected_https_chat=1 text_only=1 ephemeral_key=1 no_admin=1 stop=1 viewports=4 keyboard=1 external_requests=0`.
+The proof checks key header use/cleared input/no persistent storage, unauthorized
+mutation refusal, successful DONE handling, stop/incomplete state, reload/forget,
+no page errors, keyboard focus, 320/768/1024/1440-pixel overflow, and helper-text
+contrast. A first browser selector matched both "Message" and "Conversation
+messages"; narrowing the test to the exact accessible label fixed that fixture
+ambiguity without changing production behavior.
+
+Screenshots `/tmp/cnet-managed-ui-reviewed.png` and
+`/tmp/cnet-managed-ui-reviewed.png.mobile.png` are private fake-data artifacts;
+visual inspection checks readable layout and literal untrusted output. No full
+screen-reader or WCAG certification is claimed. The frontend skill's optional
+accessibility reference was missing, so its complete built-in checklist and
+actual browser checks were used. Browser API use was checked against the
+[official Playwright browser documentation](https://playwright.dev/docs/api/class-browsertype).
+
+A final deterministic browser cleanup barrier found a stale-session race before
+commit: `/tmp/cnet-managed-ui-forget-red.log` records
+`MANAGED_UI_RED forgotten_session_revived`, where a completion changed the
+forgotten-access status back to "Reply complete" and could restore old history.
+Access changes now increment a generation counter; stale success/error
+continuations cannot restore history/status. The full browser proof including
+that barrier passed in `/tmp/cnet-managed-ui-forget-green.log`.
