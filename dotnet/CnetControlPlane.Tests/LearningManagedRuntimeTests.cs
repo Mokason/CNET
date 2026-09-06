@@ -291,9 +291,66 @@ public sealed class LearningManagedRuntimeTests : IDisposable
     {
         var manifest = Manifest(); Put(Names[^1], [42]);
         for (var index = 0; index < 4; index++) Assert.Throws<InvalidOperationException>(() => LearningManagedRuntime.Load(root, manifest));
-        var before = Directory.EnumerateFileSystemEntries("/proc/self/fd").Count();
-        for (var index = 0; index < 40; index++) Assert.Throws<InvalidOperationException>(() => LearningManagedRuntime.Load(root, manifest));
-        Assert.Equal(before, Directory.EnumerateFileSystemEntries("/proc/self/fd").Count());
+        // Finalizers must not hide a missing deterministic Dispose in these
+        // bounded failed loads. No collection is forced after the operation.
+        Assert.True(GC.TryStartNoGCRegion(16 * 1024 * 1024));
+        try
+        {
+            Assert.Equal(0, CountFixtureDescriptors());
+            for (var index = 0; index < 40; index++)
+            {
+                Assert.Throws<InvalidOperationException>(() => LearningManagedRuntime.Load(root, manifest));
+                Assert.Equal(0, CountFixtureDescriptors());
+            }
+        }
+        finally { GC.EndNoGCRegion(); }
+    }
+    // This stable, uniquely named fixture is not renamed during measurement.
+    // Count its root, nested directories and files, not unrelated process FDs
+    // or shared ancestors. A prefix sibling is deliberately outside this scope.
+    private int CountFixtureDescriptors()
+    {
+        var count = 0;
+        foreach (var descriptor in Directory.EnumerateFileSystemEntries("/proc/self/fd"))
+        {
+            var target = new FileInfo(descriptor).LinkTarget;
+            if (target == root || target?.StartsWith(root + "/", StringComparison.Ordinal) == true) count++;
+        }
+        return count;
+    }
+
+    [Fact]
+    public void FixtureDescriptorAccountingIgnoresClosingAnUnrelatedPrefixSibling()
+    {
+        var sibling = root + "-unrelated";
+        Directory.CreateDirectory(sibling, Private);
+        try
+        {
+            using var unrelated = LearningFiles.Open(sibling);
+            var before = CountFixtureDescriptors();
+            unrelated.Dispose();
+            Assert.Equal(before, CountFixtureDescriptors());
+        }
+        finally { Directory.Delete(sibling); }
+    }
+
+    [Fact]
+    public void FixtureDescriptorAccountingDetectsEachHeldDirectoryAndFile()
+    {
+        var before = CountFixtureDescriptors();
+        var held = new List<IDisposable>();
+        try
+        {
+            foreach (var name in new[] { "" }.Concat(Directories))
+            {
+                held.Add(LearningFiles.Open(Path.Combine(root, name)));
+                Assert.Equal(before + held.Count, CountFixtureDescriptors());
+            }
+            held.Add(File.OpenHandle(Path.Combine(root, Names[^1])));
+            Assert.Equal(before + held.Count, CountFixtureDescriptors());
+        }
+        finally { foreach (var handle in held) handle.Dispose(); }
+        Assert.Equal(before, CountFixtureDescriptors());
     }
     [Fact]
     public void DisposeRefusesVerificationAndBinding()
