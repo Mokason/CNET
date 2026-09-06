@@ -33,9 +33,9 @@ public static class WebUIEndpoint
 
     public static void Map(WebApplication app)
     {
-        app.MapGet("/", (HttpContext ctx) => ServeFile(ctx, "index.html"));
-        app.MapGet("/app.js", (HttpContext ctx) => ServeFile(ctx, "app.js"));
-        app.MapGet("/app.css", (HttpContext ctx) => ServeFile(ctx, "app.css"));
+        app.MapGet("/", (HttpContext ctx) => ServeFile(ctx, "index.html")).WithMetadata(new PublicUiAsset());
+        app.MapGet("/app.js", (HttpContext ctx) => ServeFile(ctx, "app.js")).WithMetadata(new PublicUiAsset());
+        app.MapGet("/app.css", (HttpContext ctx) => ServeFile(ctx, "app.css")).WithMetadata(new PublicUiAsset());
     }
 
     private static async Task ServeFile(HttpContext ctx, string fileName)
@@ -47,8 +47,11 @@ public static class WebUIEndpoint
         }
 
         ctx.Response.ContentType = entry.ContentType;
-        ctx.Response.Headers.CacheControl = "no-cache";
+        ctx.Response.Headers.CacheControl = "no-store";
         ctx.Response.ContentLength = entry.Data.Length;
         await ctx.Response.BodyWriter.WriteAsync(entry.Data, ctx.RequestAborted);
     }
 }
+
+// Only constant, explicitly mapped UI assets may bootstrap without a bearer header.
+internal sealed class PublicUiAsset { }

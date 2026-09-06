@@ -16,6 +16,7 @@ internal sealed class FixtureEngine : IModel
     internal int DisposeCalls => Volatile.Read(ref _disposeCalls);
     internal Action<int>? OnForward { get; set; }
     internal Action? OnDispose { get; set; }
+    internal string TokenText { get; init; } = "x";
     public long ComputeMemoryBytes => 0;
     public ModelConfig Config { get; } = new()
     {
@@ -25,7 +26,7 @@ internal sealed class FixtureEngine : IModel
 
     internal ServerState CreateState()
     {
-        var tokenizer = new FixtureTokenizer();
+        var tokenizer = new FixtureTokenizer(TokenText);
         return new ServerState
         {
             Options = new ServerOptions { Model = "fixture-engine", Host = "127.0.0.1", Port = 0 },
@@ -55,15 +56,15 @@ internal sealed class FixtureEngine : IModel
         OnDispose?.Invoke();
     }
 
-    private sealed class FixtureTokenizer : ITokenizer
+    private sealed class FixtureTokenizer(string text) : ITokenizer
     {
         public int VocabSize => 4;
         public int BosTokenId => 0;
         public int EosTokenId => 3;
         public int[] Encode(string text) => [1];
         public int CountTokens(string text) => 1;
-        public string Decode(ReadOnlySpan<int> tokenIds) => new('x', tokenIds.Length);
-        public string DecodeToken(int tokenId) => tokenId == 1 ? "x" : "";
+        public string Decode(ReadOnlySpan<int> tokenIds) => string.Concat(Enumerable.Repeat(text, tokenIds.Length));
+        public string DecodeToken(int tokenId) => tokenId == 1 ? text : "";
     }
 
     private sealed class FixtureChatTemplate : IChatTemplate

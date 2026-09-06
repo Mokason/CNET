@@ -19,10 +19,10 @@ internal sealed class ServerFixture(WebApplication app, ServerState state, HttpC
     internal ServerState State => state;
 
     internal static async Task<ServerFixture> Start(ServerSecurityOptions? security = null, ServerState? state = null,
-        Action<WebApplication>? configure = null, string[]? args = null)
+        Action<WebApplication>? configure = null, string[]? args = null, bool serveUi = false)
     {
         state ??= ServerStartup.CreateBareState(new ServerOptions { Model = "unused-fixture", Host = "127.0.0.1", Port = 0 });
-        var app = ServerStartup.BuildApp(state, args ?? [], security: security ?? Policy);
+        var app = ServerStartup.BuildApp(state, args ?? [], serveUi: serveUi, security: security ?? Policy);
         configure?.Invoke(app);
         await app.StartAsync();
         var address = app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.Single();

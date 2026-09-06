@@ -3,9 +3,10 @@ using CNET.Llm.Server;
 
 if (args.Length < 1)
 {
-    Console.Error.WriteLine("Usage: CNET.Llm.Sample.Server <model.gguf> [--port 8080]");
+    Console.Error.WriteLine("Usage: CNET.Llm.Sample.Server <model.gguf> [--port 8080] [--ui]");
     Console.Error.WriteLine("  model.gguf  Path to a GGUF model file");
     Console.Error.WriteLine("  --port N    Port to listen on (default: 8080)");
+    Console.Error.WriteLine("  --ui        Enable the bundled offline chat page (no browser administration)");
     return 1;
 }
 
@@ -42,7 +43,7 @@ var resolvedPath = ServerStartup.ResolveModelPath(options.Model, options.Quant)
     ?? modelPath;
 
 using var state = ServerStartup.LoadModel(resolvedPath, options);
-await using var app = ServerStartup.BuildApp(state, [], security: security);
+await using var app = ServerStartup.BuildApp(state, [], serveUi: args.Skip(1).Contains("--ui", StringComparer.Ordinal), security: security);
 
 var url = $"http://{options.Host}:{options.Port}";
 Console.WriteLine($"Model: {state.Config!.Architecture}, {state.Config.NumLayers} layers");

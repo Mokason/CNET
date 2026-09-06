@@ -4,6 +4,8 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using CNET.Llm.Server.Models;
+using CNET.Llm.Server.Endpoints;
+using Microsoft.AspNetCore.Http.Features;
 
 namespace CNET.Llm.Server;
 
@@ -59,11 +61,14 @@ internal sealed class ServerSecurityMiddleware(ServerSecurityOptions options) : 
             return;
         }
 
-        if (role == 0 && !options.LoopbackDevelopment)
+        bool uiAsset = HttpMethods.IsGet(context.Request.Method) && context.GetEndpoint()?.Metadata.GetMetadata<PublicUiAsset>() is not null;
+        if (role == 0 && !options.LoopbackDevelopment && !uiAsset)
         { context.Response.Headers.WWWAuthenticate = "Bearer"; await Error(context, 401, "authentication_required"); return; }
         if (RequiresAdministration(context.Request) && role != 2)
         { await Error(context, role == 0 ? 401 : 403, "administration_required"); return; }
-        if (!await _admission.WaitAsync(0, context.RequestAborted))
+        if (uiAsset && context.Features.Get<IHttpRequestBodyDetectionFeature>()?.CanHaveBody == true)
+        { await Error(context, 400, "ui_asset_body_forbidden"); return; }
+        if (!uiAsset && !await _admission.WaitAsync(0, context.RequestAborted))
         { context.Response.Headers.RetryAfter = "1"; await Error(context, 429, "server_busy"); return; }
 
         var originalToken = context.RequestAborted;
@@ -73,6 +78,8 @@ internal sealed class ServerSecurityMiddleware(ServerSecurityOptions options) : 
         context.RequestAborted = deadline.Token;
         try
         {
+            // Constant, body-free assets cannot touch model state and must load during inference.
+            if (uiAsset) { await next(context); return; }
             if (context.Request.ContentLength > options.MaxBodyBytes)
             { await Error(context, 413, "body_too_large"); return; }
             using var body = new MemoryStream();
@@ -111,7 +118,7 @@ internal sealed class ServerSecurityMiddleware(ServerSecurityOptions options) : 
             context.Request.Body = originalBody;
             context.RequestAborted = originalToken;
             // A deadline does not release model ownership while work is still executing.
-            _admission.Release();
+            if (!uiAsset) _admission.Release();
         }
     }
 
