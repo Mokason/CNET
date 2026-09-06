@@ -7,9 +7,12 @@
     <RootNamespace>CnetControlPlane</RootNamespace>
     <AssemblyName>cnet-control</AssemblyName>
     <LangVersion>latest</LangVersion>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.11" />
+    <PackageReference Include="Microsoft.Data.Sqlite.Core" Version="8.0.11" />
+    <!-- Keep the native SQLite runtime independently maintained and locked. -->
+    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.5" />
   </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="CnetControlPlane.Tests" />

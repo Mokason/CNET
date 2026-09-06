@@ -112,6 +112,31 @@ public class IngestTests : IDisposable
     }
 
     [Fact]
+    public void Failed_followup_insert_rolls_back_the_entire_ingestion()
+    {
+        using var connection = new SqliteConnection($"Data Source={_db};Pooling=False");
+        connection.Open();
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = """
+            CREATE TRIGGER refuse_followup BEFORE INSERT ON suggestions
+            WHEN NEW.source = 'cnet_real_model_acceptance'
+            BEGIN SELECT RAISE(ABORT, 'injected followup failure'); END;
+            """;
+        cmd.ExecuteNonQuery();
+
+        var error = Assert.Throws<SqliteException>(() => SuggestionIngest.Ingest(_jsonl, _db, _report));
+        Assert.Contains("injected followup failure", error.Message);
+        cmd.CommandText = "SELECT COUNT(*) FROM suggestions";
+        Assert.Equal(0L, cmd.ExecuteScalar());
+
+        cmd.CommandText = "DROP TRIGGER refuse_followup";
+        cmd.ExecuteNonQuery();
+        Assert.Equal(2, SuggestionIngest.Ingest(_jsonl, _db, _report)["inserted"]);
+        cmd.CommandText = "SELECT COUNT(*) FROM suggestions";
+        Assert.Equal(2L, cmd.ExecuteScalar());
+    }
+
+    [Fact]
     public void Admitted_candidate_does_not_schedule_repair()
     {
         using var doc = JsonDocument.Parse(File.ReadAllText(_report));
