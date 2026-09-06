@@ -4,6 +4,16 @@ This file is the current task queue, not a replay of old implementation steps.
 Decision history remains in [plans/](../plans/). Current documentation starts at
 [docs/INDEX.md](../docs/INDEX.md).
 
+## Active implementation
+
+The owner authorized all remaining product and documentation-exposed code work.
+The ordered acceptance/verification contract is
+[product closure](../plans/cnet_product_closure_20260906.md), starting from
+`7c24204` in the private `feature/product-closure-20260906` worktree.
+SQLite and native workflow repair are independent; lifecycle, daemon control,
+persistence, evidence assets and integrated proof are sequential. Live rollout
+still requires an explicit target/configuration approval.
+
 ## Completed bounded source work
 
 The September 6 GPU product sequence implements resident AMD FP32 training,

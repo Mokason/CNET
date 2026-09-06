@@ -2,6 +2,10 @@
 
 Evidence, scope and dependencies: [plan.md](plan.md).
 
+Active execution contract: [product closure](../plans/cnet_product_closure_20260906.md).
+All unchecked implementation items below are authorized; live deployment remains
+a separate owner checkpoint. No item is complete without its recorded gate.
+
 ## Completed, bounded experiment
 
 - [x] Resident FP32 training, both AMD devices and unchanged numerical gates
