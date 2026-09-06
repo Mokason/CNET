@@ -4436,29 +4436,27 @@ $(BIN_DIR)/roe_front_door: $(ROE_ASI_SRC) tools/roe_front_door.c src/cnet_domain
 		src/cnet_slot_extract.c tools/roe_front_door.c $(ROE_ASI_LIBS)
 
 .PHONY: cnet_minimal_package
-cnet_minimal_package:
+CNET_MINIMAL_BINS = $(addprefix $(BIN_DIR)/,roe_daily_packs_seed roe_front_door roe_domain_route roe_chain_think roe_evolve_tick roe_gold_put stream_ix_e2e_bench)
+cnet_minimal_package: $(CNET_MINIMAL_BINS)
 	@mkdir -p logs dist
 	@chmod +x scripts/package_cnet_minimal.sh scripts/cnet_runtime_smoke.sh scripts/cnet_runtime_soak_gate.sh
-	@bash scripts/package_cnet_minimal.sh | tee logs/cnet_minimal_package.log
+	@bash scripts/package_cnet_minimal.sh > logs/cnet_minimal_package.log
 	@grep -q "PACKAGE_OK" logs/cnet_minimal_package.log
-	@# smoke inside package
-	@PKG=$$(cat dist/CNET-Minimal-latest.path); \
-	  CNET_MINIMAL_ROOT="$$PKG" bash "$$PKG/scripts/cnet_runtime_smoke.sh" | tee logs/cnet_runtime_smoke_pkg.log; \
-	  grep -q "CNET_RUNTIME_SMOKE_PASS" logs/cnet_runtime_smoke_pkg.log
+	@# The packager runs smoke on its exact private stage before creating the tar.
 	@echo "CNET_MINIMAL_PACKAGE_OK"
 
 .PHONY: cnet_runtime_smoke
-cnet_runtime_smoke:
+cnet_runtime_smoke: $(CNET_MINIMAL_BINS)
 	@mkdir -p logs
 	@chmod +x scripts/cnet_runtime_smoke.sh
-	@bash scripts/cnet_runtime_smoke.sh | tee logs/cnet_runtime_smoke.log
+	@bash scripts/cnet_runtime_smoke.sh > logs/cnet_runtime_smoke.log
 	@grep -q "CNET_RUNTIME_SMOKE_PASS" logs/cnet_runtime_smoke.log
 
 .PHONY: cnet_runtime_soak_gate
-cnet_runtime_soak_gate: cnet_minimal_package
+cnet_runtime_soak_gate: $(CNET_MINIMAL_BINS)
 	@mkdir -p logs
 	@chmod +x scripts/cnet_runtime_soak_gate.sh
-	@bash scripts/cnet_runtime_soak_gate.sh | tee logs/cnet_runtime_soak_gate.log
+	@bash scripts/cnet_runtime_soak_gate.sh > logs/cnet_runtime_soak_gate.log
 	@grep -q "CNET_RUNTIME_SOAK_GATE_PASS" logs/cnet_runtime_soak_gate.log
 
 .PHONY: cnet_minimal_deploy
@@ -4606,10 +4604,11 @@ cnet-web-service:
 
 # CERT-first domain route table (static + optional TSV overlay)
 .PHONY: domain_route
-domain_route: include/cnet_domain_route.h src/cnet_domain_route.c tools/roe_domain_route.c
+$(BIN_DIR)/roe_domain_route: include/cnet_domain_route.h src/cnet_domain_route.c tools/roe_domain_route.c
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) -std=c11 -Wall -Wextra -O2 -D_POSIX_C_SOURCE=200809L -Iinclude \
 		-o $(BIN_DIR)/roe_domain_route src/cnet_domain_route.c tools/roe_domain_route.c
+domain_route: $(BIN_DIR)/roe_domain_route
 	@./$(BIN_DIR)/roe_domain_route --test | tee logs/domain_route.log
 	@grep -q "DOMAIN_ROUTE_PASS" logs/domain_route.log
 	@./$(BIN_DIR)/roe_domain_route "who are you" | tee -a logs/domain_route.log
@@ -4617,10 +4616,14 @@ domain_route: include/cnet_domain_route.h src/cnet_domain_route.c tools/roe_doma
 	@echo "DOMAIN_ROUTE_OK"
 
 .PHONY: cert_coverage_harvest
-cert_coverage_harvest:
+cert_coverage_harvest: $(CNET_MINIMAL_BINS)
 	@mkdir -p logs bin
 	@bash scripts/cert_coverage_harvest.sh
 	@grep -q "CERT_COVERAGE_HARVEST_PASS" logs/cert_coverage_harvest.log
+
+.PHONY: native_workflows_test
+native_workflows_test: $(CNET_MINIMAL_BINS)
+	@bash tests/test_native_workflows.sh
 
 .PHONY: gold_curriculum_harvest
 gold_curriculum_harvest:
@@ -4641,18 +4644,20 @@ stream_attend_bench: $(CCE_SPARSE_KV) include/cce/cce_sparse_kv.h tools/stream_a
 	@grep -q "STREAM_ATTEND_BENCH_PASS" logs/stream_attend_bench.log
 
 .PHONY: stream_ix_e2e_bench
-stream_ix_e2e_bench: $(CCE_SPARSE_KV) include/cce/cce_sparse_kv.h tools/stream_ix_e2e_bench.c
+$(BIN_DIR)/stream_ix_e2e_bench: $(CCE_SPARSE_KV) include/cce/cce_sparse_kv.h tools/stream_ix_e2e_bench.c
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) $(CFLAGS) -o $(BIN_DIR)/stream_ix_e2e_bench $(CCE_SPARSE_KV) tools/stream_ix_e2e_bench.c $(LDFLAGS) -lm
+stream_ix_e2e_bench: $(BIN_DIR)/stream_ix_e2e_bench
 	@./$(BIN_DIR)/stream_ix_e2e_bench | tee logs/stream_ix_e2e_bench.log
 	@grep -q "STREAM_IX_E2E_BENCH_PASS" logs/stream_ix_e2e_bench.log
 
 # Chain-of-thought â€” pure C multi-hop (0-token skeleton; no Python)
 .PHONY: roe_chain_think
-roe_chain_think: include/cnet_roe_cot.h src/roe/cnet_roe_cot.c tools/roe_chain_think.c
+$(BIN_DIR)/roe_chain_think: include/cnet_roe_cot.h src/roe/cnet_roe_cot.c tools/roe_chain_think.c
 	@mkdir -p $(BIN_DIR) logs/governor
 	$(CC) -std=c11 -Wall -Wextra -O2 -D_POSIX_C_SOURCE=200809L -Iinclude \
 		-o $(BIN_DIR)/roe_chain_think src/roe/cnet_roe_cot.c tools/roe_chain_think.c
+roe_chain_think: $(BIN_DIR)/roe_chain_think
 	@./$(BIN_DIR)/roe_chain_think --test | tee logs/roe_chain_think.log
 	@grep -q "ROE_CHAIN_THINK_PASS" logs/roe_chain_think.log
 	@test -x $(BIN_DIR)/roe_front_door || $(MAKE) roe_front_door
@@ -8417,23 +8422,15 @@ md_memory: include/cnet_md_memory.h src/memory/cnet_md_memory.c tools/cnet_md_me
 	@grep -q MD_MEMORY_PASS logs/md_memory.log
 
 .PHONY: distill_slice
-distill_slice: tools/cnet_distill_slice.c
-	@mkdir -p $(BIN_DIR) logs var/capsule_inbox
-	$(CC) $(ASI_IMPROVE_CFLAGS) -o $(BIN_DIR)/cnet_distill_slice tools/cnet_distill_slice.c
-	@./$(BIN_DIR)/cnet_distill_slice --selftest | tee logs/distill_slice.log
+$(BIN_DIR)/cnet_distill_slice: tools/cnet_distill_slice.c include/cnet_json_internal.h src/roe/cnet_roe_process.h
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(ASI_IMPROVE_CFLAGS) -o $@ tools/cnet_distill_slice.c
+
+distill_slice: $(BIN_DIR)/cnet_distill_slice $(BIN_DIR)/roe_front_door $(BIN_DIR)/roe_daily_packs_seed
+	@./$(BIN_DIR)/cnet_distill_slice --selftest > logs/distill_slice.log
 	@grep -q DISTILL_SLICE_SELFTEST_PASS logs/distill_slice.log
-	@./$(BIN_DIR)/cnet_distill_slice --domain demo_arith --dry-run --query "2 plus 3" \
-		| tee -a logs/distill_slice.log
-	@grep -q DISTILL_SLICE_PASS logs/distill_slice.log
-	@# law: a slice proposes, it never seals
-	@grep -q "auto_cert=0" logs/distill_slice.log
-	@! grep -qE '"auto_cert": *true|"claimed_cert": *1' \
-		$$(ls -td var/capsule_inbox/demo_arith-* 2>/dev/null | head -1)/*.json* 2>/dev/null
-	@# anti-collapse must be a CODE gate, not a JSON claim: a query CNET already
-	@# answers Tier-A has to be dropped, not distilled back into a student.
-	@./$(BIN_DIR)/cnet_distill_slice --domain law_probe --dry-run --query "who are you" \
-		--out var/capsule_inbox | tee -a logs/distill_slice.log
-	@grep -qE "skipped_collapse=[1-9]|collapse_checked=0" logs/distill_slice.log
+	@CNET_DISTILL_TEST_BIN="$(BIN_DIR)/cnet_distill_slice" CNET_FRONT_TEST_BIN="$(BIN_DIR)/roe_front_door" \
+		CNET_SEED_TEST_BIN="$(BIN_DIR)/roe_daily_packs_seed" python3 tests/test_distill_boundary.py
 	@echo DISTILL_SLICE_PASS
 
 .PHONY: ingest_info
