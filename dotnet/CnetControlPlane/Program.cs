@@ -5,6 +5,7 @@ using CnetControlPlane.Ds4;
 using CnetControlPlane.Hermes;
 using CnetControlPlane.Ingest;
 using CnetControlPlane.Usage;
+using CnetControlPlane.Learning;
 
 static int Usage()
 {
@@ -21,6 +22,7 @@ static int Usage()
           usage-window
           capability-cert
           capability-prereq
+          learning
         """);
     return 2;
 }
@@ -43,6 +45,7 @@ try
         "usage-window" => UsageWindow.RunCli(rest),
         "capability-cert" => CapabilityCertRunner.RunCli(rest),
         "capability-prereq" => EvaluatorPrereq.RunCli(rest),
+        "learning" => LearningCommand.RunCli(rest),
         "-h" or "--help" or "help" => Usage(),
         _ => Usage(),
     };
