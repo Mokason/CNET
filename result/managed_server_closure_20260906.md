@@ -241,8 +241,9 @@ verification. SDK: 10.0.203. Installed runtimes used: Microsoft.NETCore.App
 | Existing server unit subset | 18 | 0 | 0 | 28ms | `/tmp/cnet-managed-final-existing-server-tests.log` |
 
 The four skips are `NativeGhostMemoryTests` fixture-gated cases (local GGUF and
-native harness required), not passes. Their native integration coverage remains
-WITHHELD. Full Cce.Llm emitted one existing xUnit2013 analyzer warning in
+native harness required), not passes. This run did not exercise their native
+integration; the later explicit prebuilt-harness run below covers that subset.
+Full Cce.Llm emitted one existing xUnit2013 analyzer warning in
 `GhostOrchestrationTests.cs:244`; no failure was hidden or threshold relaxed.
 
 Final real-browser receipt `/tmp/cnet-managed-final-browser.log` passed with
@@ -267,3 +268,73 @@ configured `https://api.nuget.org/v3/index.json` source:
 These are NuGet project-graph audit results, not a certification of OS/runtime,
 browser or deployment security. No package version or shared build file was
 changed as part of this final verification.
+
+## Existing-asset native memory interoperability supplement
+
+Read-only prerequisite investigation found both exact `TestModel.Resolve`
+fixtures already present in
+`/home/marble/.cnet-llm/test-cache/QuantFactory/SmolLM-135M-GGUF/`.
+The resolver selects `SmolLM-135M.Q8_0.gguf` before `SmolLM-135M.Q4_K_M.gguf`.
+The closure worktree did not contain `bin/libcnet_harness.so`, and
+`CNET_HARNESS_LIBRARY` was unset; this missing discovery path caused the four
+skips, not missing model bytes. `NativeFactAttribute` in
+`dotnet/Cce.Llm.Tests/NativeGhostMemoryTests.cs` accepts an explicit existing
+harness path before searching test-binary ancestors.
+
+After the parent approved the exact bounded command, the existing Release test
+assembly ran without build/restore from new private directory
+`/tmp/cnet-native-ghost-closure.upWXspdA`, also used as `TMPDIR`:
+
+```sh
+timeout --signal=TERM --kill-after=10s 180s \
+  env -u CNET_ROUTE_LOG -u GGML_BACKEND_PATH -u LD_LIBRARY_PATH -u LD_PRELOAD \
+  TMPDIR=/tmp/cnet-native-ghost-closure.upWXspdA \
+  CNET_HARNESS_LIBRARY=/home/marble/AI/CNET/bin/libcnet_harness.so \
+  DOTNET_CLI_TELEMETRY_OPTOUT=1 DOTNET_SKIP_FIRST_TIME_EXPERIENCE=1 \
+  dotnet vstest \
+  /home/marble/AI/CNET-worktrees/product-closure-20260906/dotnet/Cce.Llm.Tests/bin/Release/net10.0/CNET.Cce.Llm.Tests.dll \
+  --TestCaseFilter:FullyQualifiedName~NativeGhostMemoryTests \
+  --ResultsDirectory:/tmp/cnet-native-ghost-closure.upWXspdA/results \
+  '--logger:console;verbosity=normal'
+```
+
+**4 passed, 0 failed, 0 skipped; 4.3571 seconds total**:
+
+- `GhostMemory_CarriesFactsAcrossNativeSessions`.
+- `GhostMemory_WrittenByManaged_RecalledByNative`.
+- `NativeCountTokens_AgreesWithManagedTokenizer`.
+- `NativeBackend_IrrelevantQuestion_GetsNoMemoryBlock`.
+
+The tests use CPU, a 2 GiB native model budget, context 2048, batch 512 and
+8 threads. Memory stores use fresh private `cnet-ghost-native/<GUID>` paths;
+their owning tests removed those stores. No model, existing memory, service,
+registry or configuration was changed. No download or teacher call occurred.
+
+Retained receipt:
+`/tmp/cnet-native-ghost-closure.upWXspdA/native-ghost-tests.log`, SHA-256
+`77997d28901bbe5a1a1fa344f320baa43a6a8d2d4ac8d049a0ee8a5f1495c069`.
+The executed test assembly SHA-256 is
+`1f713c940a8ad8f6bc9cf2d08a6d52d0d736581a855b1090775af3665931809a`.
+Input identities, unchanged before/after the run:
+
+- Q8_0 GGUF (144,810,528 bytes):
+  `7d4afa1d8a5587f4beb8b75dab755f90d13d3ae2b8b9f148545b414ecfb9123a`.
+- Prebuilt `libcnet_harness.so`:
+  `ce7a0b212cd624f94e964a7209674ce6e0ca34b576eea2483fe1322cedbc91ae`.
+- `libcnet.so.5` resolves to `/home/marble/AI/CNET/cnet.so`, byte-identical to
+  the closure worktree's existing `cnet.so`:
+  `b6496ef269ff78bb138711682b9bcd4e11b2c4c21d51bb9ba0e9695b90788012`.
+
+Cleared-environment loader `--list` output is retained in
+`/tmp/cnet-native-ghost-closure.upWXspdA/library-bindings.txt`. The plugin's
+RUNPATH and resolved `libllama.so.0`, `libggml.so.0`, `libggml-base.so.0` and
+`libggml-cpu.so.0` point to `/home/marble/llama.cpp/build-cpu/bin`; the actual
+test log reports CPU tensor placement and mapped model buffers. The harness
+source files in the main checkout and closure worktree were byte-identical.
+
+This supplements, rather than rewrites, the earlier full-suite skip receipt.
+It proves the four selected assertions against fingerprinted **prebuilt CPU
+artifacts**: memory prompt/provenance transfer, nonempty generation, tokenizer
+agreement within the existing BOS allowance, and irrelevant-query exclusion.
+It is not fresh native-build provenance, GPU evidence, broad answer-quality
+evaluation or live-memory acceptance; those claims remain WITHHELD.
