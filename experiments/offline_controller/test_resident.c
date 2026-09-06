@@ -19,6 +19,9 @@ int main(int argc,char **argv) {
     for(int device=0;device<2;device++) {
         float *x=batches[0],*y=labels[0];
         net_init(&reference,4,1,997);initial=reference;Resident *r=resident_open(&reference,device);assert(r);
+#ifdef CONTROLLER_ROCBLAS
+        assert(!strcmp(resident_backend(r),"rocblas_fp32"));
+#endif
         assert(!resident_snapshot(r,&snapshot));assert(!memcmp(&reference,&snapshot,sizeof snapshot));
         x=batches[0];assert(net_step(&reference,&scratch,x,NULL,BATCH,0,NULL)==0);
         assert(!resident_predict(r,x,BATCH,p));
@@ -75,6 +78,32 @@ int main(int argc,char **argv) {
             resident_close(r);
         }
         printf("CONTROLLER_RESIDENT_SHAPES_PASS device=%d depth_modes=8 batch_sizes=3 runtime_error_injection=1\n",device);
+        r=resident_open(&initial,device);assert(r);float losses[8];
+        assert(resident_steps(r,&batches[0][0],&labels[0][0],9,BATCH,.15f,losses)!=0);
+        assert(resident_steps(r,&batches[0][0],&labels[0][0],0,BATCH,.15f,losses)!=0);
+        float last=labels[7][BATCH*ACTIONS-1];labels[7][BATCH*ACTIONS-1]=NAN;
+        for(int i=0;i<8;i++)losses[i]=37;
+        assert(resident_steps(r,&batches[0][0],&labels[0][0],8,BATCH,.15f,losses)!=0);
+        for(int i=0;i<8;i++)assert(losses[i]==37);
+        labels[7][BATCH*ACTIONS-1]=last;
+        assert(!resident_snapshot(r,&after));assert(!memcmp(&after,&initial,sizeof after));
+        reference=initial;
+        assert(!resident_steps(r,&batches[0][0],&labels[0][0],8,BATCH,.15f,losses));
+        for(int i=0;i<8;i++){
+            float expected=net_step(&reference,&scratch,batches[i],labels[i],BATCH,.15f,NULL);
+            assert(isfinite(losses[i])&&fabsf(expected-losses[i])<1e-4f);
+        }
+        assert(!resident_snapshot(r,&after));
+        for(int t=0;t<DEPTH;t++)for(int j=0;j<HIDDEN*JOINED;j++)assert(fabsf(reference.w[t][j]-after.w[t][j])<1e-4f);
+        for(int j=0;j<OUTPUTS*(HIDDEN+1);j++)assert(fabsf(reference.out[j]-after.out[j])<1e-4f);
+        resident_close(r);
+        printf("CONTROLLER_RESIDENT_BATCHES_PASS device=%d batches=8 oversize_refused=1\n",device);
+        r=resident_open(&initial,device);assert(r);
+        assert(!resident_test_fail_after_enqueue(r));
+        assert(resident_steps(r,&batches[0][0],&labels[0][0],8,BATCH,.15f,losses)!=0);
+        assert(resident_test_stream_idle(r));
+        assert(resident_snapshot(r,&after)!=0);resident_close(r);
+        printf("CONTROLLER_RESIDENT_DRAIN_PASS device=%d pending_failure_drained=1\n",device);
     }
     return 0;
 }

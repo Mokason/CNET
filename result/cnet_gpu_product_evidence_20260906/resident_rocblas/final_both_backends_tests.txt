@@ -1,0 +1,26 @@
+mkdir -p /tmp/cnet-controller-build
+hipcc -O2 -Wall -Wextra -Werror --offload-arch=gfx1201 -DCONTROLLER_TESTING -I../../include -c resident.cpp -o /tmp/cnet-controller-build/resident_test.o
+hipcc -O2 -Wall -Wextra -Werror --offload-arch=gfx1201 -DCONTROLLER_TESTING -I../../include -x c test_resident.c net.c fixture.c -x none /tmp/cnet-controller-build/resident_test.o /tmp/cnet-controller-build/amdmath.o -lm -o /tmp/cnet-controller-build/test_resident
+/tmp/cnet-controller-build/test_resident
+CONTROLLER_RESIDENT_PASS device=0 updates=128 weight_max_abs=1.1920929e-07 invalid_batch_refused=1 snapshot_immutable=1
+CONTROLLER_RESIDENT_POISON_PASS device=0 finite_overflow_refused=1 later_operations_refused=3
+CONTROLLER_RESIDENT_SHAPES_PASS device=0 depth_modes=8 batch_sizes=3 runtime_error_injection=1
+CONTROLLER_RESIDENT_BATCHES_PASS device=0 batches=8 oversize_refused=1
+CONTROLLER_RESIDENT_DRAIN_PASS device=0 pending_failure_drained=1
+CONTROLLER_RESIDENT_PASS device=1 updates=128 weight_max_abs=1.1920929e-07 invalid_batch_refused=1 snapshot_immutable=1
+CONTROLLER_RESIDENT_POISON_PASS device=1 finite_overflow_refused=1 later_operations_refused=3
+CONTROLLER_RESIDENT_SHAPES_PASS device=1 depth_modes=8 batch_sizes=3 runtime_error_injection=1
+CONTROLLER_RESIDENT_BATCHES_PASS device=1 batches=8 oversize_refused=1
+CONTROLLER_RESIDENT_DRAIN_PASS device=1 pending_failure_drained=1
+hipcc -O2 -Wall -Wextra -Werror --offload-arch=gfx1201 -DCONTROLLER_TESTING -DCONTROLLER_ROCBLAS -I../../include -x c test_resident.c net.c fixture.c -x none /tmp/cnet-controller-build/resident_rocblas_test.o /tmp/cnet-controller-build/amdmath.o -lrocblas -lm -o /tmp/cnet-controller-build/test_resident_rocblas
+/tmp/cnet-controller-build/test_resident_rocblas
+CONTROLLER_RESIDENT_PASS device=0 updates=128 weight_max_abs=6.85453415e-07 invalid_batch_refused=1 snapshot_immutable=1
+CONTROLLER_RESIDENT_POISON_PASS device=0 finite_overflow_refused=1 later_operations_refused=3
+CONTROLLER_RESIDENT_SHAPES_PASS device=0 depth_modes=8 batch_sizes=3 runtime_error_injection=1
+CONTROLLER_RESIDENT_BATCHES_PASS device=0 batches=8 oversize_refused=1
+CONTROLLER_RESIDENT_DRAIN_PASS device=0 pending_failure_drained=1
+CONTROLLER_RESIDENT_PASS device=1 updates=128 weight_max_abs=6.85453415e-07 invalid_batch_refused=1 snapshot_immutable=1
+CONTROLLER_RESIDENT_POISON_PASS device=1 finite_overflow_refused=1 later_operations_refused=3
+CONTROLLER_RESIDENT_SHAPES_PASS device=1 depth_modes=8 batch_sizes=3 runtime_error_injection=1
+CONTROLLER_RESIDENT_BATCHES_PASS device=1 batches=8 oversize_refused=1
+CONTROLLER_RESIDENT_DRAIN_PASS device=1 pending_failure_drained=1

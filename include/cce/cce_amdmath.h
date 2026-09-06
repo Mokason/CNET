@@ -35,7 +35,7 @@ extern "C" {
 #define CCE_AMDMATH_ERR   -1
 #define CCE_AMDMATH_FLOOR -2
 
-#define CCE_AMDMATH_VERSION "0.2.0"
+#define CCE_AMDMATH_VERSION "0.3.0"
 
 /* Partial VRAM exposure — only the working set lives on the GPU.
  * HOT  = device-resident (zero H2D on hit)
@@ -126,6 +126,20 @@ int cce_amdmath_linear_f32_dev(cce_amdmath *h, const float *dX, const float *dW,
 int cce_amdmath_sgd_f32_dev(cce_amdmath *h, float *dW, const float *dX,
                             const float *dY, size_t E, size_t N, size_t in_dim,
                             size_t out_dim, float lr);
+
+/* Enqueue on a borrowed hipStream_t, passed as void* to keep the C ABI HIP-free.
+ * NULL selects the default stream. Caller owns same-device pointers/stream and
+ * keeps them alive until completion. No copies, allocation or synchronization;
+ * success means enqueued, NOT completed. Caller must check stream completion.
+ * Dimensions must be nonzero, fit the kernel's int indexing/grid limits, and
+ * all three tensor byte counts must fit size_t. SGD requires finite lr >= 0.
+ * One caller at a time per handle. Existing _dev synchronization is unchanged. */
+int cce_amdmath_linear_f32_stream(cce_amdmath *h, const float *dX, const float *dW,
+                                float *dY, size_t E, size_t N, size_t in_dim,
+                                size_t out_dim, void *stream);
+int cce_amdmath_sgd_f32_stream(cce_amdmath *h, float *dW, const float *dX,
+                             const float *dY, size_t E, size_t N, size_t in_dim,
+                             size_t out_dim, float lr, void *stream);
 
 int cce_amdmath_vram_info(cce_amdmath *h, size_t *free_bytes, size_t *total_bytes);
 

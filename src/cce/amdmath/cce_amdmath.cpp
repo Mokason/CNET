@@ -14,6 +14,8 @@
 #include <cstdlib>
 #include <cstring>
 #include <algorithm>
+#include <climits>
+#include <cmath>
 
 #define WMMA_TILE 16u
 
@@ -887,27 +889,68 @@ extern "C" int cce_amdmath_vram_info(cce_amdmath *h, size_t *free_bytes, size_t 
     return CCE_AMDMATH_OK;
 }
 
-extern "C" int cce_amdmath_linear_f32_dev(cce_amdmath *h, const float *dX, const float *dW,
-                                         float *dY, size_t E, size_t N, size_t in_dim,
-                                         size_t out_dim)
+static bool device_shape(cce_amdmath *h, size_t E, size_t N, size_t in_dim, size_t out_dim, bool sgd)
 {
-    if (!h || !dX || !dW || !dY || E == 0)
+    const size_t limit = SIZE_MAX / sizeof(float);
+    if (!E || !N || !in_dim || !out_dim || E > 65535 || N > (sgd ? INT_MAX : INT_MAX - 15u) ||
+        out_dim > INT_MAX - 15u || in_dim > (sgd ? INT_MAX - 15u : INT_MAX) ||
+        (sgd ? out_dim : N) > 65535u * 16u ||
+        E > limit / N / in_dim || E > limit / N / out_dim || E > limit / out_dim / in_dim) {
+        set_err(h, "invalid/overflowing device matrix shape");
+        return false;
+    }
+    return true;
+}
+
+extern "C" int cce_amdmath_linear_f32_stream(cce_amdmath *h, const float *dX, const float *dW,
+                                            float *dY, size_t E, size_t N, size_t in_dim,
+                                            size_t out_dim, void *stream)
+{
+    if (!h || !dX || !dW || !dY || !device_shape(h, E, N, in_dim, out_dim, false))
         return CCE_AMDMATH_ERR;
     if (set_dev(h))
         return CCE_AMDMATH_ERR;
     dim3 block(16, 16);
     dim3 grid((unsigned)((out_dim + 15) / 16), (unsigned)((N + 15) / 16), (unsigned)E);
-    k_linear_f32<<<grid, block>>>(dX, dW, dY, (int)E, (int)N, (int)in_dim, (int)out_dim);
+    k_linear_f32<<<grid, block, 0, (hipStream_t)stream>>>(dX, dW, dY, (int)E, (int)N, (int)in_dim, (int)out_dim);
     return hip_fail(h, hipGetLastError(), "k_linear_f32_dev") ? CCE_AMDMATH_ERR : CCE_AMDMATH_OK;
 }
 
-extern "C" int cce_amdmath_sgd_f32_dev(cce_amdmath *h, float *dW, const float *dX,
-                                      const float *dY, size_t E, size_t N, size_t in_dim,
-                                      size_t out_dim, float lr)
+extern "C" int cce_amdmath_sgd_f32_stream(cce_amdmath *h, float *dW, const float *dX,
+                                         const float *dY, size_t E, size_t N, size_t in_dim,
+                                         size_t out_dim, float lr, void *stream)
 {
-    if (!h || !dW || !dX || !dY || E == 0)
+    if (!h || !dW || !dX || !dY || !device_shape(h, E, N, in_dim, out_dim, true))
         return CCE_AMDMATH_ERR;
+    if (!std::isfinite(lr) || lr < 0) {
+        set_err(h, "invalid device SGD learning rate");
+        return CCE_AMDMATH_ERR;
+    }
     if (set_dev(h))
+        return CCE_AMDMATH_ERR;
+    dim3 block(16, 16);
+    dim3 grid((unsigned)((in_dim + 15) / 16), (unsigned)((out_dim + 15) / 16), (unsigned)E);
+    k_sgd_f32<<<grid, block, 0, (hipStream_t)stream>>>(dW, dX, dY, (int)E, (int)N, (int)in_dim, (int)out_dim, lr);
+    if (hip_fail(h, hipGetLastError(), "k_sgd_f32_dev"))
+        return CCE_AMDMATH_ERR;
+    return CCE_AMDMATH_OK;
+}
+
+extern "C" int cce_amdmath_linear_f32_dev(cce_amdmath *h, const float *dX, const float *dW,
+                                        float *dY, size_t E, size_t N, size_t in_dim,
+                                        size_t out_dim)
+{
+    return cce_amdmath_linear_f32_stream(h, dX, dW, dY, E, N, in_dim, out_dim, nullptr);
+}
+
+extern "C" int cce_amdmath_sgd_f32_dev(cce_amdmath *h, float *dW, const float *dX,
+                                     const float *dY, size_t E, size_t N, size_t in_dim,
+                                     size_t out_dim, float lr)
+{
+    /* Legacy callers may use a finite negative learning rate. The additive
+     * stream API has a stricter contract; do not change this existing behavior. */
+    if (!h || !dW || !dX || !dY || !device_shape(h, E, N, in_dim, out_dim, true) ||
+        !std::isfinite(lr) || set_dev(h))
         return CCE_AMDMATH_ERR;
     dim3 block(16, 16);
     dim3 grid((unsigned)((in_dim + 15) / 16), (unsigned)((out_dim + 15) / 16), (unsigned)E);

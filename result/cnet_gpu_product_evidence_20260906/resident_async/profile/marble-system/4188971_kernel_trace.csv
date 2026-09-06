@@ -1,0 +1,778 @@
+"Kind","Agent_Id","Queue_Id","Stream_Id","Thread_Id","Dispatch_Id","Kernel_Id","Kernel_Name","Correlation_Id","Start_Timestamp","End_Timestamp","LDS_Block_Size","Scratch_Size","VGPR_Count","Accum_VGPR_Count","SGPR_Count","Workgroup_Size_X","Workgroup_Size_Y","Workgroup_Size_Z","Grid_Size_X","Grid_Size_Y","Grid_Size_Z"
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,1,2,"__amd_rocclr_fillBufferAligned",41,698991646463694,698991646468374,0,0,16,0,128,256,1,1,256,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,2,23,"join_input(float const*, Scratch*, int, int)",46,698991647334388,698991647337948,0,0,8,0,128,256,1,1,26880,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,3,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",51,698991647910677,698991647930837,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,4,22,"activation(float*, int, int*)",55,698991647940037,698991647942077,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,5,23,"join_input(float const*, Scratch*, int, int)",59,698991647948037,698991647950317,0,0,8,0,128,256,1,1,26880,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,6,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",64,698991647955558,698991647974958,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,7,22,"activation(float*, int, int*)",68,698991647980278,698991647982478,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,8,23,"join_input(float const*, Scratch*, int, int)",72,698991647987838,698991647989878,0,0,8,0,128,256,1,1,26880,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,9,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",77,698991647995878,698991648015359,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,10,22,"activation(float*, int, int*)",81,698991648020799,698991648022639,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,11,23,"join_input(float const*, Scratch*, int, int)",85,698991648027839,698991648030119,0,0,8,0,128,256,1,1,26880,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,12,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",90,698991648035839,698991648055639,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,13,22,"activation(float*, int, int*)",94,698991648061719,698991648063559,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,14,21,"final_input(Scratch*, int, int)",98,698991648069799,698991648071639,0,0,8,0,128,256,1,1,8448,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,15,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",103,698991648077040,698991648082560,0,0,16,0,128,16,16,1,16,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,16,20,"softmax(Scratch*, float const*, float*, int, int*)",107,698991648088640,698991648101480,0,0,48,0,128,128,1,1,128,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,17,17,"transpose_weights(Net const*, Scratch*, int, int)",111,698991648107440,698991648109280,0,0,8,0,128,256,1,1,1024,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,18,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",116,698991648114440,698991648117240,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,19,19,"derivative(Scratch*, int, int, int*)",120,698991648123000,698991648124680,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,20,17,"transpose_weights(Net const*, Scratch*, int, int)",124,698991648129560,698991648131280,0,0,8,0,128,256,1,1,4096,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,21,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",129,698991648135840,698991648139441,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,22,19,"derivative(Scratch*, int, int, int*)",133,698991648144081,698991648145521,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,23,17,"transpose_weights(Net const*, Scratch*, int, int)",137,698991648150041,698991648151401,0,0,8,0,128,256,1,1,4096,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,24,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",142,698991648155681,698991648158961,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,25,19,"derivative(Scratch*, int, int, int*)",146,698991648162961,698991648164201,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,26,17,"transpose_weights(Net const*, Scratch*, int, int)",150,698991648168121,698991648169441,0,0,8,0,128,256,1,1,4096,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,27,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",155,698991648173281,698991648176801,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,28,19,"derivative(Scratch*, int, int, int*)",159,698991648180641,698991648181881,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,29,32,"k_sgd_f32(float*, float const*, float const*, int, int, int, int, float)",164,698991648186601,698991648206402,0,0,16,0,128,16,16,1,80,16,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,30,32,"k_sgd_f32(float*, float const*, float const*, int, int, int, int, float)",169,698991648210722,698991648285523,0,0,16,0,128,16,16,1,224,64,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,31,16,"check_weights(float const*, int, int*)",173,698991648290323,698991648292923,0,0,8,0,128,256,1,1,53504,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,32,16,"check_weights(float const*, int, int*)",177,698991648296723,698991648297803,0,0,8,0,128,256,1,1,1280,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,33,18,"reduce_loss(float const*, int, int*, float*)",181,698991648302283,698991648307003,0,0,16,0,128,1,1,1,1,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,34,23,"join_input(float const*, Scratch*, int, int)",185,698991648311363,698991648312643,0,0,8,0,128,256,1,1,26880,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,35,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",190,698991648316643,698991648330644,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,36,22,"activation(float*, int, int*)",194,698991648334884,698991648336204,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,37,23,"join_input(float const*, Scratch*, int, int)",198,698991648340324,698991648341724,0,0,8,0,128,256,1,1,26880,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,38,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",203,698991648345884,698991648360004,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,39,22,"activation(float*, int, int*)",207,698991648364004,698991648365204,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,40,23,"join_input(float const*, Scratch*, int, int)",211,698991648369244,698991648370644,0,0,8,0,128,256,1,1,26880,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,41,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",216,698991648374724,698991648388765,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,42,22,"activation(float*, int, int*)",220,698991648392685,698991648393965,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,43,23,"join_input(float const*, Scratch*, int, int)",224,698991648397885,698991648399285,0,0,8,0,128,256,1,1,26880,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,44,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",229,698991648403245,698991648417725,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,45,22,"activation(float*, int, int*)",233,698991648421725,698991648423405,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,46,21,"final_input(Scratch*, int, int)",237,698991648427365,698991648428605,0,0,8,0,128,256,1,1,8448,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,47,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",242,698991648432805,698991648436965,0,0,16,0,128,16,16,1,16,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,48,20,"softmax(Scratch*, float const*, float*, int, int*)",246,698991648441005,698991648452326,0,0,48,0,128,128,1,1,128,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,49,17,"transpose_weights(Net const*, Scratch*, int, int)",250,698991648456526,698991648457726,0,0,8,0,128,256,1,1,1024,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,50,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",255,698991648461806,698991648463806,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,51,19,"derivative(Scratch*, int, int, int*)",259,698991648468166,698991648469446,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,52,17,"transpose_weights(Net const*, Scratch*, int, int)",263,698991648473526,698991648475126,0,0,8,0,128,256,1,1,4096,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,53,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",268,698991648479246,698991648482566,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,54,19,"derivative(Scratch*, int, int, int*)",272,698991648486886,698991648488166,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,55,17,"transpose_weights(Net const*, Scratch*, int, int)",276,698991648492166,698991648493606,0,0,8,0,128,256,1,1,4096,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,56,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",281,698991648497846,698991648501166,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,57,19,"derivative(Scratch*, int, int, int*)",285,698991648505046,698991648506246,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,58,17,"transpose_weights(Net const*, Scratch*, int, int)",289,698991648510207,698991648511527,0,0,8,0,128,256,1,1,4096,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,59,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",294,698991648515367,698991648518967,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,60,19,"derivative(Scratch*, int, int, int*)",298,698991648522847,698991648524047,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,61,32,"k_sgd_f32(float*, float const*, float const*, int, int, int, int, float)",303,698991648527967,698991648547087,0,0,16,0,128,16,16,1,80,16,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,62,32,"k_sgd_f32(float*, float const*, float const*, int, int, int, int, float)",308,698991648551087,698991648625168,0,0,16,0,128,16,16,1,224,64,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,63,16,"check_weights(float const*, int, int*)",312,698991648629328,698991648630568,0,0,8,0,128,256,1,1,53504,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,64,16,"check_weights(float const*, int, int*)",316,698991648634489,698991648635569,0,0,8,0,128,256,1,1,1280,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,65,18,"reduce_loss(float const*, int, int*, float*)",320,698991648639529,698991648644329,0,0,16,0,128,1,1,1,1,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,66,23,"join_input(float const*, Scratch*, int, int)",324,698991648648329,698991648649529,0,0,8,0,128,256,1,1,26880,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,67,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",329,698991648652889,698991648666969,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,68,22,"activation(float*, int, int*)",333,698991648670209,698991648671369,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,69,23,"join_input(float const*, Scratch*, int, int)",337,698991648674609,698991648675849,0,0,8,0,128,256,1,1,26880,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,70,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",342,698991648679129,698991648693129,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,71,22,"activation(float*, int, int*)",346,698991648696370,698991648697530,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,72,23,"join_input(float const*, Scratch*, int, int)",350,698991648700810,698991648702530,0,0,8,0,128,256,1,1,26880,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,73,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",355,698991649466462,698991649485942,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,74,22,"activation(float*, int, int*)",359,698991649490702,698991649492662,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,75,23,"join_input(float const*, Scratch*, int, int)",363,698991649497502,698991649499302,0,0,8,0,128,256,1,1,26880,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,76,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",368,698991649504062,698991649523383,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,77,22,"activation(float*, int, int*)",372,698991649528263,698991649529903,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,78,21,"final_input(Scratch*, int, int)",376,698991649534383,698991649536143,0,0,8,0,128,256,1,1,8448,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,79,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",381,698991649541103,698991649546063,0,0,16,0,128,16,16,1,16,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,80,20,"softmax(Scratch*, float const*, float*, int, int*)",385,698991649550463,698991649562623,0,0,48,0,128,128,1,1,128,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,81,17,"transpose_weights(Net const*, Scratch*, int, int)",389,698991649567824,698991649569624,0,0,8,0,128,256,1,1,1024,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,82,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",394,698991649573984,698991649575984,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,83,19,"derivative(Scratch*, int, int, int*)",398,698991649580504,698991649582224,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,84,17,"transpose_weights(Net const*, Scratch*, int, int)",402,698991649586704,698991649588304,0,0,8,0,128,256,1,1,4096,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,85,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",407,698991649592864,698991649597024,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,86,19,"derivative(Scratch*, int, int, int*)",411,698991649601624,698991649603344,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,87,17,"transpose_weights(Net const*, Scratch*, int, int)",415,698991649607944,698991649609744,0,0,8,0,128,256,1,1,4096,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,88,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",420,698991649614704,698991649618464,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,89,19,"derivative(Scratch*, int, int, int*)",424,698991649623104,698991649624944,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,90,17,"transpose_weights(Net const*, Scratch*, int, int)",428,698991649629505,698991649631145,0,0,8,0,128,256,1,1,4096,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,91,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",433,698991649635865,698991649639705,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,92,19,"derivative(Scratch*, int, int, int*)",437,698991649644305,698991649645905,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,93,32,"k_sgd_f32(float*, float const*, float const*, int, int, int, int, float)",442,698991649650665,698991649691706,0,0,16,0,128,16,16,1,80,16,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,94,32,"k_sgd_f32(float*, float const*, float const*, int, int, int, int, float)",447,698991649696506,698991649840388,0,0,16,0,128,16,16,1,224,64,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,95,16,"check_weights(float const*, int, int*)",451,698991649845148,698991649847508,0,0,8,0,128,256,1,1,53504,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,96,16,"check_weights(float const*, int, int*)",455,698991649852108,698991649853588,0,0,8,0,128,256,1,1,1280,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,97,18,"reduce_loss(float const*, int, int*, float*)",459,698991649857908,698991649863628,0,0,16,0,128,1,1,1,1,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,98,23,"join_input(float const*, Scratch*, int, int)",463,698991649867788,698991649869548,0,0,8,0,128,256,1,1,26880,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,99,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",468,698991649873508,698991649889589,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,100,22,"activation(float*, int, int*)",472,698991649892989,698991649894229,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,101,23,"join_input(float const*, Scratch*, int, int)",476,698991649897669,698991649898909,0,0,8,0,128,256,1,1,26880,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,102,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",481,698991649902629,698991649916709,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,103,22,"activation(float*, int, int*)",485,698991649920069,698991649921269,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,104,23,"join_input(float const*, Scratch*, int, int)",489,698991649924989,698991649926229,0,0,8,0,128,256,1,1,26880,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,105,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",494,698991649929989,698991649943870,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,106,22,"activation(float*, int, int*)",498,698991649947190,698991649948310,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,107,23,"join_input(float const*, Scratch*, int, int)",502,698991649951590,698991649953230,0,0,8,0,128,256,1,1,26880,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,108,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",507,698991649956710,698991649970590,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,109,22,"activation(float*, int, int*)",511,698991649973910,698991649975070,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,110,21,"final_input(Scratch*, int, int)",515,698991649978350,698991649979510,0,0,8,0,128,256,1,1,8448,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,111,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",520,698991649982790,698991649987230,0,0,16,0,128,16,16,1,16,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,112,20,"softmax(Scratch*, float const*, float*, int, int*)",524,698991649990430,698991650001991,0,0,48,0,128,128,1,1,128,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,113,17,"transpose_weights(Net const*, Scratch*, int, int)",528,698991650005311,698991650006751,0,0,8,0,128,256,1,1,1024,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,114,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",533,698991650010031,698991650012111,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,115,19,"derivative(Scratch*, int, int, int*)",537,698991650015831,698991650017391,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,116,17,"transpose_weights(Net const*, Scratch*, int, int)",541,698991650020751,698991650022431,0,0,8,0,128,256,1,1,4096,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,117,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",546,698991650025751,698991650029311,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,118,19,"derivative(Scratch*, int, int, int*)",550,698991650032671,698991650034071,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,119,17,"transpose_weights(Net const*, Scratch*, int, int)",554,698991650037391,698991650038991,0,0,8,0,128,256,1,1,4096,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,120,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",559,698991650042551,698991650046351,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,121,19,"derivative(Scratch*, int, int, int*)",563,698991650049831,698991650050991,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,122,17,"transpose_weights(Net const*, Scratch*, int, int)",567,698991650054711,698991650056071,0,0,8,0,128,256,1,1,4096,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,123,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",572,698991650059271,698991650062471,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,124,19,"derivative(Scratch*, int, int, int*)",576,698991650065912,698991650067072,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,125,32,"k_sgd_f32(float*, float const*, float const*, int, int, int, int, float)",581,698991650070432,698991650089192,0,0,16,0,128,16,16,1,80,16,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,126,32,"k_sgd_f32(float*, float const*, float const*, int, int, int, int, float)",586,698991650092552,698991650167033,0,0,16,0,128,16,16,1,224,64,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,127,16,"check_weights(float const*, int, int*)",590,698991650170673,698991650171753,0,0,8,0,128,256,1,1,53504,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,128,16,"check_weights(float const*, int, int*)",594,698991650175073,698991650176113,0,0,8,0,128,256,1,1,1280,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,129,18,"reduce_loss(float const*, int, int*, float*)",598,698991650179473,698991650184113,0,0,16,0,128,1,1,1,1,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,130,23,"join_input(float const*, Scratch*, int, int)",602,698991650187273,698991650188554,0,0,8,0,128,256,1,1,26880,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,131,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",607,698991650191834,698991650205594,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,132,22,"activation(float*, int, int*)",611,698991650208874,698991650209994,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,133,23,"join_input(float const*, Scratch*, int, int)",615,698991650213514,698991650214794,0,0,8,0,128,256,1,1,26880,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,134,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",620,698991650218474,698991650232474,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,135,22,"activation(float*, int, int*)",624,698991650235754,698991650236954,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,136,23,"join_input(float const*, Scratch*, int, int)",628,698991650240114,698991650241434,0,0,8,0,128,256,1,1,26880,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,137,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",633,698991650244794,698991650258715,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,138,22,"activation(float*, int, int*)",637,698991650262075,698991650263315,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,139,23,"join_input(float const*, Scratch*, int, int)",641,698991650266595,698991650268235,0,0,8,0,128,256,1,1,26880,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,140,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",646,698991650271675,698991650285835,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,141,22,"activation(float*, int, int*)",650,698991650289235,698991650290475,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,142,21,"final_input(Scratch*, int, int)",654,698991650293755,698991650294875,0,0,8,0,128,256,1,1,8448,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,143,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",659,698991650298115,698991650302275,0,0,16,0,128,16,16,1,16,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,144,20,"softmax(Scratch*, float const*, float*, int, int*)",663,698991650305675,698991650317196,0,0,48,0,128,128,1,1,128,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,145,17,"transpose_weights(Net const*, Scratch*, int, int)",667,698991650320716,698991650322116,0,0,8,0,128,256,1,1,1024,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,146,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",672,698991650325396,698991650327076,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,147,19,"derivative(Scratch*, int, int, int*)",676,698991650330516,698991650331716,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,148,17,"transpose_weights(Net const*, Scratch*, int, int)",680,698991650336036,698991650337316,0,0,8,0,128,256,1,1,4096,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,149,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",685,698991650340836,698991650344156,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,150,19,"derivative(Scratch*, int, int, int*)",689,698991650347356,698991650348436,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,151,17,"transpose_weights(Net const*, Scratch*, int, int)",693,698991650351636,698991650352836,0,0,8,0,128,256,1,1,4096,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,152,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",698,698991650356076,698991650359276,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,153,19,"derivative(Scratch*, int, int, int*)",702,698991650454718,698991650456198,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,154,17,"transpose_weights(Net const*, Scratch*, int, int)",706,698991650459758,698991650460958,0,0,8,0,128,256,1,1,4096,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,155,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",711,698991650464118,698991650467318,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,156,19,"derivative(Scratch*, int, int, int*)",715,698991650470958,698991650472118,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,157,32,"k_sgd_f32(float*, float const*, float const*, int, int, int, int, float)",720,698991650475478,698991650493838,0,0,16,0,128,16,16,1,80,16,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,158,32,"k_sgd_f32(float*, float const*, float const*, int, int, int, int, float)",725,698991650497056,698991650571217,0,0,16,0,128,16,16,1,224,64,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,159,16,"check_weights(float const*, int, int*)",729,698991650574497,698991650575617,0,0,8,0,128,256,1,1,53504,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,160,16,"check_weights(float const*, int, int*)",733,698991650578857,698991650579897,0,0,8,0,128,256,1,1,1280,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,161,18,"reduce_loss(float const*, int, int*, float*)",737,698991650583097,698991650587737,0,0,16,0,128,1,1,1,1,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,162,23,"join_input(float const*, Scratch*, int, int)",741,698991650590977,698991650592217,0,0,8,0,128,256,1,1,26880,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,163,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",746,698991650595697,698991650609457,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,164,22,"activation(float*, int, int*)",750,698991650612737,698991650613937,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,165,23,"join_input(float const*, Scratch*, int, int)",754,698991650617217,698991650618537,0,0,8,0,128,256,1,1,26880,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,166,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",759,698991650621697,698991650635777,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,167,22,"activation(float*, int, int*)",763,698991650639177,698991650640377,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,168,23,"join_input(float const*, Scratch*, int, int)",767,698991650643697,698991650644897,0,0,8,0,128,256,1,1,26880,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,169,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",772,698991650648297,698991650662258,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,170,22,"activation(float*, int, int*)",776,698991650665898,698991650667018,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,171,23,"join_input(float const*, Scratch*, int, int)",780,698991650670418,698991650671698,0,0,8,0,128,256,1,1,26880,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,172,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",785,698991650675098,698991650689178,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,173,22,"activation(float*, int, int*)",789,698991650692498,698991650694098,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,174,21,"final_input(Scratch*, int, int)",793,698991650697578,698991650698738,0,0,8,0,128,256,1,1,8448,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,175,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",798,698991650702098,698991650706218,0,0,16,0,128,16,16,1,16,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,176,20,"softmax(Scratch*, float const*, float*, int, int*)",802,698991650709738,698991650720978,0,0,48,0,128,128,1,1,128,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,177,17,"transpose_weights(Net const*, Scratch*, int, int)",806,698991650724418,698991650725578,0,0,8,0,128,256,1,1,1024,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,178,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",811,698991650728859,698991650730499,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,179,19,"derivative(Scratch*, int, int, int*)",815,698991650733699,698991650734859,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,180,17,"transpose_weights(Net const*, Scratch*, int, int)",819,698991650738179,698991650739379,0,0,8,0,128,256,1,1,4096,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,181,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",824,698991650742619,698991650745899,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,182,19,"derivative(Scratch*, int, int, int*)",828,698991650749099,698991650750219,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,183,17,"transpose_weights(Net const*, Scratch*, int, int)",832,698991650753459,698991650754699,0,0,8,0,128,256,1,1,4096,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,184,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",837,698991650757979,698991650761499,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,185,19,"derivative(Scratch*, int, int, int*)",841,698991650764859,698991650771099,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,186,17,"transpose_weights(Net const*, Scratch*, int, int)",845,698991650774419,698991650775979,0,0,8,0,128,256,1,1,4096,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,187,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",850,698991650779499,698991650782739,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,188,19,"derivative(Scratch*, int, int, int*)",854,698991650786019,698991650792379,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,189,32,"k_sgd_f32(float*, float const*, float const*, int, int, int, int, float)",859,698991650795739,698991650814500,0,0,16,0,128,16,16,1,80,16,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,190,32,"k_sgd_f32(float*, float const*, float const*, int, int, int, int, float)",864,698991650818020,698991650892701,0,0,16,0,128,16,16,1,224,64,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,191,16,"check_weights(float const*, int, int*)",868,698991650896581,698991650897701,0,0,8,0,128,256,1,1,53504,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,192,16,"check_weights(float const*, int, int*)",872,698991650900981,698991650901941,0,0,8,0,128,256,1,1,1280,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,193,18,"reduce_loss(float const*, int, int*, float*)",876,698991650905261,698991650909901,0,0,16,0,128,1,1,1,1,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,194,23,"join_input(float const*, Scratch*, int, int)",880,698991650913301,698991650914541,0,0,8,0,128,256,1,1,26880,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,195,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",885,698991650917901,698991650931941,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,196,22,"activation(float*, int, int*)",889,698991650935501,698991650936701,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,197,23,"join_input(float const*, Scratch*, int, int)",893,698991650939941,698991650941421,0,0,8,0,128,256,1,1,26880,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,198,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",898,698991650944741,698991650958742,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,199,22,"activation(float*, int, int*)",902,698991650962262,698991650963422,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,200,23,"join_input(float const*, Scratch*, int, int)",906,698991650966542,698991650967782,0,0,8,0,128,256,1,1,26880,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,201,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",911,698991650971182,698991650985102,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,202,22,"activation(float*, int, int*)",915,698991650988342,698991650989622,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,203,23,"join_input(float const*, Scratch*, int, int)",919,698991650992902,698991650994502,0,0,8,0,128,256,1,1,26880,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,204,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",924,698991650997902,698991651011982,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,205,22,"activation(float*, int, int*)",928,698991651015342,698991651016822,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,206,21,"final_input(Scratch*, int, int)",932,698991651020142,698991651021662,0,0,8,0,128,256,1,1,8448,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,207,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",937,698991651025182,698991651029262,0,0,16,0,128,16,16,1,16,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,208,20,"softmax(Scratch*, float const*, float*, int, int*)",941,698991651032622,698991651043823,0,0,48,0,128,128,1,1,128,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,209,17,"transpose_weights(Net const*, Scratch*, int, int)",945,698991651047063,698991651048223,0,0,8,0,128,256,1,1,1024,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,210,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",950,698991651051503,698991651053343,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,211,19,"derivative(Scratch*, int, int, int*)",954,698991651056903,698991651058063,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,212,17,"transpose_weights(Net const*, Scratch*, int, int)",958,698991651061343,698991651062543,0,0,8,0,128,256,1,1,4096,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,213,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",963,698991651065783,698991651068983,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,214,19,"derivative(Scratch*, int, int, int*)",967,698991651072543,698991651073663,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,215,17,"transpose_weights(Net const*, Scratch*, int, int)",971,698991651076903,698991651078143,0,0,8,0,128,256,1,1,4096,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,216,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",976,698991651081383,698991651084623,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,217,19,"derivative(Scratch*, int, int, int*)",980,698991651088103,698991651089263,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,218,17,"transpose_weights(Net const*, Scratch*, int, int)",984,698991651092503,698991651093703,0,0,8,0,128,256,1,1,4096,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,219,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",989,698991651096943,698991651100143,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,220,19,"derivative(Scratch*, int, int, int*)",993,698991651103663,698991651104823,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,221,32,"k_sgd_f32(float*, float const*, float const*, int, int, int, int, float)",998,698991651108023,698991651126904,0,0,16,0,128,16,16,1,80,16,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,222,32,"k_sgd_f32(float*, float const*, float const*, int, int, int, int, float)",1003,698991651130584,698991651205265,0,0,16,0,128,16,16,1,224,64,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,223,16,"check_weights(float const*, int, int*)",1007,698991651208905,698991651209985,0,0,8,0,128,256,1,1,53504,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,224,16,"check_weights(float const*, int, int*)",1011,698991651213145,698991651214145,0,0,8,0,128,256,1,1,1280,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,225,18,"reduce_loss(float const*, int, int*, float*)",1015,698991651217345,698991651221985,0,0,16,0,128,1,1,1,1,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,226,23,"join_input(float const*, Scratch*, int, int)",1019,698991651225185,698991651226465,0,0,8,0,128,256,1,1,26880,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,227,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",1024,698991651229665,698991651243505,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,228,22,"activation(float*, int, int*)",1028,698991651247025,698991651248185,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,229,23,"join_input(float const*, Scratch*, int, int)",1032,698991651251545,698991651252865,0,0,8,0,128,256,1,1,26880,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,230,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",1037,698991651256265,698991651270266,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,231,22,"activation(float*, int, int*)",1041,698991651273586,698991651274786,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,232,23,"join_input(float const*, Scratch*, int, int)",1045,698991651278266,698991651279546,0,0,8,0,128,256,1,1,26880,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,233,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",1050,698991651283186,698991651297026,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,234,22,"activation(float*, int, int*)",1054,698991651300386,698991651301546,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,235,23,"join_input(float const*, Scratch*, int, int)",1058,698991651304706,698991651305946,0,0,8,0,128,256,1,1,26880,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,236,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",1063,698991651309426,698991651323426,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,237,22,"activation(float*, int, int*)",1067,698991651326746,698991651327866,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,238,21,"final_input(Scratch*, int, int)",1071,698991651331106,698991651332226,0,0,8,0,128,256,1,1,8448,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,239,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",1076,698991651335506,698991651339547,0,0,16,0,128,16,16,1,16,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,240,20,"softmax(Scratch*, float const*, float*, int, int*)",1080,698991651342787,698991651354467,0,0,48,0,128,128,1,1,128,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,241,17,"transpose_weights(Net const*, Scratch*, int, int)",1084,698991651357827,698991651358987,0,0,8,0,128,256,1,1,1024,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,242,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",1089,698991651362267,698991651364027,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,243,19,"derivative(Scratch*, int, int, int*)",1093,698991651367347,698991651368827,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,244,17,"transpose_weights(Net const*, Scratch*, int, int)",1097,698991651372347,698991651373627,0,0,8,0,128,256,1,1,4096,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,245,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",1102,698991651376987,698991651380267,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,246,19,"derivative(Scratch*, int, int, int*)",1106,698991651383627,698991651384827,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,247,17,"transpose_weights(Net const*, Scratch*, int, int)",1110,698991651388507,698991651389787,0,0,8,0,128,256,1,1,4096,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,248,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",1115,698991651393147,698991651396387,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,249,19,"derivative(Scratch*, int, int, int*)",1119,698991651399627,698991651400747,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,250,17,"transpose_weights(Net const*, Scratch*, int, int)",1123,698991651404067,698991651405267,0,0,8,0,128,256,1,1,4096,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,251,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",1128,698991651408547,698991651411747,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,252,19,"derivative(Scratch*, int, int, int*)",1132,698991651415148,698991651416268,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,253,32,"k_sgd_f32(float*, float const*, float const*, int, int, int, int, float)",1137,698991651419588,698991651438148,0,0,16,0,128,16,16,1,80,16,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,254,32,"k_sgd_f32(float*, float const*, float const*, int, int, int, int, float)",1142,698991651441388,698991651515309,0,0,16,0,128,16,16,1,224,64,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,255,16,"check_weights(float const*, int, int*)",1146,698991651518469,698991651519909,0,0,8,0,128,256,1,1,53504,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,256,16,"check_weights(float const*, int, int*)",1150,698991651523149,698991651524189,0,0,8,0,128,256,1,1,1280,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,257,18,"reduce_loss(float const*, int, int*, float*)",1154,698991651527749,698991651532309,0,0,16,0,128,1,1,1,1,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,258,4,"__amd_rocclr_copyBuffer",1156,698991651804673,698991651806753,0,0,16,0,128,512,1,1,512,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,259,4,"__amd_rocclr_copyBuffer",1157,698991651810153,698991651811673,0,0,16,0,128,512,1,1,512,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,260,2,"__amd_rocclr_fillBufferAligned",1160,698991651896074,698991651898034,0,0,16,0,128,256,1,1,256,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,261,23,"join_input(float const*, Scratch*, int, int)",1165,698991651948555,698991651950555,0,0,8,0,128,256,1,1,26880,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,262,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",1170,698991651953955,698991651967875,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,263,22,"activation(float*, int, int*)",1174,698991651971275,698991651972435,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,264,23,"join_input(float const*, Scratch*, int, int)",1178,698991651975915,698991651977355,0,0,8,0,128,256,1,1,26880,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,265,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",1183,698991651980795,698991651994835,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,266,22,"activation(float*, int, int*)",1187,698991651998195,698991651999675,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,267,23,"join_input(float const*, Scratch*, int, int)",1191,698991652002995,698991652004355,0,0,8,0,128,256,1,1,26880,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,268,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",1196,698991652007755,698991652021915,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,269,22,"activation(float*, int, int*)",1200,698991652025156,698991652026356,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,270,23,"join_input(float const*, Scratch*, int, int)",1204,698991652029516,698991652030916,0,0,8,0,128,256,1,1,26880,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,271,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",1209,698991652034236,698991652048516,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,272,22,"activation(float*, int, int*)",1213,698991652051836,698991652052996,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,273,21,"final_input(Scratch*, int, int)",1217,698991652056196,698991652057356,0,0,8,0,128,256,1,1,8448,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,274,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",1222,698991652060636,698991652064956,0,0,16,0,128,16,16,1,16,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,275,20,"softmax(Scratch*, float const*, float*, int, int*)",1226,698991652068276,698991652079756,0,0,48,0,128,128,1,1,128,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,276,17,"transpose_weights(Net const*, Scratch*, int, int)",1230,698991652083036,698991652084236,0,0,8,0,128,256,1,1,1024,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,277,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",1235,698991652087516,698991652089196,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,278,19,"derivative(Scratch*, int, int, int*)",1239,698991652092516,698991652093676,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,279,17,"transpose_weights(Net const*, Scratch*, int, int)",1243,698991652097236,698991652098476,0,0,8,0,128,256,1,1,4096,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,280,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",1248,698991652101837,698991652105477,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,281,19,"derivative(Scratch*, int, int, int*)",1252,698991652108957,698991652110117,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,282,17,"transpose_weights(Net const*, Scratch*, int, int)",1256,698991652113437,698991652114637,0,0,8,0,128,256,1,1,4096,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,283,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",1261,698991652118037,698991652121277,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,284,19,"derivative(Scratch*, int, int, int*)",1265,698991652125037,698991652126197,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,285,17,"transpose_weights(Net const*, Scratch*, int, int)",1269,698991652129557,698991652130797,0,0,8,0,128,256,1,1,4096,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,286,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",1274,698991652134077,698991652137277,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,287,19,"derivative(Scratch*, int, int, int*)",1278,698991652140637,698991652141837,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,288,32,"k_sgd_f32(float*, float const*, float const*, int, int, int, int, float)",1283,698991652145037,698991652163517,0,0,16,0,128,16,16,1,80,16,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,289,32,"k_sgd_f32(float*, float const*, float const*, int, int, int, int, float)",1288,698991652166757,698991652241558,0,0,16,0,128,16,16,1,224,64,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,290,16,"check_weights(float const*, int, int*)",1292,698991652244958,698991652246278,0,0,8,0,128,256,1,1,53504,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,291,16,"check_weights(float const*, int, int*)",1296,698991652249798,698991652250798,0,0,8,0,128,256,1,1,1280,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,292,18,"reduce_loss(float const*, int, int*, float*)",1300,698991652254359,698991652258919,0,0,16,0,128,1,1,1,1,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,293,23,"join_input(float const*, Scratch*, int, int)",1304,698991652262239,698991652263399,0,0,8,0,128,256,1,1,26880,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,294,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",1309,698991652266599,698991652280559,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,295,22,"activation(float*, int, int*)",1313,698991652283879,698991652285359,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,296,23,"join_input(float const*, Scratch*, int, int)",1317,698991652288799,698991652290079,0,0,8,0,128,256,1,1,26880,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,297,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",1322,698991652293319,698991652307279,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,298,22,"activation(float*, int, int*)",1326,698991652310519,698991652311719,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,299,23,"join_input(float const*, Scratch*, int, int)",1330,698991652314999,698991652316639,0,0,8,0,128,256,1,1,26880,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,300,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",1335,698991652320079,698991652334120,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,301,22,"activation(float*, int, int*)",1339,698991652337600,698991652338960,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,302,23,"join_input(float const*, Scratch*, int, int)",1343,698991652342360,698991652343960,0,0,8,0,128,256,1,1,26880,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,303,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",1348,698991652347480,698991652361480,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,304,22,"activation(float*, int, int*)",1352,698991652364920,698991652366240,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,305,21,"final_input(Scratch*, int, int)",1356,698991652369560,698991652370800,0,0,8,0,128,256,1,1,8448,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,306,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",1361,698991652374200,698991652378320,0,0,16,0,128,16,16,1,16,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,307,20,"softmax(Scratch*, float const*, float*, int, int*)",1365,698991652381920,698991652393160,0,0,48,0,128,128,1,1,128,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,308,17,"transpose_weights(Net const*, Scratch*, int, int)",1369,698991652396400,698991652397560,0,0,8,0,128,256,1,1,1024,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,309,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",1374,698991652400800,698991652402800,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,310,19,"derivative(Scratch*, int, int, int*)",1378,698991652406361,698991652407521,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,311,17,"transpose_weights(Net const*, Scratch*, int, int)",1382,698991652410761,698991652411961,0,0,8,0,128,256,1,1,4096,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,312,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",1387,698991652415241,698991652418481,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,313,19,"derivative(Scratch*, int, int, int*)",1391,698991652421961,698991652423081,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,314,17,"transpose_weights(Net const*, Scratch*, int, int)",1395,698991652426281,698991652427441,0,0,8,0,128,256,1,1,4096,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,315,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",1400,698991652430721,698991652433881,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,316,19,"derivative(Scratch*, int, int, int*)",1404,698991652437521,698991652438681,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,317,17,"transpose_weights(Net const*, Scratch*, int, int)",1408,698991652441881,698991652443081,0,0,8,0,128,256,1,1,4096,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,318,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",1413,698991652446401,698991652449681,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,319,19,"derivative(Scratch*, int, int, int*)",1417,698991652453281,698991652454481,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,320,32,"k_sgd_f32(float*, float const*, float const*, int, int, int, int, float)",1422,698991652457801,698991652476561,0,0,16,0,128,16,16,1,80,16,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,321,32,"k_sgd_f32(float*, float const*, float const*, int, int, int, int, float)",1427,698991652480041,698991652554322,0,0,16,0,128,16,16,1,224,64,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,322,16,"check_weights(float const*, int, int*)",1431,698991652557922,698991652559083,0,0,8,0,128,256,1,1,53504,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,323,16,"check_weights(float const*, int, int*)",1435,698991652562403,698991652563403,0,0,8,0,128,256,1,1,1280,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,324,18,"reduce_loss(float const*, int, int*, float*)",1439,698991652566643,698991652571243,0,0,16,0,128,1,1,1,1,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,325,23,"join_input(float const*, Scratch*, int, int)",1443,698991652574563,698991652575763,0,0,8,0,128,256,1,1,26880,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,326,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",1448,698991652579203,698991652593083,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,327,22,"activation(float*, int, int*)",1452,698991652596963,698991652598843,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,328,23,"join_input(float const*, Scratch*, int, int)",1456,698991652602203,698991652603523,0,0,8,0,128,256,1,1,26880,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,329,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",1461,698991652606883,698991652620803,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,330,22,"activation(float*, int, int*)",1465,698991652624243,698991652625403,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,331,23,"join_input(float const*, Scratch*, int, int)",1469,698991652628603,698991652629883,0,0,8,0,128,256,1,1,26880,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,332,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",1474,698991652633123,698991652647164,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,333,22,"activation(float*, int, int*)",1478,698991652650444,698991652652004,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,334,23,"join_input(float const*, Scratch*, int, int)",1482,698991652655404,698991652656644,0,0,8,0,128,256,1,1,26880,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,335,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",1487,698991652659964,698991652673884,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,350,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",1552,698991652761245,698991652764485,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,348,19,"derivative(Scratch*, int, int, int*)",1543,698991652752405,698991652753565,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,345,19,"derivative(Scratch*, int, int, int*)",1530,698991652736005,698991652737085,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,344,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",1526,698991652729525,698991652732725,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,343,17,"transpose_weights(Net const*, Scratch*, int, int)",1521,698991652724605,698991652726085,0,0,8,0,128,256,1,1,4096,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,342,19,"derivative(Scratch*, int, int, int*)",1517,698991652720005,698991652721285,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,336,22,"activation(float*, int, int*)",1491,698991652677124,698991652678364,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,347,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",1539,698991652745605,698991652748845,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,349,17,"transpose_weights(Net const*, Scratch*, int, int)",1547,698991652756885,698991652758085,0,0,8,0,128,256,1,1,4096,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,346,17,"transpose_weights(Net const*, Scratch*, int, int)",1534,698991652740845,698991652742125,0,0,8,0,128,256,1,1,4096,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,340,17,"transpose_weights(Net const*, Scratch*, int, int)",1508,698991652709644,698991652710845,0,0,8,0,128,256,1,1,1024,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,338,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",1500,698991652686724,698991652690844,0,0,16,0,128,16,16,1,16,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,341,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",1513,698991652714605,698991652716645,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,339,20,"softmax(Scratch*, float const*, float*, int, int*)",1504,698991652694484,698991652705764,0,0,48,0,128,128,1,1,128,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,337,21,"final_input(Scratch*, int, int)",1495,698991652681644,698991652683084,0,0,8,0,128,256,1,1,8448,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,367,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",1626,698991653575336,698991653589336,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,366,23,"join_input(float const*, Scratch*, int, int)",1621,698991653548455,698991653549656,0,0,8,0,128,256,1,1,26880,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,365,22,"activation(float*, int, int*)",1617,698991653462574,698991653463734,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,364,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",1613,698991653424014,698991653437934,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,363,23,"join_input(float const*, Scratch*, int, int)",1608,698991653350333,698991653351613,0,0,8,0,128,256,1,1,26880,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,362,22,"activation(float*, int, int*)",1604,698991653296972,698991653298292,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,361,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",1600,698991653273412,698991653293652,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,360,23,"join_input(float const*, Scratch*, int, int)",1595,698991653183651,698991653185331,0,0,8,0,128,256,1,1,26880,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,359,22,"activation(float*, int, int*)",1591,698991653150130,698991653151250,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,358,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",1587,698991653072969,698991653086889,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,357,23,"join_input(float const*, Scratch*, int, int)",1582,698991653018209,698991653019449,0,0,8,0,128,256,1,1,26880,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,356,18,"reduce_loss(float const*, int, int*, float*)",1578,698991653003808,698991653014968,0,0,16,0,128,1,1,1,1,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,355,16,"check_weights(float const*, int, int*)",1574,698991652949288,698991652950288,0,0,8,0,128,256,1,1,1280,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,354,16,"check_weights(float const*, int, int*)",1570,698991652944768,698991652945968,0,0,8,0,128,256,1,1,53504,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,353,32,"k_sgd_f32(float*, float const*, float const*, int, int, int, int, float)",1566,698991652866807,698991652941408,0,0,16,0,128,16,16,1,224,64,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,352,32,"k_sgd_f32(float*, float const*, float const*, int, int, int, int, float)",1561,698991652782925,698991652801646,0,0,16,0,128,16,16,1,80,16,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,351,19,"derivative(Scratch*, int, int, int*)",1556,698991652768005,698991652769085,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,368,22,"activation(float*, int, int*)",1630,698991653628817,698991653630177,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,369,21,"final_input(Scratch*, int, int)",1634,698991653701858,698991653702978,0,0,8,0,128,256,1,1,8448,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,370,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",1639,698991653706298,698991653710858,0,0,16,0,128,16,16,1,16,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,371,20,"softmax(Scratch*, float const*, float*, int, int*)",1643,698991653714138,698991653725618,0,0,48,0,128,128,1,1,128,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,372,17,"transpose_weights(Net const*, Scratch*, int, int)",1647,698991653728898,698991653730298,0,0,8,0,128,256,1,1,1024,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,373,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",1652,698991653733578,698991653735178,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,374,19,"derivative(Scratch*, int, int, int*)",1656,698991653738458,698991653739538,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,375,17,"transpose_weights(Net const*, Scratch*, int, int)",1660,698991653743018,698991653744218,0,0,8,0,128,256,1,1,4096,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,376,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",1665,698991653747418,698991653750658,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,377,19,"derivative(Scratch*, int, int, int*)",1669,698991653753898,698991653755098,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,378,17,"transpose_weights(Net const*, Scratch*, int, int)",1673,698991653758658,698991653759898,0,0,8,0,128,256,1,1,4096,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,379,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",1678,698991653763098,698991653766378,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,380,19,"derivative(Scratch*, int, int, int*)",1682,698991653769698,698991653771218,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,381,17,"transpose_weights(Net const*, Scratch*, int, int)",1686,698991653774778,698991653776018,0,0,8,0,128,256,1,1,4096,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,382,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",1691,698991653779339,698991653782579,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,383,19,"derivative(Scratch*, int, int, int*)",1695,698991653785979,698991653787139,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,384,32,"k_sgd_f32(float*, float const*, float const*, int, int, int, int, float)",1700,698991653790459,698991653810259,0,0,16,0,128,16,16,1,80,16,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,385,32,"k_sgd_f32(float*, float const*, float const*, int, int, int, int, float)",1705,698991653813739,698991653887220,0,0,16,0,128,16,16,1,224,64,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,386,16,"check_weights(float const*, int, int*)",1709,698991653890580,698991653892180,0,0,8,0,128,256,1,1,53504,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,387,16,"check_weights(float const*, int, int*)",1713,698991653895780,698991653896780,0,0,8,0,128,256,1,1,1280,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,388,18,"reduce_loss(float const*, int, int*, float*)",1717,698991653900340,698991653904980,0,0,16,0,128,1,1,1,1,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,389,23,"join_input(float const*, Scratch*, int, int)",1721,698991653908340,698991653909660,0,0,8,0,128,256,1,1,26880,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,390,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",1726,698991653913020,698991653927420,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,391,22,"activation(float*, int, int*)",1730,698991653930821,698991653932061,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,392,23,"join_input(float const*, Scratch*, int, int)",1734,698991653935261,698991653936501,0,0,8,0,128,256,1,1,26880,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,393,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",1739,698991653939781,698991653953701,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,394,22,"activation(float*, int, int*)",1743,698991653956941,698991653958541,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,395,23,"join_input(float const*, Scratch*, int, int)",1747,698991653962061,698991653963341,0,0,8,0,128,256,1,1,26880,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,396,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",1752,698991653966701,698991653980781,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,397,22,"activation(float*, int, int*)",1756,698991653984181,698991653985301,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,398,23,"join_input(float const*, Scratch*, int, int)",1760,698991653988781,698991653990061,0,0,8,0,128,256,1,1,26880,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,399,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",1765,698991653993741,698991654007702,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,400,22,"activation(float*, int, int*)",1769,698991654011022,698991654012182,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,401,21,"final_input(Scratch*, int, int)",1773,698991654015622,698991654016982,0,0,8,0,128,256,1,1,8448,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,402,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",1778,698991654020622,698991654024662,0,0,16,0,128,16,16,1,16,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,403,20,"softmax(Scratch*, float const*, float*, int, int*)",1782,698991654028302,698991654039462,0,0,48,0,128,128,1,1,128,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,404,17,"transpose_weights(Net const*, Scratch*, int, int)",1786,698991654042902,698991654044302,0,0,8,0,128,256,1,1,1024,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,405,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",1791,698991654047782,698991654049462,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,406,19,"derivative(Scratch*, int, int, int*)",1795,698991654052782,698991654053942,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,407,17,"transpose_weights(Net const*, Scratch*, int, int)",1799,698991654057142,698991654058382,0,0,8,0,128,256,1,1,4096,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,408,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",1804,698991654061702,698991654064902,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,409,19,"derivative(Scratch*, int, int, int*)",1808,698991654068182,698991654069302,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,410,17,"transpose_weights(Net const*, Scratch*, int, int)",1812,698991654072542,698991654073742,0,0,8,0,128,256,1,1,4096,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,411,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",1817,698991654076942,698991654080422,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,412,19,"derivative(Scratch*, int, int, int*)",1821,698991654083743,698991654084903,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,413,17,"transpose_weights(Net const*, Scratch*, int, int)",1825,698991654088143,698991654089663,0,0,8,0,128,256,1,1,4096,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,414,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",1830,698991654092903,698991654096143,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,415,19,"derivative(Scratch*, int, int, int*)",1834,698991654099423,698991654100623,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,416,32,"k_sgd_f32(float*, float const*, float const*, int, int, int, int, float)",1839,698991654103863,698991654122543,0,0,16,0,128,16,16,1,80,16,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,417,32,"k_sgd_f32(float*, float const*, float const*, int, int, int, int, float)",1844,698991654125903,698991654200184,0,0,16,0,128,16,16,1,224,64,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,418,16,"check_weights(float const*, int, int*)",1848,698991654203784,698991654204864,0,0,8,0,128,256,1,1,53504,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,419,16,"check_weights(float const*, int, int*)",1852,698991654208144,698991654209144,0,0,8,0,128,256,1,1,1280,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,420,18,"reduce_loss(float const*, int, int*, float*)",1856,698991654212344,698991654216944,0,0,16,0,128,1,1,1,1,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,421,23,"join_input(float const*, Scratch*, int, int)",1860,698991654220304,698991654221544,0,0,8,0,128,256,1,1,26880,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,422,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",1865,698991654224744,698991654238585,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,423,22,"activation(float*, int, int*)",1869,698991654242345,698991654243465,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,424,23,"join_input(float const*, Scratch*, int, int)",1873,698991654246745,698991654247985,0,0,8,0,128,256,1,1,26880,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,425,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",1878,698991654251425,698991654265385,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,426,22,"activation(float*, int, int*)",1882,698991654268785,698991654269945,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,427,23,"join_input(float const*, Scratch*, int, int)",1886,698991654273465,698991654274785,0,0,8,0,128,256,1,1,26880,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,428,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",1891,698991654278545,698991654292705,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,429,22,"activation(float*, int, int*)",1895,698991654295905,698991654297065,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,430,23,"join_input(float const*, Scratch*, int, int)",1899,698991654300745,698991654302025,0,0,8,0,128,256,1,1,26880,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,431,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",1904,698991654305425,698991654319426,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,432,22,"activation(float*, int, int*)",1908,698991654322666,698991654324146,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,433,21,"final_input(Scratch*, int, int)",1912,698991654327346,698991654328466,0,0,8,0,128,256,1,1,8448,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,434,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",1917,698991654331986,698991654336146,0,0,16,0,128,16,16,1,16,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,435,20,"softmax(Scratch*, float const*, float*, int, int*)",1921,698991654339746,698991654350906,0,0,48,0,128,128,1,1,128,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,436,17,"transpose_weights(Net const*, Scratch*, int, int)",1925,698991654354186,698991654355386,0,0,8,0,128,256,1,1,1024,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,437,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",1930,698991654358626,698991654360586,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,438,19,"derivative(Scratch*, int, int, int*)",1934,698991654364226,698991654365346,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,439,17,"transpose_weights(Net const*, Scratch*, int, int)",1938,698991654368666,698991654369906,0,0,8,0,128,256,1,1,4096,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,440,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",1943,698991654373266,698991654376826,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,441,19,"derivative(Scratch*, int, int, int*)",1947,698991654380146,698991654386466,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,442,17,"transpose_weights(Net const*, Scratch*, int, int)",1951,698991654389747,698991654390947,0,0,8,0,128,256,1,1,4096,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,443,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",1956,698991654394387,698991654397587,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,444,19,"derivative(Scratch*, int, int, int*)",1960,698991654400907,698991654402147,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,445,17,"transpose_weights(Net const*, Scratch*, int, int)",1964,698991654405427,698991654406627,0,0,8,0,128,256,1,1,4096,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,446,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",1969,698991654410027,698991654413267,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,447,19,"derivative(Scratch*, int, int, int*)",1973,698991654416427,698991654417667,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,448,32,"k_sgd_f32(float*, float const*, float const*, int, int, int, int, float)",1978,698991654420947,698991654439707,0,0,16,0,128,16,16,1,80,16,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,449,32,"k_sgd_f32(float*, float const*, float const*, int, int, int, int, float)",1983,698991654443067,698991654517828,0,0,16,0,128,16,16,1,224,64,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,450,16,"check_weights(float const*, int, int*)",1987,698991654521268,698991654522428,0,0,8,0,128,256,1,1,53504,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,451,16,"check_weights(float const*, int, int*)",1991,698991654525788,698991654526788,0,0,8,0,128,256,1,1,1280,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,452,18,"reduce_loss(float const*, int, int*, float*)",1995,698991654530028,698991654534668,0,0,16,0,128,1,1,1,1,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,453,23,"join_input(float const*, Scratch*, int, int)",1999,698991654537948,698991654539188,0,0,8,0,128,256,1,1,26880,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,454,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",2004,698991654542629,698991654556549,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,455,22,"activation(float*, int, int*)",2008,698991654559709,698991654560869,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,456,23,"join_input(float const*, Scratch*, int, int)",2012,698991654564189,698991654565469,0,0,8,0,128,256,1,1,26880,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,457,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",2017,698991654568629,698991654582549,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,458,22,"activation(float*, int, int*)",2021,698991654586069,698991654587229,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,459,23,"join_input(float const*, Scratch*, int, int)",2025,698991654590469,698991654591669,0,0,8,0,128,256,1,1,26880,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,460,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",2030,698991654594909,698991654608949,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,461,22,"activation(float*, int, int*)",2034,698991654612389,698991654614229,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,462,23,"join_input(float const*, Scratch*, int, int)",2038,698991654617950,698991654619230,0,0,8,0,128,256,1,1,26880,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,463,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",2043,698991654622750,698991654636590,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,464,22,"activation(float*, int, int*)",2047,698991654640270,698991654641470,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,465,21,"final_input(Scratch*, int, int)",2051,698991654645270,698991654646430,0,0,8,0,128,256,1,1,8448,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,466,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",2056,698991654649790,698991654653870,0,0,16,0,128,16,16,1,16,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,467,20,"softmax(Scratch*, float const*, float*, int, int*)",2060,698991654657230,698991654668390,0,0,48,0,128,128,1,1,128,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,468,17,"transpose_weights(Net const*, Scratch*, int, int)",2064,698991654671910,698991654673070,0,0,8,0,128,256,1,1,1024,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,469,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",2069,698991654676270,698991654677910,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,470,19,"derivative(Scratch*, int, int, int*)",2073,698991654681030,698991654682190,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,471,17,"transpose_weights(Net const*, Scratch*, int, int)",2077,698991654685470,698991654686870,0,0,8,0,128,256,1,1,4096,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,472,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",2082,698991654690150,698991654693751,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,473,19,"derivative(Scratch*, int, int, int*)",2086,698991654696951,698991654698151,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,474,17,"transpose_weights(Net const*, Scratch*, int, int)",2090,698991654701431,698991654702671,0,0,8,0,128,256,1,1,4096,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,475,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",2095,698991654705831,698991654709311,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,476,19,"derivative(Scratch*, int, int, int*)",2099,698991654712591,698991654714111,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,477,17,"transpose_weights(Net const*, Scratch*, int, int)",2103,698991654717271,698991654718471,0,0,8,0,128,256,1,1,4096,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,478,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",2108,698991654722151,698991654725431,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,479,19,"derivative(Scratch*, int, int, int*)",2112,698991654728591,698991654729791,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,480,32,"k_sgd_f32(float*, float const*, float const*, int, int, int, int, float)",2117,698991654733111,698991654752311,0,0,16,0,128,16,16,1,80,16,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,481,32,"k_sgd_f32(float*, float const*, float const*, int, int, int, int, float)",2122,698991654755631,698991654829752,0,0,16,0,128,16,16,1,224,64,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,482,16,"check_weights(float const*, int, int*)",2126,698991654833032,698991654834152,0,0,8,0,128,256,1,1,53504,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,483,16,"check_weights(float const*, int, int*)",2130,698991654837432,698991654838792,0,0,8,0,128,256,1,1,1280,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,484,18,"reduce_loss(float const*, int, int*, float*)",2134,698991654842072,698991654846753,0,0,16,0,128,1,1,1,1,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,485,23,"join_input(float const*, Scratch*, int, int)",2138,698991654849993,698991654851633,0,0,8,0,128,256,1,1,26880,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,486,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",2143,698991654855193,698991654869113,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,487,22,"activation(float*, int, int*)",2147,698991654872513,698991654873753,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,488,23,"join_input(float const*, Scratch*, int, int)",2151,698991654877033,698991654878313,0,0,8,0,128,256,1,1,26880,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,489,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",2156,698991654881993,698991654895953,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,490,22,"activation(float*, int, int*)",2160,698991654899313,698991654900473,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,491,23,"join_input(float const*, Scratch*, int, int)",2164,698991654903793,698991654905393,0,0,8,0,128,256,1,1,26880,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,492,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",2169,698991654908713,698991654923114,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,493,22,"activation(float*, int, int*)",2173,698991654926434,698991654927634,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,494,23,"join_input(float const*, Scratch*, int, int)",2177,698991654930874,698991654932154,0,0,8,0,128,256,1,1,26880,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,495,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",2182,698991654935434,698991654949354,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,496,22,"activation(float*, int, int*)",2186,698991654953394,698991654955074,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,497,21,"final_input(Scratch*, int, int)",2190,698991654958834,698991654960314,0,0,8,0,128,256,1,1,8448,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,498,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",2195,698991654964234,698991654968314,0,0,16,0,128,16,16,1,16,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,499,20,"softmax(Scratch*, float const*, float*, int, int*)",2199,698991654972154,698991654983594,0,0,48,0,128,128,1,1,128,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,500,17,"transpose_weights(Net const*, Scratch*, int, int)",2203,698991654987474,698991654988754,0,0,8,0,128,256,1,1,1024,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,501,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",2208,698991654993074,698991654994794,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,502,19,"derivative(Scratch*, int, int, int*)",2212,698991654998555,698991654999995,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,503,17,"transpose_weights(Net const*, Scratch*, int, int)",2216,698991655003675,698991655004915,0,0,8,0,128,256,1,1,4096,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,504,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",2221,698991655008275,698991655011515,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,505,19,"derivative(Scratch*, int, int, int*)",2225,698991655015355,698991655016555,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,506,17,"transpose_weights(Net const*, Scratch*, int, int)",2229,698991655020115,698991655021475,0,0,8,0,128,256,1,1,4096,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,507,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",2234,698991655025075,698991655028355,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,508,19,"derivative(Scratch*, int, int, int*)",2238,698991655032275,698991655033515,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,509,17,"transpose_weights(Net const*, Scratch*, int, int)",2242,698991655036875,698991655038235,0,0,8,0,128,256,1,1,4096,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,510,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",2247,698991655041955,698991655045195,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,511,19,"derivative(Scratch*, int, int, int*)",2251,698991655048595,698991655049715,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,512,32,"k_sgd_f32(float*, float const*, float const*, int, int, int, int, float)",2256,698991655053595,698991655072675,0,0,16,0,128,16,16,1,80,16,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,513,32,"k_sgd_f32(float*, float const*, float const*, int, int, int, int, float)",2261,698991655076276,698991655150637,0,0,16,0,128,16,16,1,224,64,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,514,16,"check_weights(float const*, int, int*)",2265,698991655154437,698991655155957,0,0,8,0,128,256,1,1,53504,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,515,16,"check_weights(float const*, int, int*)",2269,698991655159477,698991655160717,0,0,8,0,128,256,1,1,1280,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,516,18,"reduce_loss(float const*, int, int*, float*)",2273,698991655164397,698991655168997,0,0,16,0,128,1,1,1,1,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,517,4,"__amd_rocclr_copyBuffer",2275,698991655172637,698991655174277,0,0,16,0,128,512,1,1,512,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,518,4,"__amd_rocclr_copyBuffer",2276,698991655177957,698991655179317,0,0,16,0,128,512,1,1,512,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,519,2,"__amd_rocclr_fillBufferAligned",2279,698991655299518,698991655301638,0,0,16,0,128,256,1,1,256,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,520,23,"join_input(float const*, Scratch*, int, int)",2284,698991655347239,698991655348839,0,0,8,0,128,256,1,1,26880,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,521,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",2289,698991655351999,698991655365799,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,522,22,"activation(float*, int, int*)",2293,698991655369399,698991655370559,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,523,23,"join_input(float const*, Scratch*, int, int)",2297,698991655377439,698991655378679,0,0,8,0,128,256,1,1,26880,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,524,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",2302,698991655382320,698991655396360,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,525,22,"activation(float*, int, int*)",2306,698991655399840,698991655400960,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,526,23,"join_input(float const*, Scratch*, int, int)",2310,698991655404480,698991655405760,0,0,8,0,128,256,1,1,26880,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,527,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",2315,698991655409360,698991655423480,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,528,22,"activation(float*, int, int*)",2319,698991655426840,698991655428080,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,529,23,"join_input(float const*, Scratch*, int, int)",2323,698991655431320,698991655432840,0,0,8,0,128,256,1,1,26880,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,530,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",2328,698991655436240,698991655450280,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,531,22,"activation(float*, int, int*)",2332,698991655453640,698991655455160,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,532,21,"final_input(Scratch*, int, int)",2336,698991655458481,698991655459961,0,0,8,0,128,256,1,1,8448,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,533,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",2341,698991655463281,698991655467321,0,0,16,0,128,16,16,1,16,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,534,20,"softmax(Scratch*, float const*, float*, int, int*)",2345,698991655470961,698991655482201,0,0,48,0,128,128,1,1,128,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,535,17,"transpose_weights(Net const*, Scratch*, int, int)",2349,698991655485481,698991655486641,0,0,8,0,128,256,1,1,1024,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,536,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",2354,698991655490281,698991655491921,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,537,19,"derivative(Scratch*, int, int, int*)",2358,698991655495241,698991655496361,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,538,17,"transpose_weights(Net const*, Scratch*, int, int)",2362,698991655499641,698991655500841,0,0,8,0,128,256,1,1,4096,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,539,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",2367,698991655504161,698991655507401,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,540,19,"derivative(Scratch*, int, int, int*)",2371,698991655510921,698991655512081,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,541,17,"transpose_weights(Net const*, Scratch*, int, int)",2375,698991655515401,698991655516601,0,0,8,0,128,256,1,1,4096,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,542,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",2380,698991655519961,698991655523481,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,543,19,"derivative(Scratch*, int, int, int*)",2384,698991655526841,698991655528001,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,544,17,"transpose_weights(Net const*, Scratch*, int, int)",2388,698991655531321,698991655532562,0,0,8,0,128,256,1,1,4096,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,545,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",2393,698991655535882,698991655539122,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,546,19,"derivative(Scratch*, int, int, int*)",2397,698991655542482,698991655543642,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,547,32,"k_sgd_f32(float*, float const*, float const*, int, int, int, int, float)",2402,698991655547042,698991655566602,0,0,16,0,128,16,16,1,80,16,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,548,32,"k_sgd_f32(float*, float const*, float const*, int, int, int, int, float)",2407,698991655569922,698991655644443,0,0,16,0,128,16,16,1,224,64,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,549,16,"check_weights(float const*, int, int*)",2411,698991655647923,698991655649043,0,0,8,0,128,256,1,1,53504,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,550,16,"check_weights(float const*, int, int*)",2415,698991655652363,698991655653403,0,0,8,0,128,256,1,1,1280,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,551,18,"reduce_loss(float const*, int, int*, float*)",2419,698991655656683,698991655661443,0,0,16,0,128,1,1,1,1,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,552,23,"join_input(float const*, Scratch*, int, int)",2423,698991655664803,698991655666003,0,0,8,0,128,256,1,1,26880,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,553,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",2428,698991655669723,698991655683883,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,554,22,"activation(float*, int, int*)",2432,698991655687164,698991655688324,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,555,23,"join_input(float const*, Scratch*, int, int)",2436,698991655691564,698991655692804,0,0,8,0,128,256,1,1,26880,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,556,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",2441,698991655696124,698991655710204,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,557,22,"activation(float*, int, int*)",2445,698991655713644,698991655714804,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,558,23,"join_input(float const*, Scratch*, int, int)",2449,698991655718124,698991655719404,0,0,8,0,128,256,1,1,26880,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,559,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",2454,698991655722804,698991655736964,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,560,22,"activation(float*, int, int*)",2458,698991655740444,698991655741564,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,561,23,"join_input(float const*, Scratch*, int, int)",2462,698991655745004,698991655746244,0,0,8,0,128,256,1,1,26880,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,562,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",2467,698991655749724,698991655764205,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,563,22,"activation(float*, int, int*)",2471,698991655767805,698991655769005,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,564,21,"final_input(Scratch*, int, int)",2475,698991655772485,698991655773685,0,0,8,0,128,256,1,1,8448,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,565,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",2480,698991655777085,698991655781165,0,0,16,0,128,16,16,1,16,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,566,20,"softmax(Scratch*, float const*, float*, int, int*)",2484,698991655784485,698991655795805,0,0,48,0,128,128,1,1,128,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,567,17,"transpose_weights(Net const*, Scratch*, int, int)",2488,698991655799525,698991655800725,0,0,8,0,128,256,1,1,1024,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,568,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",2493,698991655803885,698991655805525,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,569,19,"derivative(Scratch*, int, int, int*)",2497,698991655808805,698991655810045,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,570,17,"transpose_weights(Net const*, Scratch*, int, int)",2501,698991655813325,698991655814485,0,0,8,0,128,256,1,1,4096,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,571,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",2506,698991655817925,698991655821085,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,572,19,"derivative(Scratch*, int, int, int*)",2510,698991655824405,698991655825605,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,573,17,"transpose_weights(Net const*, Scratch*, int, int)",2514,698991655828845,698991655830085,0,0,8,0,128,256,1,1,4096,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,574,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",2519,698991655833485,698991655836686,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,575,19,"derivative(Scratch*, int, int, int*)",2523,698991655839886,698991655841206,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,576,17,"transpose_weights(Net const*, Scratch*, int, int)",2527,698991655844446,698991655845646,0,0,8,0,128,256,1,1,4096,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,577,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",2532,698991655849166,698991655852406,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,578,19,"derivative(Scratch*, int, int, int*)",2536,698991655855566,698991655857126,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,579,32,"k_sgd_f32(float*, float const*, float const*, int, int, int, int, float)",2541,698991655860366,698991655879166,0,0,16,0,128,16,16,1,80,16,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,580,32,"k_sgd_f32(float*, float const*, float const*, int, int, int, int, float)",2546,698991655882483,698991655960403,0,0,16,0,128,16,16,1,224,64,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,581,16,"check_weights(float const*, int, int*)",2550,698991655963723,698991655964883,0,0,8,0,128,256,1,1,53504,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,582,16,"check_weights(float const*, int, int*)",2554,698991655968083,698991655969123,0,0,8,0,128,256,1,1,1280,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,583,18,"reduce_loss(float const*, int, int*, float*)",2558,698991655972323,698991655977283,0,0,16,0,128,1,1,1,1,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,584,23,"join_input(float const*, Scratch*, int, int)",2562,698991655980523,698991655981763,0,0,8,0,128,256,1,1,26880,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,585,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",2567,698991655985163,698991655999083,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,586,22,"activation(float*, int, int*)",2571,698991656002483,698991656003643,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,587,23,"join_input(float const*, Scratch*, int, int)",2575,698991656007003,698991656008243,0,0,8,0,128,256,1,1,26880,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,588,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",2580,698991656011643,698991656025683,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,589,22,"activation(float*, int, int*)",2584,698991656028923,698991656030123,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,590,23,"join_input(float const*, Scratch*, int, int)",2588,698991656033483,698991656034723,0,0,8,0,128,256,1,1,26880,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,591,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",2593,698991656038043,698991656051924,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,592,22,"activation(float*, int, int*)",2597,698991656055164,698991656056684,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,593,23,"join_input(float const*, Scratch*, int, int)",2601,698991656060164,698991656061404,0,0,8,0,128,256,1,1,26880,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,594,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",2606,698991656064764,698991656078724,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,595,22,"activation(float*, int, int*)",2610,698991656082004,698991656083244,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,596,21,"final_input(Scratch*, int, int)",2614,698991656086444,698991656087844,0,0,8,0,128,256,1,1,8448,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,597,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",2619,698991656091404,698991656095524,0,0,16,0,128,16,16,1,16,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,598,20,"softmax(Scratch*, float const*, float*, int, int*)",2623,698991656099164,698991656110364,0,0,48,0,128,128,1,1,128,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,599,17,"transpose_weights(Net const*, Scratch*, int, int)",2627,698991656113884,698991656115164,0,0,8,0,128,256,1,1,1024,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,600,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",2632,698991656118764,698991656120404,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,601,19,"derivative(Scratch*, int, int, int*)",2636,698991656123804,698991656125004,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,602,17,"transpose_weights(Net const*, Scratch*, int, int)",2640,698991656128324,698991656129844,0,0,8,0,128,256,1,1,4096,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,603,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",2645,698991656133204,698991656136724,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,604,19,"derivative(Scratch*, int, int, int*)",2649,698991656140165,698991656146525,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,605,17,"transpose_weights(Net const*, Scratch*, int, int)",2653,698991656149885,698991656151125,0,0,8,0,128,256,1,1,4096,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,606,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",2658,698991656154405,698991656157645,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,607,19,"derivative(Scratch*, int, int, int*)",2662,698991656161085,698991656162245,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,608,17,"transpose_weights(Net const*, Scratch*, int, int)",2666,698991656165725,698991656166965,0,0,8,0,128,256,1,1,4096,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,609,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",2671,698991656170125,698991656173365,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,610,19,"derivative(Scratch*, int, int, int*)",2675,698991656176645,698991656177765,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,611,32,"k_sgd_f32(float*, float const*, float const*, int, int, int, int, float)",2680,698991656181205,698991656199685,0,0,16,0,128,16,16,1,80,16,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,612,32,"k_sgd_f32(float*, float const*, float const*, int, int, int, int, float)",2685,698991656203045,698991656277446,0,0,16,0,128,16,16,1,224,64,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,613,16,"check_weights(float const*, int, int*)",2689,698991656280726,698991656282006,0,0,8,0,128,256,1,1,53504,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,614,16,"check_weights(float const*, int, int*)",2693,698991656285246,698991656286246,0,0,8,0,128,256,1,1,1280,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,615,18,"reduce_loss(float const*, int, int*, float*)",2697,698991656289846,698991656294446,0,0,16,0,128,1,1,1,1,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,616,23,"join_input(float const*, Scratch*, int, int)",2701,698991656297726,698991656299046,0,0,8,0,128,256,1,1,26880,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,617,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",2706,698991656302566,698991656316367,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,618,22,"activation(float*, int, int*)",2710,698991656319607,698991656320927,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,619,23,"join_input(float const*, Scratch*, int, int)",2714,698991656324287,698991656325887,0,0,8,0,128,256,1,1,26880,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,620,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",2719,698991656329367,698991656343367,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,621,22,"activation(float*, int, int*)",2723,698991656348127,698991656351327,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,622,23,"join_input(float const*, Scratch*, int, int)",2727,698991656356767,698991656358527,0,0,8,0,128,256,1,1,26880,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,623,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",2732,698991656362367,698991656376687,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,624,22,"activation(float*, int, int*)",2736,698991656381007,698991656382607,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,625,23,"join_input(float const*, Scratch*, int, int)",2740,698991656389567,698991656391007,0,0,8,0,128,256,1,1,26880,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,626,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",2745,698991656395287,698991656409328,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,627,22,"activation(float*, int, int*)",2749,698991656413128,698991656414608,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,628,21,"final_input(Scratch*, int, int)",2753,698991656418608,698991656419888,0,0,8,0,128,256,1,1,8448,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,629,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",2758,698991656424648,698991656428808,0,0,16,0,128,16,16,1,16,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,630,20,"softmax(Scratch*, float const*, float*, int, int*)",2762,698991656432568,698991656444248,0,0,48,0,128,128,1,1,128,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,631,17,"transpose_weights(Net const*, Scratch*, int, int)",2766,698991656448488,698991656449688,0,0,8,0,128,256,1,1,1024,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,632,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",2771,698991656456328,698991656458088,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,633,19,"derivative(Scratch*, int, int, int*)",2775,698991656462448,698991656463768,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,634,17,"transpose_weights(Net const*, Scratch*, int, int)",2779,698991656467808,698991656469448,0,0,8,0,128,256,1,1,4096,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,635,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",2784,698991656473128,698991656476568,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,636,19,"derivative(Scratch*, int, int, int*)",2788,698991656480488,698991656481688,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,637,17,"transpose_weights(Net const*, Scratch*, int, int)",2792,698991656485688,698991656487408,0,0,8,0,128,256,1,1,4096,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,638,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",2797,698991656491689,698991656495049,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,639,19,"derivative(Scratch*, int, int, int*)",2801,698991656499129,698991656500449,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,640,17,"transpose_weights(Net const*, Scratch*, int, int)",2805,698991656569489,698991656571049,0,0,8,0,128,256,1,1,4096,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,641,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",2810,698991656576650,698991656580090,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,642,19,"derivative(Scratch*, int, int, int*)",2814,698991656584010,698991656585250,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,643,32,"k_sgd_f32(float*, float const*, float const*, int, int, int, int, float)",2819,698991656589210,698991656608290,0,0,16,0,128,16,16,1,80,16,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,644,32,"k_sgd_f32(float*, float const*, float const*, int, int, int, int, float)",2824,698991656614090,698991656688331,0,0,16,0,128,16,16,1,224,64,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,645,16,"check_weights(float const*, int, int*)",2828,698991656691891,698991656694731,0,0,8,0,128,256,1,1,53504,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,646,16,"check_weights(float const*, int, int*)",2832,698991656698611,698991656699931,0,0,8,0,128,256,1,1,1280,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,647,18,"reduce_loss(float const*, int, int*, float*)",2836,698991656703771,698991656708891,0,0,16,0,128,1,1,1,1,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,648,23,"join_input(float const*, Scratch*, int, int)",2840,698991656712971,698991656714891,0,0,8,0,128,256,1,1,26880,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,649,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",2845,698991656718771,698991656733371,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,650,22,"activation(float*, int, int*)",2849,698991656736691,698991656737931,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,651,23,"join_input(float const*, Scratch*, int, int)",2853,698991656741211,698991656742451,0,0,8,0,128,256,1,1,26880,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,652,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",2858,698991656746091,698991656760172,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,653,22,"activation(float*, int, int*)",2862,698991656763412,698991656764572,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,654,23,"join_input(float const*, Scratch*, int, int)",2866,698991656767892,698991656769172,0,0,8,0,128,256,1,1,26880,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,655,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",2871,698991656772572,698991656786892,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,656,22,"activation(float*, int, int*)",2875,698991656790252,698991656791452,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,657,23,"join_input(float const*, Scratch*, int, int)",2879,698991656794772,698991656796292,0,0,8,0,128,256,1,1,26880,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,658,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",2884,698991656799692,698991656813812,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,659,22,"activation(float*, int, int*)",2888,698991656817532,698991656818732,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,660,21,"final_input(Scratch*, int, int)",2892,698991656822092,698991656823292,0,0,8,0,128,256,1,1,8448,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,661,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",2897,698991656826652,698991656830772,0,0,16,0,128,16,16,1,16,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,662,20,"softmax(Scratch*, float const*, float*, int, int*)",2901,698991656833972,698991656845293,0,0,48,0,128,128,1,1,128,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,663,17,"transpose_weights(Net const*, Scratch*, int, int)",2905,698991656848733,698991656849893,0,0,8,0,128,256,1,1,1024,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,664,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",2910,698991656853133,698991656854773,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,665,19,"derivative(Scratch*, int, int, int*)",2914,698991656858013,698991656859213,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,666,17,"transpose_weights(Net const*, Scratch*, int, int)",2918,698991656862413,698991656863613,0,0,8,0,128,256,1,1,4096,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,667,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",2923,698991656866973,698991656870333,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,668,19,"derivative(Scratch*, int, int, int*)",2927,698991656873573,698991656874773,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,669,17,"transpose_weights(Net const*, Scratch*, int, int)",2931,698991656878053,698991656879773,0,0,8,0,128,256,1,1,4096,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,670,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",2936,698991656883093,698991656886293,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,673,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",2949,698991656898813,698991656902093,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,672,17,"transpose_weights(Net const*, Scratch*, int, int)",2944,698991656894333,698991656895533,0,0,8,0,128,256,1,1,4096,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,674,19,"derivative(Scratch*, int, int, int*)",2953,698991656905453,698991656906933,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,671,19,"derivative(Scratch*, int, int, int*)",2940,698991656889613,698991656890733,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,675,32,"k_sgd_f32(float*, float const*, float const*, int, int, int, int, float)",2958,698991656910453,698991656929174,0,0,16,0,128,16,16,1,80,16,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,676,32,"k_sgd_f32(float*, float const*, float const*, int, int, int, int, float)",2963,698991656933054,698991657007294,0,0,16,0,128,16,16,1,224,64,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,677,16,"check_weights(float const*, int, int*)",2967,698991657010654,698991657011774,0,0,8,0,128,256,1,1,53504,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,678,16,"check_weights(float const*, int, int*)",2971,698991657015095,698991657016135,0,0,8,0,128,256,1,1,1280,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,679,18,"reduce_loss(float const*, int, int*, float*)",2975,698991657019455,698991657024015,0,0,16,0,128,1,1,1,1,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,680,23,"join_input(float const*, Scratch*, int, int)",2979,698991657027655,698991657029095,0,0,8,0,128,256,1,1,26880,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,681,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",2984,698991657032495,698991657046375,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,682,22,"activation(float*, int, int*)",2988,698991657049735,698991657051175,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,683,23,"join_input(float const*, Scratch*, int, int)",2992,698991657054775,698991657056055,0,0,8,0,128,256,1,1,26880,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,684,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",2997,698991657059455,698991657073455,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,685,22,"activation(float*, int, int*)",3001,698991657076775,698991657077935,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,686,23,"join_input(float const*, Scratch*, int, int)",3005,698991657081495,698991657082735,0,0,8,0,128,256,1,1,26880,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,687,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",3010,698991657086015,698991657099935,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,688,22,"activation(float*, int, int*)",3014,698991657103216,698991657104376,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,689,23,"join_input(float const*, Scratch*, int, int)",3018,698991657107616,698991657108856,0,0,8,0,128,256,1,1,26880,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,690,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",3023,698991657112176,698991657126456,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,691,22,"activation(float*, int, int*)",3027,698991657129776,698991657130896,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,692,21,"final_input(Scratch*, int, int)",3031,698991657134056,698991657135176,0,0,8,0,128,256,1,1,8448,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,693,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",3036,698991657138496,698991657142856,0,0,16,0,128,16,16,1,16,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,694,20,"softmax(Scratch*, float const*, float*, int, int*)",3040,698991657146176,698991657161736,0,0,48,0,128,128,1,1,128,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,695,17,"transpose_weights(Net const*, Scratch*, int, int)",3044,698991657165176,698991657166376,0,0,8,0,128,256,1,1,1024,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,696,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",3049,698991657169696,698991657171616,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,697,19,"derivative(Scratch*, int, int, int*)",3053,698991657175136,698991657176336,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,698,17,"transpose_weights(Net const*, Scratch*, int, int)",3057,698991657180096,698991657181376,0,0,8,0,128,256,1,1,4096,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,699,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",3062,698991657184696,698991657187857,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,700,19,"derivative(Scratch*, int, int, int*)",3066,698991657191137,698991657192297,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,701,17,"transpose_weights(Net const*, Scratch*, int, int)",3070,698991657195697,698991657196897,0,0,8,0,128,256,1,1,4096,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,702,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",3075,698991657200097,698991657203457,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,703,19,"derivative(Scratch*, int, int, int*)",3079,698991657206817,698991657208017,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,704,17,"transpose_weights(Net const*, Scratch*, int, int)",3083,698991657211297,698991657212457,0,0,8,0,128,256,1,1,4096,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,705,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",3088,698991657215737,698991657219377,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,706,19,"derivative(Scratch*, int, int, int*)",3092,698991657222937,698991657224057,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,707,32,"k_sgd_f32(float*, float const*, float const*, int, int, int, int, float)",3097,698991657227377,698991657245937,0,0,16,0,128,16,16,1,80,16,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,708,32,"k_sgd_f32(float*, float const*, float const*, int, int, int, int, float)",3102,698991657249337,698991657323178,0,0,16,0,128,16,16,1,224,64,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,709,16,"check_weights(float const*, int, int*)",3106,698991657326418,698991657327618,0,0,8,0,128,256,1,1,53504,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,710,16,"check_weights(float const*, int, int*)",3110,698991657331018,698991657332058,0,0,8,0,128,256,1,1,1280,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,711,18,"reduce_loss(float const*, int, int*, float*)",3114,698991657335498,698991657340138,0,0,16,0,128,1,1,1,1,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,712,23,"join_input(float const*, Scratch*, int, int)",3118,698991657343858,698991657345098,0,0,8,0,128,256,1,1,26880,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,713,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",3123,698991657348378,698991657362178,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,714,22,"activation(float*, int, int*)",3127,698991657365499,698991657366699,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,715,23,"join_input(float const*, Scratch*, int, int)",3131,698991657370099,698991657371379,0,0,8,0,128,256,1,1,26880,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,716,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",3136,698991657375139,698991657389179,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,717,22,"activation(float*, int, int*)",3140,698991657392579,698991657393739,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,718,23,"join_input(float const*, Scratch*, int, int)",3144,698991657397419,698991657398739,0,0,8,0,128,256,1,1,26880,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,719,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",3149,698991657402499,698991657416499,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,720,22,"activation(float*, int, int*)",3153,698991657419899,698991657421059,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,721,23,"join_input(float const*, Scratch*, int, int)",3157,698991657424739,698991657426019,0,0,8,0,128,256,1,1,26880,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,722,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",3162,698991657429659,698991657443579,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,723,22,"activation(float*, int, int*)",3166,698991657446819,698991657448099,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,724,21,"final_input(Scratch*, int, int)",3170,698991657451260,698991657452420,0,0,8,0,128,256,1,1,8448,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,725,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",3175,698991657455900,698991657460020,0,0,16,0,128,16,16,1,16,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,726,20,"softmax(Scratch*, float const*, float*, int, int*)",3179,698991657463740,698991657474980,0,0,48,0,128,128,1,1,128,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,727,17,"transpose_weights(Net const*, Scratch*, int, int)",3183,698991657478300,698991657479420,0,0,8,0,128,256,1,1,1024,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,728,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",3188,698991657482620,698991657484500,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,729,19,"derivative(Scratch*, int, int, int*)",3192,698991657488220,698991657489300,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,730,17,"transpose_weights(Net const*, Scratch*, int, int)",3196,698991657492620,698991657493820,0,0,8,0,128,256,1,1,4096,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,731,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",3201,698991657497060,698991657500260,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,732,19,"derivative(Scratch*, int, int, int*)",3205,698991657503900,698991657505060,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,733,17,"transpose_weights(Net const*, Scratch*, int, int)",3209,698991657508340,698991657509620,0,0,8,0,128,256,1,1,4096,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,734,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",3214,698991657512940,698991657516380,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,735,19,"derivative(Scratch*, int, int, int*)",3218,698991657519740,698991657520900,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,736,17,"transpose_weights(Net const*, Scratch*, int, int)",3222,698991657524260,698991657525460,0,0,8,0,128,256,1,1,4096,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,737,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",3227,698991657528820,698991657532100,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,738,19,"derivative(Scratch*, int, int, int*)",3231,698991657535460,698991657536580,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,739,32,"k_sgd_f32(float*, float const*, float const*, int, int, int, int, float)",3236,698991657539981,698991657558661,0,0,16,0,128,16,16,1,80,16,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,740,32,"k_sgd_f32(float*, float const*, float const*, int, int, int, int, float)",3241,698991657562301,698991657636702,0,0,16,0,128,16,16,1,224,64,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,741,16,"check_weights(float const*, int, int*)",3245,698991657640382,698991657641502,0,0,8,0,128,256,1,1,53504,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,742,16,"check_weights(float const*, int, int*)",3249,698991657644782,698991657645862,0,0,8,0,128,256,1,1,1280,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,743,18,"reduce_loss(float const*, int, int*, float*)",3253,698991657649182,698991657653782,0,0,16,0,128,1,1,1,1,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,744,23,"join_input(float const*, Scratch*, int, int)",3257,698991657657142,698991657658702,0,0,8,0,128,256,1,1,26880,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,745,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",3262,698991657662062,698991657676102,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,746,22,"activation(float*, int, int*)",3266,698991657679342,698991657680542,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,747,23,"join_input(float const*, Scratch*, int, int)",3270,698991657683862,698991657685142,0,0,8,0,128,256,1,1,26880,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,748,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",3275,698991657688422,698991657702742,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,749,22,"activation(float*, int, int*)",3279,698991657706102,698991657707262,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,750,23,"join_input(float const*, Scratch*, int, int)",3283,698991657710542,698991657711782,0,0,8,0,128,256,1,1,26880,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,751,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",3288,698991657715103,698991657729103,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,752,22,"activation(float*, int, int*)",3292,698991657732223,698991657733743,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,753,23,"join_input(float const*, Scratch*, int, int)",3296,698991657737183,698991657738463,0,0,8,0,128,256,1,1,26880,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,754,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",3301,698991657741903,698991657756023,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,755,22,"activation(float*, int, int*)",3305,698991657759303,698991657760503,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,756,21,"final_input(Scratch*, int, int)",3309,698991657764063,698991657765223,0,0,8,0,128,256,1,1,8448,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,757,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",3314,698991657768583,698991657772623,0,0,16,0,128,16,16,1,16,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,758,20,"softmax(Scratch*, float const*, float*, int, int*)",3318,698991657776223,698991657787463,0,0,48,0,128,128,1,1,128,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,759,17,"transpose_weights(Net const*, Scratch*, int, int)",3322,698991657790743,698991657792223,0,0,8,0,128,256,1,1,1024,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,760,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",3327,698991657795703,698991657797303,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,761,19,"derivative(Scratch*, int, int, int*)",3331,698991657800624,698991657801744,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,762,17,"transpose_weights(Net const*, Scratch*, int, int)",3335,698991657804984,698991657806264,0,0,8,0,128,256,1,1,4096,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,763,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",3340,698991657809424,698991657812984,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,764,19,"derivative(Scratch*, int, int, int*)",3344,698991657816224,698991657817424,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,765,17,"transpose_weights(Net const*, Scratch*, int, int)",3348,698991657820664,698991657821864,0,0,8,0,128,256,1,1,4096,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,766,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",3353,698991657825184,698991657828464,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,767,19,"derivative(Scratch*, int, int, int*)",3357,698991657831664,698991657832864,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,768,17,"transpose_weights(Net const*, Scratch*, int, int)",3361,698991657836184,698991657837464,0,0,8,0,128,256,1,1,4096,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,769,33,"k_linear_f32(float const*, float const*, float*, int, int, int, int)",3366,698991657840624,698991657843984,0,0,16,0,128,16,16,1,64,128,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,770,19,"derivative(Scratch*, int, int, int*)",3370,698991657847264,698991657848424,0,0,8,0,128,256,1,1,8192,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,771,32,"k_sgd_f32(float*, float const*, float const*, int, int, int, int, float)",3375,698991657851704,698991657870424,0,0,16,0,128,16,16,1,80,16,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,772,32,"k_sgd_f32(float*, float const*, float const*, int, int, int, int, float)",3380,698991657873824,698991657948505,0,0,16,0,128,16,16,1,224,64,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,773,16,"check_weights(float const*, int, int*)",3384,698991657952265,698991657953425,0,0,8,0,128,256,1,1,53504,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,774,16,"check_weights(float const*, int, int*)",3388,698991657956665,698991657957665,0,0,8,0,128,256,1,1,1280,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,775,18,"reduce_loss(float const*, int, int*, float*)",3392,698991657960905,698991657965545,0,0,16,0,128,1,1,1,1,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,776,4,"__amd_rocclr_copyBuffer",3394,698991657968865,698991657970865,0,0,16,0,128,512,1,1,512,1,1
+"KERNEL_DISPATCH","Agent 1",1,1,4188971,777,4,"__amd_rocclr_copyBuffer",3395,698991657974266,698991657975586,0,0,16,0,128,512,1,1,512,1,1

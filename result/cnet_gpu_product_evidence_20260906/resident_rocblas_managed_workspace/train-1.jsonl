@@ -1,0 +1,2 @@
+{"kind":"resident_backend","name":"rocblas_fp32","device":0}
+{"kind":"resident_training","seed":1,"device":0,"steps":30000,"batch":128,"accepted_examples":3840000,"raw_draws":4880737,"unreachable_examples":1440622,"update_seconds":5.002492,"wall_seconds":7.074627,"last_loss":0.103704639,"offline_sealed":true,"labels":"independent_BFS"}

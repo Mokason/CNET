@@ -73,6 +73,44 @@ $(OUT)/diagnose_resident: diagnose_resident.c resident.h net.c fixture.c $(OUT)/
 $(OUT)/profile_resident: profile_resident.c resident.h net.c fixture.c $(OUT)/resident.o $(OUT)/amdmath.o
 	$(HIPCC) -O2 -Wall -Wextra -Werror --offload-arch=gfx1201 -I$(ROOT)/include -x c profile_resident.c net.c fixture.c -x none $(OUT)/resident.o $(OUT)/amdmath.o -lm -o $@
 resident-benchmark: $(OUT)/bench_resident $(OUT)/diagnose_resident $(OUT)/profile_resident
+.PHONY: stream-test
+$(OUT)/test_stream: test_stream.cpp $(ROOT)/include/cce/cce_amdmath.h $(OUT)/amdmath.o
+	$(HIPCC) -O2 -Wall -Wextra -Werror --offload-arch=gfx1201 -I$(ROOT)/include $< -x none $(OUT)/amdmath.o -o $@
+stream-test: $(OUT)/test_stream
+	$(OUT)/test_stream
+.PHONY: resident-train
+$(OUT)/train_resident: train_resident.c investigate.c resident.h net.c fixture.c offline.c $(OUT)/resident.o $(OUT)/amdmath.o
+	$(HIPCC) -O2 -Wall -Wextra -Werror --offload-arch=gfx1201 -I$(ROOT)/include -x c train_resident.c net.c fixture.c offline.c -x none $(OUT)/resident.o $(OUT)/amdmath.o -lm -o $@
+resident-train: $(OUT)/train_resident
+OPENBLAS_CFLAGS ?= $(shell pkg-config --cflags openblas)
+OPENBLAS_LIBS ?= $(shell pkg-config --libs openblas)
+.PHONY: optimized-benchmark
+$(OUT)/blas_reference.o: blas_reference.c net.c net.h
+	$(CC) $(CFLAGS) $(OPENBLAS_CFLAGS) -c $< -o $@
+$(OUT)/bench_optimized: bench_resident.c net.c fixture.c $(OUT)/blas_reference.o $(OUT)/resident.o $(OUT)/amdmath.o
+	$(HIPCC) -O2 -Wall -Wextra -Werror --offload-arch=gfx1201 -DCONTROLLER_OPENBLAS -I$(ROOT)/include $(OPENBLAS_CFLAGS) -x c bench_resident.c net.c fixture.c -x none $(OUT)/blas_reference.o $(OUT)/resident.o $(OUT)/amdmath.o $(OPENBLAS_LIBS) -lm -o $@
+optimized-benchmark: $(OUT)/bench_optimized
+.PHONY: matrix-benchmark
+$(OUT)/bench_matrix: bench_matrix.cpp $(OUT)/amdmath.o
+	$(HIPCC) -O2 -Wall -Wextra -Werror --offload-arch=gfx1201 -I$(ROOT)/include $(OPENBLAS_CFLAGS) $< -x none $(OUT)/amdmath.o $(OPENBLAS_LIBS) -lrocblas -o $@
+matrix-benchmark: $(OUT)/bench_matrix
+.PHONY: rocblas-test rocblas-benchmark rocblas-train
+$(OUT)/resident_rocblas_test.o: resident.cpp resident.h net.h fixture.h
+	$(HIPCC) -O2 -Wall -Wextra -Werror --offload-arch=gfx1201 -DCONTROLLER_TESTING -DCONTROLLER_ROCBLAS -I$(ROOT)/include -c $< -o $@
+$(OUT)/test_resident_rocblas: test_resident.c net.c fixture.c $(OUT)/resident_rocblas_test.o $(OUT)/amdmath.o
+	$(HIPCC) -O2 -Wall -Wextra -Werror --offload-arch=gfx1201 -DCONTROLLER_TESTING -DCONTROLLER_ROCBLAS -I$(ROOT)/include -x c test_resident.c net.c fixture.c -x none $(OUT)/resident_rocblas_test.o $(OUT)/amdmath.o -lrocblas -lm -o $@
+rocblas-test: $(OUT)/test_resident_rocblas
+	$(OUT)/test_resident_rocblas
+$(OUT)/resident_rocblas.o: resident.cpp resident.h net.h fixture.h
+	$(HIPCC) -O2 -Wall -Wextra -Werror --offload-arch=gfx1201 -DCONTROLLER_ROCBLAS -I$(ROOT)/include -c $< -o $@
+$(OUT)/bench_resident_rocblas: bench_resident.c net.c fixture.c $(OUT)/blas_reference.o $(OUT)/resident_rocblas.o $(OUT)/amdmath.o
+	$(HIPCC) -O2 -Wall -Wextra -Werror --offload-arch=gfx1201 -DCONTROLLER_OPENBLAS -I$(ROOT)/include $(OPENBLAS_CFLAGS) -x c bench_resident.c net.c fixture.c -x none $(OUT)/blas_reference.o $(OUT)/resident_rocblas.o $(OUT)/amdmath.o $(OPENBLAS_LIBS) -lrocblas -lm -o $@
+rocblas-benchmark: $(OUT)/bench_resident_rocblas
+$(OUT)/train_resident_rocblas: train_resident.c investigate.c net.c fixture.c offline.c $(OUT)/resident_rocblas.o $(OUT)/amdmath.o
+	$(HIPCC) -O2 -Wall -Wextra -Werror --offload-arch=gfx1201 -I$(ROOT)/include -x c train_resident.c net.c fixture.c offline.c -x none $(OUT)/resident_rocblas.o $(OUT)/amdmath.o -lrocblas -lm -o $@
+rocblas-train: $(OUT)/train_resident_rocblas
+$(OUT)/profile_resident_rocblas: profile_resident.c net.c fixture.c $(OUT)/resident_rocblas.o $(OUT)/amdmath.o
+	$(HIPCC) -O2 -Wall -Wextra -Werror --offload-arch=gfx1201 -I$(ROOT)/include -x c profile_resident.c net.c fixture.c -x none $(OUT)/resident_rocblas.o $(OUT)/amdmath.o -lrocblas -lm -o $@
 $(OUT)/test_local: test_local.c local_baseline.c offline.c fixture.c offline.h fixture.h $(ROOT)/include/cnet_json_internal.h
 	mkdir -p $(OUT)
 	$(CC) $(CFLAGS) test_local.c fixture.c offline.c -o $@

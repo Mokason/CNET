@@ -1,0 +1,57 @@
+{
+  "marker": "RESIDENT_CONFIRMATION_AUDIT_PASS",
+  "regression_not_new_holdout": true,
+  "cases": 2048,
+  "checked_actions": 19684,
+  "invalid_acceptances": 0,
+  "summaries": [
+    {
+      "seed": 1,
+      "mask": 0,
+      "completion": 0.9828660436137072,
+      "abstention": 0.9960732984293194,
+      "completed": 1262,
+      "unreachable_abstained": 761
+    },
+    {
+      "seed": 1,
+      "mask": 1,
+      "completion": 0.9828660436137072,
+      "abstention": 0.9960732984293194,
+      "completed": 1262,
+      "unreachable_abstained": 761
+    },
+    {
+      "seed": 2,
+      "mask": 0,
+      "completion": 0.9875389408099688,
+      "abstention": 0.9908376963350786,
+      "completed": 1268,
+      "unreachable_abstained": 757
+    },
+    {
+      "seed": 2,
+      "mask": 1,
+      "completion": 0.9875389408099688,
+      "abstention": 0.9908376963350786,
+      "completed": 1268,
+      "unreachable_abstained": 757
+    },
+    {
+      "seed": 3,
+      "mask": 0,
+      "completion": 0.9766355140186916,
+      "abstention": 0.9960732984293194,
+      "completed": 1254,
+      "unreachable_abstained": 761
+    },
+    {
+      "seed": 3,
+      "mask": 1,
+      "completion": 0.9766355140186916,
+      "abstention": 0.9960732984293194,
+      "completed": 1254,
+      "unreachable_abstained": 761
+    }
+  ]
+}

@@ -1,0 +1,1 @@
+{"kind":"resident_training","seed":2,"device":0,"steps":30000,"batch":128,"accepted_examples":3840000,"raw_draws":4880419,"unreachable_examples":1441667,"update_seconds":8.239698,"wall_seconds":10.319852,"last_loss":0.0427257046,"offline_sealed":true,"labels":"independent_BFS"}
