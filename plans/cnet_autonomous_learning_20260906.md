@@ -198,3 +198,28 @@ including abstention as distinct from a verified zero. The strict native-control
 codec preserves exact revisions, digests and request tokens; a successful
 status with uncertain durability is not approval. These tested primitives do
 not by themselves demonstrate an unattended learning loop.
+
+The operation ledger now reserves exact native STAGE/ACTIVATE/ROLLBACK/DISCARD
+requests before sending. One pending intent and one probation candidate exclude
+competing promotion work. Activation and rollback recovery require exact native
+token replay; STATUS alone cannot acknowledge them. Lost volatile stages fail
+their jobs while preserving all charges. Unexpected identities and uncertain
+durability pause. Probation starts from the earliest possible publication time
+(the persisted promotion reservation), not the late reconciliation time. Missed
+monitoring or a boot change requires rollback. An already prepared but uncertain
+native rollback stage is conservatively frozen for owner recovery.
+
+The independent receipt factory, not raw hash strings, is the ledger's evaluation
+input. It binds dataset, source and actual staged snapshot; caller-side child
+success/freshness checks remain necessary. SQLite structural checks include
+foreign-key validation and timestamp/accounting constraints: physical
+`quick_check` alone did not detect a missing epoch that could release charges.
+Calls on each ledger connection must be serialized; separate processes or
+separate connections share SQLite's transactional budgets.
+
+Private native integration passes acquisition, complete-domain observations,
+same-process refresh, stale refusal, retained incumbent answers and durable
+rollback/restart (`make learning_daemon`). The Python test is the coordinator,
+not an unattended supervisor. Runtime attestation, production orchestration,
+storage quota enforcement, useful allocator confirmation and the actual
+72-hour acceptance are still required.
