@@ -177,3 +177,41 @@ product-test:
 $(OUT)/test_local: test_local.c local_baseline.c offline.c fixture.c offline.h fixture.h $(ROOT)/include/cnet_json_internal.h
 	mkdir -p $(OUT)
 	$(CC) $(CFLAGS) test_local.c fixture.c offline.c -o $@
+
+# Allocator objective: CPU build/tests never depend on HIP or launch a worker.
+# AMD compilation and execution remain separate, explicit opt-ins.
+ALLOCATOR_CORE_SOURCES := $(ROOT)/src/serve/cnet_core_allocator.c $(ROOT)/src/serve/cnet_core_cell.c
+ALLOCATOR_CHECKPOINT_SOURCES := $(ROOT)/src/serve/cnet_core_candidate.c $(ROOT)/src/cce/cce_campaign_provenance.c
+ALLOCATOR_HEADERS := $(ROOT)/include/cnet_core_allocator.h $(ROOT)/include/cnet_core_cell.h \
+	$(ROOT)/include/cnet_core_candidate.h $(ROOT)/include/cce/cce_campaign_provenance.h
+$(OUT)/allocator $(OUT)/allocator_campaign $(OUT)/allocator_test \
+$(OUT)/allocator_data_test $(OUT)/allocator_gate_test \
+$(OUT)/allocator_worker $(OUT)/allocator_worker_test: | $(OUT)
+
+.PHONY: allocator-build allocator-test allocator-worker-build allocator-worker-test
+$(OUT)/allocator: allocator_cli.c allocator_data.c allocator_data.h worker.c worker.h $(ALLOCATOR_CORE_SOURCES) $(ALLOCATOR_CHECKPOINT_SOURCES) $(ALLOCATOR_HEADERS)
+	$(CC) $(CFLAGS) $(filter %.c,$^) -lm -o $@
+$(OUT)/allocator_campaign: allocator_campaign.c allocator_data.c allocator_data.h $(ALLOCATOR_CORE_SOURCES) $(ALLOCATOR_CHECKPOINT_SOURCES) $(ALLOCATOR_HEADERS)
+	$(CC) $(CFLAGS) $(filter %.c,$^) -lm -o $@
+allocator-build: $(OUT)/allocator $(OUT)/allocator_campaign
+
+$(OUT)/allocator_test: allocator_test.c $(ALLOCATOR_CORE_SOURCES) $(ALLOCATOR_CHECKPOINT_SOURCES) $(ALLOCATOR_HEADERS)
+	$(CC) $(CFLAGS) $(filter %.c,$^) -lm -o $@
+$(OUT)/allocator_data_test: allocator_data_test.c allocator_data.c allocator_data.h $(ALLOCATOR_CORE_SOURCES) $(ROOT)/src/cce/cce_campaign_provenance.c $(ALLOCATOR_HEADERS)
+	$(CC) $(CFLAGS) $(filter %.c,$^) -lm -o $@
+$(OUT)/allocator_gate_test: allocator_gate_test.c $(ALLOCATOR_CORE_SOURCES) $(ALLOCATOR_HEADERS)
+	$(CC) $(CFLAGS) $(filter %.c,$^) -lm -o $@
+allocator-test: $(OUT)/allocator_test $(OUT)/allocator_data_test $(OUT)/allocator_gate_test $(OUT)/test_candidate
+	$(OUT)/allocator_test
+	$(OUT)/allocator_data_test
+	$(OUT)/allocator_gate_test
+	$(OUT)/test_candidate
+
+$(OUT)/allocator_worker: allocator_worker.c worker.h cell_train.h worker_sandbox.c worker_sandbox.h offline.c offline.h $(ROOT)/src/serve/cnet_core_cell.c $(ROOT)/include/cnet_core_cell.h $(OUT)/cell_train.o $(OUT)/amdmath.o
+	$(HIPCC) -O2 -Wall -Wextra -Werror --offload-arch=gfx1201 -I$(ROOT)/include -x c allocator_worker.c worker_sandbox.c offline.c $(ROOT)/src/serve/cnet_core_cell.c -x none $(OUT)/cell_train.o $(OUT)/amdmath.o -lm -o $@
+	chmod go-w $@
+$(OUT)/allocator_worker_test: allocator_worker_test.c worker.c worker.h $(ROOT)/src/serve/cnet_core_cell.c $(ROOT)/include/cnet_core_cell.h
+	$(CC) $(CFLAGS) $(filter %.c,$^) -lm -o $@
+allocator-worker-build: $(OUT)/allocator_worker $(OUT)/allocator_worker_test
+allocator-worker-test: allocator-worker-build
+	$(OUT)/allocator_worker_test $(abspath $(OUT)/allocator_worker)

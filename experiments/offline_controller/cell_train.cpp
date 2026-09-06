@@ -78,6 +78,12 @@ extern "C" int cell_gpu_snapshot(CellGpu *g,CnetCoreCell *out){
        checked(g,hipStreamSynchronize(g->stream),"snapshot completion"))return drain(g);
     return 0;
 }
+extern "C" int cell_gpu_restore(CellGpu *g,const CnetCoreCell *model){
+    if(cnet_core_cell_validate(model)||ready(g))return -1;
+    if(checked(g,hipMemcpyAsync(&g->data->model,model,sizeof *model,hipMemcpyHostToDevice,g->stream),"restore model")||
+       checked(g,hipStreamSynchronize(g->stream),"restore completion"))return drain(g);
+    return 0;
+}
 extern "C" int cell_gpu_predict(CellGpu *g,const float *x,int n,float *scores){
     if(!x||!scores||n<1||n>2048||ready(g))return -1;
     for(int i=0;i<n*3;i++)if(!std::isfinite(x[i])||x[i]<0||x[i]>1)return -1;

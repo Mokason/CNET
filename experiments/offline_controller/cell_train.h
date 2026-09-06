@@ -12,6 +12,9 @@ void cell_gpu_close(CellGpu *gpu);
  * Any GPU/numeric failure poisons this private candidate. No CPU fallback. */
 int cell_gpu_fit(CellGpu *gpu,const float *x,const float *y,int n,int epochs,float lr,float *loss);
 int cell_gpu_snapshot(CellGpu *gpu,CnetCoreCell *out);
+/* Replace private weights after trusted fixed-data warm-up. In particular,
+ * workers can delay all supplied-data reads until confinement is installed. */
+int cell_gpu_restore(CellGpu *gpu,const CnetCoreCell *model);
 /* Frozen forward evaluation, n=1..2048. Does not update any weight. */
 int cell_gpu_predict(CellGpu *gpu,const float *x,int n,float *scores);
 const char *cell_gpu_error(const CellGpu *gpu);

@@ -14,7 +14,7 @@
 #include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
-typedef struct {pid_t pid;int fd,mode,device,eof;size_t used;uint64_t started,deadline;char scratch[128];unsigned char bytes[sizeof(WorkerResult)+1];} Job;
+typedef struct {pid_t pid;int fd,mode,device,eof;unsigned rows;size_t used;uint64_t started,deadline;char scratch[128];unsigned char bytes[sizeof(WorkerResult)+1];} Job;
 struct WorkerPool {char path[4096];Job jobs[2];};
 static uint64_t milliseconds(void){struct timespec t;if(clock_gettime(CLOCK_MONOTONIC,&t))return 0;return (uint64_t)t.tv_sec*1000+(unsigned)t.tv_nsec/1000000;}
 /* Reclaim only a job-created root, after its child is reaped. Descriptor-relative
@@ -47,11 +47,13 @@ int worker_cancel(WorkerPool *p,int slot){
     close(j->fd);cleanup(j->scratch);memset(j,0,sizeof *j);return result<0?-1:0;
 }
 void worker_pool_close(WorkerPool *p){if(!p)return;for(int i=0;i<2;i++)if(p->jobs[i].pid)worker_cancel(p,i);free(p);}
-static int start(WorkerPool *p,int mode,int device,const CnetCoreCell *snapshot,unsigned timeout){
-    if(!p||device<0||device>1||!timeout||timeout>60000||cnet_core_cell_validate(snapshot))return -1;
+static int start(WorkerPool *p,int mode,int device,const void *snapshot,size_t bytes,unsigned rows,unsigned timeout){
+    if(!p||device<0||device>1||!timeout||timeout>60000||!snapshot||!bytes||bytes>sizeof(WorkerBatch))return -1;
     int slot=-1;for(int i=0;i<2;i++){if(p->jobs[i].pid&&p->jobs[i].device==device)return -1;if(!p->jobs[i].pid)slot=i;}if(slot<0)return -1;
     int input=memfd_create("cnet-frozen-cell",MFD_CLOEXEC|MFD_ALLOW_SEALING);if(input<0)return -1;
-    if(write(input,snapshot,sizeof *snapshot)!=sizeof *snapshot||fcntl(input,F_ADD_SEALS,F_SEAL_WRITE|F_SEAL_GROW|F_SEAL_SHRINK|F_SEAL_SEAL)){close(input);return -1;}
+    size_t copied=0;
+    while(copied<bytes){ssize_t n=write(input,(const char*)snapshot+copied,bytes-copied);if(n<0&&errno==EINTR)continue;if(n<=0){close(input);return -1;}copied+=(size_t)n;}
+    if(fcntl(input,F_ADD_SEALS,F_SEAL_WRITE|F_SEAL_GROW|F_SEAL_SHRINK|F_SEAL_SEAL)){close(input);return -1;}
     int descriptors[2];if(pipe2(descriptors,O_CLOEXEC)){close(input);return -1;}
     int readfd=descriptors[0],writefd=fcntl(descriptors[1],F_DUPFD_CLOEXEC,10);close(descriptors[1]);
     int infd=fcntl(input,F_DUPFD_CLOEXEC,10);close(input);int nullfd=open("/dev/null",O_RDWR|O_CLOEXEC);
@@ -68,7 +70,7 @@ static int start(WorkerPool *p,int mode,int device,const CnetCoreCell *snapshot,
     char *argv[]={p->path,mode_text,device_text,scratch,NULL};char *env[]={"PATH=/usr/bin:/bin","LANG=C",temporary,"AMD_COMGR_CACHE=0",NULL};pid_t pid=0;
     if(!err)err=posix_spawn(&pid,p->path,&actions,NULL,argv,env);
     posix_spawn_file_actions_destroy(&actions);if(err)goto done;
-    uint64_t now=milliseconds();p->jobs[slot]=(Job){.pid=pid,.fd=readfd,.mode=mode,.device=device,.started=now,.deadline=now+timeout};
+    uint64_t now=milliseconds();p->jobs[slot]=(Job){.pid=pid,.fd=readfd,.mode=mode,.device=device,.rows=rows,.started=now,.deadline=now+timeout};
     strcpy(p->jobs[slot].scratch,scratch);made=0;
     fprintf(stderr,"{\"event\":\"worker_started\",\"pid\":%ld,\"device\":%d,\"mode\":%d,\"timeout_ms\":%u}\n",(long)pid,device,mode,timeout);
     if(fcntl(readfd,F_SETFL,O_NONBLOCK)){worker_cancel(p,slot);readfd=-1;goto done;}
@@ -81,7 +83,11 @@ done:
     if(highnull>=0)close(highnull);
     return rc;
 }
-int worker_start(WorkerPool *p,int mode,int device,const CnetCoreCell *snapshot,unsigned timeout){if(mode!=WORKER_TRAIN&&mode!=WORKER_EVALUATE)return -1;return start(p,mode,device,snapshot,timeout);}
+int worker_start(WorkerPool *p,int mode,int device,const CnetCoreCell *snapshot,unsigned timeout){if((mode!=WORKER_TRAIN&&mode!=WORKER_EVALUATE)||cnet_core_cell_validate(snapshot))return -1;return start(p,mode,device,snapshot,sizeof *snapshot,8,timeout);}
+int worker_start_batch(WorkerPool *p,int mode,int device,const WorkerBatch *b,unsigned timeout){
+    if((mode!=WORKER_BATCH_TRAIN&&mode!=WORKER_BATCH_EVALUATE)||worker_batch_validate(b))return -1;
+    return start(p,mode,device,b,sizeof *b,b->rows,timeout);
+}
 static int read_result(Job *j){
     while(!j->eof&&j->used<sizeof j->bytes){
         ssize_t n=read(j->fd,j->bytes+j->used,sizeof j->bytes-j->used);
@@ -100,11 +106,11 @@ int worker_poll(WorkerPool *p,int slot,WorkerResult *out){
     /* Exit may race the first nonblocking read: drain again after reaping. */
     int read_failed=read_result(j);
     WorkerResult result={0};int valid=finished==j->pid&&!read_failed&&WIFEXITED(status)&&WEXITSTATUS(status)==0&&j->eof&&j->used==sizeof result;
-    if(valid){memcpy(&result,j->bytes,sizeof result);valid=result.magic==UINT32_C(0x43575031)&&result.mode==(unsigned)j->mode&&result.device==(unsigned)j->device&&result.rows==8&&result.sandboxed==1&&
+    if(valid){memcpy(&result,j->bytes,sizeof result);valid=result.magic==UINT32_C(0x43575031)&&result.mode==(unsigned)j->mode&&result.device==(unsigned)j->device&&result.rows==j->rows&&result.sandboxed==1&&
         !cnet_core_cell_validate(&result.cell)&&isfinite(result.loss)&&result.loss>=0&&isfinite(result.max_error)&&result.max_error>=0&&result.max_error<1e-6f;}
     fprintf(stderr,"{\"event\":\"worker_completed\",\"pid\":%ld,\"device\":%d,\"valid\":%d,\"exit\":%d,\"signal\":%d,\"bytes\":%zu,\"elapsed_ms\":%llu}\n",(long)j->pid,j->device,valid,finished>0&&WIFEXITED(status)?WEXITSTATUS(status):-1,finished>0&&WIFSIGNALED(status)?WTERMSIG(status):0,j->used,(unsigned long long)(milliseconds()-j->started));
     close(j->fd);cleanup(j->scratch);memset(j,0,sizeof *j);if(!valid)return -1;*out=result;return 1;
 }
 #ifdef CONTROLLER_TESTING
-int worker_start_fault(WorkerPool *p,int device,int fault,unsigned timeout){CnetCoreCell zero={{0}};if(fault<1||fault>3)return -1;return start(p,100+fault,device,&zero,timeout);}
+int worker_start_fault(WorkerPool *p,int device,int fault,unsigned timeout){CnetCoreCell zero={{0}};if(fault<1||fault>3)return -1;return start(p,100+fault,device,&zero,sizeof zero,8,timeout);}
 #endif
