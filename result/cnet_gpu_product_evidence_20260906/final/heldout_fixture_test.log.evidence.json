@@ -1,0 +1,36 @@
+{
+  "binding_drift": [],
+  "binding_post": {
+    "commit": "449352a11cac48788f61487cf1e04a7d759306bb",
+    "special_index_bytes": 0,
+    "special_index_files": 0,
+    "special_index_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "untracked_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "worktree_dirty_files": 7,
+    "worktree_sha256": "21f5b26d5b1709d9194779ea208f20fa3eab0ba78aa75a5d93a036d5b7e30bcf"
+  },
+  "binding_pre": {
+    "commit": "449352a11cac48788f61487cf1e04a7d759306bb",
+    "special_index_bytes": 0,
+    "special_index_files": 0,
+    "special_index_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "untracked_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "worktree_dirty_files": 7,
+    "worktree_sha256": "21f5b26d5b1709d9194779ea208f20fa3eab0ba78aa75a5d93a036d5b7e30bcf"
+  },
+  "binding_stable": true,
+  "command": ["bin/heldout_fixture_test"],
+  "conflicting_markers": [],
+  "env_knob_names": [],
+  "env_sha256": "282a0e8e0e930f5f7592a9934a5e56d8b4b115b6d3e57e8c0c1562b6bf375a76",
+  "env_variables": 67,
+  "evidence_log": "logs/heldout_fixture_test.log",
+  "evidence_sha256": "51a79f58c7c7cc0e720efde147b5795d2da5d2b822c18c857e6c2759d7ff0789",
+  "exit_status": 0,
+  "gate": "heldout_fixture_test",
+  "marker_lines": 1,
+  "marker_present": true,
+  "required_marker": "CNET_HELDOUT_TEST_PASS",
+  "run_id": "70ab5c4f-c3ac-495b-adca-d8f6c14c4576",
+  "started_at": "2026-09-06T10:26:19Z"
+}

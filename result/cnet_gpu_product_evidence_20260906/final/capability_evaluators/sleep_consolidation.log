@@ -1,0 +1,10 @@
+make[1]: Entering directory '/home/marble/AI/CNET-worktrees/offline-controller-20260906'
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce -Werror -Iinclude -o bin/sleep_consolidate \
+	src/memory/cnet_sleep_consolidate.c src/corpus/tile_memory.c src/corpus/synonyms.c src/cnet_heldout.c \
+	tests/test_cnet_sleep_consolidate.c -lm -lpthread -lcurl
+HELDOUT_CASE id=dup-and-paraphrase-consolidation reads=7
+HELDOUT_FIXTURE capability=sleep_consolidation sha256=b04764f19592d8af648d0fba1c2d70bb44f84d94c4cb353473ea1f706dfc3576 cases=1 consumed=1
+HELDOUT_METRIC cases_passed=1 cases_declared=1 metric=1.000000 errors=0
+SLEEP_EVIDENCE {"episodes_seen":5,"episodes_ingested":3,"redundant_pruned":3,"semantic_promoted":2,"procedural_promoted":1,"tiles_before":3,"tiles_after":2,"merges":1,"graduated_units":2,"comparisons":1,"provenance_digest":"0fef58a3bd3afcdd"}
+SLEEP_CONSOLIDATE_PASS metric=1.000 merges=1 pruned=3 graduated=2 semantic=2 procedural=1 provenance=0fef58a3bd3afcdd
+make[1]: Leaving directory '/home/marble/AI/CNET-worktrees/offline-controller-20260906'

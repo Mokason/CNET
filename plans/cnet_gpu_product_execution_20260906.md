@@ -19,7 +19,7 @@ floors, independent labels and final per-hop verification remain mandatory.
       export/import, OOD refusal and growth replay; no finite compiler substitution.
 - [x] Bounded two-device worker lifecycle, cancellation/failure/restart tests,
       explicit guarded promotion in an isolated registry.
-- [ ] Final source regressions, runtime benchmarks, sanitizers and adversarial
+- [x] Final source regressions, runtime benchmarks, sanitizers and adversarial
       vulnerability/dependency review; remaining live deployment authority explicit.
 
 ## Initial resident contract and threat model
@@ -241,3 +241,14 @@ control-plane dependency advisory; see the final result report. An audit finding
 is not converted into a clean security claim. No external Claude/Grok CLI was
 invoked: exact-command offers remain unanswered; bounded independent reviewers
 and negative tests supplied the recorded findings.
+
+Final closure: fresh 28-suite `make verify`, 94-check capsule ASan/UBSan, new
+candidate/selector/host sanitizers, both-device experimental regressions,
+64-to-66 capsule capacity and an empty-output-directory product build all pass.
+The initial capability gate correctly refused concurrent worktree changes; its
+frozen rerun certifies all six existing capabilities at checkpoint449352a, with
+unchanged floors. Fresh rocBLAS median training is21.742ms GPU0 and33.982ms GPU1,
+versus57.693/57.424ms four-thread OpenBLAS; shared-GPU variability is retained.
+The requested audit is complete, but security release clearance remains WITHHELD
+for the existing control-plane SQLite High advisory. Details, concrete separate
+remediation and deployment limits: `result/cnet_gpu_product_sequence_20260906.md`.

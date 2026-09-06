@@ -2,10 +2,10 @@
 
 Date: 2026-09-06. Branch: `experiment/offline-controller-20260906`.
 Scope: bounded offline experiment and opt-in core APIs, not a live deployment.
-The implementation sequence is complete. Final frozen-state capability
-certification is pending at this evidence checkpoint. Security release clearance
-is **WITHHELD** because the separate managed control plane has an existing High
-dependency advisory described below.
+The implementation and requested validation sequence is complete. Final
+frozen-state capability certification passed all six existing capabilities.
+Security release clearance is **WITHHELD** because the separate managed control
+plane has an existing High dependency advisory described below.
 
 ## Working path
 
@@ -22,10 +22,13 @@ independently fitted snapshots are byte-identical.
 The new shared cell has 41 FP32 parameters (164 bytes), learns an explicitly
 specified local Boolean propagation rule, and is applied repeatedly to a typed
 graph. This is a bounded task-specific mechanism, not language understanding or
-autonomous acquisition of specialist knowledge. Training uses an explicit
-Boolean specification followed by independently BFS-labelled correction rows,
-never CNET Tier-A answers. The warm-up supplies the recurrence; it is not
-discovered by the experiment. Native fixture/weight files are experimental
+autonomous acquisition of specialist knowledge. The six graph-suite models use
+an explicit Boolean warm-up followed by independently BFS-labelled correction
+rows. The separate end-to-end worker model uses only the eight Boolean OR rows
+for 2000 epochs, without those BFS correction rounds. Neither trains on CNET
+Tier-A answers, and the worker model does not inherit the six-model graph-suite
+results. The Boolean specification supplies the recurrence; it is not discovered
+by the experiment. Native fixture/weight files are experimental
 artifacts; the product checkpoint is a separate canonical, versioned 404-byte
 core-model record, not a second capsule format.
 
@@ -122,9 +125,22 @@ resident results.
   A scoped high-confidence secret-pattern scan found no matches; this was not
   an exhaustive repository-history scan.
 - `capability_cert` initially refused because concurrent work changed its bound
-  untracked state. Its 34 runner unit tests passed, but that invocation is not
-  certification. A frozen-state rerun is required; the fingerprint/floors are
-  unchanged.
+  untracked state. That invocation is not certification. The frozen rerun passed
+  all six capabilities: calibrated abstention, honest memory retrieval, hybrid
+  skill serving and sleep consolidation each scored 1.000 on their declared
+  finite fixtures; CCE classification scored 0.861 and JSON tool-call adaptation
+  0.775. Floors/fingerprints were unchanged. These are existing regression gates,
+  not six new GPU-model skills. Prerequisites passed 34 runner tests, 13 evaluator
+  tests, 42 fixture-reader checks and three fixture-causality tests.
+
+The successful capability receipt binds code/evidence checkpoint
+`449352a11cac48788f61487cf1e04a7d759306bb`, run
+`2bc7fee0-17a0-499b-8654-7b8063b0a315`, with seven stable test-generated tracked
+files recorded as dirty. Those baseline outputs (`cce.dll` and six decimal weight
+files) are preserved, not included in implementation commits. The final follow-up
+commit only records evidence/documentation; it does not change tested source.
+`final/source_sha256.txt` identifies all 74 relevant source/build inputs. Raw
+tool-log whitespace and initial failed runs are intentionally retained.
 
 Independent adversarial review and RED-first tests materially changed the
 implementation: they closed a neural-promotion coverage bypass, filesystem

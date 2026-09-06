@@ -1,0 +1,24 @@
+  Cce -> /home/marble/AI/CNET-worktrees/offline-controller-20260906/dotnet/Cce/bin/Debug/net10.0/CNET.Cce.dll
+  CNET.Llm.Core -> /home/marble/AI/CNET-worktrees/offline-controller-20260906/dotnet/Llm/src/CNET.Llm.Core/bin/Debug/net10.0/CNET.Llm.Core.dll
+  CNET.Llm.Cpu -> /home/marble/AI/CNET-worktrees/offline-controller-20260906/dotnet/Llm/src/CNET.Llm.Cpu/bin/Debug/net10.0/CNET.Llm.Cpu.dll
+  CNET.Llm.Tokenizers -> /home/marble/AI/CNET-worktrees/offline-controller-20260906/dotnet/Llm/src/CNET.Llm.Tokenizers/bin/Debug/net10.0/CNET.Llm.Tokenizers.dll
+  CNET.Llm.Models -> /home/marble/AI/CNET-worktrees/offline-controller-20260906/dotnet/Llm/src/CNET.Llm.Models/bin/Debug/net10.0/CNET.Llm.Models.dll
+  CNET.Llm.Engine -> /home/marble/AI/CNET-worktrees/offline-controller-20260906/dotnet/Llm/src/CNET.Llm.Engine/bin/Debug/net10.0/CNET.Llm.Engine.dll
+  CNET.Cce.Llm -> /home/marble/AI/CNET-worktrees/offline-controller-20260906/dotnet/Cce.Llm/bin/Debug/net10.0/CNET.Cce.Llm.dll
+  CNET.Cce.Llm.Tests -> /home/marble/AI/CNET-worktrees/offline-controller-20260906/dotnet/Cce.Llm.Tests/bin/Debug/net10.0/CNET.Cce.Llm.Tests.dll
+Test run for /home/marble/AI/CNET-worktrees/offline-controller-20260906/dotnet/Cce.Llm.Tests/bin/Debug/net10.0/CNET.Cce.Llm.Tests.dll (.NETCoreApp,Version=v10.0)
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v2.8.2+699d445a1a (64-bit .NET 10.0.7)
+[xUnit.net 00:00:00.03]   Discovering: CNET.Cce.Llm.Tests
+[xUnit.net 00:00:00.06]   Discovered:  CNET.Cce.Llm.Tests
+[xUnit.net 00:00:00.07]   Starting:    CNET.Cce.Llm.Tests
+HELDOUT_CASE id=unrelated-query-misses reads=3
+HELDOUT_FIXTURE capability=honest_memory_retrieval sha256=85d4fc967875d0ed46db345bada115a097edd0817921b883de39a6daf5345720 cases=1 consumed=1
+HELDOUT_METRIC cases_passed=1 cases_declared=1 metric=1.000000 errors=0
+[xUnit.net 00:00:00.12]   Finished:    CNET.Cce.Llm.Tests
+  Passed CNET.Cce.Llm.Tests.MemoryLookupLoopTests.AutoRecall_GenuineEmpty_TellsModelNotToInvent [28 ms]
+
+Test Run Successful.
+Total tests: 1
+     Passed: 1
+ Total time: 0.3564 Seconds

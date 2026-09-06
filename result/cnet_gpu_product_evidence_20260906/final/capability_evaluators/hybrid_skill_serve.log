@@ -1,0 +1,10 @@
+make[1]: Entering directory '/home/marble/AI/CNET-worktrees/offline-controller-20260906'
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce -Werror -Iinclude -o bin/semantic_cortex \
+	src/memory/cnet_shared_workspace.c src/memory/cnet_semantic_cortex.c src/cnet_heldout.c \
+	tests/test_cnet_semantic_cortex.c -lm -lpthread -lcurl
+HELDOUT_CASE id=hermetic-uncertified reads=4
+HELDOUT_CASE id=residual-uncertified reads=2
+HELDOUT_FIXTURE capability=hybrid_skill_serve sha256=08bdf7ce8ef3ce8d5a58d4d0bf35adf7fcface9c941575337d71c4c7bc26ad97 cases=2 consumed=2
+HELDOUT_METRIC cases_passed=2 cases_declared=2 metric=1.000000 errors=0
+SEMANTIC_CORTEX_PASS metric=1.000 authority=cnet
+make[1]: Leaving directory '/home/marble/AI/CNET-worktrees/offline-controller-20260906'

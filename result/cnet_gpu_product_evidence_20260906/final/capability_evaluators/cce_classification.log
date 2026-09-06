@@ -1,0 +1,39 @@
+make[1]: Entering directory '/home/marble/AI/CNET-worktrees/offline-controller-20260906'
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -o bin/cce_train_bench  src/cnet_heldout.c tests/cce_train_bench.c bin/libcce.a -lm -lpthread -lcurl  
+=== CCE Training Benchmark (multi-run + held-out + research directions) ===
+Directions: NoProp local-denoise blocks (arXiv:2503.24322), FF goodness+neg (arXiv:2212.13345), dim-safe DFA
+Usage: cce_train_bench [--gpu]
+
+Run 1 | time/step=0.0011 ms | thr=914572/s | heldout=0.2301 | best=0.0680 | good=0.723 | frozen=4/4
+  [per-block goodness example from deeper run] layer0~0.600 layerN~0.723
+Run 2 | time/step=0.0011 ms | thr=929346/s | heldout=0.2279 | best=0.1236 | good=0.756 | frozen=4/4
+Run 3 | time/step=0.0011 ms | thr=913389/s | heldout=0.2548 | best=0.0249 | good=0.779 | frozen=4/4
+Run 4 | time/step=0.0011 ms | thr=944649/s | heldout=0.2422 | best=0.0355 | good=0.764 | frozen=4/4
+Run 5 | time/step=0.0010 ms | thr=964128/s | heldout=0.2331 | best=0.0293 | good=0.824 | frozen=4/4
+
+=== Averaged over 5 runs (NoProp+FF+fixed-DFA) ===
+Time per step:  0.0011 ms   (min 0.0010 / max 0.0011)
+Throughput:     933217 ± 19194 steps/sec
+Held-out RMSE:  0.2376 ± 0.0099  (lower is better)
+Best RMSE seen: 0.0563
+Final Goodness: 0.769
+Avg frozen blocks: 4.0 / 4
+
+Useful directions integrated (see cce_learn.c comments):
+  - NoProp: block-local denoising targets (no full net bp/ff) -> local credit
+  - Forward-Forward: positive real + cheap negative contrast for goodness
+  - Per-block freeze + stored activations + dim-correct DFA
+  - Real harness: nonlinear/spatial + accuracy + multi-specialist routing ready
+
+--- Additional real task harness (spatial patch) ---
+Spatial | thr=678745/s | best=0.0574 | final_good=0.715
+SPATIAL_PATCH_GATE_PASS thr=678745 best=0.0574
+
+--- Additional real task harness (classification) ---
+Classification | thr=264198/s | best=1.8791 | heldout_acc=0.861 | majority_baseline=0.274 | classes_used=4/4
+CLASSIFICATION_LANE_HEALTHY accuracy=0.861 baseline=0.274 lift=0.587 classes_used=4
+CLASSIFICATION_GATE_PASS status=measured accuracy=0.861 lift=0.587
+HELDOUT_CASE id=argmax-pair-sum-4class reads=8
+HELDOUT_FIXTURE capability=cce_classification sha256=45b9d3a103871b6e34fb6667d791f4233bd1129894911be4f8aa2f14cb456b5d cases=1 consumed=1
+HELDOUT_METRIC cases_passed=1 cases_declared=1 metric=1.000000 errors=0
+make[1]: Leaving directory '/home/marble/AI/CNET-worktrees/offline-controller-20260906'

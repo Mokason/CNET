@@ -1,0 +1,36 @@
+{
+  "binding_drift": [],
+  "binding_post": {
+    "commit": "449352a11cac48788f61487cf1e04a7d759306bb",
+    "special_index_bytes": 0,
+    "special_index_files": 0,
+    "special_index_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "untracked_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "worktree_dirty_files": 7,
+    "worktree_sha256": "21f5b26d5b1709d9194779ea208f20fa3eab0ba78aa75a5d93a036d5b7e30bcf"
+  },
+  "binding_pre": {
+    "commit": "449352a11cac48788f61487cf1e04a7d759306bb",
+    "special_index_bytes": 0,
+    "special_index_files": 0,
+    "special_index_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "untracked_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "worktree_dirty_files": 7,
+    "worktree_sha256": "21f5b26d5b1709d9194779ea208f20fa3eab0ba78aa75a5d93a036d5b7e30bcf"
+  },
+  "binding_stable": true,
+  "command": ["bash", "scripts/run_dotnet_gate.sh", "CAPABILITY_EVALUATOR_PREREQ_UNIT_PASS", "dotnet", "test", "dotnet/CnetControlPlane.Tests", "--filter", "FullyQualifiedName~EvaluatorPrereqTests", "--verbosity", "minimal"],
+  "conflicting_markers": [],
+  "env_knob_names": [],
+  "env_sha256": "282a0e8e0e930f5f7592a9934a5e56d8b4b115b6d3e57e8c0c1562b6bf375a76",
+  "env_variables": 67,
+  "evidence_log": "logs/capability_evaluator_prereq.log",
+  "evidence_sha256": "c59f5f6c14df46f3e920310b9a7ef2afaacdff3c8861b6b20196cba683d0b5f3",
+  "exit_status": 0,
+  "gate": "capability_evaluator_prereq",
+  "marker_lines": 1,
+  "marker_present": true,
+  "required_marker": "CAPABILITY_EVALUATOR_PREREQ_UNIT_PASS",
+  "run_id": "4a89dbba-531d-4095-99b6-ede156ac2872",
+  "started_at": "2026-09-06T10:26:17Z"
+}

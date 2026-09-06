@@ -1,0 +1,79 @@
+GATE_RUN gate=capability_cert_runner_test run_id=754bae09-9f6c-4665-bcb1-1a787b36710f started=2026-09-06T10:26:15Z commit=449352a11cac48788f61487cf1e04a7d759306bb worktree=21f5b26d5b1709d9 untracked=e3b0c44298fc1c14 special_index=e3b0c44298fc1c14 dirty=7 special_index_files=0
+  Determining projects to restore...
+  All projects are up-to-date for restore.
+  CnetControlPlane -> /home/marble/AI/CNET-worktrees/offline-controller-20260906/dotnet/CnetControlPlane/bin/Debug/net8.0/cnet-control.dll
+  CnetControlPlane.Tests -> /home/marble/AI/CNET-worktrees/offline-controller-20260906/dotnet/CnetControlPlane.Tests/bin/Debug/net8.0/CnetControlPlane.Tests.dll
+Test run for /home/marble/AI/CNET-worktrees/offline-controller-20260906/dotnet/CnetControlPlane.Tests/bin/Debug/net8.0/CnetControlPlane.Tests.dll (.NETCoreApp,Version=v8.0)
+A total of 1 test files matched the specified pattern.
+
+Passed!  - Failed:     0, Passed:    34, Skipped:     0, Total:    34, Duration: 53 ms - CnetControlPlane.Tests.dll (net8.0)
+CAPABILITY_CERT_RUNNER_PASS
+GATE_PASS gate=capability_cert_runner_test run_id=754bae09-9f6c-4665-bcb1-1a787b36710f commit=449352a11cac48788f61487cf1e04a7d759306bb evidence_sha256=2470d7857be486fbb552cc8f18b3925fb00f2d7e594c97e626e9cfe7f3a47835
+GATE_RUN gate=capability_evaluator_prereq run_id=4a89dbba-531d-4095-99b6-ede156ac2872 started=2026-09-06T10:26:17Z commit=449352a11cac48788f61487cf1e04a7d759306bb worktree=21f5b26d5b1709d9 untracked=e3b0c44298fc1c14 special_index=e3b0c44298fc1c14 dirty=7 special_index_files=0
+  Determining projects to restore...
+  All projects are up-to-date for restore.
+  CnetControlPlane -> /home/marble/AI/CNET-worktrees/offline-controller-20260906/dotnet/CnetControlPlane/bin/Debug/net8.0/cnet-control.dll
+  CnetControlPlane.Tests -> /home/marble/AI/CNET-worktrees/offline-controller-20260906/dotnet/CnetControlPlane.Tests/bin/Debug/net8.0/CnetControlPlane.Tests.dll
+Test run for /home/marble/AI/CNET-worktrees/offline-controller-20260906/dotnet/CnetControlPlane.Tests/bin/Debug/net8.0/CnetControlPlane.Tests.dll (.NETCoreApp,Version=v8.0)
+A total of 1 test files matched the specified pattern.
+
+Passed!  - Failed:     0, Passed:    13, Skipped:     0, Total:    13, Duration: 44 ms - CnetControlPlane.Tests.dll (net8.0)
+CAPABILITY_EVALUATOR_PREREQ_UNIT_PASS
+GATE_PASS gate=capability_evaluator_prereq run_id=4a89dbba-531d-4095-99b6-ede156ac2872 commit=449352a11cac48788f61487cf1e04a7d759306bb evidence_sha256=c59f5f6c14df46f3e920310b9a7ef2afaacdff3c8861b6b20196cba683d0b5f3
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce -Werror -Iinclude -o bin/heldout_fixture_test \
+	src/cnet_heldout.c tests/test_cnet_heldout.c -lm -lpthread -lcurl
+GATE_RUN gate=heldout_fixture_test run_id=70ab5c4f-c3ac-495b-adca-d8f6c14c4576 started=2026-09-06T10:26:19Z commit=449352a11cac48788f61487cf1e04a7d759306bb worktree=21f5b26d5b1709d9 untracked=e3b0c44298fc1c14 special_index=e3b0c44298fc1c14 dirty=7 special_index_files=0
+heldout: fixture /tmp/cnet-heldout-sakidO/wrong_cap.json declares capability other, evaluator is demo
+heldout: cannot read fixture /definitely/not/a/fixture.json
+heldout: fixture /tmp/cnet-heldout-sakidO/no_id.json has a case without a string id
+heldout: fixture /tmp/cnet-heldout-sakidO/dup_id.json repeats case id a
+heldout: fixture /tmp/cnet-heldout-sakidO/no_cases.json declares no cases
+heldout: fixture /tmp/cnet-heldout-sakidO/truncated.json has no cases array
+heldout: case alpha has no key absent_key
+heldout: case alpha key floor is not a string
+heldout: case alpha key expected is not a number ("abstain")
+heldout: verdict for unknown case gamma
+HELDOUT_CASE id=alpha reads=4
+HELDOUT_CASE id=beta reads=1
+HELDOUT_FIXTURE capability=demo sha256=986c64a476566dcc895194eb60da55803673f563157584dbdc903e0a4d130bc7 cases=2 consumed=2
+HELDOUT_METRIC cases_passed=2 cases_declared=2 metric=1.000000 errors=0
+HELDOUT_CASE id=alpha reads=1
+HELDOUT_CASE id=beta reads=0
+HELDOUT_CASE_FAIL id=beta verdict=not_evaluated
+HELDOUT_FIXTURE capability=demo sha256=986c64a476566dcc895194eb60da55803673f563157584dbdc903e0a4d130bc7 cases=2 consumed=1
+HELDOUT_METRIC cases_passed=1 cases_declared=2 metric=0.500000 errors=0
+HELDOUT_CASE id=alpha reads=1
+HELDOUT_CASE id=beta reads=1
+HELDOUT_CASE_FAIL id=beta verdict=failed
+HELDOUT_FIXTURE capability=demo sha256=986c64a476566dcc895194eb60da55803673f563157584dbdc903e0a4d130bc7 cases=2 consumed=2
+HELDOUT_METRIC cases_passed=1 cases_declared=2 metric=0.500000 errors=0
+HELDOUT_CASE id=alpha reads=0
+HELDOUT_CASE id=beta reads=1
+HELDOUT_FIXTURE capability=demo sha256=986c64a476566dcc895194eb60da55803673f563157584dbdc903e0a4d130bc7 cases=2 consumed=1
+HELDOUT_METRIC cases_passed=2 cases_declared=2 metric=1.000000 errors=1
+HELDOUT_CASE id=alpha reads=1
+HELDOUT_CASE id=beta reads=1
+HELDOUT_CASE_FAIL id=beta verdict=not_evaluated
+HELDOUT_FIXTURE capability=demo sha256=986c64a476566dcc895194eb60da55803673f563157584dbdc903e0a4d130bc7 cases=2 consumed=2
+HELDOUT_METRIC cases_passed=1 cases_declared=2 metric=0.500000 errors=0
+CNET_HELDOUT_TEST_PASS checks=42
+GATE_PASS gate=heldout_fixture_test run_id=70ab5c4f-c3ac-495b-adca-d8f6c14c4576 commit=449352a11cac48788f61487cf1e04a7d759306bb evidence_sha256=51a79f58c7c7cc0e720efde147b5795d2da5d2b822c18c857e6c2759d7ff0789
+GATE_RUN gate=capability_fixture_causality run_id=e7c19058-46a9-4f1f-893d-8fe831508481 started=2026-09-06T10:26:19Z commit=449352a11cac48788f61487cf1e04a7d759306bb worktree=21f5b26d5b1709d9 untracked=e3b0c44298fc1c14 special_index=e3b0c44298fc1c14 dirty=7 special_index_files=0
+  Determining projects to restore...
+  All projects are up-to-date for restore.
+  CnetControlPlane -> /home/marble/AI/CNET-worktrees/offline-controller-20260906/dotnet/CnetControlPlane/bin/Debug/net8.0/cnet-control.dll
+  CnetControlPlane.Tests -> /home/marble/AI/CNET-worktrees/offline-controller-20260906/dotnet/CnetControlPlane.Tests/bin/Debug/net8.0/CnetControlPlane.Tests.dll
+Test run for /home/marble/AI/CNET-worktrees/offline-controller-20260906/dotnet/CnetControlPlane.Tests/bin/Debug/net8.0/CnetControlPlane.Tests.dll (.NETCoreApp,Version=v8.0)
+A total of 1 test files matched the specified pattern.
+
+Passed!  - Failed:     0, Passed:     3, Skipped:     0, Total:     3, Duration: 10 ms - CnetControlPlane.Tests.dll (net8.0)
+CAPABILITY_FIXTURE_CAUSALITY_PASS
+GATE_PASS gate=capability_fixture_causality run_id=e7c19058-46a9-4f1f-893d-8fe831508481 commit=449352a11cac48788f61487cf1e04a7d759306bb evidence_sha256=33cf83a9f4f41846a3204119d77c67ce9d46d1b3403a6ae6ab1bf90fc6916dee
+CAPABILITY_CERT_RUN run_id=2bc7fee0-17a0-499b-8654-7b8063b0a315 started=2026-09-06T10:26:21Z commit=449352a11cac48788f61487cf1e04a7d759306bb worktree=21f5b26d5b1709d9 dirty=7 special_index=e3b0c44298fc1c14 special_index_files=0
+CAPABILITY id=calibrated_abstention status=certified metric=1.000 source=heldout_receipt receipt=ok
+CAPABILITY id=cce_classification status=certified metric=0.861 source=regex receipt=ok
+CAPABILITY id=honest_memory_retrieval status=certified metric=1.000 source=heldout_receipt receipt=ok
+CAPABILITY id=hybrid_skill_serve status=certified metric=1.000 source=heldout_receipt receipt=ok
+CAPABILITY id=json_toolcall_adapter status=certified metric=0.775 source=regex receipt=ok
+CAPABILITY id=sleep_consolidation status=certified metric=1.000 source=heldout_receipt receipt=ok
+CAPABILITY_CERT_PASS certified=6/6 run_id=2bc7fee0-17a0-499b-8654-7b8063b0a315 commit=449352a11cac48788f61487cf1e04a7d759306bb

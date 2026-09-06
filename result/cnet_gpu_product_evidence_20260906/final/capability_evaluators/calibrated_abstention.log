@@ -1,0 +1,11 @@
+make[1]: Entering directory '/home/marble/AI/CNET-worktrees/offline-controller-20260906'
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce -Werror -Iinclude -o bin/calibrated_governance \
+	src/cnet_calibrated_governance.c src/cnet_heldout.c \
+	tests/test_cnet_calibrated_governance.c -lm -lpthread -lcurl
+HELDOUT_CASE id=low-margin-abstains reads=4
+HELDOUT_CASE id=supported-answer reads=4
+HELDOUT_CASE id=evidence-free-claim reads=2
+HELDOUT_FIXTURE capability=calibrated_abstention sha256=bfe46304166e61f2e8fc70d8102d83eeb1087be8f9f4eea3e47e9a6999fee55e cases=3 consumed=3
+HELDOUT_METRIC cases_passed=3 cases_declared=3 metric=1.000000 errors=0
+CALIBRATED_GOVERNANCE_PASS metric=1.000 abstention=fail_closed claims=provenance_bound
+make[1]: Leaving directory '/home/marble/AI/CNET-worktrees/offline-controller-20260906'
