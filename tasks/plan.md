@@ -1,5 +1,11 @@
 # Cognitive Runtime Integration Plan
 
+## Active offline controller experiment
+
+Follow `plans/cnet_offline_controller_20260906.md`: fixture/verifier tests, trained
+network and gradient/parity tests, frozen three-seed comparison, evidence review.
+This is isolated from the existing lifecycle scope below.
+
 Source of truth: `plans/cognitive_runtime_integration_20260726.md`.
 
 ## Delivery slices

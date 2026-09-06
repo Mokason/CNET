@@ -1,5 +1,12 @@
 # Cognitive Runtime Integration Checklist
 
+## Offline controller experiment
+
+- [ ] Frozen synthetic graph fixtures and independent verifier tests
+- [ ] Trainable single/recurrent/feedforward cores and gradient/parity tests
+- [ ] Two-device evaluation, local-model subset, and evidence report
+- [ ] Review and save isolated experiment; no live promotion
+
 - [x] Shared workspace contract, implementation, and hermetic test
 - [x] Hermetic semantic cortex proposals and optional residual-HTTP adapter
 - [x] Sleep consolidation with semantic/procedural provenance
