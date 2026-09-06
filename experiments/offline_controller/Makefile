@@ -3,6 +3,16 @@ ROOT := ../..
 CFLAGS := -std=c11 -O2 -g -Wall -Wextra -Werror -I$(ROOT)/include
 OUT ?= /tmp/cnet-controller-build
 HIPCC ?= hipcc
+.DEFAULT_GOAL := test
+# Direct entry points must also work with a new OUT directory. Directory mtimes
+# are order-only prerequisites so creating another binary never forces a rebuild.
+$(OUT):
+	mkdir -p "$@"
+$(OUT)/cell_train_test.o $(OUT)/cell_train.o $(OUT)/test_cell \
+$(OUT)/test_selector $(OUT)/selector_experiment $(OUT)/test_cell_capsule \
+$(OUT)/test_candidate $(OUT)/test_host $(OUT)/test_worker_sandbox \
+$(OUT)/gpu_worker $(OUT)/gpu_worker_test $(OUT)/test_workers \
+$(OUT)/bench_cell_serving: | $(OUT)
 .PHONY: test
 test: $(OUT)/test_fixture $(OUT)/test_net $(OUT)/test_local
 	$(OUT)/test_fixture
@@ -111,6 +121,59 @@ $(OUT)/train_resident_rocblas: train_resident.c investigate.c net.c fixture.c of
 rocblas-train: $(OUT)/train_resident_rocblas
 $(OUT)/profile_resident_rocblas: profile_resident.c net.c fixture.c $(OUT)/resident_rocblas.o $(OUT)/amdmath.o
 	$(HIPCC) -O2 -Wall -Wextra -Werror --offload-arch=gfx1201 -I$(ROOT)/include -x c profile_resident.c net.c fixture.c -x none $(OUT)/resident_rocblas.o $(OUT)/amdmath.o -lrocblas -lm -o $@
+.PHONY: cell-test
+$(OUT)/cell_train_test.o: cell_train.cpp cell_train.h $(ROOT)/include/cnet_core_cell.h
+	$(HIPCC) -O2 -Wall -Wextra -Werror --offload-arch=gfx1201 -DCONTROLLER_TESTING -I$(ROOT)/include -c $< -o $@
+$(OUT)/cell_train.o: cell_train.cpp cell_train.h $(ROOT)/include/cnet_core_cell.h
+	$(HIPCC) -O2 -Wall -Wextra -Werror --offload-arch=gfx1201 -I$(ROOT)/include -c $< -o $@
+$(OUT)/test_cell: test_cell.c $(ROOT)/src/serve/cnet_core_cell.c $(OUT)/cell_train_test.o $(OUT)/amdmath.o
+	$(HIPCC) -O2 -Wall -Wextra -Werror --offload-arch=gfx1201 -DCONTROLLER_TESTING -I$(ROOT)/include -x c test_cell.c $(ROOT)/src/serve/cnet_core_cell.c -x none $(OUT)/cell_train_test.o $(OUT)/amdmath.o -lm -o $@
+cell-test: $(OUT)/test_cell
+	$(OUT)/test_cell
+.PHONY: selector-test
+$(OUT)/test_selector: test_selector.c $(ROOT)/src/serve/cnet_core_cell.c $(ROOT)/src/serve/cnet_core_selector.c $(ROOT)/include/cnet_core_selector.h
+	$(CC) $(CFLAGS) test_selector.c $(ROOT)/src/serve/cnet_core_cell.c $(ROOT)/src/serve/cnet_core_selector.c -lm -o $@
+selector-test: $(OUT)/test_selector
+	$(OUT)/test_selector
+.PHONY: selector-experiment
+$(OUT)/selector_experiment: selector_experiment.c selector_fixture.c selector_fixture.h offline.c $(ROOT)/src/serve/cnet_core_cell.c $(ROOT)/src/serve/cnet_core_selector.c $(OUT)/cell_train.o $(OUT)/amdmath.o
+	$(HIPCC) -O2 -Wall -Wextra -Werror --offload-arch=gfx1201 -I$(ROOT)/include -x c selector_experiment.c selector_fixture.c offline.c $(ROOT)/src/serve/cnet_core_cell.c $(ROOT)/src/serve/cnet_core_selector.c -x none $(OUT)/cell_train.o $(OUT)/amdmath.o -lm -o $@
+selector-experiment: $(OUT)/selector_experiment
+.PHONY: cell-capsule
+$(OUT)/test_cell_capsule: test_cell_capsule.c $(ROOT)/src/serve/cnet_cell_capsule.c $(ROOT)/src/serve/cnet_core_cell.c $(ROOT)/include/cnet_cell_capsule.h $(ROOT)/bin/libcnet_capsule_core.so
+	$(CC) $(CFLAGS) test_cell_capsule.c $(ROOT)/src/serve/cnet_cell_capsule.c $(ROOT)/src/serve/cnet_core_cell.c -L$(ROOT)/bin -lcnet_capsule_core -Wl,-rpath,$(abspath $(ROOT)/bin) -lm -o $@
+cell-capsule: $(OUT)/test_cell_capsule
+.PHONY: candidate-test
+$(OUT)/test_candidate: test_candidate.c $(ROOT)/src/serve/cnet_core_candidate.c $(ROOT)/src/serve/cnet_core_cell.c $(ROOT)/include/cnet_core_candidate.h $(ROOT)/src/cce/cce_campaign_provenance.c
+	$(CC) $(CFLAGS) test_candidate.c $(ROOT)/src/serve/cnet_core_candidate.c $(ROOT)/src/serve/cnet_core_cell.c $(ROOT)/src/cce/cce_campaign_provenance.c -lm -o $@
+candidate-test: $(OUT)/test_candidate
+	$(OUT)/test_candidate
+.PHONY: host-test-build
+$(OUT)/test_host: test_host.c selector_fixture.c $(ROOT)/bin/libcnet_capsule_core.so $(ROOT)/include/cnet_core_host.h
+	$(CC) $(CFLAGS) test_host.c selector_fixture.c -L$(ROOT)/bin -lcnet_capsule_core -Wl,-rpath,$(abspath $(ROOT)/bin) -lm -pthread -o $@
+host-test-build: $(OUT)/test_host
+.PHONY: worker-build worker-sandbox-test
+$(OUT)/test_worker_sandbox: test_worker_sandbox.c worker_sandbox.c worker_sandbox.h offline.c
+	$(CC) $(CFLAGS) test_worker_sandbox.c worker_sandbox.c offline.c -o $@
+worker-sandbox-test: $(OUT)/test_worker_sandbox
+	$(OUT)/test_worker_sandbox
+$(OUT)/gpu_worker: worker_main.c worker.h worker_sandbox.c worker_sandbox.h offline.c $(ROOT)/src/serve/cnet_core_cell.c $(OUT)/cell_train.o $(OUT)/amdmath.o
+	$(HIPCC) -O2 -Wall -Wextra -Werror --offload-arch=gfx1201 -I$(ROOT)/include -x c worker_main.c worker_sandbox.c offline.c $(ROOT)/src/serve/cnet_core_cell.c -x none $(OUT)/cell_train.o $(OUT)/amdmath.o -lm -o $@
+	chmod go-w $@
+$(OUT)/gpu_worker_test: worker_main.c worker.h worker_sandbox.c worker_sandbox.h offline.c $(ROOT)/src/serve/cnet_core_cell.c $(OUT)/cell_train.o $(OUT)/amdmath.o
+	$(HIPCC) -O2 -Wall -Wextra -Werror --offload-arch=gfx1201 -DCONTROLLER_TESTING -I$(ROOT)/include -x c worker_main.c worker_sandbox.c offline.c $(ROOT)/src/serve/cnet_core_cell.c -x none $(OUT)/cell_train.o $(OUT)/amdmath.o -lm -o $@
+	chmod go-w $@
+$(OUT)/test_workers: test_workers.c worker.c worker.h $(ROOT)/src/serve/cnet_core_cell.c
+	$(CC) $(CFLAGS) -DCONTROLLER_TESTING test_workers.c worker.c $(ROOT)/src/serve/cnet_core_cell.c -lm -o $@
+worker-build: $(OUT)/gpu_worker $(OUT)/gpu_worker_test $(OUT)/test_workers
+.PHONY: product-test
+$(OUT)/bench_cell_serving: bench_cell_serving.c $(ROOT)/bin/libcnet_capsule_core.so
+	$(CC) $(CFLAGS) bench_cell_serving.c -L$(ROOT)/bin -lcnet_capsule_core -Wl,-rpath,$(abspath $(ROOT)/bin) -lm -o $@
+# Build the parent library first, before recursively resolving test prerequisites.
+product-test:
+	$(MAKE) -C $(ROOT) capsule_core
+	$(MAKE) $(OUT)/test_cell $(OUT)/test_selector $(OUT)/test_candidate $(OUT)/test_host $(OUT)/test_cell_capsule $(OUT)/test_worker_sandbox worker-build $(OUT)/bench_cell_serving
+	bash run_product_tests.sh $(abspath $(OUT))
 $(OUT)/test_local: test_local.c local_baseline.c offline.c fixture.c offline.h fixture.h $(ROOT)/include/cnet_json_internal.h
 	mkdir -p $(OUT)
 	$(CC) $(CFLAGS) test_local.c fixture.c offline.c -o $@
