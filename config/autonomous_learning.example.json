@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "enabled": false,
+  "policy_id": "private_tables_v1",
+  "datasets": [
+    { "id": "calibration", "authority": "verified_tool" }
+  ],
+  "attempts_per_hour": 4,
+  "promotions_per_day": 8,
+  "max_attempts_per_source": 2,
+  "max_jobs": 256,
+  "max_storage_mib": 256,
+  "worker_seconds": 30,
+  "worker_memory_mib": 512,
+  "tick_seconds": 30,
+  "probation_probes": 3,
+  "max_probe_gap_seconds": 120,
+  "max_run_seconds": 259200,
+  "allocator_enabled": false
+}
