@@ -41,10 +41,13 @@ internal sealed partial class LearningLedger : IDisposable
             db.Open();
             var result = new LearningLedger(files, db, policy, clock);
             result.Execute("PRAGMA trusted_schema=OFF; PRAGMA foreign_keys=ON; PRAGMA synchronous=EXTRA; PRAGMA temp_store=MEMORY;");
-            if (!string.Equals(Convert.ToString(result.Scalar("PRAGMA journal_mode=DELETE")), "delete", StringComparison.Ordinal)
+            // Opening existing state must not rewrite its journal identity,
+            // including when the later policy/schema checks will refuse it.
+            if (!string.Equals(Convert.ToString(result.Scalar(create ? "PRAGMA journal_mode=DELETE" : "PRAGMA journal_mode")), "delete", StringComparison.Ordinal)
                 || Convert.ToInt64(result.Scalar("PRAGMA synchronous")) != 3)
                 throw new InvalidOperationException("learning_durable_sqlite_required");
             if (create) result.Initialize();
+            result.RequireSchemaVersion();
             if (Convert.ToString(result.Scalar("PRAGMA quick_check")) != "ok"
                 || result.Scalar("PRAGMA foreign_key_check") is not null
                 || Convert.ToInt64(result.Scalar("""
@@ -88,12 +91,17 @@ internal sealed partial class LearningLedger : IDisposable
         // A renamed/replaced root is an explicit refusal, never a redirection.
         files.AssertPathIdentity();
         using var tx = db.BeginTransaction(deferred: false);
+        RequireSchemaVersion(tx);
         var now = ValidNow();
         if (Scalar("SELECT boot FROM configuration WHERE id=1", tx) is not string previous
             || !Guid.TryParseExact(previous, "D", out _))
             throw new InvalidOperationException("learning_ledger_epoch_integrity");
         // The prior epoch must exist even when this call observes a new boot.
         _ = Epoch(previous, tx);
+        // Check persisted charges before advancing the epoch: a later clock
+        // must not make an invalid future timestamp appear valid. This also
+        // covers already-open connections before any budget-affecting action.
+        RequirePromotionIntegrity(tx);
         if (previous != now.Boot)
         {
             if (Convert.ToInt64(Scalar("SELECT count(*) FROM epochs WHERE boot=$boot", tx, ("$boot", now.Boot))) != 0)

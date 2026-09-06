@@ -1,7 +1,38 @@
+using Microsoft.Data.Sqlite;
+
 namespace CnetControlPlane.Learning;
 
 internal sealed partial class LearningLedger
 {
+    private const int SchemaVersion = 1;
+
+    private void RequireSchemaVersion(SqliteTransaction? tx = null)
+    {
+        if (Scalar("PRAGMA user_version", tx) is not long version || version != SchemaVersion)
+            throw new InvalidOperationException("learning_ledger_schema_version");
+    }
+
+    private void RequirePromotionIntegrity(SqliteTransaction tx)
+    {
+        // Foreign keys cannot detect a deleted child charge. Every activation,
+        // including pending/refused attempts, must retain its one durable debit;
+        // other native operations never consume the promotion budget. The PK
+        // already forbids duplicate charges for the same intent.
+        if (Convert.ToInt64(Scalar("""
+            SELECT EXISTS(
+                SELECT 1 FROM intents i LEFT JOIN promotion_charges c ON c.intent=i.id
+                WHERE i.kind='activate' AND c.intent IS NULL
+            ) OR EXISTS(
+                SELECT 1 FROM promotion_charges c
+                LEFT JOIN intents i ON i.id=c.intent LEFT JOIN epochs e ON e.boot=c.boot
+                WHERE i.id IS NULL OR i.kind<>'activate' OR e.boot IS NULL
+                    OR e.first_ns<0 OR e.last_ns<e.first_ns
+                    OR c.ns<e.first_ns OR c.ns>e.last_ns
+            )
+            """, tx)) != 0)
+            throw new InvalidOperationException("learning_ledger_promotion_integrity");
+    }
+
     // One fresh, opt-in schema. There is no migration from legacy scheduler
     // state and no reset-on-open fallback. Accounting and native authority are
     // initialized in the same durable transaction, before the first job.
@@ -22,6 +53,8 @@ internal sealed partial class LearningLedger
             CREATE INDEX jobs_source ON jobs(dataset,source);
             """, tx);
         Execute("""
+            CREATE TABLE runtime_binding(id INTEGER PRIMARY KEY CHECK(id=1),
+                digest TEXT NOT NULL CHECK(length(digest)=64 AND digest NOT GLOB '*[^0-9a-f]*')) STRICT;
             CREATE TABLE native_binding(id INTEGER PRIMARY KEY CHECK(id=1), frame TEXT NOT NULL) STRICT;
             CREATE TABLE candidates(job INTEGER PRIMARY KEY REFERENCES jobs(id), set_name TEXT NOT NULL,
                 digest TEXT NOT NULL CHECK(length(digest)=64 AND digest NOT GLOB '*[^0-9a-f]*'),
@@ -41,6 +74,7 @@ internal sealed partial class LearningLedger
         var now = ValidNow();
         Execute("INSERT INTO epochs VALUES($boot,$now,$now); INSERT INTO configuration VALUES(1,$policy,$boot,0)", tx,
             ("$policy", policy.Sha256), ("$boot", now.Boot), ("$now", now.Nanoseconds));
+        Execute($"PRAGMA user_version={SchemaVersion}", tx);
         tx.Commit();
     }
 }
