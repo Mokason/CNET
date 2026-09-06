@@ -28,6 +28,6 @@ observations, not current database status. Preserve and inspect current
 state rather than copying them into operational assertions.
 
 [Phase 5](../plans/phase5_improvement_engine_integration.md) retains the
-decision and evidence contract. The known control-plane SQLite advisory
-remains open in [SECURITY.md](SECURITY.md); documentation cleanup does not
-fix or suppress it. Training handoffs still need independent target provenance.
+decision and evidence contract. The control-plane SQLite provider was repaired
+and its actual loaded version tested; [SECURITY.md](SECURITY.md) records the
+scoped audit. Training handoffs still need independent target provenance.

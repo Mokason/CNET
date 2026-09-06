@@ -3,6 +3,21 @@
 Entries describe bounded repository changes. They are not live-deployment
 attestations or a list of claims automatically revalidated at each release.
 
+## 2026-09-06 — Bounded product closure
+
+The ordinary daemon now retains pinned capsule working sets with owner-only
+control, guarded upgrade versus explicit switch, immutable snapshots and durable
+activation/restart/rollback. The existing schema-2 asset carries five bounded
+source facts, with original payload/receipt/decoder identities and used-hop/final
+freshness refusal. Existing source-set publication is now separate from serving
+activation; migrate legacy per-request reload workflows explicitly.
+
+Documentation-exposed code fixes include the loaded SQLite provider, native
+harvest/package workflows, verified anti-collapse distillation, isolated managed
+scriptlets, and managed server authentication/resource/model-lifetime controls.
+The opt-in browser page is offline, chat-only and plain-text. Operator procedures
+and remaining live authority are in [the current plan](../tasks/plan.md).
+
 ## 2026-09-06 — Documentation cleanup
 
 Current guides were rewritten against source: capsule/core/MTK boundaries,
@@ -32,8 +47,8 @@ Dated reports cover [implementation](../result/cnet_implementation_20260905.md),
 [live acquisition observations](../result/cnet_live_acquisition_20260906.md),
 [composition](../result/cnet_composed_acquisition_20260906.md) and
 [4096-entry capacity](../result/cnet_capsule_capacity_4096_20260906.md).
-The default daemon still reloads the inventory per capsule request;
-the durable resident lifecycle remains in [the task queue](../tasks/todo.md).
+Those earlier reports predate the resident lifecycle above; their then-current
+per-request reload behavior is historical, not the current daemon contract.
 
 ## Earlier history
 

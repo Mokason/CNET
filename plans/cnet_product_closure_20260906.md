@@ -1,6 +1,8 @@
 # Bounded specialist product closure
 
-Status: active. Source baseline: `7c24204692a5b05e009627f43c98660bfcbea66d`.
+Status: implementation and focused/integrated gates complete; final frozen
+capability certification pending. Source baseline:
+`7c24204692a5b05e009627f43c98660bfcbea66d`.
 User authorized implementation of the three completion stages and all current
 product/documentation follow-ups. This does not authorize a live restart,
 registry replacement, dependency-audit suppression or another remote push.
@@ -63,9 +65,11 @@ Existing GPU evidence is not transferable to a new task without measurement.
 
 Each slice keeps a RED result before production changes, focused GREEN evidence,
 an independent review of non-trivial boundary decisions, and an atomic commit.
-Parallel work is limited to independent SQLite and native workflow slices;
-shared lifecycle/schema/control changes remain ordered. Main agent owns shared
-Make integration, task status and final evidence.
+Independent SQLite/native workflow work, bounded auxiliary boundary repairs
+and author-separated reviews ran in parallel; shared lifecycle/schema/control
+changes remained ordered. Main agent owns shared Make integration, task status
+and final evidence. Actual results and scope are collected in the
+[closure report](../result/cnet_product_closure_20260906.md).
 
 ## Threat boundaries
 

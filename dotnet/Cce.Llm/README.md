@@ -44,10 +44,26 @@ A loopback Ollama URL is not proof of offline execution.
 
 Scriptlet “certification” replays supplied examples; it is not CNU1 sealing,
 unseen-input coverage or capsule portability.
-[ScriptletSandbox](Tools/ScriptletSandbox.cs) runs compiled code in-process.
-On timeout it abandons a still-running background thread, not its computation.
-Output-length checks occur after execution and are not memory quotas.
-Use only with cooperative trusted users; it is not hostile-code isolation.
+[ScriptletSandbox](Tools/ScriptletSandbox.cs) now compiles and executes in a
+killable isolated worker, not the host. The supported target is unprivileged
+Linux x86-64/glibc, framework-dependent .NET 10, Landlock ABI >=7 and seccomp
+TSYNC. Unsupported, privileged or incomplete installations refuse; there is
+no in-process fallback. Standard build/publish copies the seven digest-bound
+worker artifacts. Self-contained/AOT/NuGet packaging is not established.
+
+Use `ScriptletSandbox.TryRunSource(source, input, out output)`. The compatibility
+compiler returns a source-bound isolated invocation closure; arbitrary host
+delegates passed to `TryRun` refuse without invocation. Every certification
+example uses the same isolated path. The method-body guard is policy, not the
+security boundary.
+
+Two invocations may run at once. Source/input/output caps are 4000/8192/8192
+UTF-16 characters. Worker ceilings are 2 GiB address space, 128 MiB managed
+heap and 10 CPU seconds; startup/compilation has a separate five-second budget,
+then caller execution is 1..10000 ms (default 200 ms). Timeout/failure kills and
+reaps the worker. A measured cold call took 1688 ms including startup, so this
+does not preserve old in-process latency. Kernel/runtime availability remains
+trusted. See [the implementation, threat bounds and 49-test evidence](../../result/scriptlet_isolation_closure_20260906.md).
 
 ## Performance evidence
 

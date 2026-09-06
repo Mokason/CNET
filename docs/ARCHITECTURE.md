@@ -67,10 +67,12 @@ member or conflicting identity refuses the new inventory rather than partially
 loading it.
 
 The deterministic library is single-threaded and admits up to 4096 capsules.
-The daemon currently reopens the capsule directory per capsule request.
-Publication does not by itself provide a durable, operator-named resident
-working-set switch. That separate scope remains in
-[the lifecycle plan](../plans/cnet_capsule_hot_swap_20260906.md).
+The daemon retains request-pinned generations. Owner-only named-set staging,
+self-closure/upgrade replay, immutable snapshots and durable monotonic selection
+provide same-process activation, restart and rollback. Publication into a source
+set does not activate it. See [the operator contract](CAPSULE_CORE.md).
+The explicit source-evidence asset schema adds fixed labels and live freshness
+without allowing unvalidated prose or replacing the existing capsule format.
 
 ## Experimental neural selection and activation
 

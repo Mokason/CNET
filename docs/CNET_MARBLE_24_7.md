@@ -47,8 +47,10 @@ configuration, then validate service health and covered/refused socket queries.
 Keep a rollback selection and preserve newly acquired evidence.
 
 Do not restore quarantined units by disabling coverage. Atomic publication does
-not make arbitrary concurrent base writers safe. The new experimental in-memory
-core host is not the ordinary daemon's durable working-set deployment mechanism.
+not make arbitrary concurrent base writers safe. The ordinary daemon now has a
+separate [durable named-set operator interface](CAPSULE_CORE.md), using immutable
+snapshots and a monotonic selection record. The experimental neural host remains
+opt-in. Existing service configuration is not migrated by a build or source change.
 
 ## Policy and evidence
 

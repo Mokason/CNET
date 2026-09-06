@@ -1,8 +1,10 @@
 # Capsule hot-swap and local codebase evidence
 
-Status: lifecycle implementation pending; larger resident inventory capacity
-requested and implemented separately, with measured gates recorded in
-`plans/cnet_capsule_capacity_4096_20260906.md`.
+Status: resident lifecycle, durable operator control and bounded source-evidence
+serving implemented in the product-closure worktree. Final integrated release
+verification is tracked in [product closure](cnet_product_closure_20260906.md);
+live rollout remains separately authorized. The 4096-entry capacity contract is
+recorded in `plans/cnet_capsule_capacity_4096_20260906.md`.
 
 The operator approved learning CNET codebase knowledge from local source and
 verified compiler/test results, and requested capsule swapping to reload
@@ -12,9 +14,10 @@ knowledge packaging format.
 
 ## Current behavior and boundary
 
-`tools/cnetd.c` currently opens and closes the entire configured capsule root
-for each typed request. Additions are visible without restart, but there is no
-resident active-set lifecycle, explicit generation switch, or retained fallback.
+At the original planning baseline, `tools/cnetd.c` opened and closed the entire
+configured capsule root for each typed request. The implemented resident path
+now requires explicit named-set staging/activation to make additions visible,
+and retains the active generation when admission fails.
 `cnet_capsule_core_open` validates imports; `validate_growth` replays sealed
 labels and guarded joins. The existing `cnet_swap_admit` law separately governs
 certified replacement and must not be bypassed by relabeling replacement as
@@ -100,8 +103,8 @@ path escapes, unsupported questions and prompt-like source comments.
 Dependency: capsule lifecycle and an asset-aware certified consumer. A source
 symbol index is not evidence of broad code understanding.
 
-The current core intentionally uses schema-1-only import. Supporting evidence
-assets requires explicit asset-schema dispatch, semantic validation and
+The original core intentionally used schema-1-only import. Implemented evidence
+assets now have explicit asset-schema dispatch, semantic validation and
 snapshot-owned asset lifetime/freeing. Bind each fact to source/extractor
 digests; bind compiler/test receipts to configuration and tested revision.
 Accepting an asset and discarding its contents is forbidden. Keep source text
@@ -130,8 +133,10 @@ Fresh-context design review identified five actionable safeguards: candidate
 self-closure proof, asset-aware ownership, semantic evidence validation,
 operator control separated from ASK text, and stable immutable publication
 with explicit unloaded/startup/reload states. All are part of acceptance above;
-none is claimed implemented. External cross-model review has been offered,
-but no external CLI has been authorized or invoked.
+all five are implemented and covered by the new lifecycle/evidence gates.
+Independent local reviews also exposed and repaired ancestor ownership,
+crash-orphan cleanup and original-payload identity issues. An optional external
+cross-model invocation was offered, but was not invoked without confirmation.
 
 No new external teacher, arbitrary source execution, new packaging format,
 certification-floor relaxation, or unmeasured broader-capability claim.

@@ -4,15 +4,15 @@ Security status is scoped to evidence, not a claim that the entire repository
 or machine has no vulnerabilities. The September 6 review and tests are recorded
 in [the GPU product report](../result/cnet_gpu_product_sequence_20260906.md).
 
-## Open dependency advisory
+## Repaired dependency boundary
 
-The separate managed control plane resolves
-`Microsoft.Data.Sqlite 8.0.11 → SQLitePCLRaw.lib.e_sqlite3 2.1.6`.
-Its September 6 transitive audit reports High-severity
+The separate managed control plane now uses `Microsoft.Data.Sqlite.Core 8.0.11`
+with `SQLitePCLRaw.bundle_e_sqlite3 3.0.5`. The actual loaded SQLite version was
+3.53.4; focused transaction/JSON/activation tests and all 80 control-plane tests
+passed, with zero reported transitive package advisories in the recorded audit.
+The prior native bundle loaded 3.41.2 and triggered
 [CVE-2025-6965 / GHSA-2m69-gcr7-jv3q](https://github.com/advisories/GHSA-2m69-gcr7-jv3q).
-This is the SQLite aggregate-term overflow fixed in SQLite 3.50.2; the old
-native-package family has no patched version listed in that advisory.
-Security release clearance remains WITHHELD.
+See [the RED/repair/audit evidence](../result/sqlite_provider_closure_20260906.md).
 
 The main `dotnet/CNET.slnx` audit does not cover this separate project.
 Ingestion and activation accept a `--db` path. Parameterized row values do not
@@ -20,13 +20,9 @@ make an attacker-controlled SQLite schema safe; schema preparation remains a
 conditional exposure. No exploit was demonstrated, and deployed file ownership
 and permissions were not audited.
 
-Remediation must select a maintained compatible native bundle or explicit
-provider, verify the actual loaded SQLite version/fix, test JSON functions,
-ingestion transactions and activation/resume, then rerun control-plane tests and
-the transitive audit. Microsoft's
-[custom provider guidance](https://learn.microsoft.com/en-us/dotnet/standard/data/sqlite/custom-versions)
-describes the mechanism. Until remediation, use only protected trusted database
-files. Do not suppress the advisory or claim an old-package bump fixes it.
+Continue using protected trusted database files. Repeat loaded-provider tests
+and both project audits after changes; package locks are not permanent advisory
+clearance. No suppression or dependency-floor reduction was used.
 
 ## Certified knowledge boundary
 
@@ -65,27 +61,47 @@ and GPU driver are trusted. Read access is not confidential isolation, and
 neither total HIP RSS nor total scratch storage has a hard quota. A wedged
 driver may delay reaping. This is not a service for hostile native programs.
 
-## Other implementation limits found during documentation review
+## Repaired product boundaries and retained limits
 
 - [Web query access](CNET_WEB.md) forwards mutating daemon commands; it is not
   a read-only capability. Its startup no-auth bypass does not remove request
   Bearer checks.
-- The [managed sample server](../dotnet/Llm/docs/SERVER.md) lacks built-in auth,
-  TLS and rate limiting. Keep it trusted-user/loopback only.
-- [Managed scriptlets](../dotnet/Cce.Llm/README.md) run in-process; a timeout
-  abandons the thread without terminating it. This is not hostile-code isolation.
-- [Distillation proposals](CNET_DISTILL.md) may be written with an unchecked
-  anti-collapse probe. Such proposals must not become training/admission input
-  without independently establishing provenance and Tier-A exclusion.
+- The [managed sample server](../dotnet/Llm/docs/SERVER.md) has separate bounded
+  inference/admin bearer authority, exact-origin CORS, bounded requests/rates,
+  one active model operation and safe errors. Protected operation requires an
+  explicitly trusted loopback TLS proxy; development bypass is explicit and
+  loopback-only. Generation cancellation is cooperative at token boundaries,
+  not hard prefill/kernel preemption. Candidate model load failure retains the
+  old model; failed retirement is loud and requires restart before another swap.
+- [Managed scriptlets](../dotnet/Cce.Llm/README.md) compile and execute in a
+  killable Linux worker. Landlock precedes CLR startup; seccomp is synchronized
+  before source consumption. Privileged/unsupported launches refuse, with no
+  in-process fallback. Input/output/time/address-space/heap limits and reaping
+  are tested. The kernel, trusted runtime and installed artifacts remain trusted;
+  this is not a universal .NET sandbox or a side-channel guarantee.
+- [Distillation proposals](CNET_DISTILL.md) require complete successful native
+  per-query anti-collapse receipts before teacher acquisition/publication.
+  LOCAL answers cannot become labels. Dry-run does not publish. Digest integrity
+  and a successful probe do not authenticate a teacher or establish correctness.
+- [Resident capsule control](CAPSULE_CORE.md) is owner-only and separate from
+  chat. Immutable snapshots, self-closure, historical identities and monotonic
+  selection protect activation/recovery. Post-commit durability uncertainty
+  freezes mutations; it must never be reported as rollback or success.
+- [Source evidence](CNET_SOURCE_EVIDENCE.md) binds exact source/receipt/decoder
+  bytes and checks current files at used hops and final emission. Concurrent
+  malicious same-UID source writers and arbitrary compiler semantics are outside
+  the supported boundary.
 
-These limitations are documented, not fixed by this cleanup. No exploit audit
-of the entire managed/vendor tree is claimed.
+These are focused code repairs with negative tests and independent review.
+No exhaustive exploit audit of the managed/vendor tree, OS or drivers is claimed.
 
 ## Focused rechecks
 
 ```sh
 make capsule_demand_security capsule_acquire_security
 make knowledge_capsule_sanitize
+make capsule_product_sanitize
+make capsule_product_closure capsule_control native_workflows_test distill_slice
 make -C experiments/offline_controller worker-sandbox-test product-test
 dotnet list dotnet/CnetControlPlane/CnetControlPlane.csproj package --vulnerable --include-transitive
 ```

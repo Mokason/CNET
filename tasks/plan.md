@@ -4,7 +4,7 @@ This file is the current task queue, not a replay of old implementation steps.
 Decision history remains in [plans/](../plans/). Current documentation starts at
 [docs/INDEX.md](../docs/INDEX.md).
 
-## Active implementation
+## Product closure checkpoint
 
 The owner authorized all remaining product and documentation-exposed code work.
 The ordered acceptance/verification contract is
@@ -34,18 +34,24 @@ Markdown/text inputs and records. Two links in one historical spec changed.
 Native regression and bounded managed/documentation checks passed.
 [Cleanup evidence](../result/documentation_cleanup_20260906.md).
 
-## Open product scope
+## Product closure status
 
-1. Remediate the managed control-plane SQLite dependency advisory, verifying
-   the actual native provider and all ingestion/activation behavior.
-2. Complete the ordinary daemon's resident capsule lifecycle: named operator
-   selection, same-process swaps, durable activation, restart and rollback.
-   The new private in-memory core host is a building block, not completion of
-   this daemon/deployment scope.
-3. Add local source-evidence acceptance through existing manifest-bound assets,
-   then integrate acquisition, swapping and regression checks.
-4. Perform any live rollout only with explicit operator authority and fresh
-   deployment-specific evidence.
+SQLite provider remediation, native harvest/package migration, anti-collapse
+distillation, resident host/control/store, bounded source assets, managed
+scriptlet isolation and server security/lifetime/UI repairs are implemented.
+Focused negative tests and independent reviews are recorded in their dated
+`result/*closure_20260906.md` reports. The explicit private deployment helper
+passes interrupted-publication and unsafe-archive tests. Final native regression
+passes all 28 required fresh-log suites, including the new lifecycle/recovery
+dependencies. Sequential frozen capability certification and the evidence
+handoff are the remaining source checkpoint; see the
+[integrated report](../result/cnet_product_closure_20260906.md).
+
+The source domain is five exact local literal facts, not arbitrary source
+understanding or unrestricted compiler/test execution. Approved arithmetic-tool
+acquisition remains independently labelled; publication needs explicit owner
+activation. A live rollout requires a selected target/configuration, separately
+authorized operations and fresh deployment-specific verification.
 
 The governing lifecycle requirements remain in
 [capsule hot-swap plan](../plans/cnet_capsule_hot_swap_20260906.md).

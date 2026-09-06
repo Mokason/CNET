@@ -59,8 +59,13 @@ See [architecture](docs/ARCHITECTURE.md), [dispatch](docs/dispatch.md) and
 
 The deterministic capsule runtime supports up to 4096 capsules. Memory use
 depends on the units and runtime state, not just serialized payload size.
-The ordinary daemon reloads the capsule inventory per request; its pending
-operator-controlled resident lifecycle is tracked separately.
+The ordinary daemon retains request-pinned capsule inventories. Owner-only
+named-set control supports same-process upgrade/switch, durable selection,
+restart and rollback; failed candidates retain the incumbent. See the
+[operator sequence](docs/CAPSULE_CORE.md#daemon-integration-and-swaps).
+The [source-evidence adapter](docs/CNET_SOURCE_EVIDENCE.md) serves five exact
+local literal facts with source freshness checks; it is not unrestricted code
+understanding or a compiler-proof engine.
 
 The opt-in GPU/core experiment implements resident AMD FP32 training, isolated
 two-device workers, immutable core checkpoints, certified BTN/capsule conversion,
@@ -102,9 +107,11 @@ payloads, incompatible ports and exhausted budgets refuse. Supported GPU
 development is AMD/ROCm; legacy vendor-specific experiments are not the product
 path.
 
-The September 6 audit found an existing High-severity SQLite dependency advisory
-in the separate managed control plane. Security release clearance remains
-WITHHELD; see [security](docs/SECURITY.md).
+The control-plane SQLite provider has been migrated and its loaded native
+version tested. Managed scriptlets now use a bounded Linux process sandbox;
+the sample server has separate inference/admin authentication and resource
+controls. These focused repairs are not an exhaustive security clearance;
+see [security](docs/SECURITY.md). Live rollout remains separately authorized.
 
 Nothing here authorizes a service restart, registry replacement, remote push or
 public release. Follow [release policy](docs/RELEASE_POLICY.md).

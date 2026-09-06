@@ -78,7 +78,7 @@ a statement that an incumbent working set can safely be replaced.
 `include/cnet_capsule_evidence.h` defines an opaque, caller-owned evidence object.
 The strict parser copies its input and validates asset schema, supported fields,
 receipts/decoder agreement, exact sealed contract labels, and exact active,
-non-generalized labelled coverage. The serving core must:
+non-generalized labelled coverage. The serving core implements these rules:
 
 1. Import through the asset-aware existing capsule importer and parse/bind the
    returned asset before exposing a candidate registry.
@@ -107,4 +107,14 @@ The focused gates are `tests/test_source_evidence.c` and
 `tests/test_source_capsule.py`; expected labels are independently maintained,
 not copied from acquisition output or previous CNET answers. These establish
 bounded source acquisition and asset semantics. Resident activation, daemon
-swaps and cross-hop integration require their separate serving-core gates.
+swaps and cross-hop integration are exercised by `make capsule_product_closure`.
+The daemon binds `source-fact NAME` to the closed named query list; typed direct
+and composed routes enforce freshness too. Assetless units cannot impersonate
+the reserved source input or answer interface. Static admission/history replay
+checks sealed historical labels without requiring current source freshness, so
+stale source evidence does not disable unrelated capsules or prevent recovery.
+Actual execution rechecks each used source-bearing hop and the final receipt.
+Upgrade retains full prior asset identities and compatible decoders, not only
+numeric codes. New source versions with changed labels require an explicit set
+switch under a new unit name. The five-fact gate does not claim arbitrary
+compiler/test receipts or unmeasured source understanding.

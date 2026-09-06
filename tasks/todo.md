@@ -25,24 +25,29 @@ See [the dated evidence](../result/cnet_gpu_product_sequence_20260906.md).
 - [x] Verify references, protected data and documentation contracts
 - [x] Record the exact retirement map and completed verification
 
-## Remaining product work
+## Product closure
 
-- [ ] SQLite native-provider remediation and repeat control-plane security audit
-- [ ] Resident ordinary-daemon working sets and named operator control
-- [ ] Same-PID daemon swap tests and failure-retention proof
-- [ ] Durable activation/restart/rollback failure tests
-- [ ] Manifest-bound local source evidence and candidate self-closure
-- [ ] Integrated acquisition/swap regression proof
+- [x] SQLite native-provider remediation and repeat control-plane security audit
+- [x] Resident ordinary-daemon working sets and named operator control
+- [x] Same-PID daemon swap tests and failure-retention proof
+- [x] Durable activation/restart/rollback failure tests
+- [x] Manifest-bound local source evidence and candidate self-closure
+- [x] Integrated acquisition/swap regression proof
+- [x] Explicit private deployment/package handoff and interrupted-publication tests
+- [ ] Final frozen capability certification and evidence handoff
 - [ ] Separately authorized, verified live deployment
 
 ## Additional code limits exposed by documentation review
 
-- [ ] Migrate the legacy coverage-harvest script off its removed Python seeder
-- [ ] Repair minimal packaging/smoke's removed-Python evolution assumptions
-- [ ] Require a verified anti-collapse check before using distillation proposals
-- [ ] Add isolated execution before accepting hostile managed scriptlets
-- [ ] Add authentication/resource controls before exposing the managed sample server
+- [x] Migrate the legacy coverage-harvest script off its removed Python seeder
+- [x] Repair minimal packaging/smoke's removed-Python evolution assumptions
+- [x] Require a verified anti-collapse check before using distillation proposals
+- [x] Add isolated execution before accepting hostile managed scriptlets
+- [x] Add authentication/resource controls before exposing the managed sample server
+- [x] Verify candidate model lifetime and offline supervised browser chat
 
-These are code/deployment follow-ups, not changes made by documentation cleanup.
+These source repairs follow the documentation cleanup; their actual negative
+tests, independent reviews and scoped results are collected in the
+[product closure report](../result/cnet_product_closure_20260906.md).
 
 Do not lower floors or reuse CNET Tier-A answers to close these boxes.
