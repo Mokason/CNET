@@ -1,0 +1,151 @@
+{
+  "marker": "CONTROLLER_INDEPENDENT_AUDIT_PASS",
+  "unique_topologies": 9216,
+  "checked_actions": 22118,
+  "false_accepted_observed": 0,
+  "deterministic_control": {
+    "cases": 512,
+    "reachable": 291,
+    "completed": 291,
+    "unreachable_abstained": 221,
+    "attempts": 792
+  },
+  "models": {
+    "single": {
+      "active_parameters": 9865,
+      "forward_flops_per_action": 28832,
+      "test_completions": [
+        38,
+        61,
+        30
+      ],
+      "reachable_per_seed": 291,
+      "optimal_first": [
+        219,
+        205,
+        230
+      ],
+      "illegal": [
+        123,
+        270,
+        90
+      ],
+      "unreachable_abstained": [
+        219,
+        219,
+        221
+      ],
+      "recovery_completions": [
+        38,
+        61,
+        30
+      ],
+      "subset32_completions": [
+        2,
+        2,
+        0
+      ],
+      "mean_completion_rate": 0.14776632302405499,
+      "batch_amortized_ms": [
+        0.013426,
+        0.013242,
+        0.013274
+      ],
+      "executed_forward_flops_per_512_cases": 118095872
+    },
+    "recurrent4": {
+      "active_parameters": 13961,
+      "forward_flops_per_action": 109088,
+      "test_completions": [
+        40,
+        64,
+        39
+      ],
+      "reachable_per_seed": 291,
+      "optimal_first": [
+        219,
+        203,
+        226
+      ],
+      "illegal": [
+        139,
+        286,
+        113
+      ],
+      "unreachable_abstained": [
+        219,
+        219,
+        220
+      ],
+      "recovery_completions": [
+        40,
+        64,
+        39
+      ],
+      "subset32_completions": [
+        1,
+        3,
+        2
+      ],
+      "mean_completion_rate": 0.16380297823596793,
+      "batch_amortized_ms": [
+        0.042818,
+        0.043051,
+        0.042685
+      ],
+      "executed_forward_flops_per_512_cases": 446824448
+    },
+    "feedforward4": {
+      "active_parameters": 49993,
+      "forward_flops_per_action": 109088,
+      "test_completions": [
+        46,
+        65,
+        34
+      ],
+      "reachable_per_seed": 291,
+      "optimal_first": [
+        225,
+        204,
+        231
+      ],
+      "illegal": [
+        138,
+        273,
+        89
+      ],
+      "unreachable_abstained": [
+        220,
+        216,
+        220
+      ],
+      "recovery_completions": [
+        46,
+        65,
+        34
+      ],
+      "subset32_completions": [
+        2,
+        2,
+        0
+      ],
+      "mean_completion_rate": 0.1660939289805269,
+      "batch_amortized_ms": [
+        0.043125,
+        0.043469,
+        0.043731
+      ],
+      "executed_forward_flops_per_512_cases": 446824448
+    }
+  },
+  "local_baseline": {
+    "reachable": 20,
+    "completed": 15,
+    "optimal_first": 13,
+    "attempts": 125,
+    "illegal": 50,
+    "unreachable_abstained": 7,
+    "seconds": 25.566432,
+    "cases": 32
+  }
+}

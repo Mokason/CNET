@@ -33,7 +33,9 @@ void net_init(Net *m,int depth,int tied,uint32_t seed) {
         m->out[i]=((float)(next_random(&seed)%20001)/10000-1)*.12f;
 }
 unsigned long net_parameters(const Net *m) {
-    return (unsigned long)(m->tied?1:m->depth)*HIDDEN*JOINED+ACTIONS*(HIDDEN+1);
+    unsigned long stored=(unsigned long)(m->tied?1:m->depth)*HIDDEN*JOINED+ACTIONS*(HIDDEN+1);
+    /* At depth one, or the untied first layer, h0 is always zero. */
+    return stored-((!m->tied || m->depth==1)?HIDDEN*HIDDEN:0);
 }
 unsigned long net_forward_flops(const Net *m) {
     return 2UL*(m->depth*HIDDEN*JOINED+OUTPUTS*(HIDDEN+1));

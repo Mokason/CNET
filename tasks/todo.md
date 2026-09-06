@@ -2,10 +2,10 @@
 
 ## Offline controller experiment
 
-- [ ] Frozen synthetic graph fixtures and independent verifier tests
-- [ ] Trainable single/recurrent/feedforward cores and gradient/parity tests
-- [ ] Two-device evaluation, local-model subset, and evidence report
-- [ ] Review and save isolated experiment; no live promotion
+- [x] Frozen synthetic graph fixtures and independent verifier tests
+- [x] Trainable single/recurrent/feedforward cores and gradient/parity tests
+- [x] Two-device evaluation, local-model subset, and evidence report
+- [x] Review and save isolated experiment; no live promotion
 
 - [x] Shared workspace contract, implementation, and hermetic test
 - [x] Hermetic semantic cortex proposals and optional residual-HTTP adapter

@@ -1,0 +1,31 @@
+make: Entering directory '/home/marble/AI/CNET-worktrees/offline-controller-20260906/experiments/offline_controller'
+mkdir -p /tmp/cnet-controller-run-vcXCFq/build
+cc -std=c11 -O2 -g -Wall -Wextra -Werror -I../../include test_fixture.c fixture.c -o /tmp/cnet-controller-run-vcXCFq/build/test_fixture
+mkdir -p /tmp/cnet-controller-run-vcXCFq/build
+cc -std=c11 -O2 -g -Wall -Wextra -Werror -I../../include -DCONTROLLER_CPU_ONLY test_net.c net.c fixture.c -lm -o /tmp/cnet-controller-run-vcXCFq/build/test_net
+mkdir -p /tmp/cnet-controller-run-vcXCFq/build
+cc -std=c11 -O2 -g -Wall -Wextra -Werror -I../../include test_local.c fixture.c offline.c -o /tmp/cnet-controller-run-vcXCFq/build/test_local
+/tmp/cnet-controller-run-vcXCFq/build/test_fixture
+CONTROLLER_FIXTURE_PASS ties=1 incompatible=1 unreachable=1 invalid=1
+/tmp/cnet-controller-run-vcXCFq/build/test_net
+CONTROLLER_NET_PASS mode=0 gradient_max_abs=2.386933e-05 initial=1.989512 final=0.001684 frozen=1
+CONTROLLER_NET_PASS mode=1 gradient_max_abs=4.452467e-05 initial=1.947891 final=0.001463 frozen=1
+CONTROLLER_NET_PASS mode=2 gradient_max_abs=3.322971e-05 initial=1.808361 final=0.001502 frozen=1
+/tmp/cnet-controller-run-vcXCFq/build/test_local
+CONTROLLER_LOCAL_BOUNDARY_PASS malformed=7 inherited_socket_refused=1 unconnected_refused=1 network_denied=1
+mkdir -p /tmp/cnet-controller-run-vcXCFq/build
+hipcc -O2 -std=c++17 --offload-arch=gfx1201 -I../../include -c ../../src/cce/amdmath/cce_amdmath.cpp -o /tmp/cnet-controller-run-vcXCFq/build/amdmath.o
+hipcc -O2 --offload-arch=gfx1201 -I../../include -x c test_gpu.c net.c fixture.c offline.c -x none /tmp/cnet-controller-run-vcXCFq/build/amdmath.o -lm -o /tmp/cnet-controller-run-vcXCFq/build/test_gpu
+/tmp/cnet-controller-run-vcXCFq/build/test_gpu
+CONTROLLER_DEVICE index=0 name=AMD Radeon AI PRO R9700 (gfx1201)
+CONTROLLER_DEVICE index=1 name=AMD Radeon AI PRO R9700 (gfx1201)
+CONTROLLER_GPU_PARITY_PASS device=0 mode=0 max_abs=2.98023224e-08 network_denied=1
+CONTROLLER_GPU_PARITY_PASS device=0 mode=1 max_abs=4.47034836e-08 network_denied=1
+CONTROLLER_GPU_PARITY_PASS device=0 mode=2 max_abs=5.96046448e-08 network_denied=1
+CONTROLLER_GPU_PARITY_PASS device=1 mode=0 max_abs=2.98023224e-08 network_denied=1
+CONTROLLER_GPU_PARITY_PASS device=1 mode=1 max_abs=4.47034836e-08 network_denied=1
+CONTROLLER_GPU_PARITY_PASS device=1 mode=2 max_abs=5.96046448e-08 network_denied=1
+hipcc -O2 -Wall -Wextra -Werror --offload-arch=gfx1201 -I../../include -x c run.c net.c fixture.c offline.c -x none /tmp/cnet-controller-run-vcXCFq/build/amdmath.o -lm -o /tmp/cnet-controller-run-vcXCFq/build/controller
+mkdir -p /tmp/cnet-controller-run-vcXCFq/build
+cc -std=c11 -O2 -g -Wall -Wextra -Werror -I../../include local_baseline.c fixture.c offline.c -o /tmp/cnet-controller-run-vcXCFq/build/local_baseline
+make: Leaving directory '/home/marble/AI/CNET-worktrees/offline-controller-20260906/experiments/offline_controller'

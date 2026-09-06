@@ -1,5 +1,8 @@
 #ifndef CONTROLLER_FIXTURE_H
 #define CONTROLLER_FIXTURE_H
+#ifdef NDEBUG
+#error Experiment safety checks require assertions enabled.
+#endif
 #include <stdint.h>
 #define NODES 8
 #define INPUTS 144 /* adjacency + compatibility + current + goal */

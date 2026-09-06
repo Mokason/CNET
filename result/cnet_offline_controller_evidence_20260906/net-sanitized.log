@@ -1,0 +1,3 @@
+CONTROLLER_NET_PASS mode=0 gradient_max_abs=2.386933e-05 initial=1.989512 final=0.001684 frozen=1
+CONTROLLER_NET_PASS mode=1 gradient_max_abs=4.452467e-05 initial=1.947891 final=0.001463 frozen=1
+CONTROLLER_NET_PASS mode=2 gradient_max_abs=3.322971e-05 initial=1.808361 final=0.001502 frozen=1

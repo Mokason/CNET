@@ -4,9 +4,10 @@ CFLAGS := -std=c11 -O2 -g -Wall -Wextra -Werror -I$(ROOT)/include
 OUT ?= /tmp/cnet-controller-build
 HIPCC ?= hipcc
 .PHONY: test
-test: $(OUT)/test_fixture $(OUT)/test_net
+test: $(OUT)/test_fixture $(OUT)/test_net $(OUT)/test_local
 	$(OUT)/test_fixture
 	$(OUT)/test_net
+	$(OUT)/test_local
 $(OUT)/test_fixture: fixture.c fixture.h test_fixture.c
 	mkdir -p $(OUT)
 	$(CC) $(CFLAGS) test_fixture.c fixture.c -o $@
@@ -21,3 +22,15 @@ $(OUT)/test_gpu: test_gpu.c net.c fixture.c offline.c net.h offline.h $(OUT)/amd
 .PHONY: gpu-test
 gpu-test: $(OUT)/test_gpu
 	$(OUT)/test_gpu
+$(OUT)/controller: run.c net.c fixture.c offline.c net.h fixture.h offline.h $(OUT)/amdmath.o
+	$(HIPCC) -O2 -Wall -Wextra -Werror --offload-arch=gfx1201 -I$(ROOT)/include -x c run.c net.c fixture.c offline.c -x none $(OUT)/amdmath.o -lm -o $@
+.PHONY: build
+build: $(OUT)/controller
+$(OUT)/local_baseline: local_baseline.c fixture.c offline.c fixture.h offline.h $(ROOT)/include/cnet_json_internal.h
+	mkdir -p $(OUT)
+	$(CC) $(CFLAGS) local_baseline.c fixture.c offline.c -o $@
+.PHONY: local-build
+local-build: $(OUT)/local_baseline
+$(OUT)/test_local: test_local.c local_baseline.c offline.c fixture.c offline.h fixture.h $(ROOT)/include/cnet_json_internal.h
+	mkdir -p $(OUT)
+	$(CC) $(CFLAGS) test_local.c fixture.c offline.c -o $@
