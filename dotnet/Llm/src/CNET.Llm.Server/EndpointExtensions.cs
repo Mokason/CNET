@@ -14,6 +14,7 @@ public static class EndpointExtensions
     /// <param name="serveUi">When true, also serves the embedded web chat UI at <c>GET /</c>.</param>
     public static WebApplication MapCnetLlmEndpoints(this WebApplication app, bool serveUi = false)
     {
+        app.UseMiddleware<ServerSecurityMiddleware>();
         ChatCompletionEndpoint.Map(app);
         CompletionEndpoint.Map(app);
         ModelEndpoint.Map(app);

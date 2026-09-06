@@ -24,18 +24,30 @@ var options = new ServerOptions
     Warmup = WarmupOptions.Disabled,
 };
 
-Console.WriteLine($"Loading model: {modelPath}");
+// Validate owner security before opening any model or listener.
+ServerSecurityOptions security;
+try
+{
+    security = ServerSecurityOptions.FromEnvironment();
+    security.Validate();
+}
+catch (InvalidOperationException)
+{
+    Console.Error.WriteLine("Server security configuration is missing or invalid; see docs/SERVER.md.");
+    return 1;
+}
+
+Console.WriteLine("Loading configured model");
 var resolvedPath = ServerStartup.ResolveModelPath(options.Model, options.Quant)
     ?? modelPath;
 
-var state = ServerStartup.LoadModel(resolvedPath, options);
-var app = ServerStartup.BuildApp(state, args, serveUi: true);
+using var state = ServerStartup.LoadModel(resolvedPath, options);
+await using var app = ServerStartup.BuildApp(state, [], security: security);
 
 var url = $"http://{options.Host}:{options.Port}";
 Console.WriteLine($"Model: {state.Config!.Architecture}, {state.Config.NumLayers} layers");
 Console.WriteLine($"Server listening on {url}");
 Console.WriteLine("Endpoints: /v1/chat/completions, /v1/completions, /v1/models");
 
-app.Run(url);
-state.Dispose();
+await app.RunAsync();
 return 0;

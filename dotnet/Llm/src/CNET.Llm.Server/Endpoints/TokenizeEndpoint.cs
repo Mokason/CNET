@@ -15,6 +15,8 @@ public static class TokenizeEndpoint
                 return Results.StatusCode(503);
 
             int[] tokens = tokenizer.Encode(request.Text);
+            if (tokens.Length > 8192)
+                return Results.BadRequest(new ErrorResponse { Error = "token_limit_exceeded" });
             string[] tokenStrings = tokens.Select(t => tokenizer.DecodeToken(t)).ToArray();
             return Results.Ok(new TokenizeResponse
             {
@@ -29,6 +31,8 @@ public static class TokenizeEndpoint
             if (state.Tokenizer is not { } tokenizer)
                 return Results.StatusCode(503);
 
+            if (request.Tokens.Any(t => t < 0 || t >= tokenizer.VocabSize))
+                return Results.BadRequest(new ErrorResponse { Error = "invalid_token_id" });
             string text = tokenizer.Decode(request.Tokens);
             return Results.Ok(new DetokenizeResponse { Text = text });
         });

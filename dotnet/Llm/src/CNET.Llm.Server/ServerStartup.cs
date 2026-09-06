@@ -65,7 +65,7 @@ public static class ServerStartup
     /// </summary>
     public static ServerState LoadModel(string resolvedPath, ServerOptions options)
     {
-        Console.WriteLine($"[cnet-llm] Loading model from {resolvedPath}...");
+        Console.WriteLine("[cnet-llm] Loading configured model...");
         var gguf = GgufFile.Open(resolvedPath);
         var config = GgufModelConfigExtractor.Extract(gguf.Metadata);
         var tokenizer = GgufBpeTokenizerFactory.Load(gguf.Metadata);
@@ -219,25 +219,35 @@ public static class ServerStartup
     /// <param name="state">Populated server state with loaded model.</param>
     /// <param name="args">Raw command-line arguments for ASP.NET configuration.</param>
     /// <param name="serveUi">When true, also serves the embedded web chat UI.</param>
-    public static WebApplication BuildApp(ServerState state, string[] args, bool serveUi = false)
+    /// <param name="security">Owner policy; null loads the explicit server environment configuration.</param>
+    public static WebApplication BuildApp(ServerState state, string[] args, bool serveUi = false, ServerSecurityOptions? security = null)
     {
+        security ??= ServerSecurityOptions.FromEnvironment();
+        security.Validate();
+        if (!ServerSecurityOptions.IsLoopbackHost(state.Options.Host) || state.Options.Port is < 0 or > 65535)
+            throw new InvalidOperationException("The sample server requires a loopback bind and a valid port.");
         var builder = WebApplication.CreateSlimBuilder(args);
-        builder.Services.AddSingleton(state);
-
-        // Wire source-generated JSON context for AOT-compatible serialization
-        builder.Services.ConfigureHttpJsonOptions(options =>
-            options.SerializerOptions.TypeInfoResolverChain.Insert(0, ServerJsonContext.Default));
-
-        // CORS — permissive for development and Chat UI
-        builder.Services.AddCors(o => o.AddDefaultPolicy(p =>
-            p.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader()));
+        builder.Services.AddCnetLlm(state, security);
+        builder.WebHost.ConfigureKestrel(kestrel =>
+        {
+            // Ignore endpoint/URL environment overrides: this host supports only a local TLS proxy.
+            kestrel.Configure(new ConfigurationBuilder().Build());
+            var address = state.Options.Host.Equals("localhost", StringComparison.OrdinalIgnoreCase) ? System.Net.IPAddress.Loopback
+                : System.Net.IPAddress.Parse(state.Options.Host.Trim('[', ']'));
+            kestrel.Listen(address, state.Options.Port);
+            kestrel.Limits.MaxRequestBodySize = security.MaxBodyBytes;
+            kestrel.Limits.MaxRequestHeadersTotalSize = 8192;
+            kestrel.Limits.MaxRequestLineSize = 4096;
+            kestrel.Limits.MaxConcurrentConnections = 32;
+            kestrel.Limits.RequestHeadersTimeout = TimeSpan.FromSeconds(10);
+            kestrel.Limits.KeepAliveTimeout = TimeSpan.FromSeconds(15);
+            kestrel.AddServerHeader = false;
+        });
 
         // Keep only warning+ logging to avoid noisy request logs
         builder.Logging.SetMinimumLevel(LogLevel.Warning);
 
         var app = builder.Build();
-        app.UseDeveloperExceptionPage();
-        app.UseCors();
         app.MapCnetLlmEndpoints(serveUi);
 
         return app;
