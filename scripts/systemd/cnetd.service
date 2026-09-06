@@ -1,6 +1,6 @@
 [Unit]
 Description=CNET warm front-door daemon (UNIX socket)
-After=default.target
+After=network.target
 Documentation=file:///home/marble/AI/CNET/docs/CNETD.md
 
 [Service]

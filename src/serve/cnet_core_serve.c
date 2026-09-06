@@ -2,6 +2,8 @@
 #include "cnet_core_serve.h"
 
 #include <ctype.h>
+#include <errno.h>
+#include <math.h>
 #include <dirent.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -35,6 +37,7 @@ static int load_one_lut(const char *path, CnetServeBrick *br) {
     f = fopen(path, "r");
     if (!f) return -1;
     while (fgets(line, sizeof line, f)) {
+        if (!strchr(line, '\n') && !feof(f)) goto invalid;
         if (line[0] == '#' || line[0] == '\n') continue;
         if (strncmp(line, "tag=", 4) == 0) {
             char *p = line + 4;
@@ -49,18 +52,34 @@ static int load_one_lut(const char *path, CnetServeBrick *br) {
         } else if (strncmp(line, "lut=", 4) == 0) {
             char *p = line + 4;
             int i;
+            if (got_lut) goto invalid;
             for (i = 0; i < 16; ++i) {
-                while (*p == ' ' || *p == ',') p++;
-                br->lut[i] = (float)strtod(p, &p);
+                char *end;
+                double value;
+                while (*p == ' ' || *p == '\t') p++;
+                errno = 0;
+                value = strtod(p, &end);
+                if (end == p || errno || !isfinite(value) || value < 0 ||
+                    value > 15 || floor(value) != value) goto invalid;
+                br->lut[i] = (float)value;
+                p = end;
+                while (*p == ' ' || *p == '\t') p++;
+                if (i != 15) { if (*p++ != ',') goto invalid; }
             }
+            while (*p && isspace((unsigned char)*p)) p++;
+            if (*p) goto invalid;
             got_lut = 1;
         }
     }
+    if (ferror(f)) goto invalid;
     fclose(f);
     if (!got_lut || !br->tag[0]) return -1;
     if (!br->name[0]) copy_text(br->name, sizeof br->name, br->tag);
     br->live = 1;
     return 0;
+invalid:
+    fclose(f);
+    return -1;
 }
 
 int cnet_serve_save_lut(const char *dir, const char *tag, const char *name,
@@ -100,8 +119,19 @@ int cnet_serve_bank_load_dir(CnetServeBank *b, const char *dir) {
         n = strlen(e->d_name);
         if (n < 5 || strcmp(e->d_name + n - 4, ".lut") != 0) continue;
         snprintf(path, sizeof path, "%s/%s", dir, e->d_name);
-        if (load_one_lut(path, &br) != 0) continue;
-        if (b->n >= CNET_SERVE_MAX_BRICKS) break;
+        if (load_one_lut(path, &br) != 0) {
+            fprintf(stderr, "cnet_serve: rejected malformed table %s\n", path);
+            closedir(d);
+            cnet_serve_bank_init(b);
+            return -1;
+        }
+        if (b->n >= CNET_SERVE_MAX_BRICKS) {
+            fprintf(stderr,
+                    "cnet_serve: lut bank full max=%d skipped=%s (fail-loud)\n",
+                    CNET_SERVE_MAX_BRICKS, e->d_name);
+            closedir(d);
+            return -1;
+        }
         b->bricks[b->n++] = br;
     }
     closedir(d);
@@ -133,8 +163,7 @@ static int parse_turn(const char *turn, char *tag_out, size_t tag_cap,
         if (tag_out && tag_cap) copy_text(tag_out, tag_cap, tag);
     } else if (tag_out && tag_cap)
         tag_out[0] = 0;
-    while (*p && !isdigit((unsigned char)*p)) p++;
-    if (!*p) return -1;
+    if (!isdigit((unsigned char)*p)) return -1;
     while (isdigit((unsigned char)*p)) {
         saw = 1;
         v = v * 10u + (unsigned)(*p - '0');
@@ -142,8 +171,51 @@ static int parse_turn(const char *turn, char *tag_out, size_t tag_cap,
         p++;
     }
     if (!saw) return -1;
+    while (*p && isspace((unsigned char)*p)) p++;
+    if (*p) return -1;
     *out_x = v;
     return 0;
+}
+
+int cnet_serve_owns(const CnetServeBank *b, const char *turn) {
+    const char *p;
+    char tag[CNET_SERVE_TAG];
+    size_t ti = 0;
+    int i;
+    if (!b || !turn) return 0;
+    p = turn;
+    while (*p == ' ' || *p == '\t') p++;
+    if (!(isalpha((unsigned char)*p) || *p == '_')) return 0;
+    while (*p && *p != ' ' && *p != '\t' && ti + 1 < sizeof tag)
+        tag[ti++] = *p++;
+    tag[ti] = 0;
+    if (!tag[0]) return 0;
+    for (i = 0; i < b->n; ++i) {
+        if (!b->bricks[i].live) continue;
+        if (strcmp(b->bricks[i].tag, tag) == 0) return 1;
+    }
+    return 0;
+}
+
+int cnet_serve_compose_tags(CnetServeBank *b, const char *tag_a, const char *tag_b,
+                            const char *tag_out) {
+    int ia = -1, ib = -1, i;
+    float lut[16];
+    if (!b || !tag_a || !tag_b || !tag_out || !tag_out[0]) return -1;
+    for (i = 0; i < b->n; ++i) {
+        if (!b->bricks[i].live) continue;
+        if (strcmp(b->bricks[i].tag, tag_a) == 0) ia = i;
+        if (strcmp(b->bricks[i].tag, tag_b) == 0) ib = i;
+    }
+    if (ia < 0 || ib < 0) return -1;
+    for (i = 0; i < 16; ++i) {
+        unsigned ya = (unsigned)(b->bricks[ia].lut[i] + 0.5f) & 15u;
+        unsigned yb = (unsigned)(b->bricks[ib].lut[ya] + 0.5f) & 15u;
+        lut[i] = (float)yb;
+    }
+    if (cnet_serve_save_lut(b->dir[0] ? b->dir : ".", tag_out, "composed", lut) != 0)
+        return -2;
+    return cnet_serve_bank_reload(b);
 }
 
 int cnet_serve_result(CnetServeBank *b, const char *turn, CnetServeResult *out) {
@@ -173,8 +245,10 @@ int cnet_serve_result(CnetServeBank *b, const char *turn, CnetServeResult *out) 
            Gate: tests/test_core_serve_untagged.c */
         if (!tag[0] || strcmp(tag, br->tag) != 0) continue;
         y = (unsigned)(br->lut[x] + 0.5f) & 15u;
-        out->proved = 1;
-        out->claimed_cert = 1;
+        /* Plain LUT files carry no contract or coverage evidence. Their
+           calculated values are candidates, never certified responses. */
+        out->proved = 0;
+        out->claimed_cert = 0;
         out->in_nibble = x;
         out->out_nibble = y;
         snprintf(out->spoken, sizeof out->spoken, "%u", y);

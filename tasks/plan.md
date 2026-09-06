@@ -33,3 +33,12 @@ Source of truth: `plans/cognitive_runtime_integration_20260726.md`.
 
 Claude owns `tests/cce_train_bench.c` until a commit containing
 `CLASSIFICATION_LANE_HEALTHY` lands. This work must not modify or stage that file.
+
+## September 6 capsule lifecycle follow-up
+
+The completed integration plan above is preserved. The new operator-requested
+scope is recorded in `plans/cnet_capsule_hot_swap_20260906.md`: explicit live
+capsule working-set swaps, guarded upgrades, restart/rollback, and local-source
+codebase evidence. The operator requested increasing the small inventory cap
+given 96 GB RAM. Capacity verification is recorded separately in
+`plans/cnet_capsule_capacity_4096_20260906.md`; resident lifecycle remains pending.

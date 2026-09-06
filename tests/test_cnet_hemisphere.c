@@ -144,15 +144,13 @@ int main(void) {
     expect(r.source == CNET_HEMI_SRC_OOD_MATH, "ask_prefers_math");
     expect(strstr(r.spoken, "hemi-residual-pong") == NULL, "ask_not_residual_text");
 
-    /* --- leftover OPEN_CHAT answers are killed --- */
-    expect(cnet_core_ask("say a novel leftover phrase about zz99", &pol, &r) == 1,
-           "ask_residual_killed");
+    /* --- OPEN_CHAT residual draft allowed, never CERT --- */
+    expect(cnet_core_ask("say a novel leftover phrase about zz99", &pol, &r) == 0,
+           "ask_residual_open");
     expect(r.claimed_cert == 0, "ask_residual_no_cert");
-    expect(r.open_chat == 0, "ask_open_flag_off");
-    expect(strstr(r.spoken, "hemi-residual-pong") == NULL, "ask_no_open_text");
-    expect(strstr(r.refusal, "open_chat_answer_killed") != NULL ||
-               strstr(r.refusal, "logic_miss") != NULL || r.bound == 0,
-           "ask_killed_reason");
+    expect(r.open_chat == 1, "ask_open_flag_on");
+    expect(r.plane == CNET_CORE_PLANE_OPEN_CHAT, "ask_open_plane");
+    expect(strstr(r.spoken, "hemi-residual-pong") != NULL, "ask_open_text");
 
     /* --- residual_disabled blocks held even if hook present --- */
         pol.residual_enabled = 0;
@@ -185,13 +183,14 @@ int main(void) {
         expect(r.open_chat == 0, "logic_miss_no_open");
         expect(strstr(r.refusal, "logic_miss") != NULL, "logic_miss_reason");
 
-        /* --- creative leftover cannot answer; table path is core_bus --- */
-        expect(cnet_core_ask("write a short poem about zz99", &pol, &r) == 1,
-               "creative_no_answer");
+        /* --- creative OPEN_CHAT draft allowed; never CERT --- */
+        expect(cnet_core_ask("write a short poem about zz99", &pol, &r) == 0,
+               "creative_open_answer");
         expect(r.intent == CNET_CORE_INTENT_CREATIVE, "creative_intent");
         expect(r.claimed_cert == 0, "creative_no_cert");
-        expect(r.open_chat == 0, "creative_no_open_flag");
-        expect(strstr(r.spoken, "hemi-residual-pong") == NULL, "creative_no_draft");
+        expect(r.open_chat == 1, "creative_open_flag");
+        expect(r.plane == CNET_CORE_PLANE_OPEN_CHAT, "creative_open_plane");
+        expect(strstr(r.spoken, "hemi-residual-pong") != NULL, "creative_draft");
 
     reset_held();
     printf("CNET_HEMI_PASS\n");

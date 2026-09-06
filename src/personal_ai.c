@@ -8,6 +8,7 @@
 #include "../include/cnet_acct.h"
 #include "../include/cnet_seal_trust.h"
 #include "../include/cnet_distrust.h"
+#include "../include/cnet_checkpoint_internal.h"
 
 #include <limits.h>
 #include <stdio.h>
@@ -93,11 +94,13 @@ static size_t coverage_selfcheck(PersonalAi *ai, int load_failed) {
        claim a shape as already-mined forever and block it from ever being
        learned again. Nothing is mined yet at open, so every live record must
        correspond to a base unit. */
-    for (i = 0; i < ai->hybrid.coverage_count; i++) {
-        const char *nm = ai->hybrid.coverage[i].unit;
-        if (!ai->hybrid.coverage[i].active || !nm[0]) continue;
-        if (cnb_has_unit(&ai->lane.base, nm)) continue;
-        if (hybrid_coverage_forget_unit(&ai->hybrid, nm)) stale++;
+    for (i = 0; i < ai->hybrid.coverage_count;) {
+        char nm[sizeof ai->hybrid.coverage[i].unit];
+        snprintf(nm, sizeof nm, "%s", ai->hybrid.coverage[i].unit);
+        if (ai->hybrid.coverage[i].active && nm[0] &&
+            !cnb_has_unit(&ai->lane.base, nm) &&
+            hybrid_coverage_forget_unit(&ai->hybrid, nm)) { stale++; continue; }
+        i++;
     }
     if (stale > 0)
         fprintf(stderr,
@@ -124,10 +127,14 @@ static size_t coverage_selfcheck(PersonalAi *ai, int load_failed) {
                                                    btn.input_ports[0],
                                                    btn.output_ports[0],
                                                    btn.input_count);
+            if (bound) bound = checkpoint_rows_bind(&ai->hybrid, nm, &ct, btn.input_count);
             contract_free(&ct);
             btn_free(&btn);
         }
-        if (!bound) unguarded++;
+        if (!bound) {
+            hybrid_coverage_forget_unit(&ai->hybrid, nm);
+            unguarded++;
+        }
     }
     if (unguarded > 0 || load_failed) {
         hybrid_coverage_arm_fail_closed(&ai->hybrid, 1);
@@ -199,20 +206,63 @@ static void seal_trust_note_tier_a(const char *domain, int is_explore) {
  * Returns 1 if caller may claim Tier-A on *domain_io (rewritten to alt),
  * 0 if fall through to residual / B/C only.
  */
-static int distrust_on_tier_a_refuse(char *domain_io, size_t domain_cap,
-                                     int *explore_out) {
+static int distrust_on_tier_a_refuse(PersonalAi *ai, Port input_port,
+                                     Port goal_port, const double *input,
+                                     size_t in_len, double *output,
+                                     size_t out_cap, char *domain_io,
+                                     size_t domain_cap, int *explore_out) {
     CnetSealTrust *st = cnet_seal_trust_global();
     const char *alt;
     const char *jpath;
     CnetDistrustReroute rr;
+    PrimitiveRegistry alternate;
+    RoutePlan plan;
+    RegistryEntry *entry = NULL;
+    double *candidate;
+    size_t i;
     if (explore_out) *explore_out = 0;
+    if (!output || out_cap > SIZE_MAX / sizeof *output) return 0;
+    memset(output, 0, out_cap * sizeof *output);
     if (!st || !st->cfg.enabled || !domain_io) return 0;
     jpath = st->journal_path[0] ? st->journal_path : NULL;
     alt = getenv("CNET_DISTRUST_REROUTE_DOMAIN");
     if (alt && alt[0] && strcmp(alt, domain_io) != 0) {
+        /* A ledger name is not an executable. Resolve the exact admitted unit
+           and retain the ORIGINAL request's interface when planning it. */
+        for (i = 0; i < ai->lane.reg.count; ++i)
+            if (ai->lane.reg.entries[i].name &&
+                strcmp(ai->lane.reg.entries[i].name, alt) == 0) {
+                entry = &ai->lane.reg.entries[i];
+                break;
+            }
+        if (!entry || !entry->btn || !entry->certified ||
+            entry->state != PRIM_FROZEN || strlen(alt) >= domain_cap)
+            goto residual;
+        registry_init_production(&alternate);
+        alternate.entries = entry; /* borrowed view; never registry_free it */
+        alternate.count = alternate.capacity = 1;
+        registry_audit_certified(&alternate);
+        memset(&plan, 0, sizeof plan);
+        if (!entry->certified ||
+            route_plan(&alternate, input_port, goal_port, &plan) != 0 ||
+            plan.length != 1 || strcmp(plan.names[0], alt) != 0 ||
+            !hybrid_coverage_admits_unit(&ai->hybrid, alt, input, in_len) ||
+            ((hybrid_unit_is_mined(alt) || hybrid_coverage_has_unit(&ai->hybrid, alt)) &&
+             !hybrid_coverage_admits_exact(&ai->hybrid, alt, input_port,
+                                           goal_port, input, in_len)))
+            goto residual;
         rr = cnet_distrust_reroute(st, domain_io, alt, 0, jpath);
         if (rr == CNET_DISTRUST_REROUTE_ALLOW ||
             rr == CNET_DISTRUST_REROUTE_EXPLORE) {
+            candidate = calloc(out_cap, sizeof *candidate);
+            if (!candidate) goto residual;
+            plan.strict = 1;
+            if (route_execute(&plan, input, in_len, candidate, out_cap) != 0) {
+                free(candidate);
+                goto residual;
+            }
+            memcpy(output, candidate, out_cap * sizeof *output);
+            free(candidate);
             if (domain_cap) {
                 snprintf(domain_io, domain_cap, "%.*s", (int)(domain_cap - 1),
                          alt);
@@ -223,6 +273,7 @@ static int distrust_on_tier_a_refuse(char *domain_io, size_t domain_cap,
         }
         /* BLOCKED or ERROR — do not claim handled via cold target */
     }
+residual:
     /* Explicit Tier-C residual path (uncertified by law). */
     (void)cnet_distrust_reroute(st, domain_io, "tier_c_residual", 1, jpath);
     return 0;
@@ -640,7 +691,9 @@ int personal_ai_serve(PersonalAi *ai, Port input_port, Port goal_port,
             snprintf(st_dom, sizeof st_dom, "%.63s", raw);
             if (!seal_trust_tier_a_open(st_dom, &st_explore)) {
                 /* Distrust: optional certified reroute, else residual fallthrough */
-                if (distrust_on_tier_a_refuse(st_dom, sizeof st_dom,
+                if (distrust_on_tier_a_refuse(ai, input_port, goal_port,
+                                              input, in_len, output, out_cap,
+                                              st_dom, sizeof st_dom,
                                               &st_explore)) {
                     seal_trust_note_tier_a(st_dom, st_explore);
                     if (st_explore) {
@@ -722,7 +775,9 @@ int personal_ai_serve(PersonalAi *ai, Port input_port, Port goal_port,
                 int st_explore = 0;
                 seal_trust_domain_key(st_dom, sizeof st_dom, goal_port, &plan);
                 if (!seal_trust_tier_a_open(st_dom, &st_explore)) {
-                    if (distrust_on_tier_a_refuse(st_dom, sizeof st_dom,
+                    if (distrust_on_tier_a_refuse(ai, input_port, goal_port,
+                                                  input, in_len, output, out_cap,
+                                                  st_dom, sizeof st_dom,
                                                   &st_explore)) {
                         seal_trust_note_tier_a(st_dom, st_explore);
                         if (st_explore) {

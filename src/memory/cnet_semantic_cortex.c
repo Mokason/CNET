@@ -5,9 +5,70 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 
 #define CNET_SEMANTIC_MAX_PROPOSALS 8u
 #define CNET_SEMANTIC_TOKEN_MAX 96u
+
+int cnet_semantic_capsule_intent(const char *query, char *typed, size_t cap) {
+    if (!typed || !cap) return -1;
+    typed[0] = 0;
+    if (!query) return -1;
+    while (isspace((unsigned char)*query)) query++;
+    char first[32] = "", second[32] = "", third[32] = "";
+    (void)sscanf(query, "%31s %31s %31s", first, second, third);
+    if (!strcasecmp(first, "please")) {
+        if (strcasecmp(second, "convert")) return 0;
+        query += strlen(first);
+        while (isspace((unsigned char)*query)) query++;
+        (void)sscanf(query, "%31s %31s %31s", first, second, third);
+    }
+    int bare = (isdigit((unsigned char)first[0]) || first[0] == '-' || first[0] == '+') && !strcasecmp(third, "in");
+    int what = !strcasecmp(first, "what") && !strcasecmp(second, "is") &&
+        (isdigit((unsigned char)third[0]) || third[0] == '-' || third[0] == '+');
+    if (strcasecmp(first, "convert") &&
+        (strcasecmp(first, "how") || strcasecmp(second, "many")) && !bare && !what) return 0;
+    char buf[512], token[8][32]; size_t n = 0, len = strlen(query);
+    if (len >= sizeof buf) return -1;
+    memcpy(buf, query, len + 1);
+    while (len && isspace((unsigned char)buf[len - 1])) buf[--len] = 0;
+    if (len && buf[len - 1] == '?') buf[--len] = 0;
+    char *save = NULL;
+    for (char *p = strtok_r(buf, " \t\r\n\v\f", &save); p; p = strtok_r(NULL, " \t\r\n\v\f", &save)) {
+        if (n == 8 || strlen(p) >= sizeof token[0]) return -1;
+        strcpy(token[n++], p);
+    }
+    if (!n) return 0;
+    for (char *p = token[0]; *p; p++) *p = (char)tolower((unsigned char)*p);
+    const char *input, *output, *value;
+    if (!strcmp(token[0], "convert")) {
+        if (n != 5 || (strcasecmp(token[3], "to") && strcasecmp(token[3], "into"))) return -1;
+        value = token[1]; input = token[2]; output = token[4];
+    } else if (!strcmp(token[0], "how") && n > 1 && !strcasecmp(token[1], "many")) {
+        if (n == 6 && !strcasecmp(token[3], "in")) {
+            output = token[2]; value = token[4]; input = token[5];
+        } else if (n == 7 && !strcasecmp(token[3], "are") && !strcasecmp(token[4], "in")) {
+            output = token[2]; value = token[5]; input = token[6];
+        } else return -1;
+    } else if (what) {
+        if (n != 6 || strcasecmp(token[4], "in")) return -1;
+        value = token[2]; input = token[3]; output = token[5];
+    } else if (bare) {
+        if (n != 4) return -1;
+        value = token[0]; input = token[1]; output = token[3];
+    } else return 0;
+    unsigned v = 0;
+    for (const char *p = value; *p; p++) {
+        if (!isdigit((unsigned char)*p)) return -1;
+        v = v * 10 + (unsigned)(*p - '0'); if (v > 65535) return -1;
+    }
+    const char *tags[] = {input, output};
+    for (size_t i = 0; i < 2; i++) for (const char *p = tags[i]; *p; p++)
+        if (!isalnum((unsigned char)*p) && *p != '_') return -1;
+    int written = snprintf(typed, cap, "capsule %s %s %u", input, output, v);
+    if (written < 0 || (size_t)written >= cap) { typed[0] = 0; return -1; }
+    return 1;
+}
 
 static void semantic_copy(char *dst, size_t dst_size, const char *src) {
     size_t n;

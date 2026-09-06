@@ -92,6 +92,15 @@ lora_n=0
 faults_n=0
 
 # --- 1) Bonsai server ---
+if [[ -n ${CNET_CAPSULE_QUEUE:-} && -n ${CNET_CAPSULES_DIR:-} ]]; then
+  capsule_tick=cnet_capsule_curriculum_tick.sh
+  if [[ -n ${CNET_CAPSULE_DEMAND_DIR:-} && -n ${CNET_CAPSULE_TOOL_POLICY:-} ]]; then
+    capsule_tick=cnet_capsule_acquire_tick.sh
+  fi
+  if ! bash "$REPO/scripts/$capsule_tick" >> "$RUNLOG" 2>&1; then
+    log "capsule curriculum refused a job; see bounded evaluation receipt"
+  fi
+fi
 if systemctl --user is-active --quiet bonsai-server.service; then
   bonsai_ok=1
 else
@@ -148,7 +157,8 @@ fi
 
 # --- 4) PEFT / JTC cert tick (bounded) ---
 if [[ -x bin/cnet_cert_learn_tick ]] && [[ "$bonsai_ok" -eq 1 ]]; then
-  if timeout 600 ./bin/cnet_cert_learn_tick >>"$RUNLOG" 2>&1; then
+  if bash "$REPO/scripts/cnet_with_lane_paused.sh" "$BASE" \
+      flock -n "$BASE.writer.lock" timeout 600 ./bin/cnet_cert_learn_tick >>"$RUNLOG" 2>&1; then
     cert_ok=1
   else
     log "cert_learn_tick failed or timed out"
@@ -157,7 +167,8 @@ fi
 
 # --- 5) Structure-mine persist every 2h of wall clock (not "3x in even hours") ---
 if due structure_mine 2 && [[ -x bin/struct_mine_persist ]] && [[ "$bonsai_ok" -eq 1 ]]; then
-  if timeout 900 ./bin/struct_mine_persist >>"$RUNLOG" 2>&1; then
+  if bash "$REPO/scripts/cnet_with_lane_paused.sh" "$BASE" \
+      timeout 900 ./bin/struct_mine_persist >>"$RUNLOG" 2>&1; then
     mine_ok=1
     stamp structure_mine
   else

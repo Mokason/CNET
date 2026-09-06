@@ -76,6 +76,7 @@ typedef struct {
     int reader_cce_gguf;
     int certified; /* always 0: this door does not auto-CERT */
     char domain[32];
+    char host_tensor[96]; /* resolved GGUF tensor; empty if unused */
     size_t combos;
     size_t residual_speak;
     size_t gguf_reads;

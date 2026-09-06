@@ -31,9 +31,6 @@ how is cnet marble	cnet-marble status
 
 check systemctl user	systemctl --user
 user systemd status	systemctl --user
-hello there	who are you
-good morning	who are you
-good evening	who are you
 how exactly are you interactiong with roe-asi	how do you answer without teacher
 how exactly are you interacting with roe-asi	how do you answer without teacher
 days of past week	days of the week

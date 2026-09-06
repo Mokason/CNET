@@ -12,7 +12,7 @@
     "Makefile",
     "include/cnet_heldout.h",
     "src/cnet_heldout.c",
-    "src/cnet_semantic_cortex.c",
+    "src/memory/cnet_semantic_cortex.c",
     "include/cnet_semantic_cortex.h",
     "tests/test_cnet_semantic_cortex.c"
   ],

@@ -17,16 +17,18 @@ base semantic grounding → typed intent → CNET isolated knowledge registry
 Gate: `make knowledge_accumulation_bench`. Decision + evidence:
 `plans/cnet_portable_knowledge_benchmark_20260727.md`.
 
-**Current HEAD focus (2026-08-12, HEAD=0ea3339):** ROE agent loop (chain-of-thought
-in C, `explore_tick`, CERT domain routing) + CCE streaming (KV stream index,
-STM/LTM bridge, `stream_ix` pre-attention mask) + serving (`cnetd` UNIX-socket
-daemon, `cnet-web` cockpit) + packs (`pack_speech_io`, `pack_english_basic`).
+**Current committed HEAD (2026-08-19, HEAD=2d298ca):** distrust rerouting in the
+serve path, `libcce` as the shared link product, tiered verification, and build /
+release integrity. **Current working-tree maintenance (2026-09-03):** fail-closed
+core-bus addressing, content-identified CNB reloads, bounded `cnetd` and MCP
+socket protocols, argv-based document tools, and build-graph cleanup. These are
+separate statements: working-tree changes are not attributed to committed HEAD.
 
 Start here. Every claim below must name a gate; if the gate is missing, the
 claim is stale.
 
-> **This index is incomplete: it links 19 of the 49 files in `docs/`.** Treat an
-> absent entry as "not indexed", not as "does not exist" — the previous header
+> **This index is intentionally selective.** Treat an absent entry as "not
+> indexed", not as "does not exist" — the previous header
 > sat at a 2026-07-21 focus for three weeks across 40 commits, which is exactly
 > the failure mode this file is supposed to prevent. Before trusting a
 > "current" claim here, check it against `git log`.

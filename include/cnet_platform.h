@@ -156,6 +156,21 @@ static inline int cnet_fsync(int fd) {
 #endif
 }
 
+/* Exclusive private sibling temporary file. Never reuse another writer's
+ * in-flight pathname or follow a planted symlink. */
+static inline int cnet_mkstemp(char *tmpl) {
+#if CNET_PLATFORM_WINDOWS
+    if (!tmpl || _mktemp_s(tmpl, strlen(tmpl) + 1) != 0) return -1;
+    return _open(tmpl, _O_CREAT | _O_EXCL | _O_RDWR | _O_BINARY | _O_NOINHERIT, 0600);
+#else
+    int fd = mkstemp(tmpl);
+    if (fd >= 0 && fcntl(fd, F_SETFD, FD_CLOEXEC) < 0) {
+        close(fd); unlink(tmpl); return -1;
+    }
+    return fd;
+#endif
+}
+
 /* mkdtemp(3): rewrite the trailing XXXXXX of `tmpl` in place and create that
  * directory, returning `tmpl` or NULL. Windows has no mkdtemp; _mktemp_s only
  * picks the name, so the directory still has to be created explicitly. Note

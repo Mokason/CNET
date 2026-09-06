@@ -1,0 +1,4 @@
+CAPSULE_HISTORY_PASS label_obligations=2
+CAPSULE_HISTORY_PASS label_obligations=4
+CAPSULE_TEACH_PASS unit=recover rows=2 source=verified_tool digest=7843938111825796823 scope=exhaustive margin=0.500000 reused=1 method=finite_domain_compile
+CAPSULE_PUBLISH_RECOVERY_PASS failures=0 artifacts=/tmp/cnet-publish-recovery-OBwhzj

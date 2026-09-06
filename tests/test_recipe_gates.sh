@@ -199,13 +199,19 @@ if [ -z "$(printf '%s' "$HEADLINE_GATES" | tr -d '[:space:]')" ]; then
     exit 1
 fi
 
-phony_lines=$(grep '^\.PHONY:' "$MAKEFILE")
+# Modular targets are declarations too. Synthetic selftest Makefiles remain
+# isolated; the real root includes its checked-in make fragments.
+set -- "$MAKEFILE"
+if [ "$MAKEFILE" = Makefile ]; then
+    for fragment in mk/*.mk; do set -- "$@" "$fragment"; done
+fi
+phony_lines=$(grep -h '^\.PHONY:' "$@")
 missing_phony=""
 missing_count=0
 for gate in $HEADLINE_GATES; do
     # The target must exist at all -- a renamed gate silently passing this
     # check would be worse than a red one.
-    if ! grep -qE "^${gate}:" "$MAKEFILE"; then
+    if ! grep -qE "^${gate}:" "$@"; then
         missing_phony="${missing_phony}  MISSING TARGET: ${gate}\n"
         missing_count=$((missing_count + 1))
         continue

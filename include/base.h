@@ -104,6 +104,9 @@ void cnb_free(CnetBase *b);
    parsing, parses into a temp base and swaps on full success; missing or
    malformed/tampered file -> -1 with *b untouched. */
 int cnb_save(const CnetBase *b, const char *path);
+/* Sync the directory containing path after atomic publication. POSIX only;
+ * Windows retains the existing write-through replacement semantics. */
+int cnb_sync_parent(const char *path);
 CNET_API int cnb_load(CnetBase *b, const char *path);
 
 /* Add a unit (serialized via unit_save_mem). Mints every non-empty port tag

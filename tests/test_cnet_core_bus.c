@@ -2,6 +2,7 @@
  * make cnet_core_bus → CNET_CORE_BUS_PASS
  */
 #include "cnet_core_bus.h"
+#include "cnet_core_serve.h"
 #include "cnet_dc_invent.h"
 #include "cnet_hemisphere.h"
 #include "cnet_held_model.h"
@@ -129,6 +130,161 @@ int main(void) {
               "propose ≠ admit");
     }
 
+    /* 27B PQ2_0: fused attn_qkv, type 142. Raw mmap bits → LUT → student.
+     * Teacher unbound. Not a mouth. Brick 2 must be a *different* tensor
+     * (attn_k → blk.1.attn_qkv), not a silent reuse of blk.0. */
+    {
+        const char *t27 =
+            "/home/marble/AI/Models/Ternary-Bonsai-27B-gguf/"
+            "Ternary-Bonsai-27B-PQ2_0.gguf";
+        char path_c[128], path_d[128], lutdir[128];
+        CnetWeightConvertReport r27, r27b;
+        CnetServeBank bank;
+        CnetServeResult sr;
+        snprintf(path_c, sizeof path_c, "%s/q1_add16_27b_qkv.gguf", dir);
+        snprintf(path_d, sizeof path_d, "%s/q1_xor16_27b_qkv.gguf", dir);
+        snprintf(lutdir, sizeof lutdir, "%s/lut27", dir);
+        unlink(path_c);
+        unlink(path_d);
+        mkdir(lutdir, 0755);
+        check(access(t27, R_OK) == 0, "27B PQ2_0.gguf present");
+        memset(&r27, 0, sizeof r27);
+        check(cnet_core_bus_make_brick(&bus, t27, "blk.0.attn_q.weight", path_c,
+                                       "brick_27b_qkv", "q1_27add", 0,
+                                       &r27) == 0,
+              "27B PQ2_0 LEASE→TABLE→CERTIFY→park (qkv fallback)");
+        check(r27.spec_rate + 1e-12 >= 0.95 && r27.teacher_unbound == 1,
+              "27B spec≥0.95 teacher gone");
+        check(strstr(r27.host_tensor, "attn_qkv") != NULL,
+              "27B add resolved fused attn_qkv");
+        check(prove_all(&bus, "q1_27add"), "27B RESULT×16 without LLM");
+        memset(&r27b, 0, sizeof r27b);
+        check(cnet_core_bus_make_brick(&bus, t27, "blk.0.attn_k.weight", path_d,
+                                       "brick_27b_k", "q1_27xor", 1,
+                                       &r27b) == 0,
+              "27B xor brick from attn_k fallback");
+        check(r27b.spec_rate + 1e-12 >= 0.95 && r27b.teacher_unbound == 1,
+              "27B xor spec≥0.95 teacher gone");
+        check(strstr(r27b.host_tensor, "blk.1.attn_qkv") != NULL,
+              "27B xor uses blk.1 qkv not blk.0");
+        check(strcmp(r27.host_tensor, r27b.host_tensor) != 0,
+              "27B add and xor are different tensors");
+        check(prove_all(&bus, "q1_27xor"), "27B xor RESULT×16 without LLM");
+        check(cnet_serve_save_lut(lutdir, "q1_27add", "brick_27b_qkv",
+                                  bus.bricks[bus.n_bricks - 2].lut_table) == 0 &&
+                  cnet_serve_save_lut(lutdir, "q1_27xor", "brick_27b_k",
+                                      bus.bricks[bus.n_bricks - 1].lut_table) == 0,
+              "27B export .lut hashtable");
+        check(cnet_serve_bank_load_dir(&bank, lutdir) == 0 && bank.n >= 2,
+              "light serve bank loads 27B luts");
+        check(cnet_serve_result(&bank, "q1_27add 3", &sr) == 0 && sr.proved,
+              "27B lut RESULT without GGUF/LLM");
+        check(cnet_serve_owns(&bank, "q1_27add 99") == 1,
+              "invalid nibble still owned by brick tag");
+        check(cnet_serve_result(&bank, "q1_27add 99", &sr) != 0 || sr.abstained,
+              "invalid nibble abstains (not a leftover mouth)");
+        {
+            char path_e[128], path_f[128];
+            CnetWeightConvertReport r27c, r27d;
+            snprintf(path_e, sizeof path_e, "%s/q1_27b2.gguf", dir);
+            snprintf(path_f, sizeof path_f, "%s/q1_27ffn.gguf", dir);
+            unlink(path_e);
+            unlink(path_f);
+            memset(&r27c, 0, sizeof r27c);
+            check(cnet_core_bus_make_brick(&bus, t27, "blk.2.attn_q.weight",
+                                           path_e, "brick_27b_l2", "q1_27b2", 0,
+                                           &r27c) == 0,
+                  "27B blk.2 qkv brick");
+            check(strstr(r27c.host_tensor, "blk.2.attn_qkv") != NULL &&
+                      r27c.teacher_unbound == 1,
+                  "27B blk.2 tensor + teacher gone");
+            memset(&r27d, 0, sizeof r27d);
+            check(cnet_core_bus_make_brick(&bus, t27, "blk.0.ffn_down.weight",
+                                           path_f, "brick_27b_ffn", "q1_27ffn",
+                                           1, &r27d) == 0,
+                  "27B ffn_down brick");
+            check(strstr(r27d.host_tensor, "ffn_down") != NULL &&
+                      r27d.teacher_unbound == 1,
+                  "27B ffn tensor + teacher gone");
+            check(prove_all(&bus, "q1_27b2") && prove_all(&bus, "q1_27ffn"),
+                  "27B extra bricks RESULT without LLM");
+            (void)cnet_serve_save_lut(lutdir, "q1_27b2", "brick_27b_l2",
+                                      bus.bricks[bus.n_bricks - 2].lut_table);
+            (void)cnet_serve_save_lut(lutdir, "q1_27ffn", "brick_27b_ffn",
+                                      bus.bricks[bus.n_bricks - 1].lut_table);
+            unlink(path_e);
+            unlink(path_f);
+            {
+                char path_g[128];
+                CnetWeightConvertReport r27e;
+                snprintf(path_g, sizeof path_g, "%s/q1_27b3.gguf", dir);
+                unlink(path_g);
+                memset(&r27e, 0, sizeof r27e);
+                check(cnet_core_bus_make_brick(&bus, t27, "blk.4.attn_q.weight",
+                                               path_g, "brick_27b_l3", "q1_27b3",
+                                               0, &r27e) == 0,
+                      "27B blk.4 qkv brick N+1");
+                check(strstr(r27e.host_tensor, "blk.4.attn_qkv") != NULL &&
+                          r27e.teacher_unbound == 1,
+                      "27B blk.4 tensor + teacher gone");
+                check(prove_all(&bus, "q1_27b3"),
+                      "27B blk.4 RESULT×16 without LLM");
+                check(prove_all(&bus, "q1_27add") && prove_all(&bus, "q1_27b2"),
+                      "prior 27B bricks still serve after N+1");
+                (void)cnet_serve_save_lut(lutdir, "q1_27b3", "brick_27b_l3",
+                                          bus.bricks[bus.n_bricks - 1].lut_table);
+                check(cnet_serve_bank_load_dir(&bank, lutdir) == 0 &&
+                          cnet_serve_result(&bank, "q1_27b3 3", &sr) == 0 &&
+                          sr.proved,
+                      "27B b3 lut RESULT without GGUF/LLM");
+                unlink(path_g);
+            }
+            {
+                char path_h[128];
+                CnetWeightConvertReport r27f;
+                snprintf(path_h, sizeof path_h, "%s/q1_27b5.gguf", dir);
+                unlink(path_h);
+                memset(&r27f, 0, sizeof r27f);
+                check(cnet_core_bus_make_brick(&bus, t27, "blk.5.attn_q.weight",
+                                               path_h, "brick_27b_l5", "q1_27b5",
+                                               0, &r27f) == 0,
+                      "27B blk.5 qkv brick N+1");
+                check(strstr(r27f.host_tensor, "blk.5.attn_qkv") != NULL &&
+                          r27f.teacher_unbound == 1,
+                      "27B blk.5 tensor + teacher gone");
+                check(prove_all(&bus, "q1_27b5"),
+                      "27B blk.5 RESULT×16 without LLM");
+                (void)cnet_serve_save_lut(lutdir, "q1_27b5", "brick_27b_l5",
+                                          bus.bricks[bus.n_bricks - 1].lut_table);
+                check(cnet_serve_bank_load_dir(&bank, lutdir) == 0 &&
+                          cnet_serve_result(&bank, "q1_27b5 3", &sr) == 0 &&
+                          sr.proved,
+                      "27B b5 lut RESULT without GGUF/LLM");
+                unlink(path_h);
+            }
+            {
+                char path_s[128];
+                CnetWeightConvertReport r27s;
+                snprintf(path_s, sizeof path_s, "%s/q1_27s3.gguf", dir);
+                unlink(path_s);
+                memset(&r27s, 0, sizeof r27s);
+                check(cnet_core_bus_make_brick(&bus, t27, "blk.3.attn_q.weight",
+                                               path_s, "brick_27b_s3", "q1_27s3",
+                                               0, &r27s) == 0,
+                      "27B SSM split blk.3.attn_q brick");
+                check(strstr(r27s.host_tensor, "blk.3.attn_q") != NULL &&
+                          strstr(r27s.host_tensor, "qkv") == NULL &&
+                          r27s.teacher_unbound == 1,
+                      "27B SSM split is attn_q not stolen qkv");
+                (void)cnet_serve_save_lut(lutdir, "q1_27s3", "brick_27b_s3",
+                                          bus.bricks[bus.n_bricks - 1].lut_table);
+                unlink(path_s);
+            }
+        }
+        unlink(path_c);
+        unlink(path_d);
+    }
+
     cnet_core_bus_free(&bus);
     cnet_held_model_set_hook(NULL);
     unlink(path_a);
@@ -137,7 +293,7 @@ int main(void) {
 
     printf("CNET_CORE_BUS_PASS checks=%d fails=%d\n", checks, failures);
     printf("verbs=lease,table,certify,result open_chat_answer=0 residual_auto_cert=0 "
-           "bonsai_q1_brick=1 brick2=1 teacher_gone=1 outside_table_abstain=1 "
+           "bonsai_q1_brick=1 brick2=1 pq2_27b_brick=1 pq2_27b_brick2=1 pq2_27b_more=1 pq2_27b_b3=1 pq2_27b_b5=1 teacher_gone=1 outside_table_abstain=1 "
            "misslog_egraph_propose=1 python=0 broader_claims=WITHHELD\n");
     return failures ? 1 : 0;
 }

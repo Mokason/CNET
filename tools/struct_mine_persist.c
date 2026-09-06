@@ -1,118 +1,68 @@
-/* Persist residual structure-mine into live CNB (registry + base). */
+/* Offline residual structure mining. Never reconstruct labels after mining. */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <fcntl.h>
+#include <sys/file.h>
+#include <unistd.h>
+#include "personal_ai.h"
+#include "residual_http.h"
 
-#include "../include/personal_ai.h"
-#include "../include/residual_http.h"
-#include "../include/gap_lane.h"
-#include "../include/base.h"
-#include "../include/contract/contract.h"
-#include "../include/nn.h"
+static int persist_student(PersonalAi *ai, BinaryTransformNetwork *stu, const char *owner) {
+    char coverage[600];
+    CnbMark mark;
+    cnb_mark(&ai->lane.base, &mark);
+    if (hybrid_seal_mined_unit_owned(&ai->hybrid, &ai->lane.base, stu, owner, NULL)) return -1;
+    snprintf(coverage, sizeof coverage, "%s.coverage", ai->lane.base_path);
+    /* Guard before base: failure must never publish an unguarded unit.
+     * Extra guard records after a failed checkpoint confer no authority. */
+    if (hybrid_coverage_save(&ai->hybrid, coverage)) {
+        (void)cnb_rollback(&ai->lane.base, &mark);
+        return -1;
+    }
+    return gap_lane_checkpoint(&ai->lane);
+}
 
 int main(void) {
-    PersonalAi ai;
-    PersonalAiPolicy pol;
-    char led[512], inb[512];
+    PersonalAi ai; PersonalAiPolicy pol;
+    char ledger[512], inbox[512], lock[600];
     const char *base = getenv("CNET_BASE_PATH");
-    ResidualHttp *rh;
-    size_t W, n_rows = 32, r, j;
-    double *in, *out, *inputs, *targets;
-    Port pin, pout;
-    int i, s = 0, rc, reused = 0, cprc = -1;
-    BinaryTransformNetwork *stu = NULL;
-    size_t before, after_cnb;
-    Contract contract;
-
-    if (!base) base = "soul_gemma4v2_final.cnb";
+    if (!base || !base[0]) { puts("STRUCT_MINE_PERSIST_REFUSED explicit_base_required"); return 2; }
+    if (snprintf(ledger, sizeof ledger, "%s.gaps.txt", base) >= (int)sizeof ledger ||
+        snprintf(inbox, sizeof inbox, "%s.inbox", base) >= (int)sizeof inbox) return 2;
+    snprintf(lock, sizeof lock, "%s.writer.lock", base);
+    int fd = open(lock, O_CREAT | O_RDWR | O_NOFOLLOW | O_CLOEXEC, 0600);
+    if (fd < 0 || flock(fd, LOCK_EX | LOCK_NB)) {
+        if (fd >= 0) close(fd);
+        puts("STRUCT_MINE_PERSIST_REFUSED writer_busy"); return 3;
+    }
     setenv("CNET_STRUCTURE_EXPAND_N", "32", 0);
-    personal_ai_policy_defaults(&pol);
-    pol.structure_min_hits = 2;
-    snprintf(led, sizeof led, "%s.gaps.txt", base);
-    snprintf(inb, sizeof inb, "%s.inbox", base);
-    if (personal_ai_open(&ai, base, led, inb, &pol) != 0) {
-        puts("open fail");
-        return 2;
+    personal_ai_policy_defaults(&pol); pol.structure_min_hits = 2;
+    if (personal_ai_open(&ai, base, ledger, inbox, &pol)) { close(fd); return 2; }
+    int rc = 1;
+    ResidualHttp *rh = ai.owned_residual_http;
+    double *in = NULL, *out = NULL;
+    if (!rh || !ai.hybrid.residual.bound) goto done;
+    size_t width = (size_t)residual_http_window_n(rh);
+    if (!width) goto done;
+    in = calloc(width, sizeof *in); out = calloc(width, sizeof *out);
+    if (!in || !out) goto done;
+    for (size_t i = 0; i < 6 && i < width; i++) {
+        memset(in, 0, width * sizeof *in); in[i] = 1;
+        if (hybrid_try_residual(&ai.hybrid, residual_http_input_port(rh),
+            residual_http_output_port(rh), in, width, out, width)) goto done;
     }
-    rh = ai.owned_residual_http;
-    if (!rh || !ai.hybrid.residual.bound) {
-        puts("no residual");
-        personal_ai_close(&ai);
-        return 3;
-    }
-    W = (size_t)residual_http_window_n(rh);
-    if (n_rows > W) n_rows = W;
-    in = calloc(W, sizeof(double));
-    out = calloc(W, sizeof(double));
-    inputs = calloc(n_rows * W, sizeof(double));
-    targets = calloc(n_rows * W, sizeof(double));
-    pin = residual_http_input_port(rh);
-    pout = residual_http_output_port(rh);
-    before = ai.lane.reg.count;
-    after_cnb = ai.lane.base.unit_count;
-
-    for (i = 0; i < 6; i++) {
-        for (j = 0; j < W; j++) in[j] = 0.0;
-        in[(size_t)(i % 6)] = 1.0;
-        if (hybrid_try_residual(&ai.hybrid, pin, pout, in, W, out, W) == 0)
-            s++;
-    }
-    rc = hybrid_structure_mine(&ai.hybrid, &ai.lane.reg, 2, &stu);
-    printf("serves=%d mine_rc=%d reg %zu->%zu student=%s traces=%zu\n", s, rc,
-           before, ai.lane.reg.count, stu ? "yes" : "no",
-           ai.hybrid.trace_count);
-
-    if (rc == 0 && stu) {
-        /* Build exemplar table for CNB seal (spread slots). */
-        for (r = 0; r < n_rows; r++) {
-            size_t slot = (r * W) / n_rows;
-            for (j = 0; j < W; j++)
-                inputs[r * W + j] = (j == slot) ? 1.0 : 0.0;
-            if (residual_http_oracle(inputs + r * W, targets + r * W, rh) != 0)
-                memcpy(targets + r * W, out, W * sizeof(double));
-        }
-        memset(&contract, 0, sizeof contract);
-        if (contract_init_borrowed(&contract, "hyb_struct_bonsai",
-                                   stu, inputs, targets, n_rows) == 0) {
-            if (btn_certify(stu, &contract, NULL) == 0) {
-                if (cnb_add_unit(&ai.lane.base, stu, &contract, &reused) == 0)
-                    printf("cnb_add_unit ok reused=%d base_units=%zu\n", reused,
-                           ai.lane.base.unit_count);
-                else
-                    printf("cnb_add_unit fail\n");
-            } else
-                printf("btn_certify fail\n");
-            contract_free(&contract);
-        } else
-            printf("contract_init fail\n");
-        /* student owned by registry admit — do not free */
-        (void)stu;
-        cprc = gap_lane_checkpoint(&ai.lane);
-        printf("checkpoint_rc=%d base_units=%zu\n", cprc,
-               ai.lane.base.unit_count);
-    }
-
-    free(in);
-    free(out);
-    free(inputs);
-    free(targets);
-    personal_ai_close(&ai);
-
-    {
-        int ok = (rc == 0 && cprc == 0 &&
-                  ai.lane.base.unit_count > after_cnb) ||
-                 (rc == 0 && cprc == 0);
-        /* reopen to verify disk */
-        if (cprc == 0) {
-            CnetBase b;
-            cnb_init(&b);
-            if (cnb_load(&b, base) == 0) {
-                printf("reload_units=%zu\n", b.unit_count);
-                ok = b.unit_count > after_cnb || b.unit_count >= 101;
-                cnb_free(&b);
-            }
-        }
-        printf("%s\n", ok ? "STRUCT_MINE_PERSIST_PASS" : "STRUCT_MINE_PERSIST_FAIL");
-        return ok ? 0 : 1;
-    }
+    BinaryTransformNetwork *student = NULL;
+    if (hybrid_structure_mine(&ai.hybrid, &ai.lane.reg, 2, &student) || !student) goto done;
+    const char *owner = NULL;
+    for (size_t i = 0; i < ai.lane.reg.count; i++)
+        if (ai.lane.reg.entries[i].btn == student) owner = ai.lane.reg.entries[i].name;
+    if (!owner || persist_student(&ai, student, owner)) goto done;
+    CnetBase probe; cnb_init(&probe);
+    rc = cnb_load(&probe, base) || !cnb_has_unit(&probe, owner);
+    cnb_free(&probe);
+done:
+    free(in); free(out); personal_ai_close(&ai); close(fd);
+    puts(rc ? "STRUCT_MINE_PERSIST_REFUSED" : "STRUCT_MINE_PERSIST_PASS");
+    return rc;
 }

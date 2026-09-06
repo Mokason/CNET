@@ -189,6 +189,63 @@ public sealed class McpProtocolIntegrityTests
         }
     }
 
+    /* RED marker: MCP_CNB_SAME_SIZE_STALE_SERVE_RED */
+    [Fact]
+    public async Task Same_Size_Content_Replacement_Never_Serves_The_Old_Generation()
+    {
+        string tempDirectory = Path.Combine(
+            Path.GetTempPath(), $"cnet-mcp-same-size-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempDirectory);
+        string liveBase = Path.Combine(tempDirectory, "live.cnb");
+        string stagedBase = Path.Combine(tempDirectory, "live.cnb.next");
+        byte[] corruptReplacement = File.ReadAllBytes(FindRepoFile("tmp_soul_host.cnb"));
+        corruptReplacement[0] ^= 0xff;
+        File.WriteAllBytes(liveBase, File.ReadAllBytes(FindRepoFile("tmp_soul_host.cnb")));
+
+        try
+        {
+            using Process process = StartServer(basePath: liveBase);
+            Task<string> stderrTask = process.StandardError.ReadToEndAsync();
+
+            async Task<string> CallListUnits(int id)
+            {
+                await process.StandardInput.WriteLineAsync(
+                    $"{{\"jsonrpc\":\"2.0\",\"id\":{id},\"method\":\"tools/call\",\"params\":{{\"name\":\"cnet_list_units\",\"arguments\":{{}}}}}}");
+                await process.StandardInput.FlushAsync();
+                using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+                string? line = await process.StandardOutput.ReadLineAsync(timeout.Token);
+                Assert.NotNull(line);
+                JsonElement frame = JsonSerializer.Deserialize<JsonElement>(line);
+                return frame.GetProperty("result").GetProperty("content")[0]
+                    .GetProperty("text").GetString() ?? "";
+            }
+
+            Assert.Contains("[CNET] 1 certified units", await CallListUnits(1),
+                StringComparison.Ordinal);
+
+            File.WriteAllBytes(stagedBase, corruptReplacement);
+            File.Move(stagedBase, liveBase, overwrite: true);
+            File.SetLastWriteTimeUtc(liveBase, DateTime.UtcNow.AddSeconds(2));
+
+            string after = await CallListUnits(2);
+            Assert.DoesNotContain("[CNET] 1 certified units", after,
+                StringComparison.Ordinal);
+            Assert.Contains("No units passed certification replay", after,
+                StringComparison.Ordinal);
+
+            process.StandardInput.Close();
+            using var exitTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            await process.WaitForExitAsync(exitTimeout.Token);
+            await stderrTask;
+            Assert.Equal(0, process.ExitCode);
+            Console.WriteLine("MCP_CNB_SAME_SIZE_STALE_SERVE_PASS");
+        }
+        finally
+        {
+            Directory.Delete(tempDirectory, recursive: true);
+        }
+    }
+
     [Fact]
     public async Task Blocking_Independent_Compression_Does_Not_Block_ToolsList()
     {

@@ -112,10 +112,9 @@ void cnet_utter_bank_init_default(CnetUtterBank *B) {
         {"st_skill", "status",
          "Running local skill {skill} on domain {domain}. Hit rate {local_hit}."},
         {"miss_soft", "miss",
-         "No local CERT for that yet. I logged the miss. I will not invent a seal."},
+         "Miss logged. No fake seal."},
         {"miss_topic", "miss",
-         "You asked about {topic}. I have no sealed skill for that yet. "
-         "Logged to miss_log for later gold review. Law: {law}."},
+         "Miss logged for \"{topic}\". No fake seal."},
         {"miss_probe", "miss",
          "That looks like a probe. Short-circuit abstain. No teacher burn."},
         {"self_status", "self",

@@ -1,0 +1,40 @@
+# lemma	past	part
+# Overlay for typed_en. Does not auto-CERT; restart cnetd after edit.
+# Builtins (go/see/…) stay in C. New rows only.
+fly	flew	flown
+begin	began	begun
+break	broke	broken
+bring	brought	brought
+build	built	built
+buy	bought	bought
+catch	caught	caught
+choose	chose	chosen
+do	did	done
+draw	drew	drawn
+drink	drank	drunk
+drive	drove	driven
+fall	fell	fallen
+feel	felt	felt
+find	found	found
+fly	flew	flown
+forget	forgot	forgotten
+grow	grew	grown
+have	had	had
+hear	heard	heard
+hold	held	held
+keep	kept	kept
+leave	left	left
+lose	lost	lost
+meet	met	met
+pay	paid	paid
+read	read	read
+run	ran	run
+sit	sat	sat
+sleep	slept	slept
+speak	spoke	spoken
+stand	stood	stood
+teach	taught	taught
+understand	understood	understood
+wear	wore	worn
+win	won	won
+write	wrote	written

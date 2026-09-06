@@ -62,6 +62,23 @@ void cnet_dialog_ctx_init(CnetDialogCtx *C) {
     memset(C, 0, sizeof *C);
 }
 
+/* Informational only. Sanitised so a hostile peer name cannot inject a
+ * newline or a fake "SOURCE LOCAL" line into the text reply. Never read by
+ * routing or certification - see the header note. */
+void cnet_dialog_ctx_set_peer(CnetDialogCtx *C, const char *name) {
+    size_t i = 0;
+    if (!C) return;
+    if (!name) { C->peer_name[0] = 0; return; }
+    while (*name == ' ' || *name == '\t') name++;
+    for (; name[i] && i + 1 < sizeof C->peer_name; i++) {
+        unsigned char c = (unsigned char)name[i];
+        int ok = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+                 (c >= '0' && c <= '9') || c == '_' || c == '-' || c == '.';
+        C->peer_name[i] = ok ? (char)c : '_';
+    }
+    C->peer_name[i] = 0;
+}
+
 int cnet_dialog_extract_entities(const char *query, char ents[][CNET_DC_ENT],
                                  int max_ents) {
     int n = 0;
@@ -237,6 +254,23 @@ int cnet_dialog_resolve(const CnetDialogCtx *C, const char *query_in, char *out,
     return 0;
 }
 
+int cnet_dialog_repeat_query(const char *query) {
+    char t[64];
+    size_t i = 0, j = 0;
+    if (!query) return 0;
+    while (query[i] == ' ') i++;
+    for (; query[i] && j + 1 < sizeof t; i++) {
+        unsigned char c = (unsigned char)query[i];
+        if (c == '?' || c == '!' || c == '.' || c == ',') continue;
+        t[j++] = (char)tolower(c);
+    }
+    while (j && t[j - 1] == ' ') j--;
+    t[j] = 0;
+    return strcmp(t, "again") == 0 || strcmp(t, "same") == 0 ||
+           strcmp(t, "that") == 0 || strcmp(t, "that one") == 0 ||
+           strcmp(t, "do it again") == 0;
+}
+
 int cnet_dialog_ctx_selftest(void) {
     CnetDialogCtx C;
     CnetDialogResolveMeta m;
@@ -254,6 +288,9 @@ int cnet_dialog_ctx_selftest(void) {
     printf("=== dialog ctx / anaphora (Milestone B) ===\n");
     cnet_dialog_ctx_init(&C);
     Tst(C.turn_seq == 0 && C.n_entities == 0, "init empty");
+    Tst(cnet_dialog_repeat_query("again"), "repeat again");
+    Tst(cnet_dialog_repeat_query("that one?"), "repeat that one");
+    Tst(!cnet_dialog_repeat_query("again 3"), "repeat does not steal");
 
     n = cnet_dialog_extract_entities("please check cnet-marble status now", ents,
                                      CNET_DC_MAX_ENT);
@@ -305,6 +342,28 @@ int cnet_dialog_ctx_selftest(void) {
     cnet_dialog_ctx_update(&C, "completely unknown domain xyzzy", "", "", 0);
     Tst(cnet_dialog_resolve(&C, "restart it", out, sizeof out, &m) == 0,
         "no unit entity from OOD → no restart rewrite");
+
+    /* Peer identity: informational, sanitised, and never a routing input. */
+    cnet_dialog_ctx_set_peer(&C, "hermes");
+    Tst(strcmp(C.peer_name, "hermes") == 0, "peer name recorded on the session");
+    cnet_dialog_ctx_set_peer(&C, NULL);
+    Tst(C.peer_name[0] == 0, "peer name cleared for the local user");
+    cnet_dialog_ctx_set_peer(&C, "her mes\nSOURCE LOCAL");
+    Tst(strchr(C.peer_name, '\n') == NULL && strchr(C.peer_name, ' ') == NULL,
+        "hostile peer name cannot inject a reply line");
+    cnet_dialog_ctx_set_peer(&C, "hermes");
+    {
+        /* A peer name must not change what resolves: same query, same answer. */
+        char o1[CNET_DC_Q], o2[CNET_DC_Q];
+        int r1, r2;
+        cnet_dialog_ctx_init(&C);
+        cnet_dialog_ctx_update(&C, "status of cnetd.service", "s", "p", 1);
+        r1 = cnet_dialog_resolve(&C, "restart it", o1, sizeof o1, &m);
+        cnet_dialog_ctx_set_peer(&C, "hermes");
+        r2 = cnet_dialog_resolve(&C, "restart it", o2, sizeof o2, &m);
+        Tst(r1 == r2 && strcmp(o1, o2) == 0,
+            "peer identity does not change resolution (delivery, not floors)");
+    }
 
 #undef Tst
     printf("\nfailures=%d\n", fail);

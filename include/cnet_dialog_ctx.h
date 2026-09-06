@@ -45,6 +45,13 @@ typedef struct {
     char last_query[CNET_DC_Q];
     char last_canonical[CNET_DC_Q];
     int last_local; /* 1 if last turn was LOCAL CERT */
+    /* Who is on the other end of this session ("hermes", "" = local user).
+     * PURELY INFORMATIONAL: the peer name is surfaced to the persona layer and
+     * in the reply, and is deliberately NOT consulted by routing, matching, or
+     * any CERT decision. Doctrine rail 3 (docs/THIRD_WAY_MARBLE_PEER.md):
+     * persona biases delivery, not certification floors. A peer must never be
+     * able to talk the daemon into a different floor by renaming itself. */
+    char peer_name[CNET_DC_ID];
 } CnetDialogCtx;
 
 typedef struct {
@@ -54,6 +61,11 @@ typedef struct {
 } CnetDialogResolveMeta;
 
 void cnet_dialog_ctx_init(CnetDialogCtx *C);
+
+/* Record the peer speaking this session. NULL/empty clears it (local user).
+ * Sanitises to [A-Za-z0-9_.-] so a peer name can never smuggle markup into a
+ * reply line. Informational only - see peer_name in CnetDialogCtx. */
+void cnet_dialog_ctx_set_peer(CnetDialogCtx *C, const char *name);
 
 /* Extract unit/service-like entities from a query into fixed slots. */
 int cnet_dialog_extract_entities(const char *query, char ents[][CNET_DC_ENT],
@@ -70,6 +82,9 @@ void cnet_dialog_ctx_update(CnetDialogCtx *C, const char *query_prep,
  * Returns 1 if rewritten. Never invents entities. */
 int cnet_dialog_resolve(const CnetDialogCtx *C, const char *query_in, char *out,
                         size_t cap, CnetDialogResolveMeta *meta);
+
+/* Whole-utterance "again"/"same"/"that one" — replay last_query. */
+int cnet_dialog_repeat_query(const char *query);
 
 int cnet_dialog_ctx_selftest(void);
 

@@ -180,7 +180,10 @@ int main(void) {
           &report) == CNET_SLEEP_RAN,
           "new idle material permits a later sleep");
 
-    heldout_consolidation_case(&heldout, &report,
+    /* The fixture describes the FIRST ingestion, not the later scheduler
+       replay over an already-consolidated store. Bind the same saved report
+       that supplies SLEEP_EVIDENCE and the final metrics below. */
+    heldout_consolidation_case(&heldout, &evidence_report,
                                sizeof(episodes) / sizeof(episodes[0]));
 
     remove_store(directory);

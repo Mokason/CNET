@@ -1,0 +1,36 @@
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce -Werror -o bin/test_capsule_core_budget tests/test_capsule_core_budget.c -Lbin -lcnet_capsule_core -Wl,-rpath,'$ORIGIN' -lm -lpthread -lcurl
+CAPSULE_CORE_BUDGET_PASS failures=0
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce -Werror  -o bin/knowledge_accumulation_bench \
+	src/memory/cnet_capsule.c src/personal_ai.c src/cnet_moe.c src/cnet_acct.c src/cnet_seal_trust.c src/cnet_distrust.c src/cnet_live_miss.c src/hybrid_ai.c src/serve/cnet_sparse_serve.c src/residual_gguf.c src/residual_http.c src/cnet_pilot.c src/selfimprove/cnet_curiosity.c src/resource_governor.c src/selfimprove/self_improve.c src/gap_lane.c src/selfimprove/cnet_auto_learn.c src/cnet_charter.c src/cnet_record_teacher.c src/cnet_fault.c src/selfimprove/cnet_promote.c src/serve/cnet_serve_decode.c src/cnet_evidence_bundle.c src/cnet_health_layers.c src/external_teacher.c \
+	src/model_runtime.c bin/libcce.a src/cce/cce_contract_adapter.c src/specialist_adapters.c src/specialist.c src/specialist_health.c \
+	src/nn.c src/router/dag_full.c src/router/registry.c src/router/route.c src/plan_table.c src/contract/contract.c src/contract/unit.c src/property.c src/consolidate.c \
+	src/scan.c src/contract/coverage.c src/acquire.c src/runtime_identity.c src/base.c src/library.c src/cnet_dc_type.c src/cnet_swap.c \
+	tests/knowledge_accumulation_bench.c -lm -lpthread -lcurl   -pthread
+KNOWLEDGE_ACCUMULATION_BENCH_PASS units=32 distinct=1 isolation=32/32 replay=8/8 cov_exact=8 pre_unservable=8/8 ood_refused=96 json=logs/knowledge_accumulation_bench.json
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce -Werror  -o bin/knowledge_composition_bench \
+	src/memory/cnet_capsule.c src/personal_ai.c src/cnet_moe.c src/cnet_acct.c src/cnet_seal_trust.c src/cnet_distrust.c src/cnet_live_miss.c src/hybrid_ai.c src/serve/cnet_sparse_serve.c src/residual_gguf.c src/residual_http.c src/cnet_pilot.c src/selfimprove/cnet_curiosity.c src/resource_governor.c src/selfimprove/self_improve.c src/gap_lane.c src/selfimprove/cnet_auto_learn.c src/cnet_charter.c src/cnet_record_teacher.c src/cnet_fault.c src/selfimprove/cnet_promote.c src/serve/cnet_serve_decode.c src/cnet_evidence_bundle.c src/cnet_health_layers.c src/external_teacher.c \
+	src/model_runtime.c bin/libcce.a src/cce/cce_contract_adapter.c src/specialist_adapters.c src/specialist.c src/specialist_health.c \
+	src/nn.c src/router/dag_full.c src/router/registry.c src/router/route.c src/plan_table.c src/contract/contract.c src/contract/unit.c src/property.c src/consolidate.c \
+	src/scan.c src/contract/coverage.c src/acquire.c src/runtime_identity.c src/base.c src/library.c src/cnet_dc_type.c src/cnet_swap.c \
+	tests/knowledge_composition_bench.c -lm -lpthread -lcurl   -pthread
+KNOWLEDGE_COMPOSITION_BENCH_PASS members=3 hops_guarded=every refusals=root+intermediate
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -o bin/test_coverage_abstain \
+	src/personal_ai.c src/cnet_moe.c src/cnet_acct.c src/cnet_seal_trust.c src/cnet_distrust.c src/cnet_live_miss.c src/hybrid_ai.c src/serve/cnet_sparse_serve.c src/residual_gguf.c src/residual_http.c src/cnet_pilot.c src/selfimprove/cnet_curiosity.c src/resource_governor.c src/selfimprove/self_improve.c src/gap_lane.c src/selfimprove/cnet_auto_learn.c src/cnet_charter.c src/cnet_record_teacher.c src/cnet_fault.c src/selfimprove/cnet_promote.c src/serve/cnet_serve_decode.c src/cnet_evidence_bundle.c src/cnet_health_layers.c src/external_teacher.c \
+	src/model_runtime.c bin/libcce.a src/cce/cce_contract_adapter.c src/specialist_adapters.c src/specialist.c src/specialist_health.c \
+	src/nn.c src/router/dag_full.c src/router/registry.c src/router/route.c src/plan_table.c src/contract/contract.c src/contract/unit.c src/property.c src/consolidate.c \
+	src/scan.c src/contract/coverage.c src/acquire.c src/runtime_identity.c src/base.c src/library.c src/cnet_dc_type.c src/cnet_swap.c \
+	tests/test_coverage_abstain.c -lm -lpthread -lcurl   -pthread
+COVERAGE_ABSTAIN_PASS checks=55 heldout_correct=4/4 was=0/4
+GATE_RUN gate=capability_cert_runner_test run_id=d2d57a80-a776-4bdb-9e54-684a73437144 started=2026-09-06T06:04:07Z commit=2d298cade27ff7196e551ccefdc51af43e87638c worktree=e35f3561768e5dfa untracked=e8e18bfb3fee6757 special_index=e3b0c44298fc1c14 dirty=337 special_index_files=0
+  Determining projects to restore...
+  Restored /tmp/cnet-capacity-final-9d5jz5/dotnet/CnetControlPlane.Tests/CnetControlPlane.Tests.csproj (in 483 ms).
+  Restored /tmp/cnet-capacity-final-9d5jz5/dotnet/CnetControlPlane/CnetControlPlane.csproj (in 483 ms).
+  CnetControlPlane -> /tmp/cnet-capacity-final-9d5jz5/dotnet/CnetControlPlane/bin/Debug/net8.0/cnet-control.dll
+  CnetControlPlane.Tests -> /tmp/cnet-capacity-final-9d5jz5/dotnet/CnetControlPlane.Tests/bin/Debug/net8.0/CnetControlPlane.Tests.dll
+Test run for /tmp/cnet-capacity-final-9d5jz5/dotnet/CnetControlPlane.Tests/bin/Debug/net8.0/CnetControlPlane.Tests.dll (.NETCoreApp,Version=v8.0)
+A total of 1 test files matched the specified pattern.
+
+Passed!  - Failed:     0, Passed:    34, Skipped:     0, Total:    34, Duration: 51 ms - CnetControlPlane.Tests.dll (net8.0)
+CAPABILITY_CERT_RUNNER_PASS
+GATE_FAIL gate=capability_cert_runner_test reason=bound_state_changed:untracked_sha256,worktree_sha256 evidence=logs/capability_cert_runner.log.evidence.json
+make: *** [mk/capability.mk:6: capability_cert_runner_test] Error 1

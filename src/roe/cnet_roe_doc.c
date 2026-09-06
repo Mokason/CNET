@@ -1,7 +1,9 @@
 #include "../../include/cnet_roe_doc.h"
 #include "../../include/cnet_roe_table.h"
+#include "cnet_roe_process.h"
 
 #include <ctype.h>
+#include <dirent.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -531,7 +533,7 @@ void roe_doc_dump_stats(const RoeDocAsset *A, char *buf, size_t cap) {
 }
 
 int roe_doc_pdftotext(const char *pdf_path, char *body, size_t cap) {
-    char cmd[ROE_PATH_MAX + 64];
+    char input[ROE_PATH_MAX];
     char tmp[] = "/tmp/roe_doc_pdf_XXXXXX";
     int fd, rc;
     FILE *f;
@@ -541,9 +543,14 @@ int roe_doc_pdftotext(const char *pdf_path, char *body, size_t cap) {
     fd = mkstemp(tmp);
     if (fd < 0) return -1;
     close(fd);
-    snprintf(cmd, sizeof cmd, "pdftotext -q -layout '%s' '%s' 2>/dev/null", pdf_path,
-             tmp);
-    rc = system(cmd);
+    if (roe_process_canonical_path(pdf_path, input, sizeof input) != 0) {
+        unlink(tmp);
+        return -1;
+    }
+    {
+        char *argv[] = {"pdftotext", "-q", "-layout", input, tmp, NULL};
+        rc = roe_process_run_quiet(argv);
+    }
     if (rc != 0) {
         unlink(tmp);
         return -1;
@@ -569,7 +576,7 @@ int roe_doc_pdftotext(const char *pdf_path, char *body, size_t cap) {
 
 int roe_doc_pdftotext_page(const char *pdf_path, int page_1based, char *body,
                            size_t cap) {
-    char cmd[ROE_PATH_MAX + 96];
+    char input[ROE_PATH_MAX], page[32];
     char tmp[] = "/tmp/roe_doc_pdfp_XXXXXX";
     int fd, rc;
     FILE *f;
@@ -580,10 +587,16 @@ int roe_doc_pdftotext_page(const char *pdf_path, int page_1based, char *body,
     if (fd < 0) return -1;
     close(fd);
     /* -f/-l select single page */
-    snprintf(cmd, sizeof cmd,
-             "pdftotext -q -layout -f %d -l %d '%s' '%s' 2>/dev/null", page_1based,
-             page_1based, pdf_path, tmp);
-    rc = system(cmd);
+    if (roe_process_canonical_path(pdf_path, input, sizeof input) != 0) {
+        unlink(tmp);
+        return -1;
+    }
+    snprintf(page, sizeof page, "%d", page_1based);
+    {
+        char *argv[] = {"pdftotext", "-q", "-layout", "-f", page,
+                        "-l", page, input, tmp, NULL};
+        rc = roe_process_run_quiet(argv);
+    }
     if (rc != 0) {
         unlink(tmp);
         return -1;
@@ -604,19 +617,25 @@ int roe_doc_pdftotext_page(const char *pdf_path, int page_1based, char *body,
 }
 
 int roe_doc_pdf_page_count(const char *pdf_path) {
-    char cmd[ROE_PATH_MAX + 80];
-    char line[256];
-    FILE *fp;
+    char input[ROE_PATH_MAX], output[4096];
+    char *line;
     int pages = -1;
     if (!pdf_path) return -1;
-    snprintf(cmd, sizeof cmd, "pdfinfo '%s' 2>/dev/null", pdf_path);
-    fp = popen(cmd, "r");
-    if (!fp) return -1;
-    while (fgets(line, sizeof line, fp)) {
-        if (sscanf(line, "Pages: %d", &pages) == 1) break;
+    if (roe_process_canonical_path(pdf_path, input, sizeof input) != 0)
+        return -1;
+    {
+        char *argv[] = {"pdfinfo", input, NULL};
+        if (roe_process_capture_stdout(argv, output, sizeof output) != 0)
+            return -1;
     }
-    pclose(fp);
-    return pages;
+    line = output;
+    while (line && *line) {
+        char *next = strchr(line, '\n');
+        if (next) *next++ = '\0';
+        if (sscanf(line, "Pages: %d", &pages) == 1) break;
+        line = next;
+    }
+    return pages > 0 ? pages : -1;
 }
 
 int roe_doc_pdf_stream(RoeDocAsset *A, const char *corpus_id, const char *pdf_path,
@@ -808,16 +827,19 @@ int roe_doc_route(RoeDocAsset *A, const char *corpus_id, const char *path,
 
     /* classic OCR optional â€” tesseract */
     if (path && !is_pdf) {
-        char cmd[ROE_PATH_MAX + 80];
+        char input[ROE_PATH_MAX];
         char tmp[] = "/tmp/roe_tess_XXXXXX";
         int fd = mkstemp(tmp);
         if (fd >= 0) {
             close(fd);
             unlink(tmp);
-            snprintf(cmd, sizeof cmd,
-                     "tesseract '%s' '%s' -l eng 2>/dev/null && test -f '%s.txt'", path,
-                     tmp, tmp);
-            if (system(cmd) == 0) {
+            if (roe_process_canonical_path(path, input, sizeof input) == 0) {
+                char *argv[] = {"tesseract", input, tmp, "-l", "eng", NULL};
+                if (roe_process_run_quiet(argv) != 0) input[0] = '\0';
+            } else {
+                input[0] = '\0';
+            }
+            if (input[0]) {
                 char tpath[ROE_PATH_MAX];
                 FILE *f;
                 snprintf(tpath, sizeof tpath, "%s.txt", tmp);
@@ -904,46 +926,82 @@ void roe_doc_coverage(const RoeDocAsset *A, RoeDocCoverage *C) {
              100.0 * C->cost_save);
 }
 
+typedef struct {
+    RoeDocAsset *asset;
+    const char *corpus_id;
+    int teacher_sim;
+    int seen;
+    int ok;
+    int teacher;
+} RoeDocBatchScan;
+
+static int roe_doc_batch_extension(const char *path) {
+    const char *dot = strrchr(path, '.');
+    return dot && (!strcmp(dot, ".txt") || !strcmp(dot, ".pdf") ||
+                   !strcmp(dot, ".md"));
+}
+
+static void roe_doc_batch_file(RoeDocBatchScan *scan, const char *path) {
+    RoeDocReply reply;
+    if (roe_doc_route(scan->asset, scan->corpus_id, path, NULL, 1,
+                      &reply) == 0) {
+        scan->ok++;
+    } else if (scan->teacher_sim) {
+        char body[ROE_DOC_BODY];
+        const char *base = strrchr(path, '/');
+        base = base ? base + 1 : path;
+        snprintf(body, sizeof body, "TEACHER_SIM CERT %s", base);
+        if (roe_doc_verify_learn(scan->asset, scan->corpus_id, body, body,
+                                 "teacher_sim", 1, 0)) {
+            scan->teacher++;
+            scan->ok++;
+        }
+    } else {
+        scan->teacher++;
+    }
+}
+
+static void roe_doc_batch_walk(RoeDocBatchScan *scan, const char *directory,
+                               unsigned depth) {
+    struct dirent *entry;
+    DIR *dir = opendir(directory);
+    if (!dir) return;
+    while (scan->seen < 200 && (entry = readdir(dir)) != NULL) {
+        char path[ROE_PATH_MAX];
+        struct stat st;
+        int length;
+        if (!strcmp(entry->d_name, ".") || !strcmp(entry->d_name, ".."))
+            continue;
+        length = snprintf(path, sizeof path, "%s/%s", directory, entry->d_name);
+        if (length < 0 || length >= (int)sizeof path || lstat(path, &st) != 0)
+            continue;
+        if (S_ISDIR(st.st_mode) && depth == 0) {
+            roe_doc_batch_walk(scan, path, depth + 1);
+        } else if (S_ISREG(st.st_mode) && roe_doc_batch_extension(path)) {
+            scan->seen++;
+            roe_doc_batch_file(scan, path);
+        }
+    }
+    closedir(dir);
+}
+
 int roe_doc_batch_distill(RoeDocAsset *A, const char *corpus_id,
                           const char *dir_path, int teacher_sim, int *n_ok,
                           int *n_teacher) {
-    /* Simple: process known files from a list file dir_path/files.list OR
-     * scan with popen find */
-    char cmd[ROE_PATH_MAX + 128];
-    char line[ROE_PATH_MAX];
-    FILE *f;
-    int ok = 0, teach = 0;
-    RoeDocReply r;
-    if (!A || !corpus_id || !dir_path) return -1;
+    char root[ROE_PATH_MAX];
+    struct stat st;
+    RoeDocBatchScan scan;
+    if (!A || !corpus_id || !dir_path ||
+        roe_process_canonical_path(dir_path, root, sizeof root) != 0 ||
+        stat(root, &st) != 0 || !S_ISDIR(st.st_mode))
+        return -1;
     roe_doc_add_corpus(A, corpus_id);
-    snprintf(cmd, sizeof cmd,
-             "find '%s' -maxdepth 2 -type f \\( -name '*.txt' -o -name '*.pdf' -o "
-             "-name '*.md' \\) 2>/dev/null | head -200",
-             dir_path);
-    f = popen(cmd, "r");
-    if (!f) return -1;
-    while (fgets(line, sizeof line, f)) {
-        size_t L = strlen(line);
-        while (L && (line[L - 1] == '\n' || line[L - 1] == '\r')) line[--L] = 0;
-        if (!L) continue;
-        if (roe_doc_route(A, corpus_id, line, NULL, 1, &r) == 0) {
-            ok++;
-        } else if (teacher_sim) {
-            /* factory sim: CERT a stub from basename */
-            char body[ROE_DOC_BODY];
-            const char *base = strrchr(line, '/');
-            base = base ? base + 1 : line;
-            snprintf(body, sizeof body, "TEACHER_SIM CERT %s", base);
-            if (roe_doc_verify_learn(A, corpus_id, body, body, "teacher_sim", 1, 0)) {
-                teach++;
-                ok++;
-            }
-        } else {
-            teach++;
-        }
-    }
-    pclose(f);
-    if (n_ok) *n_ok = ok;
-    if (n_teacher) *n_teacher = teach;
-    return ok;
+    memset(&scan, 0, sizeof scan);
+    scan.asset = A;
+    scan.corpus_id = corpus_id;
+    scan.teacher_sim = teacher_sim;
+    roe_doc_batch_walk(&scan, root, 0);
+    if (n_ok) *n_ok = scan.ok;
+    if (n_teacher) *n_teacher = scan.teacher;
+    return scan.ok;
 }

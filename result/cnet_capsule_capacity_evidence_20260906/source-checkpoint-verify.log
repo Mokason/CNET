@@ -1,0 +1,1137 @@
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce -o bin/gate_evidence tools/gate_evidence.c -lm -lpthread -lcurl
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce -Werror -o bin/test_core_serve_authority \
+	tests/test_core_serve_authority.c src/serve/cnet_core_serve.c -lm -lpthread -lcurl
+gcc -std=c11 -Wall -Wextra -Werror -O2 -D_POSIX_C_SOURCE=200809L -Iinclude -include include/cnet_platform.h -Iinclude -o bin/test_evolve_authority tests/test_evolve_authority.c
+make[2]: warning: jobserver unavailable: using -j1.  Add '+' to parent make rule.
+tools/gate_evidence.c:13: warning: "_DEFAULT_SOURCE" redefined
+   13 | #define _DEFAULT_SOURCE
+      | 
+In file included from /usr/include/x86_64-linux-gnu/bits/libc-header-start.h:33,
+                 from /usr/include/stdlib.h:26,
+                 from ./include/cnet_platform.h:40,
+                 from <command-line>:
+/usr/include/features.h:238: note: this is the location of the previous definition
+  238 | # define _DEFAULT_SOURCE        1
+      | 
+Built bin/libcce.a (1 objects)
+tools/gate_evidence.c:193:13: warning: ‘sha256_hex’ defined but not used [-Wunused-function]
+  193 | static void sha256_hex(const void *data, size_t len, char out[65]) {
+      |             ^~~~~~~~~~
+tools/gate_evidence.c: In function ‘tracked_binding’:
+tools/gate_evidence.c:846:9: warning: ‘__builtin_strncpy’ output may be truncated copying 4095 bytes from a string of length 4095 [-Wstringop-truncation]
+  846 |         strncpy(entry, tmp, n - 1);
+      |         ^
+cnet_serve: rejected malformed table /tmp/cnet-lut-authority-metFUN/audit.lut
+cnet_serve: rejected malformed table /tmp/cnet-lut-authority-metFUN/audit.lut
+cnet_serve: rejected malformed table /tmp/cnet-lut-authority-metFUN/audit.lut
+cnet_serve: rejected malformed table /tmp/cnet-lut-authority-metFUN/audit.lut
+cnet_serve: rejected malformed table /tmp/cnet-lut-authority-metFUN/audit.lut
+cnet_serve: rejected malformed table /tmp/cnet-lut-authority-metFUN/audit.lut
+cnet_serve: rejected malformed table /tmp/cnet-lut-authority-metFUN/audit.lut
+CORE_SERVE_AUTHORITY_PASS failures=0
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce -Werror -ffunction-sections -fdata-sections -Iinclude \
+	-o bin/test_core_bus_untagged \
+	tests/test_core_bus_untagged.c src/serve/cnet_core_bus.c \
+	-lm -lpthread -lcurl -Wl,--gc-sections
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce -Werror -ffunction-sections -fdata-sections -Iinclude \
+	-o bin/test_core_bus_tensor_refusal \
+	tests/test_core_bus_tensor_refusal.c src/serve/cnet_core_bus.c \
+	src/cce/cce_gguf.c -lm -lpthread -lcurl -Wl,--gc-sections
+  parked brick answers an explicitly addressed turn          PASS
+  parked brick refuses symbolic unaddressed turn             PASS
+  parked brick refuses bare digit turn                       PASS
+  active brick answers an explicitly addressed turn          PASS
+  active brick refuses symbolic unaddressed turn             PASS
+  active brick refuses bare digit turn                       PASS
+CORE_BUS_UNTAGGED_PASS checks=6 fails=0 unaddressed_claims_cert=0 broader_claims=WITHHELD
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce -Werror -Iinclude -o bin/test_cnetd_protocol \
+	tests/test_cnetd_protocol.c src/serve/cnetd_protocol.c -lm -lpthread -lcurl
+evolve_tick packs=/tmp/cnet-evolve-authority-Bfaj5T
+  miss_rows=3 clusters=1
+  promoted=0 skipped=1
+  reviewer_enabled=False
+  report -> /tmp/cnet-evolve-authority-Bfaj5T/EVOLVE_TICK.json
+ROE_EVOLVE_TICK_PASS
+evolve_tick packs=/tmp/cnet-evolve-authority-Bfaj5T
+  miss_rows=3 clusters=1
+  promoted=0 skipped=1
+  reviewer_enabled=False
+  report -> /tmp/cnet-evolve-authority-Bfaj5T/EVOLVE_TICK.json
+ROE_EVOLVE_TICK_PASS
+  (idle - no eligible promotes; drop gold or repeat misses)
+EVOLVE_AUTHORITY_PASS
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce \
+	-DCNET_HAVE_CURL=0 -Werror -Iinclude \
+	-Wl,--wrap=write -o bin/test_cnet_mcp_transport \
+	tests/test_cnet_mcp_transport.c src/serve/cnet_mcp_client.c \
+	-lm -lpthread -lcurl
+  strict JSON accepts documented request plus unknown fields PASS
+  JSON request has ASK kind and JSON response mode           PASS
+  JSON string escapes are decoded exactly                    PASS
+  PEER request captures request-local identity               PASS
+  JSON request clears identity from the previous parse       PASS
+  plain request also has local request identity              PASS
+  q-like text inside a string is not treated as a field      PASS
+  duplicate q fields are rejected as ambiguous               PASS
+  unsupported JSON operations are rejected                   PASS
+  trailing JSON garbage is rejected                          PASS
+  unterminated JSON string is rejected                       PASS
+  create overlong framing pair                               PASS
+  overlong request is rejected, never truncated              PASS
+  create stalled framing pair                                PASS
+  stalled request hits the configured deadline               PASS
+  stalled request deadline is bounded in wall time           PASS
+  create complete framing pair                               PASS
+  write a complete CRLF request                              PASS
+  complete framed request is returned without CRLF           PASS
+CNETD_PROTOCOL_BOUNDARY_PASS strict_json bounded_framing request_local_peer
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce -o bin/test_roe_process_security \
+	src/roe/cnet_roe_asi.c src/roe/cnet_roe_net.c src/selfimprove/cnet_asi_improve.c src/roe/cnet_roe_goal.c src/roe/cnet_roe_table.c \
+	src/roe/cnet_roe_doc.c src/roe/cnet_roe_ocr.c \
+	tests/test_roe_process_security.c -lm -lcurl
+  create partial-write fake MCP server                       PASS
+  fork partial-write fake MCP server                         PASS
+  short first write is completed before reading reply        PASS
+  server received the complete JSON-RPC request              PASS
+  create stalled fake MCP server                             PASS
+  fork stalled fake MCP server                               PASS
+  stalled MCP response fails closed                          PASS
+  one configured deadline bounds the MCP exchange            PASS
+  stalled fake MCP server exits cleanly                      PASS
+MCP_CLIENT_TRANSPORT_PASS full_write bounded_exchange
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce -Werror -o bin/cnet_capsule_tool tools/cnet_capsule_tool.c tools/cnet_capsule_tool_plan.c
+make[2]: warning: jobserver unavailable: using -j1.  Add '+' to parent make rule.
+Built bin/libcce.a (1 objects)
+make[2]: warning: jobserver unavailable: using -j1.  Add '+' to parent make rule.
+Built bin/libcce.a (1 objects)
+make[2]: warning: jobserver unavailable: using -j1.  Add '+' to parent make rule.
+Built bin/libcce.a (1 objects)
+make[2]: warning: jobserver unavailable: using -j1.  Add '+' to parent make rule.
+make[2]: warning: jobserver unavailable: using -j1.  Add '+' to parent make rule.
+make[2]: warning: jobserver unavailable: using -j1.  Add '+' to parent make rule.
+CAPSULE_TOOL_PASS
+CAPSULE_FRESH_BUILD_PASS
+LANE_MAINTENANCE_REFUSED base_mismatch
+LANE_MAINTENANCE_PASS
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce -Werror -o bin/test_capsule_intent tests/test_capsule_intent.c src/memory/cnet_semantic_cortex.c src/memory/cnet_shared_workspace.c -lm -lpthread -lcurl
+ROE_PROCESS_SECURITY_PASS argv_only hostile_paths_refused_as_code
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce -Werror -o bin/test_roe_publication tests/test_roe_publication.c src/roe/cnet_roe_asi.c src/roe/cnet_roe_net.c src/selfimprove/cnet_asi_improve.c -lm -lpthread -lcurl
+CAPSULE_INTENT_PASS positive=12 ambiguity_and_invalid=14 unrelated=3 failures=0
+gcc -std=c11 -Wall -Wextra -Werror -O2 -D_POSIX_C_SOURCE=200809L -Iinclude -include include/cnet_platform.h -o bin/roe_front_door \
+	src/roe/cnet_roe_asi.c src/roe/cnet_roe_net.c src/selfimprove/cnet_asi_improve.c src/cnet_domain_route.c src/memory/cnet_query_alias.c src/memory/cnet_dialog_ctx.c \
+	src/cnet_slot_extract.c tools/roe_front_door.c -lm -lcurl
+make[2]: warning: jobserver unavailable: using -j1.  Add '+' to parent make rule.
+CCE_BUILD_DEPENDENCIES_PASS
+make[2]: warning: jobserver unavailable: using -j1.  Add '+' to parent make rule.
+ROE_PUBLICATION_PASS failures=0
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce -Werror -o bin/test_capsule_socket_client tests/test_capsule_socket_client.c
+CURL_GUARD_PASS
+AUTHORITY_FIXTURE_ISOLATION_PASS
+ORPHAN_TOOLS_PASS
+  synthetic host GGUF created                                    PASS
+  documented Q-to-QKV mapping remains supported                  PASS
+  misspelled explicit tensor is refused                          PASS
+  refusal leaves no output artifact                              PASS
+CORE_BUS_TENSOR_REFUSAL_PASS checks=4 fails=0 explicit_miss_fallback=0 broader_claims=WITHHELD
+gcc -fsyntax-only -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce -UCNET_HAVE_CURL -DCNET_HAVE_CURL=0 -Iinclude -Iinclude/cce \
+	src/residual_http.c src/memory/cnet_lookup.c src/cce/cce_safetensors.c src/cnet_held_model.c src/roe/cnet_roe_net.c
+ORPHAN_TESTS_PASS
+LAYERING_GUARD_PASS
+MAKEFILE_BUDGET: 8450 lines, 69 under the ceiling. Lower it with:
+  sh tests/makefile_budget.sh --lower
+MAKEFILE_BUDGET_PASS
+RESIDUAL_HTTP_NOCURL_PASS
+g++ -x c++ -O2 -D_FILE_OFFSET_BITS=64 -DCNET_HAVE_CURL=1 \
+	-include include/cnet_platform.h -Iinclude \
+	-o bin/test_mmap_read_identity tests/test_mmap_read_identity.c -lm
+T1: authority build_integrity clgemm_unit cce_archive cce_forest mmap_read_identity recipe_gate json_escape claims_test cce_dll cce_safetensors_test cnet_lm_bounds_test cce_autograd_test cce_model_test cce_view forest_view cce_detect contract_secure contract_unit heal_mismatch mutate acquire attribution base flagship live_contracts leakcheck cnet_fault_test cce_adapter_bank_test cce_dora_test cnet_serve_decode_test 
+T2: cce_ssm cce_hybrid cce_qwen35 cce_st_llama cce_specgraph cce_wstore cce_tiers cce_similar merge_family hybrid_catalog transformer_qat qat_block mojo_bridge cnet_fault_loop_test registry_lora_store_test jtc_adapter_bench metric_honesty moe_ckpt_test distrust_loop autonomy_tick autonomy_spine 
+VERIFY_TIER_SYNC_PASS t1=31 t2=21 core_logs=28
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce -o bin/gate_evidence tools/gate_evidence.c -lm -lpthread -lcurl
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce -Iinclude -o bin/test_json_escape tests/test_json_escape.c
+tools/gate_evidence.c:13: warning: "_DEFAULT_SOURCE" redefined
+   13 | #define _DEFAULT_SOURCE
+      | 
+In file included from /usr/include/x86_64-linux-gnu/bits/libc-header-start.h:33,
+                 from /usr/include/stdlib.h:26,
+                 from ./include/cnet_platform.h:40,
+                 from <command-line>:
+/usr/include/features.h:238: note: this is the location of the previous definition
+  238 | # define _DEFAULT_SOURCE        1
+      | 
+tools/gate_evidence.c:193:13: warning: ‘sha256_hex’ defined but not used [-Wunused-function]
+  193 | static void sha256_hex(const void *data, size_t len, char out[65]) {
+      |             ^~~~~~~~~~
+== cnet_json_escape ==
+  empty string                                             PASS
+  no escaping needed                                       PASS
+  double quote                                             PASS
+  trailing backslash                                       PASS
+  embedded backslash                                       PASS
+  newline -> \n                                            PASS
+  carriage return -> \r                                    PASS
+  tab -> \t                                                PASS
+  raw 0x01 -> \u0001 (not dropped, not raw)                PASS
+  0x1f -> \u001f                                           PASS
+  vertical tab -> \u000b                                   PASS
+  0x7f passes through (not a C0 control)                   PASS
+  UTF-8 bytes pass through                                 PASS
+  overflow returns -1 and empties dst (no partial escape)  PASS
+  escape that cannot fit is refused                        PASS
+  exact fit succeeds                                       PASS
+  NULL src treated as empty                                PASS
+  NULL dst refused                                         PASS
+  zero cap refused                                         PASS
+JSON_ESCAPE_DOC {"a":"quote\" back\\ slash","b":"ctrl\u0001\u0002 end\\","c":"nl\ntab\tcr\r"}
+checks=19 failures=0
+JSON_ESCAPE_PASS checks=19
+./bin/test_mmap_read_identity > logs/mmap_read_identity.log 2>&1
+  quote+backslash round-trips                              PASS
+  0x01 survived the round trip                             PASS
+  0x02 survived the round trip                             PASS
+  trailing backslash intact                                PASS
+  field b exact                                            PASS
+  newline/tab/CR exact                                     PASS
+JSON_ESCAPE_PY_PASS: emitted document parsed by json.loads and round-tripped exactly
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce -o bin/contract_secure src/nn.c src/router/dag_full.c src/router/registry.c src/router/route.c src/plan_table.c src/consolidate.c src/contract/contract.c src/contract/unit.c tests/test_contract_secure.c -lm -lpthread -lcurl
+tools/gate_evidence.c: In function ‘tracked_binding’:
+tools/gate_evidence.c:846:9: warning: ‘__builtin_strncpy’ output may be truncated copying 4095 bytes from a string of length 4095 [-Wstringop-truncation]
+  846 |         strncpy(entry, tmp, n - 1);
+      |         ^
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce -o bin/contract_unit src/nn.c src/router/dag_full.c src/router/registry.c src/router/route.c src/plan_table.c src/consolidate.c src/contract/contract.c src/contract/unit.c tests/test_unit.c -lm -lpthread -lcurl
+CLAIMS_STRICT_PASS
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce -o bin/heal_mismatch src/nn.c src/router/dag_full.c src/router/registry.c src/router/route.c src/plan_table.c src/consolidate.c src/contract/contract.c src/contract/unit.c tests/test_heal_mismatch.c -lm -lpthread -lcurl
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce -o bin/acquire src/nn.c src/router/dag_full.c src/router/registry.c src/router/route.c src/plan_table.c src/contract/contract.c src/contract/unit.c src/property.c src/consolidate.c src/scan.c src/contract/coverage.c src/acquire.c src/runtime_identity.c src/base.c tests/test_acquire.c -lm -lpthread -lcurl
+./bin/contract_unit > logs/contract_unit.log 2>&1
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce -o bin/attribution src/nn.c src/router/dag_full.c src/router/registry.c src/router/route.c src/plan_table.c src/contract/contract.c src/contract/unit.c src/property.c src/consolidate.c src/scan.c src/contract/coverage.c src/contract/conformal.c src/acquire.c src/runtime_identity.c src/base.c src/attribution.c tests/test_attribution.c -lm -lpthread -lcurl
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce -o bin/base src/nn.c src/router/dag_full.c src/router/registry.c src/router/route.c src/plan_table.c src/contract/contract.c src/contract/unit.c src/property.c src/consolidate.c src/scan.c src/contract/coverage.c src/acquire.c src/runtime_identity.c src/base.c tests/test_base.c -lm -lpthread -lcurl
+PLATFORM_SWEEP_PASS
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce -o bin/decimal_demo src/nn.c src/router/dag_full.c src/router/registry.c src/router/route.c src/plan_table.c src/consolidate.c src/contract/contract.c src/contract/unit.c src/property.c tests/decimal_demo.c -lm -lpthread -lcurl
+./bin/acquire > logs/acquire.log 2>&1
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce -o bin/circuit_demo src/nn.c src/router/dag_full.c src/router/registry.c src/router/route.c src/plan_table.c src/consolidate.c src/contract/contract.c src/contract/unit.c tests/circuit_demo.c -lm -lpthread -lcurl
+./bin/attribution > logs/attribution.log 2>&1
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce -o bin/leakcheck src/nn.c src/router/dag_full.c src/router/registry.c src/router/route.c src/plan_table.c src/contract/contract.c src/contract/unit.c src/property.c src/consolidate.c src/scan.c src/contract/coverage.c src/acquire.c src/runtime_identity.c src/base.c tests/test_base.c tests/leak_wrap.c -Wl,--wrap=malloc,--wrap=calloc,--wrap=realloc,--wrap=free -lm -lpthread -lcurl
+./bin/base > logs/base.log 2>&1
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce -o bin/cnet_fault_test src/cnet_fault.c src/selfimprove/cnet_promote.c tests/cnet_fault_test.c -lm -lpthread -lcurl
+./bin/cnet_fault_test
+CNET_FAULT_PASS checks=16
+CNET_PROMOTE_PASS checks=5
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce -o bin/cce_adapter_bank_test src/cce/cce_adapter_bank.c tests/cce_adapter_bank_test.c -lm -lpthread -lcurl
+./bin/cce_adapter_bank_test
+CCE_ADAPTER_BANK_PASS checks=6
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce -o bin/cnet_serve_decode_test src/serve/cnet_serve_decode.c tests/cnet_serve_decode_test.c -lm -lpthread -lcurl
+./bin/cnet_serve_decode_test
+CNET_SERVE_DECODE_PASS checks=2
+make[2]: warning: jobserver unavailable: using -j1.  Add '+' to parent make rule.
+CAPABILITY_RUNNER_STATUS_PASS
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -fPIC -MMD -MP -c -o build/cce/cce_tensor.o src/cce/cce_tensor.c
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -fPIC -MMD -MP -c -o build/cce/cce_block.o src/cce/cce_block.c
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -fPIC -MMD -MP -c -o build/cce/cce_cascade.o src/cce/cce_cascade.c
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -fPIC -MMD -MP -c -o build/cce/cce_archive.o src/cce/cce_archive.c
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -fPIC -MMD -MP -c -o build/cce/cce_forest.o src/cce/cce_forest.c
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -fPIC -MMD -MP -c -o build/cce/cce_router.o src/cce/cce_router.c
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -fPIC -MMD -MP -c -o build/cce/cce_sparse_kv.o src/cce/cce_sparse_kv.c
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -fPIC -MMD -MP -c -o build/cce/cce_dsa.o src/cce/cce_dsa.c
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -fPIC -MMD -MP -c -o build/cce/cce_kv_page.o src/cce/cce_kv_page.c
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -fPIC -MMD -MP -c -o build/cce/cce_mtk.o src/cce/cce_mtk.c
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -fPIC -MMD -MP -c -o build/cce/cce_mla.o src/cce/cce_mla.c
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -fPIC -MMD -MP -c -o build/cce/cce_deepseek_map.o src/cce/cce_deepseek_map.c
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -fPIC -MMD -MP -c -o build/cce/cce_ds_runtime.o src/cce/cce_ds_runtime.c
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -fPIC -MMD -MP -c -o build/cce/cce_infer_backend.o src/cce/cce_infer_backend.c
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -fPIC -MMD -MP -c -o build/cce/cce_uncertainty.o src/cce/cce_uncertainty.c
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -fPIC -MMD -MP -c -o build/cce/cce_compression.o src/cce/cce_compression.c
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -fPIC -MMD -MP -c -o build/cce/cce_learn.o src/cce/cce_learn.c
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -fPIC -MMD -MP -c -o build/cce/cce_lora.o src/cce/cce_lora.c
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -fPIC -MMD -MP -c -o build/cce/cce_lily.o src/cce/cce_lily.c
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -fPIC -MMD -MP -c -o build/cce/cce_block_patch.o src/cce/cce_block_patch.c
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -fPIC -MMD -MP -c -o build/cce/cce_gpu.o src/cce/cce_gpu.c
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -fPIC -MMD -MP -c -o build/cce/cce_abi.o src/cce/cce_abi.c
+tests/circuit_demo.c: In function ‘main’:
+tests/circuit_demo.c:574:27: warning: ignoring return value of ‘system’ declared with attribute ‘warn_unused_result’ [-Wunused-result]
+  574 |                     (void)system("mkdir -p artifacts/consolidation 2>/dev/null || true");
+      |                           ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+tests/circuit_demo.c:607:35: warning: ignoring return value of ‘system’ declared with attribute ‘warn_unused_result’ [-Wunused-result]
+  607 |                             (void)system("mkdir -p artifacts/consolidation 2>/dev/null || true");
+      |                                   ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -fPIC -MMD -MP -c -o build/cce/cce_perceptual_leaf.o src/cce/cce_perceptual_leaf.c
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -fPIC -MMD -MP -c -o build/cce/cce_wordlm.o src/cce/cce_wordlm.c
+tests/circuit_demo.c:225:68: warning: ‘%s’ directive output may be truncated writing up to 255 bytes into a region of size 215 [-Wformat-truncation=]
+  225 |                         snprintf(tfulls[n], sizeof(tfulls[n]), "%s/%s", tdir, te->d_name);
+      |                                                                    ^~
+In file included from /usr/include/stdio.h:980,
+                 from ./include/cnet_platform.h:244,
+                 from <command-line>:
+In function ‘snprintf’,
+    inlined from ‘main’ at tests/circuit_demo.c:225:25:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: note: ‘__builtin___snprintf_chk’ output between 42 and 297 bytes into a destination of size 256
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   55 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   56 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -fPIC -MMD -MP -c -o build/cce/cce_model.o src/cce/cce_model.c
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -fPIC -MMD -MP -c -o build/cce/cce_model_io.o src/cce/cce_model_io.c
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -fPIC -MMD -MP -c -o build/cce/cce_dataset.o src/cce/cce_dataset.c
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -fPIC -MMD -MP -c -o build/cce/cce_autograd.o src/cce/cce_autograd.c
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -fPIC -MMD -MP -c -o build/cce/cce_autograd_ops.o src/cce/cce_autograd_ops.c
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -fPIC -MMD -MP -c -o build/cce/cce_safetensors.o src/cce/cce_safetensors.c
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -fPIC -MMD -MP -c -o build/cce/cce_gguf.o src/cce/cce_gguf.c
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -fPIC -MMD -MP -c -o build/cce/cce_aicimo.o src/cce/cce_aicimo.c
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -fPIC -MMD -MP -c -o build/cce/cce_qgkp.o src/cce/cce_qgkp.c
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -fPIC -MMD -MP -c -o build/cce/cce_detect.o src/cce/cce_detect.c
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -fPIC -MMD -MP -c -o build/cce/cce_ssm.o src/cce/cce_ssm.c
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -fPIC -MMD -MP -c -o build/cce/cce_hybrid.o src/cce/cce_hybrid.c
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -fPIC -MMD -MP -c -o build/cce/cce_qwen35.o src/cce/cce_qwen35.c
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -fPIC -MMD -MP -c -o build/cce/cce_gguf_qwen35.o src/cce/cce_gguf_qwen35.c
+./bin/leakcheck > logs/leakcheck.log 2>&1
+  ok: both fi[leakcheck] allocations: 349, balance at exit: 0 (crt baseline 0) -> program delta 0 (clean)
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -fPIC -MMD -MP -c -o build/cce/cce_st_llama.o src/cce/cce_st_llama.c
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -fPIC -MMD -MP -c -o build/cce/cce_specgraph.o src/cce/cce_specgraph.c
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -fPIC -MMD -MP -c -o build/cce/cce_weight_store.o src/cce/cce_weight_store.c
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -fPIC -MMD -MP -c -o build/cce/cce_tier_runtime.o src/cce/cce_tier_runtime.c
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -fPIC -MMD -MP -c -o build/cce/cce_similar.o src/cce/cce_similar.c
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -fPIC -MMD -MP -c -o build/cce/cce_clgemm.o src/cce/cce_clgemm.c
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -fPIC -MMD -MP -c -o build/cce/cce_hipgemm.o src/cce/cce_hipgemm.c
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -fPIC -MMD -MP -c -o build/cce/cce_cudagemm.o src/cce/cce_cudagemm.c
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -fPIC -MMD -MP -c -o build/cce/cce_transformer_qat.o src/cce/cce_transformer_qat.c
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -fPIC -MMD -MP -c -o build/cce/cce_transformer_qat_load.o src/cce/cce_transformer_qat_load.c
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -fPIC -MMD -MP -c -o build/cce/cce_trit_kernel.o src/cce/cce_trit_kernel.c
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -fPIC -MMD -MP -c -o build/cce/cce_mojo_dispatch.o src/cce/cce_mojo_dispatch.c
+CAPSULE_TOOL_PASS
+BUILD_INTEGRITY_PASS
+recipe_gate selftest: the gate must reject bad recipes and accept good ones
+  ok  bindir_or_true
+  ok  bindir_bare_or_true
+  ok  plain_or_true
+  ok  bindir_or_echo
+  ok  bindir_or_colon
+  ok  compile_and_run
+  ok  clean_run
+  ok  rc_propagating_run
+ROE_FRONTDOOR_PUBLICATION_PASS
+./bin/decimal_demo > logs/decimal_demo.log 2>&1
+  ok  deliberate_grep
+CAPSULE_TOOL_PLAN_PASS hops=3 oracle_calls=6 work=12
+CAPSULE_TOOL_PLAN_PASS hops=3 oracle_calls=7 work=22
+CAPSULE_TOOL_PLAN_PASS hops=2 oracle_calls=4 work=5
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_TOOL_PLAN_REFUSED invalid_policy_or_request
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_TOOL_PLAN_REFUSED unrepresentable_output
+CAPSULE_TOOL_PLAN_REFUSED invalid_policy_or_request
+CAPSULE_TOOL_PLAN_REFUSED invalid_policy_or_request
+CAPSULE_TOOL_PLAN_REFUSED invalid_policy_or_request
+CAPSULE_TOOL_PLAN_PASS hops=1 oracle_calls=2 work=1
+CAPSULE_TOOL_PLAN_PASS hops=1 oracle_calls=2 work=1
+CAPSULE_TOOL_PLAN_PASS
+  ok  make_recursion
+  ok  git_metadata
+RECIPE_GATE_SELFTEST_PASS: gate rejects 6 swallow shapes and accepts 5 legitimate ones.
+gcc -shared -DCCE_BUILD_DLL -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -o cce.dll \
+	build/cce/cce_tensor.o build/cce/cce_block.o build/cce/cce_cascade.o build/cce/cce_archive.o build/cce/cce_forest.o build/cce/cce_router.o build/cce/cce_sparse_kv.o build/cce/cce_dsa.o build/cce/cce_kv_page.o build/cce/cce_mtk.o build/cce/cce_mla.o build/cce/cce_deepseek_map.o build/cce/cce_ds_runtime.o build/cce/cce_infer_backend.o build/cce/cce_uncertainty.o build/cce/cce_compression.o build/cce/cce_learn.o build/cce/cce_lora.o build/cce/cce_lily.o build/cce/cce_block_patch.o build/cce/cce_gpu.o build/cce/cce_abi.o build/cce/cce_perceptual_leaf.o build/cce/cce_wordlm.o build/cce/cce_model.o build/cce/cce_model_io.o build/cce/cce_dataset.o build/cce/cce_autograd.o build/cce/cce_autograd_ops.o build/cce/cce_safetensors.o build/cce/cce_gguf.o build/cce/cce_aicimo.o build/cce/cce_qgkp.o build/cce/cce_detect.o build/cce/cce_ssm.o build/cce/cce_hybrid.o build/cce/cce_qwen35.o build/cce/cce_gguf_qwen35.o build/cce/cce_st_llama.o build/cce/cce_specgraph.o build/cce/cce_weight_store.o build/cce/cce_tier_runtime.o build/cce/cce_similar.o build/cce/cce_clgemm.o build/cce/cce_hipgemm.o build/cce/cce_cudagemm.o build/cce/cce_transformer_qat.o build/cce/cce_transformer_qat_load.o build/cce/cce_trit_kernel.o build/cce/cce_mojo_dispatch.o  \
+	-lm -lpthread -lcurl  
+ar rcs bin/libcce.a build/cce/cce_tensor.o build/cce/cce_block.o build/cce/cce_cascade.o build/cce/cce_archive.o build/cce/cce_forest.o build/cce/cce_router.o build/cce/cce_sparse_kv.o build/cce/cce_dsa.o build/cce/cce_kv_page.o build/cce/cce_mtk.o build/cce/cce_mla.o build/cce/cce_deepseek_map.o build/cce/cce_ds_runtime.o build/cce/cce_infer_backend.o build/cce/cce_uncertainty.o build/cce/cce_compression.o build/cce/cce_learn.o build/cce/cce_lora.o build/cce/cce_lily.o build/cce/cce_block_patch.o build/cce/cce_gpu.o build/cce/cce_abi.o build/cce/cce_perceptual_leaf.o build/cce/cce_wordlm.o build/cce/cce_model.o build/cce/cce_model_io.o build/cce/cce_dataset.o build/cce/cce_autograd.o build/cce/cce_autograd_ops.o build/cce/cce_safetensors.o build/cce/cce_gguf.o build/cce/cce_aicimo.o build/cce/cce_qgkp.o build/cce/cce_detect.o build/cce/cce_ssm.o build/cce/cce_hybrid.o build/cce/cce_qwen35.o build/cce/cce_gguf_qwen35.o build/cce/cce_st_llama.o build/cce/cce_specgraph.o build/cce/cce_weight_store.o build/cce/cce_tier_runtime.o build/cce/cce_similar.o build/cce/cce_clgemm.o build/cce/cce_hipgemm.o build/cce/cce_cudagemm.o build/cce/cce_transformer_qat.o build/cce/cce_transformer_qat_load.o build/cce/cce_trit_kernel.o build/cce/cce_mojo_dispatch.o 
+Built bin/libcce.a (50 objects)
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce -o bin/test_personal_ai_reroute \
+	src/personal_ai.c src/cnet_moe.c src/cnet_acct.c src/cnet_seal_trust.c src/cnet_distrust.c src/cnet_live_miss.c src/hybrid_ai.c src/serve/cnet_sparse_serve.c src/residual_gguf.c src/residual_http.c src/cnet_pilot.c src/selfimprove/cnet_curiosity.c src/resource_governor.c src/selfimprove/self_improve.c src/gap_lane.c src/selfimprove/cnet_auto_learn.c src/cnet_charter.c src/cnet_record_teacher.c src/cnet_fault.c src/selfimprove/cnet_promote.c src/serve/cnet_serve_decode.c src/cnet_evidence_bundle.c src/cnet_health_layers.c src/external_teacher.c src/model_runtime.c src/cce/cce_contract_adapter.c src/specialist_adapters.c src/specialist.c src/specialist_health.c src/nn.c src/router/dag_full.c src/router/registry.c src/router/route.c src/plan_table.c src/contract/contract.c src/contract/unit.c src/property.c src/consolidate.c src/scan.c src/contract/coverage.c src/acquire.c src/runtime_identity.c src/base.c src/library.c src/cnet_dc_type.c src/cnet_swap.c tests/test_personal_ai_reroute.c bin/libcce.a \
+	-lm -lpthread -lcurl  -pthread
+Built cce.dll (shared CCE; same objects as libcce)
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce -fPIC -shared -o bin/libcnet_capsule_core.so src/personal_ai.c src/cnet_moe.c src/cnet_acct.c src/cnet_seal_trust.c src/cnet_distrust.c src/cnet_live_miss.c src/hybrid_ai.c src/serve/cnet_sparse_serve.c src/residual_gguf.c src/residual_http.c src/cnet_pilot.c src/selfimprove/cnet_curiosity.c src/resource_governor.c src/selfimprove/self_improve.c src/gap_lane.c src/selfimprove/cnet_auto_learn.c src/cnet_charter.c src/cnet_record_teacher.c src/cnet_fault.c src/selfimprove/cnet_promote.c src/serve/cnet_serve_decode.c src/cnet_evidence_bundle.c src/cnet_health_layers.c src/external_teacher.c src/model_runtime.c src/cce/cce_contract_adapter.c src/specialist_adapters.c src/specialist.c src/specialist_health.c src/nn.c src/router/dag_full.c src/router/registry.c src/router/route.c src/plan_table.c src/contract/contract.c src/contract/unit.c src/property.c src/consolidate.c src/scan.c src/contract/coverage.c src/acquire.c src/runtime_identity.c src/base.c src/library.c src/cnet_dc_type.c src/cnet_swap.c src/memory/cnet_capsule.c \
+	src/serve/cnet_capsule_core.c src/serve/cnet_capsule_demand.c src/memory/cnet_semantic_cortex.c src/memory/cnet_shared_workspace.c bin/libcce.a -lm -lpthread -lcurl  -pthread
+RECIPE_GATE_PASS: no swallowed executable exits; pipefail on for 187 pipeline(s); 53 headline gate(s) .PHONY.
+PIPELINE_STATUS_PASS checks=15 shapes=6 producer=marker_then_exit_7
+BENCHMARK_VERDICT_PASS checks=30 pass=0 withheld=3 blocked=4 no_verdict=1
+GATE_EVIDENCE_PASS checks=30 skipped=0 stale=refused marker_then_exit=refused silent=refused duplicate=refused conflicting=refused substring=refused argv=exact secrets=redacted
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -o bin/clgemm_unit tests/clgemm_unit.c bin/libcce.a -lm -lpthread -lcurl  
+./bin/clgemm_unit > logs/clgemm_unit.log 2>&1
+./bin/circuit_demo > logs/circuit_demo.log 2>&1
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -o bin/cce_archive tests/cce_archive_test.c bin/libcce.a -lm -lpthread -lcurl  
+./bin/cce_archive > logs/cce_archive.log 2>&1
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -o bin/cce_forest tests/cce_forest_test.c bin/libcce.a -lm -lpthread -lcurl  
+./bin/cce_forest > logs/cce_forest.log 2>&1
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce -fopenmp -DCCE_SAFETENSORS_TESTING  -fPIC -c -o build/cce/cce_safetensors_testing.o src/cce/cce_safetensors.c
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce -fopenmp -DCCE_SAFETENSORS_TESTING  -o bin/cce_safetensors_test src/nn.c tests/test_cce_safetensors.c \
+	build/cce/cce_safetensors_testing.o \
+	build/cce/cce_tensor.o build/cce/cce_block.o build/cce/cce_cascade.o build/cce/cce_archive.o build/cce/cce_forest.o build/cce/cce_router.o build/cce/cce_sparse_kv.o build/cce/cce_dsa.o build/cce/cce_kv_page.o build/cce/cce_mtk.o build/cce/cce_mla.o build/cce/cce_deepseek_map.o build/cce/cce_ds_runtime.o build/cce/cce_infer_backend.o build/cce/cce_uncertainty.o build/cce/cce_compression.o build/cce/cce_learn.o build/cce/cce_lora.o build/cce/cce_lily.o build/cce/cce_block_patch.o build/cce/cce_gpu.o build/cce/cce_abi.o build/cce/cce_perceptual_leaf.o build/cce/cce_wordlm.o build/cce/cce_model.o build/cce/cce_model_io.o build/cce/cce_dataset.o build/cce/cce_autograd.o build/cce/cce_autograd_ops.o build/cce/cce_gguf.o build/cce/cce_aicimo.o build/cce/cce_qgkp.o build/cce/cce_detect.o build/cce/cce_ssm.o build/cce/cce_hybrid.o build/cce/cce_qwen35.o build/cce/cce_gguf_qwen35.o build/cce/cce_st_llama.o build/cce/cce_specgraph.o build/cce/cce_weight_store.o build/cce/cce_tier_runtime.o build/cce/cce_similar.o build/cce/cce_clgemm.o build/cce/cce_hipgemm.o build/cce/cce_cudagemm.o build/cce/cce_transformer_qat.o build/cce/cce_transformer_qat_load.o build/cce/cce_trit_kernel.o build/cce/cce_mojo_dispatch.o  \
+	-lm -lpthread -lcurl  
+./bin/cce_safetensors_test > logs/cce_safetensors_test.log 2>&1
+  ledger-only target cannot certify source output                PASS
+  compatible alternate executes its own rot1 output              PASS
+  install alternate restricted coverage                          PASS
+  alternate outside coverage refuses                             PASS
+  incompatible or mutated alternate refuses                      PASS
+PERSONAL_AI_REROUTE_PASS checks=5 failures=0
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -o bin/cnet_lm_bounds_test src/nn.c src/router/dag_full.c src/router/registry.c src/router/route.c src/plan_table.c src/contract/contract.c src/contract/unit.c src/cnet_lm.c src/contract/anti_repeat.c tests/test_cnet_lm_bounds.c bin/libcce.a -lm -lpthread -lcurl  
+src/serve/cnet_capsule_demand.c:1: warning: "_GNU_SOURCE" redefined
+    1 | #define _GNU_SOURCE
+      | 
+<command-line>: note: this is the location of the previous definition
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -o bin/cce_autograd_test tests/test_cce_autograd.c bin/libcce.a -lm -lpthread -lcurl  
+./bin/cce_autograd_test > logs/cce_autograd_test.log 2>&1
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -o bin/cce_model_test tests/test_cce_model_save.c bin/libcce.a -lm -lpthread -lcurl  
+./bin/cce_model_test > logs/cce_model_test.log 2>&1
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -o bin/cce_view tests/cce_view_test.c bin/libcce.a -lm -lpthread -lcurl  
+./bin/cce_view > logs/cce_view.log 2>&1
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -o bin/forest_view tests/cce_forest_view_test.c bin/libcce.a -lm -lpthread -lcurl  
+./bin/forest_view > logs/forest_view.log 2>&1
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -o bin/cce_detect tests/cce_detect_test.c bin/libcce.a -lm -lpthread -lcurl  
+./bin/cce_detect > logs/cce_detect.log 2>&1
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -o bin/mutate src/nn.c src/router/dag_full.c src/router/registry.c src/router/route.c src/plan_table.c src/contract/contract.c src/contract/unit.c src/property.c src/consolidate.c src/scan.c src/contract/coverage.c src/acquire.c src/runtime_identity.c src/base.c src/attribution.c src/contract/conformal.c tests/test_mutate.c bin/libcce.a -lm -lpthread -lcurl  
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce -o bin/flagship src/nn.c src/router/dag_full.c src/router/registry.c src/router/route.c src/plan_table.c src/contract/contract.c src/contract/unit.c src/property.c src/consolidate.c src/scan.c src/contract/coverage.c src/contract/conformal.c src/acquire.c src/runtime_identity.c src/base.c src/flagship.c tests/test_flagship.c -lm -lpthread -lcurl
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -o bin/cce_dora_test src/cce/cce_dora.c tests/cce_dora_test.c bin/libcce.a -lm -lpthread -lcurl  
+./bin/cce_dora_test
+ok init
+ok untrained no-op
+ok train mse finite
+CCE_DORA_PASS checks=3
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce -o bin/test_capsule_core_growth \
+	tests/test_capsule_core_growth.c -Lbin -lcnet_capsule_core \
+	-Wl,-rpath,'$ORIGIN' -lm -lpthread -lcurl  -ldl -pthread
+  before teaching: actual serving core refuses unknown capability PASS
+  external modulo tool teaches native BTN                        PASS
+  certified unit publishes using existing capsule format         PASS
+  fresh runtime imports and replays certification                PASS
+  independent tool expected answer matches                       PASS
+  independent tool expected answer matches                       PASS
+  independent tool expected answer matches                       PASS
+  independent tool expected answer matches                       PASS
+  independent tool expected answer matches                       PASS
+  OOD remains refused                                            PASS
+  OOD remains refused                                            PASS
+  OOD remains refused                                            PASS
+  malformed or incompatible request refuses                      PASS
+  malformed or incompatible request refuses                      PASS
+  malformed or incompatible request refuses                      PASS
+  malformed or incompatible request refuses                      PASS
+  malformed or incompatible request refuses                      PASS
+  malformed or incompatible request refuses                      PASS
+  fresh runtime imports and replays certification                PASS
+  independent tool expected answer matches                       PASS
+  independent tool expected answer matches                       PASS
+  independent tool expected answer matches                       PASS
+  independent tool expected answer matches                       PASS
+  independent tool expected answer matches                       PASS
+  OOD remains refused                                            PASS
+  OOD remains refused                                            PASS
+  OOD remains refused                                            PASS
+  malformed or incompatible request refuses                      PASS
+  malformed or incompatible request refuses                      PASS
+  malformed or incompatible request refuses                      PASS
+  malformed or incompatible request refuses                      PASS
+  malformed or incompatible request refuses                      PASS
+  malformed or incompatible request refuses                      PASS
+CAPSULE_CORE_GROWTH_PASS checks=33 failures=0
+gcc -std=c11 -Wall -Wextra -Werror -O2 -D_POSIX_C_SOURCE=200809L -Iinclude -include include/cnet_platform.h -D_DEFAULT_SOURCE -DCNET_HAVE_CURL=1 \
+	$(pkg-config --cflags libcurl) -o bin/cnetd \
+	src/roe/cnet_roe_asi.c src/roe/cnet_roe_net.c src/selfimprove/cnet_asi_improve.c src/cnet_domain_route.c src/serve/cnet_utterance.c \
+	src/serve/cnetd_protocol.c src/memory/cnet_query_alias.c \
+	src/memory/cnet_dialog_ctx.c src/cnet_slot_extract.c \
+	src/cnet_typed_en.c src/cnet_ffi_convert.c src/cnet_cert_solver.c \
+	src/cnet_roe_gold.c \
+	src/serve/cnet_showrunner.c src/serve/cnet_marble_live.c \
+	src/memory/cnet_md_memory.c src/serve/cnet_mcp_client.c \
+	src/memory/cnet_chat_lookup.c src/memory/cnet_lookup.c \
+	src/cce/cce_campaign_provenance.c src/serve/cnet_c_speak.c \
+	src/cce/cce_wordlm.c src/cnet_skill_lane.c \
+	src/memory/cnet_capsule_loop.c src/serve/cnet_paragraph.c \
+	src/cnet_ood_skill.c src/cnet_held_model.c src/cnet_hemisphere.c \
+	src/cnet_brain_mirror.c src/cnet_rlm.c \
+	src/serve/cnet_core_serve.c src/cnet_live_miss.c \
+	src/memory/cnet_ember.c src/memory/cnet_ember_ckpt.c \
+	src/memory/cnet_ember_session.c src/memory/cnet_ember_steer.c \
+	tools/cnetd.c -lm -lcurl $(pkg-config --libs libcurl) -ldl \
+	-Lbin -lcnet_capsule_core -Wl,-rpath,'$ORIGIN'
+./bin/mutate > logs/mutate.log 2>&1
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce -Werror -o bin/cnet_capsule_core tools/cnet_capsule_core_main.c \
+	-Lbin -lcnet_capsule_core -Wl,-rpath,'$ORIGIN' -lm -lpthread -lcurl
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce -Werror -o bin/test_capsule_selected_audit tests/test_capsule_selected_audit.c -Lbin -lcnet_capsule_core -Wl,-rpath,'$ORIGIN' -lm -lpthread -lcurl
+src/flagship.c: In function ‘fs_gpu_temp_amdgpu’:
+src/flagship.c:53:47: warning: ‘%s’ directive output may be truncated writing up to 255 bytes into a region of size between 64 and 191 [-Wformat-truncation=]
+   53 |             snprintf(tpath, sizeof tpath, "%s/%s/temp1_input", path,
+      |                                               ^~
+In file included from /usr/include/stdio.h:980,
+                 from ./include/cnet_platform.h:244,
+                 from <command-line>:
+In function ‘snprintf’,
+    inlined from ‘fs_gpu_temp_amdgpu’ at src/flagship.c:53:13:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: note: ‘__builtin___snprintf_chk’ output between 14 and 396 bytes into a destination of size 192
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   55 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   56 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+./bin/flagship > logs/flagship.log 2>&1
+CAPSULE_DEMOTED_REPLAY_CHECK
+CAPSULE_SELECTED_AUDIT_PASS refused=1 certified=0
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce -Werror -o bin/cnet_capsule_scale_probe tools/cnet_capsule_scale_probe.c -Lbin -lcnet_capsule_core -Wl,-rpath,'$ORIGIN' -lm -lpthread -lcurl
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce -Werror -o bin/test_capsule_replay_scale tests/test_capsule_replay_scale.c -Lbin -lcnet_capsule_core -Wl,-rpath,'$ORIGIN' -lm -lpthread -lcurl
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce -Werror -o bin/cnet_quarantine_base tools/cnet_quarantine_base.c -Lbin -lcnet_capsule_core -Wl,-rpath,'$ORIGIN' -lm -lpthread -lcurl
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce -Werror -o bin/test_capsule_demand_security tests/test_capsule_demand_security.c -Lbin -lcnet_capsule_core -Wl,-rpath,'$ORIGIN'
+CAPSULE_DEMAND_SECURITY_PASS pending_limit=256 concurrency=8
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce -Werror -o bin/test_capsule_core_budget tests/test_capsule_core_budget.c -Lbin -lcnet_capsule_core -Wl,-rpath,'$ORIGIN' -lm -lpthread -lcurl
+DEQUANT XCHECK OK: Q8_0 + Q4_K bit-identical across CNET and ds4 lineages (8192 blocks)
+f16 identity: 65536/65536 bit-exact (2046 subnormals covered)
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce -o bin/test_capsule_history_coverage tests/test_capsule_history_coverage.c -Lbin -lcnet_capsule_core -Wl,-rpath,'$ORIGIN' -lm -lpthread -lcurl
+CAPSULE_CORE_BUDGET_PASS failures=0
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce -Werror -o bin/test_struct_mine_persistence tests/test_struct_mine_persistence.c -Lbin -lcnet_capsule_core -Wl,-rpath,'$ORIGIN' -lm -lpthread -lcurl
+  fixture builds                                                 PASS
+  materialize fixture                                            PASS
+  seal only five labels                                          PASS
+  narrow coverage exports                                        PASS
+  narrow guard remains valid                                     PASS
+  history uses only the one covered row, replayed in both inventories PASS
+  legacy wider guard exports                                     PASS
+  core refuses a guard row without a sealed label                PASS
+CAPSULE_HISTORY_COVERAGE_PASS failures=0
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce -Werror -o bin/test_checkpoint_binding tests/test_checkpoint_binding.c -Lbin -lcnet_capsule_core -Wl,-rpath,'$ORIGIN' -lm -lpthread -lcurl
+  external evidence fixture                                      PASS
+  materialize student                                            PASS
+  missing recorded teacher rows refuses before sealing           PASS
+  persist actual owner rows and guard                            PASS
+  disk contains exact owner                                      PASS
+  coverage survives restart                                      PASS
+STRUCT_MINE_PERSISTENCE_PASS checks=6 failures=0
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce -Werror -o bin/test_checkpoint_durability tests/test_checkpoint_durability.c -Lbin -lcnet_capsule_core -Wl,-rpath,'$ORIGIN' -lm -lpthread -lcurl
+  fixture                                                        PASS
+  plant old predictable temporary symlink                        PASS
+  normal save                                                    PASS
+  read protected file                                            PASS
+  temporary symlink cannot truncate unrelated file               PASS
+  file sync failure reported                                     PASS
+  directory sync failure reported                                PASS
+  failed sync leaves a complete readable checkpoint              PASS
+  retry repairs durability                                       PASS
+  export                                                         PASS
+  payload manifest capsule and root directory synced             PASS
+  export refuses failed directory sync                           PASS
+  manifest file-sync failure refuses publication                 PASS
+  post-manifest rename directory-sync failure is reported        PASS
+  post-manifest sync failure retains complete certified artifact PASS
+CHECKPOINT_DURABILITY_PASS checks=15 failures=0 artifacts=/tmp/cnet-durability-ULbpHX
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce -Werror -o bin/test_capsule_publish_recovery tests/test_capsule_publish_recovery.c -Lbin -lcnet_capsule_core -Wl,-rpath,'$ORIGIN' -lm -lpthread -lcurl
+personal_ai: ERROR coverage does not bind 1 of 1 mined unit(s) — refusing to serve them until a re-mine restores the guard (fail-closed)
+personal_ai: dropped 1 stale coverage record(s) with no unit in the base
+  allocate private checkpoint                                    PASS
+  sealed fixture                                                 PASS
+  materialize bounded seal                                       PASS
+  seal only recorded subset                                      PASS
+  matching checkpoint remains available                          PASS
+  widened sidecar rejected against older seal                    PASS
+  mismatched guard cannot override fail-closed                   PASS
+  fresh sealed fixture                                           PASS
+  stale compaction preserves moved valid guard                   PASS
+  older subset guard binds newer sealed contract                 PASS
+  large reservoir allocation                                     PASS
+  1024 reordered rows bind without quadratic budget refusal      PASS
+  1024 reordered rows bind without quadratic budget refusal      PASS
+  1024 reordered rows bind without quadratic budget refusal      PASS
+  1024 reordered rows bind without quadratic budget refusal      PASS
+  1024 reordered rows bind without quadratic budget refusal      PASS
+  signed-zero guard cannot widen exact byte membership           PASS
+CHECKPOINT_BINDING_PASS checks=17 failures=0
+usage: bin/cnet_capsule_scale_probe ROOT EVEN_CAPSULES_2_TO_4096 REPEATS_1_TO_20
+usage: bin/cnet_capsule_scale_probe ROOT EVEN_CAPSULES_2_TO_4096 REPEATS_1_TO_20
+usage: bin/cnet_capsule_scale_probe ROOT EVEN_CAPSULES_2_TO_4096 REPEATS_1_TO_20
+usage: bin/cnet_capsule_scale_probe ROOT EVEN_CAPSULES_2_TO_4096 REPEATS_1_TO_20
+usage: bin/cnet_capsule_scale_probe ROOT EVEN_CAPSULES_2_TO_4096 REPEATS_1_TO_20
+usage: bin/cnet_capsule_scale_probe ROOT EVEN_CAPSULES_2_TO_4096 REPEATS_1_TO_20
+usage: bin/cnet_capsule_scale_probe ROOT EVEN_CAPSULES_2_TO_4096 REPEATS_1_TO_20
+usage: bin/cnet_capsule_scale_probe ROOT EVEN_CAPSULES_2_TO_4096 REPEATS_1_TO_20
+usage: bin/cnet_capsule_scale_probe ROOT EVEN_CAPSULES_2_TO_4096 REPEATS_1_TO_20
+usage: bin/cnet_capsule_scale_probe ROOT EVEN_CAPSULES_2_TO_4096 REPEATS_1_TO_20
+usage: bin/cnet_capsule_scale_probe ROOT EVEN_CAPSULES_2_TO_4096 REPEATS_1_TO_20
+CAPSULE_SCALE_ARTIFACTS /tmp/cnet-scale-bench-jqvNcA
+CAPSULE_SCALE_STAGE capsules=2
+CAPSULE_TEACH_REFUSED invalid evidence, failed certification, or publication conflict
+CAPSULE_TEACH_REFUSED invalid evidence, failed certification, or publication conflict
+CAPSULE_HISTORY_PASS label_obligations=2
+CAPSULE_HISTORY_PASS label_obligations=4
+CAPSULE_TEACH_PASS unit=recover rows=2 source=verified_tool digest=7843938111825796823 scope=exhaustive margin=0.500000 reused=1 method=finite_domain_compile
+CAPSULE_PUBLISH_RECOVERY_PASS failures=0 artifacts=/tmp/cnet-publish-recovery-zbN2xv
+CAPSULE_SCALE_STAGE capsules=4
+CAPSULE_SCALE_ARTIFACTS /tmp/cnet-scale-bench-FB9SJx
+CAPSULE_SCALE_STAGE capsules=64
+CAPSULE_SCALE_ARTIFACTS /tmp/cnet-scale-bench-BUs2K1
+CAPSULE_SCALE_STAGE capsules=2
+CAPSULE_SCALE_BENCH_RED artifacts=/tmp/cnet-scale-bench-BUs2K1
+CAPSULE_SCALE_ARTIFACTS /tmp/cnet-scale-bench-PiNEaq
+CAPSULE_SCALE_STAGE capsules=2
+CAPSULE_SCALE_BENCH_RED artifacts=/tmp/cnet-scale-bench-PiNEaq
+CAPSULE_SCALE_BENCH_PASS
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce -Werror -o bin/test_base_quarantine tests/test_base_quarantine.c -Lbin -lcnet_capsule_core -Wl,-rpath,'$ORIGIN' -lm -lpthread -lcurl
+BASE_QUARANTINE_REFUSED
+BASE_QUARANTINE_REFUSED
+  fixture                                                        PASS
+  save source                                                    PASS
+  missing target refuses without publishing                      PASS
+BASE_QUARANTINE_PASS kept=1 quarantined=1 byte_verified=1 source_unchanged=1
+  quarantine publishes separate deployment                       PASS
+  existing deployment never overwritten                          PASS
+  only requested unit excluded                                   PASS
+  zero-mined deployment has explicit empty coverage store        PASS
+  quarantine recoverable                                         PASS
+  source untouched                                               PASS
+BASE_QUARANTINE_PASS checks=9 failures=0
+CAPSULE_ACQUIRE_REFUSED unsafe_lock
+CAPSULE_TOOL_PLAN_REFUSED unrepresentable_output
+CAPSULE_ACQUIRE_REFUSED planner_failure_retryable
+CAPSULE_CURRICULUM_TICK processed=0 failed=0 budget=2 examined=0 scan_budget=64
+CAPSULE_ACQUIRE_TICK processed=0 published=0 examined=1 tool_calls=0 failed=1
+CAPSULE_ACQUIRE_REFUSED noncanonical_demand
+CAPSULE_CURRICULUM_TICK processed=0 failed=0 budget=2 examined=0 scan_budget=64
+CAPSULE_ACQUIRE_TICK processed=0 published=0 examined=1 tool_calls=0 failed=1
+CAPSULE_ACQUIRE_REFUSED invalid_demand
+CAPSULE_CURRICULUM_TICK processed=0 failed=0 budget=2 examined=0 scan_budget=64
+CAPSULE_ACQUIRE_TICK processed=0 published=0 examined=1 tool_calls=0 failed=1
+CAPSULE_TOOL_PLAN_REFUSED invalid_policy
+CAPSULE_ACQUIRE_REFUSED invalid_policy
+CAPSULE_TOOL_PLAN_REFUSED invalid_policy
+CAPSULE_ACQUIRE_REFUSED invalid_policy
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=0 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=1 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=10 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=11 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=12 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=13 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=14 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=15 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=16 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=17 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=18 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=19 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=2 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=20 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=21 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=22 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=23 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=24 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=25 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=26 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=27 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=28 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=29 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=3 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=30 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=31 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=32 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=33 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=34 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=35 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=36 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=37 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=38 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=39 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=4 terminal=1
+cnetd built -> bin/cnetd
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=40 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=41 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=42 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=43 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=44 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=45 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=46 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=47 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=48 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=49 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=5 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=50 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=51 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=52 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=53 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=54 terminal=1
+CAPSULE_COMPOSED_REFUSAL_PASS
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=55 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=56 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=57 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=58 terminal=1
+CAPSULE_HISTORY_PASS label_obligations=2
+CAPSULE_TEACH_PASS unit=short_ab rows=2 source=verified_tool digest=16806086139702721726 scope=exhaustive margin=0.500000 reused=0 method=finite_domain_compile
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=59 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=6 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=60 terminal=1
+CAPSULE_HISTORY_PASS label_obligations=2
+CAPSULE_TEACH_PASS unit=long_ac rows=2 source=verified_tool digest=8374792472640370615 scope=exhaustive margin=0.500000 reused=0 method=finite_domain_compile
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=61 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=62 terminal=1
+CAPSULE_HISTORY_PASS label_obligations=2
+CAPSULE_TEACH_PASS unit=long_cb rows=2 source=verified_tool digest=15926056130011393631 scope=exhaustive margin=0.500000 reused=0 method=finite_domain_compile
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=63 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=7 terminal=1
+CAPSULE_HISTORY_PASS label_obligations=1
+CAPSULE_TEACH_PASS unit=suffix_bd rows=1 source=verified_tool digest=17129168102372495783 scope=sampled margin=0.497178 reused=0 method=gradient_fit
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=8 terminal=1
+ABSTAIN verified=0 reason=no_covered_certified_plan
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=9 terminal=1
+CAPSULE_CURRICULUM_TICK processed=0 failed=0 budget=2 examined=0 scan_budget=64
+CAPSULE_ACQUIRE_TICK processed=0 published=0 examined=64 tool_calls=0 failed=1
+CAPSULE_HISTORY_PASS label_obligations=2
+CAPSULE_TEACH_PASS unit=forward rows=2 source=verified_tool digest=8374792472640370615 scope=exhaustive margin=0.500000 reused=0 method=finite_domain_compile
+CAPSULE_TOOL_PLAN_PASS hops=1 oracle_calls=2 work=1
+CAPSULE_HISTORY_PASS label_obligations=10
+CAPSULE_TEACH_PASS unit=backward rows=2 source=verified_tool digest=7592068658831060367 scope=exhaustive margin=0.500000 reused=0 method=finite_domain_compile
+CAPSULE_VALUE_SEARCH_PASS
+CAPSULE_HISTORY_PASS label_obligations=1
+CAPSULE_TEACH_PASS unit=original_ab rows=1 source=verified_tool digest=13976660982688307905 scope=sampled margin=0.497136 reused=0 method=gradient_fit
+CAPSULE_HISTORY_PASS label_obligations=4
+CAPSULE_TEACH_PASS unit=original_bd rows=1 source=verified_tool digest=7456634385269959529 scope=sampled margin=0.497136 reused=0 method=gradient_fit
+CAPSULE_TEACH_REFUSED invalid evidence, failed certification, or publication conflict
+CAPSULE_HISTORY_REFUSED label_obligations=1
+CAPSULE_HISTORY_PASS label_obligations=1
+CAPSULE_TEACH_PASS unit=ab rows=1 source=verified_tool digest=14994272506967151105 scope=sampled margin=0.497134 reused=0 method=gradient_fit
+CAPSULE_HISTORY_PASS label_obligations=5
+CAPSULE_TEACH_PASS unit=ad rows=1 source=verified_tool digest=6126432586059763517 scope=sampled margin=0.497134 reused=0 method=gradient_fit
+CAPSULE_TEACH_REFUSED invalid evidence, failed certification, or publication conflict
+CAPSULE_HISTORY_REFUSED label_obligations=6
+CAPSULE_HISTORY_PASS
+CAPSULE_HISTORY_PASS label_obligations=32
+CAPSULE_EVAL_PASS cases=32 before_correct=0 after_correct=32 wrong_certified=0 teacher_calls=0
+CAPSULE_TEACH_PASS unit=tool_32e6d4f938be5178d12225bd4ff93ccde7bdcd98d06ab7f3 rows=32 source=verified_tool digest=7119359234768127018 scope=sampled margin=0.500000 reused=0 method=finite_domain_compile
+evidence_sha256=15e2001f7025815bb0a5d50d3783f4320d3df9b54bee47890f7051da91473ff2
+CAPSULE_CURRICULUM_TICK processed=1 failed=0 budget=2 examined=1 scan_budget=64
+CAPSULE_ACQUIRE_TICK processed=1 published=1 examined=1 tool_calls=32 failed=0
+CAPSULE_TOOL_PLAN_PASS hops=1 oracle_calls=2 work=1
+ABSTAIN verified=0 reason=no_covered_certified_plan
+CAPSULE_FINITE_COMPILE_PASS
+CAPSULE_CURRICULUM_TICK processed=0 failed=0 budget=2 examined=1 scan_budget=64
+CAPSULE_ACQUIRE_TICK processed=1 published=0 examined=1 tool_calls=32 failed=0
+CAPSULE_HISTORY_PASS label_obligations=2
+CAPSULE_TEACH_PASS unit=stable rows=2 source=verified_tool digest=629750745807899002 scope=sampled margin=0.500000 reused=0 method=finite_domain_compile
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=0 terminal=1
+CAPSULE_TEACH_REFUSED candidate_contract_conflict
+CAPSULE_TEACH_REFUSED invalid evidence, failed certification, or publication conflict
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=1 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=10 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=100 terminal=1
+CAPSULE_HISTORY_PASS label_obligations=2
+CAPSULE_TEACH_PASS unit=stable rows=2 source=verified_tool digest=629750745807899002 scope=sampled margin=0.500000 reused=0 method=finite_domain_compile
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=101 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=102 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=103 terminal=1
+CAPSULE_TEACH_REFUSED candidate_contract_conflict
+CAPSULE_TEACH_REFUSED invalid evidence, failed certification, or publication conflict
+CAPSULE_PUBLICATION_INTERFACES_PASS
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=104 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=105 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=106 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=107 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=108 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=109 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=11 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=110 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=111 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=112 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=113 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=114 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=115 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=116 terminal=1
+CAPSULE_TEACH_REFUSED invalid evidence, failed certification, or publication conflict
+CAPSULE_HISTORY_PASS label_obligations=6
+CAPSULE_EVAL_REFUSED cases=1 before_correct=0 after_correct=0 wrong_certified=1 teacher_calls=0
+CAPSULE_CURRICULUM_TICK processed=1 failed=1 budget=2 examined=1 scan_budget=64
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=117 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=118 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=119 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=12 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=120 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=121 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=122 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=123 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=124 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=125 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=126 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=127 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=128 terminal=1
+CAPSULE_HISTORY_PASS label_obligations=6
+CAPSULE_EVAL_PASS cases=6 before_correct=0 after_correct=6 wrong_certified=0 teacher_calls=0
+CAPSULE_TEACH_PASS unit=minute_conversion rows=6 source=verified_tool digest=16347100664623219244 scope=sampled margin=0.500000 reused=0 method=finite_domain_compile
+evidence_sha256=717d98e031dcc14f13715f6567d5d889b1f324c347be07604e48077f51601a01
+CAPSULE_CURRICULUM_TICK processed=1 failed=0 budget=2 examined=1 scan_budget=64
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=129 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=13 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=130 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=131 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=132 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=133 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=134 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=135 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=136 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=137 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=138 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=139 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=14 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=140 terminal=1
+CAPSULE_HISTORY_PASS label_obligations=12
+CAPSULE_EVAL_PASS cases=6 before_correct=6 after_correct=6 wrong_certified=0 teacher_calls=0
+CAPSULE_TEACH_PASS unit=minute_conversion rows=6 source=verified_tool digest=16347100664623219244 scope=sampled margin=0.500000 reused=1 method=finite_domain_compile
+evidence_sha256=717d98e031dcc14f13715f6567d5d889b1f324c347be07604e48077f51601a01
+CAPSULE_CURRICULUM_TICK processed=1 failed=0 budget=2 examined=1 scan_budget=64
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=141 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=142 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=143 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=144 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=145 terminal=1
+CAPSULE_CURRICULUM_REFUSED invalid_request_or_provenance
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=146 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=147 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=148 terminal=1
+CAPSULE_CURRICULUM_TICK processed=0 failed=1 budget=2 examined=2 scan_budget=64
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=149 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=15 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=150 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=151 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=152 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=153 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=154 terminal=1
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=155 terminal=1
+CAPSULE_CURRICULUM_TICK processed=0 failed=0 budget=2 examined=1 scan_budget=64
+CAPSULE_ACQUIRE_TICK processed=0 published=0 examined=64 tool_calls=0 failed=1
+CAPSULE_TEACH_REFUSED invalid evidence, failed certification, or publication conflict
+CAPSULE_HISTORY_PASS label_obligations=18
+CAPSULE_EVAL_REFUSED cases=1 before_correct=0 after_correct=0 wrong_certified=1 teacher_calls=0
+CAPSULE_TEACH_REFUSED invalid evidence, failed certification, or publication conflict
+CAPSULE_HISTORY_PASS label_obligations=18
+CAPSULE_EVAL_REFUSED cases=1 before_correct=0 after_correct=0 wrong_certified=1 teacher_calls=0
+CAPSULE_CURRICULUM_TICK processed=2 failed=1 budget=2 examined=2 scan_budget=64
+CAPSULE_CURRICULUM_REFUSED invalid_request_or_provenance
+CAPSULE_HISTORY_PASS label_obligations=18
+CAPSULE_EVAL_PASS cases=1 before_correct=0 after_correct=1 wrong_certified=0 teacher_calls=0
+CAPSULE_TEACH_PASS unit=z_later rows=6 source=verified_tool digest=2825691588906755571 scope=sampled margin=0.500000 reused=0 method=finite_domain_compile
+evidence_sha256=68a18691c500fa14fcff603469739f5fea4e382ef3963f926b53f903476c4c9a
+CAPSULE_TEACH_REFUSED invalid evidence, failed certification, or publication conflict
+CAPSULE_HISTORY_PASS label_obligations=42
+CAPSULE_EVAL_REFUSED cases=1 before_correct=0 after_correct=0 wrong_certified=1 teacher_calls=0
+CAPSULE_CURRICULUM_TICK processed=2 failed=1 budget=2 examined=4 scan_budget=64
+CAPSULE_TEACH_REFUSED invalid evidence, failed certification, or publication conflict
+CAPSULE_HISTORY_PASS label_obligations=42
+CAPSULE_EVAL_REFUSED cases=1 before_correct=0 after_correct=0 wrong_certified=1 teacher_calls=0
+CAPSULE_CURRICULUM_REFUSED invalid_request_or_provenance
+CAPSULE_TEACH_REFUSED invalid evidence, failed certification, or publication conflict
+CAPSULE_HISTORY_PASS label_obligations=42
+CAPSULE_EVAL_REFUSED cases=1 before_correct=0 after_correct=0 wrong_certified=1 teacher_calls=0
+CAPSULE_CURRICULUM_TICK processed=2 failed=1 budget=2 examined=5 scan_budget=64
+CAPSULE_HISTORY_PASS label_obligations=26
+CAPSULE_EVAL_PASS cases=1 before_correct=0 after_correct=1 wrong_certified=0 teacher_calls=0
+CAPSULE_TEACH_PASS unit=race_unit rows=2 source=verified_tool digest=1029714088995237645 scope=exhaustive margin=0.500000 reused=0 method=finite_domain_compile
+evidence_sha256=05185d84c03be80347abc53af913f2c9d3d7b190bc66ae65b0202f2ba5d6abea
+CAPSULE_CURRICULUM_TICK processed=1 failed=0 budget=2 examined=1 scan_budget=64
+CAPSULE_HISTORY_PASS label_obligations=30
+CAPSULE_EVAL_PASS cases=1 before_correct=0 after_correct=1 wrong_certified=0 teacher_calls=0
+CAPSULE_TEACH_PASS unit=bounded_unit rows=2 source=verified_tool digest=15021538350651793155 scope=exhaustive margin=0.500000 reused=0 method=finite_domain_compile
+evidence_sha256=b56871556f00f72bc24f9cc759e537dcf0911f60ae74c4d13c5e2b681e670bde
+CAPSULE_CURRICULUM_REFUSED invalid_job_files
+CAPSULE_CURRICULUM_TICK processed=1 failed=1 budget=2 examined=2 scan_budget=2
+CAPSULE_CURRICULUM_PASS
+CAPSULE_SCALE_ARTIFACTS /tmp/cnet-scale-bench-M09b4P
+CAPSULE_SCALE_STAGE capsules=2
+CAPSULE_SOCKET_ARTIFACTS /tmp/cnet-socket-bench-qqXDUd
+CAPSULE_SOCKET_CONTRACT_PASS
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce -Werror -o bin/test_capsule_socket_client tests/test_capsule_socket_client.c
+CAPSULE_HISTORY_PASS label_obligations=6
+CAPSULE_TEACH_PASS unit=minute_conversion rows=6 source=verified_tool digest=16347100664623219244 scope=sampled margin=0.500000 reused=0 method=finite_domain_compile
+CAPSULE_HISTORY_PASS label_obligations=22
+CAPSULE_TEACH_PASS unit=metered_cost rows=5 source=verified_tool digest=13240182182108189984 scope=sampled margin=0.494767 reused=0 method=gradient_fit
+CAPSULE_TEACH_REFUSED candidate_contract_conflict
+CAPSULE_TEACH_REFUSED invalid evidence, failed certification, or publication conflict
+CAPSULE_HISTORY_PASS label_obligations=54
+CAPSULE_TEACH_PASS unit=metered_cost_v2 rows=6 source=verified_tool digest=17458862717631998953 scope=sampled margin=0.500000 reused=0 method=finite_domain_compile
+CAPSULE_FRONTDOOR_PASS before_correct=0 after_correct=6 wrong_certified=0 two_hop=1 restart=1 intermediate_ood_refused=1 expansion=1
+CAPSULE_TOOL_PLAN_PASS hops=1 oracle_calls=2 work=1
+CAPSULE_HISTORY_PASS label_obligations=32
+CAPSULE_EVAL_PASS cases=32 before_correct=0 after_correct=32 wrong_certified=0 teacher_calls=0
+CAPSULE_TEACH_PASS unit=tool_c5443252855b8175b26badcd3db129c4eadc0d0abfe8735d rows=32 source=verified_tool digest=10135917319221335391 scope=sampled margin=0.500000 reused=0 method=finite_domain_compile
+evidence_sha256=5864d2d85ca8525e3d2aa2c32c69e6b582793215785a49a97d37f6c21f38b13b
+CAPSULE_CURRICULUM_TICK processed=1 failed=0 budget=2 examined=1 scan_budget=64
+CAPSULE_ACQUIRE_TICK processed=1 published=1 examined=1 tool_calls=32 failed=0
+CAPSULE_TOOL_PLAN_PASS hops=1 oracle_calls=2 work=1
+CAPSULE_HISTORY_PASS label_obligations=96
+CAPSULE_EVAL_PASS cases=32 before_correct=0 after_correct=32 wrong_certified=0 teacher_calls=0
+CAPSULE_TEACH_PASS unit=tool_a0296eb53670fe5b92c1c509a29ef49c13d1fff8cced6897 rows=32 source=verified_tool digest=16451467083424438349 scope=sampled margin=0.500000 reused=0 method=finite_domain_compile
+evidence_sha256=6e568662184ff29bd963219a7586b71f646649ccc81d0e49f10319ccefe8e85b
+CAPSULE_CURRICULUM_TICK processed=1 failed=0 budget=2 examined=2 scan_budget=64
+CAPSULE_ACQUIRE_TICK processed=1 published=1 examined=1 tool_calls=32 failed=0
+CAPSULE_TOOL_PLAN_PASS hops=1 oracle_calls=2 work=2
+CAPSULE_HISTORY_PASS label_obligations=160
+CAPSULE_EVAL_PASS cases=32 before_correct=0 after_correct=32 wrong_certified=0 teacher_calls=0
+CAPSULE_TEACH_PASS unit=tool_5c86534dc3d2ac704982900d565d544c4671c9c88cfe9246 rows=32 source=verified_tool digest=8344984920567359334 scope=sampled margin=0.500000 reused=0 method=finite_domain_compile
+evidence_sha256=4504ff38f76e5104bd97bf7af4627d40e9a95a7bba2947a1008c515990fe6f0a
+CAPSULE_CURRICULUM_TICK processed=1 failed=0 budget=2 examined=3 scan_budget=64
+CAPSULE_ACQUIRE_TICK processed=1 published=1 examined=1 tool_calls=32 failed=0
+CAPSULE_TOOL_PLAN_REFUSED no_approved_path_within_hop_limit
+CAPSULE_ACQUIRE_REFUSED no_approved_path input=unknown output=nowhere value=2 terminal=1
+CAPSULE_CURRICULUM_TICK processed=0 failed=0 budget=2 examined=3 scan_budget=64
+CAPSULE_ACQUIRE_TICK processed=0 published=0 examined=1 tool_calls=0 failed=1
+CAPSULE_ACQUIRE_REFUSED unsafe_policy
+CAPSULE_DEMAND_GROWTH_PASS before_correct=0 after_correct=32 expansion=1 second_domain=1 restart=1 unknown_refused=1
+CAPSULE_TOOL_PLAN_PASS hops=3 oracle_calls=6 work=12
+CAPSULE_ACQUIRE_DEFERRED publication_budget
+CAPSULE_HISTORY_PASS label_obligations=32
+CAPSULE_EVAL_PASS cases=32 before_correct=0 after_correct=32 wrong_certified=0 teacher_calls=0
+CAPSULE_TEACH_PASS unit=tool_cbf3ff90b2ccf56973cd1ac111228bb827333aa45506adf2 rows=32 source=verified_tool digest=1432260052458691394 scope=exhaustive margin=0.500000 reused=0 method=finite_domain_compile
+evidence_sha256=bec292d76f2d2c973c6e46fb902ca416811e8f244bc9eccb0ae6a277657064ba
+CAPSULE_HISTORY_PASS label_obligations=128
+CAPSULE_EVAL_PASS cases=32 before_correct=0 after_correct=32 wrong_certified=0 teacher_calls=0
+CAPSULE_TEACH_PASS unit=tool_d1fe6d28a20dca08dd0dcc796bcb10f41f0ceb8ec6e860b7 rows=32 source=verified_tool digest=15267766117352715505 scope=exhaustive margin=0.500000 reused=0 method=finite_domain_compile
+evidence_sha256=f43d63948ccbe3100caf72a06742eb559ce7d6a923b35b2f4d8997fcf09c9eba
+CAPSULE_CURRICULUM_TICK processed=2 failed=0 budget=2 examined=2 scan_budget=64
+CAPSULE_ACQUIRE_TICK processed=0 published=2 examined=1 tool_calls=64 failed=0
+CAPSULE_TOOL_PLAN_PASS hops=3 oracle_calls=6 work=12
+CAPSULE_HISTORY_PASS label_obligations=256
+CAPSULE_EVAL_PASS cases=32 before_correct=0 after_correct=32 wrong_certified=0 teacher_calls=0
+CAPSULE_TEACH_PASS unit=tool_f0d9fbef3ee4e08a11b3cf742271b97ea948d519ed565c56 rows=32 source=verified_tool digest=8983613125923106521 scope=sampled margin=0.500000 reused=0 method=finite_domain_compile
+evidence_sha256=a133c585cc459510a898dacdb3485cf9f516f1884b5f1c896e644be0780bf804
+CAPSULE_CURRICULUM_TICK processed=1 failed=0 budget=2 examined=3 scan_budget=64
+CAPSULE_ACQUIRE_TICK processed=1 published=1 examined=1 tool_calls=96 failed=0
+CAPSULE_TOOL_PLAN_PASS hops=3 oracle_calls=6 work=12
+CAPSULE_HISTORY_PASS label_obligations=384
+CAPSULE_EVAL_PASS cases=32 before_correct=0 after_correct=32 wrong_certified=0 teacher_calls=0
+CAPSULE_TEACH_PASS unit=tool_a0d537c58e5b87ac9bc728658804eb6658490d7b055aa2f0 rows=32 source=verified_tool digest=8479040145373165931 scope=sampled margin=0.500000 reused=0 method=finite_domain_compile
+evidence_sha256=f7972693ef59a7cf1f3b50065627604fec7b7246fe4c5ce357b3762e6da5fa2c
+CAPSULE_CURRICULUM_TICK processed=1 failed=0 budget=2 examined=4 scan_budget=64
+CAPSULE_ACQUIRE_TICK processed=1 published=1 examined=1 tool_calls=96 failed=0
+CAPSULE_TOOL_PLAN_PASS hops=1 oracle_calls=2 work=4
+CAPSULE_HISTORY_PASS label_obligations=474
+CAPSULE_EVAL_PASS cases=26 before_correct=0 after_correct=26 wrong_certified=0 teacher_calls=0
+CAPSULE_TEACH_PASS unit=tool_175db4d24ce1673c0e78bad8aef498d9087fb9f6b2e30087 rows=26 source=verified_tool digest=4538913173806060216 scope=sampled margin=0.500000 reused=0 method=finite_domain_compile
+evidence_sha256=1e3cbcd1a7442428296c037f298aa9cfb95cb06edf23867f6e7ac03ce642ba1b
+CAPSULE_CURRICULUM_TICK processed=1 failed=0 budget=2 examined=5 scan_budget=64
+CAPSULE_ACQUIRE_TICK processed=1 published=1 examined=1 tool_calls=26 failed=0
+CAPSULE_COMPOSED_ACQUIRE_PASS heldout_task_pairs=3 initial_composed_correct=16 expanded_composed_correct=96 primitive_unseen_claim=withheld restart=1 portable=1 composition_jobs=4
+CAPSULE_TOOL_PLAN_PASS hops=1 oracle_calls=2 work=1
+CAPSULE_ACQUIRE_REFUSED queue_entry_limit
+CAPSULE_CURRICULUM_REFUSED invalid_job_files
+CAPSULE_CURRICULUM_REFUSED invalid_job_files
+CAPSULE_CURRICULUM_REFUSED invalid_job_files
+CAPSULE_CURRICULUM_REFUSED invalid_job_files
+CAPSULE_CURRICULUM_REFUSED invalid_job_files
+CAPSULE_CURRICULUM_REFUSED invalid_job_files
+CAPSULE_CURRICULUM_REFUSED invalid_job_files
+CAPSULE_CURRICULUM_REFUSED invalid_job_files
+CAPSULE_CURRICULUM_REFUSED invalid_job_files
+CAPSULE_CURRICULUM_REFUSED invalid_job_files
+CAPSULE_CURRICULUM_REFUSED invalid_job_files
+CAPSULE_CURRICULUM_REFUSED invalid_job_files
+CAPSULE_CURRICULUM_REFUSED invalid_job_files
+CAPSULE_CURRICULUM_REFUSED invalid_job_files
+CAPSULE_CURRICULUM_REFUSED invalid_job_files
+CAPSULE_CURRICULUM_REFUSED invalid_job_files
+CAPSULE_CURRICULUM_REFUSED invalid_job_files
+CAPSULE_CURRICULUM_REFUSED invalid_job_files
+CAPSULE_CURRICULUM_REFUSED invalid_job_files
+CAPSULE_CURRICULUM_REFUSED invalid_job_files
+CAPSULE_CURRICULUM_REFUSED invalid_job_files
+CAPSULE_CURRICULUM_REFUSED invalid_job_files
+CAPSULE_CURRICULUM_REFUSED invalid_job_files
+CAPSULE_CURRICULUM_REFUSED invalid_job_files
+CAPSULE_CURRICULUM_REFUSED invalid_job_files
+CAPSULE_CURRICULUM_REFUSED invalid_job_files
+CAPSULE_CURRICULUM_REFUSED invalid_job_files
+CAPSULE_CURRICULUM_REFUSED invalid_job_files
+CAPSULE_CURRICULUM_REFUSED invalid_job_files
+CAPSULE_CURRICULUM_REFUSED invalid_job_files
+CAPSULE_CURRICULUM_REFUSED invalid_job_files
+CAPSULE_CURRICULUM_REFUSED invalid_job_files
+CAPSULE_CURRICULUM_REFUSED invalid_job_files
+CAPSULE_CURRICULUM_REFUSED invalid_job_files
+CAPSULE_CURRICULUM_REFUSED invalid_job_files
+CAPSULE_CURRICULUM_REFUSED invalid_job_files
+CAPSULE_CURRICULUM_REFUSED invalid_job_files
+CAPSULE_CURRICULUM_REFUSED invalid_job_files
+CAPSULE_CURRICULUM_REFUSED invalid_job_files
+CAPSULE_CURRICULUM_REFUSED invalid_job_files
+CAPSULE_CURRICULUM_REFUSED invalid_job_files
+CAPSULE_CURRICULUM_REFUSED invalid_job_files
+CAPSULE_CURRICULUM_REFUSED invalid_job_files
+CAPSULE_CURRICULUM_REFUSED invalid_job_files
+CAPSULE_CURRICULUM_REFUSED invalid_job_files
+CAPSULE_CURRICULUM_REFUSED invalid_job_files
+CAPSULE_CURRICULUM_REFUSED invalid_job_files
+CAPSULE_CURRICULUM_REFUSED invalid_job_files
+CAPSULE_CURRICULUM_REFUSED invalid_job_files
+CAPSULE_CURRICULUM_REFUSED invalid_job_files
+CAPSULE_CURRICULUM_REFUSED invalid_job_files
+CAPSULE_CURRICULUM_REFUSED invalid_job_files
+CAPSULE_CURRICULUM_REFUSED invalid_job_files
+CAPSULE_CURRICULUM_REFUSED invalid_job_files
+CAPSULE_CURRICULUM_REFUSED invalid_job_files
+CAPSULE_CURRICULUM_REFUSED invalid_job_files
+CAPSULE_CURRICULUM_REFUSED invalid_job_files
+CAPSULE_CURRICULUM_REFUSED invalid_job_files
+CAPSULE_CURRICULUM_REFUSED invalid_job_files
+CAPSULE_CURRICULUM_REFUSED invalid_job_files
+CAPSULE_CURRICULUM_REFUSED invalid_job_files
+CAPSULE_CURRICULUM_REFUSED invalid_job_files
+CAPSULE_CURRICULUM_REFUSED invalid_job_files
+CAPSULE_CURRICULUM_REFUSED invalid_job_files
+CAPSULE_CURRICULUM_TICK processed=0 failed=1 budget=2 examined=64 scan_budget=64
+CAPSULE_ACQUIRE_TICK processed=0 published=0 examined=1 tool_calls=0 failed=1
+CAPSULE_ACQUIRE_SECURITY_PASS
+CAPSULE_SCALE_STAGE capsules=66
+CAPSULE_REPLAY_SCALE_PASS remaining=1624526 obligations=6338
+ABSTAIN verified=0 reason=no_covered_certified_plan
+ABSTAIN verified=0 reason=no_covered_certified_plan
+ABSTAIN verified=0 reason=import_refused:target_already_has_unit_refusing_duplicate_import
+ABSTAIN verified=0 reason=import_refused:payload_integrity_mismatch
+CAPSULE_CAPACITY_PASS boundary=64_to_66 public_abi=unchanged
+CNET_AUTHORITY_PASS
+
+=== verify log gate (logs) ===
+  ok    authority.log             
+  ok    cce_safetensors_test.log  
+  ok    cce_autograd_test.log     
+  ok    cce_model_test.log        
+  ok    makefile_budget.log       
+  ok    orphan_tools.log          
+  ok    layering_guard.log        
+  ok    clgemm_unit.log           
+  ok    cce_archive.log           
+  ok    cce_forest.log            
+  ok    curl_guard.log            
+  ok    orphan_tests.log          
+  ok    platform_sweep.log        
+  ok    residual_http_nocurl.log  
+  ok    cce_view.log              
+  ok    forest_view.log           
+  ok    cce_detect.log            
+  ok    contract_secure.log       
+  ok    contract_unit.log         
+  ok    heal_mismatch.log         
+  ok    mutate.log                
+  ok    acquire.log               
+  ok    attribution.log           
+  ok    base.log                  
+  ok    flagship.log              
+  ok    decimal_demo.log          
+  ok    circuit_demo.log          
+  ok    leakcheck.log             
+
+VERIFY LOG GATE: all 28 suites reported success in THIS run (bound to logs/.verify_sentinel).

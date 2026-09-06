@@ -9,12 +9,28 @@
 
 /* ---- static always-on aliases (soul + high-traffic) -------------------- */
 static const CnetQueryAlias k_static_aliases[] = {
-    /* Short greets: TSV aliases require len>=4; static + word-boundary is OK. */
-    {"hi", "who are you", 1},
-    {"hey", "who are you", 1},
-    {"hello", "who are you", 1},
-    {"yo", "who are you", 1},
-    {"sup", "who are you", 1},
+    /* Greets are presence (cnet_sr_greet_*), never identity. Do not map
+     * hi/hey/hello onto who are you — Discord Hey was dumping soul_who. */
+    {"very good", "still here", 1},
+    {"thanks", "still here", 1},
+    {"thank you", "still here", 1},
+    {"okay", "still here", 1},
+    {"ok", "still here", 1},
+    {"lol", "still here", 1},
+    {"cool", "still here", 1},
+    {"nice", "still here", 1},
+    {"got it", "still here", 1},
+    {"yeah i know", "still here", 1},
+    {"i know", "still here", 1},
+    {"yep", "still here", 1},
+    {"yup", "still here", 1},
+    {"yeah", "still here", 1},
+    {"who made you", "who is your operator", 1},
+    {"who created you", "who is your operator", 1},
+    {"who is mokason", "who is your operator", 1},
+    {"who is your operator", "who is your operator", 1},
+    {"what is my name", "what do you call me", 1},
+    {"what do you call me", "what do you call me", 1},
     {"who am i talking to", "who are you", 1},
     {"who am i speaking with", "who are you", 1},
     {"who is this", "who are you", 1},
@@ -100,6 +116,22 @@ static int word_boundary_at(const char *s, size_t i, size_t plen, size_t slen) {
     int right_ok =
         (i + plen >= slen) || !is_word_char((unsigned char)s[i + plen]);
     return left_ok && right_ok;
+}
+
+/* Greets and short acks are whole-utterance only so "hello world" / "that's
+ * very good work" never steal soul. */
+static int qa_is_whole_utterance(const char *a) {
+    if (!a) return 0;
+    return strcmp(a, "hi") == 0 || strcmp(a, "hey") == 0 ||
+           strcmp(a, "hello") == 0 || strcmp(a, "yo") == 0 ||
+           strcmp(a, "sup") == 0 || strcmp(a, "ok") == 0 ||
+           strcmp(a, "okay") == 0 || strcmp(a, "lol") == 0 ||
+           strcmp(a, "nice") == 0 || strcmp(a, "cool") == 0 ||
+           strcmp(a, "thanks") == 0 || strcmp(a, "thank you") == 0 ||
+           strcmp(a, "very good") == 0 || strcmp(a, "got it") == 0 ||
+           strcmp(a, "yeah i know") == 0 || strcmp(a, "i know") == 0 ||
+           strcmp(a, "yep") == 0 || strcmp(a, "yup") == 0 ||
+           strcmp(a, "yeah") == 0;
 }
 
 /* Find contraction at s[pos] (already lower). Returns match length or 0. */
@@ -264,9 +296,9 @@ int cnet_query_alias_apply(const CnetQueryAliasTable *T, const char *in,
         size_t plen;
         if (!a->active || !a->alias[0] || !a->canonical[0]) continue;
         plen = strlen(a->alias);
-        /* Policy: TSV tiny aliases are rejected at load. Static greets (hi/hey)
-           are intentionally short â€” allow them only as whole-query matches so
-           "this" never becomes "who are you". */
+        /* Policy: TSV tiny aliases are rejected at load. Short acks
+           (ok/yeah/thanks) are whole-query only so in-phrase never steals. */
+        if (qa_is_whole_utterance(a->alias) && plen != hlen) continue;
         if ((int)plen < 4 && plen != hlen) continue;
         if (plen > hlen) continue;
         for (pos = 0; pos + plen <= hlen; pos++) {
@@ -353,6 +385,34 @@ void cnet_query_prepare(const CnetQueryAliasTable *T, const char *in, char *out,
     if (!in || strcmp(in, norm) != 0) m->normalized = 1;
     if (!cnet_query_alias_apply(T, norm, out, cap, m))
         scopy(out, cap, norm);
+    if (cnet_query_identity_bot(norm)) {
+        scopy(out, cap, "who are you");
+        m->alias_hit = 1;
+        scopy(m->matched_alias, sizeof m->matched_alias, "you+llm");
+        scopy(m->canonical, sizeof m->canonical, "who are you");
+    }
+}
+
+static int qa_has_word(const char *hay, const char *w) {
+    size_t hlen, plen, pos;
+    if (!hay || !w || !w[0]) return 0;
+    hlen = strlen(hay);
+    plen = strlen(w);
+    for (pos = 0; pos + plen <= hlen; pos++) {
+        if (memcmp(hay + pos, w, plen) != 0) continue;
+        if (word_boundary_at(hay, pos, plen, hlen)) return 1;
+    }
+    return 0;
+}
+
+int cnet_query_identity_bot(const char *normalized) {
+    int you, bot;
+    if (!normalized || !normalized[0]) return 0;
+    you = qa_has_word(normalized, "you") || qa_has_word(normalized, "your");
+    bot = qa_has_word(normalized, "llm") || qa_has_word(normalized, "chatgpt") ||
+          qa_has_word(normalized, "chatbot") ||
+          (strstr(normalized, "language model") != NULL);
+    return you && bot;
 }
 
 int cnet_query_alias_selftest(void) {
@@ -400,7 +460,55 @@ int cnet_query_alias_selftest(void) {
     Tst(m.alias_hit == 0 && strcmp(out, "who are you") == 0,
         "canonical passthrough no loop");
 
-    /* Unknown stays unknown â€” no false CERT phrase injection */
+    /* Discord leftover: "are you an LLM / brick by brick" is identity, not FAQ. */
+    cnet_query_prepare(&T, "so you're like brick by brick made, LLM?", out,
+                       sizeof out, &m);
+    Tst(m.alias_hit == 1 && strcmp(out, "who are you") == 0,
+        "you+llm discord phrase → who are you");
+    Tst(cnet_query_identity_bot("so you are like brick by brick made llm") == 1,
+        "identity_bot you+llm");
+    cnet_query_prepare(&T, "what is an llm", out, sizeof out, &m);
+    Tst(m.alias_hit == 0 && strstr(out, "llm") != NULL,
+        "what is an llm is not identity");
+    Tst(cnet_query_identity_bot("what is an llm") == 0,
+        "identity_bot requires you");
+
+    /* Discord: "hello" inside hello-world is not identity. Bare hello is
+     * presence, not soul_who. */
+    cnet_query_prepare(&T, "can you write hello world in C#?", out, sizeof out,
+                       &m);
+    Tst(m.alias_hit == 0 && strstr(out, "hello") != NULL,
+        "hello world is not identity");
+    Tst(strstr(out, "who are you") == NULL,
+        "hello world does not inject who are you");
+    cnet_query_prepare(&T, "hello", out, sizeof out, &m);
+    Tst(m.alias_hit == 0 && strcmp(out, "hello") == 0,
+        "bare hello is not who are you");
+    cnet_query_prepare(&T, "hey", out, sizeof out, &m);
+    Tst(m.alias_hit == 0 && strcmp(out, "hey") == 0,
+        "bare hey is not who are you");
+    cnet_query_prepare(&T, "yeah i know", out, sizeof out, &m);
+    Tst(m.alias_hit == 1 && strcmp(out, "still here") == 0,
+        "bare yeah i know → still here");
+    cnet_query_prepare(&T, "yeah i know json", out, sizeof out, &m);
+    Tst(m.alias_hit == 0 && strstr(out, "json") != NULL,
+        "in-phrase yeah i know is not ack");
+
+    /* Personality: operator/address/ack. Whole-utterance acks only. */
+    cnet_query_prepare(&T, "who made you", out, sizeof out, &m);
+    Tst(m.alias_hit == 1 && strcmp(out, "who is your operator") == 0,
+        "who made you → operator");
+    cnet_query_prepare(&T, "what is my name", out, sizeof out, &m);
+    Tst(m.alias_hit == 1 && strcmp(out, "what do you call me") == 0,
+        "what is my name → address");
+    cnet_query_prepare(&T, "very good", out, sizeof out, &m);
+    Tst(m.alias_hit == 1 && strcmp(out, "still here") == 0,
+        "bare very good → still here");
+    cnet_query_prepare(&T, "that's very good work", out, sizeof out, &m);
+    Tst(m.alias_hit == 0 && strstr(out, "very good") != NULL,
+        "in-phrase very good is not ack");
+
+    /* Unknown stays unknown — no false CERT phrase injection */
     cnet_query_prepare(&T, "completely unknown domain xyzzy", out, sizeof out,
                        &m);
     Tst(m.alias_hit == 0 && strstr(out, "xyzzy") != NULL,

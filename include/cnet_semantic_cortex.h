@@ -30,6 +30,13 @@ typedef struct CnetSemanticCortex {
     char source_tag[CNET_WORKSPACE_SOURCE_MAX];
 } CnetSemanticCortex;
 
+/* Constrained, whole-request intent adapter; does not certify an answer.
+ * Supported forms: "convert N INPUT_TAG to OUTPUT_TAG" and
+ * "how many OUTPUT_TAG in N INPUT_TAG?". Tags retain their exact spelling.
+ * 1 = typed proposal; 0 = unrelated; -1 = recognized but invalid/ambiguous.
+ * Numeric range is 0..65535; actual ports and coverage must still be checked. */
+CNET_API int cnet_semantic_capsule_intent(const char *query, char *typed, size_t cap);
+
 CNET_API int cnet_semantic_cortex_init_hermetic(
     CnetSemanticCortex *cortex, const char *source_tag);
 CNET_API int cnet_semantic_cortex_init_residual_http(

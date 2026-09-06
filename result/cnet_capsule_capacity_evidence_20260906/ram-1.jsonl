@@ -1,0 +1,8 @@
+{"phase":"baseline","heap_bytes":128384,"heap_delta":0,"rss_bytes":8863744,"rss_delta":0,"anonymous_bytes":1343488,"peak_rss_bytes":8392704}
+{"phase":"loaded","heap_bytes":97205536,"heap_delta":97077152,"rss_bytes":106573824,"rss_delta":97710080,"anonymous_bytes":99053568,"peak_rss_bytes":105648128}
+{"phase":"after_ask","heap_bytes":97205792,"heap_delta":97077408,"rss_bytes":106713088,"rss_delta":97849344,"anonymous_bytes":99192832,"peak_rss_bytes":105910272}
+{"phase":"resident_trimmed","heap_bytes":97205792,"heap_delta":97077408,"rss_bytes":106295296,"rss_delta":97431552,"anonymous_bytes":98775040,"peak_rss_bytes":105910272}
+{"phase":"two_snapshots_after_replay","heap_bytes":194287952,"heap_delta":194159568,"rss_bytes":203866112,"rss_delta":195002368,"anonymous_bytes":196345856,"peak_rss_bytes":203317248}
+{"phase":"two_snapshots_trimmed","heap_bytes":194287952,"heap_delta":194159568,"rss_bytes":203702272,"rss_delta":194838528,"anonymous_bytes":196182016,"peak_rss_bytes":203317248}
+{"phase":"closed","heap_bytes":156400,"heap_delta":28016,"rss_bytes":9027584,"rss_delta":163840,"anonymous_bytes":1507328,"peak_rss_bytes":203317248}
+{"coverage_bank_struct_bytes":36376,"btn_struct_bytes":1080,"label_obligations":393216}

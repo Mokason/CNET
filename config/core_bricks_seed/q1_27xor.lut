@@ -1,0 +1,5 @@
+# CNET_LUT_V1
+# source=Ternary-Bonsai-27B-PQ2_0.gguf tensor=blk.1.attn_qkv.weight mode=xor
+tag=q1_27xor
+name=brick_27b_k
+lut=0,0,3,3,4,4,6,7,8,8,10,11,12,13,15,15

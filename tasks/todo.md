@@ -10,3 +10,15 @@
 - [x] README, changelog, and source-plan checkbox updates
 - [x] Full verification and accidental-mode-change audit
 - [x] Coherent commits with recorded SHAs
+
+## September 6 capsule lifecycle follow-up
+
+- [x] Default to retained accumulation; keep explicit switching separate from deletion
+- [x] Verify increased 4,096-capsule capacity and final-boundary publication
+- [ ] Resident snapshot lifecycle with RED/green failure-retention tests
+- [ ] Named operator control and same-PID daemon swap tests
+- [ ] Durable activation, restart and rollback failure tests
+- [ ] Local CNET source evidence using existing manifest-bound assets
+- [ ] Integrated acquisition/swap/regression proof and verified deployment
+
+Contract and acceptance criteria: `plans/cnet_capsule_hot_swap_20260906.md`.

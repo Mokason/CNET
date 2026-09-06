@@ -24,7 +24,8 @@ if [[ -f "${BASE}.stop" ]]; then
 fi
 
 mkdir -p logs "$CNET_JANITOR_REPORT_DIR"
-./bin/cnet_janitor "$BASE" | tee -a logs/janitor_cron.log
+bash "$REPO/scripts/cnet_with_lane_paused.sh" "$BASE" \
+  flock -n "$BASE.writer.lock" ./bin/cnet_janitor "$BASE" | tee -a logs/janitor_cron.log
 grep -q JANITOR_OK logs/janitor_cron.log || true
 # Keep last marker line easy to find
 tail -n 5 logs/janitor_cron.log

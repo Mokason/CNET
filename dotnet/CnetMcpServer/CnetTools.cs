@@ -15,15 +15,26 @@ namespace CnetMcpServer
         private readonly string _obsidianPath;
         private readonly string _artifactPath;
         private readonly object _soulReloadGate = new();
-        private long _baseLength = -1;
-        private long _baseWriteTicks = -1;
+        private readonly CnbGenerationTracker _baseTracker;
         private int _baseGeneration;
+        // gap_lane rewrites the CNB often (mtime/Birth change, size often identical).
+        // In-process soul_open/close LEAKS ~1–2GB RSS per same-size reload (observed:
+        // 5.4GB → 14GB after 5 gens). Default: NEVER reload when byte length unchanged.
+        // Real checkpoints that grow/shrink the file still reload. A changed
+        // same-size generation fails unavailable by default rather than serving
+        // stale certification. Opt-in in-process reload remains available via
+        // CNET_SOUL_RELOAD_SAME_SIZE=1 (+ optional CNET_SOUL_RELOAD_MIN_SEC).
+        private long _lastReloadUnixMs;
+        private static readonly int SoulReloadMinSec = ParseEnvInt("CNET_SOUL_RELOAD_MIN_SEC", 3600);
+        private static readonly bool SoulReloadSameSize =
+            ParseEnvInt("CNET_SOUL_RELOAD_SAME_SIZE", 0) != 0;
 
         public CnetTools(string basePath,
                          string obsidianPath = "/home/marble/Documents/Obsidian Vault/CNET",
                          string? artifactPath = null)
         {
             _basePath = basePath;
+            _baseTracker = new CnbGenerationTracker(basePath);
             _obsidianPath = obsidianPath;
             _artifactPath = Path.GetFullPath(
                 string.IsNullOrWhiteSpace(artifactPath)
@@ -38,75 +49,138 @@ namespace CnetMcpServer
             EnsureFreshSoulHost(logReload: false);
         }
 
-        private static bool TryBaseFingerprint(string path, out long length, out long writeTicks)
+        private static int ParseEnvInt(string name, int fallback)
         {
-            length = -1;
-            writeTicks = -1;
+            string? v = Environment.GetEnvironmentVariable(name);
+            if (string.IsNullOrWhiteSpace(v)) return fallback;
+            return int.TryParse(v, NumberStyles.Integer, CultureInfo.InvariantCulture, out int n) && n >= 0
+                ? n
+                : fallback;
+        }
+
+        [System.Runtime.InteropServices.DllImport("libc", EntryPoint = "malloc_trim")]
+        private static extern int MallocTrim(nuint pad);
+
+        private static void ReleaseSoulHost(SoulHost? host)
+        {
+            if (host == null) return;
+            try { host.Dispose(); }
+            catch (Exception e)
+            {
+                Console.Error.WriteLine($"[CNET MCP] soul dispose warning: {e.Message}");
+            }
+            // Native soul_close returns multi‑GB arenas; nudge GC + glibc trim.
             try
             {
-                var info = new FileInfo(path);
-                info.Refresh();
-                if (!info.Exists) return false;
-                length = info.Length;
-                writeTicks = info.LastWriteTimeUtc.Ticks;
-                return true;
+                GC.Collect(GC.MaxGeneration, GCCollectionMode.Forced, blocking: true, compacting: true);
+                GC.WaitForPendingFinalizers();
+                GC.Collect(GC.MaxGeneration, GCCollectionMode.Forced, blocking: true, compacting: true);
+                try { MallocTrim(0); } catch { /* non-glibc */ }
             }
-            catch
-            {
-                return false;
-            }
+            catch { /* best-effort */ }
+        }
+
+        private void DropSoulHost()
+        {
+            SoulHost? previous = _soulHost;
+            _soulHost = null!;
+            _unitRoster = null;
+            _rosterSource = "";
+            _unitByTokenId = null;
+            ReleaseSoulHost(previous);
         }
 
         /// <summary>
         /// Refresh the live native host after an atomic learner checkpoint.
-        /// Program.cs serializes all SoulHost-backed calls through toolGate;
-        /// this local lock also prevents duplicate opens when CnetTools is used
-        /// directly. A failed/unstable replacement leaves the last certified
-        /// generation serving and retries on the next call.
+        ///
+        /// RAM law (2026-08-19): same-size reloads leaked ~2GB per generation
+        /// (5.4→14GB in 5 generations). Content identity is still mandatory:
+        /// default mode refuses a changed same-size generation instead of
+        /// serving stale certification. Size changes always reload.
         /// </summary>
         private SoulHost? EnsureFreshSoulHost(bool logReload = true)
         {
-            if (!TryBaseFingerprint(_basePath, out long observedLength, out long observedTicks))
-                return _soulHost;
-            if (_soulHost != null && observedLength == _baseLength && observedTicks == _baseWriteTicks)
-                return _soulHost;
-
             lock (_soulReloadGate)
             {
-                if (!TryBaseFingerprint(_basePath, out observedLength, out observedTicks))
+                CnbGenerationChange change = _baseTracker.Observe(
+                    out CnbFileIdentity observed);
+                if (change == CnbGenerationChange.Unavailable)
+                {
+                    if (_soulHost != null)
+                        DropSoulHost();
+                    if (logReload)
+                        Console.Error.WriteLine(
+                            "[CNET MCP] certified base unavailable: stable content identity could not be read");
                     return _soulHost;
-                if (_soulHost != null && observedLength == _baseLength && observedTicks == _baseWriteTicks)
+                }
+                if (change == CnbGenerationChange.Current && _soulHost != null)
                     return _soulHost;
+                if (change == CnbGenerationChange.MetadataOnly && _soulHost != null)
+                {
+                    _baseTracker.MarkApplied(observed);
+                    return _soulHost;
+                }
+
+                bool changedSameSize =
+                    change == CnbGenerationChange.ContentChanged &&
+                    _baseTracker.AppliedLength == observed.Length;
+                if (changedSameSize)
+                {
+                    if (!SoulReloadSameSize)
+                    {
+                        DropSoulHost();
+                        if (logReload)
+                            Console.Error.WriteLine(
+                                $"[CNET MCP] changed same-size CNB refused (size={observed.Length}); " +
+                                $"generation {_baseGeneration} is unavailable until process rotation " +
+                                "or CNET_SOUL_RELOAD_SAME_SIZE=1");
+                        return _soulHost;
+                    }
+                    long nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                    long elapsedSec = (nowMs - _lastReloadUnixMs) / 1000L;
+                    if (_lastReloadUnixMs > 0 && SoulReloadMinSec > 0 && elapsedSec < SoulReloadMinSec)
+                    {
+                        DropSoulHost();
+                        if (logReload)
+                            Console.Error.WriteLine(
+                                $"[CNET MCP] CNB reload debounced ({elapsedSec}s < {SoulReloadMinSec}s, " +
+                                $"size={observed.Length}); generation {_baseGeneration} unavailable");
+                        return _soulHost;
+                    }
+                }
 
                 SoulHost? fresh = null;
                 try
                 {
+                    // Free previous FIRST when possible to avoid dual multi-GB residency.
+                    // Brief unavailable window is better than 50GB leak.
+                    DropSoulHost();
+
                     fresh = new SoulHost(_basePath);
-                    if (!TryBaseFingerprint(_basePath, out long loadedLength, out long loadedTicks) ||
-                        loadedLength != observedLength || loadedTicks != observedTicks)
+                    if (!CnbFileIdentityReader.TryReadStable(
+                            _basePath, out CnbFileIdentity loaded) || loaded != observed)
                     {
-                        fresh.Dispose();
+                        // File moved under us mid-open — drop the ambiguous host.
+                        ReleaseSoulHost(fresh);
                         return _soulHost;
                     }
 
-                    SoulHost? previous = _soulHost;
                     _soulHost = fresh;
-                    _baseLength = loadedLength;
-                    _baseWriteTicks = loadedTicks;
+                    _baseTracker.MarkApplied(loaded);
                     _baseGeneration++;
+                    _lastReloadUnixMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
                     _unitRoster = null;
                     _rosterSource = "";
                     _unitByTokenId = null;
-                    previous?.Dispose();
                     if (logReload)
                         Console.Error.WriteLine(
                             $"[CNET MCP] loaded CNB generation {_baseGeneration}: " +
-                            $"{Path.GetFileName(_basePath)} ({loadedLength} bytes)");
+                            $"{Path.GetFileName(_basePath)} ({loaded.Length} bytes)");
                     return _soulHost;
                 }
                 catch (Exception e)
                 {
-                    fresh?.Dispose();
+                    ReleaseSoulHost(fresh);
                     if (_soulHost == null)
                         Console.Error.WriteLine($"[CNET MCP] certified base unavailable: {e.Message}");
                     else

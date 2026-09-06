@@ -1,0 +1,16 @@
+  fixture                                                        PASS
+  plant old predictable temporary symlink                        PASS
+  normal save                                                    PASS
+  read protected file                                            PASS
+  temporary symlink cannot truncate unrelated file               PASS
+  file sync failure reported                                     PASS
+  directory sync failure reported                                PASS
+  failed sync leaves a complete readable checkpoint              PASS
+  retry repairs durability                                       PASS
+  export                                                         PASS
+  payload manifest capsule and root directory synced             PASS
+  export refuses failed directory sync                           PASS
+  manifest file-sync failure refuses publication                 PASS
+  post-manifest rename directory-sync failure is reported        PASS
+  post-manifest sync failure retains complete certified artifact PASS
+CHECKPOINT_DURABILITY_PASS checks=15 failures=0 artifacts=/tmp/cnet-durability-CmH6qR

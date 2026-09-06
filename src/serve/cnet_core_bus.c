@@ -364,11 +364,15 @@ int cnet_core_bus_result(CnetCoreBus *b, const char *turn,
         return 1;
     }
 
-    /* Prefer parked bricks matching domain tag (or any if tag empty). */
+    /* A domain must be addressed explicitly. An empty tag must never mean
+       "whichever certified brick loaded first". */
+    if (!tag[0]) goto abstain;
+
+    /* Prefer parked bricks matching the explicit domain tag. */
     for (i = 0; i < b->n_bricks; ++i) {
         CnetCoreBrick *br = &b->bricks[i];
         if (!br->live || !br->certified) continue;
-        if (tag[0] && strcmp(tag, br->domain_tag) != 0) continue;
+        if (strcmp(tag, br->domain_tag) != 0) continue;
         if (prove_lut(br->lut_table, x, &y, got) != 0) continue;
         out->proved = 1;
         out->claimed_cert = 1;
@@ -383,7 +387,7 @@ int cnet_core_bus_result(CnetCoreBus *b, const char *turn,
     /* Active CERTIFIED slot (not yet parked). */
     if (b->state == CNET_CORE_BUS_CERTIFIED && b->certified && b->student_live &&
         b->lut_live) {
-        if (!tag[0] || strcmp(tag, b->domain_tag) == 0) {
+        if (strcmp(tag, b->domain_tag) == 0) {
             if (prove_lut(b->lut_table, x, &y, got) == 0) {
                 out->proved = 1;
                 out->claimed_cert = 1;
@@ -397,6 +401,7 @@ int cnet_core_bus_result(CnetCoreBus *b, const char *turn,
         }
     }
 
+abstain:
     out->abstained = 1;
     out->claimed_cert = 0;
     copy_text(out->refusal, sizeof out->refusal, "outside_table_abstain");
@@ -425,9 +430,66 @@ static void wr_kv_str(FILE *f, const char *k, const char *v) {
     wr_str(f, v);
 }
 
-int cnet_core_bus_write_q1_domain_from_host_ex(const char *bonsai_gguf,
-                                               const char *tensor_name,
-                                               const char *out_gguf, int mode) {
+static void remember_host_tensor(cce_gguf *g, int idx, char *out,
+                                 size_t out_cap) {
+    cce_gguf_tensor_meta m;
+    if (out && out_cap) out[0] = '\0';
+    if (!g || idx < 0 || !out || out_cap == 0) return;
+    if (cce_gguf_get_tensor_meta(g, idx, &m) != CCE_OK) return;
+    copy_text(out, out_cap, m.name);
+}
+
+static int find_tensor_named(cce_gguf *g, const char *name) {
+    int idx;
+    if (!g || !name || !name[0]) return -1;
+    idx = cce_gguf_find_tensor(g, name);
+    return idx;
+}
+
+static int find_host_weight_tensor(cce_gguf *g, const char *want,
+                                   char *resolved, size_t resolved_cap) {
+    int idx, layer;
+    char alt[CCE_GGUF_MAX_NAME];
+    if (resolved && resolved_cap) resolved[0] = '\0';
+    if (!g || !want || !want[0]) return -1;
+    idx = find_tensor_named(g, want);
+    if (idx >= 0) {
+        remember_host_tensor(g, idx, resolved, resolved_cap);
+        return idx;
+    }
+    /* Same-block fused Q: blk.N.attn_q.weight → blk.N.attn_qkv.weight.
+     * SSM holes (blk.3, 7, …) have no qkv — refuse, do not steal blk.0. */
+    if (strstr(want, ".attn_q.weight") &&
+        sscanf(want, "blk.%d.", &layer) == 1) {
+        snprintf(alt, sizeof alt, "blk.%d.attn_qkv.weight", layer);
+        idx = find_tensor_named(g, alt);
+        if (idx >= 0) {
+            remember_host_tensor(g, idx, resolved, resolved_cap);
+            return idx;
+        }
+        return -1;
+    }
+    /* K-site: next-block fused qkv so brick 2 is a different tensor. */
+    if (strstr(want, ".attn_k.weight") &&
+        sscanf(want, "blk.%d.", &layer) == 1) {
+        snprintf(alt, sizeof alt, "blk.%d.attn_qkv.weight", layer + 1);
+        idx = find_tensor_named(g, alt);
+        if (idx >= 0) {
+            remember_host_tensor(g, idx, resolved, resolved_cap);
+            return idx;
+        }
+        return -1;
+    }
+    /* Every other requested site is exact-only. Compatibility ambiguity is a
+       refusal, never a scan for a vaguely similar tensor. */
+    return -1;
+}
+
+static int write_q1_domain_from_host_resolved(const char *bonsai_gguf,
+                                              const char *tensor_name,
+                                              const char *out_gguf, int mode,
+                                              char *resolved,
+                                              size_t resolved_cap) {
     cce_gguf *g = NULL;
     const void *raw = NULL;
     size_t nbytes = 0;
@@ -442,7 +504,7 @@ int cnet_core_bus_write_q1_domain_from_host_ex(const char *bonsai_gguf,
 
     if (!bonsai_gguf || !out_gguf) return -1;
     if (cce_gguf_load(bonsai_gguf, &g) != CCE_OK || !g) return -1;
-    idx = cce_gguf_find_tensor(g, tname);
+    idx = find_host_weight_tensor(g, tname, resolved, resolved_cap);
     if (idx < 0) {
         cce_gguf_free(g);
         return -1;
@@ -504,6 +566,13 @@ int cnet_core_bus_write_q1_domain_from_host_ex(const char *bonsai_gguf,
     return 0;
 }
 
+int cnet_core_bus_write_q1_domain_from_host_ex(const char *bonsai_gguf,
+                                               const char *tensor_name,
+                                               const char *out_gguf, int mode) {
+    return write_q1_domain_from_host_resolved(bonsai_gguf, tensor_name, out_gguf,
+                                              mode, NULL, 0);
+}
+
 int cnet_core_bus_write_q1_domain_from_host(const char *bonsai_gguf,
                                             const char *tensor_name,
                                             const char *out_gguf) {
@@ -517,15 +586,18 @@ int cnet_core_bus_make_brick(CnetCoreBus *b, const char *bonsai_gguf,
                              int mode, CnetWeightConvertReport *rep) {
     CnetWeightConvertReport local;
     CnetWeightConvertReport *r = rep ? rep : &local;
+    char saved_tensor[96];
     if (!b || !bonsai_gguf || !domain_gguf || !brick_name || !domain_tag)
         return -1;
     if (b->state != CNET_CORE_BUS_IDLE) return -11;
-    if (cnet_core_bus_write_q1_domain_from_host_ex(bonsai_gguf, tensor_name,
-                                                   domain_gguf, mode) != 0)
+    if (write_q1_domain_from_host_resolved(bonsai_gguf, tensor_name, domain_gguf,
+                                           mode, saved_tensor,
+                                           sizeof saved_tensor) != 0)
         return -12;
     copy_text(b->domain_tag, sizeof b->domain_tag, domain_tag);
     if (cnet_core_bus_lease(b, domain_gguf, brick_name) != 0) return -13;
     if (cnet_core_bus_table(b, r) != 0) return -14;
+    if (r) copy_text(r->host_tensor, sizeof r->host_tensor, saved_tensor);
     if (cnet_core_bus_certify(b) != 0) return -15;
     if (cnet_core_bus_park_brick(b, domain_tag) != 0) return -16;
     return 0;

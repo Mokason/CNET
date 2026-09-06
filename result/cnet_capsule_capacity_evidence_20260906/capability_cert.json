@@ -1,0 +1,752 @@
+{
+  "schema_version": 1,
+  "certified": 6,
+  "total": 6,
+  "run": {
+    "run_id": "6076bfe4-1e71-4f56-9bda-511f339468ab",
+    "started_at": "2026-09-06T06:05:30Z",
+    "commit": "2d298cade27ff7196e551ccefdc51af43e87638c",
+    "worktree_sha256": "3f29c299f8be86f5ee62b03ff79ef1e50330da9f9cd04bf79c0040e9573c94a9",
+    "worktree_dirty_files": 337,
+    "special_index_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "special_index_files": 0,
+    "special_index_bytes": 0
+  },
+  "results": [
+    {
+      "capability_id": "calibrated_abstention",
+      "status": "certified",
+      "return_code": 0,
+      "metric": 1,
+      "metric_source": "heldout_receipt",
+      "metric_error": null,
+      "absolute_floor": 1,
+      "regression_floor": 1,
+      "fixture_sha256": "bfe46304166e61f2e8fc70d8102d83eeb1087be8f9f4eea3e47e9a6999fee55e",
+      "manifest_sha256": "ad94e15c3eb516358a20d39e72c741ecb85ec8ccb3b70b20768f634d3255f399",
+      "evidence_sha256": "ec9e3606322ec3ed5ef0b3d88b6ac42f0faccc45e5af600716c76ede91e811c3",
+      "evidence_log": "logs/capability_cert/calibrated_abstention.log",
+      "markers_ok": true,
+      "missing_markers": [],
+      "receipt_ok": true,
+      "receipt_problems": [],
+      "receipt": {
+        "receipt_present": true,
+        "receipt_capability": "calibrated_abstention",
+        "receipt_fixture_sha256": "bfe46304166e61f2e8fc70d8102d83eeb1087be8f9f4eea3e47e9a6999fee55e",
+        "receipt_cases": 3,
+        "receipt_consumed": 3,
+        "case_reads": {
+          "low-margin-abstains": 4,
+          "supported-answer": 4,
+          "evidence-free-claim": 2
+        },
+        "case_line_count": 3,
+        "cases_passed": 3,
+        "cases_declared": 3,
+        "receipt_metric": 1,
+        "receipt_errors": 0
+      },
+      "declared_case_ids": [
+        "low-margin-abstains",
+        "supported-answer",
+        "evidence-free-claim"
+      ],
+      "evaluator_argv": [
+        "make",
+        "calibrated_governance"
+      ],
+      "evaluator_prepare": null,
+      "evaluator_sources": [
+        "Makefile",
+        "include/cnet_heldout.h",
+        "src/cnet_heldout.c",
+        "src/cnet_calibrated_governance.c",
+        "include/cnet_calibrated_governance.h",
+        "tests/test_cnet_calibrated_governance.c"
+      ],
+      "evaluator_source_set_sha256": "605aa9fd8ce7e6058beee175af9b209893adb5554adb90fe8d539fd8bcc4fdd7",
+      "evaluator_binary": "bin/calibrated_governance",
+      "evaluator_binary_sha256": "6a5055a23046da3b2c09bfdfd46de900c788c6734f082bc3e254e59ebf119b1f",
+      "binding_pre": {
+        "commit": "2d298cade27ff7196e551ccefdc51af43e87638c",
+        "worktree_sha256": "3f29c299f8be86f5ee62b03ff79ef1e50330da9f9cd04bf79c0040e9573c94a9",
+        "worktree_dirty_files": 337,
+        "special_index_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "special_index_files": 0,
+        "special_index_bytes": 0,
+        "untracked_sha256": "df81eafafa75b63ce44f553449b93a4b570093cacd30d797030533884454ed60",
+        "evaluator_source_set_sha256": "605aa9fd8ce7e6058beee175af9b209893adb5554adb90fe8d539fd8bcc4fdd7",
+        "evaluator_sources": [
+          "Makefile",
+          "include/cnet_calibrated_governance.h",
+          "include/cnet_heldout.h",
+          "src/cnet_calibrated_governance.c",
+          "src/cnet_heldout.c",
+          "tests/test_cnet_calibrated_governance.c"
+        ],
+        "fixture_sha256": "bfe46304166e61f2e8fc70d8102d83eeb1087be8f9f4eea3e47e9a6999fee55e"
+      },
+      "binding_post_run": {
+        "commit": "2d298cade27ff7196e551ccefdc51af43e87638c",
+        "worktree_sha256": "3f29c299f8be86f5ee62b03ff79ef1e50330da9f9cd04bf79c0040e9573c94a9",
+        "worktree_dirty_files": 337,
+        "special_index_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "special_index_files": 0,
+        "special_index_bytes": 0,
+        "untracked_sha256": "df81eafafa75b63ce44f553449b93a4b570093cacd30d797030533884454ed60",
+        "evaluator_source_set_sha256": "605aa9fd8ce7e6058beee175af9b209893adb5554adb90fe8d539fd8bcc4fdd7",
+        "evaluator_sources": [
+          "Makefile",
+          "include/cnet_calibrated_governance.h",
+          "include/cnet_heldout.h",
+          "src/cnet_calibrated_governance.c",
+          "src/cnet_heldout.c",
+          "tests/test_cnet_calibrated_governance.c"
+        ],
+        "fixture_sha256": "bfe46304166e61f2e8fc70d8102d83eeb1087be8f9f4eea3e47e9a6999fee55e",
+        "evaluator_binary_sha256": "6a5055a23046da3b2c09bfdfd46de900c788c6734f082bc3e254e59ebf119b1f"
+      },
+      "binding_post_bind": {
+        "commit": "2d298cade27ff7196e551ccefdc51af43e87638c",
+        "worktree_sha256": "3f29c299f8be86f5ee62b03ff79ef1e50330da9f9cd04bf79c0040e9573c94a9",
+        "worktree_dirty_files": 337,
+        "special_index_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "special_index_files": 0,
+        "special_index_bytes": 0,
+        "untracked_sha256": "df81eafafa75b63ce44f553449b93a4b570093cacd30d797030533884454ed60",
+        "evaluator_source_set_sha256": "605aa9fd8ce7e6058beee175af9b209893adb5554adb90fe8d539fd8bcc4fdd7",
+        "evaluator_sources": [
+          "Makefile",
+          "include/cnet_calibrated_governance.h",
+          "include/cnet_heldout.h",
+          "src/cnet_calibrated_governance.c",
+          "src/cnet_heldout.c",
+          "tests/test_cnet_calibrated_governance.c"
+        ],
+        "fixture_sha256": "bfe46304166e61f2e8fc70d8102d83eeb1087be8f9f4eea3e47e9a6999fee55e",
+        "evaluator_binary_sha256": "6a5055a23046da3b2c09bfdfd46de900c788c6734f082bc3e254e59ebf119b1f"
+      },
+      "binding_stable": true,
+      "binding_drift": [],
+      "duration_seconds": 0.323,
+      "run_id": "6076bfe4-1e71-4f56-9bda-511f339468ab",
+      "env_sha256": "12cf204d9e0e10a05347efd377f3731d8dc366a62098bbd73e40816aa59debcf",
+      "env_variables": 72,
+      "env_knob_names": [
+        "CNET_HELD_OUT_FIXTURE"
+      ],
+      "env_allowlisted_knobs": {
+        "CNET_HELD_OUT_FIXTURE": "/tmp/cnet-capacity-final-9d5jz5/tests/fixtures/capability_calibrated_abstention.json"
+      },
+      "env_redacted_knobs": {}
+    },
+    {
+      "capability_id": "cce_classification",
+      "status": "certified",
+      "return_code": 0,
+      "metric": 0.861,
+      "metric_source": "regex",
+      "metric_error": null,
+      "absolute_floor": 0.45,
+      "regression_floor": 0.6789999999999999,
+      "fixture_sha256": "45b9d3a103871b6e34fb6667d791f4233bd1129894911be4f8aa2f14cb456b5d",
+      "manifest_sha256": "8650ba09802cb8fd5edd40b28fd9040cef50a598a1a658e4e9a7fbe470751841",
+      "evidence_sha256": "23a16ca23aa4fa6877b3dd1e91fc0b39c9718404de35fa807182b5b499569d2a",
+      "evidence_log": "logs/capability_cert/cce_classification.log",
+      "markers_ok": true,
+      "missing_markers": [],
+      "receipt_ok": true,
+      "receipt_problems": [],
+      "receipt": {
+        "receipt_present": true,
+        "receipt_capability": "cce_classification",
+        "receipt_fixture_sha256": "45b9d3a103871b6e34fb6667d791f4233bd1129894911be4f8aa2f14cb456b5d",
+        "receipt_cases": 1,
+        "receipt_consumed": 1,
+        "case_reads": {
+          "argmax-pair-sum-4class": 8
+        },
+        "case_line_count": 1,
+        "cases_passed": 1,
+        "cases_declared": 1,
+        "receipt_metric": 1,
+        "receipt_errors": 0
+      },
+      "declared_case_ids": [
+        "argmax-pair-sum-4class"
+      ],
+      "evaluator_argv": [
+        "make",
+        "cce_train_bench"
+      ],
+      "evaluator_prepare": null,
+      "evaluator_sources": [
+        "Makefile",
+        "include/cnet_heldout.h",
+        "src/cnet_heldout.c",
+        "tests/cce_train_bench.c"
+      ],
+      "evaluator_source_set_sha256": "342ccfba0f4b1bcf649bffa97186e82cfb910051db869b4a66f40078b583857e",
+      "evaluator_binary": "bin/cce_train_bench",
+      "evaluator_binary_sha256": "7dbb264546a96e7a980996e116bd1a757a3aca179056c5cb7cee6e3f1220fa43",
+      "binding_pre": {
+        "commit": "2d298cade27ff7196e551ccefdc51af43e87638c",
+        "worktree_sha256": "3f29c299f8be86f5ee62b03ff79ef1e50330da9f9cd04bf79c0040e9573c94a9",
+        "worktree_dirty_files": 337,
+        "special_index_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "special_index_files": 0,
+        "special_index_bytes": 0,
+        "untracked_sha256": "df81eafafa75b63ce44f553449b93a4b570093cacd30d797030533884454ed60",
+        "evaluator_source_set_sha256": "342ccfba0f4b1bcf649bffa97186e82cfb910051db869b4a66f40078b583857e",
+        "evaluator_sources": [
+          "Makefile",
+          "include/cnet_heldout.h",
+          "src/cnet_heldout.c",
+          "tests/cce_train_bench.c"
+        ],
+        "fixture_sha256": "45b9d3a103871b6e34fb6667d791f4233bd1129894911be4f8aa2f14cb456b5d"
+      },
+      "binding_post_run": {
+        "commit": "2d298cade27ff7196e551ccefdc51af43e87638c",
+        "worktree_sha256": "3f29c299f8be86f5ee62b03ff79ef1e50330da9f9cd04bf79c0040e9573c94a9",
+        "worktree_dirty_files": 337,
+        "special_index_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "special_index_files": 0,
+        "special_index_bytes": 0,
+        "untracked_sha256": "df81eafafa75b63ce44f553449b93a4b570093cacd30d797030533884454ed60",
+        "evaluator_source_set_sha256": "342ccfba0f4b1bcf649bffa97186e82cfb910051db869b4a66f40078b583857e",
+        "evaluator_sources": [
+          "Makefile",
+          "include/cnet_heldout.h",
+          "src/cnet_heldout.c",
+          "tests/cce_train_bench.c"
+        ],
+        "fixture_sha256": "45b9d3a103871b6e34fb6667d791f4233bd1129894911be4f8aa2f14cb456b5d",
+        "evaluator_binary_sha256": "7dbb264546a96e7a980996e116bd1a757a3aca179056c5cb7cee6e3f1220fa43"
+      },
+      "binding_post_bind": {
+        "commit": "2d298cade27ff7196e551ccefdc51af43e87638c",
+        "worktree_sha256": "3f29c299f8be86f5ee62b03ff79ef1e50330da9f9cd04bf79c0040e9573c94a9",
+        "worktree_dirty_files": 337,
+        "special_index_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "special_index_files": 0,
+        "special_index_bytes": 0,
+        "untracked_sha256": "df81eafafa75b63ce44f553449b93a4b570093cacd30d797030533884454ed60",
+        "evaluator_source_set_sha256": "342ccfba0f4b1bcf649bffa97186e82cfb910051db869b4a66f40078b583857e",
+        "evaluator_sources": [
+          "Makefile",
+          "include/cnet_heldout.h",
+          "src/cnet_heldout.c",
+          "tests/cce_train_bench.c"
+        ],
+        "fixture_sha256": "45b9d3a103871b6e34fb6667d791f4233bd1129894911be4f8aa2f14cb456b5d",
+        "evaluator_binary_sha256": "7dbb264546a96e7a980996e116bd1a757a3aca179056c5cb7cee6e3f1220fa43"
+      },
+      "binding_stable": true,
+      "binding_drift": [],
+      "duration_seconds": 0.37,
+      "run_id": "6076bfe4-1e71-4f56-9bda-511f339468ab",
+      "env_sha256": "2911124e06f6b9e1a2a2d6ba2c6109f45b356eed38713dfc870424d930731c60",
+      "env_variables": 72,
+      "env_knob_names": [
+        "CNET_HELD_OUT_FIXTURE"
+      ],
+      "env_allowlisted_knobs": {
+        "CNET_HELD_OUT_FIXTURE": "/tmp/cnet-capacity-final-9d5jz5/tests/fixtures/capability_cce_classification.json"
+      },
+      "env_redacted_knobs": {}
+    },
+    {
+      "capability_id": "honest_memory_retrieval",
+      "status": "certified",
+      "return_code": 0,
+      "metric": 1,
+      "metric_source": "heldout_receipt",
+      "metric_error": null,
+      "absolute_floor": 1,
+      "regression_floor": 1,
+      "fixture_sha256": "85d4fc967875d0ed46db345bada115a097edd0817921b883de39a6daf5345720",
+      "manifest_sha256": "1bbdb84e7c6a6ace8a7a2e4c756ef45ae1bd1a58b4fab53fedb816af3798c98f",
+      "evidence_sha256": "3d4f5cf268de739645ad7a1bb2d7d60f34aa8b3d472e23d894792b2549b21314",
+      "evidence_log": "logs/capability_cert/honest_memory_retrieval.log",
+      "markers_ok": true,
+      "missing_markers": [],
+      "receipt_ok": true,
+      "receipt_problems": [],
+      "receipt": {
+        "receipt_present": true,
+        "receipt_capability": "honest_memory_retrieval",
+        "receipt_fixture_sha256": "85d4fc967875d0ed46db345bada115a097edd0817921b883de39a6daf5345720",
+        "receipt_cases": 1,
+        "receipt_consumed": 1,
+        "case_reads": {
+          "unrelated-query-misses": 3
+        },
+        "case_line_count": 1,
+        "cases_passed": 1,
+        "cases_declared": 1,
+        "receipt_metric": 1,
+        "receipt_errors": 0
+      },
+      "declared_case_ids": [
+        "unrelated-query-misses"
+      ],
+      "evaluator_argv": [
+        "dotnet",
+        "test",
+        "dotnet/Cce.Llm.Tests/CNET.Cce.Llm.Tests.csproj",
+        "--no-restore",
+        "--filter",
+        "FullyQualifiedName~AutoRecall_GenuineEmpty_TellsModelNotToInvent",
+        "--logger",
+        "console;verbosity=normal"
+      ],
+      "evaluator_prepare": [
+        "dotnet",
+        "build",
+        "dotnet/Cce.Llm.Tests/CNET.Cce.Llm.Tests.csproj",
+        "-c",
+        "Debug",
+        "--nologo"
+      ],
+      "evaluator_sources": [
+        "dotnet/Cce.Llm.Tests/CNET.Cce.Llm.Tests.csproj",
+        "dotnet/Cce.Llm.Tests/HeldOutFixture.cs",
+        "dotnet/Cce.Llm.Tests/MemoryLookupLoopTests.cs"
+      ],
+      "evaluator_source_set_sha256": "0950af8cb7f849d7976b31d5977fc5c52ad63f39f43380ce1ad101bf343b055c",
+      "evaluator_binary": "dotnet/Cce.Llm.Tests/bin/Debug/net10.0/CNET.Cce.Llm.Tests.dll",
+      "evaluator_binary_sha256": "8bf39afd06178978c55a849b39c88fd773d32ad553daaeaa44e2d5b18f00a117",
+      "binding_pre": {
+        "commit": "2d298cade27ff7196e551ccefdc51af43e87638c",
+        "worktree_sha256": "3f29c299f8be86f5ee62b03ff79ef1e50330da9f9cd04bf79c0040e9573c94a9",
+        "worktree_dirty_files": 337,
+        "special_index_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "special_index_files": 0,
+        "special_index_bytes": 0,
+        "untracked_sha256": "df81eafafa75b63ce44f553449b93a4b570093cacd30d797030533884454ed60",
+        "evaluator_source_set_sha256": "0950af8cb7f849d7976b31d5977fc5c52ad63f39f43380ce1ad101bf343b055c",
+        "evaluator_sources": [
+          "dotnet/Cce.Llm.Tests/CNET.Cce.Llm.Tests.csproj",
+          "dotnet/Cce.Llm.Tests/HeldOutFixture.cs",
+          "dotnet/Cce.Llm.Tests/MemoryLookupLoopTests.cs"
+        ],
+        "fixture_sha256": "85d4fc967875d0ed46db345bada115a097edd0817921b883de39a6daf5345720"
+      },
+      "binding_post_run": {
+        "commit": "2d298cade27ff7196e551ccefdc51af43e87638c",
+        "worktree_sha256": "3f29c299f8be86f5ee62b03ff79ef1e50330da9f9cd04bf79c0040e9573c94a9",
+        "worktree_dirty_files": 337,
+        "special_index_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "special_index_files": 0,
+        "special_index_bytes": 0,
+        "untracked_sha256": "df81eafafa75b63ce44f553449b93a4b570093cacd30d797030533884454ed60",
+        "evaluator_source_set_sha256": "0950af8cb7f849d7976b31d5977fc5c52ad63f39f43380ce1ad101bf343b055c",
+        "evaluator_sources": [
+          "dotnet/Cce.Llm.Tests/CNET.Cce.Llm.Tests.csproj",
+          "dotnet/Cce.Llm.Tests/HeldOutFixture.cs",
+          "dotnet/Cce.Llm.Tests/MemoryLookupLoopTests.cs"
+        ],
+        "fixture_sha256": "85d4fc967875d0ed46db345bada115a097edd0817921b883de39a6daf5345720",
+        "evaluator_binary_sha256": "8bf39afd06178978c55a849b39c88fd773d32ad553daaeaa44e2d5b18f00a117"
+      },
+      "binding_post_bind": {
+        "commit": "2d298cade27ff7196e551ccefdc51af43e87638c",
+        "worktree_sha256": "3f29c299f8be86f5ee62b03ff79ef1e50330da9f9cd04bf79c0040e9573c94a9",
+        "worktree_dirty_files": 337,
+        "special_index_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "special_index_files": 0,
+        "special_index_bytes": 0,
+        "untracked_sha256": "df81eafafa75b63ce44f553449b93a4b570093cacd30d797030533884454ed60",
+        "evaluator_source_set_sha256": "0950af8cb7f849d7976b31d5977fc5c52ad63f39f43380ce1ad101bf343b055c",
+        "evaluator_sources": [
+          "dotnet/Cce.Llm.Tests/CNET.Cce.Llm.Tests.csproj",
+          "dotnet/Cce.Llm.Tests/HeldOutFixture.cs",
+          "dotnet/Cce.Llm.Tests/MemoryLookupLoopTests.cs"
+        ],
+        "fixture_sha256": "85d4fc967875d0ed46db345bada115a097edd0817921b883de39a6daf5345720",
+        "evaluator_binary_sha256": "8bf39afd06178978c55a849b39c88fd773d32ad553daaeaa44e2d5b18f00a117"
+      },
+      "binding_stable": true,
+      "binding_drift": [],
+      "duration_seconds": 1.553,
+      "run_id": "6076bfe4-1e71-4f56-9bda-511f339468ab",
+      "env_sha256": "0ef11600c8b0c1150550c7845f551e52650313a236b919461e1068c3832dc8a4",
+      "env_variables": 72,
+      "env_knob_names": [
+        "CNET_HELD_OUT_FIXTURE"
+      ],
+      "env_allowlisted_knobs": {
+        "CNET_HELD_OUT_FIXTURE": "/tmp/cnet-capacity-final-9d5jz5/tests/fixtures/capability_honest_memory_retrieval.json"
+      },
+      "env_redacted_knobs": {}
+    },
+    {
+      "capability_id": "hybrid_skill_serve",
+      "status": "certified",
+      "return_code": 0,
+      "metric": 1,
+      "metric_source": "heldout_receipt",
+      "metric_error": null,
+      "absolute_floor": 1,
+      "regression_floor": 1,
+      "fixture_sha256": "08bdf7ce8ef3ce8d5a58d4d0bf35adf7fcface9c941575337d71c4c7bc26ad97",
+      "manifest_sha256": "987ec527bdd8df0ec2806c5b867c3ec2b4a8048d31bb39c2984de36e0672937f",
+      "evidence_sha256": "fbaeba4219080c220a54e4531aae7efaefb29e6cbfb5e943b6bbc26d3b234d55",
+      "evidence_log": "logs/capability_cert/hybrid_skill_serve.log",
+      "markers_ok": true,
+      "missing_markers": [],
+      "receipt_ok": true,
+      "receipt_problems": [],
+      "receipt": {
+        "receipt_present": true,
+        "receipt_capability": "hybrid_skill_serve",
+        "receipt_fixture_sha256": "08bdf7ce8ef3ce8d5a58d4d0bf35adf7fcface9c941575337d71c4c7bc26ad97",
+        "receipt_cases": 2,
+        "receipt_consumed": 2,
+        "case_reads": {
+          "hermetic-uncertified": 4,
+          "residual-uncertified": 2
+        },
+        "case_line_count": 2,
+        "cases_passed": 2,
+        "cases_declared": 2,
+        "receipt_metric": 1,
+        "receipt_errors": 0
+      },
+      "declared_case_ids": [
+        "hermetic-uncertified",
+        "residual-uncertified"
+      ],
+      "evaluator_argv": [
+        "make",
+        "semantic_cortex"
+      ],
+      "evaluator_prepare": null,
+      "evaluator_sources": [
+        "Makefile",
+        "include/cnet_heldout.h",
+        "src/cnet_heldout.c",
+        "src/memory/cnet_semantic_cortex.c",
+        "include/cnet_semantic_cortex.h",
+        "tests/test_cnet_semantic_cortex.c"
+      ],
+      "evaluator_source_set_sha256": "57840ddcacd03221b67e08e512129e3e8a755a9b70289347ee4117ea869bd6d6",
+      "evaluator_binary": "bin/semantic_cortex",
+      "evaluator_binary_sha256": "79a1de7531ef1be8bd879551f39fbe65634f665cab7b4a6980dbb6996a18c4f9",
+      "binding_pre": {
+        "commit": "2d298cade27ff7196e551ccefdc51af43e87638c",
+        "worktree_sha256": "3f29c299f8be86f5ee62b03ff79ef1e50330da9f9cd04bf79c0040e9573c94a9",
+        "worktree_dirty_files": 337,
+        "special_index_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "special_index_files": 0,
+        "special_index_bytes": 0,
+        "untracked_sha256": "df81eafafa75b63ce44f553449b93a4b570093cacd30d797030533884454ed60",
+        "evaluator_source_set_sha256": "57840ddcacd03221b67e08e512129e3e8a755a9b70289347ee4117ea869bd6d6",
+        "evaluator_sources": [
+          "Makefile",
+          "include/cnet_heldout.h",
+          "include/cnet_semantic_cortex.h",
+          "src/cnet_heldout.c",
+          "src/memory/cnet_semantic_cortex.c",
+          "tests/test_cnet_semantic_cortex.c"
+        ],
+        "fixture_sha256": "08bdf7ce8ef3ce8d5a58d4d0bf35adf7fcface9c941575337d71c4c7bc26ad97"
+      },
+      "binding_post_run": {
+        "commit": "2d298cade27ff7196e551ccefdc51af43e87638c",
+        "worktree_sha256": "3f29c299f8be86f5ee62b03ff79ef1e50330da9f9cd04bf79c0040e9573c94a9",
+        "worktree_dirty_files": 337,
+        "special_index_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "special_index_files": 0,
+        "special_index_bytes": 0,
+        "untracked_sha256": "df81eafafa75b63ce44f553449b93a4b570093cacd30d797030533884454ed60",
+        "evaluator_source_set_sha256": "57840ddcacd03221b67e08e512129e3e8a755a9b70289347ee4117ea869bd6d6",
+        "evaluator_sources": [
+          "Makefile",
+          "include/cnet_heldout.h",
+          "include/cnet_semantic_cortex.h",
+          "src/cnet_heldout.c",
+          "src/memory/cnet_semantic_cortex.c",
+          "tests/test_cnet_semantic_cortex.c"
+        ],
+        "fixture_sha256": "08bdf7ce8ef3ce8d5a58d4d0bf35adf7fcface9c941575337d71c4c7bc26ad97",
+        "evaluator_binary_sha256": "79a1de7531ef1be8bd879551f39fbe65634f665cab7b4a6980dbb6996a18c4f9"
+      },
+      "binding_post_bind": {
+        "commit": "2d298cade27ff7196e551ccefdc51af43e87638c",
+        "worktree_sha256": "3f29c299f8be86f5ee62b03ff79ef1e50330da9f9cd04bf79c0040e9573c94a9",
+        "worktree_dirty_files": 337,
+        "special_index_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "special_index_files": 0,
+        "special_index_bytes": 0,
+        "untracked_sha256": "df81eafafa75b63ce44f553449b93a4b570093cacd30d797030533884454ed60",
+        "evaluator_source_set_sha256": "57840ddcacd03221b67e08e512129e3e8a755a9b70289347ee4117ea869bd6d6",
+        "evaluator_sources": [
+          "Makefile",
+          "include/cnet_heldout.h",
+          "include/cnet_semantic_cortex.h",
+          "src/cnet_heldout.c",
+          "src/memory/cnet_semantic_cortex.c",
+          "tests/test_cnet_semantic_cortex.c"
+        ],
+        "fixture_sha256": "08bdf7ce8ef3ce8d5a58d4d0bf35adf7fcface9c941575337d71c4c7bc26ad97",
+        "evaluator_binary_sha256": "79a1de7531ef1be8bd879551f39fbe65634f665cab7b4a6980dbb6996a18c4f9"
+      },
+      "binding_stable": true,
+      "binding_drift": [],
+      "duration_seconds": 0.368,
+      "run_id": "6076bfe4-1e71-4f56-9bda-511f339468ab",
+      "env_sha256": "527a503232168a3704bf5a07500865a7b347ddcee5ed5fcdea232a513cbe3a92",
+      "env_variables": 72,
+      "env_knob_names": [
+        "CNET_HELD_OUT_FIXTURE"
+      ],
+      "env_allowlisted_knobs": {
+        "CNET_HELD_OUT_FIXTURE": "/tmp/cnet-capacity-final-9d5jz5/tests/fixtures/capability_hybrid_skill_serve.json"
+      },
+      "env_redacted_knobs": {}
+    },
+    {
+      "capability_id": "json_toolcall_adapter",
+      "status": "certified",
+      "return_code": 0,
+      "metric": 0.775,
+      "metric_source": "regex",
+      "metric_error": null,
+      "absolute_floor": 0.55,
+      "regression_floor": 0.6175,
+      "fixture_sha256": "8be4ac7622270b76954ba575c21505df1562e47a109ba5efd75b6d24f32d807b",
+      "manifest_sha256": "4b5c60ce9e96f25951012f01e681caaaa6eb72962d448155b596470addb7653b",
+      "evidence_sha256": "3bb9fa356348b7728e474edab77b7c2e02654a06519a664d62d398f28d4a4af4",
+      "evidence_log": "logs/capability_cert/json_toolcall_adapter.log",
+      "markers_ok": true,
+      "missing_markers": [],
+      "receipt_ok": true,
+      "receipt_problems": [],
+      "receipt": {
+        "receipt_present": true,
+        "receipt_capability": "json_toolcall_adapter",
+        "receipt_fixture_sha256": "8be4ac7622270b76954ba575c21505df1562e47a109ba5efd75b6d24f32d807b",
+        "receipt_cases": 1,
+        "receipt_consumed": 1,
+        "case_reads": {
+          "adapter-on-routing-accuracy": 8
+        },
+        "case_line_count": 1,
+        "cases_passed": 1,
+        "cases_declared": 1,
+        "receipt_metric": 1,
+        "receipt_errors": 0
+      },
+      "declared_case_ids": [
+        "adapter-on-routing-accuracy"
+      ],
+      "evaluator_argv": [
+        "make",
+        "jtc_adapter_bench"
+      ],
+      "evaluator_prepare": null,
+      "evaluator_sources": [
+        "Makefile",
+        "include/cnet_heldout.h",
+        "src/cnet_heldout.c",
+        "tests/jtc_adapter_bench.c"
+      ],
+      "evaluator_source_set_sha256": "b9754d3c7ca2bbd416d50dbdb04a2986cec8b374955b7b5e1237524d6a754a67",
+      "evaluator_binary": "bin/jtc_adapter_bench",
+      "evaluator_binary_sha256": "99409f9623adba2d59ecb046d62ca63fc8c218cd6e8dbaf59510f9a2d7468838",
+      "binding_pre": {
+        "commit": "2d298cade27ff7196e551ccefdc51af43e87638c",
+        "worktree_sha256": "3f29c299f8be86f5ee62b03ff79ef1e50330da9f9cd04bf79c0040e9573c94a9",
+        "worktree_dirty_files": 337,
+        "special_index_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "special_index_files": 0,
+        "special_index_bytes": 0,
+        "untracked_sha256": "df81eafafa75b63ce44f553449b93a4b570093cacd30d797030533884454ed60",
+        "evaluator_source_set_sha256": "b9754d3c7ca2bbd416d50dbdb04a2986cec8b374955b7b5e1237524d6a754a67",
+        "evaluator_sources": [
+          "Makefile",
+          "include/cnet_heldout.h",
+          "src/cnet_heldout.c",
+          "tests/jtc_adapter_bench.c"
+        ],
+        "fixture_sha256": "8be4ac7622270b76954ba575c21505df1562e47a109ba5efd75b6d24f32d807b"
+      },
+      "binding_post_run": {
+        "commit": "2d298cade27ff7196e551ccefdc51af43e87638c",
+        "worktree_sha256": "3f29c299f8be86f5ee62b03ff79ef1e50330da9f9cd04bf79c0040e9573c94a9",
+        "worktree_dirty_files": 337,
+        "special_index_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "special_index_files": 0,
+        "special_index_bytes": 0,
+        "untracked_sha256": "df81eafafa75b63ce44f553449b93a4b570093cacd30d797030533884454ed60",
+        "evaluator_source_set_sha256": "b9754d3c7ca2bbd416d50dbdb04a2986cec8b374955b7b5e1237524d6a754a67",
+        "evaluator_sources": [
+          "Makefile",
+          "include/cnet_heldout.h",
+          "src/cnet_heldout.c",
+          "tests/jtc_adapter_bench.c"
+        ],
+        "fixture_sha256": "8be4ac7622270b76954ba575c21505df1562e47a109ba5efd75b6d24f32d807b",
+        "evaluator_binary_sha256": "99409f9623adba2d59ecb046d62ca63fc8c218cd6e8dbaf59510f9a2d7468838"
+      },
+      "binding_post_bind": {
+        "commit": "2d298cade27ff7196e551ccefdc51af43e87638c",
+        "worktree_sha256": "3f29c299f8be86f5ee62b03ff79ef1e50330da9f9cd04bf79c0040e9573c94a9",
+        "worktree_dirty_files": 337,
+        "special_index_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "special_index_files": 0,
+        "special_index_bytes": 0,
+        "untracked_sha256": "df81eafafa75b63ce44f553449b93a4b570093cacd30d797030533884454ed60",
+        "evaluator_source_set_sha256": "b9754d3c7ca2bbd416d50dbdb04a2986cec8b374955b7b5e1237524d6a754a67",
+        "evaluator_sources": [
+          "Makefile",
+          "include/cnet_heldout.h",
+          "src/cnet_heldout.c",
+          "tests/jtc_adapter_bench.c"
+        ],
+        "fixture_sha256": "8be4ac7622270b76954ba575c21505df1562e47a109ba5efd75b6d24f32d807b",
+        "evaluator_binary_sha256": "99409f9623adba2d59ecb046d62ca63fc8c218cd6e8dbaf59510f9a2d7468838"
+      },
+      "binding_stable": true,
+      "binding_drift": [],
+      "duration_seconds": 7.992,
+      "run_id": "6076bfe4-1e71-4f56-9bda-511f339468ab",
+      "env_sha256": "8daecb1453113b1f5d0faa84ad5496bd7a39d4c203a88f0c6b9cd568424d25a9",
+      "env_variables": 72,
+      "env_knob_names": [
+        "CNET_HELD_OUT_FIXTURE"
+      ],
+      "env_allowlisted_knobs": {
+        "CNET_HELD_OUT_FIXTURE": "/tmp/cnet-capacity-final-9d5jz5/tests/fixtures/capability_json_toolcall_adapter.json"
+      },
+      "env_redacted_knobs": {}
+    },
+    {
+      "capability_id": "sleep_consolidation",
+      "status": "certified",
+      "return_code": 0,
+      "metric": 1,
+      "metric_source": "heldout_receipt",
+      "metric_error": null,
+      "absolute_floor": 1,
+      "regression_floor": 1,
+      "fixture_sha256": "b04764f19592d8af648d0fba1c2d70bb44f84d94c4cb353473ea1f706dfc3576",
+      "manifest_sha256": "d06810e68100c8f24e85f79dae5ce8dccb3ccdcc03fcc6d0fd664541099f9b7a",
+      "evidence_sha256": "38281e78d380c9497a925513bfe06ece84ebec1126868289a2846e011f0fcb5b",
+      "evidence_log": "logs/capability_cert/sleep_consolidation.log",
+      "markers_ok": true,
+      "missing_markers": [],
+      "receipt_ok": true,
+      "receipt_problems": [],
+      "receipt": {
+        "receipt_present": true,
+        "receipt_capability": "sleep_consolidation",
+        "receipt_fixture_sha256": "b04764f19592d8af648d0fba1c2d70bb44f84d94c4cb353473ea1f706dfc3576",
+        "receipt_cases": 1,
+        "receipt_consumed": 1,
+        "case_reads": {
+          "dup-and-paraphrase-consolidation": 7
+        },
+        "case_line_count": 1,
+        "cases_passed": 1,
+        "cases_declared": 1,
+        "receipt_metric": 1,
+        "receipt_errors": 0
+      },
+      "declared_case_ids": [
+        "dup-and-paraphrase-consolidation"
+      ],
+      "evaluator_argv": [
+        "make",
+        "sleep_consolidate"
+      ],
+      "evaluator_prepare": null,
+      "evaluator_sources": [
+        "Makefile",
+        "include/cnet_heldout.h",
+        "src/cnet_heldout.c",
+        "src/memory/cnet_sleep_consolidate.c",
+        "include/cnet_sleep_consolidate.h",
+        "tests/test_cnet_sleep_consolidate.c"
+      ],
+      "evaluator_source_set_sha256": "361fd2b944d6b97b4f102ba46f32ab477eb0b5a2a0546f21b7117eee26ab19b1",
+      "evaluator_binary": "bin/sleep_consolidate",
+      "evaluator_binary_sha256": "ddfeeeadf9880e7c386de9e0dd3bc6f06f5c2023d32e4b3fc54b3849138b1c45",
+      "binding_pre": {
+        "commit": "2d298cade27ff7196e551ccefdc51af43e87638c",
+        "worktree_sha256": "3f29c299f8be86f5ee62b03ff79ef1e50330da9f9cd04bf79c0040e9573c94a9",
+        "worktree_dirty_files": 337,
+        "special_index_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "special_index_files": 0,
+        "special_index_bytes": 0,
+        "untracked_sha256": "df81eafafa75b63ce44f553449b93a4b570093cacd30d797030533884454ed60",
+        "evaluator_source_set_sha256": "361fd2b944d6b97b4f102ba46f32ab477eb0b5a2a0546f21b7117eee26ab19b1",
+        "evaluator_sources": [
+          "Makefile",
+          "include/cnet_heldout.h",
+          "include/cnet_sleep_consolidate.h",
+          "src/cnet_heldout.c",
+          "src/memory/cnet_sleep_consolidate.c",
+          "tests/test_cnet_sleep_consolidate.c"
+        ],
+        "fixture_sha256": "b04764f19592d8af648d0fba1c2d70bb44f84d94c4cb353473ea1f706dfc3576"
+      },
+      "binding_post_run": {
+        "commit": "2d298cade27ff7196e551ccefdc51af43e87638c",
+        "worktree_sha256": "3f29c299f8be86f5ee62b03ff79ef1e50330da9f9cd04bf79c0040e9573c94a9",
+        "worktree_dirty_files": 337,
+        "special_index_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "special_index_files": 0,
+        "special_index_bytes": 0,
+        "untracked_sha256": "df81eafafa75b63ce44f553449b93a4b570093cacd30d797030533884454ed60",
+        "evaluator_source_set_sha256": "361fd2b944d6b97b4f102ba46f32ab477eb0b5a2a0546f21b7117eee26ab19b1",
+        "evaluator_sources": [
+          "Makefile",
+          "include/cnet_heldout.h",
+          "include/cnet_sleep_consolidate.h",
+          "src/cnet_heldout.c",
+          "src/memory/cnet_sleep_consolidate.c",
+          "tests/test_cnet_sleep_consolidate.c"
+        ],
+        "fixture_sha256": "b04764f19592d8af648d0fba1c2d70bb44f84d94c4cb353473ea1f706dfc3576",
+        "evaluator_binary_sha256": "ddfeeeadf9880e7c386de9e0dd3bc6f06f5c2023d32e4b3fc54b3849138b1c45"
+      },
+      "binding_post_bind": {
+        "commit": "2d298cade27ff7196e551ccefdc51af43e87638c",
+        "worktree_sha256": "3f29c299f8be86f5ee62b03ff79ef1e50330da9f9cd04bf79c0040e9573c94a9",
+        "worktree_dirty_files": 337,
+        "special_index_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "special_index_files": 0,
+        "special_index_bytes": 0,
+        "untracked_sha256": "df81eafafa75b63ce44f553449b93a4b570093cacd30d797030533884454ed60",
+        "evaluator_source_set_sha256": "361fd2b944d6b97b4f102ba46f32ab477eb0b5a2a0546f21b7117eee26ab19b1",
+        "evaluator_sources": [
+          "Makefile",
+          "include/cnet_heldout.h",
+          "include/cnet_sleep_consolidate.h",
+          "src/cnet_heldout.c",
+          "src/memory/cnet_sleep_consolidate.c",
+          "tests/test_cnet_sleep_consolidate.c"
+        ],
+        "fixture_sha256": "b04764f19592d8af648d0fba1c2d70bb44f84d94c4cb353473ea1f706dfc3576",
+        "evaluator_binary_sha256": "ddfeeeadf9880e7c386de9e0dd3bc6f06f5c2023d32e4b3fc54b3849138b1c45"
+      },
+      "binding_stable": true,
+      "binding_drift": [],
+      "duration_seconds": 0.738,
+      "run_id": "6076bfe4-1e71-4f56-9bda-511f339468ab",
+      "env_sha256": "6ef19816912337bb7d1d66e177c63cc21959d95dfd8641c0649f5ef56a25f1be",
+      "env_variables": 72,
+      "env_knob_names": [
+        "CNET_HELD_OUT_FIXTURE"
+      ],
+      "env_allowlisted_knobs": {
+        "CNET_HELD_OUT_FIXTURE": "/tmp/cnet-capacity-final-9d5jz5/tests/fixtures/capability_sleep_consolidation.json"
+      },
+      "env_redacted_knobs": {}
+    }
+  ]
+}

@@ -27,3 +27,11 @@ answer_prefix|abstain
 answer_prefix|i don't know
 answer_prefix|i do not know
 answer_prefix|no local skill
+
+# Probe / OOD junk (2026-08-19 levers)
+substr|totally unknown thing
+substr|zzq
+substr|xyzzy
+substr|deploy probe unique
+substr|write a haiku
+substr|this is a test

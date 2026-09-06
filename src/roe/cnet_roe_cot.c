@@ -105,7 +105,7 @@ void roe_cot_init(RoeCotChain *C) {
     memset(C, 0, sizeof *C);
     scopy(C->root, sizeof C->root, "artifacts/roe_daily_packs");
     scopy(C->gov, sizeof C->gov, "logs/governor");
-    C->max_hops = 8;
+    C->max_hops = 10;
     C->allow_teacher = 0;
     C->run_act = 1;
     C->never_self_cert = 1;
@@ -257,6 +257,71 @@ static int match_route(const RoeCotChain *C, const char *q, char *pack, size_t p
     }
     fclose(f);
     return best_len > 0;
+}
+
+static int hop_has_cand(const RoeCotHop *h, const char *id) {
+    int i;
+    if (!h || !id) return 0;
+    for (i = 0; i < h->n_cand; i++)
+        if (!strcmp(h->cand_id[i], id)) return 1;
+    return 0;
+}
+
+static void add_cand(RoeCotHop *h, const char *id) {
+    if (!h || !id || !id[0] || h->n_cand >= ROE_COT_MAX_CAND) return;
+    if (hop_has_cand(h, id)) return;
+    scopy(h->cand_id[h->n_cand], sizeof h->cand_id[0], id);
+    h->n_cand++;
+}
+
+/* Coconut v4 steal: superposition of named next hops (BFS). Not GGUF hidden. */
+static void seed_cands(const char *q, RoeCotHop *h) {
+    const char *p;
+    if (!q || !h) return;
+    if (contains_ci(q, "past tense") || contains_ci(q, "past participle") ||
+        contains_ci(q, "present participle") || contains_ci(q, "gerund of") ||
+        contains_ci(q, "plural of") || contains_ci(q, "a or an") ||
+        contains_ci(q, "an or a") || contains_ci(q, "third person") ||
+        contains_ci(q, "3sg of") || contains_ci(q, "comparative of") ||
+        contains_ci(q, "superlative of") || contains_ci(q, "adverb of") ||
+        contains_ci(q, "ly form of"))
+        add_cand(h, "typed_en");
+    if (contains_ci(q, " plus ") || contains_ci(q, " minus ") ||
+        contains_ci(q, " times ") || contains_ci(q, "multiplied") ||
+        contains_ci(q, "plus ") || contains_ci(q, "minus "))
+        add_cand(h, "add_u32_v1");
+    for (p = q; *p; p++) {
+        if (isdigit((unsigned char)*p) &&
+            (strchr(p, '+') || strchr(p, '*') || strstr(p, " - "))) {
+            add_cand(h, "add_u32_v1");
+            break;
+        }
+    }
+}
+
+static void fill_cand_show(RoeCotHop *h) {
+    char acc[ROE_COT_LINE];
+    int i, pos;
+    if (!h) return;
+    if (h->n_cand <= 0) {
+        scopy(h->cand_show, sizeof h->cand_show,
+              "I considered no named hops. ABSTAIN.");
+        return;
+    }
+    pos = snprintf(acc, sizeof acc, "I considered ");
+    for (i = 0; i < h->n_cand && pos > 0 && pos < (int)sizeof acc - 8; i++) {
+        const char *en = h->cand_id[i];
+        if (!strcmp(en, "typed_en"))
+            en = "typed_en (English morphology)";
+        else if (!strcmp(en, "add_u32_v1"))
+            en = "add_u32_v1 (adder)";
+        pos += snprintf(acc + pos, sizeof acc - (size_t)pos, "%s%s",
+                        i ? ", " : "", en);
+    }
+    if (pos > 0 && pos < (int)sizeof acc - 32)
+        snprintf(acc + pos, sizeof acc - (size_t)pos,
+                 ". Collapse only at ACT.");
+    scopy(h->cand_show, sizeof h->cand_show, acc);
 }
 
 static void split_goal(const char *q, char parts[][ROE_COT_LINE], int *nparts, int maxp) {
@@ -466,17 +531,36 @@ int roe_cot_run(RoeCotChain *C, const char *query) {
         if (match_route(C, parts[i], pack, sizeof pack, skill, sizeof skill, pat, sizeof pat)) {
             scopy(h->pack, sizeof h->pack, pack);
             scopy(h->skill, sizeof h->skill, skill);
+            add_cand(h, skill[0] ? skill : pack);
             snprintf(h->detail, sizeof h->detail, "route pack=%s skill=%s pat=%s", pack,
                      skill[0] ? skill : "-", pat);
         } else {
             scopy(h->pack, sizeof h->pack, "always_on");
-            snprintf(h->detail, sizeof h->detail, "no route â€” always_on + personal");
+            snprintf(h->detail, sizeof h->detail, "no route — always_on + personal");
         }
+        seed_cands(parts[i], h);
+        fill_cand_show(h);
+        if (h->cand_show[0])
+            snprintf(h->detail, sizeof h->detail, "%s", h->cand_show);
+        if (h->n_cand > 0 && !h->skill[0])
+            scopy(h->skill, sizeof h->skill, h->cand_id[0]);
 
         h = add_hop(C, ROE_COT_ACT, "ACT");
         if (!h) break;
         scopy(h->pack, sizeof h->pack, pack[0] ? pack : "always_on");
         if (skill[0]) scopy(h->skill, sizeof h->skill, skill);
+        {
+            RoeCotHop *rh = &C->hops[C->n_hops - 2];
+            if (rh->kind == ROE_COT_RETRIEVE && rh->n_cand > 0) {
+                int ci;
+                h->n_cand = rh->n_cand;
+                for (ci = 0; ci < rh->n_cand; ci++)
+                    scopy(h->cand_id[ci], sizeof h->cand_id[0], rh->cand_id[ci]);
+                scopy(h->cand_show, sizeof h->cand_show, rh->cand_show);
+                if (!h->skill[0])
+                    scopy(h->skill, sizeof h->skill, rh->cand_id[0]);
+            }
+        }
         run_front_door(C, parts[i], h);
         /* prefer last LOCAL answer as final */
         if (h->answer[0] && (strcmp(h->source, "LOCAL") == 0 || !C->final_answer[0])) {
@@ -486,14 +570,27 @@ int roe_cot_run(RoeCotChain *C, const char *query) {
     }
 
 join_verify:
-    /* JOIN */
+    /* JOIN — Coconut: do not prefix-CERT a partial chain. */
     h = add_hop(C, ROE_COT_JOIN, "JOIN");
     if (h) {
-        if (C->final_answer[0])
+        int nact = 0, nlocal = 0, hi;
+        for (hi = 0; hi < C->n_hops; hi++) {
+            if (C->hops[hi].kind != ROE_COT_ACT) continue;
+            nact++;
+            if (!strcmp(C->hops[hi].source, "LOCAL")) nlocal++;
+        }
+        if (nact > 1 && nlocal < nact) {
+            scopy(h->detail, sizeof h->detail,
+                  "coordinator gap — not prefix-CERT. SHOW names the miss.");
+            h->status = ROE_COT_ABSTAIN;
+            scopy(C->final_answer, sizeof C->final_answer,
+                  "ABSTAIN: coordinator gap. Not CERT.");
+            scopy(C->final_source, sizeof C->final_source, "ABSTAIN");
+        } else if (C->final_answer[0])
             snprintf(h->detail, sizeof h->detail, "assembled source=%s ans=%.60s",
                      C->final_source, C->final_answer);
         else {
-            scopy(h->detail, sizeof h->detail, "no LOCAL answer â€” abstain join");
+            scopy(h->detail, sizeof h->detail, "no LOCAL answer — abstain join");
             h->status = ROE_COT_ABSTAIN;
             if (!C->final_answer[0])
                 scopy(C->final_answer, sizeof C->final_answer,
@@ -517,10 +614,20 @@ join_verify:
         }
     }
 
-    /* SHOW */
+    /* SHOW — English of hop ids. Empty SHOW is banned (hostility law). */
     h = add_hop(C, ROE_COT_SHOW, "SHOW");
-    if (h)
-        snprintf(h->detail, sizeof h->detail, "panel hops=%d skeleton_tokens=0", C->n_hops);
+    if (h) {
+        int hi;
+        const char *en = NULL;
+        for (hi = 0; hi < C->n_hops; hi++)
+            if (C->hops[hi].kind == ROE_COT_RETRIEVE && C->hops[hi].cand_show[0])
+                en = C->hops[hi].cand_show;
+        if (!en || !en[0])
+            en = "I considered no named hops. ABSTAIN.";
+        scopy(h->cand_show, sizeof h->cand_show, en);
+        snprintf(h->detail, sizeof h->detail, "%s hops=%d skeleton_tokens=0", en,
+                 C->n_hops);
+    }
 
     /* chain one-liner */
     snprintf(C->chain_line, sizeof C->chain_line,
@@ -696,6 +803,90 @@ int roe_cot_selftest(void) {
     scopy(C.gov, sizeof C.gov, "logs/governor");
     roe_cot_run(&C, "who are you");
     T(roe_cot_persist(&C) == 0, "persist chain_last");
+
+    roe_cot_init(&C);
+    C.run_act = 0;
+    scopy(C.gov, sizeof C.gov, "/tmp/roe_cot_empty_gov_zz");
+    C.body.adenosine = 0.20;
+    C.body.pause_grow = 0;
+    C.body.serotonin = 0.50;
+    T(roe_cot_run(&C, "past tense of walk") == 0, "english morphology query");
+    {
+        int i, got = 0, show_en = 0;
+        for (i = 0; i < C.n_hops; i++) {
+            if (C.hops[i].kind == ROE_COT_RETRIEVE &&
+                hop_has_cand(&C.hops[i], "typed_en"))
+                got = 1;
+            if (C.hops[i].kind == ROE_COT_SHOW && C.hops[i].cand_show[0] &&
+                strstr(C.hops[i].cand_show, "typed_en"))
+                show_en = 1;
+        }
+        T(got, "RETRIEVE cand typed_en (Coconut BFS, not greedy)");
+        T(show_en, "SHOW English names typed_en");
+    }
+    roe_cot_init(&C);
+    C.run_act = 0;
+    scopy(C.gov, sizeof C.gov, "/tmp/roe_cot_empty_gov_zz");
+    C.body.adenosine = 0.20;
+    C.body.pause_grow = 0;
+    C.body.serotonin = 0.50;
+    T(roe_cot_run(&C, "plural of cat") == 0, "plural query");
+    {
+        int i, got = 0;
+        for (i = 0; i < C.n_hops; i++)
+            if (C.hops[i].kind == ROE_COT_RETRIEVE &&
+                hop_has_cand(&C.hops[i], "typed_en"))
+                got = 1;
+        T(got, "RETRIEVE cand typed_en on plural of");
+    }
+    roe_cot_init(&C);
+    C.run_act = 0;
+    scopy(C.gov, sizeof C.gov, "/tmp/roe_cot_empty_gov_zz");
+    C.body.adenosine = 0.20;
+    C.body.pause_grow = 0;
+    C.body.serotonin = 0.50;
+    T(roe_cot_run(&C, "a or an apple") == 0, "article query");
+    {
+        int i, got = 0;
+        for (i = 0; i < C.n_hops; i++)
+            if (C.hops[i].kind == ROE_COT_RETRIEVE &&
+                hop_has_cand(&C.hops[i], "typed_en"))
+                got = 1;
+        T(got, "RETRIEVE cand typed_en on a or an");
+    }
+    roe_cot_init(&C);
+    C.run_act = 0;
+    scopy(C.gov, sizeof C.gov, "/tmp/roe_cot_empty_gov_zz");
+    C.body.adenosine = 0.20;
+    C.body.pause_grow = 0;
+    T(roe_cot_run(&C, "twelve plus five") == 0, "arith query");
+    {
+        int i, got = 0;
+        for (i = 0; i < C.n_hops; i++)
+            if (C.hops[i].kind == ROE_COT_RETRIEVE &&
+                hop_has_cand(&C.hops[i], "add_u32_v1"))
+                got = 1;
+        T(got, "RETRIEVE cand add_u32_v1");
+    }
+    roe_cot_init(&C);
+    C.run_act = 0;
+    scopy(C.gov, sizeof C.gov, "/tmp/roe_cot_empty_gov_zz");
+    C.body.adenosine = 0.20;
+    C.body.pause_grow = 0;
+    C.body.serotonin = 0.50;
+    T(roe_cot_run(&C, "past tense of go and xyzzy") == 0, "coordinator split");
+    {
+        int i, nact = 0, join_ab = 0;
+        for (i = 0; i < C.n_hops; i++) {
+            if (C.hops[i].kind == ROE_COT_ACT) nact++;
+            if (C.hops[i].kind == ROE_COT_JOIN &&
+                C.hops[i].status == ROE_COT_ABSTAIN)
+                join_ab = 1;
+        }
+        T(nact >= 2, "split two ACT hops");
+        T(join_ab || strcmp(C.final_source, "LOCAL") != 0,
+          "JOIN refuses prefix-CERT");
+    }
 #undef T
     printf("\nfailures=%d\n", fail);
     if (fail) {

@@ -27,6 +27,9 @@ Current fragments:
 | `mk/orphans.mk` | targets for the tests and tools that previously had none |
 | `mk/verify_tiers.mk` | T0 `verify-fast` / T1 `verify` / T2 `verify-t2` / nightly membership — single table |
 | `mk/cce_lib.mk` | `bin/libcce.a` + `libcce.so` / `cce.dll` — CCE linked once, tests link the library |
+| `mk/amdmath.mk` | HIP/rocWMMA `libcnet_amdmath.a` — gfx12 WMMA + packed VOP, not CERT |
+| `mk/serve.mk` | serving/chat builds plus model-free core-bus, `cnetd` protocol, and MCP transport gates |
+| `mk/security.mk` | fixed-argv ROE document/OCR process-boundary gate |
 
 ## Verify tiers (do not re-list deps in the root Makefile)
 
@@ -43,7 +46,7 @@ Specialty CCE tests each re-link ~50 translation units — keep them off T1.
 
 ## The rest of the split is staged, not done
 
-The remaining ~8,500 lines are **not** mechanically separable. The original file
+The remaining 8,519 lines are **not** mechanically separable. The original file
 has no section banners and 301 scattered `.PHONY` declarations, so there is no
 boundary a script can cut on; classifying those rules is a hand job that needs a
 green `make verify` on both the Windows and Linux boxes to land safely.

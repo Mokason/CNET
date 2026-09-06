@@ -12,7 +12,7 @@
     "Makefile",
     "include/cnet_heldout.h",
     "src/cnet_heldout.c",
-    "src/cnet_sleep_consolidate.c",
+    "src/memory/cnet_sleep_consolidate.c",
     "include/cnet_sleep_consolidate.h",
     "tests/test_cnet_sleep_consolidate.c"
   ],

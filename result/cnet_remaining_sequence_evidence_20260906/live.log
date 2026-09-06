@@ -1,0 +1,4 @@
+LIVE_CAPSULE_SEQUENCE_PASS covered=160 grammar=4 refusals=2 wrong_certified=0
+LIVE_ACQUISITION_EXPANSION_PASS checked=32 total_covered=192 wrong_certified=0
+LOCAL verified=1 value=504 hops=1 units=tool_a6a59b0103e5493f7177f559a7e0ad6b74e4b15adc21bb60
+PREEXISTING_CAPSULE_BYTES_UNCHANGED

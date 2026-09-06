@@ -1,0 +1,26 @@
+# English irregular plurals — overlay, not C.
+# Regulars (cat/cats, box/boxes, city/cities) need no row: RULE=s.
+# Format: lemma<TAB>plural
+# mouse is omitted on purpose: typed_en selftest golds it as the exception path.
+child	children
+person	people
+man	men
+woman	women
+tooth	teeth
+foot	feet
+sheep	sheep
+goose	geese
+ox	oxen
+leaf	leaves
+knife	knives
+life	lives
+wolf	wolves
+cactus	cacti
+analysis	analyses
+criterion	criteria
+datum	data
+phenomenon	phenomena
+index	indices
+appendix	appendices
+louse	lice
+die	dice

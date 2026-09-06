@@ -19,16 +19,37 @@ CCE_C_SRCS := $(filter %.c,$(CCE))
 CCE_C_OBJS := $(patsubst src/cce/%.c,$(CCE_OBJDIR)/%.o,$(CCE_C_SRCS))
 # Extra .o already compiled (CUDA) that are in $(CCE) but not .c
 CCE_PREBUILT_OBJS := $(filter %.o,$(CCE))
+CCE_CONFIG_STAMP := $(CCE_OBJDIR)/.compiler-config
+CCE_RULES := $(lastword $(MAKEFILE_LIST))
+
+-include $(CCE_C_OBJS:.o=.d)
+
+.PHONY: cce_config_check
+cce_config_check:
+
+# Updating this file only when its contents change preserves incremental builds
+# while invalidating objects when switching compiler or flags (including back).
+$(CCE_CONFIG_STAMP): cce_config_check
+	@mkdir -p $(dir $@)
+	@set -e; cce_tmp='$@'.$$$$; trap 'rm -f "$$cce_tmp"' EXIT; \
+	{ command -v $(CC); $(CC) --version; \
+		printf '%s\n' '$(CC)' '$(CFLAGS)' '$(CUDA_CFLAGS)' '-fPIC -MMD -MP'; \
+	} > "$$cce_tmp"; \
+	if ! cmp -s "$$cce_tmp" '$@'; then mv -f "$$cce_tmp" '$@'; fi
 
 LIBCCE := $(BIN_DIR)/libcce.a
 LIBCCE_SO := $(BIN_DIR)/libcce.so
 
+# The flagship f16 identity sub-test also links the archive. Without this edge
+# a clean parallel verify can reach its link before libcce has been created.
+flagship: $(LIBCCE)
+
 .PHONY: libcce libcce_shared cce_lib cce_dll
 
 # Per-TU compile once. -fPIC so the same objects feed the shared lib.
-$(CCE_OBJDIR)/%.o: src/cce/%.c
+$(CCE_OBJDIR)/%.o: src/cce/%.c $(CCE_CONFIG_STAMP) $(CCE_RULES)
 	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -fPIC -c -o $@ $<
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -fPIC -MMD -MP -c -o $@ $<
 
 $(LIBCCE): $(CCE_C_OBJS) $(CCE_PREBUILT_OBJS)
 	@mkdir -p $(BIN_DIR)

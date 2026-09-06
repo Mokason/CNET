@@ -1,0 +1,4 @@
+# INPUT_TAG OUTPUT_TAG INPUT_BITS OUTPUT_BITS OP OPERAND MIN MAX
+# Copy to a private mode-600 file; this example is NOT automatically enabled.
+bytes bits 8 11 mul 8 0 255
+u8 masked8 8 8 xor 255 0 255

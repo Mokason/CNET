@@ -1,0 +1,22 @@
+# Article exceptions — overlay, not C.
+# Operator is spelling vowel-letter (apple→an, cat→a).
+# Sound exceptions (hour, university) live here.
+# Do not add hour/university if a selftest needs the spelling-until-gold path;
+# those two are gold-taught. Other common exceptions may be listed.
+honest	an
+heir	an
+honour	an
+honor	an
+unicorn	a
+european	a
+one	a
+once	a
+user	a
+uniform	a
+uterus	a
+hourglass	an
+mba	an
+fbi	an
+n	an
+s	an
+x	an

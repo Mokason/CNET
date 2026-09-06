@@ -3,6 +3,7 @@
 #include "../../include/contract/contract.h"
 
 #include <stdio.h>
+#include <ctype.h>
 #include <stdlib.h>
 #include <string.h>
 #include <fcntl.h>
@@ -266,7 +267,7 @@ int cnet_capsule_export_asset(const CnetBase *src, const HybridAi *cov,
         cap_fail(rep, "path_too_long");
         return -1;
     }
-    if (snprintf(tmp_path, sizeof tmp_path, "%s.tmp", man_path) < 0) return -1;
+    if (snprintf(tmp_path, sizeof tmp_path, "%s.tmp-XXXXXX", man_path) < 0) return -1;
     (void)cnet_mkdir(dir, 0777);
 
     memset(&btn, 0, sizeof btn);
@@ -407,21 +408,17 @@ int cnet_capsule_export_asset(const CnetBase *src, const HybridAi *cov,
        still only ACCIDENT hardening for a local artifact — see the trust
        boundary in the header. */
     {
-        int tfd = open(tmp_path, O_WRONLY | O_CREAT | O_EXCL | CNET_O_NOFOLLOW |
-                                     CNET_O_CLOEXEC, 0600);
-        if (tfd < 0) {
-            (void)remove(tmp_path);
-            tfd = open(tmp_path, O_WRONLY | O_CREAT | O_EXCL | CNET_O_NOFOLLOW |
-                                     CNET_O_CLOEXEC, 0600);
-        }
+        int tfd = cnet_mkstemp(tmp_path);
         if (tfd < 0) { cap_fail(rep, "manifest_write_failed"); goto done; }
         fp = fdopen(tfd, "wb");
         if (!fp) { close(tfd); (void)remove(tmp_path);
                    cap_fail(rep, "manifest_write_failed"); goto done; }
     }
-    if (fwrite(man, 1, mlen, fp) != mlen ||
+    int write_failed = fwrite(man, 1, mlen, fp) != mlen ||
         fprintf(fp, "manifest_fnv %llu\n", cap_fnv_buf(man, mlen)) < 0 ||
-        fclose(fp) != 0) {
+        fflush(fp) != 0 || cnet_fsync(fileno(fp)) != 0;
+    if (fclose(fp) != 0) write_failed = 1;
+    if (write_failed) {
         (void)remove(tmp_path);
         cap_fail(rep, "manifest_write_failed");
         goto done;
@@ -430,6 +427,9 @@ int cnet_capsule_export_asset(const CnetBase *src, const HybridAi *cov,
         (void)remove(tmp_path);
         cap_fail(rep, "manifest_publish_failed");
         goto done;
+    }
+    if (cnb_sync_parent(man_path) || cnb_sync_parent(dir)) {
+        cap_fail(rep, "manifest_sync_failed"); goto done;
     }
 
     if (rep) {
@@ -516,11 +516,22 @@ int cnet_capsule_import_asset(CnetBase *dst, HybridAi *cov, const char *dir,
     {
         const char *tail = strstr((const char *)manbuf, "\nmanifest_fnv ");
         size_t covered;
+        int consumed = 0;
         if (!tail) { cap_fail(rep, "manifest_unchecksummed"); goto done; }
         covered = (size_t)(tail - (const char *)manbuf) + 1;
-        if (sscanf(tail + 1, "manifest_fnv %llu", &want_man) != 1) {
+        if (sscanf(tail + 1, "manifest_fnv %llu%n", &want_man, &consumed) != 1) {
             cap_fail(rep, "manifest_checksum_unreadable");
             goto done;
+        }
+        /* A valid checksum is the END of the manifest, not a license to
+           ignore an appended second document or corrupt trailer. */
+        if (memchr(manbuf, 0, manlen)) {
+            cap_fail(rep, "manifest_embedded_nul"); goto done;
+        }
+        for (const char *p = tail + 1 + consumed; p < (const char *)manbuf + manlen; p++) {
+            if (!isspace((unsigned char)*p)) {
+                cap_fail(rep, "manifest_trailing_data"); goto done;
+            }
         }
         if (cap_fnv_buf(manbuf, covered) != want_man) {
             cap_fail(rep, "manifest_integrity_mismatch");

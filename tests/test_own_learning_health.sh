@@ -200,6 +200,14 @@ if [ -x "$MKBASE" ]; then
             done
 
             # A truncated sidecar must not read as coverage.
+            cp "$TMP/ok.cnb" "$TMP/signedzero.cnb"
+            sed '/^R /s/ 0/ -0/' "$TMP/ok.cnb.coverage" > "$TMP/signedzero.cnb.coverage"
+            run_health 1 "mined_units_without_bound_coverage" "OWN_LEARNING_HEALTH_PASS" \
+                "byte-distinct guard rows must not certify as healthy" -- \
+                env CNET_COVERAGE_ABSTAIN=1 CNET_PERSONAL_STRUCTURE_MINE_ON_SERVE=0 \
+                    CNET_RESIDUAL_HTTP= CNET_RESIDUAL_GGUF="$TMP/teacher.gguf" \
+                    "$HEALTH" --base "$TMP/signedzero.cnb"
+
             head -c 12 "$TMP/ok.cnb.coverage" > "$TMP/trunc.coverage"
             cp "$TMP/ok.cnb" "$TMP/trunc.cnb"
             cp "$TMP/trunc.coverage" "$TMP/trunc.cnb.coverage"

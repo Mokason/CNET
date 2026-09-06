@@ -33,7 +33,7 @@ extern "C" {
 
 #define CNET_CORE_BUS_NAME 64
 #define CNET_CORE_BUS_TEXT 768
-#define CNET_CORE_BUS_MAX_BRICKS 8
+#define CNET_CORE_BUS_MAX_BRICKS 24
 
 typedef enum {
     CNET_CORE_BUS_IDLE = 0,
@@ -114,7 +114,8 @@ int cnet_core_bus_write_q1_domain_from_host_ex(const char *bonsai_gguf,
                                                const char *out_gguf, int mode);
 
 /* Full brick pipeline: write domain → lease → table → certify → park.
-   Returns 0 if brick serves without teacher. */
+   Returns 0 if brick serves without teacher.
+   On success, rep->host_tensor is the resolved GGUF tensor name. */
 int cnet_core_bus_make_brick(CnetCoreBus *b, const char *bonsai_gguf,
                              const char *tensor_name, const char *domain_gguf,
                              const char *brick_name, const char *domain_tag,

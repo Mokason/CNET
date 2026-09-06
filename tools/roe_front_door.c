@@ -19,6 +19,9 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <time.h>
+#include <fcntl.h>
+#include <sys/file.h>
+#include <unistd.h>
 
 #include "../include/cnet_roe_asi.h"
 #include "../include/cnet_domain_route.h"
@@ -635,7 +638,7 @@ static int cmd_ask(FdRouter *F, const char *q, int accept, const char *gold,
 
     /* Shell accept → promote into domain pack (or --promote-pack).
      * Target pack is loaded alone so save_catalog does not dump always-on. */
-    if (accept && tr.is_miss) {
+    if (accept) {
         RoeAsi *P = (RoeAsi *)calloc(1, sizeof *P);
         RoeReply r2;
         char path[FD_PATH];
@@ -649,6 +652,11 @@ static int cmd_ask(FdRouter *F, const char *q, int accept, const char *gold,
         }
         if (!pack && tr.route_pack[0]) pack = tr.route_pack;
         if (!pack) pack = "pack_meta_gardener";
+        for (const char *p = pack; *p; p++) {
+            if (!isalnum((unsigned char)*p) && *p != '_' && *p != '-') {
+                free(P); free(R); return 1;
+            }
+        }
         if (path_join2(path, sizeof path, F->root, pack) != 0) {
             fprintf(stderr, "promote path failed\n");
             free(P);
@@ -664,21 +672,36 @@ static int cmd_ask(FdRouter *F, const char *q, int accept, const char *gold,
             free(R);
             return 1;
         }
+        /* Serialize load -> validate -> publish, not just the final rename.
+         * Otherwise two front doors overwrite each other's new inventory. */
+        char lock_path[FD_PATH];
+        if (path_join2(lock_path, sizeof lock_path, F->root, ".promotion.lock")) {
+            free(P); free(R); return 1;
+        }
+        int lock_fd = open(lock_path, O_CREAT | O_RDWR | O_CLOEXEC | O_NOFOLLOW, 0600);
+        if (lock_fd < 0 || flock(lock_fd, LOCK_EX)) {
+            if (lock_fd >= 0) close(lock_fd);
+            free(P); free(R); return 1;
+        }
         roe_init(P);
         roe_set_catalog_dir(P, path);
-        (void)roe_load_catalog(P);
+        if (roe_load_catalog(P) < 0) { close(lock_fd); free(P); free(R); return 1; }
         roe_add_teach(P, q, "ad_hoc", use_gold);
         roe_turn(P, q, &r2);
         if (r2.source == ROE_SRC_LOCAL) {
-            printf("promote=skip already_LOCAL pack=%s\n", pack);
+            int identical = !strcmp(r2.answer, use_gold);
+            printf("promote=%s pack=%s skills=%zu reused=%d\n", identical ? "yes" : "no", pack, P->n_skills, identical);
+            close(lock_fd);
             free(P);
             free(R);
-            return 0;
+            return identical ? 0 : 1;
         }
         promoted = roe_feedback_verify(P, q, use_gold, 1);
         printf("promote=%s pack=%s skills=%zu\n", promoted ? "yes" : "no", pack,
                P->n_skills);
+        close(lock_fd);
         free(P);
+        if (!promoted) { free(R); return 1; }
     }
     free(R);
     return rc;

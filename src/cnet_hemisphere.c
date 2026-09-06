@@ -426,10 +426,40 @@ int cnet_hemi_ask(const char *turn, const CnetHemiPolicy *policy,
     if (rc < 0) return rc;
     out->intent = intent;
 
-    /* OPEN_CHAT leftover answers are killed. Creative emits tables via
-       cnet_core_bus only — never answers a turn here. */
-    (void)open_ok;
-    (void)pol;
+    /* CORE middle ground: after CERT miss, OPEN_CHAT may draft (claimed_cert=0).
+     * This is not a bypass of never-self-CERT — it IS the creativity plane. */
+    if (open_ok) {
+        int allow = 0;
+        if (intent == CNET_CORE_INTENT_CREATIVE || intent == CNET_CORE_INTENT_MIXED ||
+            intent == CNET_CORE_INTENT_UNKNOWN)
+            allow = 1;
+        if (intent == CNET_CORE_INTENT_LOGIC && pol.logic_open_chat_fallback)
+            allow = 1;
+        if (allow) {
+            char draft[CNET_HELD_TEXT];
+            draft[0] = 0;
+            if (cnet_held_model_ask(turn, draft, sizeof draft) == 0 && draft[0]) {
+                clear_hemi(out);
+                mark_via_core(out);
+                out->intent = intent;
+                out->hemi = CNET_HEMI_RESIDUAL;
+                out->plane = CNET_CORE_PLANE_OPEN_CHAT;
+                out->open_chat = 1;
+                out->source = CNET_HEMI_SRC_HELD_LLM;
+                out->bound = 1;
+                out->claimed_cert = 0; /* NEVER self-CERT */
+                out->may_voice = pol.open_chat_may_voice ? 1 : (pol.never_voice_llm ? 0 : 1);
+                out->residual_calls = 1;
+                copy_text(out->skill, sizeof out->skill, "core_open_chat");
+                copy_text(out->value, sizeof out->value, draft);
+                copy_text(out->spoken, sizeof out->spoken, draft);
+                apply_plane_tags(out, pol.open_chat_may_voice, pol.never_voice_llm);
+                /* do not brain_mirror open chat as CERT */
+                return 0;
+            }
+        }
+    }
+
     out->via_core = 1;
     out->intent = intent;
     out->hemi = CNET_HEMI_NONE;
@@ -442,7 +472,7 @@ int cnet_hemi_ask(const char *turn, const CnetHemiPolicy *policy,
     if (intent == CNET_CORE_INTENT_LOGIC)
         copy_text(out->refusal, sizeof out->refusal, "logic_miss_no_creative_fill");
     else
-        copy_text(out->refusal, sizeof out->refusal, "open_chat_answer_killed");
+        copy_text(out->refusal, sizeof out->refusal, "open_chat_unavailable");
     return 1;
 }
 

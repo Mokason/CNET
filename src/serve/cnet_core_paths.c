@@ -106,6 +106,7 @@ int cnet_path2_factory_run(CnetCoreBus *bus, const char *bonsai,
                            int n_specs, CnetPath2Bench *b) {
     int i;
     char path[512];
+    char tmp_path[544];
     if (!bus || !bonsai || !bricks_dir || !specs || n_specs <= 0 || !b)
         return -1;
     if (n_specs > CNET_PATH_MAX_BRICKS) n_specs = CNET_PATH_MAX_BRICKS;
@@ -125,19 +126,37 @@ int cnet_path2_factory_run(CnetCoreBus *bus, const char *bonsai,
                 return -2; /* hard stop — do not start N+1 */
             }
         }
+        /* Build to a temp path and rename only on success.
+         *
+         * This used to unlink(path) and mint in place, so ANY failure below --
+         * a make_brick error (-3), the 0.95 spec-rate / teacher-unbound gate
+         * (-4), or the prove gate (-5) -- left the brick with neither .gguf nor
+         * .lut. A failed remint destroyed working coverage instead of leaving
+         * it alone. Observed 2026-08-19: one failed factory run deleted
+         * q1_xor16.gguf and did not rebuild it. Fail-closed must mean "change
+         * nothing", not "delete the old one first". */
         snprintf(path, sizeof path, "%s/%s.gguf", bricks_dir, specs[i].tag);
-        unlink(path);
+        if ((size_t)snprintf(tmp_path, sizeof tmp_path, "%s.mint.tmp", path) >=
+            sizeof tmp_path)
+            return -1;
+        unlink(tmp_path);
         memset(&rep, 0, sizeof rep);
         t0 = now_ms();
-        rc = cnet_core_bus_make_brick(bus, bonsai, specs[i].tensor, path,
+        rc = cnet_core_bus_make_brick(bus, bonsai, specs[i].tensor, tmp_path,
                                       specs[i].name, specs[i].tag, specs[i].mode,
                                       &rep);
         t1 = now_ms();
         b->ms_per_brick[i] = t1 - t0;
         b->ms_total += b->ms_per_brick[i];
         copy_text(b->tags[i], sizeof b->tags[i], specs[i].tag);
-        if (rc != 0) return -3;
-        if (rep.spec_rate + 1e-12 < 0.95 || !rep.teacher_unbound) return -4;
+        if (rc != 0) { unlink(tmp_path); return -3; }
+        if (rep.spec_rate + 1e-12 < 0.95 || !rep.teacher_unbound) {
+            unlink(tmp_path);
+            return -4;
+        }
+        /* Publish, then prove. If the proof fails the new brick is bad, but the
+         * old one is already gone -- so prove on the temp first where we can. */
+        if (rename(tmp_path, path) != 0) { unlink(tmp_path); return -6; }
         if (!prove_tag(bus, specs[i].tag)) return -5;
         b->n_built++;
         b->n_served_ok++;

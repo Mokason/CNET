@@ -1,4 +1,5 @@
 #include "../../include/cnet_roe_ocr.h"
+#include "cnet_roe_process.h"
 
 #include <ctype.h>
 #include <stdio.h>
@@ -229,7 +230,7 @@ int roe_ocr_roundtrip(const char *text, RoeOcrResult *out) {
 }
 
 static int run_pdftotext(const char *path, char *out, size_t cap) {
-    char cmd[ROE_PATH_MAX + 64];
+    char input[ROE_PATH_MAX];
     char tmp[] = "/tmp/roe_ocr_XXXXXX";
     int fd, rc;
     FILE *f;
@@ -238,8 +239,14 @@ static int run_pdftotext(const char *path, char *out, size_t cap) {
     fd = mkstemp(tmp);
     if (fd < 0) return -1;
     close(fd);
-    snprintf(cmd, sizeof cmd, "pdftotext -q -layout %s %s 2>/dev/null", path, tmp);
-    rc = system(cmd);
+    if (roe_process_canonical_path(path, input, sizeof input) != 0) {
+        unlink(tmp);
+        return -1;
+    }
+    {
+        char *argv[] = {"pdftotext", "-q", "-layout", input, tmp, NULL};
+        rc = roe_process_run_quiet(argv);
+    }
     if (rc != 0) {
         unlink(tmp);
         return -1;

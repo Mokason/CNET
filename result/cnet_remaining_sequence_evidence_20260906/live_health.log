@@ -1,0 +1,3 @@
+DEPLOYED_LEARNING_INSPECT pid=2895929 executable_generation=64512:70783681
+{"mode":"deployed","base":"/home/marble/AI/CNET/artifacts/deployments/certified-core-20260905/active.cnb","base_loaded":1,"mined_units":1,"coverage_records":1,"unguarded_mined":0,"unreadable_mined":0,"coverage_file":"ok","mine_on_serve":1,"mine_on_serve_raw":"1","coverage_abstain_raw":"1","coverage_gate":"on","residual_configured":1,"residual_teacher":"reachable","dangerous":[],"status":"ok"}
+OWN_LEARNING_HEALTH_PASS base_loaded=1 coverage=ok teacher=reachable

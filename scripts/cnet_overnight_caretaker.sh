@@ -15,7 +15,7 @@ set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1
 ROOT="$PWD"
 LOG="$ROOT/logs/overnight_caretaker.log"
-BASE="$ROOT/soul_gemma4v2_final.cnb"
+BASE="${CNET_BASE_PATH:-$ROOT/soul_gemma4v2_final.cnb}"
 INBOX="$BASE.inbox"
 GAPS="$BASE.gaps.txt"
 BONSAI="${CNET_BONSAI_GGUF:-/home/marble/AI/Models/Bonsai-8B-gguf/Bonsai-8B.gguf}"

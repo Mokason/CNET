@@ -22,6 +22,7 @@
 #   3. contract law (secure/unit/heal/mutate/acquire/attribution/base/live_contracts)
 #   4. ship-ish surface (flagship) + light PEFT smoke
 VERIFY_T1_DEPS := \
+	authority \
 	build_integrity \
 	clgemm_unit \
 	cce_archive \

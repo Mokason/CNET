@@ -614,7 +614,7 @@ static int cnb_replace_file(const char *tmp_path, const char *path) {
 #endif
 }
 
-static int cnb_sync_parent(const char *path) {
+int cnb_sync_parent(const char *path) {
 #ifdef _WIN32
     (void)path;
     return 0;
@@ -630,6 +630,7 @@ static int cnb_sync_parent(const char *path) {
     len = strlen(path);
     if (len >= sizeof dir) return -1;
     memcpy(dir, path, len + 1);
+    while (len > 1 && dir[len - 1] == '/') dir[--len] = '\0';
     slash = strrchr(dir, '/');
     if (!slash) {
         snprintf(dir, sizeof dir, ".");

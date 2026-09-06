@@ -124,6 +124,28 @@ governor_v4_ext: tools/governor_v4_ext.c
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ tools/governor_v4_ext.c $(LDFLAGS)
 
+# CPU study: compares memorising n-grams with the tiny neural word model on
+# whole held-out sentences. It reports observations only; ANTIPARROT_DONE is a
+# completion marker, not a certification claim.
+.PHONY: cnet_lm_antiparrot
+cnet_lm_antiparrot: tools/cnet_lm_antiparrot.c src/cce/cce_wordlm.c \
+		src/cce/cce_ngram.c include/cce/cce_wordlm.h include/cce/cce_ngram.h
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -Werror -o $(BIN_DIR)/$@ \
+		tools/cnet_lm_antiparrot.c src/cce/cce_wordlm.c \
+		src/cce/cce_ngram.c $(LDFLAGS)
+	./$(BIN_DIR)/$@ | tee logs/cnet_lm_antiparrot.log
+	@grep -q '^ANTIPARROT_DONE' logs/cnet_lm_antiparrot.log
+
+# Small executable wrapper around the operator-curation self-test.
+.PHONY: cnet_roe_gold_gate
+cnet_roe_gold_gate: tools/cnet_roe_gold_gate.c src/cnet_roe_gold.c \
+		include/cnet_roe_gold.h include/cnet_roe_gold_id.h
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -Werror -Iinclude -o $(BIN_DIR)/$@ \
+		tools/cnet_roe_gold_gate.c src/cnet_roe_gold.c $(LDFLAGS)
+	./$(BIN_DIR)/$@ | tee logs/cnet_roe_gold_gate.log
+
 # Drives the compete runtime from the command line. Same link set as the
 # chat1 suites, which are the other consumers of cnet_compete_runtime.c.
 cnet_compete_run: include/cnet_compete_runtime.h src/compete/cnet_compete_runtime.c \

@@ -1,0 +1,18 @@
+  allocate private checkpoint                                    PASS
+  sealed fixture                                                 PASS
+  materialize bounded seal                                       PASS
+  seal only recorded subset                                      PASS
+  matching checkpoint remains available                          PASS
+  widened sidecar rejected against older seal                    PASS
+  mismatched guard cannot override fail-closed                   PASS
+  fresh sealed fixture                                           PASS
+  stale compaction preserves moved valid guard                   PASS
+  older subset guard binds newer sealed contract                 PASS
+  large reservoir allocation                                     PASS
+  1024 reordered rows bind without quadratic budget refusal      PASS
+  1024 reordered rows bind without quadratic budget refusal      PASS
+  1024 reordered rows bind without quadratic budget refusal      PASS
+  1024 reordered rows bind without quadratic budget refusal      PASS
+  1024 reordered rows bind without quadratic budget refusal      PASS
+  signed-zero guard cannot widen exact byte membership           PASS
+CHECKPOINT_BINDING_PASS checks=17 failures=0

@@ -626,11 +626,12 @@ int cnet_rlm_ask_session(const char *turn, const CnetRlmPolicy *policy,
                     hr.residual_calls = 0;
                     hr.open_chat = 0;
                     if (hr.plane == CNET_CORE_PLANE_OPEN_CHAT) {
-                        hr.bound = 0;
-                        hr.plane = CNET_CORE_PLANE_NONE;
+                        /* leftover hop open-chat: keep as draft, not CERT */
                         hr.claimed_cert = 0;
-                        copy_text(hr.refusal, sizeof hr.refusal,
-                                  "open_chat_answer_killed");
+                        hr.open_chat = 1;
+                        hr.bound = 1;
+                        if (!hr.spoken[0] && hr.value[0])
+                            copy_text(hr.spoken, sizeof hr.spoken, hr.value);
                     }
                     push_step(out, &hr, "core");
                     steps_left--;
@@ -686,19 +687,16 @@ int cnet_rlm_ask_session(const char *turn, const CnetRlmPolicy *policy,
                 copy_text(session->last_turn, sizeof session->last_turn, turn);
             return 0;
         }
-        /* OPEN_CHAT leftover answers are killed — creative may only emit tables
-           via cnet_core_bus, never answer a turn here. */
+        /* OPEN_CHAT is CORE creativity plane — speak it, never claim CERT. */
         if (hr.bound && hr.plane == CNET_CORE_PLANE_OPEN_CHAT) {
-            hr.bound = 0;
-            hr.plane = CNET_CORE_PLANE_NONE;
-            hr.open_chat = 0;
             hr.claimed_cert = 0;
-            hr.may_voice = 0;
-            copy_text(hr.refusal, sizeof hr.refusal, "open_chat_answer_killed");
-            copy_text(hr.spoken, sizeof hr.spoken, "open_chat_answer_killed");
+            hr.open_chat = 1;
+            if (!hr.spoken[0] && hr.value[0])
+                copy_text(hr.spoken, sizeof hr.spoken, hr.value);
             out->steps[out->n_steps - 1].step = hr;
             set_final(out, &hr);
-            goto maybe_ember;
+            rlm_note_miss("core_open_chat", turn);
+            return 0;
         }
 
         /* Abstain: no further magic recursion into LLM for pure logic */

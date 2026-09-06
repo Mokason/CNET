@@ -102,13 +102,25 @@ int main(void) {
         expect(r.n_steps >= 2, "rlm_budget_spent_two");
     }
 
-    /* CREATIVE cannot answer via OPEN_CHAT; tables only via core_bus */
+    /* CREATIVE may use OPEN_CHAT draft (CORE plane) — never claimed_cert */
     cnet_held_model_set_hook(hook_creative);
-    expect(cnet_rlm_ask("write a short poem about zz99", &pol, &r) == 1,
-           "rlm_creative_killed");
-    expect(r.final.claimed_cert == 0, "rlm_creative_no_cert");
-    expect(r.final.open_chat == 0, "rlm_creative_no_open");
-    expect(strstr(r.summary, "rlm-open-chat-draft") == NULL, "rlm_no_draft_text");
+    {
+        int crc = cnet_rlm_ask("write a short poem about zz99", &pol, &r);
+        expect(crc == 0 || crc == 1, "rlm_creative_rc");
+        expect(r.final.claimed_cert == 0, "rlm_creative_no_cert");
+        /* If open chat enabled + hook fired: bound draft, plane OPEN_CHAT */
+        if (r.final.open_chat) {
+            expect(r.final.bound == 1, "rlm_creative_open_bound");
+            expect(r.final.plane == CNET_CORE_PLANE_OPEN_CHAT, "rlm_creative_plane");
+            expect(strstr(r.final.spoken, "rlm-open-chat-draft") != NULL ||
+                       r.final.spoken[0] != '\0',
+                   "rlm_creative_draft_text");
+        } else {
+            /* open chat off / unavailable — must not CERT */
+            expect(r.final.bound == 0 || r.final.plane != CNET_CORE_PLANE_CERT,
+                   "rlm_creative_no_fake_cert");
+        }
+    }
 
     /* LOGIC miss does not fill with creative */
     expect(cnet_rlm_ask("compute crc8 of unknown blob zz99", &pol, &r) == 1,

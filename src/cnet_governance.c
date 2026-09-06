@@ -211,9 +211,58 @@ static void rotate_pins(const char *dir, size_t keep) {
     for (i = 0; i < n - keep; i++) unlink(ents[i].path);
 }
 
+static int copy_regular_file_atomic(const char *source, const char *dest) {
+    unsigned char buffer[64 * 1024];
+    char tmp[CNET_GOV_PATH_MAX];
+    struct stat source_stat;
+    FILE *in = NULL, *out = NULL;
+    int out_fd = -1;
+    int ok = 0;
+    int n;
+
+    if (!source || !dest || !source[0] || !dest[0]) return -1;
+    n = snprintf(tmp, sizeof tmp, "%s.tmp.XXXXXX", dest);
+    if (n < 0 || (size_t)n >= sizeof tmp) return -1;
+    in = fopen(source, "rb");
+    if (!in) return -1;
+    if (fstat(fileno(in), &source_stat) != 0 ||
+        !S_ISREG(source_stat.st_mode))
+        goto done;
+    out_fd = mkstemp(tmp);
+    if (out_fd < 0) goto done;
+    if (fchmod(out_fd, source_stat.st_mode & 0777) != 0) goto done;
+    out = fdopen(out_fd, "wb");
+    if (!out) goto done;
+    out_fd = -1;
+
+    for (;;) {
+        size_t got = fread(buffer, 1, sizeof buffer, in);
+        if (got && fwrite(buffer, 1, got, out) != got) goto done;
+        if (got < sizeof buffer) {
+            if (ferror(in)) goto done;
+            break;
+        }
+    }
+    if (fflush(out) != 0 || cnet_fsync(fileno(out)) != 0) goto done;
+    if (fclose(out) != 0) {
+        out = NULL;
+        goto done;
+    }
+    out = NULL;
+    if (rename(tmp, dest) != 0) goto done;
+    ok = 1;
+
+done:
+    if (in) fclose(in);
+    if (out) fclose(out);
+    if (out_fd >= 0) close(out_fd);
+    if (!ok) unlink(tmp);
+    return ok ? 0 : -1;
+}
+
 int cnet_gov_pin_snapshot(const CnetGovernancePolicy *p, const char *base_path,
                           char *out_path, size_t out_cap) {
-    char stamp[32], dest[CNET_GOV_PATH_MAX], cmd[CNET_GOV_PATH_MAX * 2 + 64];
+    char stamp[32], dest[CNET_GOV_PATH_MAX];
     char cur[CNET_GOV_PATH_MAX];
     const char *base_name;
     time_t now = time(NULL);
@@ -225,10 +274,14 @@ int cnet_gov_pin_snapshot(const CnetGovernancePolicy *p, const char *base_path,
     strftime(stamp, sizeof stamp, "%Y%m%d_%H%M%S", &tm_now);
     base_name = strrchr(base_path, '/');
     base_name = base_name ? base_name + 1 : base_path;
-    snprintf(dest, sizeof dest, "%s/pin_%s_%s", p->pin_dir, stamp, base_name);
-    snprintf(cmd, sizeof cmd, "cp -f -- \"%s\" \"%s\"", base_path, dest);
-    if (system(cmd) != 0) return -3;
-    snprintf(cur, sizeof cur, "%s/CURRENT", p->pin_dir);
+    if (!base_name[0] ||
+        snprintf(dest, sizeof dest, "%s/pin_%s_%s", p->pin_dir, stamp,
+                 base_name) >= (int)sizeof dest)
+        return -1;
+    if (copy_regular_file_atomic(base_path, dest) != 0) return -3;
+    if (snprintf(cur, sizeof cur, "%s/CURRENT", p->pin_dir) >=
+        (int)sizeof cur)
+        return -2;
     cf = fopen(cur, "w");
     if (cf) {
         fprintf(cf, "%s\n", dest);
@@ -245,7 +298,9 @@ int cnet_gov_current_pin(const CnetGovernancePolicy *p, char *out,
     FILE *f;
     if (!p || !out || out_cap == 0) return -1;
     out[0] = '\0';
-    snprintf(cur, sizeof cur, "%s/CURRENT", p->pin_dir);
+    if (snprintf(cur, sizeof cur, "%s/CURRENT", p->pin_dir) >=
+        (int)sizeof cur)
+        return -1;
     f = fopen(cur, "r");
     if (!f) return -2;
     if (!fgets(out, (int)out_cap, f)) {
@@ -261,14 +316,15 @@ int cnet_gov_current_pin(const CnetGovernancePolicy *p, char *out,
 }
 
 int cnet_gov_restore_pin(const char *pin_path, const char *base_path) {
-    char cmd[CNET_GOV_PATH_MAX * 2 + 128], logp[CNET_GOV_PATH_MAX];
+    char logp[CNET_GOV_PATH_MAX];
     FILE *lf;
     time_t now = time(NULL);
     if (!pin_path || !base_path || !pin_path[0] || !base_path[0]) return -1;
     if (access(pin_path, R_OK) != 0) return -2;
-    snprintf(cmd, sizeof cmd, "cp -f -- \"%s\" \"%s\"", pin_path, base_path);
-    if (system(cmd) != 0) return -3;
-    snprintf(logp, sizeof logp, "%s.restore.log", base_path);
+    if (copy_regular_file_atomic(pin_path, base_path) != 0) return -3;
+    if (snprintf(logp, sizeof logp, "%s.restore.log", base_path) >=
+        (int)sizeof logp)
+        return -1;
     lf = fopen(logp, "a");
     if (lf) {
         fprintf(lf, "%ld restore_from %s\n", (long)now, pin_path);

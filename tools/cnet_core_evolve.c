@@ -56,6 +56,14 @@ int main(int argc, char **argv) {
     mkdir(dir, 0755);
     if (!bonsai || !bonsai[0])
         bonsai = "/home/marble/AI/Models/Bonsai-8B-gguf/Bonsai-8B.gguf";
+    /* The factory reads a single tensor out of a ~1.1GB GGUF. Without mmap the
+     * read fails and the whole mint reports "partial built=0" -- silently, and
+     * (before the temp+rename fix) after deleting the brick it was replacing.
+     * cnetd.service sets CNET_GGUF_MMAP=1, so remint works as a cnetd child and
+     * fails from a timer, a cron, or an ops shell: the unattended path was the
+     * only one that could not self-heal. Default it on here so every caller
+     * gets the working configuration; an explicit setting still wins. */
+    setenv("CNET_GGUF_MMAP", "1", 0);
 
     (void)cnet_evolve_dir_load(&dirn, dir);
     printf("evolve: direction from %s (live=%d factory=%d goals=%d max_new=%d)\n",
@@ -157,8 +165,17 @@ int main(int argc, char **argv) {
                     did = 1;
                     new_count += fb.n_built;
                 } else if (want_fac) {
-                    printf("evolve: factory curriculum partial built=%d\n",
-                           fb.n_built);
+                    /* Loud: a partial factory run means coverage did NOT grow.
+                     * This used to be indistinguishable from "nothing to do". */
+                    printf("evolve: factory curriculum partial built=%d "
+                           "requested=%d gate=spec_rate/teacher_unbound/prove "
+                           "bonsai=%s mmap=%s\n",
+                           fb.n_built, fb.n_requested, bonsai,
+                           getenv("CNET_GGUF_MMAP") ? getenv("CNET_GGUF_MMAP") : "0");
+                    fprintf(stderr,
+                            "evolve: FACTORY_MINT_FAILED tags_requested=%d built=%d "
+                            "(brick left unchanged)\n",
+                            fb.n_requested, fb.n_built);
                 }
             }
         } else if (want_fac && access(bonsai, R_OK) == 0 && n0 == 0) {

@@ -1,0 +1,32 @@
+# Lemmas for 27B residual harvest. Regular RULE=ed already covers these
+# unless 27B returns a different form (irregular). Never auto-CERT.
+cling
+fling
+slink
+wring
+stink
+shrink
+spin
+spit
+hang
+light
+wake
+weave
+strive
+smite
+slay
+seek
+freeze
+steal
+sting
+string
+swing
+wring
+begin
+drink
+sing
+ring
+sink
+spring
+stink
+cling

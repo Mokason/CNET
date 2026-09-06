@@ -1,0 +1,3 @@
+DEPLOYMENT_ROLLBACK /home/marble/AI/CNET/artifacts/deployments/remaining-sequence-20260906-gNxQLX
+LIVE_CAPSULE_SEQUENCE_PASS covered=160 grammar=4 refusals=2 wrong_certified=0
+DEPLOYMENT_SEQUENCE_PASS backup=/home/marble/AI/CNET/artifacts/deployments/remaining-sequence-20260906-gNxQLX

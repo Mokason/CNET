@@ -42,6 +42,7 @@
 #include "../include/base.h"
 #include "../include/contract/contract.h"
 #include "../include/hybrid_ai.h"
+#include "../include/cnet_checkpoint_internal.h"
 #include "../include/nn.h"
 
 #define MAX_DANGER 16
@@ -299,6 +300,7 @@ int main(int argc, char **argv) {
                                                            btn.input_ports[0],
                                                            btn.output_ports[0],
                                                            btn.input_count);
+                    if (bound) bound = checkpoint_rows_bind(&h, nm, &ct, btn.input_count);
                     contract_free(&ct);
                     btn_free(&btn);
                 } else {

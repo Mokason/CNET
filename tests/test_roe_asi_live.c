@@ -17,7 +17,7 @@ static void check(int ok, const char *m) {
 }
 
 int main(int argc, char **argv) {
-    RoeAsi R, R2;
+    static RoeAsi R, R2; /* These inventories exceed the default stack together. */
     RoeNet net;
     RoeReply rep;
     const char *dir = "artifacts/roe_catalog_test";

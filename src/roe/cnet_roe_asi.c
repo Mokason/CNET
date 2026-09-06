@@ -5,6 +5,10 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <errno.h>
+#include "cnet_json_internal.h"
 #ifdef _WIN32
 #include <direct.h>
 #endif
@@ -68,6 +72,17 @@ int roe_add_skill(RoeAsi *R, const char *id, const char *intent_key,
                   int certified) {
     RoeSkill *s;
     if (!R || !id || !pattern || !answer) return -1;
+    if (!id[0] || strlen(id) >= ROE_NAME_MAX || strlen(pattern) >= ROE_TEXT_MAX ||
+        strlen(answer) >= ROE_ANSWER_MAX || (intent_key && strlen(intent_key) >= ROE_NAME_MAX)) return -1;
+    for (const char *p = id; *p; p++)
+        if (!isalnum((unsigned char)*p) && *p != '_' && *p != '-') return -1;
+    for (size_t i = 0; i < R->n_skills; i++) {
+        const RoeSkill *old = &R->skills[i];
+        if (strcmp(old->id, id)) continue;
+        return !strcmp(old->pattern, pattern) && !strcmp(old->answer, answer) &&
+            !strcmp(old->intent_key, intent_key ? intent_key : id) &&
+            old->privilege == privilege && old->certified == !!certified ? 0 : -1;
+    }
     if (R->n_skills >= ROE_MAX_SKILLS) return -1;
     s = &R->skills[R->n_skills++];
     memset(s, 0, sizeof *s);
@@ -427,41 +442,36 @@ static int try_promote_pending(RoeAsi *R, int idx) {
     char intent[ROE_NAME_MAX];
     char pattern[ROE_TEXT_MAX];
     char answer[ROE_ANSWER_MAX];
-    size_t i, n;
+    size_t i;
     if (idx < 0 || (size_t)idx >= R->n_pending) return 0;
     if (R->pending[idx].votes < R->promote_votes_needed) return 0;
     snprintf(intent, sizeof intent, "%s", R->pending[idx].intent_key);
     snprintf(pattern, sizeof pattern, "%s", R->pending[idx].pattern);
     snprintf(answer, sizeof answer, "%s", R->pending[idx].answer);
-    /* skill_ + up to 57 chars of intent */
-    id[0] = 's';
-    id[1] = 'k';
-    id[2] = 'i';
-    id[3] = 'l';
-    id[4] = 'l';
-    id[5] = '_';
-    n = strlen(intent);
-    if (n > sizeof(id) - 7) n = sizeof(id) - 7;
-    for (i = 0; i < n; i++) {
-        unsigned char c = (unsigned char)intent[i];
-        id[6 + i] = (char)(isalnum(c) || c == '_' ? c : '_');
+    /* Content identity, not the shared "ad_hoc" intent. Collisions are checked
+     * against complete fields by roe_add_skill, never trusted as authority. */
+    uint64_t hash = UINT64_C(14695981039346656037);
+    const char *fields[] = {intent, pattern, answer};
+    for (i = 0; i < 3; i++) {
+        for (const unsigned char *p = (const unsigned char *)fields[i]; *p; p++)
+            hash = (hash ^ *p) * UINT64_C(1099511628211);
+        hash = (hash ^ 0xffu) * UINT64_C(1099511628211);
     }
-    id[6 + n] = 0;
-    if (roe_add_skill(R, id, intent, pattern, answer, 1, 1) != 0) {
-        for (i = 0; i < R->n_skills; i++) {
-            if (strcmp(R->skills[i].id, id) == 0) {
-                R->skills[i].certified = 1;
-                snprintf(R->skills[i].answer, sizeof R->skills[i].answer, "%s",
-                         answer);
-                (void)cnet_asi_add_skill(&R->gate, id, pattern, 0u, 1,
-                                         CNET_ASI_KIND_SPECIALIST);
-                break;
-            }
-        }
+    snprintf(id, sizeof id, "skill_%016llx", (unsigned long long)hash);
+    for (i = 0; i < R->n_skills; i++)
+        if (R->skills[i].active && !strcmp(R->skills[i].pattern, pattern) &&
+            strcmp(R->skills[i].answer, answer)) return 0;
+    RoeAsi *candidate = malloc(sizeof *candidate);
+    if (!candidate) return 0;
+    *candidate = *R;
+    if (roe_add_skill(candidate, id, intent, pattern, answer, 1, 1) ||
+        (candidate->catalog_dir[0] && roe_save_catalog(candidate) < 0)) {
+        free(candidate); return 0;
     }
-    R->pending[idx].active = 0;
-    R->n_promote++;
-    if (R->catalog_dir[0]) (void)roe_save_catalog(R);
+    candidate->pending[idx].active = 0;
+    candidate->n_promote++;
+    *R = *candidate;
+    free(candidate);
     return 1;
 }
 
@@ -585,11 +595,14 @@ void roe_dump_stats(const RoeAsi *R, char *buf, size_t cap) {
 }
 
 static int mkdir_one(const char *path) {
+    int rc;
 #ifdef _WIN32
-    return _mkdir(path);
+    rc = _mkdir(path);
 #else
-    return mkdir(path, 0755);
+    rc = mkdir(path, 0755);
 #endif
+    struct stat st;
+    return rc == 0 || (errno == EEXIST && !stat(path, &st) && S_ISDIR(st.st_mode)) ? 0 : -1;
 }
 
 static int mkdir_p(const char *path) {
@@ -623,7 +636,7 @@ int roe_export_skill_pack(const RoeAsi *R, const char *skill_id, const char *out
         }
     if (!s || !s->certified) return -2;
     snprintf(dir, sizeof dir, "%s/skills/%s", out_dir, skill_id);
-    mkdir_p(dir);
+    if (mkdir_p(dir)) return -3;
     {
         size_t dl = strlen(dir);
         if (dl + 14 >= sizeof path) return -5;
@@ -639,7 +652,7 @@ int roe_export_skill_pack(const RoeAsi *R, const char *skill_id, const char *out
     fprintf(f, "answer %s\n", s->answer);
     fprintf(f, "privilege %u\n", s->privilege);
     fprintf(f, "certified 1\n");
-    fclose(f);
+    if (fclose(f)) return -3;
     {
         size_t dl = strlen(dir);
         if (dl + 14 >= sizeof path) return -5;
@@ -653,82 +666,104 @@ int roe_export_skill_pack(const RoeAsi *R, const char *skill_id, const char *out
     fprintf(f, "unit %s\n", s->id);
     fprintf(f, "note untrusted_until_reload_in_roe_shell\n");
     fprintf(f, "hits %llu\n", (unsigned long long)s->hits);
-    fclose(f);
+    if (fclose(f)) return -4;
     return 0;
 }
 
+static void roe_json_write(FILE *f, const char *s) {
+    fputc('"', f);
+    for (const unsigned char *p = (const unsigned char *)s; *p; p++) {
+        if (*p == '"' || *p == '\\') { fputc('\\', f); fputc(*p, f); }
+        else if (*p < 32) fprintf(f, "\\u%04x", *p);
+        else fputc(*p, f);
+    }
+    fputc('"', f);
+}
 int roe_save_catalog(const RoeAsi *R) {
-    char path[ROE_PATH_MAX], skills_dir[ROE_PATH_MAX];
-    FILE *f;
-    size_t i;
-    int n = 0;
-    if (!R || !R->catalog_dir[0]) return -1;
-    mkdir_p(R->catalog_dir);
-    {
-        size_t cl = strlen(R->catalog_dir);
-        if (cl + 8 >= sizeof skills_dir) return -5;
-        memcpy(skills_dir, R->catalog_dir, cl);
-        memcpy(skills_dir + cl, "/skills", 8);
-    }
-    mkdir_p(skills_dir);
-    {
-        size_t cl = strlen(R->catalog_dir);
-        if (cl + 15 >= sizeof path) return -5;
-        memcpy(path, R->catalog_dir, cl);
-        memcpy(path + cl, "/catalog.jsonl", 15);
-    }
-    f = fopen(path, "w");
-    if (!f) return -2;
-    for (i = 0; i < R->n_skills; i++) {
+    char path[ROE_PATH_MAX], temp[ROE_PATH_MAX];
+    if (!R || !R->catalog_dir[0] || mkdir_p(R->catalog_dir)) return -1;
+    if (snprintf(path, sizeof path, "%s/catalog.jsonl", R->catalog_dir) >= (int)sizeof path ||
+        snprintf(temp, sizeof temp, "%s/.catalog-XXXXXX", R->catalog_dir) >= (int)sizeof temp) return -1;
+    int fd = mkstemp(temp);
+    if (fd < 0) return -2;
+    FILE *f = fdopen(fd, "w");
+    if (!f) { close(fd); unlink(temp); return -2; }
+    int n = 0, failed = 0;
+    for (size_t i = 0; i < R->n_skills; i++) {
         const RoeSkill *s = &R->skills[i];
         if (!s->active || !s->certified) continue;
-        fprintf(f,
-                "{\"id\":\"%s\",\"intent\":\"%s\",\"pattern\":\"%s\",\"answer\":\"%s\","
-                "\"privilege\":%u,\"hits\":%llu}\n",
-                s->id, s->intent_key, s->pattern, s->answer, s->privilege,
-                (unsigned long long)s->hits);
-        (void)roe_export_skill_pack(R, s->id, R->catalog_dir);
+        /* Export is a derivative; only the atomically replaced catalog grants
+         * serving authority. Failed exports may leave unreachable files. */
+        if (roe_export_skill_pack(R, s->id, R->catalog_dir)) { failed = 1; break; }
+        fputs("{\"id\":", f); roe_json_write(f, s->id);
+        fputs(",\"intent\":", f); roe_json_write(f, s->intent_key);
+        fputs(",\"pattern\":", f); roe_json_write(f, s->pattern);
+        fputs(",\"answer\":", f); roe_json_write(f, s->answer);
+        fprintf(f, ",\"privilege\":%u,\"hits\":%llu}\n", s->privilege, (unsigned long long)s->hits);
         n++;
     }
-    fclose(f);
+    if (fflush(f) || ferror(f) || fsync(fd)) failed = 1;
+    if (fclose(f)) failed = 1;
+    if (!failed && rename(temp, path)) failed = 1;
+    if (failed) { unlink(temp); return -3; }
     return n;
 }
 
+static int roe_catalog_row(const char *line, RoeAsi *r) {
+    JsonCursor c = {(const unsigned char *)line}, syntax = c;
+    if (json_value(&syntax, 0)) return -1;
+    json_ws(&syntax); if (*syntax.p) return -1;
+    json_ws(&c); if (*c.p++ != '{') return -1;
+    char id[ROE_NAME_MAX] = "", intent[ROE_NAME_MAX] = "";
+    char pattern[ROE_TEXT_MAX] = "", answer[ROE_ANSWER_MAX] = "";
+    char keys[24][64]; size_t nk = 0;
+    unsigned privilege = 0;
+    for (;;) {
+        json_ws(&c); if (*c.p == '}') { c.p++; break; }
+        if (nk == 24 || json_string(&c, keys[nk], sizeof keys[nk])) return -1;
+        for (size_t i = 0; i < nk; i++) if (!strcmp(keys[i], keys[nk])) return -1;
+        const char *key = keys[nk++];
+        json_ws(&c); if (*c.p++ != ':') return -1; json_ws(&c);
+        char *out = NULL; size_t cap = 0;
+        if (!strcmp(key, "id")) { out = id; cap = sizeof id; }
+        else if (!strcmp(key, "intent")) { out = intent; cap = sizeof intent; }
+        else if (!strcmp(key, "pattern")) { out = pattern; cap = sizeof pattern; }
+        else if (!strcmp(key, "answer")) { out = answer; cap = sizeof answer; }
+        if (out) { if (json_string(&c, out, cap)) return -1; }
+        else if (!strcmp(key, "privilege")) {
+            if (!isdigit(*c.p)) return -1;
+            unsigned long value = 0;
+            while (isdigit(*c.p)) { value = value * 10 + *c.p++ - '0'; if (value > UINT32_MAX) return -1; }
+            privilege = (unsigned)value;
+        } else if (json_value(&c, 1)) return -1;
+        json_ws(&c);
+        if (*c.p == '}') { c.p++; break; }
+        if (*c.p++ != ',') return -1;
+    }
+    json_ws(&c);
+    if (*c.p || !id[0] || !pattern[0] || !answer[0]) return -1;
+    return roe_add_skill(r, id, intent[0] ? intent : id, pattern, answer, privilege, 1);
+}
 int roe_load_catalog(RoeAsi *R) {
-    char path[ROE_PATH_MAX], line[1024];
-    FILE *f;
-    int n = 0;
-    if (!R || !R->catalog_dir[0]) return -1;
-    {
-        size_t cl = strlen(R->catalog_dir);
-        if (cl + 15 >= sizeof path) return -5;
-        memcpy(path, R->catalog_dir, cl);
-        memcpy(path + cl, "/catalog.jsonl", 15);
-    }
-    f = fopen(path, "r");
-    if (!f) return 0;
+    /* Every decoded byte can expand to six bytes (\\u00XX). Include all four
+     * string fields plus bounded JSON keys, numeric fields and terminators. */
+    char path[ROE_PATH_MAX];
+    char line[6 * (2 * ROE_NAME_MAX + ROE_TEXT_MAX + ROE_ANSWER_MAX) + 256];
+    if (!R || !R->catalog_dir[0] ||
+        snprintf(path, sizeof path, "%s/catalog.jsonl", R->catalog_dir) >= (int)sizeof path) return -1;
+    FILE *f = fopen(path, "r");
+    if (!f) return errno == ENOENT ? 0 : -1;
+    RoeAsi *candidate = malloc(sizeof *candidate);
+    if (!candidate) { fclose(f); return -1; }
+    *candidate = *R;
+    int n = 0, failed = 0;
     while (fgets(line, sizeof line, f)) {
-        char id[ROE_NAME_MAX], intent[ROE_NAME_MAX], pattern[ROE_TEXT_MAX],
-            answer[ROE_ANSWER_MAX];
-        unsigned priv = 0;
-        const char *p;
-        id[0] = intent[0] = pattern[0] = answer[0] = 0;
-        p = strstr(line, "\"id\":\"");
-        if (p) sscanf(p, "\"id\":\"%63[^\"]\"", id);
-        p = strstr(line, "\"intent\":\"");
-        if (p) sscanf(p, "\"intent\":\"%63[^\"]\"", intent);
-        p = strstr(line, "\"pattern\":\"");
-        if (p) sscanf(p, "\"pattern\":\"%255[^\"]\"", pattern);
-        p = strstr(line, "\"answer\":\"");
-        if (p) sscanf(p, "\"answer\":\"%383[^\"]\"", answer);
-        p = strstr(line, "\"privilege\":");
-        if (p) sscanf(p, "\"privilege\":%u", &priv);
-        if (id[0] && pattern[0] && answer[0]) {
-            if (roe_add_skill(R, id, intent[0] ? intent : id, pattern, answer, priv,
-                              1) == 0)
-                n++;
-        }
+        if (roe_catalog_row(line, candidate)) { failed = 1; break; }
+        n++;
     }
+    if (ferror(f)) failed = 1;
     fclose(f);
-    return n;
+    if (!failed) *R = *candidate;
+    free(candidate);
+    return failed ? -1 : n;
 }

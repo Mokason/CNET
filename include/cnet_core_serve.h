@@ -1,10 +1,10 @@
 #ifndef CNET_CORE_SERVE_H
 #define CNET_CORE_SERVE_H
 
-/* Light CERT-brick serve for live waist (no GGUF convert, no admit).
- * Bricks are plain .lut files written after park/evolve.
+/* Plain .lut calculation bank (no GGUF convert, no admission).
+ * Files carry no certification evidence; results are always uncertified.
  *
- * RESULT: prove nibble domain or abstain.
+ * RESULT: calculate a valid nibble request or abstain.
  * Never OPEN_CHAT / never residual mouth.
  */
 
@@ -14,7 +14,7 @@
 extern "C" {
 #endif
 
-#define CNET_SERVE_MAX_BRICKS 16
+#define CNET_SERVE_MAX_BRICKS 24
 #define CNET_SERVE_TAG 32
 #define CNET_SERVE_NAME 64
 #define CNET_SERVE_TEXT 256
@@ -52,6 +52,11 @@ int cnet_serve_bank_reload(CnetServeBank *b); /* re-read dir */
 int cnet_serve_save_lut(const char *dir, const char *tag, const char *name,
                         const float lut[16]);
 int cnet_serve_result(CnetServeBank *b, const char *turn, CnetServeResult *out);
+/* 1 if turn's leading token is a live brick tag (nibble may be invalid). */
+int cnet_serve_owns(const CnetServeBank *b, const char *turn);
+/* lut_b[lut_a[i]] into tag_out .lut. Never CERT residual. */
+int cnet_serve_compose_tags(CnetServeBank *b, const char *tag_a, const char *tag_b,
+                            const char *tag_out);
 
 /* Process-global bank for cnetd. */
 CnetServeBank *cnet_serve_global(void);

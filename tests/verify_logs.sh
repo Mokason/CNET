@@ -42,6 +42,7 @@ newer_than_sentinel() {
 # Each row is "<logfile>|||<fixed success substring>".
 # CORE = T1 only. Specialty CCE + PEFT live in T2 (see mk/verify_tiers.mk).
 CORE='
+authority.log|||CNET_AUTHORITY_PASS
 cce_safetensors_test.log|||ALL SAFETENSORS TESTS PASSED
 cce_autograd_test.log|||failed -> OK
 cce_model_test.log|||failed -> OK

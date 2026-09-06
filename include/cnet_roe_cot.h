@@ -15,7 +15,8 @@
 extern "C" {
 #endif
 
-#define ROE_COT_MAX_HOPS 8
+#define ROE_COT_MAX_HOPS 12
+#define ROE_COT_MAX_CAND 4
 #define ROE_COT_TEXT 512
 #define ROE_COT_LINE 384
 #define ROE_COT_ANS 512
@@ -54,6 +55,9 @@ typedef struct {
     char answer[ROE_COT_ANS];
     int status; /* RoeCotStatus */
     int tokens; /* always 0 for skeleton; leaf may note teacher */
+    int n_cand; /* Coconut steal: BFS named hops, not a float brain */
+    char cand_id[ROE_COT_MAX_CAND][ROE_COT_ID];
+    char cand_show[ROE_COT_LINE]; /* English SHOW of ids; empty is illegal */
 } RoeCotHop;
 
 typedef struct {

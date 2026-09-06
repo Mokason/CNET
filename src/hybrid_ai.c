@@ -538,10 +538,12 @@ int hybrid_coverage_save(const HybridAi *h, const char *path) {
        the same directory is atomic, so a reader sees either the old complete
        file or the new one. */
     if (!h || !path || !path[0]) return -1;
-    if (strlen(path) + 5 >= sizeof tmp) return -1;
-    snprintf(tmp, sizeof tmp, "%s.tmp", path);
-    fp = fopen(tmp, "w");
-    if (!fp) return -2;
+    if (strlen(path) + 12 >= sizeof tmp) return -1;
+    snprintf(tmp, sizeof tmp, "%s.tmp-XXXXXX", path);
+    int fd = cnet_mkstemp(tmp);
+    if (fd < 0) return -2;
+    fp = fdopen(fd, "w");
+    if (!fp) { close(fd); remove(tmp); return -2; }
     /* v2 == v1 records, plus the rule that coverage identity is OWNER + exact
        interface, so several units may legitimately share a port shape. v1 files
        still load, and keep their stricter one-owner-per-shape refusal. */
@@ -565,7 +567,7 @@ int hybrid_coverage_save(const HybridAi *h, const char *path) {
             fputc('\n', fp);
         }
     }
-    if (fflush(fp) != 0) {
+    if (ferror(fp) || fflush(fp) != 0 || cnet_fsync(fileno(fp)) != 0) {
         fclose(fp);
         remove(tmp);
         return -3;
@@ -578,7 +580,7 @@ int hybrid_coverage_save(const HybridAi *h, const char *path) {
         remove(tmp);
         return -4;
     }
-    return 0;
+    return cnb_sync_parent(path) == 0 ? 0 : -5;
 }
 
 /* ---- transactional sidecar load -----------------------------------------

@@ -1,0 +1,7 @@
+CAPSULE_TOOL_PLAN_PASS hops=1 oracle_calls=2 work=1
+CAPSULE_HISTORY_PASS label_obligations=422
+CAPSULE_EVAL_PASS cases=32 before_correct=0 after_correct=32 wrong_certified=0 teacher_calls=0
+CAPSULE_TEACH_PASS unit=tool_a6a59b0103e5493f7177f559a7e0ad6b74e4b15adc21bb60 rows=32 source=verified_tool digest=16451467083424438349 scope=sampled margin=0.500000 reused=0 method=finite_domain_compile
+evidence_sha256=40dd6153c5e051d398b08116c9b84c7adfe218712c9f6dc7564aed8e83e9c775
+CAPSULE_CURRICULUM_TICK processed=1 failed=0 budget=2 examined=6 scan_budget=64
+CAPSULE_ACQUIRE_TICK processed=1 published=1 examined=1 tool_calls=32 failed=0

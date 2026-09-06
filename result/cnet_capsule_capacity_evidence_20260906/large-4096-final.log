@@ -1,0 +1,12 @@
+CAPSULE_LARGE_ARTIFACTS /tmp/cnet-large-inventory-0mI2NF
+CAPSULE_SCALE_ARTIFACTS /tmp/cnet-scale-bench-2bL30p
+CAPSULE_SCALE_STAGE capsules=2
+CAPSULE_LARGE_LOADED count=4096 seconds=1.191616 heap_delta=97086592
+CAPSULE_LARGE_REPLAY obligations=393216 seconds=2.954553
+CAPSULE_LARGE_ASKS correct=196608 refused=6144 seconds=5.970300
+CAPSULE_LARGE_EXCESS_REFUSED old_snapshot_retained=1
+CAPSULE_LARGE_INVENTORY_PASS count=4096 correct=196608 refused=6144 obligations=393216
+CAPSULE_HISTORY_PASS label_obligations=393152
+CAPSULE_TEACH_PASS unit=edge_4095 rows=32 source=verified_tool digest=9637950565261154953 scope=sampled margin=0.500000 reused=0 method=finite_domain_compile
+LOCAL verified=1 value=11 hops=2 units=edge_4094,edge_4095
+CAPSULE_LARGE_PUBLICATION_PASS boundary=4095-to-4096
