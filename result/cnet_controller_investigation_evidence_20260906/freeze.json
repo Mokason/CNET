@@ -1,0 +1,370 @@
+{
+  "candidate": "aligned_structural_stream",
+  "updates": 30000,
+  "seeds": [
+    1,
+    2,
+    3
+  ],
+  "reachable_floor": 0.95,
+  "unreachable_floor": 0.95,
+  "cases": 2048,
+  "split": "sorted joint out/in degree pairs; FNV1a64 modulo5=0; excludes fixed effective graphs",
+  "generator_seed": 96062026,
+  "preprocessing": "effective adjacency; current0 goal7; remaining IDs ascending; INPUTS144 padded",
+  "mask_modes": [
+    0,
+    1
+  ],
+  "created_utc": "2026-09-06T08:00:09.585Z",
+  "checkpoints": [
+    {
+      "file": "checkpoints/candidate-seed1.native-weights",
+      "sha256": "c701c4987a9df7d04dc2604176968743a977ad1650fd85c2b0f4e375779d95e0",
+      "mode": "aligned_structural_stream",
+      "variant": 7,
+      "seed": 1,
+      "updates": 30000,
+      "validation": {
+        "kind": "curve",
+        "variant": "aligned_structural_stream",
+        "seed": 1,
+        "step": 30000,
+        "split": "validation",
+        "cases": 512,
+        "mask": 0,
+        "loss": 0.1011526,
+        "optimal_first": 498,
+        "reachable": 319,
+        "completed": 314,
+        "unreachable": 193,
+        "unreachable_abstained": 193,
+        "reachable_immediate_abstention": 3,
+        "illegal": 1,
+        "attempts": 836,
+        "raw_illegal": 1,
+        "transitions": 638,
+        "cycles": 7,
+        "timeouts": 1,
+        "distance_cases": [
+          119,
+          111,
+          66,
+          18,
+          5,
+          0,
+          0
+        ],
+        "distance_completed": [
+          119,
+          111,
+          64,
+          15,
+          5,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "file": "checkpoints/baseline-seed1.native-weights",
+      "sha256": "3da404a8653ceb93b8106038f092cac76c5ab63904482abf5bd0deae13abf112",
+      "mode": "raw",
+      "variant": 0,
+      "seed": 1,
+      "updates": 600
+    },
+    {
+      "file": "checkpoints/candidate-seed2.native-weights",
+      "sha256": "3c73f502dedfb616f326b52283aaa18156e5eeed25635e0b2569a3b6fb7d2b32",
+      "mode": "aligned_structural_stream",
+      "variant": 7,
+      "seed": 2,
+      "updates": 30000,
+      "validation": {
+        "kind": "curve",
+        "variant": "aligned_structural_stream",
+        "seed": 2,
+        "step": 30000,
+        "split": "validation",
+        "cases": 512,
+        "mask": 0,
+        "loss": 0.1055734,
+        "optimal_first": 498,
+        "reachable": 319,
+        "completed": 314,
+        "unreachable": 193,
+        "unreachable_abstained": 191,
+        "reachable_immediate_abstention": 4,
+        "illegal": 0,
+        "attempts": 839,
+        "raw_illegal": 0,
+        "transitions": 643,
+        "cycles": 12,
+        "timeouts": 2,
+        "distance_cases": [
+          119,
+          111,
+          66,
+          18,
+          5,
+          0,
+          0
+        ],
+        "distance_completed": [
+          119,
+          111,
+          63,
+          18,
+          3,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "file": "checkpoints/baseline-seed2.native-weights",
+      "sha256": "6a5d3a177ba1b6f623a9b2e889c44430bce59b6938d981ca524bfa773dd049b4",
+      "mode": "raw",
+      "variant": 0,
+      "seed": 2,
+      "updates": 600
+    },
+    {
+      "file": "checkpoints/candidate-seed3.native-weights",
+      "sha256": "b0f36e04de0dde4a0c997ef0d184ef723f468ca9ea05a384bebed0f95a4cb0a6",
+      "mode": "aligned_structural_stream",
+      "variant": 7,
+      "seed": 3,
+      "updates": 30000,
+      "validation": {
+        "kind": "curve",
+        "variant": "aligned_structural_stream",
+        "seed": 3,
+        "step": 30000,
+        "split": "validation",
+        "cases": 512,
+        "mask": 0,
+        "loss": 0.0982309,
+        "optimal_first": 500,
+        "reachable": 319,
+        "completed": 312,
+        "unreachable": 193,
+        "unreachable_abstained": 192,
+        "reachable_immediate_abstention": 6,
+        "illegal": 0,
+        "attempts": 821,
+        "raw_illegal": 0,
+        "transitions": 622,
+        "cycles": 5,
+        "timeouts": 1,
+        "distance_cases": [
+          119,
+          111,
+          66,
+          18,
+          5,
+          0,
+          0
+        ],
+        "distance_completed": [
+          119,
+          111,
+          65,
+          14,
+          3,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "file": "checkpoints/baseline-seed3.native-weights",
+      "sha256": "83696af7204834a2ed9a0aee353d01552be590681accdcec0722eff56a1799a1",
+      "mode": "raw",
+      "variant": 0,
+      "seed": 3,
+      "updates": 600
+    }
+  ],
+  "sources": [
+    {
+      "file": "source/investigate.c",
+      "sha256": "8e95f2399f0612361164c69ab6679781b0fc974ceb2d4a501884d93f3cd4d617"
+    },
+    {
+      "file": "source/test_investigate.c",
+      "sha256": "a2f69457b608182df44d5146e35ed70e67536b86c1aaea6ee7915a37188d44ac"
+    },
+    {
+      "file": "source/confirm.c",
+      "sha256": "d37ec86aaf65be3540b3876787ca192ae1101e6d4db16bae8360379fc921c9ab"
+    },
+    {
+      "file": "source/bench_train.c",
+      "sha256": "dda9bf23ccbf9b0f8f082c837e9f9b99b6322275351e3f5c2090af168c5f7dfd"
+    },
+    {
+      "file": "source/net.c",
+      "sha256": "49aa50fa14839e8f3f2ccd082a3b4a3aa97ab4b73d7de623cf152dbf89868680"
+    },
+    {
+      "file": "source/net.h",
+      "sha256": "7fd27082d66d377febebd3820c126678af80dbfe6098ab5eeff49985f183a9e6"
+    },
+    {
+      "file": "source/fixture.c",
+      "sha256": "ff0f8f68e9f3191ae9dd769767495e22707766f1cd5b4bf822ef3d418d894785"
+    },
+    {
+      "file": "source/fixture.h",
+      "sha256": "4bb7411032bc83f6b24e193fa312a2237707ea17995274c0e2e4591f9ad09fe2"
+    },
+    {
+      "file": "source/offline.c",
+      "sha256": "46f15bb8787b21f0b82466830cf640129465988a35b2fe13ad8a509d40c4bdb5"
+    },
+    {
+      "file": "source/offline.h",
+      "sha256": "50252f90efac6dc42618f6221d2cc18eda6a7985ae5cff9ef4421890b43a72e7"
+    },
+    {
+      "file": "source/audit_investigation.mjs",
+      "sha256": "618c445d45b1121f63be1b148c12f759b5375c8ec775a1ec190b5b3dcadf2ea7"
+    },
+    {
+      "file": "source/freeze_investigation.mjs",
+      "sha256": "de7019f2f38b6489f30df67a2e731fb49e6e5dd7a0c10c8ba747781af81f840d"
+    },
+    {
+      "file": "source/Makefile",
+      "sha256": "026ec197c17680be85918666262cc8bf970c5e631463b4462325e5ab78db34c4"
+    },
+    {
+      "file": "source/cce_amdmath.cpp",
+      "sha256": "99fa9ce1d36a3c2e9897cbf6c72c3c5d21fe09320e6b03e82679dd3411c38781"
+    },
+    {
+      "file": "source/cce_amdmath.h",
+      "sha256": "4b3c005c5947ffa0902ad42b203b83e710422714b007f680849cd8ed08886ee5"
+    },
+    {
+      "file": "bin/confirm",
+      "sha256": "e94457cc7f5aced587cad595b2359d609fbbb708dbe934339a9d712b17d70b9a"
+    },
+    {
+      "file": "training-source-v7.c",
+      "sha256": "dc4c6f758546706cfcba168211b6d2a798c9e9b57ed7f1341be40147bbe4f262"
+    }
+  ],
+  "invocations": [
+    [
+      "bin/confirm",
+      "evaluate",
+      "checkpoints/candidate-seed1.native-weights",
+      "7",
+      "1",
+      "0",
+      "confirmation"
+    ],
+    [
+      "bin/confirm",
+      "evaluate",
+      "checkpoints/candidate-seed1.native-weights",
+      "7",
+      "1",
+      "1",
+      "confirmation"
+    ],
+    [
+      "bin/confirm",
+      "evaluate",
+      "checkpoints/baseline-seed1.native-weights",
+      "0",
+      "1",
+      "0",
+      "confirmation"
+    ],
+    [
+      "bin/confirm",
+      "evaluate",
+      "checkpoints/baseline-seed1.native-weights",
+      "0",
+      "1",
+      "1",
+      "confirmation"
+    ],
+    [
+      "bin/confirm",
+      "evaluate",
+      "checkpoints/candidate-seed2.native-weights",
+      "7",
+      "2",
+      "0",
+      "confirmation"
+    ],
+    [
+      "bin/confirm",
+      "evaluate",
+      "checkpoints/candidate-seed2.native-weights",
+      "7",
+      "2",
+      "1",
+      "confirmation"
+    ],
+    [
+      "bin/confirm",
+      "evaluate",
+      "checkpoints/baseline-seed2.native-weights",
+      "0",
+      "2",
+      "0",
+      "confirmation"
+    ],
+    [
+      "bin/confirm",
+      "evaluate",
+      "checkpoints/baseline-seed2.native-weights",
+      "0",
+      "2",
+      "1",
+      "confirmation"
+    ],
+    [
+      "bin/confirm",
+      "evaluate",
+      "checkpoints/candidate-seed3.native-weights",
+      "7",
+      "3",
+      "0",
+      "confirmation"
+    ],
+    [
+      "bin/confirm",
+      "evaluate",
+      "checkpoints/candidate-seed3.native-weights",
+      "7",
+      "3",
+      "1",
+      "confirmation"
+    ],
+    [
+      "bin/confirm",
+      "evaluate",
+      "checkpoints/baseline-seed3.native-weights",
+      "0",
+      "3",
+      "0",
+      "confirmation"
+    ],
+    [
+      "bin/confirm",
+      "evaluate",
+      "checkpoints/baseline-seed3.native-weights",
+      "0",
+      "3",
+      "1",
+      "confirmation"
+    ]
+  ]
+}

@@ -1,0 +1,17 @@
+W20260906 10:49:57.149833 128705827733312 simple_timer.cpp:55] [rocprofv3] tool initialization ::     0.001430 sec
+W20260906 10:49:57.150195 128705827733312 tool.cpp:2422] HIP (compiler) version 7.2.0 initialized (instance=0)
+W20260906 10:49:57.150800 128705827733312 simple_timer.cpp:55] [rocprofv3] '/tmp/cnet-controller-build/bench_train 1 16 1' ::     0.000000 sec
+W20260906 10:49:57.154431 128705827733312 tool.cpp:2422] HIP (runtime) version 7.2.0 initialized (instance=0)
+W20260906 10:49:57.165098 128705827733312 tool.cpp:2422] HSA version 8.20.3 initialized (instance=0)
+W20260906 10:49:57.367572 128705827733312 simple_timer.cpp:55] [rocprofv3] '/tmp/cnet-controller-build/bench_train 1 16 1' ::     0.216773 sec
+E20260906 10:49:57.377767 128705827733312 output_stream.cpp:111] Opened result file: /tmp/cnet-investigation-HbmlcQ/profile/marble-system/4057937_kernel_stats.csv
+E20260906 10:49:57.377895 128705827733312 output_stream.cpp:111] Opened result file: /tmp/cnet-investigation-HbmlcQ/profile/marble-system/4057937_kernel_trace.csv
+E20260906 10:49:57.389268 128705827733312 output_stream.cpp:111] Opened result file: /tmp/cnet-investigation-HbmlcQ/profile/marble-system/4057937_hip_api_stats.csv
+E20260906 10:49:57.389386 128705827733312 output_stream.cpp:111] Opened result file: /tmp/cnet-investigation-HbmlcQ/profile/marble-system/4057937_hip_api_trace.csv
+E20260906 10:49:57.396795 128705827733312 output_stream.cpp:111] Opened result file: /tmp/cnet-investigation-HbmlcQ/profile/marble-system/4057937_memory_copy_stats.csv
+E20260906 10:49:57.396895 128705827733312 output_stream.cpp:111] Opened result file: /tmp/cnet-investigation-HbmlcQ/profile/marble-system/4057937_memory_copy_trace.csv
+E20260906 10:49:57.398422 128705827733312 output_stream.cpp:111] Opened result file: /tmp/cnet-investigation-HbmlcQ/profile/marble-system/4057937_agent_info.csv
+E20260906 10:49:57.398520 128705827733312 output_stream.cpp:111] Opened result file: /tmp/cnet-investigation-HbmlcQ/profile/marble-system/4057937_domain_stats.csv
+W20260906 10:49:57.400886 128705827733312 simple_timer.cpp:55] [rocprofv3] output generation ::     0.032569 sec
+W20260906 10:49:57.400917 128705827733312 simple_timer.cpp:55] [rocprofv3] tool finalization ::     0.032661 sec
+{"kind":"training_benchmark","device":1,"repeat":0,"updates":16,"batch":128,"cpu_seconds":0.09380923,"gpu_seconds":0.03189377,"speedup_over_scalar_cpu":2.94130,"weight_max_abs":2.98023224e-08,"prob_max_abs":1.78813934e-07,"loss_abs":0,"shared_machine":true,"parity_pass":true}
