@@ -3,8 +3,8 @@
 Evidence, scope and dependencies: [plan.md](plan.md).
 
 Active execution contract: [product closure](../plans/cnet_product_closure_20260906.md).
-All unchecked implementation items below are authorized; live deployment remains
-a separate owner checkpoint. No item is complete without its recorded gate.
+All implementation items below are complete against their recorded bounded
+gates; live deployment remains a separate owner checkpoint.
 
 ## Completed, bounded experiment
 
@@ -34,7 +34,7 @@ See [the dated evidence](../result/cnet_gpu_product_sequence_20260906.md).
 - [x] Manifest-bound local source evidence and candidate self-closure
 - [x] Integrated acquisition/swap regression proof
 - [x] Explicit private deployment/package handoff and interrupted-publication tests
-- [ ] Final frozen capability certification and evidence handoff
+- [x] Final frozen capability certification and evidence handoff
 - [ ] Separately authorized, verified live deployment
 
 ## Additional code limits exposed by documentation review

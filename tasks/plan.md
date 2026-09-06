@@ -4,7 +4,7 @@ This file is the current task queue, not a replay of old implementation steps.
 Decision history remains in [plans/](../plans/). Current documentation starts at
 [docs/INDEX.md](../docs/INDEX.md).
 
-## Product closure checkpoint
+## Completed product source checkpoint
 
 The owner authorized all remaining product and documentation-exposed code work.
 The ordered acceptance/verification contract is
@@ -43,8 +43,9 @@ Focused negative tests and independent reviews are recorded in their dated
 `result/*closure_20260906.md` reports. The explicit private deployment helper
 passes interrupted-publication and unsafe-archive tests. Final native regression
 passes all 28 required fresh-log suites, including the new lifecycle/recovery
-dependencies. Sequential frozen capability certification and the evidence
-handoff are the remaining source checkpoint; see the
+dependencies. Sequential frozen capability certification passed all six
+existing manifests at clean commit `6068a8c`, without source drift or altered
+floors. The completed implementation and evidence handoff are in the
 [integrated report](../result/cnet_product_closure_20260906.md).
 
 The source domain is five exact local literal facts, not arbitrary source
@@ -55,7 +56,7 @@ authorized operations and fresh deployment-specific verification.
 
 The governing lifecycle requirements remain in
 [capsule hot-swap plan](../plans/cnet_capsule_hot_swap_20260906.md).
-The deterministic 4096-capsule capacity gate is already separate and complete;
+The deterministic 4096-capsule capacity gate remains separate and passed again;
 the experimental neural adapter remains capped at 62 capsules.
 
 No old ownership assignment, PID, endpoint availability or handoff checkbox

@@ -33,8 +33,9 @@ A stale PASS string or successful documentation gate cannot substitute.
 The authority test injects failures and checks exact propagation and stale-log
 replacement; never relax it to produce a green release marker.
 
-The [known security advisory](SECURITY.md) remains open. Documentation cleanup
-does not clear security release review.
+The [SQLite provider repair and scoped security checks](SECURITY.md) are
+recorded separately. They do not replace security review of the exact release
+artifacts, host configuration and deployment boundary.
 
 ## Artifact handling
 
@@ -44,8 +45,8 @@ state, not default release inputs. Required provenance digests remain tracked.
 
 Follow the existing tracked-library policy when preparing an actual release:
 a release must bind its accepted source to its native artifact. This
-documentation-only cleanup neither refreshes unrelated binaries nor deploys
-them. Preserve private runtime data and all frozen benchmark evidence.
+source checkpoint does not implicitly refresh every unrelated binary or deploy
+anything. Preserve private runtime data and all frozen benchmark evidence.
 
 ## Publication decisions
 

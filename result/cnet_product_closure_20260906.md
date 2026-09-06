@@ -5,7 +5,7 @@ Scope: source implementation in `feature/product-closure-20260906`, based on
 worktree were changed; an existing main-checkout CPU harness was used read-only
 for the explicitly scoped interoperability supplement. No live restart,
 deployment selection, teacher-generation request,
-GPU reset or remote push was performed. Final aggregate verification is being
+GPU reset or remote push was performed. Final aggregate verification is
 recorded below; implementation evidence is not a public-release certificate.
 
 ## Delivered source boundaries
@@ -175,6 +175,51 @@ The final knowledge/security batch exited 0. Receipt:
 - ASI framing, execution-tier documentation, license metadata and strict claims
   checks passed.
 
-Sequential frozen capability certification and final root commit identity are
-pending. Live rollout remains separately authorized, not hidden as a passing
-source test.
+The reviewed resident/store implementation was committed as `d1ec84b`; the
+complete source plus operator documentation was frozen at
+`6068a8c0855af565bea20d598084d442f12fd954`. Sequential `make capability_cert`
+exited 0 with six of six existing manifests certified, run
+`48df13fc-59c2-4927-971d-54f7b7900dbf`, started `2026-09-06T16:11:43Z`.
+The tree was clean, with no special index entries. All six evaluators returned
+0, consumed their declared fixtures, retained stable source bindings and
+reported no binding drift. No floors, fixtures or regression budgets changed.
+
+| Existing capability gate | Observed metric | What this gate tested |
+| --- | --- | --- |
+| Calibrated abstention | 1.000 | Three declared cases: low-margin refusal, supported answer, evidence-free claim rejection |
+| CCE classification | 0.861 | Declared four-class pair-sum task; majority baseline 0.274, all four classes used |
+| Honest memory retrieval | 1.000 | One unrelated-query miss fixture; not general recall quality |
+| Hybrid skill serve | 1.000 | Two fixtures preserve uncertified authority for hermetic/residual proposals |
+| JSON tool-call adapter | 0.775 | Declared adapter routing benchmark; off 0.345, on 0.775 |
+| Sleep consolidation | 1.000 | One duplicate/paraphrase fixture checks promotion, merge and pruning counts |
+
+These are existing bounded certification floors, not perfect task accuracy.
+The adapter benchmark still reports 13 adapter-regression cases alongside
+90 fixes; its unchanged declared accuracy/regression-floor gate passes. The
+four 1.000 scores describe only the fixtures named above, not broader behavior.
+
+Retained evidence identities (SHA-256):
+
+| Receipt | SHA-256 |
+| --- | --- |
+| `/tmp/cnet-product-verify-final-20260906.log` | `c5d93cc6583154224278ff7f14bcf9c0fc4ae03f161119ca86d1e9815ee67d3d` |
+| `/tmp/cnet-product-capability-final-20260906.log` | `93d8fadb70a0e56a57dfa29b1b158241b7e9bd425122dfced5c989f337a250ef` |
+| `logs/capability_cert.json` at the frozen run | `ec04f71d6079c88e5d22250293ff11b3c4420c32a15f54d6f424969a8735a316` |
+| `/tmp/cnet-product-gpu-final-20260906.log` | `54e19b334a6f8bfd243b974145fe17da9c596cd4f4bb68aae6365f6ebca32ce4` |
+| `/tmp/cnet-product-sanitize-gate-20260906.log` | `3b5175b31e061ae150d930c27851403f3bdafc1c525348245595f5a33b477d66` |
+| `/tmp/cnet-product-knowledge-security-final-20260906.log` | `313daf0892bd3397e5002dc2cc8a6e838adabb5072d618295fa205c29a28ce89` |
+
+The seven tracked generated outputs rewritten by our native verification were
+retained in `/tmp/cnet-closure-generated-backup-o0uZI6`, then restored to their
+pre-test tracked bytes before the clean certification checkpoint. They are not
+new released artifacts. Final documentation-only updates close the checklist,
+record this checkpoint and remove a stale open-advisory statement from release
+guidance; they are not silently substituted for the evaluated commit above.
+Documentation checks passed, including 188 local link targets in 27 changed
+Markdown files before this final report update.
+
+All source items in this execution contract are complete against their bounded
+gates. Live rollout remains separately authorized and requires a selected
+target, effective configuration, package/source identity and fresh rollback/
+acceptance checks. No unattended acquisition, large-scale semantic competence,
+exhaustive vulnerability clearance or public-release readiness is inferred.

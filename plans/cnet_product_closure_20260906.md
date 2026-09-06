@@ -1,7 +1,8 @@
 # Bounded specialist product closure
 
-Status: implementation and focused/integrated gates complete; final frozen
-capability certification pending. Source baseline:
+Status: bounded source implementation, focused/integrated gates, frozen
+capability certification and operator handoff complete. Live rollout awaits
+separate target/configuration approval. Source baseline:
 `7c24204692a5b05e009627f43c98660bfcbea66d`.
 User authorized implementation of the three completion stages and all current
 product/documentation follow-ups. This does not authorize a live restart,
