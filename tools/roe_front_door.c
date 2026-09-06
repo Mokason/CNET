@@ -29,6 +29,7 @@
 #include "../include/cnet_query_alias.h"
 #include "../include/cnet_dialog_ctx.h"
 #include "../include/cnet_slot_extract.h"
+#include "../include/cnet_json_internal.h"
 
 #define FD_ROOT_DEFAULT "artifacts/roe_daily_packs"
 #define FD_MAX_ROUTES 256
@@ -55,6 +56,7 @@ typedef struct {
     char always_on[FD_MAX_ALWAYS][FD_ID];
     int n_always;
     int load_always;
+    int read_only_probe;
 } FdRouter;
 
 static int failures, checks;
@@ -117,11 +119,38 @@ static int json_get_str(const char *line, const char *key, char *out, size_t cap
     return out[0] ? 0 : -1;
 }
 
-static int fd_init(FdRouter *F, const char *root) {
+/* Refuse ambiguous/truncated routes; accepted fields must match ask semantics. */
+static int fd_probe_route_valid(const char *line, const FdRoute *route) {
+    JsonCursor c = {(const unsigned char *)line};
+    unsigned seen = 0;
+    json_ws(&c);
+    if (*c.p++ != '{') return 0;
+    for (;;) {
+        char key[96], value[FD_PAT];
+        json_ws(&c);
+        if (json_string(&c, key, sizeof key)) return 0;
+        json_ws(&c);
+        if (*c.p++ != ':') return 0;
+        json_ws(&c);
+        unsigned bit = !strcmp(key, "pattern") ? 1 : !strcmp(key, "pack") ? 2 : 0;
+        if (bit) {
+            if ((seen & bit) || json_string(&c, value, sizeof value) ||
+                strcmp(value, bit == 1 ? route->pattern : route->pack)) return 0;
+            seen |= bit;
+        } else if (json_value(&c, 0)) return 0;
+        json_ws(&c);
+        if (*c.p == '}') return seen == 3;
+        if (*c.p++ != ',') return 0;
+    }
+}
+
+static int fd_init(FdRouter *F, const char *root, int read_only_probe) {
     char path[FD_PATH], line[1024];
     FILE *f;
     if (!F) return -1;
     memset(F, 0, sizeof *F);
+    F->read_only_probe = read_only_probe;
+    if (read_only_probe && (!root || !*root || strlen(root) >= sizeof F->root)) return -1;
     snprintf(F->root, sizeof F->root, "%s", root && root[0] ? root : FD_ROOT_DEFAULT);
     if (path_join2(F->miss_log, sizeof F->miss_log, F->root, "miss_log.jsonl") != 0)
         return -1;
@@ -138,18 +167,48 @@ static int fd_init(FdRouter *F, const char *root) {
     if (path_join2(path, sizeof path, F->root, "ROUTES.jsonl") != 0) return -1;
     f = fopen(path, "r");
     if (!f) return -2;
+    struct stat route_stat;
+    if (read_only_probe && (fstat(fileno(f), &route_stat) || !S_ISREG(route_stat.st_mode) ||
+                            route_stat.st_size > FD_MAX_ROUTES * (int)sizeof line)) {
+        fclose(f); return -1;
+    }
+    long previous = 0;
     while (fgets(line, sizeof line, f) && F->n_routes < FD_MAX_ROUTES) {
         FdRoute *r = &F->routes[F->n_routes];
+        if (read_only_probe) {
+            long position = ftell(f);
+            if (position < 0 || position - previous != (long)strlen(line)) { fclose(f); return -1; }
+            previous = position;
+            JsonCursor syntax = {(const unsigned char *)line};
+            if (json_value(&syntax, 0)) { fclose(f); return -1; }
+            json_ws(&syntax);
+            if (*syntax.p) { fclose(f); return -1; }
+        }
         memset(r, 0, sizeof *r);
-        if (json_get_str(line, "pattern", r->pattern, sizeof r->pattern) != 0)
+        if (json_get_str(line, "pattern", r->pattern, sizeof r->pattern) != 0) {
+            if (read_only_probe) { fclose(f); return -1; }
             continue;
-        if (json_get_str(line, "pack", r->pack, sizeof r->pack) != 0) continue;
+        }
+        if (json_get_str(line, "pack", r->pack, sizeof r->pack) != 0) {
+            if (read_only_probe) { fclose(f); return -1; }
+            continue;
+        }
+        if (read_only_probe) {
+            if (!fd_probe_route_valid(line, r)) { fclose(f); return -1; }
+            for (const char *p = r->pack; *p; p++) {
+                if (!isalnum((unsigned char)*p) && *p != '_' && *p != '-') {
+                    fclose(f); return -1;
+                }
+            }
+        }
         (void)json_get_str(line, "cat", r->cat, sizeof r->cat);
         (void)json_get_str(line, "sub", r->sub, sizeof r->sub);
         (void)json_get_str(line, "skill", r->skill, sizeof r->skill);
         F->n_routes++;
     }
+    int incomplete = ferror(f) || (read_only_probe && !feof(f));
     fclose(f);
+    if (incomplete) return -1;
     return F->n_routes > 0 ? 0 : -3;
 }
 
@@ -178,11 +237,34 @@ static int pack_already(const char *const *list, int n, const char *id) {
     return 0;
 }
 
-static int fd_load_pack(RoeAsi *R, const char *root, const char *pack_id) {
+static int fd_probe_catalog_text(const char *directory) {
+    char path[FD_PATH], chunk[4096];
+    struct stat st;
+    if (path_join2(path, sizeof path, directory, "catalog.jsonl")) return -1;
+    int fd = open(path, O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC);
+    if (fd < 0) return errno == ENOENT ? 0 : -1;
+    if (fstat(fd, &st) || !S_ISREG(st.st_mode) || st.st_size > 32 * 1024 * 1024) {
+        close(fd); return -1;
+    }
+    size_t total = 0;
+    ssize_t n;
+    do {
+        n = read(fd, chunk, sizeof chunk);
+        if (n < 0 && errno == EINTR) continue;
+        if (n < 0) { close(fd); return -1; }
+        total += (size_t)n;
+        if (total > 32 * 1024 * 1024 || memchr(chunk, 0, (size_t)n)) { close(fd); return -1; }
+    } while (n);
+    close(fd);
+    return 0;
+}
+
+static int fd_load_pack(RoeAsi *R, const char *root, const char *pack_id, int probe) {
     char path[FD_PATH];
     int n;
     if (!R || !root || !pack_id) return -1;
     if (path_join2(path, sizeof path, root, pack_id) != 0) return -1;
+    if (probe && fd_probe_catalog_text(path)) return -1;
     roe_set_catalog_dir(R, path);
     n = roe_load_catalog(R);
     return n;
@@ -229,7 +311,9 @@ static int fd_prepare(FdRouter *F, RoeAsi *R, const char *query, FdTurnResult *t
     }
 
     for (i = 0; i < np; i++) {
-        nadd = fd_load_pack(R, F->root, plist[i]);
+        nadd = fd_load_pack(R, F->root, plist[i], F->read_only_probe);
+        if (F->read_only_probe &&
+            (nadd < 0 || (!nadd && tr->matched && !strcmp(plist[i], tr->route_pack)))) return -1;
         if (nadd < 0) nadd = 0;
         snprintf(tr->packs_loaded[tr->n_packs], sizeof tr->packs_loaded[0], "%s",
                  plist[i]);
@@ -237,7 +321,7 @@ static int fd_prepare(FdRouter *F, RoeAsi *R, const char *query, FdTurnResult *t
         tr->n_skills_loaded = (int)R->n_skills;
         (void)nadd;
     }
-    return tr->n_packs > 0 ? 0 : -1;
+    return tr->n_packs > 0 && (!F->read_only_probe || tr->n_skills_loaded > 0) ? 0 : -1;
 }
 
 static void iso_now(char *out, size_t cap) {
@@ -557,7 +641,7 @@ static int cmd_ask(FdRouter *F, const char *q, int accept, const char *gold,
 
     if (pm) {
         q_use = q;
-        printf("prepared=%s alias_hit=0 dialog_hit=0 slot_hit=0\n", q);
+        if (!F->read_only_probe) printf("prepared=%s alias_hit=0 dialog_hit=0 slot_hit=0\n", q);
     } else {
         cnet_query_prepare(&QA, q, q_prep, sizeof q_prep, &ameta);
         if (cnet_slot_extract_ops(q_prep, q_slot, sizeof q_slot, &smeta) &&
@@ -570,7 +654,7 @@ static int cmd_ask(FdRouter *F, const char *q, int accept, const char *gold,
             snprintf(q_final, sizeof q_final, "%s", q_prep);
             q_use = q_final;
         }
-        printf("prepared=%s alias_hit=%d alias=%s dialog_hit=%d dialog_reason=%s "
+        if (!F->read_only_probe) printf("prepared=%s alias_hit=%d alias=%s dialog_hit=%d dialog_reason=%s "
                "slot_hit=%d slot_unit=%s\n",
                q_use, ameta.alias_hit,
                ameta.matched_alias[0] ? ameta.matched_alias : "-",
@@ -581,17 +665,17 @@ static int cmd_ask(FdRouter *F, const char *q, int accept, const char *gold,
     }
 
     cnet_domain_route_resolve(&DR, q_use, &dd);
-    printf("domain_route=%s reason=%s pack=%s mtk=%s conf=%d\n", dd.kind_name,
+    if (!F->read_only_probe) printf("domain_route=%s reason=%s pack=%s mtk=%s conf=%d\n", dd.kind_name,
            dd.reason ? dd.reason : "-",
            dd.pack_or_skill[0] ? dd.pack_or_skill : "-",
            dd.mtk_path[0] ? dd.mtk_path : "-", dd.conf_x1000);
     /* Fail-closed residual: never auto-apply MTK from front door.
      * CERT/ABSTAIN continue into LOCAL packs. BASE_GGUF is advisory only here. */
-    if (dd.kind == CNET_ROUTE_MTK) {
+    if (!F->read_only_probe && dd.kind == CNET_ROUTE_MTK) {
         printf("domain_route_note=MTK_selected_but_front_door_stays_CERT_path_"
                "(no_auto_weight_swap)\n");
     }
-    if (pm) {
+    if (!F->read_only_probe && pm) {
         printf("probe_shortcircuit=1 pat=%s teacher=off\n",
                probe_pat[0] ? probe_pat : pm);
     }
@@ -602,6 +686,17 @@ static int cmd_ask(FdRouter *F, const char *q, int accept, const char *gold,
         fprintf(stderr, "front_door prepare failed\n");
         free(R);
         return 1;
+    }
+    if (F->read_only_probe) {
+        /* This branch cannot attach network config, accept feedback, emit
+         * thoughts or append misses. It returns only a fixed machine receipt. */
+        roe_set_net(R, NULL);
+        int status = roe_turn(R, q_use, &tr.reply);
+        if (status != ROE_OK && status != ROE_ABSTAIN) { free(R); return 1; }
+        puts(tr.reply.source == ROE_SRC_LOCAL ? "CNET_DISTILL_PROBE_V1 LOCAL" :
+                                              "CNET_DISTILL_PROBE_V1 UNCOVERED");
+        free(R);
+        return 0;
     }
 #if CNET_HAVE_CURL
     if (!curl_once) {
@@ -879,9 +974,10 @@ static void usage(const char *a0) {
             "  %s ask \"query\" [--root DIR] [--no-always]\n"
             "      [--accept] [--gold TEXT] [--promote-pack PACK]\n"
             "  %s route \"query\" [--root DIR]\n"
+            "  %s probe \"query\" --root DIR  # local, read-only receipt\n"
             "  %s bench [--root DIR]\n"
             "  %s selftest [--root DIR]\n",
-            a0, a0, a0, a0);
+            a0, a0, a0, a0, a0);
 }
 
 int main(int argc, char **argv) {
@@ -890,14 +986,18 @@ int main(int argc, char **argv) {
     const char *root = FD_ROOT_DEFAULT;
     const char *gold = NULL;
     const char *promote_pack = NULL;
-    int no_always = 0, accept = 0, i;
+    int no_always = 0, accept = 0, i, root_given = 0;
     FdRouter F;
 
     for (i = 1; i < argc; i++) {
         if (!cmd && argv[i][0] != '-')
             cmd = argv[i];
-        else if (!strcmp(argv[i], "--root") && i + 1 < argc)
+        else if (cmd && !strcmp(cmd, "probe") && !q)
+            q = argv[i]; /* positional query may itself begin with '-' */
+        else if (!strcmp(argv[i], "--root") && i + 1 < argc) {
             root = argv[++i];
+            root_given = 1;
+        }
         else if (!strcmp(argv[i], "--no-always"))
             no_always = 1;
         else if (!strcmp(argv[i], "--accept"))
@@ -913,19 +1013,23 @@ int main(int argc, char **argv) {
             usage(argv[0]);
             return 0;
         }
+        else if (cmd && !strcmp(cmd, "probe")) return 2;
     }
     if (!cmd) {
         usage(argv[0]);
         return 2;
     }
 
-    if (fd_init(&F, root) != 0) {
+    int read_only_probe = !strcmp(cmd, "probe");
+    if (read_only_probe && (!root_given || !q || !*q || strlen(q) >= ROE_TEXT_MAX ||
+                            no_always || accept || gold || promote_pack)) return 2;
+    if (fd_init(&F, root, read_only_probe) != 0) {
         fprintf(stderr, "fd_init failed root=%s (run make roe_daily_packs)\n", root);
         return 1;
     }
     if (no_always) F.load_always = 0;
 
-    if (!strcmp(cmd, "ask"))
+    if (!strcmp(cmd, "ask") || read_only_probe)
         return cmd_ask(&F, q, accept, gold, promote_pack);
     if (!strcmp(cmd, "route")) return cmd_route(&F, q);
     if (!strcmp(cmd, "bench")) {
