@@ -13,12 +13,18 @@ broad semantic competence. Hashes establish byte identity, not authentication;
 receipt authenticity, source authority and split custody remain trusted-owner
 and experiment-author responsibilities.
 
-The experimental C worker pool is also not the managed production child
+At the time of this experiment, the C worker pool was not the managed production child
 boundary: its monotonic deadline excludes suspend, it has no parent-death
 binding, and stderr is inherited without validating its writable-file authority.
 Filesystem seals do not revoke an already-open descriptor. These inherited
 limits require a trusted bounded offline runner; no unattended GPU-worker
 deployment is established. Production `allocator_enabled=true` still refuses.
+
+September 7 follow-up: worker commit `3c408b8` addresses these three lifetime,
+deadline and inherited-stderr gaps. See the
+[expansion report](cnet_operational_expansion_20260907.md) for CPU verification,
+new Linux requirements and outstanding actual-device qualification. This does
+not retroactively change the binaries/results below or pass the allocator gate.
 
 ## Evidence and chronology
 

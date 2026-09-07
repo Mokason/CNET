@@ -56,10 +56,11 @@ references do not override repository gates. Decisions stay in `plans/`.
 ## Task checklist
 
 - [x] Live verification command and focused + native integration tests
-- [ ] Owner evidence onboarding and end-to-end tests
-- [ ] GPU worker hardening, CPU and real-device regression
+- [x] Owner evidence onboarding command and end-to-end tests
+- [x] GPU worker hardening and CPU regression
+- [ ] Real-device regression of the changed GPU worker boundary
 - [ ] Bounded acceptance evidence preparation and refusal tests
-- [ ] Combined regression, audit, documentation and reviewed commits
+- [x] Combined regression, audit, documentation and reviewed commits for delivered slices
 - [ ] Owner-selected real workload and broader domain adapter certification
 - [ ] Useful controller confirmation and guarded integration
 - [ ] Actual 72-hour acceptance (WITHHELD until elapsed time and criteria pass)
@@ -81,3 +82,29 @@ Focused command/live/ASK/control/reference regression: **167 passed, 0 failed,
 end-to-end test; synthetic clocks are fault tests, not elapsed acceptance.
 Equal native STATUS fences bind the revision/state tuple, not continuous daemon
 process identity. Source/runtime digests prove identity, not source truth.
+
+## Import and worker checkpoints
+
+Import's initial real-entry test failed with `LEARNING_IMPORT_RED` before its
+implementation. The quota fixture initially used an unsupported 1 MiB policy;
+that fixture was corrected to the existing 16 MiB minimum, without changing
+production limits. Import now passes 16 focused cases, including exact-fit and
+one-byte overflow, and an additional author-separated actual-entry durability
+test. A fixed test-only fsync fault after rename causes refusal, retained exact
+bytes, released locks and refused overwrite retries. No production fault hooks
+were added. The 262143/262144-entry import boundary is source-reviewed but not
+physically exercised; no large-inventory qualification is claimed.
+
+Worker commit `3c408b8` passed 22 CPU boundary cases, the existing CPU/sandbox/
+allocator regression and AMD compilation. Focused ASan/UBSan runs also passed,
+subject to intentional SIGKILL/_exit and discarded child-stderr limits. Actual
+GPU execution was not attempted because unrelated live services occupied both
+devices. The old services, device allocations and private deployment are intact.
+
+Final delivered-slice managed regression: **670 passed, 0 failed, 0 skipped**,
+13 seconds; native table daemon, capsule/coverage/accumulation/composition gates
+also passed. Production and test NuGet audits reported no known vulnerabilities.
+See `result/cnet_operational_expansion_20260907.md` for commands and exclusions.
+The continuous acceptance collector/checker, real approved workload, useful
+controller confirmation, actual 72-hour run and production rollout are still
+outstanding; the new live probe is only a prerequisite for that work.

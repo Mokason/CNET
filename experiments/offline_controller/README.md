@@ -19,7 +19,12 @@ Artifacts remain under a new `/tmp/cnet-gpu-product-*` directory. No live regist
 GPU reservation, service restart or remote publication is performed.
 
 Requirements are HIP/ROCm for `gfx1201`, Linux Landlock ABI >=3 and a C compiler.
+Native worker jobs additionally require Linux >=6.9 thread pidfds, accessible
+`/proc/self/fd` and `CLOCK_BOOTTIME` POSIX timers. Unsupported guards refuse;
+there is no weaker fallback. Rebuild pool callers and native workers together:
+the private entry contract now passes an absolute deadline and FD5 thread pidfd.
 Override `OUT` for a separate build directory. Assertions must remain enabled.
+Check device occupancy before running GPU targets; do not displace live jobs.
 
 ## Focused checks
 
@@ -29,12 +34,16 @@ Run these from this directory:
 make test gpu-test investigate-test
 make resident-test rocblas-test stream-test
 make cell-test selector-test candidate-test worker-sandbox-test
+make worker-boundary-test
 ```
 
 The fixed recurrent network, six graph-suite cells and eight-row worker model
 are different workloads. Shared parameters and filenames do not transfer one
 workload's evidence to another. Native fixture/weight files are experiment data;
 portable core checkpoints and certified capsules use their own existing APIs.
+`make test` includes the CPU-only worker boundary regression and does not require
+HIP or GPU access. It tests lifetime, deadlines and descriptor refusal, not GPU
+math or physical machine suspension.
 
 ## Earlier experiment and investigation
 
@@ -57,3 +66,13 @@ private candidates; no silent backend fallback or lowered floor can turn them
 into accepted serving state. Worker completion is not approval. The default
 deterministic core remains unchanged; [security limits](../../docs/SECURITY.md)
 include the trusted HIP/driver boundary and the open control-plane advisory.
+
+At native entry, before input or GPU initialization, workers bind their lifetime
+to the exact spawning thread and arm a suspend-inclusive deadline. The thread
+pidfd covers death before the parent-death signal was armed. Child stdio is
+`/dev/null`; only the explicit result pipe is writable output. Parent lifecycle,
+exit and signal records remain available, but worker runtime stderr is discarded.
+The trusted dynamic loader precedes entry. SIGKILL and kernel/driver teardown
+are not hard real-time GPU cleanup guarantees or an arbitrary-executable sandbox.
+See the [September 7 expansion report](../../result/cnet_operational_expansion_20260907.md)
+for current verification and the outstanding actual-device run.
