@@ -25,7 +25,7 @@ internal sealed class LearningTableEvaluation
     public static LearningTableEvaluation Parse(byte[] nativeOutput, LocalTableReference reference, string expectedSnapshot)
     {
         // Check the external byte bound before clone, decode, splitting or hash.
-        if (nativeOutput is null || nativeOutput.Length is < 1 or > 8192)
+        if (nativeOutput is null || nativeOutput.Length < 1 || nativeOutput.Length > (reference?.Symbols is null ? 8192 : 16384))
             throw new ArgumentException("learning_table_evaluation_size");
         if (reference is null || expectedSnapshot is not { Length: 64 }
             || expectedSnapshot.Any(c => c is not (>= '0' and <= '9' or >= 'a' and <= 'f')))
@@ -35,8 +35,10 @@ internal sealed class LearningTableEvaluation
         if (snapshot.Any(b => b is not (>= 32 and <= 126 or 9 or 10)))
             throw new ArgumentException("learning_table_evaluation_ascii");
         var lines = Encoding.ASCII.GetString(snapshot).Split('\n');
-        if (lines.Length != 263 || lines[262] != "" || lines[261] != "end"
-            || lines[0] != "CNET_TABLE_SNAPSHOT_EVAL_V1"
+        var symbols = reference.Symbols;
+        var end = symbols is null ? 261 : 263 + symbols.Keys.Count;
+        if (lines.Length != end + 2 || lines[end + 1] != "" || lines[end] != "end"
+            || lines[0] != (symbols is null ? "CNET_TABLE_SNAPSHOT_EVAL_V1" : "CNET_SYMBOL_SNAPSHOT_EVAL_V1")
             || lines[1] != "snapshot_sha256 " + expectedSnapshot
             || lines[2] != "dataset " + reference.Dataset
             || lines[3] != "source_sha256 " + reference.SourceSha256
@@ -51,6 +53,17 @@ internal sealed class LearningTableEvaluation
             // rejects leading zeros, overflow, extra fields and reordered keys.
             if (lines[key + 5] != expected)
                 throw new ArgumentException("learning_table_evaluation_answer");
+        }
+        if (symbols is not null)
+        {
+            if (lines[261] != "symbols " + symbols.Keys.Count.ToString(CultureInfo.InvariantCulture)
+                || lines[end - 1] != "unknown " + symbols.UnknownToken + "\t0\t-")
+                throw new ArgumentException("learning_symbol_evaluation_frame");
+            // The encoded identity task alone cannot attest token selection or
+            // label rendering. Require observations from actual staged ASK.
+            for (var row = 0; row < symbols.Keys.Count; row++)
+                if (lines[262 + row] != symbols.Keys[row] + "\t1\t" + symbols.Labels[row])
+                    throw new ArgumentException("learning_symbol_evaluation_answer");
         }
         return new(reference.Dataset, reference.SourceSha256, expectedSnapshot,
             Convert.ToHexString(SHA256.HashData(snapshot)).ToLowerInvariant());

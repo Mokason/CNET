@@ -307,15 +307,15 @@ public sealed class LearningAcquisitionTests : IDisposable
     private sealed class FailedProbeFixture : IAsyncDisposable
     {
         private readonly string askPath, controlPath;
-        private readonly bool holdControl;
+        private readonly bool holdControl, symbolic;
         private readonly CancellationTokenSource stop = new();
         private readonly Socket askListener = new(AddressFamily.Unix, SocketType.Stream, ProtocolType.Unspecified);
         private Socket? controlListener;
         private readonly Task answer;
         public TaskCompletionSource<bool> AfterFailedProbeStatus { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        public FailedProbeFixture(string askPath, string controlPath, bool holdControl)
+        public FailedProbeFixture(string askPath, string controlPath, bool holdControl, bool symbolic = false)
         {
-            this.askPath = askPath; this.controlPath = controlPath; this.holdControl = holdControl;
+            this.askPath = askPath; this.controlPath = controlPath; this.holdControl = holdControl; this.symbolic = symbolic;
             File.Move(askPath, askPath + ".held");
             Bind(askListener, askPath);
             answer = Answer();
@@ -342,6 +342,14 @@ public sealed class LearningAcquisitionTests : IDisposable
         {
             try
             {
+                if (symbolic)
+                    for (var key = 0; key < 256; key++)
+                    {
+                        using var numeric = await askListener.AcceptAsync(stop.Token);
+                        await ReadRequest(numeric);
+                        using var stream = new NetworkStream(numeric, ownsSocket: false);
+                        await stream.WriteAsync(LearningSymbolFixture.Reply(key < 2 ? key.ToString(System.Globalization.CultureInfo.InvariantCulture) : null), stop.Token);
+                    }
                 using (var peer = await askListener.AcceptAsync(stop.Token))
                 {
                     await ReadRequest(peer);
@@ -351,8 +359,9 @@ public sealed class LearningAcquisitionTests : IDisposable
                         controlListener = new(AddressFamily.Unix, SocketType.Stream, ProtocolType.Unspecified);
                         Bind(controlListener, controlPath);
                     }
-                    // Probation's first key is zero, whose independent label
-                    // is 65535. This is a well-framed but incorrect answer.
+                    // Numeric first key expects 65535; symbolic first token
+                    // expects "first label" after all 256 numeric checks pass.
+                    // In either mode "1" is well-framed but incorrect.
                     var wrong = Encoding.ASCII.GetBytes("{\"ok\":true,\"verified\":true,\"miss\":false,\"teacher\":false,\"source\":\"LOCAL\",\"skill\":\"capsule_core\",\"answer\":\"1\"}\n");
                     using var stream = new NetworkStream(peer, ownsSocket: false);
                     await stream.WriteAsync(wrong, stop.Token);
@@ -383,35 +392,51 @@ public sealed class LearningAcquisitionTests : IDisposable
     }
 
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task KnownFailedProbeSurvivesSubsequentControlFailureOrCancellation(bool cancelled)
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
+    public async Task KnownFailedProbeSurvivesSubsequentControlFailureOrCancellation(bool cancelled, bool symbolic)
     {
+        var selected = symbolic ? LearningPolicy.Parse(Encoding.UTF8.GetBytes(LearningSymbolFixture.Policy)) : policy;
+        if (symbolic) WriteSource(Encoding.ASCII.GetBytes(LearningSymbolFixture.Source));
         await StartDaemon(); var clock = new FakeClock();
-        using (LearningLedger.Create(Work, policy, clock)) { }
-        using var supervisor = new LearningSupervisor(runtime, policy, Work, ControlSocket, AskSocket, clock);
+        using (LearningLedger.Create(Work, selected, clock)) { }
+        using var supervisor = new LearningSupervisor(runtime, selected, Work, ControlSocket, AskSocket, clock);
         using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(20));
-        await supervisor.AskAsync("calibration", 7, deadline.Token);
+        await supervisor.AskAsync("calibration", symbolic ? (byte)0 : (byte)7, deadline.Token);
         Assert.Equal("activated", await supervisor.TickAsync(deadline.Token));
-        clock.Advance(policy.TickSeconds);
-        await using (var fault = new FailedProbeFixture(AskSocket, ControlSocket, cancelled))
+        clock.Advance(selected.TickSeconds);
+        await using (var fault = new FailedProbeFixture(AskSocket, ControlSocket, cancelled, symbolic))
         {
             using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(deadline.Token);
             var failed = supervisor.TickAsync(cancellation.Token);
-            if (cancelled)
+            try
             {
-                // A STATUS request after the wrong answer proves the supervisor
-                // has already observed failure before cancellation is delivered.
-                await fault.AfterFailedProbeStatus.Task.WaitAsync(TimeSpan.FromSeconds(3));
-                cancellation.Cancel();
-                await Assert.ThrowsAnyAsync<OperationCanceledException>(() => failed);
+                if (cancelled)
+                {
+                    // A STATUS request after the wrong answer proves failure
+                    // was observed before cancellation is delivered.
+                    var reached = await Task.WhenAny(fault.AfterFailedProbeStatus.Task, Task.Delay(3000));
+                    Assert.True(reached == fault.AfterFailedProbeStatus.Task,
+                        "LEARNING_SYMBOL_PROBATION_RED known failure continued into another ASK before durable rollback duty");
+                    await fault.AfterFailedProbeStatus.Task;
+                    cancellation.Cancel();
+                    await Assert.ThrowsAnyAsync<OperationCanceledException>(() => failed);
+                }
+                else await Assert.ThrowsAsync<InvalidOperationException>(() => failed);
             }
-            else await Assert.ThrowsAsync<InvalidOperationException>(() => failed);
+            finally
+            {
+                cancellation.Cancel();
+                try { await failed; }
+                catch (Exception error) when (error is InvalidOperationException or OperationCanceledException) { }
+            }
         }
         // Restored daemon now answers every key correctly. The earlier failure
         // still mandates rollback; a later pass must never erase it.
         Assert.Equal("rolled_back", await supervisor.TickAsync(deadline.Token));
-        using var ledger = LearningLedger.Open(Work, policy, clock);
+        using var ledger = LearningLedger.Open(Work, selected, clock);
         Assert.Equal("failed", ledger.JobState(1)); Assert.Null(ledger.PendingIntent);
     }
 

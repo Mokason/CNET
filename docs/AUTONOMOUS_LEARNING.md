@@ -1,17 +1,21 @@
 # Private, policy-bounded table learning
 
-This opt-in control plane learns **authorized numeric tables**, not arbitrary
-text or self-certified facts. A real uncovered request records demand. Fixed
+This opt-in control plane learns authorized finite numeric or exact-token/text-label
+tables, not arbitrary text or self-certified facts. A real uncovered request records demand. Fixed
 confined workers build a capsule; an independent evaluator checks all 256 input
 keys, including every required abstention. Exact persisted native operations
 govern staging, activation, probation and rollback. CNET answers never become
-training labels.
+training labels. Symbolic sources also require actual token/label observations
+before activation and during probation; numeric ordinal identity alone cannot pass.
 
 A reproducible real-source example is the [Unicode 17 explicit case-change
 workload](../data/unicode17/README.md): two independently checked partial tables
 with exact source pins, license, an offline extractor and an end-to-end private
 learning gate. Its abstentions deliberately differ from Unicode's identity
 defaults; it is not a full text case converter.
+The same pinned source also supplies two symbolic workloads: printable ASCII
+character names to General_Category and Bidi_Class labels, 95 exact names each.
+These are finite lookups, not unseen-text capability or a full bidi algorithm.
 
 The learned allocator remains inactive after its failed improvement gate.
 `allocator_enabled=true` refuses. Completing a run budget does not certify
@@ -108,7 +112,8 @@ All commands use the same clean launch prefix above:
 | --- | --- |
 | `status DEPLOYMENT` | Structured pin, pause, job, pending-operation and durable-run status. Does not assert daemon health. |
 | `ask DEPLOYMENT DATASET KEY` | Actual daemon answer/abstention; records normalized demand, never answer-as-label. KEY is canonical decimal 0..255. |
-| `verify DEPLOYMENT DATASET` | Independently checks all 256 live answers/abstentions against the policy-authorized source. Creates no demand or jobs. Exit 0 requires exact coverage and abstention; missing/wrong answers exit 2. |
+| `lookup DEPLOYMENT DATASET TOKEN` | Actual literal-label answer for an explicitly vocabulary-pinned symbolic dataset. Known-token misses create stable ordinal demand; unknown tokens abstain without demand. |
+| `verify DEPLOYMENT DATASET` | Independently checks all 256 encoded inputs, plus every known text key and one absent-token probe for a symbolic source. Creates no demand or jobs. Missing/wrong answers exit 2. |
 | `import DEPLOYMENT DATASET SOURCE SHA256` | Initially publishes an owner-approved canonical source into `work/data`. Requires the exact lowercase source hash, policy authority and owner lock. Never overwrites, creates demand or starts learning. |
 | `tick DEPLOYMENT` | One serialized recovery/probe/acquisition cycle. Requires the owner lock. |
 | `pause DEPLOYMENT` | Persistently prevents new work; no healthy daemon required. A running owner observes it and performs safety cleanup. |
@@ -116,7 +121,7 @@ All commands use the same clean launch prefix above:
 | `run DEPLOYMENT` | Supervise until the original persisted budget expires or a failure/owner stop occurs. |
 | `quiesce DEPLOYMENT` | With no active owner, persist stop/pause and retry cleanup only; never replay an unpublished activation or acquire demand. Exit 0 means settled cleanup, not a successful run. |
 
-Only requests through `learning ask` create this ledger's demand; direct daemon
+Only requests through `learning ask` or known-token `learning lookup` create this ledger's demand; direct daemon
 requests are not automatically ingested. A standalone `tick` does not refresh a
 durable run heartbeat. Status uses a transactional ledger open, so observed
 clock epochs and detected clock failures can be persisted; it is not a forensic
@@ -138,6 +143,12 @@ history. Verification does not renew the learning budget, update its heartbeat,
 or certify a 72-hour run. It still opens the pinned ledger transactionally and
 the daemon may update ordinary transient query telemetry. No raw source rows
 are included in its result. The owner remains responsible for source truth.
+Symbolic receipts additionally expose `symbol_keys`, `correct_symbol_answers`,
+`correct_symbol_abstentions`, `missing_symbol_answers` and `wrong_symbol_answers`.
+The one absent-token probe is not exhaustive text-space testing. All encoded and
+text probes share the same deadline and source/native identity fences. Probation
+stops on its first known mismatch and persists rollback duty before any further
+exchange; subsequent cancellation cannot erase an already observed bad answer.
 
 ## Private daemon and independent evidence
 
@@ -182,6 +193,18 @@ travels through admission and serving freshness checks. An owner source update
 invalidates old answers until a fresh candidate passes; stale in-flight
 evidence is discarded or rolled back, never silently relabelled.
 
+For symbolic sources, use the [canonical symbolic format](local-table-capsules.md#symbolic-sources)
+and explicitly add `symbol_vocabulary_sha256` to that dataset's policy object
+before initialization. It is the lowercase SHA256 of the sorted ASCII keys, each
+followed by LF, excluding labels and headers. Omitted pin authorizes numeric
+sources only; a present pin authorizes symbolic sources only. The policy parser
+rejects null, malformed and unknown fields. Exact vocabulary bytes cannot change
+within that deployment, so historical `(dataset, ordinal)` demand never changes
+meaning. Label-only updates retain the vocabulary pin but change the full source
+hash and require normal acquisition/certification/probation. Adding, removing or
+renaming keys requires a separately provisioned policy/deployment; there is no
+automatic policy migration or live-ledger rewrite.
+
 For initial onboarding, review the independent source first and record its
 SHA256. `SOURCE` must be a canonical absolute path to a private, single-link
 regular file within a private directory with trusted ancestors, following the
@@ -199,7 +222,7 @@ history or admit a job. File publication and SQLite are not a distributed
 transaction: a late fsync/commit failure may leave a published source with a
 refusal result. Retain and inspect that file; do not delete or overwrite it to
 manufacture a clean retry. Existing-source refresh remains an explicit owner
-operation, not this initial-import command. Use `ask`, the normal learning loop
+operation, not this initial-import command. Use `ask` or `lookup`, the normal learning loop
 and then `verify` to check that approved evidence actually became live coverage.
 
 ## Stop, restart and limits
@@ -233,8 +256,10 @@ small storage policy may refuse all acquisitions. Native children are fixed atte
 the child runner is not an arbitrary descendant-process sandbox. Same-UID
 malicious-owner isolation is not claimed.
 
-Structured events use fixed names/codes and a correlation ID; no source rows,
-native tokens or arbitrary exception messages are logged. The singleton run
+Structured lifecycle events use fixed names/codes and a correlation ID; no source rows,
+native control tokens or arbitrary exception messages are logged. Explicit `ask`
+and `lookup` command stdout contains the requested value or literal label; treat
+that output as owner data, not a diagnostic log or instructions. The singleton run
 row bounds heartbeat storage. Owner stdout capture is outside the work quota
 and needs an owner retention limit. Monitor nonzero exit, `failed`, `frozen`,
 pending mutations and stale heartbeats; none is an unattended success marker.

@@ -165,6 +165,12 @@ internal sealed class LearningSupervisor : IDisposable
                 var reply = await ask.AskAsync(dataset, key, cancellation).ConfigureAwait(false);
                 if (!reply.Verified) { missing = true; break; }
                 if (reply.Value != reference.ExpectedFor(key)) { ledger.Pause(); return "verified_mismatch"; }
+                if (reference.Symbols is { } symbols)
+                {
+                    var text = await ask.AskSymbolAsync(dataset, symbols.Keys[key], cancellation).ConfigureAwait(false);
+                    if (!text.Verified) { missing = true; break; }
+                    if (text.Text != symbols.LabelFor(key)) { ledger.Pause(); return "verified_mismatch"; }
+                }
             }
             if (!missing) continue;
             var reservation = ledger.Reserve(dataset.Id, reference.SourceSha256);
@@ -227,21 +233,15 @@ internal sealed class LearningSupervisor : IDisposable
                 passed = false;
             else
             {
-                var timer = new LearningClock(); var began = timer.Now;
-                for (var key = 0; key < 256 && passed; key++)
-                {
-                    var now = timer.Now;
-                    if (now.Boot != began.Boot || now.Nanoseconds < began.Nanoseconds
-                        || now.Nanoseconds - began.Nanoseconds >= policy.WorkerSeconds * 1_000_000_000L)
-                        throw new InvalidOperationException("learning_probe_deadline");
-                    var reply = await ask.AskAsync(dataset, (byte)key, cancellation).ConfigureAwait(false);
-                    var expected = reference.ExpectedFor((byte)key);
-                    passed = reply.Verified == expected.HasValue && reply.Value == expected;
-                }
-                if (Source(dataset).SourceSha256 != job.SourceSha256) passed = false;
+                var observation = await LearningLiveVerification.ObserveAsync(dataset, () => Source(dataset), control.StatusAsync,
+                    (key, stop) => ask.AskAsync(dataset, key, stop), policy.WorkerSeconds, new LearningClock(), cancellation,
+                    (token, stop) => ask.AskSymbolAsync(dataset, token, stop), stopOnMismatch: true).ConfigureAwait(false);
+                passed = observation.Passed && observation.SourceSha256 == job.SourceSha256
+                    && observation.ActiveSha256 == observed.Active && observation.Revision == observed.Revision;
             }
         }
-        catch (OperationCanceledException) { throw; }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { throw; }
+        catch (OperationCanceledException) { passed = false; }
         catch (Exception exception) when (exception is ArgumentException or InvalidOperationException or IOException)
         { passed = false; }
         // A known failed observation is itself durable evidence. Record it

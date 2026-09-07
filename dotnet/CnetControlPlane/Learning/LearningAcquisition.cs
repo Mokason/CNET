@@ -40,7 +40,8 @@ internal sealed class LearningAcquisition(LearningRuntime runtime, LearningPolic
     private async Task<LearningChildResult> Run(LearningNativeCommand command, string[] arguments, CancellationToken cancellation)
     {
         var result = await LearningChild.RunAsync(runtime.PathFor(command), arguments, workRoot,
-            new Dictionary<string, string>(), policy.WorkerSeconds, 8192, cancellation, clock).ConfigureAwait(false);
+            new Dictionary<string, string>(), policy.WorkerSeconds,
+            command == LearningNativeCommand.VerifyTable ? 16384 : 8192, cancellation, clock).ConfigureAwait(false);
         // No worker success marker is treated as certification. Nonzero exit,
         // uncertainty, diagnostics or transport failure cannot yield a receipt.
         if (result.ExitCode != 0 || !result.Stderr.IsEmpty) throw new InvalidOperationException("learning_acquisition_worker_refused");

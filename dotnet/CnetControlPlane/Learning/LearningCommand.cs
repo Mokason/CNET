@@ -12,8 +12,10 @@ internal static class LearningCommand
         var correlation = Guid.NewGuid().ToString("N");
         try
         {
-            if (args.Length < 2 || args[0] is not ("inspect" or "initialize" or "status" or "pause" or "resume" or "ask" or "verify" or "import" or "tick" or "run" or "quiesce")
-                || args.Length != (args[0] switch { "ask" => 4, "verify" => 3, "import" => 5, _ => 2 }))
+            if (args.Length < 2 || args[0] is not ("inspect" or "initialize" or "status" or "pause" or "resume" or "ask" or "lookup" or "verify" or "import" or "tick" or "run" or "quiesce")
+                || args.Length != (args[0] switch { "ask" or "lookup" => 4, "verify" => 3, "import" => 5, _ => 2 }))
+                throw new ArgumentException("learning_command_usage");
+            if (args[0] == "lookup" && (!LearningPolicy.IsId(args[2]) || !LocalSymbolReference.IsKey(args[3])))
                 throw new ArgumentException("learning_command_usage");
             byte key = 0;
             if (args[0] == "ask" && (!LearningPolicy.IsId(args[2])
@@ -78,14 +80,19 @@ internal static class LearningCommand
                             return LocalTableReference.Parse(sources.Read(verifiedDataset.Id + ".tsv", 4096), verifiedDataset);
                         }
                         var result = LearningLiveVerification.ObserveAsync(verifiedDataset, ReadSource, control.StatusAsync,
-                            (input, stop) => observer.AskAsync(verifiedDataset, input, stop), policy.WorkerSeconds, new LearningClock()).GetAwaiter().GetResult();
+                            (input, stop) => observer.AskAsync(verifiedDataset, input, stop), policy.WorkerSeconds, new LearningClock(),
+                            symbolAsk: (token, stop) => observer.AskSymbolAsync(verifiedDataset, token, stop)).GetAwaiter().GetResult();
                         running.Verify();
                         Emit(new { @event = "learning_live_verification", correlation_id = correlation, dataset = verifiedDataset.Id,
                             managed_sha256 = running.Sha256, native_sha256 = native.Sha256, policy_sha256 = policy.Sha256,
                             source_sha256 = result.SourceSha256, active_sha256 = result.ActiveSha256, revision = result.Revision,
                             boot = result.Boot, start_ns = result.StartNanoseconds, end_ns = result.EndNanoseconds,
                             checked_keys = 256, correct_answers = result.CorrectAnswers, correct_abstentions = result.CorrectAbstentions,
-                            missing_answers = result.MissingAnswers, wrong_answers = result.WrongAnswers, passed = result.Passed });
+                            missing_answers = result.MissingAnswers, wrong_answers = result.WrongAnswers,
+                            symbol_keys = result.SymbolKeys, correct_symbol_answers = result.CorrectSymbolAnswers,
+                            correct_symbol_abstentions = result.CorrectSymbolAbstentions,
+                            missing_symbol_answers = result.MissingSymbolAnswers, wrong_symbol_answers = result.WrongSymbolAnswers,
+                            passed = result.Passed });
                         return result.Passed ? 0 : 2;
                     }
                 case "pause": ledger.Pause(); Status(ledger, policy, correlation, "learning_paused"); return 0;
@@ -110,6 +117,35 @@ internal static class LearningCommand
                         ledger.RecordDemand(dataset.Id, key, !answer.Verified);
                         Emit(new { @event = "learning_answer", correlation_id = correlation, dataset = dataset.Id, key,
                             verified = answer.Verified, value = answer.Value });
+                    }
+                    return 0;
+                case "lookup":
+                    var symbolicDataset = policy.Datasets.SingleOrDefault(d => d.Id == args[2] && d.SymbolVocabularySha256 is not null)
+                        ?? throw new ArgumentException("learning_symbol_dataset_not_authorized");
+                    using (var sources = LearningFiles.Open(Path.Combine(workPath, "data")))
+                    using (var client = new LearningAskClient(Path.Combine(root.FullPath, "ipc/ask.sock"), policy.WorkerSeconds))
+                    {
+                        LocalTableReference ReadSource()
+                        {
+                            var reference = LocalTableReference.Parse(sources.Read(symbolicDataset.Id + ".tsv", 4096), symbolicDataset);
+                            sources.AssertPathIdentity(); return reference;
+                        }
+                        var reference = ReadSource();
+                        var covered = reference.Symbols!.TryEncode(args[3], out var ordinal);
+                        var answer = client.AskSymbolAsync(symbolicDataset, args[3], default).GetAwaiter().GetResult();
+                        if (ReadSource().SourceSha256 != reference.SourceSha256)
+                            throw new InvalidOperationException("learning_symbol_source_changed");
+                        if (answer.Verified && (!covered || answer.Text != reference.Symbols.LabelFor(ordinal)))
+                        {
+                            ledger.Pause(); throw new InvalidOperationException("learning_symbol_verified_mismatch");
+                        }
+                        // Exact known tokens map into the existing bounded demand
+                        // ledger only under the immutable keys-only policy pin.
+                        // Unknown tokens abstain and never borrow another ordinal.
+                        if (covered) ledger.RecordDemand(symbolicDataset.Id, ordinal, !answer.Verified);
+                        Emit(new { @event = "learning_symbol_answer", correlation_id = correlation, dataset = symbolicDataset.Id,
+                            token = args[3], verified = answer.Verified, label = answer.Text, source_sha256 = reference.SourceSha256,
+                            symbol_vocabulary_sha256 = reference.Symbols.VocabularySha256 });
                     }
                     return 0;
                 case "quiesce":
