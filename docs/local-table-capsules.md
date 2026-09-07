@@ -2,7 +2,8 @@
 
 The local table adapter compiles a finite owner-approved dataset into the existing
 CNU1-sealed CNB capsule, with exact labelled coverage. It accepts numeric keys
-0–255 and numeric values 0–65535. It does not infer missing rows or interpret prose.
+0–255 and numeric values 0–65535, or bounded exact symbolic keys and literal text
+labels. It does not infer missing rows or interpret prose.
 
 Configure `CNET_CAPSULE_DATA_ROOT` on the resident daemon to an existing absolute
 private directory. A dataset named `stock_levels` is read only from
@@ -36,7 +37,7 @@ newlines, NUL bytes, and source files over 4096 bytes.
 actual owner corrections and the latter for a policy-approved instrument or tool
 result. Neither declaration authenticates its producer. The trusted supervisor
 must separately authorize the dataset, source type, and publisher. The owner is
-responsible for the truth of supplied numbers. Do not feed CNET's own answers into
+responsible for the truth of supplied labels. Do not feed CNET's own answers into
 either source category. Integrity hashes and exact parser agreement do not prove
 external factual accuracy or third-party authenticity.
 
@@ -103,6 +104,44 @@ still abstains when its source has changed. Source-independent incumbent capsule
 continue serving. Reaching the inventory limit refuses further growth rather than
 discarding history automatically.
 
+## Symbolic sources
+
+The existing table asset also accepts this explicit source variant:
+
+```text
+CNET_LOCAL_SYMBOLS_V1
+dataset calibration
+authority verified_tool
+input_bits 8
+output_bits 16
+rows 2
+ALPHA	first label
+BETA	second label
+```
+
+Keys match `[A-Za-z0-9_.:-]{1,48}` and must be distinct and strictly ASCII-sorted.
+Labels are 1–128 literal printable ASCII bytes (32–126), including spaces,
+quotes and backslashes; tabs, controls and newlines inside labels refuse.
+All other bounds remain unchanged: 1–256 rows, total source at most 4096 bytes,
+exact headers/tab separators/final LF and private owner-controlled files.
+The compiler assigns each row `i -> i` and uses the same finite-row BTN,
+contract, exact coverage and `.05` certification margin. The keys and labels
+travel inside the existing schema-2 `frontend.cvfa`; this is not another capsule
+package. Older readers refuse the unknown source magic rather than degrading it.
+
+`symbol calibration ALPHA` selects the fresh full-source-bound capsule, executes
+it, and renders `first label` only when the returned ordinal equals the requested
+row and the terminal unit is exactly the selected unit. Unknown, malformed,
+wrong-source-kind and stale queries abstain terminally; residual teachers and
+semantic routing do not answer over that refusal. Labels are data, never code,
+prompts or commands. The explicit `data calibration 0` interface still returns
+numeric `0`; numeric query behavior is not silently changed to text.
+
+The managed policy additionally pins the keys-only vocabulary SHA256 before
+initialization, preserving demand ordinals across label updates. See
+[private bounded learning](AUTONOMOUS_LEARNING.md). `make learning_symbol`
+exercises native, managed, actual private-daemon and pinned real-source boundaries.
+
 Certification keeps the `.05` robust margin and checks every supplied row. Sparse
 coverage refuses missing keys. All-domain verification measures fidelity on the
 supplied finite rows and refusal on omitted keys; unseen-row capability is WITHHELD.
@@ -152,10 +191,22 @@ has a version header, snapshot hash, dataset, source hash, `results 256`, exactl
 256 ordered result rows, and `end`. Each result row is `KEY<TAB>1<TAB>VALUE` or
 `KEY<TAB>0<TAB>-`. There is no worker-provided approval flag.
 
+Symbolic snapshots use `CNET_SYMBOL_SNAPSHOT_EVAL_V1` (non-snapshot observations
+use `CNET_SYMBOL_NATIVE_EVAL_V1`) and keep all 256 encoded rows. Before `end`,
+they add `symbols N`, all `TOKEN<TAB>VERIFIED<TAB>ACTUAL_LABEL_OR_DASH` rows in
+source order, and `unknown TOKEN<TAB>0<TAB>-`. The sentinel is the first absent
+token in `cnet_unknown_0` through `cnet_unknown_256`. It is one negative text
+probe, not exhaustive text OOD evidence. The worker observes actual native text
+queries; it never copies expected labels into successful observations.
+Symbolic reports are bounded to 16384 bytes; managed numeric receipts retain
+their existing 8192-byte bound. Numeric-only, wrong/constant-decoder, mislabeled,
+reordered and incorrectly covered symbolic reports cannot authorize activation.
+
 The managed `LearningTableEvaluation` factory independently compares every result
 to `LocalTableReference`, including verified zero versus refusal, and binds the
 receipt to the exact private output bytes. The caller must also require clean
 child exit, unchanged source identity before/after evaluation, and the actual
 staged identity. Native growth checks preserve old sealed obligations. Only then
-may a separate persisted activation intent be sent. Runtime installation,
-supervisor orchestration and actual 72-hour acceptance remain unfinished.
+may a separate persisted activation intent be sent. Runtime installation and
+bounded supervisor orchestration are covered by the managed integration gates;
+actual 72-hour acceptance remains WITHHELD.

@@ -956,8 +956,9 @@ static int cd_ask(CdState *S, const char *q, CdReply *out) {
     /* Explicit typed intent belongs to the capsule authority, including a
        refusal. Residual prose must not answer over a failed capsule guard. */
     char capsule_intent[160];
-    int data_query = !strncmp(q,"data",4) && (!q[4] || isspace((unsigned char)q[4]));
-    int intent_status = S->capsule_configured && !data_query ?
+    int table_query = (!strncmp(q,"data",4) && (!q[4] || isspace((unsigned char)q[4]))) ||
+        (!strncmp(q,"symbol",6) && (!q[6] || isspace((unsigned char)q[6])));
+    int intent_status = S->capsule_configured && !table_query ?
         cnet_semantic_capsule_intent(q, capsule_intent, sizeof capsule_intent) : 0;
     int source_fact = !strncmp(q,"source-fact ",12) || !strcmp(q,"source-fact");
     if(source_fact) {
@@ -974,7 +975,7 @@ static int cd_ask(CdState *S, const char *q, CdReply *out) {
         out->miss = 1;
         return 0;
     }
-    if (data_query || !strncmp(q, "capsule ", 8) || intent_status == 1) {
+    if (table_query || !strncmp(q, "capsule ", 8) || intent_status == 1) {
         out->capsule_handled = 1;
         const char *typed = intent_status == 1 ? capsule_intent : q;
         const char *error = S->capsule_configured ? "capsule_runtime_unavailable" : "capsule_directory_not_configured";
@@ -986,7 +987,7 @@ static int cd_ask(CdState *S, const char *q, CdReply *out) {
         snprintf(out->skill, sizeof out->skill, "%s", ok ? "capsule_core" : "capsule_refusal");
         if (!ok) snprintf(out->answer, sizeof out->answer, "ABSTAIN: %s", lease ? cr.reason : error);
         const char *demand = getenv("CNET_CAPSULE_DEMAND_DIR");
-        if (!data_query && !ok && lease && demand && (!strcmp(cr.reason, "unknown_or_ambiguous_interface") ||
+        if (!table_query && !ok && lease && demand && (!strcmp(cr.reason, "unknown_or_ambiguous_interface") ||
             !strcmp(cr.reason, "no_covered_certified_plan"))) {
             int queued = cnet_capsule_demand_note(demand, typed);
             size_t used = strlen(out->answer);

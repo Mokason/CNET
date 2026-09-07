@@ -32,12 +32,39 @@ static int number(const char **p,unsigned max,char end,unsigned *value) {
     if(*s!=end||n>max)return -1;
     *p=s+1;*value=n;return 0;
 }
+static int symbol_character(unsigned char c) {
+    return (c>='A'&&c<='Z')||(c>='a'&&c<='z')||(c>='0'&&c<='9')||
+        c=='_'||c=='.'||c==':'||c=='-';
+}
+static int symbol_row(const char **p,CnetCapsuleTable *t,unsigned row) {
+    const char *key=*p,*end=strchr(key,'\t');
+    size_t n=end?(size_t)(end-key):0;
+    if(!n||n>CNET_CAPSULE_SYMBOL_MAX_KEY)return -1;
+    for(size_t i=0;i<n;i++)if(!symbol_character((unsigned char)key[i]))return -1;
+    if(row){
+        size_t previous=t->symbol_key_lengths[row-1],common=n<previous?n:previous;
+        int order=memcmp(t->source+t->symbol_key_offsets[row-1],key,common);
+        if(order>0||(!order&&previous>=n))return -1;
+    }
+    t->symbol_key_offsets[row]=(unsigned short)(key-t->source);
+    t->symbol_key_lengths[row]=(unsigned char)n;
+    const char *label=end+1;end=strchr(label,'\n');n=end?(size_t)(end-label):0;
+    if(!n||n>CNET_CAPSULE_SYMBOL_MAX_LABEL)return -1;
+    for(size_t i=0;i<n;i++)if((unsigned char)label[i]<32||(unsigned char)label[i]>126)return -1;
+    t->symbol_label_offsets[row]=(unsigned short)(label-t->source);
+    t->symbol_label_lengths[row]=(unsigned char)n;
+    t->keys[row]=(unsigned char)row;t->values[row]=(unsigned short)row;
+    *p=end+1;return 0;
+}
 static int decode(const void *asset,size_t length,CnetCapsuleTable *t) {
     memset(t,0,sizeof *t);
     if(!asset||!length||length>CNET_CAPSULE_TABLE_MAX_BYTES||memchr(asset,0,length))return -1;
     memcpy(t->source,asset,length);t->length=length;
     const char *p=t->source;
-    if(literal(&p,"CNET_LOCAL_TABLE_V1\ndataset "))return -1;
+    if(!strncmp(p,"CNET_LOCAL_SYMBOLS_V1\n",22)){
+        t->symbolic=1;
+        if(literal(&p,"CNET_LOCAL_SYMBOLS_V1\ndataset "))return -1;
+    } else if(literal(&p,"CNET_LOCAL_TABLE_V1\ndataset "))return -1;
     const char *end=strchr(p,'\n');size_t n=end?(size_t)(end-p):0;
     if(!n||n>=sizeof t->dataset)return -1;
     memcpy(t->dataset,p,n);p=end+1;
@@ -49,6 +76,7 @@ static int decode(const void *asset,size_t length,CnetCapsuleTable *t) {
        literal(&p,"input_bits 8\noutput_bits 16\nrows ")||
        number(&p,256,'\n',&t->count)||!t->count)return -1;
     for(unsigned i=0;i<t->count;i++){
+        if(t->symbolic){if(symbol_row(&p,t,i))return -1;continue;}
         unsigned x,y;
         if(number(&p,255,'\t',&x)||number(&p,65535,'\n',&y)||(i&&x<=t->keys[i-1]))return -1;
         t->keys[i]=(unsigned char)x;t->values[i]=(unsigned short)y;
@@ -60,6 +88,28 @@ static int decode(const void *asset,size_t length,CnetCapsuleTable *t) {
     snprintf(t->output.tag,sizeof t->output.tag,"data_%.22s_val",t->sha256);
     snprintf(t->unit,sizeof t->unit,"table_%.56s",t->sha256);
     return 0;
+}
+int cnet_capsule_table_symbol_index(const CnetCapsuleTable *t,const char *token,unsigned *row) {
+    if(row)*row=0;
+    if(!t||!t->symbolic||!token||!row)return -1;
+    size_t n=strnlen(token,CNET_CAPSULE_SYMBOL_MAX_KEY+1);
+    if(!n||n>CNET_CAPSULE_SYMBOL_MAX_KEY)return -1;
+    for(size_t i=0;i<n;i++)if(!symbol_character((unsigned char)token[i]))return -1;
+    for(unsigned i=0;i<t->count;i++)if(n==t->symbol_key_lengths[i]&&
+        !memcmp(token,t->source+t->symbol_key_offsets[i],n)){*row=i;return 0;}
+    return -1;
+}
+int cnet_capsule_table_key_at(const CnetCapsuleTable *t,unsigned row,char *text,size_t cap) {
+    if(text&&cap)text[0]=0;
+    if(!t||!t->symbolic||row>=t->count||!text||cap<=t->symbol_key_lengths[row])return -1;
+    size_t n=t->symbol_key_lengths[row];
+    memcpy(text,t->source+t->symbol_key_offsets[row],n);text[n]=0;return 0;
+}
+int cnet_capsule_table_render(const CnetCapsuleTable *t,unsigned row,unsigned value,char *text,size_t cap) {
+    if(text&&cap)text[0]=0;
+    if(!t||!t->symbolic||row>=t->count||value!=row||!text||cap<=t->symbol_label_lengths[row])return -1;
+    size_t n=t->symbol_label_lengths[row];
+    memcpy(text,t->source+t->symbol_label_offsets[row],n);text[n]=0;return 0;
 }
 /* Ancestors are traversed without symlinks; the configured root itself is
  * owner-private. Shared system ancestors such as /tmp need not be owned. */

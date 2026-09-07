@@ -742,7 +742,8 @@ static int cell_search(CnetCapsuleCore *c,Port pin,Port goal,const double *input
 refuse:
     memset(r,0,sizeof *r);snprintf(r->reason,sizeof r->reason,"cell_execution_refused");return -1;
 }
-static int finish_answer(CnetCapsuleCore *c,CnetCapsuleCoreReply *r,char *text,size_t cap) {
+static int finish_answer(CnetCapsuleCore *c,CnetCapsuleCoreReply *r,char *text,size_t cap,
+                         const CnetCapsuleTable *symbol_table,unsigned symbol_row) {
     char units[sizeof r->units];memcpy(units,r->units,sizeof units);
     char *save=NULL;CnetCapsuleEvidence *terminal=NULL;
     for(char *unit=strtok_r(units,",",&save);unit;unit=strtok_r(NULL,",",&save)){
@@ -751,7 +752,15 @@ static int finish_answer(CnetCapsuleCore *c,CnetCapsuleCoreReply *r,char *text,s
         CnetCapsuleTable *table=find_table(c,unit);
         if(table&&cnet_capsule_table_fresh(table,getenv("CNET_CAPSULE_DATA_ROOT")))goto refused;
     }
-    if(text) {
+    if(symbol_table){
+        /* Only the explicit symbol alias enables this decoder. It must be
+         * the selected full-source-bound unit, not a different terminal or
+         * another in-range ordinal that happens to have a printable label. */
+        char checked[CNET_CAPSULE_SYMBOL_MAX_LABEL+1];
+        if(r->hops!=1||strcmp(r->units,symbol_table->unit)||
+           cnet_capsule_table_render(symbol_table,symbol_row,r->value,
+                                    text?text:checked,text?cap:sizeof checked))goto refused;
+    } else if(text) {
         if(terminal){if(cnet_capsule_evidence_render(terminal,r->value,text,cap))goto refused;}
         else {int n=snprintf(text,cap,"%u",r->value);if(n<0||(size_t)n>=cap)goto refused;}
     }
@@ -760,19 +769,24 @@ refused:
     if(text&&cap)text[0]=0;
     memset(r,0,sizeof *r);snprintf(r->reason,sizeof r->reason,"source_freshness_or_render_refused");return -1;
 }
-static int table_request(CnetCapsuleCore *c,const char *request,char typed[128]) {
-    char dataset[32],key[16],extra,canonical[80];unsigned value=0;
-    if(sscanf(request,"data %31s %15s %c",dataset,key,&extra)!=2||!cnet_capsule_table_dataset(dataset))return -1;
-    if(!key[0]||(key[0]=='0'&&key[1]))return -1;
-    for(const char *p=key;*p;p++){
-        if(*p<'0'||*p>'9'||value>25)return -1;
-        value=value*10+(unsigned)(*p-'0');
+static int table_request(CnetCapsuleCore *c,const char *request,int symbolic,char typed[128],
+                         const CnetCapsuleTable **selected,unsigned *row) {
+    char dataset[32],key[CNET_CAPSULE_SYMBOL_MAX_KEY+1],extra,canonical[96];unsigned value=0;
+    if(sscanf(request,symbolic?"symbol %31s %48s %c":"data %31s %48s %c",dataset,key,&extra)!=2||
+       !cnet_capsule_table_dataset(dataset))return -1;
+    if(!symbolic){
+        if(!key[0]||(key[0]=='0'&&key[1]))return -1;
+        for(const char *p=key;*p;p++){
+            if(*p<'0'||*p>'9'||value>25)return -1;
+            value=value*10+(unsigned)(*p-'0');
+        }
+        if(value>255)return -1;
     }
-    if(value>255)return -1;
-    snprintf(canonical,sizeof canonical,"data %s %u",dataset,value);
+    snprintf(canonical,sizeof canonical,"%s %s %s",symbolic?"symbol":"data",dataset,key);
     if(strcmp(canonical,request))return -1;
     CnetCapsuleTable current;
     if(cnet_capsule_table_read(getenv("CNET_CAPSULE_DATA_ROOT"),dataset,&current,NULL,0))return -1;
+    if(symbolic&&cnet_capsule_table_symbol_index(&current,key,&value))return -1;
     const CnetCapsuleTable *matched=NULL;
     for(size_t i=0;i<c->evidence_count;i++){
         const CnetCapsuleTable *table=c->evidence[i].table;
@@ -782,6 +796,7 @@ static int table_request(CnetCapsuleCore *c,const char *request,char typed[128])
         }
     }
     if(!matched)return -1;
+    if(symbolic){*selected=matched;*row=value;}
     snprintf(typed,128,"capsule %s %s %u",matched->input.tag,matched->output.tag,value);
     return 0;
 }
@@ -794,10 +809,11 @@ static int ask_mode(CnetCapsuleCore *c,const char *request,const CnetCoreCell *c
     if(text&&cap)text[0]=0;
     memset(r, 0, sizeof *r);
     snprintf(r->reason, sizeof r->reason, "invalid_typed_request");
-    char typed[128];
-    if(c&&request&&!strncmp(request,"data",4)&&(!request[4]||isspace((unsigned char)request[4]))){
-        if(table_request(c,request,typed)){
-            snprintf(r->reason,sizeof r->reason,"data_unknown_stale_or_invalid");return -1;
+    char typed[128];const CnetCapsuleTable *symbol_table=NULL;unsigned symbol_row=0;
+    int symbolic=request&&!strncmp(request,"symbol",6)&&(!request[6]||isspace((unsigned char)request[6]));
+    if(c&&request&&(symbolic||(!strncmp(request,"data",4)&&(!request[4]||isspace((unsigned char)request[4]))))){
+        if(table_request(c,request,symbolic,typed,&symbol_table,&symbol_row)){
+            snprintf(r->reason,sizeof r->reason,"%s_unknown_stale_or_invalid",symbolic?"symbol":"data");return -1;
         }
         request=typed;
     }
@@ -818,7 +834,7 @@ static int ask_mode(CnetCapsuleCore *c,const char *request,const CnetCoreCell *c
     }
     CoreBudget budget; budget_init(&budget, 65536);
     int rc=cell?cell_search(c,pin,pout,in,cell,generation,r,&budget,1):search(c,pin,pout,in,r,&budget,1);
-    return rc?rc:finish_answer(c,r,text,cap);
+    return rc?rc:finish_answer(c,r,text,cap,symbol_table,symbol_row);
 }
 int cnet_capsule_core_ask(CnetCapsuleCore *c,const char *request,CnetCapsuleCoreReply *r){return ask_mode(c,request,NULL,0,r,NULL,0);}
 int cnet_capsule_core_ask_cell(CnetCapsuleCore *c,const char *request,const CnetCoreCell *cell,uint64_t generation,CnetCapsuleCoreReply *r){
