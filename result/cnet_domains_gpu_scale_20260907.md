@@ -99,18 +99,24 @@ The post-code-commit repeat is
 Existing Linux-platform analyzer and native build warnings remain; tests passing
 does not mean the whole repository is warning-clean.
 
-## 3. AMD worker/controller qualification — PARTIAL, allocator WITHHELD
+## 3. AMD worker qualification — PASS; useful allocator gain WITHHELD
 
 Current private HIP worker builds and **22 CPU boundary cases passed**. Allocator
 CPU/parser/checkpoint/gate tests and all three AMD worker executable builds also
 passed. Build/CPU results are not actual-device qualification.
 
-Both discrete GPUs continued hosting live work. A final read-only snapshot showed
-GPU0 at 100% and GPU1 at 19% use, with 3,947,483,136 and 8,089,628,672 VRAM bytes used.
-No quiet two-device window was observed. The owner was asked whether brief bounded
-tests may run concurrently; no answer had arrived. No GPU test was launched,
-no process was stopped and no device was reset or reserved. Current hardening's
-actual-device and physical suspend/resume qualification remain WITHHELD.
+Both discrete GPUs continued hosting live work. After the owner explicitly
+approved concurrent execution, the prepared production-worker and allocator
+numerical gates passed on devices 0 and 1, taking 0.67 and 0.43 seconds respectively.
+The production fixture passed frozen transfer and cancellation/restart; allocator
+CPU/GPU maximum absolute error was 2.98023224e-08 on each device, below the unchanged
+1e-6 threshold. All completed workers returned valid 192-byte receipts and exited 0.
+Six monitored services retained their PIDs/start times/restart counts, four HTTP
+health endpoints returned 200, and post-test VRAM matched the pre-test snapshots.
+No service was stopped and no device was reset or reserved. These are finite
+numerical/lifecycle fixtures, not sustained throughput or service-latency tests.
+Physical suspend/resume and forced in-flight GPU fault qualification remain
+WITHHELD. See the [actual-device results and exact receipts](cnet_gpu_qualification_20260907.md).
 
 The existing learned allocator's frozen failed confirmation remains unchanged:
 coverage 0.064453125 vs demand/cost 0.06640625, gain −0.001953125, paired-95% lower
@@ -131,7 +137,8 @@ Build/CPU qualification receipt directory:
 `f6740f0bd5afc4ef54b50078eef07e144e67eae5da8b5d9c0775e12b43261280`;
 `build-and-cpu-gates.log` SHA256
 `cd376da57409c9c619486929052ce8d89c8fb84c2574690e6276a8b823a05367`.
-The report contains the exact prepared bounded two-device commands. The stale
+That earlier report preserves the pre-authorization state and prepared commands;
+the linked actual-device report records their subsequent execution. The stale
 worker-limits section in `allocator_contract.md` now describes the already
 implemented BOOTTIME/thread-pidfd/stdio guards accurately; no stronger device
 qualification is inferred from that documentation correction.

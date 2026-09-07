@@ -1,0 +1,33 @@
+production-worker.log
+{"event":"worker_started","pid":395519,"device":0,"mode":1,"timeout_ms":30000}
+{"event":"worker_started","pid":395520,"device":1,"mode":1,"timeout_ms":30000}
+{"event":"worker_completed","pid":395519,"device":0,"valid":1,"exit":0,"signal":0,"bytes":192,"elapsed_ms":234}
+{"event":"worker_completed","pid":395520,"device":1,"valid":1,"exit":0,"signal":0,"bytes":192,"elapsed_ms":233}
+{"event":"worker_started","pid":395728,"device":1,"mode":2,"timeout_ms":30000}
+{"event":"worker_completed","pid":395728,"device":1,"valid":1,"exit":0,"signal":0,"bytes":192,"elapsed_ms":224}
+{"event":"worker_started","pid":395751,"device":0,"mode":1,"timeout_ms":30000}
+{"event":"worker_cancelled","pid":395751,"device":0,"elapsed_ms":0}
+{"event":"worker_started","pid":395752,"device":0,"mode":2,"timeout_ms":30000}
+{"event":"worker_completed","pid":395752,"device":0,"valid":1,"exit":0,"signal":0,"bytes":192,"elapsed_ms":219}
+DUAL_GPU_WORKER_PASS devices=0,1 max_jobs=2 frozen_transfer=1 cancellation_restart=1 fault_injections=0 eval_max_abs=0 output=/tmp/cnet-gpu-actual-20260907-MNJxgT/production-worker.native-weights
+production-worker.time
+elapsed_s=0.67
+user_s=0.71
+system_s=0.14
+maxrss_kib=220556
+exit=0
+allocator-worker.log
+{"event":"worker_started","pid":395972,"device":0,"mode":3,"timeout_ms":30000}
+{"event":"worker_started","pid":395973,"device":1,"mode":3,"timeout_ms":30000}
+{"event":"worker_completed","pid":395972,"device":0,"valid":1,"exit":0,"signal":0,"bytes":192,"elapsed_ms":224}
+{"event":"worker_completed","pid":395973,"device":1,"valid":1,"exit":0,"signal":0,"bytes":192,"elapsed_ms":224}
+{"event":"worker_started","pid":395996,"device":1,"mode":4,"timeout_ms":30000}
+{"event":"worker_completed","pid":395996,"device":1,"valid":1,"exit":0,"signal":0,"bytes":192,"elapsed_ms":214}
+CORE_ALLOCATOR_WORKER_NUMERIC_PASS device=0 rows=16 parity=2.98023224e-08 gain_claim=WITHHELD
+CORE_ALLOCATOR_WORKER_NUMERIC_PASS device=1 rows=16 parity=2.98023224e-08 gain_claim=WITHHELD
+allocator-worker.time
+elapsed_s=0.43
+user_s=0.52
+system_s=0.10
+maxrss_kib=220320
+exit=0

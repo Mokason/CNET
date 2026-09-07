@@ -42,7 +42,7 @@ the owner's explicit acceptance of concurrent-service latency impact; no service
 stops, clock changes, GPU resets or lowered floors. A user choice was requested
 asynchronously while independent adapter/scale work proceeds.
 
-- [ ] Qualify current worker bytes on both AMD devices when permitted, using
+- [x] Qualify current worker bytes on both AMD devices when permitted, using
   existing bounded worker/allocator gates and preserved receipts.
 - [x] Distinguish successful GPU execution/parity from useful-controller gain.
   Evaluate existing chronological residual evidence before proposing another fit;
@@ -50,11 +50,14 @@ asynchronously while independent adapter/scale work proceeds.
 - [x] Keep allocator inactive unless its unchanged improvement gate passes.
   Record failed, unrun and unsupported qualification explicitly.
 
-Current builds and 22 CPU worker-boundary cases passed. Both discrete GPUs
-remained occupied; owner concurrency choice is unanswered, so no GPU jobs ran.
-The earlier learned gate remains failed, and available exposed pilot fixtures
+Current builds and 22 CPU worker-boundary cases passed. After the owner explicitly
+approved concurrent execution, both prepared actual-device gates passed on AMD
+devices 0 and 1: production worker in 0.67 seconds, allocator numerical fixture in
+0.43 seconds. Pins were unchanged; monitored services retained their identities
+and restart counts. See the [actual-device receipt](../result/cnet_gpu_qualification_20260907.md).
+The earlier learned gain gate remains failed, and available exposed pilot fixtures
 provide no eligible chronological future-demand data or residual headroom for
-another defensible fit. Actual-device qualification and useful gain are not done.
+another defensible fit. Useful gain and physical suspend/resume remain WITHHELD.
 
 ### 4. Actual resident-capsule scale measurements
 
