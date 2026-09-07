@@ -111,6 +111,12 @@ class ChronologyAuditTests(unittest.TestCase):
         raw = b'{"x":1e9999}\n' + b'[' * 2000 + b']' * 2000 + b'\n'
         self.assertEqual(self.scan(raw)["invalid_json"], 2)
 
+    def test_nesting_bound_is_explicit_and_ignores_quoted_brackets(self):
+        raw = b'[' * 65 + b']' * 65 + b'\n'
+        self.assertEqual(self.scan(raw)["invalid_json"], 1)
+        self.assertEqual(self.scan(b'[' * 64 + b']' * 64 + b'\n')["nonobjects"], 1)
+        self.assertEqual(self.scan(b'{"query":"' + b'[' * 100 + b'\\\"}"}\n')["objects"], 1)
+
     def test_boottime_failure_has_no_fallback(self):
         with patch.object(audit.time, "clock_gettime", side_effect=OSError("clock failed")):
             with self.assertRaisesRegex(ValueError, "boottime_unavailable"):

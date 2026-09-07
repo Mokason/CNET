@@ -44,6 +44,25 @@ def unique_pairs(pairs):
 
 def count_object(raw, report, previous):
     try:
+        # Decoder recursion thresholds vary between Python versions. Bound input
+        # structure before parsing; braces inside JSON strings do not add depth.
+        depth, quoted, escaped = 0, False, False
+        for byte in raw:
+            if quoted:
+                if escaped:
+                    escaped = False
+                elif byte == 92:
+                    escaped = True
+                elif byte == 34:
+                    quoted = False
+            elif byte == 34:
+                quoted = True
+            elif byte in (91, 123):
+                depth += 1
+                if depth > 64:
+                    raise ValueError("json_depth")
+            elif byte in (93, 125):
+                depth -= 1
         row = json.loads(raw.decode("utf-8"), object_pairs_hook=unique_pairs,
                          parse_constant=reject_constant, parse_float=finite_float)
     except (ValueError, RecursionError):
