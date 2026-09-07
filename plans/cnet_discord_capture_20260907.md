@@ -54,11 +54,12 @@ Absent/invalid capture policy refuses startup when capture is configured.
   private storage, size limits, failure propagation, metadata-only readiness.
 - [x] Durable journal and integration with the existing bridge; test success,
   failure and unknown outcomes without treating answers as correctness labels.
-- [ ] Fresh adversarial review and focused regression, then versioned bridge-only
+- [x] Fresh adversarial review and focused regression, then versioned bridge-only
   rollout with preserved prior script/service and an explicit rollback command.
-- [ ] Verify live identity, READY, private journal and unchanged core services;
+- [x] Verify live identity, READY, private journal and unchanged core services;
   no fabricated Discord messages or synthetic demand in the live store.
-- [ ] Inspect real demand readiness. Freeze explicit capability mappings and
+- [x] Inspect real demand readiness: empty new stream at rollout; no fitting.
+- [ ] Freeze explicit capability mappings and
   independent verifier receipts before scoring; exclude unknown mappings.
 - [ ] Whole chronological development episodes; identical budgets, initial
   state and action spaces for strong deterministic controls. Require useful
@@ -114,3 +115,8 @@ invocation. This intentional safety difference applies to all bridge traffic.
 Its existing response formatter is not a correctness verifier. The installed
 Python/WebSocket/native runtime remains trusted; this is a scoped review, not
 a whole-host dependency or vulnerability clearance.
+
+Bridge-only deployment and initial readiness are recorded in the
+[measured rollout report](../result/cnet_discord_capture_20260907.md). The private
+collector is active; future mapping, development and confirmation remain
+evidence prerequisites, with no automatic training task scheduled.

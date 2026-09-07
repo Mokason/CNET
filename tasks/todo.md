@@ -7,14 +7,16 @@ Evidence, scope and dependencies: [plan.md](plan.md).
 - [x] Bounded metadata audit and independent legacy-source eligibility review
 - [x] Parser/identity/privacy regression tests and existing allocator CPU tests
 - [x] Owner-designated ingress: existing Discord bridge, owner-only private DM
-- [ ] Durable capture, failure/dedup tests, scoped bridge rollout and readiness
+- [x] Durable capture, failure/dedup tests, scoped bridge rollout and readiness
+- [ ] Genuine demand, explicit typed mappings and independent verifier receipts
 - [ ] Development-only opportunity check against strong, equally budgeted controls
 - [ ] Bounded AMD fitting and fresh independent confirmation under unchanged floors
 
 The [readiness report](../result/cnet_chronological_allocator_20260907.md) records
 the legacy evidence prerequisite. Capture work follows the
 [approved scoped plan](../plans/cnet_discord_capture_20260907.md); the learned
-allocator remains inactive.
+allocator remains inactive. The [rollout report](../result/cnet_discord_capture_20260907.md)
+records the live collector and initially empty private stream.
 
 ## Active unattended-learning sequence
 

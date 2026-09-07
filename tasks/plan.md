@@ -13,6 +13,9 @@ complete; existing mixed/censored logs do not qualify. The owner approved the
 existing Discord bridge's owner-only private DM capture, then development
 headroom, bounded training and fresh confirmation. The scoped capture and
 bridge-only rollout contract is [here](../plans/cnet_discord_capture_20260907.md).
+Capture is now live; its [rollout evidence](../result/cnet_discord_capture_20260907.md)
+records an initially empty stream. Genuine requests and independent mappings/
+verification must precede development scoring; no automatic fitting is scheduled.
 See [measured readiness results](../result/cnet_chronological_allocator_20260907.md).
 
 ## Active: unattended learning and measured core improvement
