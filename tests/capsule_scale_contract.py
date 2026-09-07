@@ -158,17 +158,40 @@ class CapsuleScaleContract(unittest.TestCase):
             children.append(child)
             return child
 
-        def denied(path, *args, **kwargs):
-            if str(path).startswith("/proc/") and str(path).endswith("/io"):
-                raise PermissionError(errno.EACCES, "deterministic live accounting failure")
-            return real_read(path, *args, **kwargs)
+        for missing in (False, True):
+            def denied(path, *args, **kwargs):
+                if str(path).startswith("/proc/") and str(path).endswith("/io"):
+                    if missing:
+                        return ""
+                    raise PermissionError(errno.EACCES, "deterministic live accounting failure")
+                return real_read(path, *args, **kwargs)
 
-        with tempfile.TemporaryDirectory(prefix="cnet-scale-accounting-test-") as directory, \
-                patch.object(subprocess, "Popen", side_effect=launch), patch.object(Path, "read_text", denied):
-            with self.assertRaisesRegex(RuntimeError, "child write accounting unavailable"):
-                runner.run_child(["/usr/bin/sleep", "5"], Path(directory), "denied", 2)
-        self.assertEqual(len(children), 1)
-        self.assertIsNotNone(children[0].poll(), "CAPSULE_SCALE_ACCOUNTING_RED live denied child was not reaped")
+            with self.subTest(missing=missing), tempfile.TemporaryDirectory(prefix="cnet-scale-accounting-test-") as directory, \
+                    patch.object(subprocess, "Popen", side_effect=launch), patch.object(Path, "read_text", denied):
+                with self.assertRaisesRegex(RuntimeError, "child write accounting unavailable"):
+                    runner.run_child(["/usr/bin/sleep", "5"], Path(directory), "denied", 2)
+            self.assertIsNotNone(children[-1].poll(), "CAPSULE_SCALE_ACCOUNTING_RED live denied child was not reaped")
+        self.assertEqual(len(children), 2)
+
+    def test_missing_accounting_field_requires_confirmed_child_exit(self):
+        specification = importlib.util.spec_from_file_location("capsule_scale_runner", RUNNER)
+        runner = importlib.util.module_from_spec(specification)
+        specification.loader.exec_module(runner)
+        completed = Mock(pid=12345)
+        completed.poll.return_value = 0
+        live = Mock(pid=12346)
+        live.poll.return_value = None
+        for contents in ("", "rchar: 0\n"):
+            with self.subTest(contents=contents), patch.object(Path, "read_text", return_value=contents):
+                try:
+                    observed = runner.child_written_bytes(completed)
+                except RuntimeError as error:
+                    observed = str(error)
+                self.assertEqual(observed, 0,
+                                 "CAPSULE_SCALE_EMPTY_ACCOUNTING_RED completed child must reach post-exit checks")
+                completed.poll.assert_called()
+                with self.assertRaisesRegex(RuntimeError, "child write accounting unavailable"):
+                    runner.child_written_bytes(live)
 
     def test_sigterm_reaps_owned_new_session_child(self):
         self.check_terminated_runner(False)
@@ -250,18 +273,20 @@ sys.exit(runner.main())
         specification.loader.exec_module(runner)
         read_accounting = runner.child_written_bytes
 
-        def completed_accounting(process):
-            self.assertEqual(process.wait(timeout=2), 0)
-            with patch.object(Path, "read_text", side_effect=PermissionError(errno.EACCES, "completed race")):
-                return read_accounting(process)
+        for missing in (False, True):
+            def completed_accounting(process):
+                self.assertEqual(process.wait(timeout=2), 0)
+                fault = {"return_value": ""} if missing else {"side_effect": PermissionError(errno.EACCES, "completed race")}
+                with patch.object(Path, "read_text", **fault):
+                    return read_accounting(process)
 
-        with tempfile.TemporaryDirectory(prefix="cnet-scale-completed-test-") as directory, \
-                patch.object(runner, "child_written_bytes", side_effect=completed_accounting) as accounting, \
-                patch.object(runner, "disk_bytes", side_effect=[0, runner.DISK_LIMIT + 1]) as disk:
-            self.assertEqual(runner.run_child(["/usr/bin/sleep", ".05"], Path(directory), "completed", 2),
-                             (None, "disk_budget"))
-            accounting.assert_called_once()
-            self.assertEqual(disk.call_count, 2)
+            with self.subTest(missing=missing), tempfile.TemporaryDirectory(prefix="cnet-scale-completed-test-") as directory, \
+                    patch.object(runner, "child_written_bytes", side_effect=completed_accounting) as accounting, \
+                    patch.object(runner, "disk_bytes", side_effect=[0, runner.DISK_LIMIT + 1]) as disk:
+                self.assertEqual(runner.run_child(["/usr/bin/sleep", ".05"], Path(directory), "completed", 2),
+                                 (None, "disk_budget"))
+                accounting.assert_called_once()
+                self.assertEqual(disk.call_count, 2)
 
 
 if __name__ == "__main__":

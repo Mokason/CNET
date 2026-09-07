@@ -59,15 +59,17 @@ def child_limits():
 def child_written_bytes(process):
     # Linux process accounting bounds writes without repeatedly walking the
     # fixture during a latency sample. Fixed benchmark children do not fork.
+    failure = None
     try:
         for line in Path("/proc/" + str(process.pid) + "/io").read_text().splitlines():
             if line.startswith("wchar:"):
                 return int(line.split()[1])
     except OSError as error:
-        if process.poll() is not None:
-            return 0  # Exact child completed; post-exit disk/status checks remain.
-        raise RuntimeError("child write accounting unavailable") from error
-    raise RuntimeError("child write accounting unavailable")
+        failure = error
+    if process.poll() is not None:
+        return 0  # Exact child completed; post-exit disk/status checks remain.
+    detail = "missing_wchar" if failure is None else type(failure).__name__ + ":errno=" + str(failure.errno)
+    raise RuntimeError("child write accounting unavailable: " + detail) from failure
 
 
 def run_child(command, artifact, label, units):
