@@ -96,6 +96,11 @@ dotnet list dotnet/CnetControlPlane.Tests/CnetControlPlane.Tests.csproj package 
 
 ## Outstanding scope — WITHHELD
 
+Later follow-up: owner-delegated [Unicode 17 source onboarding and private
+learning verification](cnet_unicode17_workload_20260907.md) closes the first
+real finite-table workload step below. The list records this earlier increment's
+boundary; broader adapters and permanent rollout remain outstanding.
+
 1. **Real workload and broader adapters.** Import is numeric-table onboarding,
    not arbitrary text learning. Tests use synthetic calibration fixtures. No
    approved production corpus was selected or ingested in this increment.

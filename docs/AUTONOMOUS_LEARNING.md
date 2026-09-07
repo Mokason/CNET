@@ -7,6 +7,12 @@ keys, including every required abstention. Exact persisted native operations
 govern staging, activation, probation and rollback. CNET answers never become
 training labels.
 
+A reproducible real-source example is the [Unicode 17 explicit case-change
+workload](../data/unicode17/README.md): two independently checked partial tables
+with exact source pins, license, an offline extractor and an end-to-end private
+learning gate. Its abstentions deliberately differ from Unicode's identity
+defaults; it is not a full text case converter.
+
 The learned allocator remains inactive after its failed improvement gate.
 `allocator_enabled=true` refuses. Completing a run budget does not certify
 learning gain or 72-hour acceptance. See the [plan](../plans/cnet_autonomous_learning_20260906.md)

@@ -4,6 +4,10 @@ Status: IN PROGRESS. Baseline `3457f5c`. Existing services, policy, ledger and
 dirty main checkout remain untouched. The owner requested proceeding with the
 five outstanding product areas, not relaxing any failed gate.
 
+Follow-up: the owner delegated corpus selection, and the [Unicode 17 workload](cnet_unicode17_workload_20260907.md)
+now passes real-source acquisition/coexistence in a disposable private deployment.
+This closes the bounded first-corpus step, not broader adapters or rollout.
+
 ## Sequence and acceptance
 
 1. **Independent live verification** (managed command, verifier, focused tests).
@@ -18,8 +22,8 @@ five outstanding product areas, not relaxing any failed gate.
    dataset authority, byte/hash/path limits and no overwrite or self-labeling.
    Verify malformed, unauthorized, duplicate and resource refusal before writes,
    then the real acquire/activate/verify path. Depends on 1 for live validation.
-   Choosing a useful real corpus remains an owner input; do not invent approval
-   or call synthetic fixtures production knowledge.
+   The owner subsequently delegated the first corpus choice; Unicode 17 is now
+   pinned and tested. Do not call synthetic fixtures production knowledge.
 3. **GPU worker hardening** (existing experimental worker boundary and tests).
    Add suspend-inclusive deadlines, parent/spawning-thread lifetime protection
    and removal of writable inherited output authority. RED tests precede fixes;
@@ -61,7 +65,8 @@ references do not override repository gates. Decisions stay in `plans/`.
 - [ ] Real-device regression of the changed GPU worker boundary
 - [ ] Bounded acceptance evidence preparation and refusal tests
 - [x] Combined regression, audit, documentation and reviewed commits for delivered slices
-- [ ] Owner-selected real workload and broader domain adapter certification
+- [x] Owner-delegated real finite-table workload selection and private certification
+- [ ] Broader domain adapter certification
 - [ ] Useful controller confirmation and guarded integration
 - [ ] Actual 72-hour acceptance (WITHHELD until elapsed time and criteria pass)
 - [ ] Deliberate production rollout
@@ -105,6 +110,7 @@ Final delivered-slice managed regression: **670 passed, 0 failed, 0 skipped**,
 13 seconds; native table daemon, capsule/coverage/accumulation/composition gates
 also passed. Production and test NuGet audits reported no known vulnerabilities.
 See `result/cnet_operational_expansion_20260907.md` for commands and exclusions.
-The continuous acceptance collector/checker, real approved workload, useful
-controller confirmation, actual 72-hour run and production rollout are still
-outstanding; the new live probe is only a prerequisite for that work.
+At that checkpoint, the real workload was also outstanding. Its bounded Unicode
+follow-up is now complete; the continuous acceptance collector/checker, broader
+adapters, useful controller confirmation, actual 72-hour run and production
+rollout are still outstanding.
