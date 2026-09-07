@@ -12,8 +12,8 @@ internal static class LearningCommand
         var correlation = Guid.NewGuid().ToString("N");
         try
         {
-            if (args.Length < 2 || args[0] is not ("inspect" or "initialize" or "status" or "pause" or "resume" or "ask" or "tick" or "run" or "quiesce")
-                || args.Length != (args[0] == "ask" ? 4 : 2))
+            if (args.Length < 2 || args[0] is not ("inspect" or "initialize" or "status" or "pause" or "resume" or "ask" or "verify" or "tick" or "run" or "quiesce")
+                || args.Length != (args[0] == "ask" ? 4 : args[0] == "verify" ? 3 : 2))
                 throw new ArgumentException("learning_command_usage");
             byte key = 0;
             if (args[0] == "ask" && (!LearningPolicy.IsId(args[2])
@@ -59,6 +59,29 @@ internal static class LearningCommand
             ledger.BindRuntime(native); ledger.BindManaged(running);
             switch (args[0])
             {
+                case "verify":
+                    var verifiedDataset = policy.Datasets.SingleOrDefault(d => d.Id == args[2])
+                        ?? throw new ArgumentException("learning_dataset_not_authorized");
+                    using (var sources = LearningFiles.Open(Path.Combine(workPath, "data")))
+                    using (var observer = new LearningAskClient(Path.Combine(root.FullPath, "ipc/ask.sock"), policy.WorkerSeconds))
+                    {
+                        var control = new LearningControlClient(native, Path.Combine(root.FullPath, "ipc/control.sock"), Math.Min(policy.WorkerSeconds, 60));
+                        LocalTableReference ReadSource()
+                        {
+                            sources.AssertPathIdentity();
+                            return LocalTableReference.Parse(sources.Read(verifiedDataset.Id + ".tsv", 4096), verifiedDataset);
+                        }
+                        var result = LearningLiveVerification.ObserveAsync(verifiedDataset, ReadSource, control.StatusAsync,
+                            (input, stop) => observer.AskAsync(verifiedDataset, input, stop), policy.WorkerSeconds, new LearningClock()).GetAwaiter().GetResult();
+                        running.Verify();
+                        Emit(new { @event = "learning_live_verification", correlation_id = correlation, dataset = verifiedDataset.Id,
+                            managed_sha256 = running.Sha256, native_sha256 = native.Sha256, policy_sha256 = policy.Sha256,
+                            source_sha256 = result.SourceSha256, active_sha256 = result.ActiveSha256, revision = result.Revision,
+                            boot = result.Boot, start_ns = result.StartNanoseconds, end_ns = result.EndNanoseconds,
+                            checked_keys = 256, correct_answers = result.CorrectAnswers, correct_abstentions = result.CorrectAbstentions,
+                            missing_answers = result.MissingAnswers, wrong_answers = result.WrongAnswers, passed = result.Passed });
+                        return result.Passed ? 0 : 2;
+                    }
                 case "pause": ledger.Pause(); Status(ledger, policy, correlation, "learning_paused"); return 0;
                 case "resume":
                     using (var work = LearningFiles.Open(workPath))

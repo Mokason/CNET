@@ -102,6 +102,7 @@ All commands use the same clean launch prefix above:
 | --- | --- |
 | `status DEPLOYMENT` | Structured pin, pause, job, pending-operation and durable-run status. Does not assert daemon health. |
 | `ask DEPLOYMENT DATASET KEY` | Actual daemon answer/abstention; records normalized demand, never answer-as-label. KEY is canonical decimal 0..255. |
+| `verify DEPLOYMENT DATASET` | Independently checks all 256 live answers/abstentions against the policy-authorized source. Creates no demand or jobs. Exit 0 requires exact coverage and abstention; missing/wrong answers exit 2. |
 | `tick DEPLOYMENT` | One serialized recovery/probe/acquisition cycle. Requires the owner lock. |
 | `pause DEPLOYMENT` | Persistently prevents new work; no healthy daemon required. A running owner observes it and performs safety cleanup. |
 | `resume DEPLOYMENT` | Requires no running owner, exact healthy native state and no pending/required rollback. Cannot restart a terminal run. |
@@ -113,6 +114,23 @@ requests are not automatically ingested. A standalone `tick` does not refresh a
 durable run heartbeat. Status uses a transactional ledger open, so observed
 clock epochs and detected clock failures can be persisted; it is not a forensic
 read-only database viewer.
+
+`verify` emits one bounded `learning_live_verification` JSON record containing
+installation/policy/source hashes, active native digest/revision, boot-time
+interval and four disjoint counts totaling 256: correct answers, correct
+abstentions, missing answers and wrong verified answers (including answers at
+omitted keys). Zero is a valid answer, not abstention. The full sweep has one
+`worker_seconds` deadline, including pending control/ASK exchanges; boot time
+is polled every 20 ms while waiting. Cleanup retains the fixed clients' child
+reaping and socket closure; this is not a hard real-time scheduling guarantee.
+Unknown transport, clock discontinuity, staged/uncertain native state or changed
+source/native endpoint identities refuse with no successful sweep receipt.
+An active supervisor can cause an identity-change refusal during a promotion;
+do not interpret it as proof of bad answers or silently drop it from acceptance
+history. Verification does not renew the learning budget, update its heartbeat,
+or certify a 72-hour run. It still opens the pinned ledger transactionally and
+the daemon may update ordinary transient query telemetry. No raw source rows
+are included in its result. The owner remains responsible for source truth.
 
 ## Private daemon and independent evidence
 
