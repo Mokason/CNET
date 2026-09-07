@@ -120,9 +120,12 @@ The owner launches a **separate private daemon**; these commands never restart
 or reconfigure a service. Keep its IPC and packs outside measured `work/`.
 Create an owner-private `packs/ROUTES.jsonl` appropriate to the private instance.
 The integration fixture uses one inert route
-`{"pattern":"fixture","pack":"fixture"}`. Launch with a cleared environment:
+`{"pattern":"fixture","pack":"fixture"}`. The working directory must also be
+the private deployment: the daemon reads some relative `config/` paths.
+A cleared environment alone does not isolate those reads. Launch with both:
 
 ```sh
+cd -- "$LEARNING_DEPLOYMENT" && \
 env -i \
   CNET_PACKS_ROOT="$LEARNING_DEPLOYMENT/packs" \
   CNET_MINIMAL_ROOT="$LEARNING_DEPLOYMENT" \
