@@ -2,6 +2,17 @@
 
 Evidence, scope and dependencies: [plan.md](plan.md).
 
+## Current chronological allocator experiment
+
+- [x] Bounded metadata audit and independent legacy-source eligibility review
+- [x] Parser/identity/privacy regression tests and existing allocator CPU tests
+- [ ] Owner-designated trusted request ingress or eligible chronological trace
+- [ ] Development-only opportunity check against strong, equally budgeted controls
+- [ ] Bounded AMD fitting and fresh independent confirmation under unchanged floors
+
+The [readiness report](../result/cnet_chronological_allocator_20260907.md) records
+the evidence prerequisite. No capture service or learned allocator was activated.
+
 ## Active unattended-learning sequence
 
 Contract: [unattended learning](../plans/cnet_autonomous_learning_20260906.md).

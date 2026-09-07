@@ -4,6 +4,16 @@ This file is the current task queue, not a replay of old implementation steps.
 Decision history remains in [plans/](../plans/). Current documentation starts at
 [docs/INDEX.md](../docs/INDEX.md).
 
+## Current experiment: chronological allocator evidence
+
+The owner requested the new chronological experiment after dual-AMD worker
+qualification. Its [ordered contract](../plans/cnet_chronological_allocator_20260907.md)
+starts at `9e74a7e`. The bounded legacy audit and independent source review are
+complete; existing mixed/censored logs do not qualify. Next is an owner-designated
+trusted request ingress or eligible trace, then development headroom, bounded
+training and fresh confirmation. No live capture/deployment is inferred.
+See [measured readiness results](../result/cnet_chronological_allocator_20260907.md).
+
 ## Active: unattended learning and measured core improvement
 
 The owner authorized all six proposed stages. The implementation contract is
