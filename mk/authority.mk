@@ -322,6 +322,18 @@ learning_managed:
 learning_daemon: cnetd $(BIN_DIR)/cnet_capsule_core learning_native $(BIN_DIR)/cnet_capsulectl
 	@python3 tests/test_table_daemon.py TableLearningDaemon.test_table_acquisition_refresh_rollback_and_restart
 
+.PHONY: learning_symbol capsule_distinct_scale_contract capsule_distinct_scale_bench
+learning_symbol: learning_daemon
+	@python3 tests/test_symbol_capsule.py
+	@python3 tests/test_unicode17_symbol_tables.py
+	dotnet test dotnet/CnetControlPlane.Tests/CnetControlPlane.Tests.csproj --no-restore \
+		--filter 'FullyQualifiedName~LearningSymbol|FullyQualifiedName~KnownFailedProbeSurvivesSubsequentControlFailureOrCancellation'
+capsule_distinct_scale_contract: $(BIN_DIR)/libcnet_capsule_core.so
+	@python3 tests/capsule_scale_contract.py
+# Opt-in measurement; kept outside default build and CI latency budgets.
+capsule_distinct_scale_bench: $(BIN_DIR)/libcnet_capsule_core.so
+	@python3 scripts/capsule_scale_bench.py
+
 .PHONY: source_evidence
 source_evidence: $(BIN_DIR)/cnet_source_capsule tests/test_source_evidence.c
 	@mkdir -p logs
