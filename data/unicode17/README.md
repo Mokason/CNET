@@ -95,3 +95,63 @@ This measures certified acquisition and coexistence of 114 explicit external
 facts plus 398 required abstentions, not held-out prediction gain, realistic
 demand performance, general text learning, GPU acceleration or 72-hour acceptance.
 All broader claims remain WITHHELD. See the [decision](../../plans/cnet_unicode17_workload_20260907.md).
+
+## Printable ASCII symbolic labels
+
+Two additional bounded sources use the same pinned raw excerpt and license:
+`ascii_category.symbols.tsv` and `ascii_bidi.symbols.tsv`. They cover exactly
+the 95 Unicode code points U+0020..U+007E. Each key is the literal Unicode name
+from field 1, replacing ASCII spaces with underscores and sorting the resulting
+ASCII tokens. Hyphens remain: `HYPHEN-MINUS`, not `HYPHEN_MINUS`.
+
+`ascii_category` returns the exact General_Category label from zero-based
+field 2; `ascii_bidi` returns the exact Bidi_Class label from field 4. Examples:
+`LATIN_CAPITAL_LETTER_A` maps to `Lu` / `L`, `DIGIT_ZERO` to `Nd` / `EN`, and
+`SPACE` to `Zs` / `WS`, respectively. These are named property lookups, not a
+bidirectional-text algorithm or recognition of arbitrary text. The literal
+token `SPACE` is covered; an actual space, `A`, aliases, alternate casing,
+controls, DEL and non-ASCII character names are not vocabulary members.
+Unknown tokens must abstain. There is no input normalization.
+
+Each source is canonical ASCII `CNET_LOCAL_SYMBOLS_V1`: dataset ID, authority
+`verified_tool`, `input_bits 8`, `output_bits 16`, `rows 95`, then sorted
+`TOKEN<TAB>LABEL` rows with a final LF. Input bit capacity refers to the bounded
+vocabulary index, not the original Unicode code point or UTF-8 bytes. Labels
+retain their literal spelling. These files are evidence for the existing
+capsule path, not another capsule packaging format.
+
+| Artifact | Bytes | SHA256 |
+| --- | ---: | --- |
+| `ascii_category.symbols.tsv` | 2076 | `f967c633b453c9e8a4d38ddf55484f16bce97d5fac6e60275e9adbe1484e848a` |
+| `ascii_bidi.symbols.tsv` | 2020 | `c3c00de586e292da4ad197624b3aaef598a8d170c27283b251a99ed9d4523759` |
+
+Both immutable vocabulary pins are
+`ba3fe8b2440a6065c04e714136c1ff742e7e7ab772902ff4558fe3b2699b6984`.
+This hashes **only** the 95 sorted ASCII tokens, each followed by LF: no header,
+labels, tabs or JSON. Changing a label changes the source digest, not the
+vocabulary digest. [The provenance JSON](ascii_symbol_tables.provenance.json)
+records upstream, raw, source and vocabulary pins, field selection and coverage.
+These integrity pins are not publisher signatures or new source authentication.
+
+Reproduce offline on Linux with Python 3.10+:
+
+```sh
+python3 scripts/unicode17_symbol_tables.py ascii_category
+python3 scripts/unicode17_symbol_tables.py ascii_bidi
+python3 scripts/unicode17_symbol_tables.py provenance
+python3 tests/test_unicode17_symbol_tables.py
+```
+
+The extractor accepts only the exact bundled 15,707-byte raw prefix, including
+with `--source`; unlike the case extractor it does not accept the full upstream
+file. It refuses modified, truncated, oversized, non-regular and final-symlink
+sources without partial table output. It does not fetch data, consult the host
+Unicode database, rewrite files, or update pins. Repository code and ancestors
+remain trusted. Retain this README and LICENSE with distributed derived data.
+
+The extraction tests establish byte-exact external labels and vocabulary, not
+autonomous acceptance or production deployment. The managed/native integration
+gate separately measures acceptance and live behavior. These 190 supplied
+property facts are finite source lookups, not held-out generalization or broad
+semantic competence; those claims remain WITHHELD. Never use CNET answers as
+labels or modify an existing deployment's immutable policy to add these sources.

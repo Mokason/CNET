@@ -1,0 +1,50 @@
+{
+  "coverage": {
+    "first_codepoint": 32,
+    "last_codepoint": 126,
+    "normalization": "none_except_source_name_spaces_to_underscores",
+    "tokens": 95,
+    "unknown_tokens": "abstain"
+  },
+  "datasets": {
+    "ascii_bidi": {
+      "artifact": "ascii_bidi.symbols.tsv",
+      "bytes": 2020,
+      "rows": 95,
+      "source_sha256": "c3c00de586e292da4ad197624b3aaef598a8d170c27283b251a99ed9d4523759",
+      "unicode_field_zero_based": 4,
+      "unicode_property": "Bidi_Class",
+      "vocabulary_sha256": "ba3fe8b2440a6065c04e714136c1ff742e7e7ab772902ff4558fe3b2699b6984"
+    },
+    "ascii_category": {
+      "artifact": "ascii_category.symbols.tsv",
+      "bytes": 2076,
+      "rows": 95,
+      "source_sha256": "f967c633b453c9e8a4d38ddf55484f16bce97d5fac6e60275e9adbe1484e848a",
+      "unicode_field_zero_based": 2,
+      "unicode_property": "General_Category",
+      "vocabulary_sha256": "ba3fe8b2440a6065c04e714136c1ff742e7e7ab772902ff4558fe3b2699b6984"
+    }
+  },
+  "derivation": "Unicode_name_field_1_ASCII_spaces_to_underscores_then_ASCII_sort",
+  "evidence_authority": "verified_tool",
+  "labels_from_CNET": false,
+  "license": "LICENSE",
+  "raw_artifact": "UnicodeData-Latin1.txt",
+  "raw_bytes": 15707,
+  "raw_scope": "exact_first_256_LF_terminated_UnicodeData_rows_U+0000..U+00FF",
+  "raw_sha256": "75dfecc13fe9b1202e3f7c787e4e7f2c848c97c8b092dd75b4f6a2b99990cdc4",
+  "schema_version": 1,
+  "scope": "literal_printable_ASCII_name_to_external_property_lookup_only",
+  "source_authority": "owner_reviewed_official_HTTPS_acquisition_2026-09-07",
+  "unicode_version": "17.0.0",
+  "upstream_bytes": 2198209,
+  "upstream_sha256": "2e1efc1dcb59c575eedf5ccae60f95229f706ee6d031835247d843c11d96470c",
+  "upstream_url": "https://www.unicode.org/Public/17.0.0/ucd/UnicodeData.txt",
+  "vocabulary_hash_format": "ASCII_sorted_tokens_each_followed_by_LF_no_header_or_labels",
+  "withheld": [
+    "natural_language_understanding",
+    "generalization",
+    "full_Unicode_coverage"
+  ]
+}
