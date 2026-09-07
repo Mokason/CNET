@@ -14,7 +14,7 @@ $(OUT)/test_candidate $(OUT)/test_host $(OUT)/test_worker_sandbox \
 $(OUT)/gpu_worker $(OUT)/gpu_worker_test $(OUT)/test_workers \
 $(OUT)/bench_cell_serving: | $(OUT)
 .PHONY: test
-test: $(OUT)/test_fixture $(OUT)/test_net $(OUT)/test_local
+test: $(OUT)/test_fixture $(OUT)/test_net $(OUT)/test_local worker-boundary-test
 	$(OUT)/test_fixture
 	$(OUT)/test_net
 	$(OUT)/test_local
@@ -157,15 +157,21 @@ $(OUT)/test_worker_sandbox: test_worker_sandbox.c worker_sandbox.c worker_sandbo
 	$(CC) $(CFLAGS) test_worker_sandbox.c worker_sandbox.c offline.c -o $@
 worker-sandbox-test: $(OUT)/test_worker_sandbox
 	$(OUT)/test_worker_sandbox
-$(OUT)/gpu_worker: worker_main.c worker.h worker_sandbox.c worker_sandbox.h offline.c $(ROOT)/src/serve/cnet_core_cell.c $(OUT)/cell_train.o $(OUT)/amdmath.o
-	$(HIPCC) -O2 -Wall -Wextra -Werror --offload-arch=gfx1201 -I$(ROOT)/include -x c worker_main.c worker_sandbox.c offline.c $(ROOT)/src/serve/cnet_core_cell.c -x none $(OUT)/cell_train.o $(OUT)/amdmath.o -lm -o $@
+$(OUT)/gpu_worker: worker_main.c worker.c worker.h worker_sandbox.c worker_sandbox.h offline.c $(ROOT)/src/serve/cnet_core_cell.c $(OUT)/cell_train.o $(OUT)/amdmath.o
+	$(HIPCC) -O2 -Wall -Wextra -Werror --offload-arch=gfx1201 -I$(ROOT)/include -x c worker_main.c worker.c worker_sandbox.c offline.c $(ROOT)/src/serve/cnet_core_cell.c -x none $(OUT)/cell_train.o $(OUT)/amdmath.o -lm -lrt -o $@
 	chmod go-w $@
-$(OUT)/gpu_worker_test: worker_main.c worker.h worker_sandbox.c worker_sandbox.h offline.c $(ROOT)/src/serve/cnet_core_cell.c $(OUT)/cell_train.o $(OUT)/amdmath.o
-	$(HIPCC) -O2 -Wall -Wextra -Werror --offload-arch=gfx1201 -DCONTROLLER_TESTING -I$(ROOT)/include -x c worker_main.c worker_sandbox.c offline.c $(ROOT)/src/serve/cnet_core_cell.c -x none $(OUT)/cell_train.o $(OUT)/amdmath.o -lm -o $@
+$(OUT)/gpu_worker_test: worker_main.c worker.c worker.h worker_sandbox.c worker_sandbox.h offline.c $(ROOT)/src/serve/cnet_core_cell.c $(OUT)/cell_train.o $(OUT)/amdmath.o
+	$(HIPCC) -O2 -Wall -Wextra -Werror --offload-arch=gfx1201 -DCONTROLLER_TESTING -I$(ROOT)/include -x c worker_main.c worker.c worker_sandbox.c offline.c $(ROOT)/src/serve/cnet_core_cell.c -x none $(OUT)/cell_train.o $(OUT)/amdmath.o -lm -lrt -o $@
 	chmod go-w $@
 $(OUT)/test_workers: test_workers.c worker.c worker.h $(ROOT)/src/serve/cnet_core_cell.c
 	$(CC) $(CFLAGS) -DCONTROLLER_TESTING test_workers.c worker.c $(ROOT)/src/serve/cnet_core_cell.c -lm -o $@
 worker-build: $(OUT)/gpu_worker $(OUT)/gpu_worker_test $(OUT)/test_workers
+.PHONY: worker-boundary-test
+$(OUT)/test_worker_boundary: test_worker_boundary.c worker.c worker.h $(ROOT)/src/serve/cnet_core_cell.c | $(OUT)
+	$(CC) $(CFLAGS) -DCONTROLLER_TESTING test_worker_boundary.c worker.c $(ROOT)/src/serve/cnet_core_cell.c -Wl,--wrap=clock_gettime,--wrap=timer_create,--wrap=timer_settime -lm -pthread -lrt -o $@
+	chmod go-w $@
+worker-boundary-test: $(OUT)/test_worker_boundary
+	$(OUT)/test_worker_boundary
 .PHONY: product-test
 $(OUT)/bench_cell_serving: bench_cell_serving.c $(ROOT)/bin/libcnet_capsule_core.so
 	$(CC) $(CFLAGS) bench_cell_serving.c -L$(ROOT)/bin -lcnet_capsule_core -Wl,-rpath,$(abspath $(ROOT)/bin) -lm -o $@
@@ -207,8 +213,8 @@ allocator-test: $(OUT)/allocator_test $(OUT)/allocator_data_test $(OUT)/allocato
 	$(OUT)/allocator_gate_test
 	$(OUT)/test_candidate
 
-$(OUT)/allocator_worker: allocator_worker.c worker.h cell_train.h worker_sandbox.c worker_sandbox.h offline.c offline.h $(ROOT)/src/serve/cnet_core_cell.c $(ROOT)/include/cnet_core_cell.h $(OUT)/cell_train.o $(OUT)/amdmath.o
-	$(HIPCC) -O2 -Wall -Wextra -Werror --offload-arch=gfx1201 -I$(ROOT)/include -x c allocator_worker.c worker_sandbox.c offline.c $(ROOT)/src/serve/cnet_core_cell.c -x none $(OUT)/cell_train.o $(OUT)/amdmath.o -lm -o $@
+$(OUT)/allocator_worker: allocator_worker.c worker.c worker.h cell_train.h worker_sandbox.c worker_sandbox.h offline.c offline.h $(ROOT)/src/serve/cnet_core_cell.c $(ROOT)/include/cnet_core_cell.h $(OUT)/cell_train.o $(OUT)/amdmath.o
+	$(HIPCC) -O2 -Wall -Wextra -Werror --offload-arch=gfx1201 -I$(ROOT)/include -x c allocator_worker.c worker.c worker_sandbox.c offline.c $(ROOT)/src/serve/cnet_core_cell.c -x none $(OUT)/cell_train.o $(OUT)/amdmath.o -lm -lrt -o $@
 	chmod go-w $@
 $(OUT)/allocator_worker_test: allocator_worker_test.c worker.c worker.h $(ROOT)/src/serve/cnet_core_cell.c $(ROOT)/include/cnet_core_cell.h
 	$(CC) $(CFLAGS) $(filter %.c,$^) -lm -o $@

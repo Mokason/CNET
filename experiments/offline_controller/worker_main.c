@@ -14,7 +14,8 @@
 #include <unistd.h>
 static int number(const char *s,int max){char *end;errno=0;long v=strtol(s,&end,10);return !s[0]||errno||*end||v<0||v>max?-1:(int)v;}
 int main(int argc,char **argv){
-    if(argc!=4)return 2;
+    if(argc!=5)return 2;
+    if(worker_guard_enter(argv[4]))return 3;
     int mode=number(argv[1],103),device=number(argv[2],1);
     if(device<0||(mode!=WORKER_TRAIN&&mode!=WORKER_EVALUATE
 #ifdef CONTROLLER_TESTING

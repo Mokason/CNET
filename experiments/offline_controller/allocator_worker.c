@@ -17,7 +17,8 @@ static int number(const char *s,int max){
     return !s[0]||errno||*end||v<0||v>max?-1:(int)v;
 }
 int main(int argc,char **argv){
-    if(argc!=4)return 2;
+    if(argc!=5)return 2;
+    if(worker_guard_enter(argv[4]))return 3;
     int mode=number(argv[1],4),device=number(argv[2],1);
     if(device<0||(mode!=WORKER_BATCH_TRAIN&&mode!=WORKER_BATCH_EVALUATE))return 2;
     if(close_range(5,~0u,0))return 3;

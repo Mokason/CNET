@@ -24,10 +24,21 @@ static inline int worker_batch_validate(const WorkerBatch *b){
 }
 typedef struct {uint32_t magic,mode,device,rows;CnetCoreCell cell;float loss,max_error;uint32_t sandboxed;} WorkerResult;
 typedef struct WorkerPool WorkerPool;
+/* Private same-build native entry contract: FD5 is the pool-captured spawning
+ * thread pidfd; deadline is an absolute CLOCK_BOOTTIME millisecond value.
+ * Call before input/GPU use and exit immediately on failure. Fixed trusted
+ * entry/runtime only: this is not an arbitrary executable/GPU sandbox. */
+int worker_guard_enter(const char *deadline_text);
 /* One trusted owner thread. Max two jobs, one per discrete device ordinal0/1.
  * Worker path is a trusted absolute compiled executable. No shell, inherited
  * environment, external scheduling changes or automatic promotion. Timeout
- * 1..60000ms includes initialization. Snapshot input is a sealed memfd copy.
+ * 1..60000ms includes preparation, spawn and initialization, including suspend.
+ * Native entry arms uncatchable parent-thread death and deadline signals,
+ * including a pidfd check for death before arming. Requires Linux >=6.9;
+ * unsupported controls refuse. No GPU initialization occurs before this guard.
+ * The trusted dynamic loader runs before entry; kernel/driver cleanup after
+ * SIGKILL is not a hard realtime guarantee. Child stdio is /dev/null.
+ * Snapshot input is a sealed memfd copy.
  * Output is unpublished until exact result, EOF and clean child exit agree.
  * Caller must not reap pool-owned children or close pool concurrently. */
 WorkerPool *worker_pool_open(const char *executable);
