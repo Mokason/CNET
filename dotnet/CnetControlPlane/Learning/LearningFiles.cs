@@ -140,12 +140,6 @@ internal sealed class LearningFiles : IDisposable
         }
         catch { child.Dispose(); throw; }
     }
-    public SafeFileHandle AcquireLock(string name)
-    {
-        var fd = OpenFile(name, write: true);
-        if (flock(fd, 2 | 4) == 0) return fd; // LOCK_EX | LOCK_NB
-        fd.Dispose();
-        throw new InvalidOperationException("learning_owner_already_running");
-    }
+    public LearningOwnerLock AcquireLock(string name) => new(OpenFile(name, write: true));
     public void Dispose() => directory.Dispose();
 }

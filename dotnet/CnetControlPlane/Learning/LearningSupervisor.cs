@@ -1,5 +1,4 @@
 using System.Globalization;
-using Microsoft.Win32.SafeHandles;
 
 namespace CnetControlPlane.Learning;
 
@@ -9,7 +8,7 @@ internal sealed class LearningSupervisor : IDisposable
     private readonly LearningPolicy policy;
     private readonly string workRoot;
     private readonly LearningFiles files;
-    private readonly SafeFileHandle owner;
+    private readonly LearningOwnerLock owner;
     private readonly LearningLedger ledger;
     private readonly LearningControlClient control;
     private readonly LearningAskClient ask;
@@ -35,7 +34,16 @@ internal sealed class LearningSupervisor : IDisposable
             ask = new(askSocket, policy.WorkerSeconds);
             acquisition = new(runtime, policy, ledger);
         }
-        catch { ask?.Dispose(); ledger?.Dispose(); owner?.Dispose(); files.Dispose(); serial.Dispose(); throw; }
+        catch
+        {
+            try { ask?.Dispose(); ledger?.Dispose(); }
+            finally
+            {
+                try { owner?.Dispose(); }
+                finally { files.Dispose(); serial.Dispose(); }
+            }
+            throw;
+        }
     }
     private LearningDataset Authorized(string dataset) => policy.Datasets.SingleOrDefault(x => x.Id == dataset)
         ?? throw new ArgumentException("learning_dataset_not_authorized");
@@ -248,5 +256,13 @@ internal sealed class LearningSupervisor : IDisposable
         return await Send(ledger.BeginRollback(observed), cancellation).ConfigureAwait(false) == "applied" ? "rolled_back" : "frozen";
     }
     // Caller awaits in-flight calls before disposal; all calls share one ledger lane.
-    public void Dispose() { ask.Dispose(); ledger.Dispose(); owner.Dispose(); files.Dispose(); serial.Dispose(); }
+    public void Dispose()
+    {
+        try { ask.Dispose(); ledger.Dispose(); }
+        finally
+        {
+            try { owner.Dispose(); }
+            finally { files.Dispose(); serial.Dispose(); }
+        }
+    }
 }

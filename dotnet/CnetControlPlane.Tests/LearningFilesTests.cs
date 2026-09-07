@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
+using Microsoft.Win32.SafeHandles;
 using CnetControlPlane.Learning;
 using Xunit;
 
@@ -13,6 +14,7 @@ public sealed class LearningFilesTests : IDisposable
     private const UnixFileMode PrivateDir = PrivateFile | UnixFileMode.UserExecute;
     [DllImport("libc", SetLastError = true)] private static extern int link(string oldpath, string newpath);
     [DllImport("libc", SetLastError = true)] private static extern int mkfifo(string path, uint mode);
+    [DllImport("libc", SetLastError = true)] private static extern int fcntl(SafeFileHandle fd, int command, int argument);
     public LearningFilesTests() => File.SetUnixFileMode(root, PrivateDir);
     public void Dispose() => Directory.Delete(root, true);
     private void Put(string name, byte[] data)
@@ -94,6 +96,31 @@ public sealed class LearningFilesTests : IDisposable
             Assert.Throws<InvalidOperationException>(() => child.AcquireLock("owner.lock"));
         using var replacement = child.AcquireLock("owner.lock");
         Assert.Throws<InvalidOperationException>(() => files.CreateDirectory("state"));
+    }
+
+    [Fact]
+    public void DisposedOwnershipDoesNotStayLockedThroughAnInheritedOpenDescription()
+    {
+        using var files = LearningFiles.Open(root);
+        files.WriteNew("owner.lock", []);
+        using var descriptor = files.OpenFile("owner.lock", write: true);
+        using var owner = new LearningOwnerLock(descriptor); // Same acquisition used by AcquireLock.
+        // dup and fork retain the same open-file description. This widens the
+        // pre-exec inheritance window deterministically, without forking CLR threads.
+        using var inherited = new SafeFileHandle((IntPtr)fcntl(descriptor, 1030, 0), ownsHandle: true); // F_DUPFD_CLOEXEC
+        Assert.False(inherited.IsInvalid);
+        Assert.Throws<InvalidOperationException>(() => files.AcquireLock("owner.lock"));
+        owner.Dispose();
+        LearningOwnerLock? replacement = null;
+        Exception? refused = Record.Exception(() => replacement = files.AcquireLock("owner.lock"));
+        using (replacement)
+        {
+            Assert.True(refused is null, "LEARNING_LOCK_RELEASE_RED inherited description retained disposed ownership: " + refused?.Message);
+            owner.Dispose(); // Must not unlock the replacement generation.
+            inherited.Dispose();
+            Assert.Throws<InvalidOperationException>(() => files.AcquireLock("owner.lock"));
+        }
+        using var finalOwner = files.AcquireLock("owner.lock");
     }
 
     [Fact]
