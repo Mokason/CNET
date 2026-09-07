@@ -16,7 +16,7 @@ MAX_REQUESTS = 100000
 MAX_EVENTS = 100000
 MAX_TEXT = 16384
 EVENTS = {"segment_start", "gateway_ready", "gateway_close", "gateway_error",
-          "sequence_gap", "clock_regression", "process_stop"}
+          "sequence_gap", "clock_regression", "process_stop", "gateway_heartbeat"}
 SCHEMA = {
     "policy": "CREATE TABLE policy (id INTEGER PRIMARY KEY CHECK(id=1), body TEXT NOT NULL)",
     "events": "CREATE TABLE events (ord INTEGER PRIMARY KEY, segment TEXT NOT NULL, at_ns INTEGER NOT NULL, kind TEXT NOT NULL)",

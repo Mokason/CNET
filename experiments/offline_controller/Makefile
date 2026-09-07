@@ -232,3 +232,7 @@ allocator-chronology-test:
 DISCORD_PYTHON ?= python3
 discord-capture-test:
 	$(DISCORD_PYTHON) -m unittest discover -s $(ROOT)/tools/discord_capture -p 'test_*.py' -v
+
+.PHONY: capture-evidence-native-test
+capture-evidence-native-test:
+	DISCORD_PYTHON=$(DISCORD_PYTHON) sh $(ROOT)/tools/discord_capture/native_check.sh

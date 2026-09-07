@@ -209,6 +209,7 @@ class Gateway:
         self._hb_stop = threading.Event()
         self.journal = journal
         self.fatal = False
+        self._last_journal_heartbeat = None
 
     def _heartbeat(self):
         while not self._hb_stop.wait(self.heartbeat_interval):
@@ -267,6 +268,11 @@ class Gateway:
             print("[discord] READY capture=", bool(self.journal), flush=True)
         elif op == 0 and t == "MESSAGE_CREATE":
             self.handle_message(d)
+        elif op == 11 and self.me_id and self.journal:
+            now = time.monotonic()
+            if self._last_journal_heartbeat is None or now - self._last_journal_heartbeat >= 60:
+                self.journal.event("gateway_heartbeat")
+                self._last_journal_heartbeat = now
         elif op in (7, 9):
             # Reconnect as a new segment; never pretend an unresumed interval is complete.
             self.ws.close()

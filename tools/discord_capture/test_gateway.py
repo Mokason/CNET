@@ -199,6 +199,14 @@ class GatewayTests(unittest.TestCase):
         self.assertEqual(readiness(self.root)["requests"], 1)
         self.assertEqual(readiness(self.root)["unfinished"], 0)
 
+    def test_ack_records_bounded_heartbeat_without_demand(self):
+        self.gw.me_id = "999999999999999999"
+        with patch.object(gateway.time, "monotonic", return_value=100):
+            self.gw.dispatch(json.dumps({"op": 11, "d": None}))
+            self.gw.dispatch(json.dumps({"op": 11, "d": None}))
+        self.assertEqual(self.journal.db.execute("SELECT count(*) FROM events WHERE kind='gateway_heartbeat'").fetchone(), (1,))
+        self.assertEqual(readiness(self.root)["requests"], 0)
+
 
 if __name__ == "__main__":
     unittest.main()
