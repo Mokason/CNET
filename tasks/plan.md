@@ -6,6 +6,19 @@ Decision history remains in [plans/](../plans/). Current documentation starts at
 
 ## Current experiment: chronological allocator evidence
 
+The owner approved the full [capture evidence/operations sequence](../plans/cnet_capture_evidence_20260908.md):
+versioned native mapping and independent labels, immutable episode exports,
+local health alerts/legacy privacy repair, then evidence-gated qualification.
+Real elapsed observation and independent demand cannot be simulated to finish it.
+
+The pipeline is implemented and deployed as frozen capture release `345ac81`.
+Independent native mapping, immutable exports, rechecked development controls,
+private legacy permissions, heartbeat monitoring and desktop alerts are operational.
+The [measured handoff](../result/cnet_capture_evidence_20260908.md) records 66 tests,
+512 native fixture pairs and the real export: four requests, zero eligible windows.
+Real observation is running; useful gain, broader verified task coverage and
+72-hour unattended learning acceptance remain WITHHELD.
+
 The owner requested the new chronological experiment after dual-AMD worker
 qualification. Its [ordered contract](../plans/cnet_chronological_allocator_20260907.md)
 starts at `9e74a7e`. The bounded legacy audit and independent source review are

@@ -8,8 +8,14 @@ Evidence, scope and dependencies: [plan.md](plan.md).
 - [x] Parser/identity/privacy regression tests and existing allocator CPU tests
 - [x] Owner-designated ingress: existing Discord bridge, owner-only private DM
 - [x] Durable capture, failure/dedup tests, scoped bridge rollout and readiness
-- [ ] Genuine demand, explicit typed mappings and independent verifier receipts
-- [ ] Development-only opportunity check against strong, equally budgeted controls
+- [x] Versioned two-rule typed mapping and independent native verifier receipts
+- [x] Immutable exports, whole-window splits and explicit origin-review mechanism
+- [x] Local monitor/watchdog/desktop alerts and exact legacy privacy repair
+- [x] Start frozen real observation and publish scoped readiness report
+- [x] Rechecked development qualification and equally budgeted control mechanism
+- [ ] Genuine reviewed demand and broader task-specific independent verifiers
+- [ ] Eligible native development trajectories with useful headroom
+- [ ] Actual 72-hour unattended product acceptance (not capture uptime alone)
 - [ ] Bounded AMD fitting and fresh independent confirmation under unchanged floors
 
 The [readiness report](../result/cnet_chronological_allocator_20260907.md) records
@@ -17,6 +23,10 @@ the legacy evidence prerequisite. Capture work follows the
 [approved scoped plan](../plans/cnet_discord_capture_20260907.md); the learned
 allocator remains inactive. The [rollout report](../result/cnet_discord_capture_20260907.md)
 records the live collector and initially empty private stream.
+
+The [September 8 evidence rollout](../result/cnet_capture_evidence_20260908.md)
+supersedes that initial empty-stream status: four captured requests, no eligible
+scored windows. Implementation checks do not close the remaining measured gates.
 
 ## Active unattended-learning sequence
 

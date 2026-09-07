@@ -76,11 +76,17 @@ retain an operational collector instead of manufacturing a successful gate.
 
 ## Acceptance / verification
 
-- [ ] RED mapping/independence/receipt tests; canonical parser and tool negatives.
-- [ ] RED snapshot identity, immutable publication, episode leakage/gap/origin tests.
-- [ ] RED monitor fault/idle/quota/privacy tests and actual local alert delivery.
-- [ ] Exact legacy privacy repair and service creation settings, with rollback.
-- [ ] Export real local demand without displaying payloads; record actual readiness.
-- [ ] Development outcome/headroom gate; AMD fitting/confirmation only if justified.
-- [ ] Start frozen local observation; no premature 72-hour acceptance claim.
-- [ ] Focused regressions, independent reviews, operator docs and local commits.
+- [x] RED mapping/independence/receipt tests; canonical parser and tool negatives.
+- [x] RED snapshot identity, immutable publication, episode leakage/gap/origin tests.
+- [x] RED monitor fault/idle/quota/privacy tests and actual local alert submission.
+- [x] Exact legacy privacy repair and service creation settings; rollback preserved.
+- [x] Export real local demand without displaying payloads; record actual readiness.
+- [x] Execute development readiness gate; refuse fitting on zero eligible windows.
+- [x] Start frozen local observation; no premature 72-hour acceptance claim.
+- [x] Focused regressions, independent reviews, operator docs and local commits.
+- [ ] Eligible native outcomes/headroom, conditional AMD fitting/fresh confirmation.
+- [ ] Actual 72-hour unattended product acceptance with adequate verified demand.
+
+Measured implementation, rollout, refusal reasons and remaining evidence:
+[result](../result/cnet_capture_evidence_20260908.md). Checked implementation items
+are not claims that the pending evidence gates passed.
