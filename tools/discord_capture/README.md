@@ -2,7 +2,8 @@
 
 `gateway.py` is the versioned successor to the existing local Discord PEER
 bridge. `journal.py` records selected request evidence in SQLite. It is not a
-learner, correctness verifier, training exporter or allocator activation path.
+learner or allocator activation path. The separate offline evidence tools below
+provide explicit independent labels and development-only exports.
 The [decision and sequence](../../plans/cnet_discord_capture_20260907.md) govern it.
 
 ## Configuration
@@ -81,3 +82,79 @@ Do not use `systemctl revert`, which may delete unrelated owner configuration.
 Continuity acceptance and useful allocator gain are separate later gates, not
 implied by bridge READY or these fixture tests. The next evidence is genuine
 selected requests with explicit typed mappings and independent verifier receipts.
+
+## Independent evidence and immutable datasets
+
+`evidence.py` reuses the native semantic intent parser and independent native
+arithmetic tool. The pinned offline catalog is exactly `bytes → bits` (multiply
+by 8) and `u8 → masked8` (xor 255), input 0–255. It does not install live tool
+policy, broaden certification or judge the actual CNET reply. Native output must
+match a separate integer calculation; a live CNET answer is never a label.
+Unrelated/ambiguous text stays unmapped. Repeat all 512 native pairs and four
+refusals with `make -C experiments/offline_controller capture-evidence-native-test`.
+The printed private build directory contains the two required runtime artifacts.
+
+Run `dataset.py CAPTURE NEW_EXPORT RUNTIME [--review PRIVATE_REVIEW.json]` with
+the existing Python environment, a private parent outside git and an external
+60-second timeout. It publishes a manifest last; interrupted exports are invalid
+and must not be reused. Never overwrite an export or edit labels in place.
+Capture contents and IDs remain private. The manifest is identity evidence, not
+independent custody against a compromised owner/runtime.
+
+Origin review maps an exact `episode_sha256` from private `episodes.json` to
+`human`, `test`, or `automation`; missing review is `unreviewed`. Owner identity
+does not prove human demand. Review binds complete records and fixed UTC
+30-minute windows. Mixed test/human windows must be excluded, not selectively
+trimmed. Closed windows require continuous same-segment recorded ACK heartbeats
+covering both boundaries (at most 120 seconds apart), no gap/stop/reconnect,
+unfinished attempt or unmapped request. Older pre-heartbeat captures cannot be
+retroactively made continuous. Excluded requests remain in denominator reports.
+
+`qualify.py EXPORT RUNTIME` rechecks labels and rebuilt episodes, then uses the
+existing six equal-budget planners on 16 fixed, disjoint 32-row direct actions
+(8 jobs, 256 row-work). This is a prospective direct-catalog bound, **not native
+certified outcomes**. A zero bound against the strongest exact control is expected
+for this separable workload, not proof that other workloads cannot improve.
+Ordered two-thirds/one-third whole-window partitions are both exposed development;
+neither becomes confirmation. The tool never starts fitting or grants activation.
+Useful native trajectory headroom, all four campaign families and new post-freeze
+confirmation remain required before the existing AMD campaign is justified.
+The >=.05 gain, positive paired95 lower bound and nonnegative family means remain.
+
+## Alerts
+
+`monitor.py CAPTURE STATE` records bounded metadata-only health every 60 seconds;
+`--watchdog` independently checks fresh successful observation. Install the
+provided user-systemd templates after replacing `@RELEASE@` with the frozen
+revision; bridge and monitor must execute that same release. Keep `AccuracySec=1s`.
+Both failure paths trigger the rate-limited local desktop notification service
+(at most one per five minutes). No external notification provider is contacted.
+
+Inspect `systemctl --user status cnet-capture-monitor.timer
+cnet-capture-watchdog.timer` and their `.service` journals. Inspect private
+`STATE/latest.json` for the current bounded reason codes:
+
+- `bridge_down`, `heartbeat_stale`, `request_stuck`: check bridge liveness and
+  connectivity, then reconcile unfinished attempts; never resend them blindly.
+- `storage_near_limit`, `disk_reserve_low`: stop/review/archive locally before
+  creating a separate capture store. Nothing is automatically deleted.
+- `reconnect_burst`, `capture_discontinuity`, `observation_gap`: investigate the
+  connection/clock/configuration change; elapsed acceptance starts over.
+- `legacy_privacy`: re-resolve the two reviewed legacy paths before repair.
+  A retargeted `current` alias deliberately refuses the old assumption.
+- `monitor_refused`, watchdog failure: inspect metadata, private boundaries and
+  timer status. Preserve history and crash-orphan staging files for inspection;
+  never delete state to claim continuity.
+
+The watchdog requires a tick no older than 120 seconds. Healthy time advances
+only between successful, same-boot/source/policy/segment observations at most 90
+seconds apart, with no intervening journaled discontinuity. Sampling failures are
+durable unhealthy rows. Unwritable state fails loudly; a missed minute breaks
+continuity on recovery. Idle demand alone is not an alert. Observation history is
+capped at 32 MiB and refuses when full; capture alerts start at 80% of its limits.
+
+`observation_72h` describes only real elapsed capture-health continuity after
+frozen capture artifacts. `product_acceptance` always remains false here: adequate
+genuine traffic, independent outcomes and unattended learning acceptance are
+separate gates. No fixture, elapsed-time simulation or newly started timer passes
+them. Desktop alerts cannot warn while this host/session itself is unavailable.
