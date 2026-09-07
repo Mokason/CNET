@@ -25,6 +25,9 @@ public sealed class LearningAskClientTests : IDisposable
     private string root => fixtureRoot.Value;
     private string SocketPath => Path.Combine(root, "ask.sock");
     private static readonly LearningDataset Dataset = new("stock_levels", "verified_tool");
+    private static readonly LearningDataset SymbolDataset = new("stock_labels", "verified_tool", new string('a', 64));
+    private static Task<LearningAskResult> Observe(LearningAskClient client, bool symbolic, CancellationToken cancellation = default)
+        => symbolic ? client.AskSymbolAsync(SymbolDataset, "ALPHA", cancellation) : client.AskAsync(Dataset, 7, cancellation);
     private static string Frame(bool verified, string answer) => JsonSerializer.Serialize(new
     {
         ok = true, verified, miss = !verified, teacher = false,
@@ -58,7 +61,7 @@ public sealed class LearningAskClientTests : IDisposable
             {
                 using var peer = await listener.AcceptAsync(stop.Token);
                 using var stream = new NetworkStream(peer, ownsSocket: false);
-                var bytes = new byte[80]; var count = 0;
+                var bytes = new byte[128]; var count = 0;
                 while (count < bytes.Length)
                 {
                     var got = await stream.ReadAsync(bytes.AsMemory(count), stop.Token);
@@ -92,8 +95,54 @@ public sealed class LearningAskClientTests : IDisposable
         var result = await client.AskAsync(Dataset, 255, default);
         Assert.Equal(verified, result.Verified);
         Assert.Equal(verified ? ushort.Parse(answer) : (ushort?)null, result.Value);
+        Assert.Null(result.Text);
         Assert.Equal("{\"op\":\"ask\",\"q\":\"data stock_levels 255\"}\n", await server.Received.Task);
         Assert.False(server.ExtraConnection);
+    }
+
+    [Theory]
+    [InlineData("first label")]
+    [InlineData("042")]
+    [InlineData("65536")]
+    [InlineData("0")]
+    [InlineData("1e1")]
+    [InlineData(" ")]
+    [InlineData("ABSTAIN: reason")]
+    [InlineData("  say \"hello\" \\ literal  ")]
+    public void ExplicitSymbolParserRetainsLiteralTextWithoutNumericCoercion(string answer)
+    {
+        var result = LearningAskResult.ParseSymbol(Encoding.UTF8.GetBytes(Frame(true, answer)));
+        Assert.True(result.Verified); Assert.Null(result.Value);
+        Assert.Equal(answer, result.Text);
+    }
+
+    [Theory]
+    [InlineData("stock_labels", "A_z.0:-")]
+    [InlineData("a", "0")]
+    [InlineData("a123456789012345678901234567890", "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuv")]
+    public async Task SymbolRequestUsesExactTokenAndWire(string id, string token)
+    {
+        await using var server = new Server(SocketPath, Encoding.UTF8.GetBytes(Frame(true, "042")));
+        using var client = new LearningAskClient(SocketPath, 2);
+        var result = await client.AskSymbolAsync(SymbolDataset with { Id = id }, token, default);
+        Assert.True(result.Verified); Assert.Null(result.Value); Assert.Equal("042", result.Text);
+        Assert.Equal("{\"op\":\"ask\",\"q\":\"symbol " + id + " " + token + "\"}\n", await server.Received.Task);
+        Assert.False(server.ExtraConnection);
+    }
+
+    [Fact]
+    public void SymbolParserAcceptsExactLabelBoundAndRetainsAnImmutableCopy()
+    {
+        var label = new string('~', 128);
+        var bytes = Encoding.UTF8.GetBytes(Frame(true, label));
+        var result = LearningAskResult.ParseSymbol(bytes);
+        Array.Fill(bytes, (byte)0);
+        Assert.True(result.Verified); Assert.Null(result.Value); Assert.Equal(label, result.Text);
+        Assert.Equal(new string(Enumerable.Range(32, 95).Select(x => (char)x).ToArray()),
+            LearningAskResult.ParseSymbol(Encoding.UTF8.GetBytes(Frame(true,
+                new string(Enumerable.Range(32, 95).Select(x => (char)x).ToArray())))).Text);
+        var refusal = LearningAskResult.ParseSymbol(Encoding.UTF8.GetBytes(Frame(false, "ABSTAIN: no_covered_certified_plan")));
+        Assert.False(refusal.Verified); Assert.Null(refusal.Value); Assert.Null(refusal.Text);
     }
 
     private ProcessStartInfo Native(string repository, string name, params string[] arguments)
@@ -147,7 +196,7 @@ public sealed class LearningAskClientTests : IDisposable
         }
     }
 
-    public static IEnumerable<object[]> MalformedFrames()
+    public static IEnumerable<object[]> MalformedEnvelopeFrames()
     {
         var valid = Frame(true, "42");
         foreach (var value in new[]
@@ -158,9 +207,6 @@ public sealed class LearningAskClientTests : IDisposable
             valid.Replace("\"miss\":false", "\"miss\":true"), valid.Replace("\"teacher\":false", "\"teacher\":true"),
             valid.Replace("LOCAL", "LLM"), valid.Replace("capsule_core", "capsule_refusal"),
             valid.Replace("\"42\"", "42"), valid.Replace("\"42\"", "null"),
-            valid.Replace("\"42\"", "\"042\""), valid.Replace("\"42\"", "\"65536\""),
-            valid.Replace("\"42\"", "\"-1\""), valid.Replace("\"42\"", "\" 1\""),
-            valid.Replace("\"42\"", "\"1e1\""), valid.Replace("\"42\"", "\"1.0\""),
             valid.Replace("{", "{\"verified\":true,"), valid.Replace("{", "{\"ver\\u0069fied\":true,"),
             valid.Replace("{", "{\"diagnostic\":{\"a\":1,\"a\":2},"),
             valid.Replace("{", "{\"diagnostic\":{\"a\":{\"b\":{\"c\":{}}}},"),
@@ -174,6 +220,24 @@ public sealed class LearningAskClientTests : IDisposable
         yield return [Encoding.UTF8.GetBytes(new string('x', 16385))];
     }
 
+    public static IEnumerable<object[]> MalformedFrames() => MalformedEnvelopeFrames().Concat(
+        new[] { "042", "65536", "-1", " 1", "1e1", "1.0" }.Select(answer => new object[] { Encoding.UTF8.GetBytes(Frame(true, answer)) }));
+
+    public static IEnumerable<object[]> MalformedSymbolFrames() => MalformedEnvelopeFrames().Concat(
+        new[] { "", new string('x', 129), "é", "\u007f", "a\nb", "a\rb", "a\tb", "\0", "\u001b" }
+            .Select(answer => new object[] { Encoding.UTF8.GetBytes(Frame(true, answer)) }));
+
+    [Theory]
+    [MemberData(nameof(MalformedSymbolFrames))]
+    public async Task MalformedOrInconsistentSymbolReplyCannotBecomeObservation(byte[] frame)
+    {
+        await using var server = new Server(SocketPath, frame);
+        using var client = new LearningAskClient(SocketPath, 2);
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() => client.AskSymbolAsync(SymbolDataset, "ALPHA", default));
+        Assert.Equal("learning_ask_observation_unknown", error.Message); Assert.Null(error.InnerException);
+        Assert.False(server.ExtraConnection);
+    }
+
     [Theory]
     [MemberData(nameof(MalformedFrames))]
     public async Task MalformedOrInconsistentNativeDataCannotBecomeObservation(byte[] frame)
@@ -185,40 +249,47 @@ public sealed class LearningAskClientTests : IDisposable
         Assert.False(server.ExtraConnection);
     }
 
-    [Fact]
-    public async Task ExactByteCapAndIgnoredStrictDiagnosticsAreAccepted()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ExactByteCapAndIgnoredStrictDiagnosticsAreAccepted(bool symbolic)
     {
         var prefix = Frame(true, "42")[..^2] + ",\"diagnostic\":\"";
         var bytes = Encoding.UTF8.GetBytes(prefix + new string('x', 16384 - prefix.Length - 3) + "\"}\n");
         Assert.Equal(16384, bytes.Length);
         await using var server = new Server(SocketPath, bytes);
         using var client = new LearningAskClient(SocketPath, 2);
-        var result = await client.AskAsync(Dataset, 7, default);
-        Assert.True(result.Verified); Assert.Equal((ushort)42, result.Value);
+        var result = await Observe(client, symbolic);
+        Assert.True(result.Verified);
+        Assert.Equal(symbolic ? null : (ushort?)42, result.Value); Assert.Equal(symbolic ? "42" : null, result.Text);
         Array.Fill(bytes, (byte)0);
-        Assert.Equal((ushort)42, result.Value);
+        Assert.Equal(symbolic ? null : (ushort?)42, result.Value); Assert.Equal(symbolic ? "42" : null, result.Text);
+    }
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
+    public async Task DeadlineRequiresEofEvenAfterACompleteJsonLine(bool complete, bool symbolic)
+    {
+        await using var server = new Server(SocketPath, Encoding.UTF8.GetBytes(complete ? Frame(true, "42") : ""), hold: true);
+        using var client = new LearningAskClient(SocketPath, 1);
+        var elapsed = Stopwatch.StartNew();
+        Assert.Equal("learning_ask_observation_unknown", (await Assert.ThrowsAsync<InvalidOperationException>(() => Observe(client, symbolic))).Message);
+        Assert.InRange(elapsed.Elapsed.TotalSeconds, .8, 4);
+        Assert.False(server.ExtraConnection);
     }
 
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public async Task DeadlineRequiresEofEvenAfterACompleteJsonLine(bool complete)
-    {
-        await using var server = new Server(SocketPath, Encoding.UTF8.GetBytes(complete ? Frame(true, "42") : ""), hold: true);
-        using var client = new LearningAskClient(SocketPath, 1);
-        var elapsed = Stopwatch.StartNew();
-        Assert.Equal("learning_ask_observation_unknown", (await Assert.ThrowsAsync<InvalidOperationException>(() => client.AskAsync(Dataset, 7, default))).Message);
-        Assert.InRange(elapsed.Elapsed.TotalSeconds, .8, 4);
-        Assert.False(server.ExtraConnection);
-    }
-
-    [Fact]
-    public async Task CancellationAfterRequestDisposesPendingConnectionWithoutRetry()
+    public async Task CancellationAfterRequestDisposesPendingConnectionWithoutRetry(bool symbolic)
     {
         await using var server = new Server(SocketPath, [], hold: true);
         using var client = new LearningAskClient(SocketPath, 120);
         using var cancellation = new CancellationTokenSource();
-        var exchange = client.AskAsync(Dataset, 7, cancellation.Token);
+        var exchange = Observe(client, symbolic, cancellation.Token);
         await server.Received.Task.WaitAsync(TimeSpan.FromSeconds(3));
         cancellation.Cancel();
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => exchange.WaitAsync(TimeSpan.FromSeconds(3)));
@@ -231,10 +302,13 @@ public sealed class LearningAskClientTests : IDisposable
         public LearningInstant Now => Current;
     }
     [Theory]
-    [InlineData("suspend")]
-    [InlineData("reboot")]
-    [InlineData("backwards")]
-    public async Task BootClockDiscontinuityAndSuspendExpireAWaitingObservation(string condition)
+    [InlineData("suspend", false)]
+    [InlineData("reboot", false)]
+    [InlineData("backwards", false)]
+    [InlineData("suspend", true)]
+    [InlineData("reboot", true)]
+    [InlineData("backwards", true)]
+    public async Task BootClockDiscontinuityAndSuspendExpireAWaitingObservation(string condition, bool symbolic)
     {
         var clock = new ManualClock { Current = new("boot", 100) };
         await using var server = new Server(SocketPath, [], hold: true, afterRequest: () =>
@@ -243,28 +317,33 @@ public sealed class LearningAskClientTests : IDisposable
             return Task.CompletedTask;
         });
         using var client = new LearningAskClient(SocketPath, 120, clock);
-        var exchange = client.AskAsync(Dataset, 7, default);
+        var exchange = Observe(client, symbolic);
         Assert.Equal("learning_ask_observation_unknown", (await Assert.ThrowsAsync<InvalidOperationException>(() => exchange.WaitAsync(TimeSpan.FromSeconds(3)))).Message);
     }
 
     [DllImport("libc", SetLastError = true)] private static extern int link(string existing, string name);
     [Theory]
-    [InlineData("mode")]
-    [InlineData("hardlink")]
-    [InlineData("symlink")]
-    public async Task UnsafeSocketEntriesRefuseBeforeAnyQueryIsSent(string condition)
+    [InlineData("mode", false)]
+    [InlineData("hardlink", false)]
+    [InlineData("symlink", false)]
+    [InlineData("mode", true)]
+    [InlineData("hardlink", true)]
+    [InlineData("symlink", true)]
+    public async Task UnsafeSocketEntriesRefuseBeforeAnyQueryIsSent(string condition, bool symbolic)
     {
         await using var server = new Server(SocketPath, Encoding.UTF8.GetBytes(Frame(true, "42")));
         if (condition == "mode") File.SetUnixFileMode(SocketPath, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.GroupRead);
         if (condition == "hardlink") Assert.Equal(0, link(SocketPath, Path.Combine(root, "alias.sock")));
         if (condition == "symlink") { File.Move(SocketPath, Path.Combine(root, "real.sock")); File.CreateSymbolicLink(SocketPath, "real.sock"); }
         using var client = new LearningAskClient(SocketPath, 2);
-        await Assert.ThrowsAsync<InvalidOperationException>(() => client.AskAsync(Dataset, 7, default));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => Observe(client, symbolic));
         Assert.False(server.Received.Task.IsCompleted);
     }
 
-    [Fact]
-    public async Task SocketReplacementAfterReplyRefusesTheObservation()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task SocketReplacementAfterReplyRefusesTheObservation(bool symbolic)
     {
         await using var server = new Server(SocketPath, Encoding.UTF8.GetBytes(Frame(true, "42")), afterRequest: () =>
         {
@@ -275,17 +354,19 @@ public sealed class LearningAskClientTests : IDisposable
             return Task.CompletedTask;
         });
         using var client = new LearningAskClient(SocketPath, 2);
-        await Assert.ThrowsAsync<InvalidOperationException>(() => client.AskAsync(Dataset, 7, default));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => Observe(client, symbolic));
     }
 
-    [Fact]
-    public async Task RetainedParentRejectsRenameReplacement()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task RetainedParentRejectsRenameReplacement(bool symbolic)
     {
         var parent = Path.Combine(root, "run"); Directory.CreateDirectory(parent, Private);
         using var client = new LearningAskClient(Path.Combine(parent, "ask.sock"), 2);
         Directory.Move(parent, Path.Combine(root, "old")); Directory.CreateDirectory(parent, Private);
         await using var server = new Server(Path.Combine(parent, "ask.sock"), Encoding.UTF8.GetBytes(Frame(true, "42")));
-        await Assert.ThrowsAsync<InvalidOperationException>(() => client.AskAsync(Dataset, 7, default));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => Observe(client, symbolic));
         Assert.False(server.Received.Task.IsCompleted);
     }
 
@@ -319,13 +400,57 @@ public sealed class LearningAskClientTests : IDisposable
         Assert.False(server.Received.Task.IsCompleted);
     }
 
-    [Fact]
-    public async Task MissingSocketDisposedClientAndUnsafeParentFailClosed()
+    public static IEnumerable<object[]> InvalidSymbolRequests()
+    {
+        foreach (var token in new[] { null, "", new string('A', 49), "A B", "A\nQUIT", "A\r", "A\t", "A\0", "\"", "\\", "é", "$(id)", "a/b" })
+            yield return [SymbolDataset, token!, "learning_ask_symbol"];
+        foreach (var pin in new[] { null, "", new string('a', 63), new string('a', 65), new string('A', 64), new string('g', 64) })
+            yield return [SymbolDataset with { SymbolVocabularySha256 = pin }, "ALPHA", "learning_ask_dataset"];
+        foreach (var dataset in new LearningDataset?[] { null, SymbolDataset with { Id = "../stock_labels" },
+            SymbolDataset with { Id = "Stock_labels" }, SymbolDataset with { Id = "stock_labels\nQUIT" },
+            SymbolDataset with { Id = new string('a', 32) }, SymbolDataset with { Authority = "self_answer" } })
+            yield return [dataset!, "ALPHA", "learning_ask_dataset"];
+    }
+
+    [Theory]
+    [MemberData(nameof(InvalidSymbolRequests))]
+    public async Task InvalidSymbolInputsRefuseBeforeConnecting(LearningDataset dataset, string token, string message)
+    {
+        // No pending accept consumes a connection: Poll deterministically sees
+        // any queued connect, even if a client would never send request bytes.
+        using var listener = new Socket(AddressFamily.Unix, SocketType.Stream, ProtocolType.Unspecified);
+        listener.Bind(new UnixDomainSocketEndPoint(SocketPath));
+        File.SetUnixFileMode(SocketPath, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+        listener.Listen(1);
+        using var client = new LearningAskClient(SocketPath, 2);
+        var error = await Assert.ThrowsAsync<ArgumentException>(() => client.AskSymbolAsync(dataset, token, default));
+        Assert.Equal(message, error.Message); Assert.Null(error.InnerException);
+        Assert.False(listener.Poll(0, SelectMode.SelectRead));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task AlreadyCancelledRequestNeverConnects(bool symbolic)
+    {
+        using var listener = new Socket(AddressFamily.Unix, SocketType.Stream, ProtocolType.Unspecified);
+        listener.Bind(new UnixDomainSocketEndPoint(SocketPath));
+        File.SetUnixFileMode(SocketPath, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+        listener.Listen(1);
+        using var client = new LearningAskClient(SocketPath, 2);
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => Observe(client, symbolic, new CancellationToken(true)));
+        Assert.False(listener.Poll(0, SelectMode.SelectRead));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task MissingSocketDisposedClientAndUnsafeParentFailClosed(bool symbolic)
     {
         using var client = new LearningAskClient(SocketPath, 2);
-        await Assert.ThrowsAsync<InvalidOperationException>(() => client.AskAsync(Dataset, 7, default));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => Observe(client, symbolic));
         client.Dispose();
-        await Assert.ThrowsAsync<InvalidOperationException>(() => client.AskAsync(Dataset, 7, default));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => Observe(client, symbolic));
         File.SetUnixFileMode(root, Private | UnixFileMode.GroupRead);
         Assert.Throws<InvalidOperationException>(() => new LearningAskClient(SocketPath, 2));
     }

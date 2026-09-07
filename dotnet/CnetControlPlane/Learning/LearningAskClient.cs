@@ -11,9 +11,13 @@ internal sealed class LearningAskResult
 {
     public bool Verified { get; }
     public ushort? Value { get; }
-    private LearningAskResult(bool verified, ushort? value) { Verified = verified; Value = value; }
+    public string? Text { get; }
+    private LearningAskResult(bool verified, ushort? value, string? text = null) { Verified = verified; Value = value; Text = text; }
 
-    internal static LearningAskResult Parse(byte[] bytes)
+    internal static LearningAskResult Parse(byte[] bytes) => ParseCore(bytes, symbolic: false);
+    internal static LearningAskResult ParseSymbol(byte[] bytes) => ParseCore(bytes, symbolic: true);
+
+    private static LearningAskResult ParseCore(byte[] bytes, bool symbolic)
     {
         if (bytes is null || bytes.Length is < 1 or > 16384) throw new InvalidOperationException("learning_ask_reply_invalid");
         var frame = (byte[])bytes.Clone();
@@ -36,6 +40,11 @@ internal sealed class LearningAskResult
             var answer = top.GetProperty("answer").GetString();
             if (verified)
             {
+                if (symbolic)
+                {
+                    if (!LocalSymbolReference.IsLabel(answer)) throw new InvalidOperationException();
+                    return new(true, null, answer); // Literal text, including numeric-looking labels.
+                }
                 if (answer is not { Length: >= 1 and <= 5 } || answer.Length > 1 && answer[0] == '0'
                     || answer.Any(c => c is < '0' or > '9')
                     || !ushort.TryParse(answer, NumberStyles.None, CultureInfo.InvariantCulture, out var value))
@@ -72,7 +81,7 @@ internal sealed class LearningAskResult
 }
 
 /// <summary>
-/// Only numeric local-table observations, never labels or owner operations.
+/// Numeric or explicitly vocabulary-pinned symbolic observations, never owner operations.
 /// The caller authorizes the dataset and compares against an independent source.
 /// Calls and disposal are serialized by the owner. Parent identity is retained;
 /// same-UID peer checks are not protection against a malicious same-UID owner.
@@ -102,10 +111,27 @@ internal sealed class LearningAskClient : IDisposable
 
     public async Task<LearningAskResult> AskAsync(LearningDataset authorized, byte key, CancellationToken cancellation)
     {
-        if (authorized is null || authorized.Id is not { Length: >= 1 and <= 31 }
-            || authorized.Id[0] is < 'a' or > 'z' || authorized.Id.Any(c => c is not (>= 'a' and <= 'z' or >= '0' and <= '9' or '_'))
+        RequireDataset(authorized);
+        return await AskCoreAsync("data " + authorized.Id + " " + key.ToString(CultureInfo.InvariantCulture), false, cancellation).ConfigureAwait(false);
+    }
+
+    public async Task<LearningAskResult> AskSymbolAsync(LearningDataset authorized, string token, CancellationToken cancellation)
+    {
+        RequireDataset(authorized);
+        if (!LearningPolicy.IsHash(authorized.SymbolVocabularySha256)) throw new ArgumentException("learning_ask_dataset");
+        if (!LocalSymbolReference.IsKey(token)) throw new ArgumentException("learning_ask_symbol");
+        return await AskCoreAsync("symbol " + authorized.Id + " " + token, true, cancellation).ConfigureAwait(false);
+    }
+
+    private static void RequireDataset(LearningDataset authorized)
+    {
+        if (authorized is null || !LearningPolicy.IsId(authorized.Id)
             || authorized.Authority is not ("verified_tool" or "user_correction"))
             throw new ArgumentException("learning_ask_dataset");
+    }
+
+    private async Task<LearningAskResult> AskCoreAsync(string query, bool symbolic, CancellationToken cancellation)
+    {
         cancellation.ThrowIfCancellationRequested();
         Socket? socket = null;
         using var stop = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
@@ -134,7 +160,8 @@ internal sealed class LearningAskClient : IDisposable
             files.AssertPathIdentity();
             var before = RequireSocket(InspectAt(parent, "ask.sock", false)!.Value);
             var path = $"/proc/self/fd/{parent.DangerousGetHandle().ToInt64()}/ask.sock";
-            var request = Encoding.UTF8.GetBytes("{\"op\":\"ask\",\"q\":\"data " + authorized.Id + " " + key.ToString(CultureInfo.InvariantCulture) + "\"}\n");
+            // Both entry points validate every query character before transport.
+            var request = Encoding.UTF8.GetBytes("{\"op\":\"ask\",\"q\":\"" + query + "\"}\n");
             Deadline();
             exchange = Exchange(socket, path, request, () =>
             {
@@ -152,7 +179,7 @@ internal sealed class LearningAskClient : IDisposable
             Deadline();
             if (!before.Equals(RequireSocket(InspectAt(parent, "ask.sock", false)!.Value))) throw new InvalidOperationException();
             files.AssertPathIdentity();
-            var result = LearningAskResult.Parse(bytes);
+            var result = symbolic ? LearningAskResult.ParseSymbol(bytes) : LearningAskResult.Parse(bytes);
             Deadline();
             return result;
         }

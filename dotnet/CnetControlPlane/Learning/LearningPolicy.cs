@@ -3,7 +3,7 @@ using System.Text.Json;
 
 namespace CnetControlPlane.Learning;
 
-public sealed record LearningDataset(string Id, string Authority);
+public sealed record LearningDataset(string Id, string Authority, string? SymbolVocabularySha256 = null);
 
 /// <summary>Owner authority, not a worker proposal. Exact bytes are bound to the ledger.</summary>
 public sealed class LearningPolicy
@@ -85,12 +85,15 @@ public sealed class LearningPolicy
             var datasets = new List<LearningDataset>();
             foreach (var item in f["datasets"].EnumerateArray())
             {
-                var d = Fields(item, "id", "authority");
+                var symbolic = item.ValueKind == JsonValueKind.Object && item.TryGetProperty("symbol_vocabulary_sha256", out _);
+                var d = symbolic ? Fields(item, "id", "authority", "symbol_vocabulary_sha256") : Fields(item, "id", "authority");
                 var name = Text(d["id"]);
                 var authority = Text(d["authority"]);
                 if (!IsId(name) || authority is not ("verified_tool" or "user_correction")
                     || datasets.Any(x => x.Id == name)) throw new ArgumentException("learning_dataset_authority");
-                datasets.Add(new LearningDataset(name, authority));
+                var vocabulary = symbolic ? Text(d["symbol_vocabulary_sha256"]) : null;
+                if (vocabulary is not null && !IsHash(vocabulary)) throw new ArgumentException("learning_symbol_vocabulary_hash");
+                datasets.Add(new LearningDataset(name, authority, vocabulary));
             }
             var tick = Number(f["tick_seconds"], 1, 3600);
             return new LearningPolicy
@@ -112,4 +115,7 @@ public sealed class LearningPolicy
         }
         catch (JsonException ex) { throw new ArgumentException("learning_policy_json_invalid", ex); }
     }
+
+    internal static bool IsHash(string? text) => text is { Length: 64 }
+        && text.All(c => c is >= '0' and <= '9' or >= 'a' and <= 'f');
 }
