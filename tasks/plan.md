@@ -9,9 +9,10 @@ Decision history remains in [plans/](../plans/). Current documentation starts at
 The owner requested the new chronological experiment after dual-AMD worker
 qualification. Its [ordered contract](../plans/cnet_chronological_allocator_20260907.md)
 starts at `9e74a7e`. The bounded legacy audit and independent source review are
-complete; existing mixed/censored logs do not qualify. Next is an owner-designated
-trusted request ingress or eligible trace, then development headroom, bounded
-training and fresh confirmation. No live capture/deployment is inferred.
+complete; existing mixed/censored logs do not qualify. The owner approved the
+existing Discord bridge's owner-only private DM capture, then development
+headroom, bounded training and fresh confirmation. The scoped capture and
+bridge-only rollout contract is [here](../plans/cnet_discord_capture_20260907.md).
 See [measured readiness results](../result/cnet_chronological_allocator_20260907.md).
 
 ## Active: unattended learning and measured core improvement
