@@ -103,6 +103,7 @@ All commands use the same clean launch prefix above:
 | `status DEPLOYMENT` | Structured pin, pause, job, pending-operation and durable-run status. Does not assert daemon health. |
 | `ask DEPLOYMENT DATASET KEY` | Actual daemon answer/abstention; records normalized demand, never answer-as-label. KEY is canonical decimal 0..255. |
 | `verify DEPLOYMENT DATASET` | Independently checks all 256 live answers/abstentions against the policy-authorized source. Creates no demand or jobs. Exit 0 requires exact coverage and abstention; missing/wrong answers exit 2. |
+| `import DEPLOYMENT DATASET SOURCE SHA256` | Initially publishes an owner-approved canonical source into `work/data`. Requires the exact lowercase source hash, policy authority and owner lock. Never overwrites, creates demand or starts learning. |
 | `tick DEPLOYMENT` | One serialized recovery/probe/acquisition cycle. Requires the owner lock. |
 | `pause DEPLOYMENT` | Persistently prevents new work; no healthy daemon required. A running owner observes it and performs safety cleanup. |
 | `resume DEPLOYMENT` | Requires no running owner, exact healthy native state and no pending/required rollback. Cannot restart a terminal run. |
@@ -174,6 +175,26 @@ The authority must match policy. All omitted keys abstain. Source identity
 travels through admission and serving freshness checks. An owner source update
 invalidates old answers until a fresh candidate passes; stale in-flight
 evidence is discarded or rolled back, never silently relabelled.
+
+For initial onboarding, review the independent source first and record its
+SHA256. `SOURCE` must be a canonical absolute path to a private, single-link
+regular file within a private directory with trusted ancestors, following the
+same file checks as the deployment. Invoke `learning import DEPLOYMENT DATASET
+SOURCE SHA256` using the clean installed command prefix. The source header must
+match the already-authorized policy dataset and authority. A caller-supplied
+hash is explicit owner approval of those bytes, **not** authentication of a
+tool, proof of source truth, or permission to use CNET answers as labels.
+
+Import requires no running supervisor and refuses existing sources, even an
+identical retry. It reserves logical-byte/entry headroom during a SQLite-locked
+preflight and exclusive file publication; ordinary demand/status database
+writes cannot invalidate that scan. It does not modify policy, reset run
+history or admit a job. File publication and SQLite are not a distributed
+transaction: a late fsync/commit failure may leave a published source with a
+refusal result. Retain and inspect that file; do not delete or overwrite it to
+manufacture a clean retry. Existing-source refresh remains an explicit owner
+operation, not this initial-import command. Use `ask`, the normal learning loop
+and then `verify` to check that approved evidence actually became live coverage.
 
 ## Stop, restart and limits
 

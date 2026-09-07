@@ -12,8 +12,8 @@ internal static class LearningCommand
         var correlation = Guid.NewGuid().ToString("N");
         try
         {
-            if (args.Length < 2 || args[0] is not ("inspect" or "initialize" or "status" or "pause" or "resume" or "ask" or "verify" or "tick" or "run" or "quiesce")
-                || args.Length != (args[0] == "ask" ? 4 : args[0] == "verify" ? 3 : 2))
+            if (args.Length < 2 || args[0] is not ("inspect" or "initialize" or "status" or "pause" or "resume" or "ask" or "verify" or "import" or "tick" or "run" or "quiesce")
+                || args.Length != (args[0] switch { "ask" => 4, "verify" => 3, "import" => 5, _ => 2 }))
                 throw new ArgumentException("learning_command_usage");
             byte key = 0;
             if (args[0] == "ask" && (!LearningPolicy.IsId(args[2])
@@ -59,6 +59,12 @@ internal static class LearningCommand
             ledger.BindRuntime(native); ledger.BindManaged(running);
             switch (args[0])
             {
+                case "import":
+                    var source = ledger.ImportSource(args[2], args[3], args[4]);
+                    Emit(new { @event = "learning_source_imported", correlation_id = correlation, dataset = source.Dataset,
+                        authority = source.Authority, source_sha256 = source.SourceSha256, rows = source.Values.Count,
+                        managed_sha256 = running.Sha256, native_sha256 = native.Sha256, policy_sha256 = policy.Sha256 });
+                    return 0;
                 case "verify":
                     var verifiedDataset = policy.Datasets.SingleOrDefault(d => d.Id == args[2])
                         ?? throw new ArgumentException("learning_dataset_not_authorized");
