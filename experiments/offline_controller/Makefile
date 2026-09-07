@@ -221,3 +221,8 @@ $(OUT)/allocator_worker_test: allocator_worker_test.c worker.c worker.h $(ROOT)/
 allocator-worker-build: $(OUT)/allocator_worker $(OUT)/allocator_worker_test
 allocator-worker-test: allocator-worker-build
 	$(OUT)/allocator_worker_test $(abspath $(OUT)/allocator_worker)
+
+# Metadata diagnostics only: no traffic generation, training or live mutation.
+.PHONY: allocator-chronology-test
+allocator-chronology-test:
+	python3 -m unittest allocator_chronology_audit_test -v
