@@ -1,0 +1,13 @@
+[Unit]
+Description=CNET private capture watchdog
+OnFailure=cnet-capture-alert.service
+
+[Service]
+Type=oneshot
+ExecStart=%h/.config/cnet/venv-discord/bin/python %h/.local/share/cnet-discord-capture/releases/@RELEASE@/monitor.py %h/.local/share/cnet-discord-capture/data %h/.local/share/cnet-discord-capture/observation --watchdog
+Environment=PYTHONDONTWRITEBYTECODE=1
+UMask=0077
+NoNewPrivileges=yes
+TimeoutStartSec=20
+MemoryMax=256M
+TasksMax=16

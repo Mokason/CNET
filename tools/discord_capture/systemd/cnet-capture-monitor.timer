@@ -1,0 +1,13 @@
+[Unit]
+Description=Check CNET private capture monitor every minute
+OnFailure=cnet-capture-alert.service
+
+[Timer]
+OnStartupSec=30
+OnUnitActiveSec=60
+AccuracySec=1s
+RandomizedDelaySec=0
+Unit=cnet-capture-monitor.service
+
+[Install]
+WantedBy=timers.target

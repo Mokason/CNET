@@ -1,0 +1,13 @@
+[Unit]
+Description=Check CNET private capture watchdog every minute
+OnFailure=cnet-capture-alert.service
+
+[Timer]
+OnStartupSec=60
+OnUnitActiveSec=60
+AccuracySec=1s
+RandomizedDelaySec=0
+Unit=cnet-capture-watchdog.service
+
+[Install]
+WantedBy=timers.target

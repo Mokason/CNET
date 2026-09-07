@@ -1,0 +1,11 @@
+[Unit]
+Description=Local CNET capture operational alert
+StartLimitIntervalSec=300
+StartLimitBurst=1
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/notify-send --app-name=CNET --urgency=critical --expire-time=10000 "CNET capture needs attention" "Inspect cnet-capture-monitor.service and cnet-capture-watchdog.service in the user journal. No learning is authorized by capture health."
+TimeoutStartSec=10
+UMask=0077
+NoNewPrivileges=yes
