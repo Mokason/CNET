@@ -142,11 +142,30 @@ task-owned output directory; do not reuse a broad repository or home directory.
 ## Experiment-only worker lifetime and authority limits
 
 This existing C worker pool is not the managed production `LearningChild` plus
-CPU acquisition guard. It uses `CLOCK_MONOTONIC`, so its cooperative deadline
-excludes suspend time; it has no parent-death binding. It also inherits stderr
-without validating whether that descriptor grants writable regular-file
-authority. Filesystem seals do not revoke already-open writable descriptors.
-The pool therefore does not establish production parent-lifetime, BOOTTIME or
-stderr-authority guarantees. Owner termination or a blocked owner is not a
-demonstrated immediate worker-stop boundary. These are documented limits, not
-runtime fixes. Production policy continues to refuse `allocator_enabled`.
+CPU acquisition guard. Since worker commit `3c408b8`, the pool captures the exact
+spawning thread's pidfd before launch. Native entry arms `PR_SET_PDEATHSIG` with
+`SIGKILL`, then checks that pidfd so thread death before arming also refuses.
+An absolute `CLOCK_BOOTTIME` POSIX timer delivers `SIGKILL` without parent polling;
+the shared deadline includes preparation, spawn, initialization and suspend.
+Clock or timer failure refuses. Child stdio is replaced with, and checked as,
+`/dev/null`; FD4 must be a writable result pipe and extra inherited descriptors
+are closed before source input or GPU initialization. Parent lifecycle, exit
+and signal diagnostics remain available; worker runtime stderr is discarded.
+
+This private entry contract requires Linux >=6.9 thread pidfds, accessible
+`/proc/self/fd`, and `CLOCK_BOOTTIME` POSIX timers. Pool callers and native workers
+must be rebuilt together for the absolute deadline argument and FD5 thread pidfd.
+There is no weaker fallback. The CPU-only `worker-boundary-test` covers 22
+lifetime, descriptor and setup-failure cases, including process/thread death
+before and after arming and timer expiry without polling. Both AMD worker
+binaries build; CPU tests do not establish actual-device behavior or physical
+suspend/resume behavior after the hardening. See the
+[September 7 expansion report](../../result/cnet_operational_expansion_20260907.md)
+for the verification record and outstanding actual-device qualification.
+
+The fixed native entry and HIP runtime remain trusted. The dynamic loader runs
+before the guard, and kernel/driver cleanup after `SIGKILL` is not a hard
+real-time GPU-stop guarantee. This is not an arbitrary executable or malicious
+owner sandbox. Production policy continues to refuse `allocator_enabled`, and
+the unchanged useful-gain gate remains failed; worker hardening does not certify
+or activate an allocator.

@@ -66,6 +66,14 @@ restart and rollback; failed candidates retain the incumbent. See the
 The [source-evidence adapter](docs/CNET_SOURCE_EVIDENCE.md) serves five exact
 local literal facts with source freshness checks; it is not unrestricted code
 understanding or a compiler-proof engine.
+The [private learning supervisor](docs/AUTONOMOUS_LEARNING.md) can acquire
+owner-authorized finite numeric tables and exact-token/text-label tables into
+the same certified capsules. Symbolic vocabulary is policy-pinned; actual text
+observations, source freshness, probation and rollback remain mandatory.
+The pinned Unicode examples cover explicit case changes and 95 printable-ASCII
+names mapped to each of two property labels, not unrestricted text learning.
+See the [adapter/GPU/scale verification report](result/cnet_domains_gpu_scale_20260907.md)
+for measured results and explicitly unqualified scope.
 
 The opt-in GPU/core experiment implements resident AMD FP32 training, isolated
 two-device workers, immutable core checkpoints, certified BTN/capsule conversion,

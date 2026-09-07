@@ -128,6 +128,11 @@ The compiler assigns each row `i -> i` and uses the same finite-row BTN,
 contract, exact coverage and `.05` certification margin. The keys and labels
 travel inside the existing schema-2 `frontend.cvfa`; this is not another capsule
 package. Older readers refuse the unknown source magic rather than degrading it.
+The native `CnetCapsuleTable` structure layout has changed: rebuild all direct
+C consumers, producers and verifiers together with the shared library. Do not
+replace only the library under older binaries. Numeric source compatibility is
+not mixed-binary ABI compatibility. Private managed/native installations remain
+immutable bundles; provision matching new binaries separately from live code.
 
 `symbol calibration ALPHA` selects the fresh full-source-bound capsule, executes
 it, and renders `first label` only when the returned ordinal equals the requested
