@@ -226,3 +226,9 @@ allocator-worker-test: allocator-worker-build
 .PHONY: allocator-chronology-test
 allocator-chronology-test:
 	python3 -m unittest allocator_chronology_audit_test -v
+
+# Synthetic capture contracts only; no Discord API or real traffic generation.
+.PHONY: discord-capture-test
+DISCORD_PYTHON ?= python3
+discord-capture-test:
+	$(DISCORD_PYTHON) -m unittest discover -s $(ROOT)/tools/discord_capture -p 'test_*.py' -v
