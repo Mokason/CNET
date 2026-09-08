@@ -12,8 +12,8 @@ internal static class LearningCommand
         var correlation = Guid.NewGuid().ToString("N");
         try
         {
-            if (args.Length < 2 || args[0] is not ("inspect" or "initialize" or "status" or "pause" or "resume" or "ask" or "lookup" or "verify" or "import" or "tick" or "run" or "quiesce" or "observe" or "approve" or "inbox" or "task" or "gaps")
-                || args.Length != (args[0] switch { "ask" or "lookup" or "approve" or "inbox" => 4, "observe" => 6, "verify" or "gaps" => 3, "import" or "task" => 5, _ => 2 }))
+            if (args.Length < 2 || args[0] is not ("inspect" or "initialize" or "status" or "pause" or "resume" or "ask" or "lookup" or "verify" or "import" or "tick" or "run" or "quiesce" or "observe" or "approve" or "inbox" or "task" or "gaps" or "trace")
+                || args.Length != (args[0] switch { "ask" or "lookup" or "approve" or "inbox" => 4, "observe" => 6, "verify" or "gaps" or "trace" => 3, "import" or "task" => 5, _ => 2 }))
                 throw new ArgumentException("learning_command_usage");
             if (args[0] == "lookup" && (!LearningPolicy.IsId(args[2]) || !LocalSymbolReference.IsKey(args[3])))
                 throw new ArgumentException("learning_command_usage");
@@ -29,6 +29,14 @@ internal static class LearningCommand
             if (args[0] == "task" && (args[2] is not ("synthetic" or "unreviewed") || !LearningLedger.IsRequestId(args[3])))
                 throw new ArgumentException("learning_command_usage");
             long after = 0; int pageSize = 0;
+            string[] traceIds = [];
+            if (args[0] == "trace")
+            {
+                if (args[2].Length is < 32 or > 329) throw new ArgumentException("learning_command_usage");
+                traceIds = args[2].Split(',');
+                if (traceIds.Length > 10 || traceIds.Any(id => !LearningLedger.IsRequestId(id))
+                    || traceIds.Distinct().Count() != traceIds.Length) throw new ArgumentException("learning_command_usage");
+            }
             if (args[0] == "gaps" && (!int.TryParse(args[2], NumberStyles.None, CultureInfo.InvariantCulture, out pageSize)
                 || pageSize is < 1 or > 32 || pageSize.ToString(CultureInfo.InvariantCulture) != args[2]))
                 throw new ArgumentException("learning_command_usage");
@@ -67,11 +75,16 @@ internal static class LearningCommand
                 Status(created, policy, correlation, "learning_initialized");
                 return 0;
             }
-            if (args[0] is "inbox" or "gaps")
+            if (args[0] is "inbox" or "gaps" or "trace")
             {
                 using var reader = LearningLedger.OpenReadOnly(workPath, policy);
                 if (reader.RuntimeSha256 != native.Sha256 || reader.ManagedSha256 != running.Sha256)
                     throw new InvalidOperationException("learning_installation_binding_missing");
+                if (args[0] == "trace")
+                {
+                    Emit(new { @event = "learning_trace", correlation_id = correlation, matches = reader.TraceExperiences(traceIds) });
+                    return 0;
+                }
                 if (args[0] == "gaps")
                 {
                     Emit(new { @event = "learning_gaps", correlation_id = correlation, report = reader.Gaps(pageSize) });
