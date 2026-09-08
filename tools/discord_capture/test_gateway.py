@@ -98,6 +98,7 @@ class GatewayTests(unittest.TestCase):
         self.gw.learner.task_answer.assert_not_called()
         peer.assert_not_called()
         api.assert_not_called()
+
         self.gw.learner.task_answer.side_effect = RuntimeError("fixture_native_may_have_accepted")
         next_data = dict(data, id=str(int(data["id"]) + 1))
         with patch.object(gateway, "peer_ask") as peer, patch.object(gateway, "api") as api, \
@@ -106,6 +107,17 @@ class GatewayTests(unittest.TestCase):
                 self.gw.handle_message(next_data)
             self.gw.handle_message(next_data)
         self.gw.learner.task_answer.assert_called_once()
+        peer.assert_not_called()
+        api.assert_not_called()
+
+    def test_task_mode_missing_result_never_enables_legacy_or_peer_fallback(self):
+        self.gw.learner = Mock(task_mode=True)
+        self.gw.learner.task_answer.return_value = None
+        with patch.object(gateway, "peer_ask") as peer, patch.object(gateway, "api") as api, \
+                patch.object(gateway, "stamp_last_origin"):
+            with self.assertRaises(CaptureError):
+                self.gw.handle_message(dict(message(), content="unsupported task"))
+        self.gw.learner.answer.assert_not_called()
         peer.assert_not_called()
         api.assert_not_called()
 

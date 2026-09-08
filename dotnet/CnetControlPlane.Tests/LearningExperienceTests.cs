@@ -327,4 +327,19 @@ public sealed class LearningExperienceTests : IDisposable
         Assert.Equal(1, unknown.States["unknown"]); Assert.Equal(0, unknown.PendingApprovals);
         Assert.False(report.TrainingEligible); Assert.Null(report.EstimatedLearningSeconds);
     }
+
+    [Fact]
+    public void ExactTraceValidatesBatchAndKeepsPendingAndMissingIdsInRequestedOrder()
+    {
+        var missing = new string('d', 32);
+        Assert.Null(Assert.Single(ledger.TraceExperiences([missing])).Experience);
+        var pending = ledger.BeginExperience(Id, "calibration", 7, "synthetic").Experience;
+        var rows = ledger.TraceExperiences([missing, Id]);
+        Assert.Equal(missing, rows[0].RequestId); Assert.Null(rows[0].Experience);
+        Assert.Equal(pending, rows[1].Experience);
+        foreach (var bad in new[] { Array.Empty<string>(), ["bad"], [Id, Id],
+                     Enumerable.Range(1, 11).Select(value => value.ToString("x32")).ToArray() })
+            Assert.Throws<ArgumentException>(() => ledger.TraceExperiences(bad));
+        Assert.Equal((0L, 0L), ledger.Demand("calibration", 7));
+    }
 }

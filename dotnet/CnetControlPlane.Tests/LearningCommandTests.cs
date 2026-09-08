@@ -202,6 +202,7 @@ public sealed class LearningCommandInstallation : IDisposable
         if (result.Code != 0) throw new InvalidOperationException("learning_test_publish_failed: " + result.Error + result.Output);
     }
     public LearningCommandDeployment Deploy() => new(publishRoot, repository);
+    internal LearningCommandDeployment DeployTrusted() => new(publishRoot, repository, trustedAncestors: true);
     internal static async Task<(int Code, string Output, string Error)> Execute(string executable, string[] args, string cwd, bool clean)
     {
         var start = new ProcessStartInfo(executable) { WorkingDirectory = cwd, UseShellExecute = false,
@@ -223,10 +224,15 @@ public sealed class LearningCommandInstallation : IDisposable
 public sealed class LearningCommandDeployment : IDisposable
 {
     private Process? daemon;
-    public string Root { get; } = Directory.CreateTempSubdirectory("cnet-command-").FullName;
+    public string Root { get; }
     public string ManagedHash { get; }
-    internal LearningCommandDeployment(string published, string repository)
+    internal LearningCommandDeployment(string published, string repository, bool trustedAncestors = false)
     {
+        // The Python bridge deliberately refuses /tmp's writable ancestor.
+        // Only this freshly generated fixture directory is ever cleaned up.
+        Root = trustedAncestors ? Directory.CreateDirectory(Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "cnet-task-fixture-" + Guid.NewGuid().ToString("N")),
+            LearningCommandInstallation.Private).FullName : Directory.CreateTempSubdirectory("cnet-command-").FullName;
         File.SetUnixFileMode(Root, LearningCommandInstallation.Private);
         var managed = Copy(LearningCommandInstallation.ManagedNames, Path.Combine(published, "output"), "managed", false);
         var native = Copy(LearningCommandInstallation.NativeNames, Path.Combine(repository, "bin"), "native", true);

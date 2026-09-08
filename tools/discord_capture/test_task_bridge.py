@@ -137,6 +137,21 @@ class TaskBridgeTests(unittest.TestCase):
             self.assertTrue(bridge.failed)
             self.assertEqual(bridge.command.call_args_list[-1].args, ("pause",))
 
+    def test_pause_failure_remains_latched_and_pending_replay_does_not_execute_again(self):
+        bridge = self.bridge(response(experience=experience(Value=923)))
+        bridge.command.side_effect = [response(experience=experience(Value=923)), lb.BridgeError("private pause error")]
+        log = io.StringIO()
+        with contextlib.redirect_stdout(log):
+            self.assertEqual(bridge.task_answer("private input", IDENTITY)[1], "peer_error")
+        self.assertTrue(bridge.failed)
+        self.assertEqual([json.loads(line)["event"] for line in log.getvalue().splitlines()],
+                         ["captured_task_pause_failed", "captured_task_refused"])
+        self.assertNotIn("private", log.getvalue())
+        bridge = self.bridge(response(replayed=True, experience=experience(State="pending", Value=None,
+                              FinishedBoot=None, FinishedNanoseconds=None)))
+        self.assertEqual(bridge.task_answer("uppercase µ", IDENTITY)[1], "peer_unknown")
+        bridge.command.assert_called_once()
+
     def test_timeout_source_failure_latch_and_bad_local_arguments_never_retry(self):
         bridge = self.bridge(response())
         bridge.command.side_effect = lb.BridgeError("command_timeout")

@@ -1,11 +1,12 @@
 """Synthetic capture/history joins. Never attest origin or mutate live stores."""
 import importlib.util
 import json
-import sqlite3
+import contextlib
+import io
 from pathlib import Path
 import tempfile
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from capture_task_identity import task_identity
 from journal import CaptureError, Journal
@@ -99,6 +100,30 @@ class TaskInboxTests(unittest.TestCase):
         changed = self.module.inspect_page(self.root, self.bridge, 0, 1)["captures"][0]
         self.assertNotEqual(before, changed["task_request_id"])
         self.assertEqual(changed["link_state"], "no_observation")
+
+    def test_full_approved_page_fits_pipe_bound_and_cli_is_read_only_with_sanitized_errors(self):
+        def trace(verb, identities):
+            return dict(event="learning_trace", correlation_id="a" * 32,
+                        matches=[dict(RequestId=identity, Experience=experience(RequestId=identity,
+                            ApprovedSourceSha256="b" * 64, ApprovedExpected=925,
+                            ApprovedBoot=experience()["Boot"], ApprovedNanoseconds=2**63-1))
+                            for identity in identities.split(',')])
+        self.bridge.command.side_effect = trace
+        page = self.module.inspect_page(self.root, self.bridge)
+        self.assertEqual(sum(row["link_state"] == "matched" for row in page["captures"]), 10)
+        self.assertLess(len(json.dumps(page).encode()), 32768)
+        args = ["task_inbox", str(self.root), "/fixture-learning", "a" * 64, "--limit", "10"]
+        log, error = io.StringIO(), io.StringIO()
+        with patch("sys.argv", args), patch.object(self.module, "Bridge", return_value=self.bridge), \
+                contextlib.redirect_stdout(log), contextlib.redirect_stderr(error):
+            self.assertEqual(self.module.main(), 0)
+        self.assertEqual(len(json.loads(log.getvalue())["captures"]), 10)
+        self.assertEqual(error.getvalue(), "")
+        with patch("sys.argv", args), patch.object(self.module, "Bridge", side_effect=ValueError("private failure")), \
+                contextlib.redirect_stderr(error):
+            self.assertEqual(self.module.main(), 2)
+        self.assertNotIn("private", error.getvalue())
+        self.assertEqual(json.loads(error.getvalue())["event"], "capture_task_inbox_refused")
 
     def test_bounds_invalid_scope_and_malformed_trace_fail_closed_without_pause_or_replay(self):
         for after, limit in ((-1, 1), (True, 1), (2**63, 1), (0, 0), (0, 11), (0, True)):

@@ -171,7 +171,7 @@ class Bridge:
                     "source_changed")
 
     def command(self, verb, *args):
-        allowed = {"status", "pause", "task"} if getattr(self, "task_mode", False) else {"status", "pause", "ask", "lookup"}
+        allowed = {"status", "pause", "task", "trace"} if getattr(self, "task_mode", False) else {"status", "pause", "ask", "lookup"}
         require(verb in allowed, "command_refused")
         code, output, error = bounded_call([str(self.dotnet), str(self.root / "managed/cnet-control.dll"),
                                             "learning", verb, str(self.root), *args], self.root)
@@ -204,18 +204,24 @@ class Bridge:
                 reply = self.command("task", "unreviewed", identity, text)
                 self.check_installation()
                 try:
-                    return task_result(reply, identity, self.source_pins, self.reference)
+                    result = task_result(reply, identity, self.source_pins, self.reference)
                 except (ValueError, TypeError, KeyError):
                     raise ProtocolError("task_refused") from None
+                print(json.dumps(dict(event="captured_task_result", request_id=identity,
+                      proposal_status=reply["proposal"]["Status"], replayed=reply["replayed"],
+                      experience_state=reply["experience"]["State"] if reply["experience"] else None,
+                      peer_status=result[1])), flush=True)
+                return result
             except ProtocolError:
                 self.failed = True
                 try:
                     self.command("pause")
                 except Exception:
-                    print("[learning_bridge] pause_failed", flush=True)
+                    print(json.dumps(dict(event="captured_task_pause_failed", request_id=identity)), flush=True)
                 raise
         except Exception:
-            print("[learning_bridge]", "task_refused" if self.failed else "outcome_unknown" if attempted else "unavailable", flush=True)
+            print(json.dumps(dict(event="captured_task_refused", request_id=identity if hex_id(identity) else None,
+                  code="task_refused" if self.failed else "outcome_unknown" if attempted else "unavailable")), flush=True)
             return ("ABSTAIN: learning service unavailable or outcome unknown; no automatic retry.",
                     "peer_unknown" if attempted and not self.failed else "peer_error")
 
