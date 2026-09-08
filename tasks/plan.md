@@ -11,8 +11,11 @@ learning rollout](../plans/cnet_live_completion_20260908.md). The owner approved
 this ordered implementation/deployment sequence. Work starts at pushed master
 `2bfa1d8`; preserve the dirty primary checkout and all live data. Earlier source
 implementation checklists below are historical, not evidence of elapsed product
-acceptance. Identity/presence repair is deployed and published. The alert service
-has a reproduced start-limit failure; new safe MCP is not yet enabled live.
+acceptance. Identity/presence repair is deployed and published. Recall, repeatable
+alerts and safe MCP reads are now deployed and verified through the actual peer
+and owner-only Discord diagnostic. The independent Unicode workloads and
+three-stage capsule refresh gate pass. The bounded monitor's actual SIGKILL
+rehearsal stops acquisition safely; a separately frozen long run is next.
 
 Completed source task: [bounded MCP read brick](../plans/cnet_mcp_read_brick_20260908.md).
 Certified finite dispatch, opt-in MCP Wikipedia/web reads, strict evidence and

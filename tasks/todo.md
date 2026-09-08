@@ -6,10 +6,10 @@ Evidence, scope and dependencies: [plan.md](plan.md).
 
 - [x] Synthetic RED and fix for irrelevant implicit legacy memory retrieval
 - [x] RED and repair for repeatable, throttled local alerts; deploy and test
-- [ ] Private compatible runtime staging, inventory preservation and rollback
-- [ ] Enable certified safe MCP read dispatch on the existing live service
-- [ ] Verify real read/refusal through deployed peer and Discord renderer
-- [ ] Broaden independently verified learning without treating web prose as truth
+- [x] Private compatible runtime staging, inventory preservation and rollback
+- [x] Enable certified safe MCP read dispatch on the existing live service
+- [x] Verify real read/refusal through deployed peer and Discord renderer
+- [x] Broaden independently verified learning without treating web prose as truth
 - [ ] Freeze a bounded unattended learning run and start real acceptance monitoring
 - [ ] Actual elapsed/outcome acceptance and genuine-demand headroom (WITHHELD until measured)
 - [ ] Final regressions, vulnerability review and measured handoff
