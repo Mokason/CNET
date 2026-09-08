@@ -1,6 +1,10 @@
 # Fast, model-free serving boundary gates.
 
 .PHONY: social_reply_verify
+.PHONY: recall_verify
+recall_verify: cnetd
+	CNETD_BIN=$(abspath $(BIN_DIR))/cnetd $(PYTHON) tests/test_cnetd_recall.py -v
+
 DISCORD_PYTHON ?= python3
 social_reply_verify: cnetd $(BIN_DIR)/cnet_peer cnetd_protocol_boundary query_alias
 	$(CC) $(ASI_IMPROVE_CFLAGS) -o $(BIN_DIR)/test_cnet_identity_alias \
@@ -126,7 +130,7 @@ $(BIN_DIR)/cnetd: $(BIN_DIR)/libcnet_capsule_core.so $(ROE_ASI_SRC) tools/cnetd.
 		src/serve/cnet_marble_live.c src/memory/cnet_md_memory.c \
 		src/serve/cnet_mcp_client.c src/serve/cnet_mcp_read_brick.c \
 		include/cnet_mcp_read_brick.h include/cnet_mcp_evidence_internal.h \
-		src/memory/cnet_chat_lookup.c \
+		src/memory/cnet_chat_lookup.c src/memory/cnet_kb_recall.c include/cnet_kb_recall.h \
 		src/memory/cnet_lookup.c src/cce/cce_campaign_provenance.c \
 		src/serve/cnet_c_speak.c src/cce/cce_wordlm.c \
 		src/cnet_skill_lane.c src/memory/cnet_capsule_loop.c \
@@ -157,7 +161,7 @@ $(BIN_DIR)/cnetd: $(BIN_DIR)/libcnet_capsule_core.so $(ROE_ASI_SRC) tools/cnetd.
 		src/cnet_roe_gold.c \
 		src/serve/cnet_showrunner.c src/serve/cnet_marble_live.c \
 		src/memory/cnet_md_memory.c src/serve/cnet_mcp_client.c src/serve/cnet_mcp_read_brick.c \
-		src/memory/cnet_chat_lookup.c src/memory/cnet_lookup.c \
+		src/memory/cnet_chat_lookup.c src/memory/cnet_kb_recall.c src/memory/cnet_lookup.c \
 		src/cce/cce_campaign_provenance.c src/serve/cnet_c_speak.c \
 		src/cce/cce_wordlm.c src/cnet_skill_lane.c \
 		src/memory/cnet_capsule_loop.c src/serve/cnet_paragraph.c \

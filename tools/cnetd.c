@@ -52,6 +52,7 @@
 #include "../include/cnet_mcp_client.h"
 #include "../include/cnet_mcp_read_brick.h"
 #include "../include/cnet_json_escape.h"
+#include "../include/cnet_kb_recall.h"
 #include "../include/cnet_domain_route.h"
 #include "../include/cnet_probe_shortcircuit.h"
 #include "../include/cnet_query_alias.h"
@@ -191,29 +192,6 @@ static int contains_ci(const char *hay, const char *needle) {
         n[i] = (char)tolower((unsigned char)needle[i]);
     n[i] = 0;
     return strstr(h, n) != NULL;
-}
-
-static int kb_word_char(unsigned char c) {
-    return (int)(isalnum(c) || c == '-');
-}
-
-/* Whole-word match. "like" must not hit "likely". */
-static int contains_word_ci(const char *hay, const char *needle) {
-    size_t nlen, i, j;
-    if (!hay || !needle || !needle[0]) return 0;
-    nlen = strlen(needle);
-    for (i = 0; hay[i]; i++) {
-        if (i > 0 && kb_word_char((unsigned char)hay[i - 1])) continue;
-        for (j = 0; j < nlen; j++) {
-            if (!hay[i + j]) break;
-            if (tolower((unsigned char)hay[i + j]) !=
-                tolower((unsigned char)needle[j]))
-                break;
-        }
-        if (j == nlen && !kb_word_char((unsigned char)hay[i + nlen]))
-            return 1;
-    }
-    return 0;
 }
 
 static void cd_scopy(char *d, size_t cap, const char *s) {
@@ -2314,153 +2292,8 @@ static int kb_recall(const char *topic, char *out, size_t cap) {
     return hits;
 }
 
-/* ---- ingested-notes recall, preferred over invented residual ----------
- *
- * kb_recall() matches the whole topic string as a substring, which is right for
- * an explicit "what do you know about X" but useless for ordinary chat. For the
- * open-chat path we need overlap: how many significant words of the question
- * appear in a stored note.
- *
- * This is what stops CNET inventing Bitcoin for "gold hash" when someone
- * already told it what a gold hash is here. Notes are NOT CERT -- the reply is
- * SOURCE INFO, miss=1, claimed_cert=0 -- but a note we were actually given
- * beats a fluent guess.
- *
- * The threshold matters more than the matching. A weak overlap that shadows
- * open chat with an irrelevant note is worse than the guess it replaced, so a
- * hit needs either two distinct significant words or one long (>=7 char)
- * specific term.
- */
-#define KB_MAX_TOK 12
-#define KB_MIN_TOK_LEN 4
-#define KB_SPECIFIC_LEN 7
-
-static int kb_tokens(const char *q, char tok[KB_MAX_TOK][64]) {
-    static const char *stop[] = {"what", "when", "where", "which", "about",
-                                 "does", "your", "they", "them", "this", "that",
-                                 "with", "from", "have", "know", "tell", "please",
-                                 "there", "their", "would", "could", "should",
-                                 "like", "made", "make", "just", "really", "also",
-                                 "been", "being", "very", "much", "such", "into",
-                                 "over", "only", "even", "some", "more", "than",
-                                 "then", "want", "need", "well", "will", "were",
-                                 "youre", NULL};
-    int n = 0, k;
-    size_t i = 0;
-    while (q[i] && n < KB_MAX_TOK) {
-        size_t s;
-        int isstop = 0;
-        if (!isalnum((unsigned char)q[i])) { i++; continue; }
-        s = i;
-        while (q[i] && (isalnum((unsigned char)q[i]) || q[i] == '-')) i++;
-        if (i - s < KB_MIN_TOK_LEN) continue;
-        if (i - s > 63) continue;
-        {
-            size_t j;
-            for (j = 0; j < i - s; j++)
-                tok[n][j] = (char)tolower((unsigned char)q[s + j]);
-            tok[n][i - s] = 0;
-        }
-        for (k = 0; stop[k]; k++)
-            if (!strcmp(tok[n], stop[k])) { isstop = 1; break; }
-        if (!isstop) {
-            int dup = 0;
-            for (k = 0; k < n; k++)
-                if (!strcmp(tok[k], tok[n])) {
-                    dup = 1;
-                    break;
-                }
-            if (!dup) n++;
-        }
-    }
-    return n;
-}
-
-/* Best-scoring notes for q. Returns the winning score (0 = no usable hit). */
 static int kb_recall_overlap(const char *q, char *out, size_t cap) {
-    char tok[KB_MAX_TOK][64];
-    char best[3][900];
-    int bscore[3] = {0, 0, 0};
-    int ntok, i, j, nbest = 0, top = 0;
-    FILE *f;
-    char line[4096];
-    if (out && cap) out[0] = 0;
-    ntok = kb_tokens(q, tok);
-    if (ntok == 0) return 0;
-    f = fopen(kb_path_live(), "r");
-    if (!f) return 0;
-    while (fgets(line, sizeof line, f)) {
-        const char *c = strstr(line, "\"chunk\":\"");
-        char chunk[900];
-        size_t o = 0;
-        int score = 0, specific = 0;
-        if (!c) continue;
-        c += 9;
-        while (*c && *c != '"' && o + 2 < sizeof chunk) {
-            if (*c == '\\' && c[1]) c++;
-            chunk[o++] = *c++;
-        }
-        chunk[o] = 0;
-        for (i = 0; i < ntok; i++) {
-            if (!contains_word_ci(chunk, tok[i])) continue;
-            score++;
-            if (strlen(tok[i]) >= KB_SPECIFIC_LEN) specific = 1;
-        }
-        /* Threshold.
-         *
-         * The old rule -- two words OR one >=7-char word -- was too loose. A
-         * stored note is often several hundred characters, so it contains a lot
-         * of ordinary long words by chance: "good morning" matched a note about
-         * the present simple tense purely because the note's example sentence
-         * said "every morning", and the greeting came back as a grammar
-         * lecture. Length is not rarity.
-         *
-         * Now: at least two distinct query words must appear, AND they must
-         * cover at least half of the question's significant words. That keeps
-         * "what is a gold hash in CNET" (3/3) and drops "good morning" (1/2)
-         * and "I don't understand" (1/1 common word). A single-word query no
-         * longer pulls notes at all -- the explicit "what do you know about X"
-         * verb still serves that case, and deliberately.
-         */
-        (void)specific;
-        if (score < 2) continue;
-        if (score * 2 < ntok) continue;
-        /* A distinctive query term (name / >=7) must appear in the note.
-         * "Mokason made CNET" must not retrieve an English-grammar dump
-         * that merely mentions CNET. */
-        {
-            int need_spec = 0, got_spec = 0;
-            for (i = 0; i < ntok; i++) {
-                if (strlen(tok[i]) < KB_SPECIFIC_LEN) continue;
-                need_spec = 1;
-                if (contains_word_ci(chunk, tok[i])) got_spec = 1;
-            }
-            if (need_spec && !got_spec) continue;
-        }
-        for (j = 0; j < 3; j++) {
-            if (score > bscore[j]) {
-                int k2;
-                for (k2 = 2; k2 > j; k2--) {
-                    bscore[k2] = bscore[k2 - 1];
-                    memcpy(best[k2], best[k2 - 1], sizeof best[0]);
-                }
-                bscore[j] = score;
-                snprintf(best[j], sizeof best[j], "%s", chunk);
-                if (nbest < 3) nbest++;
-                break;
-            }
-        }
-    }
-    fclose(f);
-    if (nbest == 0) return 0;
-    top = bscore[0];
-    if (out && cap) {
-        size_t o = 0;
-        for (i = 0; i < nbest && bscore[i] > 0 && o + 16 < cap; i++)
-            o += (size_t)snprintf(out + o, cap - o, "%s[%d] %.400s",
-                                  i ? " " : "", i + 1, best[i]);
-    }
-    return top;
+    return cnet_kb_recall(kb_path_live(), q, out, cap);
 }
 
 /* Repeat organic demand that we already have notes for is a promote candidate.
@@ -2504,25 +2337,26 @@ static int kb_note_hit(CdState *S, const char *q, const char *notes) {
     if (count != need) return count;
     /* enough repeat demand + we have notes -> propose (still not CERT) */
     {
-        char pdir[CD_PATH], pj[CD_PATH];
+        char pdir[CD_PATH], pj[CD_PATH], preview[8408];
         const char *root = getenv("CNET_MINIMAL_ROOT");
         snprintf(pdir, sizeof pdir, "%s/var/capsule_inbox/kbnote-%ld",
                  root && root[0] ? root : ".", (long)time(NULL));
         if (mkdir_p(pdir) != 0) return count;
         snprintf(pj, sizeof pj, "%.400s/PROPOSE.json", pdir);
+        if (cnet_json_escape(notes ? notes : "", preview, sizeof preview) != 0) return count;
         f = fopen(pj, "w");
         if (f) {
             fprintf(f,
                     "{\n  \"kind\": \"kb_note_promote\",\n"
                     "  \"query\": \"%.300s\",\n"
                     "  \"hits\": %d,\n  \"need\": %d,\n"
-                    "  \"notes_preview\": \"%.300s\",\n"
+                    "  \"notes_preview\": \"%s\",\n"
                     "  \"auto_cert\": false,\n"
                     "  \"claimed_cert\": 0,\n"
                     "  \"status\": \"pending_verify\",\n"
                     "  \"law\": \"ingest_is_not_cert_propose_only\",\n"
                     "  \"ts\": %ld\n}\n",
-                    nq, count, need, notes ? notes : "", (long)time(NULL));
+                    nq, count, need, preview, (long)time(NULL));
             fclose(f);
         }
         (void)S;
@@ -3752,7 +3586,8 @@ static void handle_client(int cfd, CdState *S) {
                 if (kb_recall_overlap(q, kbn, sizeof kbn) > 0) {
                     snprintf(rep.answer, sizeof rep.answer,
                              "From what I was told (not certified): %.1800s", kbn);
-                    snprintf(rep.utterance, sizeof rep.utterance, "%.760s", rep.answer);
+                    snprintf(rep.utterance, sizeof rep.utterance,
+                             "Matched an unverified archived note; see the answer.");
                     snprintf(rep.source, sizeof rep.source, "INFO");
                     snprintf(rep.skill, sizeof rep.skill, "kb_recall");
                     rep.verified = 0;
