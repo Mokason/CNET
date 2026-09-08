@@ -60,3 +60,41 @@ C and Python test runners. Preserve RED/GREEN checkpoints and a measured report.
 The existing 72-hour terminal result, reviewed genuine demand, native allocator
 campaign trajectories, useful headroom and fresh confirmation remain separate
 requirements. A successful finite task milestone does not close these gates.
+
+## Concrete continuation after the first milestone
+
+1. Link new task IDs to the existing owner-DM capture without rewriting old
+   receipts or treating `unreviewed` as human origin. Add grouped recurrent gaps,
+   approved-source proposals and measured acquisition cost to the inbox. Review
+   real origins separately from correction truth; retain all excluded records.
+   Gate: authentic capture → one native observation → explicit approval → one
+   demand admission, with continuous original-budget history and no synthetic
+   data in the genuine-use denominator.
+2. Freeze a held-out paraphrase/OOD collection independently of parser edits.
+   Add a semantic proposer only behind the same typed policy/coverage boundary.
+   Gate: measured useful coverage and clarification against the current grammar,
+   no unsafe typed actions or reduced certification floor. Developer regression
+   strings are not a held-out model evaluation.
+3. Select one useful bounded composition with actual compatible capsule ports.
+   Record step limits, per-hop coverage, terminal verification and constituent
+   identities; reuse `cnb_export_subset` and the existing capsule manifest.
+   Gate: repeated native executions, incompatible/OOD hop refusal, offline
+   round-trip and unchanged single-capability regressions. Do not serialize an
+   arbitrary workflow language as a new package format.
+4. Before changing-source expansion, add dependent capsule/composition checks
+   against a proposed source version and a staged replacement protocol. Gate:
+   disagreement, stale version and interrupted replacement refuse while the
+   original verified version remains identifiable. Current immutable approval
+   pins deliberately refuse updates; they do not implement this protocol.
+5. Define separate capsule-selection, clarification, composition-selection and
+   abstention jobs with independent labels and task-specific returns. Freeze
+   development and fresh chronological confirmation before AMD worker fitting.
+   Gate: improve over equally budgeted fixed controls in shadow evaluation,
+   preserve all safety/regression floors, then request promotion approval.
+   Existing allocator gain/paired-bound/family gates remain independently
+   unsatisfied; GPU activity alone cannot satisfy any task-quality gate.
+
+Schema 3 is fresh-only. Migration, gateway rollout, temporal arbitration,
+multi-step reuse and trained semantic/core candidates are explicitly not part
+of this first finite-task implementation. See [operator contract](../docs/VERIFIED_TASK_CORE.md)
+and [measured handoff](../result/cnet_verified_task_core_20260908.md).

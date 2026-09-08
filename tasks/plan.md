@@ -1,20 +1,29 @@
 # Current CNET work plan
 
-## Active extension
+## Completed source milestone; next extension
 
-The next implementation follows [the verified task-core contract](../plans/cnet_verified_task_core_20260908.md):
-durable native observations and approval inbox, bounded natural-language intent,
-then an actual offline miss-to-certified-answer rehearsal. Previous live and
-empirical gates below remain unchanged. ECC TDD/verification and Graft discovery
-are being tested without replacing the existing agent configuration.
+The first [verified task-core milestone](../plans/cnet_verified_task_core_20260908.md)
+now implements durable observations, explicit approval, a bounded inbox and
+grammar-based natural-language proposals. The actual native µ correction and
+offline alternate-phrasing rehearsal passed with lowercase capability intact.
+See [measured results](../result/cnet_verified_task_core_20260908.md): 956 managed
+and 127 capture/bridge tests. Source lives on `feature/verified-task-core-20260908`;
+it is not a migration or deployment of the existing live installations.
 
-Current contract: [verified learning ingress](../plans/cnet_verified_learning_ingress_20260908.md).
-Latest implementation and deployment: [measured handoff](../result/cnet_verified_learning_ingress_20260908.md).
+Next: reviewed real-capture linkage and grouped gaps/costs, independently frozen
+paraphrase evaluation, useful certified composition reuse, dependency-aware
+freshness, then measured AMD task-selection candidates. The concrete gate
+sequence is in the task-core plan. ECC TDD/verification and Graft discovery were
+tested without replacing the existing agent configuration. Previous live and
+empirical gates below remain unchanged.
+
+Previous deployed contract: [verified learning ingress](../plans/cnet_verified_learning_ingress_20260908.md).
+Latest live deployment (not the new task CLI): [measured handoff](../result/cnet_verified_learning_ingress_20260908.md).
 Documentation starts at [docs/INDEX.md](../docs/INDEX.md). Dated plans/results
 preserve earlier decisions and failed experiments; their old checkboxes are not
 the current queue.
 
-## Implemented and deployed in this continuation
+## Previously implemented and deployed
 
 The owner-only Discord DM now routes four exact approved Unicode query forms to
 a separate private bounded learner. Capture and deduplication precede one ask;

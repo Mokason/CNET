@@ -1,12 +1,17 @@
 # Private, policy-bounded table learning
 
 This opt-in control plane learns authorized finite numeric or exact-token/text-label
-tables, not arbitrary text or self-certified facts. A real uncovered request records demand. Fixed
+tables, not arbitrary text or self-certified facts. Legacy `ask`/`lookup` requests record demand. Fixed
 confined workers build a capsule; an independent evaluator checks all 256 input
 keys, including every required abstention. Exact persisted native operations
 govern staging, activation, probation and rollback. CNET answers never become
 training labels. Symbolic sources also require actual token/label observations
 before activation and during probation; numeric ordinal identity alone cannot pass.
+
+The new [verified task route](VERIFIED_TASK_CORE.md) separates observation from
+approval: bounded natural-language or typed `observe` requests do not create
+learning demand until an owner approves independently pinned evidence. This
+new CLI milestone is not yet deployed to the existing Discord installation.
 
 A reproducible real-source example is the [Unicode 17 explicit case-change
 workload](../data/unicode17/README.md): two independently checked partial tables
@@ -110,7 +115,8 @@ env -i "$LEARNING_DOTNET" "$LEARNING_DEPLOYMENT/managed/cnet-control.dll" \
 
 `inspect` verifies the running installation and exercises the packaged SQLite
 provider without creating work. `initialize` exclusively creates `work/`,
-`ipc/`, the fresh schema-2 ledger, and work subdirectories. It never overwrites,
+`ipc/`, the fresh schema-3 ledger, and work subdirectories. Schema 2 refuses;
+existing frozen deployments must keep their original runtime. It never overwrites,
 repairs or migrates an existing deployment. Failure can leave partial artifacts;
 retain them for diagnosis. Later commands require both original installation
 pins; a missing pin refuses and pauses instead of silently rebinding.

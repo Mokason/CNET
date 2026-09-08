@@ -1,17 +1,28 @@
 # Current CNET checklist
 
-## Active: verified task-core milestone
+## Completed source milestone: verified task core
 
-- [ ] Durable deduplicated native observations with no automatic learning demand
-- [ ] Bounded approval inbox with independent source pins and atomic demand admission
-- [ ] Natural-language proposals, ambiguity clarification and OOD refusal
-- [ ] Actual native approved-correction-to-capsule offline rehearsal
-- [ ] Source drift/conflict, interruption, replay and regression checks
-- [ ] ECC RED/GREEN and coverage report; Graft freshness and discovery report
-- [ ] Subsequent composition and targeted core-training scope assessed honestly
+- [x] Durable deduplicated native observations with no automatic learning demand
+- [x] Bounded approval inbox with independent source pins and atomic demand admission
+- [x] Bounded grammar-based proposals, ambiguity clarification and OOD refusal
+- [x] Actual native approved-correction-to-capsule offline rehearsal
+- [x] Source drift/conflict, interruption, replay and regression checks
+- [x] ECC RED/GREEN and coverage report; Graft freshness and discovery report
+- [x] Subsequent composition and targeted core-training scope assessed honestly
 
-Dependencies and evidence: [plan.md](plan.md). Current measured handoff:
-[verified learning ingress](../result/cnet_verified_learning_ingress_20260908.md).
+## Remaining: task-core roadmap
+
+- [ ] Reviewed real-capture linkage, grouped gaps/source proposals and measured costs
+- [ ] Independently frozen paraphrase/OOD evaluation and broader semantic proposer
+- [ ] Useful reusable multi-step compositions using existing capsule contracts
+- [ ] Dependency-aware freshness/conflict arbitration and staged source replacement
+- [ ] AMD task-selection/clarification/composition/abstention shadow experiments
+- [ ] Demonstrated improvement and separate deployment/promotion approval
+- [ ] Reviewed schema migration and owner-DM rollout; current services unchanged
+
+Dependencies and evidence: [plan.md](plan.md). Current source handoff:
+[verified task core](../result/cnet_verified_task_core_20260908.md). Previous live
+handoff: [verified learning ingress](../result/cnet_verified_learning_ingress_20260908.md).
 
 ## Completed: verified learning ingress
 

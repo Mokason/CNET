@@ -6,6 +6,10 @@ web-to-truth conversion, general task coverage or a learned allocator gain.
 The main peer and read-only MCP paths remain unchanged. The frozen 72-hour soak
 is a different installation and must never be used as the bridge's target.
 
+The newer [natural-language task/approval CLI](VERIFIED_TASK_CORE.md) is a
+separate source milestone. It has not replaced these deployed exact-command
+forms or migrated this installation's ledger.
+
 ## Requests and answers
 
 Four exact, case-sensitive command forms are supported. Plain outer ASCII
