@@ -62,8 +62,13 @@ int cnet_query_alias_apply(const CnetQueryAliasTable *T, const char *in,
 void cnet_query_prepare(const CnetQueryAliasTable *T, const char *in, char *out,
                         size_t cap, CnetQueryPrepareMeta *meta);
 
-/* 1 if the (already-normalized) query addresses the agent as you + llm/chatbot.
- * Maps onto sealed "who are you". Not a FAQ; not a Teacher essay. */
+/* Whole normalized phrase, allowing only bounded courtesy wrappers (e.g.
+ * "please", "right now"). Refuses inputs >= CNET_QA_OUT bytes, never prefix
+ * matches a truncated request. phrase must be a normalized literal. */
+int cnet_query_phrase_is_whole(const char *query, const char *phrase);
+
+/* 1 only for a whole identity question about being an llm/chatbot.
+ * Mentioning a model and "you" elsewhere is not an identity request. */
 int cnet_query_identity_bot(const char *normalized);
 
 int cnet_query_alias_selftest(void);

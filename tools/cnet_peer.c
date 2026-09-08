@@ -21,6 +21,30 @@
 #include <unistd.h>
 
 #define LINE 8192
+#define REPLY_MAX 65536
+
+/* Append one JSON string or refuse before connecting; never clip a query. */
+static int json_string_append(char *out, size_t cap, size_t *used, const char *s) {
+    size_t n = *used, need = 2;
+    const unsigned char *p;
+    for (p = (const unsigned char *)s; *p; p++)
+        need += *p < 32 ? 6 : (*p == '"' || *p == '\\') ? 2 : 1;
+    if (need >= cap || n >= cap - need) return -1;
+    out[n++] = '"';
+    for (p = (const unsigned char *)s; *p; p++) {
+        if (*p < 32) {
+            (void)snprintf(out + n, cap - n, "\\u%04x", (unsigned)*p);
+            n += 6;
+        } else {
+            if (*p == '"' || *p == '\\') out[n++] = '\\';
+            out[n++] = (char)*p;
+        }
+    }
+    out[n++] = '"';
+    out[n] = 0;
+    *used = n;
+    return 0;
+}
 
 static int full_write(int fd, const void *buf, size_t n) {
     const char *p = (const char *)buf;
@@ -63,12 +87,12 @@ static int resolve_sock(char *out, size_t n) {
 static int ask_once(const char *sock_path, const char *msg, int want_json) {
     int fd;
     struct sockaddr_un addr;
-    char buf[LINE];
+    char buf[REPLY_MAX];
     char req[LINE + 64];
     size_t total = 0;
     ssize_t k;
 
-    (void)want_json;
+    int complete = 0;
     fd = socket(AF_UNIX, SOCK_STREAM, 0);
     if (fd < 0) {
         perror("socket");
@@ -105,11 +129,18 @@ static int ask_once(const char *sock_path, const char *msg, int want_json) {
         if (k == 0) break;
         total += (size_t)k;
         buf[total] = 0;
-        if (strstr(buf, "\nEND\n") || (buf[0] == '{' && total > 0 && buf[total - 1] == '\n'))
+        if ((!want_json && strstr(buf, "\nEND\n")) ||
+            (buf[0] == '{' && total > 0 && buf[total - 1] == '\n')) {
+            complete = 1;
             break;
+        }
         if (total >= sizeof buf - 1) break;
     }
     close(fd);
+    if (want_json && !complete) {
+        fprintf(stderr, "cnet_peer: incomplete or oversized JSON reply\n");
+        return 1;
+    }
     if (total) fwrite(buf, 1, total, stdout);
     if (total && buf[total - 1] != '\n') fputc('\n', stdout);
     return 0;
@@ -154,23 +185,26 @@ int main(int argc, char **argv) {
     q = argv[i];
     if (!strcmp(q, "PING") || !strcmp(q, "STATUS") || !strcmp(q, "QUIT")) {
         snprintf(msg, sizeof msg, "%s", q);
+        json = 0; /* Control replies keep their existing text framing. */
     } else if (json) {
-        /* minimal JSON ask */
-        snprintf(msg, sizeof msg, "{\"op\":\"ask\",\"q\":\"");
-        {
-            size_t n = strlen(msg);
-            const char *p = q;
-            while (*p && n + 2 < sizeof msg - 4) {
-                if (*p == '"' || *p == '\\') msg[n++] = '\\';
-                msg[n++] = *p++;
-            }
-            msg[n] = 0;
+        size_t n = (size_t)snprintf(msg, sizeof msg, "{\"op\":\"ask\",\"q\":");
+        if (json_string_append(msg, sizeof msg, &n, q)) goto oversized;
+        if (peer && peer[0]) {
+            if (strlen(peer) >= 64 || n + 8 >= sizeof msg) goto oversized;
+            memcpy(msg + n, ",\"peer\":", 8);
+            n += 8;
+            if (json_string_append(msg, sizeof msg, &n, peer)) goto oversized;
         }
-        strncat(msg, "\"}", sizeof msg - strlen(msg) - 1);
+        if (n + 2 >= sizeof msg) goto oversized; /* } + newline + NUL */
+        msg[n++] = '}';
+        msg[n] = 0;
     } else if (peer && peer[0]) {
         snprintf(msg, sizeof msg, "PEER %s %s", peer, q);
     } else {
         snprintf(msg, sizeof msg, "ASK %s", q);
     }
     return ask_once(sock, msg, json);
+oversized:
+    fprintf(stderr, "cnet_peer: JSON request or peer exceeds wire limit\n");
+    return 2;
 }

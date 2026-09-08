@@ -151,7 +151,9 @@ static int match_contraction(const char *s, size_t pos, size_t slen,
 
 void cnet_query_normalize(const char *in, char *out, size_t cap) {
     char lower[CNET_QA_OUT];
-    char exp[CNET_QA_OUT];
+    /* Every contraction below expands by less than 2x. Preserve its entire
+     * suffix before collapsing whitespace; clipping here can invent identity. */
+    char exp[CNET_QA_OUT * 2];
     size_t i, j, n, elen;
     int sp;
 
@@ -296,6 +298,11 @@ int cnet_query_alias_apply(const CnetQueryAliasTable *T, const char *in,
         size_t plen;
         if (!a->active || !a->alias[0] || !a->canonical[0]) continue;
         plen = strlen(a->alias);
+        /* Identity/presence describes the whole request, not a substring. */
+        if ((!strcmp(a->canonical, "who are you") ||
+             !strcmp(a->canonical, "who is your operator") ||
+             !strcmp(a->canonical, "still here")) &&
+            !cnet_query_phrase_is_whole(in, a->alias)) continue;
         /* Policy: TSV tiny aliases are rejected at load. Short acks
            (ok/yeah/thanks) are whole-query only so in-phrase never steals. */
         if (qa_is_whole_utterance(a->alias) && plen != hlen) continue;
@@ -383,6 +390,10 @@ void cnet_query_prepare(const CnetQueryAliasTable *T, const char *in, char *out,
         return;
     }
     if (!in || strcmp(in, norm) != 0) m->normalized = 1;
+    if (strlen(in) >= sizeof norm) {
+        scopy(out, cap, norm);
+        return; /* Do not turn a truncated prefix into an identity alias. */
+    }
     if (!cnet_query_alias_apply(T, norm, out, cap, m))
         scopy(out, cap, norm);
     if (cnet_query_identity_bot(norm)) {
@@ -393,26 +404,49 @@ void cnet_query_prepare(const CnetQueryAliasTable *T, const char *in, char *out,
     }
 }
 
-static int qa_has_word(const char *hay, const char *w) {
-    size_t hlen, plen, pos;
-    if (!hay || !w || !w[0]) return 0;
-    hlen = strlen(hay);
-    plen = strlen(w);
-    for (pos = 0; pos + plen <= hlen; pos++) {
-        if (memcmp(hay + pos, w, plen) != 0) continue;
-        if (word_boundary_at(hay, pos, plen, hlen)) return 1;
+int cnet_query_phrase_is_whole(const char *query, const char *phrase) {
+    static const char *const prefixes[] = {
+        "please ", "may i ask ", "could you ", "can you ", "so "
+    };
+    static const char *const suffixes[] = {" please", " right now", " now"};
+    char norm[CNET_QA_OUT * 2];
+    char *start;
+    size_t i, n, p;
+    unsigned pass;
+    if (!query || !phrase || !phrase[0] || strlen(query) >= CNET_QA_OUT) return 0;
+    cnet_query_normalize(query, norm, sizeof norm);
+    start = norm;
+    for (pass = 0; pass < 3; pass++) {
+        if (!strcmp(start, phrase)) return 1;
+        if (pass == 2) break;
+        for (i = 0; i < sizeof prefixes / sizeof prefixes[0]; i++) {
+            p = strlen(prefixes[i]);
+            if (!strncmp(start, prefixes[i], p)) { start += p; break; }
+        }
+        n = strlen(start);
+        for (i = 0; i < sizeof suffixes / sizeof suffixes[0]; i++) {
+            p = strlen(suffixes[i]);
+            if (n > p && !strcmp(start + n - p, suffixes[i])) {
+                start[n - p] = 0;
+                break;
+            }
+        }
     }
     return 0;
 }
 
 int cnet_query_identity_bot(const char *normalized) {
-    int you, bot;
-    if (!normalized || !normalized[0]) return 0;
-    you = qa_has_word(normalized, "you") || qa_has_word(normalized, "your");
-    bot = qa_has_word(normalized, "llm") || qa_has_word(normalized, "chatgpt") ||
-          qa_has_word(normalized, "chatbot") ||
-          (strstr(normalized, "language model") != NULL);
-    return you && bot;
+    static const char *const questions[] = {
+        "are you an llm", "are you a llm", "are you llm", "are you chatgpt",
+        "are you a chatbot", "are you a language model", "are you an ai",
+        "are you a large language model", "you are an llm", "you are chatgpt",
+        "you are a chatbot", "you are a language model",
+        "you are like brick by brick made llm"
+    };
+    size_t i;
+    for (i = 0; i < sizeof questions / sizeof questions[0]; i++)
+        if (cnet_query_phrase_is_whole(normalized, questions[i])) return 1;
+    return 0;
 }
 
 int cnet_query_alias_selftest(void) {

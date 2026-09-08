@@ -512,6 +512,17 @@ static void load_neuromod_into(CnetUtterState *U) {
  *
  * Cost is a few small catalog reads, and only on the open-chat miss path.
  */
+static int cd_social_pattern_allowed(const char *q, const char *pattern, const char *id) {
+    char norm[CNET_QA_OUT], norm_id[CNET_QA_OUT];
+    cnet_query_normalize(pattern, norm, sizeof norm);
+    cnet_query_normalize(id, norm_id, sizeof norm_id);
+    if (!strcmp(norm, "who are you") || !strcmp(norm, "still here") ||
+        !strcmp(norm, "who is your operator") || !strcmp(norm_id, "soul_who") ||
+        !strcmp(norm_id, "soul_ack") || !strcmp(norm_id, "soul_operator"))
+        return cnet_query_phrase_is_whole(q, norm);
+    return 1;
+}
+
 static int cd_sealed_pack_match(const CdState *S, const char *q, char *id_out,
                                 size_t id_cap) {
     char path[CD_PATH];
@@ -532,6 +543,7 @@ static int cd_sealed_pack_match(const CdState *S, const char *q, char *id_out,
             if (json_get_str(line, "pattern", pat, sizeof pat) != 0) continue;
             if (!pat[0] || !contains_ci(q, pat)) continue;
             if (json_get_str(line, "id", id, sizeof id) != 0) id[0] = 0;
+            if (!cd_social_pattern_allowed(q, pat, id)) continue;
             if (id_out && id_cap)
                 snprintf(id_out, id_cap, "%s", id[0] ? id : S->always_on[i]);
             fclose(f);
@@ -1868,6 +1880,11 @@ static int cd_ask(CdState *S, const char *q, CdReply *out) {
         net.enable_lookup = 0;
     }
     if (net.enable_llm || net.enable_lookup) roe_set_net(R, &net);
+    /* R is request-local: legacy catalogs cannot bypass the social boundary. */
+    for (size_t si = 0; si < R->n_skills; si++)
+        if (!cd_social_pattern_allowed(strlen(q) >= CNET_QA_OUT ? q : q_use,
+                                       R->skills[si].pattern, R->skills[si].id))
+            R->skills[si].active = 0;
     roe_turn(R, q_use, &rep);
 
     snprintf(out->source, sizeof out->source, "%s",
@@ -2116,10 +2133,13 @@ static void write_json_reply(int fd, const CdReply *r) {
     char alias_e[CNET_QA_PAT * 6 + 8], dreason_e[48 * 6 + 8];
     char dent_e[CNET_DC_ENT * 6 + 8], sunit_e[CNET_SLOT_UNIT * 6 + 8];
     char sreason_e[48 * 6 + 8];
+    char peer_e[sizeof r->peer * 6 + 8], stage_e[sizeof r->stage * 6 + 8];
     char buf[sizeof aesc + sizeof uesc + sizeof src_e + sizeof skill_e +
              sizeof dom_e + sizeof probe_e + sizeof prep_e + sizeof alias_e +
              sizeof dreason_e + sizeof dent_e + sizeof sunit_e +
-             sizeof sreason_e + 768];
+             sizeof sreason_e + sizeof peer_e + sizeof stage_e + 896];
+    (void)cnet_json_escape(r->peer, peer_e, sizeof peer_e);
+    (void)cnet_json_escape(r->stage, stage_e, sizeof stage_e);
     (void)cnet_json_escape(r->answer, aesc, sizeof aesc);
     (void)cnet_json_escape(r->utterance, uesc, sizeof uesc);
     (void)cnet_json_escape(r->source, src_e, sizeof src_e);
@@ -2141,7 +2161,7 @@ static void write_json_reply(int fd, const CdReply *r) {
              "\"dialog_hit\":%s,\"dialog_reason\":\"%s\",\"dialog_entity\":\"%s\","
              "\"slot_hit\":%s,\"slot_unit\":\"%s\",\"slot_reason\":\"%s\","
              "\"teacher\":%s,\"composer\":\"cnet_utterance\",\"never_voice_llm\":true,"
-             "\"self_answer\":%s}\n",
+             "\"self_answer\":%s,\"peer\":\"%s\",\"stage_draft\":%s,\"stage\":\"%s\"}\n",
              src_e, skill_e, aesc, uesc, r->may_voice ? "true" : "false",
              r->miss ? "true" : "false",
              r->verified ? "true" : "false", r->tokens, dom_e,
@@ -2157,7 +2177,8 @@ static void write_json_reply(int fd, const CdReply *r) {
              sreason_e,
              (strcmp(r->source, "LLM") == 0) ? "true" : "false",
              (strcmp(r->source, "CNET") == 0 || strcmp(r->source, "LOCAL") == 0) ? "true"
-                                                                                : "false");
+                                                                                : "false",
+             peer_e, r->stage_draft ? "true" : "false", stage_e);
     (void)full_write(fd, buf, strlen(buf));
 }
 
@@ -2661,16 +2682,16 @@ static void cd_cando_line(CdState *S, char *out, size_t cap) {
         if (cap > CD_CANDO_LINE_MAX) cap = CD_CANDO_LINE_MAX;
         if (listed > 0)
             snprintf(out, cap,
-                     "Sealed %d/%d LUT bricks (%d nibble, %d compose, %d other): %s%s. %d packs on. "
-                     "%d capsule proposes pending (not CERT). Chess-fetch, leaves, branches stay factory. "
-                     "A miss logs for a nanny brick or organ — I don't FAQ the hole.",
+                     "Loaded %d/%d raw LUT bricks (%d nibble, %d compose, %d other): %s%s. %d packs on. "
+                     "%d proposal inbox entries (not CERT). Raw tables are not certified capsules. "
+                     "Try: convert N INPUT_TAG to OUTPUT_TAG. Unsupported inputs are refused.",
                      live, CNET_SERVE_MAX_BRICKS, nib, comp, oth, tags, more,
                      S ? S->n_always : 0, ncap);
         else
             snprintf(out, cap,
-                     "Sealed 0/%d LUT bricks: none live. %d packs on. "
-                     "%d capsule proposes pending (not CERT). Chess-fetch, leaves, branches stay factory. "
-                     "A miss logs for a nanny brick or organ — I don't FAQ the hole.",
+                     "Loaded 0/%d raw LUT bricks: none live. %d packs on. "
+                     "%d proposal inbox entries (not CERT). This is inventory, not proof of capability. "
+                     "Try: convert N INPUT_TAG to OUTPUT_TAG. Unsupported inputs are refused.",
                      CNET_SERVE_MAX_BRICKS, S ? S->n_always : 0, ncap);
     }
 }
@@ -2682,6 +2703,55 @@ static int cd_action(CdState *S, const char *q, CdReply *out) {
     CnetFfiObs fobs;
     char ttag[64];
     unsigned tin = 0, tout = 0;
+
+    /* The legacy preparation buffers are 512 bytes. Never answer a clipped
+     * prefix. Explicit bounded MCP reads run before this legacy front door. */
+    {
+        char expanded[CNET_QA_OUT * 2];
+        cnet_query_normalize(q, expanded, sizeof expanded);
+        if (strlen(q) >= CNET_QA_OUT || strlen(expanded) >= CNET_QA_OUT) {
+            cd_action_reply(out, q, "request_length_refusal_v1",
+                "Please send a shorter request (under 512 bytes, including expanded contractions), "
+                "or split it into separate questions. I will not answer a truncated question.");
+            out->miss = 1;
+            return 1;
+        }
+    }
+
+    /* Closed read-only help: no learning launch or capability certification. */
+    if (cnet_query_phrase_is_whole(q, "can you use those skills") ||
+        cnet_query_phrase_is_whole(q, "how do i use your skills") ||
+        cnet_query_phrase_is_whole(q, "what are you able to calculate")) {
+        cd_action_reply(out, q, "skill_usage_v1",
+            "Use: convert N INPUT_TAG to OUTPUT_TAG (for example, convert 173 bytes to bits). "
+            "The loaded capsule must cover that input and conversion; otherwise I refuse. "
+            "Ask 'what can you do' for the current inventory.");
+        return 1;
+    }
+    if (cnet_query_phrase_is_whole(q, "can you learn") ||
+        cnet_query_phrase_is_whole(q, "can you learn new things") ||
+        cnet_query_phrase_is_whole(q, "how do you learn")) {
+        cd_action_reply(out, q, "learning_help_v1",
+            "New capsule knowledge needs external examples and independent verification before admission. "
+            "My own answers are not training evidence. This reply does not start training or confirm a running learner. "
+            "Name one specific skill and its inputs and outputs to define a learning task.");
+        return 1;
+    }
+    if (cnet_query_phrase_is_whole(q, "any improvements") ||
+        cnet_query_phrase_is_whole(q, "have you improved")) {
+        char inventory[CD_CANDO_LINE_MAX];
+        char msg[CNET_UTTER_TEXT];
+        cd_cando_line(S, inventory, sizeof inventory);
+        snprintf(msg, sizeof msg, "I cannot confirm improvement without a before/after evaluation. Current inventory: %s", inventory);
+        cd_action_reply(out, q, "improvement_status_v1", msg);
+        return 1;
+    }
+    if (cnet_query_phrase_is_whole(q, "still here") ||
+        cnet_query_phrase_is_whole(q, "are you still here") ||
+        cnet_query_phrase_is_whole(q, "are you there")) {
+        cd_action_reply(out, q, "presence_check_v1", "Yes, I'm here. What would you like to work on?");
+        return 1;
+    }
 
     if (cnet_live_parse_teach(q, ttag, sizeof ttag, &tin, &tout) == 0) {
         int pairs = 0;
@@ -2905,18 +2975,21 @@ static int cd_action(CdState *S, const char *q, CdReply *out) {
         CnetQueryPrepareMeta am;
         int who = 0, op = 0;
         cnet_query_normalize(q, nrm, sizeof nrm);
-        if (strcmp(nrm, "who are you") == 0 || cnet_query_identity_bot(nrm))
+        if (cnet_query_phrase_is_whole(q, "who are you") || cnet_query_identity_bot(q))
             who = 1;
-        if (strcmp(nrm, "who made you") == 0 ||
-            strcmp(nrm, "who created you") == 0 ||
-            strcmp(nrm, "who is your operator") == 0)
+        if (cnet_query_phrase_is_whole(q, "who made you") ||
+            cnet_query_phrase_is_whole(q, "who created you") ||
+            cnet_query_phrase_is_whole(q, "who is your operator"))
             op = 1;
         memset(&am, 0, sizeof am);
         cnet_query_prepare(&S->aliases, q, tmp, sizeof tmp, &am);
-        if (am.alias_hit && strcmp(am.canonical, "who are you") == 0)
+        if (strlen(q) < CNET_QA_OUT && am.alias_hit &&
+            cnet_query_phrase_is_whole(tmp, "who are you"))
             who = 1;
-        if (am.alias_hit && strcmp(am.canonical, "who is your operator") == 0)
+        if (strlen(q) < CNET_QA_OUT && am.alias_hit &&
+            cnet_query_phrase_is_whole(tmp, "who is your operator"))
             op = 1;
+        if (strlen(q) >= CNET_QA_OUT) op = 0;
         if (op) {
             static const char *oper = "Mokason.";
             snprintf(out->source, sizeof out->source, "LOCAL");
@@ -3474,17 +3547,12 @@ static void cd_starve_leftover(CdState *S, const char *q, CdReply *rep) {
         snprintf(rep->answer, sizeof rep->answer, "Not sealed.");
     if (keep_draft)
         snprintf(rep->utterance, sizeof rep->utterance, "%.767s", rep->stage);
-    else {
-        int reg = S ? cnet_sr_register(&S->show) : CNET_SR_REG_STEADY;
-        if (reg == CNET_SR_REG_SPARE)
-            snprintf(rep->utterance, sizeof rep->utterance, "Here. What's next?");
-        else if (reg == CNET_SR_REG_WARM)
-            snprintf(rep->utterance, sizeof rep->utterance,
-                     "Still here. Want to go at it another way?");
-        else
-            snprintf(rep->utterance, sizeof rep->utterance,
-                     "I'm here. What's on your lane?");
-    }
+    else
+        snprintf(rep->utterance, sizeof rep->utterance,
+                 "I don't have a verified answer for that request. "
+                 "Specify the skill and inputs, or provide a source to check. "
+                 "Ask 'what can you do' for the current inventory.");
+    (void)S;
 }
 
 

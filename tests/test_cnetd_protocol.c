@@ -40,6 +40,15 @@ int main(void) {
                               error, sizeof error) == 0 &&
               strcmp(req.peer, "hermes") == 0,
           "PEER request captures request-local identity");
+    check(cnetd_parse_request("{\"q\":\"who are you\",\"peer\":\"discord_fixture\"}", &req,
+                              error, sizeof error) == 0 && !strcmp(req.peer, "discord_fixture"),
+          "JSON peer identity survives the native adapter");
+    check(cnetd_parse_request("{\"q\":\"x\",\"peer\":\"a\",\"peer\":\"b\"}", &req,
+                              error, sizeof error) != 0,
+          "duplicate JSON peer identity refuses");
+    check(cnetd_parse_request("{\"q\":\"x\",\"peer\":\"a\\nb\"}", &req,
+                              error, sizeof error) != 0,
+          "JSON peer cannot carry line framing controls");
     check(cnetd_parse_request("{\"q\":\"who are you\"}", &req,
                               error, sizeof error) == 0 && req.peer[0] == '\0',
           "JSON request clears identity from the previous parse");

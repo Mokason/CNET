@@ -82,64 +82,53 @@ def validate_capture_scope(token, owner, channel):
 
 
 def extract_answer(blob: str) -> str:
-    """Discord mouth: speech only. Never protocol, never 'Not sealed.'"""
-    draft = 0
-    stage = ""
-    utter = ""
-    answer = ""
-    for line in blob.splitlines():
-        if line.startswith("STAGE_DRAFT "):
-            try:
-                draft = int(line[12:].strip() or "0")
-            except ValueError:
-                draft = 0
-        elif line.startswith("STAGE "):
-            stage = line[6:].strip()
-        elif line.startswith("UTTERANCE "):
-            utter = line[10:].strip()
-        elif line.startswith("ANSWER "):
-            answer = line[7:].strip()
+    """Render a native JSON reply, not a persona substitute.
 
-    def jargon(s: str) -> bool:
-        t = (s or "").strip()
-        if not t or t == "-":
-            return True
-        low = t.lower()
-        if low.startswith("not sealed"):
-            return True
-        if "logged for improve" in low or "leftover" in low:
-            return True
-        if "sealed skill" in low or "not certified" in low:
-            return True
-        if "cnet" in low or "roe-asi" in low or "roe asi" in low:
-            return True
-        if "brain float" in low or "mokason" in low or "hashtable" in low:
-            return True
-        if "real-time data" in low or "product lineup" in low:
-            return True
-        if "lut brick" in low or "capsule propose" in low:
-            return True
-        if low.startswith("claimed_cert") or low.startswith("stage_draft"):
-            return True
-        return False
+    Never promote a teacher draft or hide an abstention. Protocol/transport
+    failure is unavailable, not a successful conversational response.
+    """
+    unavailable = "The answer service is unavailable or returned an incomplete reply. Please try again."
+    uncovered = ("I don't have a verified answer for that request. Specify the skill and inputs, "
+                 "or provide a source to check. Ask 'what can you do' for the current inventory.")
+    def unique_object(pairs):
+        result = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError("duplicate reply field")
+            result[key] = value
+        return result
 
-    skill = ""
-    for line in blob.splitlines():
-        if line.startswith("SKILL "):
-            skill = line[6:].strip()
-            break
-    if skill == "can_do_v1":
-        return "I hold sealed skills. Ask a number, a room, or what's on your lane."
-
-    if draft == 1:
-        body = stage or utter
-        if not jargon(body):
-            return body
-    if not jargon(utter):
-        return utter
-    if not jargon(answer):
-        return answer
-    return "I'm here. What's on your lane?"
+    try:
+        if len(blob.encode("utf-8")) >= 65536:
+            return unavailable
+        fields = json.loads(blob, object_pairs_hook=unique_object)
+    except (ValueError, UnicodeError, RecursionError):
+        return unavailable
+    if (not isinstance(fields, dict) or fields.get("ok") is not True
+            or any(type(fields.get(key)) is not bool
+                   for key in ("verified", "miss", "teacher", "stage_draft"))
+            or any(not isinstance(fields.get(key), str)
+                   for key in ("source", "answer", "utterance", "stage"))):
+        return unavailable
+    if fields["source"] not in {"LOCAL", "CNET", "ACTION", "CORE", "STAGE", "INFO",
+                                 "MCP", "MCP_READ", "LLM", "TEACHER", "RESIDUAL"}:
+        return unavailable
+    if ((fields["verified"] and (fields["miss"] or fields["stage_draft"]))
+            or (fields["verified"] and fields["source"] not in {"LOCAL", "CNET", "CORE"})
+            or (fields["stage_draft"] and fields["source"] != "STAGE")):
+        return unavailable
+    if fields["teacher"] or fields["source"] in {"LLM", "TEACHER", "RESIDUAL"}:
+        return uncovered
+    if fields["source"] == "STAGE" and fields["stage_draft"]:
+        stage = fields["stage"]
+        if stage and stage != "-":
+            return "[Unverified draft] " + stage
+    answer = fields["answer"].strip()
+    if not answer or answer == "-" or answer.lower().startswith("not sealed"):
+        return uncovered
+    if not fields["verified"] and fields["source"] != "ACTION" and not answer.startswith("ABSTAIN:"):
+        return "[Unverified] " + answer
+    return answer
 
 
 def peer_ask(author: str, content: str) -> tuple[str, str]:
@@ -162,15 +151,20 @@ def peer_ask(author: str, content: str) -> tuple[str, str]:
     if (q in {"PING", "STATUS", "QUIT"} or q.startswith("-")
             or any(char in q for char in "\r\n\0") or len(q.encode("utf-8")) > 8000):
         return "(request cannot be forwarded safely)", "peer_error"
+    request = json.dumps(dict(op="ask", q=q, peer=peer), ensure_ascii=False, separators=(",", ":"))
+    if len(request.encode("utf-8")) + 1 >= 8192:
+        return "(request cannot be forwarded safely)", "peer_error"
     try:
         p = subprocess.run(
-            [peer_bin, "--peer", peer, q],
+            [peer_bin, "--json", "--peer", peer, q],
             capture_output=True,
             text=True,
             timeout=120,
         )
-        blob = (p.stdout or "") + (p.stderr or "")
-        return extract_answer(blob), "peer_ok" if p.returncode == 0 else "peer_error"
+        if p.returncode != 0:
+            return "The answer service is unavailable. Please try again.", "peer_error"
+        # stderr is diagnostic data, never part of the framed answer.
+        return extract_answer(p.stdout or ""), "peer_ok"
     except Exception:
         # The downstream may have accepted the request before a timeout or I/O error.
         return "(peer outcome unknown)", "peer_unknown"

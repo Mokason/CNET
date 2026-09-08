@@ -37,7 +37,9 @@ typedef enum {
 CnetdReadResult cnetd_read_request(int fd, char *out, size_t cap,
                                    int timeout_ms);
 
-/* Parses the documented ASK/PEER/control/JSON request forms strictly. */
+/* Parses ASK/PEER/control/JSON strictly. JSON asks accept an optional "peer"
+ * string (< CNETD_PEER_MAX bytes, no ASCII whitespace/control characters).
+ * Peer is request-local display context, never authorization or CERT evidence. */
 int cnetd_parse_request(const char *line, CnetdRequest *out,
                         char *error, size_t error_cap);
 

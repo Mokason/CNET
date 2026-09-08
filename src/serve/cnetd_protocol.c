@@ -90,6 +90,7 @@ static int parse_json_request(const unsigned char *text, CnetdRequest *out,
     JsonCursor cursor;
     int seen_q = 0;
     int seen_op = 0;
+    int seen_peer = 0;
     char op[16] = "ask";
 
     cursor.p = text;
@@ -111,6 +112,12 @@ static int parse_json_request(const unsigned char *text, CnetdRequest *out,
             if (json_string(&cursor, out->query, sizeof out->query) != 0)
                 goto invalid_json;
             seen_q = 1;
+        } else if (strcmp(key, "peer") == 0) {
+            if (seen_peer || json_string(&cursor, out->peer, sizeof out->peer) != 0)
+                goto invalid_json;
+            for (const unsigned char *p = (const unsigned char *)out->peer; *p; p++)
+                if (*p <= 32 || *p == 127) goto invalid_json;
+            seen_peer = 1;
         } else if (strcmp(key, "op") == 0) {
             if (seen_op) {
                 set_error(error, error_cap, "duplicate op field");

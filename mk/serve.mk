@@ -1,5 +1,16 @@
 # Fast, model-free serving boundary gates.
 
+.PHONY: social_reply_verify
+DISCORD_PYTHON ?= python3
+social_reply_verify: cnetd $(BIN_DIR)/cnet_peer cnetd_protocol_boundary query_alias
+	$(CC) $(ASI_IMPROVE_CFLAGS) -o $(BIN_DIR)/test_cnet_identity_alias \
+		tests/test_cnet_identity_alias.c src/memory/cnet_query_alias.c
+	$(BIN_DIR)/test_cnet_identity_alias
+	CNET_PEER_BIN=$(abspath $(BIN_DIR))/cnet_peer $(PYTHON) tests/test_cnet_peer_json.py -v
+	CNETD_BIN=$(abspath $(BIN_DIR))/cnetd CNET_PEER_BIN=$(abspath $(BIN_DIR))/cnet_peer \
+		$(DISCORD_PYTHON) tests/test_cnetd_social_routing.py -v
+	$(DISCORD_PYTHON) -m unittest discover -s tools/discord_capture -p 'test_*.py' -v
+
 .PHONY: core_brick_capacity
 core_brick_capacity: tests/test_core_brick_capacity.c include/cnet_core_bus.h \
         include/cnet_core_serve.h src/serve/cnet_core_serve.c src/serve/cnet_core_bus.c \

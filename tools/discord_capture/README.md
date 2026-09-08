@@ -52,10 +52,40 @@ This is owner-private storage, not a same-account/host-compromise defense.
 
 The native client's control words (`PING`, `STATUS`, `QUIT`), CLI-like leading
 `-`, embedded CR/LF/NUL and queries above 8000 UTF-8 bytes are rejected before
-invocation. Multiline requests should be submitted as one line. This closes
-control/framing/truncation hazards; ordinary answer formatting is unchanged.
+invocation. Multiline requests should be submitted as one line. JSON-escaped
+requests must also fit the 8192-byte wire limit. The legacy daemon preparation
+path refuses requests at or above 512 bytes (raw or after contraction expansion)
+instead of answering a clipped prefix. Explicit bounded MCP reads have their own
+limits and dispatch before that preparation path.
 REST and WebSocket redirects are refused; identification requires a validated
 TLS endpoint and HTTP 101 handshake. Generic logs contain metadata only.
+
+## Reply presentation
+
+The bridge invokes `cnet_peer --json --peer NAME QUERY`. Deploy the peer, daemon
+and gateway together: JSON asks now preserve optional peer context, and replies
+carry escaped `peer`, `stage_draft` and `stage` fields. Older daemons missing these
+fields are reported unavailable, never silently converted to a presence reply.
+
+The real answer is displayed, including multiline content, inventory, refusals
+and source qualifiers. No keyword blacklist or fixed capability replacement is
+used. Teacher-source replies are not voiced; allowed stage drafts are marked `[Unverified draft]`.
+Other non-certified informational answers are marked `[Unverified]`; operational
+actions and explicit abstentions retain their own text. Incomplete/malformed JSON,
+duplicate fields, unknown sources, inconsistent authority and failed clients
+produce an availability error. stderr never enters answer parsing. Replies still
+have the existing 1900-character display cap and disabled mentions.
+Existing memory notes can contain archived external drafts. They remain labeled
+unverified; this presentation repair does not establish their relevance or truth.
+
+Identity and presence now require whole requests. Closed skill-usage/learning/
+improvement questions return operational help without starting a learning job or
+claiming an evaluated improvement. See the
+[decision](../../plans/cnet_social_reply_repair_20260908.md) and run:
+
+```sh
+make social_reply_verify DISCORD_PYTHON=/path/to/existing/venv/bin/python
+```
 
 ## Tests and operator status
 
