@@ -1,5 +1,4 @@
 """Synthetic protocol fixtures only; no network, live ledger or origin review."""
-import copy
 import json
 from pathlib import Path
 import unittest
@@ -107,6 +106,14 @@ class TaskBridgeTests(unittest.TestCase):
         self.assertEqual(status, "peer_unknown")
         self.assertNotIn("924", text)
         self.assertIn("retained", text)
+
+    def test_replayed_conflict_still_latches_and_pauses(self):
+        for changes in (dict(State="conflict", Value=923), dict(ReviewConflict=True)):
+            bridge = self.bridge(response(replayed=True, experience=experience(**changes)))
+            self.assertEqual(bridge.task_answer("uppercase µ", IDENTITY)[1], "peer_error",
+                             "TASK_REPLAY_CONFLICT_RED: historical conflict did not close the bridge")
+            self.assertTrue(bridge.failed)
+            self.assertEqual(bridge.command.call_args_list[-1].args, ("pause",))
 
     def test_timeout_source_failure_latch_and_bad_local_arguments_never_retry(self):
         bridge = self.bridge(response())
