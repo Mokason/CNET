@@ -69,6 +69,46 @@ class GatewayTests(unittest.TestCase):
                 self.gw.handle_message(dict(message(), content="unicode upper 181", **changes))
             self.gw.learner.answer.assert_not_called()
 
+    def test_task_mode_dispatch_uses_fresh_capture_and_stable_identity_only_once(self):
+        learner = Mock(task_mode=True)
+        learner.answer.return_value = ("legacy", "peer_ok")
+        learner.task_answer.return_value = ("ABSTAIN: captured observation", "peer_ok")
+        self.gw.learner = learner
+        data = dict(message(), content="What's the uppercase of µ?")
+        def task(text, identity):
+            self.assertEqual(readiness(self.root)["unfinished"], 1)
+            self.assertEqual(text, data["content"])
+            self.assertRegex(identity, r"^[a-f0-9]{32}$")
+            return "ABSTAIN: captured observation", "peer_ok"
+        learner.task_answer.side_effect = task
+        with patch.object(gateway, "peer_ask") as peer, patch.object(gateway, "api", return_value={}), \
+                patch.object(gateway, "stamp_last_origin"):
+            self.gw.handle_message(data)
+            self.gw.handle_message(data)
+        self.assertEqual(learner.task_answer.call_count, 1, "CAPTURE_TASK_DISPATCH_RED: task route not used")
+        learner.answer.assert_not_called()
+        peer.assert_not_called()
+
+    def test_task_mode_never_replays_crash_before_or_after_native_admission(self):
+        self.gw.learner = Mock(task_mode=True)
+        data = dict(message(), content="uppercase µ")
+        self.assertTrue(self.journal.begin(data, data["content"]))
+        with patch.object(gateway, "peer_ask") as peer, patch.object(gateway, "api") as api:
+            self.gw.handle_message(data)  # Simulates crash after capture, before native.
+        self.gw.learner.task_answer.assert_not_called()
+        peer.assert_not_called()
+        api.assert_not_called()
+        self.gw.learner.task_answer.side_effect = RuntimeError("fixture_native_may_have_accepted")
+        next_data = dict(data, id=str(int(data["id"]) + 1))
+        with patch.object(gateway, "peer_ask") as peer, patch.object(gateway, "api") as api, \
+                patch.object(gateway, "stamp_last_origin"):
+            with self.assertRaises(RuntimeError):
+                self.gw.handle_message(next_data)
+            self.gw.handle_message(next_data)
+        self.gw.learner.task_answer.assert_called_once()
+        peer.assert_not_called()
+        api.assert_not_called()
+
     def test_learning_preserves_nonspace_whitespace_for_strict_parser_and_capture(self):
         learner = Mock()
         learner.answer.return_value = ("ABSTAIN: malformed", "peer_error")

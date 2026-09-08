@@ -78,6 +78,24 @@ class InstallationTests(unittest.TestCase):
             path.write_bytes(original)
         bridge.check_installation()
 
+    def test_task_mode_requires_explicit_schema_two_and_keeps_legacy_default(self):
+        self.assertFalse(getattr(lb.Bridge(self.root, self.sha(self.config)), "task_mode", False))
+        config = json.loads(self.config)
+        config["schema_version"] = 2
+        raw = self.encode(config)
+        self.put("bridge.json", raw)
+        try:
+            bridge = lb.Bridge(self.root, self.sha(raw))
+        except lb.BridgeError as error:
+            self.fail("CAPTURE_TASK_MODE_RED: explicit schema-two task mode refused: " + str(error))
+        self.assertIs(bridge.task_mode, True)
+        for version in (0, 3, True, "2"):
+            config["schema_version"] = version
+            raw = self.encode(config)
+            self.put("bridge.json", raw)
+            with self.subTest(version=version), self.assertRaises(lb.BridgeError):
+                lb.Bridge(self.root, self.sha(raw))
+
     def test_relative_root_wrong_pin_and_shared_file_refuse(self):
         with patch("os.getcwd", return_value=str(self.root.parent)):
             with self.assertRaises(Exception):
