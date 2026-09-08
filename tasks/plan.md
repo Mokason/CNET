@@ -6,6 +6,14 @@ Decision history remains in [plans/](../plans/). Current documentation starts at
 
 ## Current experiment: chronological allocator evidence
 
+Active September 8 continuation: [retrieval, alerts, safe MCP and verified
+learning rollout](../plans/cnet_live_completion_20260908.md). The owner approved
+this ordered implementation/deployment sequence. Work starts at pushed master
+`2bfa1d8`; preserve the dirty primary checkout and all live data. Earlier source
+implementation checklists below are historical, not evidence of elapsed product
+acceptance. Identity/presence repair is deployed and published. The alert service
+has a reproduced start-limit failure; new safe MCP is not yet enabled live.
+
 Completed source task: [bounded MCP read brick](../plans/cnet_mcp_read_brick_20260908.md).
 Certified finite dispatch, opt-in MCP Wikipedia/web reads, strict evidence and
 end-to-end refusal tests are implemented. [Measured result](../result/cnet_mcp_read_brick_20260908.md):

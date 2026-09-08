@@ -2,6 +2,20 @@
 
 Evidence, scope and dependencies: [plan.md](plan.md).
 
+## Active September 8 completion sequence
+
+- [x] Synthetic RED and fix for irrelevant implicit legacy memory retrieval
+- [x] RED and repair for repeatable, throttled local alerts; deploy and test
+- [ ] Private compatible runtime staging, inventory preservation and rollback
+- [ ] Enable certified safe MCP read dispatch on the existing live service
+- [ ] Verify real read/refusal through deployed peer and Discord renderer
+- [ ] Broaden independently verified learning without treating web prose as truth
+- [ ] Freeze a bounded unattended learning run and start real acceptance monitoring
+- [ ] Actual elapsed/outcome acceptance and genuine-demand headroom (WITHHELD until measured)
+- [ ] Final regressions, vulnerability review and measured handoff
+
+Contract: [live completion](../plans/cnet_live_completion_20260908.md).
+
 ## MCP read brick
 
 - [x] RED dispatch, protocol and network-policy tests
