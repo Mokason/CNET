@@ -1,0 +1,20 @@
+[Unit]
+Description=CNET bounded Unicode soak monitor %i
+BindsTo=cnet-learning-soak-daemon@%i.service
+After=cnet-learning-soak-daemon@%i.service
+
+[Service]
+Type=notify
+NotifyAccess=main
+WorkingDirectory=%h/%i
+UMask=0077
+NoNewPrivileges=yes
+RestrictAddressFamilies=AF_UNIX
+CPUQuota=100%
+MemoryMax=1G
+TasksMax=128
+LimitCORE=0
+Restart=no
+ExecStart=/usr/bin/python3 -I -B %h/%i/monitor.py %h/%i
+TimeoutStartSec=30
+TimeoutStopSec=5

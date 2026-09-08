@@ -17,6 +17,11 @@ The same pinned source also supplies two symbolic workloads: printable ASCII
 character names to General_Category and Bidi_Class labels, 95 exact names each.
 These are finite lookups, not unseen-text capability or a full bidi algorithm.
 
+The [bounded Unicode soak](UNICODE_LEARNING_SOAK.md) specifies a frozen private
+deployment, staged truthful source expansions and real-duration monitoring.
+Its scoped workload evidence is separate from product acceptance and genuine
+allocator demand.
+
 The learned allocator remains inactive after its failed improvement gate.
 `allocator_enabled=true` refuses. Completing a run budget does not certify
 learning gain or 72-hour acceptance. See the [plan](../plans/cnet_autonomous_learning_20260906.md)

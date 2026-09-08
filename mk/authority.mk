@@ -319,6 +319,11 @@ learning_native: $(BIN_DIR)/test_learning_sandbox $(BIN_DIR)/test_table_reader $
 learning_managed:
 	dotnet test dotnet/CnetControlPlane.Tests/CnetControlPlane.Tests.csproj --no-restore \
 		--filter 'FullyQualifiedName~Learning|FullyQualifiedName~LocalTableReference|FullyQualifiedName~NativeControlProtocol'
+.PHONY: learning_soak_verify
+learning_soak_verify:
+	python3 tests/test_learning_soak.py
+	dotnet test dotnet/CnetControlPlane.Tests/CnetControlPlane.Tests.csproj --no-restore \
+		--filter 'FullyQualifiedName~ThreeTruthfulSourceStages'
 learning_daemon: cnetd $(BIN_DIR)/cnet_capsule_core learning_native $(BIN_DIR)/cnet_capsulectl
 	@python3 tests/test_table_daemon.py TableLearningDaemon.test_table_acquisition_refresh_rollback_and_restart
 
