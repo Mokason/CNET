@@ -1,6 +1,7 @@
 """Synthetic capture/history joins. Never attest origin or mutate live stores."""
 import importlib.util
 import json
+import sqlite3
 from pathlib import Path
 import tempfile
 import unittest
@@ -116,6 +117,19 @@ class TaskInboxTests(unittest.TestCase):
             self.journal.db.execute("UPDATE policy SET body='{}'")
         with self.assertRaises(CaptureError):
             self.module.inspect_page(self.root, self.bridge, 0, 1)
+
+    def test_wal_capture_is_refused_before_sqlite_can_create_sidecars(self):
+        self.assertEqual(self.journal.db.execute("PRAGMA journal_mode=WAL").fetchone(), ("wal",))
+        self.journal.close()
+        before = {path.name: path.read_bytes() for path in self.root.iterdir()}
+        try:
+            self.module.inspect_page(self.root, self.bridge, 0, 1)
+        except (CaptureError, ValueError):
+            pass
+        else:
+            self.fail("CAPTURE_INBOX_WAL_RED: read-only inspector accepted WAL and may create sidecars")
+        self.assertEqual(before, {path.name: path.read_bytes() for path in self.root.iterdir()})
+        self.bridge.command.assert_not_called()
 
 
 if __name__ == "__main__":
