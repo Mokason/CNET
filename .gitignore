@@ -157,3 +157,6 @@ build/cce/
 
 # Reproducible console/demo output; never a runtime input.
 /build/built_demo.txt
+
+# graft's local graph cache — regenerable, not committed (run `graft build`).
+/graft/

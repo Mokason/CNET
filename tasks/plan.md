@@ -1,5 +1,13 @@
 # Current CNET work plan
 
+## Active extension
+
+The next implementation follows [the verified task-core contract](../plans/cnet_verified_task_core_20260908.md):
+durable native observations and approval inbox, bounded natural-language intent,
+then an actual offline miss-to-certified-answer rehearsal. Previous live and
+empirical gates below remain unchanged. ECC TDD/verification and Graft discovery
+are being tested without replacing the existing agent configuration.
+
 Current contract: [verified learning ingress](../plans/cnet_verified_learning_ingress_20260908.md).
 Latest implementation and deployment: [measured handoff](../result/cnet_verified_learning_ingress_20260908.md).
 Documentation starts at [docs/INDEX.md](../docs/INDEX.md). Dated plans/results

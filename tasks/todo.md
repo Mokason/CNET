@@ -1,5 +1,15 @@
 # Current CNET checklist
 
+## Active: verified task-core milestone
+
+- [ ] Durable deduplicated native observations with no automatic learning demand
+- [ ] Bounded approval inbox with independent source pins and atomic demand admission
+- [ ] Natural-language proposals, ambiguity clarification and OOD refusal
+- [ ] Actual native approved-correction-to-capsule offline rehearsal
+- [ ] Source drift/conflict, interruption, replay and regression checks
+- [ ] ECC RED/GREEN and coverage report; Graft freshness and discovery report
+- [ ] Subsequent composition and targeted core-training scope assessed honestly
+
 Dependencies and evidence: [plan.md](plan.md). Current measured handoff:
 [verified learning ingress](../result/cnet_verified_learning_ingress_20260908.md).
 

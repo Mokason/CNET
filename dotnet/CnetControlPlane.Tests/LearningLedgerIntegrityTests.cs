@@ -89,13 +89,14 @@ public sealed class LearningLedgerIntegrityTests : IDisposable
     {
         using (LearningLedger.Create(root, Policy(), clock)) { }
         Assert.Equal("delete", Sql("PRAGMA journal_mode"));
-        Assert.True(Equals(2L, Sql("PRAGMA user_version")),
+        Assert.True(Equals(3L, Sql("PRAGMA user_version")),
             "LEARNING_LEDGER_INTEGRITY_RED: the new schema has no explicit user_version identity");
     }
 
     [Theory]
     [InlineData(0)]
     [InlineData(1)]
+    [InlineData(2)]
     [InlineData(int.MaxValue)]
     public void UnsupportedVersionRefusesWithoutMigrationResetOrTimeAdvance(int version)
     {
