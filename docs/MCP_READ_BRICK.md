@@ -131,6 +131,20 @@ a read-only public endpoint. This brick can call only its two new safe tools.
 
 ## Scope and references
 
+The September 8 live rollout also repairs the **existing** shared broker,
+versioned as `tools/cnet_mcp_shared.py`; it is not a second MCP host. Backend and
+new thin-client responses are bounded to 2 MiB, including final serialization
+after restoring client IDs. Overflow returns an explicit error or stops the
+broker, never clipped metadata or a silently dead reader. Invalid UTF-8, partial
+frames, parser recursion and pipe failures stop the broker. The deployment uses
+`Restart=always` because the inherited SIGTERM cleanup exits successfully; an
+explicit operator stop still stops the service. `CNET_MCP_WORKDIR` preserves the
+old relative fact bank, and `CNET_MCP_SERVER_BIN` selects the frozen executable.
+Already-running old thin-client processes retain their old 64 KiB limit until
+they reconnect; no unrelated application is restarted automatically. Native
+safe-read evidence keeps its separate 256 KiB bound. Run
+`python3 tests/test_mcp_shared_frames.py` for the hermetic framing gate.
+
 Recursive crawling, arbitrary remote MCP servers, dynamic tool discovery,
 authenticated websites, general web search and factual verification/training
 from prose remain unimplemented. A larger tool vocabulary needs a reviewed

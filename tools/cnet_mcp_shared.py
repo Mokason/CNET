@@ -32,8 +32,11 @@ import time
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
-SCRIPT_DIR = Path(__file__).resolve().parent
-SERVER_BIN = SCRIPT_DIR / "CnetMcpServer"
+SCRIPT_DIR = Path(os.environ.get("CNET_MCP_WORKDIR", str(Path(__file__).resolve().parent)))
+SERVER_BIN = Path(os.environ.get("CNET_MCP_SERVER_BIN", str(SCRIPT_DIR / "CnetMcpServer")))
+# Native evidence has its own tighter bound. Full legacy inventory metadata can
+# exceed asyncio's 64 KiB default; never leave a dead reader behind on refusal.
+MAX_RESPONSE_FRAME = 2 * 1024 * 1024
 
 RUNTIME_DIR = Path(os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}") / "cnet"
 SOCK_PATH = Path(os.environ.get("CNET_MCP_SHARED_SOCK", str(RUNTIME_DIR / "mcp-shared.sock")))
@@ -160,6 +163,7 @@ class SharedDaemon:
             stderr=asyncio.subprocess.PIPE,
             env=_server_env(),
             cwd=str(SCRIPT_DIR),
+            limit=MAX_RESPONSE_FRAME,
         )
         assert self._backend.stdin and self._backend.stdout and self._backend.stderr
         self._reader_task = asyncio.create_task(self._backend_stdout_loop())
@@ -210,6 +214,12 @@ class SharedDaemon:
         raise TimeoutError(f"backend not ready within {READY_TIMEOUT_S}s: {last_err}")
 
     async def _backend_stderr_loop(self) -> None:
+        try:
+            await self._read_backend_stderr()
+        except (ValueError, OSError):
+            self._pipe_failed("stderr")
+
+    async def _read_backend_stderr(self) -> None:
         assert self._backend and self._backend.stderr
         while True:
             line = await self._backend.stderr.readline()
@@ -220,19 +230,33 @@ class SharedDaemon:
                 _log(f"backend: {text}")
 
     async def _backend_stdout_loop(self) -> None:
+        try:
+            await self._read_backend_responses()
+        except (ValueError, UnicodeError, OSError, RecursionError):
+            pass
+        # EOF is also terminal: the process may have closed stdout without
+        # exiting, so waiting only for its exit would strand every client.
+        self._pipe_failed("stdout")
+
+    def _pipe_failed(self, stream: str) -> None:
+        if not self._stopping:
+            _log(f"backend {stream} unavailable or frame refused; stopping broker")
+            os.kill(os.getpid(), signal.SIGTERM)
+
+    async def _read_backend_responses(self) -> None:
         assert self._backend and self._backend.stdout
         while True:
             line = await self._backend.stdout.readline()
             if not line:
                 break
-            text = line.decode("utf-8", "replace").strip()
+            if not line.endswith(b"\n") or len(line) > MAX_RESPONSE_FRAME:
+                raise ValueError("backend_frame_boundary")
+            text = line.decode("utf-8").strip()
             if not text:
                 continue
-            try:
-                msg = json.loads(text)
-            except json.JSONDecodeError:
-                _log(f"backend non-json stdout: {text[:160]}")
-                continue
+            msg = json.loads(text)
+            if not isinstance(msg, dict):
+                raise ValueError("backend_frame_object")
             mid = msg.get("id", None)
             key = self._id_key(mid)
             item = self._pending.pop(key, None)
@@ -243,7 +267,7 @@ class SharedDaemon:
             msg["id"] = orig_id
             try:
                 await self._write_json(writer, msg)
-            except Exception as exc:  # noqa: BLE001
+            except OSError as exc:
                 _log(f"client write failed: {exc}")
 
     @staticmethod
@@ -252,6 +276,14 @@ class SharedDaemon:
 
     async def _write_json(self, writer: asyncio.StreamWriter, obj: dict) -> None:
         data = (json.dumps(obj, ensure_ascii=False, separators=(",", ":")) + "\n").encode("utf-8")
+        if len(data) > MAX_RESPONSE_FRAME:
+            # Restoring a client's longer ID can grow an otherwise bounded
+            # backend response. Return an explicit error, never a clipped JSON.
+            error = {"jsonrpc": "2.0", "id": obj.get("id"),
+                     "error": {"code": -32000, "message": "response_frame_exceeds_limit"}}
+            data = (json.dumps(error, ensure_ascii=False, separators=(",", ":")) + "\n").encode("utf-8")
+            if len(data) > MAX_RESPONSE_FRAME:
+                raise ValueError("response_id_exceeds_limit")
         writer.write(data)
         await writer.drain()
 
@@ -522,7 +554,7 @@ async def _spawn_detached_daemon(log_f) -> int:
 async def run_client() -> None:
     ensure_daemon()
     # Connect to shared daemon and bridge stdio ↔ socket (raw line proxy).
-    reader, writer = await asyncio.open_unix_connection(str(SOCK_PATH))
+    reader, writer = await asyncio.open_unix_connection(str(SOCK_PATH), limit=MAX_RESPONSE_FRAME)
 
     async def stdin_to_sock() -> None:
         loop = asyncio.get_running_loop()
@@ -544,6 +576,8 @@ async def run_client() -> None:
             line = await reader.readline()
             if not line:
                 break
+            if not line.endswith(b"\n") or len(line) > MAX_RESPONSE_FRAME:
+                raise ValueError("client_response_frame_boundary")
             sys.stdout.buffer.write(line)
             sys.stdout.buffer.flush()
 
