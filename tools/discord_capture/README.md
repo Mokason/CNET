@@ -134,6 +134,23 @@ Unrelated/ambiguous text stays unmapped. Repeat all 512 native pairs and four
 refusals with `make -C experiments/offline_controller capture-evidence-native-test`.
 The printed private build directory contains the two required runtime artifacts.
 
+The opt-in `--unicode-source /absolute/UnicodeData-Latin1.txt` flag on both
+`dataset.py` and `qualify.py` adds four exact query mappings from the already
+approved, hash-pinned Unicode 17 excerpt: `unicode upper/lower BYTE` and
+`unicode category/bidi EXACT_UNICODE_NAME`. Explicit missing case fields and
+unknown names receive an independently established abstention, not an invented
+training value. Malformed Unicode commands are terminal unmapped records, never
+legacy arithmetic fallbacks. Existing arithmetic receipt bytes/version semantics
+are unchanged; the extended export has its own catalog and checker pins.
+No runtime Unicode library, network result or CNET answer supplies these labels.
+
+An eligible whole window containing Unicode requests appears in
+`unscored_windows`; it is never trimmed or fed into the arithmetic planner.
+`expanded_catalog_requires_native_trajectory` records the remaining allocator
+evidence requirement. Four Unicode datasets are not the four allocator campaign
+families. Source labels prove neither the served answer nor useful allocation
+gain, and do not grant origin attestation, fitting or confirmation eligibility.
+
 Run `dataset.py CAPTURE NEW_EXPORT RUNTIME [--review PRIVATE_REVIEW.json]` with
 the existing Python environment, a private parent outside git and an external
 60-second timeout. It publishes a manifest last; interrupted exports are invalid

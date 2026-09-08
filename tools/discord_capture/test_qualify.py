@@ -10,6 +10,31 @@ import test_dataset
 
 class QualificationTests(unittest.TestCase):
     setUp = test_dataset.DatasetTests.setUp
+
+    def test_verified_unicode_window_stays_whole_and_cannot_grant_allocator_headroom(self):
+        from pathlib import Path
+        from dataset import export_dataset
+        from unicode_evidence import UnicodeMapper
+        mapper = UnicodeMapper(self.mapper, Path(__file__).resolve().parents[2] / "data/unicode17/UnicodeData-Latin1.txt")
+        rows = [dict(ord=i, segment="fixture", received_ns=3600*10**9,
+                     completed_ns=3601*10**9, delivered_text=text)
+                for i, text in enumerate(("unicode category DIGIT_ZERO", "convert 3 bytes to bits"), 1)]
+        events = [dict(segment="fixture", at_ns=t*10**9, kind="gateway_heartbeat")
+                  for t in range(3540, 5461, 60)]
+        with patch("dataset.snapshot", return_value=("{}", rows, events)), patch("dataset.time.time_ns", return_value=5500*10**9):
+            initial = self.root / "initial"
+            export_dataset(self.capture, initial, mapper)
+            episodes = json.loads((initial / "episodes.json").read_bytes())
+            target = self.root / "reviewed"
+            export_dataset(self.capture, target, mapper, {ep["episode_sha256"]: "human" for ep in episodes})
+        report = qualify(target, mapper)
+        self.assertEqual(report["verified_labels"], 2)
+        self.assertEqual(report["eligible_episodes"], 1)
+        self.assertEqual(report["comparisons"], [])
+        self.assertEqual(report["unscored_windows"], [2])
+        self.assertIn("expanded_catalog_requires_native_trajectory", report["withheld_reasons"])
+        self.assertFalse(report["amd_fitting_eligible"])
+        self.assertFalse(report["confirmation_eligible"])
     def test_empty_data_never_authorizes_fitting(self):
         from dataset import export_dataset
         target = self.root / "export"

@@ -68,15 +68,24 @@ def qualify(root, mapper):
     by_ordinal = {row["ord"]: label for row, label in zip(rows, labels, strict=True)}
     if len(by_ordinal) != len(rows):
         raise ValueError("qualification_duplicate")
-    comparisons = []
+    comparisons, unscored = [], []
+    direct_catalog = {(r["input_tag"], r["output_tag"]) for r in CATALOG}
     for episode in eligible:
         check_deadline(deadline)
-        comparison = compare_direct([by_ordinal[ordinal] for ordinal in episode["record_ordinals"]])
+        window_labels = [by_ordinal[ordinal] for ordinal in episode["record_ordinals"]]
+        if any((label.get("input_tag"), label.get("output_tag")) not in direct_catalog for label in window_labels):
+            # Never trim the Unicode/unscored records out of a mixed whole window.
+            # External labels establish task evidence, not native allocator outcomes.
+            unscored.append(episode["window"])
+            continue
+        comparison = compare_direct(window_labels)
         comparisons.append(dict(window=episode["window"], **comparison))
     check_deadline(deadline)
     reasons = ["native_outcomes_not_measured", "four_family_evidence_missing", "fresh_confirmation_required"]
     if not eligible:
         reasons.insert(0, "no_eligible_episodes")
+    elif unscored:
+        reasons.insert(0, "expanded_catalog_requires_native_trajectory")
     elif all(row["headroom_upper_vs_strongest"] < 0.05 for row in comparisons):
         reasons.insert(0, "insufficient_prospective_headroom")
     else:
@@ -90,7 +99,7 @@ def qualify(root, mapper):
                 episodes=len(episodes), eligible_episodes=len(eligible),
                 excluded_requests=sum(ep["requests"] for ep in episodes if ep["excluded"]),
                 exclusions=dict(Counter(reason for ep in episodes for reason in ep["excluded"])),
-                splits=splits, comparisons=comparisons, withheld_reasons=reasons,
+                splits=splits, comparisons=comparisons, unscored_windows=unscored, withheld_reasons=reasons,
                 amd_fitting_eligible=False, confirmation_eligible=False, product_acceptance=False,
                 gate=dict(absolute_gain=0.05, paired95_lower="positive", family_means="nonnegative"))
 
@@ -99,9 +108,14 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("dataset", type=Path)
     parser.add_argument("runtime", type=Path)
+    parser.add_argument("--unicode-source", type=Path, help="exact source used for an opt-in Unicode export")
     args = parser.parse_args()
     try:
-        print(json.dumps(qualify(args.dataset, NativeMapper(args.runtime)), sort_keys=True))
+        mapper = NativeMapper(args.runtime)
+        if args.unicode_source:
+            from unicode_evidence import UnicodeMapper
+            mapper = UnicodeMapper(mapper, args.unicode_source)
+        print(json.dumps(qualify(args.dataset, mapper), sort_keys=True))
     except Exception:
         print('{"error":"qualification_refused","amd_fitting_eligible":false}')
         raise SystemExit(1)

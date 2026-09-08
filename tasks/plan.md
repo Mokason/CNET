@@ -4,6 +4,19 @@ This file is the current task queue, not a replay of old implementation steps.
 Decision history remains in [plans/](../plans/). Current documentation starts at
 [docs/INDEX.md](../docs/INDEX.md).
 
+## Active: verified learning ingress and measured remaining gates
+
+The owner requested all remaining tasks, with the 72-hour run in the background.
+The [current contract](../plans/cnet_verified_learning_ingress_20260908.md)
+orders independent Unicode query evidence, owner-only Discord routing, a separate
+bounded learning installation, native rehearsal/deployment, current capture
+qualification and checklist reconciliation. The already frozen 72-hour run is
+not a deployment target. Actual elapsed acceptance, reviewed genuine demand and
+useful allocator gain remain measured prerequisites, never source checkboxes.
+
+The sections below preserve earlier source/deployment context until the final
+reconciliation; their old "current request" wording does not supersede this one.
+
 ## Current experiment: chronological allocator evidence
 
 Active September 8 continuation: [retrieval, alerts, safe MCP and verified

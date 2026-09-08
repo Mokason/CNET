@@ -2,6 +2,19 @@
 
 Evidence, scope and dependencies: [plan.md](plan.md).
 
+## Current: verified learning ingress
+
+- [x] RED and independently pinned four-dataset query/evidence tests
+- [x] Versioned evidence extension without reclassifying old receipts
+- [ ] RED and owner-only, single-attempt, fail-closed Discord learning bridge
+- [ ] Separate bounded installation and actual native acquisition/answer rehearsal
+- [ ] Frozen live rollout, capture continuity declaration and operator controls
+- [ ] Requalify captured demand; do not fit without eligible native headroom
+- [ ] Final security/regression review, measured report and checklist reconciliation
+- [ ] Background frozen 72-hour result (actual elapsed time required)
+
+Contract: [verified learning ingress](../plans/cnet_verified_learning_ingress_20260908.md).
+
 ## Active September 8 completion sequence
 
 - [x] Synthetic RED and fix for irrelevant implicit legacy memory retrieval

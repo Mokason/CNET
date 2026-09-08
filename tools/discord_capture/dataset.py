@@ -181,6 +181,7 @@ if __name__ == "__main__":
     parser.add_argument("capture", type=Path)
     parser.add_argument("destination", type=Path)
     parser.add_argument("runtime", type=Path)
+    parser.add_argument("--unicode-source", type=Path, help="opt in to the exact pinned Unicode excerpt; no network")
     parser.add_argument("--review", type=Path, help="owner-private episode-digest to human/test/automation mapping")
     args = parser.parse_args()
     try:
@@ -190,7 +191,11 @@ if __name__ == "__main__":
             reviews = json.loads(args.review.read_bytes())
             if not isinstance(reviews, dict) or len(reviews) > 10000 or any(v not in {"human", "test", "automation"} for v in reviews.values()):
                 raise ValueError("origin_review")
-        report = export_dataset(args.capture, args.destination, NativeMapper(args.runtime), reviews)
+        mapper = NativeMapper(args.runtime)
+        if args.unicode_source:
+            from unicode_evidence import UnicodeMapper
+            mapper = UnicodeMapper(mapper, args.unicode_source)
+        report = export_dataset(args.capture, args.destination, mapper, reviews)
         print(json.dumps({k: report[k] for k in ("requests", "verified_labels", "episodes", "eligible_episodes", "training_eligible", "reasons")}))
     except Exception:
         print('{"error":"evidence_export_refused","training_eligible":false}')
