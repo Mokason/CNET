@@ -12,8 +12,8 @@ internal static class LearningCommand
         var correlation = Guid.NewGuid().ToString("N");
         try
         {
-            if (args.Length < 2 || args[0] is not ("inspect" or "initialize" or "status" or "pause" or "resume" or "ask" or "lookup" or "verify" or "import" or "tick" or "run" or "quiesce" or "observe" or "approve" or "inbox" or "task")
-                || args.Length != (args[0] switch { "ask" or "lookup" or "approve" or "inbox" => 4, "observe" => 6, "verify" => 3, "import" or "task" => 5, _ => 2 }))
+            if (args.Length < 2 || args[0] is not ("inspect" or "initialize" or "status" or "pause" or "resume" or "ask" or "lookup" or "verify" or "import" or "tick" or "run" or "quiesce" or "observe" or "approve" or "inbox" or "task" or "gaps")
+                || args.Length != (args[0] switch { "ask" or "lookup" or "approve" or "inbox" => 4, "observe" => 6, "verify" or "gaps" => 3, "import" or "task" => 5, _ => 2 }))
                 throw new ArgumentException("learning_command_usage");
             if (args[0] == "lookup" && (!LearningPolicy.IsId(args[2]) || !LocalSymbolReference.IsKey(args[3])))
                 throw new ArgumentException("learning_command_usage");
@@ -29,6 +29,9 @@ internal static class LearningCommand
             if (args[0] == "task" && (args[2] is not ("synthetic" or "unreviewed") || !LearningLedger.IsRequestId(args[3])))
                 throw new ArgumentException("learning_command_usage");
             long after = 0; int pageSize = 0;
+            if (args[0] == "gaps" && (!int.TryParse(args[2], NumberStyles.None, CultureInfo.InvariantCulture, out pageSize)
+                || pageSize is < 1 or > 32 || pageSize.ToString(CultureInfo.InvariantCulture) != args[2]))
+                throw new ArgumentException("learning_command_usage");
             if (args[0] == "inbox" && (!long.TryParse(args[2], NumberStyles.None, CultureInfo.InvariantCulture, out after)
                 || after < 0 || after.ToString(CultureInfo.InvariantCulture) != args[2]
                 || !int.TryParse(args[3], NumberStyles.None, CultureInfo.InvariantCulture, out pageSize)
@@ -64,11 +67,16 @@ internal static class LearningCommand
                 Status(created, policy, correlation, "learning_initialized");
                 return 0;
             }
-            if (args[0] == "inbox")
+            if (args[0] is "inbox" or "gaps")
             {
                 using var reader = LearningLedger.OpenReadOnly(workPath, policy);
                 if (reader.RuntimeSha256 != native.Sha256 || reader.ManagedSha256 != running.Sha256)
                     throw new InvalidOperationException("learning_installation_binding_missing");
+                if (args[0] == "gaps")
+                {
+                    Emit(new { @event = "learning_gaps", correlation_id = correlation, report = reader.Gaps(pageSize) });
+                    return 0;
+                }
                 var experiences = reader.Experiences(after, pageSize);
                 Emit(new { @event = "learning_inbox", correlation_id = correlation, experiences,
                     next_after = experiences.Count == 0 ? after : experiences[^1].Sequence });

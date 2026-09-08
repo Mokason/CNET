@@ -23,10 +23,14 @@ private runtime, policy, four pinned Unicode tables and independent reference.
 Only a selected owner-DM request that was durably admitted by the capture
 journal can invoke this mode. Derive a stable 32-hex ID from the capture scope,
 message identity and captured delivered-text hash, never mutable completion
-fields. A query is observed as `unreviewed`, not human-attested or training truth.
+fields. Dispatch requires the fresh successful `begin` control-flow handoff;
+looking up an unfinished row cannot authorize dispatch or replay. A query is
+observed as `unreviewed`, not human-attested or training truth.
 Validate native task envelopes, identity, source and expected/native values.
-Clarification, unknown and conflict must not fall through to an unverified
-answer path. No bridge import/approval/activation authority is added.
+Every parser outcome, including abstention and input bounds, is terminal in
+this opt-in finite-task mode. Unsupported tasks cannot fall through to a peer
+or the legacy demand-producing lookup. No bridge import/approval/activation
+authority is added.
 
 Tests: committed capture before dispatch; duplicates/foreign scope/unfinished
 replay refusal; malformed native replies and source mismatches; no automatic
@@ -35,9 +39,13 @@ capture fixtures and explicitly reports them as such.
 
 ## Slice 3: owner inspection of linked history
 
-Add a bounded read-only inspector joining a page of native experiences to
-capture records via the stable ID. Do not mutate/export/replay the live capture
-or widen its schema. Retain unmatched records and explicit unreviewed origin;
+Add a bounded read-only capture-side page joined to exact native request IDs.
+A native batch trace (at most 10 IDs) stays below the existing 32-KiB subprocess
+output bound. Capture-only rows remain `no_observation`, without guessing why.
+Native-only history remains available through the existing native inbox; this
+capture-side view does not claim to enumerate it. The two stores are separate
+snapshots, not one atomic cross-store transaction. Do not mutate/export/replay
+the live capture or widen its schema. Retain explicit unreviewed origin;
 no match alone implies correctness, whole-window continuity or eligibility.
 Do not emit raw private conversation text by default. Show independently
 approved source, actual observation and existing capture delivery outcome as

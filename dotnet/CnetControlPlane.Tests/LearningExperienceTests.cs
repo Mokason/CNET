@@ -296,5 +296,35 @@ public sealed class LearningExperienceTests : IDisposable
         var duplicate = ledger.BeginExperience(new string('0', 32), "calibration", 7, "synthetic");
         Assert.False(duplicate.Created); Assert.Equal("pending", duplicate.Experience.State);
         Assert.Equal(100, ledger.Experiences(0, 100).Count); Assert.Empty(ledger.Experiences(4096, 1));
+        var gaps = ledger.Gaps(1);
+        Assert.Equal(4096, gaps.Observations); Assert.Equal(4096, Assert.Single(gaps.Groups).Requests);
+        Assert.Null(gaps.Groups[0].MeanRequestMilliseconds);
+        insert.CommandText = "INSERT INTO experiences(request_id,dataset,key,origin,boot,started_ns,state) VALUES($id,'calibration',7,'synthetic',$boot,$ns,'pending')";
+        insert.Parameters.AddWithValue("$id", Id); insert.ExecuteNonQuery();
+        Assert.Throws<InvalidOperationException>(() => ledger.Gaps(1));
+    }
+
+    [Fact]
+    public void GapReportKeepsSourceVersionsApprovalsAndUncertaintySeparate()
+    {
+        Assert.Empty(ledger.Gaps(32).Groups);
+        Assert.Throws<ArgumentException>(() => ledger.Gaps(0));
+        Assert.Throws<ArgumentException>(() => ledger.Gaps(33));
+        var first = Source(); ledger.BeginExperience(Id, "calibration", 7, "synthetic");
+        clock.Advance(); ledger.FinishExperience(Id, Answer(42));
+        var second = Source(43); ledger.BeginExperience(new string('b', 32), "calibration", 7, "synthetic");
+        clock.Advance(); ledger.FinishExperience(new string('b', 32), Answer());
+        ledger.ApproveExperience(new string('b', 32), second.SourceSha256);
+        ledger.BeginExperience(new string('c', 32), "calibration", 7, "unreviewed");
+        ledger.FinishExperience(new string('c', 32), null);
+        var report = ledger.Gaps(32);
+        Assert.Equal(3, report.TotalGroups); Assert.False(report.Truncated);
+        var original = Assert.Single(report.Groups, group => group.SourceSha256 == first.SourceSha256);
+        Assert.Equal("verified", original.LatestState); Assert.Equal(1000, original.MeanRequestMilliseconds);
+        var approved = Assert.Single(report.Groups, group => group.ApprovedRequests == 1);
+        Assert.Equal(second.SourceSha256, approved.SourceSha256); Assert.Equal(0, approved.PendingApprovals);
+        var unknown = Assert.Single(report.Groups, group => group.Origin == "unreviewed");
+        Assert.Equal(1, unknown.States["unknown"]); Assert.Equal(0, unknown.PendingApprovals);
+        Assert.False(report.TrainingEligible); Assert.Null(report.EstimatedLearningSeconds);
     }
 }
