@@ -226,11 +226,41 @@ capsule_core_growth: tests/test_capsule_core_growth.c
 	@grep -q '^CAPSULE_CORE_GROWTH_PASS' logs/capsule_core_growth.log
 
 .PHONY: capsule_reuse
-capsule_reuse: capsule_core
+capsule_reuse: capsule_core $(BIN_DIR)/cnet_source_capsule
 	@mkdir -p logs
+	$(CC) $(CFLAGS) -o $(BIN_DIR)/test_capsule_reuse_boundaries tests/test_capsule_reuse_boundaries.c \
+		-L$(BIN_DIR) -lcnet_capsule_core -Wl,-rpath,'$$ORIGIN' $(LDFLAGS) -ldl -pthread
+	@$(BIN_DIR)/test_capsule_reuse_boundaries > logs/capsule_reuse_boundaries.log
+	@grep '^CAPSULE_REUSE_BOUNDARIES_PASS' logs/capsule_reuse_boundaries.log
 	@python3 tests/test_capsule_reuse.py > logs/capsule_reuse.log 2>&1 || { cat logs/capsule_reuse.log; exit 1; }
 	@cat logs/capsule_reuse.log
 authority: capsule_reuse
+
+# Instrument only the changed native boundary; other symbols resolve from the
+# ordinary runtime. Full-linked memory/UB instrumentation is a separate gate.
+.PHONY: capsule_reuse_coverage
+capsule_reuse_coverage: capsule_core $(BIN_DIR)/cnet_source_capsule
+	@set -eu; reuse_cov=$$(mktemp -d /tmp/cnet-reuse-coverage-XXXXXX); \
+	printf 'CAPSULE_REUSE_COVERAGE_ARTIFACTS=%s\n' "$$reuse_cov"; \
+	for reuse_source in cnet_capsule_core cnet_capsule_snapshot cnet_capsule_reuse; do \
+		$(CC) $(filter-out -O% -march=%,$(CFLAGS)) -O0 -g --coverage -fPIC -c \
+			"src/serve/$$reuse_source.c" -o "$$reuse_cov/$$reuse_source.o"; \
+	done; \
+	$(CC) --coverage -shared -o "$$reuse_cov/libcnet_reuse_coverage.so" \
+		"$$reuse_cov/cnet_capsule_core.o" "$$reuse_cov/cnet_capsule_snapshot.o" "$$reuse_cov/cnet_capsule_reuse.o" \
+		-L$(abspath $(BIN_DIR)) -lcnet_capsule_core -Wl,-rpath,$(abspath $(BIN_DIR)) $(LDFLAGS); \
+	for reuse_source in tools/cnet_capsule_core_main.c tests/test_capsule_snapshot.c tests/test_capsule_reuse_boundaries.c; do \
+		reuse_test=$$(basename "$$reuse_source" .c); \
+		$(CC) $(filter-out -O% -march=%,$(CFLAGS)) -O0 -g --coverage "$$reuse_source" -o "$$reuse_cov/$$reuse_test" \
+			-L"$$reuse_cov" -lcnet_reuse_coverage -L$(abspath $(BIN_DIR)) -lcnet_capsule_core \
+			-Wl,-rpath,"$$reuse_cov" -Wl,-rpath,$(abspath $(BIN_DIR)) $(LDFLAGS) -ldl -pthread; \
+	done; \
+	CNET_TEST_CORE_LIBRARY="$$reuse_cov/libcnet_reuse_coverage.so" "$$reuse_cov/test_capsule_snapshot" > "$$reuse_cov/snapshot.log"; \
+	"$$reuse_cov/test_capsule_reuse_boundaries" > "$$reuse_cov/boundaries.log"; \
+	CNET_TEST_CORE_LIBRARY="$$reuse_cov/libcnet_reuse_coverage.so" CNET_REUSE_CLI="$$reuse_cov/cnet_capsule_core_main" \
+		python3 tests/test_capsule_reuse.py > "$$reuse_cov/reuse.log" 2>&1 || { cat "$$reuse_cov/reuse.log"; exit 1; }; \
+	(cd "$$reuse_cov" && gcov -b -c -j ./*.gcno > gcov.log); \
+	printf 'CAPSULE_REUSE_COVERAGE_PASS artifacts=%s\n' "$$reuse_cov"
 
 .PHONY: capsule_resident_lifecycle
 capsule_resident_lifecycle: $(BIN_DIR)/libcnet_capsule_core.so tests/test_capsule_resident_lifecycle.c tests/test_knowledge_capsule.c
@@ -289,7 +319,7 @@ capsule_product_sanitize:
 		src/serve/cnet_capsule_core.c src/serve/cnet_capsule_demand.c $(CORE_CANDIDATE_SRC) \
 		$(SEMANTIC_CORTEX_SRC) $(SHARED_WORKSPACE_SRC) $(CCE_C_SRCS) $(LDFLAGS) $(MCP_LDFLAGS) -pthread \
 		> "$$capsule_san/build.log" 2>&1 || { tail -n 60 "$$capsule_san/build.log"; exit 1; }; \
-	for capsule_test in capsule_resident_lifecycle capsule_snapshot capsule_store capsule_store_faults source_reserved_interface; do \
+	for capsule_test in capsule_resident_lifecycle capsule_snapshot capsule_store capsule_store_faults source_reserved_interface capsule_reuse_boundaries; do \
 		capsule_extra=''; if test "$$capsule_test" = capsule_store_faults; then capsule_extra='-DCNET_CAPSULE_STORE_TESTING src/serve/cnet_capsule_store.c'; fi; \
 		$(CC) $(filter-out -O% -march=%,$(CFLAGS)) -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer \
 			-o "$$capsule_san/test_$$capsule_test" "tests/test_$$capsule_test.c" $$capsule_extra \

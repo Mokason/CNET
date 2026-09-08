@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+from unittest.mock import patch
 
 CLI = os.environ.get("CNET_REUSE_CLI", "bin/cnet_capsule_core")
 LIB = os.environ.get("CNET_TEST_CORE_LIBRARY", "bin/libcnet_capsule_core.so")
@@ -97,8 +98,9 @@ class CompositionReuse(unittest.TestCase):
                 if attack == "extra":
                     (payload.parent / "extra").write_text("unexpected")
                 elif attack == "symlink":
-                    payload.rename(source / "outside")
-                    payload.symlink_to(source / "outside")
+                    outside = self.root / "symlink-target"
+                    payload.rename(outside)
+                    payload.symlink_to(outside)
                 elif attack == "hardlink":
                     os.link(payload, self.root / "hardlink")
                 elif attack == "fifo":
@@ -119,6 +121,60 @@ class CompositionReuse(unittest.TestCase):
         self.destination.chmod(0o755)
         self.refused(self.export())
         self.destination.chmod(0o700)
+
+    def test_unselected_or_hidden_malformed_content_is_not_ignored(self):
+        for attack in ("unselected-extra", "unselected-link", "hidden", "lock"):
+            with self.subTest(attack=attack):
+                source = self.root / (self.id().split(".")[-1] + attack)
+                shutil.copytree(self.source, source)
+                if attack == "unselected-extra":
+                    (source / "m-unused" / "extra").write_text("unexpected")
+                elif attack == "unselected-link":
+                    shutil.rmtree(source / "m-unused")
+                    (source / "m-unused").symlink_to(self.source / "m-unused")
+                elif attack == "hidden":
+                    (source / ".unexpected").mkdir()
+                else:
+                    (source / ".publish.lock").write_text("not a lock")
+                self.refused(self.export(source=source))
+
+    def test_asset_bytes_and_source_freshness_survive_export(self):
+        fixture = self.root / self.id().split(".")[-1]
+        fixture.mkdir(mode=0o700)
+        includes = fixture / "include"
+        includes.mkdir(mode=0o700)
+        header = includes / "cnet_capsule.h"
+        original = ('#define CNET_CAPSULE_SCHEMA 1\n#define CNET_CAPSULE_SCHEMA_ASSET 2\n'
+                    '#define CNET_CAPSULE_ASSET_FILE "frontend.cvfa"\n#define CNET_CAPSULE_REASON_MAX 160\n')
+        header.write_text(original)
+        (includes / "cnet_json_internal.h").write_text('#define CNETD_JSON_DEPTH_MAX 32u\n')
+        source = fixture / "capsules"
+        source.mkdir(mode=0o700)
+        result = subprocess.run(["bin/cnet_source_capsule", "build", str(fixture), str(source / "facts"), "source_facts"],
+                                text=True, capture_output=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        request = "capsule cnet_source_fact cnet_source_answer 0"
+        with patch.dict(os.environ, {"CNET_CAPSULE_SOURCE_ROOT": str(fixture)}):
+            result = self.export(source=source, request=request)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            digest = re.search(r"snapshot_sha256=([a-f0-9]{64})", result.stdout)[1]
+            exported = self.destination / digest
+            self.assertEqual((exported / "facts" / "frontend.cvfa").read_bytes(),
+                             (source / "facts" / "frontend.cvfa").read_bytes())
+            self.assertEqual(run("ask", exported, request).returncode, 0)
+            header.write_text(header.read_text().replace("SCHEMA 1", "SCHEMA 3"))
+            self.assertNotEqual(run("ask", exported, request).returncode, 0)
+            self.assertNotEqual(self.export(source=source, request=request).returncode, 0)
+            self.assertEqual(list(self.destination.iterdir()), [exported])
+            header.unlink()
+            self.assertNotEqual(run("ask", exported, request).returncode, 0)
+            self.assertNotEqual(self.export(source=source, request=request).returncode, 0)
+            header.write_text(original)
+            self.assertEqual(self.export(source=source, request=request).returncode, 0)
+            asset = source / "facts" / "frontend.cvfa"
+            asset.unlink()
+            self.assertNotEqual(self.export(source=source, request=request).returncode, 0)
+        self.assertEqual(list(self.destination.iterdir()), [exported])
 
     def test_changed_existing_digest_is_not_overwritten(self):
         exported = self.exported(self.export())
