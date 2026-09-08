@@ -1,5 +1,7 @@
 """Synthetic protocol fixtures only; no network, live ledger or origin review."""
 import json
+import contextlib
+import io
 from pathlib import Path
 import unittest
 from unittest.mock import Mock, patch
@@ -49,6 +51,26 @@ class TaskBridgeTests(unittest.TestCase):
         self.assertIn("924 (U+039C)", text)
         bridge.command.assert_called_once_with("task", "unreviewed", IDENTITY, "What's the uppercase of µ?")
         self.assertEqual(bridge.check_installation.call_count, 2)
+
+    def test_task_logs_are_correlated_and_do_not_contain_private_text(self):
+        bridge = self.bridge(response())
+        log = io.StringIO()
+        with contextlib.redirect_stdout(log):
+            bridge.task_answer("private fixture question", IDENTITY)
+        self.assertTrue(log.getvalue().startswith('{'), "TASK_LOG_RED: missing structured task event")
+        record = json.loads(log.getvalue())
+        self.assertEqual(record["request_id"], IDENTITY)
+        self.assertEqual(record["event"], "captured_task_result")
+        self.assertEqual(record["experience_state"], "verified")
+        self.assertNotIn("private fixture", log.getvalue())
+        bridge.command.side_effect = lb.BridgeError("private child error")
+        log = io.StringIO()
+        with contextlib.redirect_stdout(log):
+            bridge.task_answer("private fixture question", IDENTITY)
+        record = json.loads(log.getvalue())
+        self.assertEqual(record["request_id"], IDENTITY)
+        self.assertEqual(record["code"], "outcome_unknown")
+        self.assertNotIn("private", log.getvalue())
 
     def test_miss_retains_observation_without_claiming_demand_or_returning_reference(self):
         bridge = self.bridge(response(experience=experience(State="miss", Value=None)))
