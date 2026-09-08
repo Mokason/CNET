@@ -124,6 +124,43 @@ and all artifacts remain preserved; it contributes no elapsed acceptance time.
 
 ## Remaining measured gates
 
-Frozen long-duration observation is pending at this source checkpoint.
+The separately frozen run is active at
+`/home/marble/cnet-unicode-soak-20260908-Jtg1zy`, source checkpoint `901fc8a`, monitor
+implementation `930c506`. Its original owner started at 19:53:03 EEST September 8.
+Policy SHA256: `ec3e8be72438076782a98e16b08be50380444161bbf74671d1eb0fe5a61dc168`;
+soak manifest SHA256: `c1938cabfd19723d66493ace23bcf86a417919d95f110b0908a0cc8f228e7bae`.
+The actual crash rehearsal used these same installation/monitor/policy pins.
+
+At 19:54:05 the first full observation passed: four capsules, native revision 5,
+1024 encoded-input checks and 192 symbolic probes, zero missing/wrong answers.
+Numeric sources contain 16 mappings each at this stage; both symbolic sources
+contain 95 literal facts. The monitor will publish the already-frozen expansions
+at elapsed 24 and 48 hours and verify every minute. Its permanent receipts and
+original 259800-second budget remain authoritative. Expected terminal observation
+is around September 11, 20:04 EEST if all continuity/outcome gates pass. See the
+private `OPERATIONS.md` for exact status and safe stop commands. Main live daemon,
+shared MCP, Discord and the three private soak services are healthy at handoff.
+
+Final `make -j2 verify` passed all 28 fresh-log native suites. The expanded managed
+learning suite passed **805 tests, zero failed/skipped**. The existing Linux-only
+test annotations still produce platform analyzer warnings; these were not hidden
+or represented as a warning-free build. Test-generated tracked weights/binary were
+preserved privately, then their committed copies restored; the implementation
+worktree is clean and the dirty primary worktree remains untouched.
+
+Actual live local peer round-trip measurements, 40 samples after three warmups
+per path, include process startup: identity median **0.427 ms**, p95 **0.554 ms**;
+covered 173-byte conversion median **1.841 ms**, p95 **2.084 ms**. These are two
+warm local paths under concurrent bounded work, not broad task latency, a network
+benchmark, GPU training speed or an intelligence metric. Raw synthetic receipts
+remain under the private frozen release. No new genuine allocator episodes were
+manufactured by these probes.
+
 Actual 72-hour product acceptance and useful learned allocator gains remain
-WITHHELD. A source test, synthetic demand or capture-only uptime cannot close them.
+WITHHELD. Even successful completion of this finite Unicode soak does not satisfy
+the independent genuine-demand/useful-gain prerequisites of the larger product
+gate. A source test, synthetic demand or capture-only uptime cannot close them.
+No certification floor was lowered, no CNET answer became a training label, no
+new paid integration was invoked, and no GPU fitting was started without eligible
+evidence. This turn's commits are local on `fix/retrieval-alerts-live-mcp-20260908`;
+they have not been pushed to origin/master.

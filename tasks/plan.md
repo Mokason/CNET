@@ -15,7 +15,9 @@ acceptance. Identity/presence repair is deployed and published. Recall, repeatab
 alerts and safe MCP reads are now deployed and verified through the actual peer
 and owner-only Discord diagnostic. The independent Unicode workloads and
 three-stage capsule refresh gate pass. The bounded monitor's actual SIGKILL
-rehearsal stops acquisition safely; a separately frozen long run is next.
+rehearsal stops acquisition safely. A separately frozen long run started at
+19:53:03 EEST on September 8; its initial four-capsule full sweep passed. Real
+elapsed acceptance and useful learned allocator gains remain WITHHELD.
 
 Completed source task: [bounded MCP read brick](../plans/cnet_mcp_read_brick_20260908.md).
 Certified finite dispatch, opt-in MCP Wikipedia/web reads, strict evidence and

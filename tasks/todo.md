@@ -10,9 +10,9 @@ Evidence, scope and dependencies: [plan.md](plan.md).
 - [x] Enable certified safe MCP read dispatch on the existing live service
 - [x] Verify real read/refusal through deployed peer and Discord renderer
 - [x] Broaden independently verified learning without treating web prose as truth
-- [ ] Freeze a bounded unattended learning run and start real acceptance monitoring
+- [x] Freeze a bounded unattended learning run and start real acceptance monitoring
 - [ ] Actual elapsed/outcome acceptance and genuine-demand headroom (WITHHELD until measured)
-- [ ] Final regressions, vulnerability review and measured handoff
+- [x] Final regressions, vulnerability review and measured handoff
 
 Contract: [live completion](../plans/cnet_live_completion_20260908.md).
 
