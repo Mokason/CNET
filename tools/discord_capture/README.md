@@ -76,7 +76,17 @@ duplicate fields, unknown sources, inconsistent authority and failed clients
 produce an availability error. stderr never enters answer parsing. Replies still
 have the existing 1900-character display cap and disabled mentions.
 Existing memory notes can contain archived external drafts. They remain labeled
-unverified; this presentation repair does not establish their relevance or truth.
+unverified. Implicit recall now requires 2–12 complete meaningful ASCII query
+terms, all present as whole terms. Archived Q/A matches only its question, never
+incidental words in its answer. Ambiguous/empty archives, control bytes, malformed
+or duplicate-field JSON and incomplete/oversized records refuse. Non-ASCII or
+overlong query terms refuse this conservative lexical adapter, not other routes.
+The regular JSONL bank is bounded to 8 MiB; decoded records to 2048 bytes. The
+daemon returns only a complete note fitting its 1399-byte recall display buffer,
+never a clipped prefix. The newest matching append wins; append order does not
+prove present-day freshness or truth. Explicit archival lookup remains separate.
+No archived note becomes certified by retrieval. Pending proposals remain
+unverified and now safely escape quoted notes. Run `make recall_verify`.
 
 Identity and presence now require whole requests. Closed skill-usage/learning/
 improvement questions return operational help without starting a learning job or
@@ -159,6 +169,16 @@ provided user-systemd templates after replacing `@RELEASE@` with the frozen
 revision; bridge and monitor must execute that same release. Keep `AccuracySec=1s`.
 Both failure paths trigger the rate-limited local desktop notification service
 (at most one per five minutes). No external notification provider is contacted.
+Pre-create its separate `alerts` directory with mode 0700. `alert.py` serializes
+triggers and durably records successful sends against boot identity/monotonic
+time; suppressed triggers exit successfully. The service deliberately disables
+systemd start limiting: start limiting is not notification throttling. Delivery
+failure or corrupt/unsafe state exits nonzero, with a metadata-only
+`capture_alert` event (`sent`, `suppressed`, `busy`, `delivery_failed`, or
+`state_refused`). Inspect the alert service journal as well as the two monitors.
+A process crash after desktop delivery but before state publication may repeat
+a notification; exactly-once delivery is not promised. Preserve invalid state
+for diagnosis instead of deleting it to suppress a failure.
 
 Inspect `systemctl --user status cnet-capture-monitor.timer
 cnet-capture-watchdog.timer` and their `.service` journals. Inspect private

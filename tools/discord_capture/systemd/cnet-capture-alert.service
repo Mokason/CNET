@@ -1,11 +1,13 @@
 [Unit]
 Description=Local CNET capture operational alert
-StartLimitIntervalSec=300
-StartLimitBurst=1
+# Notification frequency is bounded by durable helper state. Manager start
+# limiting rejects valid repeated OnFailure triggers and leaves a false failure.
+StartLimitIntervalSec=0
 
 [Service]
 Type=oneshot
-ExecStart=/usr/bin/notify-send --app-name=CNET --urgency=critical --expire-time=10000 "CNET capture needs attention" "Inspect cnet-capture-monitor.service and cnet-capture-watchdog.service in the user journal. No learning is authorized by capture health."
-TimeoutStartSec=10
+ExecStart=%h/.config/cnet/venv-discord/bin/python %h/.local/share/cnet-discord-capture/releases/@RELEASE@/alert.py %h/.local/share/cnet-discord-capture/alerts
+Environment=PYTHONDONTWRITEBYTECODE=1
+TimeoutStartSec=12
 UMask=0077
 NoNewPrivileges=yes
