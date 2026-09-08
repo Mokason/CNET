@@ -16,6 +16,7 @@ import time
 
 from journal import private_root
 from unicode_queries import DATASETS, QueryError, Reference, parse
+from task_protocol import hex_id, task_result
 
 MANAGED = {"cnet-control.dll", "cnet-control.deps.json", "cnet-control.runtimeconfig.json",
            "Microsoft.Data.Sqlite.dll", "SQLitePCLRaw.core.dll", "SQLitePCLRaw.batteries_v2.dll",
@@ -116,7 +117,7 @@ class Bridge:
         require(hashlib.sha256(self.config_bytes).hexdigest() == config_sha256, "configuration_pin")
         config = decode(self.config_bytes)
         require(set(config) == {"schema_version", "dotnet", "managed_sha256", "native_sha256", "policy_sha256", "sources"}
-                and type(config["schema_version"]) is int and config["schema_version"] == 1, "configuration")
+                and type(config["schema_version"]) is int and config["schema_version"] in (1, 2), "configuration")
         require(all(isinstance(config[k], str) and re.fullmatch(r"[a-f0-9]{64}", config[k])
                     for k in ("managed_sha256", "native_sha256", "policy_sha256")), "configuration")
         require(isinstance(config["sources"], dict) and set(config["sources"]) == set(DATASETS)
@@ -129,6 +130,7 @@ class Bridge:
         require(stat.S_ISREG(info.st_mode) and info.st_uid in {0, os.getuid()}
                 and not info.st_mode & 0o022 and os.access(self.dotnet, os.X_OK), "dotnet_host")
         self.config = config
+        self.task_mode = config["schema_version"] == 2
         self.source_pins = config["sources"]
         self.reference = Reference(self.root / "UnicodeData-Latin1.txt")
         self.failed = False
@@ -169,14 +171,53 @@ class Bridge:
                     "source_changed")
 
     def command(self, verb, *args):
-        require(verb in {"status", "pause", "ask", "lookup"}, "command_refused")
+        allowed = {"status", "pause", "task"} if getattr(self, "task_mode", False) else {"status", "pause", "ask", "lookup"}
+        require(verb in allowed, "command_refused")
         code, output, error = bounded_call([str(self.dotnet), str(self.root / "managed/cnet-control.dll"),
                                             "learning", verb, str(self.root), *args], self.root)
-        if code != 0 or error:
+        if error or code not in ((0, 2) if verb == "task" else (0,)):
             # The fixed native parser deliberately conflates corrupt replies
             # with observation failures. Conservatively stop this bridge/owner.
             raise ProtocolError("command_refused")
-        return decode(output)
+        result = decode(output)
+        if verb == "task":
+            row = result.get("experience")
+            expected_code = 2 if isinstance(row, dict) and row.get("State") in ("unknown", "conflict") else 0
+            if code != expected_code:
+                raise ProtocolError("task_exit_mismatch")
+        return result
+
+    def task_answer(self, text, identity):
+        """Gateway calls once, only on the fresh durable capture-admission path.
+
+        Every outcome consumes this opt-in finite task route. No legacy/peer
+        fallback and no source approval, import, activation or budget renewal.
+        """
+        attempted = False
+        try:
+            require(getattr(self, "task_mode", False) is True and not self.failed, "task_mode_unavailable")
+            require(hex_id(identity) and isinstance(text, str) and "\0" not in text, "task_arguments")
+            self.check_installation()
+            self.require_owner()
+            attempted = True
+            try:
+                reply = self.command("task", "unreviewed", identity, text)
+                self.check_installation()
+                try:
+                    return task_result(reply, identity, self.source_pins, self.reference)
+                except (ValueError, TypeError, KeyError):
+                    raise ProtocolError("task_refused") from None
+            except ProtocolError:
+                self.failed = True
+                try:
+                    self.command("pause")
+                except Exception:
+                    print("[learning_bridge] pause_failed", flush=True)
+                raise
+        except Exception:
+            print("[learning_bridge]", "task_refused" if self.failed else "outcome_unknown" if attempted else "unavailable", flush=True)
+            return ("ABSTAIN: learning service unavailable or outcome unknown; no automatic retry.",
+                    "peer_unknown" if attempted and not self.failed else "peer_error")
 
     def require_owner(self):
         status = self.command("status")

@@ -35,6 +35,7 @@ from pathlib import Path
 import websocket  # Existing dependency; never install packages at runtime.
 from journal import CaptureError, Journal, snowflake
 from learning_bridge import Bridge
+from capture_task_identity import task_identity
 
 API = "https://discord.com/api/v10"
 UA = "CNET-Marble-Peer (local, 1.0)"
@@ -315,7 +316,17 @@ class Gateway:
         author = d.get("author", {}).get("username") or "user"
         stamp_last_origin(cid, author)
         print("[discord] request captured=", captured, flush=True)
-        learned = self.learner.answer(content) if captured and self.learner is not None else None
+        learned = None
+        if captured and self.learner is not None:
+            if getattr(self.learner, "task_mode", False) is True:
+                # This path requires the fresh begin=True handoff above, never a
+                # lookup of an unfinished historical row. Native IDs also dedup.
+                identity = task_identity(self.journal.owner, self.journal.channel, d["id"], content)
+                learned = self.learner.task_answer(content, identity)
+                if learned is None:
+                    raise CaptureError("task_result_missing")
+            else:
+                learned = self.learner.answer(content)
         ans, peer_status = peer_ask(author, content) if learned is None else learned
         # Discord message max 2000
         if len(ans) > 1900:
