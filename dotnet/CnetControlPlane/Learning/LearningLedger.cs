@@ -15,7 +15,8 @@ internal sealed partial class LearningLedger : IDisposable
 
     public static LearningLedger Create(string root, LearningPolicy policy, ILearningClock clock) => Connect(root, policy, clock, true);
     public static LearningLedger Open(string root, LearningPolicy policy, ILearningClock clock) => Connect(root, policy, clock, false);
-    private static LearningLedger Connect(string root, LearningPolicy policy, ILearningClock clock, bool create)
+    public static LearningLedger OpenReadOnly(string root, LearningPolicy policy) => Connect(root, policy, new LearningClock(), false, true);
+    private static LearningLedger Connect(string root, LearningPolicy policy, ILearningClock clock, bool create, bool readOnly = false)
     {
         var files = LearningFiles.Open(root);
         SqliteConnection? db = null;
@@ -36,7 +37,7 @@ internal sealed partial class LearningLedger : IDisposable
             foreach (var name in new[] { "ledger.sqlite-journal", "ledger.sqlite-wal", "ledger.sqlite-shm" })
                 _ = files.ValidateFile(name, allowMissing: true);
             db = new SqliteConnection(new SqliteConnectionStringBuilder
-            { DataSource = Path.Combine(files.FullPath, "ledger.sqlite"), Mode = SqliteOpenMode.ReadWrite,
+            { DataSource = Path.Combine(files.FullPath, "ledger.sqlite"), Mode = readOnly ? SqliteOpenMode.ReadOnly : SqliteOpenMode.ReadWrite,
                 Pooling = false, Cache = SqliteCacheMode.Private, DefaultTimeout = 5 }.ToString());
             db.Open();
             var result = new LearningLedger(files, db, policy, clock);
@@ -56,7 +57,7 @@ internal sealed partial class LearningLedger : IDisposable
                     """)) != 0
                 || Convert.ToString(result.Scalar("SELECT policy FROM configuration WHERE id=1")) != policy.Sha256)
                 throw new InvalidOperationException("learning_ledger_identity_or_integrity");
-            result.Transaction((time, tx) => 0);
+            if (!readOnly) result.Transaction((time, tx) => 0);
             return result;
         }
         catch (Exception ex)
@@ -152,13 +153,14 @@ internal sealed partial class LearningLedger : IDisposable
     public void RecordDemand(string dataset, byte key, bool missed)
     {
         Dataset(dataset);
-        Transaction((time, tx) => Execute("""
+        Transaction((time, tx) => IncrementDemand(dataset, key, missed, tx));
+    }
+    private int IncrementDemand(string dataset, byte key, bool missed, SqliteTransaction tx) => Execute("""
             INSERT INTO demand VALUES($dataset,$key,1,$miss)
             ON CONFLICT(dataset,key) DO UPDATE SET
                 requests=CASE WHEN requests=9223372036854775807 THEN requests ELSE requests+1 END,
                 misses=CASE WHEN misses=9223372036854775807 THEN misses ELSE misses+$miss END
-            """, tx, ("$dataset", dataset), ("$key", (int)key), ("$miss", missed ? 1 : 0)));
-    }
+            """, tx, ("$dataset", dataset), ("$key", (int)key), ("$miss", missed ? 1 : 0));
     public (long Requests, long Misses) Demand(string dataset, byte key)
     {
         Dataset(dataset);
@@ -176,6 +178,8 @@ internal sealed partial class LearningLedger : IDisposable
         {
             string? reason = null;
             if (Convert.ToInt64(Scalar("SELECT paused FROM configuration WHERE id=1", tx)) != 0) reason = "learning_paused";
+            else if (Scalar("SELECT source FROM task_source_pins WHERE dataset=$d", tx, ("$d", dataset)) is string approved
+                && approved != sourceSha256) { SetPaused(tx); reason = "approved_source_changed"; }
             else if (Convert.ToInt64(Scalar("SELECT count(*) FROM jobs", tx)) >= policy.MaxJobs) reason = "job_capacity_exhausted";
             else if (Convert.ToInt64(Scalar("SELECT count(*) FROM jobs WHERE dataset=$d AND source=$s", tx,
                 ("$d", dataset), ("$s", sourceSha256))) >= policy.MaxAttemptsPerSource) reason = "source_attempts_exhausted";

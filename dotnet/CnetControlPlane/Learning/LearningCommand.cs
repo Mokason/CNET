@@ -12,15 +12,25 @@ internal static class LearningCommand
         var correlation = Guid.NewGuid().ToString("N");
         try
         {
-            if (args.Length < 2 || args[0] is not ("inspect" or "initialize" or "status" or "pause" or "resume" or "ask" or "lookup" or "verify" or "import" or "tick" or "run" or "quiesce")
-                || args.Length != (args[0] switch { "ask" or "lookup" => 4, "verify" => 3, "import" => 5, _ => 2 }))
+            if (args.Length < 2 || args[0] is not ("inspect" or "initialize" or "status" or "pause" or "resume" or "ask" or "lookup" or "verify" or "import" or "tick" or "run" or "quiesce" or "observe" or "approve" or "inbox")
+                || args.Length != (args[0] switch { "ask" or "lookup" or "approve" or "inbox" => 4, "observe" => 6, "verify" => 3, "import" => 5, _ => 2 }))
                 throw new ArgumentException("learning_command_usage");
             if (args[0] == "lookup" && (!LearningPolicy.IsId(args[2]) || !LocalSymbolReference.IsKey(args[3])))
                 throw new ArgumentException("learning_command_usage");
             byte key = 0;
-            if (args[0] == "ask" && (!LearningPolicy.IsId(args[2])
+            if (args[0] is "ask" or "observe" && (!LearningPolicy.IsId(args[2])
                 || !byte.TryParse(args[3], NumberStyles.None, CultureInfo.InvariantCulture, out key)
                 || key.ToString(CultureInfo.InvariantCulture) != args[3]))
+                throw new ArgumentException("learning_command_usage");
+            if (args[0] == "observe" && (args[4] is not ("synthetic" or "unreviewed") || !LearningLedger.IsRequestId(args[5])))
+                throw new ArgumentException("learning_command_usage");
+            if (args[0] == "approve" && (!LearningLedger.IsRequestId(args[2]) || !LearningLedger.IsHash(args[3])))
+                throw new ArgumentException("learning_command_usage");
+            long after = 0; int pageSize = 0;
+            if (args[0] == "inbox" && (!long.TryParse(args[2], NumberStyles.None, CultureInfo.InvariantCulture, out after)
+                || after < 0 || after.ToString(CultureInfo.InvariantCulture) != args[2]
+                || !int.TryParse(args[3], NumberStyles.None, CultureInfo.InvariantCulture, out pageSize)
+                || pageSize is < 1 or > 100 || pageSize.ToString(CultureInfo.InvariantCulture) != args[3]))
                 throw new ArgumentException("learning_command_usage");
             using var root = LearningFiles.Open(args[1]);
             using var managed = LearningManagedRuntime.Load(Path.Combine(root.FullPath, "managed"), root.Read("managed.json", 4096));
@@ -52,6 +62,16 @@ internal static class LearningCommand
                 Status(created, policy, correlation, "learning_initialized");
                 return 0;
             }
+            if (args[0] == "inbox")
+            {
+                using var reader = LearningLedger.OpenReadOnly(workPath, policy);
+                if (reader.RuntimeSha256 != native.Sha256 || reader.ManagedSha256 != running.Sha256)
+                    throw new InvalidOperationException("learning_installation_binding_missing");
+                var experiences = reader.Experiences(after, pageSize);
+                Emit(new { @event = "learning_inbox", correlation_id = correlation, experiences,
+                    next_after = experiences.Count == 0 ? after : experiences[^1].Sequence });
+                return 0;
+            }
             using var ledger = LearningLedger.Open(workPath, policy, new LearningClock());
             if (ledger.RuntimeSha256 is null || ledger.ManagedSha256 is null)
             {
@@ -61,6 +81,15 @@ internal static class LearningCommand
             ledger.BindRuntime(native); ledger.BindManaged(running);
             switch (args[0])
             {
+                case "observe":
+                    var observation = LearningObservationRunner.Observe(ledger, native, policy, root.FullPath, args[2], key, args[4], args[5]);
+                    Emit(new { @event = "learning_experience", correlation_id = correlation,
+                        replayed = observation.Replayed, experience = observation.Experience });
+                    return observation.Experience.State is "unknown" or "conflict" ? 2 : 0;
+                case "approve":
+                    var approved = ledger.ApproveExperience(args[2], args[3]);
+                    Emit(new { @event = "learning_experience_approved", correlation_id = correlation, experience = approved });
+                    return 0;
                 case "import":
                     var source = ledger.ImportSource(args[2], args[3], args[4]);
                     Emit(new { @event = "learning_source_imported", correlation_id = correlation, dataset = source.Dataset,

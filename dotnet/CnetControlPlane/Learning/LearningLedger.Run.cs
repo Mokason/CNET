@@ -10,7 +10,7 @@ internal sealed partial class LearningLedger
     private static readonly string[] RunTickCodes = ["idle", "activated", "probation", "probe_too_soon", "accepted",
         "rolled_back", "discarded", "interrupted", "paused", "frozen", "stage_refused", "refused", "outcome_unknown",
         "acquisition_refused", "evidence_unavailable", "verified_mismatch", "learning_paused", "job_capacity_exhausted",
-        "source_attempts_exhausted", "source_already_pending", "attempt_budget_exhausted"];
+        "source_attempts_exhausted", "source_already_pending", "attempt_budget_exhausted", "approved_source_changed"];
     private static readonly string[] RunStopCodes = ["operator_stop", "cancelled", "tick_failed"];
     private static readonly string[] RunFailureCodes = ["run_boot_changed", "run_clock_invalid", "run_clock_rollback",
         "run_gap_exceeded", "run_paused", "run_tick_count_exhausted"];

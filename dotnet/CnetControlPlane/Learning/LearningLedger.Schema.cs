@@ -4,7 +4,7 @@ namespace CnetControlPlane.Learning;
 
 internal sealed partial class LearningLedger
 {
-    private const int SchemaVersion = 2;
+    private const int SchemaVersion = 3;
 
     private void RequireSchemaVersion(SqliteTransaction? tx = null)
     {
@@ -81,6 +81,30 @@ internal sealed partial class LearningLedger
                 boot TEXT NOT NULL REFERENCES epochs(boot), last_ns INTEGER NOT NULL CHECK(last_ns>=0),
                 probes INTEGER NOT NULL CHECK(probes BETWEEN 0 AND 32),
                 rollback_required INTEGER NOT NULL CHECK(rollback_required IN(0,1))) STRICT;
+            """, tx);
+        Execute("""
+            CREATE TABLE task_source_pins(dataset TEXT PRIMARY KEY, source TEXT NOT NULL
+                CHECK(length(source)=64 AND source NOT GLOB '*[^0-9a-f]*')) STRICT;
+            CREATE TABLE experiences(sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+                request_id TEXT NOT NULL UNIQUE CHECK(length(request_id)=32 AND request_id NOT GLOB '*[^0-9a-f]*'),
+                dataset TEXT NOT NULL, key INTEGER NOT NULL CHECK(key BETWEEN 0 AND 255),
+                origin TEXT NOT NULL CHECK(origin IN('synthetic','unreviewed')),
+                boot TEXT NOT NULL REFERENCES epochs(boot), started_ns INTEGER NOT NULL CHECK(started_ns>=0),
+                finished_boot TEXT REFERENCES epochs(boot), finished_ns INTEGER CHECK(finished_ns>=0),
+                state TEXT NOT NULL CHECK(state IN('pending','miss','awaiting_evidence','verified','abstain','unknown','conflict')),
+                source TEXT CHECK(source IS NULL OR (length(source)=64 AND source NOT GLOB '*[^0-9a-f]*')),
+                expected INTEGER CHECK(expected BETWEEN 0 AND 65535), value INTEGER CHECK(value BETWEEN 0 AND 65535),
+                approved_source TEXT CHECK(approved_source IS NULL OR
+                    (length(approved_source)=64 AND approved_source NOT GLOB '*[^0-9a-f]*')),
+                approved_expected INTEGER CHECK(approved_expected BETWEEN 0 AND 65535),
+                approved_boot TEXT REFERENCES epochs(boot), approved_ns INTEGER CHECK(approved_ns>=0),
+                review_conflict INTEGER NOT NULL DEFAULT 0 CHECK(review_conflict IN(0,1)),
+                CHECK((state='pending' AND finished_boot IS NULL AND finished_ns IS NULL AND value IS NULL)
+                    OR (state<>'pending' AND finished_boot IS NOT NULL AND finished_ns IS NOT NULL)),
+                CHECK(expected IS NULL OR source IS NOT NULL),
+                CHECK((approved_source IS NULL AND approved_expected IS NULL AND approved_boot IS NULL AND approved_ns IS NULL)
+                    OR (approved_source IS NOT NULL AND approved_expected IS NOT NULL AND approved_boot IS NOT NULL
+                        AND approved_ns IS NOT NULL AND state IN('miss','awaiting_evidence')))) STRICT;
             """, tx);
         var now = ValidNow();
         Execute("INSERT INTO epochs VALUES($boot,$now,$now); INSERT INTO configuration VALUES(1,$policy,$boot,0)", tx,
