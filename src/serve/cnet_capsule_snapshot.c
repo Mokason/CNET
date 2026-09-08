@@ -112,13 +112,18 @@ release:free(data);
 done:if(close(fd))rc=-1;return rc;
 }
 /* Digest a canonical sorted inventory, not directory order or mutable paths. */
-static int inventory(int source,int target,char digest[65],size_t *bytes,int publishing) {
+static int inventory(int source,int target,char digest[65],size_t *bytes,int publishing,
+                     const char *const *selected,size_t selected_count) {
     Entry *units=calloc(SNAP_UNITS,sizeof *units);size_t count=0,total=0;
     size_t cap=32+SNAP_UNITS*384;char *canonical=calloc(1,cap);int rc=-1;
     struct stat before,after;
     if(!units||!canonical||directory(source,0,&before)||entries_filtered(source,units,SNAP_UNITS,&count,publishing))goto done;
-    size_t used=(size_t)snprintf(canonical,cap,"CNET-SNAPSHOT-1\n%zu\n",count);
+    size_t used=(size_t)snprintf(canonical,cap,"CNET-SNAPSHOT-1\n%zu\n",selected?selected_count:count);
+    size_t matched=0,copied=0;
     for(size_t i=0;i<count;i++) {
+        int keep=!selected;
+        for(size_t j=0;j<selected_count;j++)if(!strcmp(units[i].name,selected[j]))keep=1;
+        if(keep)matched++;
         int src=openat(source,units[i].name,O_RDONLY|O_DIRECTORY|O_NOFOLLOW|O_CLOEXEC),dst=-1;
         Entry files[3];size_t n=0;struct stat a,b;
         if(src<0)goto done;
@@ -129,29 +134,30 @@ static int inventory(int source,int target,char digest[65],size_t *bytes,int pub
             if(k==3)failed=1;else mask|=1u<<k;
         }
         if((mask&3)!=3)failed=1;
-        if(!failed&&target>=0) {
+        if(!failed&&keep&&target>=0) {
             if(mkdirat(target,units[i].name,0700))failed=1;
             else if((dst=openat(target,units[i].name,O_RDONLY|O_DIRECTORY|O_NOFOLLOW|O_CLOEXEC))<0)failed=1;
         }
-        used+=(size_t)snprintf(canonical+used,cap-used,"%s\n",units[i].name);
+        if(keep)used+=(size_t)snprintf(canonical+used,cap-used,"%s\n",units[i].name);
         for(unsigned k=0;k<3&&!failed;k++)if(mask&(1u<<k)){
+            size_t previous=total;
             char hash[65];if(artifact(src,dst,artifacts[k],hash,&total))failed=1;
-            else used+=(size_t)snprintf(canonical+used,cap-used,"%u %s\n",k,hash);
+            else if(keep){copied+=total-previous;used+=(size_t)snprintf(canonical+used,cap-used,"%u %s\n",k,hash);}
         }
         if(!failed&&(fstat(src,&b)||!unchanged(&a,&b)))failed=1;
         if(dst>=0){if(fsync(dst)||fchmod(dst,0500)||fsync(dst))failed=1;if(close(dst))failed=1;}
         if(close(src))failed=1;
         if(failed||used>=cap)goto done;
     }
-    if(fstat(source,&after)||!unchanged(&before,&after)||cce_sha256_bytes_hex(canonical,used,digest))goto done;
-    *bytes=total;rc=0;
+    if((selected&&matched!=selected_count)||fstat(source,&after)||!unchanged(&before,&after)||cce_sha256_bytes_hex(canonical,used,digest))goto done;
+    *bytes=copied;rc=0;
 done:free(canonical);free(units);return rc;
 }
 int cnet_capsule_snapshot_verify(int directory_fd,const char *digest,size_t *bytes) {
     struct stat st;if(!bytes||!hash_name(digest)||directory(directory_fd,1,&st))return -1;
     int fd=openat(directory_fd,digest,O_RDONLY|O_DIRECTORY|O_NOFOLLOW|O_CLOEXEC);
     if(fd<0)return -1;
-    char actual[65];int rc=inventory(fd,-1,actual,bytes,0);
+    char actual[65];int rc=inventory(fd,-1,actual,bytes,0,NULL,0);
     if(close(fd))rc=-1;
     return rc||strcmp(actual,digest)?-1:0;
 }
@@ -167,7 +173,27 @@ static void remove_temporary(int parent,const char *name,int fd) {
     }
     free(units);(void)unlinkat(parent,name,AT_REMOVEDIR);
 }
-int cnet_capsule_snapshot_create(int source,int destination,const char *name,char digest[65],size_t *bytes) {
+/* -2 means absent; -1 means malformed/busy. Never silently ignore a bad lock. */
+static int publisher_lock(int source) {
+    struct stat st;
+    int fd=openat(source,".publish.lock",O_RDONLY|O_NOFOLLOW|O_NONBLOCK|O_CLOEXEC);
+    if(fd<0)return errno==ENOENT?-2:-1;
+    if(fstat(fd,&st)||!S_ISREG(st.st_mode)||st.st_uid!=geteuid()||
+       (st.st_mode&077)||st.st_nlink!=1||st.st_size||flock(fd,LOCK_SH|LOCK_NB)) {
+        close(fd);return -1;
+    }
+    return fd;
+}
+int cnet_capsule_snapshot_inspect(int source) {
+    int lock=publisher_lock(source);if(lock==-1)return -1;
+    char digest[65];size_t bytes=0;
+    int rc=inventory(source,-1,digest,&bytes,lock>=0,NULL,0);
+    if(lock>=0&&close(lock))rc=-1;
+    return rc;
+}
+static int create(int source,int destination,const char *name,
+                  const char *const *selected,size_t count,int (*validate)(int,void *),void *context,
+                  char digest[65],size_t *bytes) {
     if(digest)digest[0]=0;
     if(bytes)*bytes=0;
     struct stat st;if(!digest||!bytes||directory(source,0,&st)||directory(destination,1,&st)||
@@ -176,21 +202,17 @@ int cnet_capsule_snapshot_create(int source,int destination,const char *name,cha
     if(src<0)return -1;
     /* Cooperate with the existing native teach publisher. Only its exact
      * private zero-length lock is metadata, never silently ignore dotfiles. */
-    int publisher=openat(src,".publish.lock",O_RDONLY|O_NOFOLLOW|O_NONBLOCK|O_CLOEXEC);
-    if(publisher>=0) {
-        if(fstat(publisher,&st)||!S_ISREG(st.st_mode)||st.st_uid!=geteuid()||
-           (st.st_mode&077)||st.st_nlink!=1||st.st_size||flock(publisher,LOCK_SH|LOCK_NB)) {
-            close(publisher);close(src);return -1;
-        }
-    } else if(errno!=ENOENT){close(src);return -1;}
+    int publisher=publisher_lock(src);
+    if(publisher==-1){close(src);return -1;}
     unsigned char nonce[16];char temporary[42]="pending-";
     if(getrandom(nonce,sizeof nonce,0)!=sizeof nonce){if(publisher>=0)close(publisher);close(src);return -1;}
     for(unsigned i=0;i<16;i++)snprintf(temporary+8+i*2,3,"%02x",nonce[i]);
     if(mkdirat(destination,temporary,0700)){if(publisher>=0)close(publisher);close(src);return -1;}
     int dst=openat(destination,temporary,O_RDONLY|O_DIRECTORY|O_NOFOLLOW|O_CLOEXEC);
-    int rc=dst<0?-1:inventory(src,dst,digest,bytes,publisher>=0);if(close(src))rc=-1;
+    int rc=dst<0?-1:inventory(src,dst,digest,bytes,publisher>=0,selected,count);if(close(src))rc=-1;
     if(publisher>=0)close(publisher);
     if(!rc&&(fsync(dst)||fchmod(dst,0500)||fsync(dst)))rc=-1;
+    if(!rc&&validate&&validate(dst,context))rc=-1;
     int published=0;
     if(!rc) {
         if(!syscall(SYS_renameat2,destination,temporary,destination,digest,1))published=1;
@@ -199,8 +221,23 @@ int cnet_capsule_snapshot_create(int source,int destination,const char *name,cha
     }
     if(dst>=0){if(!published){(void)fchmod(dst,0700);remove_temporary(destination,temporary,dst);}close(dst);}
     if(!rc&&fsync(destination))rc=-1;
-    if(rc)digest[0]=0;
+    if(rc){digest[0]=0;*bytes=0;}
     return rc;
+}
+int cnet_capsule_snapshot_create(int source,int destination,const char *name,char digest[65],size_t *bytes) {
+    return create(source,destination,name,NULL,0,NULL,NULL,digest,bytes);
+}
+int cnet_capsule_snapshot_selected(int source,int destination,
+    const char *const *names,size_t count,int (*validate)(int,void *),void *context,
+    char digest[65],size_t *bytes) {
+    if(digest)digest[0]=0;
+    if(bytes)*bytes=0;
+    if(!names||!count||count>8||!validate)return -1;
+    for(size_t i=0;i<count;i++) {
+        if(!component(names[i]))return -1;
+        for(size_t j=0;j<i;j++)if(!strcmp(names[i],names[j]))return -1;
+    }
+    return create(source,destination,NULL,names,count,validate,context,digest,bytes);
 }
 static int pending_name(const char *s) {
     if(strncmp(s,"pending-",8)||strlen(s)!=40)return 0;
